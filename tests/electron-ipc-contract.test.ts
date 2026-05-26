@@ -22,4 +22,22 @@ describe('electron ipc contract', () => {
       expect(main).toContain(channel);
     }
   });
+
+  it('starts newly created tasks in the background so the renderer can open task detail immediately', async () => {
+    const main = await readFile(new URL('../electron/main.ts', import.meta.url), 'utf8');
+
+    expect(main).toContain('void runTask(database, task');
+    expect(main).toContain('return database.getState()');
+  });
+
+  it('pushes a fresh app state snapshot for live task detail updates', async () => {
+    const main = await readFile(new URL('../electron/main.ts', import.meta.url), 'utf8');
+    const preload = await readFile(new URL('../electron/preload.ts', import.meta.url), 'utf8');
+    const viteEnv = await readFile(new URL('../src/vite-env.d.ts', import.meta.url), 'utf8');
+
+    expect(main).toContain('sendTaskState');
+    expect(main).toContain("mainWindow?.webContents.send('task:event', state)");
+    expect(preload).toContain('callback(state)');
+    expect(viteEnv).toContain('callback: (state: AppState) => void');
+  });
 });

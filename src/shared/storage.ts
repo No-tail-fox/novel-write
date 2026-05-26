@@ -184,7 +184,10 @@ export class FileDatabase {
         keep_promotion INTEGER DEFAULT 0,
         tts_provider TEXT DEFAULT 'volcengine',
         tts_speed REAL DEFAULT 1,
-        step3_prompt_snapshot TEXT DEFAULT ''
+        step3_prompt_snapshot TEXT DEFAULT '',
+        failed_step INTEGER,
+        retry_from_step INTEGER,
+        artifact_state_path TEXT DEFAULT ''
       );
       CREATE TABLE IF NOT EXISTS task_events (
         seq INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -275,6 +278,9 @@ export class FileDatabase {
       ['tts_provider', "TEXT DEFAULT 'volcengine'"],
       ['tts_speed', 'REAL DEFAULT 1'],
       ['step3_prompt_snapshot', "TEXT DEFAULT ''"],
+      ['failed_step', 'INTEGER'],
+      ['retry_from_step', 'INTEGER'],
+      ['artifact_state_path', "TEXT DEFAULT ''"],
     ] as const) {
       addColumnIfMissing(this.db, 'tasks', column, definition);
     }
@@ -517,6 +523,9 @@ export class FileDatabase {
       ttsProvider: input.ttsProvider ?? defaultConfig.tts.provider,
       ttsSpeed: input.ttsSpeed ?? 1,
       step3PromptSnapshot: input.step3PromptSnapshot ?? '',
+      failedStep: null,
+      retryFromStep: null,
+      artifactStatePath: '',
     };
     this.db.run(
       `INSERT INTO tasks (
@@ -524,8 +533,8 @@ export class FileDatabase {
         bgm_id, pause_points, output_dir, error_message, created_at, completed_at,
         mode, ai_keyword, ai_sources, extra_requirements, prompt_template_id, prompt_template_type,
         reference_image_path, rewrite_intensity, narrative_pov, keep_promotion, tts_provider,
-        tts_speed, step3_prompt_snapshot
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        tts_speed, step3_prompt_snapshot, failed_step, retry_from_step, artifact_state_path
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       [
         task.id,
         task.title,
@@ -556,6 +565,9 @@ export class FileDatabase {
         task.ttsProvider,
         task.ttsSpeed,
         task.step3PromptSnapshot,
+        task.failedStep,
+        task.retryFromStep,
+        task.artifactStatePath,
       ],
     );
     await this.persist();
@@ -564,7 +576,9 @@ export class FileDatabase {
 
   async updateTask(
     id: string,
-    patch: Partial<Pick<Task, 'status' | 'currentStep' | 'outputDir' | 'errorMessage' | 'completedAt'>>,
+    patch: Partial<
+      Pick<Task, 'status' | 'currentStep' | 'outputDir' | 'errorMessage' | 'completedAt' | 'failedStep' | 'retryFromStep' | 'artifactStatePath'>
+    >,
   ): Promise<void> {
     const sets: string[] = [];
     const values: SqlValue[] = [];
@@ -574,6 +588,9 @@ export class FileDatabase {
       outputDir: 'output_dir',
       errorMessage: 'error_message',
       completedAt: 'completed_at',
+      failedStep: 'failed_step',
+      retryFromStep: 'retry_from_step',
+      artifactStatePath: 'artifact_state_path',
     };
     for (const [key, column] of Object.entries(map)) {
       if (key in patch) {
@@ -670,6 +687,9 @@ function rowToTask(row: Record<string, unknown>): Task {
     ttsProvider: String(row.tts_provider ?? 'volcengine') as Task['ttsProvider'],
     ttsSpeed: Number(row.tts_speed ?? 1),
     step3PromptSnapshot: String(row.step3_prompt_snapshot ?? ''),
+    failedStep: row.failed_step === null || row.failed_step === undefined ? null : Number(row.failed_step),
+    retryFromStep: row.retry_from_step === null || row.retry_from_step === undefined ? null : Number(row.retry_from_step),
+    artifactStatePath: String(row.artifact_state_path ?? ''),
   };
 }
 

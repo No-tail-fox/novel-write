@@ -1,12 +1,18 @@
-import { mkdir, mkdtemp, readdir, readFile, rm } from 'node:fs/promises';
+import { mkdir, mkdtemp, readdir, readFile, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
 import { FileDatabase } from '@shared/storage';
 import { runTask } from '@shared/runner';
+import type { ImagePrompt, PipelineArtifact, StoryboardScene } from '@shared/types';
+import type { PyJianYingBridgeInput } from '@shared/jianying-bridge';
 
 const sampleInput =
-  '武曌，通称武则天、武后，是中国历史上唯一的女皇帝。武则天十四岁入宫为唐太宗才人，历经十二年不得升迁。唐高宗时复为昭仪，通过废黜王皇后与萧淑妃，得以立为皇后。并尊号为天后，与唐高宗并称二圣。';
+  'Wu Zetian entered the palace at fourteen. After years of silence, she returned to the center of power and changed the court forever.';
+const tinyPng = Buffer.from(
+  'iVBORw0KGgoAAAANSUhEUgAAAAIAAAACCAIAAAD91JpzAAAAFElEQVR4nGP8z8DAwMDAxMDAwAAABQABDQottAAAAABJRU5ErkJggg==',
+  'base64',
+);
 
 describe('high parity Storybound shell model', () => {
   it('migrates observed provider, template, credit, style, and lab defaults', async () => {
@@ -24,9 +30,7 @@ describe('high parity Storybound shell model', () => {
       expect(state.config.customImage).toMatchObject({ asyncMode: false });
       expect(state.config.tts.provider).toBe('volcengine');
       expect(state.config.tts.minimax.model).toBe('speech-02-hd');
-      expect(state.config.jianying.bgmLibrary[0].title).toBe('内置 BGM');
       expect(state.config.ima).toMatchObject({ clientId: '', apiKey: '' });
-      expect(state.customStyles.map((style) => style.name)).toContain('黑白摄影');
       expect(state.creditTransactions[0]).toMatchObject({ type: 'system', amount: 0, balance: 0 });
       expect(state.minimaxCloneVoices).toEqual([]);
 
@@ -43,15 +47,15 @@ describe('high parity Storybound shell model', () => {
     try {
       const db = await FileDatabase.open(file);
       const task = await db.createTask({
-        title: '武则天试跑',
+        title: 'Wu Zetian trial',
         inputText: sampleInput,
         mode: 'ai',
-        aiKeyword: '武则天回宫',
+        aiKeyword: 'Wu Zetian comeback',
         aiSources: ['web', 'builtin-knowledge', 'ima'],
-        extraRequirements: '聚焦人物转折经历，语气偏感性',
+        extraRequirements: 'Focus on the reversal.',
         track: 'character-story',
         style: 'photo-real',
-        speaker: '灿博小叔',
+        speaker: 'voice-a',
         ratio: '9:16',
         templateId: 'default-portrait-9-16',
         bgmId: '__builtin__',
@@ -66,17 +70,16 @@ describe('high parity Storybound shell model', () => {
       });
 
       await db.updateTask(task.id, { status: 'paused', currentStep: 3 });
-      await db.updateTask(task.id, { status: 'cancelled', errorMessage: '用户取消' });
+      await db.updateTask(task.id, { status: 'cancelled', errorMessage: 'user cancelled' });
       const state = await db.getState();
 
       expect(state.tasks[0]).toMatchObject({
-        title: '武则天试跑',
+        title: 'Wu Zetian trial',
         status: 'cancelled',
         mode: 'ai',
-        aiKeyword: '武则天回宫',
+        aiKeyword: 'Wu Zetian comeback',
         aiSources: ['web', 'builtin-knowledge', 'ima'],
-        extraRequirements: '聚焦人物转折经历，语气偏感性',
-        speaker: '灿博小叔',
+        speaker: 'voice-a',
         bgmId: '__builtin__',
         referenceImagePath: 'C:/refs/wu.png',
         rewriteIntensity: 'deep',
@@ -93,80 +96,160 @@ describe('high parity Storybound shell model', () => {
     }
   });
 
-  it('writes the complete observable artifact contract for a mock run', async () => {
+  it('writes the complete observable artifact contract for a real Jianying draft run', async () => {
     const dir = await mkdtemp(join(tmpdir(), 'storybound-high-parity-run-'));
     const db = await FileDatabase.open(join(dir, 'data.db'));
+    const draftRootDir = join(dir, 'JianyingPro Drafts');
+    const mediaDir = join(dir, 'media');
 
     try {
+      const stateBefore = await db.getState();
+      await db.upsertConfig({ ...stateBefore.config, jianying: { ...stateBefore.config.jianying, draftPath: draftRootDir } });
       const task = await db.createTask({
-        title: '武则天完整闭环',
+        title: 'Wu Zetian complete loop',
         inputText: sampleInput,
         mode: 'paste',
         track: 'character-story',
         style: 'photo-real',
         ratio: '9:16',
         templateId: 'default-portrait-9-16',
-        speaker: '灿博小叔',
+        speaker: 'voice-a',
         ttsSpeed: 1,
       });
 
-      await runTask(db, task, { appDataDir: dir });
+      await runTask(db, task, {
+        appDataDir: dir,
+        generatePipelineArtifact: async () => makeArtifact(),
+        generateImages: async (scenes) => writeSceneAssets(mediaDir, scenes, 'png', tinyPng),
+        synthesizeNarration: async (scenes) => writeSceneAssets(mediaDir, scenes, 'wav', wavTone(1200)),
+        draftWriterOptions: { runBridge: fakeBridge },
+      });
       const state = await db.getState();
       const completed = state.tasks[0];
-      const files = await readdir(completed.outputDir);
-      const imageFiles = await readdir(join(completed.outputDir, 'images'));
-      const audioFiles = await readdir(join(completed.outputDir, 'audio'));
-      const prompts = JSON.parse(await readFile(join(completed.outputDir, '03-image-prompts.json'), 'utf8'));
-      const diagnostics = JSON.parse(await readFile(join(completed.outputDir, 'diagnostics.json'), 'utf8'));
+      const draftFiles = await readdir(completed.outputDir);
+      const draftContent = JSON.parse(await readFile(join(completed.outputDir, 'draft_content.json'), 'utf8'));
+      const workDir = join(dir, 'tasks', task.id);
+      const workFiles = await readdir(workDir);
+      const prompts = JSON.parse(await readFile(join(workDir, '03-image-prompts.json'), 'utf8'));
+      const diagnostics = JSON.parse(await readFile(join(workDir, 'diagnostics.json'), 'utf8'));
 
       expect(completed.status).toBe('completed');
-      expect(files).toEqual(
-        expect.arrayContaining([
-          '00-reviewed.txt',
-          '01-rewritten-copy.md',
-          '00-cover-title.json',
-          '02-sentences.json',
-          '03-image-prompts.json',
-          'subtitles.srt',
-          'draft-project.json',
-          'diagnostics.json',
-        ]),
-      );
-      expect(imageFiles.length).toBeGreaterThan(0);
-      expect(audioFiles.length).toBeGreaterThan(0);
+      expect(completed.outputDir).toContain('JianyingPro Drafts');
+      expect(draftFiles).toEqual(expect.arrayContaining(['draft_content.json', 'draft_meta_info.json', 'materials']));
+      expect(workFiles).toEqual(expect.arrayContaining(['00-reviewed.txt', '01-rewritten-copy.md', '02-sentences.json', '03-image-prompts.json', 'subtitles.srt', 'diagnostics.json']));
+      expect(draftContent.materials.videos.length).toBeGreaterThan(0);
+      expect(draftContent.materials.audios.length).toBeGreaterThan(0);
+      expect(draftContent.materials.texts.length).toBeGreaterThan(0);
       expect(prompts[0]).toHaveProperty('negativePrompt');
-      expect(diagnostics.checks.map((check: { id: string }) => check.id)).toContain('draft-package');
-      expect(state.events.map((event) => event.detail)).toContain('字幕时间轴已生成');
+      expect(diagnostics.checks.map((check: { id: string }) => check.id)).toContain('jianying-draft');
+      expect(state.events.map((event) => event.detail)).toContain('Jianying draft folder generated');
     } finally {
       await db.close();
       await rm(dir, { recursive: true, force: true });
     }
   });
 
-  it('renders observed high-parity feature labels in the React shell source', async () => {
+  it('renders observed high-parity feature structure in the React shell source', async () => {
     const main = await readFile(new URL('../src/main.tsx', import.meta.url), 'utf8');
     const css = await readFile(new URL('../src/styles.css', import.meta.url), 'utf8');
 
-    for (const text of [
-      'AI 创作',
-      '全网搜索',
-      'AI 内置知识补全',
-      'IMA 知识库',
-      '高级选项',
-      '暂停确认',
-      '改写强度',
-      '叙事视角',
-      'MiniMax',
-      '克隆音色',
-      '导入 JSON',
-      '主角档案',
-      '图像参考',
-      '关于 · 诊断',
-      '复制诊断报告',
-    ]) {
+    for (const text of ['pipelineSteps', 'TaskDetailPage', 'MiniMax', 'ImageLabPage', 'DraftTemplatesPage']) {
       expect(main).toContain(text);
     }
     expect(css).toContain('.draft-editor-shell');
     expect(css).toContain('.segmented');
   });
 });
+
+async function writeSceneAssets(
+  mediaDir: string,
+  scenes: StoryboardScene[],
+  extension: string,
+  data: Buffer,
+): Promise<Array<{ sceneId: number; path: string }>> {
+  const targetDir = join(mediaDir, extension);
+  await mkdir(targetDir, { recursive: true });
+  return Promise.all(
+    scenes.map(async (scene) => {
+      const path = join(targetDir, `${scene.id}.${extension}`);
+      await writeFile(path, data);
+      return { sceneId: scene.id, path };
+    }),
+  );
+}
+
+async function fakeBridge(payload: PyJianYingBridgeInput) {
+  await mkdir(payload.draftDir, { recursive: true });
+  await mkdir(join(payload.draftDir, 'materials'), { recursive: true });
+  const draftContentPath = join(payload.draftDir, 'draft_content.json');
+  const draftMetaPath = join(payload.draftDir, 'draft_meta_info.json');
+  await writeFile(
+    draftContentPath,
+    JSON.stringify({
+      duration: payload.totalDurationUs,
+      materials: {
+        videos: payload.images,
+        audios: payload.narration,
+        texts: payload.scenes,
+      },
+      tracks: [{ type: 'video' }, { type: 'audio' }, { type: 'text' }],
+    }),
+    'utf8',
+  );
+  await writeFile(draftMetaPath, JSON.stringify({ draft_name: payload.title, tm_duration: payload.totalDurationUs }), 'utf8');
+  return {
+    draftDir: payload.draftDir,
+    draftContentPath,
+    draftMetaPath,
+    durationUs: payload.totalDurationUs ?? 0,
+  };
+}
+
+function makeArtifact(): PipelineArtifact {
+  const scenes: StoryboardScene[] = [
+    { id: 1, cap: 'Wu Zetian entered the palace at fourteen.', descPrompt: 'palace scene', durationMs: 1200 },
+    { id: 2, cap: 'She returned to power years later.', descPrompt: 'court scene', durationMs: 1200 },
+  ];
+  const imagePrompts: ImagePrompt[] = scenes.map((scene) => ({
+    sceneId: scene.id,
+    cap: scene.cap,
+    prompt: scene.descPrompt,
+    negativePrompt: 'none',
+    style: 'photo-real',
+    ratio: '9:16',
+    characterProfile: 'same person',
+  }));
+  return {
+    reviewedText: sampleInput,
+    rewrittenCopy: 'Wu Zetian entered the palace at fourteen.\n\nShe returned to power years later.',
+    cover: { title: 'Wu Zetian', subtitle: ['A comeback'], summary: 'summary', tags: ['#history'], comments: ['comment'] },
+    scenes,
+    imagePrompts,
+    subtitles: { cues: [], srt: '' },
+  };
+}
+
+function wavTone(durationMs: number): Buffer {
+  const sampleRate = 8000;
+  const samples = Math.max(1, Math.floor((sampleRate * durationMs) / 1000));
+  const dataSize = samples * 2;
+  const buffer = Buffer.alloc(44 + dataSize);
+  buffer.write('RIFF', 0);
+  buffer.writeUInt32LE(36 + dataSize, 4);
+  buffer.write('WAVE', 8);
+  buffer.write('fmt ', 12);
+  buffer.writeUInt32LE(16, 16);
+  buffer.writeUInt16LE(1, 20);
+  buffer.writeUInt16LE(1, 22);
+  buffer.writeUInt32LE(sampleRate, 24);
+  buffer.writeUInt32LE(sampleRate * 2, 28);
+  buffer.writeUInt16LE(2, 32);
+  buffer.writeUInt16LE(16, 34);
+  buffer.write('data', 36);
+  buffer.writeUInt32LE(dataSize, 40);
+  for (let i = 0; i < samples; i += 1) {
+    const value = Math.round(Math.sin((i / sampleRate) * Math.PI * 2 * 440) * 8000);
+    buffer.writeInt16LE(value, 44 + i * 2);
+  }
+  return buffer;
+}

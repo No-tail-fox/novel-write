@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useState } from 'react';
-import { createRoot } from 'react-dom/client';
+import { createRoot, type Root } from 'react-dom/client';
 import {
   Bell,
   Bot,
@@ -58,7 +58,6 @@ import {
   defaultPromptTemplates,
   defaultUiPreferences,
 } from './shared/config';
-import { buildStoryPackage } from './shared/story';
 import { draftTemplates as builtinDraftTemplates, imageAnimations } from './shared/templates';
 import './styles.css';
 
@@ -136,6 +135,16 @@ const povOptions = [
   ['keep-original', '保持原文'],
   ['first-person', '第一人称'],
   ['third-person', '第三人称'],
+] as const;
+
+const pipelineSteps = [
+  { index: 0, title: '文案预审', hint: '清理广告 / 敏感词', agent: 'Reviewer' },
+  { index: 1, title: '智能改写与封面生成', hint: '正文 / 标题 / 发布文案 / 标签 / 评论', agent: 'Writer' },
+  { index: 2, title: '影视分镜分句', hint: '拆成可配图的单元', agent: 'Storyboard' },
+  { index: 3, title: '生成绘图提示词', hint: '为每个分镜写 prompt', agent: 'Prompt' },
+  { index: 4, title: '批量生图', hint: '并发调用 AI 绘图', agent: 'Producer' },
+  { index: 5, title: 'TTS配音', hint: '生成音频', agent: 'TTS' },
+  { index: 6, title: '剪映草稿包', hint: '写入可打开的草稿目录', agent: 'Draft' },
 ] as const;
 
 type StoryboundApi = NonNullable<Window['storybound']>;
@@ -228,13 +237,14 @@ function makeFallbackApi(setState: (state: AppState) => void): StoryboundApi {
       return persist({ ...read(), ui });
     },
     async createAndRunTask(input: CreateTaskInput) {
-      const artifact = await buildStoryPackage(input.inputText, { style: input.style, ratio: input.ratio });
+      const browserPipelineError =
+        'Browser preview cannot run the real provider pipeline. Start the Electron app with configured LLM, image, TTS, Python, and pyJianYingDraft.';
       const task: Task = {
         id: crypto.randomUUID(),
-        title: input.title || artifact.cover.title,
+        title: input.title || input.inputText.slice(0, 18) || 'New task',
         inputText: input.inputText,
-        status: 'completed',
-        currentStep: 7,
+        status: 'paused',
+        currentStep: 0,
         track: input.track ?? 'character-story',
         style: input.style ?? 'photo-real',
         speaker: input.speaker ?? '灿博小叔',
@@ -243,9 +253,9 @@ function makeFallbackApi(setState: (state: AppState) => void): StoryboundApi {
         bgmId: input.bgmId ?? '__builtin__',
         pausePoints: input.pausePoints ?? [],
         outputDir: '',
-        errorMessage: '',
+        errorMessage: browserPipelineError,
         createdAt: new Date().toISOString(),
-        completedAt: new Date().toISOString(),
+        completedAt: null,
         mode: input.mode ?? 'paste',
         aiKeyword: input.aiKeyword ?? '',
         aiSources: input.aiSources ?? [],
@@ -256,15 +266,15 @@ function makeFallbackApi(setState: (state: AppState) => void): StoryboundApi {
         rewriteIntensity: input.rewriteIntensity ?? 'standard',
         narrativePov: input.narrativePov ?? 'keep-original',
         keepPromotion: input.keepPromotion ?? false,
-        ttsProvider: input.ttsProvider ?? 'mock',
+        ttsProvider: input.ttsProvider ?? 'volcengine',
         ttsSpeed: input.ttsSpeed ?? 1,
         step3PromptSnapshot: input.step3PromptSnapshot ?? '',
+        failedStep: 0,
+        retryFromStep: 0,
+        artifactStatePath: '',
       };
       const events: TaskEvent[] = [
-        { taskId: task.id, type: 'step_complete', step: 0, agent: 'Reviewer', tool: null, detail: `已保存 ${artifact.reviewedText.length} 字`, dataJson: null, ts: Date.now() },
-        { taskId: task.id, type: 'step_complete', step: 3, agent: 'Prompt', tool: null, detail: `已生成 ${artifact.imagePrompts.length} 条图片提示词`, dataJson: null, ts: Date.now() },
-        { taskId: task.id, type: 'step_complete', step: 5, agent: 'TTS', tool: null, detail: '字幕时间轴已生成', dataJson: null, ts: Date.now() },
-        { taskId: task.id, type: 'step_complete', step: 6, agent: 'Draft', tool: null, detail: '浏览器预览模式已生成本地草稿记录', dataJson: null, ts: Date.now() },
+        { taskId: task.id, type: 'step_error', step: 0, agent: 'Reviewer', tool: null, detail: browserPipelineError, dataJson: null, ts: Date.now() },
       ];
       const state = read();
       return persist({ ...state, tasks: [task, ...state.tasks], events: [...state.events, ...events] });
@@ -297,6 +307,7 @@ function makeFallbackApi(setState: (state: AppState) => void): StoryboundApi {
 function App() {
   const [state, setState] = useState<AppState>(cloneState(initialState));
   const [activeView, setActiveView] = useState<ShellView>('new-task');
+  const [selectedTaskId, setSelectedTaskId] = useState<string | null>(null);
   const [saveTone, setSaveTone] = useState<'saved' | 'saving' | 'dirty'>('saved');
   const api = useMemo(() => window.storybound ?? makeFallbackApi(setState), []);
 
@@ -309,15 +320,15 @@ function App() {
         setActiveView(hydrated.ui.activeView);
       })
       .catch(console.error);
-    return api.onTaskEvent((detail) => {
-      setState((current) => ({
-        ...current,
-        events: [...current.events, { taskId: 'live', type: 'step_progress', step: null, agent: null, tool: null, detail, dataJson: null, ts: Date.now() }],
-      }));
+    return api.onTaskEvent((next) => {
+      setState(hydrateState(next));
     });
   }, [api]);
 
   async function navigate(view: ShellView) {
+    if (view !== 'task-detail') {
+      setSelectedTaskId(null);
+    }
     setActiveView(view);
     setSaveTone('saving');
     try {
@@ -335,7 +346,22 @@ function App() {
     setSaveTone('saved');
   }
 
-  const activeNav = navItems.find((item) => item.view === activeView) ?? navItems[0];
+  async function openTaskDetail(taskId: string) {
+    setSelectedTaskId(taskId);
+    setActiveView('task-detail');
+    setSaveTone('saving');
+    try {
+      const next = await api.saveUiPreferences({ ...state.ui, activeView: 'task-detail' });
+      setState(hydrateState(next));
+      setSaveTone('saved');
+    } catch (error) {
+      setSaveTone('dirty');
+      console.error(error);
+    }
+  }
+
+  const selectedTask = state.tasks.find((task) => task.id === selectedTaskId) ?? state.tasks[0] ?? null;
+  const activeNav = activeView === 'task-detail' ? { label: '任务详情', hint: '单任务流水线' } : navItems.find((item) => item.view === activeView) ?? navItems[0];
 
   return (
     <main className="app-shell">
@@ -413,9 +439,10 @@ function App() {
             </div>
           </header>
 
-          {activeView === 'new-task' ? <NewTaskPage api={api} state={state} applyState={applyState} openQueue={() => navigate('queue')} /> : null}
-          {activeView === 'queue' ? <QueuePage api={api} state={state} applyState={applyState} openNewTask={() => navigate('new-task')} /> : null}
-          {activeView === 'history' ? <HistoryPage api={api} state={state} /> : null}
+          {activeView === 'new-task' ? <NewTaskPage api={api} state={state} applyState={applyState} openTaskDetail={openTaskDetail} /> : null}
+          {activeView === 'queue' ? <QueuePage api={api} state={state} applyState={applyState} openNewTask={() => navigate('new-task')} openTaskDetail={openTaskDetail} /> : null}
+          {activeView === 'history' ? <HistoryPage api={api} state={state} openTaskDetail={openTaskDetail} /> : null}
+          {activeView === 'task-detail' ? <TaskDetailPage api={api} state={state} task={selectedTask} applyState={applyState} close={() => navigate('history')} /> : null}
           {activeView === 'image-lab' ? <ImageLabPage api={api} state={state} applyState={applyState} /> : null}
           {activeView === 'prompt-templates' ? <PromptTemplatesPage api={api} state={state} applyState={applyState} /> : null}
           {activeView === 'draft-templates' ? <DraftTemplatesPage api={api} state={state} applyState={applyState} /> : null}
@@ -428,7 +455,7 @@ function App() {
   );
 }
 
-function NewTaskPage({ api, state, applyState, openQueue }: { api: StoryboundApi; state: AppState; applyState: (state: AppState) => void; openQueue: () => void }) {
+function NewTaskPage({ api, state, applyState, openTaskDetail }: { api: StoryboundApi; state: AppState; applyState: (state: AppState) => void; openTaskDetail: (taskId: string) => void }) {
   const [mode, setMode] = useState<TaskMode>('paste');
   const [title, setTitle] = useState('');
   const [inputText, setInputText] = useState(sampleText);
@@ -476,7 +503,10 @@ function NewTaskPage({ api, state, applyState, openQueue }: { api: StoryboundApi
         ttsSpeed,
       });
       applyState(next);
-      openQueue();
+      const createdTask = next.tasks[0];
+      if (createdTask) {
+        openTaskDetail(createdTask.id);
+      }
     } finally {
       setRunning(false);
     }
@@ -623,7 +653,7 @@ function NewTaskPage({ api, state, applyState, openQueue }: { api: StoryboundApi
   );
 }
 
-function QueuePage({ api, state, applyState, openNewTask }: { api: StoryboundApi; state: AppState; applyState: (state: AppState) => void; openNewTask: () => void }) {
+function QueuePage({ api, state, applyState, openNewTask, openTaskDetail }: { api: StoryboundApi; state: AppState; applyState: (state: AppState) => void; openNewTask: () => void; openTaskDetail: (taskId: string) => void }) {
   const latestTask = state.tasks[0];
   const events = latestTask ? state.events.filter((event) => event.taskId === latestTask.id || event.taskId === 'live') : state.events;
   async function setStatus(task: Task, status: TaskStatus) {
@@ -645,14 +675,14 @@ function QueuePage({ api, state, applyState, openNewTask }: { api: StoryboundApi
         <div className="task-list">
           {state.tasks.length === 0 ? <EmptyState title="暂无任务" /> : null}
           {state.tasks.map((task) => (
-            <article className="task-row" key={task.id}>
+            <article className="task-row clickable" key={task.id} role="button" tabIndex={0} onClick={() => openTaskDetail(task.id)} onKeyDown={(event) => event.key === 'Enter' && openTaskDetail(task.id)}>
               <div>
                 <strong>{task.title || '未命名任务'}</strong>
                 <span>{task.mode === 'ai' ? 'AI 创作' : '粘贴文案'} · {task.ratio} · {formatDate(task.createdAt)}</span>
                 {task.errorMessage ? <small className="danger-text">{task.errorMessage}</small> : null}
               </div>
               <StatusPill status={task.status} />
-              <div className="row-actions">
+              <div className="row-actions" onClick={(event) => event.stopPropagation()}>
                 <button className="mini-button" onClick={() => setStatus(task, task.status === 'paused' ? 'running' : 'paused')}>{task.status === 'paused' ? '继续' : '暂停'}</button>
                 <button className="mini-button" onClick={() => setStatus(task, 'cancelled')}>取消</button>
                 <button className="mini-button" onClick={async () => applyState(await api.retryTask(task.id))}>重试</button>
@@ -680,7 +710,7 @@ function QueuePage({ api, state, applyState, openNewTask }: { api: StoryboundApi
   );
 }
 
-function HistoryPage({ api, state }: { api: StoryboundApi; state: AppState }) {
+function HistoryPage({ api, state, openTaskDetail }: { api: StoryboundApi; state: AppState; openTaskDetail: (taskId: string) => void }) {
   const [filter, setFilter] = useState<'all' | TaskStatus>('all');
   const [query, setQuery] = useState('');
   const tasks = state.tasks.filter((task) => (filter === 'all' || task.status === filter) && `${task.title}${task.inputText}`.includes(query));
@@ -706,18 +736,127 @@ function HistoryPage({ api, state }: { api: StoryboundApi; state: AppState }) {
         </div>
         {tasks.length === 0 ? <EmptyState title="暂无历史任务" /> : null}
         {tasks.map((task) => (
-          <div className="table-row" key={task.id}>
+          <div className="table-row clickable" key={task.id} role="button" tabIndex={0} onClick={() => openTaskDetail(task.id)} onKeyDown={(event) => event.key === 'Enter' && openTaskDetail(task.id)}>
             <strong>{task.title || '未命名任务'}</strong>
             <StatusPill status={task.status} />
             <span>{task.currentStep}</span>
             <span>{formatDate(task.createdAt)}</span>
-            <button className="mini-button" disabled={!task.outputDir} onClick={() => task.outputDir && api.openPath(task.outputDir)}>
+            <button className="mini-button" disabled={!task.outputDir} onClick={(event) => { event.stopPropagation(); if (task.outputDir) api.openPath(task.outputDir); }}>
               <FolderOpen size={14} />
             </button>
           </div>
         ))}
       </div>
     </section>
+  );
+}
+
+function TaskDetailPage({ api, state, task, applyState, close }: { api: StoryboundApi; state: AppState; task: Task | null; applyState: (state: AppState) => void; close: () => void }) {
+  const [tab, setTab] = useState<'preview' | 'storyboard' | 'audio'>('preview');
+  if (!task) {
+    return (
+      <section className="panel full-panel">
+        <EmptyState title="暂无任务详情" />
+      </section>
+    );
+  }
+
+  const detailTask = task;
+  const events = state.events.filter((event) => event.taskId === detailTask.id);
+  const currentStep = Math.min(Math.max(detailTask.currentStep, 0), pipelineSteps.length - 1);
+  const currentMeta = pipelineSteps[currentStep] ?? pipelineSteps[0];
+  const latestEvent = [...events].reverse()[0] ?? null;
+  const completedSteps = detailTask.status === 'completed' ? pipelineSteps.length : Math.max(0, detailTask.currentStep);
+
+  async function cancelTask() {
+    applyState(await api.updateTaskStatus(detailTask.id, 'cancelled'));
+  }
+
+  return (
+    <div className="task-detail-shell">
+      <div className="task-detail-bar">
+        <div className="breadcrumb">
+          <button onClick={close}>历史任务</button>
+          <span>/</span>
+          <strong>任务详情</strong>
+        </div>
+        <button className="mini-button" onClick={close}>
+          <XCircle size={14} />
+          关闭
+        </button>
+      </div>
+
+      <aside className="task-detail-sidebar">
+        <section className="task-summary-card">
+          <div className="task-id-line">
+            <span>{task.id}</span>
+            <button className="icon-button" title="复制任务 ID" onClick={() => navigator.clipboard?.writeText(task.id)}>
+              <Copy size={14} />
+            </button>
+          </div>
+          <div className="task-metrics">
+            <div><strong>{formatDuration(task.createdAt, task.completedAt)}</strong><span>总耗时</span></div>
+            <div><strong>{completedSteps}<small>/{pipelineSteps.length}</small></strong><span>当前步骤</span></div>
+            <div><strong>{events.length || '-'}</strong><span>事件数</span></div>
+          </div>
+          <button className="cancel-task-button" disabled={task.status === 'completed' || task.status === 'cancelled'} onClick={cancelTask}>
+            <XCircle size={14} />
+            取消任务
+          </button>
+        </section>
+
+        <section className="pipeline-card">
+          <div className="pipeline-title">
+            <strong>7 步流水线</strong>
+            <span className="auto-badge">全自动</span>
+            <small>· 全部 7 步执行</small>
+          </div>
+          <div className="pipeline-list">
+            {pipelineSteps.map((step) => {
+              const status = pipelineStepStatus(task, step.index);
+              const stepEvent = [...events].reverse().find((event) => event.step === step.index);
+              return (
+                <div className={`pipeline-step ${status}`} key={step.index}>
+                  <div className="pipeline-node">{status === 'running' ? <Loader2 className="spin" size={14} /> : step.index + 1}</div>
+                  <div>
+                    <strong>{step.title}</strong>
+                    <span>{step.hint}</span>
+                    <small>{status === 'running' ? '进行中' : stepEvent?.detail ?? statusLabelForStep(status)}</small>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        </section>
+      </aside>
+
+      <section className="task-detail-main">
+        <div className="artifact-tabs">
+          <button className={tab === 'preview' ? 'active' : ''} onClick={() => setTab('preview')}><FileJson size={14} />产物预览</button>
+          <button className={tab === 'storyboard' ? 'active' : ''} onClick={() => setTab('storyboard')}><ImageIcon size={14} />分镜画廊</button>
+          <button className={tab === 'audio' ? 'active' : ''} onClick={() => setTab('audio')}><Mic2 size={14} />配音试听</button>
+        </div>
+        <div className="artifact-preview">
+          <div className="preview-empty-icon">{task.status === 'running' ? <Loader2 className="spin" size={24} /> : <Database size={24} />}</div>
+          <strong>{artifactPanelTitle(task, tab)}</strong>
+          <span>{latestEvent?.detail ?? '等待当前步骤产物落盘'}</span>
+          <div className="preview-meta-grid">
+            <div><small>任务</small><strong>{task.title || '未命名任务'}</strong></div>
+            <div><small>状态</small><strong>{statusLabel(task.status)}</strong></div>
+            <div><small>当前代理</small><strong>{currentMeta.agent}</strong></div>
+            <div><small>输出目录</small><strong>{task.outputDir || '等待生成'}</strong></div>
+            <div><small>失败步骤</small><strong>{task.failedStep ?? '-'}</strong></div>
+            <div><small>状态文件</small><strong>{task.artifactStatePath || '等待生成'}</strong></div>
+          </div>
+          {task.outputDir ? (
+            <button className="ghost-action" onClick={() => api.openPath(task.outputDir)}>
+              <FolderOpen size={15} />
+              打开输出
+            </button>
+          ) : null}
+        </div>
+      </section>
+    </div>
   );
 }
 
@@ -1264,6 +1403,7 @@ function pageSubtitle(view: ShellView): string {
     'new-task': '粘贴一段人物故事，几分钟后在剪映里打开',
     queue: '查看当前任务、步骤事件、失败重试和输出状态',
     history: '按时间浏览已完成、失败、取消和草稿任务',
+    'task-detail': '查看单个任务的独立执行状态和流水线',
     'image-lab': '单独测试文生图、图像参考和分镜图片提示词',
     'prompt-templates': '管理系统模板、克隆、导入 JSON 和本地编辑',
     'draft-templates': '调整画布、图片区域、字幕、免责声明和音频参数',
@@ -1272,6 +1412,41 @@ function pageSubtitle(view: ShellView): string {
     activation: '管理本地激活状态与试用说明',
   };
   return map[view];
+}
+
+function pipelineStepStatus(task: Task, step: number): 'pending' | 'running' | 'completed' | 'failed' | 'cancelled' {
+  if (task.status === 'paused' && task.failedStep === step) return 'failed';
+  if (task.status === 'failed') return step === task.currentStep ? 'failed' : step < task.currentStep ? 'completed' : 'pending';
+  if (task.status === 'cancelled') return step === task.currentStep ? 'cancelled' : step < task.currentStep ? 'completed' : 'pending';
+  if (task.status === 'completed') return 'completed';
+  if (task.status === 'running') return step < task.currentStep ? 'completed' : step === task.currentStep ? 'running' : 'pending';
+  return step < task.currentStep ? 'completed' : 'pending';
+}
+
+function statusLabelForStep(status: ReturnType<typeof pipelineStepStatus>): string {
+  return {
+    pending: '等待中',
+    running: '进行中',
+    completed: '已完成',
+    failed: '失败',
+    cancelled: '已取消',
+  }[status];
+}
+
+function artifactPanelTitle(task: Task, tab: 'preview' | 'storyboard' | 'audio'): string {
+  if (tab === 'storyboard') return task.currentStep >= 2 ? '分镜画廊已跟随流水线准备' : '等待分镜生成';
+  if (tab === 'audio') return task.currentStep >= 5 ? '配音与字幕时间轴' : '等待配音生成';
+  return task.currentStep >= 7 ? '最终草稿包产物' : '等待当前步骤产物落盘';
+}
+
+function formatDuration(start: string, end: string | null): string {
+  const startMs = new Date(start).getTime();
+  const endMs = end ? new Date(end).getTime() : Date.now();
+  if (Number.isNaN(startMs) || Number.isNaN(endMs)) return '--';
+  const seconds = Math.max(0, Math.floor((endMs - startMs) / 1000));
+  const minutes = Math.floor(seconds / 60);
+  const rest = seconds % 60;
+  return minutes > 0 ? `${minutes}:${String(rest).padStart(2, '0')}` : `0:${String(rest).padStart(2, '0')}`;
 }
 
 function statusLabel(status: TaskStatus | 'all'): string {
@@ -1306,4 +1481,16 @@ function toggleArray(values: string[], value: string): string[] {
   return values.includes(value) ? values.filter((item) => item !== value) : [...values, value];
 }
 
-createRoot(document.getElementById('root')!).render(<App />);
+declare global {
+  interface Window {
+    __storyboundReactRoot?: Root;
+  }
+}
+
+const rootElement = document.getElementById('root');
+if (!rootElement) {
+  throw new Error('Missing #root element');
+}
+
+window.__storyboundReactRoot ??= createRoot(rootElement);
+window.__storyboundReactRoot.render(<App />);

@@ -4,6 +4,7 @@ export type ShellView =
   | 'new-task'
   | 'queue'
   | 'history'
+  | 'task-detail'
   | 'image-lab'
   | 'prompt-templates'
   | 'draft-templates'
@@ -40,6 +41,14 @@ export interface ImageConfig {
 
 export interface JimengConfig {
   sessionId: string;
+  accessKeyId?: string;
+  secretAccessKey?: string;
+  reqKey?: string;
+  endpoint?: string;
+  region?: string;
+  service?: string;
+  pollIntervalMs?: number;
+  timeoutMs?: number;
   model: string;
   ratio: string;
   resolution: '1K' | '2K' | '4K';
@@ -61,6 +70,9 @@ export interface TtsConfig {
     appId: string;
     accessKey: string;
     speaker: string;
+    cluster?: string;
+    endpoint?: string;
+    resourceId?: string;
   };
   minimax: {
     apiKey: string;
@@ -135,6 +147,9 @@ export interface Task {
   ttsProvider: TtsProvider;
   ttsSpeed: number;
   step3PromptSnapshot: string;
+  failedStep: number | null;
+  retryFromStep: number | null;
+  artifactStatePath: string;
 }
 
 export type CreateTaskInput = Partial<

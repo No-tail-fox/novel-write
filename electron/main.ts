@@ -1,20 +1,23 @@
 import { app, BrowserWindow, ipcMain, Menu, shell } from 'electron';
+import { execFile } from 'node:child_process';
+import { mkdir } from 'node:fs/promises';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { mkdir } from 'node:fs/promises';
-import { FileDatabase } from '../src/shared/storage';
+import { promisify } from 'node:util';
+import { createOpenAiCompatibleJsonLlm } from '../src/shared/llm-provider';
+import { createConfiguredImageGenerator, createConfiguredNarrationSynthesizer } from '../src/shared/media-providers';
 import { runTask } from '../src/shared/runner';
+import { FileDatabase } from '../src/shared/storage';
 import type { AccountProfile, ActivationState, AppConfig, CreateTaskInput, DraftTemplate, PromptTemplate, TaskStatus, UiPreferences } from '../src/shared/types';
 import { getRendererIndexPath } from './paths';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
+const execFileAsync = promisify(execFile);
 let mainWindow: BrowserWindow | null = null;
 let db: FileDatabase | null = null;
 
 async function getDb(): Promise<FileDatabase> {
-  if (db) {
-    return db;
-  }
+  if (db) return db;
   const dataDir = join(app.getPath('userData'), 'storybound-replica');
   await mkdir(dataDir, { recursive: true });
   db = await FileDatabase.open(join(dataDir, 'data.db'));
@@ -46,6 +49,11 @@ async function createWindow(): Promise<void> {
   } else {
     await mainWindow.loadFile(getRendererIndexPath(__dirname));
   }
+}
+
+async function sendTaskState(database: FileDatabase): Promise<void> {
+  const state = await database.getState();
+  mainWindow?.webContents.send('task:event', state);
 }
 
 ipcMain.handle('app:get-state', async () => {
@@ -104,16 +112,28 @@ ipcMain.handle('ui:save-preferences', async (_event, ui: UiPreferences) => {
 ipcMain.handle('task:create-and-run', async (_event, input: CreateTaskInput) => {
   const database = await getDb();
   const task = await database.createTask(input);
-  await runTask(database, task, {
+  const state = await database.getState();
+  const taskWorkDir = join(app.getPath('userData'), 'storybound-replica', 'tasks', task.id);
+  void runTask(database, task, {
     appDataDir: join(app.getPath('userData'), 'storybound-replica'),
-    onEvent: (detail) => mainWindow?.webContents.send('task:event', detail),
+    llm: createOpenAiCompatibleJsonLlm(state.config.llm),
+    generateImages: createConfiguredImageGenerator(state.config, taskWorkDir),
+    synthesizeNarration: createConfiguredNarrationSynthesizer(state.config, taskWorkDir),
+    onEvent: () => {
+      void sendTaskState(database);
+    },
+  }).catch((error) => {
+    console.error('Background task failed', error);
   });
   return database.getState();
 });
 
 ipcMain.handle('task:update-status', async (_event, input: { id: string; status: TaskStatus }) => {
   const database = await getDb();
-  await database.updateTask(input.id, { status: input.status, errorMessage: input.status === 'cancelled' ? '用户取消' : '' });
+  await database.updateTask(input.id, {
+    status: input.status,
+    errorMessage: input.status === 'cancelled' ? '用户取消' : '',
+  });
   return database.getState();
 });
 
@@ -123,9 +143,15 @@ ipcMain.handle('task:retry', async (_event, id: string) => {
   const task = state.tasks.find((item) => item.id === id);
   if (task) {
     await database.updateTask(id, { status: 'pending', errorMessage: '' });
+    const taskWorkDir = join(app.getPath('userData'), 'storybound-replica', 'tasks', task.id);
     await runTask(database, { ...task, status: 'pending', errorMessage: '' }, {
       appDataDir: join(app.getPath('userData'), 'storybound-replica'),
-      onEvent: (detail) => mainWindow?.webContents.send('task:event', detail),
+      llm: createOpenAiCompatibleJsonLlm(state.config.llm),
+      generateImages: createConfiguredImageGenerator(state.config, taskWorkDir),
+      synthesizeNarration: createConfiguredNarrationSynthesizer(state.config, taskWorkDir),
+      onEvent: () => {
+        void sendTaskState(database);
+      },
     });
   }
   return database.getState();
@@ -134,12 +160,17 @@ ipcMain.handle('task:retry', async (_event, id: string) => {
 ipcMain.handle('diagnostics:run', async () => {
   const database = await getDb();
   const state = await database.getState();
+  const python = await checkPython();
+  const pyJianYingDraft = python.status === 'pass' ? await checkPyJianYingDraft() : { status: 'warn' as const, detail: 'Python unavailable; cannot check pyJianYingDraft.' };
   return {
     generatedAt: new Date().toISOString(),
     checks: [
-      { id: 'llm-config', label: 'LLM 配置完整性', status: state.config.llm.apiKey ? 'pass' : 'warn', detail: state.config.llm.model },
-      { id: 'tts-config', label: 'TTS 凭证', status: state.config.tts.accessKey ? 'pass' : 'warn', detail: state.config.tts.provider },
+      { id: 'llm-config', label: 'LLM 配置完整性', status: state.config.llm.apiKey ? 'pass' : 'warn', detail: `${state.config.llm.baseUrl} · ${state.config.llm.model}` },
+      { id: 'image-config', label: '图片供应商配置', status: imageConfigStatus(state.config), detail: state.config.imageProvider },
+      { id: 'tts-config', label: 'TTS 凭证', status: ttsConfigStatus(state.config), detail: state.config.tts.provider },
       { id: 'draft-dir', label: '剪映草稿目录', status: state.config.jianying.draftPath ? 'pass' : 'warn', detail: state.config.jianying.draftPath || '未配置' },
+      { id: 'python', label: 'Python 运行时', status: python.status, detail: python.detail },
+      { id: 'pyjianyingdraft', label: 'pyJianYingDraft', status: pyJianYingDraft.status, detail: pyJianYingDraft.detail },
       { id: 'local-db', label: '数据目录写入权限', status: 'pass', detail: app.getPath('userData') },
       { id: 'account-state', label: '账号状态', status: 'pass', detail: state.activation.message },
     ],
@@ -149,6 +180,37 @@ ipcMain.handle('diagnostics:run', async () => {
 ipcMain.handle('path:open', async (_event, path: string) => {
   await shell.openPath(path);
 });
+
+function imageConfigStatus(config: AppConfig): 'pass' | 'warn' | 'fail' {
+  if (config.imageProvider === 'mock') return 'fail';
+  if (config.imageProvider === 'jimeng') return config.jimeng.accessKeyId && config.jimeng.secretAccessKey && config.jimeng.reqKey ? 'pass' : 'warn';
+  if (config.imageProvider === 'custom') return config.customImage.apiKey && config.customImage.baseUrl ? 'pass' : 'warn';
+  return config.gptImage.apiKey || config.image.apiKey ? 'pass' : 'warn';
+}
+
+function ttsConfigStatus(config: AppConfig): 'pass' | 'warn' | 'fail' {
+  if (config.tts.provider === 'mock') return 'fail';
+  if (config.tts.provider === 'minimax') return config.tts.minimax.apiKey ? 'pass' : 'warn';
+  return (config.tts.volcengine.appId || config.tts.appId) && (config.tts.volcengine.accessKey || config.tts.accessKey) ? 'pass' : 'warn';
+}
+
+async function checkPython(): Promise<{ status: 'pass' | 'warn'; detail: string }> {
+  try {
+    const { stdout, stderr } = await execFileAsync('python', ['--version']);
+    return { status: 'pass', detail: (stdout || stderr).trim() || 'python available' };
+  } catch (error) {
+    return { status: 'warn', detail: error instanceof Error ? error.message : 'python not found' };
+  }
+}
+
+async function checkPyJianYingDraft(): Promise<{ status: 'pass' | 'warn'; detail: string }> {
+  try {
+    await execFileAsync('python', ['-c', 'import pyJianYingDraft; print("pyJianYingDraft installed")']);
+    return { status: 'pass', detail: 'pyJianYingDraft installed' };
+  } catch {
+    return { status: 'warn', detail: '未检测到 pyJianYingDraft；请运行 python -m pip install pyJianYingDraft' };
+  }
+}
 
 app.whenReady().then(createWindow);
 

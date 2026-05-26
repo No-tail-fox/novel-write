@@ -1,5 +1,5 @@
 import { contextBridge, ipcRenderer } from 'electron';
-import type { AccountProfile, ActivationState, AppConfig, CreateTaskInput, DraftTemplate, ImageLabRecord, PromptTemplate, TaskStatus, UiPreferences } from '../src/shared/types';
+import type { AccountProfile, ActivationState, AppConfig, AppState, CreateTaskInput, DraftTemplate, ImageLabRecord, PromptTemplate, TaskStatus, UiPreferences } from '../src/shared/types';
 
 contextBridge.exposeInMainWorld('storybound', {
   getState: () => ipcRenderer.invoke('app:get-state'),
@@ -16,8 +16,8 @@ contextBridge.exposeInMainWorld('storybound', {
   retryTask: (id: string) => ipcRenderer.invoke('task:retry', id),
   runDiagnostics: () => ipcRenderer.invoke('diagnostics:run'),
   openPath: (path: string) => ipcRenderer.invoke('path:open', path),
-  onTaskEvent: (callback: (detail: string) => void) => {
-    const listener = (_event: unknown, detail: string) => callback(detail);
+  onTaskEvent: (callback: (state: AppState) => void) => {
+    const listener = (_event: unknown, state: AppState) => callback(state);
     ipcRenderer.on('task:event', listener);
     return () => ipcRenderer.off('task:event', listener);
   },

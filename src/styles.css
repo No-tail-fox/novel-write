@@ -576,6 +576,17 @@ textarea {
   background: var(--panel-2);
 }
 
+.clickable {
+  cursor: pointer;
+}
+
+.clickable:hover,
+.clickable:focus-visible {
+  border-color: #3a4b58;
+  outline: none;
+  background: #182028;
+}
+
 .task-row span,
 .task-row small {
   display: block;
@@ -602,6 +613,318 @@ textarea {
   border-radius: 99px;
   background: #0b332c;
   color: var(--accent);
+}
+
+.task-detail-shell {
+  min-height: 0;
+  height: 100%;
+  display: grid;
+  grid-template-columns: 320px minmax(0, 1fr);
+  grid-template-rows: 46px minmax(0, 1fr);
+  gap: 0 20px;
+  padding: 0 18px 18px;
+  overflow: hidden;
+  background: #070a0e;
+}
+
+.task-detail-bar {
+  grid-column: 1 / -1;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  border-bottom: 1px solid var(--line);
+}
+
+.breadcrumb {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  color: var(--muted);
+}
+
+.breadcrumb button {
+  background: transparent;
+  color: var(--muted);
+}
+
+.breadcrumb strong {
+  color: var(--text);
+}
+
+.task-detail-sidebar,
+.task-detail-main {
+  min-height: 0;
+  overflow: auto;
+}
+
+.task-detail-sidebar {
+  display: grid;
+  align-content: start;
+  gap: 14px;
+  padding-top: 18px;
+}
+
+.task-summary-card,
+.pipeline-card {
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--panel);
+}
+
+.task-summary-card {
+  display: grid;
+  gap: 16px;
+  padding: 16px;
+}
+
+.task-id-line {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  color: #536171;
+  font-family: Consolas, "SFMono-Regular", monospace;
+  font-size: 12px;
+}
+
+.icon-button {
+  display: grid;
+  place-items: center;
+  width: 28px;
+  height: 28px;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  background: #0e141b;
+}
+
+.task-metrics {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 12px;
+}
+
+.task-metrics div {
+  display: grid;
+  gap: 4px;
+}
+
+.task-metrics strong {
+  font-size: 19px;
+}
+
+.task-metrics small,
+.task-metrics span {
+  color: var(--muted);
+}
+
+.cancel-task-button {
+  min-height: 34px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  border: 1px solid var(--line);
+  border-radius: 7px;
+  background: #10161d;
+  font-weight: 700;
+}
+
+.cancel-task-button:disabled {
+  cursor: not-allowed;
+  opacity: 0.55;
+}
+
+.pipeline-card {
+  padding: 14px 12px;
+}
+
+.pipeline-title {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 14px;
+}
+
+.auto-badge {
+  border: 1px solid #1b8c54;
+  border-radius: 5px;
+  padding: 3px 8px;
+  color: var(--ok);
+  font-size: 12px;
+}
+
+.pipeline-title small {
+  color: var(--muted);
+}
+
+.pipeline-list {
+  display: grid;
+}
+
+.pipeline-step {
+  position: relative;
+  display: grid;
+  grid-template-columns: 34px minmax(0, 1fr);
+  gap: 10px;
+  min-height: 68px;
+  color: var(--muted);
+}
+
+.pipeline-step::before {
+  content: "";
+  position: absolute;
+  left: 16px;
+  top: 34px;
+  bottom: 0;
+  width: 1px;
+  background: var(--line);
+}
+
+.pipeline-step:last-child::before {
+  display: none;
+}
+
+.pipeline-node {
+  z-index: 1;
+  display: grid;
+  place-items: center;
+  width: 32px;
+  height: 32px;
+  border: 1px solid var(--line);
+  border-radius: 99px;
+  background: #111821;
+  color: var(--muted);
+  font-weight: 700;
+}
+
+.pipeline-step strong,
+.pipeline-step span,
+.pipeline-step small {
+  display: block;
+}
+
+.pipeline-step strong {
+  color: var(--text);
+}
+
+.pipeline-step span {
+  margin-top: 4px;
+}
+
+.pipeline-step small {
+  margin-top: 5px;
+}
+
+.pipeline-step.running .pipeline-node {
+  border-color: #245762;
+  color: var(--accent-2);
+}
+
+.pipeline-step.running small {
+  color: var(--accent);
+}
+
+.pipeline-step.completed .pipeline-node {
+  border-color: #176945;
+  background: #0d2d23;
+  color: var(--ok);
+}
+
+.pipeline-step.failed .pipeline-node,
+.pipeline-step.cancelled .pipeline-node {
+  border-color: #6c2831;
+  background: #311218;
+  color: var(--danger);
+}
+
+.task-detail-main {
+  display: grid;
+  grid-template-rows: 44px minmax(0, 1fr);
+  padding-top: 18px;
+}
+
+.artifact-tabs {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  width: max-content;
+  max-width: 100%;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  padding: 4px;
+  background: #0b1016;
+}
+
+.artifact-tabs button {
+  min-height: 30px;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  border-radius: 6px;
+  padding: 0 12px;
+  background: transparent;
+  color: var(--muted);
+  white-space: nowrap;
+}
+
+.artifact-tabs button.active {
+  background: #111922;
+  color: var(--text);
+}
+
+.artifact-preview {
+  min-height: 176px;
+  display: grid;
+  place-items: center;
+  align-content: center;
+  gap: 12px;
+  margin-top: 16px;
+  border: 1px dashed var(--line);
+  border-radius: 8px;
+  padding: 30px;
+  background: var(--panel);
+  text-align: center;
+  color: var(--muted);
+}
+
+.preview-empty-icon {
+  display: grid;
+  place-items: center;
+  color: #5c6876;
+}
+
+.artifact-preview strong {
+  color: var(--text);
+}
+
+.preview-meta-grid {
+  width: min(100%, 720px);
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 10px;
+  margin-top: 8px;
+}
+
+.preview-meta-grid div {
+  min-width: 0;
+  display: grid;
+  gap: 4px;
+  border: 1px solid var(--line);
+  border-radius: 7px;
+  padding: 10px;
+  background: #10161d;
+  text-align: left;
+}
+
+.preview-meta-grid small {
+  color: var(--muted);
+}
+
+.preview-meta-grid strong {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 13px;
 }
 
 .status-pill {
@@ -989,6 +1312,7 @@ textarea {
 
   .page-head,
   .two-column,
+  .task-detail-shell,
   .mode-grid,
   .option-two-col,
   .advanced-grid,
@@ -1003,5 +1327,24 @@ textarea {
   .top-notice,
   .save-state {
     display: none;
+  }
+
+  .task-detail-shell {
+    grid-template-rows: auto auto minmax(0, 1fr);
+    overflow: auto;
+  }
+
+  .task-detail-bar,
+  .task-detail-sidebar,
+  .task-detail-main {
+    grid-column: 1;
+  }
+
+  .task-detail-main {
+    overflow: visible;
+  }
+
+  .preview-meta-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 }

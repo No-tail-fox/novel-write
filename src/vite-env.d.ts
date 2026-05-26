@@ -28,7 +28,7 @@ declare global {
       retryTask: (id: string) => Promise<AppState>;
       runDiagnostics: () => Promise<{ generatedAt: string; checks: Array<{ id: string; label: string; status: string; detail: string }> }>;
       openPath: (path: string) => Promise<void>;
-      onTaskEvent: (callback: (detail: string) => void) => () => void;
+      onTaskEvent: (callback: (state: AppState) => void) => () => void;
     };
   }
 }

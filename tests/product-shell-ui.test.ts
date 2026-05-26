@@ -29,4 +29,30 @@ describe('product shell ui', () => {
     expect(css).toContain('.draft-template-gallery');
     expect(css).toContain('.draft-template-thumb');
   });
+
+  it('supports opening a selected task in a screenshot-style pipeline detail view', async () => {
+    const main = await readFile(new URL('../src/main.tsx', import.meta.url), 'utf8');
+    const types = await readFile(new URL('../src/shared/types.ts', import.meta.url), 'utf8');
+    const css = await readFile(new URL('../src/styles.css', import.meta.url), 'utf8');
+
+    expect(types).toContain("'task-detail'");
+    expect(main).toContain('selectedTaskId');
+    expect(main).toContain('openTaskDetail');
+    expect(main).toContain('TaskDetailPage');
+    expect(main).toContain('pipelineSteps');
+    for (const text of ['历史任务', '任务详情', '7 步流水线', '产物预览', '分镜画廊', '配音试听', '等待当前步骤产物落盘']) {
+      expect(main).toContain(text);
+    }
+    expect(css).toContain('.task-detail-shell');
+    expect(css).toContain('.pipeline-step');
+    expect(css).toContain('.artifact-preview');
+  });
+
+  it('reuses the React root across Vite hot reloads', async () => {
+    const main = await readFile(new URL('../src/main.tsx', import.meta.url), 'utf8');
+
+    expect(main).toContain('__storyboundReactRoot');
+    expect(main).toContain('window.__storyboundReactRoot ??=');
+    expect(main).not.toContain("createRoot(document.getElementById('root')!).render(<App />)");
+  });
 });
