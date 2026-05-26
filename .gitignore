@@ -1,0 +1,30 @@
+# Dependencies
+node_modules/
+
+# Build output
+dist/
+dist-electron/
+dist-renderer/
+release/
+out/
+
+# Local runtime data
+*.db
+*.sqlite
+*.sqlite3
+*.log
+vite-smoke.*.log
+
+# Environment and secrets
+.env
+.env.*
+!.env.example
+
+# OS and editor files
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/
+
+# Local observation artifacts
+.storybound-observe-*.png
