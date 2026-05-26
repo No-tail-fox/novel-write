@@ -41,6 +41,12 @@ export interface PyJianYingBridgeOutput {
   draftContentPath: string;
   draftMetaPath: string;
   durationUs: number;
+  assets?: {
+    images: string[];
+    narration: string[];
+    bgm: string | null;
+    subtitles: string;
+  };
 }
 
 export interface PyJianYingBridgeRunnerOptions {
@@ -103,6 +109,7 @@ export async function runPyJianYingDraftBridge(
       draftContentPath: result.draftContentPath,
       draftMetaPath: result.draftMetaPath,
       durationUs: result.durationUs,
+      assets: result.assets,
     };
   } catch (error) {
     throw new Error(formatBridgeError(error));
@@ -124,6 +131,7 @@ function formatBridgeError(error: unknown): string {
 
 const pythonBridgeScript = String.raw`import json
 import os
+import shutil
 import sys
 import traceback
 
@@ -148,15 +156,21 @@ def ms_to_us(value):
     return int(round(float(value) * 1000))
 
 
-def patch_meta(meta_path, payload, draft_dir, duration):
+def copy_asset(source_path, target_dir, filename_stem, fallback_ext):
+    os.makedirs(target_dir, exist_ok=True)
+    source_path = norm(source_path)
+    _, ext = os.path.splitext(source_path)
+    target_path = os.path.join(target_dir, filename_stem + (ext or fallback_ext))
+    shutil.copy2(source_path, target_path)
+    return target_path
+
+
+def patch_meta(meta_path, payload, draft_dir, duration, image_paths, narration_paths, bgm_path):
     try:
         with open(meta_path, "r", encoding="utf-8") as handle:
             meta = json.load(handle)
     except FileNotFoundError:
         meta = {}
-    image_paths = [item["path"] for item in payload.get("images", [])]
-    narration_paths = [item["path"] for item in payload.get("narration", [])]
-    bgm = payload.get("bgm")
     meta.update({
         "draft_cover": image_paths[0] if image_paths else "",
         "draft_fold_path": draft_dir,
@@ -167,7 +181,7 @@ def patch_meta(meta_path, payload, draft_dir, duration):
     meta["draft_materials"] = [
         {"type": 0, "value": image_paths},
         {"type": 1, "value": narration_paths},
-        {"type": 2, "value": [bgm["path"]] if bgm and bgm.get("path") else []},
+        {"type": 2, "value": [bgm_path] if bgm_path else []},
         {"type": 3, "value": []},
         {"type": 6, "value": []},
         {"type": 7, "value": []},
@@ -202,8 +216,16 @@ def main():
     scenes = payload.get("scenes") or []
     starts = {int(scene["sceneId"]): int(scene["startUs"]) for scene in scenes}
     durations = {int(scene["sceneId"]): int(scene["durationUs"]) for scene in scenes}
-    image_by_scene = {int(item["sceneId"]): norm(item["path"]) for item in payload["images"]}
-    audio_by_scene = {int(item["sceneId"]): norm(item["path"]) for item in payload["narration"]}
+    materials_dir = os.path.join(draft_dir, "materials")
+    image_by_scene = {
+        int(item["sceneId"]): copy_asset(item["path"], os.path.join(materials_dir, "images"), str(int(item["sceneId"])).zfill(3), ".png")
+        for item in payload["images"]
+    }
+    audio_by_scene = {
+        int(item["sceneId"]): copy_asset(item["path"], os.path.join(materials_dir, "narration"), str(int(item["sceneId"])).zfill(3), ".mp3")
+        for item in payload["narration"]
+    }
+    subtitle_path = copy_asset(payload["subtitlesSrtPath"], os.path.join(materials_dir, "subtitles"), "subtitles", ".srt")
     volumes = payload.get("volumes") or {}
     image_area = payload.get("imageArea") or {}
 
@@ -233,19 +255,24 @@ def main():
         script.add_segment(audio_segment, "narration")
 
     bgm = payload.get("bgm")
+    bgm_path = None
     total_duration = int(payload.get("totalDurationUs") or sum(durations.values()))
     if bgm and bgm.get("path"):
         script.add_track(draft.TrackType.audio, "bgm")
+        bgm_path = copy_asset(bgm["path"], os.path.join(materials_dir, "bgm"), "bgm", ".mp3")
+        bgm_material = draft.AudioMaterial(bgm_path)
+        bgm_source_duration = min(total_duration, int(bgm_material.duration))
         bgm_segment = draft.AudioSegment(
-            norm(bgm["path"]),
+            bgm_material,
             draft.Timerange(0, total_duration),
+            source_timerange=draft.Timerange(0, bgm_source_duration),
             volume=float(volumes.get("bgm", bgm.get("volume", 0.3))),
         )
         script.add_segment(bgm_segment, "bgm")
 
     caption = payload.get("caption") or {}
     script.import_srt(
-        norm(payload["subtitlesSrtPath"]),
+        subtitle_path,
         track_name="subtitles",
         text_style=draft.TextStyle(
             size=float(caption.get("fontSize", 8)),
@@ -259,13 +286,21 @@ def main():
     script.save()
     content_path = os.path.join(draft_dir, "draft_content.json")
     meta_path = os.path.join(draft_dir, "draft_meta_info.json")
-    patch_meta(meta_path, payload, draft_dir, script.duration)
+    copied_images = [image_by_scene[int(scene["sceneId"])] for scene in scenes]
+    copied_narration = [audio_by_scene[int(scene["sceneId"])] for scene in scenes]
+    patch_meta(meta_path, payload, draft_dir, script.duration, copied_images, copied_narration, bgm_path)
     print(json.dumps({
         "ok": True,
         "draftDir": draft_dir,
         "draftContentPath": content_path,
         "draftMetaPath": meta_path,
         "durationUs": int(script.duration),
+        "assets": {
+            "images": copied_images,
+            "narration": copied_narration,
+            "bgm": bgm_path,
+            "subtitles": subtitle_path,
+        },
     }, ensure_ascii=False))
 
 

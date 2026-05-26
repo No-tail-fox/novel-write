@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
+import { mkdir, mkdtemp, readFile, rm, stat, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { writeJianyingDraft } from '@shared/draft';
@@ -81,6 +81,8 @@ describe('draft writer', () => {
         {
           runBridge: async (payload) => {
             bridgePayloads.push(payload);
+            await rm(payload.draftDir, { recursive: true, force: true });
+            await Promise.all([...payload.images, ...payload.narration].map((asset) => stat(asset.path)));
             await mkdir(payload.draftDir, { recursive: true });
             await mkdir(join(payload.draftDir, 'materials'), { recursive: true });
             await writeFile(
@@ -137,6 +139,7 @@ describe('draft writer', () => {
           { sceneId: 2, startUs: 1_200_000, durationUs: 1_400_000, text: 'Second line' },
         ],
       });
+      expect((bridgePayloads[0] as { images: Array<{ path: string }>; draftDir: string }).images.some((asset) => asset.path.startsWith(output.draftDir))).toBe(false);
     } finally {
       await rm(dir, { recursive: true, force: true });
     }
@@ -165,6 +168,50 @@ describe('draft writer', () => {
           bgm: null,
         }),
       ).rejects.toThrow(/image asset/i);
+    } finally {
+      await rm(dir, { recursive: true, force: true });
+    }
+  });
+
+  it('marks draft diagnostics as failed when the pyJianYingDraft bridge fails', async () => {
+    const dir = await mkdtemp(join(tmpdir(), 'storybound-draft-bridge-fail-'));
+    const draftRootDir = join(dir, 'JianyingPro Drafts');
+    const workDir = join(dir, 'work');
+    const scenes: StoryboardScene[] = [{ id: 1, cap: 'Only line', descPrompt: 'prompt', durationMs: 1000 }];
+    const images = await writeAssets(workDir, scenes, 'png', twoByTwoPng);
+    const audioPath = join(workDir, 'audio.wav');
+    await writeFile(audioPath, wavTone(1000));
+
+    try {
+      await expect(
+        writeJianyingDraft(
+          {
+            workDir,
+            draftRootDir,
+            title: 'Bridge Failure',
+            cover: { title: 'Bridge Failure', subtitle: [], summary: '', tags: [], comments: [] },
+            ratio: '9:16',
+            scenes,
+            imagePrompts: [],
+            reviewedText: 'reviewed',
+            rewrittenCopy: 'rewritten',
+            generatedImages: images,
+            narrationAudio: [{ sceneId: 1, path: audioPath }],
+            bgm: null,
+          },
+          {
+            runBridge: async () => {
+              throw new Error('pyJianYingDraft missing');
+            },
+          },
+        ),
+      ).rejects.toThrow(/pyJianYingDraft missing/);
+
+      const diagnostics = JSON.parse(await readFile(join(workDir, 'diagnostics.json'), 'utf8'));
+      expect(diagnostics.checks.find((check: { id: string }) => check.id === 'jianying-draft')).toMatchObject({
+        status: 'fail',
+        detail: expect.stringContaining('pyJianYingDraft missing'),
+      });
     } finally {
       await rm(dir, { recursive: true, force: true });
     }

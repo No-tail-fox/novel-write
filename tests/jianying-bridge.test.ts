@@ -43,6 +43,7 @@ describe('pyJianYingDraft bridge input', () => {
       expect(script).toContain('DraftFolder');
       expect(script).toContain('VideoSegment');
       expect(script).toContain('AudioSegment');
+      expect(script).toContain('shutil.copy2');
       expect(script).toContain('import_srt');
       expect(script).toContain('script.save()');
     } finally {

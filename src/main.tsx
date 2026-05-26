@@ -144,7 +144,7 @@ const pipelineSteps = [
   { index: 3, title: '生成绘图提示词', hint: '为每个分镜写 prompt', agent: 'Prompt' },
   { index: 4, title: '批量生图', hint: '并发调用 AI 绘图', agent: 'Producer' },
   { index: 5, title: 'TTS配音', hint: '生成音频', agent: 'TTS' },
-  { index: 6, title: '剪映草稿包', hint: '写入可打开的草稿目录', agent: 'Draft' },
+  { index: 6, title: '剪映草稿目录', hint: '写入可打开的草稿目录', agent: 'Draft' },
 ] as const;
 
 type StoryboundApi = NonNullable<Window['storybound']>;
@@ -700,7 +700,7 @@ function QueuePage({ api, state, applyState, openNewTask, openTaskDetail }: { ap
           {latestTask?.outputDir ? (
             <button className="ghost-action" onClick={() => api.openPath(latestTask.outputDir)}>
               <FolderOpen size={15} />
-              打开输出
+              打开剪映草稿
             </button>
           ) : null}
         </div>
@@ -1436,7 +1436,7 @@ function statusLabelForStep(status: ReturnType<typeof pipelineStepStatus>): stri
 function artifactPanelTitle(task: Task, tab: 'preview' | 'storyboard' | 'audio'): string {
   if (tab === 'storyboard') return task.currentStep >= 2 ? '分镜画廊已跟随流水线准备' : '等待分镜生成';
   if (tab === 'audio') return task.currentStep >= 5 ? '配音与字幕时间轴' : '等待配音生成';
-  return task.currentStep >= 7 ? '最终草稿包产物' : '等待当前步骤产物落盘';
+  return task.currentStep >= 7 ? '最终剪映草稿目录' : '等待当前步骤产物落盘';
 }
 
 function formatDuration(start: string, end: string | null): string {
