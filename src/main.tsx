@@ -1021,25 +1021,6 @@ function TaskDetailPage({ api, state, task, applyState, close }: { api: Storybou
           <button className={tab === 'audio' ? 'active' : ''} onClick={() => setTab('audio')}><Mic2 size={14} />配音试听</button>
         </div>
         <ArtifactPreviewContent api={api} task={task} tab={tab} snapshot={artifactSnapshot} latestEvent={latestEvent} currentAgent={currentMeta.agent} />
-        <div className="artifact-preview legacy-artifact-preview" hidden>
-          <div className="preview-empty-icon">{task.status === 'running' ? <Loader2 className="spin" size={24} /> : <Database size={24} />}</div>
-          <strong>{artifactPanelTitle(task, tab)}</strong>
-          <span>{latestEvent?.detail ?? '等待当前步骤产物落盘'}</span>
-          <div className="preview-meta-grid">
-            <div><small>任务</small><strong>{task.title || '未命名任务'}</strong></div>
-            <div><small>状态</small><strong>{statusLabel(task.status)}</strong></div>
-            <div><small>当前代理</small><strong>{currentMeta.agent}</strong></div>
-            <div><small>输出目录</small><strong>{task.outputDir || '等待生成'}</strong></div>
-            <div><small>失败步骤</small><strong>{task.failedStep ?? '-'}</strong></div>
-            <div><small>状态文件</small><strong>{task.artifactStatePath || '等待生成'}</strong></div>
-          </div>
-          {task.outputDir ? (
-            <button className="ghost-action" onClick={() => api.openPath(task.outputDir)}>
-              <FolderOpen size={15} />
-              打开输出
-            </button>
-          ) : null}
-        </div>
       </section>
     </div>
   );

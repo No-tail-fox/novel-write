@@ -66,6 +66,13 @@ describe('product shell ui', () => {
     expect(css).toContain('.artifact-scene-list');
   });
 
+  it('does not keep the duplicate legacy artifact preview card in task detail', async () => {
+    const main = await readFile(new URL('../src/main.tsx', import.meta.url), 'utf8');
+
+    expect(main).not.toContain('legacy-artifact-preview');
+    expect(countOccurrences(main, '<ArtifactPreviewContent')).toBe(1);
+  });
+
   it('auto-refreshes live task metrics and exposes LLM model testing controls', async () => {
     const main = await readFile(new URL('../src/main.tsx', import.meta.url), 'utf8');
     const css = await readFile(new URL('../src/styles.css', import.meta.url), 'utf8');
@@ -132,3 +139,7 @@ describe('product shell ui', () => {
     expect(main).not.toContain("createRoot(document.getElementById('root')!).render(<App />)");
   });
 });
+
+function countOccurrences(value: string, needle: string): number {
+  return value.split(needle).length - 1;
+}
