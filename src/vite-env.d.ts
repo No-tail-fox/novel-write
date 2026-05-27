@@ -4,6 +4,8 @@ import type {
   AiSourceContext,
   AppConfig,
   AppState,
+  ConfigTestResult,
+  ConfigTestTarget,
   CreateTaskInput,
   DraftTemplate,
   ImageLabRecord,
@@ -22,6 +24,7 @@ declare global {
     storybound?: {
       getState: () => Promise<AppState>;
       saveConfig: (config: AppConfig) => Promise<AppState>;
+      testAppConfig: (target: ConfigTestTarget, config: AppConfig) => Promise<ConfigTestResult>;
       testLlmConfig: (config: LlmConfig) => Promise<LlmModelTestResult>;
       searchWebSources: (query: string) => Promise<AiSourceContext>;
       composeResearchCopy: (input: ResearchCopyComposeInput) => Promise<ResearchCopyComposeResult>;

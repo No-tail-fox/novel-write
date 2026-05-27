@@ -81,11 +81,29 @@ describe('AI source research', () => {
       },
     );
 
-    expect(result).toEqual({ copy: 'Generated source copy from selected research.', raw: '{"copy":"Generated source copy from selected research."}', requestId: 'copy-1' });
+    expect(result).toEqual({ title: '', copy: 'Generated source copy from selected research.', raw: '{"copy":"Generated source copy from selected research."}', requestId: 'copy-1' });
     expect(requests[0].name).toBe('research-copy');
     expect(requests[0].prompt).toContain('Wu Zetian comeback');
     expect(requests[0].prompt).toContain('Article A facts.');
     expect(requests[0].prompt).toContain('Article B details.');
+  });
+
+  it('accepts a generated title from research copy composition responses', async () => {
+    const result = await composeCopyFromSources(
+      async <T = unknown>() => ({
+        json: { title: 'Wu Zetian Returns', copy: 'Generated body.' } as T,
+        raw: '{"title":"Wu Zetian Returns","copy":"Generated body."}',
+        requestId: 'copy-title-1',
+      }),
+      {
+        keyword: 'Wu Zetian',
+        extraRequirements: '',
+        selectedSources: [{ source: 'web', title: 'Article A', content: 'Article A facts.' }],
+      },
+    );
+
+    expect(result.title).toBe('Wu Zetian Returns');
+    expect(result.copy).toBe('Generated body.');
   });
 
   it('collects web RSS snippets and built-in knowledge for AI creation', async () => {

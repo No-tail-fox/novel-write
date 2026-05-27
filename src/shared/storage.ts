@@ -19,6 +19,7 @@ import type {
   TaskStatus,
   UiPreferences,
 } from './types';
+import { normalizeAppConfig } from './config-utils';
 import {
   defaultAccount,
   defaultActivation,
@@ -119,31 +120,7 @@ async function writeFileWithRetry(path: string, data: Uint8Array, attempts = 8):
 }
 
 function mergeConfig(input: unknown): AppConfig {
-  const partial = (input && typeof input === 'object' ? input : {}) as Partial<AppConfig>;
-  const llm = { ...defaultConfig.llm, ...(partial.llm ?? {}) };
-  return {
-    ...defaultConfig,
-    ...partial,
-    llm,
-    llmProfiles: partial.llmProfiles?.length ? partial.llmProfiles.map((profile) => ({ ...defaultConfig.llm, ...profile })) : [{ ...llm }],
-    image: { ...defaultConfig.image, ...(partial.image ?? {}) },
-    gptImage: { ...defaultConfig.gptImage, ...(partial.gptImage ?? partial.image ?? {}) },
-    jimeng: { ...defaultConfig.jimeng, ...(partial.jimeng ?? {}) },
-    customImage: { ...defaultConfig.customImage, ...(partial.customImage ?? {}) },
-    tts: {
-      ...defaultConfig.tts,
-      ...(partial.tts ?? {}),
-      volcengine: { ...defaultConfig.tts.volcengine, ...(partial.tts?.volcengine ?? {}) },
-      minimax: { ...defaultConfig.tts.minimax, ...(partial.tts?.minimax ?? {}) },
-    },
-    jianying: {
-      ...defaultConfig.jianying,
-      ...(partial.jianying ?? {}),
-      bgmLibrary: partial.jianying?.bgmLibrary?.length ? partial.jianying.bgmLibrary : defaultConfig.jianying.bgmLibrary,
-    },
-    ima: { ...defaultConfig.ima, ...(partial.ima ?? {}) },
-    ui: { ...defaultConfig.ui, ...(partial.ui ?? {}) },
-  };
+  return normalizeAppConfig(input);
 }
 
 export class FileDatabase {

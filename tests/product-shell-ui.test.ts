@@ -78,6 +78,28 @@ describe('product shell ui', () => {
     expect(css).toContain('.test-result');
   });
 
+  it('shows save and test actions for each settings configuration section', async () => {
+    const main = await readFile(new URL('../src/main.tsx', import.meta.url), 'utf8');
+    const viteEnv = await readFile(new URL('../src/vite-env.d.ts', import.meta.url), 'utf8');
+    const preload = await readFile(new URL('../electron/preload.ts', import.meta.url), 'utf8');
+    const electronMain = await readFile(new URL('../electron/main.ts', import.meta.url), 'utf8');
+
+    expect(viteEnv).toContain('testAppConfig');
+    expect(preload).toContain('config:test');
+    expect(electronMain).toContain('config:test');
+    expect(main).toContain('testCurrentConfig');
+    expect(main).toContain('测试当前配置');
+    expect(main).toContain('GPT Image Base URL');
+    expect(main).toContain('GPT Image 模型');
+    expect(main).toContain('自定义 API Key');
+    expect(main).toContain('自定义模型');
+    expect(main).toContain('即梦 AccessKey ID');
+    expect(main).toContain('即梦 SecretAccessKey');
+    expect(main).toContain('即梦 Req Key');
+    expect(main).toContain('MiniMax 模型');
+    expect(main).toContain('MiniMax 音色 ID');
+  });
+
   it('lets AI creation search real web sources and select them for generation', async () => {
     const main = await readFile(new URL('../src/main.tsx', import.meta.url), 'utf8');
     const css = await readFile(new URL('../src/styles.css', import.meta.url), 'utf8');
@@ -88,10 +110,17 @@ describe('product shell ui', () => {
     expect(main).toContain('selectedSources');
     expect(main).toContain('ai-search-results');
     expect(main).toContain('ai-search-results-scroll');
+    expect(main).toContain('ai-search-actions');
+    expect(main).toContain("setMode('paste')");
+    expect(main).toContain('setInputText(result.copy)');
+    expect(main).toContain('setTitle(result.title');
     expect(main).toContain('结合所选页面信息生成文案');
     expect(main).toContain('网页候选（前 10 条）');
     expect(css).toContain('.ai-search-results');
     expect(css).toContain('.ai-search-results-scroll');
+    expect(css).toContain('.ai-search-actions');
+    expect(css).toContain('.extra-requirements-input');
+    expect(css).toContain('::-webkit-scrollbar');
     expect(css).toContain('.search-source-card');
   });
 

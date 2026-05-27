@@ -5,6 +5,7 @@ import type {
   AiSourceContext,
   AppConfig,
   AppState,
+  ConfigTestTarget,
   CreateTaskInput,
   DraftTemplate,
   ImageLabRecord,
@@ -20,6 +21,7 @@ import type {
 contextBridge.exposeInMainWorld('storybound', {
   getState: () => ipcRenderer.invoke('app:get-state'),
   saveConfig: (config: AppConfig) => ipcRenderer.invoke('app:save-config', config),
+  testAppConfig: (target: ConfigTestTarget, config: AppConfig) => ipcRenderer.invoke('config:test', { target, config }),
   testLlmConfig: (config: LlmConfig) => ipcRenderer.invoke('llm:test-config', config),
   searchWebSources: (query: string): Promise<AiSourceContext> => ipcRenderer.invoke('research:web-search', query),
   composeResearchCopy: (input: ResearchCopyComposeInput): Promise<ResearchCopyComposeResult> => ipcRenderer.invoke('research:compose-copy', input),

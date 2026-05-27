@@ -17,6 +17,7 @@ describe('electron ipc contract', () => {
       'task:update-status',
       'task:retry',
       'task:get-artifacts',
+      'config:test',
       'llm:test-config',
       'research:web-search',
       'research:compose-copy',

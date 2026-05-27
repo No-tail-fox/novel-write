@@ -38,6 +38,17 @@ export interface LlmModelTestResult {
   requestId: string | null;
 }
 
+export type ConfigTestTarget = 'llm' | 'image' | 'tts' | 'jianying' | 'creative';
+
+export interface ConfigTestResult {
+  status: 'pass' | 'warn' | 'fail';
+  detail: string;
+  latencyMs: number;
+  target: ConfigTestTarget;
+  endpoint: string;
+  requestId: string | null;
+}
+
 export interface ImageConfig {
   baseUrl: string;
   apiKey: string;
@@ -352,6 +363,7 @@ export interface ResearchCopyComposeInput {
 }
 
 export interface ResearchCopyComposeResult {
+  title: string;
   copy: string;
   raw: string;
   requestId: string | null;

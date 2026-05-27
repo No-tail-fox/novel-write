@@ -37,6 +37,7 @@ import type {
   AiSourceSection,
   AppConfig,
   AppState,
+  ConfigTestTarget,
   CreateTaskInput,
   DraftTemplate,
   ImageLabRecord,
@@ -51,6 +52,7 @@ import type {
   TaskStatus,
   UiPreferences,
 } from './shared/types';
+import { configTargetStatus, validateConfigTarget } from './shared/config-utils';
 import {
   defaultAccount,
   defaultActivation,
@@ -203,6 +205,9 @@ function makeFallbackApi(setState: (state: AppState) => void): StoryboundApi {
         endpoint: `${config.baseUrl || 'https://api.openai.com'}/v1/chat/completions`,
         requestId: null,
       };
+    },
+    async testAppConfig(target, config) {
+      return validateConfigTarget(target, config);
     },
     async searchWebSources(query) {
       return {
@@ -571,7 +576,10 @@ function NewTaskPage({ api, state, applyState, openTaskDetail }: { api: Storybou
         selectedSources,
       });
       setResearchCopy(result.copy);
-      setResearchCopyMessage(`已生成文案，可直接编辑后开始任务${result.requestId ? `（request ${result.requestId}）` : ''}。`);
+      setInputText(result.copy);
+      setTitle(result.title || aiKeyword.trim());
+      setMode('paste');
+      setResearchCopyMessage(`已生成文案并填入粘贴文案${result.requestId ? `（request ${result.requestId}）` : ''}。`);
     } catch (error) {
       setResearchCopyMessage(error instanceof Error ? error.message : String(error));
     } finally {
@@ -654,7 +662,7 @@ function NewTaskPage({ api, state, applyState, openTaskDetail }: { api: Storybou
               IMA 知识库 <small>前往系统设置 · AI 创作配置</small>
             </label>
             <Field label="额外要求" hint="可选">
-              <textarea className="small-textarea" value={extraRequirements} onChange={(event) => setExtraRequirements(event.target.value)} />
+              <input className="extra-requirements-input" value={extraRequirements} onChange={(event) => setExtraRequirements(event.target.value)} />
             </Field>
             <button className="ghost-action" disabled={searchingSources || !aiKeyword.trim()} onClick={searchWebSources}>
               {searchingSources ? <Loader2 className="spin" size={15} /> : <Search size={15} />}
@@ -662,29 +670,33 @@ function NewTaskPage({ api, state, applyState, openTaskDetail }: { api: Storybou
             </button>
             {searchMessage ? <div className="test-result">{searchMessage}</div> : null}
             {searchContext ? (
-              <div className="ai-search-results ai-search-results-scroll">
-                <div className="panel-title-row">
-                  <h3>网页候选（前 10 条）</h3>
-                  <small>{selectedSources.length}/{searchContext.sections.length} 已选择</small>
+              <div className="ai-search-block">
+                <div className="ai-search-results ai-search-results-scroll">
+                  <div className="panel-title-row">
+                    <h3>网页候选（前 10 条）</h3>
+                    <small>{selectedSources.length}/{searchContext.sections.length} 已选择</small>
+                  </div>
+                  {searchContext.sections.length === 0 ? <EmptyState title="暂无可用网页资料" /> : null}
+                  {searchContext.sections.map((source, index) => {
+                    const id = sourceKey(source, index);
+                    return (
+                      <label className="search-source-card" key={id}>
+                        <input type="checkbox" checked={selectedSearchSourceIds.includes(id)} onChange={() => setSelectedSearchSourceIds(toggleArray(selectedSearchSourceIds, id))} />
+                        <div>
+                          <strong>{source.title}</strong>
+                          {source.url ? <span>{source.url}</span> : null}
+                          <p>{(source.content || source.snippet || '').slice(0, 220)}</p>
+                        </div>
+                      </label>
+                    );
+                  })}
                 </div>
-                {searchContext.sections.length === 0 ? <EmptyState title="暂无可用网页资料" /> : null}
-                {searchContext.sections.map((source, index) => {
-                  const id = sourceKey(source, index);
-                  return (
-                    <label className="search-source-card" key={id}>
-                      <input type="checkbox" checked={selectedSearchSourceIds.includes(id)} onChange={() => setSelectedSearchSourceIds(toggleArray(selectedSearchSourceIds, id))} />
-                      <div>
-                        <strong>{source.title}</strong>
-                        {source.url ? <span>{source.url}</span> : null}
-                        <p>{(source.content || source.snippet || '').slice(0, 220)}</p>
-                      </div>
-                    </label>
-                  );
-                })}
-                <button className="primary-action slim" disabled={composingCopy || selectedSources.length === 0} onClick={composeResearchCopy}>
-                  {composingCopy ? <Loader2 className="spin" size={15} /> : <Wand2 size={15} />}
-                  结合所选页面信息生成文案
-                </button>
+                <div className="ai-search-actions">
+                  <button className="primary-action slim" disabled={composingCopy || selectedSources.length === 0} onClick={composeResearchCopy}>
+                    {composingCopy ? <Loader2 className="spin" size={15} /> : <Wand2 size={15} />}
+                    结合所选页面信息生成文案
+                  </button>
+                </div>
                 {researchCopyMessage ? <div className="test-result">{researchCopyMessage}</div> : null}
                 {researchCopy ? (
                   <Field label="生成文案（可编辑）">
@@ -1560,6 +1572,8 @@ function SettingsPage({ api, state, applyState }: { api: StoryboundApi; state: A
   const [diagnostics, setDiagnostics] = useState('');
   const [llmTestResult, setLlmTestResult] = useState('');
   const [testingLlm, setTestingLlm] = useState(false);
+  const [configTestResult, setConfigTestResult] = useState('');
+  const [testingConfig, setTestingConfig] = useState(false);
   useEffect(() => setDraft(state.config), [state.config]);
   async function save() {
     applyState(await api.saveConfig(draft));
@@ -1576,17 +1590,30 @@ function SettingsPage({ api, state, applyState }: { api: StoryboundApi; state: A
       setTestingLlm(false);
     }
   }
+  async function testCurrentConfig() {
+    const target: ConfigTestTarget = section === 'llm' || section === 'image' || section === 'tts' || section === 'jianying' || section === 'creative' ? section : 'llm';
+    setTestingConfig(true);
+    setConfigTestResult('正在测试当前配置...');
+    try {
+      const result = await api.testAppConfig(target, draft);
+      setConfigTestResult(`[${result.status}] ${result.detail}`);
+    } catch (error) {
+      setConfigTestResult(`[fail] ${error instanceof Error ? error.message : String(error)}`);
+    } finally {
+      setTestingConfig(false);
+    }
+  }
   async function runDiagnostics() {
     const report = await api.runDiagnostics();
     setDiagnostics(JSON.stringify(report, null, 2));
   }
   const sections = [
-    ['llm', Sparkles, 'LLM', '文案与分镜', '已配置'],
-    ['image', ImageIcon, 'AI 绘图', '分镜图片', draft.image.apiKey ? '已配置' : '待配置'],
-    ['tts', Bot, 'TTS 配音', '每镜语音', draft.tts.accessKey ? '已配置' : '待配置'],
-    ['jianying', FolderOpen, '剪映', '草稿目录 · BGM', draft.jianying.draftPath ? '已配置' : '待配置'],
+    ['llm', Sparkles, 'LLM', '文案与分镜', settingsStatusLabel(configTargetStatus('llm', draft))],
+    ['image', ImageIcon, 'AI 绘图', '分镜图片', settingsStatusLabel(configTargetStatus('image', draft))],
+    ['tts', Bot, 'TTS 配音', '每镜语音', settingsStatusLabel(configTargetStatus('tts', draft))],
+    ['jianying', FolderOpen, '剪映', '草稿目录 · BGM', settingsStatusLabel(configTargetStatus('jianying', draft))],
     ['activation', KeyRound, '激活与订阅', '试用 · 激活码', state.activation.status],
-    ['creative', Wand2, 'AI 创作', 'IMA 知识库', '待配置'],
+    ['creative', Wand2, 'AI 创作', 'IMA 知识库', settingsStatusLabel(configTargetStatus('creative', draft))],
     ['about', Info, '关于 · 诊断', '日志 · 重置', '已配置'],
   ] as const;
   return (
@@ -1607,8 +1634,15 @@ function SettingsPage({ api, state, applyState }: { api: StoryboundApi; state: A
             <div className="square-icon"><Sparkles size={18} /></div>
             <div><h2>{sections.find(([id]) => id === section)?.[2]}</h2><span>配置 API 凭证与本地路径</span></div>
           </div>
-          <button className="primary-action slim" onClick={save}><Save size={15} />保存配置</button>
+          <div className="button-row">
+            <button className="ghost-action" disabled={testingConfig} onClick={testCurrentConfig}>
+              {testingConfig ? <Loader2 className="spin" size={15} /> : <Sparkles size={15} />}
+              测试当前配置
+            </button>
+            <button className="primary-action slim" onClick={save}><Save size={15} />保存配置</button>
+          </div>
         </div>
+        {configTestResult ? <div className="test-result">{configTestResult}</div> : null}
         {section === 'llm' ? (
           <SettingsCard title="LLM 配置档案" status={maskConfigured(draft.llm.apiKey)}>
             <ConfigInput label="Provider" value={draft.llm.provider} onChange={(value) => setDraft({ ...draft, llm: { ...draft.llm, provider: value } })} />
@@ -1626,21 +1660,30 @@ function SettingsPage({ api, state, applyState }: { api: StoryboundApi; state: A
           </SettingsCard>
         ) : null}
         {section === 'image' ? (
-          <SettingsCard title="AI 绘图" status={draft.image.apiKey ? '已配置' : '待配置'}>
+          <SettingsCard title="AI 绘图" status={settingsStatusLabel(configTargetStatus('image', draft))}>
             <Segmented label="Provider" value={draft.imageProvider} options={['gpt_image', 'jimeng', 'custom', 'mock']} labels={['全能绘图', '即梦', '自定义', 'mock']} onChange={(value) => setDraft({ ...draft, imageProvider: value as AppConfig['imageProvider'] })} />
+            <ConfigInput label="GPT Image Base URL" value={draft.gptImage.baseUrl} onChange={(value) => setDraft({ ...draft, gptImage: { ...draft.gptImage, baseUrl: value } })} />
             <ConfigInput label="GPT Image API Key" value={draft.gptImage.apiKey} onChange={(value) => setDraft({ ...draft, gptImage: { ...draft.gptImage, apiKey: value } })} />
+            <ConfigInput label="GPT Image 模型" value={draft.gptImage.model} onChange={(value) => setDraft({ ...draft, gptImage: { ...draft.gptImage, model: value } })} />
             <ConfigInput label="即梦 SESSION ID" value={draft.jimeng.sessionId} onChange={(value) => setDraft({ ...draft, jimeng: { ...draft.jimeng, sessionId: value } })} />
+            <ConfigInput label="即梦 AccessKey ID" value={draft.jimeng.accessKeyId ?? ''} onChange={(value) => setDraft({ ...draft, jimeng: { ...draft.jimeng, accessKeyId: value } })} />
+            <ConfigInput label="即梦 SecretAccessKey" value={draft.jimeng.secretAccessKey ?? ''} onChange={(value) => setDraft({ ...draft, jimeng: { ...draft.jimeng, secretAccessKey: value } })} />
+            <ConfigInput label="即梦 Req Key" value={draft.jimeng.reqKey ?? ''} onChange={(value) => setDraft({ ...draft, jimeng: { ...draft.jimeng, reqKey: value } })} />
             <ConfigInput label="自定义 Base URL" value={draft.customImage.baseUrl} onChange={(value) => setDraft({ ...draft, customImage: { ...draft.customImage, baseUrl: value } })} />
+            <ConfigInput label="自定义 API Key" value={draft.customImage.apiKey} onChange={(value) => setDraft({ ...draft, customImage: { ...draft.customImage, apiKey: value } })} />
+            <ConfigInput label="自定义模型" value={draft.customImage.model} onChange={(value) => setDraft({ ...draft, customImage: { ...draft.customImage, model: value } })} />
             <Segmented label="分辨率" value={draft.gptImage.resolution ?? '2K'} options={['1K', '2K', '4K']} onChange={(value) => setDraft({ ...draft, gptImage: { ...draft.gptImage, resolution: value as '1K' | '2K' | '4K' } })} />
-            <Field label="并发"><input type="range" min="1" max="6" value={draft.image.concurrency} onChange={(event) => setDraft({ ...draft, image: { ...draft.image, concurrency: Number(event.target.value) } })} /></Field>
+            <Field label="并发"><input type="range" min="1" max="6" value={activeImageConcurrency(draft)} onChange={(event) => setDraft(setImageConcurrency(draft, Number(event.target.value)))} /></Field>
           </SettingsCard>
         ) : null}
         {section === 'tts' ? (
-          <SettingsCard title="TTS 配音" status={draft.tts.accessKey ? '已配置' : '待配置'}>
+          <SettingsCard title="TTS 配音" status={settingsStatusLabel(configTargetStatus('tts', draft))}>
             <Segmented label="引擎" value={draft.tts.provider} options={['volcengine', 'minimax', 'mock']} labels={['火山引擎', 'MiniMax', 'mock']} onChange={(value) => setDraft({ ...draft, tts: { ...draft.tts, provider: value as AppConfig['tts']['provider'] } })} />
             <ConfigInput label="火山 App ID" value={draft.tts.volcengine.appId} onChange={(value) => setDraft({ ...draft, tts: { ...draft.tts, volcengine: { ...draft.tts.volcengine, appId: value }, appId: value } })} />
             <ConfigInput label="Access Token" value={draft.tts.volcengine.accessKey} onChange={(value) => setDraft({ ...draft, tts: { ...draft.tts, volcengine: { ...draft.tts.volcengine, accessKey: value }, accessKey: value } })} />
             <ConfigInput label="MiniMax API Key" value={draft.tts.minimax.apiKey} onChange={(value) => setDraft({ ...draft, tts: { ...draft.tts, minimax: { ...draft.tts.minimax, apiKey: value } } })} />
+            <ConfigInput label="MiniMax 模型" value={draft.tts.minimax.model} onChange={(value) => setDraft({ ...draft, tts: { ...draft.tts, minimax: { ...draft.tts.minimax, model: value } } })} />
+            <ConfigInput label="MiniMax 音色 ID" value={draft.tts.minimax.voiceId} onChange={(value) => setDraft({ ...draft, tts: { ...draft.tts, minimax: { ...draft.tts.minimax, voiceId: value } } })} />
             <ConfigInput label="默认音色" value={draft.tts.speaker} onChange={(value) => setDraft({ ...draft, tts: { ...draft.tts, speaker: value } })} />
             <LocalInfo title="克隆音色" value={`${state.minimaxCloneVoices.length} 个本地记录，可后续接入 MiniMax 克隆接口。`} />
           </SettingsCard>
@@ -1876,6 +1919,26 @@ function statusLabel(status: TaskStatus | 'all'): string {
 function maskConfigured(value: string): string {
   if (!value) return '待配置';
   return value.length > 8 ? `${value.slice(0, 2)}••••${value.slice(-4)}` : '已配置';
+}
+
+function settingsStatusLabel(status: 'pass' | 'warn' | 'fail'): string {
+  return status === 'pass' ? '已配置' : status === 'warn' ? '需确认' : '待配置';
+}
+
+function setImageConcurrency(config: AppConfig, concurrency: number): AppConfig {
+  if (config.imageProvider === 'custom') {
+    return { ...config, customImage: { ...config.customImage, concurrency } };
+  }
+  if (config.imageProvider === 'jimeng') {
+    return { ...config, jimeng: { ...config.jimeng, concurrency } };
+  }
+  return { ...config, image: { ...config.image, concurrency }, gptImage: { ...config.gptImage, concurrency } };
+}
+
+function activeImageConcurrency(config: AppConfig): number {
+  if (config.imageProvider === 'custom') return config.customImage.concurrency;
+  if (config.imageProvider === 'jimeng') return config.jimeng.concurrency;
+  return config.gptImage.concurrency ?? config.image.concurrency;
 }
 
 function countChars(value?: string): number {

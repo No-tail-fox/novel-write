@@ -95,4 +95,48 @@ describe('file database', () => {
       await rm(dir, { recursive: true, force: true });
     }
   });
+
+  it('keeps the active GPT image provider settings effective after saving config', async () => {
+    const dir = await mkdtemp(join(tmpdir(), 'storybound-db-image-config-'));
+    const file = join(dir, 'app.db');
+
+    try {
+      const db = await FileDatabase.open(file);
+      await db.upsertConfig({
+        ...defaultConfig,
+        imageProvider: 'gpt_image',
+        image: { ...defaultConfig.image, apiKey: '', baseUrl: '', model: 'old-image-model' },
+        gptImage: {
+          ...defaultConfig.gptImage,
+          apiKey: 'saved-image-key',
+          baseUrl: 'https://image.example/v1',
+          model: 'gpt-image-2',
+          concurrency: 4,
+          resolution: '4K',
+        },
+      });
+      await db.close();
+
+      const reopened = await FileDatabase.open(file);
+      const state = await reopened.getState();
+
+      expect(state.config.gptImage).toMatchObject({
+        apiKey: 'saved-image-key',
+        baseUrl: 'https://image.example/v1',
+        model: 'gpt-image-2',
+        concurrency: 4,
+        resolution: '4K',
+      });
+      expect(state.config.image).toMatchObject({
+        apiKey: 'saved-image-key',
+        baseUrl: 'https://image.example/v1',
+        model: 'gpt-image-2',
+        concurrency: 4,
+        resolution: '4K',
+      });
+      await reopened.close();
+    } finally {
+      await rm(dir, { recursive: true, force: true });
+    }
+  });
 });

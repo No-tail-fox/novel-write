@@ -123,7 +123,7 @@ export async function composeCopyFromSources(runJson: JsonLlm, input: ResearchCo
     })
     .join('\n\n');
 
-  const result = await runJson<{ copy?: string; inputText?: string; materialText?: string }>({
+  const result = await runJson<{ title?: string; copy?: string; inputText?: string; materialText?: string }>({
     step: 0,
     name: 'research-copy',
     messages: [
@@ -139,7 +139,7 @@ export async function composeCopyFromSources(runJson: JsonLlm, input: ResearchCo
           input.extraRequirements ? `Extra requirements: ${input.extraRequirements}` : '',
           'Selected web page material:',
           sourceBlocks,
-          'Output JSON shape: {"copy":"一段可继续进入短视频流水线的中文文案素材，保留事实依据，避免编造网页中没有的信息。"}',
+          'Output JSON shape: {"title":"一个适合任务标题的短标题","copy":"一段可继续进入短视频流水线的中文文案素材，保留事实依据，避免编造网页中没有的信息。"}',
         ]
           .filter(Boolean)
           .join('\n\n'),
@@ -151,7 +151,7 @@ export async function composeCopyFromSources(runJson: JsonLlm, input: ResearchCo
   if (!copy) {
     throw new Error('LLM did not return copy text for selected sources.');
   }
-  return { copy, raw: result.raw, requestId: result.requestId };
+  return { title: (result.json.title || '').trim(), copy, raw: result.raw, requestId: result.requestId };
 }
 
 async function fetchPageText(url: string, fetchImpl: FetchLike): Promise<string> {

@@ -409,12 +409,41 @@ textarea {
   resize: vertical;
 }
 
+* {
+  scrollbar-width: thin;
+  scrollbar-color: #5f6b78 #0b1016;
+}
+
+*::-webkit-scrollbar {
+  width: 10px;
+  height: 10px;
+}
+
+*::-webkit-scrollbar-track {
+  background: #0b1016;
+  border-radius: 999px;
+}
+
+*::-webkit-scrollbar-thumb {
+  background: #5f6b78;
+  border: 2px solid #0b1016;
+  border-radius: 999px;
+}
+
+*::-webkit-scrollbar-thumb:hover {
+  background: #7b8796;
+}
+
 .source-textarea {
   min-height: 250px;
 }
 
 .small-textarea {
   min-height: 88px;
+}
+
+.extra-requirements-input {
+  min-height: 36px;
 }
 
 .prompt-box,
@@ -1404,6 +1433,11 @@ textarea {
   line-height: 1.5;
 }
 
+.ai-search-block {
+  display: grid;
+  gap: 10px;
+}
+
 .ai-search-results {
   display: grid;
   gap: 10px;
@@ -1414,9 +1448,16 @@ textarea {
 }
 
 .ai-search-results-scroll {
-  max-height: 420px;
+  max-height: 360px;
   overflow-y: auto;
   overscroll-behavior: contain;
+}
+
+.ai-search-actions {
+  display: flex;
+  align-items: center;
+  justify-content: flex-start;
+  gap: 10px;
 }
 
 .search-source-card {
