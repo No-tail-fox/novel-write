@@ -45,6 +45,7 @@ import type {
   RewriteIntensity,
   ShellView,
   Task,
+  TaskArtifactSnapshot,
   TaskEvent,
   TaskMode,
   TaskStatus,
@@ -309,6 +310,21 @@ function makeFallbackApi(setState: (state: AppState) => void): StoryboundApi {
     async retryTask(id: string) {
       const state = read();
       return persist({ ...state, tasks: state.tasks.map((task) => (task.id === id ? { ...task, status: 'pending', errorMessage: '' } : task)) });
+    },
+    async getTaskArtifacts(id: string) {
+      const task = read().tasks.find((item) => item.id === id);
+      return {
+        available: false,
+        message: '浏览器预览无法读取本地任务产物，请在 Electron 桌面端查看。',
+        taskId: id,
+        statePath: task?.artifactStatePath ?? '',
+        outputDir: task?.outputDir ?? '',
+        updatedAt: null,
+        steps: {},
+        artifact: {},
+        assets: { images: [], narration: [] },
+        draft: null,
+      };
     },
     async runDiagnostics() {
       const state = read();
@@ -873,11 +889,42 @@ function HistoryPage({ api, state, openTaskDetail }: { api: StoryboundApi; state
 function TaskDetailPage({ api, state, task, applyState, close }: { api: StoryboundApi; state: AppState; task: Task | null; applyState: (state: AppState) => void; close: () => void }) {
   const [tab, setTab] = useState<'preview' | 'storyboard' | 'audio'>('preview');
   const [liveNow, setLiveNow] = useState(Date.now());
+  const [artifactSnapshot, setArtifactSnapshot] = useState<TaskArtifactSnapshot | null>(null);
   useEffect(() => {
     if (task?.status !== 'running') return undefined;
     const timer = window.setInterval(() => setLiveNow(Date.now()), 1000);
     return () => window.clearInterval(timer);
   }, [task?.id, task?.status]);
+  useEffect(() => {
+    let cancelled = false;
+    if (!task) {
+      setArtifactSnapshot(null);
+      return undefined;
+    }
+    api.getTaskArtifacts(task.id)
+      .then((snapshot) => {
+        if (!cancelled) setArtifactSnapshot(snapshot);
+      })
+      .catch((error) => {
+        if (!cancelled) {
+          setArtifactSnapshot({
+            available: false,
+            message: error instanceof Error ? error.message : String(error),
+            taskId: task.id,
+            statePath: task.artifactStatePath,
+            outputDir: task.outputDir,
+            updatedAt: null,
+            steps: {},
+            artifact: {},
+            assets: { images: [], narration: [] },
+            draft: null,
+          });
+        }
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [api, task?.id, task?.artifactStatePath, task?.currentStep, task?.status, task?.outputDir]);
   if (!task) {
     return (
       <section className="panel full-panel">
@@ -961,7 +1008,8 @@ function TaskDetailPage({ api, state, task, applyState, close }: { api: Storybou
           <button className={tab === 'storyboard' ? 'active' : ''} onClick={() => setTab('storyboard')}><ImageIcon size={14} />分镜画廊</button>
           <button className={tab === 'audio' ? 'active' : ''} onClick={() => setTab('audio')}><Mic2 size={14} />配音试听</button>
         </div>
-        <div className="artifact-preview">
+        <ArtifactPreviewContent api={api} task={task} tab={tab} snapshot={artifactSnapshot} latestEvent={latestEvent} currentAgent={currentMeta.agent} />
+        <div className="artifact-preview legacy-artifact-preview" hidden>
           <div className="preview-empty-icon">{task.status === 'running' ? <Loader2 className="spin" size={24} /> : <Database size={24} />}</div>
           <strong>{artifactPanelTitle(task, tab)}</strong>
           <span>{latestEvent?.detail ?? '等待当前步骤产物落盘'}</span>
@@ -981,6 +1029,223 @@ function TaskDetailPage({ api, state, task, applyState, close }: { api: Storybou
           ) : null}
         </div>
       </section>
+    </div>
+  );
+}
+
+function ArtifactPreviewContent({
+  api,
+  task,
+  tab,
+  snapshot,
+  latestEvent,
+  currentAgent,
+}: {
+  api: StoryboundApi;
+  task: Task;
+  tab: 'preview' | 'storyboard' | 'audio';
+  snapshot: TaskArtifactSnapshot | null;
+  latestEvent: TaskEvent | null;
+  currentAgent: string;
+}) {
+  const artifact = snapshot?.artifact ?? {};
+  const sourceContext = artifact.sourceContext;
+  const scenes = artifact.scenes ?? [];
+  const imagePrompts = artifact.imagePrompts ?? [];
+  const subtitles = artifact.subtitles;
+  const imageAssets = snapshot?.assets.images ?? [];
+  const narrationAssets = snapshot?.assets.narration ?? [];
+
+  return (
+    <div className="artifact-preview">
+      <div className="artifact-preview-head">
+        <div className="preview-empty-icon">{task.status === 'running' ? <Loader2 className="spin" size={22} /> : <Database size={22} />}</div>
+        <div>
+          <strong>{artifactPanelTitle(task, tab)}</strong>
+          <span>{snapshot?.message || latestEvent?.detail || '等待当前步骤产物落盘'}</span>
+        </div>
+        {task.outputDir ? (
+          <button className="ghost-action" onClick={() => api.openPath(task.outputDir)}>
+            <FolderOpen size={15} />
+            打开输出
+          </button>
+        ) : null}
+      </div>
+
+      <div className="preview-meta-grid">
+        <div><small>任务</small><strong>{task.title || '未命名任务'}</strong></div>
+        <div><small>状态</small><strong>{statusLabel(task.status)}</strong></div>
+        <div><small>当前代理</small><strong>{currentAgent}</strong></div>
+        <div><small>产物更新时间</small><strong>{snapshot?.updatedAt ? formatDate(snapshot.updatedAt) : '等待生成'}</strong></div>
+        <div><small>输出目录</small><strong>{task.outputDir || '等待生成'}</strong></div>
+        <div><small>状态文件</small><strong>{task.artifactStatePath || '等待生成'}</strong></div>
+      </div>
+
+      {tab === 'preview' ? (
+        <div className="artifact-section-stack">
+          <ArtifactSection title="AI 搜索资料" badge={`${sourceContext?.sections.length ?? 0} 条`}>
+            {sourceContext?.sections.length ? (
+              <div className="artifact-source-list">
+                {sourceContext.sections.map((source, index) => (
+                  <div key={`${source.title}-${index}`}>
+                    <strong>{source.title}</strong>
+                    {source.url ? <span>{source.url}</span> : null}
+                    <p>{trimForPreview(source.content || source.snippet || '', 260)}</p>
+                  </div>
+                ))}
+              </div>
+            ) : <ArtifactEmpty text="等待 AI 创作搜索资料" />}
+          </ArtifactSection>
+
+          <ArtifactSection title="文案预审" badge={`${countChars(artifact.reviewedText)} 字`}>
+            <ArtifactText value={artifact.reviewedText} empty="等待文案预审产物" />
+          </ArtifactSection>
+
+          <ArtifactSection title="改写产物" badge={`${countChars(artifact.rewrittenCopy)} 字`}>
+            <ArtifactText value={artifact.rewrittenCopy} empty="等待改写产物" />
+          </ArtifactSection>
+
+          <ArtifactSection title="封面信息" badge={artifact.cover?.title || '等待生成'}>
+            {artifact.cover ? (
+              <div className="artifact-cover-grid">
+                <div><small>标题</small><strong>{artifact.cover.title}</strong></div>
+                <div><small>副标题</small><strong>{artifact.cover.subtitle.join(' / ') || '-'}</strong></div>
+                <div><small>摘要</small><p>{artifact.cover.summary || '-'}</p></div>
+                <div><small>标签</small><p>{artifact.cover.tags.join(' ') || '-'}</p></div>
+                <div><small>种子评论</small><p>{artifact.cover.comments.join(' / ') || '-'}</p></div>
+              </div>
+            ) : <ArtifactEmpty text="等待封面标题、摘要、标签和评论" />}
+          </ArtifactSection>
+
+          <ArtifactSection title="分镜分句" badge={`${scenes.length} 条`}>
+            <ArtifactSceneList scenes={scenes} imagePrompts={imagePrompts} images={imageAssets} />
+          </ArtifactSection>
+
+          <ArtifactSection title="绘图提示词" badge={`${imagePrompts.length} 条`}>
+            <ArtifactPromptList prompts={imagePrompts} />
+          </ArtifactSection>
+
+          <ArtifactSection title="批量生图" badge={`${imageAssets.length} 张`}>
+            <ArtifactAssetList assets={imageAssets} empty="等待图片生成" />
+          </ArtifactSection>
+
+          <ArtifactSection title="配音字幕" badge={`${narrationAssets.length} 段 / ${subtitles?.cues.length ?? 0} 条字幕`}>
+            <ArtifactAssetList assets={narrationAssets} empty="等待配音生成" />
+            {subtitles?.srt ? <pre className="artifact-text-block compact">{trimForPreview(subtitles.srt, 900)}</pre> : null}
+          </ArtifactSection>
+
+          <ArtifactSection title="草稿输出" badge={snapshot?.draft ? '已生成' : '等待生成'}>
+            {snapshot?.draft ? (
+              <div className="artifact-path-list">
+                <span>{snapshot.draft.draftDir}</span>
+                <span>{snapshot.draft.draftContentPath}</span>
+                <span>{snapshot.draft.draftMetaPath}</span>
+              </div>
+            ) : <ArtifactEmpty text="等待剪映草稿目录" />}
+          </ArtifactSection>
+        </div>
+      ) : null}
+
+      {tab === 'storyboard' ? (
+        <div className="artifact-section-stack">
+          <ArtifactSection title="分镜分句" badge={`${scenes.length} 条`}>
+            <ArtifactSceneList scenes={scenes} imagePrompts={imagePrompts} images={imageAssets} />
+          </ArtifactSection>
+          <ArtifactSection title="绘图提示词" badge={`${imagePrompts.length} 条`}>
+            <ArtifactPromptList prompts={imagePrompts} />
+          </ArtifactSection>
+        </div>
+      ) : null}
+
+      {tab === 'audio' ? (
+        <div className="artifact-section-stack">
+          <ArtifactSection title="配音字幕" badge={`${narrationAssets.length} 段 / ${subtitles?.cues.length ?? 0} 条字幕`}>
+            <ArtifactAssetList assets={narrationAssets} empty="等待配音生成" />
+            {subtitles?.cues.length ? (
+              <div className="artifact-scene-list">
+                {subtitles.cues.map((cue) => (
+                  <div key={cue.index}>
+                    <strong>{cue.index}. {formatMs(cue.startMs)} - {formatMs(cue.endMs)}</strong>
+                    <p>{cue.text}</p>
+                  </div>
+                ))}
+              </div>
+            ) : <ArtifactEmpty text="等待字幕时间轴" />}
+          </ArtifactSection>
+        </div>
+      ) : null}
+    </div>
+  );
+}
+
+function ArtifactSection({ title, badge, children }: { title: string; badge: string; children: React.ReactNode }) {
+  return (
+    <section className="artifact-section">
+      <div className="panel-title-row">
+        <h3>{title}</h3>
+        <small>{badge}</small>
+      </div>
+      {children}
+    </section>
+  );
+}
+
+function ArtifactText({ value, empty }: { value?: string; empty: string }) {
+  return value ? <pre className="artifact-text-block">{value}</pre> : <ArtifactEmpty text={empty} />;
+}
+
+function ArtifactEmpty({ text }: { text: string }) {
+  return <div className="artifact-empty">{text}</div>;
+}
+
+function ArtifactSceneList({
+  scenes,
+  imagePrompts,
+  images,
+}: {
+  scenes: NonNullable<TaskArtifactSnapshot['artifact']['scenes']>;
+  imagePrompts: NonNullable<TaskArtifactSnapshot['artifact']['imagePrompts']>;
+  images: TaskArtifactSnapshot['assets']['images'];
+}) {
+  if (scenes.length === 0) return <ArtifactEmpty text="等待分镜生成" />;
+  return (
+    <div className="artifact-scene-list">
+      {scenes.map((scene) => {
+        const prompt = imagePrompts.find((item) => item.sceneId === scene.id);
+        const image = images.find((item) => item.sceneId === scene.id);
+        return (
+          <div key={scene.id}>
+            <strong>{scene.id}. {scene.cap}</strong>
+            <p>{scene.descPrompt}</p>
+            {prompt ? <small>Prompt: {trimForPreview(prompt.prompt, 220)}</small> : null}
+            {image ? <span>{image.path}</span> : null}
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
+function ArtifactPromptList({ prompts }: { prompts: NonNullable<TaskArtifactSnapshot['artifact']['imagePrompts']> }) {
+  if (prompts.length === 0) return <ArtifactEmpty text="等待绘图提示词" />;
+  return (
+    <div className="artifact-scene-list">
+      {prompts.map((prompt) => (
+        <div key={prompt.sceneId}>
+          <strong>{prompt.sceneId}. {prompt.cap}</strong>
+          <p>{prompt.prompt}</p>
+          <small>负面：{prompt.negativePrompt || '-'}</small>
+        </div>
+      ))}
+    </div>
+  );
+}
+
+function ArtifactAssetList({ assets, empty }: { assets: TaskArtifactSnapshot['assets']['images']; empty: string }) {
+  if (assets.length === 0) return <ArtifactEmpty text={empty} />;
+  return (
+    <div className="artifact-path-list">
+      {assets.map((asset) => <span key={`${asset.sceneId}-${asset.path}`}>{asset.sceneId}. {asset.path}</span>)}
     </div>
   );
 }
@@ -1611,6 +1876,22 @@ function statusLabel(status: TaskStatus | 'all'): string {
 function maskConfigured(value: string): string {
   if (!value) return '待配置';
   return value.length > 8 ? `${value.slice(0, 2)}••••${value.slice(-4)}` : '已配置';
+}
+
+function countChars(value?: string): number {
+  return value?.trim().length ?? 0;
+}
+
+function trimForPreview(value: string, limit: number): string {
+  const normalized = value.replace(/\s+/g, ' ').trim();
+  return normalized.length > limit ? `${normalized.slice(0, limit)}...` : normalized;
+}
+
+function formatMs(value: number): string {
+  const totalSeconds = Math.max(0, Math.floor(value / 1000));
+  const minutes = Math.floor(totalSeconds / 60);
+  const seconds = totalSeconds % 60;
+  return `${String(minutes).padStart(2, '0')}:${String(seconds).padStart(2, '0')}`;
 }
 
 function formatDate(value: string): string {

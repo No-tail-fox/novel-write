@@ -4,6 +4,7 @@ import { mkdir } from 'node:fs/promises';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { promisify } from 'node:util';
+import { readTaskArtifactSnapshot } from '../src/shared/artifact-preview';
 import { createOpenAiCompatibleJsonLlm, testOpenAiCompatibleLlm } from '../src/shared/llm-provider';
 import { composeCopyFromSources, createAiSourceResearcher, searchWebSources } from '../src/shared/research';
 import { runTask } from '../src/shared/runner';
@@ -178,6 +179,16 @@ ipcMain.handle('task:retry', async (_event, id: string) => {
     });
   }
   return database.getState();
+});
+
+ipcMain.handle('task:get-artifacts', async (_event, id: string) => {
+  const database = await getDb();
+  const state = await database.getState();
+  const task = state.tasks.find((item) => item.id === id);
+  if (!task) {
+    throw new Error(`Task not found: ${id}`);
+  }
+  return readTaskArtifactSnapshot(task);
 });
 
 ipcMain.handle('diagnostics:run', async () => {

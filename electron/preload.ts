@@ -12,6 +12,7 @@ import type {
   PromptTemplate,
   ResearchCopyComposeInput,
   ResearchCopyComposeResult,
+  TaskArtifactSnapshot,
   TaskStatus,
   UiPreferences,
 } from '../src/shared/types';
@@ -32,6 +33,7 @@ contextBridge.exposeInMainWorld('storybound', {
   createAndRunTask: (input: CreateTaskInput) => ipcRenderer.invoke('task:create-and-run', input),
   updateTaskStatus: (id: string, status: TaskStatus) => ipcRenderer.invoke('task:update-status', { id, status }),
   retryTask: (id: string) => ipcRenderer.invoke('task:retry', id),
+  getTaskArtifacts: (id: string): Promise<TaskArtifactSnapshot> => ipcRenderer.invoke('task:get-artifacts', id),
   runDiagnostics: () => ipcRenderer.invoke('diagnostics:run'),
   openPath: (path: string) => ipcRenderer.invoke('path:open', path),
   onTaskEvent: (callback: (state: AppState) => void) => {

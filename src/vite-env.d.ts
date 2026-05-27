@@ -12,6 +12,7 @@ import type {
   PromptTemplate,
   ResearchCopyComposeInput,
   ResearchCopyComposeResult,
+  TaskArtifactSnapshot,
   TaskStatus,
   UiPreferences,
 } from './shared/types';
@@ -34,6 +35,7 @@ declare global {
       createAndRunTask: (input: CreateTaskInput) => Promise<AppState>;
       updateTaskStatus: (id: string, status: TaskStatus) => Promise<AppState>;
       retryTask: (id: string) => Promise<AppState>;
+      getTaskArtifacts: (id: string) => Promise<TaskArtifactSnapshot>;
       runDiagnostics: () => Promise<{ generatedAt: string; checks: Array<{ id: string; label: string; status: string; detail: string }> }>;
       openPath: (path: string) => Promise<void>;
       onTaskEvent: (callback: (state: AppState) => void) => () => void;

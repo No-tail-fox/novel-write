@@ -875,16 +875,28 @@ textarea {
 .artifact-preview {
   min-height: 176px;
   display: grid;
-  place-items: center;
-  align-content: center;
+  align-content: start;
+  justify-items: stretch;
   gap: 12px;
   margin-top: 16px;
   border: 1px dashed var(--line);
   border-radius: 8px;
-  padding: 30px;
+  padding: 18px;
   background: var(--panel);
-  text-align: center;
+  text-align: left;
   color: var(--muted);
+}
+
+.artifact-preview-head {
+  display: grid;
+  grid-template-columns: 30px minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 12px;
+}
+
+.artifact-preview-head div:nth-child(2) {
+  display: grid;
+  gap: 4px;
 }
 
 .preview-empty-icon {
@@ -898,7 +910,7 @@ textarea {
 }
 
 .preview-meta-grid {
-  width: min(100%, 720px);
+  width: 100%;
   display: grid;
   grid-template-columns: repeat(4, minmax(0, 1fr));
   gap: 10px;
@@ -925,6 +937,119 @@ textarea {
   text-overflow: ellipsis;
   white-space: nowrap;
   font-size: 13px;
+}
+
+.artifact-section-stack {
+  display: grid;
+  gap: 12px;
+}
+
+.artifact-section {
+  display: grid;
+  gap: 10px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  padding: 14px;
+  background: #0b1016;
+}
+
+.artifact-section h3 {
+  margin: 0;
+  color: var(--text);
+  font-size: 14px;
+}
+
+.artifact-text-block {
+  max-height: 260px;
+  overflow: auto;
+  margin: 0;
+  border: 1px solid var(--line);
+  border-radius: 7px;
+  padding: 14px;
+  background: #05080c;
+  color: #e8f2ff;
+  white-space: pre-wrap;
+  line-height: 1.7;
+}
+
+.artifact-text-block.compact {
+  max-height: 160px;
+}
+
+.artifact-source-list,
+.artifact-scene-list,
+.artifact-path-list,
+.artifact-cover-grid {
+  display: grid;
+  gap: 10px;
+}
+
+.artifact-source-list div,
+.artifact-scene-list div,
+.artifact-cover-grid div {
+  min-width: 0;
+  border: 1px solid var(--line);
+  border-radius: 7px;
+  padding: 11px;
+  background: #10161d;
+}
+
+.artifact-source-list strong,
+.artifact-source-list span,
+.artifact-source-list p,
+.artifact-scene-list strong,
+.artifact-scene-list small,
+.artifact-scene-list span,
+.artifact-scene-list p {
+  display: block;
+}
+
+.artifact-source-list span,
+.artifact-scene-list span,
+.artifact-scene-list small,
+.artifact-path-list span {
+  color: var(--muted);
+  font-size: 12px;
+  overflow-wrap: anywhere;
+}
+
+.artifact-source-list p,
+.artifact-scene-list p,
+.artifact-cover-grid p {
+  margin: 7px 0 0;
+  color: #c9d5e4;
+  line-height: 1.55;
+}
+
+.artifact-cover-grid {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.artifact-cover-grid div:nth-child(3),
+.artifact-cover-grid div:nth-child(4),
+.artifact-cover-grid div:nth-child(5) {
+  grid-column: 1 / -1;
+}
+
+.artifact-cover-grid small {
+  display: block;
+  margin-bottom: 5px;
+  color: var(--muted);
+}
+
+.artifact-path-list span {
+  border: 1px solid var(--line);
+  border-radius: 7px;
+  padding: 9px 10px;
+  background: #10161d;
+}
+
+.artifact-empty {
+  border: 1px dashed var(--line);
+  border-radius: 7px;
+  padding: 14px;
+  color: var(--muted);
+  background: #080d13;
 }
 
 .status-pill {

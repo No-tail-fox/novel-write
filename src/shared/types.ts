@@ -367,6 +367,42 @@ export interface PipelineArtifact {
   sourceContext?: AiSourceContext;
 }
 
+export type TaskArtifactStepStatus = 'pending' | 'running' | 'completed' | 'failed';
+
+export interface TaskArtifactStepPreview {
+  status: TaskArtifactStepStatus;
+  outputPath?: string;
+  error?: string;
+  completedAt?: string;
+}
+
+export interface TaskArtifactAssetPreview {
+  sceneId: number;
+  path: string;
+}
+
+export interface TaskDraftArtifactPreview {
+  draftDir: string;
+  draftContentPath: string;
+  draftMetaPath: string;
+}
+
+export interface TaskArtifactSnapshot {
+  available: boolean;
+  message: string;
+  taskId: string;
+  statePath: string;
+  outputDir: string;
+  updatedAt: string | null;
+  steps: Record<string, TaskArtifactStepPreview>;
+  artifact: Partial<PipelineArtifact>;
+  assets: {
+    images: TaskArtifactAssetPreview[];
+    narration: TaskArtifactAssetPreview[];
+  };
+  draft: TaskDraftArtifactPreview | null;
+}
+
 export interface DraftTemplate {
   id: string;
   name: string;

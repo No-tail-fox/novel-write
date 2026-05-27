@@ -48,6 +48,24 @@ describe('product shell ui', () => {
     expect(css).toContain('.artifact-preview');
   });
 
+  it('loads and renders all pipeline artifact steps in task detail preview tabs', async () => {
+    const main = await readFile(new URL('../src/main.tsx', import.meta.url), 'utf8');
+    const css = await readFile(new URL('../src/styles.css', import.meta.url), 'utf8');
+    const preload = await readFile(new URL('../electron/preload.ts', import.meta.url), 'utf8');
+    const electronMain = await readFile(new URL('../electron/main.ts', import.meta.url), 'utf8');
+
+    expect(preload).toContain('getTaskArtifacts');
+    expect(electronMain).toContain('task:get-artifacts');
+    expect(main).toContain('getTaskArtifacts');
+    expect(main).toContain('ArtifactPreviewContent');
+    for (const text of ['文案预审', '改写产物', '封面信息', '分镜分句', '绘图提示词', '批量生图', '配音字幕', '草稿输出']) {
+      expect(main).toContain(text);
+    }
+    expect(css).toContain('.artifact-section');
+    expect(css).toContain('.artifact-text-block');
+    expect(css).toContain('.artifact-scene-list');
+  });
+
   it('auto-refreshes live task metrics and exposes LLM model testing controls', async () => {
     const main = await readFile(new URL('../src/main.tsx', import.meta.url), 'utf8');
     const css = await readFile(new URL('../src/styles.css', import.meta.url), 'utf8');
