@@ -37,4 +37,34 @@ describe('file database', () => {
       await rm(dir, { recursive: true, force: true });
     }
   });
+
+  it('recovers interrupted running tasks as paused on startup', async () => {
+    const dir = await mkdtemp(join(tmpdir(), 'storybound-db-recover-'));
+    const file = join(dir, 'app.db');
+
+    try {
+      const db = await FileDatabase.open(file);
+      const task = await db.createTask({ title: 'Interrupted', inputText: '素材', track: 'character-story', style: 'photo-real' });
+      await db.updateTask(task.id, {
+        status: 'running',
+        currentStep: 0,
+        errorMessage: 'LLM API key is missing; cannot run real task content generation.',
+      });
+      await db.close();
+
+      const reopened = await FileDatabase.open(file);
+      const state = await reopened.getState();
+
+      expect(state.tasks[0]).toMatchObject({
+        status: 'paused',
+        currentStep: 0,
+        failedStep: 0,
+        retryFromStep: 0,
+      });
+      expect(state.tasks[0].errorMessage).toContain('LLM API key is missing');
+      await reopened.close();
+    } finally {
+      await rm(dir, { recursive: true, force: true });
+    }
+  });
 });

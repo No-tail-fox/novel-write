@@ -4,7 +4,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { FileDatabase } from '@shared/storage';
 import { runTask } from '@shared/runner';
-import type { ImagePrompt, PipelineArtifact, StoryboardScene } from '@shared/types';
+import type { ImagePrompt, PipelineArtifact, StoryboardScene, TaskStatus } from '@shared/types';
 import type { PyJianYingBridgeInput } from '@shared/jianying-bridge';
 
 const sampleInput =
@@ -78,6 +78,45 @@ describe('task runner', () => {
       expect(state.tasks[0].currentStep).toBe(4);
       expect(state.tasks[0].failedStep).toBe(4);
       expect(state.tasks[0].errorMessage).toMatch(/image provider/i);
+    } finally {
+      await db.close();
+      await rm(dir, { recursive: true, force: true });
+    }
+  });
+
+  it('notifies listeners after a failed task status is persisted', async () => {
+    const dir = await mkdtemp(join(tmpdir(), 'storybound-runner-failure-state-'));
+    const db = await FileDatabase.open(join(dir, 'data.db'));
+    const snapshots: TaskStatus[] = [];
+    const snapshotReads: Array<Promise<void>> = [];
+
+    try {
+      const task = await db.createTask({
+        title: 'Missing LLM',
+        inputText: sampleInput,
+        track: 'character-story',
+        style: 'photo-real',
+        speaker: 'voice',
+      });
+
+      await expect(
+        runTask(db, task, {
+          appDataDir: dir,
+          llm: async () => {
+            throw new Error('LLM API key is missing; cannot run real task content generation.');
+          },
+          onEvent: () => {
+            snapshotReads.push(
+              db.getState().then((state) => {
+                snapshots.push(state.tasks[0].status);
+              }),
+            );
+          },
+        }),
+      ).rejects.toThrow(/LLM API key is missing/);
+      await Promise.all(snapshotReads);
+
+      expect(snapshots.at(-1)).toBe('paused');
     } finally {
       await db.close();
       await rm(dir, { recursive: true, force: true });

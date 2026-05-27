@@ -316,7 +316,23 @@ export class FileDatabase {
     } else {
       this.db.run('UPDATE config SET data = ? WHERE id = 1', [json(mergeConfig(parseJson(config.data, defaultConfig)))]);
     }
+    this.recoverInterruptedTasks();
     this.seedShellDefaults();
+  }
+
+  private recoverInterruptedTasks(): void {
+    this.db.run(`
+      UPDATE tasks
+      SET
+        status = 'paused',
+        failed_step = COALESCE(failed_step, current_step),
+        retry_from_step = COALESCE(retry_from_step, current_step),
+        error_message = CASE
+          WHEN error_message IS NULL OR error_message = '' THEN '任务在上次运行时中断，请重试。'
+          ELSE error_message
+        END
+      WHERE status = 'running'
+    `);
   }
 
   private seedShellDefaults(): void {

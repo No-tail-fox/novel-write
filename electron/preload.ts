@@ -1,9 +1,10 @@
 import { contextBridge, ipcRenderer } from 'electron';
-import type { AccountProfile, ActivationState, AppConfig, AppState, CreateTaskInput, DraftTemplate, ImageLabRecord, PromptTemplate, TaskStatus, UiPreferences } from '../src/shared/types';
+import type { AccountProfile, ActivationState, AppConfig, AppState, CreateTaskInput, DraftTemplate, ImageLabRecord, LlmConfig, PromptTemplate, TaskStatus, UiPreferences } from '../src/shared/types';
 
 contextBridge.exposeInMainWorld('storybound', {
   getState: () => ipcRenderer.invoke('app:get-state'),
   saveConfig: (config: AppConfig) => ipcRenderer.invoke('app:save-config', config),
+  testLlmConfig: (config: LlmConfig) => ipcRenderer.invoke('llm:test-config', config),
   savePromptTemplate: (template: PromptTemplate) => ipcRenderer.invoke('prompt-template:save', template),
   resetPromptTemplates: () => ipcRenderer.invoke('prompt-template:reset'),
   saveDraftTemplate: (template: DraftTemplate) => ipcRenderer.invoke('draft-template:save', template),

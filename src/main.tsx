@@ -191,6 +191,16 @@ function makeFallbackApi(setState: (state: AppState) => void): StoryboundApi {
     async saveConfig(config: AppConfig) {
       return persist({ ...read(), config });
     },
+    async testLlmConfig(config) {
+      return {
+        status: config.apiKey ? 'warn' : 'fail',
+        detail: config.apiKey ? 'Browser preview cannot call the model test endpoint; run the Electron app to test it.' : 'API key is missing; fill it before testing the model.',
+        latencyMs: 0,
+        model: config.model,
+        endpoint: `${config.baseUrl || 'https://api.openai.com'}/v1/chat/completions`,
+        requestId: null,
+      };
+    },
     async savePromptTemplate(template: PromptTemplate) {
       const state = read();
       const next = state.promptTemplates.filter((item) => item.id !== template.id);
@@ -324,6 +334,15 @@ function App() {
       setState(hydrateState(next));
     });
   }, [api]);
+
+  const liveRefreshMs = state.tasks.some((task) => task.status === 'running' || task.status === 'pending') ? 1000 : 0;
+  useEffect(() => {
+    if (!liveRefreshMs) return undefined;
+    const timer = window.setInterval(() => {
+      api.getState().then((next) => setState(hydrateState(next))).catch(console.error);
+    }, liveRefreshMs);
+    return () => window.clearInterval(timer);
+  }, [api, liveRefreshMs]);
 
   async function navigate(view: ShellView) {
     if (view !== 'task-detail') {
@@ -753,6 +772,12 @@ function HistoryPage({ api, state, openTaskDetail }: { api: StoryboundApi; state
 
 function TaskDetailPage({ api, state, task, applyState, close }: { api: StoryboundApi; state: AppState; task: Task | null; applyState: (state: AppState) => void; close: () => void }) {
   const [tab, setTab] = useState<'preview' | 'storyboard' | 'audio'>('preview');
+  const [liveNow, setLiveNow] = useState(Date.now());
+  useEffect(() => {
+    if (task?.status !== 'running') return undefined;
+    const timer = window.setInterval(() => setLiveNow(Date.now()), 1000);
+    return () => window.clearInterval(timer);
+  }, [task?.id, task?.status]);
   if (!task) {
     return (
       <section className="panel full-panel">
@@ -795,7 +820,7 @@ function TaskDetailPage({ api, state, task, applyState, close }: { api: Storybou
             </button>
           </div>
           <div className="task-metrics">
-            <div><strong>{formatDuration(task.createdAt, task.completedAt)}</strong><span>总耗时</span></div>
+            <div><strong>{formatDuration(task.createdAt, task.completedAt, liveNow)}</strong><span>总耗时</span></div>
             <div><strong>{completedSteps}<small>/{pipelineSteps.length}</small></strong><span>当前步骤</span></div>
             <div><strong>{events.length || '-'}</strong><span>事件数</span></div>
           </div>
@@ -1168,9 +1193,23 @@ function SettingsPage({ api, state, applyState }: { api: StoryboundApi; state: A
   const [section, setSection] = useState('llm');
   const [draft, setDraft] = useState<AppConfig>(state.config);
   const [diagnostics, setDiagnostics] = useState('');
+  const [llmTestResult, setLlmTestResult] = useState('');
+  const [testingLlm, setTestingLlm] = useState(false);
   useEffect(() => setDraft(state.config), [state.config]);
   async function save() {
     applyState(await api.saveConfig(draft));
+  }
+  async function testLlmConfig() {
+    setTestingLlm(true);
+    setLlmTestResult('正在测试模型可用性...');
+    try {
+      const result = await api.testLlmConfig(draft.llm);
+      setLlmTestResult(`[${result.status}] ${result.detail}`);
+    } catch (error) {
+      setLlmTestResult(`[fail] ${error instanceof Error ? error.message : String(error)}`);
+    } finally {
+      setTestingLlm(false);
+    }
   }
   async function runDiagnostics() {
     const report = await api.runDiagnostics();
@@ -1212,6 +1251,13 @@ function SettingsPage({ api, state, applyState }: { api: StoryboundApi; state: A
             <ConfigInput label="API Key" value={draft.llm.apiKey} onChange={(value) => setDraft({ ...draft, llm: { ...draft.llm, apiKey: value } })} />
             <ConfigInput label="模型" value={draft.llm.model} onChange={(value) => setDraft({ ...draft, llm: { ...draft.llm, model: value } })} />
             <ConfigInput label="代理 URL" value={draft.llm.proxyUrl} onChange={(value) => setDraft({ ...draft, llm: { ...draft.llm, proxyUrl: value } })} />
+            <div className="button-row">
+              <button className="ghost-action" disabled={testingLlm} onClick={testLlmConfig}>
+                {testingLlm ? <Loader2 className="spin" size={15} /> : <Sparkles size={15} />}
+                测试模型可用性
+              </button>
+            </div>
+            {llmTestResult ? <div className="test-result">{llmTestResult}</div> : null}
           </SettingsCard>
         ) : null}
         {section === 'image' ? (
@@ -1439,9 +1485,9 @@ function artifactPanelTitle(task: Task, tab: 'preview' | 'storyboard' | 'audio')
   return task.currentStep >= 7 ? '最终剪映草稿目录' : '等待当前步骤产物落盘';
 }
 
-function formatDuration(start: string, end: string | null): string {
+function formatDuration(start: string, end: string | null, now = Date.now()): string {
   const startMs = new Date(start).getTime();
-  const endMs = end ? new Date(end).getTime() : Date.now();
+  const endMs = end ? new Date(end).getTime() : now;
   if (Number.isNaN(startMs) || Number.isNaN(endMs)) return '--';
   const seconds = Math.max(0, Math.floor((endMs - startMs) / 1000));
   const minutes = Math.floor(seconds / 60);

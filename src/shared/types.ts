@@ -29,6 +29,15 @@ export interface LlmConfig {
   proxyUrl: string;
 }
 
+export interface LlmModelTestResult {
+  status: 'pass' | 'warn' | 'fail';
+  detail: string;
+  latencyMs: number;
+  model: string;
+  endpoint: string;
+  requestId: string | null;
+}
+
 export interface ImageConfig {
   baseUrl: string;
   apiKey: string;

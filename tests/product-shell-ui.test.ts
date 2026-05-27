@@ -48,6 +48,18 @@ describe('product shell ui', () => {
     expect(css).toContain('.artifact-preview');
   });
 
+  it('auto-refreshes live task metrics and exposes LLM model testing controls', async () => {
+    const main = await readFile(new URL('../src/main.tsx', import.meta.url), 'utf8');
+    const css = await readFile(new URL('../src/styles.css', import.meta.url), 'utf8');
+
+    expect(main).toContain('liveRefreshMs');
+    expect(main).toContain('api.getState()');
+    expect(main).toContain('liveNow');
+    expect(main).toContain('testLlmConfig');
+    expect(main).toContain('测试模型可用性');
+    expect(css).toContain('.test-result');
+  });
+
   it('reuses the React root across Vite hot reloads', async () => {
     const main = await readFile(new URL('../src/main.tsx', import.meta.url), 'utf8');
 

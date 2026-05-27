@@ -6,6 +6,8 @@ import type {
   CreateTaskInput,
   DraftTemplate,
   ImageLabRecord,
+  LlmConfig,
+  LlmModelTestResult,
   PromptTemplate,
   TaskStatus,
   UiPreferences,
@@ -16,6 +18,7 @@ declare global {
     storybound?: {
       getState: () => Promise<AppState>;
       saveConfig: (config: AppConfig) => Promise<AppState>;
+      testLlmConfig: (config: LlmConfig) => Promise<LlmModelTestResult>;
       savePromptTemplate: (template: PromptTemplate) => Promise<AppState>;
       resetPromptTemplates: () => Promise<AppState>;
       saveDraftTemplate: (template: DraftTemplate) => Promise<AppState>;

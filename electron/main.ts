@@ -4,12 +4,12 @@ import { mkdir } from 'node:fs/promises';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { promisify } from 'node:util';
-import { createOpenAiCompatibleJsonLlm } from '../src/shared/llm-provider';
-import { createConfiguredImageGenerator, createConfiguredNarrationSynthesizer } from '../src/shared/media-providers';
+import { testOpenAiCompatibleLlm } from '../src/shared/llm-provider';
 import { createAiSourceResearcher } from '../src/shared/research';
 import { runTask } from '../src/shared/runner';
 import { FileDatabase } from '../src/shared/storage';
-import type { AccountProfile, ActivationState, AppConfig, CreateTaskInput, DraftTemplate, PromptTemplate, TaskStatus, UiPreferences } from '../src/shared/types';
+import { createTaskRuntimeProviders } from '../src/shared/task-runtime-providers';
+import type { AccountProfile, ActivationState, AppConfig, CreateTaskInput, DraftTemplate, LlmConfig, PromptTemplate, TaskStatus, UiPreferences } from '../src/shared/types';
 import { getRendererIndexPath } from './paths';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
@@ -57,6 +57,10 @@ async function sendTaskState(database: FileDatabase): Promise<void> {
   mainWindow?.webContents.send('task:event', state);
 }
 
+function notifyTaskState(database: FileDatabase): void {
+  void sendTaskState(database);
+}
+
 ipcMain.handle('app:get-state', async () => {
   const database = await getDb();
   return database.getState();
@@ -67,6 +71,8 @@ ipcMain.handle('app:save-config', async (_event, config) => {
   await database.upsertConfig(config as AppConfig);
   return database.getState();
 });
+
+ipcMain.handle('llm:test-config', async (_event, config: LlmConfig) => testOpenAiCompatibleLlm(config));
 
 ipcMain.handle('prompt-template:save', async (_event, template: PromptTemplate) => {
   const database = await getDb();
@@ -117,12 +123,10 @@ ipcMain.handle('task:create-and-run', async (_event, input: CreateTaskInput) => 
   const taskWorkDir = join(app.getPath('userData'), 'storybound-replica', 'tasks', task.id);
   void runTask(database, task, {
     appDataDir: join(app.getPath('userData'), 'storybound-replica'),
-    llm: createOpenAiCompatibleJsonLlm(state.config.llm),
     resolveAiSourceContext: createAiSourceResearcher(state.config),
-    generateImages: createConfiguredImageGenerator(state.config, taskWorkDir),
-    synthesizeNarration: createConfiguredNarrationSynthesizer(state.config, taskWorkDir),
+    ...createTaskRuntimeProviders(state.config, taskWorkDir),
     onEvent: () => {
-      void sendTaskState(database);
+      notifyTaskState(database);
     },
   }).catch((error) => {
     console.error('Background task failed', error);
@@ -148,12 +152,10 @@ ipcMain.handle('task:retry', async (_event, id: string) => {
     const taskWorkDir = join(app.getPath('userData'), 'storybound-replica', 'tasks', task.id);
     await runTask(database, { ...task, status: 'pending', errorMessage: '' }, {
       appDataDir: join(app.getPath('userData'), 'storybound-replica'),
-      llm: createOpenAiCompatibleJsonLlm(state.config.llm),
       resolveAiSourceContext: createAiSourceResearcher(state.config),
-      generateImages: createConfiguredImageGenerator(state.config, taskWorkDir),
-      synthesizeNarration: createConfiguredNarrationSynthesizer(state.config, taskWorkDir),
+      ...createTaskRuntimeProviders(state.config, taskWorkDir),
       onEvent: () => {
-        void sendTaskState(database);
+        notifyTaskState(database);
       },
     });
   }

@@ -12,7 +12,7 @@ export interface RunTaskOptions {
   onEvent?: (detail: string) => void;
   llm?: JsonLlm;
   resolveAiSourceContext?: (task: Task) => Promise<AiSourceContext>;
-  generatePipelineArtifact?: (task: Task) => Promise<PipelineArtifact>;
+  generatePipelineArtifact?: (task: Task, sourceContext?: AiSourceContext) => Promise<PipelineArtifact>;
   generateImages?: (scenes: StoryboardScene[], prompts: ImagePrompt[], task: Task) => Promise<SceneAsset[]>;
   synthesizeNarration?: (scenes: StoryboardScene[], task: Task) => Promise<SceneAsset[]>;
   draftWriterOptions?: WriteJianyingDraftOptions;
@@ -152,6 +152,7 @@ export async function runTask(db: FileDatabase, task: Task, options: RunTaskOpti
       retryFromStep: null,
       artifactStatePath: statePath,
     });
+    options.onEvent?.('Task completed');
     return { ...task, status: 'completed', currentStep: 7, completedAt, outputDir: draftDir, errorMessage: '', failedStep: null, retryFromStep: null, artifactStatePath: statePath };
   } catch (error) {
     const step = activeStep ?? firstRunnableStep(pipeline);
@@ -167,6 +168,7 @@ export async function runTask(db: FileDatabase, task: Task, options: RunTaskOpti
       retryFromStep: step,
       artifactStatePath: statePath,
     });
+    options.onEvent?.('Task paused after failure');
     throw error;
   }
 }
@@ -186,7 +188,7 @@ async function ensureContentArtifact(input: {
   }
   const sourceContext = await prepareAiSourceContext({ task, options, workDir, emit, pipeline });
   if (options.generatePipelineArtifact) {
-    const artifact = await options.generatePipelineArtifact(task);
+    const artifact = await options.generatePipelineArtifact(task, sourceContext ?? undefined);
     pipeline.artifact = { ...artifact, subtitles: buildSubtitleTrack(artifact.scenes), sourceContext: sourceContext ?? artifact.sourceContext };
     await writeContentArtifacts(workDir, hydrateArtifact(pipeline.artifact), task);
     for (const step of [0, 1, 2, 3]) {
