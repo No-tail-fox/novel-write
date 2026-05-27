@@ -62,6 +62,61 @@ describe('configured media providers', () => {
     }
   });
 
+  it('times out OpenAI-compatible image requests instead of hanging forever', async () => {
+    const dir = await mkdtemp(join(tmpdir(), 'storybound-provider-timeout-'));
+    vi.stubGlobal(
+      'fetch',
+      vi.fn((_url: string, init?: RequestInit) => {
+        return new Promise((_resolve, reject) => {
+          init?.signal?.addEventListener('abort', () => reject(new Error('aborted')));
+        });
+      }),
+    );
+
+    try {
+      const config: AppConfig = {
+        ...defaultConfig,
+        imageProvider: 'gpt_image',
+        gptImage: { ...defaultConfig.gptImage, apiKey: 'image-key', baseUrl: 'https://image.example/v1', model: 'gpt-image-1', timeoutMs: 1 },
+      };
+      const generate = createConfiguredImageGenerator(config, dir);
+      const pending = generate([scene], [prompt], task);
+      await new Promise((resolve) => setTimeout(resolve, 0));
+      await expect(pending).rejects.toThrow(/timed out/i);
+    } finally {
+      await rm(dir, { recursive: true, force: true });
+    }
+  }, 10_000);
+
+  it('propagates parent abort reasons instead of reporting them as provider timeouts', async () => {
+    const dir = await mkdtemp(join(tmpdir(), 'storybound-provider-abort-'));
+    const controller = new AbortController();
+    vi.stubGlobal(
+      'fetch',
+      vi.fn((_url: string, init?: RequestInit) => {
+        return new Promise((_resolve, reject) => {
+          init?.signal?.addEventListener('abort', () => reject(new Error('aborted')));
+        });
+      }),
+    );
+
+    try {
+      const config: AppConfig = {
+        ...defaultConfig,
+        imageProvider: 'gpt_image',
+        gptImage: { ...defaultConfig.gptImage, apiKey: 'image-key', baseUrl: 'https://image.example/v1', model: 'gpt-image-1', timeoutMs: 180_000 },
+      };
+      const generate = createConfiguredImageGenerator(config, dir);
+      const pending = generate([scene], [prompt], task, controller.signal);
+      await new Promise((resolve) => setTimeout(resolve, 0));
+      controller.abort('用户取消');
+
+      await expect(pending).rejects.toThrow(/用户取消/);
+    } finally {
+      await rm(dir, { recursive: true, force: true });
+    }
+  }, 10_000);
+
   it('generates narration files from MiniMax T2A hex audio', async () => {
     const dir = await mkdtemp(join(tmpdir(), 'storybound-provider-tts-'));
     const audioBytes = Buffer.from('real-audio');

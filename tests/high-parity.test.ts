@@ -69,7 +69,12 @@ describe('high parity Storybound shell model', () => {
         step3PromptSnapshot: 'custom step3',
       });
 
-      await db.updateTask(task.id, { status: 'paused', currentStep: 3 });
+      await db.updateTask(task.id, {
+        status: 'paused',
+        currentStep: 3,
+        startedAt: '2026-05-27T00:00:00.000Z',
+        lastHeartbeatAt: '2026-05-27T00:00:01.000Z',
+      });
       await db.updateTask(task.id, { status: 'cancelled', errorMessage: 'user cancelled' });
       const state = await db.getState();
 
@@ -88,6 +93,8 @@ describe('high parity Storybound shell model', () => {
         ttsProvider: 'minimax',
         ttsSpeed: 1.15,
         step3PromptSnapshot: 'custom step3',
+        startedAt: '2026-05-27T00:00:00.000Z',
+        lastHeartbeatAt: '2026-05-27T00:00:01.000Z',
       });
 
       await db.close();

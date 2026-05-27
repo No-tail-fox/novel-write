@@ -12,13 +12,20 @@ import { composeCopyFromSources, createAiSourceResearcher, searchWebSources } fr
 import { runTask } from '../src/shared/runner';
 import { FileDatabase } from '../src/shared/storage';
 import { createTaskRuntimeProviders } from '../src/shared/task-runtime-providers';
-import type { AccountProfile, ActivationState, AppConfig, ConfigTestTarget, CreateTaskInput, DraftTemplate, LlmConfig, PromptTemplate, ProviderModelListRequest, ResearchCopyComposeInput, TaskStatus, UiPreferences } from '../src/shared/types';
+import type { AccountProfile, ActivationState, AppConfig, ConfigTestTarget, CreateTaskInput, DraftTemplate, LlmConfig, PromptTemplate, ProviderModelListRequest, ResearchCopyComposeInput, Task, TaskStatus, UiPreferences } from '../src/shared/types';
 import { getRendererIndexPath } from './paths';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const execFileAsync = promisify(execFile);
 let mainWindow: BrowserWindow | null = null;
 let db: FileDatabase | null = null;
+interface RunningTaskRun {
+  controller: AbortController;
+  restartAfterAbort: boolean;
+}
+
+const runningTasks = new Map<string, RunningTaskRun>();
+const staleRunningMs = 5 * 60 * 1000;
 
 async function getDb(): Promise<FileDatabase> {
   if (db) return db;
@@ -53,6 +60,9 @@ async function createWindow(): Promise<void> {
   } else {
     await mainWindow.loadFile(getRendererIndexPath(__dirname));
   }
+  const database = await getDb();
+  await pauseStaleRunningTasks(database);
+  await sendTaskState(database);
 }
 
 async function sendTaskState(database: FileDatabase): Promise<void> {
@@ -62,6 +72,101 @@ async function sendTaskState(database: FileDatabase): Promise<void> {
 
 function notifyTaskState(database: FileDatabase): void {
   void sendTaskState(database);
+}
+
+function taskWorkDir(task: Task): string {
+  return join(app.getPath('userData'), 'storybound-replica', 'tasks', task.id);
+}
+
+function appDataDir(): string {
+  return join(app.getPath('userData'), 'storybound-replica');
+}
+
+async function pauseStaleRunningTasks(database: FileDatabase): Promise<void> {
+  const state = await database.getState();
+  const now = Date.now();
+  for (const task of state.tasks) {
+    if (task.status !== 'running' || runningTasks.has(task.id)) continue;
+    const heartbeat = task.lastHeartbeatAt ? new Date(task.lastHeartbeatAt).getTime() : 0;
+    if (!heartbeat || Number.isNaN(heartbeat) || now - heartbeat > staleRunningMs) {
+      await database.updateTask(task.id, {
+        status: 'paused',
+        currentStep: task.currentStep,
+        failedStep: task.failedStep ?? task.currentStep,
+        retryFromStep: task.retryFromStep ?? task.currentStep,
+        errorMessage: '运行中断，可从失败/当前步骤重试。',
+        lastHeartbeatAt: new Date().toISOString(),
+      });
+      await database.addTaskEvent(task.id, {
+        type: 'step_error',
+        step: task.failedStep ?? task.currentStep,
+        agent: null,
+        detail: '运行中断，可从失败/当前步骤重试。',
+      });
+    }
+  }
+}
+
+async function buildRunOptions(database: FileDatabase, task: Task, controller: AbortController) {
+  const state = await database.getState();
+  return {
+    appDataDir: appDataDir(),
+    signal: controller.signal,
+    resolveAiSourceContext: createAiSourceResearcher(state.config),
+    ...createTaskRuntimeProviders(state.config, taskWorkDir(task)),
+    onEvent: () => {
+      notifyTaskState(database);
+    },
+    onHeartbeat: async () => {
+      await sendTaskState(database);
+    },
+  };
+}
+
+function startTaskRun(database: FileDatabase, task: Task): boolean {
+  if (runningTasks.has(task.id)) return false;
+  const controller = new AbortController();
+  const run: RunningTaskRun = { controller, restartAfterAbort: false };
+  runningTasks.set(task.id, run);
+  void (async () => {
+    try {
+      await runTask(database, { ...task, status: 'pending', errorMessage: '' }, await buildRunOptions(database, task, controller));
+    } catch (error) {
+      console.error('Background task failed', error);
+    } finally {
+      const currentRun = runningTasks.get(task.id);
+      const shouldRestart = currentRun === run && run.restartAfterAbort;
+      if (currentRun === run) {
+        runningTasks.delete(task.id);
+      }
+      if (shouldRestart) {
+        const latestTask = (await database.getState()).tasks.find((item) => item.id === task.id);
+        if (latestTask && latestTask.status !== 'cancelled' && latestTask.status !== 'completed') {
+          startTaskRun(database, { ...latestTask, status: 'pending', errorMessage: '' });
+          return;
+        }
+      }
+      await sendTaskState(database);
+    }
+  })();
+  return true;
+}
+
+async function resumeTaskRun(database: FileDatabase, task: Task): Promise<void> {
+  const existingRun = runningTasks.get(task.id);
+  if (existingRun) {
+    existingRun.restartAfterAbort = true;
+    if (!existingRun.controller.signal.aborted) {
+      existingRun.controller.abort('用户重试');
+    }
+    await database.updateTask(task.id, {
+      errorMessage: '正在停止当前运行，随后继续重试。',
+      lastHeartbeatAt: new Date().toISOString(),
+    });
+    return;
+  }
+  await database.updateTask(task.id, { status: 'pending', errorMessage: '' });
+  startTaskRun(database, { ...task, status: 'pending', errorMessage: '' });
 }
 
 ipcMain.handle('app:get-state', async () => {
@@ -149,27 +254,33 @@ ipcMain.handle('ui:save-preferences', async (_event, ui: UiPreferences) => {
 ipcMain.handle('task:create-and-run', async (_event, input: CreateTaskInput) => {
   const database = await getDb();
   const task = await database.createTask(input);
-  const state = await database.getState();
-  const taskWorkDir = join(app.getPath('userData'), 'storybound-replica', 'tasks', task.id);
-  void runTask(database, task, {
-    appDataDir: join(app.getPath('userData'), 'storybound-replica'),
-    resolveAiSourceContext: createAiSourceResearcher(state.config),
-    ...createTaskRuntimeProviders(state.config, taskWorkDir),
-    onEvent: () => {
-      notifyTaskState(database);
-    },
-  }).catch((error) => {
-    console.error('Background task failed', error);
-  });
+  startTaskRun(database, task);
   return database.getState();
 });
 
 ipcMain.handle('task:update-status', async (_event, input: { id: string; status: TaskStatus }) => {
   const database = await getDb();
-  await database.updateTask(input.id, {
-    status: input.status,
-    errorMessage: input.status === 'cancelled' ? '用户取消' : '',
-  });
+  const state = await database.getState();
+  const task = state.tasks.find((item) => item.id === input.id);
+  if (!task) return state;
+  if (input.status === 'running') {
+    await resumeTaskRun(database, task);
+    return database.getState();
+  }
+  if (input.status === 'paused' || input.status === 'cancelled') {
+    const existingRun = runningTasks.get(input.id);
+    if (existingRun) {
+      existingRun.restartAfterAbort = false;
+      existingRun.controller.abort(input.status === 'cancelled' ? '用户取消' : '用户暂停');
+    }
+    await database.updateTask(input.id, {
+      status: input.status,
+      errorMessage: input.status === 'cancelled' ? '用户取消' : task.errorMessage,
+      failedStep: input.status === 'paused' ? task.failedStep ?? task.currentStep : task.failedStep,
+      retryFromStep: input.status === 'paused' ? task.retryFromStep ?? task.currentStep : task.retryFromStep,
+      lastHeartbeatAt: new Date().toISOString(),
+    });
+  }
   return database.getState();
 });
 
@@ -178,16 +289,7 @@ ipcMain.handle('task:retry', async (_event, id: string) => {
   const state = await database.getState();
   const task = state.tasks.find((item) => item.id === id);
   if (task) {
-    await database.updateTask(id, { status: 'pending', errorMessage: '' });
-    const taskWorkDir = join(app.getPath('userData'), 'storybound-replica', 'tasks', task.id);
-    await runTask(database, { ...task, status: 'pending', errorMessage: '' }, {
-      appDataDir: join(app.getPath('userData'), 'storybound-replica'),
-      resolveAiSourceContext: createAiSourceResearcher(state.config),
-      ...createTaskRuntimeProviders(state.config, taskWorkDir),
-      onEvent: () => {
-        notifyTaskState(database);
-      },
-    });
+    await resumeTaskRun(database, task);
   }
   return database.getState();
 });

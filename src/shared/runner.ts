@@ -10,11 +10,13 @@ import { formatAiSourceContext } from './research';
 export interface RunTaskOptions {
   appDataDir: string;
   onEvent?: (detail: string) => void;
+  signal?: AbortSignal;
+  onHeartbeat?: (taskId: string, step: number, detail: string) => Promise<void>;
   llm?: JsonLlm;
   resolveAiSourceContext?: (task: Task) => Promise<AiSourceContext>;
   generatePipelineArtifact?: (task: Task, sourceContext?: AiSourceContext) => Promise<PipelineArtifact>;
-  generateImages?: (scenes: StoryboardScene[], prompts: ImagePrompt[], task: Task) => Promise<SceneAsset[]>;
-  synthesizeNarration?: (scenes: StoryboardScene[], task: Task) => Promise<SceneAsset[]>;
+  generateImages?: (scenes: StoryboardScene[], prompts: ImagePrompt[], task: Task, signal?: AbortSignal) => Promise<SceneAsset[]>;
+  synthesizeNarration?: (scenes: StoryboardScene[], task: Task, signal?: AbortSignal) => Promise<SceneAsset[]>;
   draftWriterOptions?: WriteJianyingDraftOptions;
 }
 
@@ -62,6 +64,7 @@ export async function runTask(db: FileDatabase, task: Task, options: RunTaskOpti
 
   let pipeline = await loadPipelineState(statePath, task.id);
   let activeStep: number | null = task.retryFromStep ?? firstRunnableStep(pipeline);
+  const startedAt = new Date().toISOString();
   await db.updateTask(task.id, {
     status: 'running',
     currentStep: activeStep,
@@ -70,6 +73,8 @@ export async function runTask(db: FileDatabase, task: Task, options: RunTaskOpti
     failedStep: null,
     retryFromStep: activeStep,
     artifactStatePath: statePath,
+    startedAt,
+    lastHeartbeatAt: startedAt,
   });
 
   const emit = async (type: string, step: number | null, agent: string | null, detail: string, data?: unknown) => {
@@ -88,6 +93,12 @@ export async function runTask(db: FileDatabase, task: Task, options: RunTaskOpti
     await writeFile(statePath, JSON.stringify(pipeline, null, 2), 'utf8');
   };
 
+  const heartbeat = async (step: number, detail: string) => {
+    throwIfAborted(options.signal);
+    await db.updateTask(task.id, { lastHeartbeatAt: new Date().toISOString(), currentStep: step, retryFromStep: step });
+    await options.onHeartbeat?.(task.id, step, detail);
+  };
+
   const markStep = async (step: number, status: StepStatus, patch: Partial<PipelineState['steps'][string]> = {}) => {
     pipeline.steps[String(step)] = {
       ...(pipeline.steps[String(step)] ?? { status: 'pending' }),
@@ -99,17 +110,23 @@ export async function runTask(db: FileDatabase, task: Task, options: RunTaskOpti
   };
 
   try {
+    throwIfAborted(options.signal);
+    await heartbeat(activeStep ?? 0, 'task started');
     await ensureContentArtifact({ db, task, options, workDir, emit, markStep, pipeline });
     const artifact = hydrateArtifact(pipeline.artifact);
     activeStep = 4;
+    await heartbeat(4, 'image step');
     await ensureImages({ db, task, artifact, options, emit, markStep, pipeline });
     activeStep = 5;
+    await heartbeat(5, 'narration step');
     await ensureNarration({ db, task, artifact, options, emit, markStep, pipeline });
 
     activeStep = 6;
+    await heartbeat(6, 'draft step');
     await db.updateTask(task.id, { currentStep: 6, retryFromStep: 6 });
     if (pipeline.steps['6']?.status !== 'completed') {
       await markStep(6, 'running');
+      await heartbeat(6, 'draft running');
       await emit('step_start', 6, 'Draft', '写入剪映草稿目录');
       const state = await db.getState();
       const bgm = resolveBgm(state.config.jianying.bgmLibrary, task.bgmId);
@@ -137,6 +154,7 @@ export async function runTask(db: FileDatabase, task: Task, options: RunTaskOpti
         draftMetaPath: draft.draftMetaPath,
       };
       await markStep(6, 'completed', { outputPath: draft.draftDir });
+      await heartbeat(6, 'draft completed');
       await emit('step_complete', 6, 'Draft', 'Jianying draft folder generated', draft);
     }
 
@@ -151,22 +169,26 @@ export async function runTask(db: FileDatabase, task: Task, options: RunTaskOpti
       failedStep: null,
       retryFromStep: null,
       artifactStatePath: statePath,
+      lastHeartbeatAt: new Date().toISOString(),
     });
     options.onEvent?.('Task completed');
-    return { ...task, status: 'completed', currentStep: 7, completedAt, outputDir: draftDir, errorMessage: '', failedStep: null, retryFromStep: null, artifactStatePath: statePath };
+    return { ...task, status: 'completed', currentStep: 7, completedAt, outputDir: draftDir, errorMessage: '', failedStep: null, retryFromStep: null, artifactStatePath: statePath, startedAt, lastHeartbeatAt: new Date().toISOString() };
   } catch (error) {
-    const step = activeStep ?? firstRunnableStep(pipeline);
+    const latestTask = (await db.getState()).tasks.find((item) => item.id === task.id);
+    const step = latestTask?.currentStep ?? activeStep ?? firstRunnableStep(pipeline);
     const message = error instanceof Error ? error.message : String(error);
+    const cancelled = /cancel|取消/i.test(message);
     await markStep(step, 'failed', { error: message });
     await emit('step_error', step, stepAgents[step] ?? null, message);
     await db.updateTask(task.id, {
-      status: 'paused',
+      status: cancelled ? 'cancelled' : 'paused',
       currentStep: step,
       errorMessage: message,
       outputDir: workDir,
-      failedStep: step,
-      retryFromStep: step,
+      failedStep: cancelled ? null : step,
+      retryFromStep: cancelled ? null : step,
       artifactStatePath: statePath,
+      lastHeartbeatAt: new Date().toISOString(),
     });
     options.onEvent?.('Task paused after failure');
     throw error;
@@ -183,17 +205,24 @@ async function ensureContentArtifact(input: {
   pipeline: PipelineState;
 }): Promise<void> {
   const { db, task, options, workDir, emit, markStep, pipeline } = input;
-  if (pipeline.steps['3']?.status === 'completed' && pipeline.artifact.reviewedText && pipeline.artifact.imagePrompts) {
+  throwIfAborted(options.signal);
+  if (hasCompleteContentArtifact(pipeline)) {
+    const artifact = hydrateArtifact(pipeline.artifact);
+    pipeline.artifact.subtitles = artifact.subtitles;
+    await writeContentArtifacts(workDir, artifact, task);
     return;
   }
   const sourceContext = await prepareAiSourceContext({ task, options, workDir, emit, pipeline });
+  throwIfAborted(options.signal);
   if (options.generatePipelineArtifact) {
     const artifact = await options.generatePipelineArtifact(task, sourceContext ?? undefined);
+    throwIfAborted(options.signal);
     pipeline.artifact = { ...artifact, subtitles: buildSubtitleTrack(artifact.scenes), sourceContext: sourceContext ?? artifact.sourceContext };
     await writeContentArtifacts(workDir, hydrateArtifact(pipeline.artifact), task);
     for (const step of [0, 1, 2, 3]) {
       await db.updateTask(task.id, { currentStep: step, retryFromStep: step });
       await markStep(step, 'completed', { outputPath: contentOutputPath(workDir, step) });
+      await heartbeatTask(db, task.id, options, step, `content step ${step} completed`);
     }
     return;
   }
@@ -201,77 +230,99 @@ async function ensureContentArtifact(input: {
     throw new Error('LLM provider is not configured; cannot run real content generation.');
   }
 
-  await db.updateTask(task.id, { currentStep: 0, retryFromStep: 0 });
-  await markStep(0, 'running');
-  await emit('step_start', 0, 'Reviewer', 'LLM 文案预审');
-  const sourceText = buildReviewSourceText(task, sourceContext);
-  const review = await options.llm<{ reviewedText: string }>({
-    step: 0,
-    name: 'review',
-    messages: [
-      { role: 'system', content: 'Return strict JSON only. Schema: {"reviewedText": string}.' },
-      { role: 'user', content: sourceText },
-    ],
-  });
-  pipeline.artifact.reviewedText = requireString(review.json.reviewedText, 'reviewedText');
-  await writeFile(join(workDir, '00-reviewed.txt'), pipeline.artifact.reviewedText, 'utf8');
-  await markStep(0, 'completed', { outputPath: join(workDir, '00-reviewed.txt') });
-  await emit('step_complete', 0, 'Reviewer', `已保存 ${pipeline.artifact.reviewedText.length} 字`, { requestId: review.requestId });
-
-  await db.updateTask(task.id, { currentStep: 1, retryFromStep: 1 });
-  await markStep(1, 'running');
-  await emit('step_start', 1, 'Writer', 'LLM 改写与封面信息');
-  const rewrite = await options.llm<{ rewrittenCopy: string; cover: CoverMetadata }>({
-    step: 1,
-    name: 'rewrite',
-    messages: [
-      { role: 'system', content: 'Return strict JSON only. Schema: {"rewrittenCopy": string, "cover": {"title": string, "subtitle": string[], "summary": string, "tags": string[], "comments": string[]}}.' },
-      { role: 'user', content: pipeline.artifact.reviewedText },
-    ],
-  });
-  pipeline.artifact.rewrittenCopy = requireString(rewrite.json.rewrittenCopy, 'rewrittenCopy');
-  pipeline.artifact.cover = normalizeCover(rewrite.json.cover);
-  await writeFile(join(workDir, '01-rewritten-copy.md'), pipeline.artifact.rewrittenCopy, 'utf8');
-  await writeFile(join(workDir, '00-cover-title.json'), JSON.stringify(pipeline.artifact.cover, null, 2), 'utf8');
-  await markStep(1, 'completed', { outputPath: join(workDir, '01-rewritten-copy.md') });
-  await emit('step_complete', 1, 'Writer', `改写完成：${pipeline.artifact.rewrittenCopy.length} 字`, { requestId: rewrite.requestId });
-
-  await db.updateTask(task.id, { currentStep: 2, retryFromStep: 2 });
-  await markStep(2, 'running');
-  await emit('step_start', 2, 'Storyboard', 'LLM 影视分镜分句');
-  const storyboard = await options.llm<{ scenes: StoryboardScene[] }>({
-    step: 2,
-    name: 'storyboard',
-    messages: [
-      { role: 'system', content: 'Return strict JSON only. Schema: {"scenes":[{"id":number,"cap":string,"descPrompt":string,"durationMs":number}]}.' },
-      { role: 'user', content: pipeline.artifact.rewrittenCopy },
-    ],
-  });
-  pipeline.artifact.scenes = normalizeScenes(storyboard.json.scenes);
-  await writeFile(join(workDir, '02-sentences.json'), JSON.stringify(pipeline.artifact.scenes, null, 2), 'utf8');
-  await markStep(2, 'completed', { outputPath: join(workDir, '02-sentences.json') });
-  await emit('step_complete', 2, 'Storyboard', `分镜 ${pipeline.artifact.scenes.length} 个`, { requestId: storyboard.requestId });
-
-  await db.updateTask(task.id, { currentStep: 3, retryFromStep: 3 });
-  await markStep(3, 'running');
-  await emit('step_start', 3, 'Prompt', 'LLM 生成绘图提示词');
-  const prompts = await options.llm<{ imagePrompts: ImagePrompt[] }>({
-    step: 3,
-    name: 'image-prompts',
-    messages: [
-      { role: 'system', content: 'Return strict JSON only. Schema: {"imagePrompts":[{"sceneId":number,"cap":string,"prompt":string,"negativePrompt":string,"style":string,"ratio":string,"characterProfile":string}]}.' },
-      { role: 'user', content: JSON.stringify({ scenes: pipeline.artifact.scenes, style: task.style, ratio: task.ratio }) },
-    ],
-  });
-  const scenes = pipeline.artifact.scenes;
-  if (!scenes) {
-    throw new Error('Pipeline storyboard scenes are missing; retry from storyboard step.');
+  if (!isStepCompleted(pipeline, 0) || !pipeline.artifact.reviewedText) {
+    await db.updateTask(task.id, { currentStep: 0, retryFromStep: 0 });
+    await heartbeatTask(db, task.id, options, 0, 'LLM review');
+    await markStep(0, 'running');
+    await emit('step_start', 0, 'Reviewer', 'LLM 文案预审');
+    const sourceText = buildReviewSourceText(task, sourceContext);
+    const review = await options.llm<{ reviewedText: string }>({
+      step: 0,
+      name: 'review',
+      signal: options.signal,
+      messages: [
+        { role: 'system', content: 'Return strict JSON only. Schema: {"reviewedText": string}.' },
+        { role: 'user', content: sourceText },
+      ],
+    });
+    pipeline.artifact.reviewedText = requireString(review.json.reviewedText, 'reviewedText');
+    await writeFile(join(workDir, '00-reviewed.txt'), pipeline.artifact.reviewedText, 'utf8');
+    await markStep(0, 'completed', { outputPath: join(workDir, '00-reviewed.txt') });
+    await heartbeatTask(db, task.id, options, 0, 'LLM review completed');
+    await emit('step_complete', 0, 'Reviewer', `已保存 ${pipeline.artifact.reviewedText.length} 字`, { requestId: review.requestId });
   }
-  pipeline.artifact.imagePrompts = normalizePrompts(prompts.json.imagePrompts, scenes, task);
-  pipeline.artifact.subtitles = buildSubtitleTrack(scenes);
+
+  if (!isStepCompleted(pipeline, 1) || !pipeline.artifact.rewrittenCopy || !pipeline.artifact.cover) {
+    await db.updateTask(task.id, { currentStep: 1, retryFromStep: 1 });
+    await heartbeatTask(db, task.id, options, 1, 'LLM rewrite');
+    await markStep(1, 'running');
+    await emit('step_start', 1, 'Writer', 'LLM 改写与封面信息');
+    const rewrite = await options.llm<{ rewrittenCopy: string; cover: CoverMetadata }>({
+      step: 1,
+      name: 'rewrite',
+      signal: options.signal,
+      messages: [
+        { role: 'system', content: 'Return strict JSON only. Schema: {"rewrittenCopy": string, "cover": {"title": string, "subtitle": string[], "summary": string, "tags": string[], "comments": string[]}}.' },
+        { role: 'user', content: requireString(pipeline.artifact.reviewedText, 'reviewedText') },
+      ],
+    });
+    pipeline.artifact.rewrittenCopy = requireString(rewrite.json.rewrittenCopy, 'rewrittenCopy');
+    pipeline.artifact.cover = normalizeCover(rewrite.json.cover);
+    await writeFile(join(workDir, '01-rewritten-copy.md'), pipeline.artifact.rewrittenCopy, 'utf8');
+    await writeFile(join(workDir, '00-cover-title.json'), JSON.stringify(pipeline.artifact.cover, null, 2), 'utf8');
+    await markStep(1, 'completed', { outputPath: join(workDir, '01-rewritten-copy.md') });
+    await heartbeatTask(db, task.id, options, 1, 'LLM rewrite completed');
+    await emit('step_complete', 1, 'Writer', `改写完成：${pipeline.artifact.rewrittenCopy.length} 字`, { requestId: rewrite.requestId });
+  }
+
+  if (!isStepCompleted(pipeline, 2) || !pipeline.artifact.scenes) {
+    await db.updateTask(task.id, { currentStep: 2, retryFromStep: 2 });
+    await heartbeatTask(db, task.id, options, 2, 'LLM storyboard');
+    await markStep(2, 'running');
+    await emit('step_start', 2, 'Storyboard', 'LLM 影视分镜分句');
+    const storyboard = await options.llm<{ scenes: StoryboardScene[] }>({
+      step: 2,
+      name: 'storyboard',
+      signal: options.signal,
+      messages: [
+        { role: 'system', content: 'Return strict JSON only. Schema: {"scenes":[{"id":number,"cap":string,"descPrompt":string,"durationMs":number}]}.' },
+        { role: 'user', content: requireString(pipeline.artifact.rewrittenCopy, 'rewrittenCopy') },
+      ],
+    });
+    pipeline.artifact.scenes = normalizeScenes(storyboard.json.scenes);
+    await writeFile(join(workDir, '02-sentences.json'), JSON.stringify(pipeline.artifact.scenes, null, 2), 'utf8');
+    await markStep(2, 'completed', { outputPath: join(workDir, '02-sentences.json') });
+    await heartbeatTask(db, task.id, options, 2, 'LLM storyboard completed');
+    await emit('step_complete', 2, 'Storyboard', `分镜 ${pipeline.artifact.scenes.length} 个`, { requestId: storyboard.requestId });
+  }
+
+  if (!isStepCompleted(pipeline, 3) || !pipeline.artifact.imagePrompts) {
+    await db.updateTask(task.id, { currentStep: 3, retryFromStep: 3 });
+    await heartbeatTask(db, task.id, options, 3, 'LLM prompts');
+    await markStep(3, 'running');
+    await emit('step_start', 3, 'Prompt', 'LLM 生成绘图提示词');
+    const prompts = await options.llm<{ imagePrompts: ImagePrompt[] }>({
+      step: 3,
+      name: 'image-prompts',
+      signal: options.signal,
+      messages: [
+        { role: 'system', content: 'Return strict JSON only. Schema: {"imagePrompts":[{"sceneId":number,"cap":string,"prompt":string,"negativePrompt":string,"style":string,"ratio":string,"characterProfile":string}]}.' },
+        { role: 'user', content: JSON.stringify({ scenes: pipeline.artifact.scenes, style: task.style, ratio: task.ratio }) },
+      ],
+    });
+    if (!pipeline.artifact.scenes) {
+      throw new Error('Pipeline scenes are missing; retry from storyboard step.');
+    }
+    pipeline.artifact.imagePrompts = normalizePrompts(prompts.json.imagePrompts, pipeline.artifact.scenes, task);
+    await markStep(3, 'completed', { outputPath: join(workDir, '03-image-prompts.json') });
+    await heartbeatTask(db, task.id, options, 3, 'LLM prompts completed');
+    await emit('step_complete', 3, 'Prompt', `已生成 ${pipeline.artifact.imagePrompts.length} 条图片提示词`, { requestId: prompts.requestId });
+  }
+  if (!pipeline.artifact.scenes) {
+    throw new Error('Pipeline scenes are missing; retry from storyboard step.');
+  }
+  pipeline.artifact.subtitles = buildSubtitleTrack(pipeline.artifact.scenes);
   await writeContentArtifacts(workDir, hydrateArtifact(pipeline.artifact), task);
-  await markStep(3, 'completed', { outputPath: join(workDir, '03-image-prompts.json') });
-  await emit('step_complete', 3, 'Prompt', `已生成 ${pipeline.artifact.imagePrompts.length} 条图片提示词`, { requestId: prompts.requestId });
 }
 
 async function prepareAiSourceContext(input: {
@@ -316,21 +367,26 @@ async function ensureImages(input: {
   pipeline: PipelineState;
 }): Promise<void> {
   const { db, task, artifact, options, emit, markStep, pipeline } = input;
+  throwIfAborted(options.signal);
   const missing = missingScenes(artifact.scenes, pipeline.assets.images);
   if (missing.length === 0 && pipeline.assets.images.length >= artifact.scenes.length) {
     await markStep(4, 'completed');
     return;
   }
   await db.updateTask(task.id, { currentStep: 4, retryFromStep: 4 });
+  await heartbeatTask(db, task.id, options, 4, 'image generation');
   await markStep(4, 'running');
   await emit('step_start', 4, 'Producer', '批量生成真实图片素材', { missingSceneIds: missing.map((scene) => scene.id) });
   if (!options.generateImages) {
     throw new Error('Image provider is not configured; cannot create real image assets.');
   }
   for (const scene of missing) {
-    const generatedImages = await options.generateImages([scene], artifact.imagePrompts, task);
+    throwIfAborted(options.signal);
+    const generatedImages = await options.generateImages([scene], artifact.imagePrompts, task, options.signal);
     pipeline.assets.images = mergeAssets(pipeline.assets.images, generatedImages);
     await markStep(4, 'running', { outputPath: pipeline.assets.images.map((asset) => asset.path).join('\n') });
+    await heartbeatTask(db, task.id, options, 4, `image scene ${scene.id} completed`);
+    throwIfAborted(options.signal);
   }
   await markStep(4, 'completed');
   await emit('step_complete', 4, 'Producer', '真实图片素材已生成', { count: pipeline.assets.images.length });
@@ -346,21 +402,26 @@ async function ensureNarration(input: {
   pipeline: PipelineState;
 }): Promise<void> {
   const { db, task, artifact, options, emit, markStep, pipeline } = input;
+  throwIfAborted(options.signal);
   const missing = missingScenes(artifact.scenes, pipeline.assets.narration);
   if (missing.length === 0 && pipeline.assets.narration.length >= artifact.scenes.length) {
     await markStep(5, 'completed');
     return;
   }
   await db.updateTask(task.id, { currentStep: 5, retryFromStep: 5 });
+  await heartbeatTask(db, task.id, options, 5, 'narration generation');
   await markStep(5, 'running');
   await emit('step_start', 5, 'TTS', '生成真实旁白音频', { missingSceneIds: missing.map((scene) => scene.id) });
   if (!options.synthesizeNarration) {
     throw new Error('TTS provider is not configured; cannot create real narration audio.');
   }
   for (const scene of missing) {
-    const narrationAudio = await options.synthesizeNarration([scene], task);
+    throwIfAborted(options.signal);
+    const narrationAudio = await options.synthesizeNarration([scene], task, options.signal);
     pipeline.assets.narration = mergeAssets(pipeline.assets.narration, narrationAudio);
     await markStep(5, 'running', { outputPath: pipeline.assets.narration.map((asset) => asset.path).join('\n') });
+    await heartbeatTask(db, task.id, options, 5, `narration scene ${scene.id} completed`);
+    throwIfAborted(options.signal);
   }
   await markStep(5, 'completed');
   await emit('step_complete', 5, 'TTS', '真实配音与字幕时间轴已生成', { subtitles: artifact.subtitles.cues.length, audio: pipeline.assets.narration.length });
@@ -488,11 +549,39 @@ function mergeAssets(existing: SceneAsset[], incoming: SceneAsset[]): SceneAsset
   return [...map.values()].sort((a, b) => a.sceneId - b.sceneId);
 }
 
+async function heartbeatTask(db: FileDatabase, taskId: string, options: RunTaskOptions, step: number, detail: string): Promise<void> {
+  throwIfAborted(options.signal);
+  await db.updateTask(taskId, { currentStep: step, retryFromStep: step, lastHeartbeatAt: new Date().toISOString() });
+  await options.onHeartbeat?.(taskId, step, detail);
+}
+
+function throwIfAborted(signal?: AbortSignal): void {
+  if (!signal?.aborted) return;
+  const reason = signal.reason;
+  if (reason instanceof Error) throw reason;
+  throw new Error(typeof reason === 'string' ? reason : 'Task aborted.');
+}
+
 function firstRunnableStep(pipeline: PipelineState): number {
   for (let step = 0; step <= 6; step += 1) {
     if (pipeline.steps[String(step)]?.status !== 'completed') return step;
   }
   return 6;
+}
+
+function isStepCompleted(pipeline: PipelineState, step: number): boolean {
+  return pipeline.steps[String(step)]?.status === 'completed';
+}
+
+function hasCompleteContentArtifact(pipeline: PipelineState): boolean {
+  return (
+    isStepCompleted(pipeline, 3) &&
+    Boolean(pipeline.artifact.reviewedText) &&
+    Boolean(pipeline.artifact.rewrittenCopy) &&
+    Boolean(pipeline.artifact.cover) &&
+    Boolean(pipeline.artifact.scenes) &&
+    Boolean(pipeline.artifact.imagePrompts)
+  );
 }
 
 function contentOutputPath(workDir: string, step: number): string {

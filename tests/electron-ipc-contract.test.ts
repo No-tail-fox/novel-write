@@ -32,8 +32,30 @@ describe('electron ipc contract', () => {
   it('starts newly created tasks in the background so the renderer can open task detail immediately', async () => {
     const main = await readFile(new URL('../electron/main.ts', import.meta.url), 'utf8');
 
-    expect(main).toContain('void runTask(database, task');
+    expect(main).toContain('startTaskRun(database, task');
     expect(main).toContain('return database.getState()');
+  });
+
+  it('routes resume and retry through a background task runner instead of only mutating status', async () => {
+    const main = await readFile(new URL('../electron/main.ts', import.meta.url), 'utf8');
+
+    expect(main).toContain('runningTasks');
+    expect(main).toContain('AbortController');
+    expect(main).toContain('restartAfterAbort');
+    expect(main).toContain('resumeTaskRun');
+    expect(main).toContain("input.status === 'running'");
+    const retryHandler = main.slice(main.indexOf("ipcMain.handle('task:retry'"), main.indexOf("ipcMain.handle('diagnostics:run'"));
+    expect(retryHandler).toContain('resumeTaskRun(database, task)');
+    expect(retryHandler).not.toContain('runTask(');
+  });
+
+  it('keeps aborting task runners registered until they exit to avoid duplicate runs', async () => {
+    const main = await readFile(new URL('../electron/main.ts', import.meta.url), 'utf8');
+    const statusHandler = main.slice(main.indexOf("ipcMain.handle('task:update-status'"), main.indexOf("ipcMain.handle('task:retry'"));
+
+    expect(statusHandler).toContain('existingRun.controller.abort');
+    expect(statusHandler).toContain('existingRun.restartAfterAbort = false');
+    expect(statusHandler).not.toContain('runningTasks.delete(input.id)');
   });
 
   it('pushes a fresh app state snapshot for live task detail updates', async () => {

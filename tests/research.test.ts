@@ -217,6 +217,8 @@ function makeTask(patch: Partial<Task>): Task {
     errorMessage: '',
     createdAt: new Date().toISOString(),
     completedAt: null,
+    startedAt: null,
+    lastHeartbeatAt: null,
     mode: 'ai',
     aiKeyword: 'Wu Zetian',
     aiSources: ['web'],

@@ -76,6 +76,7 @@ export interface ImageConfig {
   concurrency: number;
   resolution?: '1K' | '2K' | '4K';
   proxyUrl?: string;
+  timeoutMs?: number;
 }
 
 export interface JimengConfig {
@@ -173,6 +174,8 @@ export interface Task {
   errorMessage: string;
   createdAt: string;
   completedAt: string | null;
+  startedAt: string | null;
+  lastHeartbeatAt: string | null;
   mode: TaskMode;
   aiKeyword: string;
   aiSources: string[];

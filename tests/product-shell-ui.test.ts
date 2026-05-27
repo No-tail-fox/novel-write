@@ -204,6 +204,16 @@ describe('product shell ui', () => {
     expect(main).toContain('window.__storyboundReactRoot ??=');
     expect(main).not.toContain("createRoot(document.getElementById('root')!).render(<App />)");
   });
+
+  it('blocks real task execution in browser preview mode and avoids fake running states', async () => {
+    const main = await readFile(new URL('../src/main.tsx', import.meta.url), 'utf8');
+
+    expect(main).toContain('isBrowserPreview');
+    expect(main).toContain('浏览器预览不能执行真实流水线');
+    expect(main).toContain('disabled={isBrowserPreview');
+    expect(main).toContain('resumeTask');
+    expect(main).not.toContain("task.status === 'paused' ? 'running' : 'paused'");
+  });
 });
 
 function countOccurrences(value: string, needle: string): number {

@@ -290,6 +290,8 @@ function makeFallbackApi(setState: (state: AppState) => void): StoryboundApi {
         errorMessage: browserPipelineError,
         createdAt: new Date().toISOString(),
         completedAt: null,
+        startedAt: null,
+        lastHeartbeatAt: null,
         mode: input.mode ?? 'paste',
         aiKeyword: input.aiKeyword ?? '',
         aiSources: input.aiSources ?? [],
@@ -359,6 +361,7 @@ function App() {
   const [activeView, setActiveView] = useState<ShellView>('new-task');
   const [selectedTaskId, setSelectedTaskId] = useState<string | null>(null);
   const [saveTone, setSaveTone] = useState<'saved' | 'saving' | 'dirty'>('saved');
+  const isBrowserPreview = !window.storybound;
   const api = useMemo(() => window.storybound ?? makeFallbackApi(setState), []);
 
   useEffect(() => {
@@ -484,10 +487,11 @@ function App() {
 
         <section className="content">
           <header className="page-head">
-            <div>
-              <h1>{activeNav.label}</h1>
-              <p>{pageSubtitle(activeView)}</p>
-            </div>
+          <div>
+            <h1>{activeNav.label}</h1>
+            <p>{pageSubtitle(activeView)}</p>
+            {isBrowserPreview ? <span className="local-note">浏览器预览不能执行真实流水线，请在 Electron 应用中运行任务。</span> : null}
+          </div>
             <div className="top-notice">
               <Info size={16} />
               <span>{state.config.jianying.draftPath ? `剪映草稿目录：${state.config.jianying.draftPath}` : '尚未配齐：剪映草稿目录'}</span>
@@ -498,8 +502,8 @@ function App() {
             </div>
           </header>
 
-          {activeView === 'new-task' ? <NewTaskPage api={api} state={state} applyState={applyState} openTaskDetail={openTaskDetail} /> : null}
-          {activeView === 'queue' ? <QueuePage api={api} state={state} applyState={applyState} openNewTask={() => navigate('new-task')} openTaskDetail={openTaskDetail} /> : null}
+          {activeView === 'new-task' ? <NewTaskPage api={api} state={state} applyState={applyState} openTaskDetail={openTaskDetail} isBrowserPreview={isBrowserPreview} /> : null}
+          {activeView === 'queue' ? <QueuePage api={api} state={state} applyState={applyState} openNewTask={() => navigate('new-task')} openTaskDetail={openTaskDetail} isBrowserPreview={isBrowserPreview} /> : null}
           {activeView === 'history' ? <HistoryPage api={api} state={state} openTaskDetail={openTaskDetail} /> : null}
           {activeView === 'task-detail' ? <TaskDetailPage api={api} state={state} task={selectedTask} applyState={applyState} close={() => navigate('history')} /> : null}
           {activeView === 'image-lab' ? <ImageLabPage api={api} state={state} applyState={applyState} /> : null}
@@ -514,7 +518,19 @@ function App() {
   );
 }
 
-function NewTaskPage({ api, state, applyState, openTaskDetail }: { api: StoryboundApi; state: AppState; applyState: (state: AppState) => void; openTaskDetail: (taskId: string) => void }) {
+function NewTaskPage({
+  api,
+  state,
+  applyState,
+  openTaskDetail,
+  isBrowserPreview,
+}: {
+  api: StoryboundApi;
+  state: AppState;
+  applyState: (state: AppState) => void;
+  openTaskDetail: (taskId: string) => void;
+  isBrowserPreview: boolean;
+}) {
   const [mode, setMode] = useState<TaskMode>('paste');
   const [title, setTitle] = useState('');
   const [inputText, setInputText] = useState(sampleText);
@@ -594,6 +610,10 @@ function NewTaskPage({ api, state, applyState, openTaskDetail }: { api: Storybou
   }
 
   async function run() {
+    if (isBrowserPreview) {
+      setDraftNotice('浏览器预览不能执行真实流水线，请在 Electron 应用中运行任务。');
+      return;
+    }
     setRunning(true);
     try {
       const next = await api.createAndRunTask({
@@ -789,12 +809,12 @@ function NewTaskPage({ api, state, applyState, openTaskDetail }: { api: Storybou
         ) : null}
 
         <div className="task-footer">
-          <span className="danger-text">试用已用尽，复刻版仅本地模拟，不阻断生成</span>
+          <span className="danger-text">{isBrowserPreview ? '浏览器预览不能执行真实流水线' : '试用已用尽，复刻版仅本地模拟，不阻断生成'}</span>
           <div className="button-row">
             <button className="ghost-action" onClick={() => setDraftNotice('已保存为本地草稿预设')}>
               保存为草稿
             </button>
-            <button className="primary-action" onClick={run} disabled={running || (mode === 'paste' ? inputText.trim().length === 0 : aiKeyword.trim().length === 0)}>
+            <button className="primary-action" onClick={run} disabled={isBrowserPreview || running || (mode === 'paste' ? inputText.trim().length === 0 : aiKeyword.trim().length === 0)}>
               {running ? <Loader2 className="spin" size={17} /> : <Play size={17} />}
               {running ? '运行中' : '开始生成'}
             </button>
@@ -806,11 +826,28 @@ function NewTaskPage({ api, state, applyState, openTaskDetail }: { api: Storybou
   );
 }
 
-function QueuePage({ api, state, applyState, openNewTask, openTaskDetail }: { api: StoryboundApi; state: AppState; applyState: (state: AppState) => void; openNewTask: () => void; openTaskDetail: (taskId: string) => void }) {
+function QueuePage({
+  api,
+  state,
+  applyState,
+  openNewTask,
+  openTaskDetail,
+  isBrowserPreview,
+}: {
+  api: StoryboundApi;
+  state: AppState;
+  applyState: (state: AppState) => void;
+  openNewTask: () => void;
+  openTaskDetail: (taskId: string) => void;
+  isBrowserPreview: boolean;
+}) {
   const latestTask = state.tasks[0];
   const events = latestTask ? state.events.filter((event) => event.taskId === latestTask.id || event.taskId === 'live') : state.events;
   async function setStatus(task: Task, status: TaskStatus) {
     applyState(await api.updateTaskStatus(task.id, status));
+  }
+  async function resumeTask(task: Task) {
+    applyState(await api.retryTask(task.id));
   }
   return (
     <div className="two-column">
@@ -836,10 +873,11 @@ function QueuePage({ api, state, applyState, openNewTask, openTaskDetail }: { ap
               </div>
               <StatusPill status={task.status} />
               <div className="row-actions" onClick={(event) => event.stopPropagation()}>
-                <button className="mini-button" onClick={() => setStatus(task, task.status === 'paused' ? 'running' : 'paused')}>{task.status === 'paused' ? '继续' : '暂停'}</button>
-                <button className="mini-button" onClick={() => setStatus(task, 'cancelled')}>取消</button>
-                <button className="mini-button" onClick={async () => applyState(await api.retryTask(task.id))}>重试</button>
-                <button className="mini-button" disabled={!task.outputDir} onClick={() => task.outputDir && api.openPath(task.outputDir)}>
+                {task.status === 'running' ? <button className="mini-button" onClick={() => setStatus(task, 'paused')}>暂停</button> : null}
+                {task.status === 'running' || task.status === 'pending' ? <button className="mini-button" onClick={() => setStatus(task, 'cancelled')}>取消</button> : null}
+                {task.status === 'paused' || task.status === 'failed' ? <button className="mini-button" disabled={isBrowserPreview} onClick={() => resumeTask(task)}>继续</button> : null}
+                {task.status === 'paused' || task.status === 'failed' ? <button className="mini-button" disabled={isBrowserPreview} onClick={() => resumeTask(task)}>重试</button> : null}
+                <button className="mini-button" disabled={task.status !== 'completed' || !task.outputDir} onClick={() => task.outputDir && api.openPath(task.outputDir)}>
                   <FolderOpen size={14} />
                 </button>
               </div>
@@ -850,7 +888,7 @@ function QueuePage({ api, state, applyState, openNewTask, openTaskDetail }: { ap
       <section className="panel">
         <div className="panel-title-row">
           <h2>步骤事件</h2>
-          {latestTask?.outputDir ? (
+          {latestTask?.status === 'completed' && latestTask.outputDir ? (
             <button className="ghost-action" onClick={() => api.openPath(latestTask.outputDir)}>
               <FolderOpen size={15} />
               打开剪映草稿
@@ -1064,10 +1102,10 @@ function ArtifactPreviewContent({
           <strong>{artifactPanelTitle(task, tab)}</strong>
           {latestEvent?.type === 'step_error' ? <ErrorSummaryButton fullMessage={latestEvent.detail} title="流水线错误" /> : <span>{snapshot?.message || latestEvent?.detail || '等待当前步骤产物落盘'}</span>}
         </div>
-        {task.outputDir ? (
+        {task.status === 'completed' && task.outputDir ? (
           <button className="ghost-action" onClick={() => api.openPath(task.outputDir)}>
             <FolderOpen size={15} />
-            打开输出
+            打开剪映草稿
           </button>
         ) : null}
       </div>
@@ -1078,7 +1116,10 @@ function ArtifactPreviewContent({
         <div><small>当前代理</small><strong>{currentAgent}</strong></div>
         <div><small>产物更新时间</small><strong>{snapshot?.updatedAt ? formatDate(snapshot.updatedAt) : '等待生成'}</strong></div>
         <div><small>输出目录</small><strong>{task.outputDir || '等待生成'}</strong></div>
+        <div><small>失败步骤</small><strong>{task.failedStep ?? '-'}</strong></div>
         <div><small>状态文件</small><strong>{task.artifactStatePath || '等待生成'}</strong></div>
+        <div><small>最近心跳</small><strong>{task.lastHeartbeatAt ? formatDate(task.lastHeartbeatAt) : '等待运行'}</strong></div>
+        <div><small>恢复步骤</small><strong>{task.retryFromStep ?? '-'}</strong></div>
       </div>
 
       {tab === 'preview' ? (

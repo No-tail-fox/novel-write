@@ -3,12 +3,13 @@ import { join } from 'node:path';
 import { createHash, createHmac } from 'node:crypto';
 import type { AppConfig, ImagePrompt, StoryboardScene, Task } from './types';
 import type { SceneAsset } from './draft';
+import { fetchWithTimeout } from './http';
 
-type ImageGenerator = (scenes: StoryboardScene[], prompts: ImagePrompt[], task: Task) => Promise<SceneAsset[]>;
-type NarrationSynthesizer = (scenes: StoryboardScene[], task: Task) => Promise<SceneAsset[]>;
+type ImageGenerator = (scenes: StoryboardScene[], prompts: ImagePrompt[], task: Task, signal?: AbortSignal) => Promise<SceneAsset[]>;
+type NarrationSynthesizer = (scenes: StoryboardScene[], task: Task, signal?: AbortSignal) => Promise<SceneAsset[]>;
 
 export function createConfiguredImageGenerator(config: AppConfig, workDir: string): ImageGenerator {
-  return async (scenes, prompts, task) => {
+  return async (scenes, prompts, task, signal) => {
     if (config.imageProvider === 'mock') {
       throw new Error('Image provider is set to mock; real image assets are required.');
     }
@@ -27,6 +28,7 @@ export function createConfiguredImageGenerator(config: AppConfig, workDir: strin
         resolution: config.jimeng.resolution,
         pollIntervalMs: config.jimeng.pollIntervalMs ?? 2000,
         timeoutMs: config.jimeng.timeoutMs ?? 120000,
+        signal,
       });
     }
     if (config.imageProvider === 'custom') {
@@ -40,6 +42,8 @@ export function createConfiguredImageGenerator(config: AppConfig, workDir: strin
         model: config.customImage.model,
         ratio: config.customImage.ratio || task.ratio,
         resolution: config.customImage.resolution ?? '2K',
+        timeoutMs: config.customImage.timeoutMs ?? 180_000,
+        signal,
       });
     }
     return generateOpenAiCompatibleImages({
@@ -52,12 +56,14 @@ export function createConfiguredImageGenerator(config: AppConfig, workDir: strin
       model: config.gptImage.model || config.image.model,
       ratio: config.gptImage.ratio || config.image.ratio || task.ratio,
       resolution: config.gptImage.resolution ?? config.image.resolution ?? '2K',
+      timeoutMs: config.gptImage.timeoutMs ?? config.image.timeoutMs ?? 180_000,
+      signal,
     });
   };
 }
 
 export function createConfiguredNarrationSynthesizer(config: AppConfig, workDir: string): NarrationSynthesizer {
-  return async (scenes, task) => {
+  return async (scenes, task, signal) => {
     if (config.tts.provider === 'mock') {
       throw new Error('TTS provider is set to mock; real narration audio is required.');
     }
@@ -71,6 +77,7 @@ export function createConfiguredNarrationSynthesizer(config: AppConfig, workDir:
         speaker: config.tts.volcengine.speaker || config.tts.speaker || task.speaker,
         cluster: config.tts.volcengine.cluster || 'volcano_tts',
         endpoint: config.tts.volcengine.endpoint || 'https://openspeech.bytedance.com/api/v1/tts',
+        signal,
       });
     }
     return synthesizeMiniMaxNarration({
@@ -80,6 +87,7 @@ export function createConfiguredNarrationSynthesizer(config: AppConfig, workDir:
       apiKey: config.tts.minimax.apiKey,
       model: config.tts.minimax.model,
       voiceId: config.tts.minimax.voiceId || task.speaker,
+      signal,
     });
   };
 }
@@ -98,6 +106,7 @@ async function generateJimengImages(input: {
   resolution: '1K' | '2K' | '4K';
   pollIntervalMs: number;
   timeoutMs: number;
+  signal?: AbortSignal;
 }): Promise<SceneAsset[]> {
   if (!input.accessKeyId || !input.secretAccessKey) {
     throw new Error('Jimeng AccessKey ID and SecretAccessKey are required for real image generation.');
@@ -109,6 +118,7 @@ async function generateJimengImages(input: {
   for (const scene of input.scenes) {
     const prompt = input.prompts.find((item) => item.sceneId === scene.id)?.prompt ?? scene.descPrompt;
     const size = resolveJimengSize(input.task.ratio, input.resolution);
+    throwIfAborted(input.signal);
     const taskId = await submitJimengTask({ ...input, prompt, size });
     const bytes = await pollJimengResult({ ...input, taskId });
     const path = join(outputDir, `${String(scene.id).padStart(3, '0')}.png`);
@@ -127,6 +137,7 @@ async function submitJimengTask(input: {
   secretAccessKey: string;
   region: string;
   service: string;
+  signal?: AbortSignal;
 }): Promise<string> {
   const [width, height] = input.size.split('x').map(Number);
   const result = await signedVolcenginePost<{
@@ -141,6 +152,7 @@ async function submitJimengTask(input: {
     secretAccessKey: input.secretAccessKey,
     region: input.region,
     service: input.service,
+    signal: input.signal,
   });
   if (result.code !== 10000 || !result.data?.task_id) {
     throw new Error(`Jimeng submit failed: ${result.message ?? 'missing task id'}`);
@@ -158,6 +170,7 @@ async function pollJimengResult(input: {
   service: string;
   pollIntervalMs: number;
   timeoutMs: number;
+  signal?: AbortSignal;
 }): Promise<Buffer> {
   const startedAt = Date.now();
   while (Date.now() - startedAt <= input.timeoutMs) {
@@ -173,6 +186,7 @@ async function pollJimengResult(input: {
       secretAccessKey: input.secretAccessKey,
       region: input.region,
       service: input.service,
+      signal: input.signal,
     });
     if (result.code !== 10000 || !result.data) {
       throw new Error(`Jimeng poll failed: ${result.message ?? 'empty result'}`);
@@ -181,14 +195,14 @@ async function pollJimengResult(input: {
       return Buffer.from(result.data.binary_data_base64[0], 'base64');
     }
     if (result.data.image_urls?.[0]) {
-      const response = await fetch(result.data.image_urls[0]);
+      const response = await fetchWithTimeout(result.data.image_urls[0], { timeoutMs: 60_000, timeoutLabel: 'Jimeng image download', signal: input.signal });
       if (!response.ok) throw new Error(`Failed to download Jimeng image (${response.status}).`);
       return Buffer.from(await response.arrayBuffer());
     }
     if (result.data.status === 'fail') {
       throw new Error(`Jimeng task failed: ${result.message ?? input.taskId}`);
     }
-    await new Promise((resolve) => setTimeout(resolve, input.pollIntervalMs));
+    await delay(input.pollIntervalMs, input.signal);
   }
   throw new Error('Jimeng image generation timed out.');
 }
@@ -203,6 +217,8 @@ async function generateOpenAiCompatibleImages(input: {
   model: string;
   ratio: string;
   resolution: '1K' | '2K' | '4K';
+  timeoutMs: number;
+  signal?: AbortSignal;
 }): Promise<SceneAsset[]> {
   if (!input.apiKey) {
     throw new Error('Image provider API key is missing; cannot generate real image assets.');
@@ -214,8 +230,11 @@ async function generateOpenAiCompatibleImages(input: {
   const assets: SceneAsset[] = [];
   for (const scene of input.scenes) {
     const prompt = input.prompts.find((item) => item.sceneId === scene.id)?.prompt ?? scene.descPrompt;
-    const response = await fetch(`${baseUrl}/images/generations`, {
+    const response = await fetchWithTimeout(`${baseUrl}/images/generations`, {
       method: 'POST',
+      timeoutMs: input.timeoutMs,
+      timeoutLabel: 'Image provider request',
+      signal: input.signal,
       headers: {
         'Content-Type': 'application/json',
         Authorization: `Bearer ${input.apiKey}`,
@@ -230,7 +249,7 @@ async function generateOpenAiCompatibleImages(input: {
       throw new Error(`Image provider API error (${response.status}): ${await response.text()}`);
     }
     const body = (await response.json()) as { data?: Array<{ b64_json?: string; url?: string }> };
-    const bytes = await extractImageBytes(body);
+    const bytes = await extractImageBytes(body, input.signal);
     const path = join(outputDir, `${String(scene.id).padStart(3, '0')}.png`);
     await writeFile(path, bytes);
     assets.push({ sceneId: scene.id, path });
@@ -245,6 +264,7 @@ async function synthesizeMiniMaxNarration(input: {
   apiKey: string;
   model: string;
   voiceId: string;
+  signal?: AbortSignal;
 }): Promise<SceneAsset[]> {
   if (!input.apiKey) {
     throw new Error('MiniMax TTS API key is missing; cannot generate real narration audio.');
@@ -254,8 +274,11 @@ async function synthesizeMiniMaxNarration(input: {
   const assets: SceneAsset[] = [];
 
   for (const scene of input.scenes) {
-    const response = await fetch('https://api.minimaxi.com/v1/t2a_v2', {
+    const response = await fetchWithTimeout('https://api.minimaxi.com/v1/t2a_v2', {
       method: 'POST',
+      timeoutMs: 180_000,
+      timeoutLabel: 'MiniMax TTS request',
+      signal: input.signal,
       headers: {
         'Content-Type': 'application/json',
         Authorization: `Bearer ${input.apiKey}`,
@@ -310,6 +333,7 @@ async function synthesizeVolcengineNarration(input: {
   speaker: string;
   cluster: string;
   endpoint: string;
+  signal?: AbortSignal;
 }): Promise<SceneAsset[]> {
   if (!input.appId || !input.accessKey) {
     throw new Error('Volcengine TTS App ID and access token are required for real narration audio.');
@@ -319,8 +343,11 @@ async function synthesizeVolcengineNarration(input: {
   const assets: SceneAsset[] = [];
 
   for (const scene of input.scenes) {
-    const response = await fetch(input.endpoint, {
+    const response = await fetchWithTimeout(input.endpoint, {
       method: 'POST',
+      timeoutMs: 180_000,
+      timeoutLabel: 'Volcengine TTS request',
+      signal: input.signal,
       headers: {
         'Content-Type': 'application/json',
         Authorization: `Bearer ${input.accessKey}`,
@@ -354,11 +381,11 @@ async function synthesizeVolcengineNarration(input: {
   return assets;
 }
 
-async function extractImageBytes(body: { data?: Array<{ b64_json?: string; url?: string }> }): Promise<Buffer> {
+async function extractImageBytes(body: { data?: Array<{ b64_json?: string; url?: string }> }, signal?: AbortSignal): Promise<Buffer> {
   const image = body.data?.[0];
   if (image?.b64_json) return Buffer.from(image.b64_json, 'base64');
   if (image?.url) {
-    const response = await fetch(image.url);
+    const response = await fetchWithTimeout(image.url, { timeoutMs: 60_000, timeoutLabel: 'Generated image download', signal });
     if (!response.ok) throw new Error(`Failed to download generated image (${response.status}).`);
     return Buffer.from(await response.arrayBuffer());
   }
@@ -391,6 +418,7 @@ async function signedVolcenginePost<T>(input: {
   secretAccessKey: string;
   region: string;
   service: string;
+  signal?: AbortSignal;
 }): Promise<T> {
   const query = { Action: input.action, Version: '2022-08-31' };
   const url = new URL(input.endpoint);
@@ -416,8 +444,11 @@ async function signedVolcenginePost<T>(input: {
     region: input.region,
     service: input.service,
   });
-  const response = await fetch(url.toString(), {
+  const response = await fetchWithTimeout(url.toString(), {
     method: 'POST',
+    timeoutMs: 180_000,
+    timeoutLabel: `Volcengine ${input.action} request`,
+    signal: input.signal,
     headers: { ...headers, Authorization: authorization },
     body,
   });
@@ -457,6 +488,26 @@ function generateVolcengineSignature(input: {
   const kSigning = createHmac('sha256', kService).update('request').digest();
   const signature = createHmac('sha256', kSigning).update(stringToSign).digest('hex');
   return `HMAC-SHA256 Credential=${input.accessKeyId}/${credentialScope}, SignedHeaders=${signedHeaders}, Signature=${signature}`;
+}
+
+function throwIfAborted(signal?: AbortSignal): void {
+  if (!signal?.aborted) return;
+  const reason = signal.reason;
+  if (reason instanceof Error) throw reason;
+  throw new Error(typeof reason === 'string' ? reason : 'Request aborted.');
+}
+
+async function delay(ms: number, signal?: AbortSignal): Promise<void> {
+  throwIfAborted(signal);
+  await new Promise<void>((resolve, reject) => {
+    const timeout = setTimeout(resolve, ms);
+    const abort = () => {
+      clearTimeout(timeout);
+      const reason = signal?.reason;
+      reject(reason instanceof Error ? reason : new Error(typeof reason === 'string' ? reason : 'Request aborted.'));
+    };
+    signal?.addEventListener('abort', abort, { once: true });
+  });
 }
 
 function resolveJimengSize(ratio: string, resolution: '1K' | '2K' | '4K'): string {

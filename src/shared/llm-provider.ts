@@ -1,4 +1,5 @@
 import type { LlmConfig, LlmModelTestResult, ProviderModel, ProviderModelListRequest, ProviderModelListResult } from './types';
+import { fetchWithTimeout } from './http';
 
 export type LlmRole = 'system' | 'user' | 'assistant';
 
@@ -11,6 +12,7 @@ export interface LlmJsonRequest {
   step: number;
   name: string;
   messages: LlmMessage[];
+  signal?: AbortSignal;
 }
 
 export interface LlmJsonResult<T = unknown> {
@@ -37,8 +39,11 @@ export function createOpenAiCompatibleJsonLlm(config: LlmConfig): JsonLlm {
       throw new Error('LLM API key is missing; cannot run real task content generation.');
     }
     const baseUrl = normalizeOpenAiBaseUrl(config.baseUrl || 'https://api.openai.com');
-    const response = await fetch(`${baseUrl}/chat/completions`, {
+    const response = await fetchWithTimeout(`${baseUrl}/chat/completions`, {
       method: 'POST',
+      timeoutMs: 120_000,
+      timeoutLabel: `LLM step ${request.step} ${request.name}`,
+      signal: request.signal,
       headers: {
         'Content-Type': 'application/json',
         Authorization: `Bearer ${config.apiKey}`,
@@ -92,7 +97,7 @@ export async function testOpenAiCompatibleLlm(config: LlmConfig, fetchImpl: type
   }
 
   try {
-    const response = await fetchWithTimeout(
+    const response = await fetchWithInjectedTimeout(
       fetchImpl,
       endpoint,
       {
@@ -171,7 +176,7 @@ export async function listOpenAiCompatibleModels(
   }
 
   try {
-    const response = await fetchWithTimeout(
+    const response = await fetchWithInjectedTimeout(
       fetchImpl,
       endpoint,
       {
@@ -258,11 +263,19 @@ function normalizeOpenAiBaseUrl(value: string): string {
   return trimmed.endsWith('/v1') ? trimmed : `${trimmed}/v1`;
 }
 
-async function fetchWithTimeout(fetchImpl: typeof fetch, url: string, init: RequestInit, timeoutMs: number): Promise<Response> {
+async function fetchWithInjectedTimeout(fetchImpl: typeof fetch, url: string, init: RequestInit, timeoutMs: number): Promise<Response> {
   const controller = new AbortController();
-  const timer = setTimeout(() => controller.abort(), timeoutMs);
+  const timer = setTimeout(() => controller.abort(new Error(`Request timed out after ${timeoutMs}ms.`)), timeoutMs);
   try {
     return await fetchImpl(url, { ...init, signal: controller.signal });
+  } catch (error) {
+    if (controller.signal.aborted) {
+      const reason = controller.signal.reason;
+      if (reason instanceof Error) throw reason;
+      if (typeof reason === 'string') throw new Error(reason);
+      throw new Error('Request aborted.');
+    }
+    throw error;
   } finally {
     clearTimeout(timer);
   }

@@ -6,6 +6,7 @@ import { FileDatabase } from '@shared/storage';
 import { runTask } from '@shared/runner';
 import type { ImagePrompt, PipelineArtifact, StoryboardScene, TaskStatus } from '@shared/types';
 import type { PyJianYingBridgeInput } from '@shared/jianying-bridge';
+import type { JsonLlm, LlmJsonRequest } from '@shared/llm-provider';
 
 const sampleInput =
   'Wu Zetian entered the palace at fourteen. Years later, she returned to the center of power and changed the court forever.';
@@ -117,6 +118,148 @@ describe('task runner', () => {
       await Promise.all(snapshotReads);
 
       expect(snapshots.at(-1)).toBe('paused');
+    } finally {
+      await db.close();
+      await rm(dir, { recursive: true, force: true });
+    }
+  });
+
+  it('records task heartbeats while running and pauses cleanly when aborted', async () => {
+    const dir = await mkdtemp(join(tmpdir(), 'storybound-runner-abort-'));
+    const db = await FileDatabase.open(join(dir, 'data.db'));
+    const mediaDir = join(dir, 'media');
+    const controller = new AbortController();
+    const heartbeats: string[] = [];
+
+    try {
+      const task = await db.createTask({
+        title: 'Abortable task',
+        inputText: sampleInput,
+        track: 'character-story',
+        style: 'photo-real',
+        speaker: 'voice',
+      });
+
+      await expect(
+        runTask(db, task, {
+          appDataDir: dir,
+          signal: controller.signal,
+          onHeartbeat: async (_taskId, _step, detail) => {
+            heartbeats.push(detail);
+          },
+          generatePipelineArtifact: async () => makeArtifact(),
+          generateImages: async (scenes) => {
+            const assets = await writeSceneAssets(mediaDir, scenes, 'png', tinyPng);
+            controller.abort('paused');
+            return assets;
+          },
+          synthesizeNarration: async (scenes) => writeSceneAssets(mediaDir, scenes, 'wav', wavTone(1200)),
+          draftWriterOptions: { runBridge: fakeBridge },
+        }),
+      ).rejects.toThrow(/paused|aborted/i);
+
+      const paused = (await db.getState()).tasks[0];
+      expect(paused.status).toBe('paused');
+      expect(paused.failedStep).toBe(4);
+      expect(paused.retryFromStep).toBe(4);
+      expect(paused.startedAt).toEqual(expect.any(String));
+      expect(paused.lastHeartbeatAt).toEqual(expect.any(String));
+      expect(heartbeats.length).toBeGreaterThan(0);
+    } finally {
+      await db.close();
+      await rm(dir, { recursive: true, force: true });
+    }
+  });
+
+  it('marks an aborted cancellation as cancelled instead of resumable paused', async () => {
+    const dir = await mkdtemp(join(tmpdir(), 'storybound-runner-cancel-'));
+    const db = await FileDatabase.open(join(dir, 'data.db'));
+    const controller = new AbortController();
+
+    try {
+      const task = await db.createTask({
+        title: 'Cancelled task',
+        inputText: sampleInput,
+        track: 'character-story',
+        style: 'photo-real',
+        speaker: 'voice',
+      });
+
+      await expect(
+        runTask(db, task, {
+          appDataDir: dir,
+          signal: controller.signal,
+          generatePipelineArtifact: async () => {
+            controller.abort('用户取消');
+            return makeArtifact();
+          },
+          generateImages: async () => [],
+          synthesizeNarration: async () => [],
+          draftWriterOptions: { runBridge: fakeBridge },
+        }),
+      ).rejects.toThrow(/用户取消/);
+
+      const cancelled = (await db.getState()).tasks[0];
+      expect(cancelled.status).toBe('cancelled');
+      expect(cancelled.retryFromStep).toBeNull();
+      expect(cancelled.errorMessage).toContain('用户取消');
+    } finally {
+      await db.close();
+      await rm(dir, { recursive: true, force: true });
+    }
+  });
+
+  it('resumes from the failed LLM step without repeating completed LLM calls', async () => {
+    const dir = await mkdtemp(join(tmpdir(), 'storybound-runner-llm-resume-'));
+    const db = await FileDatabase.open(join(dir, 'data.db'));
+    const draftRootDir = join(dir, 'JianyingPro Drafts');
+    const mediaDir = join(dir, 'media');
+    const calls: Record<number, number> = {};
+
+    try {
+      await db.upsertConfig({
+        ...(await db.getState()).config,
+        jianying: { ...(await db.getState()).config.jianying, draftPath: draftRootDir },
+      });
+      const task = await db.createTask({
+        title: 'LLM resume task',
+        inputText: sampleInput,
+        track: 'character-story',
+        style: 'photo-real',
+        speaker: 'voice',
+      });
+      const llm: JsonLlm = async <T,>(request: LlmJsonRequest) => {
+        calls[request.step] = (calls[request.step] ?? 0) + 1;
+        if (request.step === 0) return { json: { reviewedText: sampleInput } as T, raw: '{}', requestId: 'review' };
+        if (request.step === 1) {
+          return {
+            json: { rewrittenCopy: 'First line\n\nSecond line', cover: { title: 'Wu Zetian', subtitle: [], summary: 'summary', tags: [], comments: [] } } as T,
+            raw: '{}',
+            requestId: 'rewrite',
+          };
+        }
+        if (request.step === 2 && calls[2] === 1) {
+          throw new Error('storyboard provider failed');
+        }
+        if (request.step === 2) return { json: { scenes: makeArtifact().scenes } as T, raw: '{}', requestId: 'storyboard' };
+        return { json: { imagePrompts: makeArtifact().imagePrompts } as T, raw: '{}', requestId: 'prompts' };
+      };
+
+      await expect(runTask(db, task, { appDataDir: dir, llm })).rejects.toThrow(/storyboard provider failed/);
+      const paused = (await db.getState()).tasks[0];
+      expect(paused.status).toBe('paused');
+      expect(paused.failedStep).toBe(2);
+
+      await runTask(db, paused, {
+        appDataDir: dir,
+        llm,
+        generateImages: async (scenes) => writeSceneAssets(mediaDir, scenes, 'png', tinyPng),
+        synthesizeNarration: async (scenes) => writeSceneAssets(mediaDir, scenes, 'wav', wavTone(1200)),
+        draftWriterOptions: { runBridge: fakeBridge },
+      });
+
+      expect(calls).toMatchObject({ 0: 1, 1: 1, 2: 2, 3: 1 });
+      expect((await db.getState()).tasks[0].status).toBe('completed');
     } finally {
       await db.close();
       await rm(dir, { recursive: true, force: true });

@@ -164,6 +164,8 @@ export class FileDatabase {
         error_message TEXT DEFAULT '',
         created_at TEXT NOT NULL,
         completed_at TEXT,
+        started_at TEXT,
+        last_heartbeat_at TEXT,
         mode TEXT NOT NULL DEFAULT 'paste',
         ai_keyword TEXT DEFAULT '',
         ai_sources TEXT DEFAULT '[]',
@@ -275,6 +277,8 @@ export class FileDatabase {
       ['failed_step', 'INTEGER'],
       ['retry_from_step', 'INTEGER'],
       ['artifact_state_path', "TEXT DEFAULT ''"],
+      ['started_at', 'TEXT'],
+      ['last_heartbeat_at', 'TEXT'],
     ] as const) {
       addColumnIfMissing(this.db, 'tasks', column, definition);
     }
@@ -520,6 +524,8 @@ export class FileDatabase {
       errorMessage: '',
       createdAt: now,
       completedAt: null,
+      startedAt: null,
+      lastHeartbeatAt: null,
       mode: input.mode ?? 'paste',
       aiKeyword: input.aiKeyword ?? '',
       aiSources: input.aiSources ?? ['web'],
@@ -541,11 +547,11 @@ export class FileDatabase {
     this.db.run(
       `INSERT INTO tasks (
         id, title, input_text, status, current_step, track, style, speaker, ratio, template_id,
-        bgm_id, pause_points, output_dir, error_message, created_at, completed_at,
+        bgm_id, pause_points, output_dir, error_message, created_at, completed_at, started_at, last_heartbeat_at,
         mode, ai_keyword, ai_sources, selected_sources, extra_requirements, prompt_template_id, prompt_template_type,
         reference_image_path, rewrite_intensity, narrative_pov, keep_promotion, tts_provider,
         tts_speed, step3_prompt_snapshot, failed_step, retry_from_step, artifact_state_path
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       [
         task.id,
         task.title,
@@ -563,6 +569,8 @@ export class FileDatabase {
         task.errorMessage,
         task.createdAt,
         task.completedAt,
+        task.startedAt,
+        task.lastHeartbeatAt,
         task.mode,
         task.aiKeyword,
         json(task.aiSources),
@@ -589,7 +597,19 @@ export class FileDatabase {
   async updateTask(
     id: string,
     patch: Partial<
-      Pick<Task, 'status' | 'currentStep' | 'outputDir' | 'errorMessage' | 'completedAt' | 'failedStep' | 'retryFromStep' | 'artifactStatePath'>
+      Pick<
+        Task,
+        | 'status'
+        | 'currentStep'
+        | 'outputDir'
+        | 'errorMessage'
+        | 'completedAt'
+        | 'failedStep'
+        | 'retryFromStep'
+        | 'artifactStatePath'
+        | 'startedAt'
+        | 'lastHeartbeatAt'
+      >
     >,
   ): Promise<void> {
     const sets: string[] = [];
@@ -603,6 +623,8 @@ export class FileDatabase {
       failedStep: 'failed_step',
       retryFromStep: 'retry_from_step',
       artifactStatePath: 'artifact_state_path',
+      startedAt: 'started_at',
+      lastHeartbeatAt: 'last_heartbeat_at',
     };
     for (const [key, column] of Object.entries(map)) {
       if (key in patch) {
@@ -686,6 +708,8 @@ function rowToTask(row: Record<string, unknown>): Task {
     errorMessage: String(row.error_message ?? ''),
     createdAt: String(row.created_at),
     completedAt: row.completed_at ? String(row.completed_at) : null,
+    startedAt: row.started_at ? String(row.started_at) : null,
+    lastHeartbeatAt: row.last_heartbeat_at ? String(row.last_heartbeat_at) : null,
     mode: String(row.mode ?? 'paste') as Task['mode'],
     aiKeyword: String(row.ai_keyword ?? ''),
     aiSources: parseJson(String(row.ai_sources ?? '[]'), []),
