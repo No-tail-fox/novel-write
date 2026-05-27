@@ -1,13 +1,14 @@
 import { app, BrowserWindow, ipcMain, Menu, shell } from 'electron';
 import { execFile } from 'node:child_process';
 import { existsSync } from 'node:fs';
-import { mkdir } from 'node:fs/promises';
-import { dirname, join } from 'node:path';
+import { mkdir, readFile } from 'node:fs/promises';
+import { dirname, extname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { promisify } from 'node:util';
 import { readTaskArtifactSnapshot } from '../src/shared/artifact-preview';
 import { fromLlmModelTestResult, validateConfigTarget } from '../src/shared/config-utils';
 import { createOpenAiCompatibleJsonLlm, listOpenAiCompatibleModels, testOpenAiCompatibleLlm } from '../src/shared/llm-provider';
+import { markSceneImageForRegeneration } from '../src/shared/pipeline-cache';
 import { composeCopyFromSources, createAiSourceResearcher, searchWebSources } from '../src/shared/research';
 import { runTask } from '../src/shared/runner';
 import { FileDatabase } from '../src/shared/storage';
@@ -294,6 +295,43 @@ ipcMain.handle('task:retry', async (_event, id: string) => {
   return database.getState();
 });
 
+ipcMain.handle('task:regenerate-image', async (_event, input: { id: string; sceneId: number }) => {
+  const database = await getDb();
+  const state = await database.getState();
+  const task = state.tasks.find((item) => item.id === input.id);
+  if (!task) {
+    throw new Error(`Task not found: ${input.id}`);
+  }
+  if (!task.artifactStatePath) {
+    throw new Error('Task artifact state is not available; run the task before regenerating images.');
+  }
+
+  const sceneId = Number(input.sceneId);
+  await markSceneImageForRegeneration(task.artifactStatePath, sceneId);
+  await database.updateTask(task.id, {
+    status: 'pending',
+    currentStep: 4,
+    failedStep: 4,
+    retryFromStep: 4,
+    completedAt: null,
+    outputDir: taskWorkDir(task),
+    errorMessage: `重新生成第 ${sceneId} 张图片`,
+    lastHeartbeatAt: new Date().toISOString(),
+  });
+  await database.addTaskEvent(task.id, {
+    type: 'step_start',
+    step: 4,
+    agent: 'Producer',
+    detail: `重新生成第 ${sceneId} 张图片`,
+    dataJson: JSON.stringify({ sceneId }),
+  });
+  const updatedTask = (await database.getState()).tasks.find((item) => item.id === task.id);
+  if (updatedTask) {
+    await resumeTaskRun(database, updatedTask);
+  }
+  return database.getState();
+});
+
 ipcMain.handle('task:get-artifacts', async (_event, id: string) => {
   const database = await getDb();
   const state = await database.getState();
@@ -303,6 +341,8 @@ ipcMain.handle('task:get-artifacts', async (_event, id: string) => {
   }
   return readTaskArtifactSnapshot(task);
 });
+
+ipcMain.handle('asset:read-data-url', async (_event, path: string) => readLocalImageDataUrl(path));
 
 ipcMain.handle('diagnostics:run', async () => {
   const database = await getDb();
@@ -327,6 +367,27 @@ ipcMain.handle('diagnostics:run', async () => {
 ipcMain.handle('path:open', async (_event, path: string) => {
   await shell.openPath(path);
 });
+
+async function readLocalImageDataUrl(path: string): Promise<string> {
+  if (!path || !path.trim()) {
+    throw new Error('Preview image path is required.');
+  }
+  const mime = previewImageMimeType(path);
+  if (!mime) {
+    throw new Error(`Unsupported preview image extension: ${extname(path) || '(none)'}`);
+  }
+  const bytes = await readFile(path);
+  return `data:image/${mime.replace('image/', '')};base64,${bytes.toString('base64')}`;
+}
+
+function previewImageMimeType(path: string): string | null {
+  const extension = extname(path).toLowerCase();
+  if (extension === '.png') return 'image/png';
+  if (extension === '.jpg' || extension === '.jpeg') return 'image/jpeg';
+  if (extension === '.webp') return 'image/webp';
+  if (extension === '.gif') return 'image/gif';
+  return null;
+}
 
 function imageConfigStatus(config: AppConfig): 'pass' | 'warn' | 'fail' {
   if (config.imageProvider === 'mock') return 'fail';

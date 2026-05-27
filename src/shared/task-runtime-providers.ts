@@ -1,12 +1,13 @@
 import type { RunTaskOptions } from './runner';
 import type { AppConfig } from './types';
 import { createOpenAiCompatibleJsonLlm } from './llm-provider';
-import { createConfiguredImageGenerator, createConfiguredNarrationSynthesizer } from './media-providers';
+import { createConfiguredImageGenerator, createConfiguredNarrationSynthesizer, getConfiguredImageConcurrency } from './media-providers';
 
-export function createTaskRuntimeProviders(config: AppConfig, workDir: string): Pick<RunTaskOptions, 'llm' | 'generateImages' | 'synthesizeNarration'> {
+export function createTaskRuntimeProviders(config: AppConfig, workDir: string): Pick<RunTaskOptions, 'llm' | 'generateImages' | 'imageConcurrency' | 'synthesizeNarration'> {
   return {
     llm: hasUsableLlm(config) ? createOpenAiCompatibleJsonLlm(config.llm) : undefined,
     generateImages: hasUsableImageProvider(config) ? createConfiguredImageGenerator(config, workDir) : undefined,
+    imageConcurrency: getConfiguredImageConcurrency(config),
     synthesizeNarration: hasUsableTtsProvider(config) ? createConfiguredNarrationSynthesizer(config, workDir) : undefined,
   };
 }

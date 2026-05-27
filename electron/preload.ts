@@ -38,7 +38,9 @@ contextBridge.exposeInMainWorld('storybound', {
   createAndRunTask: (input: CreateTaskInput) => ipcRenderer.invoke('task:create-and-run', input),
   updateTaskStatus: (id: string, status: TaskStatus) => ipcRenderer.invoke('task:update-status', { id, status }),
   retryTask: (id: string) => ipcRenderer.invoke('task:retry', id),
+  regenerateTaskImage: (id: string, sceneId: number) => ipcRenderer.invoke('task:regenerate-image', { id, sceneId }),
   getTaskArtifacts: (id: string): Promise<TaskArtifactSnapshot> => ipcRenderer.invoke('task:get-artifacts', id),
+  readAssetDataUrl: (path: string): Promise<string> => ipcRenderer.invoke('asset:read-data-url', path),
   runDiagnostics: () => ipcRenderer.invoke('diagnostics:run'),
   openPath: (path: string) => ipcRenderer.invoke('path:open', path),
   onTaskEvent: (callback: (state: AppState) => void) => {

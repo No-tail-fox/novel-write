@@ -62,6 +62,16 @@ export function createConfiguredImageGenerator(config: AppConfig, workDir: strin
   };
 }
 
+export function getConfiguredImageConcurrency(config: AppConfig): number {
+  const value =
+    config.imageProvider === 'jimeng'
+      ? config.jimeng.concurrency
+      : config.imageProvider === 'custom'
+        ? config.customImage.concurrency
+        : config.gptImage.concurrency ?? config.image.concurrency;
+  return Math.max(1, Math.min(6, Math.floor(Number.isFinite(value) ? value : 1)));
+}
+
 export function createConfiguredNarrationSynthesizer(config: AppConfig, workDir: string): NarrationSynthesizer {
   return async (scenes, task, signal) => {
     if (config.tts.provider === 'mock') {

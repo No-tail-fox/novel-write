@@ -214,6 +214,25 @@ describe('product shell ui', () => {
     expect(main).toContain('resumeTask');
     expect(main).not.toContain("task.status === 'paused' ? 'running' : 'paused'");
   });
+
+  it('shows live image thumbnails with concurrency context and per-scene regeneration controls', async () => {
+    const main = await readFile(new URL('../src/main.tsx', import.meta.url), 'utf8');
+    const css = await readFile(new URL('../src/styles.css', import.meta.url), 'utf8');
+    const preload = await readFile(new URL('../electron/preload.ts', import.meta.url), 'utf8');
+
+    expect(preload).toContain('readAssetDataUrl');
+    expect(preload).toContain('regenerateTaskImage');
+    expect(main).toContain('ImageGenerationGallery');
+    expect(main).toContain('readAssetDataUrl');
+    expect(main).toContain('regenerateTaskImage');
+    expect(main).toContain('activeImageConcurrency');
+    expect(main).toContain('imagePreviewUrls');
+    expect(main).toContain('disabled={isBrowserPreview || task.status === \'running\'');
+    expect(main).toContain('重新生成');
+    expect(css).toContain('.image-preview-grid');
+    expect(css).toContain('.image-preview-card');
+    expect(css).toContain('.image-thumb');
+  });
 });
 
 function countOccurrences(value: string, needle: string): number {

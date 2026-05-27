@@ -4,6 +4,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { FileDatabase } from '@shared/storage';
 import { runTask } from '@shared/runner';
+import { markSceneImageForRegeneration } from '@shared/pipeline-cache';
 import type { ImagePrompt, PipelineArtifact, StoryboardScene } from '@shared/types';
 import type { PyJianYingBridgeInput } from '@shared/jianying-bridge';
 
@@ -13,6 +14,62 @@ const tinyPng = Buffer.from(
 );
 
 describe('pipeline cache and retry', () => {
+  it('runs image generation at configured concurrency and persists each finished image while others continue', async () => {
+    const dir = await mkdtemp(join(tmpdir(), 'storybound-pipeline-concurrency-'));
+    const db = await FileDatabase.open(join(dir, 'data.db'));
+    const mediaDir = join(dir, 'media');
+    const draftRootDir = join(dir, 'JianyingPro Drafts');
+    const scenes: StoryboardScene[] = [
+      { id: 1, cap: 'Scene one', descPrompt: 'prompt one', durationMs: 1000 },
+      { id: 2, cap: 'Scene two', descPrompt: 'prompt two', durationMs: 1000 },
+      { id: 3, cap: 'Scene three', descPrompt: 'prompt three', durationMs: 1000 },
+    ];
+    const artifact = createArtifact('Concurrent Draft', scenes);
+    const activeSceneIds = new Set<number>();
+    const startedSceneIds: number[] = [];
+    let maxActive = 0;
+    let stateAfterFirstImage: unknown = null;
+
+    try {
+      const config = (await db.getState()).config;
+      await db.upsertConfig({ ...config, jianying: { ...config.jianying, draftPath: draftRootDir } });
+      const task = await db.createTask({ title: 'Concurrent Draft', inputText: 'source text' });
+      const statePath = join(dir, 'tasks', task.id, 'pipeline', 'state.json');
+
+      await runTask(db, task, {
+        appDataDir: dir,
+        imageConcurrency: 2,
+        generatePipelineArtifact: async () => artifact,
+        generateImages: async (missingScenes) => {
+          const scene = missingScenes[0];
+          startedSceneIds.push(scene.id);
+          activeSceneIds.add(scene.id);
+          maxActive = Math.max(maxActive, activeSceneIds.size);
+          await delay(scene.id === 1 ? 10 : 60);
+          await mkdir(mediaDir, { recursive: true });
+          const path = join(mediaDir, `${scene.id}.png`);
+          await writeFile(path, tinyPng);
+          activeSceneIds.delete(scene.id);
+          return [{ sceneId: scene.id, path }];
+        },
+        synthesizeNarration: async (missingScenes) => writeAudioAssets(mediaDir, missingScenes),
+        draftWriterOptions: { runBridge: fakeBridge },
+        onHeartbeat: async (_taskId, step, detail) => {
+          if (step === 4 && detail === 'image scene 1 completed') {
+            stateAfterFirstImage = JSON.parse(await readFile(statePath, 'utf8'));
+          }
+        },
+      });
+
+      expect(startedSceneIds.slice(0, 2)).toEqual([1, 2]);
+      expect(maxActive).toBe(2);
+      expect((stateAfterFirstImage as { assets: { images: Array<{ sceneId: number }> } }).assets.images).toEqual([{ sceneId: 1, path: join(mediaDir, '1.png') }]);
+    } finally {
+      await db.close();
+      await rm(dir, { recursive: true, force: true });
+    }
+  });
+
   it('persists step state, pauses on provider failure, and retries only missing image assets', async () => {
     const dir = await mkdtemp(join(tmpdir(), 'storybound-pipeline-cache-'));
     const db = await FileDatabase.open(join(dir, 'data.db'));
@@ -121,7 +178,106 @@ describe('pipeline cache and retry', () => {
       await rm(dir, { recursive: true, force: true });
     }
   });
+
+  it('marks one scene image for regeneration without clearing completed text or narration assets', async () => {
+    const dir = await mkdtemp(join(tmpdir(), 'storybound-regenerate-image-'));
+    const statePath = join(dir, 'pipeline', 'state.json');
+
+    try {
+      await mkdir(join(dir, 'pipeline'), { recursive: true });
+      await writeFile(
+        statePath,
+        JSON.stringify(
+          {
+            version: 1,
+            taskId: 'task-regenerate',
+            updatedAt: '2026-05-27T00:00:00.000Z',
+            steps: {
+              '3': { status: 'completed', outputPath: 'prompts.json' },
+              '4': { status: 'completed', outputPath: '1.png\n2.png' },
+              '5': { status: 'completed', outputPath: '1.mp3\n2.mp3' },
+              '6': { status: 'completed', outputPath: 'draft-dir' },
+            },
+            artifact: {
+              reviewedText: 'reviewed',
+              rewrittenCopy: 'copy',
+              cover: { title: 'Title', subtitle: [], summary: '', tags: [], comments: [] },
+              scenes: [
+                { id: 1, cap: 'one', descPrompt: 'one', durationMs: 1000 },
+                { id: 2, cap: 'two', descPrompt: 'two', durationMs: 1000 },
+              ],
+              imagePrompts: [
+                { sceneId: 1, cap: 'one', prompt: 'one', negativePrompt: '', style: '', ratio: '9:16', characterProfile: '' },
+                { sceneId: 2, cap: 'two', prompt: 'two', negativePrompt: '', style: '', ratio: '9:16', characterProfile: '' },
+              ],
+            },
+            assets: {
+              images: [
+                { sceneId: 1, path: '1.png' },
+                { sceneId: 2, path: '2.png' },
+              ],
+              narration: [
+                { sceneId: 1, path: '1.mp3' },
+                { sceneId: 2, path: '2.mp3' },
+              ],
+            },
+            draft: {
+              draftDir: 'draft-dir',
+              draftContentPath: 'draft_content.json',
+              draftMetaPath: 'draft_meta_info.json',
+            },
+          },
+          null,
+          2,
+        ),
+        'utf8',
+      );
+
+      const result = await markSceneImageForRegeneration(statePath, 2);
+      const next = JSON.parse(await readFile(statePath, 'utf8'));
+
+      expect(result.removed).toBe(true);
+      expect(next.assets.images).toEqual([{ sceneId: 1, path: '1.png' }]);
+      expect(next.assets.narration).toEqual([
+        { sceneId: 1, path: '1.mp3' },
+        { sceneId: 2, path: '2.mp3' },
+      ]);
+      expect(next.artifact.reviewedText).toBe('reviewed');
+      expect(next.steps['4'].status).toBe('pending');
+      expect(next.steps['4'].outputPath).toBe('1.png');
+      expect(next.steps['5'].status).toBe('completed');
+      expect(next.steps['6'].status).toBe('pending');
+      expect(next.draft).toBeUndefined();
+    } finally {
+      await rm(dir, { recursive: true, force: true });
+    }
+  });
 });
+
+function createArtifact(title: string, scenes: StoryboardScene[]): PipelineArtifact {
+  return {
+    reviewedText: 'reviewed',
+    rewrittenCopy: 'rewritten',
+    cover: { title, subtitle: [], summary: '', tags: [], comments: [] },
+    scenes,
+    imagePrompts: scenes.map(
+      (scene): ImagePrompt => ({
+        sceneId: scene.id,
+        cap: scene.cap,
+        prompt: scene.descPrompt,
+        negativePrompt: 'none',
+        style: 'photo-real',
+        ratio: '9:16',
+        characterProfile: 'same person',
+      }),
+    ),
+    subtitles: { cues: [], srt: '' },
+  };
+}
+
+async function delay(ms: number): Promise<void> {
+  await new Promise((resolve) => setTimeout(resolve, ms));
+}
 
 async function writeAudioAssets(mediaDir: string, scenes: StoryboardScene[]): Promise<Array<{ sceneId: number; path: string }>> {
   await mkdir(mediaDir, { recursive: true });

@@ -16,7 +16,9 @@ describe('electron ipc contract', () => {
       'ui:save-preferences',
       'task:update-status',
       'task:retry',
+      'task:regenerate-image',
       'task:get-artifacts',
+      'asset:read-data-url',
       'config:test',
       'llm:test-config',
       'models:list',
@@ -77,5 +79,35 @@ describe('electron ipc contract', () => {
     expect(viteEnv).toContain('listProviderModels');
     expect(viteEnv).toContain('composeResearchCopy');
     expect(viteEnv).toContain('getTaskArtifacts');
+  });
+
+  it('exposes safe local image data URLs for task artifact thumbnails', async () => {
+    const main = await readFile(new URL('../electron/main.ts', import.meta.url), 'utf8');
+    const preload = await readFile(new URL('../electron/preload.ts', import.meta.url), 'utf8');
+    const viteEnv = await readFile(new URL('../src/vite-env.d.ts', import.meta.url), 'utf8');
+
+    expect(main).toContain("ipcMain.handle('asset:read-data-url'");
+    expect(main).toContain('readLocalImageDataUrl');
+    expect(main).toContain('data:image/');
+    expect(main).toContain('Unsupported preview image extension');
+    expect(preload).toContain('readAssetDataUrl');
+    expect(preload).toContain('asset:read-data-url');
+    expect(viteEnv).toContain('readAssetDataUrl: (path: string) => Promise<string>');
+  });
+
+  it('regenerates a single scene image through cache invalidation and background resume', async () => {
+    const main = await readFile(new URL('../electron/main.ts', import.meta.url), 'utf8');
+    const preload = await readFile(new URL('../electron/preload.ts', import.meta.url), 'utf8');
+    const viteEnv = await readFile(new URL('../src/vite-env.d.ts', import.meta.url), 'utf8');
+    const regenerateHandler = main.slice(main.indexOf("ipcMain.handle('task:regenerate-image'"), main.indexOf("ipcMain.handle('task:get-artifacts'"));
+
+    expect(main).toContain('markSceneImageForRegeneration');
+    expect(regenerateHandler).toContain('retryFromStep: 4');
+    expect(regenerateHandler).toContain('failedStep: 4');
+    expect(regenerateHandler).toContain('resumeTaskRun(database, updatedTask)');
+    expect(regenerateHandler).not.toContain('runTask(');
+    expect(preload).toContain('regenerateTaskImage');
+    expect(preload).toContain('task:regenerate-image');
+    expect(viteEnv).toContain('regenerateTaskImage: (id: string, sceneId: number) => Promise<AppState>');
   });
 });

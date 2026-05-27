@@ -324,6 +324,9 @@ function makeFallbackApi(setState: (state: AppState) => void): StoryboundApi {
       const state = read();
       return persist({ ...state, tasks: state.tasks.map((task) => (task.id === id ? { ...task, status: 'pending', errorMessage: '' } : task)) });
     },
+    async regenerateTaskImage() {
+      throw new Error('浏览器预览不能重新生成真实图片，请在 Electron 应用中操作。');
+    },
     async getTaskArtifacts(id: string) {
       const task = read().tasks.find((item) => item.id === id);
       return {
@@ -338,6 +341,9 @@ function makeFallbackApi(setState: (state: AppState) => void): StoryboundApi {
         assets: { images: [], narration: [] },
         draft: null,
       };
+    },
+    async readAssetDataUrl() {
+      throw new Error('浏览器预览不能读取本地图片缩略图，请在 Electron 应用中查看。');
     },
     async runDiagnostics() {
       const state = read();
@@ -505,7 +511,7 @@ function App() {
           {activeView === 'new-task' ? <NewTaskPage api={api} state={state} applyState={applyState} openTaskDetail={openTaskDetail} isBrowserPreview={isBrowserPreview} /> : null}
           {activeView === 'queue' ? <QueuePage api={api} state={state} applyState={applyState} openNewTask={() => navigate('new-task')} openTaskDetail={openTaskDetail} isBrowserPreview={isBrowserPreview} /> : null}
           {activeView === 'history' ? <HistoryPage api={api} state={state} openTaskDetail={openTaskDetail} /> : null}
-          {activeView === 'task-detail' ? <TaskDetailPage api={api} state={state} task={selectedTask} applyState={applyState} close={() => navigate('history')} /> : null}
+          {activeView === 'task-detail' ? <TaskDetailPage api={api} state={state} task={selectedTask} applyState={applyState} close={() => navigate('history')} isBrowserPreview={isBrowserPreview} /> : null}
           {activeView === 'image-lab' ? <ImageLabPage api={api} state={state} applyState={applyState} /> : null}
           {activeView === 'prompt-templates' ? <PromptTemplatesPage api={api} state={state} applyState={applyState} /> : null}
           {activeView === 'draft-templates' ? <DraftTemplatesPage api={api} state={state} applyState={applyState} /> : null}
@@ -942,7 +948,21 @@ function HistoryPage({ api, state, openTaskDetail }: { api: StoryboundApi; state
   );
 }
 
-function TaskDetailPage({ api, state, task, applyState, close }: { api: StoryboundApi; state: AppState; task: Task | null; applyState: (state: AppState) => void; close: () => void }) {
+function TaskDetailPage({
+  api,
+  state,
+  task,
+  applyState,
+  close,
+  isBrowserPreview,
+}: {
+  api: StoryboundApi;
+  state: AppState;
+  task: Task | null;
+  applyState: (state: AppState) => void;
+  close: () => void;
+  isBrowserPreview: boolean;
+}) {
   const [tab, setTab] = useState<'preview' | 'storyboard' | 'audio'>('preview');
   const [liveNow, setLiveNow] = useState(Date.now());
   const [artifactSnapshot, setArtifactSnapshot] = useState<TaskArtifactSnapshot | null>(null);
@@ -1065,7 +1085,7 @@ function TaskDetailPage({ api, state, task, applyState, close }: { api: Storybou
           <button className={tab === 'storyboard' ? 'active' : ''} onClick={() => setTab('storyboard')}><ImageIcon size={14} />分镜画廊</button>
           <button className={tab === 'audio' ? 'active' : ''} onClick={() => setTab('audio')}><Mic2 size={14} />配音试听</button>
         </div>
-        <ArtifactPreviewContent api={api} task={task} tab={tab} snapshot={artifactSnapshot} latestEvent={latestEvent} currentAgent={currentMeta.agent} />
+        <ArtifactPreviewContent api={api} task={task} config={state.config} applyState={applyState} tab={tab} snapshot={artifactSnapshot} latestEvent={latestEvent} currentAgent={currentMeta.agent} isBrowserPreview={isBrowserPreview} />
       </section>
     </div>
   );
@@ -1074,17 +1094,23 @@ function TaskDetailPage({ api, state, task, applyState, close }: { api: Storybou
 function ArtifactPreviewContent({
   api,
   task,
+  config,
+  applyState,
   tab,
   snapshot,
   latestEvent,
   currentAgent,
+  isBrowserPreview,
 }: {
   api: StoryboundApi;
   task: Task;
+  config: AppConfig;
+  applyState: (state: AppState) => void;
   tab: 'preview' | 'storyboard' | 'audio';
   snapshot: TaskArtifactSnapshot | null;
   latestEvent: TaskEvent | null;
   currentAgent: string;
+  isBrowserPreview: boolean;
 }) {
   const artifact = snapshot?.artifact ?? {};
   const sourceContext = artifact.sourceContext;
@@ -1167,7 +1193,16 @@ function ArtifactPreviewContent({
           </ArtifactSection>
 
           <ArtifactSection title="批量生图" badge={`${imageAssets.length} 张`}>
-            <ArtifactAssetList assets={imageAssets} empty="等待图片生成" />
+            <ImageGenerationGallery
+              api={api}
+              task={task}
+              scenes={scenes}
+              imagePrompts={imagePrompts}
+              images={imageAssets}
+              concurrency={activeImageConcurrency(config)}
+              isBrowserPreview={isBrowserPreview}
+              applyState={applyState}
+            />
           </ArtifactSection>
 
           <ArtifactSection title="配音字幕" badge={`${narrationAssets.length} 段 / ${subtitles?.cues.length ?? 0} 条字幕`}>
@@ -1194,6 +1229,18 @@ function ArtifactPreviewContent({
           </ArtifactSection>
           <ArtifactSection title="绘图提示词" badge={`${imagePrompts.length} 条`}>
             <ArtifactPromptList prompts={imagePrompts} />
+          </ArtifactSection>
+          <ArtifactSection title="批量生图" badge={`${imageAssets.length} 张`}>
+            <ImageGenerationGallery
+              api={api}
+              task={task}
+              scenes={scenes}
+              imagePrompts={imagePrompts}
+              images={imageAssets}
+              concurrency={activeImageConcurrency(config)}
+              isBrowserPreview={isBrowserPreview}
+              applyState={applyState}
+            />
           </ArtifactSection>
         </div>
       ) : null}
@@ -1278,6 +1325,115 @@ function ArtifactPromptList({ prompts }: { prompts: NonNullable<TaskArtifactSnap
           <small>负面：{prompt.negativePrompt || '-'}</small>
         </div>
       ))}
+    </div>
+  );
+}
+
+function ImageGenerationGallery({
+  api,
+  task,
+  scenes,
+  imagePrompts,
+  images,
+  concurrency,
+  isBrowserPreview,
+  applyState,
+}: {
+  api: StoryboundApi;
+  task: Task;
+  scenes: NonNullable<TaskArtifactSnapshot['artifact']['scenes']>;
+  imagePrompts: NonNullable<TaskArtifactSnapshot['artifact']['imagePrompts']>;
+  images: TaskArtifactSnapshot['assets']['images'];
+  concurrency: number;
+  isBrowserPreview: boolean;
+  applyState: (state: AppState) => void;
+}) {
+  const [imagePreviewUrls, setImagePreviewUrls] = useState<Record<string, string>>({});
+  const [imagePreviewErrors, setImagePreviewErrors] = useState<Record<string, string>>({});
+  const [regeneratingSceneId, setRegeneratingSceneId] = useState<number | null>(null);
+  const imagePaths = images.map((asset) => asset.path).join('|');
+
+  useEffect(() => {
+    if (isBrowserPreview || images.length === 0) {
+      setImagePreviewUrls({});
+      setImagePreviewErrors({});
+      return undefined;
+    }
+    let cancelled = false;
+    const validPaths = new Set(images.map((asset) => asset.path));
+    setImagePreviewUrls((current) => Object.fromEntries(Object.entries(current).filter(([path]) => validPaths.has(path))));
+    setImagePreviewErrors((current) => Object.fromEntries(Object.entries(current).filter(([path]) => validPaths.has(path))));
+
+    for (const asset of images) {
+      api.readAssetDataUrl(asset.path)
+        .then((dataUrl) => {
+          if (!cancelled) {
+            setImagePreviewUrls((current) => ({ ...current, [asset.path]: dataUrl }));
+          }
+        })
+        .catch((error) => {
+          if (!cancelled) {
+            setImagePreviewErrors((current) => ({ ...current, [asset.path]: error instanceof Error ? error.message : String(error) }));
+          }
+        });
+    }
+    return () => {
+      cancelled = true;
+    };
+  }, [api, imagePaths, isBrowserPreview]);
+
+  async function regenerate(sceneId: number) {
+    setRegeneratingSceneId(sceneId);
+    try {
+      applyState(await api.regenerateTaskImage(task.id, sceneId));
+    } finally {
+      setRegeneratingSceneId(null);
+    }
+  }
+
+  if (scenes.length === 0) return <ArtifactEmpty text="等待分镜后生成图片" />;
+
+  return (
+    <div className="image-generation-gallery">
+      <div className="image-generation-toolbar">
+        <span>并发数 {concurrency}</span>
+        <span>{images.length}/{scenes.length} 张已落盘</span>
+      </div>
+      <div className="image-preview-grid">
+        {scenes.map((scene) => {
+          const image = images.find((item) => item.sceneId === scene.id);
+          const prompt = imagePrompts.find((item) => item.sceneId === scene.id);
+          const previewUrl = image ? imagePreviewUrls[image.path] : '';
+          const previewError = image ? imagePreviewErrors[image.path] : '';
+          return (
+            <article className={`image-preview-card ${image ? 'ready' : 'pending'}`} key={scene.id}>
+              <div className="image-thumb">
+                {previewUrl ? <img src={previewUrl} alt={`Scene ${scene.id}`} /> : null}
+                {!previewUrl && image && !previewError ? <span className="thumb-state">读取中</span> : null}
+                {!previewUrl && previewError ? <span className="thumb-state danger">读取失败</span> : null}
+                {!image ? <ImageIcon size={24} /> : null}
+              </div>
+              <div className="image-preview-body">
+                <div className="image-preview-title">
+                  <strong>{scene.id}. {scene.cap}</strong>
+                  <span>{image ? '已生成' : task.status === 'running' ? '等待/生成中' : '未生成'}</span>
+                </div>
+                <p>{prompt ? trimForPreview(prompt.prompt, 180) : scene.descPrompt}</p>
+                {image ? <small>{image.path}</small> : <small>等待 provider 返回真实图片</small>}
+                {previewError ? <small className="danger-text">{previewError}</small> : null}
+              </div>
+              <button
+                className="mini-button"
+                disabled={isBrowserPreview || task.status === 'running' || task.status === 'pending' || !image || regeneratingSceneId === scene.id}
+                onClick={() => regenerate(scene.id)}
+              >
+                {regeneratingSceneId === scene.id ? <Loader2 className="spin" size={14} /> : <RotateCcw size={14} />}
+                重新生成
+              </button>
+            </article>
+          );
+        })}
+      </div>
     </div>
   );
 }

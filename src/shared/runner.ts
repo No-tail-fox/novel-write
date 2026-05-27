@@ -16,6 +16,7 @@ export interface RunTaskOptions {
   resolveAiSourceContext?: (task: Task) => Promise<AiSourceContext>;
   generatePipelineArtifact?: (task: Task, sourceContext?: AiSourceContext) => Promise<PipelineArtifact>;
   generateImages?: (scenes: StoryboardScene[], prompts: ImagePrompt[], task: Task, signal?: AbortSignal) => Promise<SceneAsset[]>;
+  imageConcurrency?: number;
   synthesizeNarration?: (scenes: StoryboardScene[], task: Task, signal?: AbortSignal) => Promise<SceneAsset[]>;
   draftWriterOptions?: WriteJianyingDraftOptions;
 }
@@ -380,14 +381,20 @@ async function ensureImages(input: {
   if (!options.generateImages) {
     throw new Error('Image provider is not configured; cannot create real image assets.');
   }
-  for (const scene of missing) {
+  const generateImages = options.generateImages;
+  let persistImageQueue = Promise.resolve();
+  await runWithConcurrency(missing, options.imageConcurrency ?? 1, async (scene) => {
     throwIfAborted(options.signal);
-    const generatedImages = await options.generateImages([scene], artifact.imagePrompts, task, options.signal);
-    pipeline.assets.images = mergeAssets(pipeline.assets.images, generatedImages);
-    await markStep(4, 'running', { outputPath: pipeline.assets.images.map((asset) => asset.path).join('\n') });
-    await heartbeatTask(db, task.id, options, 4, `image scene ${scene.id} completed`);
+    const generatedImages = await generateImages([scene], artifact.imagePrompts, task, options.signal);
+    persistImageQueue = persistImageQueue.then(async () => {
+      pipeline.assets.images = mergeAssets(pipeline.assets.images, generatedImages);
+      await markStep(4, 'running', { outputPath: pipeline.assets.images.map((asset) => asset.path).join('\n') });
+      await heartbeatTask(db, task.id, options, 4, `image scene ${scene.id} completed`);
+    });
+    await persistImageQueue;
     throwIfAborted(options.signal);
-  }
+  });
+  await persistImageQueue;
   await markStep(4, 'completed');
   await emit('step_complete', 4, 'Producer', '真实图片素材已生成', { count: pipeline.assets.images.length });
 }
@@ -560,6 +567,29 @@ function throwIfAborted(signal?: AbortSignal): void {
   const reason = signal.reason;
   if (reason instanceof Error) throw reason;
   throw new Error(typeof reason === 'string' ? reason : 'Task aborted.');
+}
+
+async function runWithConcurrency<T>(items: T[], concurrency: number, worker: (item: T) => Promise<void>): Promise<void> {
+  const limit = Math.max(1, Math.min(items.length || 1, Math.floor(Number.isFinite(concurrency) ? concurrency : 1)));
+  let cursor = 0;
+  let firstError: unknown = null;
+
+  async function runWorker(): Promise<void> {
+    while (!firstError) {
+      const index = cursor;
+      cursor += 1;
+      if (index >= items.length) return;
+      try {
+        await worker(items[index]);
+      } catch (error) {
+        firstError ??= error;
+        return;
+      }
+    }
+  }
+
+  await Promise.all(Array.from({ length: limit }, runWorker));
+  if (firstError) throw firstError;
 }
 
 function firstRunnableStep(pipeline: PipelineState): number {
