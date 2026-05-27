@@ -18,6 +18,7 @@ describe('electron ipc contract', () => {
       'task:retry',
       'llm:test-config',
       'research:web-search',
+      'research:compose-copy',
       'diagnostics:run',
     ]) {
       expect(preload).toContain(channel);
@@ -43,7 +44,9 @@ describe('electron ipc contract', () => {
     expect(preload).toContain('callback(state)');
     expect(preload).toContain('testLlmConfig');
     expect(preload).toContain('searchWebSources');
+    expect(preload).toContain('composeResearchCopy');
     expect(viteEnv).toContain('callback: (state: AppState) => void');
     expect(viteEnv).toContain('testLlmConfig');
+    expect(viteEnv).toContain('composeResearchCopy');
   });
 });

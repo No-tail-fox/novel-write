@@ -4,12 +4,12 @@ import { mkdir } from 'node:fs/promises';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { promisify } from 'node:util';
-import { testOpenAiCompatibleLlm } from '../src/shared/llm-provider';
-import { createAiSourceResearcher, searchWebSources } from '../src/shared/research';
+import { createOpenAiCompatibleJsonLlm, testOpenAiCompatibleLlm } from '../src/shared/llm-provider';
+import { composeCopyFromSources, createAiSourceResearcher, searchWebSources } from '../src/shared/research';
 import { runTask } from '../src/shared/runner';
 import { FileDatabase } from '../src/shared/storage';
 import { createTaskRuntimeProviders } from '../src/shared/task-runtime-providers';
-import type { AccountProfile, ActivationState, AppConfig, CreateTaskInput, DraftTemplate, LlmConfig, PromptTemplate, TaskStatus, UiPreferences } from '../src/shared/types';
+import type { AccountProfile, ActivationState, AppConfig, CreateTaskInput, DraftTemplate, LlmConfig, PromptTemplate, ResearchCopyComposeInput, TaskStatus, UiPreferences } from '../src/shared/types';
 import { getRendererIndexPath } from './paths';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
@@ -84,6 +84,12 @@ ipcMain.handle('research:web-search', async (_event, query: string) => {
   } catch (error) {
     return { query: trimmed, sections: [], warnings: [error instanceof Error ? error.message : String(error)] };
   }
+});
+
+ipcMain.handle('research:compose-copy', async (_event, input: ResearchCopyComposeInput) => {
+  const database = await getDb();
+  const state = await database.getState();
+  return composeCopyFromSources(createOpenAiCompatibleJsonLlm(state.config.llm), input);
 });
 
 ipcMain.handle('prompt-template:save', async (_event, template: PromptTemplate) => {

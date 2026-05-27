@@ -1,4 +1,5 @@
-import type { AiSourceContext, AiSourceSection, AppConfig, Task } from './types';
+import type { JsonLlm } from './llm-provider';
+import type { AiSourceContext, AiSourceSection, AppConfig, ResearchCopyComposeInput, ResearchCopyComposeResult, Task } from './types';
 
 type FetchLike = (url: string, init?: RequestInit) => Promise<Response>;
 
@@ -73,7 +74,7 @@ export function formatAiSourceContext(task: Pick<Task, 'aiKeyword' | 'aiSources'
 export async function searchWebSources(query: string, fetchImpl: FetchLike = fetch): Promise<AiSourceSection[]> {
   const rssItems = await searchBingRss(query, fetchImpl);
   const sections: AiSourceSection[] = [];
-  for (const item of rssItems.slice(0, 5)) {
+  for (const item of rssItems.slice(0, 10)) {
     let content = item.content;
     if (item.url) {
       const pageText = await fetchPageText(item.url, fetchImpl).catch(() => '');
@@ -87,13 +88,70 @@ export async function searchWebSources(query: string, fetchImpl: FetchLike = fet
 }
 
 async function searchBingRss(query: string, fetchImpl: FetchLike): Promise<AiSourceSection[]> {
-  const url = `https://cn.bing.com/search?q=${encodeURIComponent(query)}&format=rss`;
-  const response = await fetchWithTimeout(fetchImpl, url, 8000, 'application/rss+xml,text/xml,*/*');
-  if (!response.ok) {
-    throw new Error(`Bing RSS returned ${response.status}`);
+  const urls = [
+    `https://cn.bing.com/search?q=${encodeURIComponent(query)}&format=rss`,
+    `https://www.bing.com/search?q=${encodeURIComponent(query)}&format=rss`,
+  ];
+  let lastError: unknown = null;
+  for (const url of urls) {
+    try {
+      const response = await fetchWithTimeout(fetchImpl, url, 8000, 'application/rss+xml,text/xml,*/*');
+      if (!response.ok) {
+        lastError = new Error(`Bing RSS returned ${response.status}`);
+        continue;
+      }
+      const xml = await response.text();
+      return extractRssItems(xml).slice(0, 10).map((item) => ({ source: 'web', ...item }));
+    } catch (error) {
+      lastError = error;
+    }
   }
-  const xml = await response.text();
-  return extractRssItems(xml).slice(0, 5).map((item) => ({ source: 'web', ...item }));
+  throw lastError instanceof Error ? lastError : new Error(String(lastError ?? 'Bing RSS request failed'));
+}
+
+export async function composeCopyFromSources(runJson: JsonLlm, input: ResearchCopyComposeInput): Promise<ResearchCopyComposeResult> {
+  const selectedSources = input.selectedSources.filter((source) => source.source === 'web').slice(0, 10);
+  if (selectedSources.length === 0) {
+    throw new Error('Please select at least one web source before generating copy.');
+  }
+
+  const sourceBlocks = selectedSources
+    .map((source, index) => {
+      const url = source.url ? `\nURL: ${source.url}` : '';
+      const text = compactText(source.content || source.snippet || '').slice(0, 2600);
+      return `${index + 1}. ${source.title}${url}\n${text}`;
+    })
+    .join('\n\n');
+
+  const result = await runJson<{ copy?: string; inputText?: string; materialText?: string }>({
+    step: 0,
+    name: 'research-copy',
+    messages: [
+      {
+        role: 'system',
+        content:
+          'You are a short-video script researcher. Use only the selected web page material and the user requirements to write a concise Chinese source copy. Return strict JSON only.',
+      },
+      {
+        role: 'user',
+        content: [
+          `Keyword: ${input.keyword}`,
+          input.extraRequirements ? `Extra requirements: ${input.extraRequirements}` : '',
+          'Selected web page material:',
+          sourceBlocks,
+          'Output JSON shape: {"copy":"一段可继续进入短视频流水线的中文文案素材，保留事实依据，避免编造网页中没有的信息。"}',
+        ]
+          .filter(Boolean)
+          .join('\n\n'),
+      },
+    ],
+  });
+
+  const copy = (result.json.copy || result.json.inputText || result.json.materialText || '').trim();
+  if (!copy) {
+    throw new Error('LLM did not return copy text for selected sources.');
+  }
+  return { copy, raw: result.raw, requestId: result.requestId };
 }
 
 async function fetchPageText(url: string, fetchImpl: FetchLike): Promise<string> {

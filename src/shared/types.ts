@@ -345,6 +345,18 @@ export interface AiSourceContext {
   warnings: string[];
 }
 
+export interface ResearchCopyComposeInput {
+  keyword: string;
+  extraRequirements: string;
+  selectedSources: AiSourceSection[];
+}
+
+export interface ResearchCopyComposeResult {
+  copy: string;
+  raw: string;
+  requestId: string | null;
+}
+
 export interface PipelineArtifact {
   reviewedText: string;
   rewrittenCopy: string;

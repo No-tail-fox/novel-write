@@ -1,9 +1,93 @@
 import { describe, expect, it } from 'vitest';
-import { createAiSourceResearcher } from '@shared/research';
+import { composeCopyFromSources, createAiSourceResearcher, searchWebSources } from '@shared/research';
 import { defaultConfig } from '@shared/config';
+import type { LlmJsonRequest } from '@shared/llm-provider';
 import type { Task } from '@shared/types';
 
 describe('AI source research', () => {
+  it('returns the first 10 Bing results with readable page text', async () => {
+    const requests: string[] = [];
+    const rssItems = Array.from({ length: 12 }, (_, index) => {
+      const n = index + 1;
+      return `<item><title>Result ${n}</title><link>https://example.test/${n}</link><description>Snippet ${n}</description></item>`;
+    }).join('');
+
+    const sections = await searchWebSources('history topic', async (url) => {
+      requests.push(String(url));
+      if (String(url).includes('bing.com/search')) {
+        return new Response(`<?xml version="1.0"?><rss><channel>${rssItems}</channel></rss>`, {
+          status: 200,
+          headers: { 'Content-Type': 'application/rss+xml' },
+        });
+      }
+      const pageNumber = String(url).split('/').pop();
+      return new Response(`<main><p>Readable page body ${pageNumber}.</p></main>`, {
+        status: 200,
+        headers: { 'Content-Type': 'text/html' },
+      });
+    });
+
+    expect(sections).toHaveLength(10);
+    expect(sections.map((section) => section.title)).toEqual(['Result 1', 'Result 2', 'Result 3', 'Result 4', 'Result 5', 'Result 6', 'Result 7', 'Result 8', 'Result 9', 'Result 10']);
+    expect(sections[9]).toMatchObject({ title: 'Result 10', url: 'https://example.test/10', snippet: 'Snippet 10' });
+    expect(sections[9].content).toContain('Readable page body 10');
+    expect(requests).toHaveLength(11);
+    expect(requests).not.toContain('https://example.test/11');
+  });
+
+  it('falls back to the global Bing RSS endpoint when the CN endpoint is unavailable', async () => {
+    const requests: string[] = [];
+
+    const sections = await searchWebSources('fallback topic', async (url) => {
+      requests.push(String(url));
+      if (String(url).startsWith('https://cn.bing.com/')) {
+        throw new TypeError('fetch failed');
+      }
+      if (String(url).startsWith('https://www.bing.com/')) {
+        return new Response(
+          '<?xml version="1.0"?><rss><channel><item><title>Fallback Result</title><link>https://example.test/fallback</link><description>Fallback snippet.</description></item></channel></rss>',
+          { status: 200, headers: { 'Content-Type': 'application/rss+xml' } },
+        );
+      }
+      return new Response('<main>Fallback page body.</main>', {
+        status: 200,
+        headers: { 'Content-Type': 'text/html' },
+      });
+    });
+
+    expect(requests[0]).toContain('https://cn.bing.com/search');
+    expect(requests[1]).toContain('https://www.bing.com/search');
+    expect(sections[0]).toMatchObject({ title: 'Fallback Result', content: 'Fallback page body.' });
+  });
+
+  it('composes an editable source copy from selected web pages through the configured LLM', async () => {
+    const requests: Array<{ name: string; prompt: string }> = [];
+    const result = await composeCopyFromSources(
+      async <T = unknown>(request: LlmJsonRequest) => {
+        requests.push({ name: request.name, prompt: request.messages.at(-1)?.content ?? '' });
+        return {
+          json: { copy: 'Generated source copy from selected research.' } as T,
+          raw: '{"copy":"Generated source copy from selected research."}',
+          requestId: 'copy-1',
+        };
+      },
+      {
+        keyword: 'Wu Zetian comeback',
+        extraRequirements: 'Make it emotional and suitable for short video narration.',
+        selectedSources: [
+          { source: 'web', title: 'Article A', url: 'https://example.test/a', snippet: 'Snippet A', content: 'Article A facts.' },
+          { source: 'web', title: 'Article B', url: 'https://example.test/b', content: 'Article B details.' },
+        ],
+      },
+    );
+
+    expect(result).toEqual({ copy: 'Generated source copy from selected research.', raw: '{"copy":"Generated source copy from selected research."}', requestId: 'copy-1' });
+    expect(requests[0].name).toBe('research-copy');
+    expect(requests[0].prompt).toContain('Wu Zetian comeback');
+    expect(requests[0].prompt).toContain('Article A facts.');
+    expect(requests[0].prompt).toContain('Article B details.');
+  });
+
   it('collects web RSS snippets and built-in knowledge for AI creation', async () => {
     const requests: string[] = [];
     const researcher = createAiSourceResearcher(defaultConfig, async (url) => {

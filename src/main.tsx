@@ -210,6 +210,9 @@ function makeFallbackApi(setState: (state: AppState) => void): StoryboundApi {
         warnings: ['浏览器预览无法直接抓取网页正文，请在 Electron 桌面端使用搜索。'],
       };
     },
+    async composeResearchCopy() {
+      throw new Error('浏览器预览无法调用真实 LLM 生成文案，请在 Electron 桌面端配置模型后使用。');
+    },
     async savePromptTemplate(template: PromptTemplate) {
       const state = read();
       const next = state.promptTemplates.filter((item) => item.id !== template.id);
@@ -510,8 +513,12 @@ function NewTaskPage({ api, state, applyState, openTaskDetail }: { api: Storybou
   const [searchContext, setSearchContext] = useState<AiSourceContext | null>(null);
   const [selectedSearchSourceIds, setSelectedSearchSourceIds] = useState<string[]>([]);
   const [searchMessage, setSearchMessage] = useState('');
+  const [composingCopy, setComposingCopy] = useState(false);
+  const [researchCopy, setResearchCopy] = useState('');
+  const [researchCopyMessage, setResearchCopyMessage] = useState('');
 
-  const selectedSources = (searchContext?.sections ?? []).filter((source, index) => selectedSearchSourceIds.includes(sourceKey(source, index)));
+  const searchSections = (searchContext?.sections ?? []).slice(0, 10);
+  const selectedSources = searchSections.filter((source, index) => selectedSearchSourceIds.includes(sourceKey(source, index)));
 
   async function searchWebSources() {
     const keyword = aiKeyword.trim();
@@ -523,13 +530,36 @@ function NewTaskPage({ api, state, applyState, openTaskDetail }: { api: Storybou
     setSearchMessage('正在从 Bing 搜索并读取网页正文...');
     try {
       const context = await api.searchWebSources(keyword);
-      setSearchContext(context);
-      setSelectedSearchSourceIds(context.sections.slice(0, 3).map((source, index) => sourceKey(source, index)));
-      setSearchMessage(context.warnings.length ? context.warnings.join('；') : `已获取 ${context.sections.length} 条网页资料，勾选后会补充进文案生成。`);
+      const limitedContext = { ...context, sections: context.sections.slice(0, 10) };
+      setSearchContext(limitedContext);
+      setSelectedSearchSourceIds([]);
+      setSearchMessage(context.warnings.length ? context.warnings.join('；') : `已获取前 ${limitedContext.sections.length} 条网页资料，请勾选要使用的页面。`);
     } catch (error) {
       setSearchMessage(error instanceof Error ? error.message : String(error));
     } finally {
       setSearchingSources(false);
+    }
+  }
+
+  async function composeResearchCopy() {
+    if (selectedSources.length === 0) {
+      setResearchCopyMessage('请先勾选至少 1 个网页来源。');
+      return;
+    }
+    setComposingCopy(true);
+    setResearchCopyMessage('正在结合所选页面信息生成文案...');
+    try {
+      const result = await api.composeResearchCopy({
+        keyword: aiKeyword.trim(),
+        extraRequirements,
+        selectedSources,
+      });
+      setResearchCopy(result.copy);
+      setResearchCopyMessage(`已生成文案，可直接编辑后开始任务${result.requestId ? `（request ${result.requestId}）` : ''}。`);
+    } catch (error) {
+      setResearchCopyMessage(error instanceof Error ? error.message : String(error));
+    } finally {
+      setComposingCopy(false);
     }
   }
 
@@ -538,7 +568,7 @@ function NewTaskPage({ api, state, applyState, openTaskDetail }: { api: Storybou
     try {
       const next = await api.createAndRunTask({
         title,
-        inputText: mode === 'paste' ? inputText : `${aiKeyword}\n\n${extraRequirements}`,
+        inputText: mode === 'paste' ? inputText : researchCopy.trim() || `${aiKeyword}\n\n${extraRequirements}`,
         mode,
         aiKeyword,
         aiSources,
@@ -616,9 +646,9 @@ function NewTaskPage({ api, state, applyState, openTaskDetail }: { api: Storybou
             </button>
             {searchMessage ? <div className="test-result">{searchMessage}</div> : null}
             {searchContext ? (
-              <div className="ai-search-results">
+              <div className="ai-search-results ai-search-results-scroll">
                 <div className="panel-title-row">
-                  <h3>选择网页信息补充进文案</h3>
+                  <h3>网页候选（前 10 条）</h3>
                   <small>{selectedSources.length}/{searchContext.sections.length} 已选择</small>
                 </div>
                 {searchContext.sections.length === 0 ? <EmptyState title="暂无可用网页资料" /> : null}
@@ -635,6 +665,16 @@ function NewTaskPage({ api, state, applyState, openTaskDetail }: { api: Storybou
                     </label>
                   );
                 })}
+                <button className="primary-action slim" disabled={composingCopy || selectedSources.length === 0} onClick={composeResearchCopy}>
+                  {composingCopy ? <Loader2 className="spin" size={15} /> : <Wand2 size={15} />}
+                  结合所选页面信息生成文案
+                </button>
+                {researchCopyMessage ? <div className="test-result">{researchCopyMessage}</div> : null}
+                {researchCopy ? (
+                  <Field label="生成文案（可编辑）">
+                    <textarea className="small-textarea research-copy-textarea" value={researchCopy} onChange={(event) => setResearchCopy(event.target.value)} />
+                  </Field>
+                ) : null}
               </div>
             ) : null}
           </div>

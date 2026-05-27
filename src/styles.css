@@ -1288,6 +1288,12 @@ textarea {
   background: #0b1016;
 }
 
+.ai-search-results-scroll {
+  max-height: 420px;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+}
+
 .search-source-card {
   display: grid;
   grid-template-columns: 20px minmax(0, 1fr);
@@ -1316,6 +1322,10 @@ textarea {
   margin: 8px 0 0;
   color: #c9d5e4;
   line-height: 1.5;
+}
+
+.research-copy-textarea {
+  min-height: 180px;
 }
 
 .profile-card {

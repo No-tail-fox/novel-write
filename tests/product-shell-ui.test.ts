@@ -65,11 +65,15 @@ describe('product shell ui', () => {
     const css = await readFile(new URL('../src/styles.css', import.meta.url), 'utf8');
 
     expect(main).toContain('searchWebSources');
+    expect(main).toContain('composeResearchCopy');
     expect(main).toContain('selectedSearchSourceIds');
     expect(main).toContain('selectedSources');
     expect(main).toContain('ai-search-results');
-    expect(main).toContain('选择网页信息补充进文案');
+    expect(main).toContain('ai-search-results-scroll');
+    expect(main).toContain('结合所选页面信息生成文案');
+    expect(main).toContain('网页候选（前 10 条）');
     expect(css).toContain('.ai-search-results');
+    expect(css).toContain('.ai-search-results-scroll');
     expect(css).toContain('.search-source-card');
   });
 

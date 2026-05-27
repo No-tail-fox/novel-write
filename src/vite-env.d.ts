@@ -10,6 +10,8 @@ import type {
   LlmConfig,
   LlmModelTestResult,
   PromptTemplate,
+  ResearchCopyComposeInput,
+  ResearchCopyComposeResult,
   TaskStatus,
   UiPreferences,
 } from './shared/types';
@@ -21,6 +23,7 @@ declare global {
       saveConfig: (config: AppConfig) => Promise<AppState>;
       testLlmConfig: (config: LlmConfig) => Promise<LlmModelTestResult>;
       searchWebSources: (query: string) => Promise<AiSourceContext>;
+      composeResearchCopy: (input: ResearchCopyComposeInput) => Promise<ResearchCopyComposeResult>;
       savePromptTemplate: (template: PromptTemplate) => Promise<AppState>;
       resetPromptTemplates: () => Promise<AppState>;
       saveDraftTemplate: (template: DraftTemplate) => Promise<AppState>;
