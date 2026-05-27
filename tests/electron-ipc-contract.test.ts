@@ -19,6 +19,7 @@ describe('electron ipc contract', () => {
       'task:get-artifacts',
       'config:test',
       'llm:test-config',
+      'models:list',
       'research:web-search',
       'research:compose-copy',
       'diagnostics:run',
@@ -45,11 +46,13 @@ describe('electron ipc contract', () => {
     expect(main).toContain('notifyTaskState');
     expect(preload).toContain('callback(state)');
     expect(preload).toContain('testLlmConfig');
+    expect(preload).toContain('listProviderModels');
     expect(preload).toContain('searchWebSources');
     expect(preload).toContain('composeResearchCopy');
     expect(preload).toContain('getTaskArtifacts');
     expect(viteEnv).toContain('callback: (state: AppState) => void');
     expect(viteEnv).toContain('testLlmConfig');
+    expect(viteEnv).toContain('listProviderModels');
     expect(viteEnv).toContain('composeResearchCopy');
     expect(viteEnv).toContain('getTaskArtifacts');
   });

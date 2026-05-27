@@ -7,12 +7,12 @@ import { fileURLToPath } from 'node:url';
 import { promisify } from 'node:util';
 import { readTaskArtifactSnapshot } from '../src/shared/artifact-preview';
 import { fromLlmModelTestResult, validateConfigTarget } from '../src/shared/config-utils';
-import { createOpenAiCompatibleJsonLlm, testOpenAiCompatibleLlm } from '../src/shared/llm-provider';
+import { createOpenAiCompatibleJsonLlm, listOpenAiCompatibleModels, testOpenAiCompatibleLlm } from '../src/shared/llm-provider';
 import { composeCopyFromSources, createAiSourceResearcher, searchWebSources } from '../src/shared/research';
 import { runTask } from '../src/shared/runner';
 import { FileDatabase } from '../src/shared/storage';
 import { createTaskRuntimeProviders } from '../src/shared/task-runtime-providers';
-import type { AccountProfile, ActivationState, AppConfig, ConfigTestTarget, CreateTaskInput, DraftTemplate, LlmConfig, PromptTemplate, ResearchCopyComposeInput, TaskStatus, UiPreferences } from '../src/shared/types';
+import type { AccountProfile, ActivationState, AppConfig, ConfigTestTarget, CreateTaskInput, DraftTemplate, LlmConfig, PromptTemplate, ProviderModelListRequest, ResearchCopyComposeInput, TaskStatus, UiPreferences } from '../src/shared/types';
 import { getRendererIndexPath } from './paths';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
@@ -76,6 +76,8 @@ ipcMain.handle('app:save-config', async (_event, config) => {
 });
 
 ipcMain.handle('llm:test-config', async (_event, config: LlmConfig) => testOpenAiCompatibleLlm(config));
+
+ipcMain.handle('models:list', async (_event, request: ProviderModelListRequest) => listOpenAiCompatibleModels(request));
 
 ipcMain.handle('config:test', async (_event, input: { target: ConfigTestTarget; config: AppConfig }) => {
   if (input.target === 'llm') {

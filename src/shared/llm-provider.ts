@@ -1,4 +1,4 @@
-import type { LlmConfig, LlmModelTestResult } from './types';
+import type { LlmConfig, LlmModelTestResult, ProviderModel, ProviderModelListRequest, ProviderModelListResult } from './types';
 
 export type LlmRole = 'system' | 'user' | 'assistant';
 
@@ -152,6 +152,105 @@ export async function testOpenAiCompatibleLlm(config: LlmConfig, fetchImpl: type
       detail: error instanceof Error ? error.message : String(error),
     };
   }
+}
+
+export async function listOpenAiCompatibleModels(
+  request: ProviderModelListRequest,
+  fetchImpl: typeof fetch = fetch,
+): Promise<ProviderModelListResult> {
+  const startedAt = Date.now();
+  const endpoint = `${normalizeOpenAiBaseUrl(request.baseUrl || 'https://api.openai.com')}/models`;
+  const baseResult = {
+    latencyMs: 0,
+    endpoint,
+    models: [] as ProviderModel[],
+  };
+
+  if (!request.apiKey.trim()) {
+    return { ...baseResult, status: 'fail', detail: 'API key is missing; fill it before fetching models.' };
+  }
+
+  try {
+    const response = await fetchWithTimeout(
+      fetchImpl,
+      endpoint,
+      {
+        method: 'GET',
+        headers: {
+          Authorization: `Bearer ${request.apiKey}`,
+        },
+      },
+      15000,
+    );
+    const latencyMs = Date.now() - startedAt;
+    const bodyText = await response.text();
+    if (!response.ok) {
+      return {
+        ...baseResult,
+        latencyMs,
+        status: 'fail',
+        detail: `Model list failed with HTTP ${response.status}: ${bodyText.slice(0, 300)}`,
+      };
+    }
+
+    const body = JSON.parse(bodyText) as { data?: unknown[] };
+    if (!Array.isArray(body.data)) {
+      return {
+        ...baseResult,
+        latencyMs,
+        status: 'fail',
+        detail: 'Model list response did not include data[].',
+      };
+    }
+
+    const seen = new Set<string>();
+    const models = body.data
+      .map(parseProviderModel)
+      .filter((model): model is ProviderModel => Boolean(model))
+      .filter((model) => {
+        if (seen.has(model.id)) return false;
+        seen.add(model.id);
+        return true;
+      });
+
+    if (!models.length) {
+      return {
+        ...baseResult,
+        latencyMs,
+        status: 'warn',
+        detail: 'Model list returned no usable model ids.',
+      };
+    }
+
+    return {
+      ...baseResult,
+      latencyMs,
+      status: 'pass',
+      detail: `Loaded ${models.length} models.`,
+      models,
+    };
+  } catch (error) {
+    return {
+      ...baseResult,
+      latencyMs: Date.now() - startedAt,
+      status: 'fail',
+      detail: error instanceof Error ? error.message : String(error),
+    };
+  }
+}
+
+function parseProviderModel(value: unknown): ProviderModel | null {
+  if (typeof value === 'string' && value.trim()) {
+    return { id: value.trim() };
+  }
+  if (!value || typeof value !== 'object') return null;
+  const record = value as Record<string, unknown>;
+  if (typeof record.id !== 'string' || !record.id.trim()) return null;
+  return {
+    id: record.id.trim(),
+    created: typeof record.created === 'number' ? record.created : undefined,
+    ownedBy: typeof record.owned_by === 'string' ? record.owned_by : typeof record.ownedBy === 'string' ? record.ownedBy : undefined,
+  };
 }
 
 function normalizeOpenAiBaseUrl(value: string): string {

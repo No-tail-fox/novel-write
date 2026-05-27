@@ -43,6 +43,7 @@ import type {
   ImageLabRecord,
   PausePoint,
   PromptTemplate,
+  ProviderModel,
   RewriteIntensity,
   ShellView,
   Task,
@@ -53,6 +54,7 @@ import type {
   UiPreferences,
 } from './shared/types';
 import { configTargetStatus, validateConfigTarget } from './shared/config-utils';
+import { listOpenAiCompatibleModels } from './shared/llm-provider';
 import {
   defaultAccount,
   defaultActivation,
@@ -153,6 +155,7 @@ const pipelineSteps = [
 ] as const;
 
 type StoryboundApi = NonNullable<Window['storybound']>;
+type ModelListKey = 'llm' | 'gpt-image' | 'custom-image';
 
 function cloneState(state: AppState): AppState {
   return JSON.parse(JSON.stringify(state)) as AppState;
@@ -205,6 +208,9 @@ function makeFallbackApi(setState: (state: AppState) => void): StoryboundApi {
         endpoint: `${config.baseUrl || 'https://api.openai.com'}/v1/chat/completions`,
         requestId: null,
       };
+    },
+    async listProviderModels(request) {
+      return listOpenAiCompatibleModels(request);
     },
     async testAppConfig(target, config) {
       return validateConfigTarget(target, config);
@@ -826,7 +832,7 @@ function QueuePage({ api, state, applyState, openNewTask, openTaskDetail }: { ap
               <div>
                 <strong>{task.title || '未命名任务'}</strong>
                 <span>{task.mode === 'ai' ? 'AI 创作' : '粘贴文案'} · {task.ratio} · {formatDate(task.createdAt)}</span>
-                {task.errorMessage ? <small className="danger-text">{task.errorMessage}</small> : null}
+                <ErrorSummaryButton fullMessage={task.errorMessage} title={task.title || '任务错误'} />
               </div>
               <StatusPill status={task.status} />
               <div className="row-actions" onClick={(event) => event.stopPropagation()}>
@@ -999,13 +1005,14 @@ function TaskDetailPage({ api, state, task, applyState, close }: { api: Storybou
             {pipelineSteps.map((step) => {
               const status = pipelineStepStatus(task, step.index);
               const stepEvent = [...events].reverse().find((event) => event.step === step.index);
+              const stepLabel = stepEvent?.detail || statusLabelForStep(status);
               return (
                 <div className={`pipeline-step ${status}`} key={step.index}>
                   <div className="pipeline-node">{status === 'running' ? <Loader2 className="spin" size={14} /> : step.index + 1}</div>
                   <div>
                     <strong>{step.title}</strong>
                     <span>{step.hint}</span>
-                    <small>{status === 'running' ? '进行中' : stepEvent?.detail ?? statusLabelForStep(status)}</small>
+                    {status === 'running' ? <small>进行中</small> : stepEvent?.type === 'step_error' ? <ErrorSummaryButton fullMessage={stepEvent.detail} title={step.title} compact /> : <small>{stepLabel}</small>}
                   </div>
                 </div>
               );
@@ -1055,7 +1062,7 @@ function ArtifactPreviewContent({
         <div className="preview-empty-icon">{task.status === 'running' ? <Loader2 className="spin" size={22} /> : <Database size={22} />}</div>
         <div>
           <strong>{artifactPanelTitle(task, tab)}</strong>
-          <span>{snapshot?.message || latestEvent?.detail || '等待当前步骤产物落盘'}</span>
+          {latestEvent?.type === 'step_error' ? <ErrorSummaryButton fullMessage={latestEvent.detail} title="流水线错误" /> : <span>{snapshot?.message || latestEvent?.detail || '等待当前步骤产物落盘'}</span>}
         </div>
         {task.outputDir ? (
           <button className="ghost-action" onClick={() => api.openPath(task.outputDir)}>
@@ -1549,13 +1556,24 @@ function DraftTemplatePreview({ template, compact = false }: { template: DraftTe
 
 function SettingsPage({ api, state, applyState }: { api: StoryboundApi; state: AppState; applyState: (state: AppState) => void }) {
   const [section, setSection] = useState('llm');
-  const [draft, setDraft] = useState<AppConfig>(state.config);
+  const [draft, setDraft] = useState<AppConfig>(() => normalizeEditableConfigProviders(state.config));
   const [diagnostics, setDiagnostics] = useState('');
   const [llmTestResult, setLlmTestResult] = useState('');
   const [testingLlm, setTestingLlm] = useState(false);
   const [configTestResult, setConfigTestResult] = useState('');
   const [testingConfig, setTestingConfig] = useState(false);
-  useEffect(() => setDraft(state.config), [state.config]);
+  const [modelLists, setModelLists] = useState<Record<ModelListKey, ProviderModel[]>>({ llm: [], 'gpt-image': [], 'custom-image': [] });
+  const [modelListStatus, setModelListStatus] = useState<Partial<Record<ModelListKey, string>>>({});
+  const [loadingModelList, setLoadingModelList] = useState<ModelListKey | null>(null);
+  useEffect(() => setDraft(normalizeEditableConfigProviders(state.config)), [state.config]);
+  function clearProviderModels(key: ModelListKey) {
+    setModelLists((current) => ({ ...current, [key]: [] }));
+    setModelListStatus((current) => {
+      const next = { ...current };
+      delete next[key];
+      return next;
+    });
+  }
   async function save() {
     applyState(await api.saveConfig(draft));
   }
@@ -1582,6 +1600,28 @@ function SettingsPage({ api, state, applyState }: { api: StoryboundApi; state: A
       setConfigTestResult(`[fail] ${error instanceof Error ? error.message : String(error)}`);
     } finally {
       setTestingConfig(false);
+    }
+  }
+  async function refreshProviderModels(key: ModelListKey, request: { baseUrl: string; apiKey: string }, currentModel: string) {
+    if (key === 'custom-image' && !request.baseUrl.trim()) {
+      setModelListStatus((current) => ({ ...current, [key]: '[fail] Base URL is required before fetching models.' }));
+      return;
+    }
+    setLoadingModelList(key);
+    setModelListStatus((current) => ({ ...current, [key]: '正在获取模型清单...' }));
+    try {
+      const result = await api.listProviderModels(request);
+      setModelListStatus((current) => ({ ...current, [key]: `[${result.status}] ${result.detail}` }));
+      if (result.models.length) {
+        setModelLists((current) => ({ ...current, [key]: result.models }));
+        if (!currentModel.trim()) {
+          setDraft((current) => setDraftModel(current, key, result.models[0].id));
+        }
+      }
+    } catch (error) {
+      setModelListStatus((current) => ({ ...current, [key]: `[fail] ${error instanceof Error ? error.message : String(error)}` }));
+    } finally {
+      setLoadingModelList((current) => (current === key ? null : current));
     }
   }
   async function runDiagnostics() {
@@ -1626,11 +1666,56 @@ function SettingsPage({ api, state, applyState }: { api: StoryboundApi; state: A
         {configTestResult ? <div className="test-result">{configTestResult}</div> : null}
         {section === 'llm' ? (
           <SettingsCard title="LLM 配置档案" status={maskConfigured(draft.llm.apiKey)}>
-            <ConfigInput label="Provider" value={draft.llm.provider} onChange={(value) => setDraft({ ...draft, llm: { ...draft.llm, provider: value } })} />
-            <ConfigInput label="Base URL" value={draft.llm.baseUrl} onChange={(value) => setDraft({ ...draft, llm: { ...draft.llm, baseUrl: value } })} />
-            <ConfigInput label="API Key" value={draft.llm.apiKey} onChange={(value) => setDraft({ ...draft, llm: { ...draft.llm, apiKey: value } })} />
-            <ConfigInput label="模型" value={draft.llm.model} onChange={(value) => setDraft({ ...draft, llm: { ...draft.llm, model: value } })} />
-            <ConfigInput label="代理 URL" value={draft.llm.proxyUrl} onChange={(value) => setDraft({ ...draft, llm: { ...draft.llm, proxyUrl: value } })} />
+            <Segmented
+              label="Provider"
+              value={activeLlmProvider(draft)}
+              options={['openai', 'custom']}
+              labels={['OpenAI', '自定义']}
+              onChange={(value) => {
+                clearProviderModels('llm');
+                setDraft({
+                  ...draft,
+                  llm: {
+                    ...draft.llm,
+                    provider: value,
+                    baseUrl: value === 'openai' ? 'https://api.openai.com' : draft.llm.baseUrl === 'https://api.openai.com' ? defaultConfig.llm.baseUrl : draft.llm.baseUrl,
+                  },
+                });
+              }}
+            />
+            {activeLlmProvider(draft) === 'openai' ? (
+              <>
+                <ProviderConfigNote title="OpenAI Chat Completions" value="使用官方 /v1/chat/completions，填写 API Key 与模型。" />
+                <ConfigInput label="OpenAI API Key" value={draft.llm.apiKey} onChange={(value) => { clearProviderModels('llm'); setDraft({ ...draft, llm: { ...draft.llm, apiKey: value } }); }} />
+                <ModelPicker
+                  key="llm"
+                  label="OpenAI 模型"
+                  value={draft.llm.model}
+                  models={modelLists.llm}
+                  loading={loadingModelList === 'llm'}
+                  status={modelListStatus.llm}
+                  onRefresh={() => refreshProviderModels('llm', { baseUrl: draft.llm.baseUrl || 'https://api.openai.com', apiKey: draft.llm.apiKey }, draft.llm.model)}
+                  onChange={(value) => setDraft({ ...draft, llm: { ...draft.llm, model: value } })}
+                />
+              </>
+            ) : null}
+            {activeLlmProvider(draft) === 'custom' ? (
+              <>
+                <ProviderConfigNote title="OpenAI-compatible LLM" value="自定义接口按 /chat/completions 调用，需要 Base URL、API Key 与模型。" />
+                <ConfigInput label="Base URL" value={draft.llm.baseUrl} onChange={(value) => { clearProviderModels('llm'); setDraft({ ...draft, llm: { ...draft.llm, baseUrl: value } }); }} />
+                <ConfigInput label="API Key" value={draft.llm.apiKey} onChange={(value) => { clearProviderModels('llm'); setDraft({ ...draft, llm: { ...draft.llm, apiKey: value } }); }} />
+                <ModelPicker
+                  key="llm"
+                  label="模型"
+                  value={draft.llm.model}
+                  models={modelLists.llm}
+                  loading={loadingModelList === 'llm'}
+                  status={modelListStatus.llm}
+                  onRefresh={() => refreshProviderModels('llm', { baseUrl: draft.llm.baseUrl, apiKey: draft.llm.apiKey }, draft.llm.model)}
+                  onChange={(value) => setDraft({ ...draft, llm: { ...draft.llm, model: value } })}
+                />
+              </>
+            ) : null}
             <div className="button-row">
               <button className="ghost-action" disabled={testingLlm} onClick={testLlmConfig}>
                 {testingLlm ? <Loader2 className="spin" size={15} /> : <Sparkles size={15} />}
@@ -1642,31 +1727,71 @@ function SettingsPage({ api, state, applyState }: { api: StoryboundApi; state: A
         ) : null}
         {section === 'image' ? (
           <SettingsCard title="AI 绘图" status={settingsStatusLabel(configTargetStatus('image', draft))}>
-            <Segmented label="Provider" value={draft.imageProvider} options={['gpt_image', 'jimeng', 'custom', 'mock']} labels={['全能绘图', '即梦', '自定义', 'mock']} onChange={(value) => setDraft({ ...draft, imageProvider: value as AppConfig['imageProvider'] })} />
-            <ConfigInput label="GPT Image Base URL" value={draft.gptImage.baseUrl} onChange={(value) => setDraft({ ...draft, gptImage: { ...draft.gptImage, baseUrl: value } })} />
-            <ConfigInput label="GPT Image API Key" value={draft.gptImage.apiKey} onChange={(value) => setDraft({ ...draft, gptImage: { ...draft.gptImage, apiKey: value } })} />
-            <ConfigInput label="GPT Image 模型" value={draft.gptImage.model} onChange={(value) => setDraft({ ...draft, gptImage: { ...draft.gptImage, model: value } })} />
-            <ConfigInput label="即梦 SESSION ID" value={draft.jimeng.sessionId} onChange={(value) => setDraft({ ...draft, jimeng: { ...draft.jimeng, sessionId: value } })} />
-            <ConfigInput label="即梦 AccessKey ID" value={draft.jimeng.accessKeyId ?? ''} onChange={(value) => setDraft({ ...draft, jimeng: { ...draft.jimeng, accessKeyId: value } })} />
-            <ConfigInput label="即梦 SecretAccessKey" value={draft.jimeng.secretAccessKey ?? ''} onChange={(value) => setDraft({ ...draft, jimeng: { ...draft.jimeng, secretAccessKey: value } })} />
-            <ConfigInput label="即梦 Req Key" value={draft.jimeng.reqKey ?? ''} onChange={(value) => setDraft({ ...draft, jimeng: { ...draft.jimeng, reqKey: value } })} />
-            <ConfigInput label="自定义 Base URL" value={draft.customImage.baseUrl} onChange={(value) => setDraft({ ...draft, customImage: { ...draft.customImage, baseUrl: value } })} />
-            <ConfigInput label="自定义 API Key" value={draft.customImage.apiKey} onChange={(value) => setDraft({ ...draft, customImage: { ...draft.customImage, apiKey: value } })} />
-            <ConfigInput label="自定义模型" value={draft.customImage.model} onChange={(value) => setDraft({ ...draft, customImage: { ...draft.customImage, model: value } })} />
-            <Segmented label="分辨率" value={draft.gptImage.resolution ?? '2K'} options={['1K', '2K', '4K']} onChange={(value) => setDraft({ ...draft, gptImage: { ...draft.gptImage, resolution: value as '1K' | '2K' | '4K' } })} />
+            <Segmented label="Provider" value={draft.imageProvider} options={['gpt_image', 'jimeng', 'custom']} labels={['全能绘图', '即梦', '自定义']} onChange={(value) => setDraft({ ...draft, imageProvider: value as AppConfig['imageProvider'] })} />
+            {draft.imageProvider === 'gpt_image' ? (
+              <>
+                <ProviderConfigNote title="OpenAI Image API" value="API Key 与模型必填；Base URL 为空时使用官方默认端点。" />
+                <ConfigInput label="GPT Image Base URL（可选）" value={draft.gptImage.baseUrl} onChange={(value) => { clearProviderModels('gpt-image'); setDraft({ ...draft, gptImage: { ...draft.gptImage, baseUrl: value } }); }} />
+                <ConfigInput label="GPT Image API Key" value={draft.gptImage.apiKey} onChange={(value) => { clearProviderModels('gpt-image'); setDraft({ ...draft, gptImage: { ...draft.gptImage, apiKey: value } }); }} />
+                <ModelPicker
+                  key="gpt-image"
+                  label="GPT Image 模型"
+                  value={draft.gptImage.model}
+                  models={modelLists['gpt-image']}
+                  loading={loadingModelList === 'gpt-image'}
+                  status={modelListStatus['gpt-image']}
+                  onRefresh={() => refreshProviderModels('gpt-image', { baseUrl: draft.gptImage.baseUrl || 'https://api.openai.com', apiKey: draft.gptImage.apiKey }, draft.gptImage.model)}
+                  onChange={(value) => setDraft({ ...draft, gptImage: { ...draft.gptImage, model: value } })}
+                />
+              </>
+            ) : null}
+            {draft.imageProvider === 'jimeng' ? (
+              <>
+                <ProviderConfigNote title="火山视觉 API" value={`Endpoint ${draft.jimeng.endpoint || 'https://visual.volcengineapi.com'} · Region ${draft.jimeng.region || 'cn-north-1'} · Service ${draft.jimeng.service || 'cv'}`} />
+                <ConfigInput label="即梦 AccessKey ID" value={draft.jimeng.accessKeyId ?? ''} onChange={(value) => setDraft({ ...draft, jimeng: { ...draft.jimeng, accessKeyId: value } })} />
+                <ConfigInput label="即梦 SecretAccessKey" value={draft.jimeng.secretAccessKey ?? ''} onChange={(value) => setDraft({ ...draft, jimeng: { ...draft.jimeng, secretAccessKey: value } })} />
+                <ConfigInput label="即梦 Req Key" value={draft.jimeng.reqKey ?? ''} onChange={(value) => setDraft({ ...draft, jimeng: { ...draft.jimeng, reqKey: value } })} />
+              </>
+            ) : null}
+            {draft.imageProvider === 'custom' ? (
+              <>
+                <ProviderConfigNote title="OpenAI-compatible" value="自定义图片接口按 /images/generations 调用，需要 Base URL、API Key 与模型。" />
+                <ConfigInput label="自定义 Base URL" value={draft.customImage.baseUrl} onChange={(value) => { clearProviderModels('custom-image'); setDraft({ ...draft, customImage: { ...draft.customImage, baseUrl: value } }); }} />
+                <ConfigInput label="自定义 API Key" value={draft.customImage.apiKey} onChange={(value) => { clearProviderModels('custom-image'); setDraft({ ...draft, customImage: { ...draft.customImage, apiKey: value } }); }} />
+                <ModelPicker
+                  key="custom-image"
+                  label="自定义模型"
+                  value={draft.customImage.model}
+                  models={modelLists['custom-image']}
+                  loading={loadingModelList === 'custom-image'}
+                  status={modelListStatus['custom-image']}
+                  onRefresh={() => refreshProviderModels('custom-image', { baseUrl: draft.customImage.baseUrl, apiKey: draft.customImage.apiKey }, draft.customImage.model)}
+                  onChange={(value) => setDraft({ ...draft, customImage: { ...draft.customImage, model: value } })}
+                />
+              </>
+            ) : null}
+            <Segmented label="分辨率" value={activeImageResolution(draft)} options={['1K', '2K', '4K']} onChange={(value) => setDraft(setImageResolution(draft, value as '1K' | '2K' | '4K'))} />
             <Field label="并发"><input type="range" min="1" max="6" value={activeImageConcurrency(draft)} onChange={(event) => setDraft(setImageConcurrency(draft, Number(event.target.value)))} /></Field>
           </SettingsCard>
         ) : null}
         {section === 'tts' ? (
           <SettingsCard title="TTS 配音" status={settingsStatusLabel(configTargetStatus('tts', draft))}>
-            <Segmented label="引擎" value={draft.tts.provider} options={['volcengine', 'minimax', 'mock']} labels={['火山引擎', 'MiniMax', 'mock']} onChange={(value) => setDraft({ ...draft, tts: { ...draft.tts, provider: value as AppConfig['tts']['provider'] } })} />
-            <ConfigInput label="火山 App ID" value={draft.tts.volcengine.appId} onChange={(value) => setDraft({ ...draft, tts: { ...draft.tts, volcengine: { ...draft.tts.volcengine, appId: value }, appId: value } })} />
-            <ConfigInput label="Access Token" value={draft.tts.volcengine.accessKey} onChange={(value) => setDraft({ ...draft, tts: { ...draft.tts, volcengine: { ...draft.tts.volcengine, accessKey: value }, accessKey: value } })} />
-            <ConfigInput label="MiniMax API Key" value={draft.tts.minimax.apiKey} onChange={(value) => setDraft({ ...draft, tts: { ...draft.tts, minimax: { ...draft.tts.minimax, apiKey: value } } })} />
-            <ConfigInput label="MiniMax 模型" value={draft.tts.minimax.model} onChange={(value) => setDraft({ ...draft, tts: { ...draft.tts, minimax: { ...draft.tts.minimax, model: value } } })} />
-            <ConfigInput label="MiniMax 音色 ID" value={draft.tts.minimax.voiceId} onChange={(value) => setDraft({ ...draft, tts: { ...draft.tts, minimax: { ...draft.tts.minimax, voiceId: value } } })} />
-            <ConfigInput label="默认音色" value={draft.tts.speaker} onChange={(value) => setDraft({ ...draft, tts: { ...draft.tts, speaker: value } })} />
-            <LocalInfo title="克隆音色" value={`${state.minimaxCloneVoices.length} 个本地记录，可后续接入 MiniMax 克隆接口。`} />
+            <Segmented label="引擎" value={draft.tts.provider} options={['volcengine', 'minimax']} labels={['火山引擎', 'MiniMax']} onChange={(value) => setDraft({ ...draft, tts: { ...draft.tts, provider: value as AppConfig['tts']['provider'] } })} />
+            {draft.tts.provider === 'volcengine' ? (
+              <>
+                <ConfigInput label="火山 App ID" value={draft.tts.volcengine.appId} onChange={(value) => setDraft({ ...draft, tts: { ...draft.tts, volcengine: { ...draft.tts.volcengine, appId: value }, appId: value } })} />
+                <ConfigInput label="Access Token" value={draft.tts.volcengine.accessKey} onChange={(value) => setDraft({ ...draft, tts: { ...draft.tts, volcengine: { ...draft.tts.volcengine, accessKey: value }, accessKey: value } })} />
+                <ConfigInput label="默认音色" value={draft.tts.speaker} onChange={(value) => setDraft({ ...draft, tts: { ...draft.tts, speaker: value } })} />
+              </>
+            ) : null}
+            {draft.tts.provider === 'minimax' ? (
+              <>
+                <ConfigInput label="MiniMax API Key" value={draft.tts.minimax.apiKey} onChange={(value) => setDraft({ ...draft, tts: { ...draft.tts, minimax: { ...draft.tts.minimax, apiKey: value } } })} />
+                <ConfigInput label="MiniMax 模型" value={draft.tts.minimax.model} onChange={(value) => setDraft({ ...draft, tts: { ...draft.tts, minimax: { ...draft.tts.minimax, model: value } } })} />
+                <ConfigInput label="MiniMax 音色 ID" value={draft.tts.minimax.voiceId} onChange={(value) => setDraft({ ...draft, tts: { ...draft.tts, minimax: { ...draft.tts.minimax, voiceId: value } } })} />
+                <LocalInfo title="克隆音色" value={`${state.minimaxCloneVoices.length} 个本地记录，可后续接入 MiniMax 克隆接口。`} />
+              </>
+            ) : null}
           </SettingsCard>
         ) : null}
         {section === 'jianying' ? (
@@ -1762,6 +1887,50 @@ function ConfigInput({ label, value, onChange }: { label: string; value: string;
   return <label className="config-input"><span>{label}</span><input value={value} onChange={(event) => onChange(event.target.value)} /></label>;
 }
 
+function ModelPicker({
+  label,
+  value,
+  models,
+  loading,
+  status,
+  onRefresh,
+  onChange,
+}: {
+  label: string;
+  value: string;
+  models: ProviderModel[];
+  loading: boolean;
+  status?: string;
+  onRefresh: () => void;
+  onChange: (value: string) => void;
+}) {
+  const hasModels = models.length > 0;
+  const options = hasModels && value && !models.some((model) => model.id === value) ? [{ id: value }, ...models] : models;
+  return (
+    <div className="field model-picker-field">
+      <span>{label}</span>
+      <div className="model-picker">
+        {hasModels ? (
+          <select value={value} onChange={(event) => onChange(event.target.value)}>
+            {!value ? <option value="">选择模型</option> : null}
+            {options.map((model) => (
+              <option key={model.id} value={model.id}>
+                {model.id}
+              </option>
+            ))}
+          </select>
+        ) : (
+          <input value={value} onChange={(event) => onChange(event.target.value)} />
+        )}
+        <button className="icon-button model-refresh-button" title="获取模型" aria-label="获取模型" disabled={loading} onClick={onRefresh} type="button">
+          {loading ? <Loader2 className="spin" size={15} /> : <RotateCcw size={15} />}
+        </button>
+      </div>
+      {status ? <small className="model-list-status">{status}</small> : null}
+    </div>
+  );
+}
+
 function Field({ label, hint, children }: { label: string; hint?: string; children: React.ReactNode }) {
   return <label className="field"><span>{label}{hint ? <small>{hint}</small> : null}</span>{children}</label>;
 }
@@ -1814,7 +1983,7 @@ function EventTimeline({ events }: { events: TaskEvent[] }) {
       {events.map((event, index) => (
         <div className="event-item" key={`${event.seq ?? index}-${event.ts}`}>
           <span>{event.step ?? '-'}</span>
-          <p>{event.detail}</p>
+          {event.type === 'step_error' ? <ErrorSummaryButton fullMessage={event.detail} title={`步骤 ${event.step ?? '-'} 错误`} compact /> : <p>{event.detail}</p>}
         </div>
       ))}
     </div>
@@ -1831,6 +2000,58 @@ function EmptyState({ title }: { title: string }) {
 
 function LocalInfo({ title, value }: { title: string; value: string }) {
   return <div className="local-info"><Info size={18} /><div><strong>{title}</strong><span>{value}</span></div></div>;
+}
+
+function ErrorSummaryButton({ fullMessage, title, compact = false }: { fullMessage: string; title: string; compact?: boolean }) {
+  const [open, setOpen] = useState(false);
+  if (!fullMessage.trim()) return null;
+  const summary = summarizeErrorMessage(fullMessage);
+  return (
+    <>
+      <button
+        type="button"
+        className={compact ? 'error-summary-button compact' : 'error-summary-button'}
+        onClick={(event) => {
+          event.stopPropagation();
+          setOpen(true);
+        }}
+      >
+        <span className="error-mark">!</span>
+        <span>{summary}</span>
+      </button>
+      {open ? <ErrorDetailDialog title={title} summary={summary} fullMessage={fullMessage} onClose={() => setOpen(false)} /> : null}
+    </>
+  );
+}
+
+function ErrorDetailDialog({ title, summary, fullMessage, onClose }: { title: string; summary: string; fullMessage: string; onClose: () => void }) {
+  return (
+    <div className="error-dialog-backdrop" onClick={onClose}>
+      <section className="error-dialog" role="dialog" aria-modal="true" aria-label={title} onClick={(event) => event.stopPropagation()}>
+        <div className="error-dialog-head">
+          <div>
+            <span className="error-mark">!</span>
+            <strong>{title}</strong>
+          </div>
+          <button className="mini-button" type="button" onClick={onClose}>关闭</button>
+        </div>
+        <p>{summary}</p>
+        <pre>{fullMessage}</pre>
+      </section>
+    </div>
+  );
+}
+
+function ProviderConfigNote({ title, value }: { title: string; value: string }) {
+  return (
+    <div className="provider-config-note">
+      <Info size={16} />
+      <div>
+        <strong>{title}</strong>
+        <span>{value}</span>
+      </div>
+    </div>
+  );
 }
 
 function pageSubtitle(view: ShellView): string {
@@ -1904,6 +2125,67 @@ function maskConfigured(value: string): string {
 
 function settingsStatusLabel(status: 'pass' | 'warn' | 'fail'): string {
   return status === 'pass' ? '已配置' : status === 'warn' ? '需确认' : '待配置';
+}
+
+function summarizeErrorMessage(message: string): string {
+  const normalized = message.replace(/\s+/g, ' ').trim();
+  if (!normalized) return '发生错误';
+  const imageApiStatus = normalized.match(/Image provider API error \((\d+)\)/i)?.[1];
+  if (imageApiStatus) return `生图接口错误 ${imageApiStatus}`;
+  if (/Browser preview cannot run the real provider pipeline/i.test(normalized)) return '浏览器预览无法执行真实任务';
+  if (/Image provider API key is missing/i.test(normalized)) return '生图 API Key 缺失';
+  if (/Image provider is not configured/i.test(normalized)) return '生图配置不完整';
+  if (/Jimeng submit failed/i.test(normalized)) return '即梦提交失败';
+  if (/Jimeng poll failed/i.test(normalized)) return '即梦结果获取失败';
+  if (/LLM provider is not configured/i.test(normalized)) return 'LLM 配置不完整';
+  if (/TTS provider is not configured/i.test(normalized)) return 'TTS 配置不完整';
+  const firstSentence = normalized.split(/[。.!?]/)[0] || normalized;
+  return trimForPreview(firstSentence, 42);
+}
+
+type EditableLlmProvider = 'openai' | 'custom';
+type ImageResolution = '1K' | '2K' | '4K';
+
+function normalizeEditableConfigProviders(config: AppConfig): AppConfig {
+  return {
+    ...config,
+    llm: { ...config.llm, provider: activeLlmProvider(config) },
+    imageProvider: config.imageProvider === 'mock' ? 'gpt_image' : config.imageProvider,
+    tts: {
+      ...config.tts,
+      provider: config.tts.provider === 'mock' ? 'volcengine' : config.tts.provider,
+    },
+  };
+}
+
+function activeLlmProvider(config: AppConfig): EditableLlmProvider {
+  return config.llm.provider === 'openai' ? 'openai' : 'custom';
+}
+
+function setDraftModel(config: AppConfig, key: ModelListKey, model: string): AppConfig {
+  if (key === 'gpt-image') {
+    return { ...config, gptImage: { ...config.gptImage, model } };
+  }
+  if (key === 'custom-image') {
+    return { ...config, customImage: { ...config.customImage, model } };
+  }
+  return { ...config, llm: { ...config.llm, model } };
+}
+
+function setImageResolution(config: AppConfig, resolution: ImageResolution): AppConfig {
+  if (config.imageProvider === 'custom') {
+    return { ...config, customImage: { ...config.customImage, resolution } };
+  }
+  if (config.imageProvider === 'jimeng') {
+    return { ...config, jimeng: { ...config.jimeng, resolution } };
+  }
+  return { ...config, image: { ...config.image, resolution }, gptImage: { ...config.gptImage, resolution } };
+}
+
+function activeImageResolution(config: AppConfig): ImageResolution {
+  if (config.imageProvider === 'custom') return config.customImage.resolution ?? '2K';
+  if (config.imageProvider === 'jimeng') return config.jimeng.resolution;
+  return config.gptImage.resolution ?? config.image.resolution ?? '2K';
 }
 
 function setImageConcurrency(config: AppConfig, concurrency: number): AppConfig {

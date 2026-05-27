@@ -56,7 +56,7 @@ describe('configured media providers', () => {
       expect(assets).toHaveLength(1);
       expect(await readFile(assets[0].path, 'utf8')).toBe('real-image');
       expect(requests[0].url).toBe('https://image.example/v1/images/generations');
-      expect(requests[0].body).toMatchObject({ model: 'gpt-image-1', prompt: 'visual prompt' });
+      expect(requests[0].body).toMatchObject({ model: 'gpt-image-1', prompt: 'visual prompt', size: '1024x1536' });
     } finally {
       await rm(dir, { recursive: true, force: true });
     }

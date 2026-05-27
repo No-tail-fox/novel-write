@@ -12,6 +12,8 @@ import type {
   LlmConfig,
   LlmModelTestResult,
   PromptTemplate,
+  ProviderModelListRequest,
+  ProviderModelListResult,
   ResearchCopyComposeInput,
   ResearchCopyComposeResult,
   TaskArtifactSnapshot,
@@ -26,6 +28,7 @@ declare global {
       saveConfig: (config: AppConfig) => Promise<AppState>;
       testAppConfig: (target: ConfigTestTarget, config: AppConfig) => Promise<ConfigTestResult>;
       testLlmConfig: (config: LlmConfig) => Promise<LlmModelTestResult>;
+      listProviderModels: (request: ProviderModelListRequest) => Promise<ProviderModelListResult>;
       searchWebSources: (query: string) => Promise<AiSourceContext>;
       composeResearchCopy: (input: ResearchCopyComposeInput) => Promise<ResearchCopyComposeResult>;
       savePromptTemplate: (template: PromptTemplate) => Promise<AppState>;

@@ -378,12 +378,9 @@ function normalizeBaseUrl(value: string): string {
 }
 
 function resolveOpenAiImageSize(ratio: string, resolution: '1K' | '2K' | '4K'): string {
-  const edge = resolution === '4K' ? 2048 : resolution === '2K' ? 1536 : 1024;
-  if (ratio === '16:9') return `${edge}x${Math.round((edge * 9) / 16)}`;
-  if (ratio === '9:16') return `${Math.round((edge * 9) / 16)}x${edge}`;
-  if (ratio === '4:3') return `${edge}x${Math.round((edge * 3) / 4)}`;
-  if (ratio === '3:4') return `${Math.round((edge * 3) / 4)}x${edge}`;
-  return `${edge}x${edge}`;
+  if (ratio === '9:16' || ratio === '3:4' || ratio === '2:3') return '1024x1536';
+  if (ratio === '16:9' || ratio === '4:3' || ratio === '3:2' || ratio === '21:9') return '1536x1024';
+  return '1024x1024';
 }
 
 async function signedVolcenginePost<T>(input: {

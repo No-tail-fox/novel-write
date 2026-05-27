@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { createOpenAiCompatibleJsonLlm, LlmJsonParseError, testOpenAiCompatibleLlm } from '@shared/llm-provider';
+import { createOpenAiCompatibleJsonLlm, listOpenAiCompatibleModels, LlmJsonParseError, testOpenAiCompatibleLlm } from '@shared/llm-provider';
 import { defaultConfig } from '@shared/config';
 
 afterEach(() => {
@@ -110,6 +110,57 @@ describe('OpenAI-compatible LLM JSON adapter', () => {
 
     expect(called).toBe(false);
     expect(result.status).toBe('fail');
+    expect(result.detail).toContain('API key');
+  });
+
+  it('fetches selectable models from the configured OpenAI-compatible base URL', async () => {
+    const requests: Array<{ url: string; method: string | undefined; auth: string | null }> = [];
+    const result = await listOpenAiCompatibleModels(
+      { baseUrl: 'https://llm.example', apiKey: 'llm-key' },
+      async (url, init) => {
+        requests.push({
+          url: String(url),
+          method: init?.method,
+          auth: new Headers(init?.headers).get('Authorization'),
+        });
+        return new Response(
+          JSON.stringify({
+            data: [
+              { id: 'model-a', created: 1710000000, owned_by: 'provider' },
+              { id: 'model-b' },
+            ],
+          }),
+          {
+            status: 200,
+            headers: { 'content-type': 'application/json' },
+          },
+        );
+      },
+    );
+
+    expect(result.status).toBe('pass');
+    expect(result.endpoint).toBe('https://llm.example/v1/models');
+    expect(result.models).toEqual([
+      { id: 'model-a', created: 1710000000, ownedBy: 'provider' },
+      { id: 'model-b', created: undefined, ownedBy: undefined },
+    ]);
+    expect(requests[0]).toEqual({
+      url: 'https://llm.example/v1/models',
+      method: 'GET',
+      auth: 'Bearer llm-key',
+    });
+  });
+
+  it('reports missing model-list credentials without calling the network', async () => {
+    let called = false;
+    const result = await listOpenAiCompatibleModels({ baseUrl: 'https://llm.example', apiKey: '' }, async () => {
+      called = true;
+      return new Response('{}');
+    });
+
+    expect(called).toBe(false);
+    expect(result.status).toBe('fail');
+    expect(result.models).toEqual([]);
     expect(result.detail).toContain('API key');
   });
 });

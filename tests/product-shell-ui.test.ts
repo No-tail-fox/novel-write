@@ -107,6 +107,72 @@ describe('product shell ui', () => {
     expect(main).toContain('MiniMax 音色 ID');
   });
 
+  it('loads model lists from configured provider URLs before selecting a model', async () => {
+    const main = await readFile(new URL('../src/main.tsx', import.meta.url), 'utf8');
+    const css = await readFile(new URL('../src/styles.css', import.meta.url), 'utf8');
+    const preload = await readFile(new URL('../electron/preload.ts', import.meta.url), 'utf8');
+    const electronMain = await readFile(new URL('../electron/main.ts', import.meta.url), 'utf8');
+
+    expect(preload).toContain('listProviderModels');
+    expect(electronMain).toContain('models:list');
+    expect(main).toContain('ModelPicker');
+    expect(main).toContain('refreshProviderModels');
+    expect(main).toContain('clearProviderModels');
+    expect(main).toContain('listProviderModels');
+    expect(main).toContain('获取模型');
+    expect(main).toContain("key=\"llm\"");
+    expect(main).toContain("key=\"gpt-image\"");
+    expect(main).toContain("key=\"custom-image\"");
+    expect(main).toContain("clearProviderModels('llm')");
+    expect(main).toContain("clearProviderModels('gpt-image')");
+    expect(main).toContain("clearProviderModels('custom-image')");
+    expect(css).toContain('.model-picker');
+    expect(css).toContain('.model-list-status');
+  });
+
+  it('scopes provider-specific settings instead of showing every credential at once', async () => {
+    const main = await readFile(new URL('../src/main.tsx', import.meta.url), 'utf8');
+
+    for (const branch of [
+      "activeLlmProvider(draft) === 'openai'",
+      "activeLlmProvider(draft) === 'custom'",
+      "draft.imageProvider === 'gpt_image'",
+      "draft.imageProvider === 'jimeng'",
+      "draft.imageProvider === 'custom'",
+      "draft.tts.provider === 'volcengine'",
+      "draft.tts.provider === 'minimax'",
+    ]) {
+      expect(main).toContain(branch);
+    }
+    expect(main).toContain("options={['openai', 'custom']}");
+    expect(main).toContain("options={['gpt_image', 'jimeng', 'custom']}");
+    expect(main).toContain("options={['volcengine', 'minimax']}");
+    expect(main).toContain('normalizeEditableConfigProviders');
+    expect(main).not.toContain("options={['gpt_image', 'jimeng', 'custom', 'mock']}");
+    expect(main).not.toContain("options={['volcengine', 'minimax', 'mock']}");
+    expect(main).not.toContain("draft.imageProvider === 'mock'");
+    expect(main).not.toContain("draft.tts.provider === 'mock'");
+    expect(main).not.toContain('即梦 SESSION ID');
+    expect(main).not.toContain('代理 URL');
+    expect(main).toContain('activeImageResolution');
+    expect(main).toContain('setImageResolution');
+    expect(main).toContain('ProviderConfigNote');
+  });
+
+  it('keeps task errors compact with a click-through detail dialog', async () => {
+    const main = await readFile(new URL('../src/main.tsx', import.meta.url), 'utf8');
+    const css = await readFile(new URL('../src/styles.css', import.meta.url), 'utf8');
+
+    expect(main).toContain('ErrorSummaryButton');
+    expect(main).toContain('ErrorDetailDialog');
+    expect(main).toContain('summarizeErrorMessage');
+    expect(main).toContain('fullMessage');
+    expect(main).not.toContain('<small className="danger-text">{task.errorMessage}</small>');
+    expect(main).not.toContain("stepEvent?.detail ?? statusLabelForStep(status)");
+    expect(css).toContain('.error-summary-button');
+    expect(css).toContain('.error-dialog');
+  });
+
   it('lets AI creation search real web sources and select them for generation', async () => {
     const main = await readFile(new URL('../src/main.tsx', import.meta.url), 'utf8');
     const css = await readFile(new URL('../src/styles.css', import.meta.url), 'utf8');

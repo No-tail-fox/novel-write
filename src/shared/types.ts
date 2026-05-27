@@ -38,6 +38,25 @@ export interface LlmModelTestResult {
   requestId: string | null;
 }
 
+export interface ProviderModel {
+  id: string;
+  created?: number;
+  ownedBy?: string;
+}
+
+export interface ProviderModelListRequest {
+  baseUrl: string;
+  apiKey: string;
+}
+
+export interface ProviderModelListResult {
+  status: 'pass' | 'warn' | 'fail';
+  detail: string;
+  latencyMs: number;
+  endpoint: string;
+  models: ProviderModel[];
+}
+
 export type ConfigTestTarget = 'llm' | 'image' | 'tts' | 'jianying' | 'creative';
 
 export interface ConfigTestResult {
