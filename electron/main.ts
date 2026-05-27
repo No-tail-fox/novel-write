@@ -6,6 +6,7 @@ import { fileURLToPath } from 'node:url';
 import { promisify } from 'node:util';
 import { createOpenAiCompatibleJsonLlm } from '../src/shared/llm-provider';
 import { createConfiguredImageGenerator, createConfiguredNarrationSynthesizer } from '../src/shared/media-providers';
+import { createAiSourceResearcher } from '../src/shared/research';
 import { runTask } from '../src/shared/runner';
 import { FileDatabase } from '../src/shared/storage';
 import type { AccountProfile, ActivationState, AppConfig, CreateTaskInput, DraftTemplate, PromptTemplate, TaskStatus, UiPreferences } from '../src/shared/types';
@@ -117,6 +118,7 @@ ipcMain.handle('task:create-and-run', async (_event, input: CreateTaskInput) => 
   void runTask(database, task, {
     appDataDir: join(app.getPath('userData'), 'storybound-replica'),
     llm: createOpenAiCompatibleJsonLlm(state.config.llm),
+    resolveAiSourceContext: createAiSourceResearcher(state.config),
     generateImages: createConfiguredImageGenerator(state.config, taskWorkDir),
     synthesizeNarration: createConfiguredNarrationSynthesizer(state.config, taskWorkDir),
     onEvent: () => {
@@ -147,6 +149,7 @@ ipcMain.handle('task:retry', async (_event, id: string) => {
     await runTask(database, { ...task, status: 'pending', errorMessage: '' }, {
       appDataDir: join(app.getPath('userData'), 'storybound-replica'),
       llm: createOpenAiCompatibleJsonLlm(state.config.llm),
+      resolveAiSourceContext: createAiSourceResearcher(state.config),
       generateImages: createConfiguredImageGenerator(state.config, taskWorkDir),
       synthesizeNarration: createConfiguredNarrationSynthesizer(state.config, taskWorkDir),
       onEvent: () => {

@@ -103,6 +103,21 @@ function parseJson<T>(value: unknown, fallback: T): T {
   }
 }
 
+async function writeFileWithRetry(path: string, data: Uint8Array, attempts = 8): Promise<void> {
+  for (let attempt = 0; attempt < attempts; attempt += 1) {
+    try {
+      await writeFile(path, data);
+      return;
+    } catch (error) {
+      const code = (error as NodeJS.ErrnoException).code;
+      if ((code !== 'EBUSY' && code !== 'EPERM') || attempt === attempts - 1) {
+        throw error;
+      }
+      await new Promise((resolve) => setTimeout(resolve, 40 * (attempt + 1)));
+    }
+  }
+}
+
 function mergeConfig(input: unknown): AppConfig {
   const partial = (input && typeof input === 'object' ? input : {}) as Partial<AppConfig>;
   const llm = { ...defaultConfig.llm, ...(partial.llm ?? {}) };
@@ -393,7 +408,7 @@ export class FileDatabase {
   async persist(): Promise<void> {
     await mkdir(dirname(this.file), { recursive: true });
     const data = this.db.export();
-    await writeFile(this.file, data);
+    await writeFileWithRetry(this.file, data);
   }
 
   async close(): Promise<void> {

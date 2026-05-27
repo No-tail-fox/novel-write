@@ -320,6 +320,19 @@ export interface SubtitleTrack {
   srt: string;
 }
 
+export interface AiSourceSection {
+  source: string;
+  title: string;
+  url?: string;
+  content: string;
+}
+
+export interface AiSourceContext {
+  query: string;
+  sections: AiSourceSection[];
+  warnings: string[];
+}
+
 export interface PipelineArtifact {
   reviewedText: string;
   rewrittenCopy: string;
@@ -327,6 +340,7 @@ export interface PipelineArtifact {
   scenes: StoryboardScene[];
   imagePrompts: ImagePrompt[];
   subtitles: SubtitleTrack;
+  sourceContext?: AiSourceContext;
 }
 
 export interface DraftTemplate {

@@ -1,15 +1,17 @@
 import { mkdir, readFile, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
-import type { BgmItem, CoverMetadata, ImagePrompt, PipelineArtifact, StoryboardScene, Task } from './types';
+import type { AiSourceContext, BgmItem, CoverMetadata, ImagePrompt, PipelineArtifact, StoryboardScene, Task } from './types';
 import { buildSubtitleTrack } from './story';
 import { writeJianyingDraft, type SceneAsset, type WriteJianyingDraftOptions } from './draft';
 import type { FileDatabase } from './storage';
 import type { JsonLlm } from './llm-provider';
+import { formatAiSourceContext } from './research';
 
 export interface RunTaskOptions {
   appDataDir: string;
   onEvent?: (detail: string) => void;
   llm?: JsonLlm;
+  resolveAiSourceContext?: (task: Task) => Promise<AiSourceContext>;
   generatePipelineArtifact?: (task: Task) => Promise<PipelineArtifact>;
   generateImages?: (scenes: StoryboardScene[], prompts: ImagePrompt[], task: Task) => Promise<SceneAsset[]>;
   synthesizeNarration?: (scenes: StoryboardScene[], task: Task) => Promise<SceneAsset[]>;
@@ -182,10 +184,11 @@ async function ensureContentArtifact(input: {
   if (pipeline.steps['3']?.status === 'completed' && pipeline.artifact.reviewedText && pipeline.artifact.imagePrompts) {
     return;
   }
+  const sourceContext = await prepareAiSourceContext({ task, options, workDir, emit, pipeline });
   if (options.generatePipelineArtifact) {
     const artifact = await options.generatePipelineArtifact(task);
-    pipeline.artifact = { ...artifact, subtitles: buildSubtitleTrack(artifact.scenes) };
-    await writeContentArtifacts(workDir, hydrateArtifact(pipeline.artifact));
+    pipeline.artifact = { ...artifact, subtitles: buildSubtitleTrack(artifact.scenes), sourceContext: sourceContext ?? artifact.sourceContext };
+    await writeContentArtifacts(workDir, hydrateArtifact(pipeline.artifact), task);
     for (const step of [0, 1, 2, 3]) {
       await db.updateTask(task.id, { currentStep: step, retryFromStep: step });
       await markStep(step, 'completed', { outputPath: contentOutputPath(workDir, step) });
@@ -199,7 +202,7 @@ async function ensureContentArtifact(input: {
   await db.updateTask(task.id, { currentStep: 0, retryFromStep: 0 });
   await markStep(0, 'running');
   await emit('step_start', 0, 'Reviewer', 'LLM 文案预审');
-  const sourceText = task.mode === 'ai' && task.aiKeyword ? `${task.aiKeyword}\n\n${task.extraRequirements}\n\n${task.inputText}` : task.inputText;
+  const sourceText = buildReviewSourceText(task, sourceContext);
   const review = await options.llm<{ reviewedText: string }>({
     step: 0,
     name: 'review',
@@ -258,11 +261,47 @@ async function ensureContentArtifact(input: {
       { role: 'user', content: JSON.stringify({ scenes: pipeline.artifact.scenes, style: task.style, ratio: task.ratio }) },
     ],
   });
-  pipeline.artifact.imagePrompts = normalizePrompts(prompts.json.imagePrompts, hydrateArtifact(pipeline.artifact).scenes, task);
-  pipeline.artifact.subtitles = buildSubtitleTrack(pipeline.artifact.scenes);
-  await writeContentArtifacts(workDir, hydrateArtifact(pipeline.artifact));
+  const scenes = pipeline.artifact.scenes;
+  if (!scenes) {
+    throw new Error('Pipeline storyboard scenes are missing; retry from storyboard step.');
+  }
+  pipeline.artifact.imagePrompts = normalizePrompts(prompts.json.imagePrompts, scenes, task);
+  pipeline.artifact.subtitles = buildSubtitleTrack(scenes);
+  await writeContentArtifacts(workDir, hydrateArtifact(pipeline.artifact), task);
   await markStep(3, 'completed', { outputPath: join(workDir, '03-image-prompts.json') });
   await emit('step_complete', 3, 'Prompt', `已生成 ${pipeline.artifact.imagePrompts.length} 条图片提示词`, { requestId: prompts.requestId });
+}
+
+async function prepareAiSourceContext(input: {
+  task: Task;
+  options: RunTaskOptions;
+  workDir: string;
+  emit: (type: string, step: number | null, agent: string | null, detail: string, data?: unknown) => Promise<void>;
+  pipeline: PipelineState;
+}): Promise<AiSourceContext | null> {
+  const { task, options, workDir, emit, pipeline } = input;
+  if (task.mode !== 'ai' || task.aiSources.length === 0) {
+    return null;
+  }
+
+  let context: AiSourceContext;
+  try {
+    context = options.resolveAiSourceContext
+      ? await options.resolveAiSourceContext(task)
+      : { query: task.aiKeyword || task.inputText, sections: [], warnings: ['AI source resolver is not configured; continuing with keyword only.'] };
+  } catch (error) {
+    context = {
+      query: task.aiKeyword || task.inputText,
+      sections: [],
+      warnings: [`AI source research failed: ${error instanceof Error ? error.message : String(error)}`],
+    };
+  }
+
+  pipeline.artifact.sourceContext = context;
+  await writeFile(join(workDir, '00-source-context.json'), JSON.stringify(context, null, 2), 'utf8');
+  await writeFile(join(workDir, '00-source-context.md'), formatAiSourceContext(task, context), 'utf8');
+  await emit('step_complete', 0, 'Research', `AI source research completed: ${context.sections.length} sections`, context);
+  return context;
 }
 
 async function ensureImages(input: {
@@ -340,8 +379,12 @@ async function loadPipelineState(path: string, taskId: string): Promise<Pipeline
   }
 }
 
-async function writeContentArtifacts(workDir: string, artifact: PipelineArtifact): Promise<void> {
+async function writeContentArtifacts(workDir: string, artifact: PipelineArtifact, task: Pick<Task, 'aiKeyword' | 'aiSources' | 'extraRequirements'>): Promise<void> {
   await mkdir(workDir, { recursive: true });
+  if (artifact.sourceContext) {
+    await writeFile(join(workDir, '00-source-context.json'), JSON.stringify(artifact.sourceContext, null, 2), 'utf8');
+    await writeFile(join(workDir, '00-source-context.md'), formatAiSourceContext(task, artifact.sourceContext), 'utf8');
+  }
   await writeFile(join(workDir, '00-reviewed.txt'), artifact.reviewedText, 'utf8');
   await writeFile(join(workDir, '01-rewritten-copy.md'), artifact.rewrittenCopy, 'utf8');
   await writeFile(join(workDir, '00-cover-title.json'), JSON.stringify(artifact.cover, null, 2), 'utf8');
@@ -361,7 +404,20 @@ function hydrateArtifact(input: Partial<PipelineArtifact>): PipelineArtifact {
     scenes: input.scenes,
     imagePrompts: input.imagePrompts,
     subtitles: input.subtitles ?? buildSubtitleTrack(input.scenes),
+    sourceContext: input.sourceContext,
   };
+}
+
+function buildReviewSourceText(task: Task, sourceContext: AiSourceContext | null): string {
+  if (task.mode !== 'ai') {
+    return task.inputText;
+  }
+  return [
+    `AI keyword: ${task.aiKeyword}`,
+    task.extraRequirements ? `Extra requirements: ${task.extraRequirements}` : '',
+    sourceContext ? formatAiSourceContext(task, sourceContext) : '',
+    task.inputText ? `Seed material:\n${task.inputText}` : '',
+  ].filter(Boolean).join('\n\n');
 }
 
 function normalizeCover(input: unknown): CoverMetadata {
