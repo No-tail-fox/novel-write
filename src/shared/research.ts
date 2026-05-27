@@ -14,15 +14,19 @@ export function createAiSourceResearcher(config: AppConfig, fetchImpl: FetchLike
 
     const sources = new Set(task.aiSources);
     if (sources.has('web')) {
-      try {
-        const webSections = await searchBingRss(query, fetchImpl);
-        if (webSections.length === 0) {
-          context.warnings.push('web search returned no usable results.');
-        } else {
-          context.sections.push(...webSections);
+      if (task.selectedSources.length > 0) {
+        context.sections.push(...task.selectedSources.filter((section) => section.source === 'web'));
+      } else {
+        try {
+          const webSections = await searchWebSources(query, fetchImpl);
+          if (webSections.length === 0) {
+            context.warnings.push('web search returned no usable results.');
+          } else {
+            context.sections.push(...webSections);
+          }
+        } catch (error) {
+          context.warnings.push(`web search failed: ${error instanceof Error ? error.message : String(error)}`);
         }
-      } catch (error) {
-        context.warnings.push(`web search failed: ${error instanceof Error ? error.message : String(error)}`);
       }
     }
     if (sources.has('builtin-knowledge')) {
@@ -66,9 +70,25 @@ export function formatAiSourceContext(task: Pick<Task, 'aiKeyword' | 'aiSources'
   return lines.join('\n\n');
 }
 
+export async function searchWebSources(query: string, fetchImpl: FetchLike = fetch): Promise<AiSourceSection[]> {
+  const rssItems = await searchBingRss(query, fetchImpl);
+  const sections: AiSourceSection[] = [];
+  for (const item of rssItems.slice(0, 5)) {
+    let content = item.content;
+    if (item.url) {
+      const pageText = await fetchPageText(item.url, fetchImpl).catch(() => '');
+      if (pageText) {
+        content = pageText;
+      }
+    }
+    sections.push({ ...item, snippet: item.content, content });
+  }
+  return sections;
+}
+
 async function searchBingRss(query: string, fetchImpl: FetchLike): Promise<AiSourceSection[]> {
   const url = `https://cn.bing.com/search?q=${encodeURIComponent(query)}&format=rss`;
-  const response = await fetchWithTimeout(fetchImpl, url, 8000);
+  const response = await fetchWithTimeout(fetchImpl, url, 8000, 'application/rss+xml,text/xml,*/*');
   if (!response.ok) {
     throw new Error(`Bing RSS returned ${response.status}`);
   }
@@ -76,14 +96,24 @@ async function searchBingRss(query: string, fetchImpl: FetchLike): Promise<AiSou
   return extractRssItems(xml).slice(0, 5).map((item) => ({ source: 'web', ...item }));
 }
 
-async function fetchWithTimeout(fetchImpl: FetchLike, url: string, timeoutMs: number): Promise<Response> {
+async function fetchPageText(url: string, fetchImpl: FetchLike): Promise<string> {
+  const response = await fetchWithTimeout(fetchImpl, url, 8000, 'text/html,application/xhtml+xml,text/plain,*/*');
+  if (!response.ok) return '';
+  const contentType = response.headers.get('content-type') ?? '';
+  if (!/text\/html|application\/xhtml\+xml|text\/plain/i.test(contentType)) return '';
+  const body = await response.text();
+  const text = contentType.includes('text/plain') ? body : extractReadableText(body);
+  return compactText(text).slice(0, 3000);
+}
+
+async function fetchWithTimeout(fetchImpl: FetchLike, url: string, timeoutMs: number, accept: string): Promise<Response> {
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), timeoutMs);
   try {
     return await fetchImpl(url, {
       signal: controller.signal,
       headers: {
-        Accept: 'application/rss+xml,text/xml,*/*',
+        Accept: accept,
         'User-Agent': 'Mozilla/5.0 StoryboundReplica/1.0',
       },
     });
@@ -109,6 +139,24 @@ function extractTag(input: string, tag: string): string {
 
 function cleanXml(input: string): string {
   return decodeEntities(input.replace(/<!\[CDATA\[([\s\S]*?)\]\]>/g, '$1').replace(/<[^>]+>/g, '')).trim();
+}
+
+function extractReadableText(html: string): string {
+  const stripped = html
+    .replace(/<script\b[\s\S]*?<\/script>/gi, ' ')
+    .replace(/<style\b[\s\S]*?<\/style>/gi, ' ')
+    .replace(/<noscript\b[\s\S]*?<\/noscript>/gi, ' ')
+    .replace(/<svg\b[\s\S]*?<\/svg>/gi, ' ')
+    .replace(/<(nav|header|footer|aside)\b[\s\S]*?<\/\1>/gi, ' ');
+  const article = stripped.match(/<article\b[\s\S]*?<\/article>/i)?.[0] ?? stripped.match(/<main\b[\s\S]*?<\/main>/i)?.[0] ?? stripped;
+  return cleanXml(article);
+}
+
+function compactText(input: string): string {
+  return decodeEntities(input)
+    .replace(/\s+/g, ' ')
+    .replace(/\u00a0/g, ' ')
+    .trim();
 }
 
 function decodeEntities(input: string): string {

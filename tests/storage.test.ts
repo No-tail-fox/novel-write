@@ -67,4 +67,32 @@ describe('file database', () => {
       await rm(dir, { recursive: true, force: true });
     }
   });
+
+  it('persists selected AI web sources with the task', async () => {
+    const dir = await mkdtemp(join(tmpdir(), 'storybound-db-sources-'));
+    const file = join(dir, 'app.db');
+
+    try {
+      const db = await FileDatabase.open(file);
+      await db.createTask({
+        title: 'Selected sources',
+        inputText: '',
+        mode: 'ai',
+        aiKeyword: '武则天',
+        aiSources: ['web'],
+        selectedSources: [{ source: 'web', title: 'Selected article', url: 'https://example.test/a', content: 'Selected page body.' }],
+      });
+      await db.close();
+
+      const reopened = await FileDatabase.open(file);
+      const state = await reopened.getState();
+
+      expect(state.tasks[0].selectedSources).toEqual([
+        { source: 'web', title: 'Selected article', url: 'https://example.test/a', content: 'Selected page body.' },
+      ]);
+      await reopened.close();
+    } finally {
+      await rm(dir, { recursive: true, force: true });
+    }
+  });
 });

@@ -1279,6 +1279,45 @@ textarea {
   line-height: 1.5;
 }
 
+.ai-search-results {
+  display: grid;
+  gap: 10px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  padding: 12px;
+  background: #0b1016;
+}
+
+.search-source-card {
+  display: grid;
+  grid-template-columns: 20px minmax(0, 1fr);
+  gap: 10px;
+  align-items: start;
+  border: 1px solid var(--line);
+  border-radius: 7px;
+  padding: 10px;
+  background: #10161d;
+}
+
+.search-source-card strong,
+.search-source-card span,
+.search-source-card p {
+  display: block;
+}
+
+.search-source-card span {
+  margin-top: 4px;
+  color: var(--muted);
+  font-size: 12px;
+  overflow-wrap: anywhere;
+}
+
+.search-source-card p {
+  margin: 8px 0 0;
+  color: #c9d5e4;
+  line-height: 1.5;
+}
+
 .profile-card {
   display: flex;
   align-items: center;

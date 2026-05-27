@@ -146,6 +146,7 @@ export interface Task {
   mode: TaskMode;
   aiKeyword: string;
   aiSources: string[];
+  selectedSources: AiSourceSection[];
   extraRequirements: string;
   promptTemplateId: string | null;
   promptTemplateType: string | null;
@@ -169,6 +170,7 @@ export type CreateTaskInput = Partial<
     | 'mode'
     | 'aiKeyword'
     | 'aiSources'
+    | 'selectedSources'
     | 'extraRequirements'
     | 'track'
     | 'style'
@@ -333,6 +335,7 @@ export interface AiSourceSection {
   source: string;
   title: string;
   url?: string;
+  snippet?: string;
   content: string;
 }
 

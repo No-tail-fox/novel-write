@@ -5,7 +5,7 @@ import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { promisify } from 'node:util';
 import { testOpenAiCompatibleLlm } from '../src/shared/llm-provider';
-import { createAiSourceResearcher } from '../src/shared/research';
+import { createAiSourceResearcher, searchWebSources } from '../src/shared/research';
 import { runTask } from '../src/shared/runner';
 import { FileDatabase } from '../src/shared/storage';
 import { createTaskRuntimeProviders } from '../src/shared/task-runtime-providers';
@@ -73,6 +73,18 @@ ipcMain.handle('app:save-config', async (_event, config) => {
 });
 
 ipcMain.handle('llm:test-config', async (_event, config: LlmConfig) => testOpenAiCompatibleLlm(config));
+
+ipcMain.handle('research:web-search', async (_event, query: string) => {
+  const trimmed = query.trim();
+  if (!trimmed) {
+    return { query: trimmed, sections: [], warnings: ['请输入关键词后再搜索。'] };
+  }
+  try {
+    return { query: trimmed, sections: await searchWebSources(trimmed), warnings: [] };
+  } catch (error) {
+    return { query: trimmed, sections: [], warnings: [error instanceof Error ? error.message : String(error)] };
+  }
+});
 
 ipcMain.handle('prompt-template:save', async (_event, template: PromptTemplate) => {
   const database = await getDb();

@@ -17,6 +17,7 @@ describe('electron ipc contract', () => {
       'task:update-status',
       'task:retry',
       'llm:test-config',
+      'research:web-search',
       'diagnostics:run',
     ]) {
       expect(preload).toContain(channel);
@@ -41,6 +42,7 @@ describe('electron ipc contract', () => {
     expect(main).toContain('notifyTaskState');
     expect(preload).toContain('callback(state)');
     expect(preload).toContain('testLlmConfig');
+    expect(preload).toContain('searchWebSources');
     expect(viteEnv).toContain('callback: (state: AppState) => void');
     expect(viteEnv).toContain('testLlmConfig');
   });

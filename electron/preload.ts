@@ -1,10 +1,11 @@
 import { contextBridge, ipcRenderer } from 'electron';
-import type { AccountProfile, ActivationState, AppConfig, AppState, CreateTaskInput, DraftTemplate, ImageLabRecord, LlmConfig, PromptTemplate, TaskStatus, UiPreferences } from '../src/shared/types';
+import type { AccountProfile, ActivationState, AiSourceContext, AppConfig, AppState, CreateTaskInput, DraftTemplate, ImageLabRecord, LlmConfig, PromptTemplate, TaskStatus, UiPreferences } from '../src/shared/types';
 
 contextBridge.exposeInMainWorld('storybound', {
   getState: () => ipcRenderer.invoke('app:get-state'),
   saveConfig: (config: AppConfig) => ipcRenderer.invoke('app:save-config', config),
   testLlmConfig: (config: LlmConfig) => ipcRenderer.invoke('llm:test-config', config),
+  searchWebSources: (query: string): Promise<AiSourceContext> => ipcRenderer.invoke('research:web-search', query),
   savePromptTemplate: (template: PromptTemplate) => ipcRenderer.invoke('prompt-template:save', template),
   resetPromptTemplates: () => ipcRenderer.invoke('prompt-template:reset'),
   saveDraftTemplate: (template: DraftTemplate) => ipcRenderer.invoke('draft-template:save', template),

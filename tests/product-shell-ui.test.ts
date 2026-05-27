@@ -60,6 +60,19 @@ describe('product shell ui', () => {
     expect(css).toContain('.test-result');
   });
 
+  it('lets AI creation search real web sources and select them for generation', async () => {
+    const main = await readFile(new URL('../src/main.tsx', import.meta.url), 'utf8');
+    const css = await readFile(new URL('../src/styles.css', import.meta.url), 'utf8');
+
+    expect(main).toContain('searchWebSources');
+    expect(main).toContain('selectedSearchSourceIds');
+    expect(main).toContain('selectedSources');
+    expect(main).toContain('ai-search-results');
+    expect(main).toContain('选择网页信息补充进文案');
+    expect(css).toContain('.ai-search-results');
+    expect(css).toContain('.search-source-card');
+  });
+
   it('reuses the React root across Vite hot reloads', async () => {
     const main = await readFile(new URL('../src/main.tsx', import.meta.url), 'utf8');
 

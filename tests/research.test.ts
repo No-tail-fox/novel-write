@@ -44,6 +44,57 @@ describe('AI source research', () => {
     expect(context.sections).toEqual([]);
     expect(context.warnings[0]).toContain('web search returned no usable results');
   });
+
+  it('fetches linked web pages and uses page body text as source content', async () => {
+    const fetched: string[] = [];
+    const researcher = createAiSourceResearcher(defaultConfig, async (url) => {
+      fetched.push(String(url));
+      if (String(url).includes('bing.com/search')) {
+        return new Response(
+          `<?xml version="1.0"?>
+          <rss><channel>
+            <item><title>Article A</title><link>https://example.test/article-a</link><description>Short snippet only.</description></item>
+          </channel></rss>`,
+          { status: 200, headers: { 'Content-Type': 'application/rss+xml' } },
+        );
+      }
+      return new Response(
+        `<html><head><title>Article A</title></head><body><nav>menu</nav><article><p>Full article paragraph one about the comeback.</p><p>Full article paragraph two with useful details.</p></article><script>ignored()</script></body></html>`,
+        { status: 200, headers: { 'Content-Type': 'text/html' } },
+      );
+    });
+
+    const context = await researcher(makeTask({ aiSources: ['web'], aiKeyword: 'Wu Zetian comeback' }));
+
+    expect(fetched).toEqual(['https://cn.bing.com/search?q=Wu%20Zetian%20comeback&format=rss', 'https://example.test/article-a']);
+    expect(context.sections[0]).toMatchObject({
+      source: 'web',
+      title: 'Article A',
+      url: 'https://example.test/article-a',
+      snippet: 'Short snippet only.',
+    });
+    expect(context.sections[0].content).toContain('Full article paragraph one');
+    expect(context.sections[0].content).not.toContain('ignored()');
+  });
+
+  it('uses user-selected web sources without searching again during task execution', async () => {
+    let called = false;
+    const researcher = createAiSourceResearcher(defaultConfig, async () => {
+      called = true;
+      return new Response('');
+    });
+
+    const context = await researcher(
+      makeTask({
+        aiSources: ['web', 'builtin-knowledge'],
+        selectedSources: [{ source: 'web', title: 'Chosen article', url: 'https://example.test/chosen', content: 'Selected body text for generation.' }],
+      }),
+    );
+
+    expect(called).toBe(false);
+    expect(context.sections[0]).toMatchObject({ title: 'Chosen article', content: 'Selected body text for generation.' });
+    expect(context.sections.map((section) => section.source)).toEqual(['web', 'builtin-knowledge']);
+  });
 });
 
 function makeTask(patch: Partial<Task>): Task {
@@ -67,6 +118,7 @@ function makeTask(patch: Partial<Task>): Task {
     mode: 'ai',
     aiKeyword: 'Wu Zetian',
     aiSources: ['web'],
+    selectedSources: [],
     extraRequirements: '',
     promptTemplateId: null,
     promptTemplateType: null,

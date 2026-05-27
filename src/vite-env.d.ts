@@ -1,6 +1,7 @@
 import type {
   AccountProfile,
   ActivationState,
+  AiSourceContext,
   AppConfig,
   AppState,
   CreateTaskInput,
@@ -19,6 +20,7 @@ declare global {
       getState: () => Promise<AppState>;
       saveConfig: (config: AppConfig) => Promise<AppState>;
       testLlmConfig: (config: LlmConfig) => Promise<LlmModelTestResult>;
+      searchWebSources: (query: string) => Promise<AiSourceContext>;
       savePromptTemplate: (template: PromptTemplate) => Promise<AppState>;
       resetPromptTemplates: () => Promise<AppState>;
       saveDraftTemplate: (template: DraftTemplate) => Promise<AppState>;

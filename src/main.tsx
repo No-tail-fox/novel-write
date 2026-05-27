@@ -33,6 +33,8 @@ import {
 import type {
   AccountProfile,
   ActivationState,
+  AiSourceContext,
+  AiSourceSection,
   AppConfig,
   AppState,
   CreateTaskInput,
@@ -201,6 +203,13 @@ function makeFallbackApi(setState: (state: AppState) => void): StoryboundApi {
         requestId: null,
       };
     },
+    async searchWebSources(query) {
+      return {
+        query,
+        sections: [],
+        warnings: ['浏览器预览无法直接抓取网页正文，请在 Electron 桌面端使用搜索。'],
+      };
+    },
     async savePromptTemplate(template: PromptTemplate) {
       const state = read();
       const next = state.promptTemplates.filter((item) => item.id !== template.id);
@@ -269,6 +278,7 @@ function makeFallbackApi(setState: (state: AppState) => void): StoryboundApi {
         mode: input.mode ?? 'paste',
         aiKeyword: input.aiKeyword ?? '',
         aiSources: input.aiSources ?? [],
+        selectedSources: input.selectedSources ?? [],
         extraRequirements: input.extraRequirements ?? '',
         promptTemplateId: input.promptTemplateId ?? null,
         promptTemplateType: input.promptTemplateType ?? null,
@@ -496,6 +506,32 @@ function NewTaskPage({ api, state, applyState, openTaskDetail }: { api: Storybou
   const [ttsSpeed, setTtsSpeed] = useState(1);
   const [running, setRunning] = useState(false);
   const [draftNotice, setDraftNotice] = useState('');
+  const [searchingSources, setSearchingSources] = useState(false);
+  const [searchContext, setSearchContext] = useState<AiSourceContext | null>(null);
+  const [selectedSearchSourceIds, setSelectedSearchSourceIds] = useState<string[]>([]);
+  const [searchMessage, setSearchMessage] = useState('');
+
+  const selectedSources = (searchContext?.sections ?? []).filter((source, index) => selectedSearchSourceIds.includes(sourceKey(source, index)));
+
+  async function searchWebSources() {
+    const keyword = aiKeyword.trim();
+    if (!keyword) {
+      setSearchMessage('请先输入关键词。');
+      return;
+    }
+    setSearchingSources(true);
+    setSearchMessage('正在从 Bing 搜索并读取网页正文...');
+    try {
+      const context = await api.searchWebSources(keyword);
+      setSearchContext(context);
+      setSelectedSearchSourceIds(context.sections.slice(0, 3).map((source, index) => sourceKey(source, index)));
+      setSearchMessage(context.warnings.length ? context.warnings.join('；') : `已获取 ${context.sections.length} 条网页资料，勾选后会补充进文案生成。`);
+    } catch (error) {
+      setSearchMessage(error instanceof Error ? error.message : String(error));
+    } finally {
+      setSearchingSources(false);
+    }
+  }
 
   async function run() {
     setRunning(true);
@@ -506,6 +542,7 @@ function NewTaskPage({ api, state, applyState, openTaskDetail }: { api: Storybou
         mode,
         aiKeyword,
         aiSources,
+        selectedSources: mode === 'ai' ? selectedSources : [],
         extraRequirements,
         track,
         style,
@@ -573,10 +610,33 @@ function NewTaskPage({ api, state, applyState, openTaskDetail }: { api: Storybou
             <Field label="额外要求" hint="可选">
               <textarea className="small-textarea" value={extraRequirements} onChange={(event) => setExtraRequirements(event.target.value)} />
             </Field>
-            <button className="ghost-action">
-              <Search size={15} />
+            <button className="ghost-action" disabled={searchingSources || !aiKeyword.trim()} onClick={searchWebSources}>
+              {searchingSources ? <Loader2 className="spin" size={15} /> : <Search size={15} />}
               搜索
             </button>
+            {searchMessage ? <div className="test-result">{searchMessage}</div> : null}
+            {searchContext ? (
+              <div className="ai-search-results">
+                <div className="panel-title-row">
+                  <h3>选择网页信息补充进文案</h3>
+                  <small>{selectedSources.length}/{searchContext.sections.length} 已选择</small>
+                </div>
+                {searchContext.sections.length === 0 ? <EmptyState title="暂无可用网页资料" /> : null}
+                {searchContext.sections.map((source, index) => {
+                  const id = sourceKey(source, index);
+                  return (
+                    <label className="search-source-card" key={id}>
+                      <input type="checkbox" checked={selectedSearchSourceIds.includes(id)} onChange={() => setSelectedSearchSourceIds(toggleArray(selectedSearchSourceIds, id))} />
+                      <div>
+                        <strong>{source.title}</strong>
+                        {source.url ? <span>{source.url}</span> : null}
+                        <p>{(source.content || source.snippet || '').slice(0, 220)}</p>
+                      </div>
+                    </label>
+                  );
+                })}
+              </div>
+            ) : null}
           </div>
         )}
 
@@ -1525,6 +1585,10 @@ function cloneDraftTemplate(template: DraftTemplate): DraftTemplate {
 
 function toggleArray(values: string[], value: string): string[] {
   return values.includes(value) ? values.filter((item) => item !== value) : [...values, value];
+}
+
+function sourceKey(source: AiSourceSection, index: number): string {
+  return source.url || `${source.title}-${index}`;
 }
 
 declare global {
