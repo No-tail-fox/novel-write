@@ -2,6 +2,9 @@ import { defaultConfig } from './config';
 import type { AppConfig, ConfigTestResult, ConfigTestTarget, LlmModelTestResult } from './types';
 
 type TestStatus = ConfigTestResult['status'];
+type ConfigValidationOptions = {
+  pathExists?: (path: string) => boolean;
+};
 
 export function normalizeAppConfig(input: unknown): AppConfig {
   const partial = (input && typeof input === 'object' ? input : {}) as Partial<AppConfig>;
@@ -36,11 +39,11 @@ export function normalizeAppConfig(input: unknown): AppConfig {
   };
 }
 
-export function configTargetStatus(target: ConfigTestTarget, config: AppConfig): TestStatus {
-  return validateConfigTarget(target, config).status;
+export function configTargetStatus(target: ConfigTestTarget, config: AppConfig, options: ConfigValidationOptions = {}): TestStatus {
+  return validateConfigTarget(target, config, options).status;
 }
 
-export function validateConfigTarget(target: ConfigTestTarget, input: AppConfig): ConfigTestResult {
+export function validateConfigTarget(target: ConfigTestTarget, input: AppConfig, options: ConfigValidationOptions = {}): ConfigTestResult {
   const startedAt = Date.now();
   const config = normalizeAppConfig(input);
 
@@ -64,7 +67,7 @@ export function validateConfigTarget(target: ConfigTestTarget, input: AppConfig)
 
   if (target === 'jianying') {
     const draftPath = config.jianying.draftPath.trim();
-    const pathAccessible = hasNodeRuntime() ? nodePathExists(draftPath) : true;
+    const pathAccessible = options.pathExists ? options.pathExists(draftPath) : true;
     return buildResult({
       target,
       startedAt,
@@ -194,17 +197,4 @@ function missingFields(fields: Array<[string, string | null | undefined]>): stri
 
 function normalizeBaseUrl(value: string): string {
   return value.replace(/\/+$/, '') || 'https://api.openai.com/v1';
-}
-
-function nodePathExists(path: string): boolean {
-  try {
-    const fsRequire = Function('return require')() as ((id: string) => { existsSync: (value: string) => boolean }) | undefined;
-    return Boolean(path && fsRequire?.('node:fs').existsSync(path));
-  } catch {
-    return false;
-  }
-}
-
-function hasNodeRuntime(): boolean {
-  return Boolean((globalThis as { process?: { versions?: { node?: string } } }).process?.versions?.node);
 }

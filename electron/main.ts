@@ -1,5 +1,6 @@
 import { app, BrowserWindow, ipcMain, Menu, shell } from 'electron';
 import { execFile } from 'node:child_process';
+import { existsSync } from 'node:fs';
 import { mkdir } from 'node:fs/promises';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -80,7 +81,7 @@ ipcMain.handle('config:test', async (_event, input: { target: ConfigTestTarget; 
   if (input.target === 'llm') {
     return fromLlmModelTestResult(await testOpenAiCompatibleLlm(input.config.llm));
   }
-  return validateConfigTarget(input.target, input.config);
+  return validateConfigTarget(input.target, input.config, { pathExists: existsSync });
 });
 
 ipcMain.handle('research:web-search', async (_event, query: string) => {
