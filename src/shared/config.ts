@@ -8,6 +8,7 @@ import type {
   PromptTemplate,
   UiPreferences,
 } from './types';
+import { DEFAULT_VOLCENGINE_TTS_V3_SPEAKER } from './volcengine-tts';
 
 const updatedAt = '2026-05-26T00:00:00.000Z';
 
@@ -105,14 +106,14 @@ export const defaultConfig: AppConfig = {
     provider: 'volcengine',
     appId: '',
     accessKey: '',
-    speaker: '灿博小叔',
+    speaker: DEFAULT_VOLCENGINE_TTS_V3_SPEAKER,
     volcengine: {
       apiKey: '',
       accessKeyId: '',
       secretAccessKey: '',
       appId: '',
       accessKey: '',
-      speaker: '灿博小叔',
+      speaker: DEFAULT_VOLCENGINE_TTS_V3_SPEAKER,
       cluster: 'volcano_tts',
       endpoint: 'https://openspeech.bytedance.com/api/v3/tts/unidirectional',
       resourceId: 'seed-tts-2.0',
@@ -131,14 +132,14 @@ export const defaultConfig: AppConfig = {
       provider: 'volcengine',
       appId: '',
       accessKey: '',
-      speaker: '灿博小叔',
+      speaker: DEFAULT_VOLCENGINE_TTS_V3_SPEAKER,
       volcengine: {
         apiKey: '',
         accessKeyId: '',
         secretAccessKey: '',
         appId: '',
         accessKey: '',
-        speaker: '灿博小叔',
+        speaker: DEFAULT_VOLCENGINE_TTS_V3_SPEAKER,
         cluster: 'volcano_tts',
         endpoint: 'https://openspeech.bytedance.com/api/v3/tts/unidirectional',
         resourceId: 'seed-tts-2.0',

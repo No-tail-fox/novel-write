@@ -278,4 +278,55 @@ describe('config validation utilities', () => {
     expect(result.endpoint).toBe('https://openspeech.bytedance.com/api/v3/tts/unidirectional');
     expect(result.detail).toContain('seed-tts-2.0');
   });
+
+  it('normalizes legacy Volcengine display speakers to a V3 voice type', () => {
+    const config = normalizeAppConfig({
+      ...defaultConfig,
+      ttsProfiles: [
+        {
+          id: 'tts-v3-legacy-speaker',
+          name: 'Volcengine V3',
+          provider: 'volcengine',
+          enabled: true,
+          volcengine: {
+            ...defaultConfig.tts.volcengine,
+            apiKey: 'v3-key',
+            resourceId: 'seed-tts-2.0',
+            speaker: '灿博小叔',
+          },
+        },
+      ],
+      activeTtsProfileId: 'tts-v3-legacy-speaker',
+    });
+
+    expect(config.tts.volcengine.speaker).toBe('zh_female_vv_uranus_bigtts');
+    expect(config.tts.speaker).toBe('zh_female_vv_uranus_bigtts');
+  });
+
+  it('rejects Ark model keys in Volcengine TTS V3 settings', () => {
+    const config = normalizeAppConfig({
+      ...defaultConfig,
+      ttsProfiles: [
+        {
+          id: 'tts-v3-ark-key',
+          name: 'Volcengine V3',
+          provider: 'volcengine',
+          enabled: true,
+          volcengine: {
+            ...defaultConfig.tts.volcengine,
+            apiKey: 'ark-model-key',
+            resourceId: 'seed-tts-2.0',
+            speaker: 'zh_female_vv_uranus_bigtts',
+          },
+        },
+      ],
+      activeTtsProfileId: 'tts-v3-ark-key',
+    });
+
+    const result = validateConfigTarget('tts', config);
+
+    expect(result.status).toBe('fail');
+    expect(result.detail).toContain('Ark');
+    expect(result.detail).toContain('TTS');
+  });
 });

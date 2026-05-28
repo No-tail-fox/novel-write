@@ -1,5 +1,6 @@
 import { defaultConfig } from './config';
 import { normalizeOpenAiImageBaseUrl, testOpenAiCompatibleImageModel } from './openai-image';
+import { isArkModelApiKey, normalizeVolcengineV3Speaker, VOLCENGINE_TTS_ARK_KEY_MESSAGE } from './volcengine-tts';
 import type { AppConfig, ConfigTestResult, ConfigTestTarget, ImageProviderProfile, LlmModelTestResult, TtsProviderProfile } from './types';
 
 type TestStatus = ConfigTestResult['status'];
@@ -169,11 +170,12 @@ function normalizeImageProfiles(partial: Partial<AppConfig>): {
 function normalizeTtsProfile(profile: Partial<TtsProviderProfile>, index: number): TtsProviderProfile {
   const provider = normalizeTtsProvider(profile.provider);
   const rawVolcengine = { ...defaultConfig.tts.volcengine, ...(profile.volcengine ?? {}) };
+  const speaker = normalizeVolcengineV3Speaker(profile.speaker ?? rawVolcengine.speaker);
   const volcengine = {
     ...rawVolcengine,
     appId: profile.appId ?? rawVolcengine.appId,
     accessKey: profile.accessKey ?? rawVolcengine.accessKey,
-    speaker: profile.speaker ?? rawVolcengine.speaker,
+    speaker,
   };
   const minimax = { ...defaultConfig.tts.minimax, ...(profile.minimax ?? {}) };
   const id = profile.id?.trim() || buildConfigProfileId('tts', `${provider}-${provider === 'minimax' ? minimax.model : volcengine.speaker}-${index}`, index);
@@ -184,7 +186,7 @@ function normalizeTtsProfile(profile: Partial<TtsProviderProfile>, index: number
     provider,
     appId: profile.appId ?? volcengine.appId,
     accessKey: profile.accessKey ?? volcengine.accessKey,
-    speaker: profile.speaker ?? volcengine.speaker,
+    speaker,
     volcengine,
     minimax,
   };
@@ -464,6 +466,15 @@ function validateTtsConfig(config: AppConfig, startedAt: number): ConfigTestResu
 
   const volcengineApiKey = config.tts.volcengine.apiKey?.trim() ?? '';
   if (volcengineApiKey) {
+    if (isArkModelApiKey(volcengineApiKey)) {
+      return buildResult({
+        target: 'tts',
+        startedAt,
+        status: 'fail',
+        endpoint: config.tts.volcengine.endpoint || 'https://openspeech.bytedance.com/api/v3/tts/unidirectional',
+        detail: VOLCENGINE_TTS_ARK_KEY_MESSAGE,
+      });
+    }
     const missing = missingFields([
       ['API Key', config.tts.volcengine.apiKey],
       ['Resource ID', config.tts.volcengine.resourceId],

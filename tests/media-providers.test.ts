@@ -327,6 +327,74 @@ describe('configured media providers', () => {
     }
   });
 
+  it('normalizes legacy Volcengine display speakers before V3 requests', async () => {
+    const dir = await mkdtemp(join(tmpdir(), 'storybound-provider-volc-v3-legacy-speaker-'));
+    const audioBytes = Buffer.from('legacy-speaker-audio');
+    const requests: Array<{ body: Record<string, any> }> = [];
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (_url: string, init: RequestInit) => {
+        requests.push({ body: JSON.parse(String(init.body)) });
+        return new Response(`${JSON.stringify({ code: 0, message: '', data: audioBytes.toString('base64') })}\n${JSON.stringify({ code: 20000000, message: 'ok', data: null })}\n`, {
+          status: 200,
+          headers: { 'content-type': 'application/json' },
+        });
+      }),
+    );
+
+    try {
+      const config: AppConfig = {
+        ...defaultConfig,
+        tts: {
+          ...defaultConfig.tts,
+          provider: 'volcengine',
+          volcengine: {
+            ...defaultConfig.tts.volcengine,
+            apiKey: 'v3-key',
+            resourceId: 'seed-tts-2.0',
+            endpoint: 'https://openspeech.bytedance.com/api/v3/tts/unidirectional',
+            speaker: '灿博小叔',
+          },
+        },
+      };
+      const synthesize = createConfiguredNarrationSynthesizer(config, dir);
+      await synthesize([scene], task);
+
+      expect(requests[0].body.req_params.speaker).toBe('zh_female_vv_uranus_bigtts');
+    } finally {
+      await rm(dir, { recursive: true, force: true });
+    }
+  });
+
+  it('rejects Ark model keys before calling Volcengine TTS V3', async () => {
+    const dir = await mkdtemp(join(tmpdir(), 'storybound-provider-volc-v3-ark-key-'));
+    const fetchMock = vi.fn();
+    vi.stubGlobal('fetch', fetchMock);
+
+    try {
+      const config: AppConfig = {
+        ...defaultConfig,
+        tts: {
+          ...defaultConfig.tts,
+          provider: 'volcengine',
+          volcengine: {
+            ...defaultConfig.tts.volcengine,
+            apiKey: 'ark-model-key',
+            resourceId: 'seed-tts-2.0',
+            endpoint: 'https://openspeech.bytedance.com/api/v3/tts/unidirectional',
+            speaker: 'zh_female_vv_uranus_bigtts',
+          },
+        },
+      };
+      const synthesize = createConfiguredNarrationSynthesizer(config, dir);
+
+      await expect(synthesize([scene], task)).rejects.toThrow(/Ark.*TTS/i);
+      expect(fetchMock).not.toHaveBeenCalled();
+    } finally {
+      await rm(dir, { recursive: true, force: true });
+    }
+  });
+
   it('uses the enabled image profile after config normalization', async () => {
     const dir = await mkdtemp(join(tmpdir(), 'storybound-provider-image-profile-'));
     const imageBytes = Buffer.from('profile-image');

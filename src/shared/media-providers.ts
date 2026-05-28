@@ -5,6 +5,7 @@ import type { AppConfig, ImagePrompt, StoryboardScene, Task } from './types';
 import type { SceneAsset } from './draft';
 import { fetchWithTimeout } from './http';
 import { buildOpenAiImageGenerationBody, normalizeOpenAiImageBaseUrl } from './openai-image';
+import { isArkModelApiKey, normalizeVolcengineV3Speaker, VOLCENGINE_TTS_ARK_KEY_MESSAGE } from './volcengine-tts';
 
 type ImageGenerator = (scenes: StoryboardScene[], prompts: ImagePrompt[], task: Task, signal?: AbortSignal) => Promise<SceneAsset[]>;
 type NarrationSynthesizer = (scenes: StoryboardScene[], task: Task, signal?: AbortSignal) => Promise<SceneAsset[]>;
@@ -414,9 +415,13 @@ async function synthesizeVolcengineV3Narration(input: {
   if (!input.apiKey) {
     throw new Error('Volcengine TTS API key is required for V3 narration audio.');
   }
+  if (isArkModelApiKey(input.apiKey)) {
+    throw new Error(VOLCENGINE_TTS_ARK_KEY_MESSAGE);
+  }
   const outputDir = join(input.workDir, 'provider-audio');
   await mkdir(outputDir, { recursive: true });
   const assets: SceneAsset[] = [];
+  const speaker = normalizeVolcengineV3Speaker(input.speaker);
 
   for (const scene of input.scenes) {
     const requestId = randomUUID();
@@ -436,7 +441,7 @@ async function synthesizeVolcengineV3Narration(input: {
         user: { uid: input.task.id },
         req_params: {
           text: scene.cap,
-          speaker: input.speaker,
+          speaker,
           audio_params: {
             format: 'mp3',
             sample_rate: 24000,
