@@ -10,6 +10,7 @@ describe('electron ipc contract', () => {
       'prompt-template:save',
       'prompt-template:reset',
       'draft-template:save',
+      'image-lab:generate',
       'image-lab:add-record',
       'account:save',
       'activation:save',
@@ -22,9 +23,11 @@ describe('electron ipc contract', () => {
       'config:test',
       'llm:test-config',
       'models:list',
+      'volcengine:speakers:list',
       'research:web-search',
       'research:compose-copy',
       'diagnostics:run',
+      'local-image:select',
     ]) {
       expect(preload).toContain(channel);
       expect(main).toContain(channel);
@@ -71,12 +74,14 @@ describe('electron ipc contract', () => {
     expect(preload).toContain('callback(state)');
     expect(preload).toContain('testLlmConfig');
     expect(preload).toContain('listProviderModels');
+    expect(preload).toContain('listVolcengineSpeakers');
     expect(preload).toContain('searchWebSources');
     expect(preload).toContain('composeResearchCopy');
     expect(preload).toContain('getTaskArtifacts');
     expect(viteEnv).toContain('callback: (state: AppState) => void');
     expect(viteEnv).toContain('testLlmConfig');
     expect(viteEnv).toContain('listProviderModels');
+    expect(viteEnv).toContain('listVolcengineSpeakers');
     expect(viteEnv).toContain('composeResearchCopy');
     expect(viteEnv).toContain('getTaskArtifacts');
   });
@@ -93,6 +98,33 @@ describe('electron ipc contract', () => {
     expect(preload).toContain('readAssetDataUrl');
     expect(preload).toContain('asset:read-data-url');
     expect(viteEnv).toContain('readAssetDataUrl: (path: string) => Promise<string>');
+  });
+
+  it('routes image lab submissions through the configured real image generator', async () => {
+    const main = await readFile(new URL('../electron/main.ts', import.meta.url), 'utf8');
+    const preload = await readFile(new URL('../electron/preload.ts', import.meta.url), 'utf8');
+    const viteEnv = await readFile(new URL('../src/vite-env.d.ts', import.meta.url), 'utf8');
+    const handler = main.slice(main.indexOf("ipcMain.handle('image-lab:generate'"), main.indexOf("ipcMain.handle('image-lab:add-record'"));
+
+    expect(main).toContain('generateImageLabRecord');
+    expect(handler).toContain('imageLabWorkDir');
+    expect(handler).toContain('database.addImageLabRecord(record)');
+    expect(preload).toContain('generateImageLab');
+    expect(preload).toContain('image-lab:generate');
+    expect(viteEnv).toContain('generateImageLab: (input: ImageLabGenerateInput) => Promise<AppState>');
+  });
+
+  it('exposes a safe local image picker for draft template background images', async () => {
+    const main = await readFile(new URL('../electron/main.ts', import.meta.url), 'utf8');
+    const preload = await readFile(new URL('../electron/preload.ts', import.meta.url), 'utf8');
+    const viteEnv = await readFile(new URL('../src/vite-env.d.ts', import.meta.url), 'utf8');
+
+    expect(main).toContain("ipcMain.handle('local-image:select'");
+    expect(main).toContain('dialog.showOpenDialog');
+    expect(main).toContain("properties: ['openFile']");
+    expect(preload).toContain('selectLocalImage');
+    expect(preload).toContain('local-image:select');
+    expect(viteEnv).toContain('selectLocalImage: () => Promise<string | null>');
   });
 
   it('regenerates a single scene image through cache invalidation and background resume', async () => {

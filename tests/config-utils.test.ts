@@ -19,6 +19,24 @@ describe('config validation utilities', () => {
     expect(configTargetStatus('jianying', config, { pathExists: () => true })).toBe('pass');
   });
 
+  it('marks filled LLM credentials as configured for settings status', () => {
+    const config = {
+      ...defaultConfig,
+      llm: {
+        ...defaultConfig.llm,
+        provider: 'custom' as const,
+        baseUrl: 'https://glm-relayapi.top',
+        apiKey: 'sk-test',
+        model: 'glm-5.1',
+      },
+    };
+
+    const result = validateConfigTarget('llm', config);
+
+    expect(result.status).toBe('pass');
+    expect(configTargetStatus('llm', config)).toBe('pass');
+  });
+
   it('runs a real OpenAI-compatible image probe with normalized base URL and generation params', async () => {
     const requests: Array<{ url: string; headers: Headers; body: Record<string, unknown> }> = [];
     const fetchImpl = vi.fn(async (url: RequestInfo | URL, init?: RequestInit) => {
@@ -70,5 +88,194 @@ describe('config validation utilities', () => {
     expect(config.activeLlmProfileId).toBeTruthy();
     expect(config.llmProfiles[0]).toMatchObject({ id: 'custom-a', name: 'Custom A' });
     expect(config.llmProfiles.some((profile) => profile.baseUrl === 'https://active.example' && profile.model === 'active-model')).toBe(true);
+  });
+
+  it('normalizes image profiles and mirrors the enabled profile to legacy image fields', () => {
+    const config = normalizeAppConfig({
+      ...defaultConfig,
+      imageProvider: 'gpt_image',
+      imageProfiles: [
+        {
+          id: 'image-official',
+          name: 'Official image',
+          provider: 'gpt_image',
+          enabled: false,
+          gptImage: { ...defaultConfig.gptImage, apiKey: 'old-image-key', baseUrl: 'https://old-image.example', model: 'old-image-model' },
+        },
+        {
+          id: 'image-custom',
+          name: 'Custom image',
+          provider: 'custom',
+          enabled: true,
+          customImage: { ...defaultConfig.customImage, apiKey: 'custom-image-key', baseUrl: 'https://custom-image.example', model: 'custom-image-model' },
+        },
+      ],
+      activeImageProfileId: 'image-custom',
+    } as unknown as typeof defaultConfig);
+
+    expect(config.activeImageProfileId).toBe('image-custom');
+    expect(config.imageProvider).toBe('custom');
+    expect(config.customImage).toMatchObject({ apiKey: 'custom-image-key', baseUrl: 'https://custom-image.example', model: 'custom-image-model' });
+    expect(config.imageProfiles.filter((profile) => profile.enabled)).toHaveLength(1);
+    expect(config.imageProfiles.find((profile) => profile.enabled)?.id).toBe('image-custom');
+  });
+
+  it('preserves explicit GPT Image profile fields when the profile id matches the legacy fallback id', () => {
+    const config = normalizeAppConfig({
+      ...defaultConfig,
+      imageProvider: 'gpt_image',
+      imageProfiles: [
+        {
+          id: 'default-image',
+          name: 'Edited GPT Image',
+          provider: 'gpt_image',
+          enabled: true,
+          gptImage: {
+            ...defaultConfig.gptImage,
+            apiKey: 'edited-image-key',
+            baseUrl: 'https://edited-image.example',
+            model: 'edited-image-model',
+          },
+        },
+      ],
+      activeImageProfileId: 'default-image',
+    });
+
+    expect(config.activeImageProfileId).toBe('default-image');
+    expect(config.gptImage).toMatchObject({
+      apiKey: 'edited-image-key',
+      baseUrl: 'https://edited-image.example',
+      model: 'edited-image-model',
+    });
+    expect(config.imageProfiles.find((profile) => profile.id === 'default-image')?.gptImage).toMatchObject({
+      apiKey: 'edited-image-key',
+      baseUrl: 'https://edited-image.example',
+      model: 'edited-image-model',
+    });
+  });
+
+  it('preserves same-provider image profile credentials when activating by activeImageProfileId', () => {
+    const config = normalizeAppConfig({
+      ...defaultConfig,
+      imageProvider: 'gpt_image',
+      imageProfiles: [
+        {
+          id: 'image-old',
+          name: 'Old GPT Image',
+          provider: 'gpt_image',
+          enabled: false,
+          gptImage: { ...defaultConfig.gptImage, apiKey: 'old-key', baseUrl: 'https://old-image.example', model: 'old-model' },
+        },
+        {
+          id: 'image-active',
+          name: 'Active GPT Image',
+          provider: 'gpt_image',
+          enabled: true,
+          gptImage: { ...defaultConfig.gptImage, apiKey: 'active-key', baseUrl: 'https://active-image.example', model: 'active-model' },
+        },
+      ],
+      activeImageProfileId: 'image-active',
+    });
+
+    expect(config.activeImageProfileId).toBe('image-active');
+    expect(config.gptImage).toMatchObject({
+      apiKey: 'active-key',
+      baseUrl: 'https://active-image.example',
+      model: 'active-model',
+    });
+    expect(config.imageProfiles.find((profile) => profile.id === 'image-active')?.gptImage).toMatchObject({
+      apiKey: 'active-key',
+      baseUrl: 'https://active-image.example',
+      model: 'active-model',
+    });
+  });
+
+  it('normalizes TTS profiles and mirrors the enabled profile to legacy TTS fields', () => {
+    const config = normalizeAppConfig({
+      ...defaultConfig,
+      ttsProfiles: [
+        {
+          id: 'tts-volc',
+          name: 'Volcengine voice',
+          provider: 'volcengine',
+          enabled: false,
+          volcengine: { ...defaultConfig.tts.volcengine, appId: 'old-app', accessKey: 'old-token', speaker: 'old-voice' },
+        },
+        {
+          id: 'tts-minimax',
+          name: 'MiniMax voice',
+          provider: 'minimax',
+          enabled: true,
+          minimax: { ...defaultConfig.tts.minimax, apiKey: 'mini-key', model: 'speech-02-hd', voiceId: 'mini-voice' },
+        },
+      ],
+      activeTtsProfileId: 'tts-minimax',
+    } as unknown as typeof defaultConfig);
+
+    expect(config.activeTtsProfileId).toBe('tts-minimax');
+    expect(config.tts.provider).toBe('minimax');
+    expect(config.tts.minimax).toMatchObject({ apiKey: 'mini-key', model: 'speech-02-hd', voiceId: 'mini-voice' });
+    expect(config.ttsProfiles.filter((profile) => profile.enabled)).toHaveLength(1);
+    expect(config.ttsProfiles.find((profile) => profile.enabled)?.id).toBe('tts-minimax');
+  });
+
+  it('normalizes Volcengine TTS V3 API key settings from the enabled profile', () => {
+    const config = normalizeAppConfig({
+      ...defaultConfig,
+      ttsProfiles: [
+        {
+          id: 'tts-v3',
+          name: 'Volcengine V3',
+          provider: 'volcengine',
+          enabled: true,
+          volcengine: {
+            ...defaultConfig.tts.volcengine,
+            apiKey: 'v3-key',
+            resourceId: 'seed-tts-2.0',
+            endpoint: 'https://openspeech.bytedance.com/api/v3/tts/unidirectional',
+            speaker: 'zh_female_vv_uranus_bigtts',
+          },
+        },
+      ],
+      activeTtsProfileId: 'tts-v3',
+    } as unknown as typeof defaultConfig);
+
+    expect(config.tts.provider).toBe('volcengine');
+    expect(config.tts.volcengine).toMatchObject({
+      apiKey: 'v3-key',
+      resourceId: 'seed-tts-2.0',
+      endpoint: 'https://openspeech.bytedance.com/api/v3/tts/unidirectional',
+      speaker: 'zh_female_vv_uranus_bigtts',
+    });
+    expect(config.ttsProfiles.find((profile) => profile.enabled)?.id).toBe('tts-v3');
+  });
+
+  it('validates Volcengine TTS V3 API key settings without legacy credentials', () => {
+    const config = normalizeAppConfig({
+      ...defaultConfig,
+      ttsProfiles: [
+        {
+          id: 'tts-v3-validation',
+          name: 'Volcengine V3',
+          provider: 'volcengine',
+          enabled: true,
+          volcengine: {
+            ...defaultConfig.tts.volcengine,
+            apiKey: 'v3-key',
+            appId: '',
+            accessKey: '',
+            resourceId: 'seed-tts-2.0',
+            speaker: 'zh_female_vv_uranus_bigtts',
+          },
+        },
+      ],
+      activeTtsProfileId: 'tts-v3-validation',
+    });
+
+    const result = validateConfigTarget('tts', config);
+
+    expect(result.status).toBe('pass');
+    expect(result.endpoint).toBe('https://openspeech.bytedance.com/api/v3/tts/unidirectional');
+    expect(result.detail).toContain('seed-tts-2.0');
   });
 });

@@ -139,4 +139,71 @@ describe('file database', () => {
       await rm(dir, { recursive: true, force: true });
     }
   });
+
+  it('persists enabled model profiles across reloads', async () => {
+    const dir = await mkdtemp(join(tmpdir(), 'storybound-db-model-profiles-'));
+    const file = join(dir, 'app.db');
+
+    try {
+      const db = await FileDatabase.open(file);
+      await db.upsertConfig({
+        ...defaultConfig,
+        llm: { ...defaultConfig.llm, id: 'llm-custom', apiKey: 'llm-key', baseUrl: 'https://llm.example', model: 'llm-active', enabled: true },
+        llmProfiles: [
+          { ...defaultConfig.llm, id: 'llm-old', name: 'Old LLM', apiKey: 'old-key', baseUrl: 'https://old-llm.example', model: 'llm-old', enabled: false },
+          { ...defaultConfig.llm, id: 'llm-custom', name: 'Custom LLM', apiKey: 'llm-key', baseUrl: 'https://llm.example', model: 'llm-active', enabled: true },
+        ],
+        activeLlmProfileId: 'llm-custom',
+        imageProfiles: [
+          {
+            id: 'image-old',
+            name: 'Old image',
+            provider: 'gpt_image',
+            enabled: false,
+            gptImage: { ...defaultConfig.gptImage, apiKey: 'old-image-key', baseUrl: 'https://old-image.example', model: 'old-image' },
+          },
+          {
+            id: 'image-custom',
+            name: 'Custom image',
+            provider: 'custom',
+            enabled: true,
+            customImage: { ...defaultConfig.customImage, apiKey: 'image-key', baseUrl: 'https://image.example', model: 'image-active' },
+          },
+        ],
+        activeImageProfileId: 'image-custom',
+        ttsProfiles: [
+          {
+            id: 'tts-old',
+            name: 'Old TTS',
+            provider: 'volcengine',
+            enabled: false,
+            volcengine: { ...defaultConfig.tts.volcengine, appId: 'old-app', accessKey: 'old-token', speaker: 'old-voice' },
+          },
+          {
+            id: 'tts-minimax',
+            name: 'MiniMax TTS',
+            provider: 'minimax',
+            enabled: true,
+            minimax: { ...defaultConfig.tts.minimax, apiKey: 'tts-key', model: 'speech-active', voiceId: 'voice-active' },
+          },
+        ],
+        activeTtsProfileId: 'tts-minimax',
+      } as unknown as typeof defaultConfig);
+      await db.close();
+
+      const reopened = await FileDatabase.open(file);
+      const state = await reopened.getState();
+
+      expect(state.config.llm).toMatchObject({ id: 'llm-custom', model: 'llm-active', enabled: true });
+      expect(state.config.activeImageProfileId).toBe('image-custom');
+      expect(state.config.imageProvider).toBe('custom');
+      expect(state.config.customImage).toMatchObject({ apiKey: 'image-key', baseUrl: 'https://image.example', model: 'image-active' });
+      expect(state.config.activeTtsProfileId).toBe('tts-minimax');
+      expect(state.config.tts.provider).toBe('minimax');
+      expect(state.config.tts.minimax).toMatchObject({ apiKey: 'tts-key', model: 'speech-active', voiceId: 'voice-active' });
+      await reopened.close();
+    } finally {
+      await rm(dir, { recursive: true, force: true });
+    }
+  });
 });

@@ -1,6 +1,6 @@
 import { defaultConfig } from './config';
 import { normalizeOpenAiImageBaseUrl, testOpenAiCompatibleImageModel } from './openai-image';
-import type { AppConfig, ConfigTestResult, ConfigTestTarget, LlmModelTestResult } from './types';
+import type { AppConfig, ConfigTestResult, ConfigTestTarget, ImageProviderProfile, LlmModelTestResult, TtsProviderProfile } from './types';
 
 type TestStatus = ConfigTestResult['status'];
 type ConfigValidationOptions = {
@@ -36,6 +36,232 @@ function defaultLlmProfileName(profile: AppConfig['llm'], index: number): string
   return index === 0 ? '默认配置' : `配置 ${index + 1}`;
 }
 
+function normalizeImageProvider(provider: unknown): ImageProviderProfile['provider'] {
+  return provider === 'custom' || provider === 'jimeng' || provider === 'gpt_image' ? provider : 'gpt_image';
+}
+
+function normalizeTtsProvider(provider: unknown): TtsProviderProfile['provider'] {
+  return provider === 'minimax' || provider === 'volcengine' ? provider : 'volcengine';
+}
+
+function buildConfigProfileId(prefix: string, source: string, index: number): string {
+  const slug = source
+    .toLowerCase()
+    .replace(/^https?:\/\//, '')
+    .replace(/[^a-z0-9]+/g, '-')
+    .replace(/^-+|-+$/g, '')
+    .slice(0, 48);
+  return `${prefix}-${slug || index + 1}`;
+}
+
+function normalizeImageProfile(profile: Partial<ImageProviderProfile>, index: number): ImageProviderProfile {
+  const provider = normalizeImageProvider(profile.provider);
+  const gptImage = { ...defaultConfig.gptImage, ...(profile.gptImage ?? {}) };
+  const jimeng = { ...defaultConfig.jimeng, ...(profile.jimeng ?? {}) };
+  const customImage = { ...defaultConfig.customImage, ...(profile.customImage ?? {}) };
+  const model = provider === 'jimeng' ? jimeng.reqKey || jimeng.model : provider === 'custom' ? customImage.model : gptImage.model;
+  const endpoint = provider === 'jimeng' ? jimeng.endpoint : provider === 'custom' ? customImage.baseUrl : gptImage.baseUrl || 'openai';
+  const id = profile.id?.trim() || buildConfigProfileId('image', `${provider}-${endpoint}-${model || 'model'}-${index}`, index);
+  return {
+    id,
+    name: profile.name?.trim() || defaultImageProfileName(provider, index),
+    enabled: Boolean(profile.enabled),
+    provider,
+    gptImage,
+    jimeng,
+    customImage,
+  };
+}
+
+function defaultImageProfileName(provider: ImageProviderProfile['provider'], index: number): string {
+  if (provider === 'gpt_image') return 'GPT Image';
+  if (provider === 'jimeng') return '即梦';
+  return index === 0 ? '自定义图片' : `图片配置 ${index + 1}`;
+}
+
+function imageProfileFromLegacy(partial: Partial<AppConfig>): ImageProviderProfile {
+  const provider = normalizeImageProvider(partial.imageProvider ?? defaultConfig.imageProvider);
+  const gptImage = { ...defaultConfig.gptImage, ...(partial.gptImage ?? partial.image ?? {}) };
+  return normalizeImageProfile(
+    {
+      id: partial.activeImageProfileId || defaultConfig.activeImageProfileId,
+      name: provider === 'gpt_image' ? 'GPT Image' : provider === 'jimeng' ? '即梦' : '自定义图片',
+      enabled: true,
+      provider,
+      gptImage,
+      jimeng: { ...defaultConfig.jimeng, ...(partial.jimeng ?? {}) },
+      customImage: { ...defaultConfig.customImage, ...(partial.customImage ?? {}) },
+    },
+    0,
+  );
+}
+
+function imageProfileHasProviderSettings(profile: ImageProviderProfile): boolean {
+  if (profile.provider === 'jimeng') {
+    const jimeng = profile.jimeng;
+    return Boolean(jimeng?.accessKeyId?.trim() || jimeng?.secretAccessKey?.trim() || jimeng?.reqKey?.trim());
+  }
+  if (profile.provider === 'custom') {
+    const customImage = profile.customImage;
+    return Boolean(customImage?.baseUrl?.trim() || customImage?.apiKey?.trim() || customImage?.model?.trim());
+  }
+  const gptImage = profile.gptImage;
+  return Boolean(
+    gptImage?.baseUrl?.trim() ||
+      gptImage?.apiKey?.trim() ||
+      (gptImage?.model?.trim() && gptImage.model !== defaultConfig.gptImage.model),
+  );
+}
+
+function normalizeImageProfiles(partial: Partial<AppConfig>): {
+  imageProvider: ImageProviderProfile['provider'];
+  image: AppConfig['image'];
+  gptImage: AppConfig['gptImage'];
+  jimeng: AppConfig['jimeng'];
+  customImage: AppConfig['customImage'];
+  imageProfiles: ImageProviderProfile[];
+  activeImageProfileId: string;
+} {
+  const rawProfiles = partial.imageProfiles?.length ? partial.imageProfiles : [imageProfileFromLegacy(partial)];
+  const profileMap = new Map<string, ImageProviderProfile>();
+  for (const [index, profile] of rawProfiles.entries()) {
+    const normalized = normalizeImageProfile(profile, index);
+    profileMap.set(normalized.id!, normalized);
+  }
+  const fallback = imageProfileFromLegacy(partial);
+  const existingFallbackProfile = profileMap.get(fallback.id!);
+  if (
+    existingFallbackProfile &&
+    existingFallbackProfile.provider === fallback.provider &&
+    (!partial.imageProfiles?.length || !imageProfileHasProviderSettings(existingFallbackProfile))
+  ) {
+    const existing = existingFallbackProfile;
+    profileMap.set(fallback.id!, {
+      ...existing,
+      ...fallback,
+      name: existing.name,
+      enabled: existing.enabled || (!partial.imageProfiles?.length && fallback.enabled),
+    });
+  }
+  if (profileMap.size === 0) profileMap.set(fallback.id!, fallback);
+  const enabled = Array.from(profileMap.values()).find((profile) => profile.enabled);
+  const activeImageProfileId =
+    partial.activeImageProfileId && profileMap.has(partial.activeImageProfileId)
+      ? partial.activeImageProfileId
+      : enabled?.id ?? fallback.id!;
+  const active = profileMap.get(activeImageProfileId) ?? profileMap.values().next().value ?? fallback;
+  const imageProfiles = Array.from(profileMap.values()).map((profile) => ({ ...profile, enabled: profile.id === active.id }));
+  const gptImage = { ...defaultConfig.gptImage, ...(active.gptImage ?? {}) };
+  const jimeng = { ...defaultConfig.jimeng, ...(active.jimeng ?? {}) };
+  const customImage = { ...defaultConfig.customImage, ...(active.customImage ?? {}) };
+  const image = active.provider === 'gpt_image' ? { ...defaultConfig.image, ...gptImage } : { ...defaultConfig.image, ...(partial.image ?? {}) };
+  return {
+    imageProvider: active.provider,
+    image,
+    gptImage,
+    jimeng,
+    customImage,
+    imageProfiles,
+    activeImageProfileId: active.id!,
+  };
+}
+
+function normalizeTtsProfile(profile: Partial<TtsProviderProfile>, index: number): TtsProviderProfile {
+  const provider = normalizeTtsProvider(profile.provider);
+  const rawVolcengine = { ...defaultConfig.tts.volcengine, ...(profile.volcengine ?? {}) };
+  const volcengine = {
+    ...rawVolcengine,
+    appId: profile.appId ?? rawVolcengine.appId,
+    accessKey: profile.accessKey ?? rawVolcengine.accessKey,
+    speaker: profile.speaker ?? rawVolcengine.speaker,
+  };
+  const minimax = { ...defaultConfig.tts.minimax, ...(profile.minimax ?? {}) };
+  const id = profile.id?.trim() || buildConfigProfileId('tts', `${provider}-${provider === 'minimax' ? minimax.model : volcengine.speaker}-${index}`, index);
+  return {
+    id,
+    name: profile.name?.trim() || defaultTtsProfileName(provider, index),
+    enabled: Boolean(profile.enabled),
+    provider,
+    appId: profile.appId ?? volcengine.appId,
+    accessKey: profile.accessKey ?? volcengine.accessKey,
+    speaker: profile.speaker ?? volcengine.speaker,
+    volcengine,
+    minimax,
+  };
+}
+
+function defaultTtsProfileName(provider: TtsProviderProfile['provider'], index: number): string {
+  if (provider === 'volcengine') return '火山引擎';
+  return index === 0 ? 'MiniMax' : `配音配置 ${index + 1}`;
+}
+
+function ttsProfileFromLegacy(partial: Partial<AppConfig>): TtsProviderProfile {
+  const tts = {
+    ...defaultConfig.tts,
+    ...(partial.tts ?? {}),
+    volcengine: { ...defaultConfig.tts.volcengine, ...(partial.tts?.volcengine ?? {}) },
+    minimax: { ...defaultConfig.tts.minimax, ...(partial.tts?.minimax ?? {}) },
+  };
+  const provider = normalizeTtsProvider(tts.provider);
+  return normalizeTtsProfile(
+    {
+      id: partial.activeTtsProfileId || defaultConfig.activeTtsProfileId,
+      name: provider === 'volcengine' ? '火山引擎' : 'MiniMax',
+      enabled: true,
+      provider,
+      appId: tts.appId,
+      accessKey: tts.accessKey,
+      speaker: tts.speaker,
+      volcengine: tts.volcengine,
+      minimax: tts.minimax,
+    },
+    0,
+  );
+}
+
+function normalizeTtsProfiles(partial: Partial<AppConfig>): {
+  tts: AppConfig['tts'];
+  ttsProfiles: TtsProviderProfile[];
+  activeTtsProfileId: string;
+} {
+  const rawProfiles = partial.ttsProfiles?.length ? partial.ttsProfiles : [ttsProfileFromLegacy(partial)];
+  const profileMap = new Map<string, TtsProviderProfile>();
+  for (const [index, profile] of rawProfiles.entries()) {
+    const normalized = normalizeTtsProfile(profile, index);
+    profileMap.set(normalized.id!, normalized);
+  }
+  const fallback = ttsProfileFromLegacy(partial);
+  if (!partial.ttsProfiles?.length && profileMap.has(fallback.id!) && profileMap.get(fallback.id!)?.provider === fallback.provider) {
+    const existing = profileMap.get(fallback.id!)!;
+    profileMap.set(fallback.id!, {
+      ...existing,
+      ...fallback,
+      name: existing.name,
+      enabled: existing.enabled || (!partial.ttsProfiles?.length && fallback.enabled),
+    });
+  }
+  if (profileMap.size === 0) profileMap.set(fallback.id!, fallback);
+  const enabled = Array.from(profileMap.values()).find((profile) => profile.enabled);
+  const activeTtsProfileId =
+    partial.activeTtsProfileId && profileMap.has(partial.activeTtsProfileId)
+      ? partial.activeTtsProfileId
+      : enabled?.id ?? fallback.id!;
+  const active = profileMap.get(activeTtsProfileId) ?? profileMap.values().next().value ?? fallback;
+  const ttsProfiles = Array.from(profileMap.values()).map((profile) => ({ ...profile, enabled: profile.id === active.id }));
+  const volcengine = { ...defaultConfig.tts.volcengine, ...(active.volcengine ?? {}) };
+  const minimax = { ...defaultConfig.tts.minimax, ...(active.minimax ?? {}) };
+  const tts = {
+    ...defaultConfig.tts,
+    provider: active.provider,
+    appId: active.appId ?? volcengine.appId,
+    accessKey: active.accessKey ?? volcengine.accessKey,
+    speaker: active.speaker ?? volcengine.speaker,
+    volcengine,
+    minimax,
+  };
+  return { tts, ttsProfiles, activeTtsProfileId: active.id! };
+}
+
 export function normalizeAppConfig(input: unknown): AppConfig {
   const partial = (input && typeof input === 'object' ? input : {}) as Partial<AppConfig>;
   const llm = normalizeLlmProfile({ ...defaultConfig.llm, ...(partial.llm ?? {}) }, 0);
@@ -50,12 +276,12 @@ export function normalizeAppConfig(input: unknown): AppConfig {
   } else {
     profileMap.set(llm.id!, { ...profileMap.get(llm.id!)!, ...llm });
   }
-  const activeLlmProfileId = partial.activeLlmProfileId && profileMap.has(partial.activeLlmProfileId) ? partial.activeLlmProfileId : llm.id!;
+  const enabledLlm = Array.from(profileMap.values()).find((profile) => profile.enabled);
+  const activeLlmProfileId = partial.activeLlmProfileId && profileMap.has(partial.activeLlmProfileId) ? partial.activeLlmProfileId : enabledLlm?.id ?? llm.id!;
   const llmProfiles = Array.from(profileMap.values()).map((profile) => ({ ...profile, enabled: profile.id === activeLlmProfileId }));
   const activeLlm = { ...(llmProfiles.find((profile) => profile.id === activeLlmProfileId) ?? llm), enabled: true };
-  const imageProvider = partial.imageProvider ?? defaultConfig.imageProvider;
-  const gptImage = { ...defaultConfig.gptImage, ...(partial.gptImage ?? partial.image ?? {}) };
-  const legacyImage = imageProvider === 'gpt_image' ? { ...defaultConfig.image, ...gptImage } : { ...defaultConfig.image, ...(partial.image ?? {}) };
+  const imageConfig = normalizeImageProfiles(partial);
+  const ttsConfig = normalizeTtsProfiles(partial);
 
   return {
     ...defaultConfig,
@@ -63,17 +289,8 @@ export function normalizeAppConfig(input: unknown): AppConfig {
     llm: activeLlm,
     llmProfiles,
     activeLlmProfileId,
-    imageProvider,
-    image: legacyImage,
-    gptImage,
-    jimeng: { ...defaultConfig.jimeng, ...(partial.jimeng ?? {}) },
-    customImage: { ...defaultConfig.customImage, ...(partial.customImage ?? {}) },
-    tts: {
-      ...defaultConfig.tts,
-      ...(partial.tts ?? {}),
-      volcengine: { ...defaultConfig.tts.volcengine, ...(partial.tts?.volcengine ?? {}) },
-      minimax: { ...defaultConfig.tts.minimax, ...(partial.tts?.minimax ?? {}) },
-    },
+    ...imageConfig,
+    ...ttsConfig,
     jianying: {
       ...defaultConfig.jianying,
       ...(partial.jianying ?? {}),
@@ -93,12 +310,13 @@ export function validateConfigTarget(target: ConfigTestTarget, input: AppConfig,
   const config = normalizeAppConfig(input);
 
   if (target === 'llm') {
+    const fieldsReady = Boolean(config.llm.apiKey.trim() && config.llm.model.trim());
     return buildResult({
       target,
       startedAt,
-      status: config.llm.apiKey.trim() && config.llm.model.trim() ? 'warn' : 'fail',
+      status: fieldsReady ? 'pass' : 'fail',
       endpoint: `${normalizeBaseUrl(config.llm.baseUrl || 'https://api.openai.com/v1')}/chat/completions`,
-      detail: config.llm.apiKey.trim() && config.llm.model.trim() ? `LLM 字段已填写，可继续发起真实探针：${config.llm.model}` : 'LLM API Key 和模型不能为空。',
+      detail: fieldsReady ? `LLM 字段已填写：${config.llm.model}` : 'LLM API Key 和模型不能为空。',
     });
   }
 
@@ -244,6 +462,22 @@ function validateTtsConfig(config: AppConfig, startedAt: number): ConfigTestResu
     });
   }
 
+  const volcengineApiKey = config.tts.volcengine.apiKey?.trim() ?? '';
+  if (volcengineApiKey) {
+    const missing = missingFields([
+      ['API Key', config.tts.volcengine.apiKey],
+      ['Resource ID', config.tts.volcengine.resourceId],
+      ['音色 voice_type', config.tts.volcengine.speaker || config.tts.speaker],
+    ]);
+    return buildResult({
+      target: 'tts',
+      startedAt,
+      status: missing.length ? 'fail' : 'pass',
+      endpoint: config.tts.volcengine.endpoint || 'https://openspeech.bytedance.com/api/v3/tts/unidirectional',
+      detail: missing.length ? `火山 TTS V3 缺少：${missing.join('、')}。` : `火山 TTS V3 配置已可用于任务：${config.tts.volcengine.resourceId || 'seed-tts-2.0'} · ${config.tts.volcengine.speaker || config.tts.speaker}`,
+    });
+  }
+
   const missing = missingFields([
     ['App ID', config.tts.volcengine.appId || config.tts.appId],
     ['Access Token', config.tts.volcengine.accessKey || config.tts.accessKey],
@@ -252,7 +486,7 @@ function validateTtsConfig(config: AppConfig, startedAt: number): ConfigTestResu
     target: 'tts',
     startedAt,
     status: missing.length ? 'fail' : 'pass',
-    endpoint: config.tts.volcengine.endpoint || 'https://openspeech.bytedance.com/api/v1/tts',
+    endpoint: config.tts.volcengine.endpoint?.includes('/api/v3/') ? 'https://openspeech.bytedance.com/api/v1/tts' : config.tts.volcengine.endpoint || 'https://openspeech.bytedance.com/api/v1/tts',
     detail: missing.length ? `火山 TTS 缺少：${missing.join('、')}。` : `火山 TTS 配置已可用于任务：${config.tts.volcengine.speaker || config.tts.speaker}`,
   });
 }

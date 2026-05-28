@@ -47,6 +47,29 @@ describe('OpenAI-compatible LLM JSON adapter', () => {
     });
   });
 
+  it('parses JSON wrapped in markdown fences from compatible providers', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async () =>
+        new Response(JSON.stringify({ choices: [{ message: { content: '```json\n{"reviewedText":"clean"}\n```' } }], id: 'chatcmpl-fenced' }), {
+          status: 200,
+          headers: { 'content-type': 'application/json' },
+        }),
+      ),
+    );
+
+    const runJson = createOpenAiCompatibleJsonLlm({ ...defaultConfig.llm, apiKey: 'llm-key' });
+    const result = await runJson<{ reviewedText: string }>({
+      step: 0,
+      name: 'review',
+      messages: [{ role: 'user', content: 'clean this' }],
+    });
+
+    expect(result.json).toEqual({ reviewedText: 'clean' });
+    expect(result.raw).toBe('```json\n{"reviewedText":"clean"}\n```');
+    expect(result.requestId).toBe('chatcmpl-fenced');
+  });
+
   it('throws with the raw response when the model does not return JSON', async () => {
     vi.stubGlobal(
       'fetch',
@@ -99,6 +122,20 @@ describe('OpenAI-compatible LLM JSON adapter', () => {
     expect(requests[0].url).toBe('https://llm.example/v1/chat/completions');
     expect(requests[0].auth).toBe('Bearer llm-key');
     expect(requests[0].body).toMatchObject({ model: 'model-a', response_format: { type: 'json_object' } });
+  });
+
+  it('passes model tests when JSON probe responses are wrapped in markdown fences', async () => {
+    const result = await testOpenAiCompatibleLlm(
+      { ...defaultConfig.llm, apiKey: 'llm-key', baseUrl: 'https://llm.example', model: 'model-a' },
+      async () =>
+        new Response(JSON.stringify({ id: 'probe-fenced', choices: [{ message: { content: '```json\n{"ok":true}\n```' } }] }), {
+          status: 200,
+          headers: { 'content-type': 'application/json' },
+        }),
+    );
+
+    expect(result.status).toBe('pass');
+    expect(result.requestId).toBe('probe-fenced');
   });
 
   it('reports missing LLM credentials without calling the network', async () => {

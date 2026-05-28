@@ -8,6 +8,7 @@ import type {
   ConfigTestTarget,
   CreateTaskInput,
   DraftTemplate,
+  ImageLabGenerateInput,
   ImageLabRecord,
   LlmConfig,
   PromptTemplate,
@@ -18,6 +19,8 @@ import type {
   TaskArtifactSnapshot,
   TaskStatus,
   UiPreferences,
+  VolcengineSpeakerListRequest,
+  VolcengineSpeakerListResult,
 } from '../src/shared/types';
 
 contextBridge.exposeInMainWorld('storybound', {
@@ -26,11 +29,13 @@ contextBridge.exposeInMainWorld('storybound', {
   testAppConfig: (target: ConfigTestTarget, config: AppConfig) => ipcRenderer.invoke('config:test', { target, config }),
   testLlmConfig: (config: LlmConfig) => ipcRenderer.invoke('llm:test-config', config),
   listProviderModels: (request: ProviderModelListRequest): Promise<ProviderModelListResult> => ipcRenderer.invoke('models:list', request),
+  listVolcengineSpeakers: (request: VolcengineSpeakerListRequest): Promise<VolcengineSpeakerListResult> => ipcRenderer.invoke('volcengine:speakers:list', request),
   searchWebSources: (query: string): Promise<AiSourceContext> => ipcRenderer.invoke('research:web-search', query),
   composeResearchCopy: (input: ResearchCopyComposeInput): Promise<ResearchCopyComposeResult> => ipcRenderer.invoke('research:compose-copy', input),
   savePromptTemplate: (template: PromptTemplate) => ipcRenderer.invoke('prompt-template:save', template),
   resetPromptTemplates: () => ipcRenderer.invoke('prompt-template:reset'),
   saveDraftTemplate: (template: DraftTemplate) => ipcRenderer.invoke('draft-template:save', template),
+  generateImageLab: (input: ImageLabGenerateInput): Promise<AppState> => ipcRenderer.invoke('image-lab:generate', input),
   addImageLabRecord: (input: Partial<ImageLabRecord> & Pick<ImageLabRecord, 'prompt' | 'ratio' | 'style' | 'provider'>) => ipcRenderer.invoke('image-lab:add-record', input),
   saveAccount: (account: AccountProfile) => ipcRenderer.invoke('account:save', account),
   saveActivation: (activation: ActivationState) => ipcRenderer.invoke('activation:save', activation),
@@ -41,8 +46,10 @@ contextBridge.exposeInMainWorld('storybound', {
   regenerateTaskImage: (id: string, sceneId: number) => ipcRenderer.invoke('task:regenerate-image', { id, sceneId }),
   getTaskArtifacts: (id: string): Promise<TaskArtifactSnapshot> => ipcRenderer.invoke('task:get-artifacts', id),
   readAssetDataUrl: (path: string): Promise<string> => ipcRenderer.invoke('asset:read-data-url', path),
+  selectLocalImage: (): Promise<string | null> => ipcRenderer.invoke('local-image:select'),
   runDiagnostics: () => ipcRenderer.invoke('diagnostics:run'),
   openPath: (path: string) => ipcRenderer.invoke('path:open', path),
+  windowControl: (action: 'minimize' | 'toggle-maximize' | 'close') => ipcRenderer.invoke('window:control', action),
   onTaskEvent: (callback: (state: AppState) => void) => {
     const listener = (_event: unknown, state: AppState) => callback(state);
     ipcRenderer.on('task:event', listener);

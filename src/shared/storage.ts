@@ -319,12 +319,7 @@ export class FileDatabase {
   }
 
   private seedShellDefaults(): void {
-    const promptCount = getFirstRow<{ count: number }>(this.db, 'SELECT COUNT(*) AS count FROM prompt_templates')?.count ?? 0;
-    if (promptCount === 0) {
-      for (const template of defaultPromptTemplates) {
-        this.insertPromptTemplate(template);
-      }
-    }
+    this.syncBuiltinPromptTemplates();
 
     const draftCount = getFirstRow<{ count: number }>(this.db, 'SELECT COUNT(*) AS count FROM draft_templates')?.count ?? 0;
     if (draftCount === 0) {
@@ -371,6 +366,15 @@ export class FileDatabase {
            VALUES (?, ?, ?, ?, ?)`,
           [voice.voiceId, voice.displayName, voice.sourceAudioPath, voice.createdAt, voice.lastUsedAt],
         );
+      }
+    }
+  }
+
+  private syncBuiltinPromptTemplates(): void {
+    const existingIds = new Set(getRows<{ id: string }>(this.db, 'SELECT id FROM prompt_templates').map((row) => row.id));
+    for (const template of defaultPromptTemplates) {
+      if (!existingIds.has(template.id)) {
+        this.insertPromptTemplate(template);
       }
     }
   }
@@ -609,6 +613,7 @@ export class FileDatabase {
         | 'artifactStatePath'
         | 'startedAt'
         | 'lastHeartbeatAt'
+        | 'step3PromptSnapshot'
       >
     >,
   ): Promise<void> {
@@ -625,6 +630,7 @@ export class FileDatabase {
       artifactStatePath: 'artifact_state_path',
       startedAt: 'started_at',
       lastHeartbeatAt: 'last_heartbeat_at',
+      step3PromptSnapshot: 'step3_prompt_snapshot',
     };
     for (const [key, column] of Object.entries(map)) {
       if (key in patch) {

@@ -4,6 +4,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { createConfiguredImageGenerator, createConfiguredNarrationSynthesizer } from '@shared/media-providers';
 import { defaultConfig } from '@shared/config';
+import { normalizeAppConfig } from '@shared/config-utils';
 import type { AppConfig, ImagePrompt, StoryboardScene, Task } from '@shared/types';
 
 const scene: StoryboardScene = { id: 1, cap: 'A real scene', descPrompt: 'visual prompt', durationMs: 1200 };
@@ -255,6 +256,164 @@ describe('configured media providers', () => {
         audio: { voice_type: 'voice-volc', encoding: 'mp3' },
         request: { text: 'A real scene', operation: 'query' },
       });
+    } finally {
+      await rm(dir, { recursive: true, force: true });
+    }
+  });
+
+  it('generates narration files from Volcengine TTS V3 chunked audio', async () => {
+    const dir = await mkdtemp(join(tmpdir(), 'storybound-provider-volc-v3-tts-'));
+    const firstChunk = Buffer.from('volc-');
+    const secondChunk = Buffer.from('v3-audio');
+    const requests: Array<{ url: string; body: Record<string, any>; headers: Headers }> = [];
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (url: string, init: RequestInit) => {
+        requests.push({
+          url,
+          body: JSON.parse(String(init.body)),
+          headers: new Headers(init.headers),
+        });
+        const encoder = new TextEncoder();
+        const stream = new ReadableStream({
+          start(controller) {
+            controller.enqueue(encoder.encode(`${JSON.stringify({ code: 0, message: '', data: firstChunk.toString('base64') })}\n`));
+            controller.enqueue(encoder.encode(`${JSON.stringify({ code: 0, message: '', data: secondChunk.toString('base64') })}\n`));
+            controller.enqueue(encoder.encode(`${JSON.stringify({ code: 20000000, message: 'ok', data: null })}\n`));
+            controller.close();
+          },
+        });
+        return new Response(stream, {
+          status: 200,
+          headers: { 'content-type': 'application/json' },
+        });
+      }),
+    );
+
+    try {
+      const config: AppConfig = {
+        ...defaultConfig,
+        tts: {
+          ...defaultConfig.tts,
+          provider: 'volcengine',
+          volcengine: {
+            ...defaultConfig.tts.volcengine,
+            apiKey: 'v3-key',
+            resourceId: 'seed-tts-2.0',
+            endpoint: 'https://openspeech.bytedance.com/api/v3/tts/unidirectional',
+            speaker: 'zh_female_vv_uranus_bigtts',
+          },
+        },
+      };
+      const synthesize = createConfiguredNarrationSynthesizer(config, dir);
+      const assets = await synthesize([scene], { ...task, ttsSpeed: 1.15 });
+
+      expect(await readFile(assets[0].path, 'utf8')).toBe('volc-v3-audio');
+      expect(requests[0].url).toBe('https://openspeech.bytedance.com/api/v3/tts/unidirectional');
+      expect(requests[0].headers.get('X-Api-Key')).toBe('v3-key');
+      expect(requests[0].headers.get('X-Api-Resource-Id')).toBe('seed-tts-2.0');
+      expect(requests[0].headers.get('X-Api-Request-Id')).toBeTruthy();
+      expect(requests[0].body).toMatchObject({
+        namespace: 'BidirectionalTTS',
+        user: { uid: 'task-1' },
+        req_params: {
+          text: 'A real scene',
+          speaker: 'zh_female_vv_uranus_bigtts',
+          audio_params: { format: 'mp3', sample_rate: 24000, speech_rate: 15 },
+        },
+      });
+    } finally {
+      await rm(dir, { recursive: true, force: true });
+    }
+  });
+
+  it('uses the enabled image profile after config normalization', async () => {
+    const dir = await mkdtemp(join(tmpdir(), 'storybound-provider-image-profile-'));
+    const imageBytes = Buffer.from('profile-image');
+    const requests: Array<{ url: string; body: Record<string, unknown> }> = [];
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (url: string, init: RequestInit) => {
+        requests.push({ url, body: JSON.parse(String(init.body)) });
+        return new Response(JSON.stringify({ data: [{ b64_json: imageBytes.toString('base64') }] }), {
+          status: 200,
+          headers: { 'content-type': 'application/json' },
+        });
+      }),
+    );
+
+    try {
+      const config = normalizeAppConfig({
+        ...defaultConfig,
+        imageProfiles: [
+          {
+            id: 'image-old',
+            name: 'Old image',
+            provider: 'gpt_image',
+            enabled: false,
+            gptImage: { ...defaultConfig.gptImage, apiKey: 'old-key', baseUrl: 'https://old-image.example', model: 'old-image-model' },
+          },
+          {
+            id: 'image-active',
+            name: 'Active image',
+            provider: 'custom',
+            enabled: true,
+            customImage: { ...defaultConfig.customImage, apiKey: 'active-key', baseUrl: 'https://active-image.example', model: 'active-image-model' },
+          },
+        ],
+        activeImageProfileId: 'image-active',
+      } as unknown as AppConfig);
+      const generate = createConfiguredImageGenerator(config, dir);
+      await generate([scene], [prompt], task);
+
+      expect(requests[0].url).toBe('https://active-image.example/v1/images/generations');
+      expect(requests[0].body).toMatchObject({ model: 'active-image-model' });
+    } finally {
+      await rm(dir, { recursive: true, force: true });
+    }
+  });
+
+  it('uses the enabled TTS profile after config normalization', async () => {
+    const dir = await mkdtemp(join(tmpdir(), 'storybound-provider-tts-profile-'));
+    const audioBytes = Buffer.from('profile-audio');
+    const requests: Array<{ url: string; body: Record<string, unknown> }> = [];
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (url: string, init: RequestInit) => {
+        requests.push({ url, body: JSON.parse(String(init.body)) });
+        return new Response(JSON.stringify({ data: { audio: audioBytes.toString('hex'), status: 2 }, base_resp: { status_code: 0, status_msg: 'success' } }), {
+          status: 200,
+          headers: { 'content-type': 'application/json' },
+        });
+      }),
+    );
+
+    try {
+      const config = normalizeAppConfig({
+        ...defaultConfig,
+        ttsProfiles: [
+          {
+            id: 'tts-old',
+            name: 'Old TTS',
+            provider: 'volcengine',
+            enabled: false,
+            volcengine: { ...defaultConfig.tts.volcengine, appId: 'old-app', accessKey: 'old-token', speaker: 'old-voice' },
+          },
+          {
+            id: 'tts-active',
+            name: 'Active TTS',
+            provider: 'minimax',
+            enabled: true,
+            minimax: { ...defaultConfig.tts.minimax, apiKey: 'active-tts-key', model: 'active-tts-model', voiceId: 'active-voice' },
+          },
+        ],
+        activeTtsProfileId: 'tts-active',
+      } as unknown as AppConfig);
+      const synthesize = createConfiguredNarrationSynthesizer(config, dir);
+      await synthesize([scene], task);
+
+      expect(requests[0].url).toBe('https://api.minimaxi.com/v1/t2a_v2');
+      expect(requests[0].body).toMatchObject({ model: 'active-tts-model', voice_setting: { voice_id: 'active-voice' } });
     } finally {
       await rm(dir, { recursive: true, force: true });
     }

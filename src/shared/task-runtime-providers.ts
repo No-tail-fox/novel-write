@@ -26,5 +26,8 @@ function hasUsableImageProvider(config: AppConfig): boolean {
 function hasUsableTtsProvider(config: AppConfig): boolean {
   if (config.tts.provider === 'mock') return false;
   if (config.tts.provider === 'minimax') return Boolean(config.tts.minimax.apiKey && config.tts.minimax.model);
+  if (config.tts.volcengine.apiKey) {
+    return Boolean(config.tts.volcengine.resourceId && (config.tts.volcengine.speaker || config.tts.speaker));
+  }
   return Boolean((config.tts.volcengine.appId || config.tts.appId) && (config.tts.volcengine.accessKey || config.tts.accessKey));
 }

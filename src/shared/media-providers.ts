@@ -1,6 +1,6 @@
 import { mkdir, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
-import { createHash, createHmac } from 'node:crypto';
+import { createHash, createHmac, randomUUID } from 'node:crypto';
 import type { AppConfig, ImagePrompt, StoryboardScene, Task } from './types';
 import type { SceneAsset } from './draft';
 import { fetchWithTimeout } from './http';
@@ -83,11 +83,13 @@ export function createConfiguredNarrationSynthesizer(config: AppConfig, workDir:
         scenes,
         task,
         workDir,
+        apiKey: config.tts.volcengine.apiKey ?? '',
+        resourceId: config.tts.volcengine.resourceId || 'seed-tts-2.0',
         appId: config.tts.volcengine.appId || config.tts.appId,
         accessKey: config.tts.volcengine.accessKey || config.tts.accessKey,
         speaker: config.tts.volcengine.speaker || config.tts.speaker || task.speaker,
         cluster: config.tts.volcengine.cluster || 'volcano_tts',
-        endpoint: config.tts.volcengine.endpoint || 'https://openspeech.bytedance.com/api/v1/tts',
+        endpoint: config.tts.volcengine.endpoint || 'https://openspeech.bytedance.com/api/v3/tts/unidirectional',
         signal,
       });
     }
@@ -340,6 +342,8 @@ async function synthesizeVolcengineNarration(input: {
   scenes: StoryboardScene[];
   task: Task;
   workDir: string;
+  apiKey?: string;
+  resourceId: string;
   appId: string;
   accessKey: string;
   speaker: string;
@@ -347,15 +351,19 @@ async function synthesizeVolcengineNarration(input: {
   endpoint: string;
   signal?: AbortSignal;
 }): Promise<SceneAsset[]> {
+  if (input.apiKey) {
+    return synthesizeVolcengineV3Narration(input);
+  }
   if (!input.appId || !input.accessKey) {
     throw new Error('Volcengine TTS App ID and access token are required for real narration audio.');
   }
   const outputDir = join(input.workDir, 'provider-audio');
   await mkdir(outputDir, { recursive: true });
   const assets: SceneAsset[] = [];
+  const endpoint = input.endpoint.includes('/api/v3/') ? 'https://openspeech.bytedance.com/api/v1/tts' : input.endpoint;
 
   for (const scene of input.scenes) {
-    const response = await fetchWithTimeout(input.endpoint, {
+    const response = await fetchWithTimeout(endpoint, {
       method: 'POST',
       timeoutMs: 180_000,
       timeoutLabel: 'Volcengine TTS request',
@@ -391,6 +399,120 @@ async function synthesizeVolcengineNarration(input: {
     assets.push({ sceneId: scene.id, path });
   }
   return assets;
+}
+
+async function synthesizeVolcengineV3Narration(input: {
+  scenes: StoryboardScene[];
+  task: Task;
+  workDir: string;
+  apiKey?: string;
+  resourceId: string;
+  speaker: string;
+  endpoint: string;
+  signal?: AbortSignal;
+}): Promise<SceneAsset[]> {
+  if (!input.apiKey) {
+    throw new Error('Volcengine TTS API key is required for V3 narration audio.');
+  }
+  const outputDir = join(input.workDir, 'provider-audio');
+  await mkdir(outputDir, { recursive: true });
+  const assets: SceneAsset[] = [];
+
+  for (const scene of input.scenes) {
+    const requestId = randomUUID();
+    const response = await fetchWithTimeout(input.endpoint || 'https://openspeech.bytedance.com/api/v3/tts/unidirectional', {
+      method: 'POST',
+      timeoutMs: 180_000,
+      timeoutLabel: 'Volcengine TTS V3 request',
+      signal: input.signal,
+      headers: {
+        'Content-Type': 'application/json',
+        'X-Api-Key': input.apiKey,
+        'X-Api-Resource-Id': input.resourceId || 'seed-tts-2.0',
+        'X-Api-Request-Id': requestId,
+      },
+      body: JSON.stringify({
+        namespace: 'BidirectionalTTS',
+        user: { uid: input.task.id },
+        req_params: {
+          text: scene.cap,
+          speaker: input.speaker,
+          audio_params: {
+            format: 'mp3',
+            sample_rate: 24000,
+            speech_rate: volcengineSpeechRate(input.task.ttsSpeed),
+          },
+        },
+      }),
+    });
+    if (!response.ok) {
+      throw new Error(`Volcengine TTS V3 API error (${response.status}): ${await response.text()}`);
+    }
+    const bytes = await decodeVolcengineV3Audio(response);
+    const path = join(outputDir, `${String(scene.id).padStart(3, '0')}.mp3`);
+    await writeFile(path, bytes);
+    assets.push({ sceneId: scene.id, path });
+  }
+  return assets;
+}
+
+async function decodeVolcengineV3Audio(response: Response): Promise<Buffer> {
+  if (!response.body) {
+    return parseVolcengineV3AudioLines(await response.text());
+  }
+  const reader = response.body.getReader();
+  const decoder = new TextDecoder();
+  let pending = '';
+  let done = false;
+  const chunks: Buffer[] = [];
+
+  while (!done) {
+    const result = await reader.read();
+    done = result.done;
+    pending += decoder.decode(result.value ?? new Uint8Array(), { stream: !done });
+    let lineBreak = pending.indexOf('\n');
+    while (lineBreak >= 0) {
+      consumeVolcengineV3Line(pending.slice(0, lineBreak), chunks);
+      pending = pending.slice(lineBreak + 1);
+      lineBreak = pending.indexOf('\n');
+    }
+  }
+  consumeVolcengineV3Line(pending, chunks);
+  if (!chunks.length) {
+    throw new Error('Volcengine TTS V3 response did not include audio data.');
+  }
+  return Buffer.concat(chunks);
+}
+
+function parseVolcengineV3AudioLines(text: string): Buffer {
+  const chunks: Buffer[] = [];
+  for (const line of text.split(/\r?\n/)) {
+    consumeVolcengineV3Line(line, chunks);
+  }
+  if (!chunks.length) {
+    throw new Error('Volcengine TTS V3 response did not include audio data.');
+  }
+  return Buffer.concat(chunks);
+}
+
+function consumeVolcengineV3Line(line: string, chunks: Buffer[]): void {
+  const trimmed = line.trim();
+  if (!trimmed) return;
+  const jsonText = trimmed.startsWith('data:') ? trimmed.slice(5).trim() : trimmed;
+  const body = JSON.parse(jsonText) as { code?: number; message?: string; data?: string | null };
+  if (body.code === 0 && body.data) {
+    chunks.push(Buffer.from(body.data, 'base64'));
+    return;
+  }
+  if (body.code === 20000000) return;
+  if (body.code && body.code !== 0) {
+    throw new Error(`Volcengine TTS V3 API error: ${body.message ?? body.code}`);
+  }
+}
+
+function volcengineSpeechRate(speed: number): number {
+  const ratio = Number.isFinite(speed) ? speed : 1;
+  return Math.max(-50, Math.min(100, Math.round((ratio - 1) * 100)));
 }
 
 async function extractImageBytes(body: { data?: Array<{ b64_json?: string; url?: string }> }, signal?: AbortSignal): Promise<Buffer> {

@@ -134,6 +134,14 @@ describe('draft writer', () => {
       expect(bridgePayloads[0]).toMatchObject({
         title: 'Real Draft',
         totalDurationUs: 2_600_000,
+        canvas: {
+          backgroundColor: '#000000',
+          backgroundImage: '',
+        },
+        imageArea: {
+          ratio: '9:16',
+          animation: expect.any(String),
+        },
         caption: {
           x: 0,
           y: expect.any(Number),

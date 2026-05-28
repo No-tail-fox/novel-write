@@ -13,11 +13,15 @@ export interface PyJianYingBridgeInput {
   canvas: {
     width: number;
     height: number;
+    backgroundColor: string;
+    backgroundImage: string;
   };
   imageArea: {
+    ratio: string;
     top: number;
     height: number;
     fit: 'cover' | 'contain';
+    animation: string;
   };
   caption: {
     fontSize: number;
@@ -156,8 +160,10 @@ function formatBridgeError(error: unknown): string {
 const pythonBridgeScript = String.raw`import json
 import os
 import shutil
+import struct
 import sys
 import traceback
+import zlib
 
 try:
     import pyJianYingDraft as draft
@@ -176,6 +182,66 @@ def color_to_rgb(color):
     return tuple(int(value[i:i + 2], 16) / 255.0 for i in (0, 2, 4))
 
 
+def color_to_bytes(color):
+    value = str(color or "#000000").strip().lstrip("#")
+    if len(value) != 6:
+        value = "000000"
+    try:
+        return bytes(int(value[i:i + 2], 16) for i in (0, 2, 4))
+    except ValueError:
+        return b"\x00\x00\x00"
+
+
+def png_chunk(kind, data):
+    return struct.pack(">I", len(data)) + kind + data + struct.pack(">I", zlib.crc32(kind + data) & 0xFFFFFFFF)
+
+
+def create_solid_png(path, width, height, color):
+    os.makedirs(os.path.dirname(path), exist_ok=True)
+    rgb = color_to_bytes(color)
+    row = b"\x00" + rgb * int(width)
+    raw = row * int(height)
+    payload = [
+        b"\x89PNG\r\n\x1a\n",
+        png_chunk(b"IHDR", struct.pack(">IIBBBBB", int(width), int(height), 8, 2, 0, 0, 0)),
+        png_chunk(b"IDAT", zlib.compress(raw, 6)),
+        png_chunk(b"IEND", b""),
+    ]
+    with open(path, "wb") as handle:
+        handle.write(b"".join(payload))
+
+
+def prepare_background_asset(payload, materials_dir):
+    canvas = payload.get("canvas") or {}
+    background_image = str(canvas.get("backgroundImage") or "").strip()
+    if background_image:
+        return copy_asset(background_image, os.path.join(materials_dir, "background"), "background", ".png")
+    background_path = os.path.join(materials_dir, "background", "canvas-background.png")
+    create_solid_png(
+        background_path,
+        int(canvas.get("width", 1080)),
+        int(canvas.get("height", 1920)),
+        canvas.get("backgroundColor", "#000000"),
+    )
+    return background_path
+
+
+def apply_image_animation(segment, animation_name):
+    animation_name = str(animation_name or "").strip()
+    if not animation_name or animation_name == "无动画":
+        return
+    for enum_name in ("GroupAnimationType", "IntroType", "OutroType"):
+        enum_type = getattr(draft, enum_name, None)
+        from_name = getattr(enum_type, "from_name", None) if enum_type else None
+        if not from_name:
+            continue
+        try:
+            segment.add_animation(from_name(animation_name))
+            return
+        except Exception:
+            continue
+
+
 def ms_to_us(value):
     return int(round(float(value) * 1000))
 
@@ -189,7 +255,7 @@ def copy_asset(source_path, target_dir, filename_stem, fallback_ext):
     return target_path
 
 
-def patch_meta(meta_path, payload, draft_dir, duration, image_paths, narration_paths, bgm_path):
+def patch_meta(meta_path, payload, draft_dir, duration, background_path, image_paths, narration_paths, bgm_path):
     try:
         with open(meta_path, "r", encoding="utf-8") as handle:
             meta = json.load(handle)
@@ -203,7 +269,7 @@ def patch_meta(meta_path, payload, draft_dir, duration, image_paths, narration_p
         "tm_duration": duration,
     })
     meta["draft_materials"] = [
-        {"type": 0, "value": image_paths},
+        {"type": 0, "value": [background_path] + image_paths},
         {"type": 1, "value": narration_paths},
         {"type": 2, "value": [bgm_path] if bgm_path else []},
         {"type": 3, "value": []},
@@ -234,6 +300,8 @@ def main():
         maintrack_adsorb=True,
         allow_replace=True,
     )
+    background_track = "background_track"
+    script.add_track(draft.TrackType.video, background_track)
     script.add_track(draft.TrackType.video, "images")
     script.add_track(draft.TrackType.audio, "narration")
 
@@ -252,6 +320,16 @@ def main():
     subtitle_path = copy_asset(payload["subtitlesSrtPath"], os.path.join(materials_dir, "subtitles"), "subtitles", ".srt")
     volumes = payload.get("volumes") or {}
     image_area = payload.get("imageArea") or {}
+    total_duration = int(payload.get("totalDurationUs") or sum(durations.values()))
+    background_path = prepare_background_asset(payload, materials_dir)
+    background_material = draft.VideoMaterial(background_path)
+    background_segment = draft.VideoSegment(
+        background_material,
+        draft.Timerange(0, total_duration),
+        source_timerange=draft.Timerange(0, total_duration),
+        clip_settings=draft.ClipSettings(scale_x=1.0, scale_y=1.0),
+    )
+    script.add_segment(background_segment, background_track)
 
     for scene in scenes:
         scene_id = int(scene["sceneId"])
@@ -268,6 +346,7 @@ def main():
             source_timerange=draft.Timerange(0, duration),
             clip_settings=draft.ClipSettings(scale_x=scale, scale_y=scale, transform_y=transform_y),
         )
+        apply_image_animation(image_segment, image_area.get("animation"))
         script.add_segment(image_segment, "images")
 
         audio_segment = draft.AudioSegment(
@@ -280,7 +359,6 @@ def main():
 
     bgm = payload.get("bgm")
     bgm_path = None
-    total_duration = int(payload.get("totalDurationUs") or sum(durations.values()))
     if bgm and bgm.get("path"):
         script.add_track(draft.TrackType.audio, "bgm")
         bgm_path = copy_asset(bgm["path"], os.path.join(materials_dir, "bgm"), "bgm", ".mp3")
@@ -312,7 +390,7 @@ def main():
     meta_path = os.path.join(draft_dir, "draft_meta_info.json")
     copied_images = [image_by_scene[int(scene["sceneId"])] for scene in scenes]
     copied_narration = [audio_by_scene[int(scene["sceneId"])] for scene in scenes]
-    patch_meta(meta_path, payload, draft_dir, script.duration, copied_images, copied_narration, bgm_path)
+    patch_meta(meta_path, payload, draft_dir, script.duration, background_path, copied_images, copied_narration, bgm_path)
     print(json.dumps({
         "ok": True,
         "draftDir": draft_dir,

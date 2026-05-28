@@ -1,11 +1,13 @@
 import { mkdir, readFile, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
-import type { AiSourceContext, BgmItem, CoverMetadata, ImagePrompt, PipelineArtifact, StoryboardScene, Task } from './types';
+import type { AiSourceContext, BgmItem, CoverMetadata, ImagePrompt, PipelineArtifact, PromptTemplate, PromptTemplateType, StoryboardScene, Task } from './types';
 import { buildSubtitleTrack } from './story';
 import { writeJianyingDraft, type SceneAsset, type WriteJianyingDraftOptions } from './draft';
 import type { FileDatabase } from './storage';
 import type { JsonLlm } from './llm-provider';
 import { formatAiSourceContext } from './research';
+import { normalizeDraftTemplate } from './templates';
+import { buildPromptRenderContext, renderPromptTemplate, selectStepPromptTemplate, selectTaskPromptTemplate, type PromptRenderContext } from './prompt-templates';
 
 export interface RunTaskOptions {
   appDataDir: string;
@@ -131,6 +133,7 @@ export async function runTask(db: FileDatabase, task: Task, options: RunTaskOpti
       await emit('step_start', 6, 'Draft', '写入剪映草稿目录');
       const state = await db.getState();
       const bgm = resolveBgm(state.config.jianying.bgmLibrary, task.bgmId);
+      const template = state.draftTemplates.find((item) => item.id === task.templateId);
       const draft = await writeJianyingDraft(
         {
           workDir,
@@ -139,6 +142,7 @@ export async function runTask(db: FileDatabase, task: Task, options: RunTaskOpti
           cover: artifact.cover,
           ratio: task.ratio,
           templateId: task.templateId,
+          template: template ? normalizeDraftTemplate(template) : undefined,
           scenes: artifact.scenes,
           imagePrompts: artifact.imagePrompts,
           reviewedText: artifact.reviewedText,
@@ -230,6 +234,10 @@ async function ensureContentArtifact(input: {
   if (!options.llm) {
     throw new Error('LLM provider is not configured; cannot run real content generation.');
   }
+  const appState = await db.getState();
+  const promptTemplates = appState.promptTemplates;
+  const taskTemplate = selectTaskPromptTemplate(promptTemplates, { track: task.track, promptTemplateId: task.promptTemplateId });
+  const promptContext = (): PromptRenderContext => buildPromptRenderContext({ task, taskTemplate, sourceContext, artifact: pipeline.artifact });
 
   if (!isStepCompleted(pipeline, 0) || !pipeline.artifact.reviewedText) {
     await db.updateTask(task.id, { currentStep: 0, retryFromStep: 0 });
@@ -237,13 +245,14 @@ async function ensureContentArtifact(input: {
     await markStep(0, 'running');
     await emit('step_start', 0, 'Reviewer', 'LLM 文案预审');
     const sourceText = buildReviewSourceText(task, sourceContext);
+    const reviewPrompt = renderStepPrompt(promptTemplates, 'review', promptContext(), sourceText);
     const review = await options.llm<{ reviewedText: string }>({
       step: 0,
       name: 'review',
       signal: options.signal,
       messages: [
         { role: 'system', content: 'Return strict JSON only. Schema: {"reviewedText": string}.' },
-        { role: 'user', content: sourceText },
+        { role: 'user', content: joinPromptBlocks(['Template instructions:', reviewPrompt, 'Source material:', sourceText]) },
       ],
     });
     pipeline.artifact.reviewedText = requireString(review.json.reviewedText, 'reviewedText');
@@ -258,13 +267,25 @@ async function ensureContentArtifact(input: {
     await heartbeatTask(db, task.id, options, 1, 'LLM rewrite');
     await markStep(1, 'running');
     await emit('step_start', 1, 'Writer', 'LLM 改写与封面信息');
+    const rewritePrompt = renderStepPrompt(promptTemplates, 'rewrite', promptContext(), requireString(pipeline.artifact.reviewedText, 'reviewedText'));
+    const coverPrompt = renderStepPrompt(promptTemplates, 'cover', promptContext(), '');
     const rewrite = await options.llm<{ rewrittenCopy: string; cover: CoverMetadata }>({
       step: 1,
       name: 'rewrite',
       signal: options.signal,
       messages: [
         { role: 'system', content: 'Return strict JSON only. Schema: {"rewrittenCopy": string, "cover": {"title": string, "subtitle": string[], "summary": string, "tags": string[], "comments": string[]}}.' },
-        { role: 'user', content: requireString(pipeline.artifact.reviewedText, 'reviewedText') },
+        {
+          role: 'user',
+          content: joinPromptBlocks([
+            'Rewrite instructions:',
+            rewritePrompt,
+            'Cover instructions:',
+            coverPrompt,
+            'Reviewed text:',
+            requireString(pipeline.artifact.reviewedText, 'reviewedText'),
+          ]),
+        },
       ],
     });
     pipeline.artifact.rewrittenCopy = requireString(rewrite.json.rewrittenCopy, 'rewrittenCopy');
@@ -281,13 +302,14 @@ async function ensureContentArtifact(input: {
     await heartbeatTask(db, task.id, options, 2, 'LLM storyboard');
     await markStep(2, 'running');
     await emit('step_start', 2, 'Storyboard', 'LLM 影视分镜分句');
+    const storyboardPrompt = renderStepPrompt(promptTemplates, 'storyboard', promptContext(), requireString(pipeline.artifact.rewrittenCopy, 'rewrittenCopy'));
     const storyboard = await options.llm<{ scenes: StoryboardScene[] }>({
       step: 2,
       name: 'storyboard',
       signal: options.signal,
       messages: [
         { role: 'system', content: 'Return strict JSON only. Schema: {"scenes":[{"id":number,"cap":string,"descPrompt":string,"durationMs":number}]}.' },
-        { role: 'user', content: requireString(pipeline.artifact.rewrittenCopy, 'rewrittenCopy') },
+        { role: 'user', content: joinPromptBlocks(['Storyboard instructions:', storyboardPrompt, 'Rewritten copy:', requireString(pipeline.artifact.rewrittenCopy, 'rewrittenCopy')]) },
       ],
     });
     pipeline.artifact.scenes = normalizeScenes(storyboard.json.scenes);
@@ -302,13 +324,21 @@ async function ensureContentArtifact(input: {
     await heartbeatTask(db, task.id, options, 3, 'LLM prompts');
     await markStep(3, 'running');
     await emit('step_start', 3, 'Prompt', 'LLM 生成绘图提示词');
+    const imagePromptInstruction = renderStepPrompt(promptTemplates, 'image-prompt', promptContext(), JSON.stringify({ scenes: pipeline.artifact.scenes, style: task.style, ratio: task.ratio }));
+    const imagePromptSnapshot = joinPromptBlocks([
+      'Image prompt instructions:',
+      imagePromptInstruction,
+      'Scene context:',
+      JSON.stringify({ scenes: pipeline.artifact.scenes, style: task.style, ratio: task.ratio }),
+    ]);
+    await db.updateTask(task.id, { step3PromptSnapshot: imagePromptSnapshot });
     const prompts = await options.llm<{ imagePrompts: ImagePrompt[] }>({
       step: 3,
       name: 'image-prompts',
       signal: options.signal,
       messages: [
         { role: 'system', content: 'Return strict JSON only. Schema: {"imagePrompts":[{"sceneId":number,"cap":string,"prompt":string,"negativePrompt":string,"style":string,"ratio":string,"characterProfile":string}]}.' },
-        { role: 'user', content: JSON.stringify({ scenes: pipeline.artifact.scenes, style: task.style, ratio: task.ratio }) },
+        { role: 'user', content: imagePromptSnapshot },
       ],
     });
     if (!pipeline.artifact.scenes) {
@@ -324,6 +354,15 @@ async function ensureContentArtifact(input: {
   }
   pipeline.artifact.subtitles = buildSubtitleTrack(pipeline.artifact.scenes);
   await writeContentArtifacts(workDir, hydrateArtifact(pipeline.artifact), task);
+}
+
+function renderStepPrompt(templates: PromptTemplate[], type: Exclude<PromptTemplateType, 'task'>, context: PromptRenderContext, fallback: string): string {
+  const template = selectStepPromptTemplate(templates, type);
+  return template ? renderPromptTemplate(template, context) : fallback;
+}
+
+function joinPromptBlocks(blocks: string[]): string {
+  return blocks.map((block) => block.trim()).filter(Boolean).join('\n\n');
 }
 
 async function prepareAiSourceContext(input: {

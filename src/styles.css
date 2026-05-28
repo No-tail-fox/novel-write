@@ -48,17 +48,18 @@ button {
 .app-shell {
   height: 100vh;
   display: grid;
-  grid-template-rows: 34px 32px 1fr;
+  grid-template-rows: 34px 1fr;
   background: var(--bg);
 }
 
-.window-line,
-.trial-strip {
+.window-line {
   display: flex;
   align-items: center;
   padding: 0 20px;
   border-bottom: 1px solid var(--line);
   background: #0d1117;
+  gap: 12px;
+  -webkit-app-region: drag;
 }
 
 .window-title,
@@ -97,22 +98,33 @@ button {
   height: 20px;
 }
 
-.activation-link {
+.window-controls {
+  align-self: stretch;
+  display: flex;
+  align-items: center;
   margin-left: auto;
+  margin-right: -20px;
+  -webkit-app-region: no-drag;
+}
+
+.window-control-button {
+  width: 42px;
+  height: 34px;
+  display: grid;
+  place-items: center;
   background: transparent;
-  color: #ff696d;
+  color: var(--muted);
+  -webkit-app-region: no-drag;
 }
 
-.trial-strip {
-  gap: 10px;
-  color: #dbe5f3;
+.window-control-button:hover {
+  background: #18242b;
+  color: var(--text);
 }
 
-.danger-dot {
-  width: 8px;
-  height: 8px;
-  border-radius: 99px;
+.window-control-button.close:hover {
   background: var(--danger);
+  color: #fff;
 }
 
 .shell-grid {
@@ -297,12 +309,26 @@ h2 {
 .full-panel,
 .settings-layout,
 .two-column,
+.queue-layout,
 .templates-layout,
 .draft-template-page,
 .lab-layout {
   min-height: 0;
   overflow: auto;
   padding: 20px 26px;
+}
+
+.template-filter-row {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.variable-chip-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-bottom: 14px;
 }
 
 .task-card,
@@ -345,6 +371,12 @@ h2 {
 .option-two-col {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 14px;
+}
+
+.queue-layout {
+  display: grid;
+  grid-template-columns: minmax(520px, 1.35fr) minmax(320px, 0.75fr);
   gap: 14px;
 }
 
@@ -1422,20 +1454,33 @@ textarea {
 }
 
 .image-record {
+  display: grid;
+  gap: 8px;
   border: 1px solid var(--line);
   border-radius: 8px;
   padding: 10px;
   background: var(--panel-2);
 }
 
-.mock-image {
+.image-record.failed {
+  border-color: rgba(255, 103, 125, 0.4);
+}
+
+.lab-image-preview {
   display: grid;
   place-items: center;
   min-height: 150px;
-  margin-bottom: 10px;
+  overflow: hidden;
   border-radius: 7px;
   background: #09231f;
   color: var(--accent);
+}
+
+.image-record img {
+  width: 100%;
+  height: 100%;
+  min-height: 150px;
+  object-fit: cover;
 }
 
 .provider-line {
@@ -1590,8 +1635,7 @@ textarea {
 }
 
 .draft-preview-large {
-  width: min(100%, 420px);
-  max-height: 560px;
+  width: min(100%, var(--draft-preview-width, 420px));
   margin: 0 auto;
 }
 
@@ -1607,6 +1651,15 @@ textarea {
   left: 0;
   width: 100%;
   background: linear-gradient(135deg, #0c2b25, #1f2935);
+}
+
+.draft-image-media {
+  position: absolute;
+  inset: 0;
+  margin: auto;
+  background:
+    linear-gradient(135deg, rgba(7, 85, 71, 0.62), rgba(40, 55, 74, 0.72)),
+    repeating-linear-gradient(45deg, rgba(255, 255, 255, 0.06) 0 8px, transparent 8px 16px);
 }
 
 .editable-draft-canvas {
@@ -1648,7 +1701,7 @@ textarea {
 .image-layer {
   left: 0;
   width: 100%;
-  background: linear-gradient(135deg, #0c2b25, #1f2935);
+  background: rgba(4, 28, 25, 0.52);
 }
 
 .image-layer span {
@@ -1712,6 +1765,27 @@ textarea {
 
 .accordion > div {
   padding: 12px;
+}
+
+.draft-background-field {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto auto;
+  gap: 8px;
+  align-items: center;
+}
+
+.draft-background-field.with-swatch {
+  grid-template-columns: auto minmax(0, 1fr);
+}
+
+.draft-background-field input {
+  min-width: 0;
+}
+
+.draft-background-swatch {
+  width: 38px;
+  height: 34px;
+  padding: 2px;
 }
 
 .settings-layout {
@@ -2033,6 +2107,7 @@ textarea {
 
   .page-head,
   .two-column,
+  .queue-layout,
   .task-detail-shell,
   .mode-grid,
   .option-two-col,

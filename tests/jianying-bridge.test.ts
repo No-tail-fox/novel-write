@@ -13,8 +13,8 @@ describe('pyJianYingDraft bridge input', () => {
         workDir: dir,
         draftDir: join(dir, 'Draft Root', 'Bridge Draft'),
         title: 'Bridge Draft',
-        canvas: { width: 1080, height: 1920 },
-        imageArea: { top: 0, height: 1280, fit: 'cover' },
+        canvas: { width: 1080, height: 1920, backgroundColor: '#123456', backgroundImage: join(dir, 'background.png') },
+        imageArea: { ratio: '4:3', top: 0, height: 1280, fit: 'cover', animation: '缩放' },
         caption: { fontSize: 44, color: '#ffffff', x: 0.2, y: 1480 },
         overlays: {
           title: { visible: true, text: 'Bridge Draft', x: -0.1, y: -0.5, fontSize: 44, color: '#ffde00' },
@@ -32,7 +32,7 @@ describe('pyJianYingDraft bridge input', () => {
       expect(payload.draftDir).toContain('Bridge Draft');
       expect(payload.images[0]).toMatchObject({ sceneId: 1, path: join(dir, 'image.png') });
       expect(payload.narration[0]).toMatchObject({ sceneId: 1, path: join(dir, 'voice.mp3') });
-      expect(payload.canvas).toEqual({ width: 1080, height: 1920 });
+      expect(payload.canvas).toEqual({ width: 1080, height: 1920, backgroundColor: '#123456', backgroundImage: join(dir, 'background.png') });
       expect(payload.caption).toMatchObject({ x: 0.2, y: 1480 });
       expect(payload.overlays.title).toMatchObject({ x: -0.1, y: -0.5 });
     } finally {
@@ -51,6 +51,8 @@ describe('pyJianYingDraft bridge input', () => {
       expect(script).toContain('VideoSegment');
       expect(script).toContain('AudioSegment');
       expect(script).toContain('shutil.copy2');
+      expect(script).toContain('create_solid_png');
+      expect(script).toContain('background_track');
       expect(script).toContain('import_srt');
       expect(script).toContain('script.save()');
     } finally {
@@ -69,8 +71,8 @@ describe('pyJianYingDraft bridge input', () => {
           workDir: dir,
           draftDir,
           title: 'Bridge Draft',
-          canvas: { width: 1080, height: 1920 },
-          imageArea: { top: 0, height: 1, fit: 'cover' },
+          canvas: { width: 1080, height: 1920, backgroundColor: '#000000', backgroundImage: '' },
+          imageArea: { ratio: '9:16', top: 0, height: 1, fit: 'cover', animation: '缩放' },
           caption: { fontSize: 44, color: '#ffffff', y: -0.8 },
           scenes: [{ sceneId: 1, startUs: 0, durationUs: 1_200_000, text: 'hello' }],
           images: [{ sceneId: 1, path: join(dir, 'image.png') }],
@@ -128,8 +130,8 @@ describe('pyJianYingDraft bridge input', () => {
             workDir: dir,
             draftDir: join(dir, 'Draft Root', 'Bridge Draft'),
             title: 'Bridge Draft',
-            canvas: { width: 1080, height: 1920 },
-            imageArea: { top: 0, height: 1, fit: 'cover' },
+            canvas: { width: 1080, height: 1920, backgroundColor: '#000000', backgroundImage: '' },
+            imageArea: { ratio: '9:16', top: 0, height: 1, fit: 'cover', animation: '缩放' },
             caption: { fontSize: 44, color: '#ffffff', y: -0.8 },
             scenes: [{ sceneId: 1, startUs: 0, durationUs: 1_200_000, text: 'hello' }],
             images: [{ sceneId: 1, path: join(dir, 'image.png') }],

@@ -8,6 +8,29 @@ import { FileDatabase } from '@shared/storage';
 import { runTask } from '@shared/runner';
 
 describe('task runtime providers', () => {
+  it('treats Volcengine V3 API key settings as a usable TTS provider', () => {
+    const providers = createTaskRuntimeProviders(
+      {
+        ...defaultConfig,
+        tts: {
+          ...defaultConfig.tts,
+          provider: 'volcengine',
+          volcengine: {
+            ...defaultConfig.tts.volcengine,
+            apiKey: 'v3-key',
+            appId: '',
+            accessKey: '',
+            resourceId: 'seed-tts-2.0',
+            speaker: 'zh_female_vv_uranus_bigtts',
+          },
+        },
+      },
+      'D:/tmp/storybound-task',
+    );
+
+    expect(providers.synthesizeNarration).toBeTypeOf('function');
+  });
+
   it('pauses at content generation instead of using mock providers when the LLM is not configured', async () => {
     const dir = await mkdtemp(join(tmpdir(), 'storybound-runtime-providers-'));
     const db = await FileDatabase.open(join(dir, 'data.db'));

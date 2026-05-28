@@ -67,12 +67,12 @@ export function createOpenAiCompatibleJsonLlm(config: LlmConfig): JsonLlm {
     }
     try {
       return {
-        json: JSON.parse(raw) as T,
+        json: parseLlmJsonContent<T>(raw),
         raw,
         requestId: body.id ?? null,
       };
     } catch {
-      throw new LlmJsonParseError(`LLM step ${request.step} ${request.name} did not return valid JSON.`, raw);
+      throw new LlmJsonParseError(`LLM step ${request.step} ${request.name} did not return valid JSON.${formatRawPreview(raw)}`, raw);
     }
   };
 }
@@ -138,7 +138,7 @@ export async function testOpenAiCompatibleLlm(config: LlmConfig, fetchImpl: type
       return { ...baseResult, latencyMs, requestId: body.id ?? null, status: 'warn', detail: `Model ${model} responded, but returned empty content.` };
     }
     try {
-      JSON.parse(raw);
+      parseLlmJsonContent(raw);
       return { ...baseResult, latencyMs, requestId: body.id ?? null, status: 'pass', detail: `Model ${model} is usable. Latency ${latencyMs} ms.` };
     } catch {
       return {
@@ -261,6 +261,81 @@ function parseProviderModel(value: unknown): ProviderModel | null {
 function normalizeOpenAiBaseUrl(value: string): string {
   const trimmed = value.replace(/\/+$/, '');
   return trimmed.endsWith('/v1') ? trimmed : `${trimmed}/v1`;
+}
+
+function parseLlmJsonContent<T = unknown>(raw: string): T {
+  const trimmed = raw.replace(/^\uFEFF/, '').trim();
+  try {
+    return JSON.parse(trimmed) as T;
+  } catch {
+    for (const candidate of extractJsonCandidates(trimmed)) {
+      try {
+        return JSON.parse(candidate) as T;
+      } catch {
+        // Keep looking; compatible providers sometimes add prose or fences around the payload.
+      }
+    }
+    throw new SyntaxError('No valid JSON payload found.');
+  }
+}
+
+function extractJsonCandidates(input: string): string[] {
+  const candidates: string[] = [];
+  for (let index = 0; index < input.length; index += 1) {
+    const char = input[index];
+    if (char !== '{' && char !== '[') continue;
+    const end = findJsonValueEnd(input, index);
+    if (end !== -1) {
+      candidates.push(input.slice(index, end + 1));
+    }
+  }
+  return candidates;
+}
+
+function findJsonValueEnd(input: string, start: number): number {
+  const first = input[start];
+  const stack = [first === '{' ? '}' : ']'];
+  let inString = false;
+  let escaped = false;
+
+  for (let index = start + 1; index < input.length; index += 1) {
+    const char = input[index];
+    if (inString) {
+      if (escaped) {
+        escaped = false;
+      } else if (char === '\\') {
+        escaped = true;
+      } else if (char === '"') {
+        inString = false;
+      }
+      continue;
+    }
+
+    if (char === '"') {
+      inString = true;
+      continue;
+    }
+    if (char === '{') {
+      stack.push('}');
+      continue;
+    }
+    if (char === '[') {
+      stack.push(']');
+      continue;
+    }
+    if (char === '}' || char === ']') {
+      if (char !== stack[stack.length - 1]) return -1;
+      stack.pop();
+      if (stack.length === 0) return index;
+    }
+  }
+
+  return -1;
+}
+
+function formatRawPreview(raw: string): string {
+  const preview = raw.replace(/\s+/g, ' ').trim().slice(0, 180);
+  return preview ? ` Response preview: ${preview}` : '';
 }
 
 async function fetchWithInjectedTimeout(fetchImpl: typeof fetch, url: string, init: RequestInit, timeoutMs: number): Promise<Response> {

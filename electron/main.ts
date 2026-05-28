@@ -1,5 +1,6 @@
-import { app, BrowserWindow, ipcMain, Menu, shell } from 'electron';
+import { app, BrowserWindow, dialog, ipcMain, Menu, shell } from 'electron';
 import { execFile } from 'node:child_process';
+import { randomUUID } from 'node:crypto';
 import { existsSync } from 'node:fs';
 import { mkdir, readFile } from 'node:fs/promises';
 import { dirname, extname, join } from 'node:path';
@@ -7,13 +8,15 @@ import { fileURLToPath } from 'node:url';
 import { promisify } from 'node:util';
 import { readTaskArtifactSnapshot } from '../src/shared/artifact-preview';
 import { fromLlmModelTestResult, testConfigTarget } from '../src/shared/config-utils';
+import { generateImageLabRecord } from '../src/shared/image-lab';
 import { createOpenAiCompatibleJsonLlm, listOpenAiCompatibleModels, testOpenAiCompatibleLlm } from '../src/shared/llm-provider';
 import { markSceneImageForRegeneration } from '../src/shared/pipeline-cache';
 import { composeCopyFromSources, createAiSourceResearcher, searchWebSources } from '../src/shared/research';
 import { runTask } from '../src/shared/runner';
 import { FileDatabase } from '../src/shared/storage';
 import { createTaskRuntimeProviders } from '../src/shared/task-runtime-providers';
-import type { AccountProfile, ActivationState, AppConfig, ConfigTestTarget, CreateTaskInput, DraftTemplate, LlmConfig, PromptTemplate, ProviderModelListRequest, ResearchCopyComposeInput, Task, TaskStatus, UiPreferences } from '../src/shared/types';
+import type { AccountProfile, ActivationState, AppConfig, ConfigTestTarget, CreateTaskInput, DraftTemplate, ImageLabGenerateInput, LlmConfig, PromptTemplate, ProviderModelListRequest, ResearchCopyComposeInput, Task, TaskStatus, UiPreferences, VolcengineSpeakerListRequest } from '../src/shared/types';
+import { listVolcengineSpeakers } from '../src/shared/volcengine-speakers';
 import { getRendererIndexPath } from './paths';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
@@ -47,6 +50,7 @@ async function createWindow(): Promise<void> {
     title: 'Storybound Replica',
     backgroundColor: '#101114',
     autoHideMenuBar: true,
+    frame: false,
     webPreferences: {
       preload: join(__dirname, 'preload.js'),
       contextIsolation: true,
@@ -77,6 +81,10 @@ function notifyTaskState(database: FileDatabase): void {
 
 function taskWorkDir(task: Task): string {
   return join(app.getPath('userData'), 'storybound-replica', 'tasks', task.id);
+}
+
+function imageLabWorkDir(id: string): string {
+  return join(app.getPath('userData'), 'storybound-replica', 'image-lab', id);
 }
 
 function appDataDir(): string {
@@ -170,6 +178,24 @@ async function resumeTaskRun(database: FileDatabase, task: Task): Promise<void> 
   startTaskRun(database, { ...task, status: 'pending', errorMessage: '' });
 }
 
+ipcMain.handle('window:control', async (_event, action: 'minimize' | 'toggle-maximize' | 'close') => {
+  if (action === 'minimize') {
+    mainWindow?.minimize();
+    return;
+  }
+  if (action === 'toggle-maximize') {
+    if (mainWindow?.isMaximized()) {
+      mainWindow.unmaximize();
+    } else {
+      mainWindow?.maximize();
+    }
+    return;
+  }
+  if (action === 'close') {
+    mainWindow?.close();
+  }
+});
+
 ipcMain.handle('app:get-state', async () => {
   const database = await getDb();
   return database.getState();
@@ -184,6 +210,8 @@ ipcMain.handle('app:save-config', async (_event, config) => {
 ipcMain.handle('llm:test-config', async (_event, config: LlmConfig) => testOpenAiCompatibleLlm(config));
 
 ipcMain.handle('models:list', async (_event, request: ProviderModelListRequest) => listOpenAiCompatibleModels(request));
+
+ipcMain.handle('volcengine:speakers:list', async (_event, request: VolcengineSpeakerListRequest) => listVolcengineSpeakers(request));
 
 ipcMain.handle('config:test', async (_event, input: { target: ConfigTestTarget; config: AppConfig }) => {
   if (input.target === 'llm') {
@@ -225,6 +253,15 @@ ipcMain.handle('prompt-template:reset', async () => {
 ipcMain.handle('draft-template:save', async (_event, template: DraftTemplate) => {
   const database = await getDb();
   await database.upsertDraftTemplate(template);
+  return database.getState();
+});
+
+ipcMain.handle('image-lab:generate', async (_event, input: ImageLabGenerateInput) => {
+  const database = await getDb();
+  const state = await database.getState();
+  const id = input.id ?? randomUUID();
+  const record = await generateImageLabRecord(state.config, imageLabWorkDir(id), { ...input, id });
+  await database.addImageLabRecord(record);
   return database.getState();
 });
 
@@ -344,6 +381,15 @@ ipcMain.handle('task:get-artifacts', async (_event, id: string) => {
 
 ipcMain.handle('asset:read-data-url', async (_event, path: string) => readLocalImageDataUrl(path));
 
+ipcMain.handle('local-image:select', async () => {
+  const result = await dialog.showOpenDialog({
+    title: '选择背景图',
+    properties: ['openFile'],
+    filters: [{ name: 'Images', extensions: ['png', 'jpg', 'jpeg', 'webp', 'gif'] }],
+  });
+  return result.canceled ? null : result.filePaths[0] ?? null;
+});
+
 ipcMain.handle('diagnostics:run', async () => {
   const database = await getDb();
   const state = await database.getState();
@@ -399,6 +445,7 @@ function imageConfigStatus(config: AppConfig): 'pass' | 'warn' | 'fail' {
 function ttsConfigStatus(config: AppConfig): 'pass' | 'warn' | 'fail' {
   if (config.tts.provider === 'mock') return 'fail';
   if (config.tts.provider === 'minimax') return config.tts.minimax.apiKey ? 'pass' : 'warn';
+  if (config.tts.volcengine.apiKey) return config.tts.volcengine.resourceId && (config.tts.volcengine.speaker || config.tts.speaker) ? 'pass' : 'warn';
   return (config.tts.volcengine.appId || config.tts.appId) && (config.tts.volcengine.accessKey || config.tts.accessKey) ? 'pass' : 'warn';
 }
 

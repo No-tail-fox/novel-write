@@ -59,6 +59,162 @@ describe('task runner', () => {
     }
   });
 
+  it('uses the saved draft template selected by the task when writing the draft', async () => {
+    const dir = await mkdtemp(join(tmpdir(), 'storybound-runner-template-'));
+    const db = await FileDatabase.open(join(dir, 'data.db'));
+    const draftRootDir = join(dir, 'JianyingPro Drafts');
+    const mediaDir = join(dir, 'media');
+    let capturedPayload: PyJianYingBridgeInput | null = null;
+
+    try {
+      const state = await db.getState();
+      const customTemplate = {
+        ...state.draftTemplates[0],
+        id: 'custom-central-image',
+        name: 'Central image template',
+        isDefault: false,
+        canvas: {
+          ...state.draftTemplates[0].canvas,
+          width: 1080,
+          height: 1920,
+          ratio: '9:16',
+          backgroundColor: '#123456',
+          backgroundImage: '',
+        },
+        image: {
+          ...state.draftTemplates[0].image,
+          ratio: '4:3',
+          fit: 'contain' as const,
+          top: 0.29,
+          height: 0.42,
+          animation: '缩放',
+        },
+        title: { ...state.draftTemplates[0].title, x: -0.2, y: -0.72 },
+        caption: { ...state.draftTemplates[0].caption, x: 0.15, y: 0.63 },
+      };
+      await db.upsertDraftTemplate(customTemplate);
+      await db.upsertConfig({
+        ...state.config,
+        jianying: { ...state.config.jianying, draftPath: draftRootDir },
+      });
+      const task = await db.createTask({
+        title: 'Template task',
+        inputText: sampleInput,
+        track: 'character-story',
+        style: 'photo-real',
+        speaker: 'voice',
+        templateId: customTemplate.id,
+      });
+
+      await runTask(db, task, {
+        appDataDir: dir,
+        generatePipelineArtifact: async () => makeArtifact(),
+        generateImages: async (scenes) => writeSceneAssets(mediaDir, scenes, 'png', tinyPng),
+        synthesizeNarration: async (scenes) => writeSceneAssets(mediaDir, scenes, 'wav', wavTone(1200)),
+        draftWriterOptions: {
+          runBridge: async (payload) => {
+            capturedPayload = payload;
+            return fakeBridge(payload);
+          },
+        },
+      });
+
+      expect(capturedPayload).toMatchObject({
+        canvas: { width: 1080, height: 1920, backgroundColor: '#123456', backgroundImage: '' },
+        imageArea: { top: 0.29, height: 0.42, fit: 'contain' },
+        caption: { x: 0.15, y: 0.63 },
+        overlays: {
+          title: { x: -0.2, y: -0.72 },
+        },
+      });
+    } finally {
+      await db.close();
+      await rm(dir, { recursive: true, force: true });
+    }
+  });
+
+  it('renders selected prompt templates into every LLM content step', async () => {
+    const dir = await mkdtemp(join(tmpdir(), 'storybound-runner-prompt-templates-'));
+    const db = await FileDatabase.open(join(dir, 'data.db'));
+    const draftRootDir = join(dir, 'JianyingPro Drafts');
+    const mediaDir = join(dir, 'media');
+    const requests: LlmJsonRequest[] = [];
+
+    try {
+      const state = await db.getState();
+      await db.upsertConfig({
+        ...state.config,
+        jianying: { ...state.config.jianying, draftPath: draftRootDir },
+      });
+      await db.upsertPromptTemplate({
+        id: 'custom-task-template',
+        name: '自定义人物任务模板',
+        type: 'task',
+        content: '任务模板标记：{{track}} / {{inputText}}',
+        isBuiltin: false,
+        baseTrack: 'character-story',
+      });
+      for (const template of [
+        ['builtin-review', 'review', '预审模板标记：{{taskTemplateContent}} / {{inputText}}'],
+        ['builtin-rewrite', 'rewrite', '改写模板标记：{{reviewedText}}'],
+        ['builtin-cover', 'cover', '封面模板标记：{{rewrittenCopy}}'],
+        ['builtin-storyboard', 'storyboard', '分镜模板标记：{{rewrittenCopy}}'],
+        ['builtin-image-prompt', 'image-prompt', '绘图模板标记：{{scenesJson}} / {{taskTemplateContent}}'],
+      ] as const) {
+        await db.upsertPromptTemplate({
+          id: template[0],
+          name: template[0],
+          type: template[1],
+          content: template[2],
+          isBuiltin: true,
+        });
+      }
+      const task = await db.createTask({
+        title: 'Prompt template task',
+        inputText: sampleInput,
+        track: 'character-story',
+        style: 'photo-real',
+        speaker: 'voice',
+        promptTemplateId: 'custom-task-template',
+        promptTemplateType: 'task',
+      });
+
+      const llm: JsonLlm = async <T,>(request: LlmJsonRequest) => {
+        requests.push(request);
+        if (request.step === 0) return { json: { reviewedText: sampleInput } as T, raw: '{}', requestId: 'review' };
+        if (request.step === 1) {
+          return {
+            json: { rewrittenCopy: 'First line\n\nSecond line', cover: { title: 'Wu Zetian', subtitle: [], summary: 'summary', tags: [], comments: [] } } as T,
+            raw: '{}',
+            requestId: 'rewrite',
+          };
+        }
+        if (request.step === 2) return { json: { scenes: makeArtifact().scenes } as T, raw: '{}', requestId: 'storyboard' };
+        return { json: { imagePrompts: makeArtifact().imagePrompts } as T, raw: '{}', requestId: 'prompts' };
+      };
+
+      await runTask(db, task, {
+        appDataDir: dir,
+        llm,
+        generateImages: async (scenes) => writeSceneAssets(mediaDir, scenes, 'png', tinyPng),
+        synthesizeNarration: async (scenes) => writeSceneAssets(mediaDir, scenes, 'wav', wavTone(1200)),
+        draftWriterOptions: { runBridge: fakeBridge },
+      });
+
+      const renderedMessages = requests.map((request) => request.messages.map((message) => message.content).join('\n')).join('\n');
+      expect(renderedMessages).toContain('预审模板标记');
+      expect(renderedMessages).toContain('改写模板标记');
+      expect(renderedMessages).toContain('封面模板标记');
+      expect(renderedMessages).toContain('分镜模板标记');
+      expect(renderedMessages).toContain('绘图模板标记');
+      expect(renderedMessages).toContain('任务模板标记：character-story');
+      expect((await db.getState()).tasks[0].step3PromptSnapshot).toContain('绘图模板标记');
+    } finally {
+      await db.close();
+      await rm(dir, { recursive: true, force: true });
+    }
+  });
+
   it('fails instead of completing with fake assets when real image generation is unavailable', async () => {
     const dir = await mkdtemp(join(tmpdir(), 'storybound-runner-no-image-'));
     const db = await FileDatabase.open(join(dir, 'data.db'));

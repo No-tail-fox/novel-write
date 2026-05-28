@@ -16,6 +16,35 @@ describe('product shell ui', () => {
     expect(css).toContain('--accent');
   });
 
+  it('uses the dark renderer chrome as the only title bar and removes the trial strip', async () => {
+    const main = await readFile(new URL('../src/main.tsx', import.meta.url), 'utf8');
+    const css = await readFile(new URL('../src/styles.css', import.meta.url), 'utf8');
+    const viteEnv = await readFile(new URL('../src/vite-env.d.ts', import.meta.url), 'utf8');
+
+    expect(main).toContain('window-control-button');
+    expect(main).toContain("api.windowControl('minimize')");
+    expect(main).toContain("api.windowControl('toggle-maximize')");
+    expect(main).toContain("api.windowControl('close')");
+    expect(main).not.toContain('className="trial-strip"');
+    expect(main).not.toContain('className="activation-link"');
+    expect(main).not.toContain('获取激活码');
+    expect(css).toContain('grid-template-rows: 34px 1fr');
+    expect(css).toContain('-webkit-app-region: drag');
+    expect(css).toContain('-webkit-app-region: no-drag');
+    expect(css).not.toContain('.trial-strip');
+    expect(css).not.toContain('.activation-link');
+    expect(viteEnv).toContain("windowControl: (action: 'minimize' | 'toggle-maximize' | 'close') => Promise<void>");
+  });
+
+  it('gives the queue task list more horizontal room than the event history pane', async () => {
+    const main = await readFile(new URL('../src/main.tsx', import.meta.url), 'utf8');
+    const css = await readFile(new URL('../src/styles.css', import.meta.url), 'utf8');
+
+    expect(main).toContain('className="queue-layout"');
+    expect(css).toContain('.queue-layout');
+    expect(css).toContain('grid-template-columns: minmax(520px, 1.35fr) minmax(320px, 0.75fr)');
+  });
+
   it('presents draft templates as a gallery before opening the editor', async () => {
     const main = await readFile(new URL('../src/main.tsx', import.meta.url), 'utf8');
     const css = await readFile(new URL('../src/styles.css', import.meta.url), 'utf8');
@@ -57,6 +86,67 @@ describe('product shell ui', () => {
     expect(main).toContain('[editingId]');
     expect(main).toContain('const currentEditingTemplate = state.draftTemplates.find');
     expect(main).not.toContain('[editingId, editingTemplate]');
+  });
+
+  it('applies draft canvas ratio changes and selects background images from the editor', async () => {
+    const main = await readFile(new URL('../src/main.tsx', import.meta.url), 'utf8');
+    const css = await readFile(new URL('../src/styles.css', import.meta.url), 'utf8');
+
+    expect(main).toContain('applyDraftCanvasRatio');
+    expect(main).toContain('draftCanvasSizeForRatio');
+    expect(main).toContain('selectDraftBackgroundImage');
+    expect(main).toContain('selectLocalImage');
+    expect(main).toContain('draftTemplateCanvasStyle');
+    expect(main).toContain('type="color"');
+    expect(main).toContain('backgroundImage:');
+    expect(main).toContain('draft-background-field');
+    expect(css).toContain('.draft-background-field');
+    expect(css).toContain('.draft-background-swatch');
+  });
+
+  it('sizes the draft preview from the canvas ratio instead of a fixed width', async () => {
+    const main = await readFile(new URL('../src/main.tsx', import.meta.url), 'utf8');
+    const css = await readFile(new URL('../src/styles.css', import.meta.url), 'utf8');
+
+    expect(main).toContain('draftPreviewWidth');
+    expect(main).toContain("'--draft-preview-width'");
+    expect(main).toContain('ratioToNumber(template.canvas.ratio)');
+    expect(css).toContain('width: min(100%, var(--draft-preview-width');
+    expect(css).not.toContain('width: min(100%, 420px)');
+  });
+
+  it('auto-matches prompt templates from task track and exposes an advanced override', async () => {
+    const main = await readFile(new URL('../src/main.tsx', import.meta.url), 'utf8');
+
+    expect(main).toContain('resolvePromptTemplateForTrack');
+    expect(main).toContain('promptTemplateOverrideId');
+    expect(main).toContain('prompt-template-selector');
+    expect(main).toContain('提示词模板');
+    expect(main).toContain('自动匹配赛道模板');
+    expect(main).toContain('promptTemplateId: resolvedPromptTemplate?.id');
+    expect(main).toContain("promptTemplateType: 'task'");
+  });
+
+  it('manages prompt templates with filters, metadata, variables, and clone-on-first-edit', async () => {
+    const main = await readFile(new URL('../src/main.tsx', import.meta.url), 'utf8');
+    const css = await readFile(new URL('../src/styles.css', import.meta.url), 'utf8');
+
+    for (const symbol of [
+      'createPromptTemplate',
+      'exportPromptTemplateJson',
+      'templateTypeFilter',
+      'templateTrackFilter',
+      'savePromptTemplateDraft',
+      'baseTemplateId',
+      'promptTemplateVariables',
+    ]) {
+      expect(main).toContain(symbol);
+    }
+    for (const text of ['新建模板', '导出 JSON', '类型筛选', '赛道筛选', '变量', '首次保存将创建自定义副本']) {
+      expect(main).toContain(text);
+    }
+    expect(css).toContain('.template-filter-row');
+    expect(css).toContain('.variable-chip-row');
   });
 
   it('supports opening a selected task in a screenshot-style pipeline detail view', async () => {
@@ -142,7 +232,7 @@ describe('product shell ui', () => {
     expect(main).toContain('api.getState()');
     expect(main).toContain('liveNow');
     expect(main).toContain('testCurrentConfig');
-    expect(main).toContain('测试当前配置');
+    expect(main).toContain('保存并测试');
     expect(main).not.toContain('测试模型可用性');
     expect(css).toContain('.test-result');
   });
@@ -157,7 +247,13 @@ describe('product shell ui', () => {
     expect(preload).toContain('config:test');
     expect(electronMain).toContain('config:test');
     expect(main).toContain('testCurrentConfig');
-    expect(main).toContain('测试当前配置');
+    expect(main).toContain('保存并测试');
+    expect(main).toContain('buildConfigForSelectedProfileTest');
+    expect(main.indexOf('api.saveConfig(normalizeEditableConfigProviders(draft))')).toBeLessThan(main.indexOf('api.testAppConfig(target, testConfig)'));
+    expect(main).toContain('selectedLlmProfileId');
+    expect(main).toContain('selectedImageProfileId');
+    expect(main).toContain('selectedTtsProfileId');
+    expect(main).toContain('onSelectedProfileIdChange');
     expect(main).toContain('GPT Image Base URL');
     expect(main).toContain('GPT Image 模型');
     expect(main).toContain('自定义 API Key');
@@ -184,11 +280,11 @@ describe('product shell ui', () => {
     expect(main).toContain('listProviderModels');
     expect(main).toContain('获取模型');
     expect(main).toContain('key={`llm-${selectedProfile.id}`}');
-    expect(main).toContain("key=\"gpt-image\"");
-    expect(main).toContain("key=\"custom-image\"");
+    expect(main).toContain('key={`gpt-image-${selectedProfile.id}`}');
+    expect(main).toContain('key={`custom-image-${selectedProfile.id}`}');
     expect(main).toContain("clearProviderModels('llm')");
-    expect(main).toContain("clearProviderModels('gpt-image')");
-    expect(main).toContain("clearProviderModels('custom-image')");
+    expect(main).toContain("onClearModels('gpt-image')");
+    expect(main).toContain("onClearModels('custom-image')");
     expect(css).toContain('.model-picker');
     expect(css).toContain('.model-list-status');
   });
@@ -208,6 +304,7 @@ describe('product shell ui', () => {
     const css = await readFile(new URL('../src/styles.css', import.meta.url), 'utf8');
 
     expect(main).toContain('LlmProfileManager');
+    expect(main).toContain('activateLlmProfile');
     expect(main).toContain('activeLlmProfileId');
     expect(main).toContain('enableLlmProfile');
     expect(main).toContain('addLlmProfile');
@@ -221,17 +318,31 @@ describe('product shell ui', () => {
     expect(css).toContain('.provider-profile-card.active');
   });
 
+  it('manages image and TTS providers with the same profile activation pattern', async () => {
+    const main = await readFile(new URL('../src/main.tsx', import.meta.url), 'utf8');
+
+    expect(main).toContain('ImageProfileManager');
+    expect(main).toContain('TtsProfileManager');
+    expect(main).toContain('activateImageProfile');
+    expect(main).toContain('activateTtsProfile');
+    expect(main).toContain('activeImageProfileId');
+    expect(main).toContain('activeTtsProfileId');
+    expect(main).toContain('enableImageProfile');
+    expect(main).toContain('enableTtsProfile');
+    expect(main).toContain('commitAndApplySettingsDraft');
+  });
+
   it('scopes provider-specific settings instead of showing every credential at once', async () => {
     const main = await readFile(new URL('../src/main.tsx', import.meta.url), 'utf8');
 
     for (const branch of [
       "selectedProvider === 'openai'",
       'OpenAI-compatible LLM',
-      "draft.imageProvider === 'gpt_image'",
-      "draft.imageProvider === 'jimeng'",
-      "draft.imageProvider === 'custom'",
-      "draft.tts.provider === 'volcengine'",
-      "draft.tts.provider === 'minimax'",
+      "provider === 'gpt_image'",
+      "provider === 'jimeng'",
+      "provider === 'custom'",
+      "provider === 'volcengine'",
+      "provider === 'minimax'",
     ]) {
       expect(main).toContain(branch);
     }
@@ -248,6 +359,24 @@ describe('product shell ui', () => {
     expect(main).toContain('activeImageResolution');
     expect(main).toContain('setImageResolution');
     expect(main).toContain('ProviderConfigNote');
+  });
+
+  it('exposes Volcengine V3 API key settings and voice presets', async () => {
+    const main = await readFile(new URL('../src/main.tsx', import.meta.url), 'utf8');
+
+    expect(main).toContain('volcengineVoicePresets');
+    expect(main).toContain('listVolcengineSpeakers');
+    expect(main).toContain('加载全部音色');
+    expect(main).toContain('AccessKey ID（音色列表）');
+    expect(main).toContain('SecretAccessKey（音色列表）');
+    expect(main).toContain('火山 API Key');
+    expect(main).toContain('Resource ID');
+    expect(main).toContain('V3 HTTP Chunked');
+    expect(main).toContain('volcenginePresetVoiceValue');
+    expect(main).toContain('默认音色');
+    expect(main).toContain('自定义 voice_type');
+    expect(main).toContain('voice_type');
+    expect(main).toContain('zh_female_vv_uranus_bigtts');
   });
 
   it('keeps task errors compact with a click-through detail dialog', async () => {
@@ -270,6 +399,7 @@ describe('product shell ui', () => {
 
     expect(main).toContain('searchWebSources');
     expect(main).toContain('composeResearchCopy');
+    expect(main).toContain('Bing + 搜狗 + 百度 + 360');
     expect(main).toContain('selectedSearchSourceIds');
     expect(main).toContain('selectedSources');
     expect(main).toContain('ai-search-results');
@@ -286,6 +416,19 @@ describe('product shell ui', () => {
     expect(css).toContain('.extra-requirements-input');
     expect(css).toContain('::-webkit-scrollbar');
     expect(css).toContain('.search-source-card');
+  });
+
+  it('runs image lab requests through real generation and renders returned image records', async () => {
+    const main = await readFile(new URL('../src/main.tsx', import.meta.url), 'utf8');
+    const css = await readFile(new URL('../src/styles.css', import.meta.url), 'utf8');
+
+    expect(main).toContain('api.generateImageLab');
+    expect(main).not.toContain("status: state.config.image.apiKey ? 'generated' : 'mock'");
+    expect(main).not.toContain('预计消耗：本地模拟');
+    expect(main).toContain('record.imagePath ?');
+    expect(main).toContain("record.status === 'failed'");
+    expect(css).toContain('.image-record img');
+    expect(css).toContain('.image-record.failed');
   });
 
   it('reuses the React root across Vite hot reloads', async () => {

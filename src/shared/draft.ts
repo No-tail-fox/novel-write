@@ -3,7 +3,7 @@ import { access, mkdir, stat, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import type { BgmItem, CoverMetadata, DiagnosticsReport, DraftTemplate, ImagePrompt, StoryboardScene, SubtitleTrack } from './types';
 import { buildSubtitleTrack } from './story';
-import { getTemplate } from './templates';
+import { getTemplate, normalizeDraftTemplate } from './templates';
 import { runPyJianYingDraftBridge, type PyJianYingBridgeInput, type PyJianYingBridgeOutput } from './jianying-bridge';
 
 export interface SceneAsset {
@@ -18,6 +18,7 @@ export interface WriteJianyingDraftInput {
   cover: CoverMetadata;
   ratio: string;
   templateId?: string;
+  template?: DraftTemplate;
   scenes: StoryboardScene[];
   imagePrompts: ImagePrompt[];
   reviewedText: string;
@@ -55,7 +56,7 @@ export async function writeJianyingDraft(input: WriteJianyingDraftInput, options
     throw new Error('Cannot create Jianying draft without storyboard scenes.');
   }
 
-  const template = getTemplate(input.templateId ?? (input.ratio === '16:9' ? 'builtin-landscape-16-9' : 'default-portrait-9-16'));
+  const template = normalizeDraftTemplate(input.template ?? getTemplate(input.templateId ?? (input.ratio === '16:9' ? 'builtin-landscape-16-9' : 'default-portrait-9-16')));
   const subtitles = buildSubtitleTrack(input.scenes);
   const title = safeDraftName(input.title || input.cover.title || 'storybound-draft');
   const draftDir = join(input.draftRootDir, uniqueDraftFolderName(title));
@@ -72,6 +73,9 @@ export async function writeJianyingDraft(input: WriteJianyingDraftInput, options
   if (input.bgm?.path) {
     await assertReadableFile(input.bgm.path, 'BGM asset');
     sourceBgm = input.bgm;
+  }
+  if (template.canvas.backgroundImage.trim()) {
+    await assertReadableFile(template.canvas.backgroundImage, 'background image');
   }
 
   const subtitlesFile = join(input.workDir, 'subtitles.srt');
@@ -161,11 +165,15 @@ function createBridgePayload(input: {
     canvas: {
       width: input.template.canvas.width,
       height: input.template.canvas.height,
+      backgroundColor: input.template.canvas.backgroundColor,
+      backgroundImage: input.template.canvas.backgroundImage,
     },
     imageArea: {
+      ratio: input.template.image.ratio,
       top: input.template.image.top,
       height: input.template.image.height,
       fit: input.template.image.fit,
+      animation: input.template.image.animation,
     },
     caption: {
       fontSize: input.template.caption.fontSize,

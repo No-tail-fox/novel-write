@@ -17,7 +17,9 @@ import {
   LayoutTemplate,
   ListChecks,
   Loader2,
+  Maximize2,
   Mic2,
+  Minus,
   Palette,
   Play,
   Plus,
@@ -28,6 +30,7 @@ import {
   Sparkles,
   Upload,
   Wand2,
+  X,
   XCircle,
 } from 'lucide-react';
 import type {
@@ -40,9 +43,12 @@ import type {
   ConfigTestTarget,
   CreateTaskInput,
   DraftTemplate,
+  ImageLabGenerateInput,
+  ImageProviderProfile,
   ImageLabRecord,
   PausePoint,
   PromptTemplate,
+  PromptTemplateType,
   ProviderModel,
   RewriteIntensity,
   ShellView,
@@ -51,9 +57,41 @@ import type {
   TaskEvent,
   TaskMode,
   TaskStatus,
+  TtsProviderProfile,
   UiPreferences,
+  VolcengineSpeaker,
 } from './shared/types';
 import { configTargetStatus, normalizeAppConfig, validateConfigTarget } from './shared/config-utils';
+import {
+  activeImageProfileId,
+  activeLlmProfileId,
+  activeTtsProfileId,
+  addImageProfile,
+  addLlmProfile,
+  addTtsProfile,
+  buildConfigForSelectedProfileTest,
+  copyImageProfile,
+  copyLlmProfile,
+  copyTtsProfile,
+  editableLlmProfileProvider,
+  enableImageProfile,
+  enableLlmProfile,
+  enableTtsProfile,
+  imageProfileCustomImage,
+  imageProfileGptImage,
+  imageProfileJimeng,
+  normalizeEditableConfigProviders,
+  normalizedImageProfiles,
+  normalizedTtsProfiles,
+  removeImageProfile,
+  removeLlmProfile,
+  removeTtsProfile,
+  saveImageProfile,
+  saveLlmProfile,
+  saveTtsProfile,
+  ttsProfileMinimax,
+  ttsProfileVolcengine,
+} from './shared/provider-profile-utils';
 import { listOpenAiCompatibleModels } from './shared/llm-provider';
 import {
   defaultAccount,
@@ -66,6 +104,7 @@ import {
   defaultUiPreferences,
 } from './shared/config';
 import { draftTemplates as builtinDraftTemplates, imageAnimations, normalizeDraftTemplate } from './shared/templates';
+import { selectTaskPromptTemplate } from './shared/prompt-templates';
 import './styles.css';
 
 const sampleText =
@@ -127,6 +166,13 @@ const styleOptions = [
 
 const ratioOptions = ['21:9', '16:9', '3:2', '4:3', '1:1', '3:4', '2:3', '9:16'];
 const voiceOptions = ['东方浩然', '灿博小叔', '温柔小雅', '爽快思思', '更多音色...'];
+const volcengineVoicePresets = [
+  ['Vivi 2.0', 'zh_female_vv_uranus_bigtts'],
+  ['云舟 2.0', 'zh_male_m191_uranus_bigtts'],
+  ['爽快思思 2.0', 'zh_female_shuangkuaisisi_uranus_bigtts'],
+  ['儒雅青年 2.0', 'zh_male_ruyaqingnian_uranus_bigtts'],
+  ['悬疑解说 2.0', 'zh_male_xuanyijieshuo_uranus_bigtts'],
+] as const;
 const pauseOptions: Array<[PausePoint, string]> = [
   ['none', '不暂停'],
   ['critical', '关键节点'],
@@ -143,6 +189,8 @@ const povOptions = [
   ['first-person', '第一人称'],
   ['third-person', '第三人称'],
 ] as const;
+const promptTemplateTypeOptions: Array<PromptTemplateType | 'all'> = ['all', 'task', 'review', 'rewrite', 'cover', 'storyboard', 'image-prompt'];
+const promptTemplateVariables = ['inputText', 'sourceContext', 'reviewedText', 'rewrittenCopy', 'scenesJson', 'track', 'style', 'ratio', 'extraRequirements', 'taskTemplateContent'];
 
 const pipelineSteps = [
   { index: 0, title: '文案预审', hint: '清理广告 / 敏感词', agent: 'Reviewer' },
@@ -216,6 +264,18 @@ function makeFallbackApi(setState: (state: AppState) => void): StoryboundApi {
     async listProviderModels(request) {
       return listOpenAiCompatibleModels(request);
     },
+    async listVolcengineSpeakers() {
+      const speakers = volcengineVoicePresets.map(([name, voiceType]) => ({ voiceType, name }));
+      return {
+        status: 'warn',
+        detail: '浏览器预览无法调用火山 OpenAPI，已展示本地预设音色。请在 Electron 桌面端加载全部音色。',
+        latencyMs: 0,
+        endpoint: 'https://open.volcengineapi.com/?Action=ListSpeakers&Version=2025-05-20',
+        speakers,
+        total: speakers.length,
+        requestId: null,
+      };
+    },
     async testAppConfig(target, config) {
       return validateConfigTarget(target, config);
     },
@@ -245,6 +305,26 @@ function makeFallbackApi(setState: (state: AppState) => void): StoryboundApi {
       const templates = exists ? state.draftTemplates.map((item) => (item.id === template.id ? template : item)) : [template, ...state.draftTemplates];
       return persist({ ...state, draftTemplates: templates });
     },
+    async generateImageLab(input: ImageLabGenerateInput) {
+      const state = read();
+      const now = new Date().toISOString();
+      const record: ImageLabRecord = {
+        id: input.id ?? crypto.randomUUID(),
+        prompt: input.prompt,
+        ratio: input.ratio,
+        style: input.style,
+        provider: state.config.imageProvider,
+        imagePath: '',
+        status: 'failed',
+        errorMessage: '浏览器预览无法调用真实生图模型，请在 Electron 桌面端使用。',
+        resolution: input.resolution ?? activeImageResolution(state.config),
+        referenceImagePath: input.referenceImagePath ?? '',
+        upstreamTaskId: input.upstreamTaskId ?? null,
+        createdAt: input.createdAt ?? now,
+        finishedAt: now,
+      };
+      return persist({ ...state, imageLabRecords: [record, ...state.imageLabRecords] });
+    },
     async addImageLabRecord(input: Partial<ImageLabRecord> & Pick<ImageLabRecord, 'prompt' | 'ratio' | 'style' | 'provider'>) {
       const state = read();
       const now = new Date().toISOString();
@@ -255,7 +335,7 @@ function makeFallbackApi(setState: (state: AppState) => void): StoryboundApi {
         style: input.style,
         provider: input.provider,
         imagePath: input.imagePath ?? '',
-        status: input.status ?? 'mock',
+        status: input.status ?? 'failed',
         errorMessage: input.errorMessage ?? '',
         resolution: input.resolution ?? '2K',
         referenceImagePath: input.referenceImagePath ?? '',
@@ -349,19 +429,23 @@ function makeFallbackApi(setState: (state: AppState) => void): StoryboundApi {
     async readAssetDataUrl() {
       throw new Error('浏览器预览不能读取本地图片缩略图，请在 Electron 应用中查看。');
     },
+    async selectLocalImage() {
+      return null;
+    },
     async runDiagnostics() {
       const state = read();
       return {
         generatedAt: new Date().toISOString(),
         checks: [
           { id: 'llm-config', label: 'LLM 配置完整性', status: state.config.llm.apiKey ? 'pass' : 'warn', detail: state.config.llm.model },
-          { id: 'tts-config', label: 'TTS APP ID & ACCESS TOKEN 已填写', status: state.config.tts.accessKey ? 'pass' : 'warn', detail: state.config.tts.provider },
+          { id: 'tts-config', label: 'TTS 凭证已填写', status: state.config.tts.volcengine.apiKey || state.config.tts.accessKey ? 'pass' : 'warn', detail: state.config.tts.provider },
           { id: 'jianying-sidecar', label: '剪映草稿目录', status: state.config.jianying.draftPath ? 'pass' : 'warn', detail: state.config.jianying.draftPath },
           { id: 'account-state', label: '账户状态', status: 'pass', detail: state.activation.message },
         ],
       };
     },
     openPath: async () => undefined,
+    windowControl: async () => undefined,
     onTaskEvent: () => () => undefined,
   };
 }
@@ -442,14 +526,17 @@ function App() {
           <div className="app-mark">S</div>
           <strong>Storybound</strong>
         </div>
-        <button className="activation-link" onClick={() => navigate('activation')}>获取激活码</button>
-      </div>
-
-      <div className="trial-strip">
-        <span className="danger-dot" />
-        <strong>试用已用尽</strong>
-        <span>|</span>
-        <span>旧任务可继续执行，激活后可新建任务。本地复刻版不做真实扣费阻断。</span>
+        <div className="window-controls" aria-label="窗体控制">
+          <button className="window-control-button" type="button" aria-label="最小化" onClick={() => api.windowControl('minimize')}>
+            <Minus size={14} />
+          </button>
+          <button className="window-control-button" type="button" aria-label="最大化" onClick={() => api.windowControl('toggle-maximize')}>
+            <Maximize2 size={14} />
+          </button>
+          <button className="window-control-button close" type="button" aria-label="关闭" onClick={() => api.windowControl('close')}>
+            <X size={14} />
+          </button>
+        </div>
       </div>
 
       <div className="shell-grid">
@@ -551,6 +638,7 @@ function NewTaskPage({
   const [style, setStyle] = useState('photo-real');
   const [ratio, setRatio] = useState('9:16');
   const [templateId, setTemplateId] = useState(state.draftTemplates[0]?.id ?? 'default-portrait-9-16');
+  const [promptTemplateOverrideId, setPromptTemplateOverrideId] = useState('');
   const [speaker, setSpeaker] = useState(state.config.tts.speaker);
   const [bgmId, setBgmId] = useState('__builtin__');
   const [referenceImagePath, setReferenceImagePath] = useState('');
@@ -572,6 +660,8 @@ function NewTaskPage({
 
   const searchSections = (searchContext?.sections ?? []).slice(0, 10);
   const selectedSources = searchSections.filter((source, index) => selectedSearchSourceIds.includes(sourceKey(source, index)));
+  const taskPromptTemplates = state.promptTemplates.filter((template) => template.type === 'task');
+  const resolvedPromptTemplate = resolvePromptTemplateForTrack(state.promptTemplates, track, promptTemplateOverrideId || null);
 
   async function searchWebSources() {
     const keyword = aiKeyword.trim();
@@ -647,6 +737,8 @@ function NewTaskPage({
         keepPromotion,
         ttsProvider: state.config.tts.provider,
         ttsSpeed,
+        promptTemplateId: resolvedPromptTemplate?.id ?? null,
+        promptTemplateType: 'task',
       });
       applyState(next);
       const createdTask = next.tasks[0];
@@ -687,7 +779,7 @@ function NewTaskPage({
             <span className="field-title">数据源</span>
             <label className="check-row">
               <input type="checkbox" checked={aiSources.includes('web')} onChange={() => setAiSources(toggleArray(aiSources, 'web'))} />
-              全网搜索 <small>从 Bing + 搜狗抓取相关文章作为参考素材</small>
+              全网搜索 <small>从 Bing + 搜狗 + 百度 + 360 搜索，补充百科、知乎、百家号、头条正文</small>
             </label>
             <label className="check-row">
               <input type="checkbox" checked={aiSources.includes('builtin-knowledge')} onChange={() => setAiSources(toggleArray(aiSources, 'builtin-knowledge'))} />
@@ -801,6 +893,16 @@ function NewTaskPage({
             <Segmented label="暂停确认" value={pausePoint} options={pauseOptions.map(([id]) => id)} labels={pauseOptions.map(([, label]) => label)} onChange={(value) => setPausePoint(value as PausePoint)} />
             <Segmented label="改写强度" value={rewriteIntensity} options={rewriteOptions.map(([id]) => id)} labels={rewriteOptions.map(([, label]) => label)} onChange={(value) => setRewriteIntensity(value as RewriteIntensity)} />
             <Segmented label="叙事视角" value={narrativePov} options={povOptions.map(([id]) => id)} labels={povOptions.map(([, label]) => label)} onChange={(value) => setNarrativePov(value as Task['narrativePov'])} />
+            <Field label="提示词模板" hint={resolvedPromptTemplate ? `当前：${resolvedPromptTemplate.name}` : '自动匹配赛道模板'}>
+              <select className="prompt-template-selector" value={promptTemplateOverrideId} onChange={(event) => setPromptTemplateOverrideId(event.target.value)}>
+                <option value="">自动匹配赛道模板</option>
+                {taskPromptTemplates.map((template) => (
+                  <option key={template.id} value={template.id}>
+                    {template.baseTrack ? `${template.name} · ${template.baseTrack}` : template.name}
+                  </option>
+                ))}
+              </select>
+            </Field>
             <label className="toggle-row">
               <input type="checkbox" checked={keepPromotion} onChange={(event) => setKeepPromotion(event.target.checked)} />
               带货模式 <small>改写时删除带货段落</small>
@@ -860,7 +962,7 @@ function QueuePage({
     applyState(await api.retryTask(task.id));
   }
   return (
-    <div className="two-column">
+    <div className="queue-layout">
       <section className="panel">
         <div className="panel-title-row">
           <div>
@@ -1531,19 +1633,27 @@ function ImageLabPage({ api, state, applyState }: { api: StoryboundApi; state: A
   const [style, setStyle] = useState('photo-real');
   const [resolution, setResolution] = useState<'1K' | '2K' | '4K'>('2K');
   const [referenceImagePath, setReferenceImagePath] = useState('');
+  const [generating, setGenerating] = useState(false);
+  const [submitError, setSubmitError] = useState('');
 
   async function addRecord() {
-    const next = await api.addImageLabRecord({
-      prompt,
-      ratio,
-      style,
-      provider: state.config.imageProvider,
-      imagePath: '',
-      resolution,
-      referenceImagePath,
-      status: state.config.image.apiKey ? 'generated' : 'mock',
-    });
-    applyState(next);
+    if (generating) return;
+    setGenerating(true);
+    setSubmitError('');
+    try {
+      const next = await api.generateImageLab({
+        prompt,
+        ratio,
+        style,
+        resolution,
+        referenceImagePath: tab === 'reference' ? referenceImagePath : '',
+      });
+      applyState(next);
+    } catch (error) {
+      setSubmitError(error instanceof Error ? error.message : String(error));
+    } finally {
+      setGenerating(false);
+    }
   }
 
   return (
@@ -1561,22 +1671,28 @@ function ImageLabPage({ api, state, applyState }: { api: StoryboundApi; state: A
         <OptionCloud title="风格" options={styleOptions} value={style} onChange={setStyle} />
         <Segmented label="比例" value={ratio} options={ratioOptions} onChange={setRatio} />
         <Segmented label="分辨率" value={resolution} options={['1K', '2K', '4K']} onChange={(value) => setResolution(value as '1K' | '2K' | '4K')} />
-        <div className="provider-line">Provider：{state.config.imageProvider} · 预计消耗：本地模拟</div>
-        <button className="primary-action" onClick={addRecord}>
-          <ImageIcon size={17} />
-          开始生成
+        <div className="provider-line">Provider：{state.config.imageProvider} · {resolution} · {ratio}</div>
+        {submitError ? <ErrorSummaryButton compact title="画图实验室提交失败" fullMessage={submitError} /> : null}
+        <button className="primary-action" onClick={addRecord} disabled={generating || !prompt.trim()}>
+          {generating ? <Loader2 className="spin" size={17} /> : <ImageIcon size={17} />}
+          {generating ? '生成中' : '开始生成'}
         </button>
       </section>
       <section className="image-grid-panel">
         {state.imageLabRecords.length === 0 ? <EmptyState title="暂无画图记录" /> : null}
         {state.imageLabRecords.map((record) => (
-          <article className="image-record" key={record.id}>
-            <div className="mock-image">
-              <ImageIcon size={28} />
-              <span>{record.ratio} · {record.resolution}</span>
+          <article className={`image-record ${record.status}`} key={record.id}>
+            <div className="lab-image-preview">
+              {record.imagePath ? <img src={toLocalImageUrl(record.imagePath)} alt={record.prompt} loading="lazy" /> : (
+                <>
+                  <ImageIcon size={28} />
+                  <span>{record.status === 'failed' ? '生成失败' : '等待图片'}</span>
+                </>
+              )}
             </div>
             <strong>{record.prompt}</strong>
-            <small>{record.provider} · {formatDate(record.createdAt)}</small>
+            <small>{record.provider} · {record.ratio} · {record.resolution} · {formatDate(record.createdAt)}</small>
+            {record.errorMessage ? <ErrorSummaryButton compact title="生图失败" fullMessage={record.errorMessage} /> : null}
           </article>
         ))}
       </section>
@@ -1586,28 +1702,77 @@ function ImageLabPage({ api, state, applyState }: { api: StoryboundApi; state: A
 
 function PromptTemplatesPage({ api, state, applyState }: { api: StoryboundApi; state: AppState; applyState: (state: AppState) => void }) {
   const [selectedId, setSelectedId] = useState(state.promptTemplates[0]?.id ?? '');
-  const selected = state.promptTemplates.find((template) => template.id === selectedId) ?? state.promptTemplates[0];
+  const [templateTypeFilter, setTemplateTypeFilter] = useState<PromptTemplateType | 'all'>('all');
+  const [templateTrackFilter, setTemplateTrackFilter] = useState('all');
+  const filteredTemplates = state.promptTemplates.filter((template) => {
+    const typeMatches = templateTypeFilter === 'all' || template.type === templateTypeFilter;
+    const trackMatches = templateTrackFilter === 'all' || template.baseTrack === templateTrackFilter;
+    return typeMatches && trackMatches;
+  });
+  const selected = state.promptTemplates.find((template) => template.id === selectedId) ?? filteredTemplates[0] ?? state.promptTemplates[0];
   const [draft, setDraft] = useState<PromptTemplate | null>(selected ? { ...selected } : null);
   const [importJson, setImportJson] = useState('');
 
   useEffect(() => setDraft(selected ? { ...selected } : null), [selected?.id]);
 
-  async function save() {
+  async function savePromptTemplateDraft() {
     if (!draft) return;
-    applyState(await api.savePromptTemplate(draft));
+    const templateToSave: PromptTemplate = draft.isBuiltin
+      ? {
+          ...draft,
+          id: crypto.randomUUID(),
+          name: `${draft.name} 自定义`,
+          isBuiltin: false,
+          origin: 'custom',
+          baseTemplateId: draft.id,
+          updatedAt: new Date().toISOString(),
+        }
+      : { ...draft, updatedAt: new Date().toISOString() };
+    applyState(await api.savePromptTemplate(templateToSave));
+    setSelectedId(templateToSave.id);
   }
 
   async function duplicate() {
     if (!draft) return;
-    const copy = { ...draft, id: crypto.randomUUID(), name: `${draft.name} 副本`, isBuiltin: false, origin: 'custom' as const };
+    const copy = { ...draft, id: crypto.randomUUID(), name: `${draft.name} 副本`, isBuiltin: false, origin: 'custom' as const, baseTemplateId: draft.baseTemplateId ?? draft.id };
     applyState(await api.savePromptTemplate(copy));
     setSelectedId(copy.id);
+  }
+
+  async function createPromptTemplate() {
+    const template: PromptTemplate = {
+      id: crypto.randomUUID(),
+      name: '新建模板',
+      type: 'task',
+      description: '本地自定义提示词模板',
+      content: '请基于 {{inputText}} 生成适合 {{track}} 的短视频内容。',
+      isBuiltin: false,
+      updatedAt: new Date().toISOString(),
+      baseTrack: 'general-story',
+      defaultStyles: ['写实彩色'],
+      characterPolicy: 'follow-template',
+      step3SkeletonModules: ['防台词文字'],
+      referenceKind: 'none',
+      origin: 'custom',
+      marketTags: [],
+    };
+    applyState(await api.savePromptTemplate(template));
+    setSelectedId(template.id);
+  }
+
+  function exportPromptTemplateJson() {
+    if (!draft) return;
+    const json = JSON.stringify(draft, null, 2);
+    setImportJson(json);
+    void navigator.clipboard?.writeText(json).catch(() => undefined);
   }
 
   async function importTemplate() {
     try {
       const imported = JSON.parse(importJson) as PromptTemplate;
-      applyState(await api.savePromptTemplate({ ...imported, id: imported.id || crypto.randomUUID(), isBuiltin: false, updatedAt: new Date().toISOString() }));
+      const next = { ...imported, id: imported.id || crypto.randomUUID(), isBuiltin: false, origin: 'custom' as const, updatedAt: new Date().toISOString() };
+      applyState(await api.savePromptTemplate(next));
+      setSelectedId(next.id);
       setImportJson('');
     } catch {
       setImportJson('{"name":"自定义模板","type":"task","description":"请补充","content":"请补充提示词"}');
@@ -1619,12 +1784,28 @@ function PromptTemplatesPage({ api, state, applyState }: { api: StoryboundApi; s
       <section className="template-list">
         <div className="panel-title-row compact">
           <h2>系统模板</h2>
-          <button className="ghost-action" onClick={async () => applyState(await api.resetPromptTemplates())}>
-            <RotateCcw size={14} />
-            重置
-          </button>
+          <div className="button-row">
+            <button className="ghost-action" onClick={createPromptTemplate}><Plus size={14} />新建模板</button>
+            <button className="ghost-action" onClick={async () => applyState(await api.resetPromptTemplates())}>
+              <RotateCcw size={14} />
+              重置
+            </button>
+          </div>
         </div>
-        {state.promptTemplates.map((template) => (
+        <div className="template-filter-row">
+          <Field label="类型筛选">
+            <select value={templateTypeFilter} onChange={(event) => setTemplateTypeFilter(event.target.value as PromptTemplateType | 'all')}>
+              {promptTemplateTypeOptions.map((type) => <option key={type} value={type}>{type === 'all' ? '全部类型' : type}</option>)}
+            </select>
+          </Field>
+          <Field label="赛道筛选">
+            <select value={templateTrackFilter} onChange={(event) => setTemplateTrackFilter(event.target.value)}>
+              <option value="all">全部赛道</option>
+              {contentTracks.map(([id, label]) => <option key={id} value={id}>{label}</option>)}
+            </select>
+          </Field>
+        </div>
+        {filteredTemplates.map((template) => (
           <button key={template.id} className={selectedId === template.id ? 'template-card active' : 'template-card'} onClick={() => setSelectedId(template.id)}>
             <Sparkles size={16} />
             <strong>{template.name}</strong>
@@ -1643,11 +1824,15 @@ function PromptTemplatesPage({ api, state, applyState }: { api: StoryboundApi; s
                   <Copy size={15} />
                   克隆
                 </button>
+                <button className="ghost-action" onClick={exportPromptTemplateJson}>
+                  <FileJson size={15} />
+                  导出 JSON
+                </button>
                 <button className="ghost-action" onClick={importTemplate}>
                   <FileJson size={15} />
                   导入 JSON
                 </button>
-                <button className="primary-action slim" onClick={save}>
+                <button className="primary-action slim" onClick={savePromptTemplateDraft}>
                   <Save size={15} />
                   保存
                 </button>
@@ -1660,18 +1845,49 @@ function PromptTemplatesPage({ api, state, applyState }: { api: StoryboundApi; s
               <Field label="描述（一句话说明这个模板的特点）">
                 <input value={draft.description} onChange={(event) => setDraft({ ...draft, description: event.target.value })} />
               </Field>
+              <Field label="模板类型">
+                <select value={draft.type} onChange={(event) => setDraft({ ...draft, type: event.target.value as PromptTemplateType })}>
+                  {promptTemplateTypeOptions.filter((type) => type !== 'all').map((type) => <option key={type} value={type}>{type}</option>)}
+                </select>
+              </Field>
+              <Field label="绑定赛道">
+                <select value={draft.baseTrack ?? ''} onChange={(event) => setDraft({ ...draft, baseTrack: event.target.value || undefined })}>
+                  <option value="">无</option>
+                  {contentTracks.map(([id, label]) => <option key={id} value={id}>{label}</option>)}
+                </select>
+              </Field>
             </div>
+            {draft.isBuiltin ? <span className="local-note">首次保存将创建自定义副本，原内置模板保持不变。</span> : null}
+            <span className="field-title">变量</span>
+            <div className="variable-chip-row">{promptTemplateVariables.map((item) => <button className="chip" type="button" key={item} onClick={() => setDraft({ ...draft, content: `${draft.content}${draft.content.endsWith(' ') || draft.content.endsWith('\n') ? '' : ' '}{{${item}}}` })}>{`{{${item}}}`}</button>)}</div>
             <span className="field-title">默认画风</span>
-            <div className="chip-row">{(draft.defaultStyles ?? []).map((item) => <span className="chip active" key={item}>{item}</span>)}</div>
+            <Field label="默认画风">
+              <input value={(draft.defaultStyles ?? []).join('、')} onChange={(event) => setDraft({ ...draft, defaultStyles: splitListInput(event.target.value) })} />
+            </Field>
             <span className="field-title">主角档案</span>
             <div className="chip-row">
-              <span className="chip active">{draft.characterPolicy === 'force-extract' ? '强制提取' : draft.characterPolicy === 'force-skip' ? '强制跳过' : '跟随赛道'}</span>
-              <span className="hint-text">Step 3 会先抽出主角身份/外貌/年代，注入到每句 desc_prompt。</span>
+              {(['follow-template', 'force-extract', 'force-skip'] as const).map((policy) => (
+                <button className={draft.characterPolicy === policy ? 'chip active' : 'chip'} type="button" key={policy} onClick={() => setDraft({ ...draft, characterPolicy: policy })}>
+                  {policy === 'force-extract' ? '强制提取' : policy === 'force-skip' ? '强制跳过' : '跟随赛道'}
+                </button>
+              ))}
             </div>
-            <span className="field-title">Step 3 骨架模块</span>
-            <div className="chip-row">{(draft.step3SkeletonModules ?? []).map((item) => <span className="chip" key={item}>{item}</span>)}</div>
-            <span className="field-title">参考图类型</span>
-            <div className="chip-row"><span className="chip active">{draft.referenceKind === 'product' ? '产品' : draft.referenceKind === 'face' ? '人脸' : '无'}</span><span className="chip">市场模拟</span></div>
+            <Field label="Step 3 骨架模块">
+              <input value={(draft.step3SkeletonModules ?? []).join('、')} onChange={(event) => setDraft({ ...draft, step3SkeletonModules: splitListInput(event.target.value) })} />
+            </Field>
+            <Field label="参考图类型">
+              <select value={draft.referenceKind ?? 'none'} onChange={(event) => setDraft({ ...draft, referenceKind: event.target.value as PromptTemplate['referenceKind'] })}>
+                <option value="none">无</option>
+                <option value="face">人脸</option>
+                <option value="product">产品</option>
+              </select>
+            </Field>
+            <Field label="标签">
+              <input value={(draft.marketTags ?? []).join('、')} onChange={(event) => setDraft({ ...draft, marketTags: splitListInput(event.target.value) })} />
+            </Field>
+            <Field label="baseTemplateId">
+              <input value={draft.baseTemplateId ?? ''} onChange={(event) => setDraft({ ...draft, baseTemplateId: event.target.value || null })} />
+            </Field>
             <Field label="提示词内容">
               <textarea className="template-textarea" value={draft.content} onChange={(event) => setDraft({ ...draft, content: event.target.value })} />
             </Field>
@@ -1721,6 +1937,12 @@ function DraftTemplatesPage({ api, state, applyState }: { api: StoryboundApi; st
     setEditingId(template.id);
   }
 
+  async function selectDraftBackgroundImage() {
+    const imagePath = await api.selectLocalImage();
+    if (!imagePath) return;
+    setDraft((current) => (current ? { ...current, canvas: { ...current.canvas, backgroundImage: imagePath } } : current));
+  }
+
   if (editingId && draft) {
     return (
       <div className="draft-template-page">
@@ -1747,12 +1969,24 @@ function DraftTemplatesPage({ api, state, applyState }: { api: StoryboundApi; st
 
           <section className="panel draft-controls">
             <Accordion title="画布设置" open>
-              <Segmented label="比例" value={draft.canvas.ratio} options={['9:16', '4:3', '1:1', '16:9']} onChange={(value) => setDraft({ ...draft, canvas: { ...draft.canvas, ratio: value } })} />
-              <Field label="底色"><input value={draft.canvas.backgroundColor} onChange={(event) => setDraft({ ...draft, canvas: { ...draft.canvas, backgroundColor: event.target.value } })} /></Field>
-              <Field label="背景图"><input value={draft.canvas.backgroundImage} onChange={(event) => setDraft({ ...draft, canvas: { ...draft.canvas, backgroundImage: event.target.value } })} /></Field>
+              <Segmented label="比例" value={draft.canvas.ratio} options={['9:16', '4:3', '1:1', '16:9']} onChange={(value) => setDraft(applyDraftCanvasRatio(draft, value))} />
+              <Field label="尺寸"><input value={`${draft.canvas.width}x${draft.canvas.height}`} readOnly /></Field>
+              <Field label="底色">
+                <div className="draft-background-field with-swatch">
+                  <input className="draft-background-swatch" type="color" value={normalizeColorInput(draft.canvas.backgroundColor)} onChange={(event) => setDraft({ ...draft, canvas: { ...draft.canvas, backgroundColor: event.target.value } })} />
+                  <input value={draft.canvas.backgroundColor} onChange={(event) => setDraft({ ...draft, canvas: { ...draft.canvas, backgroundColor: event.target.value } })} />
+                </div>
+              </Field>
+              <Field label="背景图">
+                <div className="draft-background-field">
+                  <input value={draft.canvas.backgroundImage} onChange={(event) => setDraft({ ...draft, canvas: { ...draft.canvas, backgroundImage: event.target.value } })} placeholder="留空 = 无背景图" />
+                  <button className="ghost-action" type="button" onClick={selectDraftBackgroundImage}><FolderOpen size={14} />浏览</button>
+                  <button className="ghost-action" type="button" onClick={() => setDraft({ ...draft, canvas: { ...draft.canvas, backgroundImage: '' } })}>清空</button>
+                </div>
+              </Field>
             </Accordion>
             <Accordion title="图片区域" open>
-              <Segmented label="图片比例" value={draft.image.ratio} options={['9:16', '4:3', '16:9']} onChange={(value) => setDraft({ ...draft, image: { ...draft.image, ratio: value } })} />
+              <Segmented label="图片比例" value={draft.image.ratio} options={['9:16', '4:3', '16:9']} onChange={(value) => setDraft(applyDraftImageRatio(draft, value))} />
               <Segmented label="适配" value={draft.image.fit} options={['cover', 'contain']} onChange={(value) => setDraft({ ...draft, image: { ...draft.image, fit: value as 'cover' | 'contain' } })} />
               <Field label="坐标"><input value={`top ${draft.image.top.toFixed(2)}, height ${draft.image.height.toFixed(2)}`} readOnly /></Field>
               <Field label="垂直位置"><input type="range" min="-1" max="1" step="0.01" value={draft.image.top} onChange={(event) => setDraft({ ...draft, image: { ...draft.image, top: Number(event.target.value) } })} /></Field>
@@ -1823,8 +2057,10 @@ function DraftTemplatePreview({ template, compact = false }: { template: DraftTe
   const subtitleSize = compact ? Math.max(7, template.subtitle.fontSize * 0.28) : template.subtitle.fontSize;
   const captionSize = compact ? Math.max(7, template.caption.fontSize * 0.42) : template.caption.fontSize;
   return (
-    <div className={compact ? 'draft-preview-mini' : 'draft-preview-large'} style={{ aspectRatio: `${template.canvas.width} / ${template.canvas.height}`, background: template.canvas.backgroundColor }}>
-      <div className="draft-image" style={{ top: `${template.image.top * 100}%`, height: `${template.image.height * 100}%` }} />
+    <div className={compact ? 'draft-preview-mini' : 'draft-preview-large'} style={draftTemplateCanvasStyle(template)}>
+      <div className="draft-image" style={{ top: `${template.image.top * 100}%`, height: `${template.image.height * 100}%` }}>
+        <div className="draft-image-media" style={draftImageMediaStyle(template)} />
+      </div>
       {template.title.visible ? <DraftCanvasText className="draft-title" x={template.title.x} y={template.title.y} style={{ color: template.title.color, fontSize: titleSize, fontWeight: 800 }}>{template.title.text}</DraftCanvasText> : null}
       {template.subtitle.visible ? <DraftCanvasText className="draft-subtitle" x={template.subtitle.x} y={template.subtitle.y} style={{ color: template.subtitle.color, fontSize: subtitleSize }}>副标题示例文字</DraftCanvasText> : null}
       {template.caption.visible ? <DraftCanvasText className="draft-caption" x={template.caption.x} y={template.caption.y} style={{ color: template.caption.color, fontSize: captionSize }}>字幕预览</DraftCanvasText> : null}
@@ -1881,7 +2117,7 @@ function EditableDraftCanvas({
     <div
       ref={canvasRef}
       className="editable-draft-canvas draft-preview-large"
-      style={{ aspectRatio: `${template.canvas.width} / ${template.canvas.height}`, background: template.canvas.backgroundColor }}
+      style={draftTemplateCanvasStyle(template)}
       onPointerMove={handlePointerMove}
       onPointerUp={stopDrag}
       onPointerCancel={stopDrag}
@@ -1892,6 +2128,7 @@ function EditableDraftCanvas({
         style={{ top: `${template.image.top * 100}%`, height: `${template.image.height * 100}%` }}
         onPointerDown={(event) => handleDraftCanvasPointerDown('image', event)}
       >
+        <div className="draft-image-media" style={draftImageMediaStyle(template)} />
         <span>图片区域</span>
         <i className="draft-layer-handle" />
       </div>
@@ -1961,6 +2198,13 @@ function SettingsPage({ api, state, applyState }: { api: StoryboundApi; state: A
   const [modelLists, setModelLists] = useState<Record<ModelListKey, ProviderModel[]>>({ llm: [], 'gpt-image': [], 'custom-image': [] });
   const [modelListStatus, setModelListStatus] = useState<Partial<Record<ModelListKey, string>>>({});
   const [loadingModelList, setLoadingModelList] = useState<ModelListKey | null>(null);
+  const [volcengineSpeakers, setVolcengineSpeakers] = useState<VolcengineSpeaker[]>([]);
+  const [volcengineSpeakerStatus, setVolcengineSpeakerStatus] = useState('');
+  const [loadingVolcengineSpeakers, setLoadingVolcengineSpeakers] = useState(false);
+  const [savingConfig, setSavingConfig] = useState(false);
+  const [selectedLlmProfileId, setSelectedLlmProfileId] = useState(() => activeLlmProfileId(state.config));
+  const [selectedImageProfileId, setSelectedImageProfileId] = useState(() => activeImageProfileId(state.config));
+  const [selectedTtsProfileId, setSelectedTtsProfileId] = useState(() => activeTtsProfileId(state.config));
   useEffect(() => {
     if (settingsDirty) return;
     const nextSignature = settingsConfigSignature(state.config);
@@ -1978,6 +2222,21 @@ function SettingsPage({ api, state, applyState }: { api: StoryboundApi; state: A
     setSettingsDirty(false);
     setLastAppliedConfigSignature(settingsConfigSignature(normalized));
   }
+  async function commitAndApplySettingsDraft(nextDraft: AppConfig, successMessage = '配置已保存') {
+    setSavingConfig(true);
+    try {
+      const next = await api.saveConfig(normalizeEditableConfigProviders(nextDraft));
+      commitSettingsDraft(next.config);
+      applyState(next);
+      setConfigTestResult(`[pass] ${successMessage}`);
+      return next.config;
+    } catch (error) {
+      setConfigTestResult(`[fail] ${error instanceof Error ? error.message : String(error)}`);
+      throw error;
+    } finally {
+      setSavingConfig(false);
+    }
+  }
   function clearProviderModels(key: ModelListKey) {
     setModelLists((current) => ({ ...current, [key]: [] }));
     setModelListStatus((current) => {
@@ -1987,24 +2246,46 @@ function SettingsPage({ api, state, applyState }: { api: StoryboundApi; state: A
     });
   }
   async function save() {
-    const next = await api.saveConfig(draft);
-    commitSettingsDraft(next.config);
-    applyState(next);
+    await commitAndApplySettingsDraft(draft);
+  }
+  async function activateLlmProfile(id: string) {
+    await commitAndApplySettingsDraft(enableLlmProfile(draft, id), '已启用 LLM 配置档案');
+  }
+  async function activateImageProfile(id: string) {
+    await commitAndApplySettingsDraft(enableImageProfile(draft, id), '已启用绘图配置档案');
+  }
+  async function activateTtsProfile(id: string) {
+    await commitAndApplySettingsDraft(enableTtsProfile(draft, id), '已启用 TTS 配置档案');
   }
   async function testCurrentConfig() {
     const target: ConfigTestTarget = section === 'llm' || section === 'image' || section === 'tts' || section === 'jianying' || section === 'creative' ? section : 'llm';
     setTestingConfig(true);
-    setConfigTestResult('正在测试当前配置...');
+    setSavingConfig(true);
+    setConfigTestResult('正在保存并测试当前配置...');
     try {
-      const result = await api.testAppConfig(target, draft);
+      const next = await api.saveConfig(normalizeEditableConfigProviders(draft));
+      commitSettingsDraft(next.config);
+      applyState(next);
+      const testConfig = buildConfigForSelectedProfileTest(next.config, target, {
+        llm: selectedLlmProfileId,
+        image: selectedImageProfileId,
+        tts: selectedTtsProfileId,
+      });
+      const result = await api.testAppConfig(target, testConfig);
       setConfigTestResult(`[${result.status}] ${result.detail}`);
     } catch (error) {
       setConfigTestResult(`[fail] ${error instanceof Error ? error.message : String(error)}`);
     } finally {
+      setSavingConfig(false);
       setTestingConfig(false);
     }
   }
-  async function refreshProviderModels(key: ModelListKey, request: { baseUrl: string; apiKey: string }, currentModel: string) {
+  async function refreshProviderModels(
+    key: ModelListKey,
+    request: { baseUrl: string; apiKey: string },
+    currentModel: string,
+    applyModel?: (config: AppConfig, model: string) => AppConfig,
+  ) {
     if (key === 'custom-image' && !request.baseUrl.trim()) {
       setModelListStatus((current) => ({ ...current, [key]: '[fail] Base URL is required before fetching models.' }));
       return;
@@ -2017,7 +2298,7 @@ function SettingsPage({ api, state, applyState }: { api: StoryboundApi; state: A
       if (result.models.length) {
         setModelLists((current) => ({ ...current, [key]: result.models }));
         if (!currentModel.trim()) {
-          setSettingsDraft((current) => setDraftModel(current, key, result.models[0].id));
+          setSettingsDraft((current) => (applyModel ? applyModel(current, result.models[0].id) : setDraftModel(current, key, result.models[0].id)));
         }
       }
     } catch (error) {
@@ -2026,10 +2307,53 @@ function SettingsPage({ api, state, applyState }: { api: StoryboundApi; state: A
       setLoadingModelList((current) => (current === key ? null : current));
     }
   }
+  async function refreshVolcengineSpeakers(profile: TtsProviderProfile) {
+    const volcengine = ttsProfileVolcengine(profile);
+    const accessKeyId = (volcengine.accessKeyId ?? '').trim();
+    const secretAccessKey = (volcengine.secretAccessKey ?? '').trim();
+    if (!accessKeyId || !secretAccessKey) {
+      setVolcengineSpeakerStatus('[fail] AccessKey ID 和 SecretAccessKey 是加载火山音色列表必填项。');
+      return;
+    }
+
+    const resourceId = (volcengine.resourceId ?? '').trim() || 'seed-tts-2.0';
+    const limit = 100;
+    setLoadingVolcengineSpeakers(true);
+    setVolcengineSpeakerStatus('正在加载全部音色...');
+    try {
+      const first = await api.listVolcengineSpeakers({ accessKeyId, secretAccessKey, resourceId, page: 1, limit });
+      let speakers = mergeVolcengineSpeakers([], first.speakers);
+      const total = first.total || speakers.length;
+      if (first.status !== 'fail' && total > speakers.length) {
+        const pageCount = Math.min(Math.ceil(total / limit), 20);
+        for (let page = 2; page <= pageCount; page += 1) {
+          const next = await api.listVolcengineSpeakers({ accessKeyId, secretAccessKey, resourceId, page, limit });
+          if (next.status === 'fail' || !next.speakers.length) break;
+          speakers = mergeVolcengineSpeakers(speakers, next.speakers);
+          if (speakers.length >= total) break;
+        }
+      }
+      setVolcengineSpeakers(speakers);
+      const loadedText = speakers.length > first.speakers.length ? `，已合并 ${speakers.length}/${total} 个` : '';
+      setVolcengineSpeakerStatus(`[${first.status}] ${first.detail}${loadedText}`);
+    } catch (error) {
+      setVolcengineSpeakerStatus(`[fail] ${error instanceof Error ? error.message : String(error)}`);
+    } finally {
+      setLoadingVolcengineSpeakers(false);
+    }
+  }
   async function runDiagnostics() {
     const report = await api.runDiagnostics();
     setDiagnostics(JSON.stringify(report, null, 2));
   }
+  const selectedProviderProfileIds = {
+    llm: selectedLlmProfileId,
+    image: selectedImageProfileId,
+    tts: selectedTtsProfileId,
+  };
+  const selectedLlmTestConfig = buildConfigForSelectedProfileTest(draft, 'llm', selectedProviderProfileIds);
+  const selectedImageTestConfig = buildConfigForSelectedProfileTest(draft, 'image', selectedProviderProfileIds);
+  const selectedTtsTestConfig = buildConfigForSelectedProfileTest(draft, 'tts', selectedProviderProfileIds);
   const sections = [
     ['llm', Sparkles, 'LLM', '文案与分镜', settingsStatusLabel(configTargetStatus('llm', draft))],
     ['image', ImageIcon, 'AI 绘图', '分镜图片', settingsStatusLabel(configTargetStatus('image', draft))],
@@ -2058,94 +2382,67 @@ function SettingsPage({ api, state, applyState }: { api: StoryboundApi; state: A
             <div><h2>{sections.find(([id]) => id === section)?.[2]}</h2><span>配置 API 凭证与本地路径</span></div>
           </div>
           <div className="button-row">
-            <button className="ghost-action" disabled={testingConfig} onClick={testCurrentConfig}>
+            <button className="ghost-action" disabled={testingConfig || savingConfig} onClick={testCurrentConfig}>
               {testingConfig ? <Loader2 className="spin" size={15} /> : <Sparkles size={15} />}
-              测试当前配置
+              保存并测试
             </button>
-            <button className="primary-action slim" onClick={save}><Save size={15} />保存配置</button>
+            <button className="primary-action slim" disabled={savingConfig} onClick={save}>
+              {savingConfig ? <Loader2 className="spin" size={15} /> : <Save size={15} />}
+              保存配置
+            </button>
           </div>
         </div>
         {configTestResult ? <div className="test-result">{configTestResult}</div> : null}
         {section === 'llm' ? (
-          <SettingsCard title="LLM 配置档案" status={maskConfigured(draft.llm.apiKey)}>
+          <SettingsCard title="LLM 配置档案" status={maskConfigured(selectedLlmTestConfig.llm.apiKey)}>
             <LlmProfileManager
               config={draft}
+              selectedProfileId={selectedLlmProfileId}
               models={modelLists.llm}
               loadingModels={loadingModelList === 'llm'}
               modelStatus={modelListStatus.llm}
+              saving={savingConfig}
               onChange={setSettingsDraft}
+              onSelectedProfileIdChange={setSelectedLlmProfileId}
+              onActivate={activateLlmProfile}
               onClearModels={() => clearProviderModels('llm')}
               onRefreshModels={(profile) => refreshProviderModels('llm', { baseUrl: profile.baseUrl, apiKey: profile.apiKey }, profile.model)}
             />
           </SettingsCard>
         ) : null}
         {section === 'image' ? (
-          <SettingsCard title="AI 绘图" status={settingsStatusLabel(configTargetStatus('image', draft))}>
-            <Segmented label="Provider" value={draft.imageProvider} options={['gpt_image', 'jimeng', 'custom']} labels={['全能绘图', '即梦', '自定义']} onChange={(value) => setSettingsDraft({ ...draft, imageProvider: value as AppConfig['imageProvider'] })} />
-            {draft.imageProvider === 'gpt_image' ? (
-              <>
-                <ProviderConfigNote title="OpenAI Image API" value="API Key 与模型必填；Base URL 为空时使用官方默认端点。" />
-                <ConfigInput label="GPT Image Base URL（可选）" value={draft.gptImage.baseUrl} onChange={(value) => { clearProviderModels('gpt-image'); setSettingsDraft({ ...draft, gptImage: { ...draft.gptImage, baseUrl: value } }); }} />
-                <ConfigInput label="GPT Image API Key" value={draft.gptImage.apiKey} onChange={(value) => { clearProviderModels('gpt-image'); setSettingsDraft({ ...draft, gptImage: { ...draft.gptImage, apiKey: value } }); }} />
-                <ModelPicker
-                  key="gpt-image"
-                  label="GPT Image 模型"
-                  value={draft.gptImage.model}
-                  models={modelLists['gpt-image']}
-                  loading={loadingModelList === 'gpt-image'}
-                  status={modelListStatus['gpt-image']}
-                  onRefresh={() => refreshProviderModels('gpt-image', { baseUrl: draft.gptImage.baseUrl || 'https://api.openai.com', apiKey: draft.gptImage.apiKey }, draft.gptImage.model)}
-                  onChange={(value) => setSettingsDraft({ ...draft, gptImage: { ...draft.gptImage, model: value } })}
-                />
-              </>
-            ) : null}
-            {draft.imageProvider === 'jimeng' ? (
-              <>
-                <ProviderConfigNote title="火山视觉 API" value={`Endpoint ${draft.jimeng.endpoint || 'https://visual.volcengineapi.com'} · Region ${draft.jimeng.region || 'cn-north-1'} · Service ${draft.jimeng.service || 'cv'}`} />
-                <ConfigInput label="即梦 AccessKey ID" value={draft.jimeng.accessKeyId ?? ''} onChange={(value) => setSettingsDraft({ ...draft, jimeng: { ...draft.jimeng, accessKeyId: value } })} />
-                <ConfigInput label="即梦 SecretAccessKey" value={draft.jimeng.secretAccessKey ?? ''} onChange={(value) => setSettingsDraft({ ...draft, jimeng: { ...draft.jimeng, secretAccessKey: value } })} />
-                <ConfigInput label="即梦 Req Key" value={draft.jimeng.reqKey ?? ''} onChange={(value) => setSettingsDraft({ ...draft, jimeng: { ...draft.jimeng, reqKey: value } })} />
-              </>
-            ) : null}
-            {draft.imageProvider === 'custom' ? (
-              <>
-                <ProviderConfigNote title="OpenAI-compatible" value="自定义图片接口按 /images/generations 调用，需要 Base URL、API Key 与模型。" />
-                <ConfigInput label="自定义 Base URL" value={draft.customImage.baseUrl} onChange={(value) => { clearProviderModels('custom-image'); setSettingsDraft({ ...draft, customImage: { ...draft.customImage, baseUrl: value } }); }} />
-                <ConfigInput label="自定义 API Key" value={draft.customImage.apiKey} onChange={(value) => { clearProviderModels('custom-image'); setSettingsDraft({ ...draft, customImage: { ...draft.customImage, apiKey: value } }); }} />
-                <ModelPicker
-                  key="custom-image"
-                  label="自定义模型"
-                  value={draft.customImage.model}
-                  models={modelLists['custom-image']}
-                  loading={loadingModelList === 'custom-image'}
-                  status={modelListStatus['custom-image']}
-                  onRefresh={() => refreshProviderModels('custom-image', { baseUrl: draft.customImage.baseUrl, apiKey: draft.customImage.apiKey }, draft.customImage.model)}
-                  onChange={(value) => setSettingsDraft({ ...draft, customImage: { ...draft.customImage, model: value } })}
-                />
-              </>
-            ) : null}
-            <Segmented label="分辨率" value={activeImageResolution(draft)} options={['1K', '2K', '4K']} onChange={(value) => setSettingsDraft(setImageResolution(draft, value as '1K' | '2K' | '4K'))} />
-            <Field label="并发"><input type="range" min="1" max="6" value={activeImageConcurrency(draft)} onChange={(event) => setSettingsDraft(setImageConcurrency(draft, Number(event.target.value)))} /></Field>
+          <SettingsCard title="AI 绘图" status={settingsStatusLabel(configTargetStatus('image', selectedImageTestConfig))}>
+            <ImageProfileManager
+              config={draft}
+              selectedProfileId={selectedImageProfileId}
+              gptModels={modelLists['gpt-image']}
+              customModels={modelLists['custom-image']}
+              loadingModelList={loadingModelList}
+              modelStatus={modelListStatus}
+              saving={savingConfig}
+              onChange={setSettingsDraft}
+              onSelectedProfileIdChange={setSelectedImageProfileId}
+              onActivate={activateImageProfile}
+              onClearModels={clearProviderModels}
+              onRefreshModels={refreshProviderModels}
+            />
           </SettingsCard>
         ) : null}
         {section === 'tts' ? (
-          <SettingsCard title="TTS 配音" status={settingsStatusLabel(configTargetStatus('tts', draft))}>
-            <Segmented label="引擎" value={draft.tts.provider} options={['volcengine', 'minimax']} labels={['火山引擎', 'MiniMax']} onChange={(value) => setSettingsDraft({ ...draft, tts: { ...draft.tts, provider: value as AppConfig['tts']['provider'] } })} />
-            {draft.tts.provider === 'volcengine' ? (
-              <>
-                <ConfigInput label="火山 App ID" value={draft.tts.volcengine.appId} onChange={(value) => setSettingsDraft({ ...draft, tts: { ...draft.tts, volcengine: { ...draft.tts.volcengine, appId: value }, appId: value } })} />
-                <ConfigInput label="Access Token" value={draft.tts.volcengine.accessKey} onChange={(value) => setSettingsDraft({ ...draft, tts: { ...draft.tts, volcengine: { ...draft.tts.volcengine, accessKey: value }, accessKey: value } })} />
-                <ConfigInput label="默认音色" value={draft.tts.speaker} onChange={(value) => setSettingsDraft({ ...draft, tts: { ...draft.tts, speaker: value } })} />
-              </>
-            ) : null}
-            {draft.tts.provider === 'minimax' ? (
-              <>
-                <ConfigInput label="MiniMax API Key" value={draft.tts.minimax.apiKey} onChange={(value) => setSettingsDraft({ ...draft, tts: { ...draft.tts, minimax: { ...draft.tts.minimax, apiKey: value } } })} />
-                <ConfigInput label="MiniMax 模型" value={draft.tts.minimax.model} onChange={(value) => setSettingsDraft({ ...draft, tts: { ...draft.tts, minimax: { ...draft.tts.minimax, model: value } } })} />
-                <ConfigInput label="MiniMax 音色 ID" value={draft.tts.minimax.voiceId} onChange={(value) => setSettingsDraft({ ...draft, tts: { ...draft.tts, minimax: { ...draft.tts.minimax, voiceId: value } } })} />
-                <LocalInfo title="克隆音色" value={`${state.minimaxCloneVoices.length} 个本地记录，可后续接入 MiniMax 克隆接口。`} />
-              </>
-            ) : null}
+          <SettingsCard title="TTS 配音" status={settingsStatusLabel(configTargetStatus('tts', selectedTtsTestConfig))}>
+            <TtsProfileManager
+              config={draft}
+              selectedProfileId={selectedTtsProfileId}
+              cloneVoiceCount={state.minimaxCloneVoices.length}
+              volcengineSpeakers={volcengineSpeakers}
+              loadingVolcengineSpeakers={loadingVolcengineSpeakers}
+              volcengineSpeakerStatus={volcengineSpeakerStatus}
+              saving={savingConfig}
+              onChange={setSettingsDraft}
+              onSelectedProfileIdChange={setSelectedTtsProfileId}
+              onActivate={activateTtsProfile}
+              onRefreshVolcengineSpeakers={refreshVolcengineSpeakers}
+            />
           </SettingsCard>
         ) : null}
         {section === 'jianying' ? (
@@ -2185,31 +2482,38 @@ function SettingsPage({ api, state, applyState }: { api: StoryboundApi; state: A
 
 function LlmProfileManager({
   config,
+  selectedProfileId,
   models,
   loadingModels,
   modelStatus,
+  saving,
   onChange,
+  onSelectedProfileIdChange,
+  onActivate,
   onClearModels,
   onRefreshModels,
 }: {
   config: AppConfig;
+  selectedProfileId: string;
   models: ProviderModel[];
   loadingModels: boolean;
   modelStatus?: string;
+  saving: boolean;
   onChange: (config: AppConfig) => void;
+  onSelectedProfileIdChange: (id: string) => void;
+  onActivate: (id: string) => Promise<void>;
   onClearModels: () => void;
   onRefreshModels: (profile: AppConfig['llm']) => void;
 }) {
   const profiles = config.llmProfiles.length ? config.llmProfiles : [config.llm];
   const activeId = activeLlmProfileId(config);
   const profileIds = profiles.map((profile) => profile.id).join('|');
-  const [selectedProfileId, setSelectedProfileId] = useState(activeId);
 
   useEffect(() => {
     if (!profiles.some((profile) => profile.id === selectedProfileId)) {
-      setSelectedProfileId(activeId);
+      onSelectedProfileIdChange(activeId);
     }
-  }, [activeId, profileIds, profiles, selectedProfileId]);
+  }, [activeId, onSelectedProfileIdChange, profileIds, profiles, selectedProfileId]);
 
   const selectedProfile = profiles.find((profile) => profile.id === selectedProfileId) ?? profiles.find((profile) => profile.id === activeId) ?? profiles[0];
 
@@ -2220,20 +2524,20 @@ function LlmProfileManager({
   function addProfile() {
     const next = addLlmProfile(config);
     onChange(next);
-    setSelectedProfileId(next.llmProfiles[0]?.id ?? activeId);
+    onSelectedProfileIdChange(next.llmProfiles[0]?.id ?? activeId);
   }
 
   function duplicateProfile(profile: AppConfig['llm']) {
     const next = copyLlmProfile(config, profile.id!);
     onChange(next);
     const currentIndex = config.llmProfiles.findIndex((item) => item.id === profile.id);
-    setSelectedProfileId(next.llmProfiles[Math.max(0, currentIndex + 1)]?.id ?? profile.id!);
+    onSelectedProfileIdChange(next.llmProfiles[Math.max(0, currentIndex + 1)]?.id ?? profile.id!);
   }
 
   function deleteProfile(profile: AppConfig['llm']) {
     const next = removeLlmProfile(config, profile.id!);
     onChange(next);
-    setSelectedProfileId(activeLlmProfileId(next));
+    onSelectedProfileIdChange(activeLlmProfileId(next));
   }
 
   if (!selectedProfile) return <ArtifactEmpty text="暂无 LLM 配置档案" />;
@@ -2263,8 +2567,8 @@ function LlmProfileManager({
               key={profile.id}
               role="button"
               tabIndex={0}
-              onClick={() => setSelectedProfileId(profile.id!)}
-              onKeyDown={(event) => event.key === 'Enter' && setSelectedProfileId(profile.id!)}
+              onClick={() => onSelectedProfileIdChange(profile.id!)}
+              onKeyDown={(event) => event.key === 'Enter' && onSelectedProfileIdChange(profile.id!)}
             >
               <div className="profile-drag-dot">⋮⋮</div>
               <div className="profile-avatar">{profile.name?.slice(0, 1).toUpperCase() || 'C'}</div>
@@ -2280,16 +2584,18 @@ function LlmProfileManager({
                   <button
                     className="primary-action slim"
                     type="button"
+                    disabled={saving}
                     onClick={(event) => {
                       event.stopPropagation();
-                      onChange(enableLlmProfile(config, profile.id!));
+                      onSelectedProfileIdChange(profile.id!);
+                      void onActivate(profile.id!);
                     }}
                   >
-                    <Play size={14} />
+                    {saving ? <Loader2 className="spin" size={14} /> : <Play size={14} />}
                     启用
                   </button>
                 )}
-                <button className="icon-button" type="button" title="编辑" onClick={(event) => { event.stopPropagation(); setSelectedProfileId(profile.id!); }}>
+                <button className="icon-button" type="button" title="编辑" onClick={(event) => { event.stopPropagation(); onSelectedProfileIdChange(profile.id!); }}>
                   <Palette size={14} />
                 </button>
                 <button className="icon-button" type="button" title="复制" onClick={(event) => { event.stopPropagation(); duplicateProfile(profile); }}>
@@ -2352,6 +2658,414 @@ function LlmProfileManager({
             />
           </>
         )}
+      </div>
+    </div>
+  );
+}
+
+function ImageProfileManager({
+  config,
+  selectedProfileId,
+  gptModels,
+  customModels,
+  loadingModelList,
+  modelStatus,
+  saving,
+  onChange,
+  onSelectedProfileIdChange,
+  onActivate,
+  onClearModels,
+  onRefreshModels,
+}: {
+  config: AppConfig;
+  selectedProfileId: string;
+  gptModels: ProviderModel[];
+  customModels: ProviderModel[];
+  loadingModelList: ModelListKey | null;
+  modelStatus: Partial<Record<ModelListKey, string>>;
+  saving: boolean;
+  onChange: (config: AppConfig) => void;
+  onSelectedProfileIdChange: (id: string) => void;
+  onActivate: (id: string) => Promise<void>;
+  onClearModels: (key: ModelListKey) => void;
+  onRefreshModels: (key: ModelListKey, request: { baseUrl: string; apiKey: string }, currentModel: string, applyModel?: (config: AppConfig, model: string) => AppConfig) => void;
+}) {
+  const profiles = normalizedImageProfiles(config);
+  const activeId = activeImageProfileId(config);
+  const profileIds = profiles.map((profile) => profile.id).join('|');
+
+  useEffect(() => {
+    if (!profiles.some((profile) => profile.id === selectedProfileId)) {
+      onSelectedProfileIdChange(activeId);
+    }
+  }, [activeId, onSelectedProfileIdChange, profileIds, profiles, selectedProfileId]);
+
+  const selectedProfile = profiles.find((profile) => profile.id === selectedProfileId) ?? profiles.find((profile) => profile.id === activeId) ?? profiles[0];
+  if (!selectedProfile) return <ArtifactEmpty text="暂无绘图配置档案" />;
+
+  const provider = selectedProfile.provider;
+  const gptImage = imageProfileGptImage(selectedProfile);
+  const jimeng = imageProfileJimeng(selectedProfile);
+  const customImage = imageProfileCustomImage(selectedProfile);
+
+  function updateSelectedProfile(profile: ImageProviderProfile) {
+    onChange(saveImageProfile(config, profile));
+  }
+
+  function addProfile() {
+    const next = addImageProfile(config);
+    onChange(next);
+    onSelectedProfileIdChange(next.imageProfiles[0]?.id ?? activeId);
+  }
+
+  function duplicateProfile(profile: ImageProviderProfile) {
+    const next = copyImageProfile(config, profile.id!);
+    onChange(next);
+    const currentIndex = profiles.findIndex((item) => item.id === profile.id);
+    onSelectedProfileIdChange(next.imageProfiles[Math.max(0, currentIndex + 1)]?.id ?? profile.id!);
+  }
+
+  function deleteProfile(profile: ImageProviderProfile) {
+    const next = removeImageProfile(config, profile.id!);
+    onChange(next);
+    onSelectedProfileIdChange(activeImageProfileId(next));
+  }
+
+  return (
+    <div className="llm-profile-manager">
+      <div className="profile-switcher-head">
+        <div>
+          <strong>绘图档案</strong>
+          <span>可保存 GPT Image、即梦和自定义图片接口，启用一个作为任务生图配置。</span>
+        </div>
+        <button className="ghost-action" type="button" onClick={addProfile}>
+          <Plus size={15} />
+          新增配置
+        </button>
+      </div>
+
+      <div className="profile-switcher-list">
+        {profiles.map((profile) => {
+          const isActive = profile.id === activeId;
+          const isSelected = profile.id === selectedProfile.id;
+          return (
+            <article
+              className={isActive ? 'provider-profile-card active' : isSelected ? 'provider-profile-card selected' : 'provider-profile-card'}
+              data-profile-card
+              key={profile.id}
+              role="button"
+              tabIndex={0}
+              onClick={() => onSelectedProfileIdChange(profile.id!)}
+              onKeyDown={(event) => event.key === 'Enter' && onSelectedProfileIdChange(profile.id!)}
+            >
+              <div className="profile-drag-dot">⋮⋮</div>
+              <div className="profile-avatar">{profile.name?.slice(0, 1).toUpperCase() || 'I'}</div>
+              <div className="profile-copy">
+                <strong>{profile.name || '未命名绘图配置'}</strong>
+                <span>{imageProviderLabel(profile.provider)}</span>
+                <small>{imageProfileSummary(profile)}</small>
+              </div>
+              <div className="profile-actions">
+                {isActive ? (
+                  <span className="profile-active-badge">启用中</span>
+                ) : (
+                  <button
+                    className="primary-action slim"
+                    type="button"
+                    disabled={saving}
+                    onClick={(event) => {
+                      event.stopPropagation();
+                      onSelectedProfileIdChange(profile.id!);
+                      void onActivate(profile.id!);
+                    }}
+                  >
+                    {saving ? <Loader2 className="spin" size={14} /> : <Play size={14} />}
+                    启用
+                  </button>
+                )}
+                <button className="icon-button" type="button" title="编辑" onClick={(event) => { event.stopPropagation(); onSelectedProfileIdChange(profile.id!); }}>
+                  <Palette size={14} />
+                </button>
+                <button className="icon-button" type="button" title="复制" onClick={(event) => { event.stopPropagation(); duplicateProfile(profile); }}>
+                  <Copy size={14} />
+                </button>
+                <button className="icon-button" type="button" title="删除" disabled={profiles.length <= 1} onClick={(event) => { event.stopPropagation(); deleteProfile(profile); }}>
+                  <XCircle size={14} />
+                </button>
+              </div>
+            </article>
+          );
+        })}
+      </div>
+
+      <div className="profile-editor-grid">
+        <ConfigInput label="配置名称" value={selectedProfile.name ?? ''} onChange={(value) => updateSelectedProfile({ ...selectedProfile, name: value })} />
+        <Segmented
+          label="Provider"
+          value={provider}
+          options={['gpt_image', 'jimeng', 'custom']}
+          labels={['GPT Image', '即梦', '自定义']}
+          onChange={(value) => {
+            onClearModels('gpt-image');
+            onClearModels('custom-image');
+            updateSelectedProfile({ ...selectedProfile, provider: value as ImageProviderProfile['provider'] });
+          }}
+        />
+        {provider === 'gpt_image' ? (
+          <>
+            <ProviderConfigNote title="OpenAI Image API" value="API Key 与模型必填；Base URL 为空时使用官方默认端点。" />
+            <ConfigInput label="GPT Image Base URL（可选）" value={gptImage.baseUrl} onChange={(value) => { onClearModels('gpt-image'); updateSelectedProfile({ ...selectedProfile, gptImage: { ...gptImage, baseUrl: value } }); }} />
+            <ConfigInput label="GPT Image API Key" value={gptImage.apiKey} onChange={(value) => { onClearModels('gpt-image'); updateSelectedProfile({ ...selectedProfile, gptImage: { ...gptImage, apiKey: value } }); }} />
+            <ModelPicker
+              key={`gpt-image-${selectedProfile.id}`}
+              label="GPT Image 模型"
+              value={gptImage.model}
+              models={gptModels}
+              loading={loadingModelList === 'gpt-image'}
+              status={modelStatus['gpt-image']}
+              onRefresh={() => onRefreshModels(
+                'gpt-image',
+                { baseUrl: gptImage.baseUrl || 'https://api.openai.com', apiKey: gptImage.apiKey },
+                gptImage.model,
+                (current, model) => saveImageProfile(current, { ...selectedProfile, gptImage: { ...gptImage, model } }),
+              )}
+              onChange={(value) => updateSelectedProfile({ ...selectedProfile, gptImage: { ...gptImage, model: value } })}
+            />
+            <Segmented label="分辨率" value={gptImage.resolution ?? '2K'} options={['1K', '2K', '4K']} onChange={(value) => updateSelectedProfile({ ...selectedProfile, gptImage: { ...gptImage, resolution: value as ImageResolution } })} />
+            <Field label="并发"><input type="range" min="1" max="6" value={gptImage.concurrency} onChange={(event) => updateSelectedProfile({ ...selectedProfile, gptImage: { ...gptImage, concurrency: Number(event.target.value) } })} /></Field>
+          </>
+        ) : null}
+        {provider === 'jimeng' ? (
+          <>
+            <ProviderConfigNote title="火山视觉 API" value={`Endpoint ${jimeng.endpoint || 'https://visual.volcengineapi.com'} · Region ${jimeng.region || 'cn-north-1'} · Service ${jimeng.service || 'cv'}`} />
+            <ConfigInput label="即梦 AccessKey ID" value={jimeng.accessKeyId ?? ''} onChange={(value) => updateSelectedProfile({ ...selectedProfile, jimeng: { ...jimeng, accessKeyId: value } })} />
+            <ConfigInput label="即梦 SecretAccessKey" value={jimeng.secretAccessKey ?? ''} onChange={(value) => updateSelectedProfile({ ...selectedProfile, jimeng: { ...jimeng, secretAccessKey: value } })} />
+            <ConfigInput label="即梦 Req Key" value={jimeng.reqKey ?? ''} onChange={(value) => updateSelectedProfile({ ...selectedProfile, jimeng: { ...jimeng, reqKey: value } })} />
+            <Segmented label="分辨率" value={jimeng.resolution} options={['1K', '2K', '4K']} onChange={(value) => updateSelectedProfile({ ...selectedProfile, jimeng: { ...jimeng, resolution: value as ImageResolution } })} />
+            <Field label="并发"><input type="range" min="1" max="6" value={jimeng.concurrency} onChange={(event) => updateSelectedProfile({ ...selectedProfile, jimeng: { ...jimeng, concurrency: Number(event.target.value) } })} /></Field>
+          </>
+        ) : null}
+        {provider === 'custom' ? (
+          <>
+            <ProviderConfigNote title="OpenAI-compatible" value="自定义图片接口按 /images/generations 调用，需要 Base URL、API Key 与模型。" />
+            <ConfigInput label="自定义 Base URL" value={customImage.baseUrl} onChange={(value) => { onClearModels('custom-image'); updateSelectedProfile({ ...selectedProfile, customImage: { ...customImage, baseUrl: value } }); }} />
+            <ConfigInput label="自定义 API Key" value={customImage.apiKey} onChange={(value) => { onClearModels('custom-image'); updateSelectedProfile({ ...selectedProfile, customImage: { ...customImage, apiKey: value } }); }} />
+            <ModelPicker
+              key={`custom-image-${selectedProfile.id}`}
+              label="自定义模型"
+              value={customImage.model}
+              models={customModels}
+              loading={loadingModelList === 'custom-image'}
+              status={modelStatus['custom-image']}
+              onRefresh={() => onRefreshModels(
+                'custom-image',
+                { baseUrl: customImage.baseUrl, apiKey: customImage.apiKey },
+                customImage.model,
+                (current, model) => saveImageProfile(current, { ...selectedProfile, customImage: { ...customImage, model } }),
+              )}
+              onChange={(value) => updateSelectedProfile({ ...selectedProfile, customImage: { ...customImage, model: value } })}
+            />
+            <Segmented label="分辨率" value={customImage.resolution ?? '2K'} options={['1K', '2K', '4K']} onChange={(value) => updateSelectedProfile({ ...selectedProfile, customImage: { ...customImage, resolution: value as ImageResolution } })} />
+            <Field label="并发"><input type="range" min="1" max="6" value={customImage.concurrency} onChange={(event) => updateSelectedProfile({ ...selectedProfile, customImage: { ...customImage, concurrency: Number(event.target.value) } })} /></Field>
+          </>
+        ) : null}
+      </div>
+    </div>
+  );
+}
+
+function TtsProfileManager({
+  config,
+  selectedProfileId,
+  cloneVoiceCount,
+  volcengineSpeakers,
+  loadingVolcengineSpeakers,
+  volcengineSpeakerStatus,
+  saving,
+  onChange,
+  onSelectedProfileIdChange,
+  onActivate,
+  onRefreshVolcengineSpeakers,
+}: {
+  config: AppConfig;
+  selectedProfileId: string;
+  cloneVoiceCount: number;
+  volcengineSpeakers: VolcengineSpeaker[];
+  loadingVolcengineSpeakers: boolean;
+  volcengineSpeakerStatus?: string;
+  saving: boolean;
+  onChange: (config: AppConfig) => void;
+  onSelectedProfileIdChange: (id: string) => void;
+  onActivate: (id: string) => Promise<void>;
+  onRefreshVolcengineSpeakers: (profile: TtsProviderProfile) => void;
+}) {
+  const profiles = normalizedTtsProfiles(config);
+  const activeId = activeTtsProfileId(config);
+  const profileIds = profiles.map((profile) => profile.id).join('|');
+
+  useEffect(() => {
+    if (!profiles.some((profile) => profile.id === selectedProfileId)) {
+      onSelectedProfileIdChange(activeId);
+    }
+  }, [activeId, onSelectedProfileIdChange, profileIds, profiles, selectedProfileId]);
+
+  const selectedProfile = profiles.find((profile) => profile.id === selectedProfileId) ?? profiles.find((profile) => profile.id === activeId) ?? profiles[0];
+  const availableVolcengineVoices = useMemo(() => buildVolcengineVoiceOptions(volcengineSpeakers), [volcengineSpeakers]);
+  if (!selectedProfile) return <ArtifactEmpty text="暂无 TTS 配置档案" />;
+
+  const provider = selectedProfile.provider;
+  const volcengine = ttsProfileVolcengine(selectedProfile);
+  const minimax = ttsProfileMinimax(selectedProfile);
+  const voiceSelection = volcenginePresetVoiceValue(volcengine.speaker, availableVolcengineVoices);
+
+  function updateSelectedProfile(profile: TtsProviderProfile) {
+    onChange(saveTtsProfile(config, profile));
+  }
+
+  function updateVolcengineVoice(voiceType: string) {
+    updateSelectedProfile({ ...selectedProfile, speaker: voiceType, volcengine: { ...volcengine, speaker: voiceType } });
+  }
+
+  function addProfile() {
+    const next = addTtsProfile(config);
+    onChange(next);
+    onSelectedProfileIdChange(next.ttsProfiles[0]?.id ?? activeId);
+  }
+
+  function duplicateProfile(profile: TtsProviderProfile) {
+    const next = copyTtsProfile(config, profile.id!);
+    onChange(next);
+    const currentIndex = profiles.findIndex((item) => item.id === profile.id);
+    onSelectedProfileIdChange(next.ttsProfiles[Math.max(0, currentIndex + 1)]?.id ?? profile.id!);
+  }
+
+  function deleteProfile(profile: TtsProviderProfile) {
+    const next = removeTtsProfile(config, profile.id!);
+    onChange(next);
+    onSelectedProfileIdChange(activeTtsProfileId(next));
+  }
+
+  return (
+    <div className="llm-profile-manager">
+      <div className="profile-switcher-head">
+        <div>
+          <strong>TTS 档案</strong>
+          <span>可保存火山引擎与 MiniMax 配音配置，启用一个作为任务配音配置。</span>
+        </div>
+        <button className="ghost-action" type="button" onClick={addProfile}>
+          <Plus size={15} />
+          新增配置
+        </button>
+      </div>
+
+      <div className="profile-switcher-list">
+        {profiles.map((profile) => {
+          const isActive = profile.id === activeId;
+          const isSelected = profile.id === selectedProfile.id;
+          return (
+            <article
+              className={isActive ? 'provider-profile-card active' : isSelected ? 'provider-profile-card selected' : 'provider-profile-card'}
+              data-profile-card
+              key={profile.id}
+              role="button"
+              tabIndex={0}
+              onClick={() => onSelectedProfileIdChange(profile.id!)}
+              onKeyDown={(event) => event.key === 'Enter' && onSelectedProfileIdChange(profile.id!)}
+            >
+              <div className="profile-drag-dot">⋮⋮</div>
+              <div className="profile-avatar">{profile.name?.slice(0, 1).toUpperCase() || 'T'}</div>
+              <div className="profile-copy">
+                <strong>{profile.name || '未命名 TTS 配置'}</strong>
+                <span>{ttsProviderLabel(profile.provider)}</span>
+                <small>{ttsProfileSummary(profile)}</small>
+              </div>
+              <div className="profile-actions">
+                {isActive ? (
+                  <span className="profile-active-badge">启用中</span>
+                ) : (
+                  <button
+                    className="primary-action slim"
+                    type="button"
+                    disabled={saving}
+                    onClick={(event) => {
+                      event.stopPropagation();
+                      onSelectedProfileIdChange(profile.id!);
+                      void onActivate(profile.id!);
+                    }}
+                  >
+                    {saving ? <Loader2 className="spin" size={14} /> : <Play size={14} />}
+                    启用
+                  </button>
+                )}
+                <button className="icon-button" type="button" title="编辑" onClick={(event) => { event.stopPropagation(); onSelectedProfileIdChange(profile.id!); }}>
+                  <Palette size={14} />
+                </button>
+                <button className="icon-button" type="button" title="复制" onClick={(event) => { event.stopPropagation(); duplicateProfile(profile); }}>
+                  <Copy size={14} />
+                </button>
+                <button className="icon-button" type="button" title="删除" disabled={profiles.length <= 1} onClick={(event) => { event.stopPropagation(); deleteProfile(profile); }}>
+                  <XCircle size={14} />
+                </button>
+              </div>
+            </article>
+          );
+        })}
+      </div>
+
+      <div className="profile-editor-grid">
+        <ConfigInput label="配置名称" value={selectedProfile.name ?? ''} onChange={(value) => updateSelectedProfile({ ...selectedProfile, name: value })} />
+        <Segmented
+          label="引擎"
+          value={provider}
+          options={['volcengine', 'minimax']}
+          labels={['火山引擎', 'MiniMax']}
+          onChange={(value) => updateSelectedProfile({ ...selectedProfile, provider: value as TtsProviderProfile['provider'] })}
+        />
+        {provider === 'volcengine' ? (
+          <>
+            <ProviderConfigNote title="火山引擎 TTS" value="V3 HTTP Chunked 使用新版控制台 API Key、Resource ID 和 voice_type。" />
+            <ConfigInput label="火山 API Key" value={volcengine.apiKey ?? ''} onChange={(value) => updateSelectedProfile({ ...selectedProfile, volcengine: { ...volcengine, apiKey: value } })} />
+            <ConfigInput label="AccessKey ID（音色列表）" value={volcengine.accessKeyId ?? ''} onChange={(value) => updateSelectedProfile({ ...selectedProfile, volcengine: { ...volcengine, accessKeyId: value } })} />
+            <ConfigInput label="SecretAccessKey（音色列表）" value={volcengine.secretAccessKey ?? ''} onChange={(value) => updateSelectedProfile({ ...selectedProfile, volcengine: { ...volcengine, secretAccessKey: value } })} />
+            <ConfigInput label="Resource ID" value={volcengine.resourceId ?? 'seed-tts-2.0'} onChange={(value) => updateSelectedProfile({ ...selectedProfile, volcengine: { ...volcengine, resourceId: value } })} />
+            <ConfigInput label="Endpoint" value={volcengine.endpoint ?? 'https://openspeech.bytedance.com/api/v3/tts/unidirectional'} onChange={(value) => updateSelectedProfile({ ...selectedProfile, volcengine: { ...volcengine, endpoint: value } })} />
+            <Field label="默认音色">
+              <div className="model-picker">
+                <select value={voiceSelection} onChange={(event) => updateVolcengineVoice(event.target.value === 'custom' ? '' : event.target.value)}>
+                  <option value="custom">自定义 voice_type</option>
+                  {availableVolcengineVoices.map((voice) => (
+                    <option key={voice.voiceType} value={voice.voiceType}>
+                      {voice.label}
+                    </option>
+                  ))}
+                </select>
+                <button
+                  className="icon-button model-refresh-button"
+                  title="加载全部音色"
+                  aria-label="加载全部音色"
+                  disabled={loadingVolcengineSpeakers}
+                  onClick={() => onRefreshVolcengineSpeakers(selectedProfile)}
+                  type="button"
+                >
+                  {loadingVolcengineSpeakers ? <Loader2 className="spin" size={15} /> : <RotateCcw size={15} />}
+                </button>
+              </div>
+              {volcengineSpeakerStatus ? <small className="model-list-status">{volcengineSpeakerStatus}</small> : null}
+            </Field>
+            {voiceSelection === 'custom' ? (
+              <ConfigInput label="自定义 voice_type" value={volcengine.speaker} onChange={updateVolcengineVoice} />
+            ) : null}
+          </>
+        ) : null}
+        {provider === 'minimax' ? (
+          <>
+            <ProviderConfigNote title="MiniMax TTS" value="填写 API Key、模型和音色 ID。" />
+            <ConfigInput label="MiniMax API Key" value={minimax.apiKey} onChange={(value) => updateSelectedProfile({ ...selectedProfile, minimax: { ...minimax, apiKey: value } })} />
+            <ConfigInput label="MiniMax 模型" value={minimax.model} onChange={(value) => updateSelectedProfile({ ...selectedProfile, minimax: { ...minimax, model: value } })} />
+            <ConfigInput label="MiniMax 音色 ID" value={minimax.voiceId} onChange={(value) => updateSelectedProfile({ ...selectedProfile, minimax: { ...minimax, voiceId: value } })} />
+            <LocalInfo title="克隆音色" value={`${cloneVoiceCount} 个本地记录，可后续接入 MiniMax 克隆接口。`} />
+          </>
+        ) : null}
       </div>
     </div>
   );
@@ -2582,6 +3296,17 @@ function ProviderConfigNote({ title, value }: { title: string; value: string }) 
   );
 }
 
+function resolvePromptTemplateForTrack(templates: PromptTemplate[], track: string, overrideId?: string | null): PromptTemplate | null {
+  return selectTaskPromptTemplate(templates, { track, promptTemplateId: overrideId ?? null });
+}
+
+function splitListInput(value: string): string[] {
+  return value
+    .split(/[,，、\n]/u)
+    .map((item) => item.trim())
+    .filter(Boolean);
+}
+
 function pageSubtitle(view: ShellView): string {
   const map: Record<ShellView, string> = {
     'new-task': '粘贴一段人物故事，几分钟后在剪映里打开',
@@ -2671,123 +3396,72 @@ function summarizeErrorMessage(message: string): string {
   return trimForPreview(firstSentence, 42);
 }
 
-type EditableLlmProvider = 'openai' | 'custom';
 type ImageResolution = '1K' | '2K' | '4K';
 
 function settingsConfigSignature(config: AppConfig): string {
   return JSON.stringify(normalizeEditableConfigProviders(config));
 }
 
-function normalizeEditableConfigProviders(config: AppConfig): AppConfig {
-  const activeId = activeLlmProfileId(config);
-  const llmProfiles = normalizeLocalLlmProfiles(config.llmProfiles.length ? config.llmProfiles : [config.llm], activeId);
-  const activeProfile = llmProfiles.find((profile) => profile.id === activeId) ?? llmProfiles[0] ?? normalizeLocalLlmProfile(config.llm, 0);
-  return {
-    ...config,
-    llm: { ...activeProfile, provider: editableLlmProfileProvider(activeProfile), enabled: true },
-    llmProfiles,
-    activeLlmProfileId: activeProfile.id!,
-    imageProvider: config.imageProvider === 'mock' ? 'gpt_image' : config.imageProvider,
-    tts: {
-      ...config.tts,
-      provider: config.tts.provider === 'mock' ? 'volcengine' : config.tts.provider,
-    },
-  };
+function imageProviderLabel(provider: ImageProviderProfile['provider']): string {
+  return provider === 'gpt_image' ? 'GPT Image' : provider === 'jimeng' ? '即梦' : '自定义图片';
 }
 
-function activeLlmProvider(config: AppConfig): EditableLlmProvider {
-  return config.llm.provider === 'openai' ? 'openai' : 'custom';
+function imageProfileSummary(profile: ImageProviderProfile): string {
+  if (profile.provider === 'jimeng') return imageProfileJimeng(profile).reqKey || imageProfileJimeng(profile).model || '未配置 Req Key';
+  if (profile.provider === 'custom') return imageProfileCustomImage(profile).model || '未选择模型';
+  return imageProfileGptImage(profile).model || '未选择模型';
 }
 
-function activeLlmProfileId(config: AppConfig): string {
-  return config.activeLlmProfileId || config.llm.id || config.llmProfiles[0]?.id || 'default-llm';
+function ttsProviderLabel(provider: TtsProviderProfile['provider']): string {
+  return provider === 'minimax' ? 'MiniMax' : '火山引擎';
 }
 
-function editableLlmProfileProvider(profile: AppConfig['llm']): EditableLlmProvider {
-  return profile.provider === 'openai' ? 'openai' : 'custom';
+function ttsProfileSummary(profile: TtsProviderProfile): string {
+  if (profile.provider === 'minimax') return ttsProfileMinimax(profile).model || '未选择模型';
+  const speaker = ttsProfileVolcengine(profile).speaker;
+  return volcengineVoicePresetLabel(speaker) || speaker || '未选择音色';
 }
 
-function normalizeLocalLlmProfiles(profiles: AppConfig['llm'][], activeId: string): AppConfig['llm'][] {
-  const seen = new Set<string>();
-  const output: AppConfig['llm'][] = [];
-  profiles.forEach((profile, index) => {
-    const normalized = normalizeLocalLlmProfile(profile, index);
-    if (seen.has(normalized.id!)) return;
-    seen.add(normalized.id!);
-    output.push({ ...normalized, enabled: normalized.id === activeId });
+type VolcengineVoiceOption = {
+  voiceType: string;
+  label: string;
+};
+
+function mergeVolcengineSpeakers(current: VolcengineSpeaker[], incoming: VolcengineSpeaker[]): VolcengineSpeaker[] {
+  const byVoiceType = new Map(current.map((speaker) => [speaker.voiceType, speaker]));
+  incoming.forEach((speaker) => {
+    const voiceType = speaker.voiceType.trim();
+    if (voiceType) byVoiceType.set(voiceType, { ...speaker, voiceType });
   });
-  return output.length ? output : [{ ...normalizeLocalLlmProfile(defaultConfig.llm, 0), enabled: true }];
+  return [...byVoiceType.values()];
 }
 
-function normalizeLocalLlmProfile(profile: Partial<AppConfig['llm']>, index: number): AppConfig['llm'] {
-  const merged = { ...defaultConfig.llm, ...profile };
-  const id = profile.id || createLlmProfileId();
-  return {
-    ...merged,
-    id,
-    name: profile.name?.trim() || (merged.provider === 'openai' ? 'OpenAI Official' : index === 0 ? '第三方' : `配置 ${index + 1}`),
-    provider: editableLlmProfileProvider(merged),
-    protocol: 'openai',
-    enabled: Boolean(profile.enabled),
-  };
+function buildVolcengineVoiceOptions(speakers: VolcengineSpeaker[]): VolcengineVoiceOption[] {
+  const byVoiceType = new Map<string, VolcengineVoiceOption>();
+  volcengineVoicePresets.forEach(([label, voiceType]) => {
+    byVoiceType.set(voiceType, { voiceType, label });
+  });
+  speakers.forEach((speaker) => {
+    const voiceType = speaker.voiceType.trim();
+    if (!voiceType) return;
+    byVoiceType.set(voiceType, {
+      voiceType,
+      label: speaker.name.trim() || volcengineStaticPresetLabel(voiceType) || voiceType,
+    });
+  });
+  return [...byVoiceType.values()];
 }
 
-function enableLlmProfile(config: AppConfig, id: string): AppConfig {
-  const profiles = normalizeLocalLlmProfiles(config.llmProfiles.length ? config.llmProfiles : [config.llm], id);
-  const active = profiles.find((profile) => profile.id === id) ?? profiles[0];
-  return {
-    ...config,
-    llm: { ...active, enabled: true },
-    llmProfiles: profiles.map((profile) => ({ ...profile, enabled: profile.id === active.id })),
-    activeLlmProfileId: active.id!,
-  };
+function volcenginePresetVoiceValue(speaker: string, options: VolcengineVoiceOption[] = buildVolcengineVoiceOptions([])): string {
+  return options.some((option) => option.voiceType === speaker) ? speaker : 'custom';
 }
 
-function saveLlmProfile(config: AppConfig, profile: AppConfig['llm']): AppConfig {
-  const activeId = activeLlmProfileId(config);
-  const normalized = normalizeLocalLlmProfile(profile, config.llmProfiles.length);
-  const profiles = normalizeLocalLlmProfiles(config.llmProfiles.length ? config.llmProfiles : [config.llm], activeId);
-  const nextProfiles = profiles.some((item) => item.id === normalized.id)
-    ? profiles.map((item) => (item.id === normalized.id ? { ...normalized, enabled: item.id === activeId } : item))
-    : [{ ...normalized, enabled: false }, ...profiles];
-  const next = { ...config, llmProfiles: nextProfiles };
-  return normalized.id === activeId ? enableLlmProfile(next, normalized.id) : next;
+function volcengineVoicePresetLabel(speaker: string, speakers: VolcengineSpeaker[] = []): string {
+  return buildVolcengineVoiceOptions(speakers).find((option) => option.voiceType === speaker)?.label ?? '';
 }
 
-function addLlmProfile(config: AppConfig): AppConfig {
-  const profile = normalizeLocalLlmProfile(
-    {
-      ...defaultConfig.llm,
-      id: createLlmProfileId(),
-      name: '新增配置',
-      apiKey: '',
-      model: '',
-      enabled: false,
-    },
-    config.llmProfiles.length,
-  );
-  return { ...config, llmProfiles: [profile, ...normalizeLocalLlmProfiles(config.llmProfiles.length ? config.llmProfiles : [config.llm], activeLlmProfileId(config))] };
-}
-
-function copyLlmProfile(config: AppConfig, id: string): AppConfig {
-  const profiles = normalizeLocalLlmProfiles(config.llmProfiles.length ? config.llmProfiles : [config.llm], activeLlmProfileId(config));
-  const index = profiles.findIndex((profile) => profile.id === id);
-  if (index < 0) return config;
-  const copy = normalizeLocalLlmProfile({ ...profiles[index], id: createLlmProfileId(), name: `${profiles[index].name || '配置'} 副本`, enabled: false }, profiles.length);
-  return { ...config, llmProfiles: [...profiles.slice(0, index + 1), copy, ...profiles.slice(index + 1)] };
-}
-
-function removeLlmProfile(config: AppConfig, id: string): AppConfig {
-  const profiles = normalizeLocalLlmProfiles(config.llmProfiles.length ? config.llmProfiles : [config.llm], activeLlmProfileId(config));
-  if (profiles.length <= 1) return config;
-  const nextProfiles = profiles.filter((profile) => profile.id !== id);
-  const activeId = id === activeLlmProfileId(config) ? nextProfiles[0].id! : activeLlmProfileId(config);
-  return enableLlmProfile({ ...config, llmProfiles: nextProfiles }, activeId);
-}
-
-function createLlmProfileId(): string {
-  if (typeof crypto !== 'undefined' && 'randomUUID' in crypto) return `llm-${crypto.randomUUID()}`;
-  return `llm-${Date.now()}-${Math.round(Math.random() * 10000)}`;
+function volcengineStaticPresetLabel(speaker: string): string {
+  return volcengineVoicePresets.find(([, voiceType]) => voiceType === speaker)?.[0] ?? '';
 }
 
 function DraftCanvasText({
@@ -2808,6 +3482,95 @@ function DraftCanvasText({
       {children}
     </div>
   );
+}
+
+function applyDraftCanvasRatio(template: DraftTemplate, ratio: string): DraftTemplate {
+  const canvas = draftCanvasSizeForRatio(ratio);
+  return applyDraftImageRatio({ ...template, canvas: { ...template.canvas, ...canvas, ratio } }, template.image.ratio);
+}
+
+function draftCanvasSizeForRatio(ratio: string): Pick<DraftTemplate['canvas'], 'width' | 'height'> {
+  if (ratio === '16:9') return { width: 1920, height: 1080 };
+  if (ratio === '4:3') return { width: 1440, height: 1080 };
+  if (ratio === '1:1') return { width: 1080, height: 1080 };
+  return { width: 1080, height: 1920 };
+}
+
+function applyDraftImageRatio(template: DraftTemplate, ratio: string): DraftTemplate {
+  const height = clamp(draftImageHeightForCanvas(template.canvas, ratio), 0.1, 1);
+  return {
+    ...template,
+    image: {
+      ...template.image,
+      ratio,
+      height,
+      top: clamp((1 - height) / 2, -0.2, 1 - Math.min(0.1, height)),
+    },
+  };
+}
+
+function draftImageHeightForCanvas(canvas: DraftTemplate['canvas'], imageRatio: string): number {
+  const ratio = ratioToNumber(imageRatio);
+  if (!ratio) return 1;
+  return (canvas.width / ratio) / canvas.height;
+}
+
+function draftTemplateCanvasStyle(template: DraftTemplate): React.CSSProperties {
+  const backgroundImage = template.canvas.backgroundImage.trim();
+  const style: React.CSSProperties & Record<string, string | number | undefined> = {
+    '--draft-preview-width': `${draftPreviewWidth(template)}px`,
+    aspectRatio: `${template.canvas.width} / ${template.canvas.height}`,
+    backgroundColor: template.canvas.backgroundColor,
+    backgroundImage: backgroundImage ? `url("${toLocalImageUrl(backgroundImage).replace(/"/g, '\\"')}")` : undefined,
+    backgroundPosition: 'center',
+    backgroundRepeat: 'no-repeat',
+    backgroundSize: 'cover',
+  };
+  return style;
+}
+
+function draftPreviewWidth(template: DraftTemplate): number {
+  const ratio = ratioToNumber(template.canvas.ratio) || template.canvas.width / template.canvas.height;
+  if (ratio >= 1.5) return 640;
+  if (ratio >= 1.2) return 560;
+  if (ratio >= 0.95) return 520;
+  return Math.max(300, Math.round(ratio * 560));
+}
+
+function draftImageMediaStyle(template: DraftTemplate): React.CSSProperties {
+  const aspectRatio = draftImageAspectRatio(template.image.ratio);
+  if (template.image.fit === 'contain') {
+    return {
+      aspectRatio,
+      height: 'auto',
+      maxHeight: '100%',
+      maxWidth: '100%',
+      width: '100%',
+    };
+  }
+  return {
+    aspectRatio,
+    height: '100%',
+    width: '100%',
+  };
+}
+
+function draftImageAspectRatio(ratio: string): string {
+  const parts = ratio.split(':').map((item) => Number(item));
+  if (parts.length === 2 && parts.every((item) => Number.isFinite(item) && item > 0)) {
+    return `${parts[0]} / ${parts[1]}`;
+  }
+  return '9 / 16';
+}
+
+function ratioToNumber(ratio: string): number {
+  const [width, height] = ratio.split(':').map((item) => Number(item));
+  if (!Number.isFinite(width) || !Number.isFinite(height) || width <= 0 || height <= 0) return 0;
+  return width / height;
+}
+
+function normalizeColorInput(value: string): string {
+  return /^#[0-9a-f]{6}$/i.test(value.trim()) ? value.trim() : '#000000';
 }
 
 function updateDraftLayerPosition(template: DraftTemplate, layer: DraftCanvasLayer, deltaX: number, deltaY: number): DraftTemplate {

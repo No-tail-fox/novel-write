@@ -60,6 +60,34 @@ export interface ProviderModelListResult {
   models: ProviderModel[];
 }
 
+export interface VolcengineSpeaker {
+  voiceType: string;
+  name: string;
+  gender?: string;
+  age?: string;
+  labels?: string[];
+  avatar?: string;
+}
+
+export interface VolcengineSpeakerListRequest {
+  accessKeyId: string;
+  secretAccessKey: string;
+  resourceId: string;
+  voiceTypes?: string[];
+  page?: number;
+  limit?: number;
+}
+
+export interface VolcengineSpeakerListResult {
+  status: 'pass' | 'warn' | 'fail';
+  detail: string;
+  latencyMs: number;
+  endpoint: string;
+  speakers: VolcengineSpeaker[];
+  total: number;
+  requestId: string | null;
+}
+
 export type ConfigTestTarget = 'llm' | 'image' | 'tts' | 'jianying' | 'creative';
 
 export interface ConfigTestResult {
@@ -104,12 +132,25 @@ export interface CustomImageConfig extends ImageConfig {
   ratioMappingJson: string;
 }
 
+export interface ImageProviderProfile {
+  id?: string;
+  name?: string;
+  enabled?: boolean;
+  provider: Exclude<ImageProvider, 'mock'>;
+  gptImage?: ImageConfig;
+  jimeng?: JimengConfig;
+  customImage?: CustomImageConfig;
+}
+
 export interface TtsConfig {
   provider: TtsProvider;
   appId: string;
   accessKey: string;
   speaker: string;
   volcengine: {
+    apiKey?: string;
+    accessKeyId?: string;
+    secretAccessKey?: string;
     appId: string;
     accessKey: string;
     speaker: string;
@@ -122,6 +163,18 @@ export interface TtsConfig {
     model: string;
     voiceId: string;
   };
+}
+
+export interface TtsProviderProfile {
+  id?: string;
+  name?: string;
+  enabled?: boolean;
+  provider: Exclude<TtsProvider, 'mock'>;
+  appId?: string;
+  accessKey?: string;
+  speaker?: string;
+  volcengine?: TtsConfig['volcengine'];
+  minimax?: TtsConfig['minimax'];
 }
 
 export interface BgmItem {
@@ -153,7 +206,11 @@ export interface AppConfig {
   gptImage: ImageConfig;
   jimeng: JimengConfig;
   customImage: CustomImageConfig;
+  imageProfiles: ImageProviderProfile[];
+  activeImageProfileId: string;
   tts: TtsConfig;
+  ttsProfiles: TtsProviderProfile[];
+  activeTtsProfileId: string;
   jianying: JianyingConfig;
   ima: ImaConfig;
   ui: {
@@ -291,6 +348,9 @@ export interface ImageLabRecord {
   createdAt: string;
   finishedAt: string | null;
 }
+
+export type ImageLabGenerateInput = Pick<ImageLabRecord, 'prompt' | 'ratio' | 'style'> &
+  Partial<Pick<ImageLabRecord, 'id' | 'provider' | 'resolution' | 'referenceImagePath' | 'upstreamTaskId' | 'createdAt'>>;
 
 export interface CreditTransaction {
   id: number;
