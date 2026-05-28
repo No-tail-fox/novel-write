@@ -48,7 +48,7 @@ describe('configured media providers', () => {
       const config: AppConfig = {
         ...defaultConfig,
         imageProvider: 'gpt_image',
-        gptImage: { ...defaultConfig.gptImage, apiKey: 'image-key', baseUrl: 'https://image.example/v1', model: 'gpt-image-1' },
+        gptImage: { ...defaultConfig.gptImage, apiKey: 'image-key', baseUrl: 'https://image.example', model: 'gpt-image-2' },
       };
       const generate = createConfiguredImageGenerator(config, dir);
       const assets = await generate([scene], [prompt], task);
@@ -56,7 +56,14 @@ describe('configured media providers', () => {
       expect(assets).toHaveLength(1);
       expect(await readFile(assets[0].path, 'utf8')).toBe('real-image');
       expect(requests[0].url).toBe('https://image.example/v1/images/generations');
-      expect(requests[0].body).toMatchObject({ model: 'gpt-image-1', prompt: 'visual prompt', size: '1024x1536' });
+      expect(requests[0].body).toMatchObject({
+        model: 'gpt-image-2',
+        prompt: 'visual prompt',
+        size: '1024x1536',
+        quality: 'medium',
+        output_format: 'png',
+        moderation: 'auto',
+      });
     } finally {
       await rm(dir, { recursive: true, force: true });
     }

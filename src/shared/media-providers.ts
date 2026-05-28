@@ -4,6 +4,7 @@ import { createHash, createHmac } from 'node:crypto';
 import type { AppConfig, ImagePrompt, StoryboardScene, Task } from './types';
 import type { SceneAsset } from './draft';
 import { fetchWithTimeout } from './http';
+import { buildOpenAiImageGenerationBody, normalizeOpenAiImageBaseUrl } from './openai-image';
 
 type ImageGenerator = (scenes: StoryboardScene[], prompts: ImagePrompt[], task: Task, signal?: AbortSignal) => Promise<SceneAsset[]>;
 type NarrationSynthesizer = (scenes: StoryboardScene[], task: Task, signal?: AbortSignal) => Promise<SceneAsset[]>;
@@ -233,7 +234,7 @@ async function generateOpenAiCompatibleImages(input: {
   if (!input.apiKey) {
     throw new Error('Image provider API key is missing; cannot generate real image assets.');
   }
-  const baseUrl = normalizeBaseUrl(input.baseUrl || 'https://api.openai.com/v1');
+  const baseUrl = normalizeOpenAiImageBaseUrl(input.baseUrl || 'https://api.openai.com');
   const outputDir = join(input.workDir, 'provider-images');
   await mkdir(outputDir, { recursive: true });
 
@@ -249,11 +250,12 @@ async function generateOpenAiCompatibleImages(input: {
         'Content-Type': 'application/json',
         Authorization: `Bearer ${input.apiKey}`,
       },
-      body: JSON.stringify({
+      body: JSON.stringify(buildOpenAiImageGenerationBody({
         model: input.model,
         prompt,
-        size: resolveOpenAiImageSize(input.ratio, input.resolution),
-      }),
+        ratio: input.ratio,
+        resolution: input.resolution,
+      })),
     });
     if (!response.ok) {
       throw new Error(`Image provider API error (${response.status}): ${await response.text()}`);
@@ -408,16 +410,6 @@ function decodeAudioPayload(value: string): Buffer {
     return Buffer.from(trimmed, 'hex');
   }
   return Buffer.from(trimmed, 'base64');
-}
-
-function normalizeBaseUrl(value: string): string {
-  return value.replace(/\/+$/, '') || 'https://api.openai.com/v1';
-}
-
-function resolveOpenAiImageSize(ratio: string, resolution: '1K' | '2K' | '4K'): string {
-  if (ratio === '9:16' || ratio === '3:4' || ratio === '2:3') return '1024x1536';
-  if (ratio === '16:9' || ratio === '4:3' || ratio === '3:2' || ratio === '21:9') return '1536x1024';
-  return '1024x1024';
 }
 
 async function signedVolcenginePost<T>(input: {

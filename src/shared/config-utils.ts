@@ -1,14 +1,58 @@
 import { defaultConfig } from './config';
+import { normalizeOpenAiImageBaseUrl, testOpenAiCompatibleImageModel } from './openai-image';
 import type { AppConfig, ConfigTestResult, ConfigTestTarget, LlmModelTestResult } from './types';
 
 type TestStatus = ConfigTestResult['status'];
 type ConfigValidationOptions = {
   pathExists?: (path: string) => boolean;
+  fetchImpl?: typeof fetch;
 };
+
+function normalizeLlmProfile(profile: Partial<AppConfig['llm']>, index: number): AppConfig['llm'] {
+  const merged = { ...defaultConfig.llm, ...profile };
+  const id = profile.id?.trim() || buildLlmProfileId(merged, index);
+  return {
+    ...merged,
+    id,
+    name: profile.name?.trim() || defaultLlmProfileName(merged, index),
+    enabled: Boolean(profile.enabled),
+  };
+}
+
+function buildLlmProfileId(profile: AppConfig['llm'], index: number): string {
+  const source = `${profile.provider}-${profile.baseUrl || 'official'}-${profile.model || 'model'}-${index}`;
+  const slug = source
+    .toLowerCase()
+    .replace(/^https?:\/\//, '')
+    .replace(/[^a-z0-9]+/g, '-')
+    .replace(/^-+|-+$/g, '')
+    .slice(0, 48);
+  return `llm-${slug || index + 1}`;
+}
+
+function defaultLlmProfileName(profile: AppConfig['llm'], index: number): string {
+  if (profile.provider === 'openai') return 'OpenAI Official';
+  if (profile.baseUrl.includes('ai.input.im')) return '第三方';
+  return index === 0 ? '默认配置' : `配置 ${index + 1}`;
+}
 
 export function normalizeAppConfig(input: unknown): AppConfig {
   const partial = (input && typeof input === 'object' ? input : {}) as Partial<AppConfig>;
-  const llm = { ...defaultConfig.llm, ...(partial.llm ?? {}) };
+  const llm = normalizeLlmProfile({ ...defaultConfig.llm, ...(partial.llm ?? {}) }, 0);
+  const rawProfiles = partial.llmProfiles?.length ? partial.llmProfiles : [];
+  const profileMap = new Map<string, AppConfig['llmProfiles'][number]>();
+  for (const [index, profile] of rawProfiles.entries()) {
+    const normalized = normalizeLlmProfile(profile, index);
+    profileMap.set(normalized.id!, normalized);
+  }
+  if (!profileMap.has(llm.id!)) {
+    profileMap.set(llm.id!, llm);
+  } else {
+    profileMap.set(llm.id!, { ...profileMap.get(llm.id!)!, ...llm });
+  }
+  const activeLlmProfileId = partial.activeLlmProfileId && profileMap.has(partial.activeLlmProfileId) ? partial.activeLlmProfileId : llm.id!;
+  const llmProfiles = Array.from(profileMap.values()).map((profile) => ({ ...profile, enabled: profile.id === activeLlmProfileId }));
+  const activeLlm = { ...(llmProfiles.find((profile) => profile.id === activeLlmProfileId) ?? llm), enabled: true };
   const imageProvider = partial.imageProvider ?? defaultConfig.imageProvider;
   const gptImage = { ...defaultConfig.gptImage, ...(partial.gptImage ?? partial.image ?? {}) };
   const legacyImage = imageProvider === 'gpt_image' ? { ...defaultConfig.image, ...gptImage } : { ...defaultConfig.image, ...(partial.image ?? {}) };
@@ -16,8 +60,9 @@ export function normalizeAppConfig(input: unknown): AppConfig {
   return {
     ...defaultConfig,
     ...partial,
-    llm,
-    llmProfiles: partial.llmProfiles?.length ? partial.llmProfiles.map((profile) => ({ ...defaultConfig.llm, ...profile })) : [{ ...llm }],
+    llm: activeLlm,
+    llmProfiles,
+    activeLlmProfileId,
     imageProvider,
     image: legacyImage,
     gptImage,
@@ -87,6 +132,37 @@ export function validateConfigTarget(target: ConfigTestTarget, input: AppConfig,
   });
 }
 
+export async function testConfigTarget(target: ConfigTestTarget, input: AppConfig, options: ConfigValidationOptions = {}): Promise<ConfigTestResult> {
+  const fieldResult = validateConfigTarget(target, input, options);
+  if (target !== 'image' || fieldResult.status === 'fail') {
+    return fieldResult;
+  }
+
+  const config = normalizeAppConfig(input);
+  if (config.imageProvider !== 'gpt_image' && config.imageProvider !== 'custom') {
+    return fieldResult;
+  }
+
+  const image = activeOpenAiImageConfig(config);
+  const probe = await testOpenAiCompatibleImageModel({
+    baseUrl: image.baseUrl,
+    apiKey: image.apiKey,
+    model: image.model,
+    ratio: image.ratio,
+    resolution: image.resolution,
+    fetchImpl: options.fetchImpl,
+  });
+
+  return {
+    target: 'image',
+    status: probe.status,
+    detail: probe.detail,
+    latencyMs: probe.latencyMs,
+    endpoint: probe.endpoint,
+    requestId: probe.requestId,
+  };
+}
+
 export function fromLlmModelTestResult(result: LlmModelTestResult): ConfigTestResult {
   return {
     status: result.status,
@@ -119,21 +195,22 @@ function validateImageConfig(config: AppConfig, startedAt: number): ConfigTestRe
   }
 
   if (config.imageProvider === 'custom') {
+    const image = activeOpenAiImageConfig(config);
     const missing = missingFields([
-      ['Base URL', config.customImage.baseUrl],
-      ['API Key', config.customImage.apiKey],
-      ['模型', config.customImage.model],
+      ['Base URL', image.baseUrl],
+      ['API Key', image.apiKey],
+      ['模型', image.model],
     ]);
     return buildResult({
       target: 'image',
       startedAt,
       status: missing.length ? 'fail' : 'pass',
-      endpoint: `${normalizeBaseUrl(config.customImage.baseUrl || 'https://api.openai.com/v1')}/images/generations`,
-      detail: missing.length ? `自定义图片接口缺少：${missing.join('、')}。` : `自定义图片接口字段完整：${config.customImage.model}`,
+      endpoint: `${normalizeOpenAiImageBaseUrl(image.baseUrl)}/images/generations`,
+      detail: missing.length ? `自定义图片接口缺少：${missing.join('、')}。` : `自定义图片接口字段完整：${image.model}`,
     });
   }
 
-  const image = config.gptImage;
+  const image = activeOpenAiImageConfig(config);
   const missing = missingFields([
     ['API Key', image.apiKey],
     ['模型', image.model],
@@ -142,7 +219,7 @@ function validateImageConfig(config: AppConfig, startedAt: number): ConfigTestRe
     target: 'image',
     startedAt,
     status: missing.length ? 'fail' : 'pass',
-    endpoint: `${normalizeBaseUrl(image.baseUrl || 'https://api.openai.com/v1')}/images/generations`,
+    endpoint: `${normalizeOpenAiImageBaseUrl(image.baseUrl)}/images/generations`,
     detail: missing.length ? `GPT Image 配置缺少：${missing.join('、')}。` : `GPT Image 配置已可用于任务：${image.model}`,
   });
 }
@@ -196,5 +273,32 @@ function missingFields(fields: Array<[string, string | null | undefined]>): stri
 }
 
 function normalizeBaseUrl(value: string): string {
-  return value.replace(/\/+$/, '') || 'https://api.openai.com/v1';
+  const trimmed = value.replace(/\/+$/, '');
+  return trimmed.endsWith('/v1') ? trimmed : `${trimmed || 'https://api.openai.com'}/v1`;
+}
+
+function activeOpenAiImageConfig(config: AppConfig): {
+  baseUrl: string;
+  apiKey: string;
+  model: string;
+  ratio: string;
+  resolution: '1K' | '2K' | '4K';
+} {
+  if (config.imageProvider === 'custom') {
+    return {
+      baseUrl: config.customImage.baseUrl,
+      apiKey: config.customImage.apiKey,
+      model: config.customImage.model,
+      ratio: config.customImage.ratio,
+      resolution: config.customImage.resolution ?? '2K',
+    };
+  }
+
+  return {
+    baseUrl: config.gptImage.baseUrl || config.image.baseUrl,
+    apiKey: config.gptImage.apiKey || config.image.apiKey,
+    model: config.gptImage.model || config.image.model,
+    ratio: config.gptImage.ratio || config.image.ratio,
+    resolution: config.gptImage.resolution ?? config.image.resolution ?? '2K',
+  };
 }

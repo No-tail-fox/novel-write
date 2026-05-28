@@ -15,7 +15,12 @@ describe('pyJianYingDraft bridge input', () => {
         title: 'Bridge Draft',
         canvas: { width: 1080, height: 1920 },
         imageArea: { top: 0, height: 1280, fit: 'cover' },
-        caption: { fontSize: 44, color: '#ffffff', y: 1480 },
+        caption: { fontSize: 44, color: '#ffffff', x: 0.2, y: 1480 },
+        overlays: {
+          title: { visible: true, text: 'Bridge Draft', x: -0.1, y: -0.5, fontSize: 44, color: '#ffde00' },
+          subtitle: { visible: true, x: 0, y: -0.35, fontSize: 22, color: '#ffffff' },
+          disclaimer: { visible: true, text: 'Disclaimer', x: 0, y: 0.9 },
+        },
         images: [{ sceneId: 1, path: join(dir, 'image.png') }],
         narration: [{ sceneId: 1, path: join(dir, 'voice.mp3') }],
         subtitlesSrtPath: join(dir, 'subtitles.srt'),
@@ -28,6 +33,8 @@ describe('pyJianYingDraft bridge input', () => {
       expect(payload.images[0]).toMatchObject({ sceneId: 1, path: join(dir, 'image.png') });
       expect(payload.narration[0]).toMatchObject({ sceneId: 1, path: join(dir, 'voice.mp3') });
       expect(payload.canvas).toEqual({ width: 1080, height: 1920 });
+      expect(payload.caption).toMatchObject({ x: 0.2, y: 1480 });
+      expect(payload.overlays.title).toMatchObject({ x: -0.1, y: -0.5 });
     } finally {
       await rm(dir, { recursive: true, force: true });
     }

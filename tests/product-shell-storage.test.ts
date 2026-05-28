@@ -76,4 +76,38 @@ describe('product shell storage', () => {
       await rm(dir, { recursive: true, force: true });
     }
   });
+
+  it('hydrates legacy draft templates with draggable canvas coordinates', async () => {
+    const dir = await mkdtemp(join(tmpdir(), 'storybound-shell-draft-layout-'));
+    const file = join(dir, 'app.db');
+
+    try {
+      const db = await FileDatabase.open(file);
+      const draft = (await db.getState()).draftTemplates.find((template) => template.id === 'default-portrait-9-16');
+      expect(draft).toBeDefined();
+      const legacyTemplate = {
+        ...draft!,
+        title: { visible: true, text: 'Legacy Title', fontSize: 44, color: '#ffde00' },
+        subtitle: { visible: true, fontSize: 22, color: '#ffffff' },
+        caption: { ...draft!.caption, x: undefined as unknown as number },
+        disclaimer: { visible: true, text: 'Legacy disclaimer' },
+      } as unknown as typeof draft;
+      await db.upsertDraftTemplate(legacyTemplate!);
+      await db.close();
+
+      const reopened = await FileDatabase.open(file);
+      const state = await reopened.getState();
+      const hydrated = state.draftTemplates.find((template) => template.id === 'default-portrait-9-16');
+
+      expect(hydrated?.title).toMatchObject({ x: 0, y: -0.1 });
+      expect(hydrated?.subtitle).toMatchObject({ x: 0, y: 0.02 });
+      expect(hydrated?.caption).toMatchObject({ x: 0 });
+      expect(typeof hydrated?.caption.y).toBe('number');
+      expect(hydrated?.disclaimer).toMatchObject({ x: 0, y: 0.92 });
+
+      await reopened.close();
+    } finally {
+      await rm(dir, { recursive: true, force: true });
+    }
+  });
 });

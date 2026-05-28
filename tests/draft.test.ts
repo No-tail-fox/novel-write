@@ -134,6 +134,15 @@ describe('draft writer', () => {
       expect(bridgePayloads[0]).toMatchObject({
         title: 'Real Draft',
         totalDurationUs: 2_600_000,
+        caption: {
+          x: 0,
+          y: expect.any(Number),
+        },
+        overlays: {
+          title: { x: 0, y: -0.1 },
+          subtitle: { x: 0, y: 0.02 },
+          disclaimer: { x: 0, y: 0.92 },
+        },
         scenes: [
           { sceneId: 1, startUs: 0, durationUs: 1_200_000, text: 'First line' },
           { sceneId: 2, startUs: 1_200_000, durationUs: 1_400_000, text: 'Second line' },

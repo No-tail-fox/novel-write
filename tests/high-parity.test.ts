@@ -25,7 +25,7 @@ describe('high parity Storybound shell model', () => {
 
       expect(state.config.imageProvider).toBe('gpt_image');
       expect(state.config.llmProfiles[0]).toMatchObject({ provider: 'custom', model: 'gpt-5.5' });
-      expect(state.config.gptImage).toMatchObject({ model: 'gpt-image-1', resolution: '2K' });
+      expect(state.config.gptImage).toMatchObject({ model: 'gpt-image-2', resolution: '2K' });
       expect(state.config.jimeng).toMatchObject({ model: 'jimeng-3.1', resolution: '2K' });
       expect(state.config.customImage).toMatchObject({ asyncMode: false });
       expect(state.config.tts.provider).toBe('volcengine');
