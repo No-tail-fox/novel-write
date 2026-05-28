@@ -170,7 +170,31 @@ function createBridgePayload(input: {
     caption: {
       fontSize: input.template.caption.fontSize,
       color: input.template.caption.color,
+      x: input.template.caption.x,
       y: input.template.caption.y,
+    },
+    overlays: {
+      title: {
+        visible: input.template.title.visible,
+        text: input.template.title.text,
+        x: input.template.title.x,
+        y: input.template.title.y,
+        fontSize: input.template.title.fontSize,
+        color: input.template.title.color,
+      },
+      subtitle: {
+        visible: input.template.subtitle.visible,
+        x: input.template.subtitle.x,
+        y: input.template.subtitle.y,
+        fontSize: input.template.subtitle.fontSize,
+        color: input.template.subtitle.color,
+      },
+      disclaimer: {
+        visible: input.template.disclaimer.visible,
+        text: input.template.disclaimer.text,
+        x: input.template.disclaimer.x,
+        y: input.template.disclaimer.y,
+      },
     },
     scenes,
     images: input.input.scenes.map((scene, index) => ({ sceneId: scene.id, path: input.sourceImages[index] })),

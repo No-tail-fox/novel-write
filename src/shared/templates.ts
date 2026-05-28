@@ -21,6 +21,8 @@ const captionBase = {
 
 const titleBase = {
   visible: true,
+  x: 0,
+  y: -0.1,
   text: '主标题示例',
   fontSize: 44,
   color: '#FFDE00',
@@ -28,12 +30,16 @@ const titleBase = {
 
 const subtitleBase = {
   visible: true,
+  x: 0,
+  y: 0.02,
   fontSize: 22,
   color: '#FFFFFF',
 };
 
 const disclaimerBase = {
   visible: true,
+  x: 0,
+  y: 0.92,
   text: '免责声明',
 };
 
@@ -108,4 +114,44 @@ export const draftTemplates: DraftTemplate[] = [
 
 export function getTemplate(id = 'default-portrait-9-16'): DraftTemplate {
   return draftTemplates.find((template) => template.id === id) ?? draftTemplates[0];
+}
+
+export function normalizeDraftTemplate(template: Partial<DraftTemplate>): DraftTemplate {
+  const fallback = draftTemplates.find((item) => item.id === template.id) ?? draftTemplates[0];
+  return {
+    ...fallback,
+    ...template,
+    canvas: { ...fallback.canvas, ...template.canvas },
+    image: { ...fallback.image, ...template.image },
+    title: {
+      ...fallback.title,
+      ...template.title,
+      x: finiteNumber(template.title?.x, fallback.title.x),
+      y: finiteNumber(template.title?.y, fallback.title.y),
+    },
+    subtitle: {
+      ...fallback.subtitle,
+      ...template.subtitle,
+      x: finiteNumber(template.subtitle?.x, fallback.subtitle.x),
+      y: finiteNumber(template.subtitle?.y, fallback.subtitle.y),
+    },
+    caption: {
+      ...fallback.caption,
+      ...template.caption,
+      x: finiteNumber(template.caption?.x, fallback.caption.x),
+      y: finiteNumber(template.caption?.y, fallback.caption.y),
+      background: { ...fallback.caption.background, ...template.caption?.background },
+    },
+    disclaimer: {
+      ...fallback.disclaimer,
+      ...template.disclaimer,
+      x: finiteNumber(template.disclaimer?.x, fallback.disclaimer.x),
+      y: finiteNumber(template.disclaimer?.y, fallback.disclaimer.y),
+    },
+    audio: { ...fallback.audio, ...template.audio },
+  };
+}
+
+function finiteNumber(value: unknown, fallback: number): number {
+  return typeof value === 'number' && Number.isFinite(value) ? value : fallback;
 }

@@ -21,6 +21,9 @@ export type RewriteIntensity = 'standard' | 'deep' | 'original';
 export type NarrativePov = 'keep-original' | 'first-person' | 'third-person';
 
 export interface LlmConfig {
+  id?: string;
+  name?: string;
+  enabled?: boolean;
   provider: string;
   protocol?: 'openai';
   apiKey: string;
@@ -143,6 +146,7 @@ export interface ImaConfig {
 export interface AppConfig {
   llm: LlmConfig;
   llmProfiles: LlmConfig[];
+  activeLlmProfileId: string;
   imageProvider: ImageProvider;
   image: ImageConfig;
   gptImage: ImageConfig;
@@ -224,6 +228,7 @@ export type CreateTaskInput = Partial<
 };
 
 export interface TaskEvent {
+  id?: string;
   seq?: number;
   taskId: string;
   type: string;
@@ -455,11 +460,15 @@ export interface DraftTemplate {
   title: {
     visible: boolean;
     text: string;
+    x: number;
+    y: number;
     fontSize: number;
     color: string;
   };
   subtitle: {
     visible: boolean;
+    x: number;
+    y: number;
     fontSize: number;
     color: string;
   };
@@ -485,6 +494,8 @@ export interface DraftTemplate {
   disclaimer: {
     visible: boolean;
     text: string;
+    x: number;
+    y: number;
   };
   audio: {
     narrationVolume: number;

@@ -30,7 +30,7 @@ import {
   defaultPromptTemplates,
   defaultUiPreferences,
 } from './config';
-import { draftTemplates } from './templates';
+import { draftTemplates, normalizeDraftTemplate } from './templates';
 export { defaultConfig } from './config';
 
 interface AddEventInput {
@@ -735,7 +735,7 @@ function rowToPromptTemplate(row: Record<string, unknown>): PromptTemplate {
 }
 
 function rowToDraftTemplate(row: Record<string, unknown>): DraftTemplate {
-  return parseJson(String(row.data), draftTemplates[0]);
+  return normalizeDraftTemplate(parseJson(String(row.data), draftTemplates[0]));
 }
 
 function rowToImageLabRecord(row: Record<string, unknown>): ImageLabRecord {

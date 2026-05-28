@@ -30,6 +30,35 @@ describe('product shell ui', () => {
     expect(css).toContain('.draft-template-thumb');
   });
 
+  it('supports dragging draft template regions directly on the preview canvas', async () => {
+    const main = await readFile(new URL('../src/main.tsx', import.meta.url), 'utf8');
+    const css = await readFile(new URL('../src/styles.css', import.meta.url), 'utf8');
+
+    expect(main).toContain("normalizeDraftTemplate");
+    expect(main).toContain("draftTemplates: (state.draftTemplates ?? builtinDraftTemplates).map(normalizeDraftTemplate)");
+    expect(main).toContain('EditableDraftCanvas');
+    expect(main).toContain('DraftCanvasLayer');
+    expect(main).toContain('handleDraftCanvasPointerDown');
+    expect(main).toContain('onPointerMove');
+    expect(main).toContain('setPointerCapture');
+    expect(main).toContain('updateDraftLayerPosition');
+    expect(main).toContain('坐标');
+    expect(main).toContain("data-layer={layer}");
+    expect(main).toContain('data-layer="image"');
+    expect(css).toContain('.editable-draft-canvas');
+    expect(css).toContain('.draft-layer');
+    expect(css).toContain('.draft-layer.selected');
+    expect(css).toContain('.draft-layer-handle');
+  });
+
+  it('does not reset unsaved draft template drag edits during state refreshes', async () => {
+    const main = await readFile(new URL('../src/main.tsx', import.meta.url), 'utf8');
+
+    expect(main).toContain('[editingId]');
+    expect(main).toContain('const currentEditingTemplate = state.draftTemplates.find');
+    expect(main).not.toContain('[editingId, editingTemplate]');
+  });
+
   it('supports opening a selected task in a screenshot-style pipeline detail view', async () => {
     const main = await readFile(new URL('../src/main.tsx', import.meta.url), 'utf8');
     const types = await readFile(new URL('../src/shared/types.ts', import.meta.url), 'utf8');
@@ -66,6 +95,38 @@ describe('product shell ui', () => {
     expect(css).toContain('.artifact-scene-list');
   });
 
+  it('refreshes task artifact snapshots while image generation is still running', async () => {
+    const main = await readFile(new URL('../src/main.tsx', import.meta.url), 'utf8');
+
+    expect(main).toContain('artifactRefreshKey');
+    expect(main).toContain('artifactRefreshTick');
+    expect(main).toContain('latestEvent?.id');
+    expect(main).toContain('snapshotImageCount');
+    expect(main).toContain('snapshotStepStatus(snapshot, 4)');
+    expect(main).toContain('imageProgressLabel');
+    expect(main).toContain('图片进度');
+  });
+
+  it('prioritizes every generated image in the storyboard gallery tab', async () => {
+    const main = await readFile(new URL('../src/main.tsx', import.meta.url), 'utf8');
+    const css = await readFile(new URL('../src/styles.css', import.meta.url), 'utf8');
+
+    expect(main).toContain('ArtifactImageGallery');
+    expect(main).toContain('storyboard-gallery-hero');
+    expect(main).toContain('ArtifactSection title="全部图片"');
+    expect(main).toContain('galleryItems');
+    expect(main).toContain("artifact-image-card pending");
+    expect(main).toContain('等待生成');
+    const galleryIndex = main.indexOf('storyboard-gallery-hero');
+    const allImagesIndex = main.indexOf('ArtifactSection title="全部图片"', galleryIndex);
+    const scenesIndex = main.indexOf('ArtifactSection title="分镜分句"', allImagesIndex);
+    expect(allImagesIndex).toBeGreaterThan(galleryIndex);
+    expect(scenesIndex).toBeGreaterThan(allImagesIndex);
+    expect(css).toContain('.artifact-image-gallery');
+    expect(css).toContain('.artifact-image-card');
+    expect(css).toContain('.storyboard-gallery-hero');
+  });
+
   it('does not keep the duplicate legacy artifact preview card in task detail', async () => {
     const main = await readFile(new URL('../src/main.tsx', import.meta.url), 'utf8');
 
@@ -73,15 +134,16 @@ describe('product shell ui', () => {
     expect(countOccurrences(main, '<ArtifactPreviewContent')).toBe(1);
   });
 
-  it('auto-refreshes live task metrics and exposes LLM model testing controls', async () => {
+  it('auto-refreshes live task metrics without duplicating settings test controls', async () => {
     const main = await readFile(new URL('../src/main.tsx', import.meta.url), 'utf8');
     const css = await readFile(new URL('../src/styles.css', import.meta.url), 'utf8');
 
     expect(main).toContain('liveRefreshMs');
     expect(main).toContain('api.getState()');
     expect(main).toContain('liveNow');
-    expect(main).toContain('testLlmConfig');
-    expect(main).toContain('测试模型可用性');
+    expect(main).toContain('testCurrentConfig');
+    expect(main).toContain('测试当前配置');
+    expect(main).not.toContain('测试模型可用性');
     expect(css).toContain('.test-result');
   });
 
@@ -116,11 +178,12 @@ describe('product shell ui', () => {
     expect(preload).toContain('listProviderModels');
     expect(electronMain).toContain('models:list');
     expect(main).toContain('ModelPicker');
+    expect(main).toContain('LlmProfileManager');
     expect(main).toContain('refreshProviderModels');
     expect(main).toContain('clearProviderModels');
     expect(main).toContain('listProviderModels');
     expect(main).toContain('获取模型');
-    expect(main).toContain("key=\"llm\"");
+    expect(main).toContain('key={`llm-${selectedProfile.id}`}');
     expect(main).toContain("key=\"gpt-image\"");
     expect(main).toContain("key=\"custom-image\"");
     expect(main).toContain("clearProviderModels('llm')");
@@ -130,12 +193,40 @@ describe('product shell ui', () => {
     expect(css).toContain('.model-list-status');
   });
 
+  it('keeps unsaved settings edits when app state refreshes in the background', async () => {
+    const main = await readFile(new URL('../src/main.tsx', import.meta.url), 'utf8');
+
+    expect(main).toContain('settingsDirty');
+    expect(main).toContain('setSettingsDraft');
+    expect(main).toContain('commitSettingsDraft');
+    expect(main).toContain('lastAppliedConfigSignature');
+    expect(main).toContain('if (settingsDirty) return');
+  });
+
+  it('manages multiple LLM configuration profiles from a switcher-style list', async () => {
+    const main = await readFile(new URL('../src/main.tsx', import.meta.url), 'utf8');
+    const css = await readFile(new URL('../src/styles.css', import.meta.url), 'utf8');
+
+    expect(main).toContain('LlmProfileManager');
+    expect(main).toContain('activeLlmProfileId');
+    expect(main).toContain('enableLlmProfile');
+    expect(main).toContain('addLlmProfile');
+    expect(main).toContain('copyLlmProfile');
+    expect(main).toContain('removeLlmProfile');
+    expect(main).toContain('新增配置');
+    expect(main).toContain('启用');
+    expect(main).toContain('data-profile-card');
+    expect(css).toContain('.profile-switcher-list');
+    expect(css).toContain('.provider-profile-card');
+    expect(css).toContain('.provider-profile-card.active');
+  });
+
   it('scopes provider-specific settings instead of showing every credential at once', async () => {
     const main = await readFile(new URL('../src/main.tsx', import.meta.url), 'utf8');
 
     for (const branch of [
-      "activeLlmProvider(draft) === 'openai'",
-      "activeLlmProvider(draft) === 'custom'",
+      "selectedProvider === 'openai'",
+      'OpenAI-compatible LLM',
       "draft.imageProvider === 'gpt_image'",
       "draft.imageProvider === 'jimeng'",
       "draft.imageProvider === 'custom'",

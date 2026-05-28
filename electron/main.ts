@@ -6,7 +6,7 @@ import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { promisify } from 'node:util';
 import { readTaskArtifactSnapshot } from '../src/shared/artifact-preview';
-import { fromLlmModelTestResult, validateConfigTarget } from '../src/shared/config-utils';
+import { fromLlmModelTestResult, testConfigTarget } from '../src/shared/config-utils';
 import { createOpenAiCompatibleJsonLlm, listOpenAiCompatibleModels, testOpenAiCompatibleLlm } from '../src/shared/llm-provider';
 import { composeCopyFromSources, createAiSourceResearcher, searchWebSources } from '../src/shared/research';
 import { runTask } from '../src/shared/runner';
@@ -83,7 +83,7 @@ ipcMain.handle('config:test', async (_event, input: { target: ConfigTestTarget; 
   if (input.target === 'llm') {
     return fromLlmModelTestResult(await testOpenAiCompatibleLlm(input.config.llm));
   }
-  return validateConfigTarget(input.target, input.config, { pathExists: existsSync });
+  return testConfigTarget(input.target, input.config, { pathExists: existsSync });
 });
 
 ipcMain.handle('research:web-search', async (_event, query: string) => {

@@ -22,7 +22,31 @@ export interface PyJianYingBridgeInput {
   caption: {
     fontSize: number;
     color: string;
+    x?: number;
     y: number;
+  };
+  overlays?: {
+    title?: {
+      visible: boolean;
+      text: string;
+      x: number;
+      y: number;
+      fontSize: number;
+      color: string;
+    };
+    subtitle?: {
+      visible: boolean;
+      x: number;
+      y: number;
+      fontSize: number;
+      color: string;
+    };
+    disclaimer?: {
+      visible: boolean;
+      text: string;
+      x: number;
+      y: number;
+    };
   };
   scenes?: Array<{ sceneId: number; startUs: number; durationUs: number; text: string }>;
   images: Array<{ sceneId: number; path: string }>;
@@ -280,7 +304,7 @@ def main():
             align=1,
             auto_wrapping=True,
         ),
-        clip_settings=draft.ClipSettings(transform_y=float(caption.get("y", -0.8))),
+        clip_settings=draft.ClipSettings(transform_x=float(caption.get("x", 0)), transform_y=float(caption.get("y", -0.8))),
     )
 
     script.save()

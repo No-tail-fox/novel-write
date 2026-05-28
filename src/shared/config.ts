@@ -13,6 +13,9 @@ const updatedAt = '2026-05-26T00:00:00.000Z';
 
 export const defaultConfig: AppConfig = {
   llm: {
+    id: 'default-llm',
+    name: '第三方',
+    enabled: true,
     provider: 'custom',
     protocol: 'openai',
     apiKey: '',
@@ -22,6 +25,9 @@ export const defaultConfig: AppConfig = {
   },
   llmProfiles: [
     {
+      id: 'default-llm',
+      name: '第三方',
+      enabled: true,
       provider: 'custom',
       protocol: 'openai',
       apiKey: '',
@@ -30,11 +36,12 @@ export const defaultConfig: AppConfig = {
       proxyUrl: '',
     },
   ],
+  activeLlmProfileId: 'default-llm',
   imageProvider: 'gpt_image',
   image: {
     baseUrl: '',
     apiKey: '',
-    model: 'gpt-image-1',
+    model: 'gpt-image-2',
     ratio: '9:16',
     concurrency: 3,
     resolution: '2K',
@@ -43,7 +50,7 @@ export const defaultConfig: AppConfig = {
   gptImage: {
     baseUrl: '',
     apiKey: '',
-    model: 'gpt-image-1',
+    model: 'gpt-image-2',
     ratio: '9:16',
     concurrency: 3,
     resolution: '2K',
@@ -68,7 +75,7 @@ export const defaultConfig: AppConfig = {
     displayName: '自定义图片接口',
     baseUrl: '',
     apiKey: '',
-    model: 'gpt-image-1',
+    model: 'gpt-image-2',
     ratio: '9:16',
     concurrency: 3,
     resolution: '2K',
