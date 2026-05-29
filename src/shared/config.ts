@@ -23,6 +23,7 @@ export const defaultConfig: AppConfig = {
     baseUrl: 'https://ai.input.im',
     model: 'gpt-5.5',
     proxyUrl: '',
+    timeoutMs: 120000,
   },
   llmProfiles: [
     {
@@ -35,6 +36,7 @@ export const defaultConfig: AppConfig = {
       baseUrl: 'https://ai.input.im',
       model: 'gpt-5.5',
       proxyUrl: '',
+      timeoutMs: 120000,
     },
   ],
   activeLlmProfileId: 'default-llm',

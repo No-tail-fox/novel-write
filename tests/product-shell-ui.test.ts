@@ -467,6 +467,22 @@ describe('product shell ui', () => {
     expect(css).toContain('.image-preview-card');
     expect(css).toContain('.image-thumb');
   });
+
+  it('shows playable narration previews with per-scene regeneration controls', async () => {
+    const main = await readFile(new URL('../src/main.tsx', import.meta.url), 'utf8');
+    const css = await readFile(new URL('../src/styles.css', import.meta.url), 'utf8');
+    const preload = await readFile(new URL('../electron/preload.ts', import.meta.url), 'utf8');
+
+    expect(preload).toContain('regenerateTaskNarration');
+    expect(main).toContain('NarrationPreviewList');
+    expect(main).toContain('<audio controls');
+    expect(main).toContain('audioPreviewUrls');
+    expect(main).toContain('regenerateTaskNarration');
+    expect(main).toContain('重新生成配音');
+    expect(css).toContain('.narration-preview-list');
+    expect(css).toContain('.narration-preview-card');
+    expect(css).toContain('.narration-player');
+  });
 });
 
 function countOccurrences(value: string, needle: string): number {

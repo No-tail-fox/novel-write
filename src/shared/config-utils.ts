@@ -17,7 +17,13 @@ function normalizeLlmProfile(profile: Partial<AppConfig['llm']>, index: number):
     id,
     name: profile.name?.trim() || defaultLlmProfileName(merged, index),
     enabled: Boolean(profile.enabled),
+    timeoutMs: normalizePositiveNumber(merged.timeoutMs, defaultConfig.llm.timeoutMs ?? 120000),
   };
+}
+
+function normalizePositiveNumber(value: unknown, fallback: number): number {
+  const parsed = Number(value);
+  return Number.isFinite(parsed) && parsed > 0 ? parsed : fallback;
 }
 
 function buildLlmProfileId(profile: AppConfig['llm'], index: number): string {

@@ -313,8 +313,8 @@ describe('configured media providers', () => {
       expect(requests[0].headers.get('X-Api-Key')).toBe('v3-key');
       expect(requests[0].headers.get('X-Api-Resource-Id')).toBe('seed-tts-2.0');
       expect(requests[0].headers.get('X-Api-Request-Id')).toBeTruthy();
+      expect(requests[0].body).not.toHaveProperty('namespace');
       expect(requests[0].body).toMatchObject({
-        namespace: 'BidirectionalTTS',
         user: { uid: 'task-1' },
         req_params: {
           text: 'A real scene',

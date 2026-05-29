@@ -41,7 +41,7 @@ export function createOpenAiCompatibleJsonLlm(config: LlmConfig): JsonLlm {
     const baseUrl = normalizeOpenAiBaseUrl(config.baseUrl || 'https://api.openai.com');
     const response = await fetchWithTimeout(`${baseUrl}/chat/completions`, {
       method: 'POST',
-      timeoutMs: 120_000,
+      timeoutMs: config.timeoutMs ?? 120_000,
       timeoutLabel: `LLM step ${request.step} ${request.name}`,
       signal: request.signal,
       headers: {

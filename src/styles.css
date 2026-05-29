@@ -1403,6 +1403,79 @@ textarea {
   overflow-wrap: anywhere;
 }
 
+.narration-preview-list {
+  display: grid;
+  gap: 10px;
+}
+
+.narration-preview-card {
+  display: grid;
+  gap: 10px;
+  min-width: 0;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  padding: 11px;
+  background: #10161d;
+}
+
+.narration-preview-card.pending {
+  border-style: dashed;
+}
+
+.narration-preview-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.narration-preview-head div {
+  display: grid;
+  gap: 4px;
+  min-width: 0;
+}
+
+.narration-preview-head strong {
+  color: var(--text);
+  line-height: 1.45;
+}
+
+.narration-preview-head span,
+.narration-preview-card small {
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.narration-preview-card p {
+  margin: 0;
+  color: #c9d5e4;
+  line-height: 1.55;
+}
+
+.narration-preview-card small {
+  overflow-wrap: anywhere;
+}
+
+.narration-player {
+  width: 100%;
+}
+
+.narration-player.loading,
+.narration-player.error {
+  display: grid;
+  place-items: center;
+  min-height: 42px;
+  border: 1px solid var(--line);
+  border-radius: 7px;
+  background: #05080c;
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.narration-player.error {
+  color: #ff9d8f;
+}
+
 .artifact-empty {
   border: 1px dashed var(--line);
   border-radius: 7px;

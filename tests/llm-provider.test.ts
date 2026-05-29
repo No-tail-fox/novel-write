@@ -4,6 +4,7 @@ import { defaultConfig } from '@shared/config';
 
 afterEach(() => {
   vi.unstubAllGlobals();
+  vi.useRealTimers();
 });
 
 describe('OpenAI-compatible LLM JSON adapter', () => {
@@ -97,6 +98,32 @@ describe('OpenAI-compatible LLM JSON adapter', () => {
         messages: [{ role: 'user', content: 'rewrite this' }],
       }),
     ).rejects.toMatchObject({ rawResponse: 'not json' });
+  });
+
+  it('uses the configured LLM timeout for JSON calls', async () => {
+    vi.useFakeTimers();
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(
+        (_url: string, init: RequestInit) =>
+          new Promise<Response>((_resolve, reject) => {
+            const signal = init.signal as AbortSignal;
+            signal.addEventListener('abort', () => reject(signal.reason), { once: true });
+          }),
+      ),
+    );
+
+    const runJson = createOpenAiCompatibleJsonLlm({ ...defaultConfig.llm, apiKey: 'llm-key', timeoutMs: 5 });
+    const pending = runJson({
+      step: 3,
+      name: 'image-prompts',
+      messages: [{ role: 'user', content: 'slow' }],
+    });
+
+    const expectation = expect(pending).rejects.toThrow('LLM step 3 image-prompts timed out after 5ms.');
+    await vi.advanceTimersByTimeAsync(120_000);
+
+    await expectation;
   });
 
   it('tests whether the configured model can answer a JSON probe', async () => {

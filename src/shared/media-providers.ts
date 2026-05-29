@@ -437,7 +437,6 @@ async function synthesizeVolcengineV3Narration(input: {
         'X-Api-Request-Id': requestId,
       },
       body: JSON.stringify({
-        namespace: 'BidirectionalTTS',
         user: { uid: input.task.id },
         req_params: {
           text: scene.cap,

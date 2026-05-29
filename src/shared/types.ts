@@ -30,6 +30,7 @@ export interface LlmConfig {
   baseUrl: string;
   model: string;
   proxyUrl: string;
+  timeoutMs?: number;
 }
 
 export interface LlmModelTestResult {
@@ -250,6 +251,7 @@ export interface Task {
   keepPromotion: boolean;
   ttsProvider: TtsProvider;
   ttsSpeed: number;
+  storyboardSceneCount: number;
   step3PromptSnapshot: string;
   failedStep: number | null;
   retryFromStep: number | null;
@@ -281,6 +283,7 @@ export type CreateTaskInput = Partial<
     | 'keepPromotion'
     | 'ttsProvider'
     | 'ttsSpeed'
+    | 'storyboardSceneCount'
     | 'step3PromptSnapshot'
   >
 > & {

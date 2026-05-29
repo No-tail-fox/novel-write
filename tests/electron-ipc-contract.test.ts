@@ -18,6 +18,7 @@ describe('electron ipc contract', () => {
       'task:update-status',
       'task:retry',
       'task:regenerate-image',
+      'task:regenerate-narration',
       'task:get-artifacts',
       'asset:read-data-url',
       'config:test',
@@ -141,5 +142,21 @@ describe('electron ipc contract', () => {
     expect(preload).toContain('regenerateTaskImage');
     expect(preload).toContain('task:regenerate-image');
     expect(viteEnv).toContain('regenerateTaskImage: (id: string, sceneId: number) => Promise<AppState>');
+  });
+
+  it('regenerates a single scene narration through cache invalidation and background resume', async () => {
+    const main = await readFile(new URL('../electron/main.ts', import.meta.url), 'utf8');
+    const preload = await readFile(new URL('../electron/preload.ts', import.meta.url), 'utf8');
+    const viteEnv = await readFile(new URL('../src/vite-env.d.ts', import.meta.url), 'utf8');
+    const regenerateHandler = main.slice(main.indexOf("ipcMain.handle('task:regenerate-narration'"), main.indexOf("ipcMain.handle('task:get-artifacts'"));
+
+    expect(main).toContain('markSceneNarrationForRegeneration');
+    expect(regenerateHandler).toContain('retryFromStep: 5');
+    expect(regenerateHandler).toContain('failedStep: 5');
+    expect(regenerateHandler).toContain('resumeTaskRun(database, updatedTask)');
+    expect(regenerateHandler).not.toContain('runTask(');
+    expect(preload).toContain('regenerateTaskNarration');
+    expect(preload).toContain('task:regenerate-narration');
+    expect(viteEnv).toContain('regenerateTaskNarration: (id: string, sceneId: number) => Promise<AppState>');
   });
 });

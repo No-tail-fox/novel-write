@@ -165,6 +165,7 @@ const styleOptions = [
 ];
 
 const ratioOptions = ['21:9', '16:9', '3:2', '4:3', '1:1', '3:4', '2:3', '9:16'];
+const storyboardSceneCountOptions = [8, 12, 16, 20, 30];
 const voiceOptions = ['东方浩然', '灿博小叔', '温柔小雅', '爽快思思', '更多音色...'];
 const volcengineVoicePresets = [
   ['Vivi 2.0', 'zh_female_vv_uranus_bigtts'],
@@ -389,6 +390,7 @@ function makeFallbackApi(setState: (state: AppState) => void): StoryboundApi {
         keepPromotion: input.keepPromotion ?? false,
         ttsProvider: input.ttsProvider ?? 'volcengine',
         ttsSpeed: input.ttsSpeed ?? 1,
+        storyboardSceneCount: input.storyboardSceneCount ?? 12,
         step3PromptSnapshot: input.step3PromptSnapshot ?? '',
         failedStep: 0,
         retryFromStep: 0,
@@ -411,6 +413,9 @@ function makeFallbackApi(setState: (state: AppState) => void): StoryboundApi {
     async regenerateTaskImage() {
       throw new Error('浏览器预览不能重新生成真实图片，请在 Electron 应用中操作。');
     },
+    async regenerateTaskNarration() {
+      throw new Error('浏览器预览不能重新生成真实配音，请在 Electron 应用中操作。');
+    },
     async getTaskArtifacts(id: string) {
       const task = read().tasks.find((item) => item.id === id);
       return {
@@ -427,7 +432,7 @@ function makeFallbackApi(setState: (state: AppState) => void): StoryboundApi {
       };
     },
     async readAssetDataUrl() {
-      throw new Error('浏览器预览不能读取本地图片缩略图，请在 Electron 应用中查看。');
+      throw new Error('浏览器预览不能读取本地媒体预览，请在 Electron 应用中查看。');
     },
     async selectLocalImage() {
       return null;
@@ -648,6 +653,7 @@ function NewTaskPage({
   const [narrativePov, setNarrativePov] = useState<Task['narrativePov']>('keep-original');
   const [keepPromotion, setKeepPromotion] = useState(false);
   const [ttsSpeed, setTtsSpeed] = useState(1);
+  const [storyboardSceneCount, setStoryboardSceneCount] = useState(12);
   const [running, setRunning] = useState(false);
   const [draftNotice, setDraftNotice] = useState('');
   const [searchingSources, setSearchingSources] = useState(false);
@@ -737,6 +743,7 @@ function NewTaskPage({
         keepPromotion,
         ttsProvider: state.config.tts.provider,
         ttsSpeed,
+        storyboardSceneCount,
         promptTemplateId: resolvedPromptTemplate?.id ?? null,
         promptTemplateType: 'task',
       });
@@ -890,6 +897,13 @@ function NewTaskPage({
         {showAdvanced ? (
           <div className="advanced-grid">
             <Segmented label="处理模式" value="full-auto" options={['full-auto', 'semi-auto', 'clip-only']} labels={['全自动', '半自动', '直接出片']} onChange={() => undefined} />
+            <Segmented
+              label="分镜数量"
+              value={String(storyboardSceneCount)}
+              options={storyboardSceneCountOptions.map(String)}
+              labels={storyboardSceneCountOptions.map((count) => `${count} 条`)}
+              onChange={(value) => setStoryboardSceneCount(Number(value))}
+            />
             <Segmented label="暂停确认" value={pausePoint} options={pauseOptions.map(([id]) => id)} labels={pauseOptions.map(([, label]) => label)} onChange={(value) => setPausePoint(value as PausePoint)} />
             <Segmented label="改写强度" value={rewriteIntensity} options={rewriteOptions.map(([id]) => id)} labels={rewriteOptions.map(([, label]) => label)} onChange={(value) => setRewriteIntensity(value as RewriteIntensity)} />
             <Segmented label="叙事视角" value={narrativePov} options={povOptions.map(([id]) => id)} labels={povOptions.map(([, label]) => label)} onChange={(value) => setNarrativePov(value as Task['narrativePov'])} />
@@ -1333,7 +1347,16 @@ function ArtifactPreviewContent({
           </ArtifactSection>
 
           <ArtifactSection title="配音字幕" badge={`${narrationAssets.length} 段 / ${subtitles?.cues.length ?? 0} 条字幕`}>
-            <ArtifactAssetList assets={narrationAssets} empty="等待配音生成" />
+            <NarrationPreviewList
+              api={api}
+              task={task}
+              scenes={scenes}
+              subtitles={subtitles}
+              assets={narrationAssets}
+              empty="等待配音生成"
+              isBrowserPreview={isBrowserPreview}
+              applyState={applyState}
+            />
             {subtitles?.srt ? <pre className="artifact-text-block compact">{trimForPreview(subtitles.srt, 900)}</pre> : null}
           </ArtifactSection>
 
@@ -1385,7 +1408,16 @@ function ArtifactPreviewContent({
       {tab === 'audio' ? (
         <div className="artifact-section-stack">
           <ArtifactSection title="配音字幕" badge={`${narrationAssets.length} 段 / ${subtitles?.cues.length ?? 0} 条字幕`}>
-            <ArtifactAssetList assets={narrationAssets} empty="等待配音生成" />
+            <NarrationPreviewList
+              api={api}
+              task={task}
+              scenes={scenes}
+              subtitles={subtitles}
+              assets={narrationAssets}
+              empty="等待配音生成"
+              isBrowserPreview={isBrowserPreview}
+              applyState={applyState}
+            />
             {subtitles?.cues.length ? (
               <div className="artifact-scene-list">
                 {subtitles.cues.map((cue) => (
@@ -1571,6 +1603,129 @@ function ImageGenerationGallery({
           );
         })}
       </div>
+    </div>
+  );
+}
+
+function NarrationPreviewList({
+  api,
+  task,
+  scenes,
+  subtitles,
+  assets,
+  empty,
+  isBrowserPreview,
+  applyState,
+}: {
+  api: StoryboundApi;
+  task: Task;
+  scenes: NonNullable<TaskArtifactSnapshot['artifact']['scenes']>;
+  subtitles: TaskArtifactSnapshot['artifact']['subtitles'];
+  assets: TaskArtifactSnapshot['assets']['narration'];
+  empty: string;
+  isBrowserPreview: boolean;
+  applyState: (state: AppState) => void;
+}) {
+  const [audioPreviewUrls, setAudioPreviewUrls] = useState<Record<string, string>>({});
+  const [audioPreviewErrors, setAudioPreviewErrors] = useState<Record<string, string>>({});
+  const [regeneratingSceneId, setRegeneratingSceneId] = useState<number | null>(null);
+  const audioPaths = assets.map((asset) => asset.path).join('|');
+
+  useEffect(() => {
+    if (isBrowserPreview || assets.length === 0) {
+      setAudioPreviewUrls({});
+      setAudioPreviewErrors({});
+      return undefined;
+    }
+    let cancelled = false;
+    const validPaths = new Set(assets.map((asset) => asset.path));
+    setAudioPreviewUrls((current) => Object.fromEntries(Object.entries(current).filter(([path]) => validPaths.has(path))));
+    setAudioPreviewErrors((current) => Object.fromEntries(Object.entries(current).filter(([path]) => validPaths.has(path))));
+
+    for (const asset of assets) {
+      api.readAssetDataUrl(asset.path)
+        .then((dataUrl) => {
+          if (!cancelled) {
+            setAudioPreviewUrls((current) => ({ ...current, [asset.path]: dataUrl }));
+          }
+        })
+        .catch((error) => {
+          if (!cancelled) {
+            setAudioPreviewErrors((current) => ({ ...current, [asset.path]: error instanceof Error ? error.message : String(error) }));
+          }
+        });
+    }
+    return () => {
+      cancelled = true;
+    };
+  }, [api, audioPaths, assets, isBrowserPreview]);
+
+  async function regenerate(sceneId: number) {
+    setRegeneratingSceneId(sceneId);
+    try {
+      applyState(await api.regenerateTaskNarration(task.id, sceneId));
+    } finally {
+      setRegeneratingSceneId(null);
+    }
+  }
+
+  const sceneIds = new Set(scenes.map((scene) => scene.id));
+  const rows = scenes.length
+    ? [
+        ...scenes.map((scene, index) => ({
+          sceneId: scene.id,
+          cap: scene.cap,
+          cue: subtitles?.cues[index],
+          asset: assets.find((item) => item.sceneId === scene.id),
+          canRegenerate: true,
+        })),
+        ...assets.filter((asset) => !sceneIds.has(asset.sceneId)).map((asset) => ({
+          sceneId: asset.sceneId,
+          cap: '已生成配音',
+          cue: undefined,
+          asset,
+          canRegenerate: false,
+        })),
+      ]
+    : assets.map((asset) => ({
+        sceneId: asset.sceneId,
+        cap: '已生成配音',
+        cue: undefined,
+        asset,
+        canRegenerate: false,
+      }));
+
+  if (rows.length === 0) return <ArtifactEmpty text={empty} />;
+
+  return (
+    <div className="narration-preview-list">
+      {rows.map((item) => {
+        const previewUrl = item.asset ? audioPreviewUrls[item.asset.path] : '';
+        const previewError = item.asset ? audioPreviewErrors[item.asset.path] : '';
+        const disabled = isBrowserPreview || task.status === 'running' || task.status === 'pending' || regeneratingSceneId === item.sceneId || !item.canRegenerate;
+        return (
+          <article className={`narration-preview-card ${item.asset ? 'ready' : 'pending'}`} key={`${item.sceneId}-${item.asset?.path ?? 'pending'}`}>
+            <div className="narration-preview-head">
+              <div>
+                <strong>{item.sceneId}. {item.cap}</strong>
+                {item.cue ? <span>{formatMs(item.cue.startMs)} - {formatMs(item.cue.endMs)}</span> : null}
+              </div>
+              <span>{item.asset ? '可试听' : task.status === 'running' ? '等待/生成中' : '未生成'}</span>
+            </div>
+            {previewUrl ? <audio controls className="narration-player" preload="metadata" src={previewUrl} /> : null}
+            {!previewUrl && item.asset && !previewError ? <div className="narration-player loading">读取音频中</div> : null}
+            {!previewUrl && item.asset && previewError ? <div className="narration-player error">音频读取失败</div> : null}
+            {!item.asset ? <div className="narration-player loading">等待音频落盘</div> : null}
+            {item.cue ? <p>{item.cue.text}</p> : null}
+            {item.asset ? <small>{item.asset.path}</small> : <small>等待 TTS 返回真实音频</small>}
+            {previewError ? <small className="danger-text">{previewError}</small> : null}
+            <button className="mini-button" disabled={disabled} onClick={() => regenerate(item.sceneId)}>
+              {regeneratingSceneId === item.sceneId ? <Loader2 className="spin" size={14} /> : <RotateCcw size={14} />}
+              {item.asset ? '重新生成配音' : '生成配音'}
+            </button>
+          </article>
+        );
+      })}
     </div>
   );
 }
@@ -2612,6 +2767,13 @@ function LlmProfileManager({
 
       <div className="profile-editor-grid">
         <ConfigInput label="配置名称" value={selectedProfile.name ?? ''} onChange={(value) => updateSelectedProfile({ ...selectedProfile, name: value })} />
+        <ConfigNumberInput
+          label="请求超时（秒）"
+          value={Math.round((selectedProfile.timeoutMs ?? defaultConfig.llm.timeoutMs ?? 120000) / 1000)}
+          min={10}
+          step={10}
+          onChange={(value) => updateSelectedProfile({ ...selectedProfile, timeoutMs: value * 1000 })}
+        />
         <Segmented
           label="Provider"
           value={selectedProvider}
@@ -3127,6 +3289,27 @@ function SettingsCard({ title, status, children }: { title: string; status: stri
 
 function ConfigInput({ label, value, onChange }: { label: string; value: string; onChange: (value: string) => void }) {
   return <label className="config-input"><span>{label}</span><input value={value} onChange={(event) => onChange(event.target.value)} /></label>;
+}
+
+function ConfigNumberInput({
+  label,
+  value,
+  min,
+  step,
+  onChange,
+}: {
+  label: string;
+  value: number;
+  min?: number;
+  step?: number;
+  onChange: (value: number) => void;
+}) {
+  return (
+    <label className="config-input">
+      <span>{label}</span>
+      <input type="number" min={min} step={step} value={value} onChange={(event) => onChange(Number(event.target.value))} />
+    </label>
+  );
 }
 
 function ModelPicker({

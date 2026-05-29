@@ -102,6 +102,7 @@ function createImageLabTask(id: string, input: ImageLabGenerateInput, createdAt:
     keepPromotion: false,
     ttsProvider: 'volcengine',
     ttsSpeed: 1,
+    storyboardSceneCount: 1,
     step3PromptSnapshot: '',
     failedStep: null,
     retryFromStep: null,

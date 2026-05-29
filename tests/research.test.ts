@@ -521,6 +521,7 @@ function makeTask(patch: Partial<Task>): Task {
     keepPromotion: false,
     ttsProvider: 'mock',
     ttsSpeed: 1,
+    storyboardSceneCount: 12,
     step3PromptSnapshot: '',
     failedStep: null,
     retryFromStep: null,

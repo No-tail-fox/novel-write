@@ -47,6 +47,7 @@ declare global {
       updateTaskStatus: (id: string, status: TaskStatus) => Promise<AppState>;
       retryTask: (id: string) => Promise<AppState>;
       regenerateTaskImage: (id: string, sceneId: number) => Promise<AppState>;
+      regenerateTaskNarration: (id: string, sceneId: number) => Promise<AppState>;
       getTaskArtifacts: (id: string) => Promise<TaskArtifactSnapshot>;
       readAssetDataUrl: (path: string) => Promise<string>;
       selectLocalImage: () => Promise<string | null>;

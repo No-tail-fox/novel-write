@@ -66,7 +66,13 @@ export function normalizeLocalLlmProfile(profile: Partial<AppConfig['llm']>, ind
     provider: editableLlmProfileProvider(merged),
     protocol: 'openai',
     enabled: Boolean(profile.enabled),
+    timeoutMs: normalizePositiveNumber(merged.timeoutMs, defaultConfig.llm.timeoutMs ?? 120000),
   };
+}
+
+function normalizePositiveNumber(value: unknown, fallback: number): number {
+  const parsed = Number(value);
+  return Number.isFinite(parsed) && parsed > 0 ? parsed : fallback;
 }
 
 export function enableLlmProfile(config: AppConfig, id: string): AppConfig {

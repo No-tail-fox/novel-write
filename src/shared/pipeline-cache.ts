@@ -19,6 +19,11 @@ export interface RegenerateSceneImageResult {
   remainingImages: TaskArtifactAssetPreview[];
 }
 
+export interface RegenerateSceneNarrationResult {
+  removed: boolean;
+  remainingNarration: TaskArtifactAssetPreview[];
+}
+
 export async function markSceneImageForRegeneration(statePath: string, sceneId: number): Promise<RegenerateSceneImageResult> {
   if (!Number.isFinite(sceneId)) {
     throw new Error('Scene id is required for image regeneration.');
@@ -39,6 +44,28 @@ export async function markSceneImageForRegeneration(statePath: string, sceneId: 
 
   await writeFile(statePath, JSON.stringify(state, null, 2), 'utf8');
   return { removed, remainingImages };
+}
+
+export async function markSceneNarrationForRegeneration(statePath: string, sceneId: number): Promise<RegenerateSceneNarrationResult> {
+  if (!Number.isFinite(sceneId)) {
+    throw new Error('Scene id is required for narration regeneration.');
+  }
+
+  const state = JSON.parse(await readFile(statePath, 'utf8')) as PipelineStateFile;
+  state.steps ??= {};
+  state.assets ??= {};
+  const narration = Array.isArray(state.assets.narration) ? state.assets.narration : [];
+  const remainingNarration = narration.filter((asset) => Number(asset.sceneId) !== sceneId);
+  const removed = remainingNarration.length !== narration.length;
+
+  state.assets.narration = remainingNarration;
+  state.steps['5'] = pendingStep(state.steps['5'], remainingNarration.map((asset) => asset.path).join('\n') || undefined);
+  state.steps['6'] = pendingStep(state.steps['6']);
+  delete state.draft;
+  state.updatedAt = new Date().toISOString();
+
+  await writeFile(statePath, JSON.stringify(state, null, 2), 'utf8');
+  return { removed, remainingNarration };
 }
 
 function pendingStep(input: Partial<TaskArtifactStepPreview> | undefined, outputPath?: string): TaskArtifactStepPreview {

@@ -52,6 +52,9 @@ const stepAgents: Record<number, string> = {
   6: 'Draft',
 };
 
+const imagePromptBatchSize = 8;
+const defaultStoryboardSceneCount = 12;
+
 function todayTitle(input: string): string {
   const title = /武则天|武曌|武后/.test(input) ? '武则天' : input.slice(0, 10).replace(/\s+/g, '');
   const date = new Date();
@@ -302,6 +305,7 @@ async function ensureContentArtifact(input: {
     await heartbeatTask(db, task.id, options, 2, 'LLM storyboard');
     await markStep(2, 'running');
     await emit('step_start', 2, 'Storyboard', 'LLM 影视分镜分句');
+    const storyboardSceneCount = normalizeStoryboardSceneCount(task.storyboardSceneCount);
     const storyboardPrompt = renderStepPrompt(promptTemplates, 'storyboard', promptContext(), requireString(pipeline.artifact.rewrittenCopy, 'rewrittenCopy'));
     const storyboard = await options.llm<{ scenes: StoryboardScene[] }>({
       step: 2,
@@ -309,7 +313,17 @@ async function ensureContentArtifact(input: {
       signal: options.signal,
       messages: [
         { role: 'system', content: 'Return strict JSON only. Schema: {"scenes":[{"id":number,"cap":string,"descPrompt":string,"durationMs":number}]}.' },
-        { role: 'user', content: joinPromptBlocks(['Storyboard instructions:', storyboardPrompt, 'Rewritten copy:', requireString(pipeline.artifact.rewrittenCopy, 'rewrittenCopy')]) },
+        {
+          role: 'user',
+          content: joinPromptBlocks([
+            'Storyboard instructions:',
+            storyboardPrompt,
+            `Storyboard scene count target: ${storyboardSceneCount}`,
+            `Return no more than ${storyboardSceneCount} scenes unless the source absolutely requires one extra transition scene.`,
+            'Rewritten copy:',
+            requireString(pipeline.artifact.rewrittenCopy, 'rewrittenCopy'),
+          ]),
+        },
       ],
     });
     pipeline.artifact.scenes = normalizeScenes(storyboard.json.scenes);
@@ -324,30 +338,36 @@ async function ensureContentArtifact(input: {
     await heartbeatTask(db, task.id, options, 3, 'LLM prompts');
     await markStep(3, 'running');
     await emit('step_start', 3, 'Prompt', 'LLM 生成绘图提示词');
-    const imagePromptInstruction = renderStepPrompt(promptTemplates, 'image-prompt', promptContext(), JSON.stringify({ scenes: pipeline.artifact.scenes, style: task.style, ratio: task.ratio }));
-    const imagePromptSnapshot = joinPromptBlocks([
-      'Image prompt instructions:',
-      imagePromptInstruction,
-      'Scene context:',
-      JSON.stringify({ scenes: pipeline.artifact.scenes, style: task.style, ratio: task.ratio }),
-    ]);
-    await db.updateTask(task.id, { step3PromptSnapshot: imagePromptSnapshot });
-    const prompts = await options.llm<{ imagePrompts: ImagePrompt[] }>({
-      step: 3,
-      name: 'image-prompts',
-      signal: options.signal,
-      messages: [
-        { role: 'system', content: 'Return strict JSON only. Schema: {"imagePrompts":[{"sceneId":number,"cap":string,"prompt":string,"negativePrompt":string,"style":string,"ratio":string,"characterProfile":string}]}.' },
-        { role: 'user', content: imagePromptSnapshot },
-      ],
-    });
     if (!pipeline.artifact.scenes) {
       throw new Error('Pipeline scenes are missing; retry from storyboard step.');
     }
-    pipeline.artifact.imagePrompts = normalizePrompts(prompts.json.imagePrompts, pipeline.artifact.scenes, task);
+    const sceneBatches = chunkArray(pipeline.artifact.scenes, imagePromptBatchSize);
+    const batchSnapshots = sceneBatches.map((scenes, index) => {
+      const batchContext = buildPromptRenderContext({ task, taskTemplate, sourceContext, artifact: { ...pipeline.artifact, scenes } });
+      const instruction = renderStepPrompt(promptTemplates, 'image-prompt', batchContext, JSON.stringify({ scenes, style: task.style, ratio: task.ratio }));
+      return buildImagePromptSnapshot(instruction, scenes, task, index + 1, sceneBatches.length);
+    });
+    await db.updateTask(task.id, { step3PromptSnapshot: batchSnapshots.join('\n\n--- image prompt batch ---\n\n') });
+    const imagePrompts: ImagePrompt[] = [];
+    const requestIds: Array<string | null> = [];
+    for (const [index, scenes] of sceneBatches.entries()) {
+      await heartbeatTask(db, task.id, options, 3, `LLM prompts batch ${index + 1}/${sceneBatches.length}`);
+      const prompts = await options.llm<{ imagePrompts: ImagePrompt[] }>({
+        step: 3,
+        name: 'image-prompts',
+        signal: options.signal,
+        messages: [
+          { role: 'system', content: 'Return strict JSON only. Schema: {"imagePrompts":[{"sceneId":number,"cap":string,"prompt":string,"negativePrompt":string,"style":string,"ratio":string,"characterProfile":string}]}.' },
+          { role: 'user', content: batchSnapshots[index] },
+        ],
+      });
+      requestIds.push(prompts.requestId);
+      imagePrompts.push(...normalizePrompts(prompts.json.imagePrompts, scenes, task));
+    }
+    pipeline.artifact.imagePrompts = normalizePrompts(imagePrompts, pipeline.artifact.scenes, task);
     await markStep(3, 'completed', { outputPath: join(workDir, '03-image-prompts.json') });
     await heartbeatTask(db, task.id, options, 3, 'LLM prompts completed');
-    await emit('step_complete', 3, 'Prompt', `已生成 ${pipeline.artifact.imagePrompts.length} 条图片提示词`, { requestId: prompts.requestId });
+    await emit('step_complete', 3, 'Prompt', `已生成 ${pipeline.artifact.imagePrompts.length} 条图片提示词`, { requestIds });
   }
   if (!pipeline.artifact.scenes) {
     throw new Error('Pipeline scenes are missing; retry from storyboard step.');
@@ -363,6 +383,31 @@ function renderStepPrompt(templates: PromptTemplate[], type: Exclude<PromptTempl
 
 function joinPromptBlocks(blocks: string[]): string {
   return blocks.map((block) => block.trim()).filter(Boolean).join('\n\n');
+}
+
+function buildImagePromptSnapshot(instruction: string, scenes: StoryboardScene[], task: Task, batchIndex: number, batchCount: number): string {
+  return joinPromptBlocks([
+    'Image prompt instructions:',
+    instruction,
+    `Batch: ${batchIndex}/${batchCount}`,
+    'Only return imagePrompts for the sceneIds in this batch.',
+    'Scene context:',
+    JSON.stringify({ scenes, style: task.style, ratio: task.ratio }),
+  ]);
+}
+
+function chunkArray<T>(items: T[], size: number): T[][] {
+  const output: T[][] = [];
+  for (let index = 0; index < items.length; index += size) {
+    output.push(items.slice(index, index + size));
+  }
+  return output;
+}
+
+function normalizeStoryboardSceneCount(value: unknown): number {
+  const parsed = Number(value);
+  if (!Number.isFinite(parsed)) return defaultStoryboardSceneCount;
+  return Math.min(30, Math.max(4, Math.round(parsed)));
 }
 
 async function prepareAiSourceContext(input: {

@@ -10,7 +10,7 @@ import { readTaskArtifactSnapshot } from '../src/shared/artifact-preview';
 import { fromLlmModelTestResult, testConfigTarget } from '../src/shared/config-utils';
 import { generateImageLabRecord } from '../src/shared/image-lab';
 import { createOpenAiCompatibleJsonLlm, listOpenAiCompatibleModels, testOpenAiCompatibleLlm } from '../src/shared/llm-provider';
-import { markSceneImageForRegeneration } from '../src/shared/pipeline-cache';
+import { markSceneImageForRegeneration, markSceneNarrationForRegeneration } from '../src/shared/pipeline-cache';
 import { composeCopyFromSources, createAiSourceResearcher, searchWebSources } from '../src/shared/research';
 import { runTask } from '../src/shared/runner';
 import { FileDatabase } from '../src/shared/storage';
@@ -369,6 +369,43 @@ ipcMain.handle('task:regenerate-image', async (_event, input: { id: string; scen
   return database.getState();
 });
 
+ipcMain.handle('task:regenerate-narration', async (_event, input: { id: string; sceneId: number }) => {
+  const database = await getDb();
+  const state = await database.getState();
+  const task = state.tasks.find((item) => item.id === input.id);
+  if (!task) {
+    throw new Error(`Task not found: ${input.id}`);
+  }
+  if (!task.artifactStatePath) {
+    throw new Error('Task artifact state is not available; run the task before regenerating narration.');
+  }
+
+  const sceneId = Number(input.sceneId);
+  await markSceneNarrationForRegeneration(task.artifactStatePath, sceneId);
+  await database.updateTask(task.id, {
+    status: 'pending',
+    currentStep: 5,
+    failedStep: 5,
+    retryFromStep: 5,
+    completedAt: null,
+    outputDir: taskWorkDir(task),
+    errorMessage: `重新生成第 ${sceneId} 段配音`,
+    lastHeartbeatAt: new Date().toISOString(),
+  });
+  await database.addTaskEvent(task.id, {
+    type: 'step_start',
+    step: 5,
+    agent: 'TTS',
+    detail: `重新生成第 ${sceneId} 段配音`,
+    dataJson: JSON.stringify({ sceneId }),
+  });
+  const updatedTask = (await database.getState()).tasks.find((item) => item.id === task.id);
+  if (updatedTask) {
+    await resumeTaskRun(database, updatedTask);
+  }
+  return database.getState();
+});
+
 ipcMain.handle('task:get-artifacts', async (_event, id: string) => {
   const database = await getDb();
   const state = await database.getState();
@@ -423,7 +460,10 @@ async function readLocalImageDataUrl(path: string): Promise<string> {
     throw new Error(`Unsupported preview image extension: ${extname(path) || '(none)'}`);
   }
   const bytes = await readFile(path);
-  return `data:image/${mime.replace('image/', '')};base64,${bytes.toString('base64')}`;
+  if (mime.startsWith('image/')) {
+    return `data:image/${mime.replace('image/', '')};base64,${bytes.toString('base64')}`;
+  }
+  return `data:${mime};base64,${bytes.toString('base64')}`;
 }
 
 function previewImageMimeType(path: string): string | null {
@@ -432,6 +472,12 @@ function previewImageMimeType(path: string): string | null {
   if (extension === '.jpg' || extension === '.jpeg') return 'image/jpeg';
   if (extension === '.webp') return 'image/webp';
   if (extension === '.gif') return 'image/gif';
+  if (extension === '.mp3') return 'audio/mpeg';
+  if (extension === '.wav') return 'audio/wav';
+  if (extension === '.m4a') return 'audio/mp4';
+  if (extension === '.aac') return 'audio/aac';
+  if (extension === '.ogg') return 'audio/ogg';
+  if (extension === '.flac') return 'audio/flac';
   return null;
 }
 

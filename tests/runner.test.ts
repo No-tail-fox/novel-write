@@ -215,6 +215,118 @@ describe('task runner', () => {
     }
   });
 
+  it('passes the selected storyboard scene count into the storyboard prompt', async () => {
+    const dir = await mkdtemp(join(tmpdir(), 'storybound-runner-scene-count-'));
+    const db = await FileDatabase.open(join(dir, 'data.db'));
+    const draftRootDir = join(dir, 'JianyingPro Drafts');
+    const mediaDir = join(dir, 'media');
+    const requests: LlmJsonRequest[] = [];
+
+    try {
+      await db.upsertConfig({
+        ...(await db.getState()).config,
+        jianying: { ...(await db.getState()).config.jianying, draftPath: draftRootDir },
+      });
+      const task = await db.createTask({
+        title: 'Scene count task',
+        inputText: sampleInput,
+        track: 'character-story',
+        style: 'photo-real',
+        speaker: 'voice',
+        storyboardSceneCount: 16,
+      });
+      const scenes = makeScenes(16);
+
+      const llm: JsonLlm = async <T,>(request: LlmJsonRequest) => {
+        requests.push(request);
+        if (request.step === 0) return { json: { reviewedText: sampleInput } as T, raw: '{}', requestId: 'review' };
+        if (request.step === 1) {
+          return {
+            json: { rewrittenCopy: 'First line\n\nSecond line', cover: { title: 'Wu Zetian', subtitle: [], summary: 'summary', tags: [], comments: [] } } as T,
+            raw: '{}',
+            requestId: 'rewrite',
+          };
+        }
+        if (request.step === 2) return { json: { scenes } as T, raw: '{}', requestId: 'storyboard' };
+        return { json: { imagePrompts: makePrompts(extractScenesFromPrompt(request)) } as T, raw: '{}', requestId: `prompts-${request.step}` };
+      };
+
+      await runTask(db, task, {
+        appDataDir: dir,
+        llm,
+        generateImages: async (inputScenes) => writeSceneAssets(mediaDir, inputScenes, 'png', tinyPng),
+        synthesizeNarration: async (inputScenes) => writeSceneAssets(mediaDir, inputScenes, 'wav', wavTone(1200)),
+        draftWriterOptions: { runBridge: fakeBridge },
+      });
+
+      const storyboardRequest = requests.find((request) => request.step === 2);
+      expect(storyboardRequest?.messages.map((message) => message.content).join('\n')).toContain('Storyboard scene count target: 16');
+    } finally {
+      await db.close();
+      await rm(dir, { recursive: true, force: true });
+    }
+  });
+
+  it('generates image prompts in batches and merges them in scene order', async () => {
+    const dir = await mkdtemp(join(tmpdir(), 'storybound-runner-prompt-batches-'));
+    const db = await FileDatabase.open(join(dir, 'data.db'));
+    const draftRootDir = join(dir, 'JianyingPro Drafts');
+    const mediaDir = join(dir, 'media');
+    const requests: LlmJsonRequest[] = [];
+    const scenes = makeScenes(17);
+
+    try {
+      await db.upsertConfig({
+        ...(await db.getState()).config,
+        jianying: { ...(await db.getState()).config.jianying, draftPath: draftRootDir },
+      });
+      const task = await db.createTask({
+        title: 'Prompt batch task',
+        inputText: sampleInput,
+        track: 'character-story',
+        style: 'photo-real',
+        speaker: 'voice',
+        storyboardSceneCount: 17,
+      });
+
+      const llm: JsonLlm = async <T,>(request: LlmJsonRequest) => {
+        requests.push(request);
+        if (request.step === 0) return { json: { reviewedText: sampleInput } as T, raw: '{}', requestId: 'review' };
+        if (request.step === 1) {
+          return {
+            json: { rewrittenCopy: 'First line\n\nSecond line', cover: { title: 'Wu Zetian', subtitle: [], summary: 'summary', tags: [], comments: [] } } as T,
+            raw: '{}',
+            requestId: 'rewrite',
+          };
+        }
+        if (request.step === 2) return { json: { scenes } as T, raw: '{}', requestId: 'storyboard' };
+        const batchScenes = extractScenesFromPrompt(request);
+        return { json: { imagePrompts: makePrompts(batchScenes) } as T, raw: '{}', requestId: `prompts-${batchScenes[0]?.id ?? 0}` };
+      };
+
+      await runTask(db, task, {
+        appDataDir: dir,
+        llm,
+        generateImages: async (inputScenes) => writeSceneAssets(mediaDir, inputScenes, 'png', tinyPng),
+        synthesizeNarration: async (inputScenes) => writeSceneAssets(mediaDir, inputScenes, 'wav', wavTone(1200)),
+        draftWriterOptions: { runBridge: fakeBridge },
+      });
+
+      const promptRequests = requests.filter((request) => request.step === 3);
+      expect(promptRequests).toHaveLength(3);
+      expect(promptRequests.map((request) => extractScenesFromPrompt(request).map((scene) => scene.id))).toEqual([
+        [1, 2, 3, 4, 5, 6, 7, 8],
+        [9, 10, 11, 12, 13, 14, 15, 16],
+        [17],
+      ]);
+      const prompts = JSON.parse(await readFile(join(dir, 'tasks', task.id, '03-image-prompts.json'), 'utf8')) as ImagePrompt[];
+      expect(prompts.map((prompt) => prompt.sceneId)).toEqual(scenes.map((scene) => scene.id));
+    } finally {
+      await db.close();
+      await rm(dir, { recursive: true, force: true });
+    }
+  });
+
   it('fails instead of completing with fake assets when real image generation is unavailable', async () => {
     const dir = await mkdtemp(join(tmpdir(), 'storybound-runner-no-image-'));
     const db = await FileDatabase.open(join(dir, 'data.db'));
@@ -472,15 +584,7 @@ function makeArtifact(): PipelineArtifact {
     { id: 1, cap: 'First line', descPrompt: 'first prompt', durationMs: 1200 },
     { id: 2, cap: 'Second line', descPrompt: 'second prompt', durationMs: 1200 },
   ];
-  const imagePrompts: ImagePrompt[] = scenes.map((scene) => ({
-    sceneId: scene.id,
-    cap: scene.cap,
-    prompt: scene.descPrompt,
-    negativePrompt: 'none',
-    style: 'photo-real',
-    ratio: '9:16',
-    characterProfile: 'same person',
-  }));
+  const imagePrompts = makePrompts(scenes);
   return {
     reviewedText: sampleInput,
     rewrittenCopy: 'First line\n\nSecond line',
@@ -489,6 +593,34 @@ function makeArtifact(): PipelineArtifact {
     imagePrompts,
     subtitles: { cues: [], srt: '' },
   };
+}
+
+function makeScenes(count: number): StoryboardScene[] {
+  return Array.from({ length: count }, (_, index) => ({
+    id: index + 1,
+    cap: `Scene ${index + 1}`,
+    descPrompt: `visual prompt ${index + 1}`,
+    durationMs: 1200,
+  }));
+}
+
+function makePrompts(scenes: StoryboardScene[]): ImagePrompt[] {
+  return scenes.map((scene) => ({
+    sceneId: scene.id,
+    cap: scene.cap,
+    prompt: scene.descPrompt,
+    negativePrompt: 'none',
+    style: 'photo-real',
+    ratio: '9:16',
+    characterProfile: 'same person',
+  }));
+}
+
+function extractScenesFromPrompt(request: LlmJsonRequest): StoryboardScene[] {
+  const content = request.messages.find((message) => message.role === 'user')?.content ?? '';
+  const match = content.match(/Scene context:\n\n(\{.*\})/s);
+  if (!match) return [];
+  return JSON.parse(match[1]).scenes as StoryboardScene[];
 }
 
 function wavTone(durationMs: number): Buffer {
