@@ -104,6 +104,37 @@ describe('product shell ui', () => {
     expect(css).toContain('.draft-background-swatch');
   });
 
+  it('wires uploaded BGM management into settings and new task defaults', async () => {
+    const main = await readFile(new URL('../src/main.tsx', import.meta.url), 'utf8');
+    const css = await readFile(new URL('../src/styles.css', import.meta.url), 'utf8');
+
+    expect(main).toContain('selectLocalAudio');
+    expect(main).toContain('addUploadedBgm');
+    expect(main).toContain('resolveDefaultBgmId');
+    expect(main).toContain('defaultBgmId');
+    expect(main).toContain('无 BGM');
+    expect(main).toContain('BGM 库为空');
+    expect(main).toContain('volume: 0.25');
+    expect(main).toContain('bgm-library-list');
+    expect(css).toContain('.bgm-library-list');
+    expect(css).toContain('.bgm-library-item');
+  });
+
+  it('loads Jianying effect catalogs and exposes conservative draft effect controls', async () => {
+    const main = await readFile(new URL('../src/main.tsx', import.meta.url), 'utf8');
+
+    expect(main).toContain('getJianyingEffectCatalog');
+    expect(main).toContain('effectCatalog');
+    expect(main).toContain('transitionType');
+    expect(main).toContain('transitionDurationMs');
+    expect(main).toContain('narrationFadeInMs');
+    expect(main).toContain('narrationFadeOutMs');
+    expect(main).toContain('bgmFadeInMs');
+    expect(main).toContain('filterType');
+    expect(main).toContain('videoEffectType');
+    expect(main).toContain('audioEffectType');
+  });
+
   it('sizes the draft preview from the canvas ratio instead of a fixed width', async () => {
     const main = await readFile(new URL('../src/main.tsx', import.meta.url), 'utf8');
     const css = await readFile(new URL('../src/styles.css', import.meta.url), 'utf8');

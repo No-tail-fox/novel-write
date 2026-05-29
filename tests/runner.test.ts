@@ -59,6 +59,59 @@ describe('task runner', () => {
     }
   });
 
+  it('uses the configured default uploaded BGM when a new task omits bgmId', async () => {
+    const dir = await mkdtemp(join(tmpdir(), 'storybound-runner-default-bgm-'));
+    const db = await FileDatabase.open(join(dir, 'data.db'));
+    const draftRootDir = join(dir, 'JianyingPro Drafts');
+    const mediaDir = join(dir, 'media');
+    const bgmPath = join(mediaDir, 'default-bgm.wav');
+    const capturedPayloads: PyJianYingBridgeInput[] = [];
+
+    try {
+      await mkdir(mediaDir, { recursive: true });
+      await writeFile(bgmPath, wavTone(3000));
+      const state = await db.getState();
+      await db.upsertConfig({
+        ...state.config,
+        jianying: {
+          ...state.config.jianying,
+          draftPath: draftRootDir,
+          defaultBgmId: 'uploaded-default',
+          bgmLibrary: [{ id: 'uploaded-default', title: 'Default BGM', path: bgmPath, durationMs: 0, volume: 0.25 }],
+        },
+      });
+      const task = await db.createTask({
+        title: 'Default BGM task',
+        inputText: sampleInput,
+        track: 'character-story',
+        style: 'photo-real',
+        speaker: 'voice',
+      });
+
+      await runTask(db, task, {
+        appDataDir: dir,
+        generatePipelineArtifact: async () => makeArtifact(),
+        generateImages: async (scenes) => writeSceneAssets(mediaDir, scenes, 'png', tinyPng),
+        synthesizeNarration: async (scenes) => writeSceneAssets(mediaDir, scenes, 'wav', wavTone(1200)),
+        draftWriterOptions: {
+          runBridge: async (payload) => {
+            capturedPayloads.push(payload);
+            return fakeBridge(payload);
+          },
+        },
+      });
+
+      expect(task.bgmId).toBe('uploaded-default');
+      expect(capturedPayloads).toHaveLength(1);
+      const payload = capturedPayloads[0];
+      expect(payload.bgm).toMatchObject({ id: 'uploaded-default', path: bgmPath, volume: 0.25 });
+      expect(payload.volumes?.bgm).toBe(0.25);
+    } finally {
+      await db.close();
+      await rm(dir, { recursive: true, force: true });
+    }
+  });
+
   it('uses the saved draft template selected by the task when writing the draft', async () => {
     const dir = await mkdtemp(join(tmpdir(), 'storybound-runner-template-'));
     const db = await FileDatabase.open(join(dir, 'data.db'));

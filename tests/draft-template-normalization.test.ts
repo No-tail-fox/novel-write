@@ -21,4 +21,32 @@ describe('draft template normalization', () => {
     expect(typeof normalized.caption.y).toBe('number');
     expect(normalized.disclaimer).toMatchObject({ x: 0, y: 0.92 });
   });
+
+  it('fills editing effect defaults for legacy template audio settings', () => {
+    const fallback = draftTemplates[0];
+    const legacyTemplate = {
+      ...fallback,
+      audio: {
+        narrationVolume: 8,
+        bgmVolume: 2,
+        bgmFadeOutMs: 1500,
+      },
+    } as unknown as DraftTemplate;
+
+    const normalized = normalizeDraftTemplate(legacyTemplate);
+
+    expect(normalized.audio).toMatchObject({
+      narrationVolume: 8,
+      bgmVolume: 2,
+      transitionType: '叠化',
+      transitionDurationMs: 450,
+      narrationFadeInMs: 80,
+      narrationFadeOutMs: 80,
+      bgmFadeInMs: 800,
+      bgmFadeOutMs: 1500,
+      filterType: '',
+      videoEffectType: '',
+      audioEffectType: '',
+    });
+  });
 });

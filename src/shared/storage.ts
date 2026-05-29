@@ -158,7 +158,7 @@ export class FileDatabase {
         speaker TEXT DEFAULT '灿博小叔',
         ratio TEXT DEFAULT '9:16',
         template_id TEXT DEFAULT 'default-portrait-9-16',
-        bgm_id TEXT DEFAULT '__builtin__',
+        bgm_id TEXT DEFAULT '',
         pause_points TEXT DEFAULT '[]',
         output_dir TEXT DEFAULT '',
         error_message TEXT DEFAULT '',
@@ -513,6 +513,8 @@ export class FileDatabase {
 
   async createTask(input: CreateTaskInput): Promise<Task> {
     const now = new Date().toISOString();
+    const configRow = getFirstRow<{ data: string }>(this.db, 'SELECT data FROM config WHERE id = 1');
+    const config = configRow ? mergeConfig(parseJson(configRow.data, defaultConfig)) : defaultConfig;
     const task: Task = {
       id: randomUUID(),
       title: input.title ?? '',
@@ -524,7 +526,7 @@ export class FileDatabase {
       speaker: input.speaker ?? defaultConfig.tts.speaker,
       ratio: input.ratio ?? '9:16',
       templateId: input.templateId ?? 'default-portrait-9-16',
-      bgmId: input.bgmId ?? '__builtin__',
+      bgmId: input.bgmId ?? config.jianying.defaultBgmId ?? '',
       pausePoints: input.pausePoints ?? [],
       outputDir: '',
       errorMessage: '',
@@ -712,7 +714,7 @@ function rowToTask(row: Record<string, unknown>): Task {
     speaker: String(row.speaker ?? '灿博小叔'),
     ratio: String(row.ratio ?? '9:16'),
     templateId: String(row.template_id ?? 'default-portrait-9-16'),
-    bgmId: String(row.bgm_id ?? '__builtin__'),
+    bgmId: String(row.bgm_id ?? ''),
     pausePoints: parseJson(String(row.pause_points ?? '[]'), []),
     outputDir: String(row.output_dir ?? ''),
     errorMessage: String(row.error_message ?? ''),

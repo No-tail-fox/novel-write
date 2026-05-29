@@ -62,6 +62,17 @@ export interface PyJianYingBridgeInput {
     narration: number;
     bgm: number;
   };
+  effects?: {
+    transitionType: string;
+    transitionDurationUs: number;
+    narrationFadeInUs: number;
+    narrationFadeOutUs: number;
+    bgmFadeInUs: number;
+    bgmFadeOutUs: number;
+    filterType: string;
+    videoEffectType: string;
+    audioEffectType: string;
+  };
 }
 
 export interface PyJianYingBridgeOutput {
@@ -242,6 +253,28 @@ def apply_image_animation(segment, animation_name):
             continue
 
 
+def resolve_enum(enum_name, name):
+    name = str(name or "").strip()
+    if not name:
+        return None
+    enum_type = getattr(draft, enum_name, None)
+    if enum_type is None:
+        raise ValueError(f"pyJianYingDraft enum is unavailable: {enum_name}")
+    from_name = getattr(enum_type, "from_name", None)
+    if from_name:
+        try:
+            return from_name(name)
+        except Exception:
+            pass
+    member = getattr(enum_type, name, None)
+    if member is not None:
+        return member
+    for item in enum_type:
+        if getattr(item, "name", "") == name:
+            return item
+    raise ValueError(f"Unknown {enum_name}: {name}")
+
+
 def ms_to_us(value):
     return int(round(float(value) * 1000))
 
@@ -281,6 +314,35 @@ def patch_meta(meta_path, payload, draft_dir, duration, background_path, image_p
         json.dump(meta, handle, ensure_ascii=False, indent=4)
 
 
+def format_srt_time(us):
+    ms = int(round(us / 1000))
+    hours = ms // 3600000
+    minutes = (ms % 3600000) // 60000
+    seconds = (ms % 60000) // 1000
+    millis = ms % 1000
+    return f"{hours:02d}:{minutes:02d}:{seconds:02d},{millis:03d}"
+
+
+def write_timed_subtitles(path, timeline):
+    os.makedirs(os.path.dirname(path), exist_ok=True)
+    blocks = []
+    for index, item in enumerate(timeline, start=1):
+        start = int(item["startUs"])
+        end = start + int(item["durationUs"])
+        text = str(item.get("text") or "").strip()
+        blocks.append(f"{index}\n{format_srt_time(start)} --> {format_srt_time(end)}\n{text}\n")
+    with open(path, "w", encoding="utf-8") as handle:
+        handle.write("\n".join(blocks))
+
+
+def clamp_effect_duration(value, segment_duration):
+    value = max(0, int(value or 0))
+    segment_duration = max(0, int(segment_duration or 0))
+    if segment_duration <= 0:
+        return 0
+    return min(value, segment_duration // 2)
+
+
 def main():
     payload_path = sys.argv[1]
     with open(payload_path, "r", encoding="utf-8") as handle:
@@ -306,7 +368,6 @@ def main():
     script.add_track(draft.TrackType.audio, "narration")
 
     scenes = payload.get("scenes") or []
-    starts = {int(scene["sceneId"]): int(scene["startUs"]) for scene in scenes}
     durations = {int(scene["sceneId"]): int(scene["durationUs"]) for scene in scenes}
     materials_dir = os.path.join(draft_dir, "materials")
     image_by_scene = {
@@ -317,10 +378,37 @@ def main():
         int(item["sceneId"]): copy_asset(item["path"], os.path.join(materials_dir, "narration"), str(int(item["sceneId"])).zfill(3), ".mp3")
         for item in payload["narration"]
     }
-    subtitle_path = copy_asset(payload["subtitlesSrtPath"], os.path.join(materials_dir, "subtitles"), "subtitles", ".srt")
+    audio_materials = {scene_id: draft.AudioMaterial(path) for scene_id, path in audio_by_scene.items()}
     volumes = payload.get("volumes") or {}
+    effects = payload.get("effects") or {}
     image_area = payload.get("imageArea") or {}
-    total_duration = int(payload.get("totalDurationUs") or sum(durations.values()))
+    timeline = []
+    cursor = 0
+    for scene in scenes:
+        scene_id = int(scene["sceneId"])
+        planned_duration = int(durations.get(scene_id, 0))
+        audio_duration = int(audio_materials[scene_id].duration)
+        scene_duration = max(planned_duration, audio_duration)
+        timeline.append({
+            "sceneId": scene_id,
+            "startUs": cursor,
+            "durationUs": scene_duration,
+            "audioDurationUs": audio_duration,
+            "text": scene.get("text", ""),
+        })
+        cursor += scene_duration
+    total_duration = max(cursor, int(payload.get("totalDurationUs") or 0))
+    subtitle_path = os.path.join(materials_dir, "subtitles", "subtitles.srt")
+    write_timed_subtitles(subtitle_path, timeline)
+    transition_type = resolve_enum("TransitionType", effects.get("transitionType"))
+    transition_duration = int(effects.get("transitionDurationUs") or 0)
+    narration_fade_in = int(effects.get("narrationFadeInUs") or 0)
+    narration_fade_out = int(effects.get("narrationFadeOutUs") or 0)
+    bgm_fade_in = int(effects.get("bgmFadeInUs") or 0)
+    bgm_fade_out = int(effects.get("bgmFadeOutUs") or 0)
+    filter_type = resolve_enum("FilterType", effects.get("filterType"))
+    video_effect_type = resolve_enum("VideoSceneEffectType", effects.get("videoEffectType"))
+    audio_effect_type = resolve_enum("AudioSceneEffectType", effects.get("audioEffectType"))
     background_path = prepare_background_asset(payload, materials_dir)
     background_material = draft.VideoMaterial(background_path)
     background_segment = draft.VideoSegment(
@@ -331,13 +419,13 @@ def main():
     )
     script.add_segment(background_segment, background_track)
 
-    for scene in scenes:
+    for index, scene in enumerate(timeline):
         scene_id = int(scene["sceneId"])
-        start = starts[scene_id]
-        duration = durations[scene_id]
+        start = int(scene["startUs"])
+        duration = int(scene["durationUs"])
+        audio_duration = int(scene["audioDurationUs"])
         image_material = draft.VideoMaterial(image_by_scene[scene_id])
-        audio_material = draft.AudioMaterial(audio_by_scene[scene_id])
-        audio_source_duration = min(duration, int(audio_material.duration))
+        audio_material = audio_materials[scene_id]
         scale = 1.0 if image_area.get("fit") == "cover" else 0.96
         transform_y = float(image_area.get("top", 0)) * 2 + float(image_area.get("height", 1)) - 1
         image_segment = draft.VideoSegment(
@@ -347,14 +435,27 @@ def main():
             clip_settings=draft.ClipSettings(scale_x=scale, scale_y=scale, transform_y=transform_y),
         )
         apply_image_animation(image_segment, image_area.get("animation"))
+        if filter_type:
+            image_segment.add_filter(filter_type)
+        if video_effect_type:
+            image_segment.add_effect(video_effect_type)
+        if index < len(timeline) - 1 and transition_type and transition_duration > 0:
+            image_segment.add_transition(transition_type, duration=clamp_effect_duration(transition_duration, duration))
         script.add_segment(image_segment, "images")
 
         audio_segment = draft.AudioSegment(
             audio_material,
-            draft.Timerange(start, duration),
-            source_timerange=draft.Timerange(0, audio_source_duration),
+            draft.Timerange(start, audio_duration),
+            source_timerange=draft.Timerange(0, audio_duration),
             volume=float(volumes.get("narration", 1.0)),
         )
+        if narration_fade_in > 0 or narration_fade_out > 0:
+            audio_segment.add_fade(
+                clamp_effect_duration(narration_fade_in, audio_duration),
+                clamp_effect_duration(narration_fade_out, audio_duration),
+            )
+        if audio_effect_type:
+            audio_segment.add_effect(audio_effect_type)
         script.add_segment(audio_segment, "narration")
 
     bgm = payload.get("bgm")
@@ -366,10 +467,15 @@ def main():
         bgm_source_duration = min(total_duration, int(bgm_material.duration))
         bgm_segment = draft.AudioSegment(
             bgm_material,
-            draft.Timerange(0, total_duration),
+            draft.Timerange(0, bgm_source_duration),
             source_timerange=draft.Timerange(0, bgm_source_duration),
             volume=float(volumes.get("bgm", bgm.get("volume", 0.3))),
         )
+        if bgm_fade_in > 0 or bgm_fade_out > 0:
+            bgm_segment.add_fade(
+                clamp_effect_duration(bgm_fade_in, bgm_source_duration),
+                clamp_effect_duration(bgm_fade_out, bgm_source_duration),
+            )
         script.add_segment(bgm_segment, "bgm")
 
     caption = payload.get("caption") or {}

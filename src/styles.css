@@ -1905,6 +1905,50 @@ textarea {
   background: var(--panel-2);
 }
 
+.bgm-library-list {
+  display: grid;
+  gap: 10px;
+}
+
+.bgm-library-empty,
+.bgm-library-item {
+  border: 1px solid var(--line);
+  border-radius: 7px;
+  padding: 10px;
+  background: #0c1117;
+}
+
+.bgm-library-item {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 120px auto auto;
+  gap: 10px;
+  align-items: center;
+}
+
+.bgm-library-item div,
+.bgm-library-item label {
+  min-width: 0;
+  display: grid;
+  gap: 4px;
+}
+
+.bgm-library-item span,
+.bgm-library-item label,
+.bgm-library-empty {
+  color: var(--muted);
+  font-size: 12px;
+  overflow-wrap: anywhere;
+}
+
+.bgm-library-item input {
+  min-height: 32px;
+}
+
+.mini-button.active {
+  border-color: var(--accent);
+  color: var(--accent);
+}
+
 .config-card-head {
   display: flex;
   justify-content: space-between;

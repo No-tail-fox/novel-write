@@ -29,6 +29,8 @@ describe('electron ipc contract', () => {
       'research:compose-copy',
       'diagnostics:run',
       'local-image:select',
+      'local-audio:select',
+      'jianying:effect-catalog',
     ]) {
       expect(preload).toContain(channel);
       expect(main).toContain(channel);
@@ -126,6 +128,31 @@ describe('electron ipc contract', () => {
     expect(preload).toContain('selectLocalImage');
     expect(preload).toContain('local-image:select');
     expect(viteEnv).toContain('selectLocalImage: () => Promise<string | null>');
+  });
+
+  it('exposes a safe local audio picker for uploaded BGM files', async () => {
+    const main = await readFile(new URL('../electron/main.ts', import.meta.url), 'utf8');
+    const preload = await readFile(new URL('../electron/preload.ts', import.meta.url), 'utf8');
+    const viteEnv = await readFile(new URL('../src/vite-env.d.ts', import.meta.url), 'utf8');
+
+    expect(main).toContain("ipcMain.handle('local-audio:select'");
+    expect(main).toContain('selectLocalAudio');
+    expect(main).toContain("extensions: ['mp3', 'wav', 'm4a', 'aac', 'ogg', 'flac']");
+    expect(preload).toContain('selectLocalAudio');
+    expect(preload).toContain('local-audio:select');
+    expect(viteEnv).toContain('selectLocalAudio: () => Promise<string | null>');
+  });
+
+  it('exposes pyJianYingDraft effect catalog loading to the renderer', async () => {
+    const main = await readFile(new URL('../electron/main.ts', import.meta.url), 'utf8');
+    const preload = await readFile(new URL('../electron/preload.ts', import.meta.url), 'utf8');
+    const viteEnv = await readFile(new URL('../src/vite-env.d.ts', import.meta.url), 'utf8');
+
+    expect(main).toContain("ipcMain.handle('jianying:effect-catalog'");
+    expect(main).toContain('loadJianyingEffectCatalog');
+    expect(preload).toContain('getJianyingEffectCatalog');
+    expect(preload).toContain('jianying:effect-catalog');
+    expect(viteEnv).toContain('getJianyingEffectCatalog: () => Promise<JianyingEffectCatalog>');
   });
 
   it('regenerates a single scene image through cache invalidation and background resume', async () => {

@@ -19,6 +19,44 @@ describe('config validation utilities', () => {
     expect(configTargetStatus('jianying', config, { pathExists: () => true })).toBe('pass');
   });
 
+  it('normalizes uploaded BGM library defaults without keeping an empty builtin track', () => {
+    const uploaded = {
+      id: 'bgm-uploaded',
+      title: 'Uploaded Theme',
+      path: 'I:/music/theme.mp3',
+      durationMs: 0,
+      volume: 0.25,
+    };
+
+    const normalized = normalizeAppConfig({
+      ...defaultConfig,
+      jianying: {
+        draftPath: 'I:/drafts',
+        bgmLibrary: [uploaded],
+      },
+    } as unknown as typeof defaultConfig);
+
+    expect(normalized.jianying.bgmLibrary).toEqual([uploaded]);
+    expect(normalized.jianying.defaultBgmId).toBe('bgm-uploaded');
+    expect(normalized.jianying.bgmLibrary.some((item) => item.id === '__builtin__')).toBe(false);
+  });
+
+  it('falls back from a stale default BGM id to the first readable uploaded item shape', () => {
+    const normalized = normalizeAppConfig({
+      ...defaultConfig,
+      jianying: {
+        ...defaultConfig.jianying,
+        defaultBgmId: 'missing',
+        bgmLibrary: [
+          { id: 'empty', title: 'Empty Path', path: '', durationMs: 0, volume: 0.25 },
+          { id: 'real', title: 'Real BGM', path: 'I:/music/real.wav', durationMs: 0, volume: 0.25 },
+        ],
+      },
+    });
+
+    expect(normalized.jianying.defaultBgmId).toBe('real');
+  });
+
   it('marks filled LLM credentials as configured for settings status', () => {
     const config = {
       ...defaultConfig,

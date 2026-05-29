@@ -100,6 +100,15 @@ export interface ConfigTestResult {
   requestId: string | null;
 }
 
+export interface JianyingEffectCatalog {
+  status: 'pass' | 'warn' | 'fail';
+  detail: string;
+  transitions: string[];
+  filters: string[];
+  videoEffects: string[];
+  audioEffects: string[];
+}
+
 export interface ImageConfig {
   baseUrl: string;
   apiKey: string;
@@ -189,6 +198,7 @@ export interface BgmItem {
 export interface JianyingConfig {
   draftPath: string;
   bgmLibrary: BgmItem[];
+  defaultBgmId: string;
 }
 
 export interface ImaConfig {
@@ -566,7 +576,15 @@ export interface DraftTemplate {
   audio: {
     narrationVolume: number;
     bgmVolume: number;
+    transitionType: string;
+    transitionDurationMs: number;
+    narrationFadeInMs: number;
+    narrationFadeOutMs: number;
+    bgmFadeInMs: number;
     bgmFadeOutMs: number;
+    filterType: string;
+    videoEffectType: string;
+    audioEffectType: string;
   };
 }
 

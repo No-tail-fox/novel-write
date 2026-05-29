@@ -46,7 +46,15 @@ const disclaimerBase = {
 const audioBase = {
   narrationVolume: 10,
   bgmVolume: 3,
+  transitionType: '叠化',
+  transitionDurationMs: 450,
+  narrationFadeInMs: 80,
+  narrationFadeOutMs: 80,
+  bgmFadeInMs: 800,
   bgmFadeOutMs: 2000,
+  filterType: '',
+  videoEffectType: '',
+  audioEffectType: '',
 };
 
 export const imageAnimations = [

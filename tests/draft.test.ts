@@ -3,7 +3,9 @@ import { mkdir, mkdtemp, readFile, rm, stat, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { writeJianyingDraft } from '@shared/draft';
+import type { PyJianYingBridgeInput } from '@shared/jianying-bridge';
 import { buildImagePrompts } from '@shared/story';
+import { draftTemplates } from '@shared/templates';
 import type { StoryboardScene } from '@shared/types';
 
 const twoByTwoPng = Buffer.from(
@@ -157,6 +159,137 @@ describe('draft writer', () => {
         ],
       });
       expect((bridgePayloads[0] as { images: Array<{ path: string }>; draftDir: string }).images.some((asset) => asset.path.startsWith(output.draftDir))).toBe(false);
+    } finally {
+      await rm(dir, { recursive: true, force: true });
+    }
+  });
+
+  it('passes uploaded BGM, volumes, and conservative edit effects to the bridge payload', async () => {
+    const dir = await mkdtemp(join(tmpdir(), 'storybound-draft-bgm-'));
+    const draftRootDir = join(dir, 'JianyingPro Drafts');
+    const workDir = join(dir, 'work');
+    const scenes: StoryboardScene[] = [
+      { id: 1, cap: 'First line', descPrompt: 'prompt 1', durationMs: 1200 },
+      { id: 2, cap: 'Second line', descPrompt: 'prompt 2', durationMs: 1400 },
+    ];
+    const images = await writeAssets(workDir, scenes, 'png', twoByTwoPng);
+    await mkdir(join(workDir, 'audio'), { recursive: true });
+    const narration = await Promise.all(
+      scenes.map(async (scene) => {
+        const path = join(workDir, 'audio', `${scene.id}.wav`);
+        await writeFile(path, wavTone(scene.durationMs));
+        return { sceneId: scene.id, path };
+      }),
+    );
+    const bgmPath = join(workDir, 'theme.wav');
+    await writeFile(bgmPath, wavTone(3000));
+    let capturedPayload: PyJianYingBridgeInput | null = null;
+
+    try {
+      const output = await writeJianyingDraft(
+        {
+          workDir,
+          draftRootDir,
+          title: 'BGM Draft',
+          cover: { title: 'BGM Draft', subtitle: [], summary: '', tags: [], comments: [] },
+          ratio: '9:16',
+          scenes,
+          imagePrompts: buildImagePrompts(scenes, { inputText: 'Wu Zetian', style: 'photo-real', ratio: '9:16' }),
+          reviewedText: 'reviewed',
+          rewrittenCopy: 'rewritten',
+          generatedImages: images,
+          narrationAudio: narration,
+          bgm: { id: 'uploaded-bgm', title: 'Theme', path: bgmPath, durationMs: 0, volume: 0.25 },
+        },
+        {
+          runBridge: async (payload) => {
+            capturedPayload = payload;
+            await mkdir(payload.draftDir, { recursive: true });
+            await writeFile(join(payload.draftDir, 'draft_content.json'), JSON.stringify({ duration: payload.totalDurationUs }), 'utf8');
+            await writeFile(join(payload.draftDir, 'draft_meta_info.json'), JSON.stringify({ draft_name: payload.title }), 'utf8');
+            return {
+              draftDir: payload.draftDir,
+              draftContentPath: join(payload.draftDir, 'draft_content.json'),
+              draftMetaPath: join(payload.draftDir, 'draft_meta_info.json'),
+              durationUs: payload.totalDurationUs ?? 0,
+              assets: {
+                images: payload.images.map((asset) => asset.path),
+                narration: payload.narration.map((asset) => asset.path),
+                bgm: payload.bgm?.path ?? null,
+                subtitles: payload.subtitlesSrtPath,
+              },
+            };
+          },
+        },
+      );
+
+      expect(capturedPayload).toMatchObject({
+        bgm: { id: 'uploaded-bgm', path: bgmPath, volume: 0.25 },
+        volumes: { narration: 1, bgm: 0.25 },
+        effects: {
+          transitionType: '叠化',
+          transitionDurationUs: 450_000,
+          narrationFadeInUs: 80_000,
+          narrationFadeOutUs: 80_000,
+          bgmFadeInUs: 800_000,
+          bgmFadeOutUs: 2_000_000,
+          filterType: '',
+          videoEffectType: '',
+          audioEffectType: '',
+        },
+      });
+      expect(output.assets.bgm).toBe(bgmPath);
+    } finally {
+      await rm(dir, { recursive: true, force: true });
+    }
+  });
+
+  it('lets the draft template BGM volume override the uploaded BGM default volume', async () => {
+    const dir = await mkdtemp(join(tmpdir(), 'storybound-draft-bgm-volume-'));
+    const draftRootDir = join(dir, 'JianyingPro Drafts');
+    const workDir = join(dir, 'work');
+    const scenes: StoryboardScene[] = [{ id: 1, cap: 'Only line', descPrompt: 'prompt', durationMs: 1200 }];
+    const images = await writeAssets(workDir, scenes, 'png', twoByTwoPng);
+    const audioPath = join(workDir, 'voice.wav');
+    const bgmPath = join(workDir, 'theme.wav');
+    await writeFile(audioPath, wavTone(1200));
+    await writeFile(bgmPath, wavTone(2000));
+    let capturedPayload: PyJianYingBridgeInput | null = null;
+
+    try {
+      await writeJianyingDraft(
+        {
+          workDir,
+          draftRootDir,
+          title: 'BGM Volume Draft',
+          cover: { title: 'BGM Volume Draft', subtitle: [], summary: '', tags: [], comments: [] },
+          ratio: '9:16',
+          template: { ...draftTemplates[0], audio: { ...draftTemplates[0].audio, bgmVolume: 1 } },
+          scenes,
+          imagePrompts: buildImagePrompts(scenes, { inputText: 'Wu Zetian', style: 'photo-real', ratio: '9:16' }),
+          reviewedText: 'reviewed',
+          rewrittenCopy: 'rewritten',
+          generatedImages: images,
+          narrationAudio: [{ sceneId: 1, path: audioPath }],
+          bgm: { id: 'uploaded-bgm', title: 'Theme', path: bgmPath, durationMs: 0, volume: 0.25 },
+        },
+        {
+          runBridge: async (payload) => {
+            capturedPayload = payload;
+            await mkdir(payload.draftDir, { recursive: true });
+            await writeFile(join(payload.draftDir, 'draft_content.json'), '{}', 'utf8');
+            await writeFile(join(payload.draftDir, 'draft_meta_info.json'), '{}', 'utf8');
+            return {
+              draftDir: payload.draftDir,
+              draftContentPath: join(payload.draftDir, 'draft_content.json'),
+              draftMetaPath: join(payload.draftDir, 'draft_meta_info.json'),
+              durationUs: payload.totalDurationUs ?? 0,
+            };
+          },
+        },
+      );
+
+      expect(capturedPayload).toMatchObject({ volumes: { bgm: 0.1 } });
     } finally {
       await rm(dir, { recursive: true, force: true });
     }

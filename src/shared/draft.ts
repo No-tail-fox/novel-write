@@ -212,9 +212,26 @@ function createBridgePayload(input: {
     totalDurationUs: input.totalDuration,
     volumes: {
       narration: input.template.audio.narrationVolume / 10,
-      bgm: input.input.bgm?.volume ?? input.template.audio.bgmVolume / 10,
+      bgm: resolveBgmVolume(input.template.audio.bgmVolume, input.sourceBgm),
+    },
+    effects: {
+      transitionType: input.template.audio.transitionType,
+      transitionDurationUs: msToUs(input.template.audio.transitionDurationMs),
+      narrationFadeInUs: msToUs(input.template.audio.narrationFadeInMs),
+      narrationFadeOutUs: msToUs(input.template.audio.narrationFadeOutMs),
+      bgmFadeInUs: msToUs(input.template.audio.bgmFadeInMs),
+      bgmFadeOutUs: msToUs(input.template.audio.bgmFadeOutMs),
+      filterType: input.template.audio.filterType,
+      videoEffectType: input.template.audio.videoEffectType,
+      audioEffectType: input.template.audio.audioEffectType,
     },
   };
+}
+
+function resolveBgmVolume(templateBgmVolume: number, bgm: BgmItem | null): number {
+  const templateVolume = templateBgmVolume / 10;
+  if (Number.isFinite(templateBgmVolume) && templateBgmVolume !== 3) return templateVolume;
+  return bgm?.volume ?? templateVolume;
 }
 
 function updateDiagnostic(

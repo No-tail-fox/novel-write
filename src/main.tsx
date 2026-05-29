@@ -46,6 +46,8 @@ import type {
   ImageLabGenerateInput,
   ImageProviderProfile,
   ImageLabRecord,
+  BgmItem,
+  JianyingEffectCatalog,
   PausePoint,
   PromptTemplate,
   PromptTemplateType,
@@ -192,6 +194,14 @@ const povOptions = [
 ] as const;
 const promptTemplateTypeOptions: Array<PromptTemplateType | 'all'> = ['all', 'task', 'review', 'rewrite', 'cover', 'storyboard', 'image-prompt'];
 const promptTemplateVariables = ['inputText', 'sourceContext', 'reviewedText', 'rewrittenCopy', 'scenesJson', 'track', 'style', 'ratio', 'extraRequirements', 'taskTemplateContent'];
+const fallbackEffectCatalog: JianyingEffectCatalog = {
+  status: 'warn',
+  detail: 'Fallback Jianying effect catalog.',
+  transitions: ['叠化'],
+  filters: [],
+  videoEffects: [],
+  audioEffects: [],
+};
 
 const pipelineSteps = [
   { index: 0, title: '文案预审', hint: '清理广告 / 敏感词', agent: 'Reviewer' },
@@ -358,6 +368,7 @@ function makeFallbackApi(setState: (state: AppState) => void): StoryboundApi {
     async createAndRunTask(input: CreateTaskInput) {
       const browserPipelineError =
         'Browser preview cannot run the real provider pipeline. Start the Electron app with configured LLM, image, TTS, Python, and pyJianYingDraft.';
+      const state = read();
       const task: Task = {
         id: crypto.randomUUID(),
         title: input.title || input.inputText.slice(0, 18) || 'New task',
@@ -369,7 +380,7 @@ function makeFallbackApi(setState: (state: AppState) => void): StoryboundApi {
         speaker: input.speaker ?? '灿博小叔',
         ratio: input.ratio ?? '9:16',
         templateId: input.templateId ?? 'default-portrait-9-16',
-        bgmId: input.bgmId ?? '__builtin__',
+        bgmId: input.bgmId ?? state.config.jianying.defaultBgmId ?? '',
         pausePoints: input.pausePoints ?? [],
         outputDir: '',
         errorMessage: browserPipelineError,
@@ -399,7 +410,6 @@ function makeFallbackApi(setState: (state: AppState) => void): StoryboundApi {
       const events: TaskEvent[] = [
         { taskId: task.id, type: 'step_error', step: 0, agent: 'Reviewer', tool: null, detail: browserPipelineError, dataJson: null, ts: Date.now() },
       ];
-      const state = read();
       return persist({ ...state, tasks: [task, ...state.tasks], events: [...state.events, ...events] });
     },
     async updateTaskStatus(id: string, status: TaskStatus) {
@@ -436,6 +446,12 @@ function makeFallbackApi(setState: (state: AppState) => void): StoryboundApi {
     },
     async selectLocalImage() {
       return null;
+    },
+    async selectLocalAudio() {
+      return null;
+    },
+    async getJianyingEffectCatalog() {
+      return fallbackEffectCatalog;
     },
     async runDiagnostics() {
       const state = read();
@@ -645,7 +661,7 @@ function NewTaskPage({
   const [templateId, setTemplateId] = useState(state.draftTemplates[0]?.id ?? 'default-portrait-9-16');
   const [promptTemplateOverrideId, setPromptTemplateOverrideId] = useState('');
   const [speaker, setSpeaker] = useState(state.config.tts.speaker);
-  const [bgmId, setBgmId] = useState('__builtin__');
+  const [bgmId, setBgmId] = useState(() => resolveDefaultBgmId(state.config));
   const [referenceImagePath, setReferenceImagePath] = useState('');
   const [showAdvanced, setShowAdvanced] = useState(false);
   const [pausePoint, setPausePoint] = useState<PausePoint>('none');
@@ -668,6 +684,11 @@ function NewTaskPage({
   const selectedSources = searchSections.filter((source, index) => selectedSearchSourceIds.includes(sourceKey(source, index)));
   const taskPromptTemplates = state.promptTemplates.filter((template) => template.type === 'task');
   const resolvedPromptTemplate = resolvePromptTemplateForTrack(state.promptTemplates, track, promptTemplateOverrideId || null);
+  const bgmOptions = validBgmItems(state.config);
+
+  useEffect(() => {
+    setBgmId((current) => (current && bgmOptions.some((bgm) => bgm.id === current) ? current : resolveDefaultBgmId(state.config)));
+  }, [state.config.jianying.bgmLibrary, state.config.jianying.defaultBgmId]);
 
   async function searchWebSources() {
     const keyword = aiKeyword.trim();
@@ -713,6 +734,15 @@ function NewTaskPage({
     } finally {
       setComposingCopy(false);
     }
+  }
+
+  async function addBgmFromTask() {
+    const audioPath = await api.selectLocalAudio();
+    if (!audioPath) return;
+    const nextBgm = addUploadedBgm(state.config, audioPath);
+    const next = await api.saveConfig(nextBgm.config);
+    applyState(next);
+    setBgmId(nextBgm.bgmId);
   }
 
   async function run() {
@@ -873,12 +903,15 @@ function NewTaskPage({
 
         <span className="field-title">背景音乐</span>
         <div className="chip-row">
-          {state.config.jianying.bgmLibrary.map((bgm) => (
+          <button className={bgmId === '' ? 'chip active' : 'chip'} onClick={() => setBgmId('')}>
+            无 BGM
+          </button>
+          {bgmOptions.map((bgm) => (
             <button key={bgm.id} className={bgmId === bgm.id ? 'chip active' : 'chip'} onClick={() => setBgmId(bgm.id)}>
               {bgm.title}
             </button>
           ))}
-          <button className="chip">+ 添加</button>
+          <button className="chip" onClick={addBgmFromTask}><Plus size={14} />添加</button>
         </div>
 
         <Field label="主角参考图" hint="可选">
@@ -2063,12 +2096,28 @@ function DraftTemplatesPage({ api, state, applyState }: { api: StoryboundApi; st
   const editingTemplate = editingId ? state.draftTemplates.find((template) => template.id === editingId) ?? null : null;
   const [draft, setDraft] = useState<DraftTemplate | null>(null);
   const [selectedLayer, setSelectedLayer] = useState<DraftCanvasLayer>('title');
+  const [effectCatalog, setEffectCatalog] = useState<JianyingEffectCatalog>(fallbackEffectCatalog);
 
   useEffect(() => {
     // Rehydrate only when switching templates; state refreshes must not overwrite unsaved drag edits.
     const currentEditingTemplate = state.draftTemplates.find((template) => template.id === editingId) ?? null;
     setDraft(currentEditingTemplate ? cloneDraftTemplate(currentEditingTemplate) : null);
   }, [editingId]);
+
+  useEffect(() => {
+    let disposed = false;
+    api
+      .getJianyingEffectCatalog()
+      .then((catalog) => {
+        if (!disposed) setEffectCatalog(catalog);
+      })
+      .catch(() => {
+        if (!disposed) setEffectCatalog(fallbackEffectCatalog);
+      });
+    return () => {
+      disposed = true;
+    };
+  }, [api]);
 
   async function save() {
     if (draft) applyState(await api.saveDraftTemplate(draft));
@@ -2160,6 +2209,35 @@ function DraftTemplatesPage({ api, state, applyState }: { api: StoryboundApi; st
             <Accordion title="音频设置">
               <Field label="旁白音量"><input type="number" value={draft.audio.narrationVolume} onChange={(event) => setDraft({ ...draft, audio: { ...draft.audio, narrationVolume: Number(event.target.value) } })} /></Field>
               <Field label="BGM 音量"><input type="number" value={draft.audio.bgmVolume} onChange={(event) => setDraft({ ...draft, audio: { ...draft.audio, bgmVolume: Number(event.target.value) } })} /></Field>
+              <Field label="转场">
+                <select value={draft.audio.transitionType} onChange={(event) => setDraft({ ...draft, audio: { ...draft.audio, transitionType: event.target.value } })}>
+                  <option value="">关闭</option>
+                  {effectCatalog.transitions.map((name) => <option key={name} value={name}>{name}</option>)}
+                </select>
+              </Field>
+              <Field label="转场时长(ms)"><input type="number" value={draft.audio.transitionDurationMs} onChange={(event) => setDraft({ ...draft, audio: { ...draft.audio, transitionDurationMs: Number(event.target.value) } })} /></Field>
+              <Field label="旁白淡入(ms)"><input type="number" value={draft.audio.narrationFadeInMs} onChange={(event) => setDraft({ ...draft, audio: { ...draft.audio, narrationFadeInMs: Number(event.target.value) } })} /></Field>
+              <Field label="旁白淡出(ms)"><input type="number" value={draft.audio.narrationFadeOutMs} onChange={(event) => setDraft({ ...draft, audio: { ...draft.audio, narrationFadeOutMs: Number(event.target.value) } })} /></Field>
+              <Field label="BGM 淡入(ms)"><input type="number" value={draft.audio.bgmFadeInMs} onChange={(event) => setDraft({ ...draft, audio: { ...draft.audio, bgmFadeInMs: Number(event.target.value) } })} /></Field>
+              <Field label="BGM 淡出(ms)"><input type="number" value={draft.audio.bgmFadeOutMs} onChange={(event) => setDraft({ ...draft, audio: { ...draft.audio, bgmFadeOutMs: Number(event.target.value) } })} /></Field>
+              <Field label="滤镜">
+                <select value={draft.audio.filterType} onChange={(event) => setDraft({ ...draft, audio: { ...draft.audio, filterType: event.target.value } })}>
+                  <option value="">关闭</option>
+                  {effectCatalog.filters.map((name) => <option key={name} value={name}>{name}</option>)}
+                </select>
+              </Field>
+              <Field label="视频特效">
+                <select value={draft.audio.videoEffectType} onChange={(event) => setDraft({ ...draft, audio: { ...draft.audio, videoEffectType: event.target.value } })}>
+                  <option value="">关闭</option>
+                  {effectCatalog.videoEffects.map((name) => <option key={name} value={name}>{name}</option>)}
+                </select>
+              </Field>
+              <Field label="音频特效">
+                <select value={draft.audio.audioEffectType} onChange={(event) => setDraft({ ...draft, audio: { ...draft.audio, audioEffectType: event.target.value } })}>
+                  <option value="">关闭</option>
+                  {effectCatalog.audioEffects.map((name) => <option key={name} value={name}>{name}</option>)}
+                </select>
+              </Field>
             </Accordion>
           </section>
         </div>
@@ -2501,6 +2579,29 @@ function SettingsPage({ api, state, applyState }: { api: StoryboundApi; state: A
     const report = await api.runDiagnostics();
     setDiagnostics(JSON.stringify(report, null, 2));
   }
+  async function uploadBgmFromSettings() {
+    const audioPath = await api.selectLocalAudio();
+    if (!audioPath) return;
+    const nextBgm = addUploadedBgm(draft, audioPath);
+    await commitAndApplySettingsDraft(nextBgm.config, '已添加 BGM 文件');
+  }
+  function setDefaultBgm(id: string) {
+    setSettingsDraft({ ...draft, jianying: { ...draft.jianying, defaultBgmId: id } });
+  }
+  function updateBgmVolume(id: string, volume: number) {
+    setSettingsDraft({
+      ...draft,
+      jianying: {
+        ...draft.jianying,
+        bgmLibrary: draft.jianying.bgmLibrary.map((bgm) => (bgm.id === id ? { ...bgm, volume } : bgm)),
+      },
+    });
+  }
+  function removeBgm(id: string) {
+    const bgmLibrary = draft.jianying.bgmLibrary.filter((bgm) => bgm.id !== id);
+    const nextConfig = { ...draft, jianying: { ...draft.jianying, bgmLibrary, defaultBgmId: draft.jianying.defaultBgmId === id ? '' : draft.jianying.defaultBgmId } };
+    setSettingsDraft({ ...nextConfig, jianying: { ...nextConfig.jianying, defaultBgmId: resolveDefaultBgmId(nextConfig) } });
+  }
   const selectedProviderProfileIds = {
     llm: selectedLlmProfileId,
     image: selectedImageProfileId,
@@ -2509,6 +2610,7 @@ function SettingsPage({ api, state, applyState }: { api: StoryboundApi; state: A
   const selectedLlmTestConfig = buildConfigForSelectedProfileTest(draft, 'llm', selectedProviderProfileIds);
   const selectedImageTestConfig = buildConfigForSelectedProfileTest(draft, 'image', selectedProviderProfileIds);
   const selectedTtsTestConfig = buildConfigForSelectedProfileTest(draft, 'tts', selectedProviderProfileIds);
+  const settingsBgms = validBgmItems(draft);
   const sections = [
     ['llm', Sparkles, 'LLM', '文案与分镜', settingsStatusLabel(configTargetStatus('llm', draft))],
     ['image', ImageIcon, 'AI 绘图', '分镜图片', settingsStatusLabel(configTargetStatus('image', draft))],
@@ -2603,8 +2705,27 @@ function SettingsPage({ api, state, applyState }: { api: StoryboundApi; state: A
         {section === 'jianying' ? (
           <SettingsCard title="剪映草稿与 BGM" status={draft.jianying.draftPath ? '已配置' : '待配置'}>
             <ConfigInput label="Draft Path" value={draft.jianying.draftPath} onChange={(value) => setSettingsDraft({ ...draft, jianying: { ...draft.jianying, draftPath: value } })} />
-            <LocalInfo title="BGM 库" value={draft.jianying.bgmLibrary.map((bgm) => bgm.title).join('、')} />
-            <button className="ghost-action">+ 添加 BGM 文件</button>
+            <LocalInfo title="BGM 库" value={settingsBgms.length ? settingsBgms.map((bgm) => bgm.title).join('、') : 'BGM 库为空'} />
+            <button className="ghost-action" type="button" onClick={uploadBgmFromSettings}><Upload size={15} />+ 添加 BGM 文件</button>
+            <div className="bgm-library-list">
+              {settingsBgms.length === 0 ? <div className="bgm-library-empty">BGM 库为空</div> : null}
+              {settingsBgms.map((bgm) => (
+                <div key={bgm.id} className="bgm-library-item">
+                  <div>
+                    <strong>{bgm.title}</strong>
+                    <span>{bgm.path}</span>
+                  </div>
+                  <label>
+                    音量
+                    <input type="number" min="0" max="1" step="0.05" value={bgm.volume} onChange={(event) => updateBgmVolume(bgm.id, Number(event.target.value))} />
+                  </label>
+                  <button className={draft.jianying.defaultBgmId === bgm.id ? 'mini-button active' : 'mini-button'} type="button" onClick={() => setDefaultBgm(bgm.id)}>
+                    {draft.jianying.defaultBgmId === bgm.id ? '默认' : '设为默认'}
+                  </button>
+                  <button className="mini-button" type="button" onClick={() => removeBgm(bgm.id)}>移除</button>
+                </div>
+              ))}
+            </div>
           </SettingsCard>
         ) : null}
         {section === 'activation' ? <LocalInfo title="激活与订阅" value={state.activation.message} /> : null}
@@ -3488,6 +3609,42 @@ function splitListInput(value: string): string[] {
     .split(/[,，、\n]/u)
     .map((item) => item.trim())
     .filter(Boolean);
+}
+
+function validBgmItems(config: AppConfig): BgmItem[] {
+  return config.jianying.bgmLibrary.filter((bgm) => bgm.id.trim() && bgm.path.trim());
+}
+
+function resolveDefaultBgmId(config: AppConfig): string {
+  const bgms = validBgmItems(config);
+  return bgms.some((bgm) => bgm.id === config.jianying.defaultBgmId) ? config.jianying.defaultBgmId : bgms[0]?.id ?? '';
+}
+
+function addUploadedBgm(config: AppConfig, audioPath: string): { config: AppConfig; bgmId: string } {
+  const id = `bgm-${crypto.randomUUID()}`;
+  const item: BgmItem = {
+    id,
+    title: audioTitleFromPath(audioPath),
+    path: audioPath,
+    durationMs: 0,
+    volume: 0.25,
+  };
+  const existingDefaultId = resolveDefaultBgmId(config);
+  const bgmLibrary = [...validBgmItems(config), item];
+  const nextConfig = {
+    ...config,
+    jianying: {
+      ...config.jianying,
+      bgmLibrary,
+      defaultBgmId: existingDefaultId || id,
+    },
+  };
+  return { config: nextConfig, bgmId: id };
+}
+
+function audioTitleFromPath(path: string): string {
+  const filename = path.split(/[\\/]/u).pop() || 'BGM';
+  return filename.replace(/\.[^.]+$/u, '') || filename;
 }
 
 function pageSubtitle(view: ShellView): string {

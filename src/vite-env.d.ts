@@ -10,6 +10,7 @@ import type {
   DraftTemplate,
   ImageLabGenerateInput,
   ImageLabRecord,
+  JianyingEffectCatalog,
   LlmConfig,
   LlmModelTestResult,
   PromptTemplate,
@@ -51,6 +52,8 @@ declare global {
       getTaskArtifacts: (id: string) => Promise<TaskArtifactSnapshot>;
       readAssetDataUrl: (path: string) => Promise<string>;
       selectLocalImage: () => Promise<string | null>;
+      selectLocalAudio: () => Promise<string | null>;
+      getJianyingEffectCatalog: () => Promise<JianyingEffectCatalog>;
       runDiagnostics: () => Promise<{ generatedAt: string; checks: Array<{ id: string; label: string; status: string; detail: string }> }>;
       openPath: (path: string) => Promise<void>;
       windowControl: (action: 'minimize' | 'toggle-maximize' | 'close') => Promise<void>;

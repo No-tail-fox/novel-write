@@ -1,7 +1,7 @@
 import { defaultConfig } from './config';
 import { normalizeOpenAiImageBaseUrl, testOpenAiCompatibleImageModel } from './openai-image';
 import { isArkModelApiKey, normalizeVolcengineV3Speaker, VOLCENGINE_TTS_ARK_KEY_MESSAGE } from './volcengine-tts';
-import type { AppConfig, ConfigTestResult, ConfigTestTarget, ImageProviderProfile, LlmModelTestResult, TtsProviderProfile } from './types';
+import type { AppConfig, BgmItem, ConfigTestResult, ConfigTestTarget, ImageProviderProfile, LlmModelTestResult, TtsProviderProfile } from './types';
 
 type TestStatus = ConfigTestResult['status'];
 type ConfigValidationOptions = {
@@ -24,6 +24,36 @@ function normalizeLlmProfile(profile: Partial<AppConfig['llm']>, index: number):
 function normalizePositiveNumber(value: unknown, fallback: number): number {
   const parsed = Number(value);
   return Number.isFinite(parsed) && parsed > 0 ? parsed : fallback;
+}
+
+function normalizeBgmLibrary(input: unknown): BgmItem[] {
+  if (!Array.isArray(input)) return defaultConfig.jianying.bgmLibrary;
+  return input
+    .map((item, index) => {
+      const source = item && typeof item === 'object' ? (item as Partial<BgmItem>) : {};
+      const id = String(source.id ?? '').trim() || `bgm-${index + 1}`;
+      const path = String(source.path ?? '').trim();
+      const title = String(source.title ?? '').trim() || id;
+      return {
+        id,
+        title,
+        path,
+        durationMs: Math.max(0, Math.round(Number(source.durationMs ?? 0) || 0)),
+        volume: normalizeNonNegativeNumber(source.volume, 0.25),
+      };
+    })
+    .filter((item) => item.id !== '__builtin__' && item.path.length > 0);
+}
+
+function normalizeNonNegativeNumber(value: unknown, fallback: number): number {
+  const parsed = Number(value);
+  return Number.isFinite(parsed) && parsed >= 0 ? parsed : fallback;
+}
+
+function normalizeDefaultBgmId(library: BgmItem[], value: unknown): string {
+  const requested = typeof value === 'string' ? value.trim() : '';
+  if (requested && library.some((item) => item.id === requested)) return requested;
+  return library.find((item) => item.path.trim())?.id ?? '';
 }
 
 function buildLlmProfileId(profile: AppConfig['llm'], index: number): string {
@@ -291,6 +321,9 @@ export function normalizeAppConfig(input: unknown): AppConfig {
   const imageConfig = normalizeImageProfiles(partial);
   const ttsConfig = normalizeTtsProfiles(partial);
 
+  const bgmLibrary = normalizeBgmLibrary(partial.jianying?.bgmLibrary);
+  const defaultBgmId = normalizeDefaultBgmId(bgmLibrary, partial.jianying?.defaultBgmId);
+
   return {
     ...defaultConfig,
     ...partial,
@@ -302,7 +335,8 @@ export function normalizeAppConfig(input: unknown): AppConfig {
     jianying: {
       ...defaultConfig.jianying,
       ...(partial.jianying ?? {}),
-      bgmLibrary: partial.jianying?.bgmLibrary?.length ? partial.jianying.bgmLibrary : defaultConfig.jianying.bgmLibrary,
+      bgmLibrary,
+      defaultBgmId,
     },
     ima: { ...defaultConfig.ima, ...(partial.ima ?? {}) },
     ui: { ...defaultConfig.ui, ...(partial.ui ?? {}) },

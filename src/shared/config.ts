@@ -151,7 +151,8 @@ export const defaultConfig: AppConfig = {
   activeTtsProfileId: 'default-tts',
   jianying: {
     draftPath: 'G:/JianyingPro Drafts',
-    bgmLibrary: [{ id: '__builtin__', title: '内置 BGM', path: '', durationMs: 60_000, volume: 0.3 }],
+    bgmLibrary: [],
+    defaultBgmId: '',
   },
   ima: {
     clientId: '',

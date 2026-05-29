@@ -9,6 +9,7 @@ import { promisify } from 'node:util';
 import { readTaskArtifactSnapshot } from '../src/shared/artifact-preview';
 import { fromLlmModelTestResult, testConfigTarget } from '../src/shared/config-utils';
 import { generateImageLabRecord } from '../src/shared/image-lab';
+import { loadJianyingEffectCatalog } from '../src/shared/jianying-effects';
 import { createOpenAiCompatibleJsonLlm, listOpenAiCompatibleModels, testOpenAiCompatibleLlm } from '../src/shared/llm-provider';
 import { markSceneImageForRegeneration, markSceneNarrationForRegeneration } from '../src/shared/pipeline-cache';
 import { composeCopyFromSources, createAiSourceResearcher, searchWebSources } from '../src/shared/research';
@@ -426,6 +427,19 @@ ipcMain.handle('local-image:select', async () => {
   });
   return result.canceled ? null : result.filePaths[0] ?? null;
 });
+
+async function selectLocalAudio(): Promise<string | null> {
+  const result = await dialog.showOpenDialog({
+    title: '选择 BGM 音频',
+    properties: ['openFile'],
+    filters: [{ name: 'Audio', extensions: ['mp3', 'wav', 'm4a', 'aac', 'ogg', 'flac'] }],
+  });
+  return result.canceled ? null : result.filePaths[0] ?? null;
+}
+
+ipcMain.handle('local-audio:select', selectLocalAudio);
+
+ipcMain.handle('jianying:effect-catalog', async () => loadJianyingEffectCatalog());
 
 ipcMain.handle('diagnostics:run', async () => {
   const database = await getDb();
