@@ -14,6 +14,7 @@ export type ShellView =
 
 export type TaskMode = 'paste' | 'ai';
 export type PromptTemplateType = 'review' | 'rewrite' | 'cover' | 'storyboard' | 'image-prompt' | 'task';
+export type PromptStepTemplateType = Exclude<PromptTemplateType, 'task'>;
 export type ImageProvider = 'gpt_image' | 'jimeng' | 'custom' | 'mock';
 export type TtsProvider = 'volcengine' | 'minimax' | 'mock';
 export type PausePoint = 'none' | 'critical' | 'every-step' | 'custom';
@@ -327,6 +328,7 @@ export interface PromptTemplate {
   characterPolicy?: 'follow-template' | 'force-extract' | 'force-skip';
   step3SkeletonModules?: string[];
   referenceKind?: 'none' | 'face' | 'product';
+  stepPrompts?: Partial<Record<PromptStepTemplateType, string>>;
   origin?: 'system' | 'custom' | 'market';
   usedCount?: number;
   marketTags?: string[];

@@ -186,6 +186,77 @@ describe('product shell ui', () => {
     expect(css).toContain('.prompt-template-detail');
   });
 
+  it('keeps prompt template pages padded, scrollable, and tolerant of narrow row actions', async () => {
+    const css = await readFile(new URL('../src/styles.css', import.meta.url), 'utf8');
+
+    const scrollablePageRule = css.match(/\.new-task-scroll,[\s\S]*?\.lab-layout\s*\{[\s\S]*?overflow: auto;[\s\S]*?padding: 20px 26px;[\s\S]*?\}/)?.[0] ?? '';
+    expect(scrollablePageRule).toContain('.prompt-template-gallery');
+    expect(scrollablePageRule).toContain('.prompt-template-detail');
+    expect(css).toMatch(/\.prompt-template-row-actions\s*\{[\s\S]*?flex-wrap: wrap;[\s\S]*?\}/);
+  });
+
+  it('opens prompt template details from the whole row without hijacking row action buttons', async () => {
+    const main = await readFile(new URL('../src/main.tsx', import.meta.url), 'utf8');
+    const css = await readFile(new URL('../src/styles.css', import.meta.url), 'utf8');
+
+    expect(main).toContain('handlePromptTemplateRowKeyDown');
+    expect(main).toContain('role="button"');
+    expect(main).toContain('tabIndex={0}');
+    expect(main).toContain('onClick={() => openPromptTemplateDetail(template)}');
+    expect(main).toContain('event.stopPropagation()');
+    expect(css).toMatch(/\.prompt-template-row\s*\{[\s\S]*?cursor: pointer;[\s\S]*?\}/);
+  });
+
+  it('lets each task prompt template configure the AI prompts used by every pipeline step', async () => {
+    const main = await readFile(new URL('../src/main.tsx', import.meta.url), 'utf8');
+    const css = await readFile(new URL('../src/styles.css', import.meta.url), 'utf8');
+
+    for (const symbol of ['promptStepEditorDefinitions', 'updatePromptTemplateStepPrompt', 'stepPrompts', 'prompt-step-editor-list', 'prompt-step-editor-card']) {
+      expect(main).toContain(symbol);
+    }
+    for (const text of ['AI 步骤设置', 'Step 0 预审', 'Step 1 改写', 'Step 1 元数据', 'Step 2 分镜', 'Step 3 出图']) {
+      expect(main).toContain(text);
+    }
+    expect(css).toContain('.prompt-step-editor-list');
+    expect(css).toContain('.prompt-step-editor-card');
+  });
+
+  it('presents prompt template details as basics, content settings, and step default prompts', async () => {
+    const main = await readFile(new URL('../src/main.tsx', import.meta.url), 'utf8');
+    const css = await readFile(new URL('../src/styles.css', import.meta.url), 'utf8');
+
+    for (const symbol of [
+      'prompt-template-basics-card',
+      'prompt-template-default-style-pills',
+      'prompt-template-settings-card',
+      'prompt-template-content-settings',
+      'prompt-step-editor-section-title',
+    ]) {
+      expect(main).toContain(symbol);
+      expect(css).toContain(`.${symbol}`);
+    }
+
+    for (const text of ['模板名', '描述（一句话说明这个模板的特点）', '默认画风', '设置内容', '步骤默认提示词']) {
+      expect(main).toContain(text);
+    }
+  });
+
+  it('uses Chinese labels for prompt template types and variable insertion chips', async () => {
+    const main = await readFile(new URL('../src/main.tsx', import.meta.url), 'utf8');
+    const css = await readFile(new URL('../src/styles.css', import.meta.url), 'utf8');
+
+    expect(main).toContain('promptTemplateTypeLabels');
+    expect(main).toContain('promptTemplateTypeLabel(type)');
+    expect(main).toContain('promptTemplateVariableDefinitions');
+    expect(main).toContain('prompt-template-variable-chip');
+    expect(css).toContain('.prompt-template-variable-chip');
+
+    for (const text of ['任务模板', '预审提示词', '改写提示词', '出图提示词', '原文素材', '联网资料', '预审结果', '改写正文', '额外要求']) {
+      expect(main).toContain(text);
+    }
+    expect(main).not.toContain('>{`{{${item}}}`}</button>');
+  });
+
   it('supports opening a selected task in a screenshot-style pipeline detail view', async () => {
     const main = await readFile(new URL('../src/main.tsx', import.meta.url), 'utf8');
     const types = await readFile(new URL('../src/shared/types.ts', import.meta.url), 'utf8');

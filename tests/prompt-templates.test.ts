@@ -46,4 +46,19 @@ describe('prompt template rendering', () => {
     expect(selectStepPromptTemplate(defaultPromptTemplates, 'storyboard')?.id).toBe('builtin-storyboard');
     expect(selectStepPromptTemplate(defaultPromptTemplates, 'image-prompt')?.id).toBe('builtin-image-prompt');
   });
+
+  it('selects task-level AI step prompts before global step templates', () => {
+    const taskTemplate = {
+      ...defaultPromptTemplates[0],
+      id: 'custom-task-with-step-prompts',
+      stepPrompts: {
+        rewrite: '只用于这个任务模板的改写规则：{{reviewedText}}',
+      },
+    };
+
+    const selected = selectStepPromptTemplate(defaultPromptTemplates, 'rewrite', taskTemplate);
+
+    expect(selected?.id).toBe('custom-task-with-step-prompts:rewrite');
+    expect(renderPromptTemplate(selected!, { reviewedText: '事实简稿' })).toContain('只用于这个任务模板的改写规则：事实简稿');
+  });
 });

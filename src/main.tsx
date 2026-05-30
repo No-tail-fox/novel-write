@@ -50,6 +50,7 @@ import type {
   JianyingEffectCatalog,
   PausePoint,
   PromptTemplate,
+  PromptStepTemplateType,
   PromptTemplateType,
   ProviderModel,
   RewriteIntensity,
@@ -106,7 +107,7 @@ import {
   defaultUiPreferences,
 } from './shared/config';
 import { draftTemplates as builtinDraftTemplates, imageAnimations, normalizeDraftTemplate } from './shared/templates';
-import { selectTaskPromptTemplate } from './shared/prompt-templates';
+import { selectStepPromptTemplate, selectTaskPromptTemplate } from './shared/prompt-templates';
 import './styles.css';
 
 const sampleText =
@@ -193,7 +194,41 @@ const povOptions = [
   ['third-person', '第三人称'],
 ] as const;
 const promptTemplateTypeOptions: Array<PromptTemplateType | 'all'> = ['all', 'task', 'review', 'rewrite', 'cover', 'storyboard', 'image-prompt'];
-const promptTemplateVariables = ['inputText', 'sourceContext', 'reviewedText', 'rewrittenCopy', 'scenesJson', 'track', 'style', 'ratio', 'extraRequirements', 'taskTemplateContent'];
+const promptTemplateTypeLabels: Record<PromptTemplateType | 'all', string> = {
+  all: '全部类型',
+  task: '任务模板',
+  review: '预审提示词',
+  rewrite: '改写提示词',
+  cover: '封面元数据提示词',
+  storyboard: '分镜提示词',
+  'image-prompt': '出图提示词',
+};
+const promptTemplateVariableDefinitions = [
+  { key: 'inputText', label: '原文素材', description: '新建任务里粘贴或导入的原始文案' },
+  { key: 'sourceContext', label: '联网资料', description: 'AI 搜索或知识库带回来的参考资料' },
+  { key: 'reviewedText', label: '预审结果', description: 'Step 0 清洗、去重后的事实素材' },
+  { key: 'rewrittenCopy', label: '改写正文', description: 'Step 1 改写后的口播文案' },
+  { key: 'scenesJson', label: '分镜数据', description: 'Step 2 拆出来的分镜 JSON' },
+  { key: 'track', label: '内容赛道', description: '人物故事、健康图书、电商等赛道' },
+  { key: 'style', label: '画风', description: '任务选择的出图风格' },
+  { key: 'ratio', label: '画面比例', description: '9:16、16:9 等画布比例' },
+  { key: 'extraRequirements', label: '额外要求', description: '新建任务里填写的补充要求' },
+  { key: 'taskTemplateContent', label: '任务模板指令', description: '当前模板的任务总指令渲染结果' },
+];
+const promptTemplateVariables = promptTemplateVariableDefinitions.map((item) => item.key);
+const promptStepEditorDefinitions: Array<{ type: PromptStepTemplateType; label: string; hint: string }> = [
+  { type: 'review', label: 'Step 0 预审', hint: '清理输入素材、保留事实顺序、去掉重复表达' },
+  { type: 'rewrite', label: 'Step 1 改写', hint: '控制口播文案的语言、节奏和结构' },
+  { type: 'cover', label: 'Step 1 元数据', hint: '生成标题、摘要、标签和评论的规则' },
+  { type: 'storyboard', label: 'Step 2 分镜', hint: '控制分镜拆句、镜头节奏和场景数量' },
+  { type: 'image-prompt', label: 'Step 3 出图', hint: '控制出图提示词、角色一致性和安全规则' },
+];
+const promptTemplateStep3SkeletonOptions = ['跨年代', '防台词文字', '产品一致性'];
+const promptTemplateReferenceOptions: Array<[NonNullable<PromptTemplate['referenceKind']>, string]> = [
+  ['none', '无'],
+  ['face', '人脸'],
+  ['product', '产品'],
+];
 const fallbackEffectCatalog: JianyingEffectCatalog = {
   status: 'warn',
   detail: 'Fallback Jianying effect catalog.',
@@ -1911,6 +1946,12 @@ function PromptTemplatesPage({ api, state, applyState }: { api: StoryboundApi; s
     setTemplateMode('detail');
   }
 
+  function handlePromptTemplateRowKeyDown(event: React.KeyboardEvent<HTMLElement>, template: PromptTemplate) {
+    if (event.key !== 'Enter' && event.key !== ' ') return;
+    event.preventDefault();
+    openPromptTemplateDetail(template);
+  }
+
   async function savePromptTemplateDraft() {
     if (!draft) return;
     const templateToSave: PromptTemplate = draft.isBuiltin
@@ -1989,6 +2030,31 @@ function PromptTemplatesPage({ api, state, applyState }: { api: StoryboundApi; s
     }
   }
 
+  function updatePromptTemplateStepPrompt(type: PromptStepTemplateType, content: string) {
+    setDraft((current) => {
+      if (!current) return current;
+      return {
+        ...current,
+        stepPrompts: {
+          ...(current.stepPrompts ?? {}),
+          [type]: content,
+        },
+      };
+    });
+  }
+
+  function resetPromptTemplateStepPrompt(type: PromptStepTemplateType) {
+    setDraft((current) => {
+      if (!current?.stepPrompts) return current;
+      const nextStepPrompts = { ...current.stepPrompts };
+      delete nextStepPrompts[type];
+      return {
+        ...current,
+        stepPrompts: Object.keys(nextStepPrompts).length > 0 ? nextStepPrompts : undefined,
+      };
+    });
+  }
+
   if (templateMode === 'gallery') {
     return (
       <div className="prompt-template-gallery">
@@ -2011,7 +2077,7 @@ function PromptTemplatesPage({ api, state, applyState }: { api: StoryboundApi; s
         <div className="template-filter-row">
           <Field label="类型筛选">
             <select value={templateTypeFilter} onChange={(event) => setTemplateTypeFilter(event.target.value as PromptTemplateType | 'all')}>
-              {promptTemplateTypeOptions.map((type) => <option key={type} value={type}>{type === 'all' ? '全部类型' : type}</option>)}
+              {promptTemplateTypeOptions.map((type) => <option key={type} value={type}>{promptTemplateTypeLabel(type)}</option>)}
             </select>
           </Field>
           <Field label="赛道筛选">
@@ -2027,7 +2093,14 @@ function PromptTemplatesPage({ api, state, applyState }: { api: StoryboundApi; s
             <span>{filteredTemplates.length} 个匹配模板</span>
           </div>
           {filteredTemplates.length > 0 ? filteredTemplates.map((template) => (
-            <article className="prompt-template-row" key={template.id}>
+            <article
+              className="prompt-template-row"
+              key={template.id}
+              role="button"
+              tabIndex={0}
+              onClick={() => openPromptTemplateDetail(template)}
+              onKeyDown={(event) => handlePromptTemplateRowKeyDown(event, template)}
+            >
               <Sparkles size={18} />
               <div className="prompt-template-row-main">
                 <strong>{template.name}</strong>
@@ -2035,10 +2108,10 @@ function PromptTemplatesPage({ api, state, applyState }: { api: StoryboundApi; s
                 <small>默认画风：{(template.defaultStyles ?? []).join('、') || '未设置'} · id: {template.id}</small>
               </div>
               <div className="prompt-template-row-actions">
-                <button className="ghost-action compact-action" onClick={() => openPromptTemplateDetail(template)}>
+                <button className="ghost-action compact-action" onClick={(event) => { event.stopPropagation(); openPromptTemplateDetail(template); }}>
                   查看
                 </button>
-                <button className="ghost-action compact-action" onClick={() => void duplicateTemplate(template)}>
+                <button className="ghost-action compact-action" onClick={(event) => { event.stopPropagation(); void duplicateTemplate(template); }}>
                   <Copy size={14} />
                   克隆
                 </button>
@@ -2079,59 +2152,148 @@ function PromptTemplatesPage({ api, state, applyState }: { api: StoryboundApi; s
                 </button>
               </div>
             </div>
-            <div className="template-meta-grid">
-              <Field label="模板名">
-                <input value={draft.name} onChange={(event) => setDraft({ ...draft, name: event.target.value })} />
-              </Field>
-              <Field label="描述（一句话说明这个模板的特点）">
-                <input value={draft.description} onChange={(event) => setDraft({ ...draft, description: event.target.value })} />
-              </Field>
-              <Field label="模板类型">
-                <select value={draft.type} onChange={(event) => setDraft({ ...draft, type: event.target.value as PromptTemplateType })}>
-                  {promptTemplateTypeOptions.filter((type) => type !== 'all').map((type) => <option key={type} value={type}>{type}</option>)}
-                </select>
-              </Field>
-              <Field label="绑定赛道">
-                <select value={draft.baseTrack ?? ''} onChange={(event) => setDraft({ ...draft, baseTrack: event.target.value || undefined })}>
-                  <option value="">无</option>
-                  {contentTracks.map(([id, label]) => <option key={id} value={id}>{label}</option>)}
-                </select>
-              </Field>
+            <div className="prompt-template-detail-stack">
+              <section className="prompt-template-basics-card">
+                <div className="template-meta-grid prompt-template-basics-grid">
+                  <Field label="模板名">
+                    <input value={draft.name} onChange={(event) => setDraft({ ...draft, name: event.target.value })} />
+                  </Field>
+                  <Field label="描述（一句话说明这个模板的特点）">
+                    <input value={draft.description} onChange={(event) => setDraft({ ...draft, description: event.target.value })} />
+                  </Field>
+                  <Field label="模板类型">
+                    <select value={draft.type} onChange={(event) => setDraft({ ...draft, type: event.target.value as PromptTemplateType })}>
+                      {promptTemplateTypeOptions.filter((type) => type !== 'all').map((type) => <option key={type} value={type}>{promptTemplateTypeLabel(type)}</option>)}
+                    </select>
+                  </Field>
+                  <Field label="绑定赛道">
+                    <select value={draft.baseTrack ?? ''} onChange={(event) => setDraft({ ...draft, baseTrack: event.target.value || undefined })}>
+                      <option value="">无</option>
+                      {contentTracks.map(([id, label]) => <option key={id} value={id}>{label}</option>)}
+                    </select>
+                  </Field>
+                </div>
+                <div className="prompt-template-default-style-pills">
+                  <span className="field-title">默认画风</span>
+                  <div className="chip-row">
+                    {promptTemplateStyleLabels(draft).map((style) => (
+                      <button
+                        className={(draft.defaultStyles ?? []).includes(style) ? 'chip active' : 'chip'}
+                        type="button"
+                        key={style}
+                        onClick={() => setDraft({ ...draft, defaultStyles: toggleArray(draft.defaultStyles ?? [], style) })}
+                      >
+                        {style}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              </section>
+
+              <section className="prompt-template-settings-card">
+                <span className="field-title">设置内容</span>
+                <div className="prompt-template-content-settings">
+                  <div className="prompt-template-setting-block">
+                    <strong>主角档案</strong>
+                    <div className="chip-row">
+                      {(['follow-template', 'force-extract', 'force-skip'] as const).map((policy) => (
+                        <button className={draft.characterPolicy === policy ? 'chip active' : 'chip'} type="button" key={policy} onClick={() => setDraft({ ...draft, characterPolicy: policy })}>
+                          {policy === 'force-extract' ? '强制提取' : policy === 'force-skip' ? '强制跳过' : '跟随赛道'}
+                        </button>
+                      ))}
+                    </div>
+                    <small>主角档案会影响 Step 3 是否保持人物身份、外貌、年代和叙事一致。</small>
+                  </div>
+                  <div className="prompt-template-setting-block">
+                    <strong>Step 3 骨架模块（可选线路）</strong>
+                    <div className="chip-row">
+                      {promptTemplateStep3SkeletonOptions.map((module) => (
+                        <button
+                          className={(draft.step3SkeletonModules ?? []).includes(module) ? 'chip active' : 'chip'}
+                          type="button"
+                          key={module}
+                          onClick={() => setDraft({ ...draft, step3SkeletonModules: toggleArray(draft.step3SkeletonModules ?? [], module) })}
+                        >
+                          {module}
+                        </button>
+                      ))}
+                    </div>
+                    <small>勾选后 AI 助手会按用途生成对应骨架，已保存的 Step 3 prompt 文本不会自动改变。</small>
+                  </div>
+                  <div className="prompt-template-setting-block">
+                    <strong>参考图类型</strong>
+                    <div className="chip-row">
+                      {promptTemplateReferenceOptions.map(([value, label]) => (
+                        <button className={(draft.referenceKind ?? 'none') === value ? 'chip active' : 'chip'} type="button" key={value} onClick={() => setDraft({ ...draft, referenceKind: value })}>
+                          {label}
+                        </button>
+                      ))}
+                    </div>
+                    <small>上传参考图时，Step 3 会按这里的类型决定人脸或产品一致性要求。</small>
+                  </div>
+                </div>
+                <div className="prompt-template-advanced-grid">
+                  <Field label="标签">
+                    <input value={(draft.marketTags ?? []).join('、')} onChange={(event) => setDraft({ ...draft, marketTags: splitListInput(event.target.value) })} />
+                  </Field>
+                  <Field label="baseTemplateId">
+                    <input value={draft.baseTemplateId ?? ''} onChange={(event) => setDraft({ ...draft, baseTemplateId: event.target.value || null })} />
+                  </Field>
+                </div>
+              </section>
+
+              {draft.isBuiltin ? <span className="local-note">首次保存将创建自定义副本，原内置模板保持不变。</span> : null}
+
+              <section className="prompt-template-settings-card">
+                <div className="prompt-template-section-heading">
+                  <span className="field-title">{draft.type === 'task' ? '任务总指令' : '提示词内容'}</span>
+                </div>
+                <span className="field-title">变量</span>
+                <span className="hint-text">点击插入对应内容占位，不需要手写英文变量。</span>
+                <div className="variable-chip-row">{promptTemplateVariableDefinitions.map((item) => (
+                  <button
+                    className="chip prompt-template-variable-chip"
+                    type="button"
+                    key={item.key}
+                    title={`插入 {{${item.key}}}: ${item.description}`}
+                    onClick={() => setDraft({ ...draft, content: `${draft.content}${draft.content.endsWith(' ') || draft.content.endsWith('\n') ? '' : ' '}{{${item.key}}}` })}
+                  >
+                    <span>{item.label}</span>
+                    <small>{item.description}</small>
+                  </button>
+                ))}</div>
+                <textarea className="template-textarea" value={draft.content} onChange={(event) => setDraft({ ...draft, content: event.target.value })} />
+              </section>
+
+              {draft.type === 'task' ? (
+                <section className="prompt-step-editor-list" aria-label="AI 步骤设置">
+                  <div className="prompt-step-editor-heading">
+                    <span className="field-title prompt-step-editor-section-title">步骤默认提示词</span>
+                  </div>
+                  {promptStepEditorDefinitions.map((step) => {
+                    const hasOverride = promptTemplateHasStepPrompt(draft, step.type);
+                    return (
+                      <article className="prompt-step-editor-card" key={step.type}>
+                        <div className="prompt-step-editor-card-header">
+                          <div>
+                            <strong>{step.label}</strong>
+                            <small>{step.hint}</small>
+                          </div>
+                          <button className="ghost-action compact-action" type="button" disabled={!hasOverride} onClick={() => resetPromptTemplateStepPrompt(step.type)}>
+                            继承全局
+                          </button>
+                        </div>
+                        <textarea
+                          className="template-textarea prompt-step-editor-textarea"
+                          value={promptTemplateStepPromptValue(draft, state.promptTemplates, step.type)}
+                          onChange={(event) => updatePromptTemplateStepPrompt(step.type, event.target.value)}
+                        />
+                      </article>
+                    );
+                  })}
+                </section>
+              ) : null}
             </div>
-            {draft.isBuiltin ? <span className="local-note">首次保存将创建自定义副本，原内置模板保持不变。</span> : null}
-            <span className="field-title">变量</span>
-            <div className="variable-chip-row">{promptTemplateVariables.map((item) => <button className="chip" type="button" key={item} onClick={() => setDraft({ ...draft, content: `${draft.content}${draft.content.endsWith(' ') || draft.content.endsWith('\n') ? '' : ' '}{{${item}}}` })}>{`{{${item}}}`}</button>)}</div>
-            <span className="field-title">默认画风</span>
-            <Field label="默认画风">
-              <input value={(draft.defaultStyles ?? []).join('、')} onChange={(event) => setDraft({ ...draft, defaultStyles: splitListInput(event.target.value) })} />
-            </Field>
-            <span className="field-title">主角档案</span>
-            <div className="chip-row">
-              {(['follow-template', 'force-extract', 'force-skip'] as const).map((policy) => (
-                <button className={draft.characterPolicy === policy ? 'chip active' : 'chip'} type="button" key={policy} onClick={() => setDraft({ ...draft, characterPolicy: policy })}>
-                  {policy === 'force-extract' ? '强制提取' : policy === 'force-skip' ? '强制跳过' : '跟随赛道'}
-                </button>
-              ))}
-            </div>
-            <Field label="Step 3 骨架模块">
-              <input value={(draft.step3SkeletonModules ?? []).join('、')} onChange={(event) => setDraft({ ...draft, step3SkeletonModules: splitListInput(event.target.value) })} />
-            </Field>
-            <Field label="参考图类型">
-              <select value={draft.referenceKind ?? 'none'} onChange={(event) => setDraft({ ...draft, referenceKind: event.target.value as PromptTemplate['referenceKind'] })}>
-                <option value="none">无</option>
-                <option value="face">人脸</option>
-                <option value="product">产品</option>
-              </select>
-            </Field>
-            <Field label="标签">
-              <input value={(draft.marketTags ?? []).join('、')} onChange={(event) => setDraft({ ...draft, marketTags: splitListInput(event.target.value) })} />
-            </Field>
-            <Field label="baseTemplateId">
-              <input value={draft.baseTemplateId ?? ''} onChange={(event) => setDraft({ ...draft, baseTemplateId: event.target.value || null })} />
-            </Field>
-            <Field label="提示词内容">
-              <textarea className="template-textarea" value={draft.content} onChange={(event) => setDraft({ ...draft, content: event.target.value })} />
-            </Field>
             <Field label="导入 JSON">
               <textarea className="small-textarea" value={importJson} onChange={(event) => setImportJson(event.target.value)} placeholder="粘贴模板 JSON 后点击导入 JSON" />
             </Field>
@@ -3654,6 +3816,23 @@ function ProviderConfigNote({ title, value }: { title: string; value: string }) 
 
 function resolvePromptTemplateForTrack(templates: PromptTemplate[], track: string, overrideId?: string | null): PromptTemplate | null {
   return selectTaskPromptTemplate(templates, { track, promptTemplateId: overrideId ?? null });
+}
+
+function promptTemplateHasStepPrompt(template: PromptTemplate, type: PromptStepTemplateType): boolean {
+  return Object.prototype.hasOwnProperty.call(template.stepPrompts ?? {}, type);
+}
+
+function promptTemplateStepPromptValue(template: PromptTemplate, templates: PromptTemplate[], type: PromptStepTemplateType): string {
+  if (promptTemplateHasStepPrompt(template, type)) return template.stepPrompts?.[type] ?? '';
+  return selectStepPromptTemplate(templates, type)?.content ?? '';
+}
+
+function promptTemplateTypeLabel(type: PromptTemplateType | 'all'): string {
+  return promptTemplateTypeLabels[type];
+}
+
+function promptTemplateStyleLabels(template: PromptTemplate): string[] {
+  return [...new Set([...styleOptions.map(([, label]) => label), ...(template.defaultStyles ?? [])])];
 }
 
 function splitListInput(value: string): string[] {

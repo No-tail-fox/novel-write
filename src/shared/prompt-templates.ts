@@ -1,4 +1,4 @@
-import type { AiSourceContext, PipelineArtifact, PromptTemplate, PromptTemplateType, StoryboardScene, Task } from './types';
+import type { AiSourceContext, PipelineArtifact, PromptStepTemplateType, PromptTemplate, StoryboardScene, Task } from './types';
 
 export interface PromptTemplateSelectionInput {
   track?: string;
@@ -31,7 +31,23 @@ export function selectTaskPromptTemplate(templates: PromptTemplate[], input: Pro
   );
 }
 
-export function selectStepPromptTemplate(templates: PromptTemplate[], type: Exclude<PromptTemplateType, 'task'>): PromptTemplate | null {
+export function selectStepPromptTemplate(templates: PromptTemplate[], type: PromptStepTemplateType, taskTemplate?: PromptTemplate | null): PromptTemplate | null {
+  if (taskTemplate?.type === 'task') {
+    const taskStepPrompt = taskTemplate.stepPrompts?.[type];
+    if (taskStepPrompt?.trim()) {
+      return {
+        id: `${taskTemplate.id}:${type}`,
+        name: `${taskTemplate.name} ${type}`,
+        type,
+        description: `${taskTemplate.name} task-level ${type} prompt override`,
+        content: taskStepPrompt,
+        isBuiltin: false,
+        updatedAt: taskTemplate.updatedAt,
+        baseTemplateId: taskTemplate.id,
+        origin: taskTemplate.origin ?? 'custom',
+      };
+    }
+  }
   return templates.find((template) => template.type === type && template.isBuiltin) ?? templates.find((template) => template.type === type) ?? null;
 }
 

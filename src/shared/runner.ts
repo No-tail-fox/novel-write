@@ -1,6 +1,6 @@
 import { mkdir, readFile, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
-import type { AiSourceContext, BgmItem, CoverMetadata, ImagePrompt, PipelineArtifact, PromptTemplate, PromptTemplateType, StoryboardScene, Task } from './types';
+import type { AiSourceContext, BgmItem, CoverMetadata, ImagePrompt, PipelineArtifact, PromptStepTemplateType, PromptTemplate, StoryboardScene, Task } from './types';
 import { buildSubtitleTrack } from './story';
 import { writeJianyingDraft, type SceneAsset, type WriteJianyingDraftOptions } from './draft';
 import type { FileDatabase } from './storage';
@@ -376,8 +376,8 @@ async function ensureContentArtifact(input: {
   await writeContentArtifacts(workDir, hydrateArtifact(pipeline.artifact), task);
 }
 
-function renderStepPrompt(templates: PromptTemplate[], type: Exclude<PromptTemplateType, 'task'>, context: PromptRenderContext, fallback: string): string {
-  const template = selectStepPromptTemplate(templates, type);
+function renderStepPrompt(templates: PromptTemplate[], type: PromptStepTemplateType, context: PromptRenderContext, fallback: string): string {
+  const template = selectStepPromptTemplate(templates, type, context.taskTemplate ?? null);
   return template ? renderPromptTemplate(template, context) : fallback;
 }
 
