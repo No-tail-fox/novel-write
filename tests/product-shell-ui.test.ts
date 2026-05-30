@@ -167,17 +167,23 @@ describe('product shell ui', () => {
       'exportPromptTemplateJson',
       'templateTypeFilter',
       'templateTrackFilter',
+      'templateMode',
+      'prompt-template-gallery',
+      'prompt-template-detail',
+      'openPromptTemplateDetail',
       'savePromptTemplateDraft',
       'baseTemplateId',
       'promptTemplateVariables',
     ]) {
       expect(main).toContain(symbol);
     }
-    for (const text of ['新建模板', '导出 JSON', '类型筛选', '赛道筛选', '变量', '首次保存将创建自定义副本']) {
+    for (const text of ['新建模板', '导出 JSON', '类型筛选', '赛道筛选', '变量', '首次保存将创建自定义副本', '返回模板库', '查看']) {
       expect(main).toContain(text);
     }
     expect(css).toContain('.template-filter-row');
     expect(css).toContain('.variable-chip-row');
+    expect(css).toContain('.prompt-template-gallery');
+    expect(css).toContain('.prompt-template-detail');
   });
 
   it('supports opening a selected task in a screenshot-style pipeline detail view', async () => {

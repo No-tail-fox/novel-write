@@ -1579,6 +1579,104 @@ textarea {
   color: var(--accent);
 }
 
+.prompt-template-gallery,
+.prompt-template-detail {
+  display: grid;
+  align-content: start;
+  gap: 16px;
+}
+
+.prompt-template-gallery-toolbar {
+  margin-bottom: 0;
+}
+
+.prompt-template-gallery-toolbar p {
+  margin: 6px 0 0;
+  color: var(--muted);
+  font-size: 13px;
+}
+
+.prompt-template-list {
+  display: grid;
+  gap: 12px;
+}
+
+.prompt-template-list-title {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  color: var(--text);
+}
+
+.prompt-template-list-title span {
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.prompt-template-row {
+  display: grid;
+  grid-template-columns: 24px minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 14px;
+  min-height: 92px;
+  padding: 14px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: #11171d;
+  transition: border-color 160ms ease, background 160ms ease;
+}
+
+.prompt-template-row:hover {
+  border-color: rgba(31, 214, 166, 0.42);
+  background: #121c22;
+}
+
+.prompt-template-row > svg {
+  color: var(--accent);
+}
+
+.prompt-template-row-main {
+  display: grid;
+  gap: 6px;
+  min-width: 0;
+}
+
+.prompt-template-row-main strong,
+.prompt-template-row-main span,
+.prompt-template-row-main small {
+  overflow-wrap: anywhere;
+}
+
+.prompt-template-row-main span {
+  color: var(--text);
+  font-size: 13px;
+}
+
+.prompt-template-row-main small {
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.prompt-template-row-actions {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 8px;
+}
+
+.compact-action {
+  min-height: 36px;
+}
+
+.prompt-template-detail-title {
+  align-items: flex-start;
+}
+
+.prompt-template-detail-title h2 {
+  margin-top: 10px;
+}
+
 .editor-panel {
   min-width: 0;
 }
@@ -2230,11 +2328,22 @@ textarea {
   .option-two-col,
   .advanced-grid,
   .templates-layout,
+  .prompt-template-row,
   .draft-editor-shell,
   .settings-layout,
   .template-meta-grid,
   .form-grid {
     grid-template-columns: 1fr;
+  }
+
+  .prompt-template-gallery-toolbar,
+  .prompt-template-detail-title {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .prompt-template-row-actions {
+    justify-content: flex-start;
   }
 
   .top-notice,

@@ -1890,6 +1890,7 @@ function ImageLabPage({ api, state, applyState }: { api: StoryboundApi; state: A
 
 function PromptTemplatesPage({ api, state, applyState }: { api: StoryboundApi; state: AppState; applyState: (state: AppState) => void }) {
   const [selectedId, setSelectedId] = useState(state.promptTemplates[0]?.id ?? '');
+  const [templateMode, setTemplateMode] = useState<'gallery' | 'detail'>('gallery');
   const [templateTypeFilter, setTemplateTypeFilter] = useState<PromptTemplateType | 'all'>('all');
   const [templateTrackFilter, setTemplateTrackFilter] = useState('all');
   const filteredTemplates = state.promptTemplates.filter((template) => {
@@ -1902,6 +1903,13 @@ function PromptTemplatesPage({ api, state, applyState }: { api: StoryboundApi; s
   const [importJson, setImportJson] = useState('');
 
   useEffect(() => setDraft(selected ? { ...selected } : null), [selected?.id]);
+
+  function openPromptTemplateDetail(template: PromptTemplate) {
+    setSelectedId(template.id);
+    setDraft({ ...template });
+    setImportJson('');
+    setTemplateMode('detail');
+  }
 
   async function savePromptTemplateDraft() {
     if (!draft) return;
@@ -1918,13 +1926,22 @@ function PromptTemplatesPage({ api, state, applyState }: { api: StoryboundApi; s
       : { ...draft, updatedAt: new Date().toISOString() };
     applyState(await api.savePromptTemplate(templateToSave));
     setSelectedId(templateToSave.id);
+    setDraft(templateToSave);
+    setTemplateMode('detail');
+  }
+
+  async function duplicateTemplate(template: PromptTemplate) {
+    const copy = { ...template, id: crypto.randomUUID(), name: `${template.name} 副本`, isBuiltin: false, origin: 'custom' as const, baseTemplateId: template.baseTemplateId ?? template.id };
+    applyState(await api.savePromptTemplate(copy));
+    setSelectedId(copy.id);
+    setDraft(copy);
+    setImportJson('');
+    setTemplateMode('detail');
   }
 
   async function duplicate() {
     if (!draft) return;
-    const copy = { ...draft, id: crypto.randomUUID(), name: `${draft.name} 副本`, isBuiltin: false, origin: 'custom' as const, baseTemplateId: draft.baseTemplateId ?? draft.id };
-    applyState(await api.savePromptTemplate(copy));
-    setSelectedId(copy.id);
+    await duplicateTemplate(draft);
   }
 
   async function createPromptTemplate() {
@@ -1946,6 +1963,9 @@ function PromptTemplatesPage({ api, state, applyState }: { api: StoryboundApi; s
     };
     applyState(await api.savePromptTemplate(template));
     setSelectedId(template.id);
+    setDraft(template);
+    setImportJson('');
+    setTemplateMode('detail');
   }
 
   function exportPromptTemplateJson() {
@@ -1961,22 +1981,30 @@ function PromptTemplatesPage({ api, state, applyState }: { api: StoryboundApi; s
       const next = { ...imported, id: imported.id || crypto.randomUUID(), isBuiltin: false, origin: 'custom' as const, updatedAt: new Date().toISOString() };
       applyState(await api.savePromptTemplate(next));
       setSelectedId(next.id);
+      setDraft(next);
+      setTemplateMode('detail');
       setImportJson('');
     } catch {
       setImportJson('{"name":"自定义模板","type":"task","description":"请补充","content":"请补充提示词"}');
     }
   }
 
-  return (
-    <div className="templates-layout">
-      <section className="template-list">
-        <div className="panel-title-row compact">
-          <h2>系统模板</h2>
+  if (templateMode === 'gallery') {
+    return (
+      <div className="prompt-template-gallery">
+        <div className="panel-title-row prompt-template-gallery-toolbar">
+          <div>
+            <h2>提示词模板</h2>
+            <p>模板决定 AI 怎么改写文案、生成元数据、写画面提示词。先浏览模板，点开后查看和编辑细节。</p>
+          </div>
           <div className="button-row">
-            <button className="ghost-action" onClick={createPromptTemplate}><Plus size={14} />新建模板</button>
             <button className="ghost-action" onClick={async () => applyState(await api.resetPromptTemplates())}>
               <RotateCcw size={14} />
               重置
+            </button>
+            <button className="primary-action slim" onClick={createPromptTemplate}>
+              <Plus size={14} />
+              新建模板
             </button>
           </div>
         </div>
@@ -1993,20 +2021,45 @@ function PromptTemplatesPage({ api, state, applyState }: { api: StoryboundApi; s
             </select>
           </Field>
         </div>
-        {filteredTemplates.map((template) => (
-          <button key={template.id} className={selectedId === template.id ? 'template-card active' : 'template-card'} onClick={() => setSelectedId(template.id)}>
-            <Sparkles size={16} />
-            <strong>{template.name}</strong>
-            <span>{template.description}</span>
-            <small>{template.isBuiltin ? '查看 / 克隆' : '自定义'}</small>
-          </button>
-        ))}
-      </section>
+        <section className="prompt-template-list">
+          <div className="prompt-template-list-title">
+            <strong>系统模板（{filteredTemplates.filter((template) => template.isBuiltin).length}）</strong>
+            <span>{filteredTemplates.length} 个匹配模板</span>
+          </div>
+          {filteredTemplates.length > 0 ? filteredTemplates.map((template) => (
+            <article className="prompt-template-row" key={template.id}>
+              <Sparkles size={18} />
+              <div className="prompt-template-row-main">
+                <strong>{template.name}</strong>
+                <span>{template.description}</span>
+                <small>默认画风：{(template.defaultStyles ?? []).join('、') || '未设置'} · id: {template.id}</small>
+              </div>
+              <div className="prompt-template-row-actions">
+                <button className="ghost-action compact-action" onClick={() => openPromptTemplateDetail(template)}>
+                  查看
+                </button>
+                <button className="ghost-action compact-action" onClick={() => void duplicateTemplate(template)}>
+                  <Copy size={14} />
+                  克隆
+                </button>
+              </div>
+            </article>
+          )) : <EmptyState title="暂无匹配模板" />}
+        </section>
+      </div>
+    );
+  }
+
+  return (
+    <div className="prompt-template-detail">
       <section className="panel editor-panel">
         {draft ? (
           <>
-            <div className="panel-title-row">
-              <h2>查看系统模板 · {draft.name}</h2>
+            <div className="panel-title-row prompt-template-detail-title">
+              <div>
+                <button className="ghost-action compact-action" onClick={() => setTemplateMode('gallery')}>返回模板库</button>
+                <h2>查看系统模板 · {draft.name}</h2>
+              </div>
               <div className="button-row">
                 <button className="ghost-action" onClick={duplicate}>
                   <Copy size={15} />
@@ -2090,7 +2143,6 @@ function PromptTemplatesPage({ api, state, applyState }: { api: StoryboundApi; s
     </div>
   );
 }
-
 function DraftTemplatesPage({ api, state, applyState }: { api: StoryboundApi; state: AppState; applyState: (state: AppState) => void }) {
   const [editingId, setEditingId] = useState<string | null>(null);
   const editingTemplate = editingId ? state.draftTemplates.find((template) => template.id === editingId) ?? null : null;
