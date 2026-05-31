@@ -327,6 +327,46 @@ describe('configured media providers', () => {
     }
   });
 
+  it('uses the task-selected Volcengine voice instead of the configured default voice', async () => {
+    const dir = await mkdtemp(join(tmpdir(), 'storybound-provider-volc-v3-task-voice-'));
+    const audioBytes = Buffer.from('task-voice-audio');
+    const requests: Array<{ body: Record<string, any>; headers: Headers }> = [];
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (_url: string, init: RequestInit) => {
+        requests.push({ body: JSON.parse(String(init.body)), headers: new Headers(init.headers) });
+        return new Response(`${JSON.stringify({ code: 0, message: '', data: audioBytes.toString('base64') })}\n${JSON.stringify({ code: 20000000, message: 'ok', data: null })}\n`, {
+          status: 200,
+          headers: { 'content-type': 'application/json' },
+        });
+      }),
+    );
+
+    try {
+      const config: AppConfig = {
+        ...defaultConfig,
+        tts: {
+          ...defaultConfig.tts,
+          provider: 'volcengine',
+          volcengine: {
+            ...defaultConfig.tts.volcengine,
+            apiKey: 'v3-key',
+            resourceId: 'seed-tts-2.0',
+            endpoint: 'https://openspeech.bytedance.com/api/v3/tts/unidirectional',
+            speaker: 'zh_female_vv_uranus_bigtts',
+          },
+        },
+      };
+      const synthesize = createConfiguredNarrationSynthesizer(config, dir);
+      await synthesize([scene], { ...task, ttsProvider: 'volcengine', speaker: 'zh_male_yuanboxiaoshu_moon_bigtts' });
+
+      expect(requests[0].body.req_params.speaker).toBe('zh_male_yuanboxiaoshu_moon_bigtts');
+      expect(requests[0].headers.get('X-Api-Resource-Id')).toBe('seed-tts-1.0');
+    } finally {
+      await rm(dir, { recursive: true, force: true });
+    }
+  });
+
   it('normalizes legacy Volcengine display speakers before V3 requests', async () => {
     const dir = await mkdtemp(join(tmpdir(), 'storybound-provider-volc-v3-legacy-speaker-'));
     const audioBytes = Buffer.from('legacy-speaker-audio');
@@ -360,7 +400,7 @@ describe('configured media providers', () => {
       const synthesize = createConfiguredNarrationSynthesizer(config, dir);
       await synthesize([scene], task);
 
-      expect(requests[0].body.req_params.speaker).toBe('zh_female_vv_uranus_bigtts');
+      expect(requests[0].body.req_params.speaker).toBe('zh_male_yuanboxiaoshu_moon_bigtts');
     } finally {
       await rm(dir, { recursive: true, force: true });
     }

@@ -1057,7 +1057,6 @@ function NewTaskPage({
               {voice.label}
             </button>
           ))}
-          <button className="chip" type="button" onClick={() => setShowAdvanced(true)}>更多音色...</button>
         </div>
         <span className="hint-text">当前默认配音员：{taskSpeakerLabel(ttsProvider, speaker)} · {speaker}</span>
 

@@ -337,8 +337,8 @@ describe('config validation utilities', () => {
       activeTtsProfileId: 'tts-v3-legacy-speaker',
     });
 
-    expect(config.tts.volcengine.speaker).toBe('zh_female_vv_uranus_bigtts');
-    expect(config.tts.speaker).toBe('zh_female_vv_uranus_bigtts');
+    expect(config.tts.volcengine.speaker).toBe('zh_male_yuanboxiaoshu_moon_bigtts');
+    expect(config.tts.speaker).toBe('zh_male_yuanboxiaoshu_moon_bigtts');
   });
 
   it('rejects Ark model keys in Volcengine TTS V3 settings', () => {

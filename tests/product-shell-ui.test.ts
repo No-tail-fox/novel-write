@@ -611,6 +611,7 @@ describe('product shell ui', () => {
       expect(main + voices).toContain(symbol);
     }
     expect(main).not.toContain("const voiceOptions = ['东方浩然', '灿博小叔', '温柔小雅', '爽快思思', '更多音色...'];");
+    expect(main).not.toContain('>更多音色...</button>');
   });
 
   it('syncs new-task content and style choices from story and image templates', async () => {

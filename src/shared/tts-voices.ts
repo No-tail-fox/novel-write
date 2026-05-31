@@ -10,10 +10,11 @@ export interface TtsVoiceOption {
 }
 
 export const VOLCENGINE_TASK_VOICE_OPTIONS: TtsVoiceOption[] = [
-  { id: DEFAULT_VOLCENGINE_TTS_V3_SPEAKER, label: '东方浩然', hint: '豆包默认叙事声' },
+  { id: DEFAULT_VOLCENGINE_TTS_V3_SPEAKER, label: '云舟 2.0', hint: '稳重男声' },
+  { id: 'zh_female_vv_uranus_bigtts', label: 'Vivi 2.0', hint: '清亮女声' },
   { id: 'zh_male_yuanboxiaoshu_moon_bigtts', label: '渊博小叔', hint: '知识讲述' },
   { id: 'zh_female_wenrouxiaoya_moon_bigtts', label: '温柔小雅', hint: '柔和女声' },
-  { id: 'zh_female_shuangkuaisisi_uranus_bigtts', label: '爽快思思', hint: '爽朗活泼' },
+  { id: 'zh_female_shuangkuaisisi_uranus_bigtts', label: '爽快思思 2.0', hint: '爽朗活泼' },
 ];
 
 export const MINIMAX_TASK_VOICE_OPTIONS: TtsVoiceOption[] = [
