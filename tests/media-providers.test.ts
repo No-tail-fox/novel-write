@@ -486,4 +486,54 @@ describe('configured media providers', () => {
       await rm(dir, { recursive: true, force: true });
     }
   });
+
+  it('uses the task-selected TTS provider and voice id for narration', async () => {
+    const dir = await mkdtemp(join(tmpdir(), 'storybound-provider-task-tts-'));
+    const audioBytes = Buffer.from('task-selected-tts');
+    const requests: Array<{ url: string; body: Record<string, unknown> }> = [];
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (url: string, init: RequestInit) => {
+        requests.push({ url, body: JSON.parse(String(init.body)) });
+        return new Response(JSON.stringify({ data: { audio: audioBytes.toString('hex'), status: 2 }, base_resp: { status_code: 0, status_msg: 'success' } }), {
+          status: 200,
+          headers: { 'content-type': 'application/json' },
+        });
+      }),
+    );
+
+    try {
+      const config = normalizeAppConfig({
+        ...defaultConfig,
+        tts: {
+          ...defaultConfig.tts,
+          provider: 'volcengine',
+          minimax: { ...defaultConfig.tts.minimax, apiKey: 'tts-key', model: 'speech-02-hd', voiceId: 'male-qn-qingse' },
+        },
+        ttsProfiles: [
+          {
+            id: 'tts-volcengine',
+            name: 'Volcengine',
+            provider: 'volcengine',
+            enabled: true,
+            volcengine: { ...defaultConfig.tts.volcengine, appId: 'appid', accessKey: 'token', speaker: 'zh_female_vv_uranus_bigtts' },
+          },
+          {
+            id: 'tts-minimax',
+            name: 'MiniMax',
+            provider: 'minimax',
+            enabled: false,
+            minimax: { ...defaultConfig.tts.minimax, apiKey: 'tts-key', model: 'speech-02-hd', voiceId: 'male-qn-qingse' },
+          },
+        ],
+      });
+      const synthesize = createConfiguredNarrationSynthesizer(config, dir);
+      await synthesize([scene], { ...task, ttsProvider: 'minimax', speaker: 'female-yujie' });
+
+      expect(requests[0].url).toBe('https://api.minimaxi.com/v1/t2a_v2');
+      expect(requests[0].body).toMatchObject({ model: 'speech-02-hd', voice_setting: { voice_id: 'female-yujie' } });
+    } finally {
+      await rm(dir, { recursive: true, force: true });
+    }
+  });
 });

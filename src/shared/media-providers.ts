@@ -6,6 +6,7 @@ import type { SceneAsset } from './draft';
 import { fetchWithTimeout } from './http';
 import { buildOpenAiImageGenerationBody, normalizeOpenAiImageBaseUrl } from './openai-image';
 import { isArkModelApiKey, normalizeVolcengineV3Speaker, VOLCENGINE_TTS_ARK_KEY_MESSAGE } from './volcengine-tts';
+import { normalizeRuntimeTtsProvider, volcengineResourceIdForTaskSpeaker } from './tts-voices';
 
 type ImageGenerator = (scenes: StoryboardScene[], prompts: ImagePrompt[], task: Task, signal?: AbortSignal) => Promise<SceneAsset[]>;
 type NarrationSynthesizer = (scenes: StoryboardScene[], task: Task, signal?: AbortSignal) => Promise<SceneAsset[]>;
@@ -76,21 +77,45 @@ export function getConfiguredImageConcurrency(config: AppConfig): number {
 
 export function createConfiguredNarrationSynthesizer(config: AppConfig, workDir: string): NarrationSynthesizer {
   return async (scenes, task, signal) => {
-    if (config.tts.provider === 'mock') {
+    const taskProvider = task.ttsProvider && task.ttsProvider !== 'mock' ? normalizeRuntimeTtsProvider(task.ttsProvider) : null;
+    const provider = taskProvider ?? normalizeRuntimeTtsProvider(config.tts.provider);
+    const providerProfile = config.ttsProfiles.find((profile) => profile.provider === provider && profile.enabled) ?? config.ttsProfiles.find((profile) => profile.provider === provider);
+    const profileVolcengine = providerProfile?.volcengine;
+    const profileMinimax = providerProfile?.minimax;
+    const volcengine = {
+      ...config.tts.volcengine,
+      apiKey: config.tts.volcengine.apiKey || profileVolcengine?.apiKey,
+      accessKeyId: config.tts.volcengine.accessKeyId || profileVolcengine?.accessKeyId,
+      secretAccessKey: config.tts.volcengine.secretAccessKey || profileVolcengine?.secretAccessKey,
+      appId: config.tts.volcengine.appId || profileVolcengine?.appId || providerProfile?.appId,
+      accessKey: config.tts.volcengine.accessKey || profileVolcengine?.accessKey || providerProfile?.accessKey,
+      speaker: config.tts.volcengine.speaker || profileVolcengine?.speaker || providerProfile?.speaker,
+      cluster: config.tts.volcengine.cluster || profileVolcengine?.cluster,
+      endpoint: config.tts.volcengine.endpoint || profileVolcengine?.endpoint,
+      resourceId: config.tts.volcengine.resourceId || profileVolcengine?.resourceId,
+    };
+    const minimax = {
+      ...config.tts.minimax,
+      apiKey: config.tts.minimax.apiKey || profileMinimax?.apiKey,
+      model: config.tts.minimax.model || profileMinimax?.model,
+      voiceId: config.tts.minimax.voiceId || profileMinimax?.voiceId,
+    };
+    if (config.tts.provider === 'mock' && !taskProvider) {
       throw new Error('TTS provider is set to mock; real narration audio is required.');
     }
-    if (config.tts.provider === 'volcengine') {
+    if (provider === 'volcengine') {
+      const speaker = taskProvider ? task.speaker : volcengine.speaker || providerProfile?.speaker || config.tts.speaker;
       return synthesizeVolcengineNarration({
         scenes,
         task,
         workDir,
-        apiKey: config.tts.volcengine.apiKey ?? '',
-        resourceId: config.tts.volcengine.resourceId || 'seed-tts-2.0',
-        appId: config.tts.volcengine.appId || config.tts.appId,
-        accessKey: config.tts.volcengine.accessKey || config.tts.accessKey,
-        speaker: config.tts.volcengine.speaker || config.tts.speaker || task.speaker,
-        cluster: config.tts.volcengine.cluster || 'volcano_tts',
-        endpoint: config.tts.volcengine.endpoint || 'https://openspeech.bytedance.com/api/v3/tts/unidirectional',
+        apiKey: volcengine.apiKey ?? '',
+        resourceId: taskProvider ? volcengineResourceIdForTaskSpeaker(speaker, volcengine.resourceId || 'seed-tts-2.0') : volcengine.resourceId || 'seed-tts-2.0',
+        appId: volcengine.appId || providerProfile?.appId || config.tts.appId,
+        accessKey: volcengine.accessKey || providerProfile?.accessKey || config.tts.accessKey,
+        speaker,
+        cluster: volcengine.cluster || 'volcano_tts',
+        endpoint: volcengine.endpoint || 'https://openspeech.bytedance.com/api/v3/tts/unidirectional',
         signal,
       });
     }
@@ -98,9 +123,9 @@ export function createConfiguredNarrationSynthesizer(config: AppConfig, workDir:
       scenes,
       task,
       workDir,
-      apiKey: config.tts.minimax.apiKey,
-      model: config.tts.minimax.model,
-      voiceId: config.tts.minimax.voiceId || task.speaker,
+      apiKey: minimax.apiKey ?? '',
+      model: minimax.model ?? '',
+      voiceId: taskProvider ? task.speaker : minimax.voiceId ?? '',
       signal,
     });
   };

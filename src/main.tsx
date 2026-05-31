@@ -42,6 +42,7 @@ import type {
   AppState,
   ConfigTestTarget,
   CreateTaskInput,
+  CustomStyle,
   DraftTemplate,
   ImageLabGenerateInput,
   ImageProviderProfile,
@@ -107,7 +108,16 @@ import {
   defaultUiPreferences,
 } from './shared/config';
 import { draftTemplates as builtinDraftTemplates, imageAnimations, normalizeDraftTemplate } from './shared/templates';
-import { selectStepPromptTemplate, selectTaskPromptTemplate } from './shared/prompt-templates';
+import {
+  buildImageTemplateStyleOptions,
+  buildStoryTemplateTrackOptions,
+  resolvePromptTemplateDefaultDraftTemplateId,
+  resolvePromptTemplateDefaultStyleId,
+  resolvePromptTemplateDefaultStyleIds,
+  selectStepPromptTemplate,
+  selectTaskPromptTemplate,
+} from './shared/prompt-templates';
+import { defaultTaskSpeakerForProvider, normalizeRuntimeTtsProvider, taskSpeakerLabel, ttsVoiceOptionsForProvider, type RuntimeTtsProvider } from './shared/tts-voices';
 import './styles.css';
 
 const sampleText =
@@ -169,7 +179,6 @@ const styleOptions = [
 
 const ratioOptions = ['21:9', '16:9', '3:2', '4:3', '1:1', '3:4', '2:3', '9:16'];
 const storyboardSceneCountOptions = [8, 12, 16, 20, 30];
-const voiceOptions = ['东方浩然', '灿博小叔', '温柔小雅', '爽快思思', '更多音色...'];
 const volcengineVoicePresets = [
   ['Vivi 2.0', 'zh_female_vv_uranus_bigtts'],
   ['云舟 2.0', 'zh_male_m191_uranus_bigtts'],
@@ -269,13 +278,22 @@ function hydrateState(state: Partial<AppState>): AppState {
     promptTemplates: state.promptTemplates ?? defaultPromptTemplates,
     draftTemplates: (state.draftTemplates ?? builtinDraftTemplates).map(normalizeDraftTemplate),
     imageLabRecords: state.imageLabRecords ?? [],
-    customStyles: state.customStyles ?? defaultCustomStyles,
+    customStyles: mergeDefaultCustomStyles(state.customStyles),
     creditTransactions: state.creditTransactions ?? defaultCreditTransactions,
     minimaxCloneVoices: state.minimaxCloneVoices ?? [],
     account: { ...defaultAccount, ...(state.account ?? {}) },
     activation: { ...defaultActivation, ...(state.activation ?? {}) },
     ui: { ...defaultUiPreferences, ...(state.ui ?? {}) },
   };
+}
+
+function mergeDefaultCustomStyles(styles: CustomStyle[] | undefined): CustomStyle[] {
+  const current = new Map((styles ?? []).map((style) => [style.id, style]));
+  const builtinIds = new Set(defaultCustomStyles.map((style) => style.id));
+  return [
+    ...defaultCustomStyles.map((style) => current.get(style.id) ?? style),
+    ...(styles ?? []).filter((style) => !builtinIds.has(style.id)),
+  ];
 }
 
 function makeFallbackApi(setState: (state: AppState) => void): StoryboundApi {
@@ -344,6 +362,15 @@ function makeFallbackApi(setState: (state: AppState) => void): StoryboundApi {
       const state = read();
       const custom = state.promptTemplates.filter((template) => !template.isBuiltin);
       return persist({ ...state, promptTemplates: [...defaultPromptTemplates, ...custom] });
+    },
+    async saveCustomStyle(style: CustomStyle) {
+      const state = read();
+      const next = state.customStyles.filter((item) => item.id !== style.id);
+      const now = new Date().toISOString();
+      return persist({ ...state, customStyles: [{ ...style, updatedAt: now, createdAt: style.createdAt || now }, ...next] });
+    },
+    async generateCustomStyleDraft(input) {
+      return { ...input.baseStyle, ...buildImageStyleDraftFromPrompt(input.prompt, input.baseStyle) };
     },
     async saveDraftTemplate(template: DraftTemplate) {
       const state = read();
@@ -684,6 +711,7 @@ function NewTaskPage({
   openTaskDetail: (taskId: string) => void;
   isBrowserPreview: boolean;
 }) {
+  const initialDraftTemplateId = state.draftTemplates[0]?.id ?? 'default-portrait-9-16';
   const [mode, setMode] = useState<TaskMode>('paste');
   const [title, setTitle] = useState('');
   const [inputText, setInputText] = useState(sampleText);
@@ -692,10 +720,15 @@ function NewTaskPage({
   const [extraRequirements, setExtraRequirements] = useState('字数控制在 500 字左右，聚焦人物转折经历，语气偏感性');
   const [track, setTrack] = useState('character-story');
   const [style, setStyle] = useState('photo-real');
-  const [ratio, setRatio] = useState('9:16');
-  const [templateId, setTemplateId] = useState(state.draftTemplates[0]?.id ?? 'default-portrait-9-16');
+  const [templateId, setTemplateId] = useState(initialDraftTemplateId);
+  const [ratio, setRatio] = useState(() => draftTemplateImageRatio(state.draftTemplates, initialDraftTemplateId));
   const [promptTemplateOverrideId, setPromptTemplateOverrideId] = useState('');
-  const [speaker, setSpeaker] = useState(state.config.tts.speaker);
+  const [promptTemplateManuallyOverridden, setPromptTemplateManuallyOverridden] = useState(false);
+  const [styleManuallyOverridden, setStyleManuallyOverridden] = useState(false);
+  const [draftTemplateManuallyOverridden, setDraftTemplateManuallyOverridden] = useState(false);
+  const [ratioManuallyOverridden, setRatioManuallyOverridden] = useState(false);
+  const [ttsProvider, setTtsProvider] = useState<RuntimeTtsProvider>(() => normalizeRuntimeTtsProvider(state.config.tts.provider));
+  const [speaker, setSpeaker] = useState(() => defaultTaskSpeakerForProvider(state.config.tts.provider, state.config));
   const [bgmId, setBgmId] = useState(() => resolveDefaultBgmId(state.config));
   const [referenceImagePath, setReferenceImagePath] = useState('');
   const [showAdvanced, setShowAdvanced] = useState(false);
@@ -718,12 +751,90 @@ function NewTaskPage({
   const searchSections = (searchContext?.sections ?? []).slice(0, 10);
   const selectedSources = searchSections.filter((source, index) => selectedSearchSourceIds.includes(sourceKey(source, index)));
   const taskPromptTemplates = state.promptTemplates.filter((template) => template.type === 'task');
+  const storyTemplateTrackOptions = buildStoryTemplateTrackOptions(taskPromptTemplates);
+  const imageTemplateStyleOptions = buildImageTemplateStyleOptions(state.customStyles);
   const resolvedPromptTemplate = resolvePromptTemplateForTrack(state.promptTemplates, track, promptTemplateOverrideId || null);
+  const availableStyleIds = state.customStyles.map((customStyle) => customStyle.id);
+  const availableDraftTemplateIds = state.draftTemplates.map((draftTemplate) => draftTemplate.id);
   const bgmOptions = validBgmItems(state.config);
+  const ttsVoiceOptions = ttsVoiceOptionsForProvider(ttsProvider);
 
   useEffect(() => {
     setBgmId((current) => (current && bgmOptions.some((bgm) => bgm.id === current) ? current : resolveDefaultBgmId(state.config)));
   }, [state.config.jianying.bgmLibrary, state.config.jianying.defaultBgmId]);
+
+  useEffect(() => {
+    const provider = normalizeRuntimeTtsProvider(state.config.tts.provider);
+    setTtsProvider(provider);
+    setSpeaker(defaultTaskSpeakerForProvider(provider, state.config));
+  }, [state.config.activeTtsProfileId, state.config.tts.provider, state.config.tts.speaker, state.config.tts.volcengine.speaker, state.config.tts.minimax.voiceId]);
+
+  useEffect(() => {
+    if (!styleManuallyOverridden && resolvedPromptTemplate) {
+      setStyle(resolvePromptTemplateDefaultStyleId(resolvedPromptTemplate, availableStyleIds));
+    }
+  }, [resolvedPromptTemplate?.id, styleManuallyOverridden, state.customStyles]);
+
+  function syncTaskDefaultsFromTrack(nextTrack: string) {
+    const template = resolvePromptTemplateForTrack(state.promptTemplates, nextTrack, null);
+    if (!promptTemplateManuallyOverridden) {
+      setPromptTemplateOverrideId('');
+    }
+    if (!styleManuallyOverridden && template) {
+      setStyle(resolvePromptTemplateDefaultStyleId(template, availableStyleIds));
+    }
+    if (!draftTemplateManuallyOverridden && template) {
+      const nextTemplateId = resolvePromptTemplateDefaultDraftTemplateId(template, availableDraftTemplateIds, templateId);
+      setTemplateId(nextTemplateId);
+      if (!ratioManuallyOverridden) {
+        setRatio(draftTemplateImageRatio(state.draftTemplates, nextTemplateId));
+      }
+    }
+  }
+
+  function handleTrackChange(nextTrack: string) {
+    setTrack(nextTrack);
+    syncTaskDefaultsFromTrack(nextTrack);
+  }
+
+  function handleStyleChange(nextStyle: string) {
+    setStyleManuallyOverridden(true);
+    setStyle(nextStyle);
+  }
+
+  function handleDraftTemplateChange(nextTemplateId: string) {
+    setDraftTemplateManuallyOverridden(true);
+    setTemplateId(nextTemplateId);
+    setRatioManuallyOverridden(false);
+    setRatio(draftTemplateImageRatio(state.draftTemplates, nextTemplateId));
+  }
+
+  function handleRatioChange(nextRatio: string) {
+    setRatioManuallyOverridden(true);
+    setRatio(nextRatio);
+  }
+
+  function handlePromptTemplateOverrideChange(nextId: string) {
+    setPromptTemplateManuallyOverridden(Boolean(nextId));
+    setPromptTemplateOverrideId(nextId);
+    const template = resolvePromptTemplateForTrack(state.promptTemplates, track, nextId || null);
+    if (!styleManuallyOverridden && template) {
+      setStyle(resolvePromptTemplateDefaultStyleId(template, availableStyleIds));
+    }
+    if (!draftTemplateManuallyOverridden && template) {
+      const nextTemplateId = resolvePromptTemplateDefaultDraftTemplateId(template, availableDraftTemplateIds, templateId);
+      setTemplateId(nextTemplateId);
+      if (!ratioManuallyOverridden) {
+        setRatio(draftTemplateImageRatio(state.draftTemplates, nextTemplateId));
+      }
+    }
+  }
+
+  function handleTtsProviderChange(nextProvider: string) {
+    const provider = normalizeRuntimeTtsProvider(nextProvider);
+    setTtsProvider(provider);
+    setSpeaker(defaultTaskSpeakerForProvider(provider, state.config));
+  }
 
   async function searchWebSources() {
     const keyword = aiKeyword.trim();
@@ -806,7 +917,7 @@ function NewTaskPage({
         rewriteIntensity,
         narrativePov,
         keepPromotion,
-        ttsProvider: state.config.tts.provider,
+        ttsProvider,
         ttsSpeed,
         storyboardSceneCount,
         promptTemplateId: resolvedPromptTemplate?.id ?? null,
@@ -908,16 +1019,27 @@ function NewTaskPage({
           </div>
         )}
 
-        <OptionCloud title="内容赛道" options={contentTracks} value={track} onChange={setTrack} />
-        <OptionCloud title="画面风格" options={styleOptions} value={style} onChange={setStyle} />
+        <OptionCloud title="内容赛道" options={storyTemplateTrackOptions} value={track} onChange={handleTrackChange} />
+        <OptionCloud title="画面风格" options={imageTemplateStyleOptions} value={style} onChange={handleStyleChange} />
+        {resolvedPromptTemplate ? (
+          <div className="template-default-summary">
+            <strong>模板默认项</strong>
+            <span>故事模板：{resolvedPromptTemplate.name}</span>
+            <span>默认图像模板：{styleLabel(style, state.customStyles)}</span>
+            <span>默认草稿模板：{draftTemplateLabel(templateId, state.draftTemplates)}</span>
+            <span>主角档案：{characterPolicyLabel(resolvedPromptTemplate.characterPolicy)}</span>
+            <span>参考图类型：{referenceKindLabel(resolvedPromptTemplate.referenceKind)}</span>
+            <span>Step 3 骨架：{(resolvedPromptTemplate.step3SkeletonModules ?? []).join('、') || '未设置'}</span>
+          </div>
+        ) : null}
 
         <div className="option-two-col">
-          <OptionCloud title="草稿模板" options={state.draftTemplates.map((template) => [template.id, template.name, `出图 ${template.image.ratio}`])} value={templateId} onChange={setTemplateId} />
+          <OptionCloud title="草稿模板" options={state.draftTemplates.map((template) => [template.id, template.name, `出图 ${template.image.ratio}`])} value={templateId} onChange={handleDraftTemplateChange} />
           <div>
-            <span className="field-title">AI 出图比例 <small>已跟随草稿模板</small></span>
+            <span className="field-title">AI 出图比例 <small>{ratioManuallyOverridden ? '已手动覆盖' : '已跟随草稿模板'}</small></span>
             <div className="ratio-grid">
               {['9:16', '4:3', '1:1', '16:9'].map((item) => (
-                <button key={item} className={ratio === item ? 'chip active' : 'chip'} onClick={() => setRatio(item)}>
+                <button key={item} className={ratio === item ? 'chip active' : 'chip'} onClick={() => handleRatioChange(item)}>
                   <span className="ratio-icon" />
                   {item}
                 </button>
@@ -927,14 +1049,17 @@ function NewTaskPage({
         </div>
 
         <span className="field-title">配音员</span>
+        <Segmented label="配音模型" value={ttsProvider} options={['volcengine', 'minimax']} labels={['豆包', 'MiniMax']} onChange={handleTtsProviderChange} />
         <div className="chip-row">
-          {voiceOptions.map((voice) => (
-            <button key={voice} className={speaker === voice ? 'chip active' : 'chip'} onClick={() => setSpeaker(voice)}>
+          {ttsVoiceOptions.map((voice) => (
+            <button key={voice.id} className={speaker === voice.id ? 'chip active' : 'chip'} title={voice.id} onClick={() => setSpeaker(voice.id)}>
               <Mic2 size={14} />
-              {voice}
+              {voice.label}
             </button>
           ))}
+          <button className="chip" type="button" onClick={() => setShowAdvanced(true)}>更多音色...</button>
         </div>
+        <span className="hint-text">当前默认配音员：{taskSpeakerLabel(ttsProvider, speaker)} · {speaker}</span>
 
         <span className="field-title">背景音乐</span>
         <div className="chip-row">
@@ -976,7 +1101,7 @@ function NewTaskPage({
             <Segmented label="改写强度" value={rewriteIntensity} options={rewriteOptions.map(([id]) => id)} labels={rewriteOptions.map(([, label]) => label)} onChange={(value) => setRewriteIntensity(value as RewriteIntensity)} />
             <Segmented label="叙事视角" value={narrativePov} options={povOptions.map(([id]) => id)} labels={povOptions.map(([, label]) => label)} onChange={(value) => setNarrativePov(value as Task['narrativePov'])} />
             <Field label="提示词模板" hint={resolvedPromptTemplate ? `当前：${resolvedPromptTemplate.name}` : '自动匹配赛道模板'}>
-              <select className="prompt-template-selector" value={promptTemplateOverrideId} onChange={(event) => setPromptTemplateOverrideId(event.target.value)}>
+              <select className="prompt-template-selector" value={promptTemplateOverrideId} onChange={(event) => handlePromptTemplateOverrideChange(event.target.value)}>
                 <option value="">自动匹配赛道模板</option>
                 {taskPromptTemplates.map((template) => (
                   <option key={template.id} value={template.id}>
@@ -1925,25 +2050,43 @@ function ImageLabPage({ api, state, applyState }: { api: StoryboundApi; state: A
 
 function PromptTemplatesPage({ api, state, applyState }: { api: StoryboundApi; state: AppState; applyState: (state: AppState) => void }) {
   const [selectedId, setSelectedId] = useState(state.promptTemplates[0]?.id ?? '');
-  const [templateMode, setTemplateMode] = useState<'gallery' | 'detail'>('gallery');
+  const [templateMode, setTemplateMode] = useState<'gallery' | 'detail' | 'image-detail'>('gallery');
+  const [promptTemplateLibraryTab, setPromptTemplateLibraryTab] = useState<'story' | 'image'>('story');
   const [templateTypeFilter, setTemplateTypeFilter] = useState<PromptTemplateType | 'all'>('all');
   const [templateTrackFilter, setTemplateTrackFilter] = useState('all');
+  const [selectedImageStyleId, setSelectedImageStyleId] = useState(state.customStyles[0]?.id ?? defaultCustomStyles[0]?.id ?? '');
+  const [imageDraft, setImageDraft] = useState<CustomStyle | null>(state.customStyles[0] ? { ...state.customStyles[0] } : null);
+  const [imageTemplateAiPrompt, setImageTemplateAiPrompt] = useState('');
+  const [imageTemplateAiStatus, setImageTemplateAiStatus] = useState('');
+  const [imageTemplateAiGenerating, setImageTemplateAiGenerating] = useState(false);
+  const [baseImageTemplateId, setBaseImageTemplateId] = useState(state.customStyles[0]?.id ?? defaultCustomStyles[0]?.id ?? '');
   const filteredTemplates = state.promptTemplates.filter((template) => {
     const typeMatches = templateTypeFilter === 'all' || template.type === templateTypeFilter;
     const trackMatches = templateTrackFilter === 'all' || template.baseTrack === templateTrackFilter;
     return typeMatches && trackMatches;
   });
   const selected = state.promptTemplates.find((template) => template.id === selectedId) ?? filteredTemplates[0] ?? state.promptTemplates[0];
+  const selectedImageStyle = state.customStyles.find((style) => style.id === selectedImageStyleId) ?? state.customStyles[0] ?? defaultCustomStyles[0];
   const [draft, setDraft] = useState<PromptTemplate | null>(selected ? { ...selected } : null);
-  const [importJson, setImportJson] = useState('');
+  const [templateJsonDraft, setTemplateJsonDraft] = useState('');
+  const [imageTemplateJsonDraft, setImageTemplateJsonDraft] = useState('');
 
   useEffect(() => setDraft(selected ? { ...selected } : null), [selected?.id]);
+  useEffect(() => setImageDraft(selectedImageStyle ? { ...selectedImageStyle } : null), [selectedImageStyle?.id]);
 
   function openPromptTemplateDetail(template: PromptTemplate) {
     setSelectedId(template.id);
     setDraft({ ...template });
-    setImportJson('');
+    setTemplateJsonDraft('');
     setTemplateMode('detail');
+  }
+
+  function openImageTemplateDetail(style: CustomStyle) {
+    setSelectedImageStyleId(style.id);
+    setImageDraft({ ...style });
+    setBaseImageTemplateId(style.id);
+    setImageTemplateAiStatus('');
+    setTemplateMode('image-detail');
   }
 
   function handlePromptTemplateRowKeyDown(event: React.KeyboardEvent<HTMLElement>, template: PromptTemplate) {
@@ -1976,7 +2119,7 @@ function PromptTemplatesPage({ api, state, applyState }: { api: StoryboundApi; s
     applyState(await api.savePromptTemplate(copy));
     setSelectedId(copy.id);
     setDraft(copy);
-    setImportJson('');
+    setTemplateJsonDraft('');
     setTemplateMode('detail');
   }
 
@@ -1995,7 +2138,8 @@ function PromptTemplatesPage({ api, state, applyState }: { api: StoryboundApi; s
       isBuiltin: false,
       updatedAt: new Date().toISOString(),
       baseTrack: 'general-story',
-      defaultStyles: ['写实彩色'],
+      defaultStyles: ['photo-real'],
+      defaultDraftTemplateId: state.draftTemplates[0]?.id ?? 'default-portrait-9-16',
       characterPolicy: 'follow-template',
       step3SkeletonModules: ['防台词文字'],
       referenceKind: 'none',
@@ -2005,28 +2149,139 @@ function PromptTemplatesPage({ api, state, applyState }: { api: StoryboundApi; s
     applyState(await api.savePromptTemplate(template));
     setSelectedId(template.id);
     setDraft(template);
-    setImportJson('');
+    setTemplateJsonDraft('');
     setTemplateMode('detail');
+  }
+
+  async function saveCustomStyleDraft() {
+    if (!imageDraft) return;
+    const now = new Date().toISOString();
+    const styleToSave = { ...imageDraft, updatedAt: now, createdAt: imageDraft.createdAt || now };
+    applyState(await api.saveCustomStyle(styleToSave));
+    setSelectedImageStyleId(styleToSave.id);
+    setImageDraft(styleToSave);
+    setImageTemplateAiStatus('已保存图像模板。');
+    setTemplateMode('image-detail');
+  }
+
+  async function duplicateImageTemplate(style: CustomStyle) {
+    const now = new Date().toISOString();
+    const copy = { ...style, id: crypto.randomUUID(), name: `${style.name} 副本`, createdAt: now, updatedAt: now };
+    applyState(await api.saveCustomStyle(copy));
+    setSelectedImageStyleId(copy.id);
+    setImageDraft(copy);
+    setImageTemplateAiStatus('已克隆图像模板。');
+    setTemplateMode('image-detail');
+  }
+
+  async function createImageTemplate() {
+    const base = state.customStyles.find((style) => style.id === baseImageTemplateId) ?? state.customStyles[0] ?? defaultCustomStyles[0];
+    const now = new Date().toISOString();
+    const template: CustomStyle = {
+      ...base,
+      id: crypto.randomUUID(),
+      name: '新建图像模板',
+      tag: '自定义风格',
+      shortName: '自定义',
+      createdAt: now,
+      updatedAt: now,
+    };
+    applyState(await api.saveCustomStyle(template));
+    setSelectedImageStyleId(template.id);
+    setImageDraft(template);
+    setImageTemplateAiStatus('');
+    setTemplateMode('image-detail');
+  }
+
+  function applyBaseImageTemplate() {
+    if (!imageDraft) return;
+    const base = state.customStyles.find((style) => style.id === baseImageTemplateId) ?? defaultCustomStyles.find((style) => style.id === baseImageTemplateId);
+    if (!base) return;
+    setImageDraft({
+      ...imageDraft,
+      tag: base.tag,
+      shortName: base.shortName,
+      prefix: base.prefix,
+      suffix: base.suffix,
+      negativePrompt: base.negativePrompt,
+      allowColor: base.allowColor,
+      description: base.description,
+    });
+    setImageTemplateAiStatus(`已套用系统风格：${base.name}`);
+  }
+
+  async function fillImageTemplateFromAiPrompt() {
+    if (!imageDraft) return;
+    const prompt = imageTemplateAiPrompt.trim();
+    if (!prompt) {
+      setImageTemplateAiStatus('请先输入风格描述。');
+      return;
+    }
+    const base = state.customStyles.find((style) => style.id === baseImageTemplateId) ?? defaultCustomStyles.find((style) => style.id === baseImageTemplateId);
+    setImageTemplateAiGenerating(true);
+    setImageTemplateAiStatus('正在生成字段...');
+    try {
+      const generated = await api.generateCustomStyleDraft({ prompt, baseStyle: base ?? imageDraft });
+      setImageDraft({ ...imageDraft, ...generated, id: imageDraft.id, createdAt: imageDraft.createdAt });
+      setImageTemplateAiStatus(`已生成字段：${generated.name || prompt}`);
+    } catch (error) {
+      setImageTemplateAiStatus(`生成失败：${error instanceof Error ? error.message : '请检查 LLM 配置后重试。'}`);
+    } finally {
+      setImageTemplateAiGenerating(false);
+    }
   }
 
   function exportPromptTemplateJson() {
     if (!draft) return;
     const json = JSON.stringify(draft, null, 2);
-    setImportJson(json);
+    setTemplateJsonDraft(json);
     void navigator.clipboard?.writeText(json).catch(() => undefined);
   }
 
-  async function importTemplate() {
+  function exportImageTemplateJson() {
+    if (!imageDraft) return;
+    const json = JSON.stringify(imageDraft, null, 2);
+    setImageTemplateJsonDraft(json);
+    void navigator.clipboard?.writeText(json).catch(() => undefined);
+  }
+
+  function resolveImportedTemplateId(imported: { id?: string }, exists: boolean): string {
+    return imported.id && !exists ? imported.id : crypto.randomUUID();
+  }
+
+  async function importPromptTemplateJson() {
     try {
-      const imported = JSON.parse(importJson) as PromptTemplate;
-      const next = { ...imported, id: imported.id || crypto.randomUUID(), isBuiltin: false, origin: 'custom' as const, updatedAt: new Date().toISOString() };
+      const imported = JSON.parse(templateJsonDraft) as PromptTemplate;
+      const id = resolveImportedTemplateId(imported, state.promptTemplates.some((template) => template.id === imported.id));
+      const next = { ...imported, id, isBuiltin: false, origin: 'custom' as const, updatedAt: new Date().toISOString() };
       applyState(await api.savePromptTemplate(next));
       setSelectedId(next.id);
       setDraft(next);
       setTemplateMode('detail');
-      setImportJson('');
+      setTemplateJsonDraft('');
     } catch {
-      setImportJson('{"name":"自定义模板","type":"task","description":"请补充","content":"请补充提示词"}');
+      setTemplateJsonDraft('{"name":"自定义模板","type":"task","description":"请补充","content":"请补充提示词"}');
+    }
+  }
+
+  async function importImageTemplateJson() {
+    try {
+      const imported = JSON.parse(imageTemplateJsonDraft) as CustomStyle;
+      const now = new Date().toISOString();
+      const id = resolveImportedTemplateId(imported, state.customStyles.some((style) => style.id === imported.id));
+      const next: CustomStyle = {
+        ...imported,
+        id,
+        createdAt: imported.createdAt || now,
+        updatedAt: now,
+      };
+      applyState(await api.saveCustomStyle(next));
+      setSelectedImageStyleId(next.id);
+      setImageDraft(next);
+      setTemplateMode('image-detail');
+      setImageTemplateJsonDraft('');
+    } catch {
+      setImageTemplateJsonDraft('{"name":"自定义图像模板","tag":"自定义","shortName":"自定义","prefix":"请补充","suffix":"请补充","negativePrompt":"请补充","allowColor":true,"description":"请补充"}');
     }
   }
 
@@ -2061,63 +2316,209 @@ function PromptTemplatesPage({ api, state, applyState }: { api: StoryboundApi; s
         <div className="panel-title-row prompt-template-gallery-toolbar">
           <div>
             <h2>提示词模板</h2>
-            <p>模板决定 AI 怎么改写文案、生成元数据、写画面提示词。先浏览模板，点开后查看和编辑细节。</p>
+            <p>故事模板决定 AI 怎么写，图像模板决定画面怎么长。先浏览模板，点开后查看和编辑细节。</p>
           </div>
           <div className="button-row">
             <button className="ghost-action" onClick={async () => applyState(await api.resetPromptTemplates())}>
               <RotateCcw size={14} />
               重置
             </button>
-            <button className="primary-action slim" onClick={createPromptTemplate}>
+            <button className="primary-action slim" onClick={promptTemplateLibraryTab === 'story' ? createPromptTemplate : createImageTemplate}>
               <Plus size={14} />
               新建模板
             </button>
           </div>
         </div>
-        <div className="template-filter-row">
-          <Field label="类型筛选">
-            <select value={templateTypeFilter} onChange={(event) => setTemplateTypeFilter(event.target.value as PromptTemplateType | 'all')}>
-              {promptTemplateTypeOptions.map((type) => <option key={type} value={type}>{promptTemplateTypeLabel(type)}</option>)}
-            </select>
-          </Field>
-          <Field label="赛道筛选">
-            <select value={templateTrackFilter} onChange={(event) => setTemplateTrackFilter(event.target.value)}>
-              <option value="all">全部赛道</option>
-              {contentTracks.map(([id, label]) => <option key={id} value={id}>{label}</option>)}
-            </select>
-          </Field>
+        <div className="prompt-template-tabs" role="tablist" aria-label="提示词模板类型">
+          <button className={promptTemplateLibraryTab === 'story' ? 'chip active' : 'chip'} type="button" onClick={() => setPromptTemplateLibraryTab('story')}>故事模板</button>
+          <button className={promptTemplateLibraryTab === 'image' ? 'chip active' : 'chip'} type="button" onClick={() => setPromptTemplateLibraryTab('image')}>图像模板</button>
         </div>
-        <section className="prompt-template-list">
-          <div className="prompt-template-list-title">
-            <strong>系统模板（{filteredTemplates.filter((template) => template.isBuiltin).length}）</strong>
-            <span>{filteredTemplates.length} 个匹配模板</span>
-          </div>
-          {filteredTemplates.length > 0 ? filteredTemplates.map((template) => (
-            <article
-              className="prompt-template-row"
-              key={template.id}
-              role="button"
-              tabIndex={0}
-              onClick={() => openPromptTemplateDetail(template)}
-              onKeyDown={(event) => handlePromptTemplateRowKeyDown(event, template)}
-            >
-              <Sparkles size={18} />
-              <div className="prompt-template-row-main">
-                <strong>{template.name}</strong>
-                <span>{template.description}</span>
-                <small>默认画风：{(template.defaultStyles ?? []).join('、') || '未设置'} · id: {template.id}</small>
+        {promptTemplateLibraryTab === 'story' ? (
+          <>
+            <div className="template-filter-row">
+              <Field label="类型筛选">
+                <select value={templateTypeFilter} onChange={(event) => setTemplateTypeFilter(event.target.value as PromptTemplateType | 'all')}>
+                  {promptTemplateTypeOptions.map((type) => <option key={type} value={type}>{promptTemplateTypeLabel(type)}</option>)}
+                </select>
+              </Field>
+              <Field label="赛道筛选">
+                <select value={templateTrackFilter} onChange={(event) => setTemplateTrackFilter(event.target.value)}>
+                  <option value="all">全部赛道</option>
+                  {contentTracks.map(([id, label]) => <option key={id} value={id}>{label}</option>)}
+                </select>
+              </Field>
+            </div>
+            <section className="prompt-template-list story-template-gallery">
+              <div className="prompt-template-list-title">
+                <strong>故事模板（{filteredTemplates.filter((template) => template.type === 'task').length}）</strong>
+                <span>{filteredTemplates.length} 个匹配模板</span>
               </div>
-              <div className="prompt-template-row-actions">
-                <button className="ghost-action compact-action" onClick={(event) => { event.stopPropagation(); openPromptTemplateDetail(template); }}>
-                  查看
-                </button>
-                <button className="ghost-action compact-action" onClick={(event) => { event.stopPropagation(); void duplicateTemplate(template); }}>
-                  <Copy size={14} />
-                  克隆
-                </button>
+              {filteredTemplates.length > 0 ? filteredTemplates.map((template) => (
+                <article
+                  className="prompt-template-row"
+                  key={template.id}
+                  role="button"
+                  tabIndex={0}
+                  onClick={() => openPromptTemplateDetail(template)}
+                  onKeyDown={(event) => handlePromptTemplateRowKeyDown(event, template)}
+                >
+                  <Sparkles size={18} />
+                  <div className="prompt-template-row-main">
+                    <strong>{template.name}</strong>
+                    <span>{template.description}</span>
+                    <small>默认图像模板：{promptTemplateStyleLabelList(template, state.customStyles).join('、') || '未设置'} · id: {template.id}</small>
+                  </div>
+                  <div className="prompt-template-row-actions">
+                    <button className="ghost-action compact-action" onClick={(event) => { event.stopPropagation(); openPromptTemplateDetail(template); }}>
+                      查看
+                    </button>
+                    <button className="ghost-action compact-action" onClick={(event) => { event.stopPropagation(); void duplicateTemplate(template); }}>
+                      <Copy size={14} />
+                      克隆
+                    </button>
+                  </div>
+                </article>
+              )) : <EmptyState title="暂无匹配模板" />}
+            </section>
+          </>
+        ) : (
+          <section className="prompt-template-list image-template-gallery">
+            <div className="prompt-template-list-title">
+              <strong>图像模板（{state.customStyles.length}）</strong>
+              <span>管理 prefix、suffix、负面提示词和色彩模式</span>
+            </div>
+            {state.customStyles.map((style) => (
+              <article
+                className="prompt-template-row"
+                key={style.id}
+                role="button"
+                tabIndex={0}
+                onClick={() => openImageTemplateDetail(style)}
+                onKeyDown={(event) => {
+                  if (event.key === 'Enter' || event.key === ' ') {
+                    event.preventDefault();
+                    openImageTemplateDetail(style);
+                  }
+                }}
+              >
+                <Palette size={18} />
+                <div className="prompt-template-row-main">
+                  <strong>{style.name}</strong>
+                  <span>{style.description}</span>
+                  <small>{style.tag} · {style.allowColor ? '彩色' : '黑白 / 单色'} · id: {style.id}</small>
+                </div>
+                <div className="prompt-template-row-actions">
+                  <button className="ghost-action compact-action" onClick={(event) => { event.stopPropagation(); openImageTemplateDetail(style); }}>
+                    查看
+                  </button>
+                  <button className="ghost-action compact-action" onClick={(event) => { event.stopPropagation(); void duplicateImageTemplate(style); }}>
+                    <Copy size={14} />
+                    克隆
+                  </button>
+                </div>
+              </article>
+            ))}
+          </section>
+        )}
+      </div>
+    );
+  }
+
+  if (templateMode === 'image-detail') {
+    return (
+      <div className="prompt-template-detail">
+        <section className="panel editor-panel">
+          {imageDraft ? (
+            <>
+              <div className="panel-title-row prompt-template-detail-title">
+                <div>
+                  <button className="ghost-action compact-action" onClick={() => setTemplateMode('gallery')}>返回模板库</button>
+                  <h2>查看图像模板 · {imageDraft.name}</h2>
+                </div>
+                <div className="button-row">
+                  <button className="ghost-action" onClick={() => void duplicateImageTemplate(imageDraft)}>
+                    <Copy size={15} />
+                    克隆
+                  </button>
+                  <button className="ghost-action" onClick={exportImageTemplateJson}>
+                    <FileJson size={15} />
+                    导出 JSON
+                  </button>
+                  <button className="ghost-action" onClick={() => void importImageTemplateJson()}>
+                    <FileJson size={15} />
+                    导入 JSON
+                  </button>
+                  <button className="primary-action slim" onClick={saveCustomStyleDraft}>
+                    <Save size={15} />
+                    保存
+                  </button>
+                </div>
               </div>
-            </article>
-          )) : <EmptyState title="暂无匹配模板" />}
+              <div className="prompt-template-detail-stack">
+                <section className="image-template-quick-card">
+                  <div>
+                    <span className="field-title">AI 快速生成</span>
+                    <span className="hint-text">输入自然语言描述，自动填充下方图像模板字段。</span>
+                  </div>
+                  <Field label="风格描述">
+                    <textarea className="small-textarea" value={imageTemplateAiPrompt} onChange={(event) => setImageTemplateAiPrompt(event.target.value)} placeholder="例如：赛博朋克雨夜街道，霓虹光影，未来都市" />
+                  </Field>
+                  <div className="template-meta-grid">
+                    <Field label="基于系统风格">
+                      <select value={baseImageTemplateId} onChange={(event) => setBaseImageTemplateId(event.target.value)}>
+                        {state.customStyles.map((style) => <option key={style.id} value={style.id}>{style.name}</option>)}
+                      </select>
+                    </Field>
+                    <div className="button-row image-template-quick-actions">
+                      <button className="ghost-action" type="button" onClick={applyBaseImageTemplate}>套用系统风格</button>
+                      <button className="primary-action slim" type="button" disabled={imageTemplateAiGenerating} onClick={() => void fillImageTemplateFromAiPrompt()}>
+                        {imageTemplateAiGenerating ? '生成中...' : '生成字段'}
+                      </button>
+                    </div>
+                  </div>
+                  {imageTemplateAiStatus ? <div className="image-template-ai-status" aria-live="polite">{imageTemplateAiStatus}</div> : null}
+                </section>
+
+                <section className="prompt-template-settings-card">
+                  <span className="field-title">手动填写字段</span>
+                  <div className="image-template-field-grid">
+                    <Field label="名称">
+                      <input value={imageDraft.name} onChange={(event) => setImageDraft({ ...imageDraft, name: event.target.value })} />
+                    </Field>
+                    <Field label="标签">
+                      <input value={imageDraft.tag} onChange={(event) => setImageDraft({ ...imageDraft, tag: event.target.value })} />
+                    </Field>
+                    <Field label="简称">
+                      <input value={imageDraft.shortName} onChange={(event) => setImageDraft({ ...imageDraft, shortName: event.target.value })} />
+                    </Field>
+                    <Field label="色彩模式">
+                      <select value={imageDraft.allowColor ? 'color' : 'mono'} onChange={(event) => setImageDraft({ ...imageDraft, allowColor: event.target.value === 'color' })}>
+                        <option value="color">彩色</option>
+                        <option value="mono">黑白 / 单色</option>
+                      </select>
+                    </Field>
+                  </div>
+                  <Field label="前缀（prefix）">
+                    <textarea className="small-textarea" value={imageDraft.prefix} onChange={(event) => setImageDraft({ ...imageDraft, prefix: event.target.value })} />
+                  </Field>
+                  <Field label="后缀（suffix）">
+                    <textarea className="small-textarea" value={imageDraft.suffix} onChange={(event) => setImageDraft({ ...imageDraft, suffix: event.target.value })} />
+                  </Field>
+                  <Field label="负面提示词（negativePrompt）">
+                    <textarea className="small-textarea" value={imageDraft.negativePrompt} onChange={(event) => setImageDraft({ ...imageDraft, negativePrompt: event.target.value })} />
+                  </Field>
+                  <Field label="适用场景描述">
+                    <textarea className="small-textarea" value={imageDraft.description} onChange={(event) => setImageDraft({ ...imageDraft, description: event.target.value })} />
+                  </Field>
+                </section>
+                <Field label="导入 / 导出 JSON">
+                  <textarea className="small-textarea" value={imageTemplateJsonDraft} onChange={(event) => setImageTemplateJsonDraft(event.target.value)} placeholder="导出后会填入这里；也可粘贴图像模板 JSON 后点击导入 JSON" />
+                </Field>
+              </div>
+            </>
+          ) : (
+            <EmptyState title="暂无图像模板" />
+          )}
         </section>
       </div>
     );
@@ -2142,7 +2543,7 @@ function PromptTemplatesPage({ api, state, applyState }: { api: StoryboundApi; s
                   <FileJson size={15} />
                   导出 JSON
                 </button>
-                <button className="ghost-action" onClick={importTemplate}>
+                <button className="ghost-action" onClick={() => void importPromptTemplateJson()}>
                   <FileJson size={15} />
                   导入 JSON
                 </button>
@@ -2176,18 +2577,36 @@ function PromptTemplatesPage({ api, state, applyState }: { api: StoryboundApi; s
                 <div className="prompt-template-default-style-pills">
                   <span className="field-title">默认画风</span>
                   <div className="chip-row">
-                    {promptTemplateStyleLabels(draft).map((style) => (
+                    {promptTemplateStyleOptions(state.customStyles, draft).map((style) => (
                       <button
-                        className={(draft.defaultStyles ?? []).includes(style) ? 'chip active' : 'chip'}
+                        className={resolvePromptTemplateDefaultStyleId(draft, state.customStyles.map((customStyle) => customStyle.id)) === style.id ? 'chip active' : 'chip'}
                         type="button"
-                        key={style}
-                        onClick={() => setDraft({ ...draft, defaultStyles: toggleArray(draft.defaultStyles ?? [], style) })}
+                        key={style.id}
+                        onClick={() => setDraft({ ...draft, defaultStyles: [style.id] })}
                       >
-                        {style}
+                        {style.name}
                       </button>
                     ))}
                   </div>
                 </div>
+                {draft.type === 'task' ? (
+                  <div className="prompt-template-default-style-pills">
+                    <span className="field-title">默认草稿模板</span>
+                    <div className="chip-row">
+                      {state.draftTemplates.map((template) => (
+                        <button
+                          className={(draft.defaultDraftTemplateId ?? 'default-portrait-9-16') === template.id ? 'chip active' : 'chip'}
+                          type="button"
+                          key={template.id}
+                          onClick={() => setDraft({ ...draft, defaultDraftTemplateId: template.id })}
+                        >
+                          {template.name}
+                        </button>
+                      ))}
+                    </div>
+                    <small>新建任务选择赛道后，会同步草稿模板，并把 AI 出图比例同步为该草稿的图片比例。</small>
+                  </div>
+                ) : null}
               </section>
 
               <section className="prompt-template-settings-card">
@@ -2249,7 +2668,7 @@ function PromptTemplatesPage({ api, state, applyState }: { api: StoryboundApi; s
                   <span className="field-title">{draft.type === 'task' ? '任务总指令' : '提示词内容'}</span>
                 </div>
                 <span className="field-title">变量</span>
-                <span className="hint-text">点击插入对应内容占位，不需要手写英文变量。</span>
+                <span className="hint-text">点击插入对应内容占位；每个提示词输入框也可输入 // 选择变量。</span>
                 <div className="variable-chip-row">{promptTemplateVariableDefinitions.map((item) => (
                   <button
                     className="chip prompt-template-variable-chip"
@@ -2259,10 +2678,11 @@ function PromptTemplatesPage({ api, state, applyState }: { api: StoryboundApi; s
                     onClick={() => setDraft({ ...draft, content: `${draft.content}${draft.content.endsWith(' ') || draft.content.endsWith('\n') ? '' : ' '}{{${item.key}}}` })}
                   >
                     <span>{item.label}</span>
+                    <code className="prompt-variable-token">{`{{${item.key}}}`}</code>
                     <small>{item.description}</small>
                   </button>
                 ))}</div>
-                <textarea className="template-textarea" value={draft.content} onChange={(event) => setDraft({ ...draft, content: event.target.value })} />
+                <VariableAwareTextarea className="template-textarea" value={draft.content} onChange={(value) => setDraft({ ...draft, content: value })} placeholder="输入 // 选择变量" />
               </section>
 
               {draft.type === 'task' ? (
@@ -2283,10 +2703,11 @@ function PromptTemplatesPage({ api, state, applyState }: { api: StoryboundApi; s
                             继承全局
                           </button>
                         </div>
-                        <textarea
+                        <VariableAwareTextarea
                           className="template-textarea prompt-step-editor-textarea"
                           value={promptTemplateStepPromptValue(draft, state.promptTemplates, step.type)}
-                          onChange={(event) => updatePromptTemplateStepPrompt(step.type, event.target.value)}
+                          onChange={(value) => updatePromptTemplateStepPrompt(step.type, value)}
+                          placeholder="输入 // 选择变量"
                         />
                       </article>
                     );
@@ -2294,8 +2715,8 @@ function PromptTemplatesPage({ api, state, applyState }: { api: StoryboundApi; s
                 </section>
               ) : null}
             </div>
-            <Field label="导入 JSON">
-              <textarea className="small-textarea" value={importJson} onChange={(event) => setImportJson(event.target.value)} placeholder="粘贴模板 JSON 后点击导入 JSON" />
+            <Field label="导入 / 导出 JSON">
+              <textarea className="small-textarea" value={templateJsonDraft} onChange={(event) => setTemplateJsonDraft(event.target.value)} placeholder="导出后会填入这里；也可粘贴故事模板 JSON 后点击导入 JSON" />
             </Field>
           </>
         ) : (
@@ -2305,6 +2726,80 @@ function PromptTemplatesPage({ api, state, applyState }: { api: StoryboundApi; s
     </div>
   );
 }
+
+function insertPromptVariable(value: string, key: string, cursor: number): { value: string; cursor: number } {
+  const token = `{{${key}}}`;
+  const before = value.slice(0, cursor);
+  const after = value.slice(cursor);
+  const triggerIndex = before.lastIndexOf('//');
+  if (triggerIndex >= 0 && before.slice(triggerIndex).trim() === '//') {
+    const nextValue = `${value.slice(0, triggerIndex)}${token}${after}`;
+    return { value: nextValue, cursor: triggerIndex + token.length };
+  }
+  const prefix = before.endsWith(' ') || before.endsWith('\n') || before.length === 0 ? '' : ' ';
+  const nextValue = `${before}${prefix}${token}${after}`;
+  return { value: nextValue, cursor: before.length + prefix.length + token.length };
+}
+
+function VariableAwareTextarea({
+  value,
+  onChange,
+  className,
+  placeholder,
+}: {
+  value: string;
+  onChange: (value: string) => void;
+  className: string;
+  placeholder?: string;
+}) {
+  const textareaRef = useRef<HTMLTextAreaElement | null>(null);
+  const [suggestOpen, setSuggestOpen] = useState(false);
+
+  function syncSuggestState(nextValue: string, cursor: number | null) {
+    const beforeCursor = nextValue.slice(0, cursor ?? nextValue.length);
+    setSuggestOpen(beforeCursor.endsWith('//'));
+  }
+
+  function onVariableInsert(key: string) {
+    const cursor = textareaRef.current?.selectionStart ?? value.length;
+    const next = insertPromptVariable(value, key, cursor);
+    onChange(next.value);
+    setSuggestOpen(false);
+    requestAnimationFrame(() => {
+      textareaRef.current?.focus();
+      textareaRef.current?.setSelectionRange(next.cursor, next.cursor);
+    });
+  }
+
+  return (
+    <div className="prompt-variable-editor">
+      <textarea
+        ref={textareaRef}
+        className={className}
+        value={value}
+        placeholder={placeholder}
+        onChange={(event) => {
+          onChange(event.target.value);
+          syncSuggestState(event.target.value, event.target.selectionStart);
+        }}
+        onKeyUp={(event) => syncSuggestState(event.currentTarget.value, event.currentTarget.selectionStart)}
+        onClick={(event) => syncSuggestState(event.currentTarget.value, event.currentTarget.selectionStart)}
+      />
+      {suggestOpen ? (
+        <div className="prompt-variable-suggest">
+          {promptTemplateVariableDefinitions.map((item) => (
+            <button type="button" key={item.key} onMouseDown={(event) => event.preventDefault()} onClick={() => onVariableInsert(item.key)}>
+              <span>{item.label}</span>
+              <code>{`{{${item.key}}}`}</code>
+              <small>英文变量 · {item.description}</small>
+            </button>
+          ))}
+        </div>
+      ) : null}
+    </div>
+  );
+}
+
 function DraftTemplatesPage({ api, state, applyState }: { api: StoryboundApi; state: AppState; applyState: (state: AppState) => void }) {
   const [editingId, setEditingId] = useState<string | null>(null);
   const editingTemplate = editingId ? state.draftTemplates.find((template) => template.id === editingId) ?? null : null;
@@ -3831,8 +4326,74 @@ function promptTemplateTypeLabel(type: PromptTemplateType | 'all'): string {
   return promptTemplateTypeLabels[type];
 }
 
-function promptTemplateStyleLabels(template: PromptTemplate): string[] {
-  return [...new Set([...styleOptions.map(([, label]) => label), ...(template.defaultStyles ?? [])])];
+function promptTemplateStyleOptions(styles: CustomStyle[], template: PromptTemplate): CustomStyle[] {
+  const byId = new Map([...defaultCustomStyles, ...styles].map((style) => [style.id, style]));
+  resolvePromptTemplateDefaultStyleIds(template, styles.map((style) => style.id)).forEach((id) => {
+    if (!byId.has(id)) {
+      const option = styleOptions.find(([styleId]) => styleId === id);
+      if (option) {
+        byId.set(id, {
+          id,
+          name: option[1],
+          tag: option[2],
+          shortName: option[1],
+          prefix: option[1],
+          suffix: option[2],
+          negativePrompt: '',
+          allowColor: id !== 'black-white',
+          description: option[2],
+          createdAt: new Date().toISOString(),
+          updatedAt: new Date().toISOString(),
+        });
+      }
+    }
+  });
+  return [...byId.values()];
+}
+
+function promptTemplateStyleLabelList(template: PromptTemplate, styles: CustomStyle[]): string[] {
+  const styleNames = new Map([...defaultCustomStyles, ...styles].map((style) => [style.id, style.name]));
+  return resolvePromptTemplateDefaultStyleIds(template, styles.map((style) => style.id)).map((id) => styleNames.get(id) ?? styleLabel(id, styles));
+}
+
+function styleLabel(id: string, styles: CustomStyle[] = defaultCustomStyles): string {
+  return [...defaultCustomStyles, ...styles].find((style) => style.id === id)?.name ?? styleOptions.find(([styleId]) => styleId === id)?.[1] ?? id;
+}
+
+function draftTemplateImageRatio(templates: DraftTemplate[], templateId: string): string {
+  return templates.find((template) => template.id === templateId)?.image.ratio ?? templates[0]?.image.ratio ?? '9:16';
+}
+
+function draftTemplateLabel(templateId: string, templates: DraftTemplate[]): string {
+  return templates.find((template) => template.id === templateId)?.name ?? templateId;
+}
+
+function characterPolicyLabel(policy: PromptTemplate['characterPolicy']): string {
+  if (policy === 'force-extract') return '强制提取';
+  if (policy === 'force-skip') return '强制跳过';
+  return '跟随赛道';
+}
+
+function referenceKindLabel(kind: PromptTemplate['referenceKind']): string {
+  if (kind === 'face') return '人脸';
+  if (kind === 'product') return '产品';
+  return '无';
+}
+
+function buildImageStyleDraftFromPrompt(prompt: string, base: CustomStyle): Pick<CustomStyle, 'name' | 'tag' | 'shortName' | 'prefix' | 'suffix' | 'negativePrompt' | 'allowColor' | 'description'> {
+  const normalized = prompt.trim() || base.name;
+  const tags = splitListInput(normalized).slice(0, 4);
+  const name = tags[0] || normalized.slice(0, 12) || base.name;
+  return {
+    name,
+    tag: tags.length ? tags.join('、') : base.tag,
+    shortName: name.slice(0, 4),
+    prefix: [normalized, base.prefix].filter(Boolean).join('，'),
+    suffix: base.suffix || '高质量，清晰细节，电影级构图',
+    negativePrompt: base.negativePrompt || '模糊，噪点，过曝，低质量，水印，文字',
+    allowColor: !/黑白|单色|mono/i.test(normalized) && base.allowColor,
+    description: `适合${normalized}题材。`,
+  };
 }
 
 function splitListInput(value: string): string[] {

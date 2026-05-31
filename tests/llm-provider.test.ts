@@ -126,6 +126,37 @@ describe('OpenAI-compatible LLM JSON adapter', () => {
     await expectation;
   });
 
+  it('retries transient upstream failures before parsing JSON content', async () => {
+    let attempts = 0;
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async () => {
+        attempts += 1;
+        if (attempts < 3) {
+          return new Response(JSON.stringify({ error: { message: 'Upstream service temporarily unavailable', type: 'upstream_error' } }), {
+            status: 502,
+            headers: { 'content-type': 'application/json' },
+          });
+        }
+        return new Response(JSON.stringify({ choices: [{ message: { content: '{"imagePrompts":[]}' } }], id: 'chatcmpl-retry' }), {
+          status: 200,
+          headers: { 'content-type': 'application/json' },
+        });
+      }),
+    );
+
+    const runJson = createOpenAiCompatibleJsonLlm({ ...defaultConfig.llm, apiKey: 'llm-key', baseUrl: 'https://llm.example' });
+    const result = await runJson<{ imagePrompts: unknown[] }>({
+      step: 3,
+      name: 'image-prompts',
+      messages: [{ role: 'user', content: 'make prompts' }],
+    });
+
+    expect(result.json).toEqual({ imagePrompts: [] });
+    expect(result.requestId).toBe('chatcmpl-retry');
+    expect(attempts).toBe(3);
+  });
+
   it('tests whether the configured model can answer a JSON probe', async () => {
     const requests: Array<{ url: string; body: Record<string, unknown>; auth: string | null }> = [];
     const result = await testOpenAiCompatibleLlm(

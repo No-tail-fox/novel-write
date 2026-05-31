@@ -2,6 +2,7 @@ import { execFile } from 'node:child_process';
 import { mkdir, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { promisify } from 'node:util';
+import { resolvePythonCommand } from './python-runtime';
 import type { BgmItem } from './types';
 
 const execFileAsync = promisify(execFile);
@@ -123,20 +124,14 @@ export async function runPyJianYingDraftBridge(
   const payloadPath = await writePyJianYingBridgeInput(input);
   const scriptPath = await writePyJianYingBridgeScript(input.workDir);
   const execute = options.execute ?? ((command, args, execOptions) => execFileAsync(command, args, execOptions));
-  const pythonCommand = options.pythonCommand ?? 'python';
+  const pythonCommand = options.pythonCommand ?? resolvePythonCommand();
 
   try {
     const { stdout } = await execute(pythonCommand, [scriptPath, payloadPath], { cwd: input.workDir });
-    const lastJsonLine = stdout
-      .split(/\r?\n/)
-      .map((line) => line.trim())
-      .filter(Boolean)
-      .reverse()
-      .find((line) => line.startsWith('{') && line.endsWith('}'));
-    if (!lastJsonLine) {
+    const result = parseBridgeJsonOutput(stdout);
+    if (!result) {
       throw new Error('pyJianYingDraft bridge did not return JSON output.');
     }
-    const result = JSON.parse(lastJsonLine) as Partial<PyJianYingBridgeOutput> & { ok?: boolean; error?: string };
     if (result.ok === false) {
       throw new Error(result.error ?? 'pyJianYingDraft bridge failed.');
     }
@@ -155,11 +150,34 @@ export async function runPyJianYingDraftBridge(
   }
 }
 
+type BridgeJsonOutput = Partial<PyJianYingBridgeOutput> & { ok?: boolean; error?: string; traceback?: string };
+
+function parseBridgeJsonOutput(output: string): BridgeJsonOutput | null {
+  const lastJsonLine = output
+    .split(/\r?\n/)
+    .map((line) => line.trim())
+    .filter(Boolean)
+    .reverse()
+    .find((line) => line.startsWith('{') && line.endsWith('}'));
+  if (!lastJsonLine) return null;
+  try {
+    return JSON.parse(lastJsonLine) as BridgeJsonOutput;
+  } catch {
+    return null;
+  }
+}
+
 function formatBridgeError(error: unknown): string {
+  const stdout = typeof error === 'object' && error !== null && 'stdout' in error ? String((error as { stdout?: unknown }).stdout ?? '') : '';
+  const structured = parseBridgeJsonOutput(stdout);
+  if (structured?.ok === false) {
+    const detail = [structured.error || 'pyJianYingDraft bridge failed.', structured.traceback].filter(Boolean).join('\n');
+    return `pyJianYingDraft bridge failed: ${detail}`;
+  }
   const pieces = [
     error instanceof Error ? error.message : String(error),
     typeof error === 'object' && error !== null && 'stderr' in error ? String((error as { stderr?: unknown }).stderr ?? '') : '',
-    typeof error === 'object' && error !== null && 'stdout' in error ? String((error as { stdout?: unknown }).stdout ?? '') : '',
+    stdout,
   ].filter(Boolean);
   const detail = pieces.join('\n').trim();
   if (/ModuleNotFoundError: No module named ['"]pyJianYingDraft['"]|No module named ['"]pyJianYingDraft['"]/i.test(detail)) {

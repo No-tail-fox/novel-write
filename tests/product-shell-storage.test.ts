@@ -2,6 +2,7 @@ import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
+import { defaultCustomStyles } from '@shared/config';
 import { FileDatabase } from '@shared/storage';
 
 describe('product shell storage', () => {
@@ -137,6 +138,68 @@ describe('product shell storage', () => {
         ratio: '9:16',
         provider: 'mock',
       });
+
+      await reopened.close();
+    } finally {
+      await rm(dir, { recursive: true, force: true });
+    }
+  });
+
+  it('persists custom image templates', async () => {
+    const dir = await mkdtemp(join(tmpdir(), 'storybound-shell-custom-style-'));
+    const file = join(dir, 'app.db');
+
+    try {
+      const db = await FileDatabase.open(file);
+
+      await db.upsertCustomStyle({
+        id: 'cyber-rain',
+        name: '赛博雨夜',
+        tag: '霓虹光影、赛博都市、雨夜',
+        shortName: '赛博',
+        prefix: '赛博朋克雨夜街道，霓虹灯反射，未来都市',
+        suffix: '高细节，电影级构图，湿润地面反光',
+        negativePrompt: '模糊，噪点，过曝，色彩溢出',
+        allowColor: true,
+        description: '适合科幻、未来都市、夜景题材。',
+        createdAt: '2026-05-30T00:00:00.000Z',
+        updatedAt: '2026-05-30T00:00:00.000Z',
+      });
+      await db.close();
+
+      const reopened = await FileDatabase.open(file);
+      const state = await reopened.getState();
+
+      expect(state.customStyles.find((style) => style.id === 'cyber-rain')).toMatchObject({
+        name: '赛博雨夜',
+        shortName: '赛博',
+        allowColor: true,
+      });
+
+      await reopened.close();
+    } finally {
+      await rm(dir, { recursive: true, force: true });
+    }
+  });
+
+  it('adds newly shipped default image templates without overwriting existing styles', async () => {
+    const dir = await mkdtemp(join(tmpdir(), 'storybound-shell-style-reconcile-'));
+    const file = join(dir, 'app.db');
+
+    try {
+      const db = await FileDatabase.open(file);
+      await db.upsertCustomStyle({
+        ...defaultCustomStyles.find((style) => style.id === 'photo-real')!,
+        name: '用户改过的写实彩色',
+      });
+      (db as unknown as { db: { run: (sql: string, params?: unknown[]) => void } }).db.run('DELETE FROM custom_styles WHERE id = ?', ['watercolor']);
+      await db.close();
+
+      const reopened = await FileDatabase.open(file);
+      const state = await reopened.getState();
+
+      expect(state.customStyles.map((style) => style.id)).toEqual(expect.arrayContaining(defaultCustomStyles.map((style) => style.id)));
+      expect(state.customStyles.find((style) => style.id === 'photo-real')?.name).toBe('用户改过的写实彩色');
 
       await reopened.close();
     } finally {

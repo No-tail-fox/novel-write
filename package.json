@@ -54,6 +54,12 @@
       "node_modules/sql.js/**/*",
       "package.json"
     ],
+    "extraResources": [
+      {
+        "from": "vendor/python",
+        "to": "python"
+      }
+    ],
     "extraMetadata": {
       "main": "dist-electron/electron/main.js"
     },
@@ -62,15 +68,9 @@
     ],
     "win": {
       "target": [
-        "nsis"
+        "dir"
       ],
-      "signAndEditExecutable": false,
-      "artifactName": "Storybound-Replica-Setup-${version}.${ext}"
-    },
-    "nsis": {
-      "oneClick": false,
-      "perMachine": false,
-      "allowToChangeInstallationDirectory": true
+      "signAndEditExecutable": false
     }
   }
 }

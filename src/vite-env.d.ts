@@ -7,6 +7,8 @@ import type {
   ConfigTestResult,
   ConfigTestTarget,
   CreateTaskInput,
+  CustomStyle,
+  CustomStyleGenerateInput,
   DraftTemplate,
   ImageLabGenerateInput,
   ImageLabRecord,
@@ -38,6 +40,8 @@ declare global {
       composeResearchCopy: (input: ResearchCopyComposeInput) => Promise<ResearchCopyComposeResult>;
       savePromptTemplate: (template: PromptTemplate) => Promise<AppState>;
       resetPromptTemplates: () => Promise<AppState>;
+      saveCustomStyle: (style: CustomStyle) => Promise<AppState>;
+      generateCustomStyleDraft: (input: CustomStyleGenerateInput) => Promise<CustomStyle>;
       saveDraftTemplate: (template: DraftTemplate) => Promise<AppState>;
       generateImageLab: (input: ImageLabGenerateInput) => Promise<AppState>;
       addImageLabRecord: (input: Partial<ImageLabRecord> & Pick<ImageLabRecord, 'prompt' | 'ratio' | 'style' | 'provider'>) => Promise<AppState>;

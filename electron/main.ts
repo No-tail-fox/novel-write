@@ -12,11 +12,12 @@ import { generateImageLabRecord } from '../src/shared/image-lab';
 import { loadJianyingEffectCatalog } from '../src/shared/jianying-effects';
 import { createOpenAiCompatibleJsonLlm, listOpenAiCompatibleModels, testOpenAiCompatibleLlm } from '../src/shared/llm-provider';
 import { markSceneImageForRegeneration, markSceneNarrationForRegeneration } from '../src/shared/pipeline-cache';
+import { resolvePythonRuntimeInfo } from '../src/shared/python-runtime';
 import { composeCopyFromSources, createAiSourceResearcher, searchWebSources } from '../src/shared/research';
 import { runTask } from '../src/shared/runner';
 import { FileDatabase } from '../src/shared/storage';
 import { createTaskRuntimeProviders } from '../src/shared/task-runtime-providers';
-import type { AccountProfile, ActivationState, AppConfig, ConfigTestTarget, CreateTaskInput, DraftTemplate, ImageLabGenerateInput, LlmConfig, PromptTemplate, ProviderModelListRequest, ResearchCopyComposeInput, Task, TaskStatus, UiPreferences, VolcengineSpeakerListRequest } from '../src/shared/types';
+import type { AccountProfile, ActivationState, AppConfig, ConfigTestTarget, CreateTaskInput, CustomStyle, CustomStyleGenerateInput, DraftTemplate, ImageLabGenerateInput, LlmConfig, PromptTemplate, ProviderModelListRequest, ResearchCopyComposeInput, Task, TaskStatus, UiPreferences, VolcengineSpeakerListRequest } from '../src/shared/types';
 import { listVolcengineSpeakers } from '../src/shared/volcengine-speakers';
 import { getRendererIndexPath } from './paths';
 
@@ -249,6 +250,34 @@ ipcMain.handle('prompt-template:reset', async () => {
   const database = await getDb();
   await database.resetPromptTemplates();
   return database.getState();
+});
+
+ipcMain.handle('custom-style:save', async (_event, style: CustomStyle) => {
+  const database = await getDb();
+  await database.upsertCustomStyle(style);
+  return database.getState();
+});
+
+ipcMain.handle('custom-style:generate-draft', async (_event, input: CustomStyleGenerateInput): Promise<CustomStyle> => {
+  const database = await getDb();
+  const state = await database.getState();
+  const llm = createOpenAiCompatibleJsonLlm(state.config.llm);
+  const result = await llm<Partial<CustomStyle>>({
+    step: -1,
+    name: 'custom-style-draft',
+    messages: [
+      { role: 'system', content: 'Return strict JSON only. Schema: {"name":string,"tag":string,"shortName":string,"prefix":string,"suffix":string,"negativePrompt":string,"allowColor":boolean,"description":string}.' },
+      {
+        role: 'user',
+        content: [
+          `用户描述：${input.prompt}`,
+          `基准风格：${JSON.stringify(input.baseStyle)}`,
+          '请生成一个中文图像风格模板。prefix 控制整体基调，suffix 强化质感，negativePrompt 写需要规避的画面问题。',
+        ].join('\n\n'),
+      },
+    ],
+  });
+  return normalizeGeneratedCustomStyle(input, result.json);
 });
 
 ipcMain.handle('draft-template:save', async (_event, template: DraftTemplate) => {
@@ -510,20 +539,41 @@ function ttsConfigStatus(config: AppConfig): 'pass' | 'warn' | 'fail' {
 }
 
 async function checkPython(): Promise<{ status: 'pass' | 'warn'; detail: string }> {
+  const runtime = resolvePythonRuntimeInfo();
   try {
-    const { stdout, stderr } = await execFileAsync('python', ['--version']);
-    return { status: 'pass', detail: (stdout || stderr).trim() || 'python available' };
+    const { stdout, stderr } = await execFileAsync(runtime.command, ['--version']);
+    const version = (stdout || stderr).trim() || 'python available';
+    return { status: 'pass', detail: `${runtime.source} ${version}` };
   } catch (error) {
     return { status: 'warn', detail: error instanceof Error ? error.message : 'python not found' };
   }
 }
 
+function normalizeGeneratedCustomStyle(input: CustomStyleGenerateInput, generated: Partial<CustomStyle>): CustomStyle {
+  const now = new Date().toISOString();
+  const fallbackName = input.prompt.trim().slice(0, 16) || input.baseStyle.name;
+  return {
+    id: input.baseStyle.id,
+    name: String(generated.name || fallbackName),
+    tag: String(generated.tag || input.baseStyle.tag),
+    shortName: String(generated.shortName || fallbackName.slice(0, 4)),
+    prefix: String(generated.prefix || input.baseStyle.prefix),
+    suffix: String(generated.suffix || input.baseStyle.suffix),
+    negativePrompt: String(generated.negativePrompt || input.baseStyle.negativePrompt),
+    allowColor: typeof generated.allowColor === 'boolean' ? generated.allowColor : input.baseStyle.allowColor,
+    description: String(generated.description || input.baseStyle.description),
+    createdAt: input.baseStyle.createdAt || now,
+    updatedAt: now,
+  };
+}
+
 async function checkPyJianYingDraft(): Promise<{ status: 'pass' | 'warn'; detail: string }> {
+  const runtime = resolvePythonRuntimeInfo();
   try {
-    await execFileAsync('python', ['-c', 'import pyJianYingDraft; print("pyJianYingDraft installed")']);
-    return { status: 'pass', detail: 'pyJianYingDraft installed' };
+    await execFileAsync(runtime.command, ['-c', 'import pyJianYingDraft; print("pyJianYingDraft installed")']);
+    return { status: 'pass', detail: `pyJianYingDraft installed in ${runtime.source} Python` };
   } catch {
-    return { status: 'warn', detail: '未检测到 pyJianYingDraft；请运行 python -m pip install pyJianYingDraft' };
+    return { status: 'warn', detail: runtime.source === 'bundled' ? 'Bundled pyJianYingDraft is unavailable; rebuild the portable Python runtime.' : '未检测到 pyJianYingDraft；请运行 python -m pip install pyJianYingDraft' };
   }
 }
 

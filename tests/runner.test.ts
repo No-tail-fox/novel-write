@@ -203,16 +203,16 @@ describe('task runner', () => {
         id: 'custom-task-template',
         name: '自定义人物任务模板',
         type: 'task',
-        content: '任务模板标记：{{track}} / {{inputText}}',
+        content: '任务模板标记：{{内容赛道}} / {{原文素材}}',
         isBuiltin: false,
         baseTrack: 'character-story',
       });
       for (const template of [
-        ['builtin-review', 'review', '预审模板标记：{{taskTemplateContent}} / {{inputText}}'],
+        ['builtin-review', 'review', '预审模板标记：{{任务模板指令}} / {{原文素材}}'],
         ['builtin-rewrite', 'rewrite', '改写模板标记：{{reviewedText}}'],
         ['builtin-cover', 'cover', '封面模板标记：{{rewrittenCopy}}'],
         ['builtin-storyboard', 'storyboard', '分镜模板标记：{{rewrittenCopy}}'],
-        ['builtin-image-prompt', 'image-prompt', '绘图模板标记：{{scenesJson}} / {{taskTemplateContent}}'],
+        ['builtin-image-prompt', 'image-prompt', '绘图模板标记：{{分镜数据}} / {{任务模板指令}}'],
       ] as const) {
         await db.upsertPromptTemplate({
           id: template[0],
@@ -261,6 +261,7 @@ describe('task runner', () => {
       expect(renderedMessages).toContain('分镜模板标记');
       expect(renderedMessages).toContain('绘图模板标记');
       expect(renderedMessages).toContain('任务模板标记：character-story');
+      expect(renderedMessages).not.toContain('{{');
       expect((await db.getState()).tasks[0].step3PromptSnapshot).toContain('绘图模板标记');
     } finally {
       await db.close();

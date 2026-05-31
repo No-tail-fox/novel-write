@@ -9,6 +9,8 @@ describe('electron ipc contract', () => {
     for (const channel of [
       'prompt-template:save',
       'prompt-template:reset',
+      'custom-style:save',
+      'custom-style:generate-draft',
       'draft-template:save',
       'image-lab:generate',
       'image-lab:add-record',
@@ -80,12 +82,16 @@ describe('electron ipc contract', () => {
     expect(preload).toContain('listVolcengineSpeakers');
     expect(preload).toContain('searchWebSources');
     expect(preload).toContain('composeResearchCopy');
+    expect(preload).toContain('saveCustomStyle');
+    expect(preload).toContain('generateCustomStyleDraft');
     expect(preload).toContain('getTaskArtifacts');
     expect(viteEnv).toContain('callback: (state: AppState) => void');
     expect(viteEnv).toContain('testLlmConfig');
     expect(viteEnv).toContain('listProviderModels');
     expect(viteEnv).toContain('listVolcengineSpeakers');
     expect(viteEnv).toContain('composeResearchCopy');
+    expect(viteEnv).toContain('saveCustomStyle');
+    expect(viteEnv).toContain('generateCustomStyleDraft');
     expect(viteEnv).toContain('getTaskArtifacts');
   });
 

@@ -23,6 +23,9 @@ export interface LlmJsonResult<T = unknown> {
 
 export type JsonLlm = <T = unknown>(request: LlmJsonRequest) => Promise<LlmJsonResult<T>>;
 
+const TRANSIENT_LLM_STATUS_CODES = new Set([429, 500, 502, 503, 504]);
+const LLM_RETRY_DELAYS_MS = [500, 1500];
+
 export class LlmJsonParseError extends Error {
   constructor(
     message: string,
@@ -39,23 +42,10 @@ export function createOpenAiCompatibleJsonLlm(config: LlmConfig): JsonLlm {
       throw new Error('LLM API key is missing; cannot run real task content generation.');
     }
     const baseUrl = normalizeOpenAiBaseUrl(config.baseUrl || 'https://api.openai.com');
-    const response = await fetchWithTimeout(`${baseUrl}/chat/completions`, {
-      method: 'POST',
-      timeoutMs: config.timeoutMs ?? 120_000,
-      timeoutLabel: `LLM step ${request.step} ${request.name}`,
-      signal: request.signal,
-      headers: {
-        'Content-Type': 'application/json',
-        Authorization: `Bearer ${config.apiKey}`,
-      },
-      body: JSON.stringify({
-        model: config.model,
-        messages: request.messages,
-        response_format: { type: 'json_object' },
-      }),
-    });
+    const endpoint = `${baseUrl}/chat/completions`;
+    const response = await fetchLlmJsonWithRetries(endpoint, config, request);
     if (!response.ok) {
-      throw new Error(`LLM API error (${response.status}) at step ${request.step} ${request.name}: ${await response.text()}`);
+      throw new Error(`LLM API error (${response.status}) at step ${request.step} ${request.name} via ${endpoint}: ${await response.text()}`);
     }
     const body = (await response.json()) as {
       id?: string;
@@ -75,6 +65,56 @@ export function createOpenAiCompatibleJsonLlm(config: LlmConfig): JsonLlm {
       throw new LlmJsonParseError(`LLM step ${request.step} ${request.name} did not return valid JSON.${formatRawPreview(raw)}`, raw);
     }
   };
+}
+
+async function fetchLlmJsonWithRetries(endpoint: string, config: LlmConfig, request: LlmJsonRequest): Promise<Response> {
+  const maxAttempts = LLM_RETRY_DELAYS_MS.length + 1;
+  for (let attempt = 1; attempt <= maxAttempts; attempt += 1) {
+    const response = await fetchWithTimeout(endpoint, {
+      method: 'POST',
+      timeoutMs: config.timeoutMs ?? 120_000,
+      timeoutLabel: `LLM step ${request.step} ${request.name}`,
+      signal: request.signal,
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${config.apiKey}`,
+      },
+      body: JSON.stringify({
+        model: config.model,
+        messages: request.messages,
+        response_format: { type: 'json_object' },
+      }),
+    });
+    if (!TRANSIENT_LLM_STATUS_CODES.has(response.status) || attempt === maxAttempts) {
+      return response;
+    }
+    await sleepBeforeRetry(LLM_RETRY_DELAYS_MS[attempt - 1], request.signal, `LLM step ${request.step} ${request.name}`);
+  }
+  throw new Error('Unexpected LLM retry state.');
+}
+
+function sleepBeforeRetry(ms: number, signal: AbortSignal | undefined, label: string): Promise<void> {
+  if (signal?.aborted) throw abortSignalError(signal, label);
+  return new Promise((resolve, reject) => {
+    const cleanup = () => signal?.removeEventListener('abort', abort);
+    const timeout = setTimeout(() => {
+      cleanup();
+      resolve();
+    }, ms);
+    const abort = () => {
+      clearTimeout(timeout);
+      cleanup();
+      reject(abortSignalError(signal, label));
+    };
+    signal?.addEventListener('abort', abort, { once: true });
+  });
+}
+
+function abortSignalError(signal: AbortSignal | undefined, label: string): Error {
+  const reason = signal?.reason;
+  if (reason instanceof Error) return reason;
+  if (typeof reason === 'string') return new Error(reason);
+  return new Error(`${label} aborted.`);
 }
 
 export async function testOpenAiCompatibleLlm(config: LlmConfig, fetchImpl: typeof fetch = fetch): Promise<LlmModelTestResult> {

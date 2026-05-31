@@ -18,11 +18,16 @@ describe('windows packaging', () => {
       electronDist: 'node_modules/electron/dist',
       productName: 'Storybound Replica',
       directories: { output: 'release' },
-      win: { artifactName: 'Storybound-Replica-Setup-${version}.${ext}', signAndEditExecutable: false },
+      extraResources: [{ from: 'vendor/python', to: 'python' }],
+      win: { target: ['dir'], signAndEditExecutable: false },
     });
     expect(packageScript).toContain('node_modules/electron-builder/cli.js');
+    expect(packageScript).toContain('scripts\\prepare-python-runtime.ps1');
+    expect(packageScript).toContain('--win');
     expect(packageScript).toContain('--dir');
-    expect(packageScript).toContain('release\\win-unpacked\\Storybound Replica.exe');
+    expect(packageScript).toContain('Compress-Archive');
+    expect(packageScript).toContain('Storybound-Replica-Portable-${Version}.zip');
+    expect(packageScript).toContain('release\\Storybound-Replica-Portable');
     expect(packageScript).toContain('node --check');
   });
 });

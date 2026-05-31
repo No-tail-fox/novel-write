@@ -325,6 +325,7 @@ export interface PromptTemplate {
   baseTrack?: string;
   baseTemplateId?: string | null;
   defaultStyles?: string[];
+  defaultDraftTemplateId?: string;
   characterPolicy?: 'follow-template' | 'force-extract' | 'force-skip';
   step3SkeletonModules?: string[];
   referenceKind?: 'none' | 'face' | 'product';
@@ -346,6 +347,11 @@ export interface CustomStyle {
   description: string;
   createdAt: string;
   updatedAt: string;
+}
+
+export interface CustomStyleGenerateInput {
+  prompt: string;
+  baseStyle: CustomStyle;
 }
 
 export interface ImageLabRecord {

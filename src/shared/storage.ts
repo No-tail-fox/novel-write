@@ -335,10 +335,7 @@ export class FileDatabase {
       }
     }
 
-    const styleCount = getFirstRow<{ count: number }>(this.db, 'SELECT COUNT(*) AS count FROM custom_styles')?.count ?? 0;
-    if (styleCount === 0) {
-      for (const style of defaultCustomStyles) this.insertCustomStyle(style);
-    }
+    this.syncDefaultCustomStyles();
 
     const creditCount = getFirstRow<{ count: number }>(this.db, 'SELECT COUNT(*) AS count FROM credit_transactions')?.count ?? 0;
     if (creditCount === 0) {
@@ -436,6 +433,25 @@ export class FileDatabase {
     this.insertPromptTemplate(template);
     await this.persist();
     return template;
+  }
+
+  private syncDefaultCustomStyles(): void {
+    for (const style of defaultCustomStyles) {
+      const existing = getFirstRow<{ id: string }>(this.db, 'SELECT id FROM custom_styles WHERE id = ?', [style.id]);
+      if (!existing) this.insertCustomStyle(style);
+    }
+  }
+
+  async upsertCustomStyle(input: CustomStyle): Promise<CustomStyle> {
+    const now = new Date().toISOString();
+    const style: CustomStyle = {
+      ...input,
+      createdAt: input.createdAt || now,
+      updatedAt: input.updatedAt || now,
+    };
+    this.insertCustomStyle(style);
+    await this.persist();
+    return style;
   }
 
   async resetPromptTemplates(): Promise<void> {

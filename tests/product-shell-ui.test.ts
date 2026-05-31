@@ -257,6 +257,113 @@ describe('product shell ui', () => {
     expect(main).not.toContain('>{`{{${item}}}`}</button>');
   });
 
+  it('splits prompt template management into story and image template tabs', async () => {
+    const main = await readFile(new URL('../src/main.tsx', import.meta.url), 'utf8');
+    const css = await readFile(new URL('../src/styles.css', import.meta.url), 'utf8');
+
+    for (const symbol of [
+      'promptTemplateLibraryTab',
+      'story-template-gallery',
+      'image-template-gallery',
+      'openImageTemplateDetail',
+      'saveCustomStyleDraft',
+      'generateCustomStyleDraft',
+      'imageTemplateAiPrompt',
+      'baseImageTemplateId',
+      'mergeDefaultCustomStyles',
+    ]) {
+      expect(main).toContain(symbol);
+    }
+    for (const text of ['故事模板', '图像模板', 'AI 快速生成', '基于系统风格', '前缀（prefix）', '后缀（suffix）', '负面提示词（negativePrompt）', '色彩模式']) {
+      expect(main).toContain(text);
+    }
+    expect(css).toContain('.prompt-template-tabs');
+    expect(css).toContain('.image-template-quick-card');
+    expect(css).toContain('.image-template-field-grid');
+  });
+
+  it('shows visible feedback while generating image template fields', async () => {
+    const main = await readFile(new URL('../src/main.tsx', import.meta.url), 'utf8');
+    const css = await readFile(new URL('../src/styles.css', import.meta.url), 'utf8');
+
+    for (const symbol of [
+      'imageTemplateAiStatus',
+      'imageTemplateAiGenerating',
+      'image-template-ai-status',
+      'aria-live="polite"',
+      '正在生成字段',
+      '已生成字段',
+      '生成失败',
+      '请先输入风格描述',
+    ]) {
+      expect(main).toContain(symbol);
+    }
+    expect(main).toContain('disabled={imageTemplateAiGenerating}');
+    expect(css).toContain('.image-template-ai-status');
+  });
+
+  it('keeps prompt variables usable inside every template textarea', async () => {
+    const main = await readFile(new URL('../src/main.tsx', import.meta.url), 'utf8');
+    const css = await readFile(new URL('../src/styles.css', import.meta.url), 'utf8');
+
+    for (const symbol of [
+      'VariableAwareTextarea',
+      'insertPromptVariable',
+      'prompt-variable-suggest',
+      'onVariableInsert',
+      'placeholder="输入 // 选择变量"',
+      '{{${item.key}}',
+      '英文变量',
+    ]) {
+      expect(main).toContain(symbol);
+    }
+    expect(css).toContain('.prompt-variable-suggest');
+    expect(css).toContain('.prompt-variable-token');
+  });
+
+  it('supports import, export, and clone for story and image templates without overwriting existing ids', async () => {
+    const main = await readFile(new URL('../src/main.tsx', import.meta.url), 'utf8');
+
+    for (const symbol of [
+      'exportPromptTemplateJson',
+      'importPromptTemplateJson',
+      'exportImageTemplateJson',
+      'importImageTemplateJson',
+      'templateJsonDraft',
+      'imageTemplateJsonDraft',
+      'resolveImportedTemplateId',
+      'duplicateTemplate',
+      'duplicateImageTemplate',
+    ]) {
+      expect(main).toContain(symbol);
+    }
+    expect(main).toContain('state.promptTemplates.some((template) => template.id === imported.id)');
+    expect(main).toContain('state.customStyles.some((style) => style.id === imported.id)');
+  });
+
+  it('syncs all story template defaults when changing content tracks in new task', async () => {
+    const main = await readFile(new URL('../src/main.tsx', import.meta.url), 'utf8');
+
+    expect(main).toContain('syncTaskDefaultsFromTrack');
+    expect(main).toContain('promptTemplateManuallyOverridden');
+    expect(main).toContain('styleManuallyOverridden');
+    expect(main).toContain('draftTemplateManuallyOverridden');
+    expect(main).toContain('resolvePromptTemplateDefaultStyleId');
+    expect(main).toContain('resolvePromptTemplateDefaultDraftTemplateId');
+    expect(main).toContain('handleDraftTemplateChange');
+    expect(main).toContain('draftTemplateImageRatio');
+    expect(main).toContain('模板默认项');
+    expect(main).toContain('主角档案');
+    expect(main).toContain('默认草稿模板');
+    expect(main).toContain('参考图类型');
+    expect(main).toContain('Step 3 骨架');
+    expect(main).toContain('setRatio(draftTemplateImageRatio');
+    expect(main).toContain('defaultStyles: [style.id]');
+    expect(main).toContain('defaultDraftTemplateId');
+    expect(main).not.toContain('toggleArray(resolvePromptTemplateDefaultStyleIds(draft), style.id)');
+    expect(main).not.toContain('OptionCloud title="草稿模板" options={state.draftTemplates.map((template) => [template.id, template.name, `出图 ${template.image.ratio}`])} value={templateId} onChange={setTemplateId}');
+  });
+
   it('supports opening a selected task in a screenshot-style pipeline detail view', async () => {
     const main = await readFile(new URL('../src/main.tsx', import.meta.url), 'utf8');
     const types = await readFile(new URL('../src/shared/types.ts', import.meta.url), 'utf8');
@@ -485,6 +592,38 @@ describe('product shell ui', () => {
     expect(main).toContain('自定义 voice_type');
     expect(main).toContain('voice_type');
     expect(main).toContain('zh_female_vv_uranus_bigtts');
+  });
+
+  it('uses provider-specific task voice defaults in the new task form', async () => {
+    const main = await readFile(new URL('../src/main.tsx', import.meta.url), 'utf8');
+    const voices = await readFile(new URL('../src/shared/tts-voices.ts', import.meta.url), 'utf8');
+
+    for (const symbol of [
+      'ttsProvider',
+      'setTtsProvider',
+      'ttsVoiceOptionsForProvider',
+      'defaultTaskSpeakerForProvider',
+      'taskSpeakerLabel',
+      "labels={['豆包', 'MiniMax']}",
+      'zh_female_vv_uranus_bigtts',
+      'male-qn-qingse',
+    ]) {
+      expect(main + voices).toContain(symbol);
+    }
+    expect(main).not.toContain("const voiceOptions = ['东方浩然', '灿博小叔', '温柔小雅', '爽快思思', '更多音色...'];");
+  });
+
+  it('syncs new-task content and style choices from story and image templates', async () => {
+    const main = await readFile(new URL('../src/main.tsx', import.meta.url), 'utf8');
+
+    expect(main).toContain('buildStoryTemplateTrackOptions');
+    expect(main).toContain('buildImageTemplateStyleOptions');
+    expect(main).toContain('storyTemplateTrackOptions');
+    expect(main).toContain('imageTemplateStyleOptions');
+    expect(main).toContain('options={storyTemplateTrackOptions}');
+    expect(main).toContain('options={imageTemplateStyleOptions}');
+    expect(main).not.toContain('OptionCloud title="内容赛道" options={contentTracks}');
+    expect(main).not.toContain('OptionCloud title="画面风格" options={styleOptions}');
   });
 
   it('keeps task errors compact with a click-through detail dialog', async () => {

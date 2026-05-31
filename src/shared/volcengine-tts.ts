@@ -5,7 +5,8 @@ export const DEFAULT_VOLCENGINE_TTS_V3_SPEAKER = 'zh_female_vv_uranus_bigtts';
 const legacySpeakerToV3: Record<string, string> = {
   '灿博小叔': DEFAULT_VOLCENGINE_TTS_V3_SPEAKER,
   '东方浩然': DEFAULT_VOLCENGINE_TTS_V3_SPEAKER,
-  '温柔小雅': DEFAULT_VOLCENGINE_TTS_V3_SPEAKER,
+  '渊博小叔': 'zh_male_yuanboxiaoshu_moon_bigtts',
+  '温柔小雅': 'zh_female_wenrouxiaoya_moon_bigtts',
   '爽快思思': 'zh_female_shuangkuaisisi_uranus_bigtts',
   '更多音色...': DEFAULT_VOLCENGINE_TTS_V3_SPEAKER,
 };

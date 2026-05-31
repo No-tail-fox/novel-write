@@ -359,6 +359,64 @@ h2 {
   font-weight: 500;
 }
 
+.prompt-variable-token {
+  max-width: 100%;
+  color: var(--accent);
+  font-size: 11px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.prompt-variable-editor {
+  position: relative;
+  display: grid;
+  gap: 8px;
+}
+
+.prompt-variable-suggest {
+  position: sticky;
+  bottom: 8px;
+  z-index: 5;
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(190px, 1fr));
+  gap: 8px;
+  padding: 10px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: #0b1118;
+  box-shadow: var(--shadow);
+}
+
+.prompt-variable-suggest button {
+  display: grid;
+  gap: 3px;
+  min-height: 54px;
+  padding: 8px 10px;
+  border: 1px solid var(--line);
+  border-radius: 7px;
+  background: var(--panel-2);
+  color: var(--text);
+  text-align: left;
+  cursor: pointer;
+}
+
+.prompt-variable-suggest button:hover,
+.prompt-variable-suggest button:focus-visible {
+  border-color: var(--accent);
+  outline: none;
+}
+
+.prompt-variable-suggest code {
+  color: var(--accent);
+  font-size: 12px;
+}
+
+.prompt-variable-suggest small {
+  color: var(--muted);
+  overflow-wrap: anywhere;
+}
+
 .task-card,
 .panel,
 .task-input-panel,
@@ -1624,6 +1682,28 @@ textarea {
   font-size: 13px;
 }
 
+.prompt-template-tabs {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.template-default-summary {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  padding: 12px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: #10161d;
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.template-default-summary strong {
+  color: var(--text);
+}
+
 .prompt-template-list {
   display: grid;
   gap: 12px;
@@ -1724,13 +1804,40 @@ textarea {
 }
 
 .prompt-template-basics-card,
-.prompt-template-settings-card {
+.prompt-template-settings-card,
+.image-template-quick-card {
   display: grid;
   gap: 16px;
   padding: 18px;
   border: 1px solid var(--line);
   border-radius: 8px;
   background: #11171d;
+}
+
+.image-template-quick-card {
+  background: #0f171d;
+}
+
+.image-template-field-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+}
+
+.image-template-quick-actions {
+  align-content: end;
+  align-items: end;
+}
+
+.image-template-ai-status {
+  min-height: 34px;
+  padding: 9px 11px;
+  border: 1px solid var(--line);
+  border-radius: 7px;
+  background: rgba(28, 201, 159, 0.08);
+  color: var(--accent);
+  font-size: 13px;
+  overflow-wrap: anywhere;
 }
 
 .prompt-template-basics-grid {
@@ -2485,6 +2592,7 @@ textarea {
   .draft-editor-shell,
   .settings-layout,
   .template-meta-grid,
+  .image-template-field-grid,
   .prompt-template-advanced-grid,
   .form-grid {
     grid-template-columns: 1fr;

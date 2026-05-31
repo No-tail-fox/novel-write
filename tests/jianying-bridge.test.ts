@@ -231,6 +231,52 @@ describe('pyJianYingDraft bridge input', () => {
       await rm(dir, { recursive: true, force: true });
     }
   });
+
+  it('prefers structured bridge errors over the child process command wrapper', async () => {
+    const dir = await mkdtemp(join(tmpdir(), 'storybound-jy-structured-error-'));
+
+    try {
+      const error = Object.assign(new Error('Command failed: python bridge.py input.json'), {
+        stdout: `${JSON.stringify({ ok: false, error: 'Unknown TransitionType: FadeSpin', traceback: 'traceback detail' })}\n`,
+        stderr: '',
+      });
+
+      let thrown: unknown;
+      try {
+        await runPyJianYingDraftBridge(
+          {
+            workDir: dir,
+            draftDir: join(dir, 'Draft Root', 'Bridge Draft'),
+            title: 'Bridge Draft',
+            canvas: { width: 1080, height: 1920, backgroundColor: '#000000', backgroundImage: '' },
+            imageArea: { ratio: '9:16', top: 0, height: 1, fit: 'cover', animation: '' },
+            caption: { fontSize: 44, color: '#ffffff', y: -0.8 },
+            scenes: [{ sceneId: 1, startUs: 0, durationUs: 1_200_000, text: 'hello' }],
+            images: [{ sceneId: 1, path: join(dir, 'image.png') }],
+            narration: [{ sceneId: 1, path: join(dir, 'voice.mp3') }],
+            subtitlesSrtPath: join(dir, 'subtitles.srt'),
+            bgm: null,
+            totalDurationUs: 1_200_000,
+            volumes: { narration: 1, bgm: 0.3 },
+          },
+          {
+            execute: async () => {
+              throw error;
+            },
+          },
+        );
+      } catch (error) {
+        thrown = error;
+      }
+
+      expect(thrown).toBeInstanceOf(Error);
+      const message = thrown instanceof Error ? thrown.message : String(thrown);
+      expect(message).toContain('pyJianYingDraft bridge failed: Unknown TransitionType: FadeSpin');
+      expect(message).not.toContain('Command failed: python');
+    } finally {
+      await rm(dir, { recursive: true, force: true });
+    }
+  });
 });
 
 function wavTone(durationMs: number): Buffer {

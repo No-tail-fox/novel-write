@@ -1,5 +1,6 @@
 import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
+import { resolvePythonCommand } from './python-runtime';
 import type { JianyingEffectCatalog } from './types';
 
 const execFileAsync = promisify(execFile);
@@ -26,7 +27,7 @@ export interface LoadJianyingEffectCatalogOptions {
 export async function loadJianyingEffectCatalog(options: LoadJianyingEffectCatalogOptions = {}): Promise<JianyingEffectCatalog> {
   const execute = options.execute ?? ((command, args, execOptions) => execFileAsync(command, args, execOptions));
   try {
-    const { stdout } = await execute(options.pythonCommand ?? 'python', ['-c', effectCatalogPythonScript], {});
+    const { stdout } = await execute(options.pythonCommand ?? resolvePythonCommand(), ['-c', effectCatalogPythonScript], {});
     const payload = parseCatalog(stdout);
     return {
       status: 'pass',
