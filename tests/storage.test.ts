@@ -96,6 +96,52 @@ describe('file database', () => {
     }
   });
 
+  it('persists viral analyses and events across reloads', async () => {
+    const dir = await mkdtemp(join(tmpdir(), 'storybound-db-viral-'));
+    const file = join(dir, 'app.db');
+
+    try {
+      const db = await FileDatabase.open(file);
+      const record = await db.createViralAnalysis({
+        url: 'https://www.douyin.com/video/123',
+        platform: 'douyin',
+        title: 'Viral source',
+        settings: { track: 'ecommerce', style: 'photo-real', ratio: '9:16', templateId: 'default-portrait-9-16' },
+      });
+      await db.addViralAnalysisEvent(record.id, {
+        type: 'stage_start',
+        stage: 'downloading',
+        detail: 'downloading source video',
+      });
+      await db.updateViralAnalysis(record.id, {
+        status: 'completed',
+        currentStage: 'completed',
+        resultPath: join(dir, 'viral-result.json'),
+      });
+      await db.close();
+
+      const reopened = await FileDatabase.open(file);
+      const state = await reopened.getState();
+
+      expect(state.viralAnalyses).toHaveLength(1);
+      expect(state.viralAnalyses[0]).toMatchObject({
+        url: 'https://www.douyin.com/video/123',
+        platform: 'douyin',
+        status: 'completed',
+        resultPath: join(dir, 'viral-result.json'),
+      });
+      expect(state.viralEvents).toHaveLength(1);
+      expect(state.viralEvents[0]).toMatchObject({
+        analysisId: record.id,
+        type: 'stage_start',
+        stage: 'downloading',
+      });
+      await reopened.close();
+    } finally {
+      await rm(dir, { recursive: true, force: true });
+    }
+  });
+
   it('keeps the active GPT image provider settings effective after saving config', async () => {
     const dir = await mkdtemp(join(tmpdir(), 'storybound-db-image-config-'));
     const file = join(dir, 'app.db');

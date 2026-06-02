@@ -6,7 +6,7 @@ describe('product shell ui', () => {
     const main = await readFile(new URL('../src/main.tsx', import.meta.url), 'utf8');
     const css = await readFile(new URL('../src/styles.css', import.meta.url), 'utf8');
 
-    for (const view of ['new-task', 'queue', 'history', 'image-lab', 'prompt-templates', 'draft-templates', 'settings', 'account', 'activation']) {
+    for (const view of ['new-task', 'queue', 'history', 'image-lab', 'viral-analyzer', 'prompt-templates', 'draft-templates', 'settings', 'account', 'activation']) {
       expect(main).toContain(view);
     }
     for (const text of ['新建任务', '任务队列', '历史任务', '画图实验室', '提示词模板', '草稿模板', '系统设置']) {
@@ -14,6 +14,34 @@ describe('product shell ui', () => {
     }
     expect(css).toContain('.app-shell');
     expect(css).toContain('--accent');
+  });
+
+  it('wires the viral analyzer page into the shell with report and recreation controls', async () => {
+    const main = await readFile(new URL('../src/main.tsx', import.meta.url), 'utf8');
+    const css = await readFile(new URL('../src/styles.css', import.meta.url), 'utf8');
+
+    for (const symbol of [
+      'ViralAnalyzerPage',
+      'createAndRunViralAnalysis',
+      'createProductionTaskFromViral',
+      'viral-analyzer-layout',
+      'viral-url-input',
+      'viral-platform-picker',
+      'viral-progress-list',
+      'viral-report-grid',
+      'viral-recreation-panel',
+      'viral-create-production-task',
+    ]) {
+      expect(main).toContain(symbol);
+    }
+
+    for (const text of ['爆款拆解', '开头', '结构', '结尾', '爆点', '一键复刻成片任务']) {
+      expect(main).toContain(text);
+    }
+
+    expect(css).toContain('.viral-analyzer-layout');
+    expect(css).toContain('.viral-report-grid');
+    expect(css).toContain('.viral-recreation-panel');
   });
 
   it('uses the dark renderer chrome as the only title bar and removes the trial strip', async () => {

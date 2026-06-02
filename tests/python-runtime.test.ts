@@ -28,10 +28,28 @@ describe('Python runtime resolution', () => {
     const dir = await mkdtemp(join(tmpdir(), 'storybound-python-runtime-missing-'));
 
     try {
-      expect(resolvePythonCommand({ resourcesPath: dir, platform: 'win32' })).toBe('python');
-      expect(resolvePythonRuntimeInfo({ resourcesPath: dir, platform: 'win32' })).toEqual({
+      expect(resolvePythonCommand({ appRoot: dir, resourcesPath: dir, platform: 'win32' })).toBe('python');
+      expect(resolvePythonRuntimeInfo({ appRoot: dir, resourcesPath: dir, platform: 'win32' })).toEqual({
         command: 'python',
         source: 'system',
+      });
+    } finally {
+      await rm(dir, { recursive: true, force: true });
+    }
+  });
+
+  it('uses the workspace Python runtime during development when it exists', async () => {
+    const dir = await mkdtemp(join(tmpdir(), 'storybound-python-runtime-workspace-'));
+
+    try {
+      const pythonExe = join(dir, 'vendor', 'python', 'python.exe');
+      await mkdir(join(dir, 'vendor', 'python'), { recursive: true });
+      await writeFile(pythonExe, '');
+
+      expect(resolvePythonCommand({ appRoot: dir, resourcesPath: join(dir, 'missing-resources'), platform: 'win32' })).toBe(pythonExe);
+      expect(resolvePythonRuntimeInfo({ appRoot: dir, resourcesPath: join(dir, 'missing-resources'), platform: 'win32' })).toEqual({
+        command: pythonExe,
+        source: 'bundled',
       });
     } finally {
       await rm(dir, { recursive: true, force: true });

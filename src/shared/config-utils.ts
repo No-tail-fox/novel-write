@@ -339,6 +339,14 @@ export function normalizeAppConfig(input: unknown): AppConfig {
       defaultBgmId,
     },
     ima: { ...defaultConfig.ima, ...(partial.ima ?? {}) },
+    viral: {
+      ...defaultConfig.viral,
+      ...(partial.viral ?? {}),
+      frameIntervalSeconds: normalizePositiveNumber(partial.viral?.frameIntervalSeconds, defaultConfig.viral.frameIntervalSeconds),
+      maxFrames: Math.max(1, Math.round(normalizePositiveNumber(partial.viral?.maxFrames, defaultConfig.viral.maxFrames))),
+      downloadTimeoutMs: normalizePositiveNumber(partial.viral?.downloadTimeoutMs, defaultConfig.viral.downloadTimeoutMs),
+      vision: normalizeLlmProfile({ ...defaultConfig.viral.vision, ...(partial.viral?.vision ?? {}) }, 0),
+    },
     ui: { ...defaultConfig.ui, ...(partial.ui ?? {}) },
   };
 }

@@ -3,15 +3,16 @@ $ErrorActionPreference = "Stop"
 $Root = Split-Path -Parent $PSScriptRoot
 $PythonVersion = "3.12.4"
 $PythonTag = "312"
-$PackageName = "pyJianYingDraft"
+$PackageNames = @("pyJianYingDraft", "yt-dlp", "faster-whisper", "playwright", "httpx", "imageio-ffmpeg")
 $PipIndexUrl = "https://pypi.org/simple"
-$RuntimeId = "python-$PythonVersion-$PackageName-isolated-v1"
+$RuntimeId = "python-$PythonVersion-storybound-media-runtime-v2"
 $VendorDir = Join-Path $Root "vendor\python"
 $CacheDir = Join-Path $Root ".cache\python-runtime"
 $ZipPath = Join-Path $CacheDir "python-$PythonVersion-embed-amd64.zip"
 $GetPipPath = Join-Path $CacheDir "get-pip.py"
 $ReadyFile = Join-Path $VendorDir ".storybound-python-runtime"
 $PythonExe = Join-Path $VendorDir "python.exe"
+$PlaywrightBrowsersPath = Join-Path $VendorDir "playwright-browsers"
 
 function Assert-UnderRoot([string]$Path) {
   $rootFull = [System.IO.Path]::GetFullPath($Root).TrimEnd('\') + '\'
@@ -30,7 +31,7 @@ function Test-RuntimeReady {
     return $false
   }
   try {
-    & $PythonExe -c "import pyJianYingDraft; print('pyJianYingDraft ready')" | Out-Null
+    & $PythonExe -c "import pyJianYingDraft, faster_whisper, playwright, httpx, yt_dlp, imageio_ffmpeg; print('storybound media runtime ready')" | Out-Null
     return $LASTEXITCODE -eq 0
   } catch {
     return $false
@@ -71,6 +72,7 @@ if (Test-Path -LiteralPath $PthPath) {
 
 $env:PYTHONNOUSERSITE = "1"
 $env:PYTHONPATH = ""
+$env:PLAYWRIGHT_BROWSERS_PATH = $PlaywrightBrowsersPath
 
 if (!(Test-Path -LiteralPath $GetPipPath)) {
   Write-Host "[python-runtime] Downloading get-pip.py"
@@ -81,18 +83,20 @@ Write-Host "[python-runtime] Installing pip"
 & $PythonExe $GetPipPath --no-warn-script-location --index-url $PipIndexUrl
 if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 
-Write-Host "[python-runtime] Installing $PackageName"
+Write-Host "[python-runtime] Installing Python packages"
 & $PythonExe -m pip install --no-warn-script-location --upgrade pip --index-url $PipIndexUrl
 if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-& $PythonExe -m pip install --no-warn-script-location $PackageName --index-url $PipIndexUrl
+& $PythonExe -m pip install --no-warn-script-location @PackageNames --index-url $PipIndexUrl
+if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+& $PythonExe -m playwright install chromium
 if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 
 if (Test-Path -LiteralPath $PthPath) {
   Set-Content -LiteralPath $PthPath -Value "python$PythonTag.zip`r`n.`r`nLib\site-packages" -Encoding ASCII
 }
 
-& $PythonExe -c "import pyJianYingDraft; print('pyJianYingDraft ready')"
+& $PythonExe -c "import pyJianYingDraft, faster_whisper, playwright, httpx, yt_dlp, imageio_ffmpeg; print('storybound media runtime ready')"
 if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 
-Set-Content -LiteralPath $ReadyFile -Value "runtime=$RuntimeId`npython=$PythonVersion`npackage=$PackageName" -Encoding ASCII
+Set-Content -LiteralPath $ReadyFile -Value "runtime=$RuntimeId`npython=$PythonVersion`npackages=$($PackageNames -join ',')" -Encoding ASCII
 Write-Host "[python-runtime] Ready: $VendorDir"

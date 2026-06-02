@@ -10,6 +10,7 @@ describe('windows packaging', () => {
       build?: Record<string, unknown>;
     };
     const packageScript = await readFile(new URL('../scripts/package-win.ps1', import.meta.url), 'utf8');
+    const pythonRuntimeScript = await readFile(new URL('../scripts/prepare-python-runtime.ps1', import.meta.url), 'utf8');
     const deps = { ...(pkg.dependencies ?? {}), ...(pkg.devDependencies ?? {}) };
 
     expect(pkg.scripts['package:win']).toContain('scripts/package-win.ps1');
@@ -29,5 +30,9 @@ describe('windows packaging', () => {
     expect(packageScript).toContain('Storybound-Replica-Portable-${Version}.zip');
     expect(packageScript).toContain('release\\Storybound-Replica-Portable');
     expect(packageScript).toContain('node --check');
+    for (const dependency of ['pyJianYingDraft', 'yt-dlp', 'faster-whisper', 'playwright', 'httpx', 'imageio-ffmpeg']) {
+      expect(pythonRuntimeScript).toContain(dependency);
+    }
+    expect(pythonRuntimeScript).toContain('playwright install chromium');
   });
 });

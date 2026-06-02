@@ -7,6 +7,7 @@ import type {
   ConfigTestResult,
   ConfigTestTarget,
   CreateTaskInput,
+  CreateViralAnalysisInput,
   CustomStyle,
   CustomStyleGenerateInput,
   DraftTemplate,
@@ -23,6 +24,9 @@ import type {
   TaskArtifactSnapshot,
   TaskStatus,
   UiPreferences,
+  ViralAnalysisResult,
+  ViralAnalysisStatus,
+  ViralProductionTaskOptions,
   VolcengineSpeakerListRequest,
   VolcengineSpeakerListResult,
 } from './shared/types';
@@ -49,6 +53,11 @@ declare global {
       saveActivation: (activation: ActivationState) => Promise<AppState>;
       saveUiPreferences: (ui: UiPreferences) => Promise<AppState>;
       createAndRunTask: (input: CreateTaskInput) => Promise<AppState>;
+      createAndRunViralAnalysis: (input: CreateViralAnalysisInput) => Promise<AppState>;
+      updateViralAnalysisStatus: (id: string, status: ViralAnalysisStatus) => Promise<AppState>;
+      retryViralAnalysis: (id: string) => Promise<AppState>;
+      getViralAnalysisResult: (id: string) => Promise<ViralAnalysisResult>;
+      createProductionTaskFromViral: (id: string, options?: ViralProductionTaskOptions) => Promise<AppState>;
       updateTaskStatus: (id: string, status: TaskStatus) => Promise<AppState>;
       retryTask: (id: string) => Promise<AppState>;
       regenerateTaskImage: (id: string, sceneId: number) => Promise<AppState>;

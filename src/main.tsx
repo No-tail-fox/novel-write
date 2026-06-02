@@ -8,6 +8,7 @@ import {
   Copy,
   Database,
   FileJson,
+  Flame,
   FlaskConical,
   FolderOpen,
   History,
@@ -42,6 +43,7 @@ import type {
   AppState,
   ConfigTestTarget,
   CreateTaskInput,
+  CreateViralAnalysisInput,
   CustomStyle,
   DraftTemplate,
   ImageLabGenerateInput,
@@ -64,6 +66,9 @@ import type {
   TtsProviderProfile,
   UiPreferences,
   VolcengineSpeaker,
+  ViralAnalysisResult,
+  ViralAnalysisStatus,
+  ViralPlatform,
 } from './shared/types';
 import { configTargetStatus, normalizeAppConfig, validateConfigTarget } from './shared/config-utils';
 import {
@@ -127,6 +132,8 @@ const initialState: AppState = {
   config: defaultConfig,
   tasks: [],
   events: [],
+  viralAnalyses: [],
+  viralEvents: [],
   promptTemplates: defaultPromptTemplates,
   draftTemplates: builtinDraftTemplates,
   imageLabRecords: [],
@@ -143,6 +150,7 @@ const navItems: Array<{ view: ShellView; label: string; hint: string; icon: Reac
   { view: 'queue', label: '任务队列', hint: '运行进度', icon: ListChecks },
   { view: 'history', label: '历史任务', hint: '本地记录', icon: History },
   { view: 'image-lab', label: '画图实验室', hint: '分镜图片', icon: FlaskConical },
+  { view: 'viral-analyzer', label: '爆款拆解', hint: '拉片复刻', icon: Flame },
   { view: 'prompt-templates', label: '提示词模板', hint: '代理提示词', icon: Sparkles },
   { view: 'draft-templates', label: '草稿模板', hint: '剪映画布', icon: LayoutTemplate },
   { view: 'settings', label: '系统设置', hint: 'API 与路径', icon: Settings },
@@ -474,6 +482,61 @@ function makeFallbackApi(setState: (state: AppState) => void): StoryboundApi {
       ];
       return persist({ ...state, tasks: [task, ...state.tasks], events: [...state.events, ...events] });
     },
+    async createAndRunViralAnalysis(input: CreateViralAnalysisInput) {
+      const state = read();
+      const now = new Date().toISOString();
+      const id = crypto.randomUUID();
+      return persist({
+        ...state,
+        viralAnalyses: [
+          {
+            id,
+            url: input.url,
+            platform: input.platform ?? detectBrowserViralPlatform(input.url),
+            title: input.title ?? input.url,
+            status: 'paused',
+            currentStage: 'failed',
+            progress: 0,
+            settings: input.settings,
+            resultPath: '',
+            videoPath: '',
+            errorMessage: 'Browser preview cannot run viral video analysis. Start the Electron app to download and process videos.',
+            createdAt: now,
+            startedAt: now,
+            completedAt: null,
+            lastHeartbeatAt: now,
+          },
+          ...state.viralAnalyses,
+        ],
+        viralEvents: [
+          ...state.viralEvents,
+          {
+            analysisId: id,
+            type: 'error',
+            stage: 'failed',
+            detail: 'Browser preview cannot run viral video analysis. Start the Electron app to download and process videos.',
+            dataJson: null,
+            ts: Date.now(),
+          },
+        ],
+      });
+    },
+    async updateViralAnalysisStatus(id: string, status: ViralAnalysisStatus) {
+      const state = read();
+      return persist({ ...state, viralAnalyses: state.viralAnalyses.map((item) => (item.id === id ? { ...item, status } : item)) });
+    },
+    async retryViralAnalysis(id: string) {
+      const state = read();
+      return persist({ ...state, viralAnalyses: state.viralAnalyses.map((item) => (item.id === id ? { ...item, status: 'pending', errorMessage: '' } : item)) });
+    },
+    async getViralAnalysisResult(id: string): Promise<ViralAnalysisResult> {
+      const state = read();
+      const record = state.viralAnalyses.find((item) => item.id === id);
+      throw new Error(`Viral analysis result is not available in browser preview: ${record?.title ?? id}`);
+    },
+    async createProductionTaskFromViral(id: string) {
+      throw new Error(`Viral recreation is not available in browser preview: ${id}`);
+    },
     async updateTaskStatus(id: string, status: TaskStatus) {
       const state = read();
       return persist({ ...state, tasks: state.tasks.map((task) => (task.id === id ? { ...task, status, errorMessage: status === 'cancelled' ? '用户取消' : task.errorMessage } : task)) });
@@ -687,6 +750,7 @@ function App() {
           {activeView === 'history' ? <HistoryPage api={api} state={state} openTaskDetail={openTaskDetail} /> : null}
           {activeView === 'task-detail' ? <TaskDetailPage api={api} state={state} task={selectedTask} applyState={applyState} close={() => navigate('history')} isBrowserPreview={isBrowserPreview} /> : null}
           {activeView === 'image-lab' ? <ImageLabPage api={api} state={state} applyState={applyState} /> : null}
+          {activeView === 'viral-analyzer' ? <ViralAnalyzerPage api={api} state={state} applyState={applyState} openTaskDetail={openTaskDetail} isBrowserPreview={isBrowserPreview} /> : null}
           {activeView === 'prompt-templates' ? <PromptTemplatesPage api={api} state={state} applyState={applyState} /> : null}
           {activeView === 'draft-templates' ? <DraftTemplatesPage api={api} state={state} applyState={applyState} /> : null}
           {activeView === 'settings' ? <SettingsPage api={api} state={state} applyState={applyState} /> : null}
@@ -696,6 +760,258 @@ function App() {
       </div>
     </main>
   );
+}
+
+function ViralAnalyzerPage({
+  api,
+  state,
+  applyState,
+  openTaskDetail,
+  isBrowserPreview,
+}: {
+  api: StoryboundApi;
+  state: AppState;
+  applyState: (state: AppState) => void;
+  openTaskDetail: (taskId: string) => void;
+  isBrowserPreview: boolean;
+}) {
+  const [url, setUrl] = useState('');
+  const [platform, setPlatform] = useState<ViralPlatform>('unknown');
+  const [track, setTrack] = useState('ecommerce');
+  const [style, setStyle] = useState('photo-real');
+  const [ratio, setRatio] = useState('9:16');
+  const [templateId, setTemplateId] = useState('default-portrait-9-16');
+  const [cookieFilePath, setCookieFilePath] = useState(state.config.viral.cookieFilePath);
+  const [selectedId, setSelectedId] = useState(state.viralAnalyses[0]?.id ?? '');
+  const [result, setResult] = useState<ViralAnalysisResult | null>(null);
+  const [message, setMessage] = useState('');
+  const selected = state.viralAnalyses.find((item) => item.id === selectedId) ?? state.viralAnalyses[0] ?? null;
+  const selectedEvents = selected ? state.viralEvents.filter((event) => event.analysisId === selected.id) : [];
+
+  useEffect(() => {
+    if (!selectedId && state.viralAnalyses[0]) setSelectedId(state.viralAnalyses[0].id);
+  }, [selectedId, state.viralAnalyses]);
+
+  useEffect(() => {
+    let cancelled = false;
+    if (!selected || selected.status !== 'completed') {
+      setResult(null);
+      return;
+    }
+    api.getViralAnalysisResult(selected.id)
+      .then((next) => {
+        if (!cancelled) setResult(next);
+      })
+      .catch((error) => {
+        if (!cancelled) setMessage(error instanceof Error ? error.message : String(error));
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [api, selected?.id, selected?.status]);
+
+  function handleUrlChange(value: string) {
+    setUrl(value);
+    setPlatform(detectBrowserViralPlatform(value));
+  }
+
+  async function startAnalysis() {
+    if (!url.trim()) {
+      setMessage('请输入抖音、快手或 B 站公开视频链接');
+      return;
+    }
+    setMessage('');
+    if (cookieFilePath !== state.config.viral.cookieFilePath) {
+      const nextState = await api.saveConfig({
+        ...state.config,
+        viral: {
+          ...state.config.viral,
+          cookieFilePath: cookieFilePath.trim(),
+        },
+      });
+      applyState(nextState);
+    }
+    const next = await api.createAndRunViralAnalysis({
+      url: url.trim(),
+      platform,
+      settings: { track, style, ratio, templateId, storyboardSceneCount: 12 },
+    });
+    applyState(next);
+    setSelectedId(next.viralAnalyses[0]?.id ?? '');
+  }
+
+  async function createProductionTask() {
+    if (!selected) return;
+    const next = await api.createProductionTaskFromViral(selected.id, {
+      track,
+      style,
+      ratio,
+      templateId,
+      storyboardSceneCount: result?.recreation.taskDefaults.storyboardSceneCount ?? 12,
+    });
+    applyState(next);
+    if (next.tasks[0]) openTaskDetail(next.tasks[0].id);
+  }
+
+  return (
+    <div className="viral-analyzer-layout">
+      <section className="panel viral-input-panel">
+        <div className="panel-title-row">
+          <div>
+            <h2>爆款拆解</h2>
+            <p>支持抖音、快手、B站链接，拆解开头、结构、结尾、爆点。</p>
+          </div>
+          <Flame size={20} />
+        </div>
+        <label className="field-label" htmlFor="viral-url-input">视频链接</label>
+        <input id="viral-url-input" className="text-input viral-url-input" value={url} onChange={(event) => handleUrlChange(event.target.value)} placeholder="https://www.douyin.com/video/..." />
+        <div className="segmented viral-platform-picker">
+          {(['unknown', 'douyin', 'kuaishou', 'bilibili'] as ViralPlatform[]).map((item) => (
+            <button key={item} className={platform === item ? 'active' : ''} onClick={() => setPlatform(item)}>
+              {viralPlatformLabel(item)}
+            </button>
+          ))}
+        </div>
+        <div className="viral-settings-grid">
+          <label>
+            赛道
+            <select value={track} onChange={(event) => setTrack(event.target.value)}>
+              {contentTracks.map(([id, label]) => <option key={id} value={id}>{label}</option>)}
+            </select>
+          </label>
+          <label>
+            风格
+            <select value={style} onChange={(event) => setStyle(event.target.value)}>
+              {styleOptions.map(([id, label]) => <option key={id} value={id}>{label}</option>)}
+            </select>
+          </label>
+          <label>
+            比例
+            <select value={ratio} onChange={(event) => setRatio(event.target.value)}>
+              {ratioOptions.map((item) => <option key={item} value={item}>{item}</option>)}
+            </select>
+          </label>
+          <label>
+            草稿模板
+            <select value={templateId} onChange={(event) => setTemplateId(event.target.value)}>
+              {state.draftTemplates.map((template) => <option key={template.id} value={template.id}>{template.name}</option>)}
+            </select>
+          </label>
+        </div>
+        <label className="field-label" htmlFor="viral-cookie-input">Cookie 文件路径</label>
+        <input
+          id="viral-cookie-input"
+          className="text-input"
+          value={cookieFilePath}
+          onChange={(event) => setCookieFilePath(event.target.value)}
+          placeholder="C:\\Users\\you\\Downloads\\douyin-cookies.txt"
+        />
+        <p className="muted-text">抖音/B站提示需要 cookies 时，填写 Netscape cookies.txt 文件路径。</p>
+        <button className="primary-action" disabled={isBrowserPreview && false} onClick={startAnalysis}>
+          <Search size={16} />
+          开始拆解
+        </button>
+        {message ? <div className="test-result">{message}</div> : null}
+      </section>
+
+      <section className="panel viral-history-panel">
+        <h3>历史拆解</h3>
+        <div className="viral-history-list">
+          {state.viralAnalyses.map((item) => (
+            <button key={item.id} className={selected?.id === item.id ? 'viral-history-item active' : 'viral-history-item'} onClick={() => setSelectedId(item.id)}>
+              <strong>{item.title || item.url}</strong>
+              <span>{viralPlatformLabel(item.platform)} · {viralStatusLabel(item.status)} · {(item.progress * 100).toFixed(0)}%</span>
+            </button>
+          ))}
+          {state.viralAnalyses.length === 0 ? <p className="muted-text">暂无拆解任务</p> : null}
+        </div>
+      </section>
+
+      <section className="panel viral-progress-panel">
+        <h3>任务进度</h3>
+        <div className="viral-progress-list">
+          {viralStages.map((stage) => (
+            <div key={stage} className={selected?.currentStage === stage ? 'viral-progress-step active' : 'viral-progress-step'}>
+              <span>{viralStageLabel(stage)}</span>
+              <small>{selectedEvents.find((event) => event.stage === stage)?.detail ?? '等待中'}</small>
+            </div>
+          ))}
+        </div>
+        {selected?.errorMessage ? <ErrorSummaryButton title="拆解错误" fullMessage={selected.errorMessage} /> : null}
+      </section>
+
+      <section className="panel viral-report-panel">
+        <div className="panel-title-row">
+          <h3>拆解报告</h3>
+          {selected?.status === 'failed' || selected?.status === 'cancelled' ? <button onClick={() => selected && api.retryViralAnalysis(selected.id).then(applyState)}><RotateCcw size={14} />重试</button> : null}
+        </div>
+        {result ? <ViralReport result={result} createProductionTask={createProductionTask} /> : <p className="muted-text">任务完成后显示开头、结构、结尾、爆点和复刻方案。</p>}
+      </section>
+    </div>
+  );
+}
+
+const viralStages = ['downloading', 'extracting', 'transcribing', 'analyzing_frames', 'breaking_down', 'recreating', 'completed'];
+
+function ViralReport({ result, createProductionTask }: { result: ViralAnalysisResult; createProductionTask: () => void }) {
+  const breakdown = result.contentBreakdown;
+  return (
+    <>
+      <div className="viral-report-grid">
+        <ViralReportCard title="开头" value={breakdown.opening.type} detail={breakdown.opening.analysis} />
+        <ViralReportCard title="结构" value={breakdown.structure.type} detail={breakdown.structure.analysis} />
+        <ViralReportCard title="结尾" value={breakdown.ending.type} detail={breakdown.ending.analysis} />
+        <ViralReportCard title="爆点" value={breakdown.viralPoint.summary} detail={breakdown.viralPoint.reusablePattern} />
+      </div>
+      <div className="viral-recreation-panel">
+        <h3>复刻功能</h3>
+        <p>{result.recreation.blueprint}</p>
+        <textarea className="small-textarea" value={result.recreation.script} readOnly />
+        <button className="primary-action viral-create-production-task" onClick={createProductionTask}>
+          <Wand2 size={16} />
+          一键复刻成片任务
+        </button>
+      </div>
+    </>
+  );
+}
+
+function ViralReportCard({ title, value, detail }: { title: string; value: string; detail: string }) {
+  return (
+    <article className="viral-report-card">
+      <span>{title}</span>
+      <strong>{value}</strong>
+      <p>{detail}</p>
+    </article>
+  );
+}
+
+function viralPlatformLabel(platform: ViralPlatform): string {
+  return { douyin: '抖音', kuaishou: '快手', bilibili: 'B站', unknown: '自动识别' }[platform];
+}
+
+function detectBrowserViralPlatform(url: string): ViralPlatform {
+  const normalized = url.toLowerCase();
+  if (/douyin\.com|iesdouyin\.com|amemv\.com/.test(normalized)) return 'douyin';
+  if (/kuaishou\.com|gifshow\.com|kwai\.com/.test(normalized)) return 'kuaishou';
+  if (/bilibili\.com|b23\.tv/.test(normalized)) return 'bilibili';
+  return 'unknown';
+}
+
+function viralStatusLabel(status: ViralAnalysisStatus): string {
+  return { pending: '等待', running: '运行中', paused: '暂停', completed: '已完成', failed: '失败', cancelled: '已取消' }[status];
+}
+
+function viralStageLabel(stage: string): string {
+  return {
+    downloading: '下载视频',
+    extracting: '抽帧提音频',
+    transcribing: '语音转写',
+    analyzing_frames: '画面分析',
+    breaking_down: '内容拆解',
+    recreating: '复刻生成',
+    completed: '完成',
+  }[stage] ?? stage;
 }
 
 function NewTaskPage({
@@ -4445,6 +4761,7 @@ function pageSubtitle(view: ShellView): string {
     history: '按时间浏览已完成、失败、取消和草稿任务',
     'task-detail': '查看单个任务的独立执行状态和流水线',
     'image-lab': '单独测试文生图、图像参考和分镜图片提示词',
+    'viral-analyzer': '拆解爆款短视频的开头、结构、结尾和爆点',
     'prompt-templates': '管理系统模板、克隆、导入 JSON 和本地编辑',
     'draft-templates': '调整画布、图片区域、字幕、免责声明和音频参数',
     settings: '配置 API 凭证、本地路径、TTS、IMA 与诊断',

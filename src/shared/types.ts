@@ -6,6 +6,7 @@ export type ShellView =
   | 'history'
   | 'task-detail'
   | 'image-lab'
+  | 'viral-analyzer'
   | 'prompt-templates'
   | 'draft-templates'
   | 'settings'
@@ -209,6 +210,28 @@ export interface ImaConfig {
   kbName: string;
 }
 
+export type ViralPlatform = 'douyin' | 'kuaishou' | 'bilibili' | 'unknown';
+export type ViralAnalysisStatus = 'pending' | 'running' | 'paused' | 'completed' | 'failed' | 'cancelled';
+export type ViralAnalysisStage =
+  | 'queued'
+  | 'downloading'
+  | 'extracting'
+  | 'transcribing'
+  | 'analyzing_frames'
+  | 'breaking_down'
+  | 'recreating'
+  | 'completed'
+  | 'failed';
+
+export interface ViralAnalyzerConfig {
+  cookieFilePath: string;
+  frameIntervalSeconds: number;
+  maxFrames: number;
+  whisperModel: string;
+  downloadTimeoutMs: number;
+  vision: LlmConfig;
+}
+
 export interface AppConfig {
   llm: LlmConfig;
   llmProfiles: LlmConfig[];
@@ -225,6 +248,7 @@ export interface AppConfig {
   activeTtsProfileId: string;
   jianying: JianyingConfig;
   ima: ImaConfig;
+  viral: ViralAnalyzerConfig;
   ui: {
     theme: ThemeName;
   };
@@ -477,6 +501,159 @@ export interface ResearchCopyComposeResult {
   requestId: string | null;
 }
 
+export interface ViralAnalysisSettings {
+  track: string;
+  style: string;
+  ratio: string;
+  templateId: string;
+  storyboardSceneCount?: number;
+  extraRequirements?: string;
+}
+
+export interface CreateViralAnalysisInput {
+  url: string;
+  platform?: ViralPlatform;
+  title?: string;
+  settings: ViralAnalysisSettings;
+}
+
+export interface ViralAnalysisRecord {
+  id: string;
+  url: string;
+  platform: ViralPlatform;
+  title: string;
+  status: ViralAnalysisStatus;
+  currentStage: ViralAnalysisStage;
+  progress: number;
+  settings: ViralAnalysisSettings;
+  resultPath: string;
+  videoPath: string;
+  errorMessage: string;
+  createdAt: string;
+  startedAt: string | null;
+  completedAt: string | null;
+  lastHeartbeatAt: string | null;
+}
+
+export interface ViralAnalysisEvent {
+  id?: string;
+  seq?: number;
+  analysisId: string;
+  type: string;
+  stage: ViralAnalysisStage | string;
+  detail: string;
+  dataJson: string | null;
+  ts: number;
+}
+
+export interface ViralVideoSource {
+  platform: ViralPlatform;
+  url: string;
+  videoPath: string;
+  coverPath: string;
+  title: string;
+  author: string;
+  duration: number;
+  stats: {
+    likes: number | null;
+    comments: number | null;
+    shares: number | null;
+  };
+}
+
+export interface ViralTranscriptWord {
+  word: string;
+  start: number;
+  end: number;
+}
+
+export interface ViralTranscriptSegment {
+  text: string;
+  start: number;
+  end: number;
+  words: ViralTranscriptWord[];
+}
+
+export interface ViralFrameAnalysis {
+  timestamp: number;
+  framePath: string;
+  shotType: string;
+  cameraMovement: string;
+  composition: string;
+  transition: string;
+  textOverlay: string | null;
+  visualDescription: string;
+  mood: string;
+  keyElements: string[];
+}
+
+export interface ViralContentBreakdown {
+  topic: string;
+  title: {
+    original: string;
+    pattern: string;
+    suggestions: string[];
+  };
+  cover: {
+    observed: string;
+    pattern: string;
+    suggestions: string[];
+  };
+  opening: {
+    type: '开门见山' | '引用金句' | '亮点前置' | '抛出观点' | string;
+    analysis: string;
+    reusablePattern: string;
+  };
+  structure: {
+    type: '总分结构' | '递进结构' | '平行结构' | string;
+    analysis: string;
+    outline: string[];
+  };
+  ending: {
+    type: '总结型结尾' | '引导型结尾' | '预告型结尾' | string;
+    analysis: string;
+    reusablePattern: string;
+  };
+  viralPoint: {
+    summary: string;
+    evidence: string[];
+    reusablePattern: string;
+  };
+}
+
+export interface ViralRecreationDraft {
+  blueprint: string;
+  openingOptions: string[];
+  titleOptions: string[];
+  coverIdeas: string[];
+  script: string;
+  storyboardHints: string[];
+  taskDefaults: {
+    track: string;
+    style: string;
+    ratio: string;
+    storyboardSceneCount: number;
+  };
+}
+
+export interface ViralAnalysisResult {
+  source: ViralVideoSource;
+  transcript: ViralTranscriptSegment[];
+  frames: ViralFrameAnalysis[];
+  contentBreakdown: ViralContentBreakdown;
+  recreation: ViralRecreationDraft;
+  createdAt: string;
+}
+
+export interface ViralProductionTaskOptions {
+  title?: string;
+  track?: string;
+  style?: string;
+  ratio?: string;
+  templateId?: string;
+  storyboardSceneCount?: number;
+}
+
 export interface PipelineArtifact {
   reviewedText: string;
   rewrittenCopy: string;
@@ -612,6 +789,8 @@ export interface AppState {
   config: AppConfig;
   tasks: Task[];
   events: TaskEvent[];
+  viralAnalyses: ViralAnalysisRecord[];
+  viralEvents: ViralAnalysisEvent[];
   promptTemplates: PromptTemplate[];
   draftTemplates: DraftTemplate[];
   imageLabRecords: ImageLabRecord[];

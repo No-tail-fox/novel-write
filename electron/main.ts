@@ -17,7 +17,9 @@ import { composeCopyFromSources, createAiSourceResearcher, searchWebSources } fr
 import { runTask } from '../src/shared/runner';
 import { FileDatabase } from '../src/shared/storage';
 import { createTaskRuntimeProviders } from '../src/shared/task-runtime-providers';
-import type { AccountProfile, ActivationState, AppConfig, ConfigTestTarget, CreateTaskInput, CustomStyle, CustomStyleGenerateInput, DraftTemplate, ImageLabGenerateInput, LlmConfig, PromptTemplate, ProviderModelListRequest, ResearchCopyComposeInput, Task, TaskStatus, UiPreferences, VolcengineSpeakerListRequest } from '../src/shared/types';
+import type { AccountProfile, ActivationState, AppConfig, ConfigTestTarget, CreateTaskInput, CreateViralAnalysisInput, CustomStyle, CustomStyleGenerateInput, DraftTemplate, ImageLabGenerateInput, LlmConfig, PromptTemplate, ProviderModelListRequest, ResearchCopyComposeInput, Task, TaskStatus, UiPreferences, ViralAnalysisRecord, ViralAnalysisStatus, ViralProductionTaskOptions, VolcengineSpeakerListRequest } from '../src/shared/types';
+import { createViralProductionTaskInput, detectViralPlatform, runViralAnalysis } from '../src/shared/viral-analysis';
+import { createViralRuntimeProviders } from '../src/shared/viral-runtime';
 import { listVolcengineSpeakers } from '../src/shared/volcengine-speakers';
 import { getRendererIndexPath } from './paths';
 
@@ -31,6 +33,7 @@ interface RunningTaskRun {
 }
 
 const runningTasks = new Map<string, RunningTaskRun>();
+const runningViralAnalyses = new Map<string, AbortController>();
 const staleRunningMs = 5 * 60 * 1000;
 
 async function getDb(): Promise<FileDatabase> {
@@ -83,6 +86,10 @@ function notifyTaskState(database: FileDatabase): void {
 
 function taskWorkDir(task: Task): string {
   return join(app.getPath('userData'), 'storybound-replica', 'tasks', task.id);
+}
+
+function viralAnalysisWorkDir(record: Pick<ViralAnalysisRecord, 'id'>): string {
+  return join(app.getPath('userData'), 'storybound-replica', 'viral-analyses', record.id);
 }
 
 function imageLabWorkDir(id: string): string {
@@ -178,6 +185,90 @@ async function resumeTaskRun(database: FileDatabase, task: Task): Promise<void> 
   }
   await database.updateTask(task.id, { status: 'pending', errorMessage: '' });
   startTaskRun(database, { ...task, status: 'pending', errorMessage: '' });
+}
+
+function startViralAnalysisRun(database: FileDatabase, record: ViralAnalysisRecord): boolean {
+  if (runningViralAnalyses.has(record.id)) return false;
+  const controller = new AbortController();
+  runningViralAnalyses.set(record.id, controller);
+  void (async () => {
+    const startedAt = new Date().toISOString();
+    try {
+      const state = await database.getState();
+      await database.updateViralAnalysis(record.id, {
+        status: 'running',
+        currentStage: 'downloading',
+        progress: 0.05,
+        errorMessage: '',
+        startedAt,
+        lastHeartbeatAt: startedAt,
+      });
+      const completed = await runViralAnalysis(record, {
+        workDir: viralAnalysisWorkDir(record),
+        signal: controller.signal,
+        ...createViralRuntimeProviders(state.config, viralAnalysisWorkDir(record)),
+        emit: async (event) => {
+          await database.addViralAnalysisEvent(record.id, {
+            type: event.type,
+            stage: event.stage,
+            detail: event.detail,
+            dataJson: event.data === undefined ? null : JSON.stringify(event.data),
+          });
+          const patch: Parameters<FileDatabase['updateViralAnalysis']>[1] = {
+            currentStage: event.stage as ViralAnalysisRecord['currentStage'],
+            lastHeartbeatAt: new Date().toISOString(),
+          };
+          if (typeof event.progress === 'number') patch.progress = event.progress;
+          await database.updateViralAnalysis(record.id, {
+            ...patch,
+          });
+          await sendTaskState(database);
+        },
+      });
+      const completedAt = new Date().toISOString();
+      await database.updateViralAnalysis(record.id, {
+        status: 'completed',
+        currentStage: 'completed',
+        progress: 1,
+        resultPath: completed.resultPath,
+        videoPath: completed.videoPath,
+        title: completed.result.source.title || record.title,
+        completedAt,
+        lastHeartbeatAt: completedAt,
+      });
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      const cancelled = controller.signal.aborted || /abort|cancel|取消/i.test(message);
+      await database.addViralAnalysisEvent(record.id, {
+        type: 'error',
+        stage: cancelled ? 'failed' : 'failed',
+        detail: message,
+      });
+      await database.updateViralAnalysis(record.id, {
+        status: cancelled ? 'cancelled' : 'failed',
+        currentStage: 'failed',
+        errorMessage: message,
+        lastHeartbeatAt: new Date().toISOString(),
+      });
+    } finally {
+      runningViralAnalyses.delete(record.id);
+      await sendTaskState(database);
+    }
+  })();
+  return true;
+}
+
+async function resumeViralAnalysisRun(database: FileDatabase, record: ViralAnalysisRecord): Promise<void> {
+  runningViralAnalyses.get(record.id)?.abort('用户重试');
+  await database.updateViralAnalysis(record.id, {
+    status: 'pending',
+    currentStage: 'queued',
+    progress: 0,
+    errorMessage: '',
+    completedAt: null,
+    lastHeartbeatAt: new Date().toISOString(),
+  });
+  startViralAnalysisRun(database, { ...record, status: 'pending', currentStage: 'queued', progress: 0, errorMessage: '' });
 }
 
 ipcMain.handle('window:control', async (_event, action: 'minimize' | 'toggle-maximize' | 'close') => {
@@ -322,6 +413,64 @@ ipcMain.handle('ui:save-preferences', async (_event, ui: UiPreferences) => {
 ipcMain.handle('task:create-and-run', async (_event, input: CreateTaskInput) => {
   const database = await getDb();
   const task = await database.createTask(input);
+  startTaskRun(database, task);
+  return database.getState();
+});
+
+ipcMain.handle('viral:create-and-run', async (_event, input: CreateViralAnalysisInput) => {
+  const database = await getDb();
+  const record = await database.createViralAnalysis({
+    ...input,
+    platform: input.platform && input.platform !== 'unknown' ? input.platform : detectViralPlatform(input.url),
+  });
+  startViralAnalysisRun(database, record);
+  return database.getState();
+});
+
+ipcMain.handle('viral:update-status', async (_event, input: { id: string; status: ViralAnalysisStatus }) => {
+  const database = await getDb();
+  const state = await database.getState();
+  const record = state.viralAnalyses.find((item) => item.id === input.id);
+  if (!record) return state;
+  if (input.status === 'running') {
+    await resumeViralAnalysisRun(database, record);
+    return database.getState();
+  }
+  if (input.status === 'paused' || input.status === 'cancelled') {
+    runningViralAnalyses.get(input.id)?.abort(input.status === 'cancelled' ? '用户取消' : '用户暂停');
+    await database.updateViralAnalysis(input.id, {
+      status: input.status,
+      errorMessage: input.status === 'cancelled' ? '用户取消' : record.errorMessage,
+      lastHeartbeatAt: new Date().toISOString(),
+    });
+  }
+  return database.getState();
+});
+
+ipcMain.handle('viral:retry', async (_event, id: string) => {
+  const database = await getDb();
+  const state = await database.getState();
+  const record = state.viralAnalyses.find((item) => item.id === id);
+  if (record) await resumeViralAnalysisRun(database, record);
+  return database.getState();
+});
+
+ipcMain.handle('viral:get-result', async (_event, id: string) => {
+  const database = await getDb();
+  const state = await database.getState();
+  const record = state.viralAnalyses.find((item) => item.id === id);
+  if (!record?.resultPath) throw new Error(`Viral analysis result is not available: ${id}`);
+  return JSON.parse(await readFile(record.resultPath, 'utf8'));
+});
+
+ipcMain.handle('viral:create-production-task', async (_event, input: { id: string; options?: ViralProductionTaskOptions }) => {
+  const database = await getDb();
+  const state = await database.getState();
+  const record = state.viralAnalyses.find((item) => item.id === input.id);
+  if (!record?.resultPath) throw new Error(`Viral analysis result is not available: ${input.id}`);
+  const result = JSON.parse(await readFile(record.resultPath, 'utf8'));
+  const taskInput = createViralProductionTaskInput(result, input.options);
+  const task = await database.createTask(taskInput);
   startTaskRun(database, task);
   return database.getState();
 });

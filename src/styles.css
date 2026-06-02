@@ -2569,6 +2569,140 @@ textarea {
   animation: spin 1s linear infinite;
 }
 
+.viral-analyzer-layout {
+  display: grid;
+  grid-template-columns: minmax(340px, 0.9fr) minmax(420px, 1.1fr);
+  grid-template-areas:
+    "input report"
+    "history report"
+    "progress report";
+  gap: 16px;
+  min-height: 0;
+  overflow: auto;
+  padding: 20px 26px;
+}
+
+.viral-input-panel {
+  grid-area: input;
+}
+
+.viral-history-panel {
+  grid-area: history;
+}
+
+.viral-progress-panel {
+  grid-area: progress;
+}
+
+.viral-report-panel {
+  grid-area: report;
+  min-width: 0;
+}
+
+.viral-url-input {
+  width: 100%;
+}
+
+.viral-platform-picker {
+  margin: 12px 0;
+}
+
+.viral-settings-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+  margin: 14px 0;
+}
+
+.viral-settings-grid label {
+  color: var(--muted);
+  display: grid;
+  font-size: 12px;
+  gap: 6px;
+}
+
+.viral-settings-grid select {
+  background: var(--panel-strong);
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  color: var(--text);
+  min-height: 36px;
+  padding: 0 10px;
+}
+
+.viral-history-list,
+.viral-progress-list {
+  display: grid;
+  gap: 8px;
+}
+
+.viral-history-item,
+.viral-progress-step {
+  background: rgba(255, 255, 255, 0.03);
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  color: var(--text);
+  display: grid;
+  gap: 4px;
+  padding: 10px 12px;
+  text-align: left;
+}
+
+.viral-history-item.active,
+.viral-progress-step.active {
+  border-color: var(--accent);
+}
+
+.viral-history-item span,
+.viral-progress-step small {
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.viral-report-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+}
+
+.viral-report-card {
+  background: rgba(255, 255, 255, 0.035);
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  display: grid;
+  gap: 8px;
+  min-height: 150px;
+  padding: 14px;
+}
+
+.viral-report-card span {
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.viral-report-card strong {
+  font-size: 16px;
+}
+
+.viral-report-card p,
+.viral-recreation-panel p {
+  color: var(--muted);
+  line-height: 1.6;
+  margin: 0;
+}
+
+.viral-recreation-panel {
+  border-top: 1px solid var(--line);
+  display: grid;
+  gap: 12px;
+  margin-top: 16px;
+  padding-top: 16px;
+}
+
+.viral-recreation-panel textarea {
+  min-height: 180px;
+}
+
 @keyframes spin {
   to {
     transform: rotate(360deg);
@@ -2584,6 +2718,7 @@ textarea {
   .two-column,
   .queue-layout,
   .task-detail-shell,
+  .viral-analyzer-layout,
   .mode-grid,
   .option-two-col,
   .advanced-grid,
@@ -2596,6 +2731,14 @@ textarea {
   .prompt-template-advanced-grid,
   .form-grid {
     grid-template-columns: 1fr;
+  }
+
+  .viral-analyzer-layout {
+    grid-template-areas:
+      "input"
+      "history"
+      "progress"
+      "report";
   }
 
   .prompt-template-gallery-toolbar,

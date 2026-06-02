@@ -18,6 +18,10 @@ import type {
   TaskEvent,
   TaskStatus,
   UiPreferences,
+  CreateViralAnalysisInput,
+  ViralAnalysisEvent,
+  ViralAnalysisRecord,
+  ViralAnalysisStage,
 } from './types';
 import { normalizeAppConfig } from './config-utils';
 import {
@@ -38,6 +42,14 @@ interface AddEventInput {
   step?: number | null;
   agent?: string | null;
   tool?: string | null;
+  detail: string;
+  dataJson?: string | null;
+  ts?: number;
+}
+
+interface AddViralEventInput {
+  type: string;
+  stage: ViralAnalysisStage | string;
   detail: string;
   dataJson?: string | null;
   ts?: number;
@@ -197,6 +209,33 @@ export class FileDatabase {
         ts INTEGER NOT NULL
       );
       CREATE INDEX IF NOT EXISTS idx_task_events_task_id ON task_events(task_id, seq);
+      CREATE TABLE IF NOT EXISTS viral_analyses (
+        id TEXT PRIMARY KEY,
+        url TEXT NOT NULL,
+        platform TEXT NOT NULL,
+        title TEXT DEFAULT '',
+        status TEXT NOT NULL,
+        current_stage TEXT NOT NULL,
+        progress REAL DEFAULT 0,
+        settings_json TEXT NOT NULL,
+        result_path TEXT DEFAULT '',
+        video_path TEXT DEFAULT '',
+        error_message TEXT DEFAULT '',
+        created_at TEXT NOT NULL,
+        started_at TEXT,
+        completed_at TEXT,
+        last_heartbeat_at TEXT
+      );
+      CREATE TABLE IF NOT EXISTS viral_analysis_events (
+        seq INTEGER PRIMARY KEY AUTOINCREMENT,
+        analysis_id TEXT NOT NULL,
+        type TEXT NOT NULL,
+        stage TEXT NOT NULL,
+        detail TEXT NOT NULL,
+        data_json TEXT,
+        ts INTEGER NOT NULL
+      );
+      CREATE INDEX IF NOT EXISTS idx_viral_analysis_events_analysis_id ON viral_analysis_events(analysis_id, seq);
       CREATE TABLE IF NOT EXISTS prompt_templates (
         id TEXT PRIMARY KEY,
         name TEXT NOT NULL,
@@ -620,6 +659,102 @@ export class FileDatabase {
     return task;
   }
 
+  async createViralAnalysis(input: CreateViralAnalysisInput): Promise<ViralAnalysisRecord> {
+    const now = new Date().toISOString();
+    const record: ViralAnalysisRecord = {
+      id: randomUUID(),
+      url: input.url.trim(),
+      platform: input.platform ?? 'unknown',
+      title: input.title ?? '',
+      status: 'pending',
+      currentStage: 'queued',
+      progress: 0,
+      settings: input.settings,
+      resultPath: '',
+      videoPath: '',
+      errorMessage: '',
+      createdAt: now,
+      startedAt: null,
+      completedAt: null,
+      lastHeartbeatAt: null,
+    };
+    this.db.run(
+      `INSERT INTO viral_analyses (
+        id, url, platform, title, status, current_stage, progress, settings_json,
+        result_path, video_path, error_message, created_at, started_at, completed_at, last_heartbeat_at
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      [
+        record.id,
+        record.url,
+        record.platform,
+        record.title,
+        record.status,
+        record.currentStage,
+        record.progress,
+        json(record.settings),
+        record.resultPath,
+        record.videoPath,
+        record.errorMessage,
+        record.createdAt,
+        record.startedAt,
+        record.completedAt,
+        record.lastHeartbeatAt,
+      ],
+    );
+    await this.persist();
+    return record;
+  }
+
+  async updateViralAnalysis(
+    id: string,
+    patch: Partial<Pick<ViralAnalysisRecord, 'status' | 'currentStage' | 'progress' | 'title' | 'resultPath' | 'videoPath' | 'errorMessage' | 'startedAt' | 'completedAt' | 'lastHeartbeatAt'>>,
+  ): Promise<void> {
+    const sets: string[] = [];
+    const values: SqlValue[] = [];
+    const map: Record<string, string> = {
+      status: 'status',
+      currentStage: 'current_stage',
+      progress: 'progress',
+      title: 'title',
+      resultPath: 'result_path',
+      videoPath: 'video_path',
+      errorMessage: 'error_message',
+      startedAt: 'started_at',
+      completedAt: 'completed_at',
+      lastHeartbeatAt: 'last_heartbeat_at',
+    };
+    for (const [key, column] of Object.entries(map)) {
+      if (key in patch) {
+        sets.push(`${column} = ?`);
+        const value = patch[key as keyof typeof patch];
+        values.push(value === null || value === undefined ? null : typeof value === 'number' ? value : String(value));
+      }
+    }
+    if (sets.length === 0) return;
+    values.push(id);
+    this.db.run(`UPDATE viral_analyses SET ${sets.join(', ')} WHERE id = ?`, values);
+    await this.persist();
+  }
+
+  async addViralAnalysisEvent(analysisId: string, input: AddViralEventInput): Promise<ViralAnalysisEvent> {
+    const event: ViralAnalysisEvent = {
+      analysisId,
+      type: input.type,
+      stage: input.stage,
+      detail: input.detail,
+      dataJson: input.dataJson ?? null,
+      ts: input.ts ?? Date.now(),
+    };
+    this.db.run(
+      `INSERT INTO viral_analysis_events (analysis_id, type, stage, detail, data_json, ts)
+       VALUES (?, ?, ?, ?, ?, ?)`,
+      [event.analysisId, event.type, event.stage, event.detail, event.dataJson, event.ts],
+    );
+    const seq = getFirstRow<{ seq: number }>(this.db, 'SELECT last_insert_rowid() AS seq')?.seq;
+    await this.persist();
+    return { ...event, seq };
+  }
+
   async updateTask(
     id: string,
     patch: Partial<
@@ -692,6 +827,8 @@ export class FileDatabase {
     const configRow = getFirstRow<{ data: string }>(this.db, 'SELECT data FROM config WHERE id = 1');
     const taskRows = getRows<Record<string, unknown>>(this.db, 'SELECT * FROM tasks ORDER BY created_at DESC');
     const eventRows = getRows<Record<string, unknown>>(this.db, 'SELECT * FROM task_events ORDER BY seq ASC');
+    const viralRows = getRows<Record<string, unknown>>(this.db, 'SELECT * FROM viral_analyses ORDER BY created_at DESC');
+    const viralEventRows = getRows<Record<string, unknown>>(this.db, 'SELECT * FROM viral_analysis_events ORDER BY seq ASC');
     const promptRows = getRows<Record<string, unknown>>(this.db, 'SELECT * FROM prompt_templates ORDER BY is_builtin DESC, updated_at DESC');
     const draftRows = getRows<Record<string, unknown>>(this.db, 'SELECT * FROM draft_templates ORDER BY is_builtin DESC, id ASC');
     const imageRows = getRows<Record<string, unknown>>(this.db, 'SELECT * FROM image_lab_records ORDER BY created_at DESC');
@@ -705,6 +842,8 @@ export class FileDatabase {
       config: configRow ? mergeConfig(parseJson(configRow.data, defaultConfig)) : defaultConfig,
       tasks: taskRows.map(rowToTask),
       events: eventRows.map(rowToEvent),
+      viralAnalyses: viralRows.map(rowToViralAnalysis),
+      viralEvents: viralEventRows.map(rowToViralEvent),
       promptTemplates: promptRows.map(rowToPromptTemplate),
       draftTemplates: draftRows.map(rowToDraftTemplate),
       imageLabRecords: imageRows.map(rowToImageLabRecord),
@@ -767,6 +906,43 @@ function rowToEvent(row: Record<string, unknown>): TaskEvent {
     step: row.step === null || row.step === undefined ? null : Number(row.step),
     agent: row.agent === null || row.agent === undefined ? null : String(row.agent),
     tool: row.tool === null || row.tool === undefined ? null : String(row.tool),
+    detail: String(row.detail ?? ''),
+    dataJson: row.data_json === null || row.data_json === undefined ? null : String(row.data_json),
+    ts: Number(row.ts),
+  };
+}
+
+function rowToViralAnalysis(row: Record<string, unknown>): ViralAnalysisRecord {
+  return {
+    id: String(row.id),
+    url: String(row.url ?? ''),
+    platform: String(row.platform ?? 'unknown') as ViralAnalysisRecord['platform'],
+    title: String(row.title ?? ''),
+    status: String(row.status ?? 'pending') as ViralAnalysisRecord['status'],
+    currentStage: String(row.current_stage ?? 'queued') as ViralAnalysisRecord['currentStage'],
+    progress: Number(row.progress ?? 0),
+    settings: parseJson(String(row.settings_json ?? '{}'), {
+      track: 'general-story',
+      style: 'photo-real',
+      ratio: '9:16',
+      templateId: 'default-portrait-9-16',
+    }),
+    resultPath: String(row.result_path ?? ''),
+    videoPath: String(row.video_path ?? ''),
+    errorMessage: String(row.error_message ?? ''),
+    createdAt: String(row.created_at ?? new Date().toISOString()),
+    startedAt: row.started_at ? String(row.started_at) : null,
+    completedAt: row.completed_at ? String(row.completed_at) : null,
+    lastHeartbeatAt: row.last_heartbeat_at ? String(row.last_heartbeat_at) : null,
+  };
+}
+
+function rowToViralEvent(row: Record<string, unknown>): ViralAnalysisEvent {
+  return {
+    seq: Number(row.seq),
+    analysisId: String(row.analysis_id),
+    type: String(row.type),
+    stage: String(row.stage),
     detail: String(row.detail ?? ''),
     dataJson: row.data_json === null || row.data_json === undefined ? null : String(row.data_json),
     ts: Number(row.ts),

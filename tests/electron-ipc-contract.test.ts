@@ -33,10 +33,29 @@ describe('electron ipc contract', () => {
       'local-image:select',
       'local-audio:select',
       'jianying:effect-catalog',
+      'viral:create-and-run',
+      'viral:update-status',
+      'viral:retry',
+      'viral:get-result',
+      'viral:create-production-task',
     ]) {
       expect(preload).toContain(channel);
       expect(main).toContain(channel);
     }
+  });
+
+  it('exposes viral analyzer state and production-task handoff to the renderer', async () => {
+    const main = await readFile(new URL('../electron/main.ts', import.meta.url), 'utf8');
+    const preload = await readFile(new URL('../electron/preload.ts', import.meta.url), 'utf8');
+    const viteEnv = await readFile(new URL('../src/vite-env.d.ts', import.meta.url), 'utf8');
+
+    expect(main).toContain('startViralAnalysisRun');
+    expect(main).toContain('runViralAnalysis');
+    expect(main).toContain('createViralProductionTaskInput');
+    expect(preload).toContain('createAndRunViralAnalysis');
+    expect(preload).toContain('createProductionTaskFromViral');
+    expect(viteEnv).toContain('createAndRunViralAnalysis');
+    expect(viteEnv).toContain('createProductionTaskFromViral');
   });
 
   it('starts newly created tasks in the background so the renderer can open task detail immediately', async () => {

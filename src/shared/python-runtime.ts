@@ -10,6 +10,7 @@ export interface PythonRuntimeInfo {
 
 export interface PythonRuntimeResolveOptions {
   resourcesPath?: string;
+  appRoot?: string;
   platform?: NodeJS.Platform;
   exists?: (path: string) => boolean;
 }
@@ -26,6 +27,12 @@ export function resolvePythonRuntimeInfo(options: PythonRuntimeResolveOptions = 
     const bundledPython = join(resourcesPath, 'python', 'python.exe');
     if (exists(bundledPython)) {
       return { command: bundledPython, source: 'bundled' };
+    }
+  }
+  if (platform === 'win32') {
+    const workspacePython = join(options.appRoot ?? process.cwd(), 'vendor', 'python', 'python.exe');
+    if (exists(workspacePython)) {
+      return { command: workspacePython, source: 'bundled' };
     }
   }
   return { command: 'python', source: 'system' };
