@@ -12,7 +12,7 @@ import { generateImageLabRecord } from '../src/shared/image-lab';
 import { loadJianyingEffectCatalog } from '../src/shared/jianying-effects';
 import { createOpenAiCompatibleJsonLlm, listOpenAiCompatibleModels, testOpenAiCompatibleLlm } from '../src/shared/llm-provider';
 import { markSceneImageForRegeneration, markSceneNarrationForRegeneration } from '../src/shared/pipeline-cache';
-import { resolvePythonRuntimeInfo } from '../src/shared/python-runtime';
+import { resolvePythonRuntimeInfo, setDefaultPythonRuntimeAppRoot } from '../src/shared/python-runtime';
 import { composeCopyFromSources, createAiSourceResearcher, searchWebSources } from '../src/shared/research';
 import { runTask } from '../src/shared/runner';
 import { FileDatabase } from '../src/shared/storage';
@@ -726,7 +726,10 @@ async function checkPyJianYingDraft(): Promise<{ status: 'pass' | 'warn'; detail
   }
 }
 
-app.whenReady().then(createWindow);
+app.whenReady().then(() => {
+  setDefaultPythonRuntimeAppRoot(app.getAppPath());
+  return createWindow();
+});
 
 app.on('window-all-closed', () => {
   if (process.platform !== 'darwin') {

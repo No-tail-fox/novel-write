@@ -15,6 +15,12 @@ export interface PythonRuntimeResolveOptions {
   exists?: (path: string) => boolean;
 }
 
+let defaultPythonRuntimeAppRoot: string | undefined;
+
+export function setDefaultPythonRuntimeAppRoot(appRoot: string | undefined): void {
+  defaultPythonRuntimeAppRoot = appRoot;
+}
+
 export function resolvePythonCommand(options: PythonRuntimeResolveOptions = {}): string {
   return resolvePythonRuntimeInfo(options).command;
 }
@@ -29,8 +35,9 @@ export function resolvePythonRuntimeInfo(options: PythonRuntimeResolveOptions = 
       return { command: bundledPython, source: 'bundled' };
     }
   }
-  if (platform === 'win32') {
-    const workspacePython = join(options.appRoot ?? process.cwd(), 'vendor', 'python', 'python.exe');
+  const appRoot = options.appRoot ?? defaultPythonRuntimeAppRoot;
+  if (platform === 'win32' && appRoot) {
+    const workspacePython = join(appRoot, 'vendor', 'python', 'python.exe');
     if (exists(workspacePython)) {
       return { command: workspacePython, source: 'bundled' };
     }

@@ -3,7 +3,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { mkdtemp, rm } from 'node:fs/promises';
 import { describe, expect, it } from 'vitest';
-import { resolvePythonCommand, resolvePythonRuntimeInfo } from '@shared/python-runtime';
+import { resolvePythonCommand, resolvePythonRuntimeInfo, setDefaultPythonRuntimeAppRoot } from '@shared/python-runtime';
 
 describe('Python runtime resolution', () => {
   it('uses the bundled Windows Python executable when it exists under resources', async () => {
@@ -50,6 +50,49 @@ describe('Python runtime resolution', () => {
       expect(resolvePythonRuntimeInfo({ appRoot: dir, resourcesPath: join(dir, 'missing-resources'), platform: 'win32' })).toEqual({
         command: pythonExe,
         source: 'bundled',
+      });
+    } finally {
+      await rm(dir, { recursive: true, force: true });
+    }
+  });
+
+  it('uses the configured default app root for development workspace Python', async () => {
+    const dir = await mkdtemp(join(tmpdir(), 'storybound-python-runtime-default-root-'));
+
+    try {
+      const pythonExe = join(dir, 'vendor', 'python', 'python.exe');
+      await mkdir(join(dir, 'vendor', 'python'), { recursive: true });
+      await writeFile(pythonExe, '');
+      setDefaultPythonRuntimeAppRoot(dir);
+
+      expect(resolvePythonCommand({ resourcesPath: join(dir, 'missing-resources'), platform: 'win32' })).toBe(pythonExe);
+      expect(resolvePythonRuntimeInfo({ resourcesPath: join(dir, 'missing-resources'), platform: 'win32' })).toEqual({
+        command: pythonExe,
+        source: 'bundled',
+      });
+    } finally {
+      setDefaultPythonRuntimeAppRoot(undefined);
+      await rm(dir, { recursive: true, force: true });
+    }
+  });
+
+  it('does not use a workspace Python runtime unless an app root is provided', async () => {
+    const dir = await mkdtemp(join(tmpdir(), 'storybound-python-runtime-implicit-workspace-'));
+
+    try {
+      const pythonExe = join(dir, 'vendor', 'python', 'python.exe');
+      await mkdir(join(dir, 'vendor', 'python'), { recursive: true });
+      await writeFile(pythonExe, '');
+
+      expect(
+        resolvePythonRuntimeInfo({
+          resourcesPath: join(dir, 'missing-resources'),
+          platform: 'win32',
+          exists: (path) => path.endsWith(join('vendor', 'python', 'python.exe')),
+        }),
+      ).toEqual({
+        command: 'python',
+        source: 'system',
       });
     } finally {
       await rm(dir, { recursive: true, force: true });
