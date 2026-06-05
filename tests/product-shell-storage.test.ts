@@ -229,11 +229,19 @@ describe('product shell storage', () => {
       const state = await reopened.getState();
       const hydrated = state.draftTemplates.find((template) => template.id === 'default-portrait-9-16');
 
+      expect(hydrated?.image.visible).toBe(true);
       expect(hydrated?.title).toMatchObject({ x: 0, y: -0.1 });
+      expect(hydrated?.title).toMatchObject({ alpha: 1, bold: true });
       expect(hydrated?.subtitle).toMatchObject({ x: 0, y: 0.02 });
+      expect(hydrated?.subtitle).toMatchObject({ text: expect.any(String), alpha: 1, bold: false });
       expect(hydrated?.caption).toMatchObject({ x: 0 });
       expect(typeof hydrated?.caption.y).toBe('number');
       expect(hydrated?.disclaimer).toMatchObject({ x: 0, y: 0.92 });
+      expect(hydrated?.disclaimer).toMatchObject({
+        fontSize: expect.any(Number),
+        color: expect.stringMatching(/^#/),
+        alpha: 1,
+      });
 
       await reopened.close();
     } finally {

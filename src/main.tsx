@@ -3143,6 +3143,11 @@ function DraftTemplatesPage({ api, state, applyState }: { api: StoryboundApi; st
     };
   }, [api]);
 
+  useEffect(() => {
+    if (!draft || isDraftLayerVisible(draft, selectedLayer)) return;
+    setSelectedLayer(firstVisibleDraftLayer(draft));
+  }, [draft, selectedLayer]);
+
   async function save() {
     if (draft) applyState(await api.saveDraftTemplate(draft));
   }
@@ -3169,6 +3174,30 @@ function DraftTemplatesPage({ api, state, applyState }: { api: StoryboundApi; st
     const imagePath = await api.selectLocalImage();
     if (!imagePath) return;
     setDraft((current) => (current ? { ...current, canvas: { ...current.canvas, backgroundImage: imagePath } } : current));
+  }
+
+  function updateDraftImage(patch: Partial<DraftTemplate['image']>) {
+    setDraft((current) => (current ? { ...current, image: { ...current.image, ...patch } } : current));
+  }
+
+  function updateDraftTitle(patch: Partial<DraftTemplate['title']>) {
+    setDraft((current) => (current ? { ...current, title: { ...current.title, ...patch } } : current));
+  }
+
+  function updateDraftSubtitle(patch: Partial<DraftTemplate['subtitle']>) {
+    setDraft((current) => (current ? { ...current, subtitle: { ...current.subtitle, ...patch } } : current));
+  }
+
+  function updateDraftCaption(patch: Partial<DraftTemplate['caption']>) {
+    setDraft((current) => (current ? { ...current, caption: { ...current.caption, ...patch } } : current));
+  }
+
+  function updateDraftCaptionBackground(patch: Partial<DraftTemplate['caption']['background']>) {
+    setDraft((current) => (current ? { ...current, caption: { ...current.caption, background: { ...current.caption.background, ...patch } } } : current));
+  }
+
+  function updateDraftDisclaimer(patch: Partial<DraftTemplate['disclaimer']>) {
+    setDraft((current) => (current ? { ...current, disclaimer: { ...current.disclaimer, ...patch } } : current));
   }
 
   if (editingId && draft) {
@@ -3214,22 +3243,62 @@ function DraftTemplatesPage({ api, state, applyState }: { api: StoryboundApi; st
               </Field>
             </Accordion>
             <Accordion title="图片区域" open>
+              <ToggleField label="显示" checked={draft.image.visible} onChange={(checked) => updateDraftImage({ visible: checked })} />
               <Segmented label="图片比例" value={draft.image.ratio} options={['9:16', '4:3', '16:9']} onChange={(value) => setDraft(applyDraftImageRatio(draft, value))} />
-              <Segmented label="适配" value={draft.image.fit} options={['cover', 'contain']} onChange={(value) => setDraft({ ...draft, image: { ...draft.image, fit: value as 'cover' | 'contain' } })} />
+              <Segmented label="适配" value={draft.image.fit} options={['cover', 'contain']} onChange={(value) => updateDraftImage({ fit: value as 'cover' | 'contain' })} />
               <Field label="坐标"><input value={`top ${draft.image.top.toFixed(2)}, height ${draft.image.height.toFixed(2)}`} readOnly /></Field>
-              <Field label="垂直位置"><input type="range" min="-1" max="1" step="0.01" value={draft.image.top} onChange={(event) => setDraft({ ...draft, image: { ...draft.image, top: Number(event.target.value) } })} /></Field>
-              <Field label="高度占比"><input type="range" min="0.1" max="1" step="0.01" value={draft.image.height} onChange={(event) => setDraft({ ...draft, image: { ...draft.image, height: Number(event.target.value) } })} /></Field>
-              <Segmented label="动画效果" value={draft.image.animation} options={imageAnimations.slice(0, 8)} onChange={(value) => setDraft({ ...draft, image: { ...draft.image, animation: value } })} />
+              <RangeField label="垂直位置" min={-1} max={1} step={0.01} value={draft.image.top} onChange={(value) => updateDraftImage({ top: value })} />
+              <RangeField label="高度占比" min={0.1} max={1} step={0.01} value={draft.image.height} onChange={(value) => updateDraftImage({ height: value })} />
+              <Segmented label="动画效果" value={draft.image.animation} options={imageAnimations.slice(0, 8)} onChange={(value) => updateDraftImage({ animation: value })} />
             </Accordion>
             <Accordion title="主标题">
-              <Field label="文字"><input value={draft.title.text} onChange={(event) => setDraft({ ...draft, title: { ...draft.title, text: event.target.value } })} /></Field>
+              <ToggleField label="显示" checked={draft.title.visible} onChange={(checked) => updateDraftTitle({ visible: checked })} />
+              <Field label="文字"><input value={draft.title.text} onChange={(event) => updateDraftTitle({ text: event.target.value })} /></Field>
               <Field label="坐标"><input value={`${draft.title.x.toFixed(2)}, ${draft.title.y.toFixed(2)}`} readOnly /></Field>
-              <Field label="字号"><input type="number" value={draft.title.fontSize} onChange={(event) => setDraft({ ...draft, title: { ...draft.title, fontSize: Number(event.target.value) } })} /></Field>
-              <Field label="颜色"><input value={draft.title.color} onChange={(event) => setDraft({ ...draft, title: { ...draft.title, color: event.target.value } })} /></Field>
+              <RangeField label="字号" min={12} max={120} step={1} value={draft.title.fontSize} onChange={(value) => updateDraftTitle({ fontSize: value })} />
+              <ColorField label="颜色" value={draft.title.color} onChange={(value) => updateDraftTitle({ color: value })} />
+              <RangeField label="透明度" min={0} max={1} step={0.05} value={draft.title.alpha} onChange={(value) => updateDraftTitle({ alpha: value })} />
+              <ToggleField label="加粗" checked={draft.title.bold} onChange={(checked) => updateDraftTitle({ bold: checked })} />
             </Accordion>
-            <Accordion title="副标题"><Field label="坐标"><input value={`${draft.subtitle.x.toFixed(2)}, ${draft.subtitle.y.toFixed(2)}`} readOnly /></Field><Field label="字号"><input type="number" value={draft.subtitle.fontSize} onChange={(event) => setDraft({ ...draft, subtitle: { ...draft.subtitle, fontSize: Number(event.target.value) } })} /></Field></Accordion>
-            <Accordion title="字幕"><Field label="坐标"><input value={`${draft.caption.x.toFixed(2)}, ${draft.caption.y.toFixed(2)}`} readOnly /></Field><Field label="字号"><input type="number" value={draft.caption.fontSize} onChange={(event) => setDraft({ ...draft, caption: { ...draft.caption, fontSize: Number(event.target.value) } })} /></Field></Accordion>
-            <Accordion title="免责声明"><Field label="坐标"><input value={`${draft.disclaimer.x.toFixed(2)}, ${draft.disclaimer.y.toFixed(2)}`} readOnly /></Field><Field label="文字"><input value={draft.disclaimer.text} onChange={(event) => setDraft({ ...draft, disclaimer: { ...draft.disclaimer, text: event.target.value } })} /></Field></Accordion>
+            <Accordion title="副标题">
+              <ToggleField label="显示" checked={draft.subtitle.visible} onChange={(checked) => updateDraftSubtitle({ visible: checked })} />
+              <Field label="文字"><input value={draft.subtitle.text} onChange={(event) => updateDraftSubtitle({ text: event.target.value })} /></Field>
+              <Field label="坐标"><input value={`${draft.subtitle.x.toFixed(2)}, ${draft.subtitle.y.toFixed(2)}`} readOnly /></Field>
+              <RangeField label="字号" min={10} max={72} step={1} value={draft.subtitle.fontSize} onChange={(value) => updateDraftSubtitle({ fontSize: value })} />
+              <ColorField label="颜色" value={draft.subtitle.color} onChange={(value) => updateDraftSubtitle({ color: value })} />
+              <RangeField label="透明度" min={0} max={1} step={0.05} value={draft.subtitle.alpha} onChange={(value) => updateDraftSubtitle({ alpha: value })} />
+              <ToggleField label="加粗" checked={draft.subtitle.bold} onChange={(checked) => updateDraftSubtitle({ bold: checked })} />
+            </Accordion>
+            <Accordion title="字幕">
+              <ToggleField label="显示" checked={draft.caption.visible} onChange={(checked) => updateDraftCaption({ visible: checked })} />
+              <Field label="坐标"><input value={`${draft.caption.x.toFixed(2)}, ${draft.caption.y.toFixed(2)}`} readOnly /></Field>
+              <RangeField label="字号" min={8} max={48} step={1} value={draft.caption.fontSize} onChange={(value) => updateDraftCaption({ fontSize: value })} />
+              <ColorField label="颜色" value={draft.caption.color} onChange={(value) => updateDraftCaption({ color: value })} />
+              <RangeField label="透明度" min={0} max={1} step={0.05} value={draft.caption.alpha} onChange={(value) => updateDraftCaption({ alpha: value })} />
+              <ToggleField label="加粗" checked={draft.caption.bold} onChange={(checked) => updateDraftCaption({ bold: checked })} />
+              <ToggleField label="下划线" checked={draft.caption.underline} onChange={(checked) => updateDraftCaption({ underline: checked })} />
+              <Field label="对齐">
+                <select value={String(draft.caption.align)} onChange={(event) => updateDraftCaption({ align: Number(event.target.value) })}>
+                  <option value="0">左对齐</option>
+                  <option value="1">居中</option>
+                  <option value="2">右对齐</option>
+                </select>
+              </Field>
+              <RangeField label="字间距" min={0} max={20} step={1} value={draft.caption.letterSpacing} onChange={(value) => updateDraftCaption({ letterSpacing: value })} />
+              <RangeField label="行间距" min={0} max={20} step={1} value={draft.caption.lineSpacing} onChange={(value) => updateDraftCaption({ lineSpacing: value })} />
+              <RangeField label="每行字数" min={4} max={30} step={1} value={draft.caption.maxCharsPerLine} onChange={(value) => updateDraftCaption({ maxCharsPerLine: value })} />
+              <ColorField label="背景色" value={draft.caption.background.color} onChange={(value) => updateDraftCaptionBackground({ color: value })} />
+              <RangeField label="背景透明度" min={0} max={1} step={0.05} value={draft.caption.background.alpha} onChange={(value) => updateDraftCaptionBackground({ alpha: value })} />
+              <RangeField label="圆角" min={0} max={1} step={0.05} value={draft.caption.background.roundRadius} onChange={(value) => updateDraftCaptionBackground({ roundRadius: value })} />
+            </Accordion>
+            <Accordion title="免责声明">
+              <ToggleField label="显示" checked={draft.disclaimer.visible} onChange={(checked) => updateDraftDisclaimer({ visible: checked })} />
+              <Field label="坐标"><input value={`${draft.disclaimer.x.toFixed(2)}, ${draft.disclaimer.y.toFixed(2)}`} readOnly /></Field>
+              <Field label="文字"><input value={draft.disclaimer.text} onChange={(event) => updateDraftDisclaimer({ text: event.target.value })} /></Field>
+              <RangeField label="字号" min={8} max={40} step={1} value={draft.disclaimer.fontSize} onChange={(value) => updateDraftDisclaimer({ fontSize: value })} />
+              <ColorField label="颜色" value={draft.disclaimer.color} onChange={(value) => updateDraftDisclaimer({ color: value })} />
+              <RangeField label="透明度" min={0} max={1} step={0.05} value={draft.disclaimer.alpha} onChange={(value) => updateDraftDisclaimer({ alpha: value })} />
+            </Accordion>
             <Accordion title="音频设置">
               <Field label="旁白音量"><input type="number" value={draft.audio.narrationVolume} onChange={(event) => setDraft({ ...draft, audio: { ...draft.audio, narrationVolume: Number(event.target.value) } })} /></Field>
               <Field label="BGM 音量"><input type="number" value={draft.audio.bgmVolume} onChange={(event) => setDraft({ ...draft, audio: { ...draft.audio, bgmVolume: Number(event.target.value) } })} /></Field>
@@ -3313,15 +3382,66 @@ function DraftTemplatePreview({ template, compact = false }: { template: DraftTe
   const titleSize = compact ? Math.max(9, template.title.fontSize * 0.28) : template.title.fontSize;
   const subtitleSize = compact ? Math.max(7, template.subtitle.fontSize * 0.28) : template.subtitle.fontSize;
   const captionSize = compact ? Math.max(7, template.caption.fontSize * 0.42) : template.caption.fontSize;
+  const disclaimerSize = compact ? Math.max(6, template.disclaimer.fontSize * 0.42) : template.disclaimer.fontSize;
   return (
     <div className={compact ? 'draft-preview-mini' : 'draft-preview-large'} style={draftTemplateCanvasStyle(template)}>
-      <div className="draft-image" style={{ top: `${template.image.top * 100}%`, height: `${template.image.height * 100}%` }}>
-        <div className="draft-image-media" style={draftImageMediaStyle(template)} />
-      </div>
-      {template.title.visible ? <DraftCanvasText className="draft-title" x={template.title.x} y={template.title.y} style={{ color: template.title.color, fontSize: titleSize, fontWeight: 800 }}>{template.title.text}</DraftCanvasText> : null}
-      {template.subtitle.visible ? <DraftCanvasText className="draft-subtitle" x={template.subtitle.x} y={template.subtitle.y} style={{ color: template.subtitle.color, fontSize: subtitleSize }}>副标题示例文字</DraftCanvasText> : null}
-      {template.caption.visible ? <DraftCanvasText className="draft-caption" x={template.caption.x} y={template.caption.y} style={{ color: template.caption.color, fontSize: captionSize }}>字幕预览</DraftCanvasText> : null}
-      {template.disclaimer.visible ? <DraftCanvasText className="draft-disclaimer" x={template.disclaimer.x} y={template.disclaimer.y}>{template.disclaimer.text}</DraftCanvasText> : null}
+      {template.image.visible ? (
+        <div className="draft-image" style={{ top: `${template.image.top * 100}%`, height: `${template.image.height * 100}%` }}>
+          <div className="draft-image-media" style={draftImageMediaStyle(template)} />
+        </div>
+      ) : null}
+      {template.title.visible ? (
+        <DraftCanvasText
+          className="draft-title"
+          x={template.title.x}
+          y={template.title.y}
+          style={{ color: template.title.color, fontSize: titleSize, opacity: template.title.alpha, fontWeight: template.title.bold ? 800 : 500 }}
+        >
+          {template.title.text}
+        </DraftCanvasText>
+      ) : null}
+      {template.subtitle.visible ? (
+        <DraftCanvasText
+          className="draft-subtitle"
+          x={template.subtitle.x}
+          y={template.subtitle.y}
+          style={{ color: template.subtitle.color, fontSize: subtitleSize, opacity: template.subtitle.alpha, fontWeight: template.subtitle.bold ? 800 : 500 }}
+        >
+          {template.subtitle.text}
+        </DraftCanvasText>
+      ) : null}
+      {template.caption.visible ? (
+        <DraftCanvasText
+          className="draft-caption"
+          x={template.caption.x}
+          y={template.caption.y}
+          style={{
+            color: template.caption.color,
+            fontSize: captionSize,
+            opacity: template.caption.alpha,
+            fontWeight: template.caption.bold ? 700 : 500,
+            textDecoration: template.caption.underline ? 'underline' : 'none',
+            textAlign: draftTextAlign(template.caption.align),
+            letterSpacing: `${template.caption.letterSpacing}px`,
+            lineHeight: `${1 + template.caption.lineSpacing / 10}`,
+            backgroundColor: colorWithAlpha(template.caption.background.color, template.caption.background.alpha),
+            borderRadius: `${template.caption.background.roundRadius * 24}px`,
+            padding: compact ? '2px 8px' : '4px 10px',
+          }}
+        >
+          字幕预览
+        </DraftCanvasText>
+      ) : null}
+      {template.disclaimer.visible ? (
+        <DraftCanvasText
+          className="draft-disclaimer"
+          x={template.disclaimer.x}
+          y={template.disclaimer.y}
+          style={{ color: template.disclaimer.color, fontSize: disclaimerSize, opacity: template.disclaimer.alpha }}
+        >
+          {template.disclaimer.text}
+        </DraftCanvasText>
+      ) : null}
     </div>
   );
 }
@@ -3379,34 +3499,76 @@ function EditableDraftCanvas({
       onPointerUp={stopDrag}
       onPointerCancel={stopDrag}
     >
-      <div
-        className={selectedLayer === 'image' ? 'draft-layer image-layer selected' : 'draft-layer image-layer'}
-        data-layer="image"
-        style={{ top: `${template.image.top * 100}%`, height: `${template.image.height * 100}%` }}
-        onPointerDown={(event) => handleDraftCanvasPointerDown('image', event)}
-      >
-        <div className="draft-image-media" style={draftImageMediaStyle(template)} />
-        <span>图片区域</span>
-        <i className="draft-layer-handle" />
-      </div>
+      {template.image.visible ? (
+        <div
+          className={selectedLayer === 'image' ? 'draft-layer image-layer selected' : 'draft-layer image-layer'}
+          data-layer="image"
+          style={{ top: `${template.image.top * 100}%`, height: `${template.image.height * 100}%` }}
+          onPointerDown={(event) => handleDraftCanvasPointerDown('image', event)}
+        >
+          <div className="draft-image-media" style={draftImageMediaStyle(template)} />
+          <span>图片区域</span>
+          <i className="draft-layer-handle" />
+        </div>
+      ) : null}
       {template.title.visible ? (
         <DraftCanvasLayerBox layer="title" label="主标题" selected={selectedLayer === 'title'} x={template.title.x} y={template.title.y} onPointerDown={handleDraftCanvasPointerDown}>
-          <DraftCanvasText className="draft-title" x={0} y={0} style={{ color: template.title.color, fontSize: template.title.fontSize, fontWeight: 800 }}>{template.title.text}</DraftCanvasText>
+          <DraftCanvasText
+            className="draft-title"
+            x={0}
+            y={0}
+            style={{ color: template.title.color, fontSize: template.title.fontSize, opacity: template.title.alpha, fontWeight: template.title.bold ? 800 : 500 }}
+          >
+            {template.title.text}
+          </DraftCanvasText>
         </DraftCanvasLayerBox>
       ) : null}
       {template.subtitle.visible ? (
         <DraftCanvasLayerBox layer="subtitle" label="副标题" selected={selectedLayer === 'subtitle'} x={template.subtitle.x} y={template.subtitle.y} onPointerDown={handleDraftCanvasPointerDown}>
-          <DraftCanvasText className="draft-subtitle" x={0} y={0} style={{ color: template.subtitle.color, fontSize: template.subtitle.fontSize }}>副标题示例文字</DraftCanvasText>
+          <DraftCanvasText
+            className="draft-subtitle"
+            x={0}
+            y={0}
+            style={{ color: template.subtitle.color, fontSize: template.subtitle.fontSize, opacity: template.subtitle.alpha, fontWeight: template.subtitle.bold ? 800 : 500 }}
+          >
+            {template.subtitle.text}
+          </DraftCanvasText>
         </DraftCanvasLayerBox>
       ) : null}
       {template.caption.visible ? (
         <DraftCanvasLayerBox layer="caption" label="字幕" selected={selectedLayer === 'caption'} x={template.caption.x} y={template.caption.y} onPointerDown={handleDraftCanvasPointerDown}>
-          <DraftCanvasText className="draft-caption" x={0} y={0} style={{ color: template.caption.color, fontSize: template.caption.fontSize }}>字幕预览</DraftCanvasText>
+          <DraftCanvasText
+            className="draft-caption"
+            x={0}
+            y={0}
+            style={{
+              color: template.caption.color,
+              fontSize: template.caption.fontSize,
+              opacity: template.caption.alpha,
+              fontWeight: template.caption.bold ? 700 : 500,
+              textDecoration: template.caption.underline ? 'underline' : 'none',
+              textAlign: draftTextAlign(template.caption.align),
+              letterSpacing: `${template.caption.letterSpacing}px`,
+              lineHeight: `${1 + template.caption.lineSpacing / 10}`,
+              backgroundColor: colorWithAlpha(template.caption.background.color, template.caption.background.alpha),
+              borderRadius: `${template.caption.background.roundRadius * 24}px`,
+              padding: '4px 10px',
+            }}
+          >
+            字幕预览
+          </DraftCanvasText>
         </DraftCanvasLayerBox>
       ) : null}
       {template.disclaimer.visible ? (
         <DraftCanvasLayerBox layer="disclaimer" label="免责声明" selected={selectedLayer === 'disclaimer'} x={template.disclaimer.x} y={template.disclaimer.y} onPointerDown={handleDraftCanvasPointerDown}>
-          <DraftCanvasText className="draft-disclaimer" x={0} y={0}>{template.disclaimer.text}</DraftCanvasText>
+          <DraftCanvasText
+            className="draft-disclaimer"
+            x={0}
+            y={0}
+            style={{ color: template.disclaimer.color, fontSize: template.disclaimer.fontSize, opacity: template.disclaimer.alpha }}
+          >
+            {template.disclaimer.text}
+          </DraftCanvasText>
         </DraftCanvasLayerBox>
       ) : null}
     </div>
@@ -4505,6 +4667,53 @@ function Field({ label, hint, children }: { label: string; hint?: string; childr
   return <label className="field"><span>{label}{hint ? <small>{hint}</small> : null}</span>{children}</label>;
 }
 
+function ToggleField({ label, checked, onChange }: { label: string; checked: boolean; onChange: (checked: boolean) => void }) {
+  return (
+    <Field label={label}>
+      <label className="draft-toggle-field">
+        <input type="checkbox" checked={checked} onChange={(event) => onChange(event.target.checked)} />
+        <span>{checked ? '开启' : '关闭'}</span>
+      </label>
+    </Field>
+  );
+}
+
+function ColorField({ label, value, onChange }: { label: string; value: string; onChange: (value: string) => void }) {
+  return (
+    <Field label={label}>
+      <div className="draft-color-field">
+        <input type="color" value={normalizeColorInput(value)} onChange={(event) => onChange(event.target.value)} />
+        <input value={value} onChange={(event) => onChange(event.target.value)} />
+      </div>
+    </Field>
+  );
+}
+
+function RangeField({
+  label,
+  min,
+  max,
+  step,
+  value,
+  onChange,
+}: {
+  label: string;
+  min: number;
+  max: number;
+  step: number;
+  value: number;
+  onChange: (value: number) => void;
+}) {
+  return (
+    <Field label={label}>
+      <div className="draft-range-field">
+        <input type="range" min={min} max={max} step={step} value={value} onChange={(event) => onChange(Number(event.target.value))} />
+        <input type="number" min={min} max={max} step={step} value={value} onChange={(event) => onChange(Number(event.target.value))} />
+      </div>
+    </Field>
+  );
+}
+
 function Segmented({ label, value, options, labels, onChange }: { label: string; value: string; options: string[]; labels?: string[]; onChange: (value: string) => void }) {
   return (
     <div className="field">
@@ -5019,6 +5228,31 @@ function ratioToNumber(ratio: string): number {
 
 function normalizeColorInput(value: string): string {
   return /^#[0-9a-f]{6}$/i.test(value.trim()) ? value.trim() : '#000000';
+}
+
+function colorWithAlpha(color: string, alpha: number): string {
+  const normalized = normalizeColorInput(color).slice(1);
+  const channel = (offset: number) => Number.parseInt(normalized.slice(offset, offset + 2), 16);
+  const opacity = clamp(alpha, 0, 1);
+  return `rgba(${channel(0)}, ${channel(2)}, ${channel(4)}, ${opacity})`;
+}
+
+function draftTextAlign(align: number): React.CSSProperties['textAlign'] {
+  if (align <= 0) return 'left';
+  if (align >= 2) return 'right';
+  return 'center';
+}
+
+function isDraftLayerVisible(template: DraftTemplate, layer: DraftCanvasLayer): boolean {
+  if (layer === 'image') return template.image.visible;
+  if (layer === 'title') return template.title.visible;
+  if (layer === 'subtitle') return template.subtitle.visible;
+  if (layer === 'caption') return template.caption.visible;
+  return template.disclaimer.visible;
+}
+
+function firstVisibleDraftLayer(template: DraftTemplate): DraftCanvasLayer {
+  return (['image', 'title', 'subtitle', 'caption', 'disclaimer'] as DraftCanvasLayer[]).find((layer) => isDraftLayerVisible(template, layer)) ?? 'title';
 }
 
 function updateDraftLayerPosition(template: DraftTemplate, layer: DraftCanvasLayer, deltaX: number, deltaY: number): DraftTemplate {

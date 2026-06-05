@@ -141,17 +141,30 @@ describe('draft writer', () => {
           backgroundImage: '',
         },
         imageArea: {
+          visible: true,
           ratio: '9:16',
           animation: expect.any(String),
         },
         caption: {
           x: 0,
           y: expect.any(Number),
+          alpha: expect.any(Number),
+          bold: expect.any(Boolean),
+          underline: expect.any(Boolean),
+          align: expect.any(Number),
+          letterSpacing: expect.any(Number),
+          lineSpacing: expect.any(Number),
+          maxCharsPerLine: expect.any(Number),
+          background: {
+            color: expect.any(String),
+            alpha: expect.any(Number),
+            roundRadius: expect.any(Number),
+          },
         },
         overlays: {
-          title: { x: 0, y: -0.1 },
-          subtitle: { x: 0, y: 0.02 },
-          disclaimer: { x: 0, y: 0.92 },
+          title: { x: 0, y: -0.1, alpha: expect.any(Number), bold: expect.any(Boolean) },
+          subtitle: { x: 0, y: 0.02, text: expect.any(String), alpha: expect.any(Number), bold: expect.any(Boolean) },
+          disclaimer: { x: 0, y: 0.92, fontSize: expect.any(Number), color: expect.any(String), alpha: expect.any(Number) },
         },
         scenes: [
           { sceneId: 1, startUs: 0, durationUs: 1_200_000, text: 'First line' },

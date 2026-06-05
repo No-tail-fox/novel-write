@@ -2219,6 +2219,33 @@ textarea {
   padding: 2px;
 }
 
+.draft-color-field,
+.draft-range-field {
+  display: grid;
+  align-items: center;
+  gap: 8px;
+}
+
+.draft-color-field {
+  grid-template-columns: 38px minmax(0, 1fr);
+}
+
+.draft-color-field input[type='color'] {
+  width: 38px;
+  height: 34px;
+  padding: 2px;
+}
+
+.draft-range-field {
+  grid-template-columns: minmax(0, 1fr) 84px;
+}
+
+.draft-toggle-field {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+}
+
 .settings-layout {
   display: grid;
   grid-template-columns: 210px minmax(0, 1fr);

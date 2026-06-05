@@ -108,6 +108,22 @@ describe('product shell ui', () => {
     expect(css).toContain('.draft-layer-handle');
   });
 
+  it('renders draft preview layers with visibility and style fields', async () => {
+    const main = await readFile(new URL('../src/main.tsx', import.meta.url), 'utf8');
+
+    expect(main).toContain('template.image.visible ?');
+    expect(main).toContain('template.title.alpha');
+    expect(main).toContain("template.title.bold ? 800 : 500");
+    expect(main).toContain('template.subtitle.text');
+    expect(main).toContain('template.subtitle.alpha');
+    expect(main).toContain('template.caption.alpha');
+    expect(main).toContain('template.caption.underline');
+    expect(main).toContain('template.disclaimer.alpha');
+    expect(main).toContain('template.disclaimer.fontSize');
+    expect(main).toContain('draftTextAlign');
+    expect(main).toContain('colorWithAlpha');
+  });
+
   it('does not reset unsaved draft template drag edits during state refreshes', async () => {
     const main = await readFile(new URL('../src/main.tsx', import.meta.url), 'utf8');
 
@@ -130,6 +146,33 @@ describe('product shell ui', () => {
     expect(main).toContain('draft-background-field');
     expect(css).toContain('.draft-background-field');
     expect(css).toContain('.draft-background-swatch');
+  });
+
+  it('exposes complete grouped controls for draft template layers', async () => {
+    const main = await readFile(new URL('../src/main.tsx', import.meta.url), 'utf8');
+    const css = await readFile(new URL('../src/styles.css', import.meta.url), 'utf8');
+
+    expect(main).toContain('ColorField');
+    expect(main).toContain('ToggleField');
+    expect(main).toContain('RangeField');
+    expect(main).toContain('updateDraftTitle');
+    expect(main).toContain('updateDraftSubtitle');
+    expect(main).toContain('updateDraftCaption');
+    expect(main).toContain('updateDraftCaptionBackground');
+    expect(main).toContain('updateDraftDisclaimer');
+    expect(main).toContain('显示');
+    expect(main).toContain('透明度');
+    expect(main).toContain('加粗');
+    expect(main).toContain('下划线');
+    expect(main).toContain('对齐');
+    expect(main).toContain('字间距');
+    expect(main).toContain('行间距');
+    expect(main).toContain('每行字数');
+    expect(main).toContain('背景透明度');
+    expect(main).toContain('圆角');
+    expect(css).toContain('.draft-color-field');
+    expect(css).toContain('.draft-range-field');
+    expect(css).toContain('.draft-toggle-field');
   });
 
   it('wires uploaded BGM management into settings and new task defaults', async () => {

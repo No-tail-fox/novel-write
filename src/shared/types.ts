@@ -712,6 +712,7 @@ export interface DraftTemplate {
     backgroundImage: string;
   };
   image: {
+    visible: boolean;
     ratio: string;
     fit: 'cover' | 'contain';
     top: number;
@@ -725,13 +726,18 @@ export interface DraftTemplate {
     y: number;
     fontSize: number;
     color: string;
+    alpha: number;
+    bold: boolean;
   };
   subtitle: {
     visible: boolean;
+    text: string;
     x: number;
     y: number;
     fontSize: number;
     color: string;
+    alpha: number;
+    bold: boolean;
   };
   caption: {
     visible: boolean;
@@ -757,6 +763,9 @@ export interface DraftTemplate {
     text: string;
     x: number;
     y: number;
+    fontSize: number;
+    color: string;
+    alpha: number;
   };
   audio: {
     narrationVolume: number;

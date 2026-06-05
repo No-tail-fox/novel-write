@@ -4,6 +4,26 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { runPyJianYingDraftBridge, writePyJianYingBridgeInput, writePyJianYingBridgeScript } from '@shared/jianying-bridge';
 
+function defaultBridgeImageArea(animation = '') {
+  return { visible: true, ratio: '9:16', top: 0, height: 1, fit: 'cover' as const, animation };
+}
+
+function defaultBridgeCaption() {
+  return {
+    fontSize: 44,
+    color: '#ffffff',
+    alpha: 1,
+    bold: false,
+    underline: false,
+    align: 1,
+    letterSpacing: 0,
+    lineSpacing: 0,
+    maxCharsPerLine: 12,
+    background: { color: '#000000', alpha: 0.5, roundRadius: 0.3 },
+    y: -0.8,
+  };
+}
+
 describe('pyJianYingDraft bridge input', () => {
   it('writes a self-contained bridge payload for Python draft generation', async () => {
     const dir = await mkdtemp(join(tmpdir(), 'storybound-jy-bridge-'));
@@ -14,12 +34,25 @@ describe('pyJianYingDraft bridge input', () => {
         draftDir: join(dir, 'Draft Root', 'Bridge Draft'),
         title: 'Bridge Draft',
         canvas: { width: 1080, height: 1920, backgroundColor: '#123456', backgroundImage: join(dir, 'background.png') },
-        imageArea: { ratio: '4:3', top: 0, height: 1280, fit: 'cover', animation: '缩放' },
-        caption: { fontSize: 44, color: '#ffffff', x: 0.2, y: 1480 },
+        imageArea: { visible: true, ratio: '4:3', top: 0, height: 1280, fit: 'cover', animation: '缩放' },
+        caption: {
+          fontSize: 44,
+          color: '#ffffff',
+          alpha: 0.85,
+          bold: true,
+          underline: false,
+          align: 2,
+          letterSpacing: 3,
+          lineSpacing: 2,
+          maxCharsPerLine: 18,
+          background: { color: '#111111', alpha: 0.4, roundRadius: 0.5 },
+          x: 0.2,
+          y: 1480,
+        },
         overlays: {
-          title: { visible: true, text: 'Bridge Draft', x: -0.1, y: -0.5, fontSize: 44, color: '#ffde00' },
-          subtitle: { visible: true, x: 0, y: -0.35, fontSize: 22, color: '#ffffff' },
-          disclaimer: { visible: true, text: 'Disclaimer', x: 0, y: 0.9 },
+          title: { visible: true, text: 'Bridge Draft', x: -0.1, y: -0.5, fontSize: 44, color: '#ffde00', alpha: 0.95, bold: true },
+          subtitle: { visible: true, text: 'Bridge Subtitle', x: 0, y: -0.35, fontSize: 22, color: '#ffffff', alpha: 0.75, bold: false },
+          disclaimer: { visible: true, text: 'Disclaimer', x: 0, y: 0.9, fontSize: 14, color: '#cccccc', alpha: 0.6 },
         },
         images: [{ sceneId: 1, path: join(dir, 'image.png') }],
         narration: [{ sceneId: 1, path: join(dir, 'voice.mp3') }],
@@ -33,8 +66,22 @@ describe('pyJianYingDraft bridge input', () => {
       expect(payload.images[0]).toMatchObject({ sceneId: 1, path: join(dir, 'image.png') });
       expect(payload.narration[0]).toMatchObject({ sceneId: 1, path: join(dir, 'voice.mp3') });
       expect(payload.canvas).toEqual({ width: 1080, height: 1920, backgroundColor: '#123456', backgroundImage: join(dir, 'background.png') });
-      expect(payload.caption).toMatchObject({ x: 0.2, y: 1480 });
-      expect(payload.overlays.title).toMatchObject({ x: -0.1, y: -0.5 });
+      expect(payload.imageArea).toMatchObject({ visible: true });
+      expect(payload.caption).toMatchObject({
+        x: 0.2,
+        y: 1480,
+        alpha: 0.85,
+        bold: true,
+        underline: false,
+        align: 2,
+        letterSpacing: 3,
+        lineSpacing: 2,
+        maxCharsPerLine: 18,
+        background: { color: '#111111', alpha: 0.4, roundRadius: 0.5 },
+      });
+      expect(payload.overlays.title).toMatchObject({ x: -0.1, y: -0.5, alpha: 0.95, bold: true });
+      expect(payload.overlays.subtitle).toMatchObject({ text: 'Bridge Subtitle', alpha: 0.75, bold: false });
+      expect(payload.overlays.disclaimer).toMatchObject({ fontSize: 14, color: '#cccccc', alpha: 0.6 });
     } finally {
       await rm(dir, { recursive: true, force: true });
     }
@@ -55,6 +102,8 @@ describe('pyJianYingDraft bridge input', () => {
       expect(script).toContain('background_track');
       expect(script).toContain('import_srt');
       expect(script).toContain('script.save()');
+      expect(script).toContain('image_area.get("visible", True)');
+      expect(script).toContain('align=int(caption.get("align", 1))');
     } finally {
       await rm(dir, { recursive: true, force: true });
     }
@@ -102,8 +151,8 @@ describe('pyJianYingDraft bridge input', () => {
         draftDir,
         title: 'Bridge Draft',
         canvas: { width: 1080, height: 1920, backgroundColor: '#000000', backgroundImage: '' },
-        imageArea: { ratio: '9:16', top: 0, height: 1, fit: 'cover', animation: '' },
-        caption: { fontSize: 44, color: '#ffffff', y: -0.8 },
+        imageArea: defaultBridgeImageArea(),
+        caption: defaultBridgeCaption(),
         scenes: [
           { sceneId: 1, startUs: 0, durationUs: 1_000_000, text: 'first' },
           { sceneId: 2, startUs: 1_000_000, durationUs: 1_000_000, text: 'second' },
@@ -151,8 +200,8 @@ describe('pyJianYingDraft bridge input', () => {
           draftDir,
           title: 'Bridge Draft',
           canvas: { width: 1080, height: 1920, backgroundColor: '#000000', backgroundImage: '' },
-          imageArea: { ratio: '9:16', top: 0, height: 1, fit: 'cover', animation: '缩放' },
-          caption: { fontSize: 44, color: '#ffffff', y: -0.8 },
+          imageArea: defaultBridgeImageArea('缩放'),
+          caption: defaultBridgeCaption(),
           scenes: [{ sceneId: 1, startUs: 0, durationUs: 1_200_000, text: 'hello' }],
           images: [{ sceneId: 1, path: join(dir, 'image.png') }],
           narration: [{ sceneId: 1, path: join(dir, 'voice.mp3') }],
@@ -210,8 +259,8 @@ describe('pyJianYingDraft bridge input', () => {
             draftDir: join(dir, 'Draft Root', 'Bridge Draft'),
             title: 'Bridge Draft',
             canvas: { width: 1080, height: 1920, backgroundColor: '#000000', backgroundImage: '' },
-            imageArea: { ratio: '9:16', top: 0, height: 1, fit: 'cover', animation: '缩放' },
-            caption: { fontSize: 44, color: '#ffffff', y: -0.8 },
+            imageArea: defaultBridgeImageArea('缩放'),
+            caption: defaultBridgeCaption(),
             scenes: [{ sceneId: 1, startUs: 0, durationUs: 1_200_000, text: 'hello' }],
             images: [{ sceneId: 1, path: join(dir, 'image.png') }],
             narration: [{ sceneId: 1, path: join(dir, 'voice.mp3') }],
@@ -249,8 +298,8 @@ describe('pyJianYingDraft bridge input', () => {
             draftDir: join(dir, 'Draft Root', 'Bridge Draft'),
             title: 'Bridge Draft',
             canvas: { width: 1080, height: 1920, backgroundColor: '#000000', backgroundImage: '' },
-            imageArea: { ratio: '9:16', top: 0, height: 1, fit: 'cover', animation: '' },
-            caption: { fontSize: 44, color: '#ffffff', y: -0.8 },
+            imageArea: defaultBridgeImageArea(),
+            caption: defaultBridgeCaption(),
             scenes: [{ sceneId: 1, startUs: 0, durationUs: 1_200_000, text: 'hello' }],
             images: [{ sceneId: 1, path: join(dir, 'image.png') }],
             narration: [{ sceneId: 1, path: join(dir, 'voice.mp3') }],
@@ -277,6 +326,7 @@ describe('pyJianYingDraft bridge input', () => {
       await rm(dir, { recursive: true, force: true });
     }
   });
+
 });
 
 function wavTone(durationMs: number): Buffer {

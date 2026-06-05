@@ -15,11 +15,19 @@ describe('draft template normalization', () => {
 
     const normalized = normalizeDraftTemplate(legacyTemplate);
 
+    expect(normalized.image.visible).toBe(true);
     expect(normalized.title).toMatchObject({ x: 0, y: -0.1 });
+    expect(normalized.title).toMatchObject({ alpha: 1, bold: true });
     expect(normalized.subtitle).toMatchObject({ x: 0, y: 0.02 });
+    expect(normalized.subtitle).toMatchObject({ text: expect.any(String), alpha: 1, bold: false });
     expect(normalized.caption).toMatchObject({ x: 0 });
     expect(typeof normalized.caption.y).toBe('number');
     expect(normalized.disclaimer).toMatchObject({ x: 0, y: 0.92 });
+    expect(normalized.disclaimer).toMatchObject({
+      fontSize: expect.any(Number),
+      color: expect.stringMatching(/^#/),
+      alpha: 1,
+    });
   });
 
   it('fills editing effect defaults for legacy template audio settings', () => {

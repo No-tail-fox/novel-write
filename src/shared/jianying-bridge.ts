@@ -18,6 +18,7 @@ export interface PyJianYingBridgeInput {
     backgroundImage: string;
   };
   imageArea: {
+    visible: boolean;
     ratio: string;
     top: number;
     height: number;
@@ -27,6 +28,18 @@ export interface PyJianYingBridgeInput {
   caption: {
     fontSize: number;
     color: string;
+    alpha: number;
+    bold: boolean;
+    underline: boolean;
+    align: number;
+    letterSpacing: number;
+    lineSpacing: number;
+    maxCharsPerLine: number;
+    background: {
+      color: string;
+      alpha: number;
+      roundRadius: number;
+    };
     x?: number;
     y: number;
   };
@@ -38,19 +51,27 @@ export interface PyJianYingBridgeInput {
       y: number;
       fontSize: number;
       color: string;
+      alpha: number;
+      bold: boolean;
     };
     subtitle?: {
       visible: boolean;
+      text: string;
       x: number;
       y: number;
       fontSize: number;
       color: string;
+      alpha: number;
+      bold: boolean;
     };
     disclaimer?: {
       visible: boolean;
       text: string;
       x: number;
       y: number;
+      fontSize: number;
+      color: string;
+      alpha: number;
     };
   };
   scenes?: Array<{ sceneId: number; startUs: number; durationUs: number; text: string }>;
@@ -446,20 +467,21 @@ def main():
         audio_material = audio_materials[scene_id]
         scale = 1.0 if image_area.get("fit") == "cover" else 0.96
         transform_y = float(image_area.get("top", 0)) * 2 + float(image_area.get("height", 1)) - 1
-        image_segment = draft.VideoSegment(
-            image_material,
-            draft.Timerange(start, duration),
-            source_timerange=draft.Timerange(0, duration),
-            clip_settings=draft.ClipSettings(scale_x=scale, scale_y=scale, transform_y=transform_y),
-        )
-        apply_image_animation(image_segment, image_area.get("animation"))
-        if filter_type:
-            image_segment.add_filter(filter_type)
-        if video_effect_type:
-            image_segment.add_effect(video_effect_type)
-        if index < len(timeline) - 1 and transition_type and transition_duration > 0:
-            image_segment.add_transition(transition_type, duration=clamp_effect_duration(transition_duration, duration))
-        script.add_segment(image_segment, "images")
+        if image_area.get("visible", True):
+            image_segment = draft.VideoSegment(
+                image_material,
+                draft.Timerange(start, duration),
+                source_timerange=draft.Timerange(0, duration),
+                clip_settings=draft.ClipSettings(scale_x=scale, scale_y=scale, transform_y=transform_y),
+            )
+            apply_image_animation(image_segment, image_area.get("animation"))
+            if filter_type:
+                image_segment.add_filter(filter_type)
+            if video_effect_type:
+                image_segment.add_effect(video_effect_type)
+            if index < len(timeline) - 1 and transition_type and transition_duration > 0:
+                image_segment.add_transition(transition_type, duration=clamp_effect_duration(transition_duration, duration))
+            script.add_segment(image_segment, "images")
 
         audio_segment = draft.AudioSegment(
             audio_material,
@@ -503,7 +525,7 @@ def main():
         text_style=draft.TextStyle(
             size=float(caption.get("fontSize", 8)),
             color=color_to_rgb(caption.get("color", "#ffffff")),
-            align=1,
+            align=int(caption.get("align", 1)),
             auto_wrapping=True,
         ),
         clip_settings=draft.ClipSettings(transform_x=float(caption.get("x", 0)), transform_y=float(caption.get("y", -0.8))),
