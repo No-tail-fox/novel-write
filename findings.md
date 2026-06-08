@@ -1,5 +1,36 @@
 # Findings
 
+## Coze Workflow Draft Template Converter
+
+- The copied Coze source is JSON with `type: "coze-workflow-clipboard-data"` and source metadata such as `workflowId`, `spaceId`, and `host`.
+- The pasted sample contains workflow ID `7629256239332032548`, `create_draft` dimensions `1920x1080`, and Jianying-related plugin APIs including `add_videos`, `add_audios`, `add_captions`, `add_effects`, `add_images`, and `add_keyframes`.
+- A full Coze workflow cannot be losslessly represented by the current Storybound `DraftTemplate` model because runtime asset URLs, code nodes, cutout/speech synthesis steps, and node references are outside the template schema. The converter therefore maps supported visual/export settings and surfaces the rest as explicit diagnostics.
+- `bg_audio_url` and `bg_video_url` from the Coze start node are preserved as diagnostics for later asset-aware wiring, not silently dropped.
+- Unsupported plugin APIs in the real fixture currently include `speech_synthesis` and `cutout`; they are reported as warnings.
+- The generated template for the real fixture is `coze-7629256239332032548`, non-default, landscape `16:9`, `1920x1080`, and can be saved through existing draft-template storage.
+- The batch converter supports multiple pasted JSON blobs or JSON arrays through `convertManyCozeWorkflowsToDraftTemplates`; the CLI writes `{ generatedAt, templates, diagnostics, failures }`.
+
+## Feishu Coze Source Batch Download
+
+- The Feishu wiki page is anonymously readable and the rendered attachment audit found 129 attachments: 64 `.txt` workflow sources and 65 `.zip` packages.
+- The browser DOM attachment `data-record-id` is not the direct download token. The initial wiki HTML embeds a document object map where each file block record contains `data.file.token`, `mimeType`, `size`, and `name`.
+- Example mapping: record `ChYYdgLYsoNaHexKw4cc6TEZnHI` (`【S1】炫酷书单1.txt`) maps to file token `LmDbb2FcnoAxLAxPuZic1mhInHb`, mime `text/plain`, size `360583`.
+- Feishu preview/cdn APIs observed in network traces:
+  - `/space/api/box/file/info/` takes `{ file_token, mount_point: "docx_file", mount_node_token, option_params }`.
+  - `/space/api/box/file/cdn_url/` takes an array of `{ file_token, width, height, policy }` for covers/previews and returns drive object URLs with encryption metadata.
+- The `lf*-drive.feishucdn.com/object/1000/box-file/...` objects observed for covers are ciphered binary preview resources, not directly useful plaintext workflow JSON.
+- The Feishu document is virtualized. A single DOM-scroll pass can miss middle or bottom file blocks; observed real runs returned 64, 104, 110, 113, or 114 `.txt` records depending on hydration timing.
+- Hydrated React fibers expose a `blockManager`; `blockManager.getRecord(recordId)` returns file metadata including `file.token`, `mimeType`, `size`, and Chinese `name` even when the DOM card is not mounted.
+- Initial Document HTML contains many record IDs in document maps and `children` arrays, even when it does not include full file token metadata. Feeding those IDs to the runtime `blockManager` fills in missing middle files such as `【S38】多人版心理学火柴人.txt`, `育儿绘本.txt`, `【S40】教育视频.txt`, and `【S122】个人成长心理视频.txt`.
+- Direct workflow download works with Feishu cookies from the CDP browser session via `https://internal-api-drive-stream.feishu.cn/space/api/box/stream/download/all/<file_token>`.
+- Final stabilized Feishu batch result:
+  - `data/coze-workflows/feishu-sources`: 114 downloaded Coze workflow `.txt` files, named with stable record-id prefixes.
+  - `data/coze-workflows/feishu-draft-templates.json`: 114 converted templates, 0 failures, 0 duplicate template IDs.
+  - `data/coze-workflows/feishu-data.db`: 117 draft template rows total, including 114 `coze-*` templates and 3 built-in Storybound presets.
+- Normal app databases now seed the bundled Feishu Coze draft-template bundle during `FileDatabase.open()`: fresh app state contains 117 draft templates total, including 114 `coze-*` templates and 3 built-in Storybound presets.
+- The seed path only inserts missing `coze-*` template IDs, so user-renamed or edited Coze presets are preserved while missing presets are restored on the next app open.
+- Some Seedance/SORA/video-generation workflows have no Jianying `create_draft` node. The converter now generates a reusable default 9:16 Storybound draft-template shell and records `node.missing_create_draft` as a warning instead of failing the batch.
+
 ## Additional Storybound Draft Preset Parity
 
 - Re-read Storybound local SQLite DB at `C:\Users\foxnotail\AppData\Local\com.dudumd.storybound\data.db`.

@@ -1,7 +1,18 @@
 import { defaultConfig } from './config';
 import { normalizeOpenAiImageBaseUrl, testOpenAiCompatibleImageModel } from './openai-image';
 import { isArkModelApiKey, normalizeVolcengineV3Speaker, VOLCENGINE_TTS_ARK_KEY_MESSAGE } from './volcengine-tts';
-import type { AppConfig, BgmItem, ConfigTestResult, ConfigTestTarget, ImageProviderProfile, LlmModelTestResult, TtsProviderProfile } from './types';
+import type {
+  AppConfig,
+  BgmItem,
+  ConfigTestResult,
+  ConfigTestTarget,
+  ImageProviderProfile,
+  LlmModelTestResult,
+  SpeechToTextChunkingStrategy,
+  SpeechToTextResponseFormat,
+  SpeechToTextTimestampGranularity,
+  TtsProviderProfile,
+} from './types';
 
 type TestStatus = ConfigTestResult['status'];
 type ConfigValidationOptions = {
@@ -48,6 +59,12 @@ function normalizeBgmLibrary(input: unknown): BgmItem[] {
 function normalizeNonNegativeNumber(value: unknown, fallback: number): number {
   const parsed = Number(value);
   return Number.isFinite(parsed) && parsed >= 0 ? parsed : fallback;
+}
+
+function normalizeNumberInRange(value: unknown, fallback: number, min: number, max: number): number {
+  const parsed = Number(value);
+  if (!Number.isFinite(parsed)) return fallback;
+  return Math.min(max, Math.max(min, parsed));
 }
 
 function normalizeDefaultBgmId(library: BgmItem[], value: unknown): string {
@@ -300,6 +317,40 @@ function normalizeTtsProfiles(partial: Partial<AppConfig>): {
   return { tts, ttsProfiles, activeTtsProfileId: active.id! };
 }
 
+function normalizeSpeechToTextConfig(input: Partial<AppConfig['speechToText']> | undefined): AppConfig['speechToText'] {
+  const merged = { ...defaultConfig.speechToText, ...(input ?? {}) };
+  return {
+    ...merged,
+    provider: 'openai-compatible',
+    baseUrl: normalizeBaseUrl(String(merged.baseUrl || defaultConfig.speechToText.baseUrl)),
+    apiKey: String(merged.apiKey ?? '').trim(),
+    model: String(merged.model ?? '').trim() || defaultConfig.speechToText.model,
+    language: String(merged.language ?? '').trim(),
+    prompt: String(merged.prompt ?? '').trim(),
+    responseFormat: normalizeSpeechToTextResponseFormat(merged.responseFormat),
+    temperature: normalizeNumberInRange(merged.temperature, defaultConfig.speechToText.temperature, 0, 1),
+    timestampGranularities: normalizeSpeechToTextTimestampGranularities(merged.timestampGranularities),
+    chunkingStrategy: normalizeSpeechToTextChunkingStrategy(merged.chunkingStrategy),
+    timeoutMs: normalizePositiveNumber(merged.timeoutMs, defaultConfig.speechToText.timeoutMs),
+  };
+}
+
+function normalizeSpeechToTextResponseFormat(value: unknown): SpeechToTextResponseFormat {
+  return value === 'json' || value === 'text' || value === 'srt' || value === 'verbose_json' || value === 'vtt'
+    ? value
+    : defaultConfig.speechToText.responseFormat;
+}
+
+function normalizeSpeechToTextTimestampGranularities(value: unknown): SpeechToTextTimestampGranularity[] {
+  if (!Array.isArray(value)) return defaultConfig.speechToText.timestampGranularities;
+  const next = value.filter((item): item is SpeechToTextTimestampGranularity => item === 'segment' || item === 'word');
+  return next.length ? Array.from(new Set(next)) : defaultConfig.speechToText.timestampGranularities;
+}
+
+function normalizeSpeechToTextChunkingStrategy(value: unknown): SpeechToTextChunkingStrategy {
+  return value === 'auto' || value === 'none' ? value : defaultConfig.speechToText.chunkingStrategy;
+}
+
 export function normalizeAppConfig(input: unknown): AppConfig {
   const partial = (input && typeof input === 'object' ? input : {}) as Partial<AppConfig>;
   const llm = normalizeLlmProfile({ ...defaultConfig.llm, ...(partial.llm ?? {}) }, 0);
@@ -332,6 +383,7 @@ export function normalizeAppConfig(input: unknown): AppConfig {
     activeLlmProfileId,
     ...imageConfig,
     ...ttsConfig,
+    speechToText: normalizeSpeechToTextConfig(partial.speechToText),
     jianying: {
       ...defaultConfig.jianying,
       ...(partial.jianying ?? {}),
@@ -387,6 +439,10 @@ export function validateConfigTarget(target: ConfigTestTarget, input: AppConfig,
 
   if (target === 'tts') {
     return validateTtsConfig(config, startedAt);
+  }
+
+  if (target === 'speechToText') {
+    return validateSpeechToTextConfig(config, startedAt);
   }
 
   if (target === 'jianying') {
@@ -451,6 +507,20 @@ export function fromLlmModelTestResult(result: LlmModelTestResult): ConfigTestRe
     endpoint: result.endpoint,
     requestId: result.requestId,
   };
+}
+
+function validateSpeechToTextConfig(config: AppConfig, startedAt: number): ConfigTestResult {
+  const missing = missingFields([
+    ['API Key', config.speechToText.apiKey],
+    ['转写模型', config.speechToText.model],
+  ]);
+  return buildResult({
+    target: 'speechToText',
+    startedAt,
+    status: missing.length ? 'fail' : 'pass',
+    endpoint: `${normalizeBaseUrl(config.speechToText.baseUrl || 'https://api.openai.com/v1')}/audio/transcriptions`,
+    detail: missing.length ? `语音转文字 API 缺少：${missing.join('、')}。` : `语音转文字 API 字段已填写：${config.speechToText.model}`,
+  });
 }
 
 function validateImageConfig(config: AppConfig, startedAt: number): ConfigTestResult {

@@ -128,8 +128,8 @@ describe('pyJianYingDraft bridge input', () => {
       expect(script).toContain('resolve_image_layout');
       expect(script).toContain('image_segment.add_mask(');
       expect(script).toContain('align=int(caption.get("align", 1))');
-      expect(script).toContain('max_line_width=clamp_number(config.get("width"), 0.8, 0.1, 1.0)');
-      expect(script).toContain('max_line_width=clamp_number(caption.get("width"), 0.8, 0.1, 1.0)');
+      expect(script).toContain('max_line_width=clamp_number(config.get("width"), 0.8, 0.1, 2.0)');
+      expect(script).toContain('max_line_width=clamp_number(caption.get("width"), 0.8, 0.1, 2.0)');
     } finally {
       await rm(dir, { recursive: true, force: true });
     }

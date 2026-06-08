@@ -4,6 +4,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { FileDatabase } from '@shared/storage';
 import { defaultConfig } from '@shared/config';
+import { convertCozeWorkflowToDraftTemplate } from '@shared/coze-workflow-converter';
 
 describe('file database', () => {
   it('persists config, tasks, and events across reloads', async () => {
@@ -179,6 +180,59 @@ describe('file database', () => {
     }
   });
 
+  it('persists converted Coze workflow draft templates across reloads', async () => {
+    const dir = await mkdtemp(join(tmpdir(), 'storybound-db-coze-draft-template-'));
+    const file = join(dir, 'app.db');
+
+    try {
+      const db = await FileDatabase.open(file);
+      const conversion = convertCozeWorkflowToDraftTemplate(JSON.stringify({
+        type: 'coze-workflow-clipboard-data',
+        source: { workflowId: '7629256239332032548' },
+        json: {
+          nodes: [
+            {
+              id: 'create',
+              type: '4',
+              data: {
+                nodeMeta: { title: 'create_draft' },
+                inputs: {
+                  apiParam: [
+                    cozeApiParam('apiName', 'create_draft'),
+                    cozeApiParam('pluginID', '7522412867740565513'),
+                    cozeApiParam('pluginName', '视频合成_剪映小助手'),
+                  ],
+                  inputParameters: [
+                    cozeLiteralParameter('width', 1920),
+                    cozeLiteralParameter('height', 1080),
+                  ],
+                },
+              },
+            },
+          ],
+        },
+      }), { name: 'Coze imported template' });
+      if (!conversion.ok) throw new Error(conversion.error);
+
+      await db.upsertDraftTemplate(conversion.template);
+      await db.close();
+
+      const reopened = await FileDatabase.open(file);
+      const state = await reopened.getState();
+      const template = state.draftTemplates.find((item) => item.id === 'coze-7629256239332032548');
+
+      expect(template).toMatchObject({
+        name: 'Coze imported template',
+        isDefault: false,
+        canvas: { width: 1920, height: 1080, ratio: '16:9' },
+        image: { ratio: '16:9', fit: 'cover' },
+      });
+      await reopened.close();
+    } finally {
+      await rm(dir, { recursive: true, force: true });
+    }
+  });
+
   it('persists viral analyses and events across reloads', async () => {
     const dir = await mkdtemp(join(tmpdir(), 'storybound-db-viral-'));
     const file = join(dir, 'app.db');
@@ -336,3 +390,29 @@ describe('file database', () => {
     }
   });
 });
+
+function cozeApiParam(name: string, content: string) {
+  return {
+    name,
+    input: {
+      type: 'string',
+      value: {
+        type: 'literal',
+        content,
+      },
+    },
+  };
+}
+
+function cozeLiteralParameter(name: string, content: unknown) {
+  return {
+    name,
+    input: {
+      type: typeof content === 'number' ? 'integer' : 'string',
+      value: {
+        type: 'literal',
+        content,
+      },
+    },
+  };
+}

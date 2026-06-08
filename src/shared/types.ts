@@ -92,7 +92,7 @@ export interface VolcengineSpeakerListResult {
   requestId: string | null;
 }
 
-export type ConfigTestTarget = 'llm' | 'image' | 'tts' | 'jianying' | 'creative';
+export type ConfigTestTarget = 'llm' | 'image' | 'tts' | 'speechToText' | 'jianying' | 'creative';
 
 export interface ConfigTestResult {
   status: 'pass' | 'warn' | 'fail';
@@ -190,6 +190,24 @@ export interface TtsProviderProfile {
   minimax?: TtsConfig['minimax'];
 }
 
+export type SpeechToTextResponseFormat = 'json' | 'text' | 'srt' | 'verbose_json' | 'vtt';
+export type SpeechToTextTimestampGranularity = 'segment' | 'word';
+export type SpeechToTextChunkingStrategy = 'none' | 'auto';
+
+export interface SpeechToTextConfig {
+  provider: 'openai-compatible';
+  baseUrl: string;
+  apiKey: string;
+  model: string;
+  language: string;
+  prompt: string;
+  responseFormat: SpeechToTextResponseFormat;
+  temperature: number;
+  timestampGranularities: SpeechToTextTimestampGranularity[];
+  chunkingStrategy: SpeechToTextChunkingStrategy;
+  timeoutMs: number;
+}
+
 export interface BgmItem {
   id: string;
   title: string;
@@ -254,6 +272,7 @@ export interface AppConfig {
   tts: TtsConfig;
   ttsProfiles: TtsProviderProfile[];
   activeTtsProfileId: string;
+  speechToText: SpeechToTextConfig;
   jianying: JianyingConfig;
   ima: ImaConfig;
   viral: ViralAnalyzerConfig;

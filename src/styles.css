@@ -1886,15 +1886,6 @@ textarea {
   background: #0f171d;
 }
 
-.prompt-template-reference-fields {
-  display: grid;
-  gap: 14px;
-}
-
-.prompt-template-reference-fields .field {
-  gap: 8px;
-}
-
 .prompt-template-seed-pools {
   min-height: 110px;
   font-family: ui-monospace, SFMono-Regular, Consolas, monospace;
@@ -2043,6 +2034,58 @@ textarea {
 .draft-template-toolbar > div {
   display: grid;
   gap: 5px;
+}
+
+.coze-template-import-panel {
+  display: grid;
+  gap: 12px;
+}
+
+.coze-template-import-grid {
+  display: grid;
+  grid-template-columns: minmax(180px, 0.35fr) minmax(260px, 1fr);
+  gap: 12px;
+  align-items: start;
+}
+
+.coze-workflow-source {
+  min-height: 132px;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+}
+
+.coze-import-preview {
+  display: grid;
+  gap: 8px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  padding: 10px;
+  background: var(--panel-2);
+}
+
+.coze-import-preview > span,
+.coze-import-preview small {
+  color: var(--muted);
+}
+
+.coze-diagnostics-list {
+  display: grid;
+  gap: 6px;
+  margin: 8px 0 0;
+  padding: 0;
+  list-style: none;
+}
+
+.coze-diagnostics-list li {
+  display: grid;
+  grid-template-columns: 48px minmax(0, 1fr);
+  gap: 8px;
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.coze-diagnostics-list span {
+  color: var(--accent);
+  text-transform: uppercase;
 }
 
 .draft-template-gallery {
@@ -2246,8 +2289,6 @@ textarea {
 
 .text-layer {
   min-height: 26px;
-  display: grid;
-  place-items: center;
 }
 
 .draft-layer-handle {
@@ -2274,6 +2315,16 @@ textarea {
   white-space: pre-line;
   overflow-wrap: anywhere;
   line-height: 1.15;
+}
+
+.editable-draft-canvas .draft-title,
+.editable-draft-canvas .draft-subtitle,
+.editable-draft-canvas .draft-caption,
+.editable-draft-canvas .draft-disclaimer {
+  position: relative;
+  left: auto;
+  top: auto;
+  transform: none;
 }
 
 .draft-title {

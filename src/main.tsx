@@ -116,6 +116,7 @@ import {
   defaultUiPreferences,
 } from './shared/config';
 import { draftTemplates as builtinDraftTemplates, imageAnimations, normalizeDraftTemplate } from './shared/templates';
+import { convertCozeWorkflowToDraftTemplate, convertManyCozeWorkflowsToDraftTemplates, type CozeWorkflowTemplateConversionResult } from './shared/coze-workflow-converter';
 import {
   buildImageTemplateStyleOptions,
   buildTaskPromptTemplateOptions,
@@ -274,6 +275,8 @@ const pipelineSteps = [
 type StoryboundApi = NonNullable<Window['storybound']>;
 type ModelListKey = 'llm' | 'gpt-image' | 'custom-image';
 type DraftCanvasLayer = 'image' | 'title' | 'subtitle' | 'caption' | 'disclaimer';
+const DRAFT_TEXT_WIDTH_MIN = 0.1;
+const DRAFT_TEXT_WIDTH_MAX = 2;
 type DraftDragSnapshot =
   | { mode: 'move'; layer: DraftCanvasLayer; pointerId: number; startX: number; startY: number; template: DraftTemplate }
   | { mode: 'resize'; layer: Exclude<DraftCanvasLayer, 'image'>; pointerId: number; startX: number; startY: number; template: DraftTemplate };
@@ -817,8 +820,6 @@ function ViralAnalyzerPage({
   const [ratio, setRatio] = useState('9:16');
   const [templateId, setTemplateId] = useState('default-portrait-9-16');
   const [cookieFilePath, setCookieFilePath] = useState(state.config.viral.cookieFilePath);
-  const [whisperModel, setWhisperModel] = useState(state.config.viral.whisperModel);
-  const [huggingFaceEndpoint, setHuggingFaceEndpoint] = useState(state.config.viral.huggingFaceEndpoint);
   const [selectedId, setSelectedId] = useState(state.viralAnalyses[0]?.id ?? '');
   const [result, setResult] = useState<ViralAnalysisResult | null>(null);
   const [message, setMessage] = useState('');
@@ -863,18 +864,12 @@ function ViralAnalyzerPage({
       return;
     }
     setMessage('');
-    if (
-      cookieFilePath !== state.config.viral.cookieFilePath ||
-      whisperModel !== state.config.viral.whisperModel ||
-      huggingFaceEndpoint !== state.config.viral.huggingFaceEndpoint
-    ) {
+    if (cookieFilePath !== state.config.viral.cookieFilePath) {
       const nextState = await api.saveConfig({
         ...state.config,
         viral: {
           ...state.config.viral,
           cookieFilePath: cookieFilePath.trim(),
-          whisperModel: whisperModel.trim() || 'small',
-          huggingFaceEndpoint: huggingFaceEndpoint.trim(),
         },
       });
       applyState(nextState);
@@ -3146,67 +3141,50 @@ function PromptTemplatesPage({ api, state, applyState }: { api: StoryboundApi; s
                   <Field label="baseTemplateId">
                     <input value={draft.baseTemplateId ?? ''} onChange={(event) => setDraft({ ...draft, baseTemplateId: event.target.value || null })} />
                   </Field>
+                  {draft.type === 'task' ? (
+                    <Field label="出图种子池 JSON">
+                      <textarea
+                        className="small-textarea prompt-template-seed-pools"
+                        value={draft.imageSeedPoolsJson ?? ''}
+                        onChange={(event) => setDraft({ ...draft, imageSeedPoolsJson: event.target.value })}
+                        placeholder='{"scenes":["close-up","wide shot"],"moods":["warm","dramatic"]}'
+                      />
+                    </Field>
+                  ) : null}
                 </div>
               </section>
 
               {draft.isBuiltin ? <span className="local-note">首次保存将创建自定义副本，原内置模板保持不变。</span> : null}
-
-              <section className="prompt-template-settings-card">
-                <div className="prompt-template-section-heading">
-                  <span className="field-title">{draft.type === 'task' ? '任务总指令' : '提示词内容'}</span>
-                </div>
-                <span className="field-title">变量</span>
-                <span className="hint-text">点击插入对应内容占位；每个提示词输入框也可输入 // 选择变量。</span>
-                <div className="variable-chip-row">{promptTemplateVariableDefinitions.map((item) => (
-                  <button
-                    className="chip prompt-template-variable-chip"
-                    type="button"
-                    key={item.key}
-                    title={`插入 {{${item.key}}}: ${item.description}`}
-                    onClick={() => setDraft({ ...draft, content: `${draft.content}${draft.content.endsWith(' ') || draft.content.endsWith('\n') ? '' : ' '}{{${item.key}}}` })}
-                  >
-                    <span>{item.label}</span>
-                    <code className="prompt-variable-token">{`{{${item.key}}}`}</code>
-                    <small>{item.description}</small>
-                  </button>
-                ))}</div>
-                <VariableAwareTextarea className="template-textarea" value={draft.content} onChange={(value) => setDraft({ ...draft, content: value })} placeholder="输入 // 选择变量" />
-              </section>
-
-              {draft.type === 'task' ? (
-                <section className="prompt-template-settings-card prompt-template-reference-fields">
-                  <div className="prompt-template-section-heading">
-                    <span className="field-title">参考提示词内容</span>
-                    <span className="hint-text">保留当前模板结构，同时补齐 Storybound 参考软件里的系统提示词字段。</span>
-                  </div>
-                  <Field label="任务总指令">
-                    <VariableAwareTextarea className="template-textarea" value={draft.content} onChange={(value) => setDraft({ ...draft, content: value })} placeholder="输入任务模板总指令" />
-                  </Field>
-                  <Field label="Step 1 改写系统提示词">
-                    <VariableAwareTextarea className="template-textarea" value={promptTemplateStepPromptValue(draft, state.promptTemplates, 'rewrite')} onChange={(value) => updatePromptTemplateStepPrompt('rewrite', value)} placeholder="输入改写系统提示词" />
-                  </Field>
-                  <Field label="Step 1 元数据系统提示词">
-                    <VariableAwareTextarea className="template-textarea" value={promptTemplateStepPromptValue(draft, state.promptTemplates, 'cover')} onChange={(value) => updatePromptTemplateStepPrompt('cover', value)} placeholder="输入标题、摘要、标签等元数据提示词" />
-                  </Field>
-                  <Field label="Step 3 出图系统提示词">
-                    <VariableAwareTextarea className="template-textarea" value={promptTemplateStepPromptValue(draft, state.promptTemplates, 'image-prompt')} onChange={(value) => updatePromptTemplateStepPrompt('image-prompt', value)} placeholder="输入出图系统提示词" />
-                  </Field>
-                  <Field label="出图种子池 JSON">
-                    <textarea
-                      className="small-textarea prompt-template-seed-pools"
-                      value={draft.imageSeedPoolsJson ?? ''}
-                      onChange={(event) => setDraft({ ...draft, imageSeedPoolsJson: event.target.value })}
-                      placeholder='{"scenes":["close-up","wide shot"],"moods":["warm","dramatic"]}'
-                    />
-                  </Field>
-                </section>
-              ) : null}
 
               {draft.type === 'task' ? (
                 <section className="prompt-step-editor-list" aria-label="AI 步骤设置">
                   <div className="prompt-step-editor-heading">
                     <span className="field-title prompt-step-editor-section-title">步骤默认提示词</span>
                   </div>
+                  <article className="prompt-step-editor-card" key="task-template-content">
+                    <div className="prompt-step-editor-card-header">
+                      <div>
+                        <strong>任务总指令</strong>
+                        <small>定义当前任务模板的整体目标、赛道语气和内容边界</small>
+                      </div>
+                    </div>
+                    <span className="field-title">变量</span>
+                    <span className="hint-text">点击插入对应内容占位；每个提示词输入框也可输入 // 选择变量。</span>
+                    <div className="variable-chip-row">{promptTemplateVariableDefinitions.map((item) => (
+                      <button
+                        className="chip prompt-template-variable-chip"
+                        type="button"
+                        key={item.key}
+                        title={`插入 {{${item.key}}}: ${item.description}`}
+                        onClick={() => setDraft({ ...draft, content: `${draft.content}${draft.content.endsWith(' ') || draft.content.endsWith('\n') ? '' : ' '}{{${item.key}}}` })}
+                      >
+                        <span>{item.label}</span>
+                        <code className="prompt-variable-token">{`{{${item.key}}}`}</code>
+                        <small>{item.description}</small>
+                      </button>
+                    ))}</div>
+                    <VariableAwareTextarea className="template-textarea prompt-step-editor-textarea" value={draft.content} onChange={(value) => setDraft({ ...draft, content: value })} placeholder="输入 // 选择变量" />
+                  </article>
                   {promptStepEditorDefinitions.map((step) => {
                     const hasOverride = promptTemplateHasStepPrompt(draft, step.type);
                     return (
@@ -3230,7 +3208,29 @@ function PromptTemplatesPage({ api, state, applyState }: { api: StoryboundApi; s
                     );
                   })}
                 </section>
-              ) : null}
+              ) : (
+                <section className="prompt-template-settings-card">
+                  <div className="prompt-template-section-heading">
+                    <span className="field-title">提示词内容</span>
+                  </div>
+                  <span className="field-title">变量</span>
+                  <span className="hint-text">点击插入对应内容占位；每个提示词输入框也可输入 // 选择变量。</span>
+                  <div className="variable-chip-row">{promptTemplateVariableDefinitions.map((item) => (
+                    <button
+                      className="chip prompt-template-variable-chip"
+                      type="button"
+                      key={item.key}
+                      title={`插入 {{${item.key}}}: ${item.description}`}
+                      onClick={() => setDraft({ ...draft, content: `${draft.content}${draft.content.endsWith(' ') || draft.content.endsWith('\n') ? '' : ' '}{{${item.key}}}` })}
+                    >
+                      <span>{item.label}</span>
+                      <code className="prompt-variable-token">{`{{${item.key}}}`}</code>
+                      <small>{item.description}</small>
+                    </button>
+                  ))}</div>
+                  <VariableAwareTextarea className="template-textarea" value={draft.content} onChange={(value) => setDraft({ ...draft, content: value })} placeholder="输入 // 选择变量" />
+                </section>
+              )}
             </div>
             <Field label="导入 / 导出 JSON">
               <textarea className="small-textarea" value={templateJsonDraft} onChange={(event) => setTemplateJsonDraft(event.target.value)} placeholder="导出后会填入这里；也可粘贴故事模板 JSON 后点击导入 JSON" />
@@ -3323,6 +3323,11 @@ function DraftTemplatesPage({ api, state, applyState }: { api: StoryboundApi; st
   const [draft, setDraft] = useState<DraftTemplate | null>(null);
   const [selectedLayer, setSelectedLayer] = useState<DraftCanvasLayer>('title');
   const [effectCatalog, setEffectCatalog] = useState<JianyingEffectCatalog>(fallbackEffectCatalog);
+  const [cozeWorkflowSource, setCozeWorkflowSource] = useState('');
+  const [cozeImportName, setCozeImportName] = useState('');
+  const [cozeImportResult, setCozeImportResult] = useState<Extract<CozeWorkflowTemplateConversionResult, { ok: true }> | null>(null);
+  const [cozeImportResults, setCozeImportResults] = useState<CozeWorkflowTemplateConversionResult[]>([]);
+  const [cozeImportError, setCozeImportError] = useState('');
 
   useEffect(() => {
     // Rehydrate only when switching templates; state refreshes must not overwrite unsaved drag edits.
@@ -3367,6 +3372,55 @@ function DraftTemplatesPage({ api, state, applyState }: { api: StoryboundApi; st
     setEditingId(next.id);
   }
 
+  function previewCozeWorkflowTemplate() {
+    const results = convertManyCozeWorkflowsToDraftTemplates(cozeWorkflowSource, { namePrefix: cozeImportName.trim() || undefined });
+    const result = results[0] ?? convertCozeWorkflowToDraftTemplate(cozeWorkflowSource, { name: cozeImportName });
+    setCozeImportResults(results);
+    if (!result.ok || results.some((item) => !item.ok)) {
+      setCozeImportResult(null);
+      setCozeImportError(!result.ok ? result.error : '部分 Coze 工作流转换失败，请检查源码。');
+      return;
+    }
+    setCozeImportResult(result);
+    setCozeImportError('');
+    if (!cozeImportName.trim()) setCozeImportName(result.template.name);
+  }
+
+  async function saveCozeWorkflowTemplate() {
+    const result = convertCozeWorkflowToDraftTemplate(cozeWorkflowSource, { name: cozeImportName });
+    if (!result.ok) {
+      setCozeImportResult(null);
+      setCozeImportError(result.error);
+      return;
+    }
+    const template = cozeImportName.trim() ? { ...result.template, name: cozeImportName.trim() } : result.template;
+    applyState(await api.saveDraftTemplate(template));
+    setCozeImportResult({ ...result, template });
+    setCozeImportError('');
+    setEditingId(template.id);
+  }
+
+  async function saveAllCozeWorkflowTemplates() {
+    const results = convertManyCozeWorkflowsToDraftTemplates(cozeWorkflowSource, { namePrefix: cozeImportName.trim() || undefined });
+    setCozeImportResults(results);
+    const failures = results.filter((result) => !result.ok);
+    if (failures.length) {
+      setCozeImportResult(null);
+      setCozeImportError(`${failures.length} 个 Coze 工作流转换失败。`);
+      return;
+    }
+    let nextState = state;
+    for (const result of results) {
+      if (!result.ok) continue;
+      nextState = await api.saveDraftTemplate(result.template);
+    }
+    applyState(nextState);
+    const first = results.find((result): result is Extract<CozeWorkflowTemplateConversionResult, { ok: true }> => result.ok) ?? null;
+    setCozeImportResult(first);
+    setCozeImportError('');
+    if (first) setEditingId(first.template.id);
+  }
+
   function openEditor(template: DraftTemplate) {
     setDraft(cloneDraftTemplate(template));
     setEditingId(template.id);
@@ -3399,7 +3453,7 @@ function DraftTemplatesPage({ api, state, applyState }: { api: StoryboundApi; st
   }
 
   function updateDraftCaptionWidth(value: number) {
-    updateDraftCaption({ width: clamp(value, 0.1, 1) });
+    updateDraftCaption({ width: clamp(value, DRAFT_TEXT_WIDTH_MIN, DRAFT_TEXT_WIDTH_MAX) });
   }
 
   function updateDraftDisclaimer(patch: Partial<DraftTemplate['disclaimer']>) {
@@ -3477,7 +3531,7 @@ function DraftTemplatesPage({ api, state, applyState }: { api: StoryboundApi; st
               <ToggleField label="显示" checked={draft.title.visible} onChange={(checked) => updateDraftTitle({ visible: checked })} />
               <Field label="文字"><input value={draft.title.text} onChange={(event) => updateDraftTitle({ text: event.target.value })} /></Field>
               <Field label="坐标"><input value={`${draft.title.x.toFixed(2)}, ${draft.title.y.toFixed(2)}`} readOnly /></Field>
-              <RangeField label="文本框宽度" min={0.1} max={1} step={0.01} value={draft.title.width} onChange={(value) => updateDraftTitle({ width: clamp(value, 0.1, 1) })} />
+              <RangeField label="文本框宽度" min={DRAFT_TEXT_WIDTH_MIN} max={DRAFT_TEXT_WIDTH_MAX} step={0.01} value={draft.title.width} onChange={(value) => updateDraftTitle({ width: clamp(value, DRAFT_TEXT_WIDTH_MIN, DRAFT_TEXT_WIDTH_MAX) })} />
               <RangeField label="字号" min={12} max={120} step={1} value={draft.title.fontSize} onChange={(value) => updateDraftTitle({ fontSize: value })} />
               <ColorField label="颜色" value={draft.title.color} onChange={(value) => updateDraftTitle({ color: value })} />
               <RangeField label="透明度" min={0} max={1} step={0.05} value={draft.title.alpha} onChange={(value) => updateDraftTitle({ alpha: value })} />
@@ -3498,7 +3552,7 @@ function DraftTemplatesPage({ api, state, applyState }: { api: StoryboundApi; st
               <ToggleField label="显示" checked={draft.subtitle.visible} onChange={(checked) => updateDraftSubtitle({ visible: checked })} />
               <Field label="文字"><input value={draft.subtitle.text} onChange={(event) => updateDraftSubtitle({ text: event.target.value })} /></Field>
               <Field label="坐标"><input value={`${draft.subtitle.x.toFixed(2)}, ${draft.subtitle.y.toFixed(2)}`} readOnly /></Field>
-              <RangeField label="文本框宽度" min={0.1} max={1} step={0.01} value={draft.subtitle.width} onChange={(value) => updateDraftSubtitle({ width: clamp(value, 0.1, 1) })} />
+              <RangeField label="文本框宽度" min={DRAFT_TEXT_WIDTH_MIN} max={DRAFT_TEXT_WIDTH_MAX} step={0.01} value={draft.subtitle.width} onChange={(value) => updateDraftSubtitle({ width: clamp(value, DRAFT_TEXT_WIDTH_MIN, DRAFT_TEXT_WIDTH_MAX) })} />
               <RangeField label="字号" min={10} max={72} step={1} value={draft.subtitle.fontSize} onChange={(value) => updateDraftSubtitle({ fontSize: value })} />
               <ColorField label="颜色" value={draft.subtitle.color} onChange={(value) => updateDraftSubtitle({ color: value })} />
               <RangeField label="透明度" min={0} max={1} step={0.05} value={draft.subtitle.alpha} onChange={(value) => updateDraftSubtitle({ alpha: value })} />
@@ -3518,7 +3572,7 @@ function DraftTemplatesPage({ api, state, applyState }: { api: StoryboundApi; st
             <Accordion title="字幕">
               <ToggleField label="显示" checked={draft.caption.visible} onChange={(checked) => updateDraftCaption({ visible: checked })} />
               <Field label="坐标"><input value={`${draft.caption.x.toFixed(2)}, ${draft.caption.y.toFixed(2)}`} readOnly /></Field>
-              <RangeField label="文本框宽度" min={0.1} max={1} step={0.01} value={draft.caption.width} onChange={updateDraftCaptionWidth} />
+              <RangeField label="文本框宽度" min={DRAFT_TEXT_WIDTH_MIN} max={DRAFT_TEXT_WIDTH_MAX} step={0.01} value={draft.caption.width} onChange={updateDraftCaptionWidth} />
               <RangeField label="字号" min={8} max={48} step={1} value={draft.caption.fontSize} onChange={(value) => updateDraftCaption({ fontSize: value })} />
               <ColorField label="颜色" value={draft.caption.color} onChange={(value) => updateDraftCaption({ color: value })} />
               <RangeField label="透明度" min={0} max={1} step={0.05} value={draft.caption.alpha} onChange={(value) => updateDraftCaption({ alpha: value })} />
@@ -3543,7 +3597,7 @@ function DraftTemplatesPage({ api, state, applyState }: { api: StoryboundApi; st
               <ToggleField label="显示" checked={draft.disclaimer.visible} onChange={(checked) => updateDraftDisclaimer({ visible: checked })} />
               <Field label="坐标"><input value={`${draft.disclaimer.x.toFixed(2)}, ${draft.disclaimer.y.toFixed(2)}`} readOnly /></Field>
               <Field label="文字"><input value={draft.disclaimer.text} onChange={(event) => updateDraftDisclaimer({ text: event.target.value })} /></Field>
-              <RangeField label="文本框宽度" min={0.1} max={1} step={0.01} value={draft.disclaimer.width} onChange={(value) => updateDraftDisclaimer({ width: clamp(value, 0.1, 1) })} />
+              <RangeField label="文本框宽度" min={DRAFT_TEXT_WIDTH_MIN} max={DRAFT_TEXT_WIDTH_MAX} step={0.01} value={draft.disclaimer.width} onChange={(value) => updateDraftDisclaimer({ width: clamp(value, DRAFT_TEXT_WIDTH_MIN, DRAFT_TEXT_WIDTH_MAX) })} />
               <RangeField label="字号" min={8} max={40} step={1} value={draft.disclaimer.fontSize} onChange={(value) => updateDraftDisclaimer({ fontSize: value })} />
               <ColorField label="颜色" value={draft.disclaimer.color} onChange={(value) => updateDraftDisclaimer({ color: value })} />
               <RangeField label="透明度" min={0} max={1} step={0.05} value={draft.disclaimer.alpha} onChange={(value) => updateDraftDisclaimer({ alpha: value })} />
@@ -3608,6 +3662,47 @@ function DraftTemplatesPage({ api, state, applyState }: { api: StoryboundApi; st
         </div>
         <button className="primary-action slim" onClick={createTemplate}><Plus size={15} />新模板</button>
       </div>
+
+      <section className="panel coze-template-import-panel">
+        <div className="panel-title-row">
+          <div>
+            <h3>导入 Coze 模板</h3>
+            <span className="hint-text">粘贴每个视频下复制出的 Coze 工作流源码，转换成可编辑的草稿模板预设。</span>
+          </div>
+          <div className="button-row">
+            <button className="ghost-action" type="button" onClick={previewCozeWorkflowTemplate}>预览转换</button>
+            <button className="primary-action slim" type="button" disabled={!cozeWorkflowSource.trim()} onClick={saveCozeWorkflowTemplate}><Upload size={15} />导入 Coze 模板</button>
+            <button className="ghost-action" type="button" disabled={!cozeWorkflowSource.trim()} onClick={saveAllCozeWorkflowTemplates}>全部导入</button>
+          </div>
+        </div>
+        <div className="coze-template-import-grid">
+          <Field label="模板名称">
+            <input value={cozeImportName} onChange={(event) => setCozeImportName(event.target.value)} placeholder="留空则使用 Coze workflowId" />
+          </Field>
+          <Field label="Coze 工作流源码">
+            <textarea className="small-textarea coze-workflow-source" value={cozeWorkflowSource} onChange={(event) => setCozeWorkflowSource(event.target.value)} placeholder='粘贴 {"type":"coze-workflow-clipboard-data", ...}' />
+          </Field>
+        </div>
+        {cozeImportError ? <p className="form-error">{cozeImportError}</p> : null}
+        {cozeImportResults.length > 1 ? <span className="hint-text">已识别 {cozeImportResults.length} 个 Coze 工作流源码。</span> : null}
+        {cozeImportResult ? (
+          <div className="coze-import-preview">
+            <strong>{cozeImportResult.template.name}</strong>
+            <span>{cozeImportResult.workflowId} · {cozeImportResult.template.canvas.ratio} · {cozeImportResult.template.canvas.width}x{cozeImportResult.template.canvas.height}</span>
+            <div>
+              <small>转换诊断</small>
+              <ul className="coze-diagnostics-list">
+                {cozeImportResult.diagnostics.slice(0, 8).map((diagnostic, index) => (
+                  <li key={`${diagnostic.code}-${diagnostic.nodeId ?? index}`}>
+                    <span>{diagnostic.level}</span>
+                    {diagnostic.message}
+                  </li>
+                ))}
+              </ul>
+            </div>
+          </div>
+        ) : null}
+      </section>
 
       <section className="draft-template-gallery">
         {state.draftTemplates.map((template) => (
@@ -3806,6 +3901,7 @@ function EditableDraftCanvas({
             y={0}
             width={1}
             border={template.title.border}
+            positioned={false}
             style={draftTextLayerStyle(template.title, template.title.fontSize, template.title.bold ? 800 : 500)}
           >
             {template.title.text}
@@ -3820,6 +3916,7 @@ function EditableDraftCanvas({
             y={0}
             width={1}
             border={template.subtitle.border}
+            positioned={false}
             style={draftTextLayerStyle(template.subtitle, template.subtitle.fontSize, template.subtitle.bold ? 800 : 500)}
           >
             {template.subtitle.text}
@@ -3834,6 +3931,7 @@ function EditableDraftCanvas({
             y={0}
             width={1}
             border={template.caption.border}
+            positioned={false}
             style={{
               color: template.caption.color,
               fontSize: template.caption.fontSize,
@@ -3860,6 +3958,7 @@ function EditableDraftCanvas({
             y={0}
             width={1}
             border={template.disclaimer.border}
+            positioned={false}
             style={draftTextLayerStyle(template.disclaimer, template.disclaimer.fontSize, template.disclaimer.bold ? 700 : 500)}
           >
             {template.disclaimer.text}
@@ -3976,7 +4075,10 @@ function SettingsPage({ api, state, applyState }: { api: StoryboundApi; state: A
     await commitAndApplySettingsDraft(enableTtsProfile(draft, id), '已启用 TTS 配置档案');
   }
   async function testCurrentConfig() {
-    const target: ConfigTestTarget = section === 'llm' || section === 'image' || section === 'tts' || section === 'jianying' || section === 'creative' ? section : 'llm';
+    const target: ConfigTestTarget =
+      section === 'llm' || section === 'image' || section === 'tts' || section === 'speechToText' || section === 'jianying' || section === 'creative'
+        ? section
+        : 'llm';
     setTestingConfig(true);
     setSavingConfig(true);
     setConfigTestResult('正在保存并测试当前配置...');
@@ -4107,6 +4209,13 @@ function SettingsPage({ api, state, applyState }: { api: StoryboundApi; state: A
     const nextConfig = { ...draft, jianying: { ...draft.jianying, bgmLibrary, defaultBgmId: draft.jianying.defaultBgmId === id ? '' : draft.jianying.defaultBgmId } };
     setSettingsDraft({ ...nextConfig, jianying: { ...nextConfig.jianying, defaultBgmId: resolveDefaultBgmId(nextConfig) } });
   }
+  function updateSpeechToTextConfig(patch: Partial<AppConfig['speechToText']>) {
+    setSettingsDraft({ ...draft, speechToText: { ...draft.speechToText, ...patch } });
+  }
+  function toggleSpeechToTextTimestamp(granularity: AppConfig['speechToText']['timestampGranularities'][number], checked: boolean) {
+    const current = draft.speechToText.timestampGranularities.filter((item) => item !== granularity);
+    updateSpeechToTextConfig({ timestampGranularities: checked ? [...current, granularity] : current });
+  }
   const selectedProviderProfileIds = {
     llm: selectedLlmProfileId,
     image: selectedImageProfileId,
@@ -4120,6 +4229,7 @@ function SettingsPage({ api, state, applyState }: { api: StoryboundApi; state: A
     ['llm', Sparkles, 'LLM', '文案与分镜', settingsStatusLabel(configTargetStatus('llm', draft))],
     ['image', ImageIcon, 'AI 绘图', '分镜图片', settingsStatusLabel(configTargetStatus('image', draft))],
     ['tts', Bot, 'TTS 配音', '每镜语音', settingsStatusLabel(configTargetStatus('tts', draft))],
+    ['speechToText', Mic2, '语音转文字', '爆款拆解转写 API', settingsStatusLabel(configTargetStatus('speechToText', draft))],
     ['jianying', FolderOpen, '剪映', '草稿目录 · BGM', settingsStatusLabel(configTargetStatus('jianying', draft))],
     ['activation', KeyRound, '激活与订阅', '试用 · 激活码', state.activation.status],
     ['creative', Wand2, 'AI 创作', 'IMA 知识库', settingsStatusLabel(configTargetStatus('creative', draft))],
@@ -4204,6 +4314,55 @@ function SettingsPage({ api, state, applyState }: { api: StoryboundApi; state: A
               onSelectedProfileIdChange={setSelectedTtsProfileId}
               onActivate={activateTtsProfile}
               onRefreshVolcengineSpeakers={refreshVolcengineSpeakers}
+            />
+          </SettingsCard>
+        ) : null}
+        {section === 'speechToText' ? (
+          <SettingsCard title="语音转文字" status={settingsStatusLabel(configTargetStatus('speechToText', draft))}>
+            <ProviderConfigNote
+              title="转写 API"
+              value="OpenAI 兼容 /audio/transcriptions。官方参数包含 file、model、language、prompt、response_format、temperature、timestamp_granularities。"
+            />
+            <ConfigInput label="Base URL" value={draft.speechToText.baseUrl} onChange={(value) => updateSpeechToTextConfig({ baseUrl: value })} />
+            <ConfigInput label="API Key" value={draft.speechToText.apiKey} onChange={(value) => updateSpeechToTextConfig({ apiKey: value })} />
+            <ConfigInput label="转写模型" value={draft.speechToText.model} onChange={(value) => updateSpeechToTextConfig({ model: value })} />
+            <ConfigInput label="语言" value={draft.speechToText.language} onChange={(value) => updateSpeechToTextConfig({ language: value })} />
+            <ConfigInput label="提示词" value={draft.speechToText.prompt} onChange={(value) => updateSpeechToTextConfig({ prompt: value })} />
+            <Segmented
+              label="响应格式"
+              value={draft.speechToText.responseFormat}
+              options={['json', 'verbose_json', 'text', 'srt', 'vtt']}
+              labels={['JSON', 'Verbose JSON', 'Text', 'SRT', 'VTT']}
+              onChange={(value) => updateSpeechToTextConfig({ responseFormat: value as AppConfig['speechToText']['responseFormat'] })}
+            />
+            <RangeField label="温度" min={0} max={1} step={0.1} value={draft.speechToText.temperature} onChange={(value) => updateSpeechToTextConfig({ temperature: value })} />
+            <ConfigNumberInput
+              label="请求超时（秒）"
+              value={Math.round(draft.speechToText.timeoutMs / 1000)}
+              min={10}
+              step={10}
+              onChange={(value) => updateSpeechToTextConfig({ timeoutMs: value * 1000 })}
+            />
+            <Field label="时间戳">
+              <div className="settings-inline-actions">
+                <ToggleField
+                  label="Segment"
+                  checked={draft.speechToText.timestampGranularities.includes('segment')}
+                  onChange={(checked) => toggleSpeechToTextTimestamp('segment', checked)}
+                />
+                <ToggleField
+                  label="Word"
+                  checked={draft.speechToText.timestampGranularities.includes('word')}
+                  onChange={(checked) => toggleSpeechToTextTimestamp('word', checked)}
+                />
+              </div>
+            </Field>
+            <Segmented
+              label="切分策略"
+              value={draft.speechToText.chunkingStrategy}
+              options={['none', 'auto']}
+              labels={['不启用', 'Auto']}
+              onChange={(value) => updateSpeechToTextConfig({ chunkingStrategy: value as AppConfig['speechToText']['chunkingStrategy'] })}
             />
           </SettingsCard>
         ) : null}
@@ -5474,6 +5633,7 @@ function DraftCanvasText({
   y,
   width,
   border,
+  positioned = true,
   style,
   children,
 }: {
@@ -5482,11 +5642,13 @@ function DraftCanvasText({
   y: number;
   width: number;
   border?: DraftTextBorder;
+  positioned?: boolean;
   style?: React.CSSProperties;
   children: React.ReactNode;
 }) {
+  const positionStyle = positioned ? draftLayerPositionStyle(x, y) : {};
   return (
-    <div className={className} style={{ ...draftLayerPositionStyle(x, y), ...draftTextWidthStyle(width), ...draftTextStrokeStyle(border), ...style }}>
+    <div className={className} style={{ ...positionStyle, ...draftTextWidthStyle(width), ...draftTextStrokeStyle(border), ...style }}>
       {children}
     </div>
   );
@@ -5624,8 +5786,7 @@ function draftTextLayerStyle(
 
 function draftTextWidthStyle(width: number): React.CSSProperties {
   return {
-    width: `${clamp(width, 0.1, 1) * 100}%`,
-    maxWidth: '100%',
+    width: `${clamp(width, DRAFT_TEXT_WIDTH_MIN, DRAFT_TEXT_WIDTH_MAX) * 100}%`,
   };
 }
 
@@ -5670,10 +5831,10 @@ function updateDraftLayerPosition(template: DraftTemplate, layer: DraftCanvasLay
 }
 
 function resizeDraftLayerWidth(template: DraftTemplate, layer: Exclude<DraftCanvasLayer, 'image'>, deltaX: number): DraftTemplate {
-  if (layer === 'title') return { ...template, title: { ...template.title, width: clamp(template.title.width + deltaX, 0.1, 1) } };
-  if (layer === 'subtitle') return { ...template, subtitle: { ...template.subtitle, width: clamp(template.subtitle.width + deltaX, 0.1, 1) } };
-  if (layer === 'caption') return { ...template, caption: { ...template.caption, width: clamp(template.caption.width + deltaX, 0.1, 1) } };
-  return { ...template, disclaimer: { ...template.disclaimer, width: clamp(template.disclaimer.width + deltaX, 0.1, 1) } };
+  if (layer === 'title') return { ...template, title: { ...template.title, width: clamp(template.title.width + deltaX, DRAFT_TEXT_WIDTH_MIN, DRAFT_TEXT_WIDTH_MAX) } };
+  if (layer === 'subtitle') return { ...template, subtitle: { ...template.subtitle, width: clamp(template.subtitle.width + deltaX, DRAFT_TEXT_WIDTH_MIN, DRAFT_TEXT_WIDTH_MAX) } };
+  if (layer === 'caption') return { ...template, caption: { ...template.caption, width: clamp(template.caption.width + deltaX, DRAFT_TEXT_WIDTH_MIN, DRAFT_TEXT_WIDTH_MAX) } };
+  return { ...template, disclaimer: { ...template.disclaimer, width: clamp(template.disclaimer.width + deltaX, DRAFT_TEXT_WIDTH_MIN, DRAFT_TEXT_WIDTH_MAX) } };
 }
 
 function draftLayerPositionStyle(x: number, y: number): React.CSSProperties {

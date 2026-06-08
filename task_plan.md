@@ -32,3 +32,29 @@ Goal: study `G:\Storybound` as the reference app and implement scoped feature ad
 | Browser skill path from session metadata was stale. | Tried reading `26.602.30954` browser skill path. | Located current `26.602.40724` path and verified local app through in-app browser. |
 | PowerShell rejected Bash-style heredoc syntax while inspecting files. | Tried `node - <<'NODE'`. | Re-ran with PowerShell-safe `node -e` commands. |
 | Full test suite caught old draft-template hydration expectations. | `npm test` still expected pre-Storybound fallback coordinates. | Updated the storage test to assert the exact Storybound defaults and text style fields. |
+| Coze CLI npm smoke lost the `--out` flag under PowerShell/npm argument forwarding. | Ran `npm run convert:coze -- --out <output> <fixture>`, and the script treated the output path as an input file. | Added positional output path support and a CLI regression test, so `npm run convert:coze -- <output.json> <workflow.json>` works. |
+| PowerShell expanded or stripped Node template-string and quote characters during Feishu asset inspection. | Tried `node -e` snippets with backticks and `${...}`. | Use plain string concatenation in double-quoted PowerShell commands, or use dedicated script files when code grows. |
+| Feishu fetch CLI called `CdpPage` before the class declaration initialized. | First real `node scripts\fetch-feishu-coze-workflows.mjs ...` run failed with `Cannot access 'CdpPage' before initialization`. | Move the top-level CLI invocation to the bottom of the module after all declarations. |
+| Feishu fetch CLI parsed hydrated DOM HTML instead of the original Document response body. | Second real run failed with `No Feishu .txt workflow attachment sources were found in the page HTML`. | Capture the initial wiki Document response through CDP `Network.responseReceived` and read it with `Network.getResponseBody`. |
+| Feishu single-pass scrolling only captured a subset of virtualized file blocks. | Runs alternated between the page-top 64 sources and partial page-bottom captures. | Use hydrated React `blockManager`, audit record seeds, and HTML document record seeds; use stable record-id filenames so repeated runs accumulate a de-duplicated source set. |
+| Some Coze video-generation workflows had no Jianying `create_draft` plugin node. | Batch conversion failed with `Coze workflow does not contain a create_draft node`. | Generate a reusable 9:16 Storybound draft-template shell and preserve the missing `create_draft` condition as a warning diagnostic. |
+
+## 2026-06-08 Coze Workflow Converter Addendum
+
+- [x] Add pure Coze clipboard parser and diagnostics.
+- [x] Convert Coze Jianying workflow nodes into reusable Storybound `DraftTemplate` presets.
+- [x] Add real pasted workflow fixture coverage.
+- [x] Add draft-template page import UI with preview, single import, and batch import.
+- [x] Add storage persistence coverage for converted templates.
+- [x] Add CLI batch converter and `npm run convert:coze` entrypoint.
+- [x] Verify targeted tests, typecheck, full tests, CLI smoke, and browser UI smoke.
+
+## 2026-06-08 Feishu Workflow Source Batch Addendum
+
+- [x] Audit the Feishu wiki page and count available workflow source attachments.
+- [x] Stabilize a browser/CDP download or direct API extraction path for `.txt` attachments.
+- [x] Download all available Coze workflow source `.txt` files from the Feishu page.
+- [x] Batch-convert every downloaded workflow into Storybound draft templates.
+- [x] Install/generated templates into a reusable Storybound template store or a project bundle the app can import.
+- [x] Seed the generated Feishu Coze templates into normal Storybound app databases as draft-template presets.
+- [x] Verify source count, conversion count, failures, typecheck, and relevant tests before calling the batch complete.

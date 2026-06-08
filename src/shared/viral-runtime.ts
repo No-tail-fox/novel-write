@@ -1,6 +1,6 @@
 import { execFile } from 'node:child_process';
-import { mkdir, readdir, readFile } from 'node:fs/promises';
-import { extname, join } from 'node:path';
+import { mkdir, readdir, readFile, stat } from 'node:fs/promises';
+import { basename, extname, join } from 'node:path';
 import { promisify } from 'node:util';
 import { createOpenAiCompatibleJsonLlm } from './llm-provider';
 import { resolvePythonCommand } from './python-runtime';
@@ -11,10 +11,11 @@ import {
   type ViralMediaExtractionResult,
 } from './viral-analysis';
 import { downloadViralMedia } from './viral-download';
-import type { AppConfig, LlmConfig, ViralFrameAnalysis, ViralVideoSource } from './types';
+import type { AppConfig, LlmConfig, SpeechToTextConfig, ViralFrameAnalysis, ViralTranscriptSegment, ViralVideoSource } from './types';
 
 const execFileAsync = promisify(execFile);
 export const DEFAULT_WHISPER_HF_MIRROR = 'https://hf-mirror.com';
+const SPEECH_TO_TEXT_UPLOAD_LIMIT_BYTES = 25 * 1024 * 1024;
 
 export function createViralRuntimeProviders(config: AppConfig, _workDir: string): Omit<RunViralAnalysisOptions, 'workDir' | 'emit' | 'signal'> {
   const textLlm = createOpenAiCompatibleJsonLlm(config.llm);
@@ -52,11 +53,11 @@ export function createViralRuntimeProviders(config: AppConfig, _workDir: string)
 }
 
 async function extractViralMedia(videoPath: string, workDir: string, config: AppConfig, signal?: AbortSignal): Promise<ViralMediaExtractionResult> {
-  const audioPath = join(workDir, 'audio.wav');
+  const audioPath = join(workDir, 'audio.m4a');
   const framesDir = join(workDir, 'frames');
   await mkdir(framesDir, { recursive: true });
   const ffmpeg = await resolveBundledFfmpeg(signal);
-  await runCommand(ffmpeg, ['-y', '-i', videoPath, '-vn', '-acodec', 'pcm_s16le', '-ar', '16000', '-ac', '1', audioPath], 120000, signal);
+  await runCommand(ffmpeg, ['-y', '-i', videoPath, '-vn', '-c:a', 'aac', '-b:a', '96k', '-ar', '16000', '-ac', '1', audioPath], 120000, signal);
   await runCommand(
     ffmpeg,
     ['-y', '-i', videoPath, '-vf', `fps=1/${config.viral.frameIntervalSeconds},scale=1280:-2`, '-q:v', '2', join(framesDir, 'frame-%04d.jpg')],
@@ -83,6 +84,187 @@ async function resolveBundledFfmpeg(signal?: AbortSignal): Promise<string> {
 }
 
 async function transcribeViralAudio(audioPath: string, config: AppConfig, signal?: AbortSignal) {
+  try {
+    return await transcribeViralAudioWithOpenAiApi(audioPath, config, signal);
+  } catch (error) {
+    throw new Error(formatOpenAiTranscriptionError(error, config.speechToText));
+  }
+}
+
+async function transcribeViralAudioWithOpenAiApi(audioPath: string, config: AppConfig, signal?: AbortSignal): Promise<ViralTranscriptSegment[]> {
+  const request = buildOpenAiTranscriptionRequest(config);
+  if (!request.apiKey.trim() || !config.speechToText.model.trim()) {
+    throw new Error('语音转文字 API 未配置：请在系统设置 > 语音转文字 填写 API Key 和转写模型。');
+  }
+
+  const audioStats = await stat(audioPath);
+  if (audioStats.size > SPEECH_TO_TEXT_UPLOAD_LIMIT_BYTES) {
+    throw new Error(`音频文件 ${(audioStats.size / 1024 / 1024).toFixed(1)}MB 超过语音转文字 API 常见 25MB 上传限制，请缩短视频或先压缩音频。`);
+  }
+
+  const bytes = await readFile(audioPath);
+  const form = new FormData();
+  form.append('file', new Blob([new Uint8Array(bytes)], { type: audioMimeType(audioPath) }), basename(audioPath));
+  for (const [key, value] of request.fields) {
+    form.append(key, value);
+  }
+
+  const response = await fetchWithTimeout(
+    request.endpoint,
+    {
+      method: 'POST',
+      headers: {
+        Authorization: `Bearer ${request.apiKey}`,
+      },
+      body: form,
+    },
+    request.timeoutMs,
+    signal,
+  );
+  if (!response.ok) {
+    throw new Error(`HTTP ${response.status}: ${(await response.text()).slice(0, 600)}`);
+  }
+
+  const contentType = response.headers.get('content-type') ?? '';
+  const payload =
+    contentType.includes('application/json') || request.responseFormat === 'json' || request.responseFormat === 'verbose_json'
+      ? await response.json()
+      : await response.text();
+  return parseOpenAiTranscriptionResult(payload);
+}
+
+export interface OpenAiTranscriptionRequest {
+  endpoint: string;
+  apiKey: string;
+  timeoutMs: number;
+  responseFormat: SpeechToTextConfig['responseFormat'];
+  fields: Array<[string, string]>;
+}
+
+export function buildOpenAiTranscriptionRequest(config: AppConfig): OpenAiTranscriptionRequest {
+  const stt = config.speechToText;
+  const fields: Array<[string, string]> = [
+    ['model', stt.model],
+  ];
+  if (stt.language.trim()) fields.push(['language', stt.language.trim()]);
+  if (stt.prompt.trim()) fields.push(['prompt', stt.prompt.trim()]);
+  fields.push(['response_format', stt.responseFormat]);
+  fields.push(['temperature', String(stt.temperature)]);
+  if (stt.responseFormat === 'verbose_json') {
+    for (const granularity of stt.timestampGranularities) {
+      fields.push(['timestamp_granularities[]', granularity]);
+    }
+  }
+  if (stt.chunkingStrategy === 'auto') {
+    fields.push(['chunking_strategy', 'auto']);
+  }
+  return {
+    endpoint: `${normalizeOpenAiBaseUrl(stt.baseUrl || 'https://api.openai.com')}/audio/transcriptions`,
+    apiKey: stt.apiKey,
+    timeoutMs: stt.timeoutMs,
+    responseFormat: stt.responseFormat,
+    fields,
+  };
+}
+
+export function parseOpenAiTranscriptionResult(payload: unknown): ViralTranscriptSegment[] {
+  if (typeof payload === 'string') return plainTranscriptSegment(payload);
+  if (!payload || typeof payload !== 'object') return [];
+  const body = payload as {
+    text?: unknown;
+    segments?: unknown;
+    words?: unknown;
+  };
+  if (Array.isArray(body.segments) && body.segments.length) {
+    return body.segments
+      .map((segment): ViralTranscriptSegment => {
+        const source = segment && typeof segment === 'object' ? (segment as Record<string, unknown>) : {};
+        return {
+          text: String(source.text ?? '').trim(),
+          start: normalizeTimestamp(source.start),
+          end: normalizeTimestamp(source.end),
+          words: normalizeTranscriptWords(source.words),
+        };
+      })
+      .filter((segment) => segment.text || segment.words.length);
+  }
+
+  const topLevelWords = normalizeTranscriptWords(body.words);
+  const text = String(body.text ?? '').trim();
+  if (topLevelWords.length) {
+    return [
+      {
+        text,
+        start: topLevelWords[0]?.start ?? 0,
+        end: topLevelWords[topLevelWords.length - 1]?.end ?? 0,
+        words: topLevelWords,
+      },
+    ];
+  }
+  return plainTranscriptSegment(text);
+}
+
+function plainTranscriptSegment(text: string): ViralTranscriptSegment[] {
+  const normalized = text.trim();
+  return normalized ? [{ text: normalized, start: 0, end: 0, words: [] }] : [];
+}
+
+function normalizeTranscriptWords(value: unknown): ViralTranscriptSegment['words'] {
+  if (!Array.isArray(value)) return [];
+  return value
+    .map((word) => {
+      const source = word && typeof word === 'object' ? (word as Record<string, unknown>) : {};
+      return {
+        word: String(source.word ?? source.text ?? '').trim(),
+        start: normalizeTimestamp(source.start),
+        end: normalizeTimestamp(source.end),
+      };
+    })
+    .filter((word) => word.word);
+}
+
+function normalizeTimestamp(value: unknown): number {
+  const parsed = Number(value);
+  return Number.isFinite(parsed) && parsed >= 0 ? parsed : 0;
+}
+
+async function fetchWithTimeout(url: string, init: RequestInit, timeoutMs: number, signal?: AbortSignal): Promise<Response> {
+  if (signal?.aborted) throw new Error('语音转文字请求已取消。');
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(new Error(`语音转文字请求超过 ${Math.round(timeoutMs / 1000)} 秒。`)), timeoutMs);
+  const abort = () => controller.abort(signal?.reason);
+  signal?.addEventListener('abort', abort, { once: true });
+  try {
+    return await fetch(url, { ...init, signal: controller.signal });
+  } finally {
+    clearTimeout(timeout);
+    signal?.removeEventListener('abort', abort);
+  }
+}
+
+function audioMimeType(path: string): string {
+  const ext = extname(path).toLowerCase();
+  if (ext === '.wav') return 'audio/wav';
+  if (ext === '.mp3' || ext === '.mpeg' || ext === '.mpga') return 'audio/mpeg';
+  if (ext === '.m4a' || ext === '.mp4') return 'audio/mp4';
+  if (ext === '.ogg') return 'audio/ogg';
+  if (ext === '.webm') return 'audio/webm';
+  if (ext === '.flac') return 'audio/flac';
+  return 'application/octet-stream';
+}
+
+function formatOpenAiTranscriptionError(error: unknown, config: SpeechToTextConfig): string {
+  const detail = compactErrorText(stringifyError(error));
+  if (/未配置/.test(detail)) return detail;
+  const endpoint = `${normalizeOpenAiBaseUrl(config.baseUrl || 'https://api.openai.com')}/audio/transcriptions`;
+  return [
+    `语音转文字 API 调用失败：${detail}`,
+    `当前端点：${endpoint}`,
+    '请在“系统设置 > 语音转文字”检查 Base URL、API Key、转写模型、响应格式、时间戳和请求超时。',
+  ].join('\n');
+}
+
+async function transcribeViralAudioWithLocalWhisper(audioPath: string, config: AppConfig, signal?: AbortSignal) {
   const model = normalizeWhisperModel(config.viral.whisperModel);
   const endpoint = normalizeHuggingFaceEndpoint(config.viral.huggingFaceEndpoint);
   const script = buildViralWhisperTranscribeScript(audioPath, model);

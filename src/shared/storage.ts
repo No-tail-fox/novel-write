@@ -25,6 +25,7 @@ import type {
   VoiceLabRecord,
 } from './types';
 import { normalizeAppConfig } from './config-utils';
+import feishuCozeDraftTemplateBundle from '../../data/coze-workflows/feishu-draft-templates.json';
 import {
   defaultAccount,
   defaultActivation,
@@ -141,6 +142,8 @@ async function writeFileWithRetry(path: string, data: Uint8Array, attempts = 8):
 function mergeConfig(input: unknown): AppConfig {
   return normalizeAppConfig(input);
 }
+
+const bundledCozeDraftTemplates = (feishuCozeDraftTemplateBundle as { templates?: DraftTemplate[] }).templates ?? [];
 
 export class FileDatabase {
   private constructor(
@@ -393,6 +396,7 @@ export class FileDatabase {
         ]);
       }
     }
+    this.syncBundledCozeDraftTemplates();
 
     this.syncDefaultCustomStyles();
 
@@ -434,6 +438,21 @@ export class FileDatabase {
       if (!existingIds.has(template.id)) {
         this.insertPromptTemplate(template);
       }
+    }
+  }
+
+  private syncBundledCozeDraftTemplates(): void {
+    const existingIds = new Set(getRows<{ id: string }>(this.db, 'SELECT id FROM draft_templates').map((row) => row.id));
+    for (const template of bundledCozeDraftTemplates) {
+      if (!template.id || existingIds.has(template.id)) continue;
+      const normalized = normalizeDraftTemplate({ ...template, isDefault: false });
+      this.db.run('INSERT INTO draft_templates (id, data, is_builtin, updated_at) VALUES (?, ?, ?, ?)', [
+        normalized.id,
+        json(normalized),
+        0,
+        '2026-06-08T00:00:00.000Z',
+      ]);
+      existingIds.add(normalized.id);
     }
   }
 

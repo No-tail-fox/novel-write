@@ -167,20 +167,20 @@ describe('draft template normalization', () => {
     expect(normalized.disclaimer.border).toEqual({ color: '#000000', width: 40, alpha: 1 });
   });
 
-  it('clamps saved text box widths for every editable text layer', () => {
+  it('allows oversized text box widths for large fonts while clamping invalid values', () => {
     const fallback = draftTemplates[0];
     const normalized = normalizeDraftTemplate({
       ...fallback,
       title: { ...fallback.title, width: 1.4 },
       subtitle: { ...fallback.subtitle, width: 0.04 },
       caption: { ...fallback.caption, width: Number.NaN },
-      disclaimer: { ...fallback.disclaimer, width: 0.52 },
+      disclaimer: { ...fallback.disclaimer, width: 2.5 },
     });
 
-    expect(normalized.title.width).toBe(1);
+    expect(normalized.title.width).toBe(1.4);
     expect(normalized.subtitle.width).toBe(0.1);
     expect(normalized.caption.width).toBe(0.8);
-    expect(normalized.disclaimer.width).toBe(0.52);
+    expect(normalized.disclaimer.width).toBe(2);
   });
 
   it('keeps Storybound text-layer style fields from partially saved templates', () => {

@@ -1,4 +1,4 @@
-import { mkdtemp, rm } from 'node:fs/promises';
+import { mkdtemp, readFile, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
@@ -29,6 +29,47 @@ describe('product shell storage', () => {
       expect(state.ui.activeView).toBe('new-task');
 
       await db.close();
+    } finally {
+      await rm(dir, { recursive: true, force: true });
+    }
+  });
+
+  it('seeds Feishu Coze workflow templates as draft presets without overwriting local edits', async () => {
+    const dir = await mkdtemp(join(tmpdir(), 'storybound-shell-coze-presets-'));
+    const file = join(dir, 'app.db');
+    const bundle = JSON.parse(await readFile(join(__dirname, '..', 'data', 'coze-workflows', 'feishu-draft-templates.json'), 'utf8')) as {
+      templates: Array<{ id: string }>;
+    };
+    const expectedCozeIds = bundle.templates.map((template) => template.id);
+
+    try {
+      const db = await FileDatabase.open(file);
+      let state = await db.getState();
+      const firstTemplate = state.draftTemplates.find((template) => template.id === expectedCozeIds[0]);
+
+      expect(expectedCozeIds).toHaveLength(114);
+      expect(firstTemplate).toBeDefined();
+      expect(state.draftTemplates.filter((template) => template.id.startsWith('coze-')).map((template) => template.id).sort()).toEqual([...expectedCozeIds].sort());
+
+      await db.upsertDraftTemplate({
+        ...firstTemplate!,
+        name: 'User renamed Coze preset',
+        canvas: { ...firstTemplate!.canvas, backgroundColor: '#123456' },
+      });
+      (db as unknown as { db: { run: (sql: string, params?: unknown[]) => void } }).db.run('DELETE FROM draft_templates WHERE id = ?', [expectedCozeIds[1]]);
+      await db.close();
+
+      const reopened = await FileDatabase.open(file);
+      state = await reopened.getState();
+
+      expect(state.draftTemplates.filter((template) => template.id.startsWith('coze-')).map((template) => template.id).sort()).toEqual([...expectedCozeIds].sort());
+      expect(state.draftTemplates.find((template) => template.id === expectedCozeIds[0])).toMatchObject({
+        name: 'User renamed Coze preset',
+        canvas: { backgroundColor: '#123456' },
+      });
+      expect(state.draftTemplates.find((template) => template.id === expectedCozeIds[1])).toBeDefined();
+
+      await reopened.close();
     } finally {
       await rm(dir, { recursive: true, force: true });
     }

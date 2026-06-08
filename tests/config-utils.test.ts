@@ -75,6 +75,54 @@ describe('config validation utilities', () => {
     });
   });
 
+  it('normalizes speech-to-text API settings for viral transcription', () => {
+    const normalized = normalizeAppConfig({
+      ...defaultConfig,
+      speechToText: {
+        ...defaultConfig.speechToText,
+        baseUrl: 'https://api.example.com/v1/',
+        apiKey: 'stt-key',
+        model: 'gpt-4o-mini-transcribe',
+        language: ' zh ',
+        responseFormat: 'verbose_json',
+        temperature: -1,
+        timeoutMs: 0,
+        timestampGranularities: ['segment', 'word', 'bad-value'] as unknown as typeof defaultConfig.speechToText.timestampGranularities,
+        chunkingStrategy: 'auto',
+      },
+    });
+
+    expect(normalized.speechToText).toMatchObject({
+      baseUrl: 'https://api.example.com/v1',
+      apiKey: 'stt-key',
+      model: 'gpt-4o-mini-transcribe',
+      language: 'zh',
+      responseFormat: 'verbose_json',
+      temperature: 0,
+      timeoutMs: defaultConfig.speechToText.timeoutMs,
+      timestampGranularities: ['segment', 'word'],
+      chunkingStrategy: 'auto',
+    });
+  });
+
+  it('validates speech-to-text API credentials for settings status', () => {
+    const ready = normalizeAppConfig({
+      ...defaultConfig,
+      speechToText: {
+        ...defaultConfig.speechToText,
+        apiKey: 'stt-key',
+        model: 'whisper-1',
+      },
+    });
+
+    const result = validateConfigTarget('speechToText', ready);
+
+    expect(result.status).toBe('pass');
+    expect(result.endpoint).toBe('https://api.openai.com/v1/audio/transcriptions');
+    expect(configTargetStatus('speechToText', ready)).toBe('pass');
+    expect(validateConfigTarget('speechToText', defaultConfig).status).toBe('fail');
+  });
+
   it('marks filled LLM credentials as configured for settings status', () => {
     const config = {
       ...defaultConfig,

@@ -133,6 +133,24 @@ describe('product shell ui', () => {
     expect(css).toContain('.draft-template-thumb');
   });
 
+  it('imports copied Coze workflow source as a draft template preset', async () => {
+    const main = await readFile(new URL('../src/main.tsx', import.meta.url), 'utf8');
+    const css = await readFile(new URL('../src/styles.css', import.meta.url), 'utf8');
+
+    expect(main).toContain('convertCozeWorkflowToDraftTemplate');
+    expect(main).toContain('convertManyCozeWorkflowsToDraftTemplates');
+    expect(main).toContain('cozeWorkflowSource');
+    expect(main).toContain('cozeImportResult');
+    expect(main).toContain('cozeImportResults');
+    expect(main).toContain('previewCozeWorkflowTemplate');
+    expect(main).toContain('saveCozeWorkflowTemplate');
+    expect(main).toContain('saveAllCozeWorkflowTemplates');
+    expect(main).toContain('coze-workflow-source');
+    expect(main).toContain('api.saveDraftTemplate(template)');
+    expect(css).toContain('.coze-template-import-panel');
+    expect(css).toContain('.coze-diagnostics-list');
+  });
+
   it('supports dragging draft template regions directly on the preview canvas', async () => {
     const main = await readFile(new URL('../src/main.tsx', import.meta.url), 'utf8');
     const css = await readFile(new URL('../src/styles.css', import.meta.url), 'utf8');
@@ -356,6 +374,22 @@ describe('product shell ui', () => {
     expect(main).toContain('draftTextWidthStyle');
     expect(main).toContain('label="文本框宽度"');
     expect(main).toContain('updateDraftCaptionWidth');
+    expect(main).toContain('const DRAFT_TEXT_WIDTH_MAX = 2');
+    expect(main).toContain('max={DRAFT_TEXT_WIDTH_MAX}');
+    expect(main).toContain('width: `${clamp(width, DRAFT_TEXT_WIDTH_MIN, DRAFT_TEXT_WIDTH_MAX) * 100}%`');
+    expect(main).toContain('positioned={false}');
+    for (const snippet of [
+      'value={draft.title.width} onChange={(value) => updateDraftTitle({ width: clamp(value, DRAFT_TEXT_WIDTH_MIN, DRAFT_TEXT_WIDTH_MAX) })}',
+      'value={draft.subtitle.width} onChange={(value) => updateDraftSubtitle({ width: clamp(value, DRAFT_TEXT_WIDTH_MIN, DRAFT_TEXT_WIDTH_MAX) })}',
+      'value={draft.caption.width} onChange={updateDraftCaptionWidth}',
+      'value={draft.disclaimer.width} onChange={(value) => updateDraftDisclaimer({ width: clamp(value, DRAFT_TEXT_WIDTH_MIN, DRAFT_TEXT_WIDTH_MAX) })}',
+    ]) {
+      expect(main).toContain(snippet);
+    }
+    expect(main.indexOf('value={draft.title.width}')).toBeLessThan(main.indexOf('value={draft.title.fontSize}'));
+    expect(main.indexOf('value={draft.subtitle.width}')).toBeLessThan(main.indexOf('value={draft.subtitle.fontSize}'));
+    expect(main.indexOf('value={draft.caption.width}')).toBeLessThan(main.indexOf('value={draft.caption.fontSize}'));
+    expect(main.indexOf('value={draft.disclaimer.width}')).toBeLessThan(main.indexOf('value={draft.disclaimer.fontSize}'));
     expect(css).toContain('cursor: ew-resize');
     expect(css).not.toContain('width: 80%;');
   });
@@ -527,30 +561,23 @@ describe('product shell ui', () => {
     expect(css).toContain('.prompt-step-editor-card');
   });
 
-  it('exposes Storybound reference prompt content fields including image seed pools', async () => {
+  it('keeps prompt editing to a single content entry while preserving image seed pools', async () => {
     const main = await readFile(new URL('../src/main.tsx', import.meta.url), 'utf8');
-    const css = await readFile(new URL('../src/styles.css', import.meta.url), 'utf8');
     const storage = await readFile(new URL('../src/shared/storage.ts', import.meta.url), 'utf8');
 
     for (const symbol of [
       'imageSeedPoolsJson',
-      'prompt-template-reference-fields',
       'prompt-template-seed-pools',
-      'updatePromptTemplateStepPrompt',
-      "updatePromptTemplateStepPrompt('rewrite'",
-      "updatePromptTemplateStepPrompt('cover'",
-      "updatePromptTemplateStepPrompt('image-prompt'",
     ]) {
       expect(main).toContain(symbol);
     }
 
-    for (const text of ['参考提示词内容', '任务总指令', 'Step 1 改写系统提示词', 'Step 1 元数据系统提示词', 'Step 3 出图系统提示词', '出图种子池 JSON']) {
-      expect(main).toContain(text);
-    }
+    expect(main).not.toContain('prompt-template-reference-fields');
+    expect(main).not.toContain('参考提示词内容');
+    expect(main).not.toContain("draft.type === 'task' ? '任务总指令'");
+    expect(main).toContain('key="task-template-content"');
 
     expect(storage).toContain('imageSeedPoolsJson');
-    expect(css).toContain('.prompt-template-reference-fields');
-    expect(css).toContain('.prompt-template-seed-pools');
   });
 
   it('presents prompt template details as basics, content settings, and step default prompts', async () => {
@@ -810,6 +837,36 @@ describe('product shell ui', () => {
     expect(main).toContain('即梦 Req Key');
     expect(main).toContain('MiniMax 模型');
     expect(main).toContain('MiniMax 音色 ID');
+  });
+
+  it('adds speech-to-text API settings for viral analyzer transcription', async () => {
+    const main = await readFile(new URL('../src/main.tsx', import.meta.url), 'utf8');
+
+    for (const text of [
+      '语音转文字',
+      '转写 API',
+      'Base URL',
+      'API Key',
+      '转写模型',
+      '语言',
+      '提示词',
+      '响应格式',
+      '温度',
+      '时间戳',
+      '切分策略',
+      '请求超时',
+    ]) {
+      expect(main).toContain(text);
+    }
+
+    const settingsPage = main.slice(main.indexOf('function SettingsPage'), main.indexOf('function LlmProfileManager'));
+    expect(settingsPage).toContain("configTargetStatus('speechToText', draft)");
+    expect(settingsPage).toContain("section === 'speechToText'");
+    expect(settingsPage).toContain('updateSpeechToTextConfig');
+
+    const viralPage = main.slice(main.indexOf('function ViralAnalyzerPage'), main.indexOf('const viralStages'));
+    expect(viralPage).not.toContain('whisperModel');
+    expect(viralPage).not.toContain('huggingFaceEndpoint');
   });
 
   it('loads model lists from configured provider URLs before selecting a model', async () => {
