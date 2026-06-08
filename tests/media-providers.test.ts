@@ -2,7 +2,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import { mkdtemp, readFile, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { createConfiguredImageGenerator, createConfiguredNarrationSynthesizer } from '@shared/media-providers';
+import { createConfiguredImageGenerator, createConfiguredNarrationSynthesizer, generateConfiguredVoicePreview } from '@shared/media-providers';
 import { defaultConfig } from '@shared/config';
 import { normalizeAppConfig } from '@shared/config-utils';
 import type { AppConfig, ImagePrompt, StoryboardScene, Task } from '@shared/types';
@@ -322,6 +322,51 @@ describe('configured media providers', () => {
           audio_params: { format: 'mp3', sample_rate: 24000, speech_rate: 15 },
         },
       });
+    } finally {
+      await rm(dir, { recursive: true, force: true });
+    }
+  });
+
+  it('generates a single voice lab preview using the selected MiniMax voice', async () => {
+    const dir = await mkdtemp(join(tmpdir(), 'storybound-provider-voice-lab-'));
+    const audioBytes = Buffer.from('voice-lab-audio');
+    const requests: Array<{ url: string; body: Record<string, unknown> }> = [];
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (url: string, init: RequestInit) => {
+        requests.push({ url, body: JSON.parse(String(init.body)) });
+        return new Response(JSON.stringify({ data: { audio: audioBytes.toString('hex'), status: 2 }, base_resp: { status_code: 0, status_msg: 'success' } }), {
+          status: 200,
+          headers: { 'content-type': 'application/json' },
+        });
+      }),
+    );
+
+    try {
+      const config: AppConfig = {
+        ...defaultConfig,
+        tts: {
+          ...defaultConfig.tts,
+          provider: 'minimax',
+          minimax: { ...defaultConfig.tts.minimax, apiKey: 'tts-key', model: 'speech-02-hd', voiceId: 'male-qn-qingse' },
+        },
+      };
+      const result = await generateConfiguredVoicePreview(config, dir, {
+        text: '这是一条试听文案',
+        provider: 'minimax',
+        voiceId: 'female-yujie',
+        speed: 1.3,
+      });
+
+      expect(await readFile(result.audioPath, 'utf8')).toBe('voice-lab-audio');
+      expect(result).toMatchObject({
+        text: '这是一条试听文案',
+        provider: 'minimax',
+        voiceId: 'female-yujie',
+        speed: 1.3,
+        status: 'generated',
+      });
+      expect(requests[0].body).toMatchObject({ text: '这是一条试听文案', voice_setting: { voice_id: 'female-yujie', speed: 1.3 } });
     } finally {
       await rm(dir, { recursive: true, force: true });
     }

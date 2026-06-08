@@ -342,8 +342,19 @@ export function normalizeAppConfig(input: unknown): AppConfig {
     viral: {
       ...defaultConfig.viral,
       ...(partial.viral ?? {}),
+      cookieFilePath: String(partial.viral?.cookieFilePath ?? defaultConfig.viral.cookieFilePath).trim(),
+      cookieFallbackMode:
+        partial.viral?.cookieFallbackMode === 'browser-first-after-failure'
+          ? partial.viral.cookieFallbackMode
+          : defaultConfig.viral.cookieFallbackMode,
+      browserCookieSource:
+        partial.viral?.browserCookieSource === 'chrome' || partial.viral?.browserCookieSource === 'edge'
+          ? partial.viral.browserCookieSource
+          : defaultConfig.viral.browserCookieSource,
       frameIntervalSeconds: normalizePositiveNumber(partial.viral?.frameIntervalSeconds, defaultConfig.viral.frameIntervalSeconds),
       maxFrames: Math.max(1, Math.round(normalizePositiveNumber(partial.viral?.maxFrames, defaultConfig.viral.maxFrames))),
+      whisperModel: String(partial.viral?.whisperModel ?? defaultConfig.viral.whisperModel).trim() || defaultConfig.viral.whisperModel,
+      huggingFaceEndpoint: String(partial.viral?.huggingFaceEndpoint ?? defaultConfig.viral.huggingFaceEndpoint).trim().replace(/\/+$/, ''),
       downloadTimeoutMs: normalizePositiveNumber(partial.viral?.downloadTimeoutMs, defaultConfig.viral.downloadTimeoutMs),
       vision: normalizeLlmProfile({ ...defaultConfig.viral.vision, ...(partial.viral?.vision ?? {}) }, 0),
     },

@@ -13,6 +13,8 @@ import type {
   ViralVideoSource,
   ViralPlatform,
   ViralProductionTaskOptions,
+  ViralCookieSource,
+  ViralDownloadProvider,
 } from './types';
 
 export interface ViralBreakdownPromptInput {
@@ -31,6 +33,10 @@ export interface ViralRecreationPromptInput {
 export interface ViralMediaDownloadResult {
   source: ViralVideoSource;
   videoPath: string;
+  provider: ViralDownloadProvider;
+  normalizedUrl: string;
+  usedCookieSource: ViralCookieSource;
+  raw?: unknown;
 }
 
 export interface ViralMediaExtractionResult {
@@ -88,6 +94,12 @@ export async function runViralAnalysis(record: ViralAnalysisRecord, options: Run
 
   await emit('stage_start', 'downloading', 'Downloading source video', 0.05);
   const downloaded = await options.download(record, options.workDir, options.signal);
+  await emit('stage_done', 'downloading', 'Downloaded source video', 0.16, {
+    provider: downloaded.provider,
+    normalizedUrl: downloaded.normalizedUrl,
+    usedCookieSource: downloaded.usedCookieSource,
+    metadataTitle: downloaded.source.title,
+  });
 
   await emit('stage_start', 'extracting', 'Extracting audio and frames', 0.18);
   const extracted = await options.extract(downloaded.videoPath, options.workDir, options.signal);

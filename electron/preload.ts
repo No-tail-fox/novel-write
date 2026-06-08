@@ -28,6 +28,7 @@ import type {
   ViralProductionTaskOptions,
   VolcengineSpeakerListRequest,
   VolcengineSpeakerListResult,
+  VoiceLabGenerateInput,
 } from '../src/shared/types';
 
 contextBridge.exposeInMainWorld('storybound', {
@@ -46,6 +47,7 @@ contextBridge.exposeInMainWorld('storybound', {
   saveDraftTemplate: (template: DraftTemplate) => ipcRenderer.invoke('draft-template:save', template),
   generateImageLab: (input: ImageLabGenerateInput): Promise<AppState> => ipcRenderer.invoke('image-lab:generate', input),
   addImageLabRecord: (input: Partial<ImageLabRecord> & Pick<ImageLabRecord, 'prompt' | 'ratio' | 'style' | 'provider'>) => ipcRenderer.invoke('image-lab:add-record', input),
+  generateVoiceLabPreview: (input: VoiceLabGenerateInput): Promise<AppState> => ipcRenderer.invoke('voice-lab:generate', input),
   saveAccount: (account: AccountProfile) => ipcRenderer.invoke('account:save', account),
   saveActivation: (activation: ActivationState) => ipcRenderer.invoke('activation:save', activation),
   saveUiPreferences: (ui: UiPreferences) => ipcRenderer.invoke('ui:save-preferences', ui),
@@ -63,6 +65,8 @@ contextBridge.exposeInMainWorld('storybound', {
   readAssetDataUrl: (path: string): Promise<string> => ipcRenderer.invoke('asset:read-data-url', path),
   selectLocalImage: (): Promise<string | null> => ipcRenderer.invoke('local-image:select'),
   selectLocalAudio: (): Promise<string | null> => ipcRenderer.invoke('local-audio:select'),
+  selectLocalFolder: (): Promise<string | null> => ipcRenderer.invoke('local-folder:select'),
+  detectJianyingDraftPath: (): Promise<string> => ipcRenderer.invoke('jianying:draft-path:detect'),
   getJianyingEffectCatalog: (): Promise<JianyingEffectCatalog> => ipcRenderer.invoke('jianying:effect-catalog'),
   runDiagnostics: () => ipcRenderer.invoke('diagnostics:run'),
   openPath: (path: string) => ipcRenderer.invoke('path:open', path),

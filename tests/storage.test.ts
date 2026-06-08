@@ -96,6 +96,89 @@ describe('file database', () => {
     }
   });
 
+  it('persists voice lab preview records across reloads', async () => {
+    const dir = await mkdtemp(join(tmpdir(), 'storybound-db-voice-lab-'));
+    const file = join(dir, 'app.db');
+
+    try {
+      const db = await FileDatabase.open(file);
+      await db.addVoiceLabRecord({
+        text: '试听文案',
+        provider: 'minimax',
+        voiceId: 'female-yujie',
+        voiceLabel: '御姐',
+        speed: 1.15,
+        audioPath: join(dir, 'voice-lab', 'preview.mp3'),
+        status: 'generated',
+        errorMessage: '',
+      });
+      await db.close();
+
+      const reopened = await FileDatabase.open(file);
+      const state = await reopened.getState();
+
+      expect(state.voiceLabRecords).toHaveLength(1);
+      expect(state.voiceLabRecords[0]).toMatchObject({
+        text: '试听文案',
+        provider: 'minimax',
+        voiceId: 'female-yujie',
+        voiceLabel: '御姐',
+        speed: 1.15,
+        status: 'generated',
+      });
+      await reopened.close();
+    } finally {
+      await rm(dir, { recursive: true, force: true });
+    }
+  });
+
+  it('persists prompt template image seed pools across reloads', async () => {
+    const dir = await mkdtemp(join(tmpdir(), 'storybound-db-prompt-seeds-'));
+    const file = join(dir, 'app.db');
+
+    try {
+      const db = await FileDatabase.open(file);
+      await db.upsertPromptTemplate({
+        id: 'custom-seed-pools',
+        name: 'Seed Pools',
+        type: 'task',
+        description: 'reference prompt content',
+        content: 'Task instruction',
+        isBuiltin: false,
+        updatedAt: '2026-06-08T00:00:00.000Z',
+        baseTrack: 'general-story',
+        defaultStyles: ['photo-real'],
+        defaultDraftTemplateId: 'default-portrait-9-16',
+        characterPolicy: 'follow-template',
+        step3SkeletonModules: ['产品一致性'],
+        referenceKind: 'product',
+        stepPrompts: {
+          rewrite: 'rewrite prompt',
+          cover: 'metadata prompt',
+          'image-prompt': 'step 3 prompt',
+        },
+        imageSeedPoolsJson: '{"scenes":["wide","close"]}',
+        origin: 'custom',
+      });
+      await db.close();
+
+      const reopened = await FileDatabase.open(file);
+      const state = await reopened.getState();
+
+      expect(state.promptTemplates.find((template) => template.id === 'custom-seed-pools')).toMatchObject({
+        imageSeedPoolsJson: '{"scenes":["wide","close"]}',
+        stepPrompts: {
+          rewrite: 'rewrite prompt',
+          cover: 'metadata prompt',
+          'image-prompt': 'step 3 prompt',
+        },
+      });
+      await reopened.close();
+    } finally {
+      await rm(dir, { recursive: true, force: true });
+    }
+  });
+
   it('persists viral analyses and events across reloads', async () => {
     const dir = await mkdtemp(join(tmpdir(), 'storybound-db-viral-'));
     const file = join(dir, 'app.db');

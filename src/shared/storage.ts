@@ -22,6 +22,7 @@ import type {
   ViralAnalysisEvent,
   ViralAnalysisRecord,
   ViralAnalysisStage,
+  VoiceLabRecord,
 } from './types';
 import { normalizeAppConfig } from './config-utils';
 import {
@@ -60,6 +61,12 @@ type PromptTemplateInput = Omit<PromptTemplate, 'description' | 'isBuiltin' | 'u
 type ImageLabRecordInput = Partial<Omit<ImageLabRecord, 'createdAt' | 'finishedAt' | 'status'>> &
   Pick<ImageLabRecord, 'prompt' | 'ratio' | 'style' | 'provider'> & {
     status?: ImageLabRecord['status'];
+    createdAt?: string;
+    finishedAt?: string | null;
+  };
+type VoiceLabRecordInput = Partial<Omit<VoiceLabRecord, 'id' | 'createdAt' | 'finishedAt'>> &
+  Pick<VoiceLabRecord, 'text' | 'provider' | 'voiceId' | 'speed'> & {
+    id?: string;
     createdAt?: string;
     finishedAt?: string | null;
   };
@@ -264,6 +271,19 @@ export class FileDatabase {
         resolution TEXT DEFAULT '2K',
         reference_image_path TEXT DEFAULT '',
         upstream_task_id TEXT,
+        created_at TEXT NOT NULL,
+        finished_at TEXT
+      );
+      CREATE TABLE IF NOT EXISTS voice_lab_records (
+        id TEXT PRIMARY KEY,
+        text TEXT NOT NULL,
+        provider TEXT NOT NULL,
+        voice_id TEXT NOT NULL,
+        voice_label TEXT DEFAULT '',
+        speed REAL NOT NULL,
+        audio_path TEXT DEFAULT '',
+        status TEXT NOT NULL,
+        error_msg TEXT DEFAULT '',
         created_at TEXT NOT NULL,
         finished_at TEXT
       );
@@ -705,6 +725,44 @@ export class FileDatabase {
     return record;
   }
 
+  async addVoiceLabRecord(input: VoiceLabRecordInput): Promise<VoiceLabRecord> {
+    const now = input.createdAt ?? new Date().toISOString();
+    const status = input.status ?? 'generated';
+    const record: VoiceLabRecord = {
+      id: input.id ?? randomUUID(),
+      text: input.text,
+      provider: input.provider,
+      voiceId: input.voiceId,
+      voiceLabel: input.voiceLabel ?? input.voiceId,
+      speed: input.speed,
+      audioPath: input.audioPath ?? '',
+      status,
+      errorMessage: input.errorMessage ?? '',
+      createdAt: now,
+      finishedAt: input.finishedAt ?? (status === 'generated' ? now : null),
+    };
+    this.db.run(
+      `INSERT INTO voice_lab_records
+       (id, text, provider, voice_id, voice_label, speed, audio_path, status, error_msg, created_at, finished_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      [
+        record.id,
+        record.text,
+        record.provider,
+        record.voiceId,
+        record.voiceLabel,
+        record.speed,
+        record.audioPath,
+        record.status,
+        record.errorMessage,
+        record.createdAt,
+        record.finishedAt,
+      ],
+    );
+    await this.persist();
+    return record;
+  }
+
   async updateViralAnalysis(
     id: string,
     patch: Partial<Pick<ViralAnalysisRecord, 'status' | 'currentStage' | 'progress' | 'title' | 'resultPath' | 'videoPath' | 'errorMessage' | 'startedAt' | 'completedAt' | 'lastHeartbeatAt'>>,
@@ -832,6 +890,7 @@ export class FileDatabase {
     const promptRows = getRows<Record<string, unknown>>(this.db, 'SELECT * FROM prompt_templates ORDER BY is_builtin DESC, updated_at DESC');
     const draftRows = getRows<Record<string, unknown>>(this.db, 'SELECT * FROM draft_templates ORDER BY is_builtin DESC, id ASC');
     const imageRows = getRows<Record<string, unknown>>(this.db, 'SELECT * FROM image_lab_records ORDER BY created_at DESC');
+    const voiceLabRows = getRows<Record<string, unknown>>(this.db, 'SELECT * FROM voice_lab_records ORDER BY created_at DESC');
     const styleRows = getRows<Record<string, unknown>>(this.db, 'SELECT * FROM custom_styles ORDER BY name ASC');
     const creditRows = getRows<Record<string, unknown>>(this.db, 'SELECT * FROM credit_transactions ORDER BY id DESC');
     const voiceRows = getRows<Record<string, unknown>>(this.db, 'SELECT * FROM minimax_clone_voices ORDER BY last_used_at DESC');
@@ -847,6 +906,7 @@ export class FileDatabase {
       promptTemplates: promptRows.map(rowToPromptTemplate),
       draftTemplates: draftRows.map(rowToDraftTemplate),
       imageLabRecords: imageRows.map(rowToImageLabRecord),
+      voiceLabRecords: voiceLabRows.map(rowToVoiceLabRecord),
       customStyles: styleRows.map(rowToCustomStyle),
       creditTransactions: creditRows.map(rowToCreditTransaction),
       minimaxCloneVoices: voiceRows.map(rowToMinimaxCloneVoice),
@@ -960,6 +1020,7 @@ function rowToPromptTemplate(row: Record<string, unknown>): PromptTemplate {
     isBuiltin: Number(row.is_builtin ?? 0) === 1,
     updatedAt: String(row.updated_at ?? new Date().toISOString()),
     ...stored,
+    imageSeedPoolsJson: stored.imageSeedPoolsJson ?? '',
   };
 }
 
@@ -980,6 +1041,22 @@ function rowToImageLabRecord(row: Record<string, unknown>): ImageLabRecord {
     resolution: String(row.resolution ?? '2K') as ImageLabRecord['resolution'],
     referenceImagePath: String(row.reference_image_path ?? ''),
     upstreamTaskId: row.upstream_task_id ? String(row.upstream_task_id) : null,
+    createdAt: String(row.created_at ?? new Date().toISOString()),
+    finishedAt: row.finished_at ? String(row.finished_at) : null,
+  };
+}
+
+function rowToVoiceLabRecord(row: Record<string, unknown>): VoiceLabRecord {
+  return {
+    id: String(row.id),
+    text: String(row.text ?? ''),
+    provider: String(row.provider ?? 'volcengine') as VoiceLabRecord['provider'],
+    voiceId: String(row.voice_id ?? ''),
+    voiceLabel: String(row.voice_label ?? row.voice_id ?? ''),
+    speed: Number(row.speed ?? 1),
+    audioPath: String(row.audio_path ?? ''),
+    status: String(row.status ?? 'generated') as VoiceLabRecord['status'],
+    errorMessage: String(row.error_msg ?? ''),
     createdAt: String(row.created_at ?? new Date().toISOString()),
     finishedAt: row.finished_at ? String(row.finished_at) : null,
   };

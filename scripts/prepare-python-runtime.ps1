@@ -3,9 +3,9 @@ $ErrorActionPreference = "Stop"
 $Root = Split-Path -Parent $PSScriptRoot
 $PythonVersion = "3.12.4"
 $PythonTag = "312"
-$PackageNames = @("pyJianYingDraft", "yt-dlp", "faster-whisper", "playwright", "httpx", "imageio-ffmpeg")
+$PackageNames = @("pyJianYingDraft", "faster-whisper", "playwright", "httpx", "imageio-ffmpeg", "browser-cookie3", "pycryptodomex", "PyYAML", "gmssl", "aiofiles")
 $PipIndexUrl = "https://pypi.org/simple"
-$RuntimeId = "python-$PythonVersion-storybound-media-runtime-v2"
+$RuntimeId = "python-$PythonVersion-storybound-media-runtime-v3"
 $VendorDir = Join-Path $Root "vendor\python"
 $CacheDir = Join-Path $Root ".cache\python-runtime"
 $ZipPath = Join-Path $CacheDir "python-$PythonVersion-embed-amd64.zip"
@@ -31,7 +31,7 @@ function Test-RuntimeReady {
     return $false
   }
   try {
-    & $PythonExe -c "import pyJianYingDraft, faster_whisper, playwright, httpx, yt_dlp, imageio_ffmpeg; print('storybound media runtime ready')" | Out-Null
+    & $PythonExe -c "import pyJianYingDraft, faster_whisper, playwright, httpx, imageio_ffmpeg, browser_cookie3, yaml, gmssl, aiofiles; import Cryptodome; print('storybound media runtime ready')" | Out-Null
     return $LASTEXITCODE -eq 0
   } catch {
     return $false
@@ -89,13 +89,15 @@ if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 & $PythonExe -m pip install --no-warn-script-location @PackageNames --index-url $PipIndexUrl
 if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 & $PythonExe -m playwright install chromium
-if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+if ($LASTEXITCODE -ne 0) {
+  Write-Warning "[python-runtime] Playwright Chromium download failed; the viral worker will fall back to local Chrome/Edge when available."
+}
 
 if (Test-Path -LiteralPath $PthPath) {
   Set-Content -LiteralPath $PthPath -Value "python$PythonTag.zip`r`n.`r`nLib\site-packages" -Encoding ASCII
 }
 
-& $PythonExe -c "import pyJianYingDraft, faster_whisper, playwright, httpx, yt_dlp, imageio_ffmpeg; print('storybound media runtime ready')"
+& $PythonExe -c "import pyJianYingDraft, faster_whisper, playwright, httpx, imageio_ffmpeg, browser_cookie3, yaml, gmssl, aiofiles; import Cryptodome; print('storybound media runtime ready')"
 if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 
 Set-Content -LiteralPath $ReadyFile -Value "runtime=$RuntimeId`npython=$PythonVersion`npackages=$($PackageNames -join ',')" -Encoding ASCII

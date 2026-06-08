@@ -150,7 +150,7 @@ export const defaultConfig: AppConfig = {
   ],
   activeTtsProfileId: 'default-tts',
   jianying: {
-    draftPath: 'G:/JianyingPro Drafts',
+    draftPath: '',
     bgmLibrary: [],
     defaultBgmId: '',
   },
@@ -162,9 +162,12 @@ export const defaultConfig: AppConfig = {
   },
   viral: {
     cookieFilePath: '',
+    cookieFallbackMode: 'browser-first-after-failure',
+    browserCookieSource: 'auto',
     frameIntervalSeconds: 3,
     maxFrames: 40,
     whisperModel: 'small',
+    huggingFaceEndpoint: '',
     downloadTimeoutMs: 180000,
     vision: {
       id: 'viral-vision',

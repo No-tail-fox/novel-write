@@ -9,7 +9,9 @@ import { promisify } from 'node:util';
 import { readTaskArtifactSnapshot } from '../src/shared/artifact-preview';
 import { fromLlmModelTestResult, testConfigTarget } from '../src/shared/config-utils';
 import { generateImageLabRecord } from '../src/shared/image-lab';
+import { detectJianyingDraftPath, resolveRuntimeJianyingDraftPath } from '../src/shared/jianying-paths';
 import { loadJianyingEffectCatalog } from '../src/shared/jianying-effects';
+import { generateConfiguredVoicePreview } from '../src/shared/media-providers';
 import { createOpenAiCompatibleJsonLlm, listOpenAiCompatibleModels, testOpenAiCompatibleLlm } from '../src/shared/llm-provider';
 import { markSceneImageForRegeneration, markSceneNarrationForRegeneration } from '../src/shared/pipeline-cache';
 import { resolvePythonRuntimeInfo, setDefaultPythonRuntimeAppRoot } from '../src/shared/python-runtime';
@@ -17,7 +19,7 @@ import { composeCopyFromSources, createAiSourceResearcher, searchWebSources } fr
 import { runTask } from '../src/shared/runner';
 import { FileDatabase } from '../src/shared/storage';
 import { createTaskRuntimeProviders } from '../src/shared/task-runtime-providers';
-import type { AccountProfile, ActivationState, AppConfig, ConfigTestTarget, CreateTaskInput, CreateViralAnalysisInput, CustomStyle, CustomStyleGenerateInput, DraftTemplate, ImageLabGenerateInput, LlmConfig, PromptTemplate, ProviderModelListRequest, ResearchCopyComposeInput, Task, TaskStatus, UiPreferences, ViralAnalysisRecord, ViralAnalysisStatus, ViralProductionTaskOptions, VolcengineSpeakerListRequest } from '../src/shared/types';
+import type { AccountProfile, ActivationState, AppConfig, ConfigTestTarget, CreateTaskInput, CreateViralAnalysisInput, CustomStyle, CustomStyleGenerateInput, DraftTemplate, ImageLabGenerateInput, LlmConfig, PromptTemplate, ProviderModelListRequest, ResearchCopyComposeInput, Task, TaskStatus, UiPreferences, ViralAnalysisRecord, ViralAnalysisStatus, ViralProductionTaskOptions, VolcengineSpeakerListRequest, VoiceLabGenerateInput } from '../src/shared/types';
 import { createViralProductionTaskInput, detectViralPlatform, runViralAnalysis } from '../src/shared/viral-analysis';
 import { createViralRuntimeProviders } from '../src/shared/viral-runtime';
 import { listVolcengineSpeakers } from '../src/shared/volcengine-speakers';
@@ -41,7 +43,23 @@ async function getDb(): Promise<FileDatabase> {
   const dataDir = join(app.getPath('userData'), 'storybound-replica');
   await mkdir(dataDir, { recursive: true });
   db = await FileDatabase.open(join(dataDir, 'data.db'));
+  await ensureRuntimeJianyingDraftPath(db);
   return db;
+}
+
+async function ensureRuntimeJianyingDraftPath(database: FileDatabase): Promise<void> {
+  const state = await database.getState();
+  const current = state.config.jianying.draftPath;
+  const resolved = resolveRuntimeJianyingDraftPath(current, { pathExists: existsSync });
+  if (resolved !== current.trim()) {
+    await database.upsertConfig({
+      ...state.config,
+      jianying: {
+        ...state.config.jianying,
+        draftPath: resolved,
+      },
+    });
+  }
 }
 
 async function createWindow(): Promise<void> {
@@ -94,6 +112,10 @@ function viralAnalysisWorkDir(record: Pick<ViralAnalysisRecord, 'id'>): string {
 
 function imageLabWorkDir(id: string): string {
   return join(app.getPath('userData'), 'storybound-replica', 'image-lab', id);
+}
+
+function voiceLabWorkDir(id: string): string {
+  return join(app.getPath('userData'), 'storybound-replica', 'voice-lab', id);
 }
 
 function appDataDir(): string {
@@ -392,6 +414,15 @@ ipcMain.handle('image-lab:add-record', async (_event, input) => {
   return database.getState();
 });
 
+ipcMain.handle('voice-lab:generate', async (_event, input: VoiceLabGenerateInput) => {
+  const database = await getDb();
+  const state = await database.getState();
+  const id = input.id ?? randomUUID();
+  const record = await generateConfiguredVoicePreview(state.config, voiceLabWorkDir(id), { ...input, id });
+  await database.addVoiceLabRecord(record);
+  return database.getState();
+});
+
 ipcMain.handle('account:save', async (_event, account: AccountProfile) => {
   const database = await getDb();
   await database.upsertAccount(account);
@@ -606,6 +637,14 @@ ipcMain.handle('local-image:select', async () => {
   return result.canceled ? null : result.filePaths[0] ?? null;
 });
 
+async function selectLocalFolder(): Promise<string | null> {
+  const result = await dialog.showOpenDialog({
+    title: '选择剪映草稿目录',
+    properties: ['openDirectory'],
+  });
+  return result.canceled ? null : result.filePaths[0] ?? null;
+}
+
 async function selectLocalAudio(): Promise<string | null> {
   const result = await dialog.showOpenDialog({
     title: '选择 BGM 音频',
@@ -616,8 +655,10 @@ async function selectLocalAudio(): Promise<string | null> {
 }
 
 ipcMain.handle('local-audio:select', selectLocalAudio);
+ipcMain.handle('local-folder:select', selectLocalFolder);
 
 ipcMain.handle('jianying:effect-catalog', async () => loadJianyingEffectCatalog());
+ipcMain.handle('jianying:draft-path:detect', async () => detectJianyingDraftPath({ pathExists: existsSync }));
 
 ipcMain.handle('diagnostics:run', async () => {
   const database = await getDb();

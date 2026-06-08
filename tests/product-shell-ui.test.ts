@@ -6,7 +6,7 @@ describe('product shell ui', () => {
     const main = await readFile(new URL('../src/main.tsx', import.meta.url), 'utf8');
     const css = await readFile(new URL('../src/styles.css', import.meta.url), 'utf8');
 
-    for (const view of ['new-task', 'queue', 'history', 'image-lab', 'viral-analyzer', 'prompt-templates', 'draft-templates', 'settings', 'account', 'activation']) {
+    for (const view of ['new-task', 'queue', 'history', 'image-lab', 'voice-lab', 'viral-analyzer', 'prompt-templates', 'draft-templates', 'settings', 'account', 'activation']) {
       expect(main).toContain(view);
     }
     for (const text of ['新建任务', '任务队列', '历史任务', '画图实验室', '提示词模板', '草稿模板', '系统设置']) {
@@ -14,6 +14,39 @@ describe('product shell ui', () => {
     }
     expect(css).toContain('.app-shell');
     expect(css).toContain('--accent');
+  });
+
+  it('adds a standalone voice lab for provider voice previews and history playback', async () => {
+    const main = await readFile(new URL('../src/main.tsx', import.meta.url), 'utf8');
+    const css = await readFile(new URL('../src/styles.css', import.meta.url), 'utf8');
+    const preload = await readFile(new URL('../electron/preload.ts', import.meta.url), 'utf8');
+
+    for (const symbol of [
+      'VoiceLabPage',
+      'api.generateVoiceLabPreview',
+      'voiceLabRecords',
+      'voice-lab-layout',
+      'voice-lab-text',
+      'voice-lab-voices',
+      'voice-lab-player',
+      'voice-lab-history',
+      'voiceProvider',
+      'voiceSpeed',
+      'ttsVoiceOptionsForProvider',
+      'taskSpeakerLabel',
+    ]) {
+      expect(main).toContain(symbol);
+    }
+
+    for (const text of ['配音实验室', '试听文案', '配音模型', '音色', '语速', '生成试听', '历史试听']) {
+      expect(main).toContain(text);
+    }
+
+    expect(preload).toContain('generateVoiceLabPreview');
+    expect(css).toContain('.voice-lab-layout');
+    expect(css).toContain('.voice-lab-voices');
+    expect(css).toContain('.voice-record');
+    expect(css).toContain('.voice-lab-player');
   });
 
   it('wires the viral analyzer page into the shell with report and recreation controls', async () => {
@@ -42,6 +75,19 @@ describe('product shell ui', () => {
     expect(css).toContain('.viral-analyzer-layout');
     expect(css).toContain('.viral-report-grid');
     expect(css).toContain('.viral-recreation-panel');
+  });
+
+  it('keeps viral source detection independent from manual platform selection and avoids native select popups', async () => {
+    const main = await readFile(new URL('../src/main.tsx', import.meta.url), 'utf8');
+    const css = await readFile(new URL('../src/styles.css', import.meta.url), 'utf8');
+    const page = main.slice(main.indexOf('function ViralAnalyzerPage'), main.indexOf('const viralStages'));
+
+    expect(page).toContain('sourceMode');
+    expect(page).toContain('selectedPlatformForAnalysis');
+    expect(main).toContain('viral-choice-grid');
+    expect(page).not.toContain('<select');
+    expect(css).toContain('.viral-source-status');
+    expect(css).toContain('.viral-choice-button.active');
   });
 
   it('uses the dark renderer chrome as the only title bar and removes the trial strip', async () => {
@@ -112,14 +158,19 @@ describe('product shell ui', () => {
     const main = await readFile(new URL('../src/main.tsx', import.meta.url), 'utf8');
 
     expect(main).toContain('template.image.visible ?');
-    expect(main).toContain('template.title.alpha');
-    expect(main).toContain("template.title.bold ? 800 : 500");
+    expect(main).toContain('draftTextLayerStyle(template.title');
+    expect(main).toContain('template.title.bold ? 800 : 500');
     expect(main).toContain('template.subtitle.text');
-    expect(main).toContain('template.subtitle.alpha');
     expect(main).toContain('template.caption.alpha');
     expect(main).toContain('template.caption.underline');
-    expect(main).toContain('template.disclaimer.alpha');
+    expect(main).toContain('draftTextLayerStyle(template.subtitle');
+    expect(main).toContain('draftTextLayerStyle(template.disclaimer');
     expect(main).toContain('template.disclaimer.fontSize');
+    expect(main).toContain('opacity: text.alpha');
+    expect(main).toContain("textDecoration: text.underline ? 'underline' : 'none'");
+    expect(main).toContain('textAlign: draftTextAlign(text.align)');
+    expect(main).toContain('letterSpacing: `${text.letterSpacing}px`');
+    expect(main).toContain('lineHeight: `${1 + text.lineSpacing / 10}`');
     expect(main).toContain('draftTextAlign');
     expect(main).toContain('colorWithAlpha');
   });
@@ -175,6 +226,137 @@ describe('product shell ui', () => {
     expect(css).toContain('.draft-toggle-field');
   });
 
+  it('exposes text border controls and preview stroke for draft text layers', async () => {
+    const main = await readFile(new URL('../src/main.tsx', import.meta.url), 'utf8');
+    const css = await readFile(new URL('../src/styles.css', import.meta.url), 'utf8');
+
+    for (const symbol of [
+      'TextBorderControls',
+      'updateDraftTitleBorder',
+      'updateDraftSubtitleBorder',
+      'updateDraftCaptionBorder',
+      'updateDraftDisclaimerBorder',
+      'draftTextBorderStyle',
+      'template.title.border',
+      'template.subtitle.border',
+      'template.caption.border',
+      'template.disclaimer.border',
+      'textShadow',
+    ]) {
+      expect(main).toContain(symbol);
+    }
+
+    for (const text of ['描边颜色', '描边宽度', '描边透明度']) {
+      expect(main).toContain(text);
+    }
+
+    expect(css).toContain('.draft-border-controls');
+  });
+
+  it('exposes Storybound text style controls for every draft text layer', async () => {
+    const main = await readFile(new URL('../src/main.tsx', import.meta.url), 'utf8');
+
+    for (const symbol of [
+      'updateDraftTitle({ underline: checked })',
+      'updateDraftTitle({ align: Number(event.target.value) })',
+      'updateDraftTitle({ letterSpacing: value })',
+      'updateDraftTitle({ lineSpacing: value })',
+      'updateDraftSubtitle({ underline: checked })',
+      'updateDraftSubtitle({ align: Number(event.target.value) })',
+      'updateDraftSubtitle({ letterSpacing: value })',
+      'updateDraftSubtitle({ lineSpacing: value })',
+      'updateDraftDisclaimer({ bold: checked })',
+      'updateDraftDisclaimer({ underline: checked })',
+      'updateDraftDisclaimer({ align: Number(event.target.value) })',
+      'updateDraftDisclaimer({ letterSpacing: value })',
+      'updateDraftDisclaimer({ lineSpacing: value })',
+      'draftTextLayerStyle(template.title',
+      'draftTextLayerStyle(template.subtitle',
+      'draftTextLayerStyle(template.disclaimer',
+      'text.underline',
+      'text.align',
+      'text.letterSpacing',
+      'text.lineSpacing',
+    ]) {
+      expect(main).toContain(symbol);
+    }
+  });
+
+  it('keeps draft layer controls compact instead of rendering oversized checkbox cards', async () => {
+    const main = await readFile(new URL('../src/main.tsx', import.meta.url), 'utf8');
+    const css = await readFile(new URL('../src/styles.css', import.meta.url), 'utf8');
+
+    expect(main.includes('className="draft-toggle-row"')).toBe(true);
+    expect(main.includes('className="draft-toggle-control"')).toBe(true);
+    expect(main.includes('className="draft-toggle-box"')).toBe(true);
+    expect(main.includes('className="draft-inline-border-grid"')).toBe(true);
+    expect(main.includes('className="draft-border-compact-panel"')).toBe(false);
+    expect(main.indexOf('onChange={updateDraftTitleBorder}')).toBeGreaterThan(main.indexOf('onChange={(checked) => updateDraftTitle({ visible: checked })}'));
+    expect(main.indexOf('onChange={updateDraftTitleBorder}')).toBeLessThan(main.indexOf('onChange={(checked) => updateDraftSubtitle({ visible: checked })}'));
+    expect(main.indexOf('onChange={updateDraftSubtitleBorder}')).toBeGreaterThan(main.indexOf('onChange={(checked) => updateDraftSubtitle({ visible: checked })}'));
+    expect(main.indexOf('onChange={updateDraftSubtitleBorder}')).toBeLessThan(main.indexOf('onChange={(checked) => updateDraftCaption({ visible: checked })}'));
+    expect(main.indexOf('onChange={updateDraftCaptionBorder}')).toBeGreaterThan(main.indexOf('onChange={(checked) => updateDraftCaption({ visible: checked })}'));
+    expect(main.indexOf('onChange={updateDraftCaptionBorder}')).toBeLessThan(main.indexOf('onChange={(checked) => updateDraftDisclaimer({ visible: checked })}'));
+    expect(main.indexOf('onChange={updateDraftDisclaimerBorder}')).toBeGreaterThan(main.indexOf('onChange={(checked) => updateDraftDisclaimer({ visible: checked })}'));
+    expect(main.includes('<Accordion title="文字描边">')).toBe(false);
+    expect(css.includes("input[type='checkbox']")).toBe(true);
+    expect(css.includes('width: 16px')).toBe(true);
+    expect(css.includes('.draft-toggle-row')).toBe(true);
+    expect(css.includes('.draft-toggle-control')).toBe(true);
+    expect(css.includes('.draft-toggle-box')).toBe(true);
+    expect(css.includes('.draft-border-compact-panel')).toBe(false);
+    expect(css.includes('.draft-inline-border-grid')).toBe(true);
+    expect(css.includes('grid-template-columns: repeat(3, minmax(0, 1fr))')).toBe(true);
+  });
+
+  it('keeps the draft canvas visible while the right controls scroll independently', async () => {
+    const css = await readFile(new URL('../src/styles.css', import.meta.url), 'utf8');
+
+    expect(css).toContain('.draft-editor-shell.focused');
+    expect(css).toContain('align-items: start');
+    expect(css).toContain('.draft-stage {');
+    expect(css).toContain('position: sticky');
+    expect(css).toContain('top: 0');
+    expect(css).toContain('.draft-controls {');
+    expect(css).toContain('max-height: calc(100vh - 150px)');
+    expect(css).toContain('max-height: min(calc(100vh - 150px), calc(100vh - 220px))');
+    expect(css).toContain('overflow-y: auto');
+  });
+
+  it('sizes the focused draft preview to the available viewport height', async () => {
+    const main = await readFile(new URL('../src/main.tsx', import.meta.url), 'utf8');
+    const css = await readFile(new URL('../src/styles.css', import.meta.url), 'utf8');
+
+    expect(main).toContain("'--draft-canvas-ratio'");
+    expect(css).toContain('.draft-editor-shell.focused .draft-preview-large');
+    expect(css).toContain('calc((100vh - 310px) * var(--draft-canvas-ratio');
+  });
+
+  it('uses a preview-safe text stroke instead of rendering Storybound 40px borders as giant shadows', async () => {
+    const main = await readFile(new URL('../src/main.tsx', import.meta.url), 'utf8');
+    const css = await readFile(new URL('../src/styles.css', import.meta.url), 'utf8');
+
+    expect(main).toContain('draftTextStrokeStyle');
+    expect(main).toContain('WebkitTextStroke');
+    expect(main).toContain('previewStrokeWidth');
+    expect(main).not.toContain('for (let x = -width; x <= width; x += width)');
+    expect(css).toContain('.draft-title,');
+    expect(css).toContain('white-space: pre-line');
+    expect(css).toContain('overflow-wrap: anywhere');
+    expect(css).toContain('line-height: 1.15');
+  });
+
+  it('shows the full learned Jianying animation list in draft template controls', async () => {
+    const main = await readFile(new URL('../src/main.tsx', import.meta.url), 'utf8');
+    const templates = await readFile(new URL('../src/shared/templates.ts', import.meta.url), 'utf8');
+
+    expect(main).toContain('options={imageAnimations}');
+    expect(main).not.toContain('imageAnimations.slice(0, 8)');
+    for (const animation of ['左拉镜', '右拉镜', '弹入旋转', '旋转回吸', '滑滑梯 II', '百叶窗 II', '立方体', '海盗船']) {
+      expect(templates).toContain(animation);
+    }
+  });
+
   it('wires uploaded BGM management into settings and new task defaults', async () => {
     const main = await readFile(new URL('../src/main.tsx', import.meta.url), 'utf8');
     const css = await readFile(new URL('../src/styles.css', import.meta.url), 'utf8');
@@ -189,6 +371,17 @@ describe('product shell ui', () => {
     expect(main).toContain('bgm-library-list');
     expect(css).toContain('.bgm-library-list');
     expect(css).toContain('.bgm-library-item');
+  });
+
+  it('offers auto-detect and folder-pick actions for the Jianying draft path setting', async () => {
+    const main = await readFile(new URL('../src/main.tsx', import.meta.url), 'utf8');
+
+    expect(main).toContain('detectJianyingDraftPath');
+    expect(main).toContain('selectLocalFolder');
+    expect(main).toContain('autoDetectJianyingDraftPath');
+    expect(main).toContain('pickJianyingDraftPath');
+    expect(main).toContain('自动检测');
+    expect(main).toContain('选择目录');
   });
 
   it('loads Jianying effect catalogs and exposes conservative draft effect controls', async () => {
@@ -257,6 +450,34 @@ describe('product shell ui', () => {
     expect(css).toContain('.prompt-template-detail');
   });
 
+  it('builds prompt template track filters from saved templates so custom tracks remain visible', async () => {
+    const main = await readFile(new URL('../src/main.tsx', import.meta.url), 'utf8');
+    const filterSnippet = main.slice(main.indexOf('<Field label="赛道筛选">'), main.indexOf('<section className="prompt-template-list story-template-gallery">'));
+
+    expect(main).toContain('promptTemplateTrackOptions');
+    expect(main).toContain('buildStoryTemplateTrackOptions(state.promptTemplates)');
+    expect(filterSnippet).toContain('promptTemplateTrackOptions.map(([id, label])');
+    expect(filterSnippet).not.toContain('contentTracks.map');
+  });
+
+  it('uses saved template tracks when binding prompt templates to content tracks', async () => {
+    const main = await readFile(new URL('../src/main.tsx', import.meta.url), 'utf8');
+    const bindingSnippet = main.slice(main.indexOf('<Field label="绑定赛道">'), main.indexOf('</Field>', main.indexOf('<Field label="绑定赛道">')));
+
+    expect(main).toContain('promptTemplateBindingTrackOptions');
+    expect(bindingSnippet).toContain('promptTemplateBindingTrackOptions.map(([id, label])');
+    expect(bindingSnippet).not.toContain('contentTracks.map');
+  });
+
+  it('binds newly created prompt templates to the active track filter when present', async () => {
+    const main = await readFile(new URL('../src/main.tsx', import.meta.url), 'utf8');
+    const createSnippet = main.slice(main.indexOf('async function createPromptTemplate()'), main.indexOf('async function saveCustomStyleDraft()'));
+
+    expect(createSnippet).toContain("const baseTrack = templateTrackFilter === 'all' ? 'general-story' : templateTrackFilter");
+    expect(createSnippet).toContain('baseTrack,');
+    expect(createSnippet).not.toContain("baseTrack: 'general-story'");
+  });
+
   it('keeps prompt template pages padded, scrollable, and tolerant of narrow row actions', async () => {
     const css = await readFile(new URL('../src/styles.css', import.meta.url), 'utf8');
 
@@ -290,6 +511,32 @@ describe('product shell ui', () => {
     }
     expect(css).toContain('.prompt-step-editor-list');
     expect(css).toContain('.prompt-step-editor-card');
+  });
+
+  it('exposes Storybound reference prompt content fields including image seed pools', async () => {
+    const main = await readFile(new URL('../src/main.tsx', import.meta.url), 'utf8');
+    const css = await readFile(new URL('../src/styles.css', import.meta.url), 'utf8');
+    const storage = await readFile(new URL('../src/shared/storage.ts', import.meta.url), 'utf8');
+
+    for (const symbol of [
+      'imageSeedPoolsJson',
+      'prompt-template-reference-fields',
+      'prompt-template-seed-pools',
+      'updatePromptTemplateStepPrompt',
+      "updatePromptTemplateStepPrompt('rewrite'",
+      "updatePromptTemplateStepPrompt('cover'",
+      "updatePromptTemplateStepPrompt('image-prompt'",
+    ]) {
+      expect(main).toContain(symbol);
+    }
+
+    for (const text of ['参考提示词内容', '任务总指令', 'Step 1 改写系统提示词', 'Step 1 元数据系统提示词', 'Step 3 出图系统提示词', '出图种子池 JSON']) {
+      expect(main).toContain(text);
+    }
+
+    expect(storage).toContain('imageSeedPoolsJson');
+    expect(css).toContain('.prompt-template-reference-fields');
+    expect(css).toContain('.prompt-template-seed-pools');
   });
 
   it('presents prompt template details as basics, content settings, and step default prompts', async () => {
@@ -689,11 +936,16 @@ describe('product shell ui', () => {
     const main = await readFile(new URL('../src/main.tsx', import.meta.url), 'utf8');
 
     expect(main).toContain('buildStoryTemplateTrackOptions');
+    expect(main).toContain('buildTaskPromptTemplateOptions');
     expect(main).toContain('buildImageTemplateStyleOptions');
     expect(main).toContain('storyTemplateTrackOptions');
+    expect(main).toContain('taskPromptTemplateOptions');
     expect(main).toContain('imageTemplateStyleOptions');
     expect(main).toContain('options={storyTemplateTrackOptions}');
     expect(main).toContain('options={imageTemplateStyleOptions}');
+    expect(main).toContain('buildTaskPromptTemplateOptions(state.promptTemplates, track)');
+    expect(main).toContain('taskPromptTemplateOptions.map(([id, label, hint])');
+    expect(main).toContain('value={promptTemplateOverrideId || resolvedPromptTemplate?.id || \'\'}');
     expect(main).not.toContain('OptionCloud title="内容赛道" options={contentTracks}');
     expect(main).not.toContain('OptionCloud title="画面风格" options={styleOptions}');
   });

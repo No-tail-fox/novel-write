@@ -14,6 +14,7 @@ describe('electron ipc contract', () => {
       'draft-template:save',
       'image-lab:generate',
       'image-lab:add-record',
+      'voice-lab:generate',
       'account:save',
       'activation:save',
       'ui:save-preferences',
@@ -32,6 +33,8 @@ describe('electron ipc contract', () => {
       'diagnostics:run',
       'local-image:select',
       'local-audio:select',
+      'local-folder:select',
+      'jianying:draft-path:detect',
       'jianying:effect-catalog',
       'viral:create-and-run',
       'viral:update-status',
@@ -139,7 +142,21 @@ describe('electron ipc contract', () => {
     expect(handler).toContain('database.addImageLabRecord(record)');
     expect(preload).toContain('generateImageLab');
     expect(preload).toContain('image-lab:generate');
-    expect(viteEnv).toContain('generateImageLab: (input: ImageLabGenerateInput) => Promise<AppState>');
+      expect(viteEnv).toContain('generateImageLab: (input: ImageLabGenerateInput) => Promise<AppState>');
+  });
+
+  it('routes voice lab preview generation through the configured TTS provider', async () => {
+    const main = await readFile(new URL('../electron/main.ts', import.meta.url), 'utf8');
+    const preload = await readFile(new URL('../electron/preload.ts', import.meta.url), 'utf8');
+    const viteEnv = await readFile(new URL('../src/vite-env.d.ts', import.meta.url), 'utf8');
+    const handler = main.slice(main.indexOf("ipcMain.handle('voice-lab:generate'"), main.indexOf("ipcMain.handle('account:save'"));
+
+    expect(main).toContain('generateConfiguredVoicePreview');
+    expect(handler).toContain('voiceLabWorkDir');
+    expect(handler).toContain('database.addVoiceLabRecord(record)');
+    expect(preload).toContain('generateVoiceLabPreview');
+    expect(preload).toContain('voice-lab:generate');
+    expect(viteEnv).toContain('generateVoiceLabPreview: (input: VoiceLabGenerateInput) => Promise<AppState>');
   });
 
   it('exposes a safe local image picker for draft template background images', async () => {
@@ -166,6 +183,23 @@ describe('electron ipc contract', () => {
     expect(preload).toContain('selectLocalAudio');
     expect(preload).toContain('local-audio:select');
     expect(viteEnv).toContain('selectLocalAudio: () => Promise<string | null>');
+  });
+
+  it('exposes Jianying draft folder detection and folder picking to the renderer', async () => {
+    const main = await readFile(new URL('../electron/main.ts', import.meta.url), 'utf8');
+    const preload = await readFile(new URL('../electron/preload.ts', import.meta.url), 'utf8');
+    const viteEnv = await readFile(new URL('../src/vite-env.d.ts', import.meta.url), 'utf8');
+
+    expect(main).toContain("ipcMain.handle('local-folder:select'");
+    expect(main).toContain("properties: ['openDirectory']");
+    expect(main).toContain("ipcMain.handle('jianying:draft-path:detect'");
+    expect(main).toContain('detectJianyingDraftPath');
+    expect(preload).toContain('selectLocalFolder');
+    expect(preload).toContain('local-folder:select');
+    expect(preload).toContain('detectJianyingDraftPath');
+    expect(preload).toContain('jianying:draft-path:detect');
+    expect(viteEnv).toContain('selectLocalFolder: () => Promise<string | null>');
+    expect(viteEnv).toContain('detectJianyingDraftPath: () => Promise<string>');
   });
 
   it('exposes pyJianYingDraft effect catalog loading to the renderer', async () => {

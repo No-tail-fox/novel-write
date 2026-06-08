@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { defaultCustomStyles, defaultPromptTemplates } from '@shared/config';
 import {
   buildImageTemplateStyleOptions,
+  buildTaskPromptTemplateOptions,
   buildStoryTemplateTrackOptions,
   resolvePromptTemplateDefaultDraftTemplateId,
   renderPromptTemplate,
@@ -63,6 +64,47 @@ describe('prompt template rendering', () => {
     expect(selectTaskPromptTemplate([...defaultPromptTemplates, explicit], { track: 'character-story', promptTemplateId: explicit.id })?.id).toBe(explicit.id);
     expect(selectTaskPromptTemplate(defaultPromptTemplates, { track: 'food-v2' })?.id).toBe('system-food-v2');
     expect(selectTaskPromptTemplate(defaultPromptTemplates, { track: 'unknown-track' })?.id).toBe('system-general-story');
+  });
+
+  it('prefers custom task templates when they share a built-in content track', () => {
+    const custom = {
+      ...defaultPromptTemplates[0],
+      id: 'custom-character-story',
+      name: '人物故事 自定义',
+      description: '历史人物、名人传记、纪实质感与情感渲染。',
+      baseTrack: 'character-story',
+      isBuiltin: false,
+      origin: 'custom' as const,
+      updatedAt: '2026-06-08T12:00:00.000Z',
+    };
+
+    const templates = [...defaultPromptTemplates, custom];
+
+    expect(selectTaskPromptTemplate(templates, { track: 'character-story' })?.id).toBe(custom.id);
+    expect(buildStoryTemplateTrackOptions(templates).find(([track]) => track === 'character-story')).toEqual([
+      'character-story',
+      '人物故事 自定义',
+      '历史人物、名人传记、纪实质感与情感渲染',
+    ]);
+  });
+
+  it('builds explicit task prompt choices for the selected content track', () => {
+    const custom = {
+      ...defaultPromptTemplates[0],
+      id: 'custom-character-story',
+      name: '人物故事 自定义',
+      description: '按用户保存的自定义人物叙事规则生成。',
+      baseTrack: 'character-story',
+      isBuiltin: false,
+      origin: 'custom' as const,
+      updatedAt: '2026-06-08T12:00:00.000Z',
+    };
+
+    const options = buildTaskPromptTemplateOptions([...defaultPromptTemplates, custom], 'character-story');
+
+    expect(options.map(([id]) => id).slice(0, 2)).toEqual(['custom-character-story', 'system-character-story']);
+    expect(options).toContainEqual(['custom-character-story', '人物故事 自定义', '按用户保存的自定义人物叙事规则生成']);
+    expect(options.some(([id]) => id === 'system-health-book')).toBe(false);
   });
 
   it('selects built-in step templates by template type', () => {

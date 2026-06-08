@@ -6,6 +6,7 @@ export type ShellView =
   | 'history'
   | 'task-detail'
   | 'image-lab'
+  | 'voice-lab'
   | 'viral-analyzer'
   | 'prompt-templates'
   | 'draft-templates'
@@ -211,6 +212,10 @@ export interface ImaConfig {
 }
 
 export type ViralPlatform = 'douyin' | 'kuaishou' | 'bilibili' | 'unknown';
+export type ViralDownloadProvider = 'douyin-internal' | 'kuaishou-playwright' | 'bilibili-internal';
+export type ViralCookieSource = 'none' | 'browser-chrome' | 'browser-edge' | 'cookie-file';
+export type ViralCookieFallbackMode = 'browser-first-after-failure';
+export type ViralBrowserCookieSource = 'auto' | 'chrome' | 'edge';
 export type ViralAnalysisStatus = 'pending' | 'running' | 'paused' | 'completed' | 'failed' | 'cancelled';
 export type ViralAnalysisStage =
   | 'queued'
@@ -225,9 +230,12 @@ export type ViralAnalysisStage =
 
 export interface ViralAnalyzerConfig {
   cookieFilePath: string;
+  cookieFallbackMode: ViralCookieFallbackMode;
+  browserCookieSource: ViralBrowserCookieSource;
   frameIntervalSeconds: number;
   maxFrames: number;
   whisperModel: string;
+  huggingFaceEndpoint: string;
   downloadTimeoutMs: number;
   vision: LlmConfig;
 }
@@ -354,6 +362,7 @@ export interface PromptTemplate {
   step3SkeletonModules?: string[];
   referenceKind?: 'none' | 'face' | 'product';
   stepPrompts?: Partial<Record<PromptStepTemplateType, string>>;
+  imageSeedPoolsJson?: string;
   origin?: 'system' | 'custom' | 'market';
   usedCount?: number;
   marketTags?: string[];
@@ -396,6 +405,23 @@ export interface ImageLabRecord {
 
 export type ImageLabGenerateInput = Pick<ImageLabRecord, 'prompt' | 'ratio' | 'style'> &
   Partial<Pick<ImageLabRecord, 'id' | 'provider' | 'resolution' | 'referenceImagePath' | 'upstreamTaskId' | 'createdAt'>>;
+
+export interface VoiceLabRecord {
+  id: string;
+  text: string;
+  provider: TtsProvider;
+  voiceId: string;
+  voiceLabel: string;
+  speed: number;
+  audioPath: string;
+  status: 'generated' | 'failed';
+  errorMessage: string;
+  createdAt: string;
+  finishedAt: string | null;
+}
+
+export type VoiceLabGenerateInput = Pick<VoiceLabRecord, 'text' | 'provider' | 'voiceId' | 'speed'> &
+  Partial<Pick<VoiceLabRecord, 'id' | 'voiceLabel' | 'createdAt'>>;
 
 export interface CreditTransaction {
   id: number;
@@ -549,6 +575,9 @@ export interface ViralAnalysisEvent {
 export interface ViralVideoSource {
   platform: ViralPlatform;
   url: string;
+  normalizedUrl: string;
+  downloadProvider: ViralDownloadProvider;
+  usedCookieSource: ViralCookieSource;
   videoPath: string;
   coverPath: string;
   title: string;
@@ -728,6 +757,11 @@ export interface DraftTemplate {
     color: string;
     alpha: number;
     bold: boolean;
+    underline: boolean;
+    align: number;
+    letterSpacing: number;
+    lineSpacing: number;
+    border: DraftTextBorder;
   };
   subtitle: {
     visible: boolean;
@@ -738,6 +772,11 @@ export interface DraftTemplate {
     color: string;
     alpha: number;
     bold: boolean;
+    underline: boolean;
+    align: number;
+    letterSpacing: number;
+    lineSpacing: number;
+    border: DraftTextBorder;
   };
   caption: {
     visible: boolean;
@@ -746,6 +785,7 @@ export interface DraftTemplate {
     fontSize: number;
     color: string;
     alpha: number;
+    border: DraftTextBorder;
     bold: boolean;
     underline: boolean;
     align: number;
@@ -766,6 +806,12 @@ export interface DraftTemplate {
     fontSize: number;
     color: string;
     alpha: number;
+    bold: boolean;
+    underline: boolean;
+    align: number;
+    letterSpacing: number;
+    lineSpacing: number;
+    border: DraftTextBorder;
   };
   audio: {
     narrationVolume: number;
@@ -780,6 +826,12 @@ export interface DraftTemplate {
     videoEffectType: string;
     audioEffectType: string;
   };
+}
+
+export interface DraftTextBorder {
+  color: string;
+  width: number;
+  alpha: number;
 }
 
 export interface DiagnosticCheck {
@@ -803,6 +855,7 @@ export interface AppState {
   promptTemplates: PromptTemplate[];
   draftTemplates: DraftTemplate[];
   imageLabRecords: ImageLabRecord[];
+  voiceLabRecords: VoiceLabRecord[];
   customStyles: CustomStyle[];
   creditTransactions: CreditTransaction[];
   minimaxCloneVoices: MinimaxCloneVoice[];

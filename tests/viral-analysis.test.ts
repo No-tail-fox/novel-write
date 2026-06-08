@@ -29,6 +29,68 @@ describe('viral analysis helpers', () => {
     );
   });
 
+  it('records internal downloader metadata after source download', async () => {
+    const dir = await mkdtemp(join(tmpdir(), 'storybound-viral-download-event-'));
+    const events: Array<{ type: string; stage: string; data?: unknown }> = [];
+
+    try {
+      await runViralAnalysis(
+        {
+          id: 'viral-download-event',
+          url: 'https://www.douyin.com/video/123',
+          platform: 'douyin',
+          title: '',
+          status: 'pending',
+          currentStage: 'queued',
+          progress: 0,
+          settings: { track: 'ecommerce', style: 'photo-real', ratio: '9:16', templateId: 'default-portrait-9-16' },
+          resultPath: '',
+          videoPath: '',
+          errorMessage: '',
+          createdAt: '2026-06-02T00:00:00.000Z',
+          startedAt: null,
+          completedAt: null,
+          lastHeartbeatAt: null,
+        },
+        {
+          workDir: dir,
+          emit: async (event) => {
+            events.push({ type: event.type, stage: event.stage, data: event.data });
+          },
+          download: async () => ({
+            source: makeViralResult().source,
+            videoPath: join(dir, 'video.mp4'),
+            provider: 'douyin-internal',
+            normalizedUrl: 'https://www.douyin.com/video/123',
+            usedCookieSource: 'none',
+            raw: { itemId: '123' },
+          }),
+          extract: async () => ({
+            audioPath: join(dir, 'audio.wav'),
+            frames: [],
+          }),
+          transcribe: async () => makeViralResult().transcript,
+          analyzeFrame: async () => makeViralResult().frames[0],
+          analyzeBreakdown: async () => makeViralResult().contentBreakdown,
+          createRecreation: async () => makeViralResult().recreation,
+        },
+      );
+
+      expect(events).toContainEqual({
+        type: 'stage_done',
+        stage: 'downloading',
+        data: {
+          provider: 'douyin-internal',
+          normalizedUrl: 'https://www.douyin.com/video/123',
+          usedCookieSource: 'none',
+          metadataTitle: 'Original title',
+        },
+      });
+    } finally {
+      await rm(dir, { recursive: true, force: true });
+    }
+  });
+
   it('builds the required four-part viral breakdown prompt without comment collection', () => {
     const prompt = buildViralBreakdownPrompt({
       title: 'Sample viral clip',
@@ -124,6 +186,9 @@ describe('viral analysis helpers', () => {
           download: async () => ({
             source: makeViralResult().source,
             videoPath: join(dir, 'video.mp4'),
+            provider: 'douyin-internal',
+            normalizedUrl: 'https://www.douyin.com/video/123',
+            usedCookieSource: 'none',
           }),
           extract: async () => ({
             audioPath: join(dir, 'audio.wav'),
@@ -149,6 +214,7 @@ describe('viral analysis helpers', () => {
 
       expect(events).toEqual([
         'stage_start:downloading',
+        'stage_done:downloading',
         'stage_start:extracting',
         'stage_start:transcribing',
         'stage_start:analyzing_frames',
@@ -175,6 +241,9 @@ function makeViralResult(): ViralAnalysisResult {
       author: 'creator',
       duration: 30,
       stats: { likes: 1000, comments: 20, shares: 30 },
+      normalizedUrl: 'https://www.douyin.com/video/123',
+      downloadProvider: 'douyin-internal',
+      usedCookieSource: 'none',
     },
     transcript: [{ text: 'Original transcript.', start: 0, end: 2, words: [] }],
     frames: [],

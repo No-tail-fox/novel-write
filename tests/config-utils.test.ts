@@ -57,6 +57,24 @@ describe('config validation utilities', () => {
     expect(normalized.jianying.defaultBgmId).toBe('real');
   });
 
+  it('normalizes viral analyzer fallback cookie settings', () => {
+    const normalized = normalizeAppConfig({
+      ...defaultConfig,
+      viral: {
+        ...defaultConfig.viral,
+        cookieFilePath: '  C:/cookies/douyin.txt  ',
+        cookieFallbackMode: 'browser-first-after-failure',
+        browserCookieSource: 'edge',
+      },
+    });
+
+    expect(normalized.viral).toMatchObject({
+      cookieFilePath: 'C:/cookies/douyin.txt',
+      cookieFallbackMode: 'browser-first-after-failure',
+      browserCookieSource: 'edge',
+    });
+  });
+
   it('marks filled LLM credentials as configured for settings status', () => {
     const config = {
       ...defaultConfig,

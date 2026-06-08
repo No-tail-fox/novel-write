@@ -29,6 +29,7 @@ import type {
   ViralProductionTaskOptions,
   VolcengineSpeakerListRequest,
   VolcengineSpeakerListResult,
+  VoiceLabGenerateInput,
 } from './shared/types';
 
 declare global {
@@ -49,6 +50,7 @@ declare global {
       saveDraftTemplate: (template: DraftTemplate) => Promise<AppState>;
       generateImageLab: (input: ImageLabGenerateInput) => Promise<AppState>;
       addImageLabRecord: (input: Partial<ImageLabRecord> & Pick<ImageLabRecord, 'prompt' | 'ratio' | 'style' | 'provider'>) => Promise<AppState>;
+      generateVoiceLabPreview: (input: VoiceLabGenerateInput) => Promise<AppState>;
       saveAccount: (account: AccountProfile) => Promise<AppState>;
       saveActivation: (activation: ActivationState) => Promise<AppState>;
       saveUiPreferences: (ui: UiPreferences) => Promise<AppState>;
@@ -66,6 +68,8 @@ declare global {
       readAssetDataUrl: (path: string) => Promise<string>;
       selectLocalImage: () => Promise<string | null>;
       selectLocalAudio: () => Promise<string | null>;
+      selectLocalFolder: () => Promise<string | null>;
+      detectJianyingDraftPath: () => Promise<string>;
       getJianyingEffectCatalog: () => Promise<JianyingEffectCatalog>;
       runDiagnostics: () => Promise<{ generatedAt: string; checks: Array<{ id: string; label: string; status: string; detail: string }> }>;
       openPath: (path: string) => Promise<void>;

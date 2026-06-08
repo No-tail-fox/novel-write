@@ -65,11 +65,12 @@ export function selectTaskPromptTemplate(templates: PromptTemplate[], input: Pro
     const explicit = templates.find((template) => template.id === input.promptTemplateId && template.type === 'task');
     if (explicit) return explicit;
   }
+  const taskTemplates = sortTaskTemplatesForSelection(templates);
   const track = input.track || fallbackTaskTrack;
   return (
-    templates.find((template) => template.type === 'task' && template.baseTrack === track) ??
-    templates.find((template) => template.type === 'task' && template.baseTrack === fallbackTaskTrack) ??
-    templates.find((template) => template.type === 'task') ??
+    taskTemplates.find((template) => template.baseTrack === track) ??
+    taskTemplates.find((template) => template.baseTrack === fallbackTaskTrack) ??
+    taskTemplates[0] ??
     null
   );
 }
@@ -77,14 +78,44 @@ export function selectTaskPromptTemplate(templates: PromptTemplate[], input: Pro
 export function buildStoryTemplateTrackOptions(templates: PromptTemplate[]): TemplateOption[] {
   const options: TemplateOption[] = [];
   const seenTracks = new Set<string>();
-  templates.forEach((template) => {
-    if (template.type !== 'task') return;
+  sortTaskTemplatesForSelection(templates).forEach((template) => {
     const track = (template.baseTrack || fallbackTaskTrack).trim();
     if (!track || seenTracks.has(track)) return;
     seenTracks.add(track);
     options.push([track, template.name, compactOptionHint(template.description || template.marketTags?.join(' / ') || track)]);
   });
   return options.length ? options : [[fallbackTaskTrack, '通用故事', '通用写实风格']];
+}
+
+export function buildTaskPromptTemplateOptions(templates: PromptTemplate[], track?: string): TemplateOption[] {
+  const targetTrack = (track || '').trim();
+  return sortTaskTemplatesForSelection(templates)
+    .filter((template) => !targetTrack || (template.baseTrack || fallbackTaskTrack) === targetTrack)
+    .map((template) => [
+      template.id,
+      template.name,
+      compactOptionHint(template.description || template.marketTags?.join(' / ') || template.baseTrack || fallbackTaskTrack),
+    ]);
+}
+
+function sortTaskTemplatesForSelection(templates: PromptTemplate[]): PromptTemplate[] {
+  return templates
+    .filter((template) => template.type === 'task')
+    .map((template, index) => ({ template, index }))
+    .sort((left, right) => {
+      const priorityDelta = taskTemplatePriority(right.template) - taskTemplatePriority(left.template);
+      if (priorityDelta !== 0) return priorityDelta;
+      const timeDelta = Date.parse(right.template.updatedAt || '') - Date.parse(left.template.updatedAt || '');
+      if (Number.isFinite(timeDelta) && timeDelta !== 0) return timeDelta;
+      return left.index - right.index;
+    })
+    .map(({ template }) => template);
+}
+
+function taskTemplatePriority(template: PromptTemplate): number {
+  if (!template.isBuiltin) return 3;
+  if (template.origin === 'market') return 2;
+  return 1;
 }
 
 export function buildImageTemplateStyleOptions(styles: CustomStyle[]): TemplateOption[] {

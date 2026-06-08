@@ -1,0 +1,96 @@
+# Findings
+
+## Additional Storybound Draft Preset Parity
+
+- Re-read Storybound local SQLite DB at `C:\Users\foxnotail\AppData\Local\com.dudumd.storybound\data.db`.
+- Confirmed the authoritative built-in draft presets are the `draft_templates.config` rows for:
+  - `default-portrait-9-16` / `默认竖屏`.
+  - `builtin-portrait-4-3` / `竖屏4:3`.
+  - `builtin-landscape-16-9` / `横屏16:9`.
+- Implemented exact built-in preset values in `src/shared/templates.ts`, including canvas/image positions, title/subtitle/caption/disclaimer positions, font sizes, alpha, border width 40 where Storybound uses it, caption background, disclaimer text, and audio volume/fade defaults.
+- Extended title, subtitle, and disclaimer with Storybound text style fields: `bold`, `underline`, `align`, `letterSpacing`, `lineSpacing`, and `border`.
+- Added compact editor controls and preview styles for those text fields. Browser smoke confirmed the title panel shows `下划线`, `对齐`, `字间距`, `行间距`, and `描边宽度` shows value `40` with max `60`.
+- Extended draft bridge payload and pyJianYingDraft export so title, subtitle, and disclaimer become text tracks through `TextSegment`, `TextStyle`, and `TextBorder`.
+- Verification evidence:
+  - Red-green targeted tests for draft preset parity, storage hydration, bridge payload/export, and UI controls.
+  - `node node_modules/vitest/vitest.mjs run --pool=threads --maxWorkers=1 tests/product-shell-storage.test.ts tests/draft-template-normalization.test.ts tests/draft.test.ts tests/jianying-bridge.test.ts tests/product-shell-ui.test.ts` passed: 5 files, 78 tests.
+  - `npm run typecheck` passed.
+  - `npm test` passed: 34 test files, 239 tests.
+  - In-app browser smoke on `http://localhost:5173` saved screenshot `tmp/draft-template-storybound-parity-ui.png`.
+
+- Workspace root: `I:\opc`.
+- Current branch: `main`, synced to `origin/main` at `fb98475`.
+- Working tree is dirty with existing tracked and untracked changes; preserve them.
+- User goal: compare current app against reference software at `G:\Storybound` and supplement the current app. User specifically called out:
+  - voice lab / dubbing lab
+  - prompt content
+  - draft template content
+- Reference directory initial listing:
+  - `G:\Storybound\storybound.exe`
+  - `G:\Storybound\draft-generator.exe`
+  - `G:\Storybound\uninstall.exe`
+  - `G:\Storybound\resources\`
+- `storybound.exe` version info:
+  - ProductName/FileDescription: `Storybound`
+  - CompanyName: `dudumd`
+  - FileVersion: `0.1.0`
+- `G:\Storybound\resources` currently exposes `default-bgm.mp3`.
+- Binary string scan suggests `storybound.exe` is a Tauri app with embedded web assets, including `/assets/index-*.js` and `/assets/index-*.css`.
+- `draft-generator.exe` is a Python/PyInstaller-style bundle. It includes:
+  - `pyJianYingDraft`
+  - `imageio_ffmpeg`
+  - `jieba`
+  - `template_jianying\...` including `draft_meta_info.json`, `draft_info.json`, `draft_cover.jpg`, and backup/template files.
+- Reference app local data directory:
+  - `C:\Users\foxnotail\AppData\Local\com.dudumd.storybound`
+  - Contains `config.json`, `data.db`, `bgm\`, `tasks\`, and Edge WebView data.
+- Reference `config.json` shape:
+  - LLM: OpenAI-compatible custom provider.
+  - Image: GPT Image / Jimeng / custom image providers.
+  - TTS: Volcengine and MiniMax sections.
+  - Jianying: `draft_path`.
+- Reference `data.db` tables relevant to this task:
+  - `draft_templates`: 4 rows.
+  - `user_prompt_templates`: 0 rows, but schema reveals the intended prompt-template model.
+  - `minimax_clone_voices`: 0 rows.
+  - `playground_jobs`: 0 rows.
+- Reference `user_prompt_templates` schema models 5 editable prompt/content fields:
+  - `step1_rewrite_system_prompt`
+  - `step1_metadata_system_prompt`
+  - `step3_system_prompt`
+  - `style_id`
+  - `image_seed_pools_json`
+  - Plus market/share metadata, character-card policy, Step 3 skeleton modules, and reference image kind.
+- Current app already has a richer prompt model than the reference schema:
+  - `PromptTemplate.content`
+  - `stepPrompts` for review/rewrite/cover/storyboard/image-prompt
+  - default image style and default draft template binding
+  - variables and JSON import/export
+- Reference draft template configs include fields the current model partially supports:
+  - title/subtitle/caption/disclaimer positions, font size, color, alpha
+  - caption underline, align, letter spacing, line spacing, max chars, background
+  - text border/stroke fields on title/subtitle/caption/disclaimer
+  - audio narration/BGM volume and BGM fade-out
+- Current draft template model already supports:
+  - gallery and visual editor
+  - draggable regions
+  - canvas/background/image/title/subtitle/caption/disclaimer/audio settings
+  - caption underline/align/letter spacing/line spacing/max chars/background
+  - Jianying transitions, filters, video/audio effects
+  - It does not yet model text border/stroke consistently for all text layers.
+- Current TTS capability:
+  - task-level Volcengine/MiniMax provider selection
+  - task-level voice selection and speed
+  - settings profile manager for TTS credentials
+  - narration preview/regeneration inside task detail
+  - no standalone "voice lab" page for quick auditioning voices outside a task.
+- Implemented parity additions:
+  - Added standalone `voice-lab` shell view with provider switching, voice chips, speed selection, real Electron generation through existing TTS providers, browser-preview failure records, audio player, and history list.
+  - Added `voice_lab_records` persistence and `voice-lab:generate` IPC using `generateConfiguredVoicePreview`.
+  - Added `PromptTemplate.imageSeedPoolsJson` and reference-style editor fields for task instruction, Step 1 rewrite, Step 1 metadata, Step 3 image prompt, and seed pools JSON while keeping `content` and `stepPrompts` as the source of truth.
+  - Added `DraftTextBorder` defaults and normalization for title/subtitle/caption/disclaimer, draft editor controls, React preview stroke via `textShadow`, bridge payload fields, and Python bridge `TextStyle` stroke kwargs for caption import.
+- Verification evidence:
+  - Targeted feature tests passed: `tests/product-shell-ui.test.ts`, `tests/storage.test.ts`, `tests/draft.test.ts`, `tests/jianying-bridge.test.ts`, `tests/media-providers.test.ts`, `tests/electron-ipc-contract.test.ts`.
+  - `npm run typecheck` passed.
+  - `npm test` passed: 34 test files, 235 tests.
+  - In-app browser smoke on `http://127.0.0.1:5173` confirmed `配音实验室` navigation, fields, voice chips, generate button, history area, and browser-preview failure record behavior.

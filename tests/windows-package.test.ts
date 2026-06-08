@@ -30,9 +30,21 @@ describe('windows packaging', () => {
     expect(packageScript).toContain('Storybound-Replica-Portable-${Version}.zip');
     expect(packageScript).toContain('release\\Storybound-Replica-Portable');
     expect(packageScript).toContain('node --check');
-    for (const dependency of ['pyJianYingDraft', 'yt-dlp', 'faster-whisper', 'playwright', 'httpx', 'imageio-ffmpeg']) {
+    for (const dependency of [
+      'pyJianYingDraft',
+      'faster-whisper',
+      'playwright',
+      'httpx',
+      'imageio-ffmpeg',
+      'browser-cookie3',
+      'pycryptodomex',
+      'PyYAML',
+      'gmssl',
+      'aiofiles',
+    ]) {
       expect(pythonRuntimeScript).toContain(dependency);
     }
+    expect(pythonRuntimeScript).not.toContain('yt-dlp');
     expect(pythonRuntimeScript).toContain('playwright install chromium');
   });
 });

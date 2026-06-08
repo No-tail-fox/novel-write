@@ -1,7 +1,7 @@
 import { mkdir, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { createHash, createHmac, randomUUID } from 'node:crypto';
-import type { AppConfig, ImagePrompt, StoryboardScene, Task } from './types';
+import type { AppConfig, ImagePrompt, StoryboardScene, Task, VoiceLabGenerateInput, VoiceLabRecord } from './types';
 import type { SceneAsset } from './draft';
 import { fetchWithTimeout } from './http';
 import { buildOpenAiImageGenerationBody, normalizeOpenAiImageBaseUrl } from './openai-image';
@@ -128,6 +128,43 @@ export function createConfiguredNarrationSynthesizer(config: AppConfig, workDir:
       voiceId: taskProvider ? task.speaker : minimax.voiceId ?? '',
       signal,
     });
+  };
+}
+
+export async function generateConfiguredVoicePreview(config: AppConfig, workDir: string, input: VoiceLabGenerateInput, signal?: AbortSignal): Promise<VoiceLabRecord> {
+  const now = input.createdAt ?? new Date().toISOString();
+  const task = {
+    id: input.id ?? `voice-lab-${randomUUID()}`,
+    title: 'Voice Lab Preview',
+    ratio: '9:16',
+    speaker: input.voiceId,
+    ttsProvider: input.provider,
+    ttsSpeed: input.speed,
+  } as Task;
+  const scene: StoryboardScene = {
+    id: 1,
+    cap: input.text,
+    descPrompt: '',
+    durationMs: 1200,
+  };
+  const synthesize = createConfiguredNarrationSynthesizer(config, workDir);
+  const assets = await synthesize([scene], task, signal);
+  const audioPath = assets[0]?.path ?? '';
+  if (!audioPath) {
+    throw new Error('Voice lab preview did not produce audio.');
+  }
+  return {
+    id: input.id ?? randomUUID(),
+    text: input.text,
+    provider: input.provider,
+    voiceId: input.voiceId,
+    voiceLabel: input.voiceLabel ?? input.voiceId,
+    speed: input.speed,
+    audioPath,
+    status: 'generated',
+    errorMessage: '',
+    createdAt: now,
+    finishedAt: new Date().toISOString(),
   };
 }
 

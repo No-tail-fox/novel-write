@@ -7,22 +7,23 @@ import { resolvePythonCommand } from './python-runtime';
 import {
   buildViralBreakdownPrompt,
   buildViralRecreationPrompt,
-  normalizeViralSourceUrl,
   type RunViralAnalysisOptions,
-  type ViralMediaDownloadResult,
   type ViralMediaExtractionResult,
 } from './viral-analysis';
-import type { AppConfig, LlmConfig, ViralFrameAnalysis, ViralPlatform, ViralVideoSource } from './types';
+import { downloadViralMedia } from './viral-download';
+import type { AppConfig, LlmConfig, ViralFrameAnalysis, ViralVideoSource } from './types';
 
 const execFileAsync = promisify(execFile);
+export const DEFAULT_WHISPER_HF_MIRROR = 'https://hf-mirror.com';
 
-export function createViralRuntimeProviders(config: AppConfig, workDir: string): Omit<RunViralAnalysisOptions, 'workDir' | 'emit' | 'signal'> {
+export function createViralRuntimeProviders(config: AppConfig, _workDir: string): Omit<RunViralAnalysisOptions, 'workDir' | 'emit' | 'signal'> {
   const textLlm = createOpenAiCompatibleJsonLlm(config.llm);
   return {
-    download: (record, runDir, signal) => downloadViralVideo(record.url, record.platform, config, runDir, signal),
+    download: (record, runDir, signal) => downloadViralMedia({ url: record.url, platform: record.platform, workDir: runDir, config }, signal),
     extract: (videoPath, runDir, signal) => extractViralMedia(videoPath, runDir, config, signal),
     transcribe: (audioPath, signal) => transcribeViralAudio(audioPath, config, signal),
-    analyzeFrame: (frame, previousFrame, source, signal) => analyzeViralFrame(frame, previousFrame, source, config.viral.vision.apiKey ? config.viral.vision : config.llm, signal),
+    analyzeFrame: (frame, previousFrame, source, signal) =>
+      analyzeViralFrame(frame, previousFrame, source, config.viral.vision.apiKey ? config.viral.vision : config.llm, signal),
     analyzeBreakdown: async (input, signal) => {
       const result = await textLlm({
         step: -1,
@@ -48,115 +49,6 @@ export function createViralRuntimeProviders(config: AppConfig, workDir: string):
       return result.json as ReturnType<RunViralAnalysisOptions['createRecreation']> extends Promise<infer T> ? T : never;
     },
   };
-}
-
-async function downloadViralVideo(url: string, platform: string, config: AppConfig, workDir: string, signal?: AbortSignal): Promise<ViralMediaDownloadResult> {
-  const normalizedUrl = normalizeViralSourceUrl(url, platform as ViralPlatform);
-  if (platform === 'kuaishou') {
-    try {
-      return await downloadKuaishouWithPlaywright(normalizedUrl, workDir, config, signal);
-    } catch {
-      // Fall back to yt-dlp below; public page structures change often.
-    }
-  }
-  const python = resolvePythonCommand();
-  const commonArgs = ['-m', 'yt_dlp', '--no-playlist'];
-  const cookieArgs = config.viral.cookieFilePath ? ['--cookies', config.viral.cookieFilePath] : [];
-  try {
-    const metadata = await runCommand(
-      python,
-      [...commonArgs, ...cookieArgs, '--dump-json', '--skip-download', normalizedUrl],
-      config.viral.downloadTimeoutMs,
-      signal,
-    );
-    await runCommand(
-      python,
-      [...commonArgs, ...cookieArgs, '-o', join(workDir, 'video.%(ext)s'), '--merge-output-format', 'mp4', normalizedUrl],
-      config.viral.downloadTimeoutMs,
-      signal,
-    );
-    const files = await readdir(workDir);
-    const videoFile = files.find((file) => /^video\.(mp4|m4v|mov|webm|mkv)$/i.test(file)) ?? '';
-    if (!videoFile) throw new Error('yt-dlp completed but no video file was written.');
-    const raw = parseJsonLoose<Record<string, unknown>>(metadata.stdout);
-    const videoPath = join(workDir, videoFile);
-    return {
-      videoPath,
-      source: {
-        platform: platform as ViralVideoSource['platform'],
-        url: normalizedUrl,
-        videoPath,
-        coverPath: '',
-        title: String(raw.title ?? raw.fulltitle ?? ''),
-        author: String(raw.uploader ?? raw.channel ?? raw.creator ?? ''),
-        duration: Number(raw.duration ?? 0),
-        stats: {
-          likes: nullableNumber(raw.like_count),
-          comments: nullableNumber(raw.comment_count),
-          shares: nullableNumber(raw.repost_count),
-        },
-      },
-    };
-  } catch (error) {
-    throw new Error(`视频下载失败：${error instanceof Error ? error.message : String(error)}。仅支持用户可访问的公开${platform}视频。`);
-  }
-}
-
-async function downloadKuaishouWithPlaywright(url: string, workDir: string, config: AppConfig, signal?: AbortSignal): Promise<ViralMediaDownloadResult> {
-  const videoPath = join(workDir, 'video.mp4');
-  const script = String.raw`
-import asyncio, json, re, sys
-import httpx
-from playwright.async_api import async_playwright
-
-url = sys.argv[1]
-video_path = sys.argv[2]
-
-async def main():
-    media_urls = []
-    async with async_playwright() as p:
-        browser = await p.chromium.launch(headless=True)
-        page = await browser.new_page(user_agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/124 Safari/537.36")
-        async def on_response(resp):
-            content_type = resp.headers.get("content-type", "")
-            if "video" in content_type or re.search(r"\.(mp4|m3u8)(\?|$)", resp.url):
-                media_urls.append(resp.url)
-        page.on("response", on_response)
-        await page.goto(url, wait_until="domcontentloaded", timeout=30000)
-        await page.wait_for_timeout(8000)
-        title = await page.title()
-        await browser.close()
-    media_url = next((item for item in media_urls if ".mp4" in item or "video" in item), "")
-    if not media_url:
-        raise RuntimeError("No public Kuaishou mp4 resource was detected.")
-    async with httpx.AsyncClient(follow_redirects=True, timeout=120) as client:
-        response = await client.get(media_url)
-        response.raise_for_status()
-        with open(video_path, "wb") as f:
-            f.write(response.content)
-    print(json.dumps({"title": title, "videoPath": video_path}, ensure_ascii=False))
-
-asyncio.run(main())
-`;
-  try {
-    const output = await runCommand(resolvePythonCommand(), ['-c', script, url, videoPath], config.viral.downloadTimeoutMs, signal);
-    const payload = parseJsonLoose<{ title?: string; videoPath?: string }>(output.stdout, {});
-    return {
-      videoPath: payload.videoPath || videoPath,
-      source: {
-        platform: 'kuaishou',
-        url,
-        videoPath: payload.videoPath || videoPath,
-        coverPath: '',
-        title: payload.title ?? '',
-        author: '',
-        duration: 0,
-        stats: { likes: null, comments: null, shares: null },
-      },
-    };
-  } catch (error) {
-    throw new Error(`快手公开视频下载失败：${error instanceof Error ? error.message : String(error)}`);
-  }
 }
 
 async function extractViralMedia(videoPath: string, workDir: string, config: AppConfig, signal?: AbortSignal): Promise<ViralMediaExtractionResult> {
@@ -191,10 +83,30 @@ async function resolveBundledFfmpeg(signal?: AbortSignal): Promise<string> {
 }
 
 async function transcribeViralAudio(audioPath: string, config: AppConfig, signal?: AbortSignal) {
-  const script = [
+  const model = normalizeWhisperModel(config.viral.whisperModel);
+  const endpoint = normalizeHuggingFaceEndpoint(config.viral.huggingFaceEndpoint);
+  const script = buildViralWhisperTranscribeScript(audioPath, model);
+  try {
+    const result = await runCommand(resolvePythonCommand(), ['-c', script], 10 * 60 * 1000, signal, buildWhisperEnv(endpoint));
+    return parseJsonLoose(result.stdout, []);
+  } catch (error) {
+    if (!endpoint && !process.env.HF_ENDPOINT && shouldRetryWhisperWithMirror(error)) {
+      try {
+        const result = await runCommand(resolvePythonCommand(), ['-c', script], 10 * 60 * 1000, signal, buildWhisperEnv(DEFAULT_WHISPER_HF_MIRROR));
+        return parseJsonLoose(result.stdout, []);
+      } catch (mirrorError) {
+        throw new Error(formatViralWhisperError(mirrorError, { model, endpoint: DEFAULT_WHISPER_HF_MIRROR, firstError: error }));
+      }
+    }
+    throw new Error(formatViralWhisperError(error, { model, endpoint }));
+  }
+}
+
+export function buildViralWhisperTranscribeScript(audioPath: string, model: string): string {
+  return [
     'import json',
     'from faster_whisper import WhisperModel',
-    `model = WhisperModel(${JSON.stringify(config.viral.whisperModel)}, device="cpu", compute_type="int8")`,
+    `model = WhisperModel(${JSON.stringify(normalizeWhisperModel(model))}, device="cpu", compute_type="int8")`,
     `segments, _ = model.transcribe(${JSON.stringify(audioPath)}, language="zh", word_timestamps=True, vad_filter=True)`,
     'out = []',
     'for s in segments:',
@@ -202,8 +114,53 @@ async function transcribeViralAudio(audioPath: string, config: AppConfig, signal
     '    out.append({"text": s.text.strip(), "start": s.start, "end": s.end, "words": words})',
     'print(json.dumps(out, ensure_ascii=False))',
   ].join('\n');
-  const result = await runCommand(resolvePythonCommand(), ['-c', script], 10 * 60 * 1000, signal);
-  return parseJsonLoose(result.stdout, []);
+}
+
+export function shouldRetryWhisperWithMirror(error: unknown): boolean {
+  const message = stringifyError(error).toLowerCase();
+  return /huggingface|snapshot_download|localentrynotfound|connecttimeout|timed out|winerror 10060/.test(message);
+}
+
+export function formatViralWhisperError(
+  error: unknown,
+  context: { model: string; endpoint?: string; firstError?: unknown },
+): string {
+  const detail = compactErrorText([context.firstError, error].filter(Boolean).map(stringifyError).join('\n'));
+  if (shouldRetryWhisperWithMirror(error) || (context.firstError && shouldRetryWhisperWithMirror(context.firstError))) {
+    const endpointText = context.endpoint ? `端点 ${context.endpoint}` : 'HuggingFace Hub';
+    return [
+      `本地 Whisper 转写失败：模型 "${context.model}" 没有可用缓存，且无法从 ${endpointText} 下载。`,
+      `处理方式：在“爆款拆解”的“转写与 Cookie 兜底设置”里把 HuggingFace 端点填为 ${DEFAULT_WHISPER_HF_MIRROR} 后重试；或者先把 faster-whisper 模型下载到本机，并把 Whisper 模型填成本地模型目录。`,
+      `原始错误：${detail}`,
+    ].join('\n');
+  }
+  return `本地 Whisper 转写失败：${detail}`;
+}
+
+function normalizeWhisperModel(value: string): string {
+  return value.trim() || 'small';
+}
+
+function normalizeHuggingFaceEndpoint(value: string | undefined): string {
+  return (value ?? '').trim().replace(/\/+$/, '');
+}
+
+function buildWhisperEnv(endpoint: string): Record<string, string> {
+  return {
+    PYTHONIOENCODING: 'utf-8',
+    HF_HUB_ETAG_TIMEOUT: '20',
+    HF_HUB_DOWNLOAD_TIMEOUT: '300',
+    ...(endpoint ? { HF_ENDPOINT: endpoint } : {}),
+  };
+}
+
+function stringifyError(error: unknown): string {
+  if (error instanceof Error) return `${error.message}\n${error.stack ?? ''}`;
+  return String(error);
+}
+
+function compactErrorText(value: string): string {
+  return value.replace(/\s+/g, ' ').trim().slice(0, 1000);
 }
 
 async function analyzeViralFrame(
@@ -224,10 +181,12 @@ async function analyzeViralFrame(
         `分析短视频第 ${frame.timestamp}s 关键帧。标题：${source.title}\n` +
         '返回 JSON: {"shotType":string,"cameraMovement":string,"composition":string,"transition":string,"textOverlay":string|null,"visualDescription":string,"mood":string,"keyElements":string[]}',
     },
-    ...(await Promise.all(images.map(async (image) => ({
-      type: 'image_url',
-      image_url: { url: `data:image/${imageExt(image.path)};base64,${(await readFile(image.path)).toString('base64')}` },
-    })))),
+    ...(await Promise.all(
+      images.map(async (image) => ({
+        type: 'image_url',
+        image_url: { url: `data:image/${imageExt(image.path)};base64,${(await readFile(image.path)).toString('base64')}` },
+      })),
+    )),
   ];
   const raw = await runOpenAiCompatibleVision(config, content, signal);
   const parsed = parseJsonLoose<Partial<ViralFrameAnalysis>>(raw, {});
@@ -269,10 +228,16 @@ async function runOpenAiCompatibleVision(config: LlmConfig, content: unknown[], 
   return body.choices?.[0]?.message?.content ?? '';
 }
 
-async function runCommand(command: string, args: string[], timeout: number, signal?: AbortSignal): Promise<{ stdout: string; stderr: string }> {
+async function runCommand(command: string, args: string[], timeout: number, signal?: AbortSignal, env?: Record<string, string>): Promise<{ stdout: string; stderr: string }> {
   if (signal?.aborted) throw new Error('Command aborted.');
   try {
-    return await execFileAsync(command, args, { timeout, signal, maxBuffer: 32 * 1024 * 1024, windowsHide: true });
+    return await execFileAsync(command, args, {
+      timeout,
+      signal,
+      maxBuffer: 32 * 1024 * 1024,
+      windowsHide: true,
+      env: env ? { ...process.env, ...env } : undefined,
+    });
   } catch (error) {
     const detail = error && typeof error === 'object' && 'stderr' in error ? String((error as { stderr?: unknown }).stderr ?? '') : '';
     throw new Error(`${command} ${args.slice(0, 3).join(' ')} failed. ${detail}`.trim());
@@ -299,11 +264,6 @@ function parseJsonLoose<T>(raw: string, fallback?: T): T {
     if (fallback !== undefined) return fallback;
     throw new Error(`Could not parse JSON output: ${raw.slice(0, 200)}`);
   }
-}
-
-function nullableNumber(value: unknown): number | null {
-  const parsed = Number(value);
-  return Number.isFinite(parsed) ? parsed : null;
 }
 
 function imageExt(path: string): string {

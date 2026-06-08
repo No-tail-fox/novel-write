@@ -46,6 +46,7 @@ import type {
   CreateViralAnalysisInput,
   CustomStyle,
   DraftTemplate,
+  DraftTextBorder,
   ImageLabGenerateInput,
   ImageProviderProfile,
   ImageLabRecord,
@@ -69,6 +70,8 @@ import type {
   ViralAnalysisResult,
   ViralAnalysisStatus,
   ViralPlatform,
+  VoiceLabGenerateInput,
+  VoiceLabRecord,
 } from './shared/types';
 import { configTargetStatus, normalizeAppConfig, validateConfigTarget } from './shared/config-utils';
 import {
@@ -115,6 +118,7 @@ import {
 import { draftTemplates as builtinDraftTemplates, imageAnimations, normalizeDraftTemplate } from './shared/templates';
 import {
   buildImageTemplateStyleOptions,
+  buildTaskPromptTemplateOptions,
   buildStoryTemplateTrackOptions,
   resolvePromptTemplateDefaultDraftTemplateId,
   resolvePromptTemplateDefaultStyleId,
@@ -137,6 +141,7 @@ const initialState: AppState = {
   promptTemplates: defaultPromptTemplates,
   draftTemplates: builtinDraftTemplates,
   imageLabRecords: [],
+  voiceLabRecords: [],
   customStyles: defaultCustomStyles,
   creditTransactions: defaultCreditTransactions,
   minimaxCloneVoices: defaultMinimaxCloneVoices,
@@ -150,6 +155,7 @@ const navItems: Array<{ view: ShellView; label: string; hint: string; icon: Reac
   { view: 'queue', label: '任务队列', hint: '运行进度', icon: ListChecks },
   { view: 'history', label: '历史任务', hint: '本地记录', icon: History },
   { view: 'image-lab', label: '画图实验室', hint: '分镜图片', icon: FlaskConical },
+  { view: 'voice-lab', label: '配音实验室', hint: '音色试听', icon: Mic2 },
   { view: 'viral-analyzer', label: '爆款拆解', hint: '拉片复刻', icon: Flame },
   { view: 'prompt-templates', label: '提示词模板', hint: '代理提示词', icon: Sparkles },
   { view: 'draft-templates', label: '草稿模板', hint: '剪映画布', icon: LayoutTemplate },
@@ -286,6 +292,7 @@ function hydrateState(state: Partial<AppState>): AppState {
     promptTemplates: state.promptTemplates ?? defaultPromptTemplates,
     draftTemplates: (state.draftTemplates ?? builtinDraftTemplates).map(normalizeDraftTemplate),
     imageLabRecords: state.imageLabRecords ?? [],
+    voiceLabRecords: state.voiceLabRecords ?? [],
     customStyles: mergeDefaultCustomStyles(state.customStyles),
     creditTransactions: state.creditTransactions ?? defaultCreditTransactions,
     minimaxCloneVoices: state.minimaxCloneVoices ?? [],
@@ -405,6 +412,24 @@ function makeFallbackApi(setState: (state: AppState) => void): StoryboundApi {
         finishedAt: now,
       };
       return persist({ ...state, imageLabRecords: [record, ...state.imageLabRecords] });
+    },
+    async generateVoiceLabPreview(input: VoiceLabGenerateInput) {
+      const state = read();
+      const now = new Date().toISOString();
+      const record: VoiceLabRecord = {
+        id: input.id ?? crypto.randomUUID(),
+        text: input.text,
+        provider: input.provider,
+        voiceId: input.voiceId,
+        voiceLabel: input.voiceLabel ?? taskSpeakerLabel(input.provider, input.voiceId),
+        speed: input.speed,
+        audioPath: '',
+        status: 'failed',
+        errorMessage: '浏览器预览不能调用真实 TTS，请在 Electron 桌面端生成试听。',
+        createdAt: input.createdAt ?? now,
+        finishedAt: now,
+      };
+      return persist({ ...state, voiceLabRecords: [record, ...state.voiceLabRecords] });
     },
     async addImageLabRecord(input: Partial<ImageLabRecord> & Pick<ImageLabRecord, 'prompt' | 'ratio' | 'style' | 'provider'>) {
       const state = read();
@@ -574,6 +599,12 @@ function makeFallbackApi(setState: (state: AppState) => void): StoryboundApi {
     },
     async selectLocalAudio() {
       return null;
+    },
+    async selectLocalFolder() {
+      return null;
+    },
+    async detectJianyingDraftPath() {
+      return '';
     },
     async getJianyingEffectCatalog() {
       return fallbackEffectCatalog;
@@ -750,6 +781,7 @@ function App() {
           {activeView === 'history' ? <HistoryPage api={api} state={state} openTaskDetail={openTaskDetail} /> : null}
           {activeView === 'task-detail' ? <TaskDetailPage api={api} state={state} task={selectedTask} applyState={applyState} close={() => navigate('history')} isBrowserPreview={isBrowserPreview} /> : null}
           {activeView === 'image-lab' ? <ImageLabPage api={api} state={state} applyState={applyState} /> : null}
+          {activeView === 'voice-lab' ? <VoiceLabPage api={api} state={state} applyState={applyState} /> : null}
           {activeView === 'viral-analyzer' ? <ViralAnalyzerPage api={api} state={state} applyState={applyState} openTaskDetail={openTaskDetail} isBrowserPreview={isBrowserPreview} /> : null}
           {activeView === 'prompt-templates' ? <PromptTemplatesPage api={api} state={state} applyState={applyState} /> : null}
           {activeView === 'draft-templates' ? <DraftTemplatesPage api={api} state={state} applyState={applyState} /> : null}
@@ -761,6 +793,9 @@ function App() {
     </main>
   );
 }
+
+type ViralSourceMode = 'auto' | 'douyin' | 'kuaishou' | 'bilibili';
+const viralSourceModes: ViralSourceMode[] = ['auto', 'douyin', 'kuaishou', 'bilibili'];
 
 function ViralAnalyzerPage({
   api,
@@ -776,17 +811,21 @@ function ViralAnalyzerPage({
   isBrowserPreview: boolean;
 }) {
   const [url, setUrl] = useState('');
-  const [platform, setPlatform] = useState<ViralPlatform>('unknown');
+  const [sourceMode, setSourceMode] = useState<ViralSourceMode>('auto');
   const [track, setTrack] = useState('ecommerce');
   const [style, setStyle] = useState('photo-real');
   const [ratio, setRatio] = useState('9:16');
   const [templateId, setTemplateId] = useState('default-portrait-9-16');
   const [cookieFilePath, setCookieFilePath] = useState(state.config.viral.cookieFilePath);
+  const [whisperModel, setWhisperModel] = useState(state.config.viral.whisperModel);
+  const [huggingFaceEndpoint, setHuggingFaceEndpoint] = useState(state.config.viral.huggingFaceEndpoint);
   const [selectedId, setSelectedId] = useState(state.viralAnalyses[0]?.id ?? '');
   const [result, setResult] = useState<ViralAnalysisResult | null>(null);
   const [message, setMessage] = useState('');
   const selected = state.viralAnalyses.find((item) => item.id === selectedId) ?? state.viralAnalyses[0] ?? null;
   const selectedEvents = selected ? state.viralEvents.filter((event) => event.analysisId === selected.id) : [];
+  const detectedPlatform = detectBrowserViralPlatform(url);
+  const selectedPlatformForAnalysis: ViralPlatform = sourceMode === 'auto' ? detectedPlatform : sourceMode;
 
   useEffect(() => {
     if (!selectedId && state.viralAnalyses[0]) setSelectedId(state.viralAnalyses[0].id);
@@ -812,7 +851,6 @@ function ViralAnalyzerPage({
 
   function handleUrlChange(value: string) {
     setUrl(value);
-    setPlatform(detectBrowserViralPlatform(value));
   }
 
   async function startAnalysis() {
@@ -820,20 +858,30 @@ function ViralAnalyzerPage({
       setMessage('请输入抖音、快手或 B 站公开视频链接');
       return;
     }
+    if (selectedPlatformForAnalysis === 'unknown') {
+      setMessage('未识别到平台，请选择抖音、快手或 B站。');
+      return;
+    }
     setMessage('');
-    if (cookieFilePath !== state.config.viral.cookieFilePath) {
+    if (
+      cookieFilePath !== state.config.viral.cookieFilePath ||
+      whisperModel !== state.config.viral.whisperModel ||
+      huggingFaceEndpoint !== state.config.viral.huggingFaceEndpoint
+    ) {
       const nextState = await api.saveConfig({
         ...state.config,
         viral: {
           ...state.config.viral,
           cookieFilePath: cookieFilePath.trim(),
+          whisperModel: whisperModel.trim() || 'small',
+          huggingFaceEndpoint: huggingFaceEndpoint.trim(),
         },
       });
       applyState(nextState);
     }
     const next = await api.createAndRunViralAnalysis({
       url: url.trim(),
-      platform,
+      platform: selectedPlatformForAnalysis,
       settings: { track, style, ratio, templateId, storyboardSceneCount: 12 },
     });
     applyState(next);
@@ -866,51 +914,36 @@ function ViralAnalyzerPage({
         <label className="field-label" htmlFor="viral-url-input">视频链接</label>
         <input id="viral-url-input" className="text-input viral-url-input" value={url} onChange={(event) => handleUrlChange(event.target.value)} placeholder="https://www.douyin.com/video/..." />
         <div className="segmented viral-platform-picker">
-          {(['unknown', 'douyin', 'kuaishou', 'bilibili'] as ViralPlatform[]).map((item) => (
-            <button key={item} className={platform === item ? 'active' : ''} onClick={() => setPlatform(item)}>
-              {viralPlatformLabel(item)}
+          {viralSourceModes.map((item) => (
+            <button key={item} type="button" className={sourceMode === item ? 'active' : ''} onClick={() => setSourceMode(item)}>
+              {viralSourceModeLabel(item)}
             </button>
           ))}
         </div>
-        <div className="viral-settings-grid">
-          <label>
-            赛道
-            <select value={track} onChange={(event) => setTrack(event.target.value)}>
-              {contentTracks.map(([id, label]) => <option key={id} value={id}>{label}</option>)}
-            </select>
-          </label>
-          <label>
-            风格
-            <select value={style} onChange={(event) => setStyle(event.target.value)}>
-              {styleOptions.map(([id, label]) => <option key={id} value={id}>{label}</option>)}
-            </select>
-          </label>
-          <label>
-            比例
-            <select value={ratio} onChange={(event) => setRatio(event.target.value)}>
-              {ratioOptions.map((item) => <option key={item} value={item}>{item}</option>)}
-            </select>
-          </label>
-          <label>
-            草稿模板
-            <select value={templateId} onChange={(event) => setTemplateId(event.target.value)}>
-              {state.draftTemplates.map((template) => <option key={template.id} value={template.id}>{template.name}</option>)}
-            </select>
-          </label>
-        </div>
-        <label className="field-label" htmlFor="viral-cookie-input">Cookie 文件路径</label>
-        <input
-          id="viral-cookie-input"
-          className="text-input"
-          value={cookieFilePath}
-          onChange={(event) => setCookieFilePath(event.target.value)}
-          placeholder="C:\\Users\\you\\Downloads\\douyin-cookies.txt"
-        />
-        <p className="muted-text">抖音/B站提示需要 cookies 时，填写 Netscape cookies.txt 文件路径。</p>
-        <button className="primary-action" disabled={isBrowserPreview && false} onClick={startAnalysis}>
+        <p className="viral-source-status">
+          {sourceMode === 'auto' ? `自动识别：${viralPlatformLabel(detectedPlatform)}` : `手动指定：${viralPlatformLabel(selectedPlatformForAnalysis)}`}
+        </p>
+        <button className="primary-action viral-start-action" disabled={isBrowserPreview && false} onClick={startAnalysis}>
           <Search size={16} />
           开始拆解
         </button>
+        <div className="viral-settings-grid">
+          <ViralChoiceGroup title="赛道" options={contentTracks} value={track} onChange={setTrack} />
+          <ViralChoiceGroup title="风格" options={styleOptions} value={style} onChange={setStyle} />
+          <ViralChoiceGroup title="比例" options={ratioOptions.map((item) => [item, item, ''])} value={ratio} onChange={setRatio} compact />
+          <ViralChoiceGroup title="草稿模板" options={state.draftTemplates.map((template) => [template.id, template.name, template.canvas.ratio])} value={templateId} onChange={setTemplateId} compact />
+        </div>
+        <details className="viral-cookie-fallback">
+          <summary>可选 Cookie 兜底文件</summary>
+          <input
+            id="viral-cookie-input"
+            className="text-input"
+            value={cookieFilePath}
+            onChange={(event) => setCookieFilePath(event.target.value)}
+            placeholder="C:\\Users\\you\\Downloads\\cookies.txt"
+          />
+          <p className="muted-text">默认先无 Cookie 采集；失败后自动尝试读取本机 Chrome/Edge Cookie。这里的 Netscape cookies.txt 只作为最后兜底。</p>
+        </details>
         {message ? <div className="test-result">{message}</div> : null}
       </section>
 
@@ -953,6 +986,34 @@ function ViralAnalyzerPage({
 
 const viralStages = ['downloading', 'extracting', 'transcribing', 'analyzing_frames', 'breaking_down', 'recreating', 'completed'];
 
+function ViralChoiceGroup({
+  title,
+  options,
+  value,
+  onChange,
+  compact = false,
+}: {
+  title: string;
+  options: string[][];
+  value: string;
+  onChange: (value: string) => void;
+  compact?: boolean;
+}) {
+  return (
+    <section className={compact ? 'viral-choice-section compact' : 'viral-choice-section'}>
+      <span>{title}</span>
+      <div className="viral-choice-grid" role="radiogroup" aria-label={title}>
+        {options.map(([id, label, hint]) => (
+          <button key={id} type="button" role="radio" aria-checked={value === id} className={value === id ? 'viral-choice-button active' : 'viral-choice-button'} onClick={() => onChange(id)}>
+            <strong>{label}</strong>
+            {hint ? <small>{hint}</small> : null}
+          </button>
+        ))}
+      </div>
+    </section>
+  );
+}
+
 function ViralReport({ result, createProductionTask }: { result: ViralAnalysisResult; createProductionTask: () => void }) {
   const breakdown = result.contentBreakdown;
   return (
@@ -988,6 +1049,10 @@ function ViralReportCard({ title, value, detail }: { title: string; value: strin
 
 function viralPlatformLabel(platform: ViralPlatform): string {
   return { douyin: '抖音', kuaishou: '快手', bilibili: 'B站', unknown: '自动识别' }[platform];
+}
+
+function viralSourceModeLabel(mode: ViralSourceMode): string {
+  return mode === 'auto' ? '自动识别' : viralPlatformLabel(mode);
 }
 
 function detectBrowserViralPlatform(url: string): ViralPlatform {
@@ -1068,6 +1133,7 @@ function NewTaskPage({
   const selectedSources = searchSections.filter((source, index) => selectedSearchSourceIds.includes(sourceKey(source, index)));
   const taskPromptTemplates = state.promptTemplates.filter((template) => template.type === 'task');
   const storyTemplateTrackOptions = buildStoryTemplateTrackOptions(taskPromptTemplates);
+  const taskPromptTemplateOptions = buildTaskPromptTemplateOptions(state.promptTemplates, track);
   const imageTemplateStyleOptions = buildImageTemplateStyleOptions(state.customStyles);
   const resolvedPromptTemplate = resolvePromptTemplateForTrack(state.promptTemplates, track, promptTemplateOverrideId || null);
   const availableStyleIds = state.customStyles.map((customStyle) => customStyle.id);
@@ -1092,9 +1158,12 @@ function NewTaskPage({
   }, [resolvedPromptTemplate?.id, styleManuallyOverridden, state.customStyles]);
 
   function syncTaskDefaultsFromTrack(nextTrack: string) {
-    const template = resolvePromptTemplateForTrack(state.promptTemplates, nextTrack, null);
-    if (!promptTemplateManuallyOverridden) {
+    const manualTemplate = promptTemplateOverrideId ? state.promptTemplates.find((template) => template.id === promptTemplateOverrideId && template.type === 'task') : null;
+    const keepManualTemplate = promptTemplateManuallyOverridden && (manualTemplate?.baseTrack || '') === nextTrack;
+    const template = keepManualTemplate ? manualTemplate : resolvePromptTemplateForTrack(state.promptTemplates, nextTrack, null);
+    if (!keepManualTemplate) {
       setPromptTemplateOverrideId('');
+      setPromptTemplateManuallyOverridden(false);
     }
     if (!styleManuallyOverridden && template) {
       setStyle(resolvePromptTemplateDefaultStyleId(template, availableStyleIds));
@@ -1134,6 +1203,9 @@ function NewTaskPage({
     setPromptTemplateManuallyOverridden(Boolean(nextId));
     setPromptTemplateOverrideId(nextId);
     const template = resolvePromptTemplateForTrack(state.promptTemplates, track, nextId || null);
+    if (template?.baseTrack && template.baseTrack !== track) {
+      setTrack(template.baseTrack);
+    }
     if (!styleManuallyOverridden && template) {
       setStyle(resolvePromptTemplateDefaultStyleId(template, availableStyleIds));
     }
@@ -1336,6 +1408,16 @@ function NewTaskPage({
         )}
 
         <OptionCloud title="内容赛道" options={storyTemplateTrackOptions} value={track} onChange={handleTrackChange} />
+        <Field label="提示词模板" hint={resolvedPromptTemplate ? `当前使用：${resolvedPromptTemplate.name}` : '自动匹配赛道模板'}>
+          <select className="prompt-template-selector" value={promptTemplateOverrideId || resolvedPromptTemplate?.id || ''} onChange={(event) => handlePromptTemplateOverrideChange(event.target.value)}>
+            <option value="">自动匹配赛道模板</option>
+            {taskPromptTemplateOptions.map(([id, label, hint]) => (
+              <option key={id} value={id}>
+                {hint ? `${label} · ${hint}` : label}
+              </option>
+            ))}
+          </select>
+        </Field>
         <OptionCloud title="画面风格" options={imageTemplateStyleOptions} value={style} onChange={handleStyleChange} />
         {resolvedPromptTemplate ? (
           <div className="template-default-summary">
@@ -1415,16 +1497,6 @@ function NewTaskPage({
             <Segmented label="暂停确认" value={pausePoint} options={pauseOptions.map(([id]) => id)} labels={pauseOptions.map(([, label]) => label)} onChange={(value) => setPausePoint(value as PausePoint)} />
             <Segmented label="改写强度" value={rewriteIntensity} options={rewriteOptions.map(([id]) => id)} labels={rewriteOptions.map(([, label]) => label)} onChange={(value) => setRewriteIntensity(value as RewriteIntensity)} />
             <Segmented label="叙事视角" value={narrativePov} options={povOptions.map(([id]) => id)} labels={povOptions.map(([, label]) => label)} onChange={(value) => setNarrativePov(value as Task['narrativePov'])} />
-            <Field label="提示词模板" hint={resolvedPromptTemplate ? `当前：${resolvedPromptTemplate.name}` : '自动匹配赛道模板'}>
-              <select className="prompt-template-selector" value={promptTemplateOverrideId} onChange={(event) => handlePromptTemplateOverrideChange(event.target.value)}>
-                <option value="">自动匹配赛道模板</option>
-                {taskPromptTemplates.map((template) => (
-                  <option key={template.id} value={template.id}>
-                    {template.baseTrack ? `${template.name} · ${template.baseTrack}` : template.name}
-                  </option>
-                ))}
-              </select>
-            </Field>
             <label className="toggle-row">
               <input type="checkbox" checked={keepPromotion} onChange={(event) => setKeepPromotion(event.target.checked)} />
               带货模式 <small>改写时删除带货段落</small>
@@ -2363,6 +2435,101 @@ function ImageLabPage({ api, state, applyState }: { api: StoryboundApi; state: A
   );
 }
 
+function VoiceLabPage({ api, state, applyState }: { api: StoryboundApi; state: AppState; applyState: (state: AppState) => void }) {
+  const [text, setText] = useState('配音实验室试听文案：用稳定、清晰、有情绪的声音讲完这一段故事。');
+  const [voiceProvider, setVoiceProvider] = useState<RuntimeTtsProvider>(() => normalizeRuntimeTtsProvider(state.config.tts.provider));
+  const [voiceId, setVoiceId] = useState(() => defaultTaskSpeakerForProvider(state.config.tts.provider, state.config));
+  const [voiceSpeed, setVoiceSpeed] = useState(1);
+  const [generating, setGenerating] = useState(false);
+  const [submitError, setSubmitError] = useState('');
+  const voiceOptions = ttsVoiceOptionsForProvider(voiceProvider);
+  const selectedVoiceLabel = taskSpeakerLabel(voiceProvider, voiceId);
+
+  useEffect(() => {
+    const options = ttsVoiceOptionsForProvider(voiceProvider);
+    if (!options.some((option) => option.id === voiceId)) {
+      setVoiceId(defaultTaskSpeakerForProvider(voiceProvider, state.config));
+    }
+  }, [state.config, voiceId, voiceProvider]);
+
+  function changeProvider(provider: string) {
+    const nextProvider = normalizeRuntimeTtsProvider(provider);
+    setVoiceProvider(nextProvider);
+    setVoiceId(defaultTaskSpeakerForProvider(nextProvider, state.config));
+  }
+
+  async function generatePreview() {
+    if (generating || !text.trim()) return;
+    setGenerating(true);
+    setSubmitError('');
+    try {
+      const next = await api.generateVoiceLabPreview({
+        text,
+        provider: voiceProvider,
+        voiceId,
+        voiceLabel: selectedVoiceLabel,
+        speed: voiceSpeed,
+      });
+      applyState(next);
+    } catch (error) {
+      setSubmitError(error instanceof Error ? error.message : String(error));
+    } finally {
+      setGenerating(false);
+    }
+  }
+
+  return (
+    <div className="voice-lab-layout lab-layout">
+      <section className="panel">
+        <Field label="试听文案">
+          <textarea className="prompt-box voice-lab-text" value={text} onChange={(event) => setText(event.target.value)} />
+        </Field>
+        <Segmented label="配音模型" value={voiceProvider} options={['volcengine', 'minimax']} labels={['豆包', 'MiniMax']} onChange={changeProvider} />
+        <div className="voice-lab-voices">
+          <span className="field-title">音色</span>
+          <div className="chip-row">
+            {voiceOptions.map((voice) => (
+              <button key={voice.id} className={voiceId === voice.id ? 'chip active' : 'chip'} title={voice.id} onClick={() => setVoiceId(voice.id)}>
+                <strong>{voice.label}</strong>
+                <small>{voice.hint}</small>
+              </button>
+            ))}
+          </div>
+        </div>
+        <Segmented label="语速" value={String(voiceSpeed)} options={['0.85', '1', '1.15', '1.3']} labels={['慢速 0.85x', '默认 1.0x', '快速 1.15x', '更快 1.3x']} onChange={(value) => setVoiceSpeed(Number(value))} />
+        <div className="provider-line">当前音色：{selectedVoiceLabel} · {voiceId}</div>
+        {submitError ? <ErrorSummaryButton compact title="配音实验室提交失败" fullMessage={submitError} /> : null}
+        <button className="primary-action" onClick={generatePreview} disabled={generating || !text.trim()}>
+          {generating ? <Loader2 className="spin" size={17} /> : <Mic2 size={17} />}
+          {generating ? '生成中' : '生成试听'}
+        </button>
+      </section>
+      <section className="panel voice-lab-history">
+        <div className="panel-title-row">
+          <div>
+            <h2>历史试听</h2>
+            <span className="hint-text">{state.voiceLabRecords.length} 条本地记录</span>
+          </div>
+        </div>
+        {state.voiceLabRecords.length === 0 ? <EmptyState title="暂无配音试听" /> : null}
+        {state.voiceLabRecords.map((record) => (
+          <article className={`voice-record ${record.status}`} key={record.id}>
+            <div className="voice-record-head">
+              <strong>{record.voiceLabel}</strong>
+              <small>{record.provider} · {record.speed}x · {formatDate(record.createdAt)}</small>
+            </div>
+            <p>{record.text}</p>
+            {record.audioPath ? <audio className="voice-lab-player" controls preload="metadata" src={toLocalAssetUrl(record.audioPath)} /> : null}
+            {!record.audioPath && record.status === 'failed' ? <div className="voice-lab-player error">未生成音频</div> : null}
+            {record.errorMessage ? <ErrorSummaryButton compact title="配音失败" fullMessage={record.errorMessage} /> : null}
+            {record.audioPath ? <small>{record.audioPath}</small> : null}
+          </article>
+        ))}
+      </section>
+    </div>
+  );
+}
+
 function PromptTemplatesPage({ api, state, applyState }: { api: StoryboundApi; state: AppState; applyState: (state: AppState) => void }) {
   const [selectedId, setSelectedId] = useState(state.promptTemplates[0]?.id ?? '');
   const [templateMode, setTemplateMode] = useState<'gallery' | 'detail' | 'image-detail'>('gallery');
@@ -2385,6 +2552,11 @@ function PromptTemplatesPage({ api, state, applyState }: { api: StoryboundApi; s
   const [draft, setDraft] = useState<PromptTemplate | null>(selected ? { ...selected } : null);
   const [templateJsonDraft, setTemplateJsonDraft] = useState('');
   const [imageTemplateJsonDraft, setImageTemplateJsonDraft] = useState('');
+  const promptTemplateTrackOptions = buildStoryTemplateTrackOptions(state.promptTemplates);
+  const promptTemplateBindingTrackOptions =
+    draft?.baseTrack && !promptTemplateTrackOptions.some(([id]) => id === draft.baseTrack)
+      ? [...promptTemplateTrackOptions, [draft.baseTrack, draft.baseTrack, '当前模板赛道'] as [string, string, string]]
+      : promptTemplateTrackOptions;
 
   useEffect(() => setDraft(selected ? { ...selected } : null), [selected?.id]);
   useEffect(() => setImageDraft(selectedImageStyle ? { ...selectedImageStyle } : null), [selectedImageStyle?.id]);
@@ -2444,6 +2616,7 @@ function PromptTemplatesPage({ api, state, applyState }: { api: StoryboundApi; s
   }
 
   async function createPromptTemplate() {
+    const baseTrack = templateTrackFilter === 'all' ? 'general-story' : templateTrackFilter;
     const template: PromptTemplate = {
       id: crypto.randomUUID(),
       name: '新建模板',
@@ -2452,7 +2625,7 @@ function PromptTemplatesPage({ api, state, applyState }: { api: StoryboundApi; s
       content: '请基于 {{inputText}} 生成适合 {{track}} 的短视频内容。',
       isBuiltin: false,
       updatedAt: new Date().toISOString(),
-      baseTrack: 'general-story',
+      baseTrack,
       defaultStyles: ['photo-real'],
       defaultDraftTemplateId: state.draftTemplates[0]?.id ?? 'default-portrait-9-16',
       characterPolicy: 'follow-template',
@@ -2659,7 +2832,7 @@ function PromptTemplatesPage({ api, state, applyState }: { api: StoryboundApi; s
               <Field label="赛道筛选">
                 <select value={templateTrackFilter} onChange={(event) => setTemplateTrackFilter(event.target.value)}>
                   <option value="all">全部赛道</option>
-                  {contentTracks.map(([id, label]) => <option key={id} value={id}>{label}</option>)}
+                  {promptTemplateTrackOptions.map(([id, label]) => <option key={id} value={id}>{label}</option>)}
                 </select>
               </Field>
             </div>
@@ -2885,7 +3058,7 @@ function PromptTemplatesPage({ api, state, applyState }: { api: StoryboundApi; s
                   <Field label="绑定赛道">
                     <select value={draft.baseTrack ?? ''} onChange={(event) => setDraft({ ...draft, baseTrack: event.target.value || undefined })}>
                       <option value="">无</option>
-                      {contentTracks.map(([id, label]) => <option key={id} value={id}>{label}</option>)}
+                      {promptTemplateBindingTrackOptions.map(([id, label]) => <option key={id} value={id}>{label}</option>)}
                     </select>
                   </Field>
                 </div>
@@ -2999,6 +3172,35 @@ function PromptTemplatesPage({ api, state, applyState }: { api: StoryboundApi; s
                 ))}</div>
                 <VariableAwareTextarea className="template-textarea" value={draft.content} onChange={(value) => setDraft({ ...draft, content: value })} placeholder="输入 // 选择变量" />
               </section>
+
+              {draft.type === 'task' ? (
+                <section className="prompt-template-settings-card prompt-template-reference-fields">
+                  <div className="prompt-template-section-heading">
+                    <span className="field-title">参考提示词内容</span>
+                    <span className="hint-text">保留当前模板结构，同时补齐 Storybound 参考软件里的系统提示词字段。</span>
+                  </div>
+                  <Field label="任务总指令">
+                    <VariableAwareTextarea className="template-textarea" value={draft.content} onChange={(value) => setDraft({ ...draft, content: value })} placeholder="输入任务模板总指令" />
+                  </Field>
+                  <Field label="Step 1 改写系统提示词">
+                    <VariableAwareTextarea className="template-textarea" value={promptTemplateStepPromptValue(draft, state.promptTemplates, 'rewrite')} onChange={(value) => updatePromptTemplateStepPrompt('rewrite', value)} placeholder="输入改写系统提示词" />
+                  </Field>
+                  <Field label="Step 1 元数据系统提示词">
+                    <VariableAwareTextarea className="template-textarea" value={promptTemplateStepPromptValue(draft, state.promptTemplates, 'cover')} onChange={(value) => updatePromptTemplateStepPrompt('cover', value)} placeholder="输入标题、摘要、标签等元数据提示词" />
+                  </Field>
+                  <Field label="Step 3 出图系统提示词">
+                    <VariableAwareTextarea className="template-textarea" value={promptTemplateStepPromptValue(draft, state.promptTemplates, 'image-prompt')} onChange={(value) => updatePromptTemplateStepPrompt('image-prompt', value)} placeholder="输入出图系统提示词" />
+                  </Field>
+                  <Field label="出图种子池 JSON">
+                    <textarea
+                      className="small-textarea prompt-template-seed-pools"
+                      value={draft.imageSeedPoolsJson ?? ''}
+                      onChange={(event) => setDraft({ ...draft, imageSeedPoolsJson: event.target.value })}
+                      placeholder='{"scenes":["close-up","wide shot"],"moods":["warm","dramatic"]}'
+                    />
+                  </Field>
+                </section>
+              ) : null}
 
               {draft.type === 'task' ? (
                 <section className="prompt-step-editor-list" aria-label="AI 步骤设置">
@@ -3200,6 +3402,22 @@ function DraftTemplatesPage({ api, state, applyState }: { api: StoryboundApi; st
     setDraft((current) => (current ? { ...current, disclaimer: { ...current.disclaimer, ...patch } } : current));
   }
 
+  function updateDraftTitleBorder(patch: Partial<DraftTextBorder>) {
+    setDraft((current) => (current ? { ...current, title: { ...current.title, border: { ...current.title.border, ...patch } } } : current));
+  }
+
+  function updateDraftSubtitleBorder(patch: Partial<DraftTextBorder>) {
+    setDraft((current) => (current ? { ...current, subtitle: { ...current.subtitle, border: { ...current.subtitle.border, ...patch } } } : current));
+  }
+
+  function updateDraftCaptionBorder(patch: Partial<DraftTextBorder>) {
+    setDraft((current) => (current ? { ...current, caption: { ...current.caption, border: { ...current.caption.border, ...patch } } } : current));
+  }
+
+  function updateDraftDisclaimerBorder(patch: Partial<DraftTextBorder>) {
+    setDraft((current) => (current ? { ...current, disclaimer: { ...current.disclaimer, border: { ...current.disclaimer.border, ...patch } } } : current));
+  }
+
   if (editingId && draft) {
     return (
       <div className="draft-template-page">
@@ -3249,7 +3467,7 @@ function DraftTemplatesPage({ api, state, applyState }: { api: StoryboundApi; st
               <Field label="坐标"><input value={`top ${draft.image.top.toFixed(2)}, height ${draft.image.height.toFixed(2)}`} readOnly /></Field>
               <RangeField label="垂直位置" min={-1} max={1} step={0.01} value={draft.image.top} onChange={(value) => updateDraftImage({ top: value })} />
               <RangeField label="高度占比" min={0.1} max={1} step={0.01} value={draft.image.height} onChange={(value) => updateDraftImage({ height: value })} />
-              <Segmented label="动画效果" value={draft.image.animation} options={imageAnimations.slice(0, 8)} onChange={(value) => updateDraftImage({ animation: value })} />
+              <Segmented label="动画效果" value={draft.image.animation} options={imageAnimations} onChange={(value) => updateDraftImage({ animation: value })} />
             </Accordion>
             <Accordion title="主标题">
               <ToggleField label="显示" checked={draft.title.visible} onChange={(checked) => updateDraftTitle({ visible: checked })} />
@@ -3259,6 +3477,17 @@ function DraftTemplatesPage({ api, state, applyState }: { api: StoryboundApi; st
               <ColorField label="颜色" value={draft.title.color} onChange={(value) => updateDraftTitle({ color: value })} />
               <RangeField label="透明度" min={0} max={1} step={0.05} value={draft.title.alpha} onChange={(value) => updateDraftTitle({ alpha: value })} />
               <ToggleField label="加粗" checked={draft.title.bold} onChange={(checked) => updateDraftTitle({ bold: checked })} />
+              <ToggleField label="下划线" checked={draft.title.underline} onChange={(checked) => updateDraftTitle({ underline: checked })} />
+              <Field label="对齐">
+                <select value={String(draft.title.align)} onChange={(event) => updateDraftTitle({ align: Number(event.target.value) })}>
+                  <option value="0">左对齐</option>
+                  <option value="1">居中</option>
+                  <option value="2">右对齐</option>
+                </select>
+              </Field>
+              <RangeField label="字间距" min={0} max={20} step={1} value={draft.title.letterSpacing} onChange={(value) => updateDraftTitle({ letterSpacing: value })} />
+              <RangeField label="行间距" min={0} max={20} step={1} value={draft.title.lineSpacing} onChange={(value) => updateDraftTitle({ lineSpacing: value })} />
+              <TextBorderControls border={draft.title.border} onChange={updateDraftTitleBorder} />
             </Accordion>
             <Accordion title="副标题">
               <ToggleField label="显示" checked={draft.subtitle.visible} onChange={(checked) => updateDraftSubtitle({ visible: checked })} />
@@ -3268,6 +3497,17 @@ function DraftTemplatesPage({ api, state, applyState }: { api: StoryboundApi; st
               <ColorField label="颜色" value={draft.subtitle.color} onChange={(value) => updateDraftSubtitle({ color: value })} />
               <RangeField label="透明度" min={0} max={1} step={0.05} value={draft.subtitle.alpha} onChange={(value) => updateDraftSubtitle({ alpha: value })} />
               <ToggleField label="加粗" checked={draft.subtitle.bold} onChange={(checked) => updateDraftSubtitle({ bold: checked })} />
+              <ToggleField label="下划线" checked={draft.subtitle.underline} onChange={(checked) => updateDraftSubtitle({ underline: checked })} />
+              <Field label="对齐">
+                <select value={String(draft.subtitle.align)} onChange={(event) => updateDraftSubtitle({ align: Number(event.target.value) })}>
+                  <option value="0">左对齐</option>
+                  <option value="1">居中</option>
+                  <option value="2">右对齐</option>
+                </select>
+              </Field>
+              <RangeField label="字间距" min={0} max={20} step={1} value={draft.subtitle.letterSpacing} onChange={(value) => updateDraftSubtitle({ letterSpacing: value })} />
+              <RangeField label="行间距" min={0} max={20} step={1} value={draft.subtitle.lineSpacing} onChange={(value) => updateDraftSubtitle({ lineSpacing: value })} />
+              <TextBorderControls border={draft.subtitle.border} onChange={updateDraftSubtitleBorder} />
             </Accordion>
             <Accordion title="字幕">
               <ToggleField label="显示" checked={draft.caption.visible} onChange={(checked) => updateDraftCaption({ visible: checked })} />
@@ -3290,6 +3530,7 @@ function DraftTemplatesPage({ api, state, applyState }: { api: StoryboundApi; st
               <ColorField label="背景色" value={draft.caption.background.color} onChange={(value) => updateDraftCaptionBackground({ color: value })} />
               <RangeField label="背景透明度" min={0} max={1} step={0.05} value={draft.caption.background.alpha} onChange={(value) => updateDraftCaptionBackground({ alpha: value })} />
               <RangeField label="圆角" min={0} max={1} step={0.05} value={draft.caption.background.roundRadius} onChange={(value) => updateDraftCaptionBackground({ roundRadius: value })} />
+              <TextBorderControls border={draft.caption.border} onChange={updateDraftCaptionBorder} />
             </Accordion>
             <Accordion title="免责声明">
               <ToggleField label="显示" checked={draft.disclaimer.visible} onChange={(checked) => updateDraftDisclaimer({ visible: checked })} />
@@ -3298,6 +3539,18 @@ function DraftTemplatesPage({ api, state, applyState }: { api: StoryboundApi; st
               <RangeField label="字号" min={8} max={40} step={1} value={draft.disclaimer.fontSize} onChange={(value) => updateDraftDisclaimer({ fontSize: value })} />
               <ColorField label="颜色" value={draft.disclaimer.color} onChange={(value) => updateDraftDisclaimer({ color: value })} />
               <RangeField label="透明度" min={0} max={1} step={0.05} value={draft.disclaimer.alpha} onChange={(value) => updateDraftDisclaimer({ alpha: value })} />
+              <ToggleField label="加粗" checked={draft.disclaimer.bold} onChange={(checked) => updateDraftDisclaimer({ bold: checked })} />
+              <ToggleField label="下划线" checked={draft.disclaimer.underline} onChange={(checked) => updateDraftDisclaimer({ underline: checked })} />
+              <Field label="对齐">
+                <select value={String(draft.disclaimer.align)} onChange={(event) => updateDraftDisclaimer({ align: Number(event.target.value) })}>
+                  <option value="0">左对齐</option>
+                  <option value="1">居中</option>
+                  <option value="2">右对齐</option>
+                </select>
+              </Field>
+              <RangeField label="字间距" min={0} max={20} step={1} value={draft.disclaimer.letterSpacing} onChange={(value) => updateDraftDisclaimer({ letterSpacing: value })} />
+              <RangeField label="行间距" min={0} max={20} step={1} value={draft.disclaimer.lineSpacing} onChange={(value) => updateDraftDisclaimer({ lineSpacing: value })} />
+              <TextBorderControls border={draft.disclaimer.border} onChange={updateDraftDisclaimerBorder} />
             </Accordion>
             <Accordion title="音频设置">
               <Field label="旁白音量"><input type="number" value={draft.audio.narrationVolume} onChange={(event) => setDraft({ ...draft, audio: { ...draft.audio, narrationVolume: Number(event.target.value) } })} /></Field>
@@ -3395,7 +3648,8 @@ function DraftTemplatePreview({ template, compact = false }: { template: DraftTe
           className="draft-title"
           x={template.title.x}
           y={template.title.y}
-          style={{ color: template.title.color, fontSize: titleSize, opacity: template.title.alpha, fontWeight: template.title.bold ? 800 : 500 }}
+          border={template.title.border}
+          style={draftTextLayerStyle(template.title, titleSize, template.title.bold ? 800 : 500)}
         >
           {template.title.text}
         </DraftCanvasText>
@@ -3405,7 +3659,8 @@ function DraftTemplatePreview({ template, compact = false }: { template: DraftTe
           className="draft-subtitle"
           x={template.subtitle.x}
           y={template.subtitle.y}
-          style={{ color: template.subtitle.color, fontSize: subtitleSize, opacity: template.subtitle.alpha, fontWeight: template.subtitle.bold ? 800 : 500 }}
+          border={template.subtitle.border}
+          style={draftTextLayerStyle(template.subtitle, subtitleSize, template.subtitle.bold ? 800 : 500)}
         >
           {template.subtitle.text}
         </DraftCanvasText>
@@ -3415,6 +3670,7 @@ function DraftTemplatePreview({ template, compact = false }: { template: DraftTe
           className="draft-caption"
           x={template.caption.x}
           y={template.caption.y}
+          border={template.caption.border}
           style={{
             color: template.caption.color,
             fontSize: captionSize,
@@ -3437,7 +3693,8 @@ function DraftTemplatePreview({ template, compact = false }: { template: DraftTe
           className="draft-disclaimer"
           x={template.disclaimer.x}
           y={template.disclaimer.y}
-          style={{ color: template.disclaimer.color, fontSize: disclaimerSize, opacity: template.disclaimer.alpha }}
+          border={template.disclaimer.border}
+          style={draftTextLayerStyle(template.disclaimer, disclaimerSize, template.disclaimer.bold ? 700 : 500)}
         >
           {template.disclaimer.text}
         </DraftCanvasText>
@@ -3517,7 +3774,8 @@ function EditableDraftCanvas({
             className="draft-title"
             x={0}
             y={0}
-            style={{ color: template.title.color, fontSize: template.title.fontSize, opacity: template.title.alpha, fontWeight: template.title.bold ? 800 : 500 }}
+            border={template.title.border}
+            style={draftTextLayerStyle(template.title, template.title.fontSize, template.title.bold ? 800 : 500)}
           >
             {template.title.text}
           </DraftCanvasText>
@@ -3529,7 +3787,8 @@ function EditableDraftCanvas({
             className="draft-subtitle"
             x={0}
             y={0}
-            style={{ color: template.subtitle.color, fontSize: template.subtitle.fontSize, opacity: template.subtitle.alpha, fontWeight: template.subtitle.bold ? 800 : 500 }}
+            border={template.subtitle.border}
+            style={draftTextLayerStyle(template.subtitle, template.subtitle.fontSize, template.subtitle.bold ? 800 : 500)}
           >
             {template.subtitle.text}
           </DraftCanvasText>
@@ -3541,6 +3800,7 @@ function EditableDraftCanvas({
             className="draft-caption"
             x={0}
             y={0}
+            border={template.caption.border}
             style={{
               color: template.caption.color,
               fontSize: template.caption.fontSize,
@@ -3565,7 +3825,8 @@ function EditableDraftCanvas({
             className="draft-disclaimer"
             x={0}
             y={0}
-            style={{ color: template.disclaimer.color, fontSize: template.disclaimer.fontSize, opacity: template.disclaimer.alpha }}
+            border={template.disclaimer.border}
+            style={draftTextLayerStyle(template.disclaimer, template.disclaimer.fontSize, template.disclaimer.bold ? 700 : 500)}
           >
             {template.disclaimer.text}
           </DraftCanvasText>
@@ -3771,6 +4032,26 @@ function SettingsPage({ api, state, applyState }: { api: StoryboundApi; state: A
     const nextBgm = addUploadedBgm(draft, audioPath);
     await commitAndApplySettingsDraft(nextBgm.config, '已添加 BGM 文件');
   }
+  async function autoDetectJianyingDraftPath() {
+    setConfigTestResult('正在自动检测剪映草稿目录...');
+    try {
+      const detected = await api.detectJianyingDraftPath();
+      if (!detected) {
+        setConfigTestResult('[warn] 未自动检测到剪映草稿目录，请用“选择目录”手动指定。');
+        return;
+      }
+      setSettingsDraft({ ...draft, jianying: { ...draft.jianying, draftPath: detected } });
+      setConfigTestResult(`[pass] 已检测到剪映草稿目录：${detected}`);
+    } catch (error) {
+      setConfigTestResult(`[fail] ${error instanceof Error ? error.message : String(error)}`);
+    }
+  }
+  async function pickJianyingDraftPath() {
+    const folder = await api.selectLocalFolder();
+    if (!folder) return;
+    setSettingsDraft({ ...draft, jianying: { ...draft.jianying, draftPath: folder } });
+    setConfigTestResult(`已选择剪映草稿目录：${folder}`);
+  }
   function setDefaultBgm(id: string) {
     setSettingsDraft({ ...draft, jianying: { ...draft.jianying, defaultBgmId: id } });
   }
@@ -3891,6 +4172,10 @@ function SettingsPage({ api, state, applyState }: { api: StoryboundApi; state: A
         {section === 'jianying' ? (
           <SettingsCard title="剪映草稿与 BGM" status={draft.jianying.draftPath ? '已配置' : '待配置'}>
             <ConfigInput label="Draft Path" value={draft.jianying.draftPath} onChange={(value) => setSettingsDraft({ ...draft, jianying: { ...draft.jianying, draftPath: value } })} />
+            <div className="settings-inline-actions">
+              <button className="ghost-action" type="button" onClick={autoDetectJianyingDraftPath}><Search size={15} />自动检测</button>
+              <button className="ghost-action" type="button" onClick={pickJianyingDraftPath}><FolderOpen size={15} />选择目录</button>
+            </div>
             <LocalInfo title="BGM 库" value={settingsBgms.length ? settingsBgms.map((bgm) => bgm.title).join('、') : 'BGM 库为空'} />
             <button className="ghost-action" type="button" onClick={uploadBgmFromSettings}><Upload size={15} />+ 添加 BGM 文件</button>
             <div className="bgm-library-list">
@@ -4669,12 +4954,14 @@ function Field({ label, hint, children }: { label: string; hint?: string; childr
 
 function ToggleField({ label, checked, onChange }: { label: string; checked: boolean; onChange: (checked: boolean) => void }) {
   return (
-    <Field label={label}>
-      <label className="draft-toggle-field">
+    <div className="draft-toggle-row">
+      <span>{label}</span>
+      <label className="draft-toggle-control">
         <input type="checkbox" checked={checked} onChange={(event) => onChange(event.target.checked)} />
+        <span className="draft-toggle-box" aria-hidden="true">{checked ? '✓' : ''}</span>
         <span>{checked ? '开启' : '关闭'}</span>
       </label>
-    </Field>
+    </div>
   );
 }
 
@@ -4711,6 +4998,27 @@ function RangeField({
         <input type="number" min={min} max={max} step={step} value={value} onChange={(event) => onChange(Number(event.target.value))} />
       </div>
     </Field>
+  );
+}
+
+function TextBorderControls({
+  label,
+  border,
+  onChange,
+}: {
+  label?: string;
+  border: DraftTextBorder;
+  onChange: (patch: Partial<DraftTextBorder>) => void;
+}) {
+  return (
+    <div className="draft-border-controls">
+      {label ? <span className="field-title">{label}</span> : null}
+      <div className="draft-inline-border-grid">
+        <ColorField label="描边颜色" value={border.color} onChange={(value) => onChange({ color: value })} />
+        <RangeField label="描边宽度" min={0} max={60} step={1} value={border.width} onChange={(value) => onChange({ width: value })} />
+        <RangeField label="描边透明度" min={0} max={1} step={0.05} value={border.alpha} onChange={(value) => onChange({ alpha: value })} />
+      </div>
+    </div>
   );
 }
 
@@ -4964,7 +5272,7 @@ function audioTitleFromPath(path: string): string {
 }
 
 function pageSubtitle(view: ShellView): string {
-  const map: Record<ShellView, string> = {
+  const map: Partial<Record<ShellView, string>> = {
     'new-task': '粘贴一段人物故事，几分钟后在剪映里打开',
     queue: '查看当前任务、步骤事件、失败重试和输出状态',
     history: '按时间浏览已完成、失败、取消和草稿任务',
@@ -4977,7 +5285,8 @@ function pageSubtitle(view: ShellView): string {
     account: '管理本机账号资料、设备和模拟余额',
     activation: '管理本地激活状态与试用说明',
   };
-  return map[view];
+  if (view === 'voice-lab') return '单独试听豆包与 MiniMax 音色，保存本地试听记录';
+  return map[view] ?? '';
 }
 
 function pipelineStepStatus(task: Task, step: number): 'pending' | 'running' | 'completed' | 'failed' | 'cancelled' {
@@ -5125,17 +5434,19 @@ function DraftCanvasText({
   className,
   x,
   y,
+  border,
   style,
   children,
 }: {
   className: string;
   x: number;
   y: number;
+  border?: DraftTextBorder;
   style?: React.CSSProperties;
   children: React.ReactNode;
 }) {
   return (
-    <div className={className} style={{ ...draftLayerPositionStyle(x, y), ...style }}>
+    <div className={className} style={{ ...draftLayerPositionStyle(x, y), ...draftTextStrokeStyle(border), ...style }}>
       {children}
     </div>
   );
@@ -5174,8 +5485,10 @@ function draftImageHeightForCanvas(canvas: DraftTemplate['canvas'], imageRatio: 
 
 function draftTemplateCanvasStyle(template: DraftTemplate): React.CSSProperties {
   const backgroundImage = template.canvas.backgroundImage.trim();
+  const ratio = ratioToNumber(template.canvas.ratio) || template.canvas.width / template.canvas.height;
   const style: React.CSSProperties & Record<string, string | number | undefined> = {
     '--draft-preview-width': `${draftPreviewWidth(template)}px`,
+    '--draft-canvas-ratio': ratio,
     aspectRatio: `${template.canvas.width} / ${template.canvas.height}`,
     backgroundColor: template.canvas.backgroundColor,
     backgroundImage: backgroundImage ? `url("${toLocalImageUrl(backgroundImage).replace(/"/g, '\\"')}")` : undefined,
@@ -5235,6 +5548,38 @@ function colorWithAlpha(color: string, alpha: number): string {
   const channel = (offset: number) => Number.parseInt(normalized.slice(offset, offset + 2), 16);
   const opacity = clamp(alpha, 0, 1);
   return `rgba(${channel(0)}, ${channel(2)}, ${channel(4)}, ${opacity})`;
+}
+
+function draftTextStrokeStyle(border?: DraftTextBorder): React.CSSProperties {
+  if (!border || border.width <= 0 || border.alpha <= 0) return {};
+  const color = colorWithAlpha(border.color, border.alpha);
+  const previewStrokeWidth = Math.min(3, Math.max(1, Math.round(border.width / 16)));
+  return {
+    WebkitTextStroke: `${previewStrokeWidth}px ${color}`,
+    paintOrder: 'stroke fill',
+    textShadow: `0 1px 2px ${colorWithAlpha(border.color, Math.min(border.alpha, 0.55))}`,
+  };
+}
+
+function draftTextBorderStyle(border?: DraftTextBorder): React.CSSProperties {
+  return draftTextStrokeStyle(border);
+}
+
+function draftTextLayerStyle(
+  text: Pick<DraftTemplate['title'], 'color' | 'alpha' | 'underline' | 'align' | 'letterSpacing' | 'lineSpacing'>,
+  fontSize: number,
+  fontWeight: React.CSSProperties['fontWeight'],
+): React.CSSProperties {
+  return {
+    color: text.color,
+    fontSize,
+    opacity: text.alpha,
+    fontWeight,
+    textDecoration: text.underline ? 'underline' : 'none',
+    textAlign: draftTextAlign(text.align),
+    letterSpacing: `${text.letterSpacing}px`,
+    lineHeight: `${1 + text.lineSpacing / 10}`,
+  };
 }
 
 function draftTextAlign(align: number): React.CSSProperties['textAlign'] {
@@ -5348,6 +5693,10 @@ function toLocalImageUrl(path: string): string {
   if (/^[A-Za-z]:\//.test(normalized)) return `file:///${encodeURI(normalized)}`;
   if (normalized.startsWith('/')) return `file://${encodeURI(normalized)}`;
   return encodeURI(normalized);
+}
+
+function toLocalAssetUrl(path: string): string {
+  return toLocalImageUrl(path);
 }
 
 function countChars(value?: string): number {

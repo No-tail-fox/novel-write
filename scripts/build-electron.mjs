@@ -1,5 +1,5 @@
 import { build } from 'esbuild';
-import { mkdir } from 'node:fs/promises';
+import { copyFile, mkdir } from 'node:fs/promises';
 
 await mkdir('dist-electron/electron', { recursive: true });
 
@@ -24,3 +24,5 @@ await build({
   external: ['electron'],
   sourcemap: false,
 });
+
+await copyFile('src/shared/viral-media-worker.py', 'dist-electron/electron/viral-media-worker.py');

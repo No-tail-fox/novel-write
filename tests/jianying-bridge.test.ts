@@ -10,9 +10,11 @@ function defaultBridgeImageArea(animation = '') {
 
 function defaultBridgeCaption() {
   return {
+    visible: true,
     fontSize: 44,
     color: '#ffffff',
     alpha: 1,
+    border: { color: '#000000', width: 0, alpha: 0 },
     bold: false,
     underline: false,
     align: 1,
@@ -36,9 +38,11 @@ describe('pyJianYingDraft bridge input', () => {
         canvas: { width: 1080, height: 1920, backgroundColor: '#123456', backgroundImage: join(dir, 'background.png') },
         imageArea: { visible: true, ratio: '4:3', top: 0, height: 1280, fit: 'cover', animation: '缩放' },
         caption: {
+          visible: true,
           fontSize: 44,
           color: '#ffffff',
           alpha: 0.85,
+          border: { color: '#ff0000', width: 4, alpha: 0.7 },
           bold: true,
           underline: false,
           align: 2,
@@ -50,9 +54,9 @@ describe('pyJianYingDraft bridge input', () => {
           y: 1480,
         },
         overlays: {
-          title: { visible: true, text: 'Bridge Draft', x: -0.1, y: -0.5, fontSize: 44, color: '#ffde00', alpha: 0.95, bold: true },
-          subtitle: { visible: true, text: 'Bridge Subtitle', x: 0, y: -0.35, fontSize: 22, color: '#ffffff', alpha: 0.75, bold: false },
-          disclaimer: { visible: true, text: 'Disclaimer', x: 0, y: 0.9, fontSize: 14, color: '#cccccc', alpha: 0.6 },
+          title: { visible: true, text: 'Bridge Draft', x: -0.1, y: -0.5, fontSize: 44, color: '#ffde00', alpha: 0.95, bold: true, underline: true, align: 1, letterSpacing: 2, lineSpacing: 3, border: { color: '#000000', width: 3, alpha: 0.8 } },
+          subtitle: { visible: true, text: 'Bridge Subtitle', x: 0, y: -0.35, fontSize: 22, color: '#ffffff', alpha: 0.75, bold: false, underline: false, align: 2, letterSpacing: 4, lineSpacing: 5, border: { color: '#333333', width: 1, alpha: 0.5 } },
+          disclaimer: { visible: true, text: 'Disclaimer', x: 0, y: 0.9, fontSize: 14, color: '#cccccc', alpha: 0.6, bold: false, underline: true, align: 0, letterSpacing: 1, lineSpacing: 6, border: { color: '#111111', width: 2, alpha: 0.6 } },
         },
         images: [{ sceneId: 1, path: join(dir, 'image.png') }],
         narration: [{ sceneId: 1, path: join(dir, 'voice.mp3') }],
@@ -68,10 +72,12 @@ describe('pyJianYingDraft bridge input', () => {
       expect(payload.canvas).toEqual({ width: 1080, height: 1920, backgroundColor: '#123456', backgroundImage: join(dir, 'background.png') });
       expect(payload.imageArea).toMatchObject({ visible: true });
       expect(payload.caption).toMatchObject({
+        visible: true,
         x: 0.2,
         y: 1480,
         alpha: 0.85,
         bold: true,
+        border: { color: '#ff0000', width: 4, alpha: 0.7 },
         underline: false,
         align: 2,
         letterSpacing: 3,
@@ -79,9 +85,9 @@ describe('pyJianYingDraft bridge input', () => {
         maxCharsPerLine: 18,
         background: { color: '#111111', alpha: 0.4, roundRadius: 0.5 },
       });
-      expect(payload.overlays.title).toMatchObject({ x: -0.1, y: -0.5, alpha: 0.95, bold: true });
-      expect(payload.overlays.subtitle).toMatchObject({ text: 'Bridge Subtitle', alpha: 0.75, bold: false });
-      expect(payload.overlays.disclaimer).toMatchObject({ fontSize: 14, color: '#cccccc', alpha: 0.6 });
+      expect(payload.overlays.title).toMatchObject({ x: -0.1, y: -0.5, alpha: 0.95, bold: true, underline: true, align: 1, letterSpacing: 2, lineSpacing: 3, border: { color: '#000000', width: 3, alpha: 0.8 } });
+      expect(payload.overlays.subtitle).toMatchObject({ text: 'Bridge Subtitle', alpha: 0.75, bold: false, underline: false, align: 2, letterSpacing: 4, lineSpacing: 5, border: { color: '#333333', width: 1, alpha: 0.5 } });
+      expect(payload.overlays.disclaimer).toMatchObject({ fontSize: 14, color: '#cccccc', alpha: 0.6, bold: false, underline: true, align: 0, letterSpacing: 1, lineSpacing: 6, border: { color: '#111111', width: 2, alpha: 0.6 } });
     } finally {
       await rm(dir, { recursive: true, force: true });
     }
@@ -101,9 +107,38 @@ describe('pyJianYingDraft bridge input', () => {
       expect(script).toContain('create_solid_png');
       expect(script).toContain('background_track');
       expect(script).toContain('import_srt');
+      expect(script).toContain('border = config.get("border") or {}');
+      expect(script).toContain('caption_border = text_border_from_config(caption)');
+      expect(script).toContain('border=caption_border');
+      expect(script).toContain('def add_overlay_text');
+      expect(script).toContain('draft.TextSegment(');
+      expect(script).toContain('draft.TrackType.text');
+      expect(script).toContain('add_overlay_text(script, "title"');
+      expect(script).toContain('add_overlay_text(script, "subtitle"');
+      expect(script).toContain('add_overlay_text(script, "disclaimer"');
       expect(script).toContain('script.save()');
       expect(script).toContain('image_area.get("visible", True)');
+      expect(script).toContain('caption.get("visible", True)');
+      expect(script).toContain('draft.TextBackground(');
+      expect(script).toContain('style_reference=caption_template');
+      expect(script).toContain('wrap_caption_text');
+      expect(script).toContain('resolve_image_layout');
+      expect(script).toContain('image_segment.add_mask(');
       expect(script).toContain('align=int(caption.get("align", 1))');
+    } finally {
+      await rm(dir, { recursive: true, force: true });
+    }
+  });
+
+  it('validates image animations instead of silently dropping unknown draft template values', async () => {
+    const dir = await mkdtemp(join(tmpdir(), 'storybound-jy-script-animation-'));
+
+    try {
+      const scriptPath = await writePyJianYingBridgeScript(dir);
+      const script = await readFile(scriptPath, 'utf8');
+
+      expect(script).toContain('raise ValueError(f"Unknown image animation');
+      expect(script).toContain('resolve_image_animation');
     } finally {
       await rm(dir, { recursive: true, force: true });
     }
@@ -183,6 +218,45 @@ describe('pyJianYingDraft bridge input', () => {
       const generatedSubtitles = await readFile(join(draftDir, 'materials', 'subtitles', 'subtitles.srt'), 'utf8');
       expect(generatedSubtitles).toContain('00:00:00,000 --> 00:00:01,800');
       expect(generatedSubtitles).toContain('00:00:01,800 --> 00:00:02,800');
+    } finally {
+      await rm(dir, { recursive: true, force: true });
+    }
+  });
+
+  it('does not import subtitle text tracks when captions are hidden', async () => {
+    const dir = await mkdtemp(join(tmpdir(), 'storybound-jy-hidden-captions-'));
+    const draftDir = join(dir, 'Draft Root', 'Bridge Draft');
+    const bridgeDir = join(dir, 'pyjianying-bridge');
+
+    try {
+      await writePyJianYingBridgeScript(dir);
+      await writeFile(join(bridgeDir, 'pyJianYingDraft.py'), fakePyJianYingDraftModule, 'utf8');
+      const voice = join(dir, 'voice.wav');
+      const image = join(dir, 'image.png');
+      const subtitles = join(dir, 'subtitles.srt');
+      await writeFile(voice, wavTone(1000));
+      await writeFile(image, Buffer.from('image'));
+      await writeFile(subtitles, '1\n00:00:00,000 --> 00:00:01,000\nhidden\n', 'utf8');
+
+      await runPyJianYingDraftBridge({
+        workDir: dir,
+        draftDir,
+        title: 'Bridge Draft',
+        canvas: { width: 1080, height: 1920, backgroundColor: '#000000', backgroundImage: '' },
+        imageArea: defaultBridgeImageArea(),
+        caption: { ...defaultBridgeCaption(), visible: false },
+        scenes: [{ sceneId: 1, startUs: 0, durationUs: 1_000_000, text: 'hidden caption' }],
+        images: [{ sceneId: 1, path: image }],
+        narration: [{ sceneId: 1, path: voice }],
+        subtitlesSrtPath: subtitles,
+        bgm: null,
+        totalDurationUs: 1_000_000,
+        volumes: { narration: 1, bgm: 0.3 },
+      });
+
+      const content = JSON.parse(await readFile(join(draftDir, 'draft_content.json'), 'utf8'));
+
+      expect(content.tracks.some((track: { name: string }) => track.name === 'subtitles')).toBe(false);
     } finally {
       await rm(dir, { recursive: true, force: true });
     }
@@ -327,6 +401,44 @@ describe('pyJianYingDraft bridge input', () => {
     }
   });
 
+  it('explains when the bridge is running through system Python without bundled runtime evidence', async () => {
+    const dir = await mkdtemp(join(tmpdir(), 'storybound-jy-system-python-error-'));
+
+    try {
+      const error = Object.assign(new Error('Command failed: python bridge.py input.json'), {
+        stdout: '',
+        stderr: '',
+      });
+
+      await expect(
+        runPyJianYingDraftBridge(
+          {
+            workDir: dir,
+            draftDir: join(dir, 'Draft Root', 'Bridge Draft'),
+            title: 'Bridge Draft',
+            canvas: { width: 1080, height: 1920, backgroundColor: '#000000', backgroundImage: '' },
+            imageArea: defaultBridgeImageArea(),
+            caption: defaultBridgeCaption(),
+            scenes: [{ sceneId: 1, startUs: 0, durationUs: 1_200_000, text: 'hello' }],
+            images: [{ sceneId: 1, path: join(dir, 'image.png') }],
+            narration: [{ sceneId: 1, path: join(dir, 'voice.mp3') }],
+            subtitlesSrtPath: join(dir, 'subtitles.srt'),
+            bgm: null,
+            totalDurationUs: 1_200_000,
+            volumes: { narration: 1, bgm: 0.3 },
+          },
+          {
+            pythonCommand: 'python',
+            execute: async () => {
+              throw error;
+            },
+          },
+        ),
+      ).rejects.toThrow(/using system Python because bundled Python was not found/);
+    } finally {
+      await rm(dir, { recursive: true, force: true });
+    }
+  });
 });
 
 function wavTone(durationMs: number): Buffer {
@@ -376,6 +488,7 @@ class Timerange:
 class TrackType:
     video = "video"
     audio = "audio"
+    text = "text"
 
 
 class ClipSettings:
@@ -386,6 +499,22 @@ class ClipSettings:
 class TextStyle:
     def __init__(self, **kwargs):
         self.kwargs = kwargs
+
+
+class TextBorder:
+    def __init__(self, **kwargs):
+        self.kwargs = kwargs
+
+
+class TextSegment:
+    def __init__(self, text, target_timerange, *, style=None, clip_settings=None, border=None, background=None, shadow=None):
+        self.text = text
+        self.target_timerange = target_timerange
+        self.source_timerange = None
+        self.volume = 1.0
+        self.style = style
+        self.clip_settings = clip_settings
+        self.border = border
 
 
 class VideoMaterial:

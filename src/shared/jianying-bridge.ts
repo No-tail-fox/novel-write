@@ -2,8 +2,8 @@ import { execFile } from 'node:child_process';
 import { mkdir, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { promisify } from 'node:util';
-import { resolvePythonCommand } from './python-runtime';
-import type { BgmItem } from './types';
+import { resolvePythonRuntimeInfo, type PythonRuntimeInfo } from './python-runtime';
+import type { BgmItem, DraftTextBorder } from './types';
 
 const execFileAsync = promisify(execFile);
 
@@ -26,9 +26,11 @@ export interface PyJianYingBridgeInput {
     animation: string;
   };
   caption: {
+    visible: boolean;
     fontSize: number;
     color: string;
     alpha: number;
+    border: DraftTextBorder;
     bold: boolean;
     underline: boolean;
     align: number;
@@ -53,6 +55,11 @@ export interface PyJianYingBridgeInput {
       color: string;
       alpha: number;
       bold: boolean;
+      underline: boolean;
+      align: number;
+      letterSpacing: number;
+      lineSpacing: number;
+      border: DraftTextBorder;
     };
     subtitle?: {
       visible: boolean;
@@ -63,6 +70,11 @@ export interface PyJianYingBridgeInput {
       color: string;
       alpha: number;
       bold: boolean;
+      underline: boolean;
+      align: number;
+      letterSpacing: number;
+      lineSpacing: number;
+      border: DraftTextBorder;
     };
     disclaimer?: {
       visible: boolean;
@@ -72,6 +84,12 @@ export interface PyJianYingBridgeInput {
       fontSize: number;
       color: string;
       alpha: number;
+      bold: boolean;
+      underline: boolean;
+      align: number;
+      letterSpacing: number;
+      lineSpacing: number;
+      border: DraftTextBorder;
     };
   };
   scenes?: Array<{ sceneId: number; startUs: number; durationUs: number; text: string }>;
@@ -145,7 +163,8 @@ export async function runPyJianYingDraftBridge(
   const payloadPath = await writePyJianYingBridgeInput(input);
   const scriptPath = await writePyJianYingBridgeScript(input.workDir);
   const execute = options.execute ?? ((command, args, execOptions) => execFileAsync(command, args, execOptions));
-  const pythonCommand = options.pythonCommand ?? resolvePythonCommand();
+  const runtime: PythonRuntimeInfo = options.pythonCommand ? { command: options.pythonCommand, source: 'system' } : resolvePythonRuntimeInfo();
+  const pythonCommand = runtime.command;
 
   try {
     const { stdout } = await execute(pythonCommand, [scriptPath, payloadPath], { cwd: input.workDir });
@@ -167,7 +186,7 @@ export async function runPyJianYingDraftBridge(
       assets: result.assets,
     };
   } catch (error) {
-    throw new Error(formatBridgeError(error));
+    throw new Error(formatBridgeError(error, runtime));
   }
 }
 
@@ -188,7 +207,7 @@ function parseBridgeJsonOutput(output: string): BridgeJsonOutput | null {
   }
 }
 
-function formatBridgeError(error: unknown): string {
+function formatBridgeError(error: unknown, runtime: PythonRuntimeInfo): string {
   const stdout = typeof error === 'object' && error !== null && 'stdout' in error ? String((error as { stdout?: unknown }).stdout ?? '') : '';
   const structured = parseBridgeJsonOutput(stdout);
   if (structured?.ok === false) {
@@ -201,10 +220,14 @@ function formatBridgeError(error: unknown): string {
     stdout,
   ].filter(Boolean);
   const detail = pieces.join('\n').trim();
+  const systemPythonHint =
+    runtime.source === 'system'
+      ? ' The app is using system Python because bundled Python was not found. Rebuild or copy the portable package with resources/python/python.exe, or install pyJianYingDraft into system Python.'
+      : '';
   if (/ModuleNotFoundError: No module named ['"]pyJianYingDraft['"]|No module named ['"]pyJianYingDraft['"]/i.test(detail)) {
-    return `pyJianYingDraft is not installed. Run: python -m pip install pyJianYingDraft. Original error: ${detail}`;
+    return `pyJianYingDraft is not installed. Run: python -m pip install pyJianYingDraft.${systemPythonHint} Original error: ${detail}`;
   }
-  return `pyJianYingDraft bridge failed: ${detail || 'unknown error'}`;
+  return `pyJianYingDraft bridge failed: ${detail || 'unknown error'}${systemPythonHint}`;
 }
 
 const pythonBridgeScript = String.raw`import json
@@ -214,6 +237,8 @@ import struct
 import sys
 import traceback
 import zlib
+
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
 try:
     import pyJianYingDraft as draft
@@ -276,20 +301,77 @@ def prepare_background_asset(payload, materials_dir):
     return background_path
 
 
-def apply_image_animation(segment, animation_name):
+def clamp_number(value, default, minimum, maximum):
+    try:
+        parsed = float(value)
+    except (TypeError, ValueError):
+        parsed = default
+    return max(minimum, min(maximum, parsed))
+
+
+def ratio_to_number(value, default=9 / 16):
+    parts = str(value or "").split(":")
+    if len(parts) != 2:
+        return default
+    try:
+        width = float(parts[0])
+        height = float(parts[1])
+    except (TypeError, ValueError):
+        return default
+    if width <= 0 or height <= 0:
+        return default
+    return width / height
+
+
+def resolve_image_animation(animation_name):
     animation_name = str(animation_name or "").strip()
     if not animation_name or animation_name == "无动画":
-        return
+        return None
     for enum_name in ("GroupAnimationType", "IntroType", "OutroType"):
         enum_type = getattr(draft, enum_name, None)
         from_name = getattr(enum_type, "from_name", None) if enum_type else None
         if not from_name:
             continue
         try:
-            segment.add_animation(from_name(animation_name))
-            return
+            return from_name(animation_name)
         except Exception:
             continue
+    raise ValueError(f"Unknown image animation: {animation_name}")
+
+
+def apply_image_animation(segment, animation_name):
+    animation_type = resolve_image_animation(animation_name)
+    if animation_type:
+        segment.add_animation(animation_type)
+
+
+def resolve_image_layout(image_area, canvas, material):
+    canvas_width = max(1.0, float(canvas.get("width", 1080) or 1080))
+    canvas_height = max(1.0, float(canvas.get("height", 1920) or 1920))
+    desired_ratio = ratio_to_number(image_area.get("ratio"), canvas_width / canvas_height)
+    default_height = clamp_number(canvas_width / desired_ratio / canvas_height, 1.0, 0.05, 1.0)
+    area_height = clamp_number(image_area.get("height"), default_height, 0.05, 1.0)
+    area_top = clamp_number(image_area.get("top"), (1 - area_height) / 2, -1.0, 1.0)
+    area_width_px = canvas_width
+    area_height_px = canvas_height * area_height
+    material_width = max(1.0, float(getattr(material, "width", canvas_width) or canvas_width))
+    material_height = max(1.0, float(getattr(material, "height", canvas_height) or canvas_height))
+    scale_x = area_width_px / material_width
+    scale_y = area_height_px / material_height
+    scale = min(scale_x, scale_y) if image_area.get("fit") == "contain" else max(scale_x, scale_y)
+    if scale <= 0:
+        scale = 1.0
+    visible_width = material_width * scale
+    visible_height = material_height * scale
+    mask_width = clamp_number(area_width_px / visible_width, 1.0, 0.01, 1.0)
+    mask_height = clamp_number(area_height_px / visible_height, 1.0, 0.01, 1.0)
+    return {
+        "scale": scale,
+        "transform_y": area_top * 2 + area_height - 1,
+        "mask_width": mask_width,
+        "mask_height": mask_height,
+        "use_mask": mask_width < 0.999 or mask_height < 0.999,
+    }
 
 
 def resolve_enum(enum_name, name):
@@ -362,16 +444,92 @@ def format_srt_time(us):
     return f"{hours:02d}:{minutes:02d}:{seconds:02d},{millis:03d}"
 
 
-def write_timed_subtitles(path, timeline):
+def wrap_caption_text(text, max_chars_per_line):
+    text = str(text or "").strip()
+    max_chars = int(clamp_number(max_chars_per_line, 0, 0, 200))
+    if not text or max_chars <= 0:
+        return text
+    wrapped = []
+    for raw_line in text.splitlines():
+        line = raw_line.strip()
+        if not line:
+            continue
+        wrapped.extend(line[index:index + max_chars] for index in range(0, len(line), max_chars))
+    return "\n".join(wrapped)
+
+
+def write_timed_subtitles(path, timeline, max_chars_per_line=0):
     os.makedirs(os.path.dirname(path), exist_ok=True)
     blocks = []
     for index, item in enumerate(timeline, start=1):
         start = int(item["startUs"])
         end = start + int(item["durationUs"])
-        text = str(item.get("text") or "").strip()
+        text = wrap_caption_text(item.get("text"), max_chars_per_line)
         blocks.append(f"{index}\n{format_srt_time(start)} --> {format_srt_time(end)}\n{text}\n")
     with open(path, "w", encoding="utf-8") as handle:
         handle.write("\n".join(blocks))
+
+
+def text_border_from_config(config):
+    border = config.get("border") or {}
+    width = float(border.get("width", 0) or 0)
+    alpha = float(border.get("alpha", 0) or 0)
+    if width <= 0 or alpha <= 0:
+        return None
+    return draft.TextBorder(
+        color=color_to_rgb(border.get("color", "#000000")),
+        width=width,
+        alpha=alpha,
+    )
+
+
+def text_style_from_config(config, default_size=8):
+    return draft.TextStyle(
+        size=float(config.get("fontSize", default_size)),
+        color=color_to_rgb(config.get("color", "#ffffff")),
+        alpha=float(config.get("alpha", 1) or 1),
+        bold=bool(config.get("bold", False)),
+        underline=bool(config.get("underline", False)),
+        align=int(config.get("align", 1)),
+        letter_spacing=int(config.get("letterSpacing", 0) or 0),
+        line_spacing=int(config.get("lineSpacing", 0) or 0),
+        auto_wrapping=True,
+    )
+
+
+def text_background_from_config(config):
+    background = config.get("background") or {}
+    alpha = clamp_number(background.get("alpha", 0), 0, 0, 1)
+    background_factory = getattr(draft, "TextBackground", None)
+    if alpha <= 0 or not background_factory:
+        return None
+    return draft.TextBackground(
+        color=str(background.get("color") or "#000000"),
+        alpha=alpha,
+        round_radius=clamp_number(background.get("roundRadius", 0), 0, 0, 1),
+        height=0.16,
+        width=0.88,
+    )
+
+
+def add_overlay_text(script, name, config, duration):
+    if not config or not config.get("visible", True):
+        return
+    text = str(config.get("text") or "").strip()
+    if not text:
+        return
+    script.add_track(draft.TrackType.text, name)
+    segment = draft.TextSegment(
+        text,
+        draft.Timerange(0, max(1, int(duration or 0))),
+        style=text_style_from_config(config),
+        border=text_border_from_config(config),
+        clip_settings=draft.ClipSettings(
+            transform_x=float(config.get("x", 0) or 0),
+            transform_y=float(config.get("y", 0) or 0),
+        ),
+    )
+    script.add_segment(segment, name)
 
 
 def clamp_effect_duration(value, segment_duration):
@@ -438,7 +596,8 @@ def main():
         cursor += scene_duration
     total_duration = max(cursor, int(payload.get("totalDurationUs") or 0))
     subtitle_path = os.path.join(materials_dir, "subtitles", "subtitles.srt")
-    write_timed_subtitles(subtitle_path, timeline)
+    caption = payload.get("caption") or {}
+    write_timed_subtitles(subtitle_path, timeline, caption.get("maxCharsPerLine"))
     transition_type = resolve_enum("TransitionType", effects.get("transitionType"))
     transition_duration = int(effects.get("transitionDurationUs") or 0)
     narration_fade_in = int(effects.get("narrationFadeInUs") or 0)
@@ -465,15 +624,24 @@ def main():
         audio_duration = int(scene["audioDurationUs"])
         image_material = draft.VideoMaterial(image_by_scene[scene_id])
         audio_material = audio_materials[scene_id]
-        scale = 1.0 if image_area.get("fit") == "cover" else 0.96
-        transform_y = float(image_area.get("top", 0)) * 2 + float(image_area.get("height", 1)) - 1
+        image_layout = resolve_image_layout(image_area, payload.get("canvas") or {}, image_material)
         if image_area.get("visible", True):
             image_segment = draft.VideoSegment(
                 image_material,
                 draft.Timerange(start, duration),
                 source_timerange=draft.Timerange(0, duration),
-                clip_settings=draft.ClipSettings(scale_x=scale, scale_y=scale, transform_y=transform_y),
+                clip_settings=draft.ClipSettings(
+                    scale_x=image_layout["scale"],
+                    scale_y=image_layout["scale"],
+                    transform_y=image_layout["transform_y"],
+                ),
             )
+            if image_layout["use_mask"] and hasattr(image_segment, "add_mask") and getattr(draft, "MaskType", None):
+                image_segment.add_mask(
+                    draft.MaskType.矩形,
+                    size=image_layout["mask_height"],
+                    rect_width=image_layout["mask_width"],
+                )
             apply_image_animation(image_segment, image_area.get("animation"))
             if filter_type:
                 image_segment.add_filter(filter_type)
@@ -518,18 +686,48 @@ def main():
             )
         script.add_segment(bgm_segment, "bgm")
 
-    caption = payload.get("caption") or {}
-    script.import_srt(
-        subtitle_path,
-        track_name="subtitles",
-        text_style=draft.TextStyle(
+    if caption.get("visible", True):
+        caption_style = draft.TextStyle(
             size=float(caption.get("fontSize", 8)),
             color=color_to_rgb(caption.get("color", "#ffffff")),
+            alpha=float(caption.get("alpha", 1) or 1),
+            bold=bool(caption.get("bold", False)),
+            underline=bool(caption.get("underline", False)),
             align=int(caption.get("align", 1)),
+            letter_spacing=int(caption.get("letterSpacing", 0) or 0),
+            line_spacing=int(caption.get("lineSpacing", 0) or 0),
             auto_wrapping=True,
-        ),
-        clip_settings=draft.ClipSettings(transform_x=float(caption.get("x", 0)), transform_y=float(caption.get("y", -0.8))),
-    )
+        )
+        caption_clip_settings = draft.ClipSettings(transform_x=float(caption.get("x", 0)), transform_y=float(caption.get("y", -0.8)))
+        caption_background = text_background_from_config(caption)
+        caption_border = text_border_from_config(caption)
+        if caption_background or caption_border:
+            caption_template = draft.TextSegment(
+                "字幕预览",
+                draft.Timerange(0, 1),
+                style=caption_style,
+                clip_settings=caption_clip_settings,
+                border=caption_border,
+                background=caption_background,
+            )
+            script.import_srt(
+                subtitle_path,
+                track_name="subtitles",
+                style_reference=caption_template,
+                clip_settings=caption_clip_settings,
+            )
+        else:
+            script.import_srt(
+                subtitle_path,
+                track_name="subtitles",
+                text_style=caption_style,
+                clip_settings=caption_clip_settings,
+            )
+
+    overlays = payload.get("overlays") or {}
+    add_overlay_text(script, "title", overlays.get("title"), total_duration)
+    add_overlay_text(script, "subtitle", overlays.get("subtitle"), total_duration)
+    add_overlay_text(script, "disclaimer", overlays.get("disclaimer"), total_duration)
 
     script.save()
     content_path = os.path.join(draft_dir, "draft_content.json")
