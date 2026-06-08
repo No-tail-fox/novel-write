@@ -753,6 +753,7 @@ export interface DraftTemplate {
     text: string;
     x: number;
     y: number;
+    width: number;
     fontSize: number;
     color: string;
     alpha: number;
@@ -768,6 +769,7 @@ export interface DraftTemplate {
     text: string;
     x: number;
     y: number;
+    width: number;
     fontSize: number;
     color: string;
     alpha: number;
@@ -782,6 +784,7 @@ export interface DraftTemplate {
     visible: boolean;
     x: number;
     y: number;
+    width: number;
     fontSize: number;
     color: string;
     alpha: number;
@@ -803,6 +806,7 @@ export interface DraftTemplate {
     text: string;
     x: number;
     y: number;
+    width: number;
     fontSize: number;
     color: string;
     alpha: number;

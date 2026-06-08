@@ -21,6 +21,7 @@ function defaultBridgeCaption() {
     letterSpacing: 0,
     lineSpacing: 0,
     maxCharsPerLine: 12,
+    width: 0.8,
     background: { color: '#000000', alpha: 0.5, roundRadius: 0.3 },
     y: -0.8,
   };
@@ -49,14 +50,15 @@ describe('pyJianYingDraft bridge input', () => {
           letterSpacing: 3,
           lineSpacing: 2,
           maxCharsPerLine: 18,
+          width: 0.72,
           background: { color: '#111111', alpha: 0.4, roundRadius: 0.5 },
           x: 0.2,
           y: 1480,
         },
         overlays: {
-          title: { visible: true, text: 'Bridge Draft', x: -0.1, y: -0.5, fontSize: 44, color: '#ffde00', alpha: 0.95, bold: true, underline: true, align: 1, letterSpacing: 2, lineSpacing: 3, border: { color: '#000000', width: 3, alpha: 0.8 } },
-          subtitle: { visible: true, text: 'Bridge Subtitle', x: 0, y: -0.35, fontSize: 22, color: '#ffffff', alpha: 0.75, bold: false, underline: false, align: 2, letterSpacing: 4, lineSpacing: 5, border: { color: '#333333', width: 1, alpha: 0.5 } },
-          disclaimer: { visible: true, text: 'Disclaimer', x: 0, y: 0.9, fontSize: 14, color: '#cccccc', alpha: 0.6, bold: false, underline: true, align: 0, letterSpacing: 1, lineSpacing: 6, border: { color: '#111111', width: 2, alpha: 0.6 } },
+          title: { visible: true, text: 'Bridge Draft', x: -0.1, y: -0.5, width: 0.88, fontSize: 44, color: '#ffde00', alpha: 0.95, bold: true, underline: true, align: 1, letterSpacing: 2, lineSpacing: 3, border: { color: '#000000', width: 3, alpha: 0.8 } },
+          subtitle: { visible: true, text: 'Bridge Subtitle', x: 0, y: -0.35, width: 0.76, fontSize: 22, color: '#ffffff', alpha: 0.75, bold: false, underline: false, align: 2, letterSpacing: 4, lineSpacing: 5, border: { color: '#333333', width: 1, alpha: 0.5 } },
+          disclaimer: { visible: true, text: 'Disclaimer', x: 0, y: 0.9, width: 0.62, fontSize: 14, color: '#cccccc', alpha: 0.6, bold: false, underline: true, align: 0, letterSpacing: 1, lineSpacing: 6, border: { color: '#111111', width: 2, alpha: 0.6 } },
         },
         images: [{ sceneId: 1, path: join(dir, 'image.png') }],
         narration: [{ sceneId: 1, path: join(dir, 'voice.mp3') }],
@@ -83,11 +85,12 @@ describe('pyJianYingDraft bridge input', () => {
         letterSpacing: 3,
         lineSpacing: 2,
         maxCharsPerLine: 18,
+        width: 0.72,
         background: { color: '#111111', alpha: 0.4, roundRadius: 0.5 },
       });
-      expect(payload.overlays.title).toMatchObject({ x: -0.1, y: -0.5, alpha: 0.95, bold: true, underline: true, align: 1, letterSpacing: 2, lineSpacing: 3, border: { color: '#000000', width: 3, alpha: 0.8 } });
-      expect(payload.overlays.subtitle).toMatchObject({ text: 'Bridge Subtitle', alpha: 0.75, bold: false, underline: false, align: 2, letterSpacing: 4, lineSpacing: 5, border: { color: '#333333', width: 1, alpha: 0.5 } });
-      expect(payload.overlays.disclaimer).toMatchObject({ fontSize: 14, color: '#cccccc', alpha: 0.6, bold: false, underline: true, align: 0, letterSpacing: 1, lineSpacing: 6, border: { color: '#111111', width: 2, alpha: 0.6 } });
+      expect(payload.overlays.title).toMatchObject({ x: -0.1, y: -0.5, width: 0.88, alpha: 0.95, bold: true, underline: true, align: 1, letterSpacing: 2, lineSpacing: 3, border: { color: '#000000', width: 3, alpha: 0.8 } });
+      expect(payload.overlays.subtitle).toMatchObject({ text: 'Bridge Subtitle', width: 0.76, alpha: 0.75, bold: false, underline: false, align: 2, letterSpacing: 4, lineSpacing: 5, border: { color: '#333333', width: 1, alpha: 0.5 } });
+      expect(payload.overlays.disclaimer).toMatchObject({ fontSize: 14, color: '#cccccc', width: 0.62, alpha: 0.6, bold: false, underline: true, align: 0, letterSpacing: 1, lineSpacing: 6, border: { color: '#111111', width: 2, alpha: 0.6 } });
     } finally {
       await rm(dir, { recursive: true, force: true });
     }
@@ -125,6 +128,8 @@ describe('pyJianYingDraft bridge input', () => {
       expect(script).toContain('resolve_image_layout');
       expect(script).toContain('image_segment.add_mask(');
       expect(script).toContain('align=int(caption.get("align", 1))');
+      expect(script).toContain('max_line_width=clamp_number(config.get("width"), 0.8, 0.1, 1.0)');
+      expect(script).toContain('max_line_width=clamp_number(caption.get("width"), 0.8, 0.1, 1.0)');
     } finally {
       await rm(dir, { recursive: true, force: true });
     }

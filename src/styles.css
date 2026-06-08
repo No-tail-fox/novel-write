@@ -2245,7 +2245,6 @@ textarea {
 }
 
 .text-layer {
-  min-width: 44%;
   min-height: 26px;
   display: grid;
   place-items: center;
@@ -2260,6 +2259,8 @@ textarea {
   border: 2px solid #08100e;
   border-radius: 99px;
   background: var(--accent);
+  cursor: ew-resize;
+  touch-action: none;
 }
 
 .draft-title,
@@ -2267,7 +2268,6 @@ textarea {
 .draft-caption,
 .draft-disclaimer {
   position: absolute;
-  width: 80%;
   text-align: center;
   text-shadow: 0 1px 2px #000;
   pointer-events: none;

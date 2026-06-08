@@ -15,6 +15,7 @@ const storyboundBorder = {
 const captionBase = {
   visible: true,
   x: 0,
+  width: 0.8,
   fontSize: 12,
   color: '#FFDE00',
   alpha: 1,
@@ -37,6 +38,7 @@ const titleBase = {
   text: '主标题示例',
   x: 0,
   y: 0.04739583333333333,
+  width: 0.8,
   fontSize: 25,
   color: '#FFDE00',
   alpha: 1,
@@ -53,6 +55,7 @@ const subtitleBase = {
   text: '副标题示例文字',
   x: 0,
   y: -0.21666666666666667,
+  width: 0.8,
   fontSize: 12,
   color: '#FFFFFF',
   alpha: 1,
@@ -69,6 +72,7 @@ const disclaimerBase = {
   text: '图片由AI生成与网络下载\n科普视频，无不良引导',
   x: 0,
   y: -0.903125,
+  width: 0.8,
   fontSize: 8,
   color: '#FFFFFF',
   alpha: 0.26,
@@ -282,6 +286,7 @@ export function normalizeDraftTemplate(template: Partial<DraftTemplate>): DraftT
       ...template.title,
       x: finiteNumber(template.title?.x, fallback.title.x),
       y: finiteNumber(template.title?.y, fallback.title.y),
+      width: clampNumber(template.title?.width, fallback.title.width, 0.1, 1),
       alpha: finiteNumber(template.title?.alpha, fallback.title.alpha),
       bold: typeof template.title?.bold === 'boolean' ? template.title.bold : fallback.title.bold,
       underline: typeof template.title?.underline === 'boolean' ? template.title.underline : fallback.title.underline,
@@ -295,6 +300,7 @@ export function normalizeDraftTemplate(template: Partial<DraftTemplate>): DraftT
       ...template.subtitle,
       x: finiteNumber(template.subtitle?.x, fallback.subtitle.x),
       y: finiteNumber(template.subtitle?.y, fallback.subtitle.y),
+      width: clampNumber(template.subtitle?.width, fallback.subtitle.width, 0.1, 1),
       text: finiteString(template.subtitle?.text, fallback.subtitle.text),
       alpha: finiteNumber(template.subtitle?.alpha, fallback.subtitle.alpha),
       bold: typeof template.subtitle?.bold === 'boolean' ? template.subtitle.bold : fallback.subtitle.bold,
@@ -309,6 +315,7 @@ export function normalizeDraftTemplate(template: Partial<DraftTemplate>): DraftT
       ...template.caption,
       x: finiteNumber(template.caption?.x, fallback.caption.x),
       y: finiteNumber(template.caption?.y, fallback.caption.y),
+      width: clampNumber(template.caption?.width, fallback.caption.width, 0.1, 1),
       border: normalizeTextBorder(template.caption?.border, fallback.caption.border),
       background: { ...fallback.caption.background, ...template.caption?.background },
     },
@@ -317,6 +324,7 @@ export function normalizeDraftTemplate(template: Partial<DraftTemplate>): DraftT
       ...template.disclaimer,
       x: finiteNumber(template.disclaimer?.x, fallback.disclaimer.x),
       y: finiteNumber(template.disclaimer?.y, fallback.disclaimer.y),
+      width: clampNumber(template.disclaimer?.width, fallback.disclaimer.width, 0.1, 1),
       fontSize: finiteNumber(template.disclaimer?.fontSize, fallback.disclaimer.fontSize),
       color: finiteString(template.disclaimer?.color, fallback.disclaimer.color),
       alpha: finiteNumber(template.disclaimer?.alpha, fallback.disclaimer.alpha),
@@ -333,6 +341,10 @@ export function normalizeDraftTemplate(template: Partial<DraftTemplate>): DraftT
 
 function finiteNumber(value: unknown, fallback: number): number {
   return typeof value === 'number' && Number.isFinite(value) ? value : fallback;
+}
+
+function clampNumber(value: unknown, fallback: number, min: number, max: number): number {
+  return Math.min(max, Math.max(min, finiteNumber(value, fallback)));
 }
 
 function finiteString(value: unknown, fallback: string): string {

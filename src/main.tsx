@@ -275,8 +275,8 @@ type StoryboundApi = NonNullable<Window['storybound']>;
 type ModelListKey = 'llm' | 'gpt-image' | 'custom-image';
 type DraftCanvasLayer = 'image' | 'title' | 'subtitle' | 'caption' | 'disclaimer';
 type DraftDragSnapshot =
-  | { layer: 'image'; pointerId: number; startX: number; startY: number; template: DraftTemplate }
-  | { layer: Exclude<DraftCanvasLayer, 'image'>; pointerId: number; startX: number; startY: number; template: DraftTemplate };
+  | { mode: 'move'; layer: DraftCanvasLayer; pointerId: number; startX: number; startY: number; template: DraftTemplate }
+  | { mode: 'resize'; layer: Exclude<DraftCanvasLayer, 'image'>; pointerId: number; startX: number; startY: number; template: DraftTemplate };
 
 function cloneState(state: AppState): AppState {
   return JSON.parse(JSON.stringify(state)) as AppState;
@@ -3398,6 +3398,10 @@ function DraftTemplatesPage({ api, state, applyState }: { api: StoryboundApi; st
     setDraft((current) => (current ? { ...current, caption: { ...current.caption, background: { ...current.caption.background, ...patch } } } : current));
   }
 
+  function updateDraftCaptionWidth(value: number) {
+    updateDraftCaption({ width: clamp(value, 0.1, 1) });
+  }
+
   function updateDraftDisclaimer(patch: Partial<DraftTemplate['disclaimer']>) {
     setDraft((current) => (current ? { ...current, disclaimer: { ...current.disclaimer, ...patch } } : current));
   }
@@ -3473,6 +3477,7 @@ function DraftTemplatesPage({ api, state, applyState }: { api: StoryboundApi; st
               <ToggleField label="显示" checked={draft.title.visible} onChange={(checked) => updateDraftTitle({ visible: checked })} />
               <Field label="文字"><input value={draft.title.text} onChange={(event) => updateDraftTitle({ text: event.target.value })} /></Field>
               <Field label="坐标"><input value={`${draft.title.x.toFixed(2)}, ${draft.title.y.toFixed(2)}`} readOnly /></Field>
+              <RangeField label="文本框宽度" min={0.1} max={1} step={0.01} value={draft.title.width} onChange={(value) => updateDraftTitle({ width: clamp(value, 0.1, 1) })} />
               <RangeField label="字号" min={12} max={120} step={1} value={draft.title.fontSize} onChange={(value) => updateDraftTitle({ fontSize: value })} />
               <ColorField label="颜色" value={draft.title.color} onChange={(value) => updateDraftTitle({ color: value })} />
               <RangeField label="透明度" min={0} max={1} step={0.05} value={draft.title.alpha} onChange={(value) => updateDraftTitle({ alpha: value })} />
@@ -3493,6 +3498,7 @@ function DraftTemplatesPage({ api, state, applyState }: { api: StoryboundApi; st
               <ToggleField label="显示" checked={draft.subtitle.visible} onChange={(checked) => updateDraftSubtitle({ visible: checked })} />
               <Field label="文字"><input value={draft.subtitle.text} onChange={(event) => updateDraftSubtitle({ text: event.target.value })} /></Field>
               <Field label="坐标"><input value={`${draft.subtitle.x.toFixed(2)}, ${draft.subtitle.y.toFixed(2)}`} readOnly /></Field>
+              <RangeField label="文本框宽度" min={0.1} max={1} step={0.01} value={draft.subtitle.width} onChange={(value) => updateDraftSubtitle({ width: clamp(value, 0.1, 1) })} />
               <RangeField label="字号" min={10} max={72} step={1} value={draft.subtitle.fontSize} onChange={(value) => updateDraftSubtitle({ fontSize: value })} />
               <ColorField label="颜色" value={draft.subtitle.color} onChange={(value) => updateDraftSubtitle({ color: value })} />
               <RangeField label="透明度" min={0} max={1} step={0.05} value={draft.subtitle.alpha} onChange={(value) => updateDraftSubtitle({ alpha: value })} />
@@ -3512,6 +3518,7 @@ function DraftTemplatesPage({ api, state, applyState }: { api: StoryboundApi; st
             <Accordion title="字幕">
               <ToggleField label="显示" checked={draft.caption.visible} onChange={(checked) => updateDraftCaption({ visible: checked })} />
               <Field label="坐标"><input value={`${draft.caption.x.toFixed(2)}, ${draft.caption.y.toFixed(2)}`} readOnly /></Field>
+              <RangeField label="文本框宽度" min={0.1} max={1} step={0.01} value={draft.caption.width} onChange={updateDraftCaptionWidth} />
               <RangeField label="字号" min={8} max={48} step={1} value={draft.caption.fontSize} onChange={(value) => updateDraftCaption({ fontSize: value })} />
               <ColorField label="颜色" value={draft.caption.color} onChange={(value) => updateDraftCaption({ color: value })} />
               <RangeField label="透明度" min={0} max={1} step={0.05} value={draft.caption.alpha} onChange={(value) => updateDraftCaption({ alpha: value })} />
@@ -3526,7 +3533,7 @@ function DraftTemplatesPage({ api, state, applyState }: { api: StoryboundApi; st
               </Field>
               <RangeField label="字间距" min={0} max={20} step={1} value={draft.caption.letterSpacing} onChange={(value) => updateDraftCaption({ letterSpacing: value })} />
               <RangeField label="行间距" min={0} max={20} step={1} value={draft.caption.lineSpacing} onChange={(value) => updateDraftCaption({ lineSpacing: value })} />
-              <RangeField label="每行字数" min={4} max={30} step={1} value={draft.caption.maxCharsPerLine} onChange={(value) => updateDraftCaption({ maxCharsPerLine: value })} />
+              <RangeField label="每行字数" min={4} max={80} step={1} value={draft.caption.maxCharsPerLine} onChange={(value) => updateDraftCaption({ maxCharsPerLine: value })} />
               <ColorField label="背景色" value={draft.caption.background.color} onChange={(value) => updateDraftCaptionBackground({ color: value })} />
               <RangeField label="背景透明度" min={0} max={1} step={0.05} value={draft.caption.background.alpha} onChange={(value) => updateDraftCaptionBackground({ alpha: value })} />
               <RangeField label="圆角" min={0} max={1} step={0.05} value={draft.caption.background.roundRadius} onChange={(value) => updateDraftCaptionBackground({ roundRadius: value })} />
@@ -3536,6 +3543,7 @@ function DraftTemplatesPage({ api, state, applyState }: { api: StoryboundApi; st
               <ToggleField label="显示" checked={draft.disclaimer.visible} onChange={(checked) => updateDraftDisclaimer({ visible: checked })} />
               <Field label="坐标"><input value={`${draft.disclaimer.x.toFixed(2)}, ${draft.disclaimer.y.toFixed(2)}`} readOnly /></Field>
               <Field label="文字"><input value={draft.disclaimer.text} onChange={(event) => updateDraftDisclaimer({ text: event.target.value })} /></Field>
+              <RangeField label="文本框宽度" min={0.1} max={1} step={0.01} value={draft.disclaimer.width} onChange={(value) => updateDraftDisclaimer({ width: clamp(value, 0.1, 1) })} />
               <RangeField label="字号" min={8} max={40} step={1} value={draft.disclaimer.fontSize} onChange={(value) => updateDraftDisclaimer({ fontSize: value })} />
               <ColorField label="颜色" value={draft.disclaimer.color} onChange={(value) => updateDraftDisclaimer({ color: value })} />
               <RangeField label="透明度" min={0} max={1} step={0.05} value={draft.disclaimer.alpha} onChange={(value) => updateDraftDisclaimer({ alpha: value })} />
@@ -3648,6 +3656,7 @@ function DraftTemplatePreview({ template, compact = false }: { template: DraftTe
           className="draft-title"
           x={template.title.x}
           y={template.title.y}
+          width={template.title.width}
           border={template.title.border}
           style={draftTextLayerStyle(template.title, titleSize, template.title.bold ? 800 : 500)}
         >
@@ -3659,6 +3668,7 @@ function DraftTemplatePreview({ template, compact = false }: { template: DraftTe
           className="draft-subtitle"
           x={template.subtitle.x}
           y={template.subtitle.y}
+          width={template.subtitle.width}
           border={template.subtitle.border}
           style={draftTextLayerStyle(template.subtitle, subtitleSize, template.subtitle.bold ? 800 : 500)}
         >
@@ -3670,6 +3680,7 @@ function DraftTemplatePreview({ template, compact = false }: { template: DraftTe
           className="draft-caption"
           x={template.caption.x}
           y={template.caption.y}
+          width={template.caption.width}
           border={template.caption.border}
           style={{
             color: template.caption.color,
@@ -3693,6 +3704,7 @@ function DraftTemplatePreview({ template, compact = false }: { template: DraftTe
           className="draft-disclaimer"
           x={template.disclaimer.x}
           y={template.disclaimer.y}
+          width={template.disclaimer.width}
           border={template.disclaimer.border}
           style={draftTextLayerStyle(template.disclaimer, disclaimerSize, template.disclaimer.bold ? 700 : 500)}
         >
@@ -3724,6 +3736,7 @@ function EditableDraftCanvas({
     event.currentTarget.setPointerCapture(event.pointerId);
     onSelectLayer(layer);
     dragRef.current = {
+      mode: 'move',
       layer,
       pointerId: event.pointerId,
       startX: event.clientX,
@@ -3732,13 +3745,30 @@ function EditableDraftCanvas({
     } as DraftDragSnapshot;
   }
 
+  function handleDraftCanvasResizePointerDown(layer: Exclude<DraftCanvasLayer, 'image'>, event: React.PointerEvent<HTMLElement>) {
+    const rect = canvasRef.current?.getBoundingClientRect();
+    if (!rect) return;
+    event.preventDefault();
+    event.stopPropagation();
+    event.currentTarget.setPointerCapture(event.pointerId);
+    onSelectLayer(layer);
+    dragRef.current = {
+      mode: 'resize',
+      layer,
+      pointerId: event.pointerId,
+      startX: event.clientX,
+      startY: event.clientY,
+      template: cloneDraftTemplate(template),
+    };
+  }
+
   function handlePointerMove(event: React.PointerEvent<HTMLDivElement>) {
     const drag = dragRef.current;
     const rect = canvasRef.current?.getBoundingClientRect();
     if (!drag || !rect || drag.pointerId !== event.pointerId) return;
     const deltaX = ((event.clientX - drag.startX) / rect.width) * 2;
     const deltaY = ((event.clientY - drag.startY) / rect.height) * 2;
-    onChange(updateDraftLayerPosition(drag.template, drag.layer, deltaX, deltaY));
+    onChange(drag.mode === 'resize' ? resizeDraftLayerWidth(drag.template, drag.layer, deltaX) : updateDraftLayerPosition(drag.template, drag.layer, deltaX, deltaY));
   }
 
   function stopDrag(event: React.PointerEvent<HTMLDivElement>) {
@@ -3769,11 +3799,12 @@ function EditableDraftCanvas({
         </div>
       ) : null}
       {template.title.visible ? (
-        <DraftCanvasLayerBox layer="title" label="主标题" selected={selectedLayer === 'title'} x={template.title.x} y={template.title.y} onPointerDown={handleDraftCanvasPointerDown}>
+        <DraftCanvasLayerBox layer="title" label="主标题" selected={selectedLayer === 'title'} x={template.title.x} y={template.title.y} width={template.title.width} onPointerDown={handleDraftCanvasPointerDown} onResizePointerDown={handleDraftCanvasResizePointerDown}>
           <DraftCanvasText
             className="draft-title"
             x={0}
             y={0}
+            width={1}
             border={template.title.border}
             style={draftTextLayerStyle(template.title, template.title.fontSize, template.title.bold ? 800 : 500)}
           >
@@ -3782,11 +3813,12 @@ function EditableDraftCanvas({
         </DraftCanvasLayerBox>
       ) : null}
       {template.subtitle.visible ? (
-        <DraftCanvasLayerBox layer="subtitle" label="副标题" selected={selectedLayer === 'subtitle'} x={template.subtitle.x} y={template.subtitle.y} onPointerDown={handleDraftCanvasPointerDown}>
+        <DraftCanvasLayerBox layer="subtitle" label="副标题" selected={selectedLayer === 'subtitle'} x={template.subtitle.x} y={template.subtitle.y} width={template.subtitle.width} onPointerDown={handleDraftCanvasPointerDown} onResizePointerDown={handleDraftCanvasResizePointerDown}>
           <DraftCanvasText
             className="draft-subtitle"
             x={0}
             y={0}
+            width={1}
             border={template.subtitle.border}
             style={draftTextLayerStyle(template.subtitle, template.subtitle.fontSize, template.subtitle.bold ? 800 : 500)}
           >
@@ -3795,11 +3827,12 @@ function EditableDraftCanvas({
         </DraftCanvasLayerBox>
       ) : null}
       {template.caption.visible ? (
-        <DraftCanvasLayerBox layer="caption" label="字幕" selected={selectedLayer === 'caption'} x={template.caption.x} y={template.caption.y} onPointerDown={handleDraftCanvasPointerDown}>
+        <DraftCanvasLayerBox layer="caption" label="字幕" selected={selectedLayer === 'caption'} x={template.caption.x} y={template.caption.y} width={template.caption.width} onPointerDown={handleDraftCanvasPointerDown} onResizePointerDown={handleDraftCanvasResizePointerDown}>
           <DraftCanvasText
             className="draft-caption"
             x={0}
             y={0}
+            width={1}
             border={template.caption.border}
             style={{
               color: template.caption.color,
@@ -3820,11 +3853,12 @@ function EditableDraftCanvas({
         </DraftCanvasLayerBox>
       ) : null}
       {template.disclaimer.visible ? (
-        <DraftCanvasLayerBox layer="disclaimer" label="免责声明" selected={selectedLayer === 'disclaimer'} x={template.disclaimer.x} y={template.disclaimer.y} onPointerDown={handleDraftCanvasPointerDown}>
+        <DraftCanvasLayerBox layer="disclaimer" label="免责声明" selected={selectedLayer === 'disclaimer'} x={template.disclaimer.x} y={template.disclaimer.y} width={template.disclaimer.width} onPointerDown={handleDraftCanvasPointerDown} onResizePointerDown={handleDraftCanvasResizePointerDown}>
           <DraftCanvasText
             className="draft-disclaimer"
             x={0}
             y={0}
+            width={1}
             border={template.disclaimer.border}
             style={draftTextLayerStyle(template.disclaimer, template.disclaimer.fontSize, template.disclaimer.bold ? 700 : 500)}
           >
@@ -3842,7 +3876,9 @@ function DraftCanvasLayerBox({
   selected,
   x,
   y,
+  width,
   onPointerDown,
+  onResizePointerDown,
   children,
 }: {
   layer: Exclude<DraftCanvasLayer, 'image'>;
@@ -3850,19 +3886,21 @@ function DraftCanvasLayerBox({
   selected: boolean;
   x: number;
   y: number;
+  width: number;
   onPointerDown: (layer: DraftCanvasLayer, event: React.PointerEvent<HTMLDivElement>) => void;
+  onResizePointerDown: (layer: Exclude<DraftCanvasLayer, 'image'>, event: React.PointerEvent<HTMLElement>) => void;
   children: React.ReactNode;
 }) {
   return (
     <div
       className={selected ? 'draft-layer text-layer selected' : 'draft-layer text-layer'}
       data-layer={layer}
-      style={draftLayerPositionStyle(x, y)}
+      style={{ ...draftLayerPositionStyle(x, y), ...draftTextWidthStyle(width) }}
       onPointerDown={(event) => onPointerDown(layer, event)}
     >
       <span>{label}</span>
       {children}
-      <i className="draft-layer-handle" />
+      <i className="draft-layer-handle" onPointerDown={(event) => onResizePointerDown(layer, event)} />
     </div>
   );
 }
@@ -5434,6 +5472,7 @@ function DraftCanvasText({
   className,
   x,
   y,
+  width,
   border,
   style,
   children,
@@ -5441,12 +5480,13 @@ function DraftCanvasText({
   className: string;
   x: number;
   y: number;
+  width: number;
   border?: DraftTextBorder;
   style?: React.CSSProperties;
   children: React.ReactNode;
 }) {
   return (
-    <div className={className} style={{ ...draftLayerPositionStyle(x, y), ...draftTextStrokeStyle(border), ...style }}>
+    <div className={className} style={{ ...draftLayerPositionStyle(x, y), ...draftTextWidthStyle(width), ...draftTextStrokeStyle(border), ...style }}>
       {children}
     </div>
   );
@@ -5582,6 +5622,13 @@ function draftTextLayerStyle(
   };
 }
 
+function draftTextWidthStyle(width: number): React.CSSProperties {
+  return {
+    width: `${clamp(width, 0.1, 1) * 100}%`,
+    maxWidth: '100%',
+  };
+}
+
 function draftTextAlign(align: number): React.CSSProperties['textAlign'] {
   if (align <= 0) return 'left';
   if (align >= 2) return 'right';
@@ -5620,6 +5667,13 @@ function updateDraftLayerPosition(template: DraftTemplate, layer: DraftCanvasLay
     return { ...template, caption: { ...template.caption, x: clamp(template.caption.x + deltaX, -0.9, 0.9), y: clamp(template.caption.y + deltaY, -0.9, 0.9) } };
   }
   return { ...template, disclaimer: { ...template.disclaimer, x: clamp(template.disclaimer.x + deltaX, -0.9, 0.9), y: clamp(template.disclaimer.y + deltaY, -0.95, 0.95) } };
+}
+
+function resizeDraftLayerWidth(template: DraftTemplate, layer: Exclude<DraftCanvasLayer, 'image'>, deltaX: number): DraftTemplate {
+  if (layer === 'title') return { ...template, title: { ...template.title, width: clamp(template.title.width + deltaX, 0.1, 1) } };
+  if (layer === 'subtitle') return { ...template, subtitle: { ...template.subtitle, width: clamp(template.subtitle.width + deltaX, 0.1, 1) } };
+  if (layer === 'caption') return { ...template, caption: { ...template.caption, width: clamp(template.caption.width + deltaX, 0.1, 1) } };
+  return { ...template, disclaimer: { ...template.disclaimer, width: clamp(template.disclaimer.width + deltaX, 0.1, 1) } };
 }
 
 function draftLayerPositionStyle(x: number, y: number): React.CSSProperties {

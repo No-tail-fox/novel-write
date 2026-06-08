@@ -149,6 +149,7 @@ describe('draft writer', () => {
           visible: true,
           x: 0,
           y: expect.any(Number),
+          width: 0.8,
           alpha: expect.any(Number),
           border: { color: '#000000', width: 0, alpha: 0 },
           bold: expect.any(Boolean),
@@ -167,6 +168,7 @@ describe('draft writer', () => {
           title: {
             x: 0,
             y: 0.04739583333333333,
+            width: 0.8,
             alpha: expect.any(Number),
             bold: expect.any(Boolean),
             underline: true,
@@ -178,6 +180,7 @@ describe('draft writer', () => {
           subtitle: {
             x: 0,
             y: -0.21666666666666667,
+            width: 0.8,
             text: expect.any(String),
             alpha: expect.any(Number),
             bold: expect.any(Boolean),
@@ -190,6 +193,7 @@ describe('draft writer', () => {
           disclaimer: {
             x: 0,
             y: -0.903125,
+            width: 0.8,
             fontSize: expect.any(Number),
             color: expect.any(String),
             alpha: expect.any(Number),
@@ -207,6 +211,68 @@ describe('draft writer', () => {
         ],
       });
       expect((bridgePayloads[0] as { images: Array<{ path: string }>; draftDir: string }).images.some((asset) => asset.path.startsWith(output.draftDir))).toBe(false);
+    } finally {
+      await rm(dir, { recursive: true, force: true });
+    }
+  });
+
+  it('passes draft template text box widths into the bridge payload', async () => {
+    const dir = await mkdtemp(join(tmpdir(), 'storybound-draft-text-width-'));
+    const draftRootDir = join(dir, 'JianyingPro Drafts');
+    const workDir = join(dir, 'work');
+    const scenes: StoryboardScene[] = [{ id: 1, cap: 'A longer subtitle line', descPrompt: 'prompt', durationMs: 1200 }];
+    const images = await writeAssets(workDir, scenes, 'png', twoByTwoPng);
+    const audioPath = join(workDir, 'voice.wav');
+    await writeFile(audioPath, wavTone(1200));
+    let capturedPayload: PyJianYingBridgeInput | null = null;
+
+    try {
+      await writeJianyingDraft(
+        {
+          workDir,
+          draftRootDir,
+          title: 'Text Width Draft',
+          cover: { title: 'Text Width Draft', subtitle: [], summary: '', tags: [], comments: [] },
+          ratio: '9:16',
+          template: {
+            ...draftTemplates[0],
+            title: { ...draftTemplates[0].title, width: 0.92 },
+            subtitle: { ...draftTemplates[0].subtitle, width: 0.74 },
+            caption: { ...draftTemplates[0].caption, width: 0.66 },
+            disclaimer: { ...draftTemplates[0].disclaimer, width: 0.58 },
+          },
+          scenes,
+          imagePrompts: buildImagePrompts(scenes, { inputText: 'Wu Zetian', style: 'photo-real', ratio: '9:16' }),
+          reviewedText: 'reviewed',
+          rewrittenCopy: 'rewritten',
+          generatedImages: images,
+          narrationAudio: [{ sceneId: 1, path: audioPath }],
+          bgm: null,
+        },
+        {
+          runBridge: async (payload) => {
+            capturedPayload = payload;
+            await mkdir(payload.draftDir, { recursive: true });
+            await writeFile(join(payload.draftDir, 'draft_content.json'), '{}', 'utf8');
+            await writeFile(join(payload.draftDir, 'draft_meta_info.json'), '{}', 'utf8');
+            return {
+              draftDir: payload.draftDir,
+              draftContentPath: join(payload.draftDir, 'draft_content.json'),
+              draftMetaPath: join(payload.draftDir, 'draft_meta_info.json'),
+              durationUs: payload.totalDurationUs ?? 0,
+            };
+          },
+        },
+      );
+
+      expect(capturedPayload).toMatchObject({
+        caption: { width: 0.66 },
+        overlays: {
+          title: { width: 0.92 },
+          subtitle: { width: 0.74 },
+          disclaimer: { width: 0.58 },
+        },
+      });
     } finally {
       await rm(dir, { recursive: true, force: true });
     }

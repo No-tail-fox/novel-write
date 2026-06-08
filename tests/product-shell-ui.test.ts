@@ -346,6 +346,20 @@ describe('product shell ui', () => {
     expect(css).toContain('line-height: 1.15');
   });
 
+  it('lets draft template text boxes be resized instead of using a fixed 80 percent width', async () => {
+    const main = await readFile(new URL('../src/main.tsx', import.meta.url), 'utf8');
+    const css = await readFile(new URL('../src/styles.css', import.meta.url), 'utf8');
+
+    expect(main).toContain('resizeDraftLayerWidth');
+    expect(main).toContain('handleDraftCanvasResizePointerDown');
+    expect(main).toContain('onResizePointerDown');
+    expect(main).toContain('draftTextWidthStyle');
+    expect(main).toContain('label="文本框宽度"');
+    expect(main).toContain('updateDraftCaptionWidth');
+    expect(css).toContain('cursor: ew-resize');
+    expect(css).not.toContain('width: 80%;');
+  });
+
   it('shows the full learned Jianying animation list in draft template controls', async () => {
     const main = await readFile(new URL('../src/main.tsx', import.meta.url), 'utf8');
     const templates = await readFile(new URL('../src/shared/templates.ts', import.meta.url), 'utf8');

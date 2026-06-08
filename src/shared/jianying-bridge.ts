@@ -28,6 +28,7 @@ export interface PyJianYingBridgeInput {
   caption: {
     visible: boolean;
     fontSize: number;
+    width: number;
     color: string;
     alpha: number;
     border: DraftTextBorder;
@@ -51,6 +52,7 @@ export interface PyJianYingBridgeInput {
       text: string;
       x: number;
       y: number;
+      width: number;
       fontSize: number;
       color: string;
       alpha: number;
@@ -66,6 +68,7 @@ export interface PyJianYingBridgeInput {
       text: string;
       x: number;
       y: number;
+      width: number;
       fontSize: number;
       color: string;
       alpha: number;
@@ -81,6 +84,7 @@ export interface PyJianYingBridgeInput {
       text: string;
       x: number;
       y: number;
+      width: number;
       fontSize: number;
       color: string;
       alpha: number;
@@ -494,6 +498,7 @@ def text_style_from_config(config, default_size=8):
         letter_spacing=int(config.get("letterSpacing", 0) or 0),
         line_spacing=int(config.get("lineSpacing", 0) or 0),
         auto_wrapping=True,
+        max_line_width=clamp_number(config.get("width"), 0.8, 0.1, 1.0),
     )
 
 
@@ -697,6 +702,7 @@ def main():
             letter_spacing=int(caption.get("letterSpacing", 0) or 0),
             line_spacing=int(caption.get("lineSpacing", 0) or 0),
             auto_wrapping=True,
+            max_line_width=clamp_number(caption.get("width"), 0.8, 0.1, 1.0),
         )
         caption_clip_settings = draft.ClipSettings(transform_x=float(caption.get("x", 0)), transform_y=float(caption.get("y", -0.8)))
         caption_background = text_background_from_config(caption)

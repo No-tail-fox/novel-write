@@ -23,6 +23,7 @@ describe('draft template normalization', () => {
       title: {
         x: 0,
         y: 0.04739583333333333,
+        width: 0.8,
         fontSize: 25,
         color: '#FFDE00',
         alpha: 1,
@@ -36,6 +37,7 @@ describe('draft template normalization', () => {
       subtitle: {
         x: 0,
         y: -0.21666666666666667,
+        width: 0.8,
         fontSize: 12,
         color: '#FFFFFF',
         alpha: 1,
@@ -49,6 +51,7 @@ describe('draft template normalization', () => {
       caption: {
         x: 0,
         y: -0.21510416666666668,
+        width: 0.8,
         fontSize: 12,
         color: '#FFDE00',
         alpha: 1,
@@ -64,6 +67,7 @@ describe('draft template normalization', () => {
       disclaimer: {
         x: 0,
         y: -0.903125,
+        width: 0.8,
         fontSize: 8,
         color: '#FFFFFF',
         alpha: 0.26,
@@ -120,6 +124,7 @@ describe('draft template normalization', () => {
     expect(normalized.title).toMatchObject({
       x: 0,
       y: 0.04739583333333333,
+      width: 0.8,
       alpha: 1,
       bold: true,
       underline: true,
@@ -130,6 +135,7 @@ describe('draft template normalization', () => {
     expect(normalized.subtitle).toMatchObject({
       x: 0,
       y: -0.21666666666666667,
+      width: 0.8,
       text: expect.any(String),
       alpha: 1,
       bold: false,
@@ -138,11 +144,12 @@ describe('draft template normalization', () => {
       letterSpacing: 2,
       lineSpacing: 4,
     });
-    expect(normalized.caption).toMatchObject({ x: 0 });
+    expect(normalized.caption).toMatchObject({ x: 0, width: 0.8 });
     expect(typeof normalized.caption.y).toBe('number');
     expect(normalized.disclaimer).toMatchObject({
       x: 0,
       y: -0.903125,
+      width: 0.8,
       bold: false,
       underline: false,
       align: 1,
@@ -158,6 +165,22 @@ describe('draft template normalization', () => {
     expect(normalized.subtitle.border).toEqual({ color: '#000000', width: 40, alpha: 1 });
     expect(normalized.caption.border).toEqual({ color: '#000000', width: 0, alpha: 0 });
     expect(normalized.disclaimer.border).toEqual({ color: '#000000', width: 40, alpha: 1 });
+  });
+
+  it('clamps saved text box widths for every editable text layer', () => {
+    const fallback = draftTemplates[0];
+    const normalized = normalizeDraftTemplate({
+      ...fallback,
+      title: { ...fallback.title, width: 1.4 },
+      subtitle: { ...fallback.subtitle, width: 0.04 },
+      caption: { ...fallback.caption, width: Number.NaN },
+      disclaimer: { ...fallback.disclaimer, width: 0.52 },
+    });
+
+    expect(normalized.title.width).toBe(1);
+    expect(normalized.subtitle.width).toBe(0.1);
+    expect(normalized.caption.width).toBe(0.8);
+    expect(normalized.disclaimer.width).toBe(0.52);
   });
 
   it('keeps Storybound text-layer style fields from partially saved templates', () => {
