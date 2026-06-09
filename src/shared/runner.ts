@@ -1,6 +1,6 @@
 import { mkdir, readFile, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
-import type { AiSourceContext, BgmItem, CoverMetadata, ImagePrompt, PipelineArtifact, PromptStepTemplateType, PromptTemplate, StoryboardScene, Task } from './types';
+import type { AiSourceContext, BgmItem, CoverMetadata, ImagePrompt, PipelineArtifact, PromptStepTemplateType, PromptTemplate, StoryboardScene, Task, TaskStepRerunMode } from './types';
 import { buildSubtitleTrack } from './story';
 import { writeJianyingDraft, type SceneAsset, type WriteJianyingDraftOptions } from './draft';
 import type { FileDatabase } from './storage';
@@ -39,6 +39,12 @@ interface PipelineState {
     draftDir: string;
     draftContentPath: string;
     draftMetaPath: string;
+  };
+  rerun?: {
+    step: number;
+    mode: TaskStepRerunMode;
+    requestedAt: string;
+    context?: Partial<PipelineArtifact>;
   };
 }
 
@@ -167,6 +173,10 @@ export async function runTask(db: FileDatabase, task: Task, options: RunTaskOpti
     }
 
     const draftDir = pipeline.draft?.draftDir ?? pipeline.steps['6']?.outputPath ?? workDir;
+    if (pipeline.rerun) {
+      delete pipeline.rerun;
+      await save();
+    }
     const completedAt = new Date().toISOString();
     await db.updateTask(task.id, {
       status: 'completed',
@@ -255,7 +265,7 @@ async function ensureContentArtifact(input: {
       signal: options.signal,
       messages: [
         { role: 'system', content: 'Return strict JSON only. Schema: {"reviewedText": string}.' },
-        { role: 'user', content: joinPromptBlocks(['Template instructions:', reviewPrompt, 'Source material:', sourceText]) },
+        { role: 'user', content: joinPromptBlocks(['Template instructions:', reviewPrompt, 'Source material:', sourceText, rewriteContextForStep(pipeline, 0)]) },
       ],
     });
     pipeline.artifact.reviewedText = requireString(review.json.reviewedText, 'reviewedText');
@@ -287,6 +297,7 @@ async function ensureContentArtifact(input: {
             coverPrompt,
             'Reviewed text:',
             requireString(pipeline.artifact.reviewedText, 'reviewedText'),
+            rewriteContextForStep(pipeline, 1),
           ]),
         },
       ],
@@ -322,6 +333,7 @@ async function ensureContentArtifact(input: {
             `Return no more than ${storyboardSceneCount} scenes unless the source absolutely requires one extra transition scene.`,
             'Rewritten copy:',
             requireString(pipeline.artifact.rewrittenCopy, 'rewrittenCopy'),
+            rewriteContextForStep(pipeline, 2),
           ]),
         },
       ],
@@ -345,7 +357,7 @@ async function ensureContentArtifact(input: {
     const batchSnapshots = sceneBatches.map((scenes, index) => {
       const batchContext = buildPromptRenderContext({ task, taskTemplate, sourceContext, artifact: { ...pipeline.artifact, scenes } });
       const instruction = renderStepPrompt(promptTemplates, 'image-prompt', batchContext, JSON.stringify({ scenes, style: task.style, ratio: task.ratio }));
-      return buildImagePromptSnapshot(instruction, scenes, task, index + 1, sceneBatches.length);
+      return buildImagePromptSnapshot(instruction, scenes, task, index + 1, sceneBatches.length, rewriteContextForStep(pipeline, 3));
     });
     await db.updateTask(task.id, { step3PromptSnapshot: batchSnapshots.join('\n\n--- image prompt batch ---\n\n') });
     const imagePrompts: ImagePrompt[] = [];
@@ -385,7 +397,16 @@ function joinPromptBlocks(blocks: string[]): string {
   return blocks.map((block) => block.trim()).filter(Boolean).join('\n\n');
 }
 
-function buildImagePromptSnapshot(instruction: string, scenes: StoryboardScene[], task: Task, batchIndex: number, batchCount: number): string {
+function rewriteContextForStep(pipeline: PipelineState, step: number): string {
+  if (pipeline.rerun?.mode !== 'rewrite' || pipeline.rerun.step !== step || !pipeline.rerun.context) return '';
+  return joinPromptBlocks([
+    'Existing artifact context:',
+    JSON.stringify(pipeline.rerun.context, null, 2),
+    'Rewrite the selected step using this existing output as reference. Return fresh JSON for the requested schema.',
+  ]);
+}
+
+function buildImagePromptSnapshot(instruction: string, scenes: StoryboardScene[], task: Task, batchIndex: number, batchCount: number, rerunContext = ''): string {
   return joinPromptBlocks([
     'Image prompt instructions:',
     instruction,
@@ -393,6 +414,7 @@ function buildImagePromptSnapshot(instruction: string, scenes: StoryboardScene[]
     'Only return imagePrompts for the sceneIds in this batch.',
     'Scene context:',
     JSON.stringify({ scenes, style: task.style, ratio: task.ratio }),
+    rerunContext,
   ]);
 }
 

@@ -245,4 +245,21 @@ describe('electron ipc contract', () => {
     expect(preload).toContain('task:regenerate-narration');
     expect(viteEnv).toContain('regenerateTaskNarration: (id: string, sceneId: number) => Promise<AppState>');
   });
+
+  it('reruns an artifact pipeline step through cache invalidation and background resume', async () => {
+    const main = await readFile(new URL('../electron/main.ts', import.meta.url), 'utf8');
+    const preload = await readFile(new URL('../electron/preload.ts', import.meta.url), 'utf8');
+    const viteEnv = await readFile(new URL('../src/vite-env.d.ts', import.meta.url), 'utf8');
+    const rerunHandler = main.slice(main.indexOf("ipcMain.handle('task:rerun-step'"), main.indexOf("ipcMain.handle('task:get-artifacts'"));
+
+    expect(main).toContain('markTaskStepForRerun');
+    expect(rerunHandler).toContain('retryFromStep: step');
+    expect(rerunHandler).toContain('failedStep: step');
+    expect(rerunHandler).toContain('resumeTaskRun(database, updatedTask)');
+    expect(rerunHandler).not.toContain('runTask(');
+    expect(preload).toContain('rerunTaskStep');
+    expect(preload).toContain('task:rerun-step');
+    expect(viteEnv).toContain('TaskStepRerunMode');
+    expect(viteEnv).toContain('rerunTaskStep: (id: string, step: number, mode: TaskStepRerunMode) => Promise<AppState>');
+  });
 });

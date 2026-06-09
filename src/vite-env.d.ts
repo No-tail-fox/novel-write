@@ -22,6 +22,7 @@ import type {
   ResearchCopyComposeInput,
   ResearchCopyComposeResult,
   TaskArtifactSnapshot,
+  TaskStepRerunMode,
   TaskStatus,
   UiPreferences,
   ViralAnalysisResult,
@@ -64,6 +65,7 @@ declare global {
       retryTask: (id: string) => Promise<AppState>;
       regenerateTaskImage: (id: string, sceneId: number) => Promise<AppState>;
       regenerateTaskNarration: (id: string, sceneId: number) => Promise<AppState>;
+      rerunTaskStep: (id: string, step: number, mode: TaskStepRerunMode) => Promise<AppState>;
       getTaskArtifacts: (id: string) => Promise<TaskArtifactSnapshot>;
       readAssetDataUrl: (path: string) => Promise<string>;
       selectLocalImage: () => Promise<string | null>;

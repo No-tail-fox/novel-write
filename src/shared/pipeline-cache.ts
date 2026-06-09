@@ -1,5 +1,5 @@
 import { readFile, writeFile } from 'node:fs/promises';
-import type { PipelineArtifact, TaskArtifactAssetPreview, TaskArtifactSnapshot, TaskArtifactStepPreview } from './types';
+import type { PipelineArtifact, TaskArtifactAssetPreview, TaskArtifactSnapshot, TaskArtifactStepPreview, TaskStepRerunMode } from './types';
 
 interface PipelineStateFile {
   version?: number;
@@ -12,6 +12,14 @@ interface PipelineStateFile {
     narration?: TaskArtifactAssetPreview[];
   };
   draft?: TaskArtifactSnapshot['draft'];
+  rerun?: TaskStepRerunMarker;
+}
+
+interface TaskStepRerunMarker {
+  step: number;
+  mode: TaskStepRerunMode;
+  requestedAt: string;
+  context?: Partial<PipelineArtifact>;
 }
 
 export interface RegenerateSceneImageResult {
@@ -22,6 +30,43 @@ export interface RegenerateSceneImageResult {
 export interface RegenerateSceneNarrationResult {
   removed: boolean;
   remainingNarration: TaskArtifactAssetPreview[];
+}
+
+export interface TaskStepRerunResult {
+  step: number;
+  mode: TaskStepRerunMode;
+  clearedSteps: number[];
+}
+
+const pipelineStepMin = 0;
+const pipelineStepMax = 6;
+
+export async function markTaskStepForRerun(statePath: string, step: number, mode: TaskStepRerunMode): Promise<TaskStepRerunResult> {
+  const rerunStep = normalizeRerunStep(step);
+  if (mode !== 'regenerate' && mode !== 'rewrite') {
+    throw new Error(`Unsupported task step rerun mode: ${String(mode)}`);
+  }
+
+  const state = JSON.parse(await readFile(statePath, 'utf8')) as PipelineStateFile;
+  state.steps ??= {};
+  state.artifact ??= {};
+  state.assets ??= {};
+
+  const context = mode === 'rewrite' ? cloneRerunContext(state.artifact, rerunStep) : undefined;
+  state.rerun = {
+    step: rerunStep,
+    mode,
+    requestedAt: new Date().toISOString(),
+    ...(context && Object.keys(context).length > 0 ? { context } : {}),
+  };
+
+  clearArtifactFromStep(state.artifact, rerunStep);
+  clearAssetsFromStep(state, rerunStep);
+  const clearedSteps = markStepsPendingFrom(state, rerunStep);
+  state.updatedAt = new Date().toISOString();
+
+  await writeFile(statePath, JSON.stringify(state, null, 2), 'utf8');
+  return { step: rerunStep, mode, clearedSteps };
 }
 
 export async function markSceneImageForRegeneration(statePath: string, sceneId: number): Promise<RegenerateSceneImageResult> {
@@ -66,6 +111,70 @@ export async function markSceneNarrationForRegeneration(statePath: string, scene
 
   await writeFile(statePath, JSON.stringify(state, null, 2), 'utf8');
   return { removed, remainingNarration };
+}
+
+function normalizeRerunStep(step: number): number {
+  const normalized = Number(step);
+  if (!Number.isInteger(normalized) || normalized < pipelineStepMin || normalized > pipelineStepMax) {
+    throw new Error(`Task step must be an integer from ${pipelineStepMin} to ${pipelineStepMax}.`);
+  }
+  return normalized;
+}
+
+function cloneRerunContext(artifact: Partial<PipelineArtifact>, step: number): Partial<PipelineArtifact> {
+  const context: Partial<PipelineArtifact> = {};
+  if (artifact.sourceContext) context.sourceContext = artifact.sourceContext;
+  if (artifact.reviewedText) context.reviewedText = artifact.reviewedText;
+  if (step >= 1) {
+    if (artifact.rewrittenCopy) context.rewrittenCopy = artifact.rewrittenCopy;
+    if (artifact.cover) context.cover = artifact.cover;
+  }
+  if (step >= 2 && artifact.scenes) context.scenes = artifact.scenes;
+  if (step >= 3) {
+    if (artifact.imagePrompts) context.imagePrompts = artifact.imagePrompts;
+    if (artifact.subtitles) context.subtitles = artifact.subtitles;
+  }
+  return JSON.parse(JSON.stringify(context)) as Partial<PipelineArtifact>;
+}
+
+function clearArtifactFromStep(artifact: Partial<PipelineArtifact>, step: number): void {
+  if (step <= 0) {
+    delete artifact.reviewedText;
+  }
+  if (step <= 1) {
+    delete artifact.rewrittenCopy;
+    delete artifact.cover;
+  }
+  if (step <= 2) {
+    delete artifact.scenes;
+    delete artifact.subtitles;
+  }
+  if (step <= 3) {
+    delete artifact.imagePrompts;
+  }
+}
+
+function clearAssetsFromStep(state: PipelineStateFile, step: number): void {
+  state.assets ??= {};
+  if (step <= 4) {
+    state.assets.images = [];
+  }
+  if (step <= 5) {
+    state.assets.narration = [];
+  }
+  if (step <= 6) {
+    delete state.draft;
+  }
+}
+
+function markStepsPendingFrom(state: PipelineStateFile, step: number): number[] {
+  state.steps ??= {};
+  const clearedSteps: number[] = [];
+  for (let currentStep = step; currentStep <= pipelineStepMax; currentStep += 1) {
+    state.steps[String(currentStep)] = pendingStep(state.steps[String(currentStep)]);
+    clearedSteps.push(currentStep);
+  }
+  return clearedSteps;
 }
 
 function pendingStep(input: Partial<TaskArtifactStepPreview> | undefined, outputPath?: string): TaskArtifactStepPreview {

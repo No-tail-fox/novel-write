@@ -87,6 +87,15 @@ export function buildStoryTemplateTrackOptions(templates: PromptTemplate[]): Tem
   return options.length ? options : [[fallbackTaskTrack, '通用故事', '通用写实风格']];
 }
 
+export function buildStoryTemplateOptions(templates: PromptTemplate[]): TemplateOption[] {
+  const options = sortTaskTemplatesForSelection(templates).map((template): TemplateOption => [
+    template.id,
+    template.name,
+    compactOptionHint(template.description || template.marketTags?.join(' / ') || template.baseTrack || fallbackTaskTrack),
+  ]);
+  return options.length ? options : [[fallbackTaskTrack, '通用故事', '通用写实风格']];
+}
+
 export function buildTaskPromptTemplateOptions(templates: PromptTemplate[], track?: string): TemplateOption[] {
   const targetTrack = (track || '').trim();
   return sortTaskTemplatesForSelection(templates)
@@ -103,7 +112,7 @@ function sortTaskTemplatesForSelection(templates: PromptTemplate[]): PromptTempl
     .filter((template) => template.type === 'task')
     .map((template, index) => ({ template, index }))
     .sort((left, right) => {
-      const priorityDelta = taskTemplatePriority(right.template) - taskTemplatePriority(left.template);
+      const priorityDelta = promptTemplatePriority(right.template) - promptTemplatePriority(left.template);
       if (priorityDelta !== 0) return priorityDelta;
       const timeDelta = Date.parse(right.template.updatedAt || '') - Date.parse(left.template.updatedAt || '');
       if (Number.isFinite(timeDelta) && timeDelta !== 0) return timeDelta;
@@ -112,7 +121,7 @@ function sortTaskTemplatesForSelection(templates: PromptTemplate[]): PromptTempl
     .map(({ template }) => template);
 }
 
-function taskTemplatePriority(template: PromptTemplate): number {
+function promptTemplatePriority(template: PromptTemplate): number {
   if (!template.isBuiltin) return 3;
   if (template.origin === 'market') return 2;
   return 1;
@@ -174,7 +183,16 @@ export function selectStepPromptTemplate(templates: PromptTemplate[], type: Prom
       };
     }
   }
-  return templates.find((template) => template.type === type && template.isBuiltin) ?? templates.find((template) => template.type === type) ?? null;
+  return templates
+    .map((template, index) => ({ template, index }))
+    .filter(({ template }) => template.type === type)
+    .sort((left, right) => {
+      const priorityDelta = promptTemplatePriority(right.template) - promptTemplatePriority(left.template);
+      if (priorityDelta !== 0) return priorityDelta;
+      const timeDelta = Date.parse(right.template.updatedAt || '') - Date.parse(left.template.updatedAt || '');
+      if (Number.isFinite(timeDelta) && timeDelta !== 0) return timeDelta;
+      return left.index - right.index;
+    })[0]?.template ?? null;
 }
 
 export function renderPromptTemplate(template: Pick<PromptTemplate, 'content'>, context: PromptRenderContext): string {

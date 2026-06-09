@@ -81,13 +81,29 @@ describe('product shell ui', () => {
     const main = await readFile(new URL('../src/main.tsx', import.meta.url), 'utf8');
     const css = await readFile(new URL('../src/styles.css', import.meta.url), 'utf8');
     const page = main.slice(main.indexOf('function ViralAnalyzerPage'), main.indexOf('const viralStages'));
+    const platformSnippet = page.slice(page.indexOf('className="segmented viral-platform-picker"'), page.indexOf('<p className="viral-source-status">'));
 
     expect(page).toContain('sourceMode');
     expect(page).toContain('selectedPlatformForAnalysis');
     expect(main).toContain('viral-choice-grid');
-    expect(page).not.toContain('<select');
+    expect(platformSnippet).not.toContain('<select');
     expect(css).toContain('.viral-source-status');
     expect(css).toContain('.viral-choice-button.active');
+  });
+
+  it('uses a compact dropdown for viral analyzer draft templates', async () => {
+    const main = await readFile(new URL('../src/main.tsx', import.meta.url), 'utf8');
+    const css = await readFile(new URL('../src/styles.css', import.meta.url), 'utf8');
+    const page = main.slice(main.indexOf('function ViralAnalyzerPage'), main.indexOf('const viralStages'));
+
+    expect(page).toContain('<Field label="草稿模板">');
+    expect(page).toContain('className="viral-draft-template-select"');
+    expect(page).toContain('value={templateId}');
+    expect(page).toContain('onChange={(event) => setTemplateId(event.target.value)}');
+    expect(page).toContain('state.draftTemplates.map((template) => (');
+    expect(page).toContain('<option key={template.id} value={template.id}>');
+    expect(page).not.toContain('ViralChoiceGroup title="草稿模板"');
+    expect(css).toContain('.viral-draft-template-select');
   });
 
   it('uses the dark renderer chrome as the only title bar and removes the trial strip', async () => {
@@ -136,17 +152,30 @@ describe('product shell ui', () => {
   it('imports copied Coze workflow source as a draft template preset', async () => {
     const main = await readFile(new URL('../src/main.tsx', import.meta.url), 'utf8');
     const css = await readFile(new URL('../src/styles.css', import.meta.url), 'utf8');
+    const toolbarSnippet = main.slice(main.indexOf('className="panel-title-row draft-template-toolbar"'), main.indexOf('<section className="draft-template-gallery">'));
 
     expect(main).toContain('convertCozeWorkflowToDraftTemplate');
     expect(main).toContain('convertManyCozeWorkflowsToDraftTemplates');
+    expect(main).toContain('cozeImportOpen');
+    expect(main).toContain('setCozeImportOpen(true)');
+    expect(main).toContain('setCozeImportOpen(false)');
     expect(main).toContain('cozeWorkflowSource');
     expect(main).toContain('cozeImportResult');
     expect(main).toContain('cozeImportResults');
     expect(main).toContain('previewCozeWorkflowTemplate');
     expect(main).toContain('saveCozeWorkflowTemplate');
     expect(main).toContain('saveAllCozeWorkflowTemplates');
+    expect(toolbarSnippet).toContain('导入 Coze 模板');
+    expect(toolbarSnippet).toContain('role="dialog"');
+    expect(toolbarSnippet).toContain('aria-modal="true"');
+    expect(toolbarSnippet).toContain('coze-template-import-backdrop');
+    expect(toolbarSnippet).toContain('coze-template-import-dialog');
+    expect(toolbarSnippet).toContain('onClick={() => setCozeImportOpen(false)}');
     expect(main).toContain('coze-workflow-source');
     expect(main).toContain('api.saveDraftTemplate(template)');
+    expect(main).not.toContain('<section className="panel coze-template-import-panel">');
+    expect(css).toContain('.coze-template-import-backdrop');
+    expect(css).toContain('.coze-template-import-dialog');
     expect(css).toContain('.coze-template-import-panel');
     expect(css).toContain('.coze-diagnostics-list');
   });
@@ -470,7 +499,7 @@ describe('product shell ui', () => {
     expect(main).toContain("promptTemplateType: 'task'");
   });
 
-  it('manages prompt templates with filters, metadata, variables, and clone-on-first-edit', async () => {
+  it('manages prompt templates with filters, metadata, variables, and save-as-new-template behavior', async () => {
     const main = await readFile(new URL('../src/main.tsx', import.meta.url), 'utf8');
     const css = await readFile(new URL('../src/styles.css', import.meta.url), 'utf8');
 
@@ -484,12 +513,11 @@ describe('product shell ui', () => {
       'prompt-template-detail',
       'openPromptTemplateDetail',
       'savePromptTemplateDraft',
-      'baseTemplateId',
       'promptTemplateVariables',
     ]) {
       expect(main).toContain(symbol);
     }
-    for (const text of ['新建模板', '导出 JSON', '类型筛选', '赛道筛选', '变量', '首次保存将创建自定义副本', '返回模板库', '查看']) {
+    for (const text of ['新建模板', '导出 JSON', '类型筛选', '赛道筛选', '变量', '每次保存都会新增一个独立模板页', '返回模板库', '查看']) {
       expect(main).toContain(text);
     }
     expect(css).toContain('.template-filter-row');
@@ -506,6 +534,20 @@ describe('product shell ui', () => {
     expect(main).toContain('buildStoryTemplateTrackOptions(state.promptTemplates)');
     expect(filterSnippet).toContain('promptTemplateTrackOptions.map(([id, label])');
     expect(filterSnippet).not.toContain('contentTracks.map');
+  });
+
+  it('saves every prompt template edit as an independent new template page', async () => {
+    const main = await readFile(new URL('../src/main.tsx', import.meta.url), 'utf8');
+    const saveSnippet = main.slice(main.indexOf('async function savePromptTemplateDraft()'), main.indexOf('async function duplicateTemplate'));
+    const duplicateSnippet = main.slice(main.indexOf('async function duplicateTemplate'), main.indexOf('async function duplicate()'));
+
+    expect(saveSnippet).toContain('id: crypto.randomUUID()');
+    expect(saveSnippet).toContain('isBuiltin: false');
+    expect(saveSnippet).toContain("origin: 'custom'");
+    expect(saveSnippet).not.toContain('draft.isBuiltin');
+    expect(saveSnippet).not.toContain('baseTemplateId');
+    expect(duplicateSnippet).not.toContain('baseTemplateId');
+    expect(main).not.toContain('<Field label="baseTemplateId">');
   });
 
   it('uses saved template tracks when binding prompt templates to content tracks', async () => {
@@ -700,10 +742,12 @@ describe('product shell ui', () => {
     expect(main).toContain('state.customStyles.some((style) => style.id === imported.id)');
   });
 
-  it('syncs all story template defaults when changing content tracks in new task', async () => {
+  it('syncs all story template defaults when changing story templates in new task', async () => {
     const main = await readFile(new URL('../src/main.tsx', import.meta.url), 'utf8');
 
-    expect(main).toContain('syncTaskDefaultsFromTrack');
+    expect(main).toContain('handleStoryTemplateChange');
+    expect(main).toContain('setTrack(nextTrack)');
+    expect(main).toContain('setPromptTemplateOverrideId(nextTemplateId)');
     expect(main).toContain('promptTemplateManuallyOverridden');
     expect(main).toContain('styleManuallyOverridden');
     expect(main).toContain('draftTemplateManuallyOverridden');
@@ -721,6 +765,25 @@ describe('product shell ui', () => {
     expect(main).toContain('defaultDraftTemplateId');
     expect(main).not.toContain('toggleArray(resolvePromptTemplateDefaultStyleIds(draft), style.id)');
     expect(main).not.toContain('OptionCloud title="草稿模板" options={state.draftTemplates.map((template) => [template.id, template.name, `出图 ${template.image.ratio}`])} value={templateId} onChange={setTemplateId}');
+  });
+
+  it('moves bundled Coze draft templates into a separate fallback selector in new task', async () => {
+    const main = await readFile(new URL('../src/main.tsx', import.meta.url), 'utf8');
+    const css = await readFile(new URL('../src/styles.css', import.meta.url), 'utf8');
+
+    expect(main).toContain('bundledDraftTemplateOptionIds');
+    expect(main).toContain('isBundledDraftTemplateOption');
+    expect(main).toContain('primaryDraftTemplates');
+    expect(main).toContain('alternateDraftTemplates');
+    expect(main).toContain('defaultTaskDraftTemplateId');
+    expect(main).toContain('draft-template-picker-stack');
+    expect(main).toContain('draft-template-alternate-select');
+    expect(main).toContain('<option value="">选择备选模板</option>');
+    expect(main).toContain('options={primaryDraftTemplates.map((template) => [template.id, template.name, `出图 ${template.image.ratio}`])}');
+    expect(main).not.toContain('options={state.draftTemplates.map((template) => [template.id, template.name, `出图 ${template.image.ratio}`])}');
+    expect(main).not.toContain("const initialDraftTemplateId = state.draftTemplates[0]?.id ?? 'default-portrait-9-16'");
+    expect(css).toContain('.draft-template-picker-stack');
+    expect(css).toContain('.draft-template-alternate-select');
   });
 
   it('supports opening a selected task in a screenshot-style pipeline detail view', async () => {
@@ -759,6 +822,21 @@ describe('product shell ui', () => {
     expect(css).toContain('.artifact-scene-list');
   });
 
+  it('shows per-step rerun controls in artifact preview sections', async () => {
+    const main = await readFile(new URL('../src/main.tsx', import.meta.url), 'utf8');
+    const css = await readFile(new URL('../src/styles.css', import.meta.url), 'utf8');
+    const preload = await readFile(new URL('../electron/preload.ts', import.meta.url), 'utf8');
+
+    expect(preload).toContain('rerunTaskStep');
+    expect(main).toContain('rerunTaskStep');
+    expect(main).toContain('ArtifactStepActions');
+    expect(main).toContain('重新生成');
+    expect(main).toContain('改写后继续');
+    expect(main).toContain('actions={artifactStepActions(1)}');
+    expect(main).toContain('actions={artifactStepActions(6)}');
+    expect(css).toContain('.artifact-section-actions');
+  });
+
   it('refreshes task artifact snapshots while image generation is still running', async () => {
     const main = await readFile(new URL('../src/main.tsx', import.meta.url), 'utf8');
 
@@ -771,24 +849,24 @@ describe('product shell ui', () => {
     expect(main).toContain('图片进度');
   });
 
-  it('prioritizes every generated image in the storyboard gallery tab', async () => {
+  it('keeps the storyboard gallery tab focused on batch images and scene sentences', async () => {
     const main = await readFile(new URL('../src/main.tsx', import.meta.url), 'utf8');
-    const css = await readFile(new URL('../src/styles.css', import.meta.url), 'utf8');
 
-    expect(main).toContain('ArtifactImageGallery');
-    expect(main).toContain('storyboard-gallery-hero');
-    expect(main).toContain('ArtifactSection title="全部图片"');
-    expect(main).toContain('galleryItems');
-    expect(main).toContain("artifact-image-card pending");
-    expect(main).toContain('等待生成');
-    const galleryIndex = main.indexOf('storyboard-gallery-hero');
-    const allImagesIndex = main.indexOf('ArtifactSection title="全部图片"', galleryIndex);
-    const scenesIndex = main.indexOf('ArtifactSection title="分镜分句"', allImagesIndex);
-    expect(allImagesIndex).toBeGreaterThan(galleryIndex);
-    expect(scenesIndex).toBeGreaterThan(allImagesIndex);
-    expect(css).toContain('.artifact-image-gallery');
-    expect(css).toContain('.artifact-image-card');
-    expect(css).toContain('.storyboard-gallery-hero');
+    const storyboardStart = main.indexOf("{tab === 'storyboard' ? (");
+    const audioStart = main.indexOf("{tab === 'audio' ? (", storyboardStart);
+    const storyboardBranch = main.slice(storyboardStart, audioStart);
+    const batchImagesIndex = storyboardBranch.indexOf('ArtifactSection title="批量生图"');
+    const scenesIndex = storyboardBranch.indexOf('ArtifactSection title="分镜分句"', batchImagesIndex);
+
+    expect(storyboardStart).toBeGreaterThan(-1);
+    expect(audioStart).toBeGreaterThan(storyboardStart);
+    expect(batchImagesIndex).toBeGreaterThan(-1);
+    expect(scenesIndex).toBeGreaterThan(batchImagesIndex);
+    expect(storyboardBranch).toContain('ImageGenerationGallery');
+    expect(storyboardBranch).toContain('ArtifactSceneList');
+    expect(storyboardBranch).not.toContain('storyboard-gallery-hero');
+    expect(storyboardBranch).not.toContain('ArtifactSection title="全部图片"');
+    expect(storyboardBranch).not.toContain('ArtifactSection title="绘图提示词"');
   });
 
   it('does not keep the duplicate legacy artifact preview card in task detail', async () => {
@@ -1007,12 +1085,15 @@ describe('product shell ui', () => {
     const main = await readFile(new URL('../src/main.tsx', import.meta.url), 'utf8');
 
     expect(main).toContain('buildStoryTemplateTrackOptions');
+    expect(main).toContain('buildStoryTemplateOptions');
     expect(main).toContain('buildTaskPromptTemplateOptions');
     expect(main).toContain('buildImageTemplateStyleOptions');
-    expect(main).toContain('storyTemplateTrackOptions');
+    expect(main).toContain('storyTemplateOptions');
     expect(main).toContain('taskPromptTemplateOptions');
     expect(main).toContain('imageTemplateStyleOptions');
-    expect(main).toContain('options={storyTemplateTrackOptions}');
+    expect(main).toContain('options={storyTemplateOptions}');
+    expect(main).toContain('value={selectedStoryTemplateId}');
+    expect(main).toContain('handleStoryTemplateChange');
     expect(main).toContain('options={imageTemplateStyleOptions}');
     expect(main).toContain('buildTaskPromptTemplateOptions(state.promptTemplates, track)');
     expect(main).toContain('taskPromptTemplateOptions.map(([id, label, hint])');

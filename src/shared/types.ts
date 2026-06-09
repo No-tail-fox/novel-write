@@ -713,6 +713,7 @@ export interface PipelineArtifact {
 }
 
 export type TaskArtifactStepStatus = 'pending' | 'running' | 'completed' | 'failed';
+export type TaskStepRerunMode = 'regenerate' | 'rewrite';
 
 export interface TaskArtifactStepPreview {
   status: TaskArtifactStepStatus;

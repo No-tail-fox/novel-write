@@ -4,7 +4,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { FileDatabase } from '@shared/storage';
 import { runTask } from '@shared/runner';
-import { markSceneImageForRegeneration, markSceneNarrationForRegeneration } from '@shared/pipeline-cache';
+import { markSceneImageForRegeneration, markSceneNarrationForRegeneration, markTaskStepForRerun } from '@shared/pipeline-cache';
 import type { ImagePrompt, PipelineArtifact, StoryboardScene } from '@shared/types';
 import type { PyJianYingBridgeInput } from '@shared/jianying-bridge';
 
@@ -326,6 +326,103 @@ describe('pipeline cache and retry', () => {
       await rm(dir, { recursive: true, force: true });
     }
   });
+
+  it('marks a content step for rewrite-assisted rerun and clears downstream artifacts', async () => {
+    const dir = await mkdtemp(join(tmpdir(), 'storybound-rerun-step-rewrite-'));
+    const statePath = join(dir, 'pipeline', 'state.json');
+
+    try {
+      await mkdir(join(dir, 'pipeline'), { recursive: true });
+      await writeFile(statePath, JSON.stringify(createCompletedPipelineState('task-rerun-rewrite'), null, 2), 'utf8');
+
+      const result = await markTaskStepForRerun(statePath, 1, 'rewrite');
+      const next = JSON.parse(await readFile(statePath, 'utf8'));
+
+      expect(result.step).toBe(1);
+      expect(result.mode).toBe('rewrite');
+      expect(next.artifact.sourceContext.query).toBe('source query');
+      expect(next.artifact.reviewedText).toBe('reviewed');
+      expect(next.artifact.rewrittenCopy).toBeUndefined();
+      expect(next.artifact.cover).toBeUndefined();
+      expect(next.artifact.scenes).toBeUndefined();
+      expect(next.artifact.imagePrompts).toBeUndefined();
+      expect(next.artifact.subtitles).toBeUndefined();
+      expect(next.assets.images).toEqual([]);
+      expect(next.assets.narration).toEqual([]);
+      expect(next.rerun.step).toBe(1);
+      expect(next.rerun.mode).toBe('rewrite');
+      expect(next.rerun.context.rewrittenCopy).toBe('old rewritten copy');
+      expect(next.steps['0'].status).toBe('completed');
+      for (const step of ['1', '2', '3', '4', '5', '6']) {
+        expect(next.steps[step].status).toBe('pending');
+        expect(next.steps[step].error).toBeUndefined();
+        expect(next.steps[step].completedAt).toBeUndefined();
+      }
+      expect(next.draft).toBeUndefined();
+    } finally {
+      await rm(dir, { recursive: true, force: true });
+    }
+  });
+
+  it('marks the draft step for regeneration without clearing content or media assets', async () => {
+    const dir = await mkdtemp(join(tmpdir(), 'storybound-rerun-step-draft-'));
+    const statePath = join(dir, 'pipeline', 'state.json');
+
+    try {
+      await mkdir(join(dir, 'pipeline'), { recursive: true });
+      await writeFile(statePath, JSON.stringify(createCompletedPipelineState('task-rerun-draft'), null, 2), 'utf8');
+
+      const result = await markTaskStepForRerun(statePath, 6, 'regenerate');
+      const next = JSON.parse(await readFile(statePath, 'utf8'));
+
+      expect(result.step).toBe(6);
+      expect(result.mode).toBe('regenerate');
+      expect(next.artifact.rewrittenCopy).toBe('old rewritten copy');
+      expect(next.artifact.scenes).toHaveLength(2);
+      expect(next.artifact.imagePrompts).toHaveLength(2);
+      expect(next.assets.images).toEqual([
+        { sceneId: 1, path: '1.png' },
+        { sceneId: 2, path: '2.png' },
+      ]);
+      expect(next.assets.narration).toEqual([
+        { sceneId: 1, path: '1.mp3' },
+        { sceneId: 2, path: '2.mp3' },
+      ]);
+      expect(next.rerun.step).toBe(6);
+      expect(next.rerun.mode).toBe('regenerate');
+      expect(next.rerun.context).toBeUndefined();
+      expect(next.steps['5'].status).toBe('completed');
+      expect(next.steps['6'].status).toBe('pending');
+      expect(next.draft).toBeUndefined();
+    } finally {
+      await rm(dir, { recursive: true, force: true });
+    }
+  });
+
+  it('marks the image step for regeneration and clears downstream narration and draft assets', async () => {
+    const dir = await mkdtemp(join(tmpdir(), 'storybound-rerun-step-images-'));
+    const statePath = join(dir, 'pipeline', 'state.json');
+
+    try {
+      await mkdir(join(dir, 'pipeline'), { recursive: true });
+      await writeFile(statePath, JSON.stringify(createCompletedPipelineState('task-rerun-images'), null, 2), 'utf8');
+
+      await markTaskStepForRerun(statePath, 4, 'regenerate');
+      const next = JSON.parse(await readFile(statePath, 'utf8'));
+
+      expect(next.artifact.reviewedText).toBe('reviewed');
+      expect(next.artifact.imagePrompts).toHaveLength(2);
+      expect(next.assets.images).toEqual([]);
+      expect(next.assets.narration).toEqual([]);
+      expect(next.steps['3'].status).toBe('completed');
+      expect(next.steps['4'].status).toBe('pending');
+      expect(next.steps['5'].status).toBe('pending');
+      expect(next.steps['6'].status).toBe('pending');
+      expect(next.draft).toBeUndefined();
+    } finally {
+      await rm(dir, { recursive: true, force: true });
+    }
+  });
 });
 
 function createArtifact(title: string, scenes: StoryboardScene[]): PipelineArtifact {
@@ -346,6 +443,54 @@ function createArtifact(title: string, scenes: StoryboardScene[]): PipelineArtif
       }),
     ),
     subtitles: { cues: [], srt: '' },
+  };
+}
+
+function createCompletedPipelineState(taskId: string) {
+  return {
+    version: 1,
+    taskId,
+    updatedAt: '2026-06-09T00:00:00.000Z',
+    steps: Object.fromEntries(
+      Array.from({ length: 7 }, (_, step) => [
+        String(step),
+        { status: 'completed', outputPath: `step-${step}.json`, completedAt: '2026-06-09T00:00:01.000Z', error: 'old error' },
+      ]),
+    ),
+    artifact: {
+      sourceContext: {
+        query: 'source query',
+        warnings: [],
+        sections: [{ source: 'web', title: 'Source', url: 'https://example.test', content: 'source body' }],
+      },
+      reviewedText: 'reviewed',
+      rewrittenCopy: 'old rewritten copy',
+      cover: { title: 'Old title', subtitle: ['Sub'], summary: 'Summary', tags: ['tag'], comments: ['comment'] },
+      scenes: [
+        { id: 1, cap: 'one', descPrompt: 'one prompt', durationMs: 1000 },
+        { id: 2, cap: 'two', descPrompt: 'two prompt', durationMs: 1000 },
+      ],
+      imagePrompts: [
+        { sceneId: 1, cap: 'one', prompt: 'image one', negativePrompt: '', style: 'photo-real', ratio: '9:16', characterProfile: '' },
+        { sceneId: 2, cap: 'two', prompt: 'image two', negativePrompt: '', style: 'photo-real', ratio: '9:16', characterProfile: '' },
+      ],
+      subtitles: { cues: [{ index: 1, startMs: 0, endMs: 1000, text: 'one' }], srt: '1\n00:00:00,000 --> 00:00:01,000\none\n' },
+    },
+    assets: {
+      images: [
+        { sceneId: 1, path: '1.png' },
+        { sceneId: 2, path: '2.png' },
+      ],
+      narration: [
+        { sceneId: 1, path: '1.mp3' },
+        { sceneId: 2, path: '2.mp3' },
+      ],
+    },
+    draft: {
+      draftDir: 'draft-dir',
+      draftContentPath: 'draft_content.json',
+      draftMetaPath: 'draft_meta_info.json',
+    },
   };
 }
 

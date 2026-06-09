@@ -64,6 +64,7 @@ import type {
   TaskEvent,
   TaskMode,
   TaskStatus,
+  TaskStepRerunMode,
   TtsProviderProfile,
   UiPreferences,
   VolcengineSpeaker,
@@ -119,6 +120,7 @@ import { draftTemplates as builtinDraftTemplates, imageAnimations, normalizeDraf
 import { convertCozeWorkflowToDraftTemplate, convertManyCozeWorkflowsToDraftTemplates, type CozeWorkflowTemplateConversionResult } from './shared/coze-workflow-converter';
 import {
   buildImageTemplateStyleOptions,
+  buildStoryTemplateOptions,
   buildTaskPromptTemplateOptions,
   buildStoryTemplateTrackOptions,
   resolvePromptTemplateDefaultDraftTemplateId,
@@ -128,6 +130,7 @@ import {
   selectTaskPromptTemplate,
 } from './shared/prompt-templates';
 import { defaultTaskSpeakerForProvider, normalizeRuntimeTtsProvider, taskSpeakerLabel, ttsVoiceOptionsForProvider, type RuntimeTtsProvider } from './shared/tts-voices';
+import feishuCozeDraftTemplateBundle from '../data/coze-workflows/feishu-draft-templates.json';
 import './styles.css';
 
 const sampleText =
@@ -253,6 +256,11 @@ const promptTemplateReferenceOptions: Array<[NonNullable<PromptTemplate['referen
   ['face', '人脸'],
   ['product', '产品'],
 ];
+const bundledDraftTemplateOptionIds = new Set<string>(
+  ((feishuCozeDraftTemplateBundle as { templates?: Array<{ id?: string }> }).templates ?? [])
+    .map((template) => template.id)
+    .filter((id): id is string => Boolean(id)),
+);
 const fallbackEffectCatalog: JianyingEffectCatalog = {
   status: 'warn',
   detail: 'Fallback Jianying effect catalog.',
@@ -578,6 +586,9 @@ function makeFallbackApi(setState: (state: AppState) => void): StoryboundApi {
     },
     async regenerateTaskNarration() {
       throw new Error('浏览器预览不能重新生成真实配音，请在 Electron 应用中操作。');
+    },
+    async rerunTaskStep() {
+      throw new Error('浏览器预览不能重新执行真实流水线步骤，请在 Electron 应用中操作。');
     },
     async getTaskArtifacts(id: string) {
       const task = read().tasks.find((item) => item.id === id);
@@ -926,7 +937,15 @@ function ViralAnalyzerPage({
           <ViralChoiceGroup title="赛道" options={contentTracks} value={track} onChange={setTrack} />
           <ViralChoiceGroup title="风格" options={styleOptions} value={style} onChange={setStyle} />
           <ViralChoiceGroup title="比例" options={ratioOptions.map((item) => [item, item, ''])} value={ratio} onChange={setRatio} compact />
-          <ViralChoiceGroup title="草稿模板" options={state.draftTemplates.map((template) => [template.id, template.name, template.canvas.ratio])} value={templateId} onChange={setTemplateId} compact />
+          <Field label="草稿模板">
+            <select className="viral-draft-template-select" value={templateId} onChange={(event) => setTemplateId(event.target.value)}>
+              {state.draftTemplates.map((template) => (
+                <option key={template.id} value={template.id}>
+                  {template.name} · {template.canvas.ratio}
+                </option>
+              ))}
+            </select>
+          </Field>
         </div>
         <details className="viral-cookie-fallback">
           <summary>可选 Cookie 兜底文件</summary>
@@ -1087,7 +1106,7 @@ function NewTaskPage({
   openTaskDetail: (taskId: string) => void;
   isBrowserPreview: boolean;
 }) {
-  const initialDraftTemplateId = state.draftTemplates[0]?.id ?? 'default-portrait-9-16';
+  const initialDraftTemplateId = defaultTaskDraftTemplateId(state.draftTemplates);
   const [mode, setMode] = useState<TaskMode>('paste');
   const [title, setTitle] = useState('');
   const [inputText, setInputText] = useState(sampleText);
@@ -1127,12 +1146,15 @@ function NewTaskPage({
   const searchSections = (searchContext?.sections ?? []).slice(0, 10);
   const selectedSources = searchSections.filter((source, index) => selectedSearchSourceIds.includes(sourceKey(source, index)));
   const taskPromptTemplates = state.promptTemplates.filter((template) => template.type === 'task');
-  const storyTemplateTrackOptions = buildStoryTemplateTrackOptions(taskPromptTemplates);
+  const storyTemplateOptions = buildStoryTemplateOptions(taskPromptTemplates);
   const taskPromptTemplateOptions = buildTaskPromptTemplateOptions(state.promptTemplates, track);
   const imageTemplateStyleOptions = buildImageTemplateStyleOptions(state.customStyles);
   const resolvedPromptTemplate = resolvePromptTemplateForTrack(state.promptTemplates, track, promptTemplateOverrideId || null);
+  const selectedStoryTemplateId = promptTemplateOverrideId || resolvedPromptTemplate?.id || '';
   const availableStyleIds = state.customStyles.map((customStyle) => customStyle.id);
   const availableDraftTemplateIds = state.draftTemplates.map((draftTemplate) => draftTemplate.id);
+  const primaryDraftTemplates = state.draftTemplates.filter((draftTemplate) => !isBundledDraftTemplateOption(draftTemplate));
+  const alternateDraftTemplates = state.draftTemplates.filter(isBundledDraftTemplateOption);
   const bgmOptions = validBgmItems(state.config);
   const ttsVoiceOptions = ttsVoiceOptionsForProvider(ttsProvider);
 
@@ -1152,29 +1174,24 @@ function NewTaskPage({
     }
   }, [resolvedPromptTemplate?.id, styleManuallyOverridden, state.customStyles]);
 
-  function syncTaskDefaultsFromTrack(nextTrack: string) {
-    const manualTemplate = promptTemplateOverrideId ? state.promptTemplates.find((template) => template.id === promptTemplateOverrideId && template.type === 'task') : null;
-    const keepManualTemplate = promptTemplateManuallyOverridden && (manualTemplate?.baseTrack || '') === nextTrack;
-    const template = keepManualTemplate ? manualTemplate : resolvePromptTemplateForTrack(state.promptTemplates, nextTrack, null);
-    if (!keepManualTemplate) {
-      setPromptTemplateOverrideId('');
-      setPromptTemplateManuallyOverridden(false);
+  function handleStoryTemplateChange(nextTemplateId: string) {
+    setPromptTemplateManuallyOverridden(true);
+    setPromptTemplateOverrideId(nextTemplateId);
+    const template = state.promptTemplates.find((item) => item.id === nextTemplateId && item.type === 'task') ?? null;
+    const nextTrack = template?.baseTrack || track;
+    if (nextTrack !== track) {
+      setTrack(nextTrack);
     }
     if (!styleManuallyOverridden && template) {
       setStyle(resolvePromptTemplateDefaultStyleId(template, availableStyleIds));
     }
     if (!draftTemplateManuallyOverridden && template) {
-      const nextTemplateId = resolvePromptTemplateDefaultDraftTemplateId(template, availableDraftTemplateIds, templateId);
-      setTemplateId(nextTemplateId);
+      const nextDraftTemplateId = resolvePromptTemplateDefaultDraftTemplateId(template, availableDraftTemplateIds, templateId);
+      setTemplateId(nextDraftTemplateId);
       if (!ratioManuallyOverridden) {
-        setRatio(draftTemplateImageRatio(state.draftTemplates, nextTemplateId));
+        setRatio(draftTemplateImageRatio(state.draftTemplates, nextDraftTemplateId));
       }
     }
-  }
-
-  function handleTrackChange(nextTrack: string) {
-    setTrack(nextTrack);
-    syncTaskDefaultsFromTrack(nextTrack);
   }
 
   function handleStyleChange(nextStyle: string) {
@@ -1402,7 +1419,7 @@ function NewTaskPage({
           </div>
         )}
 
-        <OptionCloud title="内容赛道" options={storyTemplateTrackOptions} value={track} onChange={handleTrackChange} />
+        <OptionCloud title="内容赛道" options={storyTemplateOptions} value={selectedStoryTemplateId} onChange={handleStoryTemplateChange} />
         <Field label="提示词模板" hint={resolvedPromptTemplate ? `当前使用：${resolvedPromptTemplate.name}` : '自动匹配赛道模板'}>
           <select className="prompt-template-selector" value={promptTemplateOverrideId || resolvedPromptTemplate?.id || ''} onChange={(event) => handlePromptTemplateOverrideChange(event.target.value)}>
             <option value="">自动匹配赛道模板</option>
@@ -1427,7 +1444,25 @@ function NewTaskPage({
         ) : null}
 
         <div className="option-two-col">
-          <OptionCloud title="草稿模板" options={state.draftTemplates.map((template) => [template.id, template.name, `出图 ${template.image.ratio}`])} value={templateId} onChange={handleDraftTemplateChange} />
+          <div className="draft-template-picker-stack">
+            <OptionCloud title="草稿模板" options={primaryDraftTemplates.map((template) => [template.id, template.name, `出图 ${template.image.ratio}`])} value={templateId} onChange={handleDraftTemplateChange} />
+            {alternateDraftTemplates.length ? (
+              <Field label="模板备选">
+                <select
+                  className="draft-template-alternate-select"
+                  value={alternateDraftTemplates.some((template) => template.id === templateId) ? templateId : ''}
+                  onChange={(event) => handleDraftTemplateChange(event.target.value || primaryDraftTemplates[0]?.id || templateId)}
+                >
+                  <option value="">选择备选模板</option>
+                  {alternateDraftTemplates.map((template) => (
+                    <option key={template.id} value={template.id}>
+                      {template.name} · 出图 {template.image.ratio}
+                    </option>
+                  ))}
+                </select>
+              </Field>
+            ) : null}
+          </div>
           <div>
             <span className="field-title">AI 出图比例 <small>{ratioManuallyOverridden ? '已手动覆盖' : '已跟随草稿模板'}</small></span>
             <div className="ratio-grid">
@@ -1834,6 +1869,28 @@ function ArtifactPreviewContent({
   const imageAssets = snapshot?.assets.images ?? [];
   const narrationAssets = snapshot?.assets.narration ?? [];
   const imageProgress = imageProgressLabel(scenes.length, imageAssets.length, snapshotStepStatus(snapshot, 4));
+  const [rerunningStepAction, setRerunningStepAction] = useState<string | null>(null);
+  const canRerunStep = !isBrowserPreview && task.status !== 'running' && task.status !== 'pending' && Boolean(task.artifactStatePath);
+
+  async function rerunArtifactStep(step: number, mode: TaskStepRerunMode) {
+    const key = `${step}:${mode}`;
+    setRerunningStepAction(key);
+    try {
+      applyState(await api.rerunTaskStep(task.id, step, mode));
+    } finally {
+      setRerunningStepAction(null);
+    }
+  }
+
+  const artifactStepActions = (step: number) => (
+    <ArtifactStepActions
+      step={step}
+      disabled={!canRerunStep}
+      regenerating={rerunningStepAction === `${step}:regenerate`}
+      rewriting={rerunningStepAction === `${step}:rewrite`}
+      onAction={rerunArtifactStep}
+    />
+  );
 
   return (
     <div className="artifact-preview">
@@ -1866,7 +1923,7 @@ function ArtifactPreviewContent({
 
       {tab === 'preview' ? (
         <div className="artifact-section-stack">
-          <ArtifactSection title="AI 搜索资料" badge={`${sourceContext?.sections.length ?? 0} 条`}>
+          <ArtifactSection title="AI 搜索资料" badge={`${sourceContext?.sections.length ?? 0} 条`} actions={artifactStepActions(0)}>
             {sourceContext?.sections.length ? (
               <div className="artifact-source-list">
                 {sourceContext.sections.map((source, index) => (
@@ -1880,15 +1937,15 @@ function ArtifactPreviewContent({
             ) : <ArtifactEmpty text="等待 AI 创作搜索资料" />}
           </ArtifactSection>
 
-          <ArtifactSection title="文案预审" badge={`${countChars(artifact.reviewedText)} 字`}>
+          <ArtifactSection title="文案预审" badge={`${countChars(artifact.reviewedText)} 字`} actions={artifactStepActions(0)}>
             <ArtifactText value={artifact.reviewedText} empty="等待文案预审产物" />
           </ArtifactSection>
 
-          <ArtifactSection title="改写产物" badge={`${countChars(artifact.rewrittenCopy)} 字`}>
+          <ArtifactSection title="改写产物" badge={`${countChars(artifact.rewrittenCopy)} 字`} actions={artifactStepActions(1)}>
             <ArtifactText value={artifact.rewrittenCopy} empty="等待改写产物" />
           </ArtifactSection>
 
-          <ArtifactSection title="封面信息" badge={artifact.cover?.title || '等待生成'}>
+          <ArtifactSection title="封面信息" badge={artifact.cover?.title || '等待生成'} actions={artifactStepActions(1)}>
             {artifact.cover ? (
               <div className="artifact-cover-grid">
                 <div><small>标题</small><strong>{artifact.cover.title}</strong></div>
@@ -1900,15 +1957,15 @@ function ArtifactPreviewContent({
             ) : <ArtifactEmpty text="等待封面标题、摘要、标签和评论" />}
           </ArtifactSection>
 
-          <ArtifactSection title="分镜分句" badge={`${scenes.length} 条`}>
+          <ArtifactSection title="分镜分句" badge={`${scenes.length} 条`} actions={artifactStepActions(2)}>
             <ArtifactSceneList scenes={scenes} imagePrompts={imagePrompts} images={imageAssets} />
           </ArtifactSection>
 
-          <ArtifactSection title="绘图提示词" badge={`${imagePrompts.length} 条`}>
+          <ArtifactSection title="绘图提示词" badge={`${imagePrompts.length} 条`} actions={artifactStepActions(3)}>
             <ArtifactPromptList prompts={imagePrompts} />
           </ArtifactSection>
 
-          <ArtifactSection title="批量生图" badge={`${imageAssets.length} 张`}>
+          <ArtifactSection title="批量生图" badge={`${imageAssets.length} 张`} actions={artifactStepActions(4)}>
             <ImageGenerationGallery
               api={api}
               task={task}
@@ -1921,7 +1978,7 @@ function ArtifactPreviewContent({
             />
           </ArtifactSection>
 
-          <ArtifactSection title="配音字幕" badge={`${narrationAssets.length} 段 / ${subtitles?.cues.length ?? 0} 条字幕`}>
+          <ArtifactSection title="配音字幕" badge={`${narrationAssets.length} 段 / ${subtitles?.cues.length ?? 0} 条字幕`} actions={artifactStepActions(5)}>
             <NarrationPreviewList
               api={api}
               task={task}
@@ -1935,7 +1992,7 @@ function ArtifactPreviewContent({
             {subtitles?.srt ? <pre className="artifact-text-block compact">{trimForPreview(subtitles.srt, 900)}</pre> : null}
           </ArtifactSection>
 
-          <ArtifactSection title="草稿输出" badge={snapshot?.draft ? '已生成' : '等待生成'}>
+          <ArtifactSection title="草稿输出" badge={snapshot?.draft ? '已生成' : '等待生成'} actions={artifactStepActions(6)}>
             {snapshot?.draft ? (
               <div className="artifact-path-list">
                 <span>{snapshot.draft.draftDir}</span>
@@ -1949,22 +2006,6 @@ function ArtifactPreviewContent({
 
       {tab === 'storyboard' ? (
         <div className="artifact-section-stack">
-          <section className="storyboard-gallery-hero">
-            <div>
-              <strong>分镜画廊</strong>
-              <span>{imageProgress}</span>
-            </div>
-            <small>生成一张就会出现在这里，便于边跑边检查全部画面。</small>
-          </section>
-          <ArtifactSection title="全部图片" badge={`${imageAssets.length} / ${scenes.length || imageAssets.length} 张`}>
-            <ArtifactImageGallery assets={imageAssets} scenes={scenes} empty="等待第一张分镜图片生成" />
-          </ArtifactSection>
-          <ArtifactSection title="分镜分句" badge={`${scenes.length} 条`}>
-            <ArtifactSceneList scenes={scenes} imagePrompts={imagePrompts} images={imageAssets} />
-          </ArtifactSection>
-          <ArtifactSection title="绘图提示词" badge={`${imagePrompts.length} 条`}>
-            <ArtifactPromptList prompts={imagePrompts} />
-          </ArtifactSection>
           <ArtifactSection title="批量生图" badge={`${imageAssets.length} 张`}>
             <ImageGenerationGallery
               api={api}
@@ -1976,6 +2017,9 @@ function ArtifactPreviewContent({
               isBrowserPreview={isBrowserPreview}
               applyState={applyState}
             />
+          </ArtifactSection>
+          <ArtifactSection title="分镜分句" badge={`${scenes.length} 条`}>
+            <ArtifactSceneList scenes={scenes} imagePrompts={imagePrompts} images={imageAssets} />
           </ArtifactSection>
         </div>
       ) : null}
@@ -2010,15 +2054,46 @@ function ArtifactPreviewContent({
   );
 }
 
-function ArtifactSection({ title, badge, children }: { title: string; badge: string; children: React.ReactNode }) {
+function ArtifactSection({ title, badge, actions, children }: { title: string; badge: string; actions?: React.ReactNode; children: React.ReactNode }) {
   return (
     <section className="artifact-section">
       <div className="panel-title-row">
         <h3>{title}</h3>
-        <small>{badge}</small>
+        <div className="artifact-section-actions">
+          {actions}
+          <small>{badge}</small>
+        </div>
       </div>
       {children}
     </section>
+  );
+}
+
+function ArtifactStepActions({
+  step,
+  disabled,
+  regenerating,
+  rewriting,
+  onAction,
+}: {
+  step: number;
+  disabled: boolean;
+  regenerating: boolean;
+  rewriting: boolean;
+  onAction: (step: number, mode: TaskStepRerunMode) => void;
+}) {
+  const busy = regenerating || rewriting;
+  return (
+    <div className="artifact-step-action-buttons">
+      <button className="mini-button" disabled={disabled || busy} title="从本步骤重新生成，并继续执行后续步骤" onClick={() => onAction(step, 'regenerate')}>
+        {regenerating ? <Loader2 className="spin" size={14} /> : <RotateCcw size={14} />}
+        重新生成
+      </button>
+      <button className="mini-button" disabled={disabled || busy} title="参考当前产物改写本步骤，并继续执行后续步骤" onClick={() => onAction(step, 'rewrite')}>
+        {rewriting ? <Loader2 className="spin" size={14} /> : <Wand2 size={14} />}
+        改写后继续
+      </button>
+    </div>
   );
 }
 
@@ -2579,17 +2654,13 @@ function PromptTemplatesPage({ api, state, applyState }: { api: StoryboundApi; s
 
   async function savePromptTemplateDraft() {
     if (!draft) return;
-    const templateToSave: PromptTemplate = draft.isBuiltin
-      ? {
-          ...draft,
-          id: crypto.randomUUID(),
-          name: `${draft.name} 自定义`,
-          isBuiltin: false,
-          origin: 'custom',
-          baseTemplateId: draft.id,
-          updatedAt: new Date().toISOString(),
-        }
-      : { ...draft, updatedAt: new Date().toISOString() };
+    const templateToSave: PromptTemplate = {
+      ...independentPromptTemplateFields(draft),
+      id: crypto.randomUUID(),
+      isBuiltin: false,
+      origin: 'custom',
+      updatedAt: new Date().toISOString(),
+    };
     applyState(await api.savePromptTemplate(templateToSave));
     setSelectedId(templateToSave.id);
     setDraft(templateToSave);
@@ -2597,7 +2668,7 @@ function PromptTemplatesPage({ api, state, applyState }: { api: StoryboundApi; s
   }
 
   async function duplicateTemplate(template: PromptTemplate) {
-    const copy = { ...template, id: crypto.randomUUID(), name: `${template.name} 副本`, isBuiltin: false, origin: 'custom' as const, baseTemplateId: template.baseTemplateId ?? template.id };
+    const copy = { ...independentPromptTemplateFields(template), id: crypto.randomUUID(), name: `${template.name} 副本`, isBuiltin: false, origin: 'custom' as const };
     applyState(await api.savePromptTemplate(copy));
     setSelectedId(copy.id);
     setDraft(copy);
@@ -3138,9 +3209,6 @@ function PromptTemplatesPage({ api, state, applyState }: { api: StoryboundApi; s
                   <Field label="标签">
                     <input value={(draft.marketTags ?? []).join('、')} onChange={(event) => setDraft({ ...draft, marketTags: splitListInput(event.target.value) })} />
                   </Field>
-                  <Field label="baseTemplateId">
-                    <input value={draft.baseTemplateId ?? ''} onChange={(event) => setDraft({ ...draft, baseTemplateId: event.target.value || null })} />
-                  </Field>
                   {draft.type === 'task' ? (
                     <Field label="出图种子池 JSON">
                       <textarea
@@ -3154,7 +3222,7 @@ function PromptTemplatesPage({ api, state, applyState }: { api: StoryboundApi; s
                 </div>
               </section>
 
-              {draft.isBuiltin ? <span className="local-note">首次保存将创建自定义副本，原内置模板保持不变。</span> : null}
+              <span className="local-note">每次保存都会新增一个独立模板页，原模板保持不变。</span>
 
               {draft.type === 'task' ? (
                 <section className="prompt-step-editor-list" aria-label="AI 步骤设置">
@@ -3328,6 +3396,7 @@ function DraftTemplatesPage({ api, state, applyState }: { api: StoryboundApi; st
   const [cozeImportResult, setCozeImportResult] = useState<Extract<CozeWorkflowTemplateConversionResult, { ok: true }> | null>(null);
   const [cozeImportResults, setCozeImportResults] = useState<CozeWorkflowTemplateConversionResult[]>([]);
   const [cozeImportError, setCozeImportError] = useState('');
+  const [cozeImportOpen, setCozeImportOpen] = useState(false);
 
   useEffect(() => {
     // Rehydrate only when switching templates; state refreshes must not overwrite unsaved drag edits.
@@ -3660,49 +3729,57 @@ function DraftTemplatesPage({ api, state, applyState }: { api: StoryboundApi; st
           <h2>草稿模板</h2>
           <span className="hint-text">内置模板：默认竖屏、竖屏4:3、横屏16:9；自定义模板保存在本机。</span>
         </div>
-        <button className="primary-action slim" onClick={createTemplate}><Plus size={15} />新模板</button>
+        <div className="button-row">
+          <button className="ghost-action" type="button" onClick={() => setCozeImportOpen(true)}><Upload size={15} />导入 Coze 模板</button>
+          <button className="primary-action slim" onClick={createTemplate}><Plus size={15} />新模板</button>
+        </div>
       </div>
 
-      <section className="panel coze-template-import-panel">
-        <div className="panel-title-row">
-          <div>
-            <h3>导入 Coze 模板</h3>
-            <span className="hint-text">粘贴每个视频下复制出的 Coze 工作流源码，转换成可编辑的草稿模板预设。</span>
-          </div>
-          <div className="button-row">
-            <button className="ghost-action" type="button" onClick={previewCozeWorkflowTemplate}>预览转换</button>
-            <button className="primary-action slim" type="button" disabled={!cozeWorkflowSource.trim()} onClick={saveCozeWorkflowTemplate}><Upload size={15} />导入 Coze 模板</button>
-            <button className="ghost-action" type="button" disabled={!cozeWorkflowSource.trim()} onClick={saveAllCozeWorkflowTemplates}>全部导入</button>
-          </div>
-        </div>
-        <div className="coze-template-import-grid">
-          <Field label="模板名称">
-            <input value={cozeImportName} onChange={(event) => setCozeImportName(event.target.value)} placeholder="留空则使用 Coze workflowId" />
-          </Field>
-          <Field label="Coze 工作流源码">
-            <textarea className="small-textarea coze-workflow-source" value={cozeWorkflowSource} onChange={(event) => setCozeWorkflowSource(event.target.value)} placeholder='粘贴 {"type":"coze-workflow-clipboard-data", ...}' />
-          </Field>
-        </div>
-        {cozeImportError ? <p className="form-error">{cozeImportError}</p> : null}
-        {cozeImportResults.length > 1 ? <span className="hint-text">已识别 {cozeImportResults.length} 个 Coze 工作流源码。</span> : null}
-        {cozeImportResult ? (
-          <div className="coze-import-preview">
-            <strong>{cozeImportResult.template.name}</strong>
-            <span>{cozeImportResult.workflowId} · {cozeImportResult.template.canvas.ratio} · {cozeImportResult.template.canvas.width}x{cozeImportResult.template.canvas.height}</span>
-            <div>
-              <small>转换诊断</small>
-              <ul className="coze-diagnostics-list">
-                {cozeImportResult.diagnostics.slice(0, 8).map((diagnostic, index) => (
-                  <li key={`${diagnostic.code}-${diagnostic.nodeId ?? index}`}>
-                    <span>{diagnostic.level}</span>
-                    {diagnostic.message}
-                  </li>
-                ))}
-              </ul>
+      {cozeImportOpen ? (
+        <div className="coze-template-import-backdrop" onClick={() => setCozeImportOpen(false)}>
+          <section className="panel coze-template-import-panel coze-template-import-dialog" role="dialog" aria-modal="true" aria-label="导入 Coze 模板" onClick={(event) => event.stopPropagation()}>
+            <div className="panel-title-row">
+              <div>
+                <h3>导入 Coze 模板</h3>
+                <span className="hint-text">粘贴每个视频下复制出的 Coze 工作流源码，转换成可编辑的草稿模板预设。</span>
+              </div>
+              <div className="button-row">
+                <button className="ghost-action" type="button" onClick={previewCozeWorkflowTemplate}>预览转换</button>
+                <button className="primary-action slim" type="button" disabled={!cozeWorkflowSource.trim()} onClick={saveCozeWorkflowTemplate}><Upload size={15} />导入 Coze 模板</button>
+                <button className="ghost-action" type="button" disabled={!cozeWorkflowSource.trim()} onClick={saveAllCozeWorkflowTemplates}>全部导入</button>
+                <button className="mini-button" type="button" onClick={() => setCozeImportOpen(false)}>关闭</button>
+              </div>
             </div>
-          </div>
-        ) : null}
-      </section>
+            <div className="coze-template-import-grid">
+              <Field label="模板名称">
+                <input value={cozeImportName} onChange={(event) => setCozeImportName(event.target.value)} placeholder="留空则使用 Coze workflowId" />
+              </Field>
+              <Field label="Coze 工作流源码">
+                <textarea className="small-textarea coze-workflow-source" value={cozeWorkflowSource} onChange={(event) => setCozeWorkflowSource(event.target.value)} placeholder='粘贴 {"type":"coze-workflow-clipboard-data", ...}' />
+              </Field>
+            </div>
+            {cozeImportError ? <p className="form-error">{cozeImportError}</p> : null}
+            {cozeImportResults.length > 1 ? <span className="hint-text">已识别 {cozeImportResults.length} 个 Coze 工作流源码。</span> : null}
+            {cozeImportResult ? (
+              <div className="coze-import-preview">
+                <strong>{cozeImportResult.template.name}</strong>
+                <span>{cozeImportResult.workflowId} · {cozeImportResult.template.canvas.ratio} · {cozeImportResult.template.canvas.width}x{cozeImportResult.template.canvas.height}</span>
+                <div>
+                  <small>转换诊断</small>
+                  <ul className="coze-diagnostics-list">
+                    {cozeImportResult.diagnostics.slice(0, 8).map((diagnostic, index) => (
+                      <li key={`${diagnostic.code}-${diagnostic.nodeId ?? index}`}>
+                        <span>{diagnostic.level}</span>
+                        {diagnostic.message}
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+              </div>
+            ) : null}
+          </section>
+        </div>
+      ) : null}
 
       <section className="draft-template-gallery">
         {state.draftTemplates.map((template) => (
@@ -3733,7 +3810,6 @@ function DraftTemplatesPage({ api, state, applyState }: { api: StoryboundApi; st
     </div>
   );
 }
-
 function DraftTemplatePreview({ template, compact = false }: { template: DraftTemplate; compact?: boolean }) {
   const titleSize = compact ? Math.max(9, template.title.fontSize * 0.28) : template.title.fontSize;
   const subtitleSize = compact ? Math.max(7, template.subtitle.fontSize * 0.28) : template.subtitle.fontSize;
@@ -5342,6 +5418,12 @@ function resolvePromptTemplateForTrack(templates: PromptTemplate[], track: strin
   return selectTaskPromptTemplate(templates, { track, promptTemplateId: overrideId ?? null });
 }
 
+function independentPromptTemplateFields(template: PromptTemplate): PromptTemplate {
+  const copy = { ...template };
+  delete copy.baseTemplateId;
+  return copy;
+}
+
 function promptTemplateHasStepPrompt(template: PromptTemplate, type: PromptStepTemplateType): boolean {
   return Object.prototype.hasOwnProperty.call(template.stepPrompts ?? {}, type);
 }
@@ -5393,8 +5475,16 @@ function draftTemplateImageRatio(templates: DraftTemplate[], templateId: string)
   return templates.find((template) => template.id === templateId)?.image.ratio ?? templates[0]?.image.ratio ?? '9:16';
 }
 
+function defaultTaskDraftTemplateId(templates: DraftTemplate[]): string {
+  return templates.find((template) => !isBundledDraftTemplateOption(template))?.id ?? templates[0]?.id ?? 'default-portrait-9-16';
+}
+
 function draftTemplateLabel(templateId: string, templates: DraftTemplate[]): string {
   return templates.find((template) => template.id === templateId)?.name ?? templateId;
+}
+
+function isBundledDraftTemplateOption(template: Pick<DraftTemplate, 'id' | 'isDefault'>): boolean {
+  return !template.isDefault && bundledDraftTemplateOptionIds.has(template.id);
 }
 
 function characterPolicyLabel(policy: PromptTemplate['characterPolicy']): string {

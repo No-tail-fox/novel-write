@@ -4,6 +4,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { FileDatabase } from '@shared/storage';
 import { runTask } from '@shared/runner';
+import { markTaskStepForRerun } from '@shared/pipeline-cache';
 import type { ImagePrompt, PipelineArtifact, StoryboardScene, TaskStatus } from '@shared/types';
 import type { PyJianYingBridgeInput } from '@shared/jianying-bridge';
 import type { JsonLlm, LlmJsonRequest } from '@shared/llm-provider';
@@ -582,6 +583,97 @@ describe('task runner', () => {
 
       expect(calls).toMatchObject({ 0: 1, 1: 1, 2: 2, 3: 1 });
       expect((await db.getState()).tasks[0].status).toBe('completed');
+    } finally {
+      await db.close();
+      await rm(dir, { recursive: true, force: true });
+    }
+  });
+
+  it('passes existing artifact context into a rewrite-assisted LLM rerun step', async () => {
+    const dir = await mkdtemp(join(tmpdir(), 'storybound-runner-step-rerun-'));
+    const db = await FileDatabase.open(join(dir, 'data.db'));
+    const draftRootDir = join(dir, 'JianyingPro Drafts');
+    const mediaDir = join(dir, 'media');
+    const requests: LlmJsonRequest[] = [];
+
+    try {
+      await db.upsertConfig({
+        ...(await db.getState()).config,
+        jianying: { ...(await db.getState()).config.jianying, draftPath: draftRootDir },
+      });
+      const task = await db.createTask({
+        title: 'Rewrite assisted rerun',
+        inputText: sampleInput,
+        track: 'character-story',
+        style: 'photo-real',
+        speaker: 'voice',
+      });
+      const workDir = join(dir, 'tasks', task.id);
+      const pipelineDir = join(workDir, 'pipeline');
+      const statePath = join(pipelineDir, 'state.json');
+      const oldArtifact: PipelineArtifact = {
+        ...makeArtifact(),
+        rewrittenCopy: 'Old rewrite context line',
+        cover: { title: 'Old title', subtitle: [], summary: 'old summary', tags: ['#old'], comments: [] },
+      };
+      await mkdir(pipelineDir, { recursive: true });
+      await writeFile(
+        statePath,
+        JSON.stringify(
+          {
+            version: 1,
+            taskId: task.id,
+            updatedAt: '2026-06-09T00:00:00.000Z',
+            steps: Object.fromEntries(Array.from({ length: 7 }, (_, step) => [String(step), { status: 'completed' }])),
+            artifact: oldArtifact,
+            assets: {
+              images: oldArtifact.scenes.map((scene) => ({ sceneId: scene.id, path: join(mediaDir, `${scene.id}.png`) })),
+              narration: oldArtifact.scenes.map((scene) => ({ sceneId: scene.id, path: join(mediaDir, `${scene.id}.wav`) })),
+            },
+            draft: {
+              draftDir: join(workDir, 'draft'),
+              draftContentPath: join(workDir, 'draft', 'draft_content.json'),
+              draftMetaPath: join(workDir, 'draft', 'draft_meta_info.json'),
+            },
+          },
+          null,
+          2,
+        ),
+        'utf8',
+      );
+      await markTaskStepForRerun(statePath, 1, 'rewrite');
+
+      const llm: JsonLlm = async <T,>(request: LlmJsonRequest) => {
+        requests.push(request);
+        if (request.step === 0) throw new Error('review should stay cached');
+        if (request.step === 1) {
+          return {
+            json: { rewrittenCopy: 'Fresh rewrite', cover: { title: 'Fresh title', subtitle: [], summary: 'fresh summary', tags: [], comments: [] } } as T,
+            raw: '{}',
+            requestId: 'rewrite-rerun',
+          };
+        }
+        if (request.step === 2) return { json: { scenes: makeArtifact().scenes } as T, raw: '{}', requestId: 'storyboard-rerun' };
+        return { json: { imagePrompts: makeArtifact().imagePrompts } as T, raw: '{}', requestId: 'prompts-rerun' };
+      };
+
+      await runTask(
+        db,
+        { ...task, status: 'pending', currentStep: 1, retryFromStep: 1, artifactStatePath: statePath, outputDir: workDir, errorMessage: '' },
+        {
+          appDataDir: dir,
+          llm,
+          generateImages: async (scenes) => writeSceneAssets(mediaDir, scenes, 'png', tinyPng),
+          synthesizeNarration: async (scenes) => writeSceneAssets(mediaDir, scenes, 'wav', wavTone(1200)),
+          draftWriterOptions: { runBridge: fakeBridge },
+        },
+      );
+
+      const rewriteRequest = requests.find((request) => request.step === 1);
+      const rewriteContent = rewriteRequest?.messages.map((message) => message.content).join('\n') ?? '';
+      expect(rewriteContent).toContain('Existing artifact context');
+      expect(rewriteContent).toContain('Old rewrite context line');
+      expect(requests.some((request) => request.step === 0)).toBe(false);
     } finally {
       await db.close();
       await rm(dir, { recursive: true, force: true });

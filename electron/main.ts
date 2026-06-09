@@ -13,13 +13,13 @@ import { detectJianyingDraftPath, resolveRuntimeJianyingDraftPath } from '../src
 import { loadJianyingEffectCatalog } from '../src/shared/jianying-effects';
 import { generateConfiguredVoicePreview } from '../src/shared/media-providers';
 import { createOpenAiCompatibleJsonLlm, listOpenAiCompatibleModels, testOpenAiCompatibleLlm } from '../src/shared/llm-provider';
-import { markSceneImageForRegeneration, markSceneNarrationForRegeneration } from '../src/shared/pipeline-cache';
+import { markSceneImageForRegeneration, markSceneNarrationForRegeneration, markTaskStepForRerun } from '../src/shared/pipeline-cache';
 import { resolvePythonRuntimeInfo, setDefaultPythonRuntimeAppRoot } from '../src/shared/python-runtime';
 import { composeCopyFromSources, createAiSourceResearcher, searchWebSources } from '../src/shared/research';
 import { runTask } from '../src/shared/runner';
 import { FileDatabase } from '../src/shared/storage';
 import { createTaskRuntimeProviders } from '../src/shared/task-runtime-providers';
-import type { AccountProfile, ActivationState, AppConfig, ConfigTestTarget, CreateTaskInput, CreateViralAnalysisInput, CustomStyle, CustomStyleGenerateInput, DraftTemplate, ImageLabGenerateInput, LlmConfig, PromptTemplate, ProviderModelListRequest, ResearchCopyComposeInput, Task, TaskStatus, UiPreferences, ViralAnalysisRecord, ViralAnalysisStatus, ViralProductionTaskOptions, VolcengineSpeakerListRequest, VoiceLabGenerateInput } from '../src/shared/types';
+import type { AccountProfile, ActivationState, AppConfig, ConfigTestTarget, CreateTaskInput, CreateViralAnalysisInput, CustomStyle, CustomStyleGenerateInput, DraftTemplate, ImageLabGenerateInput, LlmConfig, PromptTemplate, ProviderModelListRequest, ResearchCopyComposeInput, Task, TaskStatus, TaskStepRerunMode, UiPreferences, ViralAnalysisRecord, ViralAnalysisStatus, ViralProductionTaskOptions, VolcengineSpeakerListRequest, VoiceLabGenerateInput } from '../src/shared/types';
 import { createViralProductionTaskInput, detectViralPlatform, runViralAnalysis } from '../src/shared/viral-analysis';
 import { createViralRuntimeProviders } from '../src/shared/viral-runtime';
 import { listVolcengineSpeakers } from '../src/shared/volcengine-speakers';
@@ -37,6 +37,15 @@ interface RunningTaskRun {
 const runningTasks = new Map<string, RunningTaskRun>();
 const runningViralAnalyses = new Map<string, AbortController>();
 const staleRunningMs = 5 * 60 * 1000;
+const pipelineStepAgents: Record<number, string> = {
+  0: 'Reviewer',
+  1: 'Writer',
+  2: 'Storyboard',
+  3: 'Prompt',
+  4: 'Producer',
+  5: 'TTS',
+  6: 'Draft',
+};
 
 async function getDb(): Promise<FileDatabase> {
   if (db) return db;
@@ -608,6 +617,44 @@ ipcMain.handle('task:regenerate-narration', async (_event, input: { id: string; 
     agent: 'TTS',
     detail: `重新生成第 ${sceneId} 段配音`,
     dataJson: JSON.stringify({ sceneId }),
+  });
+  const updatedTask = (await database.getState()).tasks.find((item) => item.id === task.id);
+  if (updatedTask) {
+    await resumeTaskRun(database, updatedTask);
+  }
+  return database.getState();
+});
+
+ipcMain.handle('task:rerun-step', async (_event, input: { id: string; step: number; mode: TaskStepRerunMode }) => {
+  const database = await getDb();
+  const state = await database.getState();
+  const task = state.tasks.find((item) => item.id === input.id);
+  if (!task) {
+    throw new Error(`Task not found: ${input.id}`);
+  }
+  if (!task.artifactStatePath) {
+    throw new Error('Task artifact state is not available; run the task before rerunning a step.');
+  }
+
+  const step = Number(input.step);
+  const result = await markTaskStepForRerun(task.artifactStatePath, step, input.mode);
+  const detail = result.mode === 'rewrite' ? `改写第 ${step + 1} 步后继续` : `重新生成第 ${step + 1} 步后继续`;
+  await database.updateTask(task.id, {
+    status: 'pending',
+    currentStep: step,
+    failedStep: step,
+    retryFromStep: step,
+    completedAt: null,
+    outputDir: taskWorkDir(task),
+    errorMessage: detail,
+    lastHeartbeatAt: new Date().toISOString(),
+  });
+  await database.addTaskEvent(task.id, {
+    type: 'step_start',
+    step,
+    agent: pipelineStepAgents[step] ?? null,
+    detail,
+    dataJson: JSON.stringify({ step, mode: result.mode, clearedSteps: result.clearedSteps }),
   });
   const updatedTask = (await database.getState()).tasks.find((item) => item.id === task.id);
   if (updatedTask) {

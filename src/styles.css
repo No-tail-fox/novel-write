@@ -460,6 +460,16 @@ h2 {
   gap: 14px;
 }
 
+.draft-template-picker-stack {
+  display: grid;
+  gap: 12px;
+  align-content: start;
+}
+
+.draft-template-alternate-select {
+  min-height: 38px;
+}
+
 .queue-layout {
   display: grid;
   grid-template-columns: minmax(520px, 1.35fr) minmax(320px, 0.75fr);
@@ -1232,6 +1242,26 @@ textarea {
   margin: 0;
   color: var(--text);
   font-size: 14px;
+}
+
+.artifact-section-actions,
+.artifact-step-action-buttons {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 8px;
+  flex-wrap: wrap;
+  min-width: 0;
+}
+
+.artifact-step-action-buttons {
+  gap: 6px;
+}
+
+.artifact-step-action-buttons .mini-button {
+  min-height: 30px;
+  padding: 0 9px;
+  white-space: nowrap;
 }
 
 .artifact-text-block {
@@ -2039,6 +2069,23 @@ textarea {
 .coze-template-import-panel {
   display: grid;
   gap: 12px;
+}
+
+.coze-template-import-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 45;
+  display: grid;
+  place-items: center;
+  padding: 24px;
+  background: rgba(2, 5, 8, 0.72);
+}
+
+.coze-template-import-dialog {
+  width: min(960px, calc(100vw - 36px));
+  max-height: calc(100vh - 64px);
+  overflow: auto;
+  box-shadow: 0 24px 70px rgba(0, 0, 0, 0.5);
 }
 
 .coze-template-import-grid {
@@ -2904,6 +2951,10 @@ textarea {
   width: 100%;
 }
 
+.viral-draft-template-select {
+  min-height: 40px;
+}
+
 .viral-settings-grid {
   display: grid;
   grid-template-columns: minmax(0, 1fr);
@@ -3134,5 +3185,9 @@ textarea {
 
   .preview-meta-grid {
     grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .coze-template-import-grid {
+    grid-template-columns: 1fr;
   }
 }

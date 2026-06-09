@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { defaultCustomStyles, defaultPromptTemplates } from '@shared/config';
 import {
   buildImageTemplateStyleOptions,
+  buildStoryTemplateOptions,
   buildTaskPromptTemplateOptions,
   buildStoryTemplateTrackOptions,
   resolvePromptTemplateDefaultDraftTemplateId,
@@ -81,11 +82,33 @@ describe('prompt template rendering', () => {
     const templates = [...defaultPromptTemplates, custom];
 
     expect(selectTaskPromptTemplate(templates, { track: 'character-story' })?.id).toBe(custom.id);
+    expect(buildStoryTemplateOptions(templates).filter(([id]) => id.includes('character-story'))).toEqual([
+      ['custom-character-story', '人物故事 自定义', '历史人物、名人传记、纪实质感与情感渲染'],
+      ['system-character-story', '人物故事', '历史人物、名人传记、纪实质感与情感渲染'],
+    ]);
     expect(buildStoryTemplateTrackOptions(templates).find(([track]) => track === 'character-story')).toEqual([
       'character-story',
       '人物故事 自定义',
       '历史人物、名人传记、纪实质感与情感渲染',
     ]);
+  });
+
+  it('builds a story option for every task template instead of replacing same-track templates', () => {
+    const custom = {
+      ...defaultPromptTemplates[0],
+      id: 'custom-character-story-123',
+      name: '人物故事123',
+      description: '历史人物、名人传记、纪实质感与情感渲染',
+      baseTrack: 'character-story',
+      isBuiltin: false,
+      origin: 'custom' as const,
+      updatedAt: '2026-06-08T12:00:00.000Z',
+    };
+
+    const options = buildStoryTemplateOptions([...defaultPromptTemplates, custom]);
+
+    expect(options).toContainEqual(['custom-character-story-123', '人物故事123', '历史人物、名人传记、纪实质感与情感渲染']);
+    expect(options).toContainEqual(['system-character-story', '人物故事', '历史人物、名人传记、纪实质感与情感渲染']);
   });
 
   it('builds explicit task prompt choices for the selected content track', () => {
@@ -111,6 +134,30 @@ describe('prompt template rendering', () => {
     expect(selectStepPromptTemplate(defaultPromptTemplates, 'review')?.id).toBe('builtin-review');
     expect(selectStepPromptTemplate(defaultPromptTemplates, 'storyboard')?.id).toBe('builtin-storyboard');
     expect(selectStepPromptTemplate(defaultPromptTemplates, 'image-prompt')?.id).toBe('builtin-image-prompt');
+  });
+
+  it('prefers the newest independent custom step template over the built-in step template', () => {
+    const builtinRewrite = defaultPromptTemplates.find((template) => template.id === 'builtin-rewrite')!;
+    const olderCustom = {
+      ...builtinRewrite,
+      id: 'custom-rewrite-old',
+      name: 'Older rewrite',
+      content: 'older custom rewrite',
+      isBuiltin: false,
+      origin: 'custom' as const,
+      updatedAt: '2026-06-08T00:00:00.000Z',
+    };
+    const newestCustom = {
+      ...builtinRewrite,
+      id: 'custom-rewrite-new',
+      name: 'Newest rewrite',
+      content: 'newest custom rewrite',
+      isBuiltin: false,
+      origin: 'custom' as const,
+      updatedAt: '2026-06-09T00:00:00.000Z',
+    };
+
+    expect(selectStepPromptTemplate([...defaultPromptTemplates, olderCustom, newestCustom], 'rewrite')?.id).toBe('custom-rewrite-new');
   });
 
   it('selects task-level AI step prompts before global step templates', () => {
