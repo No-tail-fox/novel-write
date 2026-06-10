@@ -34,6 +34,19 @@ describe('prompt template rendering', () => {
     expect(rendered).not.toContain('{{missingValue}}');
   });
 
+  it('renders viral image prompt references in the built-in image prompt template', () => {
+    const template = defaultPromptTemplates.find((item) => item.id === 'builtin-image-prompt');
+    expect(template?.content).toContain('{{imagePromptReference}}');
+
+    const rendered = renderPromptTemplate(template!, {
+      task: {
+        imagePromptReference: '1. 0s - 中文生图提示词：开场特写，中心构图，大字标题',
+      } as never,
+    });
+
+    expect(rendered).toContain('中文生图提示词：开场特写，中心构图，大字标题');
+  });
+
   it('renders Chinese placeholder aliases used by the template editor labels', () => {
     const template = {
       ...defaultPromptTemplates[0],

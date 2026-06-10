@@ -94,6 +94,7 @@ function createImageLabTask(id: string, input: ImageLabGenerateInput, createdAt:
     aiSources: [],
     selectedSources: [],
     extraRequirements: '',
+    imagePromptReference: '',
     promptTemplateId: null,
     promptTemplateType: null,
     referenceImagePath: input.referenceImagePath ?? '',

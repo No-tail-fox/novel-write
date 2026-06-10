@@ -61,6 +61,7 @@ import type {
   ShellView,
   Task,
   TaskArtifactSnapshot,
+  ViralAnalysisEvent,
   TaskEvent,
   TaskMode,
   TaskStatus,
@@ -501,6 +502,7 @@ function makeFallbackApi(setState: (state: AppState) => void): StoryboundApi {
         aiSources: input.aiSources ?? [],
         selectedSources: input.selectedSources ?? [],
         extraRequirements: input.extraRequirements ?? '',
+        imagePromptReference: input.imagePromptReference ?? '',
         promptTemplateId: input.promptTemplateId ?? null,
         promptTemplateType: input.promptTemplateType ?? null,
         referenceImagePath: input.referenceImagePath ?? '',
@@ -838,6 +840,7 @@ function ViralAnalyzerPage({
   const [style, setStyle] = useState('photo-real');
   const [ratio, setRatio] = useState('9:16');
   const [templateId, setTemplateId] = useState('default-portrait-9-16');
+  const [keyFrameCount, setKeyFrameCount] = useState(8);
   const [cookieFilePath, setCookieFilePath] = useState(state.config.viral.cookieFilePath);
   const [selectedId, setSelectedId] = useState(state.viralAnalyses[0]?.id ?? '');
   const [result, setResult] = useState<ViralAnalysisResult | null>(null);
@@ -917,7 +920,7 @@ function ViralAnalyzerPage({
     const next = await api.createAndRunViralAnalysis({
       url: url.trim(),
       platform: selectedPlatformForAnalysis,
-      settings: { track, style, ratio, templateId, storyboardSceneCount: 12 },
+      settings: { track, style, ratio, templateId, keyFrameCount, storyboardSceneCount: 12 },
     });
     applyState(next);
     setSelectedId(next.viralAnalyses[0]?.id ?? '');
@@ -964,6 +967,17 @@ function ViralAnalyzerPage({
             开始拆解
           </button>
           <div className="viral-settings-grid">
+            <Field label="关键帧数量">
+              <input
+                className="text-input"
+                type="number"
+                min={1}
+                max={40}
+                step={1}
+                value={keyFrameCount}
+                onChange={(event) => setKeyFrameCount(normalizeViralKeyFrameCount(event.target.value))}
+              />
+            </Field>
             <ViralChoiceGroup title="赛道" options={contentTracks} value={track} onChange={setTrack} />
             <ViralChoiceGroup title="风格" options={styleOptions} value={style} onChange={setStyle} />
             <ViralChoiceGroup title="比例" options={ratioOptions.map((item) => [item, item, ''])} value={ratio} onChange={setRatio} compact />
@@ -1025,10 +1039,11 @@ function ViralAnalyzerPage({
             const isCompleted = selected?.status === 'completed' || (selectedStageIndex > stageIndex && selectedStageIndex !== -1);
             const isFailed = selected?.status === 'failed' && isActive;
             const className = ['viral-progress-step', 'viral-stage-node', isActive ? 'active' : '', isCompleted ? 'completed' : '', isFailed ? 'failed' : ''].filter(Boolean).join(' ');
+            const latestEvent = latestViralEventForStage(selectedEvents, stage);
             return (
               <div key={stage} className={className}>
                 <span>{viralStageLabel(stage)}</span>
-                <small>{selectedEvents.find((event) => event.stage === stage)?.detail ?? '等待中'}</small>
+                <small>{latestEvent?.detail ?? '等待中'}</small>
               </div>
             );
           })}
@@ -1048,6 +1063,20 @@ function ViralAnalyzerPage({
 }
 
 const viralStages = ['downloading', 'extracting', 'transcribing', 'analyzing_frames', 'breaking_down', 'recreating', 'completed'];
+
+function latestViralEventForStage(events: ViralAnalysisEvent[], stage: string): ViralAnalysisEvent | null {
+  for (let index = events.length - 1; index >= 0; index -= 1) {
+    const event = events[index];
+    if (event.stage === stage) return event;
+  }
+  return null;
+}
+
+function normalizeViralKeyFrameCount(value: unknown): number {
+  const parsed = Number(value);
+  if (!Number.isFinite(parsed)) return 8;
+  return Math.min(40, Math.max(1, Math.round(parsed)));
+}
 
 function ViralChoiceGroup({
   title,
@@ -1082,7 +1111,8 @@ type ViralInsightTab = 'copy' | 'prompt';
 function ViralReport({ result, createProductionTask }: { result: ViralAnalysisResult; createProductionTask: () => void }) {
   const [insightTab, setInsightTab] = useState<ViralInsightTab>('copy');
   const breakdown = result.contentBreakdown;
-  const frames = uniqueViralPromptFrames(result.frames).slice(0, 8);
+  const frames = uniqueViralPromptFrames(result.frames);
+  const keyFrameCount = frames.length;
   const originalCopy = viralTranscriptText(result);
   return (
     <>
@@ -1096,6 +1126,7 @@ function ViralReport({ result, createProductionTask }: { result: ViralAnalysisRe
         <div className="viral-insight-tabs" role="tablist" aria-label="图文拆解">
           <button type="button" className={insightTab === 'copy' ? 'active' : ''} onClick={() => setInsightTab('copy')}>文案拆解</button>
           <button type="button" className={insightTab === 'prompt' ? 'active' : ''} onClick={() => setInsightTab('prompt')}>提示词拆解</button>
+          <span className="viral-keyframe-count">关键帧数量：{keyFrameCount}</span>
         </div>
         {insightTab === 'copy' ? (
           <div className="viral-copy-breakdown">

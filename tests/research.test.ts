@@ -513,6 +513,7 @@ function makeTask(patch: Partial<Task>): Task {
     aiSources: ['web'],
     selectedSources: [],
     extraRequirements: '',
+    imagePromptReference: '',
     promptTemplateId: null,
     promptTemplateType: null,
     referenceImagePath: '',

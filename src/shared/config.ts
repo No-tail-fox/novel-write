@@ -408,6 +408,12 @@ export const defaultPromptTemplates: PromptTemplate[] = [
   },
 ];
 
+for (const template of defaultPromptTemplates) {
+  if (template.id === 'builtin-image-prompt' && !template.content.includes('{{imagePromptReference}}')) {
+    template.content = `${template.content}\n\n爆款复刻画面提示词参考：{{imagePromptReference}}`;
+  }
+}
+
 export const defaultCustomStyles: CustomStyle[] = [
   {
     id: 'black-white',

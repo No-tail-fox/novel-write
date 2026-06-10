@@ -193,6 +193,7 @@ export class FileDatabase {
         ai_sources TEXT DEFAULT '[]',
         selected_sources TEXT DEFAULT '[]',
         extra_requirements TEXT DEFAULT '',
+        image_prompt_reference TEXT DEFAULT '',
         prompt_template_id TEXT,
         prompt_template_type TEXT,
         reference_image_path TEXT DEFAULT '',
@@ -330,6 +331,7 @@ export class FileDatabase {
       ['ai_sources', "TEXT DEFAULT '[]'"],
       ['selected_sources', "TEXT DEFAULT '[]'"],
       ['extra_requirements', "TEXT DEFAULT ''"],
+      ['image_prompt_reference', "TEXT DEFAULT ''"],
       ['reference_image_path', "TEXT DEFAULT ''"],
       ['rewrite_intensity', "TEXT DEFAULT 'standard'"],
       ['narrative_pov', "TEXT DEFAULT 'keep-original'"],
@@ -633,6 +635,7 @@ export class FileDatabase {
       aiSources: input.aiSources ?? ['web'],
       selectedSources: input.selectedSources ?? [],
       extraRequirements: input.extraRequirements ?? '',
+      imagePromptReference: input.imagePromptReference ?? '',
       promptTemplateId: input.promptTemplateId ?? null,
       promptTemplateType: input.promptTemplateType ?? null,
       referenceImagePath: input.referenceImagePath ?? '',
@@ -652,9 +655,9 @@ export class FileDatabase {
         id, title, input_text, status, current_step, track, style, speaker, ratio, template_id,
         bgm_id, pause_points, output_dir, error_message, created_at, completed_at, started_at, last_heartbeat_at,
         mode, ai_keyword, ai_sources, selected_sources, extra_requirements, prompt_template_id, prompt_template_type,
-        reference_image_path, rewrite_intensity, narrative_pov, keep_promotion, tts_provider,
+        image_prompt_reference, reference_image_path, rewrite_intensity, narrative_pov, keep_promotion, tts_provider,
         tts_speed, storyboard_scene_count, step3_prompt_snapshot, failed_step, retry_from_step, artifact_state_path
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       [
         task.id,
         task.title,
@@ -679,6 +682,7 @@ export class FileDatabase {
         json(task.aiSources),
         json(task.selectedSources),
         task.extraRequirements,
+        task.imagePromptReference,
         task.promptTemplateId,
         task.promptTemplateType,
         task.referenceImagePath,
@@ -961,6 +965,7 @@ function rowToTask(row: Record<string, unknown>): Task {
     aiSources: parseJson(String(row.ai_sources ?? '[]'), []),
     selectedSources: parseJson(String(row.selected_sources ?? '[]'), []),
     extraRequirements: String(row.extra_requirements ?? ''),
+    imagePromptReference: String(row.image_prompt_reference ?? ''),
     promptTemplateId: row.prompt_template_id ? String(row.prompt_template_id) : null,
     promptTemplateType: row.prompt_template_type ? String(row.prompt_template_type) : null,
     referenceImagePath: String(row.reference_image_path ?? ''),
@@ -1030,7 +1035,7 @@ function rowToViralEvent(row: Record<string, unknown>): ViralAnalysisEvent {
 
 function rowToPromptTemplate(row: Record<string, unknown>): PromptTemplate {
   const stored = parseJson<Partial<PromptTemplate>>(row.data_json, {});
-  return {
+  const template: PromptTemplate = {
     id: String(row.id),
     name: String(row.name ?? ''),
     type: String(row.type ?? 'rewrite') as PromptTemplate['type'],
@@ -1040,6 +1045,15 @@ function rowToPromptTemplate(row: Record<string, unknown>): PromptTemplate {
     updatedAt: String(row.updated_at ?? new Date().toISOString()),
     ...stored,
     imageSeedPoolsJson: stored.imageSeedPoolsJson ?? '',
+  };
+  return withBuiltinPromptTemplateMigrations(template);
+}
+
+function withBuiltinPromptTemplateMigrations(template: PromptTemplate): PromptTemplate {
+  if (template.id !== 'builtin-image-prompt' || template.content.includes('{{imagePromptReference}}')) return template;
+  return {
+    ...template,
+    content: `${template.content}\n\n爆款复刻画面提示词参考：{{imagePromptReference}}`,
   };
 }
 

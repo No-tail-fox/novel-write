@@ -134,13 +134,46 @@ describe('viral analysis helpers', () => {
   });
 
   it('converts a recreation result into a normal production task input', () => {
-    const task = createViralProductionTaskInput(makeViralResult(), {
+    const task = createViralProductionTaskInput(
+      {
+        ...makeViralResult(),
+        frames: [
+          {
+            timestamp: 0,
+            framePath: 'frame-0001.jpg',
+            shotType: '特写',
+            cameraMovement: '固定',
+            composition: '中心构图',
+            transition: 'cut',
+            textOverlay: null,
+            visualDescription: 'Opening shot.',
+            mood: '紧张',
+            keyElements: ['人物'],
+            imagePrompt: '中文生图提示词：开场特写，中心构图，大字标题',
+          },
+          {
+            timestamp: 6,
+            framePath: 'frame-0002.jpg',
+            shotType: '中景',
+            cameraMovement: '推近',
+            composition: '三分法',
+            transition: 'cut',
+            textOverlay: null,
+            visualDescription: 'Midpoint shot.',
+            mood: '缓和',
+            keyElements: ['产品'],
+            imagePrompt: '中文生图提示词：中段产品展示，三分构图，干净字幕',
+          },
+        ],
+      },
+      {
       title: '复刻任务',
       track: 'ecommerce',
       style: 'photo-real',
       ratio: '9:16',
       templateId: 'default-portrait-9-16',
-    });
+      },
+    );
 
     expect(task).toMatchObject({
       title: '复刻任务',
@@ -153,6 +186,81 @@ describe('viral analysis helpers', () => {
       storyboardSceneCount: 12,
     });
     expect(task.extraRequirements).toContain('结构级复刻');
+    expect(task.imagePromptReference).toContain('中文生图提示词：开场特写，中心构图，大字标题');
+    expect(task.imagePromptReference).toContain('中文生图提示词：中段产品展示，三分构图，干净字幕');
+  });
+
+  it('passes the requested keyframe count and source duration into frame extraction', async () => {
+    const dir = await mkdtemp(join(tmpdir(), 'storybound-viral-keyframes-'));
+    const firstFrame = join(dir, 'frame-0001.jpg');
+    const secondFrame = join(dir, 'frame-0002.jpg');
+    await writeFile(firstFrame, 'frame-one-bytes');
+    await writeFile(secondFrame, 'frame-two-bytes');
+
+    const extract = vi.fn(async (_videoPath: string, _workDir: string, _signal?: AbortSignal, request?: { keyFrameCount: number; sourceDurationSeconds: number }) => {
+      expect(request).toEqual({ keyFrameCount: 10, sourceDurationSeconds: 30 });
+      return {
+        audioPath: join(dir, 'audio.wav'),
+        frames: [
+          { timestamp: 0, framePath: firstFrame },
+          { timestamp: 15, framePath: secondFrame },
+        ],
+      };
+    });
+
+    try {
+      await runViralAnalysis(
+        {
+          id: 'viral-keyframes',
+          url: 'https://www.douyin.com/video/123',
+          platform: 'douyin',
+          title: '',
+          status: 'pending',
+          currentStage: 'queued',
+          progress: 0,
+          settings: { track: 'ecommerce', style: 'photo-real', ratio: '9:16', templateId: 'default-portrait-9-16', keyFrameCount: 10 },
+          resultPath: '',
+          videoPath: '',
+          errorMessage: '',
+          createdAt: '2026-06-02T00:00:00.000Z',
+          startedAt: null,
+          completedAt: null,
+          lastHeartbeatAt: null,
+        },
+        {
+          workDir: dir,
+          emit: async () => {},
+          download: async () => ({
+            source: makeViralResult().source,
+            videoPath: join(dir, 'video.mp4'),
+            provider: 'douyin-internal',
+            normalizedUrl: 'https://www.douyin.com/video/123',
+            usedCookieSource: 'none',
+          }),
+          extract,
+          transcribe: async () => makeViralResult().transcript,
+          analyzeFrame: async (frame) => ({
+            timestamp: frame.timestamp,
+            framePath: frame.framePath,
+            shotType: '中景',
+            cameraMovement: '固定',
+            composition: '中心构图',
+            transition: 'cut',
+            textOverlay: null,
+            visualDescription: 'frame analysis',
+            mood: 'tense',
+            keyElements: ['character'],
+            imagePrompt: `frame prompt ${frame.timestamp}s`,
+          }),
+          analyzeBreakdown: async () => makeViralResult().contentBreakdown,
+          createRecreation: async () => makeViralResult().recreation,
+        },
+      );
+
+      expect(extract).toHaveBeenCalledTimes(1);
+    } finally {
+      await rm(dir, { recursive: true, force: true });
+    }
   });
 
   it('runs the viral analysis pipeline with injected media and model providers', async () => {
@@ -305,6 +413,82 @@ describe('viral analysis helpers', () => {
       await rm(dir, { recursive: true, force: true });
     }
   });
+
+  it('emits progress updates while analyzing multiple unique frames', async () => {
+    const dir = await mkdtemp(join(tmpdir(), 'storybound-viral-progress-'));
+    const firstFrame = join(dir, 'frame-0001.jpg');
+    const secondFrame = join(dir, 'frame-0002.jpg');
+    await writeFile(firstFrame, 'frame-one-bytes');
+    await writeFile(secondFrame, 'frame-two-bytes');
+    const events: Array<{ type: string; stage: string; detail: string; progress?: number }> = [];
+
+    try {
+      await runViralAnalysis(
+        {
+          id: 'viral-progress',
+          url: 'https://www.douyin.com/video/123',
+          platform: 'douyin',
+          title: '',
+          status: 'pending',
+          currentStage: 'queued',
+          progress: 0,
+          settings: { track: 'ecommerce', style: 'photo-real', ratio: '9:16', templateId: 'default-portrait-9-16' },
+          resultPath: '',
+          videoPath: '',
+          errorMessage: '',
+          createdAt: '2026-06-02T00:00:00.000Z',
+          startedAt: null,
+          completedAt: null,
+          lastHeartbeatAt: null,
+        },
+        {
+          workDir: dir,
+          emit: async (event) => {
+            events.push({ type: event.type, stage: event.stage, detail: event.detail, progress: event.progress });
+          },
+          download: async () => ({
+            source: makeViralResult().source,
+            videoPath: join(dir, 'video.mp4'),
+            provider: 'douyin-internal',
+            normalizedUrl: 'https://www.douyin.com/video/123',
+            usedCookieSource: 'none',
+          }),
+          extract: async () => ({
+            audioPath: join(dir, 'audio.wav'),
+            frames: [
+              { timestamp: 0, framePath: firstFrame },
+              { timestamp: 3, framePath: secondFrame },
+            ],
+          }),
+          transcribe: async () => makeViralResult().transcript,
+          analyzeFrame: async (frame) => ({
+            timestamp: frame.timestamp,
+            framePath: frame.framePath,
+            shotType: 'medium shot',
+            cameraMovement: 'static',
+            composition: 'centered',
+            transition: 'cut',
+            textOverlay: 'headline text',
+            visualDescription: 'frame analysis',
+            mood: 'tense',
+            keyElements: ['character', 'title'],
+            imagePrompt: `frame prompt ${frame.timestamp}s`,
+          }),
+          analyzeBreakdown: async () => makeViralResult().contentBreakdown,
+          createRecreation: async () => makeViralResult().recreation,
+        },
+      );
+
+      const frameProgressEvents = events.filter((event) => event.stage === 'analyzing_frames');
+      expect(frameProgressEvents.some((event) => event.type === 'stage_progress')).toBe(true);
+      expect(frameProgressEvents.some((event) => event.detail.includes('1/2'))).toBe(true);
+      expect(frameProgressEvents.some((event) => event.detail.includes('2/2'))).toBe(true);
+    } finally {
+      await rm(dir, { recursive: true, force: true });
+    }
+  });
+
+
 });
 
 function makeViralResult(): ViralAnalysisResult {
@@ -328,9 +512,9 @@ function makeViralResult(): ViralAnalysisResult {
       topic: 'Local shop topic',
       title: { original: 'Original title', pattern: 'Pain point first', suggestions: ['New title'] },
       cover: { observed: 'Face and text', pattern: 'High contrast', suggestions: ['New cover'] },
-      opening: { type: '亮点前置', analysis: 'Starts with the best result.', reusablePattern: 'Lead with the result.' },
-      structure: { type: '递进结构', analysis: 'Builds from pain to solution.', outline: ['pain', 'solution'] },
-      ending: { type: '引导型结尾', analysis: 'Invites action.', reusablePattern: 'Ask for saves.' },
+      opening: { type: '浜偣鍓嶇疆', analysis: 'Starts with the best result.', reusablePattern: 'Lead with the result.' },
+      structure: { type: '閫掕繘缁撴瀯', analysis: 'Builds from pain to solution.', outline: ['pain', 'solution'] },
+      ending: { type: '寮曞鍨嬬粨灏?', analysis: 'Invites action.', reusablePattern: 'Ask for saves.' },
       viralPoint: { summary: 'Simple useful solution.', evidence: ['clear contrast'], reusablePattern: 'Show before and after.' },
     },
     recreation: {

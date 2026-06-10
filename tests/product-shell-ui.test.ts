@@ -82,6 +82,14 @@ describe('product shell ui', () => {
     }
     expect(main).not.toContain('特效拆解');
     expect(main).not.toContain("type ViralInsightTab = 'prompt' | 'effects'");
+    expect(main).toContain('latestViralEventForStage');
+    expect(main).not.toContain('selectedEvents.find((event) => event.stage === stage)');
+
+    const viralReport = main.slice(main.indexOf('function ViralReport'), main.indexOf('function viralTranscriptText'));
+    expect(viralReport).toContain('uniqueViralPromptFrames(result.frames)');
+    expect(viralReport).not.toContain('slice(0, 8)');
+    expect(viralReport).toContain('关键帧数量');
+    expect(viralReport).toContain('keyFrameCount');
 
     expect(css).toContain('.viral-analyzer-layout');
     expect(css).toContain('.viral-workbench');

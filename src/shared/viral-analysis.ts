@@ -45,12 +45,17 @@ export interface ViralMediaExtractionResult {
   frames: Array<{ timestamp: number; framePath: string }>;
 }
 
+export interface ViralMediaExtractionRequest {
+  keyFrameCount: number;
+  sourceDurationSeconds: number;
+}
+
 export interface RunViralAnalysisOptions {
   workDir: string;
   signal?: AbortSignal;
   emit?: (event: Pick<ViralAnalysisEvent, 'type' | 'stage' | 'detail'> & { progress?: number; data?: unknown }) => Promise<void>;
   download: (record: ViralAnalysisRecord, workDir: string, signal?: AbortSignal) => Promise<ViralMediaDownloadResult>;
-  extract: (videoPath: string, workDir: string, signal?: AbortSignal) => Promise<ViralMediaExtractionResult>;
+  extract: (videoPath: string, workDir: string, signal?: AbortSignal, request?: ViralMediaExtractionRequest) => Promise<ViralMediaExtractionResult>;
   transcribe: (audioPath: string, signal?: AbortSignal) => Promise<ViralTranscriptSegment[]>;
   analyzeFrame: (frame: { timestamp: number; framePath: string }, previousFrame: { timestamp: number; framePath: string } | null, source: ViralVideoSource, signal?: AbortSignal) => Promise<ViralFrameAnalysis>;
   analyzeBreakdown: (input: ViralBreakdownPromptInput, signal?: AbortSignal) => Promise<ViralContentBreakdown>;
@@ -103,7 +108,11 @@ export async function runViralAnalysis(record: ViralAnalysisRecord, options: Run
   });
 
   await emit('stage_start', 'extracting', 'Extracting audio and frames', 0.18);
-  const extracted = await options.extract(downloaded.videoPath, options.workDir, options.signal);
+  const extractionRequest: ViralMediaExtractionRequest = {
+    keyFrameCount: normalizeKeyFrameCount(record.settings.keyFrameCount),
+    sourceDurationSeconds: normalizeDurationSeconds(downloaded.source.duration),
+  };
+  const extracted = await options.extract(downloaded.videoPath, options.workDir, options.signal, extractionRequest);
 
   await emit('stage_start', 'transcribing', 'Transcribing narration', 0.32);
   const transcript = await options.transcribe(extracted.audioPath, options.signal);
@@ -111,8 +120,19 @@ export async function runViralAnalysis(record: ViralAnalysisRecord, options: Run
   await emit('stage_start', 'analyzing_frames', 'Analyzing key frames', 0.45);
   const uniqueFrames = await filterUniqueExtractedFrames(extracted.frames);
   const frames: ViralFrameAnalysis[] = [];
+  const showFrameProgress = uniqueFrames.length > 1;
   for (const [index, frame] of uniqueFrames.entries()) {
     throwIfAborted(options.signal);
+    if (showFrameProgress) {
+      const current = index + 1;
+      await emit(
+        'stage_progress',
+        'analyzing_frames',
+        `Analyzing key frames (${current}/${uniqueFrames.length})`,
+        0.45 + (current / uniqueFrames.length) * 0.24,
+        { current, total: uniqueFrames.length, timestamp: frame.timestamp },
+      );
+    }
     const previous = index > 0 ? uniqueFrames[index - 1] : null;
     frames.push(await options.analyzeFrame(frame, previous, downloaded.source, options.signal));
   }
@@ -190,7 +210,7 @@ export function buildViralRecreationPrompt(input: ViralRecreationPromptInput): s
 
 export function createViralProductionTaskInput(result: ViralAnalysisResult, options: ViralProductionTaskOptions = {}): CreateTaskInput {
   const defaults = result.recreation.taskDefaults;
-  const settings: Required<ViralAnalysisSettings> = {
+  const settings = {
     track: options.track ?? defaults.track ?? 'general-story',
     style: options.style ?? defaults.style ?? 'photo-real',
     ratio: options.ratio ?? defaults.ratio ?? '9:16',
@@ -207,6 +227,7 @@ export function createViralProductionTaskInput(result: ViralAnalysisResult, opti
     ratio: settings.ratio,
     templateId: settings.templateId,
     storyboardSceneCount: settings.storyboardSceneCount,
+    imagePromptReference: buildViralImagePromptReference(result.frames),
     extraRequirements: [
       '结构级复刻：只复用原视频的开头方式、结构节奏、结尾功能和爆点逻辑。',
       '不要逐句照搬、不要复用原标题、不要复用原视频独特表达。',
@@ -216,6 +237,17 @@ export function createViralProductionTaskInput(result: ViralAnalysisResult, opti
       .filter(Boolean)
       .join('\n'),
   };
+}
+
+export function buildViralImagePromptReference(frames: ViralFrameAnalysis[]): string {
+  return frames
+    .map((frame, index) => {
+      const prompt = frame.imagePrompt?.trim();
+      if (!prompt) return '';
+      return `${index + 1}. ${formatViralTimestamp(frame.timestamp)} - ${prompt}`;
+    })
+    .filter(Boolean)
+    .join('\n');
 }
 
 function emptyRecreation(settings: ViralAnalysisSettings): ViralRecreationDraft {
@@ -247,6 +279,21 @@ async function filterUniqueExtractedFrames(
     unique.push(frame);
   }
   return unique;
+}
+
+function normalizeKeyFrameCount(value: unknown): number {
+  const parsed = Number(value);
+  if (!Number.isFinite(parsed)) return 8;
+  return Math.min(40, Math.max(1, Math.round(parsed)));
+}
+
+function normalizeDurationSeconds(value: unknown): number {
+  const parsed = Number(value);
+  return Number.isFinite(parsed) && parsed > 0 ? parsed : 0;
+}
+
+function formatViralTimestamp(timestamp: number): string {
+  return `${Math.max(0, Math.round(timestamp))}s`;
 }
 
 function throwIfAborted(signal?: AbortSignal): void {

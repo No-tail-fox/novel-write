@@ -306,6 +306,7 @@ export interface Task {
   aiSources: string[];
   selectedSources: AiSourceSection[];
   extraRequirements: string;
+  imagePromptReference: string;
   promptTemplateId: string | null;
   promptTemplateType: string | null;
   referenceImagePath: string;
@@ -331,6 +332,7 @@ export type CreateTaskInput = Partial<
     | 'aiSources'
     | 'selectedSources'
     | 'extraRequirements'
+    | 'imagePromptReference'
     | 'track'
     | 'style'
     | 'speaker'
@@ -552,6 +554,7 @@ export interface ViralAnalysisSettings {
   style: string;
   ratio: string;
   templateId: string;
+  keyFrameCount?: number;
   storyboardSceneCount?: number;
   extraRequirements?: string;
 }

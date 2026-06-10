@@ -3266,6 +3266,7 @@ textarea {
 }
 
 .viral-insight-tabs {
+  align-items: center;
   display: inline-flex;
   flex-wrap: wrap;
   gap: 6px;
@@ -3284,6 +3285,12 @@ textarea {
   border-color: var(--accent);
   background: rgba(0, 230, 184, 0.12);
   color: var(--accent);
+}
+
+.viral-keyframe-count {
+  color: var(--muted);
+  font-size: 12px;
+  padding: 0 4px;
 }
 
 .viral-insight-list {

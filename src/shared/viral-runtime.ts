@@ -1,13 +1,15 @@
 import { execFile } from 'node:child_process';
-import { mkdir, readdir, readFile, stat } from 'node:fs/promises';
+import { mkdir, readFile, stat } from 'node:fs/promises';
 import { basename, extname, join } from 'node:path';
 import { promisify } from 'node:util';
+import { fetchWithTimeout as fetchWithRequestTimeout } from './http';
 import { createOpenAiCompatibleJsonLlm } from './llm-provider';
 import { resolvePythonCommand } from './python-runtime';
 import {
   buildViralBreakdownPrompt,
   buildViralRecreationPrompt,
   type RunViralAnalysisOptions,
+  type ViralMediaExtractionRequest,
   type ViralMediaExtractionResult,
 } from './viral-analysis';
 import { downloadViralMedia } from './viral-download';
@@ -18,12 +20,13 @@ export const DEFAULT_WHISPER_HF_MIRROR = 'https://hf-mirror.com';
 const OPENAI_STT_UPLOAD_LIMIT_BYTES = 25 * 1024 * 1024;
 const SILICONFLOW_STT_UPLOAD_LIMIT_BYTES = 50 * 1024 * 1024;
 const SILICONFLOW_STT_BASE_URL = 'https://api.siliconflow.cn/v1';
+const DEFAULT_VIRAL_KEY_FRAME_COUNT = 8;
 
 export function createViralRuntimeProviders(config: AppConfig, _workDir: string): Omit<RunViralAnalysisOptions, 'workDir' | 'emit' | 'signal'> {
   const textLlm = createOpenAiCompatibleJsonLlm(config.llm);
   return {
     download: (record, runDir, signal) => downloadViralMedia({ url: record.url, platform: record.platform, workDir: runDir, config }, signal),
-    extract: (videoPath, runDir, signal) => extractViralMedia(videoPath, runDir, config, signal),
+    extract: (videoPath, runDir, signal, request) => extractViralMedia(videoPath, runDir, config, signal, request),
     transcribe: (audioPath, signal) => transcribeViralAudio(audioPath, config, signal),
     analyzeFrame: (frame, previousFrame, source, signal) =>
       analyzeViralFrame(frame, previousFrame, source, resolveViralFrameVisionConfig(config), signal),
@@ -62,26 +65,92 @@ function hasUsableLlmConfig(config: LlmConfig): boolean {
   return Boolean(config.apiKey.trim() && config.model.trim());
 }
 
-async function extractViralMedia(videoPath: string, workDir: string, config: AppConfig, signal?: AbortSignal): Promise<ViralMediaExtractionResult> {
+async function extractViralMedia(
+  videoPath: string,
+  workDir: string,
+  config: AppConfig,
+  signal?: AbortSignal,
+  request?: ViralMediaExtractionRequest,
+): Promise<ViralMediaExtractionResult> {
   const audioPath = join(workDir, 'audio.m4a');
   const framesDir = join(workDir, 'frames');
   await mkdir(framesDir, { recursive: true });
   const ffmpeg = await resolveBundledFfmpeg(signal);
   await runCommand(ffmpeg, ['-y', '-i', videoPath, '-vn', '-c:a', 'aac', '-b:a', '96k', '-ar', '16000', '-ac', '1', audioPath], 120000, signal);
-  await runCommand(
-    ffmpeg,
-    ['-y', '-i', videoPath, '-vf', `fps=1/${config.viral.frameIntervalSeconds},scale=1280:-2`, '-q:v', '2', join(framesDir, 'frame-%04d.jpg')],
-    120000,
-    signal,
-  );
-  const files = (await readdir(framesDir)).filter((file) => /\.jpe?g$/i.test(file)).slice(0, config.viral.maxFrames);
+  const keyFrameCount = normalizeKeyFrameCount(request?.keyFrameCount ?? config.viral.maxFrames);
+  const requestedDuration = normalizeDurationSeconds(request?.sourceDurationSeconds);
+  const sourceDuration = requestedDuration || (await probeVideoDurationSeconds(ffmpeg, videoPath, signal));
+  const timestamps = buildKeyFrameTimestamps(sourceDuration, keyFrameCount, config.viral.frameIntervalSeconds);
+  const files: string[] = [];
+  for (const [index, timestamp] of timestamps.entries()) {
+    const file = `frame-${String(index + 1).padStart(4, '0')}.jpg`;
+    await runCommand(
+      ffmpeg,
+      ['-y', '-ss', formatFfmpegTimestamp(timestamp), '-i', videoPath, '-frames:v', '1', '-vf', 'scale=1280:-2', '-q:v', '2', join(framesDir, file)],
+      120000,
+      signal,
+    );
+    files.push(file);
+  }
   return {
     audioPath,
     frames: files.map((file, index) => ({
       framePath: join(framesDir, file),
-      timestamp: index * config.viral.frameIntervalSeconds,
+      timestamp: timestamps[index] ?? index * config.viral.frameIntervalSeconds,
     })),
   };
+}
+
+function normalizeKeyFrameCount(value: unknown): number {
+  const parsed = Number(value);
+  if (!Number.isFinite(parsed)) return DEFAULT_VIRAL_KEY_FRAME_COUNT;
+  return Math.min(40, Math.max(1, Math.round(parsed)));
+}
+
+function normalizeDurationSeconds(value: unknown): number {
+  const parsed = Number(value);
+  return Number.isFinite(parsed) && parsed > 0 ? parsed : 0;
+}
+
+function buildKeyFrameTimestamps(durationSeconds: number, count: number, fallbackIntervalSeconds: number): number[] {
+  if (count <= 0) return [];
+  const duration = normalizeDurationSeconds(durationSeconds);
+  if (duration > 0) {
+    const interval = duration / count;
+    const maxTimestamp = Math.max(0, duration - 0.05);
+    return Array.from({ length: count }, (_item, index) => roundTimestamp(Math.min(index * interval, maxTimestamp)));
+  }
+  const interval = normalizeDurationSeconds(fallbackIntervalSeconds) || 3;
+  return Array.from({ length: count }, (_item, index) => roundTimestamp(index * interval));
+}
+
+function roundTimestamp(value: number): number {
+  return Number(value.toFixed(3));
+}
+
+function formatFfmpegTimestamp(value: number): string {
+  return roundTimestamp(Math.max(0, value)).toString();
+}
+
+async function probeVideoDurationSeconds(ffmpeg: string, videoPath: string, signal?: AbortSignal): Promise<number> {
+  try {
+    const result = await execFileAsync(ffmpeg, ['-hide_banner', '-i', videoPath], { timeout: 30000, signal, windowsHide: true });
+    return parseFfmpegDuration(`${result.stdout}\n${result.stderr}`);
+  } catch (error) {
+    const stderr = error && typeof error === 'object' && 'stderr' in error ? String((error as { stderr?: unknown }).stderr ?? '') : '';
+    const stdout = error && typeof error === 'object' && 'stdout' in error ? String((error as { stdout?: unknown }).stdout ?? '') : '';
+    return parseFfmpegDuration(`${stdout}\n${stderr}`);
+  }
+}
+
+function parseFfmpegDuration(output: string): number {
+  const match = output.match(/Duration:\s*(\d+):(\d+):(\d+(?:\.\d+)?)/);
+  if (!match) return 0;
+  const hours = Number(match[1]);
+  const minutes = Number(match[2]);
+  const seconds = Number(match[3]);
+  if (![hours, minutes, seconds].every(Number.isFinite)) return 0;
+  return hours * 3600 + minutes * 60 + seconds;
 }
 
 async function resolveBundledFfmpeg(signal?: AbortSignal): Promise<string> {
@@ -397,7 +466,12 @@ async function analyzeViralFrame(
       })),
     )),
   ];
-  const raw = await runOpenAiCompatibleVision(config, content, signal);
+  const endpoint = `${normalizeOpenAiBaseUrl(config.baseUrl || 'https://api.openai.com')}/chat/completions`;
+  const raw = await runOpenAiCompatibleVision(config, content, signal).catch((error) => {
+    const detail = error instanceof Error ? error.message : String(error);
+    if (/爆款拆解视觉模型未配置/.test(detail)) throw error;
+    throw new Error(formatViralFrameAnalysisError(error, { frame, source, endpoint }));
+  });
   const parsed = parseJsonLoose<Partial<ViralFrameAnalysis>>(raw, {});
   return {
     timestamp: frame.timestamp,
@@ -434,8 +508,10 @@ async function runOpenAiCompatibleVision(config: LlmConfig, content: unknown[], 
     throw new Error('爆款拆解视觉模型未配置：请在系统设置 > LLM 填写支持图片输入的 API Key 和模型后重试。');
   }
   const endpoint = `${normalizeOpenAiBaseUrl(config.baseUrl || 'https://api.openai.com')}/chat/completions`;
-  const response = await fetch(endpoint, {
+  const response = await fetchWithRequestTimeout(endpoint, {
     method: 'POST',
+    timeoutMs: config.timeoutMs ?? 120_000,
+    timeoutLabel: 'Viral frame analysis',
     signal,
     headers: {
       'Content-Type': 'application/json',
@@ -453,6 +529,13 @@ async function runOpenAiCompatibleVision(config: LlmConfig, content: unknown[], 
   if (!response.ok) throw new Error(`Vision API error ${response.status}: ${(await response.text()).slice(0, 300)}`);
   const body = (await response.json()) as { choices?: Array<{ message?: { content?: string | null } }> };
   return body.choices?.[0]?.message?.content ?? '';
+}
+
+function formatViralFrameAnalysisError(error: unknown, context: { endpoint: string; frame?: { timestamp: number }; source?: ViralVideoSource }): string {
+  const detail = compactErrorText(stringifyError(error));
+  const timestampText = context.frame ? ` at ${context.frame.timestamp}s` : '';
+  const titleText = context.source?.title.trim() ? ` for "${context.source.title.trim()}"` : '';
+  return `Frame analysis failed${timestampText}${titleText} via ${context.endpoint}: ${detail}`;
 }
 
 async function runCommand(command: string, args: string[], timeout: number, signal?: AbortSignal, env?: Record<string, string>): Promise<{ stdout: string; stderr: string }> {

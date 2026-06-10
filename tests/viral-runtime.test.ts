@@ -158,4 +158,38 @@ describe('viral runtime speech-to-text API', () => {
       '爆款拆解视觉模型未配置',
     );
   });
+
+  it('wraps viral frame vision fetch failures with stage context', async () => {
+    const dir = await mkdtemp(join(tmpdir(), 'storybound-viral-vision-fetch-fail-'));
+    const framePath = join(dir, 'frame.jpg');
+    await writeFile(framePath, 'not-a-real-jpeg');
+    const originalFetch = globalThis.fetch;
+    globalThis.fetch = vi.fn(async () => {
+      throw new TypeError('fetch failed');
+    }) as typeof fetch;
+
+    try {
+      const config = normalizeAppConfig({
+        ...defaultConfig,
+        viral: {
+          ...defaultConfig.viral,
+          vision: {
+            ...defaultConfig.viral.vision,
+            apiKey: 'vision-key',
+            baseUrl: 'https://vision.example',
+            model: 'vision-model',
+            timeoutMs: 10,
+          },
+        },
+      });
+
+      const providers = createViralRuntimeProviders(config, dir);
+
+      await expect(providers.analyzeFrame({ timestamp: 0, framePath }, null, { title: 'Sample clip' } as never)).rejects.toThrow(
+        /frame analysis failed.*fetch failed/i,
+      );
+    } finally {
+      globalThis.fetch = originalFetch;
+    }
+  });
 });

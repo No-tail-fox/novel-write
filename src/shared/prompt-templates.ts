@@ -232,6 +232,7 @@ function buildTemplateValues(context: PromptRenderContext): Record<string, strin
     style: String(task.style ?? ''),
     ratio: String(task.ratio ?? ''),
     extraRequirements: String(task.extraRequirements ?? ''),
+    imagePromptReference: String(task.imagePromptReference ?? ''),
     rewriteIntensity: String(task.rewriteIntensity ?? ''),
     narrativePov: String(task.narrativePov ?? ''),
     keepPromotion: String(task.keepPromotion ?? ''),
