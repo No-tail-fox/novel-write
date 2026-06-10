@@ -213,10 +213,13 @@ describe('electron ipc contract', () => {
     expect(main).toContain("ipcMain.handle('viral:open-login-window'");
     expect(main).toContain('partition:');
     expect(main).toContain('persist:storybound-viral-douyin');
+    expect(main).toContain('async function openViralLoginWindow(): Promise<string | null>');
+    expect(main).toContain('resolve(cookiePath)');
     expect(preload).toContain('selectCookieFile');
     expect(preload).toContain('openViralLoginWindow');
+    expect(preload).toContain('openViralLoginWindow: (): Promise<string | null>');
     expect(viteEnv).toContain('selectCookieFile: () => Promise<string | null>');
-    expect(viteEnv).toContain('openViralLoginWindow: () => Promise<void>');
+    expect(viteEnv).toContain('openViralLoginWindow: () => Promise<string | null>');
   });
 
   it('exposes pyJianYingDraft effect catalog loading to the renderer', async () => {

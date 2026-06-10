@@ -1,4 +1,5 @@
-import { mkdir, writeFile } from 'node:fs/promises';
+import { createHash } from 'node:crypto';
+import { mkdir, readFile, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import type {
   CreateTaskInput,
@@ -108,10 +109,11 @@ export async function runViralAnalysis(record: ViralAnalysisRecord, options: Run
   const transcript = await options.transcribe(extracted.audioPath, options.signal);
 
   await emit('stage_start', 'analyzing_frames', 'Analyzing key frames', 0.45);
+  const uniqueFrames = await filterUniqueExtractedFrames(extracted.frames);
   const frames: ViralFrameAnalysis[] = [];
-  for (const [index, frame] of extracted.frames.entries()) {
+  for (const [index, frame] of uniqueFrames.entries()) {
     throwIfAborted(options.signal);
-    const previous = index > 0 ? extracted.frames[index - 1] : null;
+    const previous = index > 0 ? uniqueFrames[index - 1] : null;
     frames.push(await options.analyzeFrame(frame, previous, downloaded.source, options.signal));
   }
 
@@ -231,6 +233,20 @@ function emptyRecreation(settings: ViralAnalysisSettings): ViralRecreationDraft 
       storyboardSceneCount: settings.storyboardSceneCount ?? 12,
     },
   };
+}
+
+async function filterUniqueExtractedFrames(
+  frames: ViralMediaExtractionResult['frames'],
+): Promise<ViralMediaExtractionResult['frames']> {
+  const seen = new Set<string>();
+  const unique: ViralMediaExtractionResult['frames'] = [];
+  for (const frame of frames) {
+    const hash = createHash('sha256').update(await readFile(frame.framePath)).digest('hex');
+    if (seen.has(hash)) continue;
+    seen.add(hash);
+    unique.push(frame);
+  }
+  return unique;
 }
 
 function throwIfAborted(signal?: AbortSignal): void {

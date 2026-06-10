@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import {
   buildViralBreakdownPrompt,
   buildViralRecreationPrompt,
@@ -8,7 +8,7 @@ import {
   runViralAnalysis,
 } from '@shared/viral-analysis';
 import type { ViralAnalysisResult } from '@shared/types';
-import { mkdtemp, readFile, rm } from 'node:fs/promises';
+import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
@@ -157,6 +157,8 @@ describe('viral analysis helpers', () => {
 
   it('runs the viral analysis pipeline with injected media and model providers', async () => {
     const dir = await mkdtemp(join(tmpdir(), 'storybound-viral-run-'));
+    const framePath = join(dir, 'frame.jpg');
+    await writeFile(framePath, 'single-frame-bytes');
     const events: string[] = [];
 
     try {
@@ -192,12 +194,12 @@ describe('viral analysis helpers', () => {
           }),
           extract: async () => ({
             audioPath: join(dir, 'audio.wav'),
-            frames: [{ timestamp: 0, framePath: join(dir, 'frame.jpg') }],
+            frames: [{ timestamp: 0, framePath }],
           }),
           transcribe: async () => makeViralResult().transcript,
           analyzeFrame: async () => makeViralResult().frames[0] ?? {
             timestamp: 0,
-            framePath: join(dir, 'frame.jpg'),
+            framePath,
             shotType: '特写',
             cameraMovement: '固定',
             composition: '中心构图',
@@ -206,6 +208,7 @@ describe('viral analysis helpers', () => {
             visualDescription: 'A strong opening frame.',
             mood: '紧张',
             keyElements: ['人物', '字幕'],
+            imagePrompt: '中文生图提示词：强开头画面，大字标题，中心构图',
           },
           analyzeBreakdown: async () => makeViralResult().contentBreakdown,
           createRecreation: async () => makeViralResult().recreation,
@@ -224,6 +227,80 @@ describe('viral analysis helpers', () => {
       ]);
       expect(completed.result.recreation.script).toBe('A fresh structure-level script.');
       expect(JSON.parse(await readFile(completed.resultPath, 'utf8')).recreation.script).toBe('A fresh structure-level script.');
+    } finally {
+      await rm(dir, { recursive: true, force: true });
+    }
+  });
+
+  it('analyzes only unique extracted frame images for prompt breakdown', async () => {
+    const dir = await mkdtemp(join(tmpdir(), 'storybound-viral-unique-frames-'));
+    const firstFrame = join(dir, 'frame-0001.jpg');
+    const duplicateFrame = join(dir, 'frame-0002.jpg');
+    const differentFrame = join(dir, 'frame-0003.jpg');
+    await writeFile(firstFrame, 'same-image-bytes');
+    await writeFile(duplicateFrame, 'same-image-bytes');
+    await writeFile(differentFrame, 'different-image-bytes');
+
+    const analyzeFrame = vi.fn(async (frame: { timestamp: number; framePath: string }) => ({
+      timestamp: frame.timestamp,
+      framePath: frame.framePath,
+      shotType: '中景',
+      cameraMovement: '固定镜头',
+      composition: '中心构图',
+      transition: '硬切',
+      textOverlay: '原画面字幕',
+      visualDescription: '中文画面解析',
+      mood: '紧张',
+      keyElements: ['人物', '大字标题'],
+      imagePrompt: `中文生图提示词：${frame.timestamp}s 画面`,
+    }));
+
+    try {
+      const completed = await runViralAnalysis(
+        {
+          id: 'viral-unique-frames',
+          url: 'https://www.douyin.com/video/123',
+          platform: 'douyin',
+          title: '',
+          status: 'pending',
+          currentStage: 'queued',
+          progress: 0,
+          settings: { track: 'ecommerce', style: 'photo-real', ratio: '9:16', templateId: 'default-portrait-9-16' },
+          resultPath: '',
+          videoPath: '',
+          errorMessage: '',
+          createdAt: '2026-06-02T00:00:00.000Z',
+          startedAt: null,
+          completedAt: null,
+          lastHeartbeatAt: null,
+        },
+        {
+          workDir: dir,
+          download: async () => ({
+            source: makeViralResult().source,
+            videoPath: join(dir, 'video.mp4'),
+            provider: 'douyin-internal',
+            normalizedUrl: 'https://www.douyin.com/video/123',
+            usedCookieSource: 'none',
+          }),
+          extract: async () => ({
+            audioPath: join(dir, 'audio.wav'),
+            frames: [
+              { timestamp: 0, framePath: firstFrame },
+              { timestamp: 3, framePath: duplicateFrame },
+              { timestamp: 6, framePath: differentFrame },
+            ],
+          }),
+          transcribe: async () => makeViralResult().transcript,
+          analyzeFrame,
+          analyzeBreakdown: async () => makeViralResult().contentBreakdown,
+          createRecreation: async () => makeViralResult().recreation,
+        },
+      );
+
+      expect(analyzeFrame).toHaveBeenCalledTimes(2);
+      expect(analyzeFrame.mock.calls.map(([frame]) => frame.timestamp)).toEqual([0, 6]);
+      expect(completed.result.frames.map((frame) => frame.timestamp)).toEqual([0, 6]);
     } finally {
       await rm(dir, { recursive: true, force: true });
     }

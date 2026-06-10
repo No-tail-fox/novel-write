@@ -846,6 +846,7 @@ function ViralAnalyzerPage({
   const selectedEvents = selected ? state.viralEvents.filter((event) => event.analysisId === selected.id) : [];
   const detectedPlatform = detectBrowserViralPlatform(url);
   const selectedPlatformForAnalysis: ViralPlatform = sourceMode === 'auto' ? detectedPlatform : sourceMode;
+  const selectedStageIndex = selected ? viralStages.indexOf(selected.currentStage) : -1;
 
   useEffect(() => {
     if (!selectedId && state.viralAnalyses[0]) setSelectedId(state.viralAnalyses[0].id);
@@ -895,7 +896,11 @@ function ViralAnalyzerPage({
 
   async function openDouyinLogin() {
     setMessage('请在打开的抖音窗口完成登录，关闭窗口后会自动保存 Cookie。');
-    await api.openViralLoginWindow();
+    const loginCookiePath = await api.openViralLoginWindow();
+    if (loginCookiePath) {
+      setCookieFilePath(loginCookiePath);
+      setMessage(`已保存 Cookie 文件：${loginCookiePath}`);
+    }
   }
 
   async function startAnalysis() {
@@ -933,94 +938,105 @@ function ViralAnalyzerPage({
 
   return (
     <div className="viral-analyzer-layout">
-      <section className="panel viral-input-panel">
-        <div className="panel-title-row">
-          <div>
-            <h2>爆款拆解</h2>
-            <p>支持抖音、快手、B站链接，拆解开头、结构、结尾、爆点。</p>
-          </div>
-          <Flame size={20} />
-        </div>
-        <label className="field-label" htmlFor="viral-url-input">视频链接</label>
-        <input id="viral-url-input" className="text-input viral-url-input" value={url} onChange={(event) => handleUrlChange(event.target.value)} placeholder="https://www.douyin.com/video/..." />
-        <div className="segmented viral-platform-picker">
-          {viralSourceModes.map((item) => (
-            <button key={item} type="button" className={sourceMode === item ? 'active' : ''} onClick={() => setSourceMode(item)}>
-              {viralSourceModeLabel(item)}
-            </button>
-          ))}
-        </div>
-        <p className="viral-source-status">
-          {sourceMode === 'auto' ? `自动识别：${viralPlatformLabel(detectedPlatform)}` : `手动指定：${viralPlatformLabel(selectedPlatformForAnalysis)}`}
-        </p>
-        <button className="primary-action viral-start-action" disabled={isBrowserPreview && false} onClick={startAnalysis}>
-          <Search size={16} />
-          开始拆解
-        </button>
-        <div className="viral-settings-grid">
-          <ViralChoiceGroup title="赛道" options={contentTracks} value={track} onChange={setTrack} />
-          <ViralChoiceGroup title="风格" options={styleOptions} value={style} onChange={setStyle} />
-          <ViralChoiceGroup title="比例" options={ratioOptions.map((item) => [item, item, ''])} value={ratio} onChange={setRatio} compact />
-          <Field label="草稿模板">
-            <select className="viral-draft-template-select" value={templateId} onChange={(event) => setTemplateId(event.target.value)}>
-              {state.draftTemplates.map((template) => (
-                <option key={template.id} value={template.id}>
-                  {template.name} · {template.canvas.ratio}
-                </option>
-              ))}
-            </select>
-          </Field>
-        </div>
-        <div className="viral-cookie-tools">
-          <div className="settings-inline-actions">
-            <button className="mini-button" type="button" onClick={openDouyinLogin}>打开抖音登录窗口</button>
-            <button className="mini-button" type="button" onClick={chooseCookieFile}>选择 Cookie 文件</button>
-          </div>
-          <Field label="Cookie 文件">
-            <div className="viral-cookie-input-row">
-              <input
-                id="viral-cookie-input"
-                className="text-input"
-                value={cookieFilePath}
-                onChange={(event) => setCookieFilePath(event.target.value)}
-                onBlur={() => saveViralCookiePath(cookieFilePath)}
-                placeholder="C:\\Users\\you\\Downloads\\cookies.txt"
-              />
-              {cookieFilePath ? <button className="mini-button" type="button" onClick={() => saveViralCookiePath('')}>清空</button> : null}
+      <div className="viral-workbench">
+        <section className="panel viral-input-panel">
+          <div className="panel-title-row">
+            <div>
+              <h2>爆款拆解</h2>
+              <p>支持抖音、快手、B站链接，拆解开头、结构、结尾、爆点。</p>
             </div>
-          </Field>
-          <p className="muted-text">抖音风控时先点登录窗口完成登录；关闭窗口后会自动写入本应用的 Cookie 文件。也可以手动选择 Netscape cookies.txt。</p>
-        </div>
-        {message ? <div className="test-result">{message}</div> : null}
-      </section>
+            <Flame size={20} />
+          </div>
+          <label className="field-label" htmlFor="viral-url-input">视频链接</label>
+          <input id="viral-url-input" className="text-input viral-url-input" value={url} onChange={(event) => handleUrlChange(event.target.value)} placeholder="https://www.douyin.com/video/..." />
+          <div className="segmented viral-platform-picker">
+            {viralSourceModes.map((item) => (
+              <button key={item} type="button" className={sourceMode === item ? 'active' : ''} onClick={() => setSourceMode(item)}>
+                {viralSourceModeLabel(item)}
+              </button>
+            ))}
+          </div>
+          <p className="viral-source-status">
+            {sourceMode === 'auto' ? `自动识别：${viralPlatformLabel(detectedPlatform)}` : `手动指定：${viralPlatformLabel(selectedPlatformForAnalysis)}`}
+          </p>
+          <button className="primary-action viral-start-action" disabled={isBrowserPreview && false} onClick={startAnalysis}>
+            <Search size={16} />
+            开始拆解
+          </button>
+          <div className="viral-settings-grid">
+            <ViralChoiceGroup title="赛道" options={contentTracks} value={track} onChange={setTrack} />
+            <ViralChoiceGroup title="风格" options={styleOptions} value={style} onChange={setStyle} />
+            <ViralChoiceGroup title="比例" options={ratioOptions.map((item) => [item, item, ''])} value={ratio} onChange={setRatio} compact />
+            <Field label="草稿模板">
+              <select className="viral-draft-template-select" value={templateId} onChange={(event) => setTemplateId(event.target.value)}>
+                {state.draftTemplates.map((template) => (
+                  <option key={template.id} value={template.id}>
+                    {template.name} · {template.canvas.ratio}
+                  </option>
+                ))}
+              </select>
+            </Field>
+          </div>
+          <div className="viral-cookie-tools">
+            <div className="settings-inline-actions">
+              <button className="mini-button" type="button" onClick={openDouyinLogin}>打开抖音登录窗口</button>
+              <button className="mini-button" type="button" onClick={chooseCookieFile}>选择 Cookie 文件</button>
+            </div>
+            <Field label="Cookie 文件">
+              <div className="viral-cookie-input-row">
+                <input
+                  id="viral-cookie-input"
+                  className="text-input"
+                  value={cookieFilePath}
+                  onChange={(event) => setCookieFilePath(event.target.value)}
+                  onBlur={() => saveViralCookiePath(cookieFilePath)}
+                  placeholder="C:\\Users\\you\\Downloads\\cookies.txt"
+                />
+                {cookieFilePath ? <button className="mini-button" type="button" onClick={() => saveViralCookiePath('')}>清空</button> : null}
+              </div>
+            </Field>
+            <p className="muted-text">抖音风控时先点登录窗口完成登录；关闭窗口后会自动写入本应用的 Cookie 文件。也可以手动选择 Netscape cookies.txt。</p>
+          </div>
+          {message ? <div className="test-result">{message}</div> : null}
+        </section>
 
-      <section className="panel viral-history-panel">
-        <h3>历史拆解</h3>
-        <div className="viral-history-list">
-          {state.viralAnalyses.map((item) => (
-            <button key={item.id} className={selected?.id === item.id ? 'viral-history-item active' : 'viral-history-item'} onClick={() => setSelectedId(item.id)}>
-              <strong>{item.title || item.url}</strong>
-              <span>{viralPlatformLabel(item.platform)} · {viralStatusLabel(item.status)} · {(item.progress * 100).toFixed(0)}%</span>
-            </button>
-          ))}
-          {state.viralAnalyses.length === 0 ? <p className="muted-text">暂无拆解任务</p> : null}
-        </div>
-      </section>
+        <section className="panel viral-history-panel">
+          <div className="panel-title-row">
+            <h3>历史拆解</h3>
+            <span className="panel-count">{state.viralAnalyses.length}</span>
+          </div>
+          <div className="viral-history-list">
+            {state.viralAnalyses.map((item) => (
+              <button key={item.id} title={item.title || item.url} className={selected?.id === item.id ? 'viral-history-item active' : 'viral-history-item'} onClick={() => setSelectedId(item.id)}>
+                <strong>{item.title || item.url}</strong>
+                <span>{viralPlatformLabel(item.platform)} · {viralStatusLabel(item.status)} · {(item.progress * 100).toFixed(0)}%</span>
+              </button>
+            ))}
+            {state.viralAnalyses.length === 0 ? <p className="muted-text">暂无拆解任务</p> : null}
+          </div>
+        </section>
+      </div>
 
       <section className="panel viral-progress-panel">
         <h3>任务进度</h3>
-        <div className="viral-progress-list">
-          {viralStages.map((stage) => (
-            <div key={stage} className={selected?.currentStage === stage ? 'viral-progress-step active' : 'viral-progress-step'}>
-              <span>{viralStageLabel(stage)}</span>
-              <small>{selectedEvents.find((event) => event.stage === stage)?.detail ?? '等待中'}</small>
-            </div>
-          ))}
+        <div className="viral-progress-list viral-stage-timeline">
+          {viralStages.map((stage, stageIndex) => {
+            const isActive = selected?.currentStage === stage;
+            const isCompleted = selected?.status === 'completed' || (selectedStageIndex > stageIndex && selectedStageIndex !== -1);
+            const isFailed = selected?.status === 'failed' && isActive;
+            const className = ['viral-progress-step', 'viral-stage-node', isActive ? 'active' : '', isCompleted ? 'completed' : '', isFailed ? 'failed' : ''].filter(Boolean).join(' ');
+            return (
+              <div key={stage} className={className}>
+                <span>{viralStageLabel(stage)}</span>
+                <small>{selectedEvents.find((event) => event.stage === stage)?.detail ?? '等待中'}</small>
+              </div>
+            );
+          })}
         </div>
         {selected?.errorMessage ? <ErrorSummaryButton title="拆解错误" fullMessage={selected.errorMessage} /> : null}
       </section>
 
-      <section className="panel viral-report-panel">
+      <section className="panel viral-report-panel viral-result-drawer">
         <div className="panel-title-row">
           <h3>拆解报告</h3>
           {selected?.status === 'failed' || selected?.status === 'cancelled' ? <button className="mini-button viral-retry-button" type="button" onClick={() => selected && api.retryViralAnalysis(selected.id).then(applyState)}><RotateCcw size={14} />重试</button> : null}
@@ -1061,8 +1077,13 @@ function ViralChoiceGroup({
   );
 }
 
+type ViralInsightTab = 'copy' | 'prompt';
+
 function ViralReport({ result, createProductionTask }: { result: ViralAnalysisResult; createProductionTask: () => void }) {
+  const [insightTab, setInsightTab] = useState<ViralInsightTab>('copy');
   const breakdown = result.contentBreakdown;
+  const frames = uniqueViralPromptFrames(result.frames).slice(0, 8);
+  const originalCopy = viralTranscriptText(result);
   return (
     <>
       <div className="viral-report-grid">
@@ -1070,6 +1091,37 @@ function ViralReport({ result, createProductionTask }: { result: ViralAnalysisRe
         <ViralReportCard title="结构" value={breakdown.structure.type} detail={breakdown.structure.analysis} />
         <ViralReportCard title="结尾" value={breakdown.ending.type} detail={breakdown.ending.analysis} />
         <ViralReportCard title="爆点" value={breakdown.viralPoint.summary} detail={breakdown.viralPoint.reusablePattern} />
+      </div>
+      <div className="viral-frame-insights">
+        <div className="viral-insight-tabs" role="tablist" aria-label="图文拆解">
+          <button type="button" className={insightTab === 'copy' ? 'active' : ''} onClick={() => setInsightTab('copy')}>文案拆解</button>
+          <button type="button" className={insightTab === 'prompt' ? 'active' : ''} onClick={() => setInsightTab('prompt')}>提示词拆解</button>
+        </div>
+        {insightTab === 'copy' ? (
+          <div className="viral-copy-breakdown">
+            <section className="viral-original-copy">
+              <span>原文案</span>
+              <p>{originalCopy || '暂无转写文案。可以先确认语音转文字配置，或查看下方标题、开头、结构与爆点拆解。'}</p>
+            </section>
+            <div className="viral-copy-grid">
+              <ViralCopyCard title="标题文案" value={breakdown.title.original || result.source.title || '未识别标题'} detail={breakdown.title.pattern} />
+              <ViralCopyCard title="开头话术" value={breakdown.opening.type} detail={breakdown.opening.analysis} />
+              <ViralCopyCard title="结尾话术" value={breakdown.ending.type} detail={breakdown.ending.analysis} />
+              <ViralCopyCard title="爆点表达" value={breakdown.viralPoint.summary} detail={breakdown.viralPoint.reusablePattern} />
+            </div>
+          </div>
+        ) : (
+          <div className="viral-insight-list">
+            {frames.map((frame) => (
+              <article className="viral-insight-card" key={`${frame.timestamp}-${frame.framePath}`}>
+                <span>{formatViralFrameTimestamp(frame.timestamp)} · 生图提示词拆解</span>
+                <strong>{frameImagePrompt(frame)}</strong>
+                <p>{framePromptDetail(frame)}</p>
+              </article>
+            ))}
+            {frames.length === 0 ? <p className="muted-text">暂无关键帧提示词拆解结果</p> : null}
+          </div>
+        )}
       </div>
       <div className="viral-recreation-panel">
         <h3>复刻功能</h3>
@@ -1082,6 +1134,57 @@ function ViralReport({ result, createProductionTask }: { result: ViralAnalysisRe
       </div>
     </>
   );
+}
+
+function viralTranscriptText(result: ViralAnalysisResult): string {
+  return result.transcript.map((segment) => segment.text.trim()).filter(Boolean).join('\n');
+}
+
+function frameImagePrompt(frame: ViralAnalysisResult['frames'][number]): string {
+  return frame.imagePrompt || [
+    frame.shotType,
+    frame.composition,
+    frame.visualDescription,
+    frame.mood,
+    frame.keyElements.length ? `关键元素：${frame.keyElements.join('、')}` : '',
+  ].filter(Boolean).join('，');
+}
+
+function framePromptDetail(frame: ViralAnalysisResult['frames'][number]): string {
+  return [
+    frame.visualDescription,
+    frame.textOverlay ? `画面文字：${frame.textOverlay}` : '',
+    frame.keyElements.length ? `关键元素：${frame.keyElements.join('、')}` : '',
+  ].filter(Boolean).join('\n');
+}
+
+function uniqueViralPromptFrames(frames: ViralAnalysisResult['frames']): ViralAnalysisResult['frames'] {
+  const seen = new Set<string>();
+  return frames.filter((frame) => {
+    const signature = [
+      frame.imagePrompt,
+      frame.visualDescription,
+      frame.textOverlay ?? '',
+      frame.composition,
+    ].map((item) => item.trim()).filter(Boolean).join('|') || `${frame.timestamp}-${frame.framePath}`;
+    if (seen.has(signature)) return false;
+    seen.add(signature);
+    return true;
+  });
+}
+
+function ViralCopyCard({ title, value, detail }: { title: string; value: string; detail: string }) {
+  return (
+    <article className="viral-insight-card viral-copy-card">
+      <span>{title}</span>
+      <strong>{value}</strong>
+      <p>{detail}</p>
+    </article>
+  );
+}
+
+function formatViralFrameTimestamp(timestamp: number): string {
+  return `${Math.max(0, Math.round(timestamp))}s`;
 }
 
 function ViralReportCard({ title, value, detail }: { title: string; value: string; detail: string }) {

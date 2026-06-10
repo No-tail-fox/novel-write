@@ -1,7 +1,10 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
+import { mkdtemp, writeFile } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import { defaultConfig } from '@shared/config';
 import { normalizeAppConfig } from '@shared/config-utils';
-import { buildOpenAiTranscriptionRequest, parseOpenAiTranscriptionResult } from '@shared/viral-runtime';
+import { buildOpenAiTranscriptionRequest, createViralRuntimeProviders, parseOpenAiTranscriptionResult } from '@shared/viral-runtime';
 
 describe('viral runtime speech-to-text API', () => {
   it('builds OpenAI-compatible transcription request fields from config', () => {
@@ -79,5 +82,80 @@ describe('viral runtime speech-to-text API', () => {
     expect(request.apiKey).toBe('sf-key');
     expect(request.maxUploadBytes).toBe(50 * 1024 * 1024);
     expect(request.fields).toEqual([['model', 'TeleAI/TeleSpeechASR']]);
+  });
+
+  it('falls back to the main LLM when the viral vision profile is incomplete', async () => {
+    const dir = await mkdtemp(join(tmpdir(), 'storybound-viral-vision-fallback-'));
+    const framePath = join(dir, 'frame.jpg');
+    await writeFile(framePath, 'not-a-real-jpeg');
+    const originalFetch = globalThis.fetch;
+    const fetchMock = vi.fn(async (_url: string | URL | Request, _init?: RequestInit) => new Response(JSON.stringify({
+      choices: [{ message: { content: '{"shotType":"特写","visualDescription":"商品占据画面中心","imagePrompt":"中文生图提示词：商品特写，中心构图，高对比字幕"}' } }],
+    })));
+    globalThis.fetch = fetchMock as unknown as typeof fetch;
+    try {
+      const config = normalizeAppConfig({
+        ...defaultConfig,
+        llm: {
+          ...defaultConfig.llm,
+          apiKey: 'llm-key',
+          baseUrl: 'https://llm.example',
+          model: 'vision-chat-model',
+        },
+        viral: {
+          ...defaultConfig.viral,
+          vision: {
+            ...defaultConfig.viral.vision,
+            apiKey: 'stale-vision-key',
+            model: '',
+          },
+        },
+      });
+
+      const providers = createViralRuntimeProviders(config, dir);
+      const result = await providers.analyzeFrame({ timestamp: 0, framePath }, null, { title: 'Sample clip' } as never);
+
+      expect(result.visualDescription).toBe('商品占据画面中心');
+      expect(result.imagePrompt).toBe('中文生图提示词：商品特写，中心构图，高对比字幕');
+      expect(fetchMock).toHaveBeenCalledWith('https://llm.example/v1/chat/completions', expect.objectContaining({
+        headers: expect.objectContaining({ Authorization: 'Bearer llm-key' }),
+      }));
+      const requestBody = JSON.parse(String(fetchMock.mock.calls[0]?.[1]?.body));
+      expect(requestBody).toMatchObject({ model: 'vision-chat-model' });
+      const userText = requestBody.messages[1].content.find((item: { type: string }) => item.type === 'text').text;
+      expect(userText).toContain('所有字段必须使用中文');
+      expect(userText).toContain('imagePrompt');
+      expect(userText).not.toContain('effectBreakdown');
+    } finally {
+      globalThis.fetch = originalFetch;
+    }
+  });
+
+  it('reports an actionable setup message when no viral frame vision model is usable', async () => {
+    const dir = await mkdtemp(join(tmpdir(), 'storybound-viral-vision-missing-'));
+    const framePath = join(dir, 'frame.jpg');
+    await writeFile(framePath, 'not-a-real-jpeg');
+    const config = normalizeAppConfig({
+      ...defaultConfig,
+      llm: {
+        ...defaultConfig.llm,
+        apiKey: '',
+        model: '',
+      },
+      viral: {
+        ...defaultConfig.viral,
+        vision: {
+          ...defaultConfig.viral.vision,
+          apiKey: '',
+          model: '',
+        },
+      },
+    });
+
+    const providers = createViralRuntimeProviders(config, dir);
+
+    await expect(providers.analyzeFrame({ timestamp: 0, framePath }, null, { title: 'Sample clip' } as never)).rejects.toThrow(
+      '爆款拆解视觉模型未配置',
+    );
   });
 });

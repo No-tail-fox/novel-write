@@ -72,7 +72,7 @@ declare global {
       selectLocalAudio: () => Promise<string | null>;
       selectLocalFolder: () => Promise<string | null>;
       selectCookieFile: () => Promise<string | null>;
-      openViralLoginWindow: () => Promise<void>;
+      openViralLoginWindow: () => Promise<string | null>;
       detectJianyingDraftPath: () => Promise<string>;
       getJianyingEffectCatalog: () => Promise<JianyingEffectCatalog>;
       runDiagnostics: () => Promise<{ generatedAt: string; checks: Array<{ id: string; label: string; status: string; detail: string }> }>;

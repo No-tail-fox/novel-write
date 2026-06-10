@@ -26,7 +26,7 @@ export function createViralRuntimeProviders(config: AppConfig, _workDir: string)
     extract: (videoPath, runDir, signal) => extractViralMedia(videoPath, runDir, config, signal),
     transcribe: (audioPath, signal) => transcribeViralAudio(audioPath, config, signal),
     analyzeFrame: (frame, previousFrame, source, signal) =>
-      analyzeViralFrame(frame, previousFrame, source, config.viral.vision.apiKey ? config.viral.vision : config.llm, signal),
+      analyzeViralFrame(frame, previousFrame, source, resolveViralFrameVisionConfig(config), signal),
     analyzeBreakdown: async (input, signal) => {
       const result = await textLlm({
         step: -1,
@@ -52,6 +52,14 @@ export function createViralRuntimeProviders(config: AppConfig, _workDir: string)
       return result.json as ReturnType<RunViralAnalysisOptions['createRecreation']> extends Promise<infer T> ? T : never;
     },
   };
+}
+
+function resolveViralFrameVisionConfig(config: AppConfig): LlmConfig {
+  return hasUsableLlmConfig(config.viral.vision) ? config.viral.vision : config.llm;
+}
+
+function hasUsableLlmConfig(config: LlmConfig): boolean {
+  return Boolean(config.apiKey.trim() && config.model.trim());
 }
 
 async function extractViralMedia(videoPath: string, workDir: string, config: AppConfig, signal?: AbortSignal): Promise<ViralMediaExtractionResult> {
@@ -378,7 +386,9 @@ async function analyzeViralFrame(
       type: 'text',
       text:
         `分析短视频第 ${frame.timestamp}s 关键帧。标题：${source.title}\n` +
-        '返回 JSON: {"shotType":string,"cameraMovement":string,"composition":string,"transition":string,"textOverlay":string|null,"visualDescription":string,"mood":string,"keyElements":string[]}',
+        '所有字段必须使用中文，不要输出英文拆解。请只分析当前帧画面、可见字幕/文字、构图、情绪和可复用的生图提示词，不要分析转场、滤镜、动效等后期效果。\n' +
+        'imagePrompt 必须是中文生图提示词，按“主体、场景、构图、光线、色彩、字幕/图形元素、短视频风格”组织。\n' +
+        '返回 JSON: {"shotType":string,"cameraMovement":string,"composition":string,"transition":string,"textOverlay":string|null,"visualDescription":string,"mood":string,"keyElements":string[],"imagePrompt":string}',
     },
     ...(await Promise.all(
       images.map(async (image) => ({
@@ -400,23 +410,41 @@ async function analyzeViralFrame(
     visualDescription: String(parsed.visualDescription ?? raw.slice(0, 200)),
     mood: String(parsed.mood ?? ''),
     keyElements: Array.isArray(parsed.keyElements) ? parsed.keyElements.map(String) : [],
+    imagePrompt: String(parsed.imagePrompt ?? fallbackFrameImagePrompt(parsed, raw)),
   };
 }
 
+function fallbackFrameImagePrompt(parsed: Partial<ViralFrameAnalysis>, raw: string): string {
+  return [
+    parsed.shotType,
+    parsed.composition,
+    parsed.visualDescription ?? raw.slice(0, 200),
+    parsed.mood,
+    Array.isArray(parsed.keyElements) && parsed.keyElements.length ? `关键元素：${parsed.keyElements.map(String).join('、')}` : '',
+  ]
+    .filter(Boolean)
+    .map(String)
+    .join('，');
+}
+
 async function runOpenAiCompatibleVision(config: LlmConfig, content: unknown[], signal?: AbortSignal): Promise<string> {
-  if (!config.apiKey || !config.model) throw new Error('Vision model API key and model are required for viral frame analysis.');
+  const apiKey = config.apiKey.trim();
+  const model = config.model.trim();
+  if (!apiKey || !model) {
+    throw new Error('爆款拆解视觉模型未配置：请在系统设置 > LLM 填写支持图片输入的 API Key 和模型后重试。');
+  }
   const endpoint = `${normalizeOpenAiBaseUrl(config.baseUrl || 'https://api.openai.com')}/chat/completions`;
   const response = await fetch(endpoint, {
     method: 'POST',
     signal,
     headers: {
       'Content-Type': 'application/json',
-      Authorization: `Bearer ${config.apiKey}`,
+      Authorization: `Bearer ${apiKey}`,
     },
     body: JSON.stringify({
-      model: config.model,
+      model,
       messages: [
-        { role: 'system', content: 'Return strict JSON only. You are a short-video cinematography analyst.' },
+        { role: 'system', content: 'Return strict JSON only. All text values must be Chinese. You analyze short-video frames for copywriting and image prompt reuse.' },
         { role: 'user', content },
       ],
       response_format: { type: 'json_object' },

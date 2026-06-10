@@ -755,38 +755,60 @@ async function exportDouyinLoginCookies(win: BrowserWindow): Promise<string> {
   return outputPath;
 }
 
-async function openViralLoginWindow(): Promise<void> {
+async function openViralLoginWindow(): Promise<string | null> {
   if (viralLoginWindow && !viralLoginWindow.isDestroyed()) {
     viralLoginWindow.focus();
-    return;
+    return null;
   }
-  viralLoginWindow = new BrowserWindow({
-    width: 1100,
-    height: 760,
-    title: '抖音登录',
-    autoHideMenuBar: true,
-    webPreferences: {
-      partition: 'persist:storybound-viral-douyin',
-      contextIsolation: true,
-      nodeIntegration: false,
-    },
+
+  return new Promise<string | null>((resolve) => {
+    let settled = false;
+    let exportingCookies = false;
+    function settle(cookiePath: string | null) {
+      if (settled) return;
+      settled = true;
+      resolve(cookiePath);
+    }
+
+    const loginWindow = new BrowserWindow({
+      width: 1100,
+      height: 760,
+      title: '抖音登录',
+      autoHideMenuBar: true,
+      webPreferences: {
+        partition: 'persist:storybound-viral-douyin',
+        contextIsolation: true,
+        nodeIntegration: false,
+      },
+    });
+    viralLoginWindow = loginWindow;
+    loginWindow.on('closed', () => {
+      if (viralLoginWindow === loginWindow) viralLoginWindow = null;
+      settle(null);
+    });
+    loginWindow.on('close', (event) => {
+      if (loginWindow.isDestroyed()) return;
+      event.preventDefault();
+      if (exportingCookies) return;
+      exportingCookies = true;
+      void exportDouyinLoginCookies(loginWindow)
+        .then((cookiePath) => {
+          settle(cookiePath);
+        })
+        .catch((error) => {
+          console.error('Failed to export Douyin cookies', error);
+          settle(null);
+        })
+        .finally(() => {
+          if (!loginWindow.isDestroyed()) loginWindow.destroy();
+        });
+    });
+    void loginWindow.loadURL('https://www.douyin.com/').catch((error) => {
+      console.error('Failed to open Douyin login window', error);
+      settle(null);
+      if (!loginWindow.isDestroyed()) loginWindow.destroy();
+    });
   });
-  viralLoginWindow.on('closed', () => {
-    viralLoginWindow = null;
-  });
-  viralLoginWindow.on('close', (event) => {
-    const win = viralLoginWindow;
-    if (!win || win.isDestroyed()) return;
-    event.preventDefault();
-    void exportDouyinLoginCookies(win)
-      .catch((error) => {
-        console.error('Failed to export Douyin cookies', error);
-      })
-      .finally(() => {
-        win.destroy();
-      });
-  });
-  await viralLoginWindow.loadURL('https://www.douyin.com/');
 }
 
 ipcMain.handle('local-audio:select', selectLocalAudio);

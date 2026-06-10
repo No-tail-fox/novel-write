@@ -634,6 +634,7 @@ export interface ViralFrameAnalysis {
   visualDescription: string;
   mood: string;
   keyElements: string[];
+  imagePrompt: string;
 }
 
 export interface ViralContentBreakdown {

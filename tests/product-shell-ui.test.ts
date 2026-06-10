@@ -60,7 +60,16 @@ describe('product shell ui', () => {
       'viral-analyzer-layout',
       'viral-url-input',
       'viral-platform-picker',
+      'viral-workbench',
       'viral-progress-list',
+      'viral-stage-timeline',
+      'viral-stage-node',
+      'viral-result-drawer',
+      'viral-insight-tabs',
+      'viral-frame-insights',
+      'viral-copy-breakdown',
+      'viral-original-copy',
+      'viral-insight-card',
       'viral-report-grid',
       'viral-recreation-panel',
       'viral-create-production-task',
@@ -68,13 +77,34 @@ describe('product shell ui', () => {
       expect(main).toContain(symbol);
     }
 
-    for (const text of ['爆款拆解', '开头', '结构', '结尾', '爆点', '一键复刻成片任务']) {
+    for (const text of ['爆款拆解', '开头', '结构', '结尾', '爆点', '文案拆解', '原文案', '提示词拆解', '一键复刻成片任务']) {
       expect(main).toContain(text);
     }
+    expect(main).not.toContain('特效拆解');
+    expect(main).not.toContain("type ViralInsightTab = 'prompt' | 'effects'");
 
     expect(css).toContain('.viral-analyzer-layout');
+    expect(css).toContain('.viral-workbench');
+    expect(css).toContain('@media (max-width: 1380px)');
+    expect(css).toContain('max-height: min(560px, calc(100vh - 240px))');
+    expect(css).toContain('.viral-input-panel');
+    expect(css).toContain('overflow: auto');
+    expect(css).toContain('.viral-stage-timeline');
+    expect(css).toContain('.viral-stage-node');
+    expect(css).toContain('.viral-result-drawer');
+    expect(css).toContain('.viral-insight-tabs');
+    expect(css).toContain('.viral-frame-insights');
+    expect(css).toContain('.viral-insight-card');
+    expect(css).toContain('.viral-history-item strong');
+    expect(css).toContain('-webkit-line-clamp: 2');
     expect(css).toContain('.viral-report-grid');
     expect(css).toContain('.viral-recreation-panel');
+    expect(css).toContain('.viral-report-card strong');
+    expect(css).toContain('.viral-report-card p');
+    expect(css).toContain('overflow-wrap: anywhere');
+    expect(css).toMatch(/\.viral-report-card\s*\{[\s\S]*?gap: 6px;[\s\S]*?min-height: 128px;[\s\S]*?padding: 12px;/);
+    expect(css).toMatch(/\.viral-report-card strong\s*\{[\s\S]*?-webkit-line-clamp: 2;[\s\S]*?font-size: 15px;[\s\S]*?line-height: 1\.28;/);
+    expect(css).toMatch(/\.viral-report-card p\s*\{[\s\S]*?-webkit-line-clamp: 3;/);
   });
 
   it('keeps viral source detection independent from manual platform selection and avoids native select popups', async () => {
@@ -113,6 +143,9 @@ describe('product shell ui', () => {
 
     expect(page).toContain('api.openViralLoginWindow');
     expect(page).toContain('api.selectCookieFile');
+    expect(page).toContain('const loginCookiePath = await api.openViralLoginWindow();');
+    expect(page).toContain('setCookieFilePath(loginCookiePath);');
+    expect(page).toContain('已保存 Cookie 文件');
     expect(page).toContain('viral-cookie-tools');
     expect(page).toContain('viral-cookie-input-row');
     expect(page).toContain('打开抖音登录窗口');
