@@ -40,6 +40,7 @@ export async function downloadViralMedia(
       signal,
       maxBuffer: 32 * 1024 * 1024,
       windowsHide: true,
+      env: buildViralMediaWorkerEnv(process.env),
     });
     return parseWorkerResult(stdout);
   } catch (error) {
@@ -51,4 +52,12 @@ export async function downloadViralMedia(
 function parseWorkerResult(raw: string): ViralMediaDownloadResult {
   const parsed = JSON.parse(raw) as ViralMediaDownloadResult;
   return parsed;
+}
+
+export function buildViralMediaWorkerEnv(baseEnv: NodeJS.ProcessEnv): NodeJS.ProcessEnv {
+  return {
+    ...baseEnv,
+    PYTHONIOENCODING: 'utf-8',
+    PYTHONUTF8: '1',
+  };
 }

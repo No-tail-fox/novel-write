@@ -68,6 +68,8 @@ contextBridge.exposeInMainWorld('storybound', {
   selectLocalImage: (): Promise<string | null> => ipcRenderer.invoke('local-image:select'),
   selectLocalAudio: (): Promise<string | null> => ipcRenderer.invoke('local-audio:select'),
   selectLocalFolder: (): Promise<string | null> => ipcRenderer.invoke('local-folder:select'),
+  selectCookieFile: (): Promise<string | null> => ipcRenderer.invoke('cookie-file:select'),
+  openViralLoginWindow: (): Promise<void> => ipcRenderer.invoke('viral:open-login-window'),
   detectJianyingDraftPath: (): Promise<string> => ipcRenderer.invoke('jianying:draft-path:detect'),
   getJianyingEffectCatalog: (): Promise<JianyingEffectCatalog> => ipcRenderer.invoke('jianying:effect-catalog'),
   runDiagnostics: () => ipcRenderer.invoke('diagnostics:run'),

@@ -46,5 +46,8 @@ describe('windows packaging', () => {
     }
     expect(pythonRuntimeScript).not.toContain('yt-dlp');
     expect(pythonRuntimeScript).toContain('playwright install chromium');
+    expect(pythonRuntimeScript).toContain('Test-RuntimeReady');
+    expect(pythonRuntimeScript).toContain('import pyJianYingDraft, faster_whisper, playwright, httpx');
+    expect(pythonRuntimeScript).toContain('packages=$($PackageNames -join');
   });
 });

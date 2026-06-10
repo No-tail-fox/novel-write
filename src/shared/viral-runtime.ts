@@ -15,7 +15,9 @@ import type { AppConfig, LlmConfig, SpeechToTextConfig, ViralFrameAnalysis, Vira
 
 const execFileAsync = promisify(execFile);
 export const DEFAULT_WHISPER_HF_MIRROR = 'https://hf-mirror.com';
-const SPEECH_TO_TEXT_UPLOAD_LIMIT_BYTES = 25 * 1024 * 1024;
+const OPENAI_STT_UPLOAD_LIMIT_BYTES = 25 * 1024 * 1024;
+const SILICONFLOW_STT_UPLOAD_LIMIT_BYTES = 50 * 1024 * 1024;
+const SILICONFLOW_STT_BASE_URL = 'https://api.siliconflow.cn/v1';
 
 export function createViralRuntimeProviders(config: AppConfig, _workDir: string): Omit<RunViralAnalysisOptions, 'workDir' | 'emit' | 'signal'> {
   const textLlm = createOpenAiCompatibleJsonLlm(config.llm);
@@ -98,8 +100,10 @@ async function transcribeViralAudioWithOpenAiApi(audioPath: string, config: AppC
   }
 
   const audioStats = await stat(audioPath);
-  if (audioStats.size > SPEECH_TO_TEXT_UPLOAD_LIMIT_BYTES) {
-    throw new Error(`音频文件 ${(audioStats.size / 1024 / 1024).toFixed(1)}MB 超过语音转文字 API 常见 25MB 上传限制，请缩短视频或先压缩音频。`);
+  if (audioStats.size > request.maxUploadBytes) {
+    throw new Error(
+      `音频文件 ${(audioStats.size / 1024 / 1024).toFixed(1)}MB 超过语音转文字 API ${(request.maxUploadBytes / 1024 / 1024).toFixed(0)}MB 上传限制，请缩短视频或先压缩音频。`,
+    );
   }
 
   const bytes = await readFile(audioPath);
@@ -138,11 +142,22 @@ export interface OpenAiTranscriptionRequest {
   apiKey: string;
   timeoutMs: number;
   responseFormat: SpeechToTextConfig['responseFormat'];
+  maxUploadBytes: number;
   fields: Array<[string, string]>;
 }
 
 export function buildOpenAiTranscriptionRequest(config: AppConfig): OpenAiTranscriptionRequest {
   const stt = config.speechToText;
+  if (stt.provider === 'siliconflow') {
+    return {
+      endpoint: `${normalizeOpenAiBaseUrl(stt.baseUrl || SILICONFLOW_STT_BASE_URL, SILICONFLOW_STT_BASE_URL)}/audio/transcriptions`,
+      apiKey: stt.apiKey,
+      timeoutMs: stt.timeoutMs,
+      responseFormat: 'json',
+      maxUploadBytes: SILICONFLOW_STT_UPLOAD_LIMIT_BYTES,
+      fields: [['model', stt.model]],
+    };
+  }
   const fields: Array<[string, string]> = [
     ['model', stt.model],
   ];
@@ -159,10 +174,11 @@ export function buildOpenAiTranscriptionRequest(config: AppConfig): OpenAiTransc
     fields.push(['chunking_strategy', 'auto']);
   }
   return {
-    endpoint: `${normalizeOpenAiBaseUrl(stt.baseUrl || 'https://api.openai.com')}/audio/transcriptions`,
+    endpoint: `${normalizeOpenAiBaseUrl(stt.baseUrl || 'https://api.openai.com/v1')}/audio/transcriptions`,
     apiKey: stt.apiKey,
     timeoutMs: stt.timeoutMs,
     responseFormat: stt.responseFormat,
+    maxUploadBytes: OPENAI_STT_UPLOAD_LIMIT_BYTES,
     fields,
   };
 }
@@ -256,7 +272,8 @@ function audioMimeType(path: string): string {
 function formatOpenAiTranscriptionError(error: unknown, config: SpeechToTextConfig): string {
   const detail = compactErrorText(stringifyError(error));
   if (/未配置/.test(detail)) return detail;
-  const endpoint = `${normalizeOpenAiBaseUrl(config.baseUrl || 'https://api.openai.com')}/audio/transcriptions`;
+  const defaultBaseUrl = config.provider === 'siliconflow' ? SILICONFLOW_STT_BASE_URL : 'https://api.openai.com/v1';
+  const endpoint = `${normalizeOpenAiBaseUrl(config.baseUrl || defaultBaseUrl, defaultBaseUrl)}/audio/transcriptions`;
   return [
     `语音转文字 API 调用失败：${detail}`,
     `当前端点：${endpoint}`,
@@ -426,9 +443,10 @@ async function runCommand(command: string, args: string[], timeout: number, sign
   }
 }
 
-function normalizeOpenAiBaseUrl(value: string): string {
+function normalizeOpenAiBaseUrl(value: string, fallback = 'https://api.openai.com/v1'): string {
   const trimmed = value.replace(/\/+$/, '');
-  return trimmed.endsWith('/v1') ? trimmed : `${trimmed}/v1`;
+  const fallbackTrimmed = fallback.replace(/\/+$/, '');
+  return trimmed.endsWith('/v1') ? trimmed : `${trimmed || fallbackTrimmed.replace(/\/v1$/, '')}/v1`;
 }
 
 function parseJsonLoose<T>(raw: string, fallback?: T): T {

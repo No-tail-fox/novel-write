@@ -594,6 +594,7 @@ def sniff_public_media_with_playwright(request: WorkerRequest, cookie: CookieAtt
                 headers = response.headers
                 content_type = headers.get("content-type", "")
                 response_url = response.url
+                media_urls.append(response_url)
                 if is_media_response(response_url, content_type):
                     media_urls.append(response_url)
 
@@ -611,6 +612,7 @@ def sniff_public_media_with_playwright(request: WorkerRequest, cookie: CookieAtt
                     const scripts = [...document.scripts].map((script) => script.textContent || '').filter(Boolean).slice(0, 80);
                     return {
                         title: meta('og:title') || document.title || '',
+                        bodyText: document.body?.innerText || '',
                         coverUrl: meta('og:image') || videos.find((item) => item.poster)?.poster || '',
                         videos,
                         scripts
@@ -629,6 +631,10 @@ def sniff_public_media_with_playwright(request: WorkerRequest, cookie: CookieAtt
             if item:
                 media_urls.insert(0, item)
         media_url = choose_sniffed_media_url(media_urls, platform, url)
+        if not media_url:
+            blocked_reason = blocked_page_reason(platform, url, str(metadata.get("bodyText") or ""), media_urls)
+            if blocked_reason:
+                raise ViralWorkerError(blocked_reason)
         return {
             "title": clean_title(metadata.get("title") or script_metadata.get("title") or ""),
             "author": script_metadata.get("author") or "",
@@ -664,6 +670,15 @@ def is_media_response(url: str, content_type: str) -> bool:
     if "video/" in lower_type or "mpegurl" in lower_type:
         return True
     return looks_like_video_url(lower_url)
+
+
+def blocked_page_reason(platform: str, page_url: str, body_text: str, response_urls: list[str]) -> str:
+    if platform != "douyin":
+        return ""
+    combined = " ".join([page_url, body_text[:2000], *response_urls[:80]]).lower()
+    if "verifycenter" in combined or "captcha" in combined or "视频数据加载中" in body_text or "登录" in body_text:
+        return "抖音页面触发验证或未登录，未暴露可下载视频地址。请在爆款拆解里打开抖音登录窗口完成登录，关闭窗口后重试；也可以配置 Cookie 文件。"
+    return ""
 
 
 def looks_like_video_url(url: str) -> bool:
@@ -748,11 +763,12 @@ def parse_media_from_scripts(scripts: list[str], platform: str) -> dict[str, Any
     cover_url = ""
     duration = 0
     for script in scripts:
-        for raw in re.findall(r"https?:\\?/\\?/[^\"'<>\\]+", script):
-            url = raw.replace("\\/", "/").replace("\\u002F", "/")
+        normalized_script = normalize_script_escapes(script)
+        for raw in re.findall(r"https?://[^\"'<>\\\s]+", normalized_script):
+            url = raw
             if looks_like_video_url(url):
                 media_urls.append(url)
-        for obj in extract_json_objects(script):
+        for obj in extract_json_objects(normalized_script):
             for candidate in walk_dicts(obj):
                 if platform == "douyin" and candidate.get("video"):
                     parsed = parse_douyin_aweme_detail(candidate)
@@ -774,6 +790,10 @@ def parse_media_from_scripts(scripts: list[str], platform: str) -> dict[str, Any
         "coverUrl": cover_url,
         "duration": duration,
     }
+
+
+def normalize_script_escapes(value: str) -> str:
+    return value.replace("\\/", "/").replace("\\u002F", "/").replace("\\u002f", "/")
 
 
 def extract_json_assignment(html: str, marker: str) -> Any:

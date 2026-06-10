@@ -1,8 +1,8 @@
-import { app, BrowserWindow, dialog, ipcMain, Menu, shell } from 'electron';
+import { app, BrowserWindow, dialog, ipcMain, Menu, shell, type Cookie } from 'electron';
 import { execFile } from 'node:child_process';
 import { randomUUID } from 'node:crypto';
 import { existsSync } from 'node:fs';
-import { mkdir, readFile } from 'node:fs/promises';
+import { mkdir, readFile, writeFile } from 'node:fs/promises';
 import { dirname, extname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { promisify } from 'node:util';
@@ -28,6 +28,7 @@ import { getRendererIndexPath } from './paths';
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const execFileAsync = promisify(execFile);
 let mainWindow: BrowserWindow | null = null;
+let viralLoginWindow: BrowserWindow | null = null;
 let db: FileDatabase | null = null;
 interface RunningTaskRun {
   controller: AbortController;
@@ -129,6 +130,14 @@ function voiceLabWorkDir(id: string): string {
 
 function appDataDir(): string {
   return join(app.getPath('userData'), 'storybound-replica');
+}
+
+function viralCookieDir(): string {
+  return join(appDataDir(), 'viral-cookies');
+}
+
+function viralCookieFilePath(): string {
+  return join(viralCookieDir(), 'douyin-cookies.txt');
 }
 
 async function pauseStaleRunningTasks(database: FileDatabase): Promise<void> {
@@ -701,8 +710,89 @@ async function selectLocalAudio(): Promise<string | null> {
   return result.canceled ? null : result.filePaths[0] ?? null;
 }
 
+async function selectCookieFile(): Promise<string | null> {
+  const result = await dialog.showOpenDialog({
+    title: '选择 Cookie 文件',
+    properties: ['openFile'],
+    filters: [
+      { name: 'Cookie files', extensions: ['txt', 'cookies'] },
+      { name: 'All files', extensions: ['*'] },
+    ],
+  });
+  return result.canceled ? null : result.filePaths[0] ?? null;
+}
+
+function netscapeCookieLine(cookie: Cookie): string {
+  const domain = cookie.domain || '.douyin.com';
+  const includeSubdomains = domain.startsWith('.') ? 'TRUE' : 'FALSE';
+  const path = cookie.path || '/';
+  const secure = cookie.secure ? 'TRUE' : 'FALSE';
+  const expires = Number.isFinite(cookie.expirationDate ?? NaN) ? Math.floor(cookie.expirationDate ?? 0) : 0;
+  return [domain, includeSubdomains, path, secure, expires, cookie.name, cookie.value].join('\t');
+}
+
+async function exportDouyinLoginCookies(win: BrowserWindow): Promise<string> {
+  await mkdir(viralCookieDir(), { recursive: true });
+  const allCookies = await win.webContents.session.cookies.get({});
+  const cookies = allCookies.filter((cookie) => {
+    const domain = (cookie.domain || '').toLowerCase();
+    return domain.includes('douyin.com') || domain.includes('iesdouyin.com') || domain.includes('amemv.com');
+  });
+  const lines = ['# Netscape HTTP Cookie File', ...cookies.map(netscapeCookieLine)];
+  const outputPath = viralCookieFilePath();
+  await writeFile(outputPath, `${lines.join('\n')}\n`, 'utf8');
+  const database = await getDb();
+  const state = await database.getState();
+  await database.upsertConfig({
+    ...state.config,
+    viral: {
+      ...state.config.viral,
+      cookieFilePath: outputPath,
+      cookieFallbackMode: 'browser-first-after-failure',
+    },
+  });
+  await sendTaskState(database);
+  return outputPath;
+}
+
+async function openViralLoginWindow(): Promise<void> {
+  if (viralLoginWindow && !viralLoginWindow.isDestroyed()) {
+    viralLoginWindow.focus();
+    return;
+  }
+  viralLoginWindow = new BrowserWindow({
+    width: 1100,
+    height: 760,
+    title: '抖音登录',
+    autoHideMenuBar: true,
+    webPreferences: {
+      partition: 'persist:storybound-viral-douyin',
+      contextIsolation: true,
+      nodeIntegration: false,
+    },
+  });
+  viralLoginWindow.on('closed', () => {
+    viralLoginWindow = null;
+  });
+  viralLoginWindow.on('close', (event) => {
+    const win = viralLoginWindow;
+    if (!win || win.isDestroyed()) return;
+    event.preventDefault();
+    void exportDouyinLoginCookies(win)
+      .catch((error) => {
+        console.error('Failed to export Douyin cookies', error);
+      })
+      .finally(() => {
+        win.destroy();
+      });
+  });
+  await viralLoginWindow.loadURL('https://www.douyin.com/');
+}
+
 ipcMain.handle('local-audio:select', selectLocalAudio);
 ipcMain.handle('local-folder:select', selectLocalFolder);
+ipcMain.handle('cookie-file:select', selectCookieFile);
+ipcMain.handle('viral:open-login-window', openViralLoginWindow);
 
 ipcMain.handle('jianying:effect-catalog', async () => loadJianyingEffectCatalog());
 ipcMain.handle('jianying:draft-path:detect', async () => detectJianyingDraftPath({ pathExists: existsSync }));

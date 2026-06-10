@@ -34,6 +34,8 @@ describe('electron ipc contract', () => {
       'local-image:select',
       'local-audio:select',
       'local-folder:select',
+      'cookie-file:select',
+      'viral:open-login-window',
       'jianying:draft-path:detect',
       'jianying:effect-catalog',
       'viral:create-and-run',
@@ -200,6 +202,21 @@ describe('electron ipc contract', () => {
     expect(preload).toContain('jianying:draft-path:detect');
     expect(viteEnv).toContain('selectLocalFolder: () => Promise<string | null>');
     expect(viteEnv).toContain('detectJianyingDraftPath: () => Promise<string>');
+  });
+
+  it('exposes viral cookie file picking and a persistent login browser', async () => {
+    const main = await readFile(new URL('../electron/main.ts', import.meta.url), 'utf8');
+    const preload = await readFile(new URL('../electron/preload.ts', import.meta.url), 'utf8');
+    const viteEnv = await readFile(new URL('../src/vite-env.d.ts', import.meta.url), 'utf8');
+
+    expect(main).toContain("ipcMain.handle('cookie-file:select'");
+    expect(main).toContain("ipcMain.handle('viral:open-login-window'");
+    expect(main).toContain('partition:');
+    expect(main).toContain('persist:storybound-viral-douyin');
+    expect(preload).toContain('selectCookieFile');
+    expect(preload).toContain('openViralLoginWindow');
+    expect(viteEnv).toContain('selectCookieFile: () => Promise<string | null>');
+    expect(viteEnv).toContain('openViralLoginWindow: () => Promise<void>');
   });
 
   it('exposes pyJianYingDraft effect catalog loading to the renderer', async () => {

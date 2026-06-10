@@ -1,7 +1,19 @@
 import { describe, expect, it } from 'vitest';
+import { execFileSync } from 'node:child_process';
+import { existsSync } from 'node:fs';
 import { readFile } from 'node:fs/promises';
-import { normalize } from 'node:path';
+import { join, normalize } from 'node:path';
 import { buildViralMediaWorkerInvocation, buildViralMediaWorkerRequest, resolveViralMediaWorkerScriptPath } from '@shared/viral-media-worker';
+
+const pythonPath = existsSync(join(process.cwd(), 'vendor/python/python.exe')) ? join(process.cwd(), 'vendor/python/python.exe') : 'python';
+const workerPath = join(process.cwd(), 'src/shared/viral-media-worker.py');
+
+function runWorkerProbe(code: string): string {
+  return execFileSync(pythonPath, ['-c', code, workerPath], {
+    encoding: 'utf8',
+    env: { ...process.env, PYTHONIOENCODING: 'utf-8', PYTHONUTF8: '1' },
+  }).trim();
+}
 
 describe('viral media worker wiring', () => {
   it('resolves the bundled or source-side worker script path', () => {
@@ -59,5 +71,47 @@ describe('viral media worker wiring', () => {
     expect(workerScript).toContain('choose_sniffed_media_url');
     expect(workerScript).toContain('__vid=');
     expect(workerScript).toContain('下载地址返回了安装包而不是视频文件');
+  });
+
+  it('extracts Douyin media URLs from slash-escaped page scripts', () => {
+    const output = runWorkerProbe(String.raw`
+import importlib.util
+import json
+import sys
+
+spec = importlib.util.spec_from_file_location("worker", sys.argv[1])
+worker = importlib.util.module_from_spec(spec)
+sys.modules[spec.name] = worker
+spec.loader.exec_module(worker)
+
+script = r'window.__DATA__={"play_addr":{"url_list":["https:\/\/v3-douyinvod.com\/abc\/video\/tos\/clip.mp4?__vid=123"]}}'
+parsed = worker.parse_media_from_scripts([script], "douyin")
+print(json.dumps(parsed["mediaUrls"], ensure_ascii=False))
+`);
+
+    expect(JSON.parse(output)).toContain('https://v3-douyinvod.com/abc/video/tos/clip.mp4?__vid=123');
+  });
+
+  it('recognizes Douyin verification pages as a cookie or login problem', () => {
+    const output = runWorkerProbe(String.raw`
+import importlib.util
+import sys
+
+spec = importlib.util.spec_from_file_location("worker", sys.argv[1])
+worker = importlib.util.module_from_spec(spec)
+sys.modules[spec.name] = worker
+spec.loader.exec_module(worker)
+
+reason = worker.blocked_page_reason(
+    "douyin",
+    "https://www.douyin.com/video/123",
+    "登录 视频数据加载中",
+    ["https://lf-rc1.yhgfb-cn-static.com/obj/rc-verifycenter/verifycenter/index.js"],
+)
+print(reason)
+`);
+
+    expect(output).toContain('触发验证或未登录');
+    expect(output).toContain('打开抖音登录窗口');
   });
 });

@@ -9,6 +9,7 @@ import type {
   ImageProviderProfile,
   LlmModelTestResult,
   SpeechToTextChunkingStrategy,
+  SpeechToTextProvider,
   SpeechToTextResponseFormat,
   SpeechToTextTimestampGranularity,
   TtsProviderProfile,
@@ -19,6 +20,8 @@ type ConfigValidationOptions = {
   pathExists?: (path: string) => boolean;
   fetchImpl?: typeof fetch;
 };
+const SILICONFLOW_STT_BASE_URL = 'https://api.siliconflow.cn/v1';
+const SILICONFLOW_STT_DEFAULT_MODEL = 'FunAudioLLM/SenseVoiceSmall';
 
 function normalizeLlmProfile(profile: Partial<AppConfig['llm']>, index: number): AppConfig['llm'] {
   const merged = { ...defaultConfig.llm, ...profile };
@@ -319,20 +322,31 @@ function normalizeTtsProfiles(partial: Partial<AppConfig>): {
 
 function normalizeSpeechToTextConfig(input: Partial<AppConfig['speechToText']> | undefined): AppConfig['speechToText'] {
   const merged = { ...defaultConfig.speechToText, ...(input ?? {}) };
+  const provider = normalizeSpeechToTextProvider(merged.provider);
+  const defaultBaseUrl = speechToTextDefaultBaseUrl(provider);
+  const defaultModel = provider === 'siliconflow' ? SILICONFLOW_STT_DEFAULT_MODEL : defaultConfig.speechToText.model;
+  const requestedBaseUrl = String(merged.baseUrl ?? '').trim();
+  const baseUrl =
+    provider === 'siliconflow' && requestedBaseUrl === defaultConfig.speechToText.baseUrl ? defaultBaseUrl : requestedBaseUrl || defaultBaseUrl;
   return {
     ...merged,
-    provider: 'openai-compatible',
-    baseUrl: normalizeBaseUrl(String(merged.baseUrl || defaultConfig.speechToText.baseUrl)),
+    provider,
+    baseUrl: normalizeBaseUrl(baseUrl, defaultBaseUrl),
     apiKey: String(merged.apiKey ?? '').trim(),
-    model: String(merged.model ?? '').trim() || defaultConfig.speechToText.model,
+    model: String(merged.model ?? '').trim() || defaultModel,
     language: String(merged.language ?? '').trim(),
     prompt: String(merged.prompt ?? '').trim(),
-    responseFormat: normalizeSpeechToTextResponseFormat(merged.responseFormat),
+    responseFormat: provider === 'siliconflow' ? 'json' : normalizeSpeechToTextResponseFormat(merged.responseFormat),
     temperature: normalizeNumberInRange(merged.temperature, defaultConfig.speechToText.temperature, 0, 1),
-    timestampGranularities: normalizeSpeechToTextTimestampGranularities(merged.timestampGranularities),
-    chunkingStrategy: normalizeSpeechToTextChunkingStrategy(merged.chunkingStrategy),
+    timestampGranularities:
+      provider === 'siliconflow' ? ['segment'] : normalizeSpeechToTextTimestampGranularities(merged.timestampGranularities),
+    chunkingStrategy: provider === 'siliconflow' ? 'none' : normalizeSpeechToTextChunkingStrategy(merged.chunkingStrategy),
     timeoutMs: normalizePositiveNumber(merged.timeoutMs, defaultConfig.speechToText.timeoutMs),
   };
+}
+
+function normalizeSpeechToTextProvider(value: unknown): SpeechToTextProvider {
+  return value === 'siliconflow' ? 'siliconflow' : 'openai-compatible';
 }
 
 function normalizeSpeechToTextResponseFormat(value: unknown): SpeechToTextResponseFormat {
@@ -518,7 +532,7 @@ function validateSpeechToTextConfig(config: AppConfig, startedAt: number): Confi
     target: 'speechToText',
     startedAt,
     status: missing.length ? 'fail' : 'pass',
-    endpoint: `${normalizeBaseUrl(config.speechToText.baseUrl || 'https://api.openai.com/v1')}/audio/transcriptions`,
+    endpoint: `${normalizeBaseUrl(config.speechToText.baseUrl || speechToTextDefaultBaseUrl(config.speechToText.provider), speechToTextDefaultBaseUrl(config.speechToText.provider))}/audio/transcriptions`,
     detail: missing.length ? `语音转文字 API 缺少：${missing.join('、')}。` : `语音转文字 API 字段已填写：${config.speechToText.model}`,
   });
 }
@@ -646,9 +660,14 @@ function missingFields(fields: Array<[string, string | null | undefined]>): stri
   return fields.filter(([, value]) => !String(value ?? '').trim()).map(([label]) => label);
 }
 
-function normalizeBaseUrl(value: string): string {
+function normalizeBaseUrl(value: string, fallback = 'https://api.openai.com/v1'): string {
   const trimmed = value.replace(/\/+$/, '');
-  return trimmed.endsWith('/v1') ? trimmed : `${trimmed || 'https://api.openai.com'}/v1`;
+  const fallbackTrimmed = fallback.replace(/\/+$/, '');
+  return trimmed.endsWith('/v1') ? trimmed : `${trimmed || fallbackTrimmed.replace(/\/v1$/, '')}/v1`;
+}
+
+function speechToTextDefaultBaseUrl(provider: SpeechToTextProvider): string {
+  return provider === 'siliconflow' ? SILICONFLOW_STT_BASE_URL : defaultConfig.speechToText.baseUrl;
 }
 
 function activeOpenAiImageConfig(config: AppConfig): {

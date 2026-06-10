@@ -5,7 +5,7 @@ $PythonVersion = "3.12.4"
 $PythonTag = "312"
 $PackageNames = @("pyJianYingDraft", "faster-whisper", "playwright", "httpx", "imageio-ffmpeg", "browser-cookie3", "pycryptodomex", "PyYAML", "gmssl", "aiofiles")
 $PipIndexUrl = "https://pypi.org/simple"
-$RuntimeId = "python-$PythonVersion-storybound-media-runtime-v3"
+$RuntimeId = "python-$PythonVersion-storybound-media-runtime-v4"
 $VendorDir = Join-Path $Root "vendor\python"
 $CacheDir = Join-Path $Root ".cache\python-runtime"
 $ZipPath = Join-Path $CacheDir "python-$PythonVersion-embed-amd64.zip"
@@ -46,22 +46,27 @@ if (Test-RuntimeReady) {
 Assert-UnderRoot $VendorDir
 Assert-UnderRoot $CacheDir
 
-if (Test-Path -LiteralPath $VendorDir) {
-  Write-Host "[python-runtime] Removing incomplete runtime: $VendorDir"
-  Remove-Item -LiteralPath $VendorDir -Recurse -Force
-}
-
 New-Item -ItemType Directory -Force -Path $VendorDir | Out-Null
 New-Item -ItemType Directory -Force -Path $CacheDir | Out-Null
 
-if (!(Test-Path -LiteralPath $ZipPath)) {
-  $pythonUrl = "https://www.python.org/ftp/python/$PythonVersion/python-$PythonVersion-embed-amd64.zip"
-  Write-Host "[python-runtime] Downloading $pythonUrl"
-  Invoke-WebRequest -Uri $pythonUrl -OutFile $ZipPath -UseBasicParsing
-}
+if (!(Test-Path -LiteralPath $PythonExe)) {
+  if (Test-Path -LiteralPath $VendorDir) {
+    Write-Host "[python-runtime] Removing incomplete runtime without python.exe: $VendorDir"
+    Remove-Item -LiteralPath $VendorDir -Recurse -Force
+    New-Item -ItemType Directory -Force -Path $VendorDir | Out-Null
+  }
 
-Write-Host "[python-runtime] Expanding embedded Python $PythonVersion"
-Expand-Archive -LiteralPath $ZipPath -DestinationPath $VendorDir -Force
+  if (!(Test-Path -LiteralPath $ZipPath)) {
+    $pythonUrl = "https://www.python.org/ftp/python/$PythonVersion/python-$PythonVersion-embed-amd64.zip"
+    Write-Host "[python-runtime] Downloading $pythonUrl"
+    Invoke-WebRequest -Uri $pythonUrl -OutFile $ZipPath -UseBasicParsing
+  }
+
+  Write-Host "[python-runtime] Expanding embedded Python $PythonVersion"
+  Expand-Archive -LiteralPath $ZipPath -DestinationPath $VendorDir -Force
+} else {
+  Write-Host "[python-runtime] Repairing existing runtime in place: $VendorDir"
+}
 
 $PthPath = Join-Path $VendorDir "python$PythonTag._pth"
 if (Test-Path -LiteralPath $PthPath) {

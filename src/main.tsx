@@ -197,6 +197,8 @@ const styleOptions = [
 
 const ratioOptions = ['21:9', '16:9', '3:2', '4:3', '1:1', '3:4', '2:3', '9:16'];
 const storyboardSceneCountOptions = [8, 12, 16, 20, 30];
+const siliconFlowSpeechToTextBaseUrl = 'https://api.siliconflow.cn/v1';
+const siliconFlowSpeechToTextModels = ['FunAudioLLM/SenseVoiceSmall', 'TeleAI/TeleSpeechASR'];
 const volcengineVoicePresets = [
   ['Vivi 2.0', 'zh_female_vv_uranus_bigtts'],
   ['云舟 2.0', 'zh_male_m191_uranus_bigtts'],
@@ -617,6 +619,12 @@ function makeFallbackApi(setState: (state: AppState) => void): StoryboundApi {
     async selectLocalFolder() {
       return null;
     },
+    async selectCookieFile() {
+      return null;
+    },
+    async openViralLoginWindow() {
+      throw new Error('浏览器预览不能打开抖音登录窗口，请在 Electron 桌面端操作。');
+    },
     async detectJianyingDraftPath() {
       return '';
     },
@@ -865,6 +873,31 @@ function ViralAnalyzerPage({
     setUrl(value);
   }
 
+  async function saveViralCookiePath(path: string) {
+    const trimmed = path.trim();
+    setCookieFilePath(trimmed);
+    const nextState = await api.saveConfig({
+      ...state.config,
+      viral: {
+        ...state.config.viral,
+        cookieFilePath: trimmed,
+      },
+    });
+    applyState(nextState);
+  }
+
+  async function chooseCookieFile() {
+    const selectedPath = await api.selectCookieFile();
+    if (selectedPath) {
+      await saveViralCookiePath(selectedPath);
+    }
+  }
+
+  async function openDouyinLogin() {
+    setMessage('请在打开的抖音窗口完成登录，关闭窗口后会自动保存 Cookie。');
+    await api.openViralLoginWindow();
+  }
+
   async function startAnalysis() {
     if (!url.trim()) {
       setMessage('请输入抖音、快手或 B 站公开视频链接');
@@ -875,16 +908,7 @@ function ViralAnalyzerPage({
       return;
     }
     setMessage('');
-    if (cookieFilePath !== state.config.viral.cookieFilePath) {
-      const nextState = await api.saveConfig({
-        ...state.config,
-        viral: {
-          ...state.config.viral,
-          cookieFilePath: cookieFilePath.trim(),
-        },
-      });
-      applyState(nextState);
-    }
+    if (cookieFilePath !== state.config.viral.cookieFilePath) await saveViralCookiePath(cookieFilePath);
     const next = await api.createAndRunViralAnalysis({
       url: url.trim(),
       platform: selectedPlatformForAnalysis,
@@ -947,17 +971,26 @@ function ViralAnalyzerPage({
             </select>
           </Field>
         </div>
-        <details className="viral-cookie-fallback">
-          <summary>可选 Cookie 兜底文件</summary>
-          <input
-            id="viral-cookie-input"
-            className="text-input"
-            value={cookieFilePath}
-            onChange={(event) => setCookieFilePath(event.target.value)}
-            placeholder="C:\\Users\\you\\Downloads\\cookies.txt"
-          />
-          <p className="muted-text">默认先无 Cookie 采集；失败后自动尝试读取本机 Chrome/Edge Cookie。这里的 Netscape cookies.txt 只作为最后兜底。</p>
-        </details>
+        <div className="viral-cookie-tools">
+          <div className="settings-inline-actions">
+            <button className="mini-button" type="button" onClick={openDouyinLogin}>打开抖音登录窗口</button>
+            <button className="mini-button" type="button" onClick={chooseCookieFile}>选择 Cookie 文件</button>
+          </div>
+          <Field label="Cookie 文件">
+            <div className="viral-cookie-input-row">
+              <input
+                id="viral-cookie-input"
+                className="text-input"
+                value={cookieFilePath}
+                onChange={(event) => setCookieFilePath(event.target.value)}
+                onBlur={() => saveViralCookiePath(cookieFilePath)}
+                placeholder="C:\\Users\\you\\Downloads\\cookies.txt"
+              />
+              {cookieFilePath ? <button className="mini-button" type="button" onClick={() => saveViralCookiePath('')}>清空</button> : null}
+            </div>
+          </Field>
+          <p className="muted-text">抖音风控时先点登录窗口完成登录；关闭窗口后会自动写入本应用的 Cookie 文件。也可以手动选择 Netscape cookies.txt。</p>
+        </div>
         {message ? <div className="test-result">{message}</div> : null}
       </section>
 
@@ -990,7 +1023,7 @@ function ViralAnalyzerPage({
       <section className="panel viral-report-panel">
         <div className="panel-title-row">
           <h3>拆解报告</h3>
-          {selected?.status === 'failed' || selected?.status === 'cancelled' ? <button onClick={() => selected && api.retryViralAnalysis(selected.id).then(applyState)}><RotateCcw size={14} />重试</button> : null}
+          {selected?.status === 'failed' || selected?.status === 'cancelled' ? <button className="mini-button viral-retry-button" type="button" onClick={() => selected && api.retryViralAnalysis(selected.id).then(applyState)}><RotateCcw size={14} />重试</button> : null}
         </div>
         {result ? <ViralReport result={result} createProductionTask={createProductionTask} /> : <p className="muted-text">任务完成后显示开头、结构、结尾、爆点和复刻方案。</p>}
       </section>
@@ -4288,6 +4321,24 @@ function SettingsPage({ api, state, applyState }: { api: StoryboundApi; state: A
   function updateSpeechToTextConfig(patch: Partial<AppConfig['speechToText']>) {
     setSettingsDraft({ ...draft, speechToText: { ...draft.speechToText, ...patch } });
   }
+  function switchSpeechToTextProvider(provider: AppConfig['speechToText']['provider']) {
+    if (provider === 'siliconflow') {
+      updateSpeechToTextConfig({
+        provider,
+        baseUrl: siliconFlowSpeechToTextBaseUrl,
+        model: siliconFlowSpeechToTextModels[0],
+        responseFormat: 'json',
+        timestampGranularities: ['segment'],
+        chunkingStrategy: 'none',
+      });
+      return;
+    }
+    updateSpeechToTextConfig({
+      provider,
+      baseUrl: draft.speechToText.baseUrl.includes('siliconflow') ? 'https://api.openai.com/v1' : draft.speechToText.baseUrl,
+      model: siliconFlowSpeechToTextModels.includes(draft.speechToText.model) ? 'whisper-1' : draft.speechToText.model,
+    });
+  }
   function toggleSpeechToTextTimestamp(granularity: AppConfig['speechToText']['timestampGranularities'][number], checked: boolean) {
     const current = draft.speechToText.timestampGranularities.filter((item) => item !== granularity);
     updateSpeechToTextConfig({ timestampGranularities: checked ? [...current, granularity] : current });
@@ -4301,6 +4352,7 @@ function SettingsPage({ api, state, applyState }: { api: StoryboundApi; state: A
   const selectedImageTestConfig = buildConfigForSelectedProfileTest(draft, 'image', selectedProviderProfileIds);
   const selectedTtsTestConfig = buildConfigForSelectedProfileTest(draft, 'tts', selectedProviderProfileIds);
   const settingsBgms = validBgmItems(draft);
+  const isSiliconFlowSpeechToText = draft.speechToText.provider === 'siliconflow';
   const sections = [
     ['llm', Sparkles, 'LLM', '文案与分镜', settingsStatusLabel(configTargetStatus('llm', draft))],
     ['image', ImageIcon, 'AI 绘图', '分镜图片', settingsStatusLabel(configTargetStatus('image', draft))],
@@ -4397,21 +4449,41 @@ function SettingsPage({ api, state, applyState }: { api: StoryboundApi; state: A
           <SettingsCard title="语音转文字" status={settingsStatusLabel(configTargetStatus('speechToText', draft))}>
             <ProviderConfigNote
               title="转写 API"
-              value="OpenAI 兼容 /audio/transcriptions。官方参数包含 file、model、language、prompt、response_format、temperature、timestamp_granularities。"
+              value="OpenAI 兼容 /audio/transcriptions；SiliconFlow 使用 file、model，默认 FunAudioLLM/SenseVoiceSmall，也可选 TeleAI/TeleSpeechASR。"
+            />
+            <Segmented
+              label="Provider"
+              value={draft.speechToText.provider}
+              options={['openai-compatible', 'siliconflow']}
+              labels={['OpenAI 兼容', 'SiliconFlow']}
+              onChange={(value) => switchSpeechToTextProvider(value as AppConfig['speechToText']['provider'])}
             />
             <ConfigInput label="Base URL" value={draft.speechToText.baseUrl} onChange={(value) => updateSpeechToTextConfig({ baseUrl: value })} />
             <ConfigInput label="API Key" value={draft.speechToText.apiKey} onChange={(value) => updateSpeechToTextConfig({ apiKey: value })} />
-            <ConfigInput label="转写模型" value={draft.speechToText.model} onChange={(value) => updateSpeechToTextConfig({ model: value })} />
+            {isSiliconFlowSpeechToText ? (
+              <Segmented
+                label="转写模型"
+                value={draft.speechToText.model}
+                options={siliconFlowSpeechToTextModels}
+                onChange={(value) => updateSpeechToTextConfig({ model: value })}
+              />
+            ) : (
+              <ConfigInput label="转写模型" value={draft.speechToText.model} onChange={(value) => updateSpeechToTextConfig({ model: value })} />
+            )}
             <ConfigInput label="语言" value={draft.speechToText.language} onChange={(value) => updateSpeechToTextConfig({ language: value })} />
             <ConfigInput label="提示词" value={draft.speechToText.prompt} onChange={(value) => updateSpeechToTextConfig({ prompt: value })} />
-            <Segmented
-              label="响应格式"
-              value={draft.speechToText.responseFormat}
-              options={['json', 'verbose_json', 'text', 'srt', 'vtt']}
-              labels={['JSON', 'Verbose JSON', 'Text', 'SRT', 'VTT']}
-              onChange={(value) => updateSpeechToTextConfig({ responseFormat: value as AppConfig['speechToText']['responseFormat'] })}
-            />
-            <RangeField label="温度" min={0} max={1} step={0.1} value={draft.speechToText.temperature} onChange={(value) => updateSpeechToTextConfig({ temperature: value })} />
+            {isSiliconFlowSpeechToText ? (
+              <LocalInfo title="SiliconFlow 参数" value="按官方接口只提交 file 和 model，上传上限 50MB。language、prompt、temperature、时间戳和切分策略不会随请求发送。" />
+            ) : (
+              <Segmented
+                label="响应格式"
+                value={draft.speechToText.responseFormat}
+                options={['json', 'verbose_json', 'text', 'srt', 'vtt']}
+                labels={['JSON', 'Verbose JSON', 'Text', 'SRT', 'VTT']}
+                onChange={(value) => updateSpeechToTextConfig({ responseFormat: value as AppConfig['speechToText']['responseFormat'] })}
+              />
+            )}
+            {!isSiliconFlowSpeechToText ? <RangeField label="温度" min={0} max={1} step={0.1} value={draft.speechToText.temperature} onChange={(value) => updateSpeechToTextConfig({ temperature: value })} /> : null}
             <ConfigNumberInput
               label="请求超时（秒）"
               value={Math.round(draft.speechToText.timeoutMs / 1000)}
@@ -4419,27 +4491,31 @@ function SettingsPage({ api, state, applyState }: { api: StoryboundApi; state: A
               step={10}
               onChange={(value) => updateSpeechToTextConfig({ timeoutMs: value * 1000 })}
             />
-            <Field label="时间戳">
-              <div className="settings-inline-actions">
-                <ToggleField
-                  label="Segment"
-                  checked={draft.speechToText.timestampGranularities.includes('segment')}
-                  onChange={(checked) => toggleSpeechToTextTimestamp('segment', checked)}
-                />
-                <ToggleField
-                  label="Word"
-                  checked={draft.speechToText.timestampGranularities.includes('word')}
-                  onChange={(checked) => toggleSpeechToTextTimestamp('word', checked)}
-                />
-              </div>
-            </Field>
-            <Segmented
-              label="切分策略"
-              value={draft.speechToText.chunkingStrategy}
-              options={['none', 'auto']}
-              labels={['不启用', 'Auto']}
-              onChange={(value) => updateSpeechToTextConfig({ chunkingStrategy: value as AppConfig['speechToText']['chunkingStrategy'] })}
-            />
+            {!isSiliconFlowSpeechToText ? (
+              <Field label="时间戳">
+                <div className="settings-inline-actions">
+                  <ToggleField
+                    label="Segment"
+                    checked={draft.speechToText.timestampGranularities.includes('segment')}
+                    onChange={(checked) => toggleSpeechToTextTimestamp('segment', checked)}
+                  />
+                  <ToggleField
+                    label="Word"
+                    checked={draft.speechToText.timestampGranularities.includes('word')}
+                    onChange={(checked) => toggleSpeechToTextTimestamp('word', checked)}
+                  />
+                </div>
+              </Field>
+            ) : null}
+            {!isSiliconFlowSpeechToText ? (
+              <Segmented
+                label="切分策略"
+                value={draft.speechToText.chunkingStrategy}
+                options={['none', 'auto']}
+                labels={['不启用', 'Auto']}
+                onChange={(value) => updateSpeechToTextConfig({ chunkingStrategy: value as AppConfig['speechToText']['chunkingStrategy'] })}
+              />
+            ) : null}
           </SettingsCard>
         ) : null}
         {section === 'jianying' ? (
@@ -5638,6 +5714,10 @@ function summarizeErrorMessage(message: string): string {
   if (!normalized) return '发生错误';
   const imageApiStatus = normalized.match(/Image provider API error \((\d+)\)/i)?.[1];
   if (imageApiStatus) return `生图接口错误 ${imageApiStatus}`;
+  if (/Python dependency .* is required|ModuleNotFoundError: No module named/i.test(normalized)) {
+    const missing = normalized.match(/No module named ['"]([^'"]+)['"]/i)?.[1] ?? normalized.match(/Python dependency ([\w.-]+)/i)?.[1];
+    return missing ? `Python 运行时缺少依赖：${missing}` : 'Python runtime dependency missing';
+  }
   if (/Browser preview cannot run the real provider pipeline/i.test(normalized)) return '浏览器预览无法执行真实任务';
   if (/Image provider API key is missing/i.test(normalized)) return '生图 API Key 缺失';
   if (/Image provider is not configured/i.test(normalized)) return '生图配置不完整';

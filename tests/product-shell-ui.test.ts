@@ -106,6 +106,22 @@ describe('product shell ui', () => {
     expect(css).toContain('.viral-draft-template-select');
   });
 
+  it('surfaces Douyin login and cookie file controls in the viral analyzer', async () => {
+    const main = await readFile(new URL('../src/main.tsx', import.meta.url), 'utf8');
+    const css = await readFile(new URL('../src/styles.css', import.meta.url), 'utf8');
+    const page = main.slice(main.indexOf('function ViralAnalyzerPage'), main.indexOf('const viralStages'));
+
+    expect(page).toContain('api.openViralLoginWindow');
+    expect(page).toContain('api.selectCookieFile');
+    expect(page).toContain('viral-cookie-tools');
+    expect(page).toContain('viral-cookie-input-row');
+    expect(page).toContain('打开抖音登录窗口');
+    expect(page).toContain('选择 Cookie 文件');
+    expect(page).toContain('Cookie 文件');
+    expect(css).toContain('.viral-cookie-tools');
+    expect(css).toContain('.viral-cookie-input-row');
+  });
+
   it('uses the dark renderer chrome as the only title bar and removes the trial strip', async () => {
     const main = await readFile(new URL('../src/main.tsx', import.meta.url), 'utf8');
     const css = await readFile(new URL('../src/styles.css', import.meta.url), 'utf8');
@@ -933,6 +949,9 @@ describe('product shell ui', () => {
       '时间戳',
       '切分策略',
       '请求超时',
+      'SiliconFlow',
+      'FunAudioLLM/SenseVoiceSmall',
+      'TeleAI/TeleSpeechASR',
     ]) {
       expect(main).toContain(text);
     }
@@ -1109,11 +1128,16 @@ describe('product shell ui', () => {
     expect(main).toContain('ErrorSummaryButton');
     expect(main).toContain('ErrorDetailDialog');
     expect(main).toContain('summarizeErrorMessage');
+    expect(main).toContain('Python 运行时缺少依赖');
+    expect(main).toContain('Python runtime dependency missing');
+    expect(main).toContain('className="mini-button viral-retry-button"');
     expect(main).toContain('fullMessage');
     expect(main).not.toContain('<small className="danger-text">{task.errorMessage}</small>');
     expect(main).not.toContain("stepEvent?.detail ?? statusLabelForStep(status)");
     expect(css).toContain('.error-summary-button');
     expect(css).toContain('.error-dialog');
+    expect(css).toContain('.error-summary-button > span:last-child');
+    expect(css).toContain('.viral-retry-button');
   });
 
   it('lets AI creation search real web sources and select them for generation', async () => {

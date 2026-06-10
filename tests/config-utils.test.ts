@@ -123,6 +123,32 @@ describe('config validation utilities', () => {
     expect(validateConfigTarget('speechToText', defaultConfig).status).toBe('fail');
   });
 
+  it('normalizes SiliconFlow speech-to-text settings with its default endpoint and model', () => {
+    const normalized = normalizeAppConfig({
+      ...defaultConfig,
+      speechToText: {
+        ...defaultConfig.speechToText,
+        provider: 'siliconflow',
+        baseUrl: '',
+        apiKey: 'sf-key',
+        model: '',
+        language: 'zh',
+        responseFormat: 'verbose_json',
+        timestampGranularities: ['segment', 'word'],
+      },
+    });
+
+    expect(normalized.speechToText).toMatchObject({
+      provider: 'siliconflow',
+      baseUrl: 'https://api.siliconflow.cn/v1',
+      apiKey: 'sf-key',
+      model: 'FunAudioLLM/SenseVoiceSmall',
+      responseFormat: 'json',
+      timestampGranularities: ['segment'],
+    });
+    expect(validateConfigTarget('speechToText', normalized).endpoint).toBe('https://api.siliconflow.cn/v1/audio/transcriptions');
+  });
+
   it('marks filled LLM credentials as configured for settings status', () => {
     const config = {
       ...defaultConfig,

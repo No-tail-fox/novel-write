@@ -57,4 +57,27 @@ describe('viral runtime speech-to-text API', () => {
       { text: '没有时间戳的结果', start: 0, end: 0, words: [] },
     ]);
   });
+
+  it('builds a SiliconFlow transcription request with only supported multipart fields', () => {
+    const config = normalizeAppConfig({
+      ...defaultConfig,
+      speechToText: {
+        ...defaultConfig.speechToText,
+        provider: 'siliconflow',
+        apiKey: 'sf-key',
+        model: 'TeleAI/TeleSpeechASR',
+        language: 'zh',
+        prompt: 'ignored for SiliconFlow',
+        responseFormat: 'verbose_json',
+        timestampGranularities: ['segment', 'word'],
+      },
+    });
+
+    const request = buildOpenAiTranscriptionRequest(config);
+
+    expect(request.endpoint).toBe('https://api.siliconflow.cn/v1/audio/transcriptions');
+    expect(request.apiKey).toBe('sf-key');
+    expect(request.maxUploadBytes).toBe(50 * 1024 * 1024);
+    expect(request.fields).toEqual([['model', 'TeleAI/TeleSpeechASR']]);
+  });
 });

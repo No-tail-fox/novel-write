@@ -193,9 +193,10 @@ export interface TtsProviderProfile {
 export type SpeechToTextResponseFormat = 'json' | 'text' | 'srt' | 'verbose_json' | 'vtt';
 export type SpeechToTextTimestampGranularity = 'segment' | 'word';
 export type SpeechToTextChunkingStrategy = 'none' | 'auto';
+export type SpeechToTextProvider = 'openai-compatible' | 'siliconflow';
 
 export interface SpeechToTextConfig {
-  provider: 'openai-compatible';
+  provider: SpeechToTextProvider;
   baseUrl: string;
   apiKey: string;
   model: string;
