@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from 'vitest';
-import { mkdtemp, writeFile } from 'node:fs/promises';
+import { mkdtemp, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { defaultConfig } from '@shared/config';
@@ -190,6 +190,67 @@ describe('viral runtime speech-to-text API', () => {
       );
     } finally {
       globalThis.fetch = originalFetch;
+    }
+  });
+
+  it('retries transient viral frame vision fetch failures', async () => {
+    const dir = await mkdtemp(join(tmpdir(), 'storybound-viral-vision-fetch-retry-'));
+    const framePath = join(dir, 'frame.jpg');
+    await writeFile(framePath, 'not-a-real-jpeg');
+    const originalFetch = globalThis.fetch;
+    const transient = new TypeError('fetch failed') as Error & { cause?: unknown };
+    transient.cause = new Error('read ECONNRESET');
+    const fetchMock = vi
+      .fn()
+      .mockRejectedValueOnce(transient)
+      .mockResolvedValueOnce(
+        new Response(
+          JSON.stringify({
+            choices: [
+              {
+                message: {
+                  content: JSON.stringify({
+                    shotType: 'close-up',
+                    cameraMovement: 'static',
+                    composition: 'center',
+                    transition: 'cut',
+                    textOverlay: null,
+                    visualDescription: 'Recovered frame analysis',
+                    mood: 'calm',
+                    keyElements: ['bread'],
+                    imagePrompt: 'Recovered image prompt',
+                  }),
+                },
+              },
+            ],
+          }),
+        ),
+      );
+    globalThis.fetch = fetchMock as unknown as typeof fetch;
+
+    try {
+      const config = normalizeAppConfig({
+        ...defaultConfig,
+        viral: {
+          ...defaultConfig.viral,
+          vision: {
+            ...defaultConfig.viral.vision,
+            apiKey: 'vision-key',
+            baseUrl: 'https://vision.example',
+            model: 'vision-model',
+            timeoutMs: 10,
+          },
+        },
+      });
+
+      const providers = createViralRuntimeProviders(config, dir);
+      const result = await providers.analyzeFrame({ timestamp: 0, framePath }, null, { title: 'Sample clip' } as never);
+
+      expect(result.visualDescription).toBe('Recovered frame analysis');
+      expect(fetchMock).toHaveBeenCalledTimes(2);
+    } finally {
+      globalThis.fetch = originalFetch;
+      await rm(dir, { recursive: true, force: true });
     }
   });
 });

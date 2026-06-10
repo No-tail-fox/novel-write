@@ -21,6 +21,8 @@ const OPENAI_STT_UPLOAD_LIMIT_BYTES = 25 * 1024 * 1024;
 const SILICONFLOW_STT_UPLOAD_LIMIT_BYTES = 50 * 1024 * 1024;
 const SILICONFLOW_STT_BASE_URL = 'https://api.siliconflow.cn/v1';
 const DEFAULT_VIRAL_KEY_FRAME_COUNT = 8;
+const VIRAL_FRAME_ANALYSIS_WIDTH = 768;
+const VISION_FETCH_RETRY_DELAYS_MS = [250, 1000];
 
 export function createViralRuntimeProviders(config: AppConfig, _workDir: string): Omit<RunViralAnalysisOptions, 'workDir' | 'emit' | 'signal'> {
   const textLlm = createOpenAiCompatibleJsonLlm(config.llm);
@@ -86,7 +88,20 @@ async function extractViralMedia(
     const file = `frame-${String(index + 1).padStart(4, '0')}.jpg`;
     await runCommand(
       ffmpeg,
-      ['-y', '-ss', formatFfmpegTimestamp(timestamp), '-i', videoPath, '-frames:v', '1', '-vf', 'scale=1280:-2', '-q:v', '2', join(framesDir, file)],
+      [
+        '-y',
+        '-ss',
+        formatFfmpegTimestamp(timestamp),
+        '-i',
+        videoPath,
+        '-frames:v',
+        '1',
+        '-vf',
+        `scale=${VIRAL_FRAME_ANALYSIS_WIDTH}:-2`,
+        '-q:v',
+        '4',
+        join(framesDir, file),
+      ],
       120000,
       signal,
     );
@@ -401,7 +416,7 @@ export function formatViralWhisperError(
   error: unknown,
   context: { model: string; endpoint?: string; firstError?: unknown },
 ): string {
-  const detail = compactErrorText([context.firstError, error].filter(Boolean).map(stringifyError).join('\n'));
+  const detail = compactErrorText([context.firstError, error].filter(Boolean).map((item) => stringifyError(item)).join('\n'));
   if (shouldRetryWhisperWithMirror(error) || (context.firstError && shouldRetryWhisperWithMirror(context.firstError))) {
     const endpointText = context.endpoint ? `端点 ${context.endpoint}` : 'HuggingFace Hub';
     return [
@@ -430,8 +445,26 @@ function buildWhisperEnv(endpoint: string): Record<string, string> {
   };
 }
 
-function stringifyError(error: unknown): string {
-  if (error instanceof Error) return `${error.message}\n${error.stack ?? ''}`;
+function stringifyError(error: unknown, seen = new Set<unknown>()): string {
+  if (seen.has(error)) return '[Circular error cause]';
+  seen.add(error);
+  if (error instanceof Error) {
+    const cause = (error as Error & { cause?: unknown }).cause;
+    return [
+      `${error.name}: ${error.message}`,
+      error.stack ?? '',
+      cause === undefined ? '' : `Caused by: ${stringifyError(cause, seen)}`,
+    ]
+      .filter(Boolean)
+      .join('\n');
+  }
+  if (error && typeof error === 'object') {
+    try {
+      return JSON.stringify(error);
+    } catch {
+      return String(error);
+    }
+  }
   return String(error);
 }
 
@@ -508,11 +541,8 @@ async function runOpenAiCompatibleVision(config: LlmConfig, content: unknown[], 
     throw new Error('爆款拆解视觉模型未配置：请在系统设置 > LLM 填写支持图片输入的 API Key 和模型后重试。');
   }
   const endpoint = `${normalizeOpenAiBaseUrl(config.baseUrl || 'https://api.openai.com')}/chat/completions`;
-  const response = await fetchWithRequestTimeout(endpoint, {
+  const response = await fetchVisionWithRetries(endpoint, {
     method: 'POST',
-    timeoutMs: config.timeoutMs ?? 120_000,
-    timeoutLabel: 'Viral frame analysis',
-    signal,
     headers: {
       'Content-Type': 'application/json',
       Authorization: `Bearer ${apiKey}`,
@@ -525,10 +555,58 @@ async function runOpenAiCompatibleVision(config: LlmConfig, content: unknown[], 
       ],
       response_format: { type: 'json_object' },
     }),
-  });
+  }, config, signal);
   if (!response.ok) throw new Error(`Vision API error ${response.status}: ${(await response.text()).slice(0, 300)}`);
   const body = (await response.json()) as { choices?: Array<{ message?: { content?: string | null } }> };
   return body.choices?.[0]?.message?.content ?? '';
+}
+
+async function fetchVisionWithRetries(endpoint: string, init: RequestInit, config: LlmConfig, signal?: AbortSignal): Promise<Response> {
+  const maxAttempts = VISION_FETCH_RETRY_DELAYS_MS.length + 1;
+  for (let attempt = 1; attempt <= maxAttempts; attempt += 1) {
+    try {
+      return await fetchWithRequestTimeout(endpoint, {
+        ...init,
+        timeoutMs: config.timeoutMs ?? 120_000,
+        timeoutLabel: `Viral frame analysis attempt ${attempt}/${maxAttempts}`,
+        signal,
+      });
+    } catch (error) {
+      if (attempt === maxAttempts || !isRetryableVisionFetchError(error)) throw error;
+      await sleepBeforeVisionRetry(VISION_FETCH_RETRY_DELAYS_MS[attempt - 1] ?? 0, signal);
+    }
+  }
+  throw new Error('Unexpected viral frame vision retry state.');
+}
+
+function isRetryableVisionFetchError(error: unknown): boolean {
+  const detail = stringifyError(error).toLowerCase();
+  if (/aborted|cancelled|canceled/.test(detail)) return false;
+  return /fetch failed|econnreset|socket|terminated|und_err|network|etimedout|eai_again|connection/.test(detail);
+}
+
+function sleepBeforeVisionRetry(ms: number, signal?: AbortSignal): Promise<void> {
+  if (ms <= 0) return Promise.resolve();
+  if (signal?.aborted) throw abortSignalError(signal);
+  return new Promise((resolve, reject) => {
+    const timeout = setTimeout(() => {
+      signal?.removeEventListener('abort', abort);
+      resolve();
+    }, ms);
+    const abort = () => {
+      clearTimeout(timeout);
+      signal?.removeEventListener('abort', abort);
+      reject(abortSignalError(signal));
+    };
+    signal?.addEventListener('abort', abort, { once: true });
+  });
+}
+
+function abortSignalError(signal?: AbortSignal): Error {
+  const reason = signal?.reason;
+  if (reason instanceof Error) return reason;
+  if (typeof reason === 'string') return new Error(reason);
+  return new Error('Viral frame analysis aborted.');
 }
 
 function formatViralFrameAnalysisError(error: unknown, context: { endpoint: string; frame?: { timestamp: number }; source?: ViralVideoSource }): string {
