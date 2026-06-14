@@ -133,6 +133,51 @@ describe('file database', () => {
     }
   });
 
+  it('persists music MV task kind, processing mode, and MV settings', async () => {
+    const dir = await mkdtemp(join(tmpdir(), 'storybound-db-music-mv-task-'));
+    const file = join(dir, 'app.db');
+
+    try {
+      const db = await FileDatabase.open(file);
+      await db.createTask({
+        title: 'Rainy music MV',
+        inputText: 'line one\nline two\nchorus again',
+        taskKind: 'music-mv',
+        processingMode: 'semi-auto',
+        track: 'music-mv',
+        style: 'modern-film',
+        ratio: '16:9',
+        storyboardSceneCount: 8,
+        musicMv: {
+          rhythmMode: 'lyric-sync',
+          captionStyle: 'karaoke',
+          visualMotif: 'rainy neon, lonely silhouette, slow camera',
+          audioPath: 'D:/music/rain.wav',
+        },
+      });
+      await db.close();
+
+      const reopened = await FileDatabase.open(file);
+      const state = await reopened.getState();
+
+      expect(state.tasks[0]).toMatchObject({
+        title: 'Rainy music MV',
+        taskKind: 'music-mv',
+        processingMode: 'semi-auto',
+        track: 'music-mv',
+        musicMv: {
+          rhythmMode: 'lyric-sync',
+          captionStyle: 'karaoke',
+          visualMotif: 'rainy neon, lonely silhouette, slow camera',
+          audioPath: 'D:/music/rain.wav',
+        },
+      });
+      await reopened.close();
+    } finally {
+      await rm(dir, { recursive: true, force: true });
+    }
+  });
+
   it('persists prompt template image seed pools across reloads', async () => {
     const dir = await mkdtemp(join(tmpdir(), 'storybound-db-prompt-seeds-'));
     const file = join(dir, 'app.db');

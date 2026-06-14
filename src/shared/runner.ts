@@ -1,6 +1,6 @@
 import { mkdir, readFile, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
-import type { AiSourceContext, BgmItem, CoverMetadata, ImagePrompt, PipelineArtifact, PromptStepTemplateType, PromptTemplate, StoryboardScene, Task, TaskStepRerunMode } from './types';
+import type { AiSourceContext, BgmItem, CharacterCard, CoverMetadata, ImagePrompt, MusicPlan, PipelineArtifact, PromptStepTemplateType, PromptTemplate, RewriteEvaluationResult, StoryboardScene, Task, TaskStepRerunMode } from './types';
 import { buildSubtitleTrack } from './story';
 import { writeJianyingDraft, type SceneAsset, type WriteJianyingDraftOptions } from './draft';
 import type { FileDatabase } from './storage';
@@ -61,6 +61,16 @@ const stepAgents: Record<number, string> = {
 const imagePromptBatchSize = 8;
 const defaultStoryboardSceneCount = 12;
 
+class CheckpointPause extends Error {
+  constructor(
+    public readonly step: number,
+    detail: string,
+  ) {
+    super(detail);
+    this.name = 'CheckpointPause';
+  }
+}
+
 function todayTitle(input: string): string {
   const title = /武则天|武曌|武后/.test(input) ? '武则天' : input.slice(0, 10).replace(/\s+/g, '');
   const date = new Date();
@@ -76,6 +86,7 @@ export async function runTask(db: FileDatabase, task: Task, options: RunTaskOpti
 
   let pipeline = await loadPipelineState(statePath, task.id);
   let activeStep: number | null = task.retryFromStep ?? firstRunnableStep(pipeline);
+  const initialStep = activeStep ?? 0;
   const startedAt = new Date().toISOString();
   await db.updateTask(task.id, {
     status: 'running',
@@ -119,6 +130,9 @@ export async function runTask(db: FileDatabase, task: Task, options: RunTaskOpti
       completedAt: status === 'completed' ? new Date().toISOString() : pipeline.steps[String(step)]?.completedAt,
     };
     await save();
+    if (status === 'completed' && shouldPauseEveryStep(task, initialStep, step)) {
+      throw new CheckpointPause(step + 1, `Task paused for confirmation after step ${step}.`);
+    }
   };
 
   try {
@@ -126,14 +140,34 @@ export async function runTask(db: FileDatabase, task: Task, options: RunTaskOpti
     await heartbeat(activeStep ?? 0, 'task started');
     await ensureContentArtifact({ db, task, options, workDir, emit, markStep, pipeline });
     const artifact = hydrateArtifact(pipeline.artifact);
+    if (task.processingMode === 'clip-only') {
+      const completedAt = new Date().toISOString();
+      await db.updateTask(task.id, {
+        status: 'completed',
+        currentStep: 4,
+        completedAt,
+        outputDir: workDir,
+        errorMessage: '',
+        failedStep: null,
+        retryFromStep: null,
+        artifactStatePath: statePath,
+        lastHeartbeatAt: new Date().toISOString(),
+      });
+      await emit('step_complete', 3, 'Prompt', 'Clip-only task completed after content artifacts');
+      options.onEvent?.('Task completed');
+      return { ...task, status: 'completed', currentStep: 4, completedAt, outputDir: workDir, errorMessage: '', failedStep: null, retryFromStep: null, artifactStatePath: statePath, startedAt, lastHeartbeatAt: new Date().toISOString() };
+    }
+    pauseAtCheckpoint(task, initialStep, 4, 'Task paused for confirmation before image generation.');
     activeStep = 4;
     await heartbeat(4, 'image step');
     await ensureImages({ db, task, artifact, options, emit, markStep, pipeline });
+    pauseAtCheckpoint(task, initialStep, 5, 'Task paused for confirmation after image generation.');
     activeStep = 5;
     await heartbeat(5, 'narration step');
     await ensureNarration({ db, task, artifact, options, emit, markStep, pipeline });
 
     activeStep = 6;
+    pauseAtCheckpoint(task, initialStep, 6, 'Task paused for confirmation before draft generation.');
     await heartbeat(6, 'draft step');
     await db.updateTask(task.id, { currentStep: 6, retryFromStep: 6 });
     if (pipeline.steps['6']?.status !== 'completed') {
@@ -192,6 +226,21 @@ export async function runTask(db: FileDatabase, task: Task, options: RunTaskOpti
     options.onEvent?.('Task completed');
     return { ...task, status: 'completed', currentStep: 7, completedAt, outputDir: draftDir, errorMessage: '', failedStep: null, retryFromStep: null, artifactStatePath: statePath, startedAt, lastHeartbeatAt: new Date().toISOString() };
   } catch (error) {
+    if (error instanceof CheckpointPause) {
+      await emit('checkpoint_pause', error.step, stepAgents[error.step] ?? null, error.message, { retryFromStep: error.step });
+      await db.updateTask(task.id, {
+        status: 'paused',
+        currentStep: error.step,
+        errorMessage: error.message,
+        outputDir: workDir,
+        failedStep: null,
+        retryFromStep: error.step,
+        artifactStatePath: statePath,
+        lastHeartbeatAt: new Date().toISOString(),
+      });
+      options.onEvent?.('Task paused for confirmation');
+      throw error;
+    }
     const latestTask = (await db.getState()).tasks.find((item) => item.id === task.id);
     const step = latestTask?.currentStep ?? activeStep ?? firstRunnableStep(pipeline);
     const message = error instanceof Error ? error.message : String(error);
@@ -230,6 +279,19 @@ async function ensureContentArtifact(input: {
     await writeContentArtifacts(workDir, artifact, task);
     return;
   }
+  if (hasCompleteContentData(pipeline)) {
+    const artifact = hydrateArtifact(pipeline.artifact);
+    pipeline.artifact.subtitles = artifact.subtitles;
+    await writeContentArtifacts(workDir, artifact, task);
+    for (const step of [0, 1, 2, 3]) {
+      if (!isStepCompleted(pipeline, step)) {
+        await db.updateTask(task.id, { currentStep: step, retryFromStep: step });
+        await markStep(step, 'completed', { outputPath: contentOutputPath(workDir, step) });
+        await heartbeatTask(db, task.id, options, step, `content step ${step} completed`);
+      }
+    }
+    return;
+  }
   const sourceContext = await prepareAiSourceContext({ task, options, workDir, emit, pipeline });
   throwIfAborted(options.signal);
   if (options.generatePipelineArtifact) {
@@ -241,6 +303,16 @@ async function ensureContentArtifact(input: {
       await db.updateTask(task.id, { currentStep: step, retryFromStep: step });
       await markStep(step, 'completed', { outputPath: contentOutputPath(workDir, step) });
       await heartbeatTask(db, task.id, options, step, `content step ${step} completed`);
+    }
+    return;
+  }
+  if (task.taskKind === 'music-mv') {
+    pipeline.artifact = buildMusicMvArtifact(task, sourceContext ?? undefined);
+    await writeContentArtifacts(workDir, hydrateArtifact(pipeline.artifact), task);
+    for (const step of [0, 1, 2, 3]) {
+      await db.updateTask(task.id, { currentStep: step, retryFromStep: step });
+      await markStep(step, 'completed', { outputPath: contentOutputPath(workDir, step) });
+      await heartbeatTask(db, task.id, options, step, `music mv content step ${step} completed`);
     }
     return;
   }
@@ -282,33 +354,26 @@ async function ensureContentArtifact(input: {
     await emit('step_start', 1, 'Writer', 'LLM 改写与封面信息');
     const rewritePrompt = renderStepPrompt(promptTemplates, 'rewrite', promptContext(), requireString(pipeline.artifact.reviewedText, 'reviewedText'));
     const coverPrompt = renderStepPrompt(promptTemplates, 'cover', promptContext(), '');
-    const rewrite = await options.llm<{ rewrittenCopy: string; cover: CoverMetadata }>({
-      step: 1,
-      name: 'rewrite',
+    const rewrite = await runRewriteRounds(options.llm, {
+      task,
+      rewritePrompt,
+      coverPrompt,
+      reviewedText: requireString(pipeline.artifact.reviewedText, 'reviewedText'),
       signal: options.signal,
-      messages: [
-        { role: 'system', content: 'Return strict JSON only. Schema: {"rewrittenCopy": string, "cover": {"title": string, "subtitle": string[], "summary": string, "tags": string[], "comments": string[]}}.' },
-        {
-          role: 'user',
-          content: joinPromptBlocks([
-            'Rewrite instructions:',
-            rewritePrompt,
-            'Cover instructions:',
-            coverPrompt,
-            'Reviewed text:',
-            requireString(pipeline.artifact.reviewedText, 'reviewedText'),
-            rewriteContextForStep(pipeline, 1),
-          ]),
-        },
-      ],
+      rerunContext: rewriteContextForStep(pipeline, 1),
     });
-    pipeline.artifact.rewrittenCopy = requireString(rewrite.json.rewrittenCopy, 'rewrittenCopy');
-    pipeline.artifact.cover = normalizeCover(rewrite.json.cover);
+    pipeline.artifact.rewrittenCopy = rewrite.rewrittenCopy;
+    pipeline.artifact.cover = rewrite.cover;
+    pipeline.artifact.rewriteEvaluation = rewrite.evaluation;
     await writeFile(join(workDir, '01-rewritten-copy.md'), pipeline.artifact.rewrittenCopy, 'utf8');
     await writeFile(join(workDir, '00-cover-title.json'), JSON.stringify(pipeline.artifact.cover, null, 2), 'utf8');
+    await writeFile(join(workDir, '01-rewrite-evaluations.json'), JSON.stringify(pipeline.artifact.rewriteEvaluation, null, 2), 'utf8');
+    if (pipeline.artifact.rewriteEvaluation.wordCountWarning) {
+      await emit('step_warning', 1, 'Writer', pipeline.artifact.rewriteEvaluation.wordCountWarning, pipeline.artifact.rewriteEvaluation);
+    }
     await markStep(1, 'completed', { outputPath: join(workDir, '01-rewritten-copy.md') });
     await heartbeatTask(db, task.id, options, 1, 'LLM rewrite completed');
-    await emit('step_complete', 1, 'Writer', `改写完成：${pipeline.artifact.rewrittenCopy.length} 字`, { requestId: rewrite.requestId });
+    await emit('step_complete', 1, 'Writer', `改写完成：${pipeline.artifact.rewrittenCopy.length} 字`, { evaluation: pipeline.artifact.rewriteEvaluation });
   }
 
   if (!isStepCompleted(pipeline, 2) || !pipeline.artifact.scenes) {
@@ -345,6 +410,18 @@ async function ensureContentArtifact(input: {
     await emit('step_complete', 2, 'Storyboard', `分镜 ${pipeline.artifact.scenes.length} 个`, { requestId: storyboard.requestId });
   }
 
+  if (!pipeline.artifact.characterCard) {
+    pipeline.artifact.characterCard = await ensureCharacterCard({
+      llm: options.llm,
+      task,
+      reviewedText: requireString(pipeline.artifact.reviewedText, 'reviewedText'),
+      rewrittenCopy: requireString(pipeline.artifact.rewrittenCopy, 'rewrittenCopy'),
+      scenes: pipeline.artifact.scenes ?? [],
+      signal: options.signal,
+    });
+    await writeFile(join(workDir, '02-character-card.json'), JSON.stringify(pipeline.artifact.characterCard, null, 2), 'utf8');
+  }
+
   if (!isStepCompleted(pipeline, 3) || !pipeline.artifact.imagePrompts) {
     await db.updateTask(task.id, { currentStep: 3, retryFromStep: 3 });
     await heartbeatTask(db, task.id, options, 3, 'LLM prompts');
@@ -357,7 +434,7 @@ async function ensureContentArtifact(input: {
     const batchSnapshots = sceneBatches.map((scenes, index) => {
       const batchContext = buildPromptRenderContext({ task, taskTemplate, sourceContext, artifact: { ...pipeline.artifact, scenes } });
       const instruction = renderStepPrompt(promptTemplates, 'image-prompt', batchContext, JSON.stringify({ scenes, style: task.style, ratio: task.ratio }));
-      return buildImagePromptSnapshot(instruction, scenes, task, index + 1, sceneBatches.length, rewriteContextForStep(pipeline, 3));
+      return buildImagePromptSnapshot(instruction, scenes, task, index + 1, sceneBatches.length, pipeline.artifact.characterCard, rewriteContextForStep(pipeline, 3));
     });
     await db.updateTask(task.id, { step3PromptSnapshot: batchSnapshots.join('\n\n--- image prompt batch ---\n\n') });
     const imagePrompts: ImagePrompt[] = [];
@@ -406,10 +483,11 @@ function rewriteContextForStep(pipeline: PipelineState, step: number): string {
   ]);
 }
 
-function buildImagePromptSnapshot(instruction: string, scenes: StoryboardScene[], task: Task, batchIndex: number, batchCount: number, rerunContext = ''): string {
+function buildImagePromptSnapshot(instruction: string, scenes: StoryboardScene[], task: Task, batchIndex: number, batchCount: number, characterCard?: CharacterCard, rerunContext = ''): string {
   return joinPromptBlocks([
     'Image prompt instructions:',
     instruction,
+    characterCard ? `Character card:\n${JSON.stringify(characterCard)}` : '',
     `Batch: ${batchIndex}/${batchCount}`,
     'Only return imagePrompts for the sceneIds in this batch.',
     'Scene context:',
@@ -430,6 +508,224 @@ function normalizeStoryboardSceneCount(value: unknown): number {
   const parsed = Number(value);
   if (!Number.isFinite(parsed)) return defaultStoryboardSceneCount;
   return Math.min(30, Math.max(4, Math.round(parsed)));
+}
+
+function pauseAtCheckpoint(task: Task, initialStep: number, step: number, detail: string): void {
+  if (step <= initialStep) return;
+  if (task.processingMode === 'semi-auto' && step === 4) {
+    throw new CheckpointPause(step, detail);
+  }
+  if ((task.pausePoints.includes('critical') || task.pausePoints.includes('custom')) && (step === 4 || step === 5 || step === 6)) {
+    throw new CheckpointPause(step, detail);
+  }
+}
+
+function shouldPauseEveryStep(task: Task, initialStep: number, nextStep: number): boolean {
+  if (!task.pausePoints.includes('every-step')) return false;
+  return nextStep > initialStep && nextStep <= 6;
+}
+
+async function runRewriteRounds(
+  llm: JsonLlm,
+  input: { task: Task; rewritePrompt: string; coverPrompt: string; reviewedText: string; signal?: AbortSignal; rerunContext?: string },
+): Promise<{ rewrittenCopy: string; cover: CoverMetadata; evaluation: RewriteEvaluationResult }> {
+  const candidates: Array<{ round: number; rewrittenCopy: string; cover: CoverMetadata; requestId: string | null }> = [];
+  for (let round = 1; round <= 3; round += 1) {
+    const rewrite = await llm<{ rewrittenCopy: string; cover: CoverMetadata }>({
+      step: 1,
+      name: `rewrite-round-${round}`,
+      signal: input.signal,
+      messages: [
+        { role: 'system', content: 'Return strict JSON only. Schema: {"rewrittenCopy": string, "cover": {"title": string, "subtitle": string[], "summary": string, "tags": string[], "comments": string[]}}.' },
+        {
+          role: 'user',
+          content: joinPromptBlocks([
+            `Rewrite round: ${round}/3`,
+            'Rewrite instructions:',
+            input.rewritePrompt,
+            'Cover instructions:',
+            input.coverPrompt,
+            'Reviewed text:',
+            input.reviewedText,
+            input.rerunContext ?? '',
+          ]),
+        },
+      ],
+    });
+    candidates.push({
+      round,
+      rewrittenCopy: requireString(rewrite.json.rewrittenCopy, `rewrite round ${round}.rewrittenCopy`),
+      cover: normalizeCover(rewrite.json.cover),
+      requestId: rewrite.requestId,
+    });
+  }
+  const evaluationResponse = await llm<Partial<RewriteEvaluationResult>>({
+    step: 1,
+    name: 'rewrite-evaluation',
+    signal: input.signal,
+    messages: [
+      { role: 'system', content: 'Return strict JSON only. Schema: {"bestRound": number, "evaluations":[{"round":number,"score":number,"reason":string}], "wordCountWarning": string}.' },
+      {
+        role: 'user',
+        content: joinPromptBlocks([
+          'Evaluate these three rewrite candidates for hook strength, rhythm, factual faithfulness, short-video appeal, and target word count. Choose bestRound.',
+          input.rerunContext ?? '',
+          JSON.stringify(candidates.map(({ round, rewrittenCopy }) => ({ round, rewrittenCopy }))),
+        ]),
+      },
+    ],
+  });
+  const evaluation = normalizeRewriteEvaluation(evaluationResponse.json, candidates);
+  const selected = candidates.find((candidate) => candidate.round === evaluation.bestRound) ?? candidates[0];
+  return { rewrittenCopy: selected.rewrittenCopy, cover: selected.cover, evaluation };
+}
+
+function normalizeRewriteEvaluation(input: Partial<RewriteEvaluationResult>, candidates: Array<{ round: number; rewrittenCopy: string }>): RewriteEvaluationResult {
+  const bestRound = candidates.some((candidate) => candidate.round === Number(input.bestRound)) ? Number(input.bestRound) : candidates[0]?.round ?? 1;
+  const evaluations = Array.isArray(input.evaluations) && input.evaluations.length
+    ? input.evaluations.map((item, index) => ({
+      round: Number(item.round ?? index + 1),
+      score: Number(item.score ?? 0),
+      reason: String(item.reason ?? ''),
+    }))
+    : candidates.map((candidate) => ({ round: candidate.round, score: candidate.round === bestRound ? 100 : 80, reason: 'No explicit evaluation returned.' }));
+  return {
+    bestRound,
+    evaluations,
+    wordCountWarning: input.wordCountWarning ? String(input.wordCountWarning) : undefined,
+  };
+}
+
+async function ensureCharacterCard(input: {
+  llm?: JsonLlm;
+  task: Task;
+  reviewedText: string;
+  rewrittenCopy: string;
+  scenes: StoryboardScene[];
+  signal?: AbortSignal;
+}): Promise<CharacterCard> {
+  if (input.llm) {
+    try {
+      const response = await input.llm<{ characterCard: CharacterCard }>({
+        step: 3.1,
+        name: 'character-card',
+        signal: input.signal,
+        messages: [
+          { role: 'system', content: 'Return strict JSON only. Schema: {"characterCard":{"summary":string,"characters":[{"name":string,"appearance":string,"wardrobe":string,"role":string}],"consistencyRules":string[]}}.' },
+          {
+            role: 'user',
+            content: joinPromptBlocks([
+              'Extract the protagonist and recurring character consistency card before image prompt generation.',
+              `Task kind: ${input.task.taskKind}`,
+              'Reviewed text:',
+              input.reviewedText,
+              'Rewritten copy:',
+              input.rewrittenCopy,
+              'Scenes:',
+              JSON.stringify(input.scenes),
+            ]),
+          },
+        ],
+      });
+      return normalizeCharacterCard(response.json.characterCard, input.task);
+    } catch {
+      return fallbackCharacterCard(input.task);
+    }
+  }
+  return fallbackCharacterCard(input.task);
+}
+
+function normalizeCharacterCard(input: unknown, task: Task): CharacterCard {
+  const card = input && typeof input === 'object' ? (input as Partial<CharacterCard>) : {};
+  const characters = Array.isArray(card.characters) && card.characters.length
+    ? card.characters.map((character) => ({
+      name: String(character.name ?? '主角'),
+      appearance: String(character.appearance ?? card.summary ?? '主体形象保持一致'),
+      wardrobe: character.wardrobe === undefined ? undefined : String(character.wardrobe),
+      role: character.role === undefined ? undefined : String(character.role),
+    }))
+    : [{ name: task.taskKind === 'music-mv' ? 'MV 主角' : '主角', appearance: '主体形象保持一致', role: 'protagonist' }];
+  return {
+    summary: String(card.summary ?? `${characters[0]?.name ?? '主角'}在所有镜头中保持外貌、年龄、服饰和情绪连续。`),
+    characters,
+    consistencyRules: Array.isArray(card.consistencyRules) && card.consistencyRules.length ? card.consistencyRules.map(String) : ['保持同一主体身份、外貌、服饰和时代感。'],
+  };
+}
+
+function fallbackCharacterCard(task: Task): CharacterCard {
+  const name = task.taskKind === 'music-mv' ? 'MV 主角/歌者' : '主角';
+  return {
+    summary: `${name}在所有镜头中保持外貌、服饰、年龄和情绪连续。`,
+    characters: [{ name, appearance: '主体形象稳定，镜头间保持一致。', role: 'protagonist' }],
+    consistencyRules: ['不要改变主角脸型、年龄、发型、服装主色和时代风格。'],
+  };
+}
+
+function buildMusicMvArtifact(task: Task, sourceContext?: AiSourceContext): PipelineArtifact {
+  const musicPlan = buildMusicPlan(task);
+  const scenes: StoryboardScene[] = musicPlan.segments.map((segment) => ({
+    id: segment.id,
+    cap: segment.lyric,
+    descPrompt: `音乐MV，${task.style}，${musicPlan.visualMotif || '情绪化画面'}，${segment.section}，${segment.visualHint}，歌词字幕：${segment.lyric}`,
+    durationMs: segment.durationMs,
+  }));
+  const characterCard = fallbackCharacterCard(task);
+  const imagePrompts: ImagePrompt[] = scenes.map((scene, index) => ({
+    sceneId: scene.id,
+    cap: scene.cap,
+    prompt: `音乐MV，${task.style}，${musicPlan.visualMotif || '情绪化画面'}，${musicPlan.captionStyle} 字幕，${musicPlan.rhythmMode} 节奏，第 ${index + 1} 镜：${scene.descPrompt}`,
+    negativePrompt: '低质量，模糊，水印，乱码文字，多余字幕，变形人物',
+    style: task.style,
+    ratio: task.ratio,
+    characterProfile: characterCard.summary,
+  }));
+  return {
+    reviewedText: task.inputText,
+    rewrittenCopy: musicPlan.segments.map((segment) => segment.lyric).join('\n'),
+    cover: {
+      title: task.title || '音乐MV',
+      subtitle: [musicPlan.rhythmMode, musicPlan.captionStyle],
+      summary: musicPlan.visualMotif || '根据歌词生成音乐 MV 分镜。',
+      tags: ['#音乐MV', '#歌词成片', '#AI视频'],
+      comments: ['这版 MV 的画面感很强', '歌词和镜头节奏很搭'],
+    },
+    scenes,
+    imagePrompts,
+    subtitles: buildSubtitleTrack(scenes),
+    sourceContext,
+    musicPlan,
+    characterCard,
+  };
+}
+
+function buildMusicPlan(task: Task): MusicPlan {
+  const lines = task.inputText
+    .replace(/\r/g, '')
+    .split(/\n|(?<=[。！？!?；;])/u)
+    .map((line) => line.trim())
+    .filter(Boolean);
+  const lyrics = lines.length ? lines : [task.title || '音乐MV'];
+  const durationByMode = task.musicMv.rhythmMode === 'fast-cut' ? 1600 : task.musicMv.rhythmMode === 'slow-cinematic' ? 3600 : 2400;
+  return {
+    rhythmMode: task.musicMv.rhythmMode,
+    captionStyle: task.musicMv.captionStyle,
+    visualMotif: task.musicMv.visualMotif,
+    audioPath: task.musicMv.audioPath,
+    segments: lyrics.map((lyric, index) => ({
+      id: index + 1,
+      lyric,
+      section: musicSection(index, lyrics.length),
+      durationMs: durationByMode,
+      visualHint: `${task.musicMv.visualMotif || '围绕歌词情绪'}，镜头跟随歌词 "${lyric}"`,
+    })),
+  };
+}
+
+function musicSection(index: number, total: number): MusicPlan['segments'][number]['section'] {
+  if (index === 0) return 'intro';
+  if (index === total - 1) return 'outro';
+  if (total >= 4 && index >= Math.floor(total / 2)) return 'chorus';
+  return 'verse';
 }
 
 async function prepareAiSourceContext(input: {
@@ -565,6 +861,15 @@ async function writeContentArtifacts(workDir: string, artifact: PipelineArtifact
   await writeFile(join(workDir, '01-rewritten-copy.md'), artifact.rewrittenCopy, 'utf8');
   await writeFile(join(workDir, '00-cover-title.json'), JSON.stringify(artifact.cover, null, 2), 'utf8');
   await writeFile(join(workDir, '02-sentences.json'), JSON.stringify(artifact.scenes, null, 2), 'utf8');
+  if (artifact.musicPlan) {
+    await writeFile(join(workDir, '02-music-plan.json'), JSON.stringify(artifact.musicPlan, null, 2), 'utf8');
+  }
+  if (artifact.characterCard) {
+    await writeFile(join(workDir, '02-character-card.json'), JSON.stringify(artifact.characterCard, null, 2), 'utf8');
+  }
+  if (artifact.rewriteEvaluation) {
+    await writeFile(join(workDir, '01-rewrite-evaluations.json'), JSON.stringify(artifact.rewriteEvaluation, null, 2), 'utf8');
+  }
   await writeFile(join(workDir, '03-image-prompts.json'), JSON.stringify(artifact.imagePrompts, null, 2), 'utf8');
   await writeFile(join(workDir, 'subtitles.srt'), artifact.subtitles.srt, 'utf8');
 }
@@ -581,6 +886,9 @@ function hydrateArtifact(input: Partial<PipelineArtifact>): PipelineArtifact {
     imagePrompts: input.imagePrompts,
     subtitles: input.subtitles ?? buildSubtitleTrack(input.scenes),
     sourceContext: input.sourceContext,
+    musicPlan: input.musicPlan,
+    characterCard: input.characterCard,
+    rewriteEvaluation: input.rewriteEvaluation,
   };
 }
 
@@ -712,6 +1020,16 @@ function isStepCompleted(pipeline: PipelineState, step: number): boolean {
 function hasCompleteContentArtifact(pipeline: PipelineState): boolean {
   return (
     isStepCompleted(pipeline, 3) &&
+    Boolean(pipeline.artifact.reviewedText) &&
+    Boolean(pipeline.artifact.rewrittenCopy) &&
+    Boolean(pipeline.artifact.cover) &&
+    Boolean(pipeline.artifact.scenes) &&
+    Boolean(pipeline.artifact.imagePrompts)
+  );
+}
+
+function hasCompleteContentData(pipeline: PipelineState): boolean {
+  return (
     Boolean(pipeline.artifact.reviewedText) &&
     Boolean(pipeline.artifact.rewrittenCopy) &&
     Boolean(pipeline.artifact.cover) &&

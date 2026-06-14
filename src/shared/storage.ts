@@ -173,6 +173,8 @@ export class FileDatabase {
         id TEXT PRIMARY KEY,
         title TEXT DEFAULT '',
         input_text TEXT NOT NULL,
+        task_kind TEXT DEFAULT 'story',
+        processing_mode TEXT DEFAULT 'full-auto',
         status TEXT DEFAULT 'pending',
         current_step INTEGER DEFAULT 0,
         track TEXT DEFAULT 'character-story',
@@ -204,6 +206,7 @@ export class FileDatabase {
         tts_speed REAL DEFAULT 1,
         storyboard_scene_count INTEGER DEFAULT 12,
         step3_prompt_snapshot TEXT DEFAULT '',
+        music_mv_json TEXT DEFAULT '{}',
         failed_step INTEGER,
         retry_from_step INTEGER,
         artifact_state_path TEXT DEFAULT ''
@@ -327,6 +330,8 @@ export class FileDatabase {
 
     for (const [column, definition] of [
       ['speaker', "TEXT DEFAULT '灿博小叔'"],
+      ['task_kind', "TEXT DEFAULT 'story'"],
+      ['processing_mode', "TEXT DEFAULT 'full-auto'"],
       ['ai_keyword', "TEXT DEFAULT ''"],
       ['ai_sources', "TEXT DEFAULT '[]'"],
       ['selected_sources', "TEXT DEFAULT '[]'"],
@@ -340,6 +345,7 @@ export class FileDatabase {
       ['tts_speed', 'REAL DEFAULT 1'],
       ['storyboard_scene_count', 'INTEGER DEFAULT 12'],
       ['step3_prompt_snapshot', "TEXT DEFAULT ''"],
+      ['music_mv_json', "TEXT DEFAULT '{}'"],
       ['failed_step', 'INTEGER'],
       ['retry_from_step', 'INTEGER'],
       ['artifact_state_path', "TEXT DEFAULT ''"],
@@ -615,6 +621,8 @@ export class FileDatabase {
       id: randomUUID(),
       title: input.title ?? '',
       inputText: input.inputText,
+      taskKind: input.taskKind ?? 'story',
+      processingMode: input.processingMode ?? 'full-auto',
       status: 'pending',
       currentStep: 0,
       track: input.track ?? 'character-story',
@@ -646,22 +654,25 @@ export class FileDatabase {
       ttsSpeed: input.ttsSpeed ?? 1,
       storyboardSceneCount: input.storyboardSceneCount ?? 12,
       step3PromptSnapshot: input.step3PromptSnapshot ?? '',
+      musicMv: normalizeMusicMvSettings(input.musicMv),
       failedStep: null,
       retryFromStep: null,
       artifactStatePath: '',
     };
     this.db.run(
       `INSERT INTO tasks (
-        id, title, input_text, status, current_step, track, style, speaker, ratio, template_id,
+        id, title, input_text, task_kind, processing_mode, status, current_step, track, style, speaker, ratio, template_id,
         bgm_id, pause_points, output_dir, error_message, created_at, completed_at, started_at, last_heartbeat_at,
         mode, ai_keyword, ai_sources, selected_sources, extra_requirements, prompt_template_id, prompt_template_type,
         image_prompt_reference, reference_image_path, rewrite_intensity, narrative_pov, keep_promotion, tts_provider,
-        tts_speed, storyboard_scene_count, step3_prompt_snapshot, failed_step, retry_from_step, artifact_state_path
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        tts_speed, storyboard_scene_count, step3_prompt_snapshot, music_mv_json, failed_step, retry_from_step, artifact_state_path
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       [
         task.id,
         task.title,
         task.inputText,
+        task.taskKind,
+        task.processingMode,
         task.status,
         task.currentStep,
         task.track,
@@ -682,9 +693,9 @@ export class FileDatabase {
         json(task.aiSources),
         json(task.selectedSources),
         task.extraRequirements,
-        task.imagePromptReference,
         task.promptTemplateId,
         task.promptTemplateType,
+        task.imagePromptReference,
         task.referenceImagePath,
         task.rewriteIntensity,
         task.narrativePov,
@@ -693,6 +704,7 @@ export class FileDatabase {
         task.ttsSpeed,
         task.storyboardSceneCount,
         task.step3PromptSnapshot,
+        json(task.musicMv),
         task.failedStep,
         task.retryFromStep,
         task.artifactStatePath,
@@ -945,6 +957,8 @@ function rowToTask(row: Record<string, unknown>): Task {
     id: String(row.id),
     title: String(row.title ?? ''),
     inputText: String(row.input_text ?? ''),
+    taskKind: normalizeTaskKind(row.task_kind),
+    processingMode: normalizeProcessingMode(row.processing_mode),
     status: String(row.status ?? 'pending') as TaskStatus,
     currentStep: Number(row.current_step ?? 0),
     track: String(row.track ?? 'character-story'),
@@ -976,9 +990,33 @@ function rowToTask(row: Record<string, unknown>): Task {
     ttsSpeed: Number(row.tts_speed ?? 1),
     storyboardSceneCount: Number(row.storyboard_scene_count ?? 12),
     step3PromptSnapshot: String(row.step3_prompt_snapshot ?? ''),
+    musicMv: normalizeMusicMvSettings(parseJson(String(row.music_mv_json ?? '{}'), {})),
     failedStep: row.failed_step === null || row.failed_step === undefined ? null : Number(row.failed_step),
     retryFromStep: row.retry_from_step === null || row.retry_from_step === undefined ? null : Number(row.retry_from_step),
     artifactStatePath: String(row.artifact_state_path ?? ''),
+  };
+}
+
+function normalizeTaskKind(value: unknown): Task['taskKind'] {
+  return value === 'music-mv' ? 'music-mv' : 'story';
+}
+
+function normalizeProcessingMode(value: unknown): Task['processingMode'] {
+  return value === 'semi-auto' || value === 'clip-only' ? value : 'full-auto';
+}
+
+function normalizeMusicMvSettings(value: unknown): Task['musicMv'] {
+  const input = value && typeof value === 'object' ? (value as Partial<Task['musicMv']>) : {};
+  const rhythmMode =
+    input.rhythmMode === 'fast-cut' || input.rhythmMode === 'slow-cinematic' || input.rhythmMode === 'lyric-sync'
+      ? input.rhythmMode
+      : 'lyric-sync';
+  const captionStyle = input.captionStyle === 'minimal' || input.captionStyle === 'none' || input.captionStyle === 'karaoke' ? input.captionStyle : 'karaoke';
+  return {
+    rhythmMode,
+    captionStyle,
+    visualMotif: String(input.visualMotif ?? ''),
+    audioPath: String(input.audioPath ?? ''),
   };
 }
 

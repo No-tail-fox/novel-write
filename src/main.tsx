@@ -21,6 +21,7 @@ import {
   Maximize2,
   Mic2,
   Minus,
+  Music,
   Palette,
   Play,
   Plus,
@@ -53,6 +54,7 @@ import type {
   BgmItem,
   JianyingEffectCatalog,
   PausePoint,
+  ProcessingMode,
   PromptTemplate,
   PromptStepTemplateType,
   PromptTemplateType,
@@ -161,6 +163,7 @@ const navItems: Array<{ view: ShellView; label: string; hint: string; icon: Reac
   { view: 'history', label: '历史任务', hint: '本地记录', icon: History },
   { view: 'image-lab', label: '画图实验室', hint: '分镜图片', icon: FlaskConical },
   { view: 'voice-lab', label: '配音实验室', hint: '音色试听', icon: Mic2 },
+  { view: 'music-mv', label: '音乐MV', hint: '歌词成片', icon: Music },
   { view: 'viral-analyzer', label: '爆款拆解', hint: '拉片复刻', icon: Flame },
   { view: 'prompt-templates', label: '提示词模板', hint: '代理提示词', icon: Sparkles },
   { view: 'draft-templates', label: '草稿模板', hint: '剪映画布', icon: LayoutTemplate },
@@ -482,6 +485,8 @@ function makeFallbackApi(setState: (state: AppState) => void): StoryboundApi {
         id: crypto.randomUUID(),
         title: input.title || input.inputText.slice(0, 18) || 'New task',
         inputText: input.inputText,
+        taskKind: input.taskKind ?? 'story',
+        processingMode: input.processingMode ?? 'full-auto',
         status: 'paused',
         currentStep: 0,
         track: input.track ?? 'character-story',
@@ -513,6 +518,7 @@ function makeFallbackApi(setState: (state: AppState) => void): StoryboundApi {
         ttsSpeed: input.ttsSpeed ?? 1,
         storyboardSceneCount: input.storyboardSceneCount ?? 12,
         step3PromptSnapshot: input.step3PromptSnapshot ?? '',
+        musicMv: input.musicMv ?? { rhythmMode: 'lyric-sync', captionStyle: 'karaoke', visualMotif: '', audioPath: '' },
         failedStep: 0,
         retryFromStep: 0,
         artifactStatePath: '',
@@ -806,6 +812,7 @@ function App() {
           {activeView === 'task-detail' ? <TaskDetailPage api={api} state={state} task={selectedTask} applyState={applyState} close={() => navigate('history')} isBrowserPreview={isBrowserPreview} /> : null}
           {activeView === 'image-lab' ? <ImageLabPage api={api} state={state} applyState={applyState} /> : null}
           {activeView === 'voice-lab' ? <VoiceLabPage api={api} state={state} applyState={applyState} /> : null}
+          {activeView === 'music-mv' ? <MusicMvPage api={api} state={state} applyState={applyState} openTaskDetail={openTaskDetail} isBrowserPreview={isBrowserPreview} /> : null}
           {activeView === 'viral-analyzer' ? <ViralAnalyzerPage api={api} state={state} applyState={applyState} openTaskDetail={openTaskDetail} isBrowserPreview={isBrowserPreview} /> : null}
           {activeView === 'prompt-templates' ? <PromptTemplatesPage api={api} state={state} applyState={applyState} /> : null}
           {activeView === 'draft-templates' ? <DraftTemplatesPage api={api} state={state} applyState={applyState} /> : null}
@@ -1295,6 +1302,7 @@ function NewTaskPage({
   const [referenceImagePath, setReferenceImagePath] = useState('');
   const [showAdvanced, setShowAdvanced] = useState(false);
   const [pausePoint, setPausePoint] = useState<PausePoint>('none');
+  const [processingMode, setProcessingMode] = useState<ProcessingMode>('full-auto');
   const [rewriteIntensity, setRewriteIntensity] = useState<RewriteIntensity>('standard');
   const [narrativePov, setNarrativePov] = useState<Task['narrativePov']>('keep-original');
   const [keepPromotion, setKeepPromotion] = useState(false);
@@ -1480,6 +1488,7 @@ function NewTaskPage({
         templateId,
         bgmId,
         pausePoints: [pausePoint],
+        processingMode,
         referenceImagePath,
         rewriteIntensity,
         narrativePov,
@@ -1683,7 +1692,7 @@ function NewTaskPage({
         </button>
         {showAdvanced ? (
           <div className="advanced-grid">
-            <Segmented label="处理模式" value="full-auto" options={['full-auto', 'semi-auto', 'clip-only']} labels={['全自动', '半自动', '直接出片']} onChange={() => undefined} />
+            <Segmented label="处理模式" value={processingMode} options={['full-auto', 'semi-auto', 'clip-only']} labels={['全自动', '半自动', '只出方案']} onChange={(value) => setProcessingMode(value as ProcessingMode)} />
             <Segmented
               label="分镜数量"
               value={String(storyboardSceneCount)}
@@ -1725,6 +1734,175 @@ function NewTaskPage({
         </div>
         {draftNotice ? <span className="local-note">{draftNotice}</span> : null}
       </section>
+    </div>
+  );
+}
+
+function MusicMvPage({
+  api,
+  state,
+  applyState,
+  openTaskDetail,
+  isBrowserPreview,
+}: {
+  api: StoryboundApi;
+  state: AppState;
+  applyState: (state: AppState) => void;
+  openTaskDetail: (taskId: string) => void;
+  isBrowserPreview: boolean;
+}) {
+  const defaultTemplateId = state.draftTemplates[0]?.id ?? 'default-portrait-9-16';
+  const [title, setTitle] = useState('音乐MV');
+  const [lyrics, setLyrics] = useState('雨落下第一句\n霓虹亮起第二句\n副歌把夜色唱亮');
+  const [style, setStyle] = useState('modern-film');
+  const [ratio, setRatio] = useState('16:9');
+  const [templateId, setTemplateId] = useState(defaultTemplateId);
+  const [storyboardSceneCount, setStoryboardSceneCount] = useState(12);
+  const [processingMode, setProcessingMode] = useState<ProcessingMode>('full-auto');
+  const [pausePoint, setPausePoint] = useState<PausePoint>('critical');
+  const [musicMvRhythmMode, setMusicMvRhythmMode] = useState<Task['musicMv']['rhythmMode']>('lyric-sync');
+  const [musicMvCaptionStyle, setMusicMvCaptionStyle] = useState<Task['musicMv']['captionStyle']>('karaoke');
+  const [musicMvVisualMotif, setMusicMvVisualMotif] = useState('雨夜霓虹、孤独背影、慢镜头');
+  const [musicMvAudioPath, setMusicMvAudioPath] = useState('');
+  const [bgmId, setBgmId] = useState(resolveDefaultBgmId(state.config));
+  const [running, setRunning] = useState(false);
+  const [message, setMessage] = useState('');
+  const bgmOptions = validBgmItems(state.config);
+  const lyricLines = lyrics.split(/\n/u).map((line) => line.trim()).filter(Boolean);
+  const musicMvStyleOptions = styleOptions;
+  const musicMvDraftTemplateOptions = state.draftTemplates.map((template) => [template.id, template.name, `出图 ${template.image.ratio}`]);
+
+  async function selectMusicMvAudio() {
+    const audioPath = await api.selectLocalAudio();
+    if (!audioPath) return;
+    setMusicMvAudioPath(audioPath);
+    const nextBgm = addUploadedBgm(state.config, audioPath);
+    const next = await api.saveConfig(nextBgm.config);
+    applyState(next);
+    setBgmId(nextBgm.bgmId);
+  }
+
+  async function runMusicMv() {
+    if (isBrowserPreview) {
+      setMessage('浏览器预览不能执行真实流水线，请在 Electron 应用中生成音乐 MV。');
+      return;
+    }
+    if (!lyrics.trim()) {
+      setMessage('请先输入歌词 / 文案。');
+      return;
+    }
+    setRunning(true);
+    setMessage('');
+    try {
+      const next = await api.createAndRunTask({
+        title,
+        inputText: lyrics,
+        taskKind: 'music-mv',
+        processingMode,
+        mode: 'paste',
+        track: 'music-mv',
+        style,
+        ratio,
+        templateId,
+        bgmId,
+        pausePoints: [pausePoint],
+        storyboardSceneCount,
+        musicMv: {
+          rhythmMode: musicMvRhythmMode,
+          captionStyle: musicMvCaptionStyle,
+          visualMotif: musicMvVisualMotif,
+          audioPath: musicMvAudioPath,
+        },
+      });
+      applyState(next);
+      const createdTask = next.tasks[0];
+      if (createdTask) openTaskDetail(createdTask.id);
+    } finally {
+      setRunning(false);
+    }
+  }
+
+  return (
+    <div className="music-mv-layout">
+      <section className="task-card">
+        <div className="panel-title-row">
+          <div>
+            <h2>音乐MV</h2>
+            <span>按歌词切分镜头、同步字幕节奏，并输出剪映草稿。</span>
+          </div>
+          <button className="primary-action slim" onClick={runMusicMv} disabled={running || !lyrics.trim()}>
+            {running ? <Loader2 className="spin" size={15} /> : <Music size={15} />}
+            生成音乐 MV
+          </button>
+        </div>
+
+        <Field label="标题">
+          <input value={title} onChange={(event) => setTitle(event.target.value)} />
+        </Field>
+        <Field label="歌词 / 文案">
+          <textarea className="source-textarea" value={lyrics} onChange={(event) => setLyrics(event.target.value)} />
+        </Field>
+
+        <div className="advanced-grid">
+          <Segmented label="节奏模式" value={musicMvRhythmMode} options={['lyric-sync', 'fast-cut', 'slow-cinematic']} labels={['歌词同步', '快切', '慢镜头']} onChange={(value) => setMusicMvRhythmMode(value as Task['musicMv']['rhythmMode'])} />
+          <Segmented label="歌词字幕" value={musicMvCaptionStyle} options={['karaoke', 'minimal', 'none']} labels={['卡拉 OK', '极简', '无字幕']} onChange={(value) => setMusicMvCaptionStyle(value as Task['musicMv']['captionStyle'])} />
+          <Segmented label="处理模式" value={processingMode} options={['full-auto', 'semi-auto', 'clip-only']} labels={['全自动', '半自动', '只出方案']} onChange={(value) => setProcessingMode(value as ProcessingMode)} />
+          <Segmented label="暂停确认" value={pausePoint} options={pauseOptions.map(([id]) => id)} labels={pauseOptions.map(([, label]) => label)} onChange={(value) => setPausePoint(value as PausePoint)} />
+          <Segmented label="分镜数量" value={String(storyboardSceneCount)} options={storyboardSceneCountOptions.map(String)} labels={storyboardSceneCountOptions.map((count) => `${count} 条`)} onChange={(value) => setStoryboardSceneCount(Number(value))} />
+        </div>
+
+        <OptionCloud title="画面风格" options={musicMvStyleOptions} value={style} onChange={setStyle} />
+        <div className="option-two-col">
+          <OptionCloud title="草稿模板" options={musicMvDraftTemplateOptions} value={templateId} onChange={setTemplateId} />
+          <div>
+            <span className="field-title">AI 出图比例</span>
+            <div className="ratio-grid">
+              {['9:16', '4:3', '1:1', '16:9'].map((item) => (
+                <button key={item} className={ratio === item ? 'chip active' : 'chip'} onClick={() => setRatio(item)}>
+                  <span className="ratio-icon" />
+                  {item}
+                </button>
+              ))}
+            </div>
+          </div>
+        </div>
+
+        <Field label="视觉母题">
+          <input value={musicMvVisualMotif} onChange={(event) => setMusicMvVisualMotif(event.target.value)} placeholder="例如：雨夜霓虹、孤独背影、慢镜头" />
+        </Field>
+        <Field label="音频文件">
+          <div className="upload-row">
+            <input value={musicMvAudioPath} onChange={(event) => setMusicMvAudioPath(event.target.value)} placeholder="可选择本地歌曲或伴奏" />
+            <button className="ghost-action" onClick={selectMusicMvAudio}><FolderOpen size={15} />选择音频</button>
+          </div>
+        </Field>
+
+        <span className="field-title">背景音乐</span>
+        <div className="chip-row">
+          <button className={bgmId === '' ? 'chip active' : 'chip'} onClick={() => setBgmId('')}>无 BGM</button>
+          {bgmOptions.map((bgm) => (
+            <button key={bgm.id} className={bgmId === bgm.id ? 'chip active' : 'chip'} onClick={() => setBgmId(bgm.id)}>{bgm.title}</button>
+          ))}
+        </div>
+
+        {message ? <span className="local-note">{message}</span> : null}
+      </section>
+      <aside className="music-mv-preview panel">
+        <h3>MV 结构预览</h3>
+        <div className="task-metrics">
+          <div><small>歌词行</small><strong>{lyricLines.length}</strong></div>
+          <div><small>节奏</small><strong>{musicMvRhythmMode}</strong></div>
+          <div><small>字幕</small><strong>{musicMvCaptionStyle}</strong></div>
+        </div>
+        <div className="artifact-scene-list">
+          {lyricLines.slice(0, 8).map((line, index) => (
+            <div key={`${line}-${index}`}>
+              <strong>{index + 1}. {index === 0 ? 'intro' : index === lyricLines.length - 1 ? 'outro' : index >= Math.floor(lyricLines.length / 2) ? 'chorus' : 'verse'}</strong>
+              <p>{line}</p>
+            </div>
+          ))}
+        </div>
+      </aside>
     </div>
   );
 }
@@ -5439,7 +5617,7 @@ function ToggleField({ label, checked, onChange }: { label: string; checked: boo
   return (
     <div className="draft-toggle-row">
       <span>{label}</span>
-      <label className="draft-toggle-control">
+      <label className="draft-toggle-field draft-toggle-control">
         <input type="checkbox" checked={checked} onChange={(event) => onChange(event.target.checked)} />
         <span className="draft-toggle-box" aria-hidden="true">{checked ? '✓' : ''}</span>
         <span>{checked ? '开启' : '关闭'}</span>
@@ -5775,6 +5953,7 @@ function pageSubtitle(view: ShellView): string {
     history: '按时间浏览已完成、失败、取消和草稿任务',
     'task-detail': '查看单个任务的独立执行状态和流水线',
     'image-lab': '单独测试文生图、图像参考和分镜图片提示词',
+    'music-mv': '按歌词节奏生成音乐 MV 分镜、字幕和剪映草稿',
     'viral-analyzer': '拆解爆款短视频的开头、结构、结尾和爆点',
     'prompt-templates': '管理系统模板、克隆、导入 JSON 和本地编辑',
     'draft-templates': '调整画布、图片区域、字幕、免责声明和音频参数',

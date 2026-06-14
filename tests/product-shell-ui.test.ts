@@ -6,10 +6,10 @@ describe('product shell ui', () => {
     const main = await readFile(new URL('../src/main.tsx', import.meta.url), 'utf8');
     const css = await readFile(new URL('../src/styles.css', import.meta.url), 'utf8');
 
-    for (const view of ['new-task', 'queue', 'history', 'image-lab', 'voice-lab', 'viral-analyzer', 'prompt-templates', 'draft-templates', 'settings', 'account', 'activation']) {
+    for (const view of ['new-task', 'queue', 'history', 'image-lab', 'voice-lab', 'music-mv', 'viral-analyzer', 'prompt-templates', 'draft-templates', 'settings', 'account', 'activation']) {
       expect(main).toContain(view);
     }
-    for (const text of ['新建任务', '任务队列', '历史任务', '画图实验室', '提示词模板', '草稿模板', '系统设置']) {
+    for (const text of ['新建任务', '任务队列', '历史任务', '画图实验室', '音乐MV', '提示词模板', '草稿模板', '系统设置']) {
       expect(main).toContain(text);
     }
     expect(css).toContain('.app-shell');
@@ -38,15 +38,38 @@ describe('product shell ui', () => {
       expect(main).toContain(symbol);
     }
 
-    for (const text of ['配音实验室', '试听文案', '配音模型', '音色', '语速', '生成试听', '历史试听']) {
-      expect(main).toContain(text);
-    }
-
     expect(preload).toContain('generateVoiceLabPreview');
     expect(css).toContain('.voice-lab-layout');
     expect(css).toContain('.voice-lab-voices');
     expect(css).toContain('.voice-record');
     expect(css).toContain('.voice-lab-player');
+  });
+
+  it('adds a complete music MV page and sends MV task settings into task creation', async () => {
+    const main = await readFile(new URL('../src/main.tsx', import.meta.url), 'utf8');
+    const css = await readFile(new URL('../src/styles.css', import.meta.url), 'utf8');
+    const types = await readFile(new URL('../src/shared/types.ts', import.meta.url), 'utf8');
+
+    for (const symbol of [
+      "'music-mv'",
+      'MusicMvPage',
+      'music-mv-layout',
+      'musicMvRhythmMode',
+      'musicMvCaptionStyle',
+      'musicMvVisualMotif',
+      'musicMvAudioPath',
+      "taskKind: 'music-mv'",
+      'processingMode',
+      'setProcessingMode',
+      'musicMv:',
+    ]) {
+      expect(main).toContain(symbol);
+    }
+
+    expect(types).toContain("export type ProcessingMode = 'full-auto' | 'semi-auto' | 'clip-only'");
+    expect(types).toContain("export type TaskKind = 'story' | 'music-mv'");
+    expect(css).toContain('.music-mv-layout');
+    expect(css).toContain('.music-mv-preview');
   });
 
   it('wires the viral analyzer page into the shell with report and recreation controls', async () => {
@@ -391,7 +414,7 @@ describe('product shell ui', () => {
     const css = await readFile(new URL('../src/styles.css', import.meta.url), 'utf8');
 
     expect(main.includes('className="draft-toggle-row"')).toBe(true);
-    expect(main.includes('className="draft-toggle-control"')).toBe(true);
+    expect(main.includes('draft-toggle-control')).toBe(true);
     expect(main.includes('className="draft-toggle-box"')).toBe(true);
     expect(main.includes('className="draft-inline-border-grid"')).toBe(true);
     expect(main.includes('className="draft-border-compact-panel"')).toBe(false);

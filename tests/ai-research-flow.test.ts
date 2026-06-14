@@ -99,11 +99,30 @@ function mockLlmResponse(request: LlmJsonRequest) {
   }));
   const responses: Record<string, unknown> = {
     review: { reviewedText: 'Reviewed copy from search context.' },
-    rewrite: {
+    'rewrite-round-1': {
       rewrittenCopy: 'Wu Zetian was pushed away from power.\n\nShe returned and changed the court.',
       cover: { title: 'Wu Zetian', subtitle: ['The return'], summary: 'A comeback story', tags: ['#history'], comments: ['Power changes people.'] },
     },
+    'rewrite-round-2': {
+      rewrittenCopy: 'Wu Zetian was pushed away from power.\n\nShe returned and changed the court.',
+      cover: { title: 'Wu Zetian', subtitle: ['The return'], summary: 'A comeback story', tags: ['#history'], comments: ['Power changes people.'] },
+    },
+    'rewrite-round-3': {
+      rewrittenCopy: 'Wu Zetian was pushed away from power.\n\nShe returned and changed the court.',
+      cover: { title: 'Wu Zetian', subtitle: ['The return'], summary: 'A comeback story', tags: ['#history'], comments: ['Power changes people.'] },
+    },
+    'rewrite-evaluation': {
+      bestRound: 1,
+      evaluations: [{ round: 1, score: 90, reason: 'clear' }],
+    },
     storyboard: { scenes },
+    'character-card': {
+      characterCard: {
+        summary: 'same historical protagonist',
+        characters: [{ name: 'Wu Zetian', appearance: 'court robes' }],
+        consistencyRules: ['keep protagonist stable'],
+      },
+    },
     'image-prompts': { imagePrompts },
   };
   return Promise.resolve({

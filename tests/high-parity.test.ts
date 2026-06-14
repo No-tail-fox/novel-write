@@ -66,6 +66,14 @@ describe('high parity Storybound shell model', () => {
         keepPromotion: true,
         ttsProvider: 'minimax',
         ttsSpeed: 1.15,
+        taskKind: 'music-mv',
+        processingMode: 'clip-only',
+        musicMv: {
+          rhythmMode: 'fast-cut',
+          captionStyle: 'karaoke',
+          visualMotif: '舞台灯光',
+          audioPath: 'C:/music/song.mp3',
+        },
         step3PromptSnapshot: 'custom step3',
       });
 
@@ -92,6 +100,14 @@ describe('high parity Storybound shell model', () => {
         keepPromotion: true,
         ttsProvider: 'minimax',
         ttsSpeed: 1.15,
+        taskKind: 'music-mv',
+        processingMode: 'clip-only',
+        musicMv: {
+          rhythmMode: 'fast-cut',
+          captionStyle: 'karaoke',
+          visualMotif: '舞台灯光',
+          audioPath: 'C:/music/song.mp3',
+        },
         step3PromptSnapshot: 'custom step3',
         startedAt: '2026-05-27T00:00:00.000Z',
         lastHeartbeatAt: '2026-05-27T00:00:01.000Z',

@@ -382,6 +382,265 @@ describe('task runner', () => {
     }
   });
 
+  it('completes clip-only tasks after content artifacts without generating media or draft', async () => {
+    const dir = await mkdtemp(join(tmpdir(), 'storybound-runner-clip-only-'));
+    const db = await FileDatabase.open(join(dir, 'data.db'));
+    let imageCalled = false;
+    let narrationCalled = false;
+
+    try {
+      const task = await db.createTask({
+        title: 'Clip only',
+        inputText: sampleInput,
+        processingMode: 'clip-only',
+      });
+
+      await runTask(db, task, {
+        appDataDir: dir,
+        generatePipelineArtifact: async () => makeArtifact(),
+        generateImages: async () => {
+          imageCalled = true;
+          return [];
+        },
+        synthesizeNarration: async () => {
+          narrationCalled = true;
+          return [];
+        },
+        draftWriterOptions: { runBridge: fakeBridge },
+      });
+
+      const completed = (await db.getState()).tasks[0];
+      const workDir = join(dir, 'tasks', task.id);
+      expect(completed).toMatchObject({
+        status: 'completed',
+        currentStep: 4,
+        outputDir: workDir,
+      });
+      expect(imageCalled).toBe(false);
+      expect(narrationCalled).toBe(false);
+      await expect(readFile(join(workDir, '03-image-prompts.json'), 'utf8')).resolves.toContain('first prompt');
+    } finally {
+      await db.close();
+      await rm(dir, { recursive: true, force: true });
+    }
+  });
+
+  it('pauses semi-auto tasks after content artifacts and resumes from media generation', async () => {
+    const dir = await mkdtemp(join(tmpdir(), 'storybound-runner-semi-auto-'));
+    const db = await FileDatabase.open(join(dir, 'data.db'));
+    const draftRootDir = join(dir, 'JianyingPro Drafts');
+    const mediaDir = join(dir, 'media');
+    let imageCalls = 0;
+
+    try {
+      await db.upsertConfig({
+        ...(await db.getState()).config,
+        jianying: { ...(await db.getState()).config.jianying, draftPath: draftRootDir },
+      });
+      const task = await db.createTask({
+        title: 'Semi auto',
+        inputText: sampleInput,
+        processingMode: 'semi-auto',
+      });
+
+      await expect(
+        runTask(db, task, {
+          appDataDir: dir,
+          generatePipelineArtifact: async () => makeArtifact(),
+          generateImages: async (scenes) => {
+            imageCalls += 1;
+            return writeSceneAssets(mediaDir, scenes, 'png', tinyPng);
+          },
+          synthesizeNarration: async (scenes) => writeSceneAssets(mediaDir, scenes, 'wav', wavTone(1200)),
+          draftWriterOptions: { runBridge: fakeBridge },
+        }),
+      ).rejects.toThrow(/paused for confirmation/i);
+
+      const paused = (await db.getState()).tasks[0];
+      expect(paused).toMatchObject({ status: 'paused', currentStep: 4, retryFromStep: 4, failedStep: null });
+      expect(imageCalls).toBe(0);
+
+      await runTask(db, paused, {
+        appDataDir: dir,
+        generateImages: async (scenes) => {
+          imageCalls += 1;
+          return writeSceneAssets(mediaDir, scenes, 'png', tinyPng);
+        },
+        synthesizeNarration: async (scenes) => writeSceneAssets(mediaDir, scenes, 'wav', wavTone(1200)),
+        draftWriterOptions: { runBridge: fakeBridge },
+      });
+
+      expect((await db.getState()).tasks[0].status).toBe('completed');
+      expect(imageCalls).toBeGreaterThan(0);
+    } finally {
+      await db.close();
+      await rm(dir, { recursive: true, force: true });
+    }
+  });
+
+  it('honors critical pause checkpoints before image generation', async () => {
+    const dir = await mkdtemp(join(tmpdir(), 'storybound-runner-critical-pause-'));
+    const db = await FileDatabase.open(join(dir, 'data.db'));
+    let imageCalled = false;
+
+    try {
+      const task = await db.createTask({
+        title: 'Critical pause',
+        inputText: sampleInput,
+        pausePoints: ['critical'],
+      });
+
+      await expect(
+        runTask(db, task, {
+          appDataDir: dir,
+          generatePipelineArtifact: async () => makeArtifact(),
+          generateImages: async () => {
+            imageCalled = true;
+            return [];
+          },
+        }),
+      ).rejects.toThrow(/paused for confirmation/i);
+
+      const paused = (await db.getState()).tasks[0];
+      expect(paused).toMatchObject({ status: 'paused', currentStep: 4, retryFromStep: 4, failedStep: null });
+      expect(imageCalled).toBe(false);
+      expect((await db.getState()).events.some((event) => event.type === 'checkpoint_pause' && event.step === 4)).toBe(true);
+    } finally {
+      await db.close();
+      await rm(dir, { recursive: true, force: true });
+    }
+  });
+
+  it('runs three rewrite rounds, saves evaluation output, and injects a character card into image prompts', async () => {
+    const dir = await mkdtemp(join(tmpdir(), 'storybound-runner-rewrite-character-card-'));
+    const db = await FileDatabase.open(join(dir, 'data.db'));
+    const draftRootDir = join(dir, 'JianyingPro Drafts');
+    const mediaDir = join(dir, 'media');
+    const requests: LlmJsonRequest[] = [];
+
+    try {
+      await db.upsertConfig({
+        ...(await db.getState()).config,
+        jianying: { ...(await db.getState()).config.jianying, draftPath: draftRootDir },
+      });
+      const task = await db.createTask({
+        title: 'Rewrite evaluation',
+        inputText: sampleInput,
+      });
+
+      const llm: JsonLlm = async <T,>(request: LlmJsonRequest) => {
+        requests.push(request);
+        if (request.step === 0) return { json: { reviewedText: sampleInput } as T, raw: '{}', requestId: 'review' };
+        if (request.name.startsWith('rewrite-round-')) {
+          const round = Number(request.name.replace('rewrite-round-', ''));
+          return {
+            json: {
+              rewrittenCopy: `Round ${round} line one.\n\nRound ${round} line two.`,
+              cover: { title: `Cover ${round}`, subtitle: [], summary: `summary ${round}`, tags: [], comments: [`comment ${round}`] },
+            } as T,
+            raw: '{}',
+            requestId: `rewrite-${round}`,
+          };
+        }
+        if (request.name === 'rewrite-evaluation') {
+          return {
+            json: {
+              bestRound: 2,
+              evaluations: [
+                { round: 1, score: 70, reason: 'plain' },
+                { round: 2, score: 93, reason: 'best rhythm' },
+                { round: 3, score: 80, reason: 'ok' },
+              ],
+              wordCountWarning: 'chosen copy is short',
+            } as T,
+            raw: '{}',
+            requestId: 'rewrite-eval',
+          };
+        }
+        if (request.step === 2) return { json: { scenes: makeArtifact().scenes } as T, raw: '{}', requestId: 'storyboard' };
+        if (request.name === 'character-card') {
+          return {
+            json: {
+              characterCard: {
+                summary: 'same historical protagonist',
+                characters: [{ name: 'Wu Zetian', appearance: 'calm gaze', wardrobe: 'Tang court clothing' }],
+                consistencyRules: ['keep face and wardrobe stable'],
+              },
+            } as T,
+            raw: '{}',
+            requestId: 'character-card',
+          };
+        }
+        expect(request.messages.map((message) => message.content).join('\n')).toContain('same historical protagonist');
+        return { json: { imagePrompts: makePrompts(makeArtifact().scenes) } as T, raw: '{}', requestId: 'prompts' };
+      };
+
+      await runTask(db, task, {
+        appDataDir: dir,
+        llm,
+        generateImages: async (scenes) => writeSceneAssets(mediaDir, scenes, 'png', tinyPng),
+        synthesizeNarration: async (scenes) => writeSceneAssets(mediaDir, scenes, 'wav', wavTone(1200)),
+        draftWriterOptions: { runBridge: fakeBridge },
+      });
+
+      const workDir = join(dir, 'tasks', task.id);
+      await expect(readFile(join(workDir, '01-rewritten-copy.md'), 'utf8')).resolves.toContain('Round 2 line one');
+      const evaluations = JSON.parse(await readFile(join(workDir, '01-rewrite-evaluations.json'), 'utf8'));
+      expect(evaluations.bestRound).toBe(2);
+      const characterCard = JSON.parse(await readFile(join(workDir, '02-character-card.json'), 'utf8'));
+      expect(characterCard.summary).toContain('same historical protagonist');
+      expect(requests.filter((request) => request.name.startsWith('rewrite-round-'))).toHaveLength(3);
+      expect(requests.some((request) => request.name === 'rewrite-evaluation')).toBe(true);
+      expect(requests.some((request) => request.name === 'character-card')).toBe(true);
+      expect((await db.getState()).events.some((event) => event.type === 'step_warning' && event.detail.includes('short'))).toBe(true);
+    } finally {
+      await db.close();
+      await rm(dir, { recursive: true, force: true });
+    }
+  });
+
+  it('builds music MV plans from lyrics before generating media', async () => {
+    const dir = await mkdtemp(join(tmpdir(), 'storybound-runner-music-mv-'));
+    const db = await FileDatabase.open(join(dir, 'data.db'));
+    const mediaDir = join(dir, 'media');
+
+    try {
+      const task = await db.createTask({
+        title: 'Music MV',
+        inputText: '雨落下第一句\n霓虹亮起第二句\n副歌把夜色唱亮',
+        taskKind: 'music-mv',
+        processingMode: 'clip-only',
+        track: 'music-mv',
+        musicMv: {
+          rhythmMode: 'lyric-sync',
+          captionStyle: 'karaoke',
+          visualMotif: '雨夜霓虹和孤独背影',
+          audioPath: 'D:/music/rain.mp3',
+        },
+      });
+
+      await runTask(db, task, {
+        appDataDir: dir,
+        generateImages: async (scenes) => writeSceneAssets(mediaDir, scenes, 'png', tinyPng),
+        synthesizeNarration: async (scenes) => writeSceneAssets(mediaDir, scenes, 'wav', wavTone(1200)),
+        draftWriterOptions: { runBridge: fakeBridge },
+      });
+
+      const workDir = join(dir, 'tasks', task.id);
+      const musicPlan = JSON.parse(await readFile(join(workDir, '02-music-plan.json'), 'utf8'));
+      const scenes = JSON.parse(await readFile(join(workDir, '02-sentences.json'), 'utf8')) as StoryboardScene[];
+      const prompts = JSON.parse(await readFile(join(workDir, '03-image-prompts.json'), 'utf8')) as ImagePrompt[];
+
+      expect(musicPlan).toMatchObject({ rhythmMode: 'lyric-sync', captionStyle: 'karaoke', visualMotif: '雨夜霓虹和孤独背影' });
+      expect(scenes.map((scene) => scene.cap)).toEqual(['雨落下第一句', '霓虹亮起第二句', '副歌把夜色唱亮']);
+      expect(prompts[0].prompt).toContain('音乐MV');
+      expect(prompts[0].prompt).toContain('雨夜霓虹和孤独背影');
+    } finally {
+      await db.close();
+      await rm(dir, { recursive: true, force: true });
+    }
+  });
+
   it('fails instead of completing with fake assets when real image generation is unavailable', async () => {
     const dir = await mkdtemp(join(tmpdir(), 'storybound-runner-no-image-'));
     const db = await FileDatabase.open(join(dir, 'data.db'));
@@ -581,7 +840,7 @@ describe('task runner', () => {
         draftWriterOptions: { runBridge: fakeBridge },
       });
 
-      expect(calls).toMatchObject({ 0: 1, 1: 1, 2: 2, 3: 1 });
+      expect(calls).toMatchObject({ 0: 1, 1: 4, 2: 2, 3: 1 });
       expect((await db.getState()).tasks[0].status).toBe('completed');
     } finally {
       await db.close();

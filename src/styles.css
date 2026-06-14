@@ -314,11 +314,31 @@ h2 {
 .prompt-template-gallery,
 .prompt-template-detail,
 .draft-template-page,
+.music-mv-layout,
 .lab-layout {
   min-width: 0;
   min-height: 0;
   overflow: auto;
   padding: 20px 26px;
+}
+
+.music-mv-layout {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(300px, 0.42fr);
+  gap: 18px;
+}
+
+.music-mv-preview {
+  align-self: start;
+  display: grid;
+  gap: 14px;
+  padding: 16px;
+}
+
+@media (max-width: 1180px) {
+  .music-mv-layout {
+    grid-template-columns: 1fr;
+  }
 }
 
 .template-filter-row {

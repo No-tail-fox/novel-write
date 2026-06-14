@@ -1,4 +1,3 @@
-#!/usr/bin/env node
 import { spawn } from 'node:child_process';
 import { mkdir, readFile, rm, writeFile } from 'node:fs/promises';
 import { basename, dirname, resolve } from 'node:path';

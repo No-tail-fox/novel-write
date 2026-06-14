@@ -7,6 +7,7 @@ export type ShellView =
   | 'task-detail'
   | 'image-lab'
   | 'voice-lab'
+  | 'music-mv'
   | 'viral-analyzer'
   | 'prompt-templates'
   | 'draft-templates'
@@ -15,6 +16,8 @@ export type ShellView =
   | 'activation';
 
 export type TaskMode = 'paste' | 'ai';
+export type TaskKind = 'story' | 'music-mv';
+export type ProcessingMode = 'full-auto' | 'semi-auto' | 'clip-only';
 export type PromptTemplateType = 'review' | 'rewrite' | 'cover' | 'storyboard' | 'image-prompt' | 'task';
 export type PromptStepTemplateType = Exclude<PromptTemplateType, 'task'>;
 export type ImageProvider = 'gpt_image' | 'jimeng' | 'custom' | 'mock';
@@ -286,6 +289,8 @@ export interface Task {
   id: string;
   title: string;
   inputText: string;
+  taskKind: TaskKind;
+  processingMode: ProcessingMode;
   status: TaskStatus;
   currentStep: number;
   track: string;
@@ -317,9 +322,17 @@ export interface Task {
   ttsSpeed: number;
   storyboardSceneCount: number;
   step3PromptSnapshot: string;
+  musicMv: MusicMvSettings;
   failedStep: number | null;
   retryFromStep: number | null;
   artifactStatePath: string;
+}
+
+export interface MusicMvSettings {
+  rhythmMode: 'lyric-sync' | 'fast-cut' | 'slow-cinematic';
+  captionStyle: 'karaoke' | 'minimal' | 'none';
+  visualMotif: string;
+  audioPath: string;
 }
 
 export type CreateTaskInput = Partial<
@@ -327,6 +340,8 @@ export type CreateTaskInput = Partial<
     Task,
     | 'title'
     | 'inputText'
+    | 'taskKind'
+    | 'processingMode'
     | 'mode'
     | 'aiKeyword'
     | 'aiSources'
@@ -350,6 +365,7 @@ export type CreateTaskInput = Partial<
     | 'ttsSpeed'
     | 'storyboardSceneCount'
     | 'step3PromptSnapshot'
+    | 'musicMv'
   >
 > & {
   inputText: string;
@@ -520,6 +536,41 @@ export interface SubtitleCue {
 export interface SubtitleTrack {
   cues: SubtitleCue[];
   srt: string;
+}
+
+export interface MusicPlan {
+  rhythmMode: MusicMvSettings['rhythmMode'];
+  captionStyle: MusicMvSettings['captionStyle'];
+  visualMotif: string;
+  audioPath: string;
+  segments: Array<{
+    id: number;
+    lyric: string;
+    section: 'intro' | 'verse' | 'chorus' | 'bridge' | 'outro';
+    durationMs: number;
+    visualHint: string;
+  }>;
+}
+
+export interface CharacterCard {
+  summary: string;
+  characters: Array<{
+    name: string;
+    appearance: string;
+    wardrobe?: string;
+    role?: string;
+  }>;
+  consistencyRules: string[];
+}
+
+export interface RewriteEvaluationResult {
+  bestRound: number;
+  evaluations: Array<{
+    round: number;
+    score: number;
+    reason: string;
+  }>;
+  wordCountWarning?: string;
 }
 
 export interface AiSourceSection {
@@ -715,6 +766,9 @@ export interface PipelineArtifact {
   imagePrompts: ImagePrompt[];
   subtitles: SubtitleTrack;
   sourceContext?: AiSourceContext;
+  musicPlan?: MusicPlan;
+  characterCard?: CharacterCard;
+  rewriteEvaluation?: RewriteEvaluationResult;
 }
 
 export type TaskArtifactStepStatus = 'pending' | 'running' | 'completed' | 'failed';

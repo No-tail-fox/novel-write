@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { readFile } from 'node:fs/promises';
 import { join } from 'node:path';
+import { pathToFileURL } from 'node:url';
 
 type FeishuFetcherModule = {
   extractFeishuWorkflowSourcesFromHtml(html: string): Array<{
@@ -29,8 +30,7 @@ type FeishuFetcherModule = {
 };
 
 async function importFeishuFetcher(): Promise<FeishuFetcherModule> {
-  // @ts-expect-error The Feishu fetcher is an executable .mjs script with named exports.
-  return import('../scripts/fetch-feishu-coze-workflows.mjs') as Promise<FeishuFetcherModule>;
+  return import(pathToFileURL(join(__dirname, '..', 'scripts', 'fetch-feishu-coze-workflows.mjs')).href) as Promise<FeishuFetcherModule>;
 }
 
 describe('Feishu Coze workflow fetcher', () => {

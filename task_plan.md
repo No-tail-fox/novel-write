@@ -38,6 +38,10 @@ Goal: study `G:\Storybound` as the reference app and implement scoped feature ad
 | Feishu fetch CLI parsed hydrated DOM HTML instead of the original Document response body. | Second real run failed with `No Feishu .txt workflow attachment sources were found in the page HTML`. | Capture the initial wiki Document response through CDP `Network.responseReceived` and read it with `Network.getResponseBody`. |
 | Feishu single-pass scrolling only captured a subset of virtualized file blocks. | Runs alternated between the page-top 64 sources and partial page-bottom captures. | Use hydrated React `blockManager`, audit record seeds, and HTML document record seeds; use stable record-id filenames so repeated runs accumulate a de-duplicated source set. |
 | Some Coze video-generation workflows had no Jianying `create_draft` plugin node. | Batch conversion failed with `Coze workflow does not contain a create_draft node`. | Generate a reusable 9:16 Storybound draft-template shell and preserve the missing `create_draft` condition as a warning diagnostic. |
+| PowerShell parsed unquoted `stash@{0}` oddly during stash apply. | `git stash apply stash@{0}` failed with `unknown switch e`. | Retry with the stash ref quoted as `'stash@{0}'`; the stash was not dropped. |
+| PowerShell collapsed `git show` line output while rebuilding `tests/storage.test.ts`. | Assigned `git show ':2:tests/storage.test.ts'` to a variable and wrote it back as a single line. | Restore the conflict side from Git with a line-preserving command, then reapply the Music MV storage regression test. |
+| Targeted tests failed after conflict resolution because `createTask` inserted 39 SQL placeholders for 40 columns. | Ran the 9-file Vitest target set after typecheck. | Counted columns/placeholders, added the missing placeholder, and reran the target tests successfully. |
+| Two runner tests reached draft writing without configuring a Jianying draft path. | Target set narrowed failures to `tests/runner.test.ts`. | Added `draftRootDir` config setup to those test fixtures; runner and target tests passed. |
 
 ## 2026-06-08 Coze Workflow Converter Addendum
 
@@ -58,3 +62,12 @@ Goal: study `G:\Storybound` as the reference app and implement scoped feature ad
 - [x] Install/generated templates into a reusable Storybound template store or a project bundle the app can import.
 - [x] Seed the generated Feishu Coze templates into normal Storybound app databases as draft-template presets.
 - [x] Verify source count, conversion count, failures, typecheck, and relevant tests before calling the batch complete.
+
+## 2026-06-12 Main Reference Branch Restore Addendum
+
+- [x] Fetch latest remote refs and fast-forward `main` to `origin/codex/storybound-reference-parity`.
+- [x] Protect pre-merge local MV/runtime work in `stash@{0}`.
+- [x] Apply `stash@{0}` onto updated `main` without dropping it.
+- [x] Resolve conflicts while preserving reference branch features and restored MV/runtime work.
+- [x] Run typecheck, targeted tests, and browser smoke for affected runtime/UI surfaces.
+- [ ] Decide whether it is safe to drop `stash@{0}` after verification.
