@@ -1,127 +1,51 @@
 # Findings
 
-## Coze Workflow Draft Template Converter
+## Current Project
 
-- The copied Coze source is JSON with `type: "coze-workflow-clipboard-data"` and source metadata such as `workflowId`, `spaceId`, and `host`.
-- The pasted sample contains workflow ID `7629256239332032548`, `create_draft` dimensions `1920x1080`, and Jianying-related plugin APIs including `add_videos`, `add_audios`, `add_captions`, `add_effects`, `add_images`, and `add_keyframes`.
-- A full Coze workflow cannot be losslessly represented by the current Storybound `DraftTemplate` model because runtime asset URLs, code nodes, cutout/speech synthesis steps, and node references are outside the template schema. The converter therefore maps supported visual/export settings and surfaces the rest as explicit diagnostics.
-- `bg_audio_url` and `bg_video_url` from the Coze start node are preserved as diagnostics for later asset-aware wiring, not silently dropped.
-- Unsupported plugin APIs in the real fixture currently include `speech_synthesis` and `cutout`; they are reported as warnings.
-- The generated template for the real fixture is `coze-7629256239332032548`, non-default, landscape `16:9`, `1920x1080`, and can be saved through existing draft-template storage.
-- The batch converter supports multiple pasted JSON blobs or JSON arrays through `convertManyCozeWorkflowsToDraftTemplates`; the CLI writes `{ generatedAt, templates, diagnostics, failures }`.
+- 当前分支已切到 `codex/storybound-cn-full-replica`。
+- 项目是 React + Vite + Electron + sql.js，主 UI 在 `src/main.tsx`，主要样式在 `src/styles.css`，本地数据库在 `src/shared/storage.ts`。
+- 现有代码已经包含旧 Storybound parity 工作：语音实验室、画图实验室、音乐 MV、爆款拆解、提示词模板、草稿模板、设置、账号和激活页。
+- 当前 `ShellView` 已有 `new-task`、`queue`、`history`、`task-detail`、`image-lab`、`voice-lab`、`music-mv`、`viral-analyzer`、`prompt-templates`、`draft-templates`、`settings`、`account`、`activation`。
+- 终端显示中文时会出现 mojibake，但 Node 读取确认文件内存在真实中文，例如 `新建任务`、`任务队列`、`画图实验室`。
 
-## Feishu Coze Source Batch Download
+## Reference App
 
-- The Feishu wiki page is anonymously readable and the rendered attachment audit found 129 attachments: 64 `.txt` workflow sources and 65 `.zip` packages.
-- The browser DOM attachment `data-record-id` is not the direct download token. The initial wiki HTML embeds a document object map where each file block record contains `data.file.token`, `mimeType`, `size`, and `name`.
-- Example mapping: record `ChYYdgLYsoNaHexKw4cc6TEZnHI` (`【S1】炫酷书单1.txt`) maps to file token `LmDbb2FcnoAxLAxPuZic1mhInHb`, mime `text/plain`, size `360583`.
-- Feishu preview/cdn APIs observed in network traces:
-  - `/space/api/box/file/info/` takes `{ file_token, mount_point: "docx_file", mount_node_token, option_params }`.
-  - `/space/api/box/file/cdn_url/` takes an array of `{ file_token, width, height, policy }` for covers/previews and returns drive object URLs with encryption metadata.
-- The `lf*-drive.feishucdn.com/object/1000/box-file/...` objects observed for covers are ciphered binary preview resources, not directly useful plaintext workflow JSON.
-- The Feishu document is virtualized. A single DOM-scroll pass can miss middle or bottom file blocks; observed real runs returned 64, 104, 110, 113, or 114 `.txt` records depending on hydration timing.
-- Hydrated React fibers expose a `blockManager`; `blockManager.getRecord(recordId)` returns file metadata including `file.token`, `mimeType`, `size`, and Chinese `name` even when the DOM card is not mounted.
-- Initial Document HTML contains many record IDs in document maps and `children` arrays, even when it does not include full file token metadata. Feeding those IDs to the runtime `blockManager` fills in missing middle files such as `【S38】多人版心理学火柴人.txt`, `育儿绘本.txt`, `【S40】教育视频.txt`, and `【S122】个人成长心理视频.txt`.
-- Direct workflow download works with Feishu cookies from the CDP browser session via `https://internal-api-drive-stream.feishu.cn/space/api/box/stream/download/all/<file_token>`.
-- Final stabilized Feishu batch result:
-  - `data/coze-workflows/feishu-sources`: 114 downloaded Coze workflow `.txt` files, named with stable record-id prefixes.
-  - `data/coze-workflows/feishu-draft-templates.json`: 114 converted templates, 0 failures, 0 duplicate template IDs.
-  - `data/coze-workflows/feishu-data.db`: 117 draft template rows total, including 114 `coze-*` templates and 3 built-in Storybound presets.
-- Normal app databases now seed the bundled Feishu Coze draft-template bundle during `FileDatabase.open()`: fresh app state contains 117 draft templates total, including 114 `coze-*` templates and 3 built-in Storybound presets.
-- The seed path only inserts missing `coze-*` template IDs, so user-renamed or edited Coze presets are preserved while missing presets are restored on the next app open.
-- Some Seedance/SORA/video-generation workflows have no Jianying `create_draft` node. The converter now generates a reusable default 9:16 Storybound draft-template shell and records `node.missing_create_draft` as a warning instead of failing the batch.
+- 参考应用目录：`E:\Storybound`。
+- 参考可执行文件：`storybound.exe`、`draft-generator.exe`、`uninstall.exe`。
+- 参考资源：`resources/default-bgm.mp3`。
+- 参考本地配置：`C:\Users\Administrator\AppData\Local\com.dudumd.storybound\config.json`。
+- 参考配置内容：
+  - LLM: custom/openai protocol, `base_url: https://input.codes`, `model: gpt-5.5`。
+  - Image: `gpt_image` 为当前 provider；即梦模型 `jimeng-4.5`；自定义生图默认模型 `gpt-image-1`。
+  - TTS: `volcengine` 当前 provider；火山默认 speaker `zh_male_dongfanghaoran_moon_bigtts`；MiniMax 默认模型 `speech-2.8-hd`。
+  - Jianying: `draft_path` 字段存在但为空。
+  - UI: dark theme。
 
-## Additional Storybound Draft Preset Parity
+## Reference Database
 
-- Re-read Storybound local SQLite DB at `C:\Users\foxnotail\AppData\Local\com.dudumd.storybound\data.db`.
-- Confirmed the authoritative built-in draft presets are the `draft_templates.config` rows for:
-  - `default-portrait-9-16` / `默认竖屏`.
-  - `builtin-portrait-4-3` / `竖屏4:3`.
-  - `builtin-landscape-16-9` / `横屏16:9`.
-- Implemented exact built-in preset values in `src/shared/templates.ts`, including canvas/image positions, title/subtitle/caption/disclaimer positions, font sizes, alpha, border width 40 where Storybound uses it, caption background, disclaimer text, and audio volume/fade defaults.
-- Extended title, subtitle, and disclaimer with Storybound text style fields: `bold`, `underline`, `align`, `letterSpacing`, `lineSpacing`, and `border`.
-- Added compact editor controls and preview styles for those text fields. Browser smoke confirmed the title panel shows `下划线`, `对齐`, `字间距`, `行间距`, and `描边宽度` shows value `40` with max `60`.
-- Extended draft bridge payload and pyJianYingDraft export so title, subtitle, and disclaimer become text tracks through `TextSegment`, `TextStyle`, and `TextBorder`.
-- Verification evidence:
-  - Red-green targeted tests for draft preset parity, storage hydration, bridge payload/export, and UI controls.
-  - `node node_modules/vitest/vitest.mjs run --pool=threads --maxWorkers=1 tests/product-shell-storage.test.ts tests/draft-template-normalization.test.ts tests/draft.test.ts tests/jianying-bridge.test.ts tests/product-shell-ui.test.ts` passed: 5 files, 78 tests.
-  - `npm run typecheck` passed.
-  - `npm test` passed: 34 test files, 239 tests.
-  - In-app browser smoke on `http://localhost:5173` saved screenshot `tmp/draft-template-storybound-parity-ui.png`.
+- 数据库：`C:\Users\Administrator\AppData\Local\com.dudumd.storybound\data.db`。
+- 表结构：
+  - `tasks` 1 row。
+  - `task_events` 25 rows。
+  - `draft_templates` 4 rows。
+  - `user_prompt_templates` 0 rows。
+  - `playground_jobs` 0 rows。
+  - `minimax_clone_voices` 0 rows。
+  - `credits_transactions` 0 rows。
+  - `custom_styles` 0 rows。
+  - `custom_cover_templates` 0 rows。
+- `tasks` 参考字段强调 Storybound 主工作流：`material_source`、`task_type`、`pipeline_step`、`pipeline_data`、`target_length`、`target_scenes`、`script_format`、`podcast_*`、`video_intro_*`、`cover_image_mode`、`cover_template_id`。
+- `user_prompt_templates` 参考字段包含：`step1_rewrite_system_prompt`、`step1_metadata_system_prompt`、`step3_system_prompt`、`style_id`、`image_seed_pools_json`、`needs_character_card`、`step3_skeleton_modules_json`、`reference_kind`、市场分享/统计字段。
+- 当前项目的数据层已经有对应超集或近似实体，但缺少参考表名/语义的显式 playground job 与 credits 表名兼容层。
 
-- Workspace root: `I:\opc`.
-- Current branch: `main`, synced to `origin/main` at `fb98475`.
-- Working tree is dirty with existing tracked and untracked changes; preserve them.
-- User goal: compare current app against reference software at `G:\Storybound` and supplement the current app. User specifically called out:
-  - voice lab / dubbing lab
-  - prompt content
-  - draft template content
-- Reference directory initial listing:
-  - `G:\Storybound\storybound.exe`
-  - `G:\Storybound\draft-generator.exe`
-  - `G:\Storybound\uninstall.exe`
-  - `G:\Storybound\resources\`
-- `storybound.exe` version info:
-  - ProductName/FileDescription: `Storybound`
-  - CompanyName: `dudumd`
-  - FileVersion: `0.1.0`
-- `G:\Storybound\resources` currently exposes `default-bgm.mp3`.
-- Binary string scan suggests `storybound.exe` is a Tauri app with embedded web assets, including `/assets/index-*.js` and `/assets/index-*.css`.
-- `draft-generator.exe` is a Python/PyInstaller-style bundle. It includes:
-  - `pyJianYingDraft`
-  - `imageio_ffmpeg`
-  - `jieba`
-  - `template_jianying\...` including `draft_meta_info.json`, `draft_info.json`, `draft_cover.jpg`, and backup/template files.
-- Reference app local data directory:
-  - `C:\Users\foxnotail\AppData\Local\com.dudumd.storybound`
-  - Contains `config.json`, `data.db`, `bgm\`, `tasks\`, and Edge WebView data.
-- Reference `config.json` shape:
-  - LLM: OpenAI-compatible custom provider.
-  - Image: GPT Image / Jimeng / custom image providers.
-  - TTS: Volcengine and MiniMax sections.
-  - Jianying: `draft_path`.
-- Reference `data.db` tables relevant to this task:
-  - `draft_templates`: 4 rows.
-  - `user_prompt_templates`: 0 rows, but schema reveals the intended prompt-template model.
-  - `minimax_clone_voices`: 0 rows.
-  - `playground_jobs`: 0 rows.
-- Reference `user_prompt_templates` schema models 5 editable prompt/content fields:
-  - `step1_rewrite_system_prompt`
-  - `step1_metadata_system_prompt`
-  - `step3_system_prompt`
-  - `style_id`
-  - `image_seed_pools_json`
-  - Plus market/share metadata, character-card policy, Step 3 skeleton modules, and reference image kind.
-- Current app already has a richer prompt model than the reference schema:
-  - `PromptTemplate.content`
-  - `stepPrompts` for review/rewrite/cover/storyboard/image-prompt
-  - default image style and default draft template binding
-  - variables and JSON import/export
-- Reference draft template configs include fields the current model partially supports:
-  - title/subtitle/caption/disclaimer positions, font size, color, alpha
-  - caption underline, align, letter spacing, line spacing, max chars, background
-  - text border/stroke fields on title/subtitle/caption/disclaimer
-  - audio narration/BGM volume and BGM fade-out
-- Current draft template model already supports:
-  - gallery and visual editor
-  - draggable regions
-  - canvas/background/image/title/subtitle/caption/disclaimer/audio settings
-  - caption underline/align/letter spacing/line spacing/max chars/background
-  - Jianying transitions, filters, video/audio effects
-  - It does not yet model text border/stroke consistently for all text layers.
-- Current TTS capability:
-  - task-level Volcengine/MiniMax provider selection
-  - task-level voice selection and speed
-  - settings profile manager for TTS credentials
-  - narration preview/regeneration inside task detail
-  - no standalone "voice lab" page for quick auditioning voices outside a task.
-- Implemented parity additions:
-  - Added standalone `voice-lab` shell view with provider switching, voice chips, speed selection, real Electron generation through existing TTS providers, browser-preview failure records, audio player, and history list.
-  - Added `voice_lab_records` persistence and `voice-lab:generate` IPC using `generateConfiguredVoicePreview`.
-  - Added `PromptTemplate.imageSeedPoolsJson` and reference-style editor fields for task instruction, Step 1 rewrite, Step 1 metadata, Step 3 image prompt, and seed pools JSON while keeping `content` and `stepPrompts` as the source of truth.
-  - Added `DraftTextBorder` defaults and normalization for title/subtitle/caption/disclaimer, draft editor controls, React preview stroke via `textShadow`, bridge payload fields, and Python bridge `TextStyle` stroke kwargs for caption import.
-- Verification evidence:
-  - Targeted feature tests passed: `tests/product-shell-ui.test.ts`, `tests/storage.test.ts`, `tests/draft.test.ts`, `tests/jianying-bridge.test.ts`, `tests/media-providers.test.ts`, `tests/electron-ipc-contract.test.ts`.
-  - `npm run typecheck` passed.
-  - `npm test` passed: 34 test files, 235 tests.
-  - In-app browser smoke on `http://127.0.0.1:5173` confirmed `配音实验室` navigation, fields, voice chips, generate button, history area, and browser-preview failure record behavior.
+## UI Gap
+
+- 当前壳层功能已经丰富，但主线/次级区分不够明确；爆款拆解和扩展模块与 Storybound 主工作流同级。
+- 计划要求重新变成 Storybound-first：新建任务、任务队列、历史任务、实验室、模板、设置、账户、激活为主；爆款拆解等扩展放次级区。
+- 顶部需要恢复试用/激活条、积分/账户入口、最近任务和可见中文状态。
+- 页面需要更好看，但仍保持工具型：低圆角、密集表单、状态芯片、双栏设置面板、可扫描列表。
+
+## Testing Direction
+
+- 先新增/改造文件级契约测试，断言所有主要入口、标题、按钮、空态和流水线状态为中文。
+- 再跑现有 runtime tests，确保三轮改写、自评、主角档案、暂停/续跑、草稿输出不被 UI 重排破坏。

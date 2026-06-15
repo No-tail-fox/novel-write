@@ -2,6 +2,94 @@ import { readFile } from 'node:fs/promises';
 import { describe, expect, it } from 'vitest';
 
 describe('product shell ui', () => {
+  it('presents a Chinese Storybound-first desktop shell with main workflow and secondary modules', async () => {
+    const main = await readFile(new URL('../src/main.tsx', import.meta.url), 'utf8');
+    const css = await readFile(new URL('../src/styles.css', import.meta.url), 'utf8');
+
+    for (const text of [
+      '主线工作流',
+      '扩展工具',
+      '最近任务',
+      '试用剩余',
+      '激活管理',
+      '账户中心',
+      '积分明细',
+      '新建任务',
+      '任务队列',
+      '历史任务',
+      '画图实验室',
+      '配音实验室',
+      '音乐 MV',
+      '提示词模板',
+      '草稿模板',
+      '系统设置',
+      '爆款拆解',
+    ]) {
+      expect(main).toContain(text);
+    }
+
+    expect(main).toContain('primaryNavItems');
+    expect(main).toContain('secondaryNavItems');
+    expect(main.indexOf('主线工作流')).toBeLessThan(main.indexOf('扩展工具'));
+    expect(main.indexOf('新建任务')).toBeLessThan(main.indexOf('爆款拆解'));
+    expect(main).toContain('className="trial-activation-bar"');
+    expect(main).toContain('className="recent-task-strip"');
+    expect(main).toContain('navigate(\'account\')');
+    expect(main).toContain('navigate(\'activation\')');
+    expect(css).toContain('.trial-activation-bar');
+    expect(css).toContain('.recent-task-strip');
+    expect(css).toContain('.nav-section-label');
+    expect(css).toContain('.account-entry-grid');
+  });
+
+  it('uses a restrained storyboard-console visual system instead of a generic neon shell', async () => {
+    const css = await readFile(new URL('../src/styles.css', import.meta.url), 'utf8');
+
+    for (const token of ['--cyanprint', '--paper-warm', '--timeline-blue', '--surface-ink', '--shadow', '--focus-ring']) {
+      expect(css).toContain(token);
+    }
+
+    expect(css).toContain('.app-shell::before');
+    expect(css).toContain('repeating-linear-gradient(90deg');
+    expect(css).toContain('.nav-item.active::before');
+    expect(css).toContain('.page-head::before');
+    expect(css).toContain('.primary-action:hover');
+    expect(css).not.toContain('--accent: #12d4a0');
+  });
+
+  it('keeps browser preview fallback errors in Chinese', async () => {
+    const main = await readFile(new URL('../src/main.tsx', import.meta.url), 'utf8');
+
+    expect(main).not.toContain('Browser preview cannot');
+    expect(main).not.toContain('API key is missing; fill it before testing the model.');
+    expect(main).not.toContain('Fallback Jianying effect catalog.');
+    expect(main).not.toContain('Viral analysis result is not available in browser preview');
+    expect(main).not.toContain('Viral recreation is not available in browser preview');
+    expect(main).not.toContain('Python runtime dependency missing');
+    expect(main).toContain('浏览器预览无法运行真实供应商流水线');
+    expect(main).toContain('浏览器预览无法运行爆款视频拆解');
+  });
+
+  it('keeps all visible Storybound pipeline labels in Chinese', async () => {
+    const main = await readFile(new URL('../src/main.tsx', import.meta.url), 'utf8');
+
+    for (const text of [
+      'Step 0 预审',
+      'Step 1 三轮改写自评',
+      'Step 2 分镜',
+      'Step 3 主角档案与出图提示词',
+      'Step 4 批量生图',
+      'Step 5 配音',
+      'Step 6 草稿导出',
+      '暂停后可续跑',
+      '重新生成',
+      '改写后继续',
+      '草稿输出',
+    ]) {
+      expect(main).toContain(text);
+    }
+  });
+
   it('defines the complete Storybound-style navigation shell', async () => {
     const main = await readFile(new URL('../src/main.tsx', import.meta.url), 'utf8');
     const css = await readFile(new URL('../src/styles.css', import.meta.url), 'utf8');
@@ -986,13 +1074,13 @@ describe('product shell ui', () => {
     expect(main).toContain('selectedImageProfileId');
     expect(main).toContain('selectedTtsProfileId');
     expect(main).toContain('onSelectedProfileIdChange');
-    expect(main).toContain('GPT Image Base URL');
+    expect(main).toContain('GPT Image 接口地址');
     expect(main).toContain('GPT Image 模型');
-    expect(main).toContain('自定义 API Key');
+    expect(main).toContain('自定义接口密钥');
     expect(main).toContain('自定义模型');
-    expect(main).toContain('即梦 AccessKey ID');
-    expect(main).toContain('即梦 SecretAccessKey');
-    expect(main).toContain('即梦 Req Key');
+    expect(main).toContain('即梦访问密钥 ID');
+    expect(main).toContain('即梦访问密钥 Secret');
+    expect(main).toContain('即梦请求 Key');
     expect(main).toContain('MiniMax 模型');
     expect(main).toContain('MiniMax 音色 ID');
   });
@@ -1003,14 +1091,16 @@ describe('product shell ui', () => {
     for (const text of [
       '语音转文字',
       '转写 API',
-      'Base URL',
-      'API Key',
+      '接口地址',
+      '接口密钥',
       '转写模型',
       '语言',
       '提示词',
       '响应格式',
       '温度',
       '时间戳',
+      '段落级',
+      '词级',
       '切分策略',
       '请求超时',
       'SiliconFlow',
@@ -1102,7 +1192,7 @@ describe('product shell ui', () => {
 
     for (const branch of [
       "selectedProvider === 'openai'",
-      'OpenAI-compatible LLM',
+      'OpenAI 兼容 LLM',
       "provider === 'gpt_image'",
       "provider === 'jimeng'",
       "provider === 'custom'",
@@ -1132,10 +1222,10 @@ describe('product shell ui', () => {
     expect(main).toContain('volcengineVoicePresets');
     expect(main).toContain('listVolcengineSpeakers');
     expect(main).toContain('加载全部音色');
-    expect(main).toContain('AccessKey ID（音色列表）');
-    expect(main).toContain('SecretAccessKey（音色列表）');
-    expect(main).toContain('火山 API Key');
-    expect(main).toContain('Resource ID');
+    expect(main).toContain('音色列表访问密钥 ID');
+    expect(main).toContain('音色列表访问密钥 Secret');
+    expect(main).toContain('火山接口密钥');
+    expect(main).toContain('资源 ID');
     expect(main).toContain('V3 HTTP Chunked');
     expect(main).toContain('volcenginePresetVoiceValue');
     expect(main).toContain('默认音色');
@@ -1193,7 +1283,7 @@ describe('product shell ui', () => {
     expect(main).toContain('ErrorDetailDialog');
     expect(main).toContain('summarizeErrorMessage');
     expect(main).toContain('Python 运行时缺少依赖');
-    expect(main).toContain('Python runtime dependency missing');
+    expect(main).toContain('Python 运行时依赖缺失');
     expect(main).toContain('className="mini-button viral-retry-button"');
     expect(main).toContain('fullMessage');
     expect(main).not.toContain('<small className="danger-text">{task.errorMessage}</small>');

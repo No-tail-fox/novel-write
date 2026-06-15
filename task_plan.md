@@ -1,73 +1,52 @@
-# Task Plan
+# Storybound 中文全量复刻计划
 
-Goal: study `G:\Storybound` as the reference app and implement scoped feature additions for the current app around voice lab, prompt content, and draft template content.
+Goal: 在 `codex/storybound-cn-full-replica` 分支上，以本机 `E:\Storybound` 和 `C:\Users\Administrator\AppData\Local\com.dudumd.storybound` 为参考，把当前项目改成 Storybound-first 的中文桌面工具壳，并保留现有扩展功能为次级模块。
 
 ## Phases
 
-- [x] Confirm current branch and working-tree constraints.
-- [x] Reset planning files for this reference-replication task.
-- [x] Inventory current app features related to voice lab, prompt templates, and draft templates.
-- [x] Inspect `G:\Storybound` artifacts for comparable UI, config, data, and bundled resources.
-- [x] Capture findings and gaps in `findings.md`.
-- [x] Propose implementation approach and record design/implementation plans.
-- [x] Add data model, storage, provider helper, and IPC for voice lab.
-- [x] Add standalone voice lab UI with provider, voice, speed, preview, and history.
-- [x] Add reference-style prompt content fields and image seed pool JSON editing.
-- [x] Add draft text border defaults, controls, preview stroke, and bridge payload support.
-- [x] Run targeted tests, typecheck, browser smoke verification, and full test suite.
-- [x] Replace built-in draft presets with exact Storybound `draft_templates` values and carry Storybound text style fields through UI/storage/bridge/export.
+- [x] 创建 `codex/` 工作分支。
+- [x] 读取现有项目、旧 Storybound parity 计划与参考应用本地配置。
+- [x] 探测参考 SQLite 结构与资源目录。
+- [x] 添加中文 Storybound-first 壳层、数据与流水线契约测试。
+- [x] 重做壳层导航、最近任务、试用/激活、积分/账户入口与页面中文文案。
+- [x] 补齐 Storybound 风格本地状态：任务、事件、草稿模板、积分、Clone voice、playground jobs 等参考兼容结构。
+- [x] 对齐核心流水线可见命名：Step 0 预审、Step 1 三轮改写自评、Step 2 分镜、Step 3 主角档案与出图提示词、Step 4 批量生图、Step 5 配音、Step 6 草稿导出。
+- [x] 模块重排：画图实验室、配音实验室、音乐 MV、提示词模板、草稿模板、系统设置、账户中心、激活管理进入主线区；爆款拆解保留在次级扩展区。
+- [x] 按 `frontend-design` 优化为密集、克制、工具型但有辨识度的中文 UI。
+- [x] 运行 typecheck、Vitest、构建与 Electron/浏览器烟测。
 
-## Boundaries
+## Implemented
 
-- Preserve existing user changes in the dirty working tree.
-- Do not implement feature changes until the design is approved.
-- Prefer focused parity with the reference app over broad rewrites.
+- 侧边栏拆成“主线工作流”和“扩展工具”，将爆款拆解降级到次级区。
+- 增加最近任务、试用剩余、积分明细、账户中心入口。
+- 顶部继续显示剪映草稿目录、保存状态和浏览器预览提示。
+- 流水线可见文案改为 Storybound 步骤名。
+- SQLite 迁移新增 Storybound 参考兼容表：`user_prompt_templates`、`playground_jobs`、`credits_transactions`、`custom_cover_templates`。
+- `tasks` 表新增参考字段并接入创建/读取：`material_source`、`task_type`、`pipeline_step`、`pipeline_data`、`target_length`、`target_scenes`、`script_format`、`cover_image_mode`、`cover_template_id`。
+- 默认账户改为 `Storybound 本地工作区`，激活/积分文案改为试用口径。
+- 修复一个旧样式文案错字：`80年代闭达` -> `80年代街拍`。
+- 按 `frontend-design` 收口视觉系统：新增 cyanprint、timeline blue、paper warm、reel amber 令牌，使用轻量蓝图网格、导航时间轴标识、低圆角面板阴影和统一焦点环。
+- 普通设置字段和浏览器预览 fallback 错误继续中文化；产品/API/模型名按原名保留。
+
+## Verification
+
+- `node node_modules/vitest/vitest.mjs run --pool=threads --maxWorkers=1 tests/product-shell-ui.test.ts`: 74 tests passed.
+- `node node_modules/vitest/vitest.mjs run --pool=threads --maxWorkers=1 tests/storage.test.ts`: 12 tests passed.
+- `npm run typecheck`: passed.
+- `npm test`: 39 files, 318 tests passed.
+- `npm run build`: passed; Vite reported only the existing large chunk warning.
+- `npm run smoke:electron`: passed, shell/new-task/draft-template smoke all true.
+- Browser smoke on `http://127.0.0.1:5173`: verified 主线工作流、扩展工具、最近任务、试用剩余、积分明细、账户中心、新建任务页面、系统设置中文字段 and no checked fallback English leaks.
+
+## Notes
+
+- Existing untracked `src/shared/__pycache__/` and `tmp/` were preserved and not modified.
+- Browser preview localStorage may still contain old custom style values until cleared; source code no longer contains `闭达`.
 
 ## Errors Encountered
 
 | Error | Attempt | Resolution |
 | --- | --- | --- |
-| Existing planning files described an older prompt-template verification task. | Checked planning files at task start. | Replaced them with this reference-replication plan. |
-| Electron postinstall failed during dependency repair. | `npm install` hit Electron postinstall permissions. | Used `npm install --ignore-scripts`, then verified with targeted tests. |
-| Browser skill path from session metadata was stale. | Tried reading `26.602.30954` browser skill path. | Located current `26.602.40724` path and verified local app through in-app browser. |
-| PowerShell rejected Bash-style heredoc syntax while inspecting files. | Tried `node - <<'NODE'`. | Re-ran with PowerShell-safe `node -e` commands. |
-| Full test suite caught old draft-template hydration expectations. | `npm test` still expected pre-Storybound fallback coordinates. | Updated the storage test to assert the exact Storybound defaults and text style fields. |
-| Coze CLI npm smoke lost the `--out` flag under PowerShell/npm argument forwarding. | Ran `npm run convert:coze -- --out <output> <fixture>`, and the script treated the output path as an input file. | Added positional output path support and a CLI regression test, so `npm run convert:coze -- <output.json> <workflow.json>` works. |
-| PowerShell expanded or stripped Node template-string and quote characters during Feishu asset inspection. | Tried `node -e` snippets with backticks and `${...}`. | Use plain string concatenation in double-quoted PowerShell commands, or use dedicated script files when code grows. |
-| Feishu fetch CLI called `CdpPage` before the class declaration initialized. | First real `node scripts\fetch-feishu-coze-workflows.mjs ...` run failed with `Cannot access 'CdpPage' before initialization`. | Move the top-level CLI invocation to the bottom of the module after all declarations. |
-| Feishu fetch CLI parsed hydrated DOM HTML instead of the original Document response body. | Second real run failed with `No Feishu .txt workflow attachment sources were found in the page HTML`. | Capture the initial wiki Document response through CDP `Network.responseReceived` and read it with `Network.getResponseBody`. |
-| Feishu single-pass scrolling only captured a subset of virtualized file blocks. | Runs alternated between the page-top 64 sources and partial page-bottom captures. | Use hydrated React `blockManager`, audit record seeds, and HTML document record seeds; use stable record-id filenames so repeated runs accumulate a de-duplicated source set. |
-| Some Coze video-generation workflows had no Jianying `create_draft` plugin node. | Batch conversion failed with `Coze workflow does not contain a create_draft node`. | Generate a reusable 9:16 Storybound draft-template shell and preserve the missing `create_draft` condition as a warning diagnostic. |
-| PowerShell parsed unquoted `stash@{0}` oddly during stash apply. | `git stash apply stash@{0}` failed with `unknown switch e`. | Retry with the stash ref quoted as `'stash@{0}'`; the stash was not dropped. |
-| PowerShell collapsed `git show` line output while rebuilding `tests/storage.test.ts`. | Assigned `git show ':2:tests/storage.test.ts'` to a variable and wrote it back as a single line. | Restore the conflict side from Git with a line-preserving command, then reapply the Music MV storage regression test. |
-| Targeted tests failed after conflict resolution because `createTask` inserted 39 SQL placeholders for 40 columns. | Ran the 9-file Vitest target set after typecheck. | Counted columns/placeholders, added the missing placeholder, and reran the target tests successfully. |
-| Two runner tests reached draft writing without configuring a Jianying draft path. | Target set narrowed failures to `tests/runner.test.ts`. | Added `draftRootDir` config setup to those test fixtures; runner and target tests passed. |
-
-## 2026-06-08 Coze Workflow Converter Addendum
-
-- [x] Add pure Coze clipboard parser and diagnostics.
-- [x] Convert Coze Jianying workflow nodes into reusable Storybound `DraftTemplate` presets.
-- [x] Add real pasted workflow fixture coverage.
-- [x] Add draft-template page import UI with preview, single import, and batch import.
-- [x] Add storage persistence coverage for converted templates.
-- [x] Add CLI batch converter and `npm run convert:coze` entrypoint.
-- [x] Verify targeted tests, typecheck, full tests, CLI smoke, and browser UI smoke.
-
-## 2026-06-08 Feishu Workflow Source Batch Addendum
-
-- [x] Audit the Feishu wiki page and count available workflow source attachments.
-- [x] Stabilize a browser/CDP download or direct API extraction path for `.txt` attachments.
-- [x] Download all available Coze workflow source `.txt` files from the Feishu page.
-- [x] Batch-convert every downloaded workflow into Storybound draft templates.
-- [x] Install/generated templates into a reusable Storybound template store or a project bundle the app can import.
-- [x] Seed the generated Feishu Coze templates into normal Storybound app databases as draft-template presets.
-- [x] Verify source count, conversion count, failures, typecheck, and relevant tests before calling the batch complete.
-
-## 2026-06-12 Main Reference Branch Restore Addendum
-
-- [x] Fetch latest remote refs and fast-forward `main` to `origin/codex/storybound-reference-parity`.
-- [x] Protect pre-merge local MV/runtime work in `stash@{0}`.
-- [x] Apply `stash@{0}` onto updated `main` without dropping it.
-- [x] Resolve conflicts while preserving reference branch features and restored MV/runtime work.
-- [x] Run typecheck, targeted tests, and browser smoke for affected runtime/UI surfaces.
-- [ ] Decide whether it is safe to drop `stash@{0}` after verification.
+| PowerShell/terminal 输出把正常中文显示成乱码。 | 直接 `Get-Content` 查看大文件。 | 用 Node 检查文件 UTF-8 内容和测试真实字符串，避免误判源文件编码。 |
+| Node `-e` SQL 探测被 PowerShell 引号截断。 | 单行 `node -e` 嵌套 SQL 字符串。 | 改用 PowerShell here-string 管道给 Node 执行。 |
+| 新增 `Task` 参考字段设为必填后，旧测试和工具里手工构造的 `Task` 失配。 | 首次 typecheck 失败。 | 将参考字段设为可选，并在数据库创建/读取时填默认值，保持向后兼容。 |

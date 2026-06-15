@@ -209,7 +209,20 @@ export class FileDatabase {
         music_mv_json TEXT DEFAULT '{}',
         failed_step INTEGER,
         retry_from_step INTEGER,
-        artifact_state_path TEXT DEFAULT ''
+        artifact_state_path TEXT DEFAULT '',
+        material_source TEXT DEFAULT 'paste',
+        task_type TEXT DEFAULT 'story',
+        pipeline_step TEXT DEFAULT 'new',
+        pipeline_data TEXT DEFAULT '{}',
+        target_length INTEGER DEFAULT 1500,
+        target_scenes INTEGER DEFAULT 12,
+        script_format TEXT DEFAULT 'short-video',
+        podcast_image_mode TEXT DEFAULT 'none',
+        podcast_speakers TEXT DEFAULT '[]',
+        video_intro INTEGER DEFAULT 0,
+        video_intro_duration INTEGER DEFAULT 0,
+        cover_image_mode TEXT DEFAULT 'auto',
+        cover_template_id TEXT DEFAULT ''
       );
       CREATE TABLE IF NOT EXISTS task_events (
         seq INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -260,11 +273,59 @@ export class FileDatabase {
         updated_at TEXT NOT NULL,
         data_json TEXT DEFAULT '{}'
       );
+      CREATE TABLE IF NOT EXISTS user_prompt_templates (
+        id TEXT PRIMARY KEY,
+        name TEXT NOT NULL,
+        description TEXT DEFAULT '',
+        base_track TEXT DEFAULT '',
+        base_template_id TEXT,
+        step1_rewrite_system_prompt TEXT DEFAULT '',
+        step1_metadata_system_prompt TEXT DEFAULT '',
+        step3_system_prompt TEXT DEFAULT '',
+        style_id TEXT DEFAULT '',
+        image_seed_pools_json TEXT DEFAULT '',
+        origin TEXT DEFAULT 'system',
+        created_at INTEGER DEFAULT 0,
+        updated_at INTEGER DEFAULT 0,
+        last_used_at INTEGER DEFAULT 0,
+        used_count INTEGER DEFAULT 0,
+        source_market_id TEXT,
+        source_author TEXT,
+        source_version TEXT,
+        is_shared INTEGER DEFAULT 0,
+        shared_at INTEGER,
+        share_visibility TEXT DEFAULT 'private',
+        market_title TEXT DEFAULT '',
+        market_summary TEXT DEFAULT '',
+        market_cover_url TEXT DEFAULT '',
+        market_tags_json TEXT DEFAULT '[]',
+        market_price_credits INTEGER DEFAULT 0,
+        download_count INTEGER DEFAULT 0,
+        use_count_total INTEGER DEFAULT 0,
+        rating_avg REAL DEFAULT 0,
+        rating_count INTEGER DEFAULT 0,
+        content_hash TEXT DEFAULT '',
+        needs_character_card INTEGER DEFAULT 1,
+        step3_skeleton_modules_json TEXT DEFAULT '[]',
+        reference_kind TEXT DEFAULT 'none'
+      );
       CREATE TABLE IF NOT EXISTS draft_templates (
         id TEXT PRIMARY KEY,
         data TEXT NOT NULL,
         is_builtin INTEGER DEFAULT 0,
         updated_at TEXT NOT NULL
+      );
+      CREATE TABLE IF NOT EXISTS custom_cover_templates (
+        id TEXT PRIMARY KEY,
+        name TEXT NOT NULL,
+        description TEXT DEFAULT '',
+        directions TEXT DEFAULT '',
+        composition_rule TEXT DEFAULT '',
+        title_layout TEXT DEFAULT '',
+        subtitle_layout TEXT DEFAULT '',
+        plain_hint TEXT DEFAULT '',
+        created_at TEXT DEFAULT '',
+        updated_at TEXT DEFAULT ''
       );
       CREATE TABLE IF NOT EXISTS image_lab_records (
         id TEXT PRIMARY KEY,
@@ -280,6 +341,22 @@ export class FileDatabase {
         upstream_task_id TEXT,
         created_at TEXT NOT NULL,
         finished_at TEXT
+      );
+      CREATE TABLE IF NOT EXISTS playground_jobs (
+        id TEXT PRIMARY KEY,
+        prompt TEXT NOT NULL,
+        style_id TEXT DEFAULT '',
+        style_name TEXT DEFAULT '',
+        provider TEXT DEFAULT '',
+        ratio TEXT DEFAULT '9:16',
+        image_path TEXT DEFAULT '',
+        status TEXT DEFAULT 'pending',
+        error_msg TEXT DEFAULT '',
+        created_at INTEGER DEFAULT 0,
+        finished_at INTEGER,
+        reference_image_path TEXT DEFAULT '',
+        upstream_task_id TEXT,
+        model TEXT DEFAULT ''
       );
       CREATE TABLE IF NOT EXISTS voice_lab_records (
         id TEXT PRIMARY KEY,
@@ -311,6 +388,15 @@ export class FileDatabase {
         updated_at TEXT NOT NULL
       );
       CREATE TABLE IF NOT EXISTS credit_transactions (
+        id INTEGER PRIMARY KEY,
+        type TEXT NOT NULL,
+        amount REAL NOT NULL,
+        balance REAL NOT NULL,
+        task_id TEXT,
+        description TEXT,
+        created_at TEXT NOT NULL
+      );
+      CREATE TABLE IF NOT EXISTS credits_transactions (
         id INTEGER PRIMARY KEY,
         type TEXT NOT NULL,
         amount REAL NOT NULL,
@@ -351,6 +437,19 @@ export class FileDatabase {
       ['artifact_state_path', "TEXT DEFAULT ''"],
       ['started_at', 'TEXT'],
       ['last_heartbeat_at', 'TEXT'],
+      ['material_source', "TEXT DEFAULT 'paste'"],
+      ['task_type', "TEXT DEFAULT 'story'"],
+      ['pipeline_step', "TEXT DEFAULT 'new'"],
+      ['pipeline_data', "TEXT DEFAULT '{}'"],
+      ['target_length', 'INTEGER DEFAULT 1500'],
+      ['target_scenes', 'INTEGER DEFAULT 12'],
+      ['script_format', "TEXT DEFAULT 'short-video'"],
+      ['podcast_image_mode', "TEXT DEFAULT 'none'"],
+      ['podcast_speakers', "TEXT DEFAULT '[]'"],
+      ['video_intro', 'INTEGER DEFAULT 0'],
+      ['video_intro_duration', 'INTEGER DEFAULT 0'],
+      ['cover_image_mode', "TEXT DEFAULT 'auto'"],
+      ['cover_template_id', "TEXT DEFAULT ''"],
     ] as const) {
       addColumnIfMissing(this.db, 'tasks', column, definition);
     }
@@ -658,6 +757,15 @@ export class FileDatabase {
       failedStep: null,
       retryFromStep: null,
       artifactStatePath: '',
+      materialSource: input.materialSource ?? (input.mode === 'ai' ? 'ai' : 'paste'),
+      taskType: input.taskType ?? input.taskKind ?? 'story',
+      pipelineStep: input.pipelineStep ?? 'new',
+      pipelineData: input.pipelineData ?? '{}',
+      targetLength: input.targetLength ?? 1500,
+      targetScenes: input.targetScenes ?? input.storyboardSceneCount ?? 12,
+      scriptFormat: input.scriptFormat ?? 'short-video',
+      coverImageMode: input.coverImageMode ?? 'auto',
+      coverTemplateId: input.coverTemplateId ?? '',
     };
     this.db.run(
       `INSERT INTO tasks (
@@ -665,8 +773,10 @@ export class FileDatabase {
         bgm_id, pause_points, output_dir, error_message, created_at, completed_at, started_at, last_heartbeat_at,
         mode, ai_keyword, ai_sources, selected_sources, extra_requirements, prompt_template_id, prompt_template_type,
         image_prompt_reference, reference_image_path, rewrite_intensity, narrative_pov, keep_promotion, tts_provider,
-        tts_speed, storyboard_scene_count, step3_prompt_snapshot, music_mv_json, failed_step, retry_from_step, artifact_state_path
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        tts_speed, storyboard_scene_count, step3_prompt_snapshot, music_mv_json, failed_step, retry_from_step, artifact_state_path,
+        material_source, task_type, pipeline_step, pipeline_data, target_length, target_scenes, script_format, cover_image_mode,
+        cover_template_id
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       [
         task.id,
         task.title,
@@ -708,6 +818,15 @@ export class FileDatabase {
         task.failedStep,
         task.retryFromStep,
         task.artifactStatePath,
+        task.materialSource ?? 'paste',
+        task.taskType ?? task.taskKind,
+        task.pipelineStep ?? 'new',
+        task.pipelineData ?? '{}',
+        task.targetLength ?? 1500,
+        task.targetScenes ?? task.storyboardSceneCount,
+        task.scriptFormat ?? 'short-video',
+        task.coverImageMode ?? 'auto',
+        task.coverTemplateId ?? '',
       ],
     );
     await this.persist();
@@ -994,6 +1113,15 @@ function rowToTask(row: Record<string, unknown>): Task {
     failedStep: row.failed_step === null || row.failed_step === undefined ? null : Number(row.failed_step),
     retryFromStep: row.retry_from_step === null || row.retry_from_step === undefined ? null : Number(row.retry_from_step),
     artifactStatePath: String(row.artifact_state_path ?? ''),
+    materialSource: String(row.material_source ?? 'paste'),
+    taskType: String(row.task_type ?? normalizeTaskKind(row.task_kind)),
+    pipelineStep: String(row.pipeline_step ?? 'new'),
+    pipelineData: String(row.pipeline_data ?? '{}'),
+    targetLength: Number(row.target_length ?? 1500),
+    targetScenes: Number(row.target_scenes ?? row.storyboard_scene_count ?? 12),
+    scriptFormat: String(row.script_format ?? 'short-video'),
+    coverImageMode: String(row.cover_image_mode ?? 'auto'),
+    coverTemplateId: String(row.cover_template_id ?? ''),
   };
 }
 

@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest';
+import initSqlJs from 'sql.js';
 import { mkdtemp, readFile, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -7,6 +8,110 @@ import { defaultConfig } from '@shared/config';
 import { convertCozeWorkflowToDraftTemplate } from '@shared/coze-workflow-converter';
 
 describe('file database', () => {
+  it('creates Storybound-compatible local tables and seeds Chinese account state', async () => {
+    const dir = await mkdtemp(join(tmpdir(), 'storybound-db-compatible-schema-'));
+    const file = join(dir, 'app.db');
+
+    try {
+      const db = await FileDatabase.open(file);
+      const state = await db.getState();
+
+      expect(state.account).toMatchObject({
+        displayName: '本地用户',
+        workspace: 'Storybound 本地工作区',
+      });
+      expect(state.activation.message).toContain('试用');
+      expect(state.creditTransactions.length).toBeGreaterThan(0);
+      expect(state.minimaxCloneVoices).toEqual(expect.any(Array));
+
+      await db.close();
+
+      const SQL = await initSqlJs();
+      const raw = await readFile(file);
+      const sqlite = new SQL.Database(raw);
+      const tableRows = sqlite.exec("SELECT name FROM sqlite_master WHERE type='table' ORDER BY name")[0]?.values ?? [];
+      const tables = tableRows.map((row) => String(row[0]));
+
+      expect(tables).toEqual(expect.arrayContaining([
+        'tasks',
+        'task_events',
+        'draft_templates',
+        'user_prompt_templates',
+        'playground_jobs',
+        'minimax_clone_voices',
+        'credits_transactions',
+        'custom_styles',
+        'custom_cover_templates',
+      ]));
+
+      const taskColumns = sqlite.exec('PRAGMA table_info(tasks)')[0]?.values.map((row) => String(row[1])) ?? [];
+      expect(taskColumns).toEqual(expect.arrayContaining([
+        'material_source',
+        'task_type',
+        'pipeline_step',
+        'pipeline_data',
+        'target_length',
+        'target_scenes',
+        'script_format',
+        'cover_image_mode',
+        'cover_template_id',
+      ]));
+
+      const promptColumns = sqlite.exec('PRAGMA table_info(user_prompt_templates)')[0]?.values.map((row) => String(row[1])) ?? [];
+      expect(promptColumns).toEqual(expect.arrayContaining([
+        'step1_rewrite_system_prompt',
+        'step1_metadata_system_prompt',
+        'step3_system_prompt',
+        'style_id',
+        'image_seed_pools_json',
+        'needs_character_card',
+        'step3_skeleton_modules_json',
+        'reference_kind',
+      ]));
+      sqlite.close();
+    } finally {
+      await rm(dir, { recursive: true, force: true });
+    }
+  });
+
+  it('persists Storybound task workflow fields on created tasks', async () => {
+    const dir = await mkdtemp(join(tmpdir(), 'storybound-db-task-workflow-fields-'));
+    const file = join(dir, 'app.db');
+
+    try {
+      const db = await FileDatabase.open(file);
+      await db.createTask({
+        title: '参考字段任务',
+        inputText: '一段原始素材',
+        materialSource: 'paste',
+        taskType: 'story',
+        pipelineStep: 'step-0-review',
+        pipelineData: '{"from":"storybound"}',
+        targetLength: 1800,
+        targetScenes: 16,
+        scriptFormat: 'short-video',
+        coverImageMode: 'auto',
+        coverTemplateId: 'default-cover',
+      } as Parameters<typeof db.createTask>[0] & Record<string, unknown>);
+
+      const state = await db.getState();
+      expect(state.tasks[0]).toMatchObject({
+        materialSource: 'paste',
+        taskType: 'story',
+        pipelineStep: 'step-0-review',
+        pipelineData: '{"from":"storybound"}',
+        targetLength: 1800,
+        targetScenes: 16,
+        scriptFormat: 'short-video',
+        coverImageMode: 'auto',
+        coverTemplateId: 'default-cover',
+      });
+      await db.close();
+    } finally {
+      await rm(dir, { recursive: true, force: true });
+    }
+  });
+
   it('persists config, tasks, and events across reloads', async () => {
     const dir = await mkdtemp(join(tmpdir(), 'storybound-db-'));
     const file = join(dir, 'app.db');

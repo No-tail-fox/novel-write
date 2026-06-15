@@ -483,7 +483,7 @@ export const defaultCustomStyles: CustomStyle[] = [
   {
     id: 'retro-film',
     name: '复古胶片',
-    tag: '80年代闭达',
+    tag: '80年代街拍',
     shortName: '复古',
     prefix: '复古胶片摄影，80年代生活气息，暖色颗粒，街头纪实质感',
     suffix: '自然抓拍，真实环境光，胶片颗粒，怀旧但清晰',
@@ -576,7 +576,7 @@ export const defaultCustomStyles: CustomStyle[] = [
 export const defaultAccount: AccountProfile = {
   displayName: '本地用户',
   email: 'local@storybound.replica',
-  workspace: '默认工作区',
+  workspace: 'Storybound 本地工作区',
   avatarInitial: 'S',
   deviceId: 'local-device',
   balance: 0,
@@ -587,7 +587,7 @@ export const defaultActivation: ActivationState = {
   status: 'trial',
   code: '',
   expiresAt: null,
-  message: '本地模拟试用模式：旧任务可继续执行，新任务不做真实付费限制。',
+  message: '本地试用模式：旧任务可继续执行，新任务不做真实付费限制。',
 };
 
 export const defaultUiPreferences: UiPreferences = {
@@ -602,7 +602,7 @@ export const defaultCreditTransactions: CreditTransaction[] = [
     amount: 0,
     balance: 0,
     taskId: null,
-    description: '本地模拟积分，不参与真实扣费。',
+    description: 'Storybound 本地试用积分，不参与真实扣费。',
     createdAt: updatedAt,
   },
 ];

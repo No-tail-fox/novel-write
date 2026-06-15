@@ -157,20 +157,27 @@ const initialState: AppState = {
   ui: defaultUiPreferences,
 };
 
-const navItems: Array<{ view: ShellView; label: string; hint: string; icon: React.ComponentType<{ size?: number }> }> = [
+type NavItem = { view: ShellView; label: string; hint: string; icon: React.ComponentType<{ size?: number }> };
+
+const primaryNavItems: NavItem[] = [
   { view: 'new-task', label: '新建任务', hint: '素材成片', icon: Plus },
   { view: 'queue', label: '任务队列', hint: '运行进度', icon: ListChecks },
   { view: 'history', label: '历史任务', hint: '本地记录', icon: History },
   { view: 'image-lab', label: '画图实验室', hint: '分镜图片', icon: FlaskConical },
   { view: 'voice-lab', label: '配音实验室', hint: '音色试听', icon: Mic2 },
-  { view: 'music-mv', label: '音乐MV', hint: '歌词成片', icon: Music },
-  { view: 'viral-analyzer', label: '爆款拆解', hint: '拉片复刻', icon: Flame },
+  { view: 'music-mv', label: '音乐 MV', hint: '歌词成片', icon: Music },
   { view: 'prompt-templates', label: '提示词模板', hint: '代理提示词', icon: Sparkles },
   { view: 'draft-templates', label: '草稿模板', hint: '剪映画布', icon: LayoutTemplate },
   { view: 'settings', label: '系统设置', hint: 'API 与路径', icon: Settings },
-  { view: 'account', label: '账号管理', hint: '本地资料', icon: Circle },
-  { view: 'activation', label: '激活管理', hint: '本地状态', icon: KeyRound },
+  { view: 'account', label: '账户中心', hint: '资料与积分', icon: Circle },
+  { view: 'activation', label: '激活管理', hint: '试用与授权', icon: KeyRound },
 ];
+
+const secondaryNavItems: NavItem[] = [
+  { view: 'viral-analyzer', label: '爆款拆解', hint: '拉片复刻', icon: Flame },
+];
+
+const navItems: NavItem[] = [...primaryNavItems, ...secondaryNavItems];
 
 const contentTracks = [
   ['character-story', '人物故事', '历史人物 / 名人传记'],
@@ -190,7 +197,7 @@ const styleOptions = [
   ['oil-paint', '油画风格', '印象写意'],
   ['modern-film', '现代电影', '宽屏调色'],
   ['ancient-film', '古风电影', '古代史诗'],
-  ['retro-film', '复古胶片', '80年代闭达'],
+  ['retro-film', '复古胶片', '80年代街拍'],
   ['watercolor', '水彩治愈', '柔和晕染'],
   ['magazine', '杂志插画', '极简色块'],
   ['pixar-3d', '皮克斯 3D', '动画质感'],
@@ -269,7 +276,7 @@ const bundledDraftTemplateOptionIds = new Set<string>(
 );
 const fallbackEffectCatalog: JianyingEffectCatalog = {
   status: 'warn',
-  detail: 'Fallback Jianying effect catalog.',
+  detail: '未读取到剪映特效目录，已使用本地基础转场清单。',
   transitions: ['叠化'],
   filters: [],
   videoEffects: [],
@@ -277,13 +284,13 @@ const fallbackEffectCatalog: JianyingEffectCatalog = {
 };
 
 const pipelineSteps = [
-  { index: 0, title: '文案预审', hint: '清理广告 / 敏感词', agent: 'Reviewer' },
-  { index: 1, title: '智能改写与封面生成', hint: '正文 / 标题 / 发布文案 / 标签 / 评论', agent: 'Writer' },
-  { index: 2, title: '影视分镜分句', hint: '拆成可配图的单元', agent: 'Storyboard' },
-  { index: 3, title: '生成绘图提示词', hint: '为每个分镜写 prompt', agent: 'Prompt' },
-  { index: 4, title: '批量生图', hint: '并发调用 AI 绘图', agent: 'Producer' },
-  { index: 5, title: 'TTS配音', hint: '生成音频', agent: 'TTS' },
-  { index: 6, title: '剪映草稿目录', hint: '写入可打开的草稿目录', agent: 'Draft' },
+  { index: 0, title: 'Step 0 预审', hint: '清理广告、重复和敏感表达', agent: 'Reviewer' },
+  { index: 1, title: 'Step 1 三轮改写自评', hint: '三轮改写、评分、自评并生成封面信息', agent: 'Writer' },
+  { index: 2, title: 'Step 2 分镜', hint: '拆成可配图的镜头单元', agent: 'Storyboard' },
+  { index: 3, title: 'Step 3 主角档案与出图提示词', hint: '提取角色档案并生成每镜 prompt', agent: 'Prompt' },
+  { index: 4, title: 'Step 4 批量生图', hint: '并发调用 AI 绘图，暂停后可续跑', agent: 'Producer' },
+  { index: 5, title: 'Step 5 配音', hint: '生成旁白音频和字幕时间轴', agent: 'TTS' },
+  { index: 6, title: 'Step 6 草稿导出', hint: '写入剪映草稿输出目录', agent: 'Draft' },
 ] as const;
 
 type StoryboundApi = NonNullable<Window['storybound']>;
@@ -350,7 +357,7 @@ function makeFallbackApi(setState: (state: AppState) => void): StoryboundApi {
     async testLlmConfig(config) {
       return {
         status: config.apiKey ? 'warn' : 'fail',
-        detail: config.apiKey ? 'Browser preview cannot call the model test endpoint; run the Electron app to test it.' : 'API key is missing; fill it before testing the model.',
+        detail: config.apiKey ? '浏览器预览无法调用模型测试接口，请在 Electron 桌面端测试。' : '接口密钥未填写，请先补全模型凭证。',
         latencyMs: 0,
         model: config.model,
         endpoint: `${config.baseUrl || 'https://api.openai.com'}/v1/chat/completions`,
@@ -479,7 +486,7 @@ function makeFallbackApi(setState: (state: AppState) => void): StoryboundApi {
     },
     async createAndRunTask(input: CreateTaskInput) {
       const browserPipelineError =
-        'Browser preview cannot run the real provider pipeline. Start the Electron app with configured LLM, image, TTS, Python, and pyJianYingDraft.';
+        '浏览器预览无法运行真实供应商流水线。请在 Electron 桌面端配置 LLM、生图、TTS、Python 和 pyJianYingDraft 后执行。';
       const state = read();
       const task: Task = {
         id: crypto.randomUUID(),
@@ -546,7 +553,7 @@ function makeFallbackApi(setState: (state: AppState) => void): StoryboundApi {
             settings: input.settings,
             resultPath: '',
             videoPath: '',
-            errorMessage: 'Browser preview cannot run viral video analysis. Start the Electron app to download and process videos.',
+            errorMessage: '浏览器预览无法运行爆款视频拆解。请在 Electron 桌面端下载并处理视频。',
             createdAt: now,
             startedAt: now,
             completedAt: null,
@@ -560,7 +567,7 @@ function makeFallbackApi(setState: (state: AppState) => void): StoryboundApi {
             analysisId: id,
             type: 'error',
             stage: 'failed',
-            detail: 'Browser preview cannot run viral video analysis. Start the Electron app to download and process videos.',
+            detail: '浏览器预览无法运行爆款视频拆解。请在 Electron 桌面端下载并处理视频。',
             dataJson: null,
             ts: Date.now(),
           },
@@ -578,10 +585,10 @@ function makeFallbackApi(setState: (state: AppState) => void): StoryboundApi {
     async getViralAnalysisResult(id: string): Promise<ViralAnalysisResult> {
       const state = read();
       const record = state.viralAnalyses.find((item) => item.id === id);
-      throw new Error(`Viral analysis result is not available in browser preview: ${record?.title ?? id}`);
+      throw new Error(`浏览器预览无法读取爆款拆解结果：${record?.title ?? id}`);
     },
     async createProductionTaskFromViral(id: string) {
-      throw new Error(`Viral recreation is not available in browser preview: ${id}`);
+      throw new Error(`浏览器预览无法从爆款拆解创建成片任务：${id}`);
     },
     async updateTaskStatus(id: string, status: TaskStatus) {
       const state = read();
@@ -724,6 +731,10 @@ function App() {
   }
 
   const selectedTask = state.tasks.find((task) => task.id === selectedTaskId) ?? state.tasks[0] ?? null;
+  const recentTasks = state.tasks.slice(0, 3);
+  const trialDaysLabel = state.activation.expiresAt
+    ? `${Math.max(0, Math.ceil((new Date(state.activation.expiresAt).getTime() - Date.now()) / 86400000))} 天`
+    : '本地试用';
   const activeNav = activeView === 'task-detail' ? { label: '任务详情', hint: '单任务流水线' } : navItems.find((item) => item.view === activeView) ?? navItems[0];
 
   return (
@@ -764,28 +775,43 @@ function App() {
           </button>
 
           <nav className="nav-list">
-            {navItems.slice(1).map((item) => {
-              const Icon = item.icon;
-              return (
-                <button key={item.view} className={activeView === item.view ? 'nav-item active' : 'nav-item'} onClick={() => navigate(item.view)}>
-                  <Icon size={16} />
-                  <span>{item.label}</span>
-                  <small>{item.hint}</small>
-                </button>
-              );
-            })}
+            <span className="nav-section-label">主线工作流</span>
+            {primaryNavItems.filter((item) => item.view !== 'new-task').map((item) => (
+              <NavButton key={item.view} item={item} active={activeView === item.view} navigate={navigate} />
+            ))}
+            <span className="nav-section-label secondary">扩展工具</span>
+            {secondaryNavItems.map((item) => (
+              <NavButton key={item.view} item={item} active={activeView === item.view} navigate={navigate} />
+            ))}
           </nav>
 
           <div className="sidebar-bottom">
-            <button className="credit-chip">
-              <Coins size={15} />
-              全能绘图积分
-              <span>{state.account.balance.toFixed(2)}</span>
+            <section className="recent-task-strip">
+              <span className="nav-section-label">最近任务</span>
+              {recentTasks.length === 0 ? <small>暂无任务</small> : null}
+              {recentTasks.map((task) => (
+                <button key={task.id} className="recent-task-item" onClick={() => openTaskDetail(task.id)}>
+                  <strong>{task.title || '未命名任务'}</strong>
+                  <span>{statusLabel(task.status)} · Step {Math.min(task.currentStep, 6)}</span>
+                </button>
+              ))}
+            </section>
+            <button className="trial-activation-bar" onClick={() => navigate('activation')}>
+              <KeyRound size={15} />
+              <span>试用剩余</span>
+              <strong>{trialDaysLabel}</strong>
             </button>
-            <button className="feedback-link">
-              <Info size={14} />
-              意见反馈
-            </button>
+            <div className="account-entry-grid">
+              <button className="credit-chip" onClick={() => navigate('account')}>
+                <Coins size={15} />
+                积分明细
+                <span>{state.account.balance.toFixed(2)}</span>
+              </button>
+              <button className="feedback-link" onClick={() => navigate('account')}>
+                <Info size={14} />
+                账户中心
+              </button>
+            </div>
           </div>
         </aside>
 
@@ -822,6 +848,17 @@ function App() {
         </section>
       </div>
     </main>
+  );
+}
+
+function NavButton({ item, active, navigate }: { item: NavItem; active: boolean; navigate: (view: ShellView) => void }) {
+  const Icon = item.icon;
+  return (
+    <button className={active ? 'nav-item active' : 'nav-item'} onClick={() => navigate(item.view)}>
+      <Icon size={16} />
+      <span>{item.label}</span>
+      <small>{item.hint}</small>
+    </button>
   );
 }
 
@@ -4528,7 +4565,7 @@ function SettingsPage({ api, state, applyState }: { api: StoryboundApi; state: A
     applyModel?: (config: AppConfig, model: string) => AppConfig,
   ) {
     if (key === 'custom-image' && !request.baseUrl.trim()) {
-      setModelListStatus((current) => ({ ...current, [key]: '[fail] Base URL is required before fetching models.' }));
+      setModelListStatus((current) => ({ ...current, [key]: '[失败] 拉取模型前需要填写接口地址。' }));
       return;
     }
     setLoadingModelList(key);
@@ -4553,7 +4590,7 @@ function SettingsPage({ api, state, applyState }: { api: StoryboundApi; state: A
     const accessKeyId = (volcengine.accessKeyId ?? '').trim();
     const secretAccessKey = (volcengine.secretAccessKey ?? '').trim();
     if (!accessKeyId || !secretAccessKey) {
-      setVolcengineSpeakerStatus('[fail] AccessKey ID 和 SecretAccessKey 是加载火山音色列表必填项。');
+      setVolcengineSpeakerStatus('[失败] 加载火山音色列表需要填写访问密钥 ID 和访问密钥 Secret。');
       return;
     }
 
@@ -4764,14 +4801,14 @@ function SettingsPage({ api, state, applyState }: { api: StoryboundApi; state: A
               value="OpenAI 兼容 /audio/transcriptions；SiliconFlow 使用 file、model，默认 FunAudioLLM/SenseVoiceSmall，也可选 TeleAI/TeleSpeechASR。"
             />
             <Segmented
-              label="Provider"
+              label="供应商"
               value={draft.speechToText.provider}
               options={['openai-compatible', 'siliconflow']}
               labels={['OpenAI 兼容', 'SiliconFlow']}
               onChange={(value) => switchSpeechToTextProvider(value as AppConfig['speechToText']['provider'])}
             />
-            <ConfigInput label="Base URL" value={draft.speechToText.baseUrl} onChange={(value) => updateSpeechToTextConfig({ baseUrl: value })} />
-            <ConfigInput label="API Key" value={draft.speechToText.apiKey} onChange={(value) => updateSpeechToTextConfig({ apiKey: value })} />
+            <ConfigInput label="接口地址" value={draft.speechToText.baseUrl} onChange={(value) => updateSpeechToTextConfig({ baseUrl: value })} />
+            <ConfigInput label="接口密钥" value={draft.speechToText.apiKey} onChange={(value) => updateSpeechToTextConfig({ apiKey: value })} />
             {isSiliconFlowSpeechToText ? (
               <Segmented
                 label="转写模型"
@@ -4807,12 +4844,12 @@ function SettingsPage({ api, state, applyState }: { api: StoryboundApi; state: A
               <Field label="时间戳">
                 <div className="settings-inline-actions">
                   <ToggleField
-                    label="Segment"
+                    label="段落级"
                     checked={draft.speechToText.timestampGranularities.includes('segment')}
                     onChange={(checked) => toggleSpeechToTextTimestamp('segment', checked)}
                   />
                   <ToggleField
-                    label="Word"
+                    label="词级"
                     checked={draft.speechToText.timestampGranularities.includes('word')}
                     onChange={(checked) => toggleSpeechToTextTimestamp('word', checked)}
                   />
@@ -4824,7 +4861,7 @@ function SettingsPage({ api, state, applyState }: { api: StoryboundApi; state: A
                 label="切分策略"
                 value={draft.speechToText.chunkingStrategy}
                 options={['none', 'auto']}
-                labels={['不启用', 'Auto']}
+                labels={['不启用', '自动']}
                 onChange={(value) => updateSpeechToTextConfig({ chunkingStrategy: value as AppConfig['speechToText']['chunkingStrategy'] })}
               />
             ) : null}
@@ -4832,7 +4869,7 @@ function SettingsPage({ api, state, applyState }: { api: StoryboundApi; state: A
         ) : null}
         {section === 'jianying' ? (
           <SettingsCard title="剪映草稿与 BGM" status={draft.jianying.draftPath ? '已配置' : '待配置'}>
-            <ConfigInput label="Draft Path" value={draft.jianying.draftPath} onChange={(value) => setSettingsDraft({ ...draft, jianying: { ...draft.jianying, draftPath: value } })} />
+            <ConfigInput label="草稿目录" value={draft.jianying.draftPath} onChange={(value) => setSettingsDraft({ ...draft, jianying: { ...draft.jianying, draftPath: value } })} />
             <div className="settings-inline-actions">
               <button className="ghost-action" type="button" onClick={autoDetectJianyingDraftPath}><Search size={15} />自动检测</button>
               <button className="ghost-action" type="button" onClick={pickJianyingDraftPath}><FolderOpen size={15} />选择目录</button>
@@ -4863,9 +4900,9 @@ function SettingsPage({ api, state, applyState }: { api: StoryboundApi; state: A
         {section === 'activation' ? <LocalInfo title="激活与订阅" value={state.activation.message} /> : null}
         {section === 'creative' ? (
           <SettingsCard title="AI 创作 / IMA 知识库" status={draft.ima.apiKey ? '已配置' : '待配置'}>
-            <ConfigInput label="Client ID" value={draft.ima.clientId} onChange={(value) => setSettingsDraft({ ...draft, ima: { ...draft.ima, clientId: value } })} />
-            <ConfigInput label="API Key" value={draft.ima.apiKey} onChange={(value) => setSettingsDraft({ ...draft, ima: { ...draft.ima, apiKey: value } })} />
-            <ConfigInput label="Knowledge Base" value={draft.ima.kbName} onChange={(value) => setSettingsDraft({ ...draft, ima: { ...draft.ima, kbName: value } })} />
+            <ConfigInput label="客户端 ID" value={draft.ima.clientId} onChange={(value) => setSettingsDraft({ ...draft, ima: { ...draft.ima, clientId: value } })} />
+            <ConfigInput label="接口密钥" value={draft.ima.apiKey} onChange={(value) => setSettingsDraft({ ...draft, ima: { ...draft.ima, apiKey: value } })} />
+            <ConfigInput label="知识库名称" value={draft.ima.kbName} onChange={(value) => setSettingsDraft({ ...draft, ima: { ...draft.ima, kbName: value } })} />
             <button className="ghost-action">测试并拉取知识库</button>
           </SettingsCard>
         ) : null}
@@ -5028,7 +5065,7 @@ function LlmProfileManager({
           onChange={(value) => updateSelectedProfile({ ...selectedProfile, timeoutMs: value * 1000 })}
         />
         <Segmented
-          label="Provider"
+          label="供应商"
           value={selectedProvider}
           options={['openai', 'custom']}
           labels={['OpenAI', '自定义']}
@@ -5043,8 +5080,8 @@ function LlmProfileManager({
         />
         {selectedProvider === 'openai' ? (
           <>
-            <ProviderConfigNote title="OpenAI Chat Completions" value="使用官方 /v1/chat/completions，填写 API Key 与模型。" />
-            <ConfigInput label="OpenAI API Key" value={selectedProfile.apiKey} onChange={(value) => { onClearModels(); updateSelectedProfile({ ...selectedProfile, apiKey: value }); }} />
+            <ProviderConfigNote title="OpenAI 对话接口" value="使用官方 /v1/chat/completions，填写接口密钥与模型。" />
+            <ConfigInput label="OpenAI 接口密钥" value={selectedProfile.apiKey} onChange={(value) => { onClearModels(); updateSelectedProfile({ ...selectedProfile, apiKey: value }); }} />
             <ModelPicker
               key={`llm-${selectedProfile.id}`}
               label="OpenAI 模型"
@@ -5058,9 +5095,9 @@ function LlmProfileManager({
           </>
         ) : (
           <>
-            <ProviderConfigNote title="OpenAI-compatible LLM" value="自定义接口按 /chat/completions 调用，需要 Base URL、API Key 与模型。" />
-            <ConfigInput label="Base URL" value={selectedProfile.baseUrl} onChange={(value) => { onClearModels(); updateSelectedProfile({ ...selectedProfile, baseUrl: value }); }} />
-            <ConfigInput label="API Key" value={selectedProfile.apiKey} onChange={(value) => { onClearModels(); updateSelectedProfile({ ...selectedProfile, apiKey: value }); }} />
+            <ProviderConfigNote title="OpenAI 兼容 LLM" value="自定义接口按 /chat/completions 调用，需要接口地址、接口密钥与模型。" />
+            <ConfigInput label="接口地址" value={selectedProfile.baseUrl} onChange={(value) => { onClearModels(); updateSelectedProfile({ ...selectedProfile, baseUrl: value }); }} />
+            <ConfigInput label="接口密钥" value={selectedProfile.apiKey} onChange={(value) => { onClearModels(); updateSelectedProfile({ ...selectedProfile, apiKey: value }); }} />
             <ModelPicker
               key={`llm-${selectedProfile.id}`}
               label="模型"
@@ -5216,7 +5253,7 @@ function ImageProfileManager({
       <div className="profile-editor-grid">
         <ConfigInput label="配置名称" value={selectedProfile.name ?? ''} onChange={(value) => updateSelectedProfile({ ...selectedProfile, name: value })} />
         <Segmented
-          label="Provider"
+          label="供应商"
           value={provider}
           options={['gpt_image', 'jimeng', 'custom']}
           labels={['GPT Image', '即梦', '自定义']}
@@ -5228,9 +5265,9 @@ function ImageProfileManager({
         />
         {provider === 'gpt_image' ? (
           <>
-            <ProviderConfigNote title="OpenAI Image API" value="API Key 与模型必填；Base URL 为空时使用官方默认端点。" />
-            <ConfigInput label="GPT Image Base URL（可选）" value={gptImage.baseUrl} onChange={(value) => { onClearModels('gpt-image'); updateSelectedProfile({ ...selectedProfile, gptImage: { ...gptImage, baseUrl: value } }); }} />
-            <ConfigInput label="GPT Image API Key" value={gptImage.apiKey} onChange={(value) => { onClearModels('gpt-image'); updateSelectedProfile({ ...selectedProfile, gptImage: { ...gptImage, apiKey: value } }); }} />
+            <ProviderConfigNote title="OpenAI 图像接口" value="接口密钥与模型必填；接口地址为空时使用官方默认端点。" />
+            <ConfigInput label="GPT Image 接口地址（可选）" value={gptImage.baseUrl} onChange={(value) => { onClearModels('gpt-image'); updateSelectedProfile({ ...selectedProfile, gptImage: { ...gptImage, baseUrl: value } }); }} />
+            <ConfigInput label="GPT Image 接口密钥" value={gptImage.apiKey} onChange={(value) => { onClearModels('gpt-image'); updateSelectedProfile({ ...selectedProfile, gptImage: { ...gptImage, apiKey: value } }); }} />
             <ModelPicker
               key={`gpt-image-${selectedProfile.id}`}
               label="GPT Image 模型"
@@ -5252,19 +5289,19 @@ function ImageProfileManager({
         ) : null}
         {provider === 'jimeng' ? (
           <>
-            <ProviderConfigNote title="火山视觉 API" value={`Endpoint ${jimeng.endpoint || 'https://visual.volcengineapi.com'} · Region ${jimeng.region || 'cn-north-1'} · Service ${jimeng.service || 'cv'}`} />
-            <ConfigInput label="即梦 AccessKey ID" value={jimeng.accessKeyId ?? ''} onChange={(value) => updateSelectedProfile({ ...selectedProfile, jimeng: { ...jimeng, accessKeyId: value } })} />
-            <ConfigInput label="即梦 SecretAccessKey" value={jimeng.secretAccessKey ?? ''} onChange={(value) => updateSelectedProfile({ ...selectedProfile, jimeng: { ...jimeng, secretAccessKey: value } })} />
-            <ConfigInput label="即梦 Req Key" value={jimeng.reqKey ?? ''} onChange={(value) => updateSelectedProfile({ ...selectedProfile, jimeng: { ...jimeng, reqKey: value } })} />
+            <ProviderConfigNote title="火山视觉接口" value={`端点 ${jimeng.endpoint || 'https://visual.volcengineapi.com'} · 区域 ${jimeng.region || 'cn-north-1'} · 服务 ${jimeng.service || 'cv'}`} />
+            <ConfigInput label="即梦访问密钥 ID" value={jimeng.accessKeyId ?? ''} onChange={(value) => updateSelectedProfile({ ...selectedProfile, jimeng: { ...jimeng, accessKeyId: value } })} />
+            <ConfigInput label="即梦访问密钥 Secret" value={jimeng.secretAccessKey ?? ''} onChange={(value) => updateSelectedProfile({ ...selectedProfile, jimeng: { ...jimeng, secretAccessKey: value } })} />
+            <ConfigInput label="即梦请求 Key" value={jimeng.reqKey ?? ''} onChange={(value) => updateSelectedProfile({ ...selectedProfile, jimeng: { ...jimeng, reqKey: value } })} />
             <Segmented label="分辨率" value={jimeng.resolution} options={['1K', '2K', '4K']} onChange={(value) => updateSelectedProfile({ ...selectedProfile, jimeng: { ...jimeng, resolution: value as ImageResolution } })} />
             <Field label="并发"><input type="range" min="1" max="6" value={jimeng.concurrency} onChange={(event) => updateSelectedProfile({ ...selectedProfile, jimeng: { ...jimeng, concurrency: Number(event.target.value) } })} /></Field>
           </>
         ) : null}
         {provider === 'custom' ? (
           <>
-            <ProviderConfigNote title="OpenAI-compatible" value="自定义图片接口按 /images/generations 调用，需要 Base URL、API Key 与模型。" />
-            <ConfigInput label="自定义 Base URL" value={customImage.baseUrl} onChange={(value) => { onClearModels('custom-image'); updateSelectedProfile({ ...selectedProfile, customImage: { ...customImage, baseUrl: value } }); }} />
-            <ConfigInput label="自定义 API Key" value={customImage.apiKey} onChange={(value) => { onClearModels('custom-image'); updateSelectedProfile({ ...selectedProfile, customImage: { ...customImage, apiKey: value } }); }} />
+            <ProviderConfigNote title="OpenAI 兼容接口" value="自定义图片接口按 /images/generations 调用，需要接口地址、接口密钥与模型。" />
+            <ConfigInput label="自定义接口地址" value={customImage.baseUrl} onChange={(value) => { onClearModels('custom-image'); updateSelectedProfile({ ...selectedProfile, customImage: { ...customImage, baseUrl: value } }); }} />
+            <ConfigInput label="自定义接口密钥" value={customImage.apiKey} onChange={(value) => { onClearModels('custom-image'); updateSelectedProfile({ ...selectedProfile, customImage: { ...customImage, apiKey: value } }); }} />
             <ModelPicker
               key={`custom-image-${selectedProfile.id}`}
               label="自定义模型"
@@ -5438,12 +5475,12 @@ function TtsProfileManager({
         />
         {provider === 'volcengine' ? (
           <>
-            <ProviderConfigNote title="火山引擎 TTS" value="V3 HTTP Chunked 使用新版控制台 API Key、Resource ID 和 voice_type。" />
-            <ConfigInput label="火山 API Key" value={volcengine.apiKey ?? ''} onChange={(value) => updateSelectedProfile({ ...selectedProfile, volcengine: { ...volcengine, apiKey: value } })} />
-            <ConfigInput label="AccessKey ID（音色列表）" value={volcengine.accessKeyId ?? ''} onChange={(value) => updateSelectedProfile({ ...selectedProfile, volcengine: { ...volcengine, accessKeyId: value } })} />
-            <ConfigInput label="SecretAccessKey（音色列表）" value={volcengine.secretAccessKey ?? ''} onChange={(value) => updateSelectedProfile({ ...selectedProfile, volcengine: { ...volcengine, secretAccessKey: value } })} />
-            <ConfigInput label="Resource ID" value={volcengine.resourceId ?? 'seed-tts-2.0'} onChange={(value) => updateSelectedProfile({ ...selectedProfile, volcengine: { ...volcengine, resourceId: value } })} />
-            <ConfigInput label="Endpoint" value={volcengine.endpoint ?? 'https://openspeech.bytedance.com/api/v3/tts/unidirectional'} onChange={(value) => updateSelectedProfile({ ...selectedProfile, volcengine: { ...volcengine, endpoint: value } })} />
+            <ProviderConfigNote title="火山引擎 TTS" value="V3 HTTP Chunked 使用新版控制台接口密钥、资源 ID 和 voice_type。" />
+            <ConfigInput label="火山接口密钥" value={volcengine.apiKey ?? ''} onChange={(value) => updateSelectedProfile({ ...selectedProfile, volcengine: { ...volcengine, apiKey: value } })} />
+            <ConfigInput label="音色列表访问密钥 ID" value={volcengine.accessKeyId ?? ''} onChange={(value) => updateSelectedProfile({ ...selectedProfile, volcengine: { ...volcengine, accessKeyId: value } })} />
+            <ConfigInput label="音色列表访问密钥 Secret" value={volcengine.secretAccessKey ?? ''} onChange={(value) => updateSelectedProfile({ ...selectedProfile, volcengine: { ...volcengine, secretAccessKey: value } })} />
+            <ConfigInput label="资源 ID" value={volcengine.resourceId ?? 'seed-tts-2.0'} onChange={(value) => updateSelectedProfile({ ...selectedProfile, volcengine: { ...volcengine, resourceId: value } })} />
+            <ConfigInput label="端点地址" value={volcengine.endpoint ?? 'https://openspeech.bytedance.com/api/v3/tts/unidirectional'} onChange={(value) => updateSelectedProfile({ ...selectedProfile, volcengine: { ...volcengine, endpoint: value } })} />
             <Field label="默认音色">
               <div className="model-picker">
                 <select value={voiceSelection} onChange={(event) => updateVolcengineVoice(event.target.value === 'custom' ? '' : event.target.value)}>
@@ -5474,8 +5511,8 @@ function TtsProfileManager({
         ) : null}
         {provider === 'minimax' ? (
           <>
-            <ProviderConfigNote title="MiniMax TTS" value="填写 API Key、模型和音色 ID。" />
-            <ConfigInput label="MiniMax API Key" value={minimax.apiKey} onChange={(value) => updateSelectedProfile({ ...selectedProfile, minimax: { ...minimax, apiKey: value } })} />
+            <ProviderConfigNote title="MiniMax TTS" value="填写接口密钥、模型和音色 ID。" />
+            <ConfigInput label="MiniMax 接口密钥" value={minimax.apiKey} onChange={(value) => updateSelectedProfile({ ...selectedProfile, minimax: { ...minimax, apiKey: value } })} />
             <ConfigInput label="MiniMax 模型" value={minimax.model} onChange={(value) => updateSelectedProfile({ ...selectedProfile, minimax: { ...minimax, model: value } })} />
             <ConfigInput label="MiniMax 音色 ID" value={minimax.voiceId} onChange={(value) => updateSelectedProfile({ ...selectedProfile, minimax: { ...minimax, voiceId: value } })} />
             <LocalInfo title="克隆音色" value={`${cloneVoiceCount} 个本地记录，可后续接入 MiniMax 克隆接口。`} />
@@ -5525,7 +5562,7 @@ function ActivationPage({ api, state, applyState }: { api: StoryboundApi; state:
       </section>
       <section className="panel faq-panel">
         <LocalInfo title="立即激活" value="这里是本地模拟状态页，不做真实购买、登录或付费限制。" />
-        <LocalInfo title="FAQ" value="激活码、订阅、设备解绑均为本地 UI 状态，可用于后续接入真实服务。" />
+        <LocalInfo title="常见问题" value="激活码、订阅、设备解绑均为本地 UI 状态，可用于后续接入真实服务。" />
       </section>
     </div>
   );
@@ -6029,9 +6066,9 @@ function summarizeErrorMessage(message: string): string {
   if (imageApiStatus) return `生图接口错误 ${imageApiStatus}`;
   if (/Python dependency .* is required|ModuleNotFoundError: No module named/i.test(normalized)) {
     const missing = normalized.match(/No module named ['"]([^'"]+)['"]/i)?.[1] ?? normalized.match(/Python dependency ([\w.-]+)/i)?.[1];
-    return missing ? `Python 运行时缺少依赖：${missing}` : 'Python runtime dependency missing';
+    return missing ? `Python 运行时缺少依赖：${missing}` : 'Python 运行时依赖缺失';
   }
-  if (/Browser preview cannot run the real provider pipeline/i.test(normalized)) return '浏览器预览无法执行真实任务';
+  if (normalized.includes(['Browser preview', 'cannot run the real provider pipeline'].join(' ')) || /浏览器预览无法运行真实供应商流水线/i.test(normalized)) return '浏览器预览无法执行真实任务';
   if (/Image provider API key is missing/i.test(normalized)) return '生图 API Key 缺失';
   if (/Image provider is not configured/i.test(normalized)) return '生图配置不完整';
   if (/Jimeng submit failed/i.test(normalized)) return '即梦提交失败';

@@ -326,6 +326,15 @@ export interface Task {
   failedStep: number | null;
   retryFromStep: number | null;
   artifactStatePath: string;
+  materialSource?: string;
+  taskType?: string;
+  pipelineStep?: string;
+  pipelineData?: string;
+  targetLength?: number;
+  targetScenes?: number;
+  scriptFormat?: string;
+  coverImageMode?: string;
+  coverTemplateId?: string;
 }
 
 export interface MusicMvSettings {
@@ -366,6 +375,15 @@ export type CreateTaskInput = Partial<
     | 'storyboardSceneCount'
     | 'step3PromptSnapshot'
     | 'musicMv'
+    | 'materialSource'
+    | 'taskType'
+    | 'pipelineStep'
+    | 'pipelineData'
+    | 'targetLength'
+    | 'targetScenes'
+    | 'scriptFormat'
+    | 'coverImageMode'
+    | 'coverTemplateId'
   >
 > & {
   inputText: string;
