@@ -17,6 +17,8 @@ export type ShellView =
 
 export type TaskMode = 'paste' | 'ai';
 export type TaskKind = 'story' | 'music-mv';
+export type TaskVideoForm = 'narration' | 'two-host-podcast';
+export type PodcastSpeakerPair = 'kazai-dayi' | 'liufei-xiaolei';
 export type ProcessingMode = 'full-auto' | 'semi-auto' | 'clip-only';
 export type PromptTemplateType = 'review' | 'rewrite' | 'cover' | 'storyboard' | 'image-prompt' | 'task';
 export type PromptStepTemplateType = Exclude<PromptTemplateType, 'task'>;
@@ -146,6 +148,7 @@ export interface CustomImageConfig extends ImageConfig {
   displayName: string;
   asyncMode: boolean;
   ratioMappingJson: string;
+  pollIntervalMs?: number;
 }
 
 export interface ImageProviderProfile {
@@ -326,6 +329,8 @@ export interface Task {
   failedStep: number | null;
   retryFromStep: number | null;
   artifactStatePath: string;
+  videoForm?: TaskVideoForm;
+  llmProfileId?: string | null;
   materialSource?: string;
   taskType?: string;
   pipelineStep?: string;
@@ -333,6 +338,10 @@ export interface Task {
   targetLength?: number;
   targetScenes?: number;
   scriptFormat?: string;
+  podcastImageMode?: string;
+  podcastSpeakers?: string | null;
+  podcastSpeakerA?: string | null;
+  podcastSpeakerB?: string | null;
   coverImageMode?: string;
   coverTemplateId?: string;
 }
@@ -375,6 +384,8 @@ export type CreateTaskInput = Partial<
     | 'storyboardSceneCount'
     | 'step3PromptSnapshot'
     | 'musicMv'
+    | 'videoForm'
+    | 'llmProfileId'
     | 'materialSource'
     | 'taskType'
     | 'pipelineStep'
@@ -382,6 +393,10 @@ export type CreateTaskInput = Partial<
     | 'targetLength'
     | 'targetScenes'
     | 'scriptFormat'
+    | 'podcastImageMode'
+    | 'podcastSpeakers'
+    | 'podcastSpeakerA'
+    | 'podcastSpeakerB'
     | 'coverImageMode'
     | 'coverTemplateId'
   >
@@ -438,6 +453,19 @@ export interface CustomStyle {
   updatedAt: string;
 }
 
+export interface CustomCoverTemplate {
+  id: string;
+  name: string;
+  description: string;
+  directions: string;
+  compositionRule: string;
+  titleLayout: string;
+  subtitleLayout: string;
+  plainHint: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
 export interface CustomStyleGenerateInput {
   prompt: string;
   baseStyle: CustomStyle;
@@ -453,14 +481,18 @@ export interface ImageLabRecord {
   status: 'mock' | 'generated' | 'failed';
   errorMessage: string;
   resolution: '1K' | '2K' | '4K';
+  smartMode: ImageLabSmartMode;
+  referenceImagePaths: string[];
   referenceImagePath: string;
   upstreamTaskId: string | null;
   createdAt: string;
   finishedAt: string | null;
 }
 
+export type ImageLabSmartMode = 'text-to-image' | 'cover' | 'blog-cover' | 'podcast-cover' | 'video-narration' | 'two-host-podcast' | 'reference-edit';
+
 export type ImageLabGenerateInput = Pick<ImageLabRecord, 'prompt' | 'ratio' | 'style'> &
-  Partial<Pick<ImageLabRecord, 'id' | 'provider' | 'resolution' | 'referenceImagePath' | 'upstreamTaskId' | 'createdAt'>>;
+  Partial<Pick<ImageLabRecord, 'id' | 'provider' | 'resolution' | 'smartMode' | 'referenceImagePath' | 'referenceImagePaths' | 'upstreamTaskId' | 'createdAt'>>;
 
 export interface VoiceLabRecord {
   id: string;
@@ -535,6 +567,7 @@ export interface ImagePrompt {
   style: string;
   ratio: string;
   characterProfile: string;
+  referenceImagePaths?: string[];
 }
 
 export interface StoryboardScene {
@@ -802,6 +835,9 @@ export interface TaskArtifactStepPreview {
 export interface TaskArtifactAssetPreview {
   sceneId: number;
   path: string;
+  speaker?: 'A' | 'B';
+  turnIndex?: number;
+  text?: string;
 }
 
 export interface TaskDraftArtifactPreview {
@@ -820,6 +856,7 @@ export interface TaskArtifactSnapshot {
   steps: Record<string, TaskArtifactStepPreview>;
   artifact: Partial<PipelineArtifact>;
   assets: {
+    cover: TaskArtifactAssetPreview[];
     images: TaskArtifactAssetPreview[];
     narration: TaskArtifactAssetPreview[];
   };
@@ -958,6 +995,7 @@ export interface AppState {
   imageLabRecords: ImageLabRecord[];
   voiceLabRecords: VoiceLabRecord[];
   customStyles: CustomStyle[];
+  customCoverTemplates: CustomCoverTemplate[];
   creditTransactions: CreditTransaction[];
   minimaxCloneVoices: MinimaxCloneVoice[];
   account: AccountProfile;

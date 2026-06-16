@@ -228,6 +228,56 @@ describe('pyJianYingDraft bridge input', () => {
     }
   });
 
+  it('lays multiple narration turns for one scene consecutively on the audio timeline', async () => {
+    const dir = await mkdtemp(join(tmpdir(), 'storybound-jy-dual-voice-timing-'));
+    const draftDir = join(dir, 'Draft Root', 'Bridge Draft');
+    const bridgeDir = join(dir, 'pyjianying-bridge');
+
+    try {
+      await writePyJianYingBridgeScript(dir);
+      await writeFile(join(bridgeDir, 'pyJianYingDraft.py'), fakePyJianYingDraftModule, 'utf8');
+      const firstVoice = join(dir, 'voice-a.wav');
+      const secondVoice = join(dir, 'voice-b.wav');
+      const image = join(dir, 'image.png');
+      const subtitles = join(dir, 'subtitles.srt');
+      await writeFile(firstVoice, wavTone(600));
+      await writeFile(secondVoice, wavTone(700));
+      await writeFile(image, Buffer.from('image'));
+      await writeFile(subtitles, '1\n00:00:00,000 --> 00:00:01,000\nscene\n', 'utf8');
+
+      await runPyJianYingDraftBridge({
+        workDir: dir,
+        draftDir,
+        title: 'Bridge Draft',
+        canvas: { width: 1080, height: 1920, backgroundColor: '#000000', backgroundImage: '' },
+        imageArea: defaultBridgeImageArea(),
+        caption: defaultBridgeCaption(),
+        scenes: [{ sceneId: 1, startUs: 0, durationUs: 1_000_000, text: 'Host A: First\nHost B: Second' }],
+        images: [{ sceneId: 1, path: image }],
+        narration: [
+          { sceneId: 1, path: firstVoice, speaker: 'A', turnIndex: 1, text: 'First' },
+          { sceneId: 1, path: secondVoice, speaker: 'B', turnIndex: 2, text: 'Second' },
+        ],
+        subtitlesSrtPath: subtitles,
+        bgm: null,
+        totalDurationUs: 1_000_000,
+        volumes: { narration: 1, bgm: 0.3 },
+      });
+
+      const content = JSON.parse(await readFile(join(draftDir, 'draft_content.json'), 'utf8'));
+      const imageSegments = content.tracks.find((track: { name: string }) => track.name === 'images').segments;
+      const narrationSegments = content.tracks.find((track: { name: string }) => track.name === 'narration').segments;
+
+      expect(narrationSegments).toHaveLength(2);
+      expect(narrationSegments[0].target_timerange).toMatchObject({ start: 0, duration: 600_000 });
+      expect(narrationSegments[1].target_timerange).toMatchObject({ start: 600_000, duration: 700_000 });
+      expect(imageSegments[0].target_timerange.duration).toBe(1_300_000);
+      expect(content.duration).toBe(1_300_000);
+    } finally {
+      await rm(dir, { recursive: true, force: true });
+    }
+  });
+
   it('does not import subtitle text tracks when captions are hidden', async () => {
     const dir = await mkdtemp(join(tmpdir(), 'storybound-jy-hidden-captions-'));
     const draftDir = join(dir, 'Draft Root', 'Bridge Draft');

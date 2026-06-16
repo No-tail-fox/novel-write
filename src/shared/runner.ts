@@ -1,6 +1,6 @@
-import { mkdir, readFile, writeFile } from 'node:fs/promises';
+import { copyFile, mkdir, readFile, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
-import type { AiSourceContext, BgmItem, CharacterCard, CoverMetadata, ImagePrompt, MusicPlan, PipelineArtifact, PromptStepTemplateType, PromptTemplate, RewriteEvaluationResult, StoryboardScene, Task, TaskStepRerunMode } from './types';
+import type { AiSourceContext, BgmItem, CharacterCard, CoverMetadata, CustomCoverTemplate, ImagePrompt, MusicPlan, PipelineArtifact, PromptStepTemplateType, PromptTemplate, RewriteEvaluationResult, StoryboardScene, Task, TaskStepRerunMode } from './types';
 import { buildSubtitleTrack } from './story';
 import { writeJianyingDraft, type SceneAsset, type WriteJianyingDraftOptions } from './draft';
 import type { FileDatabase } from './storage';
@@ -21,6 +21,7 @@ export interface RunTaskOptions {
   imageConcurrency?: number;
   synthesizeNarration?: (scenes: StoryboardScene[], task: Task, signal?: AbortSignal) => Promise<SceneAsset[]>;
   draftWriterOptions?: WriteJianyingDraftOptions;
+  customCoverTemplates?: CustomCoverTemplate[];
 }
 
 type StepStatus = 'pending' | 'running' | 'completed' | 'failed';
@@ -32,6 +33,7 @@ interface PipelineState {
   steps: Record<string, { status: StepStatus; outputPath?: string; error?: string; completedAt?: string }>;
   artifact: Partial<PipelineArtifact>;
   assets: {
+    cover: SceneAsset[];
     images: SceneAsset[];
     narration: SceneAsset[];
   };
@@ -160,7 +162,7 @@ export async function runTask(db: FileDatabase, task: Task, options: RunTaskOpti
     pauseAtCheckpoint(task, initialStep, 4, 'Task paused for confirmation before image generation.');
     activeStep = 4;
     await heartbeat(4, 'image step');
-    await ensureImages({ db, task, artifact, options, emit, markStep, pipeline });
+    await ensureImages({ db, task, artifact, options, workDir, emit, markStep, pipeline });
     pauseAtCheckpoint(task, initialStep, 5, 'Task paused for confirmation after image generation.');
     activeStep = 5;
     await heartbeat(5, 'narration step');
@@ -297,7 +299,12 @@ async function ensureContentArtifact(input: {
   if (options.generatePipelineArtifact) {
     const artifact = await options.generatePipelineArtifact(task, sourceContext ?? undefined);
     throwIfAborted(options.signal);
-    pipeline.artifact = { ...artifact, subtitles: buildSubtitleTrack(artifact.scenes), sourceContext: sourceContext ?? artifact.sourceContext };
+    pipeline.artifact = {
+      ...artifact,
+      imagePrompts: applyTaskReferenceImagesToPrompts(artifact.imagePrompts, task),
+      subtitles: buildSubtitleTrack(artifact.scenes),
+      sourceContext: sourceContext ?? artifact.sourceContext,
+    };
     await writeContentArtifacts(workDir, hydrateArtifact(pipeline.artifact), task);
     for (const step of [0, 1, 2, 3]) {
       await db.updateTask(task.id, { currentStep: step, retryFromStep: step });
@@ -337,7 +344,7 @@ async function ensureContentArtifact(input: {
       signal: options.signal,
       messages: [
         { role: 'system', content: 'Return strict JSON only. Schema: {"reviewedText": string}.' },
-        { role: 'user', content: joinPromptBlocks(['Template instructions:', reviewPrompt, 'Source material:', sourceText, rewriteContextForStep(pipeline, 0)]) },
+        { role: 'user', content: joinPromptBlocks(['Template instructions:', reviewPrompt, taskModeInstructions(task), 'Source material:', sourceText, rewriteContextForStep(pipeline, 0)]) },
       ],
     });
     pipeline.artifact.reviewedText = requireString(review.json.reviewedText, 'reviewedText');
@@ -394,6 +401,7 @@ async function ensureContentArtifact(input: {
           content: joinPromptBlocks([
             'Storyboard instructions:',
             storyboardPrompt,
+            taskModeInstructions(task),
             `Storyboard scene count target: ${storyboardSceneCount}`,
             `Return no more than ${storyboardSceneCount} scenes unless the source absolutely requires one extra transition scene.`,
             'Rewritten copy:',
@@ -483,10 +491,21 @@ function rewriteContextForStep(pipeline: PipelineState, step: number): string {
   ]);
 }
 
+function taskModeInstructions(task: Task): string {
+  if (task.videoForm !== 'two-host-podcast') return '';
+  return [
+    'Two-host podcast mode.',
+    `Speaker pair: ${task.podcastSpeakers ?? 'kazai-dayi'}.`,
+    'Write as a dialogue script with two hosts taking turns asking and answering.',
+    'Keep each storyboard cap suitable for podcast-style narration and avoid ordinary single-narrator phrasing.',
+  ].join('\n');
+}
+
 function buildImagePromptSnapshot(instruction: string, scenes: StoryboardScene[], task: Task, batchIndex: number, batchCount: number, characterCard?: CharacterCard, rerunContext = ''): string {
   return joinPromptBlocks([
     'Image prompt instructions:',
     instruction,
+    taskModeInstructions(task),
     characterCard ? `Character card:\n${JSON.stringify(characterCard)}` : '',
     `Batch: ${batchIndex}/${batchCount}`,
     'Only return imagePrompts for the sceneIds in this batch.',
@@ -543,6 +562,7 @@ async function runRewriteRounds(
             `Rewrite round: ${round}/3`,
             'Rewrite instructions:',
             input.rewritePrompt,
+            taskModeInstructions(input.task),
             'Cover instructions:',
             input.coverPrompt,
             'Reviewed text:',
@@ -569,6 +589,7 @@ async function runRewriteRounds(
         role: 'user',
         content: joinPromptBlocks([
           'Evaluate these three rewrite candidates for hook strength, rhythm, factual faithfulness, short-video appeal, and target word count. Choose bestRound.',
+          taskModeInstructions(input.task),
           input.rerunContext ?? '',
           JSON.stringify(candidates.map(({ round, rewrittenCopy }) => ({ round, rewrittenCopy }))),
         ]),
@@ -617,6 +638,7 @@ async function ensureCharacterCard(input: {
             content: joinPromptBlocks([
               'Extract the protagonist and recurring character consistency card before image prompt generation.',
               `Task kind: ${input.task.taskKind}`,
+              taskModeInstructions(input.task),
               'Reviewed text:',
               input.reviewedText,
               'Rewritten copy:',
@@ -765,12 +787,45 @@ async function ensureImages(input: {
   task: Task;
   artifact: PipelineArtifact;
   options: RunTaskOptions;
+  workDir: string;
   emit: (type: string, step: number | null, agent: string | null, detail: string, data?: unknown) => Promise<void>;
   markStep: (step: number, status: StepStatus, patch?: Partial<PipelineState['steps'][string]>) => Promise<void>;
   pipeline: PipelineState;
 }): Promise<void> {
   const { db, task, artifact, options, emit, markStep, pipeline } = input;
   throwIfAborted(options.signal);
+  if (!options.generateImages) {
+    throw new Error('Image provider is not configured; cannot create real image assets.');
+  }
+  const generateImages = options.generateImages;
+  if (shouldGenerateCoverImage(task) && pipeline.assets.cover.length === 0) {
+    await db.updateTask(task.id, { currentStep: 4, retryFromStep: 4 });
+    await heartbeatTask(db, task.id, options, 4, 'cover image generation');
+    await markStep(4, 'running');
+    await emit('step_start', 4, 'Producer', '生成封面图片素材', { coverTemplateId: task.coverTemplateId });
+    const coverScene = buildCoverScene(artifact);
+    const coverPrompt = buildCoverImagePrompt(task, artifact, options.customCoverTemplates);
+    const coverAssets = await generateImages([coverScene], [coverPrompt], task, options.signal);
+    const coverPath = await persistCoverImage(input.workDir, coverAssets[0], coverPrompt, input);
+    pipeline.assets.cover = [{ sceneId: 0, path: coverPath }];
+    await markStep(4, 'running', { outputPath: coverPath });
+  }
+  if (usesSinglePodcastCover(task)) {
+    if (pipeline.assets.cover.length === 0) {
+      await db.updateTask(task.id, { currentStep: 4, retryFromStep: 4 });
+      await heartbeatTask(db, task.id, options, 4, 'podcast cover generation');
+      await markStep(4, 'running');
+      const coverScene = buildCoverScene(artifact);
+      const coverPrompt = buildCoverImagePrompt(task, artifact, options.customCoverTemplates);
+      const coverAssets = await generateImages([coverScene], [coverPrompt], task, options.signal);
+      const coverPath = await persistCoverImage(input.workDir, coverAssets[0], coverPrompt, input);
+      pipeline.assets.cover = [{ sceneId: 0, path: coverPath }];
+    }
+    pipeline.assets.images = artifact.scenes.map((scene) => ({ sceneId: scene.id, path: pipeline.assets.cover[0].path }));
+    await markStep(4, 'completed', { outputPath: pipeline.assets.cover[0].path });
+    await emit('step_complete', 4, 'Producer', '播客单图封面已映射到全部分镜', { count: pipeline.assets.images.length });
+    return;
+  }
   const missing = missingScenes(artifact.scenes, pipeline.assets.images);
   if (missing.length === 0 && pipeline.assets.images.length >= artifact.scenes.length) {
     await markStep(4, 'completed');
@@ -780,10 +835,6 @@ async function ensureImages(input: {
   await heartbeatTask(db, task.id, options, 4, 'image generation');
   await markStep(4, 'running');
   await emit('step_start', 4, 'Producer', '批量生成真实图片素材', { missingSceneIds: missing.map((scene) => scene.id) });
-  if (!options.generateImages) {
-    throw new Error('Image provider is not configured; cannot create real image assets.');
-  }
-  const generateImages = options.generateImages;
   let persistImageQueue = Promise.resolve();
   await runWithConcurrency(missing, options.imageConcurrency ?? 1, async (scene) => {
     throwIfAborted(options.signal);
@@ -813,7 +864,7 @@ async function ensureNarration(input: {
   const { db, task, artifact, options, emit, markStep, pipeline } = input;
   throwIfAborted(options.signal);
   const missing = missingScenes(artifact.scenes, pipeline.assets.narration);
-  if (missing.length === 0 && pipeline.assets.narration.length >= artifact.scenes.length) {
+  if (missing.length === 0) {
     await markStep(5, 'completed');
     return;
   }
@@ -827,7 +878,7 @@ async function ensureNarration(input: {
   for (const scene of missing) {
     throwIfAborted(options.signal);
     const narrationAudio = await options.synthesizeNarration([scene], task, options.signal);
-    pipeline.assets.narration = mergeAssets(pipeline.assets.narration, narrationAudio);
+    pipeline.assets.narration = mergeNarrationAssets(pipeline.assets.narration, narrationAudio);
     await markStep(5, 'running', { outputPath: pipeline.assets.narration.map((asset) => asset.path).join('\n') });
     await heartbeatTask(db, task.id, options, 5, `narration scene ${scene.id} completed`);
     throwIfAborted(options.signal);
@@ -836,9 +887,84 @@ async function ensureNarration(input: {
   await emit('step_complete', 5, 'TTS', '真实配音与字幕时间轴已生成', { subtitles: artifact.subtitles.cues.length, audio: pipeline.assets.narration.length });
 }
 
+function shouldGenerateCoverImage(task: Task): boolean {
+  return task.coverImageMode === 'auto' || task.coverImageMode === 'manual' || usesSinglePodcastCover(task);
+}
+
+function usesSinglePodcastCover(task: Task): boolean {
+  return task.videoForm === 'two-host-podcast' && task.podcastImageMode === 'single';
+}
+
+function buildCoverScene(artifact: PipelineArtifact): StoryboardScene {
+  return {
+    id: 0,
+    cap: artifact.cover.title || 'Cover',
+    descPrompt: artifact.cover.summary || artifact.rewrittenCopy.slice(0, 160),
+    durationMs: 1200,
+  };
+}
+
+function buildCoverImagePrompt(task: Task, artifact: PipelineArtifact, customCoverTemplates: CustomCoverTemplate[] = []): ImagePrompt {
+  const selectedTemplate = customCoverTemplates.find((template) => template.id === task.coverTemplateId);
+  const template = selectedTemplate
+    ? [
+      selectedTemplate.directions,
+      selectedTemplate.compositionRule,
+      selectedTemplate.titleLayout,
+      selectedTemplate.subtitleLayout,
+      selectedTemplate.plainHint.replace(/\{\{TITLE\}\}/g, artifact.cover.title || task.title || 'Cover'),
+    ].filter(Boolean).join('\n')
+    : task.coverTemplateId === 'podcast-cover' || usesSinglePodcastCover(task)
+      ? 'Podcast cover, readable at thumbnail size, calm host/story identity, single topic signal, clean title area.'
+      : 'Short-video cover, strong subject, clear title-safe negative space, readable thumbnail composition.';
+  const videoForm = task.videoForm === 'two-host-podcast' ? `Two-host podcast, speaker pair ${task.podcastSpeakers ?? 'kazai-dayi'}, dialogue show visual identity.` : 'Narration video cover.';
+  return {
+    sceneId: 0,
+    cap: artifact.cover.title || task.title || 'Cover',
+    prompt: [
+      template,
+      videoForm,
+      `Title: ${artifact.cover.title}`,
+      artifact.cover.subtitle.length ? `Subtitle: ${artifact.cover.subtitle.join(' / ')}` : '',
+      `Summary: ${artifact.cover.summary}`,
+      `Style: ${task.style}`,
+      `Ratio: ${task.ratio}`,
+    ].filter(Boolean).join('\n'),
+    negativePrompt: 'low quality, blurry, watermark, random text, crowded layout, malformed hands',
+    style: task.style,
+    ratio: task.ratio,
+    characterProfile: artifact.characterCard?.summary ?? '',
+    referenceImagePaths: task.referenceImagePath?.trim() ? [task.referenceImagePath.trim()] : undefined,
+  };
+}
+
+async function persistCoverImage(
+  workDir: string,
+  asset: SceneAsset | undefined,
+  prompt: ImagePrompt,
+  input: {
+    emit: (type: string, step: number | null, agent: string | null, detail: string, data?: unknown) => Promise<void>;
+  },
+): Promise<string> {
+  if (!asset?.path) {
+    throw new Error('Image provider did not return a cover image asset.');
+  }
+  const coverPath = join(workDir, 'cover-image.png');
+  await copyFile(asset.path, coverPath);
+  await input.emit('step_complete', 4, 'Producer', '封面图片已生成', { path: coverPath, prompt });
+  return coverPath;
+}
+
 async function loadPipelineState(path: string, taskId: string): Promise<PipelineState> {
   try {
-    return JSON.parse(await readFile(path, 'utf8')) as PipelineState;
+    const state = JSON.parse(await readFile(path, 'utf8')) as PipelineState;
+    const assets = state.assets ?? { cover: [], images: [], narration: [] };
+    state.assets = {
+      cover: assets.cover ?? [],
+      images: assets.images ?? [],
+      narration: assets.narration ?? [],
+    };
+    return state;
   } catch {
     return {
       version: 1,
@@ -846,7 +972,7 @@ async function loadPipelineState(path: string, taskId: string): Promise<Pipeline
       updatedAt: new Date().toISOString(),
       steps: {},
       artifact: {},
-      assets: { images: [], narration: [] },
+      assets: { cover: [], images: [], narration: [] },
     };
   }
 }
@@ -947,8 +1073,21 @@ function normalizePrompts(input: unknown, scenes: StoryboardScene[], task: Task)
       style: String(prompt.style ?? task.style),
       ratio: String(prompt.ratio ?? task.ratio),
       characterProfile: String(prompt.characterProfile ?? ''),
+      referenceImagePaths: referenceImagePathsForPrompt(prompt.referenceImagePaths, task),
     };
   });
+}
+
+function applyTaskReferenceImagesToPrompts(prompts: ImagePrompt[], task: Task): ImagePrompt[] {
+  return prompts.map((prompt) => ({
+    ...prompt,
+    referenceImagePaths: referenceImagePathsForPrompt(prompt.referenceImagePaths, task),
+  }));
+}
+
+function referenceImagePathsForPrompt(current: string[] | undefined, task: Task): string[] | undefined {
+  const paths = [...(current ?? []), task.referenceImagePath ?? ''].map((path) => path.trim()).filter(Boolean);
+  return paths.length ? Array.from(new Set(paths)) : undefined;
 }
 
 function requireString(value: unknown, label: string): string {
@@ -968,6 +1107,25 @@ function mergeAssets(existing: SceneAsset[], incoming: SceneAsset[]): SceneAsset
   for (const asset of existing) map.set(asset.sceneId, asset);
   for (const asset of incoming) map.set(asset.sceneId, asset);
   return [...map.values()].sort((a, b) => a.sceneId - b.sceneId);
+}
+
+function mergeNarrationAssets(existing: SceneAsset[], incoming: SceneAsset[]): SceneAsset[] {
+  const map = new Map<string, SceneAsset>();
+  for (const asset of existing) map.set(narrationAssetKey(asset), asset);
+  for (const asset of incoming) map.set(narrationAssetKey(asset), asset);
+  return [...map.values()].sort(compareNarrationAssets);
+}
+
+function narrationAssetKey(asset: SceneAsset): string {
+  return [asset.sceneId, asset.turnIndex ?? '', asset.speaker ?? '', asset.path].join(':');
+}
+
+function compareNarrationAssets(a: SceneAsset, b: SceneAsset): number {
+  if (a.sceneId !== b.sceneId) return a.sceneId - b.sceneId;
+  const aTurn = a.turnIndex ?? Number.MAX_SAFE_INTEGER;
+  const bTurn = b.turnIndex ?? Number.MAX_SAFE_INTEGER;
+  if (aTurn !== bTurn) return aTurn - bTurn;
+  return a.path.localeCompare(b.path);
 }
 
 async function heartbeatTask(db: FileDatabase, taskId: string, options: RunTaskOptions, step: number, detail: string): Promise<void> {

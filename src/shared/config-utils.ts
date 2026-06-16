@@ -226,12 +226,15 @@ function normalizeImageProfiles(partial: Partial<AppConfig>): {
 function normalizeTtsProfile(profile: Partial<TtsProviderProfile>, index: number): TtsProviderProfile {
   const provider = normalizeTtsProvider(profile.provider);
   const rawVolcengine = { ...defaultConfig.tts.volcengine, ...(profile.volcengine ?? {}) };
-  const speaker = normalizeVolcengineV3Speaker(profile.speaker ?? rawVolcengine.speaker);
+  const speaker = normalizeVolcengineV3Speaker(profile.speaker ?? rawVolcengine.speaker) || defaultConfig.tts.volcengine.speaker;
   const volcengine = {
     ...rawVolcengine,
+    apiKey: rawVolcengine.apiKey ?? '',
     appId: profile.appId ?? rawVolcengine.appId,
     accessKey: profile.accessKey ?? rawVolcengine.accessKey,
     speaker,
+    endpoint: rawVolcengine.endpoint?.trim() || defaultConfig.tts.volcengine.endpoint,
+    resourceId: rawVolcengine.resourceId?.trim() || defaultConfig.tts.volcengine.resourceId,
   };
   const minimax = { ...defaultConfig.tts.minimax, ...(profile.minimax ?? {}) };
   const id = profile.id?.trim() || buildConfigProfileId('tts', `${provider}-${provider === 'minimax' ? minimax.model : volcengine.speaker}-${index}`, index);

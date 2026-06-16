@@ -1,8 +1,9 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { mkdtemp, readFile, rm } from 'node:fs/promises';
+import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { createConfiguredImageGenerator, createConfiguredNarrationSynthesizer, generateConfiguredVoicePreview } from '@shared/media-providers';
+import { buildOpenAiImageEditFormData } from '@shared/openai-image-edit';
 import { defaultConfig } from '@shared/config';
 import { normalizeAppConfig } from '@shared/config-utils';
 import type { AppConfig, ImagePrompt, StoryboardScene, Task } from '@shared/types';
@@ -30,6 +31,145 @@ afterEach(() => {
 });
 
 describe('configured media providers', () => {
+  it('builds OpenAI-compatible image edit form data with prompt, model, size, and references', async () => {
+    const dir = await mkdtemp(join(tmpdir(), 'storybound-provider-image-edit-form-'));
+    const first = join(dir, 'first.png');
+    const second = join(dir, 'second.png');
+    await writeFile(first, 'first-image');
+    await writeFile(second, 'second-image');
+
+    try {
+      const form = await buildOpenAiImageEditFormData({
+        model: 'gpt-image-2',
+        prompt: 'Keep the face and change the background',
+        ratio: '16:9',
+        resolution: '2K',
+        referenceImagePaths: [first, second],
+      });
+
+      expect(form.get('model')).toBe('gpt-image-2');
+      expect(form.get('prompt')).toBe('Keep the face and change the background');
+      expect(form.get('size')).toBe('1536x1024');
+      const images = form.getAll('image');
+      expect(images).toHaveLength(2);
+      expect(images[0]).toBeInstanceOf(Blob);
+      expect((images[0] as File).name).toBe('first.png');
+      expect((images[1] as File).name).toBe('second.png');
+    } finally {
+      await rm(dir, { recursive: true, force: true });
+    }
+  });
+
+  it('rejects image edits with more than 10 reference images', async () => {
+    await expect(
+      buildOpenAiImageEditFormData({
+        model: 'gpt-image-2',
+        prompt: 'too many',
+        ratio: '1:1',
+        resolution: '2K',
+        referenceImagePaths: Array.from({ length: 11 }, (_, index) => `ref-${index}.png`),
+      }),
+    ).rejects.toThrow(/10 reference images/i);
+  });
+
+  it('submits OpenAI-compatible custom image requests asynchronously and polls the task result', async () => {
+    const dir = await mkdtemp(join(tmpdir(), 'storybound-provider-image-async-'));
+    const imageBytes = Buffer.from('async-image');
+    const requests: Array<{ url: string; method: string; body?: Record<string, unknown> }> = [];
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (url: string, init: RequestInit = {}) => {
+        requests.push({
+          url,
+          method: init.method ?? 'GET',
+          body: init.body ? JSON.parse(String(init.body)) : undefined,
+        });
+        if (url.endsWith('/images/generations?async=true')) {
+          return new Response(JSON.stringify({ id: 'image-task-1' }), {
+            status: 200,
+            headers: { 'content-type': 'application/json' },
+          });
+        }
+        return new Response(JSON.stringify({ status: 'succeeded', data: [{ b64_json: imageBytes.toString('base64') }] }), {
+          status: 200,
+          headers: { 'content-type': 'application/json' },
+        });
+      }),
+    );
+
+    try {
+      const config: AppConfig = {
+        ...defaultConfig,
+        imageProvider: 'custom',
+        customImage: {
+          ...defaultConfig.customImage,
+          apiKey: 'custom-key',
+          baseUrl: 'https://image.example',
+          model: 'async-image-model',
+          asyncMode: true,
+          timeoutMs: 1000,
+          pollIntervalMs: 1,
+        },
+      };
+      const generate = createConfiguredImageGenerator(config, dir);
+      const assets = await generate([scene], [prompt], task);
+
+      expect(await readFile(assets[0].path, 'utf8')).toBe('async-image');
+      expect(requests[0]).toMatchObject({
+        url: 'https://image.example/v1/images/generations?async=true',
+        method: 'POST',
+        body: { model: 'async-image-model', prompt: 'visual prompt' },
+      });
+      expect(requests[1]).toMatchObject({
+        url: 'https://image.example/v1/images/generations/image-task-1',
+        method: 'GET',
+      });
+    } finally {
+      await rm(dir, { recursive: true, force: true });
+    }
+  });
+
+  it('applies custom image ratio mappings to OpenAI-compatible request bodies', async () => {
+    const dir = await mkdtemp(join(tmpdir(), 'storybound-provider-image-ratio-map-'));
+    const imageBytes = Buffer.from('mapped-ratio-image');
+    const requests: Array<{ url: string; body: Record<string, unknown> }> = [];
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (url: string, init: RequestInit) => {
+        requests.push({ url, body: JSON.parse(String(init.body)) });
+        return new Response(JSON.stringify({ data: [{ b64_json: imageBytes.toString('base64') }] }), {
+          status: 200,
+          headers: { 'content-type': 'application/json' },
+        });
+      }),
+    );
+
+    try {
+      const config: AppConfig = {
+        ...defaultConfig,
+        imageProvider: 'custom',
+        customImage: {
+          ...defaultConfig.customImage,
+          apiKey: 'custom-key',
+          baseUrl: 'https://image.example',
+          model: 'mapped-image-model',
+          ratioMappingJson: '{"9:16":{"size":"768x1344","aspect_ratio":"9:16"},"1:1":"1024x1024"}',
+        },
+      };
+      const generate = createConfiguredImageGenerator(config, dir);
+      await generate([scene], [prompt], task);
+
+      expect(requests[0].url).toBe('https://image.example/v1/images/generations');
+      expect(requests[0].body).toMatchObject({
+        model: 'mapped-image-model',
+        size: '768x1344',
+        aspect_ratio: '9:16',
+      });
+    } finally {
+      await rm(dir, { recursive: true, force: true });
+    }
+  });
+
   it('generates image files from an OpenAI-compatible image endpoint', async () => {
     const dir = await mkdtemp(join(tmpdir(), 'storybound-provider-image-'));
     const imageBytes = Buffer.from('real-image');
@@ -156,6 +296,88 @@ describe('configured media providers', () => {
       expect(await readFile(assets[0].path, 'utf8')).toBe('real-audio');
       expect(requests[0].url).toBe('https://api.minimaxi.com/v1/t2a_v2');
       expect(requests[0].body).toMatchObject({ model: 'speech-02-hd', text: 'A real scene', stream: false });
+    } finally {
+      await rm(dir, { recursive: true, force: true });
+    }
+  });
+
+  it('generates MiniMax two-host podcast turns with separate voice ids', async () => {
+    const dir = await mkdtemp(join(tmpdir(), 'storybound-provider-minimax-dual-voice-'));
+    const audioBytes = Buffer.from('turn-audio');
+    const requests: Array<{ body: Record<string, any> }> = [];
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (_url: string, init: RequestInit) => {
+        requests.push({ body: JSON.parse(String(init.body)) });
+        return new Response(JSON.stringify({ data: { audio: audioBytes.toString('hex'), status: 2 }, base_resp: { status_code: 0, status_msg: 'success' } }), {
+          status: 200,
+          headers: { 'content-type': 'application/json' },
+        });
+      }),
+    );
+
+    try {
+      const config: AppConfig = {
+        ...defaultConfig,
+        tts: {
+          ...defaultConfig.tts,
+          provider: 'minimax',
+          minimax: { ...defaultConfig.tts.minimax, apiKey: 'tts-key', model: 'speech-02-hd', voiceId: 'default-voice' },
+        },
+      };
+      const synthesize = createConfiguredNarrationSynthesizer(config, dir);
+      const assets = await synthesize(
+        [{ id: 1, cap: 'Host A: First line.\nHost B: Second line.', descPrompt: '', durationMs: 1200 }],
+        { ...task, videoForm: 'two-host-podcast', podcastSpeakerA: 'voice-a', podcastSpeakerB: 'voice-b' },
+      );
+
+      expect(requests).toHaveLength(2);
+      expect(requests[0].body).toMatchObject({ text: 'First line.', voice_setting: { voice_id: 'voice-a' } });
+      expect(requests[1].body).toMatchObject({ text: 'Second line.', voice_setting: { voice_id: 'voice-b' } });
+      expect(assets).toMatchObject([
+        { sceneId: 1, speaker: 'A', turnIndex: 1, text: 'First line.' },
+        { sceneId: 1, speaker: 'B', turnIndex: 2, text: 'Second line.' },
+      ]);
+      expect(assets[0].path).toContain('001-turn-001-A.mp3');
+      expect(assets[1].path).toContain('001-turn-002-B.mp3');
+    } finally {
+      await rm(dir, { recursive: true, force: true });
+    }
+  });
+
+  it('uses provider defaults for old two-host podcast tasks without stored voice ids', async () => {
+    const dir = await mkdtemp(join(tmpdir(), 'storybound-provider-dual-voice-defaults-'));
+    const audioBytes = Buffer.from('turn-audio');
+    const requests: Array<{ body: Record<string, any> }> = [];
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (_url: string, init: RequestInit) => {
+        requests.push({ body: JSON.parse(String(init.body)) });
+        return new Response(JSON.stringify({ data: { audio: audioBytes.toString('hex'), status: 2 }, base_resp: { status_code: 0, status_msg: 'success' } }), {
+          status: 200,
+          headers: { 'content-type': 'application/json' },
+        });
+      }),
+    );
+
+    try {
+      const config: AppConfig = {
+        ...defaultConfig,
+        tts: {
+          ...defaultConfig.tts,
+          provider: 'minimax',
+          minimax: { ...defaultConfig.tts.minimax, apiKey: 'tts-key', model: 'speech-02-hd', voiceId: 'default-voice' },
+        },
+      };
+      const synthesize = createConfiguredNarrationSynthesizer(config, dir);
+      await synthesize(
+        [{ id: 1, cap: 'Host A: First line.\nHost B: Second line.', descPrompt: '', durationMs: 1200 }],
+        { ...task, videoForm: 'two-host-podcast', podcastSpeakers: 'kazai-dayi', podcastSpeakerA: '', podcastSpeakerB: '' },
+      );
+
+      expect(requests).toHaveLength(2);
+      expect(requests[0].body).toMatchObject({ voice_setting: { voice_id: 'male-qn-qingse' } });
+      expect(requests[1].body).toMatchObject({ voice_setting: { voice_id: 'female-yujie' } });
     } finally {
       await rm(dir, { recursive: true, force: true });
     }
@@ -322,6 +544,54 @@ describe('configured media providers', () => {
           audio_params: { format: 'mp3', sample_rate: 24000, speech_rate: 15 },
         },
       });
+    } finally {
+      await rm(dir, { recursive: true, force: true });
+    }
+  });
+
+  it('generates Volcengine V3 two-host podcast turns with separate speakers', async () => {
+    const dir = await mkdtemp(join(tmpdir(), 'storybound-provider-volc-v3-dual-voice-'));
+    const audioBytes = Buffer.from('volc-turn-audio');
+    const requests: Array<{ body: Record<string, any> }> = [];
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (_url: string, init: RequestInit) => {
+        requests.push({ body: JSON.parse(String(init.body)) });
+        return new Response(`${JSON.stringify({ code: 0, message: '', data: audioBytes.toString('base64') })}\n${JSON.stringify({ code: 20000000, message: 'ok', data: null })}\n`, {
+          status: 200,
+          headers: { 'content-type': 'application/json' },
+        });
+      }),
+    );
+
+    try {
+      const config: AppConfig = {
+        ...defaultConfig,
+        tts: {
+          ...defaultConfig.tts,
+          provider: 'volcengine',
+          volcengine: {
+            ...defaultConfig.tts.volcengine,
+            apiKey: 'v3-key',
+            resourceId: 'seed-tts-2.0',
+            endpoint: 'https://openspeech.bytedance.com/api/v3/tts/unidirectional',
+            speaker: 'default-speaker',
+          },
+        },
+      };
+      const synthesize = createConfiguredNarrationSynthesizer(config, dir);
+      const assets = await synthesize(
+        [{ id: 1, cap: 'Host A: First line.\nHost B: Second line.', descPrompt: '', durationMs: 1200 }],
+        { ...task, videoForm: 'two-host-podcast', podcastSpeakerA: 'zh_male_yuanboxiaoshu_moon_bigtts', podcastSpeakerB: 'zh_female_vv_uranus_bigtts' },
+      );
+
+      expect(requests).toHaveLength(2);
+      expect(requests[0].body.req_params).toMatchObject({ text: 'First line.', speaker: 'zh_male_yuanboxiaoshu_moon_bigtts' });
+      expect(requests[1].body.req_params).toMatchObject({ text: 'Second line.', speaker: 'zh_female_vv_uranus_bigtts' });
+      expect(assets).toMatchObject([
+        { sceneId: 1, speaker: 'A', turnIndex: 1, text: 'First line.' },
+        { sceneId: 1, speaker: 'B', turnIndex: 2, text: 'Second line.' },
+      ]);
     } finally {
       await rm(dir, { recursive: true, force: true });
     }

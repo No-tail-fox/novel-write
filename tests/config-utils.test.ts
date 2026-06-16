@@ -409,6 +409,40 @@ describe('config validation utilities', () => {
     expect(result.detail).toContain('seed-tts-2.0');
   });
 
+  it('fills Volcengine V3 defaults when the user only provides the new TTS API key', () => {
+    const config = normalizeAppConfig({
+      ...defaultConfig,
+      ttsProfiles: [
+        {
+          id: 'tts-v3-single-key',
+          name: 'Volcengine V3',
+          provider: 'volcengine',
+          enabled: true,
+          volcengine: {
+            ...defaultConfig.tts.volcengine,
+            apiKey: 'v3-key',
+            appId: '',
+            accessKey: '',
+            resourceId: '',
+            endpoint: '',
+            speaker: '',
+          },
+        },
+      ],
+      activeTtsProfileId: 'tts-v3-single-key',
+    });
+
+    const result = validateConfigTarget('tts', config);
+
+    expect(config.tts.volcengine).toMatchObject({
+      apiKey: 'v3-key',
+      resourceId: 'seed-tts-2.0',
+      endpoint: 'https://openspeech.bytedance.com/api/v3/tts/unidirectional',
+      speaker: 'zh_male_m191_uranus_bigtts',
+    });
+    expect(result.status).toBe('pass');
+  });
+
   it('normalizes legacy Volcengine display speakers to a V3 voice type', () => {
     const config = normalizeAppConfig({
       ...defaultConfig,

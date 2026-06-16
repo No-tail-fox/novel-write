@@ -171,7 +171,8 @@ async function buildRunOptions(database: FileDatabase, task: Task, controller: A
     appDataDir: appDataDir(),
     signal: controller.signal,
     resolveAiSourceContext: createAiSourceResearcher(state.config),
-    ...createTaskRuntimeProviders(state.config, taskWorkDir(task)),
+    ...createTaskRuntimeProviders(state.config, taskWorkDir(task), task),
+    customCoverTemplates: state.customCoverTemplates,
     onEvent: () => {
       notifyTaskState(database);
     },
@@ -883,7 +884,7 @@ function imageConfigStatus(config: AppConfig): 'pass' | 'warn' | 'fail' {
 function ttsConfigStatus(config: AppConfig): 'pass' | 'warn' | 'fail' {
   if (config.tts.provider === 'mock') return 'fail';
   if (config.tts.provider === 'minimax') return config.tts.minimax.apiKey ? 'pass' : 'warn';
-  if (config.tts.volcengine.apiKey) return config.tts.volcengine.resourceId && (config.tts.volcengine.speaker || config.tts.speaker) ? 'pass' : 'warn';
+  if (config.tts.volcengine.apiKey) return 'pass';
   return (config.tts.volcengine.appId || config.tts.appId) && (config.tts.volcengine.accessKey || config.tts.accessKey) ? 'pass' : 'warn';
 }
 

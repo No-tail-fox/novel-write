@@ -1270,21 +1270,22 @@ describe('product shell ui', () => {
     expect(main).toContain('ProviderConfigNote');
   });
 
-  it('exposes Volcengine V3 API key settings and voice presets', async () => {
+  it('exposes simplified Volcengine V3 TTS settings with a single API key and preset voice defaults', async () => {
     const main = await readFile(new URL('../src/main.tsx', import.meta.url), 'utf8');
+    const manager = main.slice(main.indexOf('function TtsProfileManager'), main.indexOf('function AccountPage'));
 
     expect(main).toContain('volcengineVoicePresets');
-    expect(main).toContain('listVolcengineSpeakers');
-    expect(main).toContain('加载全部音色');
-    expect(main).toContain('音色列表访问密钥 ID');
-    expect(main).toContain('音色列表访问密钥 Secret');
-    expect(main).toContain('火山接口密钥');
-    expect(main).toContain('资源 ID');
+    expect(manager).toContain('火山 TTS 接口密钥');
+    expect(manager).not.toContain('音色列表访问密钥 ID');
+    expect(manager).not.toContain('音色列表访问密钥 Secret');
+    expect(manager).not.toContain('加载全部音色');
+    expect(manager).not.toContain('资源 ID');
+    expect(manager).not.toContain('端点地址');
     expect(main).toContain('V3 HTTP Chunked');
     expect(main).toContain('volcenginePresetVoiceValue');
-    expect(main).toContain('默认音色');
-    expect(main).toContain('自定义 voice_type');
-    expect(main).toContain('voice_type');
+    expect(manager).toContain('默认音色');
+    expect(manager).toContain('自定义 voice_type');
+    expect(manager).toContain('voice_type');
     expect(main).toContain('zh_female_vv_uranus_bigtts');
   });
 
@@ -1327,6 +1328,56 @@ describe('product shell ui', () => {
     expect(main).toContain('value={promptTemplateOverrideId || resolvedPromptTemplate?.id || \'\'}');
     expect(main).not.toContain('OptionCloud title="内容赛道" options={contentTracks}');
     expect(main).not.toContain('OptionCloud title="画面风格" options={styleOptions}');
+  });
+
+  it('exposes Storybound 1.7 cover and podcast image controls in the new task form', async () => {
+    const main = await readFile(new URL('../src/main.tsx', import.meta.url), 'utf8');
+    const page = main.slice(main.indexOf('function NewTaskPage'), main.indexOf('function MusicMvPage'));
+
+    expect(page).toContain('封面模板');
+    expect(page).toContain('封面生成');
+    expect(page).toContain('播客配图');
+    expect(page).toContain('cinematic-poster');
+    expect(page).toContain('podcast-cover');
+    expect(page).toContain('coverTemplateId');
+    expect(page).toContain('coverImageMode');
+    expect(page).toContain('podcastImageMode');
+    expect(page).toContain('state.customCoverTemplates.map');
+  });
+
+  it('wires new task reference image upload and task LLM model selection into task creation', async () => {
+    const main = await readFile(new URL('../src/main.tsx', import.meta.url), 'utf8');
+    const page = main.slice(main.indexOf('function NewTaskPage'), main.indexOf('function MusicMvPage'));
+
+    expect(page).toContain('selectedTaskLlmProfileId');
+    expect(page).toContain('llmProfileId: selectedTaskLlmProfileId');
+    expect(page).toContain('selectTaskReferenceImage');
+    expect(page).toContain('api.selectLocalImage()');
+    expect(page).toContain('onClick={selectTaskReferenceImage}');
+    expect(page).toContain('value={selectedTaskLlmProfileId}');
+    expect(page).toContain('onChange={(event) => setSelectedTaskLlmProfileId(event.target.value)}');
+  });
+
+  it('replicates the Storybound video form controls for narration and two-host podcast tasks', async () => {
+    const main = await readFile(new URL('../src/main.tsx', import.meta.url), 'utf8');
+    const page = main.slice(main.indexOf('function NewTaskPage'), main.indexOf('function MusicMvPage'));
+
+    for (const text of ['视频形态', '旁白视频', '双人播客', '配图方式', '按分镜配图', '单图封面', '主播组合', '咔仔 x 大壹', '刘飞 x 潇磊']) {
+      expect(page).toContain(text);
+    }
+    expect(page).toContain('videoForm');
+    expect(page).toContain("setVideoForm('two-host-podcast')");
+    expect(page).toContain('podcastSpeakers');
+    expect(page).toContain('podcastSpeakerA');
+    expect(page).toContain('podcastSpeakerB');
+    expect(page).toContain('defaultPodcastSpeakersForProvider');
+    expect(page).not.toContain('主播 A 音色 ID');
+    expect(page).not.toContain('主播 B 音色 ID');
+    expect(page).not.toContain('Host A voice id');
+    expect(page).not.toContain('Host B voice id');
+    expect(page).toContain("scriptFormat: videoForm === 'two-host-podcast' ? 'dialogue' : 'narration'");
+    expect(page).toContain('Segmented label="配音模型"');
+    expect(page).toContain('Segmented label="配音语速"');
   });
 
   it('keeps task errors compact with a click-through detail dialog', async () => {
@@ -1384,6 +1435,23 @@ describe('product shell ui', () => {
     expect(main).toContain("record.status === 'failed'");
     expect(css).toContain('.image-record img');
     expect(css).toContain('.image-record.failed');
+  });
+
+  it('exposes the Storybound smart image modes in image lab generation', async () => {
+    const main = await readFile(new URL('../src/main.tsx', import.meta.url), 'utf8');
+    const css = await readFile(new URL('../src/styles.css', import.meta.url), 'utf8');
+    const page = main.slice(main.indexOf('function ImageLabPage'), main.indexOf('function VoiceLabPage'));
+
+    for (const text of ['智慧生图', '封面', '博客封面', '播客封面', '旁白视频', '双人播客', '参考图编辑']) {
+      expect(page).toContain(text);
+    }
+    expect(page).toContain('smartMode');
+    expect(page).toContain('setSmartMode');
+    expect(page).toContain('referenceImagePaths');
+    expect(page).toContain("smartMode === 'reference-edit'");
+    expect(page).toContain("smartMode === 'podcast-cover'");
+    expect(css).toContain('.smart-image-mode-grid');
+    expect(css).toContain('.reference-image-list');
   });
 
   it('reuses the React root across Vite hot reloads', async () => {

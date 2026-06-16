@@ -1,13 +1,42 @@
 import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import { createTaskRuntimeProviders } from '@shared/task-runtime-providers';
 import { defaultConfig } from '@shared/config';
 import { FileDatabase } from '@shared/storage';
 import { runTask } from '@shared/runner';
 
 describe('task runtime providers', () => {
+  it('uses a task-specific LLM profile when one is selected for the task', async () => {
+    const requests: Array<Record<string, unknown>> = [];
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (_url: string, init: RequestInit) => {
+        requests.push(JSON.parse(String(init.body)));
+        return new Response(JSON.stringify({ id: 'llm-request', choices: [{ message: { content: '{"ok":true}' } }] }), {
+          status: 200,
+          headers: { 'content-type': 'application/json' },
+        });
+      }),
+    );
+
+    const config = {
+      ...defaultConfig,
+      llm: { ...defaultConfig.llm, id: 'llm-active', apiKey: 'active-key', model: 'active-model', enabled: true },
+      llmProfiles: [
+        { ...defaultConfig.llm, id: 'llm-active', apiKey: 'active-key', model: 'active-model', enabled: true },
+        { ...defaultConfig.llm, id: 'llm-draft', apiKey: 'draft-key', model: 'draft-model', enabled: false },
+      ],
+      activeLlmProfileId: 'llm-active',
+    };
+    const providers = createTaskRuntimeProviders(config, 'D:/tmp/storybound-task', { llmProfileId: 'llm-draft' });
+
+    await providers.llm?.({ step: 0, name: 'profile-check', messages: [{ role: 'user', content: 'Return {"ok":true}' }] });
+
+    expect(requests[0]).toMatchObject({ model: 'draft-model' });
+  });
+
   it('treats Volcengine V3 API key settings as a usable TTS provider', () => {
     const providers = createTaskRuntimeProviders(
       {

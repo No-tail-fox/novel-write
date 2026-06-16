@@ -51,9 +51,11 @@ import type {
   ImageLabGenerateInput,
   ImageProviderProfile,
   ImageLabRecord,
+  ImageLabSmartMode,
   BgmItem,
   JianyingEffectCatalog,
   PausePoint,
+  PodcastSpeakerPair,
   ProcessingMode,
   PromptTemplate,
   PromptStepTemplateType,
@@ -68,6 +70,7 @@ import type {
   TaskMode,
   TaskStatus,
   TaskStepRerunMode,
+  TaskVideoForm,
   TtsProviderProfile,
   UiPreferences,
   VolcengineSpeaker,
@@ -114,6 +117,7 @@ import {
   defaultActivation,
   defaultConfig,
   defaultCreditTransactions,
+  defaultCustomCoverTemplates,
   defaultCustomStyles,
   defaultMinimaxCloneVoices,
   defaultPromptTemplates,
@@ -132,7 +136,7 @@ import {
   selectStepPromptTemplate,
   selectTaskPromptTemplate,
 } from './shared/prompt-templates';
-import { defaultTaskSpeakerForProvider, normalizeRuntimeTtsProvider, taskSpeakerLabel, ttsVoiceOptionsForProvider, type RuntimeTtsProvider } from './shared/tts-voices';
+import { defaultPodcastSpeakersForProvider, defaultTaskSpeakerForProvider, normalizeRuntimeTtsProvider, taskSpeakerLabel, ttsVoiceOptionsForProvider, type RuntimeTtsProvider } from './shared/tts-voices';
 import feishuCozeDraftTemplateBundle from '../data/coze-workflows/feishu-draft-templates.json';
 import './styles.css';
 
@@ -150,6 +154,7 @@ const initialState: AppState = {
   imageLabRecords: [],
   voiceLabRecords: [],
   customStyles: defaultCustomStyles,
+  customCoverTemplates: defaultCustomCoverTemplates,
   creditTransactions: defaultCreditTransactions,
   minimaxCloneVoices: defaultMinimaxCloneVoices,
   account: defaultAccount,
@@ -206,6 +211,14 @@ const styleOptions = [
 ];
 
 const ratioOptions = ['21:9', '16:9', '3:2', '4:3', '1:1', '3:4', '2:3', '9:16'];
+const smartImageModeOptions: Array<[ImageLabSmartMode, string, string]> = [
+  ['cover', '封面', '短视频主封面'],
+  ['blog-cover', '博客封面', '文章首图 / 横版主图'],
+  ['podcast-cover', '播客封面', '节目感双人或主题封面'],
+  ['video-narration', '旁白视频', '单人讲述主视觉'],
+  ['two-host-podcast', '双人播客', '两位主播一问一答'],
+  ['reference-edit', '参考图编辑', '参考图一致性改图'],
+];
 const storyboardSceneCountOptions = [8, 12, 16, 20, 30];
 const siliconFlowSpeechToTextBaseUrl = 'https://api.siliconflow.cn/v1';
 const siliconFlowSpeechToTextModels = ['FunAudioLLM/SenseVoiceSmall', 'TeleAI/TeleSpeechASR'];
@@ -317,6 +330,7 @@ function hydrateState(state: Partial<AppState>): AppState {
     imageLabRecords: state.imageLabRecords ?? [],
     voiceLabRecords: state.voiceLabRecords ?? [],
     customStyles: mergeDefaultCustomStyles(state.customStyles),
+    customCoverTemplates: state.customCoverTemplates ?? defaultCustomCoverTemplates,
     creditTransactions: state.creditTransactions ?? defaultCreditTransactions,
     minimaxCloneVoices: state.minimaxCloneVoices ?? [],
     account: { ...defaultAccount, ...(state.account ?? {}) },
@@ -429,6 +443,8 @@ function makeFallbackApi(setState: (state: AppState) => void): StoryboundApi {
         status: 'failed',
         errorMessage: '浏览器预览无法调用真实生图模型，请在 Electron 桌面端使用。',
         resolution: input.resolution ?? activeImageResolution(state.config),
+        smartMode: input.smartMode ?? 'text-to-image',
+        referenceImagePaths: input.referenceImagePaths?.length ? input.referenceImagePaths : input.referenceImagePath ? [input.referenceImagePath] : [],
         referenceImagePath: input.referenceImagePath ?? '',
         upstreamTaskId: input.upstreamTaskId ?? null,
         createdAt: input.createdAt ?? now,
@@ -467,6 +483,8 @@ function makeFallbackApi(setState: (state: AppState) => void): StoryboundApi {
         status: input.status ?? 'failed',
         errorMessage: input.errorMessage ?? '',
         resolution: input.resolution ?? '2K',
+        smartMode: input.smartMode ?? 'text-to-image',
+        referenceImagePaths: input.referenceImagePaths?.length ? input.referenceImagePaths : input.referenceImagePath ? [input.referenceImagePath] : [],
         referenceImagePath: input.referenceImagePath ?? '',
         upstreamTaskId: input.upstreamTaskId ?? null,
         createdAt: input.createdAt ?? now,
@@ -525,6 +543,7 @@ function makeFallbackApi(setState: (state: AppState) => void): StoryboundApi {
         storyboardSceneCount: input.storyboardSceneCount ?? 12,
         step3PromptSnapshot: input.step3PromptSnapshot ?? '',
         musicMv: input.musicMv ?? { rhythmMode: 'lyric-sync', captionStyle: 'karaoke', visualMotif: '', audioPath: '' },
+        videoForm: input.videoForm ?? 'narration',
         failedStep: 0,
         retryFromStep: 0,
         artifactStatePath: '',
@@ -617,7 +636,7 @@ function makeFallbackApi(setState: (state: AppState) => void): StoryboundApi {
         updatedAt: null,
         steps: {},
         artifact: {},
-        assets: { images: [], narration: [] },
+        assets: { cover: [], images: [], narration: [] },
         draft: null,
       };
     },
@@ -1327,6 +1346,7 @@ function NewTaskPage({
   const [style, setStyle] = useState('photo-real');
   const [templateId, setTemplateId] = useState(initialDraftTemplateId);
   const [ratio, setRatio] = useState(() => draftTemplateImageRatio(state.draftTemplates, initialDraftTemplateId));
+  const [selectedTaskLlmProfileId, setSelectedTaskLlmProfileId] = useState(state.config.activeLlmProfileId || state.config.llm.id || state.config.llmProfiles[0]?.id || '');
   const [promptTemplateOverrideId, setPromptTemplateOverrideId] = useState('');
   const [promptTemplateManuallyOverridden, setPromptTemplateManuallyOverridden] = useState(false);
   const [styleManuallyOverridden, setStyleManuallyOverridden] = useState(false);
@@ -1344,6 +1364,11 @@ function NewTaskPage({
   const [keepPromotion, setKeepPromotion] = useState(false);
   const [ttsSpeed, setTtsSpeed] = useState(1);
   const [storyboardSceneCount, setStoryboardSceneCount] = useState(12);
+  const [videoForm, setVideoForm] = useState<TaskVideoForm>('narration');
+  const [coverImageMode, setCoverImageMode] = useState('off');
+  const [coverTemplateId, setCoverTemplateId] = useState('cinematic-poster');
+  const [podcastImageMode, setPodcastImageMode] = useState('multi');
+  const [podcastSpeakers, setPodcastSpeakers] = useState<PodcastSpeakerPair>('kazai-dayi');
   const [running, setRunning] = useState(false);
   const [draftNotice, setDraftNotice] = useState('');
   const [searchingSources, setSearchingSources] = useState(false);
@@ -1368,6 +1393,13 @@ function NewTaskPage({
   const alternateDraftTemplates = state.draftTemplates.filter(isBundledDraftTemplateOption);
   const bgmOptions = validBgmItems(state.config);
   const ttsVoiceOptions = ttsVoiceOptionsForProvider(ttsProvider);
+  const podcastVoiceDefaults = defaultPodcastSpeakersForProvider(ttsProvider, podcastSpeakers);
+  const storyboundCoverTemplateIds = ['cinematic-poster', 'podcast-cover'];
+  const coverTemplateOptions = state.customCoverTemplates.map((template) => [template.id, template.name, template.description]);
+  const coverTemplateSelectOptions = coverTemplateOptions.length
+    ? coverTemplateOptions
+    : [['cinematic-poster', '电影海报封面', 'Storybound 1.7 默认封面模板']];
+  const coverTemplateHint = storyboundCoverTemplateIds.includes(coverTemplateId) ? 'Storybound 1.7 兼容模板' : '自定义封面模板';
 
   useEffect(() => {
     setBgmId((current) => (current && bgmOptions.some((bgm) => bgm.id === current) ? current : resolveDefaultBgmId(state.config)));
@@ -1375,9 +1407,16 @@ function NewTaskPage({
 
   useEffect(() => {
     const provider = normalizeRuntimeTtsProvider(state.config.tts.provider);
+    const nextSpeaker = defaultTaskSpeakerForProvider(provider, state.config);
     setTtsProvider(provider);
-    setSpeaker(defaultTaskSpeakerForProvider(provider, state.config));
+    setSpeaker(nextSpeaker);
   }, [state.config.activeTtsProfileId, state.config.tts.provider, state.config.tts.speaker, state.config.tts.volcengine.speaker, state.config.tts.minimax.voiceId]);
+
+  useEffect(() => {
+    if (!state.config.llmProfiles.some((profile) => profile.id === selectedTaskLlmProfileId)) {
+      setSelectedTaskLlmProfileId(state.config.activeLlmProfileId || state.config.llm.id || state.config.llmProfiles[0]?.id || '');
+    }
+  }, [state.config.activeLlmProfileId, state.config.llm.id, state.config.llmProfiles, selectedTaskLlmProfileId]);
 
   useEffect(() => {
     if (!styleManuallyOverridden && resolvedPromptTemplate) {
@@ -1443,8 +1482,9 @@ function NewTaskPage({
 
   function handleTtsProviderChange(nextProvider: string) {
     const provider = normalizeRuntimeTtsProvider(nextProvider);
+    const nextSpeaker = defaultTaskSpeakerForProvider(provider, state.config);
     setTtsProvider(provider);
-    setSpeaker(defaultTaskSpeakerForProvider(provider, state.config));
+    setSpeaker(nextSpeaker);
   }
 
   async function searchWebSources() {
@@ -1502,6 +1542,11 @@ function NewTaskPage({
     setBgmId(nextBgm.bgmId);
   }
 
+  async function selectTaskReferenceImage() {
+    const imagePath = await api.selectLocalImage();
+    if (imagePath) setReferenceImagePath(imagePath);
+  }
+
   async function run() {
     if (isBrowserPreview) {
       setDraftNotice('浏览器预览不能执行真实流水线，请在 Electron 应用中运行任务。');
@@ -1522,6 +1567,15 @@ function NewTaskPage({
         speaker,
         ratio,
         templateId,
+        llmProfileId: selectedTaskLlmProfileId,
+        videoForm,
+        coverImageMode,
+        coverTemplateId,
+        podcastImageMode,
+        podcastSpeakers: videoForm === 'two-host-podcast' ? podcastSpeakers : null,
+        podcastSpeakerA: videoForm === 'two-host-podcast' ? podcastVoiceDefaults.podcastSpeakerA : null,
+        podcastSpeakerB: videoForm === 'two-host-podcast' ? podcastVoiceDefaults.podcastSpeakerB : null,
+        scriptFormat: videoForm === 'two-host-podcast' ? 'dialogue' : 'narration',
         bgmId,
         pausePoints: [pausePoint],
         processingMode,
@@ -1655,6 +1709,50 @@ function NewTaskPage({
           </div>
         ) : null}
 
+        <div className="video-form-panel">
+          <div className="video-form-head">
+            <span className="field-title">视频形态</span>
+            <small>{videoForm === 'two-host-podcast' ? '双人播客会自动使用对话脚本和播客配图策略' : '单人配音讲述，适合常规旁白视频'}</small>
+          </div>
+          <div className="video-form-grid">
+            <button className={videoForm === 'narration' ? 'video-form-option active' : 'video-form-option'} onClick={() => setVideoForm('narration')}>
+              <strong>旁白视频</strong>
+              <span>单人配音讲述（默认）</span>
+            </button>
+            <button className={videoForm === 'two-host-podcast' ? 'video-form-option active' : 'video-form-option'} onClick={() => setVideoForm('two-host-podcast')}>
+              <strong>双人播客</strong>
+              <span>两位主播一问一答聊内容</span>
+            </button>
+          </div>
+          {videoForm === 'two-host-podcast' ? (
+            <div className="podcast-form-controls">
+              <span className="podcast-form-label">播客配图</span>
+              <Segmented label="配图方式" value={podcastImageMode} options={['multi', 'single']} labels={['按分镜配图', '单图封面']} onChange={setPodcastImageMode} />
+              <Segmented
+                label="主播组合"
+                value={podcastSpeakers}
+                options={['kazai-dayi', 'liufei-xiaolei']}
+                labels={['咔仔 x 大壹', '刘飞 x 潇磊']}
+                onChange={(value) => setPodcastSpeakers(value as PodcastSpeakerPair)}
+              />
+              <p className="podcast-form-note">主播组合会写入对话脚本与播客封面提示，并自动使用两套默认音色生成 A/B 对话。</p>
+            </div>
+          ) : null}
+        </div>
+
+        <div className="option-two-col">
+          <Field label="封面模板" hint={coverTemplateHint}>
+            <select className="cover-template-select" value={coverTemplateId} onChange={(event) => setCoverTemplateId(event.target.value)}>
+              {coverTemplateSelectOptions.map(([id, label, hint]) => (
+                <option key={id} value={id}>
+                  {hint ? `${label} · ${id}` : label}
+                </option>
+              ))}
+            </select>
+          </Field>
+          <Segmented label="封面生成" value={coverImageMode} options={['off', 'auto', 'manual']} labels={['关闭', '自动', '仅封面']} onChange={setCoverImageMode} />
+        </div>
+
         <div className="option-two-col">
           <div className="draft-template-picker-stack">
             <OptionCloud title="草稿模板" options={primaryDraftTemplates.map((template) => [template.id, template.name, `出图 ${template.image.ratio}`])} value={templateId} onChange={handleDraftTemplateChange} />
@@ -1688,17 +1786,23 @@ function NewTaskPage({
           </div>
         </div>
 
-        <span className="field-title">配音员</span>
-        <Segmented label="配音模型" value={ttsProvider} options={['volcengine', 'minimax']} labels={['豆包', 'MiniMax']} onChange={handleTtsProviderChange} />
-        <div className="chip-row">
-          {ttsVoiceOptions.map((voice) => (
-            <button key={voice.id} className={speaker === voice.id ? 'chip active' : 'chip'} title={voice.id} onClick={() => setSpeaker(voice.id)}>
-              <Mic2 size={14} />
-              {voice.label}
-            </button>
-          ))}
-        </div>
-        <span className="hint-text">当前默认配音员：{taskSpeakerLabel(ttsProvider, speaker)} · {speaker}</span>
+        <>
+          <span className="field-title">配音员</span>
+          <Segmented label="配音模型" value={ttsProvider} options={['volcengine', 'minimax']} labels={['豆包', 'MiniMax']} onChange={handleTtsProviderChange} />
+          {videoForm !== 'two-host-podcast' ? (
+            <>
+            <div className="chip-row">
+              {ttsVoiceOptions.map((voice) => (
+                <button key={voice.id} className={speaker === voice.id ? 'chip active' : 'chip'} title={voice.id} onClick={() => setSpeaker(voice.id)}>
+                  <Mic2 size={14} />
+                  {voice.label}
+                </button>
+              ))}
+            </div>
+            <span className="hint-text">当前默认配音员：{taskSpeakerLabel(ttsProvider, speaker)} · {speaker}</span>
+            </>
+          ) : <span className="hint-text">双人播客会按主播组合自动拆分 A/B 音色，当前模型：{ttsProvider}</span>}
+        </>
 
         <span className="field-title">背景音乐</span>
         <div className="chip-row">
@@ -1716,7 +1820,7 @@ function NewTaskPage({
         <Field label="主角参考图" hint="可选">
           <div className="upload-row">
             <input value={referenceImagePath} placeholder="上传后出现主角的分镜会以这张为基础保持人物一致" onChange={(event) => setReferenceImagePath(event.target.value)} />
-            <button className="ghost-action">
+            <button className="ghost-action" onClick={selectTaskReferenceImage}>
               <Upload size={15} />
               上传主角参考图
             </button>
@@ -1745,9 +1849,9 @@ function NewTaskPage({
             </label>
             <Segmented label="配音语速" value={String(ttsSpeed)} options={['0.85', '1', '1.15', '1.3']} labels={['慢速 0.85x', '默认 1.0x', '快速 1.15x', '更快 1.3x']} onChange={(value) => setTtsSpeed(Number(value))} />
             <Field label="自定义 / 其他模型">
-              <select defaultValue={state.config.llm.model}>
+              <select value={selectedTaskLlmProfileId} onChange={(event) => setSelectedTaskLlmProfileId(event.target.value)}>
                 {state.config.llmProfiles.map((profile) => (
-                  <option key={profile.model} value={profile.model}>
+                  <option key={profile.id ?? profile.model} value={profile.id ?? profile.model}>
                     {profile.provider}: {profile.model}
                   </option>
                 ))}
@@ -2124,7 +2228,7 @@ function TaskDetailPage({
             updatedAt: null,
             steps: {},
             artifact: {},
-            assets: { images: [], narration: [] },
+            assets: { cover: [], images: [], narration: [] },
             draft: null,
           });
         }
@@ -2707,14 +2811,14 @@ function NarrationPreviewList({
           sceneId: scene.id,
           cap: scene.cap,
           cue: subtitles?.cues[index],
-          asset: assets.find((item) => item.sceneId === scene.id),
+          assets: assets.filter((item) => item.sceneId === scene.id).sort(compareNarrationPreviewAssets),
           canRegenerate: true,
         })),
         ...assets.filter((asset) => !sceneIds.has(asset.sceneId)).map((asset) => ({
           sceneId: asset.sceneId,
           cap: '已生成配音',
           cue: undefined,
-          asset,
+          assets: [asset],
           canRegenerate: false,
         })),
       ]
@@ -2722,7 +2826,7 @@ function NarrationPreviewList({
         sceneId: asset.sceneId,
         cap: '已生成配音',
         cue: undefined,
-        asset,
+        assets: [asset],
         canRegenerate: false,
       }));
 
@@ -2731,34 +2835,57 @@ function NarrationPreviewList({
   return (
     <div className="narration-preview-list">
       {rows.map((item) => {
-        const previewUrl = item.asset ? audioPreviewUrls[item.asset.path] : '';
-        const previewError = item.asset ? audioPreviewErrors[item.asset.path] : '';
         const disabled = isBrowserPreview || task.status === 'running' || task.status === 'pending' || regeneratingSceneId === item.sceneId || !item.canRegenerate;
+        const ready = item.assets.length > 0;
         return (
-          <article className={`narration-preview-card ${item.asset ? 'ready' : 'pending'}`} key={`${item.sceneId}-${item.asset?.path ?? 'pending'}`}>
+          <article className={`narration-preview-card ${ready ? 'ready' : 'pending'}`} key={`${item.sceneId}-${item.assets.map((asset) => asset.path).join('|') || 'pending'}`}>
             <div className="narration-preview-head">
               <div>
                 <strong>{item.sceneId}. {item.cap}</strong>
                 {item.cue ? <span>{formatMs(item.cue.startMs)} - {formatMs(item.cue.endMs)}</span> : null}
               </div>
-              <span>{item.asset ? '可试听' : task.status === 'running' ? '等待/生成中' : '未生成'}</span>
+              <span>{ready ? `${item.assets.length} 段可试听` : task.status === 'running' ? '等待/生成中' : '未生成'}</span>
             </div>
-            {previewUrl ? <audio controls className="narration-player" preload="metadata" src={previewUrl} /> : null}
-            {!previewUrl && item.asset && !previewError ? <div className="narration-player loading">读取音频中</div> : null}
-            {!previewUrl && item.asset && previewError ? <div className="narration-player error">音频读取失败</div> : null}
-            {!item.asset ? <div className="narration-player loading">等待音频落盘</div> : null}
+            {item.assets.map((asset, index) => {
+              const previewUrl = audioPreviewUrls[asset.path] ?? '';
+              const previewError = audioPreviewErrors[asset.path] ?? '';
+              return (
+                <div className="narration-turn-preview" key={`${asset.path}-${asset.turnIndex ?? index}`}>
+                  <strong>{narrationTurnLabel(asset, index)}</strong>
+                  {previewUrl ? <audio controls className="narration-player" preload="metadata" src={previewUrl} /> : null}
+                  {!previewUrl && !previewError ? <div className="narration-player loading">读取音频中</div> : null}
+                  {!previewUrl && previewError ? <div className="narration-player error">音频读取失败</div> : null}
+                  {asset.text ? <p>{asset.text}</p> : null}
+                  <small>{asset.path}</small>
+                  {previewError ? <small className="danger-text">{previewError}</small> : null}
+                </div>
+              );
+            })}
+            {!ready ? <div className="narration-player loading">等待音频落盘</div> : null}
             {item.cue ? <p>{item.cue.text}</p> : null}
-            {item.asset ? <small>{item.asset.path}</small> : <small>等待 TTS 返回真实音频</small>}
-            {previewError ? <small className="danger-text">{previewError}</small> : null}
+            {!ready ? <small>等待 TTS 返回真实音频</small> : null}
             <button className="mini-button" disabled={disabled} onClick={() => regenerate(item.sceneId)}>
               {regeneratingSceneId === item.sceneId ? <Loader2 className="spin" size={14} /> : <RotateCcw size={14} />}
-              {item.asset ? '重新生成配音' : '生成配音'}
+              {ready ? '重新生成配音' : '生成配音'}
             </button>
           </article>
         );
       })}
     </div>
   );
+}
+
+function compareNarrationPreviewAssets(a: TaskArtifactSnapshot['assets']['narration'][number], b: TaskArtifactSnapshot['assets']['narration'][number]): number {
+  const aTurn = a.turnIndex ?? Number.MAX_SAFE_INTEGER;
+  const bTurn = b.turnIndex ?? Number.MAX_SAFE_INTEGER;
+  if (aTurn !== bTurn) return aTurn - bTurn;
+  return a.path.localeCompare(b.path);
+}
+
+function narrationTurnLabel(asset: TaskArtifactSnapshot['assets']['narration'][number], index: number): string {
+  const speaker = asset.speaker ? `主播 ${asset.speaker}` : '配音';
+  const turn = asset.turnIndex ?? index + 1;
+  return `${speaker} · 第 ${turn} 段`;
 }
 
 function ArtifactImageGallery({
@@ -2813,7 +2940,8 @@ function ArtifactAssetList({ assets, empty }: { assets: TaskArtifactSnapshot['as
 }
 
 function ImageLabPage({ api, state, applyState }: { api: StoryboundApi; state: AppState; applyState: (state: AppState) => void }) {
-  const [tab, setTab] = useState<'text' | 'reference'>('text');
+  const [tab, setTab] = useState<'smart' | 'text' | 'reference'>('smart');
+  const [smartMode, setSmartMode] = useState<ImageLabSmartMode>('podcast-cover');
   const [prompt, setPrompt] = useState('唐代宫殿中的武则天，电影级写实光影，统一角色');
   const [ratio, setRatio] = useState('9:16');
   const [style, setStyle] = useState('photo-real');
@@ -2821,18 +2949,30 @@ function ImageLabPage({ api, state, applyState }: { api: StoryboundApi; state: A
   const [referenceImagePath, setReferenceImagePath] = useState('');
   const [generating, setGenerating] = useState(false);
   const [submitError, setSubmitError] = useState('');
+  const smartModeHint = smartMode === 'podcast-cover' ? '播客封面建议使用 1:1 或 16:9，保留标题留白和节目识别主体。' : '';
+  const smartImageModeChoices: Array<[ImageLabSmartMode, string, string]> = [
+    ['cover', '封面', '短视频主封面'],
+    ['blog-cover', '博客封面', '文章首图 / 横版主图'],
+    ['podcast-cover', '播客封面', '节目感双人或主题封面'],
+    ['video-narration', '旁白视频', '单人讲述主视觉'],
+    ['two-host-podcast', '双人播客', '两位主播一问一答'],
+    ['reference-edit', '参考图编辑', '参考图一致性改图'],
+  ];
 
   async function addRecord() {
     if (generating) return;
     setGenerating(true);
     setSubmitError('');
     try {
+      const references = parseReferenceImagePaths(referenceImagePath);
       const next = await api.generateImageLab({
         prompt,
         ratio,
         style,
         resolution,
-        referenceImagePath: tab === 'reference' ? referenceImagePath : '',
+        smartMode: tab === 'smart' ? smartMode : tab === 'reference' ? 'reference-edit' : 'text-to-image',
+        referenceImagePath: references[0] ?? '',
+        referenceImagePaths: references,
       });
       applyState(next);
     } catch (error) {
@@ -2845,13 +2985,24 @@ function ImageLabPage({ api, state, applyState }: { api: StoryboundApi; state: A
   return (
     <div className="two-column lab-layout">
       <section className="panel">
-        <Segmented label="模式" value={tab} options={['text', 'reference']} labels={['文生图', '图像参考']} onChange={(value) => setTab(value as 'text' | 'reference')} />
+        <Segmented label="模式" value={tab} options={['smart', 'text', 'reference']} labels={['智慧生图', '文生图', '图像参考']} onChange={(value) => setTab(value as 'smart' | 'text' | 'reference')} />
+        {tab === 'smart' ? (
+          <div className="smart-image-mode-grid">
+            {smartImageModeChoices.map(([id, label, hint]) => (
+              <button key={id} className={smartMode === id ? 'smart-image-mode active' : 'smart-image-mode'} onClick={() => setSmartMode(id)}>
+                <strong>{label}</strong>
+                <span>{hint}</span>
+              </button>
+            ))}
+            {smartModeHint ? <p className="smart-image-mode-note">{smartModeHint}</p> : null}
+          </div>
+        ) : null}
         <Field label="提示词">
           <textarea className="prompt-box" value={prompt} onChange={(event) => setPrompt(event.target.value)} />
         </Field>
-        {tab === 'reference' ? (
+        {tab === 'reference' || (tab === 'smart' && smartMode === 'reference-edit') ? (
           <Field label="参考图">
-            <input value={referenceImagePath} placeholder="本地图片路径" onChange={(event) => setReferenceImagePath(event.target.value)} />
+            <textarea className="reference-image-list" value={referenceImagePath} placeholder="每行一个本地图片路径，最多 10 张" onChange={(event) => setReferenceImagePath(event.target.value)} />
           </Field>
         ) : null}
         <OptionCloud title="风格" options={styleOptions} value={style} onChange={setStyle} />
@@ -2877,13 +3028,14 @@ function ImageLabPage({ api, state, applyState }: { api: StoryboundApi; state: A
               )}
             </div>
             <strong>{record.prompt}</strong>
-            <small>{record.provider} · {record.ratio} · {record.resolution} · {formatDate(record.createdAt)}</small>
+            <small>{record.provider} · {record.ratio} · {record.resolution} · {smartImageModeLabel(record.smartMode)} · {formatDate(record.createdAt)}</small>
             {record.errorMessage ? <ErrorSummaryButton compact title="生图失败" fullMessage={record.errorMessage} /> : null}
           </article>
         ))}
       </section>
     </div>
   );
+
 }
 
 function VoiceLabPage({ api, state, applyState }: { api: StoryboundApi; state: AppState; applyState: (state: AppState) => void }) {
@@ -5474,12 +5626,8 @@ function TtsProfileManager({
         />
         {provider === 'volcengine' ? (
           <>
-            <ProviderConfigNote title="火山引擎 TTS" value="V3 HTTP Chunked 使用新版控制台接口密钥、资源 ID 和 voice_type。" />
-            <ConfigInput label="火山接口密钥" value={volcengine.apiKey ?? ''} onChange={(value) => updateSelectedProfile({ ...selectedProfile, volcengine: { ...volcengine, apiKey: value } })} />
-            <ConfigInput label="音色列表访问密钥 ID" value={volcengine.accessKeyId ?? ''} onChange={(value) => updateSelectedProfile({ ...selectedProfile, volcengine: { ...volcengine, accessKeyId: value } })} />
-            <ConfigInput label="音色列表访问密钥 Secret" value={volcengine.secretAccessKey ?? ''} onChange={(value) => updateSelectedProfile({ ...selectedProfile, volcengine: { ...volcengine, secretAccessKey: value } })} />
-            <ConfigInput label="资源 ID" value={volcengine.resourceId ?? 'seed-tts-2.0'} onChange={(value) => updateSelectedProfile({ ...selectedProfile, volcengine: { ...volcengine, resourceId: value } })} />
-            <ConfigInput label="端点地址" value={volcengine.endpoint ?? 'https://openspeech.bytedance.com/api/v3/tts/unidirectional'} onChange={(value) => updateSelectedProfile({ ...selectedProfile, volcengine: { ...volcengine, endpoint: value } })} />
+            <ProviderConfigNote title="火山引擎 TTS" value="V3 HTTP Chunked 使用新版控制台 TTS 接口密钥；资源与端点使用系统默认配置。" />
+            <ConfigInput label="火山 TTS 接口密钥" value={volcengine.apiKey ?? ''} onChange={(value) => updateSelectedProfile({ ...selectedProfile, volcengine: { ...volcengine, apiKey: value } })} />
             <Field label="默认音色">
               <div className="model-picker">
                 <select value={voiceSelection} onChange={(event) => updateVolcengineVoice(event.target.value === 'custom' ? '' : event.target.value)}>
@@ -5490,18 +5638,7 @@ function TtsProfileManager({
                     </option>
                   ))}
                 </select>
-                <button
-                  className="icon-button model-refresh-button"
-                  title="加载全部音色"
-                  aria-label="加载全部音色"
-                  disabled={loadingVolcengineSpeakers}
-                  onClick={() => onRefreshVolcengineSpeakers(selectedProfile)}
-                  type="button"
-                >
-                  {loadingVolcengineSpeakers ? <Loader2 className="spin" size={15} /> : <RotateCcw size={15} />}
-                </button>
               </div>
-              {volcengineSpeakerStatus ? <small className="model-list-status">{volcengineSpeakerStatus}</small> : null}
             </Field>
             {voiceSelection === 'custom' ? (
               <ConfigInput label="自定义 voice_type" value={volcengine.speaker} onChange={updateVolcengineVoice} />
@@ -5893,6 +6030,19 @@ function promptTemplateStyleLabelList(template: PromptTemplate, styles: CustomSt
 
 function styleLabel(id: string, styles: CustomStyle[] = defaultCustomStyles): string {
   return [...defaultCustomStyles, ...styles].find((style) => style.id === id)?.name ?? styleOptions.find(([styleId]) => styleId === id)?.[1] ?? id;
+}
+
+function smartImageModeLabel(mode: ImageLabSmartMode = 'text-to-image'): string {
+  if (mode === 'text-to-image') return '文生图';
+  return smartImageModeOptions.find(([id]) => id === mode)?.[1] ?? mode;
+}
+
+function parseReferenceImagePaths(value: string): string[] {
+  return value
+    .split(/\r?\n/)
+    .map((item) => item.trim())
+    .filter(Boolean)
+    .slice(0, 10);
 }
 
 function draftTemplateImageRatio(templates: DraftTemplate[], templateId: string): string {

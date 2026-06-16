@@ -9,6 +9,7 @@ import type {
   AppState,
   CreateTaskInput,
   CreditTransaction,
+  CustomCoverTemplate,
   CustomStyle,
   DraftTemplate,
   ImageLabRecord,
@@ -31,6 +32,7 @@ import {
   defaultActivation,
   defaultConfig,
   defaultCreditTransactions,
+  defaultCustomCoverTemplates,
   defaultCustomStyles,
   defaultMinimaxCloneVoices,
   defaultPromptTemplates,
@@ -210,19 +212,23 @@ export class FileDatabase {
         failed_step INTEGER,
         retry_from_step INTEGER,
         artifact_state_path TEXT DEFAULT '',
+        video_form TEXT DEFAULT 'narration',
+        llm_profile_id TEXT,
         material_source TEXT DEFAULT 'paste',
         task_type TEXT DEFAULT 'story',
         pipeline_step TEXT DEFAULT 'new',
         pipeline_data TEXT DEFAULT '{}',
         target_length INTEGER DEFAULT 1500,
         target_scenes INTEGER DEFAULT 12,
-        script_format TEXT DEFAULT 'short-video',
-        podcast_image_mode TEXT DEFAULT 'none',
-        podcast_speakers TEXT DEFAULT '[]',
+        script_format TEXT DEFAULT 'narration',
+        podcast_image_mode TEXT DEFAULT 'multi',
+        podcast_speakers TEXT DEFAULT NULL,
+        podcast_speaker_a TEXT DEFAULT NULL,
+        podcast_speaker_b TEXT DEFAULT NULL,
         video_intro INTEGER DEFAULT 0,
         video_intro_duration INTEGER DEFAULT 0,
-        cover_image_mode TEXT DEFAULT 'auto',
-        cover_template_id TEXT DEFAULT ''
+        cover_image_mode TEXT DEFAULT 'off',
+        cover_template_id TEXT DEFAULT 'cinematic-poster'
       );
       CREATE TABLE IF NOT EXISTS task_events (
         seq INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -337,6 +343,8 @@ export class FileDatabase {
         status TEXT NOT NULL,
         error_msg TEXT DEFAULT '',
         resolution TEXT DEFAULT '2K',
+        smart_mode TEXT DEFAULT 'text-to-image',
+        reference_image_paths_json TEXT DEFAULT '[]',
         reference_image_path TEXT DEFAULT '',
         upstream_task_id TEXT,
         created_at TEXT NOT NULL,
@@ -435,6 +443,8 @@ export class FileDatabase {
       ['failed_step', 'INTEGER'],
       ['retry_from_step', 'INTEGER'],
       ['artifact_state_path', "TEXT DEFAULT ''"],
+      ['video_form', "TEXT DEFAULT 'narration'"],
+      ['llm_profile_id', 'TEXT'],
       ['started_at', 'TEXT'],
       ['last_heartbeat_at', 'TEXT'],
       ['material_source', "TEXT DEFAULT 'paste'"],
@@ -443,13 +453,15 @@ export class FileDatabase {
       ['pipeline_data', "TEXT DEFAULT '{}'"],
       ['target_length', 'INTEGER DEFAULT 1500'],
       ['target_scenes', 'INTEGER DEFAULT 12'],
-      ['script_format', "TEXT DEFAULT 'short-video'"],
-      ['podcast_image_mode', "TEXT DEFAULT 'none'"],
-      ['podcast_speakers', "TEXT DEFAULT '[]'"],
+      ['script_format', "TEXT DEFAULT 'narration'"],
+      ['podcast_image_mode', "TEXT DEFAULT 'multi'"],
+      ['podcast_speakers', 'TEXT DEFAULT NULL'],
+      ['podcast_speaker_a', 'TEXT DEFAULT NULL'],
+      ['podcast_speaker_b', 'TEXT DEFAULT NULL'],
       ['video_intro', 'INTEGER DEFAULT 0'],
       ['video_intro_duration', 'INTEGER DEFAULT 0'],
-      ['cover_image_mode', "TEXT DEFAULT 'auto'"],
-      ['cover_template_id', "TEXT DEFAULT ''"],
+      ['cover_image_mode', "TEXT DEFAULT 'off'"],
+      ['cover_template_id', "TEXT DEFAULT 'cinematic-poster'"],
     ] as const) {
       addColumnIfMissing(this.db, 'tasks', column, definition);
     }
@@ -457,6 +469,8 @@ export class FileDatabase {
     for (const [column, definition] of [
       ['error_msg', "TEXT DEFAULT ''"],
       ['resolution', "TEXT DEFAULT '2K'"],
+      ['smart_mode', "TEXT DEFAULT 'text-to-image'"],
+      ['reference_image_paths_json', "TEXT DEFAULT '[]'"],
       ['reference_image_path', "TEXT DEFAULT ''"],
       ['upstream_task_id', 'TEXT'],
       ['finished_at', 'TEXT'],
@@ -506,6 +520,7 @@ export class FileDatabase {
     this.syncBundledCozeDraftTemplates();
 
     this.syncDefaultCustomStyles();
+    this.syncDefaultCustomCoverTemplates();
 
     const creditCount = getFirstRow<{ count: number }>(this.db, 'SELECT COUNT(*) AS count FROM credit_transactions')?.count ?? 0;
     if (creditCount === 0) {
@@ -627,6 +642,30 @@ export class FileDatabase {
     }
   }
 
+  private syncDefaultCustomCoverTemplates(): void {
+    for (const template of defaultCustomCoverTemplates) {
+      const existing = getFirstRow<{ id: string }>(this.db, 'SELECT id FROM custom_cover_templates WHERE id = ?', [template.id]);
+      if (existing) continue;
+      this.db.run(
+        `INSERT INTO custom_cover_templates
+         (id, name, description, directions, composition_rule, title_layout, subtitle_layout, plain_hint, created_at, updated_at)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        [
+          template.id,
+          template.name,
+          template.description,
+          template.directions,
+          template.compositionRule,
+          template.titleLayout,
+          template.subtitleLayout,
+          template.plainHint,
+          template.createdAt,
+          template.updatedAt,
+        ],
+      );
+    }
+  }
+
   async upsertCustomStyle(input: CustomStyle): Promise<CustomStyle> {
     const now = new Date().toISOString();
     const style: CustomStyle = {
@@ -668,6 +707,8 @@ export class FileDatabase {
       status: input.status ?? 'mock',
       errorMessage: input.errorMessage ?? '',
       resolution: input.resolution ?? '2K',
+      smartMode: input.smartMode ?? 'text-to-image',
+      referenceImagePaths: input.referenceImagePaths ?? (input.referenceImagePath ? [input.referenceImagePath] : []),
       referenceImagePath: input.referenceImagePath ?? '',
       upstreamTaskId: input.upstreamTaskId ?? null,
       createdAt: now,
@@ -675,8 +716,8 @@ export class FileDatabase {
     };
     this.db.run(
       `INSERT INTO image_lab_records
-       (id, prompt, ratio, style, provider, image_path, status, error_msg, resolution, reference_image_path, upstream_task_id, created_at, finished_at)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+       (id, prompt, ratio, style, provider, image_path, status, error_msg, resolution, smart_mode, reference_image_paths_json, reference_image_path, upstream_task_id, created_at, finished_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       [
         record.id,
         record.prompt,
@@ -687,10 +728,32 @@ export class FileDatabase {
         record.status,
         record.errorMessage,
         record.resolution,
+        record.smartMode,
+        json(record.referenceImagePaths),
         record.referenceImagePath,
         record.upstreamTaskId,
         record.createdAt,
         record.finishedAt,
+      ],
+    );
+    this.db.run(
+      `INSERT OR REPLACE INTO playground_jobs
+       (id, prompt, style_id, provider, ratio, image_path, status, error_msg, created_at, finished_at, reference_image_path, upstream_task_id, model)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      [
+        record.id,
+        record.prompt,
+        record.style,
+        record.provider,
+        record.ratio,
+        record.imagePath,
+        record.status,
+        record.errorMessage,
+        Date.parse(record.createdAt) || Date.now(),
+        record.finishedAt ? Date.parse(record.finishedAt) || Date.now() : null,
+        record.referenceImagePaths[0] ?? record.referenceImagePath,
+        record.upstreamTaskId,
+        record.smartMode,
       ],
     );
     await this.persist();
@@ -757,15 +820,21 @@ export class FileDatabase {
       failedStep: null,
       retryFromStep: null,
       artifactStatePath: '',
+      videoForm: input.videoForm ?? 'narration',
+      llmProfileId: input.llmProfileId ?? null,
       materialSource: input.materialSource ?? (input.mode === 'ai' ? 'ai' : 'paste'),
       taskType: input.taskType ?? input.taskKind ?? 'story',
       pipelineStep: input.pipelineStep ?? 'new',
       pipelineData: input.pipelineData ?? '{}',
       targetLength: input.targetLength ?? 1500,
       targetScenes: input.targetScenes ?? input.storyboardSceneCount ?? 12,
-      scriptFormat: input.scriptFormat ?? 'short-video',
-      coverImageMode: input.coverImageMode ?? 'auto',
-      coverTemplateId: input.coverTemplateId ?? '',
+      scriptFormat: input.scriptFormat ?? (input.videoForm === 'two-host-podcast' ? 'dialogue' : 'narration'),
+      podcastImageMode: input.podcastImageMode ?? 'multi',
+      podcastSpeakers: input.podcastSpeakers ?? (input.videoForm === 'two-host-podcast' ? 'kazai-dayi' : null),
+      podcastSpeakerA: input.podcastSpeakerA ?? null,
+      podcastSpeakerB: input.podcastSpeakerB ?? null,
+      coverImageMode: input.coverImageMode ?? 'off',
+      coverTemplateId: input.coverTemplateId ?? 'cinematic-poster',
     };
     this.db.run(
       `INSERT INTO tasks (
@@ -774,9 +843,9 @@ export class FileDatabase {
         mode, ai_keyword, ai_sources, selected_sources, extra_requirements, prompt_template_id, prompt_template_type,
         image_prompt_reference, reference_image_path, rewrite_intensity, narrative_pov, keep_promotion, tts_provider,
         tts_speed, storyboard_scene_count, step3_prompt_snapshot, music_mv_json, failed_step, retry_from_step, artifact_state_path,
-        material_source, task_type, pipeline_step, pipeline_data, target_length, target_scenes, script_format, cover_image_mode,
-        cover_template_id
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        video_form, llm_profile_id, material_source, task_type, pipeline_step, pipeline_data, target_length, target_scenes, script_format,
+        podcast_image_mode, podcast_speakers, podcast_speaker_a, podcast_speaker_b, cover_image_mode, cover_template_id
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       [
         task.id,
         task.title,
@@ -818,15 +887,21 @@ export class FileDatabase {
         task.failedStep,
         task.retryFromStep,
         task.artifactStatePath,
+        task.videoForm ?? 'narration',
+        task.llmProfileId ?? null,
         task.materialSource ?? 'paste',
         task.taskType ?? task.taskKind,
         task.pipelineStep ?? 'new',
         task.pipelineData ?? '{}',
         task.targetLength ?? 1500,
         task.targetScenes ?? task.storyboardSceneCount,
-        task.scriptFormat ?? 'short-video',
-        task.coverImageMode ?? 'auto',
-        task.coverTemplateId ?? '',
+        task.scriptFormat ?? 'narration',
+        task.podcastImageMode ?? 'multi',
+        task.podcastSpeakers ?? null,
+        task.podcastSpeakerA ?? null,
+        task.podcastSpeakerB ?? null,
+        task.coverImageMode ?? 'off',
+        task.coverTemplateId ?? 'cinematic-poster',
       ],
     );
     await this.persist();
@@ -983,6 +1058,8 @@ export class FileDatabase {
         | 'startedAt'
         | 'lastHeartbeatAt'
         | 'step3PromptSnapshot'
+        | 'podcastSpeakerA'
+        | 'podcastSpeakerB'
       >
     >,
   ): Promise<void> {
@@ -997,9 +1074,13 @@ export class FileDatabase {
       failedStep: 'failed_step',
       retryFromStep: 'retry_from_step',
       artifactStatePath: 'artifact_state_path',
+      llmProfileId: 'llm_profile_id',
+      videoForm: 'video_form',
       startedAt: 'started_at',
       lastHeartbeatAt: 'last_heartbeat_at',
       step3PromptSnapshot: 'step3_prompt_snapshot',
+      podcastSpeakerA: 'podcast_speaker_a',
+      podcastSpeakerB: 'podcast_speaker_b',
     };
     for (const [key, column] of Object.entries(map)) {
       if (key in patch) {
@@ -1046,6 +1127,7 @@ export class FileDatabase {
     const imageRows = getRows<Record<string, unknown>>(this.db, 'SELECT * FROM image_lab_records ORDER BY created_at DESC');
     const voiceLabRows = getRows<Record<string, unknown>>(this.db, 'SELECT * FROM voice_lab_records ORDER BY created_at DESC');
     const styleRows = getRows<Record<string, unknown>>(this.db, 'SELECT * FROM custom_styles ORDER BY name ASC');
+    const coverTemplateRows = getRows<Record<string, unknown>>(this.db, 'SELECT * FROM custom_cover_templates ORDER BY created_at ASC');
     const creditRows = getRows<Record<string, unknown>>(this.db, 'SELECT * FROM credit_transactions ORDER BY id DESC');
     const voiceRows = getRows<Record<string, unknown>>(this.db, 'SELECT * FROM minimax_clone_voices ORDER BY last_used_at DESC');
     const accountRow = getFirstRow<{ data: string }>(this.db, 'SELECT data FROM account_profile WHERE id = 1');
@@ -1062,6 +1144,7 @@ export class FileDatabase {
       imageLabRecords: imageRows.map(rowToImageLabRecord),
       voiceLabRecords: voiceLabRows.map(rowToVoiceLabRecord),
       customStyles: styleRows.map(rowToCustomStyle),
+      customCoverTemplates: coverTemplateRows.map(rowToCustomCoverTemplate),
       creditTransactions: creditRows.map(rowToCreditTransaction),
       minimaxCloneVoices: voiceRows.map(rowToMinimaxCloneVoice),
       account: accountRow ? ({ ...defaultAccount, ...parseJson(accountRow.data, defaultAccount) } as AccountProfile) : defaultAccount,
@@ -1113,20 +1196,30 @@ function rowToTask(row: Record<string, unknown>): Task {
     failedStep: row.failed_step === null || row.failed_step === undefined ? null : Number(row.failed_step),
     retryFromStep: row.retry_from_step === null || row.retry_from_step === undefined ? null : Number(row.retry_from_step),
     artifactStatePath: String(row.artifact_state_path ?? ''),
+    videoForm: normalizeVideoForm(row.video_form),
+    llmProfileId: row.llm_profile_id === null || row.llm_profile_id === undefined || row.llm_profile_id === '' ? null : String(row.llm_profile_id),
     materialSource: String(row.material_source ?? 'paste'),
     taskType: String(row.task_type ?? normalizeTaskKind(row.task_kind)),
     pipelineStep: String(row.pipeline_step ?? 'new'),
     pipelineData: String(row.pipeline_data ?? '{}'),
     targetLength: Number(row.target_length ?? 1500),
     targetScenes: Number(row.target_scenes ?? row.storyboard_scene_count ?? 12),
-    scriptFormat: String(row.script_format ?? 'short-video'),
-    coverImageMode: String(row.cover_image_mode ?? 'auto'),
-    coverTemplateId: String(row.cover_template_id ?? ''),
+    scriptFormat: String(row.script_format ?? 'narration'),
+    podcastImageMode: String(row.podcast_image_mode ?? 'multi'),
+    podcastSpeakers: row.podcast_speakers === null || row.podcast_speakers === undefined ? null : String(row.podcast_speakers),
+    podcastSpeakerA: row.podcast_speaker_a === null || row.podcast_speaker_a === undefined ? null : String(row.podcast_speaker_a),
+    podcastSpeakerB: row.podcast_speaker_b === null || row.podcast_speaker_b === undefined ? null : String(row.podcast_speaker_b),
+    coverImageMode: String(row.cover_image_mode ?? 'off'),
+    coverTemplateId: String(row.cover_template_id ?? 'cinematic-poster'),
   };
 }
 
 function normalizeTaskKind(value: unknown): Task['taskKind'] {
   return value === 'music-mv' ? 'music-mv' : 'story';
+}
+
+function normalizeVideoForm(value: unknown): Task['videoForm'] {
+  return value === 'two-host-podcast' ? 'two-host-podcast' : 'narration';
 }
 
 function normalizeProcessingMode(value: unknown): Task['processingMode'] {
@@ -1238,6 +1331,8 @@ function rowToImageLabRecord(row: Record<string, unknown>): ImageLabRecord {
     status: String(row.status ?? 'mock') as ImageLabRecord['status'],
     errorMessage: String(row.error_msg ?? ''),
     resolution: String(row.resolution ?? '2K') as ImageLabRecord['resolution'],
+    smartMode: String(row.smart_mode ?? 'text-to-image') as ImageLabRecord['smartMode'],
+    referenceImagePaths: parseJson(row.reference_image_paths_json, [] as string[]),
     referenceImagePath: String(row.reference_image_path ?? ''),
     upstreamTaskId: row.upstream_task_id ? String(row.upstream_task_id) : null,
     createdAt: String(row.created_at ?? new Date().toISOString()),
@@ -1274,6 +1369,21 @@ function rowToCustomStyle(row: Record<string, unknown>): CustomStyle {
     description: String(row.description ?? ''),
     createdAt: String(row.created_at),
     updatedAt: String(row.updated_at),
+  };
+}
+
+function rowToCustomCoverTemplate(row: Record<string, unknown>): CustomCoverTemplate {
+  return {
+    id: String(row.id),
+    name: String(row.name ?? ''),
+    description: String(row.description ?? ''),
+    directions: String(row.directions ?? ''),
+    compositionRule: String(row.composition_rule ?? ''),
+    titleLayout: String(row.title_layout ?? ''),
+    subtitleLayout: String(row.subtitle_layout ?? ''),
+    plainHint: String(row.plain_hint ?? ''),
+    createdAt: String(row.created_at ?? ''),
+    updatedAt: String(row.updated_at ?? ''),
   };
 }
 

@@ -83,6 +83,7 @@ describe('file database', () => {
       await db.createTask({
         title: '参考字段任务',
         inputText: '一段原始素材',
+        llmProfileId: 'llm-draft',
         materialSource: 'paste',
         taskType: 'story',
         pipelineStep: 'step-0-review',
@@ -103,9 +104,167 @@ describe('file database', () => {
         targetLength: 1800,
         targetScenes: 16,
         scriptFormat: 'short-video',
+        llmProfileId: 'llm-draft',
         coverImageMode: 'auto',
         coverTemplateId: 'default-cover',
       });
+      await db.close();
+    } finally {
+      await rm(dir, { recursive: true, force: true });
+    }
+  });
+
+  it('uses Storybound 1.7 cover and podcast defaults for new tasks', async () => {
+    const dir = await mkdtemp(join(tmpdir(), 'storybound-db-cover-podcast-defaults-'));
+    const file = join(dir, 'app.db');
+
+    try {
+      const db = await FileDatabase.open(file);
+      await db.createTask({
+        title: 'Cover podcast defaults',
+        inputText: 'Source material',
+      });
+
+      const state = await db.getState();
+      expect(state.tasks[0]).toMatchObject({
+        scriptFormat: 'narration',
+        podcastImageMode: 'multi',
+        podcastSpeakers: null,
+        coverImageMode: 'off',
+        coverTemplateId: 'cinematic-poster',
+      });
+      await db.close();
+    } finally {
+      await rm(dir, { recursive: true, force: true });
+    }
+  });
+
+  it('persists Storybound video form and two-host podcast task options', async () => {
+    const dir = await mkdtemp(join(tmpdir(), 'storybound-db-video-form-'));
+    const file = join(dir, 'app.db');
+
+    try {
+      const db = await FileDatabase.open(file);
+      await db.createTask({
+        title: 'Two-host podcast',
+        inputText: 'Turn this story into a two-host podcast.',
+        videoForm: 'two-host-podcast',
+        podcastImageMode: 'single',
+        podcastSpeakers: 'kazai-dayi',
+        scriptFormat: 'dialogue',
+        targetLength: 1200,
+        targetScenes: 8,
+      });
+
+      const state = await db.getState();
+      expect(state.tasks[0]).toMatchObject({
+        videoForm: 'two-host-podcast',
+        podcastImageMode: 'single',
+        podcastSpeakers: 'kazai-dayi',
+        scriptFormat: 'dialogue',
+        targetLength: 1200,
+        targetScenes: 8,
+      });
+      await db.close();
+    } finally {
+      await rm(dir, { recursive: true, force: true });
+    }
+  });
+
+  it('persists true dual voice podcast speaker ids separately from narration tasks', async () => {
+    const dir = await mkdtemp(join(tmpdir(), 'storybound-db-dual-voice-podcast-'));
+    const file = join(dir, 'app.db');
+
+    try {
+      const db = await FileDatabase.open(file);
+      await db.createTask({
+        title: 'Narration task',
+        inputText: 'Read this as ordinary narration.',
+        videoForm: 'narration',
+      });
+      await db.createTask({
+        title: 'Dual voice podcast',
+        inputText: 'Turn this story into a true two-host podcast.',
+        videoForm: 'two-host-podcast',
+        podcastSpeakerA: 'voice-host-a',
+        podcastSpeakerB: 'voice-host-b',
+        ttsProvider: 'minimax',
+        ttsSpeed: 1.15,
+      });
+
+      const state = await db.getState();
+      const podcastTask = state.tasks.find((task) => task.title === 'Dual voice podcast');
+      const narrationTask = state.tasks.find((task) => task.title === 'Narration task');
+
+      expect(podcastTask).toMatchObject({
+        podcastSpeakerA: 'voice-host-a',
+        podcastSpeakerB: 'voice-host-b',
+        ttsProvider: 'minimax',
+        ttsSpeed: 1.15,
+      });
+      expect(narrationTask?.podcastSpeakerA ?? null).toBeNull();
+      expect(narrationTask?.podcastSpeakerB ?? null).toBeNull();
+      await db.close();
+    } finally {
+      await rm(dir, { recursive: true, force: true });
+    }
+  });
+
+  it('persists smart image lab metadata and mirrors generated records to playground jobs', async () => {
+    const dir = await mkdtemp(join(tmpdir(), 'storybound-db-smart-image-lab-'));
+    const file = join(dir, 'app.db');
+
+    try {
+      const db = await FileDatabase.open(file);
+      const record = await db.addImageLabRecord({
+        prompt: 'Podcast cover',
+        ratio: '1:1',
+        style: 'photo-real',
+        provider: 'gpt_image',
+        imagePath: 'D:/out/podcast-cover.png',
+        status: 'generated',
+        resolution: '2K',
+        smartMode: 'podcast-cover',
+        referenceImagePaths: ['D:/refs/a.png', 'D:/refs/b.png'],
+        upstreamTaskId: 'task-upstream',
+        finishedAt: '2026-06-16T00:00:00.000Z',
+      });
+      await db.close();
+
+      const reopened = await FileDatabase.open(file);
+      const state = await reopened.getState();
+      expect(state.imageLabRecords[0]).toMatchObject({
+        id: record.id,
+        smartMode: 'podcast-cover',
+        referenceImagePaths: ['D:/refs/a.png', 'D:/refs/b.png'],
+      });
+      await reopened.close();
+
+      const SQL = await initSqlJs();
+      const raw = await readFile(file);
+      const sqlite = new SQL.Database(raw);
+      const labRows = sqlite.exec('SELECT smart_mode, reference_image_paths_json FROM image_lab_records WHERE id = ?', [record.id])[0]?.values ?? [];
+      expect(labRows[0]).toEqual(['podcast-cover', JSON.stringify(['D:/refs/a.png', 'D:/refs/b.png'])]);
+      const playgroundRows = sqlite.exec('SELECT id, prompt, image_path, status, reference_image_path, upstream_task_id FROM playground_jobs WHERE id = ?', [record.id])[0]?.values ?? [];
+      expect(playgroundRows[0]).toEqual([record.id, 'Podcast cover', 'D:/out/podcast-cover.png', 'generated', 'D:/refs/a.png', 'task-upstream']);
+      sqlite.close();
+    } finally {
+      await rm(dir, { recursive: true, force: true });
+    }
+  });
+
+  it('seeds Storybound 1.7 cinematic cover templates and image styles', async () => {
+    const dir = await mkdtemp(join(tmpdir(), 'storybound-db-cover-template-seeds-'));
+    const file = join(dir, 'app.db');
+
+    try {
+      const db = await FileDatabase.open(file);
+      const state = await db.getState();
+      const coverTemplateIds = state.customCoverTemplates.map((template) => template.id);
+      const styleIds = state.customStyles.map((style) => style.id);
+
+      expect(coverTemplateIds).toEqual(expect.arrayContaining(['cinematic-poster', 'ancient-cinematic', 'podcast-cover']));
+      expect(styleIds).toEqual(expect.arrayContaining(['cinematic', 'ancient-cinematic']));
       await db.close();
     } finally {
       await rm(dir, { recursive: true, force: true });

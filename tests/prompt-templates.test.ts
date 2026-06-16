@@ -213,6 +213,8 @@ describe('prompt template rendering', () => {
     const ids = defaultCustomStyles.map((style) => style.id);
 
     expect(ids).toEqual([
+      'cinematic',
+      'ancient-cinematic',
       'black-white',
       'photo-real',
       'oil-paint',

@@ -5,11 +5,21 @@ import type { AppConfig, ImagePrompt, StoryboardScene, Task, VoiceLabGenerateInp
 import type { SceneAsset } from './draft';
 import { fetchWithTimeout } from './http';
 import { buildOpenAiImageGenerationBody, normalizeOpenAiImageBaseUrl } from './openai-image';
+import { buildOpenAiImageEditFormData } from './openai-image-edit';
 import { isArkModelApiKey, normalizeVolcengineV3Speaker, VOLCENGINE_TTS_ARK_KEY_MESSAGE } from './volcengine-tts';
-import { normalizeRuntimeTtsProvider, volcengineResourceIdForTaskSpeaker } from './tts-voices';
+import { defaultPodcastSpeakersForProvider, normalizeRuntimeTtsProvider, type RuntimeTtsProvider, volcengineResourceIdForTaskSpeaker } from './tts-voices';
+import { splitPodcastDialogue, type PodcastDialogueTurn } from './podcast-dialogue';
 
 type ImageGenerator = (scenes: StoryboardScene[], prompts: ImagePrompt[], task: Task, signal?: AbortSignal) => Promise<SceneAsset[]>;
 type NarrationSynthesizer = (scenes: StoryboardScene[], task: Task, signal?: AbortSignal) => Promise<SceneAsset[]>;
+
+interface TtsTurn {
+  scene: StoryboardScene;
+  text: string;
+  voiceId: string;
+  speaker?: 'A' | 'B';
+  turnIndex?: number;
+}
 
 export function createConfiguredImageGenerator(config: AppConfig, workDir: string): ImageGenerator {
   return async (scenes, prompts, task, signal) => {
@@ -45,7 +55,10 @@ export function createConfiguredImageGenerator(config: AppConfig, workDir: strin
         model: config.customImage.model,
         ratio: config.customImage.ratio || task.ratio,
         resolution: config.customImage.resolution ?? '2K',
+        ratioMappingJson: config.customImage.ratioMappingJson,
         timeoutMs: config.customImage.timeoutMs ?? 180_000,
+        asyncMode: config.customImage.asyncMode,
+        pollIntervalMs: config.customImage.pollIntervalMs ?? 2000,
         signal,
       });
     }
@@ -59,7 +72,10 @@ export function createConfiguredImageGenerator(config: AppConfig, workDir: strin
       model: config.gptImage.model || config.image.model,
       ratio: config.gptImage.ratio || config.image.ratio || task.ratio,
       resolution: config.gptImage.resolution ?? config.image.resolution ?? '2K',
+      ratioMappingJson: undefined,
       timeoutMs: config.gptImage.timeoutMs ?? config.image.timeoutMs ?? 180_000,
+      asyncMode: false,
+      pollIntervalMs: 2000,
       signal,
     });
   };
@@ -293,7 +309,10 @@ async function generateOpenAiCompatibleImages(input: {
   model: string;
   ratio: string;
   resolution: '1K' | '2K' | '4K';
+  ratioMappingJson?: string;
   timeoutMs: number;
+  asyncMode: boolean;
+  pollIntervalMs: number;
   signal?: AbortSignal;
 }): Promise<SceneAsset[]> {
   if (!input.apiKey) {
@@ -305,33 +324,185 @@ async function generateOpenAiCompatibleImages(input: {
 
   const assets: SceneAsset[] = [];
   for (const scene of input.scenes) {
-    const prompt = input.prompts.find((item) => item.sceneId === scene.id)?.prompt ?? scene.descPrompt;
-    const response = await fetchWithTimeout(`${baseUrl}/images/generations`, {
-      method: 'POST',
-      timeoutMs: input.timeoutMs,
-      timeoutLabel: 'Image provider request',
-      signal: input.signal,
-      headers: {
-        'Content-Type': 'application/json',
-        Authorization: `Bearer ${input.apiKey}`,
-      },
-      body: JSON.stringify(buildOpenAiImageGenerationBody({
-        model: input.model,
-        prompt,
-        ratio: input.ratio,
-        resolution: input.resolution,
-      })),
-    });
-    if (!response.ok) {
-      throw new Error(`Image provider API error (${response.status}): ${await response.text()}`);
-    }
-    const body = (await response.json()) as { data?: Array<{ b64_json?: string; url?: string }> };
+    const promptItem = input.prompts.find((item) => item.sceneId === scene.id);
+    const prompt = promptItem?.prompt ?? scene.descPrompt;
+    const referenceImagePaths = promptItem?.referenceImagePaths ?? [];
+    const body = referenceImagePaths.length
+      ? await generateOpenAiCompatibleImageEdit({ ...input, baseUrl, prompt, referenceImagePaths })
+      : input.asyncMode
+      ? await generateOpenAiCompatibleImageAsync({ ...input, baseUrl, prompt })
+      : await generateOpenAiCompatibleImageSync({ ...input, baseUrl, prompt });
     const bytes = await extractImageBytes(body, input.signal);
     const path = join(outputDir, `${String(scene.id).padStart(3, '0')}.png`);
     await writeFile(path, bytes);
     assets.push({ sceneId: scene.id, path });
   }
   return assets;
+}
+
+async function generateOpenAiCompatibleImageSync(input: {
+  baseUrl: string;
+  apiKey: string;
+  model: string;
+  prompt: string;
+  ratio: string;
+  resolution: '1K' | '2K' | '4K';
+  ratioMappingJson?: string;
+  timeoutMs: number;
+  signal?: AbortSignal;
+}): Promise<{ data?: Array<{ b64_json?: string; url?: string }> }> {
+  const response = await fetchWithTimeout(`${input.baseUrl}/images/generations`, {
+    method: 'POST',
+    timeoutMs: input.timeoutMs,
+    timeoutLabel: 'Image provider request',
+    signal: input.signal,
+    headers: {
+      'Content-Type': 'application/json',
+      Authorization: `Bearer ${input.apiKey}`,
+    },
+    body: JSON.stringify(buildOpenAiImageGenerationBody({
+      model: input.model,
+      prompt: input.prompt,
+      ratio: input.ratio,
+      resolution: input.resolution,
+      ratioMappingJson: input.ratioMappingJson,
+    })),
+  });
+  if (!response.ok) {
+    throw new Error(`Image provider API error (${response.status}): ${await response.text()}`);
+  }
+  return (await response.json()) as { data?: Array<{ b64_json?: string; url?: string }> };
+}
+
+async function generateOpenAiCompatibleImageEdit(input: {
+  baseUrl: string;
+  apiKey: string;
+  model: string;
+  prompt: string;
+  ratio: string;
+  resolution: '1K' | '2K' | '4K';
+  referenceImagePaths: string[];
+  timeoutMs: number;
+  signal?: AbortSignal;
+}): Promise<{ data?: Array<{ b64_json?: string; url?: string }> }> {
+  const form = await buildOpenAiImageEditFormData({
+    model: input.model,
+    prompt: input.prompt,
+    ratio: input.ratio,
+    resolution: input.resolution,
+    referenceImagePaths: input.referenceImagePaths,
+  });
+  const response = await fetchWithTimeout(`${input.baseUrl}/images/edits`, {
+    method: 'POST',
+    timeoutMs: input.timeoutMs,
+    timeoutLabel: 'Image provider edit request',
+    signal: input.signal,
+    headers: {
+      Authorization: `Bearer ${input.apiKey}`,
+    },
+    body: form,
+  });
+  if (!response.ok) {
+    throw new Error(`Image provider edit API error (${response.status}): ${await response.text()}`);
+  }
+  return (await response.json()) as { data?: Array<{ b64_json?: string; url?: string }> };
+}
+
+async function generateOpenAiCompatibleImageAsync(input: {
+  baseUrl: string;
+  apiKey: string;
+  model: string;
+  prompt: string;
+  ratio: string;
+  resolution: '1K' | '2K' | '4K';
+  ratioMappingJson?: string;
+  timeoutMs: number;
+  pollIntervalMs: number;
+  signal?: AbortSignal;
+}): Promise<{ data?: Array<{ b64_json?: string; url?: string }> }> {
+  const response = await fetchWithTimeout(`${input.baseUrl}/images/generations?async=true`, {
+    method: 'POST',
+    timeoutMs: input.timeoutMs,
+    timeoutLabel: 'Image provider async submit',
+    signal: input.signal,
+    headers: {
+      'Content-Type': 'application/json',
+      Authorization: `Bearer ${input.apiKey}`,
+    },
+    body: JSON.stringify(buildOpenAiImageGenerationBody({
+      model: input.model,
+      prompt: input.prompt,
+      ratio: input.ratio,
+      resolution: input.resolution,
+      ratioMappingJson: input.ratioMappingJson,
+    })),
+  });
+  if (!response.ok) {
+    throw new Error(`Image provider async submit error (${response.status}): ${await response.text()}`);
+  }
+  const submitBody = (await response.json()) as OpenAiAsyncImageSubmitResponse;
+  const taskId = resolveOpenAiAsyncTaskId(submitBody);
+  if (!taskId) {
+    throw new Error('Image provider async submit response did not include a task id.');
+  }
+  return pollOpenAiCompatibleImageTask({ ...input, taskId });
+}
+
+type OpenAiAsyncImageSubmitResponse = {
+  id?: string;
+  task_id?: string;
+  taskId?: string;
+  data?: { id?: string; task_id?: string; taskId?: string };
+};
+
+type OpenAiAsyncImagePollResponse = {
+  status?: string;
+  state?: string;
+  error?: string | { message?: string };
+  data?: Array<{ b64_json?: string; url?: string }>;
+  result?: { data?: Array<{ b64_json?: string; url?: string }> };
+  output?: Array<{ b64_json?: string; url?: string }>;
+};
+
+async function pollOpenAiCompatibleImageTask(input: {
+  baseUrl: string;
+  apiKey: string;
+  taskId: string;
+  timeoutMs: number;
+  pollIntervalMs: number;
+  signal?: AbortSignal;
+}): Promise<{ data?: Array<{ b64_json?: string; url?: string }> }> {
+  const startedAt = Date.now();
+  while (Date.now() - startedAt <= input.timeoutMs) {
+    const response = await fetchWithTimeout(`${input.baseUrl}/images/generations/${encodeURIComponent(input.taskId)}`, {
+      method: 'GET',
+      timeoutMs: input.timeoutMs,
+      timeoutLabel: 'Image provider async poll',
+      signal: input.signal,
+      headers: {
+        Authorization: `Bearer ${input.apiKey}`,
+      },
+    });
+    if (!response.ok) {
+      throw new Error(`Image provider async poll error (${response.status}): ${await response.text()}`);
+    }
+    const body = (await response.json()) as OpenAiAsyncImagePollResponse;
+    const data = body.data ?? body.result?.data ?? body.output;
+    if (data?.length) {
+      return { data };
+    }
+    const status = String(body.status ?? body.state ?? '').toLowerCase();
+    if (['failed', 'fail', 'error', 'cancelled', 'canceled'].includes(status)) {
+      const message = typeof body.error === 'string' ? body.error : body.error?.message;
+      throw new Error(`Image provider async task failed: ${message ?? input.taskId}`);
+    }
+    await delay(input.pollIntervalMs, input.signal);
+  }
+  throw new Error('Image provider async task timed out.');
+}
+
+function resolveOpenAiAsyncTaskId(body: OpenAiAsyncImageSubmitResponse): string {
+  return body.id ?? body.task_id ?? body.taskId ?? body.data?.id ?? body.data?.task_id ?? body.data?.taskId ?? '';
 }
 
 async function synthesizeMiniMaxNarration(input: {
@@ -351,6 +522,8 @@ async function synthesizeMiniMaxNarration(input: {
   const assets: SceneAsset[] = [];
 
   for (const scene of input.scenes) {
+    const turns = narrationTurnsForScene(scene, input.task, input.voiceId, 'minimax');
+    for (const turn of turns) {
     const response = await fetchWithTimeout('https://api.minimaxi.com/v1/t2a_v2', {
       method: 'POST',
       timeoutMs: 180_000,
@@ -362,10 +535,10 @@ async function synthesizeMiniMaxNarration(input: {
       },
       body: JSON.stringify({
         model: input.model,
-        text: scene.cap,
+        text: turn.text,
         stream: false,
         voice_setting: {
-          voice_id: input.voiceId,
+          voice_id: turn.voiceId,
           speed: input.task.ttsSpeed,
           vol: 1,
           pitch: 0,
@@ -394,9 +567,10 @@ async function synthesizeMiniMaxNarration(input: {
       throw new Error('MiniMax TTS response did not include audio data.');
     }
     const bytes = decodeAudioPayload(audio);
-    const path = join(outputDir, `${String(scene.id).padStart(3, '0')}.mp3`);
+      const path = join(outputDir, audioFileName(scene.id, turn, 'mp3'));
     await writeFile(path, bytes);
-    assets.push({ sceneId: scene.id, path });
+      assets.push(sceneAssetForTurn(scene.id, path, turn));
+    }
   }
   return assets;
 }
@@ -426,6 +600,8 @@ async function synthesizeVolcengineNarration(input: {
   const endpoint = input.endpoint.includes('/api/v3/') ? 'https://openspeech.bytedance.com/api/v1/tts' : input.endpoint;
 
   for (const scene of input.scenes) {
+    const turns = narrationTurnsForScene(scene, input.task, input.speaker, 'volcengine');
+    for (const turn of turns) {
     const response = await fetchWithTimeout(endpoint, {
       method: 'POST',
       timeoutMs: 180_000,
@@ -439,13 +615,13 @@ async function synthesizeVolcengineNarration(input: {
         app: { appid: input.appId, token: input.accessKey, cluster: input.cluster },
         user: { uid: input.task.id },
         audio: {
-          voice_type: input.speaker,
+          voice_type: turn.voiceId,
           encoding: 'mp3',
           speed_ratio: input.task.ttsSpeed,
         },
         request: {
-          reqid: `${input.task.id}-${scene.id}`,
-          text: scene.cap,
+          reqid: `${input.task.id}-${scene.id}-${turn.turnIndex ?? 1}`,
+          text: turn.text,
           operation: 'query',
         },
       }),
@@ -457,9 +633,10 @@ async function synthesizeVolcengineNarration(input: {
     if (body.code !== 3000 || !body.data) {
       throw new Error(`Volcengine TTS API error: ${body.message ?? body.code ?? 'missing audio data'}`);
     }
-    const path = join(outputDir, `${String(scene.id).padStart(3, '0')}.mp3`);
+      const path = join(outputDir, audioFileName(scene.id, turn, 'mp3'));
     await writeFile(path, Buffer.from(body.data, 'base64'));
-    assets.push({ sceneId: scene.id, path });
+      assets.push(sceneAssetForTurn(scene.id, path, turn));
+    }
   }
   return assets;
 }
@@ -483,10 +660,12 @@ async function synthesizeVolcengineV3Narration(input: {
   const outputDir = join(input.workDir, 'provider-audio');
   await mkdir(outputDir, { recursive: true });
   const assets: SceneAsset[] = [];
-  const speaker = normalizeVolcengineV3Speaker(input.speaker);
 
   for (const scene of input.scenes) {
+    const turns = narrationTurnsForScene(scene, input.task, input.speaker, 'volcengine');
+    for (const turn of turns) {
     const requestId = randomUUID();
+      const speaker = normalizeVolcengineV3Speaker(turn.voiceId);
     const response = await fetchWithTimeout(input.endpoint || 'https://openspeech.bytedance.com/api/v3/tts/unidirectional', {
       method: 'POST',
       timeoutMs: 180_000,
@@ -501,7 +680,7 @@ async function synthesizeVolcengineV3Narration(input: {
       body: JSON.stringify({
         user: { uid: input.task.id },
         req_params: {
-          text: scene.cap,
+          text: turn.text,
           speaker,
           audio_params: {
             format: 'mp3',
@@ -515,9 +694,10 @@ async function synthesizeVolcengineV3Narration(input: {
       throw new Error(`Volcengine TTS V3 API error (${response.status}): ${await response.text()}`);
     }
     const bytes = await decodeVolcengineV3Audio(response);
-    const path = join(outputDir, `${String(scene.id).padStart(3, '0')}.mp3`);
+      const path = join(outputDir, audioFileName(scene.id, turn, 'mp3'));
     await writeFile(path, bytes);
-    assets.push({ sceneId: scene.id, path });
+      assets.push(sceneAssetForTurn(scene.id, path, turn));
+    }
   }
   return assets;
 }
@@ -579,6 +759,39 @@ function consumeVolcengineV3Line(line: string, chunks: Buffer[]): void {
 function volcengineSpeechRate(speed: number): number {
   const ratio = Number.isFinite(speed) ? speed : 1;
   return Math.max(-50, Math.min(100, Math.round((ratio - 1) * 100)));
+}
+
+function narrationTurnsForScene(scene: StoryboardScene, task: Task, defaultVoiceId: string, provider: RuntimeTtsProvider): TtsTurn[] {
+  if (task.videoForm !== 'two-host-podcast') {
+    return [{ scene, text: scene.cap, voiceId: defaultVoiceId }];
+  }
+  const defaults = defaultPodcastSpeakersForProvider(provider, task.podcastSpeakers);
+  const voiceA = task.podcastSpeakerA?.trim() || defaults.podcastSpeakerA;
+  const voiceB = task.podcastSpeakerB?.trim() || defaults.podcastSpeakerB;
+
+  return splitPodcastDialogue(scene).map((turn) => ({
+    scene,
+    text: turn.text,
+    voiceId: turn.speaker === 'A' ? voiceA : voiceB,
+    speaker: turn.speaker,
+    turnIndex: turn.turnIndex,
+  }));
+}
+
+function audioFileName(sceneId: number, turn: TtsTurn, extension: string): string {
+  const scenePart = String(sceneId).padStart(3, '0');
+  if (!turn.speaker || !turn.turnIndex) return `${scenePart}.${extension}`;
+  return `${scenePart}-turn-${String(turn.turnIndex).padStart(3, '0')}-${turn.speaker}.${extension}`;
+}
+
+function sceneAssetForTurn(sceneId: number, path: string, turn: TtsTurn): SceneAsset {
+  return {
+    sceneId,
+    path,
+    ...(turn.speaker ? { speaker: turn.speaker } : {}),
+    ...(turn.turnIndex ? { turnIndex: turn.turnIndex } : {}),
+    ...(turn.speaker ? { text: turn.text } : {}),
+  };
 }
 
 async function extractImageBytes(body: { data?: Array<{ b64_json?: string; url?: string }> }, signal?: AbortSignal): Promise<Buffer> {

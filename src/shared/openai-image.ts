@@ -8,6 +8,7 @@ export interface OpenAiImageGenerationBody {
   quality: OpenAiImageQuality;
   output_format: 'png';
   moderation: 'auto';
+  [key: string]: string | OpenAiImageQuality;
 }
 
 export interface OpenAiImageProbeResult {
@@ -42,7 +43,9 @@ export function buildOpenAiImageGenerationBody(input: {
   prompt: string;
   ratio: string;
   resolution: OpenAiImageResolution;
+  ratioMappingJson?: string;
 }): OpenAiImageGenerationBody {
+  const ratioPatch = resolveCustomRatioMapping(input.ratioMappingJson, input.ratio);
   return {
     model: input.model,
     prompt: input.prompt,
@@ -50,6 +53,7 @@ export function buildOpenAiImageGenerationBody(input: {
     quality: resolveOpenAiImageQuality(input.resolution),
     output_format: 'png',
     moderation: 'auto',
+    ...ratioPatch,
   };
 }
 
@@ -139,16 +143,33 @@ export async function testOpenAiCompatibleImageModel(input: OpenAiImageProbeInpu
   }
 }
 
-function resolveOpenAiImageQuality(resolution: OpenAiImageResolution): OpenAiImageQuality {
+export function resolveOpenAiImageQuality(resolution: OpenAiImageResolution): OpenAiImageQuality {
   if (resolution === '1K') return 'low';
   if (resolution === '4K') return 'high';
   return 'medium';
 }
 
-function resolveOpenAiImageSize(ratio: string): string {
+export function resolveOpenAiImageSize(ratio: string): string {
   if (ratio === '9:16' || ratio === '3:4' || ratio === '2:3') return '1024x1536';
   if (ratio === '16:9' || ratio === '4:3' || ratio === '3:2' || ratio === '21:9') return '1536x1024';
   return '1024x1024';
+}
+
+function resolveCustomRatioMapping(value: string | undefined, ratio: string): Record<string, string> {
+  if (!value?.trim()) return {};
+  try {
+    const parsed = JSON.parse(value) as Record<string, unknown>;
+    const mapping = parsed[ratio];
+    if (typeof mapping === 'string') return { size: mapping };
+    if (!mapping || typeof mapping !== 'object' || Array.isArray(mapping)) return {};
+    return Object.fromEntries(
+      Object.entries(mapping)
+        .filter((entry): entry is [string, string | number] => typeof entry[1] === 'string' || typeof entry[1] === 'number')
+        .map(([key, mappedValue]) => [key, String(mappedValue)]),
+    );
+  } catch {
+    return {};
+  }
 }
 
 async function fetchWithTimeout(fetchImpl: typeof fetch, url: string, init: RequestInit, timeoutMs: number): Promise<Response> {

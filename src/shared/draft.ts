@@ -9,6 +9,9 @@ import { runPyJianYingDraftBridge, type PyJianYingBridgeInput, type PyJianYingBr
 export interface SceneAsset {
   sceneId: number;
   path: string;
+  speaker?: 'A' | 'B';
+  turnIndex?: number;
+  text?: string;
 }
 
 export interface WriteJianyingDraftInput {
@@ -61,13 +64,13 @@ export async function writeJianyingDraft(input: WriteJianyingDraftInput, options
   const title = safeDraftName(input.title || input.cover.title || 'storybound-draft');
   const draftDir = join(input.draftRootDir, uniqueDraftFolderName(title));
   const imagesByScene = await collectSceneAssets(input.scenes, input.generatedImages, 'image asset');
-  const audioByScene = await collectSceneAssets(input.scenes, input.narrationAudio, 'narration asset');
+  const audioByScene = await collectNarrationAssets(input.scenes, input.narrationAudio);
   const totalDuration = input.scenes.reduce((sum, scene) => sum + msToUs(scene.durationMs), 0);
 
   await mkdir(input.workDir, { recursive: true });
 
   const sourceImages = input.scenes.map((scene) => imagesByScene.get(scene.id)!);
-  const sourceNarration = input.scenes.map((scene) => audioByScene.get(scene.id)!);
+  const sourceNarration = input.scenes.flatMap((scene) => audioByScene.get(scene.id)!);
 
   let sourceBgm: BgmItem | null = null;
   if (input.bgm?.path) {
@@ -143,7 +146,7 @@ function createBridgePayload(input: {
   totalDuration: number;
   subtitlesFile: string;
   sourceImages: string[];
-  sourceNarration: string[];
+  sourceNarration: SceneAsset[];
   sourceBgm: BgmItem | null;
 }): PyJianYingBridgeInput {
   let cursor = 0;
@@ -249,7 +252,13 @@ function createBridgePayload(input: {
     },
     scenes,
     images: input.input.scenes.map((scene, index) => ({ sceneId: scene.id, path: input.sourceImages[index] })),
-    narration: input.input.scenes.map((scene, index) => ({ sceneId: scene.id, path: input.sourceNarration[index] })),
+    narration: input.sourceNarration.map((asset) => ({
+      sceneId: asset.sceneId,
+      path: asset.path,
+      ...(asset.speaker ? { speaker: asset.speaker } : {}),
+      ...(asset.turnIndex ? { turnIndex: asset.turnIndex } : {}),
+      ...(asset.text ? { text: asset.text } : {}),
+    })),
     subtitlesSrtPath: input.subtitlesFile,
     bgm: input.sourceBgm,
     totalDurationUs: input.totalDuration,
@@ -310,6 +319,30 @@ async function collectSceneAssets(scenes: StoryboardScene[], assets: SceneAsset[
     }
     await assertReadableFile(asset.path, `${label} for scene ${scene.id}`);
     result.set(scene.id, asset.path);
+  }
+  return result;
+}
+
+async function collectNarrationAssets(scenes: StoryboardScene[], assets: SceneAsset[]): Promise<Map<number, SceneAsset[]>> {
+  const result = new Map<number, SceneAsset[]>();
+  for (const scene of scenes) {
+    const sceneAssets = assets
+      .filter((item) => item.sceneId === scene.id)
+      .map((asset, index) => ({ asset, index }))
+      .sort((a, b) => {
+        const aTurn = a.asset.turnIndex ?? Number.MAX_SAFE_INTEGER;
+        const bTurn = b.asset.turnIndex ?? Number.MAX_SAFE_INTEGER;
+        if (aTurn !== bTurn) return aTurn - bTurn;
+        return a.index - b.index;
+      })
+      .map((item) => item.asset);
+    if (sceneAssets.length === 0) {
+      throw new Error(`Missing narration asset for scene ${scene.id}.`);
+    }
+    for (const asset of sceneAssets) {
+      await assertReadableFile(asset.path, `narration asset for scene ${scene.id}`);
+    }
+    result.set(scene.id, sceneAssets);
   }
   return result;
 }

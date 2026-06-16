@@ -327,6 +327,70 @@ describe('pipeline cache and retry', () => {
     }
   });
 
+  it('removes every narration turn for a scene when regenerating dual voice audio', async () => {
+    const dir = await mkdtemp(join(tmpdir(), 'storybound-regenerate-dual-voice-narration-'));
+    const statePath = join(dir, 'pipeline', 'state.json');
+
+    try {
+      await mkdir(join(dir, 'pipeline'), { recursive: true });
+      await writeFile(
+        statePath,
+        JSON.stringify(
+          {
+            version: 1,
+            taskId: 'task-regenerate-dual-voice-audio',
+            updatedAt: '2026-06-16T00:00:00.000Z',
+            steps: {
+              '4': { status: 'completed', outputPath: '1.png\n2.png' },
+              '5': { status: 'completed', outputPath: '1-a.mp3\n1-b.mp3\n2-a.mp3' },
+              '6': { status: 'completed', outputPath: 'draft-dir' },
+            },
+            artifact: {
+              reviewedText: 'reviewed',
+              rewrittenCopy: 'copy',
+              cover: { title: 'Title', subtitle: [], summary: '', tags: [], comments: [] },
+              scenes: [
+                { id: 1, cap: 'Host A: one\nHost B: two', descPrompt: 'one', durationMs: 1000 },
+                { id: 2, cap: 'Host A: three', descPrompt: 'two', durationMs: 1000 },
+              ],
+              imagePrompts: [],
+            },
+            assets: {
+              images: [
+                { sceneId: 1, path: '1.png' },
+                { sceneId: 2, path: '2.png' },
+              ],
+              narration: [
+                { sceneId: 1, path: '1-a.mp3', speaker: 'A', turnIndex: 1, text: 'one' },
+                { sceneId: 1, path: '1-b.mp3', speaker: 'B', turnIndex: 2, text: 'two' },
+                { sceneId: 2, path: '2-a.mp3', speaker: 'A', turnIndex: 1, text: 'three' },
+              ],
+            },
+            draft: {
+              draftDir: 'draft-dir',
+              draftContentPath: 'draft_content.json',
+              draftMetaPath: 'draft_meta_info.json',
+            },
+          },
+          null,
+          2,
+        ),
+        'utf8',
+      );
+
+      const result = await markSceneNarrationForRegeneration(statePath, 1);
+      const next = JSON.parse(await readFile(statePath, 'utf8'));
+
+      expect(result.removed).toBe(true);
+      expect(next.assets.narration).toEqual([{ sceneId: 2, path: '2-a.mp3', speaker: 'A', turnIndex: 1, text: 'three' }]);
+      expect(next.steps['5'].status).toBe('pending');
+      expect(next.steps['5'].outputPath).toBe('2-a.mp3');
+      expect(next.draft).toBeUndefined();
+    } finally {
+      await rm(dir, { recursive: true, force: true });
+    }
+  });
+
   it('marks a content step for rewrite-assisted rerun and clears downstream artifacts', async () => {
     const dir = await mkdtemp(join(tmpdir(), 'storybound-rerun-step-rewrite-'));
     const statePath = join(dir, 'pipeline', 'state.json');

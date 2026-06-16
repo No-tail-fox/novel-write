@@ -98,7 +98,7 @@ export interface PyJianYingBridgeInput {
   };
   scenes?: Array<{ sceneId: number; startUs: number; durationUs: number; text: string }>;
   images: Array<{ sceneId: number; path: string }>;
-  narration: Array<{ sceneId: number; path: string }>;
+  narration: Array<{ sceneId: number; path: string; speaker?: 'A' | 'B'; turnIndex?: number; text?: string }>;
   subtitlesSrtPath: string;
   bgm: BgmItem | null;
   totalDurationUs?: number;
@@ -576,11 +576,26 @@ def main():
         int(item["sceneId"]): copy_asset(item["path"], os.path.join(materials_dir, "images"), str(int(item["sceneId"])).zfill(3), ".png")
         for item in payload["images"]
     }
-    audio_by_scene = {
-        int(item["sceneId"]): copy_asset(item["path"], os.path.join(materials_dir, "narration"), str(int(item["sceneId"])).zfill(3), ".mp3")
-        for item in payload["narration"]
-    }
-    audio_materials = {scene_id: draft.AudioMaterial(path) for scene_id, path in audio_by_scene.items()}
+    audio_items_by_scene = {}
+    for index, item in enumerate(payload["narration"]):
+        scene_id = int(item["sceneId"])
+        turn_index = int(item.get("turnIndex") or (len(audio_items_by_scene.get(scene_id, [])) + 1))
+        speaker = str(item.get("speaker") or "").strip()
+        stem = f"{str(scene_id).zfill(3)}-{str(turn_index).zfill(3)}"
+        if speaker:
+            stem = f"{stem}-{speaker}"
+        copied_path = copy_asset(item["path"], os.path.join(materials_dir, "narration"), stem, ".mp3")
+        audio_items_by_scene.setdefault(scene_id, []).append({
+            "sceneId": scene_id,
+            "path": copied_path,
+            "material": draft.AudioMaterial(copied_path),
+            "turnIndex": turn_index,
+            "speaker": speaker,
+            "text": item.get("text", ""),
+            "sourceIndex": index,
+        })
+    for scene_id, items in audio_items_by_scene.items():
+        items.sort(key=lambda item: (int(item.get("turnIndex") or 0), int(item.get("sourceIndex") or 0)))
     volumes = payload.get("volumes") or {}
     effects = payload.get("effects") or {}
     image_area = payload.get("imageArea") or {}
@@ -589,7 +604,10 @@ def main():
     for scene in scenes:
         scene_id = int(scene["sceneId"])
         planned_duration = int(durations.get(scene_id, 0))
-        audio_duration = int(audio_materials[scene_id].duration)
+        audio_items = audio_items_by_scene.get(scene_id) or []
+        if not audio_items:
+            raise ValueError(f"Missing narration asset for scene {scene_id}")
+        audio_duration = sum(int(item["material"].duration) for item in audio_items)
         scene_duration = max(planned_duration, audio_duration)
         timeline.append({
             "sceneId": scene_id,
@@ -628,7 +646,7 @@ def main():
         duration = int(scene["durationUs"])
         audio_duration = int(scene["audioDurationUs"])
         image_material = draft.VideoMaterial(image_by_scene[scene_id])
-        audio_material = audio_materials[scene_id]
+        audio_items = audio_items_by_scene[scene_id]
         image_layout = resolve_image_layout(image_area, payload.get("canvas") or {}, image_material)
         if image_area.get("visible", True):
             image_segment = draft.VideoSegment(
@@ -656,20 +674,24 @@ def main():
                 image_segment.add_transition(transition_type, duration=clamp_effect_duration(transition_duration, duration))
             script.add_segment(image_segment, "images")
 
-        audio_segment = draft.AudioSegment(
-            audio_material,
-            draft.Timerange(start, audio_duration),
-            source_timerange=draft.Timerange(0, audio_duration),
-            volume=float(volumes.get("narration", 1.0)),
-        )
-        if narration_fade_in > 0 or narration_fade_out > 0:
-            audio_segment.add_fade(
-                clamp_effect_duration(narration_fade_in, audio_duration),
-                clamp_effect_duration(narration_fade_out, audio_duration),
+        turn_cursor = 0
+        for audio_item in audio_items:
+            turn_duration = int(audio_item["material"].duration)
+            audio_segment = draft.AudioSegment(
+                audio_item["material"],
+                draft.Timerange(start + turn_cursor, turn_duration),
+                source_timerange=draft.Timerange(0, turn_duration),
+                volume=float(volumes.get("narration", 1.0)),
             )
-        if audio_effect_type:
-            audio_segment.add_effect(audio_effect_type)
-        script.add_segment(audio_segment, "narration")
+            if narration_fade_in > 0 or narration_fade_out > 0:
+                audio_segment.add_fade(
+                    clamp_effect_duration(narration_fade_in, turn_duration),
+                    clamp_effect_duration(narration_fade_out, turn_duration),
+                )
+            if audio_effect_type:
+                audio_segment.add_effect(audio_effect_type)
+            script.add_segment(audio_segment, "narration")
+            turn_cursor += turn_duration
 
     bgm = payload.get("bgm")
     bgm_path = None
@@ -739,7 +761,7 @@ def main():
     content_path = os.path.join(draft_dir, "draft_content.json")
     meta_path = os.path.join(draft_dir, "draft_meta_info.json")
     copied_images = [image_by_scene[int(scene["sceneId"])] for scene in scenes]
-    copied_narration = [audio_by_scene[int(scene["sceneId"])] for scene in scenes]
+    copied_narration = [item["path"] for scene in scenes for item in audio_items_by_scene[int(scene["sceneId"])]]
     patch_meta(meta_path, payload, draft_dir, script.duration, background_path, copied_images, copied_narration, bgm_path)
     print(json.dumps({
         "ok": True,

@@ -1,4 +1,4 @@
-import type { AppConfig, TtsProvider } from './types';
+import type { AppConfig, PodcastSpeakerPair, TtsProvider } from './types';
 import { DEFAULT_VOLCENGINE_TTS_V3_SPEAKER, normalizeVolcengineV3Speaker } from './volcengine-tts';
 
 export type RuntimeTtsProvider = Exclude<TtsProvider, 'mock'>;
@@ -24,6 +24,33 @@ export const MINIMAX_TASK_VOICE_OPTIONS: TtsVoiceOption[] = [
   { id: 'female-yujie', label: '御姐', hint: '成熟女声' },
 ];
 
+export interface PodcastSpeakerDefaults {
+  podcastSpeakerA: string;
+  podcastSpeakerB: string;
+}
+
+const VOLCENGINE_PODCAST_SPEAKER_DEFAULTS: Record<PodcastSpeakerPair, PodcastSpeakerDefaults> = {
+  'kazai-dayi': {
+    podcastSpeakerA: DEFAULT_VOLCENGINE_TTS_V3_SPEAKER,
+    podcastSpeakerB: 'zh_female_vv_uranus_bigtts',
+  },
+  'liufei-xiaolei': {
+    podcastSpeakerA: 'zh_male_ruyaqingnian_uranus_bigtts',
+    podcastSpeakerB: 'zh_female_shuangkuaisisi_uranus_bigtts',
+  },
+};
+
+const MINIMAX_PODCAST_SPEAKER_DEFAULTS: Record<PodcastSpeakerPair, PodcastSpeakerDefaults> = {
+  'kazai-dayi': {
+    podcastSpeakerA: 'male-qn-qingse',
+    podcastSpeakerB: 'female-yujie',
+  },
+  'liufei-xiaolei': {
+    podcastSpeakerA: 'male-qn-jingying',
+    podcastSpeakerB: 'female-shaonv',
+  },
+};
+
 export function normalizeRuntimeTtsProvider(provider: TtsProvider | string | null | undefined): RuntimeTtsProvider {
   return provider === 'minimax' ? 'minimax' : 'volcengine';
 }
@@ -42,6 +69,12 @@ export function defaultTaskSpeakerForProvider(provider: TtsProvider | string | n
 
 export function taskSpeakerLabel(provider: TtsProvider | string | null | undefined, speaker: string): string {
   return ttsVoiceOptionsForProvider(provider).find((option) => option.id === speaker)?.label ?? speaker;
+}
+
+export function defaultPodcastSpeakersForProvider(provider: TtsProvider | string | null | undefined, pair: string | null | undefined): PodcastSpeakerDefaults {
+  const speakerPair: PodcastSpeakerPair = pair === 'liufei-xiaolei' ? 'liufei-xiaolei' : 'kazai-dayi';
+  const defaults = normalizeRuntimeTtsProvider(provider) === 'minimax' ? MINIMAX_PODCAST_SPEAKER_DEFAULTS : VOLCENGINE_PODCAST_SPEAKER_DEFAULTS;
+  return defaults[speakerPair];
 }
 
 export function volcengineResourceIdForTaskSpeaker(speaker: string, fallback: string): string {

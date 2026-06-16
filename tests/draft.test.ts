@@ -278,6 +278,64 @@ describe('draft writer', () => {
     }
   });
 
+  it('passes multiple narration turns for one scene into the bridge payload', async () => {
+    const dir = await mkdtemp(join(tmpdir(), 'storybound-draft-dual-voice-payload-'));
+    const draftRootDir = join(dir, 'JianyingPro Drafts');
+    const workDir = join(dir, 'work');
+    const scenes: StoryboardScene[] = [{ id: 1, cap: 'Host A: First line\nHost B: Second line', descPrompt: 'prompt', durationMs: 1200 }];
+    const images = await writeAssets(workDir, scenes, 'png', twoByTwoPng);
+    const firstAudio = join(workDir, 'audio-a.wav');
+    const secondAudio = join(workDir, 'audio-b.wav');
+    await writeFile(firstAudio, wavTone(600));
+    await writeFile(secondAudio, wavTone(700));
+    const capturedPayloads: PyJianYingBridgeInput[] = [];
+
+    try {
+      await writeJianyingDraft(
+        {
+          workDir,
+          draftRootDir,
+          title: 'Dual Voice Draft',
+          cover: { title: 'Dual Voice Draft', subtitle: [], summary: '', tags: [], comments: [] },
+          ratio: '9:16',
+          scenes,
+          imagePrompts: buildImagePrompts(scenes, { inputText: 'Podcast', style: 'photo-real', ratio: '9:16' }),
+          reviewedText: 'reviewed',
+          rewrittenCopy: 'rewritten',
+          generatedImages: images,
+          narrationAudio: [
+            { sceneId: 1, path: firstAudio, speaker: 'A', turnIndex: 1, text: 'First line' },
+            { sceneId: 1, path: secondAudio, speaker: 'B', turnIndex: 2, text: 'Second line' },
+          ],
+          bgm: null,
+        },
+        {
+          runBridge: async (payload) => {
+            capturedPayloads.push(payload);
+            await mkdir(payload.draftDir, { recursive: true });
+            await writeFile(join(payload.draftDir, 'draft_content.json'), '{}', 'utf8');
+            await writeFile(join(payload.draftDir, 'draft_meta_info.json'), '{}', 'utf8');
+            return {
+              draftDir: payload.draftDir,
+              draftContentPath: join(payload.draftDir, 'draft_content.json'),
+              draftMetaPath: join(payload.draftDir, 'draft_meta_info.json'),
+              durationUs: payload.totalDurationUs ?? 0,
+            };
+          },
+        },
+      );
+
+      expect(capturedPayloads).toHaveLength(1);
+      const payload = capturedPayloads[0];
+      expect(payload.narration).toEqual([
+        { sceneId: 1, path: firstAudio, speaker: 'A', turnIndex: 1, text: 'First line' },
+        { sceneId: 1, path: secondAudio, speaker: 'B', turnIndex: 2, text: 'Second line' },
+      ]);
+    } finally {
+      await rm(dir, { recursive: true, force: true });
+    }
+  });
+
   it('passes uploaded BGM, volumes, and conservative edit effects to the bridge payload', async () => {
     const dir = await mkdtemp(join(tmpdir(), 'storybound-draft-bgm-'));
     const draftRootDir = join(dir, 'JianyingPro Drafts');

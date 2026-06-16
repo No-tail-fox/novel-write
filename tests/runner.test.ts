@@ -5,7 +5,7 @@ import { join } from 'node:path';
 import { FileDatabase } from '@shared/storage';
 import { runTask } from '@shared/runner';
 import { markTaskStepForRerun } from '@shared/pipeline-cache';
-import type { ImagePrompt, PipelineArtifact, StoryboardScene, TaskStatus } from '@shared/types';
+import type { CustomCoverTemplate, ImagePrompt, PipelineArtifact, StoryboardScene, TaskStatus } from '@shared/types';
 import type { PyJianYingBridgeInput } from '@shared/jianying-bridge';
 import type { JsonLlm, LlmJsonRequest } from '@shared/llm-provider';
 
@@ -376,6 +376,396 @@ describe('task runner', () => {
       ]);
       const prompts = JSON.parse(await readFile(join(dir, 'tasks', task.id, '03-image-prompts.json'), 'utf8')) as ImagePrompt[];
       expect(prompts.map((prompt) => prompt.sceneId)).toEqual(scenes.map((scene) => scene.id));
+    } finally {
+      await db.close();
+      await rm(dir, { recursive: true, force: true });
+    }
+  });
+
+  it('generates an auto cover image asset and writes cover-image.png', async () => {
+    const dir = await mkdtemp(join(tmpdir(), 'storybound-runner-auto-cover-'));
+    const db = await FileDatabase.open(join(dir, 'data.db'));
+    const draftRootDir = join(dir, 'JianyingPro Drafts');
+    const mediaDir = join(dir, 'media');
+    const imageCalls: Array<{ scenes: StoryboardScene[]; prompts: ImagePrompt[] }> = [];
+
+    try {
+      await db.upsertConfig({
+        ...(await db.getState()).config,
+        jianying: { ...(await db.getState()).config.jianying, draftPath: draftRootDir },
+      });
+      const task = await db.createTask({
+        title: 'Auto cover task',
+        inputText: sampleInput,
+        coverImageMode: 'auto',
+      });
+
+      await runTask(db, task, {
+        appDataDir: dir,
+        generatePipelineArtifact: async () => makeArtifact(),
+        generateImages: async (scenes, prompts) => {
+          imageCalls.push({ scenes, prompts });
+          return writeSceneAssets(mediaDir, scenes, 'png', tinyPng);
+        },
+        synthesizeNarration: async (scenes) => writeSceneAssets(mediaDir, scenes, 'wav', wavTone(1200)),
+        draftWriterOptions: { runBridge: fakeBridge },
+      });
+
+      const completed = (await db.getState()).tasks[0];
+      const pipeline = JSON.parse(await readFile(completed.artifactStatePath, 'utf8'));
+      expect(imageCalls[0].scenes.map((scene) => scene.id)).toEqual([0]);
+      expect(imageCalls[0].prompts[0].prompt).toContain('Short-video cover');
+      expect(pipeline.assets.cover[0].path).toBe(join(dir, 'tasks', task.id, 'cover-image.png'));
+      expect(await readFile(join(dir, 'tasks', task.id, 'cover-image.png'))).toEqual(tinyPng);
+    } finally {
+      await db.close();
+      await rm(dir, { recursive: true, force: true });
+    }
+  });
+
+  it('uses podcast cover template wording when the task selects podcast-cover', async () => {
+    const dir = await mkdtemp(join(tmpdir(), 'storybound-runner-podcast-cover-template-'));
+    const db = await FileDatabase.open(join(dir, 'data.db'));
+    const draftRootDir = join(dir, 'JianyingPro Drafts');
+    const mediaDir = join(dir, 'media');
+    const imageCalls: Array<{ prompts: ImagePrompt[] }> = [];
+
+    try {
+      await db.upsertConfig({
+        ...(await db.getState()).config,
+        jianying: { ...(await db.getState()).config.jianying, draftPath: draftRootDir },
+      });
+      const task = await db.createTask({
+        title: 'Podcast cover task',
+        inputText: sampleInput,
+        coverImageMode: 'auto',
+        coverTemplateId: 'podcast-cover',
+      });
+
+      await runTask(db, task, {
+        appDataDir: dir,
+        generatePipelineArtifact: async () => makeArtifact(),
+        generateImages: async (scenes, prompts) => {
+          imageCalls.push({ prompts });
+          return writeSceneAssets(mediaDir, scenes, 'png', tinyPng);
+        },
+        synthesizeNarration: async (scenes) => writeSceneAssets(mediaDir, scenes, 'wav', wavTone(1200)),
+        draftWriterOptions: { runBridge: fakeBridge },
+      });
+
+      expect(imageCalls[0].prompts[0].prompt).toContain('Podcast cover');
+      expect(imageCalls[0].prompts[0].prompt).toContain('thumbnail');
+      expect(imageCalls[0].prompts[0].prompt).toContain('topic signal');
+    } finally {
+      await db.close();
+      await rm(dir, { recursive: true, force: true });
+    }
+  });
+
+  it('uses custom cover template fields when building cover image prompts', async () => {
+    const dir = await mkdtemp(join(tmpdir(), 'storybound-runner-custom-cover-template-'));
+    const db = await FileDatabase.open(join(dir, 'data.db'));
+    const draftRootDir = join(dir, 'JianyingPro Drafts');
+    const mediaDir = join(dir, 'media');
+    const imageCalls: Array<{ prompts: ImagePrompt[] }> = [];
+    const customCoverTemplates: CustomCoverTemplate[] = [
+      {
+        id: 'noir-cover',
+        name: 'Noir Cover',
+        description: 'High contrast noir cover',
+        directions: 'Use hard side light and a single detective silhouette.',
+        compositionRule: 'Subject stands in the lower right third with rain in the background.',
+        titleLayout: 'Title stays in a clean upper-left block.',
+        subtitleLayout: 'Subtitle is a narrow line below the title.',
+        plainHint: 'Noir poster for {{TITLE}} with quiet menace.',
+        createdAt: '2026-01-01T00:00:00.000Z',
+        updatedAt: '2026-01-01T00:00:00.000Z',
+      },
+    ];
+
+    try {
+      await db.upsertConfig({
+        ...(await db.getState()).config,
+        jianying: { ...(await db.getState()).config.jianying, draftPath: draftRootDir },
+      });
+      const task = await db.createTask({
+        title: 'Noir cover task',
+        inputText: sampleInput,
+        coverImageMode: 'auto',
+        coverTemplateId: 'noir-cover',
+      });
+
+      await runTask(db, task, {
+        appDataDir: dir,
+        customCoverTemplates,
+        generatePipelineArtifact: async () => makeArtifact(),
+        generateImages: async (scenes, prompts) => {
+          imageCalls.push({ prompts });
+          return writeSceneAssets(mediaDir, scenes, 'png', tinyPng);
+        },
+        synthesizeNarration: async (scenes) => writeSceneAssets(mediaDir, scenes, 'wav', wavTone(1200)),
+        draftWriterOptions: { runBridge: fakeBridge },
+      });
+
+      const prompt = imageCalls[0].prompts[0].prompt;
+      expect(prompt).toContain('Use hard side light and a single detective silhouette.');
+      expect(prompt).toContain('Subject stands in the lower right third');
+      expect(prompt).toContain('Title stays in a clean upper-left block');
+      expect(prompt).toContain('Noir poster for Wu Zetian');
+    } finally {
+      await db.close();
+      await rm(dir, { recursive: true, force: true });
+    }
+  });
+
+  it('maps one podcast cover image to every scene when two-host podcast uses single cover art', async () => {
+    const dir = await mkdtemp(join(tmpdir(), 'storybound-runner-podcast-single-cover-'));
+    const db = await FileDatabase.open(join(dir, 'data.db'));
+    const draftRootDir = join(dir, 'JianyingPro Drafts');
+    const mediaDir = join(dir, 'media');
+    const imageCalls: Array<{ scenes: StoryboardScene[]; prompts: ImagePrompt[] }> = [];
+    let capturedPayload: PyJianYingBridgeInput | null = null;
+
+    try {
+      await db.upsertConfig({
+        ...(await db.getState()).config,
+        jianying: { ...(await db.getState()).config.jianying, draftPath: draftRootDir },
+      });
+      const task = await db.createTask({
+        title: 'Two-host single cover',
+        inputText: sampleInput,
+        videoForm: 'two-host-podcast',
+        podcastImageMode: 'single',
+      });
+
+      await runTask(db, task, {
+        appDataDir: dir,
+        generatePipelineArtifact: async () => makeArtifact(),
+        generateImages: async (scenes, prompts) => {
+          imageCalls.push({ scenes, prompts });
+          return writeSceneAssets(mediaDir, scenes, 'png', tinyPng);
+        },
+        synthesizeNarration: async (scenes) => writeSceneAssets(mediaDir, scenes, 'wav', wavTone(1200)),
+        draftWriterOptions: {
+          runBridge: async (payload) => {
+            capturedPayload = payload;
+            return fakeBridge(payload);
+          },
+        },
+      });
+
+      const completed = (await db.getState()).tasks[0];
+      const pipeline = JSON.parse(await readFile(completed.artifactStatePath, 'utf8'));
+      expect(imageCalls).toHaveLength(1);
+      expect(imageCalls[0].scenes.map((scene) => scene.id)).toEqual([0]);
+      expect(imageCalls[0].prompts[0].prompt).toContain('Two-host podcast');
+      expect(pipeline.assets.images).toHaveLength(makeArtifact().scenes.length);
+      expect(new Set(pipeline.assets.images.map((asset: { path: string }) => asset.path)).size).toBe(1);
+      const payload = capturedPayload as PyJianYingBridgeInput | null;
+      expect(payload?.images.map((asset) => asset.path)).toEqual(pipeline.assets.images.map((asset: { path: string }) => asset.path));
+    } finally {
+      await db.close();
+      await rm(dir, { recursive: true, force: true });
+    }
+  });
+
+  it('injects two-host podcast dialogue constraints into LLM prompts', async () => {
+    const dir = await mkdtemp(join(tmpdir(), 'storybound-runner-podcast-prompts-'));
+    const db = await FileDatabase.open(join(dir, 'data.db'));
+    const draftRootDir = join(dir, 'JianyingPro Drafts');
+    const mediaDir = join(dir, 'media');
+    const requests: LlmJsonRequest[] = [];
+
+    try {
+      await db.upsertConfig({
+        ...(await db.getState()).config,
+        jianying: { ...(await db.getState()).config.jianying, draftPath: draftRootDir },
+      });
+      const task = await db.createTask({
+        title: 'Podcast prompt task',
+        inputText: sampleInput,
+        videoForm: 'two-host-podcast',
+        podcastSpeakers: 'kazai-dayi',
+      });
+
+      const llm: JsonLlm = async <T,>(request: LlmJsonRequest) => {
+        requests.push(request);
+        if (request.step === 0) return { json: { reviewedText: sampleInput } as T, raw: '{}', requestId: 'review' };
+        if (request.name.startsWith('rewrite-round-')) {
+          return { json: { rewrittenCopy: 'Host A: First line\nHost B: Second line', cover: { title: 'Podcast', subtitle: [], summary: 'summary', tags: [], comments: [] } } as T, raw: '{}', requestId: 'rewrite' };
+        }
+        if (request.name === 'rewrite-evaluation') return { json: { bestRound: 1, evaluations: [{ round: 1, score: 90, reason: 'dialogue' }] } as T, raw: '{}', requestId: 'eval' };
+        if (request.step === 2) return { json: { scenes: makeArtifact().scenes } as T, raw: '{}', requestId: 'storyboard' };
+        return { json: { imagePrompts: makePrompts(extractScenesFromPrompt(request)) } as T, raw: '{}', requestId: 'prompts' };
+      };
+
+      await runTask(db, task, {
+        appDataDir: dir,
+        llm,
+        generateImages: async (scenes) => writeSceneAssets(mediaDir, scenes, 'png', tinyPng),
+        synthesizeNarration: async (scenes) => writeSceneAssets(mediaDir, scenes, 'wav', wavTone(1200)),
+        draftWriterOptions: { runBridge: fakeBridge },
+      });
+
+      const promptText = requests.map((request) => request.messages.map((message) => message.content).join('\n')).join('\n\n');
+      expect(promptText).toContain('Two-host podcast mode');
+      expect(promptText).toContain('dialogue script');
+      expect(promptText).toContain('kazai-dayi');
+    } finally {
+      await db.close();
+      await rm(dir, { recursive: true, force: true });
+    }
+  });
+
+  it('preserves multiple narration turn assets for one two-host podcast scene', async () => {
+    const dir = await mkdtemp(join(tmpdir(), 'storybound-runner-podcast-turn-assets-'));
+    const db = await FileDatabase.open(join(dir, 'data.db'));
+    const draftRootDir = join(dir, 'JianyingPro Drafts');
+    const mediaDir = join(dir, 'media');
+
+    try {
+      await db.upsertConfig({
+        ...(await db.getState()).config,
+        jianying: { ...(await db.getState()).config.jianying, draftPath: draftRootDir },
+      });
+      const task = await db.createTask({
+        title: 'Podcast turn assets',
+        inputText: sampleInput,
+        track: 'character-story',
+        style: 'photo-real',
+        speaker: 'voice',
+        videoForm: 'two-host-podcast',
+        podcastSpeakerA: 'voice-host-a',
+        podcastSpeakerB: 'voice-host-b',
+      });
+      const artifact = makeArtifact();
+      artifact.scenes = [{ id: 1, cap: 'Host A: First line\nHost B: Second line', descPrompt: 'podcast studio', durationMs: 1200 }];
+      artifact.imagePrompts = [{ sceneId: 1, cap: artifact.scenes[0].cap, prompt: 'podcast studio', negativePrompt: '', style: 'photo-real', ratio: '9:16', characterProfile: '' }];
+      const firstTurn = join(mediaDir, '001-turn-001-A.wav');
+      const secondTurn = join(mediaDir, '001-turn-002-B.wav');
+      await mkdir(mediaDir, { recursive: true });
+      await writeFile(firstTurn, wavTone(600));
+      await writeFile(secondTurn, wavTone(600));
+
+      await runTask(db, task, {
+        appDataDir: dir,
+        generatePipelineArtifact: async () => artifact,
+        generateImages: async (scenes) => writeSceneAssets(mediaDir, scenes, 'png', tinyPng),
+        synthesizeNarration: async () => [
+          { sceneId: 1, path: firstTurn, speaker: 'A', turnIndex: 1, text: 'First line' },
+          { sceneId: 1, path: secondTurn, speaker: 'B', turnIndex: 2, text: 'Second line' },
+        ],
+        draftWriterOptions: { runBridge: fakeBridge },
+      });
+
+      const statePath = (await db.getState()).tasks[0].artifactStatePath;
+      const pipeline = JSON.parse(await readFile(statePath, 'utf8'));
+      expect(pipeline.assets.narration).toEqual([
+        { sceneId: 1, path: firstTurn, speaker: 'A', turnIndex: 1, text: 'First line' },
+        { sceneId: 1, path: secondTurn, speaker: 'B', turnIndex: 2, text: 'Second line' },
+      ]);
+    } finally {
+      await db.close();
+      await rm(dir, { recursive: true, force: true });
+    }
+  });
+
+  it('treats a two-host scene with multiple narration turns as complete on resume', async () => {
+    const dir = await mkdtemp(join(tmpdir(), 'storybound-runner-podcast-turn-resume-'));
+    const db = await FileDatabase.open(join(dir, 'data.db'));
+    const draftRootDir = join(dir, 'JianyingPro Drafts');
+    const mediaDir = join(dir, 'media');
+    let narrationCalls = 0;
+
+    try {
+      await db.upsertConfig({
+        ...(await db.getState()).config,
+        jianying: { ...(await db.getState()).config.jianying, draftPath: draftRootDir },
+      });
+      const task = await db.createTask({
+        title: 'Podcast turn resume',
+        inputText: sampleInput,
+        track: 'character-story',
+        style: 'photo-real',
+        speaker: 'voice',
+        videoForm: 'two-host-podcast',
+        podcastSpeakerA: 'voice-host-a',
+        podcastSpeakerB: 'voice-host-b',
+      });
+      const artifact = makeArtifact();
+      artifact.scenes = [{ id: 1, cap: 'Host A: First line\nHost B: Second line', descPrompt: 'podcast studio', durationMs: 1200 }];
+      artifact.imagePrompts = [{ sceneId: 1, cap: artifact.scenes[0].cap, prompt: 'podcast studio', negativePrompt: '', style: 'photo-real', ratio: '9:16', characterProfile: '' }];
+      const firstTurn = join(mediaDir, '001-turn-001-A.wav');
+      const secondTurn = join(mediaDir, '001-turn-002-B.wav');
+      await mkdir(mediaDir, { recursive: true });
+      await writeFile(firstTurn, wavTone(600));
+      await writeFile(secondTurn, wavTone(600));
+
+      await runTask(db, task, {
+        appDataDir: dir,
+        generatePipelineArtifact: async () => artifact,
+        generateImages: async (scenes) => writeSceneAssets(mediaDir, scenes, 'png', tinyPng),
+        synthesizeNarration: async () => {
+          narrationCalls += 1;
+          return [
+            { sceneId: 1, path: firstTurn, speaker: 'A', turnIndex: 1, text: 'First line' },
+            { sceneId: 1, path: secondTurn, speaker: 'B', turnIndex: 2, text: 'Second line' },
+          ];
+        },
+        draftWriterOptions: { runBridge: fakeBridge },
+      });
+      const completed = (await db.getState()).tasks[0];
+
+      await runTask(db, completed, {
+        appDataDir: dir,
+        generatePipelineArtifact: async () => artifact,
+        generateImages: async () => {
+          throw new Error('images should stay cached');
+        },
+        synthesizeNarration: async () => {
+          narrationCalls += 1;
+          throw new Error('narration should stay cached');
+        },
+        draftWriterOptions: { runBridge: fakeBridge },
+      });
+
+      expect(narrationCalls).toBe(1);
+    } finally {
+      await db.close();
+      await rm(dir, { recursive: true, force: true });
+    }
+  });
+
+  it('passes task reference images through to generated image prompts', async () => {
+    const dir = await mkdtemp(join(tmpdir(), 'storybound-runner-reference-image-'));
+    const db = await FileDatabase.open(join(dir, 'data.db'));
+    const draftRootDir = join(dir, 'JianyingPro Drafts');
+    const mediaDir = join(dir, 'media');
+    const imageCalls: Array<{ prompts: ImagePrompt[] }> = [];
+
+    try {
+      await db.upsertConfig({
+        ...(await db.getState()).config,
+        jianying: { ...(await db.getState()).config.jianying, draftPath: draftRootDir },
+      });
+      const task = await db.createTask({
+        title: 'Reference image task',
+        inputText: sampleInput,
+        referenceImagePath: 'D:/refs/protagonist.png',
+      });
+
+      await runTask(db, task, {
+        appDataDir: dir,
+        generatePipelineArtifact: async () => makeArtifact(),
+        generateImages: async (scenes, prompts) => {
+          imageCalls.push({ prompts });
+          return writeSceneAssets(mediaDir, scenes, 'png', tinyPng);
+        },
+        synthesizeNarration: async (scenes) => writeSceneAssets(mediaDir, scenes, 'wav', wavTone(1200)),
+        draftWriterOptions: { runBridge: fakeBridge },
+      });
+
+      expect(imageCalls.at(-1)?.prompts.every((item) => item.referenceImagePaths?.includes('D:/refs/protagonist.png'))).toBe(true);
     } finally {
       await db.close();
       await rm(dir, { recursive: true, force: true });

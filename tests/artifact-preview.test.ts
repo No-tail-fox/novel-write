@@ -66,6 +66,43 @@ describe('task artifact preview reader', () => {
     expect(snapshot.draft?.draftDir).toContain('draft');
   });
 
+  it('preserves multiple narration turn metadata for one scene', async () => {
+    const dir = await mkdtemp(join(tmpdir(), 'storybound-artifact-preview-turns-'));
+    const pipelineDir = join(dir, 'pipeline');
+    await mkdir(pipelineDir, { recursive: true });
+    const statePath = join(pipelineDir, 'state.json');
+    await writeFile(
+      statePath,
+      JSON.stringify(
+        {
+          version: 1,
+          taskId: 'task-1',
+          updatedAt: '2026-06-16T00:00:00.000Z',
+          steps: {},
+          artifact: {
+            scenes: [{ id: 1, cap: 'Host A: First\nHost B: Second', descPrompt: 'prompt', durationMs: 1200 }],
+          },
+          assets: {
+            narration: [
+              { sceneId: 1, path: join(dir, 'audio', '001-turn-001-A.mp3'), speaker: 'A', turnIndex: 1, text: 'First' },
+              { sceneId: 1, path: join(dir, 'audio', '001-turn-002-B.mp3'), speaker: 'B', turnIndex: 2, text: 'Second' },
+            ],
+          },
+        },
+        null,
+        2,
+      ),
+      'utf8',
+    );
+
+    const snapshot = await readTaskArtifactSnapshot(makeTask({ artifactStatePath: statePath }));
+
+    expect(snapshot.assets.narration).toEqual([
+      { sceneId: 1, path: join(dir, 'audio', '001-turn-001-A.mp3'), speaker: 'A', turnIndex: 1, text: 'First' },
+      { sceneId: 1, path: join(dir, 'audio', '001-turn-002-B.mp3'), speaker: 'B', turnIndex: 2, text: 'Second' },
+    ]);
+  });
+
   it('returns an unavailable snapshot when no pipeline state exists yet', async () => {
     const snapshot = await readTaskArtifactSnapshot(makeTask({ artifactStatePath: '' }));
 

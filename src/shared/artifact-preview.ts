@@ -7,6 +7,7 @@ interface PipelineStateFile {
   steps?: Record<string, Partial<TaskArtifactStepPreview>>;
   artifact?: Partial<PipelineArtifact>;
   assets?: {
+    cover?: TaskArtifactAssetPreview[];
     images?: TaskArtifactAssetPreview[];
     narration?: TaskArtifactAssetPreview[];
   };
@@ -30,6 +31,7 @@ export async function readTaskArtifactSnapshot(task: Pick<Task, 'id' | 'artifact
       steps: normalizeSteps(state.steps),
       artifact: state.artifact ?? {},
       assets: {
+        cover: Array.isArray(state.assets?.cover) ? state.assets.cover : [],
         images: Array.isArray(state.assets?.images) ? state.assets.images : [],
         narration: Array.isArray(state.assets?.narration) ? state.assets.narration : [],
       },
@@ -51,6 +53,7 @@ function emptySnapshot(task: Pick<Task, 'id' | 'artifactStatePath' | 'outputDir'
     steps: {},
     artifact: {},
     assets: {
+      cover: [],
       images: [],
       narration: [],
     },
