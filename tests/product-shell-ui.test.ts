@@ -57,6 +57,22 @@ describe('product shell ui', () => {
     expect(primaryNav.indexOf("view: 'viral-analyzer'")).toBeLessThan(primaryNav.indexOf("view: 'prompt-templates'"));
   });
 
+  it('gives two-line sidebar navigation items stable rows', async () => {
+    const css = await readFile(new URL('../src/styles.css', import.meta.url), 'utf8');
+
+    expect(css).toContain('grid-template-columns: 18px minmax(0, 1fr);');
+    expect(css).toContain('grid-template-rows: 18px 16px;');
+    expect(css).toContain('min-height: 54px;');
+    expect(css).toContain('gap: 2px 10px;');
+    expect(css).toContain('.nav-item > svg');
+    expect(css).toContain('grid-row: 1 / span 2;');
+    expect(css).toContain('.nav-item span,');
+    expect(css).toContain('text-overflow: ellipsis;');
+    expect(css).toContain('white-space: nowrap;');
+    expect(css).toContain('line-height: 16px;');
+    expect(css).toContain('line-height: 14px;');
+  });
+
   it('uses a restrained storyboard-console visual system instead of a generic neon shell', async () => {
     const css = await readFile(new URL('../src/styles.css', import.meta.url), 'utf8');
 
