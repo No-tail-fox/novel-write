@@ -220,7 +220,6 @@ const smartImageModeOptions: Array<[ImageLabSmartMode, string, string]> = [
   ['reference-edit', '参考图编辑', '参考图一致性改图'],
 ];
 const storyboardSceneCountOptions = [8, 12, 16, 20, 30];
-const targetLengthOptions = [300, 500, 800, 1200, 1500, 2000, 3000];
 const siliconFlowSpeechToTextBaseUrl = 'https://api.siliconflow.cn/v1';
 const siliconFlowSpeechToTextModels = ['FunAudioLLM/SenseVoiceSmall', 'TeleAI/TeleSpeechASR'];
 const volcengineVoicePresets = [
@@ -1364,8 +1363,8 @@ function NewTaskPage({
   const [narrativePov, setNarrativePov] = useState<Task['narrativePov']>('keep-original');
   const [keepPromotion, setKeepPromotion] = useState(false);
   const [ttsSpeed, setTtsSpeed] = useState(1);
-  const [targetLength, setTargetLength] = useState(500);
-  const [storyboardSceneCount, setStoryboardSceneCount] = useState(12);
+  const [targetLength, setTargetLength] = useState('');
+  const [storyboardSceneCount, setStoryboardSceneCount] = useState('12');
   const [videoForm, setVideoForm] = useState<TaskVideoForm>('narration');
   const [coverImageMode, setCoverImageMode] = useState('off');
   const [coverTemplateId, setCoverTemplateId] = useState('cinematic-poster');
@@ -1587,9 +1586,9 @@ function NewTaskPage({
         keepPromotion,
         ttsProvider,
         ttsSpeed,
-        targetLength: normalizeTaskTargetLength(targetLength),
-        targetScenes: storyboardSceneCount,
-        storyboardSceneCount,
+        targetLength: normalizeTaskTargetLength(targetLength) ?? undefined,
+        targetScenes: normalizeTaskStoryboardSceneCount(storyboardSceneCount),
+        storyboardSceneCount: normalizeTaskStoryboardSceneCount(storyboardSceneCount),
         promptTemplateId: resolvedPromptTemplate?.id ?? null,
         promptTemplateType: 'task',
       });
@@ -1790,21 +1789,32 @@ function NewTaskPage({
           </div>
         </div>
 
-        <div className="option-two-col">
-          <Segmented
-            label="目标字数"
-            value={String(targetLength)}
-            options={targetLengthOptions.map(String)}
-            labels={targetLengthOptions.map((count) => `${count} 字`)}
-            onChange={(value) => setTargetLength(Number(value))}
-          />
-          <Segmented
-            label="目标分镜数"
-            value={String(storyboardSceneCount)}
-            options={storyboardSceneCountOptions.map(String)}
-            labels={storyboardSceneCountOptions.map((count) => `${count} 条`)}
-            onChange={(value) => setStoryboardSceneCount(Number(value))}
-          />
+        <div className="target-controls-row">
+          <label className="target-number-field">
+            <span>目标字数</span>
+            <input
+              type="number"
+              min="100"
+              max="5000"
+              step="50"
+              value={targetLength}
+              placeholder="自动"
+              onChange={(event) => setTargetLength(event.target.value)}
+            />
+            <small>字（±15%，留空跟随原文）</small>
+          </label>
+          <label className="target-number-field">
+            <span>目标分镜数</span>
+            <input
+              type="number"
+              min="1"
+              max="60"
+              step="1"
+              value={storyboardSceneCount}
+              onChange={(event) => setStoryboardSceneCount(event.target.value)}
+            />
+            <small>个（±10%，建议每镜 25-45 字）</small>
+          </label>
         </div>
 
         <>
@@ -6601,10 +6611,17 @@ function countChars(value?: string): number {
   return value?.trim().length ?? 0;
 }
 
-function normalizeTaskTargetLength(value: number): number {
+function normalizeTaskTargetLength(value: string): number | undefined {
+  if (!value.trim()) return undefined;
   const parsed = Number(value);
-  if (!Number.isFinite(parsed)) return 1500;
+  if (!Number.isFinite(parsed)) return undefined;
   return Math.min(5000, Math.max(100, Math.round(parsed)));
+}
+
+function normalizeTaskStoryboardSceneCount(value: string): number {
+  const parsed = Number(value);
+  if (!Number.isFinite(parsed)) return 12;
+  return Math.min(60, Math.max(1, Math.round(parsed)));
 }
 
 function trimForPreview(value: string, limit: number): string {

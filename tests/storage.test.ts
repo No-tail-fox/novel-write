@@ -139,6 +139,26 @@ describe('file database', () => {
     }
   });
 
+  it('keeps task target length automatic when no explicit word count is provided', async () => {
+    const dir = await mkdtemp(join(tmpdir(), 'storybound-db-auto-target-length-'));
+    const file = join(dir, 'app.db');
+
+    try {
+      const db = await FileDatabase.open(file);
+      await db.createTask({
+        title: 'Auto target length',
+        inputText: 'Source material',
+      });
+
+      const state = await db.getState();
+      expect(state.tasks[0].targetLength).toBeUndefined();
+      expect(state.tasks[0].targetScenes).toBe(12);
+      await db.close();
+    } finally {
+      await rm(dir, { recursive: true, force: true });
+    }
+  });
+
   it('persists Storybound video form and two-host podcast task options', async () => {
     const dir = await mkdtemp(join(tmpdir(), 'storybound-db-video-form-'));
     const file = join(dir, 'app.db');

@@ -62,7 +62,6 @@ const stepAgents: Record<number, string> = {
 
 const imagePromptBatchSize = 8;
 const defaultStoryboardSceneCount = 12;
-const defaultTargetLength = 1500;
 
 class CheckpointPause extends Error {
   constructor(
@@ -527,17 +526,20 @@ function chunkArray<T>(items: T[], size: number): T[][] {
 function normalizeStoryboardSceneCount(value: unknown): number {
   const parsed = Number(value);
   if (!Number.isFinite(parsed)) return defaultStoryboardSceneCount;
-  return Math.min(30, Math.max(4, Math.round(parsed)));
+  return Math.min(60, Math.max(1, Math.round(parsed)));
 }
 
-function normalizeTargetLength(value: unknown): number {
+function normalizeTargetLength(value: unknown): number | null {
+  if (value === null || value === undefined || value === '') return null;
   const parsed = Number(value);
-  if (!Number.isFinite(parsed)) return defaultTargetLength;
+  if (!Number.isFinite(parsed)) return null;
   return Math.min(5000, Math.max(100, Math.round(parsed)));
 }
 
 function targetLengthInstruction(task: Task): string {
-  return `Target word count: about ${normalizeTargetLength(task.targetLength)} Chinese characters. Keep within +/-15% unless source length makes that impossible.`;
+  const targetLength = normalizeTargetLength(task.targetLength);
+  if (!targetLength) return '';
+  return `Target word count: about ${targetLength} Chinese characters. Keep within +/-15% unless source length makes that impossible.`;
 }
 
 function pauseAtCheckpoint(task: Task, initialStep: number, step: number, detail: string): void {

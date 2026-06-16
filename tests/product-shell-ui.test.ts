@@ -1366,8 +1366,14 @@ describe('product shell ui', () => {
     expect(page).toContain('setTargetLength');
     expect(page).toContain('目标字数');
     expect(page).toContain('目标分镜数');
-    expect(page).toContain('targetLength: normalizeTaskTargetLength(targetLength)');
-    expect(page).toContain('targetScenes: storyboardSceneCount');
+    expect(page).toContain('value={targetLength}');
+    expect(page).toContain('placeholder="自动"');
+    expect(page).toContain('type="number"');
+    expect(page).toContain('min="1"');
+    expect(page).toContain('max="60"');
+    expect(page).toContain('targetLength: normalizeTaskTargetLength(targetLength) ?? undefined');
+    expect(page).toContain('targetScenes: normalizeTaskStoryboardSceneCount(storyboardSceneCount)');
+    expect(page).not.toContain('options={targetLengthOptions.map(String)}');
     const targetWordIndex = page.indexOf('目标字数');
     const targetSceneIndex = page.indexOf('目标分镜数');
     const advancedIndex = page.indexOf('<button className="advanced-toggle"');
