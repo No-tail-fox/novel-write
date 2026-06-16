@@ -220,6 +220,7 @@ const smartImageModeOptions: Array<[ImageLabSmartMode, string, string]> = [
   ['reference-edit', '参考图编辑', '参考图一致性改图'],
 ];
 const storyboardSceneCountOptions = [8, 12, 16, 20, 30];
+const targetLengthOptions = [300, 500, 800, 1200, 1500, 2000, 3000];
 const siliconFlowSpeechToTextBaseUrl = 'https://api.siliconflow.cn/v1';
 const siliconFlowSpeechToTextModels = ['FunAudioLLM/SenseVoiceSmall', 'TeleAI/TeleSpeechASR'];
 const volcengineVoicePresets = [
@@ -1363,6 +1364,7 @@ function NewTaskPage({
   const [narrativePov, setNarrativePov] = useState<Task['narrativePov']>('keep-original');
   const [keepPromotion, setKeepPromotion] = useState(false);
   const [ttsSpeed, setTtsSpeed] = useState(1);
+  const [targetLength, setTargetLength] = useState(500);
   const [storyboardSceneCount, setStoryboardSceneCount] = useState(12);
   const [videoForm, setVideoForm] = useState<TaskVideoForm>('narration');
   const [coverImageMode, setCoverImageMode] = useState('off');
@@ -1585,6 +1587,8 @@ function NewTaskPage({
         keepPromotion,
         ttsProvider,
         ttsSpeed,
+        targetLength: normalizeTaskTargetLength(targetLength),
+        targetScenes: storyboardSceneCount,
         storyboardSceneCount,
         promptTemplateId: resolvedPromptTemplate?.id ?? null,
         promptTemplateType: 'task',
@@ -1786,6 +1790,23 @@ function NewTaskPage({
           </div>
         </div>
 
+        <div className="option-two-col">
+          <Segmented
+            label="目标字数"
+            value={String(targetLength)}
+            options={targetLengthOptions.map(String)}
+            labels={targetLengthOptions.map((count) => `${count} 字`)}
+            onChange={(value) => setTargetLength(Number(value))}
+          />
+          <Segmented
+            label="目标分镜数"
+            value={String(storyboardSceneCount)}
+            options={storyboardSceneCountOptions.map(String)}
+            labels={storyboardSceneCountOptions.map((count) => `${count} 条`)}
+            onChange={(value) => setStoryboardSceneCount(Number(value))}
+          />
+        </div>
+
         <>
           <span className="field-title">配音员</span>
           <Segmented label="配音模型" value={ttsProvider} options={['volcengine', 'minimax']} labels={['豆包', 'MiniMax']} onChange={handleTtsProviderChange} />
@@ -1833,13 +1854,6 @@ function NewTaskPage({
         {showAdvanced ? (
           <div className="advanced-grid">
             <Segmented label="处理模式" value={processingMode} options={['full-auto', 'semi-auto', 'clip-only']} labels={['全自动', '半自动', '只出方案']} onChange={(value) => setProcessingMode(value as ProcessingMode)} />
-            <Segmented
-              label="分镜数量"
-              value={String(storyboardSceneCount)}
-              options={storyboardSceneCountOptions.map(String)}
-              labels={storyboardSceneCountOptions.map((count) => `${count} 条`)}
-              onChange={(value) => setStoryboardSceneCount(Number(value))}
-            />
             <Segmented label="暂停确认" value={pausePoint} options={pauseOptions.map(([id]) => id)} labels={pauseOptions.map(([, label]) => label)} onChange={(value) => setPausePoint(value as PausePoint)} />
             <Segmented label="改写强度" value={rewriteIntensity} options={rewriteOptions.map(([id]) => id)} labels={rewriteOptions.map(([, label]) => label)} onChange={(value) => setRewriteIntensity(value as RewriteIntensity)} />
             <Segmented label="叙事视角" value={narrativePov} options={povOptions.map(([id]) => id)} labels={povOptions.map(([, label]) => label)} onChange={(value) => setNarrativePov(value as Task['narrativePov'])} />
@@ -6585,6 +6599,12 @@ function toLocalAssetUrl(path: string): string {
 
 function countChars(value?: string): number {
   return value?.trim().length ?? 0;
+}
+
+function normalizeTaskTargetLength(value: number): number {
+  const parsed = Number(value);
+  if (!Number.isFinite(parsed)) return 1500;
+  return Math.min(5000, Math.max(100, Math.round(parsed)));
 }
 
 function trimForPreview(value: string, limit: number): string {

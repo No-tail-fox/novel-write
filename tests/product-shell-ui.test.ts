@@ -1358,6 +1358,26 @@ describe('product shell ui', () => {
     expect(page).toContain('onChange={(event) => setSelectedTaskLlmProfileId(event.target.value)}');
   });
 
+  it('keeps target word and scene controls visible in the new task form', async () => {
+    const main = await readFile(new URL('../src/main.tsx', import.meta.url), 'utf8');
+    const page = main.slice(main.indexOf('function NewTaskPage'), main.indexOf('function MusicMvPage'));
+
+    expect(page).toContain('targetLength');
+    expect(page).toContain('setTargetLength');
+    expect(page).toContain('目标字数');
+    expect(page).toContain('目标分镜数');
+    expect(page).toContain('targetLength: normalizeTaskTargetLength(targetLength)');
+    expect(page).toContain('targetScenes: storyboardSceneCount');
+    const targetWordIndex = page.indexOf('目标字数');
+    const targetSceneIndex = page.indexOf('目标分镜数');
+    const advancedIndex = page.indexOf('<button className="advanced-toggle"');
+    expect(targetWordIndex).toBeGreaterThan(-1);
+    expect(targetSceneIndex).toBeGreaterThan(-1);
+    expect(advancedIndex).toBeGreaterThan(-1);
+    expect(targetWordIndex).toBeLessThan(advancedIndex);
+    expect(targetSceneIndex).toBeLessThan(advancedIndex);
+  });
+
   it('replicates the Storybound video form controls for narration and two-host podcast tasks', async () => {
     const main = await readFile(new URL('../src/main.tsx', import.meta.url), 'utf8');
     const page = main.slice(main.indexOf('function NewTaskPage'), main.indexOf('function MusicMvPage'));

@@ -62,6 +62,7 @@ const stepAgents: Record<number, string> = {
 
 const imagePromptBatchSize = 8;
 const defaultStoryboardSceneCount = 12;
+const defaultTargetLength = 1500;
 
 class CheckpointPause extends Error {
   constructor(
@@ -529,6 +530,16 @@ function normalizeStoryboardSceneCount(value: unknown): number {
   return Math.min(30, Math.max(4, Math.round(parsed)));
 }
 
+function normalizeTargetLength(value: unknown): number {
+  const parsed = Number(value);
+  if (!Number.isFinite(parsed)) return defaultTargetLength;
+  return Math.min(5000, Math.max(100, Math.round(parsed)));
+}
+
+function targetLengthInstruction(task: Task): string {
+  return `Target word count: about ${normalizeTargetLength(task.targetLength)} Chinese characters. Keep within +/-15% unless source length makes that impossible.`;
+}
+
 function pauseAtCheckpoint(task: Task, initialStep: number, step: number, detail: string): void {
   if (step <= initialStep) return;
   if (task.processingMode === 'semi-auto' && step === 4) {
@@ -562,6 +573,7 @@ async function runRewriteRounds(
             `Rewrite round: ${round}/3`,
             'Rewrite instructions:',
             input.rewritePrompt,
+            targetLengthInstruction(input.task),
             taskModeInstructions(input.task),
             'Cover instructions:',
             input.coverPrompt,
@@ -589,6 +601,7 @@ async function runRewriteRounds(
         role: 'user',
         content: joinPromptBlocks([
           'Evaluate these three rewrite candidates for hook strength, rhythm, factual faithfulness, short-video appeal, and target word count. Choose bestRound.',
+          targetLengthInstruction(input.task),
           taskModeInstructions(input.task),
           input.rerunContext ?? '',
           JSON.stringify(candidates.map(({ round, rewrittenCopy }) => ({ round, rewrittenCopy }))),
