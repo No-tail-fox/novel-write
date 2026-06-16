@@ -57,20 +57,41 @@ describe('product shell ui', () => {
     expect(primaryNav.indexOf("view: 'viral-analyzer'")).toBeLessThan(primaryNav.indexOf("view: 'prompt-templates'"));
   });
 
-  it('gives two-line sidebar navigation items stable rows', async () => {
+  it('keeps sidebar navigation compact with stable two-line rows', async () => {
     const css = await readFile(new URL('../src/styles.css', import.meta.url), 'utf8');
 
     expect(css).toContain('grid-template-columns: 18px minmax(0, 1fr);');
-    expect(css).toContain('grid-template-rows: 18px 16px;');
-    expect(css).toContain('min-height: 54px;');
-    expect(css).toContain('gap: 2px 10px;');
+    expect(css).toContain('grid-template-rows: 14px 11px;');
+    expect(css).toContain('min-height: 34px;');
+    expect(css).toContain('gap: 0 10px;');
     expect(css).toContain('.nav-item > svg');
     expect(css).toContain('grid-row: 1 / span 2;');
     expect(css).toContain('.nav-item span,');
     expect(css).toContain('text-overflow: ellipsis;');
     expect(css).toContain('white-space: nowrap;');
-    expect(css).toContain('line-height: 16px;');
     expect(css).toContain('line-height: 14px;');
+    expect(css).toContain('line-height: 11px;');
+  });
+
+  it('shows the whole sidebar menu and lets the lower task area shrink instead', async () => {
+    const css = await readFile(new URL('../src/styles.css', import.meta.url), 'utf8');
+    const navListBlock = css.match(/\.nav-list\s*\{[^}]+\}/)?.[0] ?? '';
+    const sidebarBottomBlock = css.match(/\.sidebar-bottom\s*\{[^}]+\}/)?.[0] ?? '';
+    const recentTaskBlock = css.match(/\.recent-task-strip\s*\{[^}]+\}/)?.[0] ?? '';
+
+    expect(navListBlock).toContain('flex: 0 0 auto;');
+    expect(navListBlock).toContain('overflow: visible;');
+    expect(navListBlock).not.toContain('overflow: auto;');
+    expect(sidebarBottomBlock).toContain('flex: 1 1 130px;');
+    expect(sidebarBottomBlock).toContain('min-height: 130px;');
+    expect(sidebarBottomBlock).toContain('overflow: hidden;');
+    expect(sidebarBottomBlock).toContain('grid-template-rows: minmax(0, 1fr) auto auto;');
+    expect(recentTaskBlock).toContain('min-height: 0;');
+    expect(recentTaskBlock).toContain('overflow: auto;');
+    expect(css).toContain('@media (max-height: 760px)');
+    expect(css).toContain('grid-template-columns: repeat(2, minmax(0, 1fr));');
+    expect(css).toContain('flex-basis: 88px;');
+    expect(css).toContain('min-height: 88px;');
   });
 
   it('uses a restrained storyboard-console visual system instead of a generic neon shell', async () => {
