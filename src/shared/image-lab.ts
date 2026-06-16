@@ -7,7 +7,8 @@ export async function generateImageLabRecord(config: AppConfig, workDir: string,
   const id = input.id ?? randomUUID();
   const createdAt = input.createdAt ?? new Date().toISOString();
   const baseRecord = createBaseRecord(config, input, id, createdAt);
-  const prompt = buildImageLabPrompt(input.prompt, input.style, input.smartMode ?? 'text-to-image');
+  const referenceImagePaths = normalizeReferenceImagePaths(input);
+  const prompt = buildImageLabPrompt(input.prompt, input.style, input.smartMode ?? 'text-to-image', referenceImagePaths.length > 0);
   const generator = createConfiguredImageGenerator(applyImageLabRequestSize(config, input), workDir);
   const scene: StoryboardScene = {
     id: 1,
@@ -15,7 +16,6 @@ export async function generateImageLabRecord(config: AppConfig, workDir: string,
     descPrompt: prompt,
     durationMs: 1200,
   };
-  const referenceImagePaths = normalizeReferenceImagePaths(input);
   const imagePrompt: ImagePrompt = {
     sceneId: scene.id,
     cap: scene.cap,
@@ -75,13 +75,13 @@ function createBaseRecord(config: AppConfig, input: ImageLabGenerateInput, id: s
 }
 
 function validateImageLabReferences(input: ImageLabGenerateInput): void {
-  if (input.smartMode !== 'reference-edit') return;
   const references = normalizeReferenceImagePaths(input);
+  if (references.length > 3) {
+    throw new Error('Image lab supports at most 3 reference images.');
+  }
+  if (input.smartMode !== 'reference-edit') return;
   if (!references.length) {
     throw new Error('Reference edit requires at least 1 reference image.');
-  }
-  if (references.length > 10) {
-    throw new Error('Reference edit supports at most 10 reference images.');
   }
 }
 
@@ -159,29 +159,32 @@ function activeImageResolution(config: AppConfig): ImageLabRecord['resolution'] 
   return config.gptImage.resolution ?? config.image.resolution ?? '2K';
 }
 
-function buildImageLabPrompt(prompt: string, styleId: string, smartMode: ImageLabSmartMode): string {
+function buildImageLabPrompt(prompt: string, styleId: string, smartMode: ImageLabSmartMode, hasReferenceImages: boolean): string {
   const style = defaultCustomStyles.find((item) => item.id === styleId);
-  const smartPrefix = smartImagePromptPrefix(smartMode);
+  const smartPrefix = smartImagePromptPrefix(smartMode, hasReferenceImages);
   const basePrompt = [smartPrefix, prompt].filter(Boolean).join('\n');
   if (!style) return basePrompt;
   return [style.prefix, basePrompt, style.suffix].filter(Boolean).join('，');
 }
 
-function smartImagePromptPrefix(smartMode: ImageLabSmartMode): string {
+function smartImagePromptPrefix(smartMode: ImageLabSmartMode, hasReferenceImages: boolean): string {
+  const referenceInstruction = hasReferenceImages
+    ? '必须以参考图为核心依据，保留参考图中的主体身份、轮廓、材质、构图关系和关键视觉特征；只根据需求描述调整场景、风格、文字留白或用途。'
+    : '';
   if (smartMode === 'cover') {
-    return '短视频封面，强主体，标题留白，缩略图清晰可读，避免画面内出现随机文字。';
+    return [referenceInstruction, '短视频封面，强主体，标题留白，缩略图清晰可读，避免画面内出现随机文字。'].filter(Boolean).join('\n');
   }
   if (smartMode === 'blog-cover') {
-    return '博客封面，横向信息主图，标题留白，适合文章首图，构图克制清晰。';
+    return [referenceInstruction, '博客封面，横向信息主图，标题留白，适合文章首图，构图克制清晰。'].filter(Boolean).join('\n');
   }
   if (smartMode === 'podcast-cover') {
-    return '播客封面，适合双人播客节目，两位主播或主题物件清晰，标题留白，缩略图识别度高。';
+    return [referenceInstruction, '播客封面，适合双人播客节目，两位主播或主题物件清晰，标题留白，缩略图识别度高。'].filter(Boolean).join('\n');
   }
   if (smartMode === 'video-narration') {
-    return '旁白视频主视觉，单人讲述感，画面可作为视频封面或分镜起始图。';
+    return [referenceInstruction, '旁白视频主视觉，单人讲述感，画面可作为视频封面或分镜起始图。'].filter(Boolean).join('\n');
   }
   if (smartMode === 'two-host-podcast') {
-    return '双人播客视频主视觉，两位主播一问一答，节目感构图，标题留白。';
+    return [referenceInstruction, '双人播客视频主视觉，两位主播一问一答，节目感构图，标题留白。'].filter(Boolean).join('\n');
   }
   if (smartMode === 'reference-edit') {
     return '基于参考图进行一致性改图，保留主体身份和关键特征，只改变用户指定内容。';

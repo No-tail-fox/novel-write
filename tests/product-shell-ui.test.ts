@@ -1468,15 +1468,29 @@ describe('product shell ui', () => {
     const css = await readFile(new URL('../src/styles.css', import.meta.url), 'utf8');
     const page = main.slice(main.indexOf('function ImageLabPage'), main.indexOf('function VoiceLabPage'));
 
-    for (const text of ['智慧生图', '封面', '博客封面', '播客封面', '旁白视频', '双人播客', '参考图编辑']) {
+    for (const text of ['智慧生图', '文生图', '图像参考', '画图实验室', '参考图', '需求描述', '出图数量上限', '比例', '分辨率', '最近生成']) {
       expect(page).toContain(text);
     }
     expect(page).toContain('smartMode');
-    expect(page).toContain('setSmartMode');
+    expect(page).toContain('referenceLimit');
+    expect(page).toContain('imageLabOutputCount');
+    expect(page).toContain('image-lab-dropzone');
+    expect(page).toContain('selectImageLabReferenceImage');
+    expect(page).toContain('api.selectLocalImage()');
+    expect(page).toContain('onClick={selectImageLabReferenceImage}');
+    expect(page).toContain('image-lab-reference-list');
+    expect(page).toContain('image-lab-reference-entry');
+    expect(page).toContain('hiddenReferenceCount');
+    expect(page).toContain('image-lab-ratio-grid');
     expect(page).toContain('referenceImagePaths');
-    expect(page).toContain("smartMode === 'reference-edit'");
-    expect(page).toContain("smartMode === 'podcast-cover'");
-    expect(css).toContain('.smart-image-mode-grid');
+    expect(page).toContain('resolveImageLabSmartMode(tab, smartMode, references)');
+    expect(main).toContain("tab === 'smart' && references.length > 0 ? 'reference-edit'");
+    expect(css).toContain('.image-lab-workbench');
+    expect(css).toContain('.image-lab-dropzone');
+    expect(css).toContain('.image-lab-reference-list');
+    expect(css).toContain('.image-lab-reference-entry');
+    expect(css).toContain('.image-lab-ratio-grid');
+    expect(css).toContain('.image-lab-recent');
     expect(css).toContain('.reference-image-list');
   });
 

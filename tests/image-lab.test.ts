@@ -171,6 +171,54 @@ describe('image lab generation', () => {
     }
   });
 
+  it('uses reference images for smart image requests when references are provided', async () => {
+    const dir = await mkdtemp(join(tmpdir(), 'storybound-image-lab-smart-reference-'));
+    const first = join(dir, 'first.png');
+    const second = join(dir, 'second.webp');
+    await writeFile(first, 'first-reference');
+    await writeFile(second, 'second-reference');
+    const imageBytes = Buffer.from('smart-reference-image');
+    const requests: Array<{ url: string; method: string; body: BodyInit | null | undefined }> = [];
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (url: string, init: RequestInit = {}) => {
+        requests.push({ url, method: init.method ?? 'GET', body: init.body });
+        return new Response(JSON.stringify({ data: [{ b64_json: imageBytes.toString('base64') }] }), {
+          status: 200,
+          headers: { 'content-type': 'application/json' },
+        });
+      }),
+    );
+
+    try {
+      const config: AppConfig = {
+        ...defaultConfig,
+        imageProvider: 'gpt_image',
+        gptImage: { ...defaultConfig.gptImage, apiKey: 'image-key', baseUrl: 'https://image.example', model: 'gpt-image-2' },
+      };
+
+      const record = await generateImageLabRecord(config, dir, {
+        prompt: '根据参考图生成同一角色的播客封面',
+        ratio: '9:16',
+        style: 'photo-real',
+        smartMode: 'podcast-cover',
+        referenceImagePaths: [first, second],
+      });
+
+      expect(record.status).toBe('generated');
+      expect(record.referenceImagePaths).toEqual([first, second]);
+      expect(requests[0].url).toBe('https://image.example/v1/images/edits');
+      expect(requests[0].method).toBe('POST');
+      expect(requests[0].body).toBeInstanceOf(FormData);
+      const form = requests[0].body as FormData;
+      expect(form.get('prompt')).toContain('根据参考图生成同一角色的播客封面');
+      expect(form.get('prompt')).toContain('参考图');
+      expect(form.getAll('image')).toHaveLength(2);
+    } finally {
+      await rm(dir, { recursive: true, force: true });
+    }
+  });
+
   it('fails reference edit smart requests without a reference image', async () => {
     const dir = await mkdtemp(join(tmpdir(), 'storybound-image-lab-reference-empty-'));
 
@@ -190,7 +238,7 @@ describe('image lab generation', () => {
     }
   });
 
-  it('fails reference edit smart requests with more than 10 reference images', async () => {
+  it('fails reference-driven image lab requests with more than 3 reference images', async () => {
     const dir = await mkdtemp(join(tmpdir(), 'storybound-image-lab-reference-too-many-'));
 
     try {
@@ -198,12 +246,12 @@ describe('image lab generation', () => {
         prompt: '换背景',
         ratio: '1:1',
         style: 'photo-real',
-        smartMode: 'reference-edit',
-        referenceImagePaths: Array.from({ length: 11 }, (_, index) => `ref-${index}.png`),
+        smartMode: 'podcast-cover',
+        referenceImagePaths: Array.from({ length: 4 }, (_, index) => `ref-${index}.png`),
       });
 
       expect(record.status).toBe('failed');
-      expect(record.errorMessage).toMatch(/10 reference images/i);
+      expect(record.errorMessage).toMatch(/3 reference images/i);
     } finally {
       await rm(dir, { recursive: true, force: true });
     }

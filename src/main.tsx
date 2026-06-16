@@ -2965,40 +2965,57 @@ function ArtifactAssetList({ assets, empty }: { assets: TaskArtifactSnapshot['as
 
 function ImageLabPage({ api, state, applyState }: { api: StoryboundApi; state: AppState; applyState: (state: AppState) => void }) {
   const [tab, setTab] = useState<'smart' | 'text' | 'reference'>('smart');
-  const [smartMode, setSmartMode] = useState<ImageLabSmartMode>('podcast-cover');
-  const [prompt, setPrompt] = useState('唐代宫殿中的武则天，电影级写实光影，统一角色');
+  const [smartMode] = useState<ImageLabSmartMode>('podcast-cover');
+  const [prompt, setPrompt] = useState('根据食谱内容，规划 2-3 张美食教程图，合成品图、灵魂文案、制作步骤，保持参考图主体和质感。');
   const [ratio, setRatio] = useState('9:16');
   const [style, setStyle] = useState('photo-real');
-  const [resolution, setResolution] = useState<'1K' | '2K' | '4K'>('2K');
+  const [resolution, setResolution] = useState<ImageResolution>('1K');
   const [referenceImagePath, setReferenceImagePath] = useState('');
+  const [imageLabOutputCount, setImageLabOutputCount] = useState(3);
   const [generating, setGenerating] = useState(false);
   const [submitError, setSubmitError] = useState('');
-  const smartModeHint = smartMode === 'podcast-cover' ? '播客封面建议使用 1:1 或 16:9，保留标题留白和节目识别主体。' : '';
-  const smartImageModeChoices: Array<[ImageLabSmartMode, string, string]> = [
-    ['cover', '封面', '短视频主封面'],
-    ['blog-cover', '博客封面', '文章首图 / 横版主图'],
-    ['podcast-cover', '播客封面', '节目感双人或主题封面'],
-    ['video-narration', '旁白视频', '单人讲述主视觉'],
-    ['two-host-podcast', '双人播客', '两位主播一问一答'],
-    ['reference-edit', '参考图编辑', '参考图一致性改图'],
+  const referenceLimit = 3;
+  const referenceCandidates = parseReferenceImagePaths(referenceImagePath);
+  const references = referenceCandidates.slice(0, referenceLimit);
+  const hiddenReferenceCount = Math.max(0, referenceCandidates.length - references.length);
+  const imageLabRatioChoices = [
+    ['21:9', '宽屏'],
+    ['16:9', '横屏'],
+    ['3:2', '标准横'],
+    ['4:3', '标准'],
+    ['1:1', '方形'],
+    ['3:4', '标准竖'],
+    ['2:3', '竖图'],
+    ['9:16', '竖屏'],
   ];
+  const estimatedCost = resolution === '1K' ? '0.08' : resolution === '2K' ? '0.16' : '0.32';
+  const resolvedSmartMode = resolveImageLabSmartMode(tab, smartMode, references);
+
+  async function selectImageLabReferenceImage() {
+    const imagePath = await api.selectLocalImage();
+    if (!imagePath) return;
+    setReferenceImagePath((current) => [...parseReferenceImagePaths(current), imagePath].join('\n'));
+  }
 
   async function addRecord() {
     if (generating) return;
     setGenerating(true);
     setSubmitError('');
     try {
-      const references = parseReferenceImagePaths(referenceImagePath);
-      const next = await api.generateImageLab({
-        prompt,
-        ratio,
-        style,
-        resolution,
-        smartMode: tab === 'smart' ? smartMode : tab === 'reference' ? 'reference-edit' : 'text-to-image',
-        referenceImagePath: references[0] ?? '',
-        referenceImagePaths: references,
-      });
-      applyState(next);
+      const requestedCount = tab === 'text' ? 1 : Math.max(1, Math.min(3, imageLabOutputCount));
+      let nextState = state;
+      for (let index = 0; index < requestedCount; index += 1) {
+        nextState = await api.generateImageLab({
+          prompt,
+          ratio,
+          style,
+          resolution,
+          smartMode: resolvedSmartMode,
+          referenceImagePath: references[0] ?? '',
+          referenceImagePaths: references,
+        });
+      }
+      applyState(nextState);
     } catch (error) {
       setSubmitError(error instanceof Error ? error.message : String(error));
     } finally {
@@ -3007,41 +3024,83 @@ function ImageLabPage({ api, state, applyState }: { api: StoryboundApi; state: A
   }
 
   return (
-    <div className="two-column lab-layout">
-      <section className="panel">
+    <div className="image-lab-page">
+      <header className="image-lab-header">
+        <h2>画图实验室</h2>
+        <p>输入提示词 + 选风格，直接出图；智慧模式会优先围绕参考图生成，不写入任务历史。</p>
+      </header>
+      <section className="panel image-lab-workbench">
         <Segmented label="模式" value={tab} options={['smart', 'text', 'reference']} labels={['智慧生图', '文生图', '图像参考']} onChange={(value) => setTab(value as 'smart' | 'text' | 'reference')} />
-        {tab === 'smart' ? (
-          <div className="smart-image-mode-grid">
-            {smartImageModeChoices.map(([id, label, hint]) => (
-              <button key={id} className={smartMode === id ? 'smart-image-mode active' : 'smart-image-mode'} onClick={() => setSmartMode(id)}>
-                <strong>{label}</strong>
-                <span>{hint}</span>
+        {tab !== 'text' ? (
+          <div className="image-lab-reference-block">
+            <div className="image-lab-section-head">
+              <strong>参考图</strong>
+              <small>建议统一 IP 形象，最多 {referenceLimit} 张 · 已选 {references.length}</small>
+            </div>
+            <div className="image-lab-dropzone">
+              <button className="image-lab-upload-card" type="button" onClick={selectImageLabReferenceImage}>
+                <ImageIcon size={18} />
+                添加
               </button>
-            ))}
-            {smartModeHint ? <p className="smart-image-mode-note">{smartModeHint}</p> : null}
+              <span>
+                <strong>选择或粘贴本地图片路径作为参考</strong>
+                <small>支持 PNG / JPG / WEBP，每行一张，最多 {referenceLimit} 张会参与生成</small>
+              </span>
+            </div>
+            <textarea className="reference-image-list" value={referenceImagePath} placeholder="C:\\images\\reference-1.png&#10;C:\\images\\reference-2.webp" onChange={(event) => setReferenceImagePath(event.target.value)} />
+            <div className="image-lab-reference-list" aria-live="polite">
+              {references.length ? references.map((reference, index) => (
+                <span className="image-lab-reference-entry" key={`${reference}-${index}`}>{index + 1}. {reference}</span>
+              )) : <span className="image-lab-reference-empty">暂未添加参考图路径</span>}
+              {hiddenReferenceCount > 0 ? <span className="image-lab-reference-overflow">已忽略超出上限的 {hiddenReferenceCount} 张</span> : null}
+            </div>
           </div>
         ) : null}
-        <Field label="提示词">
-          <textarea className="prompt-box" value={prompt} onChange={(event) => setPrompt(event.target.value)} />
+        <Field label="需求描述">
+          <textarea className="prompt-box image-lab-prompt" value={prompt} placeholder="例如：根据食谱内容，规划 2-3 张美食教程图，合成品图、灵魂文案、制作步骤，不要点赞元素" onChange={(event) => setPrompt(event.target.value)} />
         </Field>
-        {tab === 'reference' || (tab === 'smart' && smartMode === 'reference-edit') ? (
-          <Field label="参考图">
-            <textarea className="reference-image-list" value={referenceImagePath} placeholder="每行一个本地图片路径，最多 10 张" onChange={(event) => setReferenceImagePath(event.target.value)} />
-          </Field>
+        {tab !== 'text' ? (
+          <div className="image-lab-slider">
+            <div className="image-lab-section-head">
+              <strong>出图数量上限</strong>
+              <small>AI 最多规划这么多张</small>
+            </div>
+            <input type="range" min={1} max={3} step={1} value={imageLabOutputCount} onChange={(event) => setImageLabOutputCount(Number(event.target.value))} />
+            <strong>{imageLabOutputCount} 张</strong>
+            <small>AI 会读懂需求，规划成最多 3 张图；每张图文案需进图里。</small>
+          </div>
         ) : null}
+        <div className="image-lab-control-group">
+          <div className="image-lab-section-head">
+            <strong>比例</strong>
+            <small>可多选体验保留为单选，已选 {ratio}</small>
+          </div>
+          <div className="image-lab-ratio-grid">
+            {imageLabRatioChoices.map(([value, label]) => (
+              <button key={value} className={ratio === value ? 'selected' : ''} onClick={() => setRatio(value)} type="button">
+                <span className={`ratio-icon ratio-${value.replace(':', '-')}`} />
+                <strong>{value}</strong>
+                <small>{label}</small>
+              </button>
+            ))}
+          </div>
+        </div>
         <OptionCloud title="风格" options={styleOptions} value={style} onChange={setStyle} />
-        <Segmented label="比例" value={ratio} options={ratioOptions} onChange={setRatio} />
-        <Segmented label="分辨率" value={resolution} options={['1K', '2K', '4K']} onChange={(value) => setResolution(value as '1K' | '2K' | '4K')} />
-        <div className="provider-line">Provider：{state.config.imageProvider} · {resolution} · {ratio}</div>
+        <Segmented label="分辨率" value={resolution} options={['1K', '2K', '4K']} onChange={(value) => setResolution(value as ImageResolution)} />
+        <div className="image-lab-footer">
+          <button className="primary-action" onClick={addRecord} disabled={generating || !prompt.trim() || (resolvedSmartMode === 'reference-edit' && references.length === 0)}>
+            {generating ? <Loader2 className="spin" size={17} /> : <Wand2 size={17} />}
+            {generating ? '生成中' : '智能生成'}
+          </button>
+          <div className="provider-line">当前 Provider：<strong>{state.config.imageProvider}</strong> · {smartImageModeLabel(resolvedSmartMode)} · 预计消耗 ￥{estimatedCost}</div>
+        </div>
         {submitError ? <ErrorSummaryButton compact title="画图实验室提交失败" fullMessage={submitError} /> : null}
-        <button className="primary-action" onClick={addRecord} disabled={generating || !prompt.trim()}>
-          {generating ? <Loader2 className="spin" size={17} /> : <ImageIcon size={17} />}
-          {generating ? '生成中' : '开始生成'}
-        </button>
       </section>
-      <section className="image-grid-panel">
+      <section className="image-lab-recent">
+        <h3>最近生成 · {state.imageLabRecords.length}</h3>
         {state.imageLabRecords.length === 0 ? <EmptyState title="暂无画图记录" /> : null}
-        {state.imageLabRecords.map((record) => (
+        <div className="image-grid-panel">
+          {state.imageLabRecords.map((record) => (
           <article className={`image-record ${record.status}`} key={record.id}>
             <div className="lab-image-preview">
               {record.imagePath ? <img src={toLocalImageUrl(record.imagePath)} alt={record.prompt} loading="lazy" /> : (
@@ -3055,7 +3114,8 @@ function ImageLabPage({ api, state, applyState }: { api: StoryboundApi; state: A
             <small>{record.provider} · {record.ratio} · {record.resolution} · {smartImageModeLabel(record.smartMode)} · {formatDate(record.createdAt)}</small>
             {record.errorMessage ? <ErrorSummaryButton compact title="生图失败" fullMessage={record.errorMessage} /> : null}
           </article>
-        ))}
+          ))}
+        </div>
       </section>
     </div>
   );
@@ -6061,12 +6121,15 @@ function smartImageModeLabel(mode: ImageLabSmartMode = 'text-to-image'): string 
   return smartImageModeOptions.find(([id]) => id === mode)?.[1] ?? mode;
 }
 
+function resolveImageLabSmartMode(tab: 'smart' | 'text' | 'reference', smartMode: ImageLabSmartMode, references: string[]): ImageLabSmartMode {
+  return tab === 'smart' && references.length > 0 ? 'reference-edit' : tab === 'smart' ? smartMode : tab === 'reference' ? 'reference-edit' : 'text-to-image';
+}
+
 function parseReferenceImagePaths(value: string): string[] {
   return value
     .split(/\r?\n/)
     .map((item) => item.trim())
-    .filter(Boolean)
-    .slice(0, 10);
+    .filter(Boolean);
 }
 
 function draftTemplateImageRatio(templates: DraftTemplate[], templateId: string): string {
