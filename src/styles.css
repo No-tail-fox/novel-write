@@ -281,39 +281,31 @@ kbd {
   overflow: hidden;
   display: grid;
   grid-template-columns: 18px minmax(0, 1fr);
-  grid-template-rows: 14px 11px;
-  gap: 0 10px;
-  align-items: start;
-  min-height: 34px;
-  padding: 4px 10px;
+  grid-template-rows: 1fr;
+  gap: 10px;
+  align-items: center;
+  min-height: 36px;
+  padding: 0 10px;
   border-radius: 7px;
   background: transparent;
   text-align: left;
 }
 
 .nav-item > svg {
-  grid-row: 1 / span 2;
+  grid-row: 1;
   align-self: center;
 }
 
-.nav-item span,
-.nav-item small {
+.nav-item span {
   min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-}
-
-.nav-item span {
-  align-self: end;
-  line-height: 14px;
+  line-height: 20px;
 }
 
 .nav-item small {
-  grid-column: 2;
-  align-self: start;
-  font-size: 11px;
-  line-height: 11px;
+  display: none;
 }
 
 .nav-item.active,

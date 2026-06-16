@@ -57,20 +57,22 @@ describe('product shell ui', () => {
     expect(primaryNav.indexOf("view: 'viral-analyzer'")).toBeLessThan(primaryNav.indexOf("view: 'prompt-templates'"));
   });
 
-  it('keeps sidebar navigation compact with stable two-line rows', async () => {
+  it('keeps sidebar navigation as fixed full-width single-line rows', async () => {
     const css = await readFile(new URL('../src/styles.css', import.meta.url), 'utf8');
 
     expect(css).toContain('grid-template-columns: 18px minmax(0, 1fr);');
-    expect(css).toContain('grid-template-rows: 14px 11px;');
-    expect(css).toContain('min-height: 34px;');
-    expect(css).toContain('gap: 0 10px;');
+    expect(css).toContain('grid-template-rows: 1fr;');
+    expect(css).toContain('min-height: 36px;');
+    expect(css).toContain('gap: 10px;');
+    expect(css).toContain('align-items: center;');
+    expect(css).toContain('padding: 0 10px;');
     expect(css).toContain('.nav-item > svg');
-    expect(css).toContain('grid-row: 1 / span 2;');
-    expect(css).toContain('.nav-item span,');
+    expect(css).toContain('grid-row: 1;');
+    expect(css).toContain('.nav-item span {');
     expect(css).toContain('text-overflow: ellipsis;');
     expect(css).toContain('white-space: nowrap;');
-    expect(css).toContain('line-height: 14px;');
-    expect(css).toContain('line-height: 11px;');
+    expect(css).toContain('line-height: 20px;');
+    expect(css).toContain('display: none;');
   });
 
   it('shows the whole sidebar menu and lets the lower task area shrink instead', async () => {
