@@ -718,6 +718,8 @@ describe('task runner', () => {
       expect(promptText).toContain('Two-host podcast mode');
       expect(promptText).toContain('dialogue script');
       expect(promptText).toContain('kazai-dayi');
+      expect(promptText).toContain('Use exactly "Host A:" and "Host B:" labels');
+      expect(promptText).toContain('Do not put host display names inside spoken lines');
     } finally {
       await db.close();
       await rm(dir, { recursive: true, force: true });

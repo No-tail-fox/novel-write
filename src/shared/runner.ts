@@ -497,6 +497,9 @@ function taskModeInstructions(task: Task): string {
     'Two-host podcast mode.',
     `Speaker pair: ${task.podcastSpeakers ?? 'kazai-dayi'}.`,
     'Write as a dialogue script with two hosts taking turns asking and answering.',
+    'Use exactly "Host A:" and "Host B:" labels for every dialogue turn.',
+    'Do not put host display names inside spoken lines; names are metadata, not narration.',
+    'Keep the Host A/Host B label at the beginning of each storyboard cap so TTS can split voices.',
     'Keep each storyboard cap suitable for podcast-style narration and avoid ordinary single-narrator phrasing.',
   ].join('\n');
 }

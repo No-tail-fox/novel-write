@@ -141,38 +141,8 @@ async function searchSogouHtml(query: string, fetchImpl: FetchLike): Promise<AiS
   return extractSogouItems(html).slice(0, 20).map((item) => ({ source: 'web', ...item }));
 }
 
-async function searchBaiduHtml(query: string, fetchImpl: FetchLike): Promise<AiSourceSection[]> {
-  const url = `https://www.baidu.com/s?wd=${encodeURIComponent(query)}`;
-  const response = await fetchWithTimeout(fetchImpl, url, 8000, 'text/html,application/xhtml+xml,*/*');
-  if (!response.ok) {
-    throw new Error(`Baidu returned ${response.status}`);
-  }
-  const html = await response.text();
-  return extractBaiduItems(html).slice(0, 20).map((item) => ({ source: 'web', ...item }));
-}
-
-async function searchSo360Html(query: string, fetchImpl: FetchLike): Promise<AiSourceSection[]> {
-  const url = `https://www.so.com/s?q=${encodeURIComponent(query)}`;
-  const response = await fetchWithTimeout(fetchImpl, url, 8000, 'text/html,application/xhtml+xml,*/*');
-  if (!response.ok) {
-    throw new Error(`360 Search returned ${response.status}`);
-  }
-  const html = await response.text();
-  return extractSo360Items(html).slice(0, 20).map((item) => ({ source: 'web', ...item }));
-}
-
 function searchAdditionalChineseSources(query: string, fetchImpl: FetchLike): Promise<Array<PromiseSettledResult<AiSourceSection[]>>> {
-  const searches = [
-    searchSogouHtml(query, fetchImpl),
-    searchBaiduHtml(query, fetchImpl),
-    searchSo360Html(query, fetchImpl),
-    ...buildChineseSupplementalSourceQueries(query).map((supplementalQuery) => searchBaiduHtml(supplementalQuery, fetchImpl)),
-  ];
-  return Promise.allSettled(searches);
-}
-
-function buildChineseSupplementalSourceQueries(query: string): string[] {
-  return [`${query} \u77e5\u4e4e`, `${query} \u767e\u5bb6\u53f7`, `${query} \u5934\u6761\u53f7`];
+  return Promise.allSettled([searchSogouHtml(query, fetchImpl)]);
 }
 
 export async function composeCopyFromSources(runJson: JsonLlm, input: ResearchCopyComposeInput): Promise<ResearchCopyComposeResult> {
@@ -266,32 +236,6 @@ function extractSogouItems(html: string): SearchResultItem[] {
       const href = extractAttribute(titleHtml, 'href');
       const url = normalizeSearchResultUrl(dataUrl || href, 'https://www.sogou.com');
       const content = compactText(cleanXml(stripNonContentHtml(block)).replace(title, '').replace(/推荐您搜索[\s\S]*$/u, ''));
-      return { title, url, content };
-    })
-    .filter((item) => item.title && item.content);
-}
-
-function extractBaiduItems(html: string): SearchResultItem[] {
-  return [
-    ...html.matchAll(/<div\b[^>]*class="[^"]*(?:result|c-container)[^"]*"[\s\S]*?(?=<div\b[^>]*class="[^"]*(?:result|c-container)[^"]*"|<div\b[^>]*id="page"|$)/gi),
-  ]
-    .map(([block]) => {
-      const titleHtml = block.match(/<h3\b[\s\S]*?<\/h3>/i)?.[0] ?? '';
-      const title = cleanXml(titleHtml);
-      const url = normalizeSearchResultUrl(extractAttribute(block, 'mu') || extractBaiduDataToolsUrl(block) || extractAttribute(titleHtml, 'href'), 'https://www.baidu.com');
-      const content = cleanSearchResultContent(block, title);
-      return { title, url, content };
-    })
-    .filter((item) => item.title && item.content);
-}
-
-function extractSo360Items(html: string): SearchResultItem[] {
-  return [...html.matchAll(/<(?:li|div)\b[^>]*class="[^"]*(?:res-list|result)[^"]*"[\s\S]*?(?=<(?:li|div)\b[^>]*class="[^"]*(?:res-list|result)[^"]*"|<\/(?:ol|ul)>|$)/gi)]
-    .map(([block]) => {
-      const titleHtml = block.match(/<h3\b[\s\S]*?<\/h3>/i)?.[0] ?? '';
-      const title = cleanXml(titleHtml);
-      const url = normalizeSearchResultUrl(extractAttribute(titleHtml, 'href'), 'https://www.so.com');
-      const content = cleanSearchResultContent(block, title);
       return { title, url, content };
     })
     .filter((item) => item.title && item.content);
@@ -432,17 +376,6 @@ function normalizeDedupeKey(input: string): string {
   }
 }
 
-function extractBaiduDataToolsUrl(input: string): string {
-  const raw = extractAttribute(input, 'data-tools');
-  if (!raw) return '';
-  try {
-    const parsed = JSON.parse(raw) as { url?: unknown };
-    return typeof parsed.url === 'string' ? parsed.url : '';
-  } catch {
-    return raw.match(/"url"\s*:\s*"([^"]+)"/i)?.[1] ?? '';
-  }
-}
-
 function extractAttribute(input: string, name: string): string {
   const match = input.match(new RegExp(`${name}=(?:"([^"]*)"|'([^']*)')`, 'i'));
   return decodeEntities(match?.[1] ?? match?.[2] ?? '').trim();
@@ -462,13 +395,6 @@ function stripNonContentHtml(input: string): string {
     .replace(/<script\b[\s\S]*?<\/script>/gi, ' ')
     .replace(/<style\b[\s\S]*?<\/style>/gi, ' ')
     .replace(/<noscript\b[\s\S]*?<\/noscript>/gi, ' ');
-}
-
-function cleanSearchResultContent(block: string, title: string): string {
-  return compactText(cleanXml(stripNonContentHtml(block)).replace(title, ''))
-    .replace(/(?:反馈|快照|百度快照)$/u, '')
-    .replace(/["'}\]]+,?\s*"?(?:clamp|isSingleLine|summarySpan|isPc|consistencyUpgrade|pageStyleUpgrade|urlParams|poster|style|styles)\b[\s\S]*$/u, '')
-    .trim();
 }
 
 function extractTag(input: string, tag: string): string {

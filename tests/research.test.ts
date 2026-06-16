@@ -60,7 +60,7 @@ describe('AI source research', () => {
     expect(sections[0]).toMatchObject({ title: 'Fallback Result', content: 'Fallback page body.' });
   });
 
-  it('uses additional Chinese search engines when Bing drifts to low-relevance matches', async () => {
+  it('uses Sogou when Bing drifts to low-relevance Chinese matches', async () => {
     const requests: string[] = [];
 
     const sections = await searchWebSources('七海千秋之死', async (url) => {
@@ -86,42 +86,8 @@ describe('AI source research', () => {
           { status: 200, headers: { 'Content-Type': 'text/html' } },
         );
       }
-      if (String(url).includes('baidu.com/s')) {
-        return new Response(
-          `<html><body>
-            <div class="result c-container" mu="https://baike.baidu.com/item/%E4%B8%83%E6%B5%B7%E5%8D%83%E7%A7%8B/8788465">
-              <h3><a href="http://www.baidu.com/link?url=baidu-redirect">七海千秋_百度百科</a></h3>
-              <div>动画《弹丸论破3》绝望篇中被江之岛盾子处刑。</div>
-            </div>
-          </body></html>`,
-          { status: 200, headers: { 'Content-Type': 'text/html' } },
-        );
-      }
-      if (String(url).includes('so.com/s')) {
-        return new Response(
-          `<html><body>
-            <li class="res-list">
-              <h3><a href="https://mzh.moegirl.org.cn/%E4%B8%83%E6%B5%B7%E5%8D%83%E7%A7%8B">七海千秋 - 萌娘百科 万物皆可萌的百科全书</a></h3>
-              <p>角色经历和剧情资料。</p>
-            </li>
-          </body></html>`,
-          { status: 200, headers: { 'Content-Type': 'text/html' } },
-        );
-      }
       if (String(url).startsWith('https://www.zhihu.com/')) {
         return new Response('<main>七海千秋的死亡是绝望篇中的关键剧情。</main>', {
-          status: 200,
-          headers: { 'Content-Type': 'text/html' },
-        });
-      }
-      if (String(url).startsWith('https://baike.baidu.com/')) {
-        return new Response('<main>七海千秋是弹丸论破系列角色，绝望篇中被处刑。</main>', {
-          status: 200,
-          headers: { 'Content-Type': 'text/html' },
-        });
-      }
-      if (String(url).startsWith('https://mzh.moegirl.org.cn/')) {
-        return new Response('<main>七海千秋的角色经历和绝望篇剧情资料。</main>', {
           status: 200,
           headers: { 'Content-Type': 'text/html' },
         });
@@ -130,26 +96,59 @@ describe('AI source research', () => {
     });
 
     expect(requests.some((url) => url.includes('sogou.com/web'))).toBe(true);
-    expect(requests.some((url) => url.includes('baidu.com/s'))).toBe(true);
-    expect(requests.some((url) => url.includes('so.com/s'))).toBe(true);
-    expect(sections.map((section) => section.title)).toEqual([
-      '七海千秋_百度百科',
-      '七海千秋 - 萌娘百科 万物皆可萌的百科全书',
-      '如何评价《弹丸论破3 绝望篇》七海千秋的死亡?_知乎',
-    ]);
+    expect(requests.some((url) => url.includes('baidu.com/s'))).toBe(false);
+    expect(requests.some((url) => url.includes('so.com/s'))).toBe(false);
+    expect(sections.map((section) => section.title)).toEqual(['如何评价《弹丸论破3 绝望篇》七海千秋的死亡?_知乎']);
     expect(sections[0]).toMatchObject({
-      url: 'https://baike.baidu.com/item/%E4%B8%83%E6%B5%B7%E5%8D%83%E7%A7%8B/8788465',
-      content: '七海千秋是弹丸论破系列角色，绝望篇中被处刑。',
-    });
-    expect(sections[1]).toMatchObject({
-      url: 'https://mzh.moegirl.org.cn/%E4%B8%83%E6%B5%B7%E5%8D%83%E7%A7%8B',
-      content: '七海千秋的角色经历和绝望篇剧情资料。',
-    });
-    expect(sections[2]).toMatchObject({
       url: 'https://www.zhihu.com/question/50680152/answer/122152115',
       content: '七海千秋的死亡是绝望篇中的关键剧情。',
     });
-    expect(sections[1].snippet).not.toContain('real-tag');
+    expect(sections[0].snippet).not.toContain('real-tag');
+  });
+
+  it('limits AI search fallback to Bing and Sogou while filtering video results', async () => {
+    const requests: string[] = [];
+    const query = '七海千秋之死';
+
+    const sections = await searchWebSources(query, async (url) => {
+      const rawUrl = String(url);
+      requests.push(rawUrl);
+      if (rawUrl.includes('bing.com/search')) {
+        return new Response(
+          `<?xml version="1.0"?><rss><channel>
+            <item><title>七（汉语汉字）_百度百科</title><link>https://baike.baidu.com/item/%E4%B8%83/80825</link><description>数字七的解释。</description></item>
+          </channel></rss>`,
+          { status: 200, headers: { 'Content-Type': 'application/rss+xml' } },
+        );
+      }
+      if (rawUrl.includes('sogou.com/web')) {
+        return new Response(
+          `<html><body>
+            <div class="vrwrap">
+              <h3><a href="https://www.douyin.com/video/123">七海千秋死亡片段 - 抖音</a></h3>
+              <p>高清视频免费在线播放。</p>
+            </div><!-- z -->
+            <div class="vrwrap">
+              <h3><a href="https://www.zhihu.com/question/50680152/answer/122152115">如何评价七海千秋之死？_知乎</a></h3>
+              <p>七海千秋之死是绝望篇的重要剧情。</p>
+            </div><!-- z -->
+          </body></html>`,
+          { status: 200, headers: { 'Content-Type': 'text/html' } },
+        );
+      }
+      if (rawUrl.startsWith('https://www.zhihu.com/')) {
+        return new Response('<main>七海千秋之死是绝望篇里的关键牺牲。</main>', {
+          status: 200,
+          headers: { 'Content-Type': 'text/html' },
+        });
+      }
+      throw new Error(`unexpected search request: ${rawUrl}`);
+    });
+
+    expect(requests.some((url) => url.includes('sogou.com/web'))).toBe(true);
+    expect(requests.some((url) => url.includes('baidu.com/s'))).toBe(false);
+    expect(requests.some((url) => url.includes('so.com/s'))).toBe(false);
+    expect(sections.map((section) => section.url)).toEqual(['https://www.zhihu.com/question/50680152/answer/122152115']);
   });
 
   it('keeps supplemental Chinese article sources without restoring video image or aggregate pages', async () => {
@@ -199,7 +198,7 @@ describe('AI source research', () => {
     ]));
   });
 
-  it('runs source-hinted Chinese searches to find Zhihu Baijiahao and Toutiao articles', async () => {
+  it('does not run source-hinted Baidu searches for Chinese fallback research', async () => {
     const requests: string[] = [];
     const query = '\u4e03\u6d77\u5343\u79cb\u4e4b\u6b7b';
 
@@ -215,39 +214,6 @@ describe('AI source research', () => {
           { status: 200, headers: { 'Content-Type': 'application/rss+xml' } },
         );
       }
-      if (rawUrl.includes('baidu.com/s') && decodedUrl.includes('\u77e5\u4e4e')) {
-        return new Response(
-          `<html><body>
-            <div class="result c-container" mu="https://www.zhihu.com/question/50680152/answer/122152115">
-              <h3><a>\u5982\u4f55\u8bc4\u4ef7\u4e03\u6d77\u5343\u79cb\u7684\u6b7b\u4ea1\uff1f_\u77e5\u4e4e</a></h3>
-              <div>\u4e03\u6d77\u5343\u79cb\u7684\u6b7b\u4ea1\u5267\u60c5\u8ba8\u8bba\u3002</div>
-            </div>
-          </body></html>`,
-          { status: 200, headers: { 'Content-Type': 'text/html' } },
-        );
-      }
-      if (rawUrl.includes('baidu.com/s') && decodedUrl.includes('\u767e\u5bb6\u53f7')) {
-        return new Response(
-          `<html><body>
-            <div class="result c-container" mu="https://baijiahao.baidu.com/s?id=1777777777777777777">
-              <h3><a>\u4e03\u6d77\u5343\u79cb\u4e4b\u6b7b\u89e3\u6790 - \u767e\u5bb6\u53f7</a></h3>
-              <div>\u5267\u60c5\u6587\u7ae0\u68b3\u7406\u4e03\u6d77\u5343\u79cb\u4e4b\u6b7b\u3002</div>
-            </div>
-          </body></html>`,
-          { status: 200, headers: { 'Content-Type': 'text/html' } },
-        );
-      }
-      if (rawUrl.includes('baidu.com/s') && decodedUrl.includes('\u5934\u6761\u53f7')) {
-        return new Response(
-          `<html><body>
-            <div class="result c-container" mu="https://www.toutiao.com/article/7487785029423204403/">
-              <h3><a>\u4e03\u6d77\u5343\u79cb\u4e3a\u4ec0\u4e48\u88ab\u5904\u5211 - \u5934\u6761\u53f7</a></h3>
-              <div>\u5934\u6761\u6587\u7ae0\u89e3\u6790\u4e03\u6d77\u5343\u79cb\u4e4b\u6b7b\u3002</div>
-            </div>
-          </body></html>`,
-          { status: 200, headers: { 'Content-Type': 'text/html' } },
-        );
-      }
       if (rawUrl.includes('sogou.com/web') || rawUrl.includes('baidu.com/s') || rawUrl.includes('so.com/s')) {
         return new Response('<html><body></body></html>', {
           status: 200,
@@ -260,14 +226,13 @@ describe('AI source research', () => {
       });
     });
 
-    expect(requests.some((url) => url.includes('\u77e5\u4e4e'))).toBe(true);
-    expect(requests.some((url) => url.includes('\u767e\u5bb6\u53f7'))).toBe(true);
-    expect(requests.some((url) => url.includes('\u5934\u6761\u53f7'))).toBe(true);
-    expect(sections.map((section) => section.url)).toEqual(expect.arrayContaining([
-      'https://www.zhihu.com/question/50680152/answer/122152115',
-      'https://baijiahao.baidu.com/s?id=1777777777777777777',
-      'https://www.toutiao.com/article/7487785029423204403/',
-    ]));
+    expect(requests.some((url) => url.includes('\u77e5\u4e4e'))).toBe(false);
+    expect(requests.some((url) => url.includes('\u767e\u5bb6\u53f7'))).toBe(false);
+    expect(requests.some((url) => url.includes('\u5934\u6761\u53f7'))).toBe(false);
+    expect(requests.some((url) => url.includes('sogou.com/web'))).toBe(true);
+    expect(requests.some((url) => url.includes('baidu.com/s'))).toBe(false);
+    expect(requests.some((url) => url.includes('so.com/s'))).toBe(false);
+    expect(sections.map((section) => section.url)).toEqual(['https://baike.baidu.com/item/%E4%B8%83%E6%B5%B7%E5%8D%83%E7%A7%8B/8788465']);
   });
 
   it('filters video image and low-quality Q&A pages from Chinese research results', async () => {

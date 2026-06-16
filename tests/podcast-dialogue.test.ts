@@ -20,6 +20,15 @@ describe('podcast dialogue splitting', () => {
     ]);
   });
 
+  it('splits display-name labels even when both hosts are on one line', () => {
+    const turns = splitPodcastDialogue({ id: 6, cap: '咔仔：你有没有发现，这件事一开始就不简单？大壹：对，真正的转折在后面。' });
+
+    expect(turns).toEqual([
+      { sceneId: 6, speaker: 'A', turnIndex: 1, text: '你有没有发现，这件事一开始就不简单？' },
+      { sceneId: 6, speaker: 'B', turnIndex: 2, text: '对，真正的转折在后面。' },
+    ]);
+  });
+
   it('accepts compact A and B prefixes', () => {
     const turns = splitPodcastDialogue({ id: 3, cap: 'A: One point.\nB: Two points.' });
 

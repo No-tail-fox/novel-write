@@ -345,6 +345,49 @@ describe('configured media providers', () => {
     }
   });
 
+  it('strips Chinese host labels from two-host podcast TTS text', async () => {
+    const dir = await mkdtemp(join(tmpdir(), 'storybound-provider-minimax-host-labels-'));
+    const audioBytes = Buffer.from('turn-audio');
+    const requests: Array<{ body: Record<string, any> }> = [];
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (_url: string, init: RequestInit) => {
+        requests.push({ body: JSON.parse(String(init.body)) });
+        return new Response(JSON.stringify({ data: { audio: audioBytes.toString('hex'), status: 2 }, base_resp: { status_code: 0, status_msg: 'success' } }), {
+          status: 200,
+          headers: { 'content-type': 'application/json' },
+        });
+      }),
+    );
+
+    try {
+      const config: AppConfig = {
+        ...defaultConfig,
+        tts: {
+          ...defaultConfig.tts,
+          provider: 'minimax',
+          minimax: { ...defaultConfig.tts.minimax, apiKey: 'tts-key', model: 'speech-02-hd', voiceId: 'default-voice' },
+        },
+      };
+      const synthesize = createConfiguredNarrationSynthesizer(config, dir);
+      const assets = await synthesize(
+        [{ id: 1, cap: '咔仔：你有没有发现，这件事一开始就不简单？\n大壹：对，真正的转折在后面。', descPrompt: '', durationMs: 1200 }],
+        { ...task, videoForm: 'two-host-podcast', podcastSpeakers: 'kazai-dayi', podcastSpeakerA: 'voice-a', podcastSpeakerB: 'voice-b' },
+      );
+
+      expect(requests).toHaveLength(2);
+      expect(requests[0].body).toMatchObject({ text: '你有没有发现，这件事一开始就不简单？', voice_setting: { voice_id: 'voice-a' } });
+      expect(requests[1].body).toMatchObject({ text: '对，真正的转折在后面。', voice_setting: { voice_id: 'voice-b' } });
+      expect(requests.map((request) => request.body.text)).not.toEqual(expect.arrayContaining([expect.stringContaining('咔仔'), expect.stringContaining('大壹')]));
+      expect(assets).toMatchObject([
+        { sceneId: 1, speaker: 'A', turnIndex: 1, text: '你有没有发现，这件事一开始就不简单？' },
+        { sceneId: 1, speaker: 'B', turnIndex: 2, text: '对，真正的转折在后面。' },
+      ]);
+    } finally {
+      await rm(dir, { recursive: true, force: true });
+    }
+  });
+
   it('uses provider defaults for old two-host podcast tasks without stored voice ids', async () => {
     const dir = await mkdtemp(join(tmpdir(), 'storybound-provider-dual-voice-defaults-'));
     const audioBytes = Buffer.from('turn-audio');

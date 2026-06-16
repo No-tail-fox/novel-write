@@ -161,6 +161,7 @@ function createBridgePayload(input: {
       text: scene.cap,
     };
   });
+  const overlayText = resolveOverlayText(input.input, input.template);
   return {
     workDir: input.input.workDir,
     draftDir: input.draftDir,
@@ -203,7 +204,7 @@ function createBridgePayload(input: {
     overlays: {
       title: {
         visible: input.template.title.visible,
-        text: input.template.title.text,
+        text: overlayText.title,
         x: input.template.title.x,
         y: input.template.title.y,
         width: input.template.title.width,
@@ -219,7 +220,7 @@ function createBridgePayload(input: {
       },
       subtitle: {
         visible: input.template.subtitle.visible,
-        text: input.template.subtitle.text,
+        text: overlayText.subtitle,
         x: input.template.subtitle.x,
         y: input.template.subtitle.y,
         width: input.template.subtitle.width,
@@ -278,6 +279,17 @@ function createBridgePayload(input: {
       audioEffectType: input.template.audio.audioEffectType,
     },
   };
+}
+
+function resolveOverlayText(input: WriteJianyingDraftInput, template: DraftTemplate): { title: string; subtitle: string } {
+  const title = firstNonEmpty(input.cover.title, input.title, template.title.text);
+  const subtitleLines = input.cover.subtitle.map((line) => line.trim()).filter(Boolean);
+  const subtitle = subtitleLines.length > 0 ? subtitleLines.join('\n') : firstNonEmpty(input.cover.summary, template.subtitle.text);
+  return { title, subtitle };
+}
+
+function firstNonEmpty(...values: string[]): string {
+  return values.find((value) => value.trim())?.trim() ?? '';
 }
 
 function resolveBgmVolume(templateBgmVolume: number, bgm: BgmItem | null): number {

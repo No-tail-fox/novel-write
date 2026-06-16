@@ -9,9 +9,14 @@ export interface PodcastDialogueTurn {
   text: string;
 }
 
-const labeledTurnPattern = /^\s*(?:Host\s*)?([AB])\s*[:：]\s*(.+)$/i;
-const chineseLabeledTurnPattern = /^\s*(?:主持人|主播)\s*([ABＡＢ])\s*[:：]\s*(.+)$/i;
+const turnLabelPattern = /(^|[\s。！？!?；;])(?:(?:Host\s*)?([AB])|(?:主持人|主播)\s*([ABＡＢ])|(咔仔|大壹|刘飞|潇磊))\s*[:：]\s*/giu;
 const sentencePattern = /[^。！？!?；;]+[。！？!?；;]?/g;
+const displayNameSpeakers: Record<string, PodcastTurnSpeaker> = {
+  咔仔: 'A',
+  刘飞: 'A',
+  大壹: 'B',
+  潇磊: 'B',
+};
 
 export function splitPodcastDialogue(scene: Pick<StoryboardScene, 'id' | 'cap'>): PodcastDialogueTurn[] {
   const caption = scene.cap.trim();
@@ -24,21 +29,22 @@ export function splitPodcastDialogue(scene: Pick<StoryboardScene, 'id' | 'cap'>)
 }
 
 function parseLabeledTurns(sceneId: number, caption: string): PodcastDialogueTurn[] {
+  const labels = Array.from(caption.matchAll(turnLabelPattern));
+  if (labels.length === 0) return [];
   const turns: PodcastDialogueTurn[] = [];
-  for (const rawLine of caption.split(/\r?\n/)) {
-    const line = rawLine.trim();
-    if (!line) continue;
-    const match = line.match(chineseLabeledTurnPattern) ?? line.match(labeledTurnPattern);
-    if (!match) continue;
-    const text = match[2]?.trim();
-    if (!text) continue;
-    turns.push({
-      sceneId,
-      speaker: normalizeSpeaker(match[1]),
-      turnIndex: turns.length + 1,
-      text,
-    });
-  }
+  labels.forEach((match, index) => {
+    const textStart = matchIndex(match) + match[0].length;
+    const textEnd = index + 1 < labels.length ? labelStartIndex(labels[index + 1]) : caption.length;
+    const text = caption.slice(textStart, textEnd).trim();
+    if (text) {
+      turns.push({
+        sceneId,
+        speaker: normalizeLabelMatch(match),
+        turnIndex: turns.length + 1,
+        text,
+      });
+    }
+  });
   return turns;
 }
 
@@ -58,4 +64,18 @@ function splitFallbackSentences(sceneId: number, caption: string): PodcastDialog
 function normalizeSpeaker(value: string): PodcastTurnSpeaker {
   const normalized = value.toUpperCase();
   return normalized === 'B' || normalized === 'Ｂ' ? 'B' : 'A';
+}
+
+function normalizeLabelMatch(match: RegExpMatchArray): PodcastTurnSpeaker {
+  const displayName = match[4];
+  if (displayName) return displayNameSpeakers[displayName] ?? 'A';
+  return normalizeSpeaker(match[2] ?? match[3] ?? 'A');
+}
+
+function labelStartIndex(match: RegExpMatchArray): number {
+  return matchIndex(match) + (match[1]?.length ?? 0);
+}
+
+function matchIndex(match: RegExpMatchArray): number {
+  return match.index ?? 0;
 }

@@ -278,6 +278,65 @@ describe('draft writer', () => {
     }
   });
 
+  it('fills draft title and subtitle overlays from generated cover metadata', async () => {
+    const dir = await mkdtemp(join(tmpdir(), 'storybound-draft-cover-overlays-'));
+    const draftRootDir = join(dir, 'JianyingPro Drafts');
+    const workDir = join(dir, 'work');
+    const scenes: StoryboardScene[] = [{ id: 1, cap: 'Only line', descPrompt: 'prompt', durationMs: 1200 }];
+    const images = await writeAssets(workDir, scenes, 'png', twoByTwoPng);
+    const audioPath = join(workDir, 'voice.wav');
+    await writeFile(audioPath, wavTone(1200));
+    let capturedPayload: PyJianYingBridgeInput | null = null;
+
+    try {
+      await writeJianyingDraft(
+        {
+          workDir,
+          draftRootDir,
+          title: 'Task Title',
+          cover: {
+            title: 'Generated Main Title',
+            subtitle: ['Generated Subtitle A', 'Generated Subtitle B'],
+            summary: 'summary',
+            tags: [],
+            comments: [],
+          },
+          ratio: '9:16',
+          scenes,
+          imagePrompts: buildImagePrompts(scenes, { inputText: 'Wu Zetian', style: 'photo-real', ratio: '9:16' }),
+          reviewedText: 'reviewed',
+          rewrittenCopy: 'rewritten',
+          generatedImages: images,
+          narrationAudio: [{ sceneId: 1, path: audioPath }],
+          bgm: null,
+        },
+        {
+          runBridge: async (payload) => {
+            capturedPayload = payload;
+            await mkdir(payload.draftDir, { recursive: true });
+            await writeFile(join(payload.draftDir, 'draft_content.json'), '{}', 'utf8');
+            await writeFile(join(payload.draftDir, 'draft_meta_info.json'), '{}', 'utf8');
+            return {
+              draftDir: payload.draftDir,
+              draftContentPath: join(payload.draftDir, 'draft_content.json'),
+              draftMetaPath: join(payload.draftDir, 'draft_meta_info.json'),
+              durationUs: payload.totalDurationUs ?? 0,
+            };
+          },
+        },
+      );
+
+      expect(capturedPayload).toMatchObject({
+        overlays: {
+          title: { text: 'Generated Main Title' },
+          subtitle: { text: 'Generated Subtitle A\nGenerated Subtitle B' },
+        },
+      });
+    } finally {
+      await rm(dir, { recursive: true, force: true });
+    }
+  });
+
   it('passes multiple narration turns for one scene into the bridge payload', async () => {
     const dir = await mkdtemp(join(tmpdir(), 'storybound-draft-dual-voice-payload-'));
     const draftRootDir = join(dir, 'JianyingPro Drafts');
