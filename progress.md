@@ -21,6 +21,7 @@
 - Refined the shell visual system with blueprint grid texture, cyanprint/timeline/amber tokens, clearer active navigation, stable focus rings, and tighter panel hierarchy.
 - Chinese-localized browser preview fallback errors and ordinary settings labels such as supplier, interface address, interface key, draft directory, timestamp granularity, and knowledge base.
 - Browser smoke rechecked shell and settings at `http://127.0.0.1:5173`; Storybound shell entries and settings labels are visible in Chinese with no checked fallback English leaks.
+- Restored “爆款拆解” to the main workflow navigation after feedback that the secondary placement made it look missing.
 - Verification passed:
   - `npm run typecheck`
   - `npm test` -> 39 files, 318 tests

@@ -166,6 +166,7 @@ const primaryNavItems: NavItem[] = [
   { view: 'image-lab', label: '画图实验室', hint: '分镜图片', icon: FlaskConical },
   { view: 'voice-lab', label: '配音实验室', hint: '音色试听', icon: Mic2 },
   { view: 'music-mv', label: '音乐 MV', hint: '歌词成片', icon: Music },
+  { view: 'viral-analyzer', label: '爆款拆解', hint: '拉片复刻', icon: Flame },
   { view: 'prompt-templates', label: '提示词模板', hint: '代理提示词', icon: Sparkles },
   { view: 'draft-templates', label: '草稿模板', hint: '剪映画布', icon: LayoutTemplate },
   { view: 'settings', label: '系统设置', hint: 'API 与路径', icon: Settings },
@@ -173,9 +174,7 @@ const primaryNavItems: NavItem[] = [
   { view: 'activation', label: '激活管理', hint: '试用与授权', icon: KeyRound },
 ];
 
-const secondaryNavItems: NavItem[] = [
-  { view: 'viral-analyzer', label: '爆款拆解', hint: '拉片复刻', icon: Flame },
-];
+const secondaryNavItems: NavItem[] = [];
 
 const navItems: NavItem[] = [...primaryNavItems, ...secondaryNavItems];
 

@@ -42,6 +42,21 @@ describe('product shell ui', () => {
     expect(css).toContain('.account-entry-grid');
   });
 
+  it('keeps the viral analyzer visible in the main workflow navigation', async () => {
+    const main = await readFile(new URL('../src/main.tsx', import.meta.url), 'utf8');
+    const primaryStart = main.indexOf('const primaryNavItems');
+    const primaryEnd = main.indexOf('const secondaryNavItems');
+    const secondaryEnd = main.indexOf('const navItems');
+    const primaryNav = main.slice(primaryStart, primaryEnd);
+    const secondaryNav = main.slice(primaryEnd, secondaryEnd);
+
+    expect(primaryNav).toContain("view: 'viral-analyzer'");
+    expect(primaryNav).toContain("label: '爆款拆解'");
+    expect(secondaryNav).not.toContain("view: 'viral-analyzer'");
+    expect(primaryNav.indexOf("view: 'music-mv'")).toBeLessThan(primaryNav.indexOf("view: 'viral-analyzer'"));
+    expect(primaryNav.indexOf("view: 'viral-analyzer'")).toBeLessThan(primaryNav.indexOf("view: 'prompt-templates'"));
+  });
+
   it('uses a restrained storyboard-console visual system instead of a generic neon shell', async () => {
     const css = await readFile(new URL('../src/styles.css', import.meta.url), 'utf8');
 
