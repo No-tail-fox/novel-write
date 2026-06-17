@@ -555,11 +555,15 @@ export class FileDatabase {
   }
 
   private syncBuiltinPromptTemplates(): void {
+    const defaultIds = new Set(defaultPromptTemplates.map((template) => template.id));
     const existingIds = new Set(getRows<{ id: string }>(this.db, 'SELECT id FROM prompt_templates').map((row) => row.id));
-    for (const template of defaultPromptTemplates) {
-      if (!existingIds.has(template.id)) {
-        this.insertPromptTemplate(template);
+    for (const existingId of existingIds) {
+      if (!defaultIds.has(existingId)) {
+        this.db.run('DELETE FROM prompt_templates WHERE id = ? AND is_builtin = 1', [existingId]);
       }
+    }
+    for (const template of defaultPromptTemplates) {
+      this.insertPromptTemplate(template);
     }
   }
 

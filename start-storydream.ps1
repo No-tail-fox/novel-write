@@ -4,7 +4,7 @@ Set-Location -LiteralPath $PSScriptRoot
 
 Write-Host ""
 Write-Host "========================================"
-Write-Host "  Storybound Replica One-Click Startup"
+Write-Host "  StoryDream One-Click Startup"
 Write-Host "========================================"
 Write-Host ""
 

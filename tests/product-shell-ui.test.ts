@@ -2,7 +2,7 @@ import { readFile } from 'node:fs/promises';
 import { describe, expect, it } from 'vitest';
 
 describe('product shell ui', () => {
-  it('presents a Chinese Storybound-first desktop shell with main workflow and secondary modules', async () => {
+  it('presents a Chinese StoryDream-first desktop shell with main workflow and secondary modules', async () => {
     const main = await readFile(new URL('../src/main.tsx', import.meta.url), 'utf8');
     const css = await readFile(new URL('../src/styles.css', import.meta.url), 'utf8');
 
@@ -124,7 +124,7 @@ describe('product shell ui', () => {
     expect(main).toContain('浏览器预览无法运行爆款视频拆解');
   });
 
-  it('keeps all visible Storybound pipeline labels in Chinese', async () => {
+  it('keeps all visible StoryDream pipeline labels in Chinese', async () => {
     const main = await readFile(new URL('../src/main.tsx', import.meta.url), 'utf8');
 
     for (const text of [
@@ -144,7 +144,7 @@ describe('product shell ui', () => {
     }
   });
 
-  it('defines the complete Storybound-style navigation shell', async () => {
+  it('defines the complete StoryDream-style navigation shell', async () => {
     const main = await readFile(new URL('../src/main.tsx', import.meta.url), 'utf8');
     const css = await readFile(new URL('../src/styles.css', import.meta.url), 'utf8');
 
@@ -522,7 +522,7 @@ describe('product shell ui', () => {
     expect(css).toContain('.draft-border-controls');
   });
 
-  it('exposes Storybound text style controls for every draft text layer', async () => {
+  it('exposes StoryDream text style controls for every draft text layer', async () => {
     const main = await readFile(new URL('../src/main.tsx', import.meta.url), 'utf8');
 
     for (const symbol of [
@@ -601,7 +601,7 @@ describe('product shell ui', () => {
     expect(css).toContain('calc((100vh - 310px) * var(--draft-canvas-ratio');
   });
 
-  it('uses a preview-safe text stroke instead of rendering Storybound 40px borders as giant shadows', async () => {
+  it('uses a preview-safe text stroke instead of rendering StoryDream 40px borders as giant shadows', async () => {
     const main = await readFile(new URL('../src/main.tsx', import.meta.url), 'utf8');
     const css = await readFile(new URL('../src/styles.css', import.meta.url), 'utf8');
 
@@ -878,6 +878,31 @@ describe('product shell ui', () => {
       expect(main).toContain(text);
     }
     expect(main).not.toContain('>{`{{${item}}}`}</button>');
+  });
+
+  it('documents the canonical StoryDream runtime variables in the template editor', async () => {
+    const main = await readFile(new URL('../src/main.tsx', import.meta.url), 'utf8');
+
+    for (const key of [
+      'targetLength',
+      'storyboardSceneCount',
+      'taskTemplateName',
+      'defaultStyles',
+      'defaultDraftTemplateId',
+      'characterPolicy',
+      'step3SkeletonModules',
+      'referenceKind',
+      'stylePrefix',
+      'styleSuffix',
+      'styleAllowColor',
+      'styleNegativePrompt',
+      'referenceImagePath',
+      'imagePromptReference',
+      'characterCard',
+      'imageSeedPoolsJson',
+    ]) {
+      expect(main).toContain(`key: '${key}'`);
+    }
   });
 
   it('splits prompt template management into story and image template tabs', async () => {
@@ -1330,7 +1355,7 @@ describe('product shell ui', () => {
     expect(main).not.toContain('OptionCloud title="画面风格" options={styleOptions}');
   });
 
-  it('exposes Storybound 1.7 cover and podcast image controls in the new task form', async () => {
+  it('exposes StoryDream cover and podcast image controls in the new task form', async () => {
     const main = await readFile(new URL('../src/main.tsx', import.meta.url), 'utf8');
     const page = main.slice(main.indexOf('function NewTaskPage'), main.indexOf('function MusicMvPage'));
 
@@ -1384,7 +1409,7 @@ describe('product shell ui', () => {
     expect(targetSceneIndex).toBeLessThan(advancedIndex);
   });
 
-  it('replicates the Storybound video form controls for narration and two-host podcast tasks', async () => {
+  it('replicates the StoryDream video form controls for narration and two-host podcast tasks', async () => {
     const main = await readFile(new URL('../src/main.tsx', import.meta.url), 'utf8');
     const page = main.slice(main.indexOf('function NewTaskPage'), main.indexOf('function MusicMvPage'));
 
@@ -1463,14 +1488,15 @@ describe('product shell ui', () => {
     expect(css).toContain('.image-record.failed');
   });
 
-  it('exposes the Storybound smart image modes in image lab generation', async () => {
+  it('exposes the StoryDream smart image modes in image lab generation', async () => {
     const main = await readFile(new URL('../src/main.tsx', import.meta.url), 'utf8');
     const css = await readFile(new URL('../src/styles.css', import.meta.url), 'utf8');
     const page = main.slice(main.indexOf('function ImageLabPage'), main.indexOf('function VoiceLabPage'));
 
-    for (const text of ['智慧生图', '文生图', '图像参考', '画图实验室', '参考图', '需求描述', '出图数量上限', '比例', '分辨率', '最近生成']) {
+    for (const text of ['智慧生图', '文生图', '图像参考', '参考图', '需求描述', '出图数量上限', '比例', '分辨率', '最近生成']) {
       expect(page).toContain(text);
     }
+    expect(page).not.toContain('className="image-lab-header"');
     expect(page).toContain('smartMode');
     expect(page).toContain('referenceLimit');
     expect(page).toContain('imageLabOutputCount');
@@ -1478,27 +1504,54 @@ describe('product shell ui', () => {
     expect(page).toContain('selectImageLabReferenceImage');
     expect(page).toContain('api.selectLocalImage()');
     expect(page).toContain('onClick={selectImageLabReferenceImage}');
+    expect(page).toContain('removeReferenceImagePath');
+    expect(page).toContain('setExpandedReferenceImage');
     expect(page).toContain('image-lab-reference-list');
-    expect(page).toContain('image-lab-reference-entry');
+    expect(page).toContain('image-lab-reference-thumb');
     expect(page).toContain('hiddenReferenceCount');
     expect(page).toContain('image-lab-ratio-grid');
     expect(page).toContain('referenceImagePaths');
-    expect(page).toContain('resolveImageLabSmartMode(tab, smartMode, references)');
+    expect(page).toContain('resolveImageLabSmartMode(tab, baseSmartMode, references)');
     expect(main).toContain("tab === 'smart' && references.length > 0 ? 'reference-edit'");
+    expect(page).toContain("Math.min(10, imageLabOutputCount)");
+    expect(page).toContain('max={10}');
     expect(css).toContain('.image-lab-workbench');
     expect(css).toContain('.image-lab-dropzone');
     expect(css).toContain('.image-lab-reference-list');
-    expect(css).toContain('.image-lab-reference-entry');
+    expect(css).toContain('.image-lab-reference-grid');
+    expect(css).toContain('.image-lab-reference-thumb');
+    expect(css).toContain('.image-lab-preview-dialog');
     expect(css).toContain('.image-lab-ratio-grid');
     expect(css).toContain('.image-lab-recent');
     expect(css).toContain('.reference-image-list');
   });
 
+  it('separates smart generation and reference editing modes in image lab copy', async () => {
+    const main = await readFile(new URL('../src/main.tsx', import.meta.url), 'utf8');
+    const page = main.slice(main.indexOf('function ImageLabPage'), main.indexOf('function VoiceLabPage'));
+
+    expect(page).toContain('referenceModeDescription');
+    expect(page).toContain('智慧生图');
+    expect(page).toContain('图像参考');
+    expect(page).toContain('智能规划多张图，可带参考图');
+    expect(page).toContain('参考图编辑/延展，需要先添加参考图');
+    expect(page).toContain("tab === 'reference' ? 'reference-edit'");
+  });
+
+  it('keeps the image lab page padded and scrollable under the fixed page header', async () => {
+    const css = await readFile(new URL('../src/styles.css', import.meta.url), 'utf8');
+    const scrollablePageRule = css.match(/\.new-task-scroll,[\s\S]*?\.image-lab-page\s*\{[\s\S]*?\}/)?.[0] ?? '';
+
+    expect(scrollablePageRule).toContain('.image-lab-page');
+    expect(scrollablePageRule).toContain('overflow: auto');
+    expect(scrollablePageRule).toContain('padding: 20px 26px');
+  });
+
   it('reuses the React root across Vite hot reloads', async () => {
     const main = await readFile(new URL('../src/main.tsx', import.meta.url), 'utf8');
 
-    expect(main).toContain('__storyboundReactRoot');
-    expect(main).toContain('window.__storyboundReactRoot ??=');
+    expect(main).toContain('__storydreamReactRoot');
+    expect(main).toContain('window.__storydreamReactRoot ??=');
     expect(main).not.toContain("createRoot(document.getElementById('root')!).render(<App />)");
   });
 

@@ -9,6 +9,7 @@ import type {
   PromptTemplate,
   UiPreferences,
 } from './types';
+import { storyboundSystemTemplateVersionHash, storyboundSystemTemplates, type StoryboundSystemTemplate } from './storybound-system-templates';
 import { DEFAULT_VOLCENGINE_TTS_V3_SPEAKER } from './volcengine-tts';
 
 const updatedAt = '2026-05-26T00:00:00.000Z';
@@ -201,157 +202,59 @@ export const defaultConfig: AppConfig = {
   },
 };
 
+function storyboundTemplateUpdatedAt(template: StoryboundSystemTemplate): string {
+  return new Date(template.updatedAt * 1000).toISOString();
+}
+
+function storyboundCharacterPolicy(template: StoryboundSystemTemplate): PromptTemplate['characterPolicy'] {
+  if (template.needsCharacterCard === 'force') return 'force-extract';
+  if (template.needsCharacterCard === 'skip') return 'force-skip';
+  return 'follow-template';
+}
+
+function storyboundReferenceKind(template: StoryboundSystemTemplate): PromptTemplate['referenceKind'] {
+  if (template.referenceKind === 'character' || template.referenceKind === 'face') return 'face';
+  if (template.referenceKind === 'product') return 'product';
+  return 'none';
+}
+
+function storyboundTaskTemplateContent(template: StoryboundSystemTemplate): string {
+  return [
+    `StoryDream 系统模板：${template.name}`,
+    `模板 ID：${template.templateId}`,
+    `模板说明：${template.description}`,
+    `默认画风：${template.defaultStyleId}`,
+    `版本：${template.version}`,
+    `模板源版本：${storyboundSystemTemplateVersionHash}`,
+  ].join('\n');
+}
+
+const defaultStoryboundFallbackTemplate = storyboundSystemTemplates.find((template) => template.templateId === 'general') ?? storyboundSystemTemplates[0];
+
+const storyboundPromptTaskTemplates: PromptTemplate[] = storyboundSystemTemplates.map((template) => ({
+  id: `system-${template.templateId}`,
+  name: template.name,
+  type: 'task',
+  description: template.description,
+  content: storyboundTaskTemplateContent(template),
+  isBuiltin: true,
+  updatedAt: storyboundTemplateUpdatedAt(template),
+  baseTrack: template.templateId,
+  defaultStyles: [template.defaultStyleId],
+  characterPolicy: storyboundCharacterPolicy(template),
+  step3SkeletonModules: [...(template.step3SkeletonModules ?? [])],
+  referenceKind: storyboundReferenceKind(template),
+  stepPrompts: {
+    rewrite: template.step1RewriteSystemPrompt,
+    cover: template.step1MetadataSystemPrompt,
+    'image-prompt': template.step3SystemPrompt,
+  },
+  imageSeedPoolsJson: JSON.stringify(template.imageSeedPools ?? {}),
+  origin: 'system',
+}));
+
 export const defaultPromptTemplates: PromptTemplate[] = [
-  {
-    id: 'system-character-story',
-    name: '人物故事',
-    type: 'task',
-    description: '历史人物、名人传记、纪实质感与情感渲染。',
-    content:
-      '围绕 {{inputText}} 做人物故事短视频。保留可核验事实顺序，突出低谷、选择、转折和代价；口播要有开场反差、中段推进、结尾情绪落点。避免编造具体年份、人名和因果；如果资料不足，用克制表达说明不确定。',
-    isBuiltin: true,
-    updatedAt,
-    baseTrack: 'character-story',
-    defaultStyles: ['black-white'],
-    characterPolicy: 'follow-template',
-    step3SkeletonModules: ['跨年代', '防台词文字'],
-    referenceKind: 'face',
-    origin: 'system',
-    usedCount: 0,
-    marketTags: ['人物', '历史', '传记'],
-  },
-  {
-    id: 'system-health-book',
-    name: '健康图书',
-    type: 'task',
-    description: '健康养生、医学知识、书摘拆解。',
-    content:
-      '把 {{inputText}} 整理成健康科普/书摘短视频。先讲适用场景，再解释原理和边界；不做诊断、疗效承诺或替代就医建议。语言清楚、谨慎、可执行，重要风险必须提示。',
-    isBuiltin: true,
-    updatedAt,
-    baseTrack: 'health-book',
-    defaultStyles: ['magazine'],
-    characterPolicy: 'force-skip',
-    step3SkeletonModules: ['产品一致性'],
-    referenceKind: 'none',
-    origin: 'system',
-  },
-  {
-    id: 'system-culture-science',
-    name: '文化科普',
-    type: 'task',
-    description: '华夏文化、传统民俗、历史知识科普。',
-    content:
-      '把 {{inputText}} 拆成起因、过程、影响三段文化科普。先给一个具体场景或问题，再解释传统、人物、器物或制度背后的逻辑。语言有画面感但不神化、不猎奇、不夸大事实。',
-    isBuiltin: true,
-    updatedAt,
-    baseTrack: 'culture-science',
-    defaultStyles: ['ink'],
-    characterPolicy: 'force-skip',
-    step3SkeletonModules: ['防台词文字'],
-    referenceKind: 'none',
-    origin: 'system',
-  },
-  {
-    id: 'system-picture-book',
-    name: '绘本故事',
-    type: 'task',
-    description: '儿童绘本、睡前故事、轻叙事。',
-    content:
-      '把 {{inputText}} 改写成绘本/睡前故事。句子短、情绪温柔、画面明确，每段只推进一个动作或感受。避免惊吓、成人化冲突和复杂抽象概念，保留可被画出来的细节。',
-    isBuiltin: true,
-    updatedAt,
-    baseTrack: 'picture-book',
-    defaultStyles: ['watercolor'],
-    characterPolicy: 'force-extract',
-    step3SkeletonModules: ['跨年代'],
-    referenceKind: 'face',
-    origin: 'system',
-  },
-  {
-    id: 'system-ecommerce',
-    name: '电商带货',
-    type: 'task',
-    description: '产品种草、好物推荐、卖点脚本。',
-    content:
-      '把 {{inputText}} 改写成产品种草短视频。先呈现真实使用场景，再讲核心卖点、痛点解决、适合人群和购买理由。不要虚构功效、销量、认证和价格；{{extraRequirements}} 中的促销要求只在来源支持时保留。',
-    isBuiltin: true,
-    updatedAt,
-    baseTrack: 'ecommerce',
-    defaultStyles: ['photo-real'],
-    characterPolicy: 'force-skip',
-    step3SkeletonModules: ['产品一致性'],
-    referenceKind: 'product',
-    origin: 'system',
-  },
-  {
-    id: 'system-mind-soup',
-    name: '心灵鸡汤',
-    type: 'task',
-    description: '情感治愈、励志感悟、人生转折。',
-    content:
-      '把 {{inputText}} 写成情感治愈短视频。先给具体困境，再提炼一个能落到生活里的观点；少喊口号，多用动作、选择和细节承载情绪。结尾要有温和但有力量的落点。',
-    isBuiltin: true,
-    updatedAt,
-    baseTrack: 'mind-soup',
-    defaultStyles: ['modern-film'],
-    characterPolicy: 'follow-template',
-    step3SkeletonModules: ['防台词文字'],
-    referenceKind: 'none',
-    origin: 'system',
-    marketTags: ['情感', '治愈', '励志'],
-  },
-  {
-    id: 'system-folk-story',
-    name: '民间故事',
-    type: 'task',
-    description: '虚构传说、因果寓言、乡土叙事。',
-    content:
-      '把 {{inputText}} 改写成民间故事短视频。叙事要有悬念、因果和反转，人物动机朴素清楚；画面可落在村镇、山林、集市、老屋等场景。虚构内容要保持故事内逻辑自洽。',
-    isBuiltin: true,
-    updatedAt,
-    baseTrack: 'folk-story',
-    defaultStyles: ['folk'],
-    characterPolicy: 'force-extract',
-    step3SkeletonModules: ['跨年代', '防台词文字'],
-    referenceKind: 'none',
-    origin: 'system',
-    marketTags: ['民间', '传说', '寓言'],
-  },
-  {
-    id: 'system-general-story',
-    name: '通用故事',
-    type: 'task',
-    description: '通用写实叙事、口播故事、素材改写。',
-    content:
-      '把 {{inputText}} 改写成通用短视频故事。先抓住最有冲突的事实或情绪，再按“背景-变化-结果-余味”推进。语言口语化、节奏紧凑，避免空泛总结和无来源细节。',
-    isBuiltin: true,
-    updatedAt,
-    baseTrack: 'general-story',
-    defaultStyles: ['photo-real'],
-    characterPolicy: 'follow-template',
-    step3SkeletonModules: ['防台词文字'],
-    referenceKind: 'none',
-    origin: 'system',
-    marketTags: ['通用', '故事', '改写'],
-  },
-  {
-    id: 'system-food-v2',
-    name: '美食探店V2',
-    type: 'task',
-    description: '城市街角小店、烟火气、探店口播。',
-    content:
-      '把 {{inputText}} 写成美食探店短视频。先给地点和烟火气氛围，再讲招牌菜、口感、价格/排队等可见信息；不要虚构店名、地址、评价和优惠。镜头要能拍到热气、手作、街边环境和真实食物细节。',
-    isBuiltin: true,
-    updatedAt,
-    baseTrack: 'food-v2',
-    defaultStyles: ['retro-film'],
-    characterPolicy: 'force-skip',
-    step3SkeletonModules: ['产品一致性', '防台词文字'],
-    referenceKind: 'product',
-    origin: 'system',
-    marketTags: ['美食', '探店', '烟火气'],
-  },
+  ...storyboundPromptTaskTemplates,
   {
     id: 'builtin-review',
     name: '预审整理',
@@ -365,55 +268,46 @@ export const defaultPromptTemplates: PromptTemplate[] = [
   },
   {
     id: 'builtin-rewrite',
-    name: '短视频改写',
+    name: 'StoryDream 通用改写',
     type: 'rewrite',
-    description: '强化开头钩子、叙事推进和口播节奏。',
-    content:
-      '任务模板：{{taskTemplateContent}}\n\n事实简稿：{{reviewedText}}\n\n改写强度：{{rewriteIntensity}}；叙事视角：{{narrativePov}}；额外要求：{{extraRequirements}}\n\n请改写成短视频口播稿：开头有反差，中段有转折，结尾有情绪落点。不要添加素材无法支持的细节。',
+    description: 'StoryDream 通用故事赛道改写提示词兜底。',
+    content: defaultStoryboundFallbackTemplate.step1RewriteSystemPrompt,
     isBuiltin: true,
-    updatedAt,
+    updatedAt: storyboundTemplateUpdatedAt(defaultStoryboundFallbackTemplate),
     origin: 'system',
   },
   {
     id: 'builtin-cover',
-    name: '封面信息',
+    name: 'StoryDream 通用封面信息',
     type: 'cover',
-    description: '生成标题、副标题、摘要、标签和种子评论。',
-    content:
-      '最终口播稿：{{rewrittenCopy}}\n\n请生成适合短视频发布的封面标题、两条副标题、摘要、话题标签和种子评论。标题要短、有信息量，不夸大、不制造虚假冲突。',
+    description: 'StoryDream 通用故事赛道封面标题与视频简介提示词兜底。',
+    content: defaultStoryboundFallbackTemplate.step1MetadataSystemPrompt,
     isBuiltin: true,
-    updatedAt,
+    updatedAt: storyboundTemplateUpdatedAt(defaultStoryboundFallbackTemplate),
     origin: 'system',
   },
   {
     id: 'builtin-storyboard',
-    name: '分镜分句',
+    name: 'StoryDream 本地化分镜',
     type: 'storyboard',
-    description: '把口播稿拆成可配图、可配音的镜头句。',
+    description: '为 StoryDream 绘图提示词阶段生成字幕句和视觉种子。',
     content:
-      '最终口播稿：{{rewrittenCopy}}\n\n任务模板：{{taskTemplateContent}}\n\n请拆成连续分镜句。每个镜头只表达一个动作、场景或情绪，cap 适合字幕，descPrompt 可直接指导画面生成，durationMs 按句子长度估算。',
+      'StoryDream 本地化分镜规则\n\n最终口播稿：{{rewrittenCopy}}\n\n任务模板：{{taskTemplateContent}}\n\n目标字数：{{targetLength}}\n目标分镜数：{{storyboardSceneCount}}\n画面比例：{{ratio}}\n当前画面风格：{{style}}\n参考图类型：{{referenceKind}}\nStep 3 骨架：{{step3SkeletonModules}}\n额外要求：{{extraRequirements}}\n\n请把口播稿拆成连续分镜 JSON。cap 是最终口播字幕，必须适合 TTS 和字幕展示；descPrompt 是给后续 StoryDream Step 3 的视觉种子，只写可见画面、镜头、场景、人物/产品线索，不要复述完整字幕，不要写屏幕文字、标题、字幕、水印或 UI。每个镜头只表达一个动作、场景或情绪，保持人物/产品/时代连续性，穿插特写、中景、全景和建立镜头。durationMs 按 cap 字数和节奏估算。',
     isBuiltin: true,
     updatedAt,
     origin: 'system',
   },
   {
     id: 'builtin-image-prompt',
-    name: '绘图提示词',
+    name: 'StoryDream 通用绘图提示词',
     type: 'image-prompt',
-    description: '统一角色、镜头、场景、风格和负面提示词。',
-    content:
-      '分镜 JSON：{{scenesJson}}\n\n任务模板：{{taskTemplateContent}}\n\n画风：{{style}}；比例：{{ratio}}；主角策略：{{characterPolicy}}；参考图类型：{{referenceKind}}；骨架模块：{{step3SkeletonModules}}\n\n请先提取主体档案，再为每个镜头生成一致的中文绘图提示词和 negativePrompt。避免画面中出现字幕、水印、签名、UI、畸形肢体和不必要文字。',
+    description: 'StoryDream 通用故事赛道分镜绘画提示词兜底。',
+    content: `${defaultStoryboundFallbackTemplate.step3SystemPrompt}\n\n爆款复刻画面提示词参考：{{imagePromptReference}}`,
     isBuiltin: true,
-    updatedAt,
+    updatedAt: storyboundTemplateUpdatedAt(defaultStoryboundFallbackTemplate),
     origin: 'system',
   },
 ];
-
-for (const template of defaultPromptTemplates) {
-  if (template.id === 'builtin-image-prompt' && !template.content.includes('{{imagePromptReference}}')) {
-    template.content = `${template.content}\n\n爆款复刻画面提示词参考：{{imagePromptReference}}`;
-  }
-}
 
 export const defaultCustomStyles: CustomStyle[] = [
   {
@@ -425,7 +319,7 @@ export const defaultCustomStyles: CustomStyle[] = [
     suffix: 'sharp focal hierarchy, high contrast, premium social video cover, readable empty space',
     negativePrompt: 'low quality, blurry, watermark, extra text, malformed hands, cluttered background',
     allowColor: true,
-    description: 'Storybound 1.7 默认电影感封面与短视频主图风格。',
+    description: 'StoryDream 默认电影感封面与短视频主图风格。',
     createdAt: updatedAt,
     updatedAt,
   },
@@ -604,7 +498,7 @@ export const defaultCustomCoverTemplates: CustomCoverTemplate[] = [
   {
     id: 'cinematic-poster',
     name: '电影海报封面',
-    description: 'Storybound 1.7 默认封面模板，适合故事口播与人物反差主题。',
+    description: 'StoryDream 默认封面模板，适合故事口播与人物反差主题。',
     directions: 'Use a cinematic poster composition with one clear subject and strong contrast. Reserve clean negative space for the generated title.',
     compositionRule: 'Subject occupies the visual center or lower third; background supports tension without adding unrelated objects.',
     titleLayout: 'Large title in the upper third, short and readable, no more than two lines.',
@@ -641,8 +535,8 @@ export const defaultCustomCoverTemplates: CustomCoverTemplate[] = [
 
 export const defaultAccount: AccountProfile = {
   displayName: '本地用户',
-  email: 'local@storybound.replica',
-  workspace: 'Storybound 本地工作区',
+  email: 'local@storydream.app',
+  workspace: 'StoryDream 本地工作区',
   avatarInitial: 'S',
   deviceId: 'local-device',
   balance: 0,
@@ -668,7 +562,7 @@ export const defaultCreditTransactions: CreditTransaction[] = [
     amount: 0,
     balance: 0,
     taskId: null,
-    description: 'Storybound 本地试用积分，不参与真实扣费。',
+    description: 'StoryDream 本地试用积分，不参与真实扣费。',
     createdAt: updatedAt,
   },
 ];

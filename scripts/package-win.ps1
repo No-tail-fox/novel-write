@@ -28,10 +28,10 @@ if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 $Version = (Get-Content -LiteralPath (Join-Path $Root "package.json") -Raw | ConvertFrom-Json).version
 $ReleaseDir = Join-Path $Root "release"
 $UnpackedDir = Join-Path $ReleaseDir "win-unpacked"
-$PortableDir = Join-Path $Root "release\Storybound-Replica-Portable"
-$ZipPath = Join-Path $ReleaseDir "Storybound-Replica-Portable-${Version}.zip"
+$PortableDir = Join-Path $Root "release\StoryDream-Portable"
+$ZipPath = Join-Path $ReleaseDir "StoryDream-Portable-${Version}.zip"
 
-if (!(Test-Path -LiteralPath (Join-Path $UnpackedDir "Storybound Replica.exe"))) {
+if (!(Test-Path -LiteralPath (Join-Path $UnpackedDir "StoryDream.exe"))) {
   Write-Error "Expected unpacked app was not created: $UnpackedDir"
   exit 1
 }
@@ -42,7 +42,7 @@ if (Test-Path -LiteralPath $PortableDir) {
 if (Test-Path -LiteralPath $ZipPath) {
   Remove-Item -LiteralPath $ZipPath -Force
 }
-Get-ChildItem -LiteralPath $ReleaseDir -Filter "Storybound-Replica-Portable-*.exe" | Remove-Item -Force
+Get-ChildItem -LiteralPath $ReleaseDir -Filter "StoryDream-Portable-*.exe" | Remove-Item -Force
 
 Move-Item -LiteralPath $UnpackedDir -Destination $PortableDir
 

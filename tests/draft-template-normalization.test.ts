@@ -6,7 +6,7 @@ import { draftTemplates, imageAnimations, normalizeDraftTemplate } from '@shared
 import type { DraftTemplate } from '@shared/types';
 
 describe('draft template normalization', () => {
-  it('ships Storybound built-in draft template presets', () => {
+  it('ships StoryDream built-in draft template presets', () => {
     const [portrait916, portrait43, landscape169] = draftTemplates;
 
     expect(draftTemplates.map((template) => template.id)).toEqual([
@@ -144,7 +144,19 @@ describe('draft template normalization', () => {
       letterSpacing: 2,
       lineSpacing: 4,
     });
-    expect(normalized.caption).toMatchObject({ x: 0, width: 0.8 });
+    expect(normalized.caption).toMatchObject({
+      x: 0,
+      width: 0.8,
+      fontSize: expect.any(Number),
+      color: expect.stringMatching(/^#/),
+      alpha: 1,
+      bold: false,
+      underline: false,
+      align: 1,
+      letterSpacing: 0,
+      lineSpacing: 0,
+      maxCharsPerLine: 12,
+    });
     expect(typeof normalized.caption.y).toBe('number');
     expect(normalized.disclaimer).toMatchObject({
       x: 0,
@@ -183,18 +195,57 @@ describe('draft template normalization', () => {
     expect(normalized.disclaimer.width).toBe(2);
   });
 
-  it('keeps Storybound text-layer style fields from partially saved templates', () => {
+  it('keeps StoryDream text-layer style fields from partially saved templates', () => {
     const fallback = draftTemplates[0];
     const normalized = normalizeDraftTemplate({
       ...fallback,
       title: { ...fallback.title, underline: false, align: 2, letterSpacing: 3, lineSpacing: 6 },
       subtitle: { ...fallback.subtitle, underline: true, align: 0, letterSpacing: 4, lineSpacing: 8 },
+      caption: { ...fallback.caption, bold: true, underline: true, align: 2, letterSpacing: 1, lineSpacing: 3, maxCharsPerLine: 18 },
       disclaimer: { ...fallback.disclaimer, bold: true, underline: true, align: 2, letterSpacing: 2, lineSpacing: 7 },
     });
 
     expect(normalized.title).toMatchObject({ underline: false, align: 2, letterSpacing: 3, lineSpacing: 6 });
     expect(normalized.subtitle).toMatchObject({ underline: true, align: 0, letterSpacing: 4, lineSpacing: 8 });
+    expect(normalized.caption).toMatchObject({ bold: true, underline: true, align: 2, letterSpacing: 1, lineSpacing: 3, maxCharsPerLine: 18 });
     expect(normalized.disclaimer).toMatchObject({ bold: true, underline: true, align: 2, letterSpacing: 2, lineSpacing: 7 });
+  });
+
+  it('repairs invalid StoryDream caption style fields from stale templates', () => {
+    const fallback = draftTemplates[0];
+    const normalized = normalizeDraftTemplate({
+      ...fallback,
+      caption: {
+        ...fallback.caption,
+        fontSize: Number.NaN,
+        color: '',
+        alpha: Number.NaN,
+        bold: 'false',
+        underline: 'false',
+        align: Number.NaN,
+        letterSpacing: Number.NaN,
+        lineSpacing: Number.NaN,
+        maxCharsPerLine: Number.NaN,
+        background: {
+          color: '',
+          alpha: Number.NaN,
+          roundRadius: Number.NaN,
+        },
+      },
+    } as unknown as DraftTemplate);
+
+    expect(normalized.caption).toMatchObject({
+      fontSize: fallback.caption.fontSize,
+      color: fallback.caption.color,
+      alpha: fallback.caption.alpha,
+      bold: fallback.caption.bold,
+      underline: fallback.caption.underline,
+      align: fallback.caption.align,
+      letterSpacing: fallback.caption.letterSpacing,
+      lineSpacing: fallback.caption.lineSpacing,
+      maxCharsPerLine: fallback.caption.maxCharsPerLine,
+      background: fallback.caption.background,
+    });
   });
 
   it('fills editing effect defaults for legacy template audio settings', () => {

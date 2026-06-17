@@ -537,6 +537,7 @@ h2 {
 .prompt-template-detail,
 .draft-template-page,
 .music-mv-layout,
+.image-lab-page,
 .lab-layout {
   min-width: 0;
   min-height: 0;
@@ -2035,24 +2036,23 @@ textarea {
   max-width: 1040px;
 }
 
-.image-lab-header h2,
-.image-lab-header p,
 .image-lab-recent h3 {
   margin: 0;
-}
-
-.image-lab-header {
-  display: grid;
-  gap: 8px;
-}
-
-.image-lab-header p {
-  color: var(--muted);
 }
 
 .image-lab-workbench {
   display: grid;
   gap: 18px;
+}
+
+.image-lab-mode-note {
+  border: 1px solid rgba(69, 215, 230, 0.22);
+  border-radius: 7px;
+  padding: 9px 11px;
+  background: rgba(69, 215, 230, 0.06);
+  color: #c9eef0;
+  font-size: 12px;
+  line-height: 1.5;
 }
 
 .image-lab-section-head {
@@ -2107,7 +2107,6 @@ textarea {
   gap: 6px;
 }
 
-.image-lab-reference-entry,
 .image-lab-reference-empty,
 .image-lab-reference-overflow {
   display: block;
@@ -2124,6 +2123,50 @@ textarea {
 .image-lab-reference-empty,
 .image-lab-reference-overflow {
   color: var(--muted);
+}
+
+.image-lab-reference-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(132px, 1fr));
+  gap: 10px;
+}
+
+.image-lab-reference-thumb {
+  display: grid;
+  gap: 8px;
+  min-width: 0;
+  border: 1px solid rgba(130, 149, 170, 0.24);
+  border-radius: 8px;
+  padding: 8px;
+  background: #0e151d;
+}
+
+.image-lab-reference-image {
+  display: block;
+  width: 100%;
+  aspect-ratio: 1 / 1;
+  overflow: hidden;
+  border: 1px solid rgba(69, 215, 230, 0.18);
+  border-radius: 6px;
+  background: #071013;
+}
+
+.image-lab-reference-image img {
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.image-lab-reference-actions {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 6px;
+}
+
+.image-lab-reference-actions .mini-button {
+  justify-content: center;
+  min-width: 0;
 }
 
 .image-lab-slider {
@@ -2211,7 +2254,21 @@ textarea {
 }
 
 .reference-image-list {
-  min-height: 74px;
+  min-height: 54px;
+}
+
+.image-lab-preview-dialog {
+  width: min(86vw, 980px);
+  max-height: 88vh;
+}
+
+.image-lab-preview-dialog img {
+  display: block;
+  width: 100%;
+  max-height: calc(88vh - 90px);
+  object-fit: contain;
+  border-radius: 8px;
+  background: #05080d;
 }
 
 .image-record {

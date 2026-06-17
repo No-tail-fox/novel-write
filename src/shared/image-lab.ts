@@ -76,8 +76,8 @@ function createBaseRecord(config: AppConfig, input: ImageLabGenerateInput, id: s
 
 function validateImageLabReferences(input: ImageLabGenerateInput): void {
   const references = normalizeReferenceImagePaths(input);
-  if (references.length > 3) {
-    throw new Error('Image lab supports at most 3 reference images.');
+  if (references.length > 10) {
+    throw new Error('Image lab supports at most 10 reference images.');
   }
   if (input.smartMode !== 'reference-edit') return;
   if (!references.length) {

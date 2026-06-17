@@ -66,6 +66,118 @@ describe('prompt template rendering', () => {
     expect(rendered).not.toContain('{{');
   });
 
+  it('renders canonical local StoryDream placeholders for storyboard and image prompts', () => {
+    const template = {
+      ...defaultPromptTemplates[0],
+      content: [
+        '目标 {{targetLength}}',
+        '目标分镜 {{storyboardSceneCount}}',
+        '风格 {{style}} / {{stylePrefix}} / {{styleSuffix}} / {{styleAllowColor}} / {{styleNegativePrompt}}',
+        '参考 {{referenceKind}} / {{referenceImagePath}} / {{imagePromptReference}}',
+        '角色 {{characterCard}}',
+        '种子 {{imageSeedPoolsJson}}',
+        '分镜 {{scenesJson}}',
+      ].join('\n'),
+    };
+
+    const rendered = renderPromptTemplate(template, {
+      task: {
+        targetLength: 900,
+        storyboardSceneCount: 16,
+        style: 'black-white',
+        referenceImagePath: 'D:/refs/person.png',
+        imagePromptReference: '参考画面：近景、侧光',
+      },
+      taskTemplate: {
+        ...defaultPromptTemplates[0],
+        referenceKind: 'face',
+        imageSeedPoolsJson: '{"scenes":["close","wide"]}',
+      },
+      artifact: {
+        characterCard: {
+          summary: '武则天角色档案',
+          characters: [{ name: '武则天', appearance: '少年入宫', role: '主角' }],
+          consistencyRules: ['保持唐代服饰'],
+        },
+        scenes: [{ id: 1, cap: '她十四岁入宫', descPrompt: '唐代宫门', durationMs: 1200 }],
+      },
+    });
+
+    expect(rendered).toContain('目标 900');
+    expect(rendered).toContain('目标分镜 16');
+    expect(rendered).toContain('风格 black-white / 黑白纪实摄影');
+    expect(rendered).toContain('/ false / 卡通，动漫');
+    expect(rendered).toContain('参考 face / D:/refs/person.png / 参考画面：近景、侧光');
+    expect(rendered).toContain('武则天角色档案');
+    expect(rendered).toContain('"scenes":["close","wide"]');
+    expect(rendered).toContain('"cap":"她十四岁入宫"');
+    expect(rendered).not.toContain('{{');
+  });
+
+  it('keeps legacy Chinese aliases usable for existing local StoryDream templates', () => {
+    const template = {
+      ...defaultPromptTemplates[0],
+      content: [
+        '目标 {{目标字数}}',
+        '目标分镜 {{目标分镜数}}',
+        '风格 {{当前画面风格}} / {{风格前缀}} / {{风格后缀}} / {{允许使用色彩词}} / {{负面提示词}}',
+        '参考 {{参考图类型}} / {{参考图路径}} / {{生图参考}}',
+        '角色 {{角色档案}}',
+        '种子 {{图片种子池}}',
+        '分镜 {{分镜数据}}',
+      ].join('\n'),
+    };
+
+    const rendered = renderPromptTemplate(template, {
+      task: {
+        targetLength: 900,
+        storyboardSceneCount: 16,
+        style: 'black-white',
+        referenceImagePath: 'D:/refs/person.png',
+        imagePromptReference: '参考画面：近景、侧光',
+      },
+      taskTemplate: {
+        ...defaultPromptTemplates[0],
+        referenceKind: 'face',
+        imageSeedPoolsJson: '{"scenes":["close","wide"]}',
+      },
+      artifact: {
+        characterCard: {
+          summary: '武则天角色档案',
+          characters: [{ name: '武则天', appearance: '少年入宫', role: '主角' }],
+          consistencyRules: ['保持唐代服饰'],
+        },
+        scenes: [{ id: 1, cap: '她十四岁入宫', descPrompt: '唐代宫门', durationMs: 1200 }],
+      },
+    });
+
+    expect(rendered).toContain('目标 900');
+    expect(rendered).toContain('目标分镜 16');
+    expect(rendered).toContain('风格 black-white / 黑白纪实摄影');
+    expect(rendered).toContain('参考 face / D:/refs/person.png / 参考画面：近景、侧光');
+    expect(rendered).toContain('武则天角色档案');
+    expect(rendered).toContain('"scenes":["close","wide"]');
+    expect(rendered).not.toContain('{{');
+  });
+
+  it('uses canonical English placeholders in the built-in StoryDream storyboard template', () => {
+    const template = defaultPromptTemplates.find((item) => item.id === 'builtin-storyboard');
+    const placeholders = [...(template?.content.matchAll(/\{\{\s*([^{}]+?)\s*\}\}/gu) ?? [])].map((match) => match[1]);
+
+    expect(placeholders).toEqual([
+      'rewrittenCopy',
+      'taskTemplateContent',
+      'targetLength',
+      'storyboardSceneCount',
+      'ratio',
+      'style',
+      'referenceKind',
+      'step3SkeletonModules',
+      'extraRequirements',
+    ]);
+    expect(template?.content).not.toMatch(/\{\{[^{}]*[\u4e00-\u9fff][^{}]*\}\}/u);
+  });
+
   it('selects an explicit task template before falling back to the task track', () => {
     const explicit = {
       ...defaultPromptTemplates[0],
@@ -76,8 +188,58 @@ describe('prompt template rendering', () => {
     };
 
     expect(selectTaskPromptTemplate([...defaultPromptTemplates, explicit], { track: 'character-story', promptTemplateId: explicit.id })?.id).toBe(explicit.id);
-    expect(selectTaskPromptTemplate(defaultPromptTemplates, { track: 'food-v2' })?.id).toBe('system-food-v2');
-    expect(selectTaskPromptTemplate(defaultPromptTemplates, { track: 'unknown-track' })?.id).toBe('system-general-story');
+    expect(selectTaskPromptTemplate(defaultPromptTemplates, { track: 'food-v2' })?.id).toBe('system-food-vlog');
+    expect(selectTaskPromptTemplate(defaultPromptTemplates, { track: 'unknown-track' })?.id).toBe('system-general');
+  });
+
+  it('ships StoryDream system templates as built-in task defaults', () => {
+    const taskTemplates = defaultPromptTemplates.filter((template) => template.type === 'task');
+
+    expect(taskTemplates.map((template) => template.id)).toEqual([
+      'system-character-story',
+      'system-culture-knowledge',
+      'system-ecommerce',
+      'system-folk-tale',
+      'system-food-vlog',
+      'system-general',
+      'system-health-book',
+      'system-inspirational',
+      'system-picture-book',
+    ]);
+    expect(taskTemplates.map((template) => template.baseTrack)).toEqual([
+      'character-story',
+      'culture-knowledge',
+      'ecommerce',
+      'folk-tale',
+      'food-vlog',
+      'general',
+      'health-book',
+      'inspirational',
+      'picture-book',
+    ]);
+  });
+
+  it('uses StoryDream task-level prompts and metadata on the character story template', () => {
+    const template = defaultPromptTemplates.find((item) => item.id === 'system-character-story');
+
+    expect(template?.description).toBe('历史人物 / 名人传记，纪实质感与情感渲染');
+    expect(template?.characterPolicy).toBe('force-extract');
+    expect(template?.referenceKind).toBe('face');
+    expect(template?.step3SkeletonModules).toEqual(['time-period', 'no-dialogue']);
+    expect(template?.defaultStyles).toEqual(['black-white']);
+    expect(template?.content).toContain('StoryDream 系统模板：人物故事');
+    expect(template?.stepPrompts?.rewrite).toContain('# 对标文案改写规则');
+    expect(template?.stepPrompts?.cover).toContain('# 封面标题与视频简介生成规则');
+    expect(template?.stepPrompts?.['image-prompt']).toContain('# AI 分镜绘画提示词生成系统（工业级版本）');
+  });
+
+  it('resolves legacy local tracks to StoryDream task templates', () => {
+    expect(selectTaskPromptTemplate(defaultPromptTemplates, { track: 'food-v2' })?.id).toBe('system-food-vlog');
+    expect(selectTaskPromptTemplate(defaultPromptTemplates, { track: 'general-story' })?.id).toBe('system-general');
+    expect(selectTaskPromptTemplate(defaultPromptTemplates, { track: 'mind-soup' })?.id).toBe('system-inspirational');
+    expect(selectTaskPromptTemplate(defaultPromptTemplates, { track: 'culture-science' })?.id).toBe('system-culture-knowledge');
+    expect(selectTaskPromptTemplate(defaultPromptTemplates, { track: 'folk-story' })?.id).toBe('system-folk-tale');
+    expect(selectTaskPromptTemplate(defaultPromptTemplates, { track: 'unknown-track' })?.id).toBe('system-general');
   });
 
   it('prefers custom task templates when they share a built-in content track', () => {
@@ -97,7 +259,7 @@ describe('prompt template rendering', () => {
     expect(selectTaskPromptTemplate(templates, { track: 'character-story' })?.id).toBe(custom.id);
     expect(buildStoryTemplateOptions(templates).filter(([id]) => id.includes('character-story'))).toEqual([
       ['custom-character-story', '人物故事 自定义', '历史人物、名人传记、纪实质感与情感渲染'],
-      ['system-character-story', '人物故事', '历史人物、名人传记、纪实质感与情感渲染'],
+      ['system-character-story', '人物故事', '历史人物 / 名人传记，纪实质感与情感渲染'],
     ]);
     expect(buildStoryTemplateTrackOptions(templates).find(([track]) => track === 'character-story')).toEqual([
       'character-story',
@@ -121,7 +283,7 @@ describe('prompt template rendering', () => {
     const options = buildStoryTemplateOptions([...defaultPromptTemplates, custom]);
 
     expect(options).toContainEqual(['custom-character-story-123', '人物故事123', '历史人物、名人传记、纪实质感与情感渲染']);
-    expect(options).toContainEqual(['system-character-story', '人物故事', '历史人物、名人传记、纪实质感与情感渲染']);
+    expect(options).toContainEqual(['system-character-story', '人物故事', '历史人物 / 名人传记，纪实质感与情感渲染']);
   });
 
   it('builds explicit task prompt choices for the selected content track', () => {
@@ -197,6 +359,15 @@ describe('prompt template rendering', () => {
     expect(resolvePromptTemplateDefaultStyleIds(legacyTemplate)).toEqual(['photo-real', 'black-white']);
     expect(resolvePromptTemplateDefaultStyleId(legacyTemplate)).toBe('photo-real');
     expect(resolvePromptTemplateDefaultStyleId({ ...legacyTemplate, defaultStyles: [] })).toBe('photo-real');
+  });
+
+  it('normalizes StoryDream default style ids to stable local image template ids', () => {
+    const storyboundTemplate = {
+      ...defaultPromptTemplates[0],
+      defaultStyles: ['realistic', 'oil-painting', 'vintage-film', 'folk-tale-gongbi'],
+    };
+
+    expect(resolvePromptTemplateDefaultStyleIds(storyboundTemplate)).toEqual(['photo-real', 'oil-paint', 'retro-film', 'folk']);
   });
 
   it('resolves custom image template ids when the current style library is supplied', () => {

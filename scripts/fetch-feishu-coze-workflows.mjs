@@ -725,7 +725,7 @@ Options:
   --out-dir <dir>         Directory for downloaded .txt workflow sources.
   --manifest <path>       Download manifest path.
   --bundle <path>         Convert downloaded sources to a draft-template JSON bundle.
-  --install-db <path>     Install converted templates into a Storybound data.db.
+  --install-db <path>     Install converted templates into a StoryDream data.db.
   --chrome-path <path>    Chrome executable path.
   --chrome-port <port>    DevTools port. Default: ${DEFAULT_CHROME_PORT}.
   --html <path>           Parse a saved Feishu HTML file instead of loading the page.

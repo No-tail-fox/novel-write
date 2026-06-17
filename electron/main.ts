@@ -37,6 +37,7 @@ interface RunningTaskRun {
 
 const runningTasks = new Map<string, RunningTaskRun>();
 const runningViralAnalyses = new Map<string, AbortController>();
+const appDataName = 'storydream';
 const staleRunningMs = 5 * 60 * 1000;
 const pipelineStepAgents: Record<number, string> = {
   0: 'Reviewer',
@@ -50,7 +51,7 @@ const pipelineStepAgents: Record<number, string> = {
 
 async function getDb(): Promise<FileDatabase> {
   if (db) return db;
-  const dataDir = join(app.getPath('userData'), 'storybound-replica');
+  const dataDir = join(app.getPath('userData'), appDataName);
   await mkdir(dataDir, { recursive: true });
   db = await FileDatabase.open(join(dataDir, 'data.db'));
   await ensureRuntimeJianyingDraftPath(db);
@@ -80,7 +81,7 @@ async function createWindow(): Promise<void> {
     height: 860,
     minWidth: 1080,
     minHeight: 720,
-    title: 'Storybound Replica',
+    title: 'StoryDream',
     backgroundColor: '#101114',
     autoHideMenuBar: true,
     frame: false,
@@ -113,23 +114,23 @@ function notifyTaskState(database: FileDatabase): void {
 }
 
 function taskWorkDir(task: Task): string {
-  return join(app.getPath('userData'), 'storybound-replica', 'tasks', task.id);
+  return join(app.getPath('userData'), appDataName, 'tasks', task.id);
 }
 
 function viralAnalysisWorkDir(record: Pick<ViralAnalysisRecord, 'id'>): string {
-  return join(app.getPath('userData'), 'storybound-replica', 'viral-analyses', record.id);
+  return join(app.getPath('userData'), appDataName, 'viral-analyses', record.id);
 }
 
 function imageLabWorkDir(id: string): string {
-  return join(app.getPath('userData'), 'storybound-replica', 'image-lab', id);
+  return join(app.getPath('userData'), appDataName, 'image-lab', id);
 }
 
 function voiceLabWorkDir(id: string): string {
-  return join(app.getPath('userData'), 'storybound-replica', 'voice-lab', id);
+  return join(app.getPath('userData'), appDataName, 'voice-lab', id);
 }
 
 function appDataDir(): string {
-  return join(app.getPath('userData'), 'storybound-replica');
+  return join(app.getPath('userData'), appDataName);
 }
 
 function viralCookieDir(): string {
@@ -777,7 +778,7 @@ async function openViralLoginWindow(): Promise<string | null> {
       title: '抖音登录',
       autoHideMenuBar: true,
       webPreferences: {
-        partition: 'persist:storybound-viral-douyin',
+        partition: 'persist:storydream-viral-douyin',
         contextIsolation: true,
         nodeIntegration: false,
       },

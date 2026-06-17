@@ -238,20 +238,48 @@ describe('image lab generation', () => {
     }
   });
 
-  it('fails reference-driven image lab requests with more than 3 reference images', async () => {
+  it('accepts up to 10 reference images and fails when the limit is exceeded', async () => {
     const dir = await mkdtemp(join(tmpdir(), 'storybound-image-lab-reference-too-many-'));
+    const references = await Promise.all(Array.from({ length: 11 }, async (_, index) => {
+      const path = join(dir, `ref-${index}.png`);
+      await writeFile(path, `reference-${index}`);
+      return path;
+    }));
+    const imageBytes = Buffer.from('ten-reference-image');
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async () => new Response(JSON.stringify({ data: [{ b64_json: imageBytes.toString('base64') }] }), {
+        status: 200,
+        headers: { 'content-type': 'application/json' },
+      })),
+    );
 
     try {
-      const record = await generateImageLabRecord(defaultConfig, dir, {
+      const config: AppConfig = {
+        ...defaultConfig,
+        imageProvider: 'gpt_image',
+        gptImage: { ...defaultConfig.gptImage, apiKey: 'image-key', baseUrl: 'https://image.example', model: 'gpt-image-2' },
+      };
+      const accepted = await generateImageLabRecord(config, dir, {
         prompt: '换背景',
         ratio: '1:1',
         style: 'photo-real',
         smartMode: 'podcast-cover',
-        referenceImagePaths: Array.from({ length: 4 }, (_, index) => `ref-${index}.png`),
+        referenceImagePaths: references.slice(0, 10),
+      });
+
+      expect(accepted.status).toBe('generated');
+
+      const record = await generateImageLabRecord(config, dir, {
+        prompt: '换背景',
+        ratio: '1:1',
+        style: 'photo-real',
+        smartMode: 'podcast-cover',
+        referenceImagePaths: references,
       });
 
       expect(record.status).toBe('failed');
-      expect(record.errorMessage).toMatch(/3 reference images/i);
+      expect(record.errorMessage).toMatch(/10 reference images/i);
     } finally {
       await rm(dir, { recursive: true, force: true });
     }

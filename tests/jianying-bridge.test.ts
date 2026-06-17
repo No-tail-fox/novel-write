@@ -278,6 +278,101 @@ describe('pyJianYingDraft bridge input', () => {
     }
   });
 
+  it('splits a long scene caption into sequential SRT cues without splitting the narration audio', async () => {
+    const dir = await mkdtemp(join(tmpdir(), 'storybound-jy-subtitle-split-'));
+    const draftDir = join(dir, 'Draft Root', 'Bridge Draft');
+    const bridgeDir = join(dir, 'pyjianying-bridge');
+    const longCaption = '他慢慢打开他的眼界。有人曾用学成本领，改变国家来激励他。这样的提醒，让他明白，读书不只是为了个人前程。';
+
+    try {
+      await writePyJianYingBridgeScript(dir);
+      await writeFile(join(bridgeDir, 'pyJianYingDraft.py'), fakePyJianYingDraftModule, 'utf8');
+      const voice = join(dir, 'voice.wav');
+      const image = join(dir, 'image.png');
+      const subtitles = join(dir, 'subtitles.srt');
+      await writeFile(voice, wavTone(8000));
+      await writeFile(image, Buffer.from('image'));
+      await writeFile(subtitles, '', 'utf8');
+
+      await runPyJianYingDraftBridge({
+        workDir: dir,
+        draftDir,
+        title: 'Bridge Draft',
+        canvas: { width: 1080, height: 1920, backgroundColor: '#000000', backgroundImage: '' },
+        imageArea: defaultBridgeImageArea(),
+        caption: { ...defaultBridgeCaption(), maxCharsPerLine: 18 },
+        scenes: [{ sceneId: 1, startUs: 0, durationUs: 8_000_000, text: longCaption }],
+        images: [{ sceneId: 1, path: image }],
+        narration: [{ sceneId: 1, path: voice }],
+        subtitlesSrtPath: subtitles,
+        bgm: null,
+        totalDurationUs: 8_000_000,
+        volumes: { narration: 1, bgm: 0.3 },
+      });
+
+      const generatedSubtitles = await readFile(join(draftDir, 'materials', 'subtitles', 'subtitles.srt'), 'utf8');
+      const cueBlocks = generatedSubtitles.trim().split(/\r?\n\r?\n/);
+      const cueTexts = cueBlocks.map((block) => block.split(/\r?\n/).slice(2).join(''));
+      const content = JSON.parse(await readFile(join(draftDir, 'draft_content.json'), 'utf8'));
+      const narrationSegments = content.tracks.find((track: { name: string }) => track.name === 'narration').segments;
+
+      expect(cueBlocks.length).toBeGreaterThan(1);
+      expect(cueTexts.every((text) => text.length <= 18)).toBe(true);
+      expect(cueBlocks[0]).toContain('00:00:00,000 -->');
+      expect(cueBlocks.at(-1)).toContain('--> 00:00:08,000');
+      expect(generatedSubtitles).not.toContain(`\n${longCaption}\n`);
+      expect(narrationSegments).toHaveLength(1);
+      expect(narrationSegments[0].target_timerange).toMatchObject({ start: 0, duration: 8_000_000 });
+    } finally {
+      await rm(dir, { recursive: true, force: true });
+    }
+  });
+
+  it('uses caption box width to keep each subtitle cue within two rendered lines', async () => {
+    const dir = await mkdtemp(join(tmpdir(), 'storybound-jy-subtitle-width-split-'));
+    const draftDir = join(dir, 'Draft Root', 'Bridge Draft');
+    const bridgeDir = join(dir, 'pyjianying-bridge');
+    const longCaption = '他慢慢打开眼界有人曾用学成本领改变国家来激励他这样的提醒让他明白读书不只是为了个人前程';
+
+    try {
+      await writePyJianYingBridgeScript(dir);
+      await writeFile(join(bridgeDir, 'pyJianYingDraft.py'), fakePyJianYingDraftModule, 'utf8');
+      const voice = join(dir, 'voice.wav');
+      const image = join(dir, 'image.png');
+      const subtitles = join(dir, 'subtitles.srt');
+      await writeFile(voice, wavTone(8000));
+      await writeFile(image, Buffer.from('image'));
+      await writeFile(subtitles, '', 'utf8');
+
+      await runPyJianYingDraftBridge({
+        workDir: dir,
+        draftDir,
+        title: 'Bridge Draft',
+        canvas: { width: 1080, height: 1920, backgroundColor: '#000000', backgroundImage: '' },
+        imageArea: defaultBridgeImageArea(),
+        caption: { ...defaultBridgeCaption(), width: 0.32, fontSize: 12, maxCharsPerLine: 80 },
+        scenes: [{ sceneId: 1, startUs: 0, durationUs: 8_000_000, text: longCaption }],
+        images: [{ sceneId: 1, path: image }],
+        narration: [{ sceneId: 1, path: voice }],
+        subtitlesSrtPath: subtitles,
+        bgm: null,
+        totalDurationUs: 8_000_000,
+        volumes: { narration: 1, bgm: 0.3 },
+      });
+
+      const generatedSubtitles = await readFile(join(draftDir, 'materials', 'subtitles', 'subtitles.srt'), 'utf8');
+      const cueBlocks = generatedSubtitles.trim().split(/\r?\n\r?\n/);
+      const cueLines = cueBlocks.map((block) => block.split(/\r?\n/).slice(2));
+
+      expect(cueBlocks.length).toBeGreaterThan(1);
+      expect(cueLines.every((lines) => lines.length <= 2)).toBe(true);
+      expect(cueLines.flat().every((line) => line.length <= 10)).toBe(true);
+      expect(cueBlocks.at(-1)).toContain('--> 00:00:08,000');
+    } finally {
+      await rm(dir, { recursive: true, force: true });
+    }
+  });
+
   it('does not import subtitle text tracks when captions are hidden', async () => {
     const dir = await mkdtemp(join(tmpdir(), 'storybound-jy-hidden-captions-'));
     const draftDir = join(dir, 'Draft Root', 'Bridge Draft');
@@ -312,6 +407,58 @@ describe('pyJianYingDraft bridge input', () => {
       const content = JSON.parse(await readFile(join(draftDir, 'draft_content.json'), 'utf8'));
 
       expect(content.tracks.some((track: { name: string }) => track.name === 'subtitles')).toBe(false);
+    } finally {
+      await rm(dir, { recursive: true, force: true });
+    }
+  });
+
+  it('converts editor text y coordinates to Jianying upward-positive coordinates', async () => {
+    const dir = await mkdtemp(join(tmpdir(), 'storybound-jy-text-position-'));
+    const draftDir = join(dir, 'Draft Root', 'Bridge Draft');
+    const bridgeDir = join(dir, 'pyjianying-bridge');
+
+    try {
+      await writePyJianYingBridgeScript(dir);
+      await writeFile(join(bridgeDir, 'pyJianYingDraft.py'), fakePyJianYingDraftModule, 'utf8');
+      const voice = join(dir, 'voice.wav');
+      const image = join(dir, 'image.png');
+      const subtitles = join(dir, 'subtitles.srt');
+      await writeFile(voice, wavTone(1000));
+      await writeFile(image, Buffer.from('image'));
+      await writeFile(subtitles, '1\n00:00:00,000 --> 00:00:01,000\ncaption\n', 'utf8');
+
+      await runPyJianYingDraftBridge({
+        workDir: dir,
+        draftDir,
+        title: 'Bridge Draft',
+        canvas: { width: 1080, height: 1920, backgroundColor: '#000000', backgroundImage: '' },
+        imageArea: defaultBridgeImageArea(),
+        caption: { ...defaultBridgeCaption(), x: 0.15, y: 0.63 },
+        overlays: {
+          title: { visible: true, text: 'Title', x: -0.2, y: -0.72, width: 0.88, fontSize: 44, color: '#ffde00', alpha: 1, bold: true, underline: true, align: 1, letterSpacing: 0, lineSpacing: 0, border: { color: '#000000', width: 3, alpha: 1 } },
+          subtitle: { visible: true, text: 'Subtitle', x: 0, y: -0.35, width: 0.76, fontSize: 22, color: '#ffffff', alpha: 1, bold: false, underline: false, align: 1, letterSpacing: 0, lineSpacing: 0, border: { color: '#000000', width: 3, alpha: 1 } },
+          disclaimer: { visible: true, text: 'Disclaimer', x: 0, y: -0.9, width: 0.62, fontSize: 14, color: '#cccccc', alpha: 1, bold: false, underline: false, align: 1, letterSpacing: 0, lineSpacing: 0, border: { color: '#000000', width: 3, alpha: 1 } },
+        },
+        scenes: [{ sceneId: 1, startUs: 0, durationUs: 1_000_000, text: 'caption' }],
+        images: [{ sceneId: 1, path: image }],
+        narration: [{ sceneId: 1, path: voice }],
+        subtitlesSrtPath: subtitles,
+        bgm: null,
+        totalDurationUs: 1_000_000,
+        volumes: { narration: 1, bgm: 0.3 },
+      });
+
+      const content = JSON.parse(await readFile(join(draftDir, 'draft_content.json'), 'utf8'));
+      const trackByName = new Map(content.tracks.map((track: { name: string }) => [track.name, track]));
+      const subtitlesTrack = trackByName.get('subtitles') as { segments: Array<{ clip_settings: Record<string, number> }> };
+      const titleTrack = trackByName.get('title') as { segments: Array<{ clip_settings: Record<string, number> }> };
+      const subtitleTrack = trackByName.get('subtitle') as { segments: Array<{ clip_settings: Record<string, number> }> };
+      const disclaimerTrack = trackByName.get('disclaimer') as { segments: Array<{ clip_settings: Record<string, number> }> };
+
+      expect(subtitlesTrack.segments[0].clip_settings).toMatchObject({ transform_x: 0.15, transform_y: -0.63 });
+      expect(titleTrack.segments[0].clip_settings).toMatchObject({ transform_x: -0.2, transform_y: 0.72 });
+      expect(subtitleTrack.segments[0].clip_settings).toMatchObject({ transform_x: 0, transform_y: 0.35 });
+      expect(disclaimerTrack.segments[0].clip_settings).toMatchObject({ transform_x: 0, transform_y: 0.9 });
     } finally {
       await rm(dir, { recursive: true, force: true });
     }
@@ -595,6 +742,7 @@ class VideoSegment:
         self.source_timerange = source_timerange
         self.speed = speed
         self.volume = volume
+        self.clip_settings = clip_settings
 
     def add_transition(self, *args, **kwargs):
         return self
@@ -616,6 +764,7 @@ class AudioSegment:
         self.source_timerange = source_timerange
         self.speed = speed
         self.volume = volume
+        self.clip_settings = None
 
     def add_fade(self, *args, **kwargs):
         return self
@@ -660,7 +809,9 @@ class Script:
         raise ValueError("missing track " + track_name)
 
     def import_srt(self, *args, **kwargs):
-        self.add_track("text", kwargs.get("track_name", "subtitles"))
+        track_name = kwargs.get("track_name", "subtitles")
+        self.add_track("text", track_name)
+        self.add_segment(TextSegment("__srt__", Timerange(0, 1), clip_settings=kwargs.get("clip_settings")), track_name)
 
     def save(self):
         content = {
@@ -675,6 +826,8 @@ class Script:
                             "target_timerange": segment.target_timerange.export_json(),
                             "source_timerange": segment.source_timerange.export_json() if segment.source_timerange else None,
                             "volume": segment.volume,
+                            "text": getattr(segment, "text", None),
+                            "clip_settings": getattr(getattr(segment, "clip_settings", None), "kwargs", None),
                         }
                         for segment in track["segments"]
                     ],

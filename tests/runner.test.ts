@@ -322,6 +322,94 @@ describe('task runner', () => {
     }
   });
 
+  it('localizes StoryDream storyboard and image prompts with runtime context', async () => {
+    const dir = await mkdtemp(join(tmpdir(), 'storybound-runner-storybound-localization-'));
+    const db = await FileDatabase.open(join(dir, 'data.db'));
+    const draftRootDir = join(dir, 'JianyingPro Drafts');
+    const mediaDir = join(dir, 'media');
+    const requests: LlmJsonRequest[] = [];
+
+    try {
+      await db.upsertConfig({
+        ...(await db.getState()).config,
+        jianying: { ...(await db.getState()).config.jianying, draftPath: draftRootDir },
+      });
+      const task = await db.createTask({
+        title: 'Localized StoryDream task',
+        inputText: sampleInput,
+        track: 'character-story',
+        style: 'black-white',
+        speaker: 'voice',
+        storyboardSceneCount: 3,
+        targetLength: 900,
+        extraRequirements: '强调女性权力转折',
+        referenceImagePath: 'D:/refs/wuzetian.png',
+        imagePromptReference: '参考画面：黑白近景、宫门侧光',
+      });
+
+      const llm: JsonLlm = async <T,>(request: LlmJsonRequest) => {
+        requests.push(request);
+        if (request.step === 0) return { json: { reviewedText: sampleInput } as T, raw: '{}', requestId: 'review' };
+        if (request.name.startsWith('rewrite-round-')) {
+          return {
+            json: { rewrittenCopy: '她十四岁入宫。\n\n她回到权力中心。', cover: { title: '武则天', subtitle: [], summary: 'summary', tags: [], comments: [] } } as T,
+            raw: '{}',
+            requestId: request.name,
+          };
+        }
+        if (request.name === 'rewrite-evaluation') return { json: { bestRound: 1, evaluations: [] } as T, raw: '{}', requestId: 'rewrite-eval' };
+        if (request.step === 2) return { json: { scenes: makeScenes(2) } as T, raw: '{}', requestId: 'storyboard' };
+        if (request.name === 'character-card') {
+          return {
+            json: {
+              characterCard: {
+                summary: '武则天，唐代女性政治人物。',
+                characters: [{ name: '武则天', appearance: '青年女性，唐代宫廷服饰', wardrobe: '圆领袍与披帛', role: '主角' }],
+                consistencyRules: ['保持唐代服饰和黑白纪实影调'],
+              },
+            } as T,
+            raw: '{}',
+            requestId: 'character-card',
+          };
+        }
+        return { json: { imagePrompts: makePrompts(extractScenesFromPrompt(request)) } as T, raw: '{}', requestId: `prompts-${request.step}` };
+      };
+
+      await runTask(db, task, {
+        appDataDir: dir,
+        llm,
+        generateImages: async (inputScenes) => writeSceneAssets(mediaDir, inputScenes, 'png', tinyPng),
+        synthesizeNarration: async (inputScenes) => writeSceneAssets(mediaDir, inputScenes, 'wav', wavTone(1200)),
+        draftWriterOptions: { runBridge: fakeBridge },
+      });
+
+      const storyboardContent = requests.find((request) => request.step === 2)?.messages.map((message) => message.content).join('\n') ?? '';
+      const imageContent = requests.find((request) => request.name === 'image-prompts')?.messages.map((message) => message.content).join('\n') ?? '';
+      const snapshot = (await db.getState()).tasks[0].step3PromptSnapshot;
+
+      expect(storyboardContent).toContain('StoryDream 本地化分镜规则');
+      expect(storyboardContent).toContain('cap 是最终口播字幕');
+      expect(storyboardContent).toContain('descPrompt 是给后续 StoryDream Step 3 的视觉种子');
+      expect(storyboardContent).toContain('目标字数：900');
+      expect(storyboardContent).toContain('目标分镜数：3');
+      expect(storyboardContent).not.toContain('{{');
+      expect(imageContent).toContain('StoryDream 本地运行上下文');
+      expect(imageContent).toContain('当前画面风格：black-white');
+      expect(imageContent).toContain('风格前缀：黑白纪实摄影');
+      expect(imageContent).toContain('允许使用色彩词：false');
+      expect(imageContent).toContain('负面提示词：卡通，动漫');
+      expect(imageContent).toContain('参考图类型：face');
+      expect(imageContent).toContain('参考图路径：D:/refs/wuzetian.png');
+      expect(imageContent).toContain('参考画面：黑白近景、宫门侧光');
+      expect(imageContent).toContain('武则天，唐代女性政治人物。');
+      expect(imageContent).not.toContain('{{');
+      expect(snapshot).toContain('StoryDream 本地运行上下文');
+    } finally {
+      await db.close();
+      await rm(dir, { recursive: true, force: true });
+    }
+  });
+
   it('passes the selected target word count into rewrite prompts and evaluation', async () => {
     const dir = await mkdtemp(join(tmpdir(), 'storybound-runner-target-length-'));
     const db = await FileDatabase.open(join(dir, 'data.db'));
@@ -495,6 +583,7 @@ describe('task runner', () => {
     const draftRootDir = join(dir, 'JianyingPro Drafts');
     const mediaDir = join(dir, 'media');
     const imageCalls: Array<{ scenes: StoryboardScene[]; prompts: ImagePrompt[] }> = [];
+    const draftPayloads: PyJianYingBridgeInput[] = [];
 
     try {
       await db.upsertConfig({
@@ -515,15 +604,23 @@ describe('task runner', () => {
           return writeSceneAssets(mediaDir, scenes, 'png', tinyPng);
         },
         synthesizeNarration: async (scenes) => writeSceneAssets(mediaDir, scenes, 'wav', wavTone(1200)),
-        draftWriterOptions: { runBridge: fakeBridge },
+        draftWriterOptions: {
+          runBridge: async (payload) => {
+            draftPayloads.push(payload);
+            return fakeBridge(payload);
+          },
+        },
       });
 
       const completed = (await db.getState()).tasks[0];
       const pipeline = JSON.parse(await readFile(completed.artifactStatePath, 'utf8'));
+      const draftMeta = JSON.parse(await readFile(join(completed.outputDir, 'draft_meta_info.json'), 'utf8'));
       expect(imageCalls[0].scenes.map((scene) => scene.id)).toEqual([0]);
       expect(imageCalls[0].prompts[0].prompt).toContain('Short-video cover');
       expect(pipeline.assets.cover[0].path).toBe(join(dir, 'tasks', task.id, 'cover-image.png'));
       expect(await readFile(join(dir, 'tasks', task.id, 'cover-image.png'))).toEqual(tinyPng);
+      expect(draftPayloads[0].coverImagePath).toBe(join(dir, 'tasks', task.id, 'cover-image.png'));
+      expect(draftMeta.draft_cover).toBe(join(dir, 'tasks', task.id, 'cover-image.png'));
     } finally {
       await db.close();
       await rm(dir, { recursive: true, force: true });
@@ -1457,7 +1554,15 @@ async function fakeBridge(payload: PyJianYingBridgeInput) {
     }),
     'utf8',
   );
-  await writeFile(draftMetaPath, JSON.stringify({ draft_name: payload.title, tm_duration: payload.totalDurationUs }), 'utf8');
+  await writeFile(
+    draftMetaPath,
+    JSON.stringify({
+      draft_name: payload.title,
+      tm_duration: payload.totalDurationUs,
+      draft_cover: payload.coverImagePath ?? payload.images[0]?.path ?? '',
+    }),
+    'utf8',
+  );
   return {
     draftDir: payload.draftDir,
     draftContentPath,

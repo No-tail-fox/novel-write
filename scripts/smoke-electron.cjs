@@ -35,7 +35,7 @@ async function main() {
     const text = document.body.innerText;
     return {
       hasShell: Boolean(document.querySelector('.app-shell')),
-      hasStorybound: text.includes('Storybound'),
+      hasStoryDream: text.includes('StoryDream'),
       hasNewTask: text.includes('新建任务'),
       hasQueue: text.includes('任务队列'),
       textLength: text.trim().length,
@@ -66,7 +66,7 @@ async function main() {
 
   if (
     !result.hasShell ||
-    !result.hasStorybound ||
+    !result.hasStoryDream ||
     !result.hasNewTask ||
     !result.hasQueue ||
     !result.openedDraftTemplates ||

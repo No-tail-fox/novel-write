@@ -8,6 +8,7 @@ import type { JsonLlm } from './llm-provider';
 import { formatAiSourceContext } from './research';
 import { normalizeDraftTemplate } from './templates';
 import { buildPromptRenderContext, renderPromptTemplate, selectStepPromptTemplate, selectTaskPromptTemplate, type PromptRenderContext } from './prompt-templates';
+import { defaultCustomStyles } from './config';
 
 export interface RunTaskOptions {
   appDataDir: string;
@@ -193,6 +194,7 @@ export async function runTask(db: FileDatabase, task: Task, options: RunTaskOpti
           reviewedText: artifact.reviewedText,
           rewrittenCopy: artifact.rewrittenCopy,
           generatedImages: pipeline.assets.images,
+          coverImagePath: pipeline.assets.cover[0]?.path,
           narrationAudio: pipeline.assets.narration,
           bgm,
         },
@@ -442,7 +444,7 @@ async function ensureContentArtifact(input: {
     const batchSnapshots = sceneBatches.map((scenes, index) => {
       const batchContext = buildPromptRenderContext({ task, taskTemplate, sourceContext, artifact: { ...pipeline.artifact, scenes } });
       const instruction = renderStepPrompt(promptTemplates, 'image-prompt', batchContext, JSON.stringify({ scenes, style: task.style, ratio: task.ratio }));
-      return buildImagePromptSnapshot(instruction, scenes, task, index + 1, sceneBatches.length, pipeline.artifact.characterCard, rewriteContextForStep(pipeline, 3));
+      return buildImagePromptSnapshot(instruction, scenes, task, taskTemplate, index + 1, sceneBatches.length, pipeline.artifact.characterCard, rewriteContextForStep(pipeline, 3));
     });
     await db.updateTask(task.id, { step3PromptSnapshot: batchSnapshots.join('\n\n--- image prompt batch ---\n\n') });
     const imagePrompts: ImagePrompt[] = [];
@@ -504,10 +506,12 @@ function taskModeInstructions(task: Task): string {
   ].join('\n');
 }
 
-function buildImagePromptSnapshot(instruction: string, scenes: StoryboardScene[], task: Task, batchIndex: number, batchCount: number, characterCard?: CharacterCard, rerunContext = ''): string {
+function buildImagePromptSnapshot(instruction: string, scenes: StoryboardScene[], task: Task, taskTemplate: PromptTemplate | null, batchIndex: number, batchCount: number, characterCard?: CharacterCard, rerunContext = ''): string {
+  const style = resolveImageStyle(task.style);
   return joinPromptBlocks([
     'Image prompt instructions:',
     instruction,
+    buildStoryboundImageRuntimeContext({ task, taskTemplate, style, characterCard }),
     taskModeInstructions(task),
     characterCard ? `Character card:\n${JSON.stringify(characterCard)}` : '',
     `Batch: ${batchIndex}/${batchCount}`,
@@ -517,6 +521,37 @@ function buildImagePromptSnapshot(instruction: string, scenes: StoryboardScene[]
     rerunContext,
   ]);
 }
+
+function buildStoryboundImageRuntimeContext(input: { task: Task; taskTemplate: PromptTemplate | null; style: typeof defaultCustomStyles[number] | null; characterCard?: CharacterCard }): string {
+  const { task, taskTemplate, style, characterCard } = input;
+  return joinPromptBlocks([
+    'StoryDream 本地运行上下文',
+    `当前画面风格：${task.style}`,
+    `风格前缀：${style?.prefix ?? ''}`,
+    `风格后缀：${style?.suffix ?? ''}`,
+    `允许使用色彩词：${style ? String(style.allowColor) : ''}`,
+    `负面提示词：${style?.negativePrompt ?? ''}`,
+    `画面比例：${task.ratio}`,
+    `参考图类型：${taskTemplate?.referenceKind ?? 'none'}`,
+    `参考图路径：${task.referenceImagePath || '无'}`,
+    `Step 3 骨架：${(taskTemplate?.step3SkeletonModules ?? []).join('、') || '无'}`,
+    `图片种子池：${taskTemplate?.imageSeedPoolsJson || '{}'}`,
+    task.imagePromptReference ? `生图参考：${task.imagePromptReference}` : '',
+    characterCard ? `角色档案：${JSON.stringify(characterCard)}` : '',
+  ]);
+}
+
+function resolveImageStyle(styleId: string): typeof defaultCustomStyles[number] | null {
+  const normalized = storyboundStyleAliases.get(styleId) ?? styleId;
+  return defaultCustomStyles.find((style) => style.id === normalized) ?? null;
+}
+
+const storyboundStyleAliases = new Map([
+  ['realistic', 'photo-real'],
+  ['oil-painting', 'oil-paint'],
+  ['vintage-film', 'retro-film'],
+  ['folk-tale-gongbi', 'folk'],
+]);
 
 function chunkArray<T>(items: T[], size: number): T[][] {
   const output: T[][] = [];

@@ -1,4 +1,5 @@
-import type { AiSourceContext, CustomStyle, PipelineArtifact, PromptStepTemplateType, PromptTemplate, StoryboardScene, Task } from './types';
+import { defaultCustomStyles } from './config';
+import type { AiSourceContext, CharacterCard, CustomStyle, PipelineArtifact, PromptStepTemplateType, PromptTemplate, StoryboardScene, Task } from './types';
 
 export interface PromptTemplateSelectionInput {
   track?: string;
@@ -17,7 +18,7 @@ export interface PromptRenderContext {
 
 export type TemplateOption = [id: string, label: string, hint: string];
 
-const fallbackTaskTrack = 'general-story';
+const fallbackTaskTrack = 'general';
 const fallbackStyleId = 'photo-real';
 const styleLabelToId = new Map([
   ['黑白摄影', 'black-white'],
@@ -32,8 +33,19 @@ const styleLabelToId = new Map([
   ['中国水墨', 'ink'],
   ['民间故事工笔风', 'folk'],
   ['吉卜力', 'ghibli'],
+  ['realistic', 'photo-real'],
+  ['oil-painting', 'oil-paint'],
+  ['vintage-film', 'retro-film'],
+  ['folk-tale-gongbi', 'folk'],
 ]);
-const knownStyleIds = new Set([...styleLabelToId.values()]);
+const knownStyleIds = new Set([...styleLabelToId.values(), 'black-white', 'ancient-cinematic', 'cinematic', 'pixar-3d']);
+const trackAliases = new Map([
+  ['general-story', 'general'],
+  ['food-v2', 'food-vlog'],
+  ['mind-soup', 'inspirational'],
+  ['culture-science', 'culture-knowledge'],
+  ['folk-story', 'folk-tale'],
+]);
 const placeholderAliases = new Map([
   ['原文素材', 'inputText'],
   ['标题', 'title'],
@@ -58,6 +70,17 @@ const placeholderAliases = new Map([
   ['叙事视角', 'narrativePov'],
   ['保留带货', 'keepPromotion'],
   ['AI 关键词', 'aiKeyword'],
+  ['目标字数', 'targetLength'],
+  ['目标分镜数', 'storyboardSceneCount'],
+  ['当前画面风格', 'style'],
+  ['风格前缀', 'stylePrefix'],
+  ['风格后缀', 'styleSuffix'],
+  ['允许使用色彩词', 'styleAllowColor'],
+  ['负面提示词', 'styleNegativePrompt'],
+  ['参考图路径', 'referenceImagePath'],
+  ['生图参考', 'imagePromptReference'],
+  ['角色档案', 'characterCard'],
+  ['图片种子池', 'imageSeedPoolsJson'],
 ]);
 
 export function selectTaskPromptTemplate(templates: PromptTemplate[], input: PromptTemplateSelectionInput): PromptTemplate | null {
@@ -66,9 +89,9 @@ export function selectTaskPromptTemplate(templates: PromptTemplate[], input: Pro
     if (explicit) return explicit;
   }
   const taskTemplates = sortTaskTemplatesForSelection(templates);
-  const track = input.track || fallbackTaskTrack;
+  const track = normalizeTaskTrack(input.track || fallbackTaskTrack);
   return (
-    taskTemplates.find((template) => template.baseTrack === track) ??
+    taskTemplates.find((template) => normalizeTaskTrack(template.baseTrack) === track) ??
     taskTemplates.find((template) => template.baseTrack === fallbackTaskTrack) ??
     taskTemplates[0] ??
     null
@@ -79,7 +102,7 @@ export function buildStoryTemplateTrackOptions(templates: PromptTemplate[]): Tem
   const options: TemplateOption[] = [];
   const seenTracks = new Set<string>();
   sortTaskTemplatesForSelection(templates).forEach((template) => {
-    const track = (template.baseTrack || fallbackTaskTrack).trim();
+    const track = normalizeTaskTrack(template.baseTrack || fallbackTaskTrack);
     if (!track || seenTracks.has(track)) return;
     seenTracks.add(track);
     options.push([track, template.name, compactOptionHint(template.description || template.marketTags?.join(' / ') || track)]);
@@ -97,9 +120,9 @@ export function buildStoryTemplateOptions(templates: PromptTemplate[]): Template
 }
 
 export function buildTaskPromptTemplateOptions(templates: PromptTemplate[], track?: string): TemplateOption[] {
-  const targetTrack = (track || '').trim();
+  const targetTrack = normalizeTaskTrack(track || '');
   return sortTaskTemplatesForSelection(templates)
-    .filter((template) => !targetTrack || (template.baseTrack || fallbackTaskTrack) === targetTrack)
+    .filter((template) => !targetTrack || normalizeTaskTrack(template.baseTrack || fallbackTaskTrack) === targetTrack)
     .map((template) => [
       template.id,
       template.name,
@@ -125,6 +148,11 @@ function promptTemplatePriority(template: PromptTemplate): number {
   if (!template.isBuiltin) return 3;
   if (template.origin === 'market') return 2;
   return 1;
+}
+
+function normalizeTaskTrack(track: string | null | undefined): string {
+  const trimmed = (track || '').trim();
+  return trackAliases.get(trimmed) ?? trimmed;
 }
 
 export function buildImageTemplateStyleOptions(styles: CustomStyle[]): TemplateOption[] {
@@ -224,19 +252,25 @@ function buildTemplateValues(context: PromptRenderContext): Record<string, strin
   const scenes = context.scenes ?? context.artifact?.scenes ?? [];
   const reviewedText = context.reviewedText ?? context.artifact?.reviewedText ?? '';
   const rewrittenCopy = context.rewrittenCopy ?? context.artifact?.rewrittenCopy ?? '';
+  const styleId = String(task.style ?? '');
+  const style = resolveStyleDefinition(styleId);
+  const characterCard = context.artifact?.characterCard;
 
   const values: Record<string, string> = {
     inputText: String(task.inputText ?? ''),
     title: String(task.title ?? ''),
     track: String(task.track ?? ''),
-    style: String(task.style ?? ''),
+    style: styleId,
     ratio: String(task.ratio ?? ''),
     extraRequirements: String(task.extraRequirements ?? ''),
     imagePromptReference: String(task.imagePromptReference ?? ''),
+    referenceImagePath: String(task.referenceImagePath ?? ''),
     rewriteIntensity: String(task.rewriteIntensity ?? ''),
     narrativePov: String(task.narrativePov ?? ''),
     keepPromotion: String(task.keepPromotion ?? ''),
     aiKeyword: String(task.aiKeyword ?? ''),
+    targetLength: task.targetLength === undefined || task.targetLength === null ? '' : String(task.targetLength),
+    storyboardSceneCount: task.storyboardSceneCount === undefined || task.storyboardSceneCount === null ? '' : String(task.storyboardSceneCount),
     reviewedText,
     rewrittenCopy,
     scenesJson: JSON.stringify(scenes ?? []),
@@ -248,9 +282,25 @@ function buildTemplateValues(context: PromptRenderContext): Record<string, strin
     characterPolicy: taskTemplate?.characterPolicy ?? '',
     step3SkeletonModules: (taskTemplate?.step3SkeletonModules ?? []).join('、'),
     referenceKind: taskTemplate?.referenceKind ?? '',
+    stylePrefix: style?.prefix ?? '',
+    styleSuffix: style?.suffix ?? '',
+    styleAllowColor: style ? String(style.allowColor) : '',
+    styleNegativePrompt: style?.negativePrompt ?? '',
+    characterCard: formatCharacterCard(characterCard),
+    imageSeedPoolsJson: taskTemplate?.imageSeedPoolsJson ?? '',
   };
   values.taskTemplateContent = taskTemplate ? replacePlaceholders(taskTemplate.content, values) : '';
   return values;
+}
+
+function resolveStyleDefinition(styleId: string): CustomStyle | null {
+  const normalizedStyleId = styleLabelToId.get(styleId) ?? styleId;
+  return defaultCustomStyles.find((style) => style.id === normalizedStyleId) ?? null;
+}
+
+function formatCharacterCard(card: CharacterCard | undefined): string {
+  if (!card) return '';
+  return JSON.stringify(card);
 }
 
 function replacePlaceholders(content: string, values: Record<string, string>): string {

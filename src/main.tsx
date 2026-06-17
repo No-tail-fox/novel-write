@@ -257,6 +257,7 @@ const promptTemplateTypeLabels: Record<PromptTemplateType | 'all', string> = {
 };
 const promptTemplateVariableDefinitions = [
   { key: 'inputText', label: '原文素材', description: '新建任务里粘贴或导入的原始文案' },
+  { key: 'title', label: '任务标题', description: '当前任务标题或自动生成标题' },
   { key: 'sourceContext', label: '联网资料', description: 'AI 搜索或知识库带回来的参考资料' },
   { key: 'reviewedText', label: '预审结果', description: 'Step 0 清洗、去重后的事实素材' },
   { key: 'rewrittenCopy', label: '改写正文', description: 'Step 1 改写后的口播文案' },
@@ -265,7 +266,23 @@ const promptTemplateVariableDefinitions = [
   { key: 'style', label: '画风', description: '任务选择的出图风格' },
   { key: 'ratio', label: '画面比例', description: '9:16、16:9 等画布比例' },
   { key: 'extraRequirements', label: '额外要求', description: '新建任务里填写的补充要求' },
+  { key: 'targetLength', label: '目标字数', description: '新建任务里填写的口播目标字数' },
+  { key: 'storyboardSceneCount', label: '目标分镜数', description: '新建任务里填写的分镜数量目标' },
   { key: 'taskTemplateContent', label: '任务模板指令', description: '当前模板的任务总指令渲染结果' },
+  { key: 'taskTemplateName', label: '任务模板名称', description: '当前故事模板名称' },
+  { key: 'defaultStyles', label: '默认画风', description: '当前故事模板绑定的默认图像模板' },
+  { key: 'defaultDraftTemplateId', label: '默认草稿模板', description: '当前故事模板绑定的剪映草稿模板 ID' },
+  { key: 'characterPolicy', label: '角色档案策略', description: '当前故事模板是否强制提取或跳过角色档案' },
+  { key: 'step3SkeletonModules', label: 'Step 3 骨架', description: '当前故事模板启用的绘图骨架模块' },
+  { key: 'referenceKind', label: '参考图类型', description: '当前故事模板使用的人脸、产品或无参考图类型' },
+  { key: 'stylePrefix', label: '风格前缀', description: '当前图像模板的 prefix，会注入 Step 3 出图提示词' },
+  { key: 'styleSuffix', label: '风格后缀', description: '当前图像模板的 suffix，会注入 Step 3 出图提示词' },
+  { key: 'styleAllowColor', label: '允许色彩词', description: '当前图像模板是否允许在画面里使用具体色彩词' },
+  { key: 'styleNegativePrompt', label: '负面提示词', description: '当前图像模板的 negative prompt' },
+  { key: 'referenceImagePath', label: '参考图路径', description: '新建任务上传或填写的参考图本地路径' },
+  { key: 'imagePromptReference', label: '生图参考', description: '爆款拆解或用户补充的画面参考提示' },
+  { key: 'characterCard', label: '角色档案', description: 'Step 3 前提取出的角色一致性 JSON' },
+  { key: 'imageSeedPoolsJson', label: '图片种子池', description: '当前故事模板携带的 StoryDream 图片种子池 JSON' },
 ];
 const promptTemplateVariables = promptTemplateVariableDefinitions.map((item) => item.key);
 const promptStepEditorDefinitions: Array<{ type: PromptStepTemplateType; label: string; hint: string }> = [
@@ -305,7 +322,7 @@ const pipelineSteps = [
   { index: 6, title: 'Step 6 草稿导出', hint: '写入剪映草稿输出目录', agent: 'Draft' },
 ] as const;
 
-type StoryboundApi = NonNullable<Window['storybound']>;
+type StoryDreamApi = NonNullable<Window['storydream']>;
 type ModelListKey = 'llm' | 'gpt-image' | 'custom-image';
 type DraftCanvasLayer = 'image' | 'title' | 'subtitle' | 'caption' | 'disclaimer';
 const DRAFT_TEXT_WIDTH_MIN = 0.1;
@@ -348,14 +365,14 @@ function mergeDefaultCustomStyles(styles: CustomStyle[] | undefined): CustomStyl
   ];
 }
 
-function makeFallbackApi(setState: (state: AppState) => void): StoryboundApi {
+function makeFallbackApi(setState: (state: AppState) => void): StoryDreamApi {
   const read = () => {
-    const raw = localStorage.getItem('storybound-state');
+    const raw = localStorage.getItem('storydream-state') ?? localStorage.getItem('storybound-state');
     return raw ? hydrateState(JSON.parse(raw) as AppState) : cloneState(initialState);
   };
   const persist = (state: AppState) => {
     const next = hydrateState(state);
-    localStorage.setItem('storybound-state', JSON.stringify(next));
+    localStorage.setItem('storydream-state', JSON.stringify(next));
     setState(next);
     return next;
   };
@@ -687,8 +704,8 @@ function App() {
   const [activeView, setActiveView] = useState<ShellView>('new-task');
   const [selectedTaskId, setSelectedTaskId] = useState<string | null>(null);
   const [saveTone, setSaveTone] = useState<'saved' | 'saving' | 'dirty'>('saved');
-  const isBrowserPreview = !window.storybound;
-  const api = useMemo(() => window.storybound ?? makeFallbackApi(setState), []);
+  const isBrowserPreview = !window.storydream && !window.storybound;
+  const api = useMemo(() => window.storydream ?? window.storybound ?? makeFallbackApi(setState), []);
 
   useEffect(() => {
     api
@@ -760,7 +777,7 @@ function App() {
       <div className="window-line">
         <div className="window-title">
           <div className="app-mark">S</div>
-          <strong>Storybound</strong>
+          <strong>StoryDream</strong>
         </div>
         <div className="window-controls" aria-label="窗体控制">
           <button className="window-control-button" type="button" aria-label="最小化" onClick={() => api.windowControl('minimize')}>
@@ -780,7 +797,7 @@ function App() {
           <div className="brand-block">
             <div className="brand-logo">S</div>
             <div>
-              <strong>Storybound</strong>
+              <strong>StoryDream</strong>
               <span>v0.10.4 · beta</span>
             </div>
             <Bell size={16} className="brand-bell" />
@@ -890,7 +907,7 @@ function ViralAnalyzerPage({
   openTaskDetail,
   isBrowserPreview,
 }: {
-  api: StoryboundApi;
+  api: StoryDreamApi;
   state: AppState;
   applyState: (state: AppState) => void;
   openTaskDetail: (taskId: string) => void;
@@ -1329,7 +1346,7 @@ function NewTaskPage({
   openTaskDetail,
   isBrowserPreview,
 }: {
-  api: StoryboundApi;
+  api: StoryDreamApi;
   state: AppState;
   applyState: (state: AppState) => void;
   openTaskDetail: (taskId: string) => void;
@@ -1395,12 +1412,12 @@ function NewTaskPage({
   const bgmOptions = validBgmItems(state.config);
   const ttsVoiceOptions = ttsVoiceOptionsForProvider(ttsProvider);
   const podcastVoiceDefaults = defaultPodcastSpeakersForProvider(ttsProvider, podcastSpeakers);
-  const storyboundCoverTemplateIds = ['cinematic-poster', 'podcast-cover'];
+  const storyDreamCoverTemplateIds = ['cinematic-poster', 'podcast-cover'];
   const coverTemplateOptions = state.customCoverTemplates.map((template) => [template.id, template.name, template.description]);
   const coverTemplateSelectOptions = coverTemplateOptions.length
     ? coverTemplateOptions
-    : [['cinematic-poster', '电影海报封面', 'Storybound 1.7 默认封面模板']];
-  const coverTemplateHint = storyboundCoverTemplateIds.includes(coverTemplateId) ? 'Storybound 1.7 兼容模板' : '自定义封面模板';
+    : [['cinematic-poster', '电影海报封面', 'StoryDream 默认封面模板']];
+  const coverTemplateHint = storyDreamCoverTemplateIds.includes(coverTemplateId) ? 'StoryDream 兼容模板' : '自定义封面模板';
 
   useEffect(() => {
     setBgmId((current) => (current && bgmOptions.some((bgm) => bgm.id === current) ? current : resolveDefaultBgmId(state.config)));
@@ -1909,7 +1926,7 @@ function MusicMvPage({
   openTaskDetail,
   isBrowserPreview,
 }: {
-  api: StoryboundApi;
+  api: StoryDreamApi;
   state: AppState;
   applyState: (state: AppState) => void;
   openTaskDetail: (taskId: string) => void;
@@ -2079,7 +2096,7 @@ function QueuePage({
   openTaskDetail,
   isBrowserPreview,
 }: {
-  api: StoryboundApi;
+  api: StoryDreamApi;
   state: AppState;
   applyState: (state: AppState) => void;
   openNewTask: () => void;
@@ -2146,7 +2163,7 @@ function QueuePage({
   );
 }
 
-function HistoryPage({ api, state, openTaskDetail }: { api: StoryboundApi; state: AppState; openTaskDetail: (taskId: string) => void }) {
+function HistoryPage({ api, state, openTaskDetail }: { api: StoryDreamApi; state: AppState; openTaskDetail: (taskId: string) => void }) {
   const [filter, setFilter] = useState<'all' | TaskStatus>('all');
   const [query, setQuery] = useState('');
   const tasks = state.tasks.filter((task) => (filter === 'all' || task.status === filter) && `${task.title}${task.inputText}`.includes(query));
@@ -2195,7 +2212,7 @@ function TaskDetailPage({
   close,
   isBrowserPreview,
 }: {
-  api: StoryboundApi;
+  api: StoryDreamApi;
   state: AppState;
   task: Task | null;
   applyState: (state: AppState) => void;
@@ -2360,7 +2377,7 @@ function ArtifactPreviewContent({
   currentAgent,
   isBrowserPreview,
 }: {
-  api: StoryboundApi;
+  api: StoryDreamApi;
   task: Task;
   config: AppConfig;
   applyState: (state: AppState) => void;
@@ -2667,7 +2684,7 @@ function ImageGenerationGallery({
   isBrowserPreview,
   applyState,
 }: {
-  api: StoryboundApi;
+  api: StoryDreamApi;
   task: Task;
   scenes: NonNullable<TaskArtifactSnapshot['artifact']['scenes']>;
   imagePrompts: NonNullable<TaskArtifactSnapshot['artifact']['imagePrompts']>;
@@ -2776,7 +2793,7 @@ function NarrationPreviewList({
   isBrowserPreview,
   applyState,
 }: {
-  api: StoryboundApi;
+  api: StoryDreamApi;
   task: Task;
   scenes: NonNullable<TaskArtifactSnapshot['artifact']['scenes']>;
   subtitles: TaskArtifactSnapshot['artifact']['subtitles'];
@@ -2963,7 +2980,7 @@ function ArtifactAssetList({ assets, empty }: { assets: TaskArtifactSnapshot['as
   );
 }
 
-function ImageLabPage({ api, state, applyState }: { api: StoryboundApi; state: AppState; applyState: (state: AppState) => void }) {
+function ImageLabPage({ api, state, applyState }: { api: StoryDreamApi; state: AppState; applyState: (state: AppState) => void }) {
   const [tab, setTab] = useState<'smart' | 'text' | 'reference'>('smart');
   const [smartMode] = useState<ImageLabSmartMode>('podcast-cover');
   const [prompt, setPrompt] = useState('根据食谱内容，规划 2-3 张美食教程图，合成品图、灵魂文案、制作步骤，保持参考图主体和质感。');
@@ -2971,13 +2988,21 @@ function ImageLabPage({ api, state, applyState }: { api: StoryboundApi; state: A
   const [style, setStyle] = useState('photo-real');
   const [resolution, setResolution] = useState<ImageResolution>('1K');
   const [referenceImagePath, setReferenceImagePath] = useState('');
+  const [referencePasteDraft, setReferencePasteDraft] = useState('');
   const [imageLabOutputCount, setImageLabOutputCount] = useState(3);
   const [generating, setGenerating] = useState(false);
   const [submitError, setSubmitError] = useState('');
-  const referenceLimit = 3;
+  const [expandedReferenceImage, setExpandedReferenceImage] = useState('');
+  const referenceLimit = 10;
   const referenceCandidates = parseReferenceImagePaths(referenceImagePath);
   const references = referenceCandidates.slice(0, referenceLimit);
   const hiddenReferenceCount = Math.max(0, referenceCandidates.length - references.length);
+  const referenceModeDescription = tab === 'smart'
+    ? '智能规划多张图，可带参考图；适合根据需求批量出教程图、封面和分镜图。'
+    : tab === 'reference'
+      ? '参考图编辑/延展，需要先添加参考图；适合保留主体、材质和画面一致性。'
+      : '纯文本生成单张图，不使用参考图。';
+  const baseSmartMode: ImageLabSmartMode = tab === 'smart' ? smartMode : tab === 'reference' ? 'reference-edit' : 'text-to-image';
   const imageLabRatioChoices = [
     ['21:9', '宽屏'],
     ['16:9', '横屏'],
@@ -2989,7 +3014,7 @@ function ImageLabPage({ api, state, applyState }: { api: StoryboundApi; state: A
     ['9:16', '竖屏'],
   ];
   const estimatedCost = resolution === '1K' ? '0.08' : resolution === '2K' ? '0.16' : '0.32';
-  const resolvedSmartMode = resolveImageLabSmartMode(tab, smartMode, references);
+  const resolvedSmartMode = resolveImageLabSmartMode(tab, baseSmartMode, references);
 
   async function selectImageLabReferenceImage() {
     const imagePath = await api.selectLocalImage();
@@ -2997,12 +3022,28 @@ function ImageLabPage({ api, state, applyState }: { api: StoryboundApi; state: A
     setReferenceImagePath((current) => [...parseReferenceImagePaths(current), imagePath].join('\n'));
   }
 
+  function removeReferenceImagePath(reference: string) {
+    setReferenceImagePath((current) => parseReferenceImagePaths(current).filter((item) => item !== reference).join('\n'));
+    if (expandedReferenceImage === reference) {
+      setExpandedReferenceImage('');
+    }
+  }
+
+  function appendReferenceImagePaths(value: string) {
+    const nextPaths = parseReferenceImagePaths(value);
+    if (!nextPaths.length) return;
+    setReferenceImagePath((current) => {
+      const merged = [...parseReferenceImagePaths(current), ...nextPaths];
+      return Array.from(new Set(merged)).join('\n');
+    });
+  }
+
   async function addRecord() {
     if (generating) return;
     setGenerating(true);
     setSubmitError('');
     try {
-      const requestedCount = tab === 'text' ? 1 : Math.max(1, Math.min(3, imageLabOutputCount));
+      const requestedCount = tab === 'text' ? 1 : Math.max(1, Math.min(10, imageLabOutputCount));
       let nextState = state;
       for (let index = 0; index < requestedCount; index += 1) {
         nextState = await api.generateImageLab({
@@ -3025,12 +3066,9 @@ function ImageLabPage({ api, state, applyState }: { api: StoryboundApi; state: A
 
   return (
     <div className="image-lab-page">
-      <header className="image-lab-header">
-        <h2>画图实验室</h2>
-        <p>输入提示词 + 选风格，直接出图；智慧模式会优先围绕参考图生成，不写入任务历史。</p>
-      </header>
       <section className="panel image-lab-workbench">
         <Segmented label="模式" value={tab} options={['smart', 'text', 'reference']} labels={['智慧生图', '文生图', '图像参考']} onChange={(value) => setTab(value as 'smart' | 'text' | 'reference')} />
+        <div className="image-lab-mode-note">{referenceModeDescription}</div>
         {tab !== 'text' ? (
           <div className="image-lab-reference-block">
             <div className="image-lab-section-head">
@@ -3047,11 +3085,37 @@ function ImageLabPage({ api, state, applyState }: { api: StoryboundApi; state: A
                 <small>支持 PNG / JPG / WEBP，每行一张，最多 {referenceLimit} 张会参与生成</small>
               </span>
             </div>
-            <textarea className="reference-image-list" value={referenceImagePath} placeholder="C:\\images\\reference-1.png&#10;C:\\images\\reference-2.webp" onChange={(event) => setReferenceImagePath(event.target.value)} />
+            <textarea
+              className="reference-image-list"
+              value={referencePasteDraft}
+              placeholder="粘贴本地图片路径，每行一张；粘贴后下方只显示缩略图"
+              onPaste={(event) => {
+                event.preventDefault();
+                appendReferenceImagePaths(event.clipboardData.getData('text'));
+                setReferencePasteDraft('');
+              }}
+              onChange={(event) => setReferencePasteDraft(event.target.value)}
+              onBlur={() => {
+                appendReferenceImagePaths(referencePasteDraft);
+                setReferencePasteDraft('');
+              }}
+            />
             <div className="image-lab-reference-list" aria-live="polite">
-              {references.length ? references.map((reference, index) => (
-                <span className="image-lab-reference-entry" key={`${reference}-${index}`}>{index + 1}. {reference}</span>
-              )) : <span className="image-lab-reference-empty">暂未添加参考图路径</span>}
+              {references.length ? (
+                <div className="image-lab-reference-grid">
+                  {references.map((reference, index) => (
+                    <article className="image-lab-reference-thumb" key={`${reference}-${index}`}>
+                      <button type="button" className="image-lab-reference-image" onClick={() => setExpandedReferenceImage(reference)} aria-label={`放大参考图 ${index + 1}`}>
+                        <img src={toLocalImageUrl(reference)} alt={`参考图 ${index + 1}`} loading="lazy" />
+                      </button>
+                      <div className="image-lab-reference-actions">
+                        <button type="button" className="mini-button" onClick={() => setExpandedReferenceImage(reference)}>放大</button>
+                        <button type="button" className="mini-button" onClick={() => removeReferenceImagePath(reference)}>删除</button>
+                      </div>
+                    </article>
+                  ))}
+                </div>
+              ) : <span className="image-lab-reference-empty">暂未添加参考图路径</span>}
               {hiddenReferenceCount > 0 ? <span className="image-lab-reference-overflow">已忽略超出上限的 {hiddenReferenceCount} 张</span> : null}
             </div>
           </div>
@@ -3063,11 +3127,11 @@ function ImageLabPage({ api, state, applyState }: { api: StoryboundApi; state: A
           <div className="image-lab-slider">
             <div className="image-lab-section-head">
               <strong>出图数量上限</strong>
-              <small>AI 最多规划这么多张</small>
+              <small>普通上限设为 10 张</small>
             </div>
-            <input type="range" min={1} max={3} step={1} value={imageLabOutputCount} onChange={(event) => setImageLabOutputCount(Number(event.target.value))} />
+            <input type="range" min={1} max={10} step={1} value={imageLabOutputCount} onChange={(event) => setImageLabOutputCount(Number(event.target.value))} />
             <strong>{imageLabOutputCount} 张</strong>
-            <small>AI 会读懂需求，规划成最多 3 张图；每张图文案需进图里。</small>
+            <small>AI 会读懂需求，规划成最多 10 张图；每张图文案需进图里。</small>
           </div>
         ) : null}
         <div className="image-lab-control-group">
@@ -3096,6 +3160,17 @@ function ImageLabPage({ api, state, applyState }: { api: StoryboundApi; state: A
         </div>
         {submitError ? <ErrorSummaryButton compact title="画图实验室提交失败" fullMessage={submitError} /> : null}
       </section>
+      {expandedReferenceImage ? (
+        <div className="error-dialog-backdrop" onClick={() => setExpandedReferenceImage('')}>
+          <section className="error-dialog image-lab-preview-dialog" role="dialog" aria-modal="true" aria-label="参考图预览" onClick={(event) => event.stopPropagation()}>
+            <div className="error-dialog-head">
+              <strong>参考图预览</strong>
+              <button className="mini-button" type="button" onClick={() => setExpandedReferenceImage('')}>关闭</button>
+            </div>
+            <img src={toLocalImageUrl(expandedReferenceImage)} alt="参考图预览" />
+          </section>
+        </div>
+      ) : null}
       <section className="image-lab-recent">
         <h3>最近生成 · {state.imageLabRecords.length}</h3>
         {state.imageLabRecords.length === 0 ? <EmptyState title="暂无画图记录" /> : null}
@@ -3122,7 +3197,7 @@ function ImageLabPage({ api, state, applyState }: { api: StoryboundApi; state: A
 
 }
 
-function VoiceLabPage({ api, state, applyState }: { api: StoryboundApi; state: AppState; applyState: (state: AppState) => void }) {
+function VoiceLabPage({ api, state, applyState }: { api: StoryDreamApi; state: AppState; applyState: (state: AppState) => void }) {
   const [text, setText] = useState('配音实验室试听文案：用稳定、清晰、有情绪的声音讲完这一段故事。');
   const [voiceProvider, setVoiceProvider] = useState<RuntimeTtsProvider>(() => normalizeRuntimeTtsProvider(state.config.tts.provider));
   const [voiceId, setVoiceId] = useState(() => defaultTaskSpeakerForProvider(state.config.tts.provider, state.config));
@@ -3217,7 +3292,7 @@ function VoiceLabPage({ api, state, applyState }: { api: StoryboundApi; state: A
   );
 }
 
-function PromptTemplatesPage({ api, state, applyState }: { api: StoryboundApi; state: AppState; applyState: (state: AppState) => void }) {
+function PromptTemplatesPage({ api, state, applyState }: { api: StoryDreamApi; state: AppState; applyState: (state: AppState) => void }) {
   const [selectedId, setSelectedId] = useState(state.promptTemplates[0]?.id ?? '');
   const [templateMode, setTemplateMode] = useState<'gallery' | 'detail' | 'image-detail'>('gallery');
   const [promptTemplateLibraryTab, setPromptTemplateLibraryTab] = useState<'story' | 'image'>('story');
@@ -4002,7 +4077,7 @@ function VariableAwareTextarea({
   );
 }
 
-function DraftTemplatesPage({ api, state, applyState }: { api: StoryboundApi; state: AppState; applyState: (state: AppState) => void }) {
+function DraftTemplatesPage({ api, state, applyState }: { api: StoryDreamApi; state: AppState; applyState: (state: AppState) => void }) {
   const [editingId, setEditingId] = useState<string | null>(null);
   const editingTemplate = editingId ? state.draftTemplates.find((template) => template.id === editingId) ?? null : null;
   const [draft, setDraft] = useState<DraftTemplate | null>(null);
@@ -4697,7 +4772,7 @@ function DraftCanvasLayerBox({
   );
 }
 
-function SettingsPage({ api, state, applyState }: { api: StoryboundApi; state: AppState; applyState: (state: AppState) => void }) {
+function SettingsPage({ api, state, applyState }: { api: StoryDreamApi; state: AppState; applyState: (state: AppState) => void }) {
   const [section, setSection] = useState('llm');
   const [draft, setDraft] = useState<AppConfig>(() => normalizeEditableConfigProviders(state.config));
   const [settingsDirty, setSettingsDirty] = useState(false);
@@ -5743,7 +5818,7 @@ function TtsProfileManager({
   );
 }
 
-function AccountPage({ api, state, applyState }: { api: StoryboundApi; state: AppState; applyState: (state: AppState) => void }) {
+function AccountPage({ api, state, applyState }: { api: StoryDreamApi; state: AppState; applyState: (state: AppState) => void }) {
   const [draft, setDraft] = useState(state.account);
   useEffect(() => setDraft(state.account), [state.account]);
   return (
@@ -5765,7 +5840,7 @@ function AccountPage({ api, state, applyState }: { api: StoryboundApi; state: Ap
   );
 }
 
-function ActivationPage({ api, state, applyState }: { api: StoryboundApi; state: AppState; applyState: (state: AppState) => void }) {
+function ActivationPage({ api, state, applyState }: { api: StoryDreamApi; state: AppState; applyState: (state: AppState) => void }) {
   const [draft, setDraft] = useState(state.activation);
   useEffect(() => setDraft(state.activation), [state.activation]);
   return (
@@ -6719,7 +6794,7 @@ function sourceKey(source: AiSourceSection, index: number): string {
 
 declare global {
   interface Window {
-    __storyboundReactRoot?: Root;
+    __storydreamReactRoot?: Root;
   }
 }
 
@@ -6728,5 +6803,5 @@ if (!rootElement) {
   throw new Error('Missing #root element');
 }
 
-window.__storyboundReactRoot ??= createRoot(rootElement);
-window.__storyboundReactRoot.render(<App />);
+window.__storydreamReactRoot ??= createRoot(rootElement);
+window.__storydreamReactRoot.render(<App />);

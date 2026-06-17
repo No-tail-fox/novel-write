@@ -7,6 +7,7 @@ import { promisify } from 'node:util';
 import { FileDatabase } from '@shared/storage';
 
 const execFileAsync = promisify(execFile);
+const nodePath = process.execPath;
 
 describe('Coze workflow converter CLI', () => {
   it('exposes an npm script for repeated Coze workflow conversion', async () => {
@@ -25,7 +26,7 @@ describe('Coze workflow converter CLI', () => {
     try {
       await writeFile(inputPath, minimalWorkflowSource('7629256239332032548'), 'utf8');
 
-      const { stdout } = await execFileAsync('node', [
+      const { stdout } = await execFileAsync(nodePath, [
         'scripts/convert-coze-workflows.mjs',
         '--out',
         outputPath,
@@ -57,7 +58,7 @@ describe('Coze workflow converter CLI', () => {
     try {
       await writeFile(inputPath, minimalWorkflowSource('7629256239332032550'), 'utf8');
 
-      await execFileAsync('node', [
+      await execFileAsync(nodePath, [
         'scripts/convert-coze-workflows.mjs',
         outputPath,
         inputPath,
@@ -84,7 +85,7 @@ describe('Coze workflow converter CLI', () => {
       await writeFile(join(sourceDir, '情感混剪.txt'), minimalWorkflowSource('7629256239332032551'), 'utf8');
       await writeFile(join(nestedDir, 'TK悬疑视频.json'), minimalWorkflowSource('7629256239332032552'), 'utf8');
 
-      const { stdout } = await execFileAsync('node', [
+      const { stdout } = await execFileAsync(nodePath, [
         'scripts/convert-coze-workflows.mjs',
         '--out',
         outputPath,
@@ -111,7 +112,7 @@ describe('Coze workflow converter CLI', () => {
     }
   });
 
-  it('installs converted workflow templates into a Storybound database when requested', async () => {
+  it('installs converted workflow templates into a StoryDream database when requested', async () => {
     const dir = await mkdtemp(join(tmpdir(), 'storybound-coze-cli-install-'));
     const inputPath = join(dir, '每日学中药.txt');
     const outputPath = join(dir, 'draft-templates.json');
@@ -120,7 +121,7 @@ describe('Coze workflow converter CLI', () => {
     try {
       await writeFile(inputPath, minimalWorkflowSource('7629256239332032553'), 'utf8');
 
-      const { stdout } = await execFileAsync('node', [
+      const { stdout } = await execFileAsync(nodePath, [
         'scripts/convert-coze-workflows.mjs',
         '--out',
         outputPath,

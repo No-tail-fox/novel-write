@@ -17,7 +17,7 @@ describe('windows packaging', () => {
     expect(deps['electron-builder']).toBeDefined();
     expect(pkg.build).toMatchObject({
       electronDist: 'node_modules/electron/dist',
-      productName: 'Storybound Replica',
+      productName: 'StoryDream',
       directories: { output: 'release' },
       extraResources: [{ from: 'vendor/python', to: 'python' }],
       win: { target: ['dir'], signAndEditExecutable: false },
@@ -27,8 +27,8 @@ describe('windows packaging', () => {
     expect(packageScript).toContain('--win');
     expect(packageScript).toContain('--dir');
     expect(packageScript).toContain('Compress-Archive');
-    expect(packageScript).toContain('Storybound-Replica-Portable-${Version}.zip');
-    expect(packageScript).toContain('release\\Storybound-Replica-Portable');
+    expect(packageScript).toContain('StoryDream-Portable-${Version}.zip');
+    expect(packageScript).toContain('release\\StoryDream-Portable');
     expect(packageScript).toContain('node --check');
     for (const dependency of [
       'pyJianYingDraft',

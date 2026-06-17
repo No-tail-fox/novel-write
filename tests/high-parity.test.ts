@@ -14,7 +14,7 @@ const tinyPng = Buffer.from(
   'base64',
 );
 
-describe('high parity Storybound shell model', () => {
+describe('high parity StoryDream shell model', () => {
   it('migrates observed provider, template, credit, style, and lab defaults', async () => {
     const dir = await mkdtemp(join(tmpdir(), 'storybound-high-parity-defaults-'));
     const file = join(dir, 'app.db');

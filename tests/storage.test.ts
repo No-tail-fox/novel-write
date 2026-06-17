@@ -8,7 +8,7 @@ import { defaultConfig } from '@shared/config';
 import { convertCozeWorkflowToDraftTemplate } from '@shared/coze-workflow-converter';
 
 describe('file database', () => {
-  it('creates Storybound-compatible local tables and seeds Chinese account state', async () => {
+  it('creates StoryDream-compatible local tables and seeds Chinese account state', async () => {
     const dir = await mkdtemp(join(tmpdir(), 'storybound-db-compatible-schema-'));
     const file = join(dir, 'app.db');
 
@@ -18,7 +18,7 @@ describe('file database', () => {
 
       expect(state.account).toMatchObject({
         displayName: '本地用户',
-        workspace: 'Storybound 本地工作区',
+        workspace: 'StoryDream 本地工作区',
       });
       expect(state.activation.message).toContain('试用');
       expect(state.creditTransactions.length).toBeGreaterThan(0);
@@ -74,7 +74,7 @@ describe('file database', () => {
     }
   });
 
-  it('persists Storybound task workflow fields on created tasks', async () => {
+  it('persists StoryDream task workflow fields on created tasks', async () => {
     const dir = await mkdtemp(join(tmpdir(), 'storybound-db-task-workflow-fields-'));
     const file = join(dir, 'app.db');
 
@@ -114,7 +114,7 @@ describe('file database', () => {
     }
   });
 
-  it('uses Storybound 1.7 cover and podcast defaults for new tasks', async () => {
+  it('uses StoryDream cover and podcast defaults for new tasks', async () => {
     const dir = await mkdtemp(join(tmpdir(), 'storybound-db-cover-podcast-defaults-'));
     const file = join(dir, 'app.db');
 
@@ -159,7 +159,7 @@ describe('file database', () => {
     }
   });
 
-  it('persists Storybound video form and two-host podcast task options', async () => {
+  it('persists StoryDream video form and two-host podcast task options', async () => {
     const dir = await mkdtemp(join(tmpdir(), 'storybound-db-video-form-'));
     const file = join(dir, 'app.db');
 
@@ -273,7 +273,7 @@ describe('file database', () => {
     }
   });
 
-  it('seeds Storybound 1.7 cinematic cover templates and image styles', async () => {
+  it('seeds StoryDream cinematic cover templates and image styles', async () => {
     const dir = await mkdtemp(join(tmpdir(), 'storybound-db-cover-template-seeds-'));
     const file = join(dir, 'app.db');
 
@@ -502,6 +502,34 @@ describe('file database', () => {
           cover: 'metadata prompt',
           'image-prompt': 'step 3 prompt',
         },
+      });
+      await reopened.close();
+    } finally {
+      await rm(dir, { recursive: true, force: true });
+    }
+  });
+
+  it('refreshes built-in prompt templates to the StoryDream default set', async () => {
+    const dir = await mkdtemp(join(tmpdir(), 'storybound-db-prompt-refresh-'));
+    const file = join(dir, 'app.db');
+
+    try {
+      const db = await FileDatabase.open(file);
+      (db as unknown as { db: { run: (sql: string, params?: unknown[]) => void } }).db.run(
+        `INSERT OR REPLACE INTO prompt_templates (id, name, type, description, content, is_builtin, updated_at, data_json)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+        ['system-food-v2', '旧美食模板', 'task', '旧默认模板', 'old content', 1, '2026-05-01T00:00:00.000Z', '{}'],
+      );
+      await db.close();
+
+      const reopened = await FileDatabase.open(file);
+      const state = await reopened.getState();
+
+      expect(state.promptTemplates.some((template) => template.id === 'system-food-v2')).toBe(false);
+      expect(state.promptTemplates.find((template) => template.id === 'system-food-vlog')).toMatchObject({
+        name: '美食探店V2',
+        baseTrack: 'food-vlog',
+        isBuiltin: true,
       });
       await reopened.close();
     } finally {

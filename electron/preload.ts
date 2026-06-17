@@ -32,7 +32,7 @@ import type {
   VoiceLabGenerateInput,
 } from '../src/shared/types';
 
-contextBridge.exposeInMainWorld('storybound', {
+const storyDreamApi = {
   getState: () => ipcRenderer.invoke('app:get-state'),
   saveConfig: (config: AppConfig) => ipcRenderer.invoke('app:save-config', config),
   testAppConfig: (target: ConfigTestTarget, config: AppConfig) => ipcRenderer.invoke('config:test', { target, config }),
@@ -80,4 +80,7 @@ contextBridge.exposeInMainWorld('storybound', {
     ipcRenderer.on('task:event', listener);
     return () => ipcRenderer.off('task:event', listener);
   },
-});
+};
+
+contextBridge.exposeInMainWorld('storydream', storyDreamApi);
+contextBridge.exposeInMainWorld('storybound', storyDreamApi);

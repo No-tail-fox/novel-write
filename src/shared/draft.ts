@@ -27,6 +27,7 @@ export interface WriteJianyingDraftInput {
   reviewedText: string;
   rewrittenCopy: string;
   generatedImages: SceneAsset[];
+  coverImagePath?: string;
   narrationAudio: SceneAsset[];
   bgm: BgmItem | null;
 }
@@ -61,7 +62,7 @@ export async function writeJianyingDraft(input: WriteJianyingDraftInput, options
 
   const template = normalizeDraftTemplate(input.template ?? getTemplate(input.templateId ?? (input.ratio === '16:9' ? 'builtin-landscape-16-9' : 'default-portrait-9-16')));
   const subtitles = buildSubtitleTrack(input.scenes);
-  const title = safeDraftName(input.title || input.cover.title || 'storybound-draft');
+  const title = safeDraftName(input.title || input.cover.title || 'storydream-draft');
   const draftDir = join(input.draftRootDir, uniqueDraftFolderName(title));
   const imagesByScene = await collectSceneAssets(input.scenes, input.generatedImages, 'image asset');
   const audioByScene = await collectNarrationAssets(input.scenes, input.narrationAudio);
@@ -71,6 +72,10 @@ export async function writeJianyingDraft(input: WriteJianyingDraftInput, options
 
   const sourceImages = input.scenes.map((scene) => imagesByScene.get(scene.id)!);
   const sourceNarration = input.scenes.flatMap((scene) => audioByScene.get(scene.id)!);
+  const coverImagePath = input.coverImagePath?.trim() || '';
+  if (coverImagePath) {
+    await assertReadableFile(coverImagePath, 'cover image asset');
+  }
 
   let sourceBgm: BgmItem | null = null;
   if (input.bgm?.path) {
@@ -103,6 +108,7 @@ export async function writeJianyingDraft(input: WriteJianyingDraftInput, options
     subtitlesFile,
     sourceImages,
     sourceNarration,
+    coverImagePath,
     sourceBgm,
   });
   let bridge: PyJianYingBridgeOutput;
@@ -147,6 +153,7 @@ function createBridgePayload(input: {
   subtitlesFile: string;
   sourceImages: string[];
   sourceNarration: SceneAsset[];
+  coverImagePath: string;
   sourceBgm: BgmItem | null;
 }): PyJianYingBridgeInput {
   let cursor = 0;
@@ -253,6 +260,7 @@ function createBridgePayload(input: {
     },
     scenes,
     images: input.input.scenes.map((scene, index) => ({ sceneId: scene.id, path: input.sourceImages[index] })),
+    coverImagePath: input.coverImagePath || undefined,
     narration: input.sourceNarration.map((asset) => ({
       sceneId: asset.sceneId,
       path: asset.path,
@@ -382,7 +390,7 @@ function safeDraftName(value: string): string {
     .replace(/\s+/g, ' ')
     .trim()
     .slice(0, 80);
-  return cleaned || 'storybound-draft';
+  return cleaned || 'storydream-draft';
 }
 
 function uniqueDraftFolderName(title: string): string {

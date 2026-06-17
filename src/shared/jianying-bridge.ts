@@ -98,6 +98,7 @@ export interface PyJianYingBridgeInput {
   };
   scenes?: Array<{ sceneId: number; startUs: number; durationUs: number; text: string }>;
   images: Array<{ sceneId: number; path: string }>;
+  coverImagePath?: string;
   narration: Array<{ sceneId: number; path: string; speaker?: 'A' | 'B'; turnIndex?: number; text?: string }>;
   subtitlesSrtPath: string;
   bgm: BgmItem | null;
@@ -236,6 +237,7 @@ function formatBridgeError(error: unknown, runtime: PythonRuntimeInfo): string {
 
 const pythonBridgeScript = String.raw`import json
 import os
+import re
 import shutil
 import struct
 import sys
@@ -311,6 +313,10 @@ def clamp_number(value, default, minimum, maximum):
     except (TypeError, ValueError):
         parsed = default
     return max(minimum, min(maximum, parsed))
+
+
+def editor_text_y_to_jianying(value, default=0):
+    return -clamp_number(value, default, -1.0, 1.0)
 
 
 def ratio_to_number(value, default=9 / 16):
@@ -413,14 +419,14 @@ def copy_asset(source_path, target_dir, filename_stem, fallback_ext):
     return target_path
 
 
-def patch_meta(meta_path, payload, draft_dir, duration, background_path, image_paths, narration_paths, bgm_path):
+def patch_meta(meta_path, payload, draft_dir, duration, background_path, image_paths, cover_image_path, narration_paths, bgm_path):
     try:
         with open(meta_path, "r", encoding="utf-8") as handle:
             meta = json.load(handle)
     except FileNotFoundError:
         meta = {}
     meta.update({
-        "draft_cover": image_paths[0] if image_paths else "",
+        "draft_cover": cover_image_path or (image_paths[0] if image_paths else ""),
         "draft_fold_path": draft_dir,
         "draft_name": payload["title"],
         "draft_root_path": os.path.dirname(draft_dir),
@@ -462,13 +468,131 @@ def wrap_caption_text(text, max_chars_per_line):
     return "\n".join(wrapped)
 
 
-def write_timed_subtitles(path, timeline, max_chars_per_line=0):
+def resolve_caption_chars_per_line(caption, canvas):
+    caption = caption or {}
+    canvas = canvas or {}
+    canvas_width = clamp_number(canvas.get("width"), 1080, 1, 10000)
+    text_width = clamp_number(caption.get("width"), 0.8, 0.1, 2.0)
+    font_size = clamp_number(caption.get("fontSize"), 12, 1, 200)
+    letter_spacing = clamp_number(caption.get("letterSpacing"), 0, 0, 100)
+    estimated_char_width = max(1.0, font_size * 3.2 + letter_spacing)
+    return int(clamp_number(round((canvas_width * text_width) / estimated_char_width), 12, 4, 80))
+
+
+def split_caption_text(text, chars_per_line):
+    text = str(text or "").strip()
+    if not text:
+        return []
+    line_chars = int(clamp_number(chars_per_line, 18, 1, 80))
+    max_chars = max(1, line_chars * 2)
+    min_chars = min(line_chars, max_chars)
+    punctuation = set("，。！？；、,.!?;:")
+    cues = []
+
+    def push_piece(piece):
+        piece = str(piece or "").strip()
+        if not piece:
+            return
+        while len(piece) > max_chars:
+            cues.append(piece[:max_chars])
+            piece = piece[max_chars:].strip()
+        if piece:
+            cues.append(piece)
+
+    for raw_line in re.split(r"\r?\n+", text):
+        line = raw_line.strip()
+        if not line:
+            continue
+        units = []
+        start = 0
+        for index, char in enumerate(line):
+            if char in punctuation:
+                units.append(line[start:index + 1].strip())
+                start = index + 1
+        if start < len(line):
+            units.append(line[start:].strip())
+
+        current = ""
+        for unit in [item for item in units if item]:
+            if len(unit) > max_chars:
+                if current:
+                    push_piece(current)
+                    current = ""
+                push_piece(unit)
+                continue
+            candidate = f"{current}{unit}" if current else unit
+            if len(candidate) <= max_chars:
+                current = candidate
+                continue
+            if current:
+                push_piece(current)
+            current = unit
+        if current:
+            push_piece(current)
+
+    if len(cues) <= 1:
+        return cues
+
+    balanced = []
+    for cue in cues:
+        if balanced and len(balanced[-1]) < min_chars and len(balanced[-1]) + len(cue) <= max_chars:
+            balanced[-1] = balanced[-1] + cue
+        else:
+            balanced.append(cue)
+    return balanced
+
+
+def subtitle_text_weight(text):
+    compact = re.sub(r"\s+", "", str(text or ""))
+    return max(1, len(compact))
+
+
+def distribute_subtitle_durations(total_duration, cue_texts):
+    cue_count = len(cue_texts)
+    if cue_count == 0:
+        return []
+    total_duration = max(1, int(total_duration or 0))
+    if cue_count == 1:
+        return [total_duration]
+    minimum_duration = 800000
+    weights = [subtitle_text_weight(text) for text in cue_texts]
+    weight_total = max(1, sum(weights))
+    if total_duration >= minimum_duration * cue_count:
+        remaining = total_duration - minimum_duration * cue_count
+        durations = [minimum_duration + int(round(remaining * weight / weight_total)) for weight in weights]
+    else:
+        durations = [max(1, int(round(total_duration * weight / weight_total))) for weight in weights]
+    delta = total_duration - sum(durations)
+    durations[-1] = max(1, durations[-1] + delta)
+    return durations
+
+
+def expand_timed_subtitles(timeline, caption_config=None, canvas_config=None):
+    expanded = []
+    chars_per_line = resolve_caption_chars_per_line(caption_config, canvas_config)
+    for item in timeline:
+        cue_texts = split_caption_text(item.get("text"), chars_per_line)
+        if not cue_texts:
+            continue
+        durations = distribute_subtitle_durations(int(item["durationUs"]), cue_texts)
+        cursor = int(item["startUs"])
+        for text, duration in zip(cue_texts, durations):
+            expanded.append({
+                "startUs": cursor,
+                "durationUs": int(duration),
+                "text": wrap_caption_text(text, chars_per_line),
+            })
+            cursor += int(duration)
+    return expanded
+
+
+def write_timed_subtitles(path, timeline, caption_config=None, canvas_config=None):
     os.makedirs(os.path.dirname(path), exist_ok=True)
     blocks = []
-    for index, item in enumerate(timeline, start=1):
+    for index, item in enumerate(expand_timed_subtitles(timeline, caption_config, canvas_config), start=1):
         start = int(item["startUs"])
         end = start + int(item["durationUs"])
-        text = wrap_caption_text(item.get("text"), max_chars_per_line)
+        text = str(item.get("text") or "").strip()
         blocks.append(f"{index}\n{format_srt_time(start)} --> {format_srt_time(end)}\n{text}\n")
     with open(path, "w", encoding="utf-8") as handle:
         handle.write("\n".join(blocks))
@@ -531,7 +655,7 @@ def add_overlay_text(script, name, config, duration):
         border=text_border_from_config(config),
         clip_settings=draft.ClipSettings(
             transform_x=float(config.get("x", 0) or 0),
-            transform_y=float(config.get("y", 0) or 0),
+            transform_y=editor_text_y_to_jianying(config.get("y"), 0),
         ),
     )
     script.add_segment(segment, name)
@@ -620,7 +744,7 @@ def main():
     total_duration = max(cursor, int(payload.get("totalDurationUs") or 0))
     subtitle_path = os.path.join(materials_dir, "subtitles", "subtitles.srt")
     caption = payload.get("caption") or {}
-    write_timed_subtitles(subtitle_path, timeline, caption.get("maxCharsPerLine"))
+    write_timed_subtitles(subtitle_path, timeline, caption, payload.get("canvas") or {})
     transition_type = resolve_enum("TransitionType", effects.get("transitionType"))
     transition_duration = int(effects.get("transitionDurationUs") or 0)
     narration_fade_in = int(effects.get("narrationFadeInUs") or 0)
@@ -726,7 +850,7 @@ def main():
             auto_wrapping=True,
             max_line_width=clamp_number(caption.get("width"), 0.8, 0.1, 2.0),
         )
-        caption_clip_settings = draft.ClipSettings(transform_x=float(caption.get("x", 0)), transform_y=float(caption.get("y", -0.8)))
+        caption_clip_settings = draft.ClipSettings(transform_x=float(caption.get("x", 0)), transform_y=editor_text_y_to_jianying(caption.get("y"), -0.8))
         caption_background = text_background_from_config(caption)
         caption_border = text_border_from_config(caption)
         if caption_background or caption_border:
@@ -762,7 +886,8 @@ def main():
     meta_path = os.path.join(draft_dir, "draft_meta_info.json")
     copied_images = [image_by_scene[int(scene["sceneId"])] for scene in scenes]
     copied_narration = [item["path"] for scene in scenes for item in audio_items_by_scene[int(scene["sceneId"])]]
-    patch_meta(meta_path, payload, draft_dir, script.duration, background_path, copied_images, copied_narration, bgm_path)
+    cover_image_path = norm(payload.get("coverImagePath") or "")
+    patch_meta(meta_path, payload, draft_dir, script.duration, background_path, copied_images, cover_image_path, copied_narration, bgm_path)
     print(json.dumps({
         "ok": True,
         "draftDir": draft_dir,

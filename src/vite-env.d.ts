@@ -35,7 +35,7 @@ import type {
 
 declare global {
   interface Window {
-    storybound?: {
+    storydream?: {
       getState: () => Promise<AppState>;
       saveConfig: (config: AppConfig) => Promise<AppState>;
       testAppConfig: (target: ConfigTestTarget, config: AppConfig) => Promise<ConfigTestResult>;
@@ -80,5 +80,6 @@ declare global {
       windowControl: (action: 'minimize' | 'toggle-maximize' | 'close') => Promise<void>;
       onTaskEvent: (callback: (state: AppState) => void) => () => void;
     };
+    storybound?: Window['storydream'];
   }
 }

@@ -166,7 +166,7 @@ export function convertCozeWorkflowToDraftTemplate(
     diagnostics.push({
       level: 'warn',
       code: 'node.missing_create_draft',
-      message: 'No Jianying create_draft node was found; generated a reusable Storybound draft-template shell using default 9:16 canvas settings.',
+      message: 'No Jianying create_draft node was found; generated a reusable StoryDream draft-template shell using default 9:16 canvas settings.',
     });
   }
   collectStartAssets(parsed.source, diagnostics);
@@ -178,7 +178,7 @@ export function convertCozeWorkflowToDraftTemplate(
     diagnostics.push({
       level: 'info',
       code: 'mapping.image_overlay',
-      message: 'Image overlay/add_images nodes detected. Storybound maps these to editable text/image overlay presets where possible.',
+      message: 'Image overlay/add_images nodes detected. StoryDream maps these to editable text/image overlay presets where possible.',
       nodeId: addImages.id,
       apiName: addImages.apiName,
     });

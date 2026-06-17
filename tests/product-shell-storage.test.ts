@@ -16,7 +16,7 @@ describe('product shell storage', () => {
 
       expect(state.promptTemplates.map((template) => template.name)).toContain('人物故事');
       expect(state.promptTemplates.filter((template) => template.type === 'task').map((template) => template.baseTrack)).toEqual(
-        expect.arrayContaining(['character-story', 'health-book', 'culture-science', 'picture-book', 'ecommerce', 'mind-soup', 'folk-story', 'general-story', 'food-v2']),
+        expect.arrayContaining(['character-story', 'health-book', 'culture-knowledge', 'picture-book', 'ecommerce', 'inspirational', 'folk-tale', 'general', 'food-vlog']),
       );
       expect(state.promptTemplates.map((template) => template.id)).toEqual(expect.arrayContaining(['builtin-review', 'builtin-rewrite', 'builtin-cover', 'builtin-storyboard', 'builtin-image-prompt']));
       expect(state.draftTemplates.map((template) => template.id)).toEqual(
@@ -75,7 +75,7 @@ describe('product shell storage', () => {
     }
   });
 
-  it('adds missing built-in prompt templates without overwriting existing user edits', async () => {
+  it('refreshes built-in prompt templates to the current StoryDream defaults', async () => {
     const dir = await mkdtemp(join(tmpdir(), 'storybound-shell-template-reconcile-'));
     const file = join(dir, 'app.db');
 
@@ -89,14 +89,14 @@ describe('product shell storage', () => {
         isBuiltin: true,
         baseTrack: 'character-story',
       });
-      (db as unknown as { db: { run: (sql: string, params?: unknown[]) => void } }).db.run('DELETE FROM prompt_templates WHERE id = ?', ['system-food-v2']);
+      (db as unknown as { db: { run: (sql: string, params?: unknown[]) => void } }).db.run('DELETE FROM prompt_templates WHERE id = ?', ['system-food-vlog']);
       await db.close();
 
       const reopened = await FileDatabase.open(file);
       const state = await reopened.getState();
 
-      expect(state.promptTemplates.find((template) => template.id === 'system-character-story')?.content).toBe('用户已经修改过的内置人物模板');
-      expect(state.promptTemplates.find((template) => template.id === 'system-food-v2')?.content).toContain('烟火气');
+      expect(state.promptTemplates.find((template) => template.id === 'system-character-story')?.content).toContain('StoryDream 系统模板：人物故事');
+      expect(state.promptTemplates.find((template) => template.id === 'system-food-vlog')?.stepPrompts?.rewrite).toContain('# 美食探店 · 文案改写规则');
 
       await reopened.close();
     } finally {

@@ -1,6 +1,6 @@
-# Storybound Replica
+# StoryDream
 
-Windows desktop workbench that clean-room recreates the observable Storybound core loop:
+Windows desktop workbench for AI-assisted story, media, and local draft production:
 
 - source text review
 - short-video rewrite
@@ -12,7 +12,7 @@ Windows desktop workbench that clean-room recreates the observable Storybound co
 
 ## Commands
 
-Double-click `启动 Storybound Replica.bat` for one-click startup. It delegates to `start-storybound.ps1`.
+Double-click `启动 StoryDream.bat` for one-click startup. It delegates to `start-storydream.ps1`.
 
 On this machine, the npm script shim can return `Access is denied`. The direct Node commands below are verified:
 
@@ -40,5 +40,5 @@ $env:NODE_ENV="development"; node node_modules\electron\cli.js .
 ## Notes
 
 - SQLite persistence uses `sql.js` to avoid native addon compilation on Windows.
-- The first draft adapter writes a stable Storybound Replica draft package with `draft_content.json`, `draft_meta_info.json`, images, audio, subtitles, and pipeline artifacts.
-- Jianying compatibility is isolated behind the draft writer so it can be iterated against real draft samples without copying Storybound internals.
+- The first draft adapter writes a stable StoryDream draft package with `draft_content.json`, `draft_meta_info.json`, images, audio, subtitles, and pipeline artifacts.
+- Jianying compatibility is isolated behind the draft writer so it can be iterated against real draft samples without coupling the app shell to external internals.

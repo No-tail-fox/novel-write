@@ -1,5 +1,5 @@
 {
-  "name": "opc",
+  "name": "storydream",
   "version": "1.0.0",
   "private": true,
   "type": "module",
@@ -44,9 +44,9 @@
     "electron-builder": "^26.0.12"
   },
   "build": {
-    "appId": "local.storybound.replica",
+    "appId": "local.storydream",
     "electronDist": "node_modules/electron/dist",
-    "productName": "Storybound Replica",
+    "productName": "StoryDream",
     "directories": {
       "output": "release"
     },

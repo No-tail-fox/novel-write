@@ -216,6 +216,78 @@ describe('draft writer', () => {
     }
   });
 
+  it('passes an explicit cover image path to the Jianying bridge without adding it to scene images', async () => {
+    const dir = await mkdtemp(join(tmpdir(), 'storybound-draft-cover-image-'));
+    const draftRootDir = join(dir, 'JianyingPro Drafts');
+    const workDir = join(dir, 'work');
+    const scenes: StoryboardScene[] = [
+      { id: 1, cap: 'First line', descPrompt: 'prompt 1', durationMs: 1200 },
+      { id: 2, cap: 'Second line', descPrompt: 'prompt 2', durationMs: 1400 },
+    ];
+    const images = await writeAssets(workDir, scenes, 'png', twoByTwoPng);
+    const coverPath = join(workDir, 'cover-image.png');
+    await writeFile(coverPath, twoByTwoPng);
+    await mkdir(join(workDir, 'audio'), { recursive: true });
+    const narration = await Promise.all(
+      scenes.map(async (scene) => {
+        const path = join(workDir, 'audio', `${scene.id}.wav`);
+        await writeFile(path, wavTone(scene.durationMs));
+        return { sceneId: scene.id, path };
+      }),
+    );
+
+    try {
+      const bridgePayloads: PyJianYingBridgeInput[] = [];
+      await writeJianyingDraft(
+        {
+          workDir,
+          draftRootDir,
+          title: 'Cover Image Draft',
+          cover: {
+            title: 'Cover Image Draft',
+            subtitle: [],
+            summary: 'summary',
+            tags: [],
+            comments: [],
+          },
+          ratio: '9:16',
+          scenes,
+          imagePrompts: buildImagePrompts(scenes, { inputText: 'Wu Zetian', style: 'photo-real', ratio: '9:16' }),
+          reviewedText: 'reviewed',
+          rewrittenCopy: 'rewritten',
+          generatedImages: images,
+          coverImagePath: coverPath,
+          narrationAudio: narration,
+          bgm: null,
+        },
+        {
+          runBridge: async (payload) => {
+            bridgePayloads.push(payload);
+            await mkdir(payload.draftDir, { recursive: true });
+            await writeFile(join(payload.draftDir, 'draft_content.json'), '{}', 'utf8');
+            await writeFile(
+              join(payload.draftDir, 'draft_meta_info.json'),
+              JSON.stringify({ draft_name: payload.title, draft_cover: payload.coverImagePath ?? payload.images[0]?.path ?? '' }),
+              'utf8',
+            );
+            return {
+              draftDir: payload.draftDir,
+              draftContentPath: join(payload.draftDir, 'draft_content.json'),
+              draftMetaPath: join(payload.draftDir, 'draft_meta_info.json'),
+              durationUs: payload.totalDurationUs ?? 0,
+            };
+          },
+        },
+      );
+
+      expect(bridgePayloads[0].coverImagePath).toBe(coverPath);
+      expect(bridgePayloads[0].images.map((image) => image.path)).toEqual(images.map((image) => image.path));
+      expect(bridgePayloads[0].images.some((image) => image.path === coverPath)).toBe(false);
+    } finally {
+      await rm(dir, { recursive: true, force: true });
+    }
+  });
+
   it('passes draft template text box widths into the bridge payload', async () => {
     const dir = await mkdtemp(join(tmpdir(), 'storybound-draft-text-width-'));
     const draftRootDir = join(dir, 'JianyingPro Drafts');

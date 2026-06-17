@@ -212,7 +212,7 @@ describe('electron ipc contract', () => {
     expect(main).toContain("ipcMain.handle('cookie-file:select'");
     expect(main).toContain("ipcMain.handle('viral:open-login-window'");
     expect(main).toContain('partition:');
-    expect(main).toContain('persist:storybound-viral-douyin');
+    expect(main).toContain('persist:storydream-viral-douyin');
     expect(main).toContain('async function openViralLoginWindow(): Promise<string | null>');
     expect(main).toContain('resolve(cookiePath)');
     expect(preload).toContain('selectCookieFile');

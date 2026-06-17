@@ -316,8 +316,17 @@ export function normalizeDraftTemplate(template: Partial<DraftTemplate>): DraftT
       x: finiteNumber(template.caption?.x, fallback.caption.x),
       y: finiteNumber(template.caption?.y, fallback.caption.y),
       width: clampNumber(template.caption?.width, fallback.caption.width, 0.1, 2),
+      fontSize: finiteNumber(template.caption?.fontSize, fallback.caption.fontSize),
+      color: finiteString(template.caption?.color, fallback.caption.color),
+      alpha: finiteNumber(template.caption?.alpha, fallback.caption.alpha),
+      bold: typeof template.caption?.bold === 'boolean' ? template.caption.bold : fallback.caption.bold,
+      underline: typeof template.caption?.underline === 'boolean' ? template.caption.underline : fallback.caption.underline,
+      align: finiteNumber(template.caption?.align, fallback.caption.align),
+      letterSpacing: finiteNumber(template.caption?.letterSpacing, fallback.caption.letterSpacing),
+      lineSpacing: finiteNumber(template.caption?.lineSpacing, fallback.caption.lineSpacing),
+      maxCharsPerLine: finiteNumber(template.caption?.maxCharsPerLine, fallback.caption.maxCharsPerLine),
       border: normalizeTextBorder(template.caption?.border, fallback.caption.border),
-      background: { ...fallback.caption.background, ...template.caption?.background },
+      background: normalizeCaptionBackground(template.caption?.background, fallback.caption.background),
     },
     disclaimer: {
       ...fallback.disclaimer,
@@ -357,5 +366,14 @@ function normalizeTextBorder(value: unknown, fallback = noBorder): typeof noBord
     color: finiteString(input.color, fallback.color),
     width: finiteNumber(input.width, fallback.width),
     alpha: finiteNumber(input.alpha, fallback.alpha),
+  };
+}
+
+function normalizeCaptionBackground(value: unknown, fallback = captionBase.background): typeof captionBase.background {
+  const input = value && typeof value === 'object' ? value as Partial<typeof captionBase.background> : {};
+  return {
+    color: finiteString(input.color, fallback.color),
+    alpha: finiteNumber(input.alpha, fallback.alpha),
+    roundRadius: finiteNumber(input.roundRadius, fallback.roundRadius),
   };
 }

@@ -5,12 +5,12 @@ $PythonVersion = "3.12.4"
 $PythonTag = "312"
 $PackageNames = @("pyJianYingDraft", "faster-whisper", "playwright", "httpx", "imageio-ffmpeg", "browser-cookie3", "pycryptodomex", "PyYAML", "gmssl", "aiofiles")
 $PipIndexUrl = "https://pypi.org/simple"
-$RuntimeId = "python-$PythonVersion-storybound-media-runtime-v4"
+$RuntimeId = "python-$PythonVersion-storydream-media-runtime-v4"
 $VendorDir = Join-Path $Root "vendor\python"
 $CacheDir = Join-Path $Root ".cache\python-runtime"
 $ZipPath = Join-Path $CacheDir "python-$PythonVersion-embed-amd64.zip"
 $GetPipPath = Join-Path $CacheDir "get-pip.py"
-$ReadyFile = Join-Path $VendorDir ".storybound-python-runtime"
+$ReadyFile = Join-Path $VendorDir ".storydream-python-runtime"
 $PythonExe = Join-Path $VendorDir "python.exe"
 $PlaywrightBrowsersPath = Join-Path $VendorDir "playwright-browsers"
 
@@ -31,7 +31,7 @@ function Test-RuntimeReady {
     return $false
   }
   try {
-    & $PythonExe -c "import pyJianYingDraft, faster_whisper, playwright, httpx, imageio_ffmpeg, browser_cookie3, yaml, gmssl, aiofiles; import Cryptodome; print('storybound media runtime ready')" | Out-Null
+    & $PythonExe -c "import pyJianYingDraft, faster_whisper, playwright, httpx, imageio_ffmpeg, browser_cookie3, yaml, gmssl, aiofiles; import Cryptodome; print('storydream media runtime ready')" | Out-Null
     return $LASTEXITCODE -eq 0
   } catch {
     return $false
@@ -102,7 +102,7 @@ if (Test-Path -LiteralPath $PthPath) {
   Set-Content -LiteralPath $PthPath -Value "python$PythonTag.zip`r`n.`r`nLib\site-packages" -Encoding ASCII
 }
 
-& $PythonExe -c "import pyJianYingDraft, faster_whisper, playwright, httpx, imageio_ffmpeg, browser_cookie3, yaml, gmssl, aiofiles; import Cryptodome; print('storybound media runtime ready')"
+& $PythonExe -c "import pyJianYingDraft, faster_whisper, playwright, httpx, imageio_ffmpeg, browser_cookie3, yaml, gmssl, aiofiles; import Cryptodome; print('storydream media runtime ready')"
 if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 
 Set-Content -LiteralPath $ReadyFile -Value "runtime=$RuntimeId`npython=$PythonVersion`npackages=$($PackageNames -join ',')" -Encoding ASCII
