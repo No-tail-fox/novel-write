@@ -114,6 +114,30 @@ describe('prompt template rendering', () => {
     expect(rendered).not.toContain('{{');
   });
 
+  it('renders custom image template style placeholders when the style library is supplied', () => {
+    const template = {
+      ...defaultPromptTemplates[0],
+      content: '风格 {{stylePrefix}} / {{styleSuffix}} / {{styleNegativePrompt}} / {{styleAllowColor}}',
+    };
+    const customStyle = {
+      ...defaultCustomStyles[0],
+      id: 'viral-image-id',
+      prefix: '爆款拆解构图公式',
+      suffix: '爆款拆解光线公式',
+      negativePrompt: '禁止原视频水印',
+      allowColor: true,
+    };
+
+    const rendered = renderPromptTemplate(template, {
+      task: {
+        style: 'viral-image-id',
+      },
+      customStyles: [customStyle],
+    });
+
+    expect(rendered).toBe('风格 爆款拆解构图公式 / 爆款拆解光线公式 / 禁止原视频水印 / true');
+  });
+
   it('keeps legacy Chinese aliases usable for existing local StoryDream templates', () => {
     const template = {
       ...defaultPromptTemplates[0],

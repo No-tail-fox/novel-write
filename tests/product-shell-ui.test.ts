@@ -214,9 +214,12 @@ describe('product shell ui', () => {
     expect(css).toContain('.music-mv-preview');
   });
 
-  it('wires the viral analyzer page into the shell with report and recreation controls', async () => {
+  it('wires the viral analyzer page into the shell with report and selectable follow-up controls', async () => {
     const main = await readFile(new URL('../src/main.tsx', import.meta.url), 'utf8');
     const css = await readFile(new URL('../src/styles.css', import.meta.url), 'utf8');
+
+    expect(main).not.toContain("from './shared/viral-analysis'");
+    expect(main).toContain("from './shared/viral-template-extraction'");
 
     for (const symbol of [
       'ViralAnalyzerPage',
@@ -236,13 +239,18 @@ describe('product shell ui', () => {
       'viral-original-copy',
       'viral-insight-card',
       'viral-report-grid',
-      'viral-recreation-panel',
+      'viral-followup-panel',
+      'viral-template-name-grid',
+      'viral-followup-actions',
       'viral-create-production-task',
+      'saveViralTemplates',
+      'api.savePromptTemplate',
+      'api.saveCustomStyle',
     ]) {
       expect(main).toContain(symbol);
     }
 
-    for (const text of ['爆款拆解', '开头', '结构', '结尾', '爆点', '文案拆解', '原文案', '提示词拆解', '一键复刻成片任务']) {
+    for (const text of ['爆款拆解', '开头', '结构', '结尾', '爆点', '文案拆解', '原文案', '提示词拆解', '后续操作', '保存为模板', '生成新任务', '故事模板名', '图片模板名']) {
       expect(main).toContain(text);
     }
     expect(main).not.toContain('特效拆解');
@@ -255,6 +263,8 @@ describe('product shell ui', () => {
     expect(viralReport).not.toContain('slice(0, 8)');
     expect(viralReport).toContain('关键帧数量');
     expect(viralReport).toContain('keyFrameCount');
+    expect(viralReport).toContain('setStoryTemplateName(`爆款故事模板 - ${defaultTemplateBaseName}`)');
+    expect(viralReport).toContain('setImageTemplateName(`爆款图片模板 - ${defaultTemplateBaseName}`)');
 
     expect(css).toContain('.viral-analyzer-layout');
     expect(css).toContain('.viral-workbench');
@@ -271,7 +281,9 @@ describe('product shell ui', () => {
     expect(css).toContain('.viral-history-item strong');
     expect(css).toContain('-webkit-line-clamp: 2');
     expect(css).toContain('.viral-report-grid');
-    expect(css).toContain('.viral-recreation-panel');
+    expect(css).toContain('.viral-followup-panel');
+    expect(css).toContain('.viral-template-name-grid');
+    expect(css).toContain('.viral-followup-actions');
     expect(css).toContain('.viral-report-card strong');
     expect(css).toContain('.viral-report-card p');
     expect(css).toContain('overflow-wrap: anywhere');
@@ -739,7 +751,7 @@ describe('product shell ui', () => {
     ]) {
       expect(main).toContain(symbol);
     }
-    for (const text of ['新建模板', '导出 JSON', '类型筛选', '赛道筛选', '变量', '每次保存都会新增一个独立模板页', '返回模板库', '查看']) {
+    for (const text of ['新建模板', '导出 JSON', '类型筛选', '赛道筛选', '变量', '保存为自定义模板', '保存修改', '自定义模板保存会更新当前模板', '返回模板库', '查看']) {
       expect(main).toContain(text);
     }
     expect(css).toContain('.template-filter-row');
@@ -758,15 +770,16 @@ describe('product shell ui', () => {
     expect(filterSnippet).not.toContain('contentTracks.map');
   });
 
-  it('saves every prompt template edit as an independent new template page', async () => {
+  it('preserves custom prompt template ids on save while forking built-in templates', async () => {
     const main = await readFile(new URL('../src/main.tsx', import.meta.url), 'utf8');
     const saveSnippet = main.slice(main.indexOf('async function savePromptTemplateDraft()'), main.indexOf('async function duplicateTemplate'));
     const duplicateSnippet = main.slice(main.indexOf('async function duplicateTemplate'), main.indexOf('async function duplicate()'));
 
-    expect(saveSnippet).toContain('id: crypto.randomUUID()');
+    expect(saveSnippet).toContain('const shouldForkTemplate = Boolean(draft.isBuiltin)');
+    expect(saveSnippet).toContain('id: shouldForkTemplate ? crypto.randomUUID() : draft.id');
     expect(saveSnippet).toContain('isBuiltin: false');
     expect(saveSnippet).toContain("origin: 'custom'");
-    expect(saveSnippet).not.toContain('draft.isBuiltin');
+    expect(saveSnippet).not.toContain('id: crypto.randomUUID(),');
     expect(saveSnippet).not.toContain('baseTemplateId');
     expect(duplicateSnippet).not.toContain('baseTemplateId');
     expect(main).not.toContain('<Field label="baseTemplateId">');
@@ -962,9 +975,21 @@ describe('product shell ui', () => {
       'placeholder="输入 // 选择变量"',
       '{{${item.key}}',
       '英文变量',
+      'PromptTemplateVariableScope',
+      'promptTemplateVariablesForScope',
+      "scopes: ['task']",
+      "scopes: ['rewrite']",
+      "scopes: ['image-prompt']",
+      'variables={promptTemplateVariablesForScope',
+      'variables.map((item) =>',
+      'rewriteIntensity',
+      'narrativePov',
+      'keepPromotion',
+      'aiKeyword',
     ]) {
       expect(main).toContain(symbol);
     }
+    expect(main).not.toContain('promptTemplateVariableDefinitions.map((item) => (');
     expect(css).toContain('.prompt-variable-suggest');
     expect(css).toContain('.prompt-variable-token');
   });
@@ -1148,7 +1173,10 @@ describe('product shell ui', () => {
     expect(main).toContain('testCurrentConfig');
     expect(main).toContain('保存并测试');
     expect(main).toContain('buildConfigForSelectedProfileTest');
-    expect(main.indexOf('api.saveConfig(normalizeEditableConfigProviders(draft))')).toBeLessThan(main.indexOf('api.testAppConfig(target, testConfig)'));
+    expect(main).toContain('activateSelectedProviderProfileForTarget');
+    const testSnippet = main.slice(main.indexOf('async function testCurrentConfig()'), main.indexOf('async function refreshProviderModels'));
+    expect(testSnippet.indexOf('const nextDraft = activateSelectedProviderProfileForTarget')).toBeLessThan(testSnippet.indexOf('api.saveConfig(normalizeEditableConfigProviders(nextDraft))'));
+    expect(testSnippet.indexOf('api.saveConfig(normalizeEditableConfigProviders(nextDraft))')).toBeLessThan(testSnippet.indexOf('api.testAppConfig(target, testConfig)'));
     expect(main).toContain('selectedLlmProfileId');
     expect(main).toContain('selectedImageProfileId');
     expect(main).toContain('selectedTtsProfileId');

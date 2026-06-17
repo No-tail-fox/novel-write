@@ -85,6 +85,7 @@ import {
   activeImageProfileId,
   activeLlmProfileId,
   activeTtsProfileId,
+  activateSelectedProviderProfileForTarget,
   addImageProfile,
   addLlmProfile,
   addTtsProfile,
@@ -136,6 +137,7 @@ import {
   selectStepPromptTemplate,
   selectTaskPromptTemplate,
 } from './shared/prompt-templates';
+import { createViralTemplateDrafts } from './shared/viral-template-extraction';
 import { defaultPodcastSpeakersForProvider, defaultTaskSpeakerForProvider, normalizeRuntimeTtsProvider, taskSpeakerLabel, ttsVoiceOptionsForProvider, type RuntimeTtsProvider } from './shared/tts-voices';
 import feishuCozeDraftTemplateBundle from '../data/coze-workflows/feishu-draft-templates.json';
 import './styles.css';
@@ -255,35 +257,40 @@ const promptTemplateTypeLabels: Record<PromptTemplateType | 'all', string> = {
   storyboard: '分镜提示词',
   'image-prompt': '出图提示词',
 };
+type PromptTemplateVariableScope = PromptTemplateType;
 const promptTemplateVariableDefinitions = [
-  { key: 'inputText', label: '原文素材', description: '新建任务里粘贴或导入的原始文案' },
-  { key: 'title', label: '任务标题', description: '当前任务标题或自动生成标题' },
-  { key: 'sourceContext', label: '联网资料', description: 'AI 搜索或知识库带回来的参考资料' },
-  { key: 'reviewedText', label: '预审结果', description: 'Step 0 清洗、去重后的事实素材' },
-  { key: 'rewrittenCopy', label: '改写正文', description: 'Step 1 改写后的口播文案' },
-  { key: 'scenesJson', label: '分镜数据', description: 'Step 2 拆出来的分镜 JSON' },
-  { key: 'track', label: '内容赛道', description: '人物故事、健康图书、电商等赛道' },
-  { key: 'style', label: '画风', description: '任务选择的出图风格' },
-  { key: 'ratio', label: '画面比例', description: '9:16、16:9 等画布比例' },
-  { key: 'extraRequirements', label: '额外要求', description: '新建任务里填写的补充要求' },
-  { key: 'targetLength', label: '目标字数', description: '新建任务里填写的口播目标字数' },
-  { key: 'storyboardSceneCount', label: '目标分镜数', description: '新建任务里填写的分镜数量目标' },
-  { key: 'taskTemplateContent', label: '任务模板指令', description: '当前模板的任务总指令渲染结果' },
-  { key: 'taskTemplateName', label: '任务模板名称', description: '当前故事模板名称' },
-  { key: 'defaultStyles', label: '默认画风', description: '当前故事模板绑定的默认图像模板' },
-  { key: 'defaultDraftTemplateId', label: '默认草稿模板', description: '当前故事模板绑定的剪映草稿模板 ID' },
-  { key: 'characterPolicy', label: '角色档案策略', description: '当前故事模板是否强制提取或跳过角色档案' },
-  { key: 'step3SkeletonModules', label: 'Step 3 骨架', description: '当前故事模板启用的绘图骨架模块' },
-  { key: 'referenceKind', label: '参考图类型', description: '当前故事模板使用的人脸、产品或无参考图类型' },
-  { key: 'stylePrefix', label: '风格前缀', description: '当前图像模板的 prefix，会注入 Step 3 出图提示词' },
-  { key: 'styleSuffix', label: '风格后缀', description: '当前图像模板的 suffix，会注入 Step 3 出图提示词' },
-  { key: 'styleAllowColor', label: '允许色彩词', description: '当前图像模板是否允许在画面里使用具体色彩词' },
-  { key: 'styleNegativePrompt', label: '负面提示词', description: '当前图像模板的 negative prompt' },
-  { key: 'referenceImagePath', label: '参考图路径', description: '新建任务上传或填写的参考图本地路径' },
-  { key: 'imagePromptReference', label: '生图参考', description: '爆款拆解或用户补充的画面参考提示' },
-  { key: 'characterCard', label: '角色档案', description: 'Step 3 前提取出的角色一致性 JSON' },
-  { key: 'imageSeedPoolsJson', label: '图片种子池', description: '当前故事模板携带的 StoryDream 图片种子池 JSON' },
-];
+  { key: 'inputText', label: '原文素材', description: '新建任务里粘贴或导入的原始文案', scopes: ['task', 'review'] },
+  { key: 'title', label: '任务标题', description: '当前任务标题或自动生成标题', scopes: ['task', 'review', 'rewrite', 'cover'] },
+  { key: 'sourceContext', label: '联网资料', description: 'AI 搜索或知识库带回来的参考资料', scopes: ['review'] },
+  { key: 'reviewedText', label: '预审结果', description: 'Step 0 清洗、去重后的事实素材', scopes: ['rewrite', 'cover'] },
+  { key: 'rewrittenCopy', label: '改写正文', description: 'Step 1 改写后的口播文案', scopes: ['storyboard'] },
+  { key: 'scenesJson', label: '分镜数据', description: 'Step 2 拆出来的分镜 JSON', scopes: ['image-prompt'] },
+  { key: 'track', label: '内容赛道', description: '人物故事、健康图书、电商等赛道', scopes: ['task', 'review', 'rewrite', 'cover', 'storyboard', 'image-prompt'] },
+  { key: 'style', label: '画风', description: '任务选择的出图风格', scopes: ['task', 'storyboard', 'image-prompt'] },
+  { key: 'ratio', label: '画面比例', description: '9:16、16:9 等画布比例', scopes: ['task', 'storyboard', 'image-prompt'] },
+  { key: 'extraRequirements', label: '额外要求', description: '新建任务里填写的补充要求', scopes: ['task', 'review', 'rewrite', 'cover', 'storyboard', 'image-prompt'] },
+  { key: 'rewriteIntensity', label: '改写强度', description: '新建任务高级设置里的改写强度', scopes: ['rewrite'] },
+  { key: 'narrativePov', label: '叙事视角', description: '新建任务高级设置里的叙事视角', scopes: ['rewrite'] },
+  { key: 'keepPromotion', label: '保留带货', description: '新建任务高级设置里的带货保留开关', scopes: ['rewrite', 'cover'] },
+  { key: 'aiKeyword', label: 'AI 关键词', description: 'AI 创作模式里的检索关键词', scopes: ['task', 'review', 'rewrite', 'cover'] },
+  { key: 'targetLength', label: '目标字数', description: '新建任务里填写的口播目标字数', scopes: ['rewrite', 'storyboard'] },
+  { key: 'storyboardSceneCount', label: '目标分镜数', description: '新建任务里填写的分镜数量目标', scopes: ['storyboard'] },
+  { key: 'taskTemplateContent', label: '任务模板指令', description: '当前模板的任务总指令渲染结果；不要放在任务总指令内', scopes: ['review', 'rewrite', 'cover', 'storyboard', 'image-prompt'] },
+  { key: 'taskTemplateName', label: '任务模板名称', description: '当前故事模板名称', scopes: ['review', 'rewrite', 'cover', 'storyboard', 'image-prompt'] },
+  { key: 'defaultStyles', label: '默认画风', description: '当前故事模板绑定的默认图像模板', scopes: ['task', 'storyboard', 'image-prompt'] },
+  { key: 'defaultDraftTemplateId', label: '默认草稿模板', description: '当前故事模板绑定的剪映草稿模板 ID', scopes: ['task'] },
+  { key: 'characterPolicy', label: '角色档案策略', description: '当前故事模板是否强制提取或跳过角色档案', scopes: ['task', 'image-prompt'] },
+  { key: 'step3SkeletonModules', label: 'Step 3 骨架', description: '当前故事模板启用的绘图骨架模块', scopes: ['storyboard', 'image-prompt'] },
+  { key: 'referenceKind', label: '参考图类型', description: '当前故事模板使用的人脸、产品或无参考图类型', scopes: ['storyboard', 'image-prompt'] },
+  { key: 'stylePrefix', label: '风格前缀', description: '当前图像模板的 prefix，会注入 Step 3 出图提示词', scopes: ['image-prompt'] },
+  { key: 'styleSuffix', label: '风格后缀', description: '当前图像模板的 suffix，会注入 Step 3 出图提示词', scopes: ['image-prompt'] },
+  { key: 'styleAllowColor', label: '允许色彩词', description: '当前图像模板是否允许在画面里使用具体色彩词', scopes: ['image-prompt'] },
+  { key: 'styleNegativePrompt', label: '负面提示词', description: '当前图像模板的 negative prompt', scopes: ['image-prompt'] },
+  { key: 'referenceImagePath', label: '参考图路径', description: '新建任务上传或填写的参考图本地路径', scopes: ['image-prompt'] },
+  { key: 'imagePromptReference', label: '生图参考', description: '爆款拆解或用户补充的画面参考提示', scopes: ['image-prompt'] },
+  { key: 'characterCard', label: '角色档案', description: 'Step 3 前提取出的角色一致性 JSON', scopes: ['image-prompt'] },
+  { key: 'imageSeedPoolsJson', label: '图片种子池', description: '当前故事模板携带的 StoryDream 图片种子池 JSON', scopes: ['image-prompt'] },
+] satisfies Array<{ key: string; label: string; description: string; scopes: PromptTemplateVariableScope[] }>;
 const promptTemplateVariables = promptTemplateVariableDefinitions.map((item) => item.key);
 const promptStepEditorDefinitions: Array<{ type: PromptStepTemplateType; label: string; hint: string }> = [
   { type: 'review', label: 'Step 0 预审', hint: '清理输入素材、保留事实顺序、去掉重复表达' },
@@ -1018,6 +1025,21 @@ function ViralAnalyzerPage({
     if (next.tasks[0]) openTaskDetail(next.tasks[0].id);
   }
 
+  async function saveViralTemplates(input: { storyTemplateName: string; imageTemplateName: string }) {
+    if (!result) return;
+    const drafts = createViralTemplateDrafts(result, {
+      storyTemplateName: input.storyTemplateName,
+      imageTemplateName: input.imageTemplateName,
+      track,
+      style,
+      draftTemplateId: templateId,
+    });
+    await api.saveCustomStyle(drafts.imageTemplate);
+    const next = await api.savePromptTemplate(drafts.storyTemplate);
+    applyState(next);
+    setMessage('已保存故事模板和图片模板，可在提示词模板中继续编辑。');
+  }
+
   return (
     <div className="viral-analyzer-layout">
       <div className="viral-workbench">
@@ -1135,7 +1157,7 @@ function ViralAnalyzerPage({
           <h3>拆解报告</h3>
           {selected?.status === 'failed' || selected?.status === 'cancelled' ? <button className="mini-button viral-retry-button" type="button" onClick={() => selected && api.retryViralAnalysis(selected.id).then(applyState)}><RotateCcw size={14} />重试</button> : null}
         </div>
-        {result ? <ViralReport result={result} createProductionTask={createProductionTask} /> : <p className="muted-text">任务完成后显示开头、结构、结尾、爆点和复刻方案。</p>}
+        {result ? <ViralReport result={result} createProductionTask={createProductionTask} saveTemplates={saveViralTemplates} /> : <p className="muted-text">任务完成后显示开头、结构、结尾、爆点和复刻方案。</p>}
       </section>
     </div>
   );
@@ -1187,12 +1209,47 @@ function ViralChoiceGroup({
 
 type ViralInsightTab = 'copy' | 'prompt';
 
-function ViralReport({ result, createProductionTask }: { result: ViralAnalysisResult; createProductionTask: () => void }) {
+function ViralReport({
+  result,
+  createProductionTask,
+  saveTemplates,
+}: {
+  result: ViralAnalysisResult;
+  createProductionTask: () => void;
+  saveTemplates: (input: { storyTemplateName: string; imageTemplateName: string }) => Promise<void>;
+}) {
   const [insightTab, setInsightTab] = useState<ViralInsightTab>('copy');
+  const defaultTemplateBaseName = viralTemplateBaseName(result);
+  const [storyTemplateName, setStoryTemplateName] = useState(`爆款故事模板 - ${defaultTemplateBaseName}`);
+  const [imageTemplateName, setImageTemplateName] = useState(`爆款图片模板 - ${defaultTemplateBaseName}`);
+  const [savingTemplates, setSavingTemplates] = useState(false);
+  const [templateSaveError, setTemplateSaveError] = useState('');
   const breakdown = result.contentBreakdown;
   const frames = uniqueViralPromptFrames(result.frames);
   const keyFrameCount = frames.length;
   const originalCopy = viralTranscriptText(result);
+
+  useEffect(() => {
+    setStoryTemplateName(`爆款故事模板 - ${defaultTemplateBaseName}`);
+    setImageTemplateName(`爆款图片模板 - ${defaultTemplateBaseName}`);
+    setTemplateSaveError('');
+  }, [defaultTemplateBaseName]);
+
+  async function handleSaveTemplates() {
+    const nextStoryName = storyTemplateName.trim();
+    const nextImageName = imageTemplateName.trim();
+    if (!nextStoryName || !nextImageName || savingTemplates) return;
+    setSavingTemplates(true);
+    setTemplateSaveError('');
+    try {
+      await saveTemplates({ storyTemplateName: nextStoryName, imageTemplateName: nextImageName });
+    } catch (error) {
+      setTemplateSaveError(error instanceof Error ? error.message : String(error));
+    } finally {
+      setSavingTemplates(false);
+    }
+  }
+
   return (
     <>
       <div className="viral-report-grid">
@@ -1233,14 +1290,29 @@ function ViralReport({ result, createProductionTask }: { result: ViralAnalysisRe
           </div>
         )}
       </div>
-      <div className="viral-recreation-panel">
-        <h3>复刻功能</h3>
+      <div className="viral-followup-panel">
+        <h3>后续操作</h3>
         <p>{result.recreation.blueprint}</p>
         <textarea className="small-textarea" value={result.recreation.script} readOnly />
-        <button className="primary-action viral-create-production-task" onClick={createProductionTask}>
-          <Wand2 size={16} />
-          一键复刻成片任务
-        </button>
+        <div className="viral-template-name-grid">
+          <Field label="故事模板名">
+            <input className="text-input" value={storyTemplateName} onChange={(event) => setStoryTemplateName(event.target.value)} />
+          </Field>
+          <Field label="图片模板名">
+            <input className="text-input" value={imageTemplateName} onChange={(event) => setImageTemplateName(event.target.value)} />
+          </Field>
+        </div>
+        {templateSaveError ? <p className="form-error">{templateSaveError}</p> : null}
+        <div className="viral-followup-actions">
+          <button className="primary-action" disabled={savingTemplates || !storyTemplateName.trim() || !imageTemplateName.trim()} onClick={() => void handleSaveTemplates()}>
+            {savingTemplates ? <Loader2 className="spin" size={16} /> : <Save size={16} />}
+            {savingTemplates ? '保存中' : '保存为模板'}
+          </button>
+          <button className="ghost-action viral-create-production-task" onClick={createProductionTask}>
+            <Wand2 size={16} />
+            生成新任务
+          </button>
+        </div>
       </div>
     </>
   );
@@ -1248,6 +1320,10 @@ function ViralReport({ result, createProductionTask }: { result: ViralAnalysisRe
 
 function viralTranscriptText(result: ViralAnalysisResult): string {
   return result.transcript.map((segment) => segment.text.trim()).filter(Boolean).join('\n');
+}
+
+function viralTemplateBaseName(result: ViralAnalysisResult): string {
+  return trimForPreview(result.source.title || result.contentBreakdown.topic || '短视频', 18);
 }
 
 function frameImagePrompt(frame: ViralAnalysisResult['frames'][number]): string {
@@ -3346,9 +3422,10 @@ function PromptTemplatesPage({ api, state, applyState }: { api: StoryDreamApi; s
 
   async function savePromptTemplateDraft() {
     if (!draft) return;
+    const shouldForkTemplate = Boolean(draft.isBuiltin);
     const templateToSave: PromptTemplate = {
       ...independentPromptTemplateFields(draft),
-      id: crypto.randomUUID(),
+      id: shouldForkTemplate ? crypto.randomUUID() : draft.id,
       isBuiltin: false,
       origin: 'custom',
       updatedAt: new Date().toISOString(),
@@ -3795,7 +3872,7 @@ function PromptTemplatesPage({ api, state, applyState }: { api: StoryDreamApi; s
                 </button>
                 <button className="primary-action slim" onClick={savePromptTemplateDraft}>
                   <Save size={15} />
-                  保存
+                  {draft.isBuiltin ? '保存为自定义模板' : '保存修改'}
                 </button>
               </div>
             </div>
@@ -3914,7 +3991,7 @@ function PromptTemplatesPage({ api, state, applyState }: { api: StoryDreamApi; s
                 </div>
               </section>
 
-              <span className="local-note">每次保存都会新增一个独立模板页，原模板保持不变。</span>
+              <span className="local-note">{draft.isBuiltin ? '系统模板保存后会生成自定义副本，原系统模板保持不变。' : '自定义模板保存会更新当前模板，历史任务和已绑定配置会继续使用这个模板。'}</span>
 
               {draft.type === 'task' ? (
                 <section className="prompt-step-editor-list" aria-label="AI 步骤设置">
@@ -3928,22 +4005,14 @@ function PromptTemplatesPage({ api, state, applyState }: { api: StoryDreamApi; s
                         <small>定义当前任务模板的整体目标、赛道语气和内容边界</small>
                       </div>
                     </div>
-                    <span className="field-title">变量</span>
-                    <span className="hint-text">点击插入对应内容占位；每个提示词输入框也可输入 // 选择变量。</span>
-                    <div className="variable-chip-row">{promptTemplateVariableDefinitions.map((item) => (
-                      <button
-                        className="chip prompt-template-variable-chip"
-                        type="button"
-                        key={item.key}
-                        title={`插入 {{${item.key}}}: ${item.description}`}
-                        onClick={() => setDraft({ ...draft, content: `${draft.content}${draft.content.endsWith(' ') || draft.content.endsWith('\n') ? '' : ' '}{{${item.key}}}` })}
-                      >
-                        <span>{item.label}</span>
-                        <code className="prompt-variable-token">{`{{${item.key}}}`}</code>
-                        <small>{item.description}</small>
-                      </button>
-                    ))}</div>
-                    <VariableAwareTextarea className="template-textarea prompt-step-editor-textarea" value={draft.content} onChange={(value) => setDraft({ ...draft, content: value })} placeholder="输入 // 选择变量" />
+                    <PromptVariablePicker scope="task" value={draft.content} onChange={(value) => setDraft({ ...draft, content: value })} />
+                    <VariableAwareTextarea
+                      className="template-textarea prompt-step-editor-textarea"
+                      value={draft.content}
+                      onChange={(value) => setDraft({ ...draft, content: value })}
+                      placeholder="输入 // 选择变量"
+                      variables={promptTemplateVariablesForScope('task')}
+                    />
                   </article>
                   {promptStepEditorDefinitions.map((step) => {
                     const hasOverride = promptTemplateHasStepPrompt(draft, step.type);
@@ -3963,6 +4032,7 @@ function PromptTemplatesPage({ api, state, applyState }: { api: StoryDreamApi; s
                           value={promptTemplateStepPromptValue(draft, state.promptTemplates, step.type)}
                           onChange={(value) => updatePromptTemplateStepPrompt(step.type, value)}
                           placeholder="输入 // 选择变量"
+                          variables={promptTemplateVariablesForScope(step.type)}
                         />
                       </article>
                     );
@@ -3973,22 +4043,14 @@ function PromptTemplatesPage({ api, state, applyState }: { api: StoryDreamApi; s
                   <div className="prompt-template-section-heading">
                     <span className="field-title">提示词内容</span>
                   </div>
-                  <span className="field-title">变量</span>
-                  <span className="hint-text">点击插入对应内容占位；每个提示词输入框也可输入 // 选择变量。</span>
-                  <div className="variable-chip-row">{promptTemplateVariableDefinitions.map((item) => (
-                    <button
-                      className="chip prompt-template-variable-chip"
-                      type="button"
-                      key={item.key}
-                      title={`插入 {{${item.key}}}: ${item.description}`}
-                      onClick={() => setDraft({ ...draft, content: `${draft.content}${draft.content.endsWith(' ') || draft.content.endsWith('\n') ? '' : ' '}{{${item.key}}}` })}
-                    >
-                      <span>{item.label}</span>
-                      <code className="prompt-variable-token">{`{{${item.key}}}`}</code>
-                      <small>{item.description}</small>
-                    </button>
-                  ))}</div>
-                  <VariableAwareTextarea className="template-textarea" value={draft.content} onChange={(value) => setDraft({ ...draft, content: value })} placeholder="输入 // 选择变量" />
+                  <PromptVariablePicker scope={draft.type} value={draft.content} onChange={(value) => setDraft({ ...draft, content: value })} />
+                  <VariableAwareTextarea
+                    className="template-textarea"
+                    value={draft.content}
+                    onChange={(value) => setDraft({ ...draft, content: value })}
+                    placeholder="输入 // 选择变量"
+                    variables={promptTemplateVariablesForScope(draft.type)}
+                  />
                 </section>
               )}
             </div>
@@ -4018,16 +4080,57 @@ function insertPromptVariable(value: string, key: string, cursor: number): { val
   return { value: nextValue, cursor: before.length + prefix.length + token.length };
 }
 
+function promptTemplateVariablesForScope(scope: PromptTemplateVariableScope) {
+  return promptTemplateVariableDefinitions.filter((item) => item.scopes.includes(scope));
+}
+
+function appendPromptVariable(value: string, key: string): string {
+  return insertPromptVariable(value, key, value.length).value;
+}
+
+function PromptVariablePicker({
+  scope,
+  value,
+  onChange,
+}: {
+  scope: PromptTemplateVariableScope;
+  value: string;
+  onChange: (value: string) => void;
+}) {
+  const variables = promptTemplateVariablesForScope(scope);
+  return (
+    <>
+      <span className="field-title">变量</span>
+      <span className="hint-text">点击插入当前步骤可用变量；每个提示词输入框也可输入 // 选择变量。</span>
+      <div className="variable-chip-row">{variables.map((item) => (
+        <button
+          className="chip prompt-template-variable-chip"
+          type="button"
+          key={item.key}
+          title={`插入 {{${item.key}}}: ${item.description}`}
+          onClick={() => onChange(appendPromptVariable(value, item.key))}
+        >
+          <span>{item.label}</span>
+          <code className="prompt-variable-token">{`{{${item.key}}}`}</code>
+          <small>{item.description}</small>
+        </button>
+      ))}</div>
+    </>
+  );
+}
+
 function VariableAwareTextarea({
   value,
   onChange,
   className,
   placeholder,
+  variables,
 }: {
   value: string;
   onChange: (value: string) => void;
   className: string;
   placeholder?: string;
+  variables: typeof promptTemplateVariableDefinitions;
 }) {
   const textareaRef = useRef<HTMLTextAreaElement | null>(null);
   const [suggestOpen, setSuggestOpen] = useState(false);
@@ -4064,7 +4167,7 @@ function VariableAwareTextarea({
       />
       {suggestOpen ? (
         <div className="prompt-variable-suggest">
-          {promptTemplateVariableDefinitions.map((item) => (
+          {variables.map((item) => (
             <button type="button" key={item.key} onMouseDown={(event) => event.preventDefault()} onClick={() => onVariableInsert(item.key)}>
               <span>{item.label}</span>
               <code>{`{{${item.key}}}`}</code>
@@ -4831,7 +4934,11 @@ function SettingsPage({ api, state, applyState }: { api: StoryDreamApi; state: A
     });
   }
   async function save() {
-    await commitAndApplySettingsDraft(draft);
+    await commitAndApplySettingsDraft(activateSelectedProviderProfileForTarget(draft, section as ConfigTestTarget, {
+      llm: selectedLlmProfileId,
+      image: selectedImageProfileId,
+      tts: selectedTtsProfileId,
+    }));
   }
   async function activateLlmProfile(id: string) {
     await commitAndApplySettingsDraft(enableLlmProfile(draft, id), '已启用 LLM 配置档案');
@@ -4851,14 +4958,15 @@ function SettingsPage({ api, state, applyState }: { api: StoryDreamApi; state: A
     setSavingConfig(true);
     setConfigTestResult('正在保存并测试当前配置...');
     try {
-      const next = await api.saveConfig(normalizeEditableConfigProviders(draft));
-      commitSettingsDraft(next.config);
-      applyState(next);
-      const testConfig = buildConfigForSelectedProfileTest(next.config, target, {
+      const nextDraft = activateSelectedProviderProfileForTarget(draft, target, {
         llm: selectedLlmProfileId,
         image: selectedImageProfileId,
         tts: selectedTtsProfileId,
       });
+      const next = await api.saveConfig(normalizeEditableConfigProviders(nextDraft));
+      commitSettingsDraft(next.config);
+      applyState(next);
+      const testConfig = buildConfigForSelectedProfileTest(next.config, target, selectedProviderProfileIds);
       const result = await api.testAppConfig(target, testConfig);
       setConfigTestResult(`[${result.status}] ${result.detail}`);
     } catch (error) {

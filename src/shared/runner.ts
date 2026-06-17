@@ -331,7 +331,7 @@ async function ensureContentArtifact(input: {
   const appState = await db.getState();
   const promptTemplates = appState.promptTemplates;
   const taskTemplate = selectTaskPromptTemplate(promptTemplates, { track: task.track, promptTemplateId: task.promptTemplateId });
-  const promptContext = (): PromptRenderContext => buildPromptRenderContext({ task, taskTemplate, sourceContext, artifact: pipeline.artifact });
+  const promptContext = (): PromptRenderContext => buildPromptRenderContext({ task, taskTemplate, customStyles: appState.customStyles, sourceContext, artifact: pipeline.artifact });
 
   if (!isStepCompleted(pipeline, 0) || !pipeline.artifact.reviewedText) {
     await db.updateTask(task.id, { currentStep: 0, retryFromStep: 0 });
@@ -442,7 +442,7 @@ async function ensureContentArtifact(input: {
     }
     const sceneBatches = chunkArray(pipeline.artifact.scenes, imagePromptBatchSize);
     const batchSnapshots = sceneBatches.map((scenes, index) => {
-      const batchContext = buildPromptRenderContext({ task, taskTemplate, sourceContext, artifact: { ...pipeline.artifact, scenes } });
+      const batchContext = buildPromptRenderContext({ task, taskTemplate, customStyles: appState.customStyles, sourceContext, artifact: { ...pipeline.artifact, scenes } });
       const instruction = renderStepPrompt(promptTemplates, 'image-prompt', batchContext, JSON.stringify({ scenes, style: task.style, ratio: task.ratio }));
       return buildImagePromptSnapshot(instruction, scenes, task, taskTemplate, index + 1, sceneBatches.length, pipeline.artifact.characterCard, rewriteContextForStep(pipeline, 3));
     });

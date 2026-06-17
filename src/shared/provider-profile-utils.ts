@@ -36,6 +36,13 @@ export function buildConfigForSelectedProfileTest(config: AppConfig, target: Con
   return normalized;
 }
 
+export function activateSelectedProviderProfileForTarget(config: AppConfig, target: ConfigTestTarget, selectedIds: SelectedProviderProfileIds): AppConfig {
+  if (target === 'llm' || target === 'image' || target === 'tts') {
+    return buildConfigForSelectedProfileTest(config, target, selectedIds);
+  }
+  return normalizeEditableConfigProviders(config);
+}
+
 export function activeLlmProfileId(config: AppConfig): string {
   return config.activeLlmProfileId || config.llm.id || config.llmProfiles[0]?.id || 'default-llm';
 }

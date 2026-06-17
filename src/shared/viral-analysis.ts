@@ -17,6 +17,8 @@ import type {
   ViralCookieSource,
   ViralDownloadProvider,
 } from './types';
+export type { ViralTemplateDraftOptions, ViralTemplateDrafts } from './viral-template-extraction';
+export { createViralTemplateDrafts } from './viral-template-extraction';
 
 export interface ViralBreakdownPromptInput {
   title: string;

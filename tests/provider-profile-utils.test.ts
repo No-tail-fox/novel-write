@@ -3,6 +3,7 @@ import { defaultConfig } from '@shared/config';
 import { normalizeAppConfig } from '@shared/config-utils';
 import {
   addImageProfile,
+  activateSelectedProviderProfileForTarget,
   buildConfigForSelectedProfileTest,
   enableImageProfile,
   saveImageProfile,
@@ -135,5 +136,38 @@ describe('provider profile utilities', () => {
     expect(saved.llm).toMatchObject({ apiKey: 'active-key', model: 'active-model' });
     expect(testConfig.activeLlmProfileId).toBe('llm-draft');
     expect(testConfig.llm).toMatchObject({ apiKey: 'draft-key', model: 'draft-model' });
+  });
+
+  it('activates the selected provider profile when saving settings so runtime config matches the edited API', () => {
+    const config: AppConfig = normalizeAppConfig({
+      ...defaultConfig,
+      llm: { ...defaultConfig.llm, id: 'llm-active', enabled: true, apiKey: 'active-key', model: 'active-model' },
+      llmProfiles: [
+        { ...defaultConfig.llm, id: 'llm-active', name: 'Active LLM', enabled: true, apiKey: 'active-key', model: 'active-model' },
+        { ...defaultConfig.llm, id: 'llm-draft', name: 'Draft LLM', enabled: false, apiKey: 'old-key', model: 'old-model' },
+      ],
+      activeLlmProfileId: 'llm-active',
+      imageProfiles: [
+        gptImageProfile('image-active', true, 'active-image-key', 'active-image-model'),
+        gptImageProfile('image-draft', false, 'old-image-key', 'old-image-model'),
+      ],
+      activeImageProfileId: 'image-active',
+      ttsProfiles: [
+        ttsVolcengineProfile('tts-active', true, 'active-v3-key', 'zh_male_m191_uranus_bigtts'),
+        ttsVolcengineProfile('tts-draft', false, 'old-v3-key', 'zh_female_vv_uranus_bigtts'),
+      ],
+      activeTtsProfileId: 'tts-active',
+    });
+    const edited = saveTtsProfile(
+      saveImageProfile(
+        saveLlmProfile(config, { ...defaultConfig.llm, id: 'llm-draft', name: 'Draft LLM', enabled: false, apiKey: 'draft-key', model: 'draft-model' }),
+        gptImageProfile('image-draft', false, 'draft-image-key', 'draft-image-model'),
+      ),
+      ttsVolcengineProfile('tts-draft', false, 'draft-v3-key', 'zh_female_vv_uranus_bigtts'),
+    );
+
+    expect(activateSelectedProviderProfileForTarget(edited, 'llm', { llm: 'llm-draft' }).llm).toMatchObject({ apiKey: 'draft-key', model: 'draft-model' });
+    expect(activateSelectedProviderProfileForTarget(edited, 'image', { image: 'image-draft' }).gptImage).toMatchObject({ apiKey: 'draft-image-key', model: 'draft-image-model' });
+    expect(activateSelectedProviderProfileForTarget(edited, 'tts', { tts: 'tts-draft' }).tts.volcengine.apiKey).toBe('draft-v3-key');
   });
 });

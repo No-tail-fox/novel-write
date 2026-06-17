@@ -3848,7 +3848,7 @@ textarea {
 }
 
 .viral-report-card p,
-.viral-recreation-panel p {
+.viral-followup-panel p {
   color: var(--muted);
   line-height: 1.6;
   margin: 0;
@@ -3986,7 +3986,7 @@ textarea {
   color: var(--muted);
 }
 
-.viral-recreation-panel {
+.viral-followup-panel {
   border-top: 1px solid var(--line);
   display: grid;
   gap: 12px;
@@ -3994,8 +3994,21 @@ textarea {
   padding-top: 16px;
 }
 
-.viral-recreation-panel textarea {
+.viral-followup-panel textarea {
   min-height: 180px;
+}
+
+.viral-template-name-grid {
+  display: grid;
+  gap: 10px;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.viral-followup-actions {
+  align-items: center;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
 }
 
 @keyframes spin {

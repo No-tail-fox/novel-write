@@ -7,6 +7,7 @@ import {
   normalizeViralSourceUrl,
   runViralAnalysis,
 } from '@shared/viral-analysis';
+import { createViralTemplateDrafts } from '@shared/viral-template-extraction';
 import type { ViralAnalysisResult } from '@shared/types';
 import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
@@ -188,6 +189,85 @@ describe('viral analysis helpers', () => {
     expect(task.extraRequirements).toContain('结构级复刻');
     expect(task.imagePromptReference).toContain('中文生图提示词：开场特写，中心构图，大字标题');
     expect(task.imagePromptReference).toContain('中文生图提示词：中段产品展示，三分构图，干净字幕');
+  });
+
+  it('creates user-named story and image templates from a viral result', () => {
+    const result: ViralAnalysisResult = {
+      ...makeViralResult(),
+      frames: [
+        {
+          timestamp: 1,
+          framePath: 'frame-1.jpg',
+          shotType: 'close-up',
+          cameraMovement: 'push in',
+          composition: 'centered product and large headline',
+          transition: 'hard cut',
+          textOverlay: 'Save this',
+          visualDescription: 'Bright shop counter with a before and after contrast.',
+          mood: 'urgent and useful',
+          keyElements: ['shop counter', 'headline', 'before after'],
+          imagePrompt: 'photo-real short video frame, centered shop counter, bold headline',
+        },
+      ],
+    };
+
+    const drafts = createViralTemplateDrafts(result, {
+      storyTemplateName: 'My story pattern',
+      imageTemplateName: 'My image pattern',
+      track: 'ecommerce',
+      style: 'photo-real',
+      draftTemplateId: 'default-portrait-9-16',
+      now: '2026-06-17T00:00:00.000Z',
+      storyTemplateId: 'story-id',
+      imageTemplateId: 'image-id',
+    });
+
+    expect(drafts.storyTemplate.name).toBe('My story pattern');
+    expect(drafts.imageTemplate.name).toBe('My image pattern');
+    expect(drafts.storyTemplate.type).toBe('task');
+    expect(drafts.storyTemplate.baseTrack).toBe('ecommerce');
+    expect(drafts.storyTemplate.defaultStyles).toEqual(['image-id']);
+    expect(drafts.storyTemplate.defaultDraftTemplateId).toBe('default-portrait-9-16');
+    expect(drafts.storyTemplate.content).toContain('爆款公式化模板');
+    expect(drafts.storyTemplate.content).toContain('{{inputText}}');
+    expect(drafts.storyTemplate.content).not.toContain('{{taskTemplateContent}}');
+    expect(drafts.storyTemplate.content).toContain('Lead with the result.');
+    expect(drafts.storyTemplate.content).toContain('Show before and after.');
+    expect(drafts.storyTemplate.content).toContain('不要照抄原文');
+    expect(Object.keys(drafts.storyTemplate.stepPrompts ?? {}).sort()).toEqual(['cover', 'image-prompt', 'review', 'rewrite', 'storyboard']);
+    expect(drafts.storyTemplate.stepPrompts?.review).toContain('Step 0 预审');
+    expect(drafts.storyTemplate.stepPrompts?.review).toContain('{{inputText}}');
+    expect(drafts.storyTemplate.stepPrompts?.review).toContain('{{taskTemplateContent}}');
+    expect(drafts.storyTemplate.stepPrompts?.rewrite).toContain('文案提示词模板');
+    expect(drafts.storyTemplate.stepPrompts?.rewrite).toContain('开头公式');
+    expect(drafts.storyTemplate.stepPrompts?.rewrite).toContain('结构公式');
+    expect(drafts.storyTemplate.stepPrompts?.rewrite).toContain('转折/递进公式');
+    expect(drafts.storyTemplate.stepPrompts?.rewrite).toContain('结尾公式');
+    expect(drafts.storyTemplate.stepPrompts?.rewrite).toContain('爆点迁移规则');
+    expect(drafts.storyTemplate.stepPrompts?.rewrite).toContain('禁止照抄原文');
+    expect(drafts.storyTemplate.stepPrompts?.rewrite).toContain('{{reviewedText}}');
+    expect(drafts.storyTemplate.stepPrompts?.rewrite).toContain('{{extraRequirements}}');
+    expect(drafts.storyTemplate.stepPrompts?.cover).toContain('标题公式');
+    expect(drafts.storyTemplate.stepPrompts?.cover).toContain('封面公式');
+    expect(drafts.storyTemplate.stepPrompts?.cover).toContain('{{reviewedText}}');
+    expect(drafts.storyTemplate.stepPrompts?.cover).not.toContain('{{rewrittenCopy}}');
+    expect(drafts.storyTemplate.stepPrompts?.storyboard).toContain('分镜公式');
+    expect(drafts.storyTemplate.stepPrompts?.storyboard).toContain('{{rewrittenCopy}}');
+    expect(drafts.storyTemplate.stepPrompts?.storyboard).toContain('{{storyboardSceneCount}}');
+    expect(drafts.storyTemplate.stepPrompts?.['image-prompt']).toContain('生图提示词模板');
+    expect(drafts.storyTemplate.stepPrompts?.['image-prompt']).toContain('构图公式');
+    expect(drafts.storyTemplate.stepPrompts?.['image-prompt']).toContain('镜头公式');
+    expect(drafts.storyTemplate.stepPrompts?.['image-prompt']).toContain('文字层级公式');
+    expect(drafts.storyTemplate.stepPrompts?.['image-prompt']).toContain('关键帧抽象');
+    expect(drafts.storyTemplate.stepPrompts?.['image-prompt']).toContain('角色/产品一致性');
+    expect(drafts.storyTemplate.stepPrompts?.['image-prompt']).toContain('安全规则');
+    expect(drafts.storyTemplate.stepPrompts?.['image-prompt']).toContain('{{imagePromptReference}}');
+    expect(drafts.storyTemplate.stepPrompts?.['image-prompt']).toContain('{{stylePrefix}}');
+    expect(drafts.storyTemplate.stepPrompts?.['image-prompt']).toContain('{{styleSuffix}}');
+    expect(drafts.storyTemplate.stepPrompts?.['image-prompt']).toContain('{{styleNegativePrompt}}');
+    expect(drafts.imageTemplate.prefix).toContain('centered product and large headline');
+    expect(drafts.imageTemplate.suffix).toContain('photo-real short video frame');
+    expect(drafts.imageTemplate.negativePrompt).toContain('照抄原视频文字');
   });
 
   it('passes the requested keyframe count and source duration into frame extraction', async () => {

@@ -9,6 +9,7 @@ export interface PromptTemplateSelectionInput {
 export interface PromptRenderContext {
   task?: Partial<Task>;
   taskTemplate?: PromptTemplate | null;
+  customStyles?: CustomStyle[];
   sourceContext?: AiSourceContext | null;
   reviewedText?: string;
   rewrittenCopy?: string;
@@ -231,12 +232,14 @@ export function renderPromptTemplate(template: Pick<PromptTemplate, 'content'>, 
 export function buildPromptRenderContext(input: {
   task: Task;
   taskTemplate: PromptTemplate | null;
+  customStyles?: CustomStyle[];
   sourceContext?: AiSourceContext | null;
   artifact?: Partial<PipelineArtifact>;
 }): PromptRenderContext {
   return {
     task: input.task,
     taskTemplate: input.taskTemplate,
+    customStyles: input.customStyles,
     sourceContext: input.sourceContext,
     artifact: input.artifact,
     reviewedText: input.artifact?.reviewedText,
@@ -253,7 +256,7 @@ function buildTemplateValues(context: PromptRenderContext): Record<string, strin
   const reviewedText = context.reviewedText ?? context.artifact?.reviewedText ?? '';
   const rewrittenCopy = context.rewrittenCopy ?? context.artifact?.rewrittenCopy ?? '';
   const styleId = String(task.style ?? '');
-  const style = resolveStyleDefinition(styleId);
+  const style = resolveStyleDefinition(styleId, context.customStyles);
   const characterCard = context.artifact?.characterCard;
 
   const values: Record<string, string> = {
@@ -293,9 +296,9 @@ function buildTemplateValues(context: PromptRenderContext): Record<string, strin
   return values;
 }
 
-function resolveStyleDefinition(styleId: string): CustomStyle | null {
+function resolveStyleDefinition(styleId: string, customStyles: CustomStyle[] = []): CustomStyle | null {
   const normalizedStyleId = styleLabelToId.get(styleId) ?? styleId;
-  return defaultCustomStyles.find((style) => style.id === normalizedStyleId) ?? null;
+  return customStyles.find((style) => style.id === normalizedStyleId) ?? defaultCustomStyles.find((style) => style.id === normalizedStyleId) ?? null;
 }
 
 function formatCharacterCard(card: CharacterCard | undefined): string {
