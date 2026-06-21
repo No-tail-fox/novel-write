@@ -1,4 +1,4 @@
-﻿import React, { useEffect, useMemo, useRef, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
 import {
   Bell,
@@ -143,7 +143,7 @@ import feishuCozeDraftTemplateBundle from '../data/coze-workflows/feishu-draft-t
 import './styles.css';
 
 const sampleText =
-  '姝︽泴锛岄€氱О姝﹀垯澶┿€佹鍚庯紝鏄腑鍥藉巻鍙蹭笂鍞竴鐨勫コ鐨囧笣銆傛鍒欏ぉ鍗佸洓宀佸叆瀹负鍞愬お瀹楁墠浜猴紝鍘嗙粡鍗佷簩骞翠笉寰楀崌杩併€傚攼楂樺畻鏃跺涓烘槶浠紝閫氳繃搴熼粶鐜嬬殗鍚庝笌钀ф窇濡冿紝寰椾互绔嬩负鐨囧悗銆傚苟灏婂彿涓哄ぉ鍚庯紝涓庡攼楂樺畻骞剁О浜屽湥銆?;
+  '武曌，通称武则天、武后，是中国历史上唯一的女皇帝。武则天十四岁入宫为唐太宗才人，历经十二年不得升迁。唐高宗时复为昭仪，通过废黜王皇后与萧淑妃，得以立为皇后。并尊号为天后，与唐高宗并称二圣。';
 
 const initialState: AppState = {
   config: defaultConfig,
@@ -167,18 +167,18 @@ const initialState: AppState = {
 type NavItem = { view: ShellView; label: string; hint: string; icon: React.ComponentType<{ size?: number }> };
 
 const primaryNavItems: NavItem[] = [
-  { view: 'new-task', label: '鏂板缓浠诲姟', hint: '绱犳潗鎴愮墖', icon: Plus },
-  { view: 'queue', label: '浠诲姟闃熷垪', hint: '杩愯杩涘害', icon: ListChecks },
-  { view: 'history', label: '鍘嗗彶浠诲姟', hint: '鏈湴璁板綍', icon: History },
-  { view: 'image-lab', label: '鐢诲浘瀹為獙瀹?, hint: '鍒嗛暅鍥剧墖', icon: FlaskConical },
-  { view: 'voice-lab', label: '閰嶉煶瀹為獙瀹?, hint: '闊宠壊璇曞惉', icon: Mic2 },
-  { view: 'music-mv', label: '闊充箰 MV', hint: '姝岃瘝鎴愮墖', icon: Music },
-  { view: 'viral-analyzer', label: '鐖嗘鎷嗚В', hint: '鎷夌墖澶嶅埢', icon: Flame },
-  { view: 'prompt-templates', label: '鎻愮ず璇嶆ā鏉?, hint: '浠ｇ悊鎻愮ず璇?, icon: Sparkles },
-  { view: 'draft-templates', label: '鑽夌妯℃澘', hint: '鍓槧鐢诲竷', icon: LayoutTemplate },
-  { view: 'settings', label: '绯荤粺璁剧疆', hint: 'API 涓庤矾寰?, icon: Settings },
-  { view: 'account', label: '璐︽埛涓績', hint: '璧勬枡涓庣Н鍒?, icon: Circle },
-  { view: 'activation', label: '婵€娲荤鐞?, hint: '璇曠敤涓庢巿鏉?, icon: KeyRound },
+  { view: 'new-task', label: '新建任务', hint: '素材成片', icon: Plus },
+  { view: 'queue', label: '任务队列', hint: '运行进度', icon: ListChecks },
+  { view: 'history', label: '历史任务', hint: '本地记录', icon: History },
+  { view: 'image-lab', label: '画图实验室', hint: '分镜图片', icon: FlaskConical },
+  { view: 'voice-lab', label: '配音实验室', hint: '音色试听', icon: Mic2 },
+  { view: 'music-mv', label: '音乐 MV', hint: '歌词成片', icon: Music },
+  { view: 'viral-analyzer', label: '爆款拆解', hint: '拉片复刻', icon: Flame },
+  { view: 'prompt-templates', label: '提示词模板', hint: '代理提示词', icon: Sparkles },
+  { view: 'draft-templates', label: '草稿模板', hint: '剪映画布', icon: LayoutTemplate },
+  { view: 'settings', label: '系统设置', hint: 'API 与路径', icon: Settings },
+  { view: 'account', label: '账户中心', hint: '资料与积分', icon: Circle },
+  { view: 'activation', label: '激活管理', hint: '试用与授权', icon: KeyRound },
 ];
 
 const secondaryNavItems: NavItem[] = [];
@@ -186,124 +186,124 @@ const secondaryNavItems: NavItem[] = [];
 const navItems: NavItem[] = [...primaryNavItems, ...secondaryNavItems];
 
 const contentTracks = [
-  ['character-story', '浜虹墿鏁呬簨', '鍘嗗彶浜虹墿 / 鍚嶄汉浼犺'],
-  ['health-book', '鍋ュ悍鍥句功', '鍋ュ悍鍏荤敓 / 鍖诲鐭ヨ瘑'],
-  ['culture-science', '鏂囧寲绉戞櫘', '鍗庡鏂囧寲 / 浼犵粺姘戜織'],
-  ['picture-book', '缁樻湰鏁呬簨', '鍎跨缁樻湰 / 鐫″墠鏁呬簨'],
-  ['ecommerce', '鐢靛晢甯﹁揣', '浜у搧绉嶈崏 / 濂界墿鎺ㄨ崘'],
-  ['mind-soup', '蹇冪伒楦℃堡', '鎯呮劅娌绘剤 / 鍔卞織鎰熸偀'],
-  ['folk-story', '姘戦棿鏁呬簨', '铏氭瀯浼犺 / 鍥犳灉瀵撹█'],
-  ['general-story', '閫氱敤鏁呬簨', '閫氱敤鍐欏疄椋庢牸'],
-  ['food-v2', '缇庨鎺㈠簵V2', '鍩庡競琛楄灏忓簵鐨勭儫鐏皵'],
+  ['character-story', '人物故事', '历史人物 / 名人传记'],
+  ['health-book', '健康图书', '健康养生 / 医学知识'],
+  ['culture-science', '文化科普', '华夏文化 / 传统民俗'],
+  ['picture-book', '绘本故事', '儿童绘本 / 睡前故事'],
+  ['ecommerce', '电商带货', '产品种草 / 好物推荐'],
+  ['mind-soup', '心灵鸡汤', '情感治愈 / 励志感悟'],
+  ['folk-story', '民间故事', '虚构传说 / 因果寓言'],
+  ['general-story', '通用故事', '通用写实风格'],
+  ['food-v2', '美食探店V2', '城市街角小店的烟火气'],
 ];
 
 const styleOptions = [
-  ['black-white', '榛戠櫧鎽勫奖', '绾疄鎰?],
-  ['photo-real', '鍐欏疄褰╄壊', '璐ㄦ劅鑳剁墖'],
-  ['oil-paint', '娌圭敾椋庢牸', '鍗拌薄鍐欐剰'],
-  ['modern-film', '鐜颁唬鐢靛奖', '瀹藉睆璋冭壊'],
-  ['ancient-film', '鍙ら鐢靛奖', '鍙や唬鍙茶瘲'],
-  ['retro-film', '澶嶅彜鑳剁墖', '80骞翠唬琛楁媿'],
-  ['watercolor', '姘村僵娌绘剤', '鏌斿拰鏅曟煋'],
-  ['magazine', '鏉傚織鎻掔敾', '鏋佺畝鑹插潡'],
-  ['pixar-3d', '鐨厠鏂?3D', '鍔ㄧ敾璐ㄦ劅'],
-  ['ink', '涓浗姘村ⅷ', '鏂囦汉鎰忓'],
-  ['folk', '姘戦棿鏁呬簨宸ョ瑪椋?, '宸ョ瑪鍙欎簨'],
-  ['ghibli', '鍚夊崪鍔?, '娌绘剤鏃ユ极'],
+  ['black-white', '黑白摄影', '纪实感'],
+  ['photo-real', '写实彩色', '质感胶片'],
+  ['oil-paint', '油画风格', '印象写意'],
+  ['modern-film', '现代电影', '宽屏调色'],
+  ['ancient-film', '古风电影', '古代史诗'],
+  ['retro-film', '复古胶片', '80年代街拍'],
+  ['watercolor', '水彩治愈', '柔和晕染'],
+  ['magazine', '杂志插画', '极简色块'],
+  ['pixar-3d', '皮克斯 3D', '动画质感'],
+  ['ink', '中国水墨', '文人意境'],
+  ['folk', '民间故事工笔风', '工笔叙事'],
+  ['ghibli', '吉卜力', '治愈日漫'],
 ];
 
 const ratioOptions = ['21:9', '16:9', '3:2', '4:3', '1:1', '3:4', '2:3', '9:16'];
 const smartImageModeOptions: Array<[ImageLabSmartMode, string, string]> = [
-  ['cover', '灏侀潰', '鐭棰戜富灏侀潰'],
-  ['blog-cover', '鍗氬灏侀潰', '鏂囩珷棣栧浘 / 妯増涓诲浘'],
-  ['podcast-cover', '鎾灏侀潰', '鑺傜洰鎰熷弻浜烘垨涓婚灏侀潰'],
-  ['video-narration', '鏃佺櫧瑙嗛', '鍗曚汉璁茶堪涓昏瑙?],
-  ['two-host-podcast', '鍙屼汉鎾', '涓や綅涓绘挱涓€闂竴绛?],
-  ['reference-edit', '鍙傝€冨浘缂栬緫', '鍙傝€冨浘涓€鑷存€ф敼鍥?],
+  ['cover', '封面', '短视频主封面'],
+  ['blog-cover', '博客封面', '文章首图 / 横版主图'],
+  ['podcast-cover', '播客封面', '节目感双人或主题封面'],
+  ['video-narration', '旁白视频', '单人讲述主视觉'],
+  ['two-host-podcast', '双人播客', '两位主播一问一答'],
+  ['reference-edit', '参考图编辑', '参考图一致性改图'],
 ];
 const storyboardSceneCountOptions = [8, 12, 16, 20, 30];
 const siliconFlowSpeechToTextBaseUrl = 'https://api.siliconflow.cn/v1';
 const siliconFlowSpeechToTextModels = ['FunAudioLLM/SenseVoiceSmall', 'TeleAI/TeleSpeechASR'];
 const volcengineVoicePresets = [
   ['Vivi 2.0', 'zh_female_vv_uranus_bigtts'],
-  ['浜戣垷 2.0', 'zh_male_m191_uranus_bigtts'],
-  ['鐖藉揩鎬濇€?2.0', 'zh_female_shuangkuaisisi_uranus_bigtts'],
-  ['鍎掗泤闈掑勾 2.0', 'zh_male_ruyaqingnian_uranus_bigtts'],
-  ['鎮枒瑙ｈ 2.0', 'zh_male_xuanyijieshuo_uranus_bigtts'],
+  ['云舟 2.0', 'zh_male_m191_uranus_bigtts'],
+  ['爽快思思 2.0', 'zh_female_shuangkuaisisi_uranus_bigtts'],
+  ['儒雅青年 2.0', 'zh_male_ruyaqingnian_uranus_bigtts'],
+  ['悬疑解说 2.0', 'zh_male_xuanyijieshuo_uranus_bigtts'],
 ] as const;
 const pauseOptions: Array<[PausePoint, string]> = [
-  ['none', '涓嶆殏鍋?],
-  ['critical', '鍏抽敭鑺傜偣'],
-  ['every-step', '姣忔纭'],
-  ['custom', '鑷畾涔?],
+  ['none', '不暂停'],
+  ['critical', '关键节点'],
+  ['every-step', '每步确认'],
+  ['custom', '自定义'],
 ];
 const rewriteOptions: Array<[RewriteIntensity, string]> = [
-  ['standard', '鏍囧噯鏀瑰啓'],
-  ['deep', '娣卞害鏀瑰啓'],
-  ['original', '楂樺害鍘熷垱'],
+  ['standard', '标准改写'],
+  ['deep', '深度改写'],
+  ['original', '高度原创'],
 ];
 const povOptions = [
-  ['keep-original', '淇濇寔鍘熸枃'],
-  ['first-person', '绗竴浜虹О'],
-  ['third-person', '绗笁浜虹О'],
+  ['keep-original', '保持原文'],
+  ['first-person', '第一人称'],
+  ['third-person', '第三人称'],
 ] as const;
 const promptTemplateTypeOptions: Array<PromptTemplateType | 'all'> = ['all', 'task', 'review', 'rewrite', 'cover', 'storyboard', 'image-prompt'];
 const promptTemplateTypeLabels: Record<PromptTemplateType | 'all', string> = {
-  all: '鍏ㄩ儴绫诲瀷',
-  task: '浠诲姟妯℃澘',
-  review: '棰勫鎻愮ず璇?,
-  rewrite: '鏀瑰啓鎻愮ず璇?,
-  cover: '灏侀潰鍏冩暟鎹彁绀鸿瘝',
-  storyboard: '鍒嗛暅鎻愮ず璇?,
-  'image-prompt': '鍑哄浘鎻愮ず璇?,
+  all: '全部类型',
+  task: '任务模板',
+  review: '预审提示词',
+  rewrite: '改写提示词',
+  cover: '封面元数据提示词',
+  storyboard: '分镜提示词',
+  'image-prompt': '出图提示词',
 };
 type PromptTemplateVariableScope = PromptTemplateType;
 const promptTemplateVariableDefinitions = [
-  { key: 'inputText', label: '鍘熸枃绱犳潗', description: '鏂板缓浠诲姟閲岀矘璐存垨瀵煎叆鐨勫師濮嬫枃妗?, scopes: ['task', 'review'] },
-  { key: 'title', label: '浠诲姟鏍囬', description: '褰撳墠浠诲姟鏍囬鎴栬嚜鍔ㄧ敓鎴愭爣棰?, scopes: ['task', 'review', 'rewrite', 'cover'] },
-  { key: 'sourceContext', label: '鑱旂綉璧勬枡', description: 'AI 鎼滅储鎴栫煡璇嗗簱甯﹀洖鏉ョ殑鍙傝€冭祫鏂?, scopes: ['review'] },
-  { key: 'reviewedText', label: '棰勫缁撴灉', description: 'Step 0 娓呮礂銆佸幓閲嶅悗鐨勪簨瀹炵礌鏉?, scopes: ['rewrite', 'cover'] },
-  { key: 'rewrittenCopy', label: '鏀瑰啓姝ｆ枃', description: 'Step 1 鏀瑰啓鍚庣殑鍙ｆ挱鏂囨', scopes: ['storyboard'] },
-  { key: 'scenesJson', label: '鍒嗛暅鏁版嵁', description: 'Step 2 鎷嗗嚭鏉ョ殑鍒嗛暅 JSON', scopes: ['image-prompt'] },
-  { key: 'track', label: '鍐呭璧涢亾', description: '浜虹墿鏁呬簨銆佸仴搴峰浘涔︺€佺數鍟嗙瓑璧涢亾', scopes: ['task', 'review', 'rewrite', 'cover', 'storyboard', 'image-prompt'] },
-  { key: 'style', label: '鐢婚', description: '浠诲姟閫夋嫨鐨勫嚭鍥鹃鏍?, scopes: ['task', 'storyboard', 'image-prompt'] },
-  { key: 'ratio', label: '鐢婚潰姣斾緥', description: '9:16銆?6:9 绛夌敾甯冩瘮渚?, scopes: ['task', 'storyboard', 'image-prompt'] },
-  { key: 'extraRequirements', label: '棰濆瑕佹眰', description: '鏂板缓浠诲姟閲屽～鍐欑殑琛ュ厖瑕佹眰', scopes: ['task', 'review', 'rewrite', 'cover', 'storyboard', 'image-prompt'] },
-  { key: 'rewriteIntensity', label: '鏀瑰啓寮哄害', description: '鏂板缓浠诲姟楂樼骇璁剧疆閲岀殑鏀瑰啓寮哄害', scopes: ['rewrite'] },
-  { key: 'narrativePov', label: '鍙欎簨瑙嗚', description: '鏂板缓浠诲姟楂樼骇璁剧疆閲岀殑鍙欎簨瑙嗚', scopes: ['rewrite'] },
-  { key: 'keepPromotion', label: '淇濈暀甯﹁揣', description: '鏂板缓浠诲姟楂樼骇璁剧疆閲岀殑甯﹁揣淇濈暀寮€鍏?, scopes: ['rewrite', 'cover'] },
-  { key: 'aiKeyword', label: 'AI 鍏抽敭璇?, description: 'AI 鍒涗綔妯″紡閲岀殑妫€绱㈠叧閿瘝', scopes: ['task', 'review', 'rewrite', 'cover'] },
-  { key: 'targetLength', label: '鐩爣瀛楁暟', description: '鏂板缓浠诲姟閲屽～鍐欑殑鍙ｆ挱鐩爣瀛楁暟', scopes: ['rewrite', 'storyboard'] },
-  { key: 'storyboardSceneCount', label: '鐩爣鍒嗛暅鏁?, description: '鏂板缓浠诲姟閲屽～鍐欑殑鍒嗛暅鏁伴噺鐩爣', scopes: ['storyboard'] },
-  { key: 'taskTemplateContent', label: '浠诲姟妯℃澘鎸囦护', description: '褰撳墠妯℃澘鐨勪换鍔℃€绘寚浠ゆ覆鏌撶粨鏋滐紱涓嶈鏀惧湪浠诲姟鎬绘寚浠ゅ唴', scopes: ['review', 'rewrite', 'cover', 'storyboard', 'image-prompt'] },
-  { key: 'taskTemplateName', label: '浠诲姟妯℃澘鍚嶇О', description: '褰撳墠鏁呬簨妯℃澘鍚嶇О', scopes: ['review', 'rewrite', 'cover', 'storyboard', 'image-prompt'] },
-  { key: 'defaultStyles', label: '榛樿鐢婚', description: '褰撳墠鏁呬簨妯℃澘缁戝畾鐨勯粯璁ゅ浘鍍忔ā鏉?, scopes: ['task', 'storyboard', 'image-prompt'] },
-  { key: 'defaultDraftTemplateId', label: '榛樿鑽夌妯℃澘', description: '褰撳墠鏁呬簨妯℃澘缁戝畾鐨勫壀鏄犺崏绋挎ā鏉?ID', scopes: ['task'] },
-  { key: 'characterPolicy', label: '瑙掕壊妗ｆ绛栫暐', description: '褰撳墠鏁呬簨妯℃澘鏄惁寮哄埗鎻愬彇鎴栬烦杩囪鑹叉。妗?, scopes: ['task', 'image-prompt'] },
-  { key: 'step3SkeletonModules', label: 'Step 3 楠ㄦ灦', description: '褰撳墠鏁呬簨妯℃澘鍚敤鐨勭粯鍥鹃鏋舵ā鍧?, scopes: ['storyboard', 'image-prompt'] },
-  { key: 'referenceKind', label: '鍙傝€冨浘绫诲瀷', description: '褰撳墠鏁呬簨妯℃澘浣跨敤鐨勪汉鑴搞€佷骇鍝佹垨鏃犲弬鑰冨浘绫诲瀷', scopes: ['storyboard', 'image-prompt'] },
-  { key: 'stylePrefix', label: '椋庢牸鍓嶇紑', description: '褰撳墠鍥惧儚妯℃澘鐨?prefix锛屼細娉ㄥ叆 Step 3 鍑哄浘鎻愮ず璇?, scopes: ['image-prompt'] },
-  { key: 'styleSuffix', label: '椋庢牸鍚庣紑', description: '褰撳墠鍥惧儚妯℃澘鐨?suffix锛屼細娉ㄥ叆 Step 3 鍑哄浘鎻愮ず璇?, scopes: ['image-prompt'] },
-  { key: 'styleAllowColor', label: '鍏佽鑹插僵璇?, description: '褰撳墠鍥惧儚妯℃澘鏄惁鍏佽鍦ㄧ敾闈㈤噷浣跨敤鍏蜂綋鑹插僵璇?, scopes: ['image-prompt'] },
-  { key: 'styleNegativePrompt', label: '璐熼潰鎻愮ず璇?, description: '褰撳墠鍥惧儚妯℃澘鐨?negative prompt', scopes: ['image-prompt'] },
-  { key: 'referenceImagePath', label: '鍙傝€冨浘璺緞', description: '鏂板缓浠诲姟涓婁紶鎴栧～鍐欑殑鍙傝€冨浘鏈湴璺緞', scopes: ['image-prompt'] },
-  { key: 'imagePromptReference', label: '鐢熷浘鍙傝€?, description: '鐖嗘鎷嗚В鎴栫敤鎴疯ˉ鍏呯殑鐢婚潰鍙傝€冩彁绀?, scopes: ['image-prompt'] },
-  { key: 'characterCard', label: '瑙掕壊妗ｆ', description: 'Step 3 鍓嶆彁鍙栧嚭鐨勮鑹蹭竴鑷存€?JSON', scopes: ['image-prompt'] },
-  { key: 'imageSeedPoolsJson', label: '鍥剧墖绉嶅瓙姹?, description: '褰撳墠鏁呬簨妯℃澘鎼哄甫鐨?StoryDream 鍥剧墖绉嶅瓙姹?JSON', scopes: ['image-prompt'] },
+  { key: 'inputText', label: '原文素材', description: '新建任务里粘贴或导入的原始文案', scopes: ['task', 'review'] },
+  { key: 'title', label: '任务标题', description: '当前任务标题或自动生成标题', scopes: ['task', 'review', 'rewrite', 'cover'] },
+  { key: 'sourceContext', label: '联网资料', description: 'AI 搜索或知识库带回来的参考资料', scopes: ['review'] },
+  { key: 'reviewedText', label: '预审结果', description: 'Step 0 清洗、去重后的事实素材', scopes: ['rewrite', 'cover'] },
+  { key: 'rewrittenCopy', label: '改写正文', description: 'Step 1 改写后的口播文案', scopes: ['storyboard'] },
+  { key: 'scenesJson', label: '分镜数据', description: 'Step 2 拆出来的分镜 JSON', scopes: ['image-prompt'] },
+  { key: 'track', label: '内容赛道', description: '人物故事、健康图书、电商等赛道', scopes: ['task', 'review', 'rewrite', 'cover', 'storyboard', 'image-prompt'] },
+  { key: 'style', label: '画风', description: '任务选择的出图风格', scopes: ['task', 'storyboard', 'image-prompt'] },
+  { key: 'ratio', label: '画面比例', description: '9:16、16:9 等画布比例', scopes: ['task', 'storyboard', 'image-prompt'] },
+  { key: 'extraRequirements', label: '额外要求', description: '新建任务里填写的补充要求', scopes: ['task', 'review', 'rewrite', 'cover', 'storyboard', 'image-prompt'] },
+  { key: 'rewriteIntensity', label: '改写强度', description: '新建任务高级设置里的改写强度', scopes: ['rewrite'] },
+  { key: 'narrativePov', label: '叙事视角', description: '新建任务高级设置里的叙事视角', scopes: ['rewrite'] },
+  { key: 'keepPromotion', label: '保留带货', description: '新建任务高级设置里的带货保留开关', scopes: ['rewrite', 'cover'] },
+  { key: 'aiKeyword', label: 'AI 关键词', description: 'AI 创作模式里的检索关键词', scopes: ['task', 'review', 'rewrite', 'cover'] },
+  { key: 'targetLength', label: '目标字数', description: '新建任务里填写的口播目标字数', scopes: ['rewrite', 'storyboard'] },
+  { key: 'storyboardSceneCount', label: '目标分镜数', description: '新建任务里填写的分镜数量目标', scopes: ['storyboard'] },
+  { key: 'taskTemplateContent', label: '任务模板指令', description: '当前模板的任务总指令渲染结果；不要放在任务总指令内', scopes: ['review', 'rewrite', 'cover', 'storyboard', 'image-prompt'] },
+  { key: 'taskTemplateName', label: '任务模板名称', description: '当前故事模板名称', scopes: ['review', 'rewrite', 'cover', 'storyboard', 'image-prompt'] },
+  { key: 'defaultStyles', label: '默认画风', description: '当前故事模板绑定的默认图像模板', scopes: ['task', 'storyboard', 'image-prompt'] },
+  { key: 'defaultDraftTemplateId', label: '默认草稿模板', description: '当前故事模板绑定的剪映草稿模板 ID', scopes: ['task'] },
+  { key: 'characterPolicy', label: '角色档案策略', description: '当前故事模板是否强制提取或跳过角色档案', scopes: ['task', 'image-prompt'] },
+  { key: 'step3SkeletonModules', label: 'Step 3 骨架', description: '当前故事模板启用的绘图骨架模块', scopes: ['storyboard', 'image-prompt'] },
+  { key: 'referenceKind', label: '参考图类型', description: '当前故事模板使用的人脸、产品或无参考图类型', scopes: ['storyboard', 'image-prompt'] },
+  { key: 'stylePrefix', label: '风格前缀', description: '当前图像模板的 prefix，会注入 Step 3 出图提示词', scopes: ['image-prompt'] },
+  { key: 'styleSuffix', label: '风格后缀', description: '当前图像模板的 suffix，会注入 Step 3 出图提示词', scopes: ['image-prompt'] },
+  { key: 'styleAllowColor', label: '允许色彩词', description: '当前图像模板是否允许在画面里使用具体色彩词', scopes: ['image-prompt'] },
+  { key: 'styleNegativePrompt', label: '负面提示词', description: '当前图像模板的 negative prompt', scopes: ['image-prompt'] },
+  { key: 'referenceImagePath', label: '参考图路径', description: '新建任务上传或填写的参考图本地路径', scopes: ['image-prompt'] },
+  { key: 'imagePromptReference', label: '生图参考', description: '爆款拆解或用户补充的画面参考提示', scopes: ['image-prompt'] },
+  { key: 'characterCard', label: '角色档案', description: 'Step 3 前提取出的角色一致性 JSON', scopes: ['image-prompt'] },
+  { key: 'imageSeedPoolsJson', label: '图片种子池', description: '当前故事模板携带的 StoryDream 图片种子池 JSON', scopes: ['image-prompt'] },
 ] satisfies Array<{ key: string; label: string; description: string; scopes: PromptTemplateVariableScope[] }>;
 const promptTemplateVariables = promptTemplateVariableDefinitions.map((item) => item.key);
 const promptStepEditorDefinitions: Array<{ type: PromptStepTemplateType; label: string; hint: string }> = [
-  { type: 'review', label: 'Step 0 棰勫', hint: '娓呯悊杈撳叆绱犳潗銆佷繚鐣欎簨瀹為『搴忋€佸幓鎺夐噸澶嶈〃杈? },
-  { type: 'rewrite', label: 'Step 1 鏀瑰啓', hint: '鎺у埗鍙ｆ挱鏂囨鐨勮瑷€銆佽妭濂忓拰缁撴瀯' },
-  { type: 'cover', label: 'Step 1 鍏冩暟鎹?, hint: '鐢熸垚鏍囬銆佹憳瑕併€佹爣绛惧拰璇勮鐨勮鍒? },
-  { type: 'storyboard', label: 'Step 2 鍒嗛暅', hint: '鎺у埗鍒嗛暅鎷嗗彞銆侀暅澶磋妭濂忓拰鍦烘櫙鏁伴噺' },
-  { type: 'image-prompt', label: 'Step 3 鍑哄浘', hint: '鎺у埗鍑哄浘鎻愮ず璇嶃€佽鑹蹭竴鑷存€у拰瀹夊叏瑙勫垯' },
+  { type: 'review', label: 'Step 0 预审', hint: '清理输入素材、保留事实顺序、去掉重复表达' },
+  { type: 'rewrite', label: 'Step 1 改写', hint: '控制口播文案的语言、节奏和结构' },
+  { type: 'cover', label: 'Step 1 元数据', hint: '生成标题、摘要、标签和评论的规则' },
+  { type: 'storyboard', label: 'Step 2 分镜', hint: '控制分镜拆句、镜头节奏和场景数量' },
+  { type: 'image-prompt', label: 'Step 3 出图', hint: '控制出图提示词、角色一致性和安全规则' },
 ];
-const promptTemplateStep3SkeletonOptions = ['璺ㄥ勾浠?, '闃插彴璇嶆枃瀛?, '浜у搧涓€鑷存€?];
+const promptTemplateStep3SkeletonOptions = ['跨年代', '防台词文字', '产品一致性'];
 const promptTemplateReferenceOptions: Array<[NonNullable<PromptTemplate['referenceKind']>, string]> = [
-  ['none', '鏃?],
-  ['face', '浜鸿劯'],
-  ['product', '浜у搧'],
+  ['none', '无'],
+  ['face', '人脸'],
+  ['product', '产品'],
 ];
 const bundledDraftTemplateOptionIds = new Set<string>(
   ((feishuCozeDraftTemplateBundle as { templates?: Array<{ id?: string }> }).templates ?? [])
@@ -312,21 +312,21 @@ const bundledDraftTemplateOptionIds = new Set<string>(
 );
 const fallbackEffectCatalog: JianyingEffectCatalog = {
   status: 'warn',
-  detail: '鏈鍙栧埌鍓槧鐗规晥鐩綍锛屽凡浣跨敤鏈湴鍩虹杞満娓呭崟銆?,
-  transitions: ['鍙犲寲'],
+  detail: '未读取到剪映特效目录，已使用本地基础转场清单。',
+  transitions: ['叠化'],
   filters: [],
   videoEffects: [],
   audioEffects: [],
 };
 
 const pipelineSteps = [
-  { index: 0, title: 'Step 0 棰勫', hint: '娓呯悊骞垮憡銆侀噸澶嶅拰鏁忔劅琛ㄨ揪', agent: 'Reviewer' },
-  { index: 1, title: 'Step 1 涓夎疆鏀瑰啓鑷瘎', hint: '涓夎疆鏀瑰啓銆佽瘎鍒嗐€佽嚜璇勫苟鐢熸垚灏侀潰淇℃伅', agent: 'Writer' },
-  { index: 2, title: 'Step 2 鍒嗛暅', hint: '鎷嗘垚鍙厤鍥剧殑闀滃ご鍗曞厓', agent: 'Storyboard' },
-  { index: 3, title: 'Step 3 涓昏妗ｆ涓庡嚭鍥炬彁绀鸿瘝', hint: '鎻愬彇瑙掕壊妗ｆ骞剁敓鎴愭瘡闀?prompt', agent: 'Prompt' },
-  { index: 4, title: 'Step 4 鎵归噺鐢熷浘', hint: '骞跺彂璋冪敤 AI 缁樺浘锛屾殏鍋滃悗鍙画璺?, agent: 'Producer' },
-  { index: 5, title: 'Step 5 閰嶉煶', hint: '鐢熸垚鏃佺櫧闊抽鍜屽瓧骞曟椂闂磋酱', agent: 'TTS' },
-  { index: 6, title: 'Step 6 鑽夌瀵煎嚭', hint: '鍐欏叆鍓槧鑽夌杈撳嚭鐩綍', agent: 'Draft' },
+  { index: 0, title: 'Step 0 预审', hint: '清理广告、重复和敏感表达', agent: 'Reviewer' },
+  { index: 1, title: 'Step 1 三轮改写自评', hint: '三轮改写、评分、自评并生成封面信息', agent: 'Writer' },
+  { index: 2, title: 'Step 2 分镜', hint: '拆成可配图的镜头单元', agent: 'Storyboard' },
+  { index: 3, title: 'Step 3 主角档案与出图提示词', hint: '提取角色档案并生成每镜 prompt', agent: 'Prompt' },
+  { index: 4, title: 'Step 4 批量生图', hint: '并发调用 AI 绘图，暂停后可续跑', agent: 'Producer' },
+  { index: 5, title: 'Step 5 配音', hint: '生成旁白音频和字幕时间轴', agent: 'TTS' },
+  { index: 6, title: 'Step 6 草稿导出', hint: '写入剪映草稿输出目录', agent: 'Draft' },
 ] as const;
 
 type StoryDreamApi = NonNullable<Window['storydream']>;
@@ -394,7 +394,7 @@ function makeFallbackApi(setState: (state: AppState) => void): StoryDreamApi {
     async testLlmConfig(config) {
       return {
         status: config.apiKey ? 'warn' : 'fail',
-        detail: config.apiKey ? '娴忚鍣ㄩ瑙堟棤娉曡皟鐢ㄦā鍨嬫祴璇曟帴鍙ｏ紝璇峰湪 Electron 妗岄潰绔祴璇曘€? : '鎺ュ彛瀵嗛挜鏈～鍐欙紝璇峰厛琛ュ叏妯″瀷鍑瘉銆?,
+        detail: config.apiKey ? '浏览器预览无法调用模型测试接口，请在 Electron 桌面端测试。' : '接口密钥未填写，请先补全模型凭证。',
         latencyMs: 0,
         model: config.model,
         endpoint: `${config.baseUrl || 'https://api.openai.com'}/v1/chat/completions`,
@@ -408,7 +408,7 @@ function makeFallbackApi(setState: (state: AppState) => void): StoryDreamApi {
       const speakers = volcengineVoicePresets.map(([name, voiceType]) => ({ voiceType, name }));
       return {
         status: 'warn',
-        detail: '娴忚鍣ㄩ瑙堟棤娉曡皟鐢ㄧ伀灞?OpenAPI锛屽凡灞曠ず鏈湴棰勮闊宠壊銆傝鍦?Electron 妗岄潰绔姞杞藉叏閮ㄩ煶鑹层€?,
+        detail: '浏览器预览无法调用火山 OpenAPI，已展示本地预设音色。请在 Electron 桌面端加载全部音色。',
         latencyMs: 0,
         endpoint: 'https://open.volcengineapi.com/?Action=ListSpeakers&Version=2025-05-20',
         speakers,
@@ -423,11 +423,11 @@ function makeFallbackApi(setState: (state: AppState) => void): StoryDreamApi {
       return {
         query,
         sections: [],
-        warnings: ['娴忚鍣ㄩ瑙堟棤娉曠洿鎺ユ姄鍙栫綉椤垫鏂囷紝璇峰湪 Electron 妗岄潰绔娇鐢ㄦ悳绱€?],
+        warnings: ['浏览器预览无法直接抓取网页正文，请在 Electron 桌面端使用搜索。'],
       };
     },
     async composeResearchCopy() {
-      throw new Error('娴忚鍣ㄩ瑙堟棤娉曡皟鐢ㄧ湡瀹?LLM 鐢熸垚鏂囨锛岃鍦?Electron 妗岄潰绔厤缃ā鍨嬪悗浣跨敤銆?);
+      throw new Error('浏览器预览无法调用真实 LLM 生成文案，请在 Electron 桌面端配置模型后使用。');
     },
     async savePromptTemplate(template: PromptTemplate) {
       const state = read();
@@ -465,7 +465,7 @@ function makeFallbackApi(setState: (state: AppState) => void): StoryDreamApi {
         provider: state.config.imageProvider,
         imagePath: '',
         status: 'failed',
-        errorMessage: '娴忚鍣ㄩ瑙堟棤娉曡皟鐢ㄧ湡瀹炵敓鍥炬ā鍨嬶紝璇峰湪 Electron 妗岄潰绔娇鐢ㄣ€?,
+        errorMessage: '浏览器预览无法调用真实生图模型，请在 Electron 桌面端使用。',
         resolution: input.resolution ?? activeImageResolution(state.config),
         smartMode: input.smartMode ?? 'text-to-image',
         referenceImagePaths: input.referenceImagePaths?.length ? input.referenceImagePaths : input.referenceImagePath ? [input.referenceImagePath] : [],
@@ -488,7 +488,7 @@ function makeFallbackApi(setState: (state: AppState) => void): StoryDreamApi {
         speed: input.speed,
         audioPath: '',
         status: 'failed',
-        errorMessage: '娴忚鍣ㄩ瑙堜笉鑳借皟鐢ㄧ湡瀹?TTS锛岃鍦?Electron 妗岄潰绔敓鎴愯瘯鍚€?,
+        errorMessage: '浏览器预览不能调用真实 TTS，请在 Electron 桌面端生成试听。',
         createdAt: input.createdAt ?? now,
         finishedAt: now,
       };
@@ -527,7 +527,7 @@ function makeFallbackApi(setState: (state: AppState) => void): StoryDreamApi {
     },
     async createAndRunTask(input: CreateTaskInput) {
       const browserPipelineError =
-        '娴忚鍣ㄩ瑙堟棤娉曡繍琛岀湡瀹炰緵搴斿晢娴佹按绾裤€傝鍦?Electron 妗岄潰绔厤缃?LLM銆佺敓鍥俱€乀TS銆丳ython 鍜?pyJianYingDraft 鍚庢墽琛屻€?;
+        '浏览器预览无法运行真实供应商流水线。请在 Electron 桌面端配置 LLM、生图、TTS、Python 和 pyJianYingDraft 后执行。';
       const state = read();
       const task: Task = {
         id: crypto.randomUUID(),
@@ -540,7 +540,7 @@ function makeFallbackApi(setState: (state: AppState) => void): StoryDreamApi {
         currentStep: 0,
         track: input.track ?? 'character-story',
         style: input.style ?? 'photo-real',
-        speaker: input.speaker ?? '鐏垮崥灏忓彅',
+        speaker: input.speaker ?? '灿博小叔',
         ratio: input.ratio ?? '9:16',
         templateId: input.templateId ?? 'default-portrait-9-16',
         bgmId: input.bgmId ?? state.config.jianying.defaultBgmId ?? '',
@@ -596,7 +596,7 @@ function makeFallbackApi(setState: (state: AppState) => void): StoryDreamApi {
             settings: input.settings,
             resultPath: '',
             videoPath: '',
-            errorMessage: '娴忚鍣ㄩ瑙堟棤娉曡繍琛岀垎娆捐棰戞媶瑙ｃ€傝鍦?Electron 妗岄潰绔笅杞藉苟澶勭悊瑙嗛銆?,
+            errorMessage: '浏览器预览无法运行爆款视频拆解。请在 Electron 桌面端下载并处理视频。',
             createdAt: now,
             startedAt: now,
             completedAt: null,
@@ -610,7 +610,7 @@ function makeFallbackApi(setState: (state: AppState) => void): StoryDreamApi {
             analysisId: id,
             type: 'error',
             stage: 'failed',
-            detail: '娴忚鍣ㄩ瑙堟棤娉曡繍琛岀垎娆捐棰戞媶瑙ｃ€傝鍦?Electron 妗岄潰绔笅杞藉苟澶勭悊瑙嗛銆?,
+            detail: '浏览器预览无法运行爆款视频拆解。请在 Electron 桌面端下载并处理视频。',
             dataJson: null,
             ts: Date.now(),
           },
@@ -628,33 +628,33 @@ function makeFallbackApi(setState: (state: AppState) => void): StoryDreamApi {
     async getViralAnalysisResult(id: string): Promise<ViralAnalysisResult> {
       const state = read();
       const record = state.viralAnalyses.find((item) => item.id === id);
-      throw new Error(`娴忚鍣ㄩ瑙堟棤娉曡鍙栫垎娆炬媶瑙ｇ粨鏋滐細${record?.title ?? id}`);
+      throw new Error(`浏览器预览无法读取爆款拆解结果：${record?.title ?? id}`);
     },
     async createProductionTaskFromViral(id: string) {
-      throw new Error(`娴忚鍣ㄩ瑙堟棤娉曚粠鐖嗘鎷嗚В鍒涘缓鎴愮墖浠诲姟锛?{id}`);
+      throw new Error(`浏览器预览无法从爆款拆解创建成片任务：${id}`);
     },
     async updateTaskStatus(id: string, status: TaskStatus) {
       const state = read();
-      return persist({ ...state, tasks: state.tasks.map((task) => (task.id === id ? { ...task, status, errorMessage: status === 'cancelled' ? '鐢ㄦ埛鍙栨秷' : task.errorMessage } : task)) });
+      return persist({ ...state, tasks: state.tasks.map((task) => (task.id === id ? { ...task, status, errorMessage: status === 'cancelled' ? '用户取消' : task.errorMessage } : task)) });
     },
     async retryTask(id: string) {
       const state = read();
       return persist({ ...state, tasks: state.tasks.map((task) => (task.id === id ? { ...task, status: 'pending', errorMessage: '' } : task)) });
     },
     async regenerateTaskImage() {
-      throw new Error('娴忚鍣ㄩ瑙堜笉鑳介噸鏂扮敓鎴愮湡瀹炲浘鐗囷紝璇峰湪 Electron 搴旂敤涓搷浣溿€?);
+      throw new Error('浏览器预览不能重新生成真实图片，请在 Electron 应用中操作。');
     },
     async regenerateTaskNarration() {
-      throw new Error('娴忚鍣ㄩ瑙堜笉鑳介噸鏂扮敓鎴愮湡瀹為厤闊筹紝璇峰湪 Electron 搴旂敤涓搷浣溿€?);
+      throw new Error('浏览器预览不能重新生成真实配音，请在 Electron 应用中操作。');
     },
     async rerunTaskStep() {
-      throw new Error('娴忚鍣ㄩ瑙堜笉鑳介噸鏂版墽琛岀湡瀹炴祦姘寸嚎姝ラ锛岃鍦?Electron 搴旂敤涓搷浣溿€?);
+      throw new Error('浏览器预览不能重新执行真实流水线步骤，请在 Electron 应用中操作。');
     },
     async getTaskArtifacts(id: string) {
       const task = read().tasks.find((item) => item.id === id);
       return {
         available: false,
-        message: '娴忚鍣ㄩ瑙堟棤娉曡鍙栨湰鍦颁换鍔′骇鐗╋紝璇峰湪 Electron 妗岄潰绔煡鐪嬨€?,
+        message: '浏览器预览无法读取本地任务产物，请在 Electron 桌面端查看。',
         taskId: id,
         statePath: task?.artifactStatePath ?? '',
         outputDir: task?.outputDir ?? '',
@@ -666,7 +666,7 @@ function makeFallbackApi(setState: (state: AppState) => void): StoryDreamApi {
       };
     },
     async readAssetDataUrl() {
-      throw new Error('娴忚鍣ㄩ瑙堜笉鑳借鍙栨湰鍦板獟浣撻瑙堬紝璇峰湪 Electron 搴旂敤涓煡鐪嬨€?);
+      throw new Error('浏览器预览不能读取本地媒体预览，请在 Electron 应用中查看。');
     },
     async selectLocalImage() {
       return null;
@@ -681,7 +681,7 @@ function makeFallbackApi(setState: (state: AppState) => void): StoryDreamApi {
       return null;
     },
     async openViralLoginWindow() {
-      throw new Error('娴忚鍣ㄩ瑙堜笉鑳芥墦寮€鎶栭煶鐧诲綍绐楀彛锛岃鍦?Electron 妗岄潰绔搷浣溿€?);
+      throw new Error('浏览器预览不能打开抖音登录窗口，请在 Electron 桌面端操作。');
     },
     async detectJianyingDraftPath() {
       return '';
@@ -694,10 +694,10 @@ function makeFallbackApi(setState: (state: AppState) => void): StoryDreamApi {
       return {
         generatedAt: new Date().toISOString(),
         checks: [
-          { id: 'llm-config', label: 'LLM 閰嶇疆瀹屾暣鎬?, status: state.config.llm.apiKey ? 'pass' : 'warn', detail: state.config.llm.model },
-          { id: 'tts-config', label: 'TTS 鍑瘉宸插～鍐?, status: state.config.tts.volcengine.apiKey || state.config.tts.accessKey ? 'pass' : 'warn', detail: state.config.tts.provider },
-          { id: 'jianying-sidecar', label: '鍓槧鑽夌鐩綍', status: state.config.jianying.draftPath ? 'pass' : 'warn', detail: state.config.jianying.draftPath },
-          { id: 'account-state', label: '璐︽埛鐘舵€?, status: 'pass', detail: state.activation.message },
+          { id: 'llm-config', label: 'LLM 配置完整性', status: state.config.llm.apiKey ? 'pass' : 'warn', detail: state.config.llm.model },
+          { id: 'tts-config', label: 'TTS 凭证已填写', status: state.config.tts.volcengine.apiKey || state.config.tts.accessKey ? 'pass' : 'warn', detail: state.config.tts.provider },
+          { id: 'jianying-sidecar', label: '剪映草稿目录', status: state.config.jianying.draftPath ? 'pass' : 'warn', detail: state.config.jianying.draftPath },
+          { id: 'account-state', label: '账户状态', status: 'pass', detail: state.activation.message },
         ],
       };
     },
@@ -776,9 +776,9 @@ function App() {
   const selectedTask = state.tasks.find((task) => task.id === selectedTaskId) ?? state.tasks[0] ?? null;
   const recentTasks = state.tasks.slice(0, 3);
   const trialDaysLabel = state.activation.expiresAt
-    ? `${Math.max(0, Math.ceil((new Date(state.activation.expiresAt).getTime() - Date.now()) / 86400000))} 澶ー
-    : '鏈湴璇曠敤';
-  const activeNav = activeView === 'task-detail' ? { label: '浠诲姟璇︽儏', hint: '鍗曚换鍔℃祦姘寸嚎' } : navItems.find((item) => item.view === activeView) ?? navItems[0];
+    ? `${Math.max(0, Math.ceil((new Date(state.activation.expiresAt).getTime() - Date.now()) / 86400000))} 天`
+    : '本地试用';
+  const activeNav = activeView === 'task-detail' ? { label: '任务详情', hint: '单任务流水线' } : navItems.find((item) => item.view === activeView) ?? navItems[0];
 
   return (
     <main className="app-shell">
@@ -787,14 +787,14 @@ function App() {
           <div className="app-mark">S</div>
           <strong>StoryDream</strong>
         </div>
-        <div className="window-controls" aria-label="绐椾綋鎺у埗">
-          <button className="window-control-button" type="button" aria-label="鏈€灏忓寲" onClick={() => api.windowControl('minimize')}>
+        <div className="window-controls" aria-label="窗体控制">
+          <button className="window-control-button" type="button" aria-label="最小化" onClick={() => api.windowControl('minimize')}>
             <Minus size={14} />
           </button>
-          <button className="window-control-button" type="button" aria-label="鏈€澶у寲" onClick={() => api.windowControl('toggle-maximize')}>
+          <button className="window-control-button" type="button" aria-label="最大化" onClick={() => api.windowControl('toggle-maximize')}>
             <Maximize2 size={14} />
           </button>
-          <button className="window-control-button close" type="button" aria-label="鍏抽棴" onClick={() => api.windowControl('close')}>
+          <button className="window-control-button close" type="button" aria-label="关闭" onClick={() => api.windowControl('close')}>
             <X size={14} />
           </button>
         </div>
@@ -806,23 +806,23 @@ function App() {
             <div className="brand-logo">S</div>
             <div>
               <strong>StoryDream</strong>
-              <span>v0.10.4 路 beta</span>
+              <span>v0.10.4 · beta</span>
             </div>
             <Bell size={16} className="brand-bell" />
           </div>
 
           <button className="new-task-button" onClick={() => navigate('new-task')}>
             <Plus size={16} />
-            <span>鏂板缓浠诲姟</span>
+            <span>新建任务</span>
             <kbd>Ctrl+N</kbd>
           </button>
 
           <nav className="nav-list">
-            <span className="nav-section-label">涓荤嚎宸ヤ綔娴?/span>
+            <span className="nav-section-label">主线工作流</span>
             {primaryNavItems.filter((item) => item.view !== 'new-task').map((item) => (
               <NavButton key={item.view} item={item} active={activeView === item.view} navigate={navigate} />
             ))}
-            <span className="nav-section-label secondary">鎵╁睍宸ュ叿</span>
+            <span className="nav-section-label secondary">扩展工具</span>
             {secondaryNavItems.map((item) => (
               <NavButton key={item.view} item={item} active={activeView === item.view} navigate={navigate} />
             ))}
@@ -830,29 +830,29 @@ function App() {
 
           <div className="sidebar-bottom">
             <section className="recent-task-strip">
-              <span className="nav-section-label">鏈€杩戜换鍔?/span>
-              {recentTasks.length === 0 ? <small>鏆傛棤浠诲姟</small> : null}
+              <span className="nav-section-label">最近任务</span>
+              {recentTasks.length === 0 ? <small>暂无任务</small> : null}
               {recentTasks.map((task) => (
                 <button key={task.id} className="recent-task-item" onClick={() => openTaskDetail(task.id)}>
-                  <strong>{task.title || '鏈懡鍚嶄换鍔?}</strong>
-                  <span>{statusLabel(task.status)} 路 Step {Math.min(task.currentStep, 6)}</span>
+                  <strong>{task.title || '未命名任务'}</strong>
+                  <span>{statusLabel(task.status)} · Step {Math.min(task.currentStep, 6)}</span>
                 </button>
               ))}
             </section>
             <button className="trial-activation-bar" onClick={() => navigate('activation')}>
               <KeyRound size={15} />
-              <span>璇曠敤鍓╀綑</span>
+              <span>试用剩余</span>
               <strong>{trialDaysLabel}</strong>
             </button>
             <div className="account-entry-grid">
               <button className="credit-chip" onClick={() => navigate('account')}>
                 <Coins size={15} />
-                绉垎鏄庣粏
+                积分明细
                 <span>{state.account.balance.toFixed(2)}</span>
               </button>
               <button className="feedback-link" onClick={() => navigate('account')}>
                 <Info size={14} />
-                璐︽埛涓績
+                账户中心
               </button>
             </div>
           </div>
@@ -863,15 +863,15 @@ function App() {
           <div>
             <h1>{activeNav.label}</h1>
             <p>{pageSubtitle(activeView)}</p>
-            {isBrowserPreview ? <span className="local-note">娴忚鍣ㄩ瑙堜笉鑳芥墽琛岀湡瀹炴祦姘寸嚎锛岃鍦?Electron 搴旂敤涓繍琛屼换鍔°€?/span> : null}
+            {isBrowserPreview ? <span className="local-note">浏览器预览不能执行真实流水线，请在 Electron 应用中运行任务。</span> : null}
           </div>
             <div className="top-notice">
               <Info size={16} />
-              <span>{state.config.jianying.draftPath ? `鍓槧鑽夌鐩綍锛?{state.config.jianying.draftPath}` : '灏氭湭閰嶉綈锛氬壀鏄犺崏绋跨洰褰?}</span>
+              <span>{state.config.jianying.draftPath ? `剪映草稿目录：${state.config.jianying.draftPath}` : '尚未配齐：剪映草稿目录'}</span>
             </div>
             <div className={`save-state ${saveTone}`}>
               <span />
-              {saveTone === 'saving' ? '淇濆瓨涓? : saveTone === 'dirty' ? '鏈夋湭淇濆瓨鏀瑰姩' : '鎵€鏈夋敼鍔ㄥ凡淇濆瓨'}
+              {saveTone === 'saving' ? '保存中' : saveTone === 'dirty' ? '有未保存改动' : '所有改动已保存'}
             </div>
           </header>
 
@@ -932,7 +932,6 @@ function ViralAnalyzerPage({
   const [selectedId, setSelectedId] = useState(state.viralAnalyses[0]?.id ?? '');
   const [result, setResult] = useState<ViralAnalysisResult | null>(null);
   const [message, setMessage] = useState('');
-  const [startingAnalysis, setStartingAnalysis] = useState(false);
   const selected = state.viralAnalyses.find((item) => item.id === selectedId) ?? state.viralAnalyses[0] ?? null;
   const selectedEvents = selected ? state.viralEvents.filter((event) => event.analysisId === selected.id) : [];
   const detectedPlatform = detectBrowserViralPlatform(url);
@@ -986,39 +985,32 @@ function ViralAnalyzerPage({
   }
 
   async function openDouyinLogin() {
-    setMessage('璇峰湪鎵撳紑鐨勬姈闊崇獥鍙ｅ畬鎴愮櫥褰曪紝鍏抽棴绐楀彛鍚庝細鑷姩淇濆瓨 Cookie銆?);
+    setMessage('请在打开的抖音窗口完成登录，关闭窗口后会自动保存 Cookie。');
     const loginCookiePath = await api.openViralLoginWindow();
     if (loginCookiePath) {
       setCookieFilePath(loginCookiePath);
-      setMessage(`宸蹭繚瀛?Cookie 鏂囦欢锛?{loginCookiePath}`);
+      setMessage(`已保存 Cookie 文件：${loginCookiePath}`);
     }
   }
 
   async function startAnalysis() {
     if (!url.trim()) {
-      setMessage('璇疯緭鍏ユ姈闊炽€佸揩鎵嬫垨 B 绔欏叕寮€瑙嗛閾炬帴');
+      setMessage('请输入抖音、快手或 B 站公开视频链接');
       return;
     }
     if (selectedPlatformForAnalysis === 'unknown') {
-      setMessage('鏈瘑鍒埌骞冲彴锛岃閫夋嫨鎶栭煶銆佸揩鎵嬫垨 B绔欍€?);
+      setMessage('未识别到平台，请选择抖音、快手或 B站。');
       return;
     }
     setMessage('');
-    setStartingAnalysis(true);
-    try {
-      if (cookieFilePath !== state.config.viral.cookieFilePath) await saveViralCookiePath(cookieFilePath);
-      const next = await api.createAndRunViralAnalysis({
-        url: url.trim(),
-        platform: selectedPlatformForAnalysis,
-        settings: { track, style, ratio, templateId, keyFrameCount, storyboardSceneCount: 12 },
-      });
-      applyState(next);
-      setSelectedId(next.viralAnalyses[0]?.id ?? '');
-    } catch (error) {
-      setMessage(error instanceof Error ? error.message : String(error));
-    } finally {
-      setStartingAnalysis(false);
-    }
+    if (cookieFilePath !== state.config.viral.cookieFilePath) await saveViralCookiePath(cookieFilePath);
+    const next = await api.createAndRunViralAnalysis({
+      url: url.trim(),
+      platform: selectedPlatformForAnalysis,
+      settings: { track, style, ratio, templateId, keyFrameCount, storyboardSceneCount: 12 },
+    });
+    applyState(next);
+    setSelectedId(next.viralAnalyses[0]?.id ?? '');
   }
 
   async function createProductionTask() {
@@ -1046,7 +1038,7 @@ function ViralAnalyzerPage({
     await api.saveCustomStyle(drafts.imageTemplate);
     const next = await api.savePromptTemplate(drafts.storyTemplate);
     applyState(next);
-    setMessage('宸蹭繚瀛樻晠浜嬫ā鏉垮拰鍥剧墖妯℃澘锛屽彲鍦ㄦ彁绀鸿瘝妯℃澘涓户缁紪杈戙€?);
+    setMessage('已保存故事模板和图片模板，可在提示词模板中继续编辑。');
   }
 
   return (
@@ -1055,12 +1047,12 @@ function ViralAnalyzerPage({
         <section className="panel viral-input-panel">
           <div className="panel-title-row">
             <div>
-              <h2>鐖嗘鎷嗚В</h2>
-              <p>鏀寔鎶栭煶銆佸揩鎵嬨€丅绔欓摼鎺ワ紝鎷嗚В寮€澶淬€佺粨鏋勩€佺粨灏俱€佺垎鐐广€?/p>
+              <h2>爆款拆解</h2>
+              <p>支持抖音、快手、B站链接，拆解开头、结构、结尾、爆点。</p>
             </div>
             <Flame size={20} />
           </div>
-          <label className="field-label" htmlFor="viral-url-input">瑙嗛閾炬帴</label>
+          <label className="field-label" htmlFor="viral-url-input">视频链接</label>
           <input id="viral-url-input" className="text-input viral-url-input" value={url} onChange={(event) => handleUrlChange(event.target.value)} placeholder="https://www.douyin.com/video/..." />
           <div className="segmented viral-platform-picker">
             {viralSourceModes.map((item) => (
@@ -1070,14 +1062,14 @@ function ViralAnalyzerPage({
             ))}
           </div>
           <p className="viral-source-status">
-            {sourceMode === 'auto' ? `鑷姩璇嗗埆锛?{viralPlatformLabel(detectedPlatform)}` : `鎵嬪姩鎸囧畾锛?{viralPlatformLabel(selectedPlatformForAnalysis)}`}
+            {sourceMode === 'auto' ? `自动识别：${viralPlatformLabel(detectedPlatform)}` : `手动指定：${viralPlatformLabel(selectedPlatformForAnalysis)}`}
           </p>
-          <button className="primary-action viral-start-action" disabled={startingAnalysis || (isBrowserPreview && false)} onClick={startAnalysis}>
+          <button className="primary-action viral-start-action" disabled={isBrowserPreview && false} onClick={startAnalysis}>
             <Search size={16} />
-            {startingAnalysis ? '姝ｅ湪鍒涘缓鎷嗚В...' : '寮€濮嬫媶瑙?}
+            开始拆解
           </button>
           <div className="viral-settings-grid">
-            <Field label="鍏抽敭甯ф暟閲?>
+            <Field label="关键帧数量">
               <input
                 className="text-input"
                 type="number"
@@ -1088,14 +1080,14 @@ function ViralAnalyzerPage({
                 onChange={(event) => setKeyFrameCount(normalizeViralKeyFrameCount(event.target.value))}
               />
             </Field>
-            <ViralChoiceGroup title="璧涢亾" options={contentTracks} value={track} onChange={setTrack} />
-            <ViralChoiceGroup title="椋庢牸" options={styleOptions} value={style} onChange={setStyle} />
-            <ViralChoiceGroup title="姣斾緥" options={ratioOptions.map((item) => [item, item, ''])} value={ratio} onChange={setRatio} compact />
-            <Field label="鑽夌妯℃澘">
+            <ViralChoiceGroup title="赛道" options={contentTracks} value={track} onChange={setTrack} />
+            <ViralChoiceGroup title="风格" options={styleOptions} value={style} onChange={setStyle} />
+            <ViralChoiceGroup title="比例" options={ratioOptions.map((item) => [item, item, ''])} value={ratio} onChange={setRatio} compact />
+            <Field label="草稿模板">
               <select className="viral-draft-template-select" value={templateId} onChange={(event) => setTemplateId(event.target.value)}>
                 {state.draftTemplates.map((template) => (
                   <option key={template.id} value={template.id}>
-                    {template.name} 路 {template.canvas.ratio}
+                    {template.name} · {template.canvas.ratio}
                   </option>
                 ))}
               </select>
@@ -1103,10 +1095,10 @@ function ViralAnalyzerPage({
           </div>
           <div className="viral-cookie-tools">
             <div className="settings-inline-actions">
-              <button className="mini-button" type="button" onClick={openDouyinLogin}>鎵撳紑鎶栭煶鐧诲綍绐楀彛</button>
-              <button className="mini-button" type="button" onClick={chooseCookieFile}>閫夋嫨 Cookie 鏂囦欢</button>
+              <button className="mini-button" type="button" onClick={openDouyinLogin}>打开抖音登录窗口</button>
+              <button className="mini-button" type="button" onClick={chooseCookieFile}>选择 Cookie 文件</button>
             </div>
-            <Field label="Cookie 鏂囦欢">
+            <Field label="Cookie 文件">
               <div className="viral-cookie-input-row">
                 <input
                   id="viral-cookie-input"
@@ -1116,33 +1108,33 @@ function ViralAnalyzerPage({
                   onBlur={() => saveViralCookiePath(cookieFilePath)}
                   placeholder="C:\\Users\\you\\Downloads\\cookies.txt"
                 />
-                {cookieFilePath ? <button className="mini-button" type="button" onClick={() => saveViralCookiePath('')}>娓呯┖</button> : null}
+                {cookieFilePath ? <button className="mini-button" type="button" onClick={() => saveViralCookiePath('')}>清空</button> : null}
               </div>
             </Field>
-            <p className="muted-text">鎶栭煶椋庢帶鏃跺厛鐐圭櫥褰曠獥鍙ｅ畬鎴愮櫥褰曪紱鍏抽棴绐楀彛鍚庝細鑷姩鍐欏叆鏈簲鐢ㄧ殑 Cookie 鏂囦欢銆備篃鍙互鎵嬪姩閫夋嫨 Netscape cookies.txt銆?/p>
+            <p className="muted-text">抖音风控时先点登录窗口完成登录；关闭窗口后会自动写入本应用的 Cookie 文件。也可以手动选择 Netscape cookies.txt。</p>
           </div>
           {message ? <div className="test-result">{message}</div> : null}
         </section>
 
         <section className="panel viral-history-panel">
           <div className="panel-title-row">
-            <h3>鍘嗗彶鎷嗚В</h3>
+            <h3>历史拆解</h3>
             <span className="panel-count">{state.viralAnalyses.length}</span>
           </div>
           <div className="viral-history-list">
             {state.viralAnalyses.map((item) => (
               <button key={item.id} title={item.title || item.url} className={selected?.id === item.id ? 'viral-history-item active' : 'viral-history-item'} onClick={() => setSelectedId(item.id)}>
                 <strong>{item.title || item.url}</strong>
-                <span>{viralPlatformLabel(item.platform)} 路 {viralStatusLabel(item.status)} 路 {(item.progress * 100).toFixed(0)}%</span>
+                <span>{viralPlatformLabel(item.platform)} · {viralStatusLabel(item.status)} · {(item.progress * 100).toFixed(0)}%</span>
               </button>
             ))}
-            {state.viralAnalyses.length === 0 ? <p className="muted-text">鏆傛棤鎷嗚В浠诲姟</p> : null}
+            {state.viralAnalyses.length === 0 ? <p className="muted-text">暂无拆解任务</p> : null}
           </div>
         </section>
       </div>
 
       <section className="panel viral-progress-panel">
-        <h3>浠诲姟杩涘害</h3>
+        <h3>任务进度</h3>
         <div className="viral-progress-list viral-stage-timeline">
           {viralStages.map((stage, stageIndex) => {
             const isActive = selected?.currentStage === stage;
@@ -1153,20 +1145,20 @@ function ViralAnalyzerPage({
             return (
               <div key={stage} className={className}>
                 <span>{viralStageLabel(stage)}</span>
-                <small>{latestEvent?.detail ?? '绛夊緟涓?}</small>
+                <small>{latestEvent?.detail ?? '等待中'}</small>
               </div>
             );
           })}
         </div>
-        {selected?.errorMessage ? <ErrorSummaryButton title="鎷嗚В閿欒" fullMessage={selected.errorMessage} /> : null}
+        {selected?.errorMessage ? <ErrorSummaryButton title="拆解错误" fullMessage={selected.errorMessage} /> : null}
       </section>
 
       <section className="panel viral-report-panel viral-result-drawer">
         <div className="panel-title-row">
-          <h3>鎷嗚В鎶ュ憡</h3>
-          {selected?.status === 'failed' || selected?.status === 'cancelled' ? <button className="mini-button viral-retry-button" type="button" onClick={() => selected && api.retryViralAnalysis(selected.id).then(applyState)}><RotateCcw size={14} />閲嶈瘯</button> : null}
+          <h3>拆解报告</h3>
+          {selected?.status === 'failed' || selected?.status === 'cancelled' ? <button className="mini-button viral-retry-button" type="button" onClick={() => selected && api.retryViralAnalysis(selected.id).then(applyState)}><RotateCcw size={14} />重试</button> : null}
         </div>
-        {result ? <ViralReport result={result} createProductionTask={createProductionTask} saveTemplates={saveViralTemplates} track={track} style={style} draftTemplateId={templateId} /> : <p className="muted-text">浠诲姟瀹屾垚鍚庢樉绀哄紑澶淬€佺粨鏋勩€佺粨灏俱€佺垎鐐瑰拰澶嶅埢鏂规銆?/p>}
+        {result ? <ViralReport result={result} createProductionTask={createProductionTask} saveTemplates={saveViralTemplates} /> : <p className="muted-text">任务完成后显示开头、结构、结尾、爆点和复刻方案。</p>}
       </section>
     </div>
   );
@@ -1222,42 +1214,25 @@ function ViralReport({
   result,
   createProductionTask,
   saveTemplates,
-  track,
-  style,
-  draftTemplateId,
 }: {
   result: ViralAnalysisResult;
   createProductionTask: () => void;
   saveTemplates: (input: { storyTemplateName: string; imageTemplateName: string }) => Promise<void>;
-  track: string;
-  style: string;
-  draftTemplateId: string;
 }) {
   const [insightTab, setInsightTab] = useState<ViralInsightTab>('copy');
   const defaultTemplateBaseName = viralTemplateBaseName(result);
-  const [storyTemplateName, setStoryTemplateName] = useState(`鐖嗘鏁呬簨妯℃澘 - ${defaultTemplateBaseName}`);
-  const [imageTemplateName, setImageTemplateName] = useState(`鐖嗘鍥剧墖妯℃澘 - ${defaultTemplateBaseName}`);
+  const [storyTemplateName, setStoryTemplateName] = useState(`爆款故事模板 - ${defaultTemplateBaseName}`);
+  const [imageTemplateName, setImageTemplateName] = useState(`爆款图片模板 - ${defaultTemplateBaseName}`);
   const [savingTemplates, setSavingTemplates] = useState(false);
   const [templateSaveError, setTemplateSaveError] = useState('');
   const breakdown = result.contentBreakdown;
   const frames = uniqueViralPromptFrames(result.frames);
   const keyFrameCount = frames.length;
   const originalCopy = viralTranscriptText(result);
-  const templatePreview = useMemo(
-    () =>
-      createViralTemplateDrafts(result, {
-        storyTemplateName: storyTemplateName.trim() || `鐖嗘鏁呬簨妯℃澘 - ${defaultTemplateBaseName}`,
-        imageTemplateName: imageTemplateName.trim() || `鐖嗘鍥剧墖妯℃澘 - ${defaultTemplateBaseName}`,
-        track,
-        style,
-        draftTemplateId,
-      }),
-    [result, storyTemplateName, imageTemplateName, track, style, draftTemplateId, defaultTemplateBaseName],
-  );
 
   useEffect(() => {
-    setStoryTemplateName(`鐖嗘鏁呬簨妯℃澘 - ${defaultTemplateBaseName}`);
-    setImageTemplateName(`鐖嗘鍥剧墖妯℃澘 - ${defaultTemplateBaseName}`);
+    setStoryTemplateName(`爆款故事模板 - ${defaultTemplateBaseName}`);
+    setImageTemplateName(`爆款图片模板 - ${defaultTemplateBaseName}`);
     setTemplateSaveError('');
   }, [defaultTemplateBaseName]);
 
@@ -1279,72 +1254,52 @@ function ViralReport({
   return (
     <>
       <div className="viral-report-grid">
-        <ViralReportCard title="寮€澶? value={breakdown.opening.type} detail={breakdown.opening.analysis} />
-        <ViralReportCard title="缁撴瀯" value={breakdown.structure.type} detail={breakdown.structure.analysis} />
-        <ViralReportCard title="缁撳熬" value={breakdown.ending.type} detail={breakdown.ending.analysis} />
-        <ViralReportCard title="鐖嗙偣" value={breakdown.viralPoint.summary} detail={breakdown.viralPoint.reusablePattern} />
+        <ViralReportCard title="开头" value={breakdown.opening.type} detail={breakdown.opening.analysis} />
+        <ViralReportCard title="结构" value={breakdown.structure.type} detail={breakdown.structure.analysis} />
+        <ViralReportCard title="结尾" value={breakdown.ending.type} detail={breakdown.ending.analysis} />
+        <ViralReportCard title="爆点" value={breakdown.viralPoint.summary} detail={breakdown.viralPoint.reusablePattern} />
       </div>
       <div className="viral-frame-insights">
-        <div className="viral-insight-tabs" role="tablist" aria-label="鍥炬枃鎷嗚В">
-          <button type="button" className={insightTab === 'copy' ? 'active' : ''} onClick={() => setInsightTab('copy')}>鏂囨鎷嗚В</button>
-          <button type="button" className={insightTab === 'prompt' ? 'active' : ''} onClick={() => setInsightTab('prompt')}>鎻愮ず璇嶆媶瑙?/button>
-          <span className="viral-keyframe-count">鍏抽敭甯ф暟閲忥細{keyFrameCount}</span>
+        <div className="viral-insight-tabs" role="tablist" aria-label="图文拆解">
+          <button type="button" className={insightTab === 'copy' ? 'active' : ''} onClick={() => setInsightTab('copy')}>文案拆解</button>
+          <button type="button" className={insightTab === 'prompt' ? 'active' : ''} onClick={() => setInsightTab('prompt')}>提示词拆解</button>
+          <span className="viral-keyframe-count">关键帧数量：{keyFrameCount}</span>
         </div>
         {insightTab === 'copy' ? (
           <div className="viral-copy-breakdown">
             <section className="viral-original-copy">
-              <span>鍘熸枃妗?/span>
-              <p>{originalCopy || '鏆傛棤杞啓鏂囨銆傚彲浠ュ厛纭璇煶杞枃瀛楅厤缃紝鎴栨煡鐪嬩笅鏂规爣棰樸€佸紑澶淬€佺粨鏋勪笌鐖嗙偣鎷嗚В銆?}</p>
+              <span>原文案</span>
+              <p>{originalCopy || '暂无转写文案。可以先确认语音转文字配置，或查看下方标题、开头、结构与爆点拆解。'}</p>
             </section>
             <div className="viral-copy-grid">
-              <ViralCopyCard title="鏍囬鏂囨" value={breakdown.title.original || result.source.title || '鏈瘑鍒爣棰?} detail={breakdown.title.pattern} />
-              <ViralCopyCard title="寮€澶磋瘽鏈? value={breakdown.opening.type} detail={breakdown.opening.analysis} />
-              <ViralCopyCard title="缁撳熬璇濇湳" value={breakdown.ending.type} detail={breakdown.ending.analysis} />
-              <ViralCopyCard title="鐖嗙偣琛ㄨ揪" value={breakdown.viralPoint.summary} detail={breakdown.viralPoint.reusablePattern} />
+              <ViralCopyCard title="标题文案" value={breakdown.title.original || result.source.title || '未识别标题'} detail={breakdown.title.pattern} />
+              <ViralCopyCard title="开头话术" value={breakdown.opening.type} detail={breakdown.opening.analysis} />
+              <ViralCopyCard title="结尾话术" value={breakdown.ending.type} detail={breakdown.ending.analysis} />
+              <ViralCopyCard title="爆点表达" value={breakdown.viralPoint.summary} detail={breakdown.viralPoint.reusablePattern} />
             </div>
           </div>
         ) : (
           <div className="viral-insight-list">
             {frames.map((frame) => (
               <article className="viral-insight-card" key={`${frame.timestamp}-${frame.framePath}`}>
-                <span>{formatViralFrameTimestamp(frame.timestamp)} 路 鐢熷浘鎻愮ず璇嶆媶瑙?/span>
+                <span>{formatViralFrameTimestamp(frame.timestamp)} · 生图提示词拆解</span>
                 <strong>{frameImagePrompt(frame)}</strong>
                 <p>{framePromptDetail(frame)}</p>
               </article>
             ))}
-            {frames.length === 0 ? <p className="muted-text">鏆傛棤鍏抽敭甯ф彁绀鸿瘝鎷嗚В缁撴灉</p> : null}
+            {frames.length === 0 ? <p className="muted-text">暂无关键帧提示词拆解结果</p> : null}
           </div>
         )}
       </div>
       <div className="viral-followup-panel">
-        <h3>鍚庣画鎿嶄綔</h3>
+        <h3>后续操作</h3>
         <p>{result.recreation.blueprint}</p>
-        <ViralTemplatePreviewField label="鏁呬簨搴曠锛坰cript锛? value={result.recreation.script || result.recreation.storyContent || result.recreation.blueprint} />
-        <div className="viral-template-preview-grid">
-          <section className="viral-template-preview-section">
-            <span className="field-title">鏁呬簨妯℃澘棰勮</span>
-            <ViralTemplatePreviewField label="妯℃澘姝ｆ枃锛堝惈棰勫锛? value={templatePreview.storyTemplate.content} />
-            <div className="viral-template-preview-subgrid">
-              <ViralTemplatePreviewField label="Step 0 棰勫" value={templatePreview.storyTemplate.stepPrompts?.review ?? ''} />
-              <ViralTemplatePreviewField label="Step 1 鏀瑰啓" value={templatePreview.storyTemplate.stepPrompts?.rewrite ?? ''} />
-              <ViralTemplatePreviewField label="Step 2 灏侀潰" value={templatePreview.storyTemplate.stepPrompts?.cover ?? ''} />
-              <ViralTemplatePreviewField label="Step 3 鍒嗛暅" value={templatePreview.storyTemplate.stepPrompts?.storyboard ?? ''} />
-              <ViralTemplatePreviewField label="鎶藉抚鎻愮ず璇嶆ā鏉匡紙鐢熸垚鐢級" value={templatePreview.storyTemplate.stepPrompts?.['image-prompt'] ?? ''} />
-            </div>
-          </section>
-          <section className="viral-template-preview-section">
-            <span className="field-title">鍥剧墖妯℃澘棰勮</span>
-            <ViralTemplatePreviewField label="鍓嶇紑锛坧refix锛? value={templatePreview.imageTemplate.prefix} />
-            <ViralTemplatePreviewField label="鍚庣紑锛坰uffix锛? value={templatePreview.imageTemplate.suffix} />
-            <ViralTemplatePreviewField label="璐熼潰鎻愮ず璇嶏紙negativePrompt锛? value={templatePreview.imageTemplate.negativePrompt} />
-            <ViralTemplatePreviewField label="閫傜敤鍦烘櫙鎻忚堪" value={templatePreview.imageTemplate.description} />
-          </section>
-        </div>
+        <textarea className="small-textarea" value={result.recreation.script} readOnly />
         <div className="viral-template-name-grid">
-          <Field label="鏁呬簨妯℃澘鍚?>
+          <Field label="故事模板名">
             <input className="text-input" value={storyTemplateName} onChange={(event) => setStoryTemplateName(event.target.value)} />
           </Field>
-          <Field label="鍥剧墖妯℃澘鍚?>
+          <Field label="图片模板名">
             <input className="text-input" value={imageTemplateName} onChange={(event) => setImageTemplateName(event.target.value)} />
           </Field>
         </div>
@@ -1352,11 +1307,12 @@ function ViralReport({
         <div className="viral-followup-actions">
           <button className="primary-action" disabled={savingTemplates || !storyTemplateName.trim() || !imageTemplateName.trim()} onClick={() => void handleSaveTemplates()}>
             {savingTemplates ? <Loader2 className="spin" size={16} /> : <Save size={16} />}
-            {savingTemplates ? '淇濆瓨涓? : '淇濆瓨涓烘ā鏉?}
+            {savingTemplates ? '保存中' : '保存为模板'}
           </button>
           <button className="ghost-action viral-create-production-task" onClick={createProductionTask}>
             <Wand2 size={16} />
-            鐢熸垚鏂颁换鍔?          </button>
+            生成新任务
+          </button>
         </div>
       </div>
     </>
@@ -1368,7 +1324,7 @@ function viralTranscriptText(result: ViralAnalysisResult): string {
 }
 
 function viralTemplateBaseName(result: ViralAnalysisResult): string {
-  return trimForPreview(result.source.title || result.contentBreakdown.topic || '鐭棰?, 18);
+  return trimForPreview(result.source.title || result.contentBreakdown.topic || '短视频', 18);
 }
 
 function frameImagePrompt(frame: ViralAnalysisResult['frames'][number]): string {
@@ -1377,15 +1333,15 @@ function frameImagePrompt(frame: ViralAnalysisResult['frames'][number]): string 
     frame.composition,
     frame.visualDescription,
     frame.mood,
-    frame.keyElements.length ? `鍏抽敭鍏冪礌锛?{frame.keyElements.join('銆?)}` : '',
-  ].filter(Boolean).join('锛?);
+    frame.keyElements.length ? `关键元素：${frame.keyElements.join('、')}` : '',
+  ].filter(Boolean).join('，');
 }
 
 function framePromptDetail(frame: ViralAnalysisResult['frames'][number]): string {
   return [
     frame.visualDescription,
-    frame.textOverlay ? `鐢婚潰鏂囧瓧锛?{frame.textOverlay}` : '',
-    frame.keyElements.length ? `鍏抽敭鍏冪礌锛?{frame.keyElements.join('銆?)}` : '',
+    frame.textOverlay ? `画面文字：${frame.textOverlay}` : '',
+    frame.keyElements.length ? `关键元素：${frame.keyElements.join('、')}` : '',
   ].filter(Boolean).join('\n');
 }
 
@@ -1414,14 +1370,6 @@ function ViralCopyCard({ title, value, detail }: { title: string; value: string;
   );
 }
 
-function ViralTemplatePreviewField({ label, value }: { label: string; value: string }) {
-  return (
-    <Field label={label}>
-      <textarea className="small-textarea viral-template-preview-textarea" value={value || '鏆傛棤鍐呭'} readOnly spellCheck={false} />
-    </Field>
-  );
-}
-
 function formatViralFrameTimestamp(timestamp: number): string {
   return `${Math.max(0, Math.round(timestamp))}s`;
 }
@@ -1437,11 +1385,11 @@ function ViralReportCard({ title, value, detail }: { title: string; value: strin
 }
 
 function viralPlatformLabel(platform: ViralPlatform): string {
-  return { douyin: '鎶栭煶', kuaishou: '蹇墜', bilibili: 'B绔?, unknown: '鑷姩璇嗗埆' }[platform];
+  return { douyin: '抖音', kuaishou: '快手', bilibili: 'B站', unknown: '自动识别' }[platform];
 }
 
 function viralSourceModeLabel(mode: ViralSourceMode): string {
-  return mode === 'auto' ? '鑷姩璇嗗埆' : viralPlatformLabel(mode);
+  return mode === 'auto' ? '自动识别' : viralPlatformLabel(mode);
 }
 
 function detectBrowserViralPlatform(url: string): ViralPlatform {
@@ -1453,18 +1401,18 @@ function detectBrowserViralPlatform(url: string): ViralPlatform {
 }
 
 function viralStatusLabel(status: ViralAnalysisStatus): string {
-  return { pending: '绛夊緟', running: '杩愯涓?, paused: '鏆傚仠', completed: '宸插畬鎴?, failed: '澶辫触', cancelled: '宸插彇娑? }[status];
+  return { pending: '等待', running: '运行中', paused: '暂停', completed: '已完成', failed: '失败', cancelled: '已取消' }[status];
 }
 
 function viralStageLabel(stage: string): string {
   return {
-    downloading: '涓嬭浇瑙嗛',
-    extracting: '鎶藉抚鎻愰煶棰?,
-    transcribing: '璇煶杞啓',
-    analyzing_frames: '鐢婚潰鍒嗘瀽',
-    breaking_down: '鍐呭鎷嗚В',
-    recreating: '澶嶅埢鐢熸垚',
-    completed: '瀹屾垚',
+    downloading: '下载视频',
+    extracting: '抽帧提音频',
+    transcribing: '语音转写',
+    analyzing_frames: '画面分析',
+    breaking_down: '内容拆解',
+    recreating: '复刻生成',
+    completed: '完成',
   }[stage] ?? stage;
 }
 
@@ -1485,9 +1433,9 @@ function NewTaskPage({
   const [mode, setMode] = useState<TaskMode>('paste');
   const [title, setTitle] = useState('');
   const [inputText, setInputText] = useState(sampleText);
-  const [aiKeyword, setAiKeyword] = useState('姝﹀垯澶╁洖瀹?);
+  const [aiKeyword, setAiKeyword] = useState('武则天回宫');
   const [aiSources, setAiSources] = useState(['web']);
-  const [extraRequirements, setExtraRequirements] = useState('瀛楁暟鎺у埗鍦?500 瀛楀乏鍙筹紝鑱氱劍浜虹墿杞姌缁忓巻锛岃姘斿亸鎰熸€?);
+  const [extraRequirements, setExtraRequirements] = useState('字数控制在 500 字左右，聚焦人物转折经历，语气偏感性');
   const [track, setTrack] = useState('character-story');
   const [style, setStyle] = useState('photo-real');
   const [templateId, setTemplateId] = useState(initialDraftTemplateId);
@@ -1546,8 +1494,8 @@ function NewTaskPage({
   const coverTemplateOptions = state.customCoverTemplates.map((template) => [template.id, template.name, template.description]);
   const coverTemplateSelectOptions = coverTemplateOptions.length
     ? coverTemplateOptions
-    : [['cinematic-poster', '鐢靛奖娴锋姤灏侀潰', 'StoryDream 榛樿灏侀潰妯℃澘']];
-  const coverTemplateHint = storyDreamCoverTemplateIds.includes(coverTemplateId) ? 'StoryDream 鍏煎妯℃澘' : '鑷畾涔夊皝闈㈡ā鏉?;
+    : [['cinematic-poster', '电影海报封面', 'StoryDream 默认封面模板']];
+  const coverTemplateHint = storyDreamCoverTemplateIds.includes(coverTemplateId) ? 'StoryDream 兼容模板' : '自定义封面模板';
 
   useEffect(() => {
     setBgmId((current) => (current && bgmOptions.some((bgm) => bgm.id === current) ? current : resolveDefaultBgmId(state.config)));
@@ -1638,17 +1586,17 @@ function NewTaskPage({
   async function searchWebSources() {
     const keyword = aiKeyword.trim();
     if (!keyword) {
-      setSearchMessage('璇峰厛杈撳叆鍏抽敭璇嶃€?);
+      setSearchMessage('请先输入关键词。');
       return;
     }
     setSearchingSources(true);
-    setSearchMessage('姝ｅ湪浠?Bing 鎼滅储骞惰鍙栫綉椤垫鏂?..');
+    setSearchMessage('正在从 Bing 搜索并读取网页正文...');
     try {
       const context = await api.searchWebSources(keyword);
       const limitedContext = { ...context, sections: context.sections.slice(0, 10) };
       setSearchContext(limitedContext);
       setSelectedSearchSourceIds([]);
-      setSearchMessage(context.warnings.length ? context.warnings.join('锛?) : `宸茶幏鍙栧墠 ${limitedContext.sections.length} 鏉＄綉椤佃祫鏂欙紝璇峰嬀閫夎浣跨敤鐨勯〉闈€俙);
+      setSearchMessage(context.warnings.length ? context.warnings.join('；') : `已获取前 ${limitedContext.sections.length} 条网页资料，请勾选要使用的页面。`);
     } catch (error) {
       setSearchMessage(error instanceof Error ? error.message : String(error));
     } finally {
@@ -1658,11 +1606,11 @@ function NewTaskPage({
 
   async function composeResearchCopy() {
     if (selectedSources.length === 0) {
-      setResearchCopyMessage('璇峰厛鍕鹃€夎嚦灏?1 涓綉椤垫潵婧愩€?);
+      setResearchCopyMessage('请先勾选至少 1 个网页来源。');
       return;
     }
     setComposingCopy(true);
-    setResearchCopyMessage('姝ｅ湪缁撳悎鎵€閫夐〉闈俊鎭敓鎴愭枃妗?..');
+    setResearchCopyMessage('正在结合所选页面信息生成文案...');
     try {
       const result = await api.composeResearchCopy({
         keyword: aiKeyword.trim(),
@@ -1673,7 +1621,7 @@ function NewTaskPage({
       setInputText(result.copy);
       setTitle(result.title || aiKeyword.trim());
       setMode('paste');
-      setResearchCopyMessage(`宸茬敓鎴愭枃妗堝苟濉叆绮樿创鏂囨${result.requestId ? `锛坮equest ${result.requestId}锛塦 : ''}銆俙);
+      setResearchCopyMessage(`已生成文案并填入粘贴文案${result.requestId ? `（request ${result.requestId}）` : ''}。`);
     } catch (error) {
       setResearchCopyMessage(error instanceof Error ? error.message : String(error));
     } finally {
@@ -1697,7 +1645,7 @@ function NewTaskPage({
 
   async function run() {
     if (isBrowserPreview) {
-      setDraftNotice('娴忚鍣ㄩ瑙堜笉鑳芥墽琛岀湡瀹炴祦姘寸嚎锛岃鍦?Electron 搴旂敤涓繍琛屼换鍔°€?);
+      setDraftNotice('浏览器预览不能执行真实流水线，请在 Electron 应用中运行任务。');
       return;
     }
     setRunning(true);
@@ -1753,58 +1701,58 @@ function NewTaskPage({
   return (
     <div className="new-task-scroll">
       <section className="task-card">
-        <Field label="鏍囬" hint="鍙€?>
-          <input value={title} placeholder="鐣欑┖浼氫粠鏂囨鑷姩鎻愬彇" onChange={(event) => setTitle(event.target.value)} />
+        <Field label="标题" hint="可选">
+          <input value={title} placeholder="留空会从文案自动提取" onChange={(event) => setTitle(event.target.value)} />
         </Field>
         <div className="mode-grid">
           <button className={mode === 'paste' ? 'mode-card active' : 'mode-card'} onClick={() => setMode('paste')}>
-            <strong>绮樿创鏂囨</strong>
-            <span>宸叉湁瀵规爣鏂囨锛岀洿鎺ヨ创杩涙潵鏀瑰啓</span>
+            <strong>粘贴文案</strong>
+            <span>已有对标文案，直接贴进来改写</span>
           </button>
           <button className={mode === 'ai' ? 'mode-card active' : 'mode-card'} onClick={() => setMode('ai')}>
-            <strong>AI 鍒涗綔 <em>NEW</em></strong>
-            <span>杈撳叆鍏抽敭璇嶏紝AI 鑷姩鎼滅储骞跺垱浣滃師绋?/span>
+            <strong>AI 创作 <em>NEW</em></strong>
+            <span>输入关键词，AI 自动搜索并创作原稿</span>
           </button>
         </div>
 
         {mode === 'paste' ? (
-          <Field label="鏂囨鍐呭">
+          <Field label="文案内容">
             <textarea className="source-textarea" value={inputText} onChange={(event) => setInputText(event.target.value)} />
           </Field>
         ) : (
           <div className="ai-create-panel">
-            <Field label="鍏抽敭璇?>
-              <input value={aiKeyword} onChange={(event) => setAiKeyword(event.target.value)} placeholder="渚嬪锛氶挶瀛︽．鍥炲浗 / 寮犳姊?/ 鑻规灉绉嬪鍙戝竷浼? />
+            <Field label="关键词">
+              <input value={aiKeyword} onChange={(event) => setAiKeyword(event.target.value)} placeholder="例如：钱学森回国 / 张桂梅 / 苹果秋季发布会" />
             </Field>
-            <span className="field-title">鏁版嵁婧?/span>
+            <span className="field-title">数据源</span>
             <label className="check-row">
               <input type="checkbox" checked={aiSources.includes('web')} onChange={() => setAiSources(toggleArray(aiSources, 'web'))} />
-              鍏ㄧ綉鎼滅储 <small>浠?Bing + 鎼滅嫍 + 鐧惧害 + 360 鎼滅储锛岃ˉ鍏呯櫨绉戙€佺煡涔庛€佺櫨瀹跺彿銆佸ご鏉℃鏂?/small>
+              全网搜索 <small>从 Bing + 搜狗 + 百度 + 360 搜索，补充百科、知乎、百家号、头条正文</small>
             </label>
             <label className="check-row">
               <input type="checkbox" checked={aiSources.includes('builtin-knowledge')} onChange={() => setAiSources(toggleArray(aiSources, 'builtin-knowledge'))} />
-              AI 鍐呯疆鐭ヨ瘑琛ュ叏 <small>鍏佽 AI 鐢ㄨ嚜宸辩殑鐭ヨ瘑琛ュ叏缁嗚妭</small>
+              AI 内置知识补全 <small>允许 AI 用自己的知识补全细节</small>
             </label>
             <label className="check-row muted">
               <input type="checkbox" checked={aiSources.includes('ima')} onChange={() => setAiSources(toggleArray(aiSources, 'ima'))} />
-              IMA 鐭ヨ瘑搴?<small>鍓嶅線绯荤粺璁剧疆 路 AI 鍒涗綔閰嶇疆</small>
+              IMA 知识库 <small>前往系统设置 · AI 创作配置</small>
             </label>
-            <Field label="棰濆瑕佹眰" hint="鍙€?>
+            <Field label="额外要求" hint="可选">
               <input className="extra-requirements-input" value={extraRequirements} onChange={(event) => setExtraRequirements(event.target.value)} />
             </Field>
             <button className="ghost-action" disabled={searchingSources || !aiKeyword.trim()} onClick={searchWebSources}>
               {searchingSources ? <Loader2 className="spin" size={15} /> : <Search size={15} />}
-              鎼滅储
+              搜索
             </button>
             {searchMessage ? <div className="test-result">{searchMessage}</div> : null}
             {searchContext ? (
               <div className="ai-search-block">
                 <div className="ai-search-results ai-search-results-scroll">
                   <div className="panel-title-row">
-                    <h3>缃戦〉鍊欓€夛紙鍓?10 鏉★級</h3>
-                    <small>{selectedSources.length}/{searchContext.sections.length} 宸查€夋嫨</small>
+                    <h3>网页候选（前 10 条）</h3>
+                    <small>{selectedSources.length}/{searchContext.sections.length} 已选择</small>
                   </div>
-                  {searchContext.sections.length === 0 ? <EmptyState title="鏆傛棤鍙敤缃戦〉璧勬枡" /> : null}
+                  {searchContext.sections.length === 0 ? <EmptyState title="暂无可用网页资料" /> : null}
                   {searchContext.sections.map((source, index) => {
                     const id = sourceKey(source, index);
                     return (
@@ -1822,12 +1770,12 @@ function NewTaskPage({
                 <div className="ai-search-actions">
                   <button className="primary-action slim" disabled={composingCopy || selectedSources.length === 0} onClick={composeResearchCopy}>
                     {composingCopy ? <Loader2 className="spin" size={15} /> : <Wand2 size={15} />}
-                    缁撳悎鎵€閫夐〉闈俊鎭敓鎴愭枃妗?
+                    结合所选页面信息生成文案
                   </button>
                 </div>
                 {researchCopyMessage ? <div className="test-result">{researchCopyMessage}</div> : null}
                 {researchCopy ? (
-                  <Field label="鐢熸垚鏂囨锛堝彲缂栬緫锛?>
+                  <Field label="生成文案（可编辑）">
                     <textarea className="small-textarea research-copy-textarea" value={researchCopy} onChange={(event) => setResearchCopy(event.target.value)} />
                   </Field>
                 ) : null}
@@ -1836,88 +1784,88 @@ function NewTaskPage({
           </div>
         )}
 
-        <OptionCloud title="鍐呭璧涢亾" options={storyTemplateOptions} value={selectedStoryTemplateId} onChange={handleStoryTemplateChange} />
-        <Field label="鎻愮ず璇嶆ā鏉? hint={resolvedPromptTemplate ? `褰撳墠浣跨敤锛?{resolvedPromptTemplate.name}` : '鑷姩鍖归厤璧涢亾妯℃澘'}>
+        <OptionCloud title="内容赛道" options={storyTemplateOptions} value={selectedStoryTemplateId} onChange={handleStoryTemplateChange} />
+        <Field label="提示词模板" hint={resolvedPromptTemplate ? `当前使用：${resolvedPromptTemplate.name}` : '自动匹配赛道模板'}>
           <select className="prompt-template-selector" value={promptTemplateOverrideId || resolvedPromptTemplate?.id || ''} onChange={(event) => handlePromptTemplateOverrideChange(event.target.value)}>
-            <option value="">鑷姩鍖归厤璧涢亾妯℃澘</option>
+            <option value="">自动匹配赛道模板</option>
             {taskPromptTemplateOptions.map(([id, label, hint]) => (
               <option key={id} value={id}>
-                {hint ? `${label} 路 ${hint}` : label}
+                {hint ? `${label} · ${hint}` : label}
               </option>
             ))}
           </select>
         </Field>
-        <OptionCloud title="鐢婚潰椋庢牸" options={imageTemplateStyleOptions} value={style} onChange={handleStyleChange} />
+        <OptionCloud title="画面风格" options={imageTemplateStyleOptions} value={style} onChange={handleStyleChange} />
         {resolvedPromptTemplate ? (
           <div className="template-default-summary">
-            <strong>妯℃澘榛樿椤?/strong>
-            <span>鏁呬簨妯℃澘锛歿resolvedPromptTemplate.name}</span>
-            <span>榛樿鍥惧儚妯℃澘锛歿styleLabel(style, state.customStyles)}</span>
-            <span>榛樿鑽夌妯℃澘锛歿draftTemplateLabel(templateId, state.draftTemplates)}</span>
-            <span>涓昏妗ｆ锛歿characterPolicyLabel(resolvedPromptTemplate.characterPolicy)}</span>
-            <span>鍙傝€冨浘绫诲瀷锛歿referenceKindLabel(resolvedPromptTemplate.referenceKind)}</span>
-            <span>Step 3 楠ㄦ灦锛歿(resolvedPromptTemplate.step3SkeletonModules ?? []).join('銆?) || '鏈缃?}</span>
+            <strong>模板默认项</strong>
+            <span>故事模板：{resolvedPromptTemplate.name}</span>
+            <span>默认图像模板：{styleLabel(style, state.customStyles)}</span>
+            <span>默认草稿模板：{draftTemplateLabel(templateId, state.draftTemplates)}</span>
+            <span>主角档案：{characterPolicyLabel(resolvedPromptTemplate.characterPolicy)}</span>
+            <span>参考图类型：{referenceKindLabel(resolvedPromptTemplate.referenceKind)}</span>
+            <span>Step 3 骨架：{(resolvedPromptTemplate.step3SkeletonModules ?? []).join('、') || '未设置'}</span>
           </div>
         ) : null}
 
         <div className="video-form-panel">
           <div className="video-form-head">
-            <span className="field-title">瑙嗛褰㈡€?/span>
-            <small>{videoForm === 'two-host-podcast' ? '鍙屼汉鎾浼氳嚜鍔ㄤ娇鐢ㄥ璇濊剼鏈拰鎾閰嶅浘绛栫暐' : '鍗曚汉閰嶉煶璁茶堪锛岄€傚悎甯歌鏃佺櫧瑙嗛'}</small>
+            <span className="field-title">视频形态</span>
+            <small>{videoForm === 'two-host-podcast' ? '双人播客会自动使用对话脚本和播客配图策略' : '单人配音讲述，适合常规旁白视频'}</small>
           </div>
           <div className="video-form-grid">
             <button className={videoForm === 'narration' ? 'video-form-option active' : 'video-form-option'} onClick={() => setVideoForm('narration')}>
-              <strong>鏃佺櫧瑙嗛</strong>
-              <span>鍗曚汉閰嶉煶璁茶堪锛堥粯璁わ級</span>
+              <strong>旁白视频</strong>
+              <span>单人配音讲述（默认）</span>
             </button>
             <button className={videoForm === 'two-host-podcast' ? 'video-form-option active' : 'video-form-option'} onClick={() => setVideoForm('two-host-podcast')}>
-              <strong>鍙屼汉鎾</strong>
-              <span>涓や綅涓绘挱涓€闂竴绛旇亰鍐呭</span>
+              <strong>双人播客</strong>
+              <span>两位主播一问一答聊内容</span>
             </button>
           </div>
           {videoForm === 'two-host-podcast' ? (
             <div className="podcast-form-controls">
-              <span className="podcast-form-label">鎾閰嶅浘</span>
-              <Segmented label="閰嶅浘鏂瑰紡" value={podcastImageMode} options={['multi', 'single']} labels={['鎸夊垎闀滈厤鍥?, '鍗曞浘灏侀潰']} onChange={setPodcastImageMode} />
+              <span className="podcast-form-label">播客配图</span>
+              <Segmented label="配图方式" value={podcastImageMode} options={['multi', 'single']} labels={['按分镜配图', '单图封面']} onChange={setPodcastImageMode} />
               <Segmented
-                label="涓绘挱缁勫悎"
+                label="主播组合"
                 value={podcastSpeakers}
                 options={['kazai-dayi', 'liufei-xiaolei']}
-                labels={['鍜斾粩 x 澶у９', '鍒橀 x 娼囩']}
+                labels={['咔仔 x 大壹', '刘飞 x 潇磊']}
                 onChange={(value) => setPodcastSpeakers(value as PodcastSpeakerPair)}
               />
-              <p className="podcast-form-note">涓绘挱缁勫悎浼氬啓鍏ュ璇濊剼鏈笌鎾灏侀潰鎻愮ず锛屽苟鑷姩浣跨敤涓ゅ榛樿闊宠壊鐢熸垚 A/B 瀵硅瘽銆?/p>
+              <p className="podcast-form-note">主播组合会写入对话脚本与播客封面提示，并自动使用两套默认音色生成 A/B 对话。</p>
             </div>
           ) : null}
         </div>
 
         <div className="option-two-col">
-          <Field label="灏侀潰妯℃澘" hint={coverTemplateHint}>
+          <Field label="封面模板" hint={coverTemplateHint}>
             <select className="cover-template-select" value={coverTemplateId} onChange={(event) => setCoverTemplateId(event.target.value)}>
               {coverTemplateSelectOptions.map(([id, label, hint]) => (
                 <option key={id} value={id}>
-                  {hint ? `${label} 路 ${id}` : label}
+                  {hint ? `${label} · ${id}` : label}
                 </option>
               ))}
             </select>
           </Field>
-          <Segmented label="灏侀潰鐢熸垚" value={coverImageMode} options={['off', 'auto', 'manual']} labels={['鍏抽棴', '鑷姩', '浠呭皝闈?]} onChange={setCoverImageMode} />
+          <Segmented label="封面生成" value={coverImageMode} options={['off', 'auto', 'manual']} labels={['关闭', '自动', '仅封面']} onChange={setCoverImageMode} />
         </div>
 
         <div className="option-two-col">
           <div className="draft-template-picker-stack">
-            <OptionCloud title="鑽夌妯℃澘" options={primaryDraftTemplates.map((template) => [template.id, template.name, `鍑哄浘 ${template.image.ratio}`])} value={templateId} onChange={handleDraftTemplateChange} />
+            <OptionCloud title="草稿模板" options={primaryDraftTemplates.map((template) => [template.id, template.name, `出图 ${template.image.ratio}`])} value={templateId} onChange={handleDraftTemplateChange} />
             {alternateDraftTemplates.length ? (
-              <Field label="妯℃澘澶囬€?>
+              <Field label="模板备选">
                 <select
                   className="draft-template-alternate-select"
                   value={alternateDraftTemplates.some((template) => template.id === templateId) ? templateId : ''}
                   onChange={(event) => handleDraftTemplateChange(event.target.value || primaryDraftTemplates[0]?.id || templateId)}
                 >
-                  <option value="">閫夋嫨澶囬€夋ā鏉?/option>
+                  <option value="">选择备选模板</option>
                   {alternateDraftTemplates.map((template) => (
                     <option key={template.id} value={template.id}>
-                      {template.name} 路 鍑哄浘 {template.image.ratio}
+                      {template.name} · 出图 {template.image.ratio}
                     </option>
                   ))}
                 </select>
@@ -1925,7 +1873,7 @@ function NewTaskPage({
             ) : null}
           </div>
           <div>
-            <span className="field-title">AI 鍑哄浘姣斾緥 <small>{ratioManuallyOverridden ? '宸叉墜鍔ㄨ鐩? : '宸茶窡闅忚崏绋挎ā鏉?}</small></span>
+            <span className="field-title">AI 出图比例 <small>{ratioManuallyOverridden ? '已手动覆盖' : '已跟随草稿模板'}</small></span>
             <div className="ratio-grid">
               {['9:16', '4:3', '1:1', '16:9'].map((item) => (
                 <button key={item} className={ratio === item ? 'chip active' : 'chip'} onClick={() => handleRatioChange(item)}>
@@ -1939,20 +1887,20 @@ function NewTaskPage({
 
         <div className="target-controls-row">
           <label className="target-number-field">
-            <span>鐩爣瀛楁暟</span>
+            <span>目标字数</span>
             <input
               type="number"
               min="100"
               max="5000"
               step="50"
               value={targetLength}
-              placeholder="鑷姩"
+              placeholder="自动"
               onChange={(event) => setTargetLength(event.target.value)}
             />
-            <small>瀛楋紙卤15%锛岀暀绌鸿窡闅忓師鏂囷級</small>
+            <small>字（±15%，留空跟随原文）</small>
           </label>
           <label className="target-number-field">
-            <span>鐩爣鍒嗛暅鏁?/span>
+            <span>目标分镜数</span>
             <input
               type="number"
               min="1"
@@ -1961,24 +1909,24 @@ function NewTaskPage({
               value={storyboardSceneCount}
               onChange={(event) => setStoryboardSceneCount(event.target.value)}
             />
-            <small>涓紙卤10%锛屽缓璁瘡闀?25-45 瀛楋級</small>
+            <small>个（±10%，建议每镜 25-45 字）</small>
           </label>
           <label className="target-number-field">
-            <span>鍙戝竷鏂瑰紡</span>
+            <span>发布方式</span>
             <Segmented
               label=""
               value={publishMode}
               options={['review-rewrite', 'direct-copy']}
-              labels={['棰勫鏀瑰啓', '鐩存帴鏁呭彂']}
+              labels={['预审改写', '直接复用']}
               onChange={(value) => setPublishMode(value as 'review-rewrite' | 'direct-copy')}
             />
-            <small>棰勫鏀瑰啓浼氳蛋瀹屽叏娴佺▼锛岀洿鎺ョ粰鍘熸枃鍙互璺宠繃 Step 0 / 1</small>
+            <small>预审改写会走完整流程，直接复用原文可跳过 Step 0 / 1</small>
           </label>
         </div>
 
         <>
-          <span className="field-title">閰嶉煶鍛?/span>
-          <Segmented label="閰嶉煶妯″瀷" value={ttsProvider} options={['volcengine', 'minimax']} labels={['璞嗗寘', 'MiniMax']} onChange={handleTtsProviderChange} />
+          <span className="field-title">配音员</span>
+          <Segmented label="配音模型" value={ttsProvider} options={['volcengine', 'minimax']} labels={['豆包', 'MiniMax']} onChange={handleTtsProviderChange} />
           {videoForm !== 'two-host-podcast' ? (
             <>
             <div className="chip-row">
@@ -1989,49 +1937,49 @@ function NewTaskPage({
                 </button>
               ))}
             </div>
-            <span className="hint-text">褰撳墠榛樿閰嶉煶鍛橈細{taskSpeakerLabel(ttsProvider, speaker)} 路 {speaker}</span>
+            <span className="hint-text">当前默认配音员：{taskSpeakerLabel(ttsProvider, speaker)} · {speaker}</span>
             </>
-          ) : <span className="hint-text">鍙屼汉鎾浼氭寜涓绘挱缁勫悎鑷姩鎷嗗垎 A/B 闊宠壊锛屽綋鍓嶆ā鍨嬶細{ttsProvider}</span>}
+          ) : <span className="hint-text">双人播客会按主播组合自动拆分 A/B 音色，当前模型：{ttsProvider}</span>}
         </>
 
-        <span className="field-title">鑳屾櫙闊充箰</span>
+        <span className="field-title">背景音乐</span>
         <div className="chip-row">
           <button className={bgmId === '' ? 'chip active' : 'chip'} onClick={() => setBgmId('')}>
-            鏃?BGM
+            无 BGM
           </button>
           {bgmOptions.map((bgm) => (
             <button key={bgm.id} className={bgmId === bgm.id ? 'chip active' : 'chip'} onClick={() => setBgmId(bgm.id)}>
               {bgm.title}
             </button>
           ))}
-          <button className="chip" onClick={addBgmFromTask}><Plus size={14} />娣诲姞</button>
+          <button className="chip" onClick={addBgmFromTask}><Plus size={14} />添加</button>
         </div>
 
-        <Field label="涓昏鍙傝€冨浘" hint="鍙€?>
+        <Field label="主角参考图" hint="可选">
           <div className="upload-row">
-            <input value={referenceImagePath} placeholder="涓婁紶鍚庡嚭鐜颁富瑙掔殑鍒嗛暅浼氫互杩欏紶涓哄熀纭€淇濇寔浜虹墿涓€鑷? onChange={(event) => setReferenceImagePath(event.target.value)} />
+            <input value={referenceImagePath} placeholder="上传后出现主角的分镜会以这张为基础保持人物一致" onChange={(event) => setReferenceImagePath(event.target.value)} />
             <button className="ghost-action" onClick={selectTaskReferenceImage}>
               <Upload size={15} />
-              涓婁紶涓昏鍙傝€冨浘
+              上传主角参考图
             </button>
           </div>
         </Field>
 
         <button className="advanced-toggle" onClick={() => setShowAdvanced(!showAdvanced)}>
-          {showAdvanced ? '鈻? : '鈻?} 楂樼骇閫夐」 <span>鏀瑰啓寮哄害 路 鍙欎簨瑙嗚 路 甯﹁揣 路 澶勭悊妯″紡 路 鏆傚仠纭</span>
+          {showAdvanced ? '▼' : '▶'} 高级选项 <span>改写强度 · 叙事视角 · 带货 · 处理模式 · 暂停确认</span>
         </button>
         {showAdvanced ? (
           <div className="advanced-grid">
-            <Segmented label="澶勭悊妯″紡" value={processingMode} options={['full-auto', 'semi-auto', 'clip-only']} labels={['鍏ㄨ嚜鍔?, '鍗婅嚜鍔?, '鍙嚭鏂规']} onChange={(value) => setProcessingMode(value as ProcessingMode)} />
-            <Segmented label="鏆傚仠纭" value={pausePoint} options={pauseOptions.map(([id]) => id)} labels={pauseOptions.map(([, label]) => label)} onChange={(value) => setPausePoint(value as PausePoint)} />
-            <Segmented label="鏀瑰啓寮哄害" value={rewriteIntensity} options={rewriteOptions.map(([id]) => id)} labels={rewriteOptions.map(([, label]) => label)} onChange={(value) => setRewriteIntensity(value as RewriteIntensity)} />
-            <Segmented label="鍙欎簨瑙嗚" value={narrativePov} options={povOptions.map(([id]) => id)} labels={povOptions.map(([, label]) => label)} onChange={(value) => setNarrativePov(value as Task['narrativePov'])} />
+            <Segmented label="处理模式" value={processingMode} options={['full-auto', 'semi-auto', 'clip-only']} labels={['全自动', '半自动', '只出方案']} onChange={(value) => setProcessingMode(value as ProcessingMode)} />
+            <Segmented label="暂停确认" value={pausePoint} options={pauseOptions.map(([id]) => id)} labels={pauseOptions.map(([, label]) => label)} onChange={(value) => setPausePoint(value as PausePoint)} />
+            <Segmented label="改写强度" value={rewriteIntensity} options={rewriteOptions.map(([id]) => id)} labels={rewriteOptions.map(([, label]) => label)} onChange={(value) => setRewriteIntensity(value as RewriteIntensity)} />
+            <Segmented label="叙事视角" value={narrativePov} options={povOptions.map(([id]) => id)} labels={povOptions.map(([, label]) => label)} onChange={(value) => setNarrativePov(value as Task['narrativePov'])} />
             <label className="toggle-row">
               <input type="checkbox" checked={keepPromotion} onChange={(event) => setKeepPromotion(event.target.checked)} />
-              甯﹁揣妯″紡 <small>鏀瑰啓鏃跺垹闄ゅ甫璐ф钀?/small>
+              带货模式 <small>改写时删除带货段落</small>
             </label>
-            <Segmented label="閰嶉煶璇€? value={String(ttsSpeed)} options={['0.85', '1', '1.15', '1.3']} labels={['鎱㈤€?0.85x', '榛樿 1.0x', '蹇€?1.15x', '鏇村揩 1.3x']} onChange={(value) => setTtsSpeed(Number(value))} />
-            <Field label="鑷畾涔?/ 鍏朵粬妯″瀷">
+            <Segmented label="配音语速" value={String(ttsSpeed)} options={['0.85', '1', '1.15', '1.3']} labels={['慢速 0.85x', '默认 1.0x', '快速 1.15x', '更快 1.3x']} onChange={(value) => setTtsSpeed(Number(value))} />
+            <Field label="自定义 / 其他模型">
               <select value={selectedTaskLlmProfileId} onChange={(event) => setSelectedTaskLlmProfileId(event.target.value)}>
                 {state.config.llmProfiles.map((profile) => (
                   <option key={profile.id ?? profile.model} value={profile.id ?? profile.model}>
@@ -2044,14 +1992,14 @@ function NewTaskPage({
         ) : null}
 
         <div className="task-footer">
-          <span className="danger-text">{isBrowserPreview ? '娴忚鍣ㄩ瑙堜笉鑳芥墽琛岀湡瀹炴祦姘寸嚎' : '璇曠敤宸茬敤灏斤紝澶嶅埢鐗堜粎鏈湴妯℃嫙锛屼笉闃绘柇鐢熸垚'}</span>
+          <span className="danger-text">{isBrowserPreview ? '浏览器预览不能执行真实流水线' : '试用已用尽，复刻版仅本地模拟，不阻断生成'}</span>
           <div className="button-row">
-            <button className="ghost-action" onClick={() => setDraftNotice('宸蹭繚瀛樹负鏈湴鑽夌棰勮')}>
-              淇濆瓨涓鸿崏绋?
+            <button className="ghost-action" onClick={() => setDraftNotice('已保存为本地草稿预设')}>
+              保存为草稿
             </button>
             <button className="primary-action" onClick={run} disabled={isBrowserPreview || running || (mode === 'paste' ? inputText.trim().length === 0 : aiKeyword.trim().length === 0)}>
               {running ? <Loader2 className="spin" size={17} /> : <Play size={17} />}
-              {running ? '杩愯涓? : '寮€濮嬬敓鎴?}
+              {running ? '运行中' : '开始生成'}
             </button>
           </div>
         </div>
@@ -2075,8 +2023,8 @@ function MusicMvPage({
   isBrowserPreview: boolean;
 }) {
   const defaultTemplateId = state.draftTemplates[0]?.id ?? 'default-portrait-9-16';
-  const [title, setTitle] = useState('闊充箰MV');
-  const [lyrics, setLyrics] = useState('闆ㄨ惤涓嬬涓€鍙n闇撹櫣浜捣绗簩鍙n鍓瓕鎶婂鑹插敱浜?);
+  const [title, setTitle] = useState('音乐MV');
+  const [lyrics, setLyrics] = useState('雨落下第一句\n霓虹亮起第二句\n副歌把夜色唱亮');
   const [style, setStyle] = useState('modern-film');
   const [ratio, setRatio] = useState('16:9');
   const [templateId, setTemplateId] = useState(defaultTemplateId);
@@ -2085,7 +2033,7 @@ function MusicMvPage({
   const [pausePoint, setPausePoint] = useState<PausePoint>('critical');
   const [musicMvRhythmMode, setMusicMvRhythmMode] = useState<Task['musicMv']['rhythmMode']>('lyric-sync');
   const [musicMvCaptionStyle, setMusicMvCaptionStyle] = useState<Task['musicMv']['captionStyle']>('karaoke');
-  const [musicMvVisualMotif, setMusicMvVisualMotif] = useState('闆ㄥ闇撹櫣銆佸鐙儗褰便€佹參闀滃ご');
+  const [musicMvVisualMotif, setMusicMvVisualMotif] = useState('雨夜霓虹、孤独背影、慢镜头');
   const [musicMvAudioPath, setMusicMvAudioPath] = useState('');
   const [bgmId, setBgmId] = useState(resolveDefaultBgmId(state.config));
   const [running, setRunning] = useState(false);
@@ -2093,7 +2041,7 @@ function MusicMvPage({
   const bgmOptions = validBgmItems(state.config);
   const lyricLines = lyrics.split(/\n/u).map((line) => line.trim()).filter(Boolean);
   const musicMvStyleOptions = styleOptions;
-  const musicMvDraftTemplateOptions = state.draftTemplates.map((template) => [template.id, template.name, `鍑哄浘 ${template.image.ratio}`]);
+  const musicMvDraftTemplateOptions = state.draftTemplates.map((template) => [template.id, template.name, `出图 ${template.image.ratio}`]);
 
   async function selectMusicMvAudio() {
     const audioPath = await api.selectLocalAudio();
@@ -2107,11 +2055,11 @@ function MusicMvPage({
 
   async function runMusicMv() {
     if (isBrowserPreview) {
-      setMessage('娴忚鍣ㄩ瑙堜笉鑳芥墽琛岀湡瀹炴祦姘寸嚎锛岃鍦?Electron 搴旂敤涓敓鎴愰煶涔?MV銆?);
+      setMessage('浏览器预览不能执行真实流水线，请在 Electron 应用中生成音乐 MV。');
       return;
     }
     if (!lyrics.trim()) {
-      setMessage('璇峰厛杈撳叆姝岃瘝 / 鏂囨銆?);
+      setMessage('请先输入歌词 / 文案。');
       return;
     }
     setRunning(true);
@@ -2150,35 +2098,35 @@ function MusicMvPage({
       <section className="task-card">
         <div className="panel-title-row">
           <div>
-            <h2>闊充箰MV</h2>
-            <span>鎸夋瓕璇嶅垏鍒嗛暅澶淬€佸悓姝ュ瓧骞曡妭濂忥紝骞惰緭鍑哄壀鏄犺崏绋裤€?/span>
+            <h2>音乐MV</h2>
+            <span>按歌词切分镜头、同步字幕节奏，并输出剪映草稿。</span>
           </div>
           <button className="primary-action slim" onClick={runMusicMv} disabled={running || !lyrics.trim()}>
             {running ? <Loader2 className="spin" size={15} /> : <Music size={15} />}
-            鐢熸垚闊充箰 MV
+            生成音乐 MV
           </button>
         </div>
 
-        <Field label="鏍囬">
+        <Field label="标题">
           <input value={title} onChange={(event) => setTitle(event.target.value)} />
         </Field>
-        <Field label="姝岃瘝 / 鏂囨">
+        <Field label="歌词 / 文案">
           <textarea className="source-textarea" value={lyrics} onChange={(event) => setLyrics(event.target.value)} />
         </Field>
 
         <div className="advanced-grid">
-          <Segmented label="鑺傚妯″紡" value={musicMvRhythmMode} options={['lyric-sync', 'fast-cut', 'slow-cinematic']} labels={['姝岃瘝鍚屾', '蹇垏', '鎱㈤暅澶?]} onChange={(value) => setMusicMvRhythmMode(value as Task['musicMv']['rhythmMode'])} />
-          <Segmented label="姝岃瘝瀛楀箷" value={musicMvCaptionStyle} options={['karaoke', 'minimal', 'none']} labels={['鍗℃媺 OK', '鏋佺畝', '鏃犲瓧骞?]} onChange={(value) => setMusicMvCaptionStyle(value as Task['musicMv']['captionStyle'])} />
-          <Segmented label="澶勭悊妯″紡" value={processingMode} options={['full-auto', 'semi-auto', 'clip-only']} labels={['鍏ㄨ嚜鍔?, '鍗婅嚜鍔?, '鍙嚭鏂规']} onChange={(value) => setProcessingMode(value as ProcessingMode)} />
-          <Segmented label="鏆傚仠纭" value={pausePoint} options={pauseOptions.map(([id]) => id)} labels={pauseOptions.map(([, label]) => label)} onChange={(value) => setPausePoint(value as PausePoint)} />
-          <Segmented label="鍒嗛暅鏁伴噺" value={String(storyboardSceneCount)} options={storyboardSceneCountOptions.map(String)} labels={storyboardSceneCountOptions.map((count) => `${count} 鏉)} onChange={(value) => setStoryboardSceneCount(Number(value))} />
+          <Segmented label="节奏模式" value={musicMvRhythmMode} options={['lyric-sync', 'fast-cut', 'slow-cinematic']} labels={['歌词同步', '快切', '慢镜头']} onChange={(value) => setMusicMvRhythmMode(value as Task['musicMv']['rhythmMode'])} />
+          <Segmented label="歌词字幕" value={musicMvCaptionStyle} options={['karaoke', 'minimal', 'none']} labels={['卡拉 OK', '极简', '无字幕']} onChange={(value) => setMusicMvCaptionStyle(value as Task['musicMv']['captionStyle'])} />
+          <Segmented label="处理模式" value={processingMode} options={['full-auto', 'semi-auto', 'clip-only']} labels={['全自动', '半自动', '只出方案']} onChange={(value) => setProcessingMode(value as ProcessingMode)} />
+          <Segmented label="暂停确认" value={pausePoint} options={pauseOptions.map(([id]) => id)} labels={pauseOptions.map(([, label]) => label)} onChange={(value) => setPausePoint(value as PausePoint)} />
+          <Segmented label="分镜数量" value={String(storyboardSceneCount)} options={storyboardSceneCountOptions.map(String)} labels={storyboardSceneCountOptions.map((count) => `${count} 条`)} onChange={(value) => setStoryboardSceneCount(Number(value))} />
         </div>
 
-        <OptionCloud title="鐢婚潰椋庢牸" options={musicMvStyleOptions} value={style} onChange={setStyle} />
+        <OptionCloud title="画面风格" options={musicMvStyleOptions} value={style} onChange={setStyle} />
         <div className="option-two-col">
-          <OptionCloud title="鑽夌妯℃澘" options={musicMvDraftTemplateOptions} value={templateId} onChange={setTemplateId} />
+          <OptionCloud title="草稿模板" options={musicMvDraftTemplateOptions} value={templateId} onChange={setTemplateId} />
           <div>
-            <span className="field-title">AI 鍑哄浘姣斾緥</span>
+            <span className="field-title">AI 出图比例</span>
             <div className="ratio-grid">
               {['9:16', '4:3', '1:1', '16:9'].map((item) => (
                 <button key={item} className={ratio === item ? 'chip active' : 'chip'} onClick={() => setRatio(item)}>
@@ -2190,19 +2138,19 @@ function MusicMvPage({
           </div>
         </div>
 
-        <Field label="瑙嗚姣嶉">
-          <input value={musicMvVisualMotif} onChange={(event) => setMusicMvVisualMotif(event.target.value)} placeholder="渚嬪锛氶洦澶滈湏铏广€佸鐙儗褰便€佹參闀滃ご" />
+        <Field label="视觉母题">
+          <input value={musicMvVisualMotif} onChange={(event) => setMusicMvVisualMotif(event.target.value)} placeholder="例如：雨夜霓虹、孤独背影、慢镜头" />
         </Field>
-        <Field label="闊抽鏂囦欢">
+        <Field label="音频文件">
           <div className="upload-row">
-            <input value={musicMvAudioPath} onChange={(event) => setMusicMvAudioPath(event.target.value)} placeholder="鍙€夋嫨鏈湴姝屾洸鎴栦即濂? />
-            <button className="ghost-action" onClick={selectMusicMvAudio}><FolderOpen size={15} />閫夋嫨闊抽</button>
+            <input value={musicMvAudioPath} onChange={(event) => setMusicMvAudioPath(event.target.value)} placeholder="可选择本地歌曲或伴奏" />
+            <button className="ghost-action" onClick={selectMusicMvAudio}><FolderOpen size={15} />选择音频</button>
           </div>
         </Field>
 
-        <span className="field-title">鑳屾櫙闊充箰</span>
+        <span className="field-title">背景音乐</span>
         <div className="chip-row">
-          <button className={bgmId === '' ? 'chip active' : 'chip'} onClick={() => setBgmId('')}>鏃?BGM</button>
+          <button className={bgmId === '' ? 'chip active' : 'chip'} onClick={() => setBgmId('')}>无 BGM</button>
           {bgmOptions.map((bgm) => (
             <button key={bgm.id} className={bgmId === bgm.id ? 'chip active' : 'chip'} onClick={() => setBgmId(bgm.id)}>{bgm.title}</button>
           ))}
@@ -2211,11 +2159,11 @@ function MusicMvPage({
         {message ? <span className="local-note">{message}</span> : null}
       </section>
       <aside className="music-mv-preview panel">
-        <h3>MV 缁撴瀯棰勮</h3>
+        <h3>MV 结构预览</h3>
         <div className="task-metrics">
-          <div><small>姝岃瘝琛?/small><strong>{lyricLines.length}</strong></div>
-          <div><small>鑺傚</small><strong>{musicMvRhythmMode}</strong></div>
-          <div><small>瀛楀箷</small><strong>{musicMvCaptionStyle}</strong></div>
+          <div><small>歌词行</small><strong>{lyricLines.length}</strong></div>
+          <div><small>节奏</small><strong>{musicMvRhythmMode}</strong></div>
+          <div><small>字幕</small><strong>{musicMvCaptionStyle}</strong></div>
         </div>
         <div className="artifact-scene-list">
           {lyricLines.slice(0, 8).map((line, index) => (
@@ -2258,29 +2206,29 @@ function QueuePage({
       <section className="panel">
         <div className="panel-title-row">
           <div>
-            <h2>浠诲姟闃熷垪</h2>
-            <span>{state.tasks.length} 涓崏绋?路 閫変腑涓€鎵瑰嵆鍙嚜鍔ㄤ覆琛屾墽琛?路 鍗曚换鍔″唴 3 璺苟鍙戠敓鍥?/span>
+            <h2>任务队列</h2>
+            <span>{state.tasks.length} 个草稿 · 选中一批即可自动串行执行 · 单任务内 3 路并发生图</span>
           </div>
           <button className="primary-action slim" onClick={openNewTask}>
             <Plus size={15} />
-            鏂板缓浠诲姟
+            新建任务
           </button>
         </div>
         <div className="task-list">
-          {state.tasks.length === 0 ? <EmptyState title="鏆傛棤浠诲姟" /> : null}
+          {state.tasks.length === 0 ? <EmptyState title="暂无任务" /> : null}
           {state.tasks.map((task) => (
             <article className="task-row clickable" key={task.id} role="button" tabIndex={0} onClick={() => openTaskDetail(task.id)} onKeyDown={(event) => event.key === 'Enter' && openTaskDetail(task.id)}>
               <div>
-                <strong>{task.title || '鏈懡鍚嶄换鍔?}</strong>
-                <span>{task.mode === 'ai' ? 'AI 鍒涗綔' : '绮樿创鏂囨'} 路 {task.ratio} 路 {formatDate(task.createdAt)}</span>
-                <ErrorSummaryButton fullMessage={task.errorMessage} title={task.title || '浠诲姟閿欒'} />
+                <strong>{task.title || '未命名任务'}</strong>
+                <span>{task.mode === 'ai' ? 'AI 创作' : '粘贴文案'} · {task.ratio} · {formatDate(task.createdAt)}</span>
+                <ErrorSummaryButton fullMessage={task.errorMessage} title={task.title || '任务错误'} />
               </div>
               <StatusPill status={task.status} />
               <div className="row-actions" onClick={(event) => event.stopPropagation()}>
-                {task.status === 'running' ? <button className="mini-button" onClick={() => setStatus(task, 'paused')}>鏆傚仠</button> : null}
-                {task.status === 'running' || task.status === 'pending' ? <button className="mini-button" onClick={() => setStatus(task, 'cancelled')}>鍙栨秷</button> : null}
-                {task.status === 'paused' || task.status === 'failed' ? <button className="mini-button" disabled={isBrowserPreview} onClick={() => resumeTask(task)}>缁х画</button> : null}
-                {task.status === 'paused' || task.status === 'failed' ? <button className="mini-button" disabled={isBrowserPreview} onClick={() => resumeTask(task)}>閲嶈瘯</button> : null}
+                {task.status === 'running' ? <button className="mini-button" onClick={() => setStatus(task, 'paused')}>暂停</button> : null}
+                {task.status === 'running' || task.status === 'pending' ? <button className="mini-button" onClick={() => setStatus(task, 'cancelled')}>取消</button> : null}
+                {task.status === 'paused' || task.status === 'failed' ? <button className="mini-button" disabled={isBrowserPreview} onClick={() => resumeTask(task)}>继续</button> : null}
+                {task.status === 'paused' || task.status === 'failed' ? <button className="mini-button" disabled={isBrowserPreview} onClick={() => resumeTask(task)}>重试</button> : null}
                 <button className="mini-button" disabled={task.status !== 'completed' || !task.outputDir} onClick={() => task.outputDir && api.openPath(task.outputDir)}>
                   <FolderOpen size={14} />
                 </button>
@@ -2291,11 +2239,11 @@ function QueuePage({
       </section>
       <section className="panel">
         <div className="panel-title-row">
-          <h2>姝ラ浜嬩欢</h2>
+          <h2>步骤事件</h2>
           {latestTask?.status === 'completed' && latestTask.outputDir ? (
             <button className="ghost-action" onClick={() => api.openPath(latestTask.outputDir)}>
               <FolderOpen size={15} />
-              鎵撳紑鍓槧鑽夌
+              打开剪映草稿
             </button>
           ) : null}
         </div>
@@ -2319,20 +2267,20 @@ function HistoryPage({ api, state, openTaskDetail }: { api: StoryDreamApi; state
             </button>
           ))}
         </div>
-        <input className="search-input" value={query} placeholder="鎼滅储浠诲姟" onChange={(event) => setQuery(event.target.value)} />
+        <input className="search-input" value={query} placeholder="搜索任务" onChange={(event) => setQuery(event.target.value)} />
       </div>
       <div className="history-table">
         <div className="table-head">
-          <span>浠诲姟</span>
-          <span>鐘舵€?/span>
-          <span>姝ラ</span>
-          <span>鍒涘缓鏃堕棿</span>
-          <span>杈撳嚭</span>
+          <span>任务</span>
+          <span>状态</span>
+          <span>步骤</span>
+          <span>创建时间</span>
+          <span>输出</span>
         </div>
-        {tasks.length === 0 ? <EmptyState title="鏆傛棤鍘嗗彶浠诲姟" /> : null}
+        {tasks.length === 0 ? <EmptyState title="暂无历史任务" /> : null}
         {tasks.map((task) => (
           <div className="table-row clickable" key={task.id} role="button" tabIndex={0} onClick={() => openTaskDetail(task.id)} onKeyDown={(event) => event.key === 'Enter' && openTaskDetail(task.id)}>
-            <strong>{task.title || '鏈懡鍚嶄换鍔?}</strong>
+            <strong>{task.title || '未命名任务'}</strong>
             <StatusPill status={task.status} />
             <span>{task.currentStep}</span>
             <span>{formatDate(task.createdAt)}</span>
@@ -2423,7 +2371,7 @@ function TaskDetailPage({
   if (!task) {
     return (
       <section className="panel full-panel">
-        <EmptyState title="鏆傛棤浠诲姟璇︽儏" />
+        <EmptyState title="暂无任务详情" />
       </section>
     );
   }
@@ -2441,13 +2389,13 @@ function TaskDetailPage({
     <div className="task-detail-shell">
       <div className="task-detail-bar">
         <div className="breadcrumb">
-          <button onClick={close}>鍘嗗彶浠诲姟</button>
+          <button onClick={close}>历史任务</button>
           <span>/</span>
-          <strong>浠诲姟璇︽儏</strong>
+          <strong>任务详情</strong>
         </div>
         <button className="mini-button" onClick={close}>
           <XCircle size={14} />
-          鍏抽棴
+          关闭
         </button>
       </div>
 
@@ -2455,26 +2403,26 @@ function TaskDetailPage({
         <section className="task-summary-card">
           <div className="task-id-line">
             <span>{activeTask.id}</span>
-            <button className="icon-button" title="澶嶅埗浠诲姟 ID" onClick={() => navigator.clipboard?.writeText(activeTask.id)}>
+            <button className="icon-button" title="复制任务 ID" onClick={() => navigator.clipboard?.writeText(activeTask.id)}>
               <Copy size={14} />
             </button>
           </div>
           <div className="task-metrics">
-            <div><strong>{formatDuration(activeTask.createdAt, activeTask.completedAt, liveNow)}</strong><span>鎬昏€楁椂</span></div>
-            <div><strong>{completedSteps}<small>/{pipelineSteps.length}</small></strong><span>褰撳墠姝ラ</span></div>
-            <div><strong>{events.length || '-'}</strong><span>浜嬩欢鏁?/span></div>
+            <div><strong>{formatDuration(activeTask.createdAt, activeTask.completedAt, liveNow)}</strong><span>总耗时</span></div>
+            <div><strong>{completedSteps}<small>/{pipelineSteps.length}</small></strong><span>当前步骤</span></div>
+            <div><strong>{events.length || '-'}</strong><span>事件数</span></div>
           </div>
           <button className="cancel-task-button" disabled={activeTask.status === 'completed' || activeTask.status === 'cancelled'} onClick={cancelTask}>
             <XCircle size={14} />
-            鍙栨秷浠诲姟
+            取消任务
           </button>
         </section>
 
         <section className="pipeline-card">
           <div className="pipeline-title">
-            <strong>7 姝ユ祦姘寸嚎</strong>
-            <span className="auto-badge">鍏ㄨ嚜鍔?/span>
-            <small>路 鍏ㄩ儴 7 姝ユ墽琛?/small>
+            <strong>7 步流水线</strong>
+            <span className="auto-badge">全自动</span>
+            <small>· 全部 7 步执行</small>
           </div>
           <div className="pipeline-list">
             {pipelineSteps.map((step) => {
@@ -2487,7 +2435,7 @@ function TaskDetailPage({
                   <div>
                     <strong>{step.title}</strong>
                     <span>{step.hint}</span>
-                    {status === 'running' ? <small>杩涜涓?/small> : stepEvent?.type === 'step_error' ? <ErrorSummaryButton fullMessage={stepEvent.detail} title={step.title} compact /> : <small>{stepLabel}</small>}
+                    {status === 'running' ? <small>进行中</small> : stepEvent?.type === 'step_error' ? <ErrorSummaryButton fullMessage={stepEvent.detail} title={step.title} compact /> : <small>{stepLabel}</small>}
                   </div>
                 </div>
               );
@@ -2498,9 +2446,9 @@ function TaskDetailPage({
 
       <section className="task-detail-main">
         <div className="artifact-tabs">
-          <button className={tab === 'preview' ? 'active' : ''} onClick={() => setTab('preview')}><FileJson size={14} />浜х墿棰勮</button>
-          <button className={tab === 'storyboard' ? 'active' : ''} onClick={() => setTab('storyboard')}><ImageIcon size={14} />鍒嗛暅鐢诲粖</button>
-          <button className={tab === 'audio' ? 'active' : ''} onClick={() => setTab('audio')}><Mic2 size={14} />閰嶉煶璇曞惉</button>
+          <button className={tab === 'preview' ? 'active' : ''} onClick={() => setTab('preview')}><FileJson size={14} />产物预览</button>
+          <button className={tab === 'storyboard' ? 'active' : ''} onClick={() => setTab('storyboard')}><ImageIcon size={14} />分镜画廊</button>
+          <button className={tab === 'audio' ? 'active' : ''} onClick={() => setTab('audio')}><Mic2 size={14} />配音试听</button>
         </div>
         <ArtifactPreviewContent api={api} task={activeTask} config={state.config} applyState={applyState} tab={tab} snapshot={artifactSnapshot} latestEvent={latestEvent} currentAgent={currentMeta.agent} isBrowserPreview={isBrowserPreview} />
       </section>
@@ -2566,32 +2514,32 @@ function ArtifactPreviewContent({
         <div className="preview-empty-icon">{task.status === 'running' ? <Loader2 className="spin" size={22} /> : <Database size={22} />}</div>
         <div>
           <strong>{artifactPanelTitle(task, tab)}</strong>
-          {latestEvent?.type === 'step_error' ? <ErrorSummaryButton fullMessage={latestEvent.detail} title="娴佹按绾块敊璇? /> : <span>{snapshot?.message || latestEvent?.detail || '绛夊緟褰撳墠姝ラ浜х墿钀界洏'}</span>}
+          {latestEvent?.type === 'step_error' ? <ErrorSummaryButton fullMessage={latestEvent.detail} title="流水线错误" /> : <span>{snapshot?.message || latestEvent?.detail || '等待当前步骤产物落盘'}</span>}
         </div>
         {task.status === 'completed' && task.outputDir ? (
           <button className="ghost-action" onClick={() => api.openPath(task.outputDir)}>
             <FolderOpen size={15} />
-            鎵撳紑鍓槧鑽夌
+            打开剪映草稿
           </button>
         ) : null}
       </div>
 
       <div className="preview-meta-grid">
-        <div><small>浠诲姟</small><strong>{task.title || '鏈懡鍚嶄换鍔?}</strong></div>
-        <div><small>鐘舵€?/small><strong>{statusLabel(task.status)}</strong></div>
-        <div><small>褰撳墠浠ｇ悊</small><strong>{currentAgent}</strong></div>
-        <div><small>鍥剧墖杩涘害</small><strong>{imageProgress}</strong></div>
-        <div><small>浜х墿鏇存柊鏃堕棿</small><strong>{snapshot?.updatedAt ? formatDate(snapshot.updatedAt) : '绛夊緟鐢熸垚'}</strong></div>
-        <div><small>杈撳嚭鐩綍</small><strong>{task.outputDir || '绛夊緟鐢熸垚'}</strong></div>
-        <div><small>澶辫触姝ラ</small><strong>{task.failedStep ?? '-'}</strong></div>
-        <div><small>鐘舵€佹枃浠?/small><strong>{task.artifactStatePath || '绛夊緟鐢熸垚'}</strong></div>
-        <div><small>鏈€杩戝績璺?/small><strong>{task.lastHeartbeatAt ? formatDate(task.lastHeartbeatAt) : '绛夊緟杩愯'}</strong></div>
-        <div><small>鎭㈠姝ラ</small><strong>{task.retryFromStep ?? '-'}</strong></div>
+        <div><small>任务</small><strong>{task.title || '未命名任务'}</strong></div>
+        <div><small>状态</small><strong>{statusLabel(task.status)}</strong></div>
+        <div><small>当前代理</small><strong>{currentAgent}</strong></div>
+        <div><small>图片进度</small><strong>{imageProgress}</strong></div>
+        <div><small>产物更新时间</small><strong>{snapshot?.updatedAt ? formatDate(snapshot.updatedAt) : '等待生成'}</strong></div>
+        <div><small>输出目录</small><strong>{task.outputDir || '等待生成'}</strong></div>
+        <div><small>失败步骤</small><strong>{task.failedStep ?? '-'}</strong></div>
+        <div><small>状态文件</small><strong>{task.artifactStatePath || '等待生成'}</strong></div>
+        <div><small>最近心跳</small><strong>{task.lastHeartbeatAt ? formatDate(task.lastHeartbeatAt) : '等待运行'}</strong></div>
+        <div><small>恢复步骤</small><strong>{task.retryFromStep ?? '-'}</strong></div>
       </div>
 
       {tab === 'preview' ? (
         <div className="artifact-section-stack">
-          <ArtifactSection title="AI 鎼滅储璧勬枡" badge={`${sourceContext?.sections.length ?? 0} 鏉} actions={artifactStepActions(0)}>
+          <ArtifactSection title="AI 搜索资料" badge={`${sourceContext?.sections.length ?? 0} 条`} actions={artifactStepActions(0)}>
             {sourceContext?.sections.length ? (
               <div className="artifact-source-list">
                 {sourceContext.sections.map((source, index) => (
@@ -2602,38 +2550,38 @@ function ArtifactPreviewContent({
                   </div>
                 ))}
               </div>
-            ) : <ArtifactEmpty text="绛夊緟 AI 鍒涗綔鎼滅储璧勬枡" />}
+            ) : <ArtifactEmpty text="等待 AI 创作搜索资料" />}
           </ArtifactSection>
 
-          <ArtifactSection title="鏂囨棰勫" badge={`${countChars(artifact.reviewedText)} 瀛梎} actions={artifactStepActions(0)}>
-            <ArtifactText value={artifact.reviewedText} empty="绛夊緟鏂囨棰勫浜х墿" />
+          <ArtifactSection title="文案预审" badge={`${countChars(artifact.reviewedText)} 字`} actions={artifactStepActions(0)}>
+            <ArtifactText value={artifact.reviewedText} empty="等待文案预审产物" />
           </ArtifactSection>
 
-          <ArtifactSection title="鏀瑰啓浜х墿" badge={`${countChars(artifact.rewrittenCopy)} 瀛梎} actions={artifactStepActions(1)}>
-            <ArtifactText value={artifact.rewrittenCopy} empty="绛夊緟鏀瑰啓浜х墿" />
+          <ArtifactSection title="改写产物" badge={`${countChars(artifact.rewrittenCopy)} 字`} actions={artifactStepActions(1)}>
+            <ArtifactText value={artifact.rewrittenCopy} empty="等待改写产物" />
           </ArtifactSection>
 
-          <ArtifactSection title="灏侀潰淇℃伅" badge={artifact.cover?.title || '绛夊緟鐢熸垚'} actions={artifactStepActions(1)}>
+          <ArtifactSection title="封面信息" badge={artifact.cover?.title || '等待生成'} actions={artifactStepActions(1)}>
             {artifact.cover ? (
               <div className="artifact-cover-grid">
-                <div><small>鏍囬</small><strong>{artifact.cover.title}</strong></div>
-                <div><small>鍓爣棰?/small><strong>{artifact.cover.subtitle.join(' / ') || '-'}</strong></div>
-                <div><small>鎽樿</small><p>{artifact.cover.summary || '-'}</p></div>
-                <div><small>鏍囩</small><p>{artifact.cover.tags.join(' ') || '-'}</p></div>
-                <div><small>绉嶅瓙璇勮</small><p>{artifact.cover.comments.join(' / ') || '-'}</p></div>
+                <div><small>标题</small><strong>{artifact.cover.title}</strong></div>
+                <div><small>副标题</small><strong>{artifact.cover.subtitle.join(' / ') || '-'}</strong></div>
+                <div><small>摘要</small><p>{artifact.cover.summary || '-'}</p></div>
+                <div><small>标签</small><p>{artifact.cover.tags.join(' ') || '-'}</p></div>
+                <div><small>种子评论</small><p>{artifact.cover.comments.join(' / ') || '-'}</p></div>
               </div>
-            ) : <ArtifactEmpty text="绛夊緟灏侀潰鏍囬銆佹憳瑕併€佹爣绛惧拰璇勮" />}
+            ) : <ArtifactEmpty text="等待封面标题、摘要、标签和评论" />}
           </ArtifactSection>
 
-          <ArtifactSection title="鍒嗛暅鍒嗗彞" badge={`${scenes.length} 鏉} actions={artifactStepActions(2)}>
+          <ArtifactSection title="分镜分句" badge={`${scenes.length} 条`} actions={artifactStepActions(2)}>
             <ArtifactSceneList scenes={scenes} imagePrompts={imagePrompts} images={imageAssets} />
           </ArtifactSection>
 
-          <ArtifactSection title="缁樺浘鎻愮ず璇? badge={`${imagePrompts.length} 鏉} actions={artifactStepActions(3)}>
+          <ArtifactSection title="绘图提示词" badge={`${imagePrompts.length} 条`} actions={artifactStepActions(3)}>
             <ArtifactPromptList prompts={imagePrompts} />
           </ArtifactSection>
 
-          <ArtifactSection title="鎵归噺鐢熷浘" badge={`${imageAssets.length} 寮燻} actions={artifactStepActions(4)}>
+          <ArtifactSection title="批量生图" badge={`${imageAssets.length} 张`} actions={artifactStepActions(4)}>
             <ImageGenerationGallery
               api={api}
               task={task}
@@ -2646,35 +2594,35 @@ function ArtifactPreviewContent({
             />
           </ArtifactSection>
 
-          <ArtifactSection title="閰嶉煶瀛楀箷" badge={`${narrationAssets.length} 娈?/ ${subtitles?.cues.length ?? 0} 鏉″瓧骞昤} actions={artifactStepActions(5)}>
+          <ArtifactSection title="配音字幕" badge={`${narrationAssets.length} 段 / ${subtitles?.cues.length ?? 0} 条字幕`} actions={artifactStepActions(5)}>
             <NarrationPreviewList
               api={api}
               task={task}
               scenes={scenes}
               subtitles={subtitles}
               assets={narrationAssets}
-              empty="绛夊緟閰嶉煶鐢熸垚"
+              empty="等待配音生成"
               isBrowserPreview={isBrowserPreview}
               applyState={applyState}
             />
             {subtitles?.srt ? <pre className="artifact-text-block compact">{trimForPreview(subtitles.srt, 900)}</pre> : null}
           </ArtifactSection>
 
-          <ArtifactSection title="鑽夌杈撳嚭" badge={snapshot?.draft ? '宸茬敓鎴? : '绛夊緟鐢熸垚'} actions={artifactStepActions(6)}>
+          <ArtifactSection title="草稿输出" badge={snapshot?.draft ? '已生成' : '等待生成'} actions={artifactStepActions(6)}>
             {snapshot?.draft ? (
               <div className="artifact-path-list">
                 <span>{snapshot.draft.draftDir}</span>
                 <span>{snapshot.draft.draftContentPath}</span>
                 <span>{snapshot.draft.draftMetaPath}</span>
               </div>
-            ) : <ArtifactEmpty text="绛夊緟鍓槧鑽夌鐩綍" />}
+            ) : <ArtifactEmpty text="等待剪映草稿目录" />}
           </ArtifactSection>
         </div>
       ) : null}
 
       {tab === 'storyboard' ? (
         <div className="artifact-section-stack">
-          <ArtifactSection title="鎵归噺鐢熷浘" badge={`${imageAssets.length} 寮燻}>
+          <ArtifactSection title="批量生图" badge={`${imageAssets.length} 张`}>
             <ImageGenerationGallery
               api={api}
               task={task}
@@ -2686,7 +2634,7 @@ function ArtifactPreviewContent({
               applyState={applyState}
             />
           </ArtifactSection>
-          <ArtifactSection title="鍒嗛暅鍒嗗彞" badge={`${scenes.length} 鏉}>
+          <ArtifactSection title="分镜分句" badge={`${scenes.length} 条`}>
             <ArtifactSceneList scenes={scenes} imagePrompts={imagePrompts} images={imageAssets} />
           </ArtifactSection>
         </div>
@@ -2694,14 +2642,14 @@ function ArtifactPreviewContent({
 
       {tab === 'audio' ? (
         <div className="artifact-section-stack">
-          <ArtifactSection title="閰嶉煶瀛楀箷" badge={`${narrationAssets.length} 娈?/ ${subtitles?.cues.length ?? 0} 鏉″瓧骞昤}>
+          <ArtifactSection title="配音字幕" badge={`${narrationAssets.length} 段 / ${subtitles?.cues.length ?? 0} 条字幕`}>
             <NarrationPreviewList
               api={api}
               task={task}
               scenes={scenes}
               subtitles={subtitles}
               assets={narrationAssets}
-              empty="绛夊緟閰嶉煶鐢熸垚"
+              empty="等待配音生成"
               isBrowserPreview={isBrowserPreview}
               applyState={applyState}
             />
@@ -2714,7 +2662,7 @@ function ArtifactPreviewContent({
                   </div>
                 ))}
               </div>
-            ) : <ArtifactEmpty text="绛夊緟瀛楀箷鏃堕棿杞? />}
+            ) : <ArtifactEmpty text="等待字幕时间轴" />}
           </ArtifactSection>
         </div>
       ) : null}
@@ -2753,13 +2701,13 @@ function ArtifactStepActions({
   const busy = regenerating || rewriting;
   return (
     <div className="artifact-step-action-buttons">
-      <button className="mini-button" disabled={disabled || busy} title="浠庢湰姝ラ閲嶆柊鐢熸垚锛屽苟缁х画鎵ц鍚庣画姝ラ" onClick={() => onAction(step, 'regenerate')}>
+      <button className="mini-button" disabled={disabled || busy} title="从本步骤重新生成，并继续执行后续步骤" onClick={() => onAction(step, 'regenerate')}>
         {regenerating ? <Loader2 className="spin" size={14} /> : <RotateCcw size={14} />}
-        閲嶆柊鐢熸垚
+        重新生成
       </button>
-      <button className="mini-button" disabled={disabled || busy} title="鍙傝€冨綋鍓嶄骇鐗╂敼鍐欐湰姝ラ锛屽苟缁х画鎵ц鍚庣画姝ラ" onClick={() => onAction(step, 'rewrite')}>
+      <button className="mini-button" disabled={disabled || busy} title="参考当前产物改写本步骤，并继续执行后续步骤" onClick={() => onAction(step, 'rewrite')}>
         {rewriting ? <Loader2 className="spin" size={14} /> : <Wand2 size={14} />}
-        鏀瑰啓鍚庣户缁?
+        改写后继续
       </button>
     </div>
   );
@@ -2782,7 +2730,7 @@ function ArtifactSceneList({
   imagePrompts: NonNullable<TaskArtifactSnapshot['artifact']['imagePrompts']>;
   images: TaskArtifactSnapshot['assets']['images'];
 }) {
-  if (scenes.length === 0) return <ArtifactEmpty text="绛夊緟鍒嗛暅鐢熸垚" />;
+  if (scenes.length === 0) return <ArtifactEmpty text="等待分镜生成" />;
   return (
     <div className="artifact-scene-list">
       {scenes.map((scene) => {
@@ -2802,14 +2750,14 @@ function ArtifactSceneList({
 }
 
 function ArtifactPromptList({ prompts }: { prompts: NonNullable<TaskArtifactSnapshot['artifact']['imagePrompts']> }) {
-  if (prompts.length === 0) return <ArtifactEmpty text="绛夊緟缁樺浘鎻愮ず璇? />;
+  if (prompts.length === 0) return <ArtifactEmpty text="等待绘图提示词" />;
   return (
     <div className="artifact-scene-list">
       {prompts.map((prompt) => (
         <div key={prompt.sceneId}>
           <strong>{prompt.sceneId}. {prompt.cap}</strong>
           <p>{prompt.prompt}</p>
-          <small>璐熼潰锛歿prompt.negativePrompt || '-'}</small>
+          <small>负面：{prompt.negativePrompt || '-'}</small>
         </div>
       ))}
     </div>
@@ -2878,13 +2826,13 @@ function ImageGenerationGallery({
     }
   }
 
-  if (scenes.length === 0) return <ArtifactEmpty text="绛夊緟鍒嗛暅鍚庣敓鎴愬浘鐗? />;
+  if (scenes.length === 0) return <ArtifactEmpty text="等待分镜后生成图片" />;
 
   return (
     <div className="image-generation-gallery">
       <div className="image-generation-toolbar">
-        <span>骞跺彂鏁?{concurrency}</span>
-        <span>{images.length}/{scenes.length} 寮犲凡钀界洏</span>
+        <span>并发数 {concurrency}</span>
+        <span>{images.length}/{scenes.length} 张已落盘</span>
       </div>
       <div className="image-preview-grid">
         {scenes.map((scene) => {
@@ -2896,17 +2844,17 @@ function ImageGenerationGallery({
             <article className={`image-preview-card ${image ? 'ready' : 'pending'}`} key={scene.id}>
               <div className="image-thumb">
                 {previewUrl ? <img src={previewUrl} alt={`Scene ${scene.id}`} /> : null}
-                {!previewUrl && image && !previewError ? <span className="thumb-state">璇诲彇涓?/span> : null}
-                {!previewUrl && previewError ? <span className="thumb-state danger">璇诲彇澶辫触</span> : null}
+                {!previewUrl && image && !previewError ? <span className="thumb-state">读取中</span> : null}
+                {!previewUrl && previewError ? <span className="thumb-state danger">读取失败</span> : null}
                 {!image ? <ImageIcon size={24} /> : null}
               </div>
               <div className="image-preview-body">
                 <div className="image-preview-title">
                   <strong>{scene.id}. {scene.cap}</strong>
-                  <span>{image ? '宸茬敓鎴? : task.status === 'running' ? '绛夊緟/鐢熸垚涓? : '鏈敓鎴?}</span>
+                  <span>{image ? '已生成' : task.status === 'running' ? '等待/生成中' : '未生成'}</span>
                 </div>
                 <p>{prompt ? trimForPreview(prompt.prompt, 180) : scene.descPrompt}</p>
-                {image ? <small>{image.path}</small> : <small>绛夊緟 provider 杩斿洖鐪熷疄鍥剧墖</small>}
+                {image ? <small>{image.path}</small> : <small>等待 provider 返回真实图片</small>}
                 {previewError ? <small className="danger-text">{previewError}</small> : null}
               </div>
               <button
@@ -2915,7 +2863,7 @@ function ImageGenerationGallery({
                 onClick={() => regenerate(scene.id)}
               >
                 {regeneratingSceneId === scene.id ? <Loader2 className="spin" size={14} /> : <RotateCcw size={14} />}
-                閲嶆柊鐢熸垚
+                重新生成
               </button>
             </article>
           );
@@ -2999,7 +2947,7 @@ function NarrationPreviewList({
         })),
         ...assets.filter((asset) => !sceneIds.has(asset.sceneId)).map((asset) => ({
           sceneId: asset.sceneId,
-          cap: '宸茬敓鎴愰厤闊?,
+          cap: '已生成配音',
           cue: undefined,
           assets: [asset],
           canRegenerate: false,
@@ -3007,7 +2955,7 @@ function NarrationPreviewList({
       ]
     : assets.map((asset) => ({
         sceneId: asset.sceneId,
-        cap: '宸茬敓鎴愰厤闊?,
+        cap: '已生成配音',
         cue: undefined,
         assets: [asset],
         canRegenerate: false,
@@ -3027,7 +2975,7 @@ function NarrationPreviewList({
                 <strong>{item.sceneId}. {item.cap}</strong>
                 {item.cue ? <span>{formatMs(item.cue.startMs)} - {formatMs(item.cue.endMs)}</span> : null}
               </div>
-              <span>{ready ? `${item.assets.length} 娈靛彲璇曞惉` : task.status === 'running' ? '绛夊緟/鐢熸垚涓? : '鏈敓鎴?}</span>
+              <span>{ready ? `${item.assets.length} 段可试听` : task.status === 'running' ? '等待/生成中' : '未生成'}</span>
             </div>
             {item.assets.map((asset, index) => {
               const previewUrl = audioPreviewUrls[asset.path] ?? '';
@@ -3036,20 +2984,20 @@ function NarrationPreviewList({
                 <div className="narration-turn-preview" key={`${asset.path}-${asset.turnIndex ?? index}`}>
                   <strong>{narrationTurnLabel(asset, index)}</strong>
                   {previewUrl ? <audio controls className="narration-player" preload="metadata" src={previewUrl} /> : null}
-                  {!previewUrl && !previewError ? <div className="narration-player loading">璇诲彇闊抽涓?/div> : null}
-                  {!previewUrl && previewError ? <div className="narration-player error">闊抽璇诲彇澶辫触</div> : null}
+                  {!previewUrl && !previewError ? <div className="narration-player loading">读取音频中</div> : null}
+                  {!previewUrl && previewError ? <div className="narration-player error">音频读取失败</div> : null}
                   {asset.text ? <p>{asset.text}</p> : null}
                   <small>{asset.path}</small>
                   {previewError ? <small className="danger-text">{previewError}</small> : null}
                 </div>
               );
             })}
-            {!ready ? <div className="narration-player loading">绛夊緟闊抽钀界洏</div> : null}
+            {!ready ? <div className="narration-player loading">等待音频落盘</div> : null}
             {item.cue ? <p>{item.cue.text}</p> : null}
-            {!ready ? <small>绛夊緟 TTS 杩斿洖鐪熷疄闊抽</small> : null}
+            {!ready ? <small>等待 TTS 返回真实音频</small> : null}
             <button className="mini-button" disabled={disabled} onClick={() => regenerate(item.sceneId)}>
               {regeneratingSceneId === item.sceneId ? <Loader2 className="spin" size={14} /> : <RotateCcw size={14} />}
-              {ready ? '閲嶆柊鐢熸垚閰嶉煶' : '鐢熸垚閰嶉煶'}
+              {ready ? '重新生成配音' : '生成配音'}
             </button>
           </article>
         );
@@ -3066,9 +3014,9 @@ function compareNarrationPreviewAssets(a: TaskArtifactSnapshot['assets']['narrat
 }
 
 function narrationTurnLabel(asset: TaskArtifactSnapshot['assets']['narration'][number], index: number): string {
-  const speaker = asset.speaker ? `涓绘挱 ${asset.speaker}` : '閰嶉煶';
+  const speaker = asset.speaker ? `主播 ${asset.speaker}` : '配音';
   const turn = asset.turnIndex ?? index + 1;
-  return `${speaker} 路 绗?${turn} 娈礰;
+  return `${speaker} · 第 ${turn} 段`;
 }
 
 function ArtifactImageGallery({
@@ -3084,9 +3032,9 @@ function ArtifactImageGallery({
   const galleryItems = scenes.length
     ? [
         ...scenes.map((scene) => ({ sceneId: scene.id, cap: scene.cap, asset: assets.find((item) => item.sceneId === scene.id) })),
-        ...assets.filter((asset) => !sceneIds.has(asset.sceneId)).map((asset) => ({ sceneId: asset.sceneId, cap: '宸茬敓鎴愬浘鐗?, asset })),
+        ...assets.filter((asset) => !sceneIds.has(asset.sceneId)).map((asset) => ({ sceneId: asset.sceneId, cap: '已生成图片', asset })),
       ]
-    : assets.map((asset) => ({ sceneId: asset.sceneId, cap: '宸茬敓鎴愬浘鐗?, asset }));
+    : assets.map((asset) => ({ sceneId: asset.sceneId, cap: '已生成图片', asset }));
   if (galleryItems.length === 0) return <ArtifactEmpty text={empty} />;
   return (
     <div className="artifact-image-gallery">
@@ -3095,16 +3043,16 @@ function ArtifactImageGallery({
         return (
           <figure className={imagePath ? 'artifact-image-card' : 'artifact-image-card pending'} key={`${item.sceneId}-${imagePath || 'pending'}`}>
             {imagePath ? (
-              <img src={toLocalImageUrl(imagePath)} alt={`鍒嗛暅 ${item.sceneId}: ${item.cap}`} loading="lazy" />
+              <img src={toLocalImageUrl(imagePath)} alt={`分镜 ${item.sceneId}: ${item.cap}`} loading="lazy" />
             ) : (
               <div className="artifact-image-pending">
                 <ImageIcon size={22} />
-                <span>绛夊緟鐢熸垚</span>
+                <span>等待生成</span>
               </div>
             )}
             <figcaption>
               <strong>{item.sceneId}. {item.cap}</strong>
-              <span>{imagePath || '绛夊緟鐢熸垚'}</span>
+              <span>{imagePath || '等待生成'}</span>
             </figcaption>
           </figure>
         );
@@ -3125,7 +3073,7 @@ function ArtifactAssetList({ assets, empty }: { assets: TaskArtifactSnapshot['as
 function ImageLabPage({ api, state, applyState }: { api: StoryDreamApi; state: AppState; applyState: (state: AppState) => void }) {
   const [tab, setTab] = useState<'smart' | 'text' | 'reference'>('smart');
   const [smartMode] = useState<ImageLabSmartMode>('podcast-cover');
-  const [prompt, setPrompt] = useState('鏍规嵁椋熻氨鍐呭锛岃鍒?2-3 寮犵編椋熸暀绋嬪浘锛屽悎鎴愬搧鍥俱€佺伒榄傛枃妗堛€佸埗浣滄楠わ紝淇濇寔鍙傝€冨浘涓讳綋鍜岃川鎰熴€?);
+  const [prompt, setPrompt] = useState('根据食谱内容，规划 2-3 张美食教程图，合成品图、灵魂文案、制作步骤，保持参考图主体和质感。');
   const [ratio, setRatio] = useState('9:16');
   const [style, setStyle] = useState('photo-real');
   const [resolution, setResolution] = useState<ImageResolution>('1K');
@@ -3140,20 +3088,20 @@ function ImageLabPage({ api, state, applyState }: { api: StoryDreamApi; state: A
   const references = referenceCandidates.slice(0, referenceLimit);
   const hiddenReferenceCount = Math.max(0, referenceCandidates.length - references.length);
   const referenceModeDescription = tab === 'smart'
-    ? '鏅鸿兘瑙勫垝澶氬紶鍥撅紝鍙甫鍙傝€冨浘锛涢€傚悎鏍规嵁闇€姹傛壒閲忓嚭鏁欑▼鍥俱€佸皝闈㈠拰鍒嗛暅鍥俱€?
+    ? '智能规划多张图，可带参考图；适合根据需求批量出教程图、封面和分镜图。'
     : tab === 'reference'
-      ? '鍙傝€冨浘缂栬緫/寤跺睍锛岄渶瑕佸厛娣诲姞鍙傝€冨浘锛涢€傚悎淇濈暀涓讳綋銆佹潗璐ㄥ拰鐢婚潰涓€鑷存€с€?
-      : '绾枃鏈敓鎴愬崟寮犲浘锛屼笉浣跨敤鍙傝€冨浘銆?;
+      ? '参考图编辑/延展，需要先添加参考图；适合保留主体、材质和画面一致性。'
+      : '纯文本生成单张图，不使用参考图。';
   const baseSmartMode: ImageLabSmartMode = tab === 'smart' ? smartMode : tab === 'reference' ? 'reference-edit' : 'text-to-image';
   const imageLabRatioChoices = [
-    ['21:9', '瀹藉睆'],
-    ['16:9', '妯睆'],
-    ['3:2', '鏍囧噯妯?],
-    ['4:3', '鏍囧噯'],
-    ['1:1', '鏂瑰舰'],
-    ['3:4', '鏍囧噯绔?],
-    ['2:3', '绔栧浘'],
-    ['9:16', '绔栧睆'],
+    ['21:9', '宽屏'],
+    ['16:9', '横屏'],
+    ['3:2', '标准横'],
+    ['4:3', '标准'],
+    ['1:1', '方形'],
+    ['3:4', '标准竖'],
+    ['2:3', '竖图'],
+    ['9:16', '竖屏'],
   ];
   const estimatedCost = resolution === '1K' ? '0.08' : resolution === '2K' ? '0.16' : '0.32';
   const resolvedSmartMode = resolveImageLabSmartMode(tab, baseSmartMode, references);
@@ -3209,28 +3157,28 @@ function ImageLabPage({ api, state, applyState }: { api: StoryDreamApi; state: A
   return (
     <div className="image-lab-page">
       <section className="panel image-lab-workbench">
-        <Segmented label="妯″紡" value={tab} options={['smart', 'text', 'reference']} labels={['鏅烘収鐢熷浘', '鏂囩敓鍥?, '鍥惧儚鍙傝€?]} onChange={(value) => setTab(value as 'smart' | 'text' | 'reference')} />
+        <Segmented label="模式" value={tab} options={['smart', 'text', 'reference']} labels={['智慧生图', '文生图', '图像参考']} onChange={(value) => setTab(value as 'smart' | 'text' | 'reference')} />
         <div className="image-lab-mode-note">{referenceModeDescription}</div>
         {tab !== 'text' ? (
           <div className="image-lab-reference-block">
             <div className="image-lab-section-head">
-              <strong>鍙傝€冨浘</strong>
-              <small>寤鸿缁熶竴 IP 褰㈣薄锛屾渶澶?{referenceLimit} 寮?路 宸查€?{references.length}</small>
+              <strong>参考图</strong>
+              <small>建议统一 IP 形象，最多 {referenceLimit} 张 · 已选 {references.length}</small>
             </div>
             <div className="image-lab-dropzone">
               <button className="image-lab-upload-card" type="button" onClick={selectImageLabReferenceImage}>
                 <ImageIcon size={18} />
-                娣诲姞
+                添加
               </button>
               <span>
-                <strong>閫夋嫨鎴栫矘璐存湰鍦板浘鐗囪矾寰勪綔涓哄弬鑰?/strong>
-                <small>鏀寔 PNG / JPG / WEBP锛屾瘡琛屼竴寮狅紝鏈€澶?{referenceLimit} 寮犱細鍙備笌鐢熸垚</small>
+                <strong>选择或粘贴本地图片路径作为参考</strong>
+                <small>支持 PNG / JPG / WEBP，每行一张，最多 {referenceLimit} 张会参与生成</small>
               </span>
             </div>
             <textarea
               className="reference-image-list"
               value={referencePasteDraft}
-              placeholder="绮樿创鏈湴鍥剧墖璺緞锛屾瘡琛屼竴寮狅紱绮樿创鍚庝笅鏂瑰彧鏄剧ず缂╃暐鍥?
+              placeholder="粘贴本地图片路径，每行一张；粘贴后下方只显示缩略图"
               onPaste={(event) => {
                 event.preventDefault();
                 appendReferenceImagePaths(event.clipboardData.getData('text'));
@@ -3247,39 +3195,39 @@ function ImageLabPage({ api, state, applyState }: { api: StoryDreamApi; state: A
                 <div className="image-lab-reference-grid">
                   {references.map((reference, index) => (
                     <article className="image-lab-reference-thumb" key={`${reference}-${index}`}>
-                      <button type="button" className="image-lab-reference-image" onClick={() => setExpandedReferenceImage(reference)} aria-label={`鏀惧ぇ鍙傝€冨浘 ${index + 1}`}>
-                        <img src={toLocalImageUrl(reference)} alt={`鍙傝€冨浘 ${index + 1}`} loading="lazy" />
+                      <button type="button" className="image-lab-reference-image" onClick={() => setExpandedReferenceImage(reference)} aria-label={`放大参考图 ${index + 1}`}>
+                        <img src={toLocalImageUrl(reference)} alt={`参考图 ${index + 1}`} loading="lazy" />
                       </button>
                       <div className="image-lab-reference-actions">
-                        <button type="button" className="mini-button" onClick={() => setExpandedReferenceImage(reference)}>鏀惧ぇ</button>
-                        <button type="button" className="mini-button" onClick={() => removeReferenceImagePath(reference)}>鍒犻櫎</button>
+                        <button type="button" className="mini-button" onClick={() => setExpandedReferenceImage(reference)}>放大</button>
+                        <button type="button" className="mini-button" onClick={() => removeReferenceImagePath(reference)}>删除</button>
                       </div>
                     </article>
                   ))}
                 </div>
-              ) : <span className="image-lab-reference-empty">鏆傛湭娣诲姞鍙傝€冨浘璺緞</span>}
-              {hiddenReferenceCount > 0 ? <span className="image-lab-reference-overflow">宸插拷鐣ヨ秴鍑轰笂闄愮殑 {hiddenReferenceCount} 寮?/span> : null}
+              ) : <span className="image-lab-reference-empty">暂未添加参考图路径</span>}
+              {hiddenReferenceCount > 0 ? <span className="image-lab-reference-overflow">已忽略超出上限的 {hiddenReferenceCount} 张</span> : null}
             </div>
           </div>
         ) : null}
-        <Field label="闇€姹傛弿杩?>
-          <textarea className="prompt-box image-lab-prompt" value={prompt} placeholder="渚嬪锛氭牴鎹璋卞唴瀹癸紝瑙勫垝 2-3 寮犵編椋熸暀绋嬪浘锛屽悎鎴愬搧鍥俱€佺伒榄傛枃妗堛€佸埗浣滄楠わ紝涓嶈鐐硅禐鍏冪礌" onChange={(event) => setPrompt(event.target.value)} />
+        <Field label="需求描述">
+          <textarea className="prompt-box image-lab-prompt" value={prompt} placeholder="例如：根据食谱内容，规划 2-3 张美食教程图，合成品图、灵魂文案、制作步骤，不要点赞元素" onChange={(event) => setPrompt(event.target.value)} />
         </Field>
         {tab !== 'text' ? (
           <div className="image-lab-slider">
             <div className="image-lab-section-head">
-              <strong>鍑哄浘鏁伴噺涓婇檺</strong>
-              <small>鏅€氫笂闄愯涓?10 寮?/small>
+              <strong>出图数量上限</strong>
+              <small>普通上限设为 10 张</small>
             </div>
             <input type="range" min={1} max={10} step={1} value={imageLabOutputCount} onChange={(event) => setImageLabOutputCount(Number(event.target.value))} />
-            <strong>{imageLabOutputCount} 寮?/strong>
-            <small>AI 浼氳鎳傞渶姹傦紝瑙勫垝鎴愭渶澶?10 寮犲浘锛涙瘡寮犲浘鏂囨闇€杩涘浘閲屻€?/small>
+            <strong>{imageLabOutputCount} 张</strong>
+            <small>AI 会读懂需求，规划成最多 10 张图；每张图文案需进图里。</small>
           </div>
         ) : null}
         <div className="image-lab-control-group">
           <div className="image-lab-section-head">
-            <strong>姣斾緥</strong>
-            <small>鍙閫変綋楠屼繚鐣欎负鍗曢€夛紝宸查€?{ratio}</small>
+            <strong>比例</strong>
+            <small>可多选体验保留为单选，已选 {ratio}</small>
           </div>
           <div className="image-lab-ratio-grid">
             {imageLabRatioChoices.map(([value, label]) => (
@@ -3291,31 +3239,31 @@ function ImageLabPage({ api, state, applyState }: { api: StoryDreamApi; state: A
             ))}
           </div>
         </div>
-        <OptionCloud title="椋庢牸" options={styleOptions} value={style} onChange={setStyle} />
-        <Segmented label="鍒嗚鲸鐜? value={resolution} options={['1K', '2K', '4K']} onChange={(value) => setResolution(value as ImageResolution)} />
+        <OptionCloud title="风格" options={styleOptions} value={style} onChange={setStyle} />
+        <Segmented label="分辨率" value={resolution} options={['1K', '2K', '4K']} onChange={(value) => setResolution(value as ImageResolution)} />
         <div className="image-lab-footer">
           <button className="primary-action" onClick={addRecord} disabled={generating || !prompt.trim() || (resolvedSmartMode === 'reference-edit' && references.length === 0)}>
             {generating ? <Loader2 className="spin" size={17} /> : <Wand2 size={17} />}
-            {generating ? '鐢熸垚涓? : '鏅鸿兘鐢熸垚'}
+            {generating ? '生成中' : '智能生成'}
           </button>
-          <div className="provider-line">褰撳墠 Provider锛?strong>{state.config.imageProvider}</strong> 路 {smartImageModeLabel(resolvedSmartMode)} 路 棰勮娑堣€?锟estimatedCost}</div>
+          <div className="provider-line">当前 Provider：<strong>{state.config.imageProvider}</strong> · {smartImageModeLabel(resolvedSmartMode)} · 预计消耗 ￥{estimatedCost}</div>
         </div>
-        {submitError ? <ErrorSummaryButton compact title="鐢诲浘瀹為獙瀹ゆ彁浜ゅけ璐? fullMessage={submitError} /> : null}
+        {submitError ? <ErrorSummaryButton compact title="画图实验室提交失败" fullMessage={submitError} /> : null}
       </section>
       {expandedReferenceImage ? (
         <div className="error-dialog-backdrop" onClick={() => setExpandedReferenceImage('')}>
-          <section className="error-dialog image-lab-preview-dialog" role="dialog" aria-modal="true" aria-label="鍙傝€冨浘棰勮" onClick={(event) => event.stopPropagation()}>
+          <section className="error-dialog image-lab-preview-dialog" role="dialog" aria-modal="true" aria-label="参考图预览" onClick={(event) => event.stopPropagation()}>
             <div className="error-dialog-head">
-              <strong>鍙傝€冨浘棰勮</strong>
-              <button className="mini-button" type="button" onClick={() => setExpandedReferenceImage('')}>鍏抽棴</button>
+              <strong>参考图预览</strong>
+              <button className="mini-button" type="button" onClick={() => setExpandedReferenceImage('')}>关闭</button>
             </div>
-            <img src={toLocalImageUrl(expandedReferenceImage)} alt="鍙傝€冨浘棰勮" />
+            <img src={toLocalImageUrl(expandedReferenceImage)} alt="参考图预览" />
           </section>
         </div>
       ) : null}
       <section className="image-lab-recent">
-        <h3>鏈€杩戠敓鎴?路 {state.imageLabRecords.length}</h3>
-        {state.imageLabRecords.length === 0 ? <EmptyState title="鏆傛棤鐢诲浘璁板綍" /> : null}
+        <h3>最近生成 · {state.imageLabRecords.length}</h3>
+        {state.imageLabRecords.length === 0 ? <EmptyState title="暂无画图记录" /> : null}
         <div className="image-grid-panel">
           {state.imageLabRecords.map((record) => (
           <article className={`image-record ${record.status}`} key={record.id}>
@@ -3323,13 +3271,13 @@ function ImageLabPage({ api, state, applyState }: { api: StoryDreamApi; state: A
               {record.imagePath ? <img src={toLocalImageUrl(record.imagePath)} alt={record.prompt} loading="lazy" /> : (
                 <>
                   <ImageIcon size={28} />
-                  <span>{record.status === 'failed' ? '鐢熸垚澶辫触' : '绛夊緟鍥剧墖'}</span>
+                  <span>{record.status === 'failed' ? '生成失败' : '等待图片'}</span>
                 </>
               )}
             </div>
             <strong>{record.prompt}</strong>
-            <small>{record.provider} 路 {record.ratio} 路 {record.resolution} 路 {smartImageModeLabel(record.smartMode)} 路 {formatDate(record.createdAt)}</small>
-            {record.errorMessage ? <ErrorSummaryButton compact title="鐢熷浘澶辫触" fullMessage={record.errorMessage} /> : null}
+            <small>{record.provider} · {record.ratio} · {record.resolution} · {smartImageModeLabel(record.smartMode)} · {formatDate(record.createdAt)}</small>
+            {record.errorMessage ? <ErrorSummaryButton compact title="生图失败" fullMessage={record.errorMessage} /> : null}
           </article>
           ))}
         </div>
@@ -3340,7 +3288,7 @@ function ImageLabPage({ api, state, applyState }: { api: StoryDreamApi; state: A
 }
 
 function VoiceLabPage({ api, state, applyState }: { api: StoryDreamApi; state: AppState; applyState: (state: AppState) => void }) {
-  const [text, setText] = useState('閰嶉煶瀹為獙瀹よ瘯鍚枃妗堬細鐢ㄧǔ瀹氥€佹竻鏅般€佹湁鎯呯华鐨勫０闊宠瀹岃繖涓€娈垫晠浜嬨€?);
+  const [text, setText] = useState('配音实验室试听文案：用稳定、清晰、有情绪的声音讲完这一段故事。');
   const [voiceProvider, setVoiceProvider] = useState<RuntimeTtsProvider>(() => normalizeRuntimeTtsProvider(state.config.tts.provider));
   const [voiceId, setVoiceId] = useState(() => defaultTaskSpeakerForProvider(state.config.tts.provider, state.config));
   const [voiceSpeed, setVoiceSpeed] = useState(1);
@@ -3385,12 +3333,12 @@ function VoiceLabPage({ api, state, applyState }: { api: StoryDreamApi; state: A
   return (
     <div className="voice-lab-layout lab-layout">
       <section className="panel">
-        <Field label="璇曞惉鏂囨">
+        <Field label="试听文案">
           <textarea className="prompt-box voice-lab-text" value={text} onChange={(event) => setText(event.target.value)} />
         </Field>
-        <Segmented label="閰嶉煶妯″瀷" value={voiceProvider} options={['volcengine', 'minimax']} labels={['璞嗗寘', 'MiniMax']} onChange={changeProvider} />
+        <Segmented label="配音模型" value={voiceProvider} options={['volcengine', 'minimax']} labels={['豆包', 'MiniMax']} onChange={changeProvider} />
         <div className="voice-lab-voices">
-          <span className="field-title">闊宠壊</span>
+          <span className="field-title">音色</span>
           <div className="chip-row">
             {voiceOptions.map((voice) => (
               <button key={voice.id} className={voiceId === voice.id ? 'chip active' : 'chip'} title={voice.id} onClick={() => setVoiceId(voice.id)}>
@@ -3400,32 +3348,32 @@ function VoiceLabPage({ api, state, applyState }: { api: StoryDreamApi; state: A
             ))}
           </div>
         </div>
-        <Segmented label="璇€? value={String(voiceSpeed)} options={['0.85', '1', '1.15', '1.3']} labels={['鎱㈤€?0.85x', '榛樿 1.0x', '蹇€?1.15x', '鏇村揩 1.3x']} onChange={(value) => setVoiceSpeed(Number(value))} />
-        <div className="provider-line">褰撳墠闊宠壊锛歿selectedVoiceLabel} 路 {voiceId}</div>
-        {submitError ? <ErrorSummaryButton compact title="閰嶉煶瀹為獙瀹ゆ彁浜ゅけ璐? fullMessage={submitError} /> : null}
+        <Segmented label="语速" value={String(voiceSpeed)} options={['0.85', '1', '1.15', '1.3']} labels={['慢速 0.85x', '默认 1.0x', '快速 1.15x', '更快 1.3x']} onChange={(value) => setVoiceSpeed(Number(value))} />
+        <div className="provider-line">当前音色：{selectedVoiceLabel} · {voiceId}</div>
+        {submitError ? <ErrorSummaryButton compact title="配音实验室提交失败" fullMessage={submitError} /> : null}
         <button className="primary-action" onClick={generatePreview} disabled={generating || !text.trim()}>
           {generating ? <Loader2 className="spin" size={17} /> : <Mic2 size={17} />}
-          {generating ? '鐢熸垚涓? : '鐢熸垚璇曞惉'}
+          {generating ? '生成中' : '生成试听'}
         </button>
       </section>
       <section className="panel voice-lab-history">
         <div className="panel-title-row">
           <div>
-            <h2>鍘嗗彶璇曞惉</h2>
-            <span className="hint-text">{state.voiceLabRecords.length} 鏉℃湰鍦拌褰?/span>
+            <h2>历史试听</h2>
+            <span className="hint-text">{state.voiceLabRecords.length} 条本地记录</span>
           </div>
         </div>
-        {state.voiceLabRecords.length === 0 ? <EmptyState title="鏆傛棤閰嶉煶璇曞惉" /> : null}
+        {state.voiceLabRecords.length === 0 ? <EmptyState title="暂无配音试听" /> : null}
         {state.voiceLabRecords.map((record) => (
           <article className={`voice-record ${record.status}`} key={record.id}>
             <div className="voice-record-head">
               <strong>{record.voiceLabel}</strong>
-              <small>{record.provider} 路 {record.speed}x 路 {formatDate(record.createdAt)}</small>
+              <small>{record.provider} · {record.speed}x · {formatDate(record.createdAt)}</small>
             </div>
             <p>{record.text}</p>
             {record.audioPath ? <audio className="voice-lab-player" controls preload="metadata" src={toLocalAssetUrl(record.audioPath)} /> : null}
-            {!record.audioPath && record.status === 'failed' ? <div className="voice-lab-player error">鏈敓鎴愰煶棰?/div> : null}
-            {record.errorMessage ? <ErrorSummaryButton compact title="閰嶉煶澶辫触" fullMessage={record.errorMessage} /> : null}
+            {!record.audioPath && record.status === 'failed' ? <div className="voice-lab-player error">未生成音频</div> : null}
+            {record.errorMessage ? <ErrorSummaryButton compact title="配音失败" fullMessage={record.errorMessage} /> : null}
             {record.audioPath ? <small>{record.audioPath}</small> : null}
           </article>
         ))}
@@ -3459,7 +3407,7 @@ function PromptTemplatesPage({ api, state, applyState }: { api: StoryDreamApi; s
   const promptTemplateTrackOptions = buildStoryTemplateTrackOptions(state.promptTemplates);
   const promptTemplateBindingTrackOptions =
     draft?.baseTrack && !promptTemplateTrackOptions.some(([id]) => id === draft.baseTrack)
-      ? [...promptTemplateTrackOptions, [draft.baseTrack, draft.baseTrack, '褰撳墠妯℃澘璧涢亾'] as [string, string, string]]
+      ? [...promptTemplateTrackOptions, [draft.baseTrack, draft.baseTrack, '当前模板赛道'] as [string, string, string]]
       : promptTemplateTrackOptions;
 
   useEffect(() => setDraft(selected ? { ...selected } : null), [selected?.id]);
@@ -3503,7 +3451,7 @@ function PromptTemplatesPage({ api, state, applyState }: { api: StoryDreamApi; s
   }
 
   async function duplicateTemplate(template: PromptTemplate) {
-    const copy = { ...independentPromptTemplateFields(template), id: crypto.randomUUID(), name: `${template.name} 鍓湰`, isBuiltin: false, origin: 'custom' as const };
+    const copy = { ...independentPromptTemplateFields(template), id: crypto.randomUUID(), name: `${template.name} 副本`, isBuiltin: false, origin: 'custom' as const };
     applyState(await api.savePromptTemplate(copy));
     setSelectedId(copy.id);
     setDraft(copy);
@@ -3520,17 +3468,17 @@ function PromptTemplatesPage({ api, state, applyState }: { api: StoryDreamApi; s
     const baseTrack = templateTrackFilter === 'all' ? 'general-story' : templateTrackFilter;
     const template: PromptTemplate = {
       id: crypto.randomUUID(),
-      name: '鏂板缓妯℃澘',
+      name: '新建模板',
       type: 'task',
-      description: '鏈湴鑷畾涔夋彁绀鸿瘝妯℃澘',
-      content: '璇峰熀浜?{{inputText}} 鐢熸垚閫傚悎 {{track}} 鐨勭煭瑙嗛鍐呭銆?,
+      description: '本地自定义提示词模板',
+      content: '请基于 {{inputText}} 生成适合 {{track}} 的短视频内容。',
       isBuiltin: false,
       updatedAt: new Date().toISOString(),
       baseTrack,
       defaultStyles: ['photo-real'],
       defaultDraftTemplateId: state.draftTemplates[0]?.id ?? 'default-portrait-9-16',
       characterPolicy: 'follow-template',
-      step3SkeletonModules: ['闃插彴璇嶆枃瀛?],
+      step3SkeletonModules: ['防台词文字'],
       referenceKind: 'none',
       origin: 'custom',
       marketTags: [],
@@ -3549,17 +3497,17 @@ function PromptTemplatesPage({ api, state, applyState }: { api: StoryDreamApi; s
     applyState(await api.saveCustomStyle(styleToSave));
     setSelectedImageStyleId(styleToSave.id);
     setImageDraft(styleToSave);
-    setImageTemplateAiStatus('宸蹭繚瀛樺浘鍍忔ā鏉裤€?);
+    setImageTemplateAiStatus('已保存图像模板。');
     setTemplateMode('image-detail');
   }
 
   async function duplicateImageTemplate(style: CustomStyle) {
     const now = new Date().toISOString();
-    const copy = { ...style, id: crypto.randomUUID(), name: `${style.name} 鍓湰`, createdAt: now, updatedAt: now };
+    const copy = { ...style, id: crypto.randomUUID(), name: `${style.name} 副本`, createdAt: now, updatedAt: now };
     applyState(await api.saveCustomStyle(copy));
     setSelectedImageStyleId(copy.id);
     setImageDraft(copy);
-    setImageTemplateAiStatus('宸插厠闅嗗浘鍍忔ā鏉裤€?);
+    setImageTemplateAiStatus('已克隆图像模板。');
     setTemplateMode('image-detail');
   }
 
@@ -3569,9 +3517,9 @@ function PromptTemplatesPage({ api, state, applyState }: { api: StoryDreamApi; s
     const template: CustomStyle = {
       ...base,
       id: crypto.randomUUID(),
-      name: '鏂板缓鍥惧儚妯℃澘',
-      tag: '鑷畾涔夐鏍?,
-      shortName: '鑷畾涔?,
+      name: '新建图像模板',
+      tag: '自定义风格',
+      shortName: '自定义',
       createdAt: now,
       updatedAt: now,
     };
@@ -3596,25 +3544,25 @@ function PromptTemplatesPage({ api, state, applyState }: { api: StoryDreamApi; s
       allowColor: base.allowColor,
       description: base.description,
     });
-    setImageTemplateAiStatus(`宸插鐢ㄧ郴缁熼鏍硷細${base.name}`);
+    setImageTemplateAiStatus(`已套用系统风格：${base.name}`);
   }
 
   async function fillImageTemplateFromAiPrompt() {
     if (!imageDraft) return;
     const prompt = imageTemplateAiPrompt.trim();
     if (!prompt) {
-      setImageTemplateAiStatus('璇峰厛杈撳叆椋庢牸鎻忚堪銆?);
+      setImageTemplateAiStatus('请先输入风格描述。');
       return;
     }
     const base = state.customStyles.find((style) => style.id === baseImageTemplateId) ?? defaultCustomStyles.find((style) => style.id === baseImageTemplateId);
     setImageTemplateAiGenerating(true);
-    setImageTemplateAiStatus('姝ｅ湪鐢熸垚瀛楁...');
+    setImageTemplateAiStatus('正在生成字段...');
     try {
       const generated = await api.generateCustomStyleDraft({ prompt, baseStyle: base ?? imageDraft });
       setImageDraft({ ...imageDraft, ...generated, id: imageDraft.id, createdAt: imageDraft.createdAt });
-      setImageTemplateAiStatus(`宸茬敓鎴愬瓧娈碉細${generated.name || prompt}`);
+      setImageTemplateAiStatus(`已生成字段：${generated.name || prompt}`);
     } catch (error) {
-      setImageTemplateAiStatus(`鐢熸垚澶辫触锛?{error instanceof Error ? error.message : '璇锋鏌?LLM 閰嶇疆鍚庨噸璇曘€?}`);
+      setImageTemplateAiStatus(`生成失败：${error instanceof Error ? error.message : '请检查 LLM 配置后重试。'}`);
     } finally {
       setImageTemplateAiGenerating(false);
     }
@@ -3649,7 +3597,7 @@ function PromptTemplatesPage({ api, state, applyState }: { api: StoryDreamApi; s
       setTemplateMode('detail');
       setTemplateJsonDraft('');
     } catch {
-      setTemplateJsonDraft('{"name":"鑷畾涔夋ā鏉?,"type":"task","description":"璇疯ˉ鍏?,"content":"璇疯ˉ鍏呮彁绀鸿瘝"}');
+      setTemplateJsonDraft('{"name":"自定义模板","type":"task","description":"请补充","content":"请补充提示词"}');
     }
   }
 
@@ -3670,7 +3618,7 @@ function PromptTemplatesPage({ api, state, applyState }: { api: StoryDreamApi; s
       setTemplateMode('image-detail');
       setImageTemplateJsonDraft('');
     } catch {
-      setImageTemplateJsonDraft('{"name":"鑷畾涔夊浘鍍忔ā鏉?,"tag":"鑷畾涔?,"shortName":"鑷畾涔?,"prefix":"璇疯ˉ鍏?,"suffix":"璇疯ˉ鍏?,"negativePrompt":"璇疯ˉ鍏?,"allowColor":true,"description":"璇疯ˉ鍏?}');
+      setImageTemplateJsonDraft('{"name":"自定义图像模板","tag":"自定义","shortName":"自定义","prefix":"请补充","suffix":"请补充","negativePrompt":"请补充","allowColor":true,"description":"请补充"}');
     }
   }
 
@@ -3704,43 +3652,43 @@ function PromptTemplatesPage({ api, state, applyState }: { api: StoryDreamApi; s
       <div className="prompt-template-gallery">
         <div className="panel-title-row prompt-template-gallery-toolbar">
           <div>
-            <h2>鎻愮ず璇嶆ā鏉?/h2>
-            <p>鏁呬簨妯℃澘鍐冲畾 AI 鎬庝箞鍐欙紝鍥惧儚妯℃澘鍐冲畾鐢婚潰鎬庝箞闀裤€傚厛娴忚妯℃澘锛岀偣寮€鍚庢煡鐪嬪拰缂栬緫缁嗚妭銆?/p>
+            <h2>提示词模板</h2>
+            <p>故事模板决定 AI 怎么写，图像模板决定画面怎么长。先浏览模板，点开后查看和编辑细节。</p>
           </div>
           <div className="button-row">
             <button className="ghost-action" onClick={async () => applyState(await api.resetPromptTemplates())}>
               <RotateCcw size={14} />
-              閲嶇疆
+              重置
             </button>
             <button className="primary-action slim" onClick={promptTemplateLibraryTab === 'story' ? createPromptTemplate : createImageTemplate}>
               <Plus size={14} />
-              鏂板缓妯℃澘
+              新建模板
             </button>
           </div>
         </div>
-        <div className="prompt-template-tabs" role="tablist" aria-label="鎻愮ず璇嶆ā鏉跨被鍨?>
-          <button className={promptTemplateLibraryTab === 'story' ? 'chip active' : 'chip'} type="button" onClick={() => setPromptTemplateLibraryTab('story')}>鏁呬簨妯℃澘</button>
-          <button className={promptTemplateLibraryTab === 'image' ? 'chip active' : 'chip'} type="button" onClick={() => setPromptTemplateLibraryTab('image')}>鍥惧儚妯℃澘</button>
+        <div className="prompt-template-tabs" role="tablist" aria-label="提示词模板类型">
+          <button className={promptTemplateLibraryTab === 'story' ? 'chip active' : 'chip'} type="button" onClick={() => setPromptTemplateLibraryTab('story')}>故事模板</button>
+          <button className={promptTemplateLibraryTab === 'image' ? 'chip active' : 'chip'} type="button" onClick={() => setPromptTemplateLibraryTab('image')}>图像模板</button>
         </div>
         {promptTemplateLibraryTab === 'story' ? (
           <>
             <div className="template-filter-row">
-              <Field label="绫诲瀷绛涢€?>
+              <Field label="类型筛选">
                 <select value={templateTypeFilter} onChange={(event) => setTemplateTypeFilter(event.target.value as PromptTemplateType | 'all')}>
                   {promptTemplateTypeOptions.map((type) => <option key={type} value={type}>{promptTemplateTypeLabel(type)}</option>)}
                 </select>
               </Field>
-              <Field label="璧涢亾绛涢€?>
+              <Field label="赛道筛选">
                 <select value={templateTrackFilter} onChange={(event) => setTemplateTrackFilter(event.target.value)}>
-                  <option value="all">鍏ㄩ儴璧涢亾</option>
+                  <option value="all">全部赛道</option>
                   {promptTemplateTrackOptions.map(([id, label]) => <option key={id} value={id}>{label}</option>)}
                 </select>
               </Field>
             </div>
             <section className="prompt-template-list story-template-gallery">
               <div className="prompt-template-list-title">
-                <strong>鏁呬簨妯℃澘锛坽filteredTemplates.filter((template) => template.type === 'task').length}锛?/strong>
-                <span>{filteredTemplates.length} 涓尮閰嶆ā鏉?/span>
+                <strong>故事模板（{filteredTemplates.filter((template) => template.type === 'task').length}）</strong>
+                <span>{filteredTemplates.length} 个匹配模板</span>
               </div>
               {filteredTemplates.length > 0 ? filteredTemplates.map((template) => (
                 <article
@@ -3755,26 +3703,26 @@ function PromptTemplatesPage({ api, state, applyState }: { api: StoryDreamApi; s
                   <div className="prompt-template-row-main">
                     <strong>{template.name}</strong>
                     <span>{template.description}</span>
-                    <small>榛樿鍥惧儚妯℃澘锛歿promptTemplateStyleLabelList(template, state.customStyles).join('銆?) || '鏈缃?} 路 id: {template.id}</small>
+                    <small>默认图像模板：{promptTemplateStyleLabelList(template, state.customStyles).join('、') || '未设置'} · id: {template.id}</small>
                   </div>
                   <div className="prompt-template-row-actions">
                     <button className="ghost-action compact-action" onClick={(event) => { event.stopPropagation(); openPromptTemplateDetail(template); }}>
-                      鏌ョ湅
+                      查看
                     </button>
                     <button className="ghost-action compact-action" onClick={(event) => { event.stopPropagation(); void duplicateTemplate(template); }}>
                       <Copy size={14} />
-                      鍏嬮殕
+                      克隆
                     </button>
                   </div>
                 </article>
-              )) : <EmptyState title="鏆傛棤鍖归厤妯℃澘" />}
+              )) : <EmptyState title="暂无匹配模板" />}
             </section>
           </>
         ) : (
           <section className="prompt-template-list image-template-gallery">
             <div className="prompt-template-list-title">
-              <strong>鍥惧儚妯℃澘锛坽state.customStyles.length}锛?/strong>
-              <span>绠＄悊 prefix銆乻uffix銆佽礋闈㈡彁绀鸿瘝鍜岃壊褰╂ā寮?/span>
+              <strong>图像模板（{state.customStyles.length}）</strong>
+              <span>管理 prefix、suffix、负面提示词和色彩模式</span>
             </div>
             {state.customStyles.map((style) => (
               <article
@@ -3794,15 +3742,15 @@ function PromptTemplatesPage({ api, state, applyState }: { api: StoryDreamApi; s
                 <div className="prompt-template-row-main">
                   <strong>{style.name}</strong>
                   <span>{style.description}</span>
-                  <small>{style.tag} 路 {style.allowColor ? '褰╄壊' : '榛戠櫧 / 鍗曡壊'} 路 id: {style.id}</small>
+                  <small>{style.tag} · {style.allowColor ? '彩色' : '黑白 / 单色'} · id: {style.id}</small>
                 </div>
                 <div className="prompt-template-row-actions">
                   <button className="ghost-action compact-action" onClick={(event) => { event.stopPropagation(); openImageTemplateDetail(style); }}>
-                    鏌ョ湅
+                    查看
                   </button>
                   <button className="ghost-action compact-action" onClick={(event) => { event.stopPropagation(); void duplicateImageTemplate(style); }}>
                     <Copy size={14} />
-                    鍏嬮殕
+                    克隆
                   </button>
                 </div>
               </article>
@@ -3821,47 +3769,47 @@ function PromptTemplatesPage({ api, state, applyState }: { api: StoryDreamApi; s
             <>
               <div className="panel-title-row prompt-template-detail-title">
                 <div>
-                  <button className="ghost-action compact-action" onClick={() => setTemplateMode('gallery')}>杩斿洖妯℃澘搴?/button>
-                  <h2>鏌ョ湅鍥惧儚妯℃澘 路 {imageDraft.name}</h2>
+                  <button className="ghost-action compact-action" onClick={() => setTemplateMode('gallery')}>返回模板库</button>
+                  <h2>查看图像模板 · {imageDraft.name}</h2>
                 </div>
                 <div className="button-row">
                   <button className="ghost-action" onClick={() => void duplicateImageTemplate(imageDraft)}>
                     <Copy size={15} />
-                    鍏嬮殕
+                    克隆
                   </button>
                   <button className="ghost-action" onClick={exportImageTemplateJson}>
                     <FileJson size={15} />
-                    瀵煎嚭 JSON
+                    导出 JSON
                   </button>
                   <button className="ghost-action" onClick={() => void importImageTemplateJson()}>
                     <FileJson size={15} />
-                    瀵煎叆 JSON
+                    导入 JSON
                   </button>
                   <button className="primary-action slim" onClick={saveCustomStyleDraft}>
                     <Save size={15} />
-                    淇濆瓨
+                    保存
                   </button>
                 </div>
               </div>
               <div className="prompt-template-detail-stack">
                 <section className="image-template-quick-card">
                   <div>
-                    <span className="field-title">AI 蹇€熺敓鎴?/span>
-                    <span className="hint-text">杈撳叆鑷劧璇█鎻忚堪锛岃嚜鍔ㄥ～鍏呬笅鏂瑰浘鍍忔ā鏉垮瓧娈点€?/span>
+                    <span className="field-title">AI 快速生成</span>
+                    <span className="hint-text">输入自然语言描述，自动填充下方图像模板字段。</span>
                   </div>
-                  <Field label="椋庢牸鎻忚堪">
-                    <textarea className="small-textarea" value={imageTemplateAiPrompt} onChange={(event) => setImageTemplateAiPrompt(event.target.value)} placeholder="渚嬪锛氳禌鍗氭湅鍏嬮洦澶滆閬擄紝闇撹櫣鍏夊奖锛屾湭鏉ラ兘甯? />
+                  <Field label="风格描述">
+                    <textarea className="small-textarea" value={imageTemplateAiPrompt} onChange={(event) => setImageTemplateAiPrompt(event.target.value)} placeholder="例如：赛博朋克雨夜街道，霓虹光影，未来都市" />
                   </Field>
                   <div className="template-meta-grid">
-                    <Field label="鍩轰簬绯荤粺椋庢牸">
+                    <Field label="基于系统风格">
                       <select value={baseImageTemplateId} onChange={(event) => setBaseImageTemplateId(event.target.value)}>
                         {state.customStyles.map((style) => <option key={style.id} value={style.id}>{style.name}</option>)}
                       </select>
                     </Field>
                     <div className="button-row image-template-quick-actions">
-                      <button className="ghost-action" type="button" onClick={applyBaseImageTemplate}>濂楃敤绯荤粺椋庢牸</button>
+                      <button className="ghost-action" type="button" onClick={applyBaseImageTemplate}>套用系统风格</button>
                       <button className="primary-action slim" type="button" disabled={imageTemplateAiGenerating} onClick={() => void fillImageTemplateFromAiPrompt()}>
-                        {imageTemplateAiGenerating ? '鐢熸垚涓?..' : '鐢熸垚瀛楁'}
+                        {imageTemplateAiGenerating ? '生成中...' : '生成字段'}
                       </button>
                     </div>
                   </div>
@@ -3869,44 +3817,44 @@ function PromptTemplatesPage({ api, state, applyState }: { api: StoryDreamApi; s
                 </section>
 
                 <section className="prompt-template-settings-card">
-                  <span className="field-title">鎵嬪姩濉啓瀛楁</span>
+                  <span className="field-title">手动填写字段</span>
                   <div className="image-template-field-grid">
-                    <Field label="鍚嶇О">
+                    <Field label="名称">
                       <input value={imageDraft.name} onChange={(event) => setImageDraft({ ...imageDraft, name: event.target.value })} />
                     </Field>
-                    <Field label="鏍囩">
+                    <Field label="标签">
                       <input value={imageDraft.tag} onChange={(event) => setImageDraft({ ...imageDraft, tag: event.target.value })} />
                     </Field>
-                    <Field label="绠€绉?>
+                    <Field label="简称">
                       <input value={imageDraft.shortName} onChange={(event) => setImageDraft({ ...imageDraft, shortName: event.target.value })} />
                     </Field>
-                    <Field label="鑹插僵妯″紡">
+                    <Field label="色彩模式">
                       <select value={imageDraft.allowColor ? 'color' : 'mono'} onChange={(event) => setImageDraft({ ...imageDraft, allowColor: event.target.value === 'color' })}>
-                        <option value="color">褰╄壊</option>
-                        <option value="mono">榛戠櫧 / 鍗曡壊</option>
+                        <option value="color">彩色</option>
+                        <option value="mono">黑白 / 单色</option>
                       </select>
                     </Field>
                   </div>
-                  <Field label="鍓嶇紑锛坧refix锛?>
+                  <Field label="前缀（prefix）">
                     <textarea className="small-textarea" value={imageDraft.prefix} onChange={(event) => setImageDraft({ ...imageDraft, prefix: event.target.value })} />
                   </Field>
-                  <Field label="鍚庣紑锛坰uffix锛?>
+                  <Field label="后缀（suffix）">
                     <textarea className="small-textarea" value={imageDraft.suffix} onChange={(event) => setImageDraft({ ...imageDraft, suffix: event.target.value })} />
                   </Field>
-                  <Field label="璐熼潰鎻愮ず璇嶏紙negativePrompt锛?>
+                  <Field label="负面提示词（negativePrompt）">
                     <textarea className="small-textarea" value={imageDraft.negativePrompt} onChange={(event) => setImageDraft({ ...imageDraft, negativePrompt: event.target.value })} />
                   </Field>
-                  <Field label="閫傜敤鍦烘櫙鎻忚堪">
+                  <Field label="适用场景描述">
                     <textarea className="small-textarea" value={imageDraft.description} onChange={(event) => setImageDraft({ ...imageDraft, description: event.target.value })} />
                   </Field>
                 </section>
-                <Field label="瀵煎叆 / 瀵煎嚭 JSON">
-                  <textarea className="small-textarea" value={imageTemplateJsonDraft} onChange={(event) => setImageTemplateJsonDraft(event.target.value)} placeholder="瀵煎嚭鍚庝細濉叆杩欓噷锛涗篃鍙矘璐村浘鍍忔ā鏉?JSON 鍚庣偣鍑诲鍏?JSON" />
+                <Field label="导入 / 导出 JSON">
+                  <textarea className="small-textarea" value={imageTemplateJsonDraft} onChange={(event) => setImageTemplateJsonDraft(event.target.value)} placeholder="导出后会填入这里；也可粘贴图像模板 JSON 后点击导入 JSON" />
                 </Field>
               </div>
             </>
           ) : (
-            <EmptyState title="鏆傛棤鍥惧儚妯℃澘" />
+            <EmptyState title="暂无图像模板" />
           )}
         </section>
       </div>
@@ -3920,51 +3868,51 @@ function PromptTemplatesPage({ api, state, applyState }: { api: StoryDreamApi; s
           <>
             <div className="panel-title-row prompt-template-detail-title">
               <div>
-                <button className="ghost-action compact-action" onClick={() => setTemplateMode('gallery')}>杩斿洖妯℃澘搴?/button>
-                <h2>鏌ョ湅绯荤粺妯℃澘 路 {draft.name}</h2>
+                <button className="ghost-action compact-action" onClick={() => setTemplateMode('gallery')}>返回模板库</button>
+                <h2>查看系统模板 · {draft.name}</h2>
               </div>
               <div className="button-row">
                 <button className="ghost-action" onClick={duplicate}>
                   <Copy size={15} />
-                  鍏嬮殕
+                  克隆
                 </button>
                 <button className="ghost-action" onClick={exportPromptTemplateJson}>
                   <FileJson size={15} />
-                  瀵煎嚭 JSON
+                  导出 JSON
                 </button>
                 <button className="ghost-action" onClick={() => void importPromptTemplateJson()}>
                   <FileJson size={15} />
-                  瀵煎叆 JSON
+                  导入 JSON
                 </button>
                 <button className="primary-action slim" onClick={savePromptTemplateDraft}>
                   <Save size={15} />
-                  {draft.isBuiltin ? '淇濆瓨涓鸿嚜瀹氫箟妯℃澘' : '淇濆瓨淇敼'}
+                  {draft.isBuiltin ? '保存为自定义模板' : '保存修改'}
                 </button>
               </div>
             </div>
             <div className="prompt-template-detail-stack">
               <section className="prompt-template-basics-card">
                 <div className="template-meta-grid prompt-template-basics-grid">
-                  <Field label="妯℃澘鍚?>
+                  <Field label="模板名">
                     <input value={draft.name} onChange={(event) => setDraft({ ...draft, name: event.target.value })} />
                   </Field>
-                  <Field label="鎻忚堪锛堜竴鍙ヨ瘽璇存槑杩欎釜妯℃澘鐨勭壒鐐癸級">
+                  <Field label="描述（一句话说明这个模板的特点）">
                     <input value={draft.description} onChange={(event) => setDraft({ ...draft, description: event.target.value })} />
                   </Field>
-                  <Field label="妯℃澘绫诲瀷">
+                  <Field label="模板类型">
                     <select value={draft.type} onChange={(event) => setDraft({ ...draft, type: event.target.value as PromptTemplateType })}>
                       {promptTemplateTypeOptions.filter((type) => type !== 'all').map((type) => <option key={type} value={type}>{promptTemplateTypeLabel(type)}</option>)}
                     </select>
                   </Field>
-                  <Field label="缁戝畾璧涢亾">
+                  <Field label="绑定赛道">
                     <select value={draft.baseTrack ?? ''} onChange={(event) => setDraft({ ...draft, baseTrack: event.target.value || undefined })}>
-                      <option value="">鏃?/option>
+                      <option value="">无</option>
                       {promptTemplateBindingTrackOptions.map(([id, label]) => <option key={id} value={id}>{label}</option>)}
                     </select>
                   </Field>
                 </div>
                 <div className="prompt-template-default-style-pills">
-                  <span className="field-title">榛樿鐢婚</span>
+                  <span className="field-title">默认画风</span>
                   <div className="chip-row">
                     {promptTemplateStyleOptions(state.customStyles, draft).map((style) => (
                       <button
@@ -3980,7 +3928,7 @@ function PromptTemplatesPage({ api, state, applyState }: { api: StoryDreamApi; s
                 </div>
                 {draft.type === 'task' ? (
                   <div className="prompt-template-default-style-pills">
-                    <span className="field-title">榛樿鑽夌妯℃澘</span>
+                    <span className="field-title">默认草稿模板</span>
                     <div className="chip-row">
                       {state.draftTemplates.map((template) => (
                         <button
@@ -3993,27 +3941,27 @@ function PromptTemplatesPage({ api, state, applyState }: { api: StoryDreamApi; s
                         </button>
                       ))}
                     </div>
-                    <small>鏂板缓浠诲姟閫夋嫨璧涢亾鍚庯紝浼氬悓姝ヨ崏绋挎ā鏉匡紝骞舵妸 AI 鍑哄浘姣斾緥鍚屾涓鸿鑽夌鐨勫浘鐗囨瘮渚嬨€?/small>
+                    <small>新建任务选择赛道后，会同步草稿模板，并把 AI 出图比例同步为该草稿的图片比例。</small>
                   </div>
                 ) : null}
               </section>
 
               <section className="prompt-template-settings-card">
-                <span className="field-title">璁剧疆鍐呭</span>
+                <span className="field-title">设置内容</span>
                 <div className="prompt-template-content-settings">
                   <div className="prompt-template-setting-block">
-                    <strong>涓昏妗ｆ</strong>
+                    <strong>主角档案</strong>
                     <div className="chip-row">
                       {(['follow-template', 'force-extract', 'force-skip'] as const).map((policy) => (
                         <button className={draft.characterPolicy === policy ? 'chip active' : 'chip'} type="button" key={policy} onClick={() => setDraft({ ...draft, characterPolicy: policy })}>
-                          {policy === 'force-extract' ? '寮哄埗鎻愬彇' : policy === 'force-skip' ? '寮哄埗璺宠繃' : '璺熼殢璧涢亾'}
+                          {policy === 'force-extract' ? '强制提取' : policy === 'force-skip' ? '强制跳过' : '跟随赛道'}
                         </button>
                       ))}
                     </div>
-                    <small>涓昏妗ｆ浼氬奖鍝?Step 3 鏄惁淇濇寔浜虹墿韬唤銆佸璨屻€佸勾浠ｅ拰鍙欎簨涓€鑷淬€?/small>
+                    <small>主角档案会影响 Step 3 是否保持人物身份、外貌、年代和叙事一致。</small>
                   </div>
                   <div className="prompt-template-setting-block">
-                    <strong>Step 3 楠ㄦ灦妯″潡锛堝彲閫夌嚎璺級</strong>
+                    <strong>Step 3 骨架模块（可选线路）</strong>
                     <div className="chip-row">
                       {promptTemplateStep3SkeletonOptions.map((module) => (
                         <button
@@ -4026,10 +3974,10 @@ function PromptTemplatesPage({ api, state, applyState }: { api: StoryDreamApi; s
                         </button>
                       ))}
                     </div>
-                    <small>鍕鹃€夊悗 AI 鍔╂墜浼氭寜鐢ㄩ€旂敓鎴愬搴旈鏋讹紝宸蹭繚瀛樼殑 Step 3 prompt 鏂囨湰涓嶄細鑷姩鏀瑰彉銆?/small>
+                    <small>勾选后 AI 助手会按用途生成对应骨架，已保存的 Step 3 prompt 文本不会自动改变。</small>
                   </div>
                   <div className="prompt-template-setting-block">
-                    <strong>鍙傝€冨浘绫诲瀷</strong>
+                    <strong>参考图类型</strong>
                     <div className="chip-row">
                       {promptTemplateReferenceOptions.map(([value, label]) => (
                         <button className={(draft.referenceKind ?? 'none') === value ? 'chip active' : 'chip'} type="button" key={value} onClick={() => setDraft({ ...draft, referenceKind: value })}>
@@ -4037,15 +3985,15 @@ function PromptTemplatesPage({ api, state, applyState }: { api: StoryDreamApi; s
                         </button>
                       ))}
                     </div>
-                    <small>涓婁紶鍙傝€冨浘鏃讹紝Step 3 浼氭寜杩欓噷鐨勭被鍨嬪喅瀹氫汉鑴告垨浜у搧涓€鑷存€ц姹傘€?/small>
+                    <small>上传参考图时，Step 3 会按这里的类型决定人脸或产品一致性要求。</small>
                   </div>
                 </div>
                 <div className="prompt-template-advanced-grid">
-                  <Field label="鏍囩">
-                    <input value={(draft.marketTags ?? []).join('銆?)} onChange={(event) => setDraft({ ...draft, marketTags: splitListInput(event.target.value) })} />
+                  <Field label="标签">
+                    <input value={(draft.marketTags ?? []).join('、')} onChange={(event) => setDraft({ ...draft, marketTags: splitListInput(event.target.value) })} />
                   </Field>
                   {draft.type === 'task' ? (
-                    <Field label="鍑哄浘绉嶅瓙姹?JSON">
+                    <Field label="出图种子池 JSON">
                       <textarea
                         className="small-textarea prompt-template-seed-pools"
                         value={draft.imageSeedPoolsJson ?? ''}
@@ -4057,18 +4005,18 @@ function PromptTemplatesPage({ api, state, applyState }: { api: StoryDreamApi; s
                 </div>
               </section>
 
-              <span className="local-note">{draft.isBuiltin ? '绯荤粺妯℃澘淇濆瓨鍚庝細鐢熸垚鑷畾涔夊壇鏈紝鍘熺郴缁熸ā鏉夸繚鎸佷笉鍙樸€? : '鑷畾涔夋ā鏉夸繚瀛樹細鏇存柊褰撳墠妯℃澘锛屽巻鍙蹭换鍔″拰宸茬粦瀹氶厤缃細缁х画浣跨敤杩欎釜妯℃澘銆?}</span>
+              <span className="local-note">{draft.isBuiltin ? '系统模板保存后会生成自定义副本，原系统模板保持不变。' : '自定义模板保存会更新当前模板，历史任务和已绑定配置会继续使用这个模板。'}</span>
 
               {draft.type === 'task' ? (
-                <section className="prompt-step-editor-list" aria-label="AI 姝ラ璁剧疆">
+                <section className="prompt-step-editor-list" aria-label="AI 步骤设置">
                   <div className="prompt-step-editor-heading">
-                    <span className="field-title prompt-step-editor-section-title">姝ラ榛樿鎻愮ず璇?/span>
+                    <span className="field-title prompt-step-editor-section-title">步骤默认提示词</span>
                   </div>
                   <article className="prompt-step-editor-card" key="task-template-content">
                     <div className="prompt-step-editor-card-header">
                       <div>
-                        <strong>浠诲姟鎬绘寚浠?/strong>
-                        <small>瀹氫箟褰撳墠浠诲姟妯℃澘鐨勬暣浣撶洰鏍囥€佽禌閬撹姘斿拰鍐呭杈圭晫</small>
+                        <strong>任务总指令</strong>
+                        <small>定义当前任务模板的整体目标、赛道语气和内容边界</small>
                       </div>
                     </div>
                     <PromptVariablePicker scope="task" value={draft.content} onChange={(value) => setDraft({ ...draft, content: value })} />
@@ -4076,7 +4024,7 @@ function PromptTemplatesPage({ api, state, applyState }: { api: StoryDreamApi; s
                       className="template-textarea prompt-step-editor-textarea"
                       value={draft.content}
                       onChange={(value) => setDraft({ ...draft, content: value })}
-                      placeholder="杈撳叆 // 閫夋嫨鍙橀噺"
+                      placeholder="输入 // 选择变量"
                       variables={promptTemplateVariablesForScope('task')}
                     />
                   </article>
@@ -4090,14 +4038,14 @@ function PromptTemplatesPage({ api, state, applyState }: { api: StoryDreamApi; s
                             <small>{step.hint}</small>
                           </div>
                           <button className="ghost-action compact-action" type="button" disabled={!hasOverride} onClick={() => resetPromptTemplateStepPrompt(step.type)}>
-                            缁ф壙鍏ㄥ眬
+                            继承全局
                           </button>
                         </div>
                         <VariableAwareTextarea
                           className="template-textarea prompt-step-editor-textarea"
                           value={promptTemplateStepPromptValue(draft, state.promptTemplates, step.type)}
                           onChange={(value) => updatePromptTemplateStepPrompt(step.type, value)}
-                          placeholder="杈撳叆 // 閫夋嫨鍙橀噺"
+                          placeholder="输入 // 选择变量"
                           variables={promptTemplateVariablesForScope(step.type)}
                         />
                       </article>
@@ -4107,25 +4055,25 @@ function PromptTemplatesPage({ api, state, applyState }: { api: StoryDreamApi; s
               ) : (
                 <section className="prompt-template-settings-card">
                   <div className="prompt-template-section-heading">
-                    <span className="field-title">鎻愮ず璇嶅唴瀹?/span>
+                    <span className="field-title">提示词内容</span>
                   </div>
                   <PromptVariablePicker scope={draft.type} value={draft.content} onChange={(value) => setDraft({ ...draft, content: value })} />
                   <VariableAwareTextarea
                     className="template-textarea"
                     value={draft.content}
                     onChange={(value) => setDraft({ ...draft, content: value })}
-                    placeholder="杈撳叆 // 閫夋嫨鍙橀噺"
+                    placeholder="输入 // 选择变量"
                     variables={promptTemplateVariablesForScope(draft.type)}
                   />
                 </section>
               )}
             </div>
-            <Field label="瀵煎叆 / 瀵煎嚭 JSON">
-              <textarea className="small-textarea" value={templateJsonDraft} onChange={(event) => setTemplateJsonDraft(event.target.value)} placeholder="瀵煎嚭鍚庝細濉叆杩欓噷锛涗篃鍙矘璐存晠浜嬫ā鏉?JSON 鍚庣偣鍑诲鍏?JSON" />
+            <Field label="导入 / 导出 JSON">
+              <textarea className="small-textarea" value={templateJsonDraft} onChange={(event) => setTemplateJsonDraft(event.target.value)} placeholder="导出后会填入这里；也可粘贴故事模板 JSON 后点击导入 JSON" />
             </Field>
           </>
         ) : (
-          <EmptyState title="鏆傛棤妯℃澘" />
+          <EmptyState title="暂无模板" />
         )}
       </section>
     </div>
@@ -4166,14 +4114,14 @@ function PromptVariablePicker({
   const variables = promptTemplateVariablesForScope(scope);
   return (
     <>
-      <span className="field-title">鍙橀噺</span>
-      <span className="hint-text">鐐瑰嚮鎻掑叆褰撳墠姝ラ鍙敤鍙橀噺锛涙瘡涓彁绀鸿瘝杈撳叆妗嗕篃鍙緭鍏?// 閫夋嫨鍙橀噺銆?/span>
+      <span className="field-title">变量</span>
+      <span className="hint-text">点击插入当前步骤可用变量；每个提示词输入框也可输入 // 选择变量。</span>
       <div className="variable-chip-row">{variables.map((item) => (
         <button
           className="chip prompt-template-variable-chip"
           type="button"
           key={item.key}
-          title={`鎻掑叆 {{${item.key}}}: ${item.description}`}
+          title={`插入 {{${item.key}}}: ${item.description}`}
           onClick={() => onChange(appendPromptVariable(value, item.key))}
         >
           <span>{item.label}</span>
@@ -4237,7 +4185,7 @@ function VariableAwareTextarea({
             <button type="button" key={item.key} onMouseDown={(event) => event.preventDefault()} onClick={() => onVariableInsert(item.key)}>
               <span>{item.label}</span>
               <code>{`{{${item.key}}}`}</code>
-              <small>鑻辨枃鍙橀噺 路 {item.description}</small>
+              <small>英文变量 · {item.description}</small>
             </button>
           ))}
         </div>
@@ -4290,14 +4238,14 @@ function DraftTemplatesPage({ api, state, applyState }: { api: StoryDreamApi; st
   }
 
   async function copyTemplate(template: DraftTemplate) {
-    const copy = { ...cloneDraftTemplate(template), id: crypto.randomUUID(), name: `${template.name} 鍓湰`, isDefault: false };
+    const copy = { ...cloneDraftTemplate(template), id: crypto.randomUUID(), name: `${template.name} 副本`, isDefault: false };
     applyState(await api.saveDraftTemplate(copy));
     setEditingId(copy.id);
   }
 
   async function createTemplate() {
     const base = cloneDraftTemplate(builtinDraftTemplates[0]);
-    const next = { ...base, id: crypto.randomUUID(), name: '鏂版ā鏉?, isDefault: false };
+    const next = { ...base, id: crypto.randomUUID(), name: '新模板', isDefault: false };
     applyState(await api.saveDraftTemplate(next));
     setEditingId(next.id);
   }
@@ -4308,7 +4256,7 @@ function DraftTemplatesPage({ api, state, applyState }: { api: StoryDreamApi; st
     setCozeImportResults(results);
     if (!result.ok || results.some((item) => !item.ok)) {
       setCozeImportResult(null);
-      setCozeImportError(!result.ok ? result.error : '閮ㄥ垎 Coze 宸ヤ綔娴佽浆鎹㈠け璐ワ紝璇锋鏌ユ簮鐮併€?);
+      setCozeImportError(!result.ok ? result.error : '部分 Coze 工作流转换失败，请检查源码。');
       return;
     }
     setCozeImportResult(result);
@@ -4336,7 +4284,7 @@ function DraftTemplatesPage({ api, state, applyState }: { api: StoryDreamApi; st
     const failures = results.filter((result) => !result.ok);
     if (failures.length) {
       setCozeImportResult(null);
-      setCozeImportError(`${failures.length} 涓?Coze 宸ヤ綔娴佽浆鎹㈠け璐ャ€俙);
+      setCozeImportError(`${failures.length} 个 Coze 工作流转换失败。`);
       return;
     }
     let nextState = state;
@@ -4410,11 +4358,11 @@ function DraftTemplatesPage({ api, state, applyState }: { api: StoryDreamApi; st
     return (
       <div className="draft-template-page">
         <div className="editor-topbar">
-          <button className="ghost-action" onClick={() => setEditingId(null)}>杩斿洖妯℃澘鍒楄〃</button>
+          <button className="ghost-action" onClick={() => setEditingId(null)}>返回模板列表</button>
           <input className="template-name-input" value={draft.name} onChange={(event) => setDraft({ ...draft, name: event.target.value })} />
           <div className="button-row">
-            <button className="ghost-action" onClick={() => setDraft(editingTemplate ? cloneDraftTemplate(editingTemplate) : draft)}>鍙栨秷</button>
-            <button className="primary-action slim" onClick={save}><Save size={15} />淇濆瓨</button>
+            <button className="ghost-action" onClick={() => setDraft(editingTemplate ? cloneDraftTemplate(editingTemplate) : draft)}>取消</button>
+            <button className="primary-action slim" onClick={save}><Save size={15} />保存</button>
           </div>
         </div>
 
@@ -4423,156 +4371,156 @@ function DraftTemplatesPage({ api, state, applyState }: { api: StoryDreamApi; st
             <div className="panel-title-row">
               <div>
                 <h2>{draft.name}</h2>
-                <span className="hint-text">{draft.canvas.ratio} 路 {draft.canvas.width}x{draft.canvas.height} 路 {draft.image.animation}</span>
+                <span className="hint-text">{draft.canvas.ratio} · {draft.canvas.width}x{draft.canvas.height} · {draft.image.animation}</span>
               </div>
-              <button className="ghost-action" onClick={() => copyTemplate(draft)}><Copy size={15} />澶嶅埗</button>
+              <button className="ghost-action" onClick={() => copyTemplate(draft)}><Copy size={15} />复制</button>
             </div>
             <EditableDraftCanvas template={draft} selectedLayer={selectedLayer} onSelectLayer={setSelectedLayer} onChange={setDraft} />
           </section>
 
           <section className="panel draft-controls">
-            <Accordion title="鐢诲竷璁剧疆" open>
-              <Segmented label="姣斾緥" value={draft.canvas.ratio} options={['9:16', '4:3', '1:1', '16:9']} onChange={(value) => setDraft(applyDraftCanvasRatio(draft, value))} />
-              <Field label="灏哄"><input value={`${draft.canvas.width}x${draft.canvas.height}`} readOnly /></Field>
-              <Field label="搴曡壊">
+            <Accordion title="画布设置" open>
+              <Segmented label="比例" value={draft.canvas.ratio} options={['9:16', '4:3', '1:1', '16:9']} onChange={(value) => setDraft(applyDraftCanvasRatio(draft, value))} />
+              <Field label="尺寸"><input value={`${draft.canvas.width}x${draft.canvas.height}`} readOnly /></Field>
+              <Field label="底色">
                 <div className="draft-background-field with-swatch">
                   <input className="draft-background-swatch" type="color" value={normalizeColorInput(draft.canvas.backgroundColor)} onChange={(event) => setDraft({ ...draft, canvas: { ...draft.canvas, backgroundColor: event.target.value } })} />
                   <input value={draft.canvas.backgroundColor} onChange={(event) => setDraft({ ...draft, canvas: { ...draft.canvas, backgroundColor: event.target.value } })} />
                 </div>
               </Field>
-              <Field label="鑳屾櫙鍥?>
+              <Field label="背景图">
                 <div className="draft-background-field">
-                  <input value={draft.canvas.backgroundImage} onChange={(event) => setDraft({ ...draft, canvas: { ...draft.canvas, backgroundImage: event.target.value } })} placeholder="鐣欑┖ = 鏃犺儗鏅浘" />
-                  <button className="ghost-action" type="button" onClick={selectDraftBackgroundImage}><FolderOpen size={14} />娴忚</button>
-                  <button className="ghost-action" type="button" onClick={() => setDraft({ ...draft, canvas: { ...draft.canvas, backgroundImage: '' } })}>娓呯┖</button>
+                  <input value={draft.canvas.backgroundImage} onChange={(event) => setDraft({ ...draft, canvas: { ...draft.canvas, backgroundImage: event.target.value } })} placeholder="留空 = 无背景图" />
+                  <button className="ghost-action" type="button" onClick={selectDraftBackgroundImage}><FolderOpen size={14} />浏览</button>
+                  <button className="ghost-action" type="button" onClick={() => setDraft({ ...draft, canvas: { ...draft.canvas, backgroundImage: '' } })}>清空</button>
                 </div>
               </Field>
             </Accordion>
-            <Accordion title="鍥剧墖鍖哄煙" open>
-              <ToggleField label="鏄剧ず" checked={draft.image.visible} onChange={(checked) => updateDraftImage({ visible: checked })} />
-              <Segmented label="鍥剧墖姣斾緥" value={draft.image.ratio} options={['9:16', '4:3', '16:9']} onChange={(value) => setDraft(applyDraftImageRatio(draft, value))} />
-              <Segmented label="閫傞厤" value={draft.image.fit} options={['cover', 'contain']} onChange={(value) => updateDraftImage({ fit: value as 'cover' | 'contain' })} />
-              <Field label="鍧愭爣"><input value={`top ${draft.image.top.toFixed(2)}, height ${draft.image.height.toFixed(2)}`} readOnly /></Field>
-              <RangeField label="鍨傜洿浣嶇疆" min={-1} max={1} step={0.01} value={draft.image.top} onChange={(value) => updateDraftImage({ top: value })} />
-              <RangeField label="楂樺害鍗犳瘮" min={0.1} max={1} step={0.01} value={draft.image.height} onChange={(value) => updateDraftImage({ height: value })} />
-              <Segmented label="鍔ㄧ敾鏁堟灉" value={draft.image.animation} options={imageAnimations} onChange={(value) => updateDraftImage({ animation: value })} />
+            <Accordion title="图片区域" open>
+              <ToggleField label="显示" checked={draft.image.visible} onChange={(checked) => updateDraftImage({ visible: checked })} />
+              <Segmented label="图片比例" value={draft.image.ratio} options={['9:16', '4:3', '16:9']} onChange={(value) => setDraft(applyDraftImageRatio(draft, value))} />
+              <Segmented label="适配" value={draft.image.fit} options={['cover', 'contain']} onChange={(value) => updateDraftImage({ fit: value as 'cover' | 'contain' })} />
+              <Field label="坐标"><input value={`top ${draft.image.top.toFixed(2)}, height ${draft.image.height.toFixed(2)}`} readOnly /></Field>
+              <RangeField label="垂直位置" min={-1} max={1} step={0.01} value={draft.image.top} onChange={(value) => updateDraftImage({ top: value })} />
+              <RangeField label="高度占比" min={0.1} max={1} step={0.01} value={draft.image.height} onChange={(value) => updateDraftImage({ height: value })} />
+              <Segmented label="动画效果" value={draft.image.animation} options={imageAnimations} onChange={(value) => updateDraftImage({ animation: value })} />
             </Accordion>
-            <Accordion title="涓绘爣棰?>
-              <ToggleField label="鏄剧ず" checked={draft.title.visible} onChange={(checked) => updateDraftTitle({ visible: checked })} />
-              <Field label="鏂囧瓧"><input value={draft.title.text} onChange={(event) => updateDraftTitle({ text: event.target.value })} /></Field>
-              <Field label="鍧愭爣"><input value={`${draft.title.x.toFixed(2)}, ${draft.title.y.toFixed(2)}`} readOnly /></Field>
-              <RangeField label="鏂囨湰妗嗗搴? min={DRAFT_TEXT_WIDTH_MIN} max={DRAFT_TEXT_WIDTH_MAX} step={0.01} value={draft.title.width} onChange={(value) => updateDraftTitle({ width: clamp(value, DRAFT_TEXT_WIDTH_MIN, DRAFT_TEXT_WIDTH_MAX) })} />
-              <RangeField label="瀛楀彿" min={12} max={120} step={1} value={draft.title.fontSize} onChange={(value) => updateDraftTitle({ fontSize: value })} />
-              <ColorField label="棰滆壊" value={draft.title.color} onChange={(value) => updateDraftTitle({ color: value })} />
-              <RangeField label="閫忔槑搴? min={0} max={1} step={0.05} value={draft.title.alpha} onChange={(value) => updateDraftTitle({ alpha: value })} />
-              <ToggleField label="鍔犵矖" checked={draft.title.bold} onChange={(checked) => updateDraftTitle({ bold: checked })} />
-              <ToggleField label="涓嬪垝绾? checked={draft.title.underline} onChange={(checked) => updateDraftTitle({ underline: checked })} />
-              <Field label="瀵归綈">
+            <Accordion title="主标题">
+              <ToggleField label="显示" checked={draft.title.visible} onChange={(checked) => updateDraftTitle({ visible: checked })} />
+              <Field label="文字"><input value={draft.title.text} onChange={(event) => updateDraftTitle({ text: event.target.value })} /></Field>
+              <Field label="坐标"><input value={`${draft.title.x.toFixed(2)}, ${draft.title.y.toFixed(2)}`} readOnly /></Field>
+              <RangeField label="文本框宽度" min={DRAFT_TEXT_WIDTH_MIN} max={DRAFT_TEXT_WIDTH_MAX} step={0.01} value={draft.title.width} onChange={(value) => updateDraftTitle({ width: clamp(value, DRAFT_TEXT_WIDTH_MIN, DRAFT_TEXT_WIDTH_MAX) })} />
+              <RangeField label="字号" min={12} max={120} step={1} value={draft.title.fontSize} onChange={(value) => updateDraftTitle({ fontSize: value })} />
+              <ColorField label="颜色" value={draft.title.color} onChange={(value) => updateDraftTitle({ color: value })} />
+              <RangeField label="透明度" min={0} max={1} step={0.05} value={draft.title.alpha} onChange={(value) => updateDraftTitle({ alpha: value })} />
+              <ToggleField label="加粗" checked={draft.title.bold} onChange={(checked) => updateDraftTitle({ bold: checked })} />
+              <ToggleField label="下划线" checked={draft.title.underline} onChange={(checked) => updateDraftTitle({ underline: checked })} />
+              <Field label="对齐">
                 <select value={String(draft.title.align)} onChange={(event) => updateDraftTitle({ align: Number(event.target.value) })}>
-                  <option value="0">宸﹀榻?/option>
-                  <option value="1">灞呬腑</option>
-                  <option value="2">鍙冲榻?/option>
+                  <option value="0">左对齐</option>
+                  <option value="1">居中</option>
+                  <option value="2">右对齐</option>
                 </select>
               </Field>
-              <RangeField label="瀛楅棿璺? min={0} max={20} step={1} value={draft.title.letterSpacing} onChange={(value) => updateDraftTitle({ letterSpacing: value })} />
-              <RangeField label="琛岄棿璺? min={0} max={20} step={1} value={draft.title.lineSpacing} onChange={(value) => updateDraftTitle({ lineSpacing: value })} />
+              <RangeField label="字间距" min={0} max={20} step={1} value={draft.title.letterSpacing} onChange={(value) => updateDraftTitle({ letterSpacing: value })} />
+              <RangeField label="行间距" min={0} max={20} step={1} value={draft.title.lineSpacing} onChange={(value) => updateDraftTitle({ lineSpacing: value })} />
               <TextBorderControls border={draft.title.border} onChange={updateDraftTitleBorder} />
             </Accordion>
-            <Accordion title="鍓爣棰?>
-              <ToggleField label="鏄剧ず" checked={draft.subtitle.visible} onChange={(checked) => updateDraftSubtitle({ visible: checked })} />
-              <Field label="鏂囧瓧"><input value={draft.subtitle.text} onChange={(event) => updateDraftSubtitle({ text: event.target.value })} /></Field>
-              <Field label="鍧愭爣"><input value={`${draft.subtitle.x.toFixed(2)}, ${draft.subtitle.y.toFixed(2)}`} readOnly /></Field>
-              <RangeField label="鏂囨湰妗嗗搴? min={DRAFT_TEXT_WIDTH_MIN} max={DRAFT_TEXT_WIDTH_MAX} step={0.01} value={draft.subtitle.width} onChange={(value) => updateDraftSubtitle({ width: clamp(value, DRAFT_TEXT_WIDTH_MIN, DRAFT_TEXT_WIDTH_MAX) })} />
-              <RangeField label="瀛楀彿" min={10} max={72} step={1} value={draft.subtitle.fontSize} onChange={(value) => updateDraftSubtitle({ fontSize: value })} />
-              <ColorField label="棰滆壊" value={draft.subtitle.color} onChange={(value) => updateDraftSubtitle({ color: value })} />
-              <RangeField label="閫忔槑搴? min={0} max={1} step={0.05} value={draft.subtitle.alpha} onChange={(value) => updateDraftSubtitle({ alpha: value })} />
-              <ToggleField label="鍔犵矖" checked={draft.subtitle.bold} onChange={(checked) => updateDraftSubtitle({ bold: checked })} />
-              <ToggleField label="涓嬪垝绾? checked={draft.subtitle.underline} onChange={(checked) => updateDraftSubtitle({ underline: checked })} />
-              <Field label="瀵归綈">
+            <Accordion title="副标题">
+              <ToggleField label="显示" checked={draft.subtitle.visible} onChange={(checked) => updateDraftSubtitle({ visible: checked })} />
+              <Field label="文字"><input value={draft.subtitle.text} onChange={(event) => updateDraftSubtitle({ text: event.target.value })} /></Field>
+              <Field label="坐标"><input value={`${draft.subtitle.x.toFixed(2)}, ${draft.subtitle.y.toFixed(2)}`} readOnly /></Field>
+              <RangeField label="文本框宽度" min={DRAFT_TEXT_WIDTH_MIN} max={DRAFT_TEXT_WIDTH_MAX} step={0.01} value={draft.subtitle.width} onChange={(value) => updateDraftSubtitle({ width: clamp(value, DRAFT_TEXT_WIDTH_MIN, DRAFT_TEXT_WIDTH_MAX) })} />
+              <RangeField label="字号" min={10} max={72} step={1} value={draft.subtitle.fontSize} onChange={(value) => updateDraftSubtitle({ fontSize: value })} />
+              <ColorField label="颜色" value={draft.subtitle.color} onChange={(value) => updateDraftSubtitle({ color: value })} />
+              <RangeField label="透明度" min={0} max={1} step={0.05} value={draft.subtitle.alpha} onChange={(value) => updateDraftSubtitle({ alpha: value })} />
+              <ToggleField label="加粗" checked={draft.subtitle.bold} onChange={(checked) => updateDraftSubtitle({ bold: checked })} />
+              <ToggleField label="下划线" checked={draft.subtitle.underline} onChange={(checked) => updateDraftSubtitle({ underline: checked })} />
+              <Field label="对齐">
                 <select value={String(draft.subtitle.align)} onChange={(event) => updateDraftSubtitle({ align: Number(event.target.value) })}>
-                  <option value="0">宸﹀榻?/option>
-                  <option value="1">灞呬腑</option>
-                  <option value="2">鍙冲榻?/option>
+                  <option value="0">左对齐</option>
+                  <option value="1">居中</option>
+                  <option value="2">右对齐</option>
                 </select>
               </Field>
-              <RangeField label="瀛楅棿璺? min={0} max={20} step={1} value={draft.subtitle.letterSpacing} onChange={(value) => updateDraftSubtitle({ letterSpacing: value })} />
-              <RangeField label="琛岄棿璺? min={0} max={20} step={1} value={draft.subtitle.lineSpacing} onChange={(value) => updateDraftSubtitle({ lineSpacing: value })} />
+              <RangeField label="字间距" min={0} max={20} step={1} value={draft.subtitle.letterSpacing} onChange={(value) => updateDraftSubtitle({ letterSpacing: value })} />
+              <RangeField label="行间距" min={0} max={20} step={1} value={draft.subtitle.lineSpacing} onChange={(value) => updateDraftSubtitle({ lineSpacing: value })} />
               <TextBorderControls border={draft.subtitle.border} onChange={updateDraftSubtitleBorder} />
             </Accordion>
-            <Accordion title="瀛楀箷">
-              <ToggleField label="鏄剧ず" checked={draft.caption.visible} onChange={(checked) => updateDraftCaption({ visible: checked })} />
-              <Field label="鍧愭爣"><input value={`${draft.caption.x.toFixed(2)}, ${draft.caption.y.toFixed(2)}`} readOnly /></Field>
-              <RangeField label="鏂囨湰妗嗗搴? min={DRAFT_TEXT_WIDTH_MIN} max={DRAFT_TEXT_WIDTH_MAX} step={0.01} value={draft.caption.width} onChange={updateDraftCaptionWidth} />
-              <RangeField label="瀛楀彿" min={8} max={48} step={1} value={draft.caption.fontSize} onChange={(value) => updateDraftCaption({ fontSize: value })} />
-              <ColorField label="棰滆壊" value={draft.caption.color} onChange={(value) => updateDraftCaption({ color: value })} />
-              <RangeField label="閫忔槑搴? min={0} max={1} step={0.05} value={draft.caption.alpha} onChange={(value) => updateDraftCaption({ alpha: value })} />
-              <ToggleField label="鍔犵矖" checked={draft.caption.bold} onChange={(checked) => updateDraftCaption({ bold: checked })} />
-              <ToggleField label="涓嬪垝绾? checked={draft.caption.underline} onChange={(checked) => updateDraftCaption({ underline: checked })} />
-              <Field label="瀵归綈">
+            <Accordion title="字幕">
+              <ToggleField label="显示" checked={draft.caption.visible} onChange={(checked) => updateDraftCaption({ visible: checked })} />
+              <Field label="坐标"><input value={`${draft.caption.x.toFixed(2)}, ${draft.caption.y.toFixed(2)}`} readOnly /></Field>
+              <RangeField label="文本框宽度" min={DRAFT_TEXT_WIDTH_MIN} max={DRAFT_TEXT_WIDTH_MAX} step={0.01} value={draft.caption.width} onChange={updateDraftCaptionWidth} />
+              <RangeField label="字号" min={8} max={48} step={1} value={draft.caption.fontSize} onChange={(value) => updateDraftCaption({ fontSize: value })} />
+              <ColorField label="颜色" value={draft.caption.color} onChange={(value) => updateDraftCaption({ color: value })} />
+              <RangeField label="透明度" min={0} max={1} step={0.05} value={draft.caption.alpha} onChange={(value) => updateDraftCaption({ alpha: value })} />
+              <ToggleField label="加粗" checked={draft.caption.bold} onChange={(checked) => updateDraftCaption({ bold: checked })} />
+              <ToggleField label="下划线" checked={draft.caption.underline} onChange={(checked) => updateDraftCaption({ underline: checked })} />
+              <Field label="对齐">
                 <select value={String(draft.caption.align)} onChange={(event) => updateDraftCaption({ align: Number(event.target.value) })}>
-                  <option value="0">宸﹀榻?/option>
-                  <option value="1">灞呬腑</option>
-                  <option value="2">鍙冲榻?/option>
+                  <option value="0">左对齐</option>
+                  <option value="1">居中</option>
+                  <option value="2">右对齐</option>
                 </select>
               </Field>
-              <RangeField label="瀛楅棿璺? min={0} max={20} step={1} value={draft.caption.letterSpacing} onChange={(value) => updateDraftCaption({ letterSpacing: value })} />
-              <RangeField label="琛岄棿璺? min={0} max={20} step={1} value={draft.caption.lineSpacing} onChange={(value) => updateDraftCaption({ lineSpacing: value })} />
-              <RangeField label="姣忚瀛楁暟" min={4} max={80} step={1} value={draft.caption.maxCharsPerLine} onChange={(value) => updateDraftCaption({ maxCharsPerLine: value })} />
-              <ColorField label="鑳屾櫙鑹? value={draft.caption.background.color} onChange={(value) => updateDraftCaptionBackground({ color: value })} />
-              <RangeField label="鑳屾櫙閫忔槑搴? min={0} max={1} step={0.05} value={draft.caption.background.alpha} onChange={(value) => updateDraftCaptionBackground({ alpha: value })} />
-              <RangeField label="鍦嗚" min={0} max={1} step={0.05} value={draft.caption.background.roundRadius} onChange={(value) => updateDraftCaptionBackground({ roundRadius: value })} />
+              <RangeField label="字间距" min={0} max={20} step={1} value={draft.caption.letterSpacing} onChange={(value) => updateDraftCaption({ letterSpacing: value })} />
+              <RangeField label="行间距" min={0} max={20} step={1} value={draft.caption.lineSpacing} onChange={(value) => updateDraftCaption({ lineSpacing: value })} />
+              <RangeField label="每行字数" min={4} max={80} step={1} value={draft.caption.maxCharsPerLine} onChange={(value) => updateDraftCaption({ maxCharsPerLine: value })} />
+              <ColorField label="背景色" value={draft.caption.background.color} onChange={(value) => updateDraftCaptionBackground({ color: value })} />
+              <RangeField label="背景透明度" min={0} max={1} step={0.05} value={draft.caption.background.alpha} onChange={(value) => updateDraftCaptionBackground({ alpha: value })} />
+              <RangeField label="圆角" min={0} max={1} step={0.05} value={draft.caption.background.roundRadius} onChange={(value) => updateDraftCaptionBackground({ roundRadius: value })} />
               <TextBorderControls border={draft.caption.border} onChange={updateDraftCaptionBorder} />
             </Accordion>
-            <Accordion title="鍏嶈矗澹版槑">
-              <ToggleField label="鏄剧ず" checked={draft.disclaimer.visible} onChange={(checked) => updateDraftDisclaimer({ visible: checked })} />
-              <Field label="鍧愭爣"><input value={`${draft.disclaimer.x.toFixed(2)}, ${draft.disclaimer.y.toFixed(2)}`} readOnly /></Field>
-              <Field label="鏂囧瓧"><input value={draft.disclaimer.text} onChange={(event) => updateDraftDisclaimer({ text: event.target.value })} /></Field>
-              <RangeField label="鏂囨湰妗嗗搴? min={DRAFT_TEXT_WIDTH_MIN} max={DRAFT_TEXT_WIDTH_MAX} step={0.01} value={draft.disclaimer.width} onChange={(value) => updateDraftDisclaimer({ width: clamp(value, DRAFT_TEXT_WIDTH_MIN, DRAFT_TEXT_WIDTH_MAX) })} />
-              <RangeField label="瀛楀彿" min={8} max={40} step={1} value={draft.disclaimer.fontSize} onChange={(value) => updateDraftDisclaimer({ fontSize: value })} />
-              <ColorField label="棰滆壊" value={draft.disclaimer.color} onChange={(value) => updateDraftDisclaimer({ color: value })} />
-              <RangeField label="閫忔槑搴? min={0} max={1} step={0.05} value={draft.disclaimer.alpha} onChange={(value) => updateDraftDisclaimer({ alpha: value })} />
-              <ToggleField label="鍔犵矖" checked={draft.disclaimer.bold} onChange={(checked) => updateDraftDisclaimer({ bold: checked })} />
-              <ToggleField label="涓嬪垝绾? checked={draft.disclaimer.underline} onChange={(checked) => updateDraftDisclaimer({ underline: checked })} />
-              <Field label="瀵归綈">
+            <Accordion title="免责声明">
+              <ToggleField label="显示" checked={draft.disclaimer.visible} onChange={(checked) => updateDraftDisclaimer({ visible: checked })} />
+              <Field label="坐标"><input value={`${draft.disclaimer.x.toFixed(2)}, ${draft.disclaimer.y.toFixed(2)}`} readOnly /></Field>
+              <Field label="文字"><input value={draft.disclaimer.text} onChange={(event) => updateDraftDisclaimer({ text: event.target.value })} /></Field>
+              <RangeField label="文本框宽度" min={DRAFT_TEXT_WIDTH_MIN} max={DRAFT_TEXT_WIDTH_MAX} step={0.01} value={draft.disclaimer.width} onChange={(value) => updateDraftDisclaimer({ width: clamp(value, DRAFT_TEXT_WIDTH_MIN, DRAFT_TEXT_WIDTH_MAX) })} />
+              <RangeField label="字号" min={8} max={40} step={1} value={draft.disclaimer.fontSize} onChange={(value) => updateDraftDisclaimer({ fontSize: value })} />
+              <ColorField label="颜色" value={draft.disclaimer.color} onChange={(value) => updateDraftDisclaimer({ color: value })} />
+              <RangeField label="透明度" min={0} max={1} step={0.05} value={draft.disclaimer.alpha} onChange={(value) => updateDraftDisclaimer({ alpha: value })} />
+              <ToggleField label="加粗" checked={draft.disclaimer.bold} onChange={(checked) => updateDraftDisclaimer({ bold: checked })} />
+              <ToggleField label="下划线" checked={draft.disclaimer.underline} onChange={(checked) => updateDraftDisclaimer({ underline: checked })} />
+              <Field label="对齐">
                 <select value={String(draft.disclaimer.align)} onChange={(event) => updateDraftDisclaimer({ align: Number(event.target.value) })}>
-                  <option value="0">宸﹀榻?/option>
-                  <option value="1">灞呬腑</option>
-                  <option value="2">鍙冲榻?/option>
+                  <option value="0">左对齐</option>
+                  <option value="1">居中</option>
+                  <option value="2">右对齐</option>
                 </select>
               </Field>
-              <RangeField label="瀛楅棿璺? min={0} max={20} step={1} value={draft.disclaimer.letterSpacing} onChange={(value) => updateDraftDisclaimer({ letterSpacing: value })} />
-              <RangeField label="琛岄棿璺? min={0} max={20} step={1} value={draft.disclaimer.lineSpacing} onChange={(value) => updateDraftDisclaimer({ lineSpacing: value })} />
+              <RangeField label="字间距" min={0} max={20} step={1} value={draft.disclaimer.letterSpacing} onChange={(value) => updateDraftDisclaimer({ letterSpacing: value })} />
+              <RangeField label="行间距" min={0} max={20} step={1} value={draft.disclaimer.lineSpacing} onChange={(value) => updateDraftDisclaimer({ lineSpacing: value })} />
               <TextBorderControls border={draft.disclaimer.border} onChange={updateDraftDisclaimerBorder} />
             </Accordion>
-            <Accordion title="闊抽璁剧疆">
-              <Field label="鏃佺櫧闊抽噺"><input type="number" value={draft.audio.narrationVolume} onChange={(event) => setDraft({ ...draft, audio: { ...draft.audio, narrationVolume: Number(event.target.value) } })} /></Field>
-              <Field label="BGM 闊抽噺"><input type="number" value={draft.audio.bgmVolume} onChange={(event) => setDraft({ ...draft, audio: { ...draft.audio, bgmVolume: Number(event.target.value) } })} /></Field>
-              <Field label="杞満">
+            <Accordion title="音频设置">
+              <Field label="旁白音量"><input type="number" value={draft.audio.narrationVolume} onChange={(event) => setDraft({ ...draft, audio: { ...draft.audio, narrationVolume: Number(event.target.value) } })} /></Field>
+              <Field label="BGM 音量"><input type="number" value={draft.audio.bgmVolume} onChange={(event) => setDraft({ ...draft, audio: { ...draft.audio, bgmVolume: Number(event.target.value) } })} /></Field>
+              <Field label="转场">
                 <select value={draft.audio.transitionType} onChange={(event) => setDraft({ ...draft, audio: { ...draft.audio, transitionType: event.target.value } })}>
-                  <option value="">鍏抽棴</option>
+                  <option value="">关闭</option>
                   {effectCatalog.transitions.map((name) => <option key={name} value={name}>{name}</option>)}
                 </select>
               </Field>
-              <Field label="杞満鏃堕暱(ms)"><input type="number" value={draft.audio.transitionDurationMs} onChange={(event) => setDraft({ ...draft, audio: { ...draft.audio, transitionDurationMs: Number(event.target.value) } })} /></Field>
-              <Field label="鏃佺櫧娣″叆(ms)"><input type="number" value={draft.audio.narrationFadeInMs} onChange={(event) => setDraft({ ...draft, audio: { ...draft.audio, narrationFadeInMs: Number(event.target.value) } })} /></Field>
-              <Field label="鏃佺櫧娣″嚭(ms)"><input type="number" value={draft.audio.narrationFadeOutMs} onChange={(event) => setDraft({ ...draft, audio: { ...draft.audio, narrationFadeOutMs: Number(event.target.value) } })} /></Field>
-              <Field label="BGM 娣″叆(ms)"><input type="number" value={draft.audio.bgmFadeInMs} onChange={(event) => setDraft({ ...draft, audio: { ...draft.audio, bgmFadeInMs: Number(event.target.value) } })} /></Field>
-              <Field label="BGM 娣″嚭(ms)"><input type="number" value={draft.audio.bgmFadeOutMs} onChange={(event) => setDraft({ ...draft, audio: { ...draft.audio, bgmFadeOutMs: Number(event.target.value) } })} /></Field>
-              <Field label="婊ら暅">
+              <Field label="转场时长(ms)"><input type="number" value={draft.audio.transitionDurationMs} onChange={(event) => setDraft({ ...draft, audio: { ...draft.audio, transitionDurationMs: Number(event.target.value) } })} /></Field>
+              <Field label="旁白淡入(ms)"><input type="number" value={draft.audio.narrationFadeInMs} onChange={(event) => setDraft({ ...draft, audio: { ...draft.audio, narrationFadeInMs: Number(event.target.value) } })} /></Field>
+              <Field label="旁白淡出(ms)"><input type="number" value={draft.audio.narrationFadeOutMs} onChange={(event) => setDraft({ ...draft, audio: { ...draft.audio, narrationFadeOutMs: Number(event.target.value) } })} /></Field>
+              <Field label="BGM 淡入(ms)"><input type="number" value={draft.audio.bgmFadeInMs} onChange={(event) => setDraft({ ...draft, audio: { ...draft.audio, bgmFadeInMs: Number(event.target.value) } })} /></Field>
+              <Field label="BGM 淡出(ms)"><input type="number" value={draft.audio.bgmFadeOutMs} onChange={(event) => setDraft({ ...draft, audio: { ...draft.audio, bgmFadeOutMs: Number(event.target.value) } })} /></Field>
+              <Field label="滤镜">
                 <select value={draft.audio.filterType} onChange={(event) => setDraft({ ...draft, audio: { ...draft.audio, filterType: event.target.value } })}>
-                  <option value="">鍏抽棴</option>
+                  <option value="">关闭</option>
                   {effectCatalog.filters.map((name) => <option key={name} value={name}>{name}</option>)}
                 </select>
               </Field>
-              <Field label="瑙嗛鐗规晥">
+              <Field label="视频特效">
                 <select value={draft.audio.videoEffectType} onChange={(event) => setDraft({ ...draft, audio: { ...draft.audio, videoEffectType: event.target.value } })}>
-                  <option value="">鍏抽棴</option>
+                  <option value="">关闭</option>
                   {effectCatalog.videoEffects.map((name) => <option key={name} value={name}>{name}</option>)}
                 </select>
               </Field>
-              <Field label="闊抽鐗规晥">
+              <Field label="音频特效">
                 <select value={draft.audio.audioEffectType} onChange={(event) => setDraft({ ...draft, audio: { ...draft.audio, audioEffectType: event.target.value } })}>
-                  <option value="">鍏抽棴</option>
+                  <option value="">关闭</option>
                   {effectCatalog.audioEffects.map((name) => <option key={name} value={name}>{name}</option>)}
                 </select>
               </Field>
@@ -4587,46 +4535,46 @@ function DraftTemplatesPage({ api, state, applyState }: { api: StoryDreamApi; st
     <div className="draft-template-page">
       <div className="panel-title-row draft-template-toolbar">
         <div>
-          <h2>鑽夌妯℃澘</h2>
-          <span className="hint-text">鍐呯疆妯℃澘锛氶粯璁ょ珫灞忋€佺珫灞?:3銆佹í灞?6:9锛涜嚜瀹氫箟妯℃澘淇濆瓨鍦ㄦ湰鏈恒€?/span>
+          <h2>草稿模板</h2>
+          <span className="hint-text">内置模板：默认竖屏、竖屏4:3、横屏16:9；自定义模板保存在本机。</span>
         </div>
         <div className="button-row">
-          <button className="ghost-action" type="button" onClick={() => setCozeImportOpen(true)}><Upload size={15} />瀵煎叆 Coze 妯℃澘</button>
-          <button className="primary-action slim" onClick={createTemplate}><Plus size={15} />鏂版ā鏉?/button>
+          <button className="ghost-action" type="button" onClick={() => setCozeImportOpen(true)}><Upload size={15} />导入 Coze 模板</button>
+          <button className="primary-action slim" onClick={createTemplate}><Plus size={15} />新模板</button>
         </div>
       </div>
 
       {cozeImportOpen ? (
         <div className="coze-template-import-backdrop" onClick={() => setCozeImportOpen(false)}>
-          <section className="panel coze-template-import-panel coze-template-import-dialog" role="dialog" aria-modal="true" aria-label="瀵煎叆 Coze 妯℃澘" onClick={(event) => event.stopPropagation()}>
+          <section className="panel coze-template-import-panel coze-template-import-dialog" role="dialog" aria-modal="true" aria-label="导入 Coze 模板" onClick={(event) => event.stopPropagation()}>
             <div className="panel-title-row">
               <div>
-                <h3>瀵煎叆 Coze 妯℃澘</h3>
-                <span className="hint-text">绮樿创姣忎釜瑙嗛涓嬪鍒跺嚭鐨?Coze 宸ヤ綔娴佹簮鐮侊紝杞崲鎴愬彲缂栬緫鐨勮崏绋挎ā鏉块璁俱€?/span>
+                <h3>导入 Coze 模板</h3>
+                <span className="hint-text">粘贴每个视频下复制出的 Coze 工作流源码，转换成可编辑的草稿模板预设。</span>
               </div>
               <div className="button-row">
-                <button className="ghost-action" type="button" onClick={previewCozeWorkflowTemplate}>棰勮杞崲</button>
-                <button className="primary-action slim" type="button" disabled={!cozeWorkflowSource.trim()} onClick={saveCozeWorkflowTemplate}><Upload size={15} />瀵煎叆 Coze 妯℃澘</button>
-                <button className="ghost-action" type="button" disabled={!cozeWorkflowSource.trim()} onClick={saveAllCozeWorkflowTemplates}>鍏ㄩ儴瀵煎叆</button>
-                <button className="mini-button" type="button" onClick={() => setCozeImportOpen(false)}>鍏抽棴</button>
+                <button className="ghost-action" type="button" onClick={previewCozeWorkflowTemplate}>预览转换</button>
+                <button className="primary-action slim" type="button" disabled={!cozeWorkflowSource.trim()} onClick={saveCozeWorkflowTemplate}><Upload size={15} />导入 Coze 模板</button>
+                <button className="ghost-action" type="button" disabled={!cozeWorkflowSource.trim()} onClick={saveAllCozeWorkflowTemplates}>全部导入</button>
+                <button className="mini-button" type="button" onClick={() => setCozeImportOpen(false)}>关闭</button>
               </div>
             </div>
             <div className="coze-template-import-grid">
-              <Field label="妯℃澘鍚嶇О">
-                <input value={cozeImportName} onChange={(event) => setCozeImportName(event.target.value)} placeholder="鐣欑┖鍒欎娇鐢?Coze workflowId" />
+              <Field label="模板名称">
+                <input value={cozeImportName} onChange={(event) => setCozeImportName(event.target.value)} placeholder="留空则使用 Coze workflowId" />
               </Field>
-              <Field label="Coze 宸ヤ綔娴佹簮鐮?>
-                <textarea className="small-textarea coze-workflow-source" value={cozeWorkflowSource} onChange={(event) => setCozeWorkflowSource(event.target.value)} placeholder='绮樿创 {"type":"coze-workflow-clipboard-data", ...}' />
+              <Field label="Coze 工作流源码">
+                <textarea className="small-textarea coze-workflow-source" value={cozeWorkflowSource} onChange={(event) => setCozeWorkflowSource(event.target.value)} placeholder='粘贴 {"type":"coze-workflow-clipboard-data", ...}' />
               </Field>
             </div>
             {cozeImportError ? <p className="form-error">{cozeImportError}</p> : null}
-            {cozeImportResults.length > 1 ? <span className="hint-text">宸茶瘑鍒?{cozeImportResults.length} 涓?Coze 宸ヤ綔娴佹簮鐮併€?/span> : null}
+            {cozeImportResults.length > 1 ? <span className="hint-text">已识别 {cozeImportResults.length} 个 Coze 工作流源码。</span> : null}
             {cozeImportResult ? (
               <div className="coze-import-preview">
                 <strong>{cozeImportResult.template.name}</strong>
-                <span>{cozeImportResult.workflowId} 路 {cozeImportResult.template.canvas.ratio} 路 {cozeImportResult.template.canvas.width}x{cozeImportResult.template.canvas.height}</span>
+                <span>{cozeImportResult.workflowId} · {cozeImportResult.template.canvas.ratio} · {cozeImportResult.template.canvas.width}x{cozeImportResult.template.canvas.height}</span>
                 <div>
-                  <small>杞崲璇婃柇</small>
+                  <small>转换诊断</small>
                   <ul className="coze-diagnostics-list">
                     {cozeImportResult.diagnostics.slice(0, 8).map((diagnostic, index) => (
                       <li key={`${diagnostic.code}-${diagnostic.nodeId ?? index}`}>
@@ -4645,27 +4593,27 @@ function DraftTemplatesPage({ api, state, applyState }: { api: StoryDreamApi; st
       <section className="draft-template-gallery">
         {state.draftTemplates.map((template) => (
           <article key={template.id} className="draft-template-card">
-            <button className="draft-template-thumb" onClick={() => openEditor(template)} type="button" aria-label={`缂栬緫 ${template.name}`}>
+            <button className="draft-template-thumb" onClick={() => openEditor(template)} type="button" aria-label={`编辑 ${template.name}`}>
               <DraftTemplatePreview template={template} compact />
             </button>
             <div className="draft-template-meta">
               <div>
                 <strong>{template.name}</strong>
-                {template.isDefault ? <small>绯荤粺榛樿</small> : <small>鏈湴鑷畾涔?/small>}
+                {template.isDefault ? <small>系统默认</small> : <small>本地自定义</small>}
               </div>
-              <span>{template.canvas.ratio} 路 {template.canvas.width}x{template.canvas.height}</span>
-              <span>鍥剧墖 {template.image.ratio} 路 {template.image.fit} 路 {template.image.animation}</span>
+              <span>{template.canvas.ratio} · {template.canvas.width}x{template.canvas.height}</span>
+              <span>图片 {template.image.ratio} · {template.image.fit} · {template.image.animation}</span>
             </div>
             <div className="row-actions">
-              <button className="ghost-action" onClick={() => openEditor(template)}><LayoutTemplate size={15} />缂栬緫</button>
-              <button className="ghost-action" onClick={() => copyTemplate(template)}><Copy size={15} />澶嶅埗</button>
+              <button className="ghost-action" onClick={() => openEditor(template)}><LayoutTemplate size={15} />编辑</button>
+              <button className="ghost-action" onClick={() => copyTemplate(template)}><Copy size={15} />复制</button>
             </div>
           </article>
         ))}
         <button className="draft-template-card new-template-card" onClick={createTemplate} type="button">
           <Plus size={24} />
-          <strong>鏂版ā鏉?/strong>
-          <span>浠庨粯璁ょ珫灞忓鍒朵竴浠芥湰鍦伴厤缃?/span>
+          <strong>新模板</strong>
+          <span>从默认竖屏复制一份本地配置</span>
         </button>
       </section>
     </div>
@@ -4728,7 +4676,7 @@ function DraftTemplatePreview({ template, compact = false }: { template: DraftTe
             padding: compact ? '2px 8px' : '4px 10px',
           }}
         >
-          瀛楀箷棰勮
+          字幕预览
         </DraftCanvasText>
       ) : null}
       {template.disclaimer.visible ? (
@@ -4826,12 +4774,12 @@ function EditableDraftCanvas({
           onPointerDown={(event) => handleDraftCanvasPointerDown('image', event)}
         >
           <div className="draft-image-media" style={draftImageMediaStyle(template)} />
-          <span>鍥剧墖鍖哄煙</span>
+          <span>图片区域</span>
           <i className="draft-layer-handle" />
         </div>
       ) : null}
       {template.title.visible ? (
-        <DraftCanvasLayerBox layer="title" label="涓绘爣棰? selected={selectedLayer === 'title'} x={template.title.x} y={template.title.y} width={template.title.width} onPointerDown={handleDraftCanvasPointerDown} onResizePointerDown={handleDraftCanvasResizePointerDown}>
+        <DraftCanvasLayerBox layer="title" label="主标题" selected={selectedLayer === 'title'} x={template.title.x} y={template.title.y} width={template.title.width} onPointerDown={handleDraftCanvasPointerDown} onResizePointerDown={handleDraftCanvasResizePointerDown}>
           <DraftCanvasText
             className="draft-title"
             x={0}
@@ -4846,7 +4794,7 @@ function EditableDraftCanvas({
         </DraftCanvasLayerBox>
       ) : null}
       {template.subtitle.visible ? (
-        <DraftCanvasLayerBox layer="subtitle" label="鍓爣棰? selected={selectedLayer === 'subtitle'} x={template.subtitle.x} y={template.subtitle.y} width={template.subtitle.width} onPointerDown={handleDraftCanvasPointerDown} onResizePointerDown={handleDraftCanvasResizePointerDown}>
+        <DraftCanvasLayerBox layer="subtitle" label="副标题" selected={selectedLayer === 'subtitle'} x={template.subtitle.x} y={template.subtitle.y} width={template.subtitle.width} onPointerDown={handleDraftCanvasPointerDown} onResizePointerDown={handleDraftCanvasResizePointerDown}>
           <DraftCanvasText
             className="draft-subtitle"
             x={0}
@@ -4861,7 +4809,7 @@ function EditableDraftCanvas({
         </DraftCanvasLayerBox>
       ) : null}
       {template.caption.visible ? (
-        <DraftCanvasLayerBox layer="caption" label="瀛楀箷" selected={selectedLayer === 'caption'} x={template.caption.x} y={template.caption.y} width={template.caption.width} onPointerDown={handleDraftCanvasPointerDown} onResizePointerDown={handleDraftCanvasResizePointerDown}>
+        <DraftCanvasLayerBox layer="caption" label="字幕" selected={selectedLayer === 'caption'} x={template.caption.x} y={template.caption.y} width={template.caption.width} onPointerDown={handleDraftCanvasPointerDown} onResizePointerDown={handleDraftCanvasResizePointerDown}>
           <DraftCanvasText
             className="draft-caption"
             x={0}
@@ -4883,12 +4831,12 @@ function EditableDraftCanvas({
               padding: '4px 10px',
             }}
           >
-            瀛楀箷棰勮
+            字幕预览
           </DraftCanvasText>
         </DraftCanvasLayerBox>
       ) : null}
       {template.disclaimer.visible ? (
-        <DraftCanvasLayerBox layer="disclaimer" label="鍏嶈矗澹版槑" selected={selectedLayer === 'disclaimer'} x={template.disclaimer.x} y={template.disclaimer.y} width={template.disclaimer.width} onPointerDown={handleDraftCanvasPointerDown} onResizePointerDown={handleDraftCanvasResizePointerDown}>
+        <DraftCanvasLayerBox layer="disclaimer" label="免责声明" selected={selectedLayer === 'disclaimer'} x={template.disclaimer.x} y={template.disclaimer.y} width={template.disclaimer.width} onPointerDown={handleDraftCanvasPointerDown} onResizePointerDown={handleDraftCanvasResizePointerDown}>
           <DraftCanvasText
             className="draft-disclaimer"
             x={0}
@@ -4976,7 +4924,7 @@ function SettingsPage({ api, state, applyState }: { api: StoryDreamApi; state: A
     setSettingsDirty(false);
     setLastAppliedConfigSignature(settingsConfigSignature(normalized));
   }
-  async function commitAndApplySettingsDraft(nextDraft: AppConfig, successMessage = '閰嶇疆宸蹭繚瀛?) {
+  async function commitAndApplySettingsDraft(nextDraft: AppConfig, successMessage = '配置已保存') {
     setSavingConfig(true);
     try {
       const next = await api.saveConfig(normalizeEditableConfigProviders(nextDraft));
@@ -5007,13 +4955,13 @@ function SettingsPage({ api, state, applyState }: { api: StoryDreamApi; state: A
     }));
   }
   async function activateLlmProfile(id: string) {
-    await commitAndApplySettingsDraft(enableLlmProfile(draft, id), '宸插惎鐢?LLM 閰嶇疆妗ｆ');
+    await commitAndApplySettingsDraft(enableLlmProfile(draft, id), '已启用 LLM 配置档案');
   }
   async function activateImageProfile(id: string) {
-    await commitAndApplySettingsDraft(enableImageProfile(draft, id), '宸插惎鐢ㄧ粯鍥鹃厤缃。妗?);
+    await commitAndApplySettingsDraft(enableImageProfile(draft, id), '已启用绘图配置档案');
   }
   async function activateTtsProfile(id: string) {
-    await commitAndApplySettingsDraft(enableTtsProfile(draft, id), '宸插惎鐢?TTS 閰嶇疆妗ｆ');
+    await commitAndApplySettingsDraft(enableTtsProfile(draft, id), '已启用 TTS 配置档案');
   }
   async function testCurrentConfig() {
     const target: ConfigTestTarget =
@@ -5022,7 +4970,7 @@ function SettingsPage({ api, state, applyState }: { api: StoryDreamApi; state: A
         : 'llm';
     setTestingConfig(true);
     setSavingConfig(true);
-    setConfigTestResult('姝ｅ湪淇濆瓨骞舵祴璇曞綋鍓嶉厤缃?..');
+    setConfigTestResult('正在保存并测试当前配置...');
     try {
       const nextDraft = activateSelectedProviderProfileForTarget(draft, target, {
         llm: selectedLlmProfileId,
@@ -5049,11 +4997,11 @@ function SettingsPage({ api, state, applyState }: { api: StoryDreamApi; state: A
     applyModel?: (config: AppConfig, model: string) => AppConfig,
   ) {
     if (key === 'custom-image' && !request.baseUrl.trim()) {
-      setModelListStatus((current) => ({ ...current, [key]: '[澶辫触] 鎷夊彇妯″瀷鍓嶉渶瑕佸～鍐欐帴鍙ｅ湴鍧€銆? }));
+      setModelListStatus((current) => ({ ...current, [key]: '[失败] 拉取模型前需要填写接口地址。' }));
       return;
     }
     setLoadingModelList(key);
-    setModelListStatus((current) => ({ ...current, [key]: '姝ｅ湪鑾峰彇妯″瀷娓呭崟...' }));
+    setModelListStatus((current) => ({ ...current, [key]: '正在获取模型清单...' }));
     try {
       const result = await api.listProviderModels(request);
       setModelListStatus((current) => ({ ...current, [key]: `[${result.status}] ${result.detail}` }));
@@ -5074,14 +5022,14 @@ function SettingsPage({ api, state, applyState }: { api: StoryDreamApi; state: A
     const accessKeyId = (volcengine.accessKeyId ?? '').trim();
     const secretAccessKey = (volcengine.secretAccessKey ?? '').trim();
     if (!accessKeyId || !secretAccessKey) {
-      setVolcengineSpeakerStatus('[澶辫触] 鍔犺浇鐏北闊宠壊鍒楄〃闇€瑕佸～鍐欒闂瘑閽?ID 鍜岃闂瘑閽?Secret銆?);
+      setVolcengineSpeakerStatus('[失败] 加载火山音色列表需要填写访问密钥 ID 和访问密钥 Secret。');
       return;
     }
 
     const resourceId = (volcengine.resourceId ?? '').trim() || 'seed-tts-2.0';
     const limit = 100;
     setLoadingVolcengineSpeakers(true);
-    setVolcengineSpeakerStatus('姝ｅ湪鍔犺浇鍏ㄩ儴闊宠壊...');
+    setVolcengineSpeakerStatus('正在加载全部音色...');
     try {
       const first = await api.listVolcengineSpeakers({ accessKeyId, secretAccessKey, resourceId, page: 1, limit });
       let speakers = mergeVolcengineSpeakers([], first.speakers);
@@ -5096,7 +5044,7 @@ function SettingsPage({ api, state, applyState }: { api: StoryDreamApi; state: A
         }
       }
       setVolcengineSpeakers(speakers);
-      const loadedText = speakers.length > first.speakers.length ? `锛屽凡鍚堝苟 ${speakers.length}/${total} 涓猔 : '';
+      const loadedText = speakers.length > first.speakers.length ? `，已合并 ${speakers.length}/${total} 个` : '';
       setVolcengineSpeakerStatus(`[${first.status}] ${first.detail}${loadedText}`);
     } catch (error) {
       setVolcengineSpeakerStatus(`[fail] ${error instanceof Error ? error.message : String(error)}`);
@@ -5112,18 +5060,18 @@ function SettingsPage({ api, state, applyState }: { api: StoryDreamApi; state: A
     const audioPath = await api.selectLocalAudio();
     if (!audioPath) return;
     const nextBgm = addUploadedBgm(draft, audioPath);
-    await commitAndApplySettingsDraft(nextBgm.config, '宸叉坊鍔?BGM 鏂囦欢');
+    await commitAndApplySettingsDraft(nextBgm.config, '已添加 BGM 文件');
   }
   async function autoDetectJianyingDraftPath() {
-    setConfigTestResult('姝ｅ湪鑷姩妫€娴嬪壀鏄犺崏绋跨洰褰?..');
+    setConfigTestResult('正在自动检测剪映草稿目录...');
     try {
       const detected = await api.detectJianyingDraftPath();
       if (!detected) {
-        setConfigTestResult('[warn] 鏈嚜鍔ㄦ娴嬪埌鍓槧鑽夌鐩綍锛岃鐢ㄢ€滈€夋嫨鐩綍鈥濇墜鍔ㄦ寚瀹氥€?);
+        setConfigTestResult('[warn] 未自动检测到剪映草稿目录，请用“选择目录”手动指定。');
         return;
       }
       setSettingsDraft({ ...draft, jianying: { ...draft.jianying, draftPath: detected } });
-      setConfigTestResult(`[pass] 宸叉娴嬪埌鍓槧鑽夌鐩綍锛?{detected}`);
+      setConfigTestResult(`[pass] 已检测到剪映草稿目录：${detected}`);
     } catch (error) {
       setConfigTestResult(`[fail] ${error instanceof Error ? error.message : String(error)}`);
     }
@@ -5132,7 +5080,7 @@ function SettingsPage({ api, state, applyState }: { api: StoryDreamApi; state: A
     const folder = await api.selectLocalFolder();
     if (!folder) return;
     setSettingsDraft({ ...draft, jianying: { ...draft.jianying, draftPath: folder } });
-    setConfigTestResult(`宸查€夋嫨鍓槧鑽夌鐩綍锛?{folder}`);
+    setConfigTestResult(`已选择剪映草稿目录：${folder}`);
   }
   function setDefaultBgm(id: string) {
     setSettingsDraft({ ...draft, jianying: { ...draft.jianying, defaultBgmId: id } });
@@ -5187,14 +5135,14 @@ function SettingsPage({ api, state, applyState }: { api: StoryDreamApi; state: A
   const settingsBgms = validBgmItems(draft);
   const isSiliconFlowSpeechToText = draft.speechToText.provider === 'siliconflow';
   const sections = [
-    ['llm', Sparkles, 'LLM', '鏂囨涓庡垎闀?, settingsStatusLabel(configTargetStatus('llm', draft))],
-    ['image', ImageIcon, 'AI 缁樺浘', '鍒嗛暅鍥剧墖', settingsStatusLabel(configTargetStatus('image', draft))],
-    ['tts', Bot, 'TTS 閰嶉煶', '姣忛暅璇煶', settingsStatusLabel(configTargetStatus('tts', draft))],
-    ['speechToText', Mic2, '璇煶杞枃瀛?, '鐖嗘鎷嗚В杞啓 API', settingsStatusLabel(configTargetStatus('speechToText', draft))],
-    ['jianying', FolderOpen, '鍓槧', '鑽夌鐩綍 路 BGM', settingsStatusLabel(configTargetStatus('jianying', draft))],
-    ['activation', KeyRound, '婵€娲讳笌璁㈤槄', '璇曠敤 路 婵€娲荤爜', state.activation.status],
-    ['creative', Wand2, 'AI 鍒涗綔', 'IMA 鐭ヨ瘑搴?, settingsStatusLabel(configTargetStatus('creative', draft))],
-    ['about', Info, '鍏充簬 路 璇婃柇', '鏃ュ織 路 閲嶇疆', '宸查厤缃?],
+    ['llm', Sparkles, 'LLM', '文案与分镜', settingsStatusLabel(configTargetStatus('llm', draft))],
+    ['image', ImageIcon, 'AI 绘图', '分镜图片', settingsStatusLabel(configTargetStatus('image', draft))],
+    ['tts', Bot, 'TTS 配音', '每镜语音', settingsStatusLabel(configTargetStatus('tts', draft))],
+    ['speechToText', Mic2, '语音转文字', '爆款拆解转写 API', settingsStatusLabel(configTargetStatus('speechToText', draft))],
+    ['jianying', FolderOpen, '剪映', '草稿目录 · BGM', settingsStatusLabel(configTargetStatus('jianying', draft))],
+    ['activation', KeyRound, '激活与订阅', '试用 · 激活码', state.activation.status],
+    ['creative', Wand2, 'AI 创作', 'IMA 知识库', settingsStatusLabel(configTargetStatus('creative', draft))],
+    ['about', Info, '关于 · 诊断', '日志 · 重置', '已配置'],
   ] as const;
   return (
     <div className="settings-layout">
@@ -5212,22 +5160,22 @@ function SettingsPage({ api, state, applyState }: { api: StoryDreamApi; state: A
         <div className="panel-title-row">
           <div className="settings-heading">
             <div className="square-icon"><Sparkles size={18} /></div>
-            <div><h2>{sections.find(([id]) => id === section)?.[2]}</h2><span>閰嶇疆 API 鍑瘉涓庢湰鍦拌矾寰?/span></div>
+            <div><h2>{sections.find(([id]) => id === section)?.[2]}</h2><span>配置 API 凭证与本地路径</span></div>
           </div>
           <div className="button-row">
             <button className="ghost-action" disabled={testingConfig || savingConfig} onClick={testCurrentConfig}>
               {testingConfig ? <Loader2 className="spin" size={15} /> : <Sparkles size={15} />}
-              淇濆瓨骞舵祴璇?
+              保存并测试
             </button>
             <button className="primary-action slim" disabled={savingConfig} onClick={save}>
               {savingConfig ? <Loader2 className="spin" size={15} /> : <Save size={15} />}
-              淇濆瓨閰嶇疆
+              保存配置
             </button>
           </div>
         </div>
         {configTestResult ? <div className="test-result">{configTestResult}</div> : null}
         {section === 'llm' ? (
-          <SettingsCard title="LLM 閰嶇疆妗ｆ" status={maskConfigured(selectedLlmTestConfig.llm.apiKey)}>
+          <SettingsCard title="LLM 配置档案" status={maskConfigured(selectedLlmTestConfig.llm.apiKey)}>
             <LlmProfileManager
               config={draft}
               selectedProfileId={selectedLlmProfileId}
@@ -5244,7 +5192,7 @@ function SettingsPage({ api, state, applyState }: { api: StoryDreamApi; state: A
           </SettingsCard>
         ) : null}
         {section === 'image' ? (
-          <SettingsCard title="AI 缁樺浘" status={settingsStatusLabel(configTargetStatus('image', selectedImageTestConfig))}>
+          <SettingsCard title="AI 绘图" status={settingsStatusLabel(configTargetStatus('image', selectedImageTestConfig))}>
             <ImageProfileManager
               config={draft}
               selectedProfileId={selectedImageProfileId}
@@ -5262,7 +5210,7 @@ function SettingsPage({ api, state, applyState }: { api: StoryDreamApi; state: A
           </SettingsCard>
         ) : null}
         {section === 'tts' ? (
-          <SettingsCard title="TTS 閰嶉煶" status={settingsStatusLabel(configTargetStatus('tts', selectedTtsTestConfig))}>
+          <SettingsCard title="TTS 配音" status={settingsStatusLabel(configTargetStatus('tts', selectedTtsTestConfig))}>
             <TtsProfileManager
               config={draft}
               selectedProfileId={selectedTtsProfileId}
@@ -5279,61 +5227,61 @@ function SettingsPage({ api, state, applyState }: { api: StoryDreamApi; state: A
           </SettingsCard>
         ) : null}
         {section === 'speechToText' ? (
-          <SettingsCard title="璇煶杞枃瀛? status={settingsStatusLabel(configTargetStatus('speechToText', draft))}>
+          <SettingsCard title="语音转文字" status={settingsStatusLabel(configTargetStatus('speechToText', draft))}>
             <ProviderConfigNote
-              title="杞啓 API"
-              value="OpenAI 鍏煎 /audio/transcriptions锛汼iliconFlow 浣跨敤 file銆乵odel锛岄粯璁?FunAudioLLM/SenseVoiceSmall锛屼篃鍙€?TeleAI/TeleSpeechASR銆?
+              title="转写 API"
+              value="OpenAI 兼容 /audio/transcriptions；SiliconFlow 使用 file、model，默认 FunAudioLLM/SenseVoiceSmall，也可选 TeleAI/TeleSpeechASR。"
             />
             <Segmented
-              label="渚涘簲鍟?
+              label="供应商"
               value={draft.speechToText.provider}
               options={['openai-compatible', 'siliconflow']}
-              labels={['OpenAI 鍏煎', 'SiliconFlow']}
+              labels={['OpenAI 兼容', 'SiliconFlow']}
               onChange={(value) => switchSpeechToTextProvider(value as AppConfig['speechToText']['provider'])}
             />
-            <ConfigInput label="鎺ュ彛鍦板潃" value={draft.speechToText.baseUrl} onChange={(value) => updateSpeechToTextConfig({ baseUrl: value })} />
-            <ConfigInput label="鎺ュ彛瀵嗛挜" value={draft.speechToText.apiKey} onChange={(value) => updateSpeechToTextConfig({ apiKey: value })} />
+            <ConfigInput label="接口地址" value={draft.speechToText.baseUrl} onChange={(value) => updateSpeechToTextConfig({ baseUrl: value })} />
+            <ConfigInput label="接口密钥" value={draft.speechToText.apiKey} onChange={(value) => updateSpeechToTextConfig({ apiKey: value })} />
             {isSiliconFlowSpeechToText ? (
               <Segmented
-                label="杞啓妯″瀷"
+                label="转写模型"
                 value={draft.speechToText.model}
                 options={siliconFlowSpeechToTextModels}
                 onChange={(value) => updateSpeechToTextConfig({ model: value })}
               />
             ) : (
-              <ConfigInput label="杞啓妯″瀷" value={draft.speechToText.model} onChange={(value) => updateSpeechToTextConfig({ model: value })} />
+              <ConfigInput label="转写模型" value={draft.speechToText.model} onChange={(value) => updateSpeechToTextConfig({ model: value })} />
             )}
-            <ConfigInput label="璇█" value={draft.speechToText.language} onChange={(value) => updateSpeechToTextConfig({ language: value })} />
-            <ConfigInput label="鎻愮ず璇? value={draft.speechToText.prompt} onChange={(value) => updateSpeechToTextConfig({ prompt: value })} />
+            <ConfigInput label="语言" value={draft.speechToText.language} onChange={(value) => updateSpeechToTextConfig({ language: value })} />
+            <ConfigInput label="提示词" value={draft.speechToText.prompt} onChange={(value) => updateSpeechToTextConfig({ prompt: value })} />
             {isSiliconFlowSpeechToText ? (
-              <LocalInfo title="SiliconFlow 鍙傛暟" value="鎸夊畼鏂规帴鍙ｅ彧鎻愪氦 file 鍜?model锛屼笂浼犱笂闄?50MB銆俵anguage銆乸rompt銆乼emperature銆佹椂闂存埑鍜屽垏鍒嗙瓥鐣ヤ笉浼氶殢璇锋眰鍙戦€併€? />
+              <LocalInfo title="SiliconFlow 参数" value="按官方接口只提交 file 和 model，上传上限 50MB。language、prompt、temperature、时间戳和切分策略不会随请求发送。" />
             ) : (
               <Segmented
-                label="鍝嶅簲鏍煎紡"
+                label="响应格式"
                 value={draft.speechToText.responseFormat}
                 options={['json', 'verbose_json', 'text', 'srt', 'vtt']}
                 labels={['JSON', 'Verbose JSON', 'Text', 'SRT', 'VTT']}
                 onChange={(value) => updateSpeechToTextConfig({ responseFormat: value as AppConfig['speechToText']['responseFormat'] })}
               />
             )}
-            {!isSiliconFlowSpeechToText ? <RangeField label="娓╁害" min={0} max={1} step={0.1} value={draft.speechToText.temperature} onChange={(value) => updateSpeechToTextConfig({ temperature: value })} /> : null}
+            {!isSiliconFlowSpeechToText ? <RangeField label="温度" min={0} max={1} step={0.1} value={draft.speechToText.temperature} onChange={(value) => updateSpeechToTextConfig({ temperature: value })} /> : null}
             <ConfigNumberInput
-              label="璇锋眰瓒呮椂锛堢锛?
+              label="请求超时（秒）"
               value={Math.round(draft.speechToText.timeoutMs / 1000)}
               min={10}
               step={10}
               onChange={(value) => updateSpeechToTextConfig({ timeoutMs: value * 1000 })}
             />
             {!isSiliconFlowSpeechToText ? (
-              <Field label="鏃堕棿鎴?>
+              <Field label="时间戳">
                 <div className="settings-inline-actions">
                   <ToggleField
-                    label="娈佃惤绾?
+                    label="段落级"
                     checked={draft.speechToText.timestampGranularities.includes('segment')}
                     onChange={(checked) => toggleSpeechToTextTimestamp('segment', checked)}
                   />
                   <ToggleField
-                    label="璇嶇骇"
+                    label="词级"
                     checked={draft.speechToText.timestampGranularities.includes('word')}
                     onChange={(checked) => toggleSpeechToTextTimestamp('word', checked)}
                   />
@@ -5342,26 +5290,26 @@ function SettingsPage({ api, state, applyState }: { api: StoryDreamApi; state: A
             ) : null}
             {!isSiliconFlowSpeechToText ? (
               <Segmented
-                label="鍒囧垎绛栫暐"
+                label="切分策略"
                 value={draft.speechToText.chunkingStrategy}
                 options={['none', 'auto']}
-                labels={['涓嶅惎鐢?, '鑷姩']}
+                labels={['不启用', '自动']}
                 onChange={(value) => updateSpeechToTextConfig({ chunkingStrategy: value as AppConfig['speechToText']['chunkingStrategy'] })}
               />
             ) : null}
           </SettingsCard>
         ) : null}
         {section === 'jianying' ? (
-          <SettingsCard title="鍓槧鑽夌涓?BGM" status={draft.jianying.draftPath ? '宸查厤缃? : '寰呴厤缃?}>
-            <ConfigInput label="鑽夌鐩綍" value={draft.jianying.draftPath} onChange={(value) => setSettingsDraft({ ...draft, jianying: { ...draft.jianying, draftPath: value } })} />
+          <SettingsCard title="剪映草稿与 BGM" status={draft.jianying.draftPath ? '已配置' : '待配置'}>
+            <ConfigInput label="草稿目录" value={draft.jianying.draftPath} onChange={(value) => setSettingsDraft({ ...draft, jianying: { ...draft.jianying, draftPath: value } })} />
             <div className="settings-inline-actions">
-              <button className="ghost-action" type="button" onClick={autoDetectJianyingDraftPath}><Search size={15} />鑷姩妫€娴?/button>
-              <button className="ghost-action" type="button" onClick={pickJianyingDraftPath}><FolderOpen size={15} />閫夋嫨鐩綍</button>
+              <button className="ghost-action" type="button" onClick={autoDetectJianyingDraftPath}><Search size={15} />自动检测</button>
+              <button className="ghost-action" type="button" onClick={pickJianyingDraftPath}><FolderOpen size={15} />选择目录</button>
             </div>
-            <LocalInfo title="BGM 搴? value={settingsBgms.length ? settingsBgms.map((bgm) => bgm.title).join('銆?) : 'BGM 搴撲负绌?} />
-            <button className="ghost-action" type="button" onClick={uploadBgmFromSettings}><Upload size={15} />+ 娣诲姞 BGM 鏂囦欢</button>
+            <LocalInfo title="BGM 库" value={settingsBgms.length ? settingsBgms.map((bgm) => bgm.title).join('、') : 'BGM 库为空'} />
+            <button className="ghost-action" type="button" onClick={uploadBgmFromSettings}><Upload size={15} />+ 添加 BGM 文件</button>
             <div className="bgm-library-list">
-              {settingsBgms.length === 0 ? <div className="bgm-library-empty">BGM 搴撲负绌?/div> : null}
+              {settingsBgms.length === 0 ? <div className="bgm-library-empty">BGM 库为空</div> : null}
               {settingsBgms.map((bgm) => (
                 <div key={bgm.id} className="bgm-library-item">
                   <div>
@@ -5369,39 +5317,39 @@ function SettingsPage({ api, state, applyState }: { api: StoryDreamApi; state: A
                     <span>{bgm.path}</span>
                   </div>
                   <label>
-                    闊抽噺
+                    音量
                     <input type="number" min="0" max="1" step="0.05" value={bgm.volume} onChange={(event) => updateBgmVolume(bgm.id, Number(event.target.value))} />
                   </label>
                   <button className={draft.jianying.defaultBgmId === bgm.id ? 'mini-button active' : 'mini-button'} type="button" onClick={() => setDefaultBgm(bgm.id)}>
-                    {draft.jianying.defaultBgmId === bgm.id ? '榛樿' : '璁句负榛樿'}
+                    {draft.jianying.defaultBgmId === bgm.id ? '默认' : '设为默认'}
                   </button>
-                  <button className="mini-button" type="button" onClick={() => removeBgm(bgm.id)}>绉婚櫎</button>
+                  <button className="mini-button" type="button" onClick={() => removeBgm(bgm.id)}>移除</button>
                 </div>
               ))}
             </div>
           </SettingsCard>
         ) : null}
-        {section === 'activation' ? <LocalInfo title="婵€娲讳笌璁㈤槄" value={state.activation.message} /> : null}
+        {section === 'activation' ? <LocalInfo title="激活与订阅" value={state.activation.message} /> : null}
         {section === 'creative' ? (
-          <SettingsCard title="AI 鍒涗綔 / IMA 鐭ヨ瘑搴? status={draft.ima.apiKey ? '宸查厤缃? : '寰呴厤缃?}>
-            <ConfigInput label="瀹㈡埛绔?ID" value={draft.ima.clientId} onChange={(value) => setSettingsDraft({ ...draft, ima: { ...draft.ima, clientId: value } })} />
-            <ConfigInput label="鎺ュ彛瀵嗛挜" value={draft.ima.apiKey} onChange={(value) => setSettingsDraft({ ...draft, ima: { ...draft.ima, apiKey: value } })} />
-            <ConfigInput label="鐭ヨ瘑搴撳悕绉? value={draft.ima.kbName} onChange={(value) => setSettingsDraft({ ...draft, ima: { ...draft.ima, kbName: value } })} />
-            <button className="ghost-action">娴嬭瘯骞舵媺鍙栫煡璇嗗簱</button>
+          <SettingsCard title="AI 创作 / IMA 知识库" status={draft.ima.apiKey ? '已配置' : '待配置'}>
+            <ConfigInput label="客户端 ID" value={draft.ima.clientId} onChange={(value) => setSettingsDraft({ ...draft, ima: { ...draft.ima, clientId: value } })} />
+            <ConfigInput label="接口密钥" value={draft.ima.apiKey} onChange={(value) => setSettingsDraft({ ...draft, ima: { ...draft.ima, apiKey: value } })} />
+            <ConfigInput label="知识库名称" value={draft.ima.kbName} onChange={(value) => setSettingsDraft({ ...draft, ima: { ...draft.ima, kbName: value } })} />
+            <button className="ghost-action">测试并拉取知识库</button>
           </SettingsCard>
         ) : null}
         {section === 'about' ? (
           <div className="diagnostics-card">
-            <LocalInfo title="瑙嗛鏁呬簨鍒涗綔鍔╂墜" value="v0.10.4 路 beta 路 Windows 路 鏈湴鏁版嵁鐩綍" />
+            <LocalInfo title="视频故事创作助手" value="v0.10.4 · beta · Windows · 本地数据目录" />
             <div className="button-row">
-              <button className="ghost-action" onClick={runDiagnostics}>妫€鏌ヨ瘖鏂?/button>
+              <button className="ghost-action" onClick={runDiagnostics}>检查诊断</button>
               <button className="ghost-action" onClick={() => navigator.clipboard?.writeText(diagnostics)}>
                 <Copy size={15} />
-                澶嶅埗璇婃柇鎶ュ憡
+                复制诊断报告
               </button>
-              <button className="danger-action"><XCircle size={15} />娓呯悊鍘嗗彶</button>
+              <button className="danger-action"><XCircle size={15} />清理历史</button>
             </div>
-            <pre>{diagnostics || '鐐瑰嚮妫€鏌ヨ瘖鏂悗鏄剧ず LLM銆乀TS銆丅GM銆佸壀鏄犵洰褰曘€佽处鎴风姸鎬佺瓑妫€鏌ョ粨鏋溿€?}</pre>
+            <pre>{diagnostics || '点击检查诊断后显示 LLM、TTS、BGM、剪映目录、账户状态等检查结果。'}</pre>
           </div>
         ) : null}
       </section>
@@ -5469,7 +5417,7 @@ function LlmProfileManager({
     onSelectedProfileIdChange(activeLlmProfileId(next));
   }
 
-  if (!selectedProfile) return <ArtifactEmpty text="鏆傛棤 LLM 閰嶇疆妗ｆ" />;
+  if (!selectedProfile) return <ArtifactEmpty text="暂无 LLM 配置档案" />;
 
   const selectedProvider = editableLlmProfileProvider(selectedProfile);
   const requestParamsJsonValue = selectedProfile.requestParamsJson ?? '{}';
@@ -5477,12 +5425,12 @@ function LlmProfileManager({
     <div className="llm-profile-manager">
       <div className="profile-switcher-head">
         <div>
-          <strong>閰嶇疆妗ｆ</strong>
-          <span>鍙繚瀛樺涓?OpenAI 鍏煎鎺ュ彛锛屽惎鐢ㄤ竴涓綔涓轰换鍔¤繍琛岄厤缃€?/span>
+          <strong>配置档案</strong>
+          <span>可保存多个 OpenAI 兼容接口，启用一个作为任务运行配置。</span>
         </div>
         <button className="ghost-action" type="button" onClick={addProfile}>
           <Plus size={15} />
-          鏂板閰嶇疆
+          新增配置
         </button>
       </div>
 
@@ -5500,16 +5448,16 @@ function LlmProfileManager({
               onClick={() => onSelectedProfileIdChange(profile.id!)}
               onKeyDown={(event) => event.key === 'Enter' && onSelectedProfileIdChange(profile.id!)}
             >
-              <div className="profile-drag-dot">鈰嫯</div>
+              <div className="profile-drag-dot">⋮⋮</div>
               <div className="profile-avatar">{profile.name?.slice(0, 1).toUpperCase() || 'C'}</div>
               <div className="profile-copy">
-                <strong>{profile.name || '鏈懡鍚嶉厤缃?}</strong>
+                <strong>{profile.name || '未命名配置'}</strong>
                 <span>{profile.baseUrl || 'https://api.openai.com'}</span>
-                <small>{profile.model || '鏈€夋嫨妯″瀷'}</small>
+                <small>{profile.model || '未选择模型'}</small>
               </div>
               <div className="profile-actions">
                 {isActive ? (
-                  <span className="profile-active-badge">鍚敤涓?/span>
+                  <span className="profile-active-badge">启用中</span>
                 ) : (
                   <button
                     className="primary-action slim"
@@ -5522,16 +5470,16 @@ function LlmProfileManager({
                     }}
                   >
                     {saving ? <Loader2 className="spin" size={14} /> : <Play size={14} />}
-                    鍚敤
+                    启用
                   </button>
                 )}
-                <button className="icon-button" type="button" title="缂栬緫" onClick={(event) => { event.stopPropagation(); onSelectedProfileIdChange(profile.id!); }}>
+                <button className="icon-button" type="button" title="编辑" onClick={(event) => { event.stopPropagation(); onSelectedProfileIdChange(profile.id!); }}>
                   <Palette size={14} />
                 </button>
-                <button className="icon-button" type="button" title="澶嶅埗" onClick={(event) => { event.stopPropagation(); duplicateProfile(profile); }}>
+                <button className="icon-button" type="button" title="复制" onClick={(event) => { event.stopPropagation(); duplicateProfile(profile); }}>
                   <Copy size={14} />
                 </button>
-                <button className="icon-button" type="button" title="鍒犻櫎" disabled={profiles.length <= 1} onClick={(event) => { event.stopPropagation(); deleteProfile(profile); }}>
+                <button className="icon-button" type="button" title="删除" disabled={profiles.length <= 1} onClick={(event) => { event.stopPropagation(); deleteProfile(profile); }}>
                   <XCircle size={14} />
                 </button>
               </div>
@@ -5541,19 +5489,19 @@ function LlmProfileManager({
       </div>
 
       <div className="profile-editor-grid">
-        <ConfigInput label="閰嶇疆鍚嶇О" value={selectedProfile.name ?? ''} onChange={(value) => updateSelectedProfile({ ...selectedProfile, name: value })} />
+        <ConfigInput label="配置名称" value={selectedProfile.name ?? ''} onChange={(value) => updateSelectedProfile({ ...selectedProfile, name: value })} />
         <ConfigNumberInput
-          label="璇锋眰瓒呮椂锛堢锛?
+          label="请求超时（秒）"
           value={Math.round((selectedProfile.timeoutMs ?? defaultConfig.llm.timeoutMs ?? 120000) / 1000)}
           min={10}
           step={10}
           onChange={(value) => updateSelectedProfile({ ...selectedProfile, timeoutMs: value * 1000 })}
         />
         <Segmented
-          label="渚涘簲鍟?
+          label="供应商"
           value={selectedProvider}
           options={['openai', 'custom']}
-          labels={['OpenAI', '鑷畾涔?]}
+          labels={['OpenAI', '自定义']}
           onChange={(value) => {
             onClearModels();
             updateSelectedProfile({
@@ -5565,11 +5513,11 @@ function LlmProfileManager({
         />
         {selectedProvider === 'openai' ? (
           <>
-            <ProviderConfigNote title="OpenAI 瀵硅瘽鎺ュ彛" value="浣跨敤瀹樻柟 /v1/chat/completions锛屽～鍐欐帴鍙ｅ瘑閽ヤ笌妯″瀷銆? />
-            <ConfigInput label="OpenAI 鎺ュ彛瀵嗛挜" value={selectedProfile.apiKey} onChange={(value) => { onClearModels(); updateSelectedProfile({ ...selectedProfile, apiKey: value }); }} />
+            <ProviderConfigNote title="OpenAI 对话接口" value="使用官方 /v1/chat/completions，填写接口密钥与模型。" />
+            <ConfigInput label="OpenAI 接口密钥" value={selectedProfile.apiKey} onChange={(value) => { onClearModels(); updateSelectedProfile({ ...selectedProfile, apiKey: value }); }} />
             <ModelPicker
               key={`llm-${selectedProfile.id}`}
-              label="OpenAI 妯″瀷"
+              label="OpenAI 模型"
               value={selectedProfile.model}
               models={models}
               loading={loadingModels}
@@ -5578,7 +5526,7 @@ function LlmProfileManager({
               onChange={(value) => updateSelectedProfile({ ...selectedProfile, model: value })}
             />
             <ConfigTextarea
-              label="闄勫姞璇锋眰 JSON"
+              label="附加请求 JSON"
               hint={'Extra request JSON, e.g. {"reasoning_effort":"medium"}'}
               value={requestParamsJsonValue}
               onChange={(value) => updateSelectedProfile({ ...selectedProfile, requestParamsJson: value })}
@@ -5586,12 +5534,12 @@ function LlmProfileManager({
           </>
         ) : (
           <>
-            <ProviderConfigNote title="OpenAI 鍏煎 LLM" value="鑷畾涔夋帴鍙ｆ寜 /chat/completions 璋冪敤锛岄渶瑕佹帴鍙ｅ湴鍧€銆佹帴鍙ｅ瘑閽ヤ笌妯″瀷銆? />
-            <ConfigInput label="鎺ュ彛鍦板潃" value={selectedProfile.baseUrl} onChange={(value) => { onClearModels(); updateSelectedProfile({ ...selectedProfile, baseUrl: value }); }} />
-            <ConfigInput label="鎺ュ彛瀵嗛挜" value={selectedProfile.apiKey} onChange={(value) => { onClearModels(); updateSelectedProfile({ ...selectedProfile, apiKey: value }); }} />
+            <ProviderConfigNote title="OpenAI 兼容 LLM" value="自定义接口按 /chat/completions 调用，需要接口地址、接口密钥与模型。" />
+            <ConfigInput label="接口地址" value={selectedProfile.baseUrl} onChange={(value) => { onClearModels(); updateSelectedProfile({ ...selectedProfile, baseUrl: value }); }} />
+            <ConfigInput label="接口密钥" value={selectedProfile.apiKey} onChange={(value) => { onClearModels(); updateSelectedProfile({ ...selectedProfile, apiKey: value }); }} />
             <ModelPicker
               key={`llm-${selectedProfile.id}`}
-              label="妯″瀷"
+              label="模型"
               value={selectedProfile.model}
               models={models}
               loading={loadingModels}
@@ -5600,7 +5548,7 @@ function LlmProfileManager({
               onChange={(value) => updateSelectedProfile({ ...selectedProfile, model: value })}
             />
             <ConfigTextarea
-              label="闄勫姞璇锋眰 JSON"
+              label="附加请求 JSON"
               hint={'Extra request JSON, e.g. {"reasoning_effort":"medium"}'}
               value={requestParamsJsonValue}
               onChange={(value) => updateSelectedProfile({ ...selectedProfile, requestParamsJson: value })}
@@ -5650,7 +5598,7 @@ function ImageProfileManager({
   }, [activeId, onSelectedProfileIdChange, profileIds, profiles, selectedProfileId]);
 
   const selectedProfile = profiles.find((profile) => profile.id === selectedProfileId) ?? profiles.find((profile) => profile.id === activeId) ?? profiles[0];
-  if (!selectedProfile) return <ArtifactEmpty text="鏆傛棤缁樺浘閰嶇疆妗ｆ" />;
+  if (!selectedProfile) return <ArtifactEmpty text="暂无绘图配置档案" />;
 
   const provider = selectedProfile.provider;
   const gptImage = imageProfileGptImage(selectedProfile);
@@ -5684,12 +5632,12 @@ function ImageProfileManager({
     <div className="llm-profile-manager">
       <div className="profile-switcher-head">
         <div>
-          <strong>缁樺浘妗ｆ</strong>
-          <span>鍙繚瀛?GPT Image銆佸嵆姊﹀拰鑷畾涔夊浘鐗囨帴鍙ｏ紝鍚敤涓€涓綔涓轰换鍔＄敓鍥鹃厤缃€?/span>
+          <strong>绘图档案</strong>
+          <span>可保存 GPT Image、即梦和自定义图片接口，启用一个作为任务生图配置。</span>
         </div>
         <button className="ghost-action" type="button" onClick={addProfile}>
           <Plus size={15} />
-          鏂板閰嶇疆
+          新增配置
         </button>
       </div>
 
@@ -5707,16 +5655,16 @@ function ImageProfileManager({
               onClick={() => onSelectedProfileIdChange(profile.id!)}
               onKeyDown={(event) => event.key === 'Enter' && onSelectedProfileIdChange(profile.id!)}
             >
-              <div className="profile-drag-dot">鈰嫯</div>
+              <div className="profile-drag-dot">⋮⋮</div>
               <div className="profile-avatar">{profile.name?.slice(0, 1).toUpperCase() || 'I'}</div>
               <div className="profile-copy">
-                <strong>{profile.name || '鏈懡鍚嶇粯鍥鹃厤缃?}</strong>
+                <strong>{profile.name || '未命名绘图配置'}</strong>
                 <span>{imageProviderLabel(profile.provider)}</span>
                 <small>{imageProfileSummary(profile)}</small>
               </div>
               <div className="profile-actions">
                 {isActive ? (
-                  <span className="profile-active-badge">鍚敤涓?/span>
+                  <span className="profile-active-badge">启用中</span>
                 ) : (
                   <button
                     className="primary-action slim"
@@ -5729,16 +5677,16 @@ function ImageProfileManager({
                     }}
                   >
                     {saving ? <Loader2 className="spin" size={14} /> : <Play size={14} />}
-                    鍚敤
+                    启用
                   </button>
                 )}
-                <button className="icon-button" type="button" title="缂栬緫" onClick={(event) => { event.stopPropagation(); onSelectedProfileIdChange(profile.id!); }}>
+                <button className="icon-button" type="button" title="编辑" onClick={(event) => { event.stopPropagation(); onSelectedProfileIdChange(profile.id!); }}>
                   <Palette size={14} />
                 </button>
-                <button className="icon-button" type="button" title="澶嶅埗" onClick={(event) => { event.stopPropagation(); duplicateProfile(profile); }}>
+                <button className="icon-button" type="button" title="复制" onClick={(event) => { event.stopPropagation(); duplicateProfile(profile); }}>
                   <Copy size={14} />
                 </button>
-                <button className="icon-button" type="button" title="鍒犻櫎" disabled={profiles.length <= 1} onClick={(event) => { event.stopPropagation(); deleteProfile(profile); }}>
+                <button className="icon-button" type="button" title="删除" disabled={profiles.length <= 1} onClick={(event) => { event.stopPropagation(); deleteProfile(profile); }}>
                   <XCircle size={14} />
                 </button>
               </div>
@@ -5748,12 +5696,12 @@ function ImageProfileManager({
       </div>
 
       <div className="profile-editor-grid">
-        <ConfigInput label="閰嶇疆鍚嶇О" value={selectedProfile.name ?? ''} onChange={(value) => updateSelectedProfile({ ...selectedProfile, name: value })} />
+        <ConfigInput label="配置名称" value={selectedProfile.name ?? ''} onChange={(value) => updateSelectedProfile({ ...selectedProfile, name: value })} />
         <Segmented
-          label="渚涘簲鍟?
+          label="供应商"
           value={provider}
           options={['gpt_image', 'jimeng', 'custom']}
-          labels={['GPT Image', '鍗虫ⅵ', '鑷畾涔?]}
+          labels={['GPT Image', '即梦', '自定义']}
           onChange={(value) => {
             onClearModels('gpt-image');
             onClearModels('custom-image');
@@ -5762,12 +5710,12 @@ function ImageProfileManager({
         />
         {provider === 'gpt_image' ? (
           <>
-            <ProviderConfigNote title="OpenAI 鍥惧儚鎺ュ彛" value="鎺ュ彛瀵嗛挜涓庢ā鍨嬪繀濉紱鎺ュ彛鍦板潃涓虹┖鏃朵娇鐢ㄥ畼鏂归粯璁ょ鐐广€? />
-            <ConfigInput label="GPT Image 鎺ュ彛鍦板潃锛堝彲閫夛級" value={gptImage.baseUrl} onChange={(value) => { onClearModels('gpt-image'); updateSelectedProfile({ ...selectedProfile, gptImage: { ...gptImage, baseUrl: value } }); }} />
-            <ConfigInput label="GPT Image 鎺ュ彛瀵嗛挜" value={gptImage.apiKey} onChange={(value) => { onClearModels('gpt-image'); updateSelectedProfile({ ...selectedProfile, gptImage: { ...gptImage, apiKey: value } }); }} />
+            <ProviderConfigNote title="OpenAI 图像接口" value="接口密钥与模型必填；接口地址为空时使用官方默认端点。" />
+            <ConfigInput label="GPT Image 接口地址（可选）" value={gptImage.baseUrl} onChange={(value) => { onClearModels('gpt-image'); updateSelectedProfile({ ...selectedProfile, gptImage: { ...gptImage, baseUrl: value } }); }} />
+            <ConfigInput label="GPT Image 接口密钥" value={gptImage.apiKey} onChange={(value) => { onClearModels('gpt-image'); updateSelectedProfile({ ...selectedProfile, gptImage: { ...gptImage, apiKey: value } }); }} />
             <ModelPicker
               key={`gpt-image-${selectedProfile.id}`}
-              label="GPT Image 妯″瀷"
+              label="GPT Image 模型"
               value={gptImage.model}
               models={gptModels}
               loading={loadingModelList === 'gpt-image'}
@@ -5780,28 +5728,28 @@ function ImageProfileManager({
               )}
               onChange={(value) => updateSelectedProfile({ ...selectedProfile, gptImage: { ...gptImage, model: value } })}
             />
-            <Segmented label="鍒嗚鲸鐜? value={gptImage.resolution ?? '2K'} options={['1K', '2K', '4K']} onChange={(value) => updateSelectedProfile({ ...selectedProfile, gptImage: { ...gptImage, resolution: value as ImageResolution } })} />
-            <Field label="骞跺彂"><input type="range" min="1" max="6" value={gptImage.concurrency} onChange={(event) => updateSelectedProfile({ ...selectedProfile, gptImage: { ...gptImage, concurrency: Number(event.target.value) } })} /></Field>
+            <Segmented label="分辨率" value={gptImage.resolution ?? '2K'} options={['1K', '2K', '4K']} onChange={(value) => updateSelectedProfile({ ...selectedProfile, gptImage: { ...gptImage, resolution: value as ImageResolution } })} />
+            <Field label="并发"><input type="range" min="1" max="6" value={gptImage.concurrency} onChange={(event) => updateSelectedProfile({ ...selectedProfile, gptImage: { ...gptImage, concurrency: Number(event.target.value) } })} /></Field>
           </>
         ) : null}
         {provider === 'jimeng' ? (
           <>
-            <ProviderConfigNote title="鐏北瑙嗚鎺ュ彛" value={`绔偣 ${jimeng.endpoint || 'https://visual.volcengineapi.com'} 路 鍖哄煙 ${jimeng.region || 'cn-north-1'} 路 鏈嶅姟 ${jimeng.service || 'cv'}`} />
-            <ConfigInput label="鍗虫ⅵ璁块棶瀵嗛挜 ID" value={jimeng.accessKeyId ?? ''} onChange={(value) => updateSelectedProfile({ ...selectedProfile, jimeng: { ...jimeng, accessKeyId: value } })} />
-            <ConfigInput label="鍗虫ⅵ璁块棶瀵嗛挜 Secret" value={jimeng.secretAccessKey ?? ''} onChange={(value) => updateSelectedProfile({ ...selectedProfile, jimeng: { ...jimeng, secretAccessKey: value } })} />
-            <ConfigInput label="鍗虫ⅵ璇锋眰 Key" value={jimeng.reqKey ?? ''} onChange={(value) => updateSelectedProfile({ ...selectedProfile, jimeng: { ...jimeng, reqKey: value } })} />
-            <Segmented label="鍒嗚鲸鐜? value={jimeng.resolution} options={['1K', '2K', '4K']} onChange={(value) => updateSelectedProfile({ ...selectedProfile, jimeng: { ...jimeng, resolution: value as ImageResolution } })} />
-            <Field label="骞跺彂"><input type="range" min="1" max="6" value={jimeng.concurrency} onChange={(event) => updateSelectedProfile({ ...selectedProfile, jimeng: { ...jimeng, concurrency: Number(event.target.value) } })} /></Field>
+            <ProviderConfigNote title="火山视觉接口" value={`端点 ${jimeng.endpoint || 'https://visual.volcengineapi.com'} · 区域 ${jimeng.region || 'cn-north-1'} · 服务 ${jimeng.service || 'cv'}`} />
+            <ConfigInput label="即梦访问密钥 ID" value={jimeng.accessKeyId ?? ''} onChange={(value) => updateSelectedProfile({ ...selectedProfile, jimeng: { ...jimeng, accessKeyId: value } })} />
+            <ConfigInput label="即梦访问密钥 Secret" value={jimeng.secretAccessKey ?? ''} onChange={(value) => updateSelectedProfile({ ...selectedProfile, jimeng: { ...jimeng, secretAccessKey: value } })} />
+            <ConfigInput label="即梦请求 Key" value={jimeng.reqKey ?? ''} onChange={(value) => updateSelectedProfile({ ...selectedProfile, jimeng: { ...jimeng, reqKey: value } })} />
+            <Segmented label="分辨率" value={jimeng.resolution} options={['1K', '2K', '4K']} onChange={(value) => updateSelectedProfile({ ...selectedProfile, jimeng: { ...jimeng, resolution: value as ImageResolution } })} />
+            <Field label="并发"><input type="range" min="1" max="6" value={jimeng.concurrency} onChange={(event) => updateSelectedProfile({ ...selectedProfile, jimeng: { ...jimeng, concurrency: Number(event.target.value) } })} /></Field>
           </>
         ) : null}
         {provider === 'custom' ? (
           <>
-            <ProviderConfigNote title="OpenAI 鍏煎鎺ュ彛" value="鑷畾涔夊浘鐗囨帴鍙ｆ寜 /images/generations 璋冪敤锛岄渶瑕佹帴鍙ｅ湴鍧€銆佹帴鍙ｅ瘑閽ヤ笌妯″瀷銆? />
-            <ConfigInput label="鑷畾涔夋帴鍙ｅ湴鍧€" value={customImage.baseUrl} onChange={(value) => { onClearModels('custom-image'); updateSelectedProfile({ ...selectedProfile, customImage: { ...customImage, baseUrl: value } }); }} />
-            <ConfigInput label="鑷畾涔夋帴鍙ｅ瘑閽? value={customImage.apiKey} onChange={(value) => { onClearModels('custom-image'); updateSelectedProfile({ ...selectedProfile, customImage: { ...customImage, apiKey: value } }); }} />
+            <ProviderConfigNote title="OpenAI 兼容接口" value="自定义图片接口按 /images/generations 调用，需要接口地址、接口密钥与模型。" />
+            <ConfigInput label="自定义接口地址" value={customImage.baseUrl} onChange={(value) => { onClearModels('custom-image'); updateSelectedProfile({ ...selectedProfile, customImage: { ...customImage, baseUrl: value } }); }} />
+            <ConfigInput label="自定义接口密钥" value={customImage.apiKey} onChange={(value) => { onClearModels('custom-image'); updateSelectedProfile({ ...selectedProfile, customImage: { ...customImage, apiKey: value } }); }} />
             <ModelPicker
               key={`custom-image-${selectedProfile.id}`}
-              label="鑷畾涔夋ā鍨?
+              label="自定义模型"
               value={customImage.model}
               models={customModels}
               loading={loadingModelList === 'custom-image'}
@@ -5814,8 +5762,8 @@ function ImageProfileManager({
               )}
               onChange={(value) => updateSelectedProfile({ ...selectedProfile, customImage: { ...customImage, model: value } })}
             />
-            <Segmented label="鍒嗚鲸鐜? value={customImage.resolution ?? '2K'} options={['1K', '2K', '4K']} onChange={(value) => updateSelectedProfile({ ...selectedProfile, customImage: { ...customImage, resolution: value as ImageResolution } })} />
-            <Field label="骞跺彂"><input type="range" min="1" max="6" value={customImage.concurrency} onChange={(event) => updateSelectedProfile({ ...selectedProfile, customImage: { ...customImage, concurrency: Number(event.target.value) } })} /></Field>
+            <Segmented label="分辨率" value={customImage.resolution ?? '2K'} options={['1K', '2K', '4K']} onChange={(value) => updateSelectedProfile({ ...selectedProfile, customImage: { ...customImage, resolution: value as ImageResolution } })} />
+            <Field label="并发"><input type="range" min="1" max="6" value={customImage.concurrency} onChange={(event) => updateSelectedProfile({ ...selectedProfile, customImage: { ...customImage, concurrency: Number(event.target.value) } })} /></Field>
           </>
         ) : null}
       </div>
@@ -5860,7 +5808,7 @@ function TtsProfileManager({
 
   const selectedProfile = profiles.find((profile) => profile.id === selectedProfileId) ?? profiles.find((profile) => profile.id === activeId) ?? profiles[0];
   const availableVolcengineVoices = useMemo(() => buildVolcengineVoiceOptions(volcengineSpeakers), [volcengineSpeakers]);
-  if (!selectedProfile) return <ArtifactEmpty text="鏆傛棤 TTS 閰嶇疆妗ｆ" />;
+  if (!selectedProfile) return <ArtifactEmpty text="暂无 TTS 配置档案" />;
 
   const provider = selectedProfile.provider;
   const volcengine = ttsProfileVolcengine(selectedProfile);
@@ -5898,12 +5846,12 @@ function TtsProfileManager({
     <div className="llm-profile-manager">
       <div className="profile-switcher-head">
         <div>
-          <strong>TTS 妗ｆ</strong>
-          <span>鍙繚瀛樼伀灞卞紩鎿庝笌 MiniMax 閰嶉煶閰嶇疆锛屽惎鐢ㄤ竴涓綔涓轰换鍔￠厤闊抽厤缃€?/span>
+          <strong>TTS 档案</strong>
+          <span>可保存火山引擎与 MiniMax 配音配置，启用一个作为任务配音配置。</span>
         </div>
         <button className="ghost-action" type="button" onClick={addProfile}>
           <Plus size={15} />
-          鏂板閰嶇疆
+          新增配置
         </button>
       </div>
 
@@ -5921,16 +5869,16 @@ function TtsProfileManager({
               onClick={() => onSelectedProfileIdChange(profile.id!)}
               onKeyDown={(event) => event.key === 'Enter' && onSelectedProfileIdChange(profile.id!)}
             >
-              <div className="profile-drag-dot">鈰嫯</div>
+              <div className="profile-drag-dot">⋮⋮</div>
               <div className="profile-avatar">{profile.name?.slice(0, 1).toUpperCase() || 'T'}</div>
               <div className="profile-copy">
-                <strong>{profile.name || '鏈懡鍚?TTS 閰嶇疆'}</strong>
+                <strong>{profile.name || '未命名 TTS 配置'}</strong>
                 <span>{ttsProviderLabel(profile.provider)}</span>
                 <small>{ttsProfileSummary(profile)}</small>
               </div>
               <div className="profile-actions">
                 {isActive ? (
-                  <span className="profile-active-badge">鍚敤涓?/span>
+                  <span className="profile-active-badge">启用中</span>
                 ) : (
                   <button
                     className="primary-action slim"
@@ -5943,16 +5891,16 @@ function TtsProfileManager({
                     }}
                   >
                     {saving ? <Loader2 className="spin" size={14} /> : <Play size={14} />}
-                    鍚敤
+                    启用
                   </button>
                 )}
-                <button className="icon-button" type="button" title="缂栬緫" onClick={(event) => { event.stopPropagation(); onSelectedProfileIdChange(profile.id!); }}>
+                <button className="icon-button" type="button" title="编辑" onClick={(event) => { event.stopPropagation(); onSelectedProfileIdChange(profile.id!); }}>
                   <Palette size={14} />
                 </button>
-                <button className="icon-button" type="button" title="澶嶅埗" onClick={(event) => { event.stopPropagation(); duplicateProfile(profile); }}>
+                <button className="icon-button" type="button" title="复制" onClick={(event) => { event.stopPropagation(); duplicateProfile(profile); }}>
                   <Copy size={14} />
                 </button>
-                <button className="icon-button" type="button" title="鍒犻櫎" disabled={profiles.length <= 1} onClick={(event) => { event.stopPropagation(); deleteProfile(profile); }}>
+                <button className="icon-button" type="button" title="删除" disabled={profiles.length <= 1} onClick={(event) => { event.stopPropagation(); deleteProfile(profile); }}>
                   <XCircle size={14} />
                 </button>
               </div>
@@ -5962,22 +5910,22 @@ function TtsProfileManager({
       </div>
 
       <div className="profile-editor-grid">
-        <ConfigInput label="閰嶇疆鍚嶇О" value={selectedProfile.name ?? ''} onChange={(value) => updateSelectedProfile({ ...selectedProfile, name: value })} />
+        <ConfigInput label="配置名称" value={selectedProfile.name ?? ''} onChange={(value) => updateSelectedProfile({ ...selectedProfile, name: value })} />
         <Segmented
-          label="寮曟搸"
+          label="引擎"
           value={provider}
           options={['volcengine', 'minimax']}
-          labels={['鐏北寮曟搸', 'MiniMax']}
+          labels={['火山引擎', 'MiniMax']}
           onChange={(value) => updateSelectedProfile({ ...selectedProfile, provider: value as TtsProviderProfile['provider'] })}
         />
         {provider === 'volcengine' ? (
           <>
-            <ProviderConfigNote title="鐏北寮曟搸 TTS" value="V3 HTTP Chunked 浣跨敤鏂扮増鎺у埗鍙?TTS 鎺ュ彛瀵嗛挜锛涜祫婧愪笌绔偣浣跨敤绯荤粺榛樿閰嶇疆銆? />
-            <ConfigInput label="鐏北 TTS 鎺ュ彛瀵嗛挜" value={volcengine.apiKey ?? ''} onChange={(value) => updateSelectedProfile({ ...selectedProfile, volcengine: { ...volcengine, apiKey: value } })} />
-            <Field label="榛樿闊宠壊">
+            <ProviderConfigNote title="火山引擎 TTS" value="V3 HTTP Chunked 使用新版控制台 TTS 接口密钥；资源与端点使用系统默认配置。" />
+            <ConfigInput label="火山 TTS 接口密钥" value={volcengine.apiKey ?? ''} onChange={(value) => updateSelectedProfile({ ...selectedProfile, volcengine: { ...volcengine, apiKey: value } })} />
+            <Field label="默认音色">
               <div className="model-picker">
                 <select value={voiceSelection} onChange={(event) => updateVolcengineVoice(event.target.value === 'custom' ? '' : event.target.value)}>
-                  <option value="custom">鑷畾涔?voice_type</option>
+                  <option value="custom">自定义 voice_type</option>
                   {availableVolcengineVoices.map((voice) => (
                     <option key={voice.voiceType} value={voice.voiceType}>
                       {voice.label}
@@ -5987,17 +5935,17 @@ function TtsProfileManager({
               </div>
             </Field>
             {voiceSelection === 'custom' ? (
-              <ConfigInput label="鑷畾涔?voice_type" value={volcengine.speaker} onChange={updateVolcengineVoice} />
+              <ConfigInput label="自定义 voice_type" value={volcengine.speaker} onChange={updateVolcengineVoice} />
             ) : null}
           </>
         ) : null}
         {provider === 'minimax' ? (
           <>
-            <ProviderConfigNote title="MiniMax TTS" value="濉啓鎺ュ彛瀵嗛挜銆佹ā鍨嬪拰闊宠壊 ID銆? />
-            <ConfigInput label="MiniMax 鎺ュ彛瀵嗛挜" value={minimax.apiKey} onChange={(value) => updateSelectedProfile({ ...selectedProfile, minimax: { ...minimax, apiKey: value } })} />
-            <ConfigInput label="MiniMax 妯″瀷" value={minimax.model} onChange={(value) => updateSelectedProfile({ ...selectedProfile, minimax: { ...minimax, model: value } })} />
-            <ConfigInput label="MiniMax 闊宠壊 ID" value={minimax.voiceId} onChange={(value) => updateSelectedProfile({ ...selectedProfile, minimax: { ...minimax, voiceId: value } })} />
-            <LocalInfo title="鍏嬮殕闊宠壊" value={`${cloneVoiceCount} 涓湰鍦拌褰曪紝鍙悗缁帴鍏?MiniMax 鍏嬮殕鎺ュ彛銆俙} />
+            <ProviderConfigNote title="MiniMax TTS" value="填写接口密钥、模型和音色 ID。" />
+            <ConfigInput label="MiniMax 接口密钥" value={minimax.apiKey} onChange={(value) => updateSelectedProfile({ ...selectedProfile, minimax: { ...minimax, apiKey: value } })} />
+            <ConfigInput label="MiniMax 模型" value={minimax.model} onChange={(value) => updateSelectedProfile({ ...selectedProfile, minimax: { ...minimax, model: value } })} />
+            <ConfigInput label="MiniMax 音色 ID" value={minimax.voiceId} onChange={(value) => updateSelectedProfile({ ...selectedProfile, minimax: { ...minimax, voiceId: value } })} />
+            <LocalInfo title="克隆音色" value={`${cloneVoiceCount} 个本地记录，可后续接入 MiniMax 克隆接口。`} />
           </>
         ) : null}
       </div>
@@ -6014,15 +5962,15 @@ function AccountPage({ api, state, applyState }: { api: StoryDreamApi; state: Ap
         <div className="avatar">{draft.avatarInitial || 'S'}</div>
         <div>
           <h2>{draft.displayName}</h2>
-          <span>{draft.email} 路 {draft.deviceId}</span>
+          <span>{draft.email} · {draft.deviceId}</span>
         </div>
-        <strong>{draft.balance.toFixed(2)} 绉垎</strong>
+        <strong>{draft.balance.toFixed(2)} 积分</strong>
       </div>
-      <ConfigInput label="鏄剧ず鍚嶇О" value={draft.displayName} onChange={(value) => setDraft({ ...draft, displayName: value, avatarInitial: value.slice(0, 1).toUpperCase() || 'S' })} />
-      <ConfigInput label="閭" value={draft.email} onChange={(value) => setDraft({ ...draft, email: value })} />
-      <ConfigInput label="宸ヤ綔鍖? value={draft.workspace} onChange={(value) => setDraft({ ...draft, workspace: value })} />
-      <button className="primary-action slim" onClick={async () => applyState(await api.saveAccount(draft))}><Save size={15} />淇濆瓨璧勬枡</button>
-      <LocalInfo title="璐﹀彿涓庢縺娲诲叧绯? value="鏈湴澶嶅埢鐗堝彧鏄剧ず璁惧銆佽处鎴峰拰浣欓鐘舵€侊紝涓嶈繛鎺ョ湡瀹炵櫥褰曟垨浠樿垂绯荤粺銆? />
+      <ConfigInput label="显示名称" value={draft.displayName} onChange={(value) => setDraft({ ...draft, displayName: value, avatarInitial: value.slice(0, 1).toUpperCase() || 'S' })} />
+      <ConfigInput label="邮箱" value={draft.email} onChange={(value) => setDraft({ ...draft, email: value })} />
+      <ConfigInput label="工作区" value={draft.workspace} onChange={(value) => setDraft({ ...draft, workspace: value })} />
+      <button className="primary-action slim" onClick={async () => applyState(await api.saveAccount(draft))}><Save size={15} />保存资料</button>
+      <LocalInfo title="账号与激活关系" value="本地复刻版只显示设备、账户和余额状态，不连接真实登录或付费系统。" />
     </section>
   );
 }
@@ -6034,17 +5982,17 @@ function ActivationPage({ api, state, applyState }: { api: StoryDreamApi; state:
     <div className="two-column">
       <section className="panel">
         <div className="panel-title-row">
-          <h2>婵€娲荤姸鎬?/h2>
+          <h2>激活状态</h2>
           <StatusPill status={draft.status === 'active' ? 'completed' : 'paused'} />
         </div>
-        <ConfigInput label="婵€娲荤爜" value={draft.code} onChange={(value) => setDraft({ ...draft, code: value })} />
-        <Segmented label="璁″垝" value={draft.plan} options={['trial', 'local', 'inactive']} labels={['璇曠敤', '鏈湴婵€娲?, '鏈縺娲?]} onChange={(value) => setDraft({ ...draft, plan: value as ActivationState['plan'] })} />
-        <ConfigInput label="鐘舵€佽鏄? value={draft.message} onChange={(value) => setDraft({ ...draft, message: value })} />
-        <button className="primary-action slim" onClick={async () => applyState(await api.saveActivation(draft))}><Save size={15} />淇濆瓨鐘舵€?/button>
+        <ConfigInput label="激活码" value={draft.code} onChange={(value) => setDraft({ ...draft, code: value })} />
+        <Segmented label="计划" value={draft.plan} options={['trial', 'local', 'inactive']} labels={['试用', '本地激活', '未激活']} onChange={(value) => setDraft({ ...draft, plan: value as ActivationState['plan'] })} />
+        <ConfigInput label="状态说明" value={draft.message} onChange={(value) => setDraft({ ...draft, message: value })} />
+        <button className="primary-action slim" onClick={async () => applyState(await api.saveActivation(draft))}><Save size={15} />保存状态</button>
       </section>
       <section className="panel faq-panel">
-        <LocalInfo title="绔嬪嵆婵€娲? value="杩欓噷鏄湰鍦版ā鎷熺姸鎬侀〉锛屼笉鍋氱湡瀹炶喘涔般€佺櫥褰曟垨浠樿垂闄愬埗銆? />
-        <LocalInfo title="甯歌闂" value="婵€娲荤爜銆佽闃呫€佽澶囪В缁戝潎涓烘湰鍦?UI 鐘舵€侊紝鍙敤浜庡悗缁帴鍏ョ湡瀹炴湇鍔°€? />
+        <LocalInfo title="立即激活" value="这里是本地模拟状态页，不做真实购买、登录或付费限制。" />
+        <LocalInfo title="常见问题" value="激活码、订阅、设备解绑均为本地 UI 状态，可用于后续接入真实服务。" />
       </section>
     </div>
   );
@@ -6053,7 +6001,7 @@ function ActivationPage({ api, state, applyState }: { api: StoryDreamApi; state:
 function SettingsCard({ title, status, children }: { title: string; status: string; children: React.ReactNode }) {
   return (
     <div className="config-card">
-      <div className="config-card-head"><div><strong>{title}</strong><span>浣跨敤涓?/span></div><small>{status}</small></div>
+      <div className="config-card-head"><div><strong>{title}</strong><span>使用中</span></div><small>{status}</small></div>
       <div className="form-grid">{children}</div>
     </div>
   );
@@ -6131,7 +6079,7 @@ function ModelPicker({
       <div className="model-picker">
         {hasModels ? (
           <select value={value} onChange={(event) => onChange(event.target.value)}>
-            {!value ? <option value="">閫夋嫨妯″瀷</option> : null}
+            {!value ? <option value="">选择模型</option> : null}
             {options.map((model) => (
               <option key={model.id} value={model.id}>
                 {model.id}
@@ -6141,7 +6089,7 @@ function ModelPicker({
         ) : (
           <input value={value} onChange={(event) => onChange(event.target.value)} />
         )}
-        <button className="icon-button model-refresh-button" title="鑾峰彇妯″瀷" aria-label="鑾峰彇妯″瀷" disabled={loading} onClick={onRefresh} type="button">
+        <button className="icon-button model-refresh-button" title="获取模型" aria-label="获取模型" disabled={loading} onClick={onRefresh} type="button">
           {loading ? <Loader2 className="spin" size={15} /> : <RotateCcw size={15} />}
         </button>
       </div>
@@ -6160,8 +6108,8 @@ function ToggleField({ label, checked, onChange }: { label: string; checked: boo
       <span>{label}</span>
       <label className="draft-toggle-field draft-toggle-control">
         <input type="checkbox" checked={checked} onChange={(event) => onChange(event.target.checked)} />
-        <span className="draft-toggle-box" aria-hidden="true">{checked ? '鉁? : ''}</span>
-        <span>{checked ? '寮€鍚? : '鍏抽棴'}</span>
+        <span className="draft-toggle-box" aria-hidden="true">{checked ? '✓' : ''}</span>
+        <span>{checked ? '开启' : '关闭'}</span>
       </label>
     </div>
   );
@@ -6216,9 +6164,9 @@ function TextBorderControls({
     <div className="draft-border-controls">
       {label ? <span className="field-title">{label}</span> : null}
       <div className="draft-inline-border-grid">
-        <ColorField label="鎻忚竟棰滆壊" value={border.color} onChange={(value) => onChange({ color: value })} />
-        <RangeField label="鎻忚竟瀹藉害" min={0} max={60} step={1} value={border.width} onChange={(value) => onChange({ width: value })} />
-        <RangeField label="鎻忚竟閫忔槑搴? min={0} max={1} step={0.05} value={border.alpha} onChange={(value) => onChange({ alpha: value })} />
+        <ColorField label="描边颜色" value={border.color} onChange={(value) => onChange({ color: value })} />
+        <RangeField label="描边宽度" min={0} max={60} step={1} value={border.width} onChange={(value) => onChange({ width: value })} />
+        <RangeField label="描边透明度" min={0} max={1} step={0.05} value={border.alpha} onChange={(value) => onChange({ alpha: value })} />
       </div>
     </div>
   );
@@ -6259,20 +6207,20 @@ function Accordion({ title, open = false, children }: { title: string; open?: bo
   const [expanded, setExpanded] = useState(open);
   return (
     <div className={expanded ? 'accordion open' : 'accordion'}>
-      <button onClick={() => setExpanded(!expanded)}>鈥?{title}</button>
+      <button onClick={() => setExpanded(!expanded)}>› {title}</button>
       {expanded ? <div>{children}</div> : null}
     </div>
   );
 }
 
 function EventTimeline({ events }: { events: TaskEvent[] }) {
-  if (events.length === 0) return <EmptyState title="鏆傛棤浜嬩欢" />;
+  if (events.length === 0) return <EmptyState title="暂无事件" />;
   return (
     <div className="event-list">
       {events.map((event, index) => (
         <div className="event-item" key={`${event.seq ?? index}-${event.ts}`}>
           <span>{event.step ?? '-'}</span>
-          {event.type === 'step_error' ? <ErrorSummaryButton fullMessage={event.detail} title={`姝ラ ${event.step ?? '-'} 閿欒`} compact /> : <p>{event.detail}</p>}
+          {event.type === 'step_error' ? <ErrorSummaryButton fullMessage={event.detail} title={`步骤 ${event.step ?? '-'} 错误`} compact /> : <p>{event.detail}</p>}
         </div>
       ))}
     </div>
@@ -6322,7 +6270,7 @@ function ErrorDetailDialog({ title, summary, fullMessage, onClose }: { title: st
             <span className="error-mark">!</span>
             <strong>{title}</strong>
           </div>
-          <button className="mini-button" type="button" onClick={onClose}>鍏抽棴</button>
+          <button className="mini-button" type="button" onClick={onClose}>关闭</button>
         </div>
         <p>{summary}</p>
         <pre>{fullMessage}</pre>
@@ -6401,7 +6349,7 @@ function styleLabel(id: string, styles: CustomStyle[] = defaultCustomStyles): st
 }
 
 function smartImageModeLabel(mode: ImageLabSmartMode = 'text-to-image'): string {
-  if (mode === 'text-to-image') return '鏂囩敓鍥?;
+  if (mode === 'text-to-image') return '文生图';
   return smartImageModeOptions.find(([id]) => id === mode)?.[1] ?? mode;
 }
 
@@ -6433,15 +6381,15 @@ function isBundledDraftTemplateOption(template: Pick<DraftTemplate, 'id' | 'isDe
 }
 
 function characterPolicyLabel(policy: PromptTemplate['characterPolicy']): string {
-  if (policy === 'force-extract') return '寮哄埗鎻愬彇';
-  if (policy === 'force-skip') return '寮哄埗璺宠繃';
-  return '璺熼殢璧涢亾';
+  if (policy === 'force-extract') return '强制提取';
+  if (policy === 'force-skip') return '强制跳过';
+  return '跟随赛道';
 }
 
 function referenceKindLabel(kind: PromptTemplate['referenceKind']): string {
-  if (kind === 'face') return '浜鸿劯';
-  if (kind === 'product') return '浜у搧';
-  return '鏃?;
+  if (kind === 'face') return '人脸';
+  if (kind === 'product') return '产品';
+  return '无';
 }
 
 function buildImageStyleDraftFromPrompt(prompt: string, base: CustomStyle): Pick<CustomStyle, 'name' | 'tag' | 'shortName' | 'prefix' | 'suffix' | 'negativePrompt' | 'allowColor' | 'description'> {
@@ -6450,19 +6398,19 @@ function buildImageStyleDraftFromPrompt(prompt: string, base: CustomStyle): Pick
   const name = tags[0] || normalized.slice(0, 12) || base.name;
   return {
     name,
-    tag: tags.length ? tags.join('銆?) : base.tag,
+    tag: tags.length ? tags.join('、') : base.tag,
     shortName: name.slice(0, 4),
-    prefix: [normalized, base.prefix].filter(Boolean).join('锛?),
-    suffix: base.suffix || '楂樿川閲忥紝娓呮櫚缁嗚妭锛岀數褰辩骇鏋勫浘',
-    negativePrompt: base.negativePrompt || '妯＄硦锛屽櫔鐐癸紝杩囨洕锛屼綆璐ㄩ噺锛屾按鍗帮紝鏂囧瓧',
-    allowColor: !/榛戠櫧|鍗曡壊|mono/i.test(normalized) && base.allowColor,
-    description: `閫傚悎${normalized}棰樻潗銆俙,
+    prefix: [normalized, base.prefix].filter(Boolean).join('，'),
+    suffix: base.suffix || '高质量，清晰细节，电影级构图',
+    negativePrompt: base.negativePrompt || '模糊，噪点，过曝，低质量，水印，文字',
+    allowColor: !/黑白|单色|mono/i.test(normalized) && base.allowColor,
+    description: `适合${normalized}题材。`,
   };
 }
 
 function splitListInput(value: string): string[] {
   return value
-    .split(/[,锛屻€乗n]/u)
+    .split(/[,，、\n]/u)
     .map((item) => item.trim())
     .filter(Boolean);
 }
@@ -6505,20 +6453,20 @@ function audioTitleFromPath(path: string): string {
 
 function pageSubtitle(view: ShellView): string {
   const map: Partial<Record<ShellView, string>> = {
-    'new-task': '绮樿创涓€娈典汉鐗╂晠浜嬶紝鍑犲垎閽熷悗鍦ㄥ壀鏄犻噷鎵撳紑',
-    queue: '鏌ョ湅褰撳墠浠诲姟銆佹楠や簨浠躲€佸け璐ラ噸璇曞拰杈撳嚭鐘舵€?,
-    history: '鎸夋椂闂存祻瑙堝凡瀹屾垚銆佸け璐ャ€佸彇娑堝拰鑽夌浠诲姟',
-    'task-detail': '鏌ョ湅鍗曚釜浠诲姟鐨勭嫭绔嬫墽琛岀姸鎬佸拰娴佹按绾?,
-    'image-lab': '鍗曠嫭娴嬭瘯鏂囩敓鍥俱€佸浘鍍忓弬鑰冨拰鍒嗛暅鍥剧墖鎻愮ず璇?,
-    'music-mv': '鎸夋瓕璇嶈妭濂忕敓鎴愰煶涔?MV 鍒嗛暅銆佸瓧骞曞拰鍓槧鑽夌',
-    'viral-analyzer': '鎷嗚В鐖嗘鐭棰戠殑寮€澶淬€佺粨鏋勩€佺粨灏惧拰鐖嗙偣',
-    'prompt-templates': '绠＄悊绯荤粺妯℃澘銆佸厠闅嗐€佸鍏?JSON 鍜屾湰鍦扮紪杈?,
-    'draft-templates': '璋冩暣鐢诲竷銆佸浘鐗囧尯鍩熴€佸瓧骞曘€佸厤璐ｅ０鏄庡拰闊抽鍙傛暟',
-    settings: '閰嶇疆 API 鍑瘉銆佹湰鍦拌矾寰勩€乀TS銆両MA 涓庤瘖鏂?,
-    account: '绠＄悊鏈満璐﹀彿璧勬枡銆佽澶囧拰妯℃嫙浣欓',
-    activation: '绠＄悊鏈湴婵€娲荤姸鎬佷笌璇曠敤璇存槑',
+    'new-task': '粘贴一段人物故事，几分钟后在剪映里打开',
+    queue: '查看当前任务、步骤事件、失败重试和输出状态',
+    history: '按时间浏览已完成、失败、取消和草稿任务',
+    'task-detail': '查看单个任务的独立执行状态和流水线',
+    'image-lab': '单独测试文生图、图像参考和分镜图片提示词',
+    'music-mv': '按歌词节奏生成音乐 MV 分镜、字幕和剪映草稿',
+    'viral-analyzer': '拆解爆款短视频的开头、结构、结尾和爆点',
+    'prompt-templates': '管理系统模板、克隆、导入 JSON 和本地编辑',
+    'draft-templates': '调整画布、图片区域、字幕、免责声明和音频参数',
+    settings: '配置 API 凭证、本地路径、TTS、IMA 与诊断',
+    account: '管理本机账号资料、设备和模拟余额',
+    activation: '管理本地激活状态与试用说明',
   };
-  if (view === 'voice-lab') return '鍗曠嫭璇曞惉璞嗗寘涓?MiniMax 闊宠壊锛屼繚瀛樻湰鍦拌瘯鍚褰?;
+  if (view === 'voice-lab') return '单独试听豆包与 MiniMax 音色，保存本地试听记录';
   return map[view] ?? '';
 }
 
@@ -6533,18 +6481,18 @@ function pipelineStepStatus(task: Task, step: number): 'pending' | 'running' | '
 
 function statusLabelForStep(status: ReturnType<typeof pipelineStepStatus>): string {
   return {
-    pending: '绛夊緟涓?,
-    running: '杩涜涓?,
-    completed: '宸插畬鎴?,
-    failed: '澶辫触',
-    cancelled: '宸插彇娑?,
+    pending: '等待中',
+    running: '进行中',
+    completed: '已完成',
+    failed: '失败',
+    cancelled: '已取消',
   }[status];
 }
 
 function artifactPanelTitle(task: Task, tab: 'preview' | 'storyboard' | 'audio'): string {
-  if (tab === 'storyboard') return task.currentStep >= 2 ? '鍒嗛暅鐢诲粖宸茶窡闅忔祦姘寸嚎鍑嗗' : '绛夊緟鍒嗛暅鐢熸垚';
-  if (tab === 'audio') return task.currentStep >= 5 ? '閰嶉煶涓庡瓧骞曟椂闂磋酱' : '绛夊緟閰嶉煶鐢熸垚';
-  return task.currentStep >= 7 ? '鏈€缁堝壀鏄犺崏绋跨洰褰? : '绛夊緟褰撳墠姝ラ浜х墿钀界洏';
+  if (tab === 'storyboard') return task.currentStep >= 2 ? '分镜画廊已跟随流水线准备' : '等待分镜生成';
+  if (tab === 'audio') return task.currentStep >= 5 ? '配音与字幕时间轴' : '等待配音生成';
+  return task.currentStep >= 7 ? '最终剪映草稿目录' : '等待当前步骤产物落盘';
 }
 
 function formatDuration(start: string, end: string | null, now = Date.now()): string {
@@ -6559,43 +6507,43 @@ function formatDuration(start: string, end: string | null, now = Date.now()): st
 
 function statusLabel(status: TaskStatus | 'all'): string {
   return {
-    all: '鍏ㄩ儴',
-    draft: '鑽夌',
-    pending: '绛夊緟',
-    running: '杩愯涓?,
-    paused: '鏆傚仠',
-    completed: '宸插畬鎴?,
-    failed: '澶辫触',
-    cancelled: '宸插彇娑?,
+    all: '全部',
+    draft: '草稿',
+    pending: '等待',
+    running: '运行中',
+    paused: '暂停',
+    completed: '已完成',
+    failed: '失败',
+    cancelled: '已取消',
   }[status];
 }
 
 function maskConfigured(value: string): string {
-  if (!value) return '寰呴厤缃?;
-  return value.length > 8 ? `${value.slice(0, 2)}鈥⑩€⑩€⑩€?{value.slice(-4)}` : '宸查厤缃?;
+  if (!value) return '待配置';
+  return value.length > 8 ? `${value.slice(0, 2)}••••${value.slice(-4)}` : '已配置';
 }
 
 function settingsStatusLabel(status: 'pass' | 'warn' | 'fail'): string {
-  return status === 'pass' ? '宸查厤缃? : status === 'warn' ? '闇€纭' : '寰呴厤缃?;
+  return status === 'pass' ? '已配置' : status === 'warn' ? '需确认' : '待配置';
 }
 
 function summarizeErrorMessage(message: string): string {
   const normalized = message.replace(/\s+/g, ' ').trim();
-  if (!normalized) return '鍙戠敓閿欒';
+  if (!normalized) return '发生错误';
   const imageApiStatus = normalized.match(/Image provider API error \((\d+)\)/i)?.[1];
-  if (imageApiStatus) return `鐢熷浘鎺ュ彛閿欒 ${imageApiStatus}`;
+  if (imageApiStatus) return `生图接口错误 ${imageApiStatus}`;
   if (/Python dependency .* is required|ModuleNotFoundError: No module named/i.test(normalized)) {
     const missing = normalized.match(/No module named ['"]([^'"]+)['"]/i)?.[1] ?? normalized.match(/Python dependency ([\w.-]+)/i)?.[1];
-    return missing ? `Python 杩愯鏃剁己灏戜緷璧栵細${missing}` : 'Python 杩愯鏃朵緷璧栫己澶?;
+    return missing ? `Python 运行时缺少依赖：${missing}` : 'Python 运行时依赖缺失';
   }
-  if (normalized.includes(['Browser preview', 'cannot run the real provider pipeline'].join(' ')) || /娴忚鍣ㄩ瑙堟棤娉曡繍琛岀湡瀹炰緵搴斿晢娴佹按绾?i.test(normalized)) return '娴忚鍣ㄩ瑙堟棤娉曟墽琛岀湡瀹炰换鍔?;
-  if (/Image provider API key is missing/i.test(normalized)) return '鐢熷浘 API Key 缂哄け';
-  if (/Image provider is not configured/i.test(normalized)) return '鐢熷浘閰嶇疆涓嶅畬鏁?;
-  if (/Jimeng submit failed/i.test(normalized)) return '鍗虫ⅵ鎻愪氦澶辫触';
-  if (/Jimeng poll failed/i.test(normalized)) return '鍗虫ⅵ缁撴灉鑾峰彇澶辫触';
-  if (/LLM provider is not configured/i.test(normalized)) return 'LLM 閰嶇疆涓嶅畬鏁?;
-  if (/TTS provider is not configured/i.test(normalized)) return 'TTS 閰嶇疆涓嶅畬鏁?;
-  const firstSentence = normalized.split(/[銆?!?]/)[0] || normalized;
+  if (normalized.includes(['Browser preview', 'cannot run the real provider pipeline'].join(' ')) || /浏览器预览无法运行真实供应商流水线/i.test(normalized)) return '浏览器预览无法执行真实任务';
+  if (/Image provider API key is missing/i.test(normalized)) return '生图 API Key 缺失';
+  if (/Image provider is not configured/i.test(normalized)) return '生图配置不完整';
+  if (/Jimeng submit failed/i.test(normalized)) return '即梦提交失败';
+  if (/Jimeng poll failed/i.test(normalized)) return '即梦结果获取失败';
+  if (/LLM provider is not configured/i.test(normalized)) return 'LLM 配置不完整';
+  if (/TTS provider is not configured/i.test(normalized)) return 'TTS 配置不完整';
+  const firstSentence = normalized.split(/[。.!?]/)[0] || normalized;
   return trimForPreview(firstSentence, 42);
 }
 
@@ -6606,23 +6554,23 @@ function settingsConfigSignature(config: AppConfig): string {
 }
 
 function imageProviderLabel(provider: ImageProviderProfile['provider']): string {
-  return provider === 'gpt_image' ? 'GPT Image' : provider === 'jimeng' ? '鍗虫ⅵ' : '鑷畾涔夊浘鐗?;
+  return provider === 'gpt_image' ? 'GPT Image' : provider === 'jimeng' ? '即梦' : '自定义图片';
 }
 
 function imageProfileSummary(profile: ImageProviderProfile): string {
-  if (profile.provider === 'jimeng') return imageProfileJimeng(profile).reqKey || imageProfileJimeng(profile).model || '鏈厤缃?Req Key';
-  if (profile.provider === 'custom') return imageProfileCustomImage(profile).model || '鏈€夋嫨妯″瀷';
-  return imageProfileGptImage(profile).model || '鏈€夋嫨妯″瀷';
+  if (profile.provider === 'jimeng') return imageProfileJimeng(profile).reqKey || imageProfileJimeng(profile).model || '未配置 Req Key';
+  if (profile.provider === 'custom') return imageProfileCustomImage(profile).model || '未选择模型';
+  return imageProfileGptImage(profile).model || '未选择模型';
 }
 
 function ttsProviderLabel(provider: TtsProviderProfile['provider']): string {
-  return provider === 'minimax' ? 'MiniMax' : '鐏北寮曟搸';
+  return provider === 'minimax' ? 'MiniMax' : '火山引擎';
 }
 
 function ttsProfileSummary(profile: TtsProviderProfile): string {
-  if (profile.provider === 'minimax') return ttsProfileMinimax(profile).model || '鏈€夋嫨妯″瀷';
+  if (profile.provider === 'minimax') return ttsProfileMinimax(profile).model || '未选择模型';
   const speaker = ttsProfileVolcengine(profile).speaker;
-  return volcengineVoicePresetLabel(speaker) || speaker || '鏈€夋嫨闊宠壊';
+  return volcengineVoicePresetLabel(speaker) || speaker || '未选择音色';
 }
 
 type VolcengineVoiceOption = {
@@ -6937,9 +6885,9 @@ function snapshotStepStatus(snapshot: TaskArtifactSnapshot | null, step: number)
 
 function imageProgressLabel(totalScenes: number, generatedImages: number, stepStatus: string): string {
   const total = totalScenes || generatedImages;
-  if (total === 0) return '绛夊緟鍒嗛暅';
-  const statusText = stepStatus === 'completed' ? '宸插畬鎴? : stepStatus === 'running' ? '鐢熸垚涓? : stepStatus === 'failed' ? '鐢熸垚澶辫触' : '绛夊緟鐢熷浘';
-  return `${generatedImages}/${total} 寮?路 ${statusText}`;
+  if (total === 0) return '等待分镜';
+  const statusText = stepStatus === 'completed' ? '已完成' : stepStatus === 'running' ? '生成中' : stepStatus === 'failed' ? '生成失败' : '等待生图';
+  return `${generatedImages}/${total} 张 · ${statusText}`;
 }
 
 function toLocalImageUrl(path: string): string {
@@ -7014,4 +6962,3 @@ if (!rootElement) {
 
 window.__storydreamReactRoot ??= createRoot(rootElement);
 window.__storydreamReactRoot.render(<App />);
-
