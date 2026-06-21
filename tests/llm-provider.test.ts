@@ -48,6 +48,40 @@ describe('OpenAI-compatible LLM JSON adapter', () => {
     });
   });
 
+  it('merges per-profile request params json into chat completions payload', async () => {
+    const requests: Array<Record<string, unknown>> = [];
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (_url: string, init: RequestInit) => {
+        requests.push(JSON.parse(String(init.body)));
+        return new Response(JSON.stringify({ choices: [{ message: { content: '{"ok":true}' } }], id: 'chatcmpl-json' }), {
+          status: 200,
+          headers: { 'content-type': 'application/json' },
+        });
+      }),
+    );
+
+    const runJson = createOpenAiCompatibleJsonLlm({
+      ...defaultConfig.llm,
+      apiKey: 'llm-key',
+      requestParamsJson: '{"reasoning_effort":"medium"}',
+    });
+
+    await runJson({
+      step: 0,
+      name: 'rewrite',
+      messages: [{ role: 'user', content: 'rewrite this' }],
+    });
+
+    expect(requests[0]).toMatchObject({
+      model: defaultConfig.llm.model,
+      response_format: { type: 'json_object' },
+    });
+    expect(requests[0]).toMatchObject({
+      reasoning_effort: 'medium',
+    });
+  });
+
   it('parses JSON wrapped in markdown fences from compatible providers', async () => {
     vi.stubGlobal(
       'fetch',

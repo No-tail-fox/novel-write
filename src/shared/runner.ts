@@ -332,8 +332,25 @@ async function ensureContentArtifact(input: {
   const promptTemplates = appState.promptTemplates;
   const taskTemplate = selectTaskPromptTemplate(promptTemplates, { track: task.track, promptTemplateId: task.promptTemplateId });
   const promptContext = (): PromptRenderContext => buildPromptRenderContext({ task, taskTemplate, customStyles: appState.customStyles, sourceContext, artifact: pipeline.artifact });
+  const directCopyPublish = task.publishMode === 'direct-copy';
 
-  if (!isStepCompleted(pipeline, 0) || !pipeline.artifact.reviewedText) {
+  if (directCopyPublish) {
+    pipeline.artifact.reviewedText = pipeline.artifact.reviewedText ?? task.inputText;
+    pipeline.artifact.rewrittenCopy = pipeline.artifact.rewrittenCopy ?? task.inputText;
+    pipeline.artifact.cover = pipeline.artifact.cover ?? {
+      title: task.title || task.inputText.slice(0, 18) || 'Cover',
+      subtitle: [],
+      summary: task.inputText.slice(0, 120),
+      tags: [],
+      comments: [],
+    };
+    pipeline.artifact.rewriteEvaluation = pipeline.artifact.rewriteEvaluation ?? {
+      bestRound: 1,
+      evaluations: [{ round: 1, score: 100, reason: 'Direct-copy publish mode skips rewrite rounds and keeps the original copy.' }],
+    };
+  }
+
+  if (!directCopyPublish && (!isStepCompleted(pipeline, 0) || !pipeline.artifact.reviewedText)) {
     await db.updateTask(task.id, { currentStep: 0, retryFromStep: 0 });
     await heartbeatTask(db, task.id, options, 0, 'LLM review');
     await markStep(0, 'running');
@@ -356,7 +373,7 @@ async function ensureContentArtifact(input: {
     await emit('step_complete', 0, 'Reviewer', `已保存 ${pipeline.artifact.reviewedText.length} 字`, { requestId: review.requestId });
   }
 
-  if (!isStepCompleted(pipeline, 1) || !pipeline.artifact.rewrittenCopy || !pipeline.artifact.cover) {
+  if (!directCopyPublish && (!isStepCompleted(pipeline, 1) || !pipeline.artifact.rewrittenCopy || !pipeline.artifact.cover)) {
     await db.updateTask(task.id, { currentStep: 1, retryFromStep: 1 });
     await heartbeatTask(db, task.id, options, 1, 'LLM rewrite');
     await markStep(1, 'running');
@@ -383,6 +400,20 @@ async function ensureContentArtifact(input: {
     await markStep(1, 'completed', { outputPath: join(workDir, '01-rewritten-copy.md') });
     await heartbeatTask(db, task.id, options, 1, 'LLM rewrite completed');
     await emit('step_complete', 1, 'Writer', `改写完成：${pipeline.artifact.rewrittenCopy.length} 字`, { evaluation: pipeline.artifact.rewriteEvaluation });
+  }
+
+  if (directCopyPublish && !isStepCompleted(pipeline, 0)) {
+    await writeFile(join(workDir, '00-reviewed.txt'), pipeline.artifact.reviewedText, 'utf8');
+    await markStep(0, 'completed', { outputPath: join(workDir, '00-reviewed.txt') });
+    await emit('step_complete', 0, 'Reviewer', 'Direct-copy publish mode kept the original source text');
+  }
+
+  if (directCopyPublish && !isStepCompleted(pipeline, 1)) {
+    await writeFile(join(workDir, '01-rewritten-copy.md'), pipeline.artifact.rewrittenCopy, 'utf8');
+    await writeFile(join(workDir, '00-cover-title.json'), JSON.stringify(pipeline.artifact.cover, null, 2), 'utf8');
+    await writeFile(join(workDir, '01-rewrite-evaluations.json'), JSON.stringify(pipeline.artifact.rewriteEvaluation, null, 2), 'utf8');
+    await markStep(1, 'completed', { outputPath: join(workDir, '01-rewritten-copy.md') });
+    await emit('step_complete', 1, 'Writer', 'Direct-copy publish mode skipped rewrite rounds');
   }
 
   if (!isStepCompleted(pipeline, 2) || !pipeline.artifact.scenes) {
@@ -580,6 +611,12 @@ function targetLengthInstruction(task: Task): string {
   return `Target word count: about ${targetLength} Chinese characters. Keep within +/-15% unless source length makes that impossible.`;
 }
 
+function targetScenesInstruction(task: Task): string {
+  const targetScenes = normalizeStoryboardSceneCount(task.targetScenes ?? task.storyboardSceneCount);
+  if (!targetScenes) return '';
+  return `Storyboard scene count target: ${targetScenes}. Keep the rewrite compact enough to support that scene count.`;
+}
+
 function pauseAtCheckpoint(task: Task, initialStep: number, step: number, detail: string): void {
   if (step <= initialStep) return;
   if (task.processingMode === 'semi-auto' && step === 4) {
@@ -614,6 +651,7 @@ async function runRewriteRounds(
             'Rewrite instructions:',
             input.rewritePrompt,
             targetLengthInstruction(input.task),
+            targetScenesInstruction(input.task),
             taskModeInstructions(input.task),
             'Cover instructions:',
             input.coverPrompt,
@@ -639,12 +677,13 @@ async function runRewriteRounds(
       { role: 'system', content: 'Return strict JSON only. Schema: {"bestRound": number, "evaluations":[{"round":number,"score":number,"reason":string}], "wordCountWarning": string}.' },
       {
         role: 'user',
-        content: joinPromptBlocks([
-          'Evaluate these three rewrite candidates for hook strength, rhythm, factual faithfulness, short-video appeal, and target word count. Choose bestRound.',
-          targetLengthInstruction(input.task),
-          taskModeInstructions(input.task),
-          input.rerunContext ?? '',
-          JSON.stringify(candidates.map(({ round, rewrittenCopy }) => ({ round, rewrittenCopy }))),
+          content: joinPromptBlocks([
+            'Evaluate these three rewrite candidates for hook strength, rhythm, factual faithfulness, short-video appeal, and target word count. Choose bestRound.',
+            targetLengthInstruction(input.task),
+            targetScenesInstruction(input.task),
+            taskModeInstructions(input.task),
+            input.rerunContext ?? '',
+            JSON.stringify(candidates.map(({ round, rewrittenCopy }) => ({ round, rewrittenCopy }))),
         ]),
       },
     ],

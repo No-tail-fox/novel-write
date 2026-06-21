@@ -2,6 +2,7 @@ import { execFile } from 'node:child_process';
 import { mkdir, readFile, stat } from 'node:fs/promises';
 import { basename, extname, join } from 'node:path';
 import { promisify } from 'node:util';
+import { Agent } from 'undici';
 import { fetchWithTimeout as fetchWithRequestTimeout } from './http';
 import { createOpenAiCompatibleJsonLlm } from './llm-provider';
 import { resolvePythonCommand } from './python-runtime';
@@ -23,6 +24,12 @@ const SILICONFLOW_STT_BASE_URL = 'https://api.siliconflow.cn/v1';
 const DEFAULT_VIRAL_KEY_FRAME_COUNT = 8;
 const VIRAL_FRAME_ANALYSIS_WIDTH = 768;
 const VISION_FETCH_RETRY_DELAYS_MS = [250, 1000];
+const VISION_CONNECT_TIMEOUT_MS = 30_000;
+const VISION_FETCH_DISPATCHER = new Agent({
+  connect: {
+    timeout: VISION_CONNECT_TIMEOUT_MS,
+  },
+});
 
 export function createViralRuntimeProviders(config: AppConfig, _workDir: string): Omit<RunViralAnalysisOptions, 'workDir' | 'emit' | 'signal'> {
   const textLlm = createOpenAiCompatibleJsonLlm(config.llm);
@@ -570,6 +577,7 @@ async function fetchVisionWithRetries(endpoint: string, init: RequestInit, confi
         timeoutMs: config.timeoutMs ?? 120_000,
         timeoutLabel: `Viral frame analysis attempt ${attempt}/${maxAttempts}`,
         signal,
+        dispatcher: VISION_FETCH_DISPATCHER,
       });
     } catch (error) {
       if (attempt === maxAttempts || !isRetryableVisionFetchError(error)) throw error;

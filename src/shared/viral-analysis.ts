@@ -149,7 +149,8 @@ export async function runViralAnalysis(record: ViralAnalysisRecord, options: Run
   const contentBreakdown = await options.analyzeBreakdown(breakdownInput, options.signal);
 
   await emit('stage_start', 'recreating', 'Creating structure-level recreation draft', 0.88);
-  const recreation = await options.createRecreation(
+  const recreation = normalizeViralRecreationDraft(
+    await options.createRecreation(
     {
       track: record.settings.track,
       extraRequirements: record.settings.extraRequirements ?? '',
@@ -163,6 +164,9 @@ export async function runViralAnalysis(record: ViralAnalysisRecord, options: Run
       },
     },
     options.signal,
+    ),
+    contentBreakdown,
+    record.settings,
   );
 
   const result: ViralAnalysisResult = {
@@ -197,11 +201,52 @@ export function buildViralBreakdownPrompt(input: ViralBreakdownPromptInput): str
 }
 
 export function buildViralRecreationPrompt(input: ViralRecreationPromptInput): string {
+  const { result } = input;
+  const schema = {
+    formula: {
+      main: '',
+      title: '',
+      cover: '',
+      opening: '',
+      structure: '',
+      ending: '',
+    },
+    templatePrompt: '',
+    storyCore: {
+      who: '',
+      where: '',
+      whatHappened: '',
+      why: '',
+      turningPoint: '',
+      result: '',
+    },
+    storyContent: '',
+    blueprint: '',
+    script: '',
+    openingOptions: [],
+    titleOptions: [],
+    coverIdeas: [],
+    storyboardHints: [],
+    taskDefaults: result.recreation.taskDefaults,
+  };
+  const transcriptText = result.transcript.map((segment) => segment.text.trim()).filter(Boolean).join('\n');
+  const frameSummary = result.frames.map((frame) => `${frame.timestamp}s: ${frame.visualDescription}`).join('\n');
   return [
-    '你是一位短视频编导。请基于拆解结果做结构级复刻，保留开头方式、结构节奏、结尾功能和爆点逻辑，但生成全新的选题表达。',
+    '你是一位短视频编导。请先抽出故事事实层，再做结构级复刻。故事事实层必须具体到人物、场景、冲突、转折和结果，不要只写结构骨架。',
     '不要逐句照搬原文，不要复用原标题，不要复用原视频独特表达，不要逐镜头高仿。',
-    '输出可直接转成 CreateTaskInput 的中文素材。',
-    'JSON Schema: {"blueprint":string,"openingOptions":string[],"titleOptions":string[],"coverIdeas":string[],"script":string,"storyboardHints":string[],"taskDefaults":{"track":string,"style":string,"ratio":string,"storyboardSceneCount":number}}',
+    '输出必须是 strict JSON only，且字段必须精确到公式层、模板层、故事层和兼容层。',
+    'formula.main 是主公式总纲，必须概括这条爆款的复刻逻辑；formula.title / cover / opening / structure / ending 是子公式，分别描述标题、封面、开头、结构和收尾的复刻规则。',
+    'templatePrompt 必须是可直接复刻的标准提示词模板，保留原文案的段落功能、信息推进顺序、转折节奏和收尾方式，主题只通过占位符替换。',
+    'storyCore 必须只保留故事事实骨架；storyContent 必须是具体可讲述的故事底稿，不能只写提纲，不能只写结构骨架。',
+    'script 作为兼容字段，内容应与 storyContent 保持一致；blueprint 只作为兼容摘要，不得代替故事正文。',
+    `JSON Schema: ${JSON.stringify(schema, null, 2)}`,
+    `原视频标题：${result.source.title || '未知'}`,
+    `原视频作者：${result.source.author || '未知'}`,
+    `原视频逐字稿：\n${transcriptText || '无语音内容'}`,
+    `原视频画面摘要：\n${frameSummary || '无画面摘要'}`,
+    `故事主线：${result.contentBreakdown.topic || result.recreation.blueprint || result.source.title || '未知'}`,
+    `情节钩子：${result.contentBreakdown.opening.reusablePattern || '一开头就给结果或冲突'}`,
+    '故事内容要求：必须写成具体可讲述的故事，先写清楚是谁、在哪、遇到了什么、为什么会发生、怎么转折、最后变成什么。不要只写结构提纲。',
     `目标赛道：${input.track}`,
     input.extraRequirements ? `额外要求：${input.extraRequirements}` : '',
     `拆解结果：\n${JSON.stringify(input.result.contentBreakdown, null, 2)}`,
@@ -212,6 +257,8 @@ export function buildViralRecreationPrompt(input: ViralRecreationPromptInput): s
 
 export function createViralProductionTaskInput(result: ViralAnalysisResult, options: ViralProductionTaskOptions = {}): CreateTaskInput {
   const defaults = result.recreation.taskDefaults;
+  const storyContent = result.recreation.storyContent?.trim() || '';
+  const script = result.recreation.script?.trim() || '';
   const settings = {
     track: options.track ?? defaults.track ?? 'general-story',
     style: options.style ?? defaults.style ?? 'photo-real',
@@ -222,7 +269,7 @@ export function createViralProductionTaskInput(result: ViralAnalysisResult, opti
   };
   return {
     title: options.title ?? `爆款复刻 - ${result.source.title || result.contentBreakdown.topic || '短视频'}`,
-    inputText: result.recreation.script,
+    inputText: storyContent || script,
     mode: 'paste',
     track: settings.track,
     style: settings.style,
@@ -254,6 +301,24 @@ export function buildViralImagePromptReference(frames: ViralFrameAnalysis[]): st
 
 function emptyRecreation(settings: ViralAnalysisSettings): ViralRecreationDraft {
   return {
+    formula: {
+      main: '',
+      title: '',
+      cover: '',
+      opening: '',
+      structure: '',
+      ending: '',
+    },
+    templatePrompt: '',
+    storyCore: {
+      who: '',
+      where: '',
+      whatHappened: '',
+      why: '',
+      turningPoint: '',
+      result: '',
+    },
+    storyContent: '',
     blueprint: '',
     openingOptions: [],
     titleOptions: [],
@@ -267,6 +332,83 @@ function emptyRecreation(settings: ViralAnalysisSettings): ViralRecreationDraft 
       storyboardSceneCount: settings.storyboardSceneCount ?? 12,
     },
   };
+}
+
+function normalizeViralRecreationDraft(
+  recreation: Partial<ViralRecreationDraft> | null | undefined,
+  breakdown: ViralContentBreakdown,
+  settings: ViralAnalysisSettings,
+): ViralRecreationDraft {
+  const storyContent = String(recreation?.storyContent ?? recreation?.script ?? recreation?.blueprint ?? '').trim();
+  const script = String(recreation?.script ?? storyContent).trim() || storyContent;
+  const formula = recreation?.formula ?? {
+    main: '',
+    title: '',
+    cover: '',
+    opening: '',
+    structure: '',
+    ending: '',
+  };
+  const storyCore = recreation?.storyCore ?? {
+    who: '',
+    where: '',
+    whatHappened: '',
+    why: '',
+    turningPoint: '',
+    result: '',
+  };
+  const taskDefaults = recreation?.taskDefaults ?? {
+    track: settings.track,
+    style: settings.style,
+    ratio: settings.ratio,
+    storyboardSceneCount: settings.storyboardSceneCount ?? 12,
+  };
+  return {
+    formula: {
+      main: String(formula.main ?? recreation?.blueprint ?? breakdown.topic ?? storyContent ?? '').trim(),
+      title: String(formula.title ?? breakdown.title.pattern ?? '').trim(),
+      cover: String(formula.cover ?? breakdown.cover.pattern ?? breakdown.cover.observed ?? '').trim(),
+      opening: String(formula.opening ?? breakdown.opening.reusablePattern ?? '').trim(),
+      structure: String(formula.structure ?? breakdown.structure.analysis ?? '').trim(),
+      ending: String(formula.ending ?? breakdown.ending.reusablePattern ?? '').trim(),
+    },
+    templatePrompt: String(recreation?.templatePrompt ?? buildViralTemplatePromptFallback(breakdown)).trim(),
+    storyCore: {
+      who: String(storyCore.who ?? '').trim(),
+      where: String(storyCore.where ?? '').trim(),
+      whatHappened: String(storyCore.whatHappened ?? '').trim(),
+      why: String(storyCore.why ?? '').trim(),
+      turningPoint: String(storyCore.turningPoint ?? '').trim(),
+      result: String(storyCore.result ?? '').trim(),
+    },
+    storyContent,
+    blueprint: String(recreation?.blueprint ?? storyContent ?? breakdown.topic ?? '').trim(),
+    openingOptions: normalizeStringArray(recreation?.openingOptions),
+    titleOptions: normalizeStringArray(recreation?.titleOptions),
+    coverIdeas: normalizeStringArray(recreation?.coverIdeas),
+    script,
+    storyboardHints: normalizeStringArray(recreation?.storyboardHints),
+    taskDefaults: {
+      track: taskDefaults.track ?? settings.track,
+      style: taskDefaults.style ?? settings.style,
+      ratio: taskDefaults.ratio ?? settings.ratio,
+      storyboardSceneCount: taskDefaults.storyboardSceneCount ?? settings.storyboardSceneCount,
+    },
+  };
+}
+
+function buildViralTemplatePromptFallback(breakdown: ViralContentBreakdown): string {
+  return [
+    '保留段落功能、信息推进顺序、转折节奏和收尾方式，主题只通过占位符替换。',
+    `标题模式：${breakdown.title.pattern || '高辨识度承诺 / 痛点 / 反差'}`,
+    `开头功能：${breakdown.opening.reusablePattern || '结果 / 冲突前置'}`,
+    `结构功能：${breakdown.structure.analysis || '痛点 -> 证据 -> 方法 -> 结果'}`,
+    `结尾功能：${breakdown.ending.reusablePattern || '总结 / 行动提示 / 期待下一步'}`,
+  ].join(' ');
+}
+
+function normalizeStringArray(values: Array<string | undefined | null> | undefined): string[] {
+  return (values ?? []).map((value) => value?.trim() ?? '').filter(Boolean);
 }
 
 async function filterUniqueExtractedFrames(

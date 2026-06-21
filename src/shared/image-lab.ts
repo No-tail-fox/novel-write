@@ -99,6 +99,7 @@ function createImageLabTask(id: string, input: ImageLabGenerateInput, createdAt:
     inputText: input.prompt,
     taskKind: 'story',
     processingMode: 'full-auto',
+    publishMode: 'review-rewrite',
     status: 'running',
     currentStep: 4,
     track: 'image-lab',

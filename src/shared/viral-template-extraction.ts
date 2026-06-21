@@ -1,4 +1,4 @@
-import type { CustomStyle, PromptTemplate, ViralAnalysisResult, ViralFrameAnalysis } from './types';
+import type { CustomStyle, PromptTemplate, ViralAnalysisResult, ViralFrameAnalysis, ViralRecreationDraft } from './types';
 
 export interface ViralTemplateDraftOptions {
   storyTemplateName: string;
@@ -61,9 +61,8 @@ export function createViralTemplateDrafts(result: ViralAnalysisResult, options: 
     ].join('、'),
     allowColor: true,
     description: compactLines([
-      `由爆款拆解生成：${sourceTitle}`,
-      `爆点：${breakdown.viralPoint.summary}`,
-      `可复用画面模式：${breakdown.cover.pattern || breakdown.viralPoint.reusablePattern}`,
+      `通用画面样式：${breakdown.cover.pattern || breakdown.viralPoint.reusablePattern || '主体清晰、强对比、缩略图可读'}`,
+      '保留构图、镜头、光线、质感、色彩和文字层级',
     ]),
     createdAt: now,
     updatedAt: now,
@@ -109,8 +108,32 @@ interface ViralFormulaContext {
 function buildViralFormulaTaskContent(context: ViralFormulaContext): string {
   const { result, sourceTitle, frameSummary, imagePrompts, textOverlays } = context;
   const { contentBreakdown: breakdown, recreation } = result;
+  const storyFactLines = buildViralStoryFactLines(context);
   return compactLines([
     '# 爆款公式化模板',
+    '',
+    '## 公式层',
+    '用途：把一条爆款先抽成公式，再把公式移植到新主题。',
+    `主公式：${fallbackText(recreation.formula.main, '先抽故事事实层，再抽结构层，再生成新主题')}`,
+    `标题公式：${fallbackText(recreation.formula.title, fallbackText(breakdown.title.pattern, '用一句高辨识度承诺、痛点或反差先锁定注意力'))}`,
+    `封面公式：${fallbackText(recreation.formula.cover, fallbackText(breakdown.cover.pattern || breakdown.cover.observed, '主体明确、利益点前置、对比强、缩略图可读'))}`,
+    `开头公式：${fallbackText(recreation.formula.opening, fallbackText(breakdown.opening.reusablePattern, '先给结果、冲突、强观点或强利益，再补背景'))}`,
+    `结构公式：${fallbackText(recreation.formula.structure, fallbackText(breakdown.structure.analysis, '用清晰递进把痛点、证据、解决方案和结果串起来'))}`,
+    `结尾公式：${fallbackText(recreation.formula.ending, fallbackText(breakdown.ending.reusablePattern, '用总结、行动提示、反问或下一集预告收束'))}`,
+    '',
+    '## 故事事实模板',
+    '用途：把这条爆款先沉淀成故事内容本身，再沉淀成结构模板。后续使用时，先保留故事里的角色关系、场景事实、冲突、转折和结果变化，再把主题替换成新题材。',
+    ...storyFactLines,
+    `storyCore：${formatViralStoryCore(recreation.storyCore)}`,
+    `storyContent：${fallbackText(recreation.storyContent, recreation.script || fallbackText(recreation.blueprint, '先保留故事变化，再换成新主题'))}`,
+    frameSummary.length ? `画面事实：${frameSummary.join(' / ')}` : '',
+    imagePrompts.length ? `画面提示词样式：${imagePrompts.join(' / ')}` : '',
+    textOverlays.length ? `文字层级：${textOverlays.join(' / ')}` : '',
+    '',
+    '## 标准提示词模板',
+    '用途：把一条已拆解的爆款内容沉淀成可反复套用的故事提示词模板。后续使用时，请把原视频主题全部替换为新主题，但尽量贴合原来的文案结构、段落功能、信息排序、情绪曲线和收尾方式。',
+    `templatePrompt：${fallbackText(recreation.templatePrompt, '保留段落功能、信息推进顺序、转折节奏和收尾方式，主题只通过占位符替换。')}`,
+    '新主题变量：{{newTopic}}；目标受众：{{targetAudience}}；期望结果：{{desiredOutcome}}；原文素材：{{inputText}}；额外要求：{{extraRequirements}}。',
     '',
     '## 任务总指令',
     '请基于用户素材 {{inputText}} 创作一个全新的短视频故事。这个模板只复用原爆款的叙事结构、节奏、信息排序、情绪曲线、镜头组织和缩略图逻辑，不复用原文句子、原标题、原账号话术、人物身份、专属案例或原视频独特表达。不要照抄原文。',
@@ -138,6 +161,14 @@ function buildViralFormulaTaskContent(context: ViralFormulaContext): string {
     breakdown.viralPoint.evidence.length ? `爆点证据：${breakdown.viralPoint.evidence.join(' / ')}` : '',
     recreation.blueprint ? `复刻蓝图：${recreation.blueprint}` : '',
     '',
+    '## 原文案结构模板',
+    `开头段：承担“${fallbackText(breakdown.opening.reusablePattern, '结果/冲突/强利益前置')}”的功能。换主题时保留开头的注意力机制，不保留原人物、原案例和原句子。`,
+    breakdown.structure.outline.length
+      ? `中段推进：按“${breakdown.structure.outline.join(' -> ')}”的顺序迁移。每一段只替换为 {{newTopic}} 的新事实、新场景、新证据。`
+      : `中段推进：按“${fallbackText(breakdown.structure.analysis, '痛点 -> 证据 -> 方法 -> 结果')}”迁移。每一段只替换为 {{newTopic}} 的新事实、新场景、新证据。`,
+    `结尾段：承担“${fallbackText(breakdown.ending.reusablePattern, '总结/行动提示/反问/下一集期待')}”的功能。换主题时保留收束力度和互动理由，换掉原结尾表达。`,
+    '结构贴合规则：尽量保持原文案的段落数量、每段信息功能、句子长短节奏、转折位置和情绪递进；如果新素材信息不足，可以合并相邻功能段，但不要变成普通摘要。',
+    '',
     '## 画面公式',
     `封面模式：${fallbackText(breakdown.cover.pattern || breakdown.cover.observed, '主体明确、利益点前置、对比强、缩略图可读')}`,
     breakdown.cover.suggestions.length ? `封面迁移方向：${breakdown.cover.suggestions.join(' / ')}` : '',
@@ -148,6 +179,9 @@ function buildViralFormulaTaskContent(context: ViralFormulaContext): string {
     '',
     '## 变量入口',
     '- 原文素材：{{inputText}}',
+    '- 新主题：{{newTopic}}',
+    '- 目标受众：{{targetAudience}}',
+    '- 期望结果：{{desiredOutcome}}',
     '- 额外要求：{{extraRequirements}}',
     '',
     '## 禁止事项',
@@ -178,11 +212,21 @@ function buildViralReviewPrompt(context: ViralFormulaContext): string {
 
 function buildViralRewritePrompt(context: ViralFormulaContext): string {
   const { contentBreakdown: breakdown, recreation } = context.result;
+  const storyFactLines = buildViralStoryFactLines(context);
   return compactLines([
     '# 文案提示词模板',
+    '这是一个标准提示词模板。目标不是复述拆解报告，而是用拆解结果约束新主题创作：尽量贴合原文案结构、段落数量、句式功能、信息推进顺序和情绪转折，同时把主题、人物、场景、案例、品牌和表达全部替换为 {{newTopic}} / {{reviewedText}} 中的新内容。',
     '目标：把 {{reviewedText}} 改写成一条全新的爆款短视频口播文案。只继承公式，不继承原素材表达。',
     '',
+    '## 故事内容要求',
+    '故事必须具体、可讲述、可落地，先写清楚是谁、在哪、遇到了什么、为什么会发生、怎么转折、最后变成什么。不要只写结构提纲。',
+    ...storyFactLines,
+    '',
     '任务模板：{{taskTemplateContent}}',
+    '',
+    '新主题：{{newTopic}}',
+    '目标受众：{{targetAudience}}',
+    '期望结果：{{desiredOutcome}}',
     '',
     '预审结果：{{reviewedText}}',
     '',
@@ -199,6 +243,16 @@ function buildViralRewritePrompt(context: ViralFormulaContext): string {
     breakdown.viralPoint.evidence.length ? `可复用证据类型：${breakdown.viralPoint.evidence.join(' / ')}` : '',
     recreation.blueprint ? `复刻蓝图：${recreation.blueprint}` : '',
     recreation.openingOptions.length ? `可选开场方向：${recreation.openingOptions.join(' / ')}` : '',
+    '',
+    '## 原文案结构贴合要求',
+    `开头段：沿用“${fallbackText(breakdown.opening.reusablePattern, '结果/冲突/痛点前置')}”的开场功能，前 1-2 句负责抓注意力。`,
+    breakdown.structure.outline.length
+      ? `中段推进：尽量按原结构骨架“${breakdown.structure.outline.join(' -> ')}”组织段落。`
+      : `中段推进：尽量按“${fallbackText(breakdown.structure.analysis, '痛点 -> 证据 -> 方法 -> 结果')}”组织段落。`,
+    `结尾段：沿用“${fallbackText(breakdown.ending.reusablePattern, '总结/行动提示/反问/期待')}”的收尾功能。`,
+    '- 段落数量：优先贴近原文案的段落/信息块数量；新素材不足时可以合并，但必须保留开头、中段推进、结尾段三类功能。',
+    '- 句式功能：保留“抛结果、解释原因、给证据、给方法、展示结果、引导行动”等功能顺序；不要保留原句式表面文字。',
+    '- 节奏：保留短句密度、转折位置和情绪上扬点，让新主题读起来像同一种文案结构。',
     '',
     '## 改写硬约束',
     '- 禁止照抄原文、原标题、原账号表达、原视频字幕、原人物身份、原具体案例和原品牌露出。',
@@ -283,12 +337,18 @@ function buildViralImagePromptTemplate(context: ViralFormulaContext): string {
   const textOverlayRule = context.textOverlays.length ? context.textOverlays.join(' / ') : '如需文字层级，只保留短词级视觉位置，不在图片里生成真实字幕。';
 
   return compactLines([
-    '# 生图提示词模板',
+    '# 抽帧提示词模板',
+    '这是模仿生成时使用的抽帧提示词模板，不是存储用的通用画面样式模板。',
+    '可替换视觉变量：主体 {{visualSubject}}；场景 {{visualScene}}；关键动作 {{visualAction}}；情绪 {{visualMood}}；新主题 {{newTopic}}。',
     '目标：把分镜 {{scenesJson}} 转成高质量生图提示词。复刻原爆款的画面功能、镜头节奏、构图关系和情绪强度，不复刻原视频画面。',
     '',
     '任务模板：{{taskTemplateContent}}',
     '',
     '生图参考：{{imagePromptReference}}',
+    '视觉主体：{{visualSubject}}',
+    '视觉场景：{{visualScene}}',
+    '视觉动作：{{visualAction}}',
+    '视觉情绪：{{visualMood}}',
     '',
     '当前画面风格：{{style}}',
     '风格前缀：{{stylePrefix}}',
@@ -300,6 +360,7 @@ function buildViralImagePromptTemplate(context: ViralFormulaContext): string {
     '图片种子池：{{imageSeedPoolsJson}}',
     '',
     '## 画面公式',
+    '保留风格，不保留原主题：每条 prompt 都要先读取当前分镜的新人物/产品/场景，再套用下方风格模板；禁止把原视频主题当作默认主体。',
     `构图公式：${fallbackText(breakdown.cover.pattern || breakdown.cover.observed, '主体占据视觉中心或黄金分割点，背景服务主题，缩略图一眼可读')}。每张图都要有清楚主次关系。`,
     `镜头公式：${keyframeFormula}`,
     `文字层级公式：${textOverlayRule}。不要把长字幕、账号名、水印或标题直接画进图里；如必须表现文字，只用“干净留白/标题区域/短标签感”描述。`,
@@ -328,20 +389,36 @@ function buildViralImagePromptTemplate(context: ViralFormulaContext): string {
 function buildViralImageStylePrefix(context: ViralFormulaContext): string {
   const { contentBreakdown: breakdown } = context.result;
   return compactLines([
-    `爆款拆解视觉风格，来源主题：${context.sourceTitle}`,
-    `封面/首帧模式：${fallbackText(breakdown.cover.pattern || breakdown.cover.observed, '主体清晰、强对比、缩略图可读')}`,
-    context.frameSummary.length ? `画面结构抽象：${context.frameSummary.join(' / ')}` : '',
-    `当前风格：${context.style}`,
+    '通用画面样式模板：这是可复用的视觉风格模板，请把主体替换为 {{visualSubject}}，场景替换为 {{visualScene}}，动作替换为 {{visualAction}}，情绪替换为 {{visualMood}}。',
+    `图片模板风格：${context.style || '跟随任务画风'}`,
+    `封面/首帧模式：${fallbackText(breakdown.cover.pattern, '主体清晰、强对比、缩略图可读')}`,
     '要求：复刻构图关系、视觉层级、镜头功能和情绪强度，替换为新主题的新画面。',
   ]);
 }
 
 function buildViralImageStyleSuffix(context: ViralFormulaContext): string {
   return compactLines([
-    context.imagePrompts.length ? `关键帧提示词抽象：${context.imagePrompts.join(' / ')}` : '',
-    context.textOverlays.length ? `文字覆盖规律：${context.textOverlays.join(' / ')}` : '',
+    '保留构图、镜头、光线、质感和情绪；不要复刻原主题、原人物、原品牌、原字幕、原账号标识或原视频逐帧画面。',
     '保持画面干净、主体明确、焦点突出、短视频缩略图可读；不要生成原视频文字、水印、账号标识或逐帧复刻画面。',
   ]);
+}
+
+function buildViralStoryFactLines(context: ViralFormulaContext): string[] {
+  const { result, sourceTitle } = context;
+  const { contentBreakdown: breakdown, recreation } = result;
+  const firstFrame = result.frames[0];
+  const lastFrame = result.frames[result.frames.length - 1];
+  return [
+    `故事主线：${recreation.blueprint || breakdown.topic || sourceTitle}`,
+    `故事原点：${sourceTitle}`,
+    `情节钩子：${fallbackText(breakdown.opening.reusablePattern, '一开头就给结果或冲突')}`,
+    `故事冲突：${fallbackText(breakdown.viralPoint.summary, '让观众感到有用、反差或共鸣的核心矛盾')}`,
+    `场景事实：${[firstFrame?.visualDescription, lastFrame?.visualDescription].filter(Boolean).join(' / ') || fallbackText(breakdown.cover.observed, '原视频关键场景')}`,
+    `人物/关系：${recreation.openingOptions.length ? recreation.openingOptions.join(' / ') : fallbackText(breakdown.structure.analysis, '主角、问题、行动者和结果之间的关系')}`,
+    `转折变化：${fallbackText(breakdown.ending.reusablePattern, '从问题走向结果或行动')}`,
+    `结果/变化：${recreation.script || fallbackText(recreation.blueprint, '先保留故事变化，再换成新主题')}`,
+    `情绪弧线：${fallbackText(breakdown.structure.analysis, '先困住注意力，再推进证据，最后给到变化和收束')}`,
+  ];
 }
 
 function createViralTemplateId(prefix: string): string {
@@ -367,4 +444,15 @@ function compactLines(lines: string[], separator = '\n'): string {
 
 function fallbackText(value: string | null | undefined, fallback: string): string {
   return value?.trim() || fallback;
+}
+
+function formatViralStoryCore(storyCore: ViralRecreationDraft['storyCore']): string {
+  return compactLines([
+    `who=${storyCore.who || '未知'}`,
+    `where=${storyCore.where || '未知'}`,
+    `whatHappened=${storyCore.whatHappened || '未知'}`,
+    `why=${storyCore.why || '未知'}`,
+    `turningPoint=${storyCore.turningPoint || '未知'}`,
+    `result=${storyCore.result || '未知'}`,
+  ], '；');
 }

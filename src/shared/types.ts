@@ -19,6 +19,7 @@ export type TaskMode = 'paste' | 'ai';
 export type TaskKind = 'story' | 'music-mv';
 export type TaskVideoForm = 'narration' | 'two-host-podcast';
 export type PodcastSpeakerPair = 'kazai-dayi' | 'liufei-xiaolei';
+export type PublishMode = 'review-rewrite' | 'direct-copy';
 export type ProcessingMode = 'full-auto' | 'semi-auto' | 'clip-only';
 export type PromptTemplateType = 'review' | 'rewrite' | 'cover' | 'storyboard' | 'image-prompt' | 'task';
 export type PromptStepTemplateType = Exclude<PromptTemplateType, 'task'>;
@@ -39,6 +40,7 @@ export interface LlmConfig {
   model: string;
   proxyUrl: string;
   timeoutMs?: number;
+  requestParamsJson?: string;
 }
 
 export interface LlmModelTestResult {
@@ -294,6 +296,7 @@ export interface Task {
   inputText: string;
   taskKind: TaskKind;
   processingMode: ProcessingMode;
+  publishMode: PublishMode;
   status: TaskStatus;
   currentStep: number;
   track: string;
@@ -360,6 +363,7 @@ export type CreateTaskInput = Partial<
     | 'inputText'
     | 'taskKind'
     | 'processingMode'
+    | 'publishMode'
     | 'mode'
     | 'aiKeyword'
     | 'aiSources'
@@ -777,6 +781,24 @@ export interface ViralContentBreakdown {
 }
 
 export interface ViralRecreationDraft {
+  formula: {
+    main: string;
+    title: string;
+    cover: string;
+    opening: string;
+    structure: string;
+    ending: string;
+  };
+  templatePrompt: string;
+  storyCore: {
+    who: string;
+    where: string;
+    whatHappened: string;
+    why: string;
+    turningPoint: string;
+    result: string;
+  };
+  storyContent: string;
   blueprint: string;
   openingOptions: string[];
   titleOptions: string[];

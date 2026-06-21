@@ -2,9 +2,20 @@ import { describe, expect, it, vi } from 'vitest';
 import { mkdtemp, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import { Agent } from 'undici';
 import { defaultConfig } from '@shared/config';
 import { normalizeAppConfig } from '@shared/config-utils';
 import { buildOpenAiTranscriptionRequest, createViralRuntimeProviders, parseOpenAiTranscriptionResult } from '@shared/viral-runtime';
+
+function getAgentConnectTimeout(dispatcher: unknown): number | null {
+  if (!dispatcher || typeof dispatcher !== 'object') return null;
+  for (const symbol of Object.getOwnPropertySymbols(dispatcher)) {
+    if (symbol.description !== 'options') continue;
+    const options = (dispatcher as Record<symbol, unknown>)[symbol] as { connect?: { timeout?: number } } | undefined;
+    return typeof options?.connect?.timeout === 'number' ? options.connect.timeout : null;
+  }
+  return null;
+}
 
 describe('viral runtime speech-to-text API', () => {
   it('builds OpenAI-compatible transcription request fields from config', () => {
@@ -248,6 +259,68 @@ describe('viral runtime speech-to-text API', () => {
 
       expect(result.visualDescription).toBe('Recovered frame analysis');
       expect(fetchMock).toHaveBeenCalledTimes(2);
+    } finally {
+      globalThis.fetch = originalFetch;
+      await rm(dir, { recursive: true, force: true });
+    }
+  });
+
+  it('uses a longer connect timeout for viral frame vision requests', async () => {
+    const dir = await mkdtemp(join(tmpdir(), 'storybound-viral-vision-connect-timeout-'));
+    const framePath = join(dir, 'frame.jpg');
+    await writeFile(framePath, 'not-a-real-jpeg');
+    const originalFetch = globalThis.fetch;
+    const fetchMock = vi.fn(async (_url: string | URL | Request, init?: RequestInit) => {
+      const requestInit = init as RequestInit & { dispatcher?: unknown };
+      expect(requestInit.dispatcher).toBeInstanceOf(Agent);
+      expect(getAgentConnectTimeout(requestInit.dispatcher)).toBe(30000);
+      return new Response(
+        JSON.stringify({
+          choices: [
+            {
+              message: {
+                content: JSON.stringify({
+                  shotType: 'close-up',
+                  cameraMovement: 'static',
+                  composition: 'center',
+                  transition: 'cut',
+                  textOverlay: null,
+                  visualDescription: 'Recovered frame analysis',
+                  mood: 'calm',
+                  keyElements: ['bread'],
+                  imagePrompt: 'Recovered image prompt',
+                }),
+              },
+            },
+          ],
+        }),
+        {
+          status: 200,
+          headers: { 'content-type': 'application/json' },
+        },
+      );
+    });
+    globalThis.fetch = fetchMock as unknown as typeof fetch;
+
+    try {
+      const config = normalizeAppConfig({
+        ...defaultConfig,
+        viral: {
+          ...defaultConfig.viral,
+          vision: {
+            ...defaultConfig.viral.vision,
+            apiKey: 'vision-key',
+            baseUrl: 'https://vision.example',
+            model: 'vision-model',
+          },
+        },
+      });
+
+      const providers = createViralRuntimeProviders(config, dir);
+      const result = await providers.analyzeFrame({ timestamp: 0, framePath }, null, { title: 'Sample clip' } as never);
+
+      expect(result.visualDescription).toBe('Recovered frame analysis');
+      expect(fetchMock).toHaveBeenCalledTimes(1);
     } finally {
       globalThis.fetch = originalFetch;
       await rm(dir, { recursive: true, force: true });

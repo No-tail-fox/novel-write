@@ -1,10 +1,13 @@
+import type { Dispatcher } from 'undici';
+
 export interface FetchWithTimeoutOptions extends RequestInit {
   timeoutMs?: number;
   timeoutLabel?: string;
+  dispatcher?: Dispatcher;
 }
 
 export async function fetchWithTimeout(url: string | URL, options: FetchWithTimeoutOptions = {}): Promise<Response> {
-  const { timeoutMs = 120_000, timeoutLabel = 'Request', signal, ...init } = options;
+  const { timeoutMs = 120_000, timeoutLabel = 'Request', signal, dispatcher, ...init } = options;
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(new Error(`${timeoutLabel} timed out after ${timeoutMs}ms.`)), timeoutMs);
   const abortFromParent = () => controller.abort(signal?.reason ?? new Error(`${timeoutLabel} aborted.`));
@@ -13,7 +16,9 @@ export async function fetchWithTimeout(url: string | URL, options: FetchWithTime
     if (signal?.aborted) abortFromParent();
     signal?.addEventListener('abort', abortFromParent, { once: true });
     if (controller.signal.aborted) throw abortError(controller.signal, timeoutLabel);
-    return await fetch(url, { ...init, signal: controller.signal });
+    const requestInit: RequestInit & { dispatcher?: Dispatcher } = { ...init, signal: controller.signal };
+    if (dispatcher) requestInit.dispatcher = dispatcher;
+    return await fetch(url, requestInit);
   } catch (error) {
     if (controller.signal.aborted) {
       throw abortError(controller.signal, timeoutLabel);

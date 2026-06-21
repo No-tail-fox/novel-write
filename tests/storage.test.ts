@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import initSqlJs from 'sql.js';
-import { mkdtemp, readFile, rm } from 'node:fs/promises';
+import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { FileDatabase } from '@shared/storage';
@@ -107,6 +107,28 @@ describe('file database', () => {
         llmProfileId: 'llm-draft',
         coverImageMode: 'auto',
         coverTemplateId: 'default-cover',
+      });
+      await db.close();
+    } finally {
+      await rm(dir, { recursive: true, force: true });
+    }
+  });
+
+  it('persists publish mode on created tasks', async () => {
+    const dir = await mkdtemp(join(tmpdir(), 'storybound-db-publish-mode-'));
+    const file = join(dir, 'app.db');
+
+    try {
+      const db = await FileDatabase.open(file);
+      await db.createTask({
+        title: 'Direct copy task',
+        inputText: 'Source material',
+        publishMode: 'direct-copy',
+      });
+
+      const state = await db.getState();
+      expect(state.tasks[0]).toMatchObject({
+        publishMode: 'direct-copy',
       });
       await db.close();
     } finally {
@@ -348,6 +370,30 @@ describe('file database', () => {
       });
       expect(state.tasks[0].errorMessage).toContain('LLM API key is missing');
       await reopened.close();
+    } finally {
+      await rm(dir, { recursive: true, force: true });
+    }
+  });
+
+  it('rebuilds a malformed database file into a fresh StoryDream database', async () => {
+    const dir = await mkdtemp(join(tmpdir(), 'storybound-db-malformed-'));
+    const file = join(dir, 'app.db');
+    await writeFile(file, Buffer.from('not a sqlite database'));
+
+    try {
+      const db = await FileDatabase.open(file);
+      const state = await db.getState();
+
+      expect(state.tasks).toEqual([]);
+      expect(state.viralAnalyses).toEqual([]);
+      expect(state.promptTemplates.length).toBeGreaterThan(0);
+      await db.close();
+
+      const raw = await readFile(file);
+      const SQL = await initSqlJs();
+      const sqlite = new SQL.Database(raw);
+      expect(sqlite.exec('PRAGMA integrity_check')[0]?.values[0]?.[0]).toBe('ok');
+      sqlite.close();
     } finally {
       await rm(dir, { recursive: true, force: true });
     }

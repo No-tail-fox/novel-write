@@ -167,6 +167,31 @@ describe('config validation utilities', () => {
     expect(configTargetStatus('llm', config)).toBe('pass');
   });
 
+  it('preserves per-profile raw llm request params json during normalization', () => {
+    const normalized = normalizeAppConfig({
+      ...defaultConfig,
+      llm: {
+        ...defaultConfig.llm,
+        requestParamsJson: '{"reasoning_effort":"medium"}',
+      },
+    });
+
+    expect(normalized.llm.requestParamsJson).toBe('{"reasoning_effort":"medium"}');
+    expect(normalized.llmProfiles[0].requestParamsJson).toBe('{"reasoning_effort":"medium"}');
+  });
+
+  it('falls back to empty json when the llm request params json is invalid', () => {
+    const normalized = normalizeAppConfig({
+      ...defaultConfig,
+      llm: {
+        ...defaultConfig.llm,
+        requestParamsJson: '{broken',
+      },
+    });
+
+    expect(normalized.llm.requestParamsJson).toBe('{}');
+  });
+
   it('runs a real OpenAI-compatible image probe with normalized base URL and generation params', async () => {
     const requests: Array<{ url: string; headers: Headers; body: Record<string, unknown> }> = [];
     const fetchImpl = vi.fn(async (url: RequestInfo | URL, init?: RequestInit) => {

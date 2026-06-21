@@ -460,6 +460,7 @@ function makeTask(patch: Partial<Task>): Task {
     inputText: '',
     taskKind: 'story',
     processingMode: 'full-auto',
+    publishMode: 'review-rewrite',
     status: 'pending',
     currentStep: 0,
     track: 'character-story',

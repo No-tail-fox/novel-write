@@ -79,11 +79,7 @@ async function fetchLlmJsonWithRetries(endpoint: string, config: LlmConfig, requ
         'Content-Type': 'application/json',
         Authorization: `Bearer ${config.apiKey}`,
       },
-      body: JSON.stringify({
-        model: config.model,
-        messages: request.messages,
-        response_format: { type: 'json_object' },
-      }),
+      body: JSON.stringify(buildRequestBody(config, request.messages)),
     });
     if (!TRANSIENT_LLM_STATUS_CODES.has(response.status) || attempt === maxAttempts) {
       return response;
@@ -117,6 +113,26 @@ function abortSignalError(signal: AbortSignal | undefined, label: string): Error
   return new Error(`${label} aborted.`);
 }
 
+function buildRequestBody(config: LlmConfig, messages: LlmMessage[]): Record<string, unknown> {
+  const baseBody: Record<string, unknown> = {
+    model: config.model,
+    messages,
+    response_format: { type: 'json_object' },
+  };
+  const extra = parseRequestParamsJson(config.requestParamsJson);
+  return { ...extra, ...baseBody };
+}
+
+function parseRequestParamsJson(value: string | undefined): Record<string, unknown> {
+  const text = String(value ?? '').trim();
+  if (!text || text === '{}') return {};
+  const parsed = JSON.parse(text);
+  if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) {
+    throw new Error('LLM requestParamsJson must be a JSON object.');
+  }
+  return parsed as Record<string, unknown>;
+}
+
 export async function testOpenAiCompatibleLlm(config: LlmConfig, fetchImpl: typeof fetch = fetch): Promise<LlmModelTestResult> {
   const startedAt = Date.now();
   const model = config.model.trim();
@@ -147,12 +163,11 @@ export async function testOpenAiCompatibleLlm(config: LlmConfig, fetchImpl: type
           Authorization: `Bearer ${config.apiKey}`,
         },
         body: JSON.stringify({
-          model,
-          messages: [
+          ...buildRequestBody(config, [
             { role: 'system', content: 'Return strict JSON only.' },
             { role: 'user', content: 'Return {"ok":true} to confirm this model is usable.' },
-          ],
-          response_format: { type: 'json_object' },
+          ]),
+          model,
           max_tokens: 20,
         }),
       },

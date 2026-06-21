@@ -771,6 +771,12 @@ em {
   font-weight: 700;
 }
 
+.config-textarea textarea {
+  min-height: 96px;
+  resize: vertical;
+  font-family: ui-monospace, SFMono-Regular, Consolas, 'Liberation Mono', monospace;
+}
+
 input,
 select,
 textarea {
@@ -3998,6 +4004,45 @@ textarea {
   min-height: 180px;
 }
 
+.viral-template-preview-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1.15fr) minmax(0, 0.85fr);
+  gap: 12px;
+  min-width: 0;
+}
+
+.viral-template-preview-section {
+  display: grid;
+  gap: 10px;
+  min-width: 0;
+  padding: 12px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.025);
+}
+
+.viral-template-preview-section .field {
+  margin-bottom: 0;
+}
+
+.viral-template-preview-section .field > span {
+  margin-bottom: 6px;
+}
+
+.viral-template-preview-subgrid {
+  display: grid;
+  gap: 10px;
+}
+
+.viral-template-preview-textarea {
+  min-height: 118px;
+  max-height: 236px;
+  resize: vertical;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  line-height: 1.5;
+}
+
 .viral-template-name-grid {
   display: grid;
   gap: 10px;
@@ -4033,6 +4078,10 @@ textarea {
 
   .viral-history-list {
     max-height: calc(min(520px, calc(100vh - 230px)) - 62px);
+  }
+
+  .viral-template-preview-grid {
+    grid-template-columns: minmax(0, 1fr);
   }
 }
 

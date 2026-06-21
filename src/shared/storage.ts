@@ -1,4 +1,4 @@
-import { mkdir, readFile, writeFile } from 'node:fs/promises';
+import { mkdir, readFile, rename, writeFile } from 'node:fs/promises';
 import { dirname } from 'node:path';
 import { randomUUID } from 'node:crypto';
 import initSqlJs, { type Database, type SqlJsStatic, type SqlValue } from 'sql.js';
@@ -141,6 +141,15 @@ async function writeFileWithRetry(path: string, data: Uint8Array, attempts = 8):
   }
 }
 
+async function quarantineMalformedDatabase(file: string): Promise<void> {
+  const suffix = `${Date.now()}-${randomUUID()}.malformed`;
+  try {
+    await rename(file, `${file}.${suffix}`);
+  } catch {
+    // If quarantine fails, leave the original in place for inspection.
+  }
+}
+
 function mergeConfig(input: unknown): AppConfig {
   return normalizeAppConfig(input);
 }
@@ -163,9 +172,18 @@ export class FileDatabase {
       db = new SQL.Database();
     }
     const instance = new FileDatabase(file, db);
-    instance.migrate();
-    await instance.persist();
-    return instance;
+    try {
+      instance.migrate();
+      await instance.persist();
+      return instance;
+    } catch (error) {
+      instance.db.close();
+      await quarantineMalformedDatabase(file);
+      const fresh = new FileDatabase(file, new SQL.Database());
+      fresh.migrate();
+      await fresh.persist();
+      return fresh;
+    }
   }
 
   private migrate(): void {
@@ -193,6 +211,7 @@ export class FileDatabase {
         started_at TEXT,
         last_heartbeat_at TEXT,
         mode TEXT NOT NULL DEFAULT 'paste',
+        publish_mode TEXT DEFAULT 'review-rewrite',
         ai_keyword TEXT DEFAULT '',
         ai_sources TEXT DEFAULT '[]',
         selected_sources TEXT DEFAULT '[]',
@@ -426,6 +445,7 @@ export class FileDatabase {
       ['speaker', "TEXT DEFAULT '灿博小叔'"],
       ['task_kind', "TEXT DEFAULT 'story'"],
       ['processing_mode', "TEXT DEFAULT 'full-auto'"],
+      ['publish_mode', "TEXT DEFAULT 'review-rewrite'"],
       ['ai_keyword', "TEXT DEFAULT ''"],
       ['ai_sources', "TEXT DEFAULT '[]'"],
       ['selected_sources', "TEXT DEFAULT '[]'"],
@@ -805,6 +825,7 @@ export class FileDatabase {
       startedAt: null,
       lastHeartbeatAt: null,
       mode: input.mode ?? 'paste',
+      publishMode: input.publishMode ?? 'review-rewrite',
       aiKeyword: input.aiKeyword ?? '',
       aiSources: input.aiSources ?? ['web'],
       selectedSources: input.selectedSources ?? [],
@@ -842,20 +863,21 @@ export class FileDatabase {
     };
     this.db.run(
       `INSERT INTO tasks (
-        id, title, input_text, task_kind, processing_mode, status, current_step, track, style, speaker, ratio, template_id,
+        id, title, input_text, task_kind, processing_mode, publish_mode, status, current_step, track, style, speaker, ratio, template_id,
         bgm_id, pause_points, output_dir, error_message, created_at, completed_at, started_at, last_heartbeat_at,
         mode, ai_keyword, ai_sources, selected_sources, extra_requirements, prompt_template_id, prompt_template_type,
         image_prompt_reference, reference_image_path, rewrite_intensity, narrative_pov, keep_promotion, tts_provider,
         tts_speed, storyboard_scene_count, step3_prompt_snapshot, music_mv_json, failed_step, retry_from_step, artifact_state_path,
         video_form, llm_profile_id, material_source, task_type, pipeline_step, pipeline_data, target_length, target_scenes, script_format,
         podcast_image_mode, podcast_speakers, podcast_speaker_a, podcast_speaker_b, cover_image_mode, cover_template_id
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       [
         task.id,
         task.title,
         task.inputText,
         task.taskKind,
         task.processingMode,
+        task.publishMode,
         task.status,
         task.currentStep,
         task.track,
@@ -1208,6 +1230,7 @@ function rowToTask(row: Record<string, unknown>): Task {
     pipelineData: String(row.pipeline_data ?? '{}'),
     targetLength: row.target_length === null || row.target_length === undefined ? undefined : Number(row.target_length),
     targetScenes: Number(row.target_scenes ?? row.storyboard_scene_count ?? 12),
+    publishMode: String(row.publish_mode ?? 'review-rewrite') as Task['publishMode'],
     scriptFormat: String(row.script_format ?? 'narration'),
     podcastImageMode: String(row.podcast_image_mode ?? 'multi'),
     podcastSpeakers: row.podcast_speakers === null || row.podcast_speakers === undefined ? null : String(row.podcast_speakers),

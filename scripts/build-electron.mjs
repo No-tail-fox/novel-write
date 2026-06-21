@@ -10,7 +10,7 @@ await build({
   platform: 'node',
   format: 'esm',
   target: 'node20',
-  external: ['electron', 'sql.js'],
+  external: ['electron', 'sql.js', 'undici'],
   sourcemap: false,
 });
 

@@ -128,10 +128,59 @@ describe('viral analysis helpers', () => {
       result: makeViralResult(),
     });
 
+    expect(prompt).toContain('formula');
+    expect(prompt).toContain('templatePrompt');
+    expect(prompt).toContain('storyCore');
+    expect(prompt).toContain('storyContent');
+    expect(prompt).toContain('main');
+    expect(prompt).toContain('title');
+    expect(prompt).toContain('cover');
+    expect(prompt).toContain('opening');
+    expect(prompt).toContain('structure');
+    expect(prompt).toContain('ending');
+    expect(prompt).toContain('strict JSON');
     expect(prompt).toContain('结构级复刻');
     expect(prompt).toContain('不要逐句照搬');
     expect(prompt).toContain('不要复用原标题');
-    expect(prompt).toContain('CreateTaskInput');
+    expect(prompt).toContain('storyContent');
+  });
+
+  it('uses storyContent as the production input when script is empty', () => {
+    const result = {
+      ...makeViralResult(),
+      recreation: {
+        ...makeViralResult().recreation,
+        script: '',
+        storyContent: 'A concrete story draft for production.',
+        templatePrompt: 'Template prompt for reuse.',
+        formula: {
+          main: 'Main formula',
+          title: 'Title formula',
+          cover: 'Cover formula',
+          opening: 'Opening formula',
+          structure: 'Structure formula',
+          ending: 'Ending formula',
+        },
+        storyCore: {
+          who: 'Someone',
+          where: 'Somewhere',
+          whatHappened: 'Something happened',
+          why: 'Because of something',
+          turningPoint: 'A turning point',
+          result: 'A result',
+        },
+      },
+    } as any;
+
+    const task = createViralProductionTaskInput(result, {
+      title: '复刻任务',
+      track: 'ecommerce',
+      style: 'photo-real',
+      ratio: '9:16',
+      templateId: 'default-portrait-9-16',
+    });
+
+    expect(task.inputText).toBe('A concrete story draft for production.');
   });
 
   it('converts a recreation result into a normal production task input', () => {
@@ -228,7 +277,26 @@ describe('viral analysis helpers', () => {
     expect(drafts.storyTemplate.baseTrack).toBe('ecommerce');
     expect(drafts.storyTemplate.defaultStyles).toEqual(['image-id']);
     expect(drafts.storyTemplate.defaultDraftTemplateId).toBe('default-portrait-9-16');
+    expect(drafts.storyTemplate.content).toContain('公式层');
+    expect(drafts.storyTemplate.content).toContain('主公式');
+    expect(drafts.storyTemplate.content).toContain('templatePrompt');
+    expect(drafts.storyTemplate.content).toContain('storyCore');
+    expect(drafts.storyTemplate.content).toContain('storyContent');
     expect(drafts.storyTemplate.content).toContain('爆款公式化模板');
+    expect(drafts.storyTemplate.content).toContain('故事事实模板');
+    expect(drafts.storyTemplate.content).toContain('故事主线');
+    expect(drafts.storyTemplate.content).toContain('情节钩子');
+    expect(drafts.storyTemplate.content).toContain('场景事实');
+    expect(drafts.storyTemplate.content).toContain('人物/关系');
+    expect(drafts.storyTemplate.content).toContain('结果/变化');
+    expect(drafts.storyTemplate.content).toContain('标准提示词模板');
+    expect(drafts.storyTemplate.content).toContain('{{newTopic}}');
+    expect(drafts.storyTemplate.content).toContain('{{targetAudience}}');
+    expect(drafts.storyTemplate.content).toContain('{{desiredOutcome}}');
+    expect(drafts.storyTemplate.content).toContain('原文案结构模板');
+    expect(drafts.storyTemplate.content).toContain('开头段');
+    expect(drafts.storyTemplate.content).toContain('中段推进');
+    expect(drafts.storyTemplate.content).toContain('结尾段');
     expect(drafts.storyTemplate.content).toContain('{{inputText}}');
     expect(drafts.storyTemplate.content).not.toContain('{{taskTemplateContent}}');
     expect(drafts.storyTemplate.content).toContain('Lead with the result.');
@@ -239,6 +307,12 @@ describe('viral analysis helpers', () => {
     expect(drafts.storyTemplate.stepPrompts?.review).toContain('{{inputText}}');
     expect(drafts.storyTemplate.stepPrompts?.review).toContain('{{taskTemplateContent}}');
     expect(drafts.storyTemplate.stepPrompts?.rewrite).toContain('文案提示词模板');
+    expect(drafts.storyTemplate.stepPrompts?.rewrite).toContain('标准提示词模板');
+    expect(drafts.storyTemplate.stepPrompts?.rewrite).toContain('故事内容要求');
+    expect(drafts.storyTemplate.stepPrompts?.rewrite).toContain('{{newTopic}}');
+    expect(drafts.storyTemplate.stepPrompts?.rewrite).toContain('尽量贴合原文案结构');
+    expect(drafts.storyTemplate.stepPrompts?.rewrite).toContain('段落数量');
+    expect(drafts.storyTemplate.stepPrompts?.rewrite).toContain('句式功能');
     expect(drafts.storyTemplate.stepPrompts?.rewrite).toContain('开头公式');
     expect(drafts.storyTemplate.stepPrompts?.rewrite).toContain('结构公式');
     expect(drafts.storyTemplate.stepPrompts?.rewrite).toContain('转折/递进公式');
@@ -254,7 +328,11 @@ describe('viral analysis helpers', () => {
     expect(drafts.storyTemplate.stepPrompts?.storyboard).toContain('分镜公式');
     expect(drafts.storyTemplate.stepPrompts?.storyboard).toContain('{{rewrittenCopy}}');
     expect(drafts.storyTemplate.stepPrompts?.storyboard).toContain('{{storyboardSceneCount}}');
-    expect(drafts.storyTemplate.stepPrompts?.['image-prompt']).toContain('生图提示词模板');
+    expect(drafts.storyTemplate.stepPrompts?.['image-prompt']).not.toContain('生图提示词模板');
+    expect(drafts.storyTemplate.stepPrompts?.['image-prompt']).toContain('抽帧提示词模板');
+    expect(drafts.storyTemplate.stepPrompts?.['image-prompt']).toContain('{{visualSubject}}');
+    expect(drafts.storyTemplate.stepPrompts?.['image-prompt']).toContain('{{visualScene}}');
+    expect(drafts.storyTemplate.stepPrompts?.['image-prompt']).toContain('保留风格，不保留原主题');
     expect(drafts.storyTemplate.stepPrompts?.['image-prompt']).toContain('构图公式');
     expect(drafts.storyTemplate.stepPrompts?.['image-prompt']).toContain('镜头公式');
     expect(drafts.storyTemplate.stepPrompts?.['image-prompt']).toContain('文字层级公式');
@@ -265,9 +343,39 @@ describe('viral analysis helpers', () => {
     expect(drafts.storyTemplate.stepPrompts?.['image-prompt']).toContain('{{stylePrefix}}');
     expect(drafts.storyTemplate.stepPrompts?.['image-prompt']).toContain('{{styleSuffix}}');
     expect(drafts.storyTemplate.stepPrompts?.['image-prompt']).toContain('{{styleNegativePrompt}}');
-    expect(drafts.imageTemplate.prefix).toContain('centered product and large headline');
-    expect(drafts.imageTemplate.suffix).toContain('photo-real short video frame');
+    expect(drafts.imageTemplate.prefix).toContain('通用画面样式模板');
+    expect(drafts.imageTemplate.prefix).toContain('图片模板风格');
+    expect(drafts.imageTemplate.prefix).toContain('{{visualSubject}}');
+    expect(drafts.imageTemplate.prefix).toContain('{{visualScene}}');
+    expect(drafts.imageTemplate.description).toContain('通用画面样式');
+    expect(drafts.imageTemplate.description).not.toContain('Original title');
+    expect(drafts.imageTemplate.suffix).toContain('保留构图、镜头、光线、质感和情绪');
+    expect(drafts.imageTemplate.suffix).toContain('不要复刻原主题');
+    expect(drafts.imageTemplate.suffix).not.toContain('Original title');
     expect(drafts.imageTemplate.negativePrompt).toContain('照抄原视频文字');
+    expect(drafts.imageTemplate.prefix).not.toContain('photo-real short video frame');
+    expect(drafts.imageTemplate.prefix).not.toContain('Save this');
+    expect(drafts.imageTemplate.suffix).not.toContain('photo-real short video frame');
+    expect(drafts.imageTemplate.suffix).not.toContain('Save this');
+    expect(drafts.imageTemplate.prefix).not.toContain('centered product and large headline');
+    expect(drafts.imageTemplate.suffix).not.toContain('centered product and large headline');
+  });
+
+  it('puts source transcript and frame details into the recreation prompt so story content is concrete', () => {
+    const prompt = buildViralRecreationPrompt({
+      track: 'ecommerce',
+      extraRequirements: 'Make it suitable for a local shop.',
+      result: makeViralResult(),
+    });
+
+    expect(prompt).toContain('原视频标题');
+    expect(prompt).toContain('原视频逐字稿');
+    expect(prompt).toContain('原视频画面摘要');
+    expect(prompt).toContain('故事内容要求');
+    expect(prompt).toContain('先抽出故事事实层');
+    expect(prompt).toContain('必须写成具体可讲述的故事');
+    expect(prompt).toContain('故事主线');
+    expect(prompt).toContain('情节钩子');
   });
 
   it('passes the requested keyframe count and source duration into frame extraction', async () => {
@@ -598,6 +706,24 @@ function makeViralResult(): ViralAnalysisResult {
       viralPoint: { summary: 'Simple useful solution.', evidence: ['clear contrast'], reusablePattern: 'Show before and after.' },
     },
     recreation: {
+      formula: {
+        main: 'Use the same emotional arc with a new topic.',
+        title: 'Pain point first',
+        cover: 'High contrast',
+        opening: 'Lead with the result.',
+        structure: 'Builds from pain to solution.',
+        ending: 'Ask for saves.',
+      },
+      templatePrompt: 'Keep the structure and replace the topic.',
+      storyCore: {
+        who: 'A local shop owner',
+        where: 'At the counter',
+        whatHappened: 'A customer problem appeared',
+        why: 'The old method failed',
+        turningPoint: 'A better method showed up',
+        result: 'The problem was solved',
+      },
+      storyContent: 'A fresh structure-level script.',
       blueprint: 'Use the same emotional arc with a new topic.',
       openingOptions: ['Show the result first.'],
       titleOptions: ['New title'],

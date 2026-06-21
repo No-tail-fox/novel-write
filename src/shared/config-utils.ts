@@ -32,6 +32,7 @@ function normalizeLlmProfile(profile: Partial<AppConfig['llm']>, index: number):
     name: profile.name?.trim() || defaultLlmProfileName(merged, index),
     enabled: Boolean(profile.enabled),
     timeoutMs: normalizePositiveNumber(merged.timeoutMs, defaultConfig.llm.timeoutMs ?? 120000),
+    requestParamsJson: normalizeJsonText(merged.requestParamsJson, defaultConfig.llm.requestParamsJson ?? '{}'),
   };
 }
 
@@ -366,6 +367,17 @@ function normalizeSpeechToTextTimestampGranularities(value: unknown): SpeechToTe
 
 function normalizeSpeechToTextChunkingStrategy(value: unknown): SpeechToTextChunkingStrategy {
   return value === 'auto' || value === 'none' ? value : defaultConfig.speechToText.chunkingStrategy;
+}
+
+function normalizeJsonText(value: unknown, fallback: string): string {
+  const text = String(value ?? '').trim();
+  if (!text) return fallback;
+  try {
+    JSON.parse(text);
+    return text;
+  } catch {
+    return fallback;
+  }
 }
 
 export function normalizeAppConfig(input: unknown): AppConfig {

@@ -1417,24 +1417,20 @@ describe('product shell ui', () => {
 
     expect(page).toContain('targetLength');
     expect(page).toContain('setTargetLength');
-    expect(page).toContain('目标字数');
-    expect(page).toContain('目标分镜数');
+    expect(page).toContain('publishMode');
+    expect(page).toContain("options={['review-rewrite', 'direct-copy']}");
     expect(page).toContain('value={targetLength}');
-    expect(page).toContain('placeholder="自动"');
     expect(page).toContain('type="number"');
     expect(page).toContain('min="1"');
     expect(page).toContain('max="60"');
     expect(page).toContain('targetLength: normalizeTaskTargetLength(targetLength) ?? undefined');
     expect(page).toContain('targetScenes: normalizeTaskStoryboardSceneCount(storyboardSceneCount)');
     expect(page).not.toContain('options={targetLengthOptions.map(String)}');
-    const targetWordIndex = page.indexOf('目标字数');
-    const targetSceneIndex = page.indexOf('目标分镜数');
+    const targetControlsIndex = page.indexOf('<div className="target-controls-row">');
     const advancedIndex = page.indexOf('<button className="advanced-toggle"');
-    expect(targetWordIndex).toBeGreaterThan(-1);
-    expect(targetSceneIndex).toBeGreaterThan(-1);
+    expect(targetControlsIndex).toBeGreaterThan(-1);
     expect(advancedIndex).toBeGreaterThan(-1);
-    expect(targetWordIndex).toBeLessThan(advancedIndex);
-    expect(targetSceneIndex).toBeLessThan(advancedIndex);
+    expect(targetControlsIndex).toBeLessThan(advancedIndex);
   });
 
   it('replicates the StoryDream video form controls for narration and two-host podcast tasks', async () => {

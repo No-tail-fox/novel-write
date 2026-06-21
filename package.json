@@ -54,6 +54,7 @@
       "dist-renderer/**/*",
       "dist-electron/**/*",
       "node_modules/sql.js/**/*",
+      "node_modules/undici/**/*",
       "package.json"
     ],
     "extraResources": [

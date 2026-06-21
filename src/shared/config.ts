@@ -26,6 +26,7 @@ export const defaultConfig: AppConfig = {
     model: 'gpt-5.5',
     proxyUrl: '',
     timeoutMs: 120000,
+    requestParamsJson: '{}',
   },
   llmProfiles: [
     {
@@ -39,6 +40,7 @@ export const defaultConfig: AppConfig = {
       model: 'gpt-5.5',
       proxyUrl: '',
       timeoutMs: 120000,
+      requestParamsJson: '{}',
     },
   ],
   activeLlmProfileId: 'default-llm',
