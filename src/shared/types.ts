@@ -28,6 +28,7 @@ export type TtsProvider = 'volcengine' | 'minimax' | 'mock';
 export type PausePoint = 'none' | 'critical' | 'every-step' | 'custom';
 export type RewriteIntensity = 'standard' | 'deep' | 'original';
 export type NarrativePov = 'keep-original' | 'first-person' | 'third-person';
+export type CoverImageMode = 'off' | 'first-scene' | 'generated';
 
 export interface LlmConfig {
   id?: string;
@@ -345,8 +346,9 @@ export interface Task {
   podcastSpeakers?: string | null;
   podcastSpeakerA?: string | null;
   podcastSpeakerB?: string | null;
-  coverImageMode?: string;
+  coverImageMode?: CoverImageMode;
   coverTemplateId?: string;
+  coverRatio?: string;
 }
 
 export interface MusicMvSettings {
@@ -403,6 +405,7 @@ export type CreateTaskInput = Partial<
     | 'podcastSpeakerB'
     | 'coverImageMode'
     | 'coverTemplateId'
+    | 'coverRatio'
   >
 > & {
   inputText: string;
@@ -835,6 +838,7 @@ export interface PipelineArtifact {
   reviewedText: string;
   rewrittenCopy: string;
   cover: CoverMetadata;
+  coverImage?: CoverImageArtifact;
   scenes: StoryboardScene[];
   imagePrompts: ImagePrompt[];
   subtitles: SubtitleTrack;
@@ -842,6 +846,14 @@ export interface PipelineArtifact {
   musicPlan?: MusicPlan;
   characterCard?: CharacterCard;
   rewriteEvaluation?: RewriteEvaluationResult;
+}
+
+export interface CoverImageArtifact {
+  mode: CoverImageMode;
+  prompt?: string;
+  path?: string;
+  templateId?: string;
+  ratio?: string;
 }
 
 export type TaskArtifactStepStatus = 'pending' | 'running' | 'completed' | 'failed';

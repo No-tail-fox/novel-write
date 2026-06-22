@@ -247,7 +247,8 @@ export class FileDatabase {
         video_intro INTEGER DEFAULT 0,
         video_intro_duration INTEGER DEFAULT 0,
         cover_image_mode TEXT DEFAULT 'off',
-        cover_template_id TEXT DEFAULT 'cinematic-poster'
+        cover_template_id TEXT DEFAULT 'cinematic-poster',
+        cover_ratio TEXT DEFAULT '9:16'
       );
       CREATE TABLE IF NOT EXISTS task_events (
         seq INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -482,6 +483,7 @@ export class FileDatabase {
       ['video_intro_duration', 'INTEGER DEFAULT 0'],
       ['cover_image_mode', "TEXT DEFAULT 'off'"],
       ['cover_template_id', "TEXT DEFAULT 'cinematic-poster'"],
+      ['cover_ratio', "TEXT DEFAULT '9:16'"],
     ] as const) {
       addColumnIfMissing(this.db, 'tasks', column, definition);
     }
@@ -858,8 +860,9 @@ export class FileDatabase {
       podcastSpeakers: input.podcastSpeakers ?? (input.videoForm === 'two-host-podcast' ? 'kazai-dayi' : null),
       podcastSpeakerA: input.podcastSpeakerA ?? null,
       podcastSpeakerB: input.podcastSpeakerB ?? null,
-      coverImageMode: input.coverImageMode ?? 'off',
+      coverImageMode: normalizeCoverImageMode(input.coverImageMode),
       coverTemplateId: input.coverTemplateId ?? 'cinematic-poster',
+      coverRatio: input.coverRatio ?? input.ratio ?? '9:16',
     };
     this.db.run(
       `INSERT INTO tasks (
@@ -869,8 +872,8 @@ export class FileDatabase {
         image_prompt_reference, reference_image_path, rewrite_intensity, narrative_pov, keep_promotion, tts_provider,
         tts_speed, storyboard_scene_count, step3_prompt_snapshot, music_mv_json, failed_step, retry_from_step, artifact_state_path,
         video_form, llm_profile_id, material_source, task_type, pipeline_step, pipeline_data, target_length, target_scenes, script_format,
-        podcast_image_mode, podcast_speakers, podcast_speaker_a, podcast_speaker_b, cover_image_mode, cover_template_id
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        podcast_image_mode, podcast_speakers, podcast_speaker_a, podcast_speaker_b, cover_image_mode, cover_template_id, cover_ratio
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       [
         task.id,
         task.title,
@@ -928,6 +931,7 @@ export class FileDatabase {
         task.podcastSpeakerB ?? null,
         task.coverImageMode ?? 'off',
         task.coverTemplateId ?? 'cinematic-poster',
+        task.coverRatio ?? task.ratio,
       ],
     );
     await this.persist();
@@ -1236,8 +1240,9 @@ function rowToTask(row: Record<string, unknown>): Task {
     podcastSpeakers: row.podcast_speakers === null || row.podcast_speakers === undefined ? null : String(row.podcast_speakers),
     podcastSpeakerA: row.podcast_speaker_a === null || row.podcast_speaker_a === undefined ? null : String(row.podcast_speaker_a),
     podcastSpeakerB: row.podcast_speaker_b === null || row.podcast_speaker_b === undefined ? null : String(row.podcast_speaker_b),
-    coverImageMode: String(row.cover_image_mode ?? 'off'),
+    coverImageMode: normalizeCoverImageMode(row.cover_image_mode),
     coverTemplateId: String(row.cover_template_id ?? 'cinematic-poster'),
+    coverRatio: String(row.cover_ratio ?? row.ratio ?? '9:16'),
   };
 }
 
@@ -1251,6 +1256,12 @@ function normalizeVideoForm(value: unknown): Task['videoForm'] {
 
 function normalizeProcessingMode(value: unknown): Task['processingMode'] {
   return value === 'semi-auto' || value === 'clip-only' ? value : 'full-auto';
+}
+
+function normalizeCoverImageMode(value: unknown): Task['coverImageMode'] {
+  if (value === 'first-scene') return 'first-scene';
+  if (value === 'generated' || value === 'auto' || value === 'manual') return 'generated';
+  return 'off';
 }
 
 function normalizeMusicMvSettings(value: unknown): Task['musicMv'] {

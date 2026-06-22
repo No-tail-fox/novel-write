@@ -16,7 +16,7 @@ describe('product shell storage', () => {
 
       expect(state.promptTemplates.map((template) => template.name)).toContain('人物故事');
       expect(state.promptTemplates.filter((template) => template.type === 'task').map((template) => template.baseTrack)).toEqual(
-        expect.arrayContaining(['character-story', 'health-book', 'culture-knowledge', 'picture-book', 'ecommerce', 'inspirational', 'folk-tale', 'general', 'food-vlog']),
+        expect.arrayContaining(['character-story', 'health-book', 'culture-science', 'picture-book', 'ecommerce', 'mind-soup', 'folk-story', 'general', 'food-vlog']),
       );
       expect(state.promptTemplates.map((template) => template.id)).toEqual(expect.arrayContaining(['builtin-review', 'builtin-rewrite', 'builtin-cover', 'builtin-storyboard', 'builtin-image-prompt']));
       expect(state.draftTemplates.map((template) => template.id)).toEqual(

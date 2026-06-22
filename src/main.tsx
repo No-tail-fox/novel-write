@@ -1461,7 +1461,7 @@ function NewTaskPage({
   const [storyboardSceneCount, setStoryboardSceneCount] = useState('12');
   const [publishMode, setPublishMode] = useState<'review-rewrite' | 'direct-copy'>('review-rewrite');
   const [videoForm, setVideoForm] = useState<TaskVideoForm>('narration');
-  const [coverImageMode, setCoverImageMode] = useState('off');
+  const [coverImageMode, setCoverImageMode] = useState<NonNullable<Task['coverImageMode']>>('off');
   const [coverTemplateId, setCoverTemplateId] = useState('cinematic-poster');
   const [podcastImageMode, setPodcastImageMode] = useState('multi');
   const [podcastSpeakers, setPodcastSpeakers] = useState<PodcastSpeakerPair>('kazai-dayi');
@@ -1667,6 +1667,7 @@ function NewTaskPage({
         videoForm,
         coverImageMode,
         coverTemplateId,
+        coverRatio: ratio,
         podcastImageMode,
         podcastSpeakers: videoForm === 'two-host-podcast' ? podcastSpeakers : null,
         podcastSpeakerA: videoForm === 'two-host-podcast' ? podcastVoiceDefaults.podcastSpeakerA : null,
@@ -1849,7 +1850,13 @@ function NewTaskPage({
               ))}
             </select>
           </Field>
-          <Segmented label="封面生成" value={coverImageMode} options={['off', 'auto', 'manual']} labels={['关闭', '自动', '仅封面']} onChange={setCoverImageMode} />
+          <Segmented
+            label="封面生成"
+            value={coverImageMode}
+            options={['off', 'first-scene', 'generated']}
+            labels={['关闭', '首张分镜', 'AI生成']}
+            onChange={(value) => setCoverImageMode(value as NonNullable<Task['coverImageMode']>)}
+          />
         </div>
 
         <div className="option-two-col">
@@ -2411,6 +2418,11 @@ function TaskDetailPage({
             <div><strong>{formatDuration(activeTask.createdAt, activeTask.completedAt, liveNow)}</strong><span>总耗时</span></div>
             <div><strong>{completedSteps}<small>/{pipelineSteps.length}</small></strong><span>当前步骤</span></div>
             <div><strong>{events.length || '-'}</strong><span>事件数</span></div>
+          </div>
+          <div className="task-settings-list">
+            <div><span>目标字数</span><strong>{activeTask.targetLength ? `${activeTask.targetLength}` : '自动'}</strong></div>
+            <div><span>封面图</span><strong>{coverImageModeLabel(activeTask.coverImageMode)}</strong></div>
+            <div><span>封面比例</span><strong>{activeTask.coverRatio || activeTask.ratio}</strong></div>
           </div>
           <button className="cancel-task-button" disabled={activeTask.status === 'completed' || activeTask.status === 'cancelled'} onClick={cancelTask}>
             <XCircle size={14} />
@@ -6374,6 +6386,12 @@ function defaultTaskDraftTemplateId(templates: DraftTemplate[]): string {
 
 function draftTemplateLabel(templateId: string, templates: DraftTemplate[]): string {
   return templates.find((template) => template.id === templateId)?.name ?? templateId;
+}
+
+function coverImageModeLabel(mode: Task['coverImageMode']): string {
+  if (mode === 'first-scene') return '首张分镜';
+  if (mode === 'generated') return 'AI生成';
+  return '关闭';
 }
 
 function isBundledDraftTemplateOption(template: Pick<DraftTemplate, 'id' | 'isDefault'>): boolean {

@@ -231,6 +231,43 @@ function storyboundTaskTemplateContent(template: StoryboundSystemTemplate): stri
   ].join('\n');
 }
 
+function storydreamCanonicalTrack(templateId: string): string {
+  if (templateId === 'culture-knowledge') return 'culture-science';
+  if (templateId === 'folk-tale') return 'folk-story';
+  if (templateId === 'inspirational') return 'mind-soup';
+  return templateId;
+}
+
+function storyboundStoryboardStepPrompt(template: StoryboundSystemTemplate): string {
+  return [
+    'StoryDream 本地化分镜规则',
+    `StoryDream Storybound-compatible storyboard lane: ${template.name}`,
+    'Storyboard split only: split the rewritten copy into scene captions; do not rewrite, summarize, translate, or add new story facts.',
+    '请把口播稿拆成连续分镜 JSON。cap 是最终口播字幕，必须适合 TTS 和字幕展示；descPrompt 是给后续 StoryDream Step 3 的视觉种子，只写可见画面、镜头、场景、人物/产品线索，不要复述完整字幕，不要写屏幕文字、标题、字幕、水印或 UI。',
+    '目标字数：{{targetLength}}',
+    '目标分镜数：{{storyboardSceneCount}}',
+    'Every scene.cap must be a continuous caption fragment. The ordered cap values should join back to the original rewritten copy with only whitespace/punctuation-normalization differences.',
+    'Each descPrompt must describe visible image content for the matching cap only. Do not put new plot, narration, titles, subtitles, watermarks, UI, or readable text into descPrompt.',
+    'Respect the target storyboard scene count {{storyboardSceneCount}}, but complete copy coverage is more important than hitting the exact count.',
+    'Use varied close, medium, wide, and establishing shots while keeping character, era, product, and location continuity.',
+  ].join('\n');
+}
+
+function storyboundImagePromptStepPrompt(template: StoryboundSystemTemplate): string {
+  return [
+    template.step3SystemPrompt,
+    '',
+    'StoryDream local safety and consistency supplement:',
+    `Lane: ${template.name}`,
+    'Read each scene.cap first, then convert descPrompt/desc_prompt into a drawable scene. The prompt must not contradict the spoken caption.',
+    'Use safe substitutes for gore, medical efficacy, trademarks, celebrity likenesses, sensitive identity, minors at risk, and dangerous actions.',
+    'Keep character appearance, age, wardrobe, era, locations, and product shape consistent across all shots.',
+    'Do not generate readable text, subtitles, watermarks, signatures, UI, logos, or malformed bodies. Use unreadable posters, book pages, screen glow, or props when text-like information is needed.',
+    'Return strict JSON imagePrompts and preserve sceneId, cap, prompt, negativePrompt, style, ratio, and characterProfile.',
+    'Use desc_prompt as an alias for descPrompt when the reference prompt names it that way.',
+  ].join('\n');
+}
+
 const defaultStoryboundFallbackTemplate = storyboundSystemTemplates.find((template) => template.templateId === 'general') ?? storyboundSystemTemplates[0];
 
 const storyboundPromptTaskTemplates: PromptTemplate[] = storyboundSystemTemplates.map((template) => ({
@@ -241,7 +278,7 @@ const storyboundPromptTaskTemplates: PromptTemplate[] = storyboundSystemTemplate
   content: storyboundTaskTemplateContent(template),
   isBuiltin: true,
   updatedAt: storyboundTemplateUpdatedAt(template),
-  baseTrack: template.templateId,
+  baseTrack: storydreamCanonicalTrack(template.templateId),
   defaultStyles: [template.defaultStyleId],
   characterPolicy: storyboundCharacterPolicy(template),
   step3SkeletonModules: [...(template.step3SkeletonModules ?? [])],
@@ -249,7 +286,8 @@ const storyboundPromptTaskTemplates: PromptTemplate[] = storyboundSystemTemplate
   stepPrompts: {
     rewrite: template.step1RewriteSystemPrompt,
     cover: template.step1MetadataSystemPrompt,
-    'image-prompt': template.step3SystemPrompt,
+    storyboard: storyboundStoryboardStepPrompt(template),
+    'image-prompt': storyboundImagePromptStepPrompt(template),
   },
   imageSeedPoolsJson: JSON.stringify(template.imageSeedPools ?? {}),
   origin: 'system',

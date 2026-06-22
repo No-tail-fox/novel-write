@@ -194,7 +194,7 @@ export async function runTask(db: FileDatabase, task: Task, options: RunTaskOpti
           reviewedText: artifact.reviewedText,
           rewrittenCopy: artifact.rewrittenCopy,
           generatedImages: pipeline.assets.images,
-          coverImagePath: pipeline.assets.cover[0]?.path,
+          coverImagePath: artifact.coverImage?.path ?? pipeline.assets.cover[0]?.path,
           narrationAudio: pipeline.assets.narration,
           bgm,
         },
@@ -357,13 +357,15 @@ async function ensureContentArtifact(input: {
     await emit('step_start', 0, 'Reviewer', 'LLM 文案预审');
     const sourceText = buildReviewSourceText(task, sourceContext);
     const reviewPrompt = renderStepPrompt(promptTemplates, 'review', promptContext(), sourceText);
+    const reviewUserPrompt = joinPromptBlocks(['Template instructions:', reviewPrompt, taskModeInstructions(task), 'Source material:', sourceText, rewriteContextForStep(pipeline, 0)]);
+    await writePromptSnapshot(workDir, '00-review.md', joinPromptBlocks(['Review instructions:', reviewPrompt, 'Source material:', sourceText, rewriteContextForStep(pipeline, 0)]));
     const review = await options.llm<{ reviewedText: string }>({
       step: 0,
       name: 'review',
       signal: options.signal,
       messages: [
         { role: 'system', content: 'Return strict JSON only. Schema: {"reviewedText": string}.' },
-        { role: 'user', content: joinPromptBlocks(['Template instructions:', reviewPrompt, taskModeInstructions(task), 'Source material:', sourceText, rewriteContextForStep(pipeline, 0)]) },
+        { role: 'user', content: reviewUserPrompt },
       ],
     });
     pipeline.artifact.reviewedText = requireString(review.json.reviewedText, 'reviewedText');
@@ -380,6 +382,19 @@ async function ensureContentArtifact(input: {
     await emit('step_start', 1, 'Writer', 'LLM 改写与封面信息');
     const rewritePrompt = renderStepPrompt(promptTemplates, 'rewrite', promptContext(), requireString(pipeline.artifact.reviewedText, 'reviewedText'));
     const coverPrompt = renderStepPrompt(promptTemplates, 'cover', promptContext(), '');
+    await writePromptSnapshot(
+      workDir,
+      '01-rewrite.md',
+      joinPromptBlocks([
+        'Rewrite instructions:',
+        rewritePrompt,
+        'Cover instructions:',
+        coverPrompt,
+        'Reviewed text:',
+        requireString(pipeline.artifact.reviewedText, 'reviewedText'),
+        rewriteContextForStep(pipeline, 1),
+      ]),
+    );
     const rewrite = await runRewriteRounds(options.llm, {
       task,
       rewritePrompt,
@@ -403,13 +418,13 @@ async function ensureContentArtifact(input: {
   }
 
   if (directCopyPublish && !isStepCompleted(pipeline, 0)) {
-    await writeFile(join(workDir, '00-reviewed.txt'), pipeline.artifact.reviewedText, 'utf8');
+    await writeFile(join(workDir, '00-reviewed.txt'), requireString(pipeline.artifact.reviewedText, 'reviewedText'), 'utf8');
     await markStep(0, 'completed', { outputPath: join(workDir, '00-reviewed.txt') });
     await emit('step_complete', 0, 'Reviewer', 'Direct-copy publish mode kept the original source text');
   }
 
   if (directCopyPublish && !isStepCompleted(pipeline, 1)) {
-    await writeFile(join(workDir, '01-rewritten-copy.md'), pipeline.artifact.rewrittenCopy, 'utf8');
+    await writeFile(join(workDir, '01-rewritten-copy.md'), requireString(pipeline.artifact.rewrittenCopy, 'rewrittenCopy'), 'utf8');
     await writeFile(join(workDir, '00-cover-title.json'), JSON.stringify(pipeline.artifact.cover, null, 2), 'utf8');
     await writeFile(join(workDir, '01-rewrite-evaluations.json'), JSON.stringify(pipeline.artifact.rewriteEvaluation, null, 2), 'utf8');
     await markStep(1, 'completed', { outputPath: join(workDir, '01-rewritten-copy.md') });
@@ -423,6 +438,17 @@ async function ensureContentArtifact(input: {
     await emit('step_start', 2, 'Storyboard', 'LLM 影视分镜分句');
     const storyboardSceneCount = normalizeStoryboardSceneCount(task.storyboardSceneCount);
     const storyboardPrompt = renderStepPrompt(promptTemplates, 'storyboard', promptContext(), requireString(pipeline.artifact.rewrittenCopy, 'rewrittenCopy'));
+    const storyboardUserPrompt = joinPromptBlocks([
+      'Storyboard instructions:',
+      storyboardPrompt,
+      taskModeInstructions(task),
+      `Storyboard scene count target: ${storyboardSceneCount}`,
+      `Return no more than ${storyboardSceneCount} scenes unless the source absolutely requires one extra transition scene.`,
+      'Rewritten copy:',
+      requireString(pipeline.artifact.rewrittenCopy, 'rewrittenCopy'),
+      rewriteContextForStep(pipeline, 2),
+    ]);
+    await writePromptSnapshot(workDir, '02-storyboard.md', storyboardUserPrompt);
     const storyboard = await options.llm<{ scenes: StoryboardScene[] }>({
       step: 2,
       name: 'storyboard',
@@ -431,16 +457,7 @@ async function ensureContentArtifact(input: {
         { role: 'system', content: 'Return strict JSON only. Schema: {"scenes":[{"id":number,"cap":string,"descPrompt":string,"durationMs":number}]}.' },
         {
           role: 'user',
-          content: joinPromptBlocks([
-            'Storyboard instructions:',
-            storyboardPrompt,
-            taskModeInstructions(task),
-            `Storyboard scene count target: ${storyboardSceneCount}`,
-            `Return no more than ${storyboardSceneCount} scenes unless the source absolutely requires one extra transition scene.`,
-            'Rewritten copy:',
-            requireString(pipeline.artifact.rewrittenCopy, 'rewrittenCopy'),
-            rewriteContextForStep(pipeline, 2),
-          ]),
+          content: storyboardUserPrompt,
         },
       ],
     });
@@ -477,6 +494,7 @@ async function ensureContentArtifact(input: {
       const instruction = renderStepPrompt(promptTemplates, 'image-prompt', batchContext, JSON.stringify({ scenes, style: task.style, ratio: task.ratio }));
       return buildImagePromptSnapshot(instruction, scenes, task, taskTemplate, index + 1, sceneBatches.length, pipeline.artifact.characterCard, rewriteContextForStep(pipeline, 3));
     });
+    await writePromptSnapshot(workDir, '03-image-prompts.md', batchSnapshots.join('\n\n--- image prompt batch ---\n\n'));
     await db.updateTask(task.id, { step3PromptSnapshot: batchSnapshots.join('\n\n--- image prompt batch ---\n\n') });
     const imagePrompts: ImagePrompt[] = [];
     const requestIds: Array<string | null> = [];
@@ -513,6 +531,12 @@ function renderStepPrompt(templates: PromptTemplate[], type: PromptStepTemplateT
 
 function joinPromptBlocks(blocks: string[]): string {
   return blocks.map((block) => block.trim()).filter(Boolean).join('\n\n');
+}
+
+async function writePromptSnapshot(workDir: string, name: string, content: string): Promise<void> {
+  const snapshotDir = join(workDir, 'prompt-snapshots');
+  await mkdir(snapshotDir, { recursive: true });
+  await writeFile(join(snapshotDir, name), content, 'utf8');
 }
 
 function rewriteContextForStep(pipeline: PipelineState, step: number): string {
@@ -900,6 +924,14 @@ async function ensureImages(input: {
     const coverAssets = await generateImages([coverScene], [coverPrompt], task, options.signal);
     const coverPath = await persistCoverImage(input.workDir, coverAssets[0], coverPrompt, input);
     pipeline.assets.cover = [{ sceneId: 0, path: coverPath }];
+    artifact.coverImage = {
+      mode: 'generated',
+      path: coverPath,
+      prompt: coverPrompt.prompt,
+      templateId: task.coverTemplateId ?? 'cinematic-poster',
+      ratio: task.coverRatio || coverPrompt.ratio,
+    };
+    pipeline.artifact.coverImage = artifact.coverImage;
     await markStep(4, 'running', { outputPath: coverPath });
   }
   if (usesSinglePodcastCover(task)) {
@@ -912,6 +944,14 @@ async function ensureImages(input: {
       const coverAssets = await generateImages([coverScene], [coverPrompt], task, options.signal);
       const coverPath = await persistCoverImage(input.workDir, coverAssets[0], coverPrompt, input);
       pipeline.assets.cover = [{ sceneId: 0, path: coverPath }];
+      artifact.coverImage = {
+        mode: 'generated',
+        path: coverPath,
+        prompt: coverPrompt.prompt,
+        templateId: task.coverTemplateId ?? 'podcast-cover',
+        ratio: task.coverRatio || coverPrompt.ratio,
+      };
+      pipeline.artifact.coverImage = artifact.coverImage;
     }
     pipeline.assets.images = artifact.scenes.map((scene) => ({ sceneId: scene.id, path: pipeline.assets.cover[0].path }));
     await markStep(4, 'completed', { outputPath: pipeline.assets.cover[0].path });
@@ -920,6 +960,7 @@ async function ensureImages(input: {
   }
   const missing = missingScenes(artifact.scenes, pipeline.assets.images);
   if (missing.length === 0 && pipeline.assets.images.length >= artifact.scenes.length) {
+    applyFirstSceneCoverImage(task, artifact, pipeline);
     await markStep(4, 'completed');
     return;
   }
@@ -940,6 +981,7 @@ async function ensureImages(input: {
     throwIfAborted(options.signal);
   });
   await persistImageQueue;
+  applyFirstSceneCoverImage(task, artifact, pipeline);
   await markStep(4, 'completed');
   await emit('step_complete', 4, 'Producer', '真实图片素材已生成', { count: pipeline.assets.images.length });
 }
@@ -980,11 +1022,27 @@ async function ensureNarration(input: {
 }
 
 function shouldGenerateCoverImage(task: Task): boolean {
-  return task.coverImageMode === 'auto' || task.coverImageMode === 'manual' || usesSinglePodcastCover(task);
+  const mode = String(task.coverImageMode ?? 'off');
+  return mode === 'generated' || mode === 'auto' || mode === 'manual' || usesSinglePodcastCover(task);
 }
 
 function usesSinglePodcastCover(task: Task): boolean {
   return task.videoForm === 'two-host-podcast' && task.podcastImageMode === 'single';
+}
+
+function applyFirstSceneCoverImage(task: Task, artifact: PipelineArtifact, pipeline: PipelineState): void {
+  if (task.coverImageMode !== 'first-scene') return;
+  const firstImage = [...pipeline.assets.images].sort((left, right) => left.sceneId - right.sceneId)[0];
+  if (!firstImage?.path) return;
+  const firstPrompt = artifact.imagePrompts.find((prompt) => prompt.sceneId === firstImage.sceneId);
+  artifact.coverImage = {
+    mode: 'first-scene',
+    path: firstImage.path,
+    prompt: firstPrompt?.prompt,
+    templateId: task.coverTemplateId ?? 'cinematic-poster',
+    ratio: task.coverRatio || task.ratio,
+  };
+  pipeline.artifact.coverImage = artifact.coverImage;
 }
 
 function buildCoverScene(artifact: PipelineArtifact): StoryboardScene {
@@ -1020,11 +1078,11 @@ function buildCoverImagePrompt(task: Task, artifact: PipelineArtifact, customCov
       artifact.cover.subtitle.length ? `Subtitle: ${artifact.cover.subtitle.join(' / ')}` : '',
       `Summary: ${artifact.cover.summary}`,
       `Style: ${task.style}`,
-      `Ratio: ${task.ratio}`,
+      `Ratio: ${task.coverRatio || task.ratio}`,
     ].filter(Boolean).join('\n'),
     negativePrompt: 'low quality, blurry, watermark, random text, crowded layout, malformed hands',
     style: task.style,
-    ratio: task.ratio,
+    ratio: task.coverRatio || task.ratio,
     characterProfile: artifact.characterCard?.summary ?? '',
     referenceImagePaths: task.referenceImagePath?.trim() ? [task.referenceImagePath.trim()] : undefined,
   };

@@ -693,7 +693,7 @@ describe('task runner', () => {
       const task = await db.createTask({
         title: 'Auto cover task',
         inputText: sampleInput,
-        coverImageMode: 'auto',
+        coverImageMode: 'generated',
       });
 
       await runTask(db, task, {
@@ -742,7 +742,7 @@ describe('task runner', () => {
       const task = await db.createTask({
         title: 'Podcast cover task',
         inputText: sampleInput,
-        coverImageMode: 'auto',
+        coverImageMode: 'generated',
         coverTemplateId: 'podcast-cover',
       });
 
@@ -795,7 +795,7 @@ describe('task runner', () => {
       const task = await db.createTask({
         title: 'Noir cover task',
         inputText: sampleInput,
-        coverImageMode: 'auto',
+        coverImageMode: 'generated',
         coverTemplateId: 'noir-cover',
       });
 

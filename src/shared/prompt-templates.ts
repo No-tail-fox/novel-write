@@ -43,9 +43,9 @@ const knownStyleIds = new Set([...styleLabelToId.values(), 'black-white', 'ancie
 const trackAliases = new Map([
   ['general-story', 'general'],
   ['food-v2', 'food-vlog'],
-  ['mind-soup', 'inspirational'],
-  ['culture-science', 'culture-knowledge'],
-  ['folk-story', 'folk-tale'],
+  ['inspirational', 'mind-soup'],
+  ['culture-knowledge', 'culture-science'],
+  ['folk-tale', 'folk-story'],
 ]);
 const placeholderAliases = new Map([
   ['原文素材', 'inputText'],
@@ -73,6 +73,9 @@ const placeholderAliases = new Map([
   ['AI 关键词', 'aiKeyword'],
   ['目标字数', 'targetLength'],
   ['目标分镜数', 'storyboardSceneCount'],
+  ['封面图模式', 'coverImageMode'],
+  ['封面模板', 'coverTemplateId'],
+  ['封面比例', 'coverRatio'],
   ['当前画面风格', 'style'],
   ['风格前缀', 'stylePrefix'],
   ['风格后缀', 'styleSuffix'],
@@ -274,6 +277,9 @@ function buildTemplateValues(context: PromptRenderContext): Record<string, strin
     aiKeyword: String(task.aiKeyword ?? ''),
     targetLength: task.targetLength === undefined || task.targetLength === null ? '' : String(task.targetLength),
     storyboardSceneCount: task.storyboardSceneCount === undefined || task.storyboardSceneCount === null ? '' : String(task.storyboardSceneCount),
+    coverImageMode: String(task.coverImageMode ?? ''),
+    coverTemplateId: String(task.coverTemplateId ?? ''),
+    coverRatio: String(task.coverRatio ?? ''),
     reviewedText,
     rewrittenCopy,
     scenesJson: JSON.stringify(scenes ?? []),

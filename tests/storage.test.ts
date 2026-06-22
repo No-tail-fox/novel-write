@@ -80,7 +80,7 @@ describe('file database', () => {
 
     try {
       const db = await FileDatabase.open(file);
-      await db.createTask({
+      const legacyCoverTaskInput = {
         title: '参考字段任务',
         inputText: '一段原始素材',
         llmProfileId: 'llm-draft',
@@ -93,7 +93,9 @@ describe('file database', () => {
         scriptFormat: 'short-video',
         coverImageMode: 'auto',
         coverTemplateId: 'default-cover',
-      } as Parameters<typeof db.createTask>[0] & Record<string, unknown>);
+        coverRatio: '4:3',
+      } as unknown as Parameters<typeof db.createTask>[0] & Record<string, unknown>;
+      await db.createTask(legacyCoverTaskInput);
 
       const state = await db.getState();
       expect(state.tasks[0]).toMatchObject({
@@ -105,8 +107,9 @@ describe('file database', () => {
         targetScenes: 16,
         scriptFormat: 'short-video',
         llmProfileId: 'llm-draft',
-        coverImageMode: 'auto',
+        coverImageMode: 'generated',
         coverTemplateId: 'default-cover',
+        coverRatio: '4:3',
       });
       await db.close();
     } finally {

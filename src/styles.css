@@ -1374,6 +1374,31 @@ textarea {
   color: var(--muted);
 }
 
+.task-settings-list {
+  display: grid;
+  gap: 8px;
+  border-top: 1px solid var(--line);
+  padding-top: 12px;
+}
+
+.task-settings-list div {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  font-size: 12px;
+}
+
+.task-settings-list span {
+  color: var(--muted);
+}
+
+.task-settings-list strong {
+  color: var(--text);
+  font-size: 12px;
+  text-align: right;
+}
+
 .cancel-task-button {
   min-height: 34px;
   display: inline-flex;

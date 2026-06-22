@@ -1394,8 +1394,11 @@ describe('product shell ui', () => {
     expect(page).toContain('podcast-cover');
     expect(page).toContain('coverTemplateId');
     expect(page).toContain('coverImageMode');
+    expect(page).toContain("options={['off', 'first-scene', 'generated']}");
+    expect(page).toContain('coverRatio: ratio');
     expect(page).toContain('podcastImageMode');
     expect(page).toContain('state.customCoverTemplates.map');
+    expect(main).toContain('task-settings-list');
   });
 
   it('wires new task reference image upload and task LLM model selection into task creation', async () => {

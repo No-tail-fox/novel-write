@@ -232,13 +232,13 @@ describe('prompt template rendering', () => {
     ]);
     expect(taskTemplates.map((template) => template.baseTrack)).toEqual([
       'character-story',
-      'culture-knowledge',
+      'culture-science',
       'ecommerce',
-      'folk-tale',
+      'folk-story',
       'food-vlog',
       'general',
       'health-book',
-      'inspirational',
+      'mind-soup',
       'picture-book',
     ]);
   });
@@ -263,6 +263,9 @@ describe('prompt template rendering', () => {
     expect(selectTaskPromptTemplate(defaultPromptTemplates, { track: 'mind-soup' })?.id).toBe('system-inspirational');
     expect(selectTaskPromptTemplate(defaultPromptTemplates, { track: 'culture-science' })?.id).toBe('system-culture-knowledge');
     expect(selectTaskPromptTemplate(defaultPromptTemplates, { track: 'folk-story' })?.id).toBe('system-folk-tale');
+    expect(selectTaskPromptTemplate(defaultPromptTemplates, { track: 'inspirational' })?.id).toBe('system-inspirational');
+    expect(selectTaskPromptTemplate(defaultPromptTemplates, { track: 'culture-knowledge' })?.id).toBe('system-culture-knowledge');
+    expect(selectTaskPromptTemplate(defaultPromptTemplates, { track: 'folk-tale' })?.id).toBe('system-folk-tale');
     expect(selectTaskPromptTemplate(defaultPromptTemplates, { track: 'unknown-track' })?.id).toBe('system-general');
   });
 
