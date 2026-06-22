@@ -3,6 +3,320 @@ const today = '2026-06-21';
 export const courseCategories = ['全部', 'AI入门', 'AI漫剧', 'AI电商', 'AI内容运营', 'AI变现实践', 'OPC本地课程'];
 export const resourceCategories = ['全部', '知识库', '工具导航', '模型文档', '办公提效', '电商素材', '编程建站'];
 
+export const siteNavItems = [
+  { id: 'home', label: '首页', href: '#/home' },
+  { id: 'courses', label: '课程库', href: '#/courses' },
+  { id: 'resources', label: 'AI资源', href: '#/resources' },
+  { id: 'route', label: '学习路线', href: '#/route' },
+  { id: 'local', label: 'OPC课程', href: '#/local' },
+  { id: 'workbench', label: '应用工作台', href: '#/workbench' },
+  { id: 'wechat', label: '公众号', href: '#/wechat' },
+  { id: 'admin', label: '后台', href: '#/admin' },
+];
+
+export const homeHighlights = [
+  {
+    route: 'courses',
+    title: '课程库',
+    summary: '系统化课程，覆盖AI基础到应用实践',
+    accent: 'blue',
+    icon: 'play',
+  },
+  {
+    route: 'resources',
+    title: 'AI资源',
+    summary: '精选资料、工具与开源项目',
+    accent: 'teal',
+    icon: 'folder',
+  },
+  {
+    route: 'route',
+    title: '学习路线',
+    summary: '从入门到进阶，规划你的学习路径',
+    accent: 'violet',
+    icon: 'compass',
+  },
+  {
+    route: 'local',
+    title: 'OPC课程',
+    summary: 'OPC社区出品，聚焦行业与场景',
+    accent: 'amber',
+    icon: 'cube',
+  },
+  {
+    route: 'resources',
+    title: '飞书知识库',
+    summary: '社区知识沉淀，共建共享',
+    accent: 'indigo',
+    icon: 'book',
+  },
+];
+
+export const workbenchSidebarActions = [
+  { id: 'new-chat', label: '新对话', shortcut: 'Ctrl Shift K', icon: 'edit' },
+  { id: 'office-task', label: '新办公任务', icon: 'office' },
+  { id: 'ai-create', label: 'AI 创作', icon: 'ai' },
+  { id: 'cloud', label: '云盘', icon: 'cloud' },
+  { id: 'more', label: '更多', icon: 'grid', trailing: true },
+];
+
+export const workbenchQuickPrompts = [
+  '资讯：蚂蚁集团董事会换届何小鹏等三人履新独董',
+  '帮我梳理联合体投标流程',
+  '审批通过后如何高效推进项目落地？',
+  '请分析建言献策对项目推进的影响',
+  '资讯：健康之路 AI 数字员工首年销售收入达 3210 万元',
+  '解释AI找矿的优势和挑战',
+  '提供项目备案的常见问题解答',
+  '心理学中“空心人”的核心特征是什么？',
+  '资讯：近 16 年 6 月最强台风米克拉将影响我国海域',
+];
+
+export const workbenchToolActions = [
+  { id: 'quick', label: '快速', icon: 'bolt', mode: 'text' },
+  { id: 'ppt', label: 'PPT 生成', icon: 'ppt', mode: 'text' },
+  { id: 'image', label: '图像生成', icon: 'image', mode: 'image' },
+  { id: 'write', label: '帮我写作', icon: 'write', mode: 'text' },
+  { id: 'code', label: '编程', icon: 'code', mode: 'text' },
+  { id: 'video', label: '视频生成', icon: 'video', mode: 'video' },
+  { id: 'more', label: '更多', icon: 'grid', mode: 'text' },
+];
+
+export const workbenchModes = [
+  {
+    id: 'text',
+    label: '文本',
+    placeholder: '输入课程、公众号或飞书知识库相关问题',
+    sampleAction: '生成课程介绍文案',
+  },
+  {
+    id: 'voice',
+    label: '语音',
+    placeholder: '输入要改写成口播稿的内容',
+    sampleAction: '生成活动口播稿',
+  },
+  {
+    id: 'video',
+    label: '视频',
+    placeholder: '描述你要制作的视频主题和风格',
+    sampleAction: '拆解短视频分镜',
+  },
+  {
+    id: 'image',
+    label: '图像',
+    placeholder: '描述海报、封面或商品图需求',
+    sampleAction: '生成图片提示词',
+  },
+  {
+    id: 'music',
+    label: '音乐',
+    placeholder: '输入视频情绪、节奏或配乐方向',
+    sampleAction: '推荐配乐方向',
+  },
+];
+
+export const defaultWorkbenchThreads = [
+  {
+    id: 'thread-new-chat',
+    title: '新对话',
+    pinned: false,
+    dateLabel: '',
+    mode: 'text',
+    messages: [],
+  },
+  {
+    id: 'thread-opc-summary',
+    title: 'OPC社区课程汇总与宣传方案',
+    pinned: true,
+    dateLabel: '置顶',
+    mode: 'text',
+    messages: [],
+  },
+  {
+    id: 'thread-opc-platform',
+    title: 'AI OPC运营平台合作课程支持...',
+    pinned: false,
+    dateLabel: '昨天',
+    mode: 'text',
+    messages: [],
+  },
+  {
+    id: 'thread-scale-up',
+    title: '专升本途径介绍',
+    pinned: false,
+    dateLabel: '1天前',
+    mode: 'text',
+    messages: [],
+  },
+  {
+    id: 'thread-life-script',
+    title: '赌球人生副本',
+    pinned: false,
+    dateLabel: '1天前',
+    mode: 'text',
+    messages: [],
+  },
+  {
+    id: 'thread-travel',
+    title: '平顶山到洛阳出行方案对比',
+    pinned: false,
+    dateLabel: '6月16日',
+    mode: 'text',
+    messages: [],
+  },
+  {
+    id: 'thread-loan',
+    title: '平顶山公积金贷款要求',
+    pinned: false,
+    dateLabel: '6月15日',
+    mode: 'text',
+    messages: [],
+  },
+  {
+    id: 'thread-henan',
+    title: '河南省公积金断缴认定规则',
+    pinned: false,
+    dateLabel: '6月14日',
+    mode: 'text',
+    messages: [],
+  },
+  {
+    id: 'thread-festival',
+    title: '园区端午祝福信息',
+    pinned: false,
+    dateLabel: '6月11日',
+    mode: 'text',
+    messages: [],
+  },
+  {
+    id: 'thread-community',
+    title: '无补贴下企业承接OPC社区...',
+    pinned: false,
+    dateLabel: '6月10日',
+    mode: 'text',
+    messages: [],
+  },
+  {
+    id: 'thread-data-map',
+    title: '平顶山数据标注产业进展与措施',
+    pinned: false,
+    dateLabel: '6月9日',
+    mode: 'text',
+    messages: [],
+  },
+  {
+    id: 'thread-data-workflow',
+    title: '数据标注产业工作推进情况',
+    pinned: false,
+    dateLabel: '6月8日',
+    mode: 'text',
+    messages: [],
+  },
+];
+
+export const feishuKnowledgeItems = [
+  {
+    id: 'feishu-seedance-anime-xiuxian',
+    title: 'Seedance2.0做动漫修仙视频',
+    category: '视频工作流',
+    scenario: '把角色设定、场景描述和分镜动作拆成可复用的视频生成流程。',
+    summary: '适合补充AI漫剧课程，作为“角色一致性、分镜连续性、视频生成提示词”的案例入口。',
+    sourceName: 'BSVcdDfjroR4kexMuNtcSHNInPm-Seedance2.0做动漫修仙视频.txt',
+    tags: ['Seedance', 'AI漫剧', '视频分镜'],
+    rightsNote: '飞书知识库内部资料仅做摘要导览，不复制正文模板。',
+  },
+  {
+    id: 'feishu-ecommerce-main-image',
+    title: '电商主图二创',
+    category: '电商素材',
+    scenario: '围绕商品卖点、场景重绘、背景替换和主图视觉优化做素材流程。',
+    summary: '适合AI电商课程页补充，帮助学员从商品信息出发生成主图、海报和短视频素材。',
+    sourceName: 'PvcndYtjbomI1Ux53njc2g4Tnqe-电商主图二创.txt',
+    tags: ['电商', '主图', '商品素材'],
+    rightsNote: '飞书知识库内部资料仅做摘要导览，不复制正文模板。',
+  },
+  {
+    id: 'feishu-novel-promotion',
+    title: '【S86】小说推文',
+    category: '内容运营',
+    scenario: '把小说片段拆成爆点、悬念、口播和封面方向。',
+    summary: '适合用于公众号和短视频选题，让AI漫剧课程能连接到小说推文、剧情号和素材整理。',
+    sourceName: 'BczidChkNoqUCxxn5QJcEU0lnog-【S86】小说推文.txt',
+    tags: ['小说推文', '内容运营', '口播'],
+    rightsNote: '飞书知识库内部资料仅做摘要导览，不复制正文模板。',
+  },
+  {
+    id: 'feishu-book-list-one',
+    title: '【S1】炫酷书单1',
+    category: '内容运营',
+    scenario: '把书籍内容改写成书单视频、封面话术和推荐理由。',
+    summary: '适合补充“书籍会说话”和知识型内容课程，帮助学员做图文到短视频的转化。',
+    sourceName: 'ChYYdgLYsoNaHexKw4cc6TEZnHI-【S1】炫酷书单1.txt',
+    tags: ['书单', '知识内容', '短视频'],
+    rightsNote: '飞书知识库内部资料仅做摘要导览，不复制正文模板。',
+  },
+  {
+    id: 'feishu-food-ad',
+    title: 'SORA2 美食搞笑宣传',
+    category: '视频工作流',
+    scenario: '用轻剧情、反差梗和产品卖点组合短视频宣传脚本。',
+    summary: '适合本地商户案例，帮助AI电商课程连接餐饮、探店和活动宣传素材。',
+    sourceName: 'AJTMdap1toDPjmx2FKZcDCRMnqf-SORA2 美食搞笑宣传.txt',
+    tags: ['SORA2', '美食', '宣传片'],
+    rightsNote: '飞书知识库内部资料仅做摘要导览，不复制正文模板。',
+  },
+  {
+    id: 'feishu-model-dance',
+    title: '即梦 NANO 走秀换装工坊',
+    category: '图像视频',
+    scenario: '用人物、服装、镜头和节奏设定生成走秀换装素材。',
+    summary: '适合作为图像与视频模型试用案例，展示从提示词到短视频成片的创作链路。',
+    sourceName: 'doxcn7v00OqsUwoXplcslVHKd79-即梦 NANO 走秀换装工坊.txt',
+    tags: ['即梦', '换装', '视频生成'],
+    rightsNote: '飞书知识库内部资料仅做摘要导览，不复制正文模板。',
+  },
+  {
+    id: 'feishu-history-story',
+    title: '【S26】沉浸式历史故事',
+    category: '故事创作',
+    scenario: '把历史人物、冲突和转折组织成适合短视频的沉浸叙事。',
+    summary: '适合AI漫剧和公众号内容共用，补充历史故事类脚本的结构化拆解方式。',
+    sourceName: 'A0s4dSyALobJa0xBMpLcxHuin6d-【S26】沉浸式历史故事.txt',
+    tags: ['历史故事', '脚本', 'AI漫剧'],
+    rightsNote: '飞书知识库内部资料仅做摘要导览，不复制正文模板。',
+  },
+  {
+    id: 'feishu-english-teaching',
+    title: '英语教学视频',
+    category: '教育内容',
+    scenario: '把知识点、例句、画面和口播拆成适合教学短视频的流程。',
+    summary: '适合学习路线页展示“从工具上手到教学作品”的跨场景应用。',
+    sourceName: 'doxcnD8RVI3BX2rbz2JJRDWwqyd-英语教学视频.txt',
+    tags: ['教育', '口播', '短视频'],
+    rightsNote: '飞书知识库内部资料仅做摘要导览，不复制正文模板。',
+  },
+  {
+    id: 'feishu-ai-news-topic',
+    title: '最新今日话题',
+    category: '公众号素材',
+    scenario: '把热点、观点和行动建议组合成公众号选题。',
+    summary: '适合公众号素材库，帮助运营者快速从趋势话题延展成课程宣传或资源推荐。',
+    sourceName: 'doxcnQj7BZO3j2jwzbVW2XpoBMf-最新今日话题.txt',
+    tags: ['热点', '公众号', '选题'],
+    rightsNote: '飞书知识库内部资料仅做摘要导览，不复制正文模板。',
+  },
+  {
+    id: 'feishu-philosophy',
+    title: '哲学最新版工作流',
+    category: '知识内容',
+    scenario: '把抽象观点拆成故事、金句、案例和视觉画面。',
+    summary: '适合内容运营课程扩展，让知识类选题不只停留在工具清单，而能变成可发布作品。',
+    sourceName: 'doxcnUiH7d0hU7a2gyf1P34NqQg-哲学最新版工作流.txt',
+    tags: ['哲学', '知识内容', '文案'],
+    rightsNote: '飞书知识库内部资料仅做摘要导览，不复制正文模板。',
+  },
+];
+
 export const defaultCourses = [
   {
     id: 'opc-ai-comic-practice',
@@ -257,6 +571,65 @@ function matchesKeyword(item, keyword, fields) {
   const needle = normalizeText(keyword);
   if (!needle) return true;
   return fields.some((field) => normalizeText(item[field]).includes(needle));
+}
+
+export function normalizeRouteId(rawRoute) {
+  const cleaned = String(rawRoute ?? '')
+    .trim()
+    .replace(/^#\/?/, '')
+    .replace(/^\//, '');
+  const routeId = cleaned || 'home';
+  return siteNavItems.some((item) => item.id === routeId) ? routeId : 'home';
+}
+
+function searchableBlob(item) {
+  return normalizeText(
+    [
+      item.title,
+      item.name,
+      item.category,
+      item.type,
+      item.scenario,
+      item.summary,
+      item.source,
+      item.outcome,
+      item.audience,
+      item.recommendation,
+      Array.isArray(item.tags) ? item.tags.join(' ') : '',
+    ].join(' '),
+  );
+}
+
+function chooseReference(prompt, context) {
+  const text = normalizeText(prompt);
+  const candidates = [
+    ...(context.feishuKnowledgeItems ?? feishuKnowledgeItems),
+    ...(context.courses ?? defaultCourses),
+    ...(context.resources ?? defaultResources),
+  ];
+  const keywords = ['电商', '主图', '提示词', '漫剧', '飞书', '视频', '图像', '公众号', '课程', '语音', '音乐'];
+
+  return candidates
+    .map((item) => ({
+      item,
+      score: keywords.reduce((sum, keyword) => sum + (text.includes(keyword) && searchableBlob(item).includes(keyword) ? 1 : 0), 0),
+    }))
+    .sort((a, b) => b.score - a.score)[0]?.item ?? candidates[0];
+}
+
+export function buildWorkbenchReply(modeId, prompt, thread = {}, context = {}) {
+  const mode = workbenchModes.find((item) => item.id === modeId) ?? workbenchModes[0];
+  const reference = chooseReference(`${thread.title ?? ''} ${prompt}`, context);
+  const referenceTitle = reference?.title ?? reference?.name ?? 'OPC课程与资源库';
+  const referenceCategory = reference?.category ? `（${reference.category}）` : '';
+  const action = mode.sampleAction;
+
+  return [
+    `【${mode.label}模式】我会围绕“${String(prompt).trim() || action}”先做本地演示，不调用外部模型。`,
+    `可参考：${referenceTitle}${referenceCategory}。`,
+    `建议先按OPC学习站的结构处理：1. 明确目标人群；2. 抽取课程或飞书知识库素材；3. 输出可直接试用的${mode.label}创作草案。`,
+    `下一步可以点击“${action}”，或继续补充风格、平台、时长和发布场景。`,
+  ].join('\n');
 }
 
 export function validateCourse(course) {
