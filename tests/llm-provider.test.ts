@@ -1,5 +1,13 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { createOpenAiCompatibleJsonLlm, listOpenAiCompatibleModels, LlmJsonParseError, testOpenAiCompatibleLlm } from '@shared/llm-provider';
+import {
+  createConfiguredJsonLlm,
+  createOpenAiCompatibleJsonLlm,
+  listConfiguredProviderModels,
+  listOpenAiCompatibleModels,
+  LlmJsonParseError,
+  testConfiguredLlm,
+  testOpenAiCompatibleLlm,
+} from '@shared/llm-provider';
 import { defaultConfig } from '@shared/config';
 
 afterEach(() => {
@@ -291,5 +299,268 @@ describe('OpenAI-compatible LLM JSON adapter', () => {
     expect(result.status).toBe('fail');
     expect(result.models).toEqual([]);
     expect(result.detail).toContain('API key');
+  });
+});
+
+describe('Anthropic Messages LLM JSON adapter', () => {
+  it('posts messages with Anthropic headers and parses text content JSON', async () => {
+    const requests: Array<{
+      url: string;
+      body: Record<string, unknown>;
+      apiKey: string | null;
+      version: string | null;
+      auth: string | null;
+    }> = [];
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (url: string, init: RequestInit) => {
+        const headers = new Headers(init.headers);
+        requests.push({
+          url,
+          body: JSON.parse(String(init.body)),
+          apiKey: headers.get('x-api-key'),
+          version: headers.get('anthropic-version'),
+          auth: headers.get('Authorization'),
+        });
+        return new Response(
+          JSON.stringify({
+            id: 'msg_1',
+            content: [{ type: 'text', text: '```json\n{"reviewedText":"clean"}\n```' }],
+          }),
+          {
+            status: 200,
+            headers: { 'content-type': 'application/json' },
+          },
+        );
+      }),
+    );
+
+    const runJson = createConfiguredJsonLlm({
+      ...defaultConfig.llm,
+      provider: 'anthropic',
+      protocol: 'anthropic',
+      apiKey: 'anthropic-key',
+      baseUrl: 'https://code.newcli.com/claude/ultra',
+      model: 'claude-sonnet-4-5-20250929',
+      requestParamsJson: '{"temperature":0}',
+    });
+    const result = await runJson({
+      step: 0,
+      name: 'review',
+      messages: [
+        { role: 'system', content: 'Return strict JSON only.' },
+        { role: 'user', content: 'clean this' },
+      ],
+    });
+
+    expect(result.json).toEqual({ reviewedText: 'clean' });
+    expect(result.raw).toBe('```json\n{"reviewedText":"clean"}\n```');
+    expect(result.requestId).toBe('msg_1');
+    expect(requests[0].url).toBe('https://code.newcli.com/claude/ultra/v1/messages');
+    expect(requests[0].apiKey).toBe('anthropic-key');
+    expect(requests[0].version).toBe('2023-06-01');
+    expect(requests[0].auth).toBeNull();
+    expect(requests[0].body).toMatchObject({
+      model: 'claude-sonnet-4-5-20250929',
+      max_tokens: 4096,
+      temperature: 0,
+      system: 'Return strict JSON only.',
+      messages: [{ role: 'user', content: 'clean this' }],
+    });
+  });
+
+  it('repairs Anthropic fenced JSON when a long copy string contains literal line breaks', async () => {
+    const raw = [
+      '```json',
+      '{',
+      '  "title": "贫穷少年到韩国总统：李明博的《经营未来》",',
+      '  "copy": "有一种人生，让你读完之后，只想沉默很久。',
+      '',
+      '李明博的故事，就是这样一种人生。',
+      '',
+      '---',
+      '',
+      '**一、贫穷，是他最初的老师**"',
+      '}',
+      '```',
+    ].join('\n');
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async () =>
+        new Response(
+          JSON.stringify({
+            id: 'msg_research',
+            content: [{ type: 'text', text: raw }],
+          }),
+          {
+            status: 200,
+            headers: { 'content-type': 'application/json' },
+          },
+        ),
+      ),
+    );
+
+    const runJson = createConfiguredJsonLlm({
+      ...defaultConfig.llm,
+      provider: 'anthropic',
+      protocol: 'anthropic',
+      apiKey: 'anthropic-key',
+      baseUrl: 'https://code.newcli.com/claude/ultra',
+      model: 'claude-sonnet-4-5-20250929',
+    });
+    const result = await runJson<{ title: string; copy: string }>({
+      step: 0,
+      name: 'research-copy',
+      messages: [{ role: 'user', content: 'write source copy' }],
+    });
+
+    expect(result.json.title).toBe('贫穷少年到韩国总统：李明博的《经营未来》');
+    expect(result.json.copy).toContain('李明博的故事，就是这样一种人生。');
+    expect(result.json.copy).toContain('**一、贫穷，是他最初的老师**');
+    expect(result.requestId).toBe('msg_research');
+  });
+
+  it('requests Anthropic tool use for JSON and parses tool input directly', async () => {
+    const requests: Array<Record<string, unknown>> = [];
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (_url: string, init: RequestInit) => {
+        requests.push(JSON.parse(String(init.body)) as Record<string, unknown>);
+        return new Response(
+          JSON.stringify({
+            id: 'msg_tool',
+            content: [
+              {
+                type: 'tool_use',
+                id: 'toolu_1',
+                name: 'return_json',
+                input: {
+                  title: '从捡废品到总统再到囚徒——李明博的魔幻人生',
+                  copy: '1941年，他出生在日本大阪。\\n\\n少年时的李明博，靠捡酒瓶、卖爆米花凑齐了学费。',
+                },
+              },
+            ],
+          }),
+          {
+            status: 200,
+            headers: { 'content-type': 'application/json' },
+          },
+        );
+      }),
+    );
+
+    const runJson = createConfiguredJsonLlm({
+      ...defaultConfig.llm,
+      provider: 'anthropic',
+      protocol: 'anthropic',
+      apiKey: 'anthropic-key',
+      baseUrl: 'https://code.newcli.com/claude/ultra',
+      model: 'claude-sonnet-4-5-20250929',
+    });
+    const result = await runJson<{ title: string; copy: string }>({
+      step: 0,
+      name: 'research-copy',
+      messages: [{ role: 'user', content: 'write source copy' }],
+    });
+
+    expect(result.json.title).toBe('从捡废品到总统再到囚徒——李明博的魔幻人生');
+    expect(result.json.copy).toContain('捡酒瓶');
+    expect(result.raw).toContain('李明博');
+    expect(result.requestId).toBe('msg_tool');
+    expect(requests[0].tool_choice).toEqual({ type: 'tool', name: 'return_json' });
+    expect(requests[0].tools).toEqual([
+      {
+        name: 'return_json',
+        description: 'Return the final answer as a JSON object.',
+        input_schema: { type: 'object', properties: {}, additionalProperties: true },
+      },
+    ]);
+  });
+
+  it('tests Anthropic models with a Messages API JSON probe', async () => {
+    const requests: Array<{ url: string; body: Record<string, unknown>; apiKey: string | null; version: string | null }> = [];
+    const result = await testConfiguredLlm(
+      {
+        ...defaultConfig.llm,
+        provider: 'anthropic',
+        protocol: 'anthropic',
+        apiKey: 'anthropic-key',
+        baseUrl: 'https://api.anthropic.com',
+        model: 'claude-sonnet-4-5-20250929',
+      },
+      async (url, init) => {
+        const headers = new Headers(init?.headers);
+        requests.push({
+          url: String(url),
+          body: JSON.parse(String(init?.body)),
+          apiKey: headers.get('x-api-key'),
+          version: headers.get('anthropic-version'),
+        });
+        return new Response(
+          JSON.stringify({
+            id: 'msg_probe',
+            content: [{ type: 'text', text: '{"ok":true}' }],
+          }),
+          {
+            status: 200,
+            headers: { 'content-type': 'application/json' },
+          },
+        );
+      },
+    );
+
+    expect(result.status).toBe('pass');
+    expect(result.requestId).toBe('msg_probe');
+    expect(result.endpoint).toBe('https://api.anthropic.com/v1/messages');
+    expect(requests[0].apiKey).toBe('anthropic-key');
+    expect(requests[0].version).toBe('2023-06-01');
+    expect(requests[0].body).toMatchObject({
+      model: 'claude-sonnet-4-5-20250929',
+      max_tokens: 20,
+      system: 'Return strict JSON only.',
+    });
+  });
+
+  it('fetches Anthropic models from the configured base URL', async () => {
+    const requests: Array<{ url: string; method: string | undefined; apiKey: string | null; version: string | null; auth: string | null }> = [];
+    const result = await listConfiguredProviderModels(
+      { protocol: 'anthropic', baseUrl: 'https://api.anthropic.com', apiKey: 'anthropic-key' },
+      async (url, init) => {
+        const headers = new Headers(init?.headers);
+        requests.push({
+          url: String(url),
+          method: init?.method,
+          apiKey: headers.get('x-api-key'),
+          version: headers.get('anthropic-version'),
+          auth: headers.get('Authorization'),
+        });
+        return new Response(
+          JSON.stringify({
+            data: [
+              {
+                id: 'claude-sonnet-4-5-20250929',
+                display_name: 'Claude Sonnet 4.5',
+                created_at: '2025-09-29T00:00:00Z',
+              },
+            ],
+          }),
+          {
+            status: 200,
+            headers: { 'content-type': 'application/json' },
+          },
+        );
+      },
+    );
+
+    expect(result.status).toBe('pass');
+    expect(result.endpoint).toBe('https://api.anthropic.com/v1/models');
+    expect(result.models).toEqual([{ id: 'claude-sonnet-4-5-20250929', created: 1759104000, ownedBy: 'anthropic' }]);
+    expect(requests[0]).toEqual({
+      url: 'https://api.anthropic.com/v1/models',
+      method: 'GET',
+      apiKey: 'anthropic-key',
+      version: '2023-06-01',
+      auth: null,
+    });
   });
 });

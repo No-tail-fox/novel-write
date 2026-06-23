@@ -12,7 +12,7 @@ import { generateImageLabRecord } from '../src/shared/image-lab';
 import { detectJianyingDraftPath, resolveRuntimeJianyingDraftPath } from '../src/shared/jianying-paths';
 import { loadJianyingEffectCatalog } from '../src/shared/jianying-effects';
 import { generateConfiguredVoicePreview } from '../src/shared/media-providers';
-import { createOpenAiCompatibleJsonLlm, listOpenAiCompatibleModels, testOpenAiCompatibleLlm } from '../src/shared/llm-provider';
+import { createConfiguredJsonLlm, listConfiguredProviderModels, testConfiguredLlm } from '../src/shared/llm-provider';
 import { markSceneImageForRegeneration, markSceneNarrationForRegeneration, markTaskStepForRerun } from '../src/shared/pipeline-cache';
 import { resolvePythonRuntimeInfo, setDefaultPythonRuntimeAppRoot } from '../src/shared/python-runtime';
 import { composeCopyFromSources, createAiSourceResearcher, searchWebSources } from '../src/shared/research';
@@ -345,15 +345,15 @@ ipcMain.handle('app:save-config', async (_event, config) => {
   return database.getState();
 });
 
-ipcMain.handle('llm:test-config', async (_event, config: LlmConfig) => testOpenAiCompatibleLlm(config));
+ipcMain.handle('llm:test-config', async (_event, config: LlmConfig) => testConfiguredLlm(config));
 
-ipcMain.handle('models:list', async (_event, request: ProviderModelListRequest) => listOpenAiCompatibleModels(request));
+ipcMain.handle('models:list', async (_event, request: ProviderModelListRequest) => listConfiguredProviderModels(request));
 
 ipcMain.handle('volcengine:speakers:list', async (_event, request: VolcengineSpeakerListRequest) => listVolcengineSpeakers(request));
 
 ipcMain.handle('config:test', async (_event, input: { target: ConfigTestTarget; config: AppConfig }) => {
   if (input.target === 'llm') {
-    return fromLlmModelTestResult(await testOpenAiCompatibleLlm(input.config.llm));
+    return fromLlmModelTestResult(await testConfiguredLlm(input.config.llm));
   }
   return testConfigTarget(input.target, input.config, { pathExists: existsSync });
 });
@@ -373,7 +373,7 @@ ipcMain.handle('research:web-search', async (_event, query: string) => {
 ipcMain.handle('research:compose-copy', async (_event, input: ResearchCopyComposeInput) => {
   const database = await getDb();
   const state = await database.getState();
-  return composeCopyFromSources(createOpenAiCompatibleJsonLlm(state.config.llm), input);
+  return composeCopyFromSources(createConfiguredJsonLlm(state.config.llm), input);
 });
 
 ipcMain.handle('prompt-template:save', async (_event, template: PromptTemplate) => {
@@ -397,7 +397,7 @@ ipcMain.handle('custom-style:save', async (_event, style: CustomStyle) => {
 ipcMain.handle('custom-style:generate-draft', async (_event, input: CustomStyleGenerateInput): Promise<CustomStyle> => {
   const database = await getDb();
   const state = await database.getState();
-  const llm = createOpenAiCompatibleJsonLlm(state.config.llm);
+  const llm = createConfiguredJsonLlm(state.config.llm);
   const result = await llm<Partial<CustomStyle>>({
     step: -1,
     name: 'custom-style-draft',

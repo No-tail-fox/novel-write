@@ -167,6 +167,32 @@ describe('config validation utilities', () => {
     expect(configTargetStatus('llm', config)).toBe('pass');
   });
 
+  it('normalizes Anthropic LLM profiles and validates them against the Messages endpoint', () => {
+    const normalized = normalizeAppConfig({
+      ...defaultConfig,
+      llm: {
+        ...defaultConfig.llm,
+        provider: 'anthropic',
+        protocol: 'anthropic',
+        baseUrl: 'https://code.newcli.com/claude/ultra/',
+        apiKey: 'sk-ant-test',
+        model: 'claude-sonnet-4-5-20250929',
+      },
+    } as unknown as typeof defaultConfig);
+
+    const result = validateConfigTarget('llm', normalized);
+
+    expect(normalized.llm).toMatchObject({
+      provider: 'anthropic',
+      protocol: 'anthropic',
+      baseUrl: 'https://code.newcli.com/claude/ultra/',
+      model: 'claude-sonnet-4-5-20250929',
+    });
+    expect(normalized.llmProfiles[0]).toMatchObject({ provider: 'anthropic', protocol: 'anthropic' });
+    expect(result.status).toBe('pass');
+    expect(result.endpoint).toBe('https://code.newcli.com/claude/ultra/v1/messages');
+  });
+
   it('preserves per-profile raw llm request params json during normalization', () => {
     const normalized = normalizeAppConfig({
       ...defaultConfig,

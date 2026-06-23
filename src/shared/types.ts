@@ -35,7 +35,7 @@ export interface LlmConfig {
   name?: string;
   enabled?: boolean;
   provider: string;
-  protocol?: 'openai';
+  protocol?: 'openai' | 'anthropic';
   apiKey: string;
   baseUrl: string;
   model: string;
@@ -62,6 +62,7 @@ export interface ProviderModel {
 export interface ProviderModelListRequest {
   baseUrl: string;
   apiKey: string;
+  protocol?: LlmConfig['protocol'];
 }
 
 export interface ProviderModelListResult {

@@ -2,7 +2,7 @@ import { defaultConfig } from './config';
 import { normalizeAppConfig } from './config-utils';
 import type { AppConfig, ConfigTestTarget, ImageProviderProfile, TtsProviderProfile } from './types';
 
-export type EditableLlmProvider = 'openai' | 'custom';
+export type EditableLlmProvider = 'openai' | 'custom' | 'anthropic';
 export type ImageResolution = '1K' | '2K' | '4K';
 
 export type SelectedProviderProfileIds = {
@@ -48,6 +48,7 @@ export function activeLlmProfileId(config: AppConfig): string {
 }
 
 export function editableLlmProfileProvider(profile: AppConfig['llm']): EditableLlmProvider {
+  if (profile.protocol === 'anthropic' || profile.provider === 'anthropic') return 'anthropic';
   return profile.provider === 'openai' ? 'openai' : 'custom';
 }
 
@@ -66,12 +67,13 @@ export function normalizeLocalLlmProfiles(profiles: AppConfig['llm'][], activeId
 export function normalizeLocalLlmProfile(profile: Partial<AppConfig['llm']>, index: number): AppConfig['llm'] {
   const merged = { ...defaultConfig.llm, ...profile };
   const id = profile.id || createLlmProfileId();
+  const provider = editableLlmProfileProvider(merged);
   return {
     ...merged,
     id,
-    name: profile.name?.trim() || (merged.provider === 'openai' ? 'OpenAI Official' : index === 0 ? '第三方' : `配置 ${index + 1}`),
-    provider: editableLlmProfileProvider(merged),
-    protocol: 'openai',
+    name: profile.name?.trim() || (provider === 'anthropic' ? 'Anthropic' : provider === 'openai' ? 'OpenAI Official' : index === 0 ? '第三方' : `配置 ${index + 1}`),
+    provider,
+    protocol: provider === 'anthropic' ? 'anthropic' : 'openai',
     enabled: Boolean(profile.enabled),
     timeoutMs: normalizePositiveNumber(merged.timeoutMs, defaultConfig.llm.timeoutMs ?? 120000),
   };

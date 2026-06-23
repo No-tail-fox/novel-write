@@ -1,4 +1,4 @@
-import type { JsonLlm } from './llm-provider';
+import { LlmJsonParseError, type JsonLlm, type LlmJsonResult } from './llm-provider';
 import type { AiSourceContext, AiSourceSection, AppConfig, ResearchCopyComposeInput, ResearchCopyComposeResult, Task } from './types';
 
 type FetchLike = (url: string, init?: RequestInit) => Promise<Response>;
@@ -159,35 +159,128 @@ export async function composeCopyFromSources(runJson: JsonLlm, input: ResearchCo
     })
     .join('\n\n');
 
-  const result = await runJson<{ title?: string; copy?: string; inputText?: string; materialText?: string }>({
-    step: 0,
-    name: 'research-copy',
-    messages: [
-      {
-        role: 'system',
-        content:
+  let result: LlmJsonResult<{ title?: string; copy?: string; inputText?: string; materialText?: string }>;
+  try {
+    result = await runJson<{ title?: string; copy?: string; inputText?: string; materialText?: string }>({
+      step: 0,
+      name: 'research-copy',
+      messages: [
+        {
+          role: 'system',
+          content:
           'You are a short-video script researcher. Use only the selected web page material and the user requirements to write a concise Chinese source copy. Return strict JSON only.',
-      },
-      {
-        role: 'user',
-        content: [
+        },
+        {
+          role: 'user',
+          content: [
           `Keyword: ${input.keyword}`,
           input.extraRequirements ? `Extra requirements: ${input.extraRequirements}` : '',
           'Selected web page material:',
           sourceBlocks,
           'Output JSON shape: {"title":"一个适合任务标题的短标题","copy":"一段可继续进入短视频流水线的中文文案素材，保留事实依据，避免编造网页中没有的信息。"}',
-        ]
+          ]
           .filter(Boolean)
           .join('\n\n'),
-      },
-    ],
-  });
+        },
+      ],
+    });
+  } catch (error) {
+    if (isLlmJsonParseError(error)) {
+      const salvaged = extractResearchCopyFromMalformedJson(error.rawResponse);
+      if (salvaged?.copy) {
+        return { title: salvaged.title ?? '', copy: salvaged.copy, raw: error.rawResponse, requestId: null };
+      }
+    }
+    throw error;
+  }
 
   const copy = (result.json.copy || result.json.inputText || result.json.materialText || '').trim();
   if (!copy) {
     throw new Error('LLM did not return copy text for selected sources.');
   }
   return { title: (result.json.title || '').trim(), copy, raw: result.raw, requestId: result.requestId };
+}
+
+function isLlmJsonParseError(error: unknown): error is LlmJsonParseError {
+  return (
+    error instanceof LlmJsonParseError ||
+    Boolean(error && typeof error === 'object' && (error as { name?: unknown }).name === 'LlmJsonParseError' && typeof (error as { rawResponse?: unknown }).rawResponse === 'string')
+  );
+}
+
+function extractResearchCopyFromMalformedJson(raw: string): { title?: string; copy: string } | null {
+  const title = extractMalformedJsonStringField(raw, 'title')?.trim() || '';
+  const copy =
+    extractMalformedJsonStringField(raw, 'copy')?.trim() ||
+    extractMalformedJsonStringField(raw, 'inputText')?.trim() ||
+    extractMalformedJsonStringField(raw, 'materialText')?.trim() ||
+    '';
+  return copy ? { title, copy } : null;
+}
+
+function extractMalformedJsonStringField(input: string, field: string): string | null {
+  const fieldPattern = new RegExp(`"${field}"\\s*:`, 'g');
+  const match = fieldPattern.exec(input);
+  if (!match) return null;
+  let index = skipWhitespace(input, match.index + match[0].length);
+  if (input[index] !== '"') return null;
+  index += 1;
+
+  let value = '';
+  let escaped = false;
+  for (; index < input.length; index += 1) {
+    const char = input[index];
+    if (escaped) {
+      const decoded = decodeJsonEscape(input, index);
+      value += decoded.value;
+      index += decoded.skip;
+      escaped = false;
+      continue;
+    }
+    if (char === '\\') {
+      escaped = true;
+      continue;
+    }
+    if (char === '"' && isLikelyMalformedJsonStringBoundary(input, index)) {
+      return value;
+    }
+    value += char;
+  }
+  return value.trim() ? value : null;
+}
+
+function isLikelyMalformedJsonStringBoundary(input: string, quoteIndex: number): boolean {
+  const next = skipWhitespace(input, quoteIndex + 1);
+  if (next >= input.length) return true;
+  const char = input[next];
+  if (char === '}') return true;
+  if (char !== ',') return false;
+  const afterComma = skipWhitespace(input, next + 1);
+  if (input[afterComma] !== '"') return false;
+  const closingQuote = input.indexOf('"', afterComma + 1);
+  if (closingQuote === -1) return false;
+  return input[skipWhitespace(input, closingQuote + 1)] === ':';
+}
+
+function skipWhitespace(input: string, start: number): number {
+  let index = start;
+  while (index < input.length && /\s/.test(input[index])) index += 1;
+  return index;
+}
+
+function decodeJsonEscape(input: string, index: number): { value: string; skip: number } {
+  const char = input[index];
+  if (char === 'n') return { value: '\n', skip: 0 };
+  if (char === 'r') return { value: '\r', skip: 0 };
+  if (char === 't') return { value: '\t', skip: 0 };
+  if (char === 'b') return { value: '\b', skip: 0 };
+  if (char === 'f') return { value: '\f', skip: 0 };
+  if (char === '"' || char === '\\' || char === '/') return { value: char, skip: 0 };
+  if (char === 'u') {
+    const hex = input.slice(index + 1, index + 5);
+    if (/^[\da-f]{4}$/i.test(hex)) return { value: String.fromCharCode(Number.parseInt(hex, 16)), skip: 4 };
+  }
+  return { value: char, skip: 0 };
 }
 
 async function fetchPageText(url: string, fetchImpl: FetchLike): Promise<string> {

@@ -1,12 +1,12 @@
 import type { RunTaskOptions } from './runner';
 import type { AppConfig, Task } from './types';
-import { createOpenAiCompatibleJsonLlm } from './llm-provider';
+import { createConfiguredJsonLlm } from './llm-provider';
 import { createConfiguredImageGenerator, createConfiguredNarrationSynthesizer, getConfiguredImageConcurrency } from './media-providers';
 
 export function createTaskRuntimeProviders(config: AppConfig, workDir: string, task?: Pick<Task, 'llmProfileId'>): Pick<RunTaskOptions, 'llm' | 'generateImages' | 'imageConcurrency' | 'synthesizeNarration'> {
   const llm = task?.llmProfileId ? config.llmProfiles.find((profile) => profile.id === task.llmProfileId) ?? config.llm : config.llm;
   return {
-    llm: hasUsableLlm(llm) ? createOpenAiCompatibleJsonLlm(llm) : undefined,
+    llm: hasUsableLlm(llm) ? createConfiguredJsonLlm(llm) : undefined,
     generateImages: hasUsableImageProvider(config) ? createConfiguredImageGenerator(config, workDir) : undefined,
     imageConcurrency: getConfiguredImageConcurrency(config),
     synthesizeNarration: hasUsableTtsProvider(config) ? createConfiguredNarrationSynthesizer(config, workDir) : undefined,

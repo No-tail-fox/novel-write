@@ -1329,7 +1329,7 @@ describe('product shell ui', () => {
     ]) {
       expect(main).toContain(branch);
     }
-    expect(main).toContain("options={['openai', 'custom']}");
+    expect(main).toContain("options={['openai', 'custom', 'anthropic']}");
     expect(main).toContain("options={['gpt_image', 'jimeng', 'custom']}");
     expect(main).toContain("options={['volcengine', 'minimax']}");
     expect(main).toContain('normalizeEditableConfigProviders');

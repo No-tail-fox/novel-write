@@ -23,8 +23,18 @@ export interface LlmJsonResult<T = unknown> {
 
 export type JsonLlm = <T = unknown>(request: LlmJsonRequest) => Promise<LlmJsonResult<T>>;
 
+interface AnthropicContentPart {
+  type?: string;
+  text?: string | null;
+  name?: string | null;
+  input?: unknown;
+}
+
 const TRANSIENT_LLM_STATUS_CODES = new Set([429, 500, 502, 503, 504]);
 const LLM_RETRY_DELAYS_MS = [500, 1500];
+const ANTHROPIC_VERSION = '2023-06-01';
+const DEFAULT_ANTHROPIC_MAX_TOKENS = 4096;
+const ANTHROPIC_JSON_TOOL_NAME = 'return_json';
 
 export class LlmJsonParseError extends Error {
   constructor(
@@ -34,6 +44,10 @@ export class LlmJsonParseError extends Error {
     super(message);
     this.name = 'LlmJsonParseError';
   }
+}
+
+export function createConfiguredJsonLlm(config: LlmConfig): JsonLlm {
+  return isAnthropicLlmConfig(config) ? createAnthropicMessagesJsonLlm(config) : createOpenAiCompatibleJsonLlm(config);
 }
 
 export function createOpenAiCompatibleJsonLlm(config: LlmConfig): JsonLlm {
@@ -67,6 +81,44 @@ export function createOpenAiCompatibleJsonLlm(config: LlmConfig): JsonLlm {
   };
 }
 
+export function createAnthropicMessagesJsonLlm(config: LlmConfig): JsonLlm {
+  return async <T = unknown>(request: LlmJsonRequest): Promise<LlmJsonResult<T>> => {
+    if (!config.apiKey) {
+      throw new Error('LLM API key is missing; cannot run real task content generation.');
+    }
+    const baseUrl = normalizeAnthropicBaseUrl(config.baseUrl || 'https://api.anthropic.com');
+    const endpoint = `${baseUrl}/messages`;
+    const response = await fetchAnthropicJsonWithRetries(endpoint, config, request);
+    if (!response.ok) {
+      throw new Error(`LLM API error (${response.status}) at step ${request.step} ${request.name} via ${endpoint}: ${await response.text()}`);
+    }
+    const body = (await response.json()) as {
+      id?: string;
+      content?: AnthropicContentPart[];
+    };
+    const toolResult = extractAnthropicToolUseResult<T>(body);
+    if (toolResult) {
+      return {
+        ...toolResult,
+        requestId: body.id ?? null,
+      };
+    }
+    const raw = extractAnthropicTextContent(body);
+    if (!raw.trim()) {
+      throw new LlmJsonParseError(`LLM step ${request.step} ${request.name} returned empty content.`, raw);
+    }
+    try {
+      return {
+        json: parseLlmJsonContent<T>(raw),
+        raw,
+        requestId: body.id ?? null,
+      };
+    } catch {
+      throw new LlmJsonParseError(`LLM step ${request.step} ${request.name} did not return valid JSON.${formatRawPreview(raw)}`, raw);
+    }
+  };
+}
+
 async function fetchLlmJsonWithRetries(endpoint: string, config: LlmConfig, request: LlmJsonRequest): Promise<Response> {
   const maxAttempts = LLM_RETRY_DELAYS_MS.length + 1;
   for (let attempt = 1; attempt <= maxAttempts; attempt += 1) {
@@ -80,6 +132,29 @@ async function fetchLlmJsonWithRetries(endpoint: string, config: LlmConfig, requ
         Authorization: `Bearer ${config.apiKey}`,
       },
       body: JSON.stringify(buildRequestBody(config, request.messages)),
+    });
+    if (!TRANSIENT_LLM_STATUS_CODES.has(response.status) || attempt === maxAttempts) {
+      return response;
+    }
+    await sleepBeforeRetry(LLM_RETRY_DELAYS_MS[attempt - 1], request.signal, `LLM step ${request.step} ${request.name}`);
+  }
+  throw new Error('Unexpected LLM retry state.');
+}
+
+async function fetchAnthropicJsonWithRetries(endpoint: string, config: LlmConfig, request: LlmJsonRequest): Promise<Response> {
+  const maxAttempts = LLM_RETRY_DELAYS_MS.length + 1;
+  for (let attempt = 1; attempt <= maxAttempts; attempt += 1) {
+    const response = await fetchWithTimeout(endpoint, {
+      method: 'POST',
+      timeoutMs: config.timeoutMs ?? 120_000,
+      timeoutLabel: `LLM step ${request.step} ${request.name}`,
+      signal: request.signal,
+      headers: {
+        'Content-Type': 'application/json',
+        'x-api-key': config.apiKey,
+        'anthropic-version': ANTHROPIC_VERSION,
+      },
+      body: JSON.stringify(buildAnthropicRequestBody(config, request.messages)),
     });
     if (!TRANSIENT_LLM_STATUS_CODES.has(response.status) || attempt === maxAttempts) {
       return response;
@@ -121,6 +196,42 @@ function buildRequestBody(config: LlmConfig, messages: LlmMessage[]): Record<str
   };
   const extra = parseRequestParamsJson(config.requestParamsJson);
   return { ...extra, ...baseBody };
+}
+
+function buildAnthropicRequestBody(config: LlmConfig, messages: LlmMessage[]): Record<string, unknown> {
+  const extra = parseRequestParamsJson(config.requestParamsJson);
+  const system = messages
+    .filter((message) => message.role === 'system')
+    .map((message) => message.content.trim())
+    .filter(Boolean)
+    .join('\n\n');
+  const anthropicMessages = messages
+    .filter((message) => message.role !== 'system')
+    .map((message) => ({
+      role: message.role,
+      content: message.content,
+    }));
+  const body: Record<string, unknown> = {
+    ...extra,
+    model: config.model,
+    max_tokens: normalizeAnthropicMaxTokens(extra.max_tokens, DEFAULT_ANTHROPIC_MAX_TOKENS),
+    messages: anthropicMessages,
+    tools: [
+      {
+        name: ANTHROPIC_JSON_TOOL_NAME,
+        description: 'Return the final answer as a JSON object.',
+        input_schema: { type: 'object', properties: {}, additionalProperties: true },
+      },
+    ],
+    tool_choice: { type: 'tool', name: ANTHROPIC_JSON_TOOL_NAME },
+  };
+  if (system) body.system = system;
+  return body;
+}
+
+function normalizeAnthropicMaxTokens(value: unknown, fallback: number): number {
+  const parsed = Number(value);
+  return Number.isFinite(parsed) && parsed > 0 ? Math.round(parsed) : fallback;
 }
 
 function parseRequestParamsJson(value: string | undefined): Record<string, unknown> {
@@ -189,6 +300,92 @@ export async function testOpenAiCompatibleLlm(config: LlmConfig, fetchImpl: type
       choices?: Array<{ message?: { content?: string | null }; text?: string | null }>;
     };
     const raw = body.choices?.[0]?.message?.content ?? body.choices?.[0]?.text ?? '';
+    if (!raw.trim()) {
+      return { ...baseResult, latencyMs, requestId: body.id ?? null, status: 'warn', detail: `Model ${model} responded, but returned empty content.` };
+    }
+    try {
+      parseLlmJsonContent(raw);
+      return { ...baseResult, latencyMs, requestId: body.id ?? null, status: 'pass', detail: `Model ${model} is usable. Latency ${latencyMs} ms.` };
+    } catch {
+      return {
+        ...baseResult,
+        latencyMs,
+        requestId: body.id ?? null,
+        status: 'warn',
+        detail: `Model ${model} responded, but did not follow JSON mode: ${raw.slice(0, 160)}`,
+      };
+    }
+  } catch (error) {
+    return {
+      ...baseResult,
+      latencyMs: Date.now() - startedAt,
+      status: 'fail',
+      detail: error instanceof Error ? error.message : String(error),
+    };
+  }
+}
+
+export async function testConfiguredLlm(config: LlmConfig, fetchImpl: typeof fetch = fetch): Promise<LlmModelTestResult> {
+  return isAnthropicLlmConfig(config) ? testAnthropicMessagesLlm(config, fetchImpl) : testOpenAiCompatibleLlm(config, fetchImpl);
+}
+
+export async function testAnthropicMessagesLlm(config: LlmConfig, fetchImpl: typeof fetch = fetch): Promise<LlmModelTestResult> {
+  const startedAt = Date.now();
+  const model = config.model.trim();
+  const baseUrl = normalizeAnthropicBaseUrl(config.baseUrl || 'https://api.anthropic.com');
+  const endpoint = `${baseUrl}/messages`;
+  const baseResult = {
+    latencyMs: 0,
+    model,
+    endpoint,
+    requestId: null,
+  };
+
+  if (!config.apiKey.trim()) {
+    return { ...baseResult, status: 'fail', detail: 'API key is missing; fill it before testing the model.' };
+  }
+  if (!model) {
+    return { ...baseResult, status: 'fail', detail: 'Model name is missing; choose a model before testing.' };
+  }
+
+  try {
+    const response = await fetchWithInjectedTimeout(
+      fetchImpl,
+      endpoint,
+      {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'x-api-key': config.apiKey,
+          'anthropic-version': ANTHROPIC_VERSION,
+        },
+        body: JSON.stringify({
+          ...buildAnthropicRequestBody(config, [
+            { role: 'system', content: 'Return strict JSON only.' },
+            { role: 'user', content: 'Return {"ok":true} to confirm this model is usable.' },
+          ]),
+          model,
+          max_tokens: 20,
+        }),
+      },
+      15000,
+    );
+    const latencyMs = Date.now() - startedAt;
+    const bodyText = await response.text();
+    if (!response.ok) {
+      return {
+        ...baseResult,
+        latencyMs,
+        status: 'fail',
+        detail: `Model test failed with HTTP ${response.status}: ${bodyText.slice(0, 300)}`,
+      };
+    }
+
+    const body = JSON.parse(bodyText) as {
+      id?: string;
+      content?: Array<{ type?: string; text?: string | null }>;
+    };
+    const raw = extractAnthropicTextContent(body);
     if (!raw.trim()) {
       return { ...baseResult, latencyMs, requestId: body.id ?? null, status: 'warn', detail: `Model ${model} responded, but returned empty content.` };
     }
@@ -299,6 +496,99 @@ export async function listOpenAiCompatibleModels(
   }
 }
 
+export async function listConfiguredProviderModels(
+  request: ProviderModelListRequest,
+  fetchImpl: typeof fetch = fetch,
+): Promise<ProviderModelListResult> {
+  return request.protocol === 'anthropic' ? listAnthropicModels(request, fetchImpl) : listOpenAiCompatibleModels(request, fetchImpl);
+}
+
+export async function listAnthropicModels(
+  request: ProviderModelListRequest,
+  fetchImpl: typeof fetch = fetch,
+): Promise<ProviderModelListResult> {
+  const startedAt = Date.now();
+  const endpoint = `${normalizeAnthropicBaseUrl(request.baseUrl || 'https://api.anthropic.com')}/models`;
+  const baseResult = {
+    latencyMs: 0,
+    endpoint,
+    models: [] as ProviderModel[],
+  };
+
+  if (!request.apiKey.trim()) {
+    return { ...baseResult, status: 'fail', detail: 'API key is missing; fill it before fetching models.' };
+  }
+
+  try {
+    const response = await fetchWithInjectedTimeout(
+      fetchImpl,
+      endpoint,
+      {
+        method: 'GET',
+        headers: {
+          'x-api-key': request.apiKey,
+          'anthropic-version': ANTHROPIC_VERSION,
+        },
+      },
+      15000,
+    );
+    const latencyMs = Date.now() - startedAt;
+    const bodyText = await response.text();
+    if (!response.ok) {
+      return {
+        ...baseResult,
+        latencyMs,
+        status: 'fail',
+        detail: `Model list failed with HTTP ${response.status}: ${bodyText.slice(0, 300)}`,
+      };
+    }
+
+    const body = JSON.parse(bodyText) as { data?: unknown[] };
+    if (!Array.isArray(body.data)) {
+      return {
+        ...baseResult,
+        latencyMs,
+        status: 'fail',
+        detail: 'Model list response did not include data[].',
+      };
+    }
+
+    const seen = new Set<string>();
+    const models = body.data
+      .map(parseAnthropicProviderModel)
+      .filter((model): model is ProviderModel => Boolean(model))
+      .filter((model) => {
+        if (seen.has(model.id)) return false;
+        seen.add(model.id);
+        return true;
+      });
+
+    if (!models.length) {
+      return {
+        ...baseResult,
+        latencyMs,
+        status: 'warn',
+        detail: 'Model list returned no usable model ids.',
+      };
+    }
+
+    return {
+      ...baseResult,
+      latencyMs,
+      status: 'pass',
+      detail: `Loaded ${models.length} models.`,
+      models,
+    };
+  } catch (error) {
+    return {
+      ...baseResult,
+      latencyMs: Date.now() - startedAt,
+      status: 'fail',
+      detail: error instanceof Error ? error.message : String(error),
+    };
+  }
+}
+
 function parseProviderModel(value: unknown): ProviderModel | null {
   if (typeof value === 'string' && value.trim()) {
     return { id: value.trim() };
@@ -313,9 +603,66 @@ function parseProviderModel(value: unknown): ProviderModel | null {
   };
 }
 
+function parseAnthropicProviderModel(value: unknown): ProviderModel | null {
+  if (typeof value === 'string' && value.trim()) {
+    return { id: value.trim(), ownedBy: 'anthropic' };
+  }
+  if (!value || typeof value !== 'object') return null;
+  const record = value as Record<string, unknown>;
+  if (typeof record.id !== 'string' || !record.id.trim()) return null;
+  return {
+    id: record.id.trim(),
+    created: typeof record.created === 'number' ? record.created : parseAnthropicCreatedAt(record.created_at),
+    ownedBy: typeof record.owned_by === 'string' ? record.owned_by : typeof record.ownedBy === 'string' ? record.ownedBy : 'anthropic',
+  };
+}
+
+function parseAnthropicCreatedAt(value: unknown): number | undefined {
+  if (typeof value !== 'string' || !value.trim()) return undefined;
+  const timestamp = Date.parse(value);
+  return Number.isFinite(timestamp) ? Math.floor(timestamp / 1000) : undefined;
+}
+
 function normalizeOpenAiBaseUrl(value: string): string {
   const trimmed = value.replace(/\/+$/, '');
   return trimmed.endsWith('/v1') ? trimmed : `${trimmed}/v1`;
+}
+
+function normalizeAnthropicBaseUrl(value: string): string {
+  const trimmed = value.replace(/\/+$/, '');
+  return trimmed.endsWith('/v1') ? trimmed : `${trimmed}/v1`;
+}
+
+function isAnthropicLlmConfig(config: Pick<LlmConfig, 'provider' | 'protocol'>): boolean {
+  return config.protocol === 'anthropic' || config.provider === 'anthropic';
+}
+
+function extractAnthropicToolUseResult<T = unknown>(body: { content?: AnthropicContentPart[] }): LlmJsonResult<T> | null {
+  const toolUse = body.content?.find((part) => part.type === 'tool_use' && part.name === ANTHROPIC_JSON_TOOL_NAME && part.input !== undefined);
+  if (!toolUse) return null;
+  if (typeof toolUse.input === 'string') {
+    return {
+      json: parseLlmJsonContent<T>(toolUse.input),
+      raw: toolUse.input,
+      requestId: null,
+    };
+  }
+  const raw = JSON.stringify(toolUse.input);
+  if (!raw) return null;
+  return {
+    json: toolUse.input as T,
+    raw,
+    requestId: null,
+  };
+}
+
+function extractAnthropicTextContent(body: { content?: AnthropicContentPart[] }): string {
+  return (
+    body.content
+      ?.filter((part) => part.type === 'text' && typeof part.text === 'string')
+      .map((part) => part.text)
+      .join('\n') ?? ''
+  );
 }
 
 function parseLlmJsonContent<T = unknown>(raw: string): T {
@@ -327,11 +674,93 @@ function parseLlmJsonContent<T = unknown>(raw: string): T {
       try {
         return JSON.parse(candidate) as T;
       } catch {
-        // Keep looking; compatible providers sometimes add prose or fences around the payload.
+        const repaired = escapeControlCharactersInJsonStrings(candidate);
+        if (repaired !== candidate) {
+          try {
+            return JSON.parse(repaired) as T;
+          } catch {
+            // Keep looking; compatible providers sometimes add prose or fences around the payload.
+          }
+        }
       }
     }
     throw new SyntaxError('No valid JSON payload found.');
   }
+}
+
+function escapeControlCharactersInJsonStrings(input: string): string {
+  let output = '';
+  let inString = false;
+  let escaped = false;
+  let changed = false;
+
+  for (let index = 0; index < input.length; index += 1) {
+    const char = input[index];
+
+    if (!inString) {
+      output += char;
+      if (char === '"') inString = true;
+      continue;
+    }
+
+    if (escaped) {
+      escaped = false;
+      const replacement = escapedControlCharacterReplacement(input, index);
+      if (replacement) {
+        output += replacement.value;
+        index += replacement.skip;
+        changed = true;
+      } else {
+        output += char;
+      }
+      continue;
+    }
+
+    if (char === '\\') {
+      output += char;
+      escaped = true;
+      continue;
+    }
+    if (char === '"') {
+      output += char;
+      inString = false;
+      continue;
+    }
+
+    const replacement = controlCharacterReplacement(input, index);
+    if (replacement) {
+      output += replacement.value;
+      index += replacement.skip;
+      changed = true;
+      continue;
+    }
+
+    output += char;
+  }
+
+  return changed ? output : input;
+}
+
+function escapedControlCharacterReplacement(input: string, index: number): { value: string; skip: number } | null {
+  const char = input[index];
+  if (char === '\r' && input[index + 1] === '\n') return { value: 'n', skip: 1 };
+  if (char === '\n' || char === '\r') return { value: 'n', skip: 0 };
+  if (char === '\t') return { value: 't', skip: 0 };
+  if (char === '\b') return { value: 'b', skip: 0 };
+  if (char === '\f') return { value: 'f', skip: 0 };
+  const code = char.charCodeAt(0);
+  return code < 0x20 ? { value: `u${code.toString(16).padStart(4, '0')}`, skip: 0 } : null;
+}
+
+function controlCharacterReplacement(input: string, index: number): { value: string; skip: number } | null {
+  const char = input[index];
+  if (char === '\r' && input[index + 1] === '\n') return { value: '\\n', skip: 1 };
+  if (char === '\n' || char === '\r') return { value: '\\n', skip: 0 };
+  if (char === '\t') return { value: '\\t', skip: 0 };
+  if (char === '\b') return { value: '\\b', skip: 0 };
+  if (char === '\f') return { value: '\\f', skip: 0 };
+  const code = char.charCodeAt(0);
+  return code < 0x20 ? { value: `\\u${code.toString(16).padStart(4, '0')}`, skip: 0 } : null;
 }
 
 function extractJsonCandidates(input: string): string[] {

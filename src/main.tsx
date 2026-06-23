@@ -61,6 +61,7 @@ import type {
   PromptStepTemplateType,
   PromptTemplateType,
   ProviderModel,
+  ProviderModelListRequest,
   RewriteIntensity,
   ShellView,
   Task,
@@ -112,7 +113,7 @@ import {
   ttsProfileMinimax,
   ttsProfileVolcengine,
 } from './shared/provider-profile-utils';
-import { listOpenAiCompatibleModels } from './shared/llm-provider';
+import { listConfiguredProviderModels } from './shared/llm-provider';
 import {
   defaultAccount,
   defaultActivation,
@@ -394,17 +395,21 @@ function makeFallbackApi(setState: (state: AppState) => void): StoryDreamApi {
       return persist({ ...read(), config });
     },
     async testLlmConfig(config) {
+      const endpoint =
+        config.protocol === 'anthropic'
+          ? `${config.baseUrl || 'https://api.anthropic.com'}/v1/messages`
+          : `${config.baseUrl || 'https://api.openai.com'}/v1/chat/completions`;
       return {
         status: config.apiKey ? 'warn' : 'fail',
         detail: config.apiKey ? '浏览器预览无法调用模型测试接口，请在 Electron 桌面端测试。' : '接口密钥未填写，请先补全模型凭证。',
         latencyMs: 0,
         model: config.model,
-        endpoint: `${config.baseUrl || 'https://api.openai.com'}/v1/chat/completions`,
+        endpoint,
         requestId: null,
       };
     },
     async listProviderModels(request) {
-      return listOpenAiCompatibleModels(request);
+      return listConfiguredProviderModels(request);
     },
     async listVolcengineSpeakers() {
       const speakers = volcengineVoicePresets.map(([name, voiceType]) => ({ voiceType, name }));
@@ -5136,7 +5141,7 @@ function SettingsPage({ api, state, applyState }: { api: StoryDreamApi; state: A
   }
   async function refreshProviderModels(
     key: ModelListKey,
-    request: { baseUrl: string; apiKey: string },
+    request: ProviderModelListRequest,
     currentModel: string,
     applyModel?: (config: AppConfig, model: string) => AppConfig,
   ) {
@@ -5331,7 +5336,7 @@ function SettingsPage({ api, state, applyState }: { api: StoryDreamApi; state: A
               onSelectedProfileIdChange={setSelectedLlmProfileId}
               onActivate={activateLlmProfile}
               onClearModels={() => clearProviderModels('llm')}
-              onRefreshModels={(profile) => refreshProviderModels('llm', { baseUrl: profile.baseUrl, apiKey: profile.apiKey }, profile.model)}
+              onRefreshModels={(profile) => refreshProviderModels('llm', { baseUrl: profile.baseUrl, apiKey: profile.apiKey, protocol: profile.protocol }, profile.model)}
             />
           </SettingsCard>
         ) : null}
@@ -5644,14 +5649,24 @@ function LlmProfileManager({
         <Segmented
           label="供应商"
           value={selectedProvider}
-          options={['openai', 'custom']}
-          labels={['OpenAI', '自定义']}
+          options={['openai', 'custom', 'anthropic']}
+          labels={['OpenAI', '自定义', 'Anthropic']}
           onChange={(value) => {
             onClearModels();
             updateSelectedProfile({
               ...selectedProfile,
               provider: value,
-              baseUrl: value === 'openai' ? 'https://api.openai.com' : selectedProfile.baseUrl === 'https://api.openai.com' ? defaultConfig.llm.baseUrl : selectedProfile.baseUrl,
+              protocol: value === 'anthropic' ? 'anthropic' : 'openai',
+              baseUrl:
+                value === 'openai'
+                  ? 'https://api.openai.com'
+                  : value === 'anthropic'
+                    ? selectedProfile.baseUrl === 'https://api.openai.com' || selectedProfile.baseUrl === defaultConfig.llm.baseUrl
+                      ? 'https://api.anthropic.com'
+                      : selectedProfile.baseUrl
+                    : selectedProfile.baseUrl === 'https://api.openai.com' || selectedProfile.baseUrl === 'https://api.anthropic.com'
+                      ? defaultConfig.llm.baseUrl
+                      : selectedProfile.baseUrl,
             });
           }}
         />
@@ -5674,6 +5689,28 @@ function LlmProfileManager({
               hint={'Extra request JSON, e.g. {"reasoning_effort":"medium"}'}
               value={requestParamsJsonValue}
               onChange={(value) => updateSelectedProfile({ ...selectedProfile, requestParamsJson: value })}
+            />
+          </>
+        ) : selectedProvider === 'anthropic' ? (
+          <>
+            <ProviderConfigNote title="Anthropic Messages API" value="使用 /v1/messages，填写 Anthropic 接口密钥与 Claude 模型。" />
+            <ConfigInput label="Anthropic 接口地址" value={selectedProfile.baseUrl} onChange={(value) => { onClearModels(); updateSelectedProfile({ ...selectedProfile, provider: 'anthropic', protocol: 'anthropic', baseUrl: value }); }} />
+            <ConfigInput label="Anthropic 接口密钥" value={selectedProfile.apiKey} onChange={(value) => { onClearModels(); updateSelectedProfile({ ...selectedProfile, provider: 'anthropic', protocol: 'anthropic', apiKey: value }); }} />
+            <ModelPicker
+              key={`llm-${selectedProfile.id}`}
+              label="Claude 模型"
+              value={selectedProfile.model}
+              models={models}
+              loading={loadingModels}
+              status={modelStatus}
+              onRefresh={() => onRefreshModels({ ...selectedProfile, provider: 'anthropic', protocol: 'anthropic' })}
+              onChange={(value) => updateSelectedProfile({ ...selectedProfile, provider: 'anthropic', protocol: 'anthropic', model: value })}
+            />
+            <ConfigTextarea
+              label="附加请求 JSON"
+              hint={'Extra request JSON, e.g. {"temperature":0,"max_tokens":4096}'}
+              value={requestParamsJsonValue}
+              onChange={(value) => updateSelectedProfile({ ...selectedProfile, provider: 'anthropic', protocol: 'anthropic', requestParamsJson: value })}
             />
           </>
         ) : (

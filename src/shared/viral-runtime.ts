@@ -4,7 +4,7 @@ import { basename, extname, join } from 'node:path';
 import { promisify } from 'node:util';
 import { Agent } from 'undici';
 import { fetchWithTimeout as fetchWithRequestTimeout } from './http';
-import { createOpenAiCompatibleJsonLlm } from './llm-provider';
+import { createConfiguredJsonLlm } from './llm-provider';
 import { resolvePythonCommand } from './python-runtime';
 import {
   buildViralBreakdownPrompt,
@@ -32,7 +32,7 @@ const VISION_FETCH_DISPATCHER = new Agent({
 });
 
 export function createViralRuntimeProviders(config: AppConfig, _workDir: string): Omit<RunViralAnalysisOptions, 'workDir' | 'emit' | 'signal'> {
-  const textLlm = createOpenAiCompatibleJsonLlm(config.llm);
+  const textLlm = createConfiguredJsonLlm(config.llm);
   return {
     download: (record, runDir, signal) => downloadViralMedia({ url: record.url, platform: record.platform, workDir: runDir, config }, signal),
     extract: (videoPath, runDir, signal, request) => extractViralMedia(videoPath, runDir, config, signal, request),

@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { composeCopyFromSources, createAiSourceResearcher, searchWebSources } from '@shared/research';
 import { defaultConfig } from '@shared/config';
-import type { LlmJsonRequest } from '@shared/llm-provider';
+import { LlmJsonParseError, type LlmJsonRequest } from '@shared/llm-provider';
 import type { Task } from '@shared/types';
 
 describe('AI source research', () => {
@@ -358,6 +358,40 @@ describe('AI source research', () => {
 
     expect(result.title).toBe('Wu Zetian Returns');
     expect(result.copy).toBe('Generated body.');
+  });
+
+  it('salvages research copy from malformed fenced JSON returned by the LLM', async () => {
+    const raw = [
+      '```json',
+      '{',
+      '  "title": "从捡废品到总统再到囚徒——李明博的魔幻人生",',
+      '  "copy": "1941年，他出生在日本大阪一间牧场旁的简陋住所。',
+      '',
+      '少年时的李明博，靠捡酒瓶、卖爆米花凑齐了学费。',
+      '',
+      '他说自己的人生像"一条没有退路的路"，但这句引号没有被 JSON 转义。',
+      '',
+      '后来，他真的走到了青瓦台。"',
+      '}',
+      '```',
+    ].join('\n');
+
+    const result = await composeCopyFromSources(
+      async () => {
+        throw new LlmJsonParseError('bad json', raw);
+      },
+      {
+        keyword: '李明博 经营未来',
+        extraRequirements: '',
+        selectedSources: [{ source: 'web', title: 'Article A', content: 'Article A facts.' }],
+      },
+    );
+
+    expect(result.title).toBe('从捡废品到总统再到囚徒——李明博的魔幻人生');
+    expect(result.copy).toContain('靠捡酒瓶、卖爆米花凑齐了学费');
+    expect(result.copy).toContain('没有退路的路');
+    expect(result.raw).toBe(raw);
+    expect(result.requestId).toBeNull();
   });
 
   it('collects web RSS snippets and built-in knowledge for AI creation', async () => {
