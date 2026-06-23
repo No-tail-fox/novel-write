@@ -114,6 +114,31 @@ describe('file database', () => {
     }
   });
 
+  it('uses the recovered Storybound ai material source default while preserving explicit paste tasks', async () => {
+    const dir = await mkdtemp(join(tmpdir(), 'storybound-db-material-source-default-'));
+    const file = join(dir, 'app.db');
+
+    try {
+      const db = await FileDatabase.open(file);
+      await db.createTask({
+        title: 'Default material source',
+        inputText: 'Source material',
+      });
+      await db.createTask({
+        title: 'Explicit paste material source',
+        inputText: 'Source material',
+        materialSource: 'paste',
+      });
+
+      const state = await db.getState();
+      expect(state.tasks.find((task) => task.title === 'Default material source')?.materialSource).toBe('ai');
+      expect(state.tasks.find((task) => task.title === 'Explicit paste material source')?.materialSource).toBe('paste');
+      await db.close();
+    } finally {
+      await rm(dir, { recursive: true, force: true });
+    }
+  });
+
   it('persists publish mode on created tasks', async () => {
     const dir = await mkdtemp(join(tmpdir(), 'storybound-db-publish-mode-'));
     const file = join(dir, 'app.db');

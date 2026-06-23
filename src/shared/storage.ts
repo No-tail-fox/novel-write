@@ -233,7 +233,7 @@ export class FileDatabase {
         artifact_state_path TEXT DEFAULT '',
         video_form TEXT DEFAULT 'narration',
         llm_profile_id TEXT,
-        material_source TEXT DEFAULT 'paste',
+        material_source TEXT DEFAULT 'ai',
         task_type TEXT DEFAULT 'story',
         pipeline_step TEXT DEFAULT 'new',
         pipeline_data TEXT DEFAULT '{}',
@@ -467,7 +467,7 @@ export class FileDatabase {
       ['llm_profile_id', 'TEXT'],
       ['started_at', 'TEXT'],
       ['last_heartbeat_at', 'TEXT'],
-      ['material_source', "TEXT DEFAULT 'paste'"],
+      ['material_source', "TEXT DEFAULT 'ai'"],
       ['task_type', "TEXT DEFAULT 'story'"],
       ['pipeline_step', "TEXT DEFAULT 'new'"],
       ['pipeline_data', "TEXT DEFAULT '{}'"],
@@ -847,7 +847,7 @@ export class FileDatabase {
       artifactStatePath: '',
       videoForm: input.videoForm ?? 'narration',
       llmProfileId: input.llmProfileId ?? null,
-      materialSource: input.materialSource ?? (input.mode === 'ai' ? 'ai' : 'paste'),
+      materialSource: input.materialSource ?? 'ai',
       taskType: input.taskType ?? input.taskKind ?? 'story',
       pipelineStep: input.pipelineStep ?? 'new',
       pipelineData: input.pipelineData ?? '{}',
@@ -915,7 +915,7 @@ export class FileDatabase {
         task.artifactStatePath,
         task.videoForm ?? 'narration',
         task.llmProfileId ?? null,
-        task.materialSource ?? 'paste',
+        task.materialSource ?? 'ai',
         task.taskType ?? task.taskKind,
         task.pipelineStep ?? 'new',
         task.pipelineData ?? '{}',
@@ -1086,6 +1086,7 @@ export class FileDatabase {
         | 'step3PromptSnapshot'
         | 'podcastSpeakerA'
         | 'podcastSpeakerB'
+        | 'pipelineStep'
       >
     >,
   ): Promise<void> {
@@ -1107,6 +1108,7 @@ export class FileDatabase {
       step3PromptSnapshot: 'step3_prompt_snapshot',
       podcastSpeakerA: 'podcast_speaker_a',
       podcastSpeakerB: 'podcast_speaker_b',
+      pipelineStep: 'pipeline_step',
     };
     for (const [key, column] of Object.entries(map)) {
       if (key in patch) {
@@ -1224,7 +1226,7 @@ function rowToTask(row: Record<string, unknown>): Task {
     artifactStatePath: String(row.artifact_state_path ?? ''),
     videoForm: normalizeVideoForm(row.video_form),
     llmProfileId: row.llm_profile_id === null || row.llm_profile_id === undefined || row.llm_profile_id === '' ? null : String(row.llm_profile_id),
-    materialSource: String(row.material_source ?? 'paste'),
+    materialSource: String(row.material_source ?? 'ai'),
     taskType: String(row.task_type ?? normalizeTaskKind(row.task_kind)),
     pipelineStep: String(row.pipeline_step ?? 'new'),
     pipelineData: String(row.pipeline_data ?? '{}'),
@@ -1242,7 +1244,7 @@ function rowToTask(row: Record<string, unknown>): Task {
 }
 
 function normalizeTaskKind(value: unknown): Task['taskKind'] {
-  return value === 'music-mv' ? 'music-mv' : 'story';
+  return value === 'music-mv' || value === 'html-video' ? value : 'story';
 }
 
 function normalizeVideoForm(value: unknown): Task['videoForm'] {

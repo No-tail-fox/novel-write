@@ -181,7 +181,9 @@ const primaryNavItems: NavItem[] = [
   { view: 'activation', label: '激活管理', hint: '试用与授权', icon: KeyRound },
 ];
 
-const secondaryNavItems: NavItem[] = [];
+const secondaryNavItems: NavItem[] = [
+  { view: 'html-video', label: 'HTML Animation', hint: 'HTML 动画视频', icon: Play },
+];
 
 const navItems: NavItem[] = [...primaryNavItems, ...secondaryNavItems];
 
@@ -882,6 +884,7 @@ function App() {
           {activeView === 'image-lab' ? <ImageLabPage api={api} state={state} applyState={applyState} /> : null}
           {activeView === 'voice-lab' ? <VoiceLabPage api={api} state={state} applyState={applyState} /> : null}
           {activeView === 'music-mv' ? <MusicMvPage api={api} state={state} applyState={applyState} openTaskDetail={openTaskDetail} isBrowserPreview={isBrowserPreview} /> : null}
+          {activeView === 'html-video' ? <HtmlVideoPage api={api} state={state} applyState={applyState} openTaskDetail={openTaskDetail} isBrowserPreview={isBrowserPreview} /> : null}
           {activeView === 'viral-analyzer' ? <ViralAnalyzerPage api={api} state={state} applyState={applyState} openTaskDetail={openTaskDetail} isBrowserPreview={isBrowserPreview} /> : null}
           {activeView === 'prompt-templates' ? <PromptTemplatesPage api={api} state={state} applyState={applyState} /> : null}
           {activeView === 'draft-templates' ? <DraftTemplatesPage api={api} state={state} applyState={applyState} /> : null}
@@ -2169,6 +2172,147 @@ function MusicMvPage({
           {lyricLines.slice(0, 8).map((line, index) => (
             <div key={`${line}-${index}`}>
               <strong>{index + 1}. {index === 0 ? 'intro' : index === lyricLines.length - 1 ? 'outro' : index >= Math.floor(lyricLines.length / 2) ? 'chorus' : 'verse'}</strong>
+              <p>{line}</p>
+            </div>
+          ))}
+        </div>
+      </aside>
+    </div>
+  );
+}
+
+function HtmlVideoPage({
+  api,
+  state,
+  applyState,
+  openTaskDetail,
+  isBrowserPreview,
+}: {
+  api: StoryDreamApi;
+  state: AppState;
+  applyState: (state: AppState) => void;
+  openTaskDetail: (taskId: string) => void;
+  isBrowserPreview: boolean;
+}) {
+  const defaultTemplateId = state.draftTemplates[0]?.id ?? 'default-portrait-9-16';
+  const [title, setTitle] = useState('HTML Animation');
+  const [script, setScript] = useState('A quiet opening scene.\nA clear middle beat with moving text.\nA final visual beat that resolves the story.');
+  const [style, setStyle] = useState('modern-film');
+  const [ratio, setRatio] = useState('9:16');
+  const [templateId, setTemplateId] = useState(defaultTemplateId);
+  const [htmlVideoSceneCount, setHtmlVideoSceneCount] = useState(8);
+  const [htmlVideoMotionStyle, setHtmlVideoMotionStyle] = useState('cinematic-pan');
+  const [processingMode, setProcessingMode] = useState<ProcessingMode>('full-auto');
+  const [pausePoint, setPausePoint] = useState<PausePoint>('critical');
+  const [bgmId, setBgmId] = useState(resolveDefaultBgmId(state.config));
+  const [running, setRunning] = useState(false);
+  const [message, setMessage] = useState('');
+  const bgmOptions = validBgmItems(state.config);
+  const htmlVideoLines = script.split(/\n/u).map((line) => line.trim()).filter(Boolean);
+
+  async function runHtmlVideo() {
+    if (isBrowserPreview) {
+      setMessage('浏览器预览无法运行真实 HTML 视频渲染器。');
+      return;
+    }
+    if (!script.trim()) {
+      setMessage('Please enter a script first.');
+      return;
+    }
+    setRunning(true);
+    setMessage('');
+    try {
+      const next = await api.createAndRunTask({
+        title,
+        inputText: script,
+        taskKind: 'html-video',
+        taskType: 'html-video',
+        pipelineStep: 'plan',
+        processingMode,
+        mode: 'paste',
+        track: 'html-video',
+        style,
+        ratio,
+        templateId,
+        bgmId,
+        pausePoints: [pausePoint],
+        storyboardSceneCount: htmlVideoSceneCount,
+        targetScenes: htmlVideoSceneCount,
+        extraRequirements: `HTML video motion style: ${htmlVideoMotionStyle}`,
+      });
+      applyState(next);
+      const createdTask = next.tasks[0];
+      if (createdTask) openTaskDetail(createdTask.id);
+    } finally {
+      setRunning(false);
+    }
+  }
+
+  return (
+    <div className="html-video-layout">
+      <section className="task-card">
+        <div className="panel-title-row">
+          <div>
+            <h2>HTML Animation</h2>
+            <span>HTML 动画视频</span>
+          </div>
+          <button className="primary-action slim" onClick={runHtmlVideo} disabled={running || !script.trim()}>
+            {running ? <Loader2 className="spin" size={15} /> : <Play size={15} />}
+            Generate HTML Video
+          </button>
+        </div>
+
+        <Field label="Title">
+          <input value={title} onChange={(event) => setTitle(event.target.value)} />
+        </Field>
+        <Field label="Script">
+          <textarea className="source-textarea" value={script} onChange={(event) => setScript(event.target.value)} />
+        </Field>
+
+        <div className="advanced-grid">
+          <Segmented label="Scenes" value={String(htmlVideoSceneCount)} options={storyboardSceneCountOptions.map(String)} labels={storyboardSceneCountOptions.map((count) => `${count}`)} onChange={(value) => setHtmlVideoSceneCount(Number(value))} />
+          <Segmented label="Motion" value={htmlVideoMotionStyle} options={['cinematic-pan', 'kinetic-type', 'gallery-card']} labels={['Cinematic', 'Kinetic', 'Gallery']} onChange={setHtmlVideoMotionStyle} />
+          <Segmented label="Mode" value={processingMode} options={['full-auto', 'semi-auto', 'clip-only']} labels={['Auto', 'Review', 'Copy']} onChange={(value) => setProcessingMode(value as ProcessingMode)} />
+          <Segmented label="Pause" value={pausePoint} options={pauseOptions.map(([id]) => id)} labels={pauseOptions.map(([, label]) => label)} onChange={(value) => setPausePoint(value as PausePoint)} />
+        </div>
+
+        <OptionCloud title="Style" options={styleOptions} value={style} onChange={setStyle} />
+        <div className="option-two-col">
+          <OptionCloud title="Template" options={state.draftTemplates.map((template) => [template.id, template.name, `ratio ${template.image.ratio}`])} value={templateId} onChange={setTemplateId} />
+          <div>
+            <span className="field-title">Canvas</span>
+            <div className="ratio-grid">
+              {['9:16', '16:9', '1:1', '4:3'].map((item) => (
+                <button key={item} className={ratio === item ? 'chip active' : 'chip'} onClick={() => setRatio(item)}>
+                  <span className="ratio-icon" />
+                  {item}
+                </button>
+              ))}
+            </div>
+          </div>
+        </div>
+
+        <span className="field-title">BGM</span>
+        <div className="chip-row">
+          <button className={bgmId === '' ? 'chip active' : 'chip'} onClick={() => setBgmId('')}>None</button>
+          {bgmOptions.map((bgm) => (
+            <button key={bgm.id} className={bgmId === bgm.id ? 'chip active' : 'chip'} onClick={() => setBgmId(bgm.id)}>{bgm.title}</button>
+          ))}
+        </div>
+
+        {message ? <span className="local-note">{message}</span> : null}
+      </section>
+      <aside className="html-video-preview panel">
+        <h3>HTML Video</h3>
+        <div className="task-metrics">
+          <div><small>Scenes</small><strong>{htmlVideoSceneCount}</strong></div>
+          <div><small>Motion</small><strong>{htmlVideoMotionStyle}</strong></div>
+          <div><small>Canvas</small><strong>{ratio}</strong></div>
+        </div>
+        <div className="artifact-scene-list">
+          {htmlVideoLines.slice(0, 8).map((line, index) => (
+            <div key={`${line}-${index}`}>
+              <strong>{index + 1}. Scene</strong>
               <p>{line}</p>
             </div>
           ))}
@@ -6467,6 +6611,7 @@ function pageSubtitle(view: ShellView): string {
     activation: '管理本地激活状态与试用说明',
   };
   if (view === 'voice-lab') return '单独试听豆包与 MiniMax 音色，保存本地试听记录';
+  if (view === 'html-video') return 'HTML 动画视频按 plan/assets/render/done 进入独立渲染链路';
   return map[view] ?? '';
 }
 

@@ -209,9 +209,30 @@ describe('product shell ui', () => {
     }
 
     expect(types).toContain("export type ProcessingMode = 'full-auto' | 'semi-auto' | 'clip-only'");
-    expect(types).toContain("export type TaskKind = 'story' | 'music-mv'");
+    expect(types).toContain("export type TaskKind = 'story' | 'music-mv' | 'html-video'");
     expect(css).toContain('.music-mv-layout');
     expect(css).toContain('.music-mv-preview');
+  });
+
+  it('adds a standalone HTML animation video page and creates html-video tasks', async () => {
+    const main = await readFile(new URL('../src/main.tsx', import.meta.url), 'utf8');
+    const css = await readFile(new URL('../src/styles.css', import.meta.url), 'utf8');
+
+    for (const symbol of [
+      "'html-video'",
+      'HtmlVideoPage',
+      'html-video-layout',
+      'htmlVideoSceneCount',
+      'htmlVideoMotionStyle',
+      'taskKind: \'html-video\'',
+      'track: \'html-video\'',
+      'HTML Animation',
+    ]) {
+      expect(main).toContain(symbol);
+    }
+
+    expect(css).toContain('.html-video-layout');
+    expect(css).toContain('.html-video-preview');
   });
 
   it('wires the viral analyzer page into the shell with report and selectable follow-up controls', async () => {

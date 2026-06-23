@@ -27,3 +27,22 @@
   - `npm test` -> 39 files, 318 tests
   - `npm run build` -> passed with the existing large chunk warning
   - `npm run smoke:electron` -> shell/new-task/draft-template smoke true
+
+## 2026-06-23
+
+- Started new reverse-engineering pass for `G:\Storybound`, focused on local backend/business logic rather than UI only.
+- Preserved safety boundary: no activation bypass, no license cracking, no usable secret extraction.
+- `planning-with-files` catchup first failed because the documented `.claude` script path is absent on this machine; reran successfully with the installed `.codex` skill path.
+- Updated `task_plan.md` and `findings.md` with the new `G:\Storybound` backend reverse scope.
+- Probed `G:\Storybound`: top-level files are `storybound.exe`, `draft-generator.exe`, ONNX/sherpa DLLs, `uninstall.exe`, and `resources/default-bgm.mp3`; no visible `app.asar` or source bundle at directory depth 4.
+- Inspected PE metadata/imports and string indices: `storybound.exe` is Rust/Tauri 2.x with SQLx SQLite, sherpa-onnx ASR/VAD calls, HTTP/image proxy/update/license Tauri commands; `draft-generator.exe` is PyInstaller Python 3.11.
+- Parsed `draft-generator.exe` PyInstaller TOC and extracted analysis copies under `I:\opc\tmp\storybound-reverse\draft-generator-extract`; recovered `pyJianYingDraft` source files and confirmed `generate_draft_lib` in `PYZ.pyz`.
+- Read the recovered `generate_draft_lib` summary and confirmed it covers audio conversion, frame/audio scene rendering, BGM mux/remix, subtitle building, cover/title handling, draft asset path rewriting, and music MV draft generation.
+- Read core `pyJianYingDraft` source files. `Script_file` writes Jianying `draft_info.json`, `Draft_folder` copies/loads draft folders, and `jianying_controller.py` automates Jianying Pro export and progress reporting through Windows UI Automation.
+- Checked available local Python runtimes; only Python 3.12/3.13 are installed, so Python 3.11 bytecode disassembly is not directly reliable here without an additional compatible tool/runtime.
+- Extracted and decompressed 191 embedded web assets from `G:\Storybound\storybound.exe` into `I:\opc\tmp\storybound-reverse\extracted-web`, including Vite JS chunks, CSS, and the `podcast-cover-prompt` module.
+- Continued reversing `G:\Storybound` backend/business logic from the extracted JS bundles.
+- Recovered Tauri IPC command shapes for HTTP, download, image, ASR, updater, keychain, WebView capture/eval, and shell helpers.
+- Recovered `draft-generator.exe` mode payloads for `story`, `compose_render`, `remix_bgm`, `convert_audio_16k`, and `music_mv`.
+- Confirmed the reference app is layered: Rust/Tauri host, browser orchestration bundles, and Python sidecar draft generation.
+- Compared the reference backend contract against the current `I:\opc` implementation and logged the major parity gaps in `findings.md`.

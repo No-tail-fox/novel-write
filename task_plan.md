@@ -50,3 +50,51 @@ Goal: 在 `codex/storybound-cn-full-replica` 分支上，以本机 `E:\Storyboun
 | PowerShell/terminal 输出把正常中文显示成乱码。 | 直接 `Get-Content` 查看大文件。 | 用 Node 检查文件 UTF-8 内容和测试真实字符串，避免误判源文件编码。 |
 | Node `-e` SQL 探测被 PowerShell 引号截断。 | 单行 `node -e` 嵌套 SQL 字符串。 | 改用 PowerShell here-string 管道给 Node 执行。 |
 | 新增 `Task` 参考字段设为必填后，旧测试和工具里手工构造的 `Task` 失配。 | 首次 typecheck 失败。 | 将参考字段设为可选，并在数据库创建/读取时填默认值，保持向后兼容。 |
+
+---
+
+# 2026-06-23 G:\Storybound 后端逻辑逆向计划
+
+Goal: 以 `G:\Storybound` 为新的参考程序目录，尽量还原它的本地后端/业务逻辑结构：启动形态、资源封装、IPC/API 边界、SQLite/本地配置、任务流水线、模型调用适配、草稿导出逻辑和远程依赖。只做兼容性与功能复刻分析，不绕过激活、破解授权或提取可用密钥。
+
+## Phases
+
+- [ ] 确认 `G:\Storybound` 目录结构、可执行文件、资源封装格式和版本信息。
+- [ ] 识别是否为 Electron/Tauri/Node/Python/Go 等运行时，定位可读源码、bundle、asar、native 模块和配置。
+- [ ] 提取并索引可读资源到临时分析目录，不修改参考程序。
+- [ ] 搜索 API endpoint、IPC channel、SQLite schema、任务 pipeline、模板、prompt、模型 provider 和导出器关键词。
+- [ ] 对比 `I:\opc` 现有实现，整理可复刻逻辑、缺口、不可逆/高风险部分。
+- [ ] 输出后端逻辑逆向结论和下一步实现建议。
+
+## Constraints
+
+- 不运行可疑网络请求，不提交参考程序原始私有资源。
+- 不绕过 license/activation/credits 检查，不提取或复用用户密钥。
+- 优先静态分析；如果需要动态观察，只记录请求形态和本地状态变化。
+
+## Errors Encountered
+
+| Error | Attempt | Resolution |
+| --- | --- | --- |
+| `planning-with-files` 文档中的 `.claude` catchup 脚本路径不存在。 | 按技能说明直接运行 `$HOME\.claude\skills\...`。 | 改用实际安装路径 `C:\Users\foxnotail\.codex\skills\planning-with-files\scripts\session-catchup.py`。 |
+
+---
+
+# 2026-06-23 Backend Reverse Follow-up
+
+Goal: keep extending the `G:\Storybound` reverse-engineering pass until the backend contract is explicit enough to drive a faithful implementation plan.
+
+## Current Focus
+
+- [x] Recover Tauri IPC command names and payload shapes from the browser bundles.
+- [x] Recover `draft-generator.exe` sidecar modes and the Step 6 JSON contract.
+- [x] Recover remote license/account/system-template API shapes and local secret keys.
+- [x] Recover the current reference `tasks` schema/migration shape from the JS bundles.
+- [ ] Compare the recovered contract against `I:\opc\src\shared\runner.ts`, `storage.ts`, `draft.ts`, and `jianying-bridge.ts` in more detail.
+- [ ] Summarize the remaining parity gaps as implementation notes, not just research notes.
+
+## Notes
+
+- The reference app's backend is split between Rust/Tauri host commands and the Python sidecar.
+- The current `I:\opc` code mirrors many Storybound concepts, but it still uses Electron/Node and a different draft bridge.
+- The biggest unresolved compatibility boundary is the exact draft export flow and the Tauri IPC layer.

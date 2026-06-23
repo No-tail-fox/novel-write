@@ -19,6 +19,7 @@ import { composeCopyFromSources, createAiSourceResearcher, searchWebSources } fr
 import { runTask } from '../src/shared/runner';
 import { FileDatabase } from '../src/shared/storage';
 import { createTaskRuntimeProviders } from '../src/shared/task-runtime-providers';
+import { createElectronHtmlVideoRenderer } from './html-video-renderer';
 import type { AccountProfile, ActivationState, AppConfig, ConfigTestTarget, CreateTaskInput, CreateViralAnalysisInput, CustomStyle, CustomStyleGenerateInput, DraftTemplate, ImageLabGenerateInput, LlmConfig, PromptTemplate, ProviderModelListRequest, ResearchCopyComposeInput, Task, TaskStatus, TaskStepRerunMode, UiPreferences, ViralAnalysisRecord, ViralAnalysisStatus, ViralProductionTaskOptions, VolcengineSpeakerListRequest, VoiceLabGenerateInput } from '../src/shared/types';
 import { createViralProductionTaskInput, detectViralPlatform, runViralAnalysis } from '../src/shared/viral-analysis';
 import { createViralRuntimeProviders } from '../src/shared/viral-runtime';
@@ -168,11 +169,13 @@ async function pauseStaleRunningTasks(database: FileDatabase): Promise<void> {
 
 async function buildRunOptions(database: FileDatabase, task: Task, controller: AbortController) {
   const state = await database.getState();
+  const htmlVideoRenderer = await createElectronHtmlVideoRenderer();
   return {
     appDataDir: appDataDir(),
     signal: controller.signal,
     resolveAiSourceContext: createAiSourceResearcher(state.config),
     ...createTaskRuntimeProviders(state.config, taskWorkDir(task), task),
+    htmlVideoRenderer: htmlVideoRenderer.render,
     customCoverTemplates: state.customCoverTemplates,
     onEvent: () => {
       notifyTaskState(database);
@@ -826,6 +829,10 @@ ipcMain.handle('diagnostics:run', async () => {
   const state = await database.getState();
   const python = await checkPython();
   const pyJianYingDraft = python.status === 'pass' ? await checkPyJianYingDraft() : { status: 'warn' as const, detail: 'Python unavailable; cannot check pyJianYingDraft.' };
+  const storyboundSidecar =
+    python.status === 'pass'
+      ? await checkStoryboundSidecarDependencies()
+      : { status: 'warn' as const, detail: 'Python unavailable; cannot check Storybound sidecar dependencies.' };
   return {
     generatedAt: new Date().toISOString(),
     checks: [
@@ -835,6 +842,7 @@ ipcMain.handle('diagnostics:run', async () => {
       { id: 'draft-dir', label: '剪映草稿目录', status: state.config.jianying.draftPath ? 'pass' : 'warn', detail: state.config.jianying.draftPath || '未配置' },
       { id: 'python', label: 'Python 运行时', status: python.status, detail: python.detail },
       { id: 'pyjianyingdraft', label: 'pyJianYingDraft', status: pyJianYingDraft.status, detail: pyJianYingDraft.detail },
+      { id: 'storybound-sidecar', label: 'Storybound sidecar', status: storyboundSidecar.status, detail: storyboundSidecar.detail },
       { id: 'local-db', label: '数据目录写入权限', status: 'pass', detail: app.getPath('userData') },
       { id: 'account-state', label: '账号状态', status: 'pass', detail: state.activation.message },
     ],
@@ -925,6 +933,22 @@ async function checkPyJianYingDraft(): Promise<{ status: 'pass' | 'warn'; detail
     return { status: 'pass', detail: `pyJianYingDraft installed in ${runtime.source} Python` };
   } catch {
     return { status: 'warn', detail: runtime.source === 'bundled' ? 'Bundled pyJianYingDraft is unavailable; rebuild the portable Python runtime.' : '未检测到 pyJianYingDraft；请运行 python -m pip install pyJianYingDraft' };
+  }
+}
+
+async function checkStoryboundSidecarDependencies(): Promise<{ status: 'pass' | 'warn'; detail: string }> {
+  const runtime = resolvePythonRuntimeInfo();
+  try {
+    await execFileAsync(runtime.command, ['-c', 'import pyJianYingDraft, imageio_ffmpeg, pydub, jieba; print("Storybound sidecar dependencies installed")']);
+    return { status: 'pass', detail: `Storybound sidecar dependencies installed in ${runtime.source} Python` };
+  } catch {
+    return {
+      status: 'warn',
+      detail:
+        runtime.source === 'bundled'
+          ? 'Bundled Storybound sidecar dependencies are unavailable; rebuild the portable Python runtime.'
+          : '未检测到 Storybound sidecar 依赖；请安装 pyJianYingDraft、imageio-ffmpeg、pydub、jieba',
+    };
   }
 }
 

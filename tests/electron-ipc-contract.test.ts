@@ -234,6 +234,30 @@ describe('electron ipc contract', () => {
     expect(viteEnv).toContain('getJianyingEffectCatalog: () => Promise<JianyingEffectCatalog>');
   });
 
+  it('checks Storybound-compatible sidecar dependencies in diagnostics', async () => {
+    const main = await readFile(new URL('../electron/main.ts', import.meta.url), 'utf8');
+
+    expect(main).toContain('checkStoryboundSidecarDependencies');
+    expect(main).toContain('pyJianYingDraft, imageio_ffmpeg, pydub, jieba');
+    expect(main).toContain("id: 'storybound-sidecar'");
+  });
+
+  it('keeps HTML video capture behind a typed Electron service without generic eval IPC', async () => {
+    const main = await readFile(new URL('../electron/main.ts', import.meta.url), 'utf8');
+    const preload = await readFile(new URL('../electron/preload.ts', import.meta.url), 'utf8');
+    const renderer = await readFile(new URL('../electron/html-video-renderer.ts', import.meta.url), 'utf8');
+
+    expect(main).toContain('createElectronHtmlVideoRenderer');
+    expect(renderer).toContain('BrowserWindow');
+    expect(renderer).toContain('executeJavaScript');
+    expect(renderer).toContain('capturePage');
+    expect(renderer).toContain('frame_%04d.jpg');
+    expect(preload).not.toContain('eval_in_window');
+    expect(preload).not.toContain('capture_webview_by_label');
+    expect(main).not.toContain("ipcMain.handle('eval_in_window'");
+    expect(main).not.toContain("ipcMain.handle('capture_webview_by_label'");
+  });
+
   it('regenerates a single scene image through cache invalidation and background resume', async () => {
     const main = await readFile(new URL('../electron/main.ts', import.meta.url), 'utf8');
     const preload = await readFile(new URL('../electron/preload.ts', import.meta.url), 'utf8');

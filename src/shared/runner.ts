@@ -1,8 +1,10 @@
 import { copyFile, mkdir, readFile, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
-import type { AiSourceContext, BgmItem, CharacterCard, CoverMetadata, CustomCoverTemplate, ImagePrompt, MusicPlan, PipelineArtifact, PromptStepTemplateType, PromptTemplate, RewriteEvaluationResult, StoryboardScene, Task, TaskStepRerunMode } from './types';
+import type { AiSourceContext, BgmItem, CharacterCard, CoverMetadata, CustomCoverTemplate, DraftTemplate, ImagePrompt, MusicPlan, PipelineArtifact, PromptStepTemplateType, PromptTemplate, RewriteEvaluationResult, StoryboardScene, Task, TaskStepRerunMode } from './types';
 import { buildSubtitleTrack } from './story';
 import { writeJianyingDraft, type SceneAsset, type WriteJianyingDraftOptions } from './draft';
+import { runStoryboundMediaSidecar, type StoryboundSidecarInput, type StoryboundSidecarResult } from './storybound-sidecar';
+import { buildHtmlVideoExportInput, type HtmlVideoExportInput, type HtmlVideoExportResult } from './html-video';
 import type { FileDatabase } from './storage';
 import type { JsonLlm } from './llm-provider';
 import { formatAiSourceContext } from './research';
@@ -22,6 +24,8 @@ export interface RunTaskOptions {
   imageConcurrency?: number;
   synthesizeNarration?: (scenes: StoryboardScene[], task: Task, signal?: AbortSignal) => Promise<SceneAsset[]>;
   draftWriterOptions?: WriteJianyingDraftOptions;
+  mediaSidecar?: (input: StoryboundSidecarInput) => Promise<StoryboundSidecarResult>;
+  htmlVideoRenderer?: (input: HtmlVideoExportInput) => Promise<HtmlVideoExportResult>;
   customCoverTemplates?: CustomCoverTemplate[];
 }
 
@@ -167,7 +171,14 @@ export async function runTask(db: FileDatabase, task: Task, options: RunTaskOpti
     pauseAtCheckpoint(task, initialStep, 5, 'Task paused for confirmation after image generation.');
     activeStep = 5;
     await heartbeat(5, 'narration step');
-    await ensureNarration({ db, task, artifact, options, emit, markStep, pipeline });
+    if (task.taskKind === 'music-mv') {
+      if (!isStepCompleted(pipeline, 5)) {
+        await markStep(5, 'completed');
+        await emit('step_complete', 5, 'TTS', 'Music MV uses the supplied song audio; narration generation was skipped.');
+      }
+    } else {
+      await ensureNarration({ db, task, artifact, options, emit, markStep, pipeline });
+    }
 
     activeStep = 6;
     pauseAtCheckpoint(task, initialStep, 6, 'Task paused for confirmation before draft generation.');
@@ -180,37 +191,89 @@ export async function runTask(db: FileDatabase, task: Task, options: RunTaskOpti
       const state = await db.getState();
       const bgm = resolveBgm(state.config.jianying.bgmLibrary, task.bgmId);
       const template = state.draftTemplates.find((item) => item.id === task.templateId);
-      const draft = await writeJianyingDraft(
-        {
+      const normalizedTemplate = template ? normalizeDraftTemplate(template) : undefined;
+      if (task.taskKind === 'html-video') {
+        if (!options.htmlVideoRenderer) {
+          throw new Error('HTML video renderer is not configured; cannot export html-video tasks.');
+        }
+        const htmlVideoInput = buildHtmlVideoExportInput({
           workDir,
-          draftRootDir: state.config.jianying.draftPath,
+          outputPath: join(workDir, `${task.title || todayTitle(task.inputText)}.mp4`),
           title: task.title || todayTitle(task.inputText),
-          cover: artifact.cover,
-          ratio: task.ratio,
-          templateId: task.templateId,
-          template: template ? normalizeDraftTemplate(template) : undefined,
-          scenes: artifact.scenes,
-          imagePrompts: artifact.imagePrompts,
-          reviewedText: artifact.reviewedText,
-          rewrittenCopy: artifact.rewrittenCopy,
+          artifact,
           generatedImages: pipeline.assets.images,
-          coverImagePath: pipeline.assets.cover[0]?.path,
           narrationAudio: pipeline.assets.narration,
-          bgm,
-        },
-        options.draftWriterOptions,
-      );
-      pipeline.draft = {
-        draftDir: draft.draftDir,
-        draftContentPath: draft.draftContentPath,
-        draftMetaPath: draft.draftMetaPath,
-      };
-      await markStep(6, 'completed', { outputPath: draft.draftDir });
-      await heartbeat(6, 'draft completed');
-      await emit('step_complete', 6, 'Draft', 'Jianying draft folder generated', draft);
+          coverPath: pipeline.assets.cover[0]?.path,
+          bgmPath: bgm?.path || undefined,
+          bgmTargetDb: bgm ? -26 : undefined,
+          fps: 30,
+          canvas_w: task.ratio === '16:9' ? 1920 : 1080,
+          canvas_h: task.ratio === '16:9' ? 1080 : 1920,
+          transition: { type: 'fade', duration: 0.3 },
+        });
+        const htmlVideoExport = await options.htmlVideoRenderer(htmlVideoInput);
+        pipeline.draft = {
+          draftDir: htmlVideoExport.taskDir,
+          draftContentPath: htmlVideoExport.outputPath,
+          draftMetaPath: htmlVideoExport.sourceVideoPath,
+        };
+        await db.updateTask(task.id, {
+          outputDir: htmlVideoExport.outputPath,
+        });
+        await markStep(6, 'completed', { outputPath: htmlVideoExport.outputPath });
+        await heartbeat(6, 'html video export completed');
+        await emit('step_complete', 6, 'Draft', 'HTML video export completed', htmlVideoExport);
+      } else {
+        const draft =
+          task.taskKind === 'music-mv'
+            ? await writeMusicMvSidecarDraft({
+              task,
+              artifact,
+              workDir,
+              draftRootDir: state.config.jianying.draftPath,
+              template: normalizedTemplate,
+              generatedImages: pipeline.assets.images,
+              coverImagePath: pipeline.assets.cover[0]?.path,
+              runSidecar: options.mediaSidecar ?? runStoryboundMediaSidecar,
+            })
+            : await writeJianyingDraft(
+              {
+                workDir,
+                draftRootDir: state.config.jianying.draftPath,
+                title: task.title || todayTitle(task.inputText),
+                cover: artifact.cover,
+                ratio: task.ratio,
+                templateId: task.templateId,
+                template: normalizedTemplate,
+                scenes: artifact.scenes,
+                imagePrompts: artifact.imagePrompts,
+                reviewedText: artifact.reviewedText,
+                rewrittenCopy: artifact.rewrittenCopy,
+                generatedImages: pipeline.assets.images,
+                coverImagePath: pipeline.assets.cover[0]?.path,
+                narrationAudio: pipeline.assets.narration,
+                bgm,
+              },
+              {
+                ...(options.draftWriterOptions ?? {}),
+                runSidecar: options.mediaSidecar ?? options.draftWriterOptions?.runSidecar,
+              },
+            );
+        pipeline.draft = {
+          draftDir: draft.draftDir,
+          draftContentPath: draft.draftContentPath,
+          draftMetaPath: draft.draftMetaPath,
+        };
+        await markStep(6, 'completed', { outputPath: draft.draftDir });
+        await heartbeat(6, 'draft completed');
+        await emit('step_complete', 6, 'Draft', 'Jianying draft folder generated', draft);
+      }
     }
 
-    const draftDir = pipeline.draft?.draftDir ?? pipeline.steps['6']?.outputPath ?? workDir;
+    const draftDir =
+      task.taskKind === 'html-video'
+        ? pipeline.steps['6']?.outputPath ?? pipeline.draft?.draftContentPath ?? workDir
+        : pipeline.draft?.draftDir ?? pipeline.steps['6']?.outputPath ?? workDir;
     if (pipeline.rerun) {
       delete pipeline.rerun;
       await save();
@@ -226,6 +289,7 @@ export async function runTask(db: FileDatabase, task: Task, options: RunTaskOpti
       retryFromStep: null,
       artifactStatePath: statePath,
       lastHeartbeatAt: new Date().toISOString(),
+      ...(task.taskKind === 'html-video' ? { pipelineStep: 'done' } : {}),
     });
     options.onEvent?.('Task completed');
     return { ...task, status: 'completed', currentStep: 7, completedAt, outputDir: draftDir, errorMessage: '', failedStep: null, retryFromStep: null, artifactStatePath: statePath, startedAt, lastHeartbeatAt: new Date().toISOString() };
@@ -403,15 +467,19 @@ async function ensureContentArtifact(input: {
   }
 
   if (directCopyPublish && !isStepCompleted(pipeline, 0)) {
-    await writeFile(join(workDir, '00-reviewed.txt'), pipeline.artifact.reviewedText, 'utf8');
+    await writeFile(join(workDir, '00-reviewed.txt'), requireString(pipeline.artifact.reviewedText, 'reviewedText'), 'utf8');
     await markStep(0, 'completed', { outputPath: join(workDir, '00-reviewed.txt') });
     await emit('step_complete', 0, 'Reviewer', 'Direct-copy publish mode kept the original source text');
   }
 
   if (directCopyPublish && !isStepCompleted(pipeline, 1)) {
-    await writeFile(join(workDir, '01-rewritten-copy.md'), pipeline.artifact.rewrittenCopy, 'utf8');
-    await writeFile(join(workDir, '00-cover-title.json'), JSON.stringify(pipeline.artifact.cover, null, 2), 'utf8');
-    await writeFile(join(workDir, '01-rewrite-evaluations.json'), JSON.stringify(pipeline.artifact.rewriteEvaluation, null, 2), 'utf8');
+    await writeFile(join(workDir, '01-rewritten-copy.md'), requireString(pipeline.artifact.rewrittenCopy, 'rewrittenCopy'), 'utf8');
+    await writeFile(join(workDir, '00-cover-title.json'), JSON.stringify(normalizeCover(pipeline.artifact.cover), null, 2), 'utf8');
+    await writeFile(
+      join(workDir, '01-rewrite-evaluations.json'),
+      JSON.stringify(pipeline.artifact.rewriteEvaluation ?? { bestRound: 1, evaluations: [] }, null, 2),
+      'utf8',
+    );
     await markStep(1, 'completed', { outputPath: join(workDir, '01-rewritten-copy.md') });
     await emit('step_complete', 1, 'Writer', 'Direct-copy publish mode skipped rewrite rounds');
   }
@@ -809,6 +877,87 @@ function buildMusicMvArtifact(task: Task, sourceContext?: AiSourceContext): Pipe
     sourceContext,
     musicPlan,
     characterCard,
+  };
+}
+
+async function writeMusicMvSidecarDraft(input: {
+  task: Task;
+  artifact: PipelineArtifact;
+  workDir: string;
+  draftRootDir: string;
+  template?: DraftTemplate;
+  generatedImages: SceneAsset[];
+  coverImagePath?: string;
+  runSidecar: (input: StoryboundSidecarInput) => Promise<StoryboundSidecarResult>;
+}): Promise<{
+  draftDir: string;
+  draftContentPath: string;
+  draftMetaPath: string;
+  draftId?: string;
+  sourceVideoPath?: string;
+  workDir: string;
+  assets: {
+    images: string[];
+    narration: string[];
+    bgm: string | null;
+    subtitles: string;
+  };
+}> {
+  const sceneTimings = input.artifact.scenes.map((scene, index) => {
+    const image = input.generatedImages.find((asset) => asset.sceneId === scene.id);
+    if (!image?.path) {
+      throw new Error(`Missing music MV image asset for scene ${scene.id}.`);
+    }
+    const startUs = input.artifact.scenes.slice(0, index).reduce((sum, item) => sum + Math.max(800, item.durationMs), 0) * 1000;
+    const durationUs = Math.max(800, scene.durationMs) * 1000;
+    return {
+      sceneId: scene.id,
+      scene,
+      imagePath: image.path,
+      startUs,
+      durationUs,
+    };
+  });
+  const runSidecar = input.runSidecar ?? runStoryboundMediaSidecar;
+  const result = await runSidecar({
+    mode: 'music_mv',
+    work_dir: input.workDir,
+    audio_path: input.task.musicMv.audioPath,
+    audio_duration: Math.max(0.001, input.artifact.scenes.reduce((sum, scene) => sum + Math.max(800, scene.durationMs), 0) / 1000),
+    material_source: input.task.materialSource ?? 'ai',
+    assignments: sceneTimings.map((item) => ({
+      scene_id: item.sceneId,
+      image_path: item.imagePath,
+      start_us: item.startUs,
+      duration_us: item.durationUs,
+      lyric: item.scene.cap,
+    })),
+    lyrics: sceneTimings.map((item) => ({
+      scene_id: item.sceneId,
+      text: item.scene.cap,
+      start_us: item.startUs,
+      end_us: item.startUs + item.durationUs,
+    })),
+    jianying_draft_path: input.draftRootDir,
+    task_title: input.task.title || todayTitle(input.task.inputText),
+    template: input.template,
+    cover_title: input.artifact.cover,
+    cover_image_path: input.coverImagePath,
+  });
+  const draftDir = result.draft_dir ?? join(input.draftRootDir, safeDraftName(input.task.title || todayTitle(input.task.inputText)));
+  return {
+    draftDir,
+    draftContentPath: join(draftDir, 'draft_content.json'),
+    draftMetaPath: join(draftDir, 'draft_meta_info.json'),
+    draftId: result.draft_id,
+    sourceVideoPath: result.source_path,
+    workDir: input.workDir,
+    assets: {
+      images: sceneTimings.map((item) => item.imagePath),
+      narration: [],
+      bgm: input.task.musicMv.audioPath || null,
+      subtitles: join(input.workDir, 'subtitles.srt'),
+    },
   };
 }
 
@@ -1301,4 +1450,13 @@ function resolveBgm(library: BgmItem[], bgmId: string): BgmItem | null {
   const bgm = library.find((item) => item.id === bgmId);
   if (!bgm || !bgm.path) return null;
   return bgm;
+}
+
+function safeDraftName(value: string): string {
+  const cleaned = value
+    .replace(/[<>:"/\\|?*\u0000-\u001f]/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim()
+    .slice(0, 80);
+  return cleaned || 'storydream-draft';
 }

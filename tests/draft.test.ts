@@ -4,6 +4,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { writeJianyingDraft } from '@shared/draft';
 import type { PyJianYingBridgeInput } from '@shared/jianying-bridge';
+import type { StoryboundSidecarInput } from '@shared/storybound-sidecar';
 import { buildImagePrompts } from '@shared/story';
 import { draftTemplates } from '@shared/templates';
 import type { StoryboardScene } from '@shared/types';
@@ -283,6 +284,100 @@ describe('draft writer', () => {
       expect(bridgePayloads[0].coverImagePath).toBe(coverPath);
       expect(bridgePayloads[0].images.map((image) => image.path)).toEqual(images.map((image) => image.path));
       expect(bridgePayloads[0].images.some((image) => image.path === coverPath)).toBe(false);
+    } finally {
+      await rm(dir, { recursive: true, force: true });
+    }
+  });
+
+  it('builds the recovered Storybound story sidecar payload while keeping the draft facade result shape', async () => {
+    const dir = await mkdtemp(join(tmpdir(), 'storydream-draft-storybound-payload-'));
+    const draftRootDir = join(dir, 'JianyingPro Drafts');
+    const workDir = join(dir, 'work');
+    const scenes: StoryboardScene[] = [
+      { id: 1, cap: 'First line', descPrompt: 'prompt 1', durationMs: 1200 },
+      { id: 2, cap: 'Second line', descPrompt: 'prompt 2', durationMs: 1400 },
+    ];
+    const images = await writeAssets(workDir, scenes, 'png', twoByTwoPng);
+    const coverPath = join(workDir, 'cover-image.png');
+    const bgmPath = join(workDir, 'bgm.wav');
+    await writeFile(coverPath, twoByTwoPng);
+    await writeFile(bgmPath, wavTone(3200));
+    await mkdir(join(workDir, 'audio'), { recursive: true });
+    const narration = await Promise.all(
+      scenes.map(async (scene) => {
+        const path = join(workDir, 'audio', `${scene.id}.wav`);
+        await writeFile(path, wavTone(scene.durationMs));
+        return { sceneId: scene.id, path };
+      }),
+    );
+    const capturedPayloads: StoryboundSidecarInput[] = [];
+
+    try {
+      const output = await writeJianyingDraft(
+        {
+          workDir,
+          draftRootDir,
+          title: 'Storybound Contract Draft',
+          cover: {
+            title: 'Recovered Title',
+            subtitle: ['Recovered subtitle'],
+            summary: 'summary',
+            tags: [],
+            comments: [],
+          },
+          ratio: '9:16',
+          scenes,
+          imagePrompts: buildImagePrompts(scenes, { inputText: 'Wu Zetian', style: 'photo-real', ratio: '9:16' }),
+          reviewedText: 'reviewed',
+          rewrittenCopy: 'rewritten',
+          generatedImages: images,
+          coverImagePath: coverPath,
+          narrationAudio: narration,
+          bgm: { id: 'custom-bgm', title: 'Custom BGM', path: bgmPath, durationMs: 3200, volume: 0.25 },
+        },
+        {
+          runSidecar: async (payload) => {
+            capturedPayloads.push(payload);
+            const draftDir = join(draftRootDir, 'storybound-contract-draft');
+            await mkdir(draftDir, { recursive: true });
+            await writeFile(join(draftDir, 'draft_content.json'), '{}', 'utf8');
+            await writeFile(join(draftDir, 'draft_meta_info.json'), '{}', 'utf8');
+            return { success: true, draft_dir: draftDir, draft_id: 'storybound-contract-draft' };
+          },
+        },
+      );
+
+      expect(capturedPayloads).toHaveLength(1);
+      expect(capturedPayloads[0]).toMatchObject({
+        mode: 'story',
+        task_dir: workDir,
+        cover_title: {
+          title: 'Recovered Title',
+          subtitle: ['Recovered subtitle'],
+        },
+        bgm_path: bgmPath,
+        jianying_draft_path: draftRootDir,
+        task_title: 'Storybound Contract Draft',
+        cover_image_path: coverPath,
+        template: {
+          canvas: { width: 1080, height: 1920 },
+          caption: expect.objectContaining({ visible: true }),
+        },
+        assets: {
+          images: images.map((asset) => ({ scene_id: asset.sceneId, path: asset.path })),
+          narration: narration.map((asset) => ({ scene_id: asset.sceneId, path: asset.path })),
+          subtitles_path: join(workDir, 'subtitles.srt'),
+        },
+      });
+      expect(output).toMatchObject({
+        draftDir: join(draftRootDir, 'storybound-contract-draft'),
+        draftId: 'storybound-contract-draft',
+        draftContentPath: join(draftRootDir, 'storybound-contract-draft', 'draft_content.json'),
+        draftMetaPath: join(draftRootDir, 'storybound-contract-draft', 'draft_meta_info.json'),
+      });
+      expect(output.assets.images).toEqual(images.map((asset) => asset.path));
+      expect(output.assets.narration).toEqual(narration.map((asset) => asset.path));
+      expect(output.assets.bgm).toBe(bgmPath);
     } finally {
       await rm(dir, { recursive: true, force: true });
     }

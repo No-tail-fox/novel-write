@@ -36,6 +36,8 @@ describe('windows packaging', () => {
       'playwright',
       'httpx',
       'imageio-ffmpeg',
+      'pydub',
+      'jieba',
       'browser-cookie3',
       'pycryptodomex',
       'PyYAML',
@@ -48,6 +50,7 @@ describe('windows packaging', () => {
     expect(pythonRuntimeScript).toContain('playwright install chromium');
     expect(pythonRuntimeScript).toContain('Test-RuntimeReady');
     expect(pythonRuntimeScript).toContain('import pyJianYingDraft, faster_whisper, playwright, httpx');
+    expect(pythonRuntimeScript).toContain('import pydub, jieba');
     expect(pythonRuntimeScript).toContain('packages=$($PackageNames -join');
   });
 });

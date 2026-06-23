@@ -5,6 +5,7 @@ export type ShellView =
   | 'queue'
   | 'history'
   | 'task-detail'
+  | 'html-video'
   | 'image-lab'
   | 'voice-lab'
   | 'music-mv'
@@ -16,7 +17,7 @@ export type ShellView =
   | 'activation';
 
 export type TaskMode = 'paste' | 'ai';
-export type TaskKind = 'story' | 'music-mv';
+export type TaskKind = 'story' | 'music-mv' | 'html-video';
 export type TaskVideoForm = 'narration' | 'two-host-podcast';
 export type PodcastSpeakerPair = 'kazai-dayi' | 'liufei-xiaolei';
 export type PublishMode = 'review-rewrite' | 'direct-copy';

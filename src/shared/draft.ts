@@ -1,10 +1,11 @@
 import { constants } from 'node:fs';
 import { access, mkdir, stat, writeFile } from 'node:fs/promises';
-import { join } from 'node:path';
+import { dirname, join } from 'node:path';
 import type { BgmItem, CoverMetadata, DiagnosticsReport, DraftTemplate, ImagePrompt, StoryboardScene, SubtitleTrack } from './types';
 import { buildSubtitleTrack } from './story';
 import { getTemplate, normalizeDraftTemplate } from './templates';
-import { runPyJianYingDraftBridge, type PyJianYingBridgeInput, type PyJianYingBridgeOutput } from './jianying-bridge';
+import type { PyJianYingBridgeInput, PyJianYingBridgeOutput } from './jianying-bridge';
+import { runStoryboundMediaSidecar, type StoryboundSidecarInput, type StoryboundSidecarResult } from './storybound-sidecar';
 
 export interface SceneAsset {
   sceneId: number;
@@ -36,6 +37,8 @@ export interface JianyingDraftWriteResult {
   draftDir: string;
   draftContentPath: string;
   draftMetaPath: string;
+  draftId?: string;
+  sourceVideoPath?: string;
   workDir: string;
   assets: {
     images: string[];
@@ -50,6 +53,7 @@ const microsecondsPerMs = 1000;
 
 export interface WriteJianyingDraftOptions {
   runBridge?: (input: PyJianYingBridgeInput) => Promise<PyJianYingBridgeOutput>;
+  runSidecar?: (input: StoryboundSidecarInput) => Promise<StoryboundSidecarResult>;
 }
 
 export async function writeJianyingDraft(input: WriteJianyingDraftInput, options: WriteJianyingDraftOptions = {}): Promise<JianyingDraftWriteResult> {
@@ -111,37 +115,63 @@ export async function writeJianyingDraft(input: WriteJianyingDraftInput, options
     coverImagePath,
     sourceBgm,
   });
-  let bridge: PyJianYingBridgeOutput;
+  const sidecarPayload = createStoryboundSidecarPayload({
+    input,
+    title,
+    template,
+    sourceImages,
+    sourceNarration,
+    subtitlesFile,
+    sourceBgm,
+    coverImagePath,
+  });
   try {
-    bridge = await (options.runBridge ?? runPyJianYingDraftBridge)(bridgePayload);
-    updateDiagnostic(diagnostics, 'jianying-draft', 'pass', 'pyJianYingDraft generated draft_content.json and draft_meta_info.json.');
+    if (options.runBridge) {
+      const bridge = await options.runBridge(bridgePayload);
+      updateDiagnostic(diagnostics, 'jianying-draft', 'pass', 'pyJianYingDraft generated draft_content.json and draft_meta_info.json.');
+      await writeFile(join(input.workDir, 'diagnostics.json'), JSON.stringify(diagnostics, null, 2), 'utf8');
+      return {
+        draftDir: bridge.draftDir,
+        draftContentPath: bridge.draftContentPath,
+        draftMetaPath: bridge.draftMetaPath,
+        workDir: input.workDir,
+        assets: {
+          images: bridge.assets?.images ?? sourceImages,
+          narration: bridge.assets?.narration ?? sourceNarration.map((asset) => asset.path),
+          bgm: bridge.assets?.bgm ?? sourceBgm?.path ?? null,
+          subtitles: bridge.assets?.subtitles ?? subtitlesFile,
+        },
+        diagnostics,
+      };
+    }
+
+    const sidecar = await (options.runSidecar ?? runStoryboundMediaSidecar)(sidecarPayload);
+    updateDiagnostic(diagnostics, 'jianying-draft', 'pass', 'Storybound-compatible sidecar generated draft_content.json and draft_meta_info.json.');
+    const sidecarDraftDir = sidecar.draft_dir ?? draftDirFromResult(sidecarPayload, title);
+    const draftContentPath = join(sidecarDraftDir, 'draft_content.json');
+    const draftMetaPath = join(sidecarDraftDir, 'draft_meta_info.json');
+    await writeFile(join(input.workDir, 'diagnostics.json'), JSON.stringify(diagnostics, null, 2), 'utf8');
+    return {
+      draftDir: sidecarDraftDir,
+      draftContentPath,
+      draftMetaPath,
+      draftId: sidecar.draft_id,
+      sourceVideoPath: sidecar.source_path,
+      workDir: input.workDir,
+      assets: {
+        images: sourceImages,
+        narration: sourceNarration.map((asset) => asset.path),
+        bgm: sourceBgm?.path ?? null,
+        subtitles: subtitlesFile,
+      },
+      diagnostics,
+    };
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
     updateDiagnostic(diagnostics, 'jianying-draft', 'fail', message);
     await writeFile(join(input.workDir, 'diagnostics.json'), JSON.stringify(diagnostics, null, 2), 'utf8');
     throw error;
   }
-  const bridgeAssets = bridge.assets ?? {
-    images: bridgePayload.images.map((asset) => asset.path),
-    narration: bridgePayload.narration.map((asset) => asset.path),
-    bgm: bridgePayload.bgm?.path ?? null,
-    subtitles: subtitlesFile,
-  };
-  await writeFile(join(input.workDir, 'diagnostics.json'), JSON.stringify(diagnostics, null, 2), 'utf8');
-
-  return {
-    draftDir: bridge.draftDir,
-    draftContentPath: bridge.draftContentPath,
-    draftMetaPath: bridge.draftMetaPath,
-    workDir: input.workDir,
-    assets: {
-      images: bridgeAssets.images,
-      narration: bridgeAssets.narration,
-      bgm: bridgeAssets.bgm,
-      subtitles: bridgeAssets.subtitles,
-    },
-    diagnostics,
-  };
 }
 
 function createBridgePayload(input: {
@@ -289,6 +319,52 @@ function createBridgePayload(input: {
   };
 }
 
+function createStoryboundSidecarPayload(input: {
+  input: WriteJianyingDraftInput;
+  title: string;
+  template: DraftTemplate;
+  sourceImages: string[];
+  sourceNarration: SceneAsset[];
+  subtitlesFile: string;
+  sourceBgm: BgmItem | null;
+  coverImagePath: string;
+}): StoryboundSidecarInput {
+  let cursor = 0;
+  const scenes = input.input.scenes.map((scene) => {
+    const startUs = cursor;
+    const durationUs = msToUs(scene.durationMs);
+    cursor += durationUs;
+    return {
+      scene_id: scene.id,
+      start_us: startUs,
+      duration_us: durationUs,
+      text: scene.cap,
+    };
+  });
+  return {
+    mode: 'story',
+    task_dir: input.input.workDir,
+    cover_title: input.input.cover,
+    bgm_path: input.sourceBgm?.path ?? '',
+    jianying_draft_path: input.input.draftRootDir,
+    template: input.template,
+    task_title: input.title,
+    cover_image_path: input.coverImagePath || undefined,
+    assets: {
+      images: input.input.scenes.map((scene, index) => ({ scene_id: scene.id, path: input.sourceImages[index] })),
+      narration: input.sourceNarration.map((asset) => ({
+        scene_id: asset.sceneId,
+        path: asset.path,
+        ...(asset.speaker ? { speaker: asset.speaker } : {}),
+        ...(asset.turnIndex ? { turn_index: asset.turnIndex } : {}),
+        ...(asset.text ? { text: asset.text } : {}),
+      })),
+      subtitles_path: input.subtitlesFile,
+      scenes,
+    },
+  };
+}
+
 function resolveOverlayText(input: WriteJianyingDraftInput, template: DraftTemplate): { title: string; subtitle: string } {
   const title = firstNonEmpty(input.cover.title, input.title, template.title.text);
   const subtitleLines = input.cover.subtitle.map((line) => line.trim()).filter(Boolean);
@@ -396,4 +472,9 @@ function safeDraftName(value: string): string {
 function uniqueDraftFolderName(title: string): string {
   const stamp = new Date().toISOString().replace(/[-:T.Z]/g, '').slice(0, 14);
   return `${title}-${stamp}`;
+}
+
+function draftDirFromResult(input: StoryboundSidecarInput, title: string): string {
+  const root = 'jianying_draft_path' in input ? input.jianying_draft_path : 'output_path' in input ? dirname(input.output_path) : process.cwd();
+  return join(root, safeDraftName(title || 'storydream-draft'));
 }

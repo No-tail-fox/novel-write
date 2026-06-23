@@ -7,6 +7,8 @@ import { runTask } from '@shared/runner';
 import { markTaskStepForRerun } from '@shared/pipeline-cache';
 import type { CustomCoverTemplate, ImagePrompt, PipelineArtifact, StoryboardScene, TaskStatus } from '@shared/types';
 import type { PyJianYingBridgeInput } from '@shared/jianying-bridge';
+import type { StoryboundSidecarInput } from '@shared/storybound-sidecar';
+import type { HtmlVideoExportInput } from '@shared/html-video';
 import type { JsonLlm, LlmJsonRequest } from '@shared/llm-provider';
 
 const sampleInput =
@@ -1331,6 +1333,130 @@ describe('task runner', () => {
       expect(scenes.map((scene) => scene.cap)).toEqual(['雨落下第一句', '霓虹亮起第二句', '副歌把夜色唱亮']);
       expect(prompts[0].prompt).toContain('音乐MV');
       expect(prompts[0].prompt).toContain('雨夜霓虹和孤独背影');
+    } finally {
+      await db.close();
+      await rm(dir, { recursive: true, force: true });
+    }
+  });
+
+  it('uses the recovered music_mv sidecar mode for full music MV draft export', async () => {
+    const dir = await mkdtemp(join(tmpdir(), 'storybound-runner-music-mv-sidecar-'));
+    const db = await FileDatabase.open(join(dir, 'data.db'));
+    const mediaDir = join(dir, 'media');
+    const draftRootDir = join(dir, 'JianyingPro Drafts');
+    const songPath = join(mediaDir, 'song.wav');
+    const capturedPayloads: StoryboundSidecarInput[] = [];
+
+    try {
+      await mkdir(mediaDir, { recursive: true });
+      await writeFile(songPath, wavTone(3600));
+      await db.upsertConfig({
+        ...(await db.getState()).config,
+        jianying: { ...(await db.getState()).config.jianying, draftPath: draftRootDir },
+      });
+      const task = await db.createTask({
+        title: 'Music MV Sidecar',
+        inputText: 'First lyric\nSecond lyric\nThird lyric',
+        taskKind: 'music-mv',
+        processingMode: 'full-auto',
+        track: 'music-mv',
+        musicMv: {
+          rhythmMode: 'lyric-sync',
+          captionStyle: 'karaoke',
+          visualMotif: 'neon rain',
+          audioPath: songPath,
+        },
+      });
+
+      await runTask(db, task, {
+        appDataDir: dir,
+        generateImages: async (scenes) => writeSceneAssets(mediaDir, scenes, 'png', tinyPng),
+        synthesizeNarration: async (scenes) => writeSceneAssets(mediaDir, scenes, 'wav', wavTone(1200)),
+        mediaSidecar: async (payload) => {
+          capturedPayloads.push(payload);
+          const draftDir = join(draftRootDir, 'music-mv-sidecar');
+          await mkdir(draftDir, { recursive: true });
+          await writeFile(join(draftDir, 'draft_content.json'), '{}', 'utf8');
+          await writeFile(join(draftDir, 'draft_meta_info.json'), '{}', 'utf8');
+          return { success: true, draft_dir: draftDir, draft_id: 'music-mv-sidecar' };
+        },
+      });
+
+      expect(capturedPayloads).toHaveLength(1);
+      expect(capturedPayloads[0]).toMatchObject({
+        mode: 'music_mv',
+        work_dir: join(dir, 'tasks', task.id),
+        audio_path: songPath,
+        material_source: 'ai',
+        jianying_draft_path: draftRootDir,
+        task_title: 'Music MV Sidecar',
+        cover_title: expect.objectContaining({ title: expect.any(String) }),
+        template: expect.objectContaining({ canvas: expect.any(Object) }),
+      });
+      expect((capturedPayloads[0] as { assignments?: unknown[] }).assignments).toHaveLength(3);
+      expect((capturedPayloads[0] as { lyrics?: unknown[] }).lyrics).toHaveLength(3);
+      expect((capturedPayloads[0] as { audio_duration?: number }).audio_duration).toBeGreaterThan(0);
+      expect((await db.getState()).tasks[0]).toMatchObject({
+        status: 'completed',
+        outputDir: join(draftRootDir, 'music-mv-sidecar'),
+      });
+    } finally {
+      await db.close();
+      await rm(dir, { recursive: true, force: true });
+    }
+  });
+
+  it('exports html-video tasks through the typed HTML renderer instead of the draft writer', async () => {
+    const dir = await mkdtemp(join(tmpdir(), 'storybound-runner-html-video-'));
+    const db = await FileDatabase.open(join(dir, 'data.db'));
+    const mediaDir = join(dir, 'media');
+    const capturedExports: HtmlVideoExportInput[] = [];
+
+    try {
+      const task = await db.createTask({
+        title: 'HTML Animation',
+        inputText: sampleInput,
+        taskKind: 'html-video',
+        processingMode: 'full-auto',
+        track: 'html-video',
+        style: 'modern-film',
+        ratio: '9:16',
+        storyboardSceneCount: 2,
+      });
+
+      await runTask(db, task, {
+        appDataDir: dir,
+        generatePipelineArtifact: async () => makeArtifact(),
+        generateImages: async (scenes) => writeSceneAssets(mediaDir, scenes, 'png', tinyPng),
+        synthesizeNarration: async (scenes) => writeSceneAssets(mediaDir, scenes, 'wav', wavTone(1200)),
+        htmlVideoRenderer: async (input) => {
+          capturedExports.push(input);
+          return {
+            outputPath: input.outputPath,
+            sourceVideoPath: join(input.workDir, '_source.mp4'),
+            duration: input.totalDurationS,
+            taskDir: input.workDir,
+            framesDirs: input.scenes.map((scene) => join(input.workDir, `frames-${String(scene.sceneId).padStart(3, '0')}`)),
+          };
+        },
+      });
+
+      const completed = (await db.getState()).tasks[0];
+      expect(capturedExports).toHaveLength(1);
+      expect(capturedExports[0]).toMatchObject({
+        workDir: join(dir, 'tasks', task.id),
+        outputPath: join(dir, 'tasks', task.id, 'HTML Animation.mp4'),
+        fps: 30,
+        canvas_w: 1080,
+        canvas_h: 1920,
+      });
+      expect(capturedExports[0].scenes[0].html).toContain('window.__tl');
+      expect(completed).toMatchObject({
+        status: 'completed',
+        taskKind: 'html-video',
+        pipelineStep: 'done',
+        outputDir: join(dir, 'tasks', task.id, 'HTML Animation.mp4'),
+      });
     } finally {
       await db.close();
       await rm(dir, { recursive: true, force: true });
