@@ -90,6 +90,48 @@ describe('OpenAI-compatible LLM JSON adapter', () => {
     });
   });
 
+  it('does not leak Anthropic tool options into OpenAI-compatible requests', async () => {
+    const requests: Array<Record<string, unknown>> = [];
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (_url: string, init: RequestInit) => {
+        requests.push(JSON.parse(String(init.body)));
+        return new Response(JSON.stringify({ choices: [{ message: { content: '{"ok":true}' } }], id: 'chatcmpl-separated' }), {
+          status: 200,
+          headers: { 'content-type': 'application/json' },
+        });
+      }),
+    );
+
+    const runJson = createOpenAiCompatibleJsonLlm({
+      ...defaultConfig.llm,
+      apiKey: 'llm-key',
+      requestParamsJson: '{"temperature":0}',
+    });
+
+    await runJson({
+      step: 1,
+      name: 'rewrite-round-1',
+      messages: [{ role: 'user', content: 'rewrite this' }],
+      anthropic: {
+        toolInputSchema: {
+          type: 'object',
+          required: ['cover'],
+          properties: { cover: { type: 'object' } },
+        },
+      },
+    } as unknown as Parameters<typeof runJson>[0]);
+
+    expect(requests[0]).toMatchObject({
+      model: defaultConfig.llm.model,
+      response_format: { type: 'json_object' },
+      temperature: 0,
+    });
+    expect(requests[0]).not.toHaveProperty('tools');
+    expect(requests[0]).not.toHaveProperty('tool_choice');
+    expect(JSON.stringify(requests[0])).not.toContain('input_schema');
+  });
+
   it('parses JSON wrapped in markdown fences from compatible providers', async () => {
     vi.stubGlobal(
       'fetch',
@@ -344,7 +386,7 @@ describe('Anthropic Messages LLM JSON adapter', () => {
       model: 'claude-sonnet-4-5-20250929',
       requestParamsJson: '{"temperature":0}',
     });
-    const result = await runJson({
+    const result = await runJson.run({
       step: 0,
       name: 'review',
       messages: [
@@ -408,7 +450,7 @@ describe('Anthropic Messages LLM JSON adapter', () => {
       baseUrl: 'https://code.newcli.com/claude/ultra',
       model: 'claude-sonnet-4-5-20250929',
     });
-    const result = await runJson<{ title: string; copy: string }>({
+    const result = await runJson.run<{ title: string; copy: string }>({
       step: 0,
       name: 'research-copy',
       messages: [{ role: 'user', content: 'write source copy' }],
@@ -457,7 +499,7 @@ describe('Anthropic Messages LLM JSON adapter', () => {
       baseUrl: 'https://code.newcli.com/claude/ultra',
       model: 'claude-sonnet-4-5-20250929',
     });
-    const result = await runJson<{ title: string; copy: string }>({
+    const result = await runJson.run<{ title: string; copy: string }>({
       step: 0,
       name: 'research-copy',
       messages: [{ role: 'user', content: 'write source copy' }],
@@ -473,6 +515,75 @@ describe('Anthropic Messages LLM JSON adapter', () => {
         name: 'return_json',
         description: 'Return the final answer as a JSON object.',
         input_schema: { type: 'object', properties: {}, additionalProperties: true },
+      },
+    ]);
+  });
+
+  it('uses Anthropic-specific tool input schema for Anthropic requests', async () => {
+    const requests: Array<Record<string, unknown>> = [];
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (_url: string, init: RequestInit) => {
+        requests.push(JSON.parse(String(init.body)) as Record<string, unknown>);
+        return new Response(
+          JSON.stringify({
+            id: 'msg_schema',
+            content: [
+              {
+                type: 'tool_use',
+                id: 'toolu_schema',
+                name: 'return_json',
+                input: {
+                  rewrittenCopy: 'copy',
+                  cover: { title: 'Title', subtitle: [], summary: '', tags: [], comments: [] },
+                },
+              },
+            ],
+          }),
+          {
+            status: 200,
+            headers: { 'content-type': 'application/json' },
+          },
+        );
+      }),
+    );
+    const rewriteSchema = {
+      type: 'object',
+      required: ['rewrittenCopy', 'cover'],
+      properties: {
+        rewrittenCopy: { type: 'string' },
+        cover: {
+          type: 'object',
+          required: ['title'],
+          properties: {
+            title: { type: 'string' },
+          },
+        },
+      },
+    };
+
+    const runJson = createConfiguredJsonLlm({
+      ...defaultConfig.llm,
+      provider: 'anthropic',
+      protocol: 'anthropic',
+      apiKey: 'anthropic-key',
+      baseUrl: 'https://code.newcli.com/claude/ultra',
+      model: 'claude-sonnet-4-5-20250929',
+    });
+    const result = await runJson.run<{ rewrittenCopy: string; cover: { title: string } }>({
+      step: 1,
+      name: 'rewrite-round-1',
+      messages: [{ role: 'user', content: 'rewrite this' }],
+      anthropic: { toolInputSchema: rewriteSchema },
+    });
+
+    expect(result.json.cover.title).toBe('Title');
+    expect(requests[0].tools).toEqual([
+      {
+        name: 'return_json',
+        description: 'Return the final answer as a JSON object.',
+        input_schema: rewriteSchema,
+        strict: true,
       },
     ]);
   });

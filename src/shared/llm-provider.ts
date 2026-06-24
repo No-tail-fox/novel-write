@@ -8,12 +8,24 @@ export interface LlmMessage {
   content: string;
 }
 
-export interface LlmJsonRequest {
+export interface BaseLlmJsonRequest {
   step: number;
   name: string;
   messages: LlmMessage[];
   signal?: AbortSignal;
 }
+
+export interface OpenAiCompatibleJsonRequest extends BaseLlmJsonRequest {
+  openai?: Record<string, never>;
+}
+
+export interface AnthropicMessagesJsonRequest extends BaseLlmJsonRequest {
+  anthropic?: {
+    toolInputSchema?: Record<string, unknown>;
+  };
+}
+
+export type LlmJsonRequest = OpenAiCompatibleJsonRequest & AnthropicMessagesJsonRequest;
 
 export interface LlmJsonResult<T = unknown> {
   json: T;
@@ -22,6 +34,12 @@ export interface LlmJsonResult<T = unknown> {
 }
 
 export type JsonLlm = <T = unknown>(request: LlmJsonRequest) => Promise<LlmJsonResult<T>>;
+export type OpenAiCompatibleJsonLlm = <T = unknown>(request: OpenAiCompatibleJsonRequest) => Promise<LlmJsonResult<T>>;
+export type AnthropicMessagesJsonLlm = <T = unknown>(request: AnthropicMessagesJsonRequest) => Promise<LlmJsonResult<T>>;
+
+export type ConfiguredJsonLlm =
+  | { protocol: 'openai'; run: OpenAiCompatibleJsonLlm }
+  | { protocol: 'anthropic'; run: AnthropicMessagesJsonLlm };
 
 interface AnthropicContentPart {
   type?: string;
@@ -46,12 +64,14 @@ export class LlmJsonParseError extends Error {
   }
 }
 
-export function createConfiguredJsonLlm(config: LlmConfig): JsonLlm {
-  return isAnthropicLlmConfig(config) ? createAnthropicMessagesJsonLlm(config) : createOpenAiCompatibleJsonLlm(config);
+export function createConfiguredJsonLlm(config: LlmConfig): ConfiguredJsonLlm {
+  return isAnthropicLlmConfig(config)
+    ? { protocol: 'anthropic', run: createAnthropicMessagesJsonLlm(config) }
+    : { protocol: 'openai', run: createOpenAiCompatibleJsonLlm(config) };
 }
 
-export function createOpenAiCompatibleJsonLlm(config: LlmConfig): JsonLlm {
-  return async <T = unknown>(request: LlmJsonRequest): Promise<LlmJsonResult<T>> => {
+export function createOpenAiCompatibleJsonLlm(config: LlmConfig): OpenAiCompatibleJsonLlm {
+  return async <T = unknown>(request: OpenAiCompatibleJsonRequest): Promise<LlmJsonResult<T>> => {
     if (!config.apiKey) {
       throw new Error('LLM API key is missing; cannot run real task content generation.');
     }
@@ -81,8 +101,8 @@ export function createOpenAiCompatibleJsonLlm(config: LlmConfig): JsonLlm {
   };
 }
 
-export function createAnthropicMessagesJsonLlm(config: LlmConfig): JsonLlm {
-  return async <T = unknown>(request: LlmJsonRequest): Promise<LlmJsonResult<T>> => {
+export function createAnthropicMessagesJsonLlm(config: LlmConfig): AnthropicMessagesJsonLlm {
+  return async <T = unknown>(request: AnthropicMessagesJsonRequest): Promise<LlmJsonResult<T>> => {
     if (!config.apiKey) {
       throw new Error('LLM API key is missing; cannot run real task content generation.');
     }
@@ -119,7 +139,7 @@ export function createAnthropicMessagesJsonLlm(config: LlmConfig): JsonLlm {
   };
 }
 
-async function fetchLlmJsonWithRetries(endpoint: string, config: LlmConfig, request: LlmJsonRequest): Promise<Response> {
+async function fetchLlmJsonWithRetries(endpoint: string, config: LlmConfig, request: OpenAiCompatibleJsonRequest): Promise<Response> {
   const maxAttempts = LLM_RETRY_DELAYS_MS.length + 1;
   for (let attempt = 1; attempt <= maxAttempts; attempt += 1) {
     const response = await fetchWithTimeout(endpoint, {
@@ -141,7 +161,7 @@ async function fetchLlmJsonWithRetries(endpoint: string, config: LlmConfig, requ
   throw new Error('Unexpected LLM retry state.');
 }
 
-async function fetchAnthropicJsonWithRetries(endpoint: string, config: LlmConfig, request: LlmJsonRequest): Promise<Response> {
+async function fetchAnthropicJsonWithRetries(endpoint: string, config: LlmConfig, request: AnthropicMessagesJsonRequest): Promise<Response> {
   const maxAttempts = LLM_RETRY_DELAYS_MS.length + 1;
   for (let attempt = 1; attempt <= maxAttempts; attempt += 1) {
     const response = await fetchWithTimeout(endpoint, {
@@ -154,7 +174,7 @@ async function fetchAnthropicJsonWithRetries(endpoint: string, config: LlmConfig
         'x-api-key': config.apiKey,
         'anthropic-version': ANTHROPIC_VERSION,
       },
-      body: JSON.stringify(buildAnthropicRequestBody(config, request.messages)),
+      body: JSON.stringify(buildAnthropicRequestBody(config, request.messages, request.anthropic?.toolInputSchema)),
     });
     if (!TRANSIENT_LLM_STATUS_CODES.has(response.status) || attempt === maxAttempts) {
       return response;
@@ -198,7 +218,7 @@ function buildRequestBody(config: LlmConfig, messages: LlmMessage[]): Record<str
   return { ...extra, ...baseBody };
 }
 
-function buildAnthropicRequestBody(config: LlmConfig, messages: LlmMessage[]): Record<string, unknown> {
+function buildAnthropicRequestBody(config: LlmConfig, messages: LlmMessage[], toolInputSchema?: Record<string, unknown>): Record<string, unknown> {
   const extra = parseRequestParamsJson(config.requestParamsJson);
   const system = messages
     .filter((message) => message.role === 'system')
@@ -216,17 +236,21 @@ function buildAnthropicRequestBody(config: LlmConfig, messages: LlmMessage[]): R
     model: config.model,
     max_tokens: normalizeAnthropicMaxTokens(extra.max_tokens, DEFAULT_ANTHROPIC_MAX_TOKENS),
     messages: anthropicMessages,
-    tools: [
-      {
-        name: ANTHROPIC_JSON_TOOL_NAME,
-        description: 'Return the final answer as a JSON object.',
-        input_schema: { type: 'object', properties: {}, additionalProperties: true },
-      },
-    ],
+    tools: [buildAnthropicJsonTool(toolInputSchema)],
     tool_choice: { type: 'tool', name: ANTHROPIC_JSON_TOOL_NAME },
   };
   if (system) body.system = system;
   return body;
+}
+
+function buildAnthropicJsonTool(toolInputSchema?: Record<string, unknown>): Record<string, unknown> {
+  const tool: Record<string, unknown> = {
+    name: ANTHROPIC_JSON_TOOL_NAME,
+    description: 'Return the final answer as a JSON object.',
+    input_schema: toolInputSchema ?? { type: 'object', properties: {}, additionalProperties: true },
+  };
+  if (toolInputSchema) tool.strict = true;
+  return tool;
 }
 
 function normalizeAnthropicMaxTokens(value: unknown, fallback: number): number {

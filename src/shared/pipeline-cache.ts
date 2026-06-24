@@ -1,5 +1,5 @@
 import { readFile, writeFile } from 'node:fs/promises';
-import type { PipelineArtifact, TaskArtifactAssetPreview, TaskArtifactSnapshot, TaskArtifactStepPreview, TaskStepRerunMode } from './types';
+import type { PipelineArtifact, TaskArtifactAssetPreview, TaskArtifactImageErrorPreview, TaskArtifactSnapshot, TaskArtifactStepPreview, TaskStepRerunMode } from './types';
 
 interface PipelineStateFile {
   version?: number;
@@ -9,6 +9,7 @@ interface PipelineStateFile {
   artifact?: Partial<PipelineArtifact>;
   assets?: {
     images?: TaskArtifactAssetPreview[];
+    imageErrors?: TaskArtifactImageErrorPreview[];
     narration?: TaskArtifactAssetPreview[];
   };
   draft?: TaskArtifactSnapshot['draft'];
@@ -82,6 +83,7 @@ export async function markSceneImageForRegeneration(statePath: string, sceneId: 
   const removed = remainingImages.length !== images.length;
 
   state.assets.images = remainingImages;
+  state.assets.imageErrors = removeImageErrorsByScene(state.assets.imageErrors, sceneId);
   state.steps['4'] = pendingStep(state.steps['4'], remainingImages.map((asset) => asset.path).join('\n') || undefined);
   state.steps['6'] = pendingStep(state.steps['6']);
   delete state.draft;
@@ -158,6 +160,7 @@ function clearAssetsFromStep(state: PipelineStateFile, step: number): void {
   state.assets ??= {};
   if (step <= 4) {
     state.assets.images = [];
+    state.assets.imageErrors = [];
   }
   if (step <= 5) {
     state.assets.narration = [];
@@ -187,4 +190,8 @@ function pendingStep(input: Partial<TaskArtifactStepPreview> | undefined, output
     delete step.outputPath;
   }
   return step;
+}
+
+function removeImageErrorsByScene(errors: TaskArtifactImageErrorPreview[] | undefined, sceneId: number): TaskArtifactImageErrorPreview[] {
+  return (errors ?? []).filter((item) => Number(item.sceneId) !== sceneId);
 }

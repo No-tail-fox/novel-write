@@ -10,6 +10,7 @@ import type {
   UiPreferences,
 } from './types';
 import { storyboundSystemTemplateVersionHash, storyboundSystemTemplates, type StoryboundSystemTemplate } from './storybound-system-templates';
+import { storyboundStoryboardPrompt } from './storyboard-prompt';
 import { DEFAULT_VOLCENGINE_TTS_V3_SPEAKER } from './volcengine-tts';
 
 const updatedAt = '2026-05-26T00:00:00.000Z';
@@ -233,7 +234,35 @@ function storyboundTaskTemplateContent(template: StoryboundSystemTemplate): stri
 
 const defaultStoryboundFallbackTemplate = storyboundSystemTemplates.find((template) => template.templateId === 'general') ?? storyboundSystemTemplates[0];
 
-const storyboundPromptTaskTemplates: PromptTemplate[] = storyboundSystemTemplates.map((template) => ({
+const targetLengthRewriteRule = [
+  'Target word count range: {{targetLengthRange}} Chinese characters.',
+  'If {{targetLength}} is provided, rewrittenCopy must stay within {{targetLengthRange}} visible Chinese characters.',
+  'Do not return rewrittenCopy outside the target word count range; expand with concrete source details if too short, compress redundant phrasing if too long.',
+].join('\n');
+
+function appendPromptRule(content: string, rule: string): string {
+  if (content.includes(rule)) return content;
+  return `${content.trimEnd()}\n\n${rule}`;
+}
+
+function appendDefaultPromptRules(template: PromptTemplate): PromptTemplate {
+  let next = template;
+  if (next.id === 'builtin-rewrite') {
+    next = { ...next, content: appendPromptRule(next.content, targetLengthRewriteRule) };
+  }
+  if (next.type === 'task' && next.isBuiltin && next.stepPrompts?.rewrite) {
+    next = {
+      ...next,
+      stepPrompts: {
+        ...next.stepPrompts,
+        rewrite: appendPromptRule(next.stepPrompts.rewrite, targetLengthRewriteRule),
+      },
+    };
+  }
+  return next;
+}
+
+const storyboundPromptTaskTemplates: PromptTemplate[] = storyboundSystemTemplates.map((template): PromptTemplate => ({
   id: `system-${template.templateId}`,
   name: template.name,
   type: 'task',
@@ -249,13 +278,14 @@ const storyboundPromptTaskTemplates: PromptTemplate[] = storyboundSystemTemplate
   stepPrompts: {
     rewrite: template.step1RewriteSystemPrompt,
     cover: template.step1MetadataSystemPrompt,
+    storyboard: storyboundStoryboardPrompt,
     'image-prompt': template.step3SystemPrompt,
   },
   imageSeedPoolsJson: JSON.stringify(template.imageSeedPools ?? {}),
   origin: 'system',
-}));
+})).map(appendDefaultPromptRules);
 
-export const defaultPromptTemplates: PromptTemplate[] = [
+export const defaultPromptTemplates: PromptTemplate[] = ([
   ...storyboundPromptTaskTemplates,
   {
     id: 'builtin-review',
@@ -292,9 +322,8 @@ export const defaultPromptTemplates: PromptTemplate[] = [
     id: 'builtin-storyboard',
     name: 'StoryDream 本地化分镜',
     type: 'storyboard',
-    description: '为 StoryDream 绘图提示词阶段生成字幕句和视觉种子。',
-    content:
-      'StoryDream 本地化分镜规则\n\n最终口播稿：{{rewrittenCopy}}\n\n任务模板：{{taskTemplateContent}}\n\n目标字数：{{targetLength}}\n目标分镜数：{{storyboardSceneCount}}\n画面比例：{{ratio}}\n当前画面风格：{{style}}\n参考图类型：{{referenceKind}}\nStep 3 骨架：{{step3SkeletonModules}}\n额外要求：{{extraRequirements}}\n\n请把口播稿拆成连续分镜 JSON。cap 是最终口播字幕，必须适合 TTS 和字幕展示；descPrompt 是给后续 StoryDream Step 3 的视觉种子，只写可见画面、镜头、场景、人物/产品线索，不要复述完整字幕，不要写屏幕文字、标题、字幕、水印或 UI。每个镜头只表达一个动作、场景或情绪，保持人物/产品/时代连续性，穿插特写、中景、全景和建立镜头。durationMs 按 cap 字数和节奏估算。',
+    description: '按 Storybound 最新分镜规则输出尾部锚点，由 StoryDream 本地还原字幕分镜。',
+    content: storyboundStoryboardPrompt,
     isBuiltin: true,
     updatedAt,
     origin: 'system',
@@ -309,7 +338,7 @@ export const defaultPromptTemplates: PromptTemplate[] = [
     updatedAt: storyboundTemplateUpdatedAt(defaultStoryboundFallbackTemplate),
     origin: 'system',
   },
-];
+] as PromptTemplate[]).map(appendDefaultPromptRules);
 
 export const defaultCustomStyles: CustomStyle[] = [
   {

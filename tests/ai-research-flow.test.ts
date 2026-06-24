@@ -5,7 +5,7 @@ import { describe, expect, it } from 'vitest';
 import { FileDatabase } from '@shared/storage';
 import { runTask } from '@shared/runner';
 import type { ImagePrompt, PipelineArtifact, StoryboardScene } from '@shared/types';
-import type { LlmJsonRequest } from '@shared/llm-provider';
+import type { ConfiguredJsonLlm, JsonLlm, LlmJsonRequest } from '@shared/llm-provider';
 import type { PyJianYingBridgeInput } from '@shared/jianying-bridge';
 
 const tinyPng = Buffer.from(
@@ -36,6 +36,7 @@ describe('AI creation research flow', () => {
         ratio: '9:16',
         templateId: 'default-portrait-9-16',
         ttsSpeed: 1,
+        targetScenes: 2,
       });
 
       await runTask(db, task, {
@@ -48,10 +49,10 @@ describe('AI creation research flow', () => {
           ],
           warnings: [],
         }),
-        llm: async (request) => {
+        llm: mockConfiguredLlm(async (request) => {
           llmRequests.push(request);
           return mockLlmResponse(request);
-        },
+        }),
         generateImages: async (scenes) => writeSceneAssets(mediaDir, scenes, 'png', tinyPng),
         synthesizeNarration: async (scenes) => writeSceneAssets(mediaDir, scenes, 'wav', wavTone(1000)),
         draftWriterOptions: { runBridge: fakeBridge },
@@ -83,7 +84,11 @@ describe('AI creation research flow', () => {
   });
 });
 
-function mockLlmResponse(request: LlmJsonRequest) {
+function mockConfiguredLlm(run: JsonLlm): ConfiguredJsonLlm {
+  return { protocol: 'anthropic', run };
+}
+
+function mockLlmResponse<T = unknown>(request: LlmJsonRequest) {
   const scenes: StoryboardScene[] = [
     { id: 1, cap: 'Wu Zetian was pushed away from power.', descPrompt: 'palace corridor', durationMs: 1000 },
     { id: 2, cap: 'She returned and changed the court.', descPrompt: 'imperial court', durationMs: 1000 },
@@ -126,7 +131,7 @@ function mockLlmResponse(request: LlmJsonRequest) {
     'image-prompts': { imagePrompts },
   };
   return Promise.resolve({
-    json: responses[request.name] as PipelineArtifact,
+    json: responses[request.name] as T,
     raw: JSON.stringify(responses[request.name]),
     requestId: `mock-${request.name}`,
   });

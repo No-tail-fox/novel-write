@@ -919,6 +919,9 @@ describe('product shell ui', () => {
 
     for (const key of [
       'targetLength',
+      'targetLengthMin',
+      'targetLengthMax',
+      'targetLengthRange',
       'storyboardSceneCount',
       'taskTemplateName',
       'defaultStyles',
@@ -937,6 +940,17 @@ describe('product shell ui', () => {
     ]) {
       expect(main).toContain(`key: '${key}'`);
     }
+  });
+
+  it('surfaces targetLength in task, review, and rewrite prompt scopes with visible step pickers', async () => {
+    const main = await readFile(new URL('../src/main.tsx', import.meta.url), 'utf8');
+
+    expect(main).toContain("key: 'targetLength'");
+    expect(main).toContain("key: 'targetLengthRange'");
+    expect(main).toContain("scopes: ['task', 'review', 'rewrite', 'storyboard']");
+    expect(main).toContain("step.type === 'review' || step.type === 'rewrite'");
+    expect(main).toContain('<PromptVariablePicker');
+    expect(main).toContain('scope={step.type}');
   });
 
   it('splits prompt template management into story and image template tabs', async () => {
@@ -1113,6 +1127,16 @@ describe('product shell ui', () => {
     expect(css).toContain('.artifact-section');
     expect(css).toContain('.artifact-text-block');
     expect(css).toContain('.artifact-scene-list');
+  });
+
+  it('renders per-scene image provider errors below the matching storyboard gallery card', async () => {
+    const main = await readFile(new URL('../src/main.tsx', import.meta.url), 'utf8');
+    const css = await readFile(new URL('../src/styles.css', import.meta.url), 'utf8');
+
+    expect(main).toContain('const imageErrors = snapshot?.assets.imageErrors ?? []');
+    expect(main).toContain('imageErrors={imageErrors}');
+    expect(main).toContain('className="artifact-image-error"');
+    expect(css).toContain('.artifact-image-error');
   });
 
   it('shows per-step rerun controls in artifact preview sections', async () => {
@@ -1437,6 +1461,7 @@ describe('product shell ui', () => {
     const page = main.slice(main.indexOf('function NewTaskPage'), main.indexOf('function MusicMvPage'));
 
     expect(page).toContain('targetLength');
+    expect(page).toContain('字（±20%，留空跟随原文）');
     expect(page).toContain('setTargetLength');
     expect(page).toContain('publishMode');
     expect(page).toContain("options={['review-rewrite', 'direct-copy']}");

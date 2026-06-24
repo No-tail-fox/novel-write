@@ -70,7 +70,7 @@ describe('prompt template rendering', () => {
     const template = {
       ...defaultPromptTemplates[0],
       content: [
-        '目标 {{targetLength}}',
+        '目标 {{targetLength}} / {{targetLengthMin}}-{{targetLengthMax}} / {{targetLengthRange}}',
         '目标分镜 {{storyboardSceneCount}}',
         '风格 {{style}} / {{stylePrefix}} / {{styleSuffix}} / {{styleAllowColor}} / {{styleNegativePrompt}}',
         '参考 {{referenceKind}} / {{referenceImagePath}} / {{imagePromptReference}}',
@@ -103,7 +103,7 @@ describe('prompt template rendering', () => {
       },
     });
 
-    expect(rendered).toContain('目标 900');
+    expect(rendered).toContain('目标 900 / 720-1080 / 720-1080');
     expect(rendered).toContain('目标分镜 16');
     expect(rendered).toContain('风格 black-white / 黑白纪实摄影');
     expect(rendered).toContain('/ false / 卡通，动漫');
@@ -188,11 +188,12 @@ describe('prompt template rendering', () => {
     const template = defaultPromptTemplates.find((item) => item.id === 'builtin-storyboard');
     const placeholders = [...(template?.content.matchAll(/\{\{\s*([^{}]+?)\s*\}\}/gu) ?? [])].map((match) => match[1]);
 
-    expect(placeholders).toEqual([
+    expect([...new Set(placeholders)]).toEqual([
       'rewrittenCopy',
       'taskTemplateContent',
       'targetLength',
-      'storyboardSceneCount',
+      'targetLengthRange',
+      'targetScenes',
       'ratio',
       'style',
       'referenceKind',
@@ -200,6 +201,63 @@ describe('prompt template rendering', () => {
       'extraRequirements',
     ]);
     expect(template?.content).not.toMatch(/\{\{[^{}]*[\u4e00-\u9fff][^{}]*\}\}/u);
+    expect(template?.content).toContain('# 分句规则 - 影视分镜级字幕拆分标准');
+    expect(template?.content).toContain('JSON 字符串数组');
+    expect(template?.content).toContain('尾部锚点');
+    expect(template?.content).toContain('每项是该分镜在原文中的最后 10-20 个字符');
+    expect(template?.content).not.toContain('Strict output shape: {"scenes"');
+    expect(template?.content).not.toContain('descPrompt');
+  });
+
+  it('uses targetScenes as the effective storyboard scene count placeholder', () => {
+    const template = {
+      ...defaultPromptTemplates[0],
+      content: 'count {{targetScenes}} / {{storyboardSceneCount}}',
+    };
+
+    const rendered = renderPromptTemplate(template, {
+      task: {
+        storyboardSceneCount: 16,
+        targetScenes: 18,
+      },
+    });
+
+    expect(rendered).toBe('count 18 / 18');
+  });
+
+  it('puts the latest Storybound tail-anchor storyboard prompt on every built-in task template', () => {
+    for (const template of defaultPromptTemplates.filter((item) => item.type === 'task' && item.isBuiltin)) {
+      expect(template.stepPrompts?.storyboard, `${template.id}.stepPrompts.storyboard`).toContain('# 分句规则 - 影视分镜级字幕拆分标准');
+      expect(template.stepPrompts?.storyboard, `${template.id}.stepPrompts.storyboard`).toContain('JSON 字符串数组');
+      expect(template.stepPrompts?.storyboard, `${template.id}.stepPrompts.storyboard`).toContain('{{targetScenes}}');
+      expect(template.stepPrompts?.storyboard, `${template.id}.stepPrompts.storyboard`).not.toContain('Strict output shape: {"scenes"');
+    }
+  });
+
+  it('keeps target word count self-audit out of default prompt templates', () => {
+    const templateLevelSelfAudit = '目标字数/目标分镜数自审';
+
+    for (const template of defaultPromptTemplates) {
+      expect(template.content, `${template.id}.content`).not.toContain(templateLevelSelfAudit);
+      for (const [step, content] of Object.entries(template.stepPrompts ?? {})) {
+        expect(content, `${template.id}.stepPrompts.${step}`).not.toContain(templateLevelSelfAudit);
+      }
+    }
+  });
+
+  it('puts target word count range constraints into default rewrite prompt templates', () => {
+    const builtinRewrite = defaultPromptTemplates.find((template) => template.id === 'builtin-rewrite');
+    expect(builtinRewrite?.content).toContain('{{targetLength}}');
+    expect(builtinRewrite?.content).toContain('{{targetLengthRange}}');
+    expect(builtinRewrite?.content).toContain('Target word count range');
+    expect(builtinRewrite?.content).toContain('Do not return rewrittenCopy outside the target word count range');
+
+    for (const template of defaultPromptTemplates.filter((item) => item.type === 'task' && item.isBuiltin)) {
+      expect(template.stepPrompts?.rewrite, `${template.id}.stepPrompts.rewrite`).toContain('{{targetLength}}');
+      expect(template.stepPrompts?.rewrite, `${template.id}.stepPrompts.rewrite`).toContain('{{targetLengthRange}}');
+      expect(template.stepPrompts?.rewrite, `${template.id}.stepPrompts.rewrite`).toContain('Target word count range');
+      expect(template.stepPrompts?.rewrite, `${template.id}.stepPrompts.rewrite`).toContain('Do not return rewrittenCopy outside the target word count range');
+    }
   });
 
   it('selects an explicit task template before falling back to the task track', () => {

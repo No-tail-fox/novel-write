@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { composeCopyFromSources, createAiSourceResearcher, searchWebSources } from '@shared/research';
 import { defaultConfig } from '@shared/config';
-import { LlmJsonParseError, type LlmJsonRequest } from '@shared/llm-provider';
+import { LlmJsonParseError, type ConfiguredJsonLlm, type JsonLlm, type LlmJsonRequest } from '@shared/llm-provider';
 import type { Task } from '@shared/types';
 
 describe('AI source research', () => {
@@ -317,14 +317,14 @@ describe('AI source research', () => {
   it('composes an editable source copy from selected web pages through the configured LLM', async () => {
     const requests: Array<{ name: string; prompt: string }> = [];
     const result = await composeCopyFromSources(
-      async <T = unknown>(request: LlmJsonRequest) => {
+      mockConfiguredLlm(async <T = unknown>(request: LlmJsonRequest) => {
         requests.push({ name: request.name, prompt: request.messages.at(-1)?.content ?? '' });
         return {
           json: { copy: 'Generated source copy from selected research.' } as T,
           raw: '{"copy":"Generated source copy from selected research."}',
           requestId: 'copy-1',
         };
-      },
+      }),
       {
         keyword: 'Wu Zetian comeback',
         extraRequirements: 'Make it emotional and suitable for short video narration.',
@@ -344,11 +344,11 @@ describe('AI source research', () => {
 
   it('accepts a generated title from research copy composition responses', async () => {
     const result = await composeCopyFromSources(
-      async <T = unknown>() => ({
+      mockConfiguredLlm(async <T = unknown>() => ({
         json: { title: 'Wu Zetian Returns', copy: 'Generated body.' } as T,
         raw: '{"title":"Wu Zetian Returns","copy":"Generated body."}',
         requestId: 'copy-title-1',
-      }),
+      })),
       {
         keyword: 'Wu Zetian',
         extraRequirements: '',
@@ -377,9 +377,9 @@ describe('AI source research', () => {
     ].join('\n');
 
     const result = await composeCopyFromSources(
-      async () => {
+      mockConfiguredLlm(async () => {
         throw new LlmJsonParseError('bad json', raw);
-      },
+      }),
       {
         keyword: '李明博 经营未来',
         extraRequirements: '',
@@ -532,4 +532,8 @@ function makeTask(patch: Partial<Task>): Task {
     artifactStatePath: '',
     ...patch,
   };
+}
+
+function mockConfiguredLlm(run: JsonLlm): ConfiguredJsonLlm {
+  return { protocol: 'anthropic', run };
 }

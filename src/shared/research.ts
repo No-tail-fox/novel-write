@@ -1,4 +1,4 @@
-import { LlmJsonParseError, type JsonLlm, type LlmJsonResult } from './llm-provider';
+import { LlmJsonParseError, type ConfiguredJsonLlm, type LlmJsonResult } from './llm-provider';
 import type { AiSourceContext, AiSourceSection, AppConfig, ResearchCopyComposeInput, ResearchCopyComposeResult, Task } from './types';
 
 type FetchLike = (url: string, init?: RequestInit) => Promise<Response>;
@@ -145,7 +145,7 @@ function searchAdditionalChineseSources(query: string, fetchImpl: FetchLike): Pr
   return Promise.allSettled([searchSogouHtml(query, fetchImpl)]);
 }
 
-export async function composeCopyFromSources(runJson: JsonLlm, input: ResearchCopyComposeInput): Promise<ResearchCopyComposeResult> {
+export async function composeCopyFromSources(llm: ConfiguredJsonLlm, input: ResearchCopyComposeInput): Promise<ResearchCopyComposeResult> {
   const selectedSources = input.selectedSources.filter((source) => source.source === 'web').slice(0, 10);
   if (selectedSources.length === 0) {
     throw new Error('Please select at least one web source before generating copy.');
@@ -161,7 +161,7 @@ export async function composeCopyFromSources(runJson: JsonLlm, input: ResearchCo
 
   let result: LlmJsonResult<{ title?: string; copy?: string; inputText?: string; materialText?: string }>;
   try {
-    result = await runJson<{ title?: string; copy?: string; inputText?: string; materialText?: string }>({
+    result = await llm.run<{ title?: string; copy?: string; inputText?: string; materialText?: string }>({
       step: 0,
       name: 'research-copy',
       messages: [

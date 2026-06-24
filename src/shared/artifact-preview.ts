@@ -1,5 +1,5 @@
 import { readFile } from 'node:fs/promises';
-import type { PipelineArtifact, Task, TaskArtifactAssetPreview, TaskArtifactSnapshot, TaskArtifactStepPreview } from './types';
+import type { PipelineArtifact, Task, TaskArtifactAssetPreview, TaskArtifactImageErrorPreview, TaskArtifactSnapshot, TaskArtifactStepPreview } from './types';
 
 interface PipelineStateFile {
   taskId?: string;
@@ -9,6 +9,7 @@ interface PipelineStateFile {
   assets?: {
     cover?: TaskArtifactAssetPreview[];
     images?: TaskArtifactAssetPreview[];
+    imageErrors?: TaskArtifactImageErrorPreview[];
     narration?: TaskArtifactAssetPreview[];
   };
   draft?: TaskArtifactSnapshot['draft'];
@@ -33,6 +34,7 @@ export async function readTaskArtifactSnapshot(task: Pick<Task, 'id' | 'artifact
       assets: {
         cover: Array.isArray(state.assets?.cover) ? state.assets.cover : [],
         images: Array.isArray(state.assets?.images) ? state.assets.images : [],
+        imageErrors: Array.isArray(state.assets?.imageErrors) ? state.assets.imageErrors : [],
         narration: Array.isArray(state.assets?.narration) ? state.assets.narration : [],
       },
       draft: state.draft ?? null,
@@ -55,6 +57,7 @@ function emptySnapshot(task: Pick<Task, 'id' | 'artifactStatePath' | 'outputDir'
     assets: {
       cover: [],
       images: [],
+      imageErrors: [],
       narration: [],
     },
     draft: null,

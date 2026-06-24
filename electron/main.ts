@@ -398,7 +398,7 @@ ipcMain.handle('custom-style:generate-draft', async (_event, input: CustomStyleG
   const database = await getDb();
   const state = await database.getState();
   const llm = createConfiguredJsonLlm(state.config.llm);
-  const result = await llm<Partial<CustomStyle>>({
+  const result = await llm.run<Partial<CustomStyle>>({
     step: -1,
     name: 'custom-style-draft',
     messages: [

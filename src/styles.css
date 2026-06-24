@@ -1858,6 +1858,14 @@ textarea {
   border-style: dashed;
 }
 
+.image-preview-card.failed {
+  border-color: color-mix(in srgb, var(--danger) 70%, var(--line));
+}
+
+.image-preview-card.failed .image-thumb {
+  border-color: color-mix(in srgb, var(--danger) 65%, var(--line));
+}
+
 .image-thumb {
   display: grid;
   place-items: center;
@@ -1920,6 +1928,17 @@ textarea {
 .image-preview-body small {
   color: var(--muted);
   font-size: 11px;
+  overflow-wrap: anywhere;
+}
+
+.artifact-image-error {
+  display: inline-flex;
+  align-items: flex-start;
+  gap: 6px;
+  min-width: 0;
+  color: #ffb2b5;
+  font-size: 11px;
+  line-height: 1.45;
   overflow-wrap: anywhere;
 }
 

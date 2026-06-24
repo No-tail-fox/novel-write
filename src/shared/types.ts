@@ -864,6 +864,11 @@ export interface TaskArtifactAssetPreview {
   text?: string;
 }
 
+export interface TaskArtifactImageErrorPreview {
+  sceneId: number;
+  message: string;
+}
+
 export interface TaskDraftArtifactPreview {
   draftDir: string;
   draftContentPath: string;
@@ -882,6 +887,7 @@ export interface TaskArtifactSnapshot {
   assets: {
     cover: TaskArtifactAssetPreview[];
     images: TaskArtifactAssetPreview[];
+    imageErrors: TaskArtifactImageErrorPreview[];
     narration: TaskArtifactAssetPreview[];
   };
   draft: TaskDraftArtifactPreview | null;

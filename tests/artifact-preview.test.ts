@@ -103,6 +103,43 @@ describe('task artifact preview reader', () => {
     ]);
   });
 
+  it('exposes per-scene image generation errors for gallery slots', async () => {
+    const dir = await mkdtemp(join(tmpdir(), 'storybound-artifact-preview-image-errors-'));
+    const pipelineDir = join(dir, 'pipeline');
+    await mkdir(pipelineDir, { recursive: true });
+    const statePath = join(pipelineDir, 'state.json');
+    const providerError = 'Image provider API error (400): content_policy_violation';
+    await writeFile(
+      statePath,
+      JSON.stringify(
+        {
+          version: 1,
+          taskId: 'task-1',
+          updatedAt: '2026-06-24T00:00:00.000Z',
+          steps: { 4: { status: 'failed', error: providerError } },
+          artifact: {
+            scenes: [
+              { id: 1, cap: 'Scene one', descPrompt: 'first prompt', durationMs: 1200 },
+              { id: 2, cap: 'Scene two', descPrompt: 'blocked prompt', durationMs: 1200 },
+            ],
+          },
+          assets: {
+            images: [{ sceneId: 1, path: join(dir, 'images', 'scene-1.png') }],
+            imageErrors: [{ sceneId: 2, message: providerError }],
+          },
+        },
+        null,
+        2,
+      ),
+      'utf8',
+    );
+
+    const snapshot = await readTaskArtifactSnapshot(makeTask({ artifactStatePath: statePath }));
+    const assets = snapshot.assets as typeof snapshot.assets & { imageErrors?: Array<{ sceneId: number; message: string }> };
+
+    expect(assets.imageErrors).toEqual([{ sceneId: 2, message: providerError }]);
+  });
+
   it('returns an unavailable snapshot when no pipeline state exists yet', async () => {
     const snapshot = await readTaskArtifactSnapshot(makeTask({ artifactStatePath: '' }));
 

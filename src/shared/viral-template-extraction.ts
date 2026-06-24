@@ -1,4 +1,5 @@
 import type { CustomStyle, PromptTemplate, ViralAnalysisResult, ViralFrameAnalysis, ViralRecreationDraft } from './types';
+import { storyboundStoryboardOutputRules } from './storyboard-prompt';
 
 export interface ViralTemplateDraftOptions {
   storyTemplateName: string;
@@ -262,7 +263,7 @@ function buildViralRewritePrompt(context: ViralFormulaContext): string {
     '- 如用户素材包含带货信息，保留利益点和信任状，但弱化硬广腔。',
     '',
     '## 输出要求',
-    '输出 rewrittenCopy：一段可直接配音的中文正文，段落之间用空行分隔。长度遵循 {{targetLength}}，如果未设置则以原素材信息量为准。',
+    '输出 rewrittenCopy：一段可直接配音的中文正文，段落之间用空行分隔。若设置目标字数，必须落在 {{targetLengthRange}} 区间内；如果未设置则以原素材信息量为准。',
   ]);
 }
 
@@ -305,7 +306,8 @@ function buildViralStoryboardPrompt(context: ViralFormulaContext): string {
     '任务模板：{{taskTemplateContent}}',
     '',
     '目标字数：{{targetLength}}',
-    '目标分镜数：{{storyboardSceneCount}}',
+    '目标字数区间：{{targetLengthRange}}',
+    '目标分镜数：{{targetScenes}}',
     '画面比例：{{ratio}}',
     '当前画面风格：{{style}}',
     '参考图类型：{{referenceKind}}',
@@ -320,11 +322,8 @@ function buildViralStoryboardPrompt(context: ViralFormulaContext): string {
     recreation.storyboardHints.length ? `5. 原爆款分镜提示抽象：${recreation.storyboardHints.join(' / ')}` : '',
     '',
     '## 输出规则',
-    '- 返回 scenes JSON。cap 是最终字幕/口播片段，必须能被 TTS 朗读。',
-    '- descPrompt 只写可见画面、镜头、场景、人物/产品线索，不要复述完整字幕。',
-    '- 不要写屏幕文字、标题、字幕、水印、UI、账号名。',
-    '- 保持人物/产品/地点/时代连续性，穿插特写、中景、全景和建立镜头。',
-    '- durationMs 按 cap 字数和节奏估算。',
+    storyboundStoryboardOutputRules,
+    '- 分镜数量以目标分镜数为准，约 {{targetScenes}} 个（允许 ±10%），必要时拆细或合并，但不能改写最终口播稿。',
   ]);
 }
 

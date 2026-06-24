@@ -301,8 +301,12 @@ describe('viral analysis helpers', () => {
     expect(drafts.storyTemplate.content).not.toContain('{{taskTemplateContent}}');
     expect(drafts.storyTemplate.content).toContain('Lead with the result.');
     expect(drafts.storyTemplate.content).toContain('Show before and after.');
+    expect(drafts.storyTemplate.content).not.toContain('目标字数/目标分镜数自审');
     expect(drafts.storyTemplate.content).toContain('不要照抄原文');
     expect(Object.keys(drafts.storyTemplate.stepPrompts ?? {}).sort()).toEqual(['cover', 'image-prompt', 'review', 'rewrite', 'storyboard']);
+    for (const [step, content] of Object.entries(drafts.storyTemplate.stepPrompts ?? {})) {
+      expect(content, `storyTemplate.stepPrompts.${step}`).not.toContain('目标字数/目标分镜数自审');
+    }
     expect(drafts.storyTemplate.stepPrompts?.review).toContain('Step 0 预审');
     expect(drafts.storyTemplate.stepPrompts?.review).toContain('{{inputText}}');
     expect(drafts.storyTemplate.stepPrompts?.review).toContain('{{taskTemplateContent}}');
@@ -320,6 +324,7 @@ describe('viral analysis helpers', () => {
     expect(drafts.storyTemplate.stepPrompts?.rewrite).toContain('爆点迁移规则');
     expect(drafts.storyTemplate.stepPrompts?.rewrite).toContain('禁止照抄原文');
     expect(drafts.storyTemplate.stepPrompts?.rewrite).toContain('{{reviewedText}}');
+    expect(drafts.storyTemplate.stepPrompts?.rewrite).toContain('{{targetLengthRange}}');
     expect(drafts.storyTemplate.stepPrompts?.rewrite).toContain('{{extraRequirements}}');
     expect(drafts.storyTemplate.stepPrompts?.cover).toContain('标题公式');
     expect(drafts.storyTemplate.stepPrompts?.cover).toContain('封面公式');
@@ -327,7 +332,12 @@ describe('viral analysis helpers', () => {
     expect(drafts.storyTemplate.stepPrompts?.cover).not.toContain('{{rewrittenCopy}}');
     expect(drafts.storyTemplate.stepPrompts?.storyboard).toContain('分镜公式');
     expect(drafts.storyTemplate.stepPrompts?.storyboard).toContain('{{rewrittenCopy}}');
-    expect(drafts.storyTemplate.stepPrompts?.storyboard).toContain('{{storyboardSceneCount}}');
+    expect(drafts.storyTemplate.stepPrompts?.storyboard).toContain('{{targetLengthRange}}');
+    expect(drafts.storyTemplate.stepPrompts?.storyboard).toContain('{{targetScenes}}');
+    expect(drafts.storyTemplate.stepPrompts?.storyboard).toContain('JSON 字符串数组');
+    expect(drafts.storyTemplate.stepPrompts?.storyboard).toContain('尾部锚点');
+    expect(drafts.storyTemplate.stepPrompts?.storyboard).not.toContain('Strict output shape: {"scenes"');
+    expect(drafts.storyTemplate.stepPrompts?.storyboard).not.toContain('descPrompt');
     expect(drafts.storyTemplate.stepPrompts?.['image-prompt']).not.toContain('生图提示词模板');
     expect(drafts.storyTemplate.stepPrompts?.['image-prompt']).toContain('抽帧提示词模板');
     expect(drafts.storyTemplate.stepPrompts?.['image-prompt']).toContain('{{visualSubject}}');

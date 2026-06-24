@@ -9,7 +9,7 @@ import type { CustomCoverTemplate, ImagePrompt, PipelineArtifact, StoryboardScen
 import type { PyJianYingBridgeInput } from '@shared/jianying-bridge';
 import type { StoryboundSidecarInput } from '@shared/storybound-sidecar';
 import type { HtmlVideoExportInput } from '@shared/html-video';
-import type { JsonLlm, LlmJsonRequest } from '@shared/llm-provider';
+import type { ConfiguredJsonLlm, JsonLlm, LlmJsonRequest } from '@shared/llm-provider';
 
 const sampleInput =
   'Wu Zetian entered the palace at fourteen. Years later, she returned to the center of power and changed the court forever.';
@@ -17,6 +17,10 @@ const tinyPng = Buffer.from(
   'iVBORw0KGgoAAAANSUhEUgAAAAIAAAACCAIAAAD91JpzAAAAFElEQVR4nGP8z8DAwMDAxMDAwAAABQABDQottAAAAABJRU5ErkJggg==',
   'base64',
 );
+
+function mockConfiguredLlm(run: JsonLlm): ConfiguredJsonLlm {
+  return { protocol: 'anthropic', run };
+}
 
 describe('task runner', () => {
   it('runs a task into a real Jianying draft folder when providers return real assets', async () => {
@@ -240,7 +244,7 @@ describe('task runner', () => {
         if (request.step === 0) return { json: { reviewedText: sampleInput } as T, raw: '{}', requestId: 'review' };
         if (request.step === 1) {
           return {
-            json: { rewrittenCopy: 'First line\n\nSecond line', cover: { title: 'Wu Zetian', subtitle: [], summary: 'summary', tags: [], comments: [] } } as T,
+            json: { rewrittenCopy: fitSourceLengthRewrite(), cover: { title: 'Wu Zetian', subtitle: [], summary: 'summary', tags: [], comments: [] } } as T,
             raw: '{}',
             requestId: 'rewrite',
           };
@@ -251,7 +255,7 @@ describe('task runner', () => {
 
       await runTask(db, task, {
         appDataDir: dir,
-        llm,
+        llm: mockConfiguredLlm(llm),
         generateImages: async (scenes) => writeSceneAssets(mediaDir, scenes, 'png', tinyPng),
         synthesizeNarration: async (scenes) => writeSceneAssets(mediaDir, scenes, 'wav', wavTone(1200)),
         draftWriterOptions: { runBridge: fakeBridge },
@@ -266,6 +270,150 @@ describe('task runner', () => {
       expect(renderedMessages).toContain('任务模板标记：character-story');
       expect(renderedMessages).not.toContain('{{');
       expect((await db.getState()).tasks[0].step3PromptSnapshot).toContain('绘图模板标记');
+    } finally {
+      await db.close();
+      await rm(dir, { recursive: true, force: true });
+    }
+  });
+
+  it('does not duplicate review source material when the review template already includes it', async () => {
+    const dir = await mkdtemp(join(tmpdir(), 'storybound-runner-review-source-once-'));
+    const db = await FileDatabase.open(join(dir, 'data.db'));
+    const draftRootDir = join(dir, 'JianyingPro Drafts');
+    const mediaDir = join(dir, 'media');
+    const sourceText = 'UNIQUE_LONG_REVIEW_SOURCE_TEXT';
+    const requests: LlmJsonRequest[] = [];
+
+    try {
+      await db.upsertConfig({
+        ...(await db.getState()).config,
+        jianying: { ...(await db.getState()).config.jianying, draftPath: draftRootDir },
+      });
+      await db.upsertPromptTemplate({
+        id: 'builtin-review',
+        name: 'Review with source',
+        type: 'review',
+        content: 'Review exactly this source once: {{inputText}}',
+        isBuiltin: true,
+      });
+      const task = await db.createTask({
+        title: 'Review source once',
+        inputText: sourceText,
+        track: 'character-story',
+        style: 'photo-real',
+        speaker: 'voice',
+      });
+
+      const llm: JsonLlm = async <T,>(request: LlmJsonRequest) => {
+        requests.push(request);
+        if (request.step === 0) return { json: { reviewedText: sourceText } as T, raw: '{}', requestId: 'review' };
+        if (request.name.startsWith('rewrite-round-')) {
+          return {
+            json: { rewrittenCopy: fitSourceLengthRewrite('First line\n\nSecond line', sourceText), cover: { title: 'Review', subtitle: [], summary: 'summary', tags: [], comments: [] } } as T,
+            raw: '{}',
+            requestId: request.name,
+          };
+        }
+        if (request.name === 'rewrite-evaluation') return { json: { bestRound: 1, evaluations: [] } as T, raw: '{}', requestId: 'rewrite-eval' };
+        if (request.step === 2) return { json: { scenes: makeArtifact().scenes } as T, raw: '{}', requestId: 'storyboard' };
+        if (request.name === 'character-card') {
+          return {
+            json: { characterCard: { summary: 'same person', characters: [], consistencyRules: [] } } as T,
+            raw: '{}',
+            requestId: 'character-card',
+          };
+        }
+        return { json: { imagePrompts: makePrompts(makeArtifact().scenes) } as T, raw: '{}', requestId: 'prompts' };
+      };
+
+      await runTask(db, task, {
+        appDataDir: dir,
+        llm: mockConfiguredLlm(llm),
+        generateImages: async (scenes) => writeSceneAssets(mediaDir, scenes, 'png', tinyPng),
+        synthesizeNarration: async (scenes) => writeSceneAssets(mediaDir, scenes, 'wav', wavTone(1200)),
+        draftWriterOptions: { runBridge: fakeBridge },
+      });
+
+      const reviewContent = requests.find((request) => request.step === 0)?.messages.map((message) => message.content).join('\n') ?? '';
+      expect(countOccurrences(reviewContent, sourceText)).toBe(1);
+    } finally {
+      await db.close();
+      await rm(dir, { recursive: true, force: true });
+    }
+  });
+
+
+  it('passes required rewrite output schema as Anthropic-specific request options', async () => {
+    const dir = await mkdtemp(join(tmpdir(), 'storybound-runner-rewrite-schema-'));
+    const db = await FileDatabase.open(join(dir, 'data.db'));
+    const draftRootDir = join(dir, 'JianyingPro Drafts');
+    const mediaDir = join(dir, 'media');
+    const requests: LlmJsonRequest[] = [];
+    const artifact = makeArtifact();
+
+    try {
+      await db.upsertConfig({
+        ...(await db.getState()).config,
+        jianying: { ...(await db.getState()).config.jianying, draftPath: draftRootDir },
+      });
+      const task = await db.createTask({
+        title: 'Rewrite schema task',
+        inputText: sampleInput,
+        track: 'character-story',
+        style: 'photo-real',
+        speaker: 'voice',
+      });
+      const llm: JsonLlm = async <T,>(request: LlmJsonRequest) => {
+        requests.push(request);
+        if (request.step === 0) return { json: { reviewedText: sampleInput } as T, raw: '{}', requestId: 'review' };
+        if (request.name.startsWith('rewrite-round')) {
+          return {
+            json: { rewrittenCopy: fitSourceLengthRewrite(artifact.rewrittenCopy), cover: artifact.cover } as T,
+            raw: '{}',
+            requestId: request.name,
+          };
+        }
+        if (request.name === 'rewrite-evaluation') {
+          return {
+            json: { bestRound: 1, evaluations: [{ round: 1, score: 100, reason: 'best' }] } as T,
+            raw: '{}',
+            requestId: 'rewrite-evaluation',
+          };
+        }
+        if (request.step === 2) return { json: { scenes: artifact.scenes } as T, raw: '{}', requestId: 'storyboard' };
+        if (request.name === 'character-card') {
+          return {
+            json: { characterCard: { summary: 'same protagonist', characters: [], consistencyRules: [] } } as T,
+            raw: '{}',
+            requestId: 'character-card',
+          };
+        }
+        return { json: { imagePrompts: artifact.imagePrompts } as T, raw: '{}', requestId: 'prompts' };
+      };
+
+      await runTask(db, task, {
+        appDataDir: dir,
+        llm: mockConfiguredLlm(llm),
+        generateImages: async (scenes) => writeSceneAssets(mediaDir, scenes, 'png', tinyPng),
+        synthesizeNarration: async (scenes) => writeSceneAssets(mediaDir, scenes, 'wav', wavTone(1200)),
+        draftWriterOptions: { runBridge: fakeBridge },
+      });
+
+      const rewriteRequest = requests.find((request) => request.name === 'rewrite-round-1');
+      expect(rewriteRequest?.anthropic?.toolInputSchema).toMatchObject({
+        type: 'object',
+        required: ['rewrittenCopy', 'cover'],
+        properties: {
+          rewrittenCopy: { type: 'string' },
+          cover: {
+            type: 'object',
+            required: ['title'],
+            properties: {
+              title: { type: 'string' },
+            },
+          },
+        },
+      });
     } finally {
       await db.close();
       await rm(dir, { recursive: true, force: true });
@@ -299,7 +447,7 @@ describe('task runner', () => {
         if (request.step === 0) return { json: { reviewedText: sampleInput } as T, raw: '{}', requestId: 'review' };
         if (request.step === 1) {
           return {
-            json: { rewrittenCopy: 'First line\n\nSecond line', cover: { title: 'Wu Zetian', subtitle: [], summary: 'summary', tags: [], comments: [] } } as T,
+            json: { rewrittenCopy: fitSourceLengthRewrite(), cover: { title: 'Wu Zetian', subtitle: [], summary: 'summary', tags: [], comments: [] } } as T,
             raw: '{}',
             requestId: 'rewrite',
           };
@@ -310,7 +458,7 @@ describe('task runner', () => {
 
       await runTask(db, task, {
         appDataDir: dir,
-        llm,
+        llm: mockConfiguredLlm(llm),
         generateImages: async (inputScenes) => writeSceneAssets(mediaDir, inputScenes, 'png', tinyPng),
         synthesizeNarration: async (inputScenes) => writeSceneAssets(mediaDir, inputScenes, 'wav', wavTone(1200)),
         draftWriterOptions: { runBridge: fakeBridge },
@@ -318,6 +466,203 @@ describe('task runner', () => {
 
       const storyboardRequest = requests.find((request) => request.step === 2);
       expect(storyboardRequest?.messages.map((message) => message.content).join('\n')).toContain('Storyboard scene count target: 16');
+    } finally {
+      await db.close();
+      await rm(dir, { recursive: true, force: true });
+    }
+  });
+
+
+  it('accepts storyboard arrays returned under common non-schema keys', async () => {
+    const dir = await mkdtemp(join(tmpdir(), 'storybound-runner-storyboard-key-'));
+    const db = await FileDatabase.open(join(dir, 'data.db'));
+    const draftRootDir = join(dir, 'JianyingPro Drafts');
+    const mediaDir = join(dir, 'media');
+    const scenes = makeScenes(2);
+
+    try {
+      await db.upsertConfig({
+        ...(await db.getState()).config,
+        jianying: { ...(await db.getState()).config.jianying, draftPath: draftRootDir },
+      });
+      const task = await db.createTask({
+        title: 'Storyboard key task',
+        inputText: sampleInput,
+        track: 'character-story',
+        style: 'photo-real',
+        speaker: 'voice',
+        storyboardSceneCount: 2,
+        targetScenes: 2,
+      });
+
+      const llm: JsonLlm = async <T,>(request: LlmJsonRequest) => {
+        if (request.step === 0) return { json: { reviewedText: sampleInput } as T, raw: '{}', requestId: 'review' };
+        if (request.name.startsWith('rewrite-round-')) {
+          return {
+            json: { rewrittenCopy: fitSourceLengthRewrite(), cover: { title: 'Wu Zetian', subtitle: [], summary: 'summary', tags: [], comments: [] } } as T,
+            raw: '{}',
+            requestId: request.name,
+          };
+        }
+        if (request.name === 'rewrite-evaluation') return { json: { bestRound: 1, evaluations: [] } as T, raw: '{}', requestId: 'rewrite-eval' };
+        if (request.step === 2) return { json: { storyboard: scenes } as T, raw: '{"storyboard":[]}', requestId: 'storyboard' };
+        if (request.name === 'character-card') {
+          return {
+            json: { characterCard: { summary: 'same person', characters: [], consistencyRules: [] } } as T,
+            raw: '{}',
+            requestId: 'character-card',
+          };
+        }
+        return { json: { imagePrompts: makePrompts(extractScenesFromPrompt(request)) } as T, raw: '{}', requestId: `prompts-${request.step}` };
+      };
+
+      await runTask(db, task, {
+        appDataDir: dir,
+        llm: mockConfiguredLlm(llm),
+        generateImages: async (inputScenes) => writeSceneAssets(mediaDir, inputScenes, 'png', tinyPng),
+        synthesizeNarration: async (inputScenes) => writeSceneAssets(mediaDir, inputScenes, 'wav', wavTone(1200)),
+        draftWriterOptions: { runBridge: fakeBridge },
+      });
+
+      const storedScenes = JSON.parse(await readFile(join(dir, 'tasks', task.id, '02-sentences.json'), 'utf8')) as StoryboardScene[];
+      expect(storedScenes.map((scene) => scene.cap)).toEqual(['Scene 1', 'Scene 2']);
+    } finally {
+      await db.close();
+      await rm(dir, { recursive: true, force: true });
+    }
+  });
+
+  it('accepts storyboard scenes returned as a stringified JSON array', async () => {
+    const dir = await mkdtemp(join(tmpdir(), 'storybound-runner-storyboard-string-'));
+    const db = await FileDatabase.open(join(dir, 'data.db'));
+    const draftRootDir = join(dir, 'JianyingPro Drafts');
+    const mediaDir = join(dir, 'media');
+    const scenes = makeScenes(2);
+
+    try {
+      await db.upsertConfig({
+        ...(await db.getState()).config,
+        jianying: { ...(await db.getState()).config.jianying, draftPath: draftRootDir },
+      });
+      const task = await db.createTask({
+        title: 'Storyboard string task',
+        inputText: sampleInput,
+        track: 'character-story',
+        style: 'photo-real',
+        speaker: 'voice',
+        storyboardSceneCount: 2,
+        targetScenes: 2,
+      });
+
+      const llm: JsonLlm = async <T,>(request: LlmJsonRequest) => {
+        if (request.step === 0) return { json: { reviewedText: sampleInput } as T, raw: '{}', requestId: 'review' };
+        if (request.name.startsWith('rewrite-round-')) {
+          return {
+            json: { rewrittenCopy: fitSourceLengthRewrite(), cover: { title: 'Wu Zetian', subtitle: [], summary: 'summary', tags: [], comments: [] } } as T,
+            raw: '{}',
+            requestId: request.name,
+          };
+        }
+        if (request.name === 'rewrite-evaluation') return { json: { bestRound: 1, evaluations: [] } as T, raw: '{}', requestId: 'rewrite-eval' };
+        if (request.step === 2) {
+          const raw = JSON.stringify({ scenes: JSON.stringify(scenes) });
+          return { json: JSON.parse(raw) as T, raw, requestId: 'storyboard' };
+        }
+        if (request.name === 'character-card') {
+          return {
+            json: { characterCard: { summary: 'same person', characters: [], consistencyRules: [] } } as T,
+            raw: '{}',
+            requestId: 'character-card',
+          };
+        }
+        return { json: { imagePrompts: makePrompts(extractScenesFromPrompt(request)) } as T, raw: '{}', requestId: `prompts-${request.step}` };
+      };
+
+      await runTask(db, task, {
+        appDataDir: dir,
+        llm: mockConfiguredLlm(llm),
+        generateImages: async (inputScenes) => writeSceneAssets(mediaDir, inputScenes, 'png', tinyPng),
+        synthesizeNarration: async (inputScenes) => writeSceneAssets(mediaDir, inputScenes, 'wav', wavTone(1200)),
+        draftWriterOptions: { runBridge: fakeBridge },
+      });
+
+      const storedScenes = JSON.parse(await readFile(join(dir, 'tasks', task.id, '02-sentences.json'), 'utf8')) as StoryboardScene[];
+      expect(storedScenes).toMatchObject([
+        { cap: 'Scene 1', descPrompt: 'visual prompt 1' },
+        { cap: 'Scene 2', descPrompt: 'visual prompt 2' },
+      ]);
+    } finally {
+      await db.close();
+      await rm(dir, { recursive: true, force: true });
+    }
+  });
+
+  it('splits Storybound tail anchors into exact storyboard caps', async () => {
+    const dir = await mkdtemp(join(tmpdir(), 'storybound-runner-storyboard-tail-anchors-'));
+    const db = await FileDatabase.open(join(dir, 'data.db'));
+    const draftRootDir = join(dir, 'JianyingPro Drafts');
+    const mediaDir = join(dir, 'media');
+    const rewrittenCopy = '那一年他十八岁，独自踏上了北上的列车。窗外风景飞退，他心跳加速。他没说话，也没回头，就这样走了。';
+    const anchors = ['独自踏上了北上的列车。', '他心跳加速。', '也没回头，就这样走了。'];
+    const requests: LlmJsonRequest[] = [];
+
+    try {
+      await db.upsertConfig({
+        ...(await db.getState()).config,
+        jianying: { ...(await db.getState()).config.jianying, draftPath: draftRootDir },
+      });
+      const task = await db.createTask({
+        title: 'Tail anchor storyboard task',
+        inputText: rewrittenCopy,
+        track: 'character-story',
+        style: 'photo-real',
+        speaker: 'voice',
+        storyboardSceneCount: 3,
+        targetScenes: 3,
+      });
+
+      const llm: JsonLlm = async <T,>(request: LlmJsonRequest) => {
+        requests.push(request);
+        if (request.step === 0) return { json: { reviewedText: rewrittenCopy } as T, raw: '{}', requestId: 'review' };
+        if (request.name.startsWith('rewrite-round-')) {
+          return {
+            json: { rewrittenCopy, cover: { title: '列车', subtitle: [], summary: 'summary', tags: [], comments: [] } } as T,
+            raw: '{}',
+            requestId: request.name,
+          };
+        }
+        if (request.name === 'rewrite-evaluation') return { json: { bestRound: 1, evaluations: [] } as T, raw: '{}', requestId: 'rewrite-eval' };
+        if (request.step === 2) return { json: anchors as T, raw: JSON.stringify(anchors), requestId: 'storyboard' };
+        if (request.name === 'character-card') {
+          return {
+            json: { characterCard: { summary: 'same person', characters: [], consistencyRules: [] } } as T,
+            raw: '{}',
+            requestId: 'character-card',
+          };
+        }
+        return { json: { imagePrompts: makePrompts(extractScenesFromPrompt(request)) } as T, raw: '{}', requestId: `prompts-${request.step}` };
+      };
+
+      await runTask(db, task, {
+        appDataDir: dir,
+        llm: mockConfiguredLlm(llm),
+        generateImages: async (inputScenes) => writeSceneAssets(mediaDir, inputScenes, 'png', tinyPng),
+        synthesizeNarration: async (inputScenes) => writeSceneAssets(mediaDir, inputScenes, 'wav', wavTone(1200)),
+        draftWriterOptions: { runBridge: fakeBridge },
+      });
+
+      const storedScenes = JSON.parse(await readFile(join(dir, 'tasks', task.id, '02-sentences.json'), 'utf8')) as StoryboardScene[];
+      expect(storedScenes.map((scene) => scene.cap)).toEqual([
+        '那一年他十八岁，独自踏上了北上的列车。',
+        '窗外风景飞退，他心跳加速。',
+        '他没说话，也没回头，就这样走了。',
+      ]);
+      expect(storedScenes.map((scene) => scene.descPrompt)).toEqual(storedScenes.map((scene) => scene.cap));
+      const storyboardRequest = requests.find((request) => request.step === 2);
+      const storyboardContent = storyboardRequest?.messages.map((message) => message.content).join('\n') ?? '';
+      expect(storyboardContent).toContain('JSON 字符串数组');
+      expect(storyboardContent).toContain('尾部锚点');
+      expect(storyboardRequest?.anthropic?.toolInputSchema).toBeUndefined();
     } finally {
       await db.close();
       await rm(dir, { recursive: true, force: true });
@@ -360,7 +705,14 @@ describe('task runner', () => {
           };
         }
         if (request.name === 'rewrite-evaluation') return { json: { bestRound: 1, evaluations: [] } as T, raw: '{}', requestId: 'rewrite-eval' };
-        if (request.step === 2) return { json: { scenes: makeScenes(2) } as T, raw: '{}', requestId: 'storyboard' };
+        if (request.name.startsWith('rewrite-target-length-repair-')) {
+          return {
+            json: { rewrittenCopy: '字'.repeat(920), cover: { title: '武则天', subtitle: [], summary: 'summary', tags: [], comments: [] } } as T,
+            raw: '{}',
+            requestId: request.name,
+          };
+        }
+        if (request.step === 2) return { json: { scenes: makeScenes(3) } as T, raw: '{}', requestId: 'storyboard' };
         if (request.name === 'character-card') {
           return {
             json: {
@@ -379,7 +731,7 @@ describe('task runner', () => {
 
       await runTask(db, task, {
         appDataDir: dir,
-        llm,
+        llm: mockConfiguredLlm(llm),
         generateImages: async (inputScenes) => writeSceneAssets(mediaDir, inputScenes, 'png', tinyPng),
         synthesizeNarration: async (inputScenes) => writeSceneAssets(mediaDir, inputScenes, 'wav', wavTone(1200)),
         draftWriterOptions: { runBridge: fakeBridge },
@@ -389,9 +741,10 @@ describe('task runner', () => {
       const imageContent = requests.find((request) => request.name === 'image-prompts')?.messages.map((message) => message.content).join('\n') ?? '';
       const snapshot = (await db.getState()).tasks[0].step3PromptSnapshot;
 
-      expect(storyboardContent).toContain('StoryDream 本地化分镜规则');
-      expect(storyboardContent).toContain('cap 是最终口播字幕');
-      expect(storyboardContent).toContain('descPrompt 是给后续 StoryDream Step 3 的视觉种子');
+      expect(storyboardContent).toContain('# 分句规则 - 影视分镜级字幕拆分标准');
+      expect(storyboardContent).toContain('JSON 字符串数组');
+      expect(storyboardContent).toContain('尾部锚点');
+      expect(storyboardContent).not.toContain('descPrompt');
       expect(storyboardContent).toContain('目标字数：900');
       expect(storyboardContent).toContain('目标分镜数：3');
       expect(storyboardContent).not.toContain('{{');
@@ -438,19 +791,26 @@ describe('task runner', () => {
         if (request.step === 0) return { json: { reviewedText: sampleInput } as T, raw: '{}', requestId: 'review' };
         if (request.name.startsWith('rewrite-round-')) {
           return {
-            json: { rewrittenCopy: 'Targeted rewrite', cover: { title: 'Wu Zetian', subtitle: [], summary: 'summary', tags: [], comments: [] } } as T,
+            json: { rewrittenCopy: fitSourceLengthRewrite('Targeted rewrite'), cover: { title: 'Wu Zetian', subtitle: [], summary: 'summary', tags: [], comments: [] } } as T,
             raw: '{}',
             requestId: request.name,
           };
         }
         if (request.name === 'rewrite-evaluation') return { json: { bestRound: 1, evaluations: [] } as T, raw: '{}', requestId: 'rewrite-eval' };
+        if (request.name.startsWith('rewrite-target-length-repair-')) {
+          return {
+            json: { rewrittenCopy: '字'.repeat(920), cover: { title: 'Wu Zetian', subtitle: [], summary: 'summary', tags: [], comments: [] } } as T,
+            raw: '{}',
+            requestId: request.name,
+          };
+        }
         if (request.step === 2) return { json: { scenes: makeArtifact().scenes } as T, raw: '{}', requestId: 'storyboard' };
         return { json: { imagePrompts: makeArtifact().imagePrompts } as T, raw: '{}', requestId: 'prompts' };
       };
 
       await runTask(db, task, {
         appDataDir: dir,
-        llm,
+        llm: mockConfiguredLlm(llm),
         generateImages: async (scenes) => writeSceneAssets(mediaDir, scenes, 'png', tinyPng),
         synthesizeNarration: async (scenes) => writeSceneAssets(mediaDir, scenes, 'wav', wavTone(1200)),
         draftWriterOptions: { runBridge: fakeBridge },
@@ -458,7 +818,8 @@ describe('task runner', () => {
 
       for (const request of requests.filter((item) => item.step === 1)) {
         const content = request.messages.map((message) => message.content).join('\n');
-        expect(content).toContain('Target word count: about 900 Chinese characters');
+        expect(content).toContain('Target word count range: 720-1080 Chinese characters.');
+        expect(countOccurrences(content, 'Target word count range: 720-1080 Chinese characters.')).toBe(1);
       }
     } finally {
       await db.close();
@@ -486,25 +847,26 @@ describe('task runner', () => {
         speaker: 'voice',
         targetScenes: 16,
       });
+      const scenes = makeScenes(16);
 
       const llm: JsonLlm = async <T,>(request: LlmJsonRequest) => {
         requests.push(request);
         if (request.step === 0) return { json: { reviewedText: sampleInput } as T, raw: '{}', requestId: 'review' };
         if (request.name.startsWith('rewrite-round-')) {
           return {
-            json: { rewrittenCopy: 'Targeted rewrite', cover: { title: 'Wu Zetian', subtitle: [], summary: 'summary', tags: [], comments: [] } } as T,
+            json: { rewrittenCopy: fitSourceLengthRewrite('Targeted rewrite'), cover: { title: 'Wu Zetian', subtitle: [], summary: 'summary', tags: [], comments: [] } } as T,
             raw: '{}',
             requestId: request.name,
           };
         }
         if (request.name === 'rewrite-evaluation') return { json: { bestRound: 1, evaluations: [] } as T, raw: '{}', requestId: 'rewrite-eval' };
-        if (request.step === 2) return { json: { scenes: makeArtifact().scenes } as T, raw: '{}', requestId: 'storyboard' };
-        return { json: { imagePrompts: makeArtifact().imagePrompts } as T, raw: '{}', requestId: 'prompts' };
+        if (request.step === 2) return { json: { scenes } as T, raw: '{}', requestId: 'storyboard' };
+        return { json: { imagePrompts: makePrompts(extractScenesFromPrompt(request)) } as T, raw: '{}', requestId: 'prompts' };
       };
 
       await runTask(db, task, {
         appDataDir: dir,
-        llm,
+        llm: mockConfiguredLlm(llm),
         generateImages: async (scenes) => writeSceneAssets(mediaDir, scenes, 'png', tinyPng),
         synthesizeNarration: async (scenes) => writeSceneAssets(mediaDir, scenes, 'wav', wavTone(1200)),
         draftWriterOptions: { runBridge: fakeBridge },
@@ -551,7 +913,7 @@ describe('task runner', () => {
 
       await runTask(db, task, {
         appDataDir: dir,
-        llm,
+        llm: mockConfiguredLlm(llm),
         generateImages: async (scenes) => writeSceneAssets(mediaDir, scenes, 'png', tinyPng),
         synthesizeNarration: async (scenes) => writeSceneAssets(mediaDir, scenes, 'wav', wavTone(1200)),
         draftWriterOptions: { runBridge: fakeBridge },
@@ -566,12 +928,13 @@ describe('task runner', () => {
     }
   });
 
-  it('leaves rewrite prompts on automatic length when no target word count is selected', async () => {
+  it('uses source length as the automatic target word count range when no target is selected', async () => {
     const dir = await mkdtemp(join(tmpdir(), 'storybound-runner-auto-target-length-'));
     const db = await FileDatabase.open(join(dir, 'data.db'));
     const draftRootDir = join(dir, 'JianyingPro Drafts');
     const mediaDir = join(dir, 'media');
     const requests: LlmJsonRequest[] = [];
+    const repairedCopy = 'a'.repeat(100);
 
     try {
       await db.upsertConfig({
@@ -597,13 +960,23 @@ describe('task runner', () => {
           };
         }
         if (request.name === 'rewrite-evaluation') return { json: { bestRound: 1, evaluations: [] } as T, raw: '{}', requestId: 'rewrite-eval' };
+        if (request.name === 'rewrite-target-length-repair-1') {
+          const repairPrompt = request.messages.map((message) => message.content).join('\n');
+          expect(repairPrompt).toContain('Target word count range: 80-122 Chinese characters.');
+          expect(repairPrompt).toContain('Word count is too low: current 16 Chinese characters, target 80-122.');
+          return {
+            json: { rewrittenCopy: repairedCopy, cover: { title: 'Wu Zetian', subtitle: [], summary: 'summary', tags: [], comments: [] } } as T,
+            raw: '{}',
+            requestId: 'auto-target-repair',
+          };
+        }
         if (request.step === 2) return { json: { scenes: makeArtifact().scenes } as T, raw: '{}', requestId: 'storyboard' };
         return { json: { imagePrompts: makeArtifact().imagePrompts } as T, raw: '{}', requestId: 'prompts' };
       };
 
       await runTask(db, task, {
         appDataDir: dir,
-        llm,
+        llm: mockConfiguredLlm(llm),
         generateImages: async (scenes) => writeSceneAssets(mediaDir, scenes, 'png', tinyPng),
         synthesizeNarration: async (scenes) => writeSceneAssets(mediaDir, scenes, 'wav', wavTone(1200)),
         draftWriterOptions: { runBridge: fakeBridge },
@@ -611,8 +984,11 @@ describe('task runner', () => {
 
       for (const request of requests.filter((item) => item.step === 1)) {
         const content = request.messages.map((message) => message.content).join('\n');
-        expect(content).not.toContain('Target word count:');
+        expect(content).toContain('Target word count range: 80-122 Chinese characters.');
+        expect(countOccurrences(content, 'Target word count range: 80-122 Chinese characters.')).toBe(1);
       }
+      expect(requests.some((request) => request.name === 'rewrite-target-length-repair-1')).toBe(true);
+      await expect(readFile(join(dir, 'tasks', task.id, '01-rewritten-copy.md'), 'utf8')).resolves.toBe(repairedCopy);
     } finally {
       await db.close();
       await rm(dir, { recursive: true, force: true });
@@ -646,7 +1022,7 @@ describe('task runner', () => {
         if (request.step === 0) return { json: { reviewedText: sampleInput } as T, raw: '{}', requestId: 'review' };
         if (request.step === 1) {
           return {
-            json: { rewrittenCopy: 'First line\n\nSecond line', cover: { title: 'Wu Zetian', subtitle: [], summary: 'summary', tags: [], comments: [] } } as T,
+            json: { rewrittenCopy: fitSourceLengthRewrite(), cover: { title: 'Wu Zetian', subtitle: [], summary: 'summary', tags: [], comments: [] } } as T,
             raw: '{}',
             requestId: 'rewrite',
           };
@@ -658,7 +1034,7 @@ describe('task runner', () => {
 
       await runTask(db, task, {
         appDataDir: dir,
-        llm,
+        llm: mockConfiguredLlm(llm),
         generateImages: async (inputScenes) => writeSceneAssets(mediaDir, inputScenes, 'png', tinyPng),
         synthesizeNarration: async (inputScenes) => writeSceneAssets(mediaDir, inputScenes, 'wav', wavTone(1200)),
         draftWriterOptions: { runBridge: fakeBridge },
@@ -898,7 +1274,7 @@ describe('task runner', () => {
         requests.push(request);
         if (request.step === 0) return { json: { reviewedText: sampleInput } as T, raw: '{}', requestId: 'review' };
         if (request.name.startsWith('rewrite-round-')) {
-          return { json: { rewrittenCopy: 'Host A: First line\nHost B: Second line', cover: { title: 'Podcast', subtitle: [], summary: 'summary', tags: [], comments: [] } } as T, raw: '{}', requestId: 'rewrite' };
+          return { json: { rewrittenCopy: fitSourceLengthRewrite('Host A: First line\nHost B: Second line'), cover: { title: 'Podcast', subtitle: [], summary: 'summary', tags: [], comments: [] } } as T, raw: '{}', requestId: 'rewrite' };
         }
         if (request.name === 'rewrite-evaluation') return { json: { bestRound: 1, evaluations: [{ round: 1, score: 90, reason: 'dialogue' }] } as T, raw: '{}', requestId: 'eval' };
         if (request.step === 2) return { json: { scenes: makeArtifact().scenes } as T, raw: '{}', requestId: 'storyboard' };
@@ -907,7 +1283,7 @@ describe('task runner', () => {
 
       await runTask(db, task, {
         appDataDir: dir,
-        llm,
+        llm: mockConfiguredLlm(llm),
         generateImages: async (scenes) => writeSceneAssets(mediaDir, scenes, 'png', tinyPng),
         synthesizeNarration: async (scenes) => writeSceneAssets(mediaDir, scenes, 'wav', wavTone(1200)),
         draftWriterOptions: { runBridge: fakeBridge },
@@ -1209,7 +1585,7 @@ describe('task runner', () => {
     }
   });
 
-  it('runs three rewrite rounds, saves evaluation output, and injects a character card into image prompts', async () => {
+  it('runs one rewrite round, saves local evaluation output, and injects a character card into image prompts', async () => {
     const dir = await mkdtemp(join(tmpdir(), 'storybound-runner-rewrite-character-card-'));
     const db = await FileDatabase.open(join(dir, 'data.db'));
     const draftRootDir = join(dir, 'JianyingPro Drafts');
@@ -1229,31 +1605,18 @@ describe('task runner', () => {
       const llm: JsonLlm = async <T,>(request: LlmJsonRequest) => {
         requests.push(request);
         if (request.step === 0) return { json: { reviewedText: sampleInput } as T, raw: '{}', requestId: 'review' };
-        if (request.name.startsWith('rewrite-round-')) {
-          const round = Number(request.name.replace('rewrite-round-', ''));
+        if (request.name === 'rewrite-round-1') {
           return {
             json: {
-              rewrittenCopy: `Round ${round} line one.\n\nRound ${round} line two.`,
-              cover: { title: `Cover ${round}`, subtitle: [], summary: `summary ${round}`, tags: [], comments: [`comment ${round}`] },
+              rewrittenCopy: fitSourceLengthRewrite('Round 1 line one.\n\nRound 1 line two.'),
+              cover: { title: 'Cover 1', subtitle: [], summary: 'summary 1', tags: [], comments: ['comment 1'] },
             } as T,
             raw: '{}',
-            requestId: `rewrite-${round}`,
+            requestId: 'rewrite-1',
           };
         }
-        if (request.name === 'rewrite-evaluation') {
-          return {
-            json: {
-              bestRound: 2,
-              evaluations: [
-                { round: 1, score: 70, reason: 'plain' },
-                { round: 2, score: 93, reason: 'best rhythm' },
-                { round: 3, score: 80, reason: 'ok' },
-              ],
-              wordCountWarning: 'chosen copy is short',
-            } as T,
-            raw: '{}',
-            requestId: 'rewrite-eval',
-          };
+        if (request.name === 'rewrite-round-2' || request.name === 'rewrite-round-3' || request.name === 'rewrite-evaluation') {
+          throw new Error(`Unexpected extra rewrite request: ${request.name}`);
         }
         if (request.step === 2) return { json: { scenes: makeArtifact().scenes } as T, raw: '{}', requestId: 'storyboard' };
         if (request.name === 'character-card') {
@@ -1275,22 +1638,396 @@ describe('task runner', () => {
 
       await runTask(db, task, {
         appDataDir: dir,
-        llm,
+        llm: mockConfiguredLlm(llm),
         generateImages: async (scenes) => writeSceneAssets(mediaDir, scenes, 'png', tinyPng),
         synthesizeNarration: async (scenes) => writeSceneAssets(mediaDir, scenes, 'wav', wavTone(1200)),
         draftWriterOptions: { runBridge: fakeBridge },
       });
 
       const workDir = join(dir, 'tasks', task.id);
-      await expect(readFile(join(workDir, '01-rewritten-copy.md'), 'utf8')).resolves.toContain('Round 2 line one');
+      await expect(readFile(join(workDir, '01-rewritten-copy.md'), 'utf8')).resolves.toContain('Round 1 line one');
       const evaluations = JSON.parse(await readFile(join(workDir, '01-rewrite-evaluations.json'), 'utf8'));
-      expect(evaluations.bestRound).toBe(2);
+      expect(evaluations.bestRound).toBe(1);
+      expect(evaluations.evaluations).toEqual([{ round: 1, score: 100, reason: 'Single rewrite round accepted.' }]);
       const characterCard = JSON.parse(await readFile(join(workDir, '02-character-card.json'), 'utf8'));
       expect(characterCard.summary).toContain('same historical protagonist');
-      expect(requests.filter((request) => request.name.startsWith('rewrite-round-'))).toHaveLength(3);
-      expect(requests.some((request) => request.name === 'rewrite-evaluation')).toBe(true);
+      expect(requests.filter((request) => request.name.startsWith('rewrite-round-'))).toHaveLength(1);
+      expect(requests.some((request) => request.name === 'rewrite-evaluation')).toBe(false);
       expect(requests.some((request) => request.name === 'character-card')).toBe(true);
-      expect((await db.getState()).events.some((event) => event.type === 'step_warning' && event.detail.includes('short'))).toBe(true);
+      expect((await db.getState()).events.some((event) => event.type === 'step_warning')).toBe(false);
+    } finally {
+      await db.close();
+      await rm(dir, { recursive: true, force: true });
+    }
+  });
+
+  it('enforces target word count range in review and rewrite before accepting rewritten copy', async () => {
+    const dir = await mkdtemp(join(tmpdir(), 'storybound-runner-target-length-repair-'));
+    const db = await FileDatabase.open(join(dir, 'data.db'));
+    const draftRootDir = join(dir, 'JianyingPro Drafts');
+    const mediaDir = join(dir, 'media');
+    const requests: LlmJsonRequest[] = [];
+    const repairedCopy = '字'.repeat(130);
+
+    try {
+      await db.upsertConfig({
+        ...(await db.getState()).config,
+        jianying: { ...(await db.getState()).config.jianying, draftPath: draftRootDir },
+      });
+      const task = await db.createTask({
+        title: 'Target length repair',
+        inputText: sampleInput,
+        targetLength: 120,
+      });
+
+      const llm: JsonLlm = async <T,>(request: LlmJsonRequest) => {
+        requests.push(request);
+        if (request.step === 0) return { json: { reviewedText: sampleInput } as T, raw: '{}', requestId: 'review' };
+        if (request.name.startsWith('rewrite-round-')) {
+          return {
+            json: { rewrittenCopy: '太短', cover: { title: 'Short', subtitle: [], summary: 'summary', tags: [], comments: [] } } as T,
+            raw: '{}',
+            requestId: request.name,
+          };
+        }
+        if (request.name === 'rewrite-evaluation') {
+          return {
+            json: { bestRound: 1, evaluations: [{ round: 1, score: 90, reason: 'best but short' }] } as T,
+            raw: '{}',
+            requestId: 'rewrite-evaluation',
+          };
+        }
+        if (request.name === 'rewrite-target-length-repair-1') {
+          const repairPrompt = request.messages.map((message) => message.content).join('\n');
+          expect(repairPrompt).toContain('Target-length repair rewrite');
+          expect(repairPrompt).toContain('Target word count range: 96-144 Chinese characters.');
+          expect(repairPrompt).toContain('Word count is too low: current 2 Chinese characters, target 96-144.');
+          expect(repairPrompt).toContain('Original source material:');
+          expect(repairPrompt).toContain(sampleInput);
+          expect(repairPrompt).toContain('Current short draft:');
+          return {
+            json: { rewrittenCopy: repairedCopy, cover: { title: 'Repaired', subtitle: [], summary: 'summary', tags: [], comments: [] } } as T,
+            raw: '{}',
+            requestId: 'rewrite-repair',
+          };
+        }
+        if (request.step === 2) return { json: { scenes: makeArtifact().scenes } as T, raw: '{}', requestId: 'storyboard' };
+        if (request.name === 'character-card') {
+          return {
+            json: { characterCard: { summary: 'same person', characters: [], consistencyRules: [] } } as T,
+            raw: '{}',
+            requestId: 'character-card',
+          };
+        }
+        return { json: { imagePrompts: makePrompts(makeArtifact().scenes) } as T, raw: '{}', requestId: 'prompts' };
+      };
+
+      await runTask(db, task, {
+        appDataDir: dir,
+        llm: mockConfiguredLlm(llm),
+        generateImages: async (scenes) => writeSceneAssets(mediaDir, scenes, 'png', tinyPng),
+        synthesizeNarration: async (scenes) => writeSceneAssets(mediaDir, scenes, 'wav', wavTone(1200)),
+        draftWriterOptions: { runBridge: fakeBridge },
+      });
+
+      const reviewPrompt = requests.find((request) => request.step === 0)?.messages.map((message) => message.content).join('\n') ?? '';
+      const rewritePrompt = requests.find((request) => request.name === 'rewrite-round-1')?.messages.map((message) => message.content).join('\n') ?? '';
+      expect(reviewPrompt).toContain('Target word count range: 96-144 Chinese characters.');
+      expect(reviewPrompt).toContain('Preserve enough source detail');
+      expect(reviewPrompt).not.toContain('rewrittenCopy');
+      expect(rewritePrompt).toContain('Target word count range: 96-144 Chinese characters.');
+      expect(requests.some((request) => request.name === 'rewrite-target-length-repair-1')).toBe(true);
+      await expect(readFile(join(dir, 'tasks', task.id, '01-rewritten-copy.md'), 'utf8')).resolves.toBe(repairedCopy);
+    } finally {
+      await db.close();
+      await rm(dir, { recursive: true, force: true });
+    }
+  });
+
+  it('accepts the latest in-range rewrite after two target-length repairs', async () => {
+    const dir = await mkdtemp(join(tmpdir(), 'storybound-runner-target-length-near-miss-'));
+    const db = await FileDatabase.open(join(dir, 'data.db'));
+    const draftRootDir = join(dir, 'JianyingPro Drafts');
+    const mediaDir = join(dir, 'media');
+    const requests: LlmJsonRequest[] = [];
+    const nearMissCopy = '字'.repeat(2432);
+
+    try {
+      await db.upsertConfig({
+        ...(await db.getState()).config,
+        jianying: { ...(await db.getState()).config.jianying, draftPath: draftRootDir },
+      });
+      const task = await db.createTask({
+        title: 'Target length near miss',
+        inputText: sampleInput,
+        targetLength: 2500,
+      });
+
+      const llm: JsonLlm = async <T,>(request: LlmJsonRequest) => {
+        requests.push(request);
+        if (request.step === 0) return { json: { reviewedText: sampleInput } as T, raw: '{}', requestId: 'review' };
+        if (request.name.startsWith('rewrite-round-')) {
+          return {
+            json: { rewrittenCopy: '太短', cover: { title: 'Short', subtitle: [], summary: 'summary', tags: [], comments: [] } } as T,
+            raw: '{}',
+            requestId: request.name,
+          };
+        }
+        if (request.name === 'rewrite-evaluation') {
+          return { json: { bestRound: 1, evaluations: [{ round: 1, score: 90, reason: 'best but short' }] } as T, raw: '{}', requestId: 'rewrite-eval' };
+        }
+        if (request.name === 'rewrite-target-length-repair-1') {
+          const repairPrompt = request.messages.map((message) => message.content).join('\n');
+          expect(repairPrompt).toContain('Current draft length: 2 Chinese characters.');
+          expect(repairPrompt).toContain('Target word count range: 2000-3000 Chinese characters.');
+          expect(repairPrompt).toContain('Word count is too low: current 2 Chinese characters, target 2000-3000.');
+          return {
+            json: { rewrittenCopy: '字'.repeat(1900), cover: { title: 'Still short', subtitle: [], summary: 'summary', tags: [], comments: [] } } as T,
+            raw: '{}',
+            requestId: request.name,
+          };
+        }
+        if (request.name === 'rewrite-target-length-repair-2') {
+          const repairPrompt = request.messages.map((message) => message.content).join('\n');
+          expect(repairPrompt).toContain('Current draft length: 1900 Chinese characters.');
+          expect(repairPrompt).toContain('Target word count range: 2000-3000 Chinese characters.');
+          expect(repairPrompt).toContain('Word count is too low: current 1900 Chinese characters, target 2000-3000.');
+          return {
+            json: { rewrittenCopy: nearMissCopy, cover: { title: 'Near miss', subtitle: [], summary: 'summary', tags: [], comments: [] } } as T,
+            raw: '{}',
+            requestId: request.name,
+          };
+        }
+        if (request.step === 2) return { json: { scenes: makeArtifact().scenes } as T, raw: '{}', requestId: 'storyboard' };
+        if (request.name === 'character-card') {
+          return {
+            json: { characterCard: { summary: 'same person', characters: [], consistencyRules: [] } } as T,
+            raw: '{}',
+            requestId: 'character-card',
+          };
+        }
+        return { json: { imagePrompts: makePrompts(makeArtifact().scenes) } as T, raw: '{}', requestId: 'prompts' };
+      };
+
+      await runTask(db, task, {
+        appDataDir: dir,
+        llm: mockConfiguredLlm(llm),
+        generateImages: async (scenes) => writeSceneAssets(mediaDir, scenes, 'png', tinyPng),
+        synthesizeNarration: async (scenes) => writeSceneAssets(mediaDir, scenes, 'wav', wavTone(1200)),
+        draftWriterOptions: { runBridge: fakeBridge },
+      });
+
+      expect(requests.some((request) => request.name === 'rewrite-target-length-repair-2')).toBe(true);
+      expect(requests.some((request) => request.name === 'rewrite-target-length-repair-3')).toBe(false);
+      await expect(readFile(join(dir, 'tasks', task.id, '01-rewritten-copy.md'), 'utf8')).resolves.toBe(nearMissCopy);
+      const evaluations = JSON.parse(await readFile(join(dir, 'tasks', task.id, '01-rewrite-evaluations.json'), 'utf8'));
+      expect(evaluations.wordCountWarning).toBeUndefined();
+    } finally {
+      await db.close();
+      await rm(dir, { recursive: true, force: true });
+    }
+  });
+
+  it('compresses an overlong rewrite into the target word count range', async () => {
+    const dir = await mkdtemp(join(tmpdir(), 'storybound-runner-target-length-overlong-'));
+    const db = await FileDatabase.open(join(dir, 'data.db'));
+    const draftRootDir = join(dir, 'JianyingPro Drafts');
+    const mediaDir = join(dir, 'media');
+    const requests: LlmJsonRequest[] = [];
+    const overlongCopy = 'x'.repeat(150);
+    const compressedCopy = 'y'.repeat(100);
+
+    try {
+      await db.upsertConfig({
+        ...(await db.getState()).config,
+        jianying: { ...(await db.getState()).config.jianying, draftPath: draftRootDir },
+      });
+      const task = await db.createTask({
+        title: 'Target length overlong',
+        inputText: sampleInput,
+        targetLength: 100,
+      });
+
+      const llm: JsonLlm = async <T,>(request: LlmJsonRequest) => {
+        requests.push(request);
+        if (request.step === 0) return { json: { reviewedText: sampleInput } as T, raw: '{}', requestId: 'review' };
+        if (request.name.startsWith('rewrite-round-')) {
+          return {
+            json: { rewrittenCopy: overlongCopy, cover: { title: 'Long', subtitle: [], summary: 'summary', tags: [], comments: [] } } as T,
+            raw: '{}',
+            requestId: request.name,
+          };
+        }
+        if (request.name === 'rewrite-evaluation') {
+          return { json: { bestRound: 1, evaluations: [{ round: 1, score: 90, reason: 'best but long' }] } as T, raw: '{}', requestId: 'rewrite-eval' };
+        }
+        if (request.name === 'rewrite-target-length-repair-1') {
+          const repairPrompt = request.messages.map((message) => message.content).join('\n');
+          expect(repairPrompt).toContain('Target-length repair rewrite');
+          expect(repairPrompt).toContain('Current draft length: 150 Chinese characters.');
+          expect(repairPrompt).toContain('Target word count range: 80-120 Chinese characters.');
+          expect(repairPrompt).toContain('Word count is too high: current 150 Chinese characters, target 80-120.');
+          expect(repairPrompt).toContain('Compress redundant phrasing without dropping key plot points or source facts.');
+          expect(repairPrompt).toContain('Current long draft:');
+          return {
+            json: { rewrittenCopy: compressedCopy, cover: { title: 'Compressed', subtitle: [], summary: 'summary', tags: [], comments: [] } } as T,
+            raw: '{}',
+            requestId: request.name,
+          };
+        }
+        if (request.step === 2) return { json: { scenes: makeArtifact().scenes } as T, raw: '{}', requestId: 'storyboard' };
+        if (request.name === 'character-card') {
+          return {
+            json: { characterCard: { summary: 'same person', characters: [], consistencyRules: [] } } as T,
+            raw: '{}',
+            requestId: 'character-card',
+          };
+        }
+        return { json: { imagePrompts: makePrompts(makeArtifact().scenes) } as T, raw: '{}', requestId: 'prompts' };
+      };
+
+      await runTask(db, task, {
+        appDataDir: dir,
+        llm: mockConfiguredLlm(llm),
+        generateImages: async (scenes) => writeSceneAssets(mediaDir, scenes, 'png', tinyPng),
+        synthesizeNarration: async (scenes) => writeSceneAssets(mediaDir, scenes, 'wav', wavTone(1200)),
+        draftWriterOptions: { runBridge: fakeBridge },
+      });
+
+      expect(requests.some((request) => request.name === 'rewrite-target-length-repair-1')).toBe(true);
+      expect(requests.some((request) => request.name === 'rewrite-target-length-repair-2')).toBe(false);
+      await expect(readFile(join(dir, 'tasks', task.id, '01-rewritten-copy.md'), 'utf8')).resolves.toBe(compressedCopy);
+      const evaluations = JSON.parse(await readFile(join(dir, 'tasks', task.id, '01-rewrite-evaluations.json'), 'utf8'));
+      expect(evaluations.wordCountWarning).toBeUndefined();
+    } finally {
+      await db.close();
+      await rm(dir, { recursive: true, force: true });
+    }
+  });
+
+  it('repairs storyboard output when it is below the target scene count', async () => {
+    const dir = await mkdtemp(join(tmpdir(), 'storybound-runner-target-scenes-repair-'));
+    const db = await FileDatabase.open(join(dir, 'data.db'));
+    const draftRootDir = join(dir, 'JianyingPro Drafts');
+    const mediaDir = join(dir, 'media');
+    const requests: LlmJsonRequest[] = [];
+    const repairedScenes = makeScenes(4);
+
+    try {
+      await db.upsertConfig({
+        ...(await db.getState()).config,
+        jianying: { ...(await db.getState()).config.jianying, draftPath: draftRootDir },
+      });
+      const task = await db.createTask({
+        title: 'Target scenes repair',
+        inputText: sampleInput,
+        storyboardSceneCount: 4,
+        targetScenes: 4,
+      });
+
+      const llm: JsonLlm = async <T,>(request: LlmJsonRequest) => {
+        requests.push(request);
+        if (request.step === 0) return { json: { reviewedText: sampleInput } as T, raw: '{}', requestId: 'review' };
+        if (request.name.startsWith('rewrite-round-')) {
+          return {
+            json: { rewrittenCopy: fitSourceLengthRewrite('First line\n\nSecond line\n\nThird line\n\nFourth line'), cover: { title: 'Scenes', subtitle: [], summary: 'summary', tags: [], comments: [] } } as T,
+            raw: '{}',
+            requestId: request.name,
+          };
+        }
+        if (request.name === 'rewrite-evaluation') return { json: { bestRound: 1, evaluations: [] } as T, raw: '{}', requestId: 'rewrite-eval' };
+        if (request.name === 'storyboard') return { json: { scenes: makeScenes(2) } as T, raw: '{}', requestId: 'storyboard' };
+        if (request.name === 'storyboard-target-scenes-repair-1') {
+          const repairPrompt = request.messages.map((message) => message.content).join('\n');
+          expect(repairPrompt).toContain('Target-scene repair storyboard.');
+          expect(repairPrompt).toContain('Hard target storyboard scene count: 4.');
+          expect(repairPrompt).toContain('Current storyboard scene count: 2.');
+          expect(repairPrompt).toContain('Rewritten copy:');
+          expect(repairPrompt).toContain('Current short storyboard:');
+          return { json: { scenes: repairedScenes } as T, raw: '{}', requestId: 'storyboard-repair' };
+        }
+        if (request.name === 'character-card') {
+          return {
+            json: { characterCard: { summary: 'same person', characters: [], consistencyRules: [] } } as T,
+            raw: '{}',
+            requestId: 'character-card',
+          };
+        }
+        return { json: { imagePrompts: makePrompts(repairedScenes) } as T, raw: '{}', requestId: 'prompts' };
+      };
+
+      await runTask(db, task, {
+        appDataDir: dir,
+        llm: mockConfiguredLlm(llm),
+        generateImages: async (scenes) => writeSceneAssets(mediaDir, scenes, 'png', tinyPng),
+        synthesizeNarration: async (scenes) => writeSceneAssets(mediaDir, scenes, 'wav', wavTone(1200)),
+        draftWriterOptions: { runBridge: fakeBridge },
+      });
+
+      expect(requests.some((request) => request.name === 'storyboard-target-scenes-repair-1')).toBe(true);
+      const storedScenes = JSON.parse(await readFile(join(dir, 'tasks', task.id, '02-sentences.json'), 'utf8')) as StoryboardScene[];
+      expect(storedScenes).toHaveLength(4);
+    } finally {
+      await db.close();
+      await rm(dir, { recursive: true, force: true });
+    }
+  });
+
+  it('accepts storyboard scenes when scenes is a stringified array with trailing text', async () => {
+    const dir = await mkdtemp(join(tmpdir(), 'storybound-runner-stringified-storyboard-'));
+    const db = await FileDatabase.open(join(dir, 'data.db'));
+    const draftRootDir = join(dir, 'JianyingPro Drafts');
+    const mediaDir = join(dir, 'media');
+    const scenes = makeScenes(12);
+
+    try {
+      await db.upsertConfig({
+        ...(await db.getState()).config,
+        jianying: { ...(await db.getState()).config.jianying, draftPath: draftRootDir },
+      });
+      const task = await db.createTask({
+        title: 'Stringified storyboard scenes',
+        inputText: sampleInput,
+        track: 'character-story',
+        style: 'photo-real',
+        speaker: 'voice',
+      });
+
+      const llm: JsonLlm = async <T,>(request: LlmJsonRequest) => {
+        if (request.step === 0) return { json: { reviewedText: sampleInput } as T, raw: '{}', requestId: 'review' };
+        if (request.name.startsWith('rewrite-round-')) {
+          return {
+            json: { rewrittenCopy: fitSourceLengthRewrite(), cover: { title: 'Storyboard', subtitle: [], summary: 'summary', tags: [], comments: [] } } as T,
+            raw: '{}',
+            requestId: request.name,
+          };
+        }
+        if (request.name === 'rewrite-evaluation') return { json: { bestRound: 1, evaluations: [] } as T, raw: '{}', requestId: 'rewrite-eval' };
+        if (request.name === 'storyboard') {
+          const stringifiedScenes = `${JSON.stringify(scenes, null, 2)}\n\nReturn only JSON.`;
+          return { json: { scenes: stringifiedScenes } as T, raw: JSON.stringify({ scenes: stringifiedScenes }), requestId: 'storyboard' };
+        }
+        if (request.name === 'character-card') {
+          return {
+            json: { characterCard: { summary: 'same person', characters: [], consistencyRules: [] } } as T,
+            raw: '{}',
+            requestId: 'character-card',
+          };
+        }
+        return { json: { imagePrompts: makePrompts(scenes) } as T, raw: '{}', requestId: 'prompts' };
+      };
+
+      await runTask(db, task, {
+        appDataDir: dir,
+        llm: mockConfiguredLlm(llm),
+        generateImages: async (inputScenes) => writeSceneAssets(mediaDir, inputScenes, 'png', tinyPng),
+        synthesizeNarration: async (inputScenes) => writeSceneAssets(mediaDir, inputScenes, 'wav', wavTone(1200)),
+        draftWriterOptions: { runBridge: fakeBridge },
+      });
+
+      const storedScenes = JSON.parse(await readFile(join(dir, 'tasks', task.id, '02-sentences.json'), 'utf8')) as StoryboardScene[];
+      expect(storedScenes).toHaveLength(12);
+      expect(storedScenes[0]).toMatchObject({ id: 1, cap: 'Scene 1' });
     } finally {
       await db.close();
       await rm(dir, { recursive: true, force: true });
@@ -1489,6 +2226,50 @@ describe('task runner', () => {
     }
   });
 
+  it('records the failed image scene id when a provider rejects one storyboard image', async () => {
+    const dir = await mkdtemp(join(tmpdir(), 'storybound-runner-image-scene-error-'));
+    const db = await FileDatabase.open(join(dir, 'data.db'));
+    const mediaDir = join(dir, 'media');
+    const providerError = 'Image provider API error (400): content_policy_violation';
+
+    try {
+      const task = await db.createTask({
+        title: 'Image scene error',
+        inputText: sampleInput,
+        track: 'character-story',
+        style: 'photo-real',
+        speaker: 'voice',
+      });
+      const artifact = makeArtifact();
+      artifact.scenes = artifact.scenes.slice(0, 2);
+      artifact.imagePrompts = makePrompts(artifact.scenes);
+
+      await expect(runTask(db, task, {
+        appDataDir: dir,
+        generatePipelineArtifact: async () => artifact,
+        generateImages: async (scenes) => {
+          if (scenes.some((scene) => scene.id === 2)) {
+            throw new Error(providerError);
+          }
+          return writeSceneAssets(mediaDir, scenes, 'png', tinyPng);
+        },
+        synthesizeNarration: async (scenes) => writeSceneAssets(mediaDir, scenes, 'wav', wavTone(1200)),
+        draftWriterOptions: { runBridge: fakeBridge },
+      })).rejects.toThrow(providerError);
+
+      const state = await db.getState();
+      const pipeline = JSON.parse(await readFile(state.tasks[0].artifactStatePath, 'utf8')) as {
+        assets?: { imageErrors?: Array<{ sceneId: number; message: string }> };
+      };
+
+      expect(state.tasks[0]).toMatchObject({ status: 'paused', currentStep: 4, failedStep: 4 });
+      expect(pipeline.assets?.imageErrors).toEqual([{ sceneId: 2, message: providerError }]);
+    } finally {
+      await db.close();
+      await rm(dir, { recursive: true, force: true });
+    }
+  });
+
   it('notifies listeners after a failed task status is persisted', async () => {
     const dir = await mkdtemp(join(tmpdir(), 'storybound-runner-failure-state-'));
     const db = await FileDatabase.open(join(dir, 'data.db'));
@@ -1507,9 +2288,9 @@ describe('task runner', () => {
       await expect(
         runTask(db, task, {
           appDataDir: dir,
-          llm: async () => {
+          llm: mockConfiguredLlm(async () => {
             throw new Error('LLM API key is missing; cannot run real task content generation.');
-          },
+          }),
           onEvent: () => {
             snapshotReads.push(
               db.getState().then((state) => {
@@ -1637,7 +2418,7 @@ describe('task runner', () => {
         if (request.step === 0) return { json: { reviewedText: sampleInput } as T, raw: '{}', requestId: 'review' };
         if (request.step === 1) {
           return {
-            json: { rewrittenCopy: 'First line\n\nSecond line', cover: { title: 'Wu Zetian', subtitle: [], summary: 'summary', tags: [], comments: [] } } as T,
+            json: { rewrittenCopy: fitSourceLengthRewrite(), cover: { title: 'Wu Zetian', subtitle: [], summary: 'summary', tags: [], comments: [] } } as T,
             raw: '{}',
             requestId: 'rewrite',
           };
@@ -1649,20 +2430,20 @@ describe('task runner', () => {
         return { json: { imagePrompts: makeArtifact().imagePrompts } as T, raw: '{}', requestId: 'prompts' };
       };
 
-      await expect(runTask(db, task, { appDataDir: dir, llm })).rejects.toThrow(/storyboard provider failed/);
+      await expect(runTask(db, task, { appDataDir: dir, llm: mockConfiguredLlm(llm) })).rejects.toThrow(/storyboard provider failed/);
       const paused = (await db.getState()).tasks[0];
       expect(paused.status).toBe('paused');
       expect(paused.failedStep).toBe(2);
 
       await runTask(db, paused, {
         appDataDir: dir,
-        llm,
+        llm: mockConfiguredLlm(llm),
         generateImages: async (scenes) => writeSceneAssets(mediaDir, scenes, 'png', tinyPng),
         synthesizeNarration: async (scenes) => writeSceneAssets(mediaDir, scenes, 'wav', wavTone(1200)),
         draftWriterOptions: { runBridge: fakeBridge },
       });
 
-      expect(calls).toMatchObject({ 0: 1, 1: 4, 2: 2, 3: 1 });
+      expect(calls).toMatchObject({ 0: 1, 1: 1, 2: 2, 3: 2 });
       expect((await db.getState()).tasks[0].status).toBe('completed');
     } finally {
       await db.close();
@@ -1729,7 +2510,7 @@ describe('task runner', () => {
         if (request.step === 0) throw new Error('review should stay cached');
         if (request.step === 1) {
           return {
-            json: { rewrittenCopy: 'Fresh rewrite', cover: { title: 'Fresh title', subtitle: [], summary: 'fresh summary', tags: [], comments: [] } } as T,
+            json: { rewrittenCopy: fitSourceLengthRewrite('Fresh rewrite'), cover: { title: 'Fresh title', subtitle: [], summary: 'fresh summary', tags: [], comments: [] } } as T,
             raw: '{}',
             requestId: 'rewrite-rerun',
           };
@@ -1743,7 +2524,7 @@ describe('task runner', () => {
         { ...task, status: 'pending', currentStep: 1, retryFromStep: 1, artifactStatePath: statePath, outputDir: workDir, errorMessage: '' },
         {
           appDataDir: dir,
-          llm,
+          llm: mockConfiguredLlm(llm),
           generateImages: async (scenes) => writeSceneAssets(mediaDir, scenes, 'png', tinyPng),
           synthesizeNarration: async (scenes) => writeSceneAssets(mediaDir, scenes, 'wav', wavTone(1200)),
           draftWriterOptions: { runBridge: fakeBridge },
@@ -1818,6 +2599,7 @@ function makeArtifact(): PipelineArtifact {
   const scenes: StoryboardScene[] = [
     { id: 1, cap: 'First line', descPrompt: 'first prompt', durationMs: 1200 },
     { id: 2, cap: 'Second line', descPrompt: 'second prompt', durationMs: 1200 },
+    ...makeScenes(10).map((scene, index) => ({ ...scene, id: index + 3, cap: `Scene ${index + 3}`, descPrompt: `visual prompt ${index + 3}` })),
   ];
   const imagePrompts = makePrompts(scenes);
   return {
@@ -1856,6 +2638,22 @@ function extractScenesFromPrompt(request: LlmJsonRequest): StoryboardScene[] {
   const match = content.match(/Scene context:\n\n(\{.*\})/s);
   if (!match) return [];
   return JSON.parse(match[1]).scenes as StoryboardScene[];
+}
+
+function countOccurrences(text: string, needle: string): number {
+  if (!needle) return 0;
+  return text.split(needle).length - 1;
+}
+
+function fitSourceLengthRewrite(prefix = 'First line\n\nSecond line', source = sampleInput): string {
+  const target = countVisibleTestCharacters(source);
+  const prefixLength = countVisibleTestCharacters(prefix);
+  if (prefixLength >= Math.floor(target * 0.8) && prefixLength <= Math.ceil(target * 1.2)) return prefix;
+  return `${prefix}\n\n${'x'.repeat(Math.max(0, target - prefixLength))}`;
+}
+
+function countVisibleTestCharacters(value: string): number {
+  return value.replace(/\s+/g, '').length;
 }
 
 function wavTone(durationMs: number): Buffer {

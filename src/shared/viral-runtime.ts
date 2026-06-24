@@ -4,7 +4,7 @@ import { basename, extname, join } from 'node:path';
 import { promisify } from 'node:util';
 import { Agent } from 'undici';
 import { fetchWithTimeout as fetchWithRequestTimeout } from './http';
-import { createConfiguredJsonLlm } from './llm-provider';
+import { createConfiguredJsonLlm, type ConfiguredJsonLlm, type LlmMessage, type LlmJsonResult } from './llm-provider';
 import { resolvePythonCommand } from './python-runtime';
 import {
   buildViralBreakdownPrompt,
@@ -40,7 +40,7 @@ export function createViralRuntimeProviders(config: AppConfig, _workDir: string)
     analyzeFrame: (frame, previousFrame, source, signal) =>
       analyzeViralFrame(frame, previousFrame, source, resolveViralFrameVisionConfig(config), signal),
     analyzeBreakdown: async (input, signal) => {
-      const result = await textLlm({
+      const result = await runViralTextLlmJson(textLlm, {
         step: -1,
         name: 'viral-breakdown',
         signal,
@@ -52,7 +52,7 @@ export function createViralRuntimeProviders(config: AppConfig, _workDir: string)
       return result.json as ReturnType<RunViralAnalysisOptions['analyzeBreakdown']> extends Promise<infer T> ? T : never;
     },
     createRecreation: async (input, signal) => {
-      const result = await textLlm({
+      const result = await runViralTextLlmJson(textLlm, {
         step: -1,
         name: 'viral-recreation',
         signal,
@@ -64,6 +64,13 @@ export function createViralRuntimeProviders(config: AppConfig, _workDir: string)
       return result.json as ReturnType<RunViralAnalysisOptions['createRecreation']> extends Promise<infer T> ? T : never;
     },
   };
+}
+
+function runViralTextLlmJson<T = unknown>(
+  llm: ConfiguredJsonLlm,
+  request: { step: number; name: string; messages: LlmMessage[]; signal?: AbortSignal },
+): Promise<LlmJsonResult<T>> {
+  return llm.run<T>(request);
 }
 
 function resolveViralFrameVisionConfig(config: AppConfig): LlmConfig {

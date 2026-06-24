@@ -32,7 +32,7 @@ describe('task runtime providers', () => {
     };
     const providers = createTaskRuntimeProviders(config, 'D:/tmp/storybound-task', { llmProfileId: 'llm-draft' });
 
-    await providers.llm?.({ step: 0, name: 'profile-check', messages: [{ role: 'user', content: 'Return {"ok":true}' }] });
+    await providers.llm?.run({ step: 0, name: 'profile-check', messages: [{ role: 'user', content: 'Return {"ok":true}' }] });
 
     expect(requests[0]).toMatchObject({ model: 'draft-model' });
   });

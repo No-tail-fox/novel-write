@@ -276,7 +276,10 @@ const promptTemplateVariableDefinitions = [
   { key: 'narrativePov', label: '叙事视角', description: '新建任务高级设置里的叙事视角', scopes: ['rewrite'] },
   { key: 'keepPromotion', label: '保留带货', description: '新建任务高级设置里的带货保留开关', scopes: ['rewrite', 'cover'] },
   { key: 'aiKeyword', label: 'AI 关键词', description: 'AI 创作模式里的检索关键词', scopes: ['task', 'review', 'rewrite', 'cover'] },
-  { key: 'targetLength', label: '目标字数', description: '新建任务里填写的口播目标字数', scopes: ['rewrite', 'storyboard'] },
+  { key: 'targetLength', label: '目标字数', description: '新建任务或步骤里填写的口播目标字数', scopes: ['task', 'review', 'rewrite', 'storyboard'] },
+  { key: 'targetLengthMin', label: '目标字数下限', description: '目标字数按 ±20% 计算后的下限', scopes: ['task', 'review', 'rewrite', 'storyboard'] },
+  { key: 'targetLengthMax', label: '目标字数上限', description: '目标字数按 ±20% 计算后的上限', scopes: ['task', 'review', 'rewrite', 'storyboard'] },
+  { key: 'targetLengthRange', label: '目标字数区间', description: '目标字数按 ±20% 计算后的区间，例如 720-1080', scopes: ['task', 'review', 'rewrite', 'storyboard'] },
   { key: 'storyboardSceneCount', label: '目标分镜数', description: '新建任务里填写的分镜数量目标', scopes: ['storyboard'] },
   { key: 'taskTemplateContent', label: '任务模板指令', description: '当前模板的任务总指令渲染结果；不要放在任务总指令内', scopes: ['review', 'rewrite', 'cover', 'storyboard', 'image-prompt'] },
   { key: 'taskTemplateName', label: '任务模板名称', description: '当前故事模板名称', scopes: ['review', 'rewrite', 'cover', 'storyboard', 'image-prompt'] },
@@ -668,7 +671,7 @@ function makeFallbackApi(setState: (state: AppState) => void): StoryDreamApi {
         updatedAt: null,
         steps: {},
         artifact: {},
-        assets: { cover: [], images: [], narration: [] },
+        assets: { cover: [], images: [], imageErrors: [], narration: [] },
         draft: null,
       };
     },
@@ -1905,7 +1908,7 @@ function NewTaskPage({
               placeholder="自动"
               onChange={(event) => setTargetLength(event.target.value)}
             />
-            <small>字（±15%，留空跟随原文）</small>
+            <small>字（±20%，留空跟随原文）</small>
           </label>
           <label className="target-number-field">
             <span>目标分镜数</span>
@@ -2508,7 +2511,7 @@ function TaskDetailPage({
             updatedAt: null,
             steps: {},
             artifact: {},
-            assets: { cover: [], images: [], narration: [] },
+            assets: { cover: [], images: [], imageErrors: [], narration: [] },
             draft: null,
           });
         }
@@ -2632,6 +2635,7 @@ function ArtifactPreviewContent({
   const imagePrompts = artifact.imagePrompts ?? [];
   const subtitles = artifact.subtitles;
   const imageAssets = snapshot?.assets.images ?? [];
+  const imageErrors = snapshot?.assets.imageErrors ?? [];
   const narrationAssets = snapshot?.assets.narration ?? [];
   const imageProgress = imageProgressLabel(scenes.length, imageAssets.length, snapshotStepStatus(snapshot, 4));
   const [rerunningStepAction, setRerunningStepAction] = useState<string | null>(null);
@@ -2737,6 +2741,7 @@ function ArtifactPreviewContent({
               scenes={scenes}
               imagePrompts={imagePrompts}
               images={imageAssets}
+              imageErrors={imageErrors}
               concurrency={activeImageConcurrency(config)}
               isBrowserPreview={isBrowserPreview}
               applyState={applyState}
@@ -2778,6 +2783,7 @@ function ArtifactPreviewContent({
               scenes={scenes}
               imagePrompts={imagePrompts}
               images={imageAssets}
+              imageErrors={imageErrors}
               concurrency={activeImageConcurrency(config)}
               isBrowserPreview={isBrowserPreview}
               applyState={applyState}
@@ -2919,6 +2925,7 @@ function ImageGenerationGallery({
   scenes,
   imagePrompts,
   images,
+  imageErrors,
   concurrency,
   isBrowserPreview,
   applyState,
@@ -2928,6 +2935,7 @@ function ImageGenerationGallery({
   scenes: NonNullable<TaskArtifactSnapshot['artifact']['scenes']>;
   imagePrompts: NonNullable<TaskArtifactSnapshot['artifact']['imagePrompts']>;
   images: TaskArtifactSnapshot['assets']['images'];
+  imageErrors: TaskArtifactSnapshot['assets']['imageErrors'];
   concurrency: number;
   isBrowserPreview: boolean;
   applyState: (state: AppState) => void;
@@ -2936,6 +2944,9 @@ function ImageGenerationGallery({
   const [imagePreviewErrors, setImagePreviewErrors] = useState<Record<string, string>>({});
   const [regeneratingSceneId, setRegeneratingSceneId] = useState<number | null>(null);
   const imagePaths = images.map((asset) => asset.path).join('|');
+  const imageBySceneId = useMemo(() => new Map(images.map((asset) => [asset.sceneId, asset] as const)), [images]);
+  const promptBySceneId = useMemo(() => new Map(imagePrompts.map((prompt) => [prompt.sceneId, prompt] as const)), [imagePrompts]);
+  const imageErrorBySceneId = useMemo(() => new Map(imageErrors.map((item) => [item.sceneId, item] as const)), [imageErrors]);
 
   useEffect(() => {
     if (isBrowserPreview || images.length === 0) {
@@ -2985,30 +2996,35 @@ function ImageGenerationGallery({
       </div>
       <div className="image-preview-grid">
         {scenes.map((scene) => {
-          const image = images.find((item) => item.sceneId === scene.id);
-          const prompt = imagePrompts.find((item) => item.sceneId === scene.id);
+          const image = imageBySceneId.get(scene.id);
+          const prompt = promptBySceneId.get(scene.id);
+          const imageError = imageErrorBySceneId.get(scene.id);
           const previewUrl = image ? imagePreviewUrls[image.path] : '';
           const previewError = image ? imagePreviewErrors[image.path] : '';
+          const cardState = image ? 'ready' : imageError ? 'failed' : 'pending';
+          const statusText = image ? '已生成' : imageError ? '生成失败' : task.status === 'running' ? '等待/生成中' : '未生成';
           return (
-            <article className={`image-preview-card ${image ? 'ready' : 'pending'}`} key={scene.id}>
+            <article className={`image-preview-card ${cardState}`} key={scene.id}>
               <div className="image-thumb">
                 {previewUrl ? <img src={previewUrl} alt={`Scene ${scene.id}`} /> : null}
                 {!previewUrl && image && !previewError ? <span className="thumb-state">读取中</span> : null}
                 {!previewUrl && previewError ? <span className="thumb-state danger">读取失败</span> : null}
-                {!image ? <ImageIcon size={24} /> : null}
+                {!image && imageError ? <XCircle size={24} /> : null}
+                {!image && !imageError ? <ImageIcon size={24} /> : null}
               </div>
               <div className="image-preview-body">
                 <div className="image-preview-title">
                   <strong>{scene.id}. {scene.cap}</strong>
-                  <span>{image ? '已生成' : task.status === 'running' ? '等待/生成中' : '未生成'}</span>
+                  <span>{statusText}</span>
                 </div>
                 <p>{prompt ? trimForPreview(prompt.prompt, 180) : scene.descPrompt}</p>
                 {image ? <small>{image.path}</small> : <small>等待 provider 返回真实图片</small>}
+                {imageError ? <div className="artifact-image-error" title={imageError.message}>{summarizeErrorMessage(imageError.message)}</div> : null}
                 {previewError ? <small className="danger-text">{previewError}</small> : null}
               </div>
               <button
                 className="mini-button"
-                disabled={isBrowserPreview || task.status === 'running' || task.status === 'pending' || !image || regeneratingSceneId === scene.id}
+                disabled={isBrowserPreview || task.status === 'running' || task.status === 'pending' || (!image && !imageError) || regeneratingSceneId === scene.id}
                 onClick={() => regenerate(scene.id)}
               >
                 {regeneratingSceneId === scene.id ? <Loader2 className="spin" size={14} /> : <RotateCcw size={14} />}
@@ -4190,6 +4206,13 @@ function PromptTemplatesPage({ api, state, applyState }: { api: StoryDreamApi; s
                             继承全局
                           </button>
                         </div>
+                        {(step.type === 'review' || step.type === 'rewrite') ? (
+                          <PromptVariablePicker
+                            scope={step.type}
+                            value={promptTemplateStepPromptValue(draft, state.promptTemplates, step.type)}
+                            onChange={(value) => updatePromptTemplateStepPrompt(step.type, value)}
+                          />
+                        ) : null}
                         <VariableAwareTextarea
                           className="template-textarea prompt-step-editor-textarea"
                           value={promptTemplateStepPromptValue(draft, state.promptTemplates, step.type)}
