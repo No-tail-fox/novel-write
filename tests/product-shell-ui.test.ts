@@ -1471,6 +1471,9 @@ describe('product shell ui', () => {
     expect(page).toContain('max="60"');
     expect(page).toContain('targetLength: normalizeTaskTargetLength(targetLength) ?? undefined');
     expect(page).toContain('targetScenes: normalizeTaskStoryboardSceneCount(storyboardSceneCount)');
+    expect(page).toContain('ContentMetricsSummary text={inputText}');
+    expect(page).toContain('placeholder="自动"');
+    expect(page).toContain('setInputText(event.target.value);');
     expect(page).not.toContain('options={targetLengthOptions.map(String)}');
     const targetControlsIndex = page.indexOf('<div className="target-controls-row">');
     const advancedIndex = page.indexOf('<button className="advanced-toggle"');

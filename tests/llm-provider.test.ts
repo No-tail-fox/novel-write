@@ -1,7 +1,9 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import {
   createConfiguredJsonLlm,
+  createConfiguredTextLlm,
   createOpenAiCompatibleJsonLlm,
+  createOpenAiCompatibleTextLlm,
   listConfiguredProviderModels,
   listOpenAiCompatibleModels,
   LlmJsonParseError,
@@ -16,6 +18,60 @@ afterEach(() => {
 });
 
 describe('OpenAI-compatible LLM JSON adapter', () => {
+  it('posts Storybound-style direct text chat requests without JSON mode', async () => {
+    const requests: Array<{ url: string; body: Record<string, unknown>; auth: string | null }> = [];
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (url: string, init: RequestInit) => {
+        requests.push({
+          url,
+          body: JSON.parse(String(init.body)),
+          auth: new Headers(init.headers).get('Authorization'),
+        });
+        return new Response(JSON.stringify({ choices: [{ message: { content: '直接输出的口播稿' } }], id: 'chatcmpl-text-1' }), {
+          status: 200,
+          headers: { 'content-type': 'application/json' },
+        });
+      }),
+    );
+
+    const runText = createOpenAiCompatibleTextLlm({
+      ...defaultConfig.llm,
+      apiKey: 'llm-key',
+      baseUrl: 'https://llm.example',
+      model: 'model-a',
+      requestParamsJson: '{"reasoning_effort":"medium"}',
+    });
+    const result = await runText({
+      step: 0,
+      name: 'research-copy',
+      temperature: 0.8,
+      maxTokens: 32768,
+      timeoutMs: 90_000,
+      maxRetries: 2,
+      messages: [
+        { role: 'system', content: 'Storybound system prompt' },
+        { role: 'user', content: 'Storybound user prompt' },
+      ],
+    });
+
+    expect(result).toEqual({ text: '直接输出的口播稿', raw: '直接输出的口播稿', requestId: 'chatcmpl-text-1' });
+    expect(requests[0].url).toBe('https://llm.example/v1/chat/completions');
+    expect(requests[0].auth).toBe('Bearer llm-key');
+    expect(requests[0].body).toMatchObject({
+      model: 'model-a',
+      messages: [
+        { role: 'system', content: 'Storybound system prompt' },
+        { role: 'user', content: 'Storybound user prompt' },
+      ],
+      temperature: 0.8,
+      max_tokens: 32768,
+      reasoning_effort: 'medium',
+    });
+    expect(requests[0].body).not.toHaveProperty('response_format');
+    expect(requests[0].body).not.toHaveProperty('tools');
+  });
+
   it('posts chat messages and parses strict JSON content', async () => {
     const requests: Array<{ url: string; body: Record<string, unknown>; auth: string | null }> = [];
     vi.stubGlobal(
@@ -345,6 +401,58 @@ describe('OpenAI-compatible LLM JSON adapter', () => {
 });
 
 describe('Anthropic Messages LLM JSON adapter', () => {
+  it('posts Storybound-style direct text requests to Anthropic without tool JSON', async () => {
+    const requests: Array<Record<string, unknown>> = [];
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (_url: string, init: RequestInit) => {
+        requests.push(JSON.parse(String(init.body)) as Record<string, unknown>);
+        return new Response(
+          JSON.stringify({
+            id: 'msg_text',
+            content: [{ type: 'text', text: '直接输出的口播稿' }],
+          }),
+          {
+            status: 200,
+            headers: { 'content-type': 'application/json' },
+          },
+        );
+      }),
+    );
+
+    const runText = createConfiguredTextLlm({
+      ...defaultConfig.llm,
+      provider: 'anthropic',
+      protocol: 'anthropic',
+      apiKey: 'anthropic-key',
+      baseUrl: 'https://code.newcli.com/claude/ultra',
+      model: 'claude-sonnet-4-5-20250929',
+      requestParamsJson: '{"temperature":0.8}',
+    });
+    const result = await runText.run({
+      step: 0,
+      name: 'research-copy',
+      temperature: 0.8,
+      maxTokens: 32768,
+      maxRetries: 2,
+      messages: [
+        { role: 'system', content: 'Storybound system prompt' },
+        { role: 'user', content: 'Storybound user prompt' },
+      ],
+    });
+
+    expect(result).toEqual({ text: '直接输出的口播稿', raw: '直接输出的口播稿', requestId: 'msg_text' });
+    expect(requests[0]).toMatchObject({
+      model: 'claude-sonnet-4-5-20250929',
+      max_tokens: 32768,
+      temperature: 0.8,
+      system: 'Storybound system prompt',
+      messages: [{ role: 'user', content: 'Storybound user prompt' }],
+    });
+    expect(requests[0]).not.toHaveProperty('tools');
+    expect(requests[0]).not.toHaveProperty('tool_choice');
+  });
+
   it('posts messages with Anthropic headers and parses text content JSON', async () => {
     const requests: Array<{
       url: string;

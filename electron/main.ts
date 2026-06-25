@@ -12,7 +12,7 @@ import { generateImageLabRecord } from '../src/shared/image-lab';
 import { detectJianyingDraftPath, resolveRuntimeJianyingDraftPath } from '../src/shared/jianying-paths';
 import { loadJianyingEffectCatalog } from '../src/shared/jianying-effects';
 import { generateConfiguredVoicePreview } from '../src/shared/media-providers';
-import { createConfiguredJsonLlm, listConfiguredProviderModels, testConfiguredLlm } from '../src/shared/llm-provider';
+import { createConfiguredJsonLlm, createConfiguredTextLlm, listConfiguredProviderModels, testConfiguredLlm } from '../src/shared/llm-provider';
 import { markSceneImageForRegeneration, markSceneNarrationForRegeneration, markTaskStepForRerun } from '../src/shared/pipeline-cache';
 import { resolvePythonRuntimeInfo, setDefaultPythonRuntimeAppRoot } from '../src/shared/python-runtime';
 import { composeCopyFromSources, createAiSourceResearcher, searchWebSources } from '../src/shared/research';
@@ -25,6 +25,7 @@ import { createViralProductionTaskInput, detectViralPlatform, runViralAnalysis }
 import { createViralRuntimeProviders } from '../src/shared/viral-runtime';
 import { listVolcengineSpeakers } from '../src/shared/volcengine-speakers';
 import { getRendererIndexPath } from './paths';
+import { loadConfigFromFile, saveConfigToFile } from '../src/shared/config-file';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const execFileAsync = promisify(execFile);
@@ -52,10 +53,14 @@ const pipelineStepAgents: Record<number, string> = {
 
 async function getDb(): Promise<FileDatabase> {
   if (db) return db;
-  const dataDir = join(app.getPath('userData'), appDataName);
-  await mkdir(dataDir, { recursive: true });
-  db = await FileDatabase.open(join(dataDir, 'data.db'));
+  const dir = appDataDir();
+  await mkdir(dir, { recursive: true });
+  db = await FileDatabase.open(join(dir, 'data.db'));
   await ensureRuntimeJianyingDraftPath(db);
+  const externalConfig = await loadConfigFromFile(dir);
+  if (externalConfig) {
+    await db.upsertConfig(externalConfig);
+  }
   return db;
 }
 
@@ -342,6 +347,7 @@ ipcMain.handle('app:get-state', async () => {
 ipcMain.handle('app:save-config', async (_event, config) => {
   const database = await getDb();
   await database.upsertConfig(config as AppConfig);
+  await saveConfigToFile(appDataDir(), config as AppConfig);
   return database.getState();
 });
 
@@ -373,7 +379,7 @@ ipcMain.handle('research:web-search', async (_event, query: string) => {
 ipcMain.handle('research:compose-copy', async (_event, input: ResearchCopyComposeInput) => {
   const database = await getDb();
   const state = await database.getState();
-  return composeCopyFromSources(createConfiguredJsonLlm(state.config.llm), input);
+  return composeCopyFromSources(createConfiguredTextLlm(state.config.llm), input);
 });
 
 ipcMain.handle('prompt-template:save', async (_event, template: PromptTemplate) => {
@@ -748,14 +754,16 @@ async function exportDouyinLoginCookies(win: BrowserWindow): Promise<string> {
   await writeFile(outputPath, `${lines.join('\n')}\n`, 'utf8');
   const database = await getDb();
   const state = await database.getState();
-  await database.upsertConfig({
+  const updatedConfig: AppConfig = {
     ...state.config,
     viral: {
       ...state.config.viral,
       cookieFilePath: outputPath,
       cookieFallbackMode: 'browser-first-after-failure',
     },
-  });
+  };
+  await database.upsertConfig(updatedConfig);
+  await saveConfigToFile(appDataDir(), updatedConfig);
   await sendTaskState(database);
   return outputPath;
 }

@@ -26,6 +26,7 @@ import type {
   VoiceLabRecord,
 } from './types';
 import { normalizeAppConfig } from './config-utils';
+import { normalizeStoryboardSceneCount } from './content-metrics';
 import feishuCozeDraftTemplateBundle from '../../data/coze-workflows/feishu-draft-templates.json';
 import {
   defaultAccount,
@@ -225,7 +226,7 @@ export class FileDatabase {
         keep_promotion INTEGER DEFAULT 0,
         tts_provider TEXT DEFAULT 'volcengine',
         tts_speed REAL DEFAULT 1,
-        storyboard_scene_count INTEGER DEFAULT 12,
+        storyboard_scene_count INTEGER DEFAULT NULL,
         step3_prompt_snapshot TEXT DEFAULT '',
         music_mv_json TEXT DEFAULT '{}',
         failed_step INTEGER,
@@ -238,7 +239,7 @@ export class FileDatabase {
         pipeline_step TEXT DEFAULT 'new',
         pipeline_data TEXT DEFAULT '{}',
         target_length INTEGER DEFAULT 1500,
-        target_scenes INTEGER DEFAULT 12,
+        target_scenes INTEGER DEFAULT NULL,
         script_format TEXT DEFAULT 'narration',
         podcast_image_mode TEXT DEFAULT 'multi',
         podcast_speakers TEXT DEFAULT NULL,
@@ -457,7 +458,7 @@ export class FileDatabase {
       ['keep_promotion', 'INTEGER DEFAULT 0'],
       ['tts_provider', "TEXT DEFAULT 'volcengine'"],
       ['tts_speed', 'REAL DEFAULT 1'],
-      ['storyboard_scene_count', 'INTEGER DEFAULT 12'],
+      ['storyboard_scene_count', 'INTEGER DEFAULT NULL'],
       ['step3_prompt_snapshot', "TEXT DEFAULT ''"],
       ['music_mv_json', "TEXT DEFAULT '{}'"],
       ['failed_step', 'INTEGER'],
@@ -472,7 +473,7 @@ export class FileDatabase {
       ['pipeline_step', "TEXT DEFAULT 'new'"],
       ['pipeline_data', "TEXT DEFAULT '{}'"],
       ['target_length', 'INTEGER DEFAULT 1500'],
-      ['target_scenes', 'INTEGER DEFAULT 12'],
+      ['target_scenes', 'INTEGER DEFAULT NULL'],
       ['script_format', "TEXT DEFAULT 'narration'"],
       ['podcast_image_mode', "TEXT DEFAULT 'multi'"],
       ['podcast_speakers', 'TEXT DEFAULT NULL'],
@@ -803,6 +804,7 @@ export class FileDatabase {
     const now = new Date().toISOString();
     const configRow = getFirstRow<{ data: string }>(this.db, 'SELECT data FROM config WHERE id = 1');
     const config = configRow ? mergeConfig(parseJson(configRow.data, defaultConfig)) : defaultConfig;
+    const explicitStoryboardSceneCount = normalizeStoryboardSceneCount(input.targetScenes ?? input.storyboardSceneCount) ?? undefined;
     const task: Task = {
       id: randomUUID(),
       title: input.title ?? '',
@@ -839,7 +841,7 @@ export class FileDatabase {
       keepPromotion: input.keepPromotion ?? false,
       ttsProvider: input.ttsProvider ?? defaultConfig.tts.provider,
       ttsSpeed: input.ttsSpeed ?? 1,
-      storyboardSceneCount: input.storyboardSceneCount ?? 12,
+      storyboardSceneCount: explicitStoryboardSceneCount,
       step3PromptSnapshot: input.step3PromptSnapshot ?? '',
       musicMv: normalizeMusicMvSettings(input.musicMv),
       failedStep: null,
@@ -852,7 +854,7 @@ export class FileDatabase {
       pipelineStep: input.pipelineStep ?? 'new',
       pipelineData: input.pipelineData ?? '{}',
       targetLength: input.targetLength,
-      targetScenes: input.targetScenes ?? input.storyboardSceneCount ?? 12,
+      targetScenes: explicitStoryboardSceneCount,
       scriptFormat: input.scriptFormat ?? (input.videoForm === 'two-host-podcast' ? 'dialogue' : 'narration'),
       podcastImageMode: input.podcastImageMode ?? 'multi',
       podcastSpeakers: input.podcastSpeakers ?? (input.videoForm === 'two-host-podcast' ? 'kazai-dayi' : null),
@@ -907,7 +909,7 @@ export class FileDatabase {
         task.keepPromotion ? 1 : 0,
         task.ttsProvider,
         task.ttsSpeed,
-        task.storyboardSceneCount,
+        task.storyboardSceneCount ?? null,
         task.step3PromptSnapshot,
         json(task.musicMv),
         task.failedStep,
@@ -920,7 +922,7 @@ export class FileDatabase {
         task.pipelineStep ?? 'new',
         task.pipelineData ?? '{}',
         task.targetLength ?? null,
-        task.targetScenes ?? task.storyboardSceneCount,
+        task.targetScenes ?? null,
         task.scriptFormat ?? 'narration',
         task.podcastImageMode ?? 'multi',
         task.podcastSpeakers ?? null,
@@ -1218,7 +1220,7 @@ function rowToTask(row: Record<string, unknown>): Task {
     keepPromotion: Number(row.keep_promotion ?? 0) === 1,
     ttsProvider: String(row.tts_provider ?? 'volcengine') as Task['ttsProvider'],
     ttsSpeed: Number(row.tts_speed ?? 1),
-    storyboardSceneCount: Number(row.storyboard_scene_count ?? 12),
+    storyboardSceneCount: row.storyboard_scene_count === null || row.storyboard_scene_count === undefined ? undefined : Number(row.storyboard_scene_count),
     step3PromptSnapshot: String(row.step3_prompt_snapshot ?? ''),
     musicMv: normalizeMusicMvSettings(parseJson(String(row.music_mv_json ?? '{}'), {})),
     failedStep: row.failed_step === null || row.failed_step === undefined ? null : Number(row.failed_step),
@@ -1231,7 +1233,7 @@ function rowToTask(row: Record<string, unknown>): Task {
     pipelineStep: String(row.pipeline_step ?? 'new'),
     pipelineData: String(row.pipeline_data ?? '{}'),
     targetLength: row.target_length === null || row.target_length === undefined ? undefined : Number(row.target_length),
-    targetScenes: Number(row.target_scenes ?? row.storyboard_scene_count ?? 12),
+    targetScenes: row.target_scenes === null || row.target_scenes === undefined ? undefined : Number(row.target_scenes),
     publishMode: String(row.publish_mode ?? 'review-rewrite') as Task['publishMode'],
     scriptFormat: String(row.script_format ?? 'narration'),
     podcastImageMode: String(row.podcast_image_mode ?? 'multi'),

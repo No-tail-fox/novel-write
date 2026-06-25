@@ -33,13 +33,47 @@ export interface LlmJsonResult<T = unknown> {
   requestId: string | null;
 }
 
+export interface BaseLlmTextRequest {
+  step: number;
+  name: string;
+  messages: LlmMessage[];
+  signal?: AbortSignal;
+  temperature?: number;
+  maxTokens?: number;
+  timeoutMs?: number;
+  maxRetries?: number;
+}
+
+export interface OpenAiCompatibleTextRequest extends BaseLlmTextRequest {
+  openai?: Record<string, never>;
+}
+
+export interface AnthropicMessagesTextRequest extends BaseLlmTextRequest {
+  anthropic?: Record<string, never>;
+}
+
+export type LlmTextRequest = OpenAiCompatibleTextRequest & AnthropicMessagesTextRequest;
+
+export interface LlmTextResult {
+  text: string;
+  raw: string;
+  requestId: string | null;
+}
+
 export type JsonLlm = <T = unknown>(request: LlmJsonRequest) => Promise<LlmJsonResult<T>>;
 export type OpenAiCompatibleJsonLlm = <T = unknown>(request: OpenAiCompatibleJsonRequest) => Promise<LlmJsonResult<T>>;
 export type AnthropicMessagesJsonLlm = <T = unknown>(request: AnthropicMessagesJsonRequest) => Promise<LlmJsonResult<T>>;
+export type TextLlm = (request: LlmTextRequest) => Promise<LlmTextResult>;
+export type OpenAiCompatibleTextLlm = (request: OpenAiCompatibleTextRequest) => Promise<LlmTextResult>;
+export type AnthropicMessagesTextLlm = (request: AnthropicMessagesTextRequest) => Promise<LlmTextResult>;
 
 export type ConfiguredJsonLlm =
   | { protocol: 'openai'; run: OpenAiCompatibleJsonLlm }
   | { protocol: 'anthropic'; run: AnthropicMessagesJsonLlm };
+
+export type ConfiguredTextLlm =
+  | { protocol: 'openai'; run: OpenAiCompatibleTextLlm }
+  | { protocol: 'anthropic'; run: AnthropicMessagesTextLlm };
 
 interface AnthropicContentPart {
   type?: string;
@@ -48,7 +82,7 @@ interface AnthropicContentPart {
   input?: unknown;
 }
 
-const TRANSIENT_LLM_STATUS_CODES = new Set([429, 500, 502, 503, 504]);
+const TRANSIENT_LLM_STATUS_CODES = new Set([429, 500, 502, 503, 504, 529]);
 const LLM_RETRY_DELAYS_MS = [500, 1500];
 const ANTHROPIC_VERSION = '2023-06-01';
 const DEFAULT_ANTHROPIC_MAX_TOKENS = 4096;
@@ -68,6 +102,12 @@ export function createConfiguredJsonLlm(config: LlmConfig): ConfiguredJsonLlm {
   return isAnthropicLlmConfig(config)
     ? { protocol: 'anthropic', run: createAnthropicMessagesJsonLlm(config) }
     : { protocol: 'openai', run: createOpenAiCompatibleJsonLlm(config) };
+}
+
+export function createConfiguredTextLlm(config: LlmConfig): ConfiguredTextLlm {
+  return isAnthropicLlmConfig(config)
+    ? { protocol: 'anthropic', run: createAnthropicMessagesTextLlm(config) }
+    : { protocol: 'openai', run: createOpenAiCompatibleTextLlm(config) };
 }
 
 export function createOpenAiCompatibleJsonLlm(config: LlmConfig): OpenAiCompatibleJsonLlm {
@@ -139,6 +179,60 @@ export function createAnthropicMessagesJsonLlm(config: LlmConfig): AnthropicMess
   };
 }
 
+export function createOpenAiCompatibleTextLlm(config: LlmConfig): OpenAiCompatibleTextLlm {
+  return async (request: OpenAiCompatibleTextRequest): Promise<LlmTextResult> => {
+    if (!config.apiKey) {
+      throw new Error('LLM API key is missing; cannot run real task content generation.');
+    }
+    const baseUrl = normalizeOpenAiBaseUrl(config.baseUrl || 'https://api.openai.com');
+    const endpoint = `${baseUrl}/chat/completions`;
+    const response = await fetchLlmTextWithRetries(endpoint, config, request);
+    if (!response.ok) {
+      throw new Error(`LLM API error (${response.status}) at step ${request.step} ${request.name} via ${endpoint}: ${await response.text()}`);
+    }
+    const body = (await response.json()) as {
+      id?: string;
+      choices?: Array<{ message?: { content?: string | null }; text?: string | null }>;
+    };
+    const raw = body.choices?.[0]?.message?.content ?? body.choices?.[0]?.text ?? '';
+    if (!raw.trim()) {
+      throw new Error(`LLM step ${request.step} ${request.name} returned empty content.`);
+    }
+    return {
+      text: raw,
+      raw,
+      requestId: body.id ?? null,
+    };
+  };
+}
+
+export function createAnthropicMessagesTextLlm(config: LlmConfig): AnthropicMessagesTextLlm {
+  return async (request: AnthropicMessagesTextRequest): Promise<LlmTextResult> => {
+    if (!config.apiKey) {
+      throw new Error('LLM API key is missing; cannot run real task content generation.');
+    }
+    const baseUrl = normalizeAnthropicBaseUrl(config.baseUrl || 'https://api.anthropic.com');
+    const endpoint = `${baseUrl}/messages`;
+    const response = await fetchAnthropicTextWithRetries(endpoint, config, request);
+    if (!response.ok) {
+      throw new Error(`LLM API error (${response.status}) at step ${request.step} ${request.name} via ${endpoint}: ${await response.text()}`);
+    }
+    const body = (await response.json()) as {
+      id?: string;
+      content?: AnthropicContentPart[];
+    };
+    const raw = extractAnthropicTextContent(body);
+    if (!raw.trim()) {
+      throw new Error(`LLM step ${request.step} ${request.name} returned empty content.`);
+    }
+    return {
+      text: raw,
+      raw,
+      requestId: body.id ?? null,
+    };
+  };
+}
+
 async function fetchLlmJsonWithRetries(endpoint: string, config: LlmConfig, request: OpenAiCompatibleJsonRequest): Promise<Response> {
   const maxAttempts = LLM_RETRY_DELAYS_MS.length + 1;
   for (let attempt = 1; attempt <= maxAttempts; attempt += 1) {
@@ -184,6 +278,78 @@ async function fetchAnthropicJsonWithRetries(endpoint: string, config: LlmConfig
   throw new Error('Unexpected LLM retry state.');
 }
 
+async function fetchLlmTextWithRetries(endpoint: string, config: LlmConfig, request: OpenAiCompatibleTextRequest): Promise<Response> {
+  const maxAttempts = textRequestMaxAttempts(request);
+  let lastError: unknown = null;
+  for (let attempt = 1; attempt <= maxAttempts; attempt += 1) {
+    try {
+      const response = await fetchWithTimeout(endpoint, {
+        method: 'POST',
+        timeoutMs: request.timeoutMs ?? config.timeoutMs ?? 120_000,
+        timeoutLabel: `LLM step ${request.step} ${request.name}`,
+        signal: request.signal,
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${config.apiKey}`,
+        },
+        body: JSON.stringify(buildTextRequestBody(config, request)),
+      });
+      if (!TRANSIENT_LLM_STATUS_CODES.has(response.status) || attempt === maxAttempts) {
+        return response;
+      }
+    } catch (error) {
+      lastError = error;
+      if (attempt === maxAttempts || request.signal?.aborted) {
+        throw error;
+      }
+    }
+    await sleepBeforeRetry(retryDelayForAttempt(attempt), request.signal, `LLM step ${request.step} ${request.name}`);
+  }
+  if (lastError) throw lastError instanceof Error ? lastError : new Error(String(lastError));
+  throw new Error('Unexpected LLM retry state.');
+}
+
+async function fetchAnthropicTextWithRetries(endpoint: string, config: LlmConfig, request: AnthropicMessagesTextRequest): Promise<Response> {
+  const maxAttempts = textRequestMaxAttempts(request);
+  let lastError: unknown = null;
+  for (let attempt = 1; attempt <= maxAttempts; attempt += 1) {
+    try {
+      const response = await fetchWithTimeout(endpoint, {
+        method: 'POST',
+        timeoutMs: request.timeoutMs ?? config.timeoutMs ?? 120_000,
+        timeoutLabel: `LLM step ${request.step} ${request.name}`,
+        signal: request.signal,
+        headers: {
+          'Content-Type': 'application/json',
+          'x-api-key': config.apiKey,
+          'anthropic-version': ANTHROPIC_VERSION,
+        },
+        body: JSON.stringify(buildAnthropicTextRequestBody(config, request)),
+      });
+      if (!TRANSIENT_LLM_STATUS_CODES.has(response.status) || attempt === maxAttempts) {
+        return response;
+      }
+    } catch (error) {
+      lastError = error;
+      if (attempt === maxAttempts || request.signal?.aborted) {
+        throw error;
+      }
+    }
+    await sleepBeforeRetry(retryDelayForAttempt(attempt), request.signal, `LLM step ${request.step} ${request.name}`);
+  }
+  if (lastError) throw lastError instanceof Error ? lastError : new Error(String(lastError));
+  throw new Error('Unexpected LLM retry state.');
+}
+
+function textRequestMaxAttempts(request: Pick<BaseLlmTextRequest, 'maxRetries'>): number {
+  const retries = Number(request.maxRetries ?? LLM_RETRY_DELAYS_MS.length);
+  return Math.max(1, Math.floor(Number.isFinite(retries) ? retries : LLM_RETRY_DELAYS_MS.length) + 1);
+}
+
+function retryDelayForAttempt(attempt: number): number {
+  return LLM_RETRY_DELAYS_MS[Math.min(Math.max(0, attempt - 1), LLM_RETRY_DELAYS_MS.length - 1)] ?? 1500;
+}
+
 function sleepBeforeRetry(ms: number, signal: AbortSignal | undefined, label: string): Promise<void> {
   if (signal?.aborted) throw abortSignalError(signal, label);
   return new Promise((resolve, reject) => {
@@ -218,6 +384,20 @@ function buildRequestBody(config: LlmConfig, messages: LlmMessage[]): Record<str
   return { ...extra, ...baseBody };
 }
 
+function buildTextRequestBody(config: LlmConfig, request: OpenAiCompatibleTextRequest): Record<string, unknown> {
+  const body: Record<string, unknown> = {
+    ...parseRequestParamsJson(config.requestParamsJson),
+    model: config.model,
+    messages: request.messages,
+  };
+  delete body.response_format;
+  delete body.tools;
+  delete body.tool_choice;
+  if (request.temperature !== undefined) body.temperature = request.temperature;
+  if (request.maxTokens !== undefined) body.max_tokens = request.maxTokens;
+  return body;
+}
+
 function buildAnthropicRequestBody(config: LlmConfig, messages: LlmMessage[], toolInputSchema?: Record<string, unknown>): Record<string, unknown> {
   const extra = parseRequestParamsJson(config.requestParamsJson);
   const system = messages
@@ -239,6 +419,33 @@ function buildAnthropicRequestBody(config: LlmConfig, messages: LlmMessage[], to
     tools: [buildAnthropicJsonTool(toolInputSchema)],
     tool_choice: { type: 'tool', name: ANTHROPIC_JSON_TOOL_NAME },
   };
+  if (system) body.system = system;
+  return body;
+}
+
+function buildAnthropicTextRequestBody(config: LlmConfig, request: AnthropicMessagesTextRequest): Record<string, unknown> {
+  const extra = parseRequestParamsJson(config.requestParamsJson);
+  const system = request.messages
+    .filter((message) => message.role === 'system')
+    .map((message) => message.content.trim())
+    .filter(Boolean)
+    .join('\n\n');
+  const anthropicMessages = request.messages
+    .filter((message) => message.role !== 'system')
+    .map((message) => ({
+      role: message.role,
+      content: message.content,
+    }));
+  const body: Record<string, unknown> = {
+    ...extra,
+    model: config.model,
+    max_tokens: request.maxTokens ?? normalizeAnthropicMaxTokens(extra.max_tokens, DEFAULT_ANTHROPIC_MAX_TOKENS),
+    messages: anthropicMessages,
+  };
+  delete body.response_format;
+  delete body.tools;
+  delete body.tool_choice;
+  if (request.temperature !== undefined) body.temperature = request.temperature;
   if (system) body.system = system;
   return body;
 }

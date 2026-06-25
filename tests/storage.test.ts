@@ -199,7 +199,7 @@ describe('file database', () => {
 
       const state = await db.getState();
       expect(state.tasks[0].targetLength).toBeUndefined();
-      expect(state.tasks[0].targetScenes).toBe(12);
+      expect(state.tasks[0].targetScenes).toBeUndefined();
       await db.close();
     } finally {
       await rm(dir, { recursive: true, force: true });

@@ -478,7 +478,7 @@ describe('task runner', () => {
     const db = await FileDatabase.open(join(dir, 'data.db'));
     const draftRootDir = join(dir, 'JianyingPro Drafts');
     const mediaDir = join(dir, 'media');
-    const scenes = makeScenes(2);
+    const scenes = makeScenes(3);
 
     try {
       await db.upsertConfig({
@@ -491,8 +491,8 @@ describe('task runner', () => {
         track: 'character-story',
         style: 'photo-real',
         speaker: 'voice',
-        storyboardSceneCount: 2,
-        targetScenes: 2,
+        storyboardSceneCount: 3,
+        targetScenes: 3,
       });
 
       const llm: JsonLlm = async <T,>(request: LlmJsonRequest) => {
@@ -525,7 +525,7 @@ describe('task runner', () => {
       });
 
       const storedScenes = JSON.parse(await readFile(join(dir, 'tasks', task.id, '02-sentences.json'), 'utf8')) as StoryboardScene[];
-      expect(storedScenes.map((scene) => scene.cap)).toEqual(['Scene 1', 'Scene 2']);
+      expect(storedScenes.map((scene) => scene.cap)).toEqual(['Scene 1', 'Scene 2', 'Scene 3']);
     } finally {
       await db.close();
       await rm(dir, { recursive: true, force: true });
@@ -537,7 +537,7 @@ describe('task runner', () => {
     const db = await FileDatabase.open(join(dir, 'data.db'));
     const draftRootDir = join(dir, 'JianyingPro Drafts');
     const mediaDir = join(dir, 'media');
-    const scenes = makeScenes(2);
+    const scenes = makeScenes(3);
 
     try {
       await db.upsertConfig({
@@ -550,8 +550,8 @@ describe('task runner', () => {
         track: 'character-story',
         style: 'photo-real',
         speaker: 'voice',
-        storyboardSceneCount: 2,
-        targetScenes: 2,
+        storyboardSceneCount: 3,
+        targetScenes: 3,
       });
 
       const llm: JsonLlm = async <T,>(request: LlmJsonRequest) => {
@@ -590,6 +590,7 @@ describe('task runner', () => {
       expect(storedScenes).toMatchObject([
         { cap: 'Scene 1', descPrompt: 'visual prompt 1' },
         { cap: 'Scene 2', descPrompt: 'visual prompt 2' },
+        { cap: 'Scene 3', descPrompt: 'visual prompt 3' },
       ]);
     } finally {
       await db.close();
@@ -784,6 +785,7 @@ describe('task runner', () => {
         style: 'photo-real',
         speaker: 'voice',
         targetLength: 900,
+        targetScenes: 12,
       });
 
       const llm: JsonLlm = async <T,>(request: LlmJsonRequest) => {
@@ -1585,7 +1587,7 @@ describe('task runner', () => {
     }
   });
 
-  it('runs one rewrite round, saves local evaluation output, and injects a character card into image prompts', async () => {
+  it('runs rewrite evaluation with three rewrite rounds, saves local evaluation output, and injects a character card into image prompts', async () => {
     const dir = await mkdtemp(join(tmpdir(), 'storybound-runner-rewrite-character-card-'));
     const db = await FileDatabase.open(join(dir, 'data.db'));
     const draftRootDir = join(dir, 'JianyingPro Drafts');
@@ -1609,14 +1611,49 @@ describe('task runner', () => {
           return {
             json: {
               rewrittenCopy: fitSourceLengthRewrite('Round 1 line one.\n\nRound 1 line two.'),
-              cover: { title: 'Cover 1', subtitle: [], summary: 'summary 1', tags: [], comments: ['comment 1'] },
+              cover: { title: 'Cover 1', subtitle: ['round 1 subtitle'], summary: 'summary 1', tags: ['#one'], comments: ['comment 1'] },
             } as T,
             raw: '{}',
             requestId: 'rewrite-1',
           };
         }
-        if (request.name === 'rewrite-round-2' || request.name === 'rewrite-round-3' || request.name === 'rewrite-evaluation') {
-          throw new Error(`Unexpected extra rewrite request: ${request.name}`);
+        if (request.name === 'rewrite-round-2') {
+          return {
+            json: {
+              rewrittenCopy: fitSourceLengthRewrite('Round 2 line one.\n\nRound 2 line two.\n\nRound 2 line three.'),
+              cover: { title: 'Cover 2', subtitle: ['round 2 subtitle'], summary: 'summary 2', tags: ['#two'], comments: ['comment 2'] },
+            } as T,
+            raw: '{}',
+            requestId: 'rewrite-2',
+          };
+        }
+        if (request.name === 'rewrite-round-3') {
+          return {
+            json: {
+              rewrittenCopy: fitSourceLengthRewrite('Round 3 line one.\n\nRound 3 line two.'),
+              cover: { title: 'Cover 3', subtitle: ['round 3 subtitle'], summary: 'summary 3', tags: ['#three'], comments: ['comment 3'] },
+            } as T,
+            raw: '{}',
+            requestId: 'rewrite-3',
+          };
+        }
+        if (request.name === 'rewrite-evaluation') {
+          const evaluationPrompt = request.messages.map((message) => message.content).join('\n');
+          expect(evaluationPrompt).toContain('Round 1 line one.');
+          expect(evaluationPrompt).toContain('Round 2 line one.');
+          expect(evaluationPrompt).toContain('Round 3 line one.');
+          return {
+            json: {
+              bestRound: 2,
+              evaluations: [
+                { round: 1, score: 82, reason: 'round 1' },
+                { round: 2, score: 97, reason: 'round 2' },
+                { round: 3, score: 90, reason: 'round 3' },
+              ],
+            } as T,
+            raw: '{}',
+            requestId: 'rewrite-evaluation',
+          };
         }
         if (request.step === 2) return { json: { scenes: makeArtifact().scenes } as T, raw: '{}', requestId: 'storyboard' };
         if (request.name === 'character-card') {
@@ -1645,15 +1682,21 @@ describe('task runner', () => {
       });
 
       const workDir = join(dir, 'tasks', task.id);
-      await expect(readFile(join(workDir, '01-rewritten-copy.md'), 'utf8')).resolves.toContain('Round 1 line one');
+      await expect(readFile(join(workDir, '01-rewritten-copy.md'), 'utf8')).resolves.toContain('Round 2 line one');
+      await expect(readFile(join(workDir, '00-cover-title.json'), 'utf8')).resolves.toContain('Cover 2');
       const evaluations = JSON.parse(await readFile(join(workDir, '01-rewrite-evaluations.json'), 'utf8'));
-      expect(evaluations.bestRound).toBe(1);
-      expect(evaluations.evaluations).toEqual([{ round: 1, score: 100, reason: 'Single rewrite round accepted.' }]);
+      expect(evaluations.bestRound).toBe(2);
+      expect(evaluations.evaluations).toEqual([
+        { round: 1, score: 82, reason: 'round 1' },
+        { round: 2, score: 97, reason: 'round 2' },
+        { round: 3, score: 90, reason: 'round 3' },
+      ]);
       const characterCard = JSON.parse(await readFile(join(workDir, '02-character-card.json'), 'utf8'));
       expect(characterCard.summary).toContain('same historical protagonist');
-      expect(requests.filter((request) => request.name.startsWith('rewrite-round-'))).toHaveLength(1);
-      expect(requests.some((request) => request.name === 'rewrite-evaluation')).toBe(false);
+      expect(requests.filter((request) => request.name.startsWith('rewrite-round-'))).toHaveLength(3);
+      expect(requests.some((request) => request.name === 'rewrite-evaluation')).toBe(true);
       expect(requests.some((request) => request.name === 'character-card')).toBe(true);
+      expect((await db.getState()).events.some((event) => event.detail.includes('第 3 轮'))).toBe(true);
       expect((await db.getState()).events.some((event) => event.type === 'step_warning')).toBe(false);
     } finally {
       await db.close();
@@ -1732,6 +1775,10 @@ describe('task runner', () => {
 
       const reviewPrompt = requests.find((request) => request.step === 0)?.messages.map((message) => message.content).join('\n') ?? '';
       const rewritePrompt = requests.find((request) => request.name === 'rewrite-round-1')?.messages.map((message) => message.content).join('\n') ?? '';
+      expect(reviewPrompt).toContain('你是一名资深短视频文案预审策划者');
+      expect(reviewPrompt).toContain('【当前赛道】character-story');
+      expect(reviewPrompt).toContain('不要主观臆断或编造细节');
+      expect(reviewPrompt).toContain('适合后续创作原创短视频口播稿');
       expect(reviewPrompt).toContain('Target word count range: 96-144 Chinese characters.');
       expect(reviewPrompt).toContain('Preserve enough source detail');
       expect(reviewPrompt).not.toContain('rewrittenCopy');
@@ -1761,6 +1808,7 @@ describe('task runner', () => {
         title: 'Target length near miss',
         inputText: sampleInput,
         targetLength: 2500,
+        targetScenes: 12,
       });
 
       const llm: JsonLlm = async <T,>(request: LlmJsonRequest) => {
@@ -2158,7 +2206,7 @@ describe('task runner', () => {
         track: 'html-video',
         style: 'modern-film',
         ratio: '9:16',
-        storyboardSceneCount: 2,
+        storyboardSceneCount: 3,
       });
 
       await runTask(db, task, {
@@ -2443,7 +2491,7 @@ describe('task runner', () => {
         draftWriterOptions: { runBridge: fakeBridge },
       });
 
-      expect(calls).toMatchObject({ 0: 1, 1: 1, 2: 2, 3: 2 });
+      expect(calls).toMatchObject({ 0: 1, 1: 4, 2: 2, 3: 2 });
       expect((await db.getState()).tasks[0].status).toBe('completed');
     } finally {
       await db.close();

@@ -46,3 +46,32 @@
 - Recovered `draft-generator.exe` mode payloads for `story`, `compose_render`, `remix_bgm`, `convert_audio_16k`, and `music_mv`.
 - Confirmed the reference app is layered: Rust/Tauri host, browser orchestration bundles, and Python sidecar draft generation.
 - Compared the reference backend contract against the current `I:\opc` implementation and logged the major parity gaps in `findings.md`.
+
+## 2026-06-24
+
+- Started fresh local audit of `E:\Storybound` at user request.
+- Confirmed the install directory contains the same style of binary distribution: `storybound.exe`, `draft-generator.exe`, ONNX/sherpa DLLs, `uninstall.exe`, and `resources/default-bgm.mp3`.
+- No visible loose JS source, config, or prompt files found at the top level.
+- Captured SHA-256 hashes for `storybound.exe` and `draft-generator.exe`.
+- Read runtime config and SQLite state from `C:\Users\Administrator\AppData\Local\com.dudumd.storybound`; no local custom prompt rows were present.
+- Confirmed database task events include 3-round rewrite/self-evaluation, cover metadata generation, storyboard splitting, character-card extraction, batched image prompt generation, and credit-gated image generation.
+- Exported full recovered prompt layer to `storybound_e_prompt_dump_2026-06-24.json`.
+- Wrote human-readable audit report to `storybound_e_reverse_audit_2026-06-24.md`.
+- Implemented local prompt + call-logic parity from the audit: added `docs/plans/2026-06-24-storybound-prompt-logic-parity.md`, locked the prompt dump inventory in tests, and changed Step 1 rewrite from single-round to 3 rewrite rounds plus `rewrite-evaluation` best-round selection.
+- Preserved existing target-length repair after best-round selection and added a fallback selection path when evaluation JSON is incomplete.
+- Verification passed:
+  - `node node_modules/vitest/vitest.mjs run --pool=threads --maxWorkers=1 tests/runner.test.ts` -> 43 tests passed
+  - `node node_modules/vitest/vitest.mjs run --pool=threads --maxWorkers=1 tests/prompt-templates.test.ts` -> 30 tests passed
+  - `npm run typecheck`
+
+## Error Log
+
+- Initial inline Node/SQLite query was broken by PowerShell quoting around `length(step1_rewrite_system_prompt)`. Re-ran with a PowerShell here-string piped to Node, which succeeded.
+
+## 2026-06-24 Storybound AI Creation Prompt Follow-up
+
+- User clarified that the current target is not our local implementation, but the `E:\Storybound` reference app's AI creation/copy-generation flow.
+- Current focus: identify the exact frontend bundle and prompt assembly logic behind the UI action labeled like `AI 创作`, `生成文案`, or `结合所选页面信息生成文案`.
+- Recovered embedded `/index.html` from `E:\Storybound\storybound.exe`; confirmed current runtime entry is `/assets/index-DGyecVzc.js`.
+- Located the AI creation implementation in the reference bundle: `tH` UI component, `aE` prompt caller, `U9` system prompt builder, `B9` user prompt builder, Bing/Sogou search helpers, IMA retrieval helpers, and the shared LLM adapter.
+- Wrote the detailed audit to `storybound_ai_creation_prompt_audit_2026-06-24.md`.

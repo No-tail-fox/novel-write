@@ -1,5 +1,7 @@
 import { describe, expect, it } from 'vitest';
+import { readFileSync } from 'node:fs';
 import { defaultCustomStyles, defaultPromptTemplates } from '@shared/config';
+import { storyboundSystemTemplateVersionHash, storyboundSystemTemplates } from '@shared/storybound-system-templates';
 import {
   buildImageTemplateStyleOptions,
   buildStoryTemplateOptions,
@@ -14,6 +16,25 @@ import {
 } from '@shared/prompt-templates';
 
 describe('prompt template rendering', () => {
+  it('matches the audited Storybound prompt dump inventory', () => {
+    const dump = JSON.parse(readFileSync(new URL('../storybound_e_prompt_dump_2026-06-24.json', import.meta.url), 'utf8')) as {
+      storyboundSystemTemplateVersionHash: string;
+      systemTemplates: Array<{ templateId: string; name: string; step1RewriteSystemPrompt: string; step1MetadataSystemPrompt: string; step3SystemPrompt: string }>;
+      globalStepTemplates: Array<{ id: string; name: string; type: string; content: string }>;
+    };
+    const taskTemplates = defaultPromptTemplates.filter((template) => template.type === 'task' && template.isBuiltin);
+    const globalStepTemplates = defaultPromptTemplates.filter((template) => template.type !== 'task' && template.isBuiltin);
+
+    expect(dump.storyboundSystemTemplateVersionHash).toBe(storyboundSystemTemplateVersionHash);
+    expect(dump.systemTemplates.map((template) => template.templateId)).toEqual(storyboundSystemTemplates.map((template) => template.templateId));
+    expect(dump.systemTemplates.map((template) => template.name)).toEqual(storyboundSystemTemplates.map((template) => template.name));
+    expect(dump.systemTemplates.every((template) => template.step1RewriteSystemPrompt && template.step1MetadataSystemPrompt && template.step3SystemPrompt)).toBe(true);
+    expect(taskTemplates.map((template) => template.id)).toEqual(dump.systemTemplates.map((template) => `system-${template.templateId}`));
+    expect(globalStepTemplates.map((template) => [template.id, template.type, template.name])).toEqual(
+      dump.globalStepTemplates.map((template) => [template.id, template.type, template.name]),
+    );
+  });
+
   it('renders allowed task context placeholders and removes missing values', () => {
     const template = {
       ...defaultPromptTemplates[0],

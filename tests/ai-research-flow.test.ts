@@ -36,7 +36,7 @@ describe('AI creation research flow', () => {
         ratio: '9:16',
         templateId: 'default-portrait-9-16',
         ttsSpeed: 1,
-        targetScenes: 2,
+        targetScenes: 3,
       });
 
       await runTask(db, task, {
@@ -92,6 +92,7 @@ function mockLlmResponse<T = unknown>(request: LlmJsonRequest) {
   const scenes: StoryboardScene[] = [
     { id: 1, cap: 'Wu Zetian was pushed away from power.', descPrompt: 'palace corridor', durationMs: 1000 },
     { id: 2, cap: 'She returned and changed the court.', descPrompt: 'imperial court', durationMs: 1000 },
+    { id: 3, cap: 'Her comeback forced the court to recalculate.', descPrompt: 'ministers watching the throne', durationMs: 1000 },
   ];
   const imagePrompts: ImagePrompt[] = scenes.map((scene) => ({
     sceneId: scene.id,
@@ -130,6 +131,17 @@ function mockLlmResponse<T = unknown>(request: LlmJsonRequest) {
     },
     'image-prompts': { imagePrompts },
   };
+  if (request.name.startsWith('rewrite-target-length-repair-')) {
+    const repaired = {
+      rewrittenCopy: '字'.repeat(1400),
+      cover: { title: 'Wu Zetian', subtitle: ['The return'], summary: 'A comeback story', tags: ['#history'], comments: ['Power changes people.'] },
+    };
+    return Promise.resolve({
+      json: repaired as T,
+      raw: JSON.stringify(repaired),
+      requestId: `mock-${request.name}`,
+    });
+  }
   return Promise.resolve({
     json: responses[request.name] as T,
     raw: JSON.stringify(responses[request.name]),

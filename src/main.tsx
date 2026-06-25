@@ -115,6 +115,13 @@ import {
 } from './shared/provider-profile-utils';
 import { listConfiguredProviderModels } from './shared/llm-provider';
 import {
+  countVisibleCharacters,
+  normalizeStoryboardSceneCount,
+  normalizeTargetLength,
+  storyboardSceneCountRange,
+  targetWordCountRange,
+} from './shared/content-metrics';
+import {
   defaultAccount,
   defaultActivation,
   defaultConfig,
@@ -575,7 +582,9 @@ function makeFallbackApi(setState: (state: AppState) => void): StoryDreamApi {
         keepPromotion: input.keepPromotion ?? false,
         ttsProvider: input.ttsProvider ?? 'volcengine',
         ttsSpeed: input.ttsSpeed ?? 1,
-        storyboardSceneCount: input.storyboardSceneCount ?? 12,
+        storyboardSceneCount: input.targetScenes ?? input.storyboardSceneCount,
+        targetLength: input.targetLength,
+        targetScenes: input.targetScenes ?? input.storyboardSceneCount,
         step3PromptSnapshot: input.step3PromptSnapshot ?? '',
         musicMv: input.musicMv ?? { rhythmMode: 'lyric-sync', captionStyle: 'karaoke', visualMotif: '', audioPath: '' },
         videoForm: input.videoForm ?? 'narration',
@@ -1427,6 +1436,31 @@ function viralStageLabel(stage: string): string {
   }[stage] ?? stage;
 }
 
+function ContentMetricsSummary({
+  text,
+  targetLength,
+  storyboardSceneCount,
+}: {
+  text: string;
+  targetLength: string;
+  storyboardSceneCount: string;
+}) {
+  const visibleCount = countVisibleCharacters(text);
+  const reviewRange = targetWordCountRange(targetLength, text);
+  const autoSceneRange = storyboardSceneCountRange(text);
+  const manualSceneCount = normalizeStoryboardSceneCount(storyboardSceneCount);
+  const manualSceneRange = manualSceneCount ? storyboardSceneCountRange(text, manualSceneCount) : null;
+
+  return (
+    <div className="content-metrics-row">
+      <span>字数：{visibleCount}</span>
+      <span>预审字数：{reviewRange ? `${reviewRange.min}-${reviewRange.max}` : '待输入'}</span>
+      <span>自动分镜：{visibleCount > 0 ? `${autoSceneRange.target} 个（${autoSceneRange.min}-${autoSceneRange.max}）` : '待输入'}</span>
+      {manualSceneRange ? <span>当前目标：{manualSceneRange.target} 个（{manualSceneRange.min}-{manualSceneRange.max}）</span> : null}
+    </div>
+  );
+}
+
 function NewTaskPage({
   api,
   state,
@@ -1469,7 +1503,7 @@ function NewTaskPage({
   const [keepPromotion, setKeepPromotion] = useState(false);
   const [ttsSpeed, setTtsSpeed] = useState(1);
   const [targetLength, setTargetLength] = useState('');
-  const [storyboardSceneCount, setStoryboardSceneCount] = useState('12');
+  const [storyboardSceneCount, setStoryboardSceneCount] = useState('');
   const [publishMode, setPublishMode] = useState<'review-rewrite' | 'direct-copy'>('review-rewrite');
   const [videoForm, setVideoForm] = useState<TaskVideoForm>('narration');
   const [coverImageMode, setCoverImageMode] = useState('off');
@@ -1729,6 +1763,7 @@ function NewTaskPage({
         {mode === 'paste' ? (
           <Field label="文案内容">
             <textarea className="source-textarea" value={inputText} onChange={(event) => setInputText(event.target.value)} />
+            <ContentMetricsSummary text={inputText} targetLength={targetLength} storyboardSceneCount={storyboardSceneCount} />
           </Field>
         ) : (
           <div className="ai-create-panel">
@@ -1787,7 +1822,15 @@ function NewTaskPage({
                 {researchCopyMessage ? <div className="test-result">{researchCopyMessage}</div> : null}
                 {researchCopy ? (
                   <Field label="生成文案（可编辑）">
-                    <textarea className="small-textarea research-copy-textarea" value={researchCopy} onChange={(event) => setResearchCopy(event.target.value)} />
+                    <textarea
+                      className="small-textarea research-copy-textarea"
+                      value={researchCopy}
+                      onChange={(event) => {
+                        setResearchCopy(event.target.value);
+                        setInputText(event.target.value);
+                      }}
+                    />
+                    <ContentMetricsSummary text={researchCopy} targetLength={targetLength} storyboardSceneCount={storyboardSceneCount} />
                   </Field>
                 ) : null}
               </div>
@@ -1918,6 +1961,7 @@ function NewTaskPage({
               max="60"
               step="1"
               value={storyboardSceneCount}
+              placeholder="自动"
               onChange={(event) => setStoryboardSceneCount(event.target.value)}
             />
             <small>个（±10%，建议每镜 25-45 字）</small>
@@ -7112,16 +7156,11 @@ function countChars(value?: string): number {
 }
 
 function normalizeTaskTargetLength(value: string): number | undefined {
-  if (!value.trim()) return undefined;
-  const parsed = Number(value);
-  if (!Number.isFinite(parsed)) return undefined;
-  return Math.min(5000, Math.max(100, Math.round(parsed)));
+  return normalizeTargetLength(value) ?? undefined;
 }
 
-function normalizeTaskStoryboardSceneCount(value: string): number {
-  const parsed = Number(value);
-  if (!Number.isFinite(parsed)) return 12;
-  return Math.min(60, Math.max(1, Math.round(parsed)));
+function normalizeTaskStoryboardSceneCount(value: string): number | undefined {
+  return normalizeStoryboardSceneCount(value) ?? undefined;
 }
 
 function trimForPreview(value: string, limit: number): string {

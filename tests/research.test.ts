@@ -1,10 +1,102 @@
 import { describe, expect, it } from 'vitest';
-import { composeCopyFromSources, createAiSourceResearcher, searchWebSources } from '@shared/research';
+import {
+  buildStoryboundAiCreationSystemPrompt,
+  buildStoryboundAiCreationUserPrompt,
+  cleanStoryboundAiCreationOutput,
+  composeCopyFromSources,
+  createAiSourceResearcher,
+  searchWebSources,
+} from '@shared/research';
 import { defaultConfig } from '@shared/config';
-import { LlmJsonParseError, type ConfiguredJsonLlm, type JsonLlm, type LlmJsonRequest } from '@shared/llm-provider';
+import type { ConfiguredTextLlm, LlmTextRequest, TextLlm } from '@shared/llm-provider';
 import type { Task } from '@shared/types';
 
 describe('AI source research', () => {
+  it('builds the Storybound-style AI creation prompt for selected materials', () => {
+    const system = buildStoryboundAiCreationSystemPrompt({
+      trackName: '人物故事',
+      trackTag: '纪实人物',
+      useAiKnowledge: false,
+      hasReferenceMaterials: true,
+    });
+    const user = buildStoryboundAiCreationUserPrompt(
+      { keyword: '钱学森回国', extraRequirements: '500字左右，情绪递进' },
+      [{ source: 'web', title: '资料 A', content: '1955年，钱学森终于回到中国。' }],
+    );
+
+    expect(system).toContain('你是一名资深短视频文案创作者');
+    expect(system).toContain('【当前赛道】人物故事（纪实人物）');
+    expect(system).toContain('必须是**原创口播文案**');
+    expect(system).toContain('严格基于用户提供的参考素材进行创作');
+    expect(system).toContain('不要标题、不要章节符号、不要 markdown');
+    expect(user).toContain('【关键词】钱学森回国');
+    expect(user).toContain('【用户额外要求】');
+    expect(user).toContain('--- 素材 1：资料 A ---');
+    expect(user).toContain('请基于以上素材，围绕关键词，创作一篇原创短视频口播文案');
+  });
+
+  it('builds a no-reference Storybound prompt that forbids uncertain details', () => {
+    const system = buildStoryboundAiCreationSystemPrompt({
+      trackName: '通用故事',
+      trackTag: '通用写实',
+      useAiKnowledge: true,
+      hasReferenceMaterials: false,
+    });
+    const user = buildStoryboundAiCreationUserPrompt({ keyword: '张桂梅', extraRequirements: '' }, []);
+
+    expect(system).toContain('请基于你对该人物/主题的已知知识进行创作');
+    expect(system).toContain('本次无外部参考素材，请只输出确定的事实');
+    expect(user).toContain('请基于你对「张桂梅」的了解');
+    expect(user).not.toContain('【参考素材】');
+  });
+
+  it('cleans Storybound AI creation boilerplate from direct text output', () => {
+    expect(cleanStoryboundAiCreationOutput('```markdown\n好的，以下是为你创作的文案：\n她第一次站上讲台时，并不知道自己会把一生都留在山里。\n```')).toBe(
+      '她第一次站上讲台时，并不知道自己会把一生都留在山里。',
+    );
+  });
+
+  it('uses the Storybound Bing HTML endpoint and extracts readable article paragraphs', async () => {
+    const requests: string[] = [];
+
+    const sections = await searchWebSources('钱学森 生平', async (url) => {
+      const rawUrl = String(url);
+      requests.push(rawUrl);
+      if (rawUrl === 'https://cn.bing.com/search?q=%E9%92%B1%E5%AD%A6%E6%A3%AE') {
+        return new Response(
+          `<html><body><ol>
+            <li class="b_algo"><h2><a href="https://example.test/qian">钱学森回国始末</a></h2><p>一篇可用资料。</p></li>
+          </ol></body></html>`,
+          { status: 200, headers: { 'Content-Type': 'text/html' } },
+        );
+      }
+      if (rawUrl.includes('sogou.com/web')) {
+        return new Response('<html><body></body></html>', { status: 200, headers: { 'Content-Type': 'text/html' } });
+      }
+      if (rawUrl === 'https://example.test/qian') {
+        return new Response(
+          `<html><body><article>
+            <p>版权声明：这段应该被过滤。</p>
+            <p>1955年，钱学森冲破重重阻力回到中国，此后长期参与中国航天事业建设。</p>
+            <p>这段补充了他从研究者到国家工程组织者的角色变化。</p>
+          </article></body></html>`,
+          { status: 200, headers: { 'Content-Type': 'text/html' } },
+        );
+      }
+      throw new Error(`unexpected request: ${rawUrl}`);
+    });
+
+    expect(requests[0]).toBe('https://cn.bing.com/search?q=%E9%92%B1%E5%AD%A6%E6%A3%AE');
+    expect(requests.some((url) => url.includes('format=rss'))).toBe(false);
+    expect(sections[0]).toMatchObject({
+      source: 'web',
+      title: '钱学森回国始末',
+      url: 'https://example.test/qian',
+    });
+    expect(sections[0].content).toContain('1955年，钱学森冲破重重阻力回到中国');
+    expect(sections[0].content).not.toContain('版权声明');
+  });
+
   it('returns the first 10 Bing results with readable page text', async () => {
     const requests: string[] = [];
     const rssItems = Array.from({ length: 12 }, (_, index) => {
@@ -31,7 +123,7 @@ describe('AI source research', () => {
     expect(sections.map((section) => section.title)).toEqual(['Result 1', 'Result 2', 'Result 3', 'Result 4', 'Result 5', 'Result 6', 'Result 7', 'Result 8', 'Result 9', 'Result 10']);
     expect(sections[9]).toMatchObject({ title: 'Result 10', url: 'https://example.test/10', snippet: 'Snippet 10' });
     expect(sections[9].content).toContain('Readable page body 10');
-    expect(requests).toHaveLength(11);
+    expect(requests.filter((url) => url.startsWith('https://example.test/'))).toHaveLength(10);
     expect(requests).not.toContain('https://example.test/11');
   });
 
@@ -56,7 +148,7 @@ describe('AI source research', () => {
     });
 
     expect(requests[0]).toContain('https://cn.bing.com/search');
-    expect(requests[1]).toContain('https://www.bing.com/search');
+    expect(requests.some((url) => url.includes('https://www.bing.com/search'))).toBe(true);
     expect(sections[0]).toMatchObject({ title: 'Fallback Result', content: 'Fallback page body.' });
   });
 
@@ -314,14 +406,14 @@ describe('AI source research', () => {
     expect(sections.map((section) => section.title)).toEqual(['\u4e03\u6d77\u5343\u79cb_\u767e\u5ea6\u767e\u79d1']);
   });
 
-  it('composes an editable source copy from selected web pages through the configured LLM', async () => {
-    const requests: Array<{ name: string; prompt: string }> = [];
+  it('composes an editable source copy from selected web pages through the Storybound text LLM flow', async () => {
+    const requests: LlmTextRequest[] = [];
     const result = await composeCopyFromSources(
-      mockConfiguredLlm(async <T = unknown>(request: LlmJsonRequest) => {
-        requests.push({ name: request.name, prompt: request.messages.at(-1)?.content ?? '' });
+      mockConfiguredTextLlm(async (request) => {
+        requests.push(request);
         return {
-          json: { copy: 'Generated source copy from selected research.' } as T,
-          raw: '{"copy":"Generated source copy from selected research."}',
+          text: '以下是为你创作的文案：\nGenerated source copy from selected research.',
+          raw: '以下是为你创作的文案：\nGenerated source copy from selected research.',
           requestId: 'copy-1',
         };
       }),
@@ -335,63 +427,38 @@ describe('AI source research', () => {
       },
     );
 
-    expect(result).toEqual({ title: '', copy: 'Generated source copy from selected research.', raw: '{"copy":"Generated source copy from selected research."}', requestId: 'copy-1' });
+    expect(result).toEqual({ title: 'Wu Zetian comeback', copy: 'Generated source copy from selected research.', raw: '以下是为你创作的文案：\nGenerated source copy from selected research.', requestId: 'copy-1' });
     expect(requests[0].name).toBe('research-copy');
-    expect(requests[0].prompt).toContain('Wu Zetian comeback');
-    expect(requests[0].prompt).toContain('Article A facts.');
-    expect(requests[0].prompt).toContain('Article B details.');
+    expect(requests[0]).toMatchObject({ temperature: 0.8, maxTokens: 32768, maxRetries: 2 });
+    expect(requests[0].messages[0].content).toContain('资深短视频文案创作者');
+    expect(requests[0].messages[0].content).not.toContain('Return strict JSON only');
+    expect(requests[0].messages[1].content).toContain('【关键词】Wu Zetian comeback');
+    expect(requests[0].messages[1].content).toContain('Article A facts.');
+    expect(requests[0].messages[1].content).toContain('Article B details.');
   });
 
-  it('accepts a generated title from research copy composition responses', async () => {
+  it('supports Storybound no-reference generation when no sources are selected', async () => {
+    const requests: LlmTextRequest[] = [];
     const result = await composeCopyFromSources(
-      mockConfiguredLlm(async <T = unknown>() => ({
-        json: { title: 'Wu Zetian Returns', copy: 'Generated body.' } as T,
-        raw: '{"title":"Wu Zetian Returns","copy":"Generated body."}',
-        requestId: 'copy-title-1',
-      })),
+      mockConfiguredTextLlm(async (request) => {
+        requests.push(request);
+        return {
+          text: 'Generated body.',
+          raw: 'Generated body.',
+          requestId: 'copy-title-1',
+        };
+      }),
       {
         keyword: 'Wu Zetian',
         extraRequirements: '',
-        selectedSources: [{ source: 'web', title: 'Article A', content: 'Article A facts.' }],
+        selectedSources: [],
       },
     );
 
-    expect(result.title).toBe('Wu Zetian Returns');
+    expect(result.title).toBe('Wu Zetian');
     expect(result.copy).toBe('Generated body.');
-  });
-
-  it('salvages research copy from malformed fenced JSON returned by the LLM', async () => {
-    const raw = [
-      '```json',
-      '{',
-      '  "title": "从捡废品到总统再到囚徒——李明博的魔幻人生",',
-      '  "copy": "1941年，他出生在日本大阪一间牧场旁的简陋住所。',
-      '',
-      '少年时的李明博，靠捡酒瓶、卖爆米花凑齐了学费。',
-      '',
-      '他说自己的人生像"一条没有退路的路"，但这句引号没有被 JSON 转义。',
-      '',
-      '后来，他真的走到了青瓦台。"',
-      '}',
-      '```',
-    ].join('\n');
-
-    const result = await composeCopyFromSources(
-      mockConfiguredLlm(async () => {
-        throw new LlmJsonParseError('bad json', raw);
-      }),
-      {
-        keyword: '李明博 经营未来',
-        extraRequirements: '',
-        selectedSources: [{ source: 'web', title: 'Article A', content: 'Article A facts.' }],
-      },
-    );
-
-    expect(result.title).toBe('从捡废品到总统再到囚徒——李明博的魔幻人生');
-    expect(result.copy).toContain('靠捡酒瓶、卖爆米花凑齐了学费');
-    expect(result.copy).toContain('没有退路的路');
-    expect(result.raw).toBe(raw);
-    expect(result.requestId).toBeNull();
+    expect(requests[0].messages[0].content).toContain('本次无外部参考素材');
+    expect(requests[0].messages[1].content).toContain('请基于你对「Wu Zetian」的了解');
   });
 
   it('collects web RSS snippets and built-in knowledge for AI creation', async () => {
@@ -456,7 +523,7 @@ describe('AI source research', () => {
 
     const context = await researcher(makeTask({ aiSources: ['web'], aiKeyword: 'Wu Zetian comeback' }));
 
-    expect(fetched).toEqual(['https://cn.bing.com/search?q=Wu%20Zetian%20comeback&format=rss', 'https://example.test/article-a']);
+    expect(fetched).toEqual(expect.arrayContaining(['https://cn.bing.com/search?q=Wu%20Zetian%20comeback', 'https://example.test/article-a']));
     expect(context.sections[0]).toMatchObject({
       source: 'web',
       title: 'Article A',
@@ -534,6 +601,6 @@ function makeTask(patch: Partial<Task>): Task {
   };
 }
 
-function mockConfiguredLlm(run: JsonLlm): ConfiguredJsonLlm {
+function mockConfiguredTextLlm(run: TextLlm): ConfiguredTextLlm {
   return { protocol: 'anthropic', run };
 }

@@ -328,7 +328,7 @@ export interface Task {
   keepPromotion: boolean;
   ttsProvider: TtsProvider;
   ttsSpeed: number;
-  storyboardSceneCount: number;
+  storyboardSceneCount?: number;
   step3PromptSnapshot: string;
   musicMv: MusicMvSettings;
   failedStep: number | null;

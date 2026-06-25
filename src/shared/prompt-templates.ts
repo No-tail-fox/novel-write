@@ -1,4 +1,5 @@
 import { defaultCustomStyles } from './config';
+import { resolveEffectiveStoryboardSceneCount, targetWordCountRange } from './content-metrics';
 import type { AiSourceContext, CharacterCard, CustomStyle, PipelineArtifact, PromptStepTemplateType, PromptTemplate, StoryboardScene, Task } from './types';
 
 export interface PromptTemplateSelectionInput {
@@ -258,8 +259,8 @@ function buildTemplateValues(context: PromptRenderContext): Record<string, strin
   const scenes = context.scenes ?? context.artifact?.scenes ?? [];
   const reviewedText = context.reviewedText ?? context.artifact?.reviewedText ?? '';
   const rewrittenCopy = context.rewrittenCopy ?? context.artifact?.rewrittenCopy ?? '';
-  const storyboardSceneCountValue = task.targetScenes ?? task.storyboardSceneCount;
-  const targetLengthRange = templateTargetLengthRange(task.targetLength, reviewedText || String(task.inputText ?? ''));
+  const storyboardSceneCountValue = task.targetScenes ?? task.storyboardSceneCount ?? (rewrittenCopy ? resolveEffectiveStoryboardSceneCount(rewrittenCopy) : '');
+  const targetLengthRange = targetWordCountRange(task.targetLength, reviewedText || String(task.inputText ?? ''));
   const styleId = String(task.style ?? '');
   const style = resolveStyleDefinition(styleId, context.customStyles);
   const characterCard = context.artifact?.characterCard;
@@ -303,28 +304,6 @@ function buildTemplateValues(context: PromptRenderContext): Record<string, strin
   };
   values.taskTemplateContent = taskTemplate ? replacePlaceholders(taskTemplate.content, values) : '';
   return values;
-}
-
-function templateTargetLengthRange(value: unknown, sourceText = ''): { min: number; max: number } | null {
-  if (value !== null && value !== undefined && value !== '') {
-    const parsed = Number(value);
-    if (!Number.isFinite(parsed)) return null;
-    const target = Math.min(5000, Math.max(100, Math.round(parsed)));
-    return {
-      min: Math.floor(target * 0.8),
-      max: Math.ceil(target * 1.2),
-    };
-  }
-  const sourceLength = countVisibleCharacters(sourceText);
-  if (sourceLength <= 0) return null;
-  return {
-    min: Math.max(1, Math.floor(sourceLength * 0.8)),
-    max: Math.max(1, Math.ceil(sourceLength * 1.2)),
-  };
-}
-
-function countVisibleCharacters(value: string): number {
-  return value.replace(/\s+/g, '').length;
 }
 
 function resolveStyleDefinition(styleId: string, customStyles: CustomStyle[] = []): CustomStyle | null {

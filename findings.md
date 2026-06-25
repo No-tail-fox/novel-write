@@ -1,5 +1,13 @@
 # Findings
 
+## Storybound Parity Update
+
+- `storybound_e_prompt_dump_2026-06-24.json` now has a direct inventory check in `tests/prompt-templates.test.ts`; it locks the 9 system templates, 5 global step templates, and version hash against the recovered dump.
+- `src/shared/runner.ts` now runs Step 1 as 3 rewrite rounds plus a dedicated `rewrite-evaluation` request, then selects the best round before any target-length repair.
+- The selected rewrite round now drives `01-rewritten-copy.md`, `00-cover-title.json`, and `01-rewrite-evaluations.json`; repair only runs after selection.
+- Step 1 event flow now includes round-by-round progress, self-eval completion, best-round selection, and cover-title/comment generation notices.
+- The new path is covered by full runner tests and typecheck, so the three-round flow should not silently regress back to a single rewrite call.
+
 ## Current Project
 
 - 当前分支已切到 `codex/storybound-cn-full-replica`。
@@ -171,3 +179,47 @@
 - Current repo already has many Storybound-compatible tables/fields, but its runtime is Electron/Node and its draft writer is `src/shared/jianying-bridge.ts`, not the recovered `draft-generator` sidecar contract.
 - Current draft bridge writes its own `draft_content.json`/`draft_meta_info.json` flow. Reference sidecar uses packaged `template_jianying`, `draft_info.json`, text-to-subtitle conversion, cover/meta rewrite, ffmpeg BGM preparation, and separate `compose_render`/`music_mv` modes.
 - Current repo does not expose Tauri-equivalent IPC commands for `http_request`, `http_download`, `gpt_image_*`, `asr_transcribe`, `capture_webview_by_label`, `eval_in_window`, `allow_external_path`, updater, or system keychain. These are the main backend compatibility gaps if we want behavior parity rather than only UI parity.
+
+---
+
+# 2026-06-24 E:\Storybound Local Audit
+
+## Scope
+
+- User requested a fresh local audit of `E:\Storybound`, including prompt sources and backend/functionality logic.
+- Treat as owned software audit. Do not bypass activation, crack authorization, or expose usable secrets.
+
+## Initial Directory Shape
+
+- `E:\Storybound` contains only:
+  - `storybound.exe` (60,853,760 bytes)
+  - `draft-generator.exe` (77,747,722 bytes)
+  - `onnxruntime.dll`, `onnxruntime_providers_shared.dll`
+  - `sherpa-onnx-c-api.dll`, `sherpa-onnx-cxx-api.dll`
+  - `uninstall.exe`
+  - `resources/default-bgm.mp3`
+- No visible source tree, `app.asar`, or plain prompt/config files were present in the install directory. Analysis needs to focus on embedded assets and packaged sidecar contents.
+
+## Runtime Data and Prompt Inventory
+
+- `C:\Users\Administrator\AppData\Local\com.dudumd.storybound` contains `config.json`, `data.db`, `bgm/`, `tasks/`, and `EBWebView/`.
+- `config.json` provider defaults: custom OpenAI-compatible LLM at `https://input.codes` using model `gpt-5.5`; image provider `gpt_image`; Jimeng model `jimeng-4.5`; custom image model `gpt-image-1`; Volcengine TTS speaker `zh_male_dongfanghaoran_moon_bigtts`; MiniMax TTS model `speech-2.8-hd`; dark UI theme. API key/session/token fields were empty or treated as sensitive.
+- `data.db` tables and counts: `tasks` 3, `task_events` 25, `draft_templates` 5, `user_prompt_templates` 0, `custom_styles` 0, `custom_cover_templates` 0, `playground_jobs` 0, `minimax_clone_voices` 0, `credits_transactions` 0.
+- No local custom prompt rows are present (`user_prompt_templates` count is 0).
+- Exported recovered prompt layer to `storybound_e_prompt_dump_2026-06-24.json`: 9 system task templates, 5 global fallback prompts, shared storyboard prompt/rules, 363,266 bytes.
+
+## E:\Storybound Backend Confirmation
+
+- Direct binary string scan confirms Tauri/host command names in `storybound.exe`: `http_request`, `http_download`, `gpt_image_submit`, `gpt_image_edit`, `gpt_image_poll`, `gpt_image_test`, `asr_transcribe`, `save_secret`, `load_secret`, `delete_secret`, `capture_webview_by_label`, `capture_webview`, `eval_in_window`, `allow_external_path`, `check_update`, `apply_update`, `launch_program`, `license_verify`, `capture_webview_hwid_fingerprint`.
+- Direct binary string scan confirms sidecar packaging in `draft-generator.exe`: `pyJianYingDraft`, `template_jianying/draft_info.json`, `template_jianying/draft_meta_info.json`, and modes/modules related to `music_mv`, `compose_render`, `remix_bgm`, and `convert_audio_16k`.
+- `task_events` confirms actual observed pipeline: template selection, Step 0 pre-review, Step 1 three rewrite/self-evaluation rounds and cover metadata generation, Step 2 storyboard splitting, Step 3 character card extraction plus batched `desc_prompt` generation, Step 4 credit-gated image generation.
+
+## 2026-06-24 E:\Storybound AI Creation Prompt
+
+- Current embedded entry HTML was recovered from `E:\Storybound\storybound.exe`; it loads `/assets/index-DGyecVzc.js`.
+- The "AI 创作" feature is implemented in the current bundle, not in our local project source. Relevant functions are `tH`, `aE`, `U9`, `B9`, `F9`, `h9`, `E9`, `O9`, `sE`, `fs`, and `ps`.
+- `aE()` builds a direct system/user prompt and calls the regular LLM adapter with `temperature: 0.8`, `maxTokens: 32768`, dynamic timeout from user prompt length, and `maxRetries: 2`.
+- The recovered system prompt starts with `你是一名资深短视频文案创作者，擅长创作原创短视频口播稿。` and dynamically injects the current track name/tag plus one of three material strategies.
+- For the default story flow, the track resolves to `人物故事（纪实人物）`.
+- The user prompt includes `【关键词】`, optional `【用户额外要求】`, optional `【参考素材】` blocks, and a final instruction to create an original short-video oral narration draft with no extra explanation.
+- Full details and exact prompt/call logic are recorded in `storybound_ai_creation_prompt_audit_2026-06-24.md`.
