@@ -918,11 +918,6 @@ describe('product shell ui', () => {
     const main = await readFile(new URL('../src/main.tsx', import.meta.url), 'utf8');
 
     for (const key of [
-      'targetLength',
-      'targetLengthMin',
-      'targetLengthMax',
-      'targetLengthRange',
-      'storyboardSceneCount',
       'taskTemplateName',
       'defaultStyles',
       'defaultDraftTemplateId',
@@ -942,12 +937,12 @@ describe('product shell ui', () => {
     }
   });
 
-  it('surfaces targetLength in task, review, and rewrite prompt scopes with visible step pickers', async () => {
+  it('keeps targetLength and storyboard scene count out of visible prompt variable scopes', async () => {
     const main = await readFile(new URL('../src/main.tsx', import.meta.url), 'utf8');
 
-    expect(main).toContain("key: 'targetLength'");
-    expect(main).toContain("key: 'targetLengthRange'");
-    expect(main).toContain("scopes: ['task', 'review', 'rewrite', 'storyboard']");
+    expect(main).not.toContain("key: 'targetLength'");
+    expect(main).not.toContain("key: 'targetLengthRange'");
+    expect(main).not.toContain("key: 'storyboardSceneCount'");
     expect(main).toContain("step.type === 'review' || step.type === 'rewrite'");
     expect(main).toContain('<PromptVariablePicker');
     expect(main).toContain('scope={step.type}');
@@ -1458,6 +1453,7 @@ describe('product shell ui', () => {
 
   it('keeps target word and scene controls visible in the new task form', async () => {
     const main = await readFile(new URL('../src/main.tsx', import.meta.url), 'utf8');
+    const css = await readFile(new URL('../src/styles.css', import.meta.url), 'utf8');
     const page = main.slice(main.indexOf('function NewTaskPage'), main.indexOf('function MusicMvPage'));
 
     expect(page).toContain('targetLength');
@@ -1482,6 +1478,24 @@ describe('product shell ui', () => {
     expect(targetControlsIndex).toBeGreaterThan(-1);
     expect(advancedIndex).toBeGreaterThan(-1);
     expect(targetControlsIndex).toBeLessThan(advancedIndex);
+
+    expect(css).toContain('.target-controls-row {');
+    expect(css).toContain('display: grid;');
+    expect(css).toContain('grid-template-columns: repeat(3, minmax(0, 1fr));');
+    expect(css).toContain('align-items: start;');
+    expect(css).toContain('gap: 12px 16px;');
+    expect(css).toContain('.target-number-field {');
+    expect(css).toContain('display: grid;');
+    expect(css).toContain('gap: 4px;');
+    expect(css).toContain('font-size: 12px;');
+    expect(css).toContain('font-size: 11px;');
+    expect(css).toContain('white-space: normal;');
+    expect(css).toContain('overflow-wrap: anywhere;');
+    expect(css).toContain('.target-controls-row .segmented button');
+    expect(css).toContain('min-height: 30px;');
+    expect(css).toContain('grid-template-columns: repeat(2, minmax(0, 1fr));');
+    expect(css).toContain('@media (max-width: 720px)');
+    expect(main).toContain('label ? <span>{label}</span> : null');
   });
 
   it('replicates the StoryDream video form controls for narration and two-host podcast tasks', async () => {

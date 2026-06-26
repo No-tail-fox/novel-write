@@ -29,8 +29,10 @@ describe('AI source research', () => {
     expect(system).toContain('必须是**原创口播文案**');
     expect(system).toContain('严格基于用户提供的参考素材进行创作');
     expect(system).toContain('不要标题、不要章节符号、不要 markdown');
+    expect(system).not.toContain('【目标字数】500 字（区间 400-600 中文字符）。');
     expect(user).toContain('【关键词】钱学森回国');
     expect(user).toContain('【用户额外要求】');
+    expect(user).not.toContain('【目标字数】500 字（区间 400-600 中文字符）。');
     expect(user).toContain('--- 素材 1：资料 A ---');
     expect(user).toContain('请基于以上素材，围绕关键词，创作一篇原创短视频口播文案');
   });
@@ -435,13 +437,11 @@ describe('AI source research', () => {
     const userPrompt = requests[0].messages[1].content;
     expect(systemPrompt).toContain('资深短视频文案创作者');
     expect(systemPrompt).not.toContain('Return strict JSON only');
-    expect(systemPrompt).toContain('【目标字数】500 字（区间 400-600 中文字符）。');
+    expect(systemPrompt).not.toContain('【目标字数】500 字（区间 400-600 中文字符）。');
     expect(userPrompt).toContain('【关键词】Wu Zetian comeback');
     expect(userPrompt).toContain('Article A facts.');
     expect(userPrompt).toContain('Article B details.');
-    expect(userPrompt).toContain('【目标字数】500 字（区间 400-600 中文字符）。');
-    expect(userPrompt.indexOf('【目标字数】500 字（区间 400-600 中文字符）。')).toBeGreaterThan(userPrompt.indexOf('【关键词】Wu Zetian comeback'));
-    expect(userPrompt.indexOf('【目标字数】500 字（区间 400-600 中文字符）。')).toBeLessThan(userPrompt.indexOf('【用户额外要求】'));
+    expect(userPrompt).not.toContain('【目标字数】500 字（区间 400-600 中文字符）。');
   });
 
   it('supports Storybound no-reference generation when no sources are selected', async () => {

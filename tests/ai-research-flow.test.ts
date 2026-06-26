@@ -77,7 +77,9 @@ describe('AI creation research flow', () => {
       expect(sourceContextMarkdown).toContain('Sources: web, builtin-knowledge');
       expect(reviewInput).toContain('Wu Zetian comeback');
       expect(reviewInput).toContain('Search says she returned to power');
-      expect(reviewInput).toContain('【目标字数】500 字（区间 400-600 中文字符）。');
+      expect(reviewInput).toContain('用户额外要求');
+      expect(reviewInput).toContain('Focus on verified turning points.');
+      expect(reviewInput).not.toContain('【目标字数】500 字（区间 400-600 中文字符）。');
       expect(state.events.some((event) => event.detail.includes('AI source research completed'))).toBe(true);
     } finally {
       await db.close();

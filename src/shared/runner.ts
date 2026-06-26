@@ -556,11 +556,9 @@ async function ensureContentArtifact(input: {
     const reviewPromptResult = renderStepPromptDetails(promptTemplates, 'review', promptContext(), sourceText);
     const reviewPrompt = reviewPromptResult.content;
     const includeReviewSourceBlock = shouldAppendReviewSourceMaterial(reviewPromptResult.template);
-    const reviewTargetRange = targetWordCountRange(task.targetLength, sourceText);
     const reviewSystemPrompt = buildStoryboundReviewSystemPrompt(
       task,
       Boolean(sourceContext?.sections.length || task.inputText.trim()),
-      reviewTargetRange ? `${reviewTargetRange.min}-${reviewTargetRange.max}` : '',
     );
     const review = await runLlmJson<{ reviewedText: string }>(options.llm, {
       step: 0,
@@ -574,7 +572,7 @@ async function ensureContentArtifact(input: {
           content: joinPromptBlocks([
             'Template instructions:',
             reviewPrompt,
-            targetLengthReviewInstruction(task, sourceText),
+            extraRequirementsInstruction(task, reviewPrompt),
             taskModeInstructions(task),
             includeReviewSourceBlock ? 'Source material:' : '',
             includeReviewSourceBlock ? sourceText : '',
@@ -661,8 +659,8 @@ async function ensureContentArtifact(input: {
           content: joinPromptBlocks([
             'Storyboard instructions:',
             storyboardPrompt,
+            extraRequirementsInstruction(task, storyboardPrompt),
             taskModeInstructions(task),
-            targetScenesInstruction(task),
             'Rewritten copy:',
             rewrittenCopy,
             rewriteContextForStep(pipeline, 2),
@@ -788,6 +786,17 @@ function taskModeInstructions(task: Task): string {
   ].join('\n');
 }
 
+function extraRequirementsInstruction(task: Task, existingPrompt = ''): string {
+  const requirements = task.extraRequirements?.trim() ?? '';
+  if (!requirements) return '';
+  if (existingPrompt.includes(requirements)) return '';
+  if (existingPrompt.includes('用户额外要求：')) return '';
+  return [
+    '用户额外要求：',
+    requirements,
+  ].join('\n');
+}
+
 function buildImagePromptSnapshot(instruction: string, scenes: StoryboardScene[], task: Task, taskTemplate: PromptTemplate | null, batchIndex: number, batchCount: number, characterCard?: CharacterCard, rerunContext = ''): string {
   const style = resolveImageStyle(task.style);
   return joinPromptBlocks([
@@ -862,45 +871,9 @@ function targetWordCountFailureReason(length: number, range: TargetWordCountRang
   return '';
 }
 
-function targetLengthInstruction(task: Task, existingPrompt = '', sourceText = ''): string {
-  const range = targetWordCountRange(task.targetLength, sourceText);
-  if (!range) return '';
-  const rangeLabel = targetWordCountRangeLabel(range);
-  const rangeLine = `Target word count range: ${rangeLabel} Chinese characters.`;
-  if (existingPrompt.includes(rangeLine)) return '';
-  return [
-    rangeLine,
-    `If a candidate would be outside ${rangeLabel} Chinese characters, reject it and regenerate from the original source material.`,
-    'Do not return rewrittenCopy outside the target word count range; expand concrete details if too short, compress redundant phrasing if too long.',
-  ].join('\n');
-}
-
-function targetLengthReviewInstruction(task: Task, sourceText = ''): string {
-  const range = targetWordCountRange(task.targetLength, sourceText);
-  if (!range) return '';
-  const rangeLabel = targetWordCountRangeLabel(range);
-  return [
-    `Target word count range: ${rangeLabel} Chinese characters.`,
-    'Keep reviewedText close to the selected budget and trim obvious filler or repeated context when possible.',
-    'Preserve enough source detail in reviewedText to support that target range in the rewrite step.',
-    'Do not pad with invented content.',
-  ].join('\n');
-}
-
 function isStoryboardSceneCountAcceptable(scenes: StoryboardScene[], targetSceneCount: number | null | undefined, rewrittenCopy = ''): boolean {
   const range = storyboardSceneCountRange(rewrittenCopy, targetSceneCount);
   return scenes.length >= range.min && scenes.length <= range.max;
-}
-
-function targetScenesInstruction(task: Task): string {
-  const targetScenes = normalizeStoryboardSceneCount(task.targetScenes);
-  if (!targetScenes) return '';
-  const range = storyboardSceneCountRange('', targetScenes);
-  return [
-    `Storyboard scene count target: ${targetScenes}.`,
-    `目标分镜数：约 ${targetScenes} 个（允许 ±10%，建议范围 ${range.min}-${range.max}）。请按这个粒度切分，数量优先于默认切分习惯，必要时拆细或合并。`,
-    '只决定切分点，不要改写、扩写、删除或重排最终口播稿。',
-  ].join('\n');
 }
 
 function pauseAtCheckpoint(task: Task, initialStep: number, step: number, detail: string): void {
@@ -942,8 +915,7 @@ function buildRewriteRoundPrompt(input: { task: Task; rewritePrompt: string; rev
     round === 1 ? input.reviewedText : previousDraft ?? '',
     'Rewrite instructions:',
     input.rewritePrompt,
-    targetLengthInstruction(input.task, input.rewritePrompt, input.reviewedText),
-    targetScenesInstruction(input.task),
+    extraRequirementsInstruction(input.task, input.rewritePrompt),
     taskModeInstructions(input.task),
     input.rerunContext ?? '',
   ]);
@@ -955,8 +927,7 @@ function buildRewriteEvaluationPrompt(input: { task: Task; rewritePrompt: string
     'Select the best rewrite round and return the round number, per-round scores, and short reasons.',
     'Rewrite instructions:',
     input.rewritePrompt,
-    targetLengthInstruction(input.task, input.rewritePrompt, input.reviewedText),
-    targetScenesInstruction(input.task),
+    extraRequirementsInstruction(input.task, input.rewritePrompt),
     taskModeInstructions(input.task),
     'Reviewed text:',
     input.reviewedText,
@@ -1227,7 +1198,6 @@ async function repairStoryboardToTargetSceneCount(
             `Acceptable range: ${range.min}-${range.max} scenes.`,
             'Storyboard instructions:',
             input.storyboardPrompt,
-            targetScenesInstruction(input.task),
             taskModeInstructions(input.task),
             'Rewritten copy:',
             input.rewrittenCopy,

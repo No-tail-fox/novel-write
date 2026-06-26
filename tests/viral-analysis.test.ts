@@ -324,7 +324,7 @@ describe('viral analysis helpers', () => {
     expect(drafts.storyTemplate.stepPrompts?.rewrite).toContain('爆点迁移规则');
     expect(drafts.storyTemplate.stepPrompts?.rewrite).toContain('禁止照抄原文');
     expect(drafts.storyTemplate.stepPrompts?.rewrite).toContain('{{reviewedText}}');
-    expect(drafts.storyTemplate.stepPrompts?.rewrite).toContain('{{targetLengthRange}}');
+    expect(drafts.storyTemplate.stepPrompts?.rewrite).not.toContain('{{targetLengthRange}}');
     expect(drafts.storyTemplate.stepPrompts?.rewrite).toContain('{{extraRequirements}}');
     expect(drafts.storyTemplate.stepPrompts?.cover).toContain('标题公式');
     expect(drafts.storyTemplate.stepPrompts?.cover).toContain('封面公式');
@@ -332,8 +332,8 @@ describe('viral analysis helpers', () => {
     expect(drafts.storyTemplate.stepPrompts?.cover).not.toContain('{{rewrittenCopy}}');
     expect(drafts.storyTemplate.stepPrompts?.storyboard).toContain('分镜公式');
     expect(drafts.storyTemplate.stepPrompts?.storyboard).toContain('{{rewrittenCopy}}');
-    expect(drafts.storyTemplate.stepPrompts?.storyboard).toContain('{{targetLengthRange}}');
-    expect(drafts.storyTemplate.stepPrompts?.storyboard).toContain('{{targetScenes}}');
+    expect(drafts.storyTemplate.stepPrompts?.storyboard).not.toContain('{{targetLengthRange}}');
+    expect(drafts.storyTemplate.stepPrompts?.storyboard).not.toContain('{{targetScenes}}');
     expect(drafts.storyTemplate.stepPrompts?.storyboard).toContain('JSON 字符串数组');
     expect(drafts.storyTemplate.stepPrompts?.storyboard).toContain('尾部锚点');
     expect(drafts.storyTemplate.stepPrompts?.storyboard).not.toContain('Strict output shape: {"scenes"');

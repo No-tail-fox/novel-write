@@ -1,7 +1,6 @@
 import { describe, expect, it } from 'vitest';
-import { readFileSync } from 'node:fs';
 import { defaultCustomStyles, defaultPromptTemplates } from '@shared/config';
-import { storyboundSystemTemplateVersionHash, storyboundSystemTemplates } from '@shared/storybound-system-templates';
+import { storyboundSystemTemplates } from '@shared/storybound-system-templates';
 import {
   buildImageTemplateStyleOptions,
   buildStoryTemplateOptions,
@@ -16,23 +15,30 @@ import {
 } from '@shared/prompt-templates';
 
 describe('prompt template rendering', () => {
-  it('matches the audited Storybound prompt dump inventory', () => {
-    const dump = JSON.parse(readFileSync(new URL('../storybound_e_prompt_dump_2026-06-24.json', import.meta.url), 'utf8')) as {
-      storyboundSystemTemplateVersionHash: string;
-      systemTemplates: Array<{ templateId: string; name: string; step1RewriteSystemPrompt: string; step1MetadataSystemPrompt: string; step3SystemPrompt: string }>;
-      globalStepTemplates: Array<{ id: string; name: string; type: string; content: string }>;
-    };
+  it('matches the embedded StoryDream prompt inventory', () => {
     const taskTemplates = defaultPromptTemplates.filter((template) => template.type === 'task' && template.isBuiltin);
     const globalStepTemplates = defaultPromptTemplates.filter((template) => template.type !== 'task' && template.isBuiltin);
 
-    expect(dump.storyboundSystemTemplateVersionHash).toBe(storyboundSystemTemplateVersionHash);
-    expect(dump.systemTemplates.map((template) => template.templateId)).toEqual(storyboundSystemTemplates.map((template) => template.templateId));
-    expect(dump.systemTemplates.map((template) => template.name)).toEqual(storyboundSystemTemplates.map((template) => template.name));
-    expect(dump.systemTemplates.every((template) => template.step1RewriteSystemPrompt && template.step1MetadataSystemPrompt && template.step3SystemPrompt)).toBe(true);
-    expect(taskTemplates.map((template) => template.id)).toEqual(dump.systemTemplates.map((template) => `system-${template.templateId}`));
-    expect(globalStepTemplates.map((template) => [template.id, template.type, template.name])).toEqual(
-      dump.globalStepTemplates.map((template) => [template.id, template.type, template.name]),
-    );
+    expect(taskTemplates.map((template) => template.id)).toEqual(storyboundSystemTemplates.map((template) => `system-${template.templateId}`));
+    expect(taskTemplates.map((template) => template.name)).toEqual(storyboundSystemTemplates.map((template) => template.name));
+    expect(taskTemplates.every((template) => template.stepPrompts?.rewrite && template.stepPrompts?.cover && template.stepPrompts?.storyboard && template.stepPrompts?.['image-prompt'])).toBe(true);
+    expect(globalStepTemplates.map((template) => [template.id, template.type, template.name])).toEqual([
+      ['builtin-review', 'review', '预审整理'],
+      ['builtin-rewrite', 'rewrite', 'StoryDream 通用改写'],
+      ['builtin-cover', 'cover', 'StoryDream 通用封面信息'],
+      ['builtin-storyboard', 'storyboard', 'StoryDream 本地化分镜'],
+      ['builtin-image-prompt', 'image-prompt', 'StoryDream 通用绘图提示词'],
+    ]);
+    expect(globalStepTemplates.every((template) => template.isBuiltin)).toBe(true);
+    expect(taskTemplates.every((template) => template.isBuiltin)).toBe(true);
+    expect(taskTemplates.map((template) => template.content).every((content) => content.includes('模板源版本：'))).toBe(true);
+    expect(taskTemplates.map((template) => template.content).every((content) => content.includes('StoryDream 系统模板：'))).toBe(true);
+    expect(taskTemplates.map((template) => template.content).every((content) => content.includes('模板 ID：'))).toBe(true);
+    expect(taskTemplates.map((template) => template.content).every((content) => content.includes('模板说明：'))).toBe(true);
+    expect(taskTemplates.map((template) => template.content).every((content) => content.includes('默认画风：'))).toBe(true);
+    expect(taskTemplates.map((template) => template.content).every((content) => content.includes('版本：'))).toBe(true);
+    expect(taskTemplates.map((template) => template.stepPrompts?.storyboard).every((content) => content?.includes('JSON 字符串数组'))).toBe(true);
+    expect(taskTemplates.map((template) => template.stepPrompts?.['image-prompt']).every((content) => content?.includes('分镜绘画提示词生成系统'))).toBe(true);
   });
 
   it('renders allowed task context placeholders and removes missing values', () => {
@@ -212,9 +218,6 @@ describe('prompt template rendering', () => {
     expect([...new Set(placeholders)]).toEqual([
       'rewrittenCopy',
       'taskTemplateContent',
-      'targetLength',
-      'targetLengthRange',
-      'targetScenes',
       'ratio',
       'style',
       'referenceKind',
@@ -250,7 +253,9 @@ describe('prompt template rendering', () => {
     for (const template of defaultPromptTemplates.filter((item) => item.type === 'task' && item.isBuiltin)) {
       expect(template.stepPrompts?.storyboard, `${template.id}.stepPrompts.storyboard`).toContain('# 分句规则 - 影视分镜级字幕拆分标准');
       expect(template.stepPrompts?.storyboard, `${template.id}.stepPrompts.storyboard`).toContain('JSON 字符串数组');
-      expect(template.stepPrompts?.storyboard, `${template.id}.stepPrompts.storyboard`).toContain('{{targetScenes}}');
+      expect(template.stepPrompts?.storyboard, `${template.id}.stepPrompts.storyboard`).not.toContain('{{targetLength');
+      expect(template.stepPrompts?.storyboard, `${template.id}.stepPrompts.storyboard`).not.toContain('{{targetScenes}}');
+      expect(template.stepPrompts?.storyboard, `${template.id}.stepPrompts.storyboard`).not.toContain('{{storyboardSceneCount}}');
       expect(template.stepPrompts?.storyboard, `${template.id}.stepPrompts.storyboard`).not.toContain('Strict output shape: {"scenes"');
     }
   });
@@ -266,18 +271,18 @@ describe('prompt template rendering', () => {
     }
   });
 
-  it('puts target word count range constraints into default rewrite prompt templates', () => {
+  it('keeps target word count constraints out of default rewrite prompt templates', () => {
     const builtinRewrite = defaultPromptTemplates.find((template) => template.id === 'builtin-rewrite');
-    expect(builtinRewrite?.content).toContain('{{targetLength}}');
-    expect(builtinRewrite?.content).toContain('{{targetLengthRange}}');
-    expect(builtinRewrite?.content).toContain('Target word count range');
-    expect(builtinRewrite?.content).toContain('Do not return rewrittenCopy outside the target word count range');
+    expect(builtinRewrite?.content).not.toContain('{{targetLength}}');
+    expect(builtinRewrite?.content).not.toContain('{{targetLengthRange}}');
+    expect(builtinRewrite?.content).not.toContain('Target word count range');
+    expect(builtinRewrite?.content).not.toContain('Do not return rewrittenCopy outside the target word count range');
 
     for (const template of defaultPromptTemplates.filter((item) => item.type === 'task' && item.isBuiltin)) {
-      expect(template.stepPrompts?.rewrite, `${template.id}.stepPrompts.rewrite`).toContain('{{targetLength}}');
-      expect(template.stepPrompts?.rewrite, `${template.id}.stepPrompts.rewrite`).toContain('{{targetLengthRange}}');
-      expect(template.stepPrompts?.rewrite, `${template.id}.stepPrompts.rewrite`).toContain('Target word count range');
-      expect(template.stepPrompts?.rewrite, `${template.id}.stepPrompts.rewrite`).toContain('Do not return rewrittenCopy outside the target word count range');
+      expect(template.stepPrompts?.rewrite, `${template.id}.stepPrompts.rewrite`).not.toContain('{{targetLength}}');
+      expect(template.stepPrompts?.rewrite, `${template.id}.stepPrompts.rewrite`).not.toContain('{{targetLengthRange}}');
+      expect(template.stepPrompts?.rewrite, `${template.id}.stepPrompts.rewrite`).not.toContain('Target word count range');
+      expect(template.stepPrompts?.rewrite, `${template.id}.stepPrompts.rewrite`).not.toContain('Do not return rewrittenCopy outside the target word count range');
     }
   });
 

@@ -234,32 +234,8 @@ function storyboundTaskTemplateContent(template: StoryboundSystemTemplate): stri
 
 const defaultStoryboundFallbackTemplate = storyboundSystemTemplates.find((template) => template.templateId === 'general') ?? storyboundSystemTemplates[0];
 
-const targetLengthRewriteRule = [
-  'Target word count range: {{targetLengthRange}} Chinese characters.',
-  'If {{targetLength}} is provided, rewrittenCopy must stay within {{targetLengthRange}} visible Chinese characters.',
-  'Do not return rewrittenCopy outside the target word count range; expand with concrete source details if too short, compress redundant phrasing if too long.',
-].join('\n');
-
-function appendPromptRule(content: string, rule: string): string {
-  if (content.includes(rule)) return content;
-  return `${content.trimEnd()}\n\n${rule}`;
-}
-
 function appendDefaultPromptRules(template: PromptTemplate): PromptTemplate {
-  let next = template;
-  if (next.id === 'builtin-rewrite') {
-    next = { ...next, content: appendPromptRule(next.content, targetLengthRewriteRule) };
-  }
-  if (next.type === 'task' && next.isBuiltin && next.stepPrompts?.rewrite) {
-    next = {
-      ...next,
-      stepPrompts: {
-        ...next.stepPrompts,
-        rewrite: appendPromptRule(next.stepPrompts.rewrite, targetLengthRewriteRule),
-      },
-    };
-  }
-  return next;
+  return template;
 }
 
 const storyboundPromptTaskTemplates: PromptTemplate[] = storyboundSystemTemplates.map((template): PromptTemplate => ({

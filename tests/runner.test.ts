@@ -473,7 +473,7 @@ describe('task runner', () => {
       });
 
       const storyboardRequest = requests.find((request) => request.step === 2);
-      expect(storyboardRequest?.messages.map((message) => message.content).join('\n')).toContain('Storyboard scene count target: 16');
+      expect(storyboardRequest?.messages.map((message) => message.content).join('\n')).not.toContain('Storyboard scene count target: 16');
     } finally {
       await db.close();
       await rm(dir, { recursive: true, force: true });
@@ -754,8 +754,9 @@ describe('task runner', () => {
       expect(storyboardContent).toContain('JSON 字符串数组');
       expect(storyboardContent).toContain('尾部锚点');
       expect(storyboardContent).not.toContain('descPrompt');
-      expect(storyboardContent).toContain('目标字数：900');
-      expect(storyboardContent).toContain('目标分镜数：3');
+      expect(storyboardContent).not.toContain('目标分镜数：3');
+      expect(storyboardContent).not.toContain('目标字数：900');
+      expect(storyboardContent).not.toContain('目标字数区间');
       expect(storyboardContent).not.toContain('{{');
       expect(imageContent).toContain('StoryDream 本地运行上下文');
       expect(imageContent).toContain('当前画面风格：black-white');
@@ -829,13 +830,10 @@ describe('task runner', () => {
       for (const request of requests.filter(
         (item) =>
           item.step === 1 &&
-          (item.name.startsWith('rewrite-round-') ||
-            item.name === 'rewrite-evaluation' ||
-            item.name.startsWith('rewrite-target-length-repair-')),
+          (item.name.startsWith('rewrite-round-') || item.name === 'rewrite-evaluation'),
       )) {
         const content = request.messages.map((message) => message.content).join('\n');
-        expect(content).toContain('Target word count range: 720-1080 Chinese characters.');
-        expect(countOccurrences(content, 'Target word count range: 720-1080 Chinese characters.')).toBe(1);
+        expect(content).not.toContain('Target word count range: 720-1080 Chinese characters.');
       }
     } finally {
       await db.close();
@@ -892,7 +890,7 @@ describe('task runner', () => {
         (item) => item.step === 1 && (item.name.startsWith('rewrite-round-') || item.name === 'rewrite-evaluation'),
       )) {
         const content = request.messages.map((message) => message.content).join('\n');
-        expect(content).toContain('Storyboard scene count target: 16');
+        expect(content).not.toContain('Storyboard scene count target: 16');
       }
     } finally {
       await db.close();
@@ -1003,13 +1001,10 @@ describe('task runner', () => {
       for (const request of requests.filter(
         (item) =>
           item.step === 1 &&
-          (item.name.startsWith('rewrite-round-') ||
-            item.name === 'rewrite-evaluation' ||
-            item.name.startsWith('rewrite-target-length-repair-')),
+          (item.name.startsWith('rewrite-round-') || item.name === 'rewrite-evaluation'),
       )) {
         const content = request.messages.map((message) => message.content).join('\n');
-        expect(content).toContain('Target word count range: 80-122 Chinese characters.');
-        expect(countOccurrences(content, 'Target word count range: 80-122 Chinese characters.')).toBe(1);
+        expect(content).not.toContain('Target word count range: 80-122 Chinese characters.');
       }
       expect(requests.some((request) => request.name === 'rewrite-target-length-repair-1')).toBe(true);
       await expect(readFile(join(dir, 'tasks', task.id, '01-rewritten-copy.md'), 'utf8')).resolves.toBe(repairedCopy);
@@ -1815,10 +1810,10 @@ describe('task runner', () => {
       expect(reviewPrompt).toContain('【当前赛道】character-story');
       expect(reviewPrompt).toContain('不要主观臆断或编造细节');
       expect(reviewPrompt).toContain('适合后续创作原创短视频口播稿');
-      expect(reviewPrompt).toContain('Target word count range: 96-144 Chinese characters.');
-      expect(reviewPrompt).toContain('Preserve enough source detail');
+      expect(reviewPrompt).not.toContain('Target word count range: 96-144 Chinese characters.');
+      expect(reviewPrompt).not.toContain('Preserve enough source detail');
       expect(reviewPrompt).not.toContain('rewrittenCopy');
-      expect(rewritePrompt).toContain('Target word count range: 96-144 Chinese characters.');
+      expect(rewritePrompt).not.toContain('Target word count range: 96-144 Chinese characters.');
       expect(requests.some((request) => request.name === 'rewrite-target-length-repair-1')).toBe(true);
       await expect(readFile(join(dir, 'tasks', task.id, '01-rewritten-copy.md'), 'utf8')).resolves.toBe(repairedCopy);
     } finally {

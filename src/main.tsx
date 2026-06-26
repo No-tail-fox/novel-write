@@ -284,11 +284,6 @@ const promptTemplateVariableDefinitions = [
   { key: 'narrativePov', label: '叙事视角', description: '新建任务高级设置里的叙事视角', scopes: ['rewrite'] },
   { key: 'keepPromotion', label: '保留带货', description: '新建任务高级设置里的带货保留开关', scopes: ['rewrite', 'cover'] },
   { key: 'aiKeyword', label: 'AI 关键词', description: 'AI 创作模式里的检索关键词', scopes: ['task', 'review', 'rewrite', 'cover'] },
-  { key: 'targetLength', label: '目标字数', description: '新建任务或步骤里填写的口播目标字数', scopes: ['task', 'review', 'rewrite', 'storyboard'] },
-  { key: 'targetLengthMin', label: '目标字数下限', description: '目标字数按 ±20% 计算后的下限', scopes: ['task', 'review', 'rewrite', 'storyboard'] },
-  { key: 'targetLengthMax', label: '目标字数上限', description: '目标字数按 ±20% 计算后的上限', scopes: ['task', 'review', 'rewrite', 'storyboard'] },
-  { key: 'targetLengthRange', label: '目标字数区间', description: '目标字数按 ±20% 计算后的区间，例如 720-1080', scopes: ['task', 'review', 'rewrite', 'storyboard'] },
-  { key: 'storyboardSceneCount', label: '目标分镜数', description: '新建任务里填写的分镜数量目标', scopes: ['storyboard'] },
   { key: 'taskTemplateContent', label: '任务模板指令', description: '当前模板的任务总指令渲染结果；不要放在任务总指令内', scopes: ['review', 'rewrite', 'cover', 'storyboard', 'image-prompt'] },
   { key: 'taskTemplateName', label: '任务模板名称', description: '当前故事模板名称', scopes: ['review', 'rewrite', 'cover', 'storyboard', 'image-prompt'] },
   { key: 'defaultStyles', label: '默认画风', description: '当前故事模板绑定的默认图像模板', scopes: ['task', 'storyboard', 'image-prompt'] },
@@ -6426,7 +6421,7 @@ function TextBorderControls({
 function Segmented({ label, value, options, labels, onChange }: { label: string; value: string; options: string[]; labels?: string[]; onChange: (value: string) => void }) {
   return (
     <div className="field">
-      <span>{label}</span>
+      {label ? <span>{label}</span> : null}
       <div className="segmented">
         {options.map((option, index) => (
           <button key={option} className={option === value ? 'selected' : ''} onClick={() => onChange(option)} type="button">
