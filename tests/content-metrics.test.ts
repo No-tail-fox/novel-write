@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import {
   countVisibleCharacters,
   resolveEffectiveStoryboardSceneCount,
+  storyboardSceneCountPreviewRange,
   storyboardSceneCountRange,
   targetWordCountRange,
 } from '../src/shared/content-metrics';
@@ -26,5 +27,14 @@ describe('Storybound content metrics', () => {
 
     expect(range).toEqual({ target: 17, min: 12, max: 22, explicit: false });
     expect(resolveEffectiveStoryboardSceneCount('字'.repeat(500))).toBe(17);
+  });
+
+  it('prefers target length when previewing automatic storyboard count', () => {
+    expect(storyboardSceneCountPreviewRange('字'.repeat(100), 500)).toEqual({
+      target: 17,
+      min: 12,
+      max: 22,
+      explicit: false,
+    });
   });
 });

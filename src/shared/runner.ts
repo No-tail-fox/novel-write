@@ -1,7 +1,7 @@
 import { copyFile, mkdir, readFile, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import type { AiSourceContext, BgmItem, CharacterCard, CoverMetadata, CustomCoverTemplate, DraftTemplate, ImagePrompt, MusicPlan, PipelineArtifact, PromptStepTemplateType, PromptTemplate, RewriteEvaluationResult, StoryboardScene, Task, TaskArtifactImageErrorPreview, TaskStepRerunMode } from './types';
-import { buildSubtitleTrack } from './story';
+import { buildCoverMetadata, buildSubtitleTrack } from './story';
 import { writeJianyingDraft, type SceneAsset, type WriteJianyingDraftOptions } from './draft';
 import { runStoryboundMediaSidecar, type StoryboundSidecarInput, type StoryboundSidecarResult } from './storybound-sidecar';
 import { buildHtmlVideoExportInput, type HtmlVideoExportInput, type HtmlVideoExportResult } from './html-video';
@@ -109,10 +109,17 @@ const reviewOutputJsonSchema: Record<string, unknown> = {
 };
 const rewriteOutputJsonSchema: Record<string, unknown> = {
   type: 'object',
-  required: ['rewrittenCopy', 'cover'],
+  required: ['rewrittenCopy'],
   additionalProperties: false,
   properties: {
     rewrittenCopy: stringJsonSchema,
+  },
+};
+const coverMetadataOutputJsonSchema: Record<string, unknown> = {
+  type: 'object',
+  required: ['cover'],
+  additionalProperties: false,
+  properties: {
     cover: coverOutputJsonSchema,
   },
 };
@@ -549,7 +556,12 @@ async function ensureContentArtifact(input: {
     const reviewPromptResult = renderStepPromptDetails(promptTemplates, 'review', promptContext(), sourceText);
     const reviewPrompt = reviewPromptResult.content;
     const includeReviewSourceBlock = shouldAppendReviewSourceMaterial(reviewPromptResult.template);
-    const reviewSystemPrompt = buildStoryboundReviewSystemPrompt(task, Boolean(sourceContext?.sections.length || task.inputText.trim()));
+    const reviewTargetRange = targetWordCountRange(task.targetLength, sourceText);
+    const reviewSystemPrompt = buildStoryboundReviewSystemPrompt(
+      task,
+      Boolean(sourceContext?.sections.length || task.inputText.trim()),
+      reviewTargetRange ? `${reviewTargetRange.min}-${reviewTargetRange.max}` : '',
+    );
     const review = await runLlmJson<{ reviewedText: string }>(options.llm, {
       step: 0,
       name: 'review',
@@ -584,19 +596,23 @@ async function ensureContentArtifact(input: {
     await markStep(1, 'running');
     await emit('step_start', 1, 'Writer', '标准改写 + 自评迭代');
     const rewritePrompt = renderStepPrompt(promptTemplates, 'rewrite', promptContext(), requireString(pipeline.artifact.reviewedText, 'reviewedText'));
-    const coverPrompt = renderStepPrompt(promptTemplates, 'cover', promptContext(), '');
     const rewrite = await runRewriteRounds(options.llm, {
       task,
       rewritePrompt,
-      coverPrompt,
       reviewedText: requireString(pipeline.artifact.reviewedText, 'reviewedText'),
       signal: options.signal,
       rerunContext: rewriteContextForStep(pipeline, 1),
       emit,
     });
     pipeline.artifact.rewrittenCopy = rewrite.rewrittenCopy;
-    pipeline.artifact.cover = rewrite.cover;
     pipeline.artifact.rewriteEvaluation = rewrite.evaluation;
+    const coverPrompt = renderStepPrompt(promptTemplates, 'cover', promptContext(), '');
+    pipeline.artifact.cover = await generateCoverMetadata(options.llm, {
+      coverPrompt,
+      rewrittenCopy: pipeline.artifact.rewrittenCopy,
+      signal: options.signal,
+      emit,
+    });
     await writeFile(join(workDir, '01-rewritten-copy.md'), pipeline.artifact.rewrittenCopy, 'utf8');
     await writeFile(join(workDir, '00-cover-title.json'), JSON.stringify(pipeline.artifact.cover, null, 2), 'utf8');
     await writeFile(join(workDir, '01-rewrite-evaluations.json'), JSON.stringify(pipeline.artifact.rewriteEvaluation, null, 2), 'utf8');
@@ -865,8 +881,9 @@ function targetLengthReviewInstruction(task: Task, sourceText = ''): string {
   const rangeLabel = targetWordCountRangeLabel(range);
   return [
     `Target word count range: ${rangeLabel} Chinese characters.`,
+    'Keep reviewedText close to the selected budget and trim obvious filler or repeated context when possible.',
     'Preserve enough source detail in reviewedText to support that target range in the rewrite step.',
-    'Do not expand or pad the review output; keep reviewedText as a cleaned source brief for the later rewrite step.',
+    'Do not pad with invented content.',
   ].join('\n');
 }
 
@@ -918,25 +935,21 @@ function runLlmJson<T = unknown>(llm: ConfiguredJsonLlm, request: LlmJsonStepReq
   return llm.run<T>(openAiRequest);
 }
 
-function buildRewriteRoundPrompt(input: { task: Task; rewritePrompt: string; coverPrompt: string; reviewedText: string; rerunContext?: string }, round: number, previousDraft?: string): string {
+function buildRewriteRoundPrompt(input: { task: Task; rewritePrompt: string; reviewedText: string; rerunContext?: string }, round: number, previousDraft?: string): string {
   return joinPromptBlocks([
     `Rewrite round: ${round}/3`,
-    round === 1 ? 'Reviewed text:' : 'Reviewed text:',
-    input.reviewedText,
-    round === 1 ? '' : `Current draft to improve (round ${round - 1} result):`,
-    round === 1 ? '' : previousDraft ?? '',
+    round === 1 ? 'Reviewed text:' : `Current draft to improve (round ${round - 1} result):`,
+    round === 1 ? input.reviewedText : previousDraft ?? '',
     'Rewrite instructions:',
     input.rewritePrompt,
     targetLengthInstruction(input.task, input.rewritePrompt, input.reviewedText),
     targetScenesInstruction(input.task),
     taskModeInstructions(input.task),
-    'Cover instructions:',
-    input.coverPrompt,
     input.rerunContext ?? '',
   ]);
 }
 
-function buildRewriteEvaluationPrompt(input: { task: Task; rewritePrompt: string; coverPrompt: string; reviewedText: string; rerunContext?: string }, candidates: Array<{ round: number; rewrittenCopy: string; cover: CoverMetadata }>): string {
+function buildRewriteEvaluationPrompt(input: { task: Task; rewritePrompt: string; reviewedText: string; rerunContext?: string }, candidates: Array<{ round: number; rewrittenCopy: string }>): string {
   return joinPromptBlocks([
     'Rewrite evaluation.',
     'Select the best rewrite round and return the round number, per-round scores, and short reasons.',
@@ -945,24 +958,20 @@ function buildRewriteEvaluationPrompt(input: { task: Task; rewritePrompt: string
     targetLengthInstruction(input.task, input.rewritePrompt, input.reviewedText),
     targetScenesInstruction(input.task),
     taskModeInstructions(input.task),
-    'Cover instructions:',
-    input.coverPrompt,
     'Reviewed text:',
     input.reviewedText,
     ...candidates.flatMap((candidate) => [
       `Round ${candidate.round} rewritten copy:`,
       candidate.rewrittenCopy,
-      `Round ${candidate.round} cover metadata:`,
-      JSON.stringify(candidate.cover, null, 2),
     ]),
     input.rerunContext ?? '',
   ]);
 }
 
 function selectBestRewriteCandidate(
-  candidates: Array<{ round: number; rewrittenCopy: string; cover: CoverMetadata; requestId: string | null }>,
+  candidates: Array<{ round: number; rewrittenCopy: string; cover?: CoverMetadata; requestId: string | null }>,
   evaluation: Partial<RewriteEvaluationResult> | null | undefined,
-): { candidate: { round: number; rewrittenCopy: string; cover: CoverMetadata; requestId: string | null }; evaluation: RewriteEvaluationResult } {
+): { candidate: { round: number; rewrittenCopy: string; cover?: CoverMetadata; requestId: string | null }; evaluation: RewriteEvaluationResult } {
   const incomingEvaluations = Array.isArray(evaluation?.evaluations) ? evaluation.evaluations : [];
   const scoresByRound = new Map<number, { score: number; reason: string }>();
   for (const item of incomingEvaluations) {
@@ -1003,18 +1012,18 @@ function selectBestRewriteCandidate(
 
 async function runRewriteRounds(
   llm: ConfiguredJsonLlm,
-  input: { task: Task; rewritePrompt: string; coverPrompt: string; reviewedText: string; signal?: AbortSignal; rerunContext?: string; emit?: TaskEventEmitter },
-): Promise<{ rewrittenCopy: string; cover: CoverMetadata; evaluation: RewriteEvaluationResult }> {
-  const candidates: Array<{ round: number; rewrittenCopy: string; cover: CoverMetadata; requestId: string | null }> = [];
+  input: { task: Task; rewritePrompt: string; reviewedText: string; signal?: AbortSignal; rerunContext?: string; emit?: TaskEventEmitter },
+): Promise<{ rewrittenCopy: string; evaluation: RewriteEvaluationResult }> {
+  const candidates: Array<{ round: number; rewrittenCopy: string; cover?: CoverMetadata; requestId: string | null }> = [];
   for (let round = 1; round <= 3; round += 1) {
     await input.emit?.('step_detail', 1, 'Writer', round === 1 ? '第 1 轮改写中...' : `打磨第 ${round} 轮中...`, { round });
-    const rewrite = await runLlmJson<{ rewrittenCopy: string; cover: CoverMetadata }>(llm, {
+    const rewrite = await runLlmJson<{ rewrittenCopy: string }>(llm, {
       step: 1,
       name: `rewrite-round-${round}`,
       signal: input.signal,
       anthropicToolInputSchema: rewriteOutputJsonSchema,
       messages: [
-        { role: 'system', content: 'Return strict JSON only. Schema: {"rewrittenCopy": string, "cover": {"title": string, "subtitle": string[], "summary": string, "tags": string[], "comments": string[]}}.' },
+        { role: 'system', content: 'Return strict JSON only. Schema: {"rewrittenCopy": string}.' },
         {
           role: 'user',
           content: buildRewriteRoundPrompt(input, round, candidates[candidates.length - 1]?.rewrittenCopy),
@@ -1024,7 +1033,6 @@ async function runRewriteRounds(
     const candidate = {
       round,
       rewrittenCopy: requireString(rewrite.json.rewrittenCopy, `rewrite round ${round}.rewrittenCopy`),
-      cover: normalizeCover(rewrite.json.cover),
       requestId: rewrite.requestId,
     };
     candidates.push(candidate);
@@ -1052,27 +1060,54 @@ async function runRewriteRounds(
     bestRound: selected.round,
     evaluations: evaluation.evaluations,
   });
-  await input.emit?.('step_detail', 1, 'Writer', '生成封面标题与种子留言...', { cover: selected.cover });
   const targetRange = targetWordCountRange(input.task.targetLength, input.reviewedText);
   const selectedLength = countVisibleCharacters(selected.rewrittenCopy);
   if (targetRange && !isTargetWordCountInRange(selectedLength, targetRange)) {
     return repairRewriteToTargetLength(llm, {
       task: input.task,
       rewritePrompt: input.rewritePrompt,
-      coverPrompt: input.coverPrompt,
-      reviewedText: input.reviewedText,
       current: selected,
       targetRange,
       signal: input.signal,
-      rerunContext: input.rerunContext,
       evaluation,
     });
   }
   return {
     rewrittenCopy: selected.rewrittenCopy,
-    cover: selected.cover,
     evaluation,
   };
+}
+
+async function generateCoverMetadata(
+  llm: ConfiguredJsonLlm,
+  input: { coverPrompt: string; rewrittenCopy: string; signal?: AbortSignal; emit?: TaskEventEmitter },
+): Promise<CoverMetadata> {
+  await input.emit?.('step_detail', 1, 'Writer', '生成封面标题与种子留言...');
+  const cover = await runLlmJson<{ cover: CoverMetadata }>(llm, {
+    step: 1,
+    name: 'cover-metadata',
+    signal: input.signal,
+    anthropicToolInputSchema: coverMetadataOutputJsonSchema,
+    messages: [
+      { role: 'system', content: 'Return strict JSON only. Schema: {"cover": {"title": string, "subtitle": string[], "summary": string, "tags": string[], "comments": string[]}}.' },
+      {
+        role: 'user',
+        content: joinPromptBlocks([
+          'Cover metadata generation.',
+          'Cover instructions:',
+          input.coverPrompt,
+          'Final rewritten copy:',
+          input.rewrittenCopy,
+        ]),
+      },
+    ],
+  });
+  const result = cover.json && typeof cover.json === 'object' ? cover.json as { cover?: unknown } : {};
+  try {
+    return normalizeCover(result.cover);
+  } catch {
+    return buildCoverMetadata(input.rewrittenCopy);
+  }
 }
 
 async function repairRewriteToTargetLength(
@@ -1080,15 +1115,12 @@ async function repairRewriteToTargetLength(
   input: {
     task: Task;
     rewritePrompt: string;
-    coverPrompt: string;
-    reviewedText: string;
-    current: { round: number; rewrittenCopy: string; cover: CoverMetadata; requestId: string | null };
+    current: { round: number; rewrittenCopy: string; cover?: CoverMetadata; requestId: string | null };
     targetRange: TargetWordCountRange;
     signal?: AbortSignal;
-    rerunContext?: string;
     evaluation: RewriteEvaluationResult;
   },
-): Promise<{ rewrittenCopy: string; cover: CoverMetadata; evaluation: RewriteEvaluationResult }> {
+): Promise<{ rewrittenCopy: string; evaluation: RewriteEvaluationResult }> {
   let current = input.current;
   let currentLength = countVisibleCharacters(current.rewrittenCopy);
   const rangeLabel = targetWordCountRangeLabel(input.targetRange);
@@ -1098,7 +1130,6 @@ async function repairRewriteToTargetLength(
     const surplus = Math.max(0, currentLength - input.targetRange.max);
     const minimumAddition = deficit + rewriteTargetLengthRepairBuffer;
     const repairReason = targetWordCountFailureReason(currentLength, input.targetRange);
-    const repairTargetInstruction = targetLengthInstruction(input.task, input.rewritePrompt, input.reviewedText);
     const draftLabel = isTooShort ? 'Current short draft:' : 'Current long draft:';
     const repairGuidance = isTooShort
       ? [
@@ -1113,32 +1144,23 @@ async function repairRewriteToTargetLength(
           'Shorten repeated setup, filler transitions, and duplicated descriptions until the rewrittenCopy is inside the target word count range.',
           'The current draft is rejected because it is above the target word count range.',
         ];
-    const repair = await runLlmJson<{ rewrittenCopy: string; cover: CoverMetadata }>(llm, {
+    const repair = await runLlmJson<{ rewrittenCopy: string }>(llm, {
       step: 1,
       name: `rewrite-target-length-repair-${attempt}`,
       signal: input.signal,
       anthropicToolInputSchema: rewriteOutputJsonSchema,
       messages: [
-        { role: 'system', content: 'Return strict JSON only. Schema: {"rewrittenCopy": string, "cover": {"title": string, "subtitle": string[], "summary": string, "tags": string[], "comments": string[]}}.' },
+        { role: 'system', content: 'Return strict JSON only. Schema: {"rewrittenCopy": string}.' },
         {
           role: 'user',
           content: joinPromptBlocks([
             'Target-length repair rewrite.',
-            repairTargetInstruction,
+            `Target word count range: ${rangeLabel} Chinese characters.`,
             `Current draft length: ${currentLength} Chinese characters.`,
             repairReason,
             ...repairGuidance,
-            'Rewrite instructions:',
-            input.rewritePrompt,
-            targetScenesInstruction(input.task),
-            taskModeInstructions(input.task),
-            'Cover instructions:',
-            input.coverPrompt,
-            'Original source material:',
-            input.reviewedText,
             draftLabel,
             current.rewrittenCopy,
-            input.rerunContext ?? '',
           ]),
         },
       ],
@@ -1146,7 +1168,6 @@ async function repairRewriteToTargetLength(
     current = {
       round: current.round,
       rewrittenCopy: requireString(repair.json.rewrittenCopy, `rewrite target-length repair ${attempt}.rewrittenCopy`),
-      cover: normalizeCover(repair.json.cover),
       requestId: repair.requestId,
     };
     currentLength = countVisibleCharacters(current.rewrittenCopy);
@@ -1159,7 +1180,6 @@ async function repairRewriteToTargetLength(
     : `Auto-repaired to ${currentLength}/${rangeLabel} Chinese characters.`;
   return {
     rewrittenCopy: current.rewrittenCopy,
-    cover: current.cover,
     evaluation: {
       ...input.evaluation,
       bestRound: current.round,

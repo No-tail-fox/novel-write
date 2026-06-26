@@ -1472,7 +1472,9 @@ describe('product shell ui', () => {
     expect(page).toContain('targetLength: normalizeTaskTargetLength(targetLength) ?? undefined');
     expect(page).toContain('targetScenes: normalizeTaskStoryboardSceneCount(storyboardSceneCount)');
     expect(page).toContain('ContentMetricsSummary text={inputText}');
-    expect(page).toContain('placeholder="自动"');
+    expect(page).toContain('storyboardSceneCountPreviewRange');
+    expect(page).toContain('自动（');
+    expect(page).toContain('placeholder={storyboardScenePreviewRange ?');
     expect(page).toContain('setInputText(event.target.value);');
     expect(page).not.toContain('options={targetLengthOptions.map(String)}');
     const targetControlsIndex = page.indexOf('<div className="target-controls-row">');
@@ -1526,6 +1528,7 @@ describe('product shell ui', () => {
   it('lets AI creation search real web sources and select them for generation', async () => {
     const main = await readFile(new URL('../src/main.tsx', import.meta.url), 'utf8');
     const css = await readFile(new URL('../src/styles.css', import.meta.url), 'utf8');
+    const composeSection = main.slice(main.indexOf('async function composeResearchCopy()'), main.indexOf('async function createAndRunTask'));
 
     expect(main).toContain('searchWebSources');
     expect(main).toContain('composeResearchCopy');
@@ -1538,6 +1541,7 @@ describe('product shell ui', () => {
     expect(main).toContain("setMode('paste')");
     expect(main).toContain('setInputText(result.copy)');
     expect(main).toContain('setTitle(result.title');
+    expect(composeSection).toContain('targetLength: normalizeTaskTargetLength(targetLength) ?? undefined');
     expect(main).toContain('结合所选页面信息生成文案');
     expect(main).toContain('网页候选（前 10 条）');
     expect(css).toContain('.ai-search-results');

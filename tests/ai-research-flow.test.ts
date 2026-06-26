@@ -37,6 +37,7 @@ describe('AI creation research flow', () => {
         templateId: 'default-portrait-9-16',
         ttsSpeed: 1,
         targetScenes: 3,
+        targetLength: 500,
       });
 
       await runTask(db, task, {
@@ -69,13 +70,14 @@ describe('AI creation research flow', () => {
       const workDir = join(dir, 'tasks', task.id);
       const sourceContext = JSON.parse(await readFile(join(workDir, '00-source-context.json'), 'utf8')) as { sections: Array<{ title: string }> };
       const sourceContextMarkdown = await readFile(join(workDir, '00-source-context.md'), 'utf8');
-      const reviewInput = llmRequests.find((request) => request.name === 'review')?.messages.at(-1)?.content ?? '';
+      const reviewInput = llmRequests.find((request) => request.name === 'review')?.messages.map((message) => message.content).join('\n') ?? '';
 
       expect(completed.status).toBe('completed');
       expect(sourceContext.sections.map((section) => section.title)).toEqual(['Web result', 'Built-in context']);
       expect(sourceContextMarkdown).toContain('Sources: web, builtin-knowledge');
       expect(reviewInput).toContain('Wu Zetian comeback');
       expect(reviewInput).toContain('Search says she returned to power');
+      expect(reviewInput).toContain('【目标字数】500 字（区间 400-600 中文字符）。');
       expect(state.events.some((event) => event.detail.includes('AI source research completed'))).toBe(true);
     } finally {
       await db.close();

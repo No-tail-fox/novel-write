@@ -47,6 +47,29 @@ export function normalizeStoryboardSceneCount(value: unknown): number | null {
   return Math.min(60, Math.max(1, Math.round(parsed)));
 }
 
+function storyboardSceneCountRangeFromLength(length: number): StoryboardSceneCountRange {
+  const normalizedLength = Math.max(0, Math.round(length));
+  const min = Math.max(10, Math.min(30, Math.floor(normalizedLength / 40)));
+  const max = Math.min(60, Math.max(min + 10, Math.floor(normalizedLength / 30)));
+  return {
+    target: Math.floor((min + max) / 2),
+    min,
+    max,
+    explicit: false,
+  };
+}
+
+export function storyboardSceneCountPreviewRange(text: string, targetLength: unknown): StoryboardSceneCountRange | null {
+  const normalizedTargetLength = normalizeTargetLength(targetLength);
+  if (normalizedTargetLength !== null) {
+    return storyboardSceneCountRangeFromLength(normalizedTargetLength);
+  }
+
+  const sourceLength = countVisibleCharacters(text.trim());
+  if (sourceLength <= 0) return null;
+  return storyboardSceneCountRangeFromLength(sourceLength);
+}
+
 export function storyboardSceneCountRange(rewrittenCopy: string, targetSceneCount?: unknown): StoryboardSceneCountRange {
   const target = normalizeStoryboardSceneCount(targetSceneCount);
   if (target !== null && target > 0) {
@@ -58,15 +81,7 @@ export function storyboardSceneCountRange(rewrittenCopy: string, targetSceneCoun
     };
   }
 
-  const length = rewrittenCopy.trim().length;
-  const min = Math.max(10, Math.min(30, Math.floor(length / 40)));
-  const max = Math.min(60, Math.max(min + 10, Math.floor(length / 30)));
-  return {
-    target: Math.floor((min + max) / 2),
-    min,
-    max,
-    explicit: false,
-  };
+  return storyboardSceneCountRangeFromLength(countVisibleCharacters(rewrittenCopy.trim()));
 }
 
 export function resolveEffectiveStoryboardSceneCount(rewrittenCopy: string, targetSceneCount?: unknown): number {

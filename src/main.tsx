@@ -118,6 +118,7 @@ import {
   countVisibleCharacters,
   normalizeStoryboardSceneCount,
   normalizeTargetLength,
+  storyboardSceneCountPreviewRange,
   storyboardSceneCountRange,
   targetWordCountRange,
 } from './shared/content-metrics';
@@ -1447,7 +1448,7 @@ function ContentMetricsSummary({
 }) {
   const visibleCount = countVisibleCharacters(text);
   const reviewRange = targetWordCountRange(targetLength, text);
-  const autoSceneRange = storyboardSceneCountRange(text);
+  const previewSceneRange = storyboardSceneCountPreviewRange(text, targetLength);
   const manualSceneCount = normalizeStoryboardSceneCount(storyboardSceneCount);
   const manualSceneRange = manualSceneCount ? storyboardSceneCountRange(text, manualSceneCount) : null;
 
@@ -1455,7 +1456,7 @@ function ContentMetricsSummary({
     <div className="content-metrics-row">
       <span>字数：{visibleCount}</span>
       <span>预审字数：{reviewRange ? `${reviewRange.min}-${reviewRange.max}` : '待输入'}</span>
-      <span>自动分镜：{visibleCount > 0 ? `${autoSceneRange.target} 个（${autoSceneRange.min}-${autoSceneRange.max}）` : '待输入'}</span>
+      <span>自动分镜：{previewSceneRange ? `自动（${previewSceneRange.target}）` : '待输入'}</span>
       {manualSceneRange ? <span>当前目标：{manualSceneRange.target} 个（{manualSceneRange.min}-{manualSceneRange.max}）</span> : null}
     </div>
   );
@@ -1535,6 +1536,7 @@ function NewTaskPage({
   const bgmOptions = validBgmItems(state.config);
   const ttsVoiceOptions = ttsVoiceOptionsForProvider(ttsProvider);
   const podcastVoiceDefaults = defaultPodcastSpeakersForProvider(ttsProvider, podcastSpeakers);
+  const storyboardScenePreviewRange = storyboardSceneCountPreviewRange(inputText, targetLength);
   const storyDreamCoverTemplateIds = ['cinematic-poster', 'podcast-cover'];
   const coverTemplateOptions = state.customCoverTemplates.map((template) => [template.id, template.name, template.description]);
   const coverTemplateSelectOptions = coverTemplateOptions.length
@@ -1661,6 +1663,7 @@ function NewTaskPage({
         keyword: aiKeyword.trim(),
         extraRequirements,
         selectedSources,
+        targetLength: normalizeTaskTargetLength(targetLength) ?? undefined,
       });
       setResearchCopy(result.copy);
       setInputText(result.copy);
@@ -1961,7 +1964,7 @@ function NewTaskPage({
               max="60"
               step="1"
               value={storyboardSceneCount}
-              placeholder="自动"
+              placeholder={storyboardScenePreviewRange ? `自动（${storyboardScenePreviewRange.target}）` : '自动'}
               onChange={(event) => setStoryboardSceneCount(event.target.value)}
             />
             <small>个（±10%，建议每镜 25-45 字）</small>

@@ -424,17 +424,24 @@ describe('AI source research', () => {
           { source: 'web', title: 'Article A', url: 'https://example.test/a', snippet: 'Snippet A', content: 'Article A facts.' },
           { source: 'web', title: 'Article B', url: 'https://example.test/b', content: 'Article B details.' },
         ],
+        targetLength: 500,
       },
     );
 
     expect(result).toEqual({ title: 'Wu Zetian comeback', copy: 'Generated source copy from selected research.', raw: '以下是为你创作的文案：\nGenerated source copy from selected research.', requestId: 'copy-1' });
     expect(requests[0].name).toBe('research-copy');
     expect(requests[0]).toMatchObject({ temperature: 0.8, maxTokens: 32768, maxRetries: 2 });
-    expect(requests[0].messages[0].content).toContain('资深短视频文案创作者');
-    expect(requests[0].messages[0].content).not.toContain('Return strict JSON only');
-    expect(requests[0].messages[1].content).toContain('【关键词】Wu Zetian comeback');
-    expect(requests[0].messages[1].content).toContain('Article A facts.');
-    expect(requests[0].messages[1].content).toContain('Article B details.');
+    const systemPrompt = requests[0].messages[0].content;
+    const userPrompt = requests[0].messages[1].content;
+    expect(systemPrompt).toContain('资深短视频文案创作者');
+    expect(systemPrompt).not.toContain('Return strict JSON only');
+    expect(systemPrompt).toContain('【目标字数】500 字（区间 400-600 中文字符）。');
+    expect(userPrompt).toContain('【关键词】Wu Zetian comeback');
+    expect(userPrompt).toContain('Article A facts.');
+    expect(userPrompt).toContain('Article B details.');
+    expect(userPrompt).toContain('【目标字数】500 字（区间 400-600 中文字符）。');
+    expect(userPrompt.indexOf('【目标字数】500 字（区间 400-600 中文字符）。')).toBeGreaterThan(userPrompt.indexOf('【关键词】Wu Zetian comeback'));
+    expect(userPrompt.indexOf('【目标字数】500 字（区间 400-600 中文字符）。')).toBeLessThan(userPrompt.indexOf('【用户额外要求】'));
   });
 
   it('supports Storybound no-reference generation when no sources are selected', async () => {

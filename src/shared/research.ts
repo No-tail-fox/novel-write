@@ -1,4 +1,5 @@
 import type { ConfiguredTextLlm } from './llm-provider';
+import { targetWordCountRange } from './content-metrics';
 import type { AiSourceContext, AiSourceSection, AppConfig, ImaConfig, ResearchCopyComposeInput, ResearchCopyComposeResult, Task } from './types';
 
 type FetchLike = (url: string, init?: RequestInit) => Promise<Response>;
@@ -10,11 +11,15 @@ export interface StoryboundAiCreationSystemPromptInput {
   trackTag: string;
   useAiKnowledge: boolean;
   hasReferenceMaterials: boolean;
+  targetLength?: number;
+  targetLengthRange?: string;
 }
 
 export interface StoryboundAiCreationUserPromptInput {
   keyword: string;
   extraRequirements?: string;
+  targetLength?: number;
+  targetLengthRange?: string;
 }
 
 export interface StoryboundTrackInfo {
@@ -53,12 +58,20 @@ export function buildStoryboundAiCreationSystemPrompt(input: StoryboundAiCreatio
       : '严格基于用户提供的参考素材进行创作，不要引入素材以外的信息，不要主观臆断或编造细节'
     : '请基于你对该人物/主题的已知知识进行创作';
   const noReferenceExtra = input.hasReferenceMaterials ? '' : ' - 本次无外部参考素材，请只输出确定的事实，对不确定的细节宁可省略也不要编造';
+  const targetLengthBlock = input.targetLengthRange
+    ? [
+        '',
+        `【目标字数】${input.targetLength ?? ''} 字（区间 ${input.targetLengthRange} 中文字符）。`,
+        '请优先满足这个长度要求，压缩重复和解释性文字，避免空泛注水。',
+      ].join('\n')
+    : '';
   return [
     '你是一名资深短视频文案创作者，擅长创作原创短视频口播稿。',
     '',
     `【当前赛道】${input.trackName}（${input.trackTag}）`,
     '',
     `【素材策略】${strategy}`,
+    targetLengthBlock,
     '',
     '【创作要求】',
     '1. 必须是**原创口播文案**：不要直接复述参考素材的句子，要重新组织视角、节奏、叙事',
@@ -77,6 +90,9 @@ export function buildStoryboundAiCreationSystemPrompt(input: StoryboundAiCreatio
 
 export function buildStoryboundAiCreationUserPrompt(input: StoryboundAiCreationUserPromptInput, materials: StoryboundReferenceMaterial[]): string {
   const blocks = [`【关键词】${input.keyword.trim()}`];
+  if (input.targetLengthRange) {
+    blocks.push(`【目标字数】${input.targetLength ?? ''} 字（区间 ${input.targetLengthRange} 中文字符）。请将输出控制在该区间内，优先压缩重复和解释性文字，避免空泛注水。`);
+  }
   const extraRequirements = (input.extraRequirements ?? '').trim();
   if (extraRequirements) {
     blocks.push(`【用户额外要求】\n${extraRequirements}`);
@@ -107,7 +123,11 @@ export function cleanStoryboundAiCreationOutput(text: string): string {
   return output;
 }
 
-export function buildStoryboundReviewSystemPrompt(task: Pick<Task, 'track' | 'aiSources'>, hasReferenceMaterials: boolean): string {
+export function buildStoryboundReviewSystemPrompt(
+  task: Pick<Task, 'track' | 'aiSources' | 'targetLength'>,
+  hasReferenceMaterials: boolean,
+  targetLengthRange?: string,
+): string {
   const track = resolveStoryboundTrackInfo(task.track);
   const useAiKnowledge = task.aiSources?.includes('builtin-knowledge') ?? false;
   const strategy = hasReferenceMaterials
@@ -115,12 +135,20 @@ export function buildStoryboundReviewSystemPrompt(task: Pick<Task, 'track' | 'ai
       ? '主要参考原文素材和搜索资料，可适当结合确定的可靠常识补齐必要背景'
       : '严格基于原文素材和搜索资料整理，不要主观臆断或编造细节'
     : '请只基于原文素材和你确定的已知事实整理，对不确定细节宁可省略也不要编造';
+  const targetLengthBlock = targetLengthRange
+    ? [
+        '',
+        `【目标字数】${task.targetLength ?? ''} 字（区间 ${targetLengthRange} 中文字符）。`,
+        '预审时请尽量贴近这个长度，不要为了凑字数而虚构或重复内容。',
+      ].join('\n')
+    : '';
   return [
     '你是一名资深短视频文案预审策划者，擅长把原文、搜索资料和用户要求整理成适合后续创作原创短视频口播稿的事实底稿。',
     '',
     `【当前赛道】${task.track || track.trackName}（${track.trackTag}）`,
     '',
     `【素材策略】${strategy}`,
+    targetLengthBlock,
     '',
     '【预审要求】',
     '1. 清理重复、广告、无关口号、低价值引导语，保留事实顺序和关键因果',
@@ -279,17 +307,24 @@ async function searchSogouHtml(query: string, fetchImpl: FetchLike): Promise<AiS
 export async function composeCopyFromSources(llm: ConfiguredTextLlm, input: ResearchCopyComposeInput): Promise<ResearchCopyComposeResult> {
   const selectedSources = input.selectedSources.slice(0, 10);
   const hasReferenceMaterials = selectedSources.length > 0;
+  const selectedSourceText = compactText(selectedSources.map((source) => source.content || source.snippet || '').join('\n\n'));
+  const targetRange = input.targetLength ? targetWordCountRange(input.targetLength, selectedSourceText) : null;
+  const targetLengthRange = targetRange ? `${targetRange.min}-${targetRange.max}` : '';
   const track = resolveStoryboundTrackInfo('general');
   const system = buildStoryboundAiCreationSystemPrompt({
     trackName: track.trackName,
     trackTag: track.trackTag,
     useAiKnowledge: false,
     hasReferenceMaterials,
+    targetLength: input.targetLength,
+    targetLengthRange,
   });
   const user = buildStoryboundAiCreationUserPrompt(
     {
       keyword: input.keyword,
       extraRequirements: input.extraRequirements,
+      targetLength: input.targetLength,
+      targetLengthRange,
     },
     selectedSources,
   );

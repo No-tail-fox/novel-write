@@ -402,9 +402,17 @@ describe('task runner', () => {
       const rewriteRequest = requests.find((request) => request.name === 'rewrite-round-1');
       expect(rewriteRequest?.anthropic?.toolInputSchema).toMatchObject({
         type: 'object',
-        required: ['rewrittenCopy', 'cover'],
+        required: ['rewrittenCopy'],
         properties: {
           rewrittenCopy: { type: 'string' },
+        },
+      });
+
+      const coverRequest = requests.find((request) => request.name === 'cover-metadata');
+      expect(coverRequest?.anthropic?.toolInputSchema).toMatchObject({
+        type: 'object',
+        required: ['cover'],
+        properties: {
           cover: {
             type: 'object',
             required: ['title'],
@@ -818,7 +826,13 @@ describe('task runner', () => {
         draftWriterOptions: { runBridge: fakeBridge },
       });
 
-      for (const request of requests.filter((item) => item.step === 1)) {
+      for (const request of requests.filter(
+        (item) =>
+          item.step === 1 &&
+          (item.name.startsWith('rewrite-round-') ||
+            item.name === 'rewrite-evaluation' ||
+            item.name.startsWith('rewrite-target-length-repair-')),
+      )) {
         const content = request.messages.map((message) => message.content).join('\n');
         expect(content).toContain('Target word count range: 720-1080 Chinese characters.');
         expect(countOccurrences(content, 'Target word count range: 720-1080 Chinese characters.')).toBe(1);
@@ -874,7 +888,9 @@ describe('task runner', () => {
         draftWriterOptions: { runBridge: fakeBridge },
       });
 
-      for (const request of requests.filter((item) => item.step === 1)) {
+      for (const request of requests.filter(
+        (item) => item.step === 1 && (item.name.startsWith('rewrite-round-') || item.name === 'rewrite-evaluation'),
+      )) {
         const content = request.messages.map((message) => message.content).join('\n');
         expect(content).toContain('Storyboard scene count target: 16');
       }
@@ -984,7 +1000,13 @@ describe('task runner', () => {
         draftWriterOptions: { runBridge: fakeBridge },
       });
 
-      for (const request of requests.filter((item) => item.step === 1)) {
+      for (const request of requests.filter(
+        (item) =>
+          item.step === 1 &&
+          (item.name.startsWith('rewrite-round-') ||
+            item.name === 'rewrite-evaluation' ||
+            item.name.startsWith('rewrite-target-length-repair-')),
+      )) {
         const content = request.messages.map((message) => message.content).join('\n');
         expect(content).toContain('Target word count range: 80-122 Chinese characters.');
         expect(countOccurrences(content, 'Target word count range: 80-122 Chinese characters.')).toBe(1);
@@ -1655,6 +1677,18 @@ describe('task runner', () => {
             requestId: 'rewrite-evaluation',
           };
         }
+        if (request.name === 'cover-metadata') {
+          const coverPrompt = request.messages.map((message) => message.content).join('\n');
+          expect(coverPrompt).toContain('Final rewritten copy:');
+          expect(coverPrompt).toContain('Round 2 line one.');
+          return {
+            json: {
+              cover: { title: 'Cover 2', subtitle: ['round 2 subtitle'], summary: 'summary 2', tags: ['#two'], comments: ['comment 2'] },
+            } as T,
+            raw: '{}',
+            requestId: 'cover-metadata',
+          };
+        }
         if (request.step === 2) return { json: { scenes: makeArtifact().scenes } as T, raw: '{}', requestId: 'storyboard' };
         if (request.name === 'character-card') {
           return {
@@ -1694,7 +1728,9 @@ describe('task runner', () => {
       const characterCard = JSON.parse(await readFile(join(workDir, '02-character-card.json'), 'utf8'));
       expect(characterCard.summary).toContain('same historical protagonist');
       expect(requests.filter((request) => request.name.startsWith('rewrite-round-'))).toHaveLength(3);
+      expect(requests.filter((request) => request.name.startsWith('rewrite-round-')).every((request) => !request.messages.map((message) => message.content).join('\n').includes('Cover instructions:'))).toBe(true);
       expect(requests.some((request) => request.name === 'rewrite-evaluation')).toBe(true);
+      expect(requests.some((request) => request.name === 'cover-metadata')).toBe(true);
       expect(requests.some((request) => request.name === 'character-card')).toBe(true);
       expect((await db.getState()).events.some((event) => event.detail.includes('第 3 轮'))).toBe(true);
       expect((await db.getState()).events.some((event) => event.type === 'step_warning')).toBe(false);
@@ -1745,9 +1781,9 @@ describe('task runner', () => {
           expect(repairPrompt).toContain('Target-length repair rewrite');
           expect(repairPrompt).toContain('Target word count range: 96-144 Chinese characters.');
           expect(repairPrompt).toContain('Word count is too low: current 2 Chinese characters, target 96-144.');
-          expect(repairPrompt).toContain('Original source material:');
-          expect(repairPrompt).toContain(sampleInput);
           expect(repairPrompt).toContain('Current short draft:');
+          expect(repairPrompt).not.toContain('Original source material:');
+          expect(repairPrompt).not.toContain('Cover instructions:');
           return {
             json: { rewrittenCopy: repairedCopy, cover: { title: 'Repaired', subtitle: [], summary: 'summary', tags: [], comments: [] } } as T,
             raw: '{}',
@@ -2491,7 +2527,7 @@ describe('task runner', () => {
         draftWriterOptions: { runBridge: fakeBridge },
       });
 
-      expect(calls).toMatchObject({ 0: 1, 1: 4, 2: 2, 3: 2 });
+      expect(calls).toMatchObject({ 0: 1, 1: 5, 2: 2, 3: 2 });
       expect((await db.getState()).tasks[0].status).toBe('completed');
     } finally {
       await db.close();

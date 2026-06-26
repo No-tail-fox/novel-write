@@ -648,6 +648,7 @@ export interface ResearchCopyComposeInput {
   keyword: string;
   extraRequirements: string;
   selectedSources: AiSourceSection[];
+  targetLength?: number;
 }
 
 export interface ResearchCopyComposeResult {
