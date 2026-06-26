@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest';
+import vm from 'node:vm';
 import {
   buildHtmlVideoExportInput,
   createHtmlVideoComposePayload,
@@ -64,6 +65,25 @@ describe('HTML video composition contract', () => {
     expect(input.scenes[0].html).toContain('window.__duration');
     expect(input.scenes[0].html).toContain('window.__ready = true');
     expect(input.scenes[0].html).toContain('scene-image');
+
+    const runtime = runSceneRuntime(input.scenes[0].html);
+    runtime.fireDomContentLoaded();
+    expect(runtime.window.__ready).toBe(true);
+    expect(runtime.window.__tl.seek).toEqual(expect.any(Function));
+
+    runtime.window.__tl.seek(0.6);
+    expect(runtime.document.documentElement.dataset.time).toBe('0.6');
+    expect(runtime.document.documentElement.dataset.progress).toBe('0.5');
+    expect(runtime.document.documentElement.style.getPropertyValue('--scene-time')).toBe('0.6s');
+    expect(runtime.document.documentElement.style.getPropertyValue('--scene-progress')).toBe('0.5');
+    expect(runtime.elements.frame.dataset.time).toBe('0.6');
+    expect(runtime.elements.frame.dataset.progress).toBe('0.5');
+    expect(runtime.elements.image.style.transform).toContain('scale(');
+    expect(runtime.elements.copy.style.opacity).not.toBe('');
+
+    runtime.window.__tl.seek(2);
+    expect(runtime.document.documentElement.dataset.time).toBe('1.2');
+    expect(runtime.document.documentElement.dataset.progress).toBe('1');
   });
 
   it('creates the recovered compose_render payload after frame capture', () => {
@@ -107,3 +127,67 @@ describe('HTML video composition contract', () => {
     });
   });
 });
+
+function runSceneRuntime(html: string) {
+  const scripts = [...html.matchAll(/<script>([\s\S]*?)<\/script>/g)].map((match) => match[1]);
+  const listeners = new Map<string, Array<() => void>>();
+  const elements = {
+    root: createFakeElement(),
+    body: createFakeElement(),
+    frame: createFakeElement(),
+    image: createFakeElement(),
+    veil: createFakeElement(),
+    copy: createFakeElement(),
+  };
+  const document = {
+    documentElement: elements.root,
+    body: elements.body,
+    querySelector(selector: string) {
+      const bySelector: Record<string, ReturnType<typeof createFakeElement>> = {
+        '.frame': elements.frame,
+        '.scene-image': elements.image,
+        '.veil': elements.veil,
+        '.copy': elements.copy,
+      };
+      return bySelector[selector] ?? null;
+    },
+  };
+  const window = {
+    addEventListener(event: string, listener: () => void) {
+      listeners.set(event, [...(listeners.get(event) ?? []), listener]);
+    },
+  };
+  const context = vm.createContext({ document, window });
+  for (const script of scripts) {
+    vm.runInContext(script, context);
+  }
+
+  return {
+    document,
+    elements,
+    window: window as typeof window & {
+      __ready: boolean;
+      __tl: { current: number; duration: number; seek(time: number): number };
+    },
+    fireDomContentLoaded() {
+      for (const listener of listeners.get('DOMContentLoaded') ?? []) listener();
+    },
+  };
+}
+
+function createFakeElement() {
+  const properties = new Map<string, string>();
+  return {
+    dataset: {} as Record<string, string>,
+    style: {
+      opacity: '',
+      transform: '',
+      setProperty(name: string, value: string) {
+        properties.set(name, value);
+      },
+      getPropertyValue(name: string) {
+        return properties.get(name) ?? '';
+      },
+    },
+  };
+}

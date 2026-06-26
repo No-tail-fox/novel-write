@@ -1,6 +1,10 @@
 $ErrorActionPreference = "Stop"
 
 Set-Location -LiteralPath $PSScriptRoot
+. (Join-Path $PSScriptRoot "scripts\utf8-bootstrap.ps1")
+if (Invoke-Utf8Bootstrap -ScriptPath $PSCommandPath -ScriptArgs $args) {
+  return
+}
 
 Write-Host ""
 Write-Host "========================================"

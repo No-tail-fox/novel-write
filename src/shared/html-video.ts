@@ -208,7 +208,7 @@ function buildSceneHtml(scene: {
       height: 100%;
       object-fit: cover;
       opacity: 0.92;
-      transform: scale(1.04);
+      transform: scale(calc(1.04 + var(--scene-progress, 0) * 0.035));
     }
     .veil {
       position: absolute;
@@ -264,9 +264,33 @@ function buildSceneHtml(scene: {
       duration: ${scene.duration},
       seek(time) {
         const next = Math.max(0, Math.min(${scene.duration}, Number(time) || 0));
+        const progress = ${scene.duration} > 0 ? next / ${scene.duration} : 0;
+        const eased = 1 - Math.pow(1 - progress, 2);
         this.current = next;
+        document.documentElement.style.setProperty('--scene-time', next + 's');
+        document.documentElement.style.setProperty('--scene-progress', String(progress));
         document.documentElement.dataset.time = String(next);
+        document.documentElement.dataset.progress = String(progress);
         document.body.dataset.time = String(next);
+        document.body.dataset.progress = String(progress);
+        const frame = document.querySelector('.frame');
+        const image = document.querySelector('.scene-image');
+        const veil = document.querySelector('.veil');
+        const copy = document.querySelector('.copy');
+        if (frame) {
+          frame.dataset.time = String(next);
+          frame.dataset.progress = String(progress);
+        }
+        if (image) {
+          image.style.transform = 'scale(' + (1.04 + progress * 0.035).toFixed(4) + ')';
+        }
+        if (veil) {
+          veil.style.opacity = String(0.86 + progress * 0.1);
+        }
+        if (copy) {
+          copy.style.opacity = String(Math.min(1, 0.72 + eased * 0.28));
+          copy.style.transform = 'translateY(' + ((1 - eased) * 18).toFixed(2) + 'px)';
+        }
         return next;
       },
       play() {

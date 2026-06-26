@@ -242,20 +242,54 @@ describe('electron ipc contract', () => {
     expect(main).toContain("id: 'storybound-sidecar'");
   });
 
-  it('keeps HTML video capture behind a typed Electron service without generic eval IPC', async () => {
+  it('keeps HTML video capture behind a typed Electron service without wiring it into the story runner', async () => {
     const main = await readFile(new URL('../electron/main.ts', import.meta.url), 'utf8');
     const preload = await readFile(new URL('../electron/preload.ts', import.meta.url), 'utf8');
+    const viteEnv = await readFile(new URL('../src/vite-env.d.ts', import.meta.url), 'utf8');
     const renderer = await readFile(new URL('../electron/html-video-renderer.ts', import.meta.url), 'utf8');
 
-    expect(main).toContain('createElectronHtmlVideoRenderer');
+    expect(main).toContain("ipcMain.handle('html-video:create-task'");
+    expect(main).not.toContain('createElectronHtmlVideoRenderer');
     expect(renderer).toContain('BrowserWindow');
     expect(renderer).toContain('executeJavaScript');
     expect(renderer).toContain('capturePage');
     expect(renderer).toContain('frame_%04d.jpg');
+    expect(preload).toContain('createHtmlVideoTask');
+    expect(viteEnv).toContain('createHtmlVideoTask: (input: CreateTaskInput) => Promise<AppState>');
     expect(preload).not.toContain('eval_in_window');
     expect(preload).not.toContain('capture_webview_by_label');
+    expect(preload).not.toContain('executeJavaScript');
+    expect(viteEnv).not.toContain('eval_in_window');
+    expect(viteEnv).not.toContain('capture_webview_by_label');
+    expect(viteEnv).not.toContain('executeJavaScript');
     expect(main).not.toContain("ipcMain.handle('eval_in_window'");
     expect(main).not.toContain("ipcMain.handle('capture_webview_by_label'");
+    expect(main).not.toContain("ipcMain.handle('executeJavaScript'");
+  });
+
+  it('waits for a fully ready hidden HTML scene before capture begins', async () => {
+    const renderer = await readFile(new URL('../electron/html-video-renderer.ts', import.meta.url), 'utf8');
+    const openHiddenWindow = renderer.slice(renderer.indexOf('async function openHiddenHtmlWindow'));
+
+    expect(renderer).toContain('waitForHiddenHtmlSceneReady');
+    expect(openHiddenWindow).toContain('await waitForHiddenHtmlSceneReady(window)');
+    expect(renderer).toContain("document.readyState !== 'loading'");
+    expect(renderer).toContain('window.__ready === true');
+    expect(renderer).toContain("typeof window.__tl.seek === 'function'");
+    expect(renderer).toContain('document.fonts.ready');
+    expect(renderer).toContain('document.images');
+  });
+
+  it('seeks each hidden scene frame onto an animation frame before writing recovered JPEG names', async () => {
+    const renderer = await readFile(new URL('../electron/html-video-renderer.ts', import.meta.url), 'utf8');
+    const captureLoop = renderer.slice(renderer.indexOf('for (let frameIndex = 0'), renderer.indexOf('capturedScenes.push'));
+
+    expect(renderer).toContain("const sidecarFramePattern = 'frame_%04d.jpg'");
+    expect(captureLoop).toContain('const frameNumber = frameIndex + 1');
+    expect(captureLoop).toContain("sidecarFramePattern.replace('%04d', String(frameNumber).padStart(4, '0'))");
+    expect(captureLoop).toContain('await seekHiddenHtmlSceneFrame(window, time)');
+    expect(renderer).toContain('requestAnimationFrame');
+    expect(captureLoop).toContain('capturePage');
   });
 
   it('regenerates a single scene image through cache invalidation and background resume', async () => {

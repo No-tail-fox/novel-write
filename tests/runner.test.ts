@@ -8,7 +8,6 @@ import { markTaskStepForRerun } from '@shared/pipeline-cache';
 import type { CustomCoverTemplate, ImagePrompt, PipelineArtifact, StoryboardScene, TaskStatus } from '@shared/types';
 import type { PyJianYingBridgeInput } from '@shared/jianying-bridge';
 import type { StoryboundSidecarInput } from '@shared/storybound-sidecar';
-import type { HtmlVideoExportInput } from '@shared/html-video';
 import type { ConfiguredJsonLlm, JsonLlm, LlmJsonRequest } from '@shared/llm-provider';
 
 const sampleInput =
@@ -2222,57 +2221,34 @@ describe('task runner', () => {
     }
   });
 
-  it('exports html-video tasks through the typed HTML renderer instead of the draft writer', async () => {
-    const dir = await mkdtemp(join(tmpdir(), 'storybound-runner-html-video-'));
+  it('does not route html-video task_type through the ordinary story runner', async () => {
+    const dir = await mkdtemp(join(tmpdir(), 'storybound-runner-html-video-guard-'));
     const db = await FileDatabase.open(join(dir, 'data.db'));
-    const mediaDir = join(dir, 'media');
-    const capturedExports: HtmlVideoExportInput[] = [];
 
     try {
       const task = await db.createTask({
-        title: 'HTML Animation',
+        title: 'HTML 动画视频',
         inputText: sampleInput,
-        taskKind: 'html-video',
+        taskKind: 'story',
+        taskType: 'html-video',
+        pipelineStep: 'plan',
+        pipelineData: JSON.stringify({ scenesPlanned: 1, scenesCompleted: 0, scenes: [] }),
         processingMode: 'full-auto',
-        track: 'html-video',
+        track: 'character-story',
         style: 'modern-film',
         ratio: '9:16',
-        storyboardSceneCount: 3,
       });
 
-      await runTask(db, task, {
-        appDataDir: dir,
-        generatePipelineArtifact: async () => makeArtifact(),
-        generateImages: async (scenes) => writeSceneAssets(mediaDir, scenes, 'png', tinyPng),
-        synthesizeNarration: async (scenes) => writeSceneAssets(mediaDir, scenes, 'wav', wavTone(1200)),
-        htmlVideoRenderer: async (input) => {
-          capturedExports.push(input);
-          return {
-            outputPath: input.outputPath,
-            sourceVideoPath: join(input.workDir, '_source.mp4'),
-            duration: input.totalDurationS,
-            taskDir: input.workDir,
-            framesDirs: input.scenes.map((scene) => join(input.workDir, `frames-${String(scene.sceneId).padStart(3, '0')}`)),
-          };
-        },
-      });
+      await expect(runTask(db, task, { appDataDir: dir, generatePipelineArtifact: async () => makeArtifact() })).rejects.toThrow(/HTML 动画视频.*独立流水线/);
 
-      const completed = (await db.getState()).tasks[0];
-      expect(capturedExports).toHaveLength(1);
-      expect(capturedExports[0]).toMatchObject({
-        workDir: join(dir, 'tasks', task.id),
-        outputPath: join(dir, 'tasks', task.id, 'HTML Animation.mp4'),
-        fps: 30,
-        canvas_w: 1080,
-        canvas_h: 1920,
+      const saved = (await db.getState()).tasks[0];
+      expect(saved).toMatchObject({
+        status: 'paused',
+        taskKind: 'story',
+        taskType: 'html-video',
+        pipelineStep: 'plan',
       });
-      expect(capturedExports[0].scenes[0].html).toContain('window.__tl');
-      expect(completed).toMatchObject({
-        status: 'completed',
-        taskKind: 'html-video',
-        pipelineStep: 'done',
-        outputDir: join(dir, 'tasks', task.id, 'HTML Animation.mp4'),
-      });
+      expect(saved.errorMessage).toMatch(/HTML 动画视频.*独立流水线/);
     } finally {
       await db.close();
       await rm(dir, { recursive: true, force: true });

@@ -68,6 +68,18 @@
 
 - Initial inline Node/SQLite query was broken by PowerShell quoting around `length(step1_rewrite_system_prompt)`. Re-ran with a PowerShell here-string piped to Node, which succeeded.
 
+## 2026-06-26 HTML Video Correction
+
+- User corrected the prior HTML video implementation: UI must be Chinese, and the feature must not route through the normal story/video generation runner.
+- Root cause identified: current page still uses English labels and calls `createAndRunTask` with `taskKind: 'html-video'`, while the recovered Storybound app uses `task_kind` as normal story/default and distinguishes this feature with `task_type: 'html-video'`, `pipeline_step`, and `pipeline_data`.
+- Current implementation target: create a dedicated HTML video task record and show the recovered six-step pipeline workspace (`改写 + 分句`, `场景规划`, `素材（图片）`, `配音`, `动画预览`, `出片`) without starting the ordinary runner.
+- Implemented `createHtmlVideoTask` IPC/fallback creation, rewrote the HTML video page as a Chinese pipeline workspace, and added a runner guard so `task_type = html-video` cannot enter the ordinary story runner.
+- Browser smoke on `http://127.0.0.1:5173/` verified the HTML video page shows the Chinese title, six recovered steps, six tabs, and no checked old English/technical strings (`HTML Animation`, `Generate HTML Video`, `runner`, `WebView`, `ffmpeg`, `task_type`, `pipeline_step`, `前景 PNG`).
+- While running full tests, fixed a storage regression where legacy bundled Coze draft-template cleanup deleted user-imported templates with the same `coze-*` id; cleanup now only removes legacy bundle fingerprints.
+- Verification passed:
+  - `npm run typecheck`
+  - `npm test` -> 44 files, 457 tests passed.
+
 ## 2026-06-24 Storybound AI Creation Prompt Follow-up
 
 - User clarified that the current target is not our local implementation, but the `E:\Storybound` reference app's AI creation/copy-generation flow.

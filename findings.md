@@ -59,6 +59,13 @@
 - 先新增/改造文件级契约测试，断言所有主要入口、标题、按钮、空态和流水线状态为中文。
 - 再跑现有 runtime tests，确保三轮改写、自评、主角档案、暂停/续跑、草稿输出不被 UI 重排破坏。
 
+## 2026-06-26 HTML Video Correction
+
+- Recovered HTML video should be modeled as a Storybound pipeline workspace, not as a third `TaskKind`.
+- The reference route `/html-video` creates a normal task row with `task_type = 'html-video'`, then drives `pipeline_step` and `pipeline_data` through dedicated stages.
+- User-visible workflow labels are Chinese: `改写 + 分句`, `场景规划`, `素材（图片）`, `配音`, `动画预览`, `出片`; tabs are `文案`, `素材`, `配音`, `动画预览`, `封面`, `出片`.
+- Local implementation must avoid `createAndRunTask` for this entry; it should create and inspect the HTML video task snapshot first, leaving actual render orchestration to a later dedicated pipeline.
+
 ---
 
 # 2026-06-23 G:\Storybound Backend Reverse Findings

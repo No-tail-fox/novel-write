@@ -17,7 +17,7 @@ export type ShellView =
   | 'activation';
 
 export type TaskMode = 'paste' | 'ai';
-export type TaskKind = 'story' | 'music-mv' | 'html-video';
+export type TaskKind = 'story' | 'music-mv';
 export type TaskVideoForm = 'narration' | 'two-host-podcast';
 export type PodcastSpeakerPair = 'kazai-dayi' | 'liufei-xiaolei';
 export type PublishMode = 'review-rewrite' | 'direct-copy';
@@ -349,6 +349,89 @@ export interface Task {
   podcastSpeakerB?: string | null;
   coverImageMode?: string;
   coverTemplateId?: string;
+}
+
+export type HtmlVideoPipelineStep = 'plan' | 'assets' | 'voice' | 'render' | 'done';
+export type HtmlVideoTabKey = 'text' | 'assets' | 'voice' | 'preview' | 'cover' | 'output';
+
+export interface HtmlVideoScenePlan {
+  index: number;
+  narration: string;
+  title: string;
+  captions: string[];
+  sceneTemplate: string;
+  background: {
+    prompt: string;
+  };
+  elements: Array<{
+    slot: number;
+    prompt: string;
+  }>;
+}
+
+export interface HtmlVideoCompositionSnapshot {
+  index: number;
+  durationSec: number;
+  canvas: {
+    w: number;
+    h: number;
+  };
+  audio: {
+    src: string;
+    durationSec: number;
+  };
+  background: {
+    src: string;
+  };
+  captions: Array<{
+    id: string;
+    text: string;
+    startSec: number;
+    durationSec: number;
+  }>;
+  htmlPath?: string;
+  rev?: number;
+}
+
+export interface HtmlVideoPipelineData {
+  scenesPlanned: number;
+  scenesCompleted: number;
+  videoTitle: string;
+  scenes: HtmlVideoScenePlan[];
+  assetImages: Array<{
+    sceneIndex: number;
+    kind: 'bg' | 'fg';
+    slot: number;
+    src: string;
+  }>;
+  voiceClips: Array<{
+    sceneIndex: number;
+    src: string;
+    durationSec: number;
+    text?: string;
+  }>;
+  compositions: HtmlVideoCompositionSnapshot[];
+  htmlPaths: string[];
+  cover?: CoverMetadata | null;
+  _cfg?: {
+    style?: string;
+    voiceId?: string;
+    ttsProvider?: string;
+    ttsSpeed?: number;
+    bgmId?: string;
+    captionPreset?: string;
+    captionAnim?: string;
+    captionColors?: Record<string, string>;
+    bgmVolume?: 'soft' | 'medium' | 'loud';
+    transitionType?: string;
+    coverImageMode?: string;
+    coverTemplate?: string;
+    coverRatio?: string;
+    draftTemplate?: string;
+    foreground?: boolean;
+    maxScenes?: number;
+    ratio?: string;
+  };
 }
 
 export interface MusicMvSettings {

@@ -42,9 +42,10 @@ export async function createElectronHtmlVideoRenderer() {
         const totalFrames = Math.max(1, Math.round(scene.duration * input.fps));
         for (let frameIndex = 0; frameIndex < totalFrames; frameIndex += 1) {
           const time = frameIndex / input.fps;
-          await window.webContents.executeJavaScript(`window.__tl && window.__tl.seek(${JSON.stringify(time)})`);
+          const frameNumber = frameIndex + 1;
+          await seekHiddenHtmlSceneFrame(window, time);
           await window.webContents.capturePage().then(async (image) => {
-            const framePath = join(sceneDir, sidecarFramePattern.replace('%04d', String(frameIndex + 1).padStart(4, '0')));
+            const framePath = join(sceneDir, sidecarFramePattern.replace('%04d', String(frameNumber).padStart(4, '0')));
             await writeFile(framePath, image.toJPEG(92));
           });
         }
@@ -89,13 +90,42 @@ async function openHiddenHtmlWindow(input: {
     },
   });
   await window.loadURL(input.htmlPath ? pathToFileURL(input.htmlPath).toString() : `data:text/html;charset=utf-8,${encodeURIComponent(input.html)}`);
-  await window.webContents.executeJavaScript(`window.__ready === true ? Promise.resolve(true) : new Promise((resolve) => {
+  await waitForHiddenHtmlSceneReady(window);
+  return window;
+}
+
+async function waitForHiddenHtmlSceneReady(window: BrowserWindow): Promise<void> {
+  await window.webContents.executeJavaScript(`new Promise((resolve) => {
+    const isReady = () => document.readyState !== 'loading'
+      && window.__ready === true
+      && window.__tl
+      && typeof window.__tl.seek === 'function';
+    const finish = () => {
+      const fontsReady = document.fonts && document.fonts.ready ? document.fonts.ready : Promise.resolve();
+      const imagesReady = Promise.all(Array.from(document.images).map((image) => {
+        if (image.complete) return Promise.resolve();
+        return new Promise((imageResolve) => {
+          image.addEventListener('load', imageResolve, { once: true });
+          image.addEventListener('error', imageResolve, { once: true });
+        });
+      }));
+      Promise.all([fontsReady, imagesReady]).then(() => requestAnimationFrame(() => resolve(true)));
+    };
+    if (isReady()) {
+      finish();
+      return;
+    }
     const timer = setInterval(() => {
-      if (window.__ready === true) {
+      if (isReady()) {
         clearInterval(timer);
-        resolve(true);
+        finish();
       }
     }, 16);
   })`);
-  return window;
+}
+
+async function seekHiddenHtmlSceneFrame(window: BrowserWindow, time: number): Promise<void> {
+  await window.webContents.executeJavaScript(`Promise.resolve(window.__tl.seek(${JSON.stringify(time)})).then(() => new Promise((resolve) => {
+    requestAnimationFrame(() => requestAnimationFrame(() => resolve(true)));
+  }))`);
 }

@@ -1,6 +1,11 @@
 $ErrorActionPreference = "Stop"
 
 $Root = Split-Path -Parent $PSScriptRoot
+. (Join-Path $PSScriptRoot "utf8-bootstrap.ps1")
+$currentArgs = @($args)
+if (Invoke-Utf8Bootstrap -ScriptPath $PSCommandPath -ScriptArgs $currentArgs) {
+  return
+}
 $PythonVersion = "3.12.4"
 $PythonTag = "312"
 $PackageNames = @("pyJianYingDraft", "faster-whisper", "playwright", "httpx", "imageio-ffmpeg", "pydub", "jieba", "browser-cookie3", "pycryptodomex", "PyYAML", "gmssl", "aiofiles")

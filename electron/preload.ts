@@ -52,6 +52,7 @@ const storyDreamApi = {
   saveAccount: (account: AccountProfile) => ipcRenderer.invoke('account:save', account),
   saveActivation: (activation: ActivationState) => ipcRenderer.invoke('activation:save', activation),
   saveUiPreferences: (ui: UiPreferences) => ipcRenderer.invoke('ui:save-preferences', ui),
+  createHtmlVideoTask: (input: CreateTaskInput) => ipcRenderer.invoke('html-video:create-task', input),
   createAndRunTask: (input: CreateTaskInput) => ipcRenderer.invoke('task:create-and-run', input),
   createAndRunViralAnalysis: (input: CreateViralAnalysisInput) => ipcRenderer.invoke('viral:create-and-run', input),
   updateViralAnalysisStatus: (id: string, status: ViralAnalysisStatus) => ipcRenderer.invoke('viral:update-status', { id, status }),

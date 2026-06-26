@@ -6,14 +6,14 @@
   "main": "dist-electron/electron/main.js",
   "scripts": {
     "dev": "concurrently -k \"node node_modules/vite/bin/vite.js\" \"wait-on http://127.0.0.1:5173 && node node_modules/electron/cli.js .\"",
-    "build": "powershell -NoProfile -ExecutionPolicy Bypass -Command \"& { node 'node_modules/vite/bin/vite.js' build; if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }; node 'scripts/build-electron.mjs'; exit $LASTEXITCODE }\"",
-    "package:win": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/package-win.ps1",
+    "build": "node scripts/run-powershell.mjs scripts/build.ps1",
+    "package:win": "node scripts/run-powershell.mjs scripts/package-win.ps1",
     "convert:coze": "node scripts/convert-coze-workflows.mjs",
     "fetch:coze:feishu": "node scripts/fetch-feishu-coze-workflows.mjs",
-    "smoke:electron": "powershell -NoProfile -ExecutionPolicy Bypass -Command \"& { node 'node_modules/electron/cli.js' 'scripts/smoke-electron.cjs'; exit $LASTEXITCODE }\"",
-    "test": "powershell -NoProfile -ExecutionPolicy Bypass -Command \"& { node 'node_modules/vitest/vitest.mjs' run --pool=threads --maxWorkers=1; exit $LASTEXITCODE }\"",
-    "test:watch": "powershell -NoProfile -ExecutionPolicy Bypass -Command \"& { node 'node_modules/vitest/vitest.mjs' --watch --pool=threads --maxWorkers=1; exit $LASTEXITCODE }\"",
-    "typecheck": "powershell -NoProfile -ExecutionPolicy Bypass -Command \"& { node 'node_modules/typescript/bin/tsc' -p tsconfig.json --noEmit; if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }; node 'node_modules/typescript/bin/tsc' -p tsconfig.electron.json --noEmit; exit $LASTEXITCODE }\""
+    "smoke:electron": "node scripts/run-powershell.mjs scripts/smoke-electron.ps1",
+    "test": "node scripts/run-powershell.mjs scripts/test.ps1",
+    "test:watch": "node scripts/run-powershell.mjs scripts/test-watch.ps1",
+    "typecheck": "node scripts/run-powershell.mjs scripts/typecheck.ps1"
   },
   "keywords": [],
   "author": "",

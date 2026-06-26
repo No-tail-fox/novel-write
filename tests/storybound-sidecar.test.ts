@@ -118,6 +118,28 @@ describe('Storybound-compatible media sidecar', () => {
     }
   });
 
+  it('writes compose_render with cover, transition filters, and _source BGM remix source', async () => {
+    const dir = await mkdtemp(join(tmpdir(), 'storydream-sidecar-compose-script-'));
+
+    try {
+      const scriptPath = await writeStoryboundSidecarScript(dir);
+      const script = await readFile(scriptPath, 'utf8');
+
+      expect(script).toContain('cover_segment_path = os.path.join(work_dir, "seg_cover.mp4")');
+      expect(script).toContain('segments = [cover_segment_path, *segments]');
+      expect(script).toContain('source_path = os.path.join(work_dir, "_source.mp4")');
+      expect(script).toContain('generate_remix_bgm({');
+      expect(script).toContain('"source_path": source_path');
+      expect(script).toContain('"-filter_complex"');
+      expect(script).toContain('xfade=transition=');
+      expect(script).toContain('acrossfade=d=');
+      expect(script).not.toContain('"-f", "concat"');
+      expect(script).not.toContain('"concat.txt"');
+    } finally {
+      await rm(dir, { recursive: true, force: true });
+    }
+  });
+
   it('can smoke-test convert_audio_16k with the bundled Python runtime', async () => {
     const dir = await mkdtemp(join(tmpdir(), 'storydream-sidecar-audio-'));
     const source = join(dir, 'source.wav');

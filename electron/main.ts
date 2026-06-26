@@ -19,7 +19,6 @@ import { composeCopyFromSources, createAiSourceResearcher, searchWebSources } fr
 import { runTask } from '../src/shared/runner';
 import { FileDatabase } from '../src/shared/storage';
 import { createTaskRuntimeProviders } from '../src/shared/task-runtime-providers';
-import { createElectronHtmlVideoRenderer } from './html-video-renderer';
 import type { AccountProfile, ActivationState, AppConfig, ConfigTestTarget, CreateTaskInput, CreateViralAnalysisInput, CustomStyle, CustomStyleGenerateInput, DraftTemplate, ImageLabGenerateInput, LlmConfig, PromptTemplate, ProviderModelListRequest, ResearchCopyComposeInput, Task, TaskStatus, TaskStepRerunMode, UiPreferences, ViralAnalysisRecord, ViralAnalysisStatus, ViralProductionTaskOptions, VolcengineSpeakerListRequest, VoiceLabGenerateInput } from '../src/shared/types';
 import { createViralProductionTaskInput, detectViralPlatform, runViralAnalysis } from '../src/shared/viral-analysis';
 import { createViralRuntimeProviders } from '../src/shared/viral-runtime';
@@ -174,13 +173,11 @@ async function pauseStaleRunningTasks(database: FileDatabase): Promise<void> {
 
 async function buildRunOptions(database: FileDatabase, task: Task, controller: AbortController) {
   const state = await database.getState();
-  const htmlVideoRenderer = await createElectronHtmlVideoRenderer();
   return {
     appDataDir: appDataDir(),
     signal: controller.signal,
     resolveAiSourceContext: createAiSourceResearcher(state.config),
     ...createTaskRuntimeProviders(state.config, taskWorkDir(task), task),
-    htmlVideoRenderer: htmlVideoRenderer.render,
     customCoverTemplates: state.customCoverTemplates,
     onEvent: () => {
       notifyTaskState(database);
@@ -467,6 +464,18 @@ ipcMain.handle('activation:save', async (_event, activation: ActivationState) =>
 ipcMain.handle('ui:save-preferences', async (_event, ui: UiPreferences) => {
   const database = await getDb();
   await database.upsertUiPreferences(ui);
+  return database.getState();
+});
+
+ipcMain.handle('html-video:create-task', async (_event, input: CreateTaskInput) => {
+  const database = await getDb();
+  await database.createTask({
+    ...input,
+    taskKind: 'story',
+    taskType: 'html-video',
+    pipelineStep: input.pipelineStep ?? 'plan',
+    pipelineData: input.pipelineData ?? '{}',
+  });
   return database.getState();
 });
 

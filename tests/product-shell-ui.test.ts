@@ -209,30 +209,52 @@ describe('product shell ui', () => {
     }
 
     expect(types).toContain("export type ProcessingMode = 'full-auto' | 'semi-auto' | 'clip-only'");
-    expect(types).toContain("export type TaskKind = 'story' | 'music-mv' | 'html-video'");
+    expect(types).toContain("export type TaskKind = 'story' | 'music-mv'");
     expect(css).toContain('.music-mv-layout');
     expect(css).toContain('.music-mv-preview');
   });
 
-  it('adds a standalone HTML animation video page and creates html-video tasks', async () => {
+  it('adds the Storybound HTML animation workspace without routing through the story pipeline', async () => {
     const main = await readFile(new URL('../src/main.tsx', import.meta.url), 'utf8');
     const css = await readFile(new URL('../src/styles.css', import.meta.url), 'utf8');
+    const types = await readFile(new URL('../src/shared/types.ts', import.meta.url), 'utf8');
+    const workflow = await readFile(new URL('../src/shared/html-video-workflow.ts', import.meta.url), 'utf8');
+    const preload = await readFile(new URL('../electron/preload.ts', import.meta.url), 'utf8');
+    const electronMain = await readFile(new URL('../electron/main.ts', import.meta.url), 'utf8');
 
     for (const symbol of [
       "'html-video'",
       'HtmlVideoPage',
-      'html-video-layout',
-      'htmlVideoSceneCount',
-      'htmlVideoMotionStyle',
-      'taskKind: \'html-video\'',
-      'track: \'html-video\'',
-      'HTML Animation',
+      'hv-layout',
+      'createHtmlVideoTask',
+      'htmlVideoSteps',
+      'htmlVideoTabs',
+      'HTML 动画视频',
+      '动画预览',
+      '逐帧截图',
     ]) {
       expect(main).toContain(symbol);
     }
+    for (const label of ['改写 + 分句', '场景规划', '素材（图片）', '配音', '动画预览', '出片']) {
+      expect(workflow).toContain(label);
+    }
 
-    expect(css).toContain('.html-video-layout');
-    expect(css).toContain('.html-video-preview');
+    expect(main).not.toContain('HTML Animation');
+    expect(main).not.toContain('Generate HTML Video');
+    expect(main).not.toContain("taskKind: 'html-video'");
+    expect(types).toContain("export type TaskKind = 'story' | 'music-mv'");
+    expect(types).not.toContain("export type TaskKind = 'story' | 'music-mv' | 'html-video'");
+    expect(workflow).toContain("taskKind: 'story'");
+    expect(workflow).toContain("taskType: 'html-video'");
+    expect(workflow).toContain("pipelineStep: 'plan'");
+    expect(workflow).toContain('pipelineData: JSON.stringify(data)');
+    expect(preload).toContain('createHtmlVideoTask');
+    expect(electronMain).toContain("ipcMain.handle('html-video:create-task'");
+    const htmlCreateSection = electronMain.slice(electronMain.indexOf("ipcMain.handle('html-video:create-task'"), electronMain.indexOf("ipcMain.handle('task:create-and-run'"));
+    expect(htmlCreateSection).not.toContain('startTaskRun');
+    expect(css).toContain('.hv-layout');
+    expect(css).toContain('.hv-rail');
+    expect(css).toContain('.hv-tab');
   });
 
   it('wires the viral analyzer page into the shell with report and selectable follow-up controls', async () => {
@@ -1069,23 +1091,21 @@ describe('product shell ui', () => {
     expect(main).not.toContain('OptionCloud title="草稿模板" options={state.draftTemplates.map((template) => [template.id, template.name, `出图 ${template.image.ratio}`])} value={templateId} onChange={setTemplateId}');
   });
 
-  it('moves bundled Coze draft templates into a separate fallback selector in new task', async () => {
+  it('keeps new-task draft template choices limited to the saved default/user templates', async () => {
     const main = await readFile(new URL('../src/main.tsx', import.meta.url), 'utf8');
     const css = await readFile(new URL('../src/styles.css', import.meta.url), 'utf8');
 
-    expect(main).toContain('bundledDraftTemplateOptionIds');
-    expect(main).toContain('isBundledDraftTemplateOption');
-    expect(main).toContain('primaryDraftTemplates');
-    expect(main).toContain('alternateDraftTemplates');
     expect(main).toContain('defaultTaskDraftTemplateId');
-    expect(main).toContain('draft-template-picker-stack');
-    expect(main).toContain('draft-template-alternate-select');
-    expect(main).toContain('<option value="">选择备选模板</option>');
-    expect(main).toContain('options={primaryDraftTemplates.map((template) => [template.id, template.name, `出图 ${template.image.ratio}`])}');
-    expect(main).not.toContain('options={state.draftTemplates.map((template) => [template.id, template.name, `出图 ${template.image.ratio}`])}');
+    expect(main).toContain('options={state.draftTemplates.map((template) => [template.id, template.name, `出图 ${template.image.ratio}`])}');
+    expect(main).not.toContain('feishuCozeDraftTemplateBundle');
+    expect(main).not.toContain('bundledDraftTemplateOptionIds');
+    expect(main).not.toContain('isBundledDraftTemplateOption');
+    expect(main).not.toContain('primaryDraftTemplates');
+    expect(main).not.toContain('alternateDraftTemplates');
+    expect(main).not.toContain('draft-template-alternate-select');
+    expect(main).not.toContain('<option value="">选择备选模板</option>');
     expect(main).not.toContain("const initialDraftTemplateId = state.draftTemplates[0]?.id ?? 'default-portrait-9-16'");
-    expect(css).toContain('.draft-template-picker-stack');
-    expect(css).toContain('.draft-template-alternate-select');
+    expect(css).not.toContain('.draft-template-alternate-select');
   });
 
   it('supports opening a selected task in a screenshot-style pipeline detail view', async () => {

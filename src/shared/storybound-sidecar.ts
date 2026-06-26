@@ -229,6 +229,43 @@ def run_ffmpeg(args):
         raise RuntimeError(completed.stderr.strip() or completed.stdout.strip() or "ffmpeg failed")
 
 
+def ffprobe_exe():
+    binary = shutil.which("ffprobe")
+    if binary:
+        return binary
+    ffmpeg_path = ffmpeg_exe()
+    root = os.path.dirname(ffmpeg_path)
+    names = ["ffprobe.exe", "ffprobe"] if os.name == "nt" else ["ffprobe"]
+    for name in names:
+        candidate = os.path.join(root, name)
+        if os.path.isfile(candidate):
+            return candidate
+    return ""
+
+
+def media_duration_s(path):
+    path = norm(path)
+    probe = ffprobe_exe()
+    if probe:
+        completed = subprocess.run(
+            [probe, "-v", "error", "-show_entries", "format=duration", "-of", "default=nw=1:nk=1", path],
+            text=True,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+        )
+        if completed.returncode == 0:
+            try:
+                return max(0.0, float(completed.stdout.strip()))
+            except ValueError:
+                pass
+    completed = subprocess.run([ffmpeg_exe(), "-i", path], text=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+    match = re.search(r"Duration:\s*(\d+):(\d+):(\d+(?:\.\d+)?)", completed.stderr)
+    if not match:
+        return 0.0
+    hours, minutes, seconds = match.groups()
+    return int(hours) * 3600 + int(minutes) * 60 + float(seconds)
+
+
 def wav_to_16k_mono(source_path, output_path):
     with wave.open(norm(source_path), "rb") as reader:
         channels = reader.getnchannels()
@@ -415,15 +452,63 @@ def generate_remix_bgm(payload):
     return {"success": True, "output_path": output_path, "source_path": source_path}
 
 
-def _compose_with_xfade(segment_paths, output_path, transition_duration=0.3):
+def transition_options(value):
+    transition_type = "fade"
+    transition_duration = 0.3
+    if isinstance(value, dict):
+        transition_type = str(value.get("type") or transition_type)
+        transition_duration = float(value.get("duration") or transition_duration)
+    elif isinstance(value, str) and value:
+        transition_type = value
+    transition_type = re.sub(r"[^A-Za-z0-9_]", "", transition_type) or "fade"
+    return transition_type, max(0.01, transition_duration)
+
+
+def _compose_with_xfade(segment_paths, output_path, transition_type="fade", transition_duration=0.3):
     if len(segment_paths) < 2:
         shutil.copy2(segment_paths[0], output_path)
         return
-    concat_path = os.path.join(os.path.dirname(output_path), "concat.txt")
-    with open(concat_path, "w", encoding="utf-8") as handle:
-        for item in segment_paths:
-            handle.write("file '%s'\n" % item.replace("\\", "/"))
-    run_ffmpeg(["-f", "concat", "-safe", "0", "-i", concat_path, "-c", "copy", output_path])
+    durations = [media_duration_s(path) for path in segment_paths]
+    known_limits = [duration / 2.0 for duration in durations if duration > 0]
+    if known_limits:
+        transition_duration = min(float(transition_duration), max(0.01, min(known_limits)))
+    inputs = []
+    filters = []
+    for index, path in enumerate(segment_paths):
+        inputs.extend(["-i", path])
+        filters.append(f"[{index}:v]settb=AVTB,setsar=1[v{index}]")
+        filters.append(f"[{index}:a]aformat=sample_rates=44100:channel_layouts=stereo[a{index}]")
+    current_video = "[v0]"
+    current_audio = "[a0]"
+    elapsed = durations[0] if durations and durations[0] > 0 else transition_duration
+    for index in range(1, len(segment_paths)):
+        offset = max(0.0, elapsed - transition_duration)
+        next_video = f"[vx{index}]"
+        next_audio = f"[ax{index}]"
+        filters.append(
+            f"{current_video}[v{index}]xfade=transition={transition_type}:duration={transition_duration}:offset={offset}{next_video}"
+        )
+        filters.append(f"{current_audio}[a{index}]acrossfade=d={transition_duration}:c1=tri:c2=tri{next_audio}")
+        current_video = next_video
+        current_audio = next_audio
+        scene_duration = durations[index] if index < len(durations) and durations[index] > 0 else transition_duration
+        elapsed = max(transition_duration, elapsed + scene_duration - transition_duration)
+    run_ffmpeg([
+        *inputs,
+        "-filter_complex",
+        ";".join(filters),
+        "-map",
+        current_video,
+        "-map",
+        current_audio,
+        "-pix_fmt",
+        "yuv420p",
+        "-c:v",
+        "libx264",
+        "-c:a",
+        "aac",
+        output_path,
+    ])
 
 
 def first_frame_pattern(frames_dir):
@@ -470,13 +555,20 @@ def generate_compose_render(payload):
         raise ValueError("compose_render requires at least one scene")
     source_path = os.path.join(work_dir, "_source.mp4")
     if payload.get("cover_path"):
+        cover_duration = str(float(payload.get("cover_duration_s") or 2))
         run_ffmpeg([
             "-loop",
             "1",
             "-i",
             norm(payload["cover_path"]),
+            "-f",
+            "lavfi",
             "-t",
-            str(float(payload.get("cover_duration_s") or 2)),
+            cover_duration,
+            "-i",
+            "anullsrc=channel_layout=stereo:sample_rate=44100",
+            "-t",
+            cover_duration,
             "-vf",
             f"scale={canvas_w}:{canvas_h}:force_original_aspect_ratio=decrease,pad={canvas_w}:{canvas_h}:(ow-iw)/2:(oh-ih)/2:black,setsar=1",
             "-pix_fmt",
@@ -485,6 +577,7 @@ def generate_compose_render(payload):
             "libx264",
             "-c:a",
             "aac",
+            "-shortest",
             "-f",
             "mp4",
             cover_segment_path,
@@ -493,7 +586,8 @@ def generate_compose_render(payload):
     if len(segments) == 1:
         shutil.copy2(segments[0], source_path)
     else:
-        _compose_with_xfade(segments, source_path, float((payload.get("transition") or {}).get("duration") or 0.3))
+        transition_type, transition_duration = transition_options(payload.get("transition"))
+        _compose_with_xfade(segments, source_path, transition_type, transition_duration)
     if payload.get("bgm_path"):
         return generate_remix_bgm({
             "source_path": source_path,

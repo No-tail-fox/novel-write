@@ -34,7 +34,7 @@ describe('product shell storage', () => {
     }
   });
 
-  it('seeds Feishu Coze workflow templates as draft presets without overwriting local edits', async () => {
+  it('removes previously bundled Coze draft presets while preserving user draft templates', async () => {
     const dir = await mkdtemp(join(tmpdir(), 'storybound-shell-coze-presets-'));
     const file = join(dir, 'app.db');
     const bundle = JSON.parse(await readFile(join(__dirname, '..', 'data', 'coze-workflows', 'feishu-draft-templates.json'), 'utf8')) as {
@@ -44,30 +44,42 @@ describe('product shell storage', () => {
 
     try {
       const db = await FileDatabase.open(file);
-      let state = await db.getState();
-      const firstTemplate = state.draftTemplates.find((template) => template.id === expectedCozeIds[0]);
-
       expect(expectedCozeIds).toHaveLength(114);
-      expect(firstTemplate).toBeDefined();
-      expect(state.draftTemplates.filter((template) => template.id.startsWith('coze-')).map((template) => template.id).sort()).toEqual([...expectedCozeIds].sort());
-
+      expect((await db.getState()).draftTemplates.map((template) => template.id)).toEqual([
+        'builtin-landscape-16-9',
+        'builtin-portrait-4-3',
+        'default-portrait-9-16',
+      ]);
+      (db as unknown as { db: { run: (sql: string, params?: unknown[]) => void } }).db.run('INSERT INTO draft_templates (id, data, is_builtin, updated_at) VALUES (?, ?, ?, ?)', [
+        expectedCozeIds[0],
+        JSON.stringify({
+          ...(await db.getState()).draftTemplates[0],
+          id: expectedCozeIds[0],
+          name: 'Bundled Coze preset',
+          isDefault: false,
+        }),
+        0,
+        '2026-06-08T00:00:00.000Z',
+      ]);
       await db.upsertDraftTemplate({
-        ...firstTemplate!,
-        name: 'User renamed Coze preset',
-        canvas: { ...firstTemplate!.canvas, backgroundColor: '#123456' },
+        ...(await db.getState()).draftTemplates[0],
+        id: 'custom-local-draft',
+        name: '用户自己的草稿模板',
+        isDefault: false,
       });
-      (db as unknown as { db: { run: (sql: string, params?: unknown[]) => void } }).db.run('DELETE FROM draft_templates WHERE id = ?', [expectedCozeIds[1]]);
       await db.close();
 
       const reopened = await FileDatabase.open(file);
-      state = await reopened.getState();
+      const state = await reopened.getState();
 
-      expect(state.draftTemplates.filter((template) => template.id.startsWith('coze-')).map((template) => template.id).sort()).toEqual([...expectedCozeIds].sort());
-      expect(state.draftTemplates.find((template) => template.id === expectedCozeIds[0])).toMatchObject({
-        name: 'User renamed Coze preset',
-        canvas: { backgroundColor: '#123456' },
-      });
-      expect(state.draftTemplates.find((template) => template.id === expectedCozeIds[1])).toBeDefined();
+      expect(state.draftTemplates.find((template) => expectedCozeIds.includes(template.id))).toBeUndefined();
+      expect(state.draftTemplates.map((template) => template.id)).toEqual([
+        'builtin-landscape-16-9',
+        'builtin-portrait-4-3',
+        'default-portrait-9-16',
+        'custom-local-draft',
+      ]);
+      expect(state.draftTemplates.find((template) => template.id === 'custom-local-draft')?.name).toBe('用户自己的草稿模板');
 
       await reopened.close();
     } finally {

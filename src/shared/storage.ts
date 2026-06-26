@@ -155,7 +155,11 @@ function mergeConfig(input: unknown): AppConfig {
   return normalizeAppConfig(input);
 }
 
-const bundledCozeDraftTemplates = (feishuCozeDraftTemplateBundle as { templates?: DraftTemplate[] }).templates ?? [];
+const legacyBundledCozeDraftTemplates = new Map(
+  ((feishuCozeDraftTemplateBundle as { templates?: Array<{ id?: string }> }).templates ?? [])
+    .map((template) => [template.id, (template as { name?: string }).name] as const)
+    .filter((entry): entry is readonly [string, string | undefined] => Boolean(entry[0])),
+);
 
 export class FileDatabase {
   private constructor(
@@ -538,7 +542,7 @@ export class FileDatabase {
         ]);
       }
     }
-    this.syncBundledCozeDraftTemplates();
+    this.removeLegacyBundledCozeDraftTemplates();
 
     this.syncDefaultCustomStyles();
     this.syncDefaultCustomCoverTemplates();
@@ -588,18 +592,18 @@ export class FileDatabase {
     }
   }
 
-  private syncBundledCozeDraftTemplates(): void {
-    const existingIds = new Set(getRows<{ id: string }>(this.db, 'SELECT id FROM draft_templates').map((row) => row.id));
-    for (const template of bundledCozeDraftTemplates) {
-      if (!template.id || existingIds.has(template.id)) continue;
-      const normalized = normalizeDraftTemplate({ ...template, isDefault: false });
-      this.db.run('INSERT INTO draft_templates (id, data, is_builtin, updated_at) VALUES (?, ?, ?, ?)', [
-        normalized.id,
-        json(normalized),
-        0,
-        '2026-06-08T00:00:00.000Z',
-      ]);
-      existingIds.add(normalized.id);
+  private removeLegacyBundledCozeDraftTemplates(): void {
+    for (const [id, legacyName] of legacyBundledCozeDraftTemplates) {
+      const row = getFirstRow<{ data: string; is_builtin: number }>(this.db, 'SELECT data, is_builtin FROM draft_templates WHERE id = ?', [id]);
+      if (!row) continue;
+      const stored = parseJson<Partial<DraftTemplate>>(row.data, {});
+      const isLegacyBundledTemplate =
+        Number(row.is_builtin ?? 0) === 1 ||
+        stored.name === legacyName ||
+        stored.name === 'Bundled Coze preset';
+      if (isLegacyBundledTemplate) {
+        this.db.run('DELETE FROM draft_templates WHERE id = ?', [id]);
+      }
     }
   }
 
@@ -1246,7 +1250,7 @@ function rowToTask(row: Record<string, unknown>): Task {
 }
 
 function normalizeTaskKind(value: unknown): Task['taskKind'] {
-  return value === 'music-mv' || value === 'html-video' ? value : 'story';
+  return value === 'music-mv' ? value : 'story';
 }
 
 function normalizeVideoForm(value: unknown): Task['videoForm'] {

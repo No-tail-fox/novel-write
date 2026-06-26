@@ -4,7 +4,6 @@ import type { AiSourceContext, BgmItem, CharacterCard, CoverMetadata, CustomCove
 import { buildCoverMetadata, buildSubtitleTrack } from './story';
 import { writeJianyingDraft, type SceneAsset, type WriteJianyingDraftOptions } from './draft';
 import { runStoryboundMediaSidecar, type StoryboundSidecarInput, type StoryboundSidecarResult } from './storybound-sidecar';
-import { buildHtmlVideoExportInput, type HtmlVideoExportInput, type HtmlVideoExportResult } from './html-video';
 import type { FileDatabase } from './storage';
 import type { AnthropicMessagesJsonRequest, ConfiguredJsonLlm, LlmJsonResult, LlmMessage, OpenAiCompatibleJsonRequest } from './llm-provider';
 import { buildStoryboundReviewSystemPrompt, formatAiSourceContext } from './research';
@@ -26,7 +25,6 @@ export interface RunTaskOptions {
   synthesizeNarration?: (scenes: StoryboardScene[], task: Task, signal?: AbortSignal) => Promise<SceneAsset[]>;
   draftWriterOptions?: WriteJianyingDraftOptions;
   mediaSidecar?: (input: StoryboundSidecarInput) => Promise<StoryboundSidecarResult>;
-  htmlVideoRenderer?: (input: HtmlVideoExportInput) => Promise<HtmlVideoExportResult>;
   customCoverTemplates?: CustomCoverTemplate[];
 }
 
@@ -219,6 +217,26 @@ function todayTitle(input: string): string {
 }
 
 export async function runTask(db: FileDatabase, task: Task, options: RunTaskOptions): Promise<Task> {
+  if (task.taskType === 'html-video') {
+    const message = 'HTML 动画视频由独立流水线处理，不能进入普通 Storybound 成片 runner。';
+    await db.updateTask(task.id, {
+      status: 'paused',
+      currentStep: task.currentStep,
+      errorMessage: message,
+      failedStep: null,
+      retryFromStep: null,
+      lastHeartbeatAt: new Date().toISOString(),
+    });
+    await db.addTaskEvent(task.id, {
+      type: 'step_error',
+      step: null,
+      agent: 'HTML Video',
+      detail: message,
+    });
+    options.onEvent?.(message);
+    throw new Error(message);
+  }
+
   const workDir = join(options.appDataDir, 'tasks', task.id);
   const pipelineDir = join(workDir, 'pipeline');
   const statePath = join(pipelineDir, 'state.json');
@@ -325,88 +343,52 @@ export async function runTask(db: FileDatabase, task: Task, options: RunTaskOpti
       const bgm = resolveBgm(state.config.jianying.bgmLibrary, task.bgmId);
       const template = state.draftTemplates.find((item) => item.id === task.templateId);
       const normalizedTemplate = template ? normalizeDraftTemplate(template) : undefined;
-      if (task.taskKind === 'html-video') {
-        if (!options.htmlVideoRenderer) {
-          throw new Error('HTML video renderer is not configured; cannot export html-video tasks.');
-        }
-        const htmlVideoInput = buildHtmlVideoExportInput({
-          workDir,
-          outputPath: join(workDir, `${task.title || todayTitle(task.inputText)}.mp4`),
-          title: task.title || todayTitle(task.inputText),
-          artifact,
-          generatedImages: pipeline.assets.images,
-          narrationAudio: pipeline.assets.narration,
-          coverPath: pipeline.assets.cover[0]?.path,
-          bgmPath: bgm?.path || undefined,
-          bgmTargetDb: bgm ? -26 : undefined,
-          fps: 30,
-          canvas_w: task.ratio === '16:9' ? 1920 : 1080,
-          canvas_h: task.ratio === '16:9' ? 1080 : 1920,
-          transition: { type: 'fade', duration: 0.3 },
-        });
-        const htmlVideoExport = await options.htmlVideoRenderer(htmlVideoInput);
-        pipeline.draft = {
-          draftDir: htmlVideoExport.taskDir,
-          draftContentPath: htmlVideoExport.outputPath,
-          draftMetaPath: htmlVideoExport.sourceVideoPath,
-        };
-        await db.updateTask(task.id, {
-          outputDir: htmlVideoExport.outputPath,
-        });
-        await markStep(6, 'completed', { outputPath: htmlVideoExport.outputPath });
-        await heartbeat(6, 'html video export completed');
-        await emit('step_complete', 6, 'Draft', 'HTML video export completed', htmlVideoExport);
-      } else {
-        const draft =
-          task.taskKind === 'music-mv'
-            ? await writeMusicMvSidecarDraft({
-              task,
-              artifact,
+      const draft =
+        task.taskKind === 'music-mv'
+          ? await writeMusicMvSidecarDraft({
+            task,
+            artifact,
+            workDir,
+            draftRootDir: state.config.jianying.draftPath,
+            template: normalizedTemplate,
+            generatedImages: pipeline.assets.images,
+            coverImagePath: pipeline.assets.cover[0]?.path,
+            runSidecar: options.mediaSidecar ?? runStoryboundMediaSidecar,
+          })
+          : await writeJianyingDraft(
+            {
               workDir,
               draftRootDir: state.config.jianying.draftPath,
+              title: task.title || todayTitle(task.inputText),
+              cover: artifact.cover,
+              ratio: task.ratio,
+              templateId: task.templateId,
               template: normalizedTemplate,
+              scenes: artifact.scenes,
+              imagePrompts: artifact.imagePrompts,
+              reviewedText: artifact.reviewedText,
+              rewrittenCopy: artifact.rewrittenCopy,
               generatedImages: pipeline.assets.images,
               coverImagePath: pipeline.assets.cover[0]?.path,
-              runSidecar: options.mediaSidecar ?? runStoryboundMediaSidecar,
-            })
-            : await writeJianyingDraft(
-              {
-                workDir,
-                draftRootDir: state.config.jianying.draftPath,
-                title: task.title || todayTitle(task.inputText),
-                cover: artifact.cover,
-                ratio: task.ratio,
-                templateId: task.templateId,
-                template: normalizedTemplate,
-                scenes: artifact.scenes,
-                imagePrompts: artifact.imagePrompts,
-                reviewedText: artifact.reviewedText,
-                rewrittenCopy: artifact.rewrittenCopy,
-                generatedImages: pipeline.assets.images,
-                coverImagePath: pipeline.assets.cover[0]?.path,
-                narrationAudio: pipeline.assets.narration,
-                bgm,
-              },
-              {
-                ...(options.draftWriterOptions ?? {}),
-                runSidecar: options.mediaSidecar ?? options.draftWriterOptions?.runSidecar,
-              },
-            );
-        pipeline.draft = {
-          draftDir: draft.draftDir,
-          draftContentPath: draft.draftContentPath,
-          draftMetaPath: draft.draftMetaPath,
-        };
-        await markStep(6, 'completed', { outputPath: draft.draftDir });
-        await heartbeat(6, 'draft completed');
-        await emit('step_complete', 6, 'Draft', 'Jianying draft folder generated', draft);
-      }
+              narrationAudio: pipeline.assets.narration,
+              bgm,
+            },
+            {
+              ...(options.draftWriterOptions ?? {}),
+              runSidecar: options.mediaSidecar ?? options.draftWriterOptions?.runSidecar,
+            },
+          );
+      pipeline.draft = {
+        draftDir: draft.draftDir,
+        draftContentPath: draft.draftContentPath,
+        draftMetaPath: draft.draftMetaPath,
+      };
+      await markStep(6, 'completed', { outputPath: draft.draftDir });
+      await heartbeat(6, 'draft completed');
+      await emit('step_complete', 6, 'Draft', 'Jianying draft folder generated', draft);
     }
 
-    const draftDir =
-      task.taskKind === 'html-video'
-        ? pipeline.steps['6']?.outputPath ?? pipeline.draft?.draftContentPath ?? workDir
-        : pipeline.draft?.draftDir ?? pipeline.steps['6']?.outputPath ?? workDir;
+    const draftDir = pipeline.draft?.draftDir ?? pipeline.steps['6']?.outputPath ?? workDir;
     if (pipeline.rerun) {
       delete pipeline.rerun;
       await save();
@@ -422,7 +404,6 @@ export async function runTask(db: FileDatabase, task: Task, options: RunTaskOpti
       retryFromStep: null,
       artifactStatePath: statePath,
       lastHeartbeatAt: new Date().toISOString(),
-      ...(task.taskKind === 'html-video' ? { pipelineStep: 'done' } : {}),
     });
     options.onEvent?.('Task completed');
     return { ...task, status: 'completed', currentStep: 7, completedAt, outputDir: draftDir, errorMessage: '', failedStep: null, retryFromStep: null, artifactStatePath: statePath, startedAt, lastHeartbeatAt: new Date().toISOString() };

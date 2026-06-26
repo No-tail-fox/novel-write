@@ -22,6 +22,7 @@ describe('windows packaging', () => {
       extraResources: [{ from: 'vendor/python', to: 'python' }],
       win: { target: ['dir'], signAndEditExecutable: false },
     });
+    expect(pkg.scripts.build).toContain('scripts/build.ps1');
     expect(packageScript).toContain('node_modules/electron-builder/cli.js');
     expect(packageScript).toContain('scripts\\prepare-python-runtime.ps1');
     expect(packageScript).toContain('--win');
@@ -52,5 +53,7 @@ describe('windows packaging', () => {
     expect(pythonRuntimeScript).toContain('import pyJianYingDraft, faster_whisper, playwright, httpx');
     expect(pythonRuntimeScript).toContain('import pydub, jieba');
     expect(pythonRuntimeScript).toContain('packages=$($PackageNames -join');
+    expect(packageScript).toContain('Invoke-Utf8Bootstrap');
+    expect(pythonRuntimeScript).toContain('Invoke-Utf8Bootstrap');
   });
 });

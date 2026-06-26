@@ -55,6 +55,7 @@ declare global {
       saveAccount: (account: AccountProfile) => Promise<AppState>;
       saveActivation: (activation: ActivationState) => Promise<AppState>;
       saveUiPreferences: (ui: UiPreferences) => Promise<AppState>;
+      createHtmlVideoTask: (input: CreateTaskInput) => Promise<AppState>;
       createAndRunTask: (input: CreateTaskInput) => Promise<AppState>;
       createAndRunViralAnalysis: (input: CreateViralAnalysisInput) => Promise<AppState>;
       updateViralAnalysisStatus: (id: string, status: ViralAnalysisStatus) => Promise<AppState>;

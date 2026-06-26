@@ -28,4 +28,18 @@ describe('one-click startup script', () => {
     expect(script).toContain('@rolldown\\binding-win32-x64-msvc');
     expect(script).toContain('Installing dependencies');
   });
+
+  it('boots through the UTF-8 helper and prefers pwsh when available', async () => {
+    const script = await readFile(new URL('../start-storydream.ps1', import.meta.url), 'utf8');
+    const helper = await readFile(new URL('../scripts/utf8-bootstrap.ps1', import.meta.url), 'utf8');
+    const launcher = await readFile(new URL('../启动 StoryDream.bat', import.meta.url), 'utf8');
+
+    expect(script).toContain('Invoke-Utf8Bootstrap');
+    expect(script).toContain('$PSCommandPath');
+    expect(helper).toContain('chcp 65001');
+    expect(helper).toContain('UTF8Encoding');
+    expect(helper).toContain('Get-Command pwsh');
+    expect(launcher).toContain('where pwsh');
+    expect(launcher).toContain('PS_EXE=pwsh');
+  });
 });
