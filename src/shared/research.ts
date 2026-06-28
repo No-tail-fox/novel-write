@@ -1,4 +1,5 @@
 import type { ConfiguredTextLlm } from './llm-provider';
+import { targetWordCountRange } from './content-metrics';
 import type { AiSourceContext, AiSourceSection, AppConfig, ImaConfig, ResearchCopyComposeInput, ResearchCopyComposeResult, Task } from './types';
 
 type FetchLike = (url: string, init?: RequestInit) => Promise<Response>;
@@ -108,11 +109,12 @@ export function cleanStoryboundAiCreationOutput(text: string): string {
 }
 
 export function buildStoryboundReviewSystemPrompt(
-  task: Pick<Task, 'track' | 'aiSources'>,
+  task: Pick<Task, 'track' | 'aiSources' | 'targetLength'>,
   hasReferenceMaterials: boolean,
 ): string {
   const track = resolveStoryboundTrackInfo(task.track);
   const useAiKnowledge = task.aiSources?.includes('builtin-knowledge') ?? false;
+  const targetRange = targetWordCountRange(task.targetLength);
   const strategy = hasReferenceMaterials
     ? useAiKnowledge
       ? '主要参考原文素材和搜索资料，可适当结合确定的可靠常识补齐必要背景'
@@ -123,6 +125,13 @@ export function buildStoryboundReviewSystemPrompt(
     '',
     `【当前赛道】${task.track || track.trackName}（${track.trackTag}）`,
     '',
+    targetRange
+      ? [
+          `【目标字数参考】${targetRange.target} 字（区间 ${targetRange.min}-${targetRange.max}）`,
+          '预审时优先保留足够事实密度，不要为了压缩长度删掉后续改写需要的关键细节。',
+          '',
+        ].join('\n')
+      : '',
     `【素材策略】${strategy}`,
     '',
     '【预审要求】',
