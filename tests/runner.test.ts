@@ -677,6 +677,109 @@ describe('task runner', () => {
     }
   });
 
+  it('splits Storybound tail anchors when punctuation differs inside an anchor', async () => {
+    const dir = await mkdtemp(join(tmpdir(), 'storybound-runner-storyboard-tail-anchor-punctuation-'));
+    const db = await FileDatabase.open(join(dir, 'data.db'));
+    const draftRootDir = join(dir, 'JianyingPro Drafts');
+    const mediaDir = join(dir, 'media');
+    const rewrittenCopy =
+      '他很早就进工厂做童工。但他没有。最终考进中央大学法律系。把自己的经历和公共议题连在一起。从具体问题积累政治信用。紧接着又当选城南市长。甚至带有民粹色彩。而应该回答那些最缺资源、最容易被忽略的人到底怎么生活。态度鲜明而强硬。李在明却没有把失败当作终点。身体撑不住后接受治疗；随后接受手术。压到政治任务之后。几乎成了他人生的固定节奏。李在明当选韩国总统。又一次自己站了回来。';
+    const anchors = [
+      '他很早就进工厂做童工。',
+      '但他没有。',
+      '最终考进中央大学法律系。',
+      '把自己的经历和公共议题连在一起。',
+      '从具体问题积累政治信用。',
+      '紧接着又当选城南市长。',
+      '甚至带有民粹色彩。',
+      '而应该回答那些最缺资源最容易被忽略的人到底怎么生活。',
+      '态度鲜明而强硬。',
+      '李在明却没有把失败当作终点。',
+      '身体撑不住后接受治疗；',
+      '随后接受手术。',
+      '压到政治任务之后。',
+      '几乎成了他人生的固定节奏。',
+      '李在明当选韩国总统。',
+      '又一次自己站了回来。',
+    ];
+    const requests: LlmJsonRequest[] = [];
+
+    try {
+      await db.upsertConfig({
+        ...(await db.getState()).config,
+        jianying: { ...(await db.getState()).config.jianying, draftPath: draftRootDir },
+      });
+      const task = await db.createTask({
+        title: 'Tail anchor punctuation task',
+        inputText: rewrittenCopy,
+        track: 'character-story',
+        style: 'photo-real',
+        speaker: 'voice',
+        storyboardSceneCount: 16,
+        targetScenes: 16,
+      });
+
+      const llm: JsonLlm = async <T,>(request: LlmJsonRequest) => {
+        requests.push(request);
+        if (request.step === 0) return { json: { reviewedText: rewrittenCopy } as T, raw: '{}', requestId: 'review' };
+        if (request.name.startsWith('rewrite-round-')) {
+          return {
+            json: { rewrittenCopy, cover: { title: '列车', subtitle: [], summary: 'summary', tags: [], comments: [] } } as T,
+            raw: '{}',
+            requestId: request.name,
+          };
+        }
+        if (request.name === 'rewrite-evaluation') return { json: { bestRound: 1, evaluations: [] } as T, raw: '{}', requestId: 'rewrite-eval' };
+        if (request.step === 2) return { json: anchors as T, raw: JSON.stringify(anchors), requestId: 'storyboard' };
+        if (request.name === 'character-card') {
+          return {
+            json: { characterCard: { summary: 'same person', characters: [], consistencyRules: [] } } as T,
+            raw: '{}',
+            requestId: 'character-card',
+          };
+        }
+        return { json: { imagePrompts: makePrompts(extractScenesFromPrompt(request)) } as T, raw: '{}', requestId: `prompts-${request.step}` };
+      };
+
+      await runTask(db, task, {
+        appDataDir: dir,
+        llm: mockConfiguredLlm(llm),
+        generateImages: async (inputScenes) => writeSceneAssets(mediaDir, inputScenes, 'png', tinyPng),
+        synthesizeNarration: async (inputScenes) => writeSceneAssets(mediaDir, inputScenes, 'wav', wavTone(1200)),
+        draftWriterOptions: { runBridge: fakeBridge },
+      });
+
+      const storedScenes = JSON.parse(await readFile(join(dir, 'tasks', task.id, '02-sentences.json'), 'utf8')) as StoryboardScene[];
+      expect(storedScenes.map((scene) => scene.cap)).toEqual([
+        '他很早就进工厂做童工。',
+        '但他没有。',
+        '最终考进中央大学法律系。',
+        '把自己的经历和公共议题连在一起。',
+        '从具体问题积累政治信用。',
+        '紧接着又当选城南市长。',
+        '甚至带有民粹色彩。',
+        '而应该回答那些最缺资源、最容易被忽略的人到底怎么生活。',
+        '态度鲜明而强硬。',
+        '李在明却没有把失败当作终点。',
+        '身体撑不住后接受治疗；',
+        '随后接受手术。',
+        '压到政治任务之后。',
+        '几乎成了他人生的固定节奏。',
+        '李在明当选韩国总统。',
+        '又一次自己站了回来。',
+      ]);
+      expect(storedScenes.map((scene) => scene.descPrompt)).toEqual(storedScenes.map((scene) => scene.cap));
+      const storyboardRequest = requests.find((request) => request.step === 2);
+      const storyboardContent = storyboardRequest?.messages.map((message) => message.content).join('\n') ?? '';
+      expect(storyboardContent).toContain('JSON 字符串数组');
+      expect(storyboardContent).toContain('尾部锚点');
+      expect(storyboardRequest?.anthropic?.toolInputSchema).toBeUndefined();
+    } finally {
+      await db.close();
+      await rm(dir, { recursive: true, force: true });
+    }
+  });
+
   it('localizes StoryDream storyboard and image prompts with runtime context', async () => {
     const dir = await mkdtemp(join(tmpdir(), 'storybound-runner-storybound-localization-'));
     const db = await FileDatabase.open(join(dir, 'data.db'));
@@ -1807,9 +1910,10 @@ describe('task runner', () => {
       const rewritePrompt = requests.find((request) => request.name === 'rewrite-round-1')?.messages.map((message) => message.content).join('\n') ?? '';
       expect(reviewPrompt).toContain('你是一名资深短视频文案预审策划者');
       expect(reviewPrompt).toContain('【当前赛道】character-story');
+      expect(reviewPrompt).toContain('【目标字数参考】120 字（区间 96-144）');
+      expect(reviewPrompt).toContain('预审时优先保留足够事实密度，不要为了压缩长度删掉后续改写需要的关键细节。');
       expect(reviewPrompt).toContain('不要主观臆断或编造细节');
       expect(reviewPrompt).toContain('适合后续创作原创短视频口播稿');
-      expect(reviewPrompt).not.toContain('Target word count range: 96-144 Chinese characters.');
       expect(reviewPrompt).not.toContain('Preserve enough source detail');
       expect(reviewPrompt).not.toContain('rewrittenCopy');
       expect(rewritePrompt).not.toContain('Target word count range: 96-144 Chinese characters.');

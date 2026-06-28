@@ -1814,39 +1814,7 @@ function extractScenesFromTailAnchors(text: string, anchors: string[]): { scenes
   for (const anchor of anchors) {
     const cleanAnchor = anchor.trim().replace(/[“”]/gu, '');
     if (!cleanAnchor) continue;
-    let normalizedEnd: number | null = null;
-
-    const exactIndex = normalizedText.indexOf(cleanAnchor, normalizedSearchStart);
-    if (exactIndex >= 0) {
-      normalizedEnd = exactIndex + cleanAnchor.length;
-    }
-
-    if (normalizedEnd === null) {
-      const compactAnchor = cleanAnchor.replace(/\s+/gu, '');
-      if (compactAnchor.length >= 3) {
-        const nonWhitespace = normalizedCharsFrom(normalizedText, normalizedSearchStart);
-        const compactIndex = nonWhitespace.map((item) => item.ch).join('').indexOf(compactAnchor);
-        if (compactIndex >= 0) {
-          normalizedEnd = nonWhitespace[compactIndex + compactAnchor.length - 1].si + 1;
-        }
-      }
-    }
-
-    if (normalizedEnd === null) {
-      const looseAnchor = cleanAnchor.replace(/[\s。！？，、；：…—\-.!?,;:]+$/gu, '').replace(/\s+/gu, '');
-      if (looseAnchor.length >= 4) {
-        const nonWhitespace = normalizedCharsFrom(normalizedText, normalizedSearchStart);
-        const looseIndex = nonWhitespace.map((item) => item.ch).join('').indexOf(looseAnchor);
-        if (looseIndex >= 0) {
-          let end = nonWhitespace[looseIndex + looseAnchor.length - 1].si;
-          while (end + 1 < normalizedText.length && /[。！？，、；：…—\-.!?,;: \t]/u.test(normalizedText[end + 1])) {
-            end += 1;
-          }
-          normalizedEnd = end + 1;
-        }
-      }
-    }
-
+    const normalizedEnd = findStoryboardAnchorEnd(normalizedText, normalizedSearchStart, cleanAnchor);
     if (normalizedEnd === null) {
       missed.push(cleanAnchor.length > 20 ? `${cleanAnchor.slice(0, 20)}…` : cleanAnchor);
       continue;
@@ -1867,12 +1835,62 @@ function extractScenesFromTailAnchors(text: string, anchors: string[]): { scenes
   return { scenes, matched: total - missed.length, total, missed };
 }
 
-function normalizedCharsFrom(text: string, start: number): Array<{ ch: string; si: number }> {
+function findStoryboardAnchorEnd(text: string, searchStart: number, anchor: string): number | null {
+  const exactIndex = text.indexOf(anchor, searchStart);
+  if (exactIndex >= 0) {
+    return exactIndex + anchor.length;
+  }
+
+  const compactAnchor = anchor.replace(/\s+/gu, '');
+  if (compactAnchor.length >= 3) {
+    const nonWhitespace = normalizedCharsFrom(text, searchStart);
+    const compactIndex = nonWhitespace.map((item) => item.ch).join('').indexOf(compactAnchor);
+    if (compactIndex >= 0) {
+      return nonWhitespace[compactIndex + compactAnchor.length - 1].si + 1;
+    }
+  }
+
+  const looseAnchor = anchor.replace(/[\s。！？，、；：…—\-.!?,;:]+$/gu, '').replace(/\s+/gu, '');
+  if (looseAnchor.length >= 4) {
+    const nonWhitespace = normalizedCharsFrom(text, searchStart);
+    const looseIndex = nonWhitespace.map((item) => item.ch).join('').indexOf(looseAnchor);
+    if (looseIndex >= 0) {
+      let end = nonWhitespace[looseIndex + looseAnchor.length - 1].si;
+      while (end + 1 < text.length && /[。！？，、；：…—\-.!?,;: \t]/u.test(text[end + 1])) {
+        end += 1;
+      }
+      return end + 1;
+    }
+  }
+
+  const punctuationlessAnchor = normalizedCharsFrom(anchor, 0, (char) => !isStoryboardIgnoredMatchChar(char))
+    .map((item) => item.ch)
+    .join('');
+  if (punctuationlessAnchor.length >= 4) {
+    const punctuationlessText = normalizedCharsFrom(text, searchStart, (char) => !isStoryboardIgnoredMatchChar(char));
+    const punctuationlessIndex = punctuationlessText.map((item) => item.ch).join('').indexOf(punctuationlessAnchor);
+    if (punctuationlessIndex >= 0) {
+      let end = punctuationlessText[punctuationlessIndex + punctuationlessAnchor.length - 1].si;
+      while (end + 1 < text.length && /[。！？，、；：…—\-.!?,;: \t]/u.test(text[end + 1])) {
+        end += 1;
+      }
+      return end + 1;
+    }
+  }
+
+  return null;
+}
+
+function normalizedCharsFrom(text: string, start: number, keepChar: (char: string) => boolean = (char) => char.trim().length > 0): Array<{ ch: string; si: number }> {
   const output: Array<{ ch: string; si: number }> = [];
   for (let index = start; index < text.length; index += 1) {
-    if (text[index].trim()) output.push({ ch: text[index], si: index });
+    if (keepChar(text[index])) output.push({ ch: text[index], si: index });
   }
   return output;
+}
+
+function isStoryboardIgnoredMatchChar(char: string): boolean {
+  return /[\p{P}]/u.test(char);
 }
 
 function sceneFromCap(cap: string, index: number): StoryboardScene {
