@@ -23,6 +23,7 @@ import {
   Minus,
   Music,
   Palette,
+  Pencil,
   Play,
   Plus,
   RotateCcw,
@@ -718,6 +719,9 @@ function makeFallbackApi(setState: (state: AppState) => void): StoryDreamApi {
     },
     async regenerateTaskNarration() {
       throw new Error('浏览器预览不能重新生成真实配音，请在 Electron 应用中操作。');
+    },
+    async updateTaskImagePrompt() {
+      throw new Error('浏览器预览不能修改真实任务提示词，请在 Electron 应用中操作。');
     },
     async rerunTaskStep() {
       throw new Error('浏览器预览不能重新执行真实流水线步骤，请在 Electron 应用中操作。');
@@ -3169,6 +3173,9 @@ function ImageGenerationGallery({
   const [imagePreviewUrls, setImagePreviewUrls] = useState<Record<string, string>>({});
   const [imagePreviewErrors, setImagePreviewErrors] = useState<Record<string, string>>({});
   const [regeneratingSceneId, setRegeneratingSceneId] = useState<number | null>(null);
+  const [editingPromptSceneId, setEditingPromptSceneId] = useState<number | null>(null);
+  const [editingPromptText, setEditingPromptText] = useState('');
+  const [savingPromptSceneId, setSavingPromptSceneId] = useState<number | null>(null);
   const imagePaths = images.map((asset) => asset.path).join('|');
   const imageBySceneId = useMemo(() => new Map(images.map((asset) => [asset.sceneId, asset] as const)), [images]);
   const promptBySceneId = useMemo(() => new Map(imagePrompts.map((prompt) => [prompt.sceneId, prompt] as const)), [imagePrompts]);
@@ -3212,6 +3219,28 @@ function ImageGenerationGallery({
     }
   }
 
+  function openPromptEditor(sceneId: number, promptText: string) {
+    setEditingPromptSceneId(sceneId);
+    setEditingPromptText(promptText);
+  }
+
+  function cancelPromptEdit() {
+    setEditingPromptSceneId(null);
+    setEditingPromptText('');
+  }
+
+  async function savePrompt(sceneId: number) {
+    const nextPrompt = editingPromptText.trim();
+    if (!nextPrompt) return;
+    setSavingPromptSceneId(sceneId);
+    try {
+      applyState(await api.updateTaskImagePrompt(task.id, sceneId, nextPrompt));
+      cancelPromptEdit();
+    } finally {
+      setSavingPromptSceneId(null);
+    }
+  }
+
   if (scenes.length === 0) return <ArtifactEmpty text="等待分镜后生成图片" />;
 
   return (
@@ -3229,6 +3258,10 @@ function ImageGenerationGallery({
           const previewError = image ? imagePreviewErrors[image.path] : '';
           const cardState = image ? 'ready' : imageError ? 'failed' : 'pending';
           const statusText = image ? '已生成' : imageError ? '生成失败' : task.status === 'running' ? '等待/生成中' : '未生成';
+          const promptText = prompt?.prompt ?? scene.descPrompt;
+          const isEditingPrompt = editingPromptSceneId === scene.id;
+          const isSavingPrompt = savingPromptSceneId === scene.id;
+          const editDisabled = isBrowserPreview || task.status === 'running' || task.status === 'pending' || !prompt || isSavingPrompt;
           return (
             <article className={`image-preview-card ${cardState}`} key={scene.id}>
               <div className="image-thumb">
@@ -3243,19 +3276,40 @@ function ImageGenerationGallery({
                   <strong>{scene.id}. {scene.cap}</strong>
                   <span>{statusText}</span>
                 </div>
-                <p>{prompt ? trimForPreview(prompt.prompt, 180) : scene.descPrompt}</p>
+                <p>{trimForPreview(promptText, 180)}</p>
                 {image ? <small>{image.path}</small> : <small>等待 provider 返回真实图片</small>}
                 {imageError ? <div className="artifact-image-error" title={imageError.message}>{summarizeErrorMessage(imageError.message)}</div> : null}
                 {previewError ? <small className="danger-text">{previewError}</small> : null}
               </div>
-              <button
-                className="mini-button"
-                disabled={isBrowserPreview || task.status === 'running' || task.status === 'pending' || (!image && !imageError) || regeneratingSceneId === scene.id}
-                onClick={() => regenerate(scene.id)}
-              >
-                {regeneratingSceneId === scene.id ? <Loader2 className="spin" size={14} /> : <RotateCcw size={14} />}
-                重新生成
-              </button>
+              <div className="image-preview-actions">
+                <button
+                  className="mini-button"
+                  disabled={isBrowserPreview || task.status === 'running' || task.status === 'pending' || (!image && !imageError) || regeneratingSceneId === scene.id}
+                  onClick={() => regenerate(scene.id)}
+                >
+                  {regeneratingSceneId === scene.id ? <Loader2 className="spin" size={14} /> : <RotateCcw size={14} />}
+                  重新生成
+                </button>
+                <button className="mini-button" disabled={editDisabled} onClick={() => openPromptEditor(scene.id, promptText)}>
+                  <Pencil size={14} />
+                  修改提示词
+                </button>
+                {isEditingPrompt ? (
+                  <div className="image-prompt-editor">
+                    <textarea value={editingPromptText} disabled={isSavingPrompt} onChange={(event) => setEditingPromptText(event.target.value)} />
+                    <div className="image-prompt-editor-actions">
+                      <button className="mini-button" disabled={isSavingPrompt || !editingPromptText.trim()} onClick={() => savePrompt(scene.id)}>
+                        {isSavingPrompt ? <Loader2 className="spin" size={14} /> : <Save size={14} />}
+                        保存提示词
+                      </button>
+                      <button className="mini-button" disabled={isSavingPrompt} onClick={cancelPromptEdit}>
+                        <X size={14} />
+                        取消
+                      </button>
+                    </div>
+                  </div>
+                ) : null}
+              </div>
             </article>
           );
         })}

@@ -13,7 +13,7 @@ import { detectJianyingDraftPath, resolveRuntimeJianyingDraftPath } from '../src
 import { loadJianyingEffectCatalog } from '../src/shared/jianying-effects';
 import { generateConfiguredVoicePreview } from '../src/shared/media-providers';
 import { createConfiguredJsonLlm, createConfiguredTextLlm, listConfiguredProviderModels, testConfiguredLlm } from '../src/shared/llm-provider';
-import { markSceneImageForRegeneration, markSceneNarrationForRegeneration, markTaskStepForRerun } from '../src/shared/pipeline-cache';
+import { markSceneImageForRegeneration, markSceneNarrationForRegeneration, markTaskStepForRerun, updateSceneImagePrompt } from '../src/shared/pipeline-cache';
 import { resolvePythonRuntimeInfo, setDefaultPythonRuntimeAppRoot } from '../src/shared/python-runtime';
 import { composeCopyFromSources, createAiSourceResearcher, searchWebSources } from '../src/shared/research';
 import { runTask } from '../src/shared/runner';
@@ -651,6 +651,29 @@ ipcMain.handle('task:regenerate-narration', async (_event, input: { id: string; 
   if (updatedTask) {
     await resumeTaskRun(database, updatedTask);
   }
+  return database.getState();
+});
+
+ipcMain.handle('task:update-image-prompt', async (_event, input: { id: string; sceneId: number; prompt: string }) => {
+  const database = await getDb();
+  const state = await database.getState();
+  const task = state.tasks.find((item) => item.id === input.id);
+  if (!task) {
+    throw new Error(`Task not found: ${input.id}`);
+  }
+  if (!task.artifactStatePath) {
+    throw new Error('Task artifact state is not available; run the task before editing image prompts.');
+  }
+
+  const sceneId = Number(input.sceneId);
+  const result = await updateSceneImagePrompt(task.artifactStatePath, sceneId, input.prompt);
+  await database.addTaskEvent(task.id, {
+    type: 'prompt_update',
+    step: 3,
+    agent: 'Prompt',
+    detail: `已修改第 ${sceneId} 张图片提示词`,
+    dataJson: JSON.stringify({ sceneId, promptLength: result.updatedPrompt.prompt.length }),
+  });
   return database.getState();
 });
 

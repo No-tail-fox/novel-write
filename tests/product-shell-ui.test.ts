@@ -1683,9 +1683,15 @@ describe('product shell ui', () => {
 
     expect(preload).toContain('readAssetDataUrl');
     expect(preload).toContain('regenerateTaskImage');
+    expect(preload).toContain('updateTaskImagePrompt');
     expect(main).toContain('ImageGenerationGallery');
     expect(main).toContain('readAssetDataUrl');
     expect(main).toContain('regenerateTaskImage');
+    expect(main).toContain('updateTaskImagePrompt');
+    expect(main).toContain('editingPromptSceneId');
+    expect(main).toContain('修改提示词');
+    expect(main).toContain('保存提示词');
+    expect(main).toContain('取消');
     expect(main).toContain('activeImageConcurrency');
     expect(main).toContain('imagePreviewUrls');
     expect(main).toContain('disabled={isBrowserPreview || task.status === \'running\'');
@@ -1693,6 +1699,7 @@ describe('product shell ui', () => {
     expect(css).toContain('.image-preview-grid');
     expect(css).toContain('.image-preview-card');
     expect(css).toContain('.image-thumb');
+    expect(css).toContain('.image-prompt-editor');
   });
 
   it('shows playable narration previews with per-scene regeneration controls', async () => {

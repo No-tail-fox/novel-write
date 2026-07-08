@@ -2108,6 +2108,38 @@ textarea {
   overflow-wrap: anywhere;
 }
 
+.image-preview-actions {
+  display: grid;
+  gap: 8px;
+  min-width: 0;
+}
+
+.image-prompt-editor {
+  display: grid;
+  gap: 8px;
+  min-width: 0;
+}
+
+.image-prompt-editor textarea {
+  width: 100%;
+  min-height: 116px;
+  resize: vertical;
+  border: 1px solid var(--line);
+  border-radius: 7px;
+  padding: 9px 10px;
+  color: var(--text);
+  background: #080d13;
+  font: inherit;
+  font-size: 12px;
+  line-height: 1.55;
+}
+
+.image-prompt-editor-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
 .artifact-image-error {
   display: inline-flex;
   align-items: flex-start;

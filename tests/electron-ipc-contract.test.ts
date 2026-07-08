@@ -324,6 +324,22 @@ describe('electron ipc contract', () => {
     expect(viteEnv).toContain('regenerateTaskNarration: (id: string, sceneId: number) => Promise<AppState>');
   });
 
+  it('updates one scene image prompt through a narrow task artifact API', async () => {
+    const main = await readFile(new URL('../electron/main.ts', import.meta.url), 'utf8');
+    const preload = await readFile(new URL('../electron/preload.ts', import.meta.url), 'utf8');
+    const viteEnv = await readFile(new URL('../src/vite-env.d.ts', import.meta.url), 'utf8');
+    const updateHandler = main.slice(main.indexOf("ipcMain.handle('task:update-image-prompt'"), main.indexOf("ipcMain.handle('task:rerun-step'"));
+
+    expect(main).toContain("ipcMain.handle('task:update-image-prompt'");
+    expect(main).toContain('updateSceneImagePrompt');
+    expect(updateHandler).toContain('artifactStatePath');
+    expect(updateHandler).toContain('database.addTaskEvent');
+    expect(updateHandler).not.toContain('resumeTaskRun(database, updatedTask)');
+    expect(preload).toContain('updateTaskImagePrompt');
+    expect(preload).toContain('task:update-image-prompt');
+    expect(viteEnv).toContain('updateTaskImagePrompt: (id: string, sceneId: number, prompt: string) => Promise<AppState>');
+  });
+
   it('reruns an artifact pipeline step through cache invalidation and background resume', async () => {
     const main = await readFile(new URL('../electron/main.ts', import.meta.url), 'utf8');
     const preload = await readFile(new URL('../electron/preload.ts', import.meta.url), 'utf8');
