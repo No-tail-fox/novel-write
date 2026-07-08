@@ -4,7 +4,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { FileDatabase } from '@shared/storage';
 import { runTask } from '@shared/runner';
-import { markSceneImageForRegeneration, markSceneNarrationForRegeneration, markTaskStepForRerun } from '@shared/pipeline-cache';
+import { markSceneImageForRegeneration, markSceneNarrationForRegeneration, markTaskStepForRerun, updateSceneImagePrompt } from '@shared/pipeline-cache';
 import type { ImagePrompt, PipelineArtifact, StoryboardScene } from '@shared/types';
 import type { PyJianYingBridgeInput } from '@shared/jianying-bridge';
 
@@ -322,6 +322,83 @@ describe('pipeline cache and retry', () => {
       expect(next.steps['5'].outputPath).toBe('1.mp3');
       expect(next.steps['6'].status).toBe('pending');
       expect(next.draft).toBeUndefined();
+    } finally {
+      await rm(dir, { recursive: true, force: true });
+    }
+  });
+
+  it('updates one scene image prompt without changing other prompt fields or cached assets', async () => {
+    const dir = await mkdtemp(join(tmpdir(), 'storybound-update-image-prompt-'));
+    const statePath = join(dir, 'pipeline', 'state.json');
+
+    try {
+      await mkdir(join(dir, 'pipeline'), { recursive: true });
+      const draft = {
+        draftDir: 'draft-dir',
+        draftContentPath: 'draft_content.json',
+        draftMetaPath: 'draft_meta_info.json',
+      };
+      await writeFile(
+        statePath,
+        JSON.stringify(
+          {
+            version: 1,
+            taskId: 'task-update-image-prompt',
+            updatedAt: '2026-07-08T00:00:00.000Z',
+            steps: {
+              '3': { status: 'completed', outputPath: 'prompts.json' },
+              '4': { status: 'failed', outputPath: '1.png\n2.png', error: 'policy failed' },
+              '6': { status: 'completed', outputPath: 'draft-dir' },
+            },
+            artifact: {
+              scenes: [
+                { id: 1, cap: 'one', descPrompt: 'one prompt', durationMs: 1000 },
+                { id: 2, cap: 'two', descPrompt: 'two prompt', durationMs: 1000 },
+              ],
+              imagePrompts: [
+                { sceneId: 1, cap: 'one', prompt: 'image one', negativePrompt: 'first negative', style: 'photo-real', ratio: '9:16', characterProfile: 'same person' },
+                { sceneId: 2, cap: 'two', prompt: 'unsafe image two', negativePrompt: 'keep negative', style: 'photo-real', ratio: '9:16', characterProfile: 'same person' },
+              ],
+            },
+            assets: {
+              images: [
+                { sceneId: 1, path: '1.png' },
+                { sceneId: 2, path: '2.png' },
+              ],
+              imageErrors: [{ sceneId: 2, message: 'policy failed' }],
+              narration: [{ sceneId: 1, path: '1.mp3' }],
+            },
+            draft,
+          },
+          null,
+          2,
+        ),
+        'utf8',
+      );
+
+      const result = await updateSceneImagePrompt(statePath, 2, 'safer repaired prompt');
+      const next = JSON.parse(await readFile(statePath, 'utf8'));
+
+      expect(result.updatedPrompt.prompt).toBe('safer repaired prompt');
+      expect(next.artifact.imagePrompts[0].prompt).toBe('image one');
+      expect(next.artifact.imagePrompts[1]).toMatchObject({
+        sceneId: 2,
+        prompt: 'safer repaired prompt',
+        negativePrompt: 'keep negative',
+        style: 'photo-real',
+        ratio: '9:16',
+        characterProfile: 'same person',
+      });
+      expect(next.assets.images).toEqual([
+        { sceneId: 1, path: '1.png' },
+        { sceneId: 2, path: '2.png' },
+      ]);
+      expect(next.assets.imageErrors).toEqual([{ sceneId: 2, message: 'policy failed' }]);
+      expect(next.assets.narration).toEqual([{ sceneId: 1, path: '1.mp3' }]);
+      expect(next.draft).toEqual(draft);
+      expect(new Date(next.updatedAt).getTime()).toBeGreaterThan(new Date('2026-07-08T00:00:00.000Z').getTime());
+
+      await expect(updateSceneImagePrompt(statePath, 2, '   ')).rejects.toThrow(/Image prompt cannot be empty/);
     } finally {
       await rm(dir, { recursive: true, force: true });
     }

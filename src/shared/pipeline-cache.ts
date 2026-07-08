@@ -1,5 +1,5 @@
 import { readFile, writeFile } from 'node:fs/promises';
-import type { PipelineArtifact, TaskArtifactAssetPreview, TaskArtifactImageErrorPreview, TaskArtifactSnapshot, TaskArtifactStepPreview, TaskStepRerunMode } from './types';
+import type { ImagePrompt, PipelineArtifact, TaskArtifactAssetPreview, TaskArtifactImageErrorPreview, TaskArtifactSnapshot, TaskArtifactStepPreview, TaskStepRerunMode } from './types';
 
 interface PipelineStateFile {
   version?: number;
@@ -39,6 +39,10 @@ export interface TaskStepRerunResult {
   clearedSteps: number[];
 }
 
+export interface UpdateSceneImagePromptResult {
+  updatedPrompt: ImagePrompt;
+}
+
 const pipelineStepMin = 0;
 const pipelineStepMax = 6;
 
@@ -68,6 +72,35 @@ export async function markTaskStepForRerun(statePath: string, step: number, mode
 
   await writeFile(statePath, JSON.stringify(state, null, 2), 'utf8');
   return { step: rerunStep, mode, clearedSteps };
+}
+
+export async function updateSceneImagePrompt(statePath: string, sceneId: number, prompt: string): Promise<UpdateSceneImagePromptResult> {
+  if (!Number.isFinite(sceneId)) {
+    throw new Error('Scene id is required for image prompt update.');
+  }
+  const nextPrompt = prompt.trim();
+  if (!nextPrompt) {
+    throw new Error('Image prompt cannot be empty.');
+  }
+
+  const state = JSON.parse(await readFile(statePath, 'utf8')) as PipelineStateFile;
+  state.artifact ??= {};
+  const imagePrompts = Array.isArray(state.artifact.imagePrompts) ? state.artifact.imagePrompts : [];
+  const promptIndex = imagePrompts.findIndex((item) => Number(item.sceneId) === sceneId);
+  if (promptIndex < 0) {
+    throw new Error(`Image prompt not found for scene ${sceneId}.`);
+  }
+
+  const updatedPrompt = { ...imagePrompts[promptIndex], prompt: nextPrompt };
+  state.artifact.imagePrompts = [
+    ...imagePrompts.slice(0, promptIndex),
+    updatedPrompt,
+    ...imagePrompts.slice(promptIndex + 1),
+  ];
+  state.updatedAt = new Date().toISOString();
+
+  await writeFile(statePath, JSON.stringify(state, null, 2), 'utf8');
+  return { updatedPrompt };
 }
 
 export async function markSceneImageForRegeneration(statePath: string, sceneId: number): Promise<RegenerateSceneImageResult> {
