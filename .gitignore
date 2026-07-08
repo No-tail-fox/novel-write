@@ -16,6 +16,7 @@ vendor/python/
 *.sqlite3
 *.log
 vite-smoke.*.log
+.worktrees/
 
 # Environment and secrets
 .env
