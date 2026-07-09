@@ -576,7 +576,8 @@ async function ensureContentArtifact(input: {
     await emit('step_start', 1, 'Writer', '标准改写 + 自评迭代');
     const reviewedText = requireString(pipeline.artifact.reviewedText, 'reviewedText');
     const controlPlan = prepareRewriteControls(task, reviewedText);
-    const rewriteTask = effectiveRewriteTask(task, controlPlan);
+    const promotionTask = effectivePromotionTask(task);
+    const rewriteTask = effectiveRewriteTask(promotionTask, controlPlan);
     const rewritePromptContext = buildPromptRenderContext({
       task: rewriteTask,
       taskTemplate,
@@ -595,14 +596,21 @@ async function ensureContentArtifact(input: {
     });
     pipeline.artifact.rewrittenCopy = rewrite.rewrittenCopy;
     pipeline.artifact.rewriteEvaluation = rewrite.evaluation;
-    const coverPrompt = renderStepPrompt(promptTemplates, 'cover', promptContext(), '');
+    const coverPromptContext = buildPromptRenderContext({
+      task: promotionTask,
+      taskTemplate,
+      customStyles: appState.customStyles,
+      sourceContext,
+      artifact: pipeline.artifact,
+    });
+    const coverPrompt = renderStepPrompt(promptTemplates, 'cover', coverPromptContext, '');
     pipeline.artifact.cover = await generateCoverMetadata(options.llm, {
       coverPrompt,
       rewrittenCopy: pipeline.artifact.rewrittenCopy,
       signal: options.signal,
       emit,
     });
-    pipeline.artifact.rewrittenCopy = applyFinalRewriteControls(rewrite.rewrittenCopy, task, pipeline.artifact.cover.title, controlPlan.lockedIntro);
+    pipeline.artifact.rewrittenCopy = applyFinalRewriteControls(rewrite.rewrittenCopy, task, pipeline.artifact.cover.title, controlPlan);
     await writeFile(join(workDir, '01-rewritten-copy.md'), pipeline.artifact.rewrittenCopy, 'utf8');
     await writeFile(join(workDir, '00-cover-title.json'), JSON.stringify(pipeline.artifact.cover, null, 2), 'utf8');
     await writeFile(join(workDir, '01-rewrite-evaluations.json'), JSON.stringify(pipeline.artifact.rewriteEvaluation, null, 2), 'utf8');
@@ -900,41 +908,55 @@ function runLlmJson<T = unknown>(llm: ConfiguredJsonLlm, request: LlmJsonStepReq
   return llm.run<T>(openAiRequest);
 }
 
-function prepareRewriteControls(task: Task, reviewedText: string): { reviewedTextForRewrite: string; lockedIntro: string } {
-  if (isDialogueScript(task)) return { reviewedTextForRewrite: reviewedText, lockedIntro: '' };
+interface RewriteControlPlan {
+  reviewedTextForRewrite: string;
+  lockedIntro: string;
+  applyTaskFixedIntro: boolean;
+}
+
+function prepareRewriteControls(task: Task, reviewedText: string): RewriteControlPlan {
+  if (isDialogueScript(task)) return { reviewedTextForRewrite: reviewedText, lockedIntro: '', applyTaskFixedIntro: false };
   const lockIntroSentences = clampIntroSentenceCount(task.lockIntroSentences);
-  if (lockIntroSentences <= 0) return { reviewedTextForRewrite: reviewedText, lockedIntro: '' };
+  if (lockIntroSentences <= 0) return { reviewedTextForRewrite: reviewedText, lockedIntro: '', applyTaskFixedIntro: true };
   const split = splitLeadingSentences(reviewedText, lockIntroSentences);
-  if (!split.remainder.trim()) return { reviewedTextForRewrite: reviewedText, lockedIntro: '' };
+  if (!split.remainder.trim()) return { reviewedTextForRewrite: reviewedText, lockedIntro: '', applyTaskFixedIntro: false };
   return {
     reviewedTextForRewrite: split.remainder,
     lockedIntro: task.fixedIntro?.trim() || split.leading,
+    applyTaskFixedIntro: true,
   };
 }
 
-function effectiveRewriteTask(task: Task, controlPlan: { lockedIntro: string }): Task {
+function effectivePromotionTask(task: Task): Task {
   const keepPromotion = task.keepPromotion || Boolean(task.productInfo?.trim()) || task.track.trim() === 'ecommerce';
-  const adjustedTargetLength = adjustedRewriteTargetLength(task, controlPlan.lockedIntro);
-  if (keepPromotion === task.keepPromotion && adjustedTargetLength === task.targetLength) return task;
+  if (keepPromotion === task.keepPromotion) return task;
   return {
     ...task,
     keepPromotion,
+  };
+}
+
+function effectiveRewriteTask(task: Task, controlPlan: RewriteControlPlan): Task {
+  const adjustedTargetLength = adjustedRewriteTargetLength(task, controlPlan);
+  if (adjustedTargetLength === task.targetLength) return task;
+  return {
+    ...task,
     targetLength: adjustedTargetLength,
   };
 }
 
-function adjustedRewriteTargetLength(task: Task, lockedIntro: string): number | undefined {
+function adjustedRewriteTargetLength(task: Task, controlPlan: RewriteControlPlan): number | undefined {
   if (task.targetLength === undefined || task.targetLength === null) return task.targetLength;
   const targetLength = normalizeTargetLength(task.targetLength);
   if (!targetLength) return task.targetLength;
-  const controlLength = finalRewriteControlVisibleLength(task, lockedIntro);
+  const controlLength = finalRewriteControlVisibleLength(task, controlPlan);
   if (controlLength <= 0) return task.targetLength;
-  return Math.max(200, targetLength - controlLength);
+  return Math.min(targetLength, Math.max(100, targetLength - controlLength));
 }
 
-function finalRewriteControlVisibleLength(task: Task, lockedIntro: string): number {
+function finalRewriteControlVisibleLength(task: Task, controlPlan: RewriteControlPlan): number {
   if (isDialogueScript(task)) return 0;
-  const intro = lockedIntro.trim() || task.fixedIntro?.trim() || '';
+  const intro = controlPlan.lockedIntro.trim() || (controlPlan.applyTaskFixedIntro ? task.fixedIntro?.trim() : '') || '';
   const outroTemplate = task.outroCta?.trim() ?? '';
   const protagonist = task.title.trim() || '主角';
   const outro = outroTemplate ? outroTemplate.replace(/\{主角\}/g, protagonist) : '';
@@ -980,9 +1002,9 @@ function productInfoRewriteBlock(task: Task): string {
   ]);
 }
 
-function applyFinalRewriteControls(copy: string, task: Task, coverTitle: string | undefined, lockedIntro: string): string {
+function applyFinalRewriteControls(copy: string, task: Task, coverTitle: string | undefined, controlPlan: RewriteControlPlan): string {
   if (isDialogueScript(task)) return copy;
-  const intro = lockedIntro.trim() || task.fixedIntro?.trim() || '';
+  const intro = controlPlan.lockedIntro.trim() || (controlPlan.applyTaskFixedIntro ? task.fixedIntro?.trim() : '') || '';
   const outroTemplate = task.outroCta?.trim() ?? '';
   const protagonist = coverTitle?.trim() || task.title.trim() || '主角';
   const outro = outroTemplate ? outroTemplate.replace(/\{主角\}/g, protagonist) : '';

@@ -420,6 +420,27 @@ describe('task runner', () => {
     expect(finalCopy).toBe(aiBody);
   });
 
+  it('does not duplicate fixed intro when over-lock falls back to whole reviewed text', async () => {
+    const fixedIntro = '今天这本书，先看第一句话。';
+    const reviewedText = `${fixedIntro}第二句话也在原文里。`;
+    const { finalCopy } = await runRewriteControlScenario({
+      taskInput: {
+        title: '过锁定固定开头测试',
+        inputText: reviewedText,
+        track: 'character-story',
+        style: 'photo-real',
+        speaker: 'voice',
+        fixedIntro,
+        lockIntroSentences: 5,
+      },
+      reviewedText,
+      rewrittenCopy: reviewedText,
+      coverTitle: '过锁定标题',
+    });
+
+    expect(countOccurrences(finalCopy, fixedIntro)).toBe(1);
+  });
+
   it('adjusts target length for fixed intro and outro controls before rewrite', async () => {
     const fixedIntro = '开头控制'.repeat(20);
     const outroCta = '结尾控制'.repeat(20);
@@ -455,9 +476,48 @@ describe('task runner', () => {
 
     const rewritePrompt = requests.find((request) => request.name === 'rewrite-round-1')?.messages.map((message) => message.content).join('\n') ?? '';
     const repairPrompt = requests.find((request) => request.name === 'rewrite-target-length-repair-1')?.messages.map((message) => message.content).join('\n') ?? '';
-    expect(rewritePrompt).toContain('Target word count range: 160-240 Chinese characters.');
-    expect(repairPrompt).toContain('Target word count range: 160-240 Chinese characters.');
+    expect(rewritePrompt).toContain('Target word count range: 112-168 Chinese characters.');
+    expect(repairPrompt).toContain('Target word count range: 112-168 Chinese characters.');
     expect(countVisibleTestCharacters(finalCopy)).toBeLessThanOrEqual(360);
+  });
+
+  it('does not increase a short explicit target length while subtracting controls', async () => {
+    const { requests } = await runRewriteControlScenario({
+      taskInput: {
+        title: '短目标字数控制测试',
+        inputText: '短目标素材'.repeat(30),
+        track: 'character-story',
+        style: 'photo-real',
+        speaker: 'voice',
+        targetLength: 100,
+        fixedIntro: '固定开头'.repeat(3),
+        outroCta: '固定结尾'.repeat(3),
+        promptTemplateId: 'short-target-control-template',
+        promptTemplateType: 'task',
+      },
+      reviewedText: '短目标素材'.repeat(30),
+      rewrittenCopy: '正文'.repeat(130),
+      coverTitle: '短目标标题',
+      repairRewrite: '正文'.repeat(50),
+      configureDb: async (db) => {
+        await db.upsertPromptTemplate({
+          id: 'short-target-control-template',
+          name: 'Short target control template',
+          type: 'task',
+          content: 'Task template',
+          isBuiltin: false,
+          baseTrack: 'character-story',
+          stepPrompts: { rewrite: 'Target word count range: {{targetLengthRange}} Chinese characters.' },
+        });
+      },
+    });
+
+    const rewritePrompt = requests.find((request) => request.name === 'rewrite-round-1')?.messages.map((message) => message.content).join('\n') ?? '';
+    const repairPrompt = requests.find((request) => request.name === 'rewrite-target-length-repair-1')?.messages.map((message) => message.content).join('\n') ?? '';
+    expect(rewritePrompt).toContain('Target word count range: 80-120 Chinese characters.');
+    expect(rewritePrompt).not.toContain('Target word count range: 160-240 Chinese characters.');
+    expect(repairPrompt).toContain('Target word count range: 80-120 Chinese characters.');
+    expect(repairPrompt).not.toContain('Target word count range: 160-240 Chinese characters.');
   });
 
   it('adds product info prompting to rewrite and evaluation prompts', async () => {
@@ -517,6 +577,41 @@ describe('task runner', () => {
 
     const firstRewritePrompt = requests.find((request) => request.name === 'rewrite-round-1')?.messages.map((message) => message.content).join('\n') ?? '';
     expect(firstRewritePrompt).toContain('Promotion flag: true');
+    expect(storedKeepPromotion).toBe(false);
+  });
+
+  it('treats product info as promotion context in cover prompt templates', async () => {
+    const { requests, storedKeepPromotion } = await runRewriteControlScenario({
+      taskInput: {
+        title: '封面商品上下文测试',
+        inputText: sampleInput,
+        track: 'character-story',
+        style: 'photo-real',
+        speaker: 'voice',
+        targetLength: 100,
+        keepPromotion: false,
+        productInfo: JSON.stringify({ name: '额尔古纳河右岸', sellPoint: '民族史诗' }),
+        promptTemplateId: 'cover-promotion-context-template',
+        promptTemplateType: 'task',
+      },
+      reviewedText: sampleInput,
+      rewrittenCopy: fitSourceLengthRewrite('Cover product context body', 'x'.repeat(100)),
+      coverTitle: '额尔古纳河右岸',
+      configureDb: async (db) => {
+        await db.upsertPromptTemplate({
+          id: 'cover-promotion-context-template',
+          name: 'Cover promotion context template',
+          type: 'task',
+          content: 'Task template',
+          isBuiltin: false,
+          baseTrack: 'character-story',
+          stepPrompts: { cover: 'Cover promotion flag: {{keepPromotion}}' },
+        });
+      },
+    });
+
+    const coverPrompt = requests.find((request) => request.name === 'cover-metadata')?.messages.map((message) => message.content).join('\n') ?? '';
+    expect(coverPrompt).toContain('Cover promotion flag: true');
     expect(storedKeepPromotion).toBe(false);
   });
 
