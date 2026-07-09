@@ -130,6 +130,20 @@ describe('product shell ui', () => {
       expect(main).toContain(symbol);
     }
 
+    for (const symbol of [
+      "sessionStorage.removeItem('book_product_info')",
+      "sessionStorage.removeItem('benchmark_search')",
+      'const selectedMaterialAsset = personAssets.find((asset) => asset.name === materialPerson) ?? null;',
+      'const isLocalMaterialInvalid = materialSource === \'local\' && (!materialPerson || !selectedMaterialAsset || selectedMaterialAsset.count <= 0);',
+      '请先选择人物素材。',
+      '所选人物素材至少导入 1 张图片后才能创建任务。',
+      'disabled={running || isBrowserPreview || isLocalMaterialInvalid || (mode === \'paste\' ? inputText.trim().length === 0 : aiKeyword.trim().length === 0)}',
+      'catch (error)',
+      'error instanceof Error ? error.message : String(error)',
+    ]) {
+      expect(main).toContain(symbol);
+    }
+
     expect(css).toContain('.selection-grid');
     expect(css).toContain('.person-assets-layout');
     expect(css).toContain('.benchmark-import-layout');

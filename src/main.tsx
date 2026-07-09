@@ -1668,6 +1668,8 @@ function NewTaskPage({
     ? coverTemplateOptions
     : [['cinematic-poster', '电影海报封面', 'StoryDream 默认封面模板']];
   const coverTemplateHint = storyDreamCoverTemplateIds.includes(coverTemplateId) ? 'StoryDream 兼容模板' : '自定义封面模板';
+  const selectedMaterialAsset = personAssets.find((asset) => asset.name === materialPerson) ?? null;
+  const isLocalMaterialInvalid = materialSource === 'local' && (!materialPerson || !selectedMaterialAsset || selectedMaterialAsset.count <= 0);
 
   useEffect(() => {
     const incomingProductInfo = sessionStorage.getItem('book_product_info');
@@ -1855,6 +1857,15 @@ function NewTaskPage({
       setDraftNotice('浏览器预览不能执行真实流水线，请在 Electron 应用中运行任务。');
       return;
     }
+    if (materialSource === 'local' && !materialPerson) {
+      setDraftNotice('请先选择人物素材。');
+      return;
+    }
+    if (materialSource === 'local' && (!selectedMaterialAsset || selectedMaterialAsset.count <= 0)) {
+      setDraftNotice('所选人物素材至少导入 1 张图片后才能创建任务。');
+      return;
+    }
+    setDraftNotice('');
     setRunning(true);
     try {
       const next = await api.createAndRunTask({
@@ -1906,6 +1917,8 @@ function NewTaskPage({
       if (createdTask) {
         openTaskDetail(createdTask.id);
       }
+    } catch (error) {
+      setDraftNotice(uiErrorMessage(error));
     } finally {
       setRunning(false);
     }
@@ -2234,7 +2247,7 @@ function NewTaskPage({
             <button className="ghost-action" onClick={() => setDraftNotice('已保存为本地草稿预设')}>
               保存为草稿
             </button>
-            <button className="primary-action" onClick={run} disabled={isBrowserPreview || running || (mode === 'paste' ? inputText.trim().length === 0 : aiKeyword.trim().length === 0)}>
+            <button className="primary-action" onClick={run} disabled={running || isBrowserPreview || isLocalMaterialInvalid || (mode === 'paste' ? inputText.trim().length === 0 : aiKeyword.trim().length === 0)}>
               {running ? <Loader2 className="spin" size={17} /> : <Play size={17} />}
               {running ? '运行中' : '开始生成'}
             </button>
@@ -2262,6 +2275,7 @@ function BookSelectionPage({ api, navigate }: { api: StoryDreamApi; navigate: (v
   const [url, setUrl] = useState('');
   const [note, setNote] = useState('');
   const [message, setMessage] = useState('');
+  const [pendingAction, setPendingAction] = useState<'save' | `delete:${string}` | null>(null);
 
   useEffect(() => {
     let active = true;
@@ -2340,21 +2354,35 @@ function BookSelectionPage({ api, navigate }: { api: StoryDreamApi; navigate: (v
       setMessage('请先填写主题。');
       return;
     }
-    const record = await api.saveBookSelection({
-      theme: theme.trim(),
-      bookId: selectedBookId || undefined,
-      data: productData(),
-    });
-    setSelectedBookId(record.bookId);
-    await refreshSelections();
-    setMessage('已保存选品。');
+    setPendingAction('save');
+    try {
+      const record = await api.saveBookSelection({
+        theme: theme.trim(),
+        bookId: selectedBookId || undefined,
+        data: productData(),
+      });
+      setSelectedBookId(record.bookId);
+      await refreshSelections();
+      setMessage('已保存选品。');
+    } catch (error) {
+      setMessage(uiErrorMessage(error));
+    } finally {
+      setPendingAction(null);
+    }
   }
 
   async function deleteSelection(record: BookSelectionRecord) {
-    await api.deleteBookSelection(record.theme, record.bookId);
-    if (selectedBookId === record.bookId) clearForm();
-    await refreshSelections();
-    setMessage('已删除选品。');
+    setPendingAction(`delete:${record.bookId}`);
+    try {
+      await api.deleteBookSelection(record.theme, record.bookId);
+      if (selectedBookId === record.bookId) clearForm();
+      await refreshSelections();
+      setMessage('已删除选品。');
+    } catch (error) {
+      setMessage(uiErrorMessage(error));
+    } finally {
+      setPendingAction(null);
+    }
   }
 
   function handoffProduct(record: BookSelectionRecord, view: ShellView) {
@@ -2390,7 +2418,7 @@ function BookSelectionPage({ api, navigate }: { api: StoryDreamApi; navigate: (v
               <div className="selection-card-actions">
                 <button className="mini-button" type="button" onClick={() => handoffProduct(record, 'new-task')}>带入新建任务</button>
                 <button className="mini-button" type="button" onClick={() => handoffProduct(record, 'benchmark')}>去对标导入</button>
-                <button className="mini-button" type="button" onClick={() => deleteSelection(record)}>删除</button>
+                <button className="mini-button" type="button" disabled={pendingAction === `delete:${record.bookId}` || pendingAction === 'save'} onClick={() => deleteSelection(record)}>删除</button>
               </div>
             </article>
           ))}
@@ -2403,7 +2431,7 @@ function BookSelectionPage({ api, navigate }: { api: StoryDreamApi; navigate: (v
             <h3>{selectedBookId ? '编辑选品' : '新增选品'}</h3>
             <span>商品信息只保存在本地，不调用远端 Storybound 接口。</span>
           </div>
-          <button className="primary-action slim" type="button" onClick={saveSelection}>
+          <button className="primary-action slim" type="button" disabled={pendingAction !== null} onClick={saveSelection}>
             <Save size={15} />
             保存选品
           </button>
@@ -2478,6 +2506,8 @@ function BenchmarkImportPage({
     const incomingSearch = sessionStorage.getItem('benchmark_search');
     if (incomingProductInfo) setProductInfo(incomingProductInfo);
     if (incomingSearch) setKeyword(incomingSearch);
+    sessionStorage.removeItem('book_product_info');
+    sessionStorage.removeItem('benchmark_search');
   }, []);
 
   async function createBenchmarkTask() {
@@ -2504,6 +2534,8 @@ function BenchmarkImportPage({
       applyState(next);
       const createdTask = next.tasks[0];
       if (createdTask) openTaskDetail(createdTask.id);
+    } catch (error) {
+      setMessage(uiErrorMessage(error));
     } finally {
       setRunning(false);
     }
@@ -2565,6 +2597,7 @@ function PersonAssetsPage({ api, isBrowserPreview }: { api: StoryDreamApi; isBro
   const [images, setImages] = useState<PersonAssetImage[]>([]);
   const [imageUrls, setImageUrls] = useState<Record<string, string>>({});
   const [message, setMessage] = useState(isBrowserPreview ? '浏览器预览不能导入或读取本地图片，请在 Electron 应用中管理素材。' : '');
+  const [pendingAction, setPendingAction] = useState<'create' | 'rename' | 'delete' | 'import' | 'open' | null>(null);
   const selectedAsset = people.find((person) => person.name === selectedName) ?? null;
 
   useEffect(() => {
@@ -2635,25 +2668,46 @@ function PersonAssetsPage({ api, isBrowserPreview }: { api: StoryDreamApi; isBro
       setMessage('请先填写人物名称。');
       return;
     }
-    await api.createPersonAsset(name);
-    setNewPersonName('');
-    await refreshPeople(name);
-    setMessage('已创建人物素材库。');
+    setPendingAction('create');
+    try {
+      await api.createPersonAsset(name);
+      setNewPersonName('');
+      await refreshPeople(name);
+      setMessage('已创建人物素材库。');
+    } catch (error) {
+      setMessage(uiErrorMessage(error));
+    } finally {
+      setPendingAction(null);
+    }
   }
 
   async function renamePerson() {
     const nextName = renameValue.trim();
     if (!selectedName || !nextName) return;
-    await api.renamePersonAsset(selectedName, nextName);
-    await refreshPeople(nextName);
-    setMessage('已重命名人物素材库。');
+    setPendingAction('rename');
+    try {
+      await api.renamePersonAsset(selectedName, nextName);
+      await refreshPeople(nextName);
+      setMessage('已重命名人物素材库。');
+    } catch (error) {
+      setMessage(uiErrorMessage(error));
+    } finally {
+      setPendingAction(null);
+    }
   }
 
   async function deletePerson() {
     if (!selectedName) return;
-    await api.deletePersonAsset(selectedName);
-    await refreshPeople('');
-    setMessage('已删除人物素材库。');
+    setPendingAction('delete');
+    try {
+      await api.deletePersonAsset(selectedName);
+      await refreshPeople('');
+      setMessage('已删除人物素材库。');
+    } catch (error) {
+      setMessage(uiErrorMessage(error));
+    } finally {
+      setPendingAction(null);
+    }
   }
 
   async function importImages() {
@@ -2661,10 +2715,29 @@ function PersonAssetsPage({ api, isBrowserPreview }: { api: StoryDreamApi; isBro
       setMessage('请先选择人物。');
       return;
     }
-    const count = await api.importPersonAssetImages(selectedName);
-    await refreshPeople(selectedName);
-    setImages(await api.listPersonAssetImages(selectedName));
-    setMessage(count > 0 ? `已导入 ${count} 张图片。` : '没有导入新图片。');
+    setPendingAction('import');
+    try {
+      const count = await api.importPersonAssetImages(selectedName);
+      await refreshPeople(selectedName);
+      setImages(await api.listPersonAssetImages(selectedName));
+      setMessage(count > 0 ? `已导入 ${count} 张图片。` : '没有导入新图片。');
+    } catch (error) {
+      setMessage(uiErrorMessage(error));
+    } finally {
+      setPendingAction(null);
+    }
+  }
+
+  async function openSelectedAssetDir() {
+    if (!selectedAsset?.dir) return;
+    setPendingAction('open');
+    try {
+      await api.openPath(selectedAsset.dir);
+    } catch (error) {
+      setMessage(uiErrorMessage(error));
+    } finally {
+      setPendingAction(null);
+    }
   }
 
   return (
@@ -2678,7 +2751,7 @@ function PersonAssetsPage({ api, isBrowserPreview }: { api: StoryDreamApi; isBro
         </div>
         <div className="person-create-row">
           <input value={newPersonName} onChange={(event) => setNewPersonName(event.target.value)} placeholder="人物名称" />
-          <button className="ghost-action compact-action" type="button" onClick={createPerson}>
+          <button className="ghost-action compact-action" type="button" disabled={pendingAction !== null} onClick={createPerson}>
             <Plus size={15} />
             创建
           </button>
@@ -2702,12 +2775,12 @@ function PersonAssetsPage({ api, isBrowserPreview }: { api: StoryDreamApi; isBro
           </div>
           <div className="button-row">
             {selectedAsset?.dir ? (
-              <button className="ghost-action compact-action" type="button" onClick={() => api.openPath(selectedAsset.dir)}>
+              <button className="ghost-action compact-action" type="button" disabled={pendingAction !== null} onClick={openSelectedAssetDir}>
                 <FolderOpen size={15} />
                 打开目录
               </button>
             ) : null}
-            <button className="primary-action slim" type="button" disabled={!selectedName} onClick={importImages}>
+            <button className="primary-action slim" type="button" disabled={!selectedName || pendingAction !== null} onClick={importImages}>
               <Upload size={15} />
               导入图片
             </button>
@@ -2720,11 +2793,11 @@ function PersonAssetsPage({ api, isBrowserPreview }: { api: StoryDreamApi; isBro
               <input value={renameValue} onChange={(event) => setRenameValue(event.target.value)} />
             </Field>
             <div className="button-row person-asset-actions">
-              <button className="ghost-action compact-action" type="button" disabled={!renameValue.trim() || renameValue.trim() === selectedName} onClick={renamePerson}>
+              <button className="ghost-action compact-action" type="button" disabled={!renameValue.trim() || renameValue.trim() === selectedName || pendingAction !== null} onClick={renamePerson}>
                 <Pencil size={15} />
                 重命名
               </button>
-              <button className="mini-button" type="button" onClick={deletePerson}>删除</button>
+              <button className="mini-button" type="button" disabled={pendingAction !== null} onClick={deletePerson}>删除</button>
             </div>
           </div>
         ) : null}
@@ -8063,6 +8136,10 @@ function productInfoSummary(value: string | null): string {
 
 function emptyToUndefined(value: string): string | undefined {
   return value.trim() || undefined;
+}
+
+function uiErrorMessage(error: unknown): string {
+  return error instanceof Error ? error.message : String(error);
 }
 
 function trimForPreview(value: string, limit: number): string {
