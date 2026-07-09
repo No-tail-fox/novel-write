@@ -95,6 +95,46 @@ describe('product shell ui', () => {
     }
   });
 
+  it('adds practical latest Storybound pages and controls to the Chinese shell', async () => {
+    const main = await readFile(new URL('../src/main.tsx', import.meta.url), 'utf8');
+    const css = await readFile(new URL('../src/styles.css', import.meta.url), 'utf8');
+
+    for (const text of [
+      '选品助手',
+      '对标导入',
+      '人物素材库',
+      '文案把控',
+      '固定开头',
+      '结尾引导',
+      '锁定开头句数',
+      '素材来源',
+      '本地人物素材',
+      '用此文案创建任务',
+      '带入新建任务',
+    ]) {
+      expect(main).toContain(text);
+    }
+
+    for (const symbol of [
+      'BookSelectionPage',
+      'BenchmarkImportPage',
+      'PersonAssetsPage',
+      'book_product_info',
+      'benchmark_search',
+      'productInfo',
+      'materialPerson',
+      'fixedIntro',
+      'outroCta',
+      'lockIntroSentences',
+    ]) {
+      expect(main).toContain(symbol);
+    }
+
+    expect(css).toContain('.selection-grid');
+    expect(css).toContain('.person-assets-layout');
+    expect(css).toContain('.benchmark-import-layout');
+  });
+
   it('keeps sidebar navigation as fixed full-width single-line rows', async () => {
     const css = await readFile(new URL('../src/styles.css', import.meta.url), 'utf8');
 

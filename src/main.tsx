@@ -3,6 +3,7 @@ import { createRoot, type Root } from 'react-dom/client';
 import {
   Bell,
   Bot,
+  BookOpen,
   Circle,
   Coins,
   Copy,
@@ -13,6 +14,7 @@ import {
   FolderOpen,
   History,
   Image as ImageIcon,
+  Images,
   Info,
   KeyRound,
   LayoutTemplate,
@@ -26,6 +28,7 @@ import {
   Pencil,
   Play,
   Plus,
+  Radar,
   RotateCcw,
   Save,
   Search,
@@ -43,6 +46,8 @@ import type {
   AiSourceSection,
   AppConfig,
   AppState,
+  BookProductInfo,
+  BookSelectionRecord,
   ConfigTestTarget,
   CreateTaskInput,
   CreateViralAnalysisInput,
@@ -83,6 +88,7 @@ import type {
   VoiceLabGenerateInput,
   VoiceLabRecord,
 } from './shared/types';
+import type { PersonAssetImage, PersonAssetSummary } from './shared/person-assets';
 import { configTargetStatus, normalizeAppConfig, validateConfigTarget } from './shared/config-utils';
 import {
   activeImageProfileId,
@@ -179,6 +185,9 @@ type NavItem = { view: ShellView; label: string; hint: string; icon: React.Compo
 
 const primaryNavItems: NavItem[] = [
   { view: 'new-task', label: '新建任务', hint: '素材成片', icon: Plus },
+  { view: 'book-selection', label: '选品助手', hint: '商品卖点', icon: BookOpen },
+  { view: 'benchmark', label: '对标导入', hint: '文案二改', icon: Radar },
+  { view: 'person-assets', label: '人物素材库', hint: '真图分镜', icon: Images },
   { view: 'queue', label: '任务队列', hint: '运行进度', icon: ListChecks },
   { view: 'history', label: '历史任务', hint: '本地记录', icon: History },
   { view: 'image-lab', label: '画图实验室', hint: '分镜图片', icon: FlaskConical },
@@ -384,6 +393,19 @@ function makeFallbackApi(setState: (state: AppState) => void): StoryDreamApi {
     const raw = localStorage.getItem('storydream-state') ?? localStorage.getItem('storybound-state');
     return raw ? hydrateState(JSON.parse(raw) as AppState) : cloneState(initialState);
   };
+  const readBookSelections = () => {
+    const raw = localStorage.getItem('storybound-book-selections');
+    if (!raw) return [] as BookSelectionRecord[];
+    try {
+      return JSON.parse(raw) as BookSelectionRecord[];
+    } catch {
+      return [] as BookSelectionRecord[];
+    }
+  };
+  const writeBookSelections = (records: BookSelectionRecord[]) => {
+    localStorage.setItem('storybound-book-selections', JSON.stringify(records));
+    return records;
+  };
   const persist = (state: AppState) => {
     const next = hydrateState(state);
     localStorage.setItem('storydream-state', JSON.stringify(next));
@@ -536,13 +558,18 @@ function makeFallbackApi(setState: (state: AppState) => void): StoryDreamApi {
     async saveUiPreferences(ui: UiPreferences) {
       return persist({ ...read(), ui });
     },
-    async listBookSelections() {
-      return [];
+    async listBookSelections(theme) {
+      const records = readBookSelections();
+      return theme ? records.filter((record) => record.theme === theme) : records;
     },
     async saveBookSelection(input) {
-      return { theme: input.theme, bookId: input.bookId ?? `b-${Date.now()}`, data: input.data, updatedAt: Date.now() };
+      const records = readBookSelections();
+      const record = { theme: input.theme, bookId: input.bookId ?? `b-${Date.now()}`, data: input.data, updatedAt: Date.now() };
+      writeBookSelections([record, ...records.filter((item) => !(item.theme === record.theme && item.bookId === record.bookId))]);
+      return record;
     },
-    async deleteBookSelection() {
+    async deleteBookSelection(theme, bookId) {
+      writeBookSelections(readBookSelections().filter((record) => !(record.theme === theme && record.bookId === bookId)));
       return undefined;
     },
     async listPersonAssets() {
@@ -672,6 +699,13 @@ function makeFallbackApi(setState: (state: AppState) => void): StoryDreamApi {
         failedStep: 0,
         retryFromStep: 0,
         artifactStatePath: '',
+        materialSource: input.materialSource ?? 'ai',
+        productInfo: input.productInfo ?? null,
+        materialPerson: input.materialPerson ?? null,
+        draftDir: input.draftDir ?? null,
+        fixedIntro: input.fixedIntro ?? null,
+        outroCta: input.outroCta ?? null,
+        lockIntroSentences: input.lockIntroSentences ?? 0,
       };
       const events: TaskEvent[] = [
         { taskId: task.id, type: 'step_error', step: 0, agent: 'Reviewer', tool: null, detail: browserPipelineError, dataJson: null, ts: Date.now() },
@@ -979,6 +1013,9 @@ function App() {
           </header>
 
           {activeView === 'new-task' ? <NewTaskPage api={api} state={state} applyState={applyState} openTaskDetail={openTaskDetail} isBrowserPreview={isBrowserPreview} /> : null}
+          {activeView === 'book-selection' ? <BookSelectionPage api={api} navigate={navigate} /> : null}
+          {activeView === 'benchmark' ? <BenchmarkImportPage api={api} applyState={applyState} openTaskDetail={openTaskDetail} isBrowserPreview={isBrowserPreview} /> : null}
+          {activeView === 'person-assets' ? <PersonAssetsPage api={api} isBrowserPreview={isBrowserPreview} /> : null}
           {activeView === 'queue' ? <QueuePage api={api} state={state} applyState={applyState} openNewTask={() => navigate('new-task')} openTaskDetail={openTaskDetail} isBrowserPreview={isBrowserPreview} /> : null}
           {activeView === 'history' ? <HistoryPage api={api} state={state} openTaskDetail={openTaskDetail} /> : null}
           {activeView === 'task-detail' ? <TaskDetailPage api={api} state={state} task={selectedTask} applyState={applyState} close={() => navigate('history')} isBrowserPreview={isBrowserPreview} /> : null}
@@ -1585,6 +1622,13 @@ function NewTaskPage({
   const [rewriteIntensity, setRewriteIntensity] = useState<RewriteIntensity>('standard');
   const [narrativePov, setNarrativePov] = useState<Task['narrativePov']>('keep-original');
   const [keepPromotion, setKeepPromotion] = useState(false);
+  const [productInfo, setProductInfo] = useState<string | null>(null);
+  const [materialSource, setMaterialSource] = useState<'ai' | 'local'>('ai');
+  const [materialPerson, setMaterialPerson] = useState('');
+  const [fixedIntro, setFixedIntro] = useState('');
+  const [outroCta, setOutroCta] = useState('');
+  const [lockIntroSentences, setLockIntroSentences] = useState('0');
+  const [personAssets, setPersonAssets] = useState<PersonAssetSummary[]>([]);
   const [ttsSpeed, setTtsSpeed] = useState(1);
   const [targetLength, setTargetLength] = useState('');
   const [storyboardSceneCount, setStoryboardSceneCount] = useState('');
@@ -1624,6 +1668,40 @@ function NewTaskPage({
     ? coverTemplateOptions
     : [['cinematic-poster', '电影海报封面', 'StoryDream 默认封面模板']];
   const coverTemplateHint = storyDreamCoverTemplateIds.includes(coverTemplateId) ? 'StoryDream 兼容模板' : '自定义封面模板';
+
+  useEffect(() => {
+    const incomingProductInfo = sessionStorage.getItem('book_product_info');
+    if (incomingProductInfo) {
+      setProductInfo(incomingProductInfo);
+      setKeepPromotion(true);
+      sessionStorage.removeItem('book_product_info');
+    }
+    const incomingBenchmarkScript = sessionStorage.getItem('benchmark_script');
+    if (incomingBenchmarkScript) {
+      setInputText(incomingBenchmarkScript);
+      setMode('paste');
+      sessionStorage.removeItem('benchmark_script');
+    }
+  }, []);
+
+  useEffect(() => {
+    let active = true;
+    api
+      .listPersonAssets()
+      .then((assets) => {
+        if (active) setPersonAssets(assets);
+      })
+      .catch(console.error);
+    return () => {
+      active = false;
+    };
+  }, [api]);
+
+  useEffect(() => {
+    if (materialSource === 'local' && !materialPerson && personAssets[0]) {
+      setMaterialPerson(personAssets[0].name);
+    }
+  }, [materialSource, materialPerson, personAssets]);
 
   useEffect(() => {
     setBgmId((current) => (current && bgmOptions.some((bgm) => bgm.id === current) ? current : resolveDefaultBgmId(state.config)));
@@ -1807,7 +1885,13 @@ function NewTaskPage({
         referenceImagePath,
         rewriteIntensity,
         narrativePov,
-        keepPromotion,
+        keepPromotion: keepPromotion || Boolean(productInfo),
+        productInfo,
+        materialSource,
+        materialPerson: materialSource === 'local' ? materialPerson : null,
+        fixedIntro,
+        outroCta,
+        lockIntroSentences: normalizeLockIntroSentencesInput(lockIntroSentences),
         ttsProvider,
         ttsSpeed,
         publishMode,
@@ -2099,6 +2183,38 @@ function NewTaskPage({
               <input type="checkbox" checked={keepPromotion} onChange={(event) => setKeepPromotion(event.target.checked)} />
               带货模式 <small>改写时删除带货段落</small>
             </label>
+            <div className="advanced-section copy-control-section">
+              <div className="section-title-row">
+                <span className="field-title">文案把控</span>
+                {productInfo ? <small>已带入：{productInfoSummary(productInfo)}</small> : null}
+              </div>
+              <div className="copy-control-grid">
+                <Field label="固定开头" hint="可选">
+                  <textarea className="small-textarea" value={fixedIntro} onChange={(event) => setFixedIntro(event.target.value)} placeholder="例如：今天这本书，先看第一句话。" />
+                </Field>
+                <Field label="结尾引导" hint="可用 {主角}">
+                  <textarea className="small-textarea" value={outroCta} onChange={(event) => setOutroCta(event.target.value)} placeholder="例如：想读{主角}，去橱窗找这本书。" />
+                </Field>
+                <Field label="锁定开头句数">
+                  <input type="number" min="0" max="20" step="1" value={lockIntroSentences} onChange={(event) => setLockIntroSentences(event.target.value)} />
+                </Field>
+              </div>
+            </div>
+            <div className="advanced-section material-source-section">
+              <Segmented label="素材来源" value={materialSource} options={['ai', 'local']} labels={['AI 生图', '本地人物素材']} onChange={(value) => setMaterialSource(value as 'ai' | 'local')} />
+              {materialSource === 'local' ? (
+                <Field label="本地人物素材">
+                  <select value={materialPerson} onChange={(event) => setMaterialPerson(event.target.value)}>
+                    <option value="">请选择人物</option>
+                    {personAssets.map((asset) => (
+                      <option key={asset.name} value={asset.name}>
+                        {asset.name} · {asset.count} 张
+                      </option>
+                    ))}
+                  </select>
+                </Field>
+              ) : null}
+            </div>
             <Segmented label="配音语速" value={String(ttsSpeed)} options={['0.85', '1', '1.15', '1.3']} labels={['慢速 0.85x', '默认 1.0x', '快速 1.15x', '更快 1.3x']} onChange={(value) => setTtsSpeed(Number(value))} />
             <Field label="自定义 / 其他模型">
               <select value={selectedTaskLlmProfileId} onChange={(event) => setSelectedTaskLlmProfileId(event.target.value)}>
@@ -2125,6 +2241,504 @@ function NewTaskPage({
           </div>
         </div>
         {draftNotice ? <span className="local-note">{draftNotice}</span> : null}
+      </section>
+    </div>
+  );
+}
+
+function BookSelectionPage({ api, navigate }: { api: StoryDreamApi; navigate: (view: ShellView) => void }) {
+  const [records, setRecords] = useState<BookSelectionRecord[]>([]);
+  const [selectedBookId, setSelectedBookId] = useState('');
+  const [theme, setTheme] = useState('故事带货');
+  const [name, setName] = useState('');
+  const [author, setAuthor] = useState('');
+  const [category, setCategory] = useState('');
+  const [keyword, setKeyword] = useState('');
+  const [sellPoint, setSellPoint] = useState('');
+  const [audience, setAudience] = useState('');
+  const [persons, setPersons] = useState('');
+  const [era, setEra] = useState('');
+  const [price, setPrice] = useState('');
+  const [url, setUrl] = useState('');
+  const [note, setNote] = useState('');
+  const [message, setMessage] = useState('');
+
+  useEffect(() => {
+    let active = true;
+    api
+      .listBookSelections()
+      .then((items) => {
+        if (active) setRecords(items);
+      })
+      .catch((error) => {
+        if (active) setMessage(error instanceof Error ? error.message : String(error));
+      });
+    return () => {
+      active = false;
+    };
+  }, [api]);
+
+  async function refreshSelections() {
+    setRecords(await api.listBookSelections());
+  }
+
+  function loadRecord(record: BookSelectionRecord) {
+    setSelectedBookId(record.bookId);
+    setTheme(record.theme);
+    setName(record.data.name ?? '');
+    setAuthor(record.data.author ?? '');
+    setCategory(record.data.category ?? '');
+    setKeyword(record.data.keyword ?? '');
+    setSellPoint(record.data.sellPoint ?? '');
+    setAudience(record.data.audience ?? '');
+    setPersons(record.data.persons ?? '');
+    setEra(record.data.era ?? '');
+    setPrice(record.data.price ?? '');
+    setUrl(record.data.url ?? '');
+    setNote(record.data.note ?? '');
+    setMessage('');
+  }
+
+  function clearForm() {
+    setSelectedBookId('');
+    setName('');
+    setAuthor('');
+    setCategory('');
+    setKeyword('');
+    setSellPoint('');
+    setAudience('');
+    setPersons('');
+    setEra('');
+    setPrice('');
+    setUrl('');
+    setNote('');
+    setMessage('');
+  }
+
+  function productData(): BookProductInfo {
+    return {
+      name: name.trim(),
+      author: emptyToUndefined(author),
+      category: emptyToUndefined(category),
+      keyword: emptyToUndefined(keyword),
+      sellPoint: emptyToUndefined(sellPoint),
+      audience: emptyToUndefined(audience),
+      persons: emptyToUndefined(persons),
+      era: emptyToUndefined(era),
+      price: emptyToUndefined(price),
+      url: emptyToUndefined(url),
+      note: emptyToUndefined(note),
+    };
+  }
+
+  async function saveSelection() {
+    if (!name.trim()) {
+      setMessage('请先填写商品 / 书名。');
+      return;
+    }
+    if (!theme.trim()) {
+      setMessage('请先填写主题。');
+      return;
+    }
+    const record = await api.saveBookSelection({
+      theme: theme.trim(),
+      bookId: selectedBookId || undefined,
+      data: productData(),
+    });
+    setSelectedBookId(record.bookId);
+    await refreshSelections();
+    setMessage('已保存选品。');
+  }
+
+  async function deleteSelection(record: BookSelectionRecord) {
+    await api.deleteBookSelection(record.theme, record.bookId);
+    if (selectedBookId === record.bookId) clearForm();
+    await refreshSelections();
+    setMessage('已删除选品。');
+  }
+
+  function handoffProduct(record: BookSelectionRecord, view: ShellView) {
+    sessionStorage.setItem('book_product_info', JSON.stringify(record.data));
+    if (view === 'benchmark') {
+      sessionStorage.setItem('benchmark_search', record.data.keyword || record.data.name);
+    }
+    navigate(view);
+  }
+
+  return (
+    <div className="selection-grid">
+      <section className="panel selection-list-panel">
+        <div className="panel-title-row">
+          <div>
+            <h2>选品助手</h2>
+            <span>本地维护商品卖点，直接带入新任务。</span>
+          </div>
+          <button className="ghost-action compact-action" type="button" onClick={clearForm}>
+            <Plus size={15} />
+            新选品
+          </button>
+        </div>
+        <div className="selection-card-list">
+          {records.length === 0 ? <EmptyState title="暂无选品" /> : null}
+          {records.map((record) => (
+            <article key={`${record.theme}-${record.bookId}`} className={record.bookId === selectedBookId ? 'selection-card active' : 'selection-card'}>
+              <button type="button" className="selection-card-main" onClick={() => loadRecord(record)}>
+                <strong>{record.data.name}</strong>
+                <span>{record.theme} · {record.data.author || record.data.category || '未填分类'}</span>
+                <p>{record.data.sellPoint || record.data.note || '未填写卖点'}</p>
+              </button>
+              <div className="selection-card-actions">
+                <button className="mini-button" type="button" onClick={() => handoffProduct(record, 'new-task')}>带入新建任务</button>
+                <button className="mini-button" type="button" onClick={() => handoffProduct(record, 'benchmark')}>去对标导入</button>
+                <button className="mini-button" type="button" onClick={() => deleteSelection(record)}>删除</button>
+              </div>
+            </article>
+          ))}
+        </div>
+      </section>
+
+      <section className="panel selection-editor-panel">
+        <div className="panel-title-row">
+          <div>
+            <h3>{selectedBookId ? '编辑选品' : '新增选品'}</h3>
+            <span>商品信息只保存在本地，不调用远端 Storybound 接口。</span>
+          </div>
+          <button className="primary-action slim" type="button" onClick={saveSelection}>
+            <Save size={15} />
+            保存选品
+          </button>
+        </div>
+        <div className="selection-form-grid">
+          <Field label="主题">
+            <input value={theme} onChange={(event) => setTheme(event.target.value)} placeholder="例如：故事带货 / 健康书单" />
+          </Field>
+          <Field label="商品 / 书名">
+            <input value={name} onChange={(event) => setName(event.target.value)} placeholder="例如：额尔古纳河右岸" />
+          </Field>
+          <Field label="作者">
+            <input value={author} onChange={(event) => setAuthor(event.target.value)} />
+          </Field>
+          <Field label="分类">
+            <input value={category} onChange={(event) => setCategory(event.target.value)} />
+          </Field>
+          <Field label="关键词">
+            <input value={keyword} onChange={(event) => setKeyword(event.target.value)} />
+          </Field>
+          <Field label="价格">
+            <input value={price} onChange={(event) => setPrice(event.target.value)} />
+          </Field>
+          <Field label="目标人群">
+            <input value={audience} onChange={(event) => setAudience(event.target.value)} />
+          </Field>
+          <Field label="人物">
+            <input value={persons} onChange={(event) => setPersons(event.target.value)} />
+          </Field>
+          <Field label="年代 / 场景">
+            <input value={era} onChange={(event) => setEra(event.target.value)} />
+          </Field>
+          <Field label="链接">
+            <input value={url} onChange={(event) => setUrl(event.target.value)} />
+          </Field>
+        </div>
+        <Field label="核心卖点">
+          <textarea className="small-textarea" value={sellPoint} onChange={(event) => setSellPoint(event.target.value)} />
+        </Field>
+        <Field label="备注">
+          <textarea className="small-textarea" value={note} onChange={(event) => setNote(event.target.value)} />
+        </Field>
+        {message ? <span className="local-note">{message}</span> : null}
+      </section>
+    </div>
+  );
+}
+
+function BenchmarkImportPage({
+  api,
+  applyState,
+  openTaskDetail,
+  isBrowserPreview,
+}: {
+  api: StoryDreamApi;
+  applyState: (state: AppState) => void;
+  openTaskDetail: (taskId: string) => void;
+  isBrowserPreview: boolean;
+}) {
+  const [sourceLink, setSourceLink] = useState('');
+  const [benchmarkTitle, setBenchmarkTitle] = useState('');
+  const [keyword, setKeyword] = useState('');
+  const [script, setScript] = useState('');
+  const [productInfo, setProductInfo] = useState<string | null>(null);
+  const [running, setRunning] = useState(false);
+  const [message, setMessage] = useState('');
+  const product = parseBookProductInfo(productInfo);
+  const productName = product?.name ?? '';
+
+  useEffect(() => {
+    const incomingProductInfo = sessionStorage.getItem('book_product_info');
+    const incomingSearch = sessionStorage.getItem('benchmark_search');
+    if (incomingProductInfo) setProductInfo(incomingProductInfo);
+    if (incomingSearch) setKeyword(incomingSearch);
+  }, []);
+
+  async function createBenchmarkTask() {
+    if (!script.trim()) {
+      setMessage('请先粘贴对标文案。');
+      return;
+    }
+    if (isBrowserPreview) {
+      setMessage('浏览器预览不能执行真实流水线，请在 Electron 应用中创建任务。');
+      return;
+    }
+    setRunning(true);
+    setMessage('');
+    try {
+      const next = await api.createAndRunTask({
+        title: benchmarkTitle.trim() || keyword.trim() || productName || '',
+        inputText: script,
+        mode: 'paste',
+        track: productInfo ? 'ecommerce' : 'character-story',
+        keepPromotion: Boolean(productInfo),
+        productInfo,
+        pausePoints: [],
+      });
+      applyState(next);
+      const createdTask = next.tasks[0];
+      if (createdTask) openTaskDetail(createdTask.id);
+    } finally {
+      setRunning(false);
+    }
+  }
+
+  return (
+    <div className="benchmark-import-layout">
+      <section className="panel benchmark-source-panel">
+        <div className="panel-title-row">
+          <div>
+            <h2>对标导入</h2>
+            <span>把同类文案贴进来，按当前选品创建二改任务。</span>
+          </div>
+        </div>
+        <Field label="来源链接">
+          <input value={sourceLink} onChange={(event) => setSourceLink(event.target.value)} placeholder="抖音 / 小红书 / 视频号链接" />
+        </Field>
+        <Field label="账号 / 标题">
+          <input value={benchmarkTitle} onChange={(event) => setBenchmarkTitle(event.target.value)} />
+        </Field>
+        <Field label="关键词">
+          <input value={keyword} onChange={(event) => setKeyword(event.target.value)} placeholder={productName || '例如：民族史诗 / 睡前故事'} />
+        </Field>
+        <div className="benchmark-product-box">
+          <span className="field-title">素材来源</span>
+          <strong>{productName || '未带入选品'}</strong>
+          <small>{productInfo ? productInfoSummary(productInfo) : '可从选品助手点击“去对标导入”带入商品信息'}</small>
+        </div>
+      </section>
+
+      <section className="panel benchmark-script-panel">
+        <div className="panel-title-row">
+          <div>
+            <h3>对标文案</h3>
+            <span>保留原始结构，任务内再执行改写与带货控制。</span>
+          </div>
+          <button className="primary-action slim" type="button" disabled={running || !script.trim()} onClick={createBenchmarkTask}>
+            {running ? <Loader2 className="spin" size={15} /> : <Play size={15} />}
+            用此文案创建任务
+          </button>
+        </div>
+        <textarea className="source-textarea benchmark-script-textarea" value={script} onChange={(event) => setScript(event.target.value)} placeholder="粘贴转写稿、对标文案或人工整理后的口播稿" />
+        <div className="benchmark-meta-row">
+          <span>字数：{countVisibleCharacters(script)}</span>
+          <span>{sourceLink ? '已记录来源链接' : '未填来源链接'}</span>
+          <span>{productInfo ? '带货任务' : '常规故事任务'}</span>
+        </div>
+        {message ? <span className="local-note">{message}</span> : null}
+      </section>
+    </div>
+  );
+}
+
+function PersonAssetsPage({ api, isBrowserPreview }: { api: StoryDreamApi; isBrowserPreview: boolean }) {
+  const [people, setPeople] = useState<PersonAssetSummary[]>([]);
+  const [selectedName, setSelectedName] = useState('');
+  const [newPersonName, setNewPersonName] = useState('');
+  const [renameValue, setRenameValue] = useState('');
+  const [images, setImages] = useState<PersonAssetImage[]>([]);
+  const [imageUrls, setImageUrls] = useState<Record<string, string>>({});
+  const [message, setMessage] = useState(isBrowserPreview ? '浏览器预览不能导入或读取本地图片，请在 Electron 应用中管理素材。' : '');
+  const selectedAsset = people.find((person) => person.name === selectedName) ?? null;
+
+  useEffect(() => {
+    let active = true;
+    api
+      .listPersonAssets()
+      .then((assets) => {
+        if (!active) return;
+        setPeople(assets);
+        if (!selectedName && assets[0]) {
+          setSelectedName(assets[0].name);
+          setRenameValue(assets[0].name);
+        }
+      })
+      .catch((error) => {
+        if (active) setMessage(error instanceof Error ? error.message : String(error));
+      });
+    return () => {
+      active = false;
+    };
+  }, [api, selectedName]);
+
+  useEffect(() => {
+    setRenameValue(selectedName);
+  }, [selectedName]);
+
+  useEffect(() => {
+    let active = true;
+    if (!selectedName) {
+      setImages([]);
+      setImageUrls({});
+      return undefined;
+    }
+    api
+      .listPersonAssetImages(selectedName)
+      .then(async (items) => {
+        if (!active) return;
+        setImages(items);
+        const entries = await Promise.all(
+          items.map(async (image) => {
+            try {
+              return [image.path, await api.readAssetDataUrl(image.path)] as const;
+            } catch {
+              return [image.path, ''] as const;
+            }
+          }),
+        );
+        if (active) setImageUrls(Object.fromEntries(entries));
+      })
+      .catch((error) => {
+        if (active) setMessage(error instanceof Error ? error.message : String(error));
+      });
+    return () => {
+      active = false;
+    };
+  }, [api, selectedName]);
+
+  async function refreshPeople(nextSelectedName = selectedName) {
+    const assets = await api.listPersonAssets();
+    setPeople(assets);
+    const selected = assets.find((asset) => asset.name === nextSelectedName) ?? assets[0] ?? null;
+    setSelectedName(selected?.name ?? '');
+  }
+
+  async function createPerson() {
+    const name = newPersonName.trim();
+    if (!name) {
+      setMessage('请先填写人物名称。');
+      return;
+    }
+    await api.createPersonAsset(name);
+    setNewPersonName('');
+    await refreshPeople(name);
+    setMessage('已创建人物素材库。');
+  }
+
+  async function renamePerson() {
+    const nextName = renameValue.trim();
+    if (!selectedName || !nextName) return;
+    await api.renamePersonAsset(selectedName, nextName);
+    await refreshPeople(nextName);
+    setMessage('已重命名人物素材库。');
+  }
+
+  async function deletePerson() {
+    if (!selectedName) return;
+    await api.deletePersonAsset(selectedName);
+    await refreshPeople('');
+    setMessage('已删除人物素材库。');
+  }
+
+  async function importImages() {
+    if (!selectedName) {
+      setMessage('请先选择人物。');
+      return;
+    }
+    const count = await api.importPersonAssetImages(selectedName);
+    await refreshPeople(selectedName);
+    setImages(await api.listPersonAssetImages(selectedName));
+    setMessage(count > 0 ? `已导入 ${count} 张图片。` : '没有导入新图片。');
+  }
+
+  return (
+    <div className="person-assets-layout">
+      <section className="panel person-list-panel">
+        <div className="panel-title-row">
+          <div>
+            <h2>人物素材库</h2>
+            <span>本地真图素材用于分镜生图替代。</span>
+          </div>
+        </div>
+        <div className="person-create-row">
+          <input value={newPersonName} onChange={(event) => setNewPersonName(event.target.value)} placeholder="人物名称" />
+          <button className="ghost-action compact-action" type="button" onClick={createPerson}>
+            <Plus size={15} />
+            创建
+          </button>
+        </div>
+        <div className="person-list">
+          {people.length === 0 ? <EmptyState title="暂无人物素材" /> : null}
+          {people.map((person) => (
+            <button key={person.name} className={person.name === selectedName ? 'person-list-item active' : 'person-list-item'} type="button" onClick={() => setSelectedName(person.name)}>
+              <strong>{person.name}</strong>
+              <span>{person.count} 张图片</span>
+            </button>
+          ))}
+        </div>
+      </section>
+
+      <section className="panel person-assets-panel">
+        <div className="panel-title-row">
+          <div>
+            <h3>{selectedName || '选择人物'}</h3>
+            <span>{selectedAsset?.dir || '创建人物后可导入本地图片'}</span>
+          </div>
+          <div className="button-row">
+            {selectedAsset?.dir ? (
+              <button className="ghost-action compact-action" type="button" onClick={() => api.openPath(selectedAsset.dir)}>
+                <FolderOpen size={15} />
+                打开目录
+              </button>
+            ) : null}
+            <button className="primary-action slim" type="button" disabled={!selectedName} onClick={importImages}>
+              <Upload size={15} />
+              导入图片
+            </button>
+          </div>
+        </div>
+
+        {selectedName ? (
+          <div className="person-asset-tools">
+            <Field label="人物名称">
+              <input value={renameValue} onChange={(event) => setRenameValue(event.target.value)} />
+            </Field>
+            <div className="button-row person-asset-actions">
+              <button className="ghost-action compact-action" type="button" disabled={!renameValue.trim() || renameValue.trim() === selectedName} onClick={renamePerson}>
+                <Pencil size={15} />
+                重命名
+              </button>
+              <button className="mini-button" type="button" onClick={deletePerson}>删除</button>
+            </div>
+          </div>
+        ) : null}
+
+        <div className="person-image-grid">
+          {images.length === 0 ? <EmptyState title="暂无图片" /> : null}
+          {images.map((image) => (
+            <article className="person-image-card" key={image.path}>
+              {imageUrls[image.path] ? <img src={imageUrls[image.path]} alt={image.name} /> : <div className="person-image-placeholder">{image.name}</div>}
+              <span title={image.path}>{image.name}</span>
+            </article>
+          ))}
+        </div>
+        {message ? <span className="local-note">{message}</span> : null}
       </section>
     </div>
   );
@@ -6961,6 +7575,9 @@ function audioTitleFromPath(path: string): string {
 function pageSubtitle(view: ShellView): string {
   const map: Partial<Record<ShellView, string>> = {
     'new-task': '粘贴一段人物故事，几分钟后在剪映里打开',
+    'book-selection': '维护本地商品书单，把卖点带入新任务或对标导入',
+    benchmark: '导入对标文案，本地二改后直接创建带货任务',
+    'person-assets': '管理本地人物真图素材，供分镜阶段保持角色一致',
     queue: '查看当前任务、步骤事件、失败重试和输出状态',
     history: '按时间浏览已完成、失败、取消和草稿任务',
     'task-detail': '查看单个任务的独立执行状态和流水线',
@@ -7420,6 +8037,32 @@ function normalizeTaskTargetLength(value: string): number | undefined {
 
 function normalizeTaskStoryboardSceneCount(value: string): number | undefined {
   return normalizeStoryboardSceneCount(value) ?? undefined;
+}
+
+function normalizeLockIntroSentencesInput(value: string): number {
+  const parsed = Number.parseFloat(value);
+  if (!Number.isFinite(parsed)) return 0;
+  return Math.min(20, Math.max(0, Math.trunc(parsed)));
+}
+
+function parseBookProductInfo(value: string | null): BookProductInfo | null {
+  if (!value?.trim()) return null;
+  try {
+    const parsed = JSON.parse(value) as BookProductInfo;
+    return parsed && typeof parsed === 'object' ? parsed : null;
+  } catch {
+    return null;
+  }
+}
+
+function productInfoSummary(value: string | null): string {
+  const product = parseBookProductInfo(value);
+  if (!product) return trimForPreview(value ?? '', 42);
+  return [product.name, product.author, product.sellPoint || product.category].filter(Boolean).join(' · ') || '已带入商品信息';
+}
+
+function emptyToUndefined(value: string): string | undefined {
+  return value.trim() || undefined;
 }
 
 function trimForPreview(value: string, limit: number): string {
