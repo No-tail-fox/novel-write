@@ -666,7 +666,14 @@ describe('task runner', () => {
         speaker: 'voice',
         targetLength: 100,
         keepPromotion: false,
-        productInfo: JSON.stringify({ name: '额尔古纳河右岸', sellPoint: '民族史诗' }),
+        productInfo: JSON.stringify({
+          name: '额尔古纳河右岸',
+          sellPoint: '民族史诗',
+          cat: '文学',
+          kw: '鄂温克族',
+          coverPath: 'C:/secret/cover.png',
+          materialFolder: 'C:/secret/materials',
+        }),
         promptTemplateId: 'cover-promotion-context-template',
         promptTemplateType: 'task',
       },
@@ -688,6 +695,13 @@ describe('task runner', () => {
 
     const coverPrompt = requests.find((request) => request.name === 'cover-metadata')?.messages.map((message) => message.content).join('\n') ?? '';
     expect(coverPrompt).toContain('Cover promotion flag: true');
+    expect(coverPrompt).toContain('本视频带货商品');
+    expect(coverPrompt).toContain('额尔古纳河右岸');
+    expect(coverPrompt).toContain('民族史诗');
+    expect(coverPrompt).toContain('文学');
+    expect(coverPrompt).toContain('鄂温克族');
+    expect(coverPrompt).not.toContain('C:/secret/cover.png');
+    expect(coverPrompt).not.toContain('C:/secret/materials');
     expect(storedKeepPromotion).toBe(false);
   });
 

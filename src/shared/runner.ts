@@ -603,7 +603,10 @@ async function ensureContentArtifact(input: {
       sourceContext,
       artifact: pipeline.artifact,
     });
-    const coverPrompt = renderStepPrompt(promptTemplates, 'cover', coverPromptContext, '');
+    const coverPrompt = joinPromptBlocks([
+      renderStepPrompt(promptTemplates, 'cover', coverPromptContext, ''),
+      productInfoRewriteBlock(promotionTask),
+    ]);
     pipeline.artifact.cover = await generateCoverMetadata(options.llm, {
       coverPrompt,
       rewrittenCopy: pipeline.artifact.rewrittenCopy,
