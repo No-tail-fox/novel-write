@@ -5,6 +5,8 @@ import type {
   AiSourceContext,
   AppConfig,
   AppState,
+  BookSelectionInput,
+  BookSelectionRecord,
   ConfigTestTarget,
   CreateTaskInput,
   CreateViralAnalysisInput,
@@ -31,6 +33,7 @@ import type {
   VolcengineSpeakerListResult,
   VoiceLabGenerateInput,
 } from '../src/shared/types';
+import type { PersonAssetImage, PersonAssetSummary } from '../src/shared/person-assets';
 
 const storyDreamApi = {
   getState: () => ipcRenderer.invoke('app:get-state'),
@@ -52,6 +55,15 @@ const storyDreamApi = {
   saveAccount: (account: AccountProfile) => ipcRenderer.invoke('account:save', account),
   saveActivation: (activation: ActivationState) => ipcRenderer.invoke('activation:save', activation),
   saveUiPreferences: (ui: UiPreferences) => ipcRenderer.invoke('ui:save-preferences', ui),
+  listBookSelections: (theme?: string): Promise<BookSelectionRecord[]> => ipcRenderer.invoke('book-selection:list', theme),
+  saveBookSelection: (input: BookSelectionInput): Promise<BookSelectionRecord> => ipcRenderer.invoke('book-selection:save', input),
+  deleteBookSelection: (theme: string, bookId: string): Promise<void> => ipcRenderer.invoke('book-selection:delete', { theme, bookId }),
+  listPersonAssets: (): Promise<PersonAssetSummary[]> => ipcRenderer.invoke('person-assets:list'),
+  createPersonAsset: (name: string): Promise<PersonAssetSummary> => ipcRenderer.invoke('person-assets:create', name),
+  renamePersonAsset: (oldName: string, newName: string): Promise<string> => ipcRenderer.invoke('person-assets:rename', { oldName, newName }),
+  deletePersonAsset: (name: string): Promise<void> => ipcRenderer.invoke('person-assets:delete', name),
+  importPersonAssetImages: (name: string): Promise<number> => ipcRenderer.invoke('person-assets:import-images', name),
+  listPersonAssetImages: (name: string): Promise<PersonAssetImage[]> => ipcRenderer.invoke('person-assets:list-images', name),
   createHtmlVideoTask: (input: CreateTaskInput) => ipcRenderer.invoke('html-video:create-task', input),
   createAndRunTask: (input: CreateTaskInput) => ipcRenderer.invoke('task:create-and-run', input),
   createAndRunViralAnalysis: (input: CreateViralAnalysisInput) => ipcRenderer.invoke('viral:create-and-run', input),

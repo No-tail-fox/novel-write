@@ -4,6 +4,8 @@ import type {
   AiSourceContext,
   AppConfig,
   AppState,
+  BookSelectionInput,
+  BookSelectionRecord,
   ConfigTestResult,
   ConfigTestTarget,
   CreateTaskInput,
@@ -32,6 +34,19 @@ import type {
   VolcengineSpeakerListResult,
   VoiceLabGenerateInput,
 } from './shared/types';
+import type { PersonAssetImage, PersonAssetSummary } from './shared/person-assets';
+
+type LocalBookPersonAssetApi = {
+  listBookSelections: (theme?: string) => Promise<BookSelectionRecord[]>;
+  saveBookSelection: (input: BookSelectionInput) => Promise<BookSelectionRecord>;
+  deleteBookSelection: (theme: string, bookId: string) => Promise<void>;
+  listPersonAssets: () => Promise<PersonAssetSummary[]>;
+  createPersonAsset: (name: string) => Promise<PersonAssetSummary>;
+  renamePersonAsset: (oldName: string, newName: string) => Promise<string>;
+  deletePersonAsset: (name: string) => Promise<void>;
+  importPersonAssetImages: (name: string) => Promise<number>;
+  listPersonAssetImages: (name: string) => Promise<PersonAssetImage[]>;
+};
 
 declare global {
   interface Window {
@@ -81,7 +96,7 @@ declare global {
       openPath: (path: string) => Promise<void>;
       windowControl: (action: 'minimize' | 'toggle-maximize' | 'close') => Promise<void>;
       onTaskEvent: (callback: (state: AppState) => void) => () => void;
-    };
+    } & Partial<LocalBookPersonAssetApi>;
     storybound?: Window['storydream'];
   }
 }

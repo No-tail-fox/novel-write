@@ -12,6 +12,7 @@ import { generateImageLabRecord } from '../src/shared/image-lab';
 import { detectJianyingDraftPath, resolveRuntimeJianyingDraftPath } from '../src/shared/jianying-paths';
 import { loadJianyingEffectCatalog } from '../src/shared/jianying-effects';
 import { generateConfiguredVoicePreview } from '../src/shared/media-providers';
+import { createPersonAsset, deletePersonAsset, importPersonAssetFiles, listPersonAssets, listPersonImages, renamePersonAsset } from '../src/shared/person-assets';
 import { createConfiguredJsonLlm, createConfiguredTextLlm, listConfiguredProviderModels, testConfiguredLlm } from '../src/shared/llm-provider';
 import { markSceneImageForRegeneration, markSceneNarrationForRegeneration, markTaskStepForRerun, updateSceneImagePrompt } from '../src/shared/pipeline-cache';
 import { resolvePythonRuntimeInfo, setDefaultPythonRuntimeAppRoot } from '../src/shared/python-runtime';
@@ -19,7 +20,7 @@ import { composeCopyFromSources, createAiSourceResearcher, searchWebSources } fr
 import { runTask } from '../src/shared/runner';
 import { FileDatabase } from '../src/shared/storage';
 import { createTaskRuntimeProviders } from '../src/shared/task-runtime-providers';
-import type { AccountProfile, ActivationState, AppConfig, ConfigTestTarget, CreateTaskInput, CreateViralAnalysisInput, CustomStyle, CustomStyleGenerateInput, DraftTemplate, ImageLabGenerateInput, LlmConfig, PromptTemplate, ProviderModelListRequest, ResearchCopyComposeInput, Task, TaskStatus, TaskStepRerunMode, UiPreferences, ViralAnalysisRecord, ViralAnalysisStatus, ViralProductionTaskOptions, VolcengineSpeakerListRequest, VoiceLabGenerateInput } from '../src/shared/types';
+import type { AccountProfile, ActivationState, AppConfig, BookSelectionInput, ConfigTestTarget, CreateTaskInput, CreateViralAnalysisInput, CustomStyle, CustomStyleGenerateInput, DraftTemplate, ImageLabGenerateInput, LlmConfig, PromptTemplate, ProviderModelListRequest, ResearchCopyComposeInput, Task, TaskStatus, TaskStepRerunMode, UiPreferences, ViralAnalysisRecord, ViralAnalysisStatus, ViralProductionTaskOptions, VolcengineSpeakerListRequest, VoiceLabGenerateInput } from '../src/shared/types';
 import { createViralProductionTaskInput, detectViralPlatform, runViralAnalysis } from '../src/shared/viral-analysis';
 import { createViralRuntimeProviders } from '../src/shared/viral-runtime';
 import { listVolcengineSpeakers } from '../src/shared/volcengine-speakers';
@@ -136,6 +137,10 @@ function voiceLabWorkDir(id: string): string {
 
 function appDataDir(): string {
   return join(app.getPath('userData'), appDataName);
+}
+
+function personAssetsRoot(): string {
+  return join(appDataDir(), 'person-assets');
 }
 
 function viralCookieDir(): string {
@@ -465,6 +470,34 @@ ipcMain.handle('ui:save-preferences', async (_event, ui: UiPreferences) => {
   const database = await getDb();
   await database.upsertUiPreferences(ui);
   return database.getState();
+});
+
+ipcMain.handle('book-selection:list', async (_event, theme?: string) => (await getDb()).listBookSelections(theme));
+
+ipcMain.handle('book-selection:save', async (_event, input: BookSelectionInput) => (await getDb()).upsertBookSelection(input));
+
+ipcMain.handle('book-selection:delete', async (_event, input: { theme: string; bookId: string }) => {
+  await (await getDb()).deleteBookSelection(input.theme, input.bookId);
+});
+
+ipcMain.handle('person-assets:list', async () => listPersonAssets(personAssetsRoot()));
+
+ipcMain.handle('person-assets:create', async (_event, name: string) => createPersonAsset(personAssetsRoot(), name));
+
+ipcMain.handle('person-assets:rename', async (_event, input: { oldName: string; newName: string }) => renamePersonAsset(personAssetsRoot(), input.oldName, input.newName));
+
+ipcMain.handle('person-assets:delete', async (_event, name: string) => deletePersonAsset(personAssetsRoot(), name));
+
+ipcMain.handle('person-assets:list-images', async (_event, name: string) => listPersonImages(personAssetsRoot(), name));
+
+ipcMain.handle('person-assets:import-images', async (_event, name: string) => {
+  const result = await dialog.showOpenDialog({
+    title: `导入图片到「${name}」`,
+    properties: ['openFile', 'multiSelections'],
+    filters: [{ name: 'Images', extensions: ['png', 'jpg', 'jpeg', 'webp'] }],
+  });
+  if (result.canceled) return 0;
+  return importPersonAssetFiles(personAssetsRoot(), name, result.filePaths);
 });
 
 ipcMain.handle('html-video:create-task', async (_event, input: CreateTaskInput) => {

@@ -57,6 +57,41 @@ describe('product shell ui', () => {
     expect(primaryNav.indexOf("view: 'viral-analyzer'")).toBeLessThan(primaryNav.indexOf("view: 'prompt-templates'"));
   });
 
+  it('exposes local book selection and person asset APIs through preload', async () => {
+    const preload = await readFile(new URL('../electron/preload.ts', import.meta.url), 'utf8');
+    const main = await readFile(new URL('../electron/main.ts', import.meta.url), 'utf8');
+    const viteEnv = await readFile(new URL('../src/vite-env.d.ts', import.meta.url), 'utf8');
+
+    for (const api of [
+      'listBookSelections',
+      'saveBookSelection',
+      'deleteBookSelection',
+      'listPersonAssets',
+      'createPersonAsset',
+      'renamePersonAsset',
+      'deletePersonAsset',
+      'importPersonAssetImages',
+      'listPersonAssetImages',
+    ]) {
+      expect(preload).toContain(api);
+      expect(viteEnv).toContain(api);
+    }
+
+    for (const channel of [
+      'book-selection:list',
+      'book-selection:save',
+      'book-selection:delete',
+      'person-assets:list',
+      'person-assets:create',
+      'person-assets:rename',
+      'person-assets:delete',
+      'person-assets:import-images',
+      'person-assets:list-images',
+    ]) {
+      expect(main).toContain(channel);
+    }
+  });
+
   it('keeps sidebar navigation as fixed full-width single-line rows', async () => {
     const css = await readFile(new URL('../src/styles.css', import.meta.url), 'utf8');
 
