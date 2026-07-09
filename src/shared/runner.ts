@@ -576,8 +576,9 @@ async function ensureContentArtifact(input: {
     await emit('step_start', 1, 'Writer', '标准改写 + 自评迭代');
     const reviewedText = requireString(pipeline.artifact.reviewedText, 'reviewedText');
     const controlPlan = prepareRewriteControls(task, reviewedText);
+    const rewriteTask = effectiveRewriteTask(task, controlPlan);
     const rewritePromptContext = buildPromptRenderContext({
-      task,
+      task: rewriteTask,
       taskTemplate,
       customStyles: appState.customStyles,
       sourceContext,
@@ -585,7 +586,7 @@ async function ensureContentArtifact(input: {
     });
     const rewritePrompt = renderStepPrompt(promptTemplates, 'rewrite', rewritePromptContext, controlPlan.reviewedTextForRewrite);
     const rewrite = await runRewriteRounds(options.llm, {
-      task,
+      task: rewriteTask,
       rewritePrompt,
       reviewedText: controlPlan.reviewedTextForRewrite,
       signal: options.signal,
@@ -904,10 +905,40 @@ function prepareRewriteControls(task: Task, reviewedText: string): { reviewedTex
   const lockIntroSentences = clampIntroSentenceCount(task.lockIntroSentences);
   if (lockIntroSentences <= 0) return { reviewedTextForRewrite: reviewedText, lockedIntro: '' };
   const split = splitLeadingSentences(reviewedText, lockIntroSentences);
+  if (!split.remainder.trim()) return { reviewedTextForRewrite: reviewedText, lockedIntro: '' };
   return {
     reviewedTextForRewrite: split.remainder,
     lockedIntro: task.fixedIntro?.trim() || split.leading,
   };
+}
+
+function effectiveRewriteTask(task: Task, controlPlan: { lockedIntro: string }): Task {
+  const keepPromotion = task.keepPromotion || Boolean(task.productInfo?.trim()) || task.track.trim() === 'ecommerce';
+  const adjustedTargetLength = adjustedRewriteTargetLength(task, controlPlan.lockedIntro);
+  if (keepPromotion === task.keepPromotion && adjustedTargetLength === task.targetLength) return task;
+  return {
+    ...task,
+    keepPromotion,
+    targetLength: adjustedTargetLength,
+  };
+}
+
+function adjustedRewriteTargetLength(task: Task, lockedIntro: string): number | undefined {
+  if (task.targetLength === undefined || task.targetLength === null) return task.targetLength;
+  const targetLength = normalizeTargetLength(task.targetLength);
+  if (!targetLength) return task.targetLength;
+  const controlLength = finalRewriteControlVisibleLength(task, lockedIntro);
+  if (controlLength <= 0) return task.targetLength;
+  return Math.max(200, targetLength - controlLength);
+}
+
+function finalRewriteControlVisibleLength(task: Task, lockedIntro: string): number {
+  if (isDialogueScript(task)) return 0;
+  const intro = lockedIntro.trim() || task.fixedIntro?.trim() || '';
+  const outroTemplate = task.outroCta?.trim() ?? '';
+  const protagonist = task.title.trim() || '主角';
+  const outro = outroTemplate ? outroTemplate.replace(/\{主角\}/g, protagonist) : '';
+  return countVisibleCharacters(joinPromptBlocks([intro, outro]));
 }
 
 function splitLeadingSentences(text: string, count: number): { leading: string; remainder: string } {

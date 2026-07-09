@@ -343,24 +343,27 @@ describe('task runner', () => {
 
   it('applies fixed intro and outro while keeping fixed intro out of rewrite prompts', async () => {
     const fixedIntro = '今天这本书，先看第一句话。';
+    const reviewedText = `${fixedIntro}AI should rewrite only this body.`;
     const aiBody = fitSourceLengthRewrite('AI body for fixed intro case', 'x'.repeat(100));
     const { finalCopy, requests } = await runRewriteControlScenario({
       taskInput: {
         title: '固定开头测试',
-        inputText: sampleInput,
+        inputText: reviewedText,
         track: 'character-story',
         style: 'photo-real',
         speaker: 'voice',
         targetLength: 100,
         fixedIntro,
         outroCta: '想读{主角}，去橱窗找这本书。',
+        lockIntroSentences: 1,
       },
-      reviewedText: sampleInput,
+      reviewedText,
       rewrittenCopy: aiBody,
       coverTitle: '额尔古纳河右岸',
+      repairRewrite: aiBody,
     });
 
-    expect(finalCopy).toContain(fixedIntro);
+    expect(countOccurrences(finalCopy, fixedIntro)).toBe(1);
     expect(finalCopy).toContain(aiBody);
     expect(finalCopy).toContain('想读额尔古纳河右岸，去橱窗找这本书。');
     for (const request of requests.filter((item) => item.name.startsWith('rewrite-round-'))) {
@@ -384,6 +387,7 @@ describe('task runner', () => {
       reviewedText,
       rewrittenCopy: aiBody,
       coverTitle: '锁定标题',
+      repairRewrite: aiBody,
     });
 
     const firstRewritePrompt = requests.find((request) => request.name === 'rewrite-round-1')?.messages.map((message) => message.content).join('\n') ?? '';
@@ -391,6 +395,69 @@ describe('task runner', () => {
     expect(firstRewritePrompt).not.toContain('第二句也保留。');
     expect(firstRewritePrompt).toContain('第三句进入改写。第四句继续改写。');
     expect(finalCopy.startsWith('第一句必须保留。第二句也保留。')).toBe(true);
+  });
+
+  it('avoids empty rewrite source when lockIntroSentences covers the whole text', async () => {
+    const reviewedText = '第一句。第二句。';
+    const aiBody = fitSourceLengthRewrite('AI rewrote the whole short source.', 'x'.repeat(100));
+    const { finalCopy, requests } = await runRewriteControlScenario({
+      taskInput: {
+        title: '锁定过量测试',
+        inputText: reviewedText,
+        track: 'character-story',
+        style: 'photo-real',
+        speaker: 'voice',
+        targetLength: 100,
+        lockIntroSentences: 5,
+      },
+      reviewedText,
+      rewrittenCopy: aiBody,
+      coverTitle: '短文标题',
+    });
+
+    const firstRewritePrompt = requests.find((request) => request.name === 'rewrite-round-1')?.messages.map((message) => message.content).join('\n') ?? '';
+    expect(extractReviewedTextBlock(firstRewritePrompt)).toBe(reviewedText);
+    expect(finalCopy).toBe(aiBody);
+  });
+
+  it('adjusts target length for fixed intro and outro controls before rewrite', async () => {
+    const fixedIntro = '开头控制'.repeat(20);
+    const outroCta = '结尾控制'.repeat(20);
+    const { finalCopy, requests } = await runRewriteControlScenario({
+      taskInput: {
+        title: '目标字数控制测试',
+        inputText: '原始素材'.repeat(80),
+        track: 'character-story',
+        style: 'photo-real',
+        speaker: 'voice',
+        targetLength: 300,
+        fixedIntro,
+        outroCta,
+        promptTemplateId: 'target-control-template',
+        promptTemplateType: 'task',
+      },
+      reviewedText: '原始素材'.repeat(80),
+      rewrittenCopy: '正文'.repeat(160),
+      coverTitle: '目标标题',
+      repairRewrite: '正文'.repeat(100),
+      configureDb: async (db) => {
+        await db.upsertPromptTemplate({
+          id: 'target-control-template',
+          name: 'Target control template',
+          type: 'task',
+          content: 'Task template',
+          isBuiltin: false,
+          baseTrack: 'character-story',
+          stepPrompts: { rewrite: 'Target word count range: {{targetLengthRange}} Chinese characters.' },
+        });
+      },
+    });
+
+    const rewritePrompt = requests.find((request) => request.name === 'rewrite-round-1')?.messages.map((message) => message.content).join('\n') ?? '';
+    const repairPrompt = requests.find((request) => request.name === 'rewrite-target-length-repair-1')?.messages.map((message) => message.content).join('\n') ?? '';
+    expect(rewritePrompt).toContain('Target word count range: 160-240 Chinese characters.');
+    expect(repairPrompt).toContain('Target word count range: 160-240 Chinese characters.');
+    expect(countVisibleTestCharacters(finalCopy)).toBeLessThanOrEqual(360);
   });
 
   it('adds product info prompting to rewrite and evaluation prompts', async () => {
@@ -416,6 +483,41 @@ describe('task runner', () => {
       expect(prompt).toContain('额尔古纳河右岸');
       expect(prompt).toContain('民族史诗');
     }
+  });
+
+  it('treats product info as promotion context without mutating stored keepPromotion', async () => {
+    const { requests, storedKeepPromotion } = await runRewriteControlScenario({
+      taskInput: {
+        title: '商品上下文测试',
+        inputText: sampleInput,
+        track: 'character-story',
+        style: 'photo-real',
+        speaker: 'voice',
+        targetLength: 100,
+        keepPromotion: false,
+        productInfo: JSON.stringify({ name: '额尔古纳河右岸', sellPoint: '民族史诗' }),
+        promptTemplateId: 'promotion-context-template',
+        promptTemplateType: 'task',
+      },
+      reviewedText: sampleInput,
+      rewrittenCopy: fitSourceLengthRewrite('Product context body', 'x'.repeat(100)),
+      coverTitle: '额尔古纳河右岸',
+      configureDb: async (db) => {
+        await db.upsertPromptTemplate({
+          id: 'promotion-context-template',
+          name: 'Promotion context template',
+          type: 'task',
+          content: 'Task template',
+          isBuiltin: false,
+          baseTrack: 'character-story',
+          stepPrompts: { rewrite: 'Promotion flag: {{keepPromotion}}' },
+        });
+      },
+    });
+
+    const firstRewritePrompt = requests.find((request) => request.name === 'rewrite-round-1')?.messages.map((message) => message.content).join('\n') ?? '';
+    expect(firstRewritePrompt).toContain('Promotion flag: true');
+    expect(storedKeepPromotion).toBe(false);
   });
 
 
@@ -2881,7 +2983,9 @@ async function runRewriteControlScenario(input: {
   reviewedText: string;
   rewrittenCopy: string;
   coverTitle: string;
-}): Promise<{ finalCopy: string; requests: LlmJsonRequest[] }> {
+  repairRewrite?: string;
+  configureDb?: (db: FileDatabase) => Promise<void>;
+}): Promise<{ finalCopy: string; requests: LlmJsonRequest[]; storedKeepPromotion: boolean }> {
   const dir = await mkdtemp(join(tmpdir(), 'storybound-runner-rewrite-controls-'));
   const db = await FileDatabase.open(join(dir, 'data.db'));
   const draftRootDir = join(dir, 'JianyingPro Drafts');
@@ -2893,6 +2997,7 @@ async function runRewriteControlScenario(input: {
       ...(await db.getState()).config,
       jianying: { ...(await db.getState()).config.jianying, draftPath: draftRootDir },
     });
+    await input.configureDb?.(db);
     const task = await db.createTask(input.taskInput);
     const llm: JsonLlm = async <T,>(request: LlmJsonRequest) => {
       requests.push(request);
@@ -2903,7 +3008,10 @@ async function runRewriteControlScenario(input: {
       if (request.name === 'rewrite-evaluation') {
         return { json: { bestRound: 1, evaluations: [{ round: 1, score: 100, reason: 'best' }] } as T, raw: '{}', requestId: 'rewrite-eval' };
       }
-      if (request.name.startsWith('rewrite-target-length-repair-')) throw new Error(`Unexpected rewrite repair ${request.name}`);
+      if (request.name.startsWith('rewrite-target-length-repair-')) {
+        if (!input.repairRewrite) throw new Error(`Unexpected rewrite repair ${request.name}`);
+        return { json: { rewrittenCopy: input.repairRewrite } as T, raw: '{}', requestId: request.name };
+      }
       if (request.name === 'cover-metadata') {
         return {
           json: { cover: { title: input.coverTitle, subtitle: [], summary: 'summary', tags: [], comments: [] } } as T,
@@ -2930,14 +3038,21 @@ async function runRewriteControlScenario(input: {
       draftWriterOptions: { runBridge: fakeBridge },
     });
 
+    const state = await db.getState();
     return {
       finalCopy: await readFile(join(dir, 'tasks', task.id, '01-rewritten-copy.md'), 'utf8'),
       requests,
+      storedKeepPromotion: state.tasks.find((item) => item.id === task.id)?.keepPromotion ?? true,
     };
   } finally {
     await db.close();
     await rm(dir, { recursive: true, force: true });
   }
+}
+
+function extractReviewedTextBlock(prompt: string): string {
+  const match = prompt.match(/Reviewed text:\n\n([\s\S]*?)\n\n(?:本视频带货商品|Rewrite instructions:)/);
+  return match?.[1] ?? '';
 }
 
 function countOccurrences(text: string, needle: string): number {
