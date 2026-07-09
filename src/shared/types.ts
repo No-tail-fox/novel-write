@@ -9,6 +9,9 @@ export type ShellView =
   | 'image-lab'
   | 'voice-lab'
   | 'music-mv'
+  | 'book-selection'
+  | 'benchmark'
+  | 'person-assets'
   | 'viral-analyzer'
   | 'prompt-templates'
   | 'draft-templates'
@@ -337,6 +340,12 @@ export interface Task {
   videoForm?: TaskVideoForm;
   llmProfileId?: string | null;
   materialSource?: string;
+  productInfo?: string | null;
+  materialPerson?: string | null;
+  draftDir?: string | null;
+  fixedIntro?: string | null;
+  outroCta?: string | null;
+  lockIntroSentences?: number;
   taskType?: string;
   pipelineStep?: string;
   pipelineData?: string;
@@ -441,6 +450,35 @@ export interface MusicMvSettings {
   audioPath: string;
 }
 
+export interface BookProductInfo {
+  name: string;
+  author?: string;
+  category?: string;
+  keyword?: string;
+  sellPoint?: string;
+  audience?: string;
+  persons?: string;
+  era?: string;
+  price?: string;
+  url?: string;
+  note?: string;
+  coverPath?: string;
+  materialFolder?: string;
+}
+
+export interface BookSelectionRecord {
+  theme: string;
+  bookId: string;
+  data: BookProductInfo;
+  updatedAt: number;
+}
+
+export interface BookSelectionInput {
+  theme: string;
+  bookId?: string;
+  data: BookProductInfo;
+}
+
 export type CreateTaskInput = Partial<
   Pick<
     Task,
@@ -476,6 +514,12 @@ export type CreateTaskInput = Partial<
     | 'videoForm'
     | 'llmProfileId'
     | 'materialSource'
+    | 'productInfo'
+    | 'materialPerson'
+    | 'draftDir'
+    | 'fixedIntro'
+    | 'outroCta'
+    | 'lockIntroSentences'
     | 'taskType'
     | 'pipelineStep'
     | 'pipelineData'

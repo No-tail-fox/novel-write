@@ -42,11 +42,18 @@ describe('file database', () => {
         'credits_transactions',
         'custom_styles',
         'custom_cover_templates',
+        'book_selection',
       ]));
 
       const taskColumns = sqlite.exec('PRAGMA table_info(tasks)')[0]?.values.map((row) => String(row[1])) ?? [];
       expect(taskColumns).toEqual(expect.arrayContaining([
         'material_source',
+        'product_info',
+        'material_person',
+        'draft_dir',
+        'fixed_intro',
+        'outro_cta',
+        'lock_intro_sentences',
         'task_type',
         'pipeline_step',
         'pipeline_data',
@@ -69,6 +76,71 @@ describe('file database', () => {
         'reference_kind',
       ]));
       sqlite.close();
+    } finally {
+      await rm(dir, { recursive: true, force: true });
+    }
+  });
+
+  it('persists latest Storybound task controls and product fields', async () => {
+    const dir = await mkdtemp(join(tmpdir(), 'storybound-db-latest-task-controls-'));
+    const file = join(dir, 'app.db');
+
+    try {
+      const db = await FileDatabase.open(file);
+      const productInfo = JSON.stringify({ name: '额尔古纳河右岸', sellpt: '民族史诗' });
+      await db.createTask({
+        title: 'Latest Storybound controls',
+        inputText: '一段原始素材',
+        productInfo,
+        materialSource: 'local',
+        materialPerson: '迟子建',
+        draftDir: 'D:/drafts/latest',
+        fixedIntro: '今天先别急着划走。',
+        outroCta: '想看{主角}，去橱窗找这本书。',
+        lockIntroSentences: 3,
+      });
+
+      const state = await db.getState();
+      expect(state.tasks[0]).toMatchObject({
+        productInfo,
+        materialSource: 'local',
+        materialPerson: '迟子建',
+        draftDir: 'D:/drafts/latest',
+        fixedIntro: '今天先别急着划走。',
+        outroCta: '想看{主角}，去橱窗找这本书。',
+        lockIntroSentences: 3,
+      });
+      await db.close();
+    } finally {
+      await rm(dir, { recursive: true, force: true });
+    }
+  });
+
+  it('persists local book selection records', async () => {
+    const dir = await mkdtemp(join(tmpdir(), 'storybound-db-book-selection-'));
+    const file = join(dir, 'app.db');
+
+    try {
+      const db = await FileDatabase.open(file);
+      await db.upsertBookSelection({
+        theme: '文学',
+        bookId: 'erguna',
+        data: {
+          name: '额尔古纳河右岸',
+          author: '迟子建',
+          keyword: '鄂温克',
+          sellPoint: '民族迁徙与女性命运',
+        },
+      });
+
+      const rows = await db.listBookSelections();
+      expect(rows).toHaveLength(1);
+      expect(rows[0]).toMatchObject({
+        theme: '文学',
+        bookId: 'erguna',
+      });
+      expect(rows[0].data.name).toBe('额尔古纳河右岸');
+      await db.close();
     } finally {
       await rm(dir, { recursive: true, force: true });
     }

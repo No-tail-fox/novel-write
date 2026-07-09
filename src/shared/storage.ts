@@ -7,6 +7,8 @@ import type {
   ActivationState,
   AppConfig,
   AppState,
+  BookSelectionInput,
+  BookSelectionRecord,
   CreateTaskInput,
   CreditTransaction,
   CustomCoverTemplate,
@@ -239,6 +241,12 @@ export class FileDatabase {
         video_form TEXT DEFAULT 'narration',
         llm_profile_id TEXT,
         material_source TEXT DEFAULT 'ai',
+        product_info TEXT DEFAULT NULL,
+        material_person TEXT DEFAULT NULL,
+        draft_dir TEXT DEFAULT NULL,
+        fixed_intro TEXT DEFAULT NULL,
+        outro_cta TEXT DEFAULT NULL,
+        lock_intro_sentences INTEGER DEFAULT 0,
         task_type TEXT DEFAULT 'story',
         pipeline_step TEXT DEFAULT 'new',
         pipeline_data TEXT DEFAULT '{}',
@@ -253,6 +261,13 @@ export class FileDatabase {
         video_intro_duration INTEGER DEFAULT 0,
         cover_image_mode TEXT DEFAULT 'off',
         cover_template_id TEXT DEFAULT 'cinematic-poster'
+      );
+      CREATE TABLE IF NOT EXISTS book_selection (
+        theme TEXT NOT NULL,
+        book_id TEXT NOT NULL,
+        data TEXT NOT NULL,
+        updated_at INTEGER NOT NULL,
+        PRIMARY KEY(theme, book_id)
       );
       CREATE TABLE IF NOT EXISTS task_events (
         seq INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -473,6 +488,12 @@ export class FileDatabase {
       ['started_at', 'TEXT'],
       ['last_heartbeat_at', 'TEXT'],
       ['material_source', "TEXT DEFAULT 'ai'"],
+      ['product_info', 'TEXT DEFAULT NULL'],
+      ['material_person', 'TEXT DEFAULT NULL'],
+      ['draft_dir', 'TEXT DEFAULT NULL'],
+      ['fixed_intro', 'TEXT DEFAULT NULL'],
+      ['outro_cta', 'TEXT DEFAULT NULL'],
+      ['lock_intro_sentences', 'INTEGER DEFAULT 0'],
       ['task_type', "TEXT DEFAULT 'story'"],
       ['pipeline_step', "TEXT DEFAULT 'new'"],
       ['pipeline_data', "TEXT DEFAULT '{}'"],
@@ -804,6 +825,36 @@ export class FileDatabase {
     await this.persist();
   }
 
+  async listBookSelections(theme?: string): Promise<BookSelectionRecord[]> {
+    const rows =
+      theme === undefined
+        ? getRows<Record<string, unknown>>(this.db, 'SELECT theme, book_id, data, updated_at FROM book_selection ORDER BY updated_at DESC, theme ASC, book_id ASC')
+        : getRows<Record<string, unknown>>(this.db, 'SELECT theme, book_id, data, updated_at FROM book_selection WHERE theme = ? ORDER BY updated_at DESC, book_id ASC', [theme]);
+    return rows.map(rowToBookSelectionRecord);
+  }
+
+  async upsertBookSelection(input: BookSelectionInput): Promise<BookSelectionRecord> {
+    const record: BookSelectionRecord = {
+      theme: input.theme,
+      bookId: input.bookId ?? randomUUID(),
+      data: input.data,
+      updatedAt: Date.now(),
+    };
+    this.db.run(
+      `INSERT INTO book_selection (theme, book_id, data, updated_at)
+       VALUES (?, ?, ?, ?)
+       ON CONFLICT(theme, book_id) DO UPDATE SET data = excluded.data, updated_at = excluded.updated_at`,
+      [record.theme, record.bookId, json(record.data), record.updatedAt],
+    );
+    await this.persist();
+    return record;
+  }
+
+  async deleteBookSelection(theme: string, bookId: string): Promise<void> {
+    this.db.run('DELETE FROM book_selection WHERE theme = ? AND book_id = ?', [theme, bookId]);
+    await this.persist();
+  }
+
   async createTask(input: CreateTaskInput): Promise<Task> {
     const now = new Date().toISOString();
     const configRow = getFirstRow<{ data: string }>(this.db, 'SELECT data FROM config WHERE id = 1');
@@ -854,6 +905,12 @@ export class FileDatabase {
       videoForm: input.videoForm ?? 'narration',
       llmProfileId: input.llmProfileId ?? null,
       materialSource: input.materialSource ?? 'ai',
+      productInfo: input.productInfo ?? null,
+      materialPerson: input.materialPerson ?? null,
+      draftDir: input.draftDir ?? null,
+      fixedIntro: input.fixedIntro ?? null,
+      outroCta: input.outroCta ?? null,
+      lockIntroSentences: normalizeLockIntroSentences(input.lockIntroSentences),
       taskType: input.taskType ?? input.taskKind ?? 'story',
       pipelineStep: input.pipelineStep ?? 'new',
       pipelineData: input.pipelineData ?? '{}',
@@ -874,9 +931,10 @@ export class FileDatabase {
         mode, ai_keyword, ai_sources, selected_sources, extra_requirements, prompt_template_id, prompt_template_type,
         image_prompt_reference, reference_image_path, rewrite_intensity, narrative_pov, keep_promotion, tts_provider,
         tts_speed, storyboard_scene_count, step3_prompt_snapshot, music_mv_json, failed_step, retry_from_step, artifact_state_path,
-        video_form, llm_profile_id, material_source, task_type, pipeline_step, pipeline_data, target_length, target_scenes, script_format,
+        video_form, llm_profile_id, material_source, product_info, material_person, draft_dir, fixed_intro, outro_cta, lock_intro_sentences,
+        task_type, pipeline_step, pipeline_data, target_length, target_scenes, script_format,
         podcast_image_mode, podcast_speakers, podcast_speaker_a, podcast_speaker_b, cover_image_mode, cover_template_id
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       [
         task.id,
         task.title,
@@ -922,6 +980,12 @@ export class FileDatabase {
         task.videoForm ?? 'narration',
         task.llmProfileId ?? null,
         task.materialSource ?? 'ai',
+        task.productInfo ?? null,
+        task.materialPerson ?? null,
+        task.draftDir ?? null,
+        task.fixedIntro ?? null,
+        task.outroCta ?? null,
+        task.lockIntroSentences ?? 0,
         task.taskType ?? task.taskKind,
         task.pipelineStep ?? 'new',
         task.pipelineData ?? '{}',
@@ -1188,6 +1252,15 @@ export class FileDatabase {
   }
 }
 
+function rowToBookSelectionRecord(row: Record<string, unknown>): BookSelectionRecord {
+  return {
+    theme: String(row.theme ?? ''),
+    bookId: String(row.book_id ?? ''),
+    data: parseJson<BookSelectionRecord['data']>(row.data, { name: '' }),
+    updatedAt: Number(row.updated_at ?? 0),
+  };
+}
+
 function rowToTask(row: Record<string, unknown>): Task {
   return {
     id: String(row.id),
@@ -1233,6 +1306,12 @@ function rowToTask(row: Record<string, unknown>): Task {
     videoForm: normalizeVideoForm(row.video_form),
     llmProfileId: row.llm_profile_id === null || row.llm_profile_id === undefined || row.llm_profile_id === '' ? null : String(row.llm_profile_id),
     materialSource: String(row.material_source ?? 'ai'),
+    productInfo: row.product_info === null || row.product_info === undefined ? null : String(row.product_info),
+    materialPerson: row.material_person === null || row.material_person === undefined ? null : String(row.material_person),
+    draftDir: row.draft_dir === null || row.draft_dir === undefined ? null : String(row.draft_dir),
+    fixedIntro: row.fixed_intro === null || row.fixed_intro === undefined ? null : String(row.fixed_intro),
+    outroCta: row.outro_cta === null || row.outro_cta === undefined ? null : String(row.outro_cta),
+    lockIntroSentences: normalizeLockIntroSentences(row.lock_intro_sentences),
     taskType: String(row.task_type ?? normalizeTaskKind(row.task_kind)),
     pipelineStep: String(row.pipeline_step ?? 'new'),
     pipelineData: String(row.pipeline_data ?? '{}'),
@@ -1259,6 +1338,12 @@ function normalizeVideoForm(value: unknown): Task['videoForm'] {
 
 function normalizeProcessingMode(value: unknown): Task['processingMode'] {
   return value === 'semi-auto' || value === 'clip-only' ? value : 'full-auto';
+}
+
+function normalizeLockIntroSentences(value: unknown): number {
+  const numericValue = typeof value === 'number' ? value : typeof value === 'string' && value.trim() !== '' ? Number(value) : 0;
+  if (!Number.isFinite(numericValue)) return 0;
+  return Math.min(20, Math.max(0, Math.trunc(numericValue)));
 }
 
 function normalizeMusicMvSettings(value: unknown): Task['musicMv'] {
