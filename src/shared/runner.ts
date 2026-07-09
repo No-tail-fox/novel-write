@@ -993,12 +993,28 @@ function productInfoRewriteBlock(task: Task): string {
   const name = productInfoValue(product.name);
   if (!name) return '';
   const author = productInfoValue(product.author);
-  const sellPoint = productInfoValue(product.sellPoint);
+  const category = productInfoValue(product.category ?? product.cat);
+  const keyword = productInfoValue(product.keyword ?? product.kw);
+  const audience = productInfoValue(product.audience);
+  const persons = productInfoValue(product.persons);
+  const era = productInfoValue(product.era);
+  const price = productInfoValue(product.price);
+  const url = productInfoValue(product.url);
+  const note = productInfoValue(product.note);
+  const sellPoint = productInfoValue(product.sellPoint ?? product.sellpt);
   return joinPromptBlocks([
     '本视频带货商品：',
     `商品名称：${name}`,
+    category ? `类别：${category}` : '',
+    keyword ? `关键词：${keyword}` : '',
     author ? `作者：${author}` : '',
+    persons ? `相关人物：${persons}` : '',
+    era ? `时代：${era}` : '',
+    audience ? `受众：${audience}` : '',
+    price ? `价格：${price}` : '',
+    url ? `链接：${url}` : '',
     sellPoint ? `卖点：${sellPoint}` : '',
+    note ? `备注：${note}` : '',
   ]);
 }
 
@@ -1253,6 +1269,11 @@ async function repairRewriteToTargetLength(
             `Current draft length: ${currentLength} Chinese characters.`,
             repairReason,
             ...repairGuidance,
+            productInfoRewriteBlock(input.task),
+            'Rewrite instructions:',
+            input.rewritePrompt,
+            extraRequirementsInstruction(input.task, input.rewritePrompt),
+            taskModeInstructions(input.task),
             draftLabel,
             current.rewrittenCopy,
           ]),

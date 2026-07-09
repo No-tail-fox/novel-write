@@ -545,6 +545,82 @@ describe('task runner', () => {
     }
   });
 
+  it('keeps product info and rewrite instructions in target length repair prompts', async () => {
+    const { requests } = await runRewriteControlScenario({
+      taskInput: {
+        title: '商品修复提示测试',
+        inputText: '商品素材'.repeat(80),
+        track: 'character-story',
+        style: 'photo-real',
+        speaker: 'voice',
+        targetLength: 300,
+        keepPromotion: false,
+        productInfo: JSON.stringify({ name: '额尔古纳河右岸', sellPoint: '民族史诗' }),
+        promptTemplateId: 'product-repair-template',
+        promptTemplateType: 'task',
+      },
+      reviewedText: '商品素材'.repeat(80),
+      rewrittenCopy: '太短',
+      repairRewrite: '商品正文'.repeat(60),
+      coverTitle: '额尔古纳河右岸',
+      configureDb: async (db) => {
+        await db.upsertPromptTemplate({
+          id: 'product-repair-template',
+          name: 'Product repair template',
+          type: 'task',
+          content: 'Task template',
+          isBuiltin: false,
+          baseTrack: 'character-story',
+          stepPrompts: { rewrite: 'Promotion flag: {{keepPromotion}}\nRewrite marker: keep product pitch.' },
+        });
+      },
+    });
+
+    const repairPrompt = requests.find((request) => request.name === 'rewrite-target-length-repair-1')?.messages.map((message) => message.content).join('\n') ?? '';
+    expect(repairPrompt).toContain('本视频带货商品');
+    expect(repairPrompt).toContain('额尔古纳河右岸');
+    expect(repairPrompt).toContain('民族史诗');
+    expect(repairPrompt).toContain('Promotion flag: true');
+    expect(repairPrompt).toContain('Rewrite marker: keep product pitch.');
+  });
+
+  it('includes typed product info fields in rewrite prompts', async () => {
+    const { requests } = await runRewriteControlScenario({
+      taskInput: {
+        title: '商品字段测试',
+        inputText: sampleInput,
+        track: 'character-story',
+        style: 'photo-real',
+        speaker: 'voice',
+        targetLength: 100,
+        productInfo: JSON.stringify({
+          name: '额尔古纳河右岸',
+          cat: '文学',
+          kw: '鄂温克族',
+          audience: '历史文学读者',
+          persons: '迟子建, 鄂温克老人',
+          era: '20世纪',
+          price: '39.8',
+          url: 'https://example.com/book',
+          note: '适合年末读书分享',
+          sellpt: '民族史诗',
+          coverPath: 'C:/secret/cover.png',
+          materialFolder: 'C:/secret/materials',
+        }),
+      },
+      reviewedText: sampleInput,
+      rewrittenCopy: fitSourceLengthRewrite('Typed product body', 'x'.repeat(100)),
+      coverTitle: '额尔古纳河右岸',
+    });
+
+    const rewritePrompt = requests.find((request) => request.name === 'rewrite-round-1')?.messages.map((message) => message.content).join('\n') ?? '';
+    for (const value of ['额尔古纳河右岸', '文学', '鄂温克族', '历史文学读者', '迟子建, 鄂温克老人', '20世纪', '39.8', 'https://example.com/book', '适合年末读书分享', '民族史诗']) {
+      expect(rewritePrompt).toContain(value);
+    }
+    expect(rewritePrompt).not.toContain('C:/secret/cover.png');
+    expect(rewritePrompt).not.toContain('C:/secret/materials');
+  });
+
   it('treats product info as promotion context without mutating stored keepPromotion', async () => {
     const { requests, storedKeepPromotion } = await runRewriteControlScenario({
       taskInput: {
