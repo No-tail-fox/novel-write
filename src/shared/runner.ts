@@ -11,6 +11,7 @@ import { countVisibleCharacters, normalizeStoryboardSceneCount, normalizeTargetL
 import { normalizeDraftTemplate } from './templates';
 import { buildPromptRenderContext, renderPromptTemplate, selectStepPromptTemplate, selectTaskPromptTemplate, type PromptRenderContext } from './prompt-templates';
 import { defaultCustomStyles } from './config';
+import { copyPersonMaterialsForScenes } from './person-assets';
 
 export interface RunTaskOptions {
   appDataDir: string;
@@ -1625,6 +1626,29 @@ async function ensureImages(input: {
 }): Promise<void> {
   const { db, task, artifact, options, emit, markStep, pipeline } = input;
   throwIfAborted(options.signal);
+  if (task.materialSource === 'local') {
+    const person = task.materialPerson?.trim();
+    if (!person) {
+      throw new Error('本地人物素材来源需要选择人物。');
+    }
+    await db.updateTask(task.id, { currentStep: 4, retryFromStep: 4 });
+    await heartbeatTask(db, task.id, options, 4, 'local person materials');
+    await markStep(4, 'running');
+    await emit('step_start', 4, 'Producer', '从人物素材库复制本地图片素材', { person, sceneIds: artifact.scenes.map((scene) => scene.id) });
+    const copied = await copyPersonMaterialsForScenes({
+      rootDir: join(options.appDataDir, 'person-assets'),
+      person,
+      scenes: artifact.scenes,
+      taskDir: input.workDir,
+      ratio: task.ratio,
+      signal: options.signal,
+    });
+    pipeline.assets.images = mergeAssets(pipeline.assets.images, copied.assets);
+    pipeline.assets.imageErrors = removeImageErrors(pipeline.assets.imageErrors, copied.assets.map((asset) => asset.sceneId));
+    await markStep(4, 'completed', { outputPath: join(input.workDir, '04-local-meta.json') });
+    await emit('step_complete', 4, 'Producer', '人物素材库图片已复制', { count: copied.assets.length, origins: copied.origins });
+    return;
+  }
   if (!options.generateImages) {
     throw new Error('Image provider is not configured; cannot create real image assets.');
   }

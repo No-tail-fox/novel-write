@@ -5,6 +5,7 @@ import { join } from 'node:path';
 import { FileDatabase } from '@shared/storage';
 import { runTask } from '@shared/runner';
 import { markTaskStepForRerun } from '@shared/pipeline-cache';
+import { createPersonAsset, importPersonAssetFiles } from '@shared/person-assets';
 import type { CustomCoverTemplate, ImagePrompt, PipelineArtifact, StoryboardScene, TaskStatus } from '@shared/types';
 import type { PyJianYingBridgeInput } from '@shared/jianying-bridge';
 import type { StoryboundSidecarInput } from '@shared/storybound-sidecar';
@@ -22,6 +23,52 @@ function mockConfiguredLlm(run: JsonLlm): ConfiguredJsonLlm {
 }
 
 describe('task runner', () => {
+  it('uses local person materials instead of AI image generation when materialSource is local', async () => {
+    const dir = await mkdtemp(join(tmpdir(), 'storybound-runner-local-materials-'));
+    const db = await FileDatabase.open(join(dir, 'data.db'));
+    const draftRootDir = join(dir, 'JianyingPro Drafts');
+    const mediaDir = join(dir, 'media');
+    const assetRoot = join(dir, 'person-assets');
+    const source = join(dir, 'source.png');
+
+    try {
+      await db.upsertConfig({
+        ...(await db.getState()).config,
+        jianying: { ...(await db.getState()).config.jianying, draftPath: draftRootDir },
+      });
+      await writeFile(source, tinyPng);
+      await createPersonAsset(assetRoot, '迟子建');
+      await importPersonAssetFiles(assetRoot, '迟子建', [source]);
+      const task = await db.createTask({
+        title: 'Local person materials',
+        inputText: sampleInput,
+        track: 'character-story',
+        style: 'photo-real',
+        speaker: 'voice',
+        materialSource: 'local',
+        materialPerson: '迟子建',
+      });
+
+      await runTask(db, task, {
+        appDataDir: dir,
+        generatePipelineArtifact: async () => makeArtifact(),
+        generateImages: async () => {
+          throw new Error('AI image generation should not be called');
+        },
+        synthesizeNarration: async (scenes) => writeSceneAssets(mediaDir, scenes, 'wav', wavTone(1200)),
+        draftWriterOptions: { runBridge: fakeBridge },
+      });
+
+      const meta = JSON.parse(await readFile(join(dir, 'tasks', task.id, '04-local-meta.json'), 'utf8'));
+      expect(meta.person).toBe('迟子建');
+      const completed = (await db.getState()).tasks.find((item) => item.id === task.id);
+      expect(completed?.status).toBe('completed');
+    } finally {
+      await db.close();
+      await rm(dir, { recursive: true, force: true });
+    }
+  });
+
   it('runs a task into a real Jianying draft folder when providers return real assets', async () => {
     const dir = await mkdtemp(join(tmpdir(), 'storybound-runner-'));
     const db = await FileDatabase.open(join(dir, 'data.db'));
