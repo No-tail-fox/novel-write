@@ -77,6 +77,9 @@ describe('product shell ui', () => {
       expect(viteEnv).toContain(api);
     }
 
+    expect(viteEnv).not.toContain('Partial<LocalBookPersonAssetApi>');
+    expect(viteEnv).toContain('& LocalBookPersonAssetApi');
+
     for (const channel of [
       'book-selection:list',
       'book-selection:save',

@@ -96,7 +96,7 @@ declare global {
       openPath: (path: string) => Promise<void>;
       windowControl: (action: 'minimize' | 'toggle-maximize' | 'close') => Promise<void>;
       onTaskEvent: (callback: (state: AppState) => void) => () => void;
-    } & Partial<LocalBookPersonAssetApi>;
+    } & LocalBookPersonAssetApi;
     storybound?: Window['storydream'];
   }
 }

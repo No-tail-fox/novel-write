@@ -536,6 +536,33 @@ function makeFallbackApi(setState: (state: AppState) => void): StoryDreamApi {
     async saveUiPreferences(ui: UiPreferences) {
       return persist({ ...read(), ui });
     },
+    async listBookSelections() {
+      return [];
+    },
+    async saveBookSelection(input) {
+      return { theme: input.theme, bookId: input.bookId ?? `b-${Date.now()}`, data: input.data, updatedAt: Date.now() };
+    },
+    async deleteBookSelection() {
+      return undefined;
+    },
+    async listPersonAssets() {
+      return [];
+    },
+    async createPersonAsset(name) {
+      return { name, count: 0, dir: '', updatedAt: Date.now() };
+    },
+    async renamePersonAsset(_oldName, newName) {
+      return newName;
+    },
+    async deletePersonAsset() {
+      return undefined;
+    },
+    async importPersonAssetImages() {
+      return 0;
+    },
+    async listPersonAssetImages() {
+      return [];
+    },
     async createHtmlVideoTask(input: CreateTaskInput) {
       const state = read();
       const now = new Date().toISOString();
