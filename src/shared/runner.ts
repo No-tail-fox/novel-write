@@ -574,11 +574,20 @@ async function ensureContentArtifact(input: {
     await heartbeatTask(db, task.id, options, 1, 'LLM rewrite');
     await markStep(1, 'running');
     await emit('step_start', 1, 'Writer', '标准改写 + 自评迭代');
-    const rewritePrompt = renderStepPrompt(promptTemplates, 'rewrite', promptContext(), requireString(pipeline.artifact.reviewedText, 'reviewedText'));
+    const reviewedText = requireString(pipeline.artifact.reviewedText, 'reviewedText');
+    const controlPlan = prepareRewriteControls(task, reviewedText);
+    const rewritePromptContext = buildPromptRenderContext({
+      task,
+      taskTemplate,
+      customStyles: appState.customStyles,
+      sourceContext,
+      artifact: { ...pipeline.artifact, reviewedText: controlPlan.reviewedTextForRewrite },
+    });
+    const rewritePrompt = renderStepPrompt(promptTemplates, 'rewrite', rewritePromptContext, controlPlan.reviewedTextForRewrite);
     const rewrite = await runRewriteRounds(options.llm, {
       task,
       rewritePrompt,
-      reviewedText: requireString(pipeline.artifact.reviewedText, 'reviewedText'),
+      reviewedText: controlPlan.reviewedTextForRewrite,
       signal: options.signal,
       rerunContext: rewriteContextForStep(pipeline, 1),
       emit,
@@ -592,6 +601,7 @@ async function ensureContentArtifact(input: {
       signal: options.signal,
       emit,
     });
+    pipeline.artifact.rewrittenCopy = applyFinalRewriteControls(rewrite.rewrittenCopy, task, pipeline.artifact.cover.title, controlPlan.lockedIntro);
     await writeFile(join(workDir, '01-rewritten-copy.md'), pipeline.artifact.rewrittenCopy, 'utf8');
     await writeFile(join(workDir, '00-cover-title.json'), JSON.stringify(pipeline.artifact.cover, null, 2), 'utf8');
     await writeFile(join(workDir, '01-rewrite-evaluations.json'), JSON.stringify(pipeline.artifact.rewriteEvaluation, null, 2), 'utf8');
@@ -889,11 +899,89 @@ function runLlmJson<T = unknown>(llm: ConfiguredJsonLlm, request: LlmJsonStepReq
   return llm.run<T>(openAiRequest);
 }
 
+function prepareRewriteControls(task: Task, reviewedText: string): { reviewedTextForRewrite: string; lockedIntro: string } {
+  if (isDialogueScript(task)) return { reviewedTextForRewrite: reviewedText, lockedIntro: '' };
+  const lockIntroSentences = clampIntroSentenceCount(task.lockIntroSentences);
+  if (lockIntroSentences <= 0) return { reviewedTextForRewrite: reviewedText, lockedIntro: '' };
+  const split = splitLeadingSentences(reviewedText, lockIntroSentences);
+  return {
+    reviewedTextForRewrite: split.remainder,
+    lockedIntro: task.fixedIntro?.trim() || split.leading,
+  };
+}
+
+function splitLeadingSentences(text: string, count: number): { leading: string; remainder: string } {
+  if (count <= 0) return { leading: '', remainder: text };
+  const sentenceEnd = /[。！？；!?;]/g;
+  let endIndex = 0;
+  let sentencesFound = 0;
+  for (let match = sentenceEnd.exec(text); match && sentencesFound < count; match = sentenceEnd.exec(text)) {
+    sentencesFound += 1;
+    endIndex = match.index + match[0].length;
+  }
+  if (sentencesFound < count) return { leading: text.trim(), remainder: '' };
+  return {
+    leading: text.slice(0, endIndex).trim(),
+    remainder: text.slice(endIndex).trim(),
+  };
+}
+
+function productInfoRewriteBlock(task: Task): string {
+  const raw = task.productInfo?.trim();
+  if (!raw) return '';
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(raw);
+  } catch {
+    return '';
+  }
+  if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) return '';
+  const product = parsed as Record<string, unknown>;
+  const name = productInfoValue(product.name);
+  if (!name) return '';
+  const author = productInfoValue(product.author);
+  const sellPoint = productInfoValue(product.sellPoint);
+  return joinPromptBlocks([
+    '本视频带货商品：',
+    `商品名称：${name}`,
+    author ? `作者：${author}` : '',
+    sellPoint ? `卖点：${sellPoint}` : '',
+  ]);
+}
+
+function applyFinalRewriteControls(copy: string, task: Task, coverTitle: string | undefined, lockedIntro: string): string {
+  if (isDialogueScript(task)) return copy;
+  const intro = lockedIntro.trim() || task.fixedIntro?.trim() || '';
+  const outroTemplate = task.outroCta?.trim() ?? '';
+  const protagonist = coverTitle?.trim() || task.title.trim() || '主角';
+  const outro = outroTemplate ? outroTemplate.replace(/\{主角\}/g, protagonist) : '';
+  if (!intro && !outro) return copy;
+  return joinPromptBlocks([intro, copy, outro]);
+}
+
+function clampIntroSentenceCount(value: unknown): number {
+  if (value === null || value === undefined || value === '') return 0;
+  const parsed = Number(value);
+  if (!Number.isFinite(parsed)) return 0;
+  return Math.min(20, Math.max(0, Math.round(parsed)));
+}
+
+function productInfoValue(value: unknown): string {
+  if (typeof value === 'string') return value.trim();
+  if (value === null || value === undefined) return '';
+  return String(value).trim();
+}
+
+function isDialogueScript(task: Task): boolean {
+  return task.scriptFormat === 'dialogue' || task.videoForm === 'two-host-podcast';
+}
+
 function buildRewriteRoundPrompt(input: { task: Task; rewritePrompt: string; reviewedText: string; rerunContext?: string }, round: number, previousDraft?: string): string {
   return joinPromptBlocks([
     `Rewrite round: ${round}/3`,
     round === 1 ? 'Reviewed text:' : `Current draft to improve (round ${round - 1} result):`,
     round === 1 ? input.reviewedText : previousDraft ?? '',
+    productInfoRewriteBlock(input.task),
     'Rewrite instructions:',
     input.rewritePrompt,
     extraRequirementsInstruction(input.task, input.rewritePrompt),
@@ -906,6 +994,7 @@ function buildRewriteEvaluationPrompt(input: { task: Task; rewritePrompt: string
   return joinPromptBlocks([
     'Rewrite evaluation.',
     'Select the best rewrite round and return the round number, per-round scores, and short reasons.',
+    productInfoRewriteBlock(input.task),
     'Rewrite instructions:',
     input.rewritePrompt,
     extraRequirementsInstruction(input.task, input.rewritePrompt),

@@ -341,6 +341,83 @@ describe('task runner', () => {
     }
   });
 
+  it('applies fixed intro and outro while keeping fixed intro out of rewrite prompts', async () => {
+    const fixedIntro = '今天这本书，先看第一句话。';
+    const aiBody = fitSourceLengthRewrite('AI body for fixed intro case', 'x'.repeat(100));
+    const { finalCopy, requests } = await runRewriteControlScenario({
+      taskInput: {
+        title: '固定开头测试',
+        inputText: sampleInput,
+        track: 'character-story',
+        style: 'photo-real',
+        speaker: 'voice',
+        targetLength: 100,
+        fixedIntro,
+        outroCta: '想读{主角}，去橱窗找这本书。',
+      },
+      reviewedText: sampleInput,
+      rewrittenCopy: aiBody,
+      coverTitle: '额尔古纳河右岸',
+    });
+
+    expect(finalCopy).toContain(fixedIntro);
+    expect(finalCopy).toContain(aiBody);
+    expect(finalCopy).toContain('想读额尔古纳河右岸，去橱窗找这本书。');
+    for (const request of requests.filter((item) => item.name.startsWith('rewrite-round-'))) {
+      expect(request.messages.map((message) => message.content).join('\n')).not.toContain(fixedIntro);
+    }
+  });
+
+  it('locks the first two reviewed sentences outside rewrite prompts', async () => {
+    const reviewedText = '第一句必须保留。第二句也保留。第三句进入改写。第四句继续改写。';
+    const aiBody = fitSourceLengthRewrite('第三句进入AI改写。第四句继续AI改写。', 'x'.repeat(100));
+    const { finalCopy, requests } = await runRewriteControlScenario({
+      taskInput: {
+        title: '锁定开头测试',
+        inputText: reviewedText,
+        track: 'character-story',
+        style: 'photo-real',
+        speaker: 'voice',
+        targetLength: 100,
+        lockIntroSentences: 2,
+      },
+      reviewedText,
+      rewrittenCopy: aiBody,
+      coverTitle: '锁定标题',
+    });
+
+    const firstRewritePrompt = requests.find((request) => request.name === 'rewrite-round-1')?.messages.map((message) => message.content).join('\n') ?? '';
+    expect(firstRewritePrompt).not.toContain('第一句必须保留。');
+    expect(firstRewritePrompt).not.toContain('第二句也保留。');
+    expect(firstRewritePrompt).toContain('第三句进入改写。第四句继续改写。');
+    expect(finalCopy.startsWith('第一句必须保留。第二句也保留。')).toBe(true);
+  });
+
+  it('adds product info prompting to rewrite and evaluation prompts', async () => {
+    const { requests } = await runRewriteControlScenario({
+      taskInput: {
+        title: '商品信息测试',
+        inputText: sampleInput,
+        track: 'character-story',
+        style: 'photo-real',
+        speaker: 'voice',
+        targetLength: 100,
+        keepPromotion: false,
+        productInfo: JSON.stringify({ name: '额尔古纳河右岸', author: '迟子建', sellPoint: '民族史诗' }),
+      },
+      reviewedText: sampleInput,
+      rewrittenCopy: fitSourceLengthRewrite('Product body', 'x'.repeat(100)),
+      coverTitle: '额尔古纳河右岸',
+    });
+
+    for (const request of requests.filter((item) => item.name === 'rewrite-round-1' || item.name === 'rewrite-evaluation')) {
+      const prompt = request.messages.map((message) => message.content).join('\n');
+      expect(prompt).toContain('本视频带货商品');
+      expect(prompt).toContain('额尔古纳河右岸');
+      expect(prompt).toContain('民族史诗');
+    }
+  });
+
 
   it('passes required rewrite output schema as Anthropic-specific request options', async () => {
     const dir = await mkdtemp(join(tmpdir(), 'storybound-runner-rewrite-schema-'));
@@ -2797,6 +2874,70 @@ function extractScenesFromPrompt(request: LlmJsonRequest): StoryboardScene[] {
   const match = content.match(/Scene context:\n\n(\{.*\})/s);
   if (!match) return [];
   return JSON.parse(match[1]).scenes as StoryboardScene[];
+}
+
+async function runRewriteControlScenario(input: {
+  taskInput: Parameters<FileDatabase['createTask']>[0];
+  reviewedText: string;
+  rewrittenCopy: string;
+  coverTitle: string;
+}): Promise<{ finalCopy: string; requests: LlmJsonRequest[] }> {
+  const dir = await mkdtemp(join(tmpdir(), 'storybound-runner-rewrite-controls-'));
+  const db = await FileDatabase.open(join(dir, 'data.db'));
+  const draftRootDir = join(dir, 'JianyingPro Drafts');
+  const mediaDir = join(dir, 'media');
+  const requests: LlmJsonRequest[] = [];
+
+  try {
+    await db.upsertConfig({
+      ...(await db.getState()).config,
+      jianying: { ...(await db.getState()).config.jianying, draftPath: draftRootDir },
+    });
+    const task = await db.createTask(input.taskInput);
+    const llm: JsonLlm = async <T,>(request: LlmJsonRequest) => {
+      requests.push(request);
+      if (request.step === 0) return { json: { reviewedText: input.reviewedText } as T, raw: '{}', requestId: 'review' };
+      if (request.name.startsWith('rewrite-round-')) {
+        return { json: { rewrittenCopy: input.rewrittenCopy } as T, raw: '{}', requestId: request.name };
+      }
+      if (request.name === 'rewrite-evaluation') {
+        return { json: { bestRound: 1, evaluations: [{ round: 1, score: 100, reason: 'best' }] } as T, raw: '{}', requestId: 'rewrite-eval' };
+      }
+      if (request.name.startsWith('rewrite-target-length-repair-')) throw new Error(`Unexpected rewrite repair ${request.name}`);
+      if (request.name === 'cover-metadata') {
+        return {
+          json: { cover: { title: input.coverTitle, subtitle: [], summary: 'summary', tags: [], comments: [] } } as T,
+          raw: '{}',
+          requestId: 'cover-metadata',
+        };
+      }
+      if (request.step === 2) return { json: { scenes: makeArtifact().scenes } as T, raw: '{}', requestId: 'storyboard' };
+      if (request.name === 'character-card') {
+        return {
+          json: { characterCard: { summary: 'same person', characters: [], consistencyRules: [] } } as T,
+          raw: '{}',
+          requestId: 'character-card',
+        };
+      }
+      return { json: { imagePrompts: makeArtifact().imagePrompts } as T, raw: '{}', requestId: 'prompts' };
+    };
+
+    await runTask(db, task, {
+      appDataDir: dir,
+      llm: mockConfiguredLlm(llm),
+      generateImages: async (scenes) => writeSceneAssets(mediaDir, scenes, 'png', tinyPng),
+      synthesizeNarration: async (scenes) => writeSceneAssets(mediaDir, scenes, 'wav', wavTone(1200)),
+      draftWriterOptions: { runBridge: fakeBridge },
+    });
+
+    return {
+      finalCopy: await readFile(join(dir, 'tasks', task.id, '01-rewritten-copy.md'), 'utf8'),
+      requests,
+    };
+  } finally {
+    await db.close();
+    await rm(dir, { recursive: true, force: true });
+  }
 }
 
 function countOccurrences(text: string, needle: string): number {
