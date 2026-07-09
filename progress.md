@@ -87,3 +87,28 @@
 - Recovered embedded `/index.html` from `E:\Storybound\storybound.exe`; confirmed current runtime entry is `/assets/index-DGyecVzc.js`.
 - Located the AI creation implementation in the reference bundle: `tH` UI component, `aE` prompt caller, `U9` system prompt builder, `B9` user prompt builder, Bing/Sogou search helpers, IMA retrieval helpers, and the shared LLM adapter.
 - Wrote the detailed audit to `storybound_ai_creation_prompt_audit_2026-06-24.md`.
+
+## 2026-07-09 Latest Storybound Practical Migration
+
+- User selected `方案 B：实用移植版`.
+- Created implementation worktree `C:\Users\Administrator\.config\superpowers\worktrees\novel-write\storybound-latest-practical` on branch `codex/storybound-latest-practical`.
+- Wrote design and implementation plans:
+  - `docs/plans/2026-07-09-storybound-latest-practical-features-design.md`
+  - `docs/plans/2026-07-09-storybound-latest-practical-features.md`
+- Implemented storage/type contract for latest local fields and `book_selection`.
+- Implemented rewrite controls and product prompting, including target-length repair and cover metadata product context.
+- Implemented local person asset helper and Step 4 local material copy path.
+- Exposed local selection/person APIs through Electron main/preload and required renderer type signatures.
+- Added practical UI pages and controls: `选品助手`、`对标导入`、`人物素材库`、`文案把控`、`素材来源`.
+- Fixed Task 5 review issues: benchmark session handoff cleanup, local-material preflight validation, and user-facing async error handling.
+- Per-task spec and quality reviews were completed; Important review issues were fixed before proceeding.
+- Final focused verification passed:
+  - `node node_modules/vitest/vitest.mjs run --pool=threads --maxWorkers=1 tests/storage.test.ts` -> 24 tests passed.
+  - `node node_modules/vitest/vitest.mjs run --pool=threads --maxWorkers=1 tests/person-assets.test.ts` -> 1 test passed.
+  - `node node_modules/vitest/vitest.mjs run --pool=threads --maxWorkers=1 tests/runner.test.ts -t "fixed intro|locks the first|product info|local person materials"` -> 10 tests passed, 46 skipped.
+  - `node node_modules/vitest/vitest.mjs run --pool=threads --maxWorkers=1 tests/product-shell-ui.test.ts` -> 90 tests passed.
+- Final full verification passed:
+  - `npm run typecheck`
+  - `npm test` -> 45 files, 477 tests passed.
+  - `npm run build` -> passed with the existing large chunk warning.
+  - `npm run smoke:electron` -> shell/new-task/queue/draft-template smoke true.

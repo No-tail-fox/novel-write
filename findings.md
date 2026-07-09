@@ -230,3 +230,25 @@
 - For the default story flow, the track resolves to `人物故事（纪实人物）`.
 - The user prompt includes `【关键词】`, optional `【用户额外要求】`, optional `【参考素材】` blocks, and a final instruction to create an original short-video oral narration draft with no extra explanation.
 - Full details and exact prompt/call logic are recorded in `storybound_ai_creation_prompt_audit_2026-06-24.md`.
+
+---
+
+# 2026-07-09 Latest Storybound Practical Migration Findings
+
+## Implemented Local Features
+
+- Latest task fields are now persisted locally: `product_info`、`material_person`、`draft_dir`、`fixed_intro`、`outro_cta`、`lock_intro_sentences`.
+- `book_selection` is implemented as a local product/book handoff table. It stores `BookProductInfo` JSON and feeds both new tasks and benchmark import.
+- Rewrite controls are applied outside the LLM where appropriate: fixed intro is not sent for rewrite, locked intro sentences are preserved for narration scripts, outro CTA is appended after cover metadata, and target-length repair keeps product/promotion context.
+- Product prompting carries useful typed fields and aliases such as `category/cat`、`keyword/kw`、`audience`、`persons`、`era`、`price`、`url`、`note`、`sellPoint/sellpt`, while local path fields such as `coverPath` and `materialFolder` are omitted from prompts.
+- Person assets are stored under `appDataDir/person-assets/<person>/`; accepted file types are `.jpg`、`.jpeg`、`.png`、`.webp`.
+- Local material Step 4 copies person images to `taskDir/images/<sceneId><ext>`, cycles available images across scenes, writes `04-local-meta.json`, and skips AI image generation for `materialSource = local`.
+- Electron APIs now expose local book selection and person asset operations through preload/main IPC.
+- UI now includes `选品助手`、`对标导入`、`人物素材库`, plus new task controls for `文案把控` and `素材来源`.
+
+## Safety And Scope Notes
+
+- The migration intentionally keeps all benchmark and selection behavior local. No private Storybound remote benchmark endpoints were implemented.
+- Credit refund/server ledger behavior remains out of scope.
+- Local materials currently copy original images rather than crop or auto-retouch them. This keeps the first version dependency-free and auditable.
+- The new UI preflights local-person tasks so empty or missing person libraries are caught before running the expensive pipeline.

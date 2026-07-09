@@ -80,6 +80,29 @@ Goal: 以 `G:\Storybound` 为新的参考程序目录，尽量还原它的本地
 
 ---
 
+# 2026-07-09 Storybound Latest Practical Migration
+
+Goal: 用户选择“方案 B：实用移植版”后，将 `E:\Storybound` 最新版中可安全、本地化复用的能力迁移到当前 Electron/React/sql.js 项目中，同时避开私有远端接口、授权/积分绕过和不可控的服务端依赖。
+
+## Phases
+
+- [x] 逆向确认最新版可迁移功能：文案把控三件套、人物素材库真图分镜、选品助手、对标导入本地版。
+- [x] 扩展本地类型和 SQLite 契约：任务新增 `product_info`、`material_person`、`draft_dir`、`fixed_intro`、`outro_cta`、`lock_intro_sentences`；新增 `book_selection` 本地表。
+- [x] 接入 Step 1 文案把控：固定开头、结尾 CTA、锁定开头句数、产品信息提示和目标字数修复上下文。
+- [x] 新增人物素材库 helper，并在 Step 4 支持 `materialSource = local` 时复制本地人物图片替代 AI 生图。
+- [x] 暴露 Electron IPC/preload API：本地选品和人物素材库 CRUD、导入图片、列图。
+- [x] 新增 UI：选品助手、对标导入、人物素材库；新建任务高级设置新增文案把控和素材来源。
+- [x] 完成规格审查、代码质量审查和最终验证。
+
+## Deliberate Exclusions
+
+- 不接入 Storybound 私有远端接口，如 `/v1/dajiala/*`、`/v1/bugpk/parse` 或下载解密相关逻辑。
+- 不实现服务端积分返还、授权绕过、密钥提取或 token 复用。
+- 不实现完整图生视频远程工作流。
+- 人物素材首版使用本地图片复制铺分镜，不新增裁剪/抠图依赖。
+
+---
+
 # 2026-06-23 Backend Reverse Follow-up
 
 Goal: keep extending the `G:\Storybound` reverse-engineering pass until the backend contract is explicit enough to drive a faithful implementation plan.
