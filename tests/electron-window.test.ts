@@ -114,8 +114,14 @@ describe('electron window chrome', () => {
 
     expect(html).toContain("default-src 'self'");
     expect(html).toContain("object-src 'none'");
-    expect(html).toContain("frame-ancestors 'none'");
     expect(html).toContain("connect-src 'self' http://127.0.0.1:* ws://127.0.0.1:*");
     expect(html).not.toMatch(/connect-src[^;]*https:\/\//);
+  });
+
+  it('omits sources and directives that Chromium ignores in a meta content security policy', async () => {
+    const html = await readFile(new URL('../index.html', import.meta.url), 'utf8');
+
+    expect(html).not.toContain("frame-ancestors 'none'");
+    expect(html).not.toMatch(/(?:http|ws):\/\/\[::1\]:\*/);
   });
 });
