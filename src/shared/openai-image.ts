@@ -1,5 +1,8 @@
 import { fetchWithTimeout } from './http';
 import { readTextBounded, type NetworkFetch } from './network-policy';
+import { normalizeOpenAiImageBaseUrl } from './openai-image-config';
+
+export { normalizeOpenAiImageBaseUrl } from './openai-image-config';
 
 export type OpenAiImageResolution = '1K' | '2K' | '4K';
 export type OpenAiImageQuality = 'low' | 'medium' | 'high';
@@ -32,15 +35,8 @@ export interface OpenAiImageProbeInput {
   timeoutMs?: number;
 }
 
-const DEFAULT_OPENAI_IMAGE_BASE_URL = 'https://api.openai.com';
 const IMAGE_PROBE_PROMPT = 'Configuration smoke test: a simple geometric icon on a plain background, no text.';
 const IMAGE_PROBE_RESPONSE_MAX_BYTES = 64 * 1024 * 1024;
-
-export function normalizeOpenAiImageBaseUrl(value: string): string {
-  const trimmed = value.replace(/\/+$/, '');
-  const base = trimmed || DEFAULT_OPENAI_IMAGE_BASE_URL;
-  return base.endsWith('/v1') ? base : `${base}/v1`;
-}
 
 export function buildOpenAiImageGenerationBody(input: {
   model: string;

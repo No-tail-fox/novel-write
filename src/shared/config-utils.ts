@@ -1,5 +1,5 @@
 import { defaultConfig } from './config';
-import { normalizeOpenAiImageBaseUrl, testOpenAiCompatibleImageModel } from './openai-image';
+import { normalizeOpenAiImageBaseUrl } from './openai-image-config';
 import { isArkModelApiKey, normalizeVolcengineV3Speaker, VOLCENGINE_TTS_ARK_KEY_MESSAGE } from './volcengine-tts';
 import type {
   AppConfig,
@@ -525,6 +525,7 @@ export async function testConfigTarget(target: ConfigTestTarget, input: AppConfi
   }
 
   const image = activeOpenAiImageConfig(config);
+  const { testOpenAiCompatibleImageModel } = await import('./openai-image');
   const probe = await testOpenAiCompatibleImageModel({
     baseUrl: image.baseUrl,
     apiKey: image.apiKey,

@@ -39,6 +39,19 @@ describe('product shell ui', () => {
     expect(settingsCommit).not.toContain('throw error');
   });
 
+  it('keeps Node-only provider networking out of the browser fallback bundle', async () => {
+    const main = await readFile(new URL('../src/main.tsx', import.meta.url), 'utf8');
+    const configUtils = await readFile(new URL('../src/shared/config-utils.ts', import.meta.url), 'utf8');
+    const fallbackModels = main.slice(main.indexOf('async listProviderModels(request)'), main.indexOf('async listVolcengineSpeakers'));
+
+    expect(main).not.toContain("from './shared/llm-provider'");
+    expect(configUtils).not.toContain("from './openai-image'");
+    expect(configUtils).toContain("await import('./openai-image')");
+    expect(fallbackModels).not.toContain('listConfiguredProviderModels');
+    expect(fallbackModels).toContain('浏览器预览无法安全加载模型列表');
+    expect(fallbackModels).toContain('models: []');
+  });
+
   it('presents a Chinese StoryDream-first desktop shell with main workflow and secondary modules', async () => {
     const main = await readFile(new URL('../src/main.tsx', import.meta.url), 'utf8');
     const css = await readFile(new URL('../src/styles.css', import.meta.url), 'utf8');

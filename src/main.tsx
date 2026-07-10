@@ -129,7 +129,6 @@ import {
   ttsProfileMinimax,
   ttsProfileVolcengine,
 } from './shared/provider-profile-utils';
-import { listConfiguredProviderModels } from './shared/llm-provider';
 import {
   countVisibleCharacters,
   normalizeStoryboardSceneCount,
@@ -466,7 +465,15 @@ function makeFallbackApi(setState: (state: AppState) => void): StoryDreamApi {
       };
     },
     async listProviderModels(request) {
-      return listConfiguredProviderModels(request);
+      const baseUrl = request.baseUrl.trim().replace(/\/+$/, '');
+      const endpoint = `${baseUrl || (request.protocol === 'anthropic' ? 'https://api.anthropic.com' : 'https://api.openai.com')}/v1/models`;
+      return {
+        status: 'warn',
+        detail: '浏览器预览无法安全加载模型列表，请在 Electron 桌面端使用。',
+        latencyMs: 0,
+        endpoint,
+        models: [],
+      };
     },
     async listVolcengineSpeakers() {
       const speakers = volcengineVoicePresets.map(([name, voiceType]) => ({ voiceType, name }));
