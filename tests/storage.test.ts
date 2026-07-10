@@ -7,7 +7,30 @@ import { FileDatabase } from '@shared/storage';
 import { defaultConfig } from '@shared/config';
 import { convertCozeWorkflowToDraftTemplate } from '@shared/coze-workflow-converter';
 
+function configWithStorageSecret(secret: string) {
+  return {
+    ...structuredClone(defaultConfig),
+    llm: { ...defaultConfig.llm, apiKey: secret },
+    llmProfiles: [{ ...defaultConfig.llmProfiles[0], apiKey: secret }],
+  };
+}
+
 describe('file database', () => {
+  it('strips provider credentials from normal config persistence', async () => {
+    const dir = await mkdtemp(join(tmpdir(), 'storydream-db-config-redaction-'));
+    const file = join(dir, 'app.db');
+    try {
+      const db = await FileDatabase.open(file);
+      await db.upsertConfig(configWithStorageSecret('must-never-reach-sqlite'));
+
+      expect(JSON.stringify((await db.getState()).config)).not.toContain('must-never-reach-sqlite');
+      await db.close();
+      expect((await readFile(file)).includes(Buffer.from('must-never-reach-sqlite'))).toBe(false);
+    } finally {
+      await rm(dir, { recursive: true, force: true });
+    }
+  });
+
   it('creates StoryDream-compatible local tables and seeds Chinese account state', async () => {
     const dir = await mkdtemp(join(tmpdir(), 'storybound-db-compatible-schema-'));
     const file = join(dir, 'app.db');
@@ -779,7 +802,7 @@ describe('file database', () => {
     }
   });
 
-  it('keeps the active GPT image provider settings effective after saving config', async () => {
+  it('keeps active GPT image settings except credentials after saving config', async () => {
     const dir = await mkdtemp(join(tmpdir(), 'storybound-db-image-config-'));
     const file = join(dir, 'app.db');
 
@@ -804,14 +827,14 @@ describe('file database', () => {
       const state = await reopened.getState();
 
       expect(state.config.gptImage).toMatchObject({
-        apiKey: 'saved-image-key',
+        apiKey: '',
         baseUrl: 'https://image.example/v1',
         model: 'gpt-image-2',
         concurrency: 4,
         resolution: '4K',
       });
       expect(state.config.image).toMatchObject({
-        apiKey: 'saved-image-key',
+        apiKey: '',
         baseUrl: 'https://image.example/v1',
         model: 'gpt-image-2',
         concurrency: 4,
@@ -877,13 +900,13 @@ describe('file database', () => {
       const reopened = await FileDatabase.open(file);
       const state = await reopened.getState();
 
-      expect(state.config.llm).toMatchObject({ id: 'llm-custom', model: 'llm-active', enabled: true });
+      expect(state.config.llm).toMatchObject({ id: 'llm-custom', apiKey: '', model: 'llm-active', enabled: true });
       expect(state.config.activeImageProfileId).toBe('image-custom');
       expect(state.config.imageProvider).toBe('custom');
-      expect(state.config.customImage).toMatchObject({ apiKey: 'image-key', baseUrl: 'https://image.example', model: 'image-active' });
+      expect(state.config.customImage).toMatchObject({ apiKey: '', baseUrl: 'https://image.example', model: 'image-active' });
       expect(state.config.activeTtsProfileId).toBe('tts-minimax');
       expect(state.config.tts.provider).toBe('minimax');
-      expect(state.config.tts.minimax).toMatchObject({ apiKey: 'tts-key', model: 'speech-active', voiceId: 'voice-active' });
+      expect(state.config.tts.minimax).toMatchObject({ apiKey: '', model: 'speech-active', voiceId: 'voice-active' });
       await reopened.close();
     } finally {
       await rm(dir, { recursive: true, force: true });

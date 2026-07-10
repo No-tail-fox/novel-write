@@ -66,6 +66,7 @@ export interface ProviderModelListRequest {
   baseUrl: string;
   apiKey: string;
   protocol?: LlmConfig['protocol'];
+  secretId?: string;
 }
 
 export interface ProviderModelListResult {
@@ -88,6 +89,8 @@ export interface VolcengineSpeaker {
 export interface VolcengineSpeakerListRequest {
   accessKeyId: string;
   secretAccessKey: string;
+  accessKeyIdSecretId?: string;
+  secretAccessKeySecretId?: string;
   resourceId: string;
   voiceTypes?: string[];
   page?: number;

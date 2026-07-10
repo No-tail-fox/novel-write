@@ -3,7 +3,6 @@ import type {
   ActivationState,
   AiSourceContext,
   AppConfig,
-  AppState,
   BookSelectionInput,
   BookSelectionRecord,
   ConfigTestResult,
@@ -34,6 +33,7 @@ import type {
   VolcengineSpeakerListResult,
   VoiceLabGenerateInput,
 } from './shared/types';
+import type { PublicAppState as AppState, SaveConfigInput, SecretChanges } from './shared/config-secrets';
 import type { PersonAssetImage, PersonAssetSummary } from './shared/person-assets';
 
 type LocalBookPersonAssetApi = {
@@ -52,8 +52,8 @@ declare global {
   interface Window {
     storydream?: {
       getState: () => Promise<AppState>;
-      saveConfig: (config: AppConfig) => Promise<AppState>;
-      testAppConfig: (target: ConfigTestTarget, config: AppConfig) => Promise<ConfigTestResult>;
+      saveConfig: (input: SaveConfigInput) => Promise<AppState>;
+      testAppConfig: (target: ConfigTestTarget, config: AppConfig, secretChanges?: SecretChanges) => Promise<ConfigTestResult>;
       testLlmConfig: (config: LlmConfig) => Promise<LlmModelTestResult>;
       listProviderModels: (request: ProviderModelListRequest) => Promise<ProviderModelListResult>;
       listVolcengineSpeakers: (request: VolcengineSpeakerListRequest) => Promise<VolcengineSpeakerListResult>;

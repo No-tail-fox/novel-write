@@ -1,5 +1,6 @@
 import { z } from 'zod';
 import type { AppConfig, DraftTemplate, ImageLabRecord } from './types';
+import { isSecretId, type SaveConfigInput } from './config-secrets';
 
 export const MAX_TASK_TEXT = 1_000_000;
 export const MAX_IPC_TEXT = 65_536;
@@ -12,6 +13,7 @@ const nonEmptyText = (max = MAX_IPC_TEXT) => z.string().max(max).refine((value) 
 const optionalText = (max = MAX_IPC_TEXT) => z.string().max(max).optional();
 const nullableText = (max = MAX_IPC_TEXT) => z.string().max(max).nullable().optional();
 const idSchema = nonEmptyText(256);
+const secretIdSchema = z.string().max(1024).refine(isSecretId, 'Invalid secret id.');
 const finiteNumber = z.number().finite();
 const nonNegativeInteger = z.number().finite().int().nonnegative();
 const stringArray = (maxLength = MAX_IPC_ARRAY_ITEMS, itemLength = MAX_IPC_TEXT) => z.array(z.string().max(itemLength)).max(maxLength);
@@ -187,6 +189,7 @@ export const providerModelListSchema = z
     baseUrl: nonEmptyText(MAX_IPC_TEXT),
     apiKey: z.string().max(MAX_IPC_TEXT),
     protocol: z.enum(['openai', 'anthropic']).optional(),
+    secretId: secretIdSchema.optional(),
   })
   .strict();
 
@@ -194,6 +197,8 @@ const volcengineSpeakerListSchema = z
   .object({
     accessKeyId: z.string().max(MAX_IPC_TEXT),
     secretAccessKey: z.string().max(MAX_IPC_TEXT),
+    accessKeyIdSecretId: secretIdSchema.optional(),
+    secretAccessKeySecretId: secretIdSchema.optional(),
     resourceId: z.string().max(1024),
     voiceTypes: stringArray().optional(),
     page: nonNegativeInteger.max(100_000).optional(),
@@ -339,6 +344,12 @@ const viralProductionOptionsSchema = z
   .strict();
 
 const appConfigSchema = boundedObjectSchema as unknown as z.ZodType<AppConfig>;
+const secretChangesSchema = bounded(
+  z.record(secretIdSchema, z.union([z.string().min(1).max(MAX_IPC_TEXT), z.null()])),
+);
+const saveConfigInputSchema = z
+  .object({ config: appConfigSchema, secretChanges: secretChangesSchema })
+  .strict() as z.ZodType<SaveConfigInput>;
 const draftTemplateSchema = boundedObjectSchema.refine(
   (value) => typeof value.id === 'string' && typeof value.name === 'string',
   'Draft template requires id and name.',
@@ -346,8 +357,8 @@ const draftTemplateSchema = boundedObjectSchema.refine(
 
 export const ipcInputSchemas = {
   'app:get-state': z.void(),
-  'app:save-config': appConfigSchema,
-  'config:test': z.object({ target: configTestTargetSchema, config: appConfigSchema }).strict(),
+  'app:save-config': saveConfigInputSchema,
+  'config:test': z.object({ target: configTestTargetSchema, config: appConfigSchema, secretChanges: secretChangesSchema }).strict(),
   'llm:test-config': llmConfigSchema,
   'models:list': providerModelListSchema,
   'volcengine:speakers:list': volcengineSpeakerListSchema,

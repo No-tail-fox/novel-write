@@ -924,6 +924,31 @@ em {
   font-weight: 700;
 }
 
+.secret-input > span {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.secret-input > span small {
+  color: var(--muted);
+  font-size: 11px;
+  font-weight: 600;
+}
+
+.secret-input-control {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 36px 36px;
+  gap: 6px;
+  min-width: 0;
+}
+
+.secret-input-control .icon-button {
+  width: 36px;
+  height: 36px;
+}
+
 .config-textarea textarea {
   min-height: 96px;
   resize: vertical;

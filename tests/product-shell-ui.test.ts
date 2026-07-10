@@ -2,6 +2,43 @@ import { readFile } from 'node:fs/promises';
 import { describe, expect, it } from 'vitest';
 
 describe('product shell ui', () => {
+  it('keeps saved provider secrets out of renderer state, DOM values, and browser persistence', async () => {
+    const main = await readFile(new URL('../src/main.tsx', import.meta.url), 'utf8');
+    const viteEnv = await readFile(new URL('../src/vite-env.d.ts', import.meta.url), 'utf8');
+    const preload = await readFile(new URL('../electron/preload.ts', import.meta.url), 'utf8');
+    const electronMain = await readFile(new URL('../electron/main.ts', import.meta.url), 'utf8');
+
+    expect(main).toContain('stripConfigSecrets');
+    expect(main).toContain("from './shared/config-secrets'");
+    expect(main).toContain('secretChanges');
+    expect(main).toContain('SecretInput');
+    expect(main).toContain("type={revealed ? 'text' : 'password'}");
+    expect(main).toContain('Eye');
+    expect(main).toContain('EyeOff');
+    expect(main).toContain('onClear');
+    expect(main).toContain('secretChanges: {}');
+    expect(main).toContain('stripConfigSecrets(next.config)');
+    expect(main).not.toContain('function maskConfigured');
+    expect(main).not.toContain('value.slice(0, 2)');
+    expect(viteEnv).toContain('PublicAppState');
+    expect(viteEnv).toContain('SaveConfigInput');
+    expect(preload).toContain('SaveConfigInput');
+    expect(electronMain).toContain('ConfigService');
+    expect(electronMain).toContain('getPublicState()');
+    expect(electronMain).toContain('getRuntimeConfig()');
+  });
+
+  it('does not claim that browser preview securely saved edited provider secrets', async () => {
+    const main = await readFile(new URL('../src/main.tsx', import.meta.url), 'utf8');
+    const fallbackSave = main.slice(main.indexOf('async saveConfig(input)'), main.indexOf('async testLlmConfig'));
+    const settingsCommit = main.slice(main.indexOf('async function commitAndApplySettingsDraft'), main.indexOf('function clearProviderModels'));
+
+    expect(fallbackSave).toContain('Object.keys(input.secretChanges).length > 0');
+    expect(fallbackSave).toContain('浏览器预览不会安全保存接口密钥');
+    expect(settingsCommit).toContain('setConfigTestResult(`[fail]');
+    expect(settingsCommit).not.toContain('throw error');
+  });
+
   it('presents a Chinese StoryDream-first desktop shell with main workflow and secondary modules', async () => {
     const main = await readFile(new URL('../src/main.tsx', import.meta.url), 'utf8');
     const css = await readFile(new URL('../src/styles.css', import.meta.url), 'utf8');
@@ -1327,8 +1364,9 @@ describe('product shell ui', () => {
     expect(main).toContain('buildConfigForSelectedProfileTest');
     expect(main).toContain('activateSelectedProviderProfileForTarget');
     const testSnippet = main.slice(main.indexOf('async function testCurrentConfig()'), main.indexOf('async function refreshProviderModels'));
-    expect(testSnippet.indexOf('const nextDraft = activateSelectedProviderProfileForTarget')).toBeLessThan(testSnippet.indexOf('api.saveConfig(normalizeEditableConfigProviders(nextDraft))'));
-    expect(testSnippet.indexOf('api.saveConfig(normalizeEditableConfigProviders(nextDraft))')).toBeLessThan(testSnippet.indexOf('api.testAppConfig(target, testConfig)'));
+    const secureSaveCall = 'api.saveConfig({ config: normalizeEditableConfigProviders(nextDraft), secretChanges })';
+    expect(testSnippet.indexOf('const nextDraft = activateSelectedProviderProfileForTarget')).toBeLessThan(testSnippet.indexOf(secureSaveCall));
+    expect(testSnippet.indexOf(secureSaveCall)).toBeLessThan(testSnippet.indexOf('api.testAppConfig(target, testConfig)'));
     expect(main).toContain('selectedLlmProfileId');
     expect(main).toContain('selectedImageProfileId');
     expect(main).toContain('selectedTtsProfileId');

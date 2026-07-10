@@ -28,6 +28,7 @@ import type {
   VoiceLabRecord,
 } from './types';
 import { normalizeAppConfig } from './config-utils';
+import { stripConfigSecrets } from './config-secrets';
 import { normalizeStoryboardSceneCount } from './content-metrics';
 import feishuCozeDraftTemplateBundle from '../../data/coze-workflows/feishu-draft-templates.json';
 import {
@@ -669,7 +670,7 @@ export class FileDatabase {
   }
 
   async upsertConfig(config: AppConfig): Promise<void> {
-    this.db.run('INSERT OR REPLACE INTO config (id, data) VALUES (1, ?)', [json(mergeConfig(config))]);
+    this.db.run('INSERT OR REPLACE INTO config (id, data) VALUES (1, ?)', [json(stripConfigSecrets(mergeConfig(config)))]);
     await this.persist();
   }
 

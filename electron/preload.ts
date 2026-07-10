@@ -4,7 +4,6 @@ import type {
   ActivationState,
   AiSourceContext,
   AppConfig,
-  AppState,
   BookSelectionInput,
   BookSelectionRecord,
   ConfigTestTarget,
@@ -33,6 +32,7 @@ import type {
   VolcengineSpeakerListResult,
   VoiceLabGenerateInput,
 } from '../src/shared/types';
+import type { PublicAppState, SaveConfigInput, SecretChanges } from '../src/shared/config-secrets';
 import type { PersonAssetImage, PersonAssetSummary } from '../src/shared/person-assets';
 import { unwrapIpcResult, type IpcChannel } from '../src/shared/ipc-contract';
 
@@ -42,9 +42,10 @@ async function invokeTrusted<T = unknown>(channel: IpcChannel, input?: unknown):
 }
 
 const storyDreamApi = {
-  getState: () => invokeTrusted('app:get-state'),
-  saveConfig: (config: AppConfig) => invokeTrusted('app:save-config', config),
-  testAppConfig: (target: ConfigTestTarget, config: AppConfig) => invokeTrusted('config:test', { target, config }),
+  getState: (): Promise<PublicAppState> => invokeTrusted('app:get-state'),
+  saveConfig: (input: SaveConfigInput): Promise<PublicAppState> => invokeTrusted('app:save-config', input),
+  testAppConfig: (target: ConfigTestTarget, config: AppConfig, secretChanges: SecretChanges = {}) =>
+    invokeTrusted('config:test', { target, config, secretChanges }),
   testLlmConfig: (config: LlmConfig) => invokeTrusted('llm:test-config', config),
   listProviderModels: (request: ProviderModelListRequest): Promise<ProviderModelListResult> => invokeTrusted('models:list', request),
   listVolcengineSpeakers: (request: VolcengineSpeakerListRequest): Promise<VolcengineSpeakerListResult> => invokeTrusted('volcengine:speakers:list', request),
@@ -55,9 +56,9 @@ const storyDreamApi = {
   saveCustomStyle: (style: CustomStyle) => invokeTrusted('custom-style:save', style),
   generateCustomStyleDraft: (input: CustomStyleGenerateInput): Promise<CustomStyle> => invokeTrusted('custom-style:generate-draft', input),
   saveDraftTemplate: (template: DraftTemplate) => invokeTrusted('draft-template:save', template),
-  generateImageLab: (input: ImageLabGenerateInput): Promise<AppState> => invokeTrusted('image-lab:generate', input),
+  generateImageLab: (input: ImageLabGenerateInput): Promise<PublicAppState> => invokeTrusted('image-lab:generate', input),
   addImageLabRecord: (input: Partial<ImageLabRecord> & Pick<ImageLabRecord, 'prompt' | 'ratio' | 'style' | 'provider'>) => invokeTrusted('image-lab:add-record', input),
-  generateVoiceLabPreview: (input: VoiceLabGenerateInput): Promise<AppState> => invokeTrusted('voice-lab:generate', input),
+  generateVoiceLabPreview: (input: VoiceLabGenerateInput): Promise<PublicAppState> => invokeTrusted('voice-lab:generate', input),
   saveAccount: (account: AccountProfile) => invokeTrusted('account:save', account),
   saveActivation: (activation: ActivationState) => invokeTrusted('activation:save', activation),
   saveUiPreferences: (ui: UiPreferences) => invokeTrusted('ui:save-preferences', ui),
@@ -95,8 +96,8 @@ const storyDreamApi = {
   runDiagnostics: () => invokeTrusted('diagnostics:run'),
   openPath: (path: string) => invokeTrusted('path:open', path),
   windowControl: (action: 'minimize' | 'toggle-maximize' | 'close') => invokeTrusted('window:control', action),
-  onTaskEvent: (callback: (state: AppState) => void) => {
-    const listener = (_event: unknown, state: AppState) => callback(state);
+  onTaskEvent: (callback: (state: PublicAppState) => void) => {
+    const listener = (_event: unknown, state: PublicAppState) => callback(state);
     ipcRenderer.on('task:event', listener);
     return () => ipcRenderer.off('task:event', listener);
   },

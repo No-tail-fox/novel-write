@@ -1,4 +1,4 @@
-import type { AppConfig } from './types';
+import type { AppConfig, AppState } from './types';
 
 export type SecretId =
   | `llm/${string}/apiKey`
@@ -20,6 +20,17 @@ export type SecretId =
 
 export type ConfigSecrets = Partial<Record<SecretId, string>>;
 export type SecretStatus = Partial<Record<SecretId, boolean>>;
+export type SecretChanges = Partial<Record<SecretId, string | null>>;
+
+export interface SaveConfigInput {
+  config: AppConfig;
+  secretChanges: SecretChanges;
+}
+
+export type PublicAppState = Omit<AppState, 'config'> & {
+  config: AppConfig;
+  secretStatus: SecretStatus;
+};
 
 interface SecretSlot {
   id: SecretId;

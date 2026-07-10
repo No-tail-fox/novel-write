@@ -1,4 +1,4 @@
-import { app, BrowserWindow, dialog, ipcMain, Menu, shell, type Cookie } from 'electron';
+import { app, BrowserWindow, dialog, ipcMain, Menu, safeStorage, shell, type Cookie } from 'electron';
 import { execFile } from 'node:child_process';
 import { randomUUID } from 'node:crypto';
 import { existsSync } from 'node:fs';
@@ -26,6 +26,8 @@ import { createViralRuntimeProviders } from '../src/shared/viral-runtime';
 import { listVolcengineSpeakers } from '../src/shared/volcengine-speakers';
 import { getRendererIndexPath } from './paths';
 import { createTrustedIpcRegistrar } from './ipc';
+import { ConfigService } from './config-service';
+import { CredentialVault } from './credential-vault';
 import {
   attachDouyinLoginSecurity,
   attachMainWindowSecurity,
@@ -33,7 +35,6 @@ import {
   type RendererPolicy,
   validateDevServerUrl,
 } from './security';
-import { loadConfigFromFile, saveConfigToFile } from '../src/shared/config-file';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const execFileAsync = promisify(execFile);
@@ -41,6 +42,7 @@ let mainWindow: BrowserWindow | null = null;
 let viralLoginWindow: BrowserWindow | null = null;
 let mainRendererPolicy: RendererPolicy | null = null;
 let db: FileDatabase | null = null;
+let configService: ConfigService | null = null;
 interface RunningTaskRun {
   controller: AbortController;
   restartAfterAbort: boolean;
@@ -69,26 +71,52 @@ async function getDb(): Promise<FileDatabase> {
   if (db) return db;
   const dir = appDataDir();
   await mkdir(dir, { recursive: true });
-  db = await FileDatabase.open(join(dir, 'data.db'));
-  await ensureRuntimeJianyingDraftPath(db);
-  const externalConfig = await loadConfigFromFile(dir);
-  if (externalConfig) {
-    await db.upsertConfig(externalConfig);
+  const database = await FileDatabase.open(join(dir, 'data.db'));
+  const service = new ConfigService({
+    database,
+    dataDir: dir,
+    vault: new CredentialVault(join(dir, 'secrets.v1.json'), {
+      isEncryptionAvailable: () => safeStorage.isEncryptionAvailable(),
+      encryptString: (value) => safeStorage.encryptString(value),
+      decryptString: (value) => safeStorage.decryptString(value),
+    }),
+  });
+  try {
+    await service.migrateLegacySecrets();
+    await ensureRuntimeJianyingDraftPath(database, service);
+  } catch (error) {
+    await database.close().catch(() => undefined);
+    throw error;
   }
-  return db;
+  db = database;
+  configService = service;
+  return database;
 }
 
-async function ensureRuntimeJianyingDraftPath(database: FileDatabase): Promise<void> {
+async function getConfigService(): Promise<ConfigService> {
+  await getDb();
+  if (!configService) throw new Error('CONFIG_SERVICE_UNAVAILABLE: Configuration service is not initialized.');
+  return configService;
+}
+
+async function getPublicState() {
+  return (await getConfigService()).getPublicState();
+}
+
+async function ensureRuntimeJianyingDraftPath(database: FileDatabase, service: ConfigService): Promise<void> {
   const state = await database.getState();
   const current = state.config.jianying.draftPath;
   const resolved = resolveRuntimeJianyingDraftPath(current, { pathExists: existsSync });
   if (resolved !== current.trim()) {
-    await database.upsertConfig({
-      ...state.config,
-      jianying: {
-        ...state.config.jianying,
-        draftPath: resolved,
+    await service.save({
+      config: {
+        ...state.config,
+        jianying: {
+          ...state.config.jianying,
+          draftPath: resolved,
+        },
       },
+      secretChanges: {},
     });
   }
 }
@@ -133,7 +161,8 @@ async function createWindow(): Promise<void> {
 }
 
 async function sendTaskState(database: FileDatabase): Promise<void> {
-  const state = await database.getState();
+  void database;
+  const state = await getPublicState();
   mainWindow?.webContents.send('task:event', state);
 }
 
@@ -199,12 +228,12 @@ async function pauseStaleRunningTasks(database: FileDatabase): Promise<void> {
 }
 
 async function buildRunOptions(database: FileDatabase, task: Task, controller: AbortController) {
-  const state = await database.getState();
+  const [state, runtimeConfig] = await Promise.all([database.getState(), (await getConfigService()).getRuntimeConfig()]);
   return {
     appDataDir: appDataDir(),
     signal: controller.signal,
-    resolveAiSourceContext: createAiSourceResearcher(state.config),
-    ...createTaskRuntimeProviders(state.config, taskWorkDir(task), task),
+    resolveAiSourceContext: createAiSourceResearcher(runtimeConfig),
+    ...createTaskRuntimeProviders(runtimeConfig, taskWorkDir(task), task),
     customCoverTemplates: state.customCoverTemplates,
     onEvent: () => {
       notifyTaskState(database);
@@ -268,7 +297,7 @@ function startViralAnalysisRun(database: FileDatabase, record: ViralAnalysisReco
   void (async () => {
     const startedAt = new Date().toISOString();
     try {
-      const state = await database.getState();
+      const runtimeConfig = await (await getConfigService()).getRuntimeConfig();
       await database.updateViralAnalysis(record.id, {
         status: 'running',
         currentStage: 'downloading',
@@ -280,7 +309,7 @@ function startViralAnalysisRun(database: FileDatabase, record: ViralAnalysisReco
       const completed = await runViralAnalysis(record, {
         workDir: viralAnalysisWorkDir(record),
         signal: controller.signal,
-        ...createViralRuntimeProviders(state.config, viralAnalysisWorkDir(record)),
+        ...createViralRuntimeProviders(runtimeConfig, viralAnalysisWorkDir(record)),
         emit: async (event) => {
           await database.addViralAnalysisEvent(record.id, {
             type: event.type,
@@ -364,28 +393,42 @@ trustedHandle('window:control', async (_event, action: 'minimize' | 'toggle-maxi
 });
 
 trustedHandle('app:get-state', async () => {
-  const database = await getDb();
-  return database.getState();
+  return getPublicState();
 });
 
-trustedHandle('app:save-config', async (_event, config) => {
-  const database = await getDb();
-  await database.upsertConfig(config as AppConfig);
-  await saveConfigToFile(appDataDir(), config as AppConfig);
-  return database.getState();
+trustedHandle('app:save-config', async (_event, input) => {
+  return (await getConfigService()).save(input);
 });
 
-trustedHandle('llm:test-config', async (_event, config: LlmConfig) => testConfiguredLlm(config));
+trustedHandle('llm:test-config', async (_event, config: LlmConfig) => {
+  if (config.apiKey) return testConfiguredLlm(config);
+  const runtime = await (await getConfigService()).getRuntimeConfig();
+  const stored = runtime.llmProfiles.find((profile) => profile.id === config.id) ?? runtime.llm;
+  return testConfiguredLlm({ ...config, apiKey: stored.apiKey });
+});
 
-trustedHandle('models:list', async (_event, request: ProviderModelListRequest) => listConfiguredProviderModels(request));
+trustedHandle('models:list', async (_event, request: ProviderModelListRequest) => {
+  const { secretId, ...providerRequest } = request;
+  const apiKey = await (await getConfigService()).resolveSecret(secretId, providerRequest.apiKey);
+  return listConfiguredProviderModels({ ...providerRequest, apiKey });
+});
 
-trustedHandle('volcengine:speakers:list', async (_event, request: VolcengineSpeakerListRequest) => listVolcengineSpeakers(request));
+trustedHandle('volcengine:speakers:list', async (_event, request: VolcengineSpeakerListRequest) => {
+  const { accessKeyIdSecretId, secretAccessKeySecretId, ...providerRequest } = request;
+  const service = await getConfigService();
+  const [accessKeyId, secretAccessKey] = await Promise.all([
+    service.resolveSecret(accessKeyIdSecretId, providerRequest.accessKeyId),
+    service.resolveSecret(secretAccessKeySecretId, providerRequest.secretAccessKey),
+  ]);
+  return listVolcengineSpeakers({ ...providerRequest, accessKeyId, secretAccessKey });
+});
 
-trustedHandle('config:test', async (_event, input: { target: ConfigTestTarget; config: AppConfig }) => {
+trustedHandle('config:test', async (_event, input) => {
+  const runtimeConfig = await (await getConfigService()).getRuntimeConfigFor(input);
   if (input.target === 'llm') {
-    return fromLlmModelTestResult(await testConfiguredLlm(input.config.llm));
+    return fromLlmModelTestResult(await testConfiguredLlm(runtimeConfig.llm));
   }
-  return testConfigTarget(input.target, input.config, { pathExists: existsSync });
+  return testConfigTarget(input.target, runtimeConfig, { pathExists: existsSync });
 });
 
 trustedHandle('research:web-search', async (_event, query: string) => {
@@ -401,33 +444,31 @@ trustedHandle('research:web-search', async (_event, query: string) => {
 });
 
 trustedHandle('research:compose-copy', async (_event, input: ResearchCopyComposeInput) => {
-  const database = await getDb();
-  const state = await database.getState();
-  return composeCopyFromSources(createConfiguredTextLlm(state.config.llm), input);
+  const runtimeConfig = await (await getConfigService()).getRuntimeConfig();
+  return composeCopyFromSources(createConfiguredTextLlm(runtimeConfig.llm), input);
 });
 
 trustedHandle('prompt-template:save', async (_event, template: PromptTemplate) => {
   const database = await getDb();
   await database.upsertPromptTemplate(template);
-  return database.getState();
+  return getPublicState();
 });
 
 trustedHandle('prompt-template:reset', async () => {
   const database = await getDb();
   await database.resetPromptTemplates();
-  return database.getState();
+  return getPublicState();
 });
 
 trustedHandle('custom-style:save', async (_event, style: CustomStyle) => {
   const database = await getDb();
   await database.upsertCustomStyle(style);
-  return database.getState();
+  return getPublicState();
 });
 
 trustedHandle('custom-style:generate-draft', async (_event, input: CustomStyleGenerateInput): Promise<CustomStyle> => {
-  const database = await getDb();
-  const state = await database.getState();
-  const llm = createConfiguredJsonLlm(state.config.llm);
+  const runtimeConfig = await (await getConfigService()).getRuntimeConfig();
+  const llm = createConfiguredJsonLlm(runtimeConfig.llm);
   const result = await llm.run<Partial<CustomStyle>>({
     step: -1,
     name: 'custom-style-draft',
@@ -449,49 +490,49 @@ trustedHandle('custom-style:generate-draft', async (_event, input: CustomStyleGe
 trustedHandle('draft-template:save', async (_event, template: DraftTemplate) => {
   const database = await getDb();
   await database.upsertDraftTemplate(template);
-  return database.getState();
+  return getPublicState();
 });
 
 trustedHandle('image-lab:generate', async (_event, input: ImageLabGenerateInput) => {
   const database = await getDb();
-  const state = await database.getState();
+  const runtimeConfig = await (await getConfigService()).getRuntimeConfig();
   const id = input.id ?? randomUUID();
-  const record = await generateImageLabRecord(state.config, imageLabWorkDir(id), { ...input, id });
+  const record = await generateImageLabRecord(runtimeConfig, imageLabWorkDir(id), { ...input, id });
   await database.addImageLabRecord(record);
-  return database.getState();
+  return getPublicState();
 });
 
 trustedHandle('image-lab:add-record', async (_event, input) => {
   const database = await getDb();
   await database.addImageLabRecord(input);
-  return database.getState();
+  return getPublicState();
 });
 
 trustedHandle('voice-lab:generate', async (_event, input: VoiceLabGenerateInput) => {
   const database = await getDb();
-  const state = await database.getState();
+  const runtimeConfig = await (await getConfigService()).getRuntimeConfig();
   const id = input.id ?? randomUUID();
-  const record = await generateConfiguredVoicePreview(state.config, voiceLabWorkDir(id), { ...input, id });
+  const record = await generateConfiguredVoicePreview(runtimeConfig, voiceLabWorkDir(id), { ...input, id });
   await database.addVoiceLabRecord(record);
-  return database.getState();
+  return getPublicState();
 });
 
 trustedHandle('account:save', async (_event, account: AccountProfile) => {
   const database = await getDb();
   await database.upsertAccount(account);
-  return database.getState();
+  return getPublicState();
 });
 
 trustedHandle('activation:save', async (_event, activation: ActivationState) => {
   const database = await getDb();
   await database.upsertActivation(activation);
-  return database.getState();
+  return getPublicState();
 });
 
 trustedHandle('ui:save-preferences', async (_event, ui: UiPreferences) => {
   const database = await getDb();
   await database.upsertUiPreferences(ui);
-  return database.getState();
+  return getPublicState();
 });
 
 trustedHandle('book-selection:list', async (_event, theme?: string) => (await getDb()).listBookSelections(theme));
@@ -531,14 +572,14 @@ trustedHandle('html-video:create-task', async (_event, input: CreateTaskInput) =
     pipelineStep: input.pipelineStep ?? 'plan',
     pipelineData: input.pipelineData ?? '{}',
   });
-  return database.getState();
+  return getPublicState();
 });
 
 trustedHandle('task:create-and-run', async (_event, input: CreateTaskInput) => {
   const database = await getDb();
   const task = await database.createTask(input);
   startTaskRun(database, task);
-  return database.getState();
+  return getPublicState();
 });
 
 trustedHandle('viral:create-and-run', async (_event, input: CreateViralAnalysisInput) => {
@@ -548,17 +589,17 @@ trustedHandle('viral:create-and-run', async (_event, input: CreateViralAnalysisI
     platform: input.platform && input.platform !== 'unknown' ? input.platform : detectViralPlatform(input.url),
   });
   startViralAnalysisRun(database, record);
-  return database.getState();
+  return getPublicState();
 });
 
 trustedHandle('viral:update-status', async (_event, input: { id: string; status: ViralAnalysisStatus }) => {
   const database = await getDb();
   const state = await database.getState();
   const record = state.viralAnalyses.find((item) => item.id === input.id);
-  if (!record) return state;
+  if (!record) return getPublicState();
   if (input.status === 'running') {
     await resumeViralAnalysisRun(database, record);
-    return database.getState();
+    return getPublicState();
   }
   if (input.status === 'paused' || input.status === 'cancelled') {
     runningViralAnalyses.get(input.id)?.abort(input.status === 'cancelled' ? '用户取消' : '用户暂停');
@@ -568,7 +609,7 @@ trustedHandle('viral:update-status', async (_event, input: { id: string; status:
       lastHeartbeatAt: new Date().toISOString(),
     });
   }
-  return database.getState();
+  return getPublicState();
 });
 
 trustedHandle('viral:retry', async (_event, id: string) => {
@@ -576,7 +617,7 @@ trustedHandle('viral:retry', async (_event, id: string) => {
   const state = await database.getState();
   const record = state.viralAnalyses.find((item) => item.id === id);
   if (record) await resumeViralAnalysisRun(database, record);
-  return database.getState();
+  return getPublicState();
 });
 
 trustedHandle('viral:get-result', async (_event, id: string) => {
@@ -596,17 +637,17 @@ trustedHandle('viral:create-production-task', async (_event, input: { id: string
   const taskInput = createViralProductionTaskInput(result, input.options);
   const task = await database.createTask(taskInput);
   startTaskRun(database, task);
-  return database.getState();
+  return getPublicState();
 });
 
 trustedHandle('task:update-status', async (_event, input: { id: string; status: TaskStatus }) => {
   const database = await getDb();
   const state = await database.getState();
   const task = state.tasks.find((item) => item.id === input.id);
-  if (!task) return state;
+  if (!task) return getPublicState();
   if (input.status === 'running') {
     await resumeTaskRun(database, task);
-    return database.getState();
+    return getPublicState();
   }
   if (input.status === 'paused' || input.status === 'cancelled') {
     const existingRun = runningTasks.get(input.id);
@@ -622,7 +663,7 @@ trustedHandle('task:update-status', async (_event, input: { id: string; status: 
       lastHeartbeatAt: new Date().toISOString(),
     });
   }
-  return database.getState();
+  return getPublicState();
 });
 
 trustedHandle('task:retry', async (_event, id: string) => {
@@ -632,7 +673,7 @@ trustedHandle('task:retry', async (_event, id: string) => {
   if (task) {
     await resumeTaskRun(database, task);
   }
-  return database.getState();
+  return getPublicState();
 });
 
 trustedHandle('task:regenerate-image', async (_event, input: { id: string; sceneId: number }) => {
@@ -669,7 +710,7 @@ trustedHandle('task:regenerate-image', async (_event, input: { id: string; scene
   if (updatedTask) {
     await resumeTaskRun(database, updatedTask);
   }
-  return database.getState();
+  return getPublicState();
 });
 
 trustedHandle('task:regenerate-narration', async (_event, input: { id: string; sceneId: number }) => {
@@ -706,7 +747,7 @@ trustedHandle('task:regenerate-narration', async (_event, input: { id: string; s
   if (updatedTask) {
     await resumeTaskRun(database, updatedTask);
   }
-  return database.getState();
+  return getPublicState();
 });
 
 trustedHandle('task:update-image-prompt', async (_event, input: { id: string; sceneId: number; prompt: string }) => {
@@ -729,7 +770,7 @@ trustedHandle('task:update-image-prompt', async (_event, input: { id: string; sc
     detail: `已修改第 ${sceneId} 张图片提示词`,
     dataJson: JSON.stringify({ sceneId, promptLength: result.updatedPrompt.prompt.length }),
   });
-  return database.getState();
+  return getPublicState();
 });
 
 trustedHandle('task:rerun-step', async (_event, input: { id: string; step: number; mode: TaskStepRerunMode }) => {
@@ -767,7 +808,7 @@ trustedHandle('task:rerun-step', async (_event, input: { id: string; step: numbe
   if (updatedTask) {
     await resumeTaskRun(database, updatedTask);
   }
-  return database.getState();
+  return getPublicState();
 });
 
 trustedHandle('task:get-artifacts', async (_event, id: string) => {
@@ -837,7 +878,8 @@ async function exportDouyinLoginCookies(win: BrowserWindow): Promise<string> {
   const outputPath = viralCookieFilePath();
   await writeFile(outputPath, `${lines.join('\n')}\n`, 'utf8');
   const database = await getDb();
-  const state = await database.getState();
+  const service = await getConfigService();
+  const state = await service.getPublicState();
   const updatedConfig: AppConfig = {
     ...state.config,
     viral: {
@@ -846,8 +888,7 @@ async function exportDouyinLoginCookies(win: BrowserWindow): Promise<string> {
       cookieFallbackMode: 'browser-first-after-failure',
     },
   };
-  await database.upsertConfig(updatedConfig);
-  await saveConfigToFile(appDataDir(), updatedConfig);
+  await service.save({ config: updatedConfig, secretChanges: {} });
   await sendTaskState(database);
   return outputPath;
 }
@@ -920,7 +961,7 @@ trustedHandle('jianying:draft-path:detect', async () => detectJianyingDraftPath(
 
 trustedHandle('diagnostics:run', async () => {
   const database = await getDb();
-  const state = await database.getState();
+  const [state, runtimeConfig] = await Promise.all([database.getState(), (await getConfigService()).getRuntimeConfig()]);
   const python = await checkPython();
   const pyJianYingDraft = python.status === 'pass' ? await checkPyJianYingDraft() : { status: 'warn' as const, detail: 'Python unavailable; cannot check pyJianYingDraft.' };
   const storyboundSidecar =
@@ -930,10 +971,10 @@ trustedHandle('diagnostics:run', async () => {
   return {
     generatedAt: new Date().toISOString(),
     checks: [
-      { id: 'llm-config', label: 'LLM 配置完整性', status: state.config.llm.apiKey ? 'pass' : 'warn', detail: `${state.config.llm.baseUrl} · ${state.config.llm.model}` },
-      { id: 'image-config', label: '图片供应商配置', status: imageConfigStatus(state.config), detail: state.config.imageProvider },
-      { id: 'tts-config', label: 'TTS 凭证', status: ttsConfigStatus(state.config), detail: state.config.tts.provider },
-      { id: 'draft-dir', label: '剪映草稿目录', status: state.config.jianying.draftPath ? 'pass' : 'warn', detail: state.config.jianying.draftPath || '未配置' },
+      { id: 'llm-config', label: 'LLM 配置完整性', status: runtimeConfig.llm.apiKey ? 'pass' : 'warn', detail: `${runtimeConfig.llm.baseUrl} · ${runtimeConfig.llm.model}` },
+      { id: 'image-config', label: '图片供应商配置', status: imageConfigStatus(runtimeConfig), detail: runtimeConfig.imageProvider },
+      { id: 'tts-config', label: 'TTS 凭证', status: ttsConfigStatus(runtimeConfig), detail: runtimeConfig.tts.provider },
+      { id: 'draft-dir', label: '剪映草稿目录', status: runtimeConfig.jianying.draftPath ? 'pass' : 'warn', detail: runtimeConfig.jianying.draftPath || '未配置' },
       { id: 'python', label: 'Python 运行时', status: python.status, detail: python.detail },
       { id: 'pyjianyingdraft', label: 'pyJianYingDraft', status: pyJianYingDraft.status, detail: pyJianYingDraft.detail },
       { id: 'storybound-sidecar', label: 'Storybound sidecar', status: storyboundSidecar.status, detail: storyboundSidecar.detail },

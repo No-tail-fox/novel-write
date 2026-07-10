@@ -97,7 +97,7 @@ describe('electron ipc contract', () => {
     const main = await readFile(new URL('../electron/main.ts', import.meta.url), 'utf8');
 
     expect(main).toContain('startTaskRun(database, task');
-    expect(main).toContain('return database.getState()');
+    expect(main).toContain('return getPublicState()');
   });
 
   it('routes resume and retry through a background task runner instead of only mutating status', async () => {

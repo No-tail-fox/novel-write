@@ -8,6 +8,8 @@ import {
   Coins,
   Copy,
   Database,
+  Eye,
+  EyeOff,
   FileJson,
   Flame,
   FlaskConical,
@@ -34,6 +36,7 @@ import {
   Search,
   Settings,
   Sparkles,
+  Trash2,
   Upload,
   Wand2,
   X,
@@ -45,7 +48,6 @@ import type {
   AiSourceContext,
   AiSourceSection,
   AppConfig,
-  AppState,
   BookProductInfo,
   BookSelectionRecord,
   ConfigTestTarget,
@@ -88,6 +90,12 @@ import type {
   VoiceLabGenerateInput,
   VoiceLabRecord,
 } from './shared/types';
+import {
+  stripConfigSecrets,
+  type PublicAppState as AppState,
+  type SecretChanges,
+  type SecretId,
+} from './shared/config-secrets';
 import type { PersonAssetImage, PersonAssetSummary } from './shared/person-assets';
 import { configTargetStatus, normalizeAppConfig, validateConfigTarget } from './shared/config-utils';
 import {
@@ -164,6 +172,7 @@ const sampleText =
 
 const initialState: AppState = {
   config: defaultConfig,
+  secretStatus: {},
   tasks: [],
   events: [],
   viralAnalyses: [],
@@ -347,6 +356,18 @@ const pipelineSteps = [
 
 type StoryDreamApi = NonNullable<Window['storydream']>;
 type ModelListKey = 'llm' | 'gpt-image' | 'custom-image';
+type SecretEditor = {
+  value: (id: SecretId) => string;
+  configured: (id: SecretId) => boolean;
+  reference: (id: SecretId) => { value: string; secretId?: string };
+  change: (id: SecretId, value: string | null) => void;
+};
+
+function profileSecretId(domain: 'llm' | 'image' | 'tts', profileId: string | undefined, suffix: string): SecretId {
+  const stableId = profileId?.trim();
+  if (!stableId) throw new Error('Provider profile requires a stable id.');
+  return `${domain}/${encodeURIComponent(stableId)}/${suffix}` as SecretId;
+}
 type DraftCanvasLayer = 'image' | 'title' | 'subtitle' | 'caption' | 'disclaimer';
 const DRAFT_TEXT_WIDTH_MIN = 0.1;
 const DRAFT_TEXT_WIDTH_MAX = 2;
@@ -362,7 +383,8 @@ function hydrateState(state: Partial<AppState>): AppState {
   return {
     ...cloneState(initialState),
     ...state,
-    config: normalizeAppConfig(state.config ?? defaultConfig),
+    config: stripConfigSecrets(normalizeAppConfig(state.config ?? defaultConfig)),
+    secretStatus: state.secretStatus ?? {},
     tasks: state.tasks ?? [],
     events: state.events ?? [],
     promptTemplates: state.promptTemplates ?? defaultPromptTemplates,
@@ -391,7 +413,11 @@ function mergeDefaultCustomStyles(styles: CustomStyle[] | undefined): CustomStyl
 function makeFallbackApi(setState: (state: AppState) => void): StoryDreamApi {
   const read = () => {
     const raw = localStorage.getItem('storydream-state') ?? localStorage.getItem('storybound-state');
-    return raw ? hydrateState(JSON.parse(raw) as AppState) : cloneState(initialState);
+    const next = raw ? hydrateState(JSON.parse(raw) as AppState) : cloneState(initialState);
+    const sanitized = { ...next, config: stripConfigSecrets(next.config), secretStatus: {} };
+    localStorage.setItem('storydream-state', JSON.stringify(sanitized));
+    localStorage.removeItem('storybound-state');
+    return sanitized;
   };
   const readBookSelections = () => {
     const raw = localStorage.getItem('storybound-book-selections');
@@ -408,17 +434,22 @@ function makeFallbackApi(setState: (state: AppState) => void): StoryDreamApi {
   };
   const persist = (state: AppState) => {
     const next = hydrateState(state);
-    localStorage.setItem('storydream-state', JSON.stringify(next));
-    setState(next);
-    return next;
+    const sanitized = { ...next, config: stripConfigSecrets(next.config), secretStatus: {} };
+    localStorage.setItem('storydream-state', JSON.stringify(sanitized));
+    localStorage.removeItem('storybound-state');
+    setState(sanitized);
+    return sanitized;
   };
 
   return {
     async getState() {
       return read();
     },
-    async saveConfig(config: AppConfig) {
-      return persist({ ...read(), config });
+    async saveConfig(input) {
+      if (Object.keys(input.secretChanges).length > 0) {
+        throw new Error('浏览器预览不会安全保存接口密钥，请在 Electron 桌面端配置并保存。');
+      }
+      return persist({ ...read(), config: input.config });
     },
     async testLlmConfig(config) {
       const endpoint =
@@ -1109,11 +1140,14 @@ function ViralAnalyzerPage({
     const trimmed = path.trim();
     setCookieFilePath(trimmed);
     const nextState = await api.saveConfig({
-      ...state.config,
-      viral: {
-        ...state.config.viral,
-        cookieFilePath: trimmed,
+      config: {
+        ...state.config,
+        viral: {
+          ...state.config.viral,
+          cookieFilePath: trimmed,
+        },
       },
+      secretChanges: {},
     });
     applyState(nextState);
   }
@@ -1842,7 +1876,7 @@ function NewTaskPage({
     const audioPath = await api.selectLocalAudio();
     if (!audioPath) return;
     const nextBgm = addUploadedBgm(state.config, audioPath);
-    const next = await api.saveConfig(nextBgm.config);
+    const next = await api.saveConfig({ config: nextBgm.config, secretChanges: {} });
     applyState(next);
     setBgmId(nextBgm.bgmId);
   }
@@ -2856,7 +2890,7 @@ function MusicMvPage({
     if (!audioPath) return;
     setMusicMvAudioPath(audioPath);
     const nextBgm = addUploadedBgm(state.config, audioPath);
-    const next = await api.saveConfig(nextBgm.config);
+    const next = await api.saveConfig({ config: nextBgm.config, secretChanges: {} });
     applyState(next);
     setBgmId(nextBgm.bgmId);
   }
@@ -6059,6 +6093,7 @@ function SettingsPage({ api, state, applyState }: { api: StoryDreamApi; state: A
   const [section, setSection] = useState('llm');
   const [draft, setDraft] = useState<AppConfig>(() => normalizeEditableConfigProviders(state.config));
   const [settingsDirty, setSettingsDirty] = useState(false);
+  const [secretChanges, setSecretChanges] = useState<SecretChanges>({});
   const [lastAppliedConfigSignature, setLastAppliedConfigSignature] = useState(() => settingsConfigSignature(state.config));
   const [diagnostics, setDiagnostics] = useState('');
   const [configTestResult, setConfigTestResult] = useState('');
@@ -6078,6 +6113,7 @@ function SettingsPage({ api, state, applyState }: { api: StoryDreamApi; state: A
     const nextSignature = settingsConfigSignature(state.config);
     if (nextSignature === lastAppliedConfigSignature) return;
     setDraft(normalizeEditableConfigProviders(state.config));
+    setSecretChanges({});
     setLastAppliedConfigSignature(nextSignature);
   }, [lastAppliedConfigSignature, settingsDirty, state.config]);
   function setSettingsDraft(next: AppConfig | ((current: AppConfig) => AppConfig)) {
@@ -6088,19 +6124,19 @@ function SettingsPage({ api, state, applyState }: { api: StoryDreamApi; state: A
     const normalized = normalizeEditableConfigProviders(next);
     setDraft(normalized);
     setSettingsDirty(false);
+    setSecretChanges({});
     setLastAppliedConfigSignature(settingsConfigSignature(normalized));
   }
   async function commitAndApplySettingsDraft(nextDraft: AppConfig, successMessage = '配置已保存') {
     setSavingConfig(true);
     try {
-      const next = await api.saveConfig(normalizeEditableConfigProviders(nextDraft));
+      const next = await api.saveConfig({ config: normalizeEditableConfigProviders(nextDraft), secretChanges });
       commitSettingsDraft(next.config);
       applyState(next);
       setConfigTestResult(`[pass] ${successMessage}`);
       return next.config;
     } catch (error) {
       setConfigTestResult(`[fail] ${error instanceof Error ? error.message : String(error)}`);
-      throw error;
     } finally {
       setSavingConfig(false);
     }
@@ -6113,6 +6149,35 @@ function SettingsPage({ api, state, applyState }: { api: StoryDreamApi; state: A
       return next;
     });
   }
+  function changeSecret(id: SecretId, value: string | null) {
+    setSettingsDirty(true);
+    setSecretChanges((current) => {
+      const next = { ...current };
+      if (value === '') delete next[id];
+      else next[id] = value;
+      return next;
+    });
+  }
+  function secretValue(id: SecretId): string {
+    const value = secretChanges[id];
+    return typeof value === 'string' ? value : '';
+  }
+  function isSecretConfigured(id: SecretId): boolean {
+    const value = secretChanges[id];
+    if (value === null) return false;
+    if (typeof value === 'string') return value.length > 0;
+    return state.secretStatus[id] === true;
+  }
+  function secretReference(id: SecretId): { value: string; secretId?: string } {
+    if (secretChanges[id] === null) return { value: '' };
+    return { value: secretValue(id), secretId: id };
+  }
+  const secrets: SecretEditor = {
+    value: secretValue,
+    configured: isSecretConfigured,
+    reference: secretReference,
+    change: changeSecret,
+  };
   async function save() {
     await commitAndApplySettingsDraft(activateSelectedProviderProfileForTarget(draft, section as ConfigTestTarget, {
       llm: selectedLlmProfileId,
@@ -6143,7 +6208,7 @@ function SettingsPage({ api, state, applyState }: { api: StoryDreamApi; state: A
         image: selectedImageProfileId,
         tts: selectedTtsProfileId,
       });
-      const next = await api.saveConfig(normalizeEditableConfigProviders(nextDraft));
+      const next = await api.saveConfig({ config: normalizeEditableConfigProviders(nextDraft), secretChanges });
       commitSettingsDraft(next.config);
       applyState(next);
       const testConfig = buildConfigForSelectedProfileTest(next.config, target, selectedProviderProfileIds);
@@ -6185,9 +6250,11 @@ function SettingsPage({ api, state, applyState }: { api: StoryDreamApi; state: A
   }
   async function refreshVolcengineSpeakers(profile: TtsProviderProfile) {
     const volcengine = ttsProfileVolcengine(profile);
-    const accessKeyId = (volcengine.accessKeyId ?? '').trim();
-    const secretAccessKey = (volcengine.secretAccessKey ?? '').trim();
-    if (!accessKeyId || !secretAccessKey) {
+    const accessKeyIdId = profileSecretId('tts', profile.id, 'volcengine/accessKeyId');
+    const secretAccessKeyId = profileSecretId('tts', profile.id, 'volcengine/secretAccessKey');
+    const accessKeyId = secrets.reference(accessKeyIdId);
+    const secretAccessKey = secrets.reference(secretAccessKeyId);
+    if (!secrets.configured(accessKeyIdId) || !secrets.configured(secretAccessKeyId)) {
       setVolcengineSpeakerStatus('[失败] 加载火山音色列表需要填写访问密钥 ID 和访问密钥 Secret。');
       return;
     }
@@ -6197,13 +6264,21 @@ function SettingsPage({ api, state, applyState }: { api: StoryDreamApi; state: A
     setLoadingVolcengineSpeakers(true);
     setVolcengineSpeakerStatus('正在加载全部音色...');
     try {
-      const first = await api.listVolcengineSpeakers({ accessKeyId, secretAccessKey, resourceId, page: 1, limit });
+      const request = {
+        accessKeyId: accessKeyId.value,
+        secretAccessKey: secretAccessKey.value,
+        accessKeyIdSecretId: accessKeyId.secretId,
+        secretAccessKeySecretId: secretAccessKey.secretId,
+        resourceId,
+        limit,
+      };
+      const first = await api.listVolcengineSpeakers({ ...request, page: 1 });
       let speakers = mergeVolcengineSpeakers([], first.speakers);
       const total = first.total || speakers.length;
       if (first.status !== 'fail' && total > speakers.length) {
         const pageCount = Math.min(Math.ceil(total / limit), 20);
         for (let page = 2; page <= pageCount; page += 1) {
-          const next = await api.listVolcengineSpeakers({ accessKeyId, secretAccessKey, resourceId, page, limit });
+          const next = await api.listVolcengineSpeakers({ ...request, page });
           if (next.status === 'fail' || !next.speakers.length) break;
           speakers = mergeVolcengineSpeakers(speakers, next.speakers);
           if (speakers.length >= total) break;
@@ -6341,7 +6416,7 @@ function SettingsPage({ api, state, applyState }: { api: StoryDreamApi; state: A
         </div>
         {configTestResult ? <div className="test-result">{configTestResult}</div> : null}
         {section === 'llm' ? (
-          <SettingsCard title="LLM 配置档案" status={maskConfigured(selectedLlmTestConfig.llm.apiKey)}>
+          <SettingsCard title="LLM 配置档案" status={secrets.configured(profileSecretId('llm', selectedLlmProfileId, 'apiKey')) ? '已配置' : '待配置'}>
             <LlmProfileManager
               config={draft}
               selectedProfileId={selectedLlmProfileId}
@@ -6349,16 +6424,23 @@ function SettingsPage({ api, state, applyState }: { api: StoryDreamApi; state: A
               loadingModels={loadingModelList === 'llm'}
               modelStatus={modelListStatus.llm}
               saving={savingConfig}
+              secrets={secrets}
               onChange={setSettingsDraft}
               onSelectedProfileIdChange={setSelectedLlmProfileId}
               onActivate={activateLlmProfile}
               onClearModels={() => clearProviderModels('llm')}
-              onRefreshModels={(profile) => refreshProviderModels('llm', { baseUrl: profile.baseUrl, apiKey: profile.apiKey, protocol: profile.protocol }, profile.model)}
+              onRefreshModels={(profile) => {
+                const secret = secrets.reference(profileSecretId('llm', profile.id, 'apiKey'));
+                return refreshProviderModels('llm', { baseUrl: profile.baseUrl, apiKey: secret.value, protocol: profile.protocol, secretId: secret.secretId }, profile.model);
+              }}
             />
           </SettingsCard>
         ) : null}
         {section === 'image' ? (
-          <SettingsCard title="AI 绘图" status={settingsStatusLabel(configTargetStatus('image', selectedImageTestConfig))}>
+          <SettingsCard
+            title="AI 绘图"
+            status={secrets.configured(profileSecretId('image', selectedImageProfileId, selectedImageTestConfig.imageProvider === 'jimeng' ? 'jimeng/accessKeyId' : selectedImageTestConfig.imageProvider === 'custom' ? 'customImage/apiKey' : 'gptImage/apiKey')) ? '已配置' : '待配置'}
+          >
             <ImageProfileManager
               config={draft}
               selectedProfileId={selectedImageProfileId}
@@ -6367,6 +6449,7 @@ function SettingsPage({ api, state, applyState }: { api: StoryDreamApi; state: A
               loadingModelList={loadingModelList}
               modelStatus={modelListStatus}
               saving={savingConfig}
+              secrets={secrets}
               onChange={setSettingsDraft}
               onSelectedProfileIdChange={setSelectedImageProfileId}
               onActivate={activateImageProfile}
@@ -6376,7 +6459,7 @@ function SettingsPage({ api, state, applyState }: { api: StoryDreamApi; state: A
           </SettingsCard>
         ) : null}
         {section === 'tts' ? (
-          <SettingsCard title="TTS 配音" status={settingsStatusLabel(configTargetStatus('tts', selectedTtsTestConfig))}>
+          <SettingsCard title="TTS 配音" status={secrets.configured(profileSecretId('tts', selectedTtsProfileId, selectedTtsTestConfig.tts.provider === 'minimax' ? 'minimax/apiKey' : 'volcengine/apiKey')) ? '已配置' : '待配置'}>
             <TtsProfileManager
               config={draft}
               selectedProfileId={selectedTtsProfileId}
@@ -6385,6 +6468,7 @@ function SettingsPage({ api, state, applyState }: { api: StoryDreamApi; state: A
               loadingVolcengineSpeakers={loadingVolcengineSpeakers}
               volcengineSpeakerStatus={volcengineSpeakerStatus}
               saving={savingConfig}
+              secrets={secrets}
               onChange={setSettingsDraft}
               onSelectedProfileIdChange={setSelectedTtsProfileId}
               onActivate={activateTtsProfile}
@@ -6393,7 +6477,7 @@ function SettingsPage({ api, state, applyState }: { api: StoryDreamApi; state: A
           </SettingsCard>
         ) : null}
         {section === 'speechToText' ? (
-          <SettingsCard title="语音转文字" status={settingsStatusLabel(configTargetStatus('speechToText', draft))}>
+          <SettingsCard title="语音转文字" status={secrets.configured('speechToText/apiKey') ? '已配置' : '待配置'}>
             <ProviderConfigNote
               title="转写 API"
               value="OpenAI 兼容 /audio/transcriptions；SiliconFlow 使用 file、model，默认 FunAudioLLM/SenseVoiceSmall，也可选 TeleAI/TeleSpeechASR。"
@@ -6406,7 +6490,13 @@ function SettingsPage({ api, state, applyState }: { api: StoryDreamApi; state: A
               onChange={(value) => switchSpeechToTextProvider(value as AppConfig['speechToText']['provider'])}
             />
             <ConfigInput label="接口地址" value={draft.speechToText.baseUrl} onChange={(value) => updateSpeechToTextConfig({ baseUrl: value })} />
-            <ConfigInput label="接口密钥" value={draft.speechToText.apiKey} onChange={(value) => updateSpeechToTextConfig({ apiKey: value })} />
+            <SecretInput
+              label="接口密钥"
+              value={secrets.value('speechToText/apiKey')}
+              configured={secrets.configured('speechToText/apiKey')}
+              onChange={(value) => secrets.change('speechToText/apiKey', value)}
+              onClear={() => secrets.change('speechToText/apiKey', null)}
+            />
             {isSiliconFlowSpeechToText ? (
               <Segmented
                 label="转写模型"
@@ -6497,9 +6587,15 @@ function SettingsPage({ api, state, applyState }: { api: StoryDreamApi; state: A
         ) : null}
         {section === 'activation' ? <LocalInfo title="激活与订阅" value={state.activation.message} /> : null}
         {section === 'creative' ? (
-          <SettingsCard title="AI 创作 / IMA 知识库" status={draft.ima.apiKey ? '已配置' : '待配置'}>
+          <SettingsCard title="AI 创作 / IMA 知识库" status={secrets.configured('ima/apiKey') ? '已配置' : '待配置'}>
             <ConfigInput label="客户端 ID" value={draft.ima.clientId} onChange={(value) => setSettingsDraft({ ...draft, ima: { ...draft.ima, clientId: value } })} />
-            <ConfigInput label="接口密钥" value={draft.ima.apiKey} onChange={(value) => setSettingsDraft({ ...draft, ima: { ...draft.ima, apiKey: value } })} />
+            <SecretInput
+              label="接口密钥"
+              value={secrets.value('ima/apiKey')}
+              configured={secrets.configured('ima/apiKey')}
+              onChange={(value) => secrets.change('ima/apiKey', value)}
+              onClear={() => secrets.change('ima/apiKey', null)}
+            />
             <ConfigInput label="知识库名称" value={draft.ima.kbName} onChange={(value) => setSettingsDraft({ ...draft, ima: { ...draft.ima, kbName: value } })} />
             <button className="ghost-action">测试并拉取知识库</button>
           </SettingsCard>
@@ -6530,6 +6626,7 @@ function LlmProfileManager({
   loadingModels,
   modelStatus,
   saving,
+  secrets,
   onChange,
   onSelectedProfileIdChange,
   onActivate,
@@ -6542,6 +6639,7 @@ function LlmProfileManager({
   loadingModels: boolean;
   modelStatus?: string;
   saving: boolean;
+  secrets: SecretEditor;
   onChange: (config: AppConfig) => void;
   onSelectedProfileIdChange: (id: string) => void;
   onActivate: (id: string) => Promise<void>;
@@ -6586,6 +6684,7 @@ function LlmProfileManager({
   if (!selectedProfile) return <ArtifactEmpty text="暂无 LLM 配置档案" />;
 
   const selectedProvider = editableLlmProfileProvider(selectedProfile);
+  const apiKeyId = profileSecretId('llm', selectedProfile.id, 'apiKey');
   const requestParamsJsonValue = selectedProfile.requestParamsJson ?? '{}';
   return (
     <div className="llm-profile-manager">
@@ -6690,7 +6789,7 @@ function LlmProfileManager({
         {selectedProvider === 'openai' ? (
           <>
             <ProviderConfigNote title="OpenAI 对话接口" value="使用官方 /v1/chat/completions，填写接口密钥与模型。" />
-            <ConfigInput label="OpenAI 接口密钥" value={selectedProfile.apiKey} onChange={(value) => { onClearModels(); updateSelectedProfile({ ...selectedProfile, apiKey: value }); }} />
+            <SecretInput label="OpenAI 接口密钥" value={secrets.value(apiKeyId)} configured={secrets.configured(apiKeyId)} onChange={(value) => { onClearModels(); secrets.change(apiKeyId, value); }} onClear={() => secrets.change(apiKeyId, null)} />
             <ModelPicker
               key={`llm-${selectedProfile.id}`}
               label="OpenAI 模型"
@@ -6712,7 +6811,7 @@ function LlmProfileManager({
           <>
             <ProviderConfigNote title="Anthropic Messages API" value="使用 /v1/messages，填写 Anthropic 接口密钥与 Claude 模型。" />
             <ConfigInput label="Anthropic 接口地址" value={selectedProfile.baseUrl} onChange={(value) => { onClearModels(); updateSelectedProfile({ ...selectedProfile, provider: 'anthropic', protocol: 'anthropic', baseUrl: value }); }} />
-            <ConfigInput label="Anthropic 接口密钥" value={selectedProfile.apiKey} onChange={(value) => { onClearModels(); updateSelectedProfile({ ...selectedProfile, provider: 'anthropic', protocol: 'anthropic', apiKey: value }); }} />
+            <SecretInput label="Anthropic 接口密钥" value={secrets.value(apiKeyId)} configured={secrets.configured(apiKeyId)} onChange={(value) => { onClearModels(); secrets.change(apiKeyId, value); }} onClear={() => secrets.change(apiKeyId, null)} />
             <ModelPicker
               key={`llm-${selectedProfile.id}`}
               label="Claude 模型"
@@ -6734,7 +6833,7 @@ function LlmProfileManager({
           <>
             <ProviderConfigNote title="OpenAI 兼容 LLM" value="自定义接口按 /chat/completions 调用，需要接口地址、接口密钥与模型。" />
             <ConfigInput label="接口地址" value={selectedProfile.baseUrl} onChange={(value) => { onClearModels(); updateSelectedProfile({ ...selectedProfile, baseUrl: value }); }} />
-            <ConfigInput label="接口密钥" value={selectedProfile.apiKey} onChange={(value) => { onClearModels(); updateSelectedProfile({ ...selectedProfile, apiKey: value }); }} />
+            <SecretInput label="接口密钥" value={secrets.value(apiKeyId)} configured={secrets.configured(apiKeyId)} onChange={(value) => { onClearModels(); secrets.change(apiKeyId, value); }} onClear={() => secrets.change(apiKeyId, null)} />
             <ModelPicker
               key={`llm-${selectedProfile.id}`}
               label="模型"
@@ -6766,6 +6865,7 @@ function ImageProfileManager({
   loadingModelList,
   modelStatus,
   saving,
+  secrets,
   onChange,
   onSelectedProfileIdChange,
   onActivate,
@@ -6779,11 +6879,12 @@ function ImageProfileManager({
   loadingModelList: ModelListKey | null;
   modelStatus: Partial<Record<ModelListKey, string>>;
   saving: boolean;
+  secrets: SecretEditor;
   onChange: (config: AppConfig) => void;
   onSelectedProfileIdChange: (id: string) => void;
   onActivate: (id: string) => Promise<void>;
   onClearModels: (key: ModelListKey) => void;
-  onRefreshModels: (key: ModelListKey, request: { baseUrl: string; apiKey: string }, currentModel: string, applyModel?: (config: AppConfig, model: string) => AppConfig) => void;
+  onRefreshModels: (key: ModelListKey, request: ProviderModelListRequest, currentModel: string, applyModel?: (config: AppConfig, model: string) => AppConfig) => void;
 }) {
   const profiles = normalizedImageProfiles(config);
   const activeId = activeImageProfileId(config);
@@ -6802,6 +6903,11 @@ function ImageProfileManager({
   const gptImage = imageProfileGptImage(selectedProfile);
   const jimeng = imageProfileJimeng(selectedProfile);
   const customImage = imageProfileCustomImage(selectedProfile);
+  const gptApiKeyId = profileSecretId('image', selectedProfile.id, 'gptImage/apiKey');
+  const jimengSessionId = profileSecretId('image', selectedProfile.id, 'jimeng/sessionId');
+  const jimengAccessKeyId = profileSecretId('image', selectedProfile.id, 'jimeng/accessKeyId');
+  const jimengSecretAccessKeyId = profileSecretId('image', selectedProfile.id, 'jimeng/secretAccessKey');
+  const customApiKeyId = profileSecretId('image', selectedProfile.id, 'customImage/apiKey');
 
   function updateSelectedProfile(profile: ImageProviderProfile) {
     onChange(saveImageProfile(config, profile));
@@ -6910,7 +7016,7 @@ function ImageProfileManager({
           <>
             <ProviderConfigNote title="OpenAI 图像接口" value="接口密钥与模型必填；接口地址为空时使用官方默认端点。" />
             <ConfigInput label="GPT Image 接口地址（可选）" value={gptImage.baseUrl} onChange={(value) => { onClearModels('gpt-image'); updateSelectedProfile({ ...selectedProfile, gptImage: { ...gptImage, baseUrl: value } }); }} />
-            <ConfigInput label="GPT Image 接口密钥" value={gptImage.apiKey} onChange={(value) => { onClearModels('gpt-image'); updateSelectedProfile({ ...selectedProfile, gptImage: { ...gptImage, apiKey: value } }); }} />
+            <SecretInput label="GPT Image 接口密钥" value={secrets.value(gptApiKeyId)} configured={secrets.configured(gptApiKeyId)} onChange={(value) => { onClearModels('gpt-image'); secrets.change(gptApiKeyId, value); }} onClear={() => secrets.change(gptApiKeyId, null)} />
             <ModelPicker
               key={`gpt-image-${selectedProfile.id}`}
               label="GPT Image 模型"
@@ -6920,7 +7026,7 @@ function ImageProfileManager({
               status={modelStatus['gpt-image']}
               onRefresh={() => onRefreshModels(
                 'gpt-image',
-                { baseUrl: gptImage.baseUrl || 'https://api.openai.com', apiKey: gptImage.apiKey },
+                { baseUrl: gptImage.baseUrl || 'https://api.openai.com', apiKey: secrets.reference(gptApiKeyId).value, secretId: secrets.reference(gptApiKeyId).secretId },
                 gptImage.model,
                 (current, model) => saveImageProfile(current, { ...selectedProfile, gptImage: { ...gptImage, model } }),
               )}
@@ -6933,8 +7039,9 @@ function ImageProfileManager({
         {provider === 'jimeng' ? (
           <>
             <ProviderConfigNote title="火山视觉接口" value={`端点 ${jimeng.endpoint || 'https://visual.volcengineapi.com'} · 区域 ${jimeng.region || 'cn-north-1'} · 服务 ${jimeng.service || 'cv'}`} />
-            <ConfigInput label="即梦访问密钥 ID" value={jimeng.accessKeyId ?? ''} onChange={(value) => updateSelectedProfile({ ...selectedProfile, jimeng: { ...jimeng, accessKeyId: value } })} />
-            <ConfigInput label="即梦访问密钥 Secret" value={jimeng.secretAccessKey ?? ''} onChange={(value) => updateSelectedProfile({ ...selectedProfile, jimeng: { ...jimeng, secretAccessKey: value } })} />
+            <SecretInput label="即梦 Session ID" value={secrets.value(jimengSessionId)} configured={secrets.configured(jimengSessionId)} onChange={(value) => secrets.change(jimengSessionId, value)} onClear={() => secrets.change(jimengSessionId, null)} />
+            <SecretInput label="即梦访问密钥 ID" value={secrets.value(jimengAccessKeyId)} configured={secrets.configured(jimengAccessKeyId)} onChange={(value) => secrets.change(jimengAccessKeyId, value)} onClear={() => secrets.change(jimengAccessKeyId, null)} />
+            <SecretInput label="即梦访问密钥 Secret" value={secrets.value(jimengSecretAccessKeyId)} configured={secrets.configured(jimengSecretAccessKeyId)} onChange={(value) => secrets.change(jimengSecretAccessKeyId, value)} onClear={() => secrets.change(jimengSecretAccessKeyId, null)} />
             <ConfigInput label="即梦请求 Key" value={jimeng.reqKey ?? ''} onChange={(value) => updateSelectedProfile({ ...selectedProfile, jimeng: { ...jimeng, reqKey: value } })} />
             <Segmented label="分辨率" value={jimeng.resolution} options={['1K', '2K', '4K']} onChange={(value) => updateSelectedProfile({ ...selectedProfile, jimeng: { ...jimeng, resolution: value as ImageResolution } })} />
             <Field label="并发"><input type="range" min="1" max="6" value={jimeng.concurrency} onChange={(event) => updateSelectedProfile({ ...selectedProfile, jimeng: { ...jimeng, concurrency: Number(event.target.value) } })} /></Field>
@@ -6944,7 +7051,7 @@ function ImageProfileManager({
           <>
             <ProviderConfigNote title="OpenAI 兼容接口" value="自定义图片接口按 /images/generations 调用，需要接口地址、接口密钥与模型。" />
             <ConfigInput label="自定义接口地址" value={customImage.baseUrl} onChange={(value) => { onClearModels('custom-image'); updateSelectedProfile({ ...selectedProfile, customImage: { ...customImage, baseUrl: value } }); }} />
-            <ConfigInput label="自定义接口密钥" value={customImage.apiKey} onChange={(value) => { onClearModels('custom-image'); updateSelectedProfile({ ...selectedProfile, customImage: { ...customImage, apiKey: value } }); }} />
+            <SecretInput label="自定义接口密钥" value={secrets.value(customApiKeyId)} configured={secrets.configured(customApiKeyId)} onChange={(value) => { onClearModels('custom-image'); secrets.change(customApiKeyId, value); }} onClear={() => secrets.change(customApiKeyId, null)} />
             <ModelPicker
               key={`custom-image-${selectedProfile.id}`}
               label="自定义模型"
@@ -6954,7 +7061,7 @@ function ImageProfileManager({
               status={modelStatus['custom-image']}
               onRefresh={() => onRefreshModels(
                 'custom-image',
-                { baseUrl: customImage.baseUrl, apiKey: customImage.apiKey },
+                { baseUrl: customImage.baseUrl, apiKey: secrets.reference(customApiKeyId).value, secretId: secrets.reference(customApiKeyId).secretId },
                 customImage.model,
                 (current, model) => saveImageProfile(current, { ...selectedProfile, customImage: { ...customImage, model } }),
               )}
@@ -6977,6 +7084,7 @@ function TtsProfileManager({
   loadingVolcengineSpeakers,
   volcengineSpeakerStatus,
   saving,
+  secrets,
   onChange,
   onSelectedProfileIdChange,
   onActivate,
@@ -6989,6 +7097,7 @@ function TtsProfileManager({
   loadingVolcengineSpeakers: boolean;
   volcengineSpeakerStatus?: string;
   saving: boolean;
+  secrets: SecretEditor;
   onChange: (config: AppConfig) => void;
   onSelectedProfileIdChange: (id: string) => void;
   onActivate: (id: string) => Promise<void>;
@@ -7012,6 +7121,10 @@ function TtsProfileManager({
   const volcengine = ttsProfileVolcengine(selectedProfile);
   const minimax = ttsProfileMinimax(selectedProfile);
   const voiceSelection = volcenginePresetVoiceValue(volcengine.speaker, availableVolcengineVoices);
+  const volcengineApiKeyId = profileSecretId('tts', selectedProfile.id, 'volcengine/apiKey');
+  const volcengineAccessKeyId = profileSecretId('tts', selectedProfile.id, 'volcengine/accessKeyId');
+  const volcengineSecretAccessKeyId = profileSecretId('tts', selectedProfile.id, 'volcengine/secretAccessKey');
+  const minimaxApiKeyId = profileSecretId('tts', selectedProfile.id, 'minimax/apiKey');
 
   function updateSelectedProfile(profile: TtsProviderProfile) {
     onChange(saveTtsProfile(config, profile));
@@ -7119,7 +7232,16 @@ function TtsProfileManager({
         {provider === 'volcengine' ? (
           <>
             <ProviderConfigNote title="火山引擎 TTS" value="V3 HTTP Chunked 使用新版控制台 TTS 接口密钥；资源与端点使用系统默认配置。" />
-            <ConfigInput label="火山 TTS 接口密钥" value={volcengine.apiKey ?? ''} onChange={(value) => updateSelectedProfile({ ...selectedProfile, volcengine: { ...volcengine, apiKey: value } })} />
+            <SecretInput label="火山 TTS 接口密钥" value={secrets.value(volcengineApiKeyId)} configured={secrets.configured(volcengineApiKeyId)} onChange={(value) => secrets.change(volcengineApiKeyId, value)} onClear={() => secrets.change(volcengineApiKeyId, null)} />
+            <SecretInput label="音色访问密钥 ID" value={secrets.value(volcengineAccessKeyId)} configured={secrets.configured(volcengineAccessKeyId)} onChange={(value) => secrets.change(volcengineAccessKeyId, value)} onClear={() => secrets.change(volcengineAccessKeyId, null)} />
+            <SecretInput label="音色访问密钥 Secret" value={secrets.value(volcengineSecretAccessKeyId)} configured={secrets.configured(volcengineSecretAccessKeyId)} onChange={(value) => secrets.change(volcengineSecretAccessKeyId, value)} onClear={() => secrets.change(volcengineSecretAccessKeyId, null)} />
+            <div className="settings-inline-actions">
+              <button className="ghost-action" type="button" disabled={loadingVolcengineSpeakers} onClick={() => onRefreshVolcengineSpeakers(selectedProfile)}>
+                {loadingVolcengineSpeakers ? <Loader2 className="spin" size={15} /> : <Search size={15} />}
+                加载音色
+              </button>
+              {volcengineSpeakerStatus ? <span>{volcengineSpeakerStatus}</span> : null}
+            </div>
             <Field label="默认音色">
               <div className="model-picker">
                 <select value={voiceSelection} onChange={(event) => updateVolcengineVoice(event.target.value === 'custom' ? '' : event.target.value)}>
@@ -7140,7 +7262,7 @@ function TtsProfileManager({
         {provider === 'minimax' ? (
           <>
             <ProviderConfigNote title="MiniMax TTS" value="填写接口密钥、模型和音色 ID。" />
-            <ConfigInput label="MiniMax 接口密钥" value={minimax.apiKey} onChange={(value) => updateSelectedProfile({ ...selectedProfile, minimax: { ...minimax, apiKey: value } })} />
+            <SecretInput label="MiniMax 接口密钥" value={secrets.value(minimaxApiKeyId)} configured={secrets.configured(minimaxApiKeyId)} onChange={(value) => secrets.change(minimaxApiKeyId, value)} onClear={() => secrets.change(minimaxApiKeyId, null)} />
             <ConfigInput label="MiniMax 模型" value={minimax.model} onChange={(value) => updateSelectedProfile({ ...selectedProfile, minimax: { ...minimax, model: value } })} />
             <ConfigInput label="MiniMax 音色 ID" value={minimax.voiceId} onChange={(value) => updateSelectedProfile({ ...selectedProfile, minimax: { ...minimax, voiceId: value } })} />
             <LocalInfo title="克隆音色" value={`${cloneVoiceCount} 个本地记录，可后续接入 MiniMax 克隆接口。`} />
@@ -7207,6 +7329,42 @@ function SettingsCard({ title, status, children }: { title: string; status: stri
 
 function ConfigInput({ label, value, onChange }: { label: string; value: string; onChange: (value: string) => void }) {
   return <label className="config-input"><span>{label}</span><input value={value} onChange={(event) => onChange(event.target.value)} /></label>;
+}
+
+function SecretInput({
+  label,
+  value,
+  configured,
+  onChange,
+  onClear,
+}: {
+  label: string;
+  value: string;
+  configured: boolean;
+  onChange: (value: string) => void;
+  onClear: () => void;
+}) {
+  const [revealed, setRevealed] = useState(false);
+  return (
+    <label className="config-input secret-input">
+      <span>{label}<small>{configured ? '已配置' : '待配置'}</small></span>
+      <div className="secret-input-control">
+        <input
+          type={revealed ? 'text' : 'password'}
+          value={value}
+          autoComplete="new-password"
+          spellCheck={false}
+          onChange={(event) => onChange(event.target.value)}
+        />
+        <button className="icon-button" type="button" title={revealed ? '隐藏' : '显示'} aria-label={revealed ? '隐藏密钥' : '显示密钥'} onClick={() => setRevealed((current) => !current)}>
+          {revealed ? <EyeOff size={15} /> : <Eye size={15} />}
+        </button>
+        <button className="icon-button" type="button" title="清除" aria-label="清除密钥" disabled={!configured && !value} onClick={onClear}>
+          <Trash2 size={15} />
+        </button>
+      </div>
+    </label>
+  );
 }
 
 function ConfigTextarea({
@@ -7714,11 +7872,6 @@ function statusLabel(status: TaskStatus | 'all'): string {
     failed: '失败',
     cancelled: '已取消',
   }[status];
-}
-
-function maskConfigured(value: string): string {
-  if (!value) return '待配置';
-  return value.length > 8 ? `${value.slice(0, 2)}••••${value.slice(-4)}` : '已配置';
 }
 
 function settingsStatusLabel(status: 'pass' | 'warn' | 'fail'): string {
