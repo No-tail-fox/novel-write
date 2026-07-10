@@ -1,6 +1,7 @@
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import type { ViralAnalyzerConfig, ViralBrowserCookieSource, ViralCookieFallbackMode, ViralPlatform } from './types';
+import { assertViralSourceUrl } from './viral-analysis';
 
 export interface ViralMediaWorkerRequest {
   url: string;
@@ -36,7 +37,7 @@ export function buildViralMediaWorkerRequest(input: {
   timeoutMs: number;
 }): ViralMediaWorkerRequest {
   return {
-    url: input.url,
+    url: assertViralSourceUrl(input.url, input.platform),
     platform: input.platform,
     workDir: input.workDir,
     cookieFallbackMode: input.cookieFallbackMode,

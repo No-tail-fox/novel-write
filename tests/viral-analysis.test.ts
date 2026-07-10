@@ -2,6 +2,7 @@ import { describe, expect, it, vi } from 'vitest';
 import {
   buildViralBreakdownPrompt,
   buildViralRecreationPrompt,
+  assertViralSourceUrl,
   createViralProductionTaskInput,
   detectViralPlatform,
   normalizeViralSourceUrl,
@@ -16,9 +17,26 @@ import { join } from 'node:path';
 describe('viral analysis helpers', () => {
   it('detects the first supported Chinese short-video platforms', () => {
     expect(detectViralPlatform('https://www.douyin.com/video/123')).toBe('douyin');
+    expect(detectViralPlatform('https://v.douyin.com/abc')).toBe('douyin');
     expect(detectViralPlatform('https://v.kuaishou.com/abc')).toBe('kuaishou');
     expect(detectViralPlatform('https://www.bilibili.com/video/BV1xx411c7mD')).toBe('bilibili');
     expect(detectViralPlatform('https://example.com/video/123')).toBe('unknown');
+  });
+
+  it('detects platforms from the exact hostname instead of URL text', () => {
+    expect(detectViralPlatform('https://evil.example/?next=kuaishou.com')).toBe('unknown');
+    expect(detectViralPlatform('https://kuaishou.com.evil.example/video/1')).toBe('unknown');
+    expect(detectViralPlatform('https://douyin.com@evil.example/video/1')).toBe('unknown');
+    expect(detectViralPlatform('not a URL containing bilibili.com')).toBe('unknown');
+  });
+
+  it('accepts only credential-free HTTPS URLs for the selected platform', () => {
+    expect(assertViralSourceUrl('https://www.douyin.com/video/1', 'douyin')).toBe('https://www.douyin.com/video/1');
+    expect(() => assertViralSourceUrl('file:///C:/secret.txt', 'douyin')).toThrow(/仅支持 HTTPS/);
+    expect(() => assertViralSourceUrl('http://www.douyin.com/video/1', 'douyin')).toThrow(/仅支持 HTTPS/);
+    expect(() => assertViralSourceUrl('https://user:pass@www.douyin.com/video/1', 'douyin')).toThrow(/凭证/);
+    expect(() => assertViralSourceUrl('https://www.douyin.com/video/1', 'kuaishou')).toThrow(/平台不匹配/);
+    expect(() => assertViralSourceUrl('https://evil.example/?next=douyin.com', 'douyin')).toThrow(/不受支持/);
   });
 
   it('normalizes Douyin jingxuan modal links to concrete video links', () => {

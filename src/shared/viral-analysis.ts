@@ -70,12 +70,54 @@ export interface CompletedViralAnalysisRun {
   videoPath: string;
 }
 
+export const VIRAL_SOURCE_DOMAINS = {
+  douyin: ['douyin.com', 'iesdouyin.com', 'amemv.com'],
+  kuaishou: ['kuaishou.com', 'gifshow.com', 'kwai.com'],
+  bilibili: ['bilibili.com', 'b23.tv'],
+} as const;
+
+export function hostnameMatches(hostname: string, domain: string): boolean {
+  const host = hostname.toLowerCase().replace(/\.$/u, '');
+  const base = domain.toLowerCase().replace(/\.$/u, '');
+  return host === base || host.endsWith(`.${base}`);
+}
+
 export function detectViralPlatform(url: string): ViralPlatform {
-  const normalized = url.toLowerCase();
-  if (/douyin\.com|iesdouyin\.com|amemv\.com/.test(normalized)) return 'douyin';
-  if (/kuaishou\.com|gifshow\.com|kwai\.com/.test(normalized)) return 'kuaishou';
-  if (/bilibili\.com|b23\.tv/.test(normalized)) return 'bilibili';
+  let hostname = '';
+  try {
+    hostname = new URL(url).hostname;
+  } catch {
+    return 'unknown';
+  }
+  for (const [platform, domains] of Object.entries(VIRAL_SOURCE_DOMAINS) as Array<
+    [Exclude<ViralPlatform, 'unknown'>, readonly string[]]
+  >) {
+    if (domains.some((domain) => hostnameMatches(hostname, domain))) return platform;
+  }
   return 'unknown';
+}
+
+export function assertViralSourceUrl(url: string, platform: ViralPlatform): string {
+  let parsed: URL;
+  try {
+    parsed = new URL(url.trim());
+  } catch {
+    throw new Error('视频链接格式无效，仅支持 HTTPS 链接。');
+  }
+  if (parsed.protocol !== 'https:') {
+    throw new Error('视频链接仅支持 HTTPS。');
+  }
+  if (parsed.username || parsed.password) {
+    throw new Error('视频链接不得包含用户名、密码或其他 URL 凭证。');
+  }
+  const detected = detectViralPlatform(parsed.toString());
+  if (detected === 'unknown') {
+    throw new Error('视频链接域名不受支持。');
+  }
+  if (platform === 'unknown' || detected !== platform) {
+    throw new Error('视频链接与所选平台不匹配。');
+  }
+  return parsed.toString();
 }
 
 export function normalizeViralSourceUrl(url: string, platform: ViralPlatform): string {

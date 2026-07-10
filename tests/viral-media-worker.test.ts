@@ -43,6 +43,20 @@ describe('viral media worker wiring', () => {
     });
   });
 
+  it('rejects a source URL that does not belong to the selected platform', () => {
+    expect(() =>
+      buildViralMediaWorkerRequest({
+        url: 'https://evil.example/?next=douyin.com',
+        platform: 'douyin',
+        workDir: 'I:/opc/tmp/viral',
+        cookieFallbackMode: 'browser-first-after-failure',
+        browserCookieSource: 'auto',
+        cookieFilePath: '',
+        timeoutMs: 180000,
+      }),
+    ).toThrow(/不受支持|平台不匹配/);
+  });
+
   it('builds a python invocation that targets the internal worker script instead of yt-dlp', () => {
     const invocation = buildViralMediaWorkerInvocation({
       baseDir: 'I:/opc/dist-electron/electron',

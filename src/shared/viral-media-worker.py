@@ -18,7 +18,7 @@ import time
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
-from urllib.parse import parse_qs, urlencode, urlparse
+from urllib.parse import parse_qs, urlencode, urljoin, urlparse
 
 try:
     import httpx
@@ -30,6 +30,47 @@ USER_AGENT = (
     "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
     "(KHTML, like Gecko) Chrome/130.0.0.0 Safari/537.36"
 )
+
+PLATFORM_SOURCE_DOMAINS: dict[str, tuple[str, ...]] = {
+    "douyin": ("douyin.com", "iesdouyin.com", "amemv.com"),
+    "kuaishou": ("kuaishou.com", "gifshow.com", "kwai.com"),
+    "bilibili": ("bilibili.com", "b23.tv"),
+}
+
+PLATFORM_MEDIA_DOMAINS: dict[str, tuple[str, ...]] = {
+    "douyin": (
+        *PLATFORM_SOURCE_DOMAINS["douyin"],
+        "douyinvod.com",
+        "douyinpic.com",
+        "byteimg.com",
+        "byteimg.cn",
+        "bytedance.com",
+        "bytedance.net",
+        "ibytedtos.com",
+        "pstatp.com",
+        "snssdk.com",
+    ),
+    "kuaishou": (
+        *PLATFORM_SOURCE_DOMAINS["kuaishou"],
+        "kwaicdn.com",
+        "yximgs.com",
+        "kwimgs.com",
+        "kspkg.com",
+        "ksapisrv.com",
+        "kwai.net",
+        "wsukwai.com",
+    ),
+    "bilibili": (
+        *PLATFORM_SOURCE_DOMAINS["bilibili"],
+        "bilivideo.com",
+        "hdslb.com",
+        "biliapi.net",
+    ),
+}
+
+MAX_REDIRECTS = 8
+MAX_MEDIA_DOWNLOAD_BYTES = 1024 * 1024 * 1024
+MAX_COVER_DOWNLOAD_BYTES = 32 * 1024 * 1024
 
 
 class ViralWorkerError(RuntimeError):
@@ -47,10 +88,20 @@ class WorkerRequest:
     timeout_ms: int
 
 
+@dataclass(frozen=True)
+class StoredCookie:
+    name: str
+    value: str
+    domain: str
+    path: str = "/"
+    secure: bool = True
+    expires: int | None = None
+
+
 @dataclass
 class CookieAttempt:
     source: str
-    header: str
+    cookies: list[StoredCookie]
 
 
 def main() -> int:
@@ -69,8 +120,6 @@ def main() -> int:
 
 def load_request(path: Path) -> WorkerRequest:
     payload = json.loads(path.read_text(encoding="utf-8-sig"))
-    work_dir = Path(str(payload.get("workDir", ""))).resolve()
-    work_dir.mkdir(parents=True, exist_ok=True)
     platform = str(payload.get("platform") or "unknown")
     url = str(payload.get("url") or "").strip()
     if not url:
@@ -79,6 +128,9 @@ def load_request(path: Path) -> WorkerRequest:
         platform = detect_platform(url)
     if platform not in {"douyin", "kuaishou", "bilibili"}:
         raise ViralWorkerError("只支持抖音、快手、B站公开视频链接。")
+    validate_platform_url(url, platform)
+    work_dir = Path(str(payload.get("workDir", ""))).resolve()
+    work_dir.mkdir(parents=True, exist_ok=True)
     return WorkerRequest(
         url=url,
         platform=platform,
@@ -91,14 +143,39 @@ def load_request(path: Path) -> WorkerRequest:
 
 
 def detect_platform(url: str) -> str:
-    lower = url.lower()
-    if "douyin.com" in lower or "iesdouyin.com" in lower or "amemv.com" in lower:
-        return "douyin"
-    if "kuaishou.com" in lower or "gifshow.com" in lower or "kwai.com" in lower:
-        return "kuaishou"
-    if "bilibili.com" in lower or "b23.tv" in lower:
-        return "bilibili"
+    try:
+        hostname = urlparse(url).hostname or ""
+    except ValueError:
+        return "unknown"
+    for platform, domains in PLATFORM_SOURCE_DOMAINS.items():
+        if any(hostname_matches(hostname, domain) for domain in domains):
+            return platform
     return "unknown"
+
+
+def hostname_matches(hostname: str, domain: str) -> bool:
+    host = hostname.lower().rstrip(".")
+    base = domain.lower().lstrip(".").rstrip(".")
+    return bool(host and base and (host == base or host.endswith(f".{base}")))
+
+
+def validate_platform_url(url: str, platform: str) -> str:
+    try:
+        parsed = urlparse(url.strip())
+        hostname = parsed.hostname or ""
+    except ValueError as exc:
+        raise ViralWorkerError("视频链接格式无效，仅支持 HTTPS 链接。") from exc
+    if parsed.scheme.lower() != "https" or not hostname:
+        raise ViralWorkerError("视频链接仅支持 HTTPS。")
+    if parsed.username or parsed.password:
+        raise ViralWorkerError("视频链接不得包含用户名、密码或其他 URL 凭证。")
+    domains = PLATFORM_SOURCE_DOMAINS.get(platform, ())
+    if not any(hostname_matches(hostname, domain) for domain in domains):
+        detected = detect_platform(url)
+        if detected == "unknown":
+            raise ViralWorkerError("视频链接域名不受支持。")
+        raise ViralWorkerError("视频链接与所选平台不匹配。")
+    return url
 
 
 def download_with_cookie_fallback(request: WorkerRequest) -> dict[str, Any]:
@@ -119,16 +196,16 @@ def download_with_cookie_fallback(request: WorkerRequest) -> dict[str, Any]:
 
 
 def build_cookie_attempts(request: WorkerRequest) -> list[CookieAttempt]:
-    attempts = [CookieAttempt("none", "")]
+    attempts = [CookieAttempt("none", [])]
     if request.cookie_fallback_mode == "browser-first-after-failure":
         for source in browser_cookie_sources(request.browser_cookie_source):
-            header = load_browser_cookie_header(request.platform, source)
-            if header:
-                attempts.append(CookieAttempt(f"browser-{source}", header))
+            cookies = load_browser_cookies(request.platform, source)
+            if cookies:
+                attempts.append(CookieAttempt(f"browser-{source}", cookies))
     if request.cookie_file_path:
-        header = load_cookie_file_header(Path(request.cookie_file_path))
-        if header:
-            attempts.append(CookieAttempt("cookie-file", header))
+        cookies = filter_cookies_for_platform(load_cookie_file(Path(request.cookie_file_path), request.platform), request.platform)
+        if cookies:
+            attempts.append(CookieAttempt("cookie-file", cookies))
     return dedupe_attempts(attempts)
 
 
@@ -141,10 +218,10 @@ def browser_cookie_sources(source: str) -> list[str]:
 
 
 def dedupe_attempts(attempts: list[CookieAttempt]) -> list[CookieAttempt]:
-    seen: set[tuple[str, str]] = set()
+    seen: set[tuple[str, tuple[StoredCookie, ...]]] = set()
     unique: list[CookieAttempt] = []
     for attempt in attempts:
-        key = (attempt.source, attempt.header)
+        key = (attempt.source, tuple(attempt.cookies))
         if key in seen:
             continue
         seen.add(key)
@@ -152,23 +229,32 @@ def dedupe_attempts(attempts: list[CookieAttempt]) -> list[CookieAttempt]:
     return unique
 
 
-def load_browser_cookie_header(platform: str, source: str) -> str:
+def load_browser_cookies(platform: str, source: str) -> list[StoredCookie]:
     try:
         import browser_cookie3
     except Exception:
-        return ""
+        return []
     loader = getattr(browser_cookie3, source, None)
     if loader is None:
-        return ""
-    cookie_pairs: dict[str, str] = {}
+        return []
+    cookies: list[StoredCookie] = []
     for domain in cookie_domains(platform):
         try:
             jar = loader(domain_name=domain)
         except Exception:
             continue
         for cookie in jar:
-            cookie_pairs[cookie.name] = cookie.value
-    return "; ".join(f"{name}={value}" for name, value in cookie_pairs.items())
+            stored = StoredCookie(
+                name=str(cookie.name),
+                value=str(cookie.value),
+                domain=str(cookie.domain or domain),
+                path=str(cookie.path or "/"),
+                secure=bool(cookie.secure),
+                expires=normalize_cookie_expiry(cookie.expires),
+            )
+            if cookie_belongs_to_platform(stored, platform):
+                cookies.append(stored)
+    return dedupe_cookies(cookies)
 
 
 def cookie_domains(platform: str) -> list[str]:
@@ -181,49 +267,169 @@ def cookie_domains(platform: str) -> list[str]:
     return []
 
 
-def load_cookie_file_header(path: Path) -> str:
+def load_cookie_file(path: Path, platform: str = "") -> list[StoredCookie]:
     if not path.exists():
-        return ""
-    pairs: dict[str, str] = {}
+        return []
+    cookies: list[StoredCookie] = []
+    header_pairs: dict[str, str] = {}
     for raw_line in path.read_text(encoding="utf-8", errors="ignore").splitlines():
         line = raw_line.strip()
-        if not line or line.startswith("#"):
+        if not line or line.startswith("#") and not line.startswith("#HttpOnly_"):
             continue
+        if line.startswith("#HttpOnly_"):
+            line = line[len("#HttpOnly_") :]
         parts = line.split("\t")
         if len(parts) >= 7:
-            pairs[parts[5]] = parts[6]
+            domain = parts[0].strip()
+            if parts[1].strip().upper() == "TRUE" and domain and not domain.startswith("."):
+                domain = f".{domain}"
+            name = parts[5].strip()
+            if domain and name:
+                cookies.append(
+                    StoredCookie(
+                        name=name,
+                        value=parts[6].strip(),
+                        domain=domain,
+                        path=parts[2].strip() or "/",
+                        secure=parts[3].strip().upper() == "TRUE",
+                        expires=normalize_cookie_expiry(parts[4]),
+                    )
+                )
         elif "=" in line and ";" not in line:
             name, value = line.split("=", 1)
-            pairs[name.strip()] = value.strip()
+            header_pairs[name.strip()] = value.strip()
         elif "=" in line:
             for item in line.split(";"):
                 if "=" in item:
                     name, value = item.split("=", 1)
-                    pairs[name.strip()] = value.strip()
-    return "; ".join(f"{name}={value}" for name, value in pairs.items() if name)
+                    header_pairs[name.strip()] = value.strip()
+    if platform and header_pairs:
+        primary_domain = first(PLATFORM_SOURCE_DOMAINS.get(platform, ()))
+        if primary_domain:
+            cookies.extend(
+                StoredCookie(name=name, value=value, domain=f".{primary_domain}")
+                for name, value in header_pairs.items()
+                if name
+            )
+    return dedupe_cookies(cookies)
 
 
-def common_headers(url: str, cookie_header: str = "") -> dict[str, str]:
-    headers = {
+def normalize_cookie_expiry(value: Any) -> int | None:
+    try:
+        expires = int(float(value))
+    except (TypeError, ValueError):
+        return None
+    return expires if expires > 0 else None
+
+
+def dedupe_cookies(cookies: list[StoredCookie]) -> list[StoredCookie]:
+    unique: dict[tuple[str, str, str], StoredCookie] = {}
+    for cookie in cookies:
+        unique[(cookie.name, cookie.domain.lower(), cookie.path)] = cookie
+    return list(unique.values())
+
+
+def cookie_belongs_to_platform(cookie: StoredCookie, platform: str) -> bool:
+    cookie_domain = cookie.domain.lstrip(".")
+    return any(hostname_matches(cookie_domain, domain) for domain in PLATFORM_SOURCE_DOMAINS.get(platform, ()))
+
+
+def filter_cookies_for_platform(cookies: list[StoredCookie], platform: str) -> list[StoredCookie]:
+    return [cookie for cookie in cookies if cookie_belongs_to_platform(cookie, platform)]
+
+
+def domain_matches(hostname: str, cookie_domain: str) -> bool:
+    domain = cookie_domain.lower().rstrip(".")
+    if domain.startswith("."):
+        return hostname_matches(hostname, domain)
+    return hostname.lower().rstrip(".") == domain
+
+
+def cookie_path_matches(request_path: str, cookie_path: str) -> bool:
+    path = cookie_path if cookie_path.startswith("/") else "/"
+    if request_path == path:
+        return True
+    if not request_path.startswith(path):
+        return False
+    return path.endswith("/") or request_path[len(path) :].startswith("/")
+
+
+def cookie_matches_url(cookie: StoredCookie, url: str, now: int | None = None) -> bool:
+    try:
+        parsed = urlparse(url)
+        hostname = parsed.hostname or ""
+    except ValueError:
+        return False
+    if not hostname or not domain_matches(hostname, cookie.domain):
+        return False
+    if cookie.secure and parsed.scheme.lower() != "https":
+        return False
+    if cookie.expires is not None and cookie.expires <= (now if now is not None else int(time.time())):
+        return False
+    return cookie_path_matches(parsed.path or "/", cookie.path)
+
+
+def cookie_header_for_url(cookies: list[StoredCookie], url: str) -> str:
+    matches = [cookie for cookie in cookies if cookie_matches_url(cookie, url)]
+    matches.sort(key=lambda cookie: len(cookie.path), reverse=True)
+    return "; ".join(f"{cookie.name}={cookie.value}" for cookie in matches)
+
+
+def common_headers(url: str) -> dict[str, str]:
+    return {
         "User-Agent": USER_AGENT,
         "Accept": "*/*",
         "Accept-Language": "zh-CN,zh;q=0.9,en;q=0.8",
         "Referer": url,
     }
-    if cookie_header:
-        headers["Cookie"] = cookie_header
-    return headers
 
 
-def resolve_url(url: str, timeout_ms: int, cookie_header: str = "") -> str:
-    headers = common_headers(url, cookie_header)
-    with httpx.Client(follow_redirects=True, timeout=timeout_ms / 1000) as client:
-        response = client.get(url, headers=headers)
-        response.raise_for_status()
-        return str(response.url)
+def cookie_header_for_request(cookies: list[StoredCookie] | str, url: str) -> str:
+    if isinstance(cookies, str):
+        return cookies
+    return cookie_header_for_url(cookies, url)
 
 
-def normalize_douyin_url(url: str, timeout_ms: int, cookie_header: str = "") -> str:
+def get_platform_response(
+    url: str,
+    timeout_ms: int,
+    platform: str,
+    cookies: list[StoredCookie] | str,
+    headers: dict[str, str] | None = None,
+) -> tuple[Any, str]:
+    current_url = validate_platform_url(url, platform)
+    base_headers = dict(headers or common_headers(url))
+    with httpx.Client(follow_redirects=False, timeout=timeout_ms / 1000) as client:
+        for _ in range(MAX_REDIRECTS + 1):
+            request_headers = dict(base_headers)
+            request_headers.pop("Cookie", None)
+            cookie_header = cookie_header_for_request(cookies, current_url)
+            if cookie_header:
+                request_headers["Cookie"] = cookie_header
+            response = client.get(current_url, headers=request_headers)
+            if response.status_code in {301, 302, 303, 307, 308}:
+                location = response.headers.get("location", "")
+                if not location:
+                    raise ViralWorkerError("平台返回了缺少目标地址的跳转。")
+                target = urljoin(current_url, location)
+                try:
+                    current_url = validate_platform_url(target, platform)
+                except ViralWorkerError as exc:
+                    raise ViralWorkerError("链接跳转目标不属于所选平台。") from exc
+                continue
+            response.raise_for_status()
+            validate_platform_url(current_url, platform)
+            return response, current_url
+    raise ViralWorkerError("平台链接跳转次数超过上限。")
+
+
+def resolve_url(url: str, timeout_ms: int, cookies: list[StoredCookie] | str = "", platform: str = "") -> str:
+    selected_platform = platform or detect_platform(url)
+    response, resolved_url = get_platform_response(url, timeout_ms, selected_platform, cookies)
+    return str(getattr(response, "url", resolved_url) or resolved_url)
+
+
+def normalize_douyin_url(url: str, timeout_ms: int, cookies: list[StoredCookie] | str = "") -> str:
     parsed = urlparse(url)
     query = parse_qs(parsed.query)
     modal_id = first(query.get("modal_id"))
@@ -233,9 +439,9 @@ def normalize_douyin_url(url: str, timeout_ms: int, cookie_header: str = "") -> 
     if match:
         return f"https://www.douyin.com/video/{match.group(1)}"
     if "v.douyin.com" in parsed.netloc or "iesdouyin.com" in parsed.netloc:
-        resolved = resolve_url(url, timeout_ms, cookie_header)
+        resolved = resolve_url(url, timeout_ms, cookies, "douyin")
         if resolved != url:
-            return normalize_douyin_url(resolved, timeout_ms, cookie_header)
+            return normalize_douyin_url(resolved, timeout_ms, cookies)
     return url
 
 
@@ -252,17 +458,17 @@ def extract_douyin_id(url: str) -> str:
 
 
 def download_douyin(request: WorkerRequest, cookie: CookieAttempt) -> dict[str, Any]:
-    normalized_url = normalize_douyin_url(request.url, request.timeout_ms, cookie.header)
+    normalized_url = normalize_douyin_url(request.url, request.timeout_ms, cookie.cookies)
     aweme_id = extract_douyin_id(normalized_url)
-    metadata = fetch_douyin_metadata(aweme_id, normalized_url, request.timeout_ms, cookie.header)
+    metadata = fetch_douyin_metadata(aweme_id, normalized_url, request.timeout_ms, cookie.cookies)
     if metadata is None:
         metadata = sniff_public_media_with_playwright(request, cookie, normalized_url, "douyin")
     video_url = metadata.get("videoUrl") or ""
     if not video_url:
         raise ViralWorkerError("抖音页面没有暴露可下载的视频地址。")
     video_path = request.work_dir / "video.mp4"
-    download_media_url(video_url, video_path, normalized_url, request.timeout_ms, cookie.header, validate_video=True)
-    cover_path = download_cover(metadata.get("coverUrl"), request.work_dir, normalized_url, request.timeout_ms, cookie.header)
+    download_media_url(video_url, video_path, normalized_url, request.timeout_ms, "douyin", validate_video=True)
+    cover_path = download_cover(metadata.get("coverUrl"), request.work_dir, normalized_url, request.timeout_ms, "douyin")
     source = {
         "platform": "douyin",
         "url": request.url,
@@ -283,18 +489,16 @@ def download_douyin(request: WorkerRequest, cookie: CookieAttempt) -> dict[str, 
     return media_result(video_path, source, "douyin-internal", normalized_url, cookie.source, metadata.get("raw"))
 
 
-def fetch_douyin_metadata(aweme_id: str, referer: str, timeout_ms: int, cookie_header: str) -> dict[str, Any] | None:
+def fetch_douyin_metadata(aweme_id: str, referer: str, timeout_ms: int, cookies: list[StoredCookie]) -> dict[str, Any] | None:
     params = douyin_detail_params(aweme_id)
     endpoint = "https://www.douyin.com/aweme/v1/web/aweme/detail/?" + urlencode(params)
-    headers = common_headers(referer, cookie_header)
+    headers = common_headers(referer)
     headers["Accept"] = "application/json,text/plain,*/*"
     try:
-        with httpx.Client(follow_redirects=True, timeout=timeout_ms / 1000) as client:
-            response = client.get(endpoint, headers=headers)
-            response.raise_for_status()
-            if not response.text.strip():
-                return None
-            payload = response.json()
+        response, _ = get_platform_response(endpoint, timeout_ms, "douyin", cookies, headers)
+        if not response.text.strip():
+            return None
+        payload = response.json()
     except Exception:
         return None
     detail = payload.get("aweme_detail") or payload.get("awemeDetail")
@@ -365,10 +569,10 @@ def parse_douyin_aweme_detail(detail: dict[str, Any]) -> dict[str, Any]:
     }
 
 
-def normalize_bilibili_url(url: str, timeout_ms: int, cookie_header: str = "") -> str:
+def normalize_bilibili_url(url: str, timeout_ms: int, cookies: list[StoredCookie] | str = "") -> str:
     parsed = urlparse(url)
     if "b23.tv" in parsed.netloc:
-        url = resolve_url(url, timeout_ms, cookie_header)
+        url = resolve_url(url, timeout_ms, cookies, "bilibili")
         parsed = urlparse(url)
     match = re.search(r"/video/(BV[0-9A-Za-z]+|av\d+)", parsed.path, re.I)
     if match:
@@ -387,20 +591,20 @@ def extract_bilibili_id(url: str) -> tuple[str, str]:
 
 
 def download_bilibili(request: WorkerRequest, cookie: CookieAttempt) -> dict[str, Any]:
-    normalized_url = normalize_bilibili_url(request.url, request.timeout_ms, cookie.header)
+    normalized_url = normalize_bilibili_url(request.url, request.timeout_ms, cookie.cookies)
     id_kind, video_id = extract_bilibili_id(normalized_url)
-    page_data = fetch_bilibili_page_data(normalized_url, request.timeout_ms, cookie.header)
-    metadata = build_bilibili_metadata(page_data, id_kind, video_id, request.timeout_ms, cookie.header)
+    page_data = fetch_bilibili_page_data(normalized_url, request.timeout_ms, cookie.cookies)
+    metadata = build_bilibili_metadata(page_data, id_kind, video_id, request.timeout_ms, cookie.cookies)
     video_path = request.work_dir / "video.mp4"
     if metadata.get("progressiveUrl"):
-        download_media_url(str(metadata["progressiveUrl"]), video_path, normalized_url, request.timeout_ms, cookie.header, validate_video=True)
+        download_media_url(str(metadata["progressiveUrl"]), video_path, normalized_url, request.timeout_ms, "bilibili", validate_video=True)
     else:
         video_url = str(metadata.get("videoUrl") or "")
         audio_url = str(metadata.get("audioUrl") or "")
         if not video_url or not audio_url:
             raise ViralWorkerError("B站下载地址缺少视频流或音频流。")
-        merge_bilibili_streams(video_url, audio_url, video_path, request, cookie, normalized_url)
-    cover_path = download_cover(metadata.get("coverUrl"), request.work_dir, normalized_url, request.timeout_ms, cookie.header)
+        merge_bilibili_streams(video_url, audio_url, video_path, request, normalized_url)
+    cover_path = download_cover(metadata.get("coverUrl"), request.work_dir, normalized_url, request.timeout_ms, "bilibili")
     source = {
         "platform": "bilibili",
         "url": request.url,
@@ -421,12 +625,10 @@ def download_bilibili(request: WorkerRequest, cookie: CookieAttempt) -> dict[str
     return media_result(video_path, source, "bilibili-internal", normalized_url, cookie.source, metadata.get("raw"))
 
 
-def fetch_bilibili_page_data(url: str, timeout_ms: int, cookie_header: str) -> dict[str, Any]:
-    headers = common_headers(url, cookie_header)
+def fetch_bilibili_page_data(url: str, timeout_ms: int, cookies: list[StoredCookie]) -> dict[str, Any]:
+    headers = common_headers(url)
     headers["Referer"] = "https://www.bilibili.com/"
-    with httpx.Client(follow_redirects=True, timeout=timeout_ms / 1000) as client:
-        response = client.get(url, headers=headers)
-        response.raise_for_status()
+    response, _ = get_platform_response(url, timeout_ms, "bilibili", cookies, headers)
     html = response.text
     return {
         "playinfo": extract_json_assignment(html, "window.__playinfo__"),
@@ -435,13 +637,13 @@ def fetch_bilibili_page_data(url: str, timeout_ms: int, cookie_header: str) -> d
     }
 
 
-def build_bilibili_metadata(page_data: dict[str, Any], id_kind: str, video_id: str, timeout_ms: int, cookie_header: str) -> dict[str, Any]:
+def build_bilibili_metadata(page_data: dict[str, Any], id_kind: str, video_id: str, timeout_ms: int, cookies: list[StoredCookie]) -> dict[str, Any]:
     initial = as_dict(page_data.get("initial"))
     playinfo = as_dict(page_data.get("playinfo"))
-    view = as_dict(initial.get("videoData")) or fetch_bilibili_view_api(id_kind, video_id, timeout_ms, cookie_header)
+    view = as_dict(initial.get("videoData")) or fetch_bilibili_view_api(id_kind, video_id, timeout_ms, cookies)
     cid = str(view.get("cid") or first([as_dict(item).get("cid") for item in as_list(view.get("pages")) if as_dict(item).get("cid")]) or "")
     if not playinfo and cid:
-        playinfo = fetch_bilibili_playurl_api(id_kind, video_id, cid, timeout_ms, cookie_header)
+        playinfo = fetch_bilibili_playurl_api(id_kind, video_id, cid, timeout_ms, cookies)
     play_data = as_dict(playinfo.get("data")) or playinfo
     progressive_url = ""
     durl = as_list(play_data.get("durl"))
@@ -467,20 +669,18 @@ def build_bilibili_metadata(page_data: dict[str, Any], id_kind: str, video_id: s
     }
 
 
-def fetch_bilibili_view_api(id_kind: str, video_id: str, timeout_ms: int, cookie_header: str) -> dict[str, Any]:
+def fetch_bilibili_view_api(id_kind: str, video_id: str, timeout_ms: int, cookies: list[StoredCookie]) -> dict[str, Any]:
     query = urlencode({id_kind: video_id})
     endpoint = f"https://api.bilibili.com/x/web-interface/view?{query}"
-    with httpx.Client(follow_redirects=True, timeout=timeout_ms / 1000) as client:
-        response = client.get(endpoint, headers=common_headers("https://www.bilibili.com/", cookie_header))
-        response.raise_for_status()
-        payload = response.json()
+    response, _ = get_platform_response(endpoint, timeout_ms, "bilibili", cookies, common_headers("https://www.bilibili.com/"))
+    payload = response.json()
     data = as_dict(payload.get("data"))
     if not data:
         raise ViralWorkerError(str(payload.get("message") or "B站公开详情接口没有返回视频数据。"))
     return data
 
 
-def fetch_bilibili_playurl_api(id_kind: str, video_id: str, cid: str, timeout_ms: int, cookie_header: str) -> dict[str, Any]:
+def fetch_bilibili_playurl_api(id_kind: str, video_id: str, cid: str, timeout_ms: int, cookies: list[StoredCookie]) -> dict[str, Any]:
     query = {
         id_kind: video_id,
         "cid": cid,
@@ -490,10 +690,8 @@ def fetch_bilibili_playurl_api(id_kind: str, video_id: str, cid: str, timeout_ms
         "platform": "html5",
     }
     endpoint = f"https://api.bilibili.com/x/player/playurl?{urlencode(query)}"
-    with httpx.Client(follow_redirects=True, timeout=timeout_ms / 1000) as client:
-        response = client.get(endpoint, headers=common_headers("https://www.bilibili.com/", cookie_header))
-        response.raise_for_status()
-        payload = response.json()
+    response, _ = get_platform_response(endpoint, timeout_ms, "bilibili", cookies, common_headers("https://www.bilibili.com/"))
+    payload = response.json()
     data = as_dict(payload.get("data"))
     if not data:
         raise ViralWorkerError(str(payload.get("message") or "B站公开播放接口没有返回下载地址。"))
@@ -510,11 +708,11 @@ def choose_bilibili_stream(streams: list[Any]) -> str:
     return str(best.get("baseUrl") or best.get("base_url") or first(best.get("backupUrl")) or first(best.get("backup_url")) or "")
 
 
-def merge_bilibili_streams(video_url: str, audio_url: str, output_path: Path, request: WorkerRequest, cookie: CookieAttempt, referer: str) -> None:
+def merge_bilibili_streams(video_url: str, audio_url: str, output_path: Path, request: WorkerRequest, referer: str) -> None:
     video_temp = request.work_dir / "bilibili-video.m4s"
     audio_temp = request.work_dir / "bilibili-audio.m4s"
-    download_media_url(video_url, video_temp, referer, request.timeout_ms, cookie.header)
-    download_media_url(audio_url, audio_temp, referer, request.timeout_ms, cookie.header)
+    download_media_url(video_url, video_temp, referer, request.timeout_ms, "bilibili")
+    download_media_url(audio_url, audio_temp, referer, request.timeout_ms, "bilibili")
     ffmpeg = resolve_ffmpeg()
     command = [
         ffmpeg,
@@ -536,25 +734,27 @@ def merge_bilibili_streams(video_url: str, audio_url: str, output_path: Path, re
         raise ViralWorkerError(f"B站音视频合并失败：{result.stderr[-800:]}")
 
 
-def normalize_kuaishou_url(url: str, timeout_ms: int, cookie_header: str = "") -> str:
+def normalize_kuaishou_url(url: str, timeout_ms: int, cookies: list[StoredCookie] | str = "") -> str:
     parsed = urlparse(url)
     if "v.kuaishou.com" in parsed.netloc or "gifshow.com" in parsed.netloc or "kwai.com" in parsed.netloc:
         try:
-            return resolve_url(url, timeout_ms, cookie_header)
+            return resolve_url(url, timeout_ms, cookies, "kuaishou")
+        except ViralWorkerError:
+            raise
         except Exception:
             return url
     return url
 
 
 def download_kuaishou(request: WorkerRequest, cookie: CookieAttempt) -> dict[str, Any]:
-    normalized_url = normalize_kuaishou_url(request.url, request.timeout_ms, cookie.header)
+    normalized_url = normalize_kuaishou_url(request.url, request.timeout_ms, cookie.cookies)
     metadata = sniff_public_media_with_playwright(request, cookie, normalized_url, "kuaishou")
     video_url = metadata.get("videoUrl") or ""
     if not video_url:
         raise ViralWorkerError("快手公开页面没有嗅探到 mp4/m3u8 视频资源。")
     video_path = request.work_dir / "video.mp4"
-    download_media_url(video_url, video_path, normalized_url, request.timeout_ms, cookie.header, validate_video=True)
-    cover_path = download_cover(metadata.get("coverUrl"), request.work_dir, normalized_url, request.timeout_ms, cookie.header)
+    download_media_url(video_url, video_path, normalized_url, request.timeout_ms, "kuaishou", validate_video=True)
+    cover_path = download_cover(metadata.get("coverUrl"), request.work_dir, normalized_url, request.timeout_ms, "kuaishou")
     source = {
         "platform": "kuaishou",
         "url": request.url,
@@ -587,15 +787,16 @@ def sniff_public_media_with_playwright(request: WorkerRequest, cookie: CookieAtt
                 locale="zh-CN",
                 extra_http_headers={"Accept-Language": "zh-CN,zh;q=0.9,en;q=0.8"},
             )
-            await add_playwright_cookies(context, cookie.header, url)
+            await add_playwright_cookies(context, cookie.cookies, url)
             page = await context.new_page()
+            await install_playwright_navigation_guard(page, platform)
 
             def on_response(response: Any) -> None:
                 headers = response.headers
                 content_type = headers.get("content-type", "")
                 response_url = response.url
                 media_urls.append(response_url)
-                if is_media_response(response_url, content_type):
+                if is_media_response(response_url, content_type, platform):
                     media_urls.append(response_url)
 
             page.on("response", on_response)
@@ -647,25 +848,66 @@ def sniff_public_media_with_playwright(request: WorkerRequest, cookie: CookieAtt
     return asyncio.run(run())
 
 
-async def add_playwright_cookies(context: Any, cookie_header: str, url: str) -> None:
-    if not cookie_header:
+async def install_playwright_navigation_guard(page: Any, platform: str) -> None:
+    async def guard_navigation(route: Any) -> None:
+        request = route.request
+        if request.is_navigation_request() and request.frame == page.main_frame:
+            try:
+                validate_platform_url(request.url, platform)
+            except ViralWorkerError:
+                await route.abort()
+                return
+        await route.continue_()
+
+    await page.route("**/*", guard_navigation)
+
+
+async def add_playwright_cookies(context: Any, stored_cookies: list[StoredCookie], url: str) -> None:
+    if not stored_cookies:
         return
-    parsed = urlparse(url)
-    cookies = []
-    for item in cookie_header.split(";"):
-        if "=" not in item:
+    cookies: list[dict[str, Any]] = []
+    for cookie in stored_cookies:
+        if not cookie_matches_url(cookie, url):
             continue
-        name, value = item.strip().split("=", 1)
-        if name:
-            cookies.append({"name": name, "value": value, "domain": parsed.hostname or "", "path": "/"})
+        payload: dict[str, Any] = {
+            "name": cookie.name,
+            "value": cookie.value,
+            "domain": cookie.domain,
+            "path": cookie.path,
+            "secure": cookie.secure,
+        }
+        if cookie.expires is not None:
+            payload["expires"] = cookie.expires
+        cookies.append(payload)
     if cookies:
         await context.add_cookies(cookies)
 
 
-def is_media_response(url: str, content_type: str) -> bool:
+def is_allowed_media_url(url: str, platform: str) -> bool:
+    try:
+        parsed = urlparse(url)
+        hostname = parsed.hostname or ""
+    except ValueError:
+        return False
+    if parsed.scheme.lower() != "https" or not hostname or parsed.username or parsed.password:
+        return False
+    if platform == "douyin" and re.fullmatch(r"v\d+-douyinvod\.com", hostname.lower().rstrip(".")):
+        return True
+    return any(hostname_matches(hostname, domain) for domain in PLATFORM_MEDIA_DOMAINS.get(platform, ()))
+
+
+def validate_media_url(url: str, platform: str) -> str:
+    if not is_allowed_media_url(url, platform):
+        raise ViralWorkerError("媒体下载地址不属于所选平台的受信域名。")
+    return url
+
+
+def is_media_response(url: str, content_type: str, platform: str = "") -> bool:
     lower_url = url.lower()
     lower_type = content_type.lower()
     if is_blocked_download_url(url):
+        return False
+    if platform and not is_allowed_media_url(url, platform):
         return False
     if "video/" in lower_type or "mpegurl" in lower_type:
         return True
@@ -711,7 +953,11 @@ def is_blocked_download_url(url: str) -> bool:
 
 
 def choose_sniffed_media_url(media_urls: list[str], platform: str, page_url: str) -> str:
-    candidates = [item for item in media_urls if looks_like_video_url(item) and not item.startswith("blob:")]
+    candidates = [
+        item
+        for item in media_urls
+        if looks_like_video_url(item) and not item.startswith("blob:") and is_allowed_media_url(item, platform)
+    ]
     if platform == "douyin":
         try:
             aweme_id = extract_douyin_id(page_url)
@@ -837,27 +1083,79 @@ def clean_title(value: str) -> str:
     return re.sub(r"[_\-\s]*(哔哩哔哩|bilibili|抖音|快手).*$", "", value, flags=re.I).strip()
 
 
-def download_media_url(url: str, output_path: Path, referer: str, timeout_ms: int, cookie_header: str, validate_video: bool = False) -> None:
+def write_limited_stream(output_path: Path, chunks: Any, max_bytes: int) -> None:
+    safe_unlink(output_path)
+    total = 0
+    try:
+        with output_path.open("wb") as out_file:
+            for chunk in chunks:
+                if not chunk:
+                    continue
+                total += len(chunk)
+                if total > max_bytes:
+                    raise ViralWorkerError(f"下载内容超过大小上限（{max_bytes} 字节）。")
+                out_file.write(chunk)
+    except Exception:
+        safe_unlink(output_path)
+        raise
+
+
+def resolve_media_url(url: str, referer: str, timeout_ms: int, platform: str) -> str:
+    current_url = validate_media_url(url, platform)
+    headers = common_headers(referer)
+    headers["Range"] = "bytes=0-0"
+    with httpx.Client(follow_redirects=False, timeout=timeout_ms / 1000) as client:
+        for _ in range(MAX_REDIRECTS + 1):
+            with client.stream("GET", current_url, headers=headers) as response:
+                if response.status_code in {301, 302, 303, 307, 308}:
+                    location = response.headers.get("location", "")
+                    if not location:
+                        raise ViralWorkerError("媒体地址返回了缺少目标地址的跳转。")
+                    current_url = validate_media_url(urljoin(current_url, location), platform)
+                    continue
+                response.raise_for_status()
+                return current_url
+    raise ViralWorkerError("媒体地址跳转次数超过上限。")
+
+
+def download_media_url(
+    url: str,
+    output_path: Path,
+    referer: str,
+    timeout_ms: int,
+    platform: str,
+    validate_video: bool = False,
+    max_bytes: int = MAX_MEDIA_DOWNLOAD_BYTES,
+) -> None:
     if not url:
         raise ViralWorkerError("下载地址为空。")
+    validate_media_url(url, platform)
     if validate_video and not looks_like_video_url(url):
         raise ViralWorkerError("下载地址不是可识别的视频资源。")
     if ".m3u8" in url.lower():
-        ffmpeg_download(url, output_path, referer, timeout_ms, cookie_header)
+        ffmpeg_download(url, output_path, referer, timeout_ms, platform, max_bytes)
         if validate_video:
             validate_downloaded_video(output_path)
         return
-    headers = common_headers(referer, cookie_header)
+    headers = common_headers(referer)
     headers["Range"] = "bytes=0-"
     safe_unlink(output_path)
     try:
-        with httpx.Client(follow_redirects=True, timeout=timeout_ms / 1000) as client:
-            with client.stream("GET", url, headers=headers) as response:
-                response.raise_for_status()
-                with output_path.open("wb") as out_file:
-                    for chunk in response.iter_bytes():
-                        if chunk:
-                            out_file.write(chunk)
+        current_url = url
+        with httpx.Client(follow_redirects=False, timeout=timeout_ms / 1000) as client:
+            for _ in range(MAX_REDIRECTS + 1):
+                with client.stream("GET", current_url, headers=headers) as response:
+                    if response.status_code in {301, 302, 303, 307, 308}:
+                        location = response.headers.get("location", "")
+                        if not location:
+                            raise ViralWorkerError("媒体地址返回了缺少目标地址的跳转。")
+                        current_url = validate_media_url(urljoin(current_url, location), platform)
+                        continue
+                    response.raise_for_status()
+                    write_limited_stream(output_path, response.iter_bytes(), max_bytes)
+                    break
+            else:
+                raise ViralWorkerError("媒体地址跳转次数超过上限。")
         if output_path.stat().st_size <= 0:
             raise ViralWorkerError("下载地址返回了空文件。")
         if validate_video:
@@ -867,19 +1165,27 @@ def download_media_url(url: str, output_path: Path, referer: str, timeout_ms: in
         raise
 
 
-def ffmpeg_download(url: str, output_path: Path, referer: str, timeout_ms: int, cookie_header: str) -> None:
+def ffmpeg_download(url: str, output_path: Path, referer: str, timeout_ms: int, platform: str, max_bytes: int) -> None:
     ffmpeg = resolve_ffmpeg()
+    resolved_url = resolve_media_url(url, referer, timeout_ms, platform)
     headers = f"User-Agent: {USER_AGENT}\r\nReferer: {referer}\r\n"
-    if cookie_header:
-        headers += f"Cookie: {cookie_header}\r\n"
-    command = [ffmpeg, "-y", "-headers", headers, "-i", url, "-c", "copy", str(output_path)]
-    result = subprocess.run(command, capture_output=True, text=True, timeout=max(30, timeout_ms // 1000))
-    if result.returncode != 0:
-        raise ViralWorkerError(f"m3u8 下载失败：{result.stderr[-800:]}")
-    validate_downloaded_video(output_path)
+    command = [ffmpeg, "-y", "-headers", headers, "-i", resolved_url, "-c", "copy", "-fs", str(max_bytes), str(output_path)]
+    safe_unlink(output_path)
+    try:
+        result = subprocess.run(command, capture_output=True, text=True, timeout=max(30, timeout_ms // 1000))
+        if result.returncode != 0:
+            raise ViralWorkerError(f"m3u8 下载失败：{result.stderr[-800:]}")
+        if not output_path.exists() or output_path.stat().st_size <= 0:
+            raise ViralWorkerError("m3u8 下载没有生成有效文件。")
+        if output_path.stat().st_size >= max_bytes:
+            raise ViralWorkerError(f"下载内容达到大小上限（{max_bytes} 字节）。")
+        validate_downloaded_video(output_path)
+    except Exception:
+        safe_unlink(output_path)
+        raise
 
 
-def download_cover(url: Any, work_dir: Path, referer: str, timeout_ms: int, cookie_header: str) -> str:
+def download_cover(url: Any, work_dir: Path, referer: str, timeout_ms: int, platform: str) -> str:
     cover_url = str(url or "")
     if not cover_url:
         return ""
@@ -889,7 +1195,15 @@ def download_cover(url: Any, work_dir: Path, referer: str, timeout_ms: int, cook
         suffix = parsed_suffix
     cover_path = work_dir / f"cover{suffix}"
     try:
-        download_media_url(cover_url, cover_path, referer, min(timeout_ms, 60000), cookie_header, validate_video=False)
+        download_media_url(
+            cover_url,
+            cover_path,
+            referer,
+            min(timeout_ms, 60000),
+            platform,
+            validate_video=False,
+            max_bytes=MAX_COVER_DOWNLOAD_BYTES,
+        )
         return str(cover_path)
     except Exception:
         return ""
