@@ -95,6 +95,38 @@ describe('viral runtime speech-to-text API', () => {
     expect(request.fields).toEqual([['model', 'TeleAI/TeleSpeechASR']]);
   });
 
+  it('rejects an oversized speech-to-text response before parsing it', async () => {
+    const dir = await mkdtemp(join(tmpdir(), 'storybound-viral-stt-response-limit-'));
+    const audioPath = join(dir, 'audio.wav');
+    await writeFile(audioPath, 'small audio fixture');
+    const originalFetch = globalThis.fetch;
+    globalThis.fetch = vi.fn(async () =>
+      new Response(JSON.stringify({ text: 'transcript' }), {
+        status: 200,
+        headers: {
+          'content-type': 'application/json',
+          'content-length': String(4 * 1024 * 1024 + 1),
+        },
+      })) as unknown as typeof fetch;
+    try {
+      const config = normalizeAppConfig({
+        ...defaultConfig,
+        speechToText: {
+          ...defaultConfig.speechToText,
+          apiKey: 'stt-key',
+          baseUrl: 'https://stt.example/v1',
+          model: 'whisper-1',
+        },
+      });
+      const providers = createViralRuntimeProviders(config, dir);
+
+      await expect(providers.transcribe(audioPath)).rejects.toThrow(/byte|large|limit|大小|上限/i);
+    } finally {
+      globalThis.fetch = originalFetch;
+      await rm(dir, { recursive: true, force: true });
+    }
+  });
+
   it('falls back to the main LLM when the viral vision profile is incomplete', async () => {
     const dir = await mkdtemp(join(tmpdir(), 'storybound-viral-vision-fallback-'));
     const framePath = join(dir, 'frame.jpg');
@@ -128,9 +160,8 @@ describe('viral runtime speech-to-text API', () => {
 
       expect(result.visualDescription).toBe('商品占据画面中心');
       expect(result.imagePrompt).toBe('中文生图提示词：商品特写，中心构图，高对比字幕');
-      expect(fetchMock).toHaveBeenCalledWith('https://llm.example/v1/chat/completions', expect.objectContaining({
-        headers: expect.objectContaining({ Authorization: 'Bearer llm-key' }),
-      }));
+      expect(fetchMock).toHaveBeenCalledWith('https://llm.example/v1/chat/completions', expect.any(Object));
+      expect(new Headers(fetchMock.mock.calls[0]?.[1]?.headers).get('authorization')).toBe('Bearer llm-key');
       const requestBody = JSON.parse(String(fetchMock.mock.calls[0]?.[1]?.body));
       expect(requestBody).toMatchObject({ model: 'vision-chat-model' });
       const userText = requestBody.messages[1].content.find((item: { type: string }) => item.type === 'text').text;

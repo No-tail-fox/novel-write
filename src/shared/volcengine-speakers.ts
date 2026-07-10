@@ -1,4 +1,6 @@
 import { createHash, createHmac } from 'node:crypto';
+import { fetchWithTimeout } from './http';
+import { readJsonBounded, readTextBounded, type NetworkFetch } from './network-policy';
 import type { VolcengineSpeaker, VolcengineSpeakerListRequest, VolcengineSpeakerListResult } from './types';
 
 type SpeakerListOptions = {
@@ -10,6 +12,7 @@ const endpoint = 'https://open.volcengineapi.com/?Action=ListSpeakers&Version=20
 const host = 'open.volcengineapi.com';
 const region = 'cn-beijing';
 const service = 'speech_saas_prod';
+const SPEAKER_LIST_RESPONSE_MAX_BYTES = 8 * 1024 * 1024;
 
 export async function listVolcengineSpeakers(
   request: VolcengineSpeakerListRequest,
@@ -47,8 +50,12 @@ export async function listVolcengineSpeakers(
   });
 
   try {
-    const response = await (options.fetchImpl ?? fetch)(endpoint, {
+    const response = await fetchWithTimeout(endpoint, {
       method: 'POST',
+      timeoutMs: 30_000,
+      timeoutLabel: 'Volcengine speaker list request',
+      maxBytes: SPEAKER_LIST_RESPONSE_MAX_BYTES,
+      fetchImpl: options.fetchImpl as NetworkFetch | undefined,
       headers: {
         'Content-Type': 'application/json; charset=UTF-8',
         Host: host,
@@ -62,13 +69,13 @@ export async function listVolcengineSpeakers(
       return buildResult({
         startedAt,
         status: 'fail',
-        detail: `火山音色列表接口错误 (${response.status}): ${await response.text()}`,
+        detail: `火山音色列表接口错误 (${response.status}): ${await readTextBounded(response, SPEAKER_LIST_RESPONSE_MAX_BYTES)}`,
         speakers: [],
         total: 0,
         requestId: null,
       });
     }
-    const data = await response.json();
+    const data = await readJsonBounded(response, SPEAKER_LIST_RESPONSE_MAX_BYTES);
     const result = parseListSpeakersResponse(data);
     return buildResult({
       startedAt,

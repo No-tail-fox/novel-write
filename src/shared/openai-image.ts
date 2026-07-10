@@ -1,3 +1,6 @@
+import { fetchWithTimeout } from './http';
+import { readTextBounded, type NetworkFetch } from './network-policy';
+
 export type OpenAiImageResolution = '1K' | '2K' | '4K';
 export type OpenAiImageQuality = 'low' | 'medium' | 'high';
 
@@ -31,6 +34,7 @@ export interface OpenAiImageProbeInput {
 
 const DEFAULT_OPENAI_IMAGE_BASE_URL = 'https://api.openai.com';
 const IMAGE_PROBE_PROMPT = 'Configuration smoke test: a simple geometric icon on a plain background, no text.';
+const IMAGE_PROBE_RESPONSE_MAX_BYTES = 64 * 1024 * 1024;
 
 export function normalizeOpenAiImageBaseUrl(value: string): string {
   const trimmed = value.replace(/\/+$/, '');
@@ -74,26 +78,25 @@ export async function testOpenAiCompatibleImageModel(input: OpenAiImageProbeInpu
   }
 
   try {
-    const response = await fetchWithTimeout(
-      input.fetchImpl ?? fetch,
-      endpoint,
-      {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          Authorization: `Bearer ${input.apiKey}`,
-        },
-        body: JSON.stringify(buildOpenAiImageGenerationBody({
-          model: input.model,
-          prompt: IMAGE_PROBE_PROMPT,
-          ratio: input.ratio,
-          resolution: input.resolution,
-        })),
+    const response = await fetchWithTimeout(endpoint, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${input.apiKey}`,
       },
-      input.timeoutMs ?? 90000,
-    );
+      body: JSON.stringify(buildOpenAiImageGenerationBody({
+        model: input.model,
+        prompt: IMAGE_PROBE_PROMPT,
+        ratio: input.ratio,
+        resolution: input.resolution,
+      })),
+      timeoutMs: input.timeoutMs ?? 90000,
+      timeoutLabel: 'Image model test',
+      maxBytes: IMAGE_PROBE_RESPONSE_MAX_BYTES,
+      fetchImpl: input.fetchImpl as NetworkFetch | undefined,
+    });
     const latencyMs = Date.now() - startedAt;
-    const bodyText = await response.text();
+    const bodyText = await readTextBounded(response, IMAGE_PROBE_RESPONSE_MAX_BYTES);
     if (!response.ok) {
       return {
         ...baseResult,
@@ -169,15 +172,5 @@ function resolveCustomRatioMapping(value: string | undefined, ratio: string): Re
     );
   } catch {
     return {};
-  }
-}
-
-async function fetchWithTimeout(fetchImpl: typeof fetch, url: string, init: RequestInit, timeoutMs: number): Promise<Response> {
-  const controller = new AbortController();
-  const timer = setTimeout(() => controller.abort(), timeoutMs);
-  try {
-    return await fetchImpl(url, { ...init, signal: controller.signal });
-  } finally {
-    clearTimeout(timer);
   }
 }

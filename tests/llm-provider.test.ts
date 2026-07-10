@@ -266,6 +266,34 @@ describe('OpenAI-compatible LLM JSON adapter', () => {
     await expectation;
   });
 
+  it('rejects an oversized provider response before parsing JSON', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async () =>
+        new Response(JSON.stringify({ choices: [{ message: { content: '{"ok":true}' } }] }), {
+          status: 200,
+          headers: {
+            'content-type': 'application/json',
+            'content-length': String(8 * 1024 * 1024 + 1),
+          },
+        }),
+      ),
+    );
+    const runJson = createOpenAiCompatibleJsonLlm({
+      ...defaultConfig.llm,
+      apiKey: 'llm-key',
+      baseUrl: 'https://llm.example',
+    });
+
+    await expect(
+      runJson({
+        step: 1,
+        name: 'bounded-response',
+        messages: [{ role: 'user', content: 'return json' }],
+      }),
+    ).rejects.toThrow(/byte|large|limit|大小|上限/i);
+  });
+
   it('retries transient upstream failures before parsing JSON content', async () => {
     let attempts = 0;
     vi.stubGlobal(

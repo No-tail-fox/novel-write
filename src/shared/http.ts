@@ -1,38 +1,45 @@
-import type { Dispatcher } from 'undici';
+import {
+  fetchWithNetworkPolicy,
+  NetworkPolicyError,
+  type NetworkFetch,
+  type NetworkPurpose,
+} from './network-policy';
 
 export interface FetchWithTimeoutOptions extends RequestInit {
   timeoutMs?: number;
   timeoutLabel?: string;
-  dispatcher?: Dispatcher;
+  maxBytes?: number;
+  maxRedirects?: number;
+  allowPrivateNetwork?: boolean;
+  purpose?: NetworkPurpose;
+  fetchImpl?: NetworkFetch;
 }
 
 export async function fetchWithTimeout(url: string | URL, options: FetchWithTimeoutOptions = {}): Promise<Response> {
-  const { timeoutMs = 120_000, timeoutLabel = 'Request', signal, dispatcher, ...init } = options;
-  const controller = new AbortController();
-  const timeout = setTimeout(() => controller.abort(new Error(`${timeoutLabel} timed out after ${timeoutMs}ms.`)), timeoutMs);
-  const abortFromParent = () => controller.abort(signal?.reason ?? new Error(`${timeoutLabel} aborted.`));
-
+  const {
+    timeoutMs = 120_000,
+    timeoutLabel = 'Request',
+    maxBytes,
+    maxRedirects,
+    allowPrivateNetwork = false,
+    purpose = 'provider-api',
+    fetchImpl,
+    ...init
+  } = options;
   try {
-    if (signal?.aborted) abortFromParent();
-    signal?.addEventListener('abort', abortFromParent, { once: true });
-    if (controller.signal.aborted) throw abortError(controller.signal, timeoutLabel);
-    const requestInit: RequestInit & { dispatcher?: Dispatcher } = { ...init, signal: controller.signal };
-    if (dispatcher) requestInit.dispatcher = dispatcher;
-    return await fetch(url, requestInit);
+    return await fetchWithNetworkPolicy(url, {
+      ...init,
+      purpose,
+      timeoutMs,
+      maxBytes,
+      maxRedirects,
+      allowPrivate: allowPrivateNetwork,
+      fetchImpl,
+    });
   } catch (error) {
-    if (controller.signal.aborted) {
-      throw abortError(controller.signal, timeoutLabel);
+    if (error instanceof NetworkPolicyError && error.code === 'NETWORK_TIMEOUT') {
+      throw new Error(`${timeoutLabel} timed out after ${timeoutMs}ms.`);
     }
     throw error;
-  } finally {
-    clearTimeout(timeout);
-    signal?.removeEventListener('abort', abortFromParent);
   }
-}
-
-function abortError(signal: AbortSignal, timeoutLabel: string): Error {
-  const reason = signal.reason;
-  if (reason instanceof Error) return reason;
-  if (typeof reason === 'string') return new Error(reason);
-  return new Error(`${timeoutLabel} aborted.`);
 }

@@ -1,8 +1,29 @@
 import { describe, expect, it, vi } from 'vitest';
 import { defaultConfig } from '@shared/config';
 import { configTargetStatus, normalizeAppConfig, testConfigTarget, validateConfigTarget } from '@shared/config-utils';
+import { testOpenAiCompatibleImageModel } from '@shared/openai-image';
 
 describe('config validation utilities', () => {
+  it('rejects an oversized image-provider probe response', async () => {
+    const result = await testOpenAiCompatibleImageModel({
+      baseUrl: 'https://images.example',
+      apiKey: 'image-key',
+      model: 'gpt-image-2',
+      ratio: '9:16',
+      resolution: '2K',
+      fetchImpl: async () => new Response(JSON.stringify({ data: [{ url: 'https://cdn.example/image.png' }] }), {
+        status: 200,
+        headers: {
+          'content-type': 'application/json',
+          'content-length': String(64 * 1024 * 1024 + 1),
+        },
+      }),
+    });
+
+    expect(result.status).toBe('fail');
+    expect(result.detail).toMatch(/byte|large|limit|大小|上限/i);
+  });
+
   it('validates Jianying draft paths through the injected filesystem check', () => {
     const config = {
       ...defaultConfig,

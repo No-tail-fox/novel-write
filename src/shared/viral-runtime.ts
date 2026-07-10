@@ -2,9 +2,9 @@ import { execFile } from 'node:child_process';
 import { mkdir, readFile, stat } from 'node:fs/promises';
 import { basename, extname, join } from 'node:path';
 import { promisify } from 'node:util';
-import { Agent } from 'undici';
 import { fetchWithTimeout as fetchWithRequestTimeout } from './http';
 import { createConfiguredJsonLlm, type ConfiguredJsonLlm, type LlmMessage, type LlmJsonResult } from './llm-provider';
+import { readJsonBounded, readTextBounded } from './network-policy';
 import { resolvePythonCommand } from './python-runtime';
 import {
   buildViralBreakdownPrompt,
@@ -23,13 +23,9 @@ const SILICONFLOW_STT_UPLOAD_LIMIT_BYTES = 50 * 1024 * 1024;
 const SILICONFLOW_STT_BASE_URL = 'https://api.siliconflow.cn/v1';
 const DEFAULT_VIRAL_KEY_FRAME_COUNT = 8;
 const VIRAL_FRAME_ANALYSIS_WIDTH = 768;
+const STT_RESPONSE_MAX_BYTES = 4 * 1024 * 1024;
+const VISION_RESPONSE_MAX_BYTES = 8 * 1024 * 1024;
 const VISION_FETCH_RETRY_DELAYS_MS = [250, 1000];
-const VISION_CONNECT_TIMEOUT_MS = 30_000;
-const VISION_FETCH_DISPATCHER = new Agent({
-  connect: {
-    timeout: VISION_CONNECT_TIMEOUT_MS,
-  },
-});
 
 export function createViralRuntimeProviders(config: AppConfig, _workDir: string): Omit<RunViralAnalysisOptions, 'workDir' | 'emit' | 'signal'> {
   const textLlm = createConfiguredJsonLlm(config.llm);
@@ -219,27 +215,26 @@ async function transcribeViralAudioWithOpenAiApi(audioPath: string, config: AppC
     form.append(key, value);
   }
 
-  const response = await fetchWithTimeout(
-    request.endpoint,
-    {
-      method: 'POST',
-      headers: {
-        Authorization: `Bearer ${request.apiKey}`,
-      },
-      body: form,
+  const response = await fetchWithRequestTimeout(request.endpoint, {
+    method: 'POST',
+    headers: {
+      Authorization: `Bearer ${request.apiKey}`,
     },
-    request.timeoutMs,
+    body: form,
+    timeoutMs: request.timeoutMs,
+    timeoutLabel: '语音转文字请求',
+    maxBytes: STT_RESPONSE_MAX_BYTES,
     signal,
-  );
+  });
   if (!response.ok) {
-    throw new Error(`HTTP ${response.status}: ${(await response.text()).slice(0, 600)}`);
+    throw new Error(`HTTP ${response.status}: ${(await readTextBounded(response, STT_RESPONSE_MAX_BYTES)).slice(0, 600)}`);
   }
 
   const contentType = response.headers.get('content-type') ?? '';
   const payload =
     contentType.includes('application/json') || request.responseFormat === 'json' || request.responseFormat === 'verbose_json'
-      ? await response.json()
-      : await response.text();
+      ? await readJsonBounded(response, STT_RESPONSE_MAX_BYTES)
+      : await readTextBounded(response, STT_RESPONSE_MAX_BYTES);
   return parseOpenAiTranscriptionResult(payload);
 }
 
@@ -348,20 +343,6 @@ function normalizeTranscriptWords(value: unknown): ViralTranscriptSegment['words
 function normalizeTimestamp(value: unknown): number {
   const parsed = Number(value);
   return Number.isFinite(parsed) && parsed >= 0 ? parsed : 0;
-}
-
-async function fetchWithTimeout(url: string, init: RequestInit, timeoutMs: number, signal?: AbortSignal): Promise<Response> {
-  if (signal?.aborted) throw new Error('语音转文字请求已取消。');
-  const controller = new AbortController();
-  const timeout = setTimeout(() => controller.abort(new Error(`语音转文字请求超过 ${Math.round(timeoutMs / 1000)} 秒。`)), timeoutMs);
-  const abort = () => controller.abort(signal?.reason);
-  signal?.addEventListener('abort', abort, { once: true });
-  try {
-    return await fetch(url, { ...init, signal: controller.signal });
-  } finally {
-    clearTimeout(timeout);
-    signal?.removeEventListener('abort', abort);
-  }
 }
 
 function audioMimeType(path: string): string {
@@ -570,8 +551,8 @@ async function runOpenAiCompatibleVision(config: LlmConfig, content: unknown[], 
       response_format: { type: 'json_object' },
     }),
   }, config, signal);
-  if (!response.ok) throw new Error(`Vision API error ${response.status}: ${(await response.text()).slice(0, 300)}`);
-  const body = (await response.json()) as { choices?: Array<{ message?: { content?: string | null } }> };
+  if (!response.ok) throw new Error(`Vision API error ${response.status}: ${(await readTextBounded(response, VISION_RESPONSE_MAX_BYTES)).slice(0, 300)}`);
+  const body = await readJsonBounded<{ choices?: Array<{ message?: { content?: string | null } }> }>(response, VISION_RESPONSE_MAX_BYTES);
   return body.choices?.[0]?.message?.content ?? '';
 }
 
@@ -583,8 +564,8 @@ async function fetchVisionWithRetries(endpoint: string, init: RequestInit, confi
         ...init,
         timeoutMs: config.timeoutMs ?? 120_000,
         timeoutLabel: `Viral frame analysis attempt ${attempt}/${maxAttempts}`,
+        maxBytes: VISION_RESPONSE_MAX_BYTES,
         signal,
-        dispatcher: VISION_FETCH_DISPATCHER,
       });
     } catch (error) {
       if (attempt === maxAttempts || !isRetryableVisionFetchError(error)) throw error;

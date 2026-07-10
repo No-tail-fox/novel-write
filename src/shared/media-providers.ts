@@ -4,6 +4,7 @@ import { createHash, createHmac, randomUUID } from 'node:crypto';
 import type { AppConfig, ImagePrompt, StoryboardScene, Task, VoiceLabGenerateInput, VoiceLabRecord } from './types';
 import type { SceneAsset } from './draft';
 import { fetchWithTimeout } from './http';
+import { readJsonBounded, readTextBounded } from './network-policy';
 import { buildOpenAiImageGenerationBody, normalizeOpenAiImageBaseUrl } from './openai-image';
 import { buildOpenAiImageEditFormData } from './openai-image-edit';
 import { isArkModelApiKey, normalizeVolcengineV3Speaker, VOLCENGINE_TTS_ARK_KEY_MESSAGE } from './volcengine-tts';
@@ -12,6 +13,7 @@ import { splitPodcastDialogue, type PodcastDialogueTurn } from './podcast-dialog
 
 type ImageGenerator = (scenes: StoryboardScene[], prompts: ImagePrompt[], task: Task, signal?: AbortSignal) => Promise<SceneAsset[]>;
 type NarrationSynthesizer = (scenes: StoryboardScene[], task: Task, signal?: AbortSignal) => Promise<SceneAsset[]>;
+const PROVIDER_RESPONSE_MAX_BYTES = 64 * 1024 * 1024;
 
 interface TtsTurn {
   scene: StoryboardScene;
@@ -287,7 +289,13 @@ async function pollJimengResult(input: {
       return Buffer.from(result.data.binary_data_base64[0], 'base64');
     }
     if (result.data.image_urls?.[0]) {
-      const response = await fetchWithTimeout(result.data.image_urls[0], { timeoutMs: 60_000, timeoutLabel: 'Jimeng image download', signal: input.signal });
+      const response = await fetchWithTimeout(result.data.image_urls[0], {
+        purpose: 'public-research',
+        timeoutMs: 60_000,
+        timeoutLabel: 'Jimeng image download',
+        maxBytes: PROVIDER_RESPONSE_MAX_BYTES,
+        signal: input.signal,
+      });
       if (!response.ok) throw new Error(`Failed to download Jimeng image (${response.status}).`);
       return Buffer.from(await response.arrayBuffer());
     }
@@ -369,9 +377,9 @@ async function generateOpenAiCompatibleImageSync(input: {
     })),
   });
   if (!response.ok) {
-    throw new Error(`Image provider API error (${response.status}): ${await response.text()}`);
+    throw new Error(`Image provider API error (${response.status}): ${await readTextBounded(response, PROVIDER_RESPONSE_MAX_BYTES)}`);
   }
-  return (await response.json()) as { data?: Array<{ b64_json?: string; url?: string }> };
+  return readJsonBounded<{ data?: Array<{ b64_json?: string; url?: string }> }>(response, PROVIDER_RESPONSE_MAX_BYTES);
 }
 
 async function generateOpenAiCompatibleImageEdit(input: {
@@ -403,9 +411,9 @@ async function generateOpenAiCompatibleImageEdit(input: {
     body: form,
   });
   if (!response.ok) {
-    throw new Error(`Image provider edit API error (${response.status}): ${await response.text()}`);
+    throw new Error(`Image provider edit API error (${response.status}): ${await readTextBounded(response, PROVIDER_RESPONSE_MAX_BYTES)}`);
   }
-  return (await response.json()) as { data?: Array<{ b64_json?: string; url?: string }> };
+  return readJsonBounded<{ data?: Array<{ b64_json?: string; url?: string }> }>(response, PROVIDER_RESPONSE_MAX_BYTES);
 }
 
 async function generateOpenAiCompatibleImageAsync(input: {
@@ -438,9 +446,9 @@ async function generateOpenAiCompatibleImageAsync(input: {
     })),
   });
   if (!response.ok) {
-    throw new Error(`Image provider async submit error (${response.status}): ${await response.text()}`);
+    throw new Error(`Image provider async submit error (${response.status}): ${await readTextBounded(response, PROVIDER_RESPONSE_MAX_BYTES)}`);
   }
-  const submitBody = (await response.json()) as OpenAiAsyncImageSubmitResponse;
+  const submitBody = await readJsonBounded<OpenAiAsyncImageSubmitResponse>(response, PROVIDER_RESPONSE_MAX_BYTES);
   const taskId = resolveOpenAiAsyncTaskId(submitBody);
   if (!taskId) {
     throw new Error('Image provider async submit response did not include a task id.');
@@ -484,9 +492,9 @@ async function pollOpenAiCompatibleImageTask(input: {
       },
     });
     if (!response.ok) {
-      throw new Error(`Image provider async poll error (${response.status}): ${await response.text()}`);
+      throw new Error(`Image provider async poll error (${response.status}): ${await readTextBounded(response, PROVIDER_RESPONSE_MAX_BYTES)}`);
     }
-    const body = (await response.json()) as OpenAiAsyncImagePollResponse;
+    const body = await readJsonBounded<OpenAiAsyncImagePollResponse>(response, PROVIDER_RESPONSE_MAX_BYTES);
     const data = body.data ?? body.result?.data ?? body.output;
     if (data?.length) {
       return { data };
@@ -552,13 +560,13 @@ async function synthesizeMiniMaxNarration(input: {
       }),
     });
     if (!response.ok) {
-      throw new Error(`MiniMax TTS API error (${response.status}): ${await response.text()}`);
+      throw new Error(`MiniMax TTS API error (${response.status}): ${await readTextBounded(response, PROVIDER_RESPONSE_MAX_BYTES)}`);
     }
-    const body = (await response.json()) as {
+    const body = await readJsonBounded<{
       data?: { audio?: string };
       audio_file?: string;
       base_resp?: { status_code?: number; status_msg?: string };
-    };
+    }>(response, PROVIDER_RESPONSE_MAX_BYTES);
     if (body.base_resp?.status_code && body.base_resp.status_code !== 0) {
       throw new Error(`MiniMax TTS API error: ${body.base_resp.status_msg ?? body.base_resp.status_code}`);
     }
@@ -627,9 +635,9 @@ async function synthesizeVolcengineNarration(input: {
       }),
     });
     if (!response.ok) {
-      throw new Error(`Volcengine TTS API error (${response.status}): ${await response.text()}`);
+      throw new Error(`Volcengine TTS API error (${response.status}): ${await readTextBounded(response, PROVIDER_RESPONSE_MAX_BYTES)}`);
     }
-    const body = (await response.json()) as { code?: number; message?: string; data?: string };
+    const body = await readJsonBounded<{ code?: number; message?: string; data?: string }>(response, PROVIDER_RESPONSE_MAX_BYTES);
     if (body.code !== 3000 || !body.data) {
       throw new Error(`Volcengine TTS API error: ${body.message ?? body.code ?? 'missing audio data'}`);
     }
@@ -691,7 +699,7 @@ async function synthesizeVolcengineV3Narration(input: {
       }),
     });
     if (!response.ok) {
-      throw new Error(`Volcengine TTS V3 API error (${response.status}): ${await response.text()}`);
+      throw new Error(`Volcengine TTS V3 API error (${response.status}): ${await readTextBounded(response, PROVIDER_RESPONSE_MAX_BYTES)}`);
     }
     const bytes = await decodeVolcengineV3Audio(response);
       const path = join(outputDir, audioFileName(scene.id, turn, 'mp3'));
@@ -704,7 +712,7 @@ async function synthesizeVolcengineV3Narration(input: {
 
 async function decodeVolcengineV3Audio(response: Response): Promise<Buffer> {
   if (!response.body) {
-    return parseVolcengineV3AudioLines(await response.text());
+    return parseVolcengineV3AudioLines(await readTextBounded(response, PROVIDER_RESPONSE_MAX_BYTES));
   }
   const reader = response.body.getReader();
   const decoder = new TextDecoder();
@@ -798,7 +806,13 @@ async function extractImageBytes(body: { data?: Array<{ b64_json?: string; url?:
   const image = body.data?.[0];
   if (image?.b64_json) return Buffer.from(image.b64_json, 'base64');
   if (image?.url) {
-    const response = await fetchWithTimeout(image.url, { timeoutMs: 60_000, timeoutLabel: 'Generated image download', signal });
+    const response = await fetchWithTimeout(image.url, {
+      purpose: 'public-research',
+      timeoutMs: 60_000,
+      timeoutLabel: 'Generated image download',
+      maxBytes: PROVIDER_RESPONSE_MAX_BYTES,
+      signal,
+    });
     if (!response.ok) throw new Error(`Failed to download generated image (${response.status}).`);
     return Buffer.from(await response.arrayBuffer());
   }
@@ -856,9 +870,9 @@ async function signedVolcenginePost<T>(input: {
     body,
   });
   if (!response.ok) {
-    throw new Error(`Volcengine ${input.action} API error (${response.status}): ${await response.text()}`);
+    throw new Error(`Volcengine ${input.action} API error (${response.status}): ${await readTextBounded(response, PROVIDER_RESPONSE_MAX_BYTES)}`);
   }
-  return (await response.json()) as T;
+  return readJsonBounded<T>(response, PROVIDER_RESPONSE_MAX_BYTES);
 }
 
 function generateVolcengineSignature(input: {

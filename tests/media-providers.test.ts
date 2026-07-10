@@ -210,6 +210,38 @@ describe('configured media providers', () => {
     }
   });
 
+  it('does not download a loopback image URL returned by a provider API', async () => {
+    const dir = await mkdtemp(join(tmpdir(), 'storybound-provider-image-private-download-'));
+    const requests: string[] = [];
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (url: string) => {
+        requests.push(url);
+        if (url.endsWith('/images/generations')) {
+          return new Response(JSON.stringify({ data: [{ url: 'http://127.0.0.1:9000/private-image.png' }] }), {
+            status: 200,
+            headers: { 'content-type': 'application/json' },
+          });
+        }
+        return new Response('PRIVATE IMAGE DATA', { status: 200, headers: { 'content-type': 'image/png' } });
+      }),
+    );
+
+    try {
+      const config: AppConfig = {
+        ...defaultConfig,
+        imageProvider: 'gpt_image',
+        gptImage: { ...defaultConfig.gptImage, apiKey: 'image-key', baseUrl: 'https://image.example', model: 'gpt-image-2' },
+      };
+      const generate = createConfiguredImageGenerator(config, dir);
+
+      await expect(generate([scene], [prompt], task)).rejects.toThrow(/network|loopback|target|blocked|禁止/i);
+      expect(requests).toEqual(['https://image.example/v1/images/generations']);
+    } finally {
+      await rm(dir, { recursive: true, force: true });
+    }
+  });
+
   it('times out OpenAI-compatible image requests instead of hanging forever', async () => {
     const dir = await mkdtemp(join(tmpdir(), 'storybound-provider-timeout-'));
     vi.stubGlobal(

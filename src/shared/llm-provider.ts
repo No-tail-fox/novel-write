@@ -1,5 +1,6 @@
 import type { LlmConfig, LlmModelTestResult, ProviderModel, ProviderModelListRequest, ProviderModelListResult } from './types';
 import { fetchWithTimeout } from './http';
+import { readJsonBounded, readTextBounded, type NetworkFetch } from './network-policy';
 
 export type LlmRole = 'system' | 'user' | 'assistant';
 
@@ -98,6 +99,8 @@ export class LlmJsonParseError extends Error {
   }
 }
 
+const LLM_RESPONSE_MAX_BYTES = 8 * 1024 * 1024;
+
 export function createConfiguredJsonLlm(config: LlmConfig): ConfiguredJsonLlm {
   return isAnthropicLlmConfig(config)
     ? { protocol: 'anthropic', run: createAnthropicMessagesJsonLlm(config) }
@@ -119,12 +122,12 @@ export function createOpenAiCompatibleJsonLlm(config: LlmConfig): OpenAiCompatib
     const endpoint = `${baseUrl}/chat/completions`;
     const response = await fetchLlmJsonWithRetries(endpoint, config, request);
     if (!response.ok) {
-      throw new Error(`LLM API error (${response.status}) at step ${request.step} ${request.name} via ${endpoint}: ${await response.text()}`);
+      throw new Error(`LLM API error (${response.status}) at step ${request.step} ${request.name} via ${endpoint}: ${await readTextBounded(response, LLM_RESPONSE_MAX_BYTES)}`);
     }
-    const body = (await response.json()) as {
+    const body = await readJsonBounded<{
       id?: string;
       choices?: Array<{ message?: { content?: string | null }; text?: string | null }>;
-    };
+    }>(response, LLM_RESPONSE_MAX_BYTES);
     const raw = body.choices?.[0]?.message?.content ?? body.choices?.[0]?.text ?? '';
     if (!raw.trim()) {
       throw new LlmJsonParseError(`LLM step ${request.step} ${request.name} returned empty content.`, raw);
@@ -150,12 +153,12 @@ export function createAnthropicMessagesJsonLlm(config: LlmConfig): AnthropicMess
     const endpoint = `${baseUrl}/messages`;
     const response = await fetchAnthropicJsonWithRetries(endpoint, config, request);
     if (!response.ok) {
-      throw new Error(`LLM API error (${response.status}) at step ${request.step} ${request.name} via ${endpoint}: ${await response.text()}`);
+      throw new Error(`LLM API error (${response.status}) at step ${request.step} ${request.name} via ${endpoint}: ${await readTextBounded(response, LLM_RESPONSE_MAX_BYTES)}`);
     }
-    const body = (await response.json()) as {
+    const body = await readJsonBounded<{
       id?: string;
       content?: AnthropicContentPart[];
-    };
+    }>(response, LLM_RESPONSE_MAX_BYTES);
     const toolResult = extractAnthropicToolUseResult<T>(body);
     if (toolResult) {
       return {
@@ -188,12 +191,12 @@ export function createOpenAiCompatibleTextLlm(config: LlmConfig): OpenAiCompatib
     const endpoint = `${baseUrl}/chat/completions`;
     const response = await fetchLlmTextWithRetries(endpoint, config, request);
     if (!response.ok) {
-      throw new Error(`LLM API error (${response.status}) at step ${request.step} ${request.name} via ${endpoint}: ${await response.text()}`);
+      throw new Error(`LLM API error (${response.status}) at step ${request.step} ${request.name} via ${endpoint}: ${await readTextBounded(response, LLM_RESPONSE_MAX_BYTES)}`);
     }
-    const body = (await response.json()) as {
+    const body = await readJsonBounded<{
       id?: string;
       choices?: Array<{ message?: { content?: string | null }; text?: string | null }>;
-    };
+    }>(response, LLM_RESPONSE_MAX_BYTES);
     const raw = body.choices?.[0]?.message?.content ?? body.choices?.[0]?.text ?? '';
     if (!raw.trim()) {
       throw new Error(`LLM step ${request.step} ${request.name} returned empty content.`);
@@ -215,12 +218,12 @@ export function createAnthropicMessagesTextLlm(config: LlmConfig): AnthropicMess
     const endpoint = `${baseUrl}/messages`;
     const response = await fetchAnthropicTextWithRetries(endpoint, config, request);
     if (!response.ok) {
-      throw new Error(`LLM API error (${response.status}) at step ${request.step} ${request.name} via ${endpoint}: ${await response.text()}`);
+      throw new Error(`LLM API error (${response.status}) at step ${request.step} ${request.name} via ${endpoint}: ${await readTextBounded(response, LLM_RESPONSE_MAX_BYTES)}`);
     }
-    const body = (await response.json()) as {
+    const body = await readJsonBounded<{
       id?: string;
       content?: AnthropicContentPart[];
-    };
+    }>(response, LLM_RESPONSE_MAX_BYTES);
     const raw = extractAnthropicTextContent(body);
     if (!raw.trim()) {
       throw new Error(`LLM step ${request.step} ${request.name} returned empty content.`);
@@ -240,6 +243,7 @@ async function fetchLlmJsonWithRetries(endpoint: string, config: LlmConfig, requ
       method: 'POST',
       timeoutMs: config.timeoutMs ?? 120_000,
       timeoutLabel: `LLM step ${request.step} ${request.name}`,
+      maxBytes: LLM_RESPONSE_MAX_BYTES,
       signal: request.signal,
       headers: {
         'Content-Type': 'application/json',
@@ -262,6 +266,7 @@ async function fetchAnthropicJsonWithRetries(endpoint: string, config: LlmConfig
       method: 'POST',
       timeoutMs: config.timeoutMs ?? 120_000,
       timeoutLabel: `LLM step ${request.step} ${request.name}`,
+      maxBytes: LLM_RESPONSE_MAX_BYTES,
       signal: request.signal,
       headers: {
         'Content-Type': 'application/json',
@@ -287,6 +292,7 @@ async function fetchLlmTextWithRetries(endpoint: string, config: LlmConfig, requ
         method: 'POST',
         timeoutMs: request.timeoutMs ?? config.timeoutMs ?? 120_000,
         timeoutLabel: `LLM step ${request.step} ${request.name}`,
+        maxBytes: LLM_RESPONSE_MAX_BYTES,
         signal: request.signal,
         headers: {
           'Content-Type': 'application/json',
@@ -318,6 +324,7 @@ async function fetchAnthropicTextWithRetries(endpoint: string, config: LlmConfig
         method: 'POST',
         timeoutMs: request.timeoutMs ?? config.timeoutMs ?? 120_000,
         timeoutLabel: `LLM step ${request.step} ${request.name}`,
+        maxBytes: LLM_RESPONSE_MAX_BYTES,
         signal: request.signal,
         headers: {
           'Content-Type': 'application/json',
@@ -516,7 +523,7 @@ export async function testOpenAiCompatibleLlm(config: LlmConfig, fetchImpl: type
       15000,
     );
     const latencyMs = Date.now() - startedAt;
-    const bodyText = await response.text();
+    const bodyText = await readTextBounded(response, LLM_RESPONSE_MAX_BYTES);
     if (!response.ok) {
       return {
         ...baseResult,
@@ -602,7 +609,7 @@ export async function testAnthropicMessagesLlm(config: LlmConfig, fetchImpl: typ
       15000,
     );
     const latencyMs = Date.now() - startedAt;
-    const bodyText = await response.text();
+    const bodyText = await readTextBounded(response, LLM_RESPONSE_MAX_BYTES);
     if (!response.ok) {
       return {
         ...baseResult,
@@ -671,7 +678,7 @@ export async function listOpenAiCompatibleModels(
       15000,
     );
     const latencyMs = Date.now() - startedAt;
-    const bodyText = await response.text();
+    const bodyText = await readTextBounded(response, LLM_RESPONSE_MAX_BYTES);
     if (!response.ok) {
       return {
         ...baseResult,
@@ -764,7 +771,7 @@ export async function listAnthropicModels(
       15000,
     );
     const latencyMs = Date.now() - startedAt;
-    const bodyText = await response.text();
+    const bodyText = await readTextBounded(response, LLM_RESPONSE_MAX_BYTES);
     if (!response.ok) {
       return {
         ...baseResult,
@@ -1054,19 +1061,11 @@ function formatRawPreview(raw: string): string {
 }
 
 async function fetchWithInjectedTimeout(fetchImpl: typeof fetch, url: string, init: RequestInit, timeoutMs: number): Promise<Response> {
-  const controller = new AbortController();
-  const timer = setTimeout(() => controller.abort(new Error(`Request timed out after ${timeoutMs}ms.`)), timeoutMs);
-  try {
-    return await fetchImpl(url, { ...init, signal: controller.signal });
-  } catch (error) {
-    if (controller.signal.aborted) {
-      const reason = controller.signal.reason;
-      if (reason instanceof Error) throw reason;
-      if (typeof reason === 'string') throw new Error(reason);
-      throw new Error('Request aborted.');
-    }
-    throw error;
-  } finally {
-    clearTimeout(timer);
-  }
+  return fetchWithTimeout(url, {
+    ...init,
+    timeoutMs,
+    timeoutLabel: 'Request',
+    maxBytes: LLM_RESPONSE_MAX_BYTES,
+    fetchImpl: fetchImpl as NetworkFetch,
+  });
 }

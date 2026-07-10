@@ -541,6 +541,82 @@ describe('AI source research', () => {
     expect(context.sections[0].content).not.toContain('ignored()');
   });
 
+  it('does not request a private article URL returned by a public search page', async () => {
+    const fetched: string[] = [];
+    const sections = await searchWebSources('private result', async (url) => {
+      fetched.push(String(url));
+      if (String(url).includes('bing.com/search')) {
+        return new Response(
+          '<?xml version="1.0"?><rss><channel><item><title>Unsafe result</title><link>http://127.0.0.1:9000/admin</link><description>Public snippet.</description></item></channel></rss>',
+          { status: 200, headers: { 'Content-Type': 'application/rss+xml' } },
+        );
+      }
+      if (String(url).includes('sogou.com/web')) {
+        return new Response('<html></html>', { status: 200, headers: { 'Content-Type': 'text/html' } });
+      }
+      return new Response('PRIVATE ADMIN DATA', { status: 200, headers: { 'Content-Type': 'text/plain' } });
+    });
+
+    expect(fetched.some((url) => url.startsWith('http://127.0.0.1'))).toBe(false);
+    expect(sections[0]).toMatchObject({ title: 'Unsafe result', content: 'Public snippet.' });
+  });
+
+  it('filters IMA document headers before issuing a signed download request', async () => {
+    const capturedDocumentHeaders: Headers[] = [];
+    const researcher = createAiSourceResearcher(
+      {
+        ...defaultConfig,
+        ima: { clientId: 'ima-client', apiKey: 'ima-key', kbId: 'kb-1', kbName: '' },
+      },
+      async (url, init) => {
+        const target = String(url);
+        if (target.endsWith('/openapi/wiki/v1/search_knowledge')) {
+          return new Response(JSON.stringify({ code: 0, data: { list: [{ title: 'IMA doc', media_id: 'media-1' }] } }), {
+            status: 200,
+            headers: { 'Content-Type': 'application/json' },
+          });
+        }
+        if (target.endsWith('/openapi/wiki/v1/get_media_info')) {
+          return new Response(
+            JSON.stringify({
+              code: 0,
+              data: {
+                url_info: {
+                  url: 'https://documents.example.test/doc.txt',
+                  headers: {
+                    Accept: 'text/plain',
+                    Authorization: 'Bearer signed-document',
+                    Cookie: 'ima-session=secret',
+                    Host: 'internal.service',
+                    'Proxy-Authorization': 'Basic secret',
+                    'X-Ima-Signature': 'signature',
+                  },
+                },
+              },
+            }),
+            { status: 200, headers: { 'Content-Type': 'application/json' } },
+          );
+        }
+        if (target === 'https://documents.example.test/doc.txt') {
+          capturedDocumentHeaders.push(new Headers(init?.headers));
+          return new Response('IMA document body', { status: 200, headers: { 'Content-Type': 'text/plain' } });
+        }
+        throw new Error(`Unexpected request: ${target}`);
+      },
+    );
+
+    const context = await researcher(makeTask({ aiSources: ['ima'], aiKeyword: 'IMA topic' }));
+    const documentHeaders = capturedDocumentHeaders[0];
+
+    expect(context.sections[0]).toMatchObject({ source: 'ima', title: 'IMA doc', content: 'IMA document body' });
+    expect(documentHeaders?.get('accept')).toBe('text/plain');
+    expect(documentHeaders?.get('authorization')).toBe('Bearer signed-document');
+    expect(documentHeaders?.get('x-ima-signature')).toBe('signature');
+    expect(documentHeaders?.get('cookie')).toBeNull();
+    expect(documentHeaders?.get('host')).toBeNull();
+    expect(documentHeaders?.get('proxy-authorization')).toBeNull();
+  });
+
   it('uses user-selected web sources without searching again during task execution', async () => {
     let called = false;
     const researcher = createAiSourceResearcher(defaultConfig, async () => {

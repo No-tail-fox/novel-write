@@ -80,4 +80,26 @@ describe('volcengine speaker list', () => {
     expect(result.speakers).toEqual([]);
     expect(result.detail).toContain('AccessKey ID');
   });
+
+  it('rejects an oversized speaker-list response', async () => {
+    const result = await listVolcengineSpeakers(
+      {
+        accessKeyId: 'ak-test',
+        secretAccessKey: 'sk-test',
+        resourceId: 'seed-tts-2.0',
+      },
+      {
+        fetchImpl: async () => new Response(JSON.stringify({ Result: { Total: 1, Speakers: [{ VoiceType: 'voice-1' }] } }), {
+          status: 200,
+          headers: {
+            'content-type': 'application/json',
+            'content-length': String(8 * 1024 * 1024 + 1),
+          },
+        }),
+      },
+    );
+
+    expect(result.status).toBe('fail');
+    expect(result.detail).toMatch(/byte|large|limit|大小|上限/i);
+  });
 });

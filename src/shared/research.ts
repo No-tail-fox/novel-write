@@ -1,5 +1,6 @@
 import type { ConfiguredTextLlm } from './llm-provider';
 import { targetWordCountRange } from './content-metrics';
+import { fetchWithNetworkPolicy, readTextBounded, type NetworkPurpose } from './network-policy';
 import type { AiSourceContext, AiSourceSection, AppConfig, ImaConfig, ResearchCopyComposeInput, ResearchCopyComposeResult, Task } from './types';
 
 type FetchLike = (url: string, init?: RequestInit) => Promise<Response>;
@@ -30,6 +31,10 @@ const STORYBOUND_AI_CREATION_TEMPERATURE = 0.8;
 const STORYBOUND_AI_CREATION_MAX_RETRIES = 2;
 const STORYBOUND_REFERENCE_TEXT_LIMIT = 3000;
 const STORYBOUND_SEARCH_USER_AGENT = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36';
+const SEARCH_PAGE_MAX_BYTES = 2 * 1024 * 1024;
+const ARTICLE_PAGE_MAX_BYTES = 4 * 1024 * 1024;
+const IMA_API_MAX_BYTES = 2 * 1024 * 1024;
+const IMA_DOCUMENT_MAX_BYTES = 8 * 1024 * 1024;
 
 const storyboundTrackMap: Record<string, StoryboundTrackInfo> = {
   'character-story': { trackName: '人物故事', trackTag: '纪实人物' },
@@ -257,12 +262,16 @@ async function searchBingHtml(query: string, fetchImpl: FetchLike): Promise<AiSo
   let lastError: unknown = null;
   for (const url of urls) {
     try {
-      const response = await fetchWithTimeout(fetchImpl, url, 8000, 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*');
+      const response = await fetchBounded(fetchImpl, url, {
+        timeoutMs: 8000,
+        maxBytes: SEARCH_PAGE_MAX_BYTES,
+        accept: 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*',
+      });
       if (!response.ok) {
         lastError = new Error(`Bing returned ${response.status}`);
         continue;
       }
-      const html = await response.text();
+      const html = await readTextBounded(response, SEARCH_PAGE_MAX_BYTES);
       const items = /<item\b/i.test(html) ? extractRssItems(html) : extractBingItems(html);
       if (items.length > 0) return items.slice(0, 15).map((item) => ({ source: 'web', ...item }));
     } catch (error) {
@@ -275,11 +284,15 @@ async function searchBingHtml(query: string, fetchImpl: FetchLike): Promise<AiSo
 
 async function searchSogouHtml(query: string, fetchImpl: FetchLike): Promise<AiSourceSection[]> {
   const url = `https://www.sogou.com/web?query=${encodeURIComponent(query)}`;
-  const response = await fetchWithTimeout(fetchImpl, url, 8000, 'text/html,application/xhtml+xml,*/*');
+  const response = await fetchBounded(fetchImpl, url, {
+    timeoutMs: 8000,
+    maxBytes: SEARCH_PAGE_MAX_BYTES,
+    accept: 'text/html,application/xhtml+xml,*/*',
+  });
   if (!response.ok) {
     throw new Error(`Sogou returned ${response.status}`);
   }
-  const html = await response.text();
+  const html = await readTextBounded(response, SEARCH_PAGE_MAX_BYTES);
   const items = extractSogouItems(html).slice(0, 10);
   const resolvedItems = await Promise.all(items.map(async (item) => ({
     ...item,
@@ -348,9 +361,15 @@ async function expandImaEntry(entry: Record<string, unknown>, index: number, con
   const url = urlInfo ? firstString(urlInfo, ['url']) : firstString(mediaData, ['url', 'doc_url']);
   if (url) {
     const headers = urlInfo ? objectStringMap(urlInfo, 'headers') : undefined;
-    const response = await fetchWithTimeout(fetchImpl, url, 20_000, 'text/html,application/xhtml+xml,text/plain,*/*', headers).catch(() => null);
+    const response = await fetchBounded(fetchImpl, url, {
+      timeoutMs: 20_000,
+      maxBytes: IMA_DOCUMENT_MAX_BYTES,
+      accept: 'text/html,application/xhtml+xml,text/plain,*/*',
+      extraHeaders: headers,
+      purpose: 'ima-document',
+    }).catch(() => null);
     if (response?.ok) {
-      const body = await response.text();
+      const body = await readTextBounded(response, IMA_DOCUMENT_MAX_BYTES);
       const contentType = response.headers.get('content-type') ?? '';
       const content = contentType.includes('text/plain') ? body : extractReadableText(body);
       return { source: 'ima', title, url, content: compactText(content).slice(0, 50_000) };
@@ -371,12 +390,20 @@ async function expandImaEntry(entry: Record<string, unknown>, index: number, con
 }
 
 async function requestImaApi(path: string, body: Record<string, unknown>, config: ImaConfig, fetchImpl: FetchLike, timeoutMs: number): Promise<unknown> {
-  const response = await fetchWithTimeout(fetchImpl, `https://ima.qq.com/${path}`, timeoutMs, 'application/json,*/*', {
-    'Content-Type': 'application/json',
-    'ima-openapi-clientid': config.clientId,
-    'ima-openapi-apikey': config.apiKey,
-  }, JSON.stringify(body), 'POST');
-  const text = await response.text();
+  const response = await fetchBounded(fetchImpl, `https://ima.qq.com/${path}`, {
+    timeoutMs,
+    maxBytes: IMA_API_MAX_BYTES,
+    accept: 'application/json,*/*',
+    extraHeaders: {
+      'Content-Type': 'application/json',
+      'ima-openapi-clientid': config.clientId,
+      'ima-openapi-apikey': config.apiKey,
+    },
+    body: JSON.stringify(body),
+    method: 'POST',
+    purpose: 'ima-api',
+  });
+  const text = await readTextBounded(response, IMA_API_MAX_BYTES);
   if (!response.ok) {
     throw new Error(`IMA API ${path} returned ${response.status}: ${text.slice(0, 300)}`);
   }
@@ -444,41 +471,46 @@ function stripHtmlToText(input: string): string {
 }
 
 async function fetchPageText(url: string, fetchImpl: FetchLike): Promise<string> {
-  const response = await fetchWithTimeout(fetchImpl, url, 8000, 'text/html,application/xhtml+xml,text/plain,*/*');
+  const response = await fetchBounded(fetchImpl, url, {
+    timeoutMs: 8000,
+    maxBytes: ARTICLE_PAGE_MAX_BYTES,
+    accept: 'text/html,application/xhtml+xml,text/plain,*/*',
+  });
   if (!response.ok) return '';
   const contentType = response.headers.get('content-type') ?? '';
   if (!/text\/html|application\/xhtml\+xml|text\/plain/i.test(contentType)) return '';
-  const body = await response.text();
+  const body = await readTextBounded(response, ARTICLE_PAGE_MAX_BYTES);
   const text = contentType.includes('text/plain') ? body : extractReadableText(body);
   return compactText(text).slice(0, STORYBOUND_REFERENCE_TEXT_LIMIT);
 }
 
-async function fetchWithTimeout(
+async function fetchBounded(
   fetchImpl: FetchLike,
   url: string,
-  timeoutMs: number,
-  accept: string,
-  extraHeaders: Record<string, string> = {},
-  body?: BodyInit,
-  method = 'GET',
+  options: {
+    timeoutMs: number;
+    maxBytes: number;
+    accept: string;
+    extraHeaders?: Record<string, string>;
+    body?: BodyInit;
+    method?: string;
+    purpose?: NetworkPurpose;
+  },
 ): Promise<Response> {
-  const controller = new AbortController();
-  const timer = setTimeout(() => controller.abort(), timeoutMs);
-  try {
-    return await fetchImpl(url, {
-      method,
-      signal: controller.signal,
-      headers: {
-        Accept: accept,
-        'Accept-Language': 'zh-CN,zh;q=0.9,en;q=0.8',
-        'User-Agent': STORYBOUND_SEARCH_USER_AGENT,
-        ...extraHeaders,
-      },
-      body,
-    });
-  } finally {
-    clearTimeout(timer);
-  }
+  return fetchWithNetworkPolicy(url, {
+    purpose: options.purpose ?? 'public-research',
+    fetchImpl,
+    timeoutMs: options.timeoutMs,
+    maxBytes: options.maxBytes,
+    method: options.method ?? 'GET',
+    headers: {
+      Accept: options.accept,
+      'Accept-Language': 'zh-CN,zh;q=0.9,en;q=0.8',
+      'User-Agent': STORYBOUND_SEARCH_USER_AGENT,
+      ...options.extraHeaders,
+    },
+    body: options.body,
+  });
 }
 
 function extractRssItems(xml: string): Array<Omit<AiSourceSection, 'source'>> {
@@ -528,10 +560,14 @@ function extractSogouItems(html: string): SearchResultItem[] {
 
 async function resolveSogouResultUrl(url: string, fetchImpl: FetchLike): Promise<string> {
   if (!/https?:\/\/(?:www\.)?sogou\.com\/link\?url=/i.test(url)) return url;
-  const response = await fetchWithTimeout(fetchImpl, url, 8000, 'text/html,application/xhtml+xml,*/*');
+  const response = await fetchBounded(fetchImpl, url, {
+    timeoutMs: 8000,
+    maxBytes: SEARCH_PAGE_MAX_BYTES,
+    accept: 'text/html,application/xhtml+xml,*/*',
+  });
   const finalUrl = response.url || '';
   if (finalUrl && !/sogou\.com/i.test(new URL(finalUrl).hostname)) return finalUrl;
-  const html = await response.text().catch(() => '');
+  const html = await readTextBounded(response, SEARCH_PAGE_MAX_BYTES).catch(() => '');
   return extractRedirectUrl(html, url) || decodeSogouUrlParam(url) || url;
 }
 
