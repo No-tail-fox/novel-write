@@ -46,10 +46,19 @@ let configService: ConfigService | null = null;
 interface RunningTaskRun {
   controller: AbortController;
   restartAfterAbort: boolean;
+  completion: Promise<void>;
+}
+
+interface RunningViralAnalysisRun {
+  controller: AbortController;
+  completion: Promise<void>;
 }
 
 const runningTasks = new Map<string, RunningTaskRun>();
-const runningViralAnalyses = new Map<string, AbortController>();
+const runningViralAnalyses = new Map<string, RunningViralAnalysisRun>();
+let isShuttingDown = false;
+let shutdownComplete = false;
+let shutdownPromise: Promise<void> | null = null;
 const trustedHandle = createTrustedIpcRegistrar({
   register: (channel, handler) => ipcMain.handle(channel, handler),
   getWindow: () => mainWindow,
@@ -245,18 +254,22 @@ async function buildRunOptions(database: FileDatabase, task: Task, controller: A
 }
 
 function startTaskRun(database: FileDatabase, task: Task): boolean {
-  if (runningTasks.has(task.id)) return false;
+  if (isShuttingDown || runningTasks.has(task.id)) return false;
   const controller = new AbortController();
-  const run: RunningTaskRun = { controller, restartAfterAbort: false };
+  const run: RunningTaskRun = {
+    controller,
+    restartAfterAbort: false,
+    completion: Promise.resolve(),
+  };
   runningTasks.set(task.id, run);
-  void (async () => {
+  run.completion = (async () => {
     try {
       await runTask(database, { ...task, status: 'pending', errorMessage: '' }, await buildRunOptions(database, task, controller));
     } catch (error) {
       console.error('Background task failed', error);
     } finally {
       const currentRun = runningTasks.get(task.id);
-      const shouldRestart = currentRun === run && run.restartAfterAbort;
+      const shouldRestart = !isShuttingDown && currentRun === run && run.restartAfterAbort;
       if (currentRun === run) {
         runningTasks.delete(task.id);
       }
@@ -267,13 +280,17 @@ function startTaskRun(database: FileDatabase, task: Task): boolean {
           return;
         }
       }
-      await sendTaskState(database);
+      if (!isShuttingDown) await sendTaskState(database);
     }
   })();
+  void run.completion.catch((error) => {
+    console.error('Background task cleanup failed', error);
+  });
   return true;
 }
 
 async function resumeTaskRun(database: FileDatabase, task: Task): Promise<void> {
+  if (isShuttingDown) return;
   const existingRun = runningTasks.get(task.id);
   if (existingRun) {
     existingRun.restartAfterAbort = true;
@@ -291,10 +308,14 @@ async function resumeTaskRun(database: FileDatabase, task: Task): Promise<void> 
 }
 
 function startViralAnalysisRun(database: FileDatabase, record: ViralAnalysisRecord): boolean {
-  if (runningViralAnalyses.has(record.id)) return false;
+  if (isShuttingDown || runningViralAnalyses.has(record.id)) return false;
   const controller = new AbortController();
-  runningViralAnalyses.set(record.id, controller);
-  void (async () => {
+  const run: RunningViralAnalysisRun = {
+    controller,
+    completion: Promise.resolve(),
+  };
+  runningViralAnalyses.set(record.id, run);
+  run.completion = (async () => {
     const startedAt = new Date().toISOString();
     try {
       const runtimeConfig = await (await getConfigService()).getRuntimeConfig();
@@ -354,15 +375,26 @@ function startViralAnalysisRun(database: FileDatabase, record: ViralAnalysisReco
         lastHeartbeatAt: new Date().toISOString(),
       });
     } finally {
-      runningViralAnalyses.delete(record.id);
-      await sendTaskState(database);
+      if (runningViralAnalyses.get(record.id) === run) {
+        runningViralAnalyses.delete(record.id);
+      }
+      if (!isShuttingDown) await sendTaskState(database);
     }
   })();
+  void run.completion.catch((error) => {
+    console.error('Background viral analysis cleanup failed', error);
+  });
   return true;
 }
 
 async function resumeViralAnalysisRun(database: FileDatabase, record: ViralAnalysisRecord): Promise<void> {
-  runningViralAnalyses.get(record.id)?.abort('用户重试');
+  if (isShuttingDown) return;
+  const existingRun = runningViralAnalyses.get(record.id);
+  if (existingRun) {
+    if (!existingRun.controller.signal.aborted) existingRun.controller.abort('用户重试');
+    await existingRun.completion.catch(() => undefined);
+  }
+  if (isShuttingDown) return;
   await database.updateViralAnalysis(record.id, {
     status: 'pending',
     currentStage: 'queued',
@@ -602,7 +634,10 @@ trustedHandle('viral:update-status', async (_event, input: { id: string; status:
     return getPublicState();
   }
   if (input.status === 'paused' || input.status === 'cancelled') {
-    runningViralAnalyses.get(input.id)?.abort(input.status === 'cancelled' ? '用户取消' : '用户暂停');
+    const run = runningViralAnalyses.get(input.id);
+    if (run && !run.controller.signal.aborted) {
+      run.controller.abort(input.status === 'cancelled' ? '用户取消' : '用户暂停');
+    }
     await database.updateViralAnalysis(input.id, {
       status: input.status,
       errorMessage: input.status === 'cancelled' ? '用户取消' : record.errorMessage,
@@ -1087,6 +1122,31 @@ async function checkStoryboundSidecarDependencies(): Promise<{ status: 'pass' | 
   }
 }
 
+async function shutdownApplication(): Promise<void> {
+  isShuttingDown = true;
+  const completions: Promise<void>[] = [];
+
+  for (const run of runningTasks.values()) {
+    run.restartAfterAbort = false;
+    if (!run.controller.signal.aborted) run.controller.abort('应用退出');
+    completions.push(run.completion);
+  }
+  for (const run of runningViralAnalyses.values()) {
+    if (!run.controller.signal.aborted) run.controller.abort('应用退出');
+    completions.push(run.completion);
+  }
+
+  await Promise.allSettled(completions);
+  const database = db;
+  if (database) {
+    await database.close();
+    if (db === database) {
+      db = null;
+      configService = null;
+    }
+  }
+}
+
 app.whenReady().then(() => {
   setDefaultPythonRuntimeAppRoot(app.getAppPath());
   return createWindow();
@@ -1098,9 +1158,15 @@ app.on('window-all-closed', () => {
   }
 });
 
-app.on('before-quit', async () => {
-  if (db) {
-    await db.close();
-    db = null;
-  }
+app.on('before-quit', (event) => {
+  if (shutdownComplete) return;
+  event.preventDefault();
+  shutdownPromise ??= shutdownApplication()
+    .catch((error) => {
+      console.error('Application shutdown failed', error);
+    })
+    .finally(() => {
+      shutdownComplete = true;
+      app.quit();
+    });
 });

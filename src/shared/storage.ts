@@ -1,5 +1,5 @@
-import { mkdir, readFile, rename, writeFile } from 'node:fs/promises';
-import { dirname } from 'node:path';
+import { mkdir, open as openFile, readFile, readdir, rename, rm } from 'node:fs/promises';
+import { basename, dirname, join } from 'node:path';
 import { randomUUID } from 'node:crypto';
 import initSqlJs, { type Database, type SqlJsStatic, type SqlValue } from 'sql.js';
 import type {
@@ -130,28 +130,155 @@ function parseJson<T>(value: unknown, fallback: T): T {
   }
 }
 
-async function writeFileWithRetry(path: string, data: Uint8Array, attempts = 8): Promise<void> {
-  for (let attempt = 0; attempt < attempts; attempt += 1) {
-    try {
-      await writeFile(path, data);
-      return;
-    } catch (error) {
-      const code = (error as NodeJS.ErrnoException).code;
-      if ((code !== 'EBUSY' && code !== 'EPERM') || attempt === attempts - 1) {
-        throw error;
+export interface FileDatabaseDependencies {
+  readFile: (path: string) => Promise<Uint8Array>;
+  writeTempFile: (path: string, data: Uint8Array) => Promise<void>;
+  replaceFile: (source: string, target: string) => Promise<void>;
+  removeFile: (path: string) => Promise<void>;
+  ensureDirectory: (path: string) => Promise<void>;
+  readDirectory: (path: string) => Promise<string[]>;
+  delay: (milliseconds: number) => Promise<void>;
+  createTempSuffix: () => string;
+}
+
+const atomicReplaceAttempts = 8;
+
+function isErrno(error: unknown, code: string): boolean {
+  return Boolean(error && typeof error === 'object' && 'code' in error && (error as NodeJS.ErrnoException).code === code);
+}
+
+function resolveFileDatabaseDependencies(overrides: Partial<FileDatabaseDependencies> = {}): FileDatabaseDependencies {
+  return {
+    readFile: overrides.readFile ?? ((path) => readFile(path)),
+    writeTempFile:
+      overrides.writeTempFile ??
+      (async (path, data) => {
+        const handle = await openFile(path, 'wx', 0o600);
+        try {
+          await handle.writeFile(data);
+          await handle.sync();
+        } finally {
+          await handle.close();
+        }
+      }),
+    replaceFile: overrides.replaceFile ?? ((source, target) => rename(source, target)),
+    removeFile: overrides.removeFile ?? (async (path) => { await rm(path, { force: true }); }),
+    ensureDirectory: overrides.ensureDirectory ?? (async (path) => { await mkdir(path, { recursive: true }); }),
+    readDirectory: overrides.readDirectory ?? ((path) => readdir(path)),
+    delay: overrides.delay ?? (async (milliseconds) => { await new Promise((resolve) => setTimeout(resolve, milliseconds)); }),
+    createTempSuffix: overrides.createTempSuffix ?? (() => `${Date.now()}-${randomUUID()}`),
+  };
+}
+
+export async function atomicWriteDatabase(
+  file: string,
+  data: Uint8Array,
+  overrides?: Partial<FileDatabaseDependencies>,
+): Promise<void> {
+  const dependencies = resolveFileDatabaseDependencies(overrides);
+  const suffix = dependencies.createTempSuffix().replace(/[^a-zA-Z0-9_-]/gu, '') || randomUUID();
+  const tempFile = `${file}.${suffix}.tmp`;
+  await dependencies.ensureDirectory(dirname(file));
+  try {
+    await dependencies.writeTempFile(tempFile, data);
+    for (let attempt = 0; attempt < atomicReplaceAttempts; attempt += 1) {
+      try {
+        await dependencies.replaceFile(tempFile, file);
+        return;
+      } catch (error) {
+        const retryable = isErrno(error, 'EBUSY') || isErrno(error, 'EPERM');
+        if (!retryable || attempt === atomicReplaceAttempts - 1) throw error;
+        await dependencies.delay(40 * (attempt + 1));
       }
-      await new Promise((resolve) => setTimeout(resolve, 40 * (attempt + 1)));
+    }
+  } catch (error) {
+    try {
+      await dependencies.removeFile(tempFile);
+    } catch {
+      // Preserve the primary persistence error.
+    }
+    throw error;
+  }
+}
+
+async function listDatabaseTempFiles(file: string, dependencies: FileDatabaseDependencies): Promise<string[]> {
+  let names: string[];
+  try {
+    names = await dependencies.readDirectory(dirname(file));
+  } catch (error) {
+    if (isErrno(error, 'ENOENT')) return [];
+    throw error;
+  }
+  const prefix = `${basename(file)}.`;
+  return names
+    .filter((name) => name.startsWith(prefix) && name.endsWith('.tmp'))
+    .sort((left, right) => right.localeCompare(left))
+    .map((name) => join(dirname(file), name));
+}
+
+function openValidatedDatabase(SQL: SqlJsStatic, bytes: Uint8Array): Database {
+  if (bytes.byteLength === 0) throw new Error('SQLITE_MALFORMED: Database file is empty.');
+  const database = new SQL.Database(bytes);
+  try {
+    const integrity = database.exec('PRAGMA integrity_check')[0]?.values[0]?.[0];
+    if (integrity !== 'ok') throw new Error('SQLITE_MALFORMED: Database integrity check failed.');
+    return database;
+  } catch (error) {
+    database.close();
+    throw error;
+  }
+}
+
+async function recoverDatabaseTemp(
+  file: string,
+  SQL: SqlJsStatic,
+  dependencies: FileDatabaseDependencies,
+): Promise<Database | null> {
+  for (const tempFile of await listDatabaseTempFiles(file, dependencies)) {
+    let bytes: Uint8Array;
+    try {
+      bytes = await dependencies.readFile(tempFile);
+    } catch (error) {
+      if (isErrno(error, 'ENOENT')) continue;
+      throw error;
+    }
+
+    let database: Database;
+    try {
+      database = openValidatedDatabase(SQL, bytes);
+    } catch {
+      try {
+        await dependencies.removeFile(tempFile);
+      } catch {
+        // Continue to the next recoverable candidate.
+      }
+      continue;
+    }
+
+    try {
+      await dependencies.replaceFile(tempFile, file);
+      return database;
+    } catch (error) {
+      database.close();
+      throw error;
+    }
+  }
+  return null;
+}
+
+async function removeStaleDatabaseTemps(file: string, dependencies: FileDatabaseDependencies): Promise<void> {
+  for (const tempFile of await listDatabaseTempFiles(file, dependencies)) {
+    try {
+      await dependencies.removeFile(tempFile);
+    } catch {
+      // A stale temp never takes precedence over a validated primary database.
     }
   }
 }
 
-async function quarantineMalformedDatabase(file: string): Promise<void> {
+async function quarantineMalformedDatabase(file: string, dependencies: FileDatabaseDependencies): Promise<void> {
   const suffix = `${Date.now()}-${randomUUID()}.malformed`;
-  try {
-    await rename(file, `${file}.${suffix}`);
-  } catch {
-    // If quarantine fails, leave the original in place for inspection.
-  }
+  await dependencies.replaceFile(file, `${file}.${suffix}`);
 }
 
 function mergeConfig(input: unknown): AppConfig {
@@ -165,33 +292,77 @@ const legacyBundledCozeDraftTemplates = new Map(
 );
 
 export class FileDatabase {
+  private writeTail: Promise<void> = Promise.resolve();
+  private closing = false;
+  private closed = false;
+  private closePromise: Promise<void> | null = null;
+
   private constructor(
     private readonly file: string,
-    private readonly db: Database,
+    private db: Database,
+    private readonly SQL: SqlJsStatic,
+    private readonly dependencies: FileDatabaseDependencies,
   ) {}
 
-  static async open(file: string): Promise<FileDatabase> {
+  static async open(file: string, overrides?: Partial<FileDatabaseDependencies>): Promise<FileDatabase> {
     const SQL = await loadSql();
-    let db: Database;
+    const dependencies = resolveFileDatabaseDependencies(overrides);
+    let database: Database | null = null;
+    let primaryExists = true;
     try {
-      const bytes = await readFile(file);
-      db = new SQL.Database(bytes);
-    } catch {
-      db = new SQL.Database();
+      database = openValidatedDatabase(SQL, await dependencies.readFile(file));
+    } catch (error) {
+      if (isErrno(error, 'ENOENT')) {
+        primaryExists = false;
+      } else if (error && typeof error === 'object' && 'code' in error) {
+        throw error;
+      } else {
+        await quarantineMalformedDatabase(file, dependencies);
+        primaryExists = false;
+      }
     }
-    const instance = new FileDatabase(file, db);
+
+    if (!database && !primaryExists) {
+      database = await recoverDatabaseTemp(file, SQL, dependencies);
+    }
+    database ??= new SQL.Database();
+
+    const instance = new FileDatabase(file, database, SQL, dependencies);
     try {
       instance.migrate();
       await instance.persist();
+      await removeStaleDatabaseTemps(file, dependencies);
       return instance;
     } catch (error) {
       instance.db.close();
-      await quarantineMalformedDatabase(file);
-      const fresh = new FileDatabase(file, new SQL.Database());
-      fresh.migrate();
-      await fresh.persist();
-      return fresh;
+      throw error;
     }
+  }
+
+  private enqueueCommit<T>(mutation: () => T): Promise<T> {
+    if (this.closing || this.closed) {
+      return Promise.reject(new Error(this.closed ? 'Database is closed.' : 'Database is closing.'));
+    }
+    const operation = this.writeTail.then(async () => {
+      const previous = this.db.export();
+      try {
+        const value = mutation();
+        const next = this.db.export();
+        await atomicWriteDatabase(this.file, next, this.dependencies);
+        return value;
+      } catch (error) {
+        this.db.close();
+        this.db = new this.SQL.Database(previous);
+        throw error;
+      }
+    });
+    this.writeTail = operation.then(() => undefined, () => undefined);
+    return operation;
+  }
+
+  private async waitForWrites(): Promise<void> {
+    await this.writeTail;
+    if (this.closed) throw new Error('Database is closed.');
   }
 
   private migrate(): void {
@@ -659,31 +830,39 @@ export class FileDatabase {
   }
 
   async persist(): Promise<void> {
-    await mkdir(dirname(this.file), { recursive: true });
-    const data = this.db.export();
-    await writeFileWithRetry(this.file, data);
+    await this.enqueueCommit(() => undefined);
   }
 
-  async close(): Promise<void> {
-    await this.persist();
-    this.db.close();
+  close(): Promise<void> {
+    if (this.closePromise) return this.closePromise;
+    this.closing = true;
+    const acceptedWrites = this.writeTail;
+    this.closePromise = (async () => {
+      await acceptedWrites;
+      await atomicWriteDatabase(this.file, this.db.export(), this.dependencies);
+      this.db.close();
+      this.closed = true;
+    })();
+    return this.closePromise;
   }
 
   async upsertConfig(config: AppConfig): Promise<void> {
-    this.db.run('INSERT OR REPLACE INTO config (id, data) VALUES (1, ?)', [json(stripConfigSecrets(mergeConfig(config)))]);
-    await this.persist();
+    await this.enqueueCommit(() => {
+      this.db.run('INSERT OR REPLACE INTO config (id, data) VALUES (1, ?)', [json(stripConfigSecrets(mergeConfig(config)))]);
+    });
   }
 
   async upsertPromptTemplate(input: PromptTemplateInput): Promise<PromptTemplate> {
-    const template: PromptTemplate = {
-      ...input,
-      description: input.description ?? '',
-      isBuiltin: input.isBuiltin ?? false,
-      updatedAt: input.updatedAt ?? new Date().toISOString(),
-    };
-    this.insertPromptTemplate(template);
-    await this.persist();
-    return template;
+    return this.enqueueCommit(() => {
+      const template: PromptTemplate = {
+        ...input,
+        description: input.description ?? '',
+        isBuiltin: input.isBuiltin ?? false,
+        updatedAt: input.updatedAt ?? new Date().toISOString(),
+      };
+      this.insertPromptTemplate(template);
+      return template;
+    });
   }
 
   private syncDefaultCustomStyles(): void {
@@ -718,115 +897,123 @@ export class FileDatabase {
   }
 
   async upsertCustomStyle(input: CustomStyle): Promise<CustomStyle> {
-    const now = new Date().toISOString();
-    const style: CustomStyle = {
-      ...input,
-      createdAt: input.createdAt || now,
-      updatedAt: input.updatedAt || now,
-    };
-    this.insertCustomStyle(style);
-    await this.persist();
-    return style;
+    return this.enqueueCommit(() => {
+      const now = new Date().toISOString();
+      const style: CustomStyle = {
+        ...input,
+        createdAt: input.createdAt || now,
+        updatedAt: input.updatedAt || now,
+      };
+      this.insertCustomStyle(style);
+      return style;
+    });
   }
 
   async resetPromptTemplates(): Promise<void> {
-    this.db.run('DELETE FROM prompt_templates WHERE is_builtin = 1');
-    for (const template of defaultPromptTemplates) this.insertPromptTemplate({ ...template, updatedAt: new Date().toISOString() });
-    await this.persist();
+    await this.enqueueCommit(() => {
+      this.db.run('DELETE FROM prompt_templates WHERE is_builtin = 1');
+      for (const template of defaultPromptTemplates) this.insertPromptTemplate({ ...template, updatedAt: new Date().toISOString() });
+    });
   }
 
   async upsertDraftTemplate(template: DraftTemplate): Promise<DraftTemplate> {
-    this.db.run('INSERT OR REPLACE INTO draft_templates (id, data, is_builtin, updated_at) VALUES (?, ?, ?, ?)', [
-      template.id,
-      json(template),
-      template.isDefault ? 1 : 0,
-      new Date().toISOString(),
-    ]);
-    await this.persist();
-    return template;
+    return this.enqueueCommit(() => {
+      this.db.run('INSERT OR REPLACE INTO draft_templates (id, data, is_builtin, updated_at) VALUES (?, ?, ?, ?)', [
+        template.id,
+        json(template),
+        template.isDefault ? 1 : 0,
+        new Date().toISOString(),
+      ]);
+      return template;
+    });
   }
 
   async addImageLabRecord(input: ImageLabRecordInput): Promise<ImageLabRecord> {
-    const now = input.createdAt ?? new Date().toISOString();
-    const record: ImageLabRecord = {
-      id: input.id ?? randomUUID(),
-      prompt: input.prompt,
-      ratio: input.ratio,
-      style: input.style,
-      provider: input.provider,
-      imagePath: input.imagePath ?? '',
-      status: input.status ?? 'mock',
-      errorMessage: input.errorMessage ?? '',
-      resolution: input.resolution ?? '2K',
-      smartMode: input.smartMode ?? 'text-to-image',
-      referenceImagePaths: input.referenceImagePaths ?? (input.referenceImagePath ? [input.referenceImagePath] : []),
-      referenceImagePath: input.referenceImagePath ?? '',
-      upstreamTaskId: input.upstreamTaskId ?? null,
-      createdAt: now,
-      finishedAt: input.finishedAt ?? (input.status === 'generated' ? now : null),
-    };
-    this.db.run(
-      `INSERT INTO image_lab_records
-       (id, prompt, ratio, style, provider, image_path, status, error_msg, resolution, smart_mode, reference_image_paths_json, reference_image_path, upstream_task_id, created_at, finished_at)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-      [
-        record.id,
-        record.prompt,
-        record.ratio,
-        record.style,
-        record.provider,
-        record.imagePath,
-        record.status,
-        record.errorMessage,
-        record.resolution,
-        record.smartMode,
-        json(record.referenceImagePaths),
-        record.referenceImagePath,
-        record.upstreamTaskId,
-        record.createdAt,
-        record.finishedAt,
-      ],
-    );
-    this.db.run(
-      `INSERT OR REPLACE INTO playground_jobs
-       (id, prompt, style_id, provider, ratio, image_path, status, error_msg, created_at, finished_at, reference_image_path, upstream_task_id, model)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-      [
-        record.id,
-        record.prompt,
-        record.style,
-        record.provider,
-        record.ratio,
-        record.imagePath,
-        record.status,
-        record.errorMessage,
-        Date.parse(record.createdAt) || Date.now(),
-        record.finishedAt ? Date.parse(record.finishedAt) || Date.now() : null,
-        record.referenceImagePaths[0] ?? record.referenceImagePath,
-        record.upstreamTaskId,
-        record.smartMode,
-      ],
-    );
-    await this.persist();
-    return record;
+    return this.enqueueCommit(() => {
+      const now = input.createdAt ?? new Date().toISOString();
+      const record: ImageLabRecord = {
+        id: input.id ?? randomUUID(),
+        prompt: input.prompt,
+        ratio: input.ratio,
+        style: input.style,
+        provider: input.provider,
+        imagePath: input.imagePath ?? '',
+        status: input.status ?? 'mock',
+        errorMessage: input.errorMessage ?? '',
+        resolution: input.resolution ?? '2K',
+        smartMode: input.smartMode ?? 'text-to-image',
+        referenceImagePaths: input.referenceImagePaths ?? (input.referenceImagePath ? [input.referenceImagePath] : []),
+        referenceImagePath: input.referenceImagePath ?? '',
+        upstreamTaskId: input.upstreamTaskId ?? null,
+        createdAt: now,
+        finishedAt: input.finishedAt ?? (input.status === 'generated' ? now : null),
+      };
+      this.db.run(
+        `INSERT INTO image_lab_records
+         (id, prompt, ratio, style, provider, image_path, status, error_msg, resolution, smart_mode, reference_image_paths_json, reference_image_path, upstream_task_id, created_at, finished_at)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        [
+          record.id,
+          record.prompt,
+          record.ratio,
+          record.style,
+          record.provider,
+          record.imagePath,
+          record.status,
+          record.errorMessage,
+          record.resolution,
+          record.smartMode,
+          json(record.referenceImagePaths),
+          record.referenceImagePath,
+          record.upstreamTaskId,
+          record.createdAt,
+          record.finishedAt,
+        ],
+      );
+      this.db.run(
+        `INSERT OR REPLACE INTO playground_jobs
+         (id, prompt, style_id, provider, ratio, image_path, status, error_msg, created_at, finished_at, reference_image_path, upstream_task_id, model)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        [
+          record.id,
+          record.prompt,
+          record.style,
+          record.provider,
+          record.ratio,
+          record.imagePath,
+          record.status,
+          record.errorMessage,
+          Date.parse(record.createdAt) || Date.now(),
+          record.finishedAt ? Date.parse(record.finishedAt) || Date.now() : null,
+          record.referenceImagePaths[0] ?? record.referenceImagePath,
+          record.upstreamTaskId,
+          record.smartMode,
+        ],
+      );
+      return record;
+    });
   }
 
   async upsertAccount(account: AccountProfile): Promise<void> {
-    this.db.run('INSERT OR REPLACE INTO account_profile (id, data) VALUES (1, ?)', [json({ ...defaultAccount, ...account })]);
-    await this.persist();
+    await this.enqueueCommit(() => {
+      this.db.run('INSERT OR REPLACE INTO account_profile (id, data) VALUES (1, ?)', [json({ ...defaultAccount, ...account })]);
+    });
   }
 
   async upsertActivation(activation: ActivationState): Promise<void> {
-    this.db.run('INSERT OR REPLACE INTO activation_state (id, data) VALUES (1, ?)', [json({ ...defaultActivation, ...activation })]);
-    await this.persist();
+    await this.enqueueCommit(() => {
+      this.db.run('INSERT OR REPLACE INTO activation_state (id, data) VALUES (1, ?)', [json({ ...defaultActivation, ...activation })]);
+    });
   }
 
   async upsertUiPreferences(ui: UiPreferences): Promise<void> {
-    this.db.run('INSERT OR REPLACE INTO ui_preferences (id, data) VALUES (1, ?)', [json({ ...defaultUiPreferences, ...ui })]);
-    await this.persist();
+    await this.enqueueCommit(() => {
+      this.db.run('INSERT OR REPLACE INTO ui_preferences (id, data) VALUES (1, ?)', [json({ ...defaultUiPreferences, ...ui })]);
+    });
   }
 
   async listBookSelections(theme?: string): Promise<BookSelectionRecord[]> {
+    await this.waitForWrites();
     const rows =
       theme === undefined
         ? getRows<Record<string, unknown>>(this.db, 'SELECT theme, book_id, data, updated_at FROM book_selection ORDER BY updated_at DESC, theme ASC, book_id ASC')
@@ -835,28 +1022,34 @@ export class FileDatabase {
   }
 
   async upsertBookSelection(input: BookSelectionInput): Promise<BookSelectionRecord> {
-    const record: BookSelectionRecord = {
-      theme: input.theme,
-      bookId: input.bookId ?? randomUUID(),
-      data: input.data,
-      updatedAt: Date.now(),
-    };
-    this.db.run(
-      `INSERT INTO book_selection (theme, book_id, data, updated_at)
-       VALUES (?, ?, ?, ?)
-       ON CONFLICT(theme, book_id) DO UPDATE SET data = excluded.data, updated_at = excluded.updated_at`,
-      [record.theme, record.bookId, json(record.data), record.updatedAt],
-    );
-    await this.persist();
-    return record;
+    return this.enqueueCommit(() => {
+      const record: BookSelectionRecord = {
+        theme: input.theme,
+        bookId: input.bookId ?? randomUUID(),
+        data: input.data,
+        updatedAt: Date.now(),
+      };
+      this.db.run(
+        `INSERT INTO book_selection (theme, book_id, data, updated_at)
+         VALUES (?, ?, ?, ?)
+         ON CONFLICT(theme, book_id) DO UPDATE SET data = excluded.data, updated_at = excluded.updated_at`,
+        [record.theme, record.bookId, json(record.data), record.updatedAt],
+      );
+      return record;
+    });
   }
 
   async deleteBookSelection(theme: string, bookId: string): Promise<void> {
-    this.db.run('DELETE FROM book_selection WHERE theme = ? AND book_id = ?', [theme, bookId]);
-    await this.persist();
+    await this.enqueueCommit(() => {
+      this.db.run('DELETE FROM book_selection WHERE theme = ? AND book_id = ?', [theme, bookId]);
+    });
   }
 
   async createTask(input: CreateTaskInput): Promise<Task> {
+    return this.enqueueCommit(() => this.insertTask(input));
+  }
+
+  private insertTask(input: CreateTaskInput): Task {
     const now = new Date().toISOString();
     const configRow = getFirstRow<{ data: string }>(this.db, 'SELECT data FROM config WHERE id = 1');
     const config = configRow ? mergeConfig(parseJson(configRow.data, defaultConfig)) : defaultConfig;
@@ -1001,92 +1194,93 @@ export class FileDatabase {
         task.coverTemplateId ?? 'cinematic-poster',
       ],
     );
-    await this.persist();
     return task;
   }
 
   async createViralAnalysis(input: CreateViralAnalysisInput): Promise<ViralAnalysisRecord> {
-    const now = new Date().toISOString();
-    const record: ViralAnalysisRecord = {
-      id: randomUUID(),
-      url: input.url.trim(),
-      platform: input.platform ?? 'unknown',
-      title: input.title ?? '',
-      status: 'pending',
-      currentStage: 'queued',
-      progress: 0,
-      settings: input.settings,
-      resultPath: '',
-      videoPath: '',
-      errorMessage: '',
-      createdAt: now,
-      startedAt: null,
-      completedAt: null,
-      lastHeartbeatAt: null,
-    };
-    this.db.run(
-      `INSERT INTO viral_analyses (
-        id, url, platform, title, status, current_stage, progress, settings_json,
-        result_path, video_path, error_message, created_at, started_at, completed_at, last_heartbeat_at
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-      [
-        record.id,
-        record.url,
-        record.platform,
-        record.title,
-        record.status,
-        record.currentStage,
-        record.progress,
-        json(record.settings),
-        record.resultPath,
-        record.videoPath,
-        record.errorMessage,
-        record.createdAt,
-        record.startedAt,
-        record.completedAt,
-        record.lastHeartbeatAt,
-      ],
-    );
-    await this.persist();
-    return record;
+    return this.enqueueCommit(() => {
+      const now = new Date().toISOString();
+      const record: ViralAnalysisRecord = {
+        id: randomUUID(),
+        url: input.url.trim(),
+        platform: input.platform ?? 'unknown',
+        title: input.title ?? '',
+        status: 'pending',
+        currentStage: 'queued',
+        progress: 0,
+        settings: input.settings,
+        resultPath: '',
+        videoPath: '',
+        errorMessage: '',
+        createdAt: now,
+        startedAt: null,
+        completedAt: null,
+        lastHeartbeatAt: null,
+      };
+      this.db.run(
+        `INSERT INTO viral_analyses (
+          id, url, platform, title, status, current_stage, progress, settings_json,
+          result_path, video_path, error_message, created_at, started_at, completed_at, last_heartbeat_at
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        [
+          record.id,
+          record.url,
+          record.platform,
+          record.title,
+          record.status,
+          record.currentStage,
+          record.progress,
+          json(record.settings),
+          record.resultPath,
+          record.videoPath,
+          record.errorMessage,
+          record.createdAt,
+          record.startedAt,
+          record.completedAt,
+          record.lastHeartbeatAt,
+        ],
+      );
+      return record;
+    });
   }
 
   async addVoiceLabRecord(input: VoiceLabRecordInput): Promise<VoiceLabRecord> {
-    const now = input.createdAt ?? new Date().toISOString();
-    const status = input.status ?? 'generated';
-    const record: VoiceLabRecord = {
-      id: input.id ?? randomUUID(),
-      text: input.text,
-      provider: input.provider,
-      voiceId: input.voiceId,
-      voiceLabel: input.voiceLabel ?? input.voiceId,
-      speed: input.speed,
-      audioPath: input.audioPath ?? '',
-      status,
-      errorMessage: input.errorMessage ?? '',
-      createdAt: now,
-      finishedAt: input.finishedAt ?? (status === 'generated' ? now : null),
-    };
-    this.db.run(
-      `INSERT INTO voice_lab_records
-       (id, text, provider, voice_id, voice_label, speed, audio_path, status, error_msg, created_at, finished_at)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-      [
-        record.id,
-        record.text,
-        record.provider,
-        record.voiceId,
-        record.voiceLabel,
-        record.speed,
-        record.audioPath,
-        record.status,
-        record.errorMessage,
-        record.createdAt,
-        record.finishedAt,
-      ],
-    );
-    await this.persist();
-    return record;
+    return this.enqueueCommit(() => {
+      const now = input.createdAt ?? new Date().toISOString();
+      const status = input.status ?? 'generated';
+      const record: VoiceLabRecord = {
+        id: input.id ?? randomUUID(),
+        text: input.text,
+        provider: input.provider,
+        voiceId: input.voiceId,
+        voiceLabel: input.voiceLabel ?? input.voiceId,
+        speed: input.speed,
+        audioPath: input.audioPath ?? '',
+        status,
+        errorMessage: input.errorMessage ?? '',
+        createdAt: now,
+        finishedAt: input.finishedAt ?? (status === 'generated' ? now : null),
+      };
+      this.db.run(
+        `INSERT INTO voice_lab_records
+         (id, text, provider, voice_id, voice_label, speed, audio_path, status, error_msg, created_at, finished_at)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        [
+          record.id,
+          record.text,
+          record.provider,
+          record.voiceId,
+          record.voiceLabel,
+          record.speed,
+          record.audioPath,
+          record.status,
+          record.errorMessage,
+          record.createdAt,
+          record.finishedAt,
+        ],
+      );
+      return record;
+    });
   }
 
   async updateViralAnalysis(
@@ -1116,8 +1310,9 @@ export class FileDatabase {
     }
     if (sets.length === 0) return;
     values.push(id);
-    this.db.run(`UPDATE viral_analyses SET ${sets.join(', ')} WHERE id = ?`, values);
-    await this.persist();
+    await this.enqueueCommit(() => {
+      this.db.run(`UPDATE viral_analyses SET ${sets.join(', ')} WHERE id = ?`, values);
+    });
   }
 
   async addViralAnalysisEvent(analysisId: string, input: AddViralEventInput): Promise<ViralAnalysisEvent> {
@@ -1129,14 +1324,15 @@ export class FileDatabase {
       dataJson: input.dataJson ?? null,
       ts: input.ts ?? Date.now(),
     };
-    this.db.run(
-      `INSERT INTO viral_analysis_events (analysis_id, type, stage, detail, data_json, ts)
-       VALUES (?, ?, ?, ?, ?, ?)`,
-      [event.analysisId, event.type, event.stage, event.detail, event.dataJson, event.ts],
-    );
-    const seq = getFirstRow<{ seq: number }>(this.db, 'SELECT last_insert_rowid() AS seq')?.seq;
-    await this.persist();
-    return { ...event, seq };
+    return this.enqueueCommit(() => {
+      this.db.run(
+        `INSERT INTO viral_analysis_events (analysis_id, type, stage, detail, data_json, ts)
+         VALUES (?, ?, ?, ?, ?, ?)`,
+        [event.analysisId, event.type, event.stage, event.detail, event.dataJson, event.ts],
+      );
+      const seq = getFirstRow<{ seq: number }>(this.db, 'SELECT last_insert_rowid() AS seq')?.seq;
+      return { ...event, seq };
+    });
   }
 
   async updateTask(
@@ -1190,8 +1386,9 @@ export class FileDatabase {
     }
     if (sets.length === 0) return;
     values.push(id);
-    this.db.run(`UPDATE tasks SET ${sets.join(', ')} WHERE id = ?`, values);
-    await this.persist();
+    await this.enqueueCommit(() => {
+      this.db.run(`UPDATE tasks SET ${sets.join(', ')} WHERE id = ?`, values);
+    });
   }
 
   async addTaskEvent(taskId: string, input: AddEventInput): Promise<TaskEvent> {
@@ -1205,17 +1402,19 @@ export class FileDatabase {
       dataJson: input.dataJson ?? null,
       ts: input.ts ?? Date.now(),
     };
-    this.db.run(
-      `INSERT INTO task_events (task_id, type, step, agent, tool, detail, data_json, ts)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
-      [event.taskId, event.type, event.step, event.agent, event.tool, event.detail, event.dataJson, event.ts],
-    );
-    const seq = getFirstRow<{ seq: number }>(this.db, 'SELECT last_insert_rowid() AS seq')?.seq;
-    await this.persist();
-    return { ...event, seq };
+    return this.enqueueCommit(() => {
+      this.db.run(
+        `INSERT INTO task_events (task_id, type, step, agent, tool, detail, data_json, ts)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+        [event.taskId, event.type, event.step, event.agent, event.tool, event.detail, event.dataJson, event.ts],
+      );
+      const seq = getFirstRow<{ seq: number }>(this.db, 'SELECT last_insert_rowid() AS seq')?.seq;
+      return { ...event, seq };
+    });
   }
 
   async getState(): Promise<AppState> {
+    await this.waitForWrites();
     const configRow = getFirstRow<{ data: string }>(this.db, 'SELECT data FROM config WHERE id = 1');
     const taskRows = getRows<Record<string, unknown>>(this.db, 'SELECT * FROM tasks ORDER BY created_at DESC');
     const eventRows = getRows<Record<string, unknown>>(this.db, 'SELECT * FROM task_events ORDER BY seq ASC');
