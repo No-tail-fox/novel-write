@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import vm from 'node:vm';
+import { readFile } from 'node:fs/promises';
 import {
   buildHtmlVideoExportInput,
   createHtmlVideoComposePayload,
@@ -20,6 +21,15 @@ const artifact: PipelineArtifact = {
 };
 
 describe('HTML video composition contract', () => {
+  it('bounds hidden renderer readiness and frame capture and always destroys the window', async () => {
+    const renderer = await readFile(new URL('../electron/html-video-renderer.ts', import.meta.url), 'utf8');
+
+    expect(renderer).toContain('hiddenWindowReadyTimeoutMs');
+    expect(renderer).toContain('hiddenFrameTimeoutMs');
+    expect(renderer).toContain('withRendererTimeout');
+    expect(renderer).toMatch(/try\s*\{[\s\S]*?finally\s*\{[\s\S]*?window\.destroy\(\)/);
+  });
+
   it('builds seekable Storybound-style scene HTML with timeline globals', () => {
     const input = buildHtmlVideoExportInput({
       workDir: 'D:/tasks/html-video-1',

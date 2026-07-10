@@ -1,13 +1,12 @@
-import { execFile } from 'node:child_process';
 import { writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
-import { promisify } from 'node:util';
+import { redactProcessOutput, runBoundedProcess } from './process-runner';
 import { buildViralMediaWorkerInvocation, buildViralMediaWorkerRequest } from './viral-media-worker';
 import { resolvePythonCommand } from './python-runtime';
 import type { AppConfig, ViralPlatform } from './types';
 import type { ViralMediaDownloadResult } from './viral-analysis';
 
-const execFileAsync = promisify(execFile);
+const VIRAL_WORKER_OUTPUT_MAX_BYTES = 32 * 1024 * 1024;
 
 export async function downloadViralMedia(
   input: {
@@ -34,19 +33,19 @@ export async function downloadViralMedia(
     requestPath,
   });
   const python = resolvePythonCommand();
-  try {
-    const { stdout } = await execFileAsync(python, invocation.args, {
-      timeout: input.config.viral.downloadTimeoutMs,
-      signal,
-      maxBuffer: 32 * 1024 * 1024,
-      windowsHide: true,
-      env: buildViralMediaWorkerEnv(process.env),
-    });
-    return parseWorkerResult(stdout);
-  } catch (error) {
-    const detail = error && typeof error === 'object' && 'stderr' in error ? String((error as { stderr?: unknown }).stderr ?? '') : '';
-    throw new Error(`${python} ${invocation.args.join(' ')} failed. ${detail}`.trim());
+  const result = await runBoundedProcess(python, invocation.args, {
+    cwd: input.workDir,
+    timeoutMs: input.config.viral.downloadTimeoutMs,
+    maxStdoutBytes: VIRAL_WORKER_OUTPUT_MAX_BYTES,
+    maxStderrBytes: VIRAL_WORKER_OUTPUT_MAX_BYTES,
+    signal,
+    env: buildViralMediaWorkerEnv(process.env),
+  });
+  if (result.code !== 0) {
+    const detail = redactProcessOutput(result.stderr || result.stdout).trim().slice(-(64 * 1024));
+    throw new Error(`Viral media worker exited with code ${result.code ?? 'unknown'}${detail ? `: ${detail}` : '.'}`);
   }
+  return parseWorkerResult(result.stdout);
 }
 
 function parseWorkerResult(raw: string): ViralMediaDownloadResult {

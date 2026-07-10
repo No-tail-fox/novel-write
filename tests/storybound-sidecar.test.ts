@@ -85,6 +85,94 @@ describe('Storybound-compatible media sidecar', () => {
     }
   });
 
+  it('forwards timeout, cancellation, and output limits to the sidecar executor', async () => {
+    const dir = await mkdtemp(join(tmpdir(), 'storydream-sidecar-bounds-'));
+    const controller = new AbortController();
+    let received: Record<string, unknown> | null = null;
+    try {
+      await runStoryboundMediaSidecar(
+        {
+          mode: 'convert_audio_16k',
+          audio_path: join(dir, 'in.wav'),
+          output_path: join(dir, 'out.wav'),
+        },
+        {
+          pythonCommand: 'python-test',
+          timeoutMs: 1234,
+          maxStdoutBytes: 2345,
+          maxStderrBytes: 3456,
+          signal: controller.signal,
+          execute: async (_command, _args, options) => {
+            received = options as unknown as Record<string, unknown>;
+            return { code: 0, stdout: '{"success":true,"output_path":"out.wav"}', stderr: '' };
+          },
+        },
+      );
+
+      expect(received).toMatchObject({
+        cwd: dir,
+        timeoutMs: 1234,
+        maxStdoutBytes: 2345,
+        maxStderrBytes: 3456,
+        signal: controller.signal,
+      });
+    } finally {
+      await rm(dir, { recursive: true, force: true });
+    }
+  });
+
+  it('redacts credentials from sidecar process failures', async () => {
+    const dir = await mkdtemp(join(tmpdir(), 'storydream-sidecar-redaction-'));
+    try {
+      const pending = runStoryboundMediaSidecar(
+        {
+          mode: 'convert_audio_16k',
+          audio_path: join(dir, 'in.wav'),
+          output_path: join(dir, 'out.wav'),
+        },
+        {
+          pythonCommand: 'python-test',
+          execute: async () => ({
+            code: 2,
+            stdout: '',
+            stderr: 'Authorization: Bearer super-secret-token\nCookie: session=private-cookie',
+          }),
+        },
+      );
+
+      await expect(pending).rejects.toThrow(/退出码 2/);
+      await expect(pending).rejects.not.toThrow(/super-secret-token|private-cookie/);
+    } finally {
+      await rm(dir, { recursive: true, force: true });
+    }
+  });
+
+  it('treats a signal-terminated sidecar as a failure', async () => {
+    const dir = await mkdtemp(join(tmpdir(), 'storydream-sidecar-signal-'));
+    try {
+      await expect(
+        runStoryboundMediaSidecar(
+          {
+            mode: 'convert_audio_16k',
+            audio_path: join(dir, 'in.wav'),
+            output_path: join(dir, 'out.wav'),
+          },
+          {
+            pythonCommand: 'python-test',
+            execute: async () => ({
+              code: null,
+              signal: 'SIGTERM',
+              stdout: '{"success":true,"output_path":"out.wav"}',
+              stderr: '',
+            }),
+          },
+        ),
+      ).rejects.toThrow(/SIGTERM|signal|terminated/i);
+    } finally {
+      await rm(dir, { recursive: true, force: true });
+    }
+  });
+
   it('writes a Python sidecar script with all recovered Storybound modes', async () => {
     const dir = await mkdtemp(join(tmpdir(), 'storydream-sidecar-script-'));
 

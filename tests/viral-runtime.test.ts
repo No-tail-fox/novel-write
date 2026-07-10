@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from 'vitest';
-import { mkdtemp, rm, writeFile } from 'node:fs/promises';
+import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { Agent } from 'undici';
@@ -18,6 +18,22 @@ function getAgentConnectTimeout(dispatcher: unknown): number | null {
 }
 
 describe('viral runtime speech-to-text API', () => {
+  it('routes TypeScript and Python media processes through bounded tree cleanup', async () => {
+    const runtime = await readFile(new URL('../src/shared/viral-runtime.ts', import.meta.url), 'utf8');
+    const download = await readFile(new URL('../src/shared/viral-download.ts', import.meta.url), 'utf8');
+    const worker = await readFile(new URL('../src/shared/viral-media-worker.py', import.meta.url), 'utf8');
+
+    expect(runtime).toContain("from './process-runner'");
+    expect(runtime).toContain('runBoundedProcess');
+    expect(runtime).not.toContain('execFileAsync');
+    expect(download).toContain("from './process-runner'");
+    expect(download).toContain('runBoundedProcess');
+    expect(download).not.toContain('execFileAsync');
+    expect(worker).toContain('run_bounded_subprocess');
+    expect(worker).toContain('taskkill');
+    expect(worker).toContain('safe_unlink(output_path)');
+  });
+
   it('builds OpenAI-compatible transcription request fields from config', () => {
     const config = normalizeAppConfig({
       ...defaultConfig,

@@ -1,10 +1,16 @@
-import { execFile } from 'node:child_process';
 import { mkdir, writeFile } from 'node:fs/promises';
 import { dirname, join } from 'node:path';
-import { promisify } from 'node:util';
+import {
+  redactProcessOutput,
+  runBoundedProcess,
+  type BoundedProcessOptions,
+  type BoundedProcessResult,
+} from './process-runner';
 import { resolvePythonRuntimeInfo, type PythonRuntimeInfo } from './python-runtime';
 
-const execFileAsync = promisify(execFile);
+const defaultSidecarTimeoutMs = 60 * 60 * 1_000;
+const defaultSidecarStdoutBytes = 4 * 1024 * 1024;
+const defaultSidecarStderrBytes = 16 * 1024 * 1024;
 
 export interface StoryboundStoryAssets {
   images?: Array<{ scene_id: number; path: string }>;
@@ -89,12 +95,17 @@ export interface StoryboundSidecarResult {
 
 export interface StoryboundSidecarRunnerOptions {
   pythonCommand?: string;
+  timeoutMs?: number;
+  maxStdoutBytes?: number;
+  maxStderrBytes?: number;
+  signal?: AbortSignal;
   execute?: (
     command: string,
     args: string[],
-    options: { cwd: string },
+    options: BoundedProcessOptions,
   ) => Promise<{
     code?: number | null;
+    signal?: NodeJS.Signals | null;
     stdout: string;
     stderr: string;
   }>;
@@ -125,17 +136,32 @@ export async function runStoryboundMediaSidecar(
   const scriptPath = await writeStoryboundSidecarScript(workDir);
   const runtime: PythonRuntimeInfo = options.pythonCommand ? { command: options.pythonCommand, source: 'system' } : resolvePythonRuntimeInfo();
   const execute = options.execute ?? executePython;
-  const execution = await execute(runtime.command, [scriptPath, payloadPath], { cwd: workDir });
+  let execution: Awaited<ReturnType<NonNullable<StoryboundSidecarRunnerOptions['execute']>>>;
+  try {
+    execution = await execute(runtime.command, [scriptPath, payloadPath], {
+      cwd: workDir,
+      timeoutMs: options.timeoutMs ?? defaultSidecarTimeoutMs,
+      maxStdoutBytes: options.maxStdoutBytes ?? defaultSidecarStdoutBytes,
+      maxStderrBytes: options.maxStderrBytes ?? defaultSidecarStderrBytes,
+      signal: options.signal,
+    });
+  } catch (error) {
+    throw safeSidecarExecutionError(error);
+  }
+  if (execution.signal) {
+    const detail = safeProcessDetail([execution.stderr.trim(), execution.stdout.trim()].filter(Boolean).join('\n'));
+    throw new Error(`Jianying draft sidecar terminated by signal ${execution.signal}${detail ? `: ${detail}` : '.'}`);
+  }
   const code = execution.code ?? 0;
 
   if (code !== 0) {
-    const detail = [execution.stderr.trim(), execution.stdout.trim()].filter(Boolean).join('\n') || 'unknown error';
+    const detail = safeProcessDetail([execution.stderr.trim(), execution.stdout.trim()].filter(Boolean).join('\n')) || 'unknown error';
     throw new Error(`Jianying draft sidecar 退出码 ${code}: ${detail}`);
   }
 
   const result = parseStoryboundSidecarOutput(execution.stdout);
   if (result.success === false) {
-    const detail = [result.error || 'Storybound-compatible sidecar failed.', result.traceback].filter(Boolean).join('\n');
+    const detail = safeProcessDetail([result.error || 'Storybound-compatible sidecar failed.', result.traceback].filter(Boolean).join('\n'));
     throw new Error(detail);
   }
   return result;
@@ -166,19 +192,22 @@ function resolveStoryboundWorkDir(input: StoryboundSidecarInput): string {
   throw new Error('Unsupported Storybound sidecar input.');
 }
 
-async function executePython(command: string, args: string[], options: { cwd: string }): Promise<{ code: number; stdout: string; stderr: string }> {
-  try {
-    const { stdout, stderr } = await execFileAsync(command, args, options);
-    return { code: 0, stdout, stderr };
-  } catch (error) {
-    const shellError = error as { code?: unknown; stdout?: unknown; stderr?: unknown; message?: unknown };
-    const code = typeof shellError.code === 'number' ? shellError.code : 1;
-    return {
-      code,
-      stdout: String(shellError.stdout ?? ''),
-      stderr: String(shellError.stderr ?? shellError.message ?? ''),
-    };
+function executePython(command: string, args: string[], options: BoundedProcessOptions): Promise<BoundedProcessResult> {
+  return runBoundedProcess(command, args, options);
+}
+
+function safeSidecarExecutionError(error: unknown): Error & NodeJS.ErrnoException {
+  const message = error instanceof Error ? error.message : String(error);
+  const safeError = new Error(safeProcessDetail(message) || 'Storybound-compatible sidecar process failed.') as Error & NodeJS.ErrnoException;
+  if (error && typeof error === 'object' && 'code' in error && typeof error.code === 'string') {
+    safeError.code = error.code;
   }
+  return safeError;
+}
+
+function safeProcessDetail(value: unknown): string {
+  const redacted = redactProcessOutput(value).trim();
+  return redacted.length > 64 * 1024 ? redacted.slice(-(64 * 1024)) : redacted;
 }
 
 const pythonSidecarScript = String.raw`import json
@@ -186,13 +215,19 @@ import math
 import os
 import re
 import shutil
+import signal
 import struct
 import subprocess
 import sys
+import threading
 import time
 import traceback
 import uuid
 import wave
+
+
+SIDECAR_SUBPROCESS_TIMEOUT_SECONDS = 15 * 60
+SIDECAR_SUBPROCESS_MAX_OUTPUT_BYTES = 8 * 1024 * 1024
 
 
 def norm(path):
@@ -203,6 +238,140 @@ def ensure_parent(path):
     parent = os.path.dirname(norm(path))
     if parent:
         os.makedirs(parent, exist_ok=True)
+
+
+def safe_unlink(path):
+    path = norm(path)
+    try:
+        if path and os.path.exists(path):
+            os.unlink(path)
+    except FileNotFoundError:
+        pass
+
+
+def terminate_process_tree(process):
+    if process.poll() is not None:
+        return
+    if os.name == "nt":
+        try:
+            subprocess.run(
+                ["taskkill", "/PID", str(process.pid), "/T", "/F"],
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.DEVNULL,
+                timeout=5,
+                check=False,
+            )
+        except Exception:
+            try:
+                process.kill()
+            except Exception:
+                pass
+        return
+    try:
+        os.killpg(process.pid, signal.SIGTERM)
+    except ProcessLookupError:
+        return
+    except Exception:
+        try:
+            process.terminate()
+        except Exception:
+            pass
+    time.sleep(0.3)
+    try:
+        os.killpg(process.pid, signal.SIGKILL)
+    except ProcessLookupError:
+        pass
+    except Exception:
+        try:
+            process.kill()
+        except Exception:
+            pass
+
+
+def _read_bounded_pipe(pipe, max_bytes, chunks, overflow):
+    total = 0
+    try:
+        while True:
+            chunk = pipe.read(65536)
+            if not chunk:
+                return
+            remaining = max(0, max_bytes - total)
+            if remaining:
+                chunks.append(chunk[:remaining])
+            total += len(chunk)
+            if total > max_bytes:
+                overflow.set()
+                return
+    finally:
+        try:
+            pipe.close()
+        except Exception:
+            pass
+
+
+def run_bounded_subprocess(
+    command,
+    timeout_seconds=SIDECAR_SUBPROCESS_TIMEOUT_SECONDS,
+    max_stdout_bytes=SIDECAR_SUBPROCESS_MAX_OUTPUT_BYTES,
+    max_stderr_bytes=SIDECAR_SUBPROCESS_MAX_OUTPUT_BYTES,
+):
+    popen_options = {
+        "stdin": subprocess.DEVNULL,
+        "stdout": subprocess.PIPE,
+        "stderr": subprocess.PIPE,
+    }
+    if os.name == "nt":
+        popen_options["creationflags"] = (
+            getattr(subprocess, "CREATE_NEW_PROCESS_GROUP", 0)
+            | getattr(subprocess, "CREATE_NO_WINDOW", 0)
+        )
+    else:
+        popen_options["start_new_session"] = True
+    process = subprocess.Popen([str(item) for item in command], **popen_options)
+    stdout_chunks = []
+    stderr_chunks = []
+    stdout_overflow = threading.Event()
+    stderr_overflow = threading.Event()
+    stdout_thread = threading.Thread(
+        target=_read_bounded_pipe,
+        args=(process.stdout, int(max_stdout_bytes), stdout_chunks, stdout_overflow),
+        daemon=True,
+    )
+    stderr_thread = threading.Thread(
+        target=_read_bounded_pipe,
+        args=(process.stderr, int(max_stderr_bytes), stderr_chunks, stderr_overflow),
+        daemon=True,
+    )
+    stdout_thread.start()
+    stderr_thread.start()
+    deadline = time.monotonic() + max(1.0, float(timeout_seconds))
+    failure = ""
+    while process.poll() is None:
+        if stdout_overflow.is_set() or stderr_overflow.is_set():
+            failure = "media process output exceeded its byte limit"
+            break
+        if time.monotonic() >= deadline:
+            failure = "media process timed out"
+            break
+        time.sleep(0.05)
+    if failure:
+        terminate_process_tree(process)
+    try:
+        process.wait(timeout=5)
+    except subprocess.TimeoutExpired:
+        terminate_process_tree(process)
+        process.kill()
+        process.wait(timeout=5)
+    stdout_thread.join(timeout=5)
+    stderr_thread.join(timeout=5)
+    stdout = b"".join(stdout_chunks).decode("utf-8", errors="replace")
+    stderr = b"".join(stderr_chunks).decode("utf-8", errors="replace")
+    if not failure and (stdout_overflow.is_set() or stderr_overflow.is_set()):
+        failure = "media process output exceeded its byte limit"
+    if failure:
+        detail = (stderr or stdout)[-2000:].strip()
+        raise RuntimeError(f"{failure}: {detail}" if detail else failure)
+    return subprocess.CompletedProcess(command, process.returncode, stdout, stderr)
 
 
 def safe_filename(value, fallback="draft"):
@@ -224,8 +393,16 @@ def ffmpeg_exe():
 
 
 def run_ffmpeg(args):
-    completed = subprocess.run([ffmpeg_exe(), "-y", *args], text=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+    output_path = norm(args[-1]) if args and not str(args[-1]).startswith("-") else ""
+    try:
+        completed = run_bounded_subprocess([ffmpeg_exe(), "-y", *args])
+    except Exception:
+        if output_path:
+            safe_unlink(output_path)
+        raise
     if completed.returncode != 0:
+        if output_path:
+            safe_unlink(output_path)
         raise RuntimeError(completed.stderr.strip() or completed.stdout.strip() or "ffmpeg failed")
 
 
@@ -247,18 +424,23 @@ def media_duration_s(path):
     path = norm(path)
     probe = ffprobe_exe()
     if probe:
-        completed = subprocess.run(
+        completed = run_bounded_subprocess(
             [probe, "-v", "error", "-show_entries", "format=duration", "-of", "default=nw=1:nk=1", path],
-            text=True,
-            stdout=subprocess.PIPE,
-            stderr=subprocess.PIPE,
+            timeout_seconds=60,
+            max_stdout_bytes=2 * 1024 * 1024,
+            max_stderr_bytes=2 * 1024 * 1024,
         )
         if completed.returncode == 0:
             try:
                 return max(0.0, float(completed.stdout.strip()))
             except ValueError:
                 pass
-    completed = subprocess.run([ffmpeg_exe(), "-i", path], text=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+    completed = run_bounded_subprocess(
+        [ffmpeg_exe(), "-i", path],
+        timeout_seconds=60,
+        max_stdout_bytes=2 * 1024 * 1024,
+        max_stderr_bytes=2 * 1024 * 1024,
+    )
     match = re.search(r"Duration:\s*(\d+):(\d+):(\d+(?:\.\d+)?)", completed.stderr)
     if not match:
         return 0.0

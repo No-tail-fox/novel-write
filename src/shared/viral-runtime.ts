@@ -1,10 +1,9 @@
-import { execFile } from 'node:child_process';
 import { mkdir, readFile, stat } from 'node:fs/promises';
-import { basename, extname, join } from 'node:path';
-import { promisify } from 'node:util';
+import { basename, dirname, extname, join } from 'node:path';
 import { fetchWithTimeout as fetchWithRequestTimeout } from './http';
 import { createConfiguredJsonLlm, type ConfiguredJsonLlm, type LlmMessage, type LlmJsonResult } from './llm-provider';
 import { readJsonBounded, readTextBounded } from './network-policy';
+import { redactProcessOutput, runBoundedProcess } from './process-runner';
 import { resolvePythonCommand } from './python-runtime';
 import {
   buildViralBreakdownPrompt,
@@ -16,7 +15,6 @@ import {
 import { downloadViralMedia } from './viral-download';
 import type { AppConfig, LlmConfig, SpeechToTextConfig, ViralFrameAnalysis, ViralTranscriptSegment, ViralVideoSource } from './types';
 
-const execFileAsync = promisify(execFile);
 export const DEFAULT_WHISPER_HF_MIRROR = 'https://hf-mirror.com';
 const OPENAI_STT_UPLOAD_LIMIT_BYTES = 25 * 1024 * 1024;
 const SILICONFLOW_STT_UPLOAD_LIMIT_BYTES = 50 * 1024 * 1024;
@@ -26,6 +24,7 @@ const VIRAL_FRAME_ANALYSIS_WIDTH = 768;
 const STT_RESPONSE_MAX_BYTES = 4 * 1024 * 1024;
 const VISION_RESPONSE_MAX_BYTES = 8 * 1024 * 1024;
 const VISION_FETCH_RETRY_DELAYS_MS = [250, 1000];
+const VIRAL_PROCESS_OUTPUT_MAX_BYTES = 32 * 1024 * 1024;
 
 export function createViralRuntimeProviders(config: AppConfig, _workDir: string): Omit<RunViralAnalysisOptions, 'workDir' | 'emit' | 'signal'> {
   const textLlm = createConfiguredJsonLlm(config.llm);
@@ -158,14 +157,14 @@ function formatFfmpegTimestamp(value: number): string {
 }
 
 async function probeVideoDurationSeconds(ffmpeg: string, videoPath: string, signal?: AbortSignal): Promise<number> {
-  try {
-    const result = await execFileAsync(ffmpeg, ['-hide_banner', '-i', videoPath], { timeout: 30000, signal, windowsHide: true });
-    return parseFfmpegDuration(`${result.stdout}\n${result.stderr}`);
-  } catch (error) {
-    const stderr = error && typeof error === 'object' && 'stderr' in error ? String((error as { stderr?: unknown }).stderr ?? '') : '';
-    const stdout = error && typeof error === 'object' && 'stdout' in error ? String((error as { stdout?: unknown }).stdout ?? '') : '';
-    return parseFfmpegDuration(`${stdout}\n${stderr}`);
-  }
+  const result = await runBoundedProcess(ffmpeg, ['-hide_banner', '-i', videoPath], {
+    cwd: dirname(videoPath),
+    timeoutMs: 30_000,
+    maxStdoutBytes: 4 * 1024 * 1024,
+    maxStderrBytes: 4 * 1024 * 1024,
+    signal,
+  });
+  return parseFfmpegDuration(`${result.stdout}\n${result.stderr}`);
 }
 
 function parseFfmpegDuration(output: string): number {
@@ -613,19 +612,19 @@ function formatViralFrameAnalysisError(error: unknown, context: { endpoint: stri
 }
 
 async function runCommand(command: string, args: string[], timeout: number, signal?: AbortSignal, env?: Record<string, string>): Promise<{ stdout: string; stderr: string }> {
-  if (signal?.aborted) throw new Error('Command aborted.');
-  try {
-    return await execFileAsync(command, args, {
-      timeout,
-      signal,
-      maxBuffer: 32 * 1024 * 1024,
-      windowsHide: true,
-      env: env ? { ...process.env, ...env } : undefined,
-    });
-  } catch (error) {
-    const detail = error && typeof error === 'object' && 'stderr' in error ? String((error as { stderr?: unknown }).stderr ?? '') : '';
-    throw new Error(`${command} ${args.slice(0, 3).join(' ')} failed. ${detail}`.trim());
+  const result = await runBoundedProcess(command, args, {
+    cwd: process.cwd(),
+    timeoutMs: timeout,
+    maxStdoutBytes: VIRAL_PROCESS_OUTPUT_MAX_BYTES,
+    maxStderrBytes: VIRAL_PROCESS_OUTPUT_MAX_BYTES,
+    signal,
+    env: env ? { ...process.env, ...env } : undefined,
+  });
+  if (result.code !== 0) {
+    const detail = redactProcessOutput(result.stderr || result.stdout).trim().slice(-(64 * 1024));
+    throw new Error(`Media process exited with code ${result.code ?? 'unknown'}${detail ? `: ${detail}` : '.'}`);
   }
+  return { stdout: result.stdout, stderr: result.stderr };
 }
 
 function normalizeOpenAiBaseUrl(value: string, fallback = 'https://api.openai.com/v1'): string {

@@ -11,9 +11,11 @@ import json
 import os
 import re
 import shutil
+import signal
 import subprocess
 import sys
 import tempfile
+import threading
 import time
 from dataclasses import dataclass
 from pathlib import Path
@@ -71,10 +73,158 @@ PLATFORM_MEDIA_DOMAINS: dict[str, tuple[str, ...]] = {
 MAX_REDIRECTS = 8
 MAX_MEDIA_DOWNLOAD_BYTES = 1024 * 1024 * 1024
 MAX_COVER_DOWNLOAD_BYTES = 32 * 1024 * 1024
+MAX_SUBPROCESS_OUTPUT_BYTES = 8 * 1024 * 1024
 
 
 class ViralWorkerError(RuntimeError):
     pass
+
+
+def terminate_subprocess_tree(process: subprocess.Popen[bytes]) -> None:
+    if process.poll() is not None:
+        return
+    if os.name == "nt":
+        try:
+            subprocess.run(
+                ["taskkill", "/PID", str(process.pid), "/T", "/F"],
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.DEVNULL,
+                timeout=5,
+                check=False,
+            )
+        except Exception:
+            try:
+                process.kill()
+            except Exception:
+                pass
+        return
+    try:
+        os.killpg(process.pid, signal.SIGTERM)
+    except ProcessLookupError:
+        return
+    except Exception:
+        try:
+            process.terminate()
+        except Exception:
+            pass
+    time.sleep(0.3)
+    try:
+        os.killpg(process.pid, signal.SIGKILL)
+    except ProcessLookupError:
+        pass
+    except Exception:
+        try:
+            process.kill()
+        except Exception:
+            pass
+
+
+def _read_bounded_subprocess_pipe(
+    pipe: Any,
+    max_bytes: int,
+    chunks: list[bytes],
+    overflow: threading.Event,
+) -> None:
+    total = 0
+    try:
+        while True:
+            chunk = pipe.read(65536)
+            if not chunk:
+                return
+            remaining = max(0, max_bytes - total)
+            if remaining:
+                chunks.append(chunk[:remaining])
+            total += len(chunk)
+            if total > max_bytes:
+                overflow.set()
+                return
+    finally:
+        try:
+            pipe.close()
+        except Exception:
+            pass
+
+
+def run_bounded_subprocess(
+    command: list[str],
+    timeout_seconds: float,
+    max_stdout_bytes: int = MAX_SUBPROCESS_OUTPUT_BYTES,
+    max_stderr_bytes: int = MAX_SUBPROCESS_OUTPUT_BYTES,
+) -> subprocess.CompletedProcess[str]:
+    popen_options: dict[str, Any] = {
+        "stdin": subprocess.DEVNULL,
+        "stdout": subprocess.PIPE,
+        "stderr": subprocess.PIPE,
+    }
+    if os.name == "nt":
+        popen_options["creationflags"] = (
+            getattr(subprocess, "CREATE_NEW_PROCESS_GROUP", 0)
+            | getattr(subprocess, "CREATE_NO_WINDOW", 0)
+        )
+    else:
+        popen_options["start_new_session"] = True
+    process = subprocess.Popen([str(item) for item in command], **popen_options)
+    stdout_chunks: list[bytes] = []
+    stderr_chunks: list[bytes] = []
+    stdout_overflow = threading.Event()
+    stderr_overflow = threading.Event()
+    stdout_thread = threading.Thread(
+        target=_read_bounded_subprocess_pipe,
+        args=(process.stdout, int(max_stdout_bytes), stdout_chunks, stdout_overflow),
+        daemon=True,
+    )
+    stderr_thread = threading.Thread(
+        target=_read_bounded_subprocess_pipe,
+        args=(process.stderr, int(max_stderr_bytes), stderr_chunks, stderr_overflow),
+        daemon=True,
+    )
+    stdout_thread.start()
+    stderr_thread.start()
+    deadline = time.monotonic() + max(1.0, float(timeout_seconds))
+    failure = ""
+    while process.poll() is None:
+        if stdout_overflow.is_set() or stderr_overflow.is_set():
+            failure = "output"
+            break
+        if time.monotonic() >= deadline:
+            failure = "timeout"
+            break
+        time.sleep(0.05)
+    if failure:
+        terminate_subprocess_tree(process)
+    try:
+        process.wait(timeout=5)
+    except subprocess.TimeoutExpired:
+        terminate_subprocess_tree(process)
+        process.kill()
+        process.wait(timeout=5)
+    stdout_thread.join(timeout=5)
+    stderr_thread.join(timeout=5)
+    stdout = b"".join(stdout_chunks).decode("utf-8", errors="replace")
+    stderr = b"".join(stderr_chunks).decode("utf-8", errors="replace")
+    if not failure and (stdout_overflow.is_set() or stderr_overflow.is_set()):
+        failure = "output"
+    if failure == "timeout":
+        raise subprocess.TimeoutExpired(command, timeout_seconds, output=stdout, stderr=stderr)
+    if failure == "output":
+        raise ViralWorkerError("媒体处理进程输出超过大小上限。")
+    return subprocess.CompletedProcess(command, process.returncode, stdout, stderr)
+
+
+def redact_process_output(value: str) -> str:
+    text = re.sub(r"\b(Bearer|Basic)\s+[^\s,;]+", r"\1 [REDACTED]", str(value or ""), flags=re.I)
+    text = re.sub(
+        r"((?:^|[\r\n])\s*(?:authorization|proxy-authorization|cookie|set-cookie)\s*:\s*)[^\r\n]*",
+        r"\1[REDACTED]",
+        text,
+        flags=re.I,
+    )
+    return re.sub(
+        r"([?&](?:api[_-]?key|access[_-]?token|refresh[_-]?token|token|secret|signature|credential|password)=)[^&#\s]*",
+        r"\1[REDACTED]",
+        text,
+        flags=re.I,
+    )
 
 
 @dataclass
@@ -729,9 +879,22 @@ def merge_bilibili_streams(video_url: str, audio_url: str, output_path: Path, re
         "mp4",
         str(output_path),
     ]
-    result = subprocess.run(command, capture_output=True, text=True)
-    if result.returncode != 0:
-        raise ViralWorkerError(f"B站音视频合并失败：{result.stderr[-800:]}")
+    safe_unlink(output_path)
+    try:
+        result = run_bounded_subprocess(command, max(30, request.timeout_ms / 1000))
+        if result.returncode != 0:
+            raise ViralWorkerError(f"B站音视频合并失败：{redact_process_output(result.stderr[-800:])}")
+        if not output_path.exists() or output_path.stat().st_size <= 0:
+            raise ViralWorkerError("B站音视频合并没有生成有效文件。")
+    except Exception:
+        safe_unlink(output_path)
+        raise
+    finally:
+        for temp_path in (video_temp, audio_temp):
+            try:
+                safe_unlink(temp_path)
+            except Exception:
+                pass
 
 
 def normalize_kuaishou_url(url: str, timeout_ms: int, cookies: list[StoredCookie] | str = "") -> str:
@@ -1172,9 +1335,9 @@ def ffmpeg_download(url: str, output_path: Path, referer: str, timeout_ms: int, 
     command = [ffmpeg, "-y", "-headers", headers, "-i", resolved_url, "-c", "copy", "-fs", str(max_bytes), str(output_path)]
     safe_unlink(output_path)
     try:
-        result = subprocess.run(command, capture_output=True, text=True, timeout=max(30, timeout_ms // 1000))
+        result = run_bounded_subprocess(command, max(30, timeout_ms / 1000))
         if result.returncode != 0:
-            raise ViralWorkerError(f"m3u8 下载失败：{result.stderr[-800:]}")
+            raise ViralWorkerError(f"m3u8 下载失败：{redact_process_output(result.stderr[-800:])}")
         if not output_path.exists() or output_path.stat().st_size <= 0:
             raise ViralWorkerError("m3u8 下载没有生成有效文件。")
         if output_path.stat().st_size >= max_bytes:
