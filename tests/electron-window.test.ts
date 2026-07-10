@@ -21,7 +21,7 @@ describe('electron window chrome', () => {
     const preload = await readFile(new URL('../electron/preload.ts', import.meta.url), 'utf8');
 
     expect(main).toContain('frame: false');
-    expect(main).toContain("ipcMain.handle('window:control'");
+    expect(main).toContain("trustedHandle('window:control'");
     expect(main).toContain('mainWindow?.minimize()');
     expect(main).toContain('mainWindow?.isMaximized()');
     expect(main).toContain('mainWindow?.close()');

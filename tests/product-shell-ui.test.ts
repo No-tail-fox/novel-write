@@ -341,8 +341,8 @@ describe('product shell ui', () => {
     expect(workflow).toContain("pipelineStep: 'plan'");
     expect(workflow).toContain('pipelineData: JSON.stringify(data)');
     expect(preload).toContain('createHtmlVideoTask');
-    expect(electronMain).toContain("ipcMain.handle('html-video:create-task'");
-    const htmlCreateSection = electronMain.slice(electronMain.indexOf("ipcMain.handle('html-video:create-task'"), electronMain.indexOf("ipcMain.handle('task:create-and-run'"));
+    expect(electronMain).toContain("trustedHandle('html-video:create-task'");
+    const htmlCreateSection = electronMain.slice(electronMain.indexOf("trustedHandle('html-video:create-task'"), electronMain.indexOf("trustedHandle('task:create-and-run'"));
     expect(htmlCreateSection).not.toContain('startTaskRun');
     expect(css).toContain('.hv-layout');
     expect(css).toContain('.hv-rail');

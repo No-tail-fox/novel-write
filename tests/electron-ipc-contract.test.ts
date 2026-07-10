@@ -2,6 +2,27 @@ import { readFile } from 'node:fs/promises';
 import { describe, expect, it } from 'vitest';
 
 describe('electron ipc contract', () => {
+  it('routes every privileged invoke through one trusted registration and result boundary', async () => {
+    const main = await readFile(new URL('../electron/main.ts', import.meta.url), 'utf8');
+    const preload = await readFile(new URL('../electron/preload.ts', import.meta.url), 'utf8');
+    const gateway = await readFile(new URL('../electron/ipc.ts', import.meta.url), 'utf8').catch(() => '');
+    const manifest = JSON.parse(await readFile(new URL('../package.json', import.meta.url), 'utf8')) as {
+      dependencies?: Record<string, string>;
+      devDependencies?: Record<string, string>;
+    };
+
+    expect(main).toContain('createTrustedIpcRegistrar');
+    expect(main).toContain("trustedHandle('app:get-state'");
+    expect((main.match(/ipcMain\.handle\(/g) ?? []).length).toBe(1);
+    expect(preload).toContain('invokeTrusted');
+    expect(preload).toContain('unwrapIpcResult');
+    expect((preload.match(/ipcRenderer\.invoke\(/g) ?? []).length).toBe(1);
+    expect(gateway).toContain('IPC_SENDER_REJECTED');
+    expect(gateway).toContain('IPC_INVALID_INPUT');
+    expect(manifest.dependencies?.zod).toBeTruthy();
+    expect(manifest.devDependencies?.zod).toBeUndefined();
+  });
+
   it('defines a renderer sender policy for the trusted IPC gateway', async () => {
     const security = await readFile(new URL('../electron/security.ts', import.meta.url), 'utf8').catch(() => '');
 
@@ -87,14 +108,14 @@ describe('electron ipc contract', () => {
     expect(main).toContain('restartAfterAbort');
     expect(main).toContain('resumeTaskRun');
     expect(main).toContain("input.status === 'running'");
-    const retryHandler = main.slice(main.indexOf("ipcMain.handle('task:retry'"), main.indexOf("ipcMain.handle('diagnostics:run'"));
+    const retryHandler = main.slice(main.indexOf("trustedHandle('task:retry'"), main.indexOf("trustedHandle('diagnostics:run'"));
     expect(retryHandler).toContain('resumeTaskRun(database, task)');
     expect(retryHandler).not.toContain('runTask(');
   });
 
   it('keeps aborting task runners registered until they exit to avoid duplicate runs', async () => {
     const main = await readFile(new URL('../electron/main.ts', import.meta.url), 'utf8');
-    const statusHandler = main.slice(main.indexOf("ipcMain.handle('task:update-status'"), main.indexOf("ipcMain.handle('task:retry'"));
+    const statusHandler = main.slice(main.indexOf("trustedHandle('task:update-status'"), main.indexOf("trustedHandle('task:retry'"));
 
     expect(statusHandler).toContain('existingRun.controller.abort');
     expect(statusHandler).toContain('existingRun.restartAfterAbort = false');
@@ -133,7 +154,7 @@ describe('electron ipc contract', () => {
     const preload = await readFile(new URL('../electron/preload.ts', import.meta.url), 'utf8');
     const viteEnv = await readFile(new URL('../src/vite-env.d.ts', import.meta.url), 'utf8');
 
-    expect(main).toContain("ipcMain.handle('asset:read-data-url'");
+    expect(main).toContain("trustedHandle('asset:read-data-url'");
     expect(main).toContain('readLocalImageDataUrl');
     expect(main).toContain('data:image/');
     expect(main).toContain('Unsupported preview image extension');
@@ -146,7 +167,7 @@ describe('electron ipc contract', () => {
     const main = await readFile(new URL('../electron/main.ts', import.meta.url), 'utf8');
     const preload = await readFile(new URL('../electron/preload.ts', import.meta.url), 'utf8');
     const viteEnv = await readFile(new URL('../src/vite-env.d.ts', import.meta.url), 'utf8');
-    const handler = main.slice(main.indexOf("ipcMain.handle('image-lab:generate'"), main.indexOf("ipcMain.handle('image-lab:add-record'"));
+    const handler = main.slice(main.indexOf("trustedHandle('image-lab:generate'"), main.indexOf("trustedHandle('image-lab:add-record'"));
 
     expect(main).toContain('generateImageLabRecord');
     expect(handler).toContain('imageLabWorkDir');
@@ -160,7 +181,7 @@ describe('electron ipc contract', () => {
     const main = await readFile(new URL('../electron/main.ts', import.meta.url), 'utf8');
     const preload = await readFile(new URL('../electron/preload.ts', import.meta.url), 'utf8');
     const viteEnv = await readFile(new URL('../src/vite-env.d.ts', import.meta.url), 'utf8');
-    const handler = main.slice(main.indexOf("ipcMain.handle('voice-lab:generate'"), main.indexOf("ipcMain.handle('account:save'"));
+    const handler = main.slice(main.indexOf("trustedHandle('voice-lab:generate'"), main.indexOf("trustedHandle('account:save'"));
 
     expect(main).toContain('generateConfiguredVoicePreview');
     expect(handler).toContain('voiceLabWorkDir');
@@ -175,7 +196,7 @@ describe('electron ipc contract', () => {
     const preload = await readFile(new URL('../electron/preload.ts', import.meta.url), 'utf8');
     const viteEnv = await readFile(new URL('../src/vite-env.d.ts', import.meta.url), 'utf8');
 
-    expect(main).toContain("ipcMain.handle('local-image:select'");
+    expect(main).toContain("trustedHandle('local-image:select'");
     expect(main).toContain('dialog.showOpenDialog');
     expect(main).toContain("properties: ['openFile']");
     expect(preload).toContain('selectLocalImage');
@@ -188,7 +209,7 @@ describe('electron ipc contract', () => {
     const preload = await readFile(new URL('../electron/preload.ts', import.meta.url), 'utf8');
     const viteEnv = await readFile(new URL('../src/vite-env.d.ts', import.meta.url), 'utf8');
 
-    expect(main).toContain("ipcMain.handle('local-audio:select'");
+    expect(main).toContain("trustedHandle('local-audio:select'");
     expect(main).toContain('selectLocalAudio');
     expect(main).toContain("extensions: ['mp3', 'wav', 'm4a', 'aac', 'ogg', 'flac']");
     expect(preload).toContain('selectLocalAudio');
@@ -201,9 +222,9 @@ describe('electron ipc contract', () => {
     const preload = await readFile(new URL('../electron/preload.ts', import.meta.url), 'utf8');
     const viteEnv = await readFile(new URL('../src/vite-env.d.ts', import.meta.url), 'utf8');
 
-    expect(main).toContain("ipcMain.handle('local-folder:select'");
+    expect(main).toContain("trustedHandle('local-folder:select'");
     expect(main).toContain("properties: ['openDirectory']");
-    expect(main).toContain("ipcMain.handle('jianying:draft-path:detect'");
+    expect(main).toContain("trustedHandle('jianying:draft-path:detect'");
     expect(main).toContain('detectJianyingDraftPath');
     expect(preload).toContain('selectLocalFolder');
     expect(preload).toContain('local-folder:select');
@@ -218,8 +239,8 @@ describe('electron ipc contract', () => {
     const preload = await readFile(new URL('../electron/preload.ts', import.meta.url), 'utf8');
     const viteEnv = await readFile(new URL('../src/vite-env.d.ts', import.meta.url), 'utf8');
 
-    expect(main).toContain("ipcMain.handle('cookie-file:select'");
-    expect(main).toContain("ipcMain.handle('viral:open-login-window'");
+    expect(main).toContain("trustedHandle('cookie-file:select'");
+    expect(main).toContain("trustedHandle('viral:open-login-window'");
     expect(main).toContain('partition:');
     expect(main).toContain('persist:storydream-viral-douyin');
     expect(main).toContain('async function openViralLoginWindow(): Promise<string | null>');
@@ -236,7 +257,7 @@ describe('electron ipc contract', () => {
     const preload = await readFile(new URL('../electron/preload.ts', import.meta.url), 'utf8');
     const viteEnv = await readFile(new URL('../src/vite-env.d.ts', import.meta.url), 'utf8');
 
-    expect(main).toContain("ipcMain.handle('jianying:effect-catalog'");
+    expect(main).toContain("trustedHandle('jianying:effect-catalog'");
     expect(main).toContain('loadJianyingEffectCatalog');
     expect(preload).toContain('getJianyingEffectCatalog');
     expect(preload).toContain('jianying:effect-catalog');
@@ -257,7 +278,7 @@ describe('electron ipc contract', () => {
     const viteEnv = await readFile(new URL('../src/vite-env.d.ts', import.meta.url), 'utf8');
     const renderer = await readFile(new URL('../electron/html-video-renderer.ts', import.meta.url), 'utf8');
 
-    expect(main).toContain("ipcMain.handle('html-video:create-task'");
+    expect(main).toContain("trustedHandle('html-video:create-task'");
     expect(main).not.toContain('createElectronHtmlVideoRenderer');
     expect(renderer).toContain('BrowserWindow');
     expect(renderer).toContain('executeJavaScript');
@@ -271,9 +292,9 @@ describe('electron ipc contract', () => {
     expect(viteEnv).not.toContain('eval_in_window');
     expect(viteEnv).not.toContain('capture_webview_by_label');
     expect(viteEnv).not.toContain('executeJavaScript');
-    expect(main).not.toContain("ipcMain.handle('eval_in_window'");
-    expect(main).not.toContain("ipcMain.handle('capture_webview_by_label'");
-    expect(main).not.toContain("ipcMain.handle('executeJavaScript'");
+    expect(main).not.toContain("trustedHandle('eval_in_window'");
+    expect(main).not.toContain("trustedHandle('capture_webview_by_label'");
+    expect(main).not.toContain("trustedHandle('executeJavaScript'");
   });
 
   it('waits for a fully ready hidden HTML scene before capture begins', async () => {
@@ -305,7 +326,7 @@ describe('electron ipc contract', () => {
     const main = await readFile(new URL('../electron/main.ts', import.meta.url), 'utf8');
     const preload = await readFile(new URL('../electron/preload.ts', import.meta.url), 'utf8');
     const viteEnv = await readFile(new URL('../src/vite-env.d.ts', import.meta.url), 'utf8');
-    const regenerateHandler = main.slice(main.indexOf("ipcMain.handle('task:regenerate-image'"), main.indexOf("ipcMain.handle('task:get-artifacts'"));
+    const regenerateHandler = main.slice(main.indexOf("trustedHandle('task:regenerate-image'"), main.indexOf("trustedHandle('task:get-artifacts'"));
 
     expect(main).toContain('markSceneImageForRegeneration');
     expect(regenerateHandler).toContain('retryFromStep: 4');
@@ -321,7 +342,7 @@ describe('electron ipc contract', () => {
     const main = await readFile(new URL('../electron/main.ts', import.meta.url), 'utf8');
     const preload = await readFile(new URL('../electron/preload.ts', import.meta.url), 'utf8');
     const viteEnv = await readFile(new URL('../src/vite-env.d.ts', import.meta.url), 'utf8');
-    const regenerateHandler = main.slice(main.indexOf("ipcMain.handle('task:regenerate-narration'"), main.indexOf("ipcMain.handle('task:get-artifacts'"));
+    const regenerateHandler = main.slice(main.indexOf("trustedHandle('task:regenerate-narration'"), main.indexOf("trustedHandle('task:get-artifacts'"));
 
     expect(main).toContain('markSceneNarrationForRegeneration');
     expect(regenerateHandler).toContain('retryFromStep: 5');
@@ -337,9 +358,9 @@ describe('electron ipc contract', () => {
     const main = await readFile(new URL('../electron/main.ts', import.meta.url), 'utf8');
     const preload = await readFile(new URL('../electron/preload.ts', import.meta.url), 'utf8');
     const viteEnv = await readFile(new URL('../src/vite-env.d.ts', import.meta.url), 'utf8');
-    const updateHandler = main.slice(main.indexOf("ipcMain.handle('task:update-image-prompt'"), main.indexOf("ipcMain.handle('task:rerun-step'"));
+    const updateHandler = main.slice(main.indexOf("trustedHandle('task:update-image-prompt'"), main.indexOf("trustedHandle('task:rerun-step'"));
 
-    expect(main).toContain("ipcMain.handle('task:update-image-prompt'");
+    expect(main).toContain("trustedHandle('task:update-image-prompt'");
     expect(main).toContain('updateSceneImagePrompt');
     expect(updateHandler).toContain('artifactStatePath');
     expect(updateHandler).toContain('database.addTaskEvent');
@@ -353,7 +374,7 @@ describe('electron ipc contract', () => {
     const main = await readFile(new URL('../electron/main.ts', import.meta.url), 'utf8');
     const preload = await readFile(new URL('../electron/preload.ts', import.meta.url), 'utf8');
     const viteEnv = await readFile(new URL('../src/vite-env.d.ts', import.meta.url), 'utf8');
-    const rerunHandler = main.slice(main.indexOf("ipcMain.handle('task:rerun-step'"), main.indexOf("ipcMain.handle('task:get-artifacts'"));
+    const rerunHandler = main.slice(main.indexOf("trustedHandle('task:rerun-step'"), main.indexOf("trustedHandle('task:get-artifacts'"));
 
     expect(main).toContain('markTaskStepForRerun');
     expect(rerunHandler).toContain('retryFromStep: step');

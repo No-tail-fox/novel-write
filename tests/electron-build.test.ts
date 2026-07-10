@@ -2,7 +2,7 @@ import { readFile } from 'node:fs/promises';
 import { describe, expect, it } from 'vitest';
 
 describe('electron build', () => {
-  it('keeps sql.js and undici external so Node runtime code is not bundled into ESM output', async () => {
+  it('keeps native runtime modules external while bundling the IPC schema runtime', async () => {
     const script = await readFile(new URL('../scripts/build-electron.mjs', import.meta.url), 'utf8');
     const packageJson = JSON.parse(await readFile(new URL('../package.json', import.meta.url), 'utf8')) as {
       dependencies?: Record<string, string>;
@@ -14,8 +14,9 @@ describe('electron build', () => {
     expect(packageJson.dependencies).toMatchObject({
       'sql.js': expect.any(String),
       undici: '^6.27.0',
+      zod: '^4.4.3',
     });
-    expect(Object.keys(packageJson.dependencies ?? {}).sort()).toEqual(['sql.js', 'undici']);
+    expect(Object.keys(packageJson.dependencies ?? {}).sort()).toEqual(['sql.js', 'undici', 'zod']);
     expect(packageJson.devDependencies).toMatchObject({
       concurrently: '^9.2.1',
       esbuild: '^0.28.1',

@@ -25,6 +25,7 @@ import { createViralProductionTaskInput, detectViralPlatform, runViralAnalysis }
 import { createViralRuntimeProviders } from '../src/shared/viral-runtime';
 import { listVolcengineSpeakers } from '../src/shared/volcengine-speakers';
 import { getRendererIndexPath } from './paths';
+import { createTrustedIpcRegistrar } from './ipc';
 import {
   attachDouyinLoginSecurity,
   attachMainWindowSecurity,
@@ -38,6 +39,7 @@ const __dirname = dirname(fileURLToPath(import.meta.url));
 const execFileAsync = promisify(execFile);
 let mainWindow: BrowserWindow | null = null;
 let viralLoginWindow: BrowserWindow | null = null;
+let mainRendererPolicy: RendererPolicy | null = null;
 let db: FileDatabase | null = null;
 interface RunningTaskRun {
   controller: AbortController;
@@ -46,6 +48,11 @@ interface RunningTaskRun {
 
 const runningTasks = new Map<string, RunningTaskRun>();
 const runningViralAnalyses = new Map<string, AbortController>();
+const trustedHandle = createTrustedIpcRegistrar({
+  register: (channel, handler) => ipcMain.handle(channel, handler),
+  getWindow: () => mainWindow,
+  getPolicy: () => mainRendererPolicy,
+});
 const appDataName = 'storydream';
 const staleRunningMs = 5 * 60 * 1000;
 const pipelineStepAgents: Record<number, string> = {
@@ -89,9 +96,10 @@ async function ensureRuntimeJianyingDraftPath(database: FileDatabase): Promise<v
 async function createWindow(): Promise<void> {
   const configuredDevUrl = process.env.VITE_DEV_SERVER_URL ?? (process.env.NODE_ENV === 'development' ? 'http://127.0.0.1:5173' : '');
   const rendererIndexPath = getRendererIndexPath(__dirname);
-  const rendererPolicy: RendererPolicy = configuredDevUrl
+  mainRendererPolicy = configuredDevUrl
     ? { mode: 'development', entryUrl: validateDevServerUrl(configuredDevUrl) }
     : { mode: 'production', entryUrl: pathToFileURL(rendererIndexPath).toString() };
+  const rendererPolicy = mainRendererPolicy;
 
   Menu.setApplicationMenu(null);
 
@@ -337,7 +345,7 @@ async function resumeViralAnalysisRun(database: FileDatabase, record: ViralAnaly
   startViralAnalysisRun(database, { ...record, status: 'pending', currentStage: 'queued', progress: 0, errorMessage: '' });
 }
 
-ipcMain.handle('window:control', async (_event, action: 'minimize' | 'toggle-maximize' | 'close') => {
+trustedHandle('window:control', async (_event, action: 'minimize' | 'toggle-maximize' | 'close') => {
   if (action === 'minimize') {
     mainWindow?.minimize();
     return;
@@ -355,32 +363,32 @@ ipcMain.handle('window:control', async (_event, action: 'minimize' | 'toggle-max
   }
 });
 
-ipcMain.handle('app:get-state', async () => {
+trustedHandle('app:get-state', async () => {
   const database = await getDb();
   return database.getState();
 });
 
-ipcMain.handle('app:save-config', async (_event, config) => {
+trustedHandle('app:save-config', async (_event, config) => {
   const database = await getDb();
   await database.upsertConfig(config as AppConfig);
   await saveConfigToFile(appDataDir(), config as AppConfig);
   return database.getState();
 });
 
-ipcMain.handle('llm:test-config', async (_event, config: LlmConfig) => testConfiguredLlm(config));
+trustedHandle('llm:test-config', async (_event, config: LlmConfig) => testConfiguredLlm(config));
 
-ipcMain.handle('models:list', async (_event, request: ProviderModelListRequest) => listConfiguredProviderModels(request));
+trustedHandle('models:list', async (_event, request: ProviderModelListRequest) => listConfiguredProviderModels(request));
 
-ipcMain.handle('volcengine:speakers:list', async (_event, request: VolcengineSpeakerListRequest) => listVolcengineSpeakers(request));
+trustedHandle('volcengine:speakers:list', async (_event, request: VolcengineSpeakerListRequest) => listVolcengineSpeakers(request));
 
-ipcMain.handle('config:test', async (_event, input: { target: ConfigTestTarget; config: AppConfig }) => {
+trustedHandle('config:test', async (_event, input: { target: ConfigTestTarget; config: AppConfig }) => {
   if (input.target === 'llm') {
     return fromLlmModelTestResult(await testConfiguredLlm(input.config.llm));
   }
   return testConfigTarget(input.target, input.config, { pathExists: existsSync });
 });
 
-ipcMain.handle('research:web-search', async (_event, query: string) => {
+trustedHandle('research:web-search', async (_event, query: string) => {
   const trimmed = query.trim();
   if (!trimmed) {
     return { query: trimmed, sections: [], warnings: ['请输入关键词后再搜索。'] };
@@ -392,31 +400,31 @@ ipcMain.handle('research:web-search', async (_event, query: string) => {
   }
 });
 
-ipcMain.handle('research:compose-copy', async (_event, input: ResearchCopyComposeInput) => {
+trustedHandle('research:compose-copy', async (_event, input: ResearchCopyComposeInput) => {
   const database = await getDb();
   const state = await database.getState();
   return composeCopyFromSources(createConfiguredTextLlm(state.config.llm), input);
 });
 
-ipcMain.handle('prompt-template:save', async (_event, template: PromptTemplate) => {
+trustedHandle('prompt-template:save', async (_event, template: PromptTemplate) => {
   const database = await getDb();
   await database.upsertPromptTemplate(template);
   return database.getState();
 });
 
-ipcMain.handle('prompt-template:reset', async () => {
+trustedHandle('prompt-template:reset', async () => {
   const database = await getDb();
   await database.resetPromptTemplates();
   return database.getState();
 });
 
-ipcMain.handle('custom-style:save', async (_event, style: CustomStyle) => {
+trustedHandle('custom-style:save', async (_event, style: CustomStyle) => {
   const database = await getDb();
   await database.upsertCustomStyle(style);
   return database.getState();
 });
 
-ipcMain.handle('custom-style:generate-draft', async (_event, input: CustomStyleGenerateInput): Promise<CustomStyle> => {
+trustedHandle('custom-style:generate-draft', async (_event, input: CustomStyleGenerateInput): Promise<CustomStyle> => {
   const database = await getDb();
   const state = await database.getState();
   const llm = createConfiguredJsonLlm(state.config.llm);
@@ -438,13 +446,13 @@ ipcMain.handle('custom-style:generate-draft', async (_event, input: CustomStyleG
   return normalizeGeneratedCustomStyle(input, result.json);
 });
 
-ipcMain.handle('draft-template:save', async (_event, template: DraftTemplate) => {
+trustedHandle('draft-template:save', async (_event, template: DraftTemplate) => {
   const database = await getDb();
   await database.upsertDraftTemplate(template);
   return database.getState();
 });
 
-ipcMain.handle('image-lab:generate', async (_event, input: ImageLabGenerateInput) => {
+trustedHandle('image-lab:generate', async (_event, input: ImageLabGenerateInput) => {
   const database = await getDb();
   const state = await database.getState();
   const id = input.id ?? randomUUID();
@@ -453,13 +461,13 @@ ipcMain.handle('image-lab:generate', async (_event, input: ImageLabGenerateInput
   return database.getState();
 });
 
-ipcMain.handle('image-lab:add-record', async (_event, input) => {
+trustedHandle('image-lab:add-record', async (_event, input) => {
   const database = await getDb();
   await database.addImageLabRecord(input);
   return database.getState();
 });
 
-ipcMain.handle('voice-lab:generate', async (_event, input: VoiceLabGenerateInput) => {
+trustedHandle('voice-lab:generate', async (_event, input: VoiceLabGenerateInput) => {
   const database = await getDb();
   const state = await database.getState();
   const id = input.id ?? randomUUID();
@@ -468,43 +476,43 @@ ipcMain.handle('voice-lab:generate', async (_event, input: VoiceLabGenerateInput
   return database.getState();
 });
 
-ipcMain.handle('account:save', async (_event, account: AccountProfile) => {
+trustedHandle('account:save', async (_event, account: AccountProfile) => {
   const database = await getDb();
   await database.upsertAccount(account);
   return database.getState();
 });
 
-ipcMain.handle('activation:save', async (_event, activation: ActivationState) => {
+trustedHandle('activation:save', async (_event, activation: ActivationState) => {
   const database = await getDb();
   await database.upsertActivation(activation);
   return database.getState();
 });
 
-ipcMain.handle('ui:save-preferences', async (_event, ui: UiPreferences) => {
+trustedHandle('ui:save-preferences', async (_event, ui: UiPreferences) => {
   const database = await getDb();
   await database.upsertUiPreferences(ui);
   return database.getState();
 });
 
-ipcMain.handle('book-selection:list', async (_event, theme?: string) => (await getDb()).listBookSelections(theme));
+trustedHandle('book-selection:list', async (_event, theme?: string) => (await getDb()).listBookSelections(theme));
 
-ipcMain.handle('book-selection:save', async (_event, input: BookSelectionInput) => (await getDb()).upsertBookSelection(input));
+trustedHandle('book-selection:save', async (_event, input: BookSelectionInput) => (await getDb()).upsertBookSelection(input));
 
-ipcMain.handle('book-selection:delete', async (_event, input: { theme: string; bookId: string }) => {
+trustedHandle('book-selection:delete', async (_event, input: { theme: string; bookId: string }) => {
   await (await getDb()).deleteBookSelection(input.theme, input.bookId);
 });
 
-ipcMain.handle('person-assets:list', async () => listPersonAssets(personAssetsRoot()));
+trustedHandle('person-assets:list', async () => listPersonAssets(personAssetsRoot()));
 
-ipcMain.handle('person-assets:create', async (_event, name: string) => createPersonAsset(personAssetsRoot(), name));
+trustedHandle('person-assets:create', async (_event, name: string) => createPersonAsset(personAssetsRoot(), name));
 
-ipcMain.handle('person-assets:rename', async (_event, input: { oldName: string; newName: string }) => renamePersonAsset(personAssetsRoot(), input.oldName, input.newName));
+trustedHandle('person-assets:rename', async (_event, input: { oldName: string; newName: string }) => renamePersonAsset(personAssetsRoot(), input.oldName, input.newName));
 
-ipcMain.handle('person-assets:delete', async (_event, name: string) => deletePersonAsset(personAssetsRoot(), name));
+trustedHandle('person-assets:delete', async (_event, name: string) => deletePersonAsset(personAssetsRoot(), name));
 
-ipcMain.handle('person-assets:list-images', async (_event, name: string) => listPersonImages(personAssetsRoot(), name));
+trustedHandle('person-assets:list-images', async (_event, name: string) => listPersonImages(personAssetsRoot(), name));
 
-ipcMain.handle('person-assets:import-images', async (_event, name: string) => {
+trustedHandle('person-assets:import-images', async (_event, name: string) => {
   const result = await dialog.showOpenDialog({
     title: `导入图片到「${name}」`,
     properties: ['openFile', 'multiSelections'],
@@ -514,7 +522,7 @@ ipcMain.handle('person-assets:import-images', async (_event, name: string) => {
   return importPersonAssetFiles(personAssetsRoot(), name, result.filePaths);
 });
 
-ipcMain.handle('html-video:create-task', async (_event, input: CreateTaskInput) => {
+trustedHandle('html-video:create-task', async (_event, input: CreateTaskInput) => {
   const database = await getDb();
   await database.createTask({
     ...input,
@@ -526,14 +534,14 @@ ipcMain.handle('html-video:create-task', async (_event, input: CreateTaskInput) 
   return database.getState();
 });
 
-ipcMain.handle('task:create-and-run', async (_event, input: CreateTaskInput) => {
+trustedHandle('task:create-and-run', async (_event, input: CreateTaskInput) => {
   const database = await getDb();
   const task = await database.createTask(input);
   startTaskRun(database, task);
   return database.getState();
 });
 
-ipcMain.handle('viral:create-and-run', async (_event, input: CreateViralAnalysisInput) => {
+trustedHandle('viral:create-and-run', async (_event, input: CreateViralAnalysisInput) => {
   const database = await getDb();
   const record = await database.createViralAnalysis({
     ...input,
@@ -543,7 +551,7 @@ ipcMain.handle('viral:create-and-run', async (_event, input: CreateViralAnalysis
   return database.getState();
 });
 
-ipcMain.handle('viral:update-status', async (_event, input: { id: string; status: ViralAnalysisStatus }) => {
+trustedHandle('viral:update-status', async (_event, input: { id: string; status: ViralAnalysisStatus }) => {
   const database = await getDb();
   const state = await database.getState();
   const record = state.viralAnalyses.find((item) => item.id === input.id);
@@ -563,7 +571,7 @@ ipcMain.handle('viral:update-status', async (_event, input: { id: string; status
   return database.getState();
 });
 
-ipcMain.handle('viral:retry', async (_event, id: string) => {
+trustedHandle('viral:retry', async (_event, id: string) => {
   const database = await getDb();
   const state = await database.getState();
   const record = state.viralAnalyses.find((item) => item.id === id);
@@ -571,7 +579,7 @@ ipcMain.handle('viral:retry', async (_event, id: string) => {
   return database.getState();
 });
 
-ipcMain.handle('viral:get-result', async (_event, id: string) => {
+trustedHandle('viral:get-result', async (_event, id: string) => {
   const database = await getDb();
   const state = await database.getState();
   const record = state.viralAnalyses.find((item) => item.id === id);
@@ -579,7 +587,7 @@ ipcMain.handle('viral:get-result', async (_event, id: string) => {
   return JSON.parse(await readFile(record.resultPath, 'utf8'));
 });
 
-ipcMain.handle('viral:create-production-task', async (_event, input: { id: string; options?: ViralProductionTaskOptions }) => {
+trustedHandle('viral:create-production-task', async (_event, input: { id: string; options?: ViralProductionTaskOptions }) => {
   const database = await getDb();
   const state = await database.getState();
   const record = state.viralAnalyses.find((item) => item.id === input.id);
@@ -591,7 +599,7 @@ ipcMain.handle('viral:create-production-task', async (_event, input: { id: strin
   return database.getState();
 });
 
-ipcMain.handle('task:update-status', async (_event, input: { id: string; status: TaskStatus }) => {
+trustedHandle('task:update-status', async (_event, input: { id: string; status: TaskStatus }) => {
   const database = await getDb();
   const state = await database.getState();
   const task = state.tasks.find((item) => item.id === input.id);
@@ -617,7 +625,7 @@ ipcMain.handle('task:update-status', async (_event, input: { id: string; status:
   return database.getState();
 });
 
-ipcMain.handle('task:retry', async (_event, id: string) => {
+trustedHandle('task:retry', async (_event, id: string) => {
   const database = await getDb();
   const state = await database.getState();
   const task = state.tasks.find((item) => item.id === id);
@@ -627,7 +635,7 @@ ipcMain.handle('task:retry', async (_event, id: string) => {
   return database.getState();
 });
 
-ipcMain.handle('task:regenerate-image', async (_event, input: { id: string; sceneId: number }) => {
+trustedHandle('task:regenerate-image', async (_event, input: { id: string; sceneId: number }) => {
   const database = await getDb();
   const state = await database.getState();
   const task = state.tasks.find((item) => item.id === input.id);
@@ -664,7 +672,7 @@ ipcMain.handle('task:regenerate-image', async (_event, input: { id: string; scen
   return database.getState();
 });
 
-ipcMain.handle('task:regenerate-narration', async (_event, input: { id: string; sceneId: number }) => {
+trustedHandle('task:regenerate-narration', async (_event, input: { id: string; sceneId: number }) => {
   const database = await getDb();
   const state = await database.getState();
   const task = state.tasks.find((item) => item.id === input.id);
@@ -701,7 +709,7 @@ ipcMain.handle('task:regenerate-narration', async (_event, input: { id: string; 
   return database.getState();
 });
 
-ipcMain.handle('task:update-image-prompt', async (_event, input: { id: string; sceneId: number; prompt: string }) => {
+trustedHandle('task:update-image-prompt', async (_event, input: { id: string; sceneId: number; prompt: string }) => {
   const database = await getDb();
   const state = await database.getState();
   const task = state.tasks.find((item) => item.id === input.id);
@@ -724,7 +732,7 @@ ipcMain.handle('task:update-image-prompt', async (_event, input: { id: string; s
   return database.getState();
 });
 
-ipcMain.handle('task:rerun-step', async (_event, input: { id: string; step: number; mode: TaskStepRerunMode }) => {
+trustedHandle('task:rerun-step', async (_event, input: { id: string; step: number; mode: TaskStepRerunMode }) => {
   const database = await getDb();
   const state = await database.getState();
   const task = state.tasks.find((item) => item.id === input.id);
@@ -762,7 +770,7 @@ ipcMain.handle('task:rerun-step', async (_event, input: { id: string; step: numb
   return database.getState();
 });
 
-ipcMain.handle('task:get-artifacts', async (_event, id: string) => {
+trustedHandle('task:get-artifacts', async (_event, id: string) => {
   const database = await getDb();
   const state = await database.getState();
   const task = state.tasks.find((item) => item.id === id);
@@ -772,9 +780,9 @@ ipcMain.handle('task:get-artifacts', async (_event, id: string) => {
   return readTaskArtifactSnapshot(task);
 });
 
-ipcMain.handle('asset:read-data-url', async (_event, path: string) => readLocalImageDataUrl(path));
+trustedHandle('asset:read-data-url', async (_event, path: string) => readLocalImageDataUrl(path));
 
-ipcMain.handle('local-image:select', async () => {
+trustedHandle('local-image:select', async () => {
   const result = await dialog.showOpenDialog({
     title: '选择背景图',
     properties: ['openFile'],
@@ -902,15 +910,15 @@ async function openViralLoginWindow(): Promise<string | null> {
   });
 }
 
-ipcMain.handle('local-audio:select', selectLocalAudio);
-ipcMain.handle('local-folder:select', selectLocalFolder);
-ipcMain.handle('cookie-file:select', selectCookieFile);
-ipcMain.handle('viral:open-login-window', openViralLoginWindow);
+trustedHandle('local-audio:select', selectLocalAudio);
+trustedHandle('local-folder:select', selectLocalFolder);
+trustedHandle('cookie-file:select', selectCookieFile);
+trustedHandle('viral:open-login-window', openViralLoginWindow);
 
-ipcMain.handle('jianying:effect-catalog', async () => loadJianyingEffectCatalog());
-ipcMain.handle('jianying:draft-path:detect', async () => detectJianyingDraftPath({ pathExists: existsSync }));
+trustedHandle('jianying:effect-catalog', async () => loadJianyingEffectCatalog());
+trustedHandle('jianying:draft-path:detect', async () => detectJianyingDraftPath({ pathExists: existsSync }));
 
-ipcMain.handle('diagnostics:run', async () => {
+trustedHandle('diagnostics:run', async () => {
   const database = await getDb();
   const state = await database.getState();
   const python = await checkPython();
@@ -935,7 +943,7 @@ ipcMain.handle('diagnostics:run', async () => {
   };
 });
 
-ipcMain.handle('path:open', async (_event, path: string) => {
+trustedHandle('path:open', async (_event, path: string) => {
   await shell.openPath(path);
 });
 
