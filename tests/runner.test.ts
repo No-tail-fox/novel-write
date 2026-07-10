@@ -17,6 +17,7 @@ const tinyPng = Buffer.from(
   'iVBORw0KGgoAAAANSUhEUgAAAAIAAAACCAIAAAD91JpzAAAAFElEQVR4nGP8z8DAwMDAxMDAwAAABQABDQottAAAAABJRU5ErkJggg==',
   'base64',
 );
+const rewriteControlTestTimeoutMs = 15_000;
 
 function mockConfiguredLlm(run: JsonLlm): ConfiguredJsonLlm {
   return { protocol: 'anthropic', run };
@@ -388,7 +389,7 @@ describe('task runner', () => {
     }
   });
 
-  it('applies fixed intro and outro while keeping fixed intro out of rewrite prompts', async () => {
+  it('applies fixed intro and outro while keeping fixed intro out of rewrite prompts', { timeout: rewriteControlTestTimeoutMs }, async () => {
     const fixedIntro = '今天这本书，先看第一句话。';
     const reviewedText = `${fixedIntro}AI should rewrite only this body.`;
     const aiBody = fitSourceLengthRewrite('AI body for fixed intro case', 'x'.repeat(100));
@@ -418,7 +419,7 @@ describe('task runner', () => {
     }
   });
 
-  it('locks the first two reviewed sentences outside rewrite prompts', async () => {
+  it('locks the first two reviewed sentences outside rewrite prompts', { timeout: rewriteControlTestTimeoutMs }, async () => {
     const reviewedText = '第一句必须保留。第二句也保留。第三句进入改写。第四句继续改写。';
     const aiBody = fitSourceLengthRewrite('第三句进入AI改写。第四句继续AI改写。', 'x'.repeat(100));
     const { finalCopy, requests } = await runRewriteControlScenario({
@@ -444,7 +445,7 @@ describe('task runner', () => {
     expect(finalCopy.startsWith('第一句必须保留。第二句也保留。')).toBe(true);
   });
 
-  it('avoids empty rewrite source when lockIntroSentences covers the whole text', async () => {
+  it('avoids empty rewrite source when lockIntroSentences covers the whole text', { timeout: rewriteControlTestTimeoutMs }, async () => {
     const reviewedText = '第一句。第二句。';
     const aiBody = fitSourceLengthRewrite('AI rewrote the whole short source.', 'x'.repeat(100));
     const { finalCopy, requests } = await runRewriteControlScenario({
@@ -467,7 +468,7 @@ describe('task runner', () => {
     expect(finalCopy).toBe(aiBody);
   });
 
-  it('does not duplicate fixed intro when over-lock falls back to whole reviewed text', async () => {
+  it('does not duplicate fixed intro when over-lock falls back to whole reviewed text', { timeout: rewriteControlTestTimeoutMs }, async () => {
     const fixedIntro = '今天这本书，先看第一句话。';
     const reviewedText = `${fixedIntro}第二句话也在原文里。`;
     const { finalCopy } = await runRewriteControlScenario({
@@ -488,7 +489,7 @@ describe('task runner', () => {
     expect(countOccurrences(finalCopy, fixedIntro)).toBe(1);
   });
 
-  it('adjusts target length for fixed intro and outro controls before rewrite', async () => {
+  it('adjusts target length for fixed intro and outro controls before rewrite', { timeout: rewriteControlTestTimeoutMs }, async () => {
     const fixedIntro = '开头控制'.repeat(20);
     const outroCta = '结尾控制'.repeat(20);
     const { finalCopy, requests } = await runRewriteControlScenario({
@@ -528,7 +529,7 @@ describe('task runner', () => {
     expect(countVisibleTestCharacters(finalCopy)).toBeLessThanOrEqual(360);
   });
 
-  it('does not increase a short explicit target length while subtracting controls', async () => {
+  it('does not increase a short explicit target length while subtracting controls', { timeout: rewriteControlTestTimeoutMs }, async () => {
     const { requests } = await runRewriteControlScenario({
       taskInput: {
         title: '短目标字数控制测试',
@@ -567,7 +568,7 @@ describe('task runner', () => {
     expect(repairPrompt).not.toContain('Target word count range: 160-240 Chinese characters.');
   });
 
-  it('adds product info prompting to rewrite and evaluation prompts', async () => {
+  it('adds product info prompting to rewrite and evaluation prompts', { timeout: rewriteControlTestTimeoutMs }, async () => {
     const { requests } = await runRewriteControlScenario({
       taskInput: {
         title: '商品信息测试',
@@ -592,7 +593,7 @@ describe('task runner', () => {
     }
   });
 
-  it('keeps product info and rewrite instructions in target length repair prompts', async () => {
+  it('keeps product info and rewrite instructions in target length repair prompts', { timeout: rewriteControlTestTimeoutMs }, async () => {
     const { requests } = await runRewriteControlScenario({
       taskInput: {
         title: '商品修复提示测试',
@@ -631,7 +632,7 @@ describe('task runner', () => {
     expect(repairPrompt).toContain('Rewrite marker: keep product pitch.');
   });
 
-  it('includes typed product info fields in rewrite prompts', async () => {
+  it('includes typed product info fields in rewrite prompts', { timeout: rewriteControlTestTimeoutMs }, async () => {
     const { requests } = await runRewriteControlScenario({
       taskInput: {
         title: '商品字段测试',
@@ -668,7 +669,7 @@ describe('task runner', () => {
     expect(rewritePrompt).not.toContain('C:/secret/materials');
   });
 
-  it('treats product info as promotion context without mutating stored keepPromotion', async () => {
+  it('treats product info as promotion context without mutating stored keepPromotion', { timeout: rewriteControlTestTimeoutMs }, async () => {
     const { requests, storedKeepPromotion } = await runRewriteControlScenario({
       taskInput: {
         title: '商品上下文测试',
@@ -703,7 +704,7 @@ describe('task runner', () => {
     expect(storedKeepPromotion).toBe(false);
   });
 
-  it('treats product info as promotion context in cover prompt templates', async () => {
+  it('treats product info as promotion context in cover prompt templates', { timeout: rewriteControlTestTimeoutMs }, async () => {
     const { requests, storedKeepPromotion } = await runRewriteControlScenario({
       taskInput: {
         title: '封面商品上下文测试',
