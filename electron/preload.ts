@@ -35,9 +35,13 @@ import type {
 import type { PublicAppState, SaveConfigInput, SecretChanges } from '../src/shared/config-secrets';
 import type { PersonAssetImage, PersonAssetSummary } from '../src/shared/person-assets';
 import { unwrapIpcResult, type IpcChannel } from '../src/shared/ipc-contract';
+import { appErrorFromPayload, serializeAppErrorForBridge } from '../src/shared/app-error';
 
 async function invokeTrusted<T = unknown>(channel: IpcChannel, input?: unknown): Promise<T> {
   const result = await ipcRenderer.invoke(channel, input);
+  if (result && typeof result === 'object' && result.ok === false) {
+    throw new Error(serializeAppErrorForBridge(appErrorFromPayload(result.error)));
+  }
   return unwrapIpcResult<T>(result);
 }
 

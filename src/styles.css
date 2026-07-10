@@ -3820,6 +3820,34 @@ textarea {
   line-height: 1.5;
 }
 
+.global-action-banner {
+  padding: 10px 28px 0;
+}
+
+.inline-action-feedback {
+  display: flex;
+  align-items: center;
+  width: 100%;
+  min-height: 36px;
+  margin: 10px 0 0;
+  padding: 8px 12px;
+  border-left: 3px solid var(--danger);
+  background: rgba(255, 93, 97, 0.08);
+  color: #ffd7d8;
+  line-height: 1.5;
+  overflow-wrap: anywhere;
+}
+
+.inline-action-feedback.success {
+  border-left-color: var(--ok);
+  background: rgba(133, 199, 107, 0.08);
+  color: #d8f2cc;
+}
+
+.global-action-banner .inline-action-feedback {
+  margin: 0;
+}
+
 .provider-config-note {
   grid-column: 1 / -1;
   display: flex;

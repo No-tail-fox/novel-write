@@ -164,6 +164,7 @@ import {
 import { createViralTemplateDrafts } from './shared/viral-template-extraction';
 import { defaultPodcastSpeakersForProvider, defaultTaskSpeakerForProvider, normalizeRuntimeTtsProvider, taskSpeakerLabel, ttsVoiceOptionsForProvider, type RuntimeTtsProvider } from './shared/tts-voices';
 import { createHtmlVideoTaskInput, htmlVideoSteps, htmlVideoTabs, isHtmlVideoTask, parseHtmlVideoPipelineData, tabForHtmlVideoStep } from './shared/html-video-workflow';
+import { useAsyncAction, type AsyncActionFeedback } from './ui/async-action';
 import './styles.css';
 
 const sampleText =
@@ -889,6 +890,7 @@ function App() {
   const [saveTone, setSaveTone] = useState<'saved' | 'saving' | 'dirty'>('saved');
   const isBrowserPreview = !window.storydream && !window.storybound;
   const api = useMemo(() => window.storydream ?? window.storybound ?? makeFallbackApi(setState), []);
+  const shellAction = useAsyncAction();
 
   useEffect(() => {
     api
@@ -898,20 +900,24 @@ function App() {
         setState(hydrated);
         setActiveView(hydrated.ui.activeView);
       })
-      .catch(console.error);
+      .catch(shellAction.reportError);
     return api.onTaskEvent((next) => {
-      setState(hydrateState(next));
+      try {
+        setState(hydrateState(next));
+      } catch (error) {
+        shellAction.reportError(error);
+      }
     });
-  }, [api]);
+  }, [api, shellAction.reportError]);
 
   const liveRefreshMs = state.tasks.some((task) => task.status === 'running' || task.status === 'pending') ? 1000 : 0;
   useEffect(() => {
     if (!liveRefreshMs) return undefined;
     const timer = window.setInterval(() => {
-      api.getState().then((next) => setState(hydrateState(next))).catch(console.error);
+      api.getState().then((next) => setState(hydrateState(next))).catch(shellAction.reportError);
     }, liveRefreshMs);
     return () => window.clearInterval(timer);
-  }, [api, liveRefreshMs]);
+  }, [api, liveRefreshMs, shellAction.reportError]);
 
   async function navigate(view: ShellView) {
     if (view !== 'task-detail') {
@@ -919,13 +925,13 @@ function App() {
     }
     setActiveView(view);
     setSaveTone('saving');
-    try {
+    const result = await shellAction.run(async () => {
       const next = await api.saveUiPreferences({ ...state.ui, activeView: view });
       setState(hydrateState(next));
       setSaveTone('saved');
-    } catch (error) {
+    });
+    if (!result.ok) {
       setSaveTone('dirty');
-      console.error(error);
     }
   }
 
@@ -938,14 +944,26 @@ function App() {
     setSelectedTaskId(taskId);
     setActiveView('task-detail');
     setSaveTone('saving');
-    try {
+    const result = await shellAction.run(async () => {
       const next = await api.saveUiPreferences({ ...state.ui, activeView: 'task-detail' });
       setState(hydrateState(next));
       setSaveTone('saved');
-    } catch (error) {
+    });
+    if (!result.ok) {
       setSaveTone('dirty');
-      console.error(error);
     }
+  }
+
+  function minimizeWindow() {
+    void shellAction.run(() => api.windowControl('minimize'));
+  }
+
+  function toggleMaximizeWindow() {
+    void shellAction.run(() => api.windowControl('toggle-maximize'));
+  }
+
+  function closeWindow() {
+    void shellAction.run(() => api.windowControl('close'));
   }
 
   const selectedTask = state.tasks.find((task) => task.id === selectedTaskId) ?? state.tasks[0] ?? null;
@@ -963,13 +981,13 @@ function App() {
           <strong>StoryDream</strong>
         </div>
         <div className="window-controls" aria-label="窗体控制">
-          <button className="window-control-button" type="button" aria-label="最小化" onClick={() => api.windowControl('minimize')}>
+          <button className="window-control-button" type="button" aria-label="最小化" onClick={minimizeWindow}>
             <Minus size={14} />
           </button>
-          <button className="window-control-button" type="button" aria-label="最大化" onClick={() => api.windowControl('toggle-maximize')}>
+          <button className="window-control-button" type="button" aria-label="最大化" onClick={toggleMaximizeWindow}>
             <Maximize2 size={14} />
           </button>
-          <button className="window-control-button close" type="button" aria-label="关闭" onClick={() => api.windowControl('close')}>
+          <button className="window-control-button close" type="button" aria-label="关闭" onClick={closeWindow}>
             <X size={14} />
           </button>
         </div>
@@ -1049,6 +1067,11 @@ function App() {
               {saveTone === 'saving' ? '保存中' : saveTone === 'dirty' ? '有未保存改动' : '所有改动已保存'}
             </div>
           </header>
+          {shellAction.feedback ? (
+            <div className="global-action-banner">
+              <InlineActionFeedback feedback={shellAction.feedback} />
+            </div>
+          ) : null}
 
           {activeView === 'new-task' ? <NewTaskPage api={api} state={state} applyState={applyState} openTaskDetail={openTaskDetail} isBrowserPreview={isBrowserPreview} /> : null}
           {activeView === 'book-selection' ? <BookSelectionPage api={api} navigate={navigate} /> : null}
@@ -1111,6 +1134,7 @@ function ViralAnalyzerPage({
   const [selectedId, setSelectedId] = useState(state.viralAnalyses[0]?.id ?? '');
   const [result, setResult] = useState<ViralAnalysisResult | null>(null);
   const [message, setMessage] = useState('');
+  const viralAction = useAsyncAction();
   const selected = state.viralAnalyses.find((item) => item.id === selectedId) ?? state.viralAnalyses[0] ?? null;
   const selectedEvents = selected ? state.viralEvents.filter((event) => event.analysisId === selected.id) : [];
   const detectedPlatform = detectBrowserViralPlatform(url);
@@ -1132,21 +1156,21 @@ function ViralAnalyzerPage({
         if (!cancelled) setResult(next);
       })
       .catch((error) => {
-        if (!cancelled) setMessage(error instanceof Error ? error.message : String(error));
+        if (!cancelled) viralAction.reportError(error);
       });
     return () => {
       cancelled = true;
     };
-  }, [api, selected?.id, selected?.status]);
+  }, [api, selected?.id, selected?.status, viralAction.reportError]);
 
   function handleUrlChange(value: string) {
     setUrl(value);
   }
 
-  async function saveViralCookiePath(path: string) {
+  function persistViralCookiePath(path: string) {
     const trimmed = path.trim();
     setCookieFilePath(trimmed);
-    const nextState = await api.saveConfig({
+    return api.saveConfig({
       config: {
         ...state.config,
         viral: {
@@ -1155,24 +1179,29 @@ function ViralAnalyzerPage({
         },
       },
       secretChanges: {},
-    });
-    applyState(nextState);
+    }).then(applyState);
+  }
+
+  async function saveViralCookiePath(path: string) {
+    await viralAction.run(() => persistViralCookiePath(path));
   }
 
   async function chooseCookieFile() {
-    const selectedPath = await api.selectCookieFile();
-    if (selectedPath) {
-      await saveViralCookiePath(selectedPath);
-    }
+    await viralAction.run(async () => {
+      const selectedPath = await api.selectCookieFile();
+      if (selectedPath) await persistViralCookiePath(selectedPath);
+    });
   }
 
   async function openDouyinLogin() {
-    setMessage('请在打开的抖音窗口完成登录，关闭窗口后会自动保存 Cookie。');
-    const loginCookiePath = await api.openViralLoginWindow();
-    if (loginCookiePath) {
-      setCookieFilePath(loginCookiePath);
-      setMessage(`已保存 Cookie 文件：${loginCookiePath}`);
-    }
+    await viralAction.run(async () => {
+      setMessage('请在打开的抖音窗口完成登录，关闭窗口后会自动保存 Cookie。');
+      const loginCookiePath = await api.openViralLoginWindow();
+      if (loginCookiePath) {
+        setCookieFilePath(loginCookiePath);
+        setMessage(`已保存 Cookie 文件：${loginCookiePath}`);
+      }
+    });
   }
 
   async function startAnalysis() {
@@ -1185,42 +1214,56 @@ function ViralAnalyzerPage({
       return;
     }
     setMessage('');
-    if (cookieFilePath !== state.config.viral.cookieFilePath) await saveViralCookiePath(cookieFilePath);
-    const next = await api.createAndRunViralAnalysis({
-      url: url.trim(),
-      platform: selectedPlatformForAnalysis,
-      settings: { track, style, ratio, templateId, keyFrameCount, storyboardSceneCount: 12 },
+    await viralAction.run(async () => {
+      if (cookieFilePath !== state.config.viral.cookieFilePath) await persistViralCookiePath(cookieFilePath);
+      const next = await api.createAndRunViralAnalysis({
+        url: url.trim(),
+        platform: selectedPlatformForAnalysis,
+        settings: { track, style, ratio, templateId, keyFrameCount, storyboardSceneCount: 12 },
+      });
+      applyState(next);
+      setSelectedId(next.viralAnalyses[0]?.id ?? '');
     });
-    applyState(next);
-    setSelectedId(next.viralAnalyses[0]?.id ?? '');
   }
 
   async function createProductionTask() {
     if (!selected) return;
-    const next = await api.createProductionTaskFromViral(selected.id, {
-      track,
-      style,
-      ratio,
-      templateId,
-      storyboardSceneCount: result?.recreation.taskDefaults.storyboardSceneCount ?? 12,
+    await viralAction.run(async () => {
+      const next = await api.createProductionTaskFromViral(selected.id, {
+        track,
+        style,
+        ratio,
+        templateId,
+        storyboardSceneCount: result?.recreation.taskDefaults.storyboardSceneCount ?? 12,
+      });
+      applyState(next);
+      if (next.tasks[0]) openTaskDetail(next.tasks[0].id);
     });
-    applyState(next);
-    if (next.tasks[0]) openTaskDetail(next.tasks[0].id);
   }
 
   async function saveViralTemplates(input: { storyTemplateName: string; imageTemplateName: string }) {
     if (!result) return;
-    const drafts = createViralTemplateDrafts(result, {
-      storyTemplateName: input.storyTemplateName,
-      imageTemplateName: input.imageTemplateName,
-      track,
-      style,
-      draftTemplateId: templateId,
+    const actionResult = await viralAction.run(async () => {
+      const drafts = createViralTemplateDrafts(result, {
+        storyTemplateName: input.storyTemplateName,
+        imageTemplateName: input.imageTemplateName,
+        track,
+        style,
+        draftTemplateId: templateId,
+      });
+      await api.saveCustomStyle(drafts.imageTemplate);
+      const next = await api.savePromptTemplate(drafts.storyTemplate);
+      applyState(next);
+      setMessage('已保存故事模板和图片模板，可在提示词模板中继续编辑。');
     });
-    await api.saveCustomStyle(drafts.imageTemplate);
-    const next = await api.savePromptTemplate(drafts.storyTemplate);
-    applyState(next);
-    setMessage('已保存故事模板和图片模板，可在提示词模板中继续编辑。');
+    if (!actionResult.ok && actionResult.error) throw actionResult.error;
+  }
+
+  async function retryAnalysis() {
+    if (!selected) return;
+    await viralAction.run(async () => {
+      applyState(await api.retryViralAnalysis(selected.id));
+    });
   }
 
   return (
@@ -1296,6 +1339,7 @@ function ViralAnalyzerPage({
             <p className="muted-text">抖音风控时先点登录窗口完成登录；关闭窗口后会自动写入本应用的 Cookie 文件。也可以手动选择 Netscape cookies.txt。</p>
           </div>
           {message ? <div className="test-result">{message}</div> : null}
+          <InlineActionFeedback feedback={viralAction.feedback} />
         </section>
 
         <section className="panel viral-history-panel">
@@ -1338,7 +1382,7 @@ function ViralAnalyzerPage({
       <section className="panel viral-report-panel viral-result-drawer">
         <div className="panel-title-row">
           <h3>拆解报告</h3>
-          {selected?.status === 'failed' || selected?.status === 'cancelled' ? <button className="mini-button viral-retry-button" type="button" onClick={() => selected && api.retryViralAnalysis(selected.id).then(applyState)}><RotateCcw size={14} />重试</button> : null}
+          {selected?.status === 'failed' || selected?.status === 'cancelled' ? <button className="mini-button viral-retry-button" type="button" disabled={viralAction.busy} onClick={retryAnalysis}><RotateCcw size={14} />重试</button> : null}
         </div>
         {result ? <ViralReport result={result} createProductionTask={createProductionTask} saveTemplates={saveViralTemplates} /> : <p className="muted-text">任务完成后显示开头、结构、结尾、爆点和复刻方案。</p>}
       </section>
@@ -1688,6 +1732,7 @@ function NewTaskPage({
   const [composingCopy, setComposingCopy] = useState(false);
   const [researchCopy, setResearchCopy] = useState('');
   const [researchCopyMessage, setResearchCopyMessage] = useState('');
+  const taskAction = useAsyncAction();
 
   const searchSections = (searchContext?.sections ?? []).slice(0, 10);
   const selectedSources = searchSections.filter((source, index) => selectedSearchSourceIds.includes(sourceKey(source, index)));
@@ -1734,11 +1779,11 @@ function NewTaskPage({
       .then((assets) => {
         if (active) setPersonAssets(assets);
       })
-      .catch(console.error);
+      .catch(taskAction.reportError);
     return () => {
       active = false;
     };
-  }, [api]);
+  }, [api, taskAction.reportError]);
 
   useEffect(() => {
     if (materialSource === 'local' && !materialPerson && personAssets[0]) {
@@ -1838,19 +1883,19 @@ function NewTaskPage({
       setSearchMessage('请先输入关键词。');
       return;
     }
-    setSearchingSources(true);
-    setSearchMessage('正在从 Bing 搜索并读取网页正文...');
-    try {
-      const context = await api.searchWebSources(keyword);
-      const limitedContext = { ...context, sections: context.sections.slice(0, 10) };
-      setSearchContext(limitedContext);
-      setSelectedSearchSourceIds([]);
-      setSearchMessage(context.warnings.length ? context.warnings.join('；') : `已获取前 ${limitedContext.sections.length} 条网页资料，请勾选要使用的页面。`);
-    } catch (error) {
-      setSearchMessage(error instanceof Error ? error.message : String(error));
-    } finally {
-      setSearchingSources(false);
-    }
+    await taskAction.run(async () => {
+      setSearchingSources(true);
+      setSearchMessage('正在从 Bing 搜索并读取网页正文...');
+      try {
+        const context = await api.searchWebSources(keyword);
+        const limitedContext = { ...context, sections: context.sections.slice(0, 10) };
+        setSearchContext(limitedContext);
+        setSelectedSearchSourceIds([]);
+        setSearchMessage(context.warnings.length ? context.warnings.join('；') : `已获取前 ${limitedContext.sections.length} 条网页资料，请勾选要使用的页面。`);
+      } finally {
+        setSearchingSources(false);
+      }
+    }, { onError: (error) => setSearchMessage(error.message) });
   }
 
   async function composeResearchCopy() {
@@ -1858,39 +1903,43 @@ function NewTaskPage({
       setResearchCopyMessage('请先勾选至少 1 个网页来源。');
       return;
     }
-    setComposingCopy(true);
-    setResearchCopyMessage('正在结合所选页面信息生成文案...');
-    try {
-      const result = await api.composeResearchCopy({
-        keyword: aiKeyword.trim(),
-        extraRequirements,
-        selectedSources,
-        targetLength: normalizeTaskTargetLength(targetLength) ?? undefined,
-      });
-      setResearchCopy(result.copy);
-      setInputText(result.copy);
-      setTitle(result.title || aiKeyword.trim());
-      setMode('paste');
-      setResearchCopyMessage(`已生成文案并填入粘贴文案${result.requestId ? `（request ${result.requestId}）` : ''}。`);
-    } catch (error) {
-      setResearchCopyMessage(error instanceof Error ? error.message : String(error));
-    } finally {
-      setComposingCopy(false);
-    }
+    await taskAction.run(async () => {
+      setComposingCopy(true);
+      setResearchCopyMessage('正在结合所选页面信息生成文案...');
+      try {
+        const result = await api.composeResearchCopy({
+          keyword: aiKeyword.trim(),
+          extraRequirements,
+          selectedSources,
+          targetLength: normalizeTaskTargetLength(targetLength) ?? undefined,
+        });
+        setResearchCopy(result.copy);
+        setInputText(result.copy);
+        setTitle(result.title || aiKeyword.trim());
+        setMode('paste');
+        setResearchCopyMessage(`已生成文案并填入粘贴文案${result.requestId ? `（request ${result.requestId}）` : ''}。`);
+      } finally {
+        setComposingCopy(false);
+      }
+    }, { onError: (error) => setResearchCopyMessage(error.message) });
   }
 
   async function addBgmFromTask() {
-    const audioPath = await api.selectLocalAudio();
-    if (!audioPath) return;
-    const nextBgm = addUploadedBgm(state.config, audioPath);
-    const next = await api.saveConfig({ config: nextBgm.config, secretChanges: {} });
-    applyState(next);
-    setBgmId(nextBgm.bgmId);
+    await taskAction.run(async () => {
+      const audioPath = await api.selectLocalAudio();
+      if (!audioPath) return;
+      const nextBgm = addUploadedBgm(state.config, audioPath);
+      const next = await api.saveConfig({ config: nextBgm.config, secretChanges: {} });
+      applyState(next);
+      setBgmId(nextBgm.bgmId);
+    });
   }
 
   async function selectTaskReferenceImage() {
-    const imagePath = await api.selectLocalImage();
-    if (imagePath) setReferenceImagePath(imagePath);
+    await taskAction.run(async () => {
+      const imagePath = await api.selectLocalImage();
+      if (imagePath) setReferenceImagePath(imagePath);
+    });
   }
 
   async function run() {
@@ -1907,9 +1956,10 @@ function NewTaskPage({
       return;
     }
     setDraftNotice('');
-    setRunning(true);
-    try {
-      const next = await api.createAndRunTask({
+    await taskAction.run(async () => {
+      setRunning(true);
+      try {
+        const next = await api.createAndRunTask({
         title,
         inputText: mode === 'paste' ? inputText : researchCopy.trim() || `${aiKeyword}\n\n${extraRequirements}`,
         mode,
@@ -1952,17 +2002,16 @@ function NewTaskPage({
         storyboardSceneCount: normalizeTaskStoryboardSceneCount(storyboardSceneCount),
         promptTemplateId: resolvedPromptTemplate?.id ?? null,
         promptTemplateType: 'task',
-      });
-      applyState(next);
-      const createdTask = next.tasks[0];
-      if (createdTask) {
-        openTaskDetail(createdTask.id);
+        });
+        applyState(next);
+        const createdTask = next.tasks[0];
+        if (createdTask) {
+          openTaskDetail(createdTask.id);
+        }
+      } finally {
+        setRunning(false);
       }
-    } catch (error) {
-      setDraftNotice(uiErrorMessage(error));
-    } finally {
-      setRunning(false);
-    }
+    }, { onError: (error) => setDraftNotice(error.message) });
   }
 
   return (
@@ -2295,6 +2344,7 @@ function NewTaskPage({
           </div>
         </div>
         {draftNotice ? <span className="local-note">{draftNotice}</span> : null}
+        <InlineActionFeedback feedback={taskAction.feedback} />
       </section>
     </div>
   );
@@ -2317,6 +2367,7 @@ function BookSelectionPage({ api, navigate }: { api: StoryDreamApi; navigate: (v
   const [note, setNote] = useState('');
   const [message, setMessage] = useState('');
   const [pendingAction, setPendingAction] = useState<'save' | `delete:${string}` | null>(null);
+  const bookAction = useAsyncAction();
 
   useEffect(() => {
     let active = true;
@@ -2326,15 +2377,19 @@ function BookSelectionPage({ api, navigate }: { api: StoryDreamApi; navigate: (v
         if (active) setRecords(items);
       })
       .catch((error) => {
-        if (active) setMessage(error instanceof Error ? error.message : String(error));
+        if (active) bookAction.reportError(error);
       });
     return () => {
       active = false;
     };
-  }, [api]);
+  }, [api, bookAction.reportError]);
+
+  function loadSelections() {
+    return api.listBookSelections().then(setRecords);
+  }
 
   async function refreshSelections() {
-    setRecords(await api.listBookSelections());
+    await bookAction.run(loadSelections);
   }
 
   function loadRecord(record: BookSelectionRecord) {
@@ -2395,35 +2450,35 @@ function BookSelectionPage({ api, navigate }: { api: StoryDreamApi; navigate: (v
       setMessage('请先填写主题。');
       return;
     }
-    setPendingAction('save');
-    try {
-      const record = await api.saveBookSelection({
-        theme: theme.trim(),
-        bookId: selectedBookId || undefined,
-        data: productData(),
-      });
-      setSelectedBookId(record.bookId);
-      await refreshSelections();
-      setMessage('已保存选品。');
-    } catch (error) {
-      setMessage(uiErrorMessage(error));
-    } finally {
-      setPendingAction(null);
-    }
+    await bookAction.run(async () => {
+      setPendingAction('save');
+      try {
+        const record = await api.saveBookSelection({
+          theme: theme.trim(),
+          bookId: selectedBookId || undefined,
+          data: productData(),
+        });
+        setSelectedBookId(record.bookId);
+        await loadSelections();
+        setMessage('已保存选品。');
+      } finally {
+        setPendingAction(null);
+      }
+    }, { onError: (error) => setMessage(error.message) });
   }
 
   async function deleteSelection(record: BookSelectionRecord) {
-    setPendingAction(`delete:${record.bookId}`);
-    try {
-      await api.deleteBookSelection(record.theme, record.bookId);
-      if (selectedBookId === record.bookId) clearForm();
-      await refreshSelections();
-      setMessage('已删除选品。');
-    } catch (error) {
-      setMessage(uiErrorMessage(error));
-    } finally {
-      setPendingAction(null);
-    }
+    await bookAction.run(async () => {
+      setPendingAction(`delete:${record.bookId}`);
+      try {
+        await api.deleteBookSelection(record.theme, record.bookId);
+        if (selectedBookId === record.bookId) clearForm();
+        await loadSelections();
+        setMessage('已删除选品。');
+      } finally {
+        setPendingAction(null);
+      }
+    }, { onError: (error) => setMessage(error.message) });
   }
 
   function handoffProduct(record: BookSelectionRecord, view: ShellView) {
@@ -2516,6 +2571,7 @@ function BookSelectionPage({ api, navigate }: { api: StoryDreamApi; navigate: (v
           <textarea className="small-textarea" value={note} onChange={(event) => setNote(event.target.value)} />
         </Field>
         {message ? <span className="local-note">{message}</span> : null}
+        <InlineActionFeedback feedback={bookAction.feedback} />
       </section>
     </div>
   );
@@ -2539,6 +2595,7 @@ function BenchmarkImportPage({
   const [productInfo, setProductInfo] = useState<string | null>(null);
   const [running, setRunning] = useState(false);
   const [message, setMessage] = useState('');
+  const benchmarkAction = useAsyncAction();
   const product = parseBookProductInfo(productInfo);
   const productName = product?.name ?? '';
 
@@ -2560,26 +2617,26 @@ function BenchmarkImportPage({
       setMessage('浏览器预览不能执行真实流水线，请在 Electron 应用中创建任务。');
       return;
     }
-    setRunning(true);
-    setMessage('');
-    try {
-      const next = await api.createAndRunTask({
-        title: benchmarkTitle.trim() || keyword.trim() || productName || '',
-        inputText: script,
-        mode: 'paste',
-        track: productInfo ? 'ecommerce' : 'character-story',
-        keepPromotion: Boolean(productInfo),
-        productInfo,
-        pausePoints: [],
-      });
-      applyState(next);
-      const createdTask = next.tasks[0];
-      if (createdTask) openTaskDetail(createdTask.id);
-    } catch (error) {
-      setMessage(uiErrorMessage(error));
-    } finally {
-      setRunning(false);
-    }
+    await benchmarkAction.run(async () => {
+      setRunning(true);
+      setMessage('');
+      try {
+        const next = await api.createAndRunTask({
+          title: benchmarkTitle.trim() || keyword.trim() || productName || '',
+          inputText: script,
+          mode: 'paste',
+          track: productInfo ? 'ecommerce' : 'character-story',
+          keepPromotion: Boolean(productInfo),
+          productInfo,
+          pausePoints: [],
+        });
+        applyState(next);
+        const createdTask = next.tasks[0];
+        if (createdTask) openTaskDetail(createdTask.id);
+      } finally {
+        setRunning(false);
+      }
+    }, { onError: (error) => setMessage(error.message) });
   }
 
   return (
@@ -2625,6 +2682,7 @@ function BenchmarkImportPage({
           <span>{productInfo ? '带货任务' : '常规故事任务'}</span>
         </div>
         {message ? <span className="local-note">{message}</span> : null}
+        <InlineActionFeedback feedback={benchmarkAction.feedback} />
       </section>
     </div>
   );
@@ -2639,6 +2697,7 @@ function PersonAssetsPage({ api, isBrowserPreview }: { api: StoryDreamApi; isBro
   const [imageUrls, setImageUrls] = useState<Record<string, string>>({});
   const [message, setMessage] = useState(isBrowserPreview ? '浏览器预览不能导入或读取本地图片，请在 Electron 应用中管理素材。' : '');
   const [pendingAction, setPendingAction] = useState<'create' | 'rename' | 'delete' | 'import' | 'open' | null>(null);
+  const personAction = useAsyncAction();
   const selectedAsset = people.find((person) => person.name === selectedName) ?? null;
 
   useEffect(() => {
@@ -2654,12 +2713,12 @@ function PersonAssetsPage({ api, isBrowserPreview }: { api: StoryDreamApi; isBro
         }
       })
       .catch((error) => {
-        if (active) setMessage(error instanceof Error ? error.message : String(error));
+        if (active) personAction.reportError(error);
       });
     return () => {
       active = false;
     };
-  }, [api, selectedName]);
+  }, [api, personAction.reportError, selectedName]);
 
   useEffect(() => {
     setRenameValue(selectedName);
@@ -2689,18 +2748,22 @@ function PersonAssetsPage({ api, isBrowserPreview }: { api: StoryDreamApi; isBro
         if (active) setImageUrls(Object.fromEntries(entries));
       })
       .catch((error) => {
-        if (active) setMessage(error instanceof Error ? error.message : String(error));
+        if (active) personAction.reportError(error);
       });
     return () => {
       active = false;
     };
-  }, [api, selectedName]);
+  }, [api, personAction.reportError, selectedName]);
 
-  async function refreshPeople(nextSelectedName = selectedName) {
+  const loadPeople = async (nextSelectedName = selectedName) => {
     const assets = await api.listPersonAssets();
     setPeople(assets);
     const selected = assets.find((asset) => asset.name === nextSelectedName) ?? assets[0] ?? null;
     setSelectedName(selected?.name ?? '');
+  };
+
+  async function refreshPeople(nextSelectedName = selectedName) {
+    await personAction.run(() => loadPeople(nextSelectedName));
   }
 
   async function createPerson() {
@@ -2709,46 +2772,46 @@ function PersonAssetsPage({ api, isBrowserPreview }: { api: StoryDreamApi; isBro
       setMessage('请先填写人物名称。');
       return;
     }
-    setPendingAction('create');
-    try {
-      await api.createPersonAsset(name);
-      setNewPersonName('');
-      await refreshPeople(name);
-      setMessage('已创建人物素材库。');
-    } catch (error) {
-      setMessage(uiErrorMessage(error));
-    } finally {
-      setPendingAction(null);
-    }
+    await personAction.run(async () => {
+      setPendingAction('create');
+      try {
+        await api.createPersonAsset(name);
+        setNewPersonName('');
+        await loadPeople(name);
+        setMessage('已创建人物素材库。');
+      } finally {
+        setPendingAction(null);
+      }
+    }, { onError: (error) => setMessage(error.message) });
   }
 
   async function renamePerson() {
     const nextName = renameValue.trim();
     if (!selectedName || !nextName) return;
-    setPendingAction('rename');
-    try {
-      await api.renamePersonAsset(selectedName, nextName);
-      await refreshPeople(nextName);
-      setMessage('已重命名人物素材库。');
-    } catch (error) {
-      setMessage(uiErrorMessage(error));
-    } finally {
-      setPendingAction(null);
-    }
+    await personAction.run(async () => {
+      setPendingAction('rename');
+      try {
+        await api.renamePersonAsset(selectedName, nextName);
+        await loadPeople(nextName);
+        setMessage('已重命名人物素材库。');
+      } finally {
+        setPendingAction(null);
+      }
+    }, { onError: (error) => setMessage(error.message) });
   }
 
   async function deletePerson() {
     if (!selectedName) return;
-    setPendingAction('delete');
-    try {
-      await api.deletePersonAsset(selectedName);
-      await refreshPeople('');
-      setMessage('已删除人物素材库。');
-    } catch (error) {
-      setMessage(uiErrorMessage(error));
-    } finally {
-      setPendingAction(null);
-    }
+    await personAction.run(async () => {
+      setPendingAction('delete');
+      try {
+        await api.deletePersonAsset(selectedName);
+        await loadPeople('');
+        setMessage('已删除人物素材库。');
+      } finally {
+        setPendingAction(null);
+      }
+    }, { onError: (error) => setMessage(error.message) });
   }
 
   async function importImages() {
@@ -2756,29 +2819,29 @@ function PersonAssetsPage({ api, isBrowserPreview }: { api: StoryDreamApi; isBro
       setMessage('请先选择人物。');
       return;
     }
-    setPendingAction('import');
-    try {
-      const count = await api.importPersonAssetImages(selectedName);
-      await refreshPeople(selectedName);
-      setImages(await api.listPersonAssetImages(selectedName));
-      setMessage(count > 0 ? `已导入 ${count} 张图片。` : '没有导入新图片。');
-    } catch (error) {
-      setMessage(uiErrorMessage(error));
-    } finally {
-      setPendingAction(null);
-    }
+    await personAction.run(async () => {
+      setPendingAction('import');
+      try {
+        const count = await api.importPersonAssetImages(selectedName);
+        await loadPeople(selectedName);
+        setImages(await api.listPersonAssetImages(selectedName));
+        setMessage(count > 0 ? `已导入 ${count} 张图片。` : '没有导入新图片。');
+      } finally {
+        setPendingAction(null);
+      }
+    }, { onError: (error) => setMessage(error.message) });
   }
 
   async function openSelectedAssetDir() {
     if (!selectedAsset?.dir) return;
-    setPendingAction('open');
-    try {
-      await api.openPath(selectedAsset.dir);
-    } catch (error) {
-      setMessage(uiErrorMessage(error));
-    } finally {
-      setPendingAction(null);
-    }
+    await personAction.run(async () => {
+      setPendingAction('open');
+      try {
+        await api.openPath(selectedAsset.dir);
+      } finally {
+        setPendingAction(null);
+      }
+    }, { onError: (error) => setMessage(error.message) });
   }
 
   return (
@@ -2853,6 +2916,7 @@ function PersonAssetsPage({ api, isBrowserPreview }: { api: StoryDreamApi; isBro
           ))}
         </div>
         {message ? <span className="local-note">{message}</span> : null}
+        <InlineActionFeedback feedback={personAction.feedback} />
       </section>
     </div>
   );
@@ -2887,19 +2951,22 @@ function MusicMvPage({
   const [bgmId, setBgmId] = useState(resolveDefaultBgmId(state.config));
   const [running, setRunning] = useState(false);
   const [message, setMessage] = useState('');
+  const musicAction = useAsyncAction();
   const bgmOptions = validBgmItems(state.config);
   const lyricLines = lyrics.split(/\n/u).map((line) => line.trim()).filter(Boolean);
   const musicMvStyleOptions = styleOptions;
   const musicMvDraftTemplateOptions = state.draftTemplates.map((template) => [template.id, template.name, `出图 ${template.image.ratio}`]);
 
   async function selectMusicMvAudio() {
-    const audioPath = await api.selectLocalAudio();
-    if (!audioPath) return;
-    setMusicMvAudioPath(audioPath);
-    const nextBgm = addUploadedBgm(state.config, audioPath);
-    const next = await api.saveConfig({ config: nextBgm.config, secretChanges: {} });
-    applyState(next);
-    setBgmId(nextBgm.bgmId);
+    await musicAction.run(async () => {
+      const audioPath = await api.selectLocalAudio();
+      if (!audioPath) return;
+      setMusicMvAudioPath(audioPath);
+      const nextBgm = addUploadedBgm(state.config, audioPath);
+      const next = await api.saveConfig({ config: nextBgm.config, secretChanges: {} });
+      applyState(next);
+      setBgmId(nextBgm.bgmId);
+    });
   }
 
   async function runMusicMv() {
@@ -2911,35 +2978,37 @@ function MusicMvPage({
       setMessage('请先输入歌词 / 文案。');
       return;
     }
-    setRunning(true);
-    setMessage('');
-    try {
-      const next = await api.createAndRunTask({
-        title,
-        inputText: lyrics,
-        taskKind: 'music-mv',
-        processingMode,
-        mode: 'paste',
-        track: 'music-mv',
-        style,
-        ratio,
-        templateId,
-        bgmId,
-        pausePoints: [pausePoint],
-        storyboardSceneCount,
-        musicMv: {
-          rhythmMode: musicMvRhythmMode,
-          captionStyle: musicMvCaptionStyle,
-          visualMotif: musicMvVisualMotif,
-          audioPath: musicMvAudioPath,
-        },
-      });
-      applyState(next);
-      const createdTask = next.tasks[0];
-      if (createdTask) openTaskDetail(createdTask.id);
-    } finally {
-      setRunning(false);
-    }
+    await musicAction.run(async () => {
+      setRunning(true);
+      setMessage('');
+      try {
+        const next = await api.createAndRunTask({
+          title,
+          inputText: lyrics,
+          taskKind: 'music-mv',
+          processingMode,
+          mode: 'paste',
+          track: 'music-mv',
+          style,
+          ratio,
+          templateId,
+          bgmId,
+          pausePoints: [pausePoint],
+          storyboardSceneCount,
+          musicMv: {
+            rhythmMode: musicMvRhythmMode,
+            captionStyle: musicMvCaptionStyle,
+            visualMotif: musicMvVisualMotif,
+            audioPath: musicMvAudioPath,
+          },
+        });
+        applyState(next);
+        const createdTask = next.tasks[0];
+        if (createdTask) openTaskDetail(createdTask.id);
+      } finally {
+        setRunning(false);
+      }
+    }, { onError: (error) => setMessage(error.message) });
   }
 
   return (
@@ -3006,6 +3075,7 @@ function MusicMvPage({
         </div>
 
         {message ? <span className="local-note">{message}</span> : null}
+        <InlineActionFeedback feedback={musicAction.feedback} />
       </section>
       <aside className="music-mv-preview panel">
         <h3>MV 结构预览</h3>
@@ -3048,6 +3118,7 @@ function HtmlVideoPage({
   const [activeTab, setActiveTab] = useState<HtmlVideoTabKey>('text');
   const [running, setRunning] = useState(false);
   const [message, setMessage] = useState('');
+  const htmlVideoAction = useAsyncAction();
   const bgmOptions = validBgmItems(state.config);
   const htmlTasks = state.tasks.filter(isHtmlVideoTask);
   const activeTask = htmlTasks.find((task) => task.id === activeTaskId) ?? htmlTasks[0] ?? null;
@@ -3070,24 +3141,26 @@ function HtmlVideoPage({
       setMessage('请先输入文案。');
       return;
     }
-    setRunning(true);
-    setMessage('');
-    try {
-      const next = await api.createHtmlVideoTask(createHtmlVideoTaskInput({
-        copy,
-        ratio,
-        style,
-        bgmId,
-        maxScenes,
-        foreground,
-      }));
-      applyState(next);
-      const createdTask = next.tasks.find(isHtmlVideoTask);
-      if (createdTask) setActiveTaskId(createdTask.id);
-      setMessage(isBrowserPreview ? '已在浏览器预览中创建 HTML 动画视频任务快照。' : 'HTML 动画视频任务已创建，等待流水线推进。');
-    } finally {
-      setRunning(false);
-    }
+    await htmlVideoAction.run(async () => {
+      setRunning(true);
+      setMessage('');
+      try {
+        const next = await api.createHtmlVideoTask(createHtmlVideoTaskInput({
+          copy,
+          ratio,
+          style,
+          bgmId,
+          maxScenes,
+          foreground,
+        }));
+        applyState(next);
+        const createdTask = next.tasks.find(isHtmlVideoTask);
+        if (createdTask) setActiveTaskId(createdTask.id);
+        setMessage(isBrowserPreview ? '已在浏览器预览中创建 HTML 动画视频任务快照。' : 'HTML 动画视频任务已创建，等待流水线推进。');
+      } finally {
+        setRunning(false);
+      }
+    }, { onError: (error) => setMessage(error.message) });
   }
 
   return (
@@ -3125,6 +3198,7 @@ function HtmlVideoPage({
         </div>
 
         {message ? <span className="local-note">{message}</span> : null}
+        <InlineActionFeedback feedback={htmlVideoAction.feedback} />
       </section>
 
       <section className="hv-workspace hv-card">
@@ -3332,11 +3406,19 @@ function QueuePage({
 }) {
   const latestTask = state.tasks[0];
   const events = latestTask ? state.events.filter((event) => event.taskId === latestTask.id || event.taskId === 'live') : state.events;
+  const queueAction = useAsyncAction();
   async function setStatus(task: Task, status: TaskStatus) {
-    applyState(await api.updateTaskStatus(task.id, status));
+    await queueAction.run(async () => {
+      applyState(await api.updateTaskStatus(task.id, status));
+    });
   }
   async function resumeTask(task: Task) {
-    applyState(await api.retryTask(task.id));
+    await queueAction.run(async () => {
+      applyState(await api.retryTask(task.id));
+    });
+  }
+  async function openQueueOutput(path: string) {
+    await queueAction.run(() => api.openPath(path));
   }
   return (
     <div className="queue-layout">
@@ -3366,7 +3448,7 @@ function QueuePage({
                 {task.status === 'running' || task.status === 'pending' ? <button className="mini-button" onClick={() => setStatus(task, 'cancelled')}>取消</button> : null}
                 {task.status === 'paused' || task.status === 'failed' ? <button className="mini-button" disabled={isBrowserPreview} onClick={() => resumeTask(task)}>继续</button> : null}
                 {task.status === 'paused' || task.status === 'failed' ? <button className="mini-button" disabled={isBrowserPreview} onClick={() => resumeTask(task)}>重试</button> : null}
-                <button className="mini-button" disabled={task.status !== 'completed' || !task.outputDir} onClick={() => task.outputDir && api.openPath(task.outputDir)}>
+                <button className="mini-button" disabled={queueAction.busy || task.status !== 'completed' || !task.outputDir} onClick={() => task.outputDir && openQueueOutput(task.outputDir)}>
                   <FolderOpen size={14} />
                 </button>
               </div>
@@ -3378,12 +3460,13 @@ function QueuePage({
         <div className="panel-title-row">
           <h2>步骤事件</h2>
           {latestTask?.status === 'completed' && latestTask.outputDir ? (
-            <button className="ghost-action" onClick={() => api.openPath(latestTask.outputDir)}>
+            <button className="ghost-action" disabled={queueAction.busy} onClick={() => openQueueOutput(latestTask.outputDir)}>
               <FolderOpen size={15} />
               打开剪映草稿
             </button>
           ) : null}
         </div>
+        <InlineActionFeedback feedback={queueAction.feedback} />
         <EventTimeline events={events.slice(-24)} />
       </section>
     </div>
@@ -3393,7 +3476,11 @@ function QueuePage({
 function HistoryPage({ api, state, openTaskDetail }: { api: StoryDreamApi; state: AppState; openTaskDetail: (taskId: string) => void }) {
   const [filter, setFilter] = useState<'all' | TaskStatus>('all');
   const [query, setQuery] = useState('');
+  const historyAction = useAsyncAction();
   const tasks = state.tasks.filter((task) => (filter === 'all' || task.status === filter) && `${task.title}${task.inputText}`.includes(query));
+  async function openHistoryOutput(path: string) {
+    await historyAction.run(() => api.openPath(path));
+  }
   return (
     <section className="panel full-panel">
       <div className="panel-title-row">
@@ -3421,12 +3508,13 @@ function HistoryPage({ api, state, openTaskDetail }: { api: StoryDreamApi; state
             <StatusPill status={task.status} />
             <span>{task.currentStep}</span>
             <span>{formatDate(task.createdAt)}</span>
-            <button className="mini-button" disabled={!task.outputDir} onClick={(event) => { event.stopPropagation(); if (task.outputDir) api.openPath(task.outputDir); }}>
+            <button className="mini-button" disabled={historyAction.busy || !task.outputDir} onClick={(event) => { event.stopPropagation(); if (task.outputDir) void openHistoryOutput(task.outputDir); }}>
               <FolderOpen size={14} />
             </button>
           </div>
         ))}
       </div>
+      <InlineActionFeedback feedback={historyAction.feedback} />
     </section>
   );
 }
@@ -3450,6 +3538,7 @@ function TaskDetailPage({
   const [liveNow, setLiveNow] = useState(Date.now());
   const [artifactSnapshot, setArtifactSnapshot] = useState<TaskArtifactSnapshot | null>(null);
   const [artifactRefreshTick, setArtifactRefreshTick] = useState(0);
+  const taskDetailAction = useAsyncAction();
   const events = task ? state.events.filter((event) => event.taskId === task.id) : [];
   const latestEvent = [...events].reverse()[0] ?? null;
   const snapshotImageCount = artifactSnapshot?.assets.images.length ?? 0;
@@ -3487,9 +3576,10 @@ function TaskDetailPage({
       })
       .catch((error) => {
         if (!cancelled) {
+          const normalized = taskDetailAction.reportError(error);
           setArtifactSnapshot({
             available: false,
-            message: error instanceof Error ? error.message : String(error),
+            message: normalized.message,
             taskId: artifactTask.id,
             statePath: artifactTask.artifactStatePath,
             outputDir: artifactTask.outputDir,
@@ -3504,7 +3594,7 @@ function TaskDetailPage({
     return () => {
       cancelled = true;
     };
-  }, [api, artifactRefreshKey, task]);
+  }, [api, artifactRefreshKey, task, taskDetailAction.reportError]);
   if (!task) {
     return (
       <section className="panel full-panel">
@@ -3519,7 +3609,9 @@ function TaskDetailPage({
   const completedSteps = activeTask.status === 'completed' ? pipelineSteps.length : Math.max(0, activeTask.currentStep);
 
   async function cancelTask() {
-    applyState(await api.updateTaskStatus(activeTask.id, 'cancelled'));
+    await taskDetailAction.run(async () => {
+      applyState(await api.updateTaskStatus(activeTask.id, 'cancelled'));
+    });
   }
 
   return (
@@ -3582,6 +3674,7 @@ function TaskDetailPage({
       </aside>
 
       <section className="task-detail-main">
+        <InlineActionFeedback feedback={taskDetailAction.feedback} />
         <div className="artifact-tabs">
           <button className={tab === 'preview' ? 'active' : ''} onClick={() => setTab('preview')}><FileJson size={14} />产物预览</button>
           <button className={tab === 'storyboard' ? 'active' : ''} onClick={() => setTab('storyboard')}><ImageIcon size={14} />分镜画廊</button>
@@ -3624,16 +3717,23 @@ function ArtifactPreviewContent({
   const narrationAssets = snapshot?.assets.narration ?? [];
   const imageProgress = imageProgressLabel(scenes.length, imageAssets.length, snapshotStepStatus(snapshot, 4));
   const [rerunningStepAction, setRerunningStepAction] = useState<string | null>(null);
+  const artifactAction = useAsyncAction();
   const canRerunStep = !isBrowserPreview && task.status !== 'running' && task.status !== 'pending' && Boolean(task.artifactStatePath);
 
   async function rerunArtifactStep(step: number, mode: TaskStepRerunMode) {
     const key = `${step}:${mode}`;
-    setRerunningStepAction(key);
-    try {
-      applyState(await api.rerunTaskStep(task.id, step, mode));
-    } finally {
-      setRerunningStepAction(null);
-    }
+    await artifactAction.run(async () => {
+      setRerunningStepAction(key);
+      try {
+        applyState(await api.rerunTaskStep(task.id, step, mode));
+      } finally {
+        setRerunningStepAction(null);
+      }
+    });
+  }
+
+  async function openArtifactOutput() {
+    await artifactAction.run(() => api.openPath(task.outputDir));
   }
 
   const artifactStepActions = (step: number) => (
@@ -3655,12 +3755,13 @@ function ArtifactPreviewContent({
           {latestEvent?.type === 'step_error' ? <ErrorSummaryButton fullMessage={latestEvent.detail} title="流水线错误" /> : <span>{snapshot?.message || latestEvent?.detail || '等待当前步骤产物落盘'}</span>}
         </div>
         {task.status === 'completed' && task.outputDir ? (
-          <button className="ghost-action" onClick={() => api.openPath(task.outputDir)}>
+          <button className="ghost-action" disabled={artifactAction.busy} onClick={openArtifactOutput}>
             <FolderOpen size={15} />
             打开剪映草稿
           </button>
         ) : null}
       </div>
+      <InlineActionFeedback feedback={artifactAction.feedback} />
 
       <div className="preview-meta-grid">
         <div><small>任务</small><strong>{task.title || '未命名任务'}</strong></div>
@@ -3931,6 +4032,7 @@ function ImageGenerationGallery({
   const [editingPromptSceneId, setEditingPromptSceneId] = useState<number | null>(null);
   const [editingPromptText, setEditingPromptText] = useState('');
   const [savingPromptSceneId, setSavingPromptSceneId] = useState<number | null>(null);
+  const imageGenerationAction = useAsyncAction();
   const imagePaths = images.map((asset) => asset.path).join('|');
   const imageBySceneId = useMemo(() => new Map(images.map((asset) => [asset.sceneId, asset] as const)), [images]);
   const promptBySceneId = useMemo(() => new Map(imagePrompts.map((prompt) => [prompt.sceneId, prompt] as const)), [imagePrompts]);
@@ -3956,22 +4058,25 @@ function ImageGenerationGallery({
         })
         .catch((error) => {
           if (!cancelled) {
-            setImagePreviewErrors((current) => ({ ...current, [asset.path]: error instanceof Error ? error.message : String(error) }));
+            const normalized = imageGenerationAction.reportError(error);
+            setImagePreviewErrors((current) => ({ ...current, [asset.path]: normalized.message }));
           }
         });
     }
     return () => {
       cancelled = true;
     };
-  }, [api, imagePaths, isBrowserPreview]);
+  }, [api, imageGenerationAction.reportError, imagePaths, isBrowserPreview]);
 
   async function regenerate(sceneId: number) {
-    setRegeneratingSceneId(sceneId);
-    try {
-      applyState(await api.regenerateTaskImage(task.id, sceneId));
-    } finally {
-      setRegeneratingSceneId(null);
-    }
+    await imageGenerationAction.run(async () => {
+      setRegeneratingSceneId(sceneId);
+      try {
+        applyState(await api.regenerateTaskImage(task.id, sceneId));
+      } finally {
+        setRegeneratingSceneId(null);
+      }
+    });
   }
 
   function openPromptEditor(sceneId: number, promptText: string) {
@@ -3987,13 +4092,15 @@ function ImageGenerationGallery({
   async function savePrompt(sceneId: number) {
     const nextPrompt = editingPromptText.trim();
     if (!nextPrompt) return;
-    setSavingPromptSceneId(sceneId);
-    try {
-      applyState(await api.updateTaskImagePrompt(task.id, sceneId, nextPrompt));
-      cancelPromptEdit();
-    } finally {
-      setSavingPromptSceneId(null);
-    }
+    await imageGenerationAction.run(async () => {
+      setSavingPromptSceneId(sceneId);
+      try {
+        applyState(await api.updateTaskImagePrompt(task.id, sceneId, nextPrompt));
+        cancelPromptEdit();
+      } finally {
+        setSavingPromptSceneId(null);
+      }
+    });
   }
 
   if (scenes.length === 0) return <ArtifactEmpty text="等待分镜后生成图片" />;
@@ -4004,6 +4111,7 @@ function ImageGenerationGallery({
         <span>并发数 {concurrency}</span>
         <span>{images.length}/{scenes.length} 张已落盘</span>
       </div>
+      <InlineActionFeedback feedback={imageGenerationAction.feedback} />
       <div className="image-preview-grid">
         {scenes.map((scene) => {
           const image = imageBySceneId.get(scene.id);
@@ -4095,6 +4203,7 @@ function NarrationPreviewList({
   const [audioPreviewUrls, setAudioPreviewUrls] = useState<Record<string, string>>({});
   const [audioPreviewErrors, setAudioPreviewErrors] = useState<Record<string, string>>({});
   const [regeneratingSceneId, setRegeneratingSceneId] = useState<number | null>(null);
+  const narrationAction = useAsyncAction();
   const audioPaths = assets.map((asset) => asset.path).join('|');
 
   useEffect(() => {
@@ -4117,22 +4226,25 @@ function NarrationPreviewList({
         })
         .catch((error) => {
           if (!cancelled) {
-            setAudioPreviewErrors((current) => ({ ...current, [asset.path]: error instanceof Error ? error.message : String(error) }));
+            const normalized = narrationAction.reportError(error);
+            setAudioPreviewErrors((current) => ({ ...current, [asset.path]: normalized.message }));
           }
         });
     }
     return () => {
       cancelled = true;
     };
-  }, [api, audioPaths, assets, isBrowserPreview]);
+  }, [api, assets, audioPaths, isBrowserPreview, narrationAction.reportError]);
 
   async function regenerate(sceneId: number) {
-    setRegeneratingSceneId(sceneId);
-    try {
-      applyState(await api.regenerateTaskNarration(task.id, sceneId));
-    } finally {
-      setRegeneratingSceneId(null);
-    }
+    await narrationAction.run(async () => {
+      setRegeneratingSceneId(sceneId);
+      try {
+        applyState(await api.regenerateTaskNarration(task.id, sceneId));
+      } finally {
+        setRegeneratingSceneId(null);
+      }
+    });
   }
 
   const sceneIds = new Set(scenes.map((scene) => scene.id));
@@ -4165,6 +4277,7 @@ function NarrationPreviewList({
 
   return (
     <div className="narration-preview-list">
+      <InlineActionFeedback feedback={narrationAction.feedback} />
       {rows.map((item) => {
         const disabled = isBrowserPreview || task.status === 'running' || task.status === 'pending' || regeneratingSceneId === item.sceneId || !item.canRegenerate;
         const ready = item.assets.length > 0;
@@ -4283,6 +4396,7 @@ function ImageLabPage({ api, state, applyState }: { api: StoryDreamApi; state: A
   const [generating, setGenerating] = useState(false);
   const [submitError, setSubmitError] = useState('');
   const [expandedReferenceImage, setExpandedReferenceImage] = useState('');
+  const imageLabAction = useAsyncAction();
   const referenceLimit = 10;
   const referenceCandidates = parseReferenceImagePaths(referenceImagePath);
   const references = referenceCandidates.slice(0, referenceLimit);
@@ -4307,9 +4421,11 @@ function ImageLabPage({ api, state, applyState }: { api: StoryDreamApi; state: A
   const resolvedSmartMode = resolveImageLabSmartMode(tab, baseSmartMode, references);
 
   async function selectImageLabReferenceImage() {
-    const imagePath = await api.selectLocalImage();
-    if (!imagePath) return;
-    setReferenceImagePath((current) => [...parseReferenceImagePaths(current), imagePath].join('\n'));
+    await imageLabAction.run(async () => {
+      const imagePath = await api.selectLocalImage();
+      if (!imagePath) return;
+      setReferenceImagePath((current) => [...parseReferenceImagePaths(current), imagePath].join('\n'));
+    });
   }
 
   function removeReferenceImagePath(reference: string) {
@@ -4330,28 +4446,28 @@ function ImageLabPage({ api, state, applyState }: { api: StoryDreamApi; state: A
 
   async function addRecord() {
     if (generating) return;
-    setGenerating(true);
-    setSubmitError('');
-    try {
-      const requestedCount = tab === 'text' ? 1 : Math.max(1, Math.min(10, imageLabOutputCount));
-      let nextState = state;
-      for (let index = 0; index < requestedCount; index += 1) {
-        nextState = await api.generateImageLab({
-          prompt,
-          ratio,
-          style,
-          resolution,
-          smartMode: resolvedSmartMode,
-          referenceImagePath: references[0] ?? '',
-          referenceImagePaths: references,
-        });
+    await imageLabAction.run(async () => {
+      setGenerating(true);
+      setSubmitError('');
+      try {
+        const requestedCount = tab === 'text' ? 1 : Math.max(1, Math.min(10, imageLabOutputCount));
+        let nextState = state;
+        for (let index = 0; index < requestedCount; index += 1) {
+          nextState = await api.generateImageLab({
+            prompt,
+            ratio,
+            style,
+            resolution,
+            smartMode: resolvedSmartMode,
+            referenceImagePath: references[0] ?? '',
+            referenceImagePaths: references,
+          });
+        }
+        applyState(nextState);
+      } finally {
+        setGenerating(false);
       }
-      applyState(nextState);
-    } catch (error) {
-      setSubmitError(error instanceof Error ? error.message : String(error));
-    } finally {
-      setGenerating(false);
-    }
+    }, { onError: (error) => setSubmitError(error.message) });
   }
 
   return (
@@ -4449,6 +4565,7 @@ function ImageLabPage({ api, state, applyState }: { api: StoryDreamApi; state: A
           <div className="provider-line">当前 Provider：<strong>{state.config.imageProvider}</strong> · {smartImageModeLabel(resolvedSmartMode)} · 预计消耗 ￥{estimatedCost}</div>
         </div>
         {submitError ? <ErrorSummaryButton compact title="画图实验室提交失败" fullMessage={submitError} /> : null}
+        <InlineActionFeedback feedback={imageLabAction.feedback} />
       </section>
       {expandedReferenceImage ? (
         <div className="error-dialog-backdrop" onClick={() => setExpandedReferenceImage('')}>
@@ -4494,6 +4611,7 @@ function VoiceLabPage({ api, state, applyState }: { api: StoryDreamApi; state: A
   const [voiceSpeed, setVoiceSpeed] = useState(1);
   const [generating, setGenerating] = useState(false);
   const [submitError, setSubmitError] = useState('');
+  const voiceLabAction = useAsyncAction();
   const voiceOptions = ttsVoiceOptionsForProvider(voiceProvider);
   const selectedVoiceLabel = taskSpeakerLabel(voiceProvider, voiceId);
 
@@ -4512,22 +4630,22 @@ function VoiceLabPage({ api, state, applyState }: { api: StoryDreamApi; state: A
 
   async function generatePreview() {
     if (generating || !text.trim()) return;
-    setGenerating(true);
-    setSubmitError('');
-    try {
-      const next = await api.generateVoiceLabPreview({
-        text,
-        provider: voiceProvider,
-        voiceId,
-        voiceLabel: selectedVoiceLabel,
-        speed: voiceSpeed,
-      });
-      applyState(next);
-    } catch (error) {
-      setSubmitError(error instanceof Error ? error.message : String(error));
-    } finally {
-      setGenerating(false);
-    }
+    await voiceLabAction.run(async () => {
+      setGenerating(true);
+      setSubmitError('');
+      try {
+        const next = await api.generateVoiceLabPreview({
+          text,
+          provider: voiceProvider,
+          voiceId,
+          voiceLabel: selectedVoiceLabel,
+          speed: voiceSpeed,
+        });
+        applyState(next);
+      } finally {
+        setGenerating(false);
+      }
+    }, { onError: (error) => setSubmitError(error.message) });
   }
 
   return (
@@ -4551,6 +4669,7 @@ function VoiceLabPage({ api, state, applyState }: { api: StoryDreamApi; state: A
         <Segmented label="语速" value={String(voiceSpeed)} options={['0.85', '1', '1.15', '1.3']} labels={['慢速 0.85x', '默认 1.0x', '快速 1.15x', '更快 1.3x']} onChange={(value) => setVoiceSpeed(Number(value))} />
         <div className="provider-line">当前音色：{selectedVoiceLabel} · {voiceId}</div>
         {submitError ? <ErrorSummaryButton compact title="配音实验室提交失败" fullMessage={submitError} /> : null}
+        <InlineActionFeedback feedback={voiceLabAction.feedback} />
         <button className="primary-action" onClick={generatePreview} disabled={generating || !text.trim()}>
           {generating ? <Loader2 className="spin" size={17} /> : <Mic2 size={17} />}
           {generating ? '生成中' : '生成试听'}
@@ -4604,6 +4723,7 @@ function PromptTemplatesPage({ api, state, applyState }: { api: StoryDreamApi; s
   const [draft, setDraft] = useState<PromptTemplate | null>(selected ? { ...selected } : null);
   const [templateJsonDraft, setTemplateJsonDraft] = useState('');
   const [imageTemplateJsonDraft, setImageTemplateJsonDraft] = useState('');
+  const promptTemplateAction = useAsyncAction();
   const promptTemplateTrackOptions = buildStoryTemplateTrackOptions(state.promptTemplates);
   const promptTemplateBindingTrackOptions =
     draft?.baseTrack && !promptTemplateTrackOptions.some(([id]) => id === draft.baseTrack)
@@ -4644,19 +4764,23 @@ function PromptTemplatesPage({ api, state, applyState }: { api: StoryDreamApi; s
       origin: 'custom',
       updatedAt: new Date().toISOString(),
     };
-    applyState(await api.savePromptTemplate(templateToSave));
-    setSelectedId(templateToSave.id);
-    setDraft(templateToSave);
-    setTemplateMode('detail');
+    await promptTemplateAction.run(async () => {
+      applyState(await api.savePromptTemplate(templateToSave));
+      setSelectedId(templateToSave.id);
+      setDraft(templateToSave);
+      setTemplateMode('detail');
+    });
   }
 
   async function duplicateTemplate(template: PromptTemplate) {
     const copy = { ...independentPromptTemplateFields(template), id: crypto.randomUUID(), name: `${template.name} 副本`, isBuiltin: false, origin: 'custom' as const };
-    applyState(await api.savePromptTemplate(copy));
-    setSelectedId(copy.id);
-    setDraft(copy);
-    setTemplateJsonDraft('');
-    setTemplateMode('detail');
+    await promptTemplateAction.run(async () => {
+      applyState(await api.savePromptTemplate(copy));
+      setSelectedId(copy.id);
+      setDraft(copy);
+      setTemplateJsonDraft('');
+      setTemplateMode('detail');
+    });
   }
 
   async function duplicate() {
@@ -4683,32 +4807,38 @@ function PromptTemplatesPage({ api, state, applyState }: { api: StoryDreamApi; s
       origin: 'custom',
       marketTags: [],
     };
-    applyState(await api.savePromptTemplate(template));
-    setSelectedId(template.id);
-    setDraft(template);
-    setTemplateJsonDraft('');
-    setTemplateMode('detail');
+    await promptTemplateAction.run(async () => {
+      applyState(await api.savePromptTemplate(template));
+      setSelectedId(template.id);
+      setDraft(template);
+      setTemplateJsonDraft('');
+      setTemplateMode('detail');
+    });
   }
 
   async function saveCustomStyleDraft() {
     if (!imageDraft) return;
     const now = new Date().toISOString();
     const styleToSave = { ...imageDraft, updatedAt: now, createdAt: imageDraft.createdAt || now };
-    applyState(await api.saveCustomStyle(styleToSave));
-    setSelectedImageStyleId(styleToSave.id);
-    setImageDraft(styleToSave);
-    setImageTemplateAiStatus('已保存图像模板。');
-    setTemplateMode('image-detail');
+    await promptTemplateAction.run(async () => {
+      applyState(await api.saveCustomStyle(styleToSave));
+      setSelectedImageStyleId(styleToSave.id);
+      setImageDraft(styleToSave);
+      setImageTemplateAiStatus('已保存图像模板。');
+      setTemplateMode('image-detail');
+    });
   }
 
   async function duplicateImageTemplate(style: CustomStyle) {
     const now = new Date().toISOString();
     const copy = { ...style, id: crypto.randomUUID(), name: `${style.name} 副本`, createdAt: now, updatedAt: now };
-    applyState(await api.saveCustomStyle(copy));
-    setSelectedImageStyleId(copy.id);
-    setImageDraft(copy);
-    setImageTemplateAiStatus('已克隆图像模板。');
-    setTemplateMode('image-detail');
+    await promptTemplateAction.run(async () => {
+      applyState(await api.saveCustomStyle(copy));
+      setSelectedImageStyleId(copy.id);
+      setImageDraft(copy);
+      setImageTemplateAiStatus('已克隆图像模板。');
+      setTemplateMode('image-detail');
+    });
   }
 
   async function createImageTemplate() {
@@ -4723,11 +4853,13 @@ function PromptTemplatesPage({ api, state, applyState }: { api: StoryDreamApi; s
       createdAt: now,
       updatedAt: now,
     };
-    applyState(await api.saveCustomStyle(template));
-    setSelectedImageStyleId(template.id);
-    setImageDraft(template);
-    setImageTemplateAiStatus('');
-    setTemplateMode('image-detail');
+    await promptTemplateAction.run(async () => {
+      applyState(await api.saveCustomStyle(template));
+      setSelectedImageStyleId(template.id);
+      setImageDraft(template);
+      setImageTemplateAiStatus('');
+      setTemplateMode('image-detail');
+    });
   }
 
   function applyBaseImageTemplate() {
@@ -4755,17 +4887,17 @@ function PromptTemplatesPage({ api, state, applyState }: { api: StoryDreamApi; s
       return;
     }
     const base = state.customStyles.find((style) => style.id === baseImageTemplateId) ?? defaultCustomStyles.find((style) => style.id === baseImageTemplateId);
-    setImageTemplateAiGenerating(true);
-    setImageTemplateAiStatus('正在生成字段...');
-    try {
-      const generated = await api.generateCustomStyleDraft({ prompt, baseStyle: base ?? imageDraft });
-      setImageDraft({ ...imageDraft, ...generated, id: imageDraft.id, createdAt: imageDraft.createdAt });
-      setImageTemplateAiStatus(`已生成字段：${generated.name || prompt}`);
-    } catch (error) {
-      setImageTemplateAiStatus(`生成失败：${error instanceof Error ? error.message : '请检查 LLM 配置后重试。'}`);
-    } finally {
-      setImageTemplateAiGenerating(false);
-    }
+    await promptTemplateAction.run(async () => {
+      setImageTemplateAiGenerating(true);
+      setImageTemplateAiStatus('正在生成字段...');
+      try {
+        const generated = await api.generateCustomStyleDraft({ prompt, baseStyle: base ?? imageDraft });
+        setImageDraft({ ...imageDraft, ...generated, id: imageDraft.id, createdAt: imageDraft.createdAt });
+        setImageTemplateAiStatus(`已生成字段：${generated.name || prompt}`);
+      } finally {
+        setImageTemplateAiGenerating(false);
+      }
+    }, { onError: (error) => setImageTemplateAiStatus(`生成失败：${error.message}`) });
   }
 
   function exportPromptTemplateJson() {
@@ -4787,7 +4919,7 @@ function PromptTemplatesPage({ api, state, applyState }: { api: StoryDreamApi; s
   }
 
   async function importPromptTemplateJson() {
-    try {
+    await promptTemplateAction.run(async () => {
       const imported = JSON.parse(templateJsonDraft) as PromptTemplate;
       const id = resolveImportedTemplateId(imported, state.promptTemplates.some((template) => template.id === imported.id));
       const next = { ...imported, id, isBuiltin: false, origin: 'custom' as const, updatedAt: new Date().toISOString() };
@@ -4796,13 +4928,11 @@ function PromptTemplatesPage({ api, state, applyState }: { api: StoryDreamApi; s
       setDraft(next);
       setTemplateMode('detail');
       setTemplateJsonDraft('');
-    } catch {
-      setTemplateJsonDraft('{"name":"自定义模板","type":"task","description":"请补充","content":"请补充提示词"}');
-    }
+    }, { onError: () => setTemplateJsonDraft('{"name":"自定义模板","type":"task","description":"请补充","content":"请补充提示词"}') });
   }
 
   async function importImageTemplateJson() {
-    try {
+    await promptTemplateAction.run(async () => {
       const imported = JSON.parse(imageTemplateJsonDraft) as CustomStyle;
       const now = new Date().toISOString();
       const id = resolveImportedTemplateId(imported, state.customStyles.some((style) => style.id === imported.id));
@@ -4817,9 +4947,13 @@ function PromptTemplatesPage({ api, state, applyState }: { api: StoryDreamApi; s
       setImageDraft(next);
       setTemplateMode('image-detail');
       setImageTemplateJsonDraft('');
-    } catch {
-      setImageTemplateJsonDraft('{"name":"自定义图像模板","tag":"自定义","shortName":"自定义","prefix":"请补充","suffix":"请补充","negativePrompt":"请补充","allowColor":true,"description":"请补充"}');
-    }
+    }, { onError: () => setImageTemplateJsonDraft('{"name":"自定义图像模板","tag":"自定义","shortName":"自定义","prefix":"请补充","suffix":"请补充","negativePrompt":"请补充","allowColor":true,"description":"请补充"}') });
+  }
+
+  async function resetPromptTemplateLibrary() {
+    await promptTemplateAction.run(async () => {
+      applyState(await api.resetPromptTemplates());
+    });
   }
 
   function updatePromptTemplateStepPrompt(type: PromptStepTemplateType, content: string) {
@@ -4856,7 +4990,7 @@ function PromptTemplatesPage({ api, state, applyState }: { api: StoryDreamApi; s
             <p>故事模板决定 AI 怎么写，图像模板决定画面怎么长。先浏览模板，点开后查看和编辑细节。</p>
           </div>
           <div className="button-row">
-            <button className="ghost-action" onClick={async () => applyState(await api.resetPromptTemplates())}>
+            <button className="ghost-action" disabled={promptTemplateAction.busy} onClick={resetPromptTemplateLibrary}>
               <RotateCcw size={14} />
               重置
             </button>
@@ -4866,6 +5000,7 @@ function PromptTemplatesPage({ api, state, applyState }: { api: StoryDreamApi; s
             </button>
           </div>
         </div>
+        <InlineActionFeedback feedback={promptTemplateAction.feedback} />
         <div className="prompt-template-tabs" role="tablist" aria-label="提示词模板类型">
           <button className={promptTemplateLibraryTab === 'story' ? 'chip active' : 'chip'} type="button" onClick={() => setPromptTemplateLibraryTab('story')}>故事模板</button>
           <button className={promptTemplateLibraryTab === 'image' ? 'chip active' : 'chip'} type="button" onClick={() => setPromptTemplateLibraryTab('image')}>图像模板</button>
@@ -4965,6 +5100,7 @@ function PromptTemplatesPage({ api, state, applyState }: { api: StoryDreamApi; s
     return (
       <div className="prompt-template-detail">
         <section className="panel editor-panel">
+          <InlineActionFeedback feedback={promptTemplateAction.feedback} />
           {imageDraft ? (
             <>
               <div className="panel-title-row prompt-template-detail-title">
@@ -5064,6 +5200,7 @@ function PromptTemplatesPage({ api, state, applyState }: { api: StoryDreamApi; s
   return (
     <div className="prompt-template-detail">
       <section className="panel editor-panel">
+        <InlineActionFeedback feedback={promptTemplateAction.feedback} />
         {draft ? (
           <>
             <div className="panel-title-row prompt-template-detail-title">
@@ -5413,6 +5550,7 @@ function DraftTemplatesPage({ api, state, applyState }: { api: StoryDreamApi; st
   const [cozeImportResults, setCozeImportResults] = useState<CozeWorkflowTemplateConversionResult[]>([]);
   const [cozeImportError, setCozeImportError] = useState('');
   const [cozeImportOpen, setCozeImportOpen] = useState(false);
+  const draftTemplateAction = useAsyncAction();
 
   useEffect(() => {
     // Rehydrate only when switching templates; state refreshes must not overwrite unsaved drag edits.
@@ -5427,13 +5565,16 @@ function DraftTemplatesPage({ api, state, applyState }: { api: StoryDreamApi; st
       .then((catalog) => {
         if (!disposed) setEffectCatalog(catalog);
       })
-      .catch(() => {
-        if (!disposed) setEffectCatalog(fallbackEffectCatalog);
+      .catch((error) => {
+        if (!disposed) {
+          setEffectCatalog(fallbackEffectCatalog);
+          draftTemplateAction.reportError(error);
+        }
       });
     return () => {
       disposed = true;
     };
-  }, [api]);
+  }, [api, draftTemplateAction.reportError]);
 
   useEffect(() => {
     if (!draft || isDraftLayerVisible(draft, selectedLayer)) return;
@@ -5441,20 +5582,27 @@ function DraftTemplatesPage({ api, state, applyState }: { api: StoryDreamApi; st
   }, [draft, selectedLayer]);
 
   async function save() {
-    if (draft) applyState(await api.saveDraftTemplate(draft));
+    if (!draft) return;
+    await draftTemplateAction.run(async () => {
+      applyState(await api.saveDraftTemplate(draft));
+    });
   }
 
   async function copyTemplate(template: DraftTemplate) {
     const copy = { ...cloneDraftTemplate(template), id: crypto.randomUUID(), name: `${template.name} 副本`, isDefault: false };
-    applyState(await api.saveDraftTemplate(copy));
-    setEditingId(copy.id);
+    await draftTemplateAction.run(async () => {
+      applyState(await api.saveDraftTemplate(copy));
+      setEditingId(copy.id);
+    });
   }
 
   async function createTemplate() {
     const base = cloneDraftTemplate(builtinDraftTemplates[0]);
     const next = { ...base, id: crypto.randomUUID(), name: '新模板', isDefault: false };
-    applyState(await api.saveDraftTemplate(next));
-    setEditingId(next.id);
+    await draftTemplateAction.run(async () => {
+      applyState(await api.saveDraftTemplate(next));
+      setEditingId(next.id);
+    });
   }
 
   function previewCozeWorkflowTemplate() {
@@ -5479,10 +5627,12 @@ function DraftTemplatesPage({ api, state, applyState }: { api: StoryDreamApi; st
       return;
     }
     const template = cozeImportName.trim() ? { ...result.template, name: cozeImportName.trim() } : result.template;
-    applyState(await api.saveDraftTemplate(template));
-    setCozeImportResult({ ...result, template });
-    setCozeImportError('');
-    setEditingId(template.id);
+    await draftTemplateAction.run(async () => {
+      applyState(await api.saveDraftTemplate(template));
+      setCozeImportResult({ ...result, template });
+      setCozeImportError('');
+      setEditingId(template.id);
+    }, { onError: (error) => setCozeImportError(error.message) });
   }
 
   async function saveAllCozeWorkflowTemplates() {
@@ -5494,16 +5644,18 @@ function DraftTemplatesPage({ api, state, applyState }: { api: StoryDreamApi; st
       setCozeImportError(`${failures.length} 个 Coze 工作流转换失败。`);
       return;
     }
-    let nextState = state;
-    for (const result of results) {
-      if (!result.ok) continue;
-      nextState = await api.saveDraftTemplate(result.template);
-    }
-    applyState(nextState);
-    const first = results.find((result): result is Extract<CozeWorkflowTemplateConversionResult, { ok: true }> => result.ok) ?? null;
-    setCozeImportResult(first);
-    setCozeImportError('');
-    if (first) setEditingId(first.template.id);
+    await draftTemplateAction.run(async () => {
+      let nextState = state;
+      for (const result of results) {
+        if (!result.ok) continue;
+        nextState = await api.saveDraftTemplate(result.template);
+      }
+      applyState(nextState);
+      const first = results.find((result): result is Extract<CozeWorkflowTemplateConversionResult, { ok: true }> => result.ok) ?? null;
+      setCozeImportResult(first);
+      setCozeImportError('');
+      if (first) setEditingId(first.template.id);
+    }, { onError: (error) => setCozeImportError(error.message) });
   }
 
   function openEditor(template: DraftTemplate) {
@@ -5512,9 +5664,11 @@ function DraftTemplatesPage({ api, state, applyState }: { api: StoryDreamApi; st
   }
 
   async function selectDraftBackgroundImage() {
-    const imagePath = await api.selectLocalImage();
-    if (!imagePath) return;
-    setDraft((current) => (current ? { ...current, canvas: { ...current.canvas, backgroundImage: imagePath } } : current));
+    await draftTemplateAction.run(async () => {
+      const imagePath = await api.selectLocalImage();
+      if (!imagePath) return;
+      setDraft((current) => (current ? { ...current, canvas: { ...current.canvas, backgroundImage: imagePath } } : current));
+    });
   }
 
   function updateDraftImage(patch: Partial<DraftTemplate['image']>) {
@@ -5572,6 +5726,7 @@ function DraftTemplatesPage({ api, state, applyState }: { api: StoryDreamApi; st
             <button className="primary-action slim" onClick={save}><Save size={15} />保存</button>
           </div>
         </div>
+        <InlineActionFeedback feedback={draftTemplateAction.feedback} />
 
         <div className="draft-editor-shell focused">
           <section className="draft-stage">
@@ -5750,6 +5905,7 @@ function DraftTemplatesPage({ api, state, applyState }: { api: StoryDreamApi; st
           <button className="primary-action slim" onClick={createTemplate}><Plus size={15} />新模板</button>
         </div>
       </div>
+      <InlineActionFeedback feedback={draftTemplateAction.feedback} />
 
       {cozeImportOpen ? (
         <div className="coze-template-import-backdrop" onClick={() => setCozeImportOpen(false)}>
@@ -6115,6 +6271,7 @@ function SettingsPage({ api, state, applyState }: { api: StoryDreamApi; state: A
   const [selectedLlmProfileId, setSelectedLlmProfileId] = useState(() => activeLlmProfileId(state.config));
   const [selectedImageProfileId, setSelectedImageProfileId] = useState(() => activeImageProfileId(state.config));
   const [selectedTtsProfileId, setSelectedTtsProfileId] = useState(() => activeTtsProfileId(state.config));
+  const settingsAction = useAsyncAction();
   useEffect(() => {
     if (settingsDirty) return;
     const nextSignature = settingsConfigSignature(state.config);
@@ -6134,7 +6291,7 @@ function SettingsPage({ api, state, applyState }: { api: StoryDreamApi; state: A
     setSecretChanges({});
     setLastAppliedConfigSignature(settingsConfigSignature(normalized));
   }
-  async function commitAndApplySettingsDraft(nextDraft: AppConfig, successMessage = '配置已保存') {
+  const persistSettingsDraft = async (nextDraft: AppConfig, successMessage: string) => {
     setSavingConfig(true);
     try {
       const next = await api.saveConfig({ config: normalizeEditableConfigProviders(nextDraft), secretChanges });
@@ -6142,11 +6299,16 @@ function SettingsPage({ api, state, applyState }: { api: StoryDreamApi; state: A
       applyState(next);
       setConfigTestResult(`[pass] ${successMessage}`);
       return next.config;
-    } catch (error) {
-      setConfigTestResult(`[fail] ${error instanceof Error ? error.message : String(error)}`);
     } finally {
       setSavingConfig(false);
     }
+  };
+  async function commitAndApplySettingsDraft(nextDraft: AppConfig, successMessage = '配置已保存') {
+    const result = await settingsAction.run(
+      () => persistSettingsDraft(nextDraft, successMessage),
+      { onError: (error) => setConfigTestResult(`[fail] ${error.message}`) },
+    );
+    return result.ok ? result.value : undefined;
   }
   function clearProviderModels(key: ModelListKey) {
     setModelLists((current) => ({ ...current, [key]: [] }));
@@ -6206,27 +6368,27 @@ function SettingsPage({ api, state, applyState }: { api: StoryDreamApi; state: A
       section === 'llm' || section === 'image' || section === 'tts' || section === 'speechToText' || section === 'jianying' || section === 'creative'
         ? section
         : 'llm';
-    setTestingConfig(true);
-    setSavingConfig(true);
-    setConfigTestResult('正在保存并测试当前配置...');
-    try {
-      const nextDraft = activateSelectedProviderProfileForTarget(draft, target, {
-        llm: selectedLlmProfileId,
-        image: selectedImageProfileId,
-        tts: selectedTtsProfileId,
-      });
-      const next = await api.saveConfig({ config: normalizeEditableConfigProviders(nextDraft), secretChanges });
-      commitSettingsDraft(next.config);
-      applyState(next);
-      const testConfig = buildConfigForSelectedProfileTest(next.config, target, selectedProviderProfileIds);
-      const result = await api.testAppConfig(target, testConfig);
-      setConfigTestResult(`[${result.status}] ${result.detail}`);
-    } catch (error) {
-      setConfigTestResult(`[fail] ${error instanceof Error ? error.message : String(error)}`);
-    } finally {
-      setSavingConfig(false);
-      setTestingConfig(false);
-    }
+    await settingsAction.run(async () => {
+      setTestingConfig(true);
+      setSavingConfig(true);
+      setConfigTestResult('正在保存并测试当前配置...');
+      try {
+        const nextDraft = activateSelectedProviderProfileForTarget(draft, target, {
+          llm: selectedLlmProfileId,
+          image: selectedImageProfileId,
+          tts: selectedTtsProfileId,
+        });
+        const next = await api.saveConfig({ config: normalizeEditableConfigProviders(nextDraft), secretChanges });
+        commitSettingsDraft(next.config);
+        applyState(next);
+        const testConfig = buildConfigForSelectedProfileTest(next.config, target, selectedProviderProfileIds);
+        const result = await api.testAppConfig(target, testConfig);
+        setConfigTestResult(`[${result.status}] ${result.detail}`);
+      } finally {
+        setSavingConfig(false);
+        setTestingConfig(false);
+      }
+    }, { onError: (error) => setConfigTestResult(`[fail] ${error.message}`) });
   }
   async function refreshProviderModels(
     key: ModelListKey,
@@ -6238,22 +6400,22 @@ function SettingsPage({ api, state, applyState }: { api: StoryDreamApi; state: A
       setModelListStatus((current) => ({ ...current, [key]: '[失败] 拉取模型前需要填写接口地址。' }));
       return;
     }
-    setLoadingModelList(key);
-    setModelListStatus((current) => ({ ...current, [key]: '正在获取模型清单...' }));
-    try {
-      const result = await api.listProviderModels(request);
-      setModelListStatus((current) => ({ ...current, [key]: `[${result.status}] ${result.detail}` }));
-      if (result.models.length) {
-        setModelLists((current) => ({ ...current, [key]: result.models }));
-        if (!currentModel.trim()) {
-          setSettingsDraft((current) => (applyModel ? applyModel(current, result.models[0].id) : setDraftModel(current, key, result.models[0].id)));
+    await settingsAction.run(async () => {
+      setLoadingModelList(key);
+      setModelListStatus((current) => ({ ...current, [key]: '正在获取模型清单...' }));
+      try {
+        const result = await api.listProviderModels(request);
+        setModelListStatus((current) => ({ ...current, [key]: `[${result.status}] ${result.detail}` }));
+        if (result.models.length) {
+          setModelLists((current) => ({ ...current, [key]: result.models }));
+          if (!currentModel.trim()) {
+            setSettingsDraft((current) => (applyModel ? applyModel(current, result.models[0].id) : setDraftModel(current, key, result.models[0].id)));
+          }
         }
+      } finally {
+        setLoadingModelList((current) => (current === key ? null : current));
       }
-    } catch (error) {
-      setModelListStatus((current) => ({ ...current, [key]: `[fail] ${error instanceof Error ? error.message : String(error)}` }));
-    } finally {
-      setLoadingModelList((current) => (current === key ? null : current));
-    }
+    }, { onError: (error) => setModelListStatus((current) => ({ ...current, [key]: `[fail] ${error.message}` })) });
   }
   async function refreshVolcengineSpeakers(profile: TtsProviderProfile) {
     const volcengine = ttsProfileVolcengine(profile);
@@ -6268,51 +6430,55 @@ function SettingsPage({ api, state, applyState }: { api: StoryDreamApi; state: A
 
     const resourceId = (volcengine.resourceId ?? '').trim() || 'seed-tts-2.0';
     const limit = 100;
-    setLoadingVolcengineSpeakers(true);
-    setVolcengineSpeakerStatus('正在加载全部音色...');
-    try {
-      const request = {
-        accessKeyId: accessKeyId.value,
-        secretAccessKey: secretAccessKey.value,
-        accessKeyIdSecretId: accessKeyId.secretId,
-        secretAccessKeySecretId: secretAccessKey.secretId,
-        resourceId,
-        limit,
-      };
-      const first = await api.listVolcengineSpeakers({ ...request, page: 1 });
-      let speakers = mergeVolcengineSpeakers([], first.speakers);
-      const total = first.total || speakers.length;
-      if (first.status !== 'fail' && total > speakers.length) {
-        const pageCount = Math.min(Math.ceil(total / limit), 20);
-        for (let page = 2; page <= pageCount; page += 1) {
-          const next = await api.listVolcengineSpeakers({ ...request, page });
-          if (next.status === 'fail' || !next.speakers.length) break;
-          speakers = mergeVolcengineSpeakers(speakers, next.speakers);
-          if (speakers.length >= total) break;
+    await settingsAction.run(async () => {
+      setLoadingVolcengineSpeakers(true);
+      setVolcengineSpeakerStatus('正在加载全部音色...');
+      try {
+        const request = {
+          accessKeyId: accessKeyId.value,
+          secretAccessKey: secretAccessKey.value,
+          accessKeyIdSecretId: accessKeyId.secretId,
+          secretAccessKeySecretId: secretAccessKey.secretId,
+          resourceId,
+          limit,
+        };
+        const first = await api.listVolcengineSpeakers({ ...request, page: 1 });
+        let speakers = mergeVolcengineSpeakers([], first.speakers);
+        const total = first.total || speakers.length;
+        if (first.status !== 'fail' && total > speakers.length) {
+          const pageCount = Math.min(Math.ceil(total / limit), 20);
+          for (let page = 2; page <= pageCount; page += 1) {
+            const next = await api.listVolcengineSpeakers({ ...request, page });
+            if (next.status === 'fail' || !next.speakers.length) break;
+            speakers = mergeVolcengineSpeakers(speakers, next.speakers);
+            if (speakers.length >= total) break;
+          }
         }
+        setVolcengineSpeakers(speakers);
+        const loadedText = speakers.length > first.speakers.length ? `，已合并 ${speakers.length}/${total} 个` : '';
+        setVolcengineSpeakerStatus(`[${first.status}] ${first.detail}${loadedText}`);
+      } finally {
+        setLoadingVolcengineSpeakers(false);
       }
-      setVolcengineSpeakers(speakers);
-      const loadedText = speakers.length > first.speakers.length ? `，已合并 ${speakers.length}/${total} 个` : '';
-      setVolcengineSpeakerStatus(`[${first.status}] ${first.detail}${loadedText}`);
-    } catch (error) {
-      setVolcengineSpeakerStatus(`[fail] ${error instanceof Error ? error.message : String(error)}`);
-    } finally {
-      setLoadingVolcengineSpeakers(false);
-    }
+    }, { onError: (error) => setVolcengineSpeakerStatus(`[fail] ${error.message}`) });
   }
   async function runDiagnostics() {
-    const report = await api.runDiagnostics();
-    setDiagnostics(JSON.stringify(report, null, 2));
+    await settingsAction.run(async () => {
+      const report = await api.runDiagnostics();
+      setDiagnostics(JSON.stringify(report, null, 2));
+    });
   }
   async function uploadBgmFromSettings() {
-    const audioPath = await api.selectLocalAudio();
-    if (!audioPath) return;
-    const nextBgm = addUploadedBgm(draft, audioPath);
-    await commitAndApplySettingsDraft(nextBgm.config, '已添加 BGM 文件');
+    await settingsAction.run(async () => {
+      const audioPath = await api.selectLocalAudio();
+      if (!audioPath) return;
+      const nextBgm = addUploadedBgm(draft, audioPath);
+      await persistSettingsDraft(nextBgm.config, '已添加 BGM 文件');
+    }, { onError: (error) => setConfigTestResult(`[fail] ${error.message}`) });
   }
   async function autoDetectJianyingDraftPath() {
-    setConfigTestResult('正在自动检测剪映草稿目录...');
-    try {
+    await settingsAction.run(async () => {
+      setConfigTestResult('正在自动检测剪映草稿目录...');
       const detected = await api.detectJianyingDraftPath();
       if (!detected) {
         setConfigTestResult('[warn] 未自动检测到剪映草稿目录，请用“选择目录”手动指定。');
@@ -6320,15 +6486,15 @@ function SettingsPage({ api, state, applyState }: { api: StoryDreamApi; state: A
       }
       setSettingsDraft({ ...draft, jianying: { ...draft.jianying, draftPath: detected } });
       setConfigTestResult(`[pass] 已检测到剪映草稿目录：${detected}`);
-    } catch (error) {
-      setConfigTestResult(`[fail] ${error instanceof Error ? error.message : String(error)}`);
-    }
+    }, { onError: (error) => setConfigTestResult(`[fail] ${error.message}`) });
   }
   async function pickJianyingDraftPath() {
-    const folder = await api.selectLocalFolder();
-    if (!folder) return;
-    setSettingsDraft({ ...draft, jianying: { ...draft.jianying, draftPath: folder } });
-    setConfigTestResult(`已选择剪映草稿目录：${folder}`);
+    await settingsAction.run(async () => {
+      const folder = await api.selectLocalFolder();
+      if (!folder) return;
+      setSettingsDraft({ ...draft, jianying: { ...draft.jianying, draftPath: folder } });
+      setConfigTestResult(`已选择剪映草稿目录：${folder}`);
+    });
   }
   function setDefaultBgm(id: string) {
     setSettingsDraft({ ...draft, jianying: { ...draft.jianying, defaultBgmId: id } });
@@ -6422,6 +6588,7 @@ function SettingsPage({ api, state, applyState }: { api: StoryDreamApi; state: A
           </div>
         </div>
         {configTestResult ? <div className="test-result">{configTestResult}</div> : null}
+        <InlineActionFeedback feedback={settingsAction.feedback} />
         {section === 'llm' ? (
           <SettingsCard title="LLM 配置档案" status={secrets.configured(profileSecretId('llm', selectedLlmProfileId, 'apiKey')) ? '已配置' : '待配置'}>
             <LlmProfileManager
@@ -7282,7 +7449,13 @@ function TtsProfileManager({
 
 function AccountPage({ api, state, applyState }: { api: StoryDreamApi; state: AppState; applyState: (state: AppState) => void }) {
   const [draft, setDraft] = useState(state.account);
+  const accountAction = useAsyncAction();
   useEffect(() => setDraft(state.account), [state.account]);
+  async function saveAccountProfile() {
+    await accountAction.run(async () => {
+      applyState(await api.saveAccount(draft));
+    }, { successMessage: '账户资料已保存。' });
+  }
   return (
     <section className="panel account-panel">
       <div className="profile-card">
@@ -7296,7 +7469,8 @@ function AccountPage({ api, state, applyState }: { api: StoryDreamApi; state: Ap
       <ConfigInput label="显示名称" value={draft.displayName} onChange={(value) => setDraft({ ...draft, displayName: value, avatarInitial: value.slice(0, 1).toUpperCase() || 'S' })} />
       <ConfigInput label="邮箱" value={draft.email} onChange={(value) => setDraft({ ...draft, email: value })} />
       <ConfigInput label="工作区" value={draft.workspace} onChange={(value) => setDraft({ ...draft, workspace: value })} />
-      <button className="primary-action slim" onClick={async () => applyState(await api.saveAccount(draft))}><Save size={15} />保存资料</button>
+      <button className="primary-action slim" disabled={accountAction.busy} onClick={saveAccountProfile}><Save size={15} />保存资料</button>
+      <InlineActionFeedback feedback={accountAction.feedback} />
       <LocalInfo title="账号与激活关系" value="本地复刻版只显示设备、账户和余额状态，不连接真实登录或付费系统。" />
     </section>
   );
@@ -7304,7 +7478,13 @@ function AccountPage({ api, state, applyState }: { api: StoryDreamApi; state: Ap
 
 function ActivationPage({ api, state, applyState }: { api: StoryDreamApi; state: AppState; applyState: (state: AppState) => void }) {
   const [draft, setDraft] = useState(state.activation);
+  const activationAction = useAsyncAction();
   useEffect(() => setDraft(state.activation), [state.activation]);
+  async function saveActivationState() {
+    await activationAction.run(async () => {
+      applyState(await api.saveActivation(draft));
+    }, { successMessage: '本地激活状态已保存。' });
+  }
   return (
     <div className="two-column">
       <section className="panel">
@@ -7315,7 +7495,8 @@ function ActivationPage({ api, state, applyState }: { api: StoryDreamApi; state:
         <ConfigInput label="激活码" value={draft.code} onChange={(value) => setDraft({ ...draft, code: value })} />
         <Segmented label="计划" value={draft.plan} options={['trial', 'local', 'inactive']} labels={['试用', '本地激活', '未激活']} onChange={(value) => setDraft({ ...draft, plan: value as ActivationState['plan'] })} />
         <ConfigInput label="状态说明" value={draft.message} onChange={(value) => setDraft({ ...draft, message: value })} />
-        <button className="primary-action slim" onClick={async () => applyState(await api.saveActivation(draft))}><Save size={15} />保存状态</button>
+        <button className="primary-action slim" disabled={activationAction.busy} onClick={saveActivationState}><Save size={15} />保存状态</button>
+        <InlineActionFeedback feedback={activationAction.feedback} />
       </section>
       <section className="panel faq-panel">
         <LocalInfo title="立即激活" value="这里是本地模拟状态页，不做真实购买、登录或付费限制。" />
@@ -7600,6 +7781,15 @@ function EmptyState({ title }: { title: string }) {
 
 function LocalInfo({ title, value }: { title: string; value: string }) {
   return <div className="local-info"><Info size={18} /><div><strong>{title}</strong><span>{value}</span></div></div>;
+}
+
+function InlineActionFeedback({ feedback }: { feedback: AsyncActionFeedback | null }) {
+  if (!feedback) return null;
+  return (
+    <div className={`inline-action-feedback ${feedback.tone}`} role={feedback.tone === 'error' ? 'alert' : 'status'}>
+      <span>{feedback.message}</span>
+    </div>
+  );
 }
 
 function ErrorSummaryButton({ fullMessage, title, compact = false }: { fullMessage: string; title: string; compact?: boolean }) {
@@ -8296,10 +8486,6 @@ function productInfoSummary(value: string | null): string {
 
 function emptyToUndefined(value: string): string | undefined {
   return value.trim() || undefined;
-}
-
-function uiErrorMessage(error: unknown): string {
-  return error instanceof Error ? error.message : String(error);
 }
 
 function trimForPreview(value: string, limit: number): string {

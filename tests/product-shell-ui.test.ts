@@ -1,7 +1,78 @@
 import { readFile } from 'node:fs/promises';
+import ts from 'typescript';
 import { describe, expect, it } from 'vitest';
 
 describe('product shell ui', () => {
+  it('normalizes privileged IPC failures before they reach renderer actions', async () => {
+    const gateway = await readFile(new URL('../electron/ipc.ts', import.meta.url), 'utf8');
+    const preload = await readFile(new URL('../electron/preload.ts', import.meta.url), 'utf8');
+    const helper = await readFile(new URL('../src/ui/async-action.ts', import.meta.url), 'utf8').catch(() => '');
+
+    expect(gateway).toContain('toAppErrorPayload');
+    expect(preload).toContain('appErrorFromPayload');
+    expect(helper).toContain('export function useAsyncAction');
+    expect(helper).toContain('activeRef');
+    expect(helper).toContain('isCancellation');
+    expect(helper).toContain('finally');
+  });
+
+  it('delegates every named privileged async UI handler to the shared action helper', async () => {
+    const main = await readFile(new URL('../src/main.tsx', import.meta.url), 'utf8');
+    const sourceFile = ts.createSourceFile('main.tsx', main, ts.ScriptTarget.Latest, true, ts.ScriptKind.TSX);
+    const uncovered: string[] = [];
+
+    function isAsync(node: ts.FunctionLikeDeclaration): boolean {
+      return Boolean(node.modifiers?.some((modifier) => modifier.kind === ts.SyntaxKind.AsyncKeyword));
+    }
+
+    function visit(node: ts.Node): void {
+      if (ts.isFunctionDeclaration(node) && node.name && node.body && isAsync(node)) {
+        const body = node.body.getText(sourceFile);
+        if (/\bapi\.[A-Za-z0-9_]+\(/u.test(body) && !body.includes('Action.run(')) {
+          uncovered.push(node.name.text);
+        }
+      }
+      ts.forEachChild(node, visit);
+    }
+
+    visit(sourceFile);
+    expect(uncovered).toEqual([]);
+  });
+
+  it('shows local action feedback and reserves a global banner for state failures', async () => {
+    const main = await readFile(new URL('../src/main.tsx', import.meta.url), 'utf8');
+    const css = await readFile(new URL('../src/styles.css', import.meta.url), 'utf8');
+
+    expect(main).toContain("from './ui/async-action'");
+    expect(main).toContain('InlineActionFeedback');
+    expect(main).toContain('className="global-action-banner"');
+    expect(main).toContain('className={`inline-action-feedback ${feedback.tone}`}');
+    for (const page of [
+      'ViralAnalyzerPage',
+      'NewTaskPage',
+      'MusicMvPage',
+      'HtmlVideoPage',
+      'QueuePage',
+      'TaskDetailPage',
+      'ArtifactPreviewContent',
+      'ImageGenerationGallery',
+      'NarrationPreviewList',
+      'PromptTemplatesPage',
+      'DraftTemplatesPage',
+      'SettingsPage',
+      'AccountPage',
+      'ActivationPage',
+    ]) {
+      const start = main.indexOf(`function ${page}(`);
+      expect(start, `${page} is present`).toBeGreaterThan(-1);
+      const nextComponent = main.indexOf('\nfunction ', start + 10);
+      const section = main.slice(start, nextComponent === -1 ? main.length : nextComponent);
+      expect(section, `${page} owns local feedback`).toContain('<InlineActionFeedback');
+    }
+    expect(css).toContain('.inline-action-feedback');
+    expect(css).toContain('.global-action-banner');
+  });
+
   it('keeps saved provider secrets out of renderer state, DOM values, and browser persistence', async () => {
     const main = await readFile(new URL('../src/main.tsx', import.meta.url), 'utf8');
     const viteEnv = await readFile(new URL('../src/vite-env.d.ts', import.meta.url), 'utf8');
