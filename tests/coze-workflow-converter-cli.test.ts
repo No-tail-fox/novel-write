@@ -15,7 +15,7 @@ describe('Coze workflow converter CLI', () => {
       scripts?: Record<string, string>;
     };
 
-    expect(packageJson.scripts?.['convert:coze']).toBe('node scripts/convert-coze-workflows.mjs');
+    expect(packageJson.scripts?.['convert:coze']).toBe('scripts\\run-npm-node.cmd scripts/convert-coze-workflows.mjs');
   });
 
   it('converts copied workflow files into a draft template JSON bundle', async () => {

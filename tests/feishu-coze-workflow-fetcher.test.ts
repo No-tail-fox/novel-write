@@ -39,7 +39,7 @@ describe('Feishu Coze workflow fetcher', () => {
       scripts?: Record<string, string>;
     };
 
-    expect(packageJson.scripts?.['fetch:coze:feishu']).toBe('node scripts/fetch-feishu-coze-workflows.mjs');
+    expect(packageJson.scripts?.['fetch:coze:feishu']).toBe('scripts\\run-npm-node.cmd scripts/fetch-feishu-coze-workflows.mjs');
   });
 
   it('extracts downloadable txt workflow attachments from Feishu wiki html', async () => {
