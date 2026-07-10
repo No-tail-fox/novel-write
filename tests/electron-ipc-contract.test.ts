@@ -2,6 +2,15 @@ import { readFile } from 'node:fs/promises';
 import { describe, expect, it } from 'vitest';
 
 describe('electron ipc contract', () => {
+  it('defines a renderer sender policy for the trusted IPC gateway', async () => {
+    const security = await readFile(new URL('../electron/security.ts', import.meta.url), 'utf8').catch(() => '');
+
+    expect(security).toContain('export function isTrustedRendererSender');
+    expect(security).toContain('event.sender !== win.webContents');
+    expect(security).toContain('event.senderFrame !== win.webContents.mainFrame');
+    expect(security).toContain('isAllowedRendererNavigation');
+  });
+
   it('exposes product shell persistence channels to the renderer', async () => {
     const preload = await readFile(new URL('../electron/preload.ts', import.meta.url), 'utf8');
     const main = await readFile(new URL('../electron/main.ts', import.meta.url), 'utf8');

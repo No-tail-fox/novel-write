@@ -5,6 +5,7 @@ import { pathToFileURL } from 'node:url';
 import type { HtmlVideoBuildInput, HtmlVideoComposition, HtmlVideoCapturedScene, HtmlVideoExportInput, HtmlVideoExportResult } from '../src/shared/html-video';
 import { createHtmlVideoComposePayload, buildHtmlVideoExportInput, type HtmlVideoComposePayload } from '../src/shared/html-video';
 import { runStoryboundMediaSidecar } from '../src/shared/storybound-sidecar';
+import { attachLocalHtmlSecurity, isAllowedLocalHtmlNavigation } from './security';
 
 const sidecarFramePattern = 'frame_%04d.jpg';
 
@@ -33,7 +34,6 @@ export async function createElectronHtmlVideoRenderer() {
         await writeFile(htmlPath, scene.html, 'utf8');
         const window = await openHiddenHtmlWindow({
           workDir: input.workDir,
-          html: scene.html,
           htmlPath,
           fps: input.fps,
           duration: scene.duration,
@@ -72,8 +72,7 @@ export async function createElectronHtmlVideoRenderer() {
 
 async function openHiddenHtmlWindow(input: {
   workDir: string;
-  html: string;
-  htmlPath?: string;
+  htmlPath: string;
   fps: number;
   duration: number;
   canvas: Rectangle;
@@ -87,9 +86,16 @@ async function openHiddenHtmlWindow(input: {
     webPreferences: {
       contextIsolation: true,
       nodeIntegration: false,
+      sandbox: true,
     },
   });
-  await window.loadURL(input.htmlPath ? pathToFileURL(input.htmlPath).toString() : `data:text/html;charset=utf-8,${encodeURIComponent(input.html)}`);
+  const htmlUrl = pathToFileURL(input.htmlPath).toString();
+  if (!isAllowedLocalHtmlNavigation(htmlUrl, input.workDir)) {
+    window.destroy();
+    throw new Error('HTML scene path must stay inside the task work directory.');
+  }
+  attachLocalHtmlSecurity(window, input.workDir);
+  await window.loadURL(htmlUrl);
   await waitForHiddenHtmlSceneReady(window);
   return window;
 }

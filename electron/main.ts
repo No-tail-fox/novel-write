@@ -4,7 +4,7 @@ import { randomUUID } from 'node:crypto';
 import { existsSync } from 'node:fs';
 import { mkdir, readFile, writeFile } from 'node:fs/promises';
 import { dirname, extname, join } from 'node:path';
-import { fileURLToPath } from 'node:url';
+import { fileURLToPath, pathToFileURL } from 'node:url';
 import { promisify } from 'node:util';
 import { readTaskArtifactSnapshot } from '../src/shared/artifact-preview';
 import { fromLlmModelTestResult, testConfigTarget } from '../src/shared/config-utils';
@@ -25,6 +25,13 @@ import { createViralProductionTaskInput, detectViralPlatform, runViralAnalysis }
 import { createViralRuntimeProviders } from '../src/shared/viral-runtime';
 import { listVolcengineSpeakers } from '../src/shared/volcengine-speakers';
 import { getRendererIndexPath } from './paths';
+import {
+  attachDouyinLoginSecurity,
+  attachMainWindowSecurity,
+  isAllowedDouyinCookieDomain,
+  type RendererPolicy,
+  validateDevServerUrl,
+} from './security';
 import { loadConfigFromFile, saveConfigToFile } from '../src/shared/config-file';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
@@ -80,6 +87,12 @@ async function ensureRuntimeJianyingDraftPath(database: FileDatabase): Promise<v
 }
 
 async function createWindow(): Promise<void> {
+  const configuredDevUrl = process.env.VITE_DEV_SERVER_URL ?? (process.env.NODE_ENV === 'development' ? 'http://127.0.0.1:5173' : '');
+  const rendererIndexPath = getRendererIndexPath(__dirname);
+  const rendererPolicy: RendererPolicy = configuredDevUrl
+    ? { mode: 'development', entryUrl: validateDevServerUrl(configuredDevUrl) }
+    : { mode: 'production', entryUrl: pathToFileURL(rendererIndexPath).toString() };
+
   Menu.setApplicationMenu(null);
 
   mainWindow = new BrowserWindow({
@@ -95,15 +108,16 @@ async function createWindow(): Promise<void> {
       preload: join(__dirname, 'preload.js'),
       contextIsolation: true,
       nodeIntegration: false,
+      sandbox: true,
     },
   });
   mainWindow.setMenuBarVisibility(false);
+  attachMainWindowSecurity(mainWindow, rendererPolicy);
 
-  const devUrl = process.env.VITE_DEV_SERVER_URL ?? (process.env.NODE_ENV === 'development' ? 'http://127.0.0.1:5173' : '');
-  if (devUrl) {
-    await mainWindow.loadURL(devUrl);
+  if (rendererPolicy.mode === 'development') {
+    await mainWindow.loadURL(rendererPolicy.entryUrl);
   } else {
-    await mainWindow.loadFile(getRendererIndexPath(__dirname));
+    await mainWindow.loadFile(rendererIndexPath);
   }
   const database = await getDb();
   await pauseStaleRunningTasks(database);
@@ -810,10 +824,7 @@ function netscapeCookieLine(cookie: Cookie): string {
 async function exportDouyinLoginCookies(win: BrowserWindow): Promise<string> {
   await mkdir(viralCookieDir(), { recursive: true });
   const allCookies = await win.webContents.session.cookies.get({});
-  const cookies = allCookies.filter((cookie) => {
-    const domain = (cookie.domain || '').toLowerCase();
-    return domain.includes('douyin.com') || domain.includes('iesdouyin.com') || domain.includes('amemv.com');
-  });
+  const cookies = allCookies.filter((cookie) => isAllowedDouyinCookieDomain(cookie.domain || ''));
   const lines = ['# Netscape HTTP Cookie File', ...cookies.map(netscapeCookieLine)];
   const outputPath = viralCookieFilePath();
   await writeFile(outputPath, `${lines.join('\n')}\n`, 'utf8');
@@ -857,9 +868,11 @@ async function openViralLoginWindow(): Promise<string | null> {
         partition: 'persist:storydream-viral-douyin',
         contextIsolation: true,
         nodeIntegration: false,
+        sandbox: true,
       },
     });
     viralLoginWindow = loginWindow;
+    attachDouyinLoginSecurity(loginWindow);
     loginWindow.on('closed', () => {
       if (viralLoginWindow === loginWindow) viralLoginWindow = null;
       settle(null);
