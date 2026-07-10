@@ -363,8 +363,21 @@ export interface Task {
   coverTemplateId?: string;
 }
 
-export type HtmlVideoPipelineStep = 'plan' | 'assets' | 'voice' | 'render' | 'done';
+export type HtmlVideoVisibleStep = 'rewrite' | 'planning' | 'assets' | 'voice' | 'preview' | 'render';
+export type HtmlVideoPipelineStep = HtmlVideoVisibleStep | 'done';
 export type HtmlVideoTabKey = 'text' | 'assets' | 'voice' | 'preview' | 'cover' | 'output';
+
+export type HtmlVideoStepStatus = 'pending' | 'running' | 'completed' | 'failed' | 'cancelled';
+
+export interface HtmlVideoStepState {
+  status: HtmlVideoStepStatus;
+  inputHash?: string;
+  artifactPath?: string;
+  artifactSize?: number;
+  error?: string;
+  startedAt?: number;
+  completedAt?: number;
+}
 
 export interface HtmlVideoScenePlan {
   index: number;
@@ -405,45 +418,75 @@ export interface HtmlVideoCompositionSnapshot {
   rev?: number;
 }
 
-export interface HtmlVideoPipelineData {
-  scenesPlanned: number;
-  scenesCompleted: number;
-  videoTitle: string;
-  scenes: HtmlVideoScenePlan[];
-  assetImages: Array<{
-    sceneIndex: number;
-    kind: 'bg' | 'fg';
-    slot: number;
-    src: string;
-  }>;
-  voiceClips: Array<{
-    sceneIndex: number;
-    src: string;
-    durationSec: number;
-    text?: string;
-  }>;
-  compositions: HtmlVideoCompositionSnapshot[];
-  htmlPaths: string[];
+export interface HtmlVideoAsset {
+  sceneIndex: number;
+  kind: 'bg' | 'fg';
+  slot: number;
+  src: string;
+  prompt?: string;
+  sizeBytes?: number;
+}
+
+export interface HtmlVideoVoiceClip {
+  sceneIndex: number;
+  src: string;
+  durationSec: number;
+  text?: string;
+  sizeBytes?: number;
+}
+
+export interface HtmlVideoOutput {
+  path: string;
+  sizeBytes: number;
+  durationSec?: number;
   cover?: CoverMetadata | null;
-  _cfg?: {
-    style?: string;
-    voiceId?: string;
-    ttsProvider?: string;
-    ttsSpeed?: number;
-    bgmId?: string;
-    captionPreset?: string;
-    captionAnim?: string;
-    captionColors?: Record<string, string>;
-    bgmVolume?: 'soft' | 'medium' | 'loud';
-    transitionType?: string;
-    coverImageMode?: string;
-    coverTemplate?: string;
-    coverRatio?: string;
-    draftTemplate?: string;
-    foreground?: boolean;
-    maxScenes?: number;
-    ratio?: string;
-  };
+}
+
+export interface HtmlVideoJobConfig {
+  style?: string;
+  voiceId?: string;
+  ttsProvider?: string;
+  ttsSpeed?: number;
+  bgmId?: string;
+  captionPreset?: string;
+  captionAnim?: string;
+  captionColors?: Record<string, string>;
+  bgmVolume?: 'soft' | 'medium' | 'loud';
+  transitionType?: string;
+  coverImageMode?: string;
+  coverTemplate?: string;
+  coverRatio?: string;
+  draftTemplate?: string;
+  foreground?: boolean;
+  maxScenes?: number;
+  ratio?: string;
+}
+
+export interface HtmlVideoPipelineDataV2 {
+  version: 2;
+  revision: number;
+  current: HtmlVideoPipelineStep;
+  warnings: string[];
+  steps: Record<HtmlVideoVisibleStep, HtmlVideoStepState>;
+  scenes: HtmlVideoScenePlan[];
+  assets: HtmlVideoAsset[];
+  voices: HtmlVideoVoiceClip[];
+  compositions: HtmlVideoCompositionSnapshot[];
+  output?: HtmlVideoOutput;
+  config: HtmlVideoJobConfig;
+}
+
+// Temporary read-only projection for the existing HTML video page. These
+// properties are non-enumerable at runtime and are not persisted in V2 JSON.
+export interface HtmlVideoPipelineData extends HtmlVideoPipelineDataV2 {
+  readonly scenesPlanned: number;
+  readonly scenesCompleted: number;
+  readonly videoTitle: string;
+  readonly assetImages: HtmlVideoAsset[];
+  readonly voiceClips: HtmlVideoVoiceClip[];
+  readonly htmlPaths: string[];
+  readonly cover?: CoverMetadata | null;
+  readonly _cfg?: HtmlVideoJobConfig;
 }
 
 export interface MusicMvSettings {

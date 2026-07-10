@@ -459,7 +459,7 @@ describe('product shell ui', () => {
     expect(types).not.toContain("export type TaskKind = 'story' | 'music-mv' | 'html-video'");
     expect(workflow).toContain("taskKind: 'story'");
     expect(workflow).toContain("taskType: 'html-video'");
-    expect(workflow).toContain("pipelineStep: 'plan'");
+    expect(workflow).toContain("pipelineStep: 'rewrite'");
     expect(workflow).toContain('pipelineData: JSON.stringify(data)');
     expect(preload).toContain('createHtmlVideoTask');
     expect(electronMain).toContain("trustedHandle('html-video:create-task'");

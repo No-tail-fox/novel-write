@@ -209,6 +209,46 @@ describe('file database', () => {
     }
   });
 
+  it('atomically persists the HTML video pipeline step and versioned snapshot', async () => {
+    const dir = await mkdtemp(join(tmpdir(), 'storydream-db-html-video-checkpoint-'));
+    const file = join(dir, 'app.db');
+    const pipelineData = JSON.stringify({
+      version: 2,
+      revision: 3,
+      current: 'assets',
+      warnings: [],
+      steps: {},
+      scenes: [],
+      assets: [],
+      voices: [],
+      compositions: [],
+      config: {},
+    });
+
+    try {
+      const db = await FileDatabase.open(file);
+      const task = await db.createTask({
+        title: 'HTML checkpoint',
+        inputText: 'source',
+        taskType: 'html-video',
+        pipelineStep: 'plan',
+        pipelineData: '{"legacy":true}',
+      });
+
+      await db.updateTask(task.id, { pipelineStep: 'assets', pipelineData });
+      await db.close();
+
+      const reopened = await FileDatabase.open(file);
+      expect((await reopened.getState()).tasks[0]).toMatchObject({
+        pipelineStep: 'assets',
+        pipelineData,
+      });
+      await reopened.close();
+    } finally {
+      await rm(dir, { recursive: true, force: true });
+    }
+  });
+
   it('uses the recovered Storybound ai material source default while preserving explicit paste tasks', async () => {
     const dir = await mkdtemp(join(tmpdir(), 'storybound-db-material-source-default-'));
     const file = join(dir, 'app.db');

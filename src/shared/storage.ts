@@ -1354,6 +1354,7 @@ export class FileDatabase {
         | 'podcastSpeakerA'
         | 'podcastSpeakerB'
         | 'pipelineStep'
+        | 'pipelineData'
       >
     >,
   ): Promise<void> {
@@ -1376,6 +1377,7 @@ export class FileDatabase {
       podcastSpeakerA: 'podcast_speaker_a',
       podcastSpeakerB: 'podcast_speaker_b',
       pipelineStep: 'pipeline_step',
+      pipelineData: 'pipeline_data',
     };
     for (const [key, column] of Object.entries(map)) {
       if (key in patch) {

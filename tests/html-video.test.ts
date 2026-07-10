@@ -6,6 +6,13 @@ import {
   createHtmlVideoComposePayload,
   type HtmlVideoCapturedScene,
 } from '@shared/html-video';
+import {
+  createHtmlVideoPipelineData,
+  createHtmlVideoTaskInput,
+  htmlVideoSteps,
+  parseHtmlVideoPipelineData,
+  tabForHtmlVideoStep,
+} from '@shared/html-video-workflow';
 import type { PipelineArtifact } from '@shared/types';
 
 const artifact: PipelineArtifact = {
@@ -19,6 +26,104 @@ const artifact: PipelineArtifact = {
   imagePrompts: [],
   subtitles: { cues: [], srt: '' },
 };
+
+describe('HTML video pipeline V2 contract', () => {
+  it('uses six visible steps and keeps done as a terminal-only state', () => {
+    expect(htmlVideoSteps.map((step) => (step as { key?: string }).key)).toEqual([
+      'rewrite',
+      'planning',
+      'assets',
+      'voice',
+      'preview',
+      'render',
+    ]);
+
+    const data = createHtmlVideoPipelineData('第一句。\n\n第二句。', { ratio: '9:16', style: 'modern-film' });
+    expect(data).toMatchObject({
+      version: 2,
+      revision: 0,
+      current: 'rewrite',
+      warnings: [],
+      config: { ratio: '9:16', style: 'modern-film' },
+    });
+    expect(Object.keys(data.steps)).toEqual([
+      'rewrite',
+      'planning',
+      'assets',
+      'voice',
+      'preview',
+      'render',
+    ]);
+    expect(data.steps.rewrite.status).toBe('pending');
+
+    const taskInput = createHtmlVideoTaskInput({ copy: '第一句。', ratio: '9:16', style: 'modern-film' });
+    expect(taskInput.pipelineStep).toBe('rewrite');
+    expect(JSON.parse(taskInput.pipelineData ?? '{}')).toMatchObject({ version: 2, current: 'rewrite' });
+    expect(tabForHtmlVideoStep('rewrite')).toBe('text');
+    expect(tabForHtmlVideoStep('planning')).toBe('text');
+    expect(tabForHtmlVideoStep('preview')).toBe('preview');
+    expect(tabForHtmlVideoStep('render')).toBe('output');
+    expect(tabForHtmlVideoStep('done')).toBe('output');
+  });
+
+  it('normalizes old plan snapshots without losing scenes or generated media', () => {
+    const legacy = JSON.stringify({
+      pipelineStep: 'plan',
+      scenesPlanned: 1,
+      scenesCompleted: 0,
+      videoTitle: '旧任务',
+      scenes: [{
+        index: 1,
+        narration: '必须保留的旧场景',
+        title: '旧场景',
+        captions: ['必须保留的旧场景'],
+        sceneTemplate: 'cinematic-title',
+        background: { prompt: '旧背景' },
+        elements: [{ slot: 0, prompt: '旧前景' }],
+      }],
+      assetImages: [{ sceneIndex: 1, kind: 'bg', slot: 0, src: 'D:/legacy/bg.png' }],
+      voiceClips: [{ sceneIndex: 1, src: 'D:/legacy/voice.wav', durationSec: 1.5 }],
+      compositions: [],
+      htmlPaths: ['D:/legacy/scene.html'],
+      _cfg: { ratio: '9:16', style: 'legacy-film' },
+    });
+
+    const normalized = parseHtmlVideoPipelineData(legacy);
+    expect(normalized).toMatchObject({
+      version: 2,
+      current: 'planning',
+      scenes: [{ index: 1, narration: '必须保留的旧场景', title: '旧场景' }],
+      assets: [{ sceneIndex: 1, kind: 'bg', slot: 0, src: 'D:/legacy/bg.png' }],
+      voices: [{ sceneIndex: 1, src: 'D:/legacy/voice.wav', durationSec: 1.5 }],
+      config: { ratio: '9:16', style: 'legacy-film' },
+    });
+    expect(normalized.scenes).toHaveLength(1);
+    expect(normalized.scenes[0].background.prompt).toBe('旧背景');
+  });
+
+  it('rejects malformed, unsupported, and oversized pipeline JSON', () => {
+    for (const value of [
+      '{',
+      'null',
+      '[]',
+      JSON.stringify({ version: 99 }),
+      JSON.stringify({ version: 2, revision: 0, current: 'rewrite', warnings: [], steps: {}, scenes: 'invalid' }),
+    ]) {
+      expect(() => parseHtmlVideoPipelineData(value)).toThrow(/HTML video pipeline/i);
+    }
+
+    const oversized = JSON.stringify({ padding: 'x'.repeat(1_000_001) });
+    expect(() => parseHtmlVideoPipelineData(oversized)).toThrow(/HTML video pipeline.*large/i);
+
+    const malformedCover = JSON.parse(JSON.stringify(createHtmlVideoPipelineData('封面校验。'))) as Record<string, unknown>;
+    malformedCover.output = {
+      path: 'D:/output.mp4',
+      sizeBytes: 1024,
+      cover: { title: 42, subtitle: [], summary: '', tags: [], comments: [] },
+    };
+    expect(() => parseHtmlVideoPipelineData(JSON.stringify(malformedCover))).toThrow(/HTML video pipeline.*cover/i);
+  });
+});
 
 describe('HTML video composition contract', () => {
   it('bounds hidden renderer readiness and frame capture and always destroys the window', async () => {
