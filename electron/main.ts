@@ -3,7 +3,7 @@ import { execFile } from 'node:child_process';
 import { randomUUID } from 'node:crypto';
 import { existsSync } from 'node:fs';
 import { mkdir, readFile, writeFile } from 'node:fs/promises';
-import { dirname, extname, join } from 'node:path';
+import { dirname, extname, isAbsolute, join, relative, resolve } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { promisify } from 'node:util';
 import { readTaskArtifactSnapshot } from '../src/shared/artifact-preview';
@@ -41,6 +41,7 @@ const execFileAsync = promisify(execFile);
 let mainWindow: BrowserWindow | null = null;
 let viralLoginWindow: BrowserWindow | null = null;
 let mainRendererPolicy: RendererPolicy | null = null;
+let mainWindowPolicyInstalled = false;
 let db: FileDatabase | null = null;
 let configService: ConfigService | null = null;
 interface RunningTaskRun {
@@ -59,6 +60,26 @@ const runningViralAnalyses = new Map<string, RunningViralAnalysisRun>();
 let isShuttingDown = false;
 let shutdownComplete = false;
 let shutdownPromise: Promise<void> | null = null;
+
+interface SmokeConfig {
+  outputPath: string;
+  userDataPath: string;
+}
+
+interface SmokeReport {
+  mainLoaded: boolean;
+  preloadExposed: boolean;
+  ipcStateLoaded: boolean;
+  preloadActionSucceeded: boolean;
+  windowPolicyInstalled: boolean;
+  shellRendered: boolean;
+}
+
+const smokeConfig = resolveSmokeConfig();
+if (smokeConfig) {
+  app.setPath('userData', smokeConfig.userDataPath);
+}
+
 const trustedHandle = createTrustedIpcRegistrar({
   register: (channel, handler) => ipcMain.handle(channel, handler),
   getWindow: () => mainWindow,
@@ -75,6 +96,28 @@ const pipelineStepAgents: Record<number, string> = {
   5: 'TTS',
   6: 'Draft',
 };
+
+function resolveSmokeConfig(): SmokeConfig | null {
+  const output = process.env.STORYDREAM_SMOKE_OUTPUT?.trim() ?? '';
+  const userData = process.env.STORYDREAM_SMOKE_USER_DATA?.trim() ?? '';
+  if (!output && !userData) return null;
+  if (!output || !userData) {
+    throw new Error('Both STORYDREAM_SMOKE_OUTPUT and STORYDREAM_SMOKE_USER_DATA are required.');
+  }
+  if (output.length > 4096 || userData.length > 4096 || output.includes('\0') || userData.includes('\0')) {
+    throw new Error('Electron smoke paths are invalid.');
+  }
+  if (!isAbsolute(output) || !isAbsolute(userData)) {
+    throw new Error('Electron smoke paths must be absolute.');
+  }
+  const userDataPath = resolve(userData);
+  const outputPath = resolve(output);
+  const outputFromUserData = relative(userDataPath, outputPath);
+  if (!outputFromUserData || outputFromUserData.startsWith('..') || isAbsolute(outputFromUserData)) {
+    throw new Error('Electron smoke output must be a file inside the temporary userData directory.');
+  }
+  return { outputPath, userDataPath };
+}
 
 async function getDb(): Promise<FileDatabase> {
   if (db) return db;
@@ -158,6 +201,7 @@ async function createWindow(): Promise<void> {
   });
   mainWindow.setMenuBarVisibility(false);
   attachMainWindowSecurity(mainWindow, rendererPolicy);
+  mainWindowPolicyInstalled = true;
 
   if (rendererPolicy.mode === 'development') {
     await mainWindow.loadURL(rendererPolicy.entryUrl);
@@ -167,6 +211,56 @@ async function createWindow(): Promise<void> {
   const database = await getDb();
   await pauseStaleRunningTasks(database);
   await sendTaskState(database);
+}
+
+async function runSmokeHandshake(): Promise<void> {
+  if (!smokeConfig) return;
+  if (!mainWindow || mainWindow.isDestroyed()) {
+    throw new Error('Electron smoke main window is unavailable.');
+  }
+
+  const rendererResult = await mainWindow.webContents.executeJavaScript(`(async () => {
+    const waitForShell = () => new Promise((resolve) => {
+      const deadline = Date.now() + 10000;
+      const check = () => {
+        if (document.querySelector('.app-shell') || Date.now() >= deadline) resolve(undefined);
+        else setTimeout(check, 50);
+      };
+      check();
+    });
+    await waitForShell();
+    const api = window.storydream;
+    const base = {
+      preloadExposed: Boolean(api),
+      ipcStateLoaded: false,
+      preloadActionSucceeded: false,
+      shellRendered: Boolean(document.querySelector('.app-shell')) && document.body.innerText.includes('StoryDream'),
+    };
+    if (!api) return base;
+    try {
+      const state = await api.getState();
+      base.ipcStateLoaded = Boolean(state && state.config && Array.isArray(state.tasks));
+      if (state && state.ui) {
+        const saved = await api.saveUiPreferences({ ...state.ui, activeView: 'new-task' });
+        base.preloadActionSucceeded = saved?.ui?.activeView === 'new-task';
+      }
+    } catch {
+      return base;
+    }
+    return base;
+  })()`, true) as Pick<SmokeReport, 'preloadExposed' | 'ipcStateLoaded' | 'preloadActionSucceeded' | 'shellRendered'>;
+
+  const report: SmokeReport = {
+    mainLoaded: true,
+    preloadExposed: rendererResult.preloadExposed === true,
+    ipcStateLoaded: rendererResult.ipcStateLoaded === true,
+    preloadActionSucceeded: rendererResult.preloadActionSucceeded === true,
+    windowPolicyInstalled: mainWindowPolicyInstalled,
+    shellRendered: rendererResult.shellRendered === true,
+  };
+  await writeFile(smokeConfig.outputPath, `${JSON.stringify(report, null, 2)}\n`, 'utf8');
+  mainWindow.close();
+  if (process.platform === 'darwin') app.quit();
 }
 
 async function sendTaskState(database: FileDatabase): Promise<void> {
@@ -1147,9 +1241,28 @@ async function shutdownApplication(): Promise<void> {
   }
 }
 
-app.whenReady().then(() => {
+app.whenReady().then(async () => {
   setDefaultPythonRuntimeAppRoot(app.getAppPath());
-  return createWindow();
+  await createWindow();
+  await runSmokeHandshake();
+}).catch(async (error) => {
+  console.error('Application startup failed', error);
+  process.exitCode = 1;
+  if (smokeConfig) {
+    const failedReport: SmokeReport = {
+      mainLoaded: false,
+      preloadExposed: false,
+      ipcStateLoaded: false,
+      preloadActionSucceeded: false,
+      windowPolicyInstalled: mainWindowPolicyInstalled,
+      shellRendered: false,
+    };
+    await writeFile(smokeConfig.outputPath, `${JSON.stringify(failedReport, null, 2)}\n`, 'utf8').catch(() => undefined);
+  }
+  if (mainWindow && !mainWindow.isDestroyed()) {
+    mainWindow.close();
+    if (process.platform === 'darwin') app.quit();
+  } else app.quit();
 });
 
 app.on('window-all-closed', () => {

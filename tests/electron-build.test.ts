@@ -24,4 +24,13 @@ describe('electron build', () => {
     });
     expect(packageJson.overrides).toMatchObject({ 'shell-quote': '1.9.0' });
   });
+
+  it('keeps the smoke command on the npm-provided Node runtime', async () => {
+    const script = await readFile(new URL('../scripts/smoke-electron.ps1', import.meta.url), 'utf8');
+    const manifest = JSON.parse(await readFile(new URL('../package.json', import.meta.url), 'utf8')) as { main?: string; scripts?: Record<string, string> };
+
+    expect(manifest.main).toBe('dist-electron/electron/main.js');
+    expect(manifest.scripts?.['smoke:electron']).toContain('smoke-electron.ps1');
+    expect(script).toContain('run-npm-node.cmd');
+  });
 });

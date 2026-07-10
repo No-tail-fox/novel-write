@@ -7,5 +7,5 @@ if (Invoke-Utf8Bootstrap -ScriptPath $PSCommandPath -ScriptArgs $args) {
   return
 }
 
-node "node_modules/electron/cli.js" "scripts/smoke-electron.cjs"
+& (Join-Path $PSScriptRoot "run-npm-node.cmd") "scripts/smoke-electron.cjs"
 if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
