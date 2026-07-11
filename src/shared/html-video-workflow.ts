@@ -99,7 +99,7 @@ export function createHtmlVideoPipelineData(
   copy: string,
   config: HtmlVideoJobConfig = {},
 ): HtmlVideoPipelineData {
-  const scenes = buildHtmlVideoScenePlans(copy, config.maxScenes ?? 8);
+  const scenes = planHtmlVideoScenes(copy, config.maxScenes ?? 8);
   const data: HtmlVideoPipelineDataV2 = {
     version: 2,
     revision: 0,
@@ -151,6 +151,15 @@ export function createHtmlVideoTaskInput(input: {
 
 export function isHtmlVideoTask(task: Pick<Task, 'taskType'>): boolean {
   return task.taskType === 'html-video';
+}
+
+export function validateHtmlVideoScenePlans(value: unknown): HtmlVideoScenePlan[] {
+  const scenes = requireArray(value, 'scenes').map((scene, index) => parseScenePlan(scene, `scenes[${index}]`, false));
+  if (scenes.length === 0) throw invalidPipeline('scenes must not be empty');
+  for (const [index, scene] of scenes.entries()) {
+    if (scene.index !== index + 1) throw invalidPipeline('scene indexes must be contiguous from 1');
+  }
+  return scenes;
 }
 
 function parsePipelineV2(value: UnknownRecord): HtmlVideoPipelineDataV2 {
@@ -501,7 +510,7 @@ function invalidPipeline(reason: string): Error {
   return new Error(`HTML video pipeline ${reason}.`);
 }
 
-function buildHtmlVideoScenePlans(copy: string, maxScenes: number): HtmlVideoScenePlan[] {
+export function planHtmlVideoScenes(copy: string, maxScenes: number): HtmlVideoScenePlan[] {
   const chunks = splitCopyIntoSceneTexts(copy).slice(0, Math.max(1, maxScenes));
   return chunks.map((text, index) => ({
     index: index + 1,
