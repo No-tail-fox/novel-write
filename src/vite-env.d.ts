@@ -71,6 +71,8 @@ declare global {
       saveActivation: (activation: ActivationState) => Promise<AppState>;
       saveUiPreferences: (ui: UiPreferences) => Promise<AppState>;
       createHtmlVideoTask: (input: CreateTaskInput) => Promise<AppState>;
+      openHtmlVideoPreview: (id: string, sceneIndex?: number) => Promise<void>;
+      getHtmlVideoMediaUrl: (id: string, path: string) => Promise<string>;
       createAndRunTask: (input: CreateTaskInput) => Promise<AppState>;
       createAndRunViralAnalysis: (input: CreateViralAnalysisInput) => Promise<AppState>;
       updateViralAnalysisStatus: (id: string, status: ViralAnalysisStatus) => Promise<AppState>;

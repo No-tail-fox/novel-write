@@ -12,6 +12,7 @@ import { defaultConfig } from '@shared/config';
 import { FileDatabase } from '@shared/storage';
 import { runTask, type RunTaskOptions } from '@shared/runner';
 import type { SceneAsset } from '@shared/draft';
+import { MAX_HTML_VIDEO_SOURCE_CHARS } from '@shared/html-video-workflow';
 import type { HtmlVideoScenePlan, Task } from '@shared/types';
 
 afterEach(() => vi.unstubAllGlobals());
@@ -65,6 +66,215 @@ describe('task runtime providers', () => {
     });
   });
 
+  it('keeps an exact-cap foreground prompt valid when adding the transparent-PNG suffix', async () => {
+    await withRuntimeTask(async (task, workDir) => {
+      let providerPrompt = '';
+      const generator: NonNullable<RunTaskOptions['generateImages']> = async (scenes, prompts) => {
+        providerPrompt = prompts.find((prompt) => prompt.sceneId === 2)?.prompt ?? '';
+        return Promise.all(scenes.map(async (scene) => {
+          const path = join(workDir, `bounded-prompt-${scene.id}.png`);
+          await writeFile(path, Buffer.from('asset'));
+          return { sceneId: scene.id, path };
+        }));
+      };
+      const scene = structuredClone(htmlScenes()[0]);
+      scene.elements[0].prompt = 'x'.repeat(MAX_HTML_VIDEO_SOURCE_CHARS);
+
+      const assets = await adaptHtmlVideoAssetGenerator(generator, task)({
+        scenes: [scene],
+        config: { foreground: true },
+      });
+
+      expect(providerPrompt.length).toBeLessThanOrEqual(MAX_HTML_VIDEO_SOURCE_CHARS);
+      expect(providerPrompt).toMatch(/透明背景 PNG 前景素材$/u);
+      expect(assets.find((asset) => asset.kind === 'fg')?.prompt).toBe(providerPrompt);
+    });
+  });
+
+  it('rejects oversized image-provider output before reading any returned item', async () => {
+    await withRuntimeTask(async (task) => {
+      let assetAccessed = false;
+      const generated = new Array<SceneAsset>(3);
+      Object.defineProperty(generated, 0, {
+        get() {
+          assetAccessed = true;
+          throw new Error('image provider asset was accessed');
+        },
+      });
+      const generateAssets = adaptHtmlVideoAssetGenerator(async () => generated, task);
+
+      await expect(generateAssets({ scenes: htmlScenes(), config: { foreground: true } }))
+        .rejects.toMatchObject({ code: 'IMAGE_PROVIDER_INVALID_OUTPUT' });
+      expect(assetAccessed).toBe(false);
+    });
+  });
+
+  it('rejects oversized direct image scene arrays before reading items or calling the provider', async () => {
+    await withRuntimeTask(async (task) => {
+      let sceneAccessed = false;
+      let providerCalls = 0;
+      const scenes = new Array<HtmlVideoScenePlan>(31);
+      Object.defineProperty(scenes, 0, {
+        get() {
+          sceneAccessed = true;
+          throw new Error('image scene was accessed');
+        },
+      });
+      const generator: NonNullable<RunTaskOptions['generateImages']> = async () => {
+        providerCalls += 1;
+        return [];
+      };
+      const generateAssets = adaptHtmlVideoAssetGenerator(generator, task);
+
+      await expect(generateAssets({ scenes, config: {} })).rejects.toThrow(/scene|maximum|limit/i);
+
+      expect(sceneAccessed).toBe(false);
+      expect(providerCalls).toBe(0);
+    });
+  });
+
+  it('rejects oversized direct foreground arrays before reading items or calling the image provider', async () => {
+    await withRuntimeTask(async (task) => {
+      let elementAccessed = false;
+      let providerCalls = 0;
+      const scene = structuredClone(htmlScenes()[0]);
+      const elements = new Array<HtmlVideoScenePlan['elements'][number]>(5);
+      Object.defineProperty(elements, 0, {
+        get() {
+          elementAccessed = true;
+          throw new Error('foreground element was accessed');
+        },
+      });
+      scene.elements = elements;
+      const generator: NonNullable<RunTaskOptions['generateImages']> = async () => {
+        providerCalls += 1;
+        return [];
+      };
+      const generateAssets = adaptHtmlVideoAssetGenerator(generator, task);
+
+      await expect(generateAssets({ scenes: [scene], config: {} })).rejects.toThrow(/element|maximum|limit/i);
+
+      expect(elementAccessed).toBe(false);
+      expect(providerCalls).toBe(0);
+    });
+  });
+
+  it('rejects oversized direct captions before image or narration provider calls', async () => {
+    await withRuntimeTask(async (task) => {
+      let imageCaptionAccessed = false;
+      let voiceCaptionAccessed = false;
+      let imageProviderCalls = 0;
+      let voiceProviderCalls = 0;
+      const imageScene = structuredClone(htmlScenes()[0]);
+      const voiceScene = structuredClone(htmlScenes()[0]);
+      const imageCaptions = new Array<string>(33);
+      const voiceCaptions = new Array<string>(33);
+      Object.defineProperty(imageCaptions, 0, {
+        get() {
+          imageCaptionAccessed = true;
+          throw new Error('image caption was accessed');
+        },
+      });
+      Object.defineProperty(voiceCaptions, 0, {
+        get() {
+          voiceCaptionAccessed = true;
+          throw new Error('voice caption was accessed');
+        },
+      });
+      imageScene.captions = imageCaptions;
+      voiceScene.captions = voiceCaptions;
+      const generateAssets = adaptHtmlVideoAssetGenerator(async () => {
+        imageProviderCalls += 1;
+        return [];
+      }, task);
+      const synthesizeVoices = adaptHtmlVideoNarrationSynthesizer(async () => {
+        voiceProviderCalls += 1;
+        return [];
+      }, task, async () => 1);
+
+      const imageError = await generateAssets({ scenes: [imageScene], config: {} }).then(
+        () => null,
+        (error: unknown) => error,
+      );
+      const voiceError = await synthesizeVoices({ scenes: [voiceScene], config: {} }).then(
+        () => null,
+        (error: unknown) => error,
+      );
+
+      expect(String(imageError)).toMatch(/caption|maximum|limit/i);
+      expect(String(voiceError)).toMatch(/caption|maximum|limit/i);
+      expect(imageCaptionAccessed).toBe(false);
+      expect(voiceCaptionAccessed).toBe(false);
+      expect(imageProviderCalls).toBe(0);
+      expect(voiceProviderCalls).toBe(0);
+    });
+  });
+
+  it('rejects aggregate planning text before direct image or narration provider calls', async () => {
+    await withRuntimeTask(async (task) => {
+      const text = 'x'.repeat(15_000);
+      const scene = structuredClone(htmlScenes()[0]);
+      scene.narration = text;
+      scene.title = text;
+      scene.captions = [text];
+      scene.background.prompt = text;
+      scene.elements[0].prompt = text;
+      let imageProviderCalls = 0;
+      let voiceProviderCalls = 0;
+      const generateAssets = adaptHtmlVideoAssetGenerator(async () => {
+        imageProviderCalls += 1;
+        throw new Error('image provider called');
+      }, task);
+      const synthesizeVoices = adaptHtmlVideoNarrationSynthesizer(async () => {
+        voiceProviderCalls += 1;
+        throw new Error('voice provider called');
+      }, task, async () => 1);
+
+      const imageError = await generateAssets({ scenes: [scene], config: {} }).then(
+        () => null,
+        (error: unknown) => error,
+      );
+      const voiceError = await synthesizeVoices({ scenes: [scene], config: {} }).then(
+        () => null,
+        (error: unknown) => error,
+      );
+
+      expect(String(imageError)).toMatch(/planning|text|budget|large|69/i);
+      expect(String(voiceError)).toMatch(/planning|text|budget|large|69/i);
+      expect(imageProviderCalls).toBe(0);
+      expect(voiceProviderCalls).toBe(0);
+    });
+  });
+
+  it('rejects a source-sized planning field before direct providers or duration probes', async () => {
+    await withRuntimeTask(async (task) => {
+      const imageScene = structuredClone(htmlScenes()[0]);
+      const voiceScene = structuredClone(htmlScenes()[0]);
+      imageScene.narration = 'x'.repeat(MAX_HTML_VIDEO_SOURCE_CHARS + 1);
+      voiceScene.narration = 'x'.repeat(MAX_HTML_VIDEO_SOURCE_CHARS + 1);
+      let imageCalls = 0;
+      let voiceCalls = 0;
+      let probeCalls = 0;
+      const generateAssets = adaptHtmlVideoAssetGenerator(async () => {
+        imageCalls += 1;
+        return [];
+      }, task);
+      const synthesizeVoices = adaptHtmlVideoNarrationSynthesizer(async () => {
+        voiceCalls += 1;
+        return [];
+      }, task, async () => {
+        probeCalls += 1;
+        return 1;
+      });
+
+      await expect(generateAssets({ scenes: [imageScene], config: {} })).rejects.toThrow(/narration|characters|maximum/i);
+      await expect(synthesizeVoices({ scenes: [voiceScene], config: {} })).rejects.toThrow(/narration|characters|maximum/i);
+      expect(imageCalls).toBe(0);
+      expect(voiceCalls).toBe(0);
+      expect(probeCalls).toBe(0);
+    });
+  });
+
   it('adapts narration assets and records measured audio duration', async () => {
     expect(adaptHtmlVideoNarrationSynthesizer).toBeTypeOf('function');
     await withRuntimeTask(async (task, workDir) => {
@@ -91,6 +301,66 @@ describe('task runtime providers', () => {
 
       expect(measured).toEqual([join(workDir, 'voice-1.wav')]);
       expect(voices).toEqual([{ sceneIndex: 1, src: join(workDir, 'voice-1.wav'), durationSec: 1.75, text: '第一幕。' }]);
+    });
+  });
+
+  it('rejects oversized narration-provider output before reading items or probing duration', async () => {
+    await withRuntimeTask(async (task) => {
+      let assetAccessed = false;
+      let durationProbeCalls = 0;
+      const generated = new Array<SceneAsset>(2);
+      Object.defineProperty(generated, 0, {
+        get() {
+          assetAccessed = true;
+          throw new Error('narration provider asset was accessed');
+        },
+      });
+      const synthesizeVoices = adaptHtmlVideoNarrationSynthesizer(
+        async () => generated,
+        task,
+        async () => {
+          durationProbeCalls += 1;
+          return 1;
+        },
+      );
+
+      await expect(synthesizeVoices({ scenes: htmlScenes(), config: {} }))
+        .rejects.toMatchObject({ code: 'TTS_PROVIDER_INVALID_OUTPUT' });
+      expect(assetAccessed).toBe(false);
+      expect(durationProbeCalls).toBe(0);
+    });
+  });
+
+  it('rejects oversized direct narration scene arrays before reading items or calling the provider', async () => {
+    await withRuntimeTask(async (task) => {
+      let sceneAccessed = false;
+      let providerCalls = 0;
+      let durationProbeCalls = 0;
+      const scenes = new Array<HtmlVideoScenePlan>(31);
+      Object.defineProperty(scenes, 0, {
+        get() {
+          sceneAccessed = true;
+          throw new Error('narration scene was accessed');
+        },
+      });
+      const synthesizer: NonNullable<RunTaskOptions['synthesizeNarration']> = async () => {
+        providerCalls += 1;
+        return [];
+      };
+      const synthesizeVoices = adaptHtmlVideoNarrationSynthesizer(
+        synthesizer,
+        task,
+        async () => {
+          durationProbeCalls += 1;
+          return 1;
+        },
+      );
+
+      await expect(synthesizeVoices({ scenes, config: {} })).rejects.toThrow(/scene|maximum|limit/i);
+
+      expect(sceneAccessed).toBe(false);
+      expect(providerCalls).toBe(0);
+      expect(durationProbeCalls).toBe(0);
     });
   });
 
@@ -128,6 +398,75 @@ describe('task runtime providers', () => {
       expect(planning).toEqual({ scenes: htmlScenes() });
       expect(requests).toHaveLength(2);
       expect(requests.every((request) => request.model === 'html-model')).toBe(true);
+    });
+  });
+
+  it('sends shared HTML resource limits in Anthropic rewrite and planning schemas', async () => {
+    const requests: Array<Record<string, unknown>> = [];
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (_url: string, init: RequestInit) => {
+        requests.push(JSON.parse(String(init.body)) as Record<string, unknown>);
+        const input = requests.length === 1
+          ? { rewrittenText: '改写后的第一幕。', segments: ['改写后的第一幕。'] }
+          : { scenes: htmlScenes() };
+        return new Response(JSON.stringify({
+          id: `html-anthropic-${requests.length}`,
+          content: [{ type: 'tool_use', name: 'return_json', input }],
+        }), {
+          status: 200,
+          headers: { 'content-type': 'application/json' },
+        });
+      }),
+    );
+
+    await withRuntimeTask(async (task, workDir) => {
+      const config = {
+        ...defaultConfig,
+        llm: {
+          ...defaultConfig.llm,
+          provider: 'anthropic' as const,
+          protocol: 'anthropic' as const,
+          apiKey: 'anthropic-key',
+          baseUrl: 'https://api.anthropic.com',
+          model: 'claude-test',
+          enabled: true,
+        },
+      };
+      const providers = createHtmlVideoRuntimeProviders(config, workDir, task, {
+        measureAudioDuration: async () => 1,
+      });
+      const rewrite = await providers.rewrite?.({ sourceText: '原始第一幕。', config: {} });
+      await providers.plan?.({ ...rewrite!, config: {} });
+
+      const rewriteSchema = anthropicToolSchema(requests[0]);
+      const planningSchema = anthropicToolSchema(requests[1]);
+      expect(rewriteSchema).toMatchObject({
+        properties: {
+          rewrittenText: { maxLength: MAX_HTML_VIDEO_SOURCE_CHARS },
+          segments: { maxItems: 30, items: { maxLength: MAX_HTML_VIDEO_SOURCE_CHARS } },
+        },
+      });
+      expect(planningSchema).toMatchObject({
+        properties: {
+          scenes: {
+            maxItems: 30,
+            items: {
+              properties: {
+                narration: { maxLength: MAX_HTML_VIDEO_SOURCE_CHARS },
+                title: { maxLength: MAX_HTML_VIDEO_SOURCE_CHARS },
+                captions: { maxItems: 32, items: { maxLength: MAX_HTML_VIDEO_SOURCE_CHARS } },
+                sceneTemplate: { maxLength: MAX_HTML_VIDEO_SOURCE_CHARS },
+                background: { properties: { prompt: { maxLength: MAX_HTML_VIDEO_SOURCE_CHARS } } },
+                elements: {
+                  maxItems: 4,
+                  items: { properties: { prompt: { maxLength: MAX_HTML_VIDEO_SOURCE_CHARS } } },
+                },
+              },
+            },
+          },
+        },
+      });
     });
   });
 
@@ -260,6 +599,11 @@ function htmlScenes(): HtmlVideoScenePlan[] {
     background: { prompt: '电影感背景' },
     elements: [{ slot: 0, prompt: '人物透明 PNG 前景' }],
   }];
+}
+
+function anthropicToolSchema(request: Record<string, unknown>): Record<string, unknown> {
+  const tools = request.tools as Array<{ input_schema?: Record<string, unknown> }>;
+  return tools[0]?.input_schema ?? {};
 }
 
 async function withRuntimeTask(run: (task: Task, workDir: string) => Promise<void>): Promise<void> {

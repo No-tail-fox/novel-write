@@ -76,6 +76,10 @@ const storyDreamApi = {
   importPersonAssetImages: (name: string): Promise<number> => invokeTrusted('person-assets:import-images', name),
   listPersonAssetImages: (name: string): Promise<PersonAssetImage[]> => invokeTrusted('person-assets:list-images', name),
   createHtmlVideoTask: (input: CreateTaskInput) => invokeTrusted('html-video:create-task', input),
+  openHtmlVideoPreview: (id: string, sceneIndex?: number): Promise<void> =>
+    invokeTrusted('html-video:open-preview', { id, sceneIndex }),
+  getHtmlVideoMediaUrl: (id: string, path: string): Promise<string> =>
+    invokeTrusted('html-video:media-url', { id, path }),
   createAndRunTask: (input: CreateTaskInput) => invokeTrusted('task:create-and-run', input),
   createAndRunViralAnalysis: (input: CreateViralAnalysisInput) => invokeTrusted('viral:create-and-run', input),
   updateViralAnalysisStatus: (id: string, status: ViralAnalysisStatus) => invokeTrusted('viral:update-status', { id, status }),

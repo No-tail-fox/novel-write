@@ -361,6 +361,7 @@ export interface Task {
   podcastSpeakerB?: string | null;
   coverImageMode?: string;
   coverTemplateId?: string;
+  htmlVideoForeground?: boolean;
 }
 
 export type HtmlVideoVisibleStep = 'rewrite' | 'planning' | 'assets' | 'voice' | 'preview' | 'render';
@@ -415,6 +416,7 @@ export interface HtmlVideoCompositionSnapshot {
     durationSec: number;
   }>;
   htmlPath?: string;
+  thumbnailPath?: string;
   rev?: number;
 }
 
@@ -578,6 +580,7 @@ export type CreateTaskInput = Partial<
     | 'podcastSpeakerB'
     | 'coverImageMode'
     | 'coverTemplateId'
+    | 'htmlVideoForeground'
   >
 > & {
   inputText: string;

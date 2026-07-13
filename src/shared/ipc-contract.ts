@@ -1,6 +1,11 @@
 import { z } from 'zod';
 import type { AppConfig, DraftTemplate, ImageLabRecord } from './types';
 import { isSecretId, type SaveConfigInput } from './config-secrets';
+import {
+  MAX_HTML_VIDEO_SCENES,
+  MAX_HTML_VIDEO_SOURCE_CHARS,
+  parseHtmlVideoPipelineData,
+} from './html-video-workflow';
 
 export const MAX_TASK_TEXT = 1_000_000;
 export const MAX_IPC_TEXT = 65_536;
@@ -173,9 +178,40 @@ export const createTaskSchema = bounded(
       podcastSpeakerB: nullableText(1024),
       coverImageMode: optionalText(128),
       coverTemplateId: optionalText(256),
+      htmlVideoForeground: z.boolean().optional(),
     })
     .strict(),
 );
+
+export const htmlVideoCreateTaskSchema = createTaskSchema.superRefine((input, ctx) => {
+  if (input.inputText.length > MAX_HTML_VIDEO_SOURCE_CHARS) {
+    addBoundedIssue(ctx, `HTML video source text must not exceed ${MAX_HTML_VIDEO_SOURCE_CHARS} characters.`, ['inputText']);
+  }
+  try {
+    parseHtmlVideoPipelineData(input.pipelineData);
+  } catch {
+    addBoundedIssue(ctx, 'Invalid HTML video pipeline data.', ['pipelineData']);
+  }
+  for (const field of ['targetScenes', 'storyboardSceneCount'] as const) {
+    if (input[field] !== undefined && input[field] > MAX_HTML_VIDEO_SCENES) {
+      addBoundedIssue(ctx, `HTML video scenes must not exceed ${MAX_HTML_VIDEO_SCENES}.`, [field]);
+    }
+  }
+});
+
+const htmlVideoPreviewSchema = z
+  .object({
+    id: idSchema,
+    sceneIndex: nonNegativeInteger.min(1).max(10_000).optional(),
+  })
+  .strict();
+
+const htmlVideoMediaSchema = z
+  .object({
+    id: idSchema,
+    path: pathSchema,
+  })
+  .strict();
 
 export const sceneActionSchema = z.object({ id: idSchema, sceneId: nonNegativeInteger }).strict();
 export const taskStatusSchema = z.object({ id: idSchema, status: taskStatusValueSchema }).strict();
@@ -424,7 +460,9 @@ export const ipcInputSchemas = {
   'person-assets:delete': nameSchema,
   'person-assets:list-images': nameSchema,
   'person-assets:import-images': nameSchema,
-  'html-video:create-task': createTaskSchema,
+  'html-video:create-task': htmlVideoCreateTaskSchema,
+  'html-video:open-preview': htmlVideoPreviewSchema,
+  'html-video:media-url': htmlVideoMediaSchema,
   'task:create-and-run': createTaskSchema,
   'viral:create-and-run': createViralAnalysisSchema,
   'viral:update-status': viralStatusSchema,

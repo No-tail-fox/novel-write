@@ -240,7 +240,7 @@ describe('task runner', () => {
     }
   });
 
-  it('renders selected prompt templates into every LLM content step', async () => {
+  it('renders selected prompt templates into every LLM content step', { timeout: rewriteControlTestTimeoutMs }, async () => {
     const dir = await mkdtemp(join(tmpdir(), 'storybound-runner-prompt-templates-'));
     const db = await FileDatabase.open(join(dir, 'data.db'));
     const draftRootDir = join(dir, 'JianyingPro Drafts');
@@ -837,7 +837,7 @@ describe('task runner', () => {
       await db.close();
       await rm(dir, { recursive: true, force: true });
     }
-  });
+  }, rewriteControlTestTimeoutMs);
 
   it('passes the selected storyboard scene count into the storyboard prompt', async () => {
     const dir = await mkdtemp(join(tmpdir(), 'storybound-runner-scene-count-'));
@@ -1528,7 +1528,7 @@ describe('task runner', () => {
     }
   });
 
-  it('generates image prompts in batches and merges them in scene order', async () => {
+  it('generates image prompts in batches and merges them in scene order', { timeout: rewriteControlTestTimeoutMs }, async () => {
     const dir = await mkdtemp(join(tmpdir(), 'storybound-runner-prompt-batches-'));
     const db = await FileDatabase.open(join(dir, 'data.db'));
     const draftRootDir = join(dir, 'JianyingPro Drafts');
@@ -2247,9 +2247,9 @@ describe('task runner', () => {
       await db.close();
       await rm(dir, { recursive: true, force: true });
     }
-  });
+  }, rewriteControlTestTimeoutMs);
 
-  it('enforces target word count range in review and rewrite before accepting rewritten copy', async () => {
+  it('enforces target word count range in review and rewrite before accepting rewritten copy', { timeout: rewriteControlTestTimeoutMs }, async () => {
     const dir = await mkdtemp(join(tmpdir(), 'storybound-runner-target-length-repair-'));
     const db = await FileDatabase.open(join(dir, 'data.db'));
     const draftRootDir = join(dir, 'JianyingPro Drafts');
@@ -2337,7 +2337,7 @@ describe('task runner', () => {
     }
   });
 
-  it('accepts the latest in-range rewrite after two target-length repairs', async () => {
+  it('accepts the latest in-range rewrite after two target-length repairs', { timeout: rewriteControlTestTimeoutMs }, async () => {
     const dir = await mkdtemp(join(tmpdir(), 'storybound-runner-target-length-near-miss-'));
     const db = await FileDatabase.open(join(dir, 'data.db'));
     const draftRootDir = join(dir, 'JianyingPro Drafts');

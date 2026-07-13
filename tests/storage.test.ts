@@ -6,6 +6,11 @@ import { join } from 'node:path';
 import { FileDatabase } from '@shared/storage';
 import { defaultConfig } from '@shared/config';
 import { convertCozeWorkflowToDraftTemplate } from '@shared/coze-workflow-converter';
+import {
+  createHtmlVideoTaskInput,
+  parseHtmlVideoPipelineData,
+  recoverHtmlVideoPipelineDataForRetry,
+} from '@shared/html-video-workflow';
 
 function configWithStorageSecret(secret: string) {
   return {
@@ -242,6 +247,49 @@ describe('file database', () => {
       expect((await reopened.getState()).tasks[0]).toMatchObject({
         pipelineStep: 'assets',
         pipelineData,
+      });
+      await reopened.close();
+    } finally {
+      await rm(dir, { recursive: true, force: true });
+    }
+  });
+
+  it('persists every HTML retry setting outside the recoverable pipeline snapshot', async () => {
+    const dir = await mkdtemp(join(tmpdir(), 'storydream-db-html-video-recovery-settings-'));
+    const file = join(dir, 'app.db');
+
+    try {
+      const db = await FileDatabase.open(file);
+      const created = await db.createTask(createHtmlVideoTaskInput({
+        copy: '第一句。\n\n第二句。\n\n第三句。\n\n第四句。',
+        ratio: '1:1',
+        style: 'paper-cut',
+        ttsProvider: 'minimax',
+        voiceId: 'female-shaonv',
+        ttsSpeed: 1.2,
+        bgmId: 'bgm-recovery',
+        maxScenes: 4,
+        foreground: false,
+      }));
+      expect(created).toMatchObject({
+        targetScenes: 4,
+        coverImageMode: 'titled',
+        coverTemplateId: 'cinematic-poster',
+        htmlVideoForeground: false,
+      });
+
+      await db.updateTask(created.id, { pipelineData: '{' });
+      await db.close();
+      const reopened = await FileDatabase.open(file);
+      const stored = (await reopened.getState()).tasks[0];
+      expect(stored).toMatchObject({ htmlVideoForeground: false, targetScenes: 4, coverImageMode: 'titled' });
+      const recovery = recoverHtmlVideoPipelineDataForRetry(stored);
+      const recovered = parseHtmlVideoPipelineData(recovery?.pipelineData);
+      expect(recovered.config).toMatchObject({
+        maxScenes: 4,
+        foreground: false,
+        coverImageMode: 'titled',
+        coverTemplate: 'cinematic-poster',
       });
       await reopened.close();
     } finally {

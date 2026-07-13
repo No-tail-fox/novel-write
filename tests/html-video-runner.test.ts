@@ -2,14 +2,22 @@ import { existsSync } from 'node:fs';
 import { mkdir, mkdtemp, readFile, realpath, rm, unlink, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import {
   runHtmlVideoPipeline,
   type HtmlVideoRewriteOutput,
   type HtmlVideoRunnerInput,
   type HtmlVideoRunnerOptions,
 } from '@shared/html-video-runner';
-import { createHtmlVideoPipelineData, htmlVideoVisibleSteps, parseHtmlVideoPipelineData } from '@shared/html-video-workflow';
+import {
+  MAX_HTML_VIDEO_PIPELINE_JSON_CHARS,
+  MAX_HTML_VIDEO_PIPELINE_FILE_BYTES,
+  MAX_HTML_VIDEO_SOURCE_CHARS,
+  MAX_HTML_VIDEO_SCENES,
+  createHtmlVideoPipelineData,
+  htmlVideoVisibleSteps,
+  parseHtmlVideoPipelineData,
+} from '@shared/html-video-workflow';
 import type {
   HtmlVideoAsset,
   HtmlVideoCompositionSnapshot,
@@ -62,6 +70,208 @@ describe('HTML video runner module', () => {
     });
   });
 
+  it('keeps every exact-cap NUL artifact and checkpoint below the pipeline JSON limit', async () => {
+    await withTempRunner(async (workDir) => {
+      const sourceText = '\0'.repeat(MAX_HTML_VIDEO_SOURCE_CHARS);
+      const runtime = createFakeRuntime(workDir);
+      delete runtime.options.rewrite;
+      delete runtime.options.plan;
+      const generateAssets = runtime.options.generateAssets;
+      runtime.options.generateAssets = async (assetInput) => {
+        const assets = await generateAssets(assetInput);
+        return assets.map((asset) => {
+          const scene = assetInput.scenes.find((item) => item.index === asset.sceneIndex)!;
+          const prompt = asset.kind === 'bg'
+            ? scene.background.prompt
+            : scene.elements.find((element) => element.slot === asset.slot)!.prompt;
+          return { ...asset, prompt };
+        });
+      };
+
+      const result = await runHtmlVideoPipeline(createRunnerInput('exact-cap-nul', sourceText), runtime.options);
+
+      expect(result.current).toBe('done');
+      for (const checkpoint of runtime.checkpoints) {
+        expect(JSON.stringify(checkpoint).length).toBeLessThan(MAX_HTML_VIDEO_PIPELINE_JSON_CHARS);
+      }
+      for (const step of htmlVideoVisibleSteps) {
+        expect((await readFile(join(workDir, 'steps', `${step}.json`), 'utf8')).length)
+          .toBeLessThan(MAX_HTML_VIDEO_PIPELINE_JSON_CHARS);
+      }
+      expect((await readFile(join(workDir, 'html-video-pipeline.v2.json'), 'utf8')).length)
+        .toBeLessThan(MAX_HTML_VIDEO_PIPELINE_JSON_CHARS);
+      expect(result.assets.some((asset) => Boolean(asset.prompt))).toBe(true);
+      expect(result.voices.some((voice) => Boolean(voice.text))).toBe(true);
+      expect(result.compositions[0].captions[0].text).toBe(sourceText);
+    });
+  });
+
+  it('rejects an oversized deterministic source before splitting or checkpointing it', async () => {
+    await withTempRunner(async (workDir) => {
+      const sourceText = 'x'.repeat(MAX_HTML_VIDEO_SOURCE_CHARS + 1);
+      const input = createRunnerInput('oversized-source');
+      input.sourceText = sourceText;
+      const runtime = createFakeRuntime(workDir);
+      delete runtime.options.rewrite;
+      delete runtime.options.plan;
+      let sourceSplit = false;
+      const nativeSplit = RegExp.prototype[Symbol.split];
+      const splitSpy = vi.spyOn(RegExp.prototype, Symbol.split).mockImplementation(function (
+        this: RegExp,
+        value: string,
+        limit?: number,
+      ) {
+        if (value === sourceText && limit === undefined) {
+          sourceSplit = true;
+          throw new Error('unbounded source split');
+        }
+        return nativeSplit.call(this, value, limit);
+      });
+
+      try {
+        await expect(runHtmlVideoPipeline(input, runtime.options)).rejects.toThrow(/source|16|large|long/i);
+      } finally {
+        splitSpy.mockRestore();
+      }
+
+      expect(sourceSplit).toBe(false);
+      expect(existsSync(join(workDir, 'html-video-pipeline.v2.json'))).toBe(false);
+      expect(runtime.calls).toEqual([]);
+    });
+  });
+
+  it('bounds delimiter-heavy deterministic rewrite segments and continues planning', async () => {
+    await withTempRunner(async (workDir) => {
+      const sourceText = 'a;'.repeat(MAX_HTML_VIDEO_SOURCE_CHARS / 2);
+      const input = createRunnerInput('bounded-source');
+      input.sourceText = sourceText;
+      input.state.config.maxScenes = MAX_HTML_VIDEO_SCENES;
+      const runtime = createFakeRuntime(workDir);
+      delete runtime.options.rewrite;
+      let planningSegments: string[] | undefined;
+      runtime.options.plan = async (planningInput) => {
+        planningSegments = planningInput.segments;
+        return { scenes: buildTestScenes(['合并后的场景。']) };
+      };
+      let sourceSplit = false;
+      const nativeSplit = RegExp.prototype[Symbol.split];
+      const splitSpy = vi.spyOn(RegExp.prototype, Symbol.split).mockImplementation(function (
+        this: RegExp,
+        value: string,
+        limit?: number,
+      ) {
+        if (value === sourceText && limit === undefined) {
+          sourceSplit = true;
+          throw new Error('unbounded source split');
+        }
+        return nativeSplit.call(this, value, limit);
+      });
+
+      try {
+        await expect(runHtmlVideoPipeline(input, runtime.options)).resolves.toMatchObject({ current: 'done' });
+      } finally {
+        splitSpy.mockRestore();
+      }
+
+      expect(sourceSplit).toBe(false);
+      expect(planningSegments).toHaveLength(MAX_HTML_VIDEO_SCENES);
+      expect(planningSegments?.join('')).toBe(sourceText);
+      const rewriteArtifact = JSON.parse(await readFile(join(workDir, 'steps', 'rewrite.json'), 'utf8')) as HtmlVideoRewriteOutput;
+      expect(rewriteArtifact.rewrittenText).toBe(sourceText);
+      expect(rewriteArtifact.segments).toEqual(planningSegments);
+    });
+  });
+
+  it.each([
+    { label: 'the shared hard limit', maxScenes: undefined, segmentCount: 31 },
+    { label: 'the configured scene limit', maxScenes: 8, segmentCount: 9 },
+  ])('rejects LLM rewrite segments above $label before reading their items', async ({ maxScenes, segmentCount }) => {
+    await withTempRunner(async (workDir) => {
+      const input = createRunnerInput(`rewrite-segments-${segmentCount}`);
+      if (maxScenes !== undefined) input.state.config.maxScenes = maxScenes;
+      const runtime = createFakeRuntime(workDir);
+      let segmentAccessed = false;
+      let planningCalled = false;
+      const segments = new Array<string>(segmentCount);
+      Object.defineProperty(segments, 0, {
+        get() {
+          segmentAccessed = true;
+          throw new Error('rewrite segment was accessed');
+        },
+      });
+      runtime.options.rewrite = async () => ({ rewrittenText: '合法改写。', segments });
+      runtime.options.plan = async () => {
+        planningCalled = true;
+        return { scenes: buildTestScenes(['不应规划。']) };
+      };
+
+      await expect(runHtmlVideoPipeline(input, runtime.options)).rejects.toThrow(/rewrite/i);
+
+      expect(segmentAccessed).toBe(false);
+      expect(planningCalled).toBe(false);
+      expect(existsSync(join(workDir, 'steps', 'rewrite.json'))).toBe(false);
+    });
+  });
+
+  it('rejects oversized LLM rewritten text before reading segments', async () => {
+    await withTempRunner(async (workDir) => {
+      const runtime = createFakeRuntime(workDir);
+      let segmentAccessed = false;
+      const segments = new Array<string>(1);
+      Object.defineProperty(segments, 0, {
+        get() {
+          segmentAccessed = true;
+          throw new Error('rewrite segment was accessed');
+        },
+      });
+      runtime.options.rewrite = async () => ({ rewrittenText: 'x'.repeat(MAX_HTML_VIDEO_SOURCE_CHARS + 1), segments });
+
+      await expect(runHtmlVideoPipeline(createRunnerInput('oversized-rewrite'), runtime.options)).rejects.toThrow(/rewrite/i);
+
+      expect(segmentAccessed).toBe(false);
+      expect(existsSync(join(workDir, 'steps', 'rewrite.json'))).toBe(false);
+    });
+  });
+
+  it('rejects LLM rewrite segments whose combined text exceeds the source limit', async () => {
+    await withTempRunner(async (workDir) => {
+      const runtime = createFakeRuntime(workDir);
+      let planningCalled = false;
+      runtime.options.rewrite = async () => ({
+        rewrittenText: '合法改写。',
+        segments: ['a'.repeat(20_000), 'b'.repeat(12_769)],
+      });
+      runtime.options.plan = async () => {
+        planningCalled = true;
+        return { scenes: buildTestScenes(['不应规划。']) };
+      };
+
+      await expect(runHtmlVideoPipeline(createRunnerInput('rewrite-total'), runtime.options)).rejects.toThrow(/rewrite/i);
+
+      expect(planningCalled).toBe(false);
+      expect(existsSync(join(workDir, 'steps', 'rewrite.json'))).toBe(false);
+    });
+  });
+
+  it('keeps legal LLM rewrite segments and passes them to planning', async () => {
+    await withTempRunner(async (workDir) => {
+      const segments = Array.from({ length: MAX_HTML_VIDEO_SCENES }, (_, index) => `片段 ${index + 1}。`);
+      const input = createRunnerInput('legal-rewrite');
+      input.state.config.maxScenes = MAX_HTML_VIDEO_SCENES;
+      const runtime = createFakeRuntime(workDir);
+      let planningSegments: string[] | undefined;
+      runtime.options.rewrite = async () => ({ rewrittenText: segments.join(''), segments });
+      runtime.options.plan = async (planningInput) => {
+        planningSegments = planningInput.segments;
+        return { scenes: buildTestScenes(['合法规划。']) };
+      };
+
+      await expect(runHtmlVideoPipeline(input, runtime.options)).resolves.toMatchObject({ current: 'done' });
+
+      expect(planningSegments).toEqual(segments);
+    });
+  });
+
   it('rejects malformed planning output and checkpoints the exact failed step', async () => {
     await withTempRunner(async (workDir) => {
       const runtime = createFakeRuntime(workDir);
@@ -96,6 +306,207 @@ describe('HTML video runner module', () => {
     });
   });
 
+  it('rejects more than 30 LLM-planned scenes before calling the asset provider', async () => {
+    await withTempRunner(async (workDir) => {
+      const runtime = createFakeRuntime(workDir);
+      let assetProviderCalled = false;
+      runtime.options.plan = async () => ({
+        scenes: buildTestScenes(Array.from({ length: 31 }, (_, index) => `场景 ${index + 1}。`)),
+      });
+      runtime.options.generateAssets = async () => {
+        assetProviderCalled = true;
+        return [];
+      };
+
+      await expect(runHtmlVideoPipeline(createRunnerInput('too-many-scenes'), runtime.options))
+        .rejects.toThrow(/planning/i);
+
+      expect(assetProviderCalled).toBe(false);
+      const checkpoint = await readCheckpoint(workDir);
+      expect(checkpoint.current).toBe('planning');
+      expect(checkpoint.steps.planning.status).toBe('failed');
+      expect(checkpoint.steps.assets.status).toBe('pending');
+    });
+  });
+
+  it('rejects LLM-planned scenes above configured maxScenes before calling the asset provider', async () => {
+    await withTempRunner(async (workDir) => {
+      const input = createRunnerInput('configured-scene-limit');
+      input.state.config.maxScenes = 8;
+      const runtime = createFakeRuntime(workDir);
+      let assetProviderCalled = false;
+      runtime.options.plan = async () => ({
+        scenes: buildTestScenes(Array.from({ length: 9 }, (_, index) => `场景 ${index + 1}。`)),
+      });
+      runtime.options.generateAssets = async () => {
+        assetProviderCalled = true;
+        return [];
+      };
+
+      await expect(runHtmlVideoPipeline(input, runtime.options)).rejects.toThrow(/planning/i);
+
+      expect(assetProviderCalled).toBe(false);
+      const checkpoint = await readCheckpoint(workDir);
+      expect(checkpoint.current).toBe('planning');
+      expect(checkpoint.steps.assets.status).toBe('pending');
+    });
+  });
+
+  it('rejects oversized scene elements before reading them or calling the asset provider', async () => {
+    await withTempRunner(async (workDir) => {
+      const runtime = createFakeRuntime(workDir);
+      const scene = buildTestScenes(['元素上限。'])[0];
+      let elementAccessed = false;
+      let assetProviderCalled = false;
+      const elements = new Array<HtmlVideoScenePlan['elements'][number]>(5_000);
+      Object.defineProperty(elements, 0, {
+        get() {
+          elementAccessed = true;
+          throw new Error('scene element was accessed');
+        },
+      });
+      scene.elements = elements;
+      runtime.options.plan = async () => ({ scenes: [scene] });
+      runtime.options.generateAssets = async () => {
+        assetProviderCalled = true;
+        return [];
+      };
+
+      await expect(runHtmlVideoPipeline(createRunnerInput('too-many-elements'), runtime.options))
+        .rejects.toThrow(/planning/i);
+
+      expect(elementAccessed).toBe(false);
+      expect(assetProviderCalled).toBe(false);
+      expect(existsSync(join(workDir, 'steps', 'planning.json'))).toBe(false);
+    });
+  });
+
+  it('rejects oversized scene captions before reading them or calling the asset provider', async () => {
+    await withTempRunner(async (workDir) => {
+      const runtime = createFakeRuntime(workDir);
+      const scene = buildTestScenes(['字幕上限。'])[0];
+      let captionAccessed = false;
+      let assetProviderCalled = false;
+      const captions = new Array<string>(80_000);
+      Object.defineProperty(captions, 0, {
+        get() {
+          captionAccessed = true;
+          throw new Error('scene caption was accessed');
+        },
+      });
+      scene.captions = captions;
+      runtime.options.plan = async () => ({ scenes: [scene] });
+      runtime.options.generateAssets = async () => {
+        assetProviderCalled = true;
+        return [];
+      };
+
+      await expect(runHtmlVideoPipeline(createRunnerInput('too-many-captions'), runtime.options))
+        .rejects.toThrow(/planning/i);
+
+      expect(captionAccessed).toBe(false);
+      expect(assetProviderCalled).toBe(false);
+      expect(existsSync(join(workDir, 'steps', 'planning.json'))).toBe(false);
+    });
+  });
+
+  it('rejects aggregate planning text before calling the asset provider', async () => {
+    await withTempRunner(async (workDir) => {
+      const runtime = createFakeRuntime(workDir);
+      const text = 'x'.repeat(15_000);
+      const scene = buildTestScenes(['聚合上限。'])[0];
+      scene.narration = text;
+      scene.title = text;
+      scene.captions = [text];
+      scene.background.prompt = text;
+      scene.elements[0].prompt = text;
+      let assetProviderCalled = false;
+      runtime.options.plan = async () => ({ scenes: [scene] });
+      runtime.options.generateAssets = async () => {
+        assetProviderCalled = true;
+        return [];
+      };
+
+      await expect(runHtmlVideoPipeline(createRunnerInput('planning-text-budget'), runtime.options))
+        .rejects.toThrow(/planning/i);
+
+      expect(assetProviderCalled).toBe(false);
+      expect(existsSync(join(workDir, 'steps', 'planning.json'))).toBe(false);
+    });
+  });
+
+  it('rejects oversized raw assets before item access or voice provider calls', async () => {
+    await withTempRunner(async (workDir) => {
+      const runtime = createFakeRuntime(workDir);
+      let itemAccessed = false;
+      let voiceCalls = 0;
+      const assets = new Array<HtmlVideoAsset>(3);
+      Object.defineProperty(assets, 0, {
+        get() {
+          itemAccessed = true;
+          throw new Error('asset item accessed');
+        },
+      });
+      runtime.options.generateAssets = async () => assets;
+      runtime.options.synthesizeVoices = async () => {
+        voiceCalls += 1;
+        return [];
+      };
+
+      await expect(runHtmlVideoPipeline(createRunnerInput('raw-assets-limit'), runtime.options)).rejects.toThrow(/assets/i);
+      expect(itemAccessed).toBe(false);
+      expect(voiceCalls).toBe(0);
+    });
+  });
+
+  it('rejects oversized raw voices before item access or preview calls', async () => {
+    await withTempRunner(async (workDir) => {
+      const runtime = createFakeRuntime(workDir);
+      let itemAccessed = false;
+      let previewCalls = 0;
+      const voices = new Array<HtmlVideoVoiceClip>(3);
+      Object.defineProperty(voices, 0, {
+        get() {
+          itemAccessed = true;
+          throw new Error('voice item accessed');
+        },
+      });
+      runtime.options.synthesizeVoices = async () => voices;
+      runtime.options.createPreviews = async () => {
+        previewCalls += 1;
+        return { compositions: [] };
+      };
+
+      await expect(runHtmlVideoPipeline(createRunnerInput('raw-voices-limit'), runtime.options)).rejects.toThrow(/voice/i);
+      expect(itemAccessed).toBe(false);
+      expect(previewCalls).toBe(0);
+    });
+  });
+
+  it('rejects oversized raw compositions before item access or render calls', async () => {
+    await withTempRunner(async (workDir) => {
+      const runtime = createFakeRuntime(workDir);
+      let itemAccessed = false;
+      let renderCalls = 0;
+      const compositions = new Array<HtmlVideoCompositionSnapshot>(3);
+      Object.defineProperty(compositions, 0, {
+        get() {
+          itemAccessed = true;
+          throw new Error('composition item accessed');
+        },
+      });
+      runtime.options.createPreviews = async () => ({ compositions });
+      runtime.options.render = async () => {
+        renderCalls += 1;
+        throw new Error('render called');
+      };
+
+      await expect(runHtmlVideoPipeline(createRunnerInput('raw-compositions-limit'), runtime.options)).rejects.toThrow(/preview/i);
+      expect(itemAccessed).toBe(false);
+      expect(renderCalls).toBe(0);
+    });
+  });
+
   it('stops at the exact assets provider failure without producing fake artifacts', async () => {
     await withTempRunner((workDir) => assertProviderFailure(workDir, 'assets', 'IMAGE_PROVIDER_NOT_CONFIGURED: 请先配置图片服务。'));
   });
@@ -120,6 +531,101 @@ describe('HTML video runner module', () => {
       expect(resumed.calls).toEqual(['assets', 'voice', 'preview', 'render']);
       expect(resumed.calls).not.toContain('rewrite');
       expect(resumed.calls).not.toContain('planning');
+    });
+  });
+
+  it('falls back to the supplied state when the disk checkpoint is invalid', async () => {
+    const invalidCheckpoints = [
+      '{',
+      JSON.stringify({ version: 99 }),
+      JSON.stringify({ padding: 'x'.repeat(1_000_001) }),
+    ];
+    for (const [index, checkpoint] of invalidCheckpoints.entries()) {
+      await withTempRunner(async (workDir) => {
+        await writeFile(join(workDir, 'html-video-pipeline.v2.json'), checkpoint, 'utf8');
+        const runtime = createFakeRuntime(workDir);
+        const input = createRunnerInput(`invalid-checkpoint-${index}`);
+        input.state.config = { ...input.state.config, foreground: false, style: 'recovered-style' };
+
+        await expect(runHtmlVideoPipeline(input, runtime.options)).resolves.toMatchObject({
+          current: 'done',
+          config: { foreground: false, style: 'recovered-style' },
+        });
+      });
+    }
+  });
+
+  it('falls back without parsing a checkpoint above the shared file-byte limit', async () => {
+    await withTempRunner(async (workDir) => {
+      await writeFile(
+        join(workDir, 'html-video-pipeline.v2.json'),
+        Buffer.alloc(MAX_HTML_VIDEO_PIPELINE_FILE_BYTES + 1, 0x20),
+      );
+      const runtime = createFakeRuntime(workDir);
+
+      const result = await runHtmlVideoPipeline(createRunnerInput('oversized-checkpoint'), runtime.options);
+
+      expect(result.current).toBe('done');
+      expect(result.warnings).toEqual(expect.arrayContaining([expect.stringMatching(/checkpoint.*损坏|数据库快照/u)]));
+    });
+  });
+
+  it('rejects a replaced oversized step artifact before parsing and reruns from that step', async () => {
+    await withTempRunner(async (workDir) => {
+      const initial = createFakeRuntime(workDir);
+      const completed = await runHtmlVideoPipeline(createRunnerInput('replaced-step-artifact'), initial.options);
+      const rewritePath = completed.steps.rewrite.artifactPath;
+      expect(rewritePath).toBeTruthy();
+      await writeFile(
+        join(workDir, rewritePath!),
+        Buffer.alloc(MAX_HTML_VIDEO_PIPELINE_FILE_BYTES + 1, 0x20),
+      );
+
+      const resumed = createFakeRuntime(workDir);
+      const result = await runHtmlVideoPipeline(createRunnerInput('replaced-step-artifact'), resumed.options);
+
+      expect(result.current).toBe('done');
+      expect(resumed.calls).toEqual([...htmlVideoVisibleSteps]);
+    });
+  });
+
+  it('ignores an old valid disk checkpoint when retry recovery selected a new authoritative state', async () => {
+    await withTempRunner(async (workDir) => {
+      const oldCheckpoint = createHtmlVideoPipelineData('旧快照。', {
+        foreground: true,
+        style: 'old-style',
+      });
+      await writeFile(join(workDir, 'html-video-pipeline.v2.json'), JSON.stringify(oldCheckpoint), 'utf8');
+      const runtime = createFakeRuntime(workDir);
+      const input = createRunnerInput('recovered-authority');
+      input.state.config = { ...input.state.config, foreground: false, style: 'recovered-style' };
+      const recoveredInput = { ...input, ignoreCheckpoint: true } as HtmlVideoRunnerInput & { ignoreCheckpoint: boolean };
+
+      const result = await runHtmlVideoPipeline(recoveredInput, runtime.options);
+
+      expect(result.config).toMatchObject({ foreground: false, style: 'recovered-style' });
+      expect(result.scenes.some((scene) => scene.narration === '旧快照。')).toBe(false);
+      expect(result.assets.some((asset) => asset.kind === 'fg')).toBe(false);
+    });
+  });
+
+  it('atomically publishes a recovered checkpoint before later preflight work can fail', async () => {
+    await withTempRunner(async (workDir) => {
+      const runnerModule = await import('@shared/html-video-runner') as Record<string, unknown>;
+      const synchronize = runnerModule.synchronizeHtmlVideoPipelineCheckpoint;
+      expect(synchronize).toBeTypeOf('function');
+      if (typeof synchronize !== 'function') return;
+      const oldCheckpoint = createHtmlVideoPipelineData('旧快照。', { style: 'old-style' });
+      await writeFile(join(workDir, 'html-video-pipeline.v2.json'), JSON.stringify(oldCheckpoint), 'utf8');
+      const input = createRunnerInput('published-recovery');
+      input.state.config = { ...input.state.config, style: 'recovered-style', foreground: false };
+
+      await (synchronize as (path: string, state: HtmlVideoPipelineDataV2) => Promise<void>)(workDir, input.state);
+      const runtime = createFakeRuntime(workDir);
+      const result = await runHtmlVideoPipeline(input, runtime.options);
+
+      expect(result.config).toMatchObject({ style: 'recovered-style', foreground: false });
+      expect(result.scenes.some((scene) => scene.narration === '旧快照。')).toBe(false);
     });
   });
 

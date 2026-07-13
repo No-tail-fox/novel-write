@@ -1,13 +1,19 @@
 import { createHash, randomUUID } from 'node:crypto';
-import { mkdir, open, readFile, realpath, rename, rm, stat } from 'node:fs/promises';
+import { mkdir, open, realpath, rename, rm, stat } from 'node:fs/promises';
 import { dirname, isAbsolute, join, relative, resolve } from 'node:path';
 import { AppError, isCancellation, normalizeAppError } from './app-error';
 import {
+  MAX_HTML_VIDEO_SCENES,
+  MAX_HTML_VIDEO_SOURCE_CHARS,
+  MAX_HTML_VIDEO_PIPELINE_FILE_BYTES,
   MAX_HTML_VIDEO_PIPELINE_JSON_CHARS,
   htmlVideoVisibleSteps,
   parseHtmlVideoPipelineData,
   planHtmlVideoScenes,
+  validateHtmlVideoAssets,
+  validateHtmlVideoCompositions,
   validateHtmlVideoScenePlans,
+  validateHtmlVideoVoices,
 } from './html-video-workflow';
 import type {
   HtmlVideoAsset,
@@ -25,6 +31,7 @@ export interface HtmlVideoRunnerInput {
   sourceText: string;
   state: HtmlVideoPipelineDataV2;
   rerunFrom?: HtmlVideoVisibleStep;
+  ignoreCheckpoint?: boolean;
 }
 
 export interface HtmlVideoRewriteInput {
@@ -88,12 +95,21 @@ interface StepArtifact {
 const checkpointFileName = 'html-video-pipeline.v2.json';
 const stepArtifactDir = 'steps';
 const maxAtomicReplaceAttempts = 8;
+const boundedReadChunkBytes = 64 * 1024;
 const activeHtmlVideoTasks = new Set<string>();
+
+class InvalidPipelineFileError extends Error {}
 
 export async function runHtmlVideoPipeline(
   input: HtmlVideoRunnerInput,
   options: HtmlVideoRunnerOptions,
 ): Promise<HtmlVideoPipelineDataV2> {
+  if (input.sourceText.length > MAX_HTML_VIDEO_SOURCE_CHARS) {
+    throw new AppError(
+      'HTML_VIDEO_SOURCE_TOO_LARGE',
+      `HTML video source text must not exceed ${MAX_HTML_VIDEO_SOURCE_CHARS} characters.`,
+    );
+  }
   const taskId = input.taskId.trim();
   if (!taskId) throw new AppError('HTML_VIDEO_TASK_INVALID', 'HTML video task id is required.');
   if (activeHtmlVideoTasks.has(taskId)) {
@@ -128,12 +144,21 @@ export function invalidateHtmlVideoPipeline(
   return state;
 }
 
+export async function synchronizeHtmlVideoPipelineCheckpoint(
+  workDir: string,
+  state: HtmlVideoPipelineDataV2,
+): Promise<void> {
+  await atomicWriteJson(join(workDir, checkpointFileName), cloneValidatedState(state));
+}
+
 async function runOwnedPipeline(
   input: HtmlVideoRunnerInput,
   options: HtmlVideoRunnerOptions,
 ): Promise<HtmlVideoPipelineDataV2> {
   await mkdir(join(options.workDir, stepArtifactDir), { recursive: true });
-  let state = await loadCheckpoint(options.workDir, input.state);
+  let state = input.ignoreCheckpoint
+    ? cloneValidatedState(input.state)
+    : await loadCheckpoint(options.workDir, input.state);
   const context: RunnerContext = {};
 
   if (input.rerunFrom) {
@@ -148,7 +173,12 @@ async function runOwnedPipeline(
     if (state.steps[step].status === 'completed') {
       try {
         const artifact = await validateCompletedStep(options.workDir, step, state, inputHash);
-        if (step === 'rewrite') context.rewrite = validateRewriteOutput(artifact);
+        if (step === 'rewrite') {
+          context.rewrite = validateRewriteOutput(
+            artifact,
+            state.config.maxScenes ?? MAX_HTML_VIDEO_SCENES,
+          );
+        }
         continue;
       } catch {
         state = invalidateHtmlVideoPipeline(state, step);
@@ -223,9 +253,13 @@ async function executeStep(
   options: HtmlVideoRunnerOptions,
 ): Promise<unknown> {
   if (step === 'rewrite') {
+    const maxSegments = state.config.maxScenes ?? MAX_HTML_VIDEO_SCENES;
     const rewrite = options.rewrite
-      ? validateRewriteOutput(await options.rewrite({ sourceText, config: state.config, signal: options.signal }))
-      : deterministicRewrite(sourceText);
+      ? validateRewriteOutput(
+          await options.rewrite({ sourceText, config: state.config, signal: options.signal }),
+          maxSegments,
+        )
+      : deterministicRewrite(sourceText, maxSegments);
     if (!options.rewrite) addWarning(state, '未配置 LLM，已保留原文并仅执行分句。');
     context.rewrite = rewrite;
     return rewrite;
@@ -237,7 +271,10 @@ async function executeStep(
       ? (await options.plan({ ...context.rewrite, config: state.config, signal: options.signal })).scenes
       : planHtmlVideoScenes(context.rewrite.segments.join('\n\n'), state.config.maxScenes ?? 8);
     if (!options.plan) addWarning(state, '未配置场景规划 LLM，已使用确定性场景规划。');
-    state.scenes = validateHtmlVideoScenePlans(rawScenes);
+    state.scenes = validateHtmlVideoScenePlans(
+      rawScenes,
+      state.config.maxScenes ?? MAX_HTML_VIDEO_SCENES,
+    );
     return { scenes: state.scenes };
   }
 
@@ -287,10 +324,15 @@ async function validateCompletedStep(
   if (stepState.inputHash !== expectedHash) throw new Error(`HTML video ${step} input changed.`);
   const payload = await readStepArtifact(workDir, stepState.artifactPath, stepState.artifactSize);
 
-  if (step === 'rewrite') return validateRewriteOutput(payload);
+  if (step === 'rewrite') {
+    return validateRewriteOutput(payload, state.config.maxScenes ?? MAX_HTML_VIDEO_SCENES);
+  }
   const record = requireRecord(payload, `${step} artifact`);
   if (step === 'planning') {
-    const scenes = validateHtmlVideoScenePlans(record.scenes);
+    const scenes = validateHtmlVideoScenePlans(
+      record.scenes,
+      state.config.maxScenes ?? MAX_HTML_VIDEO_SCENES,
+    );
     assertSameJson(scenes, state.scenes, 'planning');
     state.scenes = scenes;
   } else if (step === 'assets') {
@@ -315,7 +357,8 @@ async function validateAssets(
   state: HtmlVideoPipelineDataV2,
   value: unknown,
 ): Promise<HtmlVideoAsset[]> {
-  const assets = validatePatchedState(state, { assets: value }).assets;
+  const parsedAssets = validateHtmlVideoAssets(value, state.scenes, state.config);
+  const assets = validatePatchedState(state, { assets: parsedAssets }).assets;
   for (const scene of state.scenes) {
     if (!assets.some((asset) => asset.sceneIndex === scene.index && asset.kind === 'bg')) {
       throw new Error(`HTML video assets are missing a background for scene ${scene.index}.`);
@@ -336,7 +379,8 @@ async function validateVoices(
   state: HtmlVideoPipelineDataV2,
   value: unknown,
 ): Promise<HtmlVideoVoiceClip[]> {
-  const voices = validatePatchedState(state, { voices: value }).voices;
+  const parsedVoices = validateHtmlVideoVoices(value, state.scenes);
+  const voices = validatePatchedState(state, { voices: parsedVoices }).voices;
   for (const scene of state.scenes) {
     if (!voices.some((voice) => voice.sceneIndex === scene.index && voice.durationSec > 0)) {
       throw new Error(`HTML video voice is missing for scene ${scene.index}.`);
@@ -354,12 +398,14 @@ async function validateCompositions(
   state: HtmlVideoPipelineDataV2,
   value: unknown,
 ): Promise<HtmlVideoCompositionSnapshot[]> {
-  const compositions = validatePatchedState(state, { compositions: value }).compositions;
+  const parsedCompositions = validateHtmlVideoCompositions(value, state.scenes);
+  const compositions = validatePatchedState(state, { compositions: parsedCompositions }).compositions;
   if (compositions.length !== state.scenes.length) throw new Error('HTML video preview count does not match the scene count.');
   for (const scene of state.scenes) {
     const composition = compositions.find((item) => item.index === scene.index);
     if (!composition?.htmlPath) throw new Error(`HTML video preview is missing for scene ${scene.index}.`);
     composition.htmlPath = await localFilePath(workDir, composition.htmlPath);
+    if (composition.thumbnailPath) composition.thumbnailPath = await localFilePath(workDir, composition.thumbnailPath);
     composition.audio.src = await localFilePath(workDir, composition.audio.src);
     composition.background.src = await localFilePath(workDir, composition.background.src);
   }
@@ -385,24 +431,61 @@ function validatePatchedState(
   return cloneValidatedState({ ...state, ...patch });
 }
 
-function validateRewriteOutput(value: unknown): HtmlVideoRewriteOutput {
+function validateRewriteOutput(value: unknown, maxSegments: number): HtmlVideoRewriteOutput {
   const record = requireRecord(value, 'rewrite output');
+  if (typeof record.rewrittenText !== 'string' || record.rewrittenText.length > MAX_HTML_VIDEO_SOURCE_CHARS) {
+    throw new Error('HTML video rewrite output text is invalid or too large.');
+  }
   const rewrittenText = requireNonEmptyString(record.rewrittenText, 'rewrite output text');
-  if (!Array.isArray(record.segments) || record.segments.length === 0) {
+  if (
+    !Array.isArray(record.segments)
+    || record.segments.length === 0
+    || record.segments.length > maxSegments
+  ) {
     throw new Error('HTML video rewrite segments are invalid.');
   }
-  const segments = record.segments.map((segment) => requireNonEmptyString(segment, 'rewrite segment'));
+  const segments: string[] = [];
+  let segmentChars = 0;
+  for (const segment of record.segments) {
+    if (typeof segment !== 'string') throw new Error('HTML video rewrite segment is invalid.');
+    segmentChars += segment.length;
+    if (segmentChars > MAX_HTML_VIDEO_SOURCE_CHARS) {
+      throw new Error('HTML video rewrite segments are too large.');
+    }
+    segments.push(requireNonEmptyString(segment, 'rewrite segment'));
+  }
   return { rewrittenText, segments };
 }
 
-function deterministicRewrite(sourceText: string): HtmlVideoRewriteOutput {
+function deterministicRewrite(sourceText: string, maxSegments: number): HtmlVideoRewriteOutput {
+  if (sourceText.length > MAX_HTML_VIDEO_SOURCE_CHARS) {
+    throw new Error(`HTML video source text must not exceed ${MAX_HTML_VIDEO_SOURCE_CHARS} characters.`);
+  }
   const rewrittenText = requireNonEmptyString(sourceText.trim(), 'source text');
-  const segments = rewrittenText
-    .split(/\n{2,}|(?<=[。！？!?；;])\s*/u)
-    .map((item) => item.trim())
-    .filter(Boolean);
+  const segments = splitDeterministicRewriteSegments(rewrittenText, maxSegments);
   if (segments.length === 0) throw new Error('HTML video source text could not be segmented.');
   return { rewrittenText, segments };
+}
+
+function splitDeterministicRewriteSegments(sourceText: string, maxSegments: number): string[] {
+  if (!Number.isSafeInteger(maxSegments) || maxSegments < 1 || maxSegments > MAX_HTML_VIDEO_SCENES) {
+    throw new Error('HTML video rewrite segment limit is invalid.');
+  }
+  const segments: string[] = [];
+  const separator = /\n{2,}|[。！？!?；;]\s*/gu;
+  let start = 0;
+  while (segments.length < maxSegments - 1) {
+    const match = separator.exec(sourceText);
+    if (!match) break;
+    const nextStart = match.index + match[0].length;
+    const includesSeparator = /^[。！？!?；;]/u.test(match[0]);
+    const segment = sourceText.slice(start, includesSeparator ? nextStart : match.index).trim();
+    if (segment) segments.push(segment);
+    start = nextStart;
+  }
+  const remainder = sourceText.slice(start).trim();
+  if (remainder) segments.push(remainder);
+  return segments;
 }
 
 function hashStepInput(
@@ -426,13 +509,28 @@ function pickConfig(config: HtmlVideoJobConfig, keys: Array<keyof HtmlVideoJobCo
 }
 
 async function loadCheckpoint(workDir: string, fallback: HtmlVideoPipelineDataV2): Promise<HtmlVideoPipelineDataV2> {
+  let value: string;
   try {
-    const value = await readFile(join(workDir, checkpointFileName), 'utf8');
-    return cloneValidatedState(parseHtmlVideoPipelineData(value));
+    value = await readBoundedUtf8File(
+      join(workDir, checkpointFileName),
+      MAX_HTML_VIDEO_PIPELINE_FILE_BYTES,
+    );
   } catch (error) {
     if (isNodeError(error, 'ENOENT')) return cloneValidatedState(fallback);
+    if (error instanceof InvalidPipelineFileError) return recoveredCheckpoint(fallback);
     throw error;
   }
+  try {
+    return cloneValidatedState(parseHtmlVideoPipelineData(value));
+  } catch {
+    return recoveredCheckpoint(fallback);
+  }
+}
+
+function recoveredCheckpoint(fallback: HtmlVideoPipelineDataV2): HtmlVideoPipelineDataV2 {
+  const recovered = cloneValidatedState(fallback);
+  recovered.warnings.push('检测到磁盘 HTML 视频 checkpoint 损坏，已使用数据库快照恢复。');
+  return recovered;
 }
 
 async function persistCheckpoint(state: HtmlVideoPipelineDataV2, options: HtmlVideoRunnerOptions): Promise<void> {
@@ -454,13 +552,57 @@ async function readStepArtifact(
   artifactSize: number | undefined,
 ): Promise<unknown> {
   if (!artifactPath || !artifactSize) throw new Error('HTML video step artifact metadata is missing.');
-  const path = await localFilePath(workDir, artifactPath, artifactSize);
-  const value = await readFile(path, 'utf8');
+  const path = await localFilePath(workDir, artifactPath);
+  const value = await readBoundedUtf8File(
+    path,
+    MAX_HTML_VIDEO_PIPELINE_FILE_BYTES,
+    artifactSize,
+  );
   if (value.length > MAX_HTML_VIDEO_PIPELINE_JSON_CHARS) throw new Error('HTML video step artifact is too large.');
   try {
     return JSON.parse(value) as unknown;
   } catch {
     throw new Error('HTML video step artifact JSON is invalid.');
+  }
+}
+
+async function readBoundedUtf8File(
+  path: string,
+  maximumBytes: number,
+  expectedSize?: number,
+): Promise<string> {
+  const handle = await open(path, 'r');
+  try {
+    const file = await handle.stat();
+    if (!file.isFile() || file.size <= 0) {
+      throw new InvalidPipelineFileError('HTML video pipeline file is empty or invalid.');
+    }
+    if (file.size > maximumBytes) {
+      throw new InvalidPipelineFileError('HTML video pipeline file is too large.');
+    }
+    if (expectedSize !== undefined && file.size !== expectedSize) {
+      throw new InvalidPipelineFileError('HTML video artifact size changed.');
+    }
+
+    const chunks: Buffer[] = [];
+    let total = 0;
+    while (total <= maximumBytes) {
+      const remaining = maximumBytes - total + 1;
+      const buffer = Buffer.allocUnsafe(Math.min(boundedReadChunkBytes, remaining));
+      const { bytesRead } = await handle.read(buffer, 0, buffer.length, total);
+      if (bytesRead === 0) break;
+      total += bytesRead;
+      if (total > maximumBytes) {
+        throw new InvalidPipelineFileError('HTML video pipeline file is too large.');
+      }
+      chunks.push(buffer.subarray(0, bytesRead));
+    }
+    if (expectedSize !== undefined && total !== expectedSize) {
+      throw new InvalidPipelineFileError('HTML video artifact size changed.');
+    }
+    return Buffer.concat(chunks, total).toString('utf8');
+  } finally {
+    await handle.close();
   }
 }
 

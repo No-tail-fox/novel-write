@@ -1,3 +1,4 @@
+import { pathToFileURL } from 'node:url';
 import type { PipelineArtifact } from './types';
 
 export interface HtmlVideoSceneSource {
@@ -6,6 +7,7 @@ export interface HtmlVideoSceneSource {
   caption: string;
   description: string;
   imagePath: string;
+  foregroundPaths?: string[];
   audioPath: string;
   durationMs: number;
 }
@@ -43,6 +45,7 @@ export interface HtmlVideoBuildInput {
   title: string;
   artifact: PipelineArtifact;
   generatedImages: Array<{ sceneId: number; path: string }>;
+  foregroundImages?: Array<{ sceneId: number; path: string }>;
   narrationAudio: Array<{ sceneId: number; path: string }>;
   coverPath?: string;
   bgmPath?: string;
@@ -80,6 +83,10 @@ export interface HtmlVideoComposePayload {
 
 export function buildHtmlVideoExportInput(input: HtmlVideoBuildInput): HtmlVideoComposition {
   const generatedImages = new Map(input.generatedImages.map((asset) => [asset.sceneId, asset.path]));
+  const foregroundImages = new Map<number, string[]>();
+  for (const asset of input.foregroundImages ?? []) {
+    foregroundImages.set(asset.sceneId, [...(foregroundImages.get(asset.sceneId) ?? []), asset.path]);
+  }
   const narrationAudio = new Map(input.narrationAudio.map((asset) => [asset.sceneId, asset.path]));
   const scenes = input.artifact.scenes.map((scene) => {
     const imagePath = generatedImages.get(scene.id);
@@ -96,6 +103,7 @@ export function buildHtmlVideoExportInput(input: HtmlVideoBuildInput): HtmlVideo
       caption: scene.cap,
       description: scene.descPrompt,
       imagePath,
+      foregroundPaths: foregroundImages.get(scene.id) ?? [],
       audioPath,
       durationMs: Math.max(800, Math.round(scene.durationMs)),
     };
@@ -120,6 +128,7 @@ export function buildHtmlVideoExportInput(input: HtmlVideoBuildInput): HtmlVideo
         caption: scene.caption,
         description: scene.description,
         imagePath: scene.imagePath,
+        foregroundPaths: scene.foregroundPaths,
         audioPath: scene.audioPath,
         duration: scene.durationMs / 1000,
         fps: Math.max(1, Math.round(input.fps || 30)),
@@ -166,6 +175,7 @@ function buildSceneHtml(scene: {
   caption: string;
   description: string;
   imagePath: string;
+  foregroundPaths?: string[];
   audioPath: string;
   duration: number;
   fps: number;
@@ -173,6 +183,10 @@ function buildSceneHtml(scene: {
   canvas_h: number;
 }): string {
   const imageDataUrl = safeAssetUrl(scene.imagePath);
+  const audioDataUrl = safeLocalAssetUrl(scene.audioPath);
+  const foregroundMarkup = (scene.foregroundPaths ?? [])
+    .map((path, index) => `<img class="scene-foreground" data-slot="${index}" src="${safeAssetUrl(path)}" alt="" />`)
+    .join('\n    ');
   return `<!doctype html>
 <html lang="zh-CN">
 <head>
@@ -210,9 +224,24 @@ function buildSceneHtml(scene: {
       opacity: 0.92;
       transform: scale(calc(1.04 + var(--scene-progress, 0) * 0.035));
     }
+    .scene-foreground {
+      position: absolute;
+      inset: 8% 4% 0;
+      z-index: 2;
+      width: 92%;
+      height: 92%;
+      object-fit: contain;
+      object-position: center bottom;
+      filter: drop-shadow(0 18px 28px rgba(0, 0, 0, 0.34));
+      transform: translateY(0) scale(1);
+    }
+    .scene-audio {
+      display: none;
+    }
     .veil {
       position: absolute;
       inset: 0;
+      z-index: 1;
       background:
         linear-gradient(180deg, rgba(6, 8, 10, 0.10), rgba(6, 8, 10, 0.58) 74%, rgba(6, 8, 10, 0.82)),
         radial-gradient(circle at 50% 20%, rgba(69, 215, 230, 0.16), transparent 46%);
@@ -259,46 +288,112 @@ function buildSceneHtml(scene: {
   <script>
     window.__duration = ${scene.duration};
     window.__ready = false;
+    let sceneAudio = null;
+    let playbackFrame = null;
+    let playbackStartedAt = 0;
+    let playbackStartedFrom = 0;
+    let playbackCycle = 0;
+    const applyTimelineTime = (time) => {
+      const next = Math.max(0, Math.min(${scene.duration}, Number(time) || 0));
+      const progress = ${scene.duration} > 0 ? next / ${scene.duration} : 0;
+      const eased = 1 - Math.pow(1 - progress, 2);
+      window.__tl.current = next;
+      document.documentElement.style.setProperty('--scene-time', next + 's');
+      document.documentElement.style.setProperty('--scene-progress', String(progress));
+      document.documentElement.dataset.time = String(next);
+      document.documentElement.dataset.progress = String(progress);
+      document.body.dataset.time = String(next);
+      document.body.dataset.progress = String(progress);
+      const frame = document.querySelector('.frame');
+      const image = document.querySelector('.scene-image');
+      const foregrounds = typeof document.querySelectorAll === 'function' ? document.querySelectorAll('.scene-foreground') : [];
+      const veil = document.querySelector('.veil');
+      const copy = document.querySelector('.copy');
+      if (frame) {
+        frame.dataset.time = String(next);
+        frame.dataset.progress = String(progress);
+      }
+      if (image) {
+        image.style.transform = 'scale(' + (1.04 + progress * 0.035).toFixed(4) + ')';
+      }
+      Array.from(foregrounds).forEach((foreground, index) => {
+        const direction = index % 2 === 0 ? 1 : -1;
+        foreground.style.transform = 'translate(' + (direction * (1 - eased) * 8).toFixed(2) + 'px, ' + ((1 - eased) * 14).toFixed(2) + 'px) scale(' + (0.98 + eased * 0.02).toFixed(4) + ')';
+      });
+      if (veil) {
+        veil.style.opacity = String(0.86 + progress * 0.1);
+      }
+      if (copy) {
+        copy.style.opacity = String(Math.min(1, 0.72 + eased * 0.28));
+        copy.style.transform = 'translateY(' + ((1 - eased) * 18).toFixed(2) + 'px)';
+      }
+      return next;
+    };
+    const syncAudioTime = (time) => {
+      if (!sceneAudio) return;
+      try {
+        sceneAudio.currentTime = time;
+      } catch {}
+    };
+    const playNarration = () => {
+      if (!sceneAudio) return;
+      const result = sceneAudio.play();
+      if (result && typeof result.catch === 'function') result.catch(() => undefined);
+    };
+    const advancePlayback = (now) => {
+      if (!window.__tl.playing) return;
+      const elapsed = Math.max(0, (now - playbackStartedAt) / 1000);
+      const rawTime = playbackStartedFrom + elapsed;
+      const cycle = ${scene.duration} > 0 ? Math.floor(rawTime / ${scene.duration}) : 0;
+      const next = ${scene.duration} > 0 ? rawTime % ${scene.duration} : 0;
+      applyTimelineTime(next);
+      if (cycle !== playbackCycle) {
+        playbackCycle = cycle;
+        syncAudioTime(next);
+        playNarration();
+      }
+      playbackFrame = requestAnimationFrame(advancePlayback);
+    };
     window.__tl = {
       current: 0,
       duration: ${scene.duration},
+      playing: false,
       seek(time) {
-        const next = Math.max(0, Math.min(${scene.duration}, Number(time) || 0));
-        const progress = ${scene.duration} > 0 ? next / ${scene.duration} : 0;
-        const eased = 1 - Math.pow(1 - progress, 2);
-        this.current = next;
-        document.documentElement.style.setProperty('--scene-time', next + 's');
-        document.documentElement.style.setProperty('--scene-progress', String(progress));
-        document.documentElement.dataset.time = String(next);
-        document.documentElement.dataset.progress = String(progress);
-        document.body.dataset.time = String(next);
-        document.body.dataset.progress = String(progress);
-        const frame = document.querySelector('.frame');
-        const image = document.querySelector('.scene-image');
-        const veil = document.querySelector('.veil');
-        const copy = document.querySelector('.copy');
-        if (frame) {
-          frame.dataset.time = String(next);
-          frame.dataset.progress = String(progress);
-        }
-        if (image) {
-          image.style.transform = 'scale(' + (1.04 + progress * 0.035).toFixed(4) + ')';
-        }
-        if (veil) {
-          veil.style.opacity = String(0.86 + progress * 0.1);
-        }
-        if (copy) {
-          copy.style.opacity = String(Math.min(1, 0.72 + eased * 0.28));
-          copy.style.transform = 'translateY(' + ((1 - eased) * 18).toFixed(2) + 'px)';
+        const next = applyTimelineTime(time);
+        syncAudioTime(next);
+        if (this.playing) {
+          playbackStartedAt = performance.now();
+          playbackStartedFrom = next;
+          playbackCycle = 0;
         }
         return next;
       },
       play() {
-        return this.seek(this.current);
+        if (this.playing) return this.current;
+        if (this.current >= this.duration) this.seek(0);
+        this.playing = true;
+        playbackStartedAt = performance.now();
+        playbackStartedFrom = this.current;
+        playbackCycle = 0;
+        syncAudioTime(this.current);
+        playNarration();
+        playbackFrame = requestAnimationFrame(advancePlayback);
+        return this.current;
+      },
+      pause() {
+        this.playing = false;
+        if (playbackFrame !== null) {
+          cancelAnimationFrame(playbackFrame);
+          playbackFrame = null;
+        }
+        if (sceneAudio) sceneAudio.pause();
+        return this.current;
       }
     };
     window.__audioPath = ${JSON.stringify(scene.audioPath)};
     window.addEventListener('DOMContentLoaded', () => {
+      sceneAudio = document.querySelector('.scene-audio');
+      if (sceneAudio) sceneAudio.loop = true;
       window.__ready = true;
       window.__tl.seek(0);
     });
@@ -307,7 +402,9 @@ function buildSceneHtml(scene: {
 <body>
   <div class="frame">
     <img class="scene-image" src="${imageDataUrl}" alt="${escapeHtml(scene.caption)}" />
+    <audio class="scene-audio" src="${audioDataUrl}" preload="auto"></audio>
     <div class="veil"></div>
+    ${foregroundMarkup}
     <div class="copy">
       <div class="title">${escapeHtml(scene.title)}</div>
       <div class="caption">${escapeHtml(scene.caption)}</div>
@@ -323,9 +420,15 @@ function safeAssetUrl(path: string): string {
   if (!path) return '';
   if (/^(https?:|file:|data:|blob:)/i.test(path)) return path;
   const normalized = path.replace(/\\/g, '/');
-  if (/^[A-Za-z]:\//.test(normalized)) return `file:///${encodeURI(normalized)}`;
-  if (normalized.startsWith('/')) return `file://${encodeURI(normalized)}`;
+  if (/^[A-Za-z]:\//.test(normalized) || normalized.startsWith('/')) {
+    return pathToFileURL(path).toString();
+  }
   return encodeURI(normalized);
+}
+
+function safeLocalAssetUrl(path: string): string {
+  if (/^https?:/i.test(path)) return '';
+  return safeAssetUrl(path);
 }
 
 function escapeHtml(value: string): string {

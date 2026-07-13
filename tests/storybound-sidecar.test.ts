@@ -121,6 +121,20 @@ describe('Storybound-compatible media sidecar', () => {
     }
   });
 
+  it('keeps POSIX media children in the outer sidecar process group', async () => {
+    const dir = await mkdtemp(join(tmpdir(), 'storydream-sidecar-process-group-'));
+    try {
+      const script = await readFile(await writeStoryboundSidecarScript(dir), 'utf8');
+
+      expect(script).not.toContain('start_new_session');
+      expect(script).not.toContain('os.killpg(process.pid');
+      expect(script).toContain('process.terminate()');
+      expect(script).toContain('process.kill()');
+    } finally {
+      await rm(dir, { recursive: true, force: true });
+    }
+  });
+
   it('redacts credentials from sidecar process failures', async () => {
     const dir = await mkdtemp(join(tmpdir(), 'storydream-sidecar-redaction-'));
     try {
@@ -223,6 +237,81 @@ describe('Storybound-compatible media sidecar', () => {
       expect(script).toContain('acrossfade=d=');
       expect(script).not.toContain('"-f", "concat"');
       expect(script).not.toContain('"concat.txt"');
+    } finally {
+      await rm(dir, { recursive: true, force: true });
+    }
+  });
+
+  it('maps each scene frame stream and narration stream explicitly', async () => {
+    const dir = await mkdtemp(join(tmpdir(), 'storydream-sidecar-compose-map-'));
+
+    try {
+      const scriptPath = await writeStoryboundSidecarScript(dir);
+      const script = await readFile(scriptPath, 'utf8');
+
+      expect(script).toContain('"-map", "0:v:0"');
+      expect(script).toContain('"-map", "1:a:0"');
+    } finally {
+      await rm(dir, { recursive: true, force: true });
+    }
+  });
+
+  it('keeps video and audio streams for narration shorter than one frame interval', async () => {
+    const dir = await mkdtemp(join(tmpdir(), 'storydream-sidecar-short-scene-'));
+    const framesDir = join(dir, 'frames');
+    const audioPath = join(dir, 'voice.wav');
+    const outputPath = join(dir, 'output.mp4');
+
+    try {
+      await mkdir(framesDir, { recursive: true });
+      await writeFile(
+        join(framesDir, '0001.png'),
+        Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAIAAAACCAYAAABytg0kAAAAAXNSR0IArs4c6QAAAARnQU1BAACxjwv8YQUAAAAJcEhZcwAADsMAAA7DAcdvqGQAAAAVSURBVBhXY/jPAEQNIIrhPxD8/w8AQ9QJeKxchO4AAAAASUVORK5CYII=', 'base64'),
+      );
+      await writeFile(audioPath, wavTone(900));
+
+      await runStoryboundMediaSidecar({
+        mode: 'compose_render',
+        work_dir: dir,
+        scenes: [{ frames_dir: framesDir, audio_path: audioPath, fps: 1 }],
+        output_path: outputPath,
+      });
+      const probe = await runStoryboundMediaSidecar({
+        mode: 'probe_media',
+        work_dir: dir,
+        media_path: outputPath,
+      });
+
+      expect(probe).toMatchObject({
+        success: true,
+        has_audio: true,
+        has_video: true,
+        width: 2,
+        height: 2,
+      });
+    } finally {
+      await rm(dir, { recursive: true, force: true });
+    }
+  }, 30_000);
+
+  it('probes the real duration of task-local media with the bounded sidecar', async () => {
+    const dir = await mkdtemp(join(tmpdir(), 'storydream-sidecar-probe-'));
+    const source = join(dir, 'source.wav');
+
+    try {
+      await writeFile(source, wavTone(220));
+      const result = await runStoryboundMediaSidecar({
+        mode: 'probe_media',
+        work_dir: dir,
+        media_path: source,
+      });
+
+      expect(result).toMatchObject({
+        success: true,
+        has_audio: true,
+        has_video: false,
+      });
+      expect(result.duration).toBeCloseTo(0.22, 1);
     } finally {
       await rm(dir, { recursive: true, force: true });
     }

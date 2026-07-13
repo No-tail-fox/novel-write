@@ -600,6 +600,46 @@ h2 {
   max-width: 260px;
 }
 
+.hv-workspace-actions {
+  min-width: 0;
+  display: grid;
+  justify-items: end;
+  gap: 8px;
+}
+
+.hv-workspace-heading,
+.hv-workspace-error,
+.hv-workspace-status,
+.hv-step-error {
+  min-width: 0;
+  max-width: 100%;
+}
+
+.hv-workspace-error .error-summary-button,
+.hv-step .error-summary-button {
+  max-width: 100%;
+}
+
+.hv-workspace-status {
+  margin-top: 7px;
+  border-left: 2px solid var(--accent);
+  color: var(--muted);
+  padding: 4px 8px;
+  overflow-wrap: anywhere;
+}
+
+.hv-run-controls {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 6px;
+}
+
+.hv-run-controls .mini-button {
+  min-height: 32px;
+  white-space: nowrap;
+}
+
 .hv-main {
   display: grid;
   grid-template-columns: 220px minmax(0, 1fr);
@@ -645,6 +685,10 @@ h2 {
   min-width: 0;
 }
 
+.hv-step > div {
+  min-width: 0;
+}
+
 .hv-step strong {
   color: var(--text);
   font-size: 13px;
@@ -670,8 +714,47 @@ h2 {
   background: rgba(22, 39, 56, 0.72);
 }
 
+.hv-step.failed {
+  border-color: rgba(255, 93, 97, 0.55);
+  background: rgba(65, 22, 26, 0.45);
+}
+
+.hv-step.failed > span {
+  background: rgba(255, 93, 97, 0.14);
+  color: var(--danger);
+}
+
+.hv-step.cancelled {
+  border-color: rgba(240, 180, 91, 0.38);
+}
+
+.hv-step.cancelled > span {
+  background: rgba(240, 180, 91, 0.12);
+  color: var(--warn);
+}
+
 .hv-stage {
   min-width: 0;
+}
+
+.hv-warning-list {
+  display: grid;
+  gap: 6px;
+  margin: 12px 0;
+  border: 1px solid rgba(240, 180, 91, 0.34);
+  border-radius: 7px;
+  background: rgba(72, 49, 17, 0.28);
+  color: var(--warn);
+  padding: 9px 11px;
+  overflow-wrap: anywhere;
+}
+
+.hv-warning-list ul {
+  display: grid;
+  gap: 4px;
+  margin: 0;
+  padding-left: 18px;
+  color: var(--text);
 }
 
 .hv-tabs {
@@ -705,6 +788,141 @@ h2 {
   padding: 12px;
 }
 
+.hv-media-error {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px 12px;
+  margin-bottom: 12px;
+  border: 1px solid rgba(255, 93, 97, 0.46);
+  border-radius: 7px;
+  background: rgba(65, 22, 26, 0.45);
+  color: var(--danger);
+  padding: 8px 10px;
+  overflow-wrap: anywhere;
+}
+
+.hv-media-error > span {
+  min-width: 0;
+  flex: 1 1 240px;
+}
+
+.hv-media-error .mini-button {
+  flex: none;
+}
+
+.hv-media-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+  gap: 14px;
+}
+
+.hv-media-item {
+  min-width: 0;
+  display: grid;
+  align-content: start;
+  gap: 9px;
+  margin: 0;
+  padding-bottom: 12px;
+  border-bottom: 1px solid rgba(111, 125, 142, 0.22);
+}
+
+.hv-media-frame {
+  width: 100%;
+  aspect-ratio: 16 / 10;
+  min-height: 130px;
+  max-height: 240px;
+  overflow: hidden;
+  display: grid;
+  place-items: center;
+  border: 1px solid rgba(111, 125, 142, 0.24);
+  border-radius: 7px;
+  background: #090d11;
+  color: var(--muted);
+}
+
+.hv-media-frame img {
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+}
+
+.hv-media-item figcaption {
+  min-width: 0;
+  display: grid;
+  gap: 6px;
+}
+
+.hv-media-item figcaption strong,
+.hv-media-item figcaption small {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.hv-media-item figcaption small {
+  color: var(--muted);
+  line-height: 1.45;
+}
+
+.hv-media-item .mini-button {
+  justify-self: start;
+}
+
+.hv-tab-content audio {
+  width: 100%;
+  height: 36px;
+  margin: 8px 0 6px;
+}
+
+.hv-video-output {
+  display: grid;
+  gap: 12px;
+  margin-top: 14px;
+}
+
+.hv-video-output video,
+.hv-video-placeholder {
+  width: 100%;
+  justify-self: center;
+  border: 1px solid rgba(111, 125, 142, 0.24);
+  border-radius: 7px;
+  background: #050708;
+}
+
+.hv-video-output video {
+  display: block;
+  object-fit: contain;
+}
+
+.hv-video-placeholder {
+  display: grid;
+  place-items: center;
+  align-content: center;
+  gap: 8px;
+  color: var(--muted);
+}
+
+.hv-output-meta {
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.hv-output-meta strong,
+.hv-output-meta small {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.hv-output-meta small {
+  color: var(--muted);
+  white-space: nowrap;
+}
+
 @media (max-width: 1180px) {
   .music-mv-layout {
     grid-template-columns: 1fr;
@@ -724,6 +942,18 @@ h2 {
     border-bottom: 1px solid var(--line);
     padding-right: 0;
     padding-bottom: 12px;
+  }
+
+  .hv-workspace-actions {
+    justify-items: stretch;
+  }
+
+  .hv-workspace select {
+    max-width: none;
+  }
+
+  .hv-run-controls {
+    justify-content: flex-start;
   }
 }
 

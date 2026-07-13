@@ -1,4 +1,4 @@
-import { app, BrowserWindow, dialog, ipcMain, Menu, safeStorage, shell, type Cookie } from 'electron';
+import { app, BrowserWindow, dialog, ipcMain, Menu, net, protocol, safeStorage, shell, type Cookie } from 'electron';
 import { execFile } from 'node:child_process';
 import { randomUUID } from 'node:crypto';
 import { existsSync } from 'node:fs';
@@ -7,10 +7,13 @@ import { dirname, extname, isAbsolute, join, relative, resolve } from 'node:path
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { promisify } from 'node:util';
 import { readTaskArtifactSnapshot } from '../src/shared/artifact-preview';
+import { isCancellation, normalizeAppError } from '../src/shared/app-error';
 import { fromLlmModelTestResult, testConfigTarget } from '../src/shared/config-utils';
 import { generateImageLabRecord } from '../src/shared/image-lab';
 import { detectJianyingDraftPath, resolveRuntimeJianyingDraftPath } from '../src/shared/jianying-paths';
 import { loadJianyingEffectCatalog } from '../src/shared/jianying-effects';
+import { runHtmlVideoPipeline, synchronizeHtmlVideoPipelineCheckpoint } from '../src/shared/html-video-runner';
+import { htmlVideoVisibleSteps, isHtmlVideoTask, parseHtmlVideoPipelineData, recoverHtmlVideoPipelineDataForRetry, type HtmlVideoPipelineRetryPatch } from '../src/shared/html-video-workflow';
 import { generateConfiguredVoicePreview } from '../src/shared/media-providers';
 import { createPersonAsset, deletePersonAsset, importPersonAssetFiles, listPersonAssets, listPersonImages, renamePersonAsset } from '../src/shared/person-assets';
 import { createConfiguredJsonLlm, createConfiguredTextLlm, listConfiguredProviderModels, testConfiguredLlm } from '../src/shared/llm-provider';
@@ -18,16 +21,36 @@ import { markSceneImageForRegeneration, markSceneNarrationForRegeneration, markT
 import { resolvePythonRuntimeInfo, setDefaultPythonRuntimeAppRoot } from '../src/shared/python-runtime';
 import { composeCopyFromSources, createAiSourceResearcher, searchWebSources } from '../src/shared/research';
 import { runTask } from '../src/shared/runner';
+import { runStoryboundMediaSidecar } from '../src/shared/storybound-sidecar';
 import { FileDatabase } from '../src/shared/storage';
-import { createTaskRuntimeProviders } from '../src/shared/task-runtime-providers';
-import type { AccountProfile, ActivationState, AppConfig, BookSelectionInput, ConfigTestTarget, CreateTaskInput, CreateViralAnalysisInput, CustomStyle, CustomStyleGenerateInput, DraftTemplate, ImageLabGenerateInput, LlmConfig, PromptTemplate, ProviderModelListRequest, ResearchCopyComposeInput, Task, TaskStatus, TaskStepRerunMode, UiPreferences, ViralAnalysisRecord, ViralAnalysisStatus, ViralProductionTaskOptions, VolcengineSpeakerListRequest, VoiceLabGenerateInput } from '../src/shared/types';
+import { createHtmlVideoRuntimeProviders, createTaskRuntimeProviders } from '../src/shared/task-runtime-providers';
+import type { AccountProfile, ActivationState, AppConfig, BookSelectionInput, ConfigTestTarget, CreateTaskInput, CreateViralAnalysisInput, CustomStyle, CustomStyleGenerateInput, DraftTemplate, HtmlVideoPipelineDataV2, ImageLabGenerateInput, LlmConfig, PromptTemplate, ProviderModelListRequest, ResearchCopyComposeInput, Task, TaskStatus, TaskStepRerunMode, UiPreferences, ViralAnalysisRecord, ViralAnalysisStatus, ViralProductionTaskOptions, VolcengineSpeakerListRequest, VoiceLabGenerateInput } from '../src/shared/types';
 import { createViralProductionTaskInput, detectViralPlatform, runViralAnalysis } from '../src/shared/viral-analysis';
 import { createViralRuntimeProviders } from '../src/shared/viral-runtime';
 import { listVolcengineSpeakers } from '../src/shared/volcengine-speakers';
 import { getRendererIndexPath } from './paths';
+import {
+  createElectronHtmlVideoRuntime,
+  fetchHtmlVideoMediaResponse,
+  createHtmlVideoMediaUrl,
+  ensureHtmlVideoTaskWorkDir,
+  htmlVideoMediaScheme,
+  prepareHtmlVideoBgm,
+  resolveHtmlVideoMediaUrl,
+  type HtmlVideoMediaProbeResult,
+} from './html-video-runtime';
+import { createElectronHtmlVideoRenderer } from './html-video-renderer';
 import { createTrustedIpcRegistrar } from './ipc';
 import { ConfigService } from './config-service';
 import { CredentialVault } from './credential-vault';
+import {
+  finalizeTaskRunIntent,
+  requestTaskRunIntent,
+  runLatestTaskControlRequest,
+  stopTaskRunBeforeArtifactMutation,
+  type TaskRunIntent,
+  type TaskRunIntentState,
+} from './task-run-lifecycle';
 import {
   attachDouyinLoginSecurity,
   attachMainWindowSecurity,
@@ -37,6 +60,15 @@ import {
 } from './security';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
+protocol.registerSchemesAsPrivileged([{
+  scheme: htmlVideoMediaScheme,
+  privileges: {
+    standard: true,
+    secure: true,
+    supportFetchAPI: true,
+    stream: true,
+  },
+}]);
 const execFileAsync = promisify(execFile);
 let mainWindow: BrowserWindow | null = null;
 let viralLoginWindow: BrowserWindow | null = null;
@@ -44,9 +76,7 @@ let mainRendererPolicy: RendererPolicy | null = null;
 let mainWindowPolicyInstalled = false;
 let db: FileDatabase | null = null;
 let configService: ConfigService | null = null;
-interface RunningTaskRun {
-  controller: AbortController;
-  restartAfterAbort: boolean;
+interface RunningTaskRun extends TaskRunIntentState {
   completion: Promise<void>;
 }
 
@@ -56,6 +86,7 @@ interface RunningViralAnalysisRun {
 }
 
 const runningTasks = new Map<string, RunningTaskRun>();
+const latestTaskControlRequests = new Map<string, symbol>();
 const runningViralAnalyses = new Map<string, RunningViralAnalysisRun>();
 let isShuttingDown = false;
 let shutdownComplete = false;
@@ -78,6 +109,18 @@ interface SmokeReport {
 const smokeConfig = resolveSmokeConfig();
 if (smokeConfig) {
   app.setPath('userData', smokeConfig.userDataPath);
+}
+const isPrimaryInstance = app.requestSingleInstanceLock();
+if (!isPrimaryInstance) {
+  app.quit();
+}
+if (isPrimaryInstance) {
+  app.on('second-instance', () => {
+    if (!mainWindow || mainWindow.isDestroyed()) return;
+    if (mainWindow.isMinimized()) mainWindow.restore();
+    if (!mainWindow.isVisible()) mainWindow.show();
+    mainWindow.focus();
+  });
 }
 
 const trustedHandle = createTrustedIpcRegistrar({
@@ -273,8 +316,26 @@ function notifyTaskState(database: FileDatabase): void {
   void sendTaskState(database);
 }
 
-function taskWorkDir(task: Task): string {
+function taskWorkDir(task: Pick<Task, 'id'>): string {
   return join(app.getPath('userData'), appDataName, 'tasks', task.id);
+}
+
+function htmlVideoTaskDirectory(taskId: string) {
+  return ensureHtmlVideoTaskWorkDir(app.getPath('userData'), appDataName, taskId);
+}
+
+function registerHtmlVideoMediaProtocol(): void {
+  protocol.handle(htmlVideoMediaScheme, async (request) => {
+    try {
+      return await fetchHtmlVideoMediaResponse(
+        request.url,
+        htmlVideoTaskDirectory,
+        (mediaPath) => net.fetch(pathToFileURL(mediaPath).toString(), { headers: request.headers }),
+      );
+    } catch {
+      return new Response(null, { status: 404 });
+    }
+  });
 }
 
 function viralAnalysisWorkDir(record: Pick<ViralAnalysisRecord, 'id'>): string {
@@ -349,31 +410,57 @@ async function buildRunOptions(database: FileDatabase, task: Task, controller: A
 
 function startTaskRun(database: FileDatabase, task: Task): boolean {
   if (isShuttingDown || runningTasks.has(task.id)) return false;
+  return isHtmlVideoTask(task)
+    ? startHtmlVideoTaskRun(database, task)
+    : startStandardTaskRun(database, task);
+}
+
+function startStandardTaskRun(database: FileDatabase, task: Task): boolean {
+  return startOwnedTaskRun(database, task, 'Background task', async (controller) => {
+    await runTask(database, { ...task, status: 'pending', errorMessage: '' }, await buildRunOptions(database, task, controller));
+  });
+}
+
+function startHtmlVideoTaskRun(database: FileDatabase, task: Task): boolean {
+  const recovery = recoverHtmlVideoPipelineDataForRetry(task);
+  const runnableTask = recovery ? { ...task, ...recovery } : task;
+  return startOwnedTaskRun(database, task, 'HTML video task', async (controller) => {
+    await runHtmlVideoTask(database, runnableTask, controller, recovery);
+  });
+}
+
+function startOwnedTaskRun(
+  database: FileDatabase,
+  task: Task,
+  label: string,
+  execute: (controller: AbortController) => Promise<void>,
+): boolean {
   const controller = new AbortController();
   const run: RunningTaskRun = {
     controller,
-    restartAfterAbort: false,
+    intent: null,
     completion: Promise.resolve(),
   };
   runningTasks.set(task.id, run);
   run.completion = (async () => {
     try {
-      await runTask(database, { ...task, status: 'pending', errorMessage: '' }, await buildRunOptions(database, task, controller));
+      await execute(controller);
     } catch (error) {
-      console.error('Background task failed', error);
+      console.error(`${label} failed`, error);
     } finally {
       const currentRun = runningTasks.get(task.id);
-      const shouldRestart = !isShuttingDown && currentRun === run && run.restartAfterAbort;
-      if (currentRun === run) {
-        runningTasks.delete(task.id);
-      }
-      if (shouldRestart) {
-        const latestTask = (await database.getState()).tasks.find((item) => item.id === task.id);
-        if (latestTask && latestTask.status !== 'cancelled' && latestTask.status !== 'completed') {
-          startTaskRun(database, { ...latestTask, status: 'pending', errorMessage: '' });
-          return;
+      let restartTask: Task | null = null;
+      try {
+        if (!isShuttingDown && currentRun === run) {
+          const finalized = await finalizeTaskRunIntent(run, async (intent) => {
+            return applyTaskRunIntent(database, task.id, intent);
+          });
+          if (finalized?.intent === 'restart') restartTask = finalized.result;
         }
+      } finally {
+        if (runningTasks.get(task.id) === run) runningTasks.delete(task.id);
       }
+      if (restartTask && !isShuttingDown) startTaskRun(database, restartTask);
       if (!isShuttingDown) await sendTaskState(database);
     }
   })();
@@ -383,14 +470,229 @@ function startTaskRun(database: FileDatabase, task: Task): boolean {
   return true;
 }
 
-async function resumeTaskRun(database: FileDatabase, task: Task): Promise<void> {
+async function applyTaskRunIntent(
+  database: FileDatabase,
+  taskId: string,
+  intent: TaskRunIntent,
+): Promise<Task | null> {
+  const latestTask = (await database.getState()).tasks.find((item) => item.id === taskId);
+  if (!latestTask) return null;
+  const now = new Date().toISOString();
+  if (intent === 'restart') {
+    await database.updateTask(taskId, {
+      status: 'pending',
+      errorMessage: '',
+      completedAt: null,
+      lastHeartbeatAt: now,
+    });
+    return {
+      ...latestTask,
+      status: 'pending',
+      errorMessage: '',
+      completedAt: null,
+      lastHeartbeatAt: now,
+    };
+  }
+  await database.updateTask(taskId, {
+    status: intent,
+    errorMessage: intent === 'cancelled' ? '用户取消' : '运行已暂停，可继续。',
+    failedStep: intent === 'paused' ? latestTask.failedStep ?? latestTask.currentStep : latestTask.failedStep,
+    retryFromStep: intent === 'paused' ? latestTask.retryFromStep ?? latestTask.currentStep : latestTask.retryFromStep,
+    lastHeartbeatAt: now,
+  });
+  return null;
+}
+
+async function runHtmlVideoTask(
+  database: FileDatabase,
+  task: Task,
+  controller: AbortController,
+  recovery: HtmlVideoPipelineRetryPatch | null = null,
+): Promise<void> {
+  let workDir = taskWorkDir(task);
+  const startedAt = task.startedAt ?? new Date().toISOString();
+  let lastState: HtmlVideoPipelineDataV2 | null = null;
+  try {
+    const taskDirectory = await ensureHtmlVideoTaskWorkDir(app.getPath('userData'), appDataName, task.id);
+    workDir = taskDirectory.workDir.canonicalPath;
+    const initialState = parseHtmlVideoPipelineData(task.pipelineData);
+    lastState = initialState;
+    if (recovery) {
+      await synchronizeHtmlVideoPipelineCheckpoint(workDir, initialState);
+      await database.updateTask(task.id, recovery);
+    }
+    await database.updateTask(task.id, {
+      status: 'running',
+      outputDir: workDir,
+      errorMessage: '',
+      failedStep: null,
+      retryFromStep: null,
+      completedAt: null,
+      startedAt,
+      lastHeartbeatAt: startedAt,
+    });
+    await sendTaskState(database);
+
+    const runtimeConfig = await (await getConfigService()).getRuntimeConfig();
+    const probeMedia = probeHtmlVideoMedia;
+    const bgmPath = await prepareHtmlVideoBgm({
+      taskDirectory,
+      bgmId: initialState.config.bgmId?.trim() ?? '',
+      bgmLibrary: runtimeConfig.jianying.bgmLibrary,
+      signal: controller.signal,
+      probeMedia,
+    });
+    const renderer = createElectronHtmlVideoRenderer();
+    const runtime = createElectronHtmlVideoRuntime({
+      taskDirectory,
+      taskTitle: task.title,
+      bgmPath,
+      signal: controller.signal,
+      renderer,
+      probeMedia,
+    });
+    const providers = createHtmlVideoRuntimeProviders(runtimeConfig, workDir, task, {
+      measureAudioDuration: runtime.measureAudioDuration,
+    });
+    const finalState = await runHtmlVideoPipeline({
+      taskId: task.id,
+      sourceText: task.inputText,
+      state: initialState,
+      ignoreCheckpoint: Boolean(recovery),
+    }, {
+      workDir,
+      signal: controller.signal,
+      ...providers,
+      createPreviews: runtime.createPreviews,
+      render: runtime.render,
+      onCheckpoint: async (state) => {
+        lastState = state;
+        await persistHtmlVideoTaskCheckpoint(database, task.id, workDir, state, controller.signal);
+        await sendTaskState(database);
+      },
+    });
+    lastState = finalState;
+    await persistHtmlVideoTaskCheckpoint(database, task.id, workDir, finalState, controller.signal);
+    await sendTaskState(database);
+  } catch (error) {
+    if (controller.signal.aborted || isCancellation(error)) {
+      const status = htmlVideoAbortStatus(controller.signal.reason);
+      const step = lastState ? htmlVideoTaskStep(lastState) : task.currentStep;
+      await database.updateTask(task.id, {
+        status,
+        currentStep: step,
+        outputDir: workDir,
+        errorMessage: status === 'cancelled' ? '用户取消' : '运行已暂停，可继续。',
+        failedStep: status === 'paused' ? step : task.failedStep,
+        retryFromStep: status === 'paused' ? step : task.retryFromStep,
+        lastHeartbeatAt: new Date().toISOString(),
+      });
+      await sendTaskState(database);
+      return;
+    }
+
+    const normalized = normalizeAppError(error, {
+      code: 'HTML_VIDEO_RUN_FAILED',
+      message: 'HTML 视频生成失败。',
+      retryable: true,
+    });
+    const step = lastState ? htmlVideoTaskStep(lastState) : task.currentStep;
+    await database.updateTask(task.id, {
+      status: 'failed',
+      currentStep: step,
+      outputDir: workDir,
+      errorMessage: normalized.message,
+      failedStep: step,
+      retryFromStep: step,
+      lastHeartbeatAt: new Date().toISOString(),
+    });
+    await database.addTaskEvent(task.id, {
+      type: 'step_error',
+      step,
+      agent: null,
+      detail: normalized.message,
+    });
+    await sendTaskState(database);
+    throw normalized;
+  }
+}
+
+async function probeHtmlVideoMedia(
+  root: string,
+  path: string,
+  signal?: AbortSignal,
+): Promise<HtmlVideoMediaProbeResult> {
+  const result = await runStoryboundMediaSidecar({
+    mode: 'probe_media',
+    work_dir: root,
+    media_path: path,
+  }, { signal });
+  return {
+    duration: result.duration,
+    hasAudio: result.has_audio,
+    hasVideo: result.has_video,
+    width: result.width,
+    height: result.height,
+  };
+}
+
+async function persistHtmlVideoTaskCheckpoint(
+  database: FileDatabase,
+  taskId: string,
+  workDir: string,
+  state: HtmlVideoPipelineDataV2,
+  signal: AbortSignal,
+): Promise<void> {
+  const currentStep = htmlVideoTaskStep(state);
+  const stepState = state.current === 'done' ? null : state.steps[state.current];
+  const status: TaskStatus = state.current === 'done'
+    ? 'completed'
+    : stepState?.status === 'failed'
+      ? 'failed'
+      : stepState?.status === 'cancelled'
+        ? htmlVideoAbortStatus(signal.reason)
+        : 'running';
+  const now = new Date().toISOString();
+  const errorMessage = status === 'failed'
+    ? stepState?.error ?? 'HTML 视频生成失败。'
+    : status === 'cancelled'
+      ? '用户取消'
+      : status === 'paused'
+        ? '运行已暂停，可继续。'
+        : '';
+  await database.updateTask(taskId, {
+    status,
+    currentStep,
+    pipelineStep: state.current,
+    pipelineData: JSON.stringify(state),
+    outputDir: workDir,
+    errorMessage,
+    completedAt: status === 'completed' ? now : null,
+    failedStep: status === 'failed' || status === 'paused' ? currentStep : null,
+    retryFromStep: status === 'failed' || status === 'paused' ? currentStep : null,
+    lastHeartbeatAt: now,
+  });
+}
+
+function htmlVideoTaskStep(state: HtmlVideoPipelineDataV2): number {
+  return state.current === 'done'
+    ? htmlVideoVisibleSteps.length
+    : Math.max(0, htmlVideoVisibleSteps.indexOf(state.current));
+}
+
+function htmlVideoAbortStatus(reason: unknown): Extract<TaskStatus, 'paused' | 'cancelled'> {
+  return typeof reason === 'string' && reason.includes('取消') ? 'cancelled' : 'paused';
+}
+
+async function resumeTaskRun(
+  database: FileDatabase,
+  task: Task,
+  shouldStart: () => boolean = () => true,
+): Promise<void> {
   if (isShuttingDown) return;
   const existingRun = runningTasks.get(task.id);
   if (existingRun) {
-    existingRun.restartAfterAbort = true;
-    if (!existingRun.controller.signal.aborted) {
-      existingRun.controller.abort('用户重试');
-    }
+    requestTaskRunIntent(existingRun, 'restart', '用户重试');
     await database.updateTask(task.id, {
       errorMessage: '正在停止当前运行，随后继续重试。',
       lastHeartbeatAt: new Date().toISOString(),
@@ -398,7 +700,19 @@ async function resumeTaskRun(database: FileDatabase, task: Task): Promise<void> 
     return;
   }
   await database.updateTask(task.id, { status: 'pending', errorMessage: '' });
+  if (!shouldStart()) return;
   startTaskRun(database, { ...task, status: 'pending', errorMessage: '' });
+}
+
+async function resumeLatestTaskRun(
+  database: FileDatabase,
+  taskId: string,
+  isCurrent: () => boolean,
+): Promise<void> {
+  if (!isCurrent()) return;
+  const updatedTask = (await database.getState()).tasks.find((item) => item.id === taskId);
+  if (!updatedTask || !isCurrent()) return;
+  await resumeTaskRun(database, updatedTask, isCurrent);
 }
 
 function startViralAnalysisRun(database: FileDatabase, record: ViralAnalysisRecord): boolean {
@@ -691,15 +1005,52 @@ trustedHandle('person-assets:import-images', async (_event, name: string) => {
 
 trustedHandle('html-video:create-task', async (_event, input: CreateTaskInput) => {
   const database = await getDb();
-  await database.createTask({
+  const task = await database.createTask({
     ...input,
     taskKind: 'story',
     taskType: 'html-video',
-    pipelineStep: input.pipelineStep ?? 'plan',
+    pipelineStep: input.pipelineStep ?? 'rewrite',
     pipelineData: input.pipelineData ?? '{}',
   });
+  startTaskRun(database, task);
   return getPublicState();
 });
+
+trustedHandle('html-video:open-preview', async (_event, input: { id: string; sceneIndex?: number }) => {
+  const database = await getDb();
+  const task = await getHtmlVideoTask(database, input.id);
+  const state = parseHtmlVideoPipelineData(task.pipelineData);
+  const composition = input.sceneIndex === undefined
+    ? state.compositions[0]
+    : state.compositions.find((item) => item.index === input.sceneIndex);
+  if (!composition?.htmlPath) {
+    throw new Error('HTML_VIDEO_PREVIEW_UNAVAILABLE: 当前任务还没有可预览的 HTML 场景。');
+  }
+  const taskDirectory = await htmlVideoTaskDirectory(task.id);
+  const workDir = taskDirectory.workDir.canonicalPath;
+  const mediaUrl = await createHtmlVideoMediaUrl(task.id, taskDirectory, composition.htmlPath);
+  const htmlPath = await resolveHtmlVideoMediaUrl(mediaUrl, () => taskDirectory);
+  await createElectronHtmlVideoRenderer().openPreview({
+    workDir,
+    htmlPath,
+    canvas: { width: composition.canvas.w, height: composition.canvas.h },
+  });
+});
+
+trustedHandle('html-video:media-url', async (_event, input: { id: string; path: string }) => {
+  const database = await getDb();
+  const task = await getHtmlVideoTask(database, input.id);
+  const taskDirectory = await htmlVideoTaskDirectory(task.id);
+  return createHtmlVideoMediaUrl(task.id, taskDirectory, input.path);
+});
+
+async function getHtmlVideoTask(database: FileDatabase, id: string): Promise<Task> {
+  const task = (await database.getState()).tasks.find((item) => item.id === id);
+  if (!task || !isHtmlVideoTask(task)) {
+    throw new Error('HTML_VIDEO_TASK_NOT_FOUND: HTML 视频任务不存在。');
+  }
+  return task;
+}
 
 trustedHandle('task:create-and-run', async (_event, input: CreateTaskInput) => {
   const database = await getDb();
@@ -770,174 +1121,257 @@ trustedHandle('viral:create-production-task', async (_event, input: { id: string
 });
 
 trustedHandle('task:update-status', async (_event, input: { id: string; status: TaskStatus }) => {
-  const database = await getDb();
-  const state = await database.getState();
-  const task = state.tasks.find((item) => item.id === input.id);
-  if (!task) return getPublicState();
-  if (input.status === 'running') {
-    await resumeTaskRun(database, task);
-    return getPublicState();
-  }
-  if (input.status === 'paused' || input.status === 'cancelled') {
+  const isControlRequest = input.status === 'running' || input.status === 'paused' || input.status === 'cancelled';
+  if (!isControlRequest) return getPublicState();
+  return runLatestTaskControlRequest(latestTaskControlRequests, input.id, async (isCurrent) => {
     const existingRun = runningTasks.get(input.id);
+    let controlledRun = existingRun;
     if (existingRun) {
-      existingRun.restartAfterAbort = false;
-      existingRun.controller.abort(input.status === 'cancelled' ? '用户取消' : '用户暂停');
+      if (input.status === 'running') {
+        requestTaskRunIntent(existingRun, 'restart', '用户重试');
+      } else if (input.status === 'paused' || input.status === 'cancelled') {
+        requestTaskRunIntent(
+          existingRun,
+          input.status,
+          input.status === 'cancelled' ? '用户取消' : '用户暂停',
+        );
+      }
     }
-    await database.updateTask(input.id, {
-      status: input.status,
-      errorMessage: input.status === 'cancelled' ? '用户取消' : task.errorMessage,
-      failedStep: input.status === 'paused' ? task.failedStep ?? task.currentStep : task.failedStep,
-      retryFromStep: input.status === 'paused' ? task.retryFromStep ?? task.currentStep : task.retryFromStep,
-      lastHeartbeatAt: new Date().toISOString(),
-    });
-  }
-  return getPublicState();
+    const database = await getDb();
+    const state = await database.getState();
+    const task = state.tasks.find((item) => item.id === input.id);
+    if (!task || !isCurrent()) {
+      return getPublicState();
+    }
+    if (input.status === 'running') {
+      if (!existingRun) {
+        await resumeTaskRun(database, task, isCurrent);
+      } else if (isCurrent() && runningTasks.get(input.id) === existingRun && existingRun.intent === 'restart') {
+        await database.updateTask(input.id, {
+          errorMessage: '正在停止当前运行，随后继续重试。',
+          lastHeartbeatAt: new Date().toISOString(),
+        });
+      }
+      return getPublicState();
+    }
+    if (input.status === 'paused' || input.status === 'cancelled') {
+      const currentRun = runningTasks.get(input.id);
+      if (currentRun && currentRun !== controlledRun) {
+        requestTaskRunIntent(
+          currentRun,
+          input.status,
+          input.status === 'cancelled' ? '用户取消' : '用户暂停',
+        );
+        controlledRun = currentRun;
+      }
+      if (isCurrent() && (!existingRun || (runningTasks.get(input.id) === existingRun && existingRun.intent === input.status))) {
+        await database.updateTask(input.id, {
+          status: input.status,
+          errorMessage: input.status === 'cancelled' ? '用户取消' : task.errorMessage,
+          failedStep: input.status === 'paused' ? task.failedStep ?? task.currentStep : task.failedStep,
+          retryFromStep: input.status === 'paused' ? task.retryFromStep ?? task.currentStep : task.retryFromStep,
+          lastHeartbeatAt: new Date().toISOString(),
+        });
+      }
+      if (isCurrent()) {
+        const runAfterUpdate = runningTasks.get(input.id);
+        if (runAfterUpdate && runAfterUpdate !== controlledRun) {
+          requestTaskRunIntent(
+            runAfterUpdate,
+            input.status,
+            input.status === 'cancelled' ? '用户取消' : '用户暂停',
+          );
+        }
+      }
+    }
+    return getPublicState();
+  });
 });
 
 trustedHandle('task:retry', async (_event, id: string) => {
-  const database = await getDb();
-  const state = await database.getState();
-  const task = state.tasks.find((item) => item.id === id);
-  if (task) {
-    await resumeTaskRun(database, task);
-  }
-  return getPublicState();
+  return runLatestTaskControlRequest(latestTaskControlRequests, id, async (isCurrent) => {
+    const existingRun = runningTasks.get(id);
+    if (existingRun) requestTaskRunIntent(existingRun, 'restart', '用户重试');
+    const database = await getDb();
+    const state = await database.getState();
+    const task = state.tasks.find((item) => item.id === id);
+    if (!task || !isCurrent()) {
+      return getPublicState();
+    }
+    if (!existingRun) {
+      await resumeTaskRun(database, task, isCurrent);
+    } else if (isCurrent() && runningTasks.get(id) === existingRun && existingRun.intent === 'restart') {
+      await database.updateTask(id, {
+        errorMessage: '正在停止当前运行，随后继续重试。',
+        lastHeartbeatAt: new Date().toISOString(),
+      });
+    }
+    return getPublicState();
+  });
 });
 
 trustedHandle('task:regenerate-image', async (_event, input: { id: string; sceneId: number }) => {
-  const database = await getDb();
-  const state = await database.getState();
-  const task = state.tasks.find((item) => item.id === input.id);
-  if (!task) {
-    throw new Error(`Task not found: ${input.id}`);
-  }
-  if (!task.artifactStatePath) {
-    throw new Error('Task artifact state is not available; run the task before regenerating images.');
-  }
+  return runLatestTaskControlRequest(latestTaskControlRequests, input.id, async (isCurrent) => {
+    const database = await getDb();
+    if (!isCurrent()) return getPublicState();
+    const state = await database.getState();
+    if (!isCurrent()) return getPublicState();
+    const task = state.tasks.find((item) => item.id === input.id);
+    if (!task) {
+      throw new Error(`Task not found: ${input.id}`);
+    }
+    if (!task.artifactStatePath) {
+      throw new Error('Task artifact state is not available; run the task before regenerating images.');
+    }
 
-  const sceneId = Number(input.sceneId);
-  await markSceneImageForRegeneration(task.artifactStatePath, sceneId);
-  await database.updateTask(task.id, {
-    status: 'pending',
-    currentStep: 4,
-    failedStep: 4,
-    retryFromStep: 4,
-    completedAt: null,
-    outputDir: taskWorkDir(task),
-    errorMessage: `重新生成第 ${sceneId} 张图片`,
-    lastHeartbeatAt: new Date().toISOString(),
+    const sceneId = Number(input.sceneId);
+    if (!await stopTaskRunBeforeArtifactMutation(() => runningTasks.get(input.id), isCurrent)) {
+      return getPublicState();
+    }
+    await markSceneImageForRegeneration(task.artifactStatePath, sceneId);
+    if (!isCurrent()) return getPublicState();
+    await database.updateTask(task.id, {
+      status: 'pending',
+      currentStep: 4,
+      failedStep: 4,
+      retryFromStep: 4,
+      completedAt: null,
+      outputDir: taskWorkDir(task),
+      errorMessage: `重新生成第 ${sceneId} 张图片`,
+      lastHeartbeatAt: new Date().toISOString(),
+    });
+    if (!isCurrent()) return getPublicState();
+    await database.addTaskEvent(task.id, {
+      type: 'step_start',
+      step: 4,
+      agent: 'Producer',
+      detail: `重新生成第 ${sceneId} 张图片`,
+      dataJson: JSON.stringify({ sceneId }),
+    });
+    if (!isCurrent()) return getPublicState();
+    await resumeLatestTaskRun(database, task.id, isCurrent);
+    return getPublicState();
   });
-  await database.addTaskEvent(task.id, {
-    type: 'step_start',
-    step: 4,
-    agent: 'Producer',
-    detail: `重新生成第 ${sceneId} 张图片`,
-    dataJson: JSON.stringify({ sceneId }),
-  });
-  const updatedTask = (await database.getState()).tasks.find((item) => item.id === task.id);
-  if (updatedTask) {
-    await resumeTaskRun(database, updatedTask);
-  }
-  return getPublicState();
 });
 
 trustedHandle('task:regenerate-narration', async (_event, input: { id: string; sceneId: number }) => {
-  const database = await getDb();
-  const state = await database.getState();
-  const task = state.tasks.find((item) => item.id === input.id);
-  if (!task) {
-    throw new Error(`Task not found: ${input.id}`);
-  }
-  if (!task.artifactStatePath) {
-    throw new Error('Task artifact state is not available; run the task before regenerating narration.');
-  }
+  return runLatestTaskControlRequest(latestTaskControlRequests, input.id, async (isCurrent) => {
+    const database = await getDb();
+    if (!isCurrent()) return getPublicState();
+    const state = await database.getState();
+    if (!isCurrent()) return getPublicState();
+    const task = state.tasks.find((item) => item.id === input.id);
+    if (!task) {
+      throw new Error(`Task not found: ${input.id}`);
+    }
+    if (!task.artifactStatePath) {
+      throw new Error('Task artifact state is not available; run the task before regenerating narration.');
+    }
 
-  const sceneId = Number(input.sceneId);
-  await markSceneNarrationForRegeneration(task.artifactStatePath, sceneId);
-  await database.updateTask(task.id, {
-    status: 'pending',
-    currentStep: 5,
-    failedStep: 5,
-    retryFromStep: 5,
-    completedAt: null,
-    outputDir: taskWorkDir(task),
-    errorMessage: `重新生成第 ${sceneId} 段配音`,
-    lastHeartbeatAt: new Date().toISOString(),
+    const sceneId = Number(input.sceneId);
+    if (!await stopTaskRunBeforeArtifactMutation(() => runningTasks.get(input.id), isCurrent)) {
+      return getPublicState();
+    }
+    await markSceneNarrationForRegeneration(task.artifactStatePath, sceneId);
+    if (!isCurrent()) return getPublicState();
+    await database.updateTask(task.id, {
+      status: 'pending',
+      currentStep: 5,
+      failedStep: 5,
+      retryFromStep: 5,
+      completedAt: null,
+      outputDir: taskWorkDir(task),
+      errorMessage: `重新生成第 ${sceneId} 段配音`,
+      lastHeartbeatAt: new Date().toISOString(),
+    });
+    if (!isCurrent()) return getPublicState();
+    await database.addTaskEvent(task.id, {
+      type: 'step_start',
+      step: 5,
+      agent: 'TTS',
+      detail: `重新生成第 ${sceneId} 段配音`,
+      dataJson: JSON.stringify({ sceneId }),
+    });
+    if (!isCurrent()) return getPublicState();
+    await resumeLatestTaskRun(database, task.id, isCurrent);
+    return getPublicState();
   });
-  await database.addTaskEvent(task.id, {
-    type: 'step_start',
-    step: 5,
-    agent: 'TTS',
-    detail: `重新生成第 ${sceneId} 段配音`,
-    dataJson: JSON.stringify({ sceneId }),
-  });
-  const updatedTask = (await database.getState()).tasks.find((item) => item.id === task.id);
-  if (updatedTask) {
-    await resumeTaskRun(database, updatedTask);
-  }
-  return getPublicState();
 });
 
 trustedHandle('task:update-image-prompt', async (_event, input: { id: string; sceneId: number; prompt: string }) => {
-  const database = await getDb();
-  const state = await database.getState();
-  const task = state.tasks.find((item) => item.id === input.id);
-  if (!task) {
-    throw new Error(`Task not found: ${input.id}`);
-  }
-  if (!task.artifactStatePath) {
-    throw new Error('Task artifact state is not available; run the task before editing image prompts.');
-  }
+  return runLatestTaskControlRequest(latestTaskControlRequests, input.id, async (isCurrent) => {
+    const database = await getDb();
+    if (!isCurrent()) return getPublicState();
+    const state = await database.getState();
+    if (!isCurrent()) return getPublicState();
+    const task = state.tasks.find((item) => item.id === input.id);
+    if (!task) {
+      throw new Error(`Task not found: ${input.id}`);
+    }
+    if (!task.artifactStatePath) {
+      throw new Error('Task artifact state is not available; run the task before editing image prompts.');
+    }
 
-  const sceneId = Number(input.sceneId);
-  const result = await updateSceneImagePrompt(task.artifactStatePath, sceneId, input.prompt);
-  await database.addTaskEvent(task.id, {
-    type: 'prompt_update',
-    step: 3,
-    agent: 'Prompt',
-    detail: `已修改第 ${sceneId} 张图片提示词`,
-    dataJson: JSON.stringify({ sceneId, promptLength: result.updatedPrompt.prompt.length }),
+    const sceneId = Number(input.sceneId);
+    if (!await stopTaskRunBeforeArtifactMutation(() => runningTasks.get(input.id), isCurrent)) {
+      return getPublicState();
+    }
+    const result = await updateSceneImagePrompt(task.artifactStatePath, sceneId, input.prompt);
+    if (!isCurrent()) return getPublicState();
+    await database.addTaskEvent(task.id, {
+      type: 'prompt_update',
+      step: 3,
+      agent: 'Prompt',
+      detail: `已修改第 ${sceneId} 张图片提示词`,
+      dataJson: JSON.stringify({ sceneId, promptLength: result.updatedPrompt.prompt.length }),
+    });
+    return getPublicState();
   });
-  return getPublicState();
 });
 
 trustedHandle('task:rerun-step', async (_event, input: { id: string; step: number; mode: TaskStepRerunMode }) => {
-  const database = await getDb();
-  const state = await database.getState();
-  const task = state.tasks.find((item) => item.id === input.id);
-  if (!task) {
-    throw new Error(`Task not found: ${input.id}`);
-  }
-  if (!task.artifactStatePath) {
-    throw new Error('Task artifact state is not available; run the task before rerunning a step.');
-  }
+  return runLatestTaskControlRequest(latestTaskControlRequests, input.id, async (isCurrent) => {
+    const database = await getDb();
+    if (!isCurrent()) return getPublicState();
+    const state = await database.getState();
+    if (!isCurrent()) return getPublicState();
+    const task = state.tasks.find((item) => item.id === input.id);
+    if (!task) {
+      throw new Error(`Task not found: ${input.id}`);
+    }
+    if (!task.artifactStatePath) {
+      throw new Error('Task artifact state is not available; run the task before rerunning a step.');
+    }
 
-  const step = Number(input.step);
-  const result = await markTaskStepForRerun(task.artifactStatePath, step, input.mode);
-  const detail = result.mode === 'rewrite' ? `改写第 ${step + 1} 步后继续` : `重新生成第 ${step + 1} 步后继续`;
-  await database.updateTask(task.id, {
-    status: 'pending',
-    currentStep: step,
-    failedStep: step,
-    retryFromStep: step,
-    completedAt: null,
-    outputDir: taskWorkDir(task),
-    errorMessage: detail,
-    lastHeartbeatAt: new Date().toISOString(),
+    const step = Number(input.step);
+    if (!await stopTaskRunBeforeArtifactMutation(() => runningTasks.get(input.id), isCurrent)) {
+      return getPublicState();
+    }
+    const result = await markTaskStepForRerun(task.artifactStatePath, step, input.mode);
+    if (!isCurrent()) return getPublicState();
+    const detail = result.mode === 'rewrite' ? `改写第 ${step + 1} 步后继续` : `重新生成第 ${step + 1} 步后继续`;
+    await database.updateTask(task.id, {
+      status: 'pending',
+      currentStep: step,
+      failedStep: step,
+      retryFromStep: step,
+      completedAt: null,
+      outputDir: taskWorkDir(task),
+      errorMessage: detail,
+      lastHeartbeatAt: new Date().toISOString(),
+    });
+    if (!isCurrent()) return getPublicState();
+    await database.addTaskEvent(task.id, {
+      type: 'step_start',
+      step,
+      agent: pipelineStepAgents[step] ?? null,
+      detail,
+      dataJson: JSON.stringify({ step, mode: result.mode, clearedSteps: result.clearedSteps }),
+    });
+    if (!isCurrent()) return getPublicState();
+    await resumeLatestTaskRun(database, task.id, isCurrent);
+    return getPublicState();
   });
-  await database.addTaskEvent(task.id, {
-    type: 'step_start',
-    step,
-    agent: pipelineStepAgents[step] ?? null,
-    detail,
-    dataJson: JSON.stringify({ step, mode: result.mode, clearedSteps: result.clearedSteps }),
-  });
-  const updatedTask = (await database.getState()).tasks.find((item) => item.id === task.id);
-  if (updatedTask) {
-    await resumeTaskRun(database, updatedTask);
-  }
-  return getPublicState();
 });
 
 trustedHandle('task:get-artifacts', async (_event, id: string) => {
@@ -1221,7 +1655,7 @@ async function shutdownApplication(): Promise<void> {
   const completions: Promise<void>[] = [];
 
   for (const run of runningTasks.values()) {
-    run.restartAfterAbort = false;
+    run.intent = null;
     if (!run.controller.signal.aborted) run.controller.abort('应用退出');
     completions.push(run.completion);
   }
@@ -1241,45 +1675,48 @@ async function shutdownApplication(): Promise<void> {
   }
 }
 
-app.whenReady().then(async () => {
-  setDefaultPythonRuntimeAppRoot(app.getAppPath());
-  await createWindow();
-  await runSmokeHandshake();
-}).catch(async (error) => {
-  console.error('Application startup failed', error);
-  process.exitCode = 1;
-  if (smokeConfig) {
-    const failedReport: SmokeReport = {
-      mainLoaded: false,
-      preloadExposed: false,
-      ipcStateLoaded: false,
-      preloadActionSucceeded: false,
-      windowPolicyInstalled: mainWindowPolicyInstalled,
-      shellRendered: false,
-    };
-    await writeFile(smokeConfig.outputPath, `${JSON.stringify(failedReport, null, 2)}\n`, 'utf8').catch(() => undefined);
-  }
-  if (mainWindow && !mainWindow.isDestroyed()) {
-    mainWindow.close();
-    if (process.platform === 'darwin') app.quit();
-  } else app.quit();
-});
+if (isPrimaryInstance) {
+  app.whenReady().then(async () => {
+    setDefaultPythonRuntimeAppRoot(app.getAppPath());
+    registerHtmlVideoMediaProtocol();
+    await createWindow();
+    await runSmokeHandshake();
+  }).catch(async (error) => {
+    console.error('Application startup failed', error);
+    process.exitCode = 1;
+    if (smokeConfig) {
+      const failedReport: SmokeReport = {
+        mainLoaded: false,
+        preloadExposed: false,
+        ipcStateLoaded: false,
+        preloadActionSucceeded: false,
+        windowPolicyInstalled: mainWindowPolicyInstalled,
+        shellRendered: false,
+      };
+      await writeFile(smokeConfig.outputPath, `${JSON.stringify(failedReport, null, 2)}\n`, 'utf8').catch(() => undefined);
+    }
+    if (mainWindow && !mainWindow.isDestroyed()) {
+      mainWindow.close();
+      if (process.platform === 'darwin') app.quit();
+    } else app.quit();
+  });
 
-app.on('window-all-closed', () => {
-  if (process.platform !== 'darwin') {
-    app.quit();
-  }
-});
-
-app.on('before-quit', (event) => {
-  if (shutdownComplete) return;
-  event.preventDefault();
-  shutdownPromise ??= shutdownApplication()
-    .catch((error) => {
-      console.error('Application shutdown failed', error);
-    })
-    .finally(() => {
-      shutdownComplete = true;
+  app.on('window-all-closed', () => {
+    if (process.platform !== 'darwin') {
       app.quit();
-    });
-});
+    }
+  });
+
+  app.on('before-quit', (event) => {
+    if (shutdownComplete) return;
+    event.preventDefault();
+    shutdownPromise ??= shutdownApplication()
+      .catch((error) => {
+        console.error('Application shutdown failed', error);
+      })
+      .finally(() => {
+        shutdownComplete = true;
+        app.quit();
+      });
+  });
+}

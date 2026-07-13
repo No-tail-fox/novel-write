@@ -432,7 +432,8 @@ export class FileDatabase {
         video_intro INTEGER DEFAULT 0,
         video_intro_duration INTEGER DEFAULT 0,
         cover_image_mode TEXT DEFAULT 'off',
-        cover_template_id TEXT DEFAULT 'cinematic-poster'
+        cover_template_id TEXT DEFAULT 'cinematic-poster',
+        html_video_foreground INTEGER DEFAULT NULL
       );
       CREATE TABLE IF NOT EXISTS book_selection (
         theme TEXT NOT NULL,
@@ -680,6 +681,7 @@ export class FileDatabase {
       ['video_intro_duration', 'INTEGER DEFAULT 0'],
       ['cover_image_mode', "TEXT DEFAULT 'off'"],
       ['cover_template_id', "TEXT DEFAULT 'cinematic-poster'"],
+      ['html_video_foreground', 'INTEGER DEFAULT NULL'],
     ] as const) {
       addColumnIfMissing(this.db, 'tasks', column, definition);
     }
@@ -1117,6 +1119,7 @@ export class FileDatabase {
       podcastSpeakerB: input.podcastSpeakerB ?? null,
       coverImageMode: input.coverImageMode ?? 'off',
       coverTemplateId: input.coverTemplateId ?? 'cinematic-poster',
+      htmlVideoForeground: input.htmlVideoForeground,
     };
     this.db.run(
       `INSERT INTO tasks (
@@ -1127,8 +1130,9 @@ export class FileDatabase {
         tts_speed, storyboard_scene_count, step3_prompt_snapshot, music_mv_json, failed_step, retry_from_step, artifact_state_path,
         video_form, llm_profile_id, material_source, product_info, material_person, draft_dir, fixed_intro, outro_cta, lock_intro_sentences,
         task_type, pipeline_step, pipeline_data, target_length, target_scenes, script_format,
-        podcast_image_mode, podcast_speakers, podcast_speaker_a, podcast_speaker_b, cover_image_mode, cover_template_id
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        podcast_image_mode, podcast_speakers, podcast_speaker_a, podcast_speaker_b, cover_image_mode, cover_template_id,
+        html_video_foreground
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       [
         task.id,
         task.title,
@@ -1192,6 +1196,7 @@ export class FileDatabase {
         task.podcastSpeakerB ?? null,
         task.coverImageMode ?? 'off',
         task.coverTemplateId ?? 'cinematic-poster',
+        task.htmlVideoForeground === undefined ? null : task.htmlVideoForeground ? 1 : 0,
       ],
     );
     return task;
@@ -1527,6 +1532,9 @@ function rowToTask(row: Record<string, unknown>): Task {
     podcastSpeakerB: row.podcast_speaker_b === null || row.podcast_speaker_b === undefined ? null : String(row.podcast_speaker_b),
     coverImageMode: String(row.cover_image_mode ?? 'off'),
     coverTemplateId: String(row.cover_template_id ?? 'cinematic-poster'),
+    htmlVideoForeground: row.html_video_foreground === null || row.html_video_foreground === undefined
+      ? undefined
+      : Number(row.html_video_foreground) === 1,
   };
 }
 

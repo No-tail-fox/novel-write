@@ -39,6 +39,35 @@ describe('IPC runtime contract', () => {
     expect(contract.pathSchema.parse('I:/opc/tasks/task-1/output.mp4')).toBe('I:/opc/tasks/task-1/output.mp4');
     expect(() => contract.pathSchema.parse('../secret.txt')).toThrow();
     expect(() => contract.pathSchema.parse('I:/opc/tasks/../secret.txt')).toThrow();
+
+    const htmlVideoCreateSchema = contract.ipcInputSchemas['html-video:create-task'];
+    expect(() => htmlVideoCreateSchema.parse({ inputText: 'hello', pipelineData: '{' })).toThrow();
+    expect(htmlVideoCreateSchema.parse({ inputText: 'hello' })).toMatchObject({ inputText: 'hello' });
+
+    const workflow = await import('../src/shared/html-video-workflow');
+    expect(workflow.MAX_HTML_VIDEO_SCENES).toBe(30);
+    expect(workflow.MAX_HTML_VIDEO_SOURCE_CHARS).toBe(16_384);
+    const oversizedPipeline = workflow.createHtmlVideoPipelineData('hello');
+    oversizedPipeline.config.maxScenes = 31;
+    expect(() => htmlVideoCreateSchema.parse({
+      inputText: 'hello',
+      pipelineData: JSON.stringify(oversizedPipeline),
+    })).toThrow();
+    expect(() => htmlVideoCreateSchema.parse({ inputText: 'hello', targetScenes: 31 })).toThrow();
+    expect(() => htmlVideoCreateSchema.parse({ inputText: 'hello', storyboardSceneCount: 31 })).toThrow();
+    expect(() => htmlVideoCreateSchema.parse({ inputText: 'x'.repeat(workflow.MAX_HTML_VIDEO_SOURCE_CHARS + 1) })).toThrow();
+    expect(htmlVideoCreateSchema.parse({
+      inputText: 'hello',
+      targetScenes: 30,
+      storyboardSceneCount: 30,
+    })).toMatchObject({ targetScenes: 30, storyboardSceneCount: 30 });
+
+    expect(contract.createTaskSchema.parse({
+      inputText: 'hello',
+      targetScenes: 500,
+      storyboardSceneCount: 500,
+    })).toMatchObject({ targetScenes: 500, storyboardSceneCount: 500 });
+    expect(contract.createTaskSchema.parse({ inputText: 'x'.repeat(32_769) }).inputText).toHaveLength(32_769);
   });
 
   it('accepts current narrow provider, research, and viral payloads', async () => {
@@ -77,7 +106,7 @@ describe('IPC runtime contract', () => {
     ].map((match) => match[1]);
     const uniqueChannels = [...new Set(invokedChannels)].sort();
 
-    expect(uniqueChannels).toHaveLength(53);
+    expect(uniqueChannels).toHaveLength(55);
     expect([...contract.IPC_CHANNELS].sort()).toEqual(uniqueChannels);
     expect(Object.keys(contract.ipcInputSchemas).sort()).toEqual(uniqueChannels);
   });

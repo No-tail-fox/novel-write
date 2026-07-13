@@ -46,6 +46,31 @@ describe('real Electron smoke contract', () => {
     }
   });
 
+  it('acquires a userData-scoped single-instance lock before primary startup and focuses the existing window', async () => {
+    const main = await readFile(new URL('../electron/main.ts', import.meta.url), 'utf8');
+    const setUserData = main.indexOf("app.setPath('userData'");
+    const requestLock = main.indexOf('app.requestSingleInstanceLock()');
+    const getDatabase = main.indexOf('async function getDb()');
+    const startTask = main.indexOf('function startTaskRun(');
+    const ready = main.indexOf('app.whenReady()');
+
+    expect(requestLock).toBeGreaterThan(setUserData);
+    expect(requestLock).toBeLessThan(getDatabase);
+    expect(requestLock).toBeLessThan(startTask);
+    expect(requestLock).toBeLessThan(ready);
+    expect(main).toContain(`if (!isPrimaryInstance) {
+  app.quit();
+}`);
+    expect(main).toContain(`if (isPrimaryInstance) {
+  app.whenReady().then`);
+    expect(main).toContain("app.on('second-instance'");
+    expect(main).toContain('mainWindow.isMinimized()');
+    expect(main).toContain('mainWindow.restore();');
+    expect(main).toContain('mainWindow.isVisible()');
+    expect(main).toContain('mainWindow.show();');
+    expect(main).toContain('mainWindow.focus();');
+  });
+
   it('requires every fixed smoke assertion and propagates child failures', async () => {
     const smoke = await readFile(new URL('../scripts/smoke-electron.cjs', import.meta.url), 'utf8');
 
@@ -64,5 +89,30 @@ describe('real Electron smoke contract', () => {
     expect(smoke).toContain('delete childEnvironment.ELECTRON_RUN_AS_NODE');
     expect(smoke).toContain("VITE_DEV_SERVER_URL: ''");
     expect(smoke).toContain("throw new Error('Electron smoke failed");
+  });
+
+  it('installs graceful HTML smoke signals before temporary work and cleans up after abort', async () => {
+    const smoke = await readFile(new URL('../scripts/smoke-html-video.ts', import.meta.url), 'utf8');
+    const lifecycle = smoke.indexOf('runSmokeWithTempRoot({');
+    const createTempRoot = smoke.indexOf('createTempRoot:', lifecycle);
+    const run = smoke.indexOf('run: async ({ tempRoot, signal }) => {', createTempRoot);
+    const createWorkDir = smoke.indexOf('await mkdir(workDir', run);
+    const build = smoke.indexOf('await build({', createWorkDir);
+    const abortCheckpoint = smoke.indexOf('signal.throwIfAborted()', build);
+    const runner = smoke.indexOf('await runBoundedProcess(', createWorkDir);
+    const runnerSignal = smoke.indexOf('signal,', runner);
+    const cleanup = smoke.indexOf('cleanup:', runnerSignal);
+
+    expect(lifecycle).toBeGreaterThan(-1);
+    expect(createTempRoot).toBeGreaterThan(lifecycle);
+    expect(run).toBeGreaterThan(createTempRoot);
+    expect(createWorkDir).toBeGreaterThan(run);
+    expect(build).toBeGreaterThan(createWorkDir);
+    expect(abortCheckpoint).toBeGreaterThan(build);
+    expect(runner).toBeGreaterThan(abortCheckpoint);
+    expect(runnerSignal).toBeGreaterThan(runner);
+    expect(cleanup).toBeGreaterThan(runnerSignal);
+    expect(smoke).toContain('setSmokeFailureExitCode(process)');
+    expect(smoke).toContain('formatSmokeError(error)');
   });
 });

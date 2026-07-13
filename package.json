@@ -11,6 +11,7 @@
     "convert:coze": "scripts\\run-npm-node.cmd scripts/convert-coze-workflows.mjs",
     "fetch:coze:feishu": "scripts\\run-npm-node.cmd scripts/fetch-feishu-coze-workflows.mjs",
     "smoke:electron": "scripts\\run-npm-powershell.cmd scripts/smoke-electron.ps1",
+    "smoke:html-video": "scripts\\run-npm-node.cmd node_modules/tsx/dist/cli.mjs scripts/smoke-html-video.ts",
     "test": "scripts\\run-npm-powershell.cmd scripts/test.ps1",
     "test:watch": "scripts\\run-npm-powershell.cmd scripts/test-watch.ps1",
     "typecheck": "scripts\\run-npm-powershell.cmd scripts/typecheck.ps1"

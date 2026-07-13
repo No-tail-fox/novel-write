@@ -105,11 +105,15 @@ describe('electron ipc contract', () => {
 
     expect(main).toContain('runningTasks');
     expect(main).toContain('AbortController');
-    expect(main).toContain('restartAfterAbort');
+    expect(main).toContain('requestTaskRunIntent');
+    expect(main).toContain('latestTaskControlRequests');
+    expect(main).not.toContain('restartAfterAbort');
     expect(main).toContain('resumeTaskRun');
     expect(main).toContain("input.status === 'running'");
     const retryHandler = main.slice(main.indexOf("trustedHandle('task:retry'"), main.indexOf("trustedHandle('diagnostics:run'"));
-    expect(retryHandler).toContain('resumeTaskRun(database, task)');
+    expect(retryHandler).toContain("requestTaskRunIntent(existingRun, 'restart', '用户重试')");
+    expect(retryHandler).toContain('runLatestTaskControlRequest(latestTaskControlRequests, id, async (isCurrent) => {');
+    expect(retryHandler).toContain('await resumeTaskRun(database, task, isCurrent)');
     expect(retryHandler).not.toContain('runTask(');
   });
 
@@ -117,8 +121,12 @@ describe('electron ipc contract', () => {
     const main = await readFile(new URL('../electron/main.ts', import.meta.url), 'utf8');
     const statusHandler = main.slice(main.indexOf("trustedHandle('task:update-status'"), main.indexOf("trustedHandle('task:retry'"));
 
-    expect(statusHandler).toContain('existingRun.controller.abort');
-    expect(statusHandler).toContain('existingRun.restartAfterAbort = false');
+    const requestIntent = statusHandler.indexOf('requestTaskRunIntent(');
+    const firstAwait = statusHandler.indexOf('await getDb()');
+    expect(requestIntent).toBeGreaterThan(-1);
+    expect(firstAwait).toBeGreaterThan(requestIntent);
+    expect(statusHandler).toContain('latestTaskControlRequests');
+    expect(statusHandler).not.toContain('existingRun.controller.abort');
     expect(statusHandler).not.toContain('runningTasks.delete(input.id)');
   });
 
@@ -272,20 +280,26 @@ describe('electron ipc contract', () => {
     expect(main).toContain("id: 'storybound-sidecar'");
   });
 
-  it('keeps HTML video capture behind a typed Electron service without wiring it into the story runner', async () => {
+  it('keeps HTML video capture behind a typed dedicated runner and narrow preview IPC', async () => {
     const main = await readFile(new URL('../electron/main.ts', import.meta.url), 'utf8');
     const preload = await readFile(new URL('../electron/preload.ts', import.meta.url), 'utf8');
     const viteEnv = await readFile(new URL('../src/vite-env.d.ts', import.meta.url), 'utf8');
     const renderer = await readFile(new URL('../electron/html-video-renderer.ts', import.meta.url), 'utf8');
 
     expect(main).toContain("trustedHandle('html-video:create-task'");
-    expect(main).not.toContain('createElectronHtmlVideoRenderer');
+    expect(main).toContain('createElectronHtmlVideoRuntime');
+    expect(main).toContain('runHtmlVideoPipeline');
+    expect(main).toContain('startHtmlVideoTaskRun');
     expect(renderer).toContain('BrowserWindow');
     expect(renderer).toContain('executeJavaScript');
     expect(renderer).toContain('capturePage');
     expect(renderer).toContain('frame_%04d.jpg');
     expect(preload).toContain('createHtmlVideoTask');
+    expect(preload).toContain('openHtmlVideoPreview');
+    expect(preload).toContain('getHtmlVideoMediaUrl');
     expect(viteEnv).toContain('createHtmlVideoTask: (input: CreateTaskInput) => Promise<AppState>');
+    expect(viteEnv).toContain('openHtmlVideoPreview: (id: string, sceneIndex?: number) => Promise<void>');
+    expect(viteEnv).toContain('getHtmlVideoMediaUrl: (id: string, path: string) => Promise<string>');
     expect(preload).not.toContain('eval_in_window');
     expect(preload).not.toContain('capture_webview_by_label');
     expect(preload).not.toContain('executeJavaScript');
@@ -329,9 +343,10 @@ describe('electron ipc contract', () => {
     const regenerateHandler = main.slice(main.indexOf("trustedHandle('task:regenerate-image'"), main.indexOf("trustedHandle('task:get-artifacts'"));
 
     expect(main).toContain('markSceneImageForRegeneration');
+    expect(regenerateHandler).toContain('runLatestTaskControlRequest(latestTaskControlRequests, input.id, async (isCurrent) => {');
     expect(regenerateHandler).toContain('retryFromStep: 4');
     expect(regenerateHandler).toContain('failedStep: 4');
-    expect(regenerateHandler).toContain('resumeTaskRun(database, updatedTask)');
+    expect(regenerateHandler).toContain('resumeLatestTaskRun(database, task.id, isCurrent)');
     expect(regenerateHandler).not.toContain('runTask(');
     expect(preload).toContain('regenerateTaskImage');
     expect(preload).toContain('task:regenerate-image');
@@ -345,9 +360,10 @@ describe('electron ipc contract', () => {
     const regenerateHandler = main.slice(main.indexOf("trustedHandle('task:regenerate-narration'"), main.indexOf("trustedHandle('task:get-artifacts'"));
 
     expect(main).toContain('markSceneNarrationForRegeneration');
+    expect(regenerateHandler).toContain('runLatestTaskControlRequest(latestTaskControlRequests, input.id, async (isCurrent) => {');
     expect(regenerateHandler).toContain('retryFromStep: 5');
     expect(regenerateHandler).toContain('failedStep: 5');
-    expect(regenerateHandler).toContain('resumeTaskRun(database, updatedTask)');
+    expect(regenerateHandler).toContain('resumeLatestTaskRun(database, task.id, isCurrent)');
     expect(regenerateHandler).not.toContain('runTask(');
     expect(preload).toContain('regenerateTaskNarration');
     expect(preload).toContain('task:regenerate-narration');
@@ -377,9 +393,10 @@ describe('electron ipc contract', () => {
     const rerunHandler = main.slice(main.indexOf("trustedHandle('task:rerun-step'"), main.indexOf("trustedHandle('task:get-artifacts'"));
 
     expect(main).toContain('markTaskStepForRerun');
+    expect(rerunHandler).toContain('runLatestTaskControlRequest(latestTaskControlRequests, input.id, async (isCurrent) => {');
     expect(rerunHandler).toContain('retryFromStep: step');
     expect(rerunHandler).toContain('failedStep: step');
-    expect(rerunHandler).toContain('resumeTaskRun(database, updatedTask)');
+    expect(rerunHandler).toContain('resumeLatestTaskRun(database, task.id, isCurrent)');
     expect(rerunHandler).not.toContain('runTask(');
     expect(preload).toContain('rerunTaskStep');
     expect(preload).toContain('task:rerun-step');

@@ -454,6 +454,12 @@ describe('product shell ui', () => {
 
     expect(main).not.toContain('HTML Animation');
     expect(main).not.toContain('Generate HTML Video');
+    expect(main).toContain('safeParseHtmlVideoPipelineData(activeTask?.pipelineData, activeTask?.inputText)');
+    expect(main).toContain('pipelineParse.error');
+    expect(main).toContain('HTML 视频任务数据损坏');
+    expect(main).toContain('ttsProvider: normalizeRuntimeTtsProvider(state.config.tts.provider)');
+    expect(main).toContain('voiceId: defaultTaskSpeakerForProvider(state.config.tts.provider, state.config)');
+    expect(main).toContain('ttsSpeed: 1');
     expect(main).not.toContain("taskKind: 'html-video'");
     expect(types).toContain("export type TaskKind = 'story' | 'music-mv'");
     expect(types).not.toContain("export type TaskKind = 'story' | 'music-mv' | 'html-video'");
@@ -464,10 +470,119 @@ describe('product shell ui', () => {
     expect(preload).toContain('createHtmlVideoTask');
     expect(electronMain).toContain("trustedHandle('html-video:create-task'");
     const htmlCreateSection = electronMain.slice(electronMain.indexOf("trustedHandle('html-video:create-task'"), electronMain.indexOf("trustedHandle('task:create-and-run'"));
-    expect(htmlCreateSection).not.toContain('startTaskRun');
+    expect(htmlCreateSection).toContain('startTaskRun');
+    for (const symbol of [
+      'openHtmlVideoPreview',
+      'getHtmlVideoMediaUrl',
+      'updateTaskStatus',
+      'retryTask',
+      '<video',
+      'pipelineData.steps',
+      '暂停',
+      '取消',
+      '继续',
+      '重试',
+      '打开目录',
+    ]) {
+      expect(main).toContain(symbol);
+    }
     expect(css).toContain('.hv-layout');
     expect(css).toContain('.hv-rail');
     expect(css).toContain('.hv-tab');
+    expect(css).toContain('.hv-media-grid');
+    expect(css).toContain('.hv-run-controls');
+  });
+
+  it('keeps HTML video task, step, and pipeline diagnostics visible without expanding long errors', async () => {
+    const main = await readFile(new URL('../src/main.tsx', import.meta.url), 'utf8');
+    const css = await readFile(new URL('../src/styles.css', import.meta.url), 'utf8');
+    const page = main.slice(main.indexOf('function HtmlVideoPage'), main.indexOf('function QueuePage'));
+
+    expect(page).toContain('classifyHtmlVideoTaskMessage(activeTask.status, activeTask.errorMessage)');
+    expect(page).toMatch(/taskMessageKind === 'error'[\s\S]*?className="hv-workspace-error"\s+role="alert"\s+aria-live="assertive"[\s\S]*?<ErrorSummaryButton/);
+    expect(page).toMatch(/taskMessageKind === 'status'[\s\S]*?className="hv-workspace-status"\s+role="status"\s+aria-live="polite"/);
+    expect(page).toContain('fullMessage={activeTask.errorMessage}');
+    expect(page).toMatch(/stepState\.error\s*\?\s*\([\s\S]*?className="hv-step-error"\s+role="alert"\s+aria-live="assertive"[\s\S]*?<ErrorSummaryButton/);
+    expect(page).toContain('pipelineData.warnings.length');
+    expect(page).toContain('className="hv-warning-list" role="status" aria-live="polite"');
+    expect(css).toContain('.hv-workspace-error');
+    expect(css).toContain('.hv-workspace-status');
+    expect(css).toContain('.hv-warning-list');
+    expect(css).toMatch(/\.hv-workspace-error[\s\S]*?max-width:\s*100%/);
+    expect(css).toMatch(/\.hv-warning-list[\s\S]*?overflow-wrap:\s*anywhere/);
+  });
+
+  it('loads HTML video media incrementally from stable primitive effect dependencies', async () => {
+    const main = await readFile(new URL('../src/main.tsx', import.meta.url), 'utf8');
+    const page = main.slice(main.indexOf('function HtmlVideoPage'), main.indexOf('function QueuePage'));
+    const mediaEffect = page.slice(page.indexOf('useEffect(() => {\n    const generation ='), page.indexOf('async function createHtmlVideoTask'));
+
+    expect(page).toContain("const mediaTaskId = activeTask?.id ?? '';");
+    expect(page).toContain('const mediaPathKey = JSON.stringify(mediaPaths);');
+    expect(page).toContain('createHtmlVideoMediaCache()');
+    expect(page).toContain('syncHtmlVideoMediaCache(mediaCacheRef.current, mediaTaskId, paths)');
+    expect(page).toMatch(/loadHtmlVideoMedia\(\s*cache,\s*mediaTaskId,\s*path,/);
+    expect(mediaEffect).toContain('Promise.all');
+    expect(mediaEffect).toContain('mediaRequestGeneration.current');
+    expect(mediaEffect).toMatch(/disposed\s*\|\|\s*generation\s*!==\s*mediaRequestGeneration\.current/);
+    expect(mediaEffect).toContain('setMediaState((current) =>');
+    expect(mediaEffect).toMatch(/\}, \[api, isBrowserPreview, mediaPathKey, mediaRetryRevision, mediaTaskId\]\);/);
+    expect(mediaEffect).not.toMatch(/\}, \[[^\]]*activeTask[^\]]*\]\);/);
+    expect(page).toContain('setMediaRetryRevision((revision) => revision + 1)');
+    expect(page).toContain('<RotateCcw size={14} />重新加载媒体');
+  });
+
+  it('labels paused checkpoints and opens the first composition that has an HTML preview', async () => {
+    const main = await readFile(new URL('../src/main.tsx', import.meta.url), 'utf8');
+    const page = main.slice(main.indexOf('function HtmlVideoPage'), main.indexOf('function QueuePage'));
+
+    expect(page).toContain('pipelineData.compositions.find((composition) => Boolean(composition.htmlPath))');
+    expect(page).toContain('openPreview(firstPreviewComposition.index)');
+    expect(page).not.toContain('onClick={() => openPreview()}');
+    expect(page).toContain('htmlVideoStepStatusLabel(pipelineData.steps.render.status, activeTask?.status)');
+    expect(page).toContain('htmlVideoStepStatusLabel(stepState.status, activeTask?.status)');
+    expect(page).toMatch(/status === 'cancelled' && taskStatus === 'paused'[\s\S]*?'已暂停'/);
+  });
+
+  it('exposes accessible HTML video tabs and media with the task output ratio', async () => {
+    const main = await readFile(new URL('../src/main.tsx', import.meta.url), 'utf8');
+    const css = await readFile(new URL('../src/styles.css', import.meta.url), 'utf8');
+    const page = main.slice(main.indexOf('function HtmlVideoPage'), main.indexOf('function QueuePage'));
+    const outputRule = css.match(/\.hv-video-output video,\s*\.hv-video-placeholder\s*\{[\s\S]*?\}/)?.[0] ?? '';
+
+    expect(page).toContain('role="tablist" aria-label="HTML 动画视频内容"');
+    for (const attribute of ['role="tab"', 'aria-selected={activeTab === tab.key}', 'tabIndex={activeTab === tab.key ? 0 : -1}', 'aria-controls="html-video-panel"']) {
+      expect(page).toContain(attribute);
+    }
+    expect(page).toContain('role="tabpanel"');
+    expect(countOccurrences(page, 'id="html-video-panel"')).toBe(1);
+    expect(page).toContain('aria-labelledby={`html-video-tab-${activeTab}`}');
+    expect(page).not.toContain('html-video-panel-${tab.key}');
+    expect(page).not.toContain('html-video-panel-${activeTab}');
+    expect(page).toContain('aria-label={`场景 ${clip.sceneIndex} 配音`}');
+    expect(page).toContain('aria-label={`${task.title || \'HTML 动画视频\'}成片预览`}');
+    expect(page).toContain('className="hv-media-error" role="alert"');
+    expect(page).toContain('fitHtmlVideoOutputSize(Number.POSITIVE_INFINITY, 520, data.config.ratio || task.ratio)');
+    expect(page).toContain('maxWidth: outputSize.width');
+    expect(page).toContain('maxHeight: outputSize.height');
+    expect(page).toContain('aspectRatio: String(outputSize.aspectRatio)');
+    expect(countOccurrences(page, 'style={outputStyle}')).toBe(2);
+    expect(outputRule).toContain('justify-self: center;');
+    expect(outputRule).not.toContain('aspect-ratio:');
+    expect(outputRule).not.toContain('max-height: 520px;');
+    expect(css).toMatch(/\.hv-media-error[\s\S]*?color:\s*var\(--danger\)/);
+  });
+
+  it('moves focus with all standard HTML video tab navigation keys', async () => {
+    const main = await readFile(new URL('../src/main.tsx', import.meta.url), 'utf8');
+    const page = main.slice(main.indexOf('function HtmlVideoPage'), main.indexOf('function HtmlVideoTabPanel'));
+
+    expect(page).toContain('nextHtmlVideoTabKey(tabKey, event.key)');
+    expect(page).toContain('onKeyDown={(event) => handleHtmlVideoTabKeyDown(event, tab.key)}');
+    expect(page).toContain('event.preventDefault();');
+    expect(page).toContain('setActiveTab(nextTab);');
+    expect(page).toContain('htmlVideoTabRefs.current[nextTab]?.focus();');
+    expect(page).toContain('htmlVideoTabRefs.current[tab.key] = element;');
   });
 
   it('wires the viral analyzer page into the shell with report and selectable follow-up controls', async () => {

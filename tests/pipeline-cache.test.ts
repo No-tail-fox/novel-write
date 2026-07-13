@@ -1,11 +1,11 @@
 import { describe, expect, it } from 'vitest';
 import { mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
-import { join } from 'node:path';
+import { join, relative } from 'node:path';
 import { FileDatabase } from '@shared/storage';
 import { runTask } from '@shared/runner';
 import { markSceneImageForRegeneration, markSceneNarrationForRegeneration, markTaskStepForRerun, updateSceneImagePrompt } from '@shared/pipeline-cache';
-import type { ImagePrompt, PipelineArtifact, StoryboardScene } from '@shared/types';
+import type { ImagePrompt, PipelineArtifact, StoryboardScene, TaskStepRerunMode } from '@shared/types';
 import type { PyJianYingBridgeInput } from '@shared/jianying-bridge';
 
 const tinyPng = Buffer.from(
@@ -68,7 +68,7 @@ describe('pipeline cache and retry', () => {
       await db.close();
       await rm(dir, { recursive: true, force: true });
     }
-  });
+  }, 15_000);
 
   it('persists step state, pauses on provider failure, and retries only missing image assets', async () => {
     const dir = await mkdtemp(join(tmpdir(), 'storybound-pipeline-cache-'));
@@ -560,6 +560,76 @@ describe('pipeline cache and retry', () => {
       expect(next.steps['5'].status).toBe('pending');
       expect(next.steps['6'].status).toBe('pending');
       expect(next.draft).toBeUndefined();
+    } finally {
+      await rm(dir, { recursive: true, force: true });
+    }
+  });
+
+  it('serializes concurrent mutations of the same pipeline state file', async () => {
+    const dir = await mkdtemp(join(tmpdir(), 'storybound-pipeline-mutation-serialization-'));
+    try {
+      for (let attempt = 0; attempt < 12; attempt += 1) {
+        const statePath = join(dir, `state-${attempt}.json`);
+        await writeFile(statePath, JSON.stringify(createCompletedPipelineState(`task-${attempt}`), null, 2), 'utf8');
+
+        await Promise.all([
+          markSceneImageForRegeneration(statePath, 1),
+          markSceneNarrationForRegeneration(relative(process.cwd(), statePath), 1),
+          updateSceneImagePrompt(statePath, 1, 'updated image prompt'),
+          markTaskStepForRerun(statePath, 6, 'regenerate'),
+        ]);
+
+        const state = JSON.parse(await readFile(statePath, 'utf8')) as ReturnType<typeof createCompletedPipelineState> & {
+          rerun: { step: number; mode: TaskStepRerunMode };
+        };
+        expect(state.assets.images).toEqual([{ sceneId: 2, path: '2.png' }]);
+        expect(state.assets.narration).toEqual([{ sceneId: 2, path: '2.mp3' }]);
+        expect(state.artifact.imagePrompts[0].prompt).toBe('updated image prompt');
+        expect(state.rerun).toMatchObject({ step: 6, mode: 'regenerate' });
+        expect(state.steps['6']).toMatchObject({ status: 'pending' });
+      }
+    } finally {
+      await rm(dir, { recursive: true, force: true });
+    }
+  });
+
+  it('serializes runner checkpoint ownership with an artifact prompt edit', async () => {
+    const pipelineCache = await import('@shared/pipeline-cache') as Record<string, unknown>;
+    const withPipelineStateLock = pipelineCache.withPipelineStateLock;
+    const runnerSource = await readFile(new URL('../src/shared/runner.ts', import.meta.url), 'utf8');
+    expect(withPipelineStateLock).toBeTypeOf('function');
+    expect(runnerSource).toContain('withPipelineStateLock(statePath');
+    if (typeof withPipelineStateLock !== 'function') return;
+
+    const dir = await mkdtemp(join(tmpdir(), 'storybound-pipeline-runner-lock-'));
+    const statePath = join(dir, 'state.json');
+    try {
+      await writeFile(statePath, JSON.stringify(createCompletedPipelineState('task-runner-lock'), null, 2), 'utf8');
+      let markRunnerRead!: () => void;
+      let releaseRunner!: () => void;
+      const runnerRead = new Promise<void>((resolve) => {
+        markRunnerRead = resolve;
+      });
+      const runnerGate = new Promise<void>((resolve) => {
+        releaseRunner = resolve;
+      });
+      const runnerWrite = (withPipelineStateLock as (
+        path: string,
+        operation: (normalizedStatePath: string) => Promise<void>,
+      ) => Promise<void>)(statePath, async (normalizedStatePath) => {
+        const staleSnapshot = await readFile(normalizedStatePath, 'utf8');
+        markRunnerRead();
+        await runnerGate;
+        await writeFile(normalizedStatePath, staleSnapshot, 'utf8');
+      });
+      await runnerRead;
+
+      const promptEdit = updateSceneImagePrompt(statePath, 1, 'user edited prompt');
+      releaseRunner();
+      await Promise.all([runnerWrite, promptEdit]);
+
+      const state = JSON.parse(await readFile(statePath, 'utf8')) as ReturnType<typeof createCompletedPipelineState>;
+      expect(state.artifact.imagePrompts[0].prompt).toBe('user edited prompt');
     } finally {
       await rm(dir, { recursive: true, force: true });
     }

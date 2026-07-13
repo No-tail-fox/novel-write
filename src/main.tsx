@@ -27,6 +27,7 @@ import {
   Minus,
   Music,
   Palette,
+  Pause,
   Pencil,
   Play,
   Plus,
@@ -61,6 +62,7 @@ import type {
   ImageLabRecord,
   ImageLabSmartMode,
   BgmItem,
+  HtmlVideoStepStatus,
   HtmlVideoTabKey,
   JianyingEffectCatalog,
   PausePoint,
@@ -163,7 +165,8 @@ import {
 } from './shared/prompt-templates';
 import { createViralTemplateDrafts } from './shared/viral-template-extraction';
 import { defaultPodcastSpeakersForProvider, defaultTaskSpeakerForProvider, normalizeRuntimeTtsProvider, taskSpeakerLabel, ttsVoiceOptionsForProvider, type RuntimeTtsProvider } from './shared/tts-voices';
-import { createHtmlVideoTaskInput, htmlVideoSteps, htmlVideoTabs, isHtmlVideoTask, parseHtmlVideoPipelineData, tabForHtmlVideoStep } from './shared/html-video-workflow';
+import { classifyHtmlVideoTaskMessage, createHtmlVideoTaskInput, fitHtmlVideoOutputSize, htmlVideoSteps, htmlVideoTabs, isHtmlVideoTask, nextHtmlVideoTabKey, safeParseHtmlVideoPipelineData, tabForHtmlVideoStep } from './shared/html-video-workflow';
+import { createHtmlVideoMediaCache, loadHtmlVideoMedia, syncHtmlVideoMediaCache } from './shared/html-video-media';
 import { useAsyncAction, type AsyncActionFeedback } from './ui/async-action';
 import './styles.css';
 
@@ -679,7 +682,7 @@ function makeFallbackApi(setState: (state: AppState) => void): StoryDreamApi {
         artifactStatePath: '',
         materialSource: input.materialSource ?? 'paste',
         taskType: 'html-video',
-        pipelineStep: input.pipelineStep ?? 'plan',
+        pipelineStep: input.pipelineStep ?? 'rewrite',
         pipelineData: input.pipelineData ?? '{}',
         coverImageMode: input.coverImageMode ?? 'titled',
         coverTemplateId: input.coverTemplateId ?? 'cinematic-poster',
@@ -688,6 +691,12 @@ function makeFallbackApi(setState: (state: AppState) => void): StoryDreamApi {
         { taskId: task.id, type: 'pipeline_ready', step: 0, agent: 'HTML Video', tool: null, detail: 'HTML 动画视频任务已创建，等待改写与分句。', dataJson: task.pipelineData ?? null, ts: Date.now() },
       ];
       return persist({ ...state, tasks: [task, ...state.tasks], events: [...state.events, ...events] });
+    },
+    async openHtmlVideoPreview() {
+      throw new Error('浏览器预览仅创建任务快照，未执行特权 HTML 渲染。请在 Electron 桌面端打开预览。');
+    },
+    async getHtmlVideoMediaUrl() {
+      throw new Error('浏览器预览仅创建任务快照，未执行特权 HTML 渲染。请在 Electron 桌面端读取媒体。');
     },
     async createAndRunTask(input: CreateTaskInput) {
       const browserPipelineError =
@@ -3116,15 +3125,52 @@ function HtmlVideoPage({
   const [bgmId, setBgmId] = useState(resolveDefaultBgmId(state.config));
   const [activeTaskId, setActiveTaskId] = useState<string>('');
   const [activeTab, setActiveTab] = useState<HtmlVideoTabKey>('text');
+  const [mediaRetryRevision, setMediaRetryRevision] = useState(0);
   const [running, setRunning] = useState(false);
   const [message, setMessage] = useState('');
   const htmlVideoAction = useAsyncAction();
   const bgmOptions = validBgmItems(state.config);
   const htmlTasks = state.tasks.filter(isHtmlVideoTask);
   const activeTask = htmlTasks.find((task) => task.id === activeTaskId) ?? htmlTasks[0] ?? null;
-  const pipelineData = parseHtmlVideoPipelineData(activeTask?.pipelineData);
-  const activeStep = activeTask?.pipelineStep ?? 'plan';
+  const pipelineParse = useMemo(
+    () => safeParseHtmlVideoPipelineData(activeTask?.pipelineData, activeTask?.inputText),
+    [activeTask?.inputText, activeTask?.pipelineData],
+  );
+  const pipelineData = pipelineParse.data;
+  const activeStep = pipelineData.current;
   const derivedTab = tabForHtmlVideoStep(activeStep);
+  const firstPreviewComposition = pipelineData.compositions.find((composition) => Boolean(composition.htmlPath));
+  const mediaTaskId = activeTask?.id ?? '';
+  const mediaPaths = useMemo(() => [...new Set([
+    ...pipelineData.assets.map((asset) => asset.src),
+    ...pipelineData.voices.map((voice) => voice.src),
+    ...pipelineData.compositions.flatMap((composition) => [
+      composition.thumbnailPath,
+      composition.audio.src,
+      composition.background.src,
+    ]),
+    pipelineData.output?.path,
+  ].filter((path): path is string => Boolean(path)))], [pipelineData]);
+  const mediaPathKey = JSON.stringify(mediaPaths);
+  const mediaCacheRef = useRef(createHtmlVideoMediaCache());
+  const mediaRequestGeneration = useRef(0);
+  const htmlVideoTabRefs = useRef<Partial<Record<HtmlVideoTabKey, HTMLButtonElement | null>>>({});
+  const [mediaState, setMediaState] = useState<{ taskId: string; urls: Record<string, string> }>({ taskId: '', urls: {} });
+  const [mediaErrorState, setMediaErrorState] = useState<{ taskId: string; pathKey: string; message: string }>({
+    taskId: '',
+    pathKey: '',
+    message: '',
+  });
+  const mediaUrls: Record<string, string> = !isBrowserPreview && mediaState.taskId === mediaTaskId
+    ? Object.fromEntries(mediaPaths.filter((path) => mediaState.urls[path]).map((path) => [path, mediaState.urls[path]]))
+    : {};
+  const mediaError = mediaErrorState.taskId === mediaTaskId && mediaErrorState.pathKey === mediaPathKey
+    ? mediaErrorState.message
+    : '';
+  const taskBusy = running || htmlVideoAction.busy;
+  const taskMessageKind = activeTask
+    ? classifyHtmlVideoTaskMessage(activeTask.status, activeTask.errorMessage)
+    : null;
 
   useEffect(() => {
     if (!activeTaskId && htmlTasks[0]) {
@@ -3135,6 +3181,62 @@ function HtmlVideoPage({
   useEffect(() => {
     setActiveTab(derivedTab);
   }, [derivedTab, activeTask?.id]);
+
+  useEffect(() => {
+    const generation = ++mediaRequestGeneration.current;
+    let disposed = false;
+    const paths = JSON.parse(mediaPathKey) as string[];
+    if (!mediaTaskId || isBrowserPreview || paths.length === 0) {
+      syncHtmlVideoMediaCache(mediaCacheRef.current, mediaTaskId, []);
+      setMediaState((current) => current.taskId === mediaTaskId && Object.keys(current.urls).length === 0
+        ? current
+        : { taskId: mediaTaskId, urls: {} });
+      setMediaErrorState({ taskId: mediaTaskId, pathKey: mediaPathKey, message: '' });
+      return () => {
+        disposed = true;
+      };
+    }
+
+    const cache = syncHtmlVideoMediaCache(mediaCacheRef.current, mediaTaskId, paths);
+    const retainedUrls = Object.fromEntries(paths.flatMap((path) => {
+      const url = cache.urls.get(path);
+      return url ? [[path, url]] : [];
+    }));
+    const pathRequests = paths.map(async (path) => {
+      try {
+        const url = await loadHtmlVideoMedia(
+          cache,
+          mediaTaskId,
+          path,
+          (taskId, mediaPath) => api.getHtmlVideoMediaUrl(taskId, mediaPath),
+        );
+        return [path, url] as const;
+      } catch {
+        return [path, null] as const;
+      }
+    });
+    setMediaState((current) => current.taskId === mediaTaskId && current.urls === retainedUrls
+      ? current
+      : { taskId: mediaTaskId, urls: retainedUrls });
+    setMediaErrorState({ taskId: mediaTaskId, pathKey: mediaPathKey, message: '' });
+
+    void Promise.all(pathRequests).then((entries) => {
+      if (disposed || generation !== mediaRequestGeneration.current) return;
+      const availableUrls = Object.fromEntries(entries.flatMap(([path, url]) => url ? [[path, url]] : []));
+      setMediaState((current) => current.taskId === mediaTaskId
+        ? { taskId: mediaTaskId, urls: { ...current.urls, ...availableUrls } }
+        : current);
+      setMediaErrorState({
+        taskId: mediaTaskId,
+        pathKey: mediaPathKey,
+        message: entries.every(([, url]) => Boolean(url)) ? '' : '部分媒体文件不可用，可重试任务或检查任务目录。',
+      });
+    });
+
+    return () => {
+      disposed = true;
+    };
+  }, [api, isBrowserPreview, mediaPathKey, mediaRetryRevision, mediaTaskId]);
 
   async function createHtmlVideoTask() {
     if (!copy.trim()) {
@@ -3152,15 +3254,60 @@ function HtmlVideoPage({
           bgmId,
           maxScenes,
           foreground,
+          ttsProvider: normalizeRuntimeTtsProvider(state.config.tts.provider),
+          voiceId: defaultTaskSpeakerForProvider(state.config.tts.provider, state.config),
+          ttsSpeed: 1,
         }));
         applyState(next);
         const createdTask = next.tasks.find(isHtmlVideoTask);
         if (createdTask) setActiveTaskId(createdTask.id);
-        setMessage(isBrowserPreview ? '已在浏览器预览中创建 HTML 动画视频任务快照。' : 'HTML 动画视频任务已创建，等待流水线推进。');
+        setMessage(isBrowserPreview ? '已创建浏览器预览快照，未执行特权渲染。' : 'HTML 动画视频任务已创建并开始生成。');
       } finally {
         setRunning(false);
       }
     }, { onError: (error) => setMessage(error.message) });
+  }
+
+  async function setTaskStatus(status: Extract<TaskStatus, 'paused' | 'cancelled' | 'running'>) {
+    if (!activeTask) return;
+    await htmlVideoAction.run(async () => {
+      const next = await api.updateTaskStatus(activeTask.id, status);
+      applyState(next);
+      setMessage(status === 'paused' ? '任务已暂停。' : status === 'cancelled' ? '任务已取消。' : '任务已继续。');
+    }, { onError: (error) => setMessage(error.message) });
+  }
+
+  async function retryTask() {
+    if (!activeTask) return;
+    await htmlVideoAction.run(async () => {
+      const next = await api.retryTask(activeTask.id);
+      applyState(next);
+      setMessage('任务已从断点重试。');
+    }, { onError: (error) => setMessage(error.message) });
+  }
+
+  async function openPreview(sceneIndex?: number) {
+    if (!activeTask) return;
+    await htmlVideoAction.run(
+      () => api.openHtmlVideoPreview(activeTask.id, sceneIndex),
+      { onError: (error) => setMessage(error.message) },
+    );
+  }
+
+  async function openOutputDirectory() {
+    if (!activeTask?.outputDir) return;
+    await htmlVideoAction.run(
+      () => api.openPath(activeTask.outputDir),
+      { onError: (error) => setMessage(error.message) },
+    );
+  }
+
+  function handleHtmlVideoTabKeyDown(event: React.KeyboardEvent<HTMLButtonElement>, tabKey: HtmlVideoTabKey) {
+    const nextTab = nextHtmlVideoTabKey(tabKey, event.key);
+    if (!nextTab) return;
+    event.preventDefault();
+    setActiveTab(nextTab);
+    htmlVideoTabRefs.current[nextTab]?.focus();
   }
 
   return (
@@ -3171,9 +3318,9 @@ function HtmlVideoPage({
             <h2>HTML 动画视频</h2>
             <span>按 Storybound 的独立 HTML 渲染流水线创建任务，不进入普通成片链路</span>
           </div>
-          <button className="primary-action slim" onClick={createHtmlVideoTask} disabled={running || !copy.trim()}>
+          <button className="primary-action slim" onClick={createHtmlVideoTask} disabled={taskBusy || !copy.trim()}>
             {running ? <Loader2 className="spin" size={15} /> : <Play size={15} />}
-            生成动画视频
+            {isBrowserPreview ? '创建预览快照' : '创建并生成'}
           </button>
         </div>
 
@@ -3197,42 +3344,107 @@ function HtmlVideoPage({
           ))}
         </div>
 
+        {isBrowserPreview ? <span className="local-note">浏览器模式只保存预览快照，不生成本地媒体或视频。</span> : null}
         {message ? <span className="local-note">{message}</span> : null}
         <InlineActionFeedback feedback={htmlVideoAction.feedback} />
       </section>
 
       <section className="hv-workspace hv-card">
         <div className="panel-title-row">
-          <div>
+          <div className="hv-workspace-heading">
             <h3>{activeTask?.title ?? '等待创建 HTML 动画视频任务'}</h3>
             <span>{activeTask ? `HTML 动画视频 · 当前阶段：${htmlVideoPipelineStepLabel(activeStep)}` : '创建后会在这里显示文案、素材、配音、动画预览、封面和出片状态'}</span>
+            {pipelineParse.error && activeTask ? (
+              <div className="hv-workspace-error" role="alert" aria-live="assertive">
+                <ErrorSummaryButton compact title="HTML 视频任务数据损坏" fullMessage={pipelineParse.error} />
+              </div>
+            ) : taskMessageKind === 'error' && activeTask ? (
+              <div className="hv-workspace-error" role="alert" aria-live="assertive">
+                <ErrorSummaryButton compact title={`${activeTask.title || 'HTML 动画视频任务'}错误`} fullMessage={activeTask.errorMessage} />
+              </div>
+            ) : taskMessageKind === 'status' && activeTask ? (
+              <div className="hv-workspace-status" role="status" aria-live="polite">
+                {activeTask.errorMessage}
+              </div>
+            ) : null}
           </div>
-          {htmlTasks.length ? (
-            <select value={activeTask?.id ?? ''} onChange={(event) => setActiveTaskId(event.target.value)} aria-label="切换 HTML 动画视频任务">
-              {htmlTasks.map((task) => (
-                <option key={task.id} value={task.id}>{task.title || task.id}</option>
-              ))}
-            </select>
-          ) : null}
+          <div className="hv-workspace-actions">
+            {htmlTasks.length ? (
+              <select value={activeTask?.id ?? ''} onChange={(event) => setActiveTaskId(event.target.value)} aria-label="切换 HTML 动画视频任务">
+                {htmlTasks.map((task) => (
+                  <option key={task.id} value={task.id}>{task.title || task.id}</option>
+                ))}
+              </select>
+            ) : null}
+            {activeTask ? (
+              <div className="hv-run-controls" aria-label="HTML 动画视频任务控制">
+                {activeTask.status === 'running' || activeTask.status === 'pending' ? (
+                  <button className="mini-button" disabled={taskBusy || isBrowserPreview} onClick={() => setTaskStatus('paused')}>
+                    <Pause size={14} />暂停
+                  </button>
+                ) : null}
+                {['running', 'pending', 'paused'].includes(activeTask.status) ? (
+                  <button className="mini-button" disabled={taskBusy || isBrowserPreview} onClick={() => setTaskStatus('cancelled')}>
+                    <XCircle size={14} />取消
+                  </button>
+                ) : null}
+                {activeTask.status === 'paused' ? (
+                  <button className="mini-button" disabled={taskBusy || isBrowserPreview} onClick={() => setTaskStatus('running')}>
+                    <Play size={14} />继续
+                  </button>
+                ) : null}
+                {pipelineParse.error || activeTask.status === 'failed' || activeTask.status === 'cancelled' ? (
+                  <button className="mini-button" disabled={taskBusy || isBrowserPreview} onClick={retryTask}>
+                    <RotateCcw size={14} />重试
+                  </button>
+                ) : null}
+                {firstPreviewComposition ? (
+                  <button className="mini-button" disabled={taskBusy || isBrowserPreview} onClick={() => openPreview(firstPreviewComposition.index)}>
+                    <Eye size={14} />预览
+                  </button>
+                ) : null}
+                {activeTask.outputDir ? (
+                  <button className="mini-button" disabled={taskBusy || isBrowserPreview} onClick={openOutputDirectory}>
+                    <FolderOpen size={14} />打开目录
+                  </button>
+                ) : null}
+              </div>
+            ) : null}
+          </div>
         </div>
 
+        {pipelineData.warnings.length ? (
+          <div className="hv-warning-list" role="status" aria-live="polite">
+            <strong>流水线提示</strong>
+            <ul>
+              {pipelineData.warnings.map((warning, index) => <li key={`${index}-${warning}`}>{warning}</li>)}
+            </ul>
+          </div>
+        ) : null}
+
         <div className="task-metrics">
-          <div><small>计划场景</small><strong>{pipelineData.scenesPlanned}</strong></div>
-          <div><small>完成场景</small><strong>{pipelineData.scenesCompleted}</strong></div>
-          <div><small>画布</small><strong>{pipelineData._cfg?.ratio ?? ratio}</strong></div>
-          <div><small>逐帧截图</small><strong>{pipelineData.htmlPaths.length}</strong></div>
+          <div><small>计划场景</small><strong>{pipelineData.scenes.length}</strong></div>
+          <div><small>完成预览</small><strong>{pipelineData.compositions.length}</strong></div>
+          <div><small>画布</small><strong>{pipelineData.config.ratio ?? ratio}</strong></div>
+          <div><small>逐帧截图</small><strong>{htmlVideoStepStatusLabel(pipelineData.steps.render.status, activeTask?.status)}</strong></div>
         </div>
 
         <div className="hv-main">
           <aside className="hv-rail" aria-label="HTML 动画视频流水线步骤">
             {htmlVideoSteps.map((step, index) => {
-              const status = htmlVideoStepState(activeStep, index);
+              const stepState = pipelineData.steps[step.key];
+              const status = stepState.status;
               return (
-                <div key={step.name} className={`hv-step ${status}`}>
+                <div key={step.key} className={`hv-step ${htmlVideoStepClass(status)}`}>
                   <span>{index + 1}</span>
                   <div>
                     <strong>{step.name}</strong>
-                    <small>{step.sub}</small>
+                    <small>{step.sub} · {htmlVideoStepStatusLabel(stepState.status, activeTask?.status)}</small>
+                    {stepState.error ? (
+                      <div className="hv-step-error" role="alert" aria-live="assertive">
+                        <ErrorSummaryButton compact title={`${step.name}错误`} fullMessage={stepState.error} />
+                      </div>
+                    ) : null}
                   </div>
                 </div>
               );
@@ -3240,14 +3452,50 @@ function HtmlVideoPage({
           </aside>
 
           <div className="hv-stage">
-            <div className="hv-tabs">
+            <div className="hv-tabs" role="tablist" aria-label="HTML 动画视频内容">
               {htmlVideoTabs.map((tab) => (
-                <button key={tab.key} type="button" className={activeTab === tab.key ? 'hv-tab active' : 'hv-tab'} onClick={() => setActiveTab(tab.key)}>
+                <button
+                  key={tab.key}
+                  id={`html-video-tab-${tab.key}`}
+                  ref={(element) => {
+                    htmlVideoTabRefs.current[tab.key] = element;
+                  }}
+                  type="button"
+                  role="tab"
+                  aria-selected={activeTab === tab.key}
+                  aria-controls="html-video-panel"
+                  tabIndex={activeTab === tab.key ? 0 : -1}
+                  className={activeTab === tab.key ? 'hv-tab active' : 'hv-tab'}
+                  onClick={() => setActiveTab(tab.key)}
+                  onKeyDown={(event) => handleHtmlVideoTabKeyDown(event, tab.key)}
+                >
                   {tab.label}
                 </button>
               ))}
             </div>
-            <HtmlVideoTabPanel tab={activeTab} task={activeTask} data={pipelineData} />
+            {mediaError ? (
+              <div className="hv-media-error" role="alert">
+                <span>{mediaError}</span>
+                <button className="mini-button" type="button" onClick={() => setMediaRetryRevision((revision) => revision + 1)}>
+                  <RotateCcw size={14} />重新加载媒体
+                </button>
+              </div>
+            ) : null}
+            <div
+              id="html-video-panel"
+              role="tabpanel"
+              aria-labelledby={`html-video-tab-${activeTab}`}
+            >
+              <HtmlVideoTabPanel
+                tab={activeTab}
+                task={activeTask}
+                data={pipelineData}
+                mediaUrls={mediaUrls}
+                busy={taskBusy}
+                isBrowserPreview={isBrowserPreview}
+                openPreview={openPreview}
+              />
+            </div>
           </div>
         </div>
       </section>
@@ -3255,7 +3503,23 @@ function HtmlVideoPage({
   );
 }
 
-function HtmlVideoTabPanel({ tab, task, data }: { tab: HtmlVideoTabKey; task: Task | null; data: ReturnType<typeof parseHtmlVideoPipelineData> }) {
+function HtmlVideoTabPanel({
+  tab,
+  task,
+  data,
+  mediaUrls,
+  busy,
+  isBrowserPreview,
+  openPreview,
+}: {
+  tab: HtmlVideoTabKey;
+  task: Task | null;
+  data: ReturnType<typeof safeParseHtmlVideoPipelineData>['data'];
+  mediaUrls: Record<string, string>;
+  busy: boolean;
+  isBrowserPreview: boolean;
+  openPreview: (sceneIndex?: number) => Promise<void>;
+}) {
   if (!task) {
     return <EmptyState title="暂无 HTML 动画视频任务" />;
   }
@@ -3263,15 +3527,17 @@ function HtmlVideoTabPanel({ tab, task, data }: { tab: HtmlVideoTabKey; task: Ta
   if (tab === 'text') {
     return (
       <div className="hv-tab-content">
-        <div className="artifact-scene-list">
-          {data.scenes.map((scene) => (
-            <div key={scene.index}>
-              <strong>{scene.index}. {scene.title}</strong>
-              <p>{scene.narration}</p>
-              <small>{scene.captions.join(' / ')}</small>
-            </div>
-          ))}
-        </div>
+        {data.scenes.length ? (
+          <div className="artifact-scene-list">
+            {data.scenes.map((scene) => (
+              <div key={scene.index}>
+                <strong>{scene.index}. {scene.title}</strong>
+                <p>{scene.narration}</p>
+                <small>{scene.captions.join(' / ')}</small>
+              </div>
+            ))}
+          </div>
+        ) : <EmptyState title="等待文案改写与场景规划" />}
       </div>
     );
   }
@@ -3279,21 +3545,36 @@ function HtmlVideoTabPanel({ tab, task, data }: { tab: HtmlVideoTabKey; task: Ta
   if (tab === 'assets') {
     return (
       <div className="hv-tab-content">
-        <div className="artifact-scene-list">
-          {data.scenes.map((scene) => (
-            <div key={scene.index}>
-              <strong>场景 {scene.index} 素材提示词</strong>
-              <p>背景图：{scene.background.prompt}</p>
-              {scene.elements.map((element) => <small key={element.slot}>透明前景图：{element.prompt}</small>)}
-            </div>
-          ))}
-          {data.assetImages.map((asset) => (
-            <div key={`${asset.sceneIndex}-${asset.kind}-${asset.slot}`}>
-              <strong>已生成素材 · 场景 {asset.sceneIndex}</strong>
-              <p>{asset.kind === 'bg' ? '背景图' : '前景图'}：{asset.src}</p>
-            </div>
-          ))}
-        </div>
+        {data.assets.length ? (
+          <div className="hv-media-grid">
+            {data.assets.map((asset) => {
+              const url = mediaUrls[asset.src];
+              return (
+                <figure className="hv-media-item" key={`${asset.sceneIndex}-${asset.kind}-${asset.slot}`}>
+                  <div className="hv-media-frame">
+                    {url ? (
+                      <img src={url} alt={`场景 ${asset.sceneIndex}${asset.kind === 'bg' ? '背景图' : '前景图'}`} loading="lazy" decoding="async" />
+                    ) : <ImageIcon size={24} />}
+                  </div>
+                  <figcaption>
+                    <strong>场景 {asset.sceneIndex} · {asset.kind === 'bg' ? '背景图' : `前景图 ${asset.slot + 1}`}</strong>
+                    {asset.prompt ? <small>{trimForPreview(asset.prompt, 90)}</small> : null}
+                  </figcaption>
+                </figure>
+              );
+            })}
+          </div>
+        ) : data.scenes.length ? (
+          <div className="artifact-scene-list">
+            {data.scenes.map((scene) => (
+              <div key={scene.index}>
+                <strong>场景 {scene.index} 素材提示词</strong>
+                <p>背景图：{scene.background.prompt}</p>
+                {scene.elements.map((element) => <small key={element.slot}>透明前景图：{element.prompt}</small>)}
+              </div>
+            ))}
+          </div>
+        ) : <EmptyState title="等待素材生成" />}
       </div>
     );
   }
@@ -3303,13 +3584,17 @@ function HtmlVideoTabPanel({ tab, task, data }: { tab: HtmlVideoTabKey; task: Ta
       <div className="hv-tab-content">
         {data.voiceClips.length ? (
           <div className="artifact-scene-list">
-            {data.voiceClips.map((clip) => (
-              <div key={`${clip.sceneIndex}-${clip.src}`}>
-                <strong>场景 {clip.sceneIndex} 配音</strong>
-                <p>{clip.text ?? '旁白音频'}</p>
-                <small>{clip.durationSec.toFixed(1)} 秒 · {clip.src}</small>
-              </div>
-            ))}
+            {data.voices.map((clip) => {
+              const url = mediaUrls[clip.src];
+              return (
+                <div key={`${clip.sceneIndex}-${clip.src}`}>
+                  <strong>场景 {clip.sceneIndex} 配音</strong>
+                  <p>{clip.text ?? '旁白音频'}</p>
+                  {url ? <audio controls preload="metadata" src={url} aria-label={`场景 ${clip.sceneIndex} 配音`} /> : <small>音频文件暂不可用</small>}
+                  <small>{clip.durationSec.toFixed(1)} 秒</small>
+                </div>
+              );
+            })}
           </div>
         ) : (
           <EmptyState title="等待配音生成" />
@@ -3321,22 +3606,28 @@ function HtmlVideoTabPanel({ tab, task, data }: { tab: HtmlVideoTabKey; task: Ta
   if (tab === 'preview') {
     return (
       <div className="hv-tab-content">
-        <div className="artifact-scene-list">
-          {data.compositions.map((composition) => (
-            <div key={composition.index}>
-              <strong>动画预览 · 场景 {composition.index}</strong>
-              <p>{composition.canvas.w}x{composition.canvas.h} · {composition.durationSec.toFixed(1)} 秒 · {composition.captions.length} 条字幕</p>
-              {composition.htmlPath ? <small>{composition.htmlPath}</small> : null}
-            </div>
-          ))}
-          {data.htmlPaths.map((path, index) => (
-            <div key={path}>
-              <strong>逐帧截图源 {index + 1}</strong>
-              <p>{path}</p>
-            </div>
-          ))}
-        </div>
-        {!data.compositions.length && !data.htmlPaths.length ? <EmptyState title="等待动画预览" /> : null}
+        {data.compositions.length ? (
+          <div className="hv-media-grid">
+            {data.compositions.map((composition) => {
+              const thumbnailPath = composition.thumbnailPath ?? composition.background.src;
+              const thumbnailUrl = mediaUrls[thumbnailPath];
+              return (
+                <figure className="hv-media-item" key={composition.index}>
+                  <div className="hv-media-frame">
+                    {thumbnailUrl ? <img src={thumbnailUrl} alt={`场景 ${composition.index} 动画预览`} loading="lazy" decoding="async" /> : <Play size={24} />}
+                  </div>
+                  <figcaption>
+                    <strong>动画预览 · 场景 {composition.index}</strong>
+                    <small>{composition.canvas.w}x{composition.canvas.h} · {composition.durationSec.toFixed(1)} 秒 · {composition.captions.length} 条字幕</small>
+                    <button className="mini-button" disabled={busy || isBrowserPreview || !composition.htmlPath} onClick={() => openPreview(composition.index)}>
+                      <Eye size={14} />打开预览
+                    </button>
+                  </figcaption>
+                </figure>
+              );
+            })}
+          </div>
+        ) : <EmptyState title="等待动画预览" />}
       </div>
     );
   }
@@ -3344,12 +3635,12 @@ function HtmlVideoTabPanel({ tab, task, data }: { tab: HtmlVideoTabKey; task: Ta
   if (tab === 'cover') {
     return (
       <div className="hv-tab-content">
-        {data.cover ? (
+        {data.output?.cover ? (
           <div className="artifact-scene-list">
             <div>
-              <strong>{data.cover.title}</strong>
-              <p>{data.cover.summary}</p>
-              <small>{data.cover.subtitle.join(' / ')}</small>
+              <strong>{data.output.cover.title}</strong>
+              <p>{data.output.cover.summary}</p>
+              <small>{data.output.cover.subtitle.join(' / ')}</small>
             </div>
           </div>
         ) : (
@@ -3359,34 +3650,79 @@ function HtmlVideoTabPanel({ tab, task, data }: { tab: HtmlVideoTabKey; task: Ta
     );
   }
 
+  const outputUrl = data.output ? mediaUrls[data.output.path] : '';
+  const outputSize = fitHtmlVideoOutputSize(Number.POSITIVE_INFINITY, 520, data.config.ratio || task.ratio);
+  const outputStyle: React.CSSProperties = {
+    width: '100%',
+    maxWidth: outputSize.width,
+    maxHeight: outputSize.height,
+    aspectRatio: String(outputSize.aspectRatio),
+  };
   return (
     <div className="hv-tab-content">
       <div className="task-metrics">
-        <div><small>转场</small><strong>{data._cfg?.transitionType ?? 'fade'}</strong></div>
-        <div><small>背景音乐</small><strong>{data._cfg?.bgmId || '无'}</strong></div>
-        <div><small>封面比例</small><strong>{data._cfg?.coverRatio ?? '3:4'}</strong></div>
+        <div><small>转场</small><strong>{data.config.transitionType ?? 'fade'}</strong></div>
+        <div><small>背景音乐</small><strong>{data.config.bgmId || '无'}</strong></div>
+        <div><small>封面比例</small><strong>{data.config.coverRatio ?? '3:4'}</strong></div>
       </div>
-      <EmptyState title="等待出片" />
+      {data.output ? (
+        <div className="hv-video-output">
+          {outputUrl ? (
+            <video
+              controls
+              preload="metadata"
+              src={outputUrl}
+              aria-label={`${task.title || 'HTML 动画视频'}成片预览`}
+              style={outputStyle}
+            />
+          ) : (
+            <div className="hv-video-placeholder" style={outputStyle}>
+              <Play size={28} />
+              <span>视频文件暂不可用</span>
+            </div>
+          )}
+          <div className="hv-output-meta">
+            <strong>{task.title}</strong>
+            <small>{formatFileSize(data.output.sizeBytes)}{data.output.durationSec ? ` · ${data.output.durationSec.toFixed(1)} 秒` : ''}</small>
+          </div>
+        </div>
+      ) : <EmptyState title="等待出片" />}
     </div>
   );
 }
 
-function htmlVideoStepState(activeStep: string, index: number): 'pending' | 'running' | 'done' {
-  const order = ['plan', 'assets', 'voice', 'render', 'done'];
-  const activeIndex = Math.max(0, order.indexOf(activeStep));
-  if (index < activeIndex) return 'done';
-  if (index === activeIndex) return 'running';
-  return 'pending';
+function htmlVideoStepClass(status: HtmlVideoStepStatus): string {
+  return status === 'completed' ? 'done' : status;
+}
+
+function htmlVideoStepStatusLabel(status: HtmlVideoStepStatus, taskStatus?: TaskStatus): string {
+  if (status === 'cancelled' && taskStatus === 'paused') return '已暂停';
+  return {
+    pending: '等待',
+    running: '运行中',
+    completed: '已完成',
+    failed: '失败',
+    cancelled: '已取消',
+  }[status];
 }
 
 function htmlVideoPipelineStepLabel(step: string): string {
   return {
-    plan: '文案与场景规划',
+    rewrite: '改写与分句',
+    planning: '场景规划',
     assets: '素材生成',
     voice: '配音生成',
-    render: '动画预览',
+    preview: '动画预览',
+    render: '逐帧合成',
     done: '出片完成',
   }[step] ?? '等待推进';
+}
+
+function formatFileSize(bytes: number): string {
+  if (!Number.isFinite(bytes) || bytes <= 0) return '0 B';
+  if (bytes < 1024) return `${Math.round(bytes)} B`;
+  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
+  return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
 }
 
 function QueuePage({

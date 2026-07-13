@@ -12,6 +12,7 @@ import { normalizeDraftTemplate } from './templates';
 import { buildPromptRenderContext, renderPromptTemplate, selectStepPromptTemplate, selectTaskPromptTemplate, type PromptRenderContext } from './prompt-templates';
 import { defaultCustomStyles } from './config';
 import { copyPersonMaterialsForScenes } from './person-assets';
+import { withPipelineStateLock } from './pipeline-cache';
 
 export interface RunTaskOptions {
   appDataDir: string;
@@ -218,6 +219,11 @@ function todayTitle(input: string): string {
 }
 
 export async function runTask(db: FileDatabase, task: Task, options: RunTaskOptions): Promise<Task> {
+  const statePath = join(options.appDataDir, 'tasks', task.id, 'pipeline', 'state.json');
+  return withPipelineStateLock(statePath, () => runTaskWithPipelineStateLock(db, task, options));
+}
+
+async function runTaskWithPipelineStateLock(db: FileDatabase, task: Task, options: RunTaskOptions): Promise<Task> {
   if (task.taskType === 'html-video') {
     const message = 'HTML 动画视频由独立流水线处理，不能进入普通 Storybound 成片 runner。';
     await db.updateTask(task.id, {

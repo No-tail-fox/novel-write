@@ -9,6 +9,13 @@ import type {
   HtmlVideoRunnerOptions,
   HtmlVideoVoiceInput,
 } from './html-video-runner';
+import {
+  MAX_HTML_VIDEO_CAPTIONS_PER_SCENE,
+  MAX_HTML_VIDEO_ELEMENTS_PER_SCENE,
+  MAX_HTML_VIDEO_SCENES,
+  MAX_HTML_VIDEO_SOURCE_CHARS,
+  validateHtmlVideoScenePlans,
+} from './html-video-workflow';
 import type { AppConfig, HtmlVideoAsset, HtmlVideoJobConfig, HtmlVideoScenePlan, HtmlVideoVoiceClip, ImagePrompt, StoryboardScene, Task } from './types';
 import { createConfiguredJsonLlm, type ConfiguredJsonLlm, type LlmMessage } from './llm-provider';
 import { createConfiguredImageGenerator, createConfiguredNarrationSynthesizer, getConfiguredImageConcurrency } from './media-providers';
@@ -39,8 +46,13 @@ const htmlRewriteSchema: Record<string, unknown> = {
   additionalProperties: false,
   required: ['rewrittenText', 'segments'],
   properties: {
-    rewrittenText: { type: 'string', minLength: 1 },
-    segments: { type: 'array', minItems: 1, items: { type: 'string', minLength: 1 } },
+    rewrittenText: { type: 'string', minLength: 1, maxLength: MAX_HTML_VIDEO_SOURCE_CHARS },
+    segments: {
+      type: 'array',
+      minItems: 1,
+      maxItems: MAX_HTML_VIDEO_SCENES,
+      items: { type: 'string', minLength: 1, maxLength: MAX_HTML_VIDEO_SOURCE_CHARS },
+    },
   },
 };
 
@@ -52,31 +64,38 @@ const htmlPlanningSchema: Record<string, unknown> = {
     scenes: {
       type: 'array',
       minItems: 1,
+      maxItems: MAX_HTML_VIDEO_SCENES,
       items: {
         type: 'object',
         additionalProperties: false,
         required: ['index', 'narration', 'title', 'captions', 'sceneTemplate', 'background', 'elements'],
         properties: {
           index: { type: 'integer', minimum: 1 },
-          narration: { type: 'string', minLength: 1 },
-          title: { type: 'string', minLength: 1 },
-          captions: { type: 'array', minItems: 1, items: { type: 'string', minLength: 1 } },
-          sceneTemplate: { type: 'string', minLength: 1 },
+          narration: { type: 'string', minLength: 1, maxLength: MAX_HTML_VIDEO_SOURCE_CHARS },
+          title: { type: 'string', minLength: 1, maxLength: MAX_HTML_VIDEO_SOURCE_CHARS },
+          captions: {
+            type: 'array',
+            minItems: 1,
+            maxItems: MAX_HTML_VIDEO_CAPTIONS_PER_SCENE,
+            items: { type: 'string', minLength: 1, maxLength: MAX_HTML_VIDEO_SOURCE_CHARS },
+          },
+          sceneTemplate: { type: 'string', minLength: 1, maxLength: MAX_HTML_VIDEO_SOURCE_CHARS },
           background: {
             type: 'object',
             additionalProperties: false,
             required: ['prompt'],
-            properties: { prompt: { type: 'string', minLength: 1 } },
+            properties: { prompt: { type: 'string', minLength: 1, maxLength: MAX_HTML_VIDEO_SOURCE_CHARS } },
           },
           elements: {
             type: 'array',
+            maxItems: MAX_HTML_VIDEO_ELEMENTS_PER_SCENE,
             items: {
               type: 'object',
               additionalProperties: false,
               required: ['slot', 'prompt'],
               properties: {
                 slot: { type: 'integer', minimum: 0 },
-                prompt: { type: 'string', minLength: 1 },
+                prompt: { type: 'string', minLength: 1, maxLength: MAX_HTML_VIDEO_SOURCE_CHARS },
               },
             },
           },
@@ -126,7 +145,14 @@ export function adaptHtmlVideoAssetGenerator(
   task: Task,
 ): HtmlVideoRunnerOptions['generateAssets'] {
   return async (input: HtmlVideoAssetInput): Promise<HtmlVideoAsset[]> => {
-    const requests = buildHtmlAssetRequests(input);
+    const validatedInput = {
+      ...input,
+      scenes: validateHtmlVideoScenePlans(
+        input.scenes,
+        input.config.maxScenes ?? MAX_HTML_VIDEO_SCENES,
+      ),
+    };
+    const requests = buildHtmlAssetRequests(validatedInput);
     const runtimeTask = applyHtmlTaskConfig(task, input.config);
     const scenes: StoryboardScene[] = requests.map((request) => ({
       id: request.syntheticId,
@@ -162,7 +188,11 @@ export function adaptHtmlVideoNarrationSynthesizer(
   measureAudioDuration: AudioDurationProbe,
 ): HtmlVideoRunnerOptions['synthesizeVoices'] {
   return async (input: HtmlVideoVoiceInput): Promise<HtmlVideoVoiceClip[]> => {
-    const requests: HtmlVoiceRequest[] = input.scenes.map((scene, index) => ({ syntheticId: index + 1, scene }));
+    const validatedScenes = validateHtmlVideoScenePlans(
+      input.scenes,
+      input.config.maxScenes ?? MAX_HTML_VIDEO_SCENES,
+    );
+    const requests: HtmlVoiceRequest[] = validatedScenes.map((scene, index) => ({ syntheticId: index + 1, scene }));
     const runtimeTask = applyHtmlVoiceConfig(applyHtmlTaskConfig(task, input.config), input.config);
     const scenes: StoryboardScene[] = requests.map((request) => ({
       id: request.syntheticId,
@@ -258,7 +288,9 @@ function buildHtmlAssetRequests(input: HtmlVideoAssetInput): HtmlAssetRequest[] 
 }
 
 function ensureTransparentForegroundPrompt(prompt: string): string {
-  return /透明|transparent/iu.test(prompt) ? prompt : `${prompt}，透明背景 PNG 前景素材`;
+  if (/透明|transparent/iu.test(prompt)) return prompt;
+  const suffix = '，透明背景 PNG 前景素材';
+  return `${prompt.slice(0, MAX_HTML_VIDEO_SOURCE_CHARS - suffix.length)}${suffix}`;
 }
 
 function indexProviderAssets(
@@ -266,6 +298,9 @@ function indexProviderAssets(
   expectedIds: number[],
   errorCode: 'IMAGE_PROVIDER_INVALID_OUTPUT' | 'TTS_PROVIDER_INVALID_OUTPUT',
 ): Map<number, SceneAsset> {
+  if (!Array.isArray(assets) || assets.length !== expectedIds.length) {
+    throw new AppError(errorCode, '媒体服务返回的场景文件数量不匹配。', true);
+  }
   const expected = new Set(expectedIds);
   const byId = new Map<number, SceneAsset>();
   for (const asset of assets) {

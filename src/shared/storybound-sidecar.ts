@@ -76,12 +76,19 @@ export interface StoryboundConvertAudioInput {
   output_path: string;
 }
 
+export interface StoryboundProbeMediaInput {
+  mode: 'probe_media';
+  work_dir: string;
+  media_path: string;
+}
+
 export type StoryboundSidecarInput =
   | StoryboundStoryInput
   | StoryboundMusicMvInput
   | StoryboundComposeRenderInput
   | StoryboundRemixBgmInput
-  | StoryboundConvertAudioInput;
+  | StoryboundConvertAudioInput
+  | StoryboundProbeMediaInput;
 
 export interface StoryboundSidecarResult {
   success: boolean;
@@ -89,6 +96,11 @@ export interface StoryboundSidecarResult {
   draft_id?: string;
   output_path?: string;
   source_path?: string;
+  duration?: number;
+  has_audio?: boolean;
+  has_video?: boolean;
+  width?: number;
+  height?: number;
   error?: string;
   traceback?: string;
 }
@@ -215,7 +227,6 @@ import math
 import os
 import re
 import shutil
-import signal
 import struct
 import subprocess
 import sys
@@ -268,20 +279,13 @@ def terminate_process_tree(process):
                 pass
         return
     try:
-        os.killpg(process.pid, signal.SIGTERM)
+        process.terminate()
     except ProcessLookupError:
         return
     except Exception:
-        try:
-            process.terminate()
-        except Exception:
-            pass
-    time.sleep(0.3)
-    try:
-        os.killpg(process.pid, signal.SIGKILL)
-    except ProcessLookupError:
         pass
-    except Exception:
+    time.sleep(0.3)
+    if process.poll() is None:
         try:
             process.kill()
         except Exception:
@@ -325,8 +329,6 @@ def run_bounded_subprocess(
             getattr(subprocess, "CREATE_NEW_PROCESS_GROUP", 0)
             | getattr(subprocess, "CREATE_NO_WINDOW", 0)
         )
-    else:
-        popen_options["start_new_session"] = True
     process = subprocess.Popen([str(item) for item in command], **popen_options)
     stdout_chunks = []
     stderr_chunks = []
@@ -446,6 +448,52 @@ def media_duration_s(path):
         return 0.0
     hours, minutes, seconds = match.groups()
     return int(hours) * 3600 + int(minutes) * 60 + float(seconds)
+
+
+def media_stream_info(path):
+    path = norm(path)
+    probe = ffprobe_exe()
+    if probe:
+        completed = run_bounded_subprocess(
+            [probe, "-v", "error", "-show_entries", "stream=codec_type,width,height", "-of", "json", path],
+            timeout_seconds=60,
+            max_stdout_bytes=2 * 1024 * 1024,
+            max_stderr_bytes=2 * 1024 * 1024,
+        )
+        if completed.returncode == 0:
+            try:
+                streams = json.loads(completed.stdout).get("streams") or []
+                video_stream = next((item for item in streams if item.get("codec_type") == "video"), None)
+                return {
+                    "has_video": video_stream is not None,
+                    "has_audio": any(item.get("codec_type") == "audio" for item in streams),
+                    "width": int((video_stream or {}).get("width") or 0),
+                    "height": int((video_stream or {}).get("height") or 0),
+                }
+            except (TypeError, ValueError, json.JSONDecodeError):
+                pass
+    completed = run_bounded_subprocess(
+        [ffmpeg_exe(), "-hide_banner", "-i", path],
+        timeout_seconds=60,
+        max_stdout_bytes=2 * 1024 * 1024,
+        max_stderr_bytes=2 * 1024 * 1024,
+    )
+    detail = completed.stderr
+    video_line = next((line for line in detail.splitlines() if re.search(r"Stream #.*Video:", line, re.IGNORECASE)), "")
+    dimensions = next(
+        (
+            (int(match.group(1)), int(match.group(2)))
+            for match in re.finditer(r"(\d{1,6})x(\d{1,6})", video_line)
+            if int(match.group(1)) > 0 and 0 < int(match.group(2)) <= 100000
+        ),
+        (0, 0),
+    )
+    return {
+        "has_video": bool(video_line),
+        "has_audio": bool(re.search(r"Stream #.*Audio:", detail, re.IGNORECASE)),
+        "width": dimensions[0],
+        "height": dimensions[1],
+    }
 
 
 def wav_to_16k_mono(source_path, output_path):
@@ -610,6 +658,18 @@ def convert_audio_16k(payload):
     return {"success": True, "output_path": output_path}
 
 
+def probe_media(payload):
+    media_path = norm(payload["media_path"])
+    if not os.path.isfile(media_path):
+        raise ValueError("Media file does not exist")
+    duration = media_duration_s(media_path)
+    if not math.isfinite(duration) or duration <= 0:
+        raise ValueError("Media duration is unavailable")
+    result = {"success": True, "duration": duration}
+    result.update(media_stream_info(media_path))
+    return result
+
+
 def generate_remix_bgm(payload):
     source_path = norm(payload["source_path"])
     output_path = norm(payload["output_path"])
@@ -717,6 +777,10 @@ def generate_compose_render(payload):
     canvas_h = int(payload.get("canvas_h") or 1920)
     for index, scene in enumerate(payload.get("scenes") or []):
         pattern = first_frame_pattern(scene["frames_dir"])
+        audio_path = norm(scene["audio_path"])
+        scene_duration = media_duration_s(audio_path)
+        if not math.isfinite(scene_duration) or scene_duration <= 0:
+            raise ValueError("Scene audio duration is unavailable")
         segment_path = os.path.join(work_dir, f"seg_{index:02d}.mp4")
         fps = str(scene.get("fps") or 24)
         if "%" in pattern:
@@ -725,8 +789,10 @@ def generate_compose_render(payload):
             video_input = ["-loop", "1", "-framerate", fps, "-i", pattern]
         run_ffmpeg([
             *video_input,
-            "-i", norm(scene["audio_path"]),
-            "-shortest",
+            "-i", audio_path,
+            "-map", "0:v:0",
+            "-map", "1:a:0",
+            "-t", str(scene_duration),
             "-pix_fmt", "yuv420p",
             "-c:v", "libx264",
             "-c:a", "aac",
@@ -795,6 +861,8 @@ def dispatch(payload):
         return generate_remix_bgm(payload)
     if mode == "convert_audio_16k":
         return convert_audio_16k(payload)
+    if mode == "probe_media":
+        return probe_media(payload)
     raise ValueError(f"Unsupported Storybound sidecar mode: {mode}")
 
 
