@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { mkdir, mkdtemp, readdir, readFile, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { FileDatabase } from '@shared/storage';
+import { FileDatabase as PersistentFileDatabase, type FileDatabaseDependencies } from '@shared/storage';
 import { runTask } from '@shared/runner';
 import { markTaskStepForRerun } from '@shared/pipeline-cache';
 import { createPersonAsset, importPersonAssetFiles } from '@shared/person-assets';
@@ -18,6 +18,38 @@ const tinyPng = Buffer.from(
   'base64',
 );
 const rewriteControlTestTimeoutMs = 15_000;
+type FileDatabase = PersistentFileDatabase;
+
+async function openRunnerDatabase(file: string): Promise<FileDatabase> {
+  const files = new Map<string, Uint8Array>();
+  let suffix = 0;
+  const dependencies: Partial<FileDatabaseDependencies> = {
+    readFile: async (path) => {
+      const data = files.get(path);
+      if (data) return new Uint8Array(data);
+      throw Object.assign(new Error(`File not found: ${path}`), { code: 'ENOENT' });
+    },
+    writeTempFile: async (path, data) => {
+      files.set(path, new Uint8Array(data));
+    },
+    replaceFile: async (source, target) => {
+      const data = files.get(source);
+      if (!data) throw Object.assign(new Error(`File not found: ${source}`), { code: 'ENOENT' });
+      files.set(target, data);
+      files.delete(source);
+    },
+    removeFile: async (path) => {
+      files.delete(path);
+    },
+    ensureDirectory: async () => undefined,
+    readDirectory: async () => [],
+    delay: async () => undefined,
+    createTempSuffix: () => `runner-${suffix += 1}`,
+  };
+  return PersistentFileDatabase.open(file, dependencies);
+}
+
+const FileDatabase = { open: openRunnerDatabase };
 
 function mockConfiguredLlm(run: JsonLlm): ConfiguredJsonLlm {
   return { protocol: 'anthropic', run };
@@ -1357,7 +1389,7 @@ describe('task runner', () => {
 
   it('passes the selected target scene count into rewrite prompts', async () => {
     const dir = await mkdtemp(join(tmpdir(), 'storybound-runner-target-scenes-'));
-    const db = await FileDatabase.open(join(dir, 'data.db'));
+    const db = await openRunnerDatabase(join(dir, 'data.db'));
     const draftRootDir = join(dir, 'JianyingPro Drafts');
     const mediaDir = join(dir, 'media');
     const requests: LlmJsonRequest[] = [];
@@ -2845,6 +2877,7 @@ describe('task runner', () => {
     const dir = await mkdtemp(join(tmpdir(), 'storybound-runner-failure-state-'));
     const db = await FileDatabase.open(join(dir, 'data.db'));
     const snapshots: TaskStatus[] = [];
+    const deliveredSeqs: number[] = [];
     const snapshotReads: Array<Promise<void>> = [];
 
     try {
@@ -2862,7 +2895,8 @@ describe('task runner', () => {
           llm: mockConfiguredLlm(async () => {
             throw new Error('LLM API key is missing; cannot run real task content generation.');
           }),
-          onEvent: () => {
+          onEvent: (event) => {
+            deliveredSeqs.push(event.seq);
             snapshotReads.push(
               db.getState().then((state) => {
                 snapshots.push(state.tasks[0].status);
@@ -2873,6 +2907,8 @@ describe('task runner', () => {
       ).rejects.toThrow(/LLM API key is missing/);
       await Promise.all(snapshotReads);
 
+      expect(deliveredSeqs.length).toBeGreaterThan(0);
+      expect(deliveredSeqs.every(Number.isInteger)).toBe(true);
       expect(snapshots.at(-1)).toBe('paused');
     } finally {
       await db.close();

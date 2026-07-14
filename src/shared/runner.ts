@@ -1,6 +1,6 @@
 import { copyFile, mkdir, readFile, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
-import type { AiSourceContext, BgmItem, CharacterCard, CoverMetadata, CustomCoverTemplate, DraftTemplate, ImagePrompt, MusicPlan, PipelineArtifact, PromptStepTemplateType, PromptTemplate, RewriteEvaluationResult, StoryboardScene, Task, TaskArtifactImageErrorPreview, TaskStepRerunMode } from './types';
+import type { AiSourceContext, BgmItem, CharacterCard, CoverMetadata, CustomCoverTemplate, DraftTemplate, ImagePrompt, MusicPlan, PipelineArtifact, PromptStepTemplateType, PromptTemplate, RewriteEvaluationResult, SequencedTaskEvent, StoryboardScene, Task, TaskArtifactImageErrorPreview, TaskStepRerunMode } from './types';
 import { buildCoverMetadata, buildSubtitleTrack } from './story';
 import { writeJianyingDraft, type SceneAsset, type WriteJianyingDraftOptions } from './draft';
 import { runStoryboundMediaSidecar, type StoryboundSidecarInput, type StoryboundSidecarResult } from './storybound-sidecar';
@@ -16,7 +16,7 @@ import { withPipelineStateLock } from './pipeline-cache';
 
 export interface RunTaskOptions {
   appDataDir: string;
-  onEvent?: (detail: string) => void;
+  onEvent?: (event: SequencedTaskEvent) => void;
   signal?: AbortSignal;
   onHeartbeat?: (taskId: string, step: number, detail: string) => Promise<void>;
   llm?: ConfiguredJsonLlm;
@@ -234,13 +234,13 @@ async function runTaskWithPipelineStateLock(db: FileDatabase, task: Task, option
       retryFromStep: null,
       lastHeartbeatAt: new Date().toISOString(),
     });
-    await db.addTaskEvent(task.id, {
+    const event = await db.addTaskEvent(task.id, {
       type: 'step_error',
       step: null,
       agent: 'HTML Video',
       detail: message,
     });
-    options.onEvent?.(message);
+    options.onEvent?.(event);
     throw new Error(message);
   }
 
@@ -266,14 +266,14 @@ async function runTaskWithPipelineStateLock(db: FileDatabase, task: Task, option
   });
 
   const emit = async (type: string, step: number | null, agent: string | null, detail: string, data?: unknown) => {
-    options.onEvent?.(detail);
-    await db.addTaskEvent(task.id, {
+    const event = await db.addTaskEvent(task.id, {
       type,
       step,
       agent,
       detail,
       dataJson: data === undefined ? null : JSON.stringify(data),
     });
+    options.onEvent?.(event);
   };
 
   const save = async () => {
@@ -319,7 +319,6 @@ async function runTaskWithPipelineStateLock(db: FileDatabase, task: Task, option
         lastHeartbeatAt: new Date().toISOString(),
       });
       await emit('step_complete', 3, 'Prompt', 'Clip-only task completed after content artifacts');
-      options.onEvent?.('Task completed');
       return { ...task, status: 'completed', currentStep: 4, completedAt, outputDir: workDir, errorMessage: '', failedStep: null, retryFromStep: null, artifactStatePath: statePath, startedAt, lastHeartbeatAt: new Date().toISOString() };
     }
     pauseAtCheckpoint(task, initialStep, 4, 'Task paused for confirmation before image generation.');
@@ -412,11 +411,9 @@ async function runTaskWithPipelineStateLock(db: FileDatabase, task: Task, option
       artifactStatePath: statePath,
       lastHeartbeatAt: new Date().toISOString(),
     });
-    options.onEvent?.('Task completed');
     return { ...task, status: 'completed', currentStep: 7, completedAt, outputDir: draftDir, errorMessage: '', failedStep: null, retryFromStep: null, artifactStatePath: statePath, startedAt, lastHeartbeatAt: new Date().toISOString() };
   } catch (error) {
     if (error instanceof CheckpointPause) {
-      await emit('checkpoint_pause', error.step, stepAgents[error.step] ?? null, error.message, { retryFromStep: error.step });
       await db.updateTask(task.id, {
         status: 'paused',
         currentStep: error.step,
@@ -427,7 +424,7 @@ async function runTaskWithPipelineStateLock(db: FileDatabase, task: Task, option
         artifactStatePath: statePath,
         lastHeartbeatAt: new Date().toISOString(),
       });
-      options.onEvent?.('Task paused for confirmation');
+      await emit('checkpoint_pause', error.step, stepAgents[error.step] ?? null, error.message, { retryFromStep: error.step });
       throw error;
     }
     const latestTask = (await db.getState()).tasks.find((item) => item.id === task.id);
@@ -435,7 +432,6 @@ async function runTaskWithPipelineStateLock(db: FileDatabase, task: Task, option
     const message = error instanceof Error ? error.message : String(error);
     const cancelled = /cancel|取消/i.test(message);
     await markStep(step, 'failed', { error: message });
-    await emit('step_error', step, stepAgents[step] ?? null, message);
     await db.updateTask(task.id, {
       status: cancelled ? 'cancelled' : 'paused',
       currentStep: step,
@@ -446,7 +442,7 @@ async function runTaskWithPipelineStateLock(db: FileDatabase, task: Task, option
       artifactStatePath: statePath,
       lastHeartbeatAt: new Date().toISOString(),
     });
-    options.onEvent?.('Task paused after failure');
+    await emit('step_error', step, stepAgents[step] ?? null, message);
     throw error;
   }
 }

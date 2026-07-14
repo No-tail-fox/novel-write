@@ -170,7 +170,7 @@ describe('Electron HTML video runtime contract', () => {
       'await persistHtmlVideoTaskCheckpoint(database, task.id, workDir, finalState, controller.signal);',
       finalStateAssignment,
     );
-    const finalNotification = runner.indexOf('await sendTaskState(database);', finalCheckpoint);
+    const finalNotification = runner.indexOf('await publishTaskUpsert(database, task.id);', finalCheckpoint);
 
     expect(pipelineStart).toBeGreaterThan(-1);
     expect(finalStateAssignment).toBeGreaterThan(pipelineStart);
@@ -192,7 +192,7 @@ describe('Electron HTML video runtime contract', () => {
     for (const initialization of [
       "await ensureHtmlVideoTaskWorkDir(app.getPath('userData'), appDataName, task.id)",
       "status: 'running',",
-      'await sendTaskState(database);',
+      'await publishTaskUpsert(database, task.id);',
     ]) {
       const initializationIndex = runner.indexOf(initialization);
       expect(initializationIndex).toBeGreaterThan(tryStart);

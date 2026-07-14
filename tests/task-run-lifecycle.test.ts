@@ -30,6 +30,52 @@ const restartCommands = [
 ] as const;
 
 describe('task run lifecycle intent coordination', () => {
+  it('does not throw when an app delta races a destroyed renderer window', async () => {
+    const main = await readFile(new URL('../electron/main.ts', import.meta.url), 'utf8');
+    const compiledSource = transpileModule(
+      extractFunctionSource(main, 'function publishAppDelta', 'function enqueueAppDelta'),
+      {
+        compilerOptions: {
+          target: ScriptTarget.ES2022,
+          module: ModuleKind.None,
+        },
+      },
+    ).outputText;
+    const FunctionConstructor = Function;
+    const factory = new FunctionConstructor(
+      'appRevision',
+      'appDeltaHistory',
+      'appDeltaHistoryLimit',
+      'mainWindow',
+      `${compiledSource}\nreturn publishAppDelta;`,
+    ) as (
+      revision: number,
+      history: unknown[],
+      limit: number,
+      mainWindow: unknown,
+    ) => (payload: unknown) => unknown;
+    const payload = { kind: 'task-upsert', task: { id: 'task-1' } };
+    const destroyedSend = vi.fn(() => {
+      throw new Error('Object has been destroyed');
+    });
+
+    const publishToDestroyedWindow = factory(0, [], 512, {
+      isDestroyed: () => true,
+      webContents: { isDestroyed: () => false, send: destroyedSend },
+    });
+    expect(() => publishToDestroyedWindow(payload)).not.toThrow();
+    expect(destroyedSend).not.toHaveBeenCalled();
+
+    const racedSend = vi.fn(() => {
+      throw new Error('Object has been destroyed');
+    });
+    const publishDuringCloseRace = factory(0, [], 512, {
+      isDestroyed: () => false,
+      webContents: { isDestroyed: () => false, send: racedSend },
+    });
+    expect(() => publishDuringCloseRace(payload)).not.toThrow();
+  });
+
   it('lets cancel supersede pause without changing the first abort reason', async () => {
     const gate = deferred<void>();
     const run = taskRun();
@@ -928,6 +974,7 @@ async function loadTaskRunHandlers(dependencies: TaskRunHandlerDependencies) {
     'runLatestTaskControlRequest',
     'requestTaskRunIntent',
     'resumeTaskRun',
+    'publishTaskUpsert',
     extractHandlerBody(main, 'task:update-status'),
   );
   const compiledRetry = new AsyncFunction(
@@ -940,6 +987,7 @@ async function loadTaskRunHandlers(dependencies: TaskRunHandlerDependencies) {
     'runLatestTaskControlRequest',
     'requestTaskRunIntent',
     'resumeTaskRun',
+    'publishTaskUpsert',
     extractHandlerBody(main, 'task:retry'),
   );
   const actualLatestRequestRunner = Reflect.get(taskRunLifecycle, 'runLatestTaskControlRequest');
@@ -971,6 +1019,8 @@ async function loadTaskRunHandlers(dependencies: TaskRunHandlerDependencies) {
     'resumeTaskRun',
     'resumeLatestTaskRun',
     'taskWorkDir',
+    'publishTaskEvent',
+    'publishTaskUpsert',
     ...dependencyNames,
     extractHandlerBody(main, channel),
   );
@@ -994,6 +1044,8 @@ async function loadTaskRunHandlers(dependencies: TaskRunHandlerDependencies) {
     resumeTaskRun,
     resumeLatestTaskRun,
     (task: { id: string }) => `work/${task.id}`,
+    async () => undefined,
+    async () => null,
   ] as const;
   const markSceneImageForRegeneration = dependencies.markSceneImageForRegeneration
     ?? (async () => undefined);
@@ -1019,6 +1071,7 @@ async function loadTaskRunHandlers(dependencies: TaskRunHandlerDependencies) {
         runLatestTaskControlRequest,
         requestTaskRunIntent,
         resumeTaskRun,
+        async () => undefined,
       );
     },
     retry(event: unknown, id: string) {
@@ -1032,6 +1085,7 @@ async function loadTaskRunHandlers(dependencies: TaskRunHandlerDependencies) {
         runLatestTaskControlRequest,
         requestTaskRunIntent,
         resumeTaskRun,
+        async () => undefined,
       );
     },
     regenerateImage(event: unknown, input: { id: string; sceneId: number }) {

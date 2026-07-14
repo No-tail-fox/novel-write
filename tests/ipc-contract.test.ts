@@ -106,7 +106,7 @@ describe('IPC runtime contract', () => {
     ].map((match) => match[1]);
     const uniqueChannels = [...new Set(invokedChannels)].sort();
 
-    expect(uniqueChannels).toHaveLength(55);
+    expect(uniqueChannels).toHaveLength(71);
     expect([...contract.IPC_CHANNELS].sort()).toEqual(uniqueChannels);
     expect(Object.keys(contract.ipcInputSchemas).sort()).toEqual(uniqueChannels);
   });

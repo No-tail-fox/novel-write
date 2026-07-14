@@ -2,6 +2,12 @@ import { readFile } from 'node:fs/promises';
 import { describe, expect, it } from 'vitest';
 
 describe('electron ipc contract', () => {
+  it('keeps runner integration timeouts at the committed heavy-test baseline', async () => {
+    const runnerTests = await readFile(new URL('./runner.test.ts', import.meta.url), 'utf8');
+
+    expect((runnerTests.match(/rewriteControlTestTimeoutMs/gu) ?? []).length).toBe(18);
+  });
+
   it('routes every privileged invoke through one trusted registration and result boundary', async () => {
     const main = await readFile(new URL('../electron/main.ts', import.meta.url), 'utf8');
     const preload = await readFile(new URL('../electron/preload.ts', import.meta.url), 'utf8');
@@ -12,7 +18,7 @@ describe('electron ipc contract', () => {
     };
 
     expect(main).toContain('createTrustedIpcRegistrar');
-    expect(main).toContain("trustedHandle('app:get-state'");
+    expect(main).toContain("trustedHandle('app:get-bootstrap'");
     expect((main.match(/ipcMain\.handle\(/g) ?? []).length).toBe(1);
     expect(preload).toContain('invokeTrusted');
     expect(preload).toContain('unwrapIpcResult');
@@ -37,6 +43,22 @@ describe('electron ipc contract', () => {
     const main = await readFile(new URL('../electron/main.ts', import.meta.url), 'utf8');
 
     for (const channel of [
+      'app:get-bootstrap',
+      'app:reconcile-deltas',
+      'task:list',
+      'task:get-detail',
+      'task:list-events',
+      'viral:list',
+      'viral:list-events',
+      'image-lab:list',
+      'voice-lab:list',
+      'viral:get-detail',
+      'image-lab:get-detail',
+      'voice-lab:get-detail',
+      'prompt-template:list',
+      'prompt-template:get-detail',
+      'draft-template:list',
+      'draft-template:get-detail',
       'prompt-template:save',
       'prompt-template:reset',
       'custom-style:save',
@@ -77,6 +99,26 @@ describe('electron ipc contract', () => {
       expect(preload).toContain(channel);
       expect(main).toContain(channel);
     }
+    expect((preload.match(/invokeTrusted\('/gu) ?? []).length).toBe(71);
+  });
+
+  it('keeps bootstrap list SQL off heavy record and template body columns', async () => {
+    const storage = await readFile(new URL('../src/shared/storage.ts', import.meta.url), 'utf8');
+    const viralList = storage.slice(storage.indexOf('async listViralAnalyses'), storage.indexOf('async getViralAnalysisDetail'));
+    const imageList = storage.slice(storage.indexOf('async listImageLabRecords'), storage.indexOf('async getImageLabRecordDetail'));
+    const voiceList = storage.slice(storage.indexOf('async listVoiceLabRecords'), storage.indexOf('async getVoiceLabRecordDetail'));
+    const listHelper = storage.slice(storage.indexOf('private async listCreatedRecords'), storage.indexOf('async addTaskEvent'));
+    const draftList = storage.slice(storage.indexOf('async listDraftTemplateSummaries'), storage.indexOf('async getDraftTemplateDetail'));
+
+    expect(viralList).not.toContain('SELECT *');
+    expect(viralList).not.toContain('settings_json');
+    expect(imageList).not.toContain('SELECT *');
+    expect(imageList).toContain('substr(prompt');
+    expect(imageList).not.toContain('reference_image_paths_json');
+    expect(voiceList).not.toContain('SELECT *');
+    expect(voiceList).toContain('substr(text');
+    expect(listHelper).not.toContain('SELECT *');
+    expect(draftList).not.toContain('SELECT id, data');
   });
 
   it('exposes viral analyzer state and production-task handoff to the renderer', async () => {
@@ -93,11 +135,27 @@ describe('electron ipc contract', () => {
     expect(viteEnv).toContain('createProductionTaskFromViral');
   });
 
+  it('publishes the initial running viral summary before waiting for runtime events', async () => {
+    const main = await readFile(new URL('../electron/main.ts', import.meta.url), 'utf8');
+    const runner = main.slice(main.indexOf('function startViralAnalysisRun'), main.indexOf('async function resumeViralAnalysisRun'));
+    const runningUpdate = runner.indexOf("status: 'running'");
+    const initialPublish = runner.indexOf('await publishViralUpsert(database, record.id);', runningUpdate);
+    const runtimeStart = runner.indexOf('const completed = await runViralAnalysis', runningUpdate);
+
+    expect(runningUpdate).toBeGreaterThan(-1);
+    expect(initialPublish).toBeGreaterThan(runningUpdate);
+    expect(initialPublish).toBeLessThan(runtimeStart);
+  });
+
   it('starts newly created tasks in the background so the renderer can open task detail immediately', async () => {
     const main = await readFile(new URL('../electron/main.ts', import.meta.url), 'utf8');
+    const handler = main.slice(main.indexOf("trustedHandle('task:create-and-run'"), main.indexOf("trustedHandle('viral:create-and-run'"));
 
-    expect(main).toContain('startTaskRun(database, task');
-    expect(main).toContain('return getPublicState()');
+    expect(handler).toContain('const delta = await publishTaskUpsert(database, task.id)');
+    expect(handler).toContain('startTaskRun(database, task)');
+    expect(handler).toContain('return delta');
+    expect(handler).not.toContain('getPublicState()');
+    expect(main.match(/return getPublicState\(\)/gu)).toHaveLength(1);
   });
 
   it('routes resume and retry through a background task runner instead of only mutating status', async () => {
@@ -130,15 +188,18 @@ describe('electron ipc contract', () => {
     expect(statusHandler).not.toContain('runningTasks.delete(input.id)');
   });
 
-  it('pushes a fresh app state snapshot for live task detail updates', async () => {
+  it('pushes revisioned app deltas and exposes narrow bootstrap APIs', async () => {
     const main = await readFile(new URL('../electron/main.ts', import.meta.url), 'utf8');
     const preload = await readFile(new URL('../electron/preload.ts', import.meta.url), 'utf8');
     const viteEnv = await readFile(new URL('../src/vite-env.d.ts', import.meta.url), 'utf8');
 
-    expect(main).toContain('sendTaskState');
-    expect(main).toContain("mainWindow?.webContents.send('task:event', state)");
-    expect(main).toContain('notifyTaskState');
-    expect(preload).toContain('callback(state)');
+    expect(main).toContain('publishAppDelta');
+    expect(main).toContain("target.webContents.send('app:delta', delta)");
+    expect(main).toContain('publishTaskUpsert');
+    expect(preload).toContain('getBootstrap');
+    expect(preload).toContain('getTaskDetail');
+    expect(preload).toContain('listTaskEvents');
+    expect(preload).toContain('onAppDelta');
     expect(preload).toContain('testLlmConfig');
     expect(preload).toContain('listProviderModels');
     expect(preload).toContain('listVolcengineSpeakers');
@@ -147,7 +208,7 @@ describe('electron ipc contract', () => {
     expect(preload).toContain('saveCustomStyle');
     expect(preload).toContain('generateCustomStyleDraft');
     expect(preload).toContain('getTaskArtifacts');
-    expect(viteEnv).toContain('callback: (state: AppState) => void');
+    expect(viteEnv).toContain('callback: (delta: AppDelta) => void');
     expect(viteEnv).toContain('testLlmConfig');
     expect(viteEnv).toContain('listProviderModels');
     expect(viteEnv).toContain('listVolcengineSpeakers');
@@ -155,6 +216,19 @@ describe('electron ipc contract', () => {
     expect(viteEnv).toContain('saveCustomStyle');
     expect(viteEnv).toContain('generateCustomStyleDraft');
     expect(viteEnv).toContain('getTaskArtifacts');
+  });
+
+  it('publishes committed runner events and narrow heartbeat task summaries', async () => {
+    const main = await readFile(new URL('../electron/main.ts', import.meta.url), 'utf8');
+    const buildOptions = main.slice(main.indexOf('async function buildRunOptions'), main.indexOf('function startTaskRun'));
+    const heartbeat = buildOptions.slice(buildOptions.indexOf('onHeartbeat:'), buildOptions.indexOf('\n    },', buildOptions.indexOf('onHeartbeat:')));
+
+    expect(buildOptions).toContain('onEvent: (event: SequencedTaskEvent)');
+    expect(buildOptions).toContain('void publishTaskEvent(event)');
+    expect(heartbeat).toContain('publishTaskUpsert(database, task.id)');
+    expect(heartbeat).not.toContain('getState(');
+    expect(heartbeat).not.toContain('getPublicState(');
+    expect(heartbeat).not.toContain('sendTaskState(');
   });
 
   it('exposes safe local image data URLs for task artifact thumbnails', async () => {
@@ -182,7 +256,7 @@ describe('electron ipc contract', () => {
     expect(handler).toContain('database.addImageLabRecord(record)');
     expect(preload).toContain('generateImageLab');
     expect(preload).toContain('image-lab:generate');
-      expect(viteEnv).toContain('generateImageLab: (input: ImageLabGenerateInput) => Promise<AppState>');
+    expect(viteEnv).toContain('generateImageLab: (input: ImageLabGenerateInput) => Promise<AppMutationResult | null>');
   });
 
   it('routes voice lab preview generation through the configured TTS provider', async () => {
@@ -196,7 +270,7 @@ describe('electron ipc contract', () => {
     expect(handler).toContain('database.addVoiceLabRecord(record)');
     expect(preload).toContain('generateVoiceLabPreview');
     expect(preload).toContain('voice-lab:generate');
-    expect(viteEnv).toContain('generateVoiceLabPreview: (input: VoiceLabGenerateInput) => Promise<AppState>');
+    expect(viteEnv).toContain('generateVoiceLabPreview: (input: VoiceLabGenerateInput) => Promise<AppMutationResult | null>');
   });
 
   it('exposes a safe local image picker for draft template background images', async () => {
@@ -297,7 +371,7 @@ describe('electron ipc contract', () => {
     expect(preload).toContain('createHtmlVideoTask');
     expect(preload).toContain('openHtmlVideoPreview');
     expect(preload).toContain('getHtmlVideoMediaUrl');
-    expect(viteEnv).toContain('createHtmlVideoTask: (input: CreateTaskInput) => Promise<AppState>');
+    expect(viteEnv).toContain('createHtmlVideoTask: (input: CreateTaskInput) => Promise<AppMutationResult | null>');
     expect(viteEnv).toContain('openHtmlVideoPreview: (id: string, sceneIndex?: number) => Promise<void>');
     expect(viteEnv).toContain('getHtmlVideoMediaUrl: (id: string, path: string) => Promise<string>');
     expect(preload).not.toContain('eval_in_window');
@@ -350,7 +424,7 @@ describe('electron ipc contract', () => {
     expect(regenerateHandler).not.toContain('runTask(');
     expect(preload).toContain('regenerateTaskImage');
     expect(preload).toContain('task:regenerate-image');
-    expect(viteEnv).toContain('regenerateTaskImage: (id: string, sceneId: number) => Promise<AppState>');
+    expect(viteEnv).toContain('regenerateTaskImage: (id: string, sceneId: number) => Promise<AppMutationResult | null>');
   });
 
   it('regenerates a single scene narration through cache invalidation and background resume', async () => {
@@ -367,7 +441,7 @@ describe('electron ipc contract', () => {
     expect(regenerateHandler).not.toContain('runTask(');
     expect(preload).toContain('regenerateTaskNarration');
     expect(preload).toContain('task:regenerate-narration');
-    expect(viteEnv).toContain('regenerateTaskNarration: (id: string, sceneId: number) => Promise<AppState>');
+    expect(viteEnv).toContain('regenerateTaskNarration: (id: string, sceneId: number) => Promise<AppMutationResult | null>');
   });
 
   it('updates one scene image prompt through a narrow task artifact API', async () => {
@@ -379,11 +453,12 @@ describe('electron ipc contract', () => {
     expect(main).toContain("trustedHandle('task:update-image-prompt'");
     expect(main).toContain('updateSceneImagePrompt');
     expect(updateHandler).toContain('artifactStatePath');
-    expect(updateHandler).toContain('database.addTaskEvent');
+    expect(updateHandler).toContain('const event = await database.addTaskEvent');
+    expect(updateHandler).toContain('await publishTaskEvent(event)');
     expect(updateHandler).not.toContain('resumeTaskRun(database, updatedTask)');
     expect(preload).toContain('updateTaskImagePrompt');
     expect(preload).toContain('task:update-image-prompt');
-    expect(viteEnv).toContain('updateTaskImagePrompt: (id: string, sceneId: number, prompt: string) => Promise<AppState>');
+    expect(viteEnv).toContain('updateTaskImagePrompt: (id: string, sceneId: number, prompt: string) => Promise<AppMutationResult | null>');
   });
 
   it('reruns an artifact pipeline step through cache invalidation and background resume', async () => {
@@ -401,6 +476,6 @@ describe('electron ipc contract', () => {
     expect(preload).toContain('rerunTaskStep');
     expect(preload).toContain('task:rerun-step');
     expect(viteEnv).toContain('TaskStepRerunMode');
-    expect(viteEnv).toContain('rerunTaskStep: (id: string, step: number, mode: TaskStepRerunMode) => Promise<AppState>');
+    expect(viteEnv).toContain('rerunTaskStep: (id: string, step: number, mode: TaskStepRerunMode) => Promise<AppMutationResult | null>');
   });
 });

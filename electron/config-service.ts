@@ -14,12 +14,31 @@ import {
   type SecretChanges,
   type SecretId,
 } from '../src/shared/config-secrets';
-import type { AppConfig, AppState } from '../src/shared/types';
+import type {
+  AppConfig,
+  AppState,
+  BootstrapState,
+  CursorPage,
+  CursorRequest,
+  DraftTemplateSummary,
+  ImageLabSummary,
+  PromptTemplateSummary,
+  TaskSummary,
+  ViralAnalysisSummary,
+  VoiceLabSummary,
+} from '../src/shared/types';
 
 const MIGRATION_MARKER = 'config-secrets.v1.migrated';
 
 export interface ConfigDatabase {
   getState: () => Promise<AppState>;
+  getBootstrapMetadata: () => Promise<Pick<AppState, 'config' | 'customStyles' | 'customCoverTemplates' | 'creditTransactions' | 'minimaxCloneVoices' | 'account' | 'activation' | 'ui'>>;
+  listTaskSummaries: (request?: CursorRequest) => Promise<CursorPage<TaskSummary>>;
+  listViralAnalyses: (request?: CursorRequest) => Promise<CursorPage<ViralAnalysisSummary>>;
+  listImageLabRecords: (request?: CursorRequest) => Promise<CursorPage<ImageLabSummary>>;
+  listVoiceLabRecords: (request?: CursorRequest) => Promise<CursorPage<VoiceLabSummary>>;
+  listPromptTemplateSummaries: (request?: CursorRequest) => Promise<CursorPage<PromptTemplateSummary>>;
+  listDraftTemplateSummaries: (request?: CursorRequest) => Promise<CursorPage<DraftTemplateSummary>>;
   upsertConfig: (config: AppConfig) => Promise<void>;
 }
 
@@ -32,6 +51,11 @@ export interface ConfigServiceOptions {
   database: ConfigDatabase;
   dataDir: string;
   vault: ConfigVault;
+}
+
+export interface PublicConfigState {
+  config: AppConfig;
+  secretStatus: Partial<Record<string, boolean>>;
 }
 
 export function configMigrationMarkerPath(dataDir: string): string {
@@ -142,10 +166,36 @@ export class ConfigService {
     };
   }
 
+  async getBootstrapState(revision: number): Promise<BootstrapState> {
+    await this.migrateLegacySecrets();
+    const [metadata, tasks, viralAnalyses, imageLabRecords, voiceLabRecords, promptTemplates, draftTemplates, secrets] = await Promise.all([
+      this.options.database.getBootstrapMetadata(),
+      this.options.database.listTaskSummaries(),
+      this.options.database.listViralAnalyses(),
+      this.options.database.listImageLabRecords(),
+      this.options.database.listVoiceLabRecords(),
+      this.options.database.listPromptTemplateSummaries(),
+      this.options.database.listDraftTemplateSummaries(),
+      this.options.vault.load(),
+    ]);
+    return {
+      ...metadata,
+      revision,
+      config: stripConfigSecrets(normalizeAppConfig(metadata.config)),
+      secretStatus: secretStatus(secrets),
+      tasks,
+      viralAnalyses,
+      imageLabRecords,
+      voiceLabRecords,
+      promptTemplates,
+      draftTemplates,
+    };
+  }
+
   async getRuntimeConfig(): Promise<AppConfig> {
     await this.migrateLegacySecrets();
-    const [state, secrets] = await Promise.all([this.options.database.getState(), this.options.vault.load()]);
-    return normalizeAppConfig(applyConfigSecrets(state.config, canonicalizeActiveSecrets(state.config, secrets, false)));
+    const [metadata, secrets] = await Promise.all([this.options.database.getBootstrapMetadata(), this.options.vault.load()]);
+    return normalizeAppConfig(applyConfigSecrets(metadata.config, canonicalizeActiveSecrets(metadata.config, secrets, false)));
   }
 
   async getRuntimeConfigFor(input: SaveConfigInput): Promise<AppConfig> {
@@ -162,7 +212,7 @@ export class ConfigService {
     return (await this.options.vault.load())[secretId] ?? '';
   }
 
-  async save(input: SaveConfigInput): Promise<PublicAppState> {
+  async save(input: SaveConfigInput): Promise<PublicConfigState> {
     await this.migrateLegacySecrets();
     const sanitized = stripConfigSecrets(normalizeAppConfig(input.config));
     if (Object.keys(input.secretChanges).length > 0) {
@@ -172,11 +222,11 @@ export class ConfigService {
     }
     await this.options.database.upsertConfig(sanitized);
     await saveConfigToFile(this.options.dataDir, sanitized);
-    return this.getPublicState();
+    return { config: sanitized, secretStatus: secretStatus(await this.options.vault.load()) };
   }
 
   private async performMigration(): Promise<void> {
-    const state = await this.options.database.getState();
+    const state = await this.options.database.getBootstrapMetadata();
     const externalConfig = await loadConfigFromFileStrict(this.options.dataDir);
     const sourceConfig = normalizeAppConfig(externalConfig ?? state.config);
     const legacySecrets: ConfigSecrets = {

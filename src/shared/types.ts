@@ -599,6 +599,38 @@ export interface TaskEvent {
   ts: number;
 }
 
+export type SequencedTaskEvent = Omit<TaskEvent, 'seq'> & { seq: number };
+
+export interface CursorRequest {
+  cursor?: string | null;
+  limit?: number;
+}
+
+export interface CursorPage<T> {
+  items: T[];
+  nextCursor: string | null;
+}
+
+export type TaskSummary = Omit<
+  Task,
+  | 'inputText'
+  | 'pausePoints'
+  | 'aiSources'
+  | 'selectedSources'
+  | 'extraRequirements'
+  | 'imagePromptReference'
+  | 'step3PromptSnapshot'
+  | 'musicMv'
+  | 'pipelineData'
+  | 'productInfo'
+  | 'materialPerson'
+  | 'fixedIntro'
+  | 'outroCta'
+  | 'podcastSpeakers'
+> & {
+  inputPreview: string;
+};
+
 export interface PromptTemplate {
   id: string;
   name: string;
@@ -620,6 +652,8 @@ export interface PromptTemplate {
   usedCount?: number;
   marketTags?: string[];
 }
+
+export type PromptTemplateSummary = Omit<PromptTemplate, 'content' | 'stepPrompts' | 'imageSeedPoolsJson'>;
 
 export interface CustomStyle {
   id: string;
@@ -671,6 +705,10 @@ export interface ImageLabRecord {
   finishedAt: string | null;
 }
 
+export type ImageLabSummary = Omit<ImageLabRecord, 'prompt' | 'referenceImagePaths' | 'referenceImagePath'> & {
+  promptPreview: string;
+};
+
 export type ImageLabSmartMode = 'text-to-image' | 'cover' | 'blog-cover' | 'podcast-cover' | 'video-narration' | 'two-host-podcast' | 'reference-edit';
 
 export type ImageLabGenerateInput = Pick<ImageLabRecord, 'prompt' | 'ratio' | 'style'> &
@@ -689,6 +727,10 @@ export interface VoiceLabRecord {
   createdAt: string;
   finishedAt: string | null;
 }
+
+export type VoiceLabSummary = Omit<VoiceLabRecord, 'text'> & {
+  textPreview: string;
+};
 
 export type VoiceLabGenerateInput = Pick<VoiceLabRecord, 'text' | 'provider' | 'voiceId' | 'speed'> &
   Partial<Pick<VoiceLabRecord, 'id' | 'voiceLabel' | 'createdAt'>>;
@@ -868,6 +910,8 @@ export interface ViralAnalysisRecord {
   completedAt: string | null;
   lastHeartbeatAt: string | null;
 }
+
+export type ViralAnalysisSummary = Omit<ViralAnalysisRecord, 'settings' | 'resultPath' | 'videoPath'>;
 
 export interface ViralAnalysisEvent {
   id?: string;
@@ -1074,6 +1118,7 @@ export interface DraftTemplate {
   id: string;
   name: string;
   isDefault: boolean;
+  updatedAt?: string;
   canvas: {
     width: number;
     height: number;
@@ -1177,6 +1222,70 @@ export interface DraftTextBorder {
   color: string;
   width: number;
   alpha: number;
+}
+
+export interface DraftTemplateSummary {
+  id: string;
+  name: string;
+  isDefault: boolean;
+  canvas: Pick<DraftTemplate['canvas'], 'width' | 'height' | 'ratio'>;
+  updatedAt: string;
+}
+
+export interface BootstrapState {
+  revision: number;
+  config: AppConfig;
+  secretStatus: Partial<Record<string, boolean>>;
+  tasks: CursorPage<TaskSummary>;
+  viralAnalyses: CursorPage<ViralAnalysisSummary>;
+  imageLabRecords: CursorPage<ImageLabSummary>;
+  voiceLabRecords: CursorPage<VoiceLabSummary>;
+  promptTemplates: CursorPage<PromptTemplateSummary>;
+  draftTemplates: CursorPage<DraftTemplateSummary>;
+  customStyles: CustomStyle[];
+  customCoverTemplates: CustomCoverTemplate[];
+  creditTransactions: CreditTransaction[];
+  minimaxCloneVoices: MinimaxCloneVoice[];
+  account: AccountProfile;
+  activation: ActivationState;
+  ui: UiPreferences;
+}
+
+export type AppStatePatch =
+  | { kind: 'config'; config: AppConfig; secretStatus: Partial<Record<string, boolean>> }
+  | { kind: 'prompt-template-upsert'; template: PromptTemplate }
+  | { kind: 'prompt-templates-reset'; templates: PromptTemplateSummary[] }
+  | { kind: 'custom-style-upsert'; style: CustomStyle }
+  | { kind: 'draft-template-upsert'; template: DraftTemplate }
+  | { kind: 'image-lab-upsert'; record: ImageLabSummary }
+  | { kind: 'voice-lab-upsert'; record: VoiceLabSummary }
+  | { kind: 'account'; account: AccountProfile }
+  | { kind: 'activation'; activation: ActivationState }
+  | { kind: 'ui'; ui: UiPreferences };
+
+export type AppDelta =
+  | { kind: 'task-upsert'; task: TaskSummary; revision: number }
+  | { kind: 'task-event'; event: SequencedTaskEvent; revision: number }
+  | { kind: 'viral-upsert'; record: ViralAnalysisSummary; revision: number }
+  | { kind: 'state-patch'; patch: AppStatePatch; revision: number };
+
+export type AppMutationResult = Extract<AppDelta, { kind: 'task-upsert' | 'viral-upsert' | 'state-patch' }>;
+
+export interface AppDeltaReconcileRequest {
+  sinceRevision: number;
+  taskId?: string;
+  viralAnalysisId?: string;
+  forceReset?: boolean;
+}
+
+export interface AppDeltaReconcileResult {
+  revision: number;
+  deltas: AppDelta[];
+  resetRequired: boolean;
+  task: Task | null;
+  taskEvents: SequencedTaskEvent[];
+  viralAnalysis: ViralAnalysisRecord | null;
+  viralEvents: ViralAnalysisEvent[];
 }
 
 export interface DiagnosticCheck {

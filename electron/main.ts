@@ -24,7 +24,7 @@ import { runTask } from '../src/shared/runner';
 import { runStoryboundMediaSidecar } from '../src/shared/storybound-sidecar';
 import { FileDatabase } from '../src/shared/storage';
 import { createHtmlVideoRuntimeProviders, createTaskRuntimeProviders } from '../src/shared/task-runtime-providers';
-import type { AccountProfile, ActivationState, AppConfig, BookSelectionInput, ConfigTestTarget, CreateTaskInput, CreateViralAnalysisInput, CustomStyle, CustomStyleGenerateInput, DraftTemplate, HtmlVideoPipelineDataV2, ImageLabGenerateInput, LlmConfig, PromptTemplate, ProviderModelListRequest, ResearchCopyComposeInput, Task, TaskStatus, TaskStepRerunMode, UiPreferences, ViralAnalysisRecord, ViralAnalysisStatus, ViralProductionTaskOptions, VolcengineSpeakerListRequest, VoiceLabGenerateInput } from '../src/shared/types';
+import type { AccountProfile, ActivationState, AppConfig, AppDelta, AppDeltaReconcileRequest, AppDeltaReconcileResult, AppStatePatch, BookSelectionInput, ConfigTestTarget, CreateTaskInput, CreateViralAnalysisInput, CursorRequest, CustomStyle, CustomStyleGenerateInput, DraftTemplate, HtmlVideoPipelineDataV2, ImageLabGenerateInput, ImageLabRecord, ImageLabSummary, LlmConfig, PromptTemplate, ProviderModelListRequest, ResearchCopyComposeInput, SequencedTaskEvent, Task, TaskStatus, TaskStepRerunMode, UiPreferences, ViralAnalysisRecord, ViralAnalysisStatus, ViralProductionTaskOptions, VolcengineSpeakerListRequest, VoiceLabGenerateInput, VoiceLabRecord, VoiceLabSummary } from '../src/shared/types';
 import { createViralProductionTaskInput, detectViralPlatform, runViralAnalysis } from '../src/shared/viral-analysis';
 import { createViralRuntimeProviders } from '../src/shared/viral-runtime';
 import { listVolcengineSpeakers } from '../src/shared/volcengine-speakers';
@@ -88,6 +88,11 @@ interface RunningViralAnalysisRun {
 const runningTasks = new Map<string, RunningTaskRun>();
 const latestTaskControlRequests = new Map<string, symbol>();
 const runningViralAnalyses = new Map<string, RunningViralAnalysisRun>();
+const appDeltaHistoryLimit = 512;
+const appDeltaHistory: AppDelta[] = [];
+let appRevision = 0;
+let deltaPublishQueue: Promise<void> = Promise.resolve();
+let acceptingAppDeltas = true;
 let isShuttingDown = false;
 let shutdownComplete = false;
 let shutdownPromise: Promise<void> | null = null;
@@ -253,7 +258,6 @@ async function createWindow(): Promise<void> {
   }
   const database = await getDb();
   await pauseStaleRunningTasks(database);
-  await sendTaskState(database);
 }
 
 async function runSmokeHandshake(): Promise<void> {
@@ -281,11 +285,13 @@ async function runSmokeHandshake(): Promise<void> {
     };
     if (!api) return base;
     try {
-      const state = await api.getState();
-      base.ipcStateLoaded = Boolean(state && state.config && Array.isArray(state.tasks));
+      const state = await api.getBootstrap();
+      base.ipcStateLoaded = Boolean(state && state.config && Array.isArray(state.tasks?.items));
       if (state && state.ui) {
         const saved = await api.saveUiPreferences({ ...state.ui, activeView: 'new-task' });
-        base.preloadActionSucceeded = saved?.ui?.activeView === 'new-task';
+        base.preloadActionSucceeded = saved?.kind === 'state-patch'
+          && saved.patch.kind === 'ui'
+          && saved.patch.ui.activeView === 'new-task';
       }
     } catch {
       return base;
@@ -306,14 +312,67 @@ async function runSmokeHandshake(): Promise<void> {
   if (process.platform === 'darwin') app.quit();
 }
 
-async function sendTaskState(database: FileDatabase): Promise<void> {
-  void database;
-  const state = await getPublicState();
-  mainWindow?.webContents.send('task:event', state);
+type AppDeltaPayload =
+  | Omit<Extract<AppDelta, { kind: 'task-upsert' }>, 'revision'>
+  | Omit<Extract<AppDelta, { kind: 'task-event' }>, 'revision'>
+  | Omit<Extract<AppDelta, { kind: 'viral-upsert' }>, 'revision'>
+  | Omit<Extract<AppDelta, { kind: 'state-patch' }>, 'revision'>;
+
+function publishAppDelta(payload: AppDeltaPayload): AppDelta {
+  const delta = { ...payload, revision: ++appRevision } as AppDelta;
+  appDeltaHistory.push(delta);
+  if (appDeltaHistory.length > appDeltaHistoryLimit) appDeltaHistory.splice(0, appDeltaHistory.length - appDeltaHistoryLimit);
+  const target = mainWindow;
+  if (!target || target.isDestroyed() || target.webContents.isDestroyed()) return delta;
+  try {
+    target.webContents.send('app:delta', delta);
+  } catch {
+    // The history remains available for reconciliation if the renderer closes during send.
+  }
+  return delta;
 }
 
-function notifyTaskState(database: FileDatabase): void {
-  void sendTaskState(database);
+function enqueueAppDelta(build: () => Promise<AppDeltaPayload | null> | AppDeltaPayload | null): Promise<AppDelta | null> {
+  if (!acceptingAppDeltas) return Promise.resolve(null);
+  const operation = deltaPublishQueue.then(async () => {
+    if (!acceptingAppDeltas) return null;
+    const payload = await build();
+    return payload ? publishAppDelta(payload) : null;
+  });
+  deltaPublishQueue = operation.then(() => undefined, () => undefined);
+  return operation;
+}
+
+function publishTaskUpsert(database: FileDatabase, taskId: string): Promise<AppDelta | null> {
+  return enqueueAppDelta(async () => {
+    const task = await database.getTaskSummary(taskId);
+    return task ? { kind: 'task-upsert', task } : null;
+  });
+}
+
+function publishTaskEvent(event: SequencedTaskEvent): Promise<AppDelta | null> {
+  return enqueueAppDelta(() => ({ kind: 'task-event', event }));
+}
+
+function publishViralUpsert(database: FileDatabase, analysisId: string): Promise<AppDelta | null> {
+  return enqueueAppDelta(async () => {
+    const record = await database.getViralAnalysisSummary(analysisId);
+    return record ? { kind: 'viral-upsert', record } : null;
+  });
+}
+
+function publishStatePatch(patch: AppStatePatch): Promise<AppDelta | null> {
+  return enqueueAppDelta(() => ({ kind: 'state-patch', patch }));
+}
+
+function imageLabSummary(record: ImageLabRecord): ImageLabSummary {
+  const { prompt, referenceImagePaths: _paths, referenceImagePath: _path, ...summary } = record;
+  return { ...summary, promptPreview: prompt.slice(0, 160) };
+}
+
+function voiceLabSummary(record: VoiceLabRecord): VoiceLabSummary {
+  const { text, ...summary } = record;
+  return { ...summary, textPreview: text.slice(0, 160) };
 }
 
 function taskWorkDir(task: Pick<Task, 'id'>): string {
@@ -381,12 +440,14 @@ async function pauseStaleRunningTasks(database: FileDatabase): Promise<void> {
         errorMessage: '运行中断，可从失败/当前步骤重试。',
         lastHeartbeatAt: new Date().toISOString(),
       });
-      await database.addTaskEvent(task.id, {
+      const event = await database.addTaskEvent(task.id, {
         type: 'step_error',
         step: task.failedStep ?? task.currentStep,
         agent: null,
         detail: '运行中断，可从失败/当前步骤重试。',
       });
+      await publishTaskEvent(event);
+      await publishTaskUpsert(database, task.id);
     }
   }
 }
@@ -399,11 +460,11 @@ async function buildRunOptions(database: FileDatabase, task: Task, controller: A
     resolveAiSourceContext: createAiSourceResearcher(runtimeConfig),
     ...createTaskRuntimeProviders(runtimeConfig, taskWorkDir(task), task),
     customCoverTemplates: state.customCoverTemplates,
-    onEvent: () => {
-      notifyTaskState(database);
+    onEvent: (event: SequencedTaskEvent) => {
+      void publishTaskEvent(event);
     },
     onHeartbeat: async () => {
-      await sendTaskState(database);
+      await publishTaskUpsert(database, task.id);
     },
   };
 }
@@ -461,7 +522,7 @@ function startOwnedTaskRun(
         if (runningTasks.get(task.id) === run) runningTasks.delete(task.id);
       }
       if (restartTask && !isShuttingDown) startTaskRun(database, restartTask);
-      if (!isShuttingDown) await sendTaskState(database);
+      if (!isShuttingDown) await publishTaskUpsert(database, task.id);
     }
   })();
   void run.completion.catch((error) => {
@@ -531,7 +592,7 @@ async function runHtmlVideoTask(
       startedAt,
       lastHeartbeatAt: startedAt,
     });
-    await sendTaskState(database);
+    await publishTaskUpsert(database, task.id);
 
     const runtimeConfig = await (await getConfigService()).getRuntimeConfig();
     const probeMedia = probeHtmlVideoMedia;
@@ -568,12 +629,12 @@ async function runHtmlVideoTask(
       onCheckpoint: async (state) => {
         lastState = state;
         await persistHtmlVideoTaskCheckpoint(database, task.id, workDir, state, controller.signal);
-        await sendTaskState(database);
+        await publishTaskUpsert(database, task.id);
       },
     });
     lastState = finalState;
     await persistHtmlVideoTaskCheckpoint(database, task.id, workDir, finalState, controller.signal);
-    await sendTaskState(database);
+    await publishTaskUpsert(database, task.id);
   } catch (error) {
     if (controller.signal.aborted || isCancellation(error)) {
       const status = htmlVideoAbortStatus(controller.signal.reason);
@@ -587,7 +648,7 @@ async function runHtmlVideoTask(
         retryFromStep: status === 'paused' ? step : task.retryFromStep,
         lastHeartbeatAt: new Date().toISOString(),
       });
-      await sendTaskState(database);
+      await publishTaskUpsert(database, task.id);
       return;
     }
 
@@ -606,13 +667,14 @@ async function runHtmlVideoTask(
       retryFromStep: step,
       lastHeartbeatAt: new Date().toISOString(),
     });
-    await database.addTaskEvent(task.id, {
+    const event = await database.addTaskEvent(task.id, {
       type: 'step_error',
       step,
       agent: null,
       detail: normalized.message,
     });
-    await sendTaskState(database);
+    await publishTaskEvent(event);
+    await publishTaskUpsert(database, task.id);
     throw normalized;
   }
 }
@@ -735,6 +797,7 @@ function startViralAnalysisRun(database: FileDatabase, record: ViralAnalysisReco
         startedAt,
         lastHeartbeatAt: startedAt,
       });
+      await publishViralUpsert(database, record.id);
       const completed = await runViralAnalysis(record, {
         workDir: viralAnalysisWorkDir(record),
         signal: controller.signal,
@@ -754,7 +817,7 @@ function startViralAnalysisRun(database: FileDatabase, record: ViralAnalysisReco
           await database.updateViralAnalysis(record.id, {
             ...patch,
           });
-          await sendTaskState(database);
+          await publishViralUpsert(database, record.id);
         },
       });
       const completedAt = new Date().toISOString();
@@ -786,7 +849,7 @@ function startViralAnalysisRun(database: FileDatabase, record: ViralAnalysisReco
       if (runningViralAnalyses.get(record.id) === run) {
         runningViralAnalyses.delete(record.id);
       }
-      if (!isShuttingDown) await sendTaskState(database);
+      if (!isShuttingDown) await publishViralUpsert(database, record.id);
     }
   })();
   void run.completion.catch((error) => {
@@ -814,6 +877,28 @@ async function resumeViralAnalysisRun(database: FileDatabase, record: ViralAnaly
   startViralAnalysisRun(database, { ...record, status: 'pending', currentStage: 'queued', progress: 0, errorMessage: '' });
 }
 
+async function reconcileAppDeltas(database: FileDatabase, input: AppDeltaReconcileRequest): Promise<AppDeltaReconcileResult> {
+  await deltaPublishQueue;
+  const firstAvailableRevision = appDeltaHistory[0]?.revision ?? appRevision + 1;
+  const resetRequired = input.forceReset === true
+    || (input.sinceRevision < appRevision && input.sinceRevision < firstAvailableRevision - 1);
+  const [task, taskEvents, viralAnalysis, viralEvents] = await Promise.all([
+    input.taskId ? database.getTaskDetail(input.taskId) : Promise.resolve(null),
+    input.taskId ? database.listTaskEvents(input.taskId, { limit: 100 }) : Promise.resolve({ items: [], nextCursor: null }),
+    input.viralAnalysisId ? database.getViralAnalysisDetail(input.viralAnalysisId) : Promise.resolve(null),
+    input.viralAnalysisId ? database.listViralAnalysisEvents(input.viralAnalysisId, { limit: 100 }) : Promise.resolve({ items: [], nextCursor: null }),
+  ]);
+  return {
+    revision: appRevision,
+    deltas: resetRequired ? [] : appDeltaHistory.filter((delta) => delta.revision > input.sinceRevision),
+    resetRequired,
+    task,
+    taskEvents: taskEvents.items,
+    viralAnalysis,
+    viralEvents: viralEvents.items,
+  };
+}
+
 trustedHandle('window:control', async (_event, action: 'minimize' | 'toggle-maximize' | 'close') => {
   if (action === 'minimize') {
     mainWindow?.minimize();
@@ -836,8 +921,35 @@ trustedHandle('app:get-state', async () => {
   return getPublicState();
 });
 
+trustedHandle('app:get-bootstrap', async () => {
+  await deltaPublishQueue;
+  return (await getConfigService()).getBootstrapState(appRevision);
+});
+
+trustedHandle('app:reconcile-deltas', async (_event, input: AppDeltaReconcileRequest) => {
+  return reconcileAppDeltas(await getDb(), input);
+});
+
+trustedHandle('task:list', async (_event, request: CursorRequest) => (await getDb()).listTaskSummaries(request));
+trustedHandle('task:get-detail', async (_event, id: string) => (await getDb()).getTaskDetail(id));
+trustedHandle('task:list-events', async (_event, input: { taskId: string } & CursorRequest) =>
+  (await getDb()).listTaskEvents(input.taskId, input));
+trustedHandle('viral:list', async (_event, request: CursorRequest) => (await getDb()).listViralAnalyses(request));
+trustedHandle('viral:get-detail', async (_event, id: string) => (await getDb()).getViralAnalysisDetail(id));
+trustedHandle('viral:list-events', async (_event, input: { analysisId: string } & CursorRequest) =>
+  (await getDb()).listViralAnalysisEvents(input.analysisId, input));
+trustedHandle('image-lab:list', async (_event, request: CursorRequest) => (await getDb()).listImageLabRecords(request));
+trustedHandle('image-lab:get-detail', async (_event, id: string) => (await getDb()).getImageLabRecordDetail(id));
+trustedHandle('voice-lab:list', async (_event, request: CursorRequest) => (await getDb()).listVoiceLabRecords(request));
+trustedHandle('voice-lab:get-detail', async (_event, id: string) => (await getDb()).getVoiceLabRecordDetail(id));
+trustedHandle('prompt-template:list', async (_event, request: CursorRequest) => (await getDb()).listPromptTemplateSummaries(request));
+trustedHandle('prompt-template:get-detail', async (_event, id: string) => (await getDb()).getPromptTemplateDetail(id));
+trustedHandle('draft-template:list', async (_event, request: CursorRequest) => (await getDb()).listDraftTemplateSummaries(request));
+trustedHandle('draft-template:get-detail', async (_event, id: string) => (await getDb()).getDraftTemplateDetail(id));
+
 trustedHandle('app:save-config', async (_event, input) => {
-  return (await getConfigService()).save(input);
+  const saved = await (await getConfigService()).save(input);
+  return publishStatePatch({ kind: 'config', ...saved });
 });
 
 trustedHandle('llm:test-config', async (_event, config: LlmConfig) => {
@@ -890,20 +1002,20 @@ trustedHandle('research:compose-copy', async (_event, input: ResearchCopyCompose
 
 trustedHandle('prompt-template:save', async (_event, template: PromptTemplate) => {
   const database = await getDb();
-  await database.upsertPromptTemplate(template);
-  return getPublicState();
+  const saved = await database.upsertPromptTemplate(template);
+  return publishStatePatch({ kind: 'prompt-template-upsert', template: saved });
 });
 
 trustedHandle('prompt-template:reset', async () => {
   const database = await getDb();
   await database.resetPromptTemplates();
-  return getPublicState();
+  return publishStatePatch({ kind: 'prompt-templates-reset', templates: await database.listBuiltinPromptTemplateSummaries() });
 });
 
 trustedHandle('custom-style:save', async (_event, style: CustomStyle) => {
   const database = await getDb();
-  await database.upsertCustomStyle(style);
-  return getPublicState();
+  const saved = await database.upsertCustomStyle(style);
+  return publishStatePatch({ kind: 'custom-style-upsert', style: saved });
 });
 
 trustedHandle('custom-style:generate-draft', async (_event, input: CustomStyleGenerateInput): Promise<CustomStyle> => {
@@ -929,8 +1041,8 @@ trustedHandle('custom-style:generate-draft', async (_event, input: CustomStyleGe
 
 trustedHandle('draft-template:save', async (_event, template: DraftTemplate) => {
   const database = await getDb();
-  await database.upsertDraftTemplate(template);
-  return getPublicState();
+  const saved = await database.upsertDraftTemplate(template);
+  return publishStatePatch({ kind: 'draft-template-upsert', template: saved });
 });
 
 trustedHandle('image-lab:generate', async (_event, input: ImageLabGenerateInput) => {
@@ -938,14 +1050,14 @@ trustedHandle('image-lab:generate', async (_event, input: ImageLabGenerateInput)
   const runtimeConfig = await (await getConfigService()).getRuntimeConfig();
   const id = input.id ?? randomUUID();
   const record = await generateImageLabRecord(runtimeConfig, imageLabWorkDir(id), { ...input, id });
-  await database.addImageLabRecord(record);
-  return getPublicState();
+  const saved = await database.addImageLabRecord(record);
+  return publishStatePatch({ kind: 'image-lab-upsert', record: imageLabSummary(saved) });
 });
 
 trustedHandle('image-lab:add-record', async (_event, input) => {
   const database = await getDb();
-  await database.addImageLabRecord(input);
-  return getPublicState();
+  const saved = await database.addImageLabRecord(input);
+  return publishStatePatch({ kind: 'image-lab-upsert', record: imageLabSummary(saved) });
 });
 
 trustedHandle('voice-lab:generate', async (_event, input: VoiceLabGenerateInput) => {
@@ -953,26 +1065,26 @@ trustedHandle('voice-lab:generate', async (_event, input: VoiceLabGenerateInput)
   const runtimeConfig = await (await getConfigService()).getRuntimeConfig();
   const id = input.id ?? randomUUID();
   const record = await generateConfiguredVoicePreview(runtimeConfig, voiceLabWorkDir(id), { ...input, id });
-  await database.addVoiceLabRecord(record);
-  return getPublicState();
+  const saved = await database.addVoiceLabRecord(record);
+  return publishStatePatch({ kind: 'voice-lab-upsert', record: voiceLabSummary(saved) });
 });
 
 trustedHandle('account:save', async (_event, account: AccountProfile) => {
   const database = await getDb();
   await database.upsertAccount(account);
-  return getPublicState();
+  return publishStatePatch({ kind: 'account', account });
 });
 
 trustedHandle('activation:save', async (_event, activation: ActivationState) => {
   const database = await getDb();
   await database.upsertActivation(activation);
-  return getPublicState();
+  return publishStatePatch({ kind: 'activation', activation });
 });
 
 trustedHandle('ui:save-preferences', async (_event, ui: UiPreferences) => {
   const database = await getDb();
   await database.upsertUiPreferences(ui);
-  return getPublicState();
+  return publishStatePatch({ kind: 'ui', ui });
 });
 
 trustedHandle('book-selection:list', async (_event, theme?: string) => (await getDb()).listBookSelections(theme));
@@ -1012,8 +1124,9 @@ trustedHandle('html-video:create-task', async (_event, input: CreateTaskInput) =
     pipelineStep: input.pipelineStep ?? 'rewrite',
     pipelineData: input.pipelineData ?? '{}',
   });
+  const delta = await publishTaskUpsert(database, task.id);
   startTaskRun(database, task);
-  return getPublicState();
+  return delta;
 });
 
 trustedHandle('html-video:open-preview', async (_event, input: { id: string; sceneIndex?: number }) => {
@@ -1045,7 +1158,7 @@ trustedHandle('html-video:media-url', async (_event, input: { id: string; path: 
 });
 
 async function getHtmlVideoTask(database: FileDatabase, id: string): Promise<Task> {
-  const task = (await database.getState()).tasks.find((item) => item.id === id);
+  const task = await database.getTaskDetail(id);
   if (!task || !isHtmlVideoTask(task)) {
     throw new Error('HTML_VIDEO_TASK_NOT_FOUND: HTML 视频任务不存在。');
   }
@@ -1055,8 +1168,9 @@ async function getHtmlVideoTask(database: FileDatabase, id: string): Promise<Tas
 trustedHandle('task:create-and-run', async (_event, input: CreateTaskInput) => {
   const database = await getDb();
   const task = await database.createTask(input);
+  const delta = await publishTaskUpsert(database, task.id);
   startTaskRun(database, task);
-  return getPublicState();
+  return delta;
 });
 
 trustedHandle('viral:create-and-run', async (_event, input: CreateViralAnalysisInput) => {
@@ -1065,18 +1179,19 @@ trustedHandle('viral:create-and-run', async (_event, input: CreateViralAnalysisI
     ...input,
     platform: input.platform && input.platform !== 'unknown' ? input.platform : detectViralPlatform(input.url),
   });
+  const delta = await publishViralUpsert(database, record.id);
   startViralAnalysisRun(database, record);
-  return getPublicState();
+  return delta;
 });
 
 trustedHandle('viral:update-status', async (_event, input: { id: string; status: ViralAnalysisStatus }) => {
   const database = await getDb();
   const state = await database.getState();
   const record = state.viralAnalyses.find((item) => item.id === input.id);
-  if (!record) return getPublicState();
+  if (!record) return null;
   if (input.status === 'running') {
     await resumeViralAnalysisRun(database, record);
-    return getPublicState();
+    return publishViralUpsert(database, record.id);
   }
   if (input.status === 'paused' || input.status === 'cancelled') {
     const run = runningViralAnalyses.get(input.id);
@@ -1088,16 +1203,20 @@ trustedHandle('viral:update-status', async (_event, input: { id: string; status:
       errorMessage: input.status === 'cancelled' ? '用户取消' : record.errorMessage,
       lastHeartbeatAt: new Date().toISOString(),
     });
+    return publishViralUpsert(database, input.id);
   }
-  return getPublicState();
+  return publishViralUpsert(database, input.id);
 });
 
 trustedHandle('viral:retry', async (_event, id: string) => {
   const database = await getDb();
   const state = await database.getState();
   const record = state.viralAnalyses.find((item) => item.id === id);
-  if (record) await resumeViralAnalysisRun(database, record);
-  return getPublicState();
+  if (record) {
+    await resumeViralAnalysisRun(database, record);
+    return publishViralUpsert(database, id);
+  }
+  return null;
 });
 
 trustedHandle('viral:get-result', async (_event, id: string) => {
@@ -1116,13 +1235,14 @@ trustedHandle('viral:create-production-task', async (_event, input: { id: string
   const result = JSON.parse(await readFile(record.resultPath, 'utf8'));
   const taskInput = createViralProductionTaskInput(result, input.options);
   const task = await database.createTask(taskInput);
+  const delta = await publishTaskUpsert(database, task.id);
   startTaskRun(database, task);
-  return getPublicState();
+  return delta;
 });
 
 trustedHandle('task:update-status', async (_event, input: { id: string; status: TaskStatus }) => {
   const isControlRequest = input.status === 'running' || input.status === 'paused' || input.status === 'cancelled';
-  if (!isControlRequest) return getPublicState();
+  if (!isControlRequest) return null;
   return runLatestTaskControlRequest(latestTaskControlRequests, input.id, async (isCurrent) => {
     const existingRun = runningTasks.get(input.id);
     let controlledRun = existingRun;
@@ -1141,7 +1261,7 @@ trustedHandle('task:update-status', async (_event, input: { id: string; status: 
     const state = await database.getState();
     const task = state.tasks.find((item) => item.id === input.id);
     if (!task || !isCurrent()) {
-      return getPublicState();
+      return null;
     }
     if (input.status === 'running') {
       if (!existingRun) {
@@ -1152,7 +1272,7 @@ trustedHandle('task:update-status', async (_event, input: { id: string; status: 
           lastHeartbeatAt: new Date().toISOString(),
         });
       }
-      return getPublicState();
+      return publishTaskUpsert(database, input.id);
     }
     if (input.status === 'paused' || input.status === 'cancelled') {
       const currentRun = runningTasks.get(input.id);
@@ -1184,7 +1304,7 @@ trustedHandle('task:update-status', async (_event, input: { id: string; status: 
         }
       }
     }
-    return getPublicState();
+    return publishTaskUpsert(database, input.id);
   });
 });
 
@@ -1196,7 +1316,7 @@ trustedHandle('task:retry', async (_event, id: string) => {
     const state = await database.getState();
     const task = state.tasks.find((item) => item.id === id);
     if (!task || !isCurrent()) {
-      return getPublicState();
+      return null;
     }
     if (!existingRun) {
       await resumeTaskRun(database, task, isCurrent);
@@ -1206,16 +1326,16 @@ trustedHandle('task:retry', async (_event, id: string) => {
         lastHeartbeatAt: new Date().toISOString(),
       });
     }
-    return getPublicState();
+    return publishTaskUpsert(database, id);
   });
 });
 
 trustedHandle('task:regenerate-image', async (_event, input: { id: string; sceneId: number }) => {
   return runLatestTaskControlRequest(latestTaskControlRequests, input.id, async (isCurrent) => {
     const database = await getDb();
-    if (!isCurrent()) return getPublicState();
+    if (!isCurrent()) return null;
     const state = await database.getState();
-    if (!isCurrent()) return getPublicState();
+    if (!isCurrent()) return null;
     const task = state.tasks.find((item) => item.id === input.id);
     if (!task) {
       throw new Error(`Task not found: ${input.id}`);
@@ -1226,10 +1346,10 @@ trustedHandle('task:regenerate-image', async (_event, input: { id: string; scene
 
     const sceneId = Number(input.sceneId);
     if (!await stopTaskRunBeforeArtifactMutation(() => runningTasks.get(input.id), isCurrent)) {
-      return getPublicState();
+      return null;
     }
     await markSceneImageForRegeneration(task.artifactStatePath, sceneId);
-    if (!isCurrent()) return getPublicState();
+    if (!isCurrent()) return null;
     await database.updateTask(task.id, {
       status: 'pending',
       currentStep: 4,
@@ -1240,26 +1360,27 @@ trustedHandle('task:regenerate-image', async (_event, input: { id: string; scene
       errorMessage: `重新生成第 ${sceneId} 张图片`,
       lastHeartbeatAt: new Date().toISOString(),
     });
-    if (!isCurrent()) return getPublicState();
-    await database.addTaskEvent(task.id, {
+    if (!isCurrent()) return null;
+    const event = await database.addTaskEvent(task.id, {
       type: 'step_start',
       step: 4,
       agent: 'Producer',
       detail: `重新生成第 ${sceneId} 张图片`,
       dataJson: JSON.stringify({ sceneId }),
     });
-    if (!isCurrent()) return getPublicState();
+    await publishTaskEvent(event);
+    if (!isCurrent()) return null;
     await resumeLatestTaskRun(database, task.id, isCurrent);
-    return getPublicState();
+    return publishTaskUpsert(database, task.id);
   });
 });
 
 trustedHandle('task:regenerate-narration', async (_event, input: { id: string; sceneId: number }) => {
   return runLatestTaskControlRequest(latestTaskControlRequests, input.id, async (isCurrent) => {
     const database = await getDb();
-    if (!isCurrent()) return getPublicState();
+    if (!isCurrent()) return null;
     const state = await database.getState();
-    if (!isCurrent()) return getPublicState();
+    if (!isCurrent()) return null;
     const task = state.tasks.find((item) => item.id === input.id);
     if (!task) {
       throw new Error(`Task not found: ${input.id}`);
@@ -1270,10 +1391,10 @@ trustedHandle('task:regenerate-narration', async (_event, input: { id: string; s
 
     const sceneId = Number(input.sceneId);
     if (!await stopTaskRunBeforeArtifactMutation(() => runningTasks.get(input.id), isCurrent)) {
-      return getPublicState();
+      return null;
     }
     await markSceneNarrationForRegeneration(task.artifactStatePath, sceneId);
-    if (!isCurrent()) return getPublicState();
+    if (!isCurrent()) return null;
     await database.updateTask(task.id, {
       status: 'pending',
       currentStep: 5,
@@ -1284,26 +1405,27 @@ trustedHandle('task:regenerate-narration', async (_event, input: { id: string; s
       errorMessage: `重新生成第 ${sceneId} 段配音`,
       lastHeartbeatAt: new Date().toISOString(),
     });
-    if (!isCurrent()) return getPublicState();
-    await database.addTaskEvent(task.id, {
+    if (!isCurrent()) return null;
+    const event = await database.addTaskEvent(task.id, {
       type: 'step_start',
       step: 5,
       agent: 'TTS',
       detail: `重新生成第 ${sceneId} 段配音`,
       dataJson: JSON.stringify({ sceneId }),
     });
-    if (!isCurrent()) return getPublicState();
+    await publishTaskEvent(event);
+    if (!isCurrent()) return null;
     await resumeLatestTaskRun(database, task.id, isCurrent);
-    return getPublicState();
+    return publishTaskUpsert(database, task.id);
   });
 });
 
 trustedHandle('task:update-image-prompt', async (_event, input: { id: string; sceneId: number; prompt: string }) => {
   return runLatestTaskControlRequest(latestTaskControlRequests, input.id, async (isCurrent) => {
     const database = await getDb();
-    if (!isCurrent()) return getPublicState();
+    if (!isCurrent()) return null;
     const state = await database.getState();
-    if (!isCurrent()) return getPublicState();
+    if (!isCurrent()) return null;
     const task = state.tasks.find((item) => item.id === input.id);
     if (!task) {
       throw new Error(`Task not found: ${input.id}`);
@@ -1314,27 +1436,28 @@ trustedHandle('task:update-image-prompt', async (_event, input: { id: string; sc
 
     const sceneId = Number(input.sceneId);
     if (!await stopTaskRunBeforeArtifactMutation(() => runningTasks.get(input.id), isCurrent)) {
-      return getPublicState();
+      return null;
     }
     const result = await updateSceneImagePrompt(task.artifactStatePath, sceneId, input.prompt);
-    if (!isCurrent()) return getPublicState();
-    await database.addTaskEvent(task.id, {
+    if (!isCurrent()) return null;
+    const event = await database.addTaskEvent(task.id, {
       type: 'prompt_update',
       step: 3,
       agent: 'Prompt',
       detail: `已修改第 ${sceneId} 张图片提示词`,
       dataJson: JSON.stringify({ sceneId, promptLength: result.updatedPrompt.prompt.length }),
     });
-    return getPublicState();
+    await publishTaskEvent(event);
+    return publishTaskUpsert(database, task.id);
   });
 });
 
 trustedHandle('task:rerun-step', async (_event, input: { id: string; step: number; mode: TaskStepRerunMode }) => {
   return runLatestTaskControlRequest(latestTaskControlRequests, input.id, async (isCurrent) => {
     const database = await getDb();
-    if (!isCurrent()) return getPublicState();
+    if (!isCurrent()) return null;
     const state = await database.getState();
-    if (!isCurrent()) return getPublicState();
+    if (!isCurrent()) return null;
     const task = state.tasks.find((item) => item.id === input.id);
     if (!task) {
       throw new Error(`Task not found: ${input.id}`);
@@ -1345,10 +1468,10 @@ trustedHandle('task:rerun-step', async (_event, input: { id: string; step: numbe
 
     const step = Number(input.step);
     if (!await stopTaskRunBeforeArtifactMutation(() => runningTasks.get(input.id), isCurrent)) {
-      return getPublicState();
+      return null;
     }
     const result = await markTaskStepForRerun(task.artifactStatePath, step, input.mode);
-    if (!isCurrent()) return getPublicState();
+    if (!isCurrent()) return null;
     const detail = result.mode === 'rewrite' ? `改写第 ${step + 1} 步后继续` : `重新生成第 ${step + 1} 步后继续`;
     await database.updateTask(task.id, {
       status: 'pending',
@@ -1360,17 +1483,18 @@ trustedHandle('task:rerun-step', async (_event, input: { id: string; step: numbe
       errorMessage: detail,
       lastHeartbeatAt: new Date().toISOString(),
     });
-    if (!isCurrent()) return getPublicState();
-    await database.addTaskEvent(task.id, {
+    if (!isCurrent()) return null;
+    const event = await database.addTaskEvent(task.id, {
       type: 'step_start',
       step,
       agent: pipelineStepAgents[step] ?? null,
       detail,
       dataJson: JSON.stringify({ step, mode: result.mode, clearedSteps: result.clearedSteps }),
     });
-    if (!isCurrent()) return getPublicState();
+    await publishTaskEvent(event);
+    if (!isCurrent()) return null;
     await resumeLatestTaskRun(database, task.id, isCurrent);
-    return getPublicState();
+    return publishTaskUpsert(database, task.id);
   });
 });
 
@@ -1452,7 +1576,7 @@ async function exportDouyinLoginCookies(win: BrowserWindow): Promise<string> {
     },
   };
   await service.save({ config: updatedConfig, secretChanges: {} });
-  await sendTaskState(database);
+  void database;
   return outputPath;
 }
 
@@ -1652,6 +1776,7 @@ async function checkStoryboundSidecarDependencies(): Promise<{ status: 'pass' | 
 
 async function shutdownApplication(): Promise<void> {
   isShuttingDown = true;
+  acceptingAppDeltas = false;
   const completions: Promise<void>[] = [];
 
   for (const run of runningTasks.values()) {
@@ -1665,6 +1790,7 @@ async function shutdownApplication(): Promise<void> {
   }
 
   await Promise.allSettled(completions);
+  await deltaPublishQueue;
   const database = db;
   if (database) {
     await database.close();

@@ -217,6 +217,12 @@ export const sceneActionSchema = z.object({ id: idSchema, sceneId: nonNegativeIn
 export const taskStatusSchema = z.object({ id: idSchema, status: taskStatusValueSchema }).strict();
 const viralStatusSchema = z.object({ id: idSchema, status: viralStatusValueSchema }).strict();
 const idOnlySchema = idSchema;
+const cursorPageSchema = z
+  .object({
+    cursor: nonEmptyText(4096).nullable().optional(),
+    limit: finiteNumber.optional(),
+  })
+  .strict();
 const optionalThemeSchema = z.string().max(1024).optional();
 const nameSchema = nonEmptyText(256).refine((value) => !/[\\/]/u.test(value) && value !== '..', 'Invalid name.');
 
@@ -393,6 +399,15 @@ const draftTemplateSchema = boundedObjectSchema.refine(
 
 export const ipcInputSchemas = {
   'app:get-state': z.void(),
+  'app:get-bootstrap': z.void(),
+  'app:reconcile-deltas': z
+    .object({
+      sinceRevision: nonNegativeInteger,
+      taskId: idSchema.optional(),
+      viralAnalysisId: idSchema.optional(),
+      forceReset: z.boolean().optional(),
+    })
+    .strict(),
   'app:save-config': saveConfigInputSchema,
   'config:test': z.object({ target: configTestTargetSchema, config: appConfigSchema, secretChanges: secretChangesSchema }).strict(),
   'llm:test-config': llmConfigSchema,
@@ -401,13 +416,21 @@ export const ipcInputSchemas = {
   'research:web-search': nonEmptyText(MAX_IPC_TEXT),
   'research:compose-copy': researchCopyComposeSchema,
   'prompt-template:save': promptTemplateSchema,
+  'prompt-template:list': cursorPageSchema,
+  'prompt-template:get-detail': idOnlySchema,
   'prompt-template:reset': z.void(),
   'custom-style:save': customStyleSchema,
   'custom-style:generate-draft': z.object({ prompt: nonEmptyText(MAX_TASK_TEXT), baseStyle: customStyleSchema }).strict(),
   'draft-template:save': draftTemplateSchema,
+  'draft-template:list': cursorPageSchema,
+  'draft-template:get-detail': idOnlySchema,
   'image-lab:generate': imageLabSchema,
+  'image-lab:list': cursorPageSchema,
+  'image-lab:get-detail': idOnlySchema,
   'image-lab:add-record': imageLabAddRecordSchema,
   'voice-lab:generate': voiceLabSchema,
+  'voice-lab:list': cursorPageSchema,
+  'voice-lab:get-detail': idOnlySchema,
   'account:save': z
     .object({
       displayName: z.string().max(1024),
@@ -464,7 +487,13 @@ export const ipcInputSchemas = {
   'html-video:open-preview': htmlVideoPreviewSchema,
   'html-video:media-url': htmlVideoMediaSchema,
   'task:create-and-run': createTaskSchema,
+  'task:list': cursorPageSchema,
+  'task:get-detail': idOnlySchema,
+  'task:list-events': z.object({ taskId: idSchema, cursor: nonEmptyText(4096).nullable().optional(), limit: finiteNumber.optional() }).strict(),
   'viral:create-and-run': createViralAnalysisSchema,
+  'viral:list': cursorPageSchema,
+  'viral:get-detail': idOnlySchema,
+  'viral:list-events': z.object({ analysisId: idSchema, cursor: nonEmptyText(4096).nullable().optional(), limit: finiteNumber.optional() }).strict(),
   'viral:update-status': viralStatusSchema,
   'viral:retry': idOnlySchema,
   'viral:get-result': idOnlySchema,

@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
 import {
   Bell,
@@ -48,7 +48,10 @@ import type {
   ActivationState,
   AiSourceContext,
   AiSourceSection,
+  AppDelta,
+  AppMutationResult,
   AppConfig,
+  BootstrapState,
   BookProductInfo,
   BookSelectionRecord,
   ConfigTestTarget,
@@ -60,6 +63,7 @@ import type {
   ImageLabGenerateInput,
   ImageProviderProfile,
   ImageLabRecord,
+  ImageLabSummary,
   ImageLabSmartMode,
   BgmItem,
   HtmlVideoStepStatus,
@@ -76,6 +80,7 @@ import type {
   RewriteIntensity,
   ShellView,
   Task,
+  TaskSummary,
   TaskArtifactSnapshot,
   ViralAnalysisEvent,
   TaskEvent,
@@ -87,11 +92,34 @@ import type {
   UiPreferences,
   VolcengineSpeaker,
   ViralAnalysisResult,
+  ViralAnalysisRecord,
+  ViralAnalysisSummary,
   ViralAnalysisStatus,
   ViralPlatform,
   VoiceLabGenerateInput,
   VoiceLabRecord,
+  VoiceLabSummary,
 } from './shared/types';
+import { createAppDeltaCoordinator, MAX_RENDERER_DELTA_BUFFER, type DeltaViewState, type RevisionGap } from './shared/state-delta';
+import {
+  applyAppMutationResult,
+  applyBufferedMutationResults,
+  applyLocalMutationResponse,
+  claimMutationResult,
+  collectCursorPages,
+  createRequestGenerationGuard,
+  imageLabSummaryToRecord,
+  mergeBootstrapTemplateDetails,
+  mergeDeltaViewSlices,
+  mergeReconciliationSlices,
+  raiseMutationRevisionFloor,
+  taskDetailRefreshKey,
+  taskSummaryToTask,
+  taskToSummary,
+  viralSummaryToRecord,
+  viralEventRefreshKey,
+  voiceLabSummaryToRecord,
+} from './shared/state-reconciliation';
 import {
   stripConfigSecrets,
   type PublicAppState as AppState,
@@ -358,6 +386,40 @@ const pipelineSteps = [
 ] as const;
 
 type StoryDreamApi = NonNullable<Window['storydream']>;
+type ApplyMutationResult = (result: AppMutationResult | null) => void;
+
+function taskFromMutation(result: AppMutationResult | null): TaskSummary | null {
+  return result?.kind === 'task-upsert' ? result.task : null;
+}
+
+function viralFromMutation(result: AppMutationResult | null): ViralAnalysisSummary | null {
+  return result?.kind === 'viral-upsert' ? result.record : null;
+}
+
+function configFromMutation(result: AppMutationResult | null): AppConfig {
+  if (result?.kind === 'state-patch' && result.patch.kind === 'config') return result.patch.config;
+  throw new Error('CONFIG_MUTATION_INVALID: Save did not return a config patch.');
+}
+
+async function loadCompleteBootstrap(api: StoryDreamApi, bootstrap: BootstrapState): Promise<BootstrapState> {
+  const [tasks, viralAnalyses, imageLabRecords, voiceLabRecords, promptTemplates, draftTemplates] = await Promise.all([
+    collectCursorPages(bootstrap.tasks, (cursor) => api.listTasks({ cursor, limit: 100 })),
+    collectCursorPages(bootstrap.viralAnalyses, (cursor) => api.listViralAnalyses({ cursor, limit: 100 })),
+    collectCursorPages(bootstrap.imageLabRecords, (cursor) => api.listImageLabRecords({ cursor, limit: 100 })),
+    collectCursorPages(bootstrap.voiceLabRecords, (cursor) => api.listVoiceLabRecords({ cursor, limit: 100 })),
+    collectCursorPages(bootstrap.promptTemplates, (cursor) => api.listPromptTemplates({ cursor, limit: 100 })),
+    collectCursorPages(bootstrap.draftTemplates, (cursor) => api.listDraftTemplates({ cursor, limit: 100 })),
+  ]);
+  return {
+    ...bootstrap,
+    tasks: { items: tasks, nextCursor: null },
+    viralAnalyses: { items: viralAnalyses, nextCursor: null },
+    imageLabRecords: { items: imageLabRecords, nextCursor: null },
+    voiceLabRecords: { items: voiceLabRecords, nextCursor: null },
+    promptTemplates: { items: promptTemplates, nextCursor: null },
+    draftTemplates: { items: draftTemplates, nextCursor: null },
+  };
+}
 type ModelListKey = 'llm' | 'gpt-image' | 'custom-image';
 type SecretEditor = {
   value: (id: SecretId) => string;
@@ -404,6 +466,48 @@ function hydrateState(state: Partial<AppState>): AppState {
   };
 }
 
+function bootstrapToState(bootstrap: BootstrapState): AppState {
+  const promptDefaults = new Map(defaultPromptTemplates.map((template) => [template.id, template]));
+  const draftDefaults = new Map(builtinDraftTemplates.map((template) => [template.id, template]));
+  return hydrateState({
+    config: bootstrap.config,
+    secretStatus: bootstrap.secretStatus,
+    tasks: bootstrap.tasks.items.map((task) => taskSummaryToTask(task)),
+    events: [],
+    viralAnalyses: bootstrap.viralAnalyses.items.map((summary) => viralSummaryToRecord(summary)),
+    viralEvents: [],
+    promptTemplates: bootstrap.promptTemplates.items.map((summary) => ({
+      ...(promptDefaults.get(summary.id) ?? { content: '' }),
+      ...summary,
+      content: promptDefaults.get(summary.id)?.content ?? '',
+    })) as PromptTemplate[],
+    draftTemplates: bootstrap.draftTemplates.items.map((summary) => {
+      const base = draftDefaults.get(summary.id) ?? builtinDraftTemplates[0];
+      return normalizeDraftTemplate({
+        ...base,
+        id: summary.id,
+        name: summary.name,
+        isDefault: summary.isDefault,
+        updatedAt: summary.updatedAt,
+        canvas: { ...base.canvas, ...summary.canvas },
+      });
+    }),
+    imageLabRecords: bootstrap.imageLabRecords.items.map((summary) => imageLabSummaryToRecord(summary)),
+    voiceLabRecords: bootstrap.voiceLabRecords.items.map((summary) => voiceLabSummaryToRecord(summary)),
+    customStyles: bootstrap.customStyles,
+    customCoverTemplates: bootstrap.customCoverTemplates,
+    creditTransactions: bootstrap.creditTransactions,
+    minimaxCloneVoices: bootstrap.minimaxCloneVoices,
+    account: bootstrap.account,
+    activation: bootstrap.activation,
+    ui: bootstrap.ui,
+  });
+}
+
+function mergeDeltaView(current: AppState, deltaState: DeltaViewState): AppState {
+  return mergeDeltaViewSlices(current, deltaState);
+}
+
 function mergeDefaultCustomStyles(styles: CustomStyle[] | undefined): CustomStyle[] {
   const current = new Map((styles ?? []).map((style) => [style.id, style]));
   const builtinIds = new Set(defaultCustomStyles.map((style) => style.id));
@@ -435,18 +539,178 @@ function makeFallbackApi(setState: (state: AppState) => void): StoryDreamApi {
     localStorage.setItem('storybound-book-selections', JSON.stringify(records));
     return records;
   };
-  const persist = (state: AppState) => {
+  let fallbackRevision = 0;
+  const changed = (left: unknown, right: unknown) => JSON.stringify(left) !== JSON.stringify(right);
+  const mutationForState = (previous: AppState, next: AppState): AppMutationResult | null => {
+    const task = next.tasks.find((item) => {
+      const old = previous.tasks.find((candidate) => candidate.id === item.id);
+      return !old || changed(old, item);
+    });
+    if (task) return { kind: 'task-upsert', task: taskToSummary(task), revision: ++fallbackRevision };
+    const viral = next.viralAnalyses.find((item) => {
+      const old = previous.viralAnalyses.find((candidate) => candidate.id === item.id);
+      return !old || changed(old, item);
+    });
+    if (viral) {
+      const { settings: _settings, resultPath: _resultPath, videoPath: _videoPath, ...record } = viral;
+      return { kind: 'viral-upsert', record, revision: ++fallbackRevision };
+    }
+    let patch: Extract<AppDelta, { kind: 'state-patch' }>['patch'] | null = null;
+    if (changed(previous.config, next.config)) patch = { kind: 'config', config: next.config, secretStatus: {} };
+    else if (changed(previous.promptTemplates, next.promptTemplates)) {
+      const changedTemplates = next.promptTemplates.filter((template) => {
+        const old = previous.promptTemplates.find((candidate) => candidate.id === template.id);
+        return !old || changed(old, template);
+      });
+      patch = changedTemplates.length === 1
+        ? { kind: 'prompt-template-upsert', template: changedTemplates[0] }
+        : {
+            kind: 'prompt-templates-reset',
+            templates: next.promptTemplates.filter((template) => template.isBuiltin).map(({ content: _content, stepPrompts: _steps, imageSeedPoolsJson: _seeds, ...summary }) => summary),
+          };
+    } else if (changed(previous.customStyles, next.customStyles)) {
+      const style = next.customStyles.find((item) => !previous.customStyles.some((old) => old.id === item.id && !changed(old, item)));
+      if (style) patch = { kind: 'custom-style-upsert', style };
+    } else if (changed(previous.draftTemplates, next.draftTemplates)) {
+      const template = next.draftTemplates.find((item) => !previous.draftTemplates.some((old) => old.id === item.id && !changed(old, item)));
+      if (template) patch = { kind: 'draft-template-upsert', template };
+    } else if (changed(previous.imageLabRecords, next.imageLabRecords) && next.imageLabRecords[0]) {
+      const { prompt, referenceImagePaths: _paths, referenceImagePath: _path, ...record } = next.imageLabRecords[0];
+      patch = { kind: 'image-lab-upsert', record: { ...record, promptPreview: prompt.slice(0, 160) } };
+    } else if (changed(previous.voiceLabRecords, next.voiceLabRecords) && next.voiceLabRecords[0]) {
+      const { text, ...record } = next.voiceLabRecords[0];
+      patch = { kind: 'voice-lab-upsert', record: { ...record, textPreview: text.slice(0, 160) } };
+    } else if (changed(previous.account, next.account)) patch = { kind: 'account', account: next.account };
+    else if (changed(previous.activation, next.activation)) patch = { kind: 'activation', activation: next.activation };
+    else if (changed(previous.ui, next.ui)) patch = { kind: 'ui', ui: next.ui };
+    return patch ? { kind: 'state-patch', patch, revision: ++fallbackRevision } : null;
+  };
+  const persist = (state: AppState): AppMutationResult | null => {
+    const previous = read();
     const next = hydrateState(state);
     const sanitized = { ...next, config: stripConfigSecrets(next.config), secretStatus: {} };
     localStorage.setItem('storydream-state', JSON.stringify(sanitized));
     localStorage.removeItem('storybound-state');
     setState(sanitized);
-    return sanitized;
+    return mutationForState(previous, sanitized);
   };
 
   return {
     async getState() {
       return read();
+    },
+    async getBootstrap() {
+      const state = read();
+      return {
+        revision: 0,
+        config: state.config,
+        secretStatus: {},
+        tasks: { items: state.tasks.map(taskToSummary), nextCursor: null },
+        viralAnalyses: { items: state.viralAnalyses, nextCursor: null },
+        imageLabRecords: {
+          items: state.imageLabRecords.map(({ prompt, referenceImagePaths: _paths, referenceImagePath: _path, ...record }) => ({ ...record, promptPreview: prompt.slice(0, 160) })),
+          nextCursor: null,
+        },
+        voiceLabRecords: {
+          items: state.voiceLabRecords.map(({ text, ...record }) => ({ ...record, textPreview: text.slice(0, 160) })),
+          nextCursor: null,
+        },
+        promptTemplates: {
+          items: state.promptTemplates.map(({ content: _content, stepPrompts: _steps, imageSeedPoolsJson: _seeds, ...summary }) => summary),
+          nextCursor: null,
+        },
+        draftTemplates: {
+          items: state.draftTemplates.map((template) => ({
+            id: template.id,
+            name: template.name,
+            isDefault: template.isDefault,
+            canvas: { width: template.canvas.width, height: template.canvas.height, ratio: template.canvas.ratio },
+            updatedAt: '',
+          })),
+          nextCursor: null,
+        },
+        customStyles: state.customStyles,
+        customCoverTemplates: state.customCoverTemplates,
+        creditTransactions: state.creditTransactions,
+        minimaxCloneVoices: state.minimaxCloneVoices,
+        account: state.account,
+        activation: state.activation,
+        ui: state.ui,
+      } satisfies BootstrapState;
+    },
+    async reconcileDeltas(input) {
+      const state = read();
+      return {
+        revision: input.sinceRevision,
+        deltas: [],
+        resetRequired: false,
+        task: input.taskId ? state.tasks.find((task) => task.id === input.taskId) ?? null : null,
+        taskEvents: input.taskId
+          ? state.events.filter((event) => event.taskId === input.taskId && Number.isInteger(event.seq)) as Array<TaskEvent & { seq: number }>
+          : [],
+        viralAnalysis: input.viralAnalysisId ? state.viralAnalyses.find((record) => record.id === input.viralAnalysisId) ?? null : null,
+        viralEvents: input.viralAnalysisId ? state.viralEvents.filter((event) => event.analysisId === input.viralAnalysisId) : [],
+      };
+    },
+    async listTasks() {
+      return { items: read().tasks.map(taskToSummary), nextCursor: null };
+    },
+    async getTaskDetail(id) {
+      return read().tasks.find((task) => task.id === id) ?? null;
+    },
+    async listTaskEvents(taskId) {
+      return {
+        items: read().events.filter((event) => event.taskId === taskId && Number.isInteger(event.seq)) as Array<TaskEvent & { seq: number }>,
+        nextCursor: null,
+      };
+    },
+    async listViralAnalyses() {
+      return { items: read().viralAnalyses, nextCursor: null };
+    },
+    async getViralAnalysisDetail(id) {
+      return read().viralAnalyses.find((record) => record.id === id) ?? null;
+    },
+    async listViralEvents(analysisId) {
+      return { items: read().viralEvents.filter((event) => event.analysisId === analysisId), nextCursor: null };
+    },
+    async listImageLabRecords() {
+      return {
+        items: read().imageLabRecords.map(({ prompt, referenceImagePaths: _paths, referenceImagePath: _path, ...record }) => ({ ...record, promptPreview: prompt.slice(0, 160) })),
+        nextCursor: null,
+      };
+    },
+    async getImageLabRecordDetail(id) {
+      return read().imageLabRecords.find((record) => record.id === id) ?? null;
+    },
+    async listVoiceLabRecords() {
+      return { items: read().voiceLabRecords.map(({ text, ...record }) => ({ ...record, textPreview: text.slice(0, 160) })), nextCursor: null };
+    },
+    async getVoiceLabRecordDetail(id) {
+      return read().voiceLabRecords.find((record) => record.id === id) ?? null;
+    },
+    async listPromptTemplates() {
+      return {
+        items: read().promptTemplates.map(({ content: _content, stepPrompts: _steps, imageSeedPoolsJson: _seeds, ...summary }) => summary),
+        nextCursor: null,
+      };
+    },
+    async getPromptTemplateDetail(id) {
+      return read().promptTemplates.find((template) => template.id === id) ?? null;
+    },
+    async listDraftTemplates() {
+      return {
+        items: read().draftTemplates.map((template) => ({
+          id: template.id,
+          name: template.name,
+          isDefault: template.isDefault,
+          canvas: { width: template.canvas.width, height: template.canvas.height, ratio: template.canvas.ratio },
+          updatedAt: '',
+        })),
+        nextCursor: null,
+      };
+    },
+    async getDraftTemplateDetail(id) {
+      return read().draftTemplates.find((template) => template.id === id) ?? null;
     },
     async saveConfig(input) {
       if (Object.keys(input.secretChanges).length > 0) {
@@ -888,7 +1152,7 @@ function makeFallbackApi(setState: (state: AppState) => void): StoryDreamApi {
     },
     openPath: async () => undefined,
     windowControl: async () => undefined,
-    onTaskEvent: () => () => undefined,
+    onAppDelta: () => () => undefined,
   };
 }
 
@@ -900,33 +1164,303 @@ function App() {
   const isBrowserPreview = !window.storydream && !window.storybound;
   const api = useMemo(() => window.storydream ?? window.storybound ?? makeFallbackApi(setState), []);
   const shellAction = useAsyncAction();
+  const revisionRef = useRef(0);
+  const mutationRevisionsRef = useRef(new Map<string, number>());
+  const selectedTaskIdRef = useRef<string | null>(null);
+  const activeHtmlTaskIdRef = useRef<string | null>(null);
+  const activeViralAnalysisIdRef = useRef<string | null>(null);
+  const taskDetailGuard = useMemo(() => createRequestGenerationGuard(), []);
+  const viralDetailGuard = useMemo(() => createRequestGenerationGuard(), []);
+
+  const refreshTaskDetail = useCallback(async (taskId: string) => {
+    const generation = taskDetailGuard.begin(taskId);
+    try {
+      const [detail, eventPage] = await Promise.all([
+        api.getTaskDetail(taskId),
+        api.listTaskEvents(taskId, { limit: 100 }),
+      ]);
+      if (!taskDetailGuard.isCurrent(taskId, generation) || !detail) return;
+      setState((current) => mergeReconciliationSlices(current, {
+        task: detail,
+        taskEvents: eventPage.items,
+        viralAnalysis: null,
+        viralEvents: [],
+      }));
+    } catch (error) {
+      if (taskDetailGuard.isCurrent(taskId, generation)) shellAction.reportError(error);
+    }
+  }, [api, shellAction.reportError, taskDetailGuard]);
+
+  const refreshViralEvents = useCallback(async (analysisId: string) => {
+    const generation = viralDetailGuard.begin(analysisId);
+    try {
+      const [detail, eventPage] = await Promise.all([
+        api.getViralAnalysisDetail(analysisId),
+        api.listViralEvents(analysisId, { limit: 100 }),
+      ]);
+      if (!viralDetailGuard.isCurrent(analysisId, generation)) return;
+      setState((current) => mergeReconciliationSlices(current, {
+        task: null,
+        taskEvents: [],
+        viralAnalysis: detail,
+        viralEvents: eventPage.items,
+      }));
+    } catch (error) {
+      if (viralDetailGuard.isCurrent(analysisId, generation)) shellAction.reportError(error);
+    }
+  }, [api, shellAction.reportError, viralDetailGuard]);
+
+  const onActiveHtmlTaskChange = useCallback((taskId: string) => {
+    activeHtmlTaskIdRef.current = taskId || null;
+  }, []);
+
+  const onActiveViralAnalysisChange = useCallback((analysisId: string) => {
+    activeViralAnalysisIdRef.current = analysisId || null;
+  }, []);
 
   useEffect(() => {
-    api
-      .getState()
-      .then((next) => {
-        const hydrated = hydrateState(next);
-        setState(hydrated);
-        setActiveView(hydrated.ui.activeView);
-      })
-      .catch(shellAction.reportError);
-    return api.onTaskEvent((next) => {
+    selectedTaskIdRef.current = selectedTaskId;
+  }, [selectedTaskId]);
+
+  useEffect(() => {
+    let disposed = false;
+    let reconciling = false;
+    let reconcileAgain = false;
+    let reconcileAgainWithReset = false;
+    let resetInProgress = false;
+    let resetRecoveryRevision = 0;
+    let snapshotInstalling = true;
+    let mutationBufferOverflowed = false;
+    const bufferedMutationResults = new Map<number, AppMutationResult>();
+    const applyDeltaState = (next: DeltaViewState | null) => {
+      if (!next || disposed) return;
+      revisionRef.current = next.revision;
+      setState((current) => mergeDeltaView(current, next));
+    };
+    const applyStatePatch = (delta: AppDelta) => {
+      if (delta.kind !== 'state-patch') return;
+      const claimedRevisions = claimMutationResult(delta, mutationRevisionsRef.current);
+      if (!claimedRevisions) return;
+      setState((current) => applyAppMutationResult(current, delta, new Map(claimedRevisions)));
+    };
+    const requestReconciliation = (forceReset = false) => {
+      if (disposed) return;
+      if (snapshotInstalling || reconciling) {
+        reconcileAgain = true;
+        reconcileAgainWithReset ||= forceReset;
+        return;
+      }
+      void reconcile(undefined, forceReset);
+    };
+    const flushQueuedReconciliation = () => {
+      if (reconcileAgain && !disposed && !snapshotInstalling && !reconciling) {
+        reconcileAgain = false;
+        const reset = reconcileAgainWithReset;
+        reconcileAgainWithReset = false;
+        void reconcile(undefined, reset);
+      }
+    };
+    const bufferMutationResult = (result: AppMutationResult) => {
+      if (result.kind !== 'state-patch' || mutationBufferOverflowed) return;
+      if (!bufferedMutationResults.has(result.revision) && bufferedMutationResults.size >= MAX_RENDERER_DELTA_BUFFER) {
+        mutationBufferOverflowed = true;
+        requestReconciliation(true);
+        return;
+      }
+      bufferedMutationResults.set(result.revision, result);
+    };
+    const takeBufferedMutationResults = () => {
+      const buffered = [...bufferedMutationResults.values()];
+      bufferedMutationResults.clear();
+      mutationBufferOverflowed = false;
+      return buffered;
+    };
+    const beginSnapshotInstallation = () => {
+      snapshotInstalling = true;
+      mutationBufferOverflowed = false;
+      bufferedMutationResults.clear();
+    };
+    const installAuthoritativeSnapshot = (
+      rebuiltState: AppState,
+      snapshotRevision: number,
+      replayedRevision: number,
+      preserveTemplateDetails: boolean,
+    ) => {
+      const buffered = takeBufferedMutationResults();
+      raiseMutationRevisionFloor(mutationRevisionsRef.current, snapshotRevision);
+      const replayRevisionFloor = new Map(mutationRevisionsRef.current);
+      const finalRevision = Math.max(
+        snapshotRevision,
+        replayedRevision,
+        buffered.reduce((revision, result) => Math.max(revision, result.revision), snapshotRevision),
+      );
+      raiseMutationRevisionFloor(mutationRevisionsRef.current, finalRevision);
+      snapshotInstalling = false;
+      setState((current) => {
+        const localMutationRevisions = new Map(replayRevisionFloor);
+        const authoritative = preserveTemplateDetails
+          ? mergeBootstrapTemplateDetails(current, rebuiltState)
+          : rebuiltState;
+        const replayed = applyBufferedMutationResults(
+          authoritative,
+          buffered,
+          snapshotRevision,
+          localMutationRevisions,
+        );
+        return replayed;
+      });
+    };
+    const recoverSnapshotInstallation = (snapshotRevision: number, replayedRevision: number) => {
+      const buffered = takeBufferedMutationResults();
+      raiseMutationRevisionFloor(mutationRevisionsRef.current, snapshotRevision);
+      const replayRevisionFloor = new Map(mutationRevisionsRef.current);
+      const finalRevision = Math.max(
+        snapshotRevision,
+        replayedRevision,
+        buffered.reduce((revision, result) => Math.max(revision, result.revision), snapshotRevision),
+      );
+      raiseMutationRevisionFloor(mutationRevisionsRef.current, finalRevision);
+      snapshotInstalling = false;
+      setState((current) => {
+        const localMutationRevisions = new Map(replayRevisionFloor);
+        const recovered = applyBufferedMutationResults(
+          current,
+          buffered,
+          snapshotRevision,
+          localMutationRevisions,
+        );
+        return recovered;
+      });
+    };
+    const applyIncomingDelta = (delta: AppDelta) => {
+      if (delta.kind === 'state-patch') {
+        if (snapshotInstalling) bufferMutationResult(delta);
+        else applyStatePatch(delta);
+      }
+      applyDeltaState(coordinator.receive(delta));
+    };
+    async function reconcile(_gap?: RevisionGap, forceReset = false) {
+      if (disposed) return;
+      if (reconciling) {
+        reconcileAgain = true;
+        reconcileAgainWithReset ||= forceReset;
+        return;
+      }
+      if (snapshotInstalling) {
+        reconcileAgain = true;
+        reconcileAgainWithReset ||= forceReset;
+        return;
+      }
+      reconciling = true;
       try {
-        setState(hydrateState(next));
+        const result = await api.reconcileDeltas({
+          sinceRevision: revisionRef.current,
+          taskId: selectedTaskIdRef.current ?? activeHtmlTaskIdRef.current ?? undefined,
+          viralAnalysisId: activeViralAnalysisIdRef.current ?? undefined,
+          forceReset,
+        });
+        if (disposed) return;
+        if (result.resetRequired) {
+          coordinator.beginReset();
+          resetInProgress = true;
+          resetRecoveryRevision = revisionRef.current;
+          beginSnapshotInstallation();
+          const bootstrap = await loadCompleteBootstrap(api, await api.getBootstrap());
+          const replayed = coordinator.reset({
+            revision: bootstrap.revision,
+            tasks: bootstrap.tasks.items,
+            events: result.taskEvents,
+            viralAnalyses: bootstrap.viralAnalyses.items,
+          });
+          revisionRef.current = replayed.revision;
+          const rebuiltResetState = mergeReconciliationSlices(mergeDeltaView(bootstrapToState(bootstrap), replayed), result);
+          installAuthoritativeSnapshot(rebuiltResetState, bootstrap.revision, replayed.revision, true);
+          resetInProgress = false;
+          const activeTaskId = selectedTaskIdRef.current ?? activeHtmlTaskIdRef.current;
+          if (activeTaskId) void refreshTaskDetail(activeTaskId);
+          const activeViralId = activeViralAnalysisIdRef.current;
+          if (activeViralId) void refreshViralEvents(activeViralId);
+          return;
+        }
+        result.deltas.forEach(applyIncomingDelta);
+        const current = coordinator.current();
+        if (current && result.revision === current.revision) {
+          const eventsBySeq = new Map(current.events.map((event) => [event.seq, event]));
+          result.taskEvents.forEach((event) => eventsBySeq.set(event.seq, event));
+          const synced = coordinator.bootstrap({
+            ...current,
+            revision: result.revision,
+            events: [...eventsBySeq.values()].sort((left, right) => left.seq - right.seq),
+          });
+          applyDeltaState(synced);
+        }
+        setState((currentState) => mergeReconciliationSlices(currentState, result));
+      } catch (error) {
+        if (resetInProgress) {
+          const current = coordinator.current();
+          const replayed = current ? coordinator.reset(current) : null;
+          if (replayed) applyDeltaState(replayed);
+          recoverSnapshotInstallation(resetRecoveryRevision, replayed?.revision ?? resetRecoveryRevision);
+          resetInProgress = false;
+        }
+        shellAction.reportError(error);
+      } finally {
+        reconciling = false;
+        flushQueuedReconciliation();
+      }
+    }
+    const coordinator = createAppDeltaCoordinator(
+      (gap) => {
+        if (gap) requestReconciliation();
+      },
+      () => {
+        requestReconciliation(true);
+      },
+    );
+    const unsubscribe = api.onAppDelta((delta: AppDelta) => {
+      try {
+        applyIncomingDelta(delta);
       } catch (error) {
         shellAction.reportError(error);
       }
     });
-  }, [api, shellAction.reportError]);
+    api.getBootstrap().then((initialBootstrap) => loadCompleteBootstrap(api, initialBootstrap)).then((bootstrap) => {
+      if (disposed) return;
+      const replayed = coordinator.bootstrap({
+        revision: bootstrap.revision,
+        tasks: bootstrap.tasks.items,
+        events: [],
+        viralAnalyses: bootstrap.viralAnalyses.items,
+      });
+      revisionRef.current = replayed.revision;
+      installAuthoritativeSnapshot(
+        mergeDeltaView(bootstrapToState(bootstrap), replayed),
+        bootstrap.revision,
+        replayed.revision,
+        false,
+      );
+      setActiveView(bootstrap.ui.activeView);
+      flushQueuedReconciliation();
+    }).catch((error) => {
+      if (disposed) return;
+      recoverSnapshotInstallation(revisionRef.current, coordinator.current()?.revision ?? revisionRef.current);
+      shellAction.reportError(error);
+      requestReconciliation(true);
+    });
+    const reconciliationTimer = window.setInterval(() => {
+      requestReconciliation();
+    }, 30_000);
+    return () => {
+      disposed = true;
+      window.clearInterval(reconciliationTimer);
+      unsubscribe();
+    };
+  }, [api, refreshTaskDetail, refreshViralEvents, shellAction.reportError]);
 
-  const liveRefreshMs = state.tasks.some((task) => task.status === 'running' || task.status === 'pending') ? 1000 : 0;
   useEffect(() => {
-    if (!liveRefreshMs) return undefined;
-    const timer = window.setInterval(() => {
-      api.getState().then((next) => setState(hydrateState(next))).catch(shellAction.reportError);
-    }, liveRefreshMs);
-    return () => window.clearInterval(timer);
-  }, [api, liveRefreshMs, shellAction.reportError]);
+    if (!selectedTaskId) return;
+    void refreshTaskDetail(selectedTaskId);
+  }, [refreshTaskDetail, selectedTaskId]);
 
   async function navigate(view: ShellView) {
     if (view !== 'task-detail') {
@@ -936,7 +1470,7 @@ function App() {
     setSaveTone('saving');
     const result = await shellAction.run(async () => {
       const next = await api.saveUiPreferences({ ...state.ui, activeView: view });
-      setState(hydrateState(next));
+      applyState(next);
       setSaveTone('saved');
     });
     if (!result.ok) {
@@ -944,8 +1478,12 @@ function App() {
     }
   }
 
-  function applyState(next: AppState) {
-    setState(hydrateState(next));
+  function applyState(next: AppMutationResult | null) {
+    if (isBrowserPreview && next) {
+      const claimedRevisions = claimMutationResult(next, mutationRevisionsRef.current);
+      if (!claimedRevisions) return;
+      setState((current) => applyLocalMutationResponse(current, next, new Map(claimedRevisions), true));
+    }
     setSaveTone('saved');
   }
 
@@ -955,7 +1493,7 @@ function App() {
     setSaveTone('saving');
     const result = await shellAction.run(async () => {
       const next = await api.saveUiPreferences({ ...state.ui, activeView: 'task-detail' });
-      setState(hydrateState(next));
+      applyState(next);
       setSaveTone('saved');
     });
     if (!result.ok) {
@@ -1092,8 +1630,8 @@ function App() {
           {activeView === 'image-lab' ? <ImageLabPage api={api} state={state} applyState={applyState} /> : null}
           {activeView === 'voice-lab' ? <VoiceLabPage api={api} state={state} applyState={applyState} /> : null}
           {activeView === 'music-mv' ? <MusicMvPage api={api} state={state} applyState={applyState} openTaskDetail={openTaskDetail} isBrowserPreview={isBrowserPreview} /> : null}
-          {activeView === 'html-video' ? <HtmlVideoPage api={api} state={state} applyState={applyState} isBrowserPreview={isBrowserPreview} /> : null}
-          {activeView === 'viral-analyzer' ? <ViralAnalyzerPage api={api} state={state} applyState={applyState} openTaskDetail={openTaskDetail} isBrowserPreview={isBrowserPreview} /> : null}
+          {activeView === 'html-video' ? <HtmlVideoPage api={api} state={state} applyState={applyState} refreshTaskDetail={refreshTaskDetail} onActiveTaskChange={onActiveHtmlTaskChange} isBrowserPreview={isBrowserPreview} /> : null}
+          {activeView === 'viral-analyzer' ? <ViralAnalyzerPage api={api} state={state} applyState={applyState} refreshViralEvents={refreshViralEvents} onActiveAnalysisChange={onActiveViralAnalysisChange} openTaskDetail={openTaskDetail} isBrowserPreview={isBrowserPreview} /> : null}
           {activeView === 'prompt-templates' ? <PromptTemplatesPage api={api} state={state} applyState={applyState} /> : null}
           {activeView === 'draft-templates' ? <DraftTemplatesPage api={api} state={state} applyState={applyState} /> : null}
           {activeView === 'settings' ? <SettingsPage api={api} state={state} applyState={applyState} /> : null}
@@ -1123,12 +1661,16 @@ function ViralAnalyzerPage({
   api,
   state,
   applyState,
+  refreshViralEvents,
+  onActiveAnalysisChange,
   openTaskDetail,
   isBrowserPreview,
 }: {
   api: StoryDreamApi;
   state: AppState;
-  applyState: (state: AppState) => void;
+  applyState: ApplyMutationResult;
+  refreshViralEvents: (analysisId: string) => Promise<void>;
+  onActiveAnalysisChange: (analysisId: string) => void;
   openTaskDetail: (taskId: string) => void;
   isBrowserPreview: boolean;
 }) {
@@ -1146,6 +1688,7 @@ function ViralAnalyzerPage({
   const viralAction = useAsyncAction();
   const selected = state.viralAnalyses.find((item) => item.id === selectedId) ?? state.viralAnalyses[0] ?? null;
   const selectedEvents = selected ? state.viralEvents.filter((event) => event.analysisId === selected.id) : [];
+  const selectedEventRefreshKey = viralEventRefreshKey(selected);
   const detectedPlatform = detectBrowserViralPlatform(url);
   const selectedPlatformForAnalysis: ViralPlatform = sourceMode === 'auto' ? detectedPlatform : sourceMode;
   const selectedStageIndex = selected ? viralStages.indexOf(selected.currentStage) : -1;
@@ -1153,6 +1696,19 @@ function ViralAnalyzerPage({
   useEffect(() => {
     if (!selectedId && state.viralAnalyses[0]) setSelectedId(state.viralAnalyses[0].id);
   }, [selectedId, state.viralAnalyses]);
+
+  useEffect(() => {
+    if (!selected) {
+      onActiveAnalysisChange('');
+      return;
+    }
+    onActiveAnalysisChange(selected.id);
+    return () => onActiveAnalysisChange('');
+  }, [onActiveAnalysisChange, selected?.id]);
+
+  useEffect(() => {
+    if (selected) void refreshViralEvents(selected.id);
+  }, [refreshViralEvents, selected?.id, selectedEventRefreshKey]);
 
   useEffect(() => {
     let cancelled = false;
@@ -1231,7 +1787,7 @@ function ViralAnalyzerPage({
         settings: { track, style, ratio, templateId, keyFrameCount, storyboardSceneCount: 12 },
       });
       applyState(next);
-      setSelectedId(next.viralAnalyses[0]?.id ?? '');
+      setSelectedId(viralFromMutation(next)?.id ?? '');
     });
   }
 
@@ -1246,7 +1802,8 @@ function ViralAnalyzerPage({
         storyboardSceneCount: result?.recreation.taskDefaults.storyboardSceneCount ?? 12,
       });
       applyState(next);
-      if (next.tasks[0]) openTaskDetail(next.tasks[0].id);
+      const task = taskFromMutation(next);
+      if (task) openTaskDetail(task.id);
     });
   }
 
@@ -1685,7 +2242,7 @@ function NewTaskPage({
 }: {
   api: StoryDreamApi;
   state: AppState;
-  applyState: (state: AppState) => void;
+  applyState: ApplyMutationResult;
   openTaskDetail: (taskId: string) => void;
   isBrowserPreview: boolean;
 }) {
@@ -2013,7 +2570,7 @@ function NewTaskPage({
         promptTemplateType: 'task',
         });
         applyState(next);
-        const createdTask = next.tasks[0];
+        const createdTask = taskFromMutation(next);
         if (createdTask) {
           openTaskDetail(createdTask.id);
         }
@@ -2593,7 +3150,7 @@ function BenchmarkImportPage({
   isBrowserPreview,
 }: {
   api: StoryDreamApi;
-  applyState: (state: AppState) => void;
+  applyState: ApplyMutationResult;
   openTaskDetail: (taskId: string) => void;
   isBrowserPreview: boolean;
 }) {
@@ -2640,7 +3197,7 @@ function BenchmarkImportPage({
           pausePoints: [],
         });
         applyState(next);
-        const createdTask = next.tasks[0];
+        const createdTask = taskFromMutation(next);
         if (createdTask) openTaskDetail(createdTask.id);
       } finally {
         setRunning(false);
@@ -2940,7 +3497,7 @@ function MusicMvPage({
 }: {
   api: StoryDreamApi;
   state: AppState;
-  applyState: (state: AppState) => void;
+  applyState: ApplyMutationResult;
   openTaskDetail: (taskId: string) => void;
   isBrowserPreview: boolean;
 }) {
@@ -3012,7 +3569,7 @@ function MusicMvPage({
           },
         });
         applyState(next);
-        const createdTask = next.tasks[0];
+        const createdTask = taskFromMutation(next);
         if (createdTask) openTaskDetail(createdTask.id);
       } finally {
         setRunning(false);
@@ -3110,11 +3667,15 @@ function HtmlVideoPage({
   api,
   state,
   applyState,
+  refreshTaskDetail,
+  onActiveTaskChange,
   isBrowserPreview,
 }: {
   api: StoryDreamApi;
   state: AppState;
-  applyState: (state: AppState) => void;
+  applyState: ApplyMutationResult;
+  refreshTaskDetail: (taskId: string) => Promise<void>;
+  onActiveTaskChange: (taskId: string) => void;
   isBrowserPreview: boolean;
 }) {
   const [copy, setCopy] = useState('武则天十四岁入宫，十二年间几乎没有被命运看见。\n直到唐高宗时代，她重新站回权力中心，用一次次选择改写自己的位置。\n这支视频用 HTML 动画呈现她从才人到天后的关键转折。');
@@ -3132,6 +3693,7 @@ function HtmlVideoPage({
   const bgmOptions = validBgmItems(state.config);
   const htmlTasks = state.tasks.filter(isHtmlVideoTask);
   const activeTask = htmlTasks.find((task) => task.id === activeTaskId) ?? htmlTasks[0] ?? null;
+  const activeTaskRefreshKey = taskDetailRefreshKey(activeTask);
   const pipelineParse = useMemo(
     () => safeParseHtmlVideoPipelineData(activeTask?.pipelineData, activeTask?.inputText),
     [activeTask?.inputText, activeTask?.pipelineData],
@@ -3177,6 +3739,19 @@ function HtmlVideoPage({
       setActiveTaskId(htmlTasks[0].id);
     }
   }, [activeTaskId, htmlTasks]);
+
+  useEffect(() => {
+    if (!activeTask) {
+      onActiveTaskChange('');
+      return;
+    }
+    onActiveTaskChange(activeTask.id);
+    return () => onActiveTaskChange('');
+  }, [activeTask?.id, onActiveTaskChange]);
+
+  useEffect(() => {
+    if (activeTask) void refreshTaskDetail(activeTask.id);
+  }, [activeTask?.id, activeTaskRefreshKey, refreshTaskDetail]);
 
   useEffect(() => {
     setActiveTab(derivedTab);
@@ -3259,7 +3834,7 @@ function HtmlVideoPage({
           ttsSpeed: 1,
         }));
         applyState(next);
-        const createdTask = next.tasks.find(isHtmlVideoTask);
+        const createdTask = taskFromMutation(next);
         if (createdTask) setActiveTaskId(createdTask.id);
         setMessage(isBrowserPreview ? '已创建浏览器预览快照，未执行特权渲染。' : 'HTML 动画视频任务已创建并开始生成。');
       } finally {
@@ -3735,7 +4310,7 @@ function QueuePage({
 }: {
   api: StoryDreamApi;
   state: AppState;
-  applyState: (state: AppState) => void;
+  applyState: ApplyMutationResult;
   openNewTask: () => void;
   openTaskDetail: (taskId: string) => void;
   isBrowserPreview: boolean;
@@ -3866,7 +4441,7 @@ function TaskDetailPage({
   api: StoryDreamApi;
   state: AppState;
   task: Task | null;
-  applyState: (state: AppState) => void;
+  applyState: ApplyMutationResult;
   close: () => void;
   isBrowserPreview: boolean;
 }) {
@@ -4036,7 +4611,7 @@ function ArtifactPreviewContent({
   api: StoryDreamApi;
   task: Task;
   config: AppConfig;
-  applyState: (state: AppState) => void;
+  applyState: ApplyMutationResult;
   tab: 'preview' | 'storyboard' | 'audio';
   snapshot: TaskArtifactSnapshot | null;
   latestEvent: TaskEvent | null;
@@ -4360,7 +4935,7 @@ function ImageGenerationGallery({
   imageErrors: TaskArtifactSnapshot['assets']['imageErrors'];
   concurrency: number;
   isBrowserPreview: boolean;
-  applyState: (state: AppState) => void;
+  applyState: ApplyMutationResult;
 }) {
   const [imagePreviewUrls, setImagePreviewUrls] = useState<Record<string, string>>({});
   const [imagePreviewErrors, setImagePreviewErrors] = useState<Record<string, string>>({});
@@ -4534,7 +5109,7 @@ function NarrationPreviewList({
   assets: TaskArtifactSnapshot['assets']['narration'];
   empty: string;
   isBrowserPreview: boolean;
-  applyState: (state: AppState) => void;
+  applyState: ApplyMutationResult;
 }) {
   const [audioPreviewUrls, setAudioPreviewUrls] = useState<Record<string, string>>({});
   const [audioPreviewErrors, setAudioPreviewErrors] = useState<Record<string, string>>({});
@@ -4719,7 +5294,7 @@ function ArtifactAssetList({ assets, empty }: { assets: TaskArtifactSnapshot['as
   );
 }
 
-function ImageLabPage({ api, state, applyState }: { api: StoryDreamApi; state: AppState; applyState: (state: AppState) => void }) {
+function ImageLabPage({ api, state, applyState }: { api: StoryDreamApi; state: AppState; applyState: ApplyMutationResult }) {
   const [tab, setTab] = useState<'smart' | 'text' | 'reference'>('smart');
   const [smartMode] = useState<ImageLabSmartMode>('podcast-cover');
   const [prompt, setPrompt] = useState('根据食谱内容，规划 2-3 张美食教程图，合成品图、灵魂文案、制作步骤，保持参考图主体和质感。');
@@ -4787,7 +5362,7 @@ function ImageLabPage({ api, state, applyState }: { api: StoryDreamApi; state: A
       setSubmitError('');
       try {
         const requestedCount = tab === 'text' ? 1 : Math.max(1, Math.min(10, imageLabOutputCount));
-        let nextState = state;
+        let nextState: AppMutationResult | null = null;
         for (let index = 0; index < requestedCount; index += 1) {
           nextState = await api.generateImageLab({
             prompt,
@@ -4940,7 +5515,7 @@ function ImageLabPage({ api, state, applyState }: { api: StoryDreamApi; state: A
 
 }
 
-function VoiceLabPage({ api, state, applyState }: { api: StoryDreamApi; state: AppState; applyState: (state: AppState) => void }) {
+function VoiceLabPage({ api, state, applyState }: { api: StoryDreamApi; state: AppState; applyState: ApplyMutationResult }) {
   const [text, setText] = useState('配音实验室试听文案：用稳定、清晰、有情绪的声音讲完这一段故事。');
   const [voiceProvider, setVoiceProvider] = useState<RuntimeTtsProvider>(() => normalizeRuntimeTtsProvider(state.config.tts.provider));
   const [voiceId, setVoiceId] = useState(() => defaultTaskSpeakerForProvider(state.config.tts.provider, state.config));
@@ -5037,7 +5612,7 @@ function VoiceLabPage({ api, state, applyState }: { api: StoryDreamApi; state: A
   );
 }
 
-function PromptTemplatesPage({ api, state, applyState }: { api: StoryDreamApi; state: AppState; applyState: (state: AppState) => void }) {
+function PromptTemplatesPage({ api, state, applyState }: { api: StoryDreamApi; state: AppState; applyState: ApplyMutationResult }) {
   const [selectedId, setSelectedId] = useState(state.promptTemplates[0]?.id ?? '');
   const [templateMode, setTemplateMode] = useState<'gallery' | 'detail' | 'image-detail'>('gallery');
   const [promptTemplateLibraryTab, setPromptTemplateLibraryTab] = useState<'story' | 'image'>('story');
@@ -5060,6 +5635,7 @@ function PromptTemplatesPage({ api, state, applyState }: { api: StoryDreamApi; s
   const [templateJsonDraft, setTemplateJsonDraft] = useState('');
   const [imageTemplateJsonDraft, setImageTemplateJsonDraft] = useState('');
   const promptTemplateAction = useAsyncAction();
+  const promptDetailGeneration = useRef(0);
   const promptTemplateTrackOptions = buildStoryTemplateTrackOptions(state.promptTemplates);
   const promptTemplateBindingTrackOptions =
     draft?.baseTrack && !promptTemplateTrackOptions.some(([id]) => id === draft.baseTrack)
@@ -5070,10 +5646,15 @@ function PromptTemplatesPage({ api, state, applyState }: { api: StoryDreamApi; s
   useEffect(() => setImageDraft(selectedImageStyle ? { ...selectedImageStyle } : null), [selectedImageStyle?.id]);
 
   function openPromptTemplateDetail(template: PromptTemplate) {
+    const generation = ++promptDetailGeneration.current;
     setSelectedId(template.id);
     setDraft({ ...template });
     setTemplateJsonDraft('');
     setTemplateMode('detail');
+    void promptTemplateAction.run(async () => {
+      const detail = await api.getPromptTemplateDetail(template.id);
+      if (generation === promptDetailGeneration.current && detail) setDraft({ ...detail });
+    });
   }
 
   function openImageTemplateDetail(style: CustomStyle) {
@@ -5874,7 +6455,7 @@ function VariableAwareTextarea({
   );
 }
 
-function DraftTemplatesPage({ api, state, applyState }: { api: StoryDreamApi; state: AppState; applyState: (state: AppState) => void }) {
+function DraftTemplatesPage({ api, state, applyState }: { api: StoryDreamApi; state: AppState; applyState: ApplyMutationResult }) {
   const [editingId, setEditingId] = useState<string | null>(null);
   const editingTemplate = editingId ? state.draftTemplates.find((template) => template.id === editingId) ?? null : null;
   const [draft, setDraft] = useState<DraftTemplate | null>(null);
@@ -5887,6 +6468,7 @@ function DraftTemplatesPage({ api, state, applyState }: { api: StoryDreamApi; st
   const [cozeImportError, setCozeImportError] = useState('');
   const [cozeImportOpen, setCozeImportOpen] = useState(false);
   const draftTemplateAction = useAsyncAction();
+  const draftDetailGeneration = useRef(0);
 
   useEffect(() => {
     // Rehydrate only when switching templates; state refreshes must not overwrite unsaved drag edits.
@@ -5925,8 +6507,9 @@ function DraftTemplatesPage({ api, state, applyState }: { api: StoryDreamApi; st
   }
 
   async function copyTemplate(template: DraftTemplate) {
-    const copy = { ...cloneDraftTemplate(template), id: crypto.randomUUID(), name: `${template.name} 副本`, isDefault: false };
     await draftTemplateAction.run(async () => {
+      const detail = await api.getDraftTemplateDetail(template.id) ?? template;
+      const copy = { ...cloneDraftTemplate(detail), id: crypto.randomUUID(), name: `${detail.name} 副本`, isDefault: false };
       applyState(await api.saveDraftTemplate(copy));
       setEditingId(copy.id);
     });
@@ -5981,7 +6564,7 @@ function DraftTemplatesPage({ api, state, applyState }: { api: StoryDreamApi; st
       return;
     }
     await draftTemplateAction.run(async () => {
-      let nextState = state;
+      let nextState: AppMutationResult | null = null;
       for (const result of results) {
         if (!result.ok) continue;
         nextState = await api.saveDraftTemplate(result.template);
@@ -5995,8 +6578,13 @@ function DraftTemplatesPage({ api, state, applyState }: { api: StoryDreamApi; st
   }
 
   function openEditor(template: DraftTemplate) {
+    const generation = ++draftDetailGeneration.current;
     setDraft(cloneDraftTemplate(template));
     setEditingId(template.id);
+    void draftTemplateAction.run(async () => {
+      const detail = await api.getDraftTemplateDetail(template.id);
+      if (generation === draftDetailGeneration.current && detail) setDraft(cloneDraftTemplate(detail));
+    });
   }
 
   async function selectDraftBackgroundImage() {
@@ -6588,7 +7176,7 @@ function DraftCanvasLayerBox({
   );
 }
 
-function SettingsPage({ api, state, applyState }: { api: StoryDreamApi; state: AppState; applyState: (state: AppState) => void }) {
+function SettingsPage({ api, state, applyState }: { api: StoryDreamApi; state: AppState; applyState: ApplyMutationResult }) {
   const [section, setSection] = useState('llm');
   const [draft, setDraft] = useState<AppConfig>(() => normalizeEditableConfigProviders(state.config));
   const [settingsDirty, setSettingsDirty] = useState(false);
@@ -6631,10 +7219,11 @@ function SettingsPage({ api, state, applyState }: { api: StoryDreamApi; state: A
     setSavingConfig(true);
     try {
       const next = await api.saveConfig({ config: normalizeEditableConfigProviders(nextDraft), secretChanges });
-      commitSettingsDraft(next.config);
+      const savedConfig = configFromMutation(next);
+      commitSettingsDraft(savedConfig);
       applyState(next);
       setConfigTestResult(`[pass] ${successMessage}`);
-      return next.config;
+      return savedConfig;
     } finally {
       setSavingConfig(false);
     }
@@ -6715,9 +7304,10 @@ function SettingsPage({ api, state, applyState }: { api: StoryDreamApi; state: A
           tts: selectedTtsProfileId,
         });
         const next = await api.saveConfig({ config: normalizeEditableConfigProviders(nextDraft), secretChanges });
-        commitSettingsDraft(next.config);
+        const savedConfig = configFromMutation(next);
+        commitSettingsDraft(savedConfig);
         applyState(next);
-        const testConfig = buildConfigForSelectedProfileTest(next.config, target, selectedProviderProfileIds);
+        const testConfig = buildConfigForSelectedProfileTest(savedConfig, target, selectedProviderProfileIds);
         const result = await api.testAppConfig(target, testConfig);
         setConfigTestResult(`[${result.status}] ${result.detail}`);
       } finally {
@@ -7783,7 +8373,7 @@ function TtsProfileManager({
   );
 }
 
-function AccountPage({ api, state, applyState }: { api: StoryDreamApi; state: AppState; applyState: (state: AppState) => void }) {
+function AccountPage({ api, state, applyState }: { api: StoryDreamApi; state: AppState; applyState: ApplyMutationResult }) {
   const [draft, setDraft] = useState(state.account);
   const accountAction = useAsyncAction();
   useEffect(() => setDraft(state.account), [state.account]);
@@ -7812,7 +8402,7 @@ function AccountPage({ api, state, applyState }: { api: StoryDreamApi; state: Ap
   );
 }
 
-function ActivationPage({ api, state, applyState }: { api: StoryDreamApi; state: AppState; applyState: (state: AppState) => void }) {
+function ActivationPage({ api, state, applyState }: { api: StoryDreamApi; state: AppState; applyState: ApplyMutationResult }) {
   const [draft, setDraft] = useState(state.activation);
   const activationAction = useAsyncAction();
   useEffect(() => setDraft(state.activation), [state.activation]);

@@ -30,8 +30,11 @@ describe('real Electron smoke contract', () => {
     expect(setUserData).toBeLessThan(ready);
     expect(main).toContain('runSmokeHandshake');
     expect(main).toContain('window.storydream');
-    expect(main).toContain('api.getState()');
+    expect(main).toContain('api.getBootstrap()');
     expect(main).toContain('api.saveUiPreferences');
+    expect(main).toContain("saved?.kind === 'state-patch'");
+    expect(main).toContain("saved.patch.kind === 'ui'");
+    expect(main).toContain("saved.patch.ui.activeView === 'new-task'");
     expect(main).toContain('mainWindowPolicyInstalled');
     expect(main).toContain('mainWindow.close()');
     for (const field of [

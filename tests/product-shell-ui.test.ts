@@ -28,7 +28,8 @@ describe('product shell ui', () => {
     function visit(node: ts.Node): void {
       if (ts.isFunctionDeclaration(node) && node.name && node.body && isAsync(node)) {
         const body = node.body.getText(sourceFile);
-        if (/\bapi\.[A-Za-z0-9_]+\(/u.test(body) && !body.includes('Action.run(')) {
+        const isStateLoader = node.name.text === 'loadCompleteBootstrap' || node.name.text === 'reconcile';
+        if (!isStateLoader && /\bapi\.[A-Za-z0-9_]+\(/u.test(body) && !body.includes('Action.run(')) {
           uncovered.push(node.name.text);
         }
       }
@@ -1536,17 +1537,119 @@ describe('product shell ui', () => {
     expect(countOccurrences(main, '<ArtifactPreviewContent')).toBe(1);
   });
 
-  it('auto-refreshes live task metrics without duplicating settings test controls', async () => {
+  it('uses one bootstrap and delta updates without a one-second full-state heartbeat', async () => {
     const main = await readFile(new URL('../src/main.tsx', import.meta.url), 'utf8');
     const css = await readFile(new URL('../src/styles.css', import.meta.url), 'utf8');
 
-    expect(main).toContain('liveRefreshMs');
-    expect(main).toContain('api.getState()');
+    expect(main).toContain('api.getBootstrap()');
+    expect(main).toContain('api.onAppDelta');
+    expect(main).toContain('api.reconcileDeltas');
+    expect(main).not.toContain('liveRefreshMs');
+    expect(main).not.toContain('api.getState()');
     expect(main).toContain('liveNow');
     expect(main).toContain('testCurrentConfig');
     expect(main).toContain('保存并测试');
     expect(main).not.toContain('测试模型可用性');
     expect(css).toContain('.test-result');
+  });
+
+  it('queues reconciliation gaps that arrive in flight and preserves loaded template details on reset', async () => {
+    const main = await readFile(new URL('../src/main.tsx', import.meta.url), 'utf8');
+    const app = main.slice(main.indexOf('function App()'), main.indexOf('function NavButton'));
+
+    expect(app).toContain('let reconcileAgain = false');
+    expect(app).toContain('let reconcileAgainWithReset = false');
+    expect(app).toMatch(/if \(reconciling\) \{\s+reconcileAgain = true;\s+reconcileAgainWithReset \|\|= forceReset;\s+return;\s+\}/u);
+    expect(app).toMatch(/if \(reconcileAgain && !disposed && !snapshotInstalling && !reconciling\) \{\s+reconcileAgain = false;\s+const reset = reconcileAgainWithReset;\s+reconcileAgainWithReset = false;\s+void reconcile\(undefined, reset\);\s+\}/u);
+    expect(app).toContain('mergeBootstrapTemplateDetails(current, rebuiltState)');
+  });
+
+  it('buffers bounded state patches across authoritative snapshot installation and error recovery', async () => {
+    const main = await readFile(new URL('../src/main.tsx', import.meta.url), 'utf8');
+    const app = main.slice(main.indexOf('function App()'), main.indexOf('function NavButton'));
+
+    expect(main).toContain('MAX_RENDERER_DELTA_BUFFER');
+    expect(main).toContain('applyBufferedMutationResults');
+    expect(main).toContain('raiseMutationRevisionFloor');
+    expect(app).toContain('let snapshotInstalling = true');
+    expect(app).toContain('const bufferedMutationResults = new Map<number, AppMutationResult>()');
+    expect(app).toContain('bufferedMutationResults.size >= MAX_RENDERER_DELTA_BUFFER');
+    expect(app).toContain("delta.kind === 'state-patch'");
+    expect(app).toContain('installAuthoritativeSnapshot');
+    expect(app).toContain('recoverSnapshotInstallation');
+    expect(countOccurrences(app, 'recoverSnapshotInstallation(')).toBeGreaterThanOrEqual(2);
+    expect(app).toContain('requestReconciliation(true)');
+  });
+
+  it('uses app deltas as the sole Electron mutation owner and keeps response application local to browser fallback', async () => {
+    const main = await readFile(new URL('../src/main.tsx', import.meta.url), 'utf8');
+    const applyState = main.slice(main.indexOf('function applyState('), main.indexOf('async function openTaskDetail'));
+    const fallback = main.slice(main.indexOf('function makeFallbackApi('), main.indexOf('function App()'));
+
+    expect(main).toContain('applyLocalMutationResponse');
+    expect(applyState).toContain('if (isBrowserPreview && next)');
+    expect(applyState).toContain('applyLocalMutationResponse(current, next, new Map(claimedRevisions), true)');
+    expect(applyState).not.toContain('applyAppMutationResult(');
+    expect(fallback).toContain('setState(sanitized)');
+  });
+
+  it('keeps authoritative snapshot replay updaters pure under StrictMode double invocation', async () => {
+    const main = await readFile(new URL('../src/main.tsx', import.meta.url), 'utf8');
+    const app = main.slice(main.indexOf('function App()'), main.indexOf('function NavButton'));
+    const install = app.slice(app.indexOf('const installAuthoritativeSnapshot'), app.indexOf('const recoverSnapshotInstallation'));
+    const recover = app.slice(app.indexOf('const recoverSnapshotInstallation'), app.indexOf('const applyIncomingDelta'));
+
+    for (const section of [install, recover]) {
+      expect(section).toContain('const replayRevisionFloor = new Map(mutationRevisionsRef.current)');
+      expect(section).toContain('const finalRevision = Math.max(');
+      expect(section).toContain('raiseMutationRevisionFloor(mutationRevisionsRef.current, finalRevision)');
+      expect(section).toContain('const localMutationRevisions = new Map(replayRevisionFloor)');
+      expect(section).toContain('localMutationRevisions,');
+      const updater = section.slice(section.indexOf('setState((current) => {'));
+      expect(updater).not.toContain('raiseMutationRevisionFloor(mutationRevisionsRef.current');
+      expect(updater).not.toContain('applyBufferedMutationResults(\n          current,\n          buffered,\n          snapshotRevision,\n          mutationRevisionsRef.current');
+    }
+  });
+
+  it('claims live and browser mutations before scheduling pure state updaters', async () => {
+    const main = await readFile(new URL('../src/main.tsx', import.meta.url), 'utf8');
+    const app = main.slice(main.indexOf('function App()'), main.indexOf('function NavButton'));
+    const livePatch = app.slice(app.indexOf('const applyStatePatch'), app.indexOf('const requestReconciliation'));
+    const browserApply = app.slice(app.indexOf('function applyState('), app.indexOf('async function openTaskDetail'));
+
+    expect(main).toContain('claimMutationResult');
+    for (const section of [livePatch, browserApply]) {
+      expect(section).toContain('const claimedRevisions = claimMutationResult(');
+      expect(section).toContain('if (!claimedRevisions) return');
+      expect(section).toContain('new Map(claimedRevisions)');
+      const updater = section.slice(section.indexOf('setState((current) =>'));
+      expect(updater).not.toContain('mutationRevisionsRef.current');
+    }
+  });
+
+  it('loads active HTML task details on bootstrap and checkpoint summary changes', async () => {
+    const main = await readFile(new URL('../src/main.tsx', import.meta.url), 'utf8');
+    const app = main.slice(main.indexOf('function App()'), main.indexOf('function NavButton'));
+    const htmlPage = main.slice(main.indexOf('function HtmlVideoPage'), main.indexOf('function HtmlVideoTabPanel'));
+
+    expect(app).toContain('activeHtmlTaskIdRef');
+    expect(app).toContain('refreshTaskDetail');
+    expect(htmlPage).toContain('taskDetailRefreshKey(activeTask)');
+    expect(htmlPage).toContain('refreshTaskDetail(activeTask.id)');
+    expect(htmlPage).toContain('onActiveTaskChange(activeTask.id)');
+  });
+
+  it('loads active viral events and includes both active entities in reconciliation', async () => {
+    const main = await readFile(new URL('../src/main.tsx', import.meta.url), 'utf8');
+    const app = main.slice(main.indexOf('function App()'), main.indexOf('function NavButton'));
+    const viralPage = main.slice(main.indexOf('function ViralAnalyzerPage'), main.indexOf('function NewTaskPage'));
+
+    expect(app).toContain('viralAnalysisId: activeViralAnalysisIdRef.current ?? undefined');
+    expect(app).toContain('mergeReconciliationSlices');
+    expect(app).toContain('refreshViralEvents');
+    expect(viralPage).toContain('viralEventRefreshKey(selected)');
+    expect(viralPage).toContain('refreshViralEvents(selected.id)');
+    expect(viralPage).toContain('onActiveAnalysisChange(selected.id)');
   });
 
   it('shows save and test actions for each settings configuration section', async () => {

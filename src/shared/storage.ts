@@ -10,22 +10,31 @@ import type {
   BookSelectionInput,
   BookSelectionRecord,
   CreateTaskInput,
+  CursorPage,
+  CursorRequest,
   CreditTransaction,
   CustomCoverTemplate,
   CustomStyle,
   DraftTemplate,
+  DraftTemplateSummary,
   ImageLabRecord,
+  ImageLabSummary,
   MinimaxCloneVoice,
   PromptTemplate,
+  PromptTemplateSummary,
+  SequencedTaskEvent,
   Task,
   TaskEvent,
+  TaskSummary,
   TaskStatus,
   UiPreferences,
   CreateViralAnalysisInput,
   ViralAnalysisEvent,
   ViralAnalysisRecord,
+  ViralAnalysisSummary,
   ViralAnalysisStage,
   VoiceLabRecord,
+  VoiceLabSummary,
 } from './types';
 import { normalizeAppConfig } from './config-utils';
 import { stripConfigSecrets } from './config-secrets';
@@ -128,6 +137,66 @@ function parseJson<T>(value: unknown, fallback: T): T {
   } catch {
     return fallback;
   }
+}
+
+export const MAX_STORAGE_PAGE_LIMIT = 100;
+const DEFAULT_STORAGE_PAGE_LIMIT = 50;
+const TASK_INPUT_PREVIEW_LIMIT = 160;
+const RECORD_TEXT_PREVIEW_LIMIT = 160;
+const taskSummaryColumns = `
+  id, title, task_kind, processing_mode, publish_mode, status, current_step,
+  track, style, speaker, ratio, template_id, bgm_id, output_dir, error_message,
+  created_at, completed_at, started_at, last_heartbeat_at, mode, ai_keyword,
+  prompt_template_id, prompt_template_type, reference_image_path, rewrite_intensity,
+  narrative_pov, keep_promotion, tts_provider, tts_speed, storyboard_scene_count,
+  failed_step, retry_from_step, artifact_state_path, video_form, llm_profile_id,
+  material_source, draft_dir,
+  lock_intro_sentences, task_type, pipeline_step, target_length, target_scenes,
+  script_format, podcast_image_mode, podcast_speaker_a,
+  podcast_speaker_b, cover_image_mode, cover_template_id, html_video_foreground,
+  substr(input_text, 1, ${TASK_INPUT_PREVIEW_LIMIT}) AS input_preview
+`;
+
+function clampPageLimit(limit: number | undefined): number {
+  if (!Number.isFinite(limit)) return DEFAULT_STORAGE_PAGE_LIMIT;
+  return Math.min(MAX_STORAGE_PAGE_LIMIT, Math.max(1, Math.trunc(limit ?? DEFAULT_STORAGE_PAGE_LIMIT)));
+}
+
+function encodeCursor(value: Record<string, string | number>): string {
+  return Buffer.from(JSON.stringify(value), 'utf8').toString('base64url');
+}
+
+function decodeCursor(cursor: string | null | undefined): Record<string, unknown> | null {
+  if (cursor === null || cursor === undefined) return null;
+  if (typeof cursor !== 'string' || cursor.trim().length === 0) {
+    throw new Error('CURSOR_INVALID: Cursor must be a non-empty string.');
+  }
+  if (cursor.length > 4096) throw new Error('CURSOR_INVALID: Cursor is too long.');
+  try {
+    const parsed = JSON.parse(Buffer.from(cursor, 'base64url').toString('utf8')) as unknown;
+    if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) throw new Error('invalid');
+    return parsed as Record<string, unknown>;
+  } catch {
+    throw new Error('CURSOR_INVALID: Cursor is malformed.');
+  }
+}
+
+function createdIdCursor(cursor: string | null | undefined): { createdAt: string; id: string } | null {
+  const parsed = decodeCursor(cursor);
+  if (!parsed) return null;
+  if (Object.keys(parsed).length !== 2 || typeof parsed.createdAt !== 'string' || typeof parsed.id !== 'string') {
+    throw new Error('CURSOR_INVALID: Expected a created-at cursor.');
+  }
+  return { createdAt: parsed.createdAt, id: parsed.id };
+}
+
+function sequenceCursor(cursor: string | null | undefined): number | null {
+  const parsed = decodeCursor(cursor);
+  if (!parsed) return null;
+  if (Object.keys(parsed).length !== 1 || !Number.isSafeInteger(parsed.seq) || Number(parsed.seq) < 0) {
+    throw new Error('CURSOR_INVALID: Expected an event sequence cursor.');
+  }
+  return Number(parsed.seq);
 }
 
 export interface FileDatabaseDependencies {
@@ -489,7 +558,8 @@ export class FileDatabase {
         content TEXT NOT NULL,
         is_builtin INTEGER DEFAULT 0,
         updated_at TEXT NOT NULL,
-        data_json TEXT DEFAULT '{}'
+        data_json TEXT DEFAULT '{}',
+        summary_json TEXT DEFAULT '{}'
       );
       CREATE TABLE IF NOT EXISTS user_prompt_templates (
         id TEXT PRIMARY KEY,
@@ -531,6 +601,10 @@ export class FileDatabase {
         id TEXT PRIMARY KEY,
         data TEXT NOT NULL,
         is_builtin INTEGER DEFAULT 0,
+        name TEXT DEFAULT '',
+        canvas_width INTEGER DEFAULT 1080,
+        canvas_height INTEGER DEFAULT 1920,
+        canvas_ratio TEXT DEFAULT '9:16',
         updated_at TEXT NOT NULL
       );
       CREATE TABLE IF NOT EXISTS custom_cover_templates (
@@ -686,6 +760,17 @@ export class FileDatabase {
       addColumnIfMissing(this.db, 'tasks', column, definition);
     }
     addColumnIfMissing(this.db, 'prompt_templates', 'data_json', "TEXT DEFAULT '{}'");
+    addColumnIfMissing(this.db, 'prompt_templates', 'summary_json', "TEXT DEFAULT '{}'");
+    this.backfillPromptTemplateSummaries();
+    for (const [column, definition] of [
+      ['name', "TEXT DEFAULT ''"],
+      ['canvas_width', 'INTEGER DEFAULT 1080'],
+      ['canvas_height', 'INTEGER DEFAULT 1920'],
+      ['canvas_ratio', "TEXT DEFAULT '9:16'"],
+    ] as const) {
+      addColumnIfMissing(this.db, 'draft_templates', column, definition);
+    }
+    this.backfillDraftTemplateSummaries();
     for (const [column, definition] of [
       ['error_msg', "TEXT DEFAULT ''"],
       ['resolution', "TEXT DEFAULT '2K'"],
@@ -729,10 +814,14 @@ export class FileDatabase {
     const draftCount = getFirstRow<{ count: number }>(this.db, 'SELECT COUNT(*) AS count FROM draft_templates')?.count ?? 0;
     if (draftCount === 0) {
       for (const template of draftTemplates) {
-        this.db.run('INSERT INTO draft_templates (id, data, is_builtin, updated_at) VALUES (?, ?, ?, ?)', [
+        this.db.run('INSERT INTO draft_templates (id, data, is_builtin, name, canvas_width, canvas_height, canvas_ratio, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)', [
           template.id,
           json(template),
           template.isDefault ? 1 : 0,
+          template.name,
+          template.canvas.width,
+          template.canvas.height,
+          template.canvas.ratio,
           '2026-05-26T00:00:00.000Z',
         ]);
       }
@@ -774,6 +863,41 @@ export class FileDatabase {
     }
   }
 
+  private backfillDraftTemplateSummaries(): void {
+    const rows = getRows<{ id: string; data: string; name: string }>(
+      this.db,
+      "SELECT id, data, name FROM draft_templates WHERE name IS NULL OR name = ''",
+    );
+    for (const row of rows) {
+      const template = normalizeDraftTemplate(parseJson(row.data, draftTemplates[0]));
+      this.db.run(
+        'UPDATE draft_templates SET name = ?, is_builtin = ?, canvas_width = ?, canvas_height = ?, canvas_ratio = ? WHERE id = ?',
+        [template.name, template.isDefault ? 1 : 0, template.canvas.width, template.canvas.height, template.canvas.ratio, row.id],
+      );
+    }
+  }
+
+  private backfillPromptTemplateSummaries(): void {
+    const rows = getRows<Record<string, unknown>>(
+      this.db,
+      "SELECT id, name, type, description, is_builtin, updated_at, data_json FROM prompt_templates WHERE summary_json IS NULL OR summary_json = '{}'",
+    );
+    for (const row of rows) {
+      const stored = parseJson<Partial<PromptTemplate>>(row.data_json, {});
+      const template = {
+        ...stored,
+        id: String(row.id),
+        name: String(row.name ?? ''),
+        type: String(row.type ?? 'task') as PromptTemplate['type'],
+        description: String(row.description ?? ''),
+        content: String(stored.content ?? ''),
+        isBuiltin: Number(row.is_builtin ?? 0) === 1,
+        updatedAt: String(row.updated_at ?? ''),
+      } as PromptTemplate;
+      this.db.run('UPDATE prompt_templates SET summary_json = ? WHERE id = ?', [json(promptTemplateSummary(template)), template.id]);
+    }
+  }
+
   private syncBuiltinPromptTemplates(): void {
     const defaultIds = new Set(defaultPromptTemplates.map((template) => template.id));
     const existingIds = new Set(getRows<{ id: string }>(this.db, 'SELECT id FROM prompt_templates').map((row) => row.id));
@@ -804,9 +928,9 @@ export class FileDatabase {
 
   private insertPromptTemplate(template: PromptTemplate): void {
     this.db.run(
-      `INSERT OR REPLACE INTO prompt_templates (id, name, type, description, content, is_builtin, updated_at, data_json)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
-      [template.id, template.name, template.type, template.description, template.content, template.isBuiltin ? 1 : 0, template.updatedAt, json(template)],
+      `INSERT OR REPLACE INTO prompt_templates (id, name, type, description, content, is_builtin, updated_at, data_json, summary_json)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      [template.id, template.name, template.type, template.description, template.content, template.isBuiltin ? 1 : 0, template.updatedAt, json(template), json(promptTemplateSummary(template))],
     );
   }
 
@@ -920,13 +1044,19 @@ export class FileDatabase {
 
   async upsertDraftTemplate(template: DraftTemplate): Promise<DraftTemplate> {
     return this.enqueueCommit(() => {
-      this.db.run('INSERT OR REPLACE INTO draft_templates (id, data, is_builtin, updated_at) VALUES (?, ?, ?, ?)', [
+      const updatedAt = new Date().toISOString();
+      const storedTemplate = { ...template, updatedAt };
+      this.db.run('INSERT OR REPLACE INTO draft_templates (id, data, is_builtin, name, canvas_width, canvas_height, canvas_ratio, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)', [
         template.id,
-        json(template),
+        json(storedTemplate),
         template.isDefault ? 1 : 0,
-        new Date().toISOString(),
+        template.name,
+        template.canvas.width,
+        template.canvas.height,
+        template.canvas.ratio,
+        updatedAt,
       ]);
-      return template;
+      return storedTemplate;
     });
   }
 
@@ -1398,7 +1528,251 @@ export class FileDatabase {
     });
   }
 
-  async addTaskEvent(taskId: string, input: AddEventInput): Promise<TaskEvent> {
+  async listTaskSummaries(request: CursorRequest = {}): Promise<CursorPage<TaskSummary>> {
+    await this.waitForWrites();
+    const limit = clampPageLimit(request.limit);
+    const cursor = createdIdCursor(request.cursor);
+    const where = cursor ? 'WHERE created_at < ? OR (created_at = ? AND id < ?)' : '';
+    const params: SqlValue[] = cursor ? [cursor.createdAt, cursor.createdAt, cursor.id, limit + 1] : [limit + 1];
+    const rows = getRows<Record<string, unknown>>(
+      this.db,
+      `SELECT ${taskSummaryColumns} FROM tasks ${where} ORDER BY created_at DESC, id DESC LIMIT ?`,
+      params,
+    );
+    const hasMore = rows.length > limit;
+    const pageRows = rows.slice(0, limit);
+    const last = pageRows.at(-1);
+    return {
+      items: pageRows.map(rowToTaskSummary),
+      nextCursor: hasMore && last ? encodeCursor({ createdAt: String(last.created_at), id: String(last.id) }) : null,
+    };
+  }
+
+  async getTaskSummary(id: string): Promise<TaskSummary | null> {
+    await this.waitForWrites();
+    const row = getFirstRow<Record<string, unknown>>(this.db, `SELECT ${taskSummaryColumns} FROM tasks WHERE id = ?`, [id]);
+    return row ? rowToTaskSummary(row) : null;
+  }
+
+  async getTaskDetail(id: string): Promise<Task | null> {
+    await this.waitForWrites();
+    const row = getFirstRow<Record<string, unknown>>(this.db, 'SELECT * FROM tasks WHERE id = ?', [id]);
+    return row ? rowToTask(row) : null;
+  }
+
+  async listTaskEvents(taskId: string, request: CursorRequest = {}): Promise<CursorPage<SequencedTaskEvent>> {
+    await this.waitForWrites();
+    const limit = clampPageLimit(request.limit);
+    const cursor = sequenceCursor(request.cursor);
+    const rows = getRows<Record<string, unknown>>(
+      this.db,
+      `SELECT * FROM task_events WHERE task_id = ? ${cursor === null ? '' : 'AND seq < ?'} ORDER BY seq DESC LIMIT ?`,
+      cursor === null ? [taskId, limit + 1] : [taskId, cursor, limit + 1],
+    );
+    const hasMore = rows.length > limit;
+    const pageRows = rows.slice(0, limit);
+    const items = pageRows.map(rowToSequencedTaskEvent).reverse();
+    return { items, nextCursor: hasMore && items.length > 0 ? encodeCursor({ seq: items[0].seq }) : null };
+  }
+
+  async listViralAnalyses(request: CursorRequest = {}): Promise<CursorPage<ViralAnalysisSummary>> {
+    await this.waitForWrites();
+    const limit = clampPageLimit(request.limit);
+    const cursor = createdIdCursor(request.cursor);
+    const where = cursor ? 'WHERE created_at < ? OR (created_at = ? AND id < ?)' : '';
+    const params: SqlValue[] = cursor ? [cursor.createdAt, cursor.createdAt, cursor.id, limit + 1] : [limit + 1];
+    const rows = getRows<Record<string, unknown>>(
+      this.db,
+      `SELECT id, url, platform, title, status, current_stage, progress,
+        substr(error_message, 1, 1024) AS error_message,
+        created_at, started_at, completed_at, last_heartbeat_at
+       FROM viral_analyses ${where} ORDER BY created_at DESC, id DESC LIMIT ?`,
+      params,
+    );
+    const hasMore = rows.length > limit;
+    const pageRows = rows.slice(0, limit);
+    const last = pageRows.at(-1);
+    return {
+      items: pageRows.map(rowToViralAnalysisSummary),
+      nextCursor: hasMore && last ? encodeCursor({ createdAt: String(last.created_at), id: String(last.id) }) : null,
+    };
+  }
+
+  async getViralAnalysisSummary(id: string): Promise<ViralAnalysisSummary | null> {
+    await this.waitForWrites();
+    const row = getFirstRow<Record<string, unknown>>(
+      this.db,
+      `SELECT id, url, platform, title, status, current_stage, progress,
+        substr(error_message, 1, 1024) AS error_message,
+        created_at, started_at, completed_at, last_heartbeat_at
+       FROM viral_analyses WHERE id = ?`,
+      [id],
+    );
+    return row ? rowToViralAnalysisSummary(row) : null;
+  }
+
+  async getViralAnalysisDetail(id: string): Promise<ViralAnalysisRecord | null> {
+    await this.waitForWrites();
+    const row = getFirstRow<Record<string, unknown>>(this.db, 'SELECT * FROM viral_analyses WHERE id = ?', [id]);
+    return row ? rowToViralAnalysis(row) : null;
+  }
+
+  async listViralAnalysisEvents(analysisId: string, request: CursorRequest = {}): Promise<CursorPage<ViralAnalysisEvent>> {
+    await this.waitForWrites();
+    const limit = clampPageLimit(request.limit);
+    const cursor = sequenceCursor(request.cursor);
+    const rows = getRows<Record<string, unknown>>(
+      this.db,
+      `SELECT * FROM viral_analysis_events WHERE analysis_id = ? ${cursor === null ? '' : 'AND seq < ?'} ORDER BY seq DESC LIMIT ?`,
+      cursor === null ? [analysisId, limit + 1] : [analysisId, cursor, limit + 1],
+    );
+    const hasMore = rows.length > limit;
+    const pageRows = rows.slice(0, limit);
+    const items = pageRows.map(rowToViralEvent).reverse();
+    const oldestSeq = Number(pageRows.at(-1)?.seq);
+    return { items, nextCursor: hasMore && Number.isSafeInteger(oldestSeq) ? encodeCursor({ seq: oldestSeq }) : null };
+  }
+
+  async listImageLabRecords(request: CursorRequest = {}): Promise<CursorPage<ImageLabSummary>> {
+    return this.listCreatedRecords(
+      'image_lab_records',
+      `id, substr(prompt, 1, ${RECORD_TEXT_PREVIEW_LIMIT}) AS prompt_preview,
+       ratio, style, provider, image_path, status, substr(error_msg, 1, 1024) AS error_msg,
+       resolution, smart_mode, upstream_task_id, created_at, finished_at`,
+      rowToImageLabSummary,
+      request,
+    );
+  }
+
+  async getImageLabRecordDetail(id: string): Promise<ImageLabRecord | null> {
+    await this.waitForWrites();
+    const row = getFirstRow<Record<string, unknown>>(this.db, 'SELECT * FROM image_lab_records WHERE id = ?', [id]);
+    return row ? rowToImageLabRecord(row) : null;
+  }
+
+  async listVoiceLabRecords(request: CursorRequest = {}): Promise<CursorPage<VoiceLabSummary>> {
+    return this.listCreatedRecords(
+      'voice_lab_records',
+      `id, substr(text, 1, ${RECORD_TEXT_PREVIEW_LIMIT}) AS text_preview,
+       provider, voice_id, voice_label, speed, audio_path, status,
+       substr(error_msg, 1, 1024) AS error_msg, created_at, finished_at`,
+      rowToVoiceLabSummary,
+      request,
+    );
+  }
+
+  async getVoiceLabRecordDetail(id: string): Promise<VoiceLabRecord | null> {
+    await this.waitForWrites();
+    const row = getFirstRow<Record<string, unknown>>(this.db, 'SELECT * FROM voice_lab_records WHERE id = ?', [id]);
+    return row ? rowToVoiceLabRecord(row) : null;
+  }
+
+  async listPromptTemplateSummaries(request: CursorRequest = {}): Promise<CursorPage<PromptTemplateSummary>> {
+    await this.waitForWrites();
+    const limit = clampPageLimit(request.limit);
+    const cursor = createdIdCursor(request.cursor);
+    const where = cursor ? 'WHERE updated_at < ? OR (updated_at = ? AND id < ?)' : '';
+    const params: SqlValue[] = cursor ? [cursor.createdAt, cursor.createdAt, cursor.id, limit + 1] : [limit + 1];
+    const rows = getRows<Record<string, unknown>>(
+      this.db,
+      `SELECT id, name, type, description, is_builtin, updated_at, summary_json FROM prompt_templates ${where} ORDER BY updated_at DESC, id DESC LIMIT ?`,
+      params,
+    );
+    const hasMore = rows.length > limit;
+    const pageRows = rows.slice(0, limit);
+    const last = pageRows.at(-1);
+    return {
+      items: pageRows.map(rowToPromptTemplateSummary),
+      nextCursor: hasMore && last ? encodeCursor({ createdAt: String(last.updated_at), id: String(last.id) }) : null,
+    };
+  }
+
+  async getPromptTemplateDetail(id: string): Promise<PromptTemplate | null> {
+    await this.waitForWrites();
+    const row = getFirstRow<Record<string, unknown>>(this.db, 'SELECT * FROM prompt_templates WHERE id = ?', [id]);
+    return row ? rowToPromptTemplate(row) : null;
+  }
+
+  async listBuiltinPromptTemplateSummaries(): Promise<PromptTemplateSummary[]> {
+    await this.waitForWrites();
+    return getRows<Record<string, unknown>>(
+      this.db,
+      `SELECT id, name, type, description, is_builtin, updated_at, summary_json
+       FROM prompt_templates WHERE is_builtin = 1 ORDER BY updated_at DESC, id DESC`,
+    ).map(rowToPromptTemplateSummary);
+  }
+
+  async listDraftTemplateSummaries(request: CursorRequest = {}): Promise<CursorPage<DraftTemplateSummary>> {
+    await this.waitForWrites();
+    const limit = clampPageLimit(request.limit);
+    const parsed = decodeCursor(request.cursor);
+    const id = parsed && Object.keys(parsed).length === 1 && typeof parsed.id === 'string' && parsed.id.trim().length > 0
+      ? parsed.id
+      : null;
+    if (parsed && !id) throw new Error('CURSOR_INVALID: Expected a draft template cursor.');
+    const rows = getRows<Record<string, unknown>>(
+      this.db,
+      `SELECT id, name, is_builtin, canvas_width, canvas_height, canvas_ratio, updated_at
+       FROM draft_templates ${id ? 'WHERE id > ?' : ''} ORDER BY id ASC LIMIT ?`,
+      id ? [id, limit + 1] : [limit + 1],
+    );
+    const hasMore = rows.length > limit;
+    const pageRows = rows.slice(0, limit);
+    const last = pageRows.at(-1);
+    return {
+      items: pageRows.map(rowToDraftTemplateSummary),
+      nextCursor: hasMore && last ? encodeCursor({ id: String(last.id) }) : null,
+    };
+  }
+
+  async getDraftTemplateDetail(id: string): Promise<DraftTemplate | null> {
+    await this.waitForWrites();
+    const row = getFirstRow<Record<string, unknown>>(this.db, 'SELECT data, updated_at FROM draft_templates WHERE id = ?', [id]);
+    return row ? rowToDraftTemplate(row) : null;
+  }
+
+  async getBootstrapMetadata(): Promise<
+    Pick<AppState, 'config' | 'customStyles' | 'customCoverTemplates' | 'creditTransactions' | 'minimaxCloneVoices' | 'account' | 'activation' | 'ui'>
+  > {
+    await this.waitForWrites();
+    const configRow = getFirstRow<{ data: string }>(this.db, 'SELECT data FROM config WHERE id = 1');
+    const accountRow = getFirstRow<{ data: string }>(this.db, 'SELECT data FROM account_profile WHERE id = 1');
+    const activationRow = getFirstRow<{ data: string }>(this.db, 'SELECT data FROM activation_state WHERE id = 1');
+    const uiRow = getFirstRow<{ data: string }>(this.db, 'SELECT data FROM ui_preferences WHERE id = 1');
+    return {
+      config: configRow ? mergeConfig(parseJson(configRow.data, defaultConfig)) : defaultConfig,
+      customStyles: getRows<Record<string, unknown>>(this.db, 'SELECT * FROM custom_styles ORDER BY name ASC').map(rowToCustomStyle),
+      customCoverTemplates: getRows<Record<string, unknown>>(this.db, 'SELECT * FROM custom_cover_templates ORDER BY created_at ASC').map(rowToCustomCoverTemplate),
+      creditTransactions: getRows<Record<string, unknown>>(this.db, 'SELECT * FROM credit_transactions ORDER BY id DESC LIMIT 100').map(rowToCreditTransaction),
+      minimaxCloneVoices: getRows<Record<string, unknown>>(this.db, 'SELECT * FROM minimax_clone_voices ORDER BY last_used_at DESC LIMIT 100').map(rowToMinimaxCloneVoice),
+      account: accountRow ? ({ ...defaultAccount, ...parseJson(accountRow.data, defaultAccount) } as AccountProfile) : defaultAccount,
+      activation: activationRow ? ({ ...defaultActivation, ...parseJson(activationRow.data, defaultActivation) } as ActivationState) : defaultActivation,
+      ui: uiRow ? ({ ...defaultUiPreferences, ...parseJson(uiRow.data, defaultUiPreferences) } as UiPreferences) : defaultUiPreferences,
+    };
+  }
+
+  private async listCreatedRecords<T>(
+    table: 'image_lab_records' | 'voice_lab_records',
+    columns: string,
+    mapRow: (row: Record<string, unknown>) => T,
+    request: CursorRequest,
+  ): Promise<CursorPage<T>> {
+    await this.waitForWrites();
+    const limit = clampPageLimit(request.limit);
+    const cursor = createdIdCursor(request.cursor);
+    const where = cursor ? 'WHERE created_at < ? OR (created_at = ? AND id < ?)' : '';
+    const params: SqlValue[] = cursor ? [cursor.createdAt, cursor.createdAt, cursor.id, limit + 1] : [limit + 1];
+    const rows = getRows<Record<string, unknown>>(this.db, `SELECT ${columns} FROM ${table} ${where} ORDER BY created_at DESC, id DESC LIMIT ?`, params);
+    const hasMore = rows.length > limit;
+    const pageRows = rows.slice(0, limit);
+    const last = pageRows.at(-1);
+    return {
+      items: pageRows.map(mapRow),
+      nextCursor: hasMore && last ? encodeCursor({ createdAt: String(last.created_at), id: String(last.id) }) : null,
+    };
+  }
+
+  async addTaskEvent(taskId: string, input: AddEventInput): Promise<SequencedTaskEvent> {
     const event: TaskEvent = {
       taskId,
       type: input.type,
@@ -1416,7 +1790,8 @@ export class FileDatabase {
         [event.taskId, event.type, event.step, event.agent, event.tool, event.detail, event.dataJson, event.ts],
       );
       const seq = getFirstRow<{ seq: number }>(this.db, 'SELECT last_insert_rowid() AS seq')?.seq;
-      return { ...event, seq };
+      if (!Number.isSafeInteger(seq)) throw new Error('TASK_EVENT_SEQUENCE_MISSING: Event was not assigned a sequence.');
+      return { ...event, seq: Number(seq) };
     });
   }
 
@@ -1457,6 +1832,74 @@ export class FileDatabase {
       ui: uiRow ? ({ ...defaultUiPreferences, ...parseJson(uiRow.data, defaultUiPreferences) } as UiPreferences) : defaultUiPreferences,
     };
   }
+}
+
+function rowToTaskSummary(row: Record<string, unknown>): TaskSummary {
+  const task = rowToTask(row);
+  const {
+    inputText,
+    pausePoints: _pausePoints,
+    aiSources: _aiSources,
+    selectedSources: _selectedSources,
+    extraRequirements: _extraRequirements,
+    imagePromptReference: _imagePromptReference,
+    step3PromptSnapshot: _step3PromptSnapshot,
+    musicMv: _musicMv,
+    pipelineData: _pipelineData,
+    productInfo: _productInfo,
+    materialPerson: _materialPerson,
+    fixedIntro: _fixedIntro,
+    outroCta: _outroCta,
+    podcastSpeakers: _podcastSpeakers,
+    ...summary
+  } = task;
+  return {
+    ...summary,
+    inputPreview: String(row.input_preview ?? inputText).replace(/\s+/gu, ' ').trim().slice(0, TASK_INPUT_PREVIEW_LIMIT),
+  };
+}
+
+function rowToSequencedTaskEvent(row: Record<string, unknown>): SequencedTaskEvent {
+  const event = rowToEvent(row);
+  if (!Number.isSafeInteger(event.seq)) throw new Error('TASK_EVENT_SEQUENCE_INVALID: Persisted event has no sequence.');
+  return { ...event, seq: Number(event.seq) };
+}
+
+function rowToPromptTemplateSummary(row: Record<string, unknown>): PromptTemplateSummary {
+  const stored = parseJson<Partial<PromptTemplateSummary>>(row.summary_json, {});
+  return {
+    ...stored,
+    id: String(row.id),
+    name: String(row.name ?? ''),
+    type: String(row.type ?? 'task') as PromptTemplate['type'],
+    description: String(row.description ?? ''),
+    isBuiltin: Number(row.is_builtin) === 1,
+    updatedAt: String(row.updated_at ?? ''),
+  };
+}
+
+function promptTemplateSummary(template: PromptTemplate): PromptTemplateSummary {
+  const {
+    content: _content,
+    stepPrompts: _stepPrompts,
+    imageSeedPoolsJson: _imageSeedPoolsJson,
+    ...summary
+  } = template;
+  return summary;
+}
+
+function rowToDraftTemplateSummary(row: Record<string, unknown>): DraftTemplateSummary {
+  return {
+    id: String(row.id),
+    name: String(row.name ?? ''),
+    isDefault: Number(row.is_builtin ?? 0) === 1,
+    canvas: {
+      width: Number(row.canvas_width ?? 1080),
+      height: Number(row.canvas_height ?? 1920),
+      ratio: String(row.canvas_ratio ?? '9:16'),
+    },
+    updatedAt: String(row.updated_at ?? ''),
+  };
 }
 
 function rowToBookSelectionRecord(row: Record<string, unknown>): BookSelectionRecord {
@@ -1610,6 +2053,23 @@ function rowToViralAnalysis(row: Record<string, unknown>): ViralAnalysisRecord {
   };
 }
 
+function rowToViralAnalysisSummary(row: Record<string, unknown>): ViralAnalysisSummary {
+  return {
+    id: String(row.id),
+    url: String(row.url ?? ''),
+    platform: String(row.platform ?? 'unknown') as ViralAnalysisRecord['platform'],
+    title: String(row.title ?? ''),
+    status: String(row.status ?? 'pending') as ViralAnalysisRecord['status'],
+    currentStage: String(row.current_stage ?? 'queued') as ViralAnalysisRecord['currentStage'],
+    progress: Number(row.progress ?? 0),
+    errorMessage: String(row.error_message ?? ''),
+    createdAt: String(row.created_at ?? new Date().toISOString()),
+    startedAt: row.started_at ? String(row.started_at) : null,
+    completedAt: row.completed_at ? String(row.completed_at) : null,
+    lastHeartbeatAt: row.last_heartbeat_at ? String(row.last_heartbeat_at) : null,
+  };
+}
+
 function rowToViralEvent(row: Record<string, unknown>): ViralAnalysisEvent {
   return {
     seq: Number(row.seq),
@@ -1647,7 +2107,8 @@ function withBuiltinPromptTemplateMigrations(template: PromptTemplate): PromptTe
 }
 
 function rowToDraftTemplate(row: Record<string, unknown>): DraftTemplate {
-  return normalizeDraftTemplate(parseJson(String(row.data), draftTemplates[0]));
+  const template = normalizeDraftTemplate(parseJson(String(row.data), draftTemplates[0]));
+  return { ...template, updatedAt: String(row.updated_at ?? template.updatedAt ?? '') };
 }
 
 function rowToImageLabRecord(row: Record<string, unknown>): ImageLabRecord {
@@ -1670,10 +2131,44 @@ function rowToImageLabRecord(row: Record<string, unknown>): ImageLabRecord {
   };
 }
 
+function rowToImageLabSummary(row: Record<string, unknown>): ImageLabSummary {
+  return {
+    id: String(row.id),
+    promptPreview: String(row.prompt_preview ?? ''),
+    ratio: String(row.ratio ?? '9:16'),
+    style: String(row.style ?? 'photo-real'),
+    provider: String(row.provider ?? 'mock'),
+    imagePath: String(row.image_path ?? ''),
+    status: String(row.status ?? 'mock') as ImageLabRecord['status'],
+    errorMessage: String(row.error_msg ?? ''),
+    resolution: String(row.resolution ?? '2K') as ImageLabRecord['resolution'],
+    smartMode: String(row.smart_mode ?? 'text-to-image') as ImageLabRecord['smartMode'],
+    upstreamTaskId: row.upstream_task_id ? String(row.upstream_task_id) : null,
+    createdAt: String(row.created_at ?? new Date().toISOString()),
+    finishedAt: row.finished_at ? String(row.finished_at) : null,
+  };
+}
+
 function rowToVoiceLabRecord(row: Record<string, unknown>): VoiceLabRecord {
   return {
     id: String(row.id),
     text: String(row.text ?? ''),
+    provider: String(row.provider ?? 'volcengine') as VoiceLabRecord['provider'],
+    voiceId: String(row.voice_id ?? ''),
+    voiceLabel: String(row.voice_label ?? row.voice_id ?? ''),
+    speed: Number(row.speed ?? 1),
+    audioPath: String(row.audio_path ?? ''),
+    status: String(row.status ?? 'generated') as VoiceLabRecord['status'],
+    errorMessage: String(row.error_msg ?? ''),
+    createdAt: String(row.created_at ?? new Date().toISOString()),
+    finishedAt: row.finished_at ? String(row.finished_at) : null,
+  };
+}
+
+function rowToVoiceLabSummary(row: Record<string, unknown>): VoiceLabSummary {
+  return {
+    id: String(row.id),
+    textPreview: String(row.text_preview ?? ''),
     provider: String(row.provider ?? 'volcengine') as VoiceLabRecord['provider'],
     voiceId: String(row.voice_id ?? ''),
     voiceLabel: String(row.voice_label ?? row.voice_id ?? ''),

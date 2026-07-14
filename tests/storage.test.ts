@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import initSqlJs from 'sql.js';
 import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
@@ -997,6 +997,154 @@ describe('file database', () => {
       expect(state.config.tts.minimax).toMatchObject({ apiKey: '', model: 'speech-active', voiceId: 'voice-active' });
       await reopened.close();
     } finally {
+      await rm(dir, { recursive: true, force: true });
+    }
+  });
+
+  it('paginates task summaries and events with stable cursors while keeping heavy fields on demand', async () => {
+    const dir = await mkdtemp(join(tmpdir(), 'storydream-db-pages-'));
+    const db = await FileDatabase.open(join(dir, 'app.db'));
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date('2026-01-02T03:04:05.000Z'));
+    try {
+      const created = [];
+      for (const suffix of ['a', 'b', 'c']) {
+        created.push(await db.createTask({
+          title: `Task ${suffix}`,
+          inputText: `full input ${suffix}`,
+          track: 'story',
+          style: 'photo-real',
+          speaker: 'voice',
+          selectedSources: [{ source: 'test', title: suffix, content: `source ${suffix}` }],
+        }));
+      }
+
+      const first = await db.listTaskSummaries({ limit: 2 });
+      const second = await db.listTaskSummaries({ cursor: first.nextCursor, limit: 2 });
+      expect(first.items).toHaveLength(2);
+      expect(new Set([...first.items, ...second.items].map((task) => task.id))).toEqual(new Set(created.map((task) => task.id)));
+      expect(first.items[0]).not.toHaveProperty('inputText');
+      expect(first.items[0]).not.toHaveProperty('selectedSources');
+      expect(first.items[0]).not.toHaveProperty('step3PromptSnapshot');
+      expect(first.items[0]).not.toHaveProperty('pipelineData');
+      expect(first.items[0]).not.toHaveProperty('productInfo');
+      expect(first.items[0]).not.toHaveProperty('fixedIntro');
+      expect(first.items[0]).not.toHaveProperty('outroCta');
+      expect(first.items[0]).not.toHaveProperty('podcastSpeakers');
+      expect(first.items[0].inputPreview.length).toBeLessThanOrEqual(160);
+
+      const detail = await db.getTaskDetail(created[0].id);
+      expect(detail?.inputText).toBe('full input a');
+      expect(detail?.selectedSources[0]?.content).toBe('source a');
+
+      const persisted = await Promise.all([
+        db.addTaskEvent(created[0].id, { type: 'one', detail: 'one' }),
+        db.addTaskEvent(created[0].id, { type: 'two', detail: 'two' }),
+        db.addTaskEvent(created[0].id, { type: 'three', detail: 'three' }),
+      ]);
+      expect(persisted.every((event) => Number.isInteger(event.seq))).toBe(true);
+      expect(persisted.map((event) => event.seq)).toEqual([...persisted.map((event) => event.seq)].sort((left, right) => left - right));
+      const eventFirst = await db.listTaskEvents(created[0].id, { limit: 2 });
+      const eventSecond = await db.listTaskEvents(created[0].id, { cursor: eventFirst.nextCursor, limit: 2 });
+      expect(eventFirst.items.map((event) => event.seq)).toEqual(persisted.slice(1).map((event) => event.seq));
+      expect(eventSecond.items.map((event) => event.seq)).toEqual(persisted.slice(0, 1).map((event) => event.seq));
+      expect(new Set([...eventFirst.items, ...eventSecond.items].map((event) => event.seq))).toEqual(new Set(persisted.map((event) => event.seq)));
+    } finally {
+      vi.useRealTimers();
+      await db.close();
+      await rm(dir, { recursive: true, force: true });
+    }
+  });
+
+  it('clamps every narrow list API and loads template bodies only by id', async () => {
+    const dir = await mkdtemp(join(tmpdir(), 'storydream-db-list-clamps-'));
+    const db = await FileDatabase.open(join(dir, 'app.db'));
+    try {
+      const viralHeavy = `viral-heavy-${'v'.repeat(200_000)}`;
+      const imageHeavy = `image-preview-${'i'.repeat(200_000)}-image-heavy-tail-must-be-lazy`;
+      const voiceHeavy = `voice-preview-${'a'.repeat(200_000)}-voice-heavy-tail-must-be-lazy`;
+      const viral = await db.createViralAnalysis({
+        url: 'https://example.com/video',
+        settings: { track: 'story', style: 'photo-real', ratio: '9:16', templateId: 'default-portrait-9-16', extraRequirements: viralHeavy },
+      });
+      await db.addViralAnalysisEvent(viral.id, { type: 'start', stage: 'downloading', detail: 'start' });
+      const image = await db.addImageLabRecord({ prompt: imageHeavy, ratio: '9:16', style: 'photo-real', provider: 'mock', referenceImagePaths: [imageHeavy] });
+      const voice = await db.addVoiceLabRecord({ text: voiceHeavy, provider: 'mock', voiceId: 'voice', speed: 1 });
+      const template = await db.upsertPromptTemplate({ id: 'lazy-template', name: 'Lazy', type: 'task', content: 'lazy prompt body' });
+
+      const viralSummaries = await db.listViralAnalyses({ limit: 0 });
+      const imageSummaries = await db.listImageLabRecords({ limit: 0 });
+      const voiceSummaries = await db.listVoiceLabRecords({ limit: 0 });
+      expect(viralSummaries.items).toHaveLength(1);
+      expect((await db.listViralAnalysisEvents(viral.id, { limit: 0 })).items).toHaveLength(1);
+      expect(imageSummaries.items).toHaveLength(1);
+      expect(voiceSummaries.items).toHaveLength(1);
+      expect((await db.listPromptTemplateSummaries({ limit: 0 })).items).toHaveLength(1);
+      expect((await db.listDraftTemplateSummaries({ limit: 0 })).items).toHaveLength(1);
+
+      const summaries = await db.listPromptTemplateSummaries({ limit: 10_000 });
+      expect(summaries.items.find((item) => item.id === template.id)).not.toHaveProperty('content');
+      expect(summaries.items.find((item) => item.id === template.id)).not.toHaveProperty('stepPrompts');
+      expect((await db.getPromptTemplateDetail(template.id))?.content).toBe('lazy prompt body');
+      expect(viralSummaries.items[0]).not.toHaveProperty('settings');
+      expect(imageSummaries.items[0]).not.toHaveProperty('prompt');
+      expect(imageSummaries.items[0]).not.toHaveProperty('referenceImagePaths');
+      expect(voiceSummaries.items[0]).not.toHaveProperty('text');
+      expect(imageSummaries.items[0].promptPreview.length).toBeLessThanOrEqual(160);
+      expect(voiceSummaries.items[0].textPreview.length).toBeLessThanOrEqual(160);
+      expect(JSON.stringify([viralSummaries, imageSummaries, voiceSummaries])).not.toContain('heavy-tail-must-be-lazy');
+      expect((await db.getViralAnalysisDetail(viral.id))?.settings.extraRequirements).toBe(viralHeavy);
+      expect((await db.getImageLabRecordDetail(image.id))?.prompt).toBe(imageHeavy);
+      expect((await db.getVoiceLabRecordDetail(voice.id))?.text).toBe(voiceHeavy);
+      const draftSummary = (await db.listDraftTemplateSummaries({ limit: 1 })).items[0];
+      expect((await db.getDraftTemplateDetail(draftSummary.id))?.id).toBe(draftSummary.id);
+    } finally {
+      await db.close();
+      await rm(dir, { recursive: true, force: true });
+    }
+  });
+
+  it('rejects empty, non-string, or over-specified draft cursors', async () => {
+    const dir = await mkdtemp(join(tmpdir(), 'storydream-db-draft-cursors-'));
+    const db = await FileDatabase.open(join(dir, 'app.db'));
+    const cursor = (value: unknown) => Buffer.from(JSON.stringify(value), 'utf8').toString('base64url');
+    try {
+      await expect(db.listDraftTemplateSummaries({ cursor: '' })).rejects.toThrow('CURSOR_INVALID');
+      await expect(db.listDraftTemplateSummaries({ cursor: cursor({ id: 7 }) })).rejects.toThrow('CURSOR_INVALID');
+      await expect(db.listDraftTemplateSummaries({ cursor: cursor({ id: 'draft', extra: true }) })).rejects.toThrow('CURSOR_INVALID');
+    } finally {
+      await db.close();
+      await rm(dir, { recursive: true, force: true });
+    }
+  });
+
+  it('returns the latest bounded task and viral event pages with stable older cursors', { timeout: 30_000 }, async () => {
+    const dir = await mkdtemp(join(tmpdir(), 'storydream-db-latest-events-'));
+    const db = await FileDatabase.open(join(dir, 'app.db'));
+    try {
+      const task = await db.createTask({ title: 'Events', inputText: 'events', track: 'story', style: 'photo-real', speaker: 'voice' });
+      const viral = await db.createViralAnalysis({
+        url: 'https://example.com/events',
+        settings: { track: 'story', style: 'photo-real', ratio: '9:16', templateId: 'default-portrait-9-16' },
+      });
+      const taskEvents = await Promise.all(Array.from({ length: 101 }, (_, index) =>
+        db.addTaskEvent(task.id, { type: 'tick', detail: `task-${index + 1}` })));
+      const viralEvents = await Promise.all(Array.from({ length: 101 }, (_, index) =>
+        db.addViralAnalysisEvent(viral.id, { type: 'tick', stage: 'downloading', detail: `viral-${index + 1}` })));
+
+      const latestTaskPage = await db.listTaskEvents(task.id, { limit: 100 });
+      const olderTaskPage = await db.listTaskEvents(task.id, { cursor: latestTaskPage.nextCursor, limit: 100 });
+      expect(latestTaskPage.items.map((event) => event.seq)).toEqual(taskEvents.slice(1).map((event) => event.seq));
+      expect(olderTaskPage.items.map((event) => event.seq)).toEqual(taskEvents.slice(0, 1).map((event) => event.seq));
+      expect(new Set([...latestTaskPage.items, ...olderTaskPage.items].map((event) => event.seq)).size).toBe(101);
+
+      const latestViralPage = await db.listViralAnalysisEvents(viral.id, { limit: 100 });
+      const olderViralPage = await db.listViralAnalysisEvents(viral.id, { cursor: latestViralPage.nextCursor, limit: 100 });
+      expect(latestViralPage.items.map((event) => event.seq)).toEqual(viralEvents.slice(1).map((event) => event.seq));
+      expect(olderViralPage.items.map((event) => event.seq)).toEqual(viralEvents.slice(0, 1).map((event) => event.seq));
+      expect(new Set([...latestViralPage.items, ...olderViralPage.items].map((event) => event.seq)).size).toBe(101);
+    } finally {
+      await db.close();
       await rm(dir, { recursive: true, force: true });
     }
   });
