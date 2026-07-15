@@ -1,4 +1,4 @@
-import { readFile, rm, writeFile, mkdtemp } from 'node:fs/promises';
+import { readFile, rename, rm, writeFile, mkdtemp } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import initSqlJs from 'sql.js';
@@ -43,6 +43,54 @@ async function sqliteSchema(file: string): Promise<string> {
   }
 }
 
+async function queryDatabase<T extends Record<string, unknown>>(
+  file: string,
+  sql: string,
+  params: Array<string | number | null> = [],
+): Promise<T[]> {
+  const SQL = await initSqlJs();
+  const database = new SQL.Database(await readFile(file));
+  const statement = database.prepare(sql, params);
+  try {
+    const rows: T[] = [];
+    while (statement.step()) rows.push(statement.getAsObject() as T);
+    return rows;
+  } finally {
+    statement.free();
+    database.close();
+  }
+}
+
+async function createGovernedRecords(db: FileDatabase) {
+  const task = await db.createTask({ title: 'Governed task', inputText: 'task input', taskType: 'story' });
+  await db.updateTask(task.id, { status: 'completed' });
+  const viral = await db.createViralAnalysis({
+    title: 'Governed viral analysis',
+    url: 'https://example.test/governed',
+    settings: { track: 'story', style: 'photo-real', ratio: '9:16', templateId: 'portrait' },
+  });
+  await db.updateViralAnalysis(viral.id, { status: 'completed' });
+  const image = await db.addImageLabRecord({
+    prompt: 'governed image',
+    ratio: '9:16',
+    style: 'photo-real',
+    provider: 'mock',
+    status: 'generated',
+  });
+  const voice = await db.addVoiceLabRecord({
+    text: 'governed voice',
+    provider: 'mock',
+    voiceId: 'voice-governed',
+    speed: 1,
+  });
+  const [storedTask, storedViral] = await Promise.all([
+    db.getTaskDetail(task.id),
+    db.getViralAnalysisDetail(viral.id),
+  ]);
+  if (!storedTask || !storedViral) throw new Error('Governed fixture did not persist canonical records.');
+  return { task: storedTask, viral: storedViral, image, voice };
+}
+
 describe('history governance storage', () => {
   it('migrates every governed family with archive/key columns, stable indexes, and tombstones', async () => {
     const { db, file } = await createDatabase('storydream-history-schema-');
@@ -54,6 +102,21 @@ describe('history governance storage', () => {
       expect(schema).toMatch(new RegExp(`table:${table}:[\\s\\S]*?managed_storage_key`, 'u'));
     }
     expect(schema).toContain('table:history_tombstones:');
+    const tombstoneStart = schema.indexOf('table:history_tombstones:');
+    const tombstoneEnd = schema.indexOf('\ntable:', tombstoneStart + 1);
+    const tombstoneSchema = schema.slice(tombstoneStart, tombstoneEnd);
+    for (const column of [
+      'family',
+      'entity_id',
+      'managed_storage_key',
+      'cleanup_state',
+      'quarantine_name',
+      'quarantine_identity_json',
+      'diagnostic',
+      'deleted_at',
+    ]) {
+      expect(tombstoneSchema).toMatch(new RegExp(`\\b${column}\\b`, 'u'));
+    }
     for (const index of [
       'idx_tasks_active_history',
       'idx_tasks_archived_history',
@@ -67,6 +130,62 @@ describe('history governance storage', () => {
       expect(schema).toContain(`index:${index}:`);
     }
     expect(await readFile(new URL('../src/shared/storage.ts', import.meta.url), 'utf8')).toContain('COUNT(*) AS total_count');
+  });
+
+  it('migrates persisted Task 5 tombstones without losing cleanup ownership or deletion time', async () => {
+    const directory = await mkdtemp(join(tmpdir(), 'storydream-history-legacy-tombstones-'));
+    createdDirectories.push(directory);
+    const file = join(directory, 'app.db');
+    const SQL = await initSqlJs();
+    const legacy = new SQL.Database();
+    try {
+      legacy.run(`
+        CREATE TABLE history_tombstones (
+          family TEXT NOT NULL,
+          entity_id TEXT NOT NULL,
+          managed_storage_key TEXT,
+          deleted_at TEXT NOT NULL,
+          PRIMARY KEY (family, entity_id)
+        )
+      `);
+      legacy.run(
+        'INSERT INTO history_tombstones (family, entity_id, managed_storage_key, deleted_at) VALUES (?, ?, ?, ?)',
+        ['task', 'legacy-unmanaged', null, '2026-05-01T00:00:00.000Z'],
+      );
+      legacy.run(
+        'INSERT INTO history_tombstones (family, entity_id, managed_storage_key, deleted_at) VALUES (?, ?, ?, ?)',
+        ['image-lab', 'legacy-managed', 'legacy-managed-key', '2026-05-02T00:00:00.000Z'],
+      );
+      await writeFile(file, legacy.export());
+    } finally {
+      legacy.close();
+    }
+
+    const migrated = await FileDatabase.open(file);
+    await migrated.close();
+
+    const reopened = await FileDatabase.open(file);
+    const unmanaged = await reopened.deleteTaskPermanently('legacy-unmanaged');
+    expect(unmanaged).toMatchObject({
+      managedStorageKey: null,
+      cleanupState: 'unmanaged-legacy',
+      quarantineName: null,
+      quarantineIdentityJson: '{}',
+      deletedAt: '2026-05-01T00:00:00.000Z',
+    });
+    expect(unmanaged.diagnostic.trim()).not.toBe('');
+
+    expect(await reopened.deleteImageLabRecordPermanently('legacy-managed')).toEqual({
+      family: 'image-lab',
+      id: 'legacy-managed',
+      managedStorageKey: 'legacy-managed-key',
+      cleanupState: 'pending',
+      quarantineName: null,
+      quarantineIdentityJson: '{}',
+      diagnostic: '',
+      deletedAt: '2026-05-02T00:00:00.000Z',
+    });
+    await reopened.close();
   });
 
   it('returns stable task pages with exact totals and canonical status cursor binding', async () => {
@@ -243,5 +362,303 @@ describe('history governance storage', () => {
     expect(pages.every((page) => page.totalCount === 1 && page.hasMore === false && page.nextCursor === null)).toBe(true);
     expect(pages.every((page) => page.items[0].archivedAt !== null && page.items[0].managedStorageKey !== null)).toBe(true);
     await reopened.close();
+  });
+
+  it('archives and restores every family idempotently without changing business status', async () => {
+    const { db } = await createDatabase('storydream-history-lifecycle-');
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date('2026-06-05T12:00:00.000Z'));
+    const records = await createGovernedRecords(db);
+    const lifecycles = [
+      { record: records.task, archive: () => db.archiveTask(records.task.id), restore: () => db.restoreTask(records.task.id) },
+      {
+        record: records.viral,
+        archive: () => db.archiveViralAnalysis(records.viral.id),
+        restore: () => db.restoreViralAnalysis(records.viral.id),
+      },
+      {
+        record: records.image,
+        archive: () => db.archiveImageLabRecord(records.image.id),
+        restore: () => db.restoreImageLabRecord(records.image.id),
+      },
+      {
+        record: records.voice,
+        archive: () => db.archiveVoiceLabRecord(records.voice.id),
+        restore: () => db.restoreVoiceLabRecord(records.voice.id),
+      },
+    ] as const;
+
+    for (const lifecycle of lifecycles) {
+      vi.setSystemTime(new Date('2026-06-05T12:00:00.000Z'));
+      const archived = await lifecycle.archive();
+      expect(archived.archivedAt).toBe('2026-06-05T12:00:00.000Z');
+      expect(archived.status).toBe(lifecycle.record.status);
+
+      vi.setSystemTime(new Date('2026-06-05T13:00:00.000Z'));
+      const archivedAgain = await lifecycle.archive();
+      expect(archivedAgain.archivedAt).toBe(archived.archivedAt);
+      expect(archivedAgain.status).toBe(archived.status);
+
+      const restored = await lifecycle.restore();
+      expect(restored.archivedAt).toBeNull();
+      expect(restored.status).toBe(archived.status);
+      expect(await lifecycle.restore()).toEqual(restored);
+    }
+    await db.close();
+  });
+
+  it('rejects task and viral archive or delete while pending or running and requires archive for every delete', async () => {
+    const { db } = await createDatabase('storydream-history-active-rejection-');
+    const task = await db.createTask({ title: 'Active task', inputText: 'active' });
+    const viral = await db.createViralAnalysis({
+      url: 'https://example.test/active',
+      settings: { track: 'story', style: 'photo-real', ratio: '9:16', templateId: 'portrait' },
+    });
+
+    for (const operation of [
+      () => db.archiveTask(task.id),
+      () => db.deleteTaskPermanently(task.id),
+      () => db.archiveViralAnalysis(viral.id),
+      () => db.deleteViralAnalysisPermanently(viral.id),
+    ]) {
+      await expect(operation()).rejects.toThrow(/pending|running|active/i);
+    }
+
+    await db.updateTask(task.id, { status: 'running' });
+    await db.updateViralAnalysis(viral.id, { status: 'running' });
+    for (const operation of [
+      () => db.archiveTask(task.id),
+      () => db.deleteTaskPermanently(task.id),
+      () => db.archiveViralAnalysis(viral.id),
+      () => db.deleteViralAnalysisPermanently(viral.id),
+    ]) {
+      await expect(operation()).rejects.toThrow(/pending|running|active/i);
+    }
+
+    await db.updateTask(task.id, { status: 'completed' });
+    await db.updateViralAnalysis(viral.id, { status: 'completed' });
+    const image = await db.addImageLabRecord({ prompt: 'active image', ratio: '9:16', style: 'photo-real', provider: 'mock' });
+    const voice = await db.addVoiceLabRecord({ text: 'active voice', provider: 'mock', voiceId: 'voice', speed: 1 });
+    for (const operation of [
+      () => db.deleteTaskPermanently(task.id),
+      () => db.deleteViralAnalysisPermanently(viral.id),
+      () => db.deleteImageLabRecordPermanently(image.id),
+      () => db.deleteVoiceLabRecordPermanently(voice.id),
+    ]) {
+      await expect(operation()).rejects.toThrow(/archived/i);
+    }
+    await db.close();
+  });
+
+  it('deletes governed rows atomically, cascades owned rows, and preserves clone voice assets', async () => {
+    const { db: initialDb, file, directory } = await createDatabase('storydream-history-delete-');
+    const clone = { voiceId: 'clone-preserved', displayName: 'Preserved clone voice' };
+    const sourceAudio = join(directory, 'clone-source.wav');
+    await writeFile(sourceAudio, 'clone-source', 'utf8');
+    await initialDb.close();
+    await mutateDatabase(
+      file,
+      `INSERT INTO minimax_clone_voices
+       (voice_id, display_name, source_audio_path, created_at, last_used_at) VALUES (?, ?, ?, ?, ?)`,
+      [clone.voiceId, clone.displayName, sourceAudio, 1, 1],
+    );
+    const db = await FileDatabase.open(file);
+    const cloneVoicesBefore = (await db.getState()).minimaxCloneVoices;
+    const task = await db.createTask({ title: 'Delete task', inputText: 'delete task' });
+    await db.updateTask(task.id, { status: 'completed' });
+    await db.addTaskEvent(task.id, { type: 'complete', detail: 'task event' });
+    const viral = await db.createViralAnalysis({
+      title: 'Delete viral',
+      url: 'https://example.test/delete',
+      settings: { track: 'story', style: 'photo-real', ratio: '9:16', templateId: 'portrait' },
+    });
+    await db.updateViralAnalysis(viral.id, { status: 'completed' });
+    await db.addViralAnalysisEvent(viral.id, { type: 'complete', stage: 'completed', detail: 'viral event' });
+    const image = await db.addImageLabRecord({ prompt: 'delete image', ratio: '9:16', style: 'photo-real', provider: 'mock' });
+    const voice = await db.addVoiceLabRecord({
+      text: 'delete voice',
+      provider: 'minimax',
+      voiceId: clone.voiceId,
+      voiceLabel: clone.displayName,
+      speed: 1,
+      audioPath: join(directory, 'generated-voice.wav'),
+    });
+
+    await Promise.all([
+      db.archiveTask(task.id),
+      db.archiveViralAnalysis(viral.id),
+      db.archiveImageLabRecord(image.id),
+      db.archiveVoiceLabRecord(voice.id),
+    ]);
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date('2026-06-06T00:00:00.000Z'));
+    const tombstones = await Promise.all([
+      db.deleteTaskPermanently(task.id),
+      db.deleteViralAnalysisPermanently(viral.id),
+      db.deleteImageLabRecordPermanently(image.id),
+      db.deleteVoiceLabRecordPermanently(voice.id),
+    ]);
+    vi.setSystemTime(new Date('2026-06-07T00:00:00.000Z'));
+    const duplicateTombstones = await Promise.all([
+      db.deleteTaskPermanently(task.id),
+      db.deleteViralAnalysisPermanently(viral.id),
+      db.deleteImageLabRecordPermanently(image.id),
+      db.deleteVoiceLabRecordPermanently(voice.id),
+    ]);
+
+    expect(duplicateTombstones).toEqual(tombstones);
+    expect(tombstones.map((item) => item.deletedAt)).toEqual(Array(4).fill('2026-06-06T00:00:00.000Z'));
+    expect(await db.getTaskDetail(task.id)).toBeNull();
+    expect(await db.getViralAnalysisDetail(viral.id)).toBeNull();
+    expect(await db.getImageLabRecordDetail(image.id)).toBeNull();
+    expect(await db.getVoiceLabRecordDetail(voice.id)).toBeNull();
+    expect((await db.listTaskEvents(task.id)).items).toEqual([]);
+    expect((await db.listViralAnalysisEvents(viral.id)).items).toEqual([]);
+    expect(await queryDatabase(file, 'SELECT id FROM playground_jobs WHERE id = ?', [image.id])).toEqual([]);
+    expect((await db.getState()).minimaxCloneVoices).toEqual(cloneVoicesBefore);
+    expect(await readFile(sourceAudio, 'utf8')).toBe('clone-source');
+
+    const ledger = await queryDatabase<{
+      family: string;
+      entity_id: string;
+      managed_storage_key: string;
+      cleanup_state: string;
+      quarantine_name: null;
+      quarantine_identity_json: string;
+      diagnostic: string;
+      deleted_at: string;
+    }>(file, 'SELECT * FROM history_tombstones ORDER BY family ASC');
+    expect(ledger).toHaveLength(4);
+    expect(ledger.map((row) => row.family)).toEqual(['image-lab', 'task', 'viral-analysis', 'voice-lab']);
+    expect(ledger.every((row) => row.managed_storage_key.length > 0)).toBe(true);
+    expect(ledger.every((row) => row.cleanup_state === 'pending')).toBe(true);
+    expect(ledger.every((row) => row.quarantine_name === null && row.quarantine_identity_json === '{}' && row.diagnostic === '')).toBe(true);
+    expect(ledger.every((row) => row.deleted_at === '2026-06-06T00:00:00.000Z')).toBe(true);
+    await db.close();
+  });
+
+  it('rolls back the entity, owned rows, and tombstone when permanent deletion cannot persist', async () => {
+    const directory = await mkdtemp(join(tmpdir(), 'storydream-history-delete-rollback-'));
+    createdDirectories.push(directory);
+    const file = join(directory, 'app.db');
+    let failNextReplace = false;
+    const db = await FileDatabase.open(file, {
+      replaceFile: async (source, target) => {
+        if (failNextReplace) {
+          failNextReplace = false;
+          throw Object.assign(new Error('injected permanent delete persistence failure'), { code: 'EIO' });
+        }
+        await rename(source, target);
+      },
+    });
+    const task = await db.createTask({ title: 'Rollback delete', inputText: 'must survive' });
+    await db.updateTask(task.id, { status: 'completed' });
+    await db.addTaskEvent(task.id, { type: 'owned', detail: 'must survive' });
+    await db.archiveTask(task.id);
+
+    failNextReplace = true;
+    await expect(db.deleteTaskPermanently(task.id)).rejects.toThrow(/persist|failure|EIO/i);
+
+    expect(await db.getTaskDetail(task.id)).toMatchObject({ id: task.id, archivedAt: expect.any(String) });
+    expect((await db.listTaskEvents(task.id)).items.map((event) => event.detail)).toEqual(['must survive']);
+    expect(await queryDatabase(file, 'SELECT entity_id FROM history_tombstones WHERE family = ? AND entity_id = ?', ['task', task.id])).toEqual([]);
+    await db.close();
+  });
+
+  it('records unmanaged legacy deletion without touching a path derived from the business ID', async () => {
+    const { db, file, directory } = await createDatabase('storydream-history-legacy-delete-');
+    const task = await db.createTask({ title: 'Legacy task', inputText: 'legacy' });
+    await db.updateTask(task.id, { status: 'completed' });
+    await db.close();
+    await mutateDatabase(file, 'UPDATE tasks SET managed_storage_key = NULL WHERE id = ?', [task.id]);
+    const legacySentinel = join(directory, task.id);
+    await writeFile(legacySentinel, 'unmanaged legacy data', 'utf8');
+
+    const reopened = await FileDatabase.open(file);
+    await reopened.archiveTask(task.id);
+    const tombstone = await reopened.deleteTaskPermanently(task.id);
+    expect(tombstone.managedStorageKey).toBeNull();
+    expect(tombstone.cleanupState).toBe('unmanaged-legacy');
+    expect(tombstone.diagnostic).toMatch(/legacy|managed storage key/i);
+    expect(await readFile(legacySentinel, 'utf8')).toBe('unmanaged legacy data');
+    const [ledger] = await queryDatabase<{
+      cleanup_state: string;
+      quarantine_name: null;
+      quarantine_identity_json: string;
+      diagnostic: string;
+    }>(file, 'SELECT cleanup_state, quarantine_name, quarantine_identity_json, diagnostic FROM history_tombstones WHERE family = ? AND entity_id = ?', ['task', task.id]);
+    expect(ledger).toMatchObject({
+      cleanup_state: 'unmanaged-legacy',
+      quarantine_name: null,
+      quarantine_identity_json: '{}',
+    });
+    expect(ledger.diagnostic).toMatch(/legacy|managed storage key/i);
+    await reopened.close();
+  });
+
+  it('rejects every public business write while a governed record is archived', async () => {
+    const { db } = await createDatabase('storydream-history-archived-writes-');
+    const records = await createGovernedRecords(db);
+    await Promise.all([
+      db.archiveTask(records.task.id),
+      db.archiveViralAnalysis(records.viral.id),
+      db.archiveImageLabRecord(records.image.id),
+      db.archiveVoiceLabRecord(records.voice.id),
+    ]);
+
+    const writes = [
+      () => db.updateTask(records.task.id, { status: 'failed', retryFromStep: 2, artifactStatePath: 'task-state.json', outputDir: 'task-output' }),
+      () => db.updateTask(records.task.id, {}),
+      () => db.addTaskEvent(records.task.id, { type: 'retry', detail: 'must reject' }),
+      () => db.updateViralAnalysis(records.viral.id, { status: 'failed', resultPath: 'result.json', videoPath: 'video.mp4' }),
+      () => db.updateViralAnalysis(records.viral.id, {}),
+      () => db.addViralAnalysisEvent(records.viral.id, { type: 'retry', stage: 'failed', detail: 'must reject' }),
+      () => db.addImageLabRecord({ ...records.image, id: records.image.id }),
+      () => db.updateImageLabRecord(records.image.id, { status: 'failed', imagePath: 'image.png' }),
+      () => db.addVoiceLabRecord({ ...records.voice, id: records.voice.id }),
+      () => db.updateVoiceLabRecord(records.voice.id, { status: 'failed', audioPath: 'voice.wav' }),
+    ];
+    for (const write of writes) await expect(write()).rejects.toThrow(/archived/i);
+    await db.close();
+  });
+
+  it('never resurrects tombstoned IDs through any public write or restore path', async () => {
+    const { db } = await createDatabase('storydream-history-tombstoned-writes-');
+    const records = await createGovernedRecords(db);
+    await db.archiveTask(records.task.id);
+    await db.archiveViralAnalysis(records.viral.id);
+    await db.archiveImageLabRecord(records.image.id);
+    await db.archiveVoiceLabRecord(records.voice.id);
+    await db.deleteTaskPermanently(records.task.id);
+    await db.deleteViralAnalysisPermanently(records.viral.id);
+    await db.deleteImageLabRecordPermanently(records.image.id);
+    await db.deleteVoiceLabRecordPermanently(records.voice.id);
+
+    const writes = [
+      () => db.archiveTask(records.task.id),
+      () => db.restoreTask(records.task.id),
+      () => db.updateTask(records.task.id, { status: 'running', retryFromStep: 1, artifactStatePath: 'resurrect-task.json' }),
+      () => db.updateTask(records.task.id, {}),
+      () => db.addTaskEvent(records.task.id, { type: 'resurrect', detail: 'must reject' }),
+      () => db.backfillManagedStorageKey('task', records.task.id, 'resurrect-task-key'),
+      () => db.archiveViralAnalysis(records.viral.id),
+      () => db.restoreViralAnalysis(records.viral.id),
+      () => db.updateViralAnalysis(records.viral.id, { status: 'running', resultPath: 'resurrect-result.json' }),
+      () => db.updateViralAnalysis(records.viral.id, {}),
+      () => db.addViralAnalysisEvent(records.viral.id, { type: 'resurrect', stage: 'queued', detail: 'must reject' }),
+      () => db.backfillManagedStorageKey('viral-analysis', records.viral.id, 'resurrect-viral-key'),
+      () => db.archiveImageLabRecord(records.image.id),
+      () => db.restoreImageLabRecord(records.image.id),
+      () => db.addImageLabRecord({ ...records.image, id: records.image.id }),
+      () => db.updateImageLabRecord(records.image.id, { status: 'generated', imagePath: 'resurrect-image.png' }),
+      () => db.backfillManagedStorageKey('image-lab', records.image.id, 'resurrect-image-key'),
+      () => db.archiveVoiceLabRecord(records.voice.id),
+      () => db.restoreVoiceLabRecord(records.voice.id),
+      () => db.addVoiceLabRecord({ ...records.voice, id: records.voice.id }),
+      () => db.updateVoiceLabRecord(records.voice.id, { status: 'generated', audioPath: 'resurrect-voice.wav' }),
+      () => db.backfillManagedStorageKey('voice-lab', records.voice.id, 'resurrect-voice-key'),
+    ];
+    for (const write of writes) await expect(write()).rejects.toThrow(/deleted|tombstone/i);
+    await db.close();
   });
 });

@@ -95,6 +95,17 @@ type VoiceLabRecordInput = Partial<Omit<VoiceLabRecord, 'id' | 'createdAt' | 'fi
     finishedAt?: string | null;
   };
 
+export interface HistoryTombstone {
+  family: HistoryFamily;
+  id: string;
+  managedStorageKey: string | null;
+  cleanupState: string;
+  quarantineName: string | null;
+  quarantineIdentityJson: string;
+  diagnostic: string;
+  deletedAt: string;
+}
+
 let sqlPromise: Promise<SqlJsStatic> | null = null;
 
 async function loadSql(): Promise<SqlJsStatic> {
@@ -169,6 +180,28 @@ const taskSummaryColumns = `
   podcast_speaker_b, cover_image_mode, cover_template_id, html_video_foreground,
   substr(input_text, 1, ${TASK_INPUT_PREVIEW_LIMIT}) AS input_preview
 `;
+const viralAnalysisSummaryColumns = `
+  id, archived_at, managed_storage_key, url, platform, title, status, current_stage, progress,
+  substr(error_message, 1, 1024) AS error_message,
+  created_at, started_at, completed_at, last_heartbeat_at
+`;
+const imageLabSummaryColumns = `
+  id, archived_at, managed_storage_key, substr(prompt, 1, ${RECORD_TEXT_PREVIEW_LIMIT}) AS prompt_preview,
+  ratio, style, provider, image_path, status, substr(error_msg, 1, 1024) AS error_msg,
+  resolution, smart_mode, upstream_task_id, created_at, finished_at
+`;
+const voiceLabSummaryColumns = `
+  id, archived_at, managed_storage_key, substr(text, 1, ${RECORD_TEXT_PREVIEW_LIMIT}) AS text_preview,
+  provider, voice_id, voice_label, speed, audio_path, status,
+  substr(error_msg, 1, 1024) AS error_msg, created_at, finished_at
+`;
+
+const historyTableByFamily: Record<HistoryFamily, 'tasks' | 'viral_analyses' | 'image_lab_records' | 'voice_lab_records'> = {
+  task: 'tasks',
+  'viral-analysis': 'viral_analyses',
+  'image-lab': 'image_lab_records',
+  'voice-lab': 'voice_lab_records',
+};
 
 function clampPageLimit(limit: number | undefined): number {
   if (!Number.isFinite(limit)) return DEFAULT_STORAGE_PAGE_LIMIT;
@@ -533,6 +566,149 @@ export class FileDatabase {
     if (this.closed) throw new Error('Database is closed.');
   }
 
+  private getHistoryTombstone(family: HistoryFamily, id: string): HistoryTombstone | null {
+    const row = getFirstRow<Record<string, unknown>>(
+      this.db,
+      'SELECT * FROM history_tombstones WHERE family = ? AND entity_id = ?',
+      [family, id],
+    );
+    return row ? rowToHistoryTombstone(row) : null;
+  }
+
+  private assertHistoryWritable(
+    family: HistoryFamily,
+    id: string,
+    options: { allowArchived?: boolean } = {},
+  ): void {
+    if (this.getHistoryTombstone(family, id)) {
+      throw new Error(`HISTORY_DELETED: ${family} ${id} is tombstoned and cannot be changed.`);
+    }
+    if (options.allowArchived) return;
+    const row = getFirstRow<{ archived_at: string | null }>(
+      this.db,
+      `SELECT archived_at FROM ${historyTableByFamily[family]} WHERE id = ?`,
+      [id],
+    );
+    if (row?.archived_at) {
+      throw new Error(`HISTORY_ARCHIVED: ${family} ${id} is archived and read-only.`);
+    }
+  }
+
+  private getHistorySummary<T>(
+    family: HistoryFamily,
+    id: string,
+    columns: string,
+    mapRow: (row: Record<string, unknown>) => T,
+  ): T {
+    const row = getFirstRow<Record<string, unknown>>(
+      this.db,
+      `SELECT ${columns} FROM ${historyTableByFamily[family]} WHERE id = ?`,
+      [id],
+    );
+    if (!row) throw new Error(`HISTORY_NOT_FOUND: ${family} ${id} does not exist.`);
+    return mapRow(row);
+  }
+
+  private archiveHistoryRecord<T>(
+    family: HistoryFamily,
+    id: string,
+    columns: string,
+    mapRow: (row: Record<string, unknown>) => T,
+    rejectActiveStatus: boolean,
+  ): T {
+    if (this.getHistoryTombstone(family, id)) {
+      throw new Error(`HISTORY_DELETED: ${family} ${id} is tombstoned and cannot be archived.`);
+    }
+    const table = historyTableByFamily[family];
+    const row = getFirstRow<Record<string, unknown>>(this.db, `SELECT archived_at, status FROM ${table} WHERE id = ?`, [id]);
+    if (!row) throw new Error(`HISTORY_NOT_FOUND: ${family} ${id} does not exist.`);
+    if (row.archived_at) return this.getHistorySummary(family, id, columns, mapRow);
+    const status = String(row.status ?? '');
+    if (rejectActiveStatus && (status === 'pending' || status === 'running')) {
+      throw new Error(`HISTORY_ACTIVE: ${family} ${id} has ${status} status and cannot be archived or deleted.`);
+    }
+    this.db.run(`UPDATE ${table} SET archived_at = ? WHERE id = ?`, [new Date().toISOString(), id]);
+    return this.getHistorySummary(family, id, columns, mapRow);
+  }
+
+  private restoreHistoryRecord<T>(
+    family: HistoryFamily,
+    id: string,
+    columns: string,
+    mapRow: (row: Record<string, unknown>) => T,
+  ): T {
+    if (this.getHistoryTombstone(family, id)) {
+      throw new Error(`HISTORY_DELETED: ${family} ${id} is tombstoned and cannot be restored.`);
+    }
+    const table = historyTableByFamily[family];
+    const row = getFirstRow<{ archived_at: string | null }>(this.db, `SELECT archived_at FROM ${table} WHERE id = ?`, [id]);
+    if (!row) throw new Error(`HISTORY_NOT_FOUND: ${family} ${id} does not exist.`);
+    if (row.archived_at) this.db.run(`UPDATE ${table} SET archived_at = NULL WHERE id = ?`, [id]);
+    return this.getHistorySummary(family, id, columns, mapRow);
+  }
+
+  private deleteHistoryRecordPermanently(
+    family: HistoryFamily,
+    id: string,
+    rejectActiveStatus: boolean,
+  ): HistoryTombstone {
+    const existing = this.getHistoryTombstone(family, id);
+    if (existing) return existing;
+    const table = historyTableByFamily[family];
+    const row = getFirstRow<Record<string, unknown>>(
+      this.db,
+      `SELECT archived_at, managed_storage_key, status FROM ${table} WHERE id = ?`,
+      [id],
+    );
+    if (!row) throw new Error(`HISTORY_NOT_FOUND: ${family} ${id} does not exist.`);
+    const status = String(row.status ?? '');
+    if (rejectActiveStatus && (status === 'pending' || status === 'running')) {
+      throw new Error(`HISTORY_ACTIVE: ${family} ${id} has ${status} status and cannot be archived or deleted.`);
+    }
+    if (!row.archived_at) {
+      throw new Error(`HISTORY_NOT_ARCHIVED: ${family} ${id} must be archived before permanent deletion.`);
+    }
+
+    const managedStorageKey = row.managed_storage_key === null || row.managed_storage_key === undefined
+      ? null
+      : String(row.managed_storage_key);
+    const tombstone: HistoryTombstone = {
+      family,
+      id,
+      managedStorageKey,
+      cleanupState: managedStorageKey === null ? 'unmanaged-legacy' : 'pending',
+      quarantineName: null,
+      quarantineIdentityJson: '{}',
+      diagnostic: managedStorageKey === null
+        ? 'Legacy record has no managed storage key; filesystem cleanup was not attempted.'
+        : '',
+      deletedAt: new Date().toISOString(),
+    };
+    this.db.run(
+      `INSERT INTO history_tombstones
+       (family, entity_id, managed_storage_key, cleanup_state, quarantine_name, quarantine_identity_json, diagnostic, deleted_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+      [
+        tombstone.family,
+        tombstone.id,
+        tombstone.managedStorageKey,
+        tombstone.cleanupState,
+        tombstone.quarantineName,
+        tombstone.quarantineIdentityJson,
+        tombstone.diagnostic,
+        tombstone.deletedAt,
+      ],
+    );
+    if (family === 'task') this.db.run('DELETE FROM task_events WHERE task_id = ?', [id]);
+    if (family === 'viral-analysis') this.db.run('DELETE FROM viral_analysis_events WHERE analysis_id = ?', [id]);
+    if (family === 'image-lab') this.db.run('DELETE FROM playground_jobs WHERE id = ?', [id]);
+    this.db.run(`DELETE FROM ${table} WHERE id = ?`, [id]);
+    if (this.db.getRowsModified() !== 1) {
+      throw new Error(`HISTORY_DELETE_FAILED: ${family} ${id} was not deleted.`);
+    }
+    return tombstone;
+  }
+
   private migrate(): void {
     this.db.run(`
       CREATE TABLE IF NOT EXISTS config (id INTEGER PRIMARY KEY CHECK (id = 1), data TEXT NOT NULL);
@@ -776,6 +952,10 @@ export class FileDatabase {
         family TEXT NOT NULL,
         entity_id TEXT NOT NULL,
         managed_storage_key TEXT,
+        cleanup_state TEXT NOT NULL DEFAULT 'pending',
+        quarantine_name TEXT,
+        quarantine_identity_json TEXT NOT NULL DEFAULT '{}',
+        diagnostic TEXT NOT NULL DEFAULT '',
         deleted_at TEXT NOT NULL,
         PRIMARY KEY (family, entity_id)
       );
@@ -904,6 +1084,25 @@ export class FileDatabase {
       addColumnIfMissing(this.db, table, 'archived_at', 'TEXT DEFAULT NULL');
       addColumnIfMissing(this.db, table, 'managed_storage_key', 'TEXT DEFAULT NULL');
     }
+    for (const [column, definition] of [
+      ['cleanup_state', "TEXT NOT NULL DEFAULT 'pending'"],
+      ['quarantine_name', 'TEXT DEFAULT NULL'],
+      ['quarantine_identity_json', "TEXT NOT NULL DEFAULT '{}'"],
+      ['diagnostic', "TEXT NOT NULL DEFAULT ''"],
+    ] as const) {
+      addColumnIfMissing(this.db, 'history_tombstones', column, definition);
+    }
+    this.db.run(
+      `UPDATE history_tombstones
+       SET cleanup_state = 'unmanaged-legacy',
+           diagnostic = CASE
+             WHEN trim(coalesce(diagnostic, '')) = ''
+               THEN 'Legacy record has no managed storage key; filesystem cleanup was not attempted.'
+             ELSE diagnostic
+           END
+       WHERE managed_storage_key IS NULL
+         AND (cleanup_state IS NULL OR trim(cleanup_state) IN ('', 'pending'))`,
+    );
     this.db.run(`
       CREATE INDEX IF NOT EXISTS idx_tasks_active_history
         ON tasks(created_at DESC, id DESC) WHERE archived_at IS NULL;
@@ -944,7 +1143,7 @@ export class FileDatabase {
           WHEN error_message IS NULL OR error_message = '' THEN '任务在上次运行时中断，请重试。'
           ELSE error_message
         END
-      WHERE status = 'running'
+      WHERE status = 'running' AND archived_at IS NULL
     `);
   }
 
@@ -1222,6 +1421,7 @@ export class FileDatabase {
         createdAt: now,
         finishedAt: input.finishedAt ?? (input.status === 'generated' ? now : null),
       };
+      this.assertHistoryWritable('image-lab', record.id);
       this.db.run(
         `INSERT INTO image_lab_records
          (id, archived_at, managed_storage_key, prompt, ratio, style, provider, image_path, status, error_msg, resolution, smart_mode, reference_image_paths_json, reference_image_path, upstream_task_id, created_at, finished_at)
@@ -1289,6 +1489,7 @@ export class FileDatabase {
     >,
   ): Promise<ImageLabRecord> {
     return this.enqueueCommit(() => {
+      this.assertHistoryWritable('image-lab', id);
       const mapping: Array<[keyof typeof patch, string, (value: unknown) => SqlValue]> = [
         ['provider', 'provider', toNullableSqlValue],
         ['imagePath', 'image_path', toNullableSqlValue],
@@ -1455,6 +1656,7 @@ export class FileDatabase {
       coverTemplateId: input.coverTemplateId ?? 'cinematic-poster',
       htmlVideoForeground: input.htmlVideoForeground,
     };
+    this.assertHistoryWritable('task', task.id);
     this.db.run(
       `INSERT INTO tasks (
         id, archived_at, managed_storage_key, title, input_text, task_kind, processing_mode, publish_mode, status, current_step, track, style, speaker, ratio, template_id,
@@ -1560,6 +1762,7 @@ export class FileDatabase {
         completedAt: null,
         lastHeartbeatAt: null,
       };
+      this.assertHistoryWritable('viral-analysis', record.id);
       this.db.run(
         `INSERT INTO viral_analyses (
           id, archived_at, managed_storage_key, url, platform, title, status, current_stage, progress, settings_json,
@@ -1608,6 +1811,7 @@ export class FileDatabase {
         createdAt: now,
         finishedAt: input.finishedAt ?? (status === 'generated' ? now : null),
       };
+      this.assertHistoryWritable('voice-lab', record.id);
       this.db.run(
         `INSERT INTO voice_lab_records
          (id, archived_at, managed_storage_key, text, provider, voice_id, voice_label, speed, audio_path, status, error_msg, created_at, finished_at)
@@ -1637,6 +1841,7 @@ export class FileDatabase {
     patch: Partial<Pick<VoiceLabRecord, 'provider' | 'voiceLabel' | 'audioPath' | 'status' | 'errorMessage' | 'finishedAt'>>,
   ): Promise<VoiceLabRecord> {
     return this.enqueueCommit(() => {
+      this.assertHistoryWritable('voice-lab', id);
       const mapping: Array<[keyof typeof patch, string]> = [
         ['provider', 'provider'],
         ['voiceLabel', 'voice_label'],
@@ -1671,6 +1876,7 @@ export class FileDatabase {
       'voice-lab': 'voice_lab_records',
     };
     return this.enqueueCommit(() => {
+      this.assertHistoryWritable(family, id, { allowArchived: true });
       this.db.run(
         `UPDATE ${table[family]} SET managed_storage_key = ? WHERE id = ? AND managed_storage_key IS NULL`,
         [managedStorageKey, id],
@@ -1694,6 +1900,87 @@ export class FileDatabase {
        SELECT 'voice-lab' AS family, id, managed_storage_key FROM voice_lab_records WHERE managed_storage_key IS NULL
        ORDER BY family ASC, id ASC`,
     ).map((row) => ({ family: row.family as HistoryFamily, id: String(row.id), managedStorageKey: null }));
+  }
+
+  async archiveTask(id: string): Promise<TaskSummary> {
+    return this.enqueueCommit(() => this.archiveHistoryRecord('task', id, taskSummaryColumns, rowToTaskSummary, true));
+  }
+
+  async restoreTask(id: string): Promise<TaskSummary> {
+    return this.enqueueCommit(() => this.restoreHistoryRecord('task', id, taskSummaryColumns, rowToTaskSummary));
+  }
+
+  async deleteTaskPermanently(id: string): Promise<HistoryTombstone> {
+    return this.enqueueCommit(() => this.deleteHistoryRecordPermanently('task', id, true));
+  }
+
+  async archiveViralAnalysis(id: string): Promise<ViralAnalysisSummary> {
+    return this.enqueueCommit(() => this.archiveHistoryRecord(
+      'viral-analysis',
+      id,
+      viralAnalysisSummaryColumns,
+      rowToViralAnalysisSummary,
+      true,
+    ));
+  }
+
+  async restoreViralAnalysis(id: string): Promise<ViralAnalysisSummary> {
+    return this.enqueueCommit(() => this.restoreHistoryRecord(
+      'viral-analysis',
+      id,
+      viralAnalysisSummaryColumns,
+      rowToViralAnalysisSummary,
+    ));
+  }
+
+  async deleteViralAnalysisPermanently(id: string): Promise<HistoryTombstone> {
+    return this.enqueueCommit(() => this.deleteHistoryRecordPermanently('viral-analysis', id, true));
+  }
+
+  async archiveImageLabRecord(id: string): Promise<ImageLabSummary> {
+    return this.enqueueCommit(() => this.archiveHistoryRecord(
+      'image-lab',
+      id,
+      imageLabSummaryColumns,
+      rowToImageLabSummary,
+      false,
+    ));
+  }
+
+  async restoreImageLabRecord(id: string): Promise<ImageLabSummary> {
+    return this.enqueueCommit(() => this.restoreHistoryRecord(
+      'image-lab',
+      id,
+      imageLabSummaryColumns,
+      rowToImageLabSummary,
+    ));
+  }
+
+  async deleteImageLabRecordPermanently(id: string): Promise<HistoryTombstone> {
+    return this.enqueueCommit(() => this.deleteHistoryRecordPermanently('image-lab', id, false));
+  }
+
+  async archiveVoiceLabRecord(id: string): Promise<VoiceLabSummary> {
+    return this.enqueueCommit(() => this.archiveHistoryRecord(
+      'voice-lab',
+      id,
+      voiceLabSummaryColumns,
+      rowToVoiceLabSummary,
+      false,
+    ));
+  }
+
+  async restoreVoiceLabRecord(id: string): Promise<VoiceLabSummary> {
+    return this.enqueueCommit(() => this.restoreHistoryRecord(
+      'voice-lab',
+      id,
+      voiceLabSummaryColumns,
+      rowToVoiceLabSummary,
+    ));
+  }
+
+  async deleteVoiceLabRecordPermanently(id: string): Promise<HistoryTombstone> {
+    return this.enqueueCommit(() => this.deleteHistoryRecordPermanently('voice-lab', id, false));
   }
 
   async updateViralAnalysis(
@@ -1721,10 +2008,10 @@ export class FileDatabase {
         values.push(value === null || value === undefined ? null : typeof value === 'number' ? value : String(value));
       }
     }
-    if (sets.length === 0) return;
-    values.push(id);
+    if (sets.length > 0) values.push(id);
     await this.enqueueCommit(() => {
-      this.db.run(`UPDATE viral_analyses SET ${sets.join(', ')} WHERE id = ?`, values);
+      this.assertHistoryWritable('viral-analysis', id);
+      if (sets.length > 0) this.db.run(`UPDATE viral_analyses SET ${sets.join(', ')} WHERE id = ?`, values);
     });
   }
 
@@ -1738,6 +2025,7 @@ export class FileDatabase {
       ts: input.ts ?? Date.now(),
     };
     return this.enqueueCommit(() => {
+      this.assertHistoryWritable('viral-analysis', analysisId);
       this.db.run(
         `INSERT INTO viral_analysis_events (analysis_id, type, stage, detail, data_json, ts)
          VALUES (?, ?, ?, ?, ?, ?)`,
@@ -1799,10 +2087,10 @@ export class FileDatabase {
         values.push(value === null || value === undefined ? null : String(value));
       }
     }
-    if (sets.length === 0) return;
-    values.push(id);
+    if (sets.length > 0) values.push(id);
     await this.enqueueCommit(() => {
-      this.db.run(`UPDATE tasks SET ${sets.join(', ')} WHERE id = ?`, values);
+      this.assertHistoryWritable('task', id);
+      if (sets.length > 0) this.db.run(`UPDATE tasks SET ${sets.join(', ')} WHERE id = ?`, values);
     });
   }
 
@@ -1869,9 +2157,7 @@ export class FileDatabase {
     return this.listHistoryRecords({
       family: 'viral-analysis',
       table: 'viral_analyses',
-      columns: `id, archived_at, managed_storage_key, url, platform, title, status, current_stage, progress,
-        substr(error_message, 1, 1024) AS error_message,
-        created_at, started_at, completed_at, last_heartbeat_at`,
+      columns: viralAnalysisSummaryColumns,
       searchColumns: ['title', 'url', 'platform'],
       mapRow: rowToViralAnalysisSummary,
       request,
@@ -1884,10 +2170,7 @@ export class FileDatabase {
     await this.waitForWrites();
     const row = getFirstRow<Record<string, unknown>>(
       this.db,
-      `SELECT id, archived_at, managed_storage_key, url, platform, title, status, current_stage, progress,
-        substr(error_message, 1, 1024) AS error_message,
-        created_at, started_at, completed_at, last_heartbeat_at
-       FROM viral_analyses WHERE id = ?`,
+      `SELECT ${viralAnalysisSummaryColumns} FROM viral_analyses WHERE id = ?`,
       [id],
     );
     return row ? rowToViralAnalysisSummary(row) : null;
@@ -1920,9 +2203,7 @@ export class FileDatabase {
     return this.listHistoryRecords({
       family: 'image-lab',
       table: 'image_lab_records',
-      columns: `id, archived_at, managed_storage_key, substr(prompt, 1, ${RECORD_TEXT_PREVIEW_LIMIT}) AS prompt_preview,
-       ratio, style, provider, image_path, status, substr(error_msg, 1, 1024) AS error_msg,
-       resolution, smart_mode, upstream_task_id, created_at, finished_at`,
+      columns: imageLabSummaryColumns,
       searchColumns: ['prompt', 'provider', 'style'],
       mapRow: rowToImageLabSummary,
       request,
@@ -1942,9 +2223,7 @@ export class FileDatabase {
     return this.listHistoryRecords({
       family: 'voice-lab',
       table: 'voice_lab_records',
-      columns: `id, archived_at, managed_storage_key, substr(text, 1, ${RECORD_TEXT_PREVIEW_LIMIT}) AS text_preview,
-       provider, voice_id, voice_label, speed, audio_path, status,
-       substr(error_msg, 1, 1024) AS error_msg, created_at, finished_at`,
+      columns: voiceLabSummaryColumns,
       searchColumns: ['text', 'voice_label', 'provider'],
       mapRow: rowToVoiceLabSummary,
       request,
@@ -2113,6 +2392,7 @@ export class FileDatabase {
       ts: input.ts ?? Date.now(),
     };
     return this.enqueueCommit(() => {
+      this.assertHistoryWritable('task', taskId);
       this.db.run(
         `INSERT INTO task_events (task_id, type, step, agent, tool, detail, data_json, ts)
          VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
@@ -2533,6 +2813,23 @@ function rowToVoiceLabSummary(row: Record<string, unknown>): VoiceLabSummary {
     errorMessage: String(row.error_msg ?? ''),
     createdAt: String(row.created_at ?? new Date().toISOString()),
     finishedAt: row.finished_at ? String(row.finished_at) : null,
+  };
+}
+
+function rowToHistoryTombstone(row: Record<string, unknown>): HistoryTombstone {
+  return {
+    family: String(row.family) as HistoryFamily,
+    id: String(row.entity_id),
+    managedStorageKey: row.managed_storage_key === null || row.managed_storage_key === undefined
+      ? null
+      : String(row.managed_storage_key),
+    cleanupState: String(row.cleanup_state ?? 'pending'),
+    quarantineName: row.quarantine_name === null || row.quarantine_name === undefined
+      ? null
+      : String(row.quarantine_name),
+    quarantineIdentityJson: String(row.quarantine_identity_json ?? '{}'),
+    diagnostic: String(row.diagnostic ?? ''),
+    deletedAt: String(row.deleted_at),
   };
 }
 
