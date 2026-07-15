@@ -19,6 +19,13 @@ const nonEmptyText = (max = MAX_IPC_TEXT) => z.string().max(max).refine((value) 
 const optionalText = (max = MAX_IPC_TEXT) => z.string().max(max).optional();
 const nullableText = (max = MAX_IPC_TEXT) => z.string().max(max).nullable().optional();
 const idSchema = nonEmptyText(256);
+const governanceIdSchema = z
+  .string()
+  .regex(/^[A-Za-z0-9_-]{1,256}$/u, 'Invalid governance id.')
+  .refine(
+    (value) => !/^(?:con|prn|aux|nul|com[1-9]|lpt[1-9])(?:\..*)?$/iu.test(value),
+    'Reserved device names are not allowed.',
+  );
 const secretIdSchema = z.string().max(1024).refine(isSecretId, 'Invalid secret id.');
 const finiteNumber = z.number().finite();
 const nonNegativeInteger = z.number().finite().int().nonnegative();
@@ -224,6 +231,77 @@ const cursorPageSchema = z
     limit: finiteNumber.optional(),
   })
   .strict();
+const historyArchiveFilterSchema = z.enum(['active', 'archived']);
+const historyCursorSchema = z
+  .string()
+  .max(4096)
+  .refine((value) => value.trim().length > 0, 'History cursor must not be empty.')
+  .nullable()
+  .optional();
+const historyLimitSchema = z.number().finite().int().min(1).max(100).optional();
+const historyQuerySchema = z.preprocess(
+  (value) => {
+    if (typeof value !== 'string') return value;
+    if (value.length > MAX_IPC_TEXT) return value;
+    const query = value.trim();
+    return query || undefined;
+  },
+  z.string().max(256).optional(),
+);
+const historyBaseShape = {
+  filter: historyArchiveFilterSchema,
+  query: historyQuerySchema,
+  cursor: historyCursorSchema,
+  limit: historyLimitSchema,
+} as const;
+const taskHistoryStatusesSchema = z
+  .array(taskStatusValueSchema)
+  .min(1)
+  .max(7)
+  .superRefine((statuses, ctx) => {
+    if (new Set(statuses).size !== statuses.length) {
+      ctx.addIssue({ code: 'custom', message: 'Task history statuses must be unique.' });
+    }
+  });
+const taskHistoryListSchema = z.union([
+  z
+    .object({
+      ...historyBaseShape,
+      family: z.literal('task'),
+      taskType: z.enum(['story', 'music-mv', 'html-video']).optional(),
+      status: taskStatusValueSchema.optional(),
+    })
+    .strict(),
+  z
+    .object({
+      ...historyBaseShape,
+      family: z.literal('task'),
+      taskType: z.enum(['story', 'music-mv', 'html-video']).optional(),
+      statuses: taskHistoryStatusesSchema,
+    })
+    .strict(),
+]);
+const viralHistoryListSchema = z
+  .object({
+    ...historyBaseShape,
+    family: z.literal('viral-analysis'),
+    status: viralStatusValueSchema.optional(),
+  })
+  .strict();
+const imageLabHistoryListSchema = z
+  .object({
+    ...historyBaseShape,
+    family: z.literal('image-lab'),
+    status: z.enum(['mock', 'generated', 'failed']).optional(),
+  })
+  .strict();
+const voiceLabHistoryListSchema = z
+  .object({
+    ...historyBaseShape,
+    family: z.literal('voice-lab'),
+    status: z.enum(['generated', 'failed']).optional(),
+  })
+  .strict();
 const optionalThemeSchema = z.string().max(1024).optional();
 const nameSchema = nonEmptyText(256).refine((value) => !/[\\/]/u.test(value) && value !== '..', 'Invalid name.');
 
@@ -426,11 +504,17 @@ export const ipcInputSchemas = {
   'draft-template:list': cursorPageSchema,
   'draft-template:get-detail': idOnlySchema,
   'image-lab:generate': imageLabSchema,
-  'image-lab:list': cursorPageSchema,
+  'image-lab:list': imageLabHistoryListSchema,
+  'image-lab:archive': governanceIdSchema,
+  'image-lab:restore': governanceIdSchema,
+  'image-lab:delete': governanceIdSchema,
   'image-lab:get-detail': idOnlySchema,
   'image-lab:add-record': imageLabAddRecordSchema,
   'voice-lab:generate': voiceLabSchema,
-  'voice-lab:list': cursorPageSchema,
+  'voice-lab:list': voiceLabHistoryListSchema,
+  'voice-lab:archive': governanceIdSchema,
+  'voice-lab:restore': governanceIdSchema,
+  'voice-lab:delete': governanceIdSchema,
   'voice-lab:get-detail': idOnlySchema,
   'account:save': z
     .object({
@@ -488,11 +572,17 @@ export const ipcInputSchemas = {
   'html-video:open-preview': htmlVideoPreviewSchema,
   'html-video:media-url': htmlVideoMediaSchema,
   'task:create-and-run': createTaskSchema,
-  'task:list': cursorPageSchema,
+  'task:list': taskHistoryListSchema,
+  'task:archive': governanceIdSchema,
+  'task:restore': governanceIdSchema,
+  'task:delete': governanceIdSchema,
   'task:get-detail': idOnlySchema,
   'task:list-events': z.object({ taskId: idSchema, cursor: nonEmptyText(4096).nullable().optional(), limit: finiteNumber.optional() }).strict(),
   'viral:create-and-run': createViralAnalysisSchema,
-  'viral:list': cursorPageSchema,
+  'viral:list': viralHistoryListSchema,
+  'viral:archive': governanceIdSchema,
+  'viral:restore': governanceIdSchema,
+  'viral:delete': governanceIdSchema,
   'viral:get-detail': idOnlySchema,
   'viral:list-events': z.object({ analysisId: idSchema, cursor: nonEmptyText(4096).nullable().optional(), limit: finiteNumber.optional() }).strict(),
   'viral:update-status': viralStatusSchema,

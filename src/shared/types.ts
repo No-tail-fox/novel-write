@@ -606,6 +606,64 @@ export interface CursorRequest {
   limit?: number;
 }
 
+export type HistoryFamily = 'task' | 'viral-analysis' | 'image-lab' | 'voice-lab';
+export type HistoryArchiveFilter = 'active' | 'archived';
+
+export type TaskHistoryStatusFilter =
+  | { status?: TaskStatus; statuses?: never }
+  | { status?: never; statuses: TaskStatus[] };
+
+export type HistoryListRequest =
+  | ({
+      family: 'task';
+      filter: HistoryArchiveFilter;
+      taskType?: 'story' | 'music-mv' | 'html-video';
+      query?: string;
+      cursor?: string | null;
+      limit?: number;
+    } & TaskHistoryStatusFilter)
+  | {
+      family: 'viral-analysis';
+      filter: HistoryArchiveFilter;
+      status?: ViralAnalysisStatus;
+      query?: string;
+      cursor?: string | null;
+      limit?: number;
+    }
+  | {
+      family: 'image-lab';
+      filter: HistoryArchiveFilter;
+      status?: ImageLabRecord['status'];
+      query?: string;
+      cursor?: string | null;
+      limit?: number;
+    }
+  | {
+      family: 'voice-lab';
+      filter: HistoryArchiveFilter;
+      status?: VoiceLabRecord['status'];
+      query?: string;
+      cursor?: string | null;
+      limit?: number;
+    };
+
+export type HistoryListInput<F extends HistoryFamily, R = HistoryListRequest> = R extends { family: F }
+  ? Omit<R, 'family' | 'filter'> & { filter?: HistoryArchiveFilter }
+  : never;
+
+export type HistoryPage<F extends HistoryFamily, T> = {
+  family: F;
+  items: T[];
+  totalCount: number;
+  hasMore: boolean;
+  nextCursor: string | null;
+};
+
+export type TaskTombstoneResult = { kind: 'task-tombstone'; id: string; revision: number };
+export type ViralAnalysisTombstoneResult = { kind: 'viral-tombstone'; id: string; revision: number };
+export type ImageLabTombstoneResult = { kind: 'image-lab-tombstone'; id: string; revision: number };
+export type VoiceLabTombstoneResult = { kind: 'voice-lab-tombstone'; id: string; revision: number };
+
 export interface CursorPage<T> {
   items: T[];
   nextCursor: string | null;

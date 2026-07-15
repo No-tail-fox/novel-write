@@ -20,9 +20,11 @@ import type {
   CustomStyleGenerateInput,
   DraftTemplate,
   DraftTemplateSummary,
+  HistoryListInput,
   ImageLabGenerateInput,
   ImageLabRecord,
   ImageLabSummary,
+  ImageLabTombstoneResult,
   JianyingEffectCatalog,
   LlmConfig,
   LlmModelTestResult,
@@ -38,16 +40,19 @@ import type {
   TaskStatus,
   TaskStepRerunMode,
   TaskSummary,
+  TaskTombstoneResult,
   UiPreferences,
   ViralAnalysisEvent,
   ViralAnalysisRecord,
   ViralAnalysisResult,
   ViralAnalysisStatus,
   ViralAnalysisSummary,
+  ViralAnalysisTombstoneResult,
   ViralProductionTaskOptions,
   VoiceLabGenerateInput,
   VoiceLabRecord,
   VoiceLabSummary,
+  VoiceLabTombstoneResult,
   VolcengineSpeakerListRequest,
   VolcengineSpeakerListResult,
 } from './types';
@@ -59,14 +64,26 @@ export const INVOKE_CHANNELS = Object.freeze([
   'app:get-bootstrap',
   'app:reconcile-deltas',
   'task:list',
+  'task:archive',
+  'task:restore',
+  'task:delete',
   'task:get-detail',
   'task:list-events',
   'viral:list',
+  'viral:archive',
+  'viral:restore',
+  'viral:delete',
   'viral:get-detail',
   'viral:list-events',
   'image-lab:list',
+  'image-lab:archive',
+  'image-lab:restore',
+  'image-lab:delete',
   'image-lab:get-detail',
   'voice-lab:list',
+  'voice-lab:archive',
+  'voice-lab:restore',
+  'voice-lab:delete',
   'voice-lab:get-detail',
   'prompt-template:list',
   'prompt-template:get-detail',
@@ -146,15 +163,27 @@ export type StoryDreamApi = {
   getState: () => Promise<AppState>;
   getBootstrap: () => Promise<BootstrapState>;
   reconcileDeltas: (input: AppDeltaReconcileRequest) => Promise<AppDeltaReconcileResult>;
-  listTasks: (request?: CursorRequest) => Promise<CursorPage<TaskSummary>>;
+  listTasks: (request?: HistoryListInput<'task'>) => Promise<CursorPage<TaskSummary>>;
+  archiveTask: (id: string) => Promise<TaskSummary>;
+  restoreTask: (id: string) => Promise<TaskSummary>;
+  deleteTaskPermanently: (id: string) => Promise<TaskTombstoneResult>;
   getTaskDetail: (id: string) => Promise<Task | null>;
   listTaskEvents: (taskId: string, request?: CursorRequest) => Promise<CursorPage<SequencedTaskEvent>>;
-  listViralAnalyses: (request?: CursorRequest) => Promise<CursorPage<ViralAnalysisSummary>>;
+  listViralAnalyses: (request?: HistoryListInput<'viral-analysis'>) => Promise<CursorPage<ViralAnalysisSummary>>;
+  archiveViralAnalysis: (id: string) => Promise<ViralAnalysisSummary>;
+  restoreViralAnalysis: (id: string) => Promise<ViralAnalysisSummary>;
+  deleteViralAnalysisPermanently: (id: string) => Promise<ViralAnalysisTombstoneResult>;
   getViralAnalysisDetail: (id: string) => Promise<ViralAnalysisRecord | null>;
   listViralEvents: (analysisId: string, request?: CursorRequest) => Promise<CursorPage<ViralAnalysisEvent>>;
-  listImageLabRecords: (request?: CursorRequest) => Promise<CursorPage<ImageLabSummary>>;
+  listImageLabRecords: (request?: HistoryListInput<'image-lab'>) => Promise<CursorPage<ImageLabSummary>>;
+  archiveImageLabRecord: (id: string) => Promise<ImageLabSummary>;
+  restoreImageLabRecord: (id: string) => Promise<ImageLabSummary>;
+  deleteImageLabRecordPermanently: (id: string) => Promise<ImageLabTombstoneResult>;
   getImageLabRecordDetail: (id: string) => Promise<ImageLabRecord | null>;
-  listVoiceLabRecords: (request?: CursorRequest) => Promise<CursorPage<VoiceLabSummary>>;
+  listVoiceLabRecords: (request?: HistoryListInput<'voice-lab'>) => Promise<CursorPage<VoiceLabSummary>>;
+  archiveVoiceLabRecord: (id: string) => Promise<VoiceLabSummary>;
+  restoreVoiceLabRecord: (id: string) => Promise<VoiceLabSummary>;
+  deleteVoiceLabRecordPermanently: (id: string) => Promise<VoiceLabTombstoneResult>;
   getVoiceLabRecordDetail: (id: string) => Promise<VoiceLabRecord | null>;
   listPromptTemplates: (request?: CursorRequest) => Promise<CursorPage<PromptTemplateSummary>>;
   getPromptTemplateDetail: (id: string) => Promise<PromptTemplate | null>;

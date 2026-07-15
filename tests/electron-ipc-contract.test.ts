@@ -48,6 +48,44 @@ describe('electron ipc contract', () => {
     expect(viteEnv).not.toContain('getState:');
   });
 
+  it('declares typed history pages and all four-family governance methods at the renderer boundary', async () => {
+    const types = await readFile(new URL('../src/shared/types.ts', import.meta.url), 'utf8');
+    const apiContract = await readFile(new URL('../src/shared/storydream-api.ts', import.meta.url), 'utf8');
+    const preload = await readFile(new URL('../electron/preload.ts', import.meta.url), 'utf8');
+
+    for (const typeName of [
+      'HistoryFamily',
+      'HistoryArchiveFilter',
+      'TaskHistoryStatusFilter',
+      'HistoryListRequest',
+      'HistoryPage',
+      'TaskTombstoneResult',
+      'ViralAnalysisTombstoneResult',
+      'ImageLabTombstoneResult',
+      'VoiceLabTombstoneResult',
+    ]) {
+      expect(types).toContain(`export type ${typeName}`);
+    }
+
+    for (const method of [
+      'archiveTask',
+      'restoreTask',
+      'deleteTaskPermanently',
+      'archiveViralAnalysis',
+      'restoreViralAnalysis',
+      'deleteViralAnalysisPermanently',
+      'archiveImageLabRecord',
+      'restoreImageLabRecord',
+      'deleteImageLabRecordPermanently',
+      'archiveVoiceLabRecord',
+      'restoreVoiceLabRecord',
+      'deleteVoiceLabRecordPermanently',
+    ]) {
+      expect(apiContract).toContain(`${method}:`);
+      expect(preload).toContain(`${method}:`);
+    }
+  });
+
   it('exposes product shell persistence channels to the renderer', async () => {
     const preload = await readFile(new URL('../electron/preload.ts', import.meta.url), 'utf8');
     const main = await readFile(new URL('../electron/main.ts', import.meta.url), 'utf8');

@@ -20,9 +20,14 @@ import type {
   CustomStyleGenerateInput,
   DraftTemplate,
   DraftTemplateSummary,
+  HistoryArchiveFilter,
+  HistoryFamily,
+  HistoryListInput,
+  HistoryListRequest,
   ImageLabGenerateInput,
   ImageLabRecord,
   ImageLabSummary,
+  ImageLabTombstoneResult,
   JianyingEffectCatalog,
   LlmConfig,
   PromptTemplate,
@@ -37,23 +42,26 @@ import type {
   TaskSummary,
   TaskStepRerunMode,
   TaskStatus,
+  TaskTombstoneResult,
   UiPreferences,
   ViralAnalysisResult,
   ViralAnalysisEvent,
   ViralAnalysisSummary,
   ViralAnalysisRecord,
   ViralAnalysisStatus,
+  ViralAnalysisTombstoneResult,
   ViralProductionTaskOptions,
   VolcengineSpeakerListRequest,
   VolcengineSpeakerListResult,
   VoiceLabGenerateInput,
   VoiceLabRecord,
   VoiceLabSummary,
+  VoiceLabTombstoneResult,
 } from '../src/shared/types';
 import type { PublicAppState, SaveConfigInput, SecretChanges } from '../src/shared/config-secrets';
 import type { PersonAssetImage, PersonAssetSummary } from '../src/shared/person-assets';
 import type { StoryDreamApi } from '../src/shared/storydream-api';
-import { unwrapIpcResult, type IpcChannel } from '../src/shared/ipc-contract';
+import { MAX_IPC_TEXT, unwrapIpcResult, type IpcChannel } from '../src/shared/ipc-contract';
 import { appErrorFromPayload, serializeAppErrorForBridge } from '../src/shared/app-error';
 
 async function invokeTrusted<T = unknown>(channel: IpcChannel, input?: unknown): Promise<T> {
@@ -64,21 +72,97 @@ async function invokeTrusted<T = unknown>(channel: IpcChannel, input?: unknown):
   return unwrapIpcResult<T>(result);
 }
 
+interface RendererHistoryBase {
+  filter?: HistoryArchiveFilter;
+  query?: string;
+  cursor?: string | null;
+  limit?: number;
+}
+
+function normalizeHistoryBase<F extends HistoryFamily>(family: F, request: RendererHistoryBase) {
+  if (request.filter !== undefined && request.filter !== 'active' && request.filter !== 'archived') {
+    throw new TypeError('Invalid history filter.');
+  }
+  if (request.query !== undefined && typeof request.query !== 'string') {
+    throw new TypeError('Invalid history query.');
+  }
+  if (request.query !== undefined && request.query.length > MAX_IPC_TEXT) {
+    throw new TypeError('History query exceeds the IPC text limit.');
+  }
+  const query = request.query?.trim();
+  return {
+    family,
+    filter: request.filter === undefined ? 'active' : request.filter,
+    ...(query ? { query } : {}),
+    ...(request.cursor !== undefined ? { cursor: request.cursor } : {}),
+    ...(request.limit !== undefined ? { limit: request.limit } : {}),
+  };
+}
+
+function normalizeTaskHistoryRequest(request: HistoryListInput<'task'>): Extract<HistoryListRequest, { family: 'task' }> {
+  const base = {
+    ...normalizeHistoryBase('task', request),
+    ...(request.taskType !== undefined ? { taskType: request.taskType } : {}),
+  };
+  if (request.statuses !== undefined) return { ...base, statuses: request.statuses };
+  return {
+    ...base,
+    ...(request.status !== undefined ? { status: request.status } : {}),
+  };
+}
+
+function normalizeViralHistoryRequest(request: HistoryListInput<'viral-analysis'>): Extract<HistoryListRequest, { family: 'viral-analysis' }> {
+  return {
+    ...normalizeHistoryBase('viral-analysis', request),
+    ...(request.status !== undefined ? { status: request.status } : {}),
+  };
+}
+
+function normalizeImageLabHistoryRequest(request: HistoryListInput<'image-lab'>): Extract<HistoryListRequest, { family: 'image-lab' }> {
+  return {
+    ...normalizeHistoryBase('image-lab', request),
+    ...(request.status !== undefined ? { status: request.status } : {}),
+  };
+}
+
+function normalizeVoiceLabHistoryRequest(request: HistoryListInput<'voice-lab'>): Extract<HistoryListRequest, { family: 'voice-lab' }> {
+  return {
+    ...normalizeHistoryBase('voice-lab', request),
+    ...(request.status !== undefined ? { status: request.status } : {}),
+  };
+}
+
 export const storyDreamApi = {
   getState: (): Promise<PublicAppState> => invokeTrusted('app:get-state'),
   getBootstrap: (): Promise<BootstrapState> => invokeTrusted('app:get-bootstrap'),
   reconcileDeltas: (input: AppDeltaReconcileRequest): Promise<AppDeltaReconcileResult> => invokeTrusted('app:reconcile-deltas', input),
-  listTasks: (request: CursorRequest = {}): Promise<CursorPage<TaskSummary>> => invokeTrusted('task:list', request),
+  listTasks: async (request: HistoryListInput<'task'> = {}): Promise<CursorPage<TaskSummary>> =>
+    invokeTrusted('task:list', normalizeTaskHistoryRequest(request)),
+  archiveTask: (id: string): Promise<TaskSummary> => invokeTrusted('task:archive', id),
+  restoreTask: (id: string): Promise<TaskSummary> => invokeTrusted('task:restore', id),
+  deleteTaskPermanently: (id: string): Promise<TaskTombstoneResult> => invokeTrusted('task:delete', id),
   getTaskDetail: (id: string): Promise<Task | null> => invokeTrusted('task:get-detail', id),
   listTaskEvents: (taskId: string, request: CursorRequest = {}): Promise<CursorPage<SequencedTaskEvent>> =>
     invokeTrusted('task:list-events', { taskId, ...request }),
-  listViralAnalyses: (request: CursorRequest = {}): Promise<CursorPage<ViralAnalysisSummary>> => invokeTrusted('viral:list', request),
+  listViralAnalyses: async (request: HistoryListInput<'viral-analysis'> = {}): Promise<CursorPage<ViralAnalysisSummary>> =>
+    invokeTrusted('viral:list', normalizeViralHistoryRequest(request)),
+  archiveViralAnalysis: (id: string): Promise<ViralAnalysisSummary> => invokeTrusted('viral:archive', id),
+  restoreViralAnalysis: (id: string): Promise<ViralAnalysisSummary> => invokeTrusted('viral:restore', id),
+  deleteViralAnalysisPermanently: (id: string): Promise<ViralAnalysisTombstoneResult> => invokeTrusted('viral:delete', id),
   getViralAnalysisDetail: (id: string): Promise<ViralAnalysisRecord | null> => invokeTrusted('viral:get-detail', id),
   listViralEvents: (analysisId: string, request: CursorRequest = {}): Promise<CursorPage<ViralAnalysisEvent>> =>
     invokeTrusted('viral:list-events', { analysisId, ...request }),
-  listImageLabRecords: (request: CursorRequest = {}): Promise<CursorPage<ImageLabSummary>> => invokeTrusted('image-lab:list', request),
+  listImageLabRecords: async (request: HistoryListInput<'image-lab'> = {}): Promise<CursorPage<ImageLabSummary>> =>
+    invokeTrusted('image-lab:list', normalizeImageLabHistoryRequest(request)),
+  archiveImageLabRecord: (id: string): Promise<ImageLabSummary> => invokeTrusted('image-lab:archive', id),
+  restoreImageLabRecord: (id: string): Promise<ImageLabSummary> => invokeTrusted('image-lab:restore', id),
+  deleteImageLabRecordPermanently: (id: string): Promise<ImageLabTombstoneResult> => invokeTrusted('image-lab:delete', id),
   getImageLabRecordDetail: (id: string): Promise<ImageLabRecord | null> => invokeTrusted('image-lab:get-detail', id),
-  listVoiceLabRecords: (request: CursorRequest = {}): Promise<CursorPage<VoiceLabSummary>> => invokeTrusted('voice-lab:list', request),
+  listVoiceLabRecords: async (request: HistoryListInput<'voice-lab'> = {}): Promise<CursorPage<VoiceLabSummary>> =>
+    invokeTrusted('voice-lab:list', normalizeVoiceLabHistoryRequest(request)),
+  archiveVoiceLabRecord: (id: string): Promise<VoiceLabSummary> => invokeTrusted('voice-lab:archive', id),
+  restoreVoiceLabRecord: (id: string): Promise<VoiceLabSummary> => invokeTrusted('voice-lab:restore', id),
+  deleteVoiceLabRecordPermanently: (id: string): Promise<VoiceLabTombstoneResult> => invokeTrusted('voice-lab:delete', id),
   getVoiceLabRecordDetail: (id: string): Promise<VoiceLabRecord | null> => invokeTrusted('voice-lab:get-detail', id),
   listPromptTemplates: (request: CursorRequest = {}): Promise<CursorPage<PromptTemplateSummary>> => invokeTrusted('prompt-template:list', request),
   getPromptTemplateDetail: (id: string): Promise<PromptTemplate | null> => invokeTrusted('prompt-template:get-detail', id),

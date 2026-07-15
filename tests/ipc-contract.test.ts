@@ -98,6 +98,123 @@ describe('IPC runtime contract', () => {
     ).toMatchObject({ platform: 'douyin' });
   });
 
+  it('enforces strict family-specific history list filters and bounded pagination', async () => {
+    const contract = await loadContract();
+    expect(contract).not.toBeNull();
+    if (!contract) return;
+
+    const parseIpcInput = (channel: keyof typeof contract.ipcInputSchemas, input: unknown) =>
+      contract.ipcInputSchemas[channel].parse(input);
+    const taskRequest = { family: 'task', filter: 'active' };
+
+    expect(parseIpcInput('task:list', taskRequest)).toEqual(taskRequest);
+    expect(parseIpcInput('task:list', { ...taskRequest, taskType: 'html-video', statuses: ['pending', 'running'] })).toMatchObject({
+      family: 'task',
+      taskType: 'html-video',
+      statuses: ['pending', 'running'],
+    });
+    expect(parseIpcInput('viral:list', { family: 'viral-analysis', filter: 'archived', status: 'completed' })).toMatchObject({
+      family: 'viral-analysis',
+      status: 'completed',
+    });
+    expect(parseIpcInput('image-lab:list', { family: 'image-lab', filter: 'active', status: 'generated' })).toMatchObject({
+      family: 'image-lab',
+      status: 'generated',
+    });
+    expect(parseIpcInput('voice-lab:list', { family: 'voice-lab', filter: 'active', status: 'failed' })).toMatchObject({
+      family: 'voice-lab',
+      status: 'failed',
+    });
+
+    expect(() => parseIpcInput('task:list', { ...taskRequest, extra: true })).toThrow();
+    expect(() => parseIpcInput('viral:list', { family: 'viral-analysis', filter: 'active', extra: true })).toThrow();
+    expect(() => parseIpcInput('image-lab:list', { family: 'image-lab', filter: 'active', extra: true })).toThrow();
+    expect(() => parseIpcInput('voice-lab:list', { family: 'voice-lab', filter: 'active', extra: true })).toThrow();
+    expect(() => parseIpcInput('task:list', { ...taskRequest, family: 'voice-lab' })).toThrow();
+    expect(() => parseIpcInput('task:list', { ...taskRequest, status: 'mock' })).toThrow();
+    expect(() => parseIpcInput('viral:list', { family: 'viral-analysis', filter: 'active', status: 'draft' })).toThrow();
+    expect(() => parseIpcInput('image-lab:list', { family: 'image-lab', filter: 'active', status: 'running' })).toThrow();
+    expect(() => parseIpcInput('voice-lab:list', { family: 'voice-lab', filter: 'active', status: 'mock' })).toThrow();
+    expect(() => parseIpcInput('task:list', { ...taskRequest, status: 'running', statuses: ['paused'] })).toThrow();
+    expect(() => parseIpcInput('task:list', { ...taskRequest, statuses: [] })).toThrow();
+    expect(() => parseIpcInput('task:list', { ...taskRequest, statuses: ['running', 'running'] })).toThrow();
+    expect(() =>
+      parseIpcInput('task:list', {
+        ...taskRequest,
+        statuses: ['draft', 'pending', 'running', 'paused', 'completed', 'failed', 'cancelled', 'draft'],
+      }),
+    ).toThrow();
+    expect(() => parseIpcInput('task:list', { ...taskRequest, taskType: 'legacy' })).toThrow();
+
+    expect(parseIpcInput('task:list', { ...taskRequest, limit: 1 })).toMatchObject({ limit: 1 });
+    expect(parseIpcInput('task:list', { ...taskRequest, limit: 100 })).toMatchObject({ limit: 100 });
+    expect(() => parseIpcInput('task:list', { ...taskRequest, limit: 0 })).toThrow();
+    expect(() => parseIpcInput('task:list', { ...taskRequest, limit: 1.5 })).toThrow();
+    expect(() => parseIpcInput('task:list', { ...taskRequest, limit: 101 })).toThrow();
+
+    const maxQuery = 'q'.repeat(256);
+    expect(parseIpcInput('task:list', { ...taskRequest, query: `  ${maxQuery}  ` })).toMatchObject({ query: maxQuery });
+    expect(parseIpcInput('task:list', { ...taskRequest, query: '   ' })).toMatchObject({ query: undefined });
+    expect(() => parseIpcInput('task:list', { ...taskRequest, query: 'q'.repeat(257) })).toThrow();
+    expect(() => parseIpcInput('task:list', { ...taskRequest, query: ' '.repeat(contract.MAX_IPC_TEXT + 1) })).toThrow();
+    expect(parseIpcInput('task:list', { ...taskRequest, cursor: null })).toMatchObject({ cursor: null });
+    expect(() => parseIpcInput('task:list', { ...taskRequest, cursor: '' })).toThrow();
+    expect(() => parseIpcInput('task:list', { ...taskRequest, cursor: '   ' })).toThrow();
+    expect(() => parseIpcInput('task:list', { ...taskRequest, cursor: 'c'.repeat(4097) })).toThrow();
+  });
+
+  it('uses a dedicated safe governance id for every archive, restore, and delete channel', async () => {
+    const contract = await loadContract();
+    expect(contract).not.toBeNull();
+    if (!contract) return;
+
+    const channels = [
+      'task:archive',
+      'task:restore',
+      'task:delete',
+      'viral:archive',
+      'viral:restore',
+      'viral:delete',
+      'image-lab:archive',
+      'image-lab:restore',
+      'image-lab:delete',
+      'voice-lab:archive',
+      'voice-lab:restore',
+      'voice-lab:delete',
+    ] as const;
+    const invalidIds = [
+      '',
+      '.',
+      '..',
+      '../outside',
+      '..\\outside',
+      'folder/id',
+      'folder\\id',
+      '/absolute',
+      'C:\\absolute',
+      '\\\\server\\share',
+      'CON',
+      'con.txt',
+      'PRN',
+      'AUX.json',
+      'NUL',
+      'COM1',
+      'com9.log',
+      'LPT1',
+      'lpt9.txt',
+      'x'.repeat(257),
+    ];
+
+    for (const channel of channels) {
+      const schema = contract.ipcInputSchemas[channel];
+      expect(schema.parse('safe_ID-123')).toBe('safe_ID-123');
+      expect(schema.parse('x'.repeat(256))).toHaveLength(256);
+      for (const id of invalidIds) expect(() => schema.parse(id)).toThrow();
+    }
+
+    expect(contract.ipcInputSchemas['task:get-detail'].parse('legacy/path')).toBe('legacy/path');
+  });
+
   it('defines one runtime schema for every canonical invoke channel', async () => {
     const contract = await loadContract();
     const apiContract = await loadStoryDreamApiContract();

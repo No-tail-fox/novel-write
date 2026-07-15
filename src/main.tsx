@@ -517,6 +517,10 @@ function mergeDefaultCustomStyles(styles: CustomStyle[] | undefined): CustomStyl
   ];
 }
 
+function desktopHistoryGovernanceUnavailable(): never {
+  throw new Error('浏览器预览不支持历史记录治理，请在 Electron 桌面端操作。');
+}
+
 function makeFallbackApi(setState: (state: AppState) => void): StoryDreamApi {
   const read = () => {
     const raw = localStorage.getItem('storydream-state') ?? localStorage.getItem('storybound-state');
@@ -655,6 +659,15 @@ function makeFallbackApi(setState: (state: AppState) => void): StoryDreamApi {
     async listTasks() {
       return { items: read().tasks.map(taskToSummary), nextCursor: null };
     },
+    async archiveTask() {
+      return desktopHistoryGovernanceUnavailable();
+    },
+    async restoreTask() {
+      return desktopHistoryGovernanceUnavailable();
+    },
+    async deleteTaskPermanently() {
+      return desktopHistoryGovernanceUnavailable();
+    },
     async getTaskDetail(id) {
       return read().tasks.find((task) => task.id === id) ?? null;
     },
@@ -666,6 +679,15 @@ function makeFallbackApi(setState: (state: AppState) => void): StoryDreamApi {
     },
     async listViralAnalyses() {
       return { items: read().viralAnalyses, nextCursor: null };
+    },
+    async archiveViralAnalysis() {
+      return desktopHistoryGovernanceUnavailable();
+    },
+    async restoreViralAnalysis() {
+      return desktopHistoryGovernanceUnavailable();
+    },
+    async deleteViralAnalysisPermanently() {
+      return desktopHistoryGovernanceUnavailable();
     },
     async getViralAnalysisDetail(id) {
       return read().viralAnalyses.find((record) => record.id === id) ?? null;
@@ -679,11 +701,29 @@ function makeFallbackApi(setState: (state: AppState) => void): StoryDreamApi {
         nextCursor: null,
       };
     },
+    async archiveImageLabRecord() {
+      return desktopHistoryGovernanceUnavailable();
+    },
+    async restoreImageLabRecord() {
+      return desktopHistoryGovernanceUnavailable();
+    },
+    async deleteImageLabRecordPermanently() {
+      return desktopHistoryGovernanceUnavailable();
+    },
     async getImageLabRecordDetail(id) {
       return read().imageLabRecords.find((record) => record.id === id) ?? null;
     },
     async listVoiceLabRecords() {
       return { items: read().voiceLabRecords.map(({ text, ...record }) => ({ ...record, textPreview: text.slice(0, 160) })), nextCursor: null };
+    },
+    async archiveVoiceLabRecord() {
+      return desktopHistoryGovernanceUnavailable();
+    },
+    async restoreVoiceLabRecord() {
+      return desktopHistoryGovernanceUnavailable();
+    },
+    async deleteVoiceLabRecordPermanently() {
+      return desktopHistoryGovernanceUnavailable();
     },
     async getVoiceLabRecordDetail(id) {
       return read().voiceLabRecords.find((record) => record.id === id) ?? null;
