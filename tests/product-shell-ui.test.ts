@@ -1,8 +1,21 @@
 import { readFile } from 'node:fs/promises';
 import ts from 'typescript';
 import { describe, expect, it } from 'vitest';
+import { readRendererSources } from './helpers/renderer-source';
+
+const rendererSourcesPromise = readRendererSources();
 
 describe('product shell ui', () => {
+  it('reads tracked renderer sources as an aggregate and by exact module', async () => {
+    const renderer = await rendererSourcesPromise;
+
+    expect(renderer.all).toContain('useAsyncAction');
+    expect(renderer.file('src/main.tsx')).toContain('createRoot');
+    expect(renderer.file('src/not-present.ts')).toBeNull();
+    expect(renderer.requiredFile('src/main.tsx')).toContain('createRoot');
+    expect(() => renderer.requiredFile('src/not-present.ts')).toThrow('Required renderer source is not tracked: src/not-present.ts');
+  });
+
   it('normalizes privileged IPC failures before they reach renderer actions', async () => {
     const gateway = await readFile(new URL('../electron/ipc.ts', import.meta.url), 'utf8');
     const preload = await readFile(new URL('../electron/preload.ts', import.meta.url), 'utf8');
@@ -17,7 +30,7 @@ describe('product shell ui', () => {
   });
 
   it('delegates every named privileged async UI handler to the shared action helper', async () => {
-    const main = await readFile(new URL('../src/main.tsx', import.meta.url), 'utf8');
+    const main = (await rendererSourcesPromise).requiredFile('src/main.tsx');
     const sourceFile = ts.createSourceFile('main.tsx', main, ts.ScriptTarget.Latest, true, ts.ScriptKind.TSX);
     const uncovered: string[] = [];
 
@@ -41,7 +54,7 @@ describe('product shell ui', () => {
   });
 
   it('shows local action feedback and reserves a global banner for state failures', async () => {
-    const main = await readFile(new URL('../src/main.tsx', import.meta.url), 'utf8');
+    const main = (await rendererSourcesPromise).requiredFile('src/main.tsx');
     const css = await readFile(new URL('../src/styles.css', import.meta.url), 'utf8');
 
     expect(main).toContain("from './ui/async-action'");
@@ -75,7 +88,7 @@ describe('product shell ui', () => {
   });
 
   it('keeps saved provider secrets out of renderer state, DOM values, and browser persistence', async () => {
-    const main = await readFile(new URL('../src/main.tsx', import.meta.url), 'utf8');
+    const main = (await rendererSourcesPromise).requiredFile('src/main.tsx');
     const viteEnv = await readFile(new URL('../src/vite-env.d.ts', import.meta.url), 'utf8');
     const preload = await readFile(new URL('../electron/preload.ts', import.meta.url), 'utf8');
     const electronMain = await readFile(new URL('../electron/main.ts', import.meta.url), 'utf8');
@@ -101,7 +114,7 @@ describe('product shell ui', () => {
   });
 
   it('does not claim that browser preview securely saved edited provider secrets', async () => {
-    const main = await readFile(new URL('../src/main.tsx', import.meta.url), 'utf8');
+    const main = (await rendererSourcesPromise).requiredFile('src/main.tsx');
     const fallbackSave = main.slice(main.indexOf('async saveConfig(input)'), main.indexOf('async testLlmConfig'));
     const settingsCommit = main.slice(main.indexOf('async function commitAndApplySettingsDraft'), main.indexOf('function clearProviderModels'));
 
@@ -112,7 +125,7 @@ describe('product shell ui', () => {
   });
 
   it('keeps Node-only provider networking out of the browser fallback bundle', async () => {
-    const main = await readFile(new URL('../src/main.tsx', import.meta.url), 'utf8');
+    const main = (await rendererSourcesPromise).requiredFile('src/main.tsx');
     const configUtils = await readFile(new URL('../src/shared/config-utils.ts', import.meta.url), 'utf8');
     const fallbackModels = main.slice(main.indexOf('async listProviderModels(request)'), main.indexOf('async listVolcengineSpeakers'));
 
@@ -125,7 +138,7 @@ describe('product shell ui', () => {
   });
 
   it('presents a Chinese StoryDream-first desktop shell with main workflow and secondary modules', async () => {
-    const main = await readFile(new URL('../src/main.tsx', import.meta.url), 'utf8');
+    const main = (await rendererSourcesPromise).requiredFile('src/main.tsx');
     const css = await readFile(new URL('../src/styles.css', import.meta.url), 'utf8');
 
     for (const text of [
@@ -165,7 +178,7 @@ describe('product shell ui', () => {
   });
 
   it('keeps the viral analyzer visible in the main workflow navigation', async () => {
-    const main = await readFile(new URL('../src/main.tsx', import.meta.url), 'utf8');
+    const main = (await rendererSourcesPromise).requiredFile('src/main.tsx');
     const primaryStart = main.indexOf('const primaryNavItems');
     const primaryEnd = main.indexOf('const secondaryNavItems');
     const secondaryEnd = main.indexOf('const navItems');
@@ -218,7 +231,7 @@ describe('product shell ui', () => {
   });
 
   it('adds practical latest Storybound pages and controls to the Chinese shell', async () => {
-    const main = await readFile(new URL('../src/main.tsx', import.meta.url), 'utf8');
+    const main = (await rendererSourcesPromise).requiredFile('src/main.tsx');
     const css = await readFile(new URL('../src/styles.css', import.meta.url), 'utf8');
 
     for (const text of [
@@ -326,7 +339,7 @@ describe('product shell ui', () => {
   });
 
   it('keeps browser preview fallback errors in Chinese', async () => {
-    const main = await readFile(new URL('../src/main.tsx', import.meta.url), 'utf8');
+    const main = (await rendererSourcesPromise).requiredFile('src/main.tsx');
 
     expect(main).not.toContain('Browser preview cannot');
     expect(main).not.toContain('API key is missing; fill it before testing the model.');
@@ -339,7 +352,7 @@ describe('product shell ui', () => {
   });
 
   it('keeps all visible StoryDream pipeline labels in Chinese', async () => {
-    const main = await readFile(new URL('../src/main.tsx', import.meta.url), 'utf8');
+    const main = (await rendererSourcesPromise).all;
 
     for (const text of [
       'Step 0 预审',
@@ -359,7 +372,7 @@ describe('product shell ui', () => {
   });
 
   it('defines the complete StoryDream-style navigation shell', async () => {
-    const main = await readFile(new URL('../src/main.tsx', import.meta.url), 'utf8');
+    const main = (await rendererSourcesPromise).all;
     const css = await readFile(new URL('../src/styles.css', import.meta.url), 'utf8');
 
     for (const view of ['new-task', 'queue', 'history', 'image-lab', 'voice-lab', 'music-mv', 'viral-analyzer', 'prompt-templates', 'draft-templates', 'settings', 'account', 'activation']) {
@@ -373,7 +386,7 @@ describe('product shell ui', () => {
   });
 
   it('adds a standalone voice lab for provider voice previews and history playback', async () => {
-    const main = await readFile(new URL('../src/main.tsx', import.meta.url), 'utf8');
+    const main = (await rendererSourcesPromise).requiredFile('src/main.tsx');
     const css = await readFile(new URL('../src/styles.css', import.meta.url), 'utf8');
     const preload = await readFile(new URL('../electron/preload.ts', import.meta.url), 'utf8');
 
@@ -402,7 +415,7 @@ describe('product shell ui', () => {
   });
 
   it('adds a complete music MV page and sends MV task settings into task creation', async () => {
-    const main = await readFile(new URL('../src/main.tsx', import.meta.url), 'utf8');
+    const main = (await rendererSourcesPromise).requiredFile('src/main.tsx');
     const css = await readFile(new URL('../src/styles.css', import.meta.url), 'utf8');
     const types = await readFile(new URL('../src/shared/types.ts', import.meta.url), 'utf8');
 
@@ -429,7 +442,7 @@ describe('product shell ui', () => {
   });
 
   it('adds the Storybound HTML animation workspace without routing through the story pipeline', async () => {
-    const main = await readFile(new URL('../src/main.tsx', import.meta.url), 'utf8');
+    const main = (await rendererSourcesPromise).requiredFile('src/main.tsx');
     const css = await readFile(new URL('../src/styles.css', import.meta.url), 'utf8');
     const types = await readFile(new URL('../src/shared/types.ts', import.meta.url), 'utf8');
     const workflow = await readFile(new URL('../src/shared/html-video-workflow.ts', import.meta.url), 'utf8');
@@ -495,7 +508,7 @@ describe('product shell ui', () => {
   });
 
   it('keeps HTML video task, step, and pipeline diagnostics visible without expanding long errors', async () => {
-    const main = await readFile(new URL('../src/main.tsx', import.meta.url), 'utf8');
+    const main = (await rendererSourcesPromise).requiredFile('src/main.tsx');
     const css = await readFile(new URL('../src/styles.css', import.meta.url), 'utf8');
     const page = main.slice(main.indexOf('function HtmlVideoPage'), main.indexOf('function QueuePage'));
 
@@ -514,7 +527,7 @@ describe('product shell ui', () => {
   });
 
   it('loads HTML video media incrementally from stable primitive effect dependencies', async () => {
-    const main = await readFile(new URL('../src/main.tsx', import.meta.url), 'utf8');
+    const main = (await rendererSourcesPromise).requiredFile('src/main.tsx');
     const page = main.slice(main.indexOf('function HtmlVideoPage'), main.indexOf('function QueuePage'));
     const mediaEffect = page.slice(page.indexOf('useEffect(() => {\n    const generation ='), page.indexOf('async function createHtmlVideoTask'));
 
@@ -534,7 +547,7 @@ describe('product shell ui', () => {
   });
 
   it('labels paused checkpoints and opens the first composition that has an HTML preview', async () => {
-    const main = await readFile(new URL('../src/main.tsx', import.meta.url), 'utf8');
+    const main = (await rendererSourcesPromise).requiredFile('src/main.tsx');
     const page = main.slice(main.indexOf('function HtmlVideoPage'), main.indexOf('function QueuePage'));
 
     expect(page).toContain('pipelineData.compositions.find((composition) => Boolean(composition.htmlPath))');
@@ -546,7 +559,7 @@ describe('product shell ui', () => {
   });
 
   it('exposes accessible HTML video tabs and media with the task output ratio', async () => {
-    const main = await readFile(new URL('../src/main.tsx', import.meta.url), 'utf8');
+    const main = (await rendererSourcesPromise).requiredFile('src/main.tsx');
     const css = await readFile(new URL('../src/styles.css', import.meta.url), 'utf8');
     const page = main.slice(main.indexOf('function HtmlVideoPage'), main.indexOf('function QueuePage'));
     const outputRule = css.match(/\.hv-video-output video,\s*\.hv-video-placeholder\s*\{[\s\S]*?\}/)?.[0] ?? '';
@@ -575,7 +588,7 @@ describe('product shell ui', () => {
   });
 
   it('moves focus with all standard HTML video tab navigation keys', async () => {
-    const main = await readFile(new URL('../src/main.tsx', import.meta.url), 'utf8');
+    const main = (await rendererSourcesPromise).requiredFile('src/main.tsx');
     const page = main.slice(main.indexOf('function HtmlVideoPage'), main.indexOf('function HtmlVideoTabPanel'));
 
     expect(page).toContain('nextHtmlVideoTabKey(tabKey, event.key)');
@@ -587,7 +600,7 @@ describe('product shell ui', () => {
   });
 
   it('wires the viral analyzer page into the shell with report and selectable follow-up controls', async () => {
-    const main = await readFile(new URL('../src/main.tsx', import.meta.url), 'utf8');
+    const main = (await rendererSourcesPromise).requiredFile('src/main.tsx');
     const css = await readFile(new URL('../src/styles.css', import.meta.url), 'utf8');
 
     expect(main).not.toContain("from './shared/viral-analysis'");
@@ -665,7 +678,7 @@ describe('product shell ui', () => {
   });
 
   it('keeps viral source detection independent from manual platform selection and avoids native select popups', async () => {
-    const main = await readFile(new URL('../src/main.tsx', import.meta.url), 'utf8');
+    const main = (await rendererSourcesPromise).requiredFile('src/main.tsx');
     const css = await readFile(new URL('../src/styles.css', import.meta.url), 'utf8');
     const page = main.slice(main.indexOf('function ViralAnalyzerPage'), main.indexOf('const viralStages'));
     const platformSnippet = page.slice(page.indexOf('className="segmented viral-platform-picker"'), page.indexOf('<p className="viral-source-status">'));
@@ -679,7 +692,7 @@ describe('product shell ui', () => {
   });
 
   it('uses a compact dropdown for viral analyzer draft templates', async () => {
-    const main = await readFile(new URL('../src/main.tsx', import.meta.url), 'utf8');
+    const main = (await rendererSourcesPromise).requiredFile('src/main.tsx');
     const css = await readFile(new URL('../src/styles.css', import.meta.url), 'utf8');
     const page = main.slice(main.indexOf('function ViralAnalyzerPage'), main.indexOf('const viralStages'));
 
@@ -694,7 +707,7 @@ describe('product shell ui', () => {
   });
 
   it('surfaces Douyin login and cookie file controls in the viral analyzer', async () => {
-    const main = await readFile(new URL('../src/main.tsx', import.meta.url), 'utf8');
+    const main = (await rendererSourcesPromise).requiredFile('src/main.tsx');
     const css = await readFile(new URL('../src/styles.css', import.meta.url), 'utf8');
     const page = main.slice(main.indexOf('function ViralAnalyzerPage'), main.indexOf('const viralStages'));
 
@@ -713,7 +726,7 @@ describe('product shell ui', () => {
   });
 
   it('uses the dark renderer chrome as the only title bar and removes the trial strip', async () => {
-    const main = await readFile(new URL('../src/main.tsx', import.meta.url), 'utf8');
+    const main = (await rendererSourcesPromise).requiredFile('src/main.tsx');
     const css = await readFile(new URL('../src/styles.css', import.meta.url), 'utf8');
     const viteEnv = await readFile(new URL('../src/vite-env.d.ts', import.meta.url), 'utf8');
 
@@ -733,7 +746,7 @@ describe('product shell ui', () => {
   });
 
   it('gives the queue task list more horizontal room than the event history pane', async () => {
-    const main = await readFile(new URL('../src/main.tsx', import.meta.url), 'utf8');
+    const main = (await rendererSourcesPromise).requiredFile('src/main.tsx');
     const css = await readFile(new URL('../src/styles.css', import.meta.url), 'utf8');
 
     expect(main).toContain('className="queue-layout"');
@@ -742,7 +755,7 @@ describe('product shell ui', () => {
   });
 
   it('presents draft templates as a gallery before opening the editor', async () => {
-    const main = await readFile(new URL('../src/main.tsx', import.meta.url), 'utf8');
+    const main = (await rendererSourcesPromise).requiredFile('src/main.tsx');
     const css = await readFile(new URL('../src/styles.css', import.meta.url), 'utf8');
 
     for (const text of ['默认竖屏', '竖屏4:3', '横屏16:9', '编辑', '复制', '新模板', '返回模板列表']) {
@@ -756,7 +769,7 @@ describe('product shell ui', () => {
   });
 
   it('imports copied Coze workflow source as a draft template preset', async () => {
-    const main = await readFile(new URL('../src/main.tsx', import.meta.url), 'utf8');
+    const main = (await rendererSourcesPromise).requiredFile('src/main.tsx');
     const css = await readFile(new URL('../src/styles.css', import.meta.url), 'utf8');
     const toolbarSnippet = main.slice(main.indexOf('className="panel-title-row draft-template-toolbar"'), main.indexOf('<section className="draft-template-gallery">'));
 
@@ -787,7 +800,7 @@ describe('product shell ui', () => {
   });
 
   it('supports dragging draft template regions directly on the preview canvas', async () => {
-    const main = await readFile(new URL('../src/main.tsx', import.meta.url), 'utf8');
+    const main = (await rendererSourcesPromise).requiredFile('src/main.tsx');
     const css = await readFile(new URL('../src/styles.css', import.meta.url), 'utf8');
 
     expect(main).toContain("normalizeDraftTemplate");
@@ -808,7 +821,7 @@ describe('product shell ui', () => {
   });
 
   it('renders draft preview layers with visibility and style fields', async () => {
-    const main = await readFile(new URL('../src/main.tsx', import.meta.url), 'utf8');
+    const main = (await rendererSourcesPromise).requiredFile('src/main.tsx');
 
     expect(main).toContain('template.image.visible ?');
     expect(main).toContain('draftTextLayerStyle(template.title');
@@ -829,7 +842,7 @@ describe('product shell ui', () => {
   });
 
   it('does not reset unsaved draft template drag edits during state refreshes', async () => {
-    const main = await readFile(new URL('../src/main.tsx', import.meta.url), 'utf8');
+    const main = (await rendererSourcesPromise).requiredFile('src/main.tsx');
 
     expect(main).toContain('[editingId]');
     expect(main).toContain('const currentEditingTemplate = state.draftTemplates.find');
@@ -837,7 +850,7 @@ describe('product shell ui', () => {
   });
 
   it('applies draft canvas ratio changes and selects background images from the editor', async () => {
-    const main = await readFile(new URL('../src/main.tsx', import.meta.url), 'utf8');
+    const main = (await rendererSourcesPromise).requiredFile('src/main.tsx');
     const css = await readFile(new URL('../src/styles.css', import.meta.url), 'utf8');
 
     expect(main).toContain('applyDraftCanvasRatio');
@@ -853,7 +866,7 @@ describe('product shell ui', () => {
   });
 
   it('exposes complete grouped controls for draft template layers', async () => {
-    const main = await readFile(new URL('../src/main.tsx', import.meta.url), 'utf8');
+    const main = (await rendererSourcesPromise).requiredFile('src/main.tsx');
     const css = await readFile(new URL('../src/styles.css', import.meta.url), 'utf8');
 
     expect(main).toContain('ColorField');
@@ -880,7 +893,7 @@ describe('product shell ui', () => {
   });
 
   it('exposes text border controls and preview stroke for draft text layers', async () => {
-    const main = await readFile(new URL('../src/main.tsx', import.meta.url), 'utf8');
+    const main = (await rendererSourcesPromise).requiredFile('src/main.tsx');
     const css = await readFile(new URL('../src/styles.css', import.meta.url), 'utf8');
 
     for (const symbol of [
@@ -907,7 +920,7 @@ describe('product shell ui', () => {
   });
 
   it('exposes StoryDream text style controls for every draft text layer', async () => {
-    const main = await readFile(new URL('../src/main.tsx', import.meta.url), 'utf8');
+    const main = (await rendererSourcesPromise).requiredFile('src/main.tsx');
 
     for (const symbol of [
       'updateDraftTitle({ underline: checked })',
@@ -936,7 +949,7 @@ describe('product shell ui', () => {
   });
 
   it('keeps draft layer controls compact instead of rendering oversized checkbox cards', async () => {
-    const main = await readFile(new URL('../src/main.tsx', import.meta.url), 'utf8');
+    const main = (await rendererSourcesPromise).requiredFile('src/main.tsx');
     const css = await readFile(new URL('../src/styles.css', import.meta.url), 'utf8');
 
     expect(main.includes('className="draft-toggle-row"')).toBe(true);
@@ -977,7 +990,7 @@ describe('product shell ui', () => {
   });
 
   it('sizes the focused draft preview to the available viewport height', async () => {
-    const main = await readFile(new URL('../src/main.tsx', import.meta.url), 'utf8');
+    const main = (await rendererSourcesPromise).requiredFile('src/main.tsx');
     const css = await readFile(new URL('../src/styles.css', import.meta.url), 'utf8');
 
     expect(main).toContain("'--draft-canvas-ratio'");
@@ -986,7 +999,7 @@ describe('product shell ui', () => {
   });
 
   it('uses a preview-safe text stroke instead of rendering StoryDream 40px borders as giant shadows', async () => {
-    const main = await readFile(new URL('../src/main.tsx', import.meta.url), 'utf8');
+    const main = (await rendererSourcesPromise).requiredFile('src/main.tsx');
     const css = await readFile(new URL('../src/styles.css', import.meta.url), 'utf8');
 
     expect(main).toContain('draftTextStrokeStyle');
@@ -1000,7 +1013,7 @@ describe('product shell ui', () => {
   });
 
   it('lets draft template text boxes be resized instead of using a fixed 80 percent width', async () => {
-    const main = await readFile(new URL('../src/main.tsx', import.meta.url), 'utf8');
+    const main = (await rendererSourcesPromise).requiredFile('src/main.tsx');
     const css = await readFile(new URL('../src/styles.css', import.meta.url), 'utf8');
 
     expect(main).toContain('resizeDraftLayerWidth');
@@ -1030,7 +1043,7 @@ describe('product shell ui', () => {
   });
 
   it('shows the full learned Jianying animation list in draft template controls', async () => {
-    const main = await readFile(new URL('../src/main.tsx', import.meta.url), 'utf8');
+    const main = (await rendererSourcesPromise).requiredFile('src/main.tsx');
     const templates = await readFile(new URL('../src/shared/templates.ts', import.meta.url), 'utf8');
 
     expect(main).toContain('options={imageAnimations}');
@@ -1041,7 +1054,7 @@ describe('product shell ui', () => {
   });
 
   it('wires uploaded BGM management into settings and new task defaults', async () => {
-    const main = await readFile(new URL('../src/main.tsx', import.meta.url), 'utf8');
+    const main = (await rendererSourcesPromise).requiredFile('src/main.tsx');
     const css = await readFile(new URL('../src/styles.css', import.meta.url), 'utf8');
 
     expect(main).toContain('selectLocalAudio');
@@ -1057,7 +1070,7 @@ describe('product shell ui', () => {
   });
 
   it('offers auto-detect and folder-pick actions for the Jianying draft path setting', async () => {
-    const main = await readFile(new URL('../src/main.tsx', import.meta.url), 'utf8');
+    const main = (await rendererSourcesPromise).requiredFile('src/main.tsx');
 
     expect(main).toContain('detectJianyingDraftPath');
     expect(main).toContain('selectLocalFolder');
@@ -1068,7 +1081,7 @@ describe('product shell ui', () => {
   });
 
   it('loads Jianying effect catalogs and exposes conservative draft effect controls', async () => {
-    const main = await readFile(new URL('../src/main.tsx', import.meta.url), 'utf8');
+    const main = (await rendererSourcesPromise).requiredFile('src/main.tsx');
 
     expect(main).toContain('getJianyingEffectCatalog');
     expect(main).toContain('effectCatalog');
@@ -1083,7 +1096,7 @@ describe('product shell ui', () => {
   });
 
   it('sizes the draft preview from the canvas ratio instead of a fixed width', async () => {
-    const main = await readFile(new URL('../src/main.tsx', import.meta.url), 'utf8');
+    const main = (await rendererSourcesPromise).requiredFile('src/main.tsx');
     const css = await readFile(new URL('../src/styles.css', import.meta.url), 'utf8');
 
     expect(main).toContain('draftPreviewWidth');
@@ -1094,7 +1107,7 @@ describe('product shell ui', () => {
   });
 
   it('auto-matches prompt templates from task track and exposes an advanced override', async () => {
-    const main = await readFile(new URL('../src/main.tsx', import.meta.url), 'utf8');
+    const main = (await rendererSourcesPromise).requiredFile('src/main.tsx');
 
     expect(main).toContain('resolvePromptTemplateForTrack');
     expect(main).toContain('promptTemplateOverrideId');
@@ -1106,7 +1119,7 @@ describe('product shell ui', () => {
   });
 
   it('manages prompt templates with filters, metadata, variables, and save-as-new-template behavior', async () => {
-    const main = await readFile(new URL('../src/main.tsx', import.meta.url), 'utf8');
+    const main = (await rendererSourcesPromise).requiredFile('src/main.tsx');
     const css = await readFile(new URL('../src/styles.css', import.meta.url), 'utf8');
 
     for (const symbol of [
@@ -1133,7 +1146,7 @@ describe('product shell ui', () => {
   });
 
   it('builds prompt template track filters from saved templates so custom tracks remain visible', async () => {
-    const main = await readFile(new URL('../src/main.tsx', import.meta.url), 'utf8');
+    const main = (await rendererSourcesPromise).requiredFile('src/main.tsx');
     const filterSnippet = main.slice(main.indexOf('<Field label="赛道筛选">'), main.indexOf('<section className="prompt-template-list story-template-gallery">'));
 
     expect(main).toContain('promptTemplateTrackOptions');
@@ -1143,7 +1156,7 @@ describe('product shell ui', () => {
   });
 
   it('preserves custom prompt template ids on save while forking built-in templates', async () => {
-    const main = await readFile(new URL('../src/main.tsx', import.meta.url), 'utf8');
+    const main = (await rendererSourcesPromise).requiredFile('src/main.tsx');
     const saveSnippet = main.slice(main.indexOf('async function savePromptTemplateDraft()'), main.indexOf('async function duplicateTemplate'));
     const duplicateSnippet = main.slice(main.indexOf('async function duplicateTemplate'), main.indexOf('async function duplicate()'));
 
@@ -1158,7 +1171,7 @@ describe('product shell ui', () => {
   });
 
   it('uses saved template tracks when binding prompt templates to content tracks', async () => {
-    const main = await readFile(new URL('../src/main.tsx', import.meta.url), 'utf8');
+    const main = (await rendererSourcesPromise).requiredFile('src/main.tsx');
     const bindingSnippet = main.slice(main.indexOf('<Field label="绑定赛道">'), main.indexOf('</Field>', main.indexOf('<Field label="绑定赛道">')));
 
     expect(main).toContain('promptTemplateBindingTrackOptions');
@@ -1167,7 +1180,7 @@ describe('product shell ui', () => {
   });
 
   it('binds newly created prompt templates to the active track filter when present', async () => {
-    const main = await readFile(new URL('../src/main.tsx', import.meta.url), 'utf8');
+    const main = (await rendererSourcesPromise).requiredFile('src/main.tsx');
     const createSnippet = main.slice(main.indexOf('async function createPromptTemplate()'), main.indexOf('async function saveCustomStyleDraft()'));
 
     expect(createSnippet).toContain("const baseTrack = templateTrackFilter === 'all' ? 'general-story' : templateTrackFilter");
@@ -1185,7 +1198,7 @@ describe('product shell ui', () => {
   });
 
   it('opens prompt template details from the whole row without hijacking row action buttons', async () => {
-    const main = await readFile(new URL('../src/main.tsx', import.meta.url), 'utf8');
+    const main = (await rendererSourcesPromise).requiredFile('src/main.tsx');
     const css = await readFile(new URL('../src/styles.css', import.meta.url), 'utf8');
 
     expect(main).toContain('handlePromptTemplateRowKeyDown');
@@ -1197,7 +1210,7 @@ describe('product shell ui', () => {
   });
 
   it('lets each task prompt template configure the AI prompts used by every pipeline step', async () => {
-    const main = await readFile(new URL('../src/main.tsx', import.meta.url), 'utf8');
+    const main = (await rendererSourcesPromise).requiredFile('src/main.tsx');
     const css = await readFile(new URL('../src/styles.css', import.meta.url), 'utf8');
 
     for (const symbol of ['promptStepEditorDefinitions', 'updatePromptTemplateStepPrompt', 'stepPrompts', 'prompt-step-editor-list', 'prompt-step-editor-card']) {
@@ -1211,7 +1224,7 @@ describe('product shell ui', () => {
   });
 
   it('keeps prompt editing to a single content entry while preserving image seed pools', async () => {
-    const main = await readFile(new URL('../src/main.tsx', import.meta.url), 'utf8');
+    const main = (await rendererSourcesPromise).requiredFile('src/main.tsx');
     const storage = await readFile(new URL('../src/shared/storage.ts', import.meta.url), 'utf8');
 
     for (const symbol of [
@@ -1230,7 +1243,7 @@ describe('product shell ui', () => {
   });
 
   it('presents prompt template details as basics, content settings, and step default prompts', async () => {
-    const main = await readFile(new URL('../src/main.tsx', import.meta.url), 'utf8');
+    const main = (await rendererSourcesPromise).requiredFile('src/main.tsx');
     const css = await readFile(new URL('../src/styles.css', import.meta.url), 'utf8');
 
     for (const symbol of [
@@ -1250,7 +1263,7 @@ describe('product shell ui', () => {
   });
 
   it('uses Chinese labels for prompt template types and variable insertion chips', async () => {
-    const main = await readFile(new URL('../src/main.tsx', import.meta.url), 'utf8');
+    const main = (await rendererSourcesPromise).requiredFile('src/main.tsx');
     const css = await readFile(new URL('../src/styles.css', import.meta.url), 'utf8');
 
     expect(main).toContain('promptTemplateTypeLabels');
@@ -1266,7 +1279,7 @@ describe('product shell ui', () => {
   });
 
   it('documents the canonical StoryDream runtime variables in the template editor', async () => {
-    const main = await readFile(new URL('../src/main.tsx', import.meta.url), 'utf8');
+    const main = (await rendererSourcesPromise).requiredFile('src/main.tsx');
 
     for (const key of [
       'taskTemplateName',
@@ -1289,7 +1302,7 @@ describe('product shell ui', () => {
   });
 
   it('keeps targetLength and storyboard scene count out of visible prompt variable scopes', async () => {
-    const main = await readFile(new URL('../src/main.tsx', import.meta.url), 'utf8');
+    const main = (await rendererSourcesPromise).requiredFile('src/main.tsx');
 
     expect(main).not.toContain("key: 'targetLength'");
     expect(main).not.toContain("key: 'targetLengthRange'");
@@ -1300,7 +1313,7 @@ describe('product shell ui', () => {
   });
 
   it('splits prompt template management into story and image template tabs', async () => {
-    const main = await readFile(new URL('../src/main.tsx', import.meta.url), 'utf8');
+    const main = (await rendererSourcesPromise).requiredFile('src/main.tsx');
     const css = await readFile(new URL('../src/styles.css', import.meta.url), 'utf8');
 
     for (const symbol of [
@@ -1325,7 +1338,7 @@ describe('product shell ui', () => {
   });
 
   it('shows visible feedback while generating image template fields', async () => {
-    const main = await readFile(new URL('../src/main.tsx', import.meta.url), 'utf8');
+    const main = (await rendererSourcesPromise).requiredFile('src/main.tsx');
     const css = await readFile(new URL('../src/styles.css', import.meta.url), 'utf8');
 
     for (const symbol of [
@@ -1345,7 +1358,7 @@ describe('product shell ui', () => {
   });
 
   it('keeps prompt variables usable inside every template textarea', async () => {
-    const main = await readFile(new URL('../src/main.tsx', import.meta.url), 'utf8');
+    const main = (await rendererSourcesPromise).requiredFile('src/main.tsx');
     const css = await readFile(new URL('../src/styles.css', import.meta.url), 'utf8');
 
     for (const symbol of [
@@ -1376,7 +1389,7 @@ describe('product shell ui', () => {
   });
 
   it('supports import, export, and clone for story and image templates without overwriting existing ids', async () => {
-    const main = await readFile(new URL('../src/main.tsx', import.meta.url), 'utf8');
+    const main = (await rendererSourcesPromise).requiredFile('src/main.tsx');
 
     for (const symbol of [
       'exportPromptTemplateJson',
@@ -1396,7 +1409,7 @@ describe('product shell ui', () => {
   });
 
   it('syncs all story template defaults when changing story templates in new task', async () => {
-    const main = await readFile(new URL('../src/main.tsx', import.meta.url), 'utf8');
+    const main = (await rendererSourcesPromise).requiredFile('src/main.tsx');
 
     expect(main).toContain('handleStoryTemplateChange');
     expect(main).toContain('setTrack(nextTrack)');
@@ -1421,7 +1434,7 @@ describe('product shell ui', () => {
   });
 
   it('keeps new-task draft template choices limited to the saved default/user templates', async () => {
-    const main = await readFile(new URL('../src/main.tsx', import.meta.url), 'utf8');
+    const main = (await rendererSourcesPromise).requiredFile('src/main.tsx');
     const css = await readFile(new URL('../src/styles.css', import.meta.url), 'utf8');
 
     expect(main).toContain('defaultTaskDraftTemplateId');
@@ -1438,7 +1451,7 @@ describe('product shell ui', () => {
   });
 
   it('supports opening a selected task in a screenshot-style pipeline detail view', async () => {
-    const main = await readFile(new URL('../src/main.tsx', import.meta.url), 'utf8');
+    const main = (await rendererSourcesPromise).requiredFile('src/main.tsx');
     const types = await readFile(new URL('../src/shared/types.ts', import.meta.url), 'utf8');
     const css = await readFile(new URL('../src/styles.css', import.meta.url), 'utf8');
 
@@ -1456,7 +1469,7 @@ describe('product shell ui', () => {
   });
 
   it('loads and renders all pipeline artifact steps in task detail preview tabs', async () => {
-    const main = await readFile(new URL('../src/main.tsx', import.meta.url), 'utf8');
+    const main = (await rendererSourcesPromise).requiredFile('src/main.tsx');
     const css = await readFile(new URL('../src/styles.css', import.meta.url), 'utf8');
     const preload = await readFile(new URL('../electron/preload.ts', import.meta.url), 'utf8');
     const electronMain = await readFile(new URL('../electron/main.ts', import.meta.url), 'utf8');
@@ -1474,7 +1487,7 @@ describe('product shell ui', () => {
   });
 
   it('renders per-scene image provider errors below the matching storyboard gallery card', async () => {
-    const main = await readFile(new URL('../src/main.tsx', import.meta.url), 'utf8');
+    const main = (await rendererSourcesPromise).requiredFile('src/main.tsx');
     const css = await readFile(new URL('../src/styles.css', import.meta.url), 'utf8');
 
     expect(main).toContain('const imageErrors = snapshot?.assets.imageErrors ?? []');
@@ -1484,7 +1497,7 @@ describe('product shell ui', () => {
   });
 
   it('shows per-step rerun controls in artifact preview sections', async () => {
-    const main = await readFile(new URL('../src/main.tsx', import.meta.url), 'utf8');
+    const main = (await rendererSourcesPromise).requiredFile('src/main.tsx');
     const css = await readFile(new URL('../src/styles.css', import.meta.url), 'utf8');
     const preload = await readFile(new URL('../electron/preload.ts', import.meta.url), 'utf8');
 
@@ -1499,7 +1512,7 @@ describe('product shell ui', () => {
   });
 
   it('refreshes task artifact snapshots while image generation is still running', async () => {
-    const main = await readFile(new URL('../src/main.tsx', import.meta.url), 'utf8');
+    const main = (await rendererSourcesPromise).requiredFile('src/main.tsx');
 
     expect(main).toContain('artifactRefreshKey');
     expect(main).toContain('artifactRefreshTick');
@@ -1511,7 +1524,7 @@ describe('product shell ui', () => {
   });
 
   it('keeps the storyboard gallery tab focused on batch images and scene sentences', async () => {
-    const main = await readFile(new URL('../src/main.tsx', import.meta.url), 'utf8');
+    const main = (await rendererSourcesPromise).requiredFile('src/main.tsx');
 
     const storyboardStart = main.indexOf("{tab === 'storyboard' ? (");
     const audioStart = main.indexOf("{tab === 'audio' ? (", storyboardStart);
@@ -1531,14 +1544,14 @@ describe('product shell ui', () => {
   });
 
   it('does not keep the duplicate legacy artifact preview card in task detail', async () => {
-    const main = await readFile(new URL('../src/main.tsx', import.meta.url), 'utf8');
+    const main = (await rendererSourcesPromise).requiredFile('src/main.tsx');
 
     expect(main).not.toContain('legacy-artifact-preview');
     expect(countOccurrences(main, '<ArtifactPreviewContent')).toBe(1);
   });
 
   it('uses one bootstrap and delta updates without a one-second full-state heartbeat', async () => {
-    const main = await readFile(new URL('../src/main.tsx', import.meta.url), 'utf8');
+    const main = (await rendererSourcesPromise).requiredFile('src/main.tsx');
     const css = await readFile(new URL('../src/styles.css', import.meta.url), 'utf8');
 
     expect(main).toContain('api.getBootstrap()');
@@ -1554,7 +1567,7 @@ describe('product shell ui', () => {
   });
 
   it('queues reconciliation gaps that arrive in flight and preserves loaded template details on reset', async () => {
-    const main = await readFile(new URL('../src/main.tsx', import.meta.url), 'utf8');
+    const main = (await rendererSourcesPromise).requiredFile('src/main.tsx');
     const app = main.slice(main.indexOf('function App()'), main.indexOf('function NavButton'));
 
     expect(app).toContain('let reconcileAgain = false');
@@ -1565,7 +1578,7 @@ describe('product shell ui', () => {
   });
 
   it('buffers bounded state patches across authoritative snapshot installation and error recovery', async () => {
-    const main = await readFile(new URL('../src/main.tsx', import.meta.url), 'utf8');
+    const main = (await rendererSourcesPromise).requiredFile('src/main.tsx');
     const app = main.slice(main.indexOf('function App()'), main.indexOf('function NavButton'));
 
     expect(main).toContain('MAX_RENDERER_DELTA_BUFFER');
@@ -1582,7 +1595,7 @@ describe('product shell ui', () => {
   });
 
   it('uses app deltas as the sole Electron mutation owner and keeps response application local to browser fallback', async () => {
-    const main = await readFile(new URL('../src/main.tsx', import.meta.url), 'utf8');
+    const main = (await rendererSourcesPromise).requiredFile('src/main.tsx');
     const applyState = main.slice(main.indexOf('function applyState('), main.indexOf('async function openTaskDetail'));
     const fallback = main.slice(main.indexOf('function makeFallbackApi('), main.indexOf('function App()'));
 
@@ -1594,7 +1607,7 @@ describe('product shell ui', () => {
   });
 
   it('keeps authoritative snapshot replay updaters pure under StrictMode double invocation', async () => {
-    const main = await readFile(new URL('../src/main.tsx', import.meta.url), 'utf8');
+    const main = (await rendererSourcesPromise).requiredFile('src/main.tsx');
     const app = main.slice(main.indexOf('function App()'), main.indexOf('function NavButton'));
     const install = app.slice(app.indexOf('const installAuthoritativeSnapshot'), app.indexOf('const recoverSnapshotInstallation'));
     const recover = app.slice(app.indexOf('const recoverSnapshotInstallation'), app.indexOf('const applyIncomingDelta'));
@@ -1612,7 +1625,7 @@ describe('product shell ui', () => {
   });
 
   it('claims live and browser mutations before scheduling pure state updaters', async () => {
-    const main = await readFile(new URL('../src/main.tsx', import.meta.url), 'utf8');
+    const main = (await rendererSourcesPromise).requiredFile('src/main.tsx');
     const app = main.slice(main.indexOf('function App()'), main.indexOf('function NavButton'));
     const livePatch = app.slice(app.indexOf('const applyStatePatch'), app.indexOf('const requestReconciliation'));
     const browserApply = app.slice(app.indexOf('function applyState('), app.indexOf('async function openTaskDetail'));
@@ -1628,7 +1641,7 @@ describe('product shell ui', () => {
   });
 
   it('loads active HTML task details on bootstrap and checkpoint summary changes', async () => {
-    const main = await readFile(new URL('../src/main.tsx', import.meta.url), 'utf8');
+    const main = (await rendererSourcesPromise).requiredFile('src/main.tsx');
     const app = main.slice(main.indexOf('function App()'), main.indexOf('function NavButton'));
     const htmlPage = main.slice(main.indexOf('function HtmlVideoPage'), main.indexOf('function HtmlVideoTabPanel'));
 
@@ -1640,7 +1653,7 @@ describe('product shell ui', () => {
   });
 
   it('loads active viral events and includes both active entities in reconciliation', async () => {
-    const main = await readFile(new URL('../src/main.tsx', import.meta.url), 'utf8');
+    const main = (await rendererSourcesPromise).requiredFile('src/main.tsx');
     const app = main.slice(main.indexOf('function App()'), main.indexOf('function NavButton'));
     const viralPage = main.slice(main.indexOf('function ViralAnalyzerPage'), main.indexOf('function NewTaskPage'));
 
@@ -1653,7 +1666,7 @@ describe('product shell ui', () => {
   });
 
   it('shows save and test actions for each settings configuration section', async () => {
-    const main = await readFile(new URL('../src/main.tsx', import.meta.url), 'utf8');
+    const main = (await rendererSourcesPromise).requiredFile('src/main.tsx');
     const viteEnv = await readFile(new URL('../src/vite-env.d.ts', import.meta.url), 'utf8');
     const preload = await readFile(new URL('../electron/preload.ts', import.meta.url), 'utf8');
     const electronMain = await readFile(new URL('../electron/main.ts', import.meta.url), 'utf8');
@@ -1685,7 +1698,7 @@ describe('product shell ui', () => {
   });
 
   it('adds speech-to-text API settings for viral analyzer transcription', async () => {
-    const main = await readFile(new URL('../src/main.tsx', import.meta.url), 'utf8');
+    const main = (await rendererSourcesPromise).requiredFile('src/main.tsx');
 
     for (const text of [
       '语音转文字',
@@ -1720,7 +1733,7 @@ describe('product shell ui', () => {
   });
 
   it('loads model lists from configured provider URLs before selecting a model', async () => {
-    const main = await readFile(new URL('../src/main.tsx', import.meta.url), 'utf8');
+    const main = (await rendererSourcesPromise).requiredFile('src/main.tsx');
     const css = await readFile(new URL('../src/styles.css', import.meta.url), 'utf8');
     const preload = await readFile(new URL('../electron/preload.ts', import.meta.url), 'utf8');
     const electronMain = await readFile(new URL('../electron/main.ts', import.meta.url), 'utf8');
@@ -1744,7 +1757,7 @@ describe('product shell ui', () => {
   });
 
   it('keeps unsaved settings edits when app state refreshes in the background', async () => {
-    const main = await readFile(new URL('../src/main.tsx', import.meta.url), 'utf8');
+    const main = (await rendererSourcesPromise).requiredFile('src/main.tsx');
 
     expect(main).toContain('settingsDirty');
     expect(main).toContain('setSettingsDraft');
@@ -1754,7 +1767,7 @@ describe('product shell ui', () => {
   });
 
   it('manages multiple LLM configuration profiles from a switcher-style list', async () => {
-    const main = await readFile(new URL('../src/main.tsx', import.meta.url), 'utf8');
+    const main = (await rendererSourcesPromise).requiredFile('src/main.tsx');
     const css = await readFile(new URL('../src/styles.css', import.meta.url), 'utf8');
 
     expect(main).toContain('LlmProfileManager');
@@ -1773,7 +1786,7 @@ describe('product shell ui', () => {
   });
 
   it('manages image and TTS providers with the same profile activation pattern', async () => {
-    const main = await readFile(new URL('../src/main.tsx', import.meta.url), 'utf8');
+    const main = (await rendererSourcesPromise).requiredFile('src/main.tsx');
 
     expect(main).toContain('ImageProfileManager');
     expect(main).toContain('TtsProfileManager');
@@ -1787,7 +1800,7 @@ describe('product shell ui', () => {
   });
 
   it('scopes provider-specific settings instead of showing every credential at once', async () => {
-    const main = await readFile(new URL('../src/main.tsx', import.meta.url), 'utf8');
+    const main = (await rendererSourcesPromise).requiredFile('src/main.tsx');
 
     for (const branch of [
       "selectedProvider === 'openai'",
@@ -1816,7 +1829,7 @@ describe('product shell ui', () => {
   });
 
   it('exposes simplified Volcengine V3 TTS settings with a single API key and preset voice defaults', async () => {
-    const main = await readFile(new URL('../src/main.tsx', import.meta.url), 'utf8');
+    const main = (await rendererSourcesPromise).requiredFile('src/main.tsx');
     const manager = main.slice(main.indexOf('function TtsProfileManager'), main.indexOf('function AccountPage'));
 
     expect(main).toContain('volcengineVoicePresets');
@@ -1835,7 +1848,7 @@ describe('product shell ui', () => {
   });
 
   it('uses provider-specific task voice defaults in the new task form', async () => {
-    const main = await readFile(new URL('../src/main.tsx', import.meta.url), 'utf8');
+    const main = (await rendererSourcesPromise).requiredFile('src/main.tsx');
     const voices = await readFile(new URL('../src/shared/tts-voices.ts', import.meta.url), 'utf8');
 
     for (const symbol of [
@@ -1855,7 +1868,7 @@ describe('product shell ui', () => {
   });
 
   it('syncs new-task content and style choices from story and image templates', async () => {
-    const main = await readFile(new URL('../src/main.tsx', import.meta.url), 'utf8');
+    const main = (await rendererSourcesPromise).requiredFile('src/main.tsx');
 
     expect(main).toContain('buildStoryTemplateTrackOptions');
     expect(main).toContain('buildStoryTemplateOptions');
@@ -1876,7 +1889,7 @@ describe('product shell ui', () => {
   });
 
   it('exposes StoryDream cover and podcast image controls in the new task form', async () => {
-    const main = await readFile(new URL('../src/main.tsx', import.meta.url), 'utf8');
+    const main = (await rendererSourcesPromise).requiredFile('src/main.tsx');
     const page = main.slice(main.indexOf('function NewTaskPage'), main.indexOf('function MusicMvPage'));
 
     expect(page).toContain('封面模板');
@@ -1891,7 +1904,7 @@ describe('product shell ui', () => {
   });
 
   it('wires new task reference image upload and task LLM model selection into task creation', async () => {
-    const main = await readFile(new URL('../src/main.tsx', import.meta.url), 'utf8');
+    const main = (await rendererSourcesPromise).requiredFile('src/main.tsx');
     const page = main.slice(main.indexOf('function NewTaskPage'), main.indexOf('function MusicMvPage'));
 
     expect(page).toContain('selectedTaskLlmProfileId');
@@ -1904,7 +1917,7 @@ describe('product shell ui', () => {
   });
 
   it('keeps target word and scene controls visible in the new task form', async () => {
-    const main = await readFile(new URL('../src/main.tsx', import.meta.url), 'utf8');
+    const main = (await rendererSourcesPromise).requiredFile('src/main.tsx');
     const css = await readFile(new URL('../src/styles.css', import.meta.url), 'utf8');
     const page = main.slice(main.indexOf('function NewTaskPage'), main.indexOf('function MusicMvPage'));
 
@@ -1951,7 +1964,7 @@ describe('product shell ui', () => {
   });
 
   it('replicates the StoryDream video form controls for narration and two-host podcast tasks', async () => {
-    const main = await readFile(new URL('../src/main.tsx', import.meta.url), 'utf8');
+    const main = (await rendererSourcesPromise).requiredFile('src/main.tsx');
     const page = main.slice(main.indexOf('function NewTaskPage'), main.indexOf('function MusicMvPage'));
 
     for (const text of ['视频形态', '旁白视频', '双人播客', '配图方式', '按分镜配图', '单图封面', '主播组合', '咔仔 x 大壹', '刘飞 x 潇磊']) {
@@ -1973,7 +1986,7 @@ describe('product shell ui', () => {
   });
 
   it('keeps task errors compact with a click-through detail dialog', async () => {
-    const main = await readFile(new URL('../src/main.tsx', import.meta.url), 'utf8');
+    const main = (await rendererSourcesPromise).requiredFile('src/main.tsx');
     const css = await readFile(new URL('../src/styles.css', import.meta.url), 'utf8');
 
     expect(main).toContain('ErrorSummaryButton');
@@ -1992,7 +2005,7 @@ describe('product shell ui', () => {
   });
 
   it('lets AI creation search real web sources and select them for generation', async () => {
-    const main = await readFile(new URL('../src/main.tsx', import.meta.url), 'utf8');
+    const main = (await rendererSourcesPromise).requiredFile('src/main.tsx');
     const css = await readFile(new URL('../src/styles.css', import.meta.url), 'utf8');
     const composeSection = main.slice(main.indexOf('async function composeResearchCopy()'), main.indexOf('async function createAndRunTask'));
 
@@ -2019,7 +2032,7 @@ describe('product shell ui', () => {
   });
 
   it('runs image lab requests through real generation and renders returned image records', async () => {
-    const main = await readFile(new URL('../src/main.tsx', import.meta.url), 'utf8');
+    const main = (await rendererSourcesPromise).requiredFile('src/main.tsx');
     const css = await readFile(new URL('../src/styles.css', import.meta.url), 'utf8');
 
     expect(main).toContain('api.generateImageLab');
@@ -2032,7 +2045,7 @@ describe('product shell ui', () => {
   });
 
   it('exposes the StoryDream smart image modes in image lab generation', async () => {
-    const main = await readFile(new URL('../src/main.tsx', import.meta.url), 'utf8');
+    const main = (await rendererSourcesPromise).requiredFile('src/main.tsx');
     const css = await readFile(new URL('../src/styles.css', import.meta.url), 'utf8');
     const page = main.slice(main.indexOf('function ImageLabPage'), main.indexOf('function VoiceLabPage'));
 
@@ -2070,7 +2083,7 @@ describe('product shell ui', () => {
   });
 
   it('separates smart generation and reference editing modes in image lab copy', async () => {
-    const main = await readFile(new URL('../src/main.tsx', import.meta.url), 'utf8');
+    const main = (await rendererSourcesPromise).requiredFile('src/main.tsx');
     const page = main.slice(main.indexOf('function ImageLabPage'), main.indexOf('function VoiceLabPage'));
 
     expect(page).toContain('referenceModeDescription');
@@ -2091,7 +2104,7 @@ describe('product shell ui', () => {
   });
 
   it('reuses the React root across Vite hot reloads', async () => {
-    const main = await readFile(new URL('../src/main.tsx', import.meta.url), 'utf8');
+    const main = (await rendererSourcesPromise).requiredFile('src/main.tsx');
 
     expect(main).toContain('__storydreamReactRoot');
     expect(main).toContain('window.__storydreamReactRoot ??=');
@@ -2099,7 +2112,7 @@ describe('product shell ui', () => {
   });
 
   it('blocks real task execution in browser preview mode and avoids fake running states', async () => {
-    const main = await readFile(new URL('../src/main.tsx', import.meta.url), 'utf8');
+    const main = (await rendererSourcesPromise).requiredFile('src/main.tsx');
 
     expect(main).toContain('isBrowserPreview');
     expect(main).toContain('浏览器预览不能执行真实流水线');
@@ -2109,7 +2122,7 @@ describe('product shell ui', () => {
   });
 
   it('shows live image thumbnails with concurrency context and per-scene regeneration controls', async () => {
-    const main = await readFile(new URL('../src/main.tsx', import.meta.url), 'utf8');
+    const main = (await rendererSourcesPromise).requiredFile('src/main.tsx');
     const css = await readFile(new URL('../src/styles.css', import.meta.url), 'utf8');
     const preload = await readFile(new URL('../electron/preload.ts', import.meta.url), 'utf8');
 
@@ -2135,7 +2148,7 @@ describe('product shell ui', () => {
   });
 
   it('shows playable narration previews with per-scene regeneration controls', async () => {
-    const main = await readFile(new URL('../src/main.tsx', import.meta.url), 'utf8');
+    const main = (await rendererSourcesPromise).requiredFile('src/main.tsx');
     const css = await readFile(new URL('../src/styles.css', import.meta.url), 'utf8');
     const preload = await readFile(new URL('../electron/preload.ts', import.meta.url), 'utf8');
 
