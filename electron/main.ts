@@ -135,7 +135,6 @@ const trustedHandle = createTrustedIpcRegistrar({
   getPolicy: () => mainRendererPolicy,
 });
 const appDataName = 'storydream';
-const staleRunningMs = 5 * 60 * 1000;
 const pipelineStepAgents: Record<number, string> = {
   0: 'Reviewer',
   1: 'Writer',
@@ -211,15 +210,15 @@ async function getPublicState() {
 }
 
 async function ensureRuntimeJianyingDraftPath(database: FileDatabase, service: ConfigService): Promise<void> {
-  const state = await database.getState();
-  const current = state.config.jianying.draftPath;
+  const metadata = await database.getBootstrapMetadata();
+  const current = metadata.config.jianying.draftPath;
   const resolved = resolveRuntimeJianyingDraftPath(current, { pathExists: existsSync });
   if (resolved !== current.trim()) {
     await service.save({
       config: {
-        ...state.config,
+        ...metadata.config,
         jianying: {
-          ...state.config.jianying,
+          ...metadata.config.jianying,
           draftPath: resolved,
         },
       },
@@ -263,8 +262,7 @@ async function createWindow(): Promise<void> {
   } else {
     await mainWindow.loadFile(rendererIndexPath);
   }
-  const database = await getDb();
-  await pauseStaleRunningTasks(database);
+  await getDb();
 }
 
 async function runSmokeHandshake(): Promise<void> {
@@ -435,41 +433,14 @@ function viralCookieFilePath(): string {
   return join(viralCookieDir(), 'douyin-cookies.txt');
 }
 
-async function pauseStaleRunningTasks(database: FileDatabase): Promise<void> {
-  const state = await database.getState();
-  const now = Date.now();
-  for (const task of state.tasks) {
-    if (task.status !== 'running' || runningTasks.has(task.id)) continue;
-    const heartbeat = task.lastHeartbeatAt ? new Date(task.lastHeartbeatAt).getTime() : 0;
-    if (!heartbeat || Number.isNaN(heartbeat) || now - heartbeat > staleRunningMs) {
-      await database.updateTask(task.id, {
-        status: 'paused',
-        currentStep: task.currentStep,
-        failedStep: task.failedStep ?? task.currentStep,
-        retryFromStep: task.retryFromStep ?? task.currentStep,
-        errorMessage: '运行中断，可从失败/当前步骤重试。',
-        lastHeartbeatAt: new Date().toISOString(),
-      });
-      const event = await database.addTaskEvent(task.id, {
-        type: 'step_error',
-        step: task.failedStep ?? task.currentStep,
-        agent: null,
-        detail: '运行中断，可从失败/当前步骤重试。',
-      });
-      await publishTaskEvent(event);
-      await publishTaskUpsert(database, task.id);
-    }
-  }
-}
-
-async function buildRunOptions(database: FileDatabase, task: Task, controller: AbortController) {
+async function buildRunOptions(database: FileDatabase, task: Task, workDir: string, controller: AbortController) {
   const [state, runtimeConfig] = await Promise.all([database.getState(), (await getConfigService()).getRuntimeConfig()]);
   return {
     appDataDir: appDataDir(),
-    workDir: taskWorkDir(task),
+    workDir,
     signal: controller.signal,
     resolveAiSourceContext: createAiSourceResearcher(runtimeConfig),
-    ...createTaskRuntimeProviders(runtimeConfig, taskWorkDir(task), task),
+    ...createTaskRuntimeProviders(runtimeConfig, workDir, task),
     customCoverTemplates: state.customCoverTemplates,
     onEvent: (event: SequencedTaskEvent) => {
       void publishTaskEvent(event);
@@ -480,30 +451,31 @@ async function buildRunOptions(database: FileDatabase, task: Task, controller: A
   };
 }
 
-function startTaskRun(database: FileDatabase, task: Task): boolean {
+function startTaskRun(database: FileDatabase, task: Task, workDir: string): boolean {
   if (isShuttingDown || runningTasks.has(task.id)) return false;
   return isHtmlVideoTask(task)
-    ? startHtmlVideoTaskRun(database, task)
-    : startStandardTaskRun(database, task);
+    ? startHtmlVideoTaskRun(database, task, workDir)
+    : startStandardTaskRun(database, task, workDir);
 }
 
-function startStandardTaskRun(database: FileDatabase, task: Task): boolean {
-  return startOwnedTaskRun(database, task, 'Background task', async (controller) => {
-    await runTask(database, { ...task, status: 'pending', errorMessage: '' }, await buildRunOptions(database, task, controller));
+function startStandardTaskRun(database: FileDatabase, task: Task, workDir: string): boolean {
+  return startOwnedTaskRun(database, task, workDir, 'Background task', async (controller) => {
+    await runTask(database, { ...task, status: 'pending', errorMessage: '' }, await buildRunOptions(database, task, workDir, controller));
   });
 }
 
-function startHtmlVideoTaskRun(database: FileDatabase, task: Task): boolean {
+function startHtmlVideoTaskRun(database: FileDatabase, task: Task, workDir: string): boolean {
   const recovery = recoverHtmlVideoPipelineDataForRetry(task);
   const runnableTask = recovery ? { ...task, ...recovery } : task;
-  return startOwnedTaskRun(database, task, 'HTML video task', async (controller) => {
-    await runHtmlVideoTask(database, runnableTask, controller, recovery);
+  return startOwnedTaskRun(database, task, workDir, 'HTML video task', async (controller) => {
+    await runHtmlVideoTask(database, runnableTask, workDir, controller, recovery);
   });
 }
 
 function startOwnedTaskRun(
   database: FileDatabase,
   task: Task,
+  workDir: string,
   label: string,
   execute: (controller: AbortController) => Promise<void>,
 ): boolean {
@@ -532,7 +504,7 @@ function startOwnedTaskRun(
       } finally {
         if (runningTasks.get(task.id) === run) runningTasks.delete(task.id);
       }
-      if (restartTask && !isShuttingDown) startTaskRun(database, restartTask);
+      if (restartTask && !isShuttingDown) startTaskRun(database, restartTask, workDir);
       if (!isShuttingDown) await publishTaskUpsert(database, task.id);
     }
   })();
@@ -578,10 +550,10 @@ async function applyTaskRunIntent(
 async function runHtmlVideoTask(
   database: FileDatabase,
   task: Task,
+  workDir: string,
   controller: AbortController,
   recovery: HtmlVideoPipelineRetryPatch | null = null,
 ): Promise<void> {
-  let workDir = taskWorkDir(task);
   const startedAt = task.startedAt ?? new Date().toISOString();
   let lastState: HtmlVideoPipelineDataV2 | null = null;
   try {
@@ -760,6 +732,7 @@ function htmlVideoAbortStatus(reason: unknown): Extract<TaskStatus, 'paused' | '
 async function resumeTaskRun(
   database: FileDatabase,
   task: Task,
+  workDir: string,
   shouldStart: () => boolean = () => true,
 ): Promise<void> {
   if (isShuttingDown) return;
@@ -774,21 +747,22 @@ async function resumeTaskRun(
   }
   await database.updateTask(task.id, { status: 'pending', errorMessage: '' });
   if (!shouldStart()) return;
-  startTaskRun(database, { ...task, status: 'pending', errorMessage: '' });
+  startTaskRun(database, { ...task, status: 'pending', errorMessage: '' }, workDir);
 }
 
 async function resumeLatestTaskRun(
   database: FileDatabase,
   taskId: string,
+  workDir: string,
   isCurrent: () => boolean,
 ): Promise<void> {
   if (!isCurrent()) return;
   const updatedTask = (await database.getState()).tasks.find((item) => item.id === taskId);
   if (!updatedTask || !isCurrent()) return;
-  await resumeTaskRun(database, updatedTask, isCurrent);
+  await resumeTaskRun(database, updatedTask, workDir, isCurrent);
 }
 
-function startViralAnalysisRun(database: FileDatabase, record: ViralAnalysisRecord): boolean {
+function startViralAnalysisRun(database: FileDatabase, record: ViralAnalysisRecord, workDir: string): boolean {
   if (isShuttingDown || runningViralAnalyses.has(record.id)) return false;
   const controller = new AbortController();
   const run: RunningViralAnalysisRun = {
@@ -809,7 +783,6 @@ function startViralAnalysisRun(database: FileDatabase, record: ViralAnalysisReco
         lastHeartbeatAt: startedAt,
       });
       await publishViralUpsert(database, record.id);
-      const workDir = viralAnalysisWorkDir(record);
       const completed = await runViralAnalysis(record, {
         workDir,
         signal: controller.signal,
@@ -870,7 +843,7 @@ function startViralAnalysisRun(database: FileDatabase, record: ViralAnalysisReco
   return true;
 }
 
-async function resumeViralAnalysisRun(database: FileDatabase, record: ViralAnalysisRecord): Promise<void> {
+async function resumeViralAnalysisRun(database: FileDatabase, record: ViralAnalysisRecord, workDir: string): Promise<void> {
   if (isShuttingDown) return;
   const existingRun = runningViralAnalyses.get(record.id);
   if (existingRun) {
@@ -886,7 +859,7 @@ async function resumeViralAnalysisRun(database: FileDatabase, record: ViralAnaly
     completedAt: null,
     lastHeartbeatAt: new Date().toISOString(),
   });
-  startViralAnalysisRun(database, { ...record, status: 'pending', currentStage: 'queued', progress: 0, errorMessage: '' });
+  startViralAnalysisRun(database, { ...record, status: 'pending', currentStage: 'queued', progress: 0, errorMessage: '' }, workDir);
 }
 
 async function reconcileAppDeltas(database: FileDatabase, input: AppDeltaReconcileRequest): Promise<AppDeltaReconcileResult> {
@@ -1181,8 +1154,9 @@ trustedHandle('html-video:create-task', async (_event, input: CreateTaskInput) =
     pipelineStep: input.pipelineStep ?? 'rewrite',
     pipelineData: input.pipelineData ?? '{}',
   });
+  const workDir = taskWorkDir(task);
   const delta = await publishTaskUpsert(database, task.id);
-  startTaskRun(database, task);
+  startTaskRun(database, task, workDir);
   return delta;
 });
 
@@ -1225,8 +1199,9 @@ async function getHtmlVideoTask(database: FileDatabase, id: string): Promise<Tas
 trustedHandle('task:create-and-run', async (_event, input: CreateTaskInput) => {
   const database = await getDb();
   const task = await database.createTask(input);
+  const workDir = taskWorkDir(task);
   const delta = await publishTaskUpsert(database, task.id);
-  startTaskRun(database, task);
+  startTaskRun(database, task, workDir);
   return delta;
 });
 
@@ -1236,8 +1211,9 @@ trustedHandle('viral:create-and-run', async (_event, input: CreateViralAnalysisI
     ...input,
     platform: input.platform && input.platform !== 'unknown' ? input.platform : detectViralPlatform(input.url),
   });
+  const workDir = viralAnalysisWorkDir(record);
   const delta = await publishViralUpsert(database, record.id);
-  startViralAnalysisRun(database, record);
+  startViralAnalysisRun(database, record, workDir);
   return delta;
 });
 
@@ -1247,7 +1223,8 @@ trustedHandle('viral:update-status', async (_event, input: { id: string; status:
   const record = state.viralAnalyses.find((item) => item.id === input.id);
   if (!record) return null;
   if (input.status === 'running') {
-    await resumeViralAnalysisRun(database, record);
+    const workDir = viralAnalysisWorkDir(record);
+    await resumeViralAnalysisRun(database, record, workDir);
     return publishViralUpsert(database, record.id);
   }
   if (input.status === 'paused' || input.status === 'cancelled') {
@@ -1270,7 +1247,8 @@ trustedHandle('viral:retry', async (_event, id: string) => {
   const state = await database.getState();
   const record = state.viralAnalyses.find((item) => item.id === id);
   if (record) {
-    await resumeViralAnalysisRun(database, record);
+    const workDir = viralAnalysisWorkDir(record);
+    await resumeViralAnalysisRun(database, record, workDir);
     return publishViralUpsert(database, id);
   }
   return null;
@@ -1292,8 +1270,9 @@ trustedHandle('viral:create-production-task', async (_event, input: { id: string
   const result = JSON.parse(await readFile(record.resultPath, 'utf8'));
   const taskInput = createViralProductionTaskInput(result, input.options);
   const task = await database.createTask(taskInput);
+  const workDir = taskWorkDir(task);
   const delta = await publishTaskUpsert(database, task.id);
-  startTaskRun(database, task);
+  startTaskRun(database, task, workDir);
   return delta;
 });
 
@@ -1301,6 +1280,13 @@ trustedHandle('task:update-status', async (_event, input: { id: string; status: 
   const isControlRequest = input.status === 'running' || input.status === 'paused' || input.status === 'cancelled';
   if (!isControlRequest) return null;
   return runLatestTaskControlRequest(latestTaskControlRequests, input.id, async (isCurrent) => {
+    const database = await getDb();
+    const state = await database.getState();
+    const task = state.tasks.find((item) => item.id === input.id);
+    if (!task || !isCurrent()) {
+      return null;
+    }
+    const workDir = input.status === 'running' ? taskWorkDir(task) : null;
     const existingRun = runningTasks.get(input.id);
     let controlledRun = existingRun;
     if (existingRun) {
@@ -1314,15 +1300,10 @@ trustedHandle('task:update-status', async (_event, input: { id: string; status: 
         );
       }
     }
-    const database = await getDb();
-    const state = await database.getState();
-    const task = state.tasks.find((item) => item.id === input.id);
-    if (!task || !isCurrent()) {
-      return null;
-    }
     if (input.status === 'running') {
+      if (workDir === null) throw new Error('Managed task work directory is unavailable.');
       if (!existingRun) {
-        await resumeTaskRun(database, task, isCurrent);
+        await resumeTaskRun(database, task, workDir, isCurrent);
       } else if (isCurrent() && runningTasks.get(input.id) === existingRun && existingRun.intent === 'restart') {
         await database.updateTask(input.id, {
           errorMessage: '正在停止当前运行，随后继续重试。',
@@ -1367,16 +1348,17 @@ trustedHandle('task:update-status', async (_event, input: { id: string; status: 
 
 trustedHandle('task:retry', async (_event, id: string) => {
   return runLatestTaskControlRequest(latestTaskControlRequests, id, async (isCurrent) => {
-    const existingRun = runningTasks.get(id);
-    if (existingRun) requestTaskRunIntent(existingRun, 'restart', '用户重试');
     const database = await getDb();
     const state = await database.getState();
     const task = state.tasks.find((item) => item.id === id);
     if (!task || !isCurrent()) {
       return null;
     }
+    const workDir = taskWorkDir(task);
+    const existingRun = runningTasks.get(id);
+    if (existingRun) requestTaskRunIntent(existingRun, 'restart', '用户重试');
     if (!existingRun) {
-      await resumeTaskRun(database, task, isCurrent);
+      await resumeTaskRun(database, task, workDir, isCurrent);
     } else if (isCurrent() && runningTasks.get(id) === existingRun && existingRun.intent === 'restart') {
       await database.updateTask(id, {
         errorMessage: '正在停止当前运行，随后继续重试。',
@@ -1397,6 +1379,7 @@ trustedHandle('task:regenerate-image', async (_event, input: { id: string; scene
     if (!task) {
       throw new Error(`Task not found: ${input.id}`);
     }
+    const workDir = taskWorkDir(task);
     if (!task.artifactStatePath) {
       throw new Error('Task artifact state is not available; run the task before regenerating images.');
     }
@@ -1413,7 +1396,7 @@ trustedHandle('task:regenerate-image', async (_event, input: { id: string; scene
       failedStep: 4,
       retryFromStep: 4,
       completedAt: null,
-      outputDir: taskWorkDir(task),
+      outputDir: workDir,
       errorMessage: `重新生成第 ${sceneId} 张图片`,
       lastHeartbeatAt: new Date().toISOString(),
     });
@@ -1427,7 +1410,7 @@ trustedHandle('task:regenerate-image', async (_event, input: { id: string; scene
     });
     await publishTaskEvent(event);
     if (!isCurrent()) return null;
-    await resumeLatestTaskRun(database, task.id, isCurrent);
+    await resumeLatestTaskRun(database, task.id, workDir, isCurrent);
     return publishTaskUpsert(database, task.id);
   });
 });
@@ -1442,6 +1425,7 @@ trustedHandle('task:regenerate-narration', async (_event, input: { id: string; s
     if (!task) {
       throw new Error(`Task not found: ${input.id}`);
     }
+    const workDir = taskWorkDir(task);
     if (!task.artifactStatePath) {
       throw new Error('Task artifact state is not available; run the task before regenerating narration.');
     }
@@ -1458,7 +1442,7 @@ trustedHandle('task:regenerate-narration', async (_event, input: { id: string; s
       failedStep: 5,
       retryFromStep: 5,
       completedAt: null,
-      outputDir: taskWorkDir(task),
+      outputDir: workDir,
       errorMessage: `重新生成第 ${sceneId} 段配音`,
       lastHeartbeatAt: new Date().toISOString(),
     });
@@ -1472,7 +1456,7 @@ trustedHandle('task:regenerate-narration', async (_event, input: { id: string; s
     });
     await publishTaskEvent(event);
     if (!isCurrent()) return null;
-    await resumeLatestTaskRun(database, task.id, isCurrent);
+    await resumeLatestTaskRun(database, task.id, workDir, isCurrent);
     return publishTaskUpsert(database, task.id);
   });
 });
@@ -1487,6 +1471,7 @@ trustedHandle('task:update-image-prompt', async (_event, input: { id: string; sc
     if (!task) {
       throw new Error(`Task not found: ${input.id}`);
     }
+    const workDir = taskWorkDir(task);
     if (!task.artifactStatePath) {
       throw new Error('Task artifact state is not available; run the task before editing image prompts.');
     }
@@ -1519,6 +1504,7 @@ trustedHandle('task:rerun-step', async (_event, input: { id: string; step: numbe
     if (!task) {
       throw new Error(`Task not found: ${input.id}`);
     }
+    const workDir = taskWorkDir(task);
     if (!task.artifactStatePath) {
       throw new Error('Task artifact state is not available; run the task before rerunning a step.');
     }
@@ -1536,7 +1522,7 @@ trustedHandle('task:rerun-step', async (_event, input: { id: string; step: numbe
       failedStep: step,
       retryFromStep: step,
       completedAt: null,
-      outputDir: taskWorkDir(task),
+      outputDir: workDir,
       errorMessage: detail,
       lastHeartbeatAt: new Date().toISOString(),
     });
@@ -1550,7 +1536,7 @@ trustedHandle('task:rerun-step', async (_event, input: { id: string; step: numbe
     });
     await publishTaskEvent(event);
     if (!isCurrent()) return null;
-    await resumeLatestTaskRun(database, task.id, isCurrent);
+    await resumeLatestTaskRun(database, task.id, workDir, isCurrent);
     return publishTaskUpsert(database, task.id);
   });
 });

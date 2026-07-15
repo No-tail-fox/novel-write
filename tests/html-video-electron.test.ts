@@ -123,7 +123,7 @@ describe('Electron HTML video runtime contract', () => {
     );
     const finalizeIntent = ownedRun.indexOf('await finalizeTaskRunIntent(');
     const releaseOwnership = ownedRun.indexOf('runningTasks.delete(task.id);');
-    const restart = ownedRun.indexOf('startTaskRun(database, restartTask);');
+    const restart = ownedRun.indexOf('startTaskRun(database, restartTask, workDir);');
 
     expect(main).toContain("from './task-run-lifecycle'");
     expect(main).not.toContain('restartAfterAbort');
@@ -144,7 +144,7 @@ describe('Electron HTML video runtime contract', () => {
     );
     const recover = start.indexOf('recoverHtmlVideoPipelineDataForRetry(task)');
     const acquireOwner = start.indexOf('return startOwnedTaskRun(', recover);
-    const run = start.indexOf('await runHtmlVideoTask(database, runnableTask, controller, recovery);', recover);
+    const run = start.indexOf('await runHtmlVideoTask(database, runnableTask, workDir, controller, recovery);', recover);
     const runner = main.slice(
       main.indexOf('async function runHtmlVideoTask'),
       main.indexOf('async function persistHtmlVideoTaskCheckpoint'),

@@ -242,7 +242,8 @@ describe('electron ipc contract', () => {
     const handler = main.slice(main.indexOf("trustedHandle('task:create-and-run'"), main.indexOf("trustedHandle('viral:create-and-run'"));
 
     expect(handler).toContain('const delta = await publishTaskUpsert(database, task.id)');
-    expect(handler).toContain('startTaskRun(database, task)');
+    expect(handler).toContain('const workDir = taskWorkDir(task)');
+    expect(handler).toContain('startTaskRun(database, task, workDir)');
     expect(handler).toContain('return delta');
     expect(handler).not.toContain('getPublicState()');
     expect(main.match(/return getPublicState\(\)/gu)).toHaveLength(1);
@@ -261,7 +262,7 @@ describe('electron ipc contract', () => {
     const retryHandler = main.slice(main.indexOf("trustedHandle('task:retry'"), main.indexOf("trustedHandle('diagnostics:run'"));
     expect(retryHandler).toContain("requestTaskRunIntent(existingRun, 'restart', '用户重试')");
     expect(retryHandler).toContain('runLatestTaskControlRequest(latestTaskControlRequests, id, async (isCurrent) => {');
-    expect(retryHandler).toContain('await resumeTaskRun(database, task, isCurrent)');
+    expect(retryHandler).toContain('await resumeTaskRun(database, task, workDir, isCurrent)');
     expect(retryHandler).not.toContain('runTask(');
   });
 
@@ -272,7 +273,7 @@ describe('electron ipc contract', () => {
     const requestIntent = statusHandler.indexOf('requestTaskRunIntent(');
     const firstAwait = statusHandler.indexOf('await getDb()');
     expect(requestIntent).toBeGreaterThan(-1);
-    expect(firstAwait).toBeGreaterThan(requestIntent);
+    expect(requestIntent).toBeGreaterThan(firstAwait);
     expect(statusHandler).toContain('latestTaskControlRequests');
     expect(statusHandler).not.toContain('existingRun.controller.abort');
     expect(statusHandler).not.toContain('runningTasks.delete(input.id)');
@@ -510,7 +511,7 @@ describe('electron ipc contract', () => {
     expect(regenerateHandler).toContain('runLatestTaskControlRequest(latestTaskControlRequests, input.id, async (isCurrent) => {');
     expect(regenerateHandler).toContain('retryFromStep: 4');
     expect(regenerateHandler).toContain('failedStep: 4');
-    expect(regenerateHandler).toContain('resumeLatestTaskRun(database, task.id, isCurrent)');
+    expect(regenerateHandler).toContain('resumeLatestTaskRun(database, task.id, workDir, isCurrent)');
     expect(regenerateHandler).not.toContain('runTask(');
     expect(preload).toContain('regenerateTaskImage');
     expect(preload).toContain('task:regenerate-image');
@@ -527,7 +528,7 @@ describe('electron ipc contract', () => {
     expect(regenerateHandler).toContain('runLatestTaskControlRequest(latestTaskControlRequests, input.id, async (isCurrent) => {');
     expect(regenerateHandler).toContain('retryFromStep: 5');
     expect(regenerateHandler).toContain('failedStep: 5');
-    expect(regenerateHandler).toContain('resumeLatestTaskRun(database, task.id, isCurrent)');
+    expect(regenerateHandler).toContain('resumeLatestTaskRun(database, task.id, workDir, isCurrent)');
     expect(regenerateHandler).not.toContain('runTask(');
     expect(preload).toContain('regenerateTaskNarration');
     expect(preload).toContain('task:regenerate-narration');
@@ -561,7 +562,7 @@ describe('electron ipc contract', () => {
     expect(rerunHandler).toContain('runLatestTaskControlRequest(latestTaskControlRequests, input.id, async (isCurrent) => {');
     expect(rerunHandler).toContain('retryFromStep: step');
     expect(rerunHandler).toContain('failedStep: step');
-    expect(rerunHandler).toContain('resumeLatestTaskRun(database, task.id, isCurrent)');
+    expect(rerunHandler).toContain('resumeLatestTaskRun(database, task.id, workDir, isCurrent)');
     expect(rerunHandler).not.toContain('runTask(');
     expect(preload).toContain('rerunTaskStep');
     expect(preload).toContain('task:rerun-step');

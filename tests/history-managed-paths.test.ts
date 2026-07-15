@@ -125,10 +125,106 @@ describe('managed history paths', () => {
     await reopened.close();
 
     const main = await readFile(new URL('../electron/main.ts', import.meta.url), 'utf8');
+    const storage = await readFile(new URL('../src/shared/storage.ts', import.meta.url), 'utf8');
     const getDatabase = main.slice(main.indexOf('async function getDb'), main.indexOf('async function getConfigService'));
+    const ensureDraftPath = main.slice(
+      main.indexOf('async function ensureRuntimeJianyingDraftPath'),
+      main.indexOf('async function createWindow'),
+    );
+    const createWindow = main.slice(main.indexOf('async function createWindow'), main.indexOf('async function runSmokeHandshake'));
+    const storageRecovery = storage.slice(
+      storage.indexOf('private recoverInterruptedTasks()'),
+      storage.indexOf('private seedShellDefaults()'),
+    );
     expect(getDatabase.indexOf('backfillLegacyManagedHistoryStorage')).toBeGreaterThan(getDatabase.indexOf('FileDatabase.open'));
     expect(getDatabase).toContain('database.listMissingManagedStorageKeys()');
     expect(getDatabase).not.toContain('database.getState()');
+    expect(ensureDraftPath).toContain('database.getBootstrapMetadata()');
+    expect(ensureDraftPath).not.toContain('database.getState()');
+    expect(ensureDraftPath).toContain('metadata.config.jianying.draftPath');
+    expect(createWindow).not.toContain('pauseStaleRunningTasks');
+    expect(main).not.toContain('async function pauseStaleRunningTasks');
+    expect(storage).toContain('this.recoverInterruptedTasks();');
+    expect(storageRecovery).toContain("status = 'paused'");
+    expect(storageRecovery).toContain('failed_step = COALESCE(failed_step, current_step)');
+    expect(storageRecovery).toContain('retry_from_step = COALESCE(retry_from_step, current_step)');
+    expect(storageRecovery).toContain("WHERE status = 'running'");
+  });
+
+  it('guards task, HTML, and viral resume entries before runtime ownership or state changes', async () => {
+    const main = await readFile(new URL('../electron/main.ts', import.meta.url), 'utf8');
+    const taskStatus = sourceSection(main, "trustedHandle('task:update-status'", "trustedHandle('task:retry'");
+    const taskRetry = sourceSection(main, "trustedHandle('task:retry'", "trustedHandle('task:regenerate-image'");
+    const viralStatus = sourceSection(main, "trustedHandle('viral:update-status'", "trustedHandle('viral:retry'");
+    const viralRetry = sourceSection(main, "trustedHandle('viral:retry'", "trustedHandle('viral:get-result'");
+    const startTask = sourceSection(main, 'function startTaskRun', 'function startViralAnalysisRun');
+    const runHtml = sourceSection(main, 'async function runHtmlVideoTask', 'async function persistHtmlVideoTaskCheckpoint');
+    const viralRuntime = sourceSection(main, 'function startViralAnalysisRun', 'async function reconcileAppDeltas');
+
+    expectSourceOrder(taskStatus, [
+      'const task = state.tasks.find',
+      "const workDir = input.status === 'running' ? taskWorkDir(task) : null",
+      'const existingRun = runningTasks.get(input.id)',
+      'requestTaskRunIntent(',
+    ]);
+    expect(taskStatus).toContain('resumeTaskRun(database, task, workDir, isCurrent)');
+
+    expectSourceOrder(taskRetry, [
+      'const task = state.tasks.find',
+      'const workDir = taskWorkDir(task)',
+      'const existingRun = runningTasks.get(id)',
+      'requestTaskRunIntent(',
+    ]);
+    expect(taskRetry).toContain('resumeTaskRun(database, task, workDir, isCurrent)');
+
+    expectSourceOrder(viralStatus, [
+      'const record = state.viralAnalyses.find',
+      'const workDir = viralAnalysisWorkDir(record)',
+      'resumeViralAnalysisRun(database, record, workDir)',
+    ]);
+    expectSourceOrder(viralRetry, [
+      'const record = state.viralAnalyses.find',
+      'const workDir = viralAnalysisWorkDir(record)',
+      'resumeViralAnalysisRun(database, record, workDir)',
+    ]);
+
+    expect(startTask).toContain('function startTaskRun(database: FileDatabase, task: Task, workDir: string)');
+    expect(startTask).toContain('startStandardTaskRun(database, task, workDir)');
+    expect(startTask).toContain('startHtmlVideoTaskRun(database, task, workDir)');
+    expect(startTask).toContain('async function resumeTaskRun(');
+    expect(startTask).toContain('workDir: string,');
+    expect(startTask).not.toContain('taskWorkDir(task)');
+    expect(runHtml).toContain('workDir: string,');
+    expect(runHtml).not.toContain('taskWorkDir(task)');
+    expect(viralRuntime).toContain('function startViralAnalysisRun(database: FileDatabase, record: ViralAnalysisRecord, workDir: string)');
+    expect(viralRuntime).toContain('async function resumeViralAnalysisRun(');
+    expect(viralRuntime).not.toContain('viralAnalysisWorkDir(record)');
+  });
+
+  it('guards every task artifact mutation before touching run ownership or artifact files', async () => {
+    const main = await readFile(new URL('../electron/main.ts', import.meta.url), 'utf8');
+    const entries = [
+      ['task:regenerate-image', 'task:regenerate-narration', 'markSceneImageForRegeneration', true],
+      ['task:regenerate-narration', 'task:update-image-prompt', 'markSceneNarrationForRegeneration', true],
+      ['task:update-image-prompt', 'task:rerun-step', 'updateSceneImagePrompt', false],
+      ['task:rerun-step', 'task:get-artifacts', 'markTaskStepForRerun', true],
+    ] as const;
+
+    for (const [channel, nextChannel, mutation, resumes] of entries) {
+      const handler = sourceSection(main, `trustedHandle('${channel}'`, `trustedHandle('${nextChannel}'`);
+      expectSourceOrder(handler, [
+        'const task = state.tasks.find',
+        'const workDir = taskWorkDir(task)',
+        'if (!task.artifactStatePath)',
+        'stopTaskRunBeforeArtifactMutation(',
+        `${mutation}(`,
+      ]);
+      expect(handler.match(/taskWorkDir\(task\)/gu)).toHaveLength(1);
+      if (resumes) {
+        expect(handler).toContain('outputDir: workDir');
+        expect(handler).toContain('resumeLatestTaskRun(database, task.id, workDir, isCurrent)');
+      }
+    }
   });
 
   it('persists image and voice ownership before invoking providers and retains failed rows', async () => {
@@ -176,5 +272,23 @@ async function clearManagedStorageKeys(
     await writeFile(file, database.export());
   } finally {
     database.close();
+  }
+}
+
+function sourceSection(source: string, startMarker: string, endMarker: string): string {
+  const start = source.indexOf(startMarker);
+  const end = source.indexOf(endMarker, start + startMarker.length);
+  expect(start, `${startMarker} exists`).toBeGreaterThan(-1);
+  expect(end, `${endMarker} bounds ${startMarker}`).toBeGreaterThan(start);
+  return source.slice(start, end);
+}
+
+function expectSourceOrder(source: string, markers: string[]): void {
+  let previous = -1;
+  for (const marker of markers) {
+    const index = source.indexOf(marker);
+    expect(index, `${marker} exists`).toBeGreaterThan(-1);
+    expect(index, `${marker} follows the prior guard step`).toBeGreaterThan(previous);
+    previous = index;
   }
 }
