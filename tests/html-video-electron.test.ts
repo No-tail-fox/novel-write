@@ -123,7 +123,7 @@ describe('Electron HTML video runtime contract', () => {
     );
     const finalizeIntent = ownedRun.indexOf('await finalizeTaskRunIntent(');
     const releaseOwnership = ownedRun.indexOf('runningTasks.delete(task.id);');
-    const restart = ownedRun.indexOf('startTaskRun(database, restartTask, workDir);');
+    const restart = ownedRun.indexOf('startTaskRun(database, restartTask, workDir, restartReservation);');
 
     expect(main).toContain("from './task-run-lifecycle'");
     expect(main).not.toContain('restartAfterAbort');

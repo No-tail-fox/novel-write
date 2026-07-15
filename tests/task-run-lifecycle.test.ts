@@ -632,6 +632,21 @@ describe('task run lifecycle intent coordination', () => {
     expect(close).toHaveBeenCalledTimes(1);
   });
 
+  it('waits for an unpublished database initializer before closing the database', async () => {
+    const registry = new HistoryActivityRegistry();
+    const initialization = deferred<void>();
+    const close = vi.fn(async () => undefined);
+    const shutdownApplication = await loadShutdownApplication(registry, close, initialization.promise);
+
+    const shutdown = shutdownApplication();
+    await new Promise<void>((resolve) => setImmediate(resolve));
+
+    expect(close).not.toHaveBeenCalled();
+    initialization.resolve();
+    await shutdown;
+    expect(close).toHaveBeenCalledTimes(1);
+  });
+
   it('does not throw when an app delta races a destroyed renderer window', async () => {
     const main = await readFile(new URL('../electron/main.ts', import.meta.url), 'utf8');
     const compiledSource = transpileModule(
@@ -1865,6 +1880,7 @@ async function loadViralControlHandlers(dependencies: ViralControlHarnessDepende
 async function loadShutdownApplication(
   registry: HistoryActivityRegistry,
   close: () => Promise<void>,
+  dbInitializationPromise: Promise<unknown> | null = null,
 ): Promise<() => Promise<void>> {
   const main = await readFile(new URL('../electron/main.ts', import.meta.url), 'utf8');
   const FunctionConstructor = Function as unknown as new (
@@ -1886,6 +1902,7 @@ async function loadShutdownApplication(
     'runningViralAnalyses',
     'historyActivityRegistry',
     'deltaPublishQueue',
+    'dbInitializationPromise',
     'db',
     'configService',
     `${compiledSource}\nreturn shutdownApplication;`,
@@ -1897,6 +1914,7 @@ async function loadShutdownApplication(
     new Map(),
     registry,
     Promise.resolve(),
+    dbInitializationPromise,
     { close },
     null,
   ) as () => Promise<void>;

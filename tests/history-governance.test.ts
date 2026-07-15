@@ -1,3 +1,4 @@
+import { createHash } from 'node:crypto';
 import { readFile, rename, rm, writeFile, mkdtemp } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -91,6 +92,24 @@ async function createGovernedRecords(db: FileDatabase) {
   return { task: storedTask, viral: storedViral, image, voice };
 }
 
+function managedCleanup(managedStorageKey: string | null | undefined, identity = '1') {
+  if (!managedStorageKey) throw new Error('Expected a managed storage key in the governed test fixture.');
+  const keyHash = createHash('sha256').update(managedStorageKey, 'utf8').digest('hex');
+  return {
+    cleanupState: 'pending' as const,
+    quarantineName: `.history.${keyHash}.${identity.padStart(32, '0')}.quarantine`,
+    quarantineIdentityJson: JSON.stringify({ version: 1, dev: identity, ino: identity }),
+    diagnostic: '',
+  };
+}
+
+const missingCleanup = {
+  cleanupState: 'missing' as const,
+  quarantineName: null,
+  quarantineIdentityJson: '{}',
+  diagnostic: 'Managed history directory was already missing; no filesystem cleanup was required.',
+};
+
 describe('history governance storage', () => {
   it('migrates every governed family with archive/key columns, stable indexes, and tombstones', async () => {
     const { db, file } = await createDatabase('storydream-history-schema-');
@@ -126,10 +145,70 @@ describe('history governance storage', () => {
       'idx_image_lab_records_archived_history',
       'idx_voice_lab_records_active_history',
       'idx_voice_lab_records_archived_history',
+      'idx_tasks_managed_storage_key',
+      'idx_viral_analyses_managed_storage_key',
+      'idx_image_lab_records_managed_storage_key',
+      'idx_voice_lab_records_managed_storage_key',
     ]) {
       expect(schema).toContain(`index:${index}:`);
     }
     expect(await readFile(new URL('../src/shared/storage.ts', import.meta.url), 'utf8')).toContain('COUNT(*) AS total_count');
+  });
+
+  it('rejects case-insensitive managed key collisions within a family but permits the same key across families', async () => {
+    const { db, file } = await createDatabase('storydream-history-key-collision-');
+    const first = await db.createTask({ title: 'First owner', inputText: 'first' });
+    const second = await db.createTask({ title: 'Second owner', inputText: 'second' });
+    const image = await db.addImageLabRecord({ prompt: 'Other family', ratio: '9:16', style: 'photo-real', provider: 'mock' });
+    await db.close();
+    await mutateDatabase(file, 'UPDATE tasks SET managed_storage_key = NULL WHERE id IN (?, ?)', [first.id, second.id]);
+    await mutateDatabase(file, 'UPDATE image_lab_records SET managed_storage_key = NULL WHERE id = ?', [image.id]);
+
+    const reopened = await FileDatabase.open(file);
+    expect(await reopened.backfillManagedStorageKey('task', first.id, 'CaseSensitiveLegacyKey')).toBe(true);
+    expect(await reopened.backfillManagedStorageKey('task', second.id, 'casesensitivelegacykey')).toBe(false);
+    expect(await reopened.backfillManagedStorageKey('image-lab', image.id, 'casesensitivelegacykey')).toBe(true);
+    expect((await reopened.getTaskDetail(first.id))?.managedStorageKey).toBe('CaseSensitiveLegacyKey');
+    expect((await reopened.getTaskDetail(second.id))?.managedStorageKey).toBeNull();
+    expect((await reopened.getImageLabRecordDetail(image.id))?.managedStorageKey).toBe('casesensitivelegacykey');
+    await reopened.close();
+  });
+
+  it('refuses every single-row backfill for case-insensitive business id collisions', async () => {
+    const { db, file } = await createDatabase('storydream-history-id-collision-');
+    const first = await db.createTask({ title: 'First legacy id owner', inputText: 'first' });
+    const second = await db.createTask({ title: 'Second legacy id owner', inputText: 'second' });
+    await db.close();
+    const firstLegacyId = 'CaseLegacyOwner123456';
+    const secondLegacyId = firstLegacyId.toLowerCase();
+    await mutateDatabase(file, 'UPDATE tasks SET id = ?, managed_storage_key = NULL WHERE id = ?', [firstLegacyId, first.id]);
+    await mutateDatabase(file, 'UPDATE tasks SET id = ?, managed_storage_key = NULL WHERE id = ?', [secondLegacyId, second.id]);
+
+    const reopened = await FileDatabase.open(file);
+    expect(await reopened.backfillManagedStorageKey('task', firstLegacyId, firstLegacyId)).toBe(false);
+    expect(await reopened.backfillManagedStorageKey('task', secondLegacyId, secondLegacyId)).toBe(false);
+    expect((await reopened.getTaskDetail(firstLegacyId))?.managedStorageKey).toBeNull();
+    expect((await reopened.getTaskDetail(secondLegacyId))?.managedStorageKey).toBeNull();
+    await reopened.close();
+  });
+
+  it('downgrades every ambiguous case-insensitive legacy key owner before creating unique indexes', async () => {
+    const { db, file } = await createDatabase('storydream-history-key-migration-');
+    const first = await db.createTask({ title: 'First legacy owner', inputText: 'first' });
+    const second = await db.createTask({ title: 'Second legacy owner', inputText: 'second' });
+    const unique = await db.createTask({ title: 'Unique legacy owner', inputText: 'unique' });
+    await db.close();
+    await mutateDatabase(file, 'DROP INDEX IF EXISTS idx_tasks_managed_storage_key');
+    await mutateDatabase(file, 'UPDATE tasks SET managed_storage_key = ? WHERE id = ?', ['SharedLegacyKey', first.id]);
+    await mutateDatabase(file, 'UPDATE tasks SET managed_storage_key = ? WHERE id = ?', ['sharedlegacykey', second.id]);
+    await mutateDatabase(file, 'UPDATE tasks SET managed_storage_key = ? WHERE id = ?', ['UniqueLegacyKey', unique.id]);
+
+    const reopened = await FileDatabase.open(file);
+    expect((await reopened.getTaskDetail(first.id))?.managedStorageKey).toBeNull();
+    expect((await reopened.getTaskDetail(second.id))?.managedStorageKey).toBeNull();
+    expect((await reopened.getTaskDetail(unique.id))?.managedStorageKey).toBe('UniqueLegacyKey');
+    await reopened.close();
+    expect(await sqliteSchema(file)).toContain('index:idx_tasks_managed_storage_key:');
   });
 
   it('migrates persisted Task 5 tombstones without losing cleanup ownership or deletion time', async () => {
@@ -450,6 +529,83 @@ describe('history governance storage', () => {
     await db.close();
   });
 
+  it('revalidates a narrow deletion target before path work and returns an existing tombstone idempotently', async () => {
+    const { db } = await createDatabase('storydream-history-delete-target-');
+    const task = await db.createTask({ title: 'Deletion target', inputText: 'target' });
+    await db.updateTask(task.id, { status: 'completed' });
+
+    await expect(db.getHistoryDeletionTarget('task', task.id)).rejects.toThrow(/archived/i);
+    await db.archiveTask(task.id);
+    const target = await db.getHistoryDeletionTarget('task', task.id);
+    expect(target).toEqual({
+      family: 'task',
+      id: task.id,
+      managedStorageKey: task.managedStorageKey,
+      tombstone: null,
+    });
+
+    const deleted = await db.deleteTaskPermanently(task.id, managedCleanup(task.managedStorageKey));
+    expect(await db.getHistoryDeletionTarget('task', task.id)).toEqual({
+      family: 'task',
+      id: task.id,
+      managedStorageKey: task.managedStorageKey,
+      tombstone: deleted,
+    });
+    await db.close();
+  });
+
+  it('commits quarantine metadata atomically and exposes only pending cleanup ledgers', async () => {
+    const { db, file } = await createDatabase('storydream-history-quarantine-ledger-');
+    const task = await db.createTask({ title: 'Pending cleanup', inputText: 'pending' });
+    await db.updateTask(task.id, { status: 'completed' });
+    await db.addTaskEvent(task.id, { type: 'owned', detail: 'delete atomically' });
+    const image = await db.addImageLabRecord({ prompt: 'missing cleanup', ratio: '9:16', style: 'photo-real', provider: 'mock' });
+    await db.archiveTask(task.id);
+    await db.archiveImageLabRecord(image.id);
+    const cleanup = managedCleanup(task.managedStorageKey, '2');
+
+    const pending = await db.deleteTaskPermanently(task.id, cleanup);
+    const missing = await db.deleteImageLabRecordPermanently(image.id, missingCleanup);
+
+    expect(pending).toMatchObject(cleanup);
+    expect(missing).toMatchObject(missingCleanup);
+    expect(await db.getTaskDetail(task.id)).toBeNull();
+    expect((await db.listTaskEvents(task.id)).items).toEqual([]);
+    expect(await db.listPendingHistoryTombstones()).toEqual([pending]);
+    const [persisted] = await queryDatabase<{
+      cleanup_state: string;
+      quarantine_name: string;
+      quarantine_identity_json: string;
+      diagnostic: string;
+    }>(file, 'SELECT cleanup_state, quarantine_name, quarantine_identity_json, diagnostic FROM history_tombstones WHERE family = ? AND entity_id = ?', ['task', task.id]);
+    expect(persisted).toEqual({
+      cleanup_state: cleanup.cleanupState,
+      quarantine_name: cleanup.quarantineName,
+      quarantine_identity_json: cleanup.quarantineIdentityJson,
+      diagnostic: cleanup.diagnostic,
+    });
+    await db.close();
+  });
+
+  it('updates cleanup state and diagnostics without exposing non-pending tombstones to the reaper', async () => {
+    const { db } = await createDatabase('storydream-history-cleanup-update-');
+    const task = await db.createTask({ title: 'Cleanup update', inputText: 'cleanup' });
+    await db.updateTask(task.id, { status: 'completed' });
+    await db.archiveTask(task.id);
+    const deleted = await db.deleteTaskPermanently(task.id, managedCleanup(task.managedStorageKey, '3'));
+
+    const diagnosed = await db.updateHistoryTombstoneCleanup('task', task.id, 'pending', 'injected cleanup failure');
+    expect(diagnosed).toEqual({ ...deleted, diagnostic: 'injected cleanup failure' });
+    expect(await db.listPendingHistoryTombstones()).toEqual([diagnosed]);
+    const cleaned = await db.updateHistoryTombstoneCleanup('task', task.id, 'cleaned', '');
+    expect(cleaned).toEqual({ ...deleted, cleanupState: 'cleaned', diagnostic: '' });
+    expect(await db.listPendingHistoryTombstones()).toEqual([]);
+    await expect(db.updateHistoryTombstoneCleanup('task', task.id, 'pending', 'reopen')).rejects.toThrow(/terminal|cleanup/i);
+    expect(await db.updateHistoryTombstoneCleanup('task', task.id, 'cleaned', '')).toEqual(cleaned);
+    await expect(db.updateHistoryTombstoneCleanup('task', 'missing-id', 'cleaned', '')).rejects.toThrow(/not found|tombstone/i);
+    await db.close();
+  });
+
   it('deletes governed rows atomically, cascades owned rows, and preserves clone voice assets', async () => {
     const { db: initialDb, file, directory } = await createDatabase('storydream-history-delete-');
     const clone = { voiceId: 'clone-preserved', displayName: 'Preserved clone voice' };
@@ -493,10 +649,10 @@ describe('history governance storage', () => {
     vi.useFakeTimers();
     vi.setSystemTime(new Date('2026-06-06T00:00:00.000Z'));
     const tombstones = await Promise.all([
-      db.deleteTaskPermanently(task.id),
-      db.deleteViralAnalysisPermanently(viral.id),
-      db.deleteImageLabRecordPermanently(image.id),
-      db.deleteVoiceLabRecordPermanently(voice.id),
+      db.deleteTaskPermanently(task.id, managedCleanup(task.managedStorageKey, '4')),
+      db.deleteViralAnalysisPermanently(viral.id, managedCleanup(viral.managedStorageKey, '5')),
+      db.deleteImageLabRecordPermanently(image.id, managedCleanup(image.managedStorageKey, '6')),
+      db.deleteVoiceLabRecordPermanently(voice.id, managedCleanup(voice.managedStorageKey, '7')),
     ]);
     vi.setSystemTime(new Date('2026-06-07T00:00:00.000Z'));
     const duplicateTombstones = await Promise.all([
@@ -523,7 +679,7 @@ describe('history governance storage', () => {
       entity_id: string;
       managed_storage_key: string;
       cleanup_state: string;
-      quarantine_name: null;
+      quarantine_name: string;
       quarantine_identity_json: string;
       diagnostic: string;
       deleted_at: string;
@@ -532,7 +688,8 @@ describe('history governance storage', () => {
     expect(ledger.map((row) => row.family)).toEqual(['image-lab', 'task', 'viral-analysis', 'voice-lab']);
     expect(ledger.every((row) => row.managed_storage_key.length > 0)).toBe(true);
     expect(ledger.every((row) => row.cleanup_state === 'pending')).toBe(true);
-    expect(ledger.every((row) => row.quarantine_name === null && row.quarantine_identity_json === '{}' && row.diagnostic === '')).toBe(true);
+    expect(ledger.every((row) => typeof row.quarantine_name === 'string' && row.quarantine_name.endsWith('.quarantine'))).toBe(true);
+    expect(ledger.every((row) => JSON.parse(row.quarantine_identity_json).version === 1 && row.diagnostic === '')).toBe(true);
     expect(ledger.every((row) => row.deleted_at === '2026-06-06T00:00:00.000Z')).toBe(true);
     await db.close();
   });
@@ -557,7 +714,7 @@ describe('history governance storage', () => {
     await db.archiveTask(task.id);
 
     failNextReplace = true;
-    await expect(db.deleteTaskPermanently(task.id)).rejects.toThrow(/persist|failure|EIO/i);
+    await expect(db.deleteTaskPermanently(task.id, managedCleanup(task.managedStorageKey, '8'))).rejects.toThrow(/persist|failure|EIO/i);
 
     expect(await db.getTaskDetail(task.id)).toMatchObject({ id: task.id, archivedAt: expect.any(String) });
     expect((await db.listTaskEvents(task.id)).items.map((event) => event.detail)).toEqual(['must survive']);
@@ -629,10 +786,10 @@ describe('history governance storage', () => {
     await db.archiveViralAnalysis(records.viral.id);
     await db.archiveImageLabRecord(records.image.id);
     await db.archiveVoiceLabRecord(records.voice.id);
-    await db.deleteTaskPermanently(records.task.id);
-    await db.deleteViralAnalysisPermanently(records.viral.id);
-    await db.deleteImageLabRecordPermanently(records.image.id);
-    await db.deleteVoiceLabRecordPermanently(records.voice.id);
+    await db.deleteTaskPermanently(records.task.id, managedCleanup(records.task.managedStorageKey, '9'));
+    await db.deleteViralAnalysisPermanently(records.viral.id, managedCleanup(records.viral.managedStorageKey, '10'));
+    await db.deleteImageLabRecordPermanently(records.image.id, managedCleanup(records.image.managedStorageKey, '11'));
+    await db.deleteVoiceLabRecordPermanently(records.voice.id, managedCleanup(records.voice.managedStorageKey, '12'));
 
     const writes = [
       () => db.archiveTask(records.task.id),

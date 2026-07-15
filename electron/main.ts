@@ -22,7 +22,7 @@ import { resolvePythonRuntimeInfo, setDefaultPythonRuntimeAppRoot } from '../src
 import { composeCopyFromSources, createAiSourceResearcher, searchWebSources } from '../src/shared/research';
 import { runTask } from '../src/shared/runner';
 import { runStoryboundMediaSidecar } from '../src/shared/storybound-sidecar';
-import { FileDatabase } from '../src/shared/storage';
+import { FileDatabase, type HistoryDeletionCleanup, type HistoryTombstone } from '../src/shared/storage';
 import { createHtmlVideoRuntimeProviders, createTaskRuntimeProviders } from '../src/shared/task-runtime-providers';
 import type { AccountProfile, ActivationState, AppConfig, AppDelta, AppDeltaReconcileRequest, AppDeltaReconcileResult, AppStatePatch, BookSelectionInput, ConfigTestTarget, CreateTaskInput, CreateViralAnalysisInput, CursorRequest, CustomStyle, CustomStyleGenerateInput, DraftTemplate, HistoryFamily, HistoryListRequest, HtmlVideoPipelineDataV2, ImageLabGenerateInput, ImageLabRecord, ImageLabSummary, LlmConfig, PromptTemplate, ProviderModelListRequest, ResearchCopyComposeInput, SequencedTaskEvent, Task, TaskStatus, TaskStepRerunMode, UiPreferences, ViralAnalysisRecord, ViralAnalysisStatus, ViralProductionTaskOptions, VolcengineSpeakerListRequest, VoiceLabGenerateInput, VoiceLabRecord, VoiceLabSummary } from '../src/shared/types';
 import { createViralProductionTaskInput, detectViralPlatform, runViralAnalysis } from '../src/shared/viral-analysis';
@@ -44,7 +44,12 @@ import { createTrustedIpcRegistrar } from './ipc';
 import { ConfigService } from './config-service';
 import { CredentialVault } from './credential-vault';
 import { HistoryActivityRegistry, type HistoryActivityReservation } from './history-activity-registry';
-import { backfillLegacyManagedHistoryStorage, resolveManagedHistoryWorkDir } from './managed-history-paths';
+import {
+  backfillLegacyManagedHistoryStorage,
+  deleteManagedHistoryWithQuarantine,
+  reapHistoryQuarantines,
+  resolveManagedHistoryWorkDir,
+} from './managed-history-paths';
 import {
   finalizeTaskRunIntent,
   requestTaskRunIntent,
@@ -79,6 +84,7 @@ let viralLoginWindow: BrowserWindow | null = null;
 let mainRendererPolicy: RendererPolicy | null = null;
 let mainWindowPolicyInstalled = false;
 let db: FileDatabase | null = null;
+let dbInitializationPromise: Promise<FileDatabase> | null = null;
 let configService: ConfigService | null = null;
 interface RunningTaskRun extends TaskRunIntentState {
   activityReservation: HistoryActivityReservation | null;
@@ -176,6 +182,18 @@ function resolveSmokeConfig(): SmokeConfig | null {
 
 async function getDb(): Promise<FileDatabase> {
   if (db) return db;
+  if (isShuttingDown) {
+    throw new Error('DATABASE_UNAVAILABLE: Application shutdown is in progress.');
+  }
+  const initialization = dbInitializationPromise ??= initializeDatabase();
+  try {
+    return await initialization;
+  } finally {
+    if (dbInitializationPromise === initialization) dbInitializationPromise = null;
+  }
+}
+
+async function initializeDatabase(): Promise<FileDatabase> {
   const dir = appDataDir();
   await mkdir(dir, { recursive: true });
   const database = await FileDatabase.open(join(dir, 'data.db'));
@@ -195,15 +213,19 @@ async function getDb(): Promise<FileDatabase> {
       candidates,
       (family, id, managedStorageKey) => database.backfillManagedStorageKey(family, id, managedStorageKey),
     );
+    await reapHistoryQuarantines(dir, database);
     await service.migrateLegacySecrets();
     await ensureRuntimeJianyingDraftPath(database, service);
+    if (isShuttingDown) {
+      throw new Error('DATABASE_INITIALIZATION_CANCELLED: Application shutdown started before database publication.');
+    }
+    db = database;
+    configService = service;
+    return database;
   } catch (error) {
     await database.close().catch(() => undefined);
     throw error;
   }
-  db = database;
-  configService = service;
-  return database;
 }
 
 async function runHistoryGovernanceMutation<T>(
@@ -224,6 +246,30 @@ async function runHistoryGovernanceMutation<T>(
   } finally {
     reservation.release();
   }
+}
+
+async function deleteHistoryPermanently(
+  database: FileDatabase,
+  family: HistoryFamily,
+  id: string,
+): Promise<HistoryTombstone> {
+  const target = await database.getHistoryDeletionTarget(family, id);
+  if (target.tombstone) return target.tombstone;
+  return deleteManagedHistoryWithQuarantine(
+    appDataDir(),
+    family,
+    target.managedStorageKey,
+    {
+      commit: (cleanup: HistoryDeletionCleanup) => {
+        if (family === 'task') return database.deleteTaskPermanently(id, cleanup);
+        if (family === 'viral-analysis') return database.deleteViralAnalysisPermanently(id, cleanup);
+        if (family === 'image-lab') return database.deleteImageLabRecordPermanently(id, cleanup);
+        return database.deleteVoiceLabRecordPermanently(id, cleanup);
+      },
+      updateCleanup: (cleanupState, diagnostic) =>
+        database.updateHistoryTombstoneCleanup(family, id, cleanupState, diagnostic),
+    },
+  );
 }
 
 async function getConfigService(): Promise<ConfigService> {
@@ -1034,25 +1080,41 @@ trustedHandle('task:archive', (_event, id: string) =>
 trustedHandle('task:restore', (_event, id: string) =>
   runHistoryGovernanceMutation('task', id, (database) => database.restoreTask(id)));
 trustedHandle('task:delete', (_event, id: string) =>
-  runHistoryGovernanceMutation('task', id, (database) => database.deleteTaskPermanently(id)));
+  runHistoryGovernanceMutation('task', id, async (database) => {
+    const target = await database.getHistoryDeletionTarget('task', id);
+    if (target.tombstone) return database.deleteTaskPermanently(id);
+    return deleteHistoryPermanently(database, 'task', id);
+  }));
 trustedHandle('viral:archive', (_event, id: string) =>
   runHistoryGovernanceMutation('viral-analysis', id, (database) => database.archiveViralAnalysis(id)));
 trustedHandle('viral:restore', (_event, id: string) =>
   runHistoryGovernanceMutation('viral-analysis', id, (database) => database.restoreViralAnalysis(id)));
 trustedHandle('viral:delete', (_event, id: string) =>
-  runHistoryGovernanceMutation('viral-analysis', id, (database) => database.deleteViralAnalysisPermanently(id)));
+  runHistoryGovernanceMutation('viral-analysis', id, async (database) => {
+    const target = await database.getHistoryDeletionTarget('viral-analysis', id);
+    if (target.tombstone) return database.deleteViralAnalysisPermanently(id);
+    return deleteHistoryPermanently(database, 'viral-analysis', id);
+  }));
 trustedHandle('image-lab:archive', (_event, id: string) =>
   runHistoryGovernanceMutation('image-lab', id, (database) => database.archiveImageLabRecord(id)));
 trustedHandle('image-lab:restore', (_event, id: string) =>
   runHistoryGovernanceMutation('image-lab', id, (database) => database.restoreImageLabRecord(id)));
 trustedHandle('image-lab:delete', (_event, id: string) =>
-  runHistoryGovernanceMutation('image-lab', id, (database) => database.deleteImageLabRecordPermanently(id)));
+  runHistoryGovernanceMutation('image-lab', id, async (database) => {
+    const target = await database.getHistoryDeletionTarget('image-lab', id);
+    if (target.tombstone) return database.deleteImageLabRecordPermanently(id);
+    return deleteHistoryPermanently(database, 'image-lab', id);
+  }));
 trustedHandle('voice-lab:archive', (_event, id: string) =>
   runHistoryGovernanceMutation('voice-lab', id, (database) => database.archiveVoiceLabRecord(id)));
 trustedHandle('voice-lab:restore', (_event, id: string) =>
   runHistoryGovernanceMutation('voice-lab', id, (database) => database.restoreVoiceLabRecord(id)));
 trustedHandle('voice-lab:delete', (_event, id: string) =>
-  runHistoryGovernanceMutation('voice-lab', id, (database) => database.deleteVoiceLabRecordPermanently(id)));
+  runHistoryGovernanceMutation('voice-lab', id, async (database) => {
+    const target = await database.getHistoryDeletionTarget('voice-lab', id);
+    if (target.tombstone) return database.deleteVoiceLabRecordPermanently(id);
+    return deleteHistoryPermanently(database, 'voice-lab', id);
+  }));
 trustedHandle('prompt-template:list', async (_event, request: CursorRequest) => (await getDb()).listPromptTemplateSummaries(request));
 trustedHandle('prompt-template:get-detail', async (_event, id: string) => (await getDb()).getPromptTemplateDetail(id));
 trustedHandle('draft-template:list', async (_event, request: CursorRequest) => (await getDb()).listDraftTemplateSummaries(request));
@@ -2101,6 +2163,8 @@ async function shutdownApplication(): Promise<void> {
   await Promise.allSettled(completions);
   await historyActivityRegistry.waitForIdle();
   await deltaPublishQueue;
+  const databaseInitialization = dbInitializationPromise;
+  if (databaseInitialization) await databaseInitialization.catch(() => undefined);
   const database = db;
   if (database) {
     await database.close();

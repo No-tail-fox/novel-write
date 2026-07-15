@@ -106,6 +106,75 @@ export interface HistoryTombstone {
   deletedAt: string;
 }
 
+export interface HistoryDeletionCleanup {
+  cleanupState: 'pending' | 'missing' | 'unmanaged-legacy';
+  quarantineName: string | null;
+  quarantineIdentityJson: string;
+  diagnostic: string;
+}
+
+export interface HistoryDeletionTarget {
+  family: HistoryFamily;
+  id: string;
+  managedStorageKey: string | null;
+  tombstone: HistoryTombstone | null;
+}
+
+function normalizeHistoryDeletionCleanup(
+  managedStorageKey: string | null,
+  cleanup: HistoryDeletionCleanup | undefined,
+): HistoryDeletionCleanup {
+  if (managedStorageKey === null) {
+    return {
+      cleanupState: 'unmanaged-legacy',
+      quarantineName: null,
+      quarantineIdentityJson: '{}',
+      diagnostic: 'Legacy record has no managed storage key; filesystem cleanup was not attempted.',
+    };
+  }
+  if (!cleanup) {
+    throw new Error('HISTORY_CLEANUP_METADATA_REQUIRED: Managed history deletion requires quarantine or missing-directory metadata.');
+  }
+  if (cleanup.cleanupState === 'missing') {
+    if (cleanup.quarantineName !== null || cleanup.quarantineIdentityJson !== '{}' || !cleanup.diagnostic.trim()) {
+      throw new Error('HISTORY_CLEANUP_METADATA_INVALID: Missing managed data requires a terminal diagnostic and no quarantine identity.');
+    }
+    return { ...cleanup };
+  }
+  if (cleanup.cleanupState !== 'pending' || typeof cleanup.quarantineName !== 'string') {
+    throw new Error('HISTORY_CLEANUP_METADATA_INVALID: Managed history cleanup must be pending or missing.');
+  }
+  const prefix = `.history.${createHash('sha256').update(managedStorageKey, 'utf8').digest('hex')}.`;
+  const suffix = '.quarantine';
+  const token = cleanup.quarantineName.startsWith(prefix) && cleanup.quarantineName.endsWith(suffix)
+    ? cleanup.quarantineName.slice(prefix.length, -suffix.length)
+    : '';
+  if (!/^[a-f0-9]{32}$/u.test(token)) {
+    throw new Error('HISTORY_CLEANUP_METADATA_INVALID: Quarantine name does not belong to the managed storage key.');
+  }
+  let identity: unknown;
+  try {
+    identity = JSON.parse(cleanup.quarantineIdentityJson);
+  } catch {
+    throw new Error('HISTORY_CLEANUP_METADATA_INVALID: Quarantine identity is not valid JSON.');
+  }
+  if (!identity || typeof identity !== 'object' || Array.isArray(identity)) {
+    throw new Error('HISTORY_CLEANUP_METADATA_INVALID: Quarantine identity is invalid.');
+  }
+  const value = identity as Record<string, unknown>;
+  if (
+    Object.keys(value).length !== 3
+    || value.version !== 1
+    || typeof value.dev !== 'string'
+    || !/^\d+$/u.test(value.dev)
+    || typeof value.ino !== 'string'
+    || !/^\d+$/u.test(value.ino)
+  ) {
+    throw new Error('HISTORY_CLEANUP_METADATA_INVALID: Quarantine identity must contain decimal dev and ino strings.');
+  }
+  return { ...cleanup };
+}
+
 let sqlPromise: Promise<SqlJsStatic> | null = null;
 
 async function loadSql(): Promise<SqlJsStatic> {
@@ -651,6 +720,7 @@ export class FileDatabase {
     family: HistoryFamily,
     id: string,
     rejectActiveStatus: boolean,
+    cleanup?: HistoryDeletionCleanup,
   ): HistoryTombstone {
     const existing = this.getHistoryTombstone(family, id);
     if (existing) return existing;
@@ -672,16 +742,12 @@ export class FileDatabase {
     const managedStorageKey = row.managed_storage_key === null || row.managed_storage_key === undefined
       ? null
       : String(row.managed_storage_key);
+    const deletionCleanup = normalizeHistoryDeletionCleanup(managedStorageKey, cleanup);
     const tombstone: HistoryTombstone = {
       family,
       id,
       managedStorageKey,
-      cleanupState: managedStorageKey === null ? 'unmanaged-legacy' : 'pending',
-      quarantineName: null,
-      quarantineIdentityJson: '{}',
-      diagnostic: managedStorageKey === null
-        ? 'Legacy record has no managed storage key; filesystem cleanup was not attempted.'
-        : '',
+      ...deletionCleanup,
       deletedAt: new Date().toISOString(),
     };
     this.db.run(
@@ -1103,7 +1169,29 @@ export class FileDatabase {
        WHERE managed_storage_key IS NULL
          AND (cleanup_state IS NULL OR trim(cleanup_state) IN ('', 'pending'))`,
     );
+    for (const table of Object.values(historyTableByFamily)) {
+      this.db.run(
+        `UPDATE ${table}
+         SET managed_storage_key = NULL
+         WHERE managed_storage_key IS NOT NULL
+           AND managed_storage_key COLLATE NOCASE IN (
+             SELECT managed_storage_key
+             FROM ${table}
+             WHERE managed_storage_key IS NOT NULL
+             GROUP BY managed_storage_key COLLATE NOCASE
+             HAVING COUNT(*) > 1
+           )`,
+      );
+    }
     this.db.run(`
+      CREATE UNIQUE INDEX IF NOT EXISTS idx_tasks_managed_storage_key
+        ON tasks(managed_storage_key COLLATE NOCASE) WHERE managed_storage_key IS NOT NULL;
+      CREATE UNIQUE INDEX IF NOT EXISTS idx_viral_analyses_managed_storage_key
+        ON viral_analyses(managed_storage_key COLLATE NOCASE) WHERE managed_storage_key IS NOT NULL;
+      CREATE UNIQUE INDEX IF NOT EXISTS idx_image_lab_records_managed_storage_key
+        ON image_lab_records(managed_storage_key COLLATE NOCASE) WHERE managed_storage_key IS NOT NULL;
+      CREATE UNIQUE INDEX IF NOT EXISTS idx_voice_lab_records_managed_storage_key
+        ON voice_lab_records(managed_storage_key COLLATE NOCASE) WHERE managed_storage_key IS NOT NULL;
       CREATE INDEX IF NOT EXISTS idx_tasks_active_history
         ON tasks(created_at DESC, id DESC) WHERE archived_at IS NULL;
       CREATE INDEX IF NOT EXISTS idx_tasks_archived_history
@@ -1869,16 +1957,27 @@ export class FileDatabase {
     ) {
       throw new Error('MANAGED_STORAGE_KEY_INVALID: Cannot persist an invalid managed storage key.');
     }
-    const table: Record<HistoryFamily, string> = {
-      task: 'tasks',
-      'viral-analysis': 'viral_analyses',
-      'image-lab': 'image_lab_records',
-      'voice-lab': 'voice_lab_records',
-    };
     return this.enqueueCommit(() => {
       this.assertHistoryWritable(family, id, { allowArchived: true });
+      const table = historyTableByFamily[family];
+      const idCollision = getFirstRow<{ id: string }>(
+        this.db,
+        `SELECT id FROM ${table}
+         WHERE id COLLATE NOCASE = ? COLLATE NOCASE AND id <> ?
+         LIMIT 1`,
+        [id, id],
+      );
+      if (idCollision) return false;
+      const collision = getFirstRow<{ id: string }>(
+        this.db,
+        `SELECT id FROM ${table}
+         WHERE managed_storage_key COLLATE NOCASE = ? COLLATE NOCASE AND id <> ?
+         LIMIT 1`,
+        [managedStorageKey, id],
+      );
+      if (collision) return false;
       this.db.run(
-        `UPDATE ${table[family]} SET managed_storage_key = ? WHERE id = ? AND managed_storage_key IS NULL`,
+        `UPDATE ${table} SET managed_storage_key = ? WHERE id = ? AND managed_storage_key IS NULL`,
         [managedStorageKey, id],
       );
       return this.db.getRowsModified() === 1;
@@ -1910,8 +2009,70 @@ export class FileDatabase {
     return this.enqueueCommit(() => this.restoreHistoryRecord('task', id, taskSummaryColumns, rowToTaskSummary));
   }
 
-  async deleteTaskPermanently(id: string): Promise<HistoryTombstone> {
-    return this.enqueueCommit(() => this.deleteHistoryRecordPermanently('task', id, true));
+  async getHistoryDeletionTarget(family: HistoryFamily, id: string): Promise<HistoryDeletionTarget> {
+    await this.waitForWrites();
+    const tombstone = this.getHistoryTombstone(family, id);
+    if (tombstone) {
+      return { family, id, managedStorageKey: tombstone.managedStorageKey, tombstone };
+    }
+    const row = getFirstRow<Record<string, unknown>>(
+      this.db,
+      `SELECT archived_at, managed_storage_key, status FROM ${historyTableByFamily[family]} WHERE id = ?`,
+      [id],
+    );
+    if (!row) throw new Error(`HISTORY_NOT_FOUND: ${family} ${id} does not exist.`);
+    const status = String(row.status ?? '');
+    if ((family === 'task' || family === 'viral-analysis') && (status === 'pending' || status === 'running')) {
+      throw new Error(`HISTORY_ACTIVE: ${family} ${id} has ${status} status and cannot be archived or deleted.`);
+    }
+    if (!row.archived_at) {
+      throw new Error(`HISTORY_NOT_ARCHIVED: ${family} ${id} must be archived before permanent deletion.`);
+    }
+    return {
+      family,
+      id,
+      managedStorageKey: row.managed_storage_key === null || row.managed_storage_key === undefined
+        ? null
+        : String(row.managed_storage_key),
+      tombstone: null,
+    };
+  }
+
+  async listPendingHistoryTombstones(): Promise<HistoryTombstone[]> {
+    await this.waitForWrites();
+    return getRows<Record<string, unknown>>(
+      this.db,
+      `SELECT * FROM history_tombstones
+       WHERE cleanup_state = 'pending' AND managed_storage_key IS NOT NULL
+       ORDER BY deleted_at ASC, family ASC, entity_id ASC`,
+    ).map(rowToHistoryTombstone);
+  }
+
+  async updateHistoryTombstoneCleanup(
+    family: HistoryFamily,
+    id: string,
+    cleanupState: 'pending' | 'cleaned' | 'missing',
+    diagnostic: string,
+  ): Promise<HistoryTombstone> {
+    return this.enqueueCommit(() => {
+      const existing = this.getHistoryTombstone(family, id);
+      if (!existing) throw new Error(`HISTORY_TOMBSTONE_NOT_FOUND: ${family} ${id} does not have a tombstone.`);
+      if (existing.cleanupState !== 'pending') {
+        if (existing.cleanupState === cleanupState && existing.diagnostic === diagnostic) return existing;
+        throw new Error(`HISTORY_CLEANUP_TERMINAL: ${family} ${id} cleanup is already ${existing.cleanupState}.`);
+      }
+      this.db.run(
+        'UPDATE history_tombstones SET cleanup_state = ?, diagnostic = ? WHERE family = ? AND entity_id = ?',
+        [cleanupState, diagnostic, family, id],
+      );
+      const updated = this.getHistoryTombstone(family, id);
+      if (!updated) throw new Error(`HISTORY_TOMBSTONE_NOT_FOUND: ${family} ${id} does not have a tombstone.`);
+      return updated;
+    });
+  }
+
+  async deleteTaskPermanently(id: string, cleanup?: HistoryDeletionCleanup): Promise<HistoryTombstone> {
+    return this.enqueueCommit(() => this.deleteHistoryRecordPermanently('task', id, true, cleanup));
   }
 
   async archiveViralAnalysis(id: string): Promise<ViralAnalysisSummary> {
@@ -1933,8 +2094,8 @@ export class FileDatabase {
     ));
   }
 
-  async deleteViralAnalysisPermanently(id: string): Promise<HistoryTombstone> {
-    return this.enqueueCommit(() => this.deleteHistoryRecordPermanently('viral-analysis', id, true));
+  async deleteViralAnalysisPermanently(id: string, cleanup?: HistoryDeletionCleanup): Promise<HistoryTombstone> {
+    return this.enqueueCommit(() => this.deleteHistoryRecordPermanently('viral-analysis', id, true, cleanup));
   }
 
   async archiveImageLabRecord(id: string): Promise<ImageLabSummary> {
@@ -1956,8 +2117,8 @@ export class FileDatabase {
     ));
   }
 
-  async deleteImageLabRecordPermanently(id: string): Promise<HistoryTombstone> {
-    return this.enqueueCommit(() => this.deleteHistoryRecordPermanently('image-lab', id, false));
+  async deleteImageLabRecordPermanently(id: string, cleanup?: HistoryDeletionCleanup): Promise<HistoryTombstone> {
+    return this.enqueueCommit(() => this.deleteHistoryRecordPermanently('image-lab', id, false, cleanup));
   }
 
   async archiveVoiceLabRecord(id: string): Promise<VoiceLabSummary> {
@@ -1979,8 +2140,8 @@ export class FileDatabase {
     ));
   }
 
-  async deleteVoiceLabRecordPermanently(id: string): Promise<HistoryTombstone> {
-    return this.enqueueCommit(() => this.deleteHistoryRecordPermanently('voice-lab', id, false));
+  async deleteVoiceLabRecordPermanently(id: string, cleanup?: HistoryDeletionCleanup): Promise<HistoryTombstone> {
+    return this.enqueueCommit(() => this.deleteHistoryRecordPermanently('voice-lab', id, false, cleanup));
   }
 
   async updateViralAnalysis(
