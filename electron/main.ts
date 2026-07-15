@@ -394,7 +394,11 @@ type AppDeltaPayload =
   | Omit<Extract<AppDelta, { kind: 'task-upsert' }>, 'revision'>
   | Omit<Extract<AppDelta, { kind: 'task-event' }>, 'revision'>
   | Omit<Extract<AppDelta, { kind: 'viral-upsert' }>, 'revision'>
-  | Omit<Extract<AppDelta, { kind: 'state-patch' }>, 'revision'>;
+  | Omit<Extract<AppDelta, { kind: 'state-patch' }>, 'revision'>
+  | Omit<Extract<AppDelta, { kind: 'task-tombstone' }>, 'revision'>
+  | Omit<Extract<AppDelta, { kind: 'viral-tombstone' }>, 'revision'>
+  | Omit<Extract<AppDelta, { kind: 'image-lab-tombstone' }>, 'revision'>
+  | Omit<Extract<AppDelta, { kind: 'voice-lab-tombstone' }>, 'revision'>;
 
 function publishAppDelta(payload: AppDeltaPayload): AppDelta {
   const delta = { ...payload, revision: ++appRevision } as AppDelta;
@@ -1076,44 +1080,64 @@ trustedHandle('image-lab:get-detail', async (_event, id: string) => (await getDb
 trustedHandle('voice-lab:list', async (_event, request: Extract<HistoryListRequest, { family: 'voice-lab' }>) => (await getDb()).listVoiceLabRecords(request));
 trustedHandle('voice-lab:get-detail', async (_event, id: string) => (await getDb()).getVoiceLabRecordDetail(id));
 trustedHandle('task:archive', (_event, id: string) =>
-  runHistoryGovernanceMutation('task', id, (database) => database.archiveTask(id)));
+  runHistoryGovernanceMutation('task', id, async (database) => {
+    const task = await database.archiveTask(id);
+    return await enqueueAppDelta(() => ({ kind: 'task-upsert', task }));
+  }));
 trustedHandle('task:restore', (_event, id: string) =>
-  runHistoryGovernanceMutation('task', id, (database) => database.restoreTask(id)));
+  runHistoryGovernanceMutation('task', id, async (database) => {
+    const task = await database.restoreTask(id);
+    return await enqueueAppDelta(() => ({ kind: 'task-upsert', task }));
+  }));
 trustedHandle('task:delete', (_event, id: string) =>
   runHistoryGovernanceMutation('task', id, async (database) => {
-    const target = await database.getHistoryDeletionTarget('task', id);
-    if (target.tombstone) return database.deleteTaskPermanently(id);
-    return deleteHistoryPermanently(database, 'task', id);
+    await deleteHistoryPermanently(database, 'task', id);
+    return await enqueueAppDelta(() => ({ kind: 'task-tombstone', id }));
   }));
 trustedHandle('viral:archive', (_event, id: string) =>
-  runHistoryGovernanceMutation('viral-analysis', id, (database) => database.archiveViralAnalysis(id)));
+  runHistoryGovernanceMutation('viral-analysis', id, async (database) => {
+    const record = await database.archiveViralAnalysis(id);
+    return await enqueueAppDelta(() => ({ kind: 'viral-upsert', record }));
+  }));
 trustedHandle('viral:restore', (_event, id: string) =>
-  runHistoryGovernanceMutation('viral-analysis', id, (database) => database.restoreViralAnalysis(id)));
+  runHistoryGovernanceMutation('viral-analysis', id, async (database) => {
+    const record = await database.restoreViralAnalysis(id);
+    return await enqueueAppDelta(() => ({ kind: 'viral-upsert', record }));
+  }));
 trustedHandle('viral:delete', (_event, id: string) =>
   runHistoryGovernanceMutation('viral-analysis', id, async (database) => {
-    const target = await database.getHistoryDeletionTarget('viral-analysis', id);
-    if (target.tombstone) return database.deleteViralAnalysisPermanently(id);
-    return deleteHistoryPermanently(database, 'viral-analysis', id);
+    await deleteHistoryPermanently(database, 'viral-analysis', id);
+    return await enqueueAppDelta(() => ({ kind: 'viral-tombstone', id }));
   }));
 trustedHandle('image-lab:archive', (_event, id: string) =>
-  runHistoryGovernanceMutation('image-lab', id, (database) => database.archiveImageLabRecord(id)));
+  runHistoryGovernanceMutation('image-lab', id, async (database) => {
+    const record = await database.archiveImageLabRecord(id);
+    return await enqueueAppDelta(() => ({ kind: 'state-patch', patch: { kind: 'image-lab-upsert', record } }));
+  }));
 trustedHandle('image-lab:restore', (_event, id: string) =>
-  runHistoryGovernanceMutation('image-lab', id, (database) => database.restoreImageLabRecord(id)));
+  runHistoryGovernanceMutation('image-lab', id, async (database) => {
+    const record = await database.restoreImageLabRecord(id);
+    return await enqueueAppDelta(() => ({ kind: 'state-patch', patch: { kind: 'image-lab-upsert', record } }));
+  }));
 trustedHandle('image-lab:delete', (_event, id: string) =>
   runHistoryGovernanceMutation('image-lab', id, async (database) => {
-    const target = await database.getHistoryDeletionTarget('image-lab', id);
-    if (target.tombstone) return database.deleteImageLabRecordPermanently(id);
-    return deleteHistoryPermanently(database, 'image-lab', id);
+    await deleteHistoryPermanently(database, 'image-lab', id);
+    return await enqueueAppDelta(() => ({ kind: 'image-lab-tombstone', id }));
   }));
 trustedHandle('voice-lab:archive', (_event, id: string) =>
-  runHistoryGovernanceMutation('voice-lab', id, (database) => database.archiveVoiceLabRecord(id)));
+  runHistoryGovernanceMutation('voice-lab', id, async (database) => {
+    const record = await database.archiveVoiceLabRecord(id);
+    return await enqueueAppDelta(() => ({ kind: 'state-patch', patch: { kind: 'voice-lab-upsert', record } }));
+  }));
 trustedHandle('voice-lab:restore', (_event, id: string) =>
-  runHistoryGovernanceMutation('voice-lab', id, (database) => database.restoreVoiceLabRecord(id)));
+  runHistoryGovernanceMutation('voice-lab', id, async (database) => {
+    const record = await database.restoreVoiceLabRecord(id);
+    return await enqueueAppDelta(() => ({ kind: 'state-patch', patch: { kind: 'voice-lab-upsert', record } }));
+  }));
 trustedHandle('voice-lab:delete', (_event, id: string) =>
   runHistoryGovernanceMutation('voice-lab', id, async (database) => {
-    const target = await database.getHistoryDeletionTarget('voice-lab', id);
-    if (target.tombstone) return database.deleteVoiceLabRecordPermanently(id);
-    return deleteHistoryPermanently(database, 'voice-lab', id);
+    await deleteHistoryPermanently(database, 'voice-lab', id);
+    return await enqueueAppDelta(() => ({ kind: 'voice-lab-tombstone', id }));
   }));
 trustedHandle('prompt-template:list', async (_event, request: CursorRequest) => (await getDb()).listPromptTemplateSummaries(request));
 trustedHandle('prompt-template:get-detail', async (_event, id: string) => (await getDb()).getPromptTemplateDetail(id));

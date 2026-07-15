@@ -4,6 +4,7 @@ import { beforeEach, describe, expect, expectTypeOf, it, vi } from 'vitest';
 import { storyDreamApi } from '../electron/preload';
 import { ipcInputSchemas, MAX_IPC_TEXT } from '../src/shared/ipc-contract';
 import { INVOKE_CHANNELS, type StoryDreamApi } from '../src/shared/storydream-api';
+import type { AppMutationResult } from '../src/shared/types';
 
 vi.mock('electron', () => ({
   contextBridge: { exposeInMainWorld: vi.fn() },
@@ -40,6 +41,27 @@ describe('renderer IPC inventory', () => {
     expect(preload).toContain("ipcRenderer.on('app:delta', listener)");
     expect(preload).toContain("ipcRenderer.off('app:delta', listener)");
     expect(INVOKE_CHANNELS).not.toContain('app:delta');
+  });
+
+  it('returns revision-bearing mutation results from every history governance method', () => {
+    type GovernanceMethod =
+      | 'archiveTask'
+      | 'restoreTask'
+      | 'deleteTaskPermanently'
+      | 'archiveViralAnalysis'
+      | 'restoreViralAnalysis'
+      | 'deleteViralAnalysisPermanently'
+      | 'archiveImageLabRecord'
+      | 'restoreImageLabRecord'
+      | 'deleteImageLabRecordPermanently'
+      | 'archiveVoiceLabRecord'
+      | 'restoreVoiceLabRecord'
+      | 'deleteVoiceLabRecordPermanently';
+
+    expectTypeOf<ReturnType<StoryDreamApi[GovernanceMethod]>>()
+      .toEqualTypeOf<Promise<AppMutationResult>>();
+    expectTypeOf<ReturnType<(typeof storyDreamApi)[GovernanceMethod]>>()
+      .toEqualTypeOf<Promise<AppMutationResult>>();
   });
 
   it('fixes each list family, defaults active, trims query, and drops renderer-only keys', async () => {

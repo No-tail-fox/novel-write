@@ -1,11 +1,423 @@
 import { readFile } from 'node:fs/promises';
 import ts from 'typescript';
 import { describe, expect, it } from 'vitest';
+import * as reconciliationModule from '../src/shared/state-reconciliation';
+import type { AppMutationResult, BootstrapState } from '../src/shared/types';
 import { readRendererSources } from './helpers/renderer-source';
 
 const rendererSourcesPromise = readRendererSources();
 
 describe('product shell ui', () => {
+  it('owns history tombstone revisions in App and rejects late detail responses after deletion', async () => {
+    const main = (await rendererSourcesPromise).requiredFile('src/main.tsx');
+    const app = main.slice(main.indexOf('function App()'), main.indexOf('\nfunction ViralAnalyzerPage'));
+    const taskRefresh = app.slice(app.indexOf('const refreshTaskDetail'), app.indexOf('const refreshViralEvents'));
+    const viralRefresh = app.slice(app.indexOf('const refreshViralEvents'), app.indexOf('const onActiveHtmlTaskChange'));
+    const incoming = app.slice(app.indexOf('const applyIncomingDelta'), app.indexOf('async function reconcile'));
+
+    expect(app).toContain('historyEntityRevisionsRef');
+    expect(app).toContain('historyTombstoneRevisionsRef');
+    expect(taskRefresh).toMatch(/captureHistoryResponseRevision\(\s*'task',\s*taskId/u);
+    expect(taskRefresh).toContain("isHistoryResponseCurrent('task', taskId");
+    expect(taskRefresh).toContain('taskDetailGuard.finish(taskId, generation)');
+    expect(viralRefresh).toMatch(/captureHistoryResponseRevision\(\s*'viral-analysis',\s*analysisId/u);
+    expect(viralRefresh).toContain("isHistoryResponseCurrent('viral-analysis', analysisId");
+    expect(viralRefresh).toContain('viralDetailGuard.finish(analysisId, generation)');
+    const barrier = app.slice(app.indexOf('const applyHistoryBarrier'), app.indexOf('const refreshTaskDetail'));
+    expect(barrier).toContain('registerHistoryDeltaBarrier(');
+    expect(barrier).toContain('applyHistorySelectionBarrier(');
+    expect(barrier).toContain('taskDetailGuard.invalidate(id)');
+    expect(barrier).toContain('viralDetailGuard.invalidate(id)');
+    expect(incoming).toContain('applyHistoryBarrier(delta)');
+    expect(app).toContain('imageLabRecords: bootstrap.imageLabRecords.items');
+    expect(app).toContain('voiceLabRecords: bootstrap.voiceLabRecords.items');
+    expect(countOccurrences(app, 'api.onAppDelta(')).toBe(1);
+  });
+
+  it('invalidates a deferred detail response through the shared desktop and browser tombstone barrier', async () => {
+    const main = (await rendererSourcesPromise).requiredFile('src/main.tsx');
+    const source = main.slice(main.indexOf('type HistoryDeltaIdentity'), main.indexOf('function mergeDefaultCustomStyles'));
+    expect(source).toContain('function registerHistoryDeltaBarrier');
+    if (!source.includes('function registerHistoryDeltaBarrier')) return;
+
+    const compiled = ts.transpileModule(source, {
+      compilerOptions: { module: ts.ModuleKind.None, target: ts.ScriptTarget.ES2022 },
+    }).outputText;
+    const helpers = new Function(
+      'historyEntityRevisionKey',
+      `${compiled}\nreturn { captureHistoryResponseRevision, isHistoryResponseCurrent, registerHistoryDeltaBarrier };`,
+    )((family: string, id: string) => `history:${family}:${id}`) as {
+      captureHistoryResponseRevision(
+        family: string,
+        id: string,
+        entities: Map<string, number>,
+        tombstones: Map<string, number>,
+      ): { entityRevision: number; tombstoneRevision: number };
+      isHistoryResponseCurrent(
+        family: string,
+        id: string,
+        captured: { entityRevision: number; tombstoneRevision: number },
+        entities: Map<string, number>,
+        tombstones: Map<string, number>,
+      ): boolean;
+      registerHistoryDeltaBarrier(
+        entities: Map<string, number>,
+        tombstones: Map<string, number>,
+        delta: AppMutationResult,
+        invalidate: (family: string, id: string) => void,
+      ): void;
+    };
+    const entities = new Map<string, number>();
+    const tombstones = new Map<string, number>();
+    const stateHelpers = reconciliationModule as unknown as {
+      applyAppMutationResult: (
+        state: { tasks: Array<{ id: string }>; events: Array<{ taskId: string }>; [key: string]: unknown },
+        result: AppMutationResult,
+        revisions: Map<string, number>,
+      ) => { tasks: Array<{ id: string }>; events: Array<{ taskId: string }>; [key: string]: unknown };
+      applyHistorySelectionBarrier?: (
+        state: {
+          selectedTaskId: string | null;
+          activeHtmlTaskId: string | null;
+          activeViralAnalysisId: string | null;
+          activeView: string;
+        },
+        family: string,
+        id: string,
+      ) => {
+        selectedTaskId: string | null;
+        activeHtmlTaskId: string | null;
+        activeViralAnalysisId: string | null;
+        activeView: string;
+      };
+    };
+    expect(typeof stateHelpers.applyHistorySelectionBarrier).toBe('function');
+    if (!stateHelpers.applyHistorySelectionBarrier) return;
+
+    let selection: {
+      selectedTaskId: string | null;
+      activeHtmlTaskId: string | null;
+      activeViralAnalysisId: string | null;
+      activeView: string;
+    } = {
+      selectedTaskId: 'deferred-task',
+      activeHtmlTaskId: 'deferred-task',
+      activeViralAnalysisId: null,
+      activeView: 'task-detail',
+    };
+    let rendered = {
+      tasks: [{ id: 'deferred-task' }],
+      events: [{ taskId: 'deferred-task' }],
+      detail: null as { id: string } | null,
+    };
+    const captured = helpers.captureHistoryResponseRevision('task', 'deferred-task', entities, tombstones);
+    let resolveDetail!: () => void;
+    const deferredDetail = new Promise<void>((resolve) => { resolveDetail = resolve; }).then(() => {
+      if (helpers.isHistoryResponseCurrent('task', 'deferred-task', captured, entities, tombstones)) {
+        rendered = {
+          tasks: [{ id: 'deferred-task' }],
+          events: [{ taskId: 'deferred-task' }],
+          detail: { id: 'deferred-task' },
+        };
+      }
+    });
+    const invalidated: string[] = [];
+    const tombstone = { kind: 'task-tombstone', id: 'deferred-task', revision: 9 } as AppMutationResult;
+
+    helpers.registerHistoryDeltaBarrier(
+      entities,
+      tombstones,
+      tombstone,
+      (family, id) => {
+        invalidated.push(`${family}:${id}`);
+        selection = stateHelpers.applyHistorySelectionBarrier!(selection, family, id);
+      },
+    );
+    rendered = stateHelpers.applyAppMutationResult(rendered, tombstone, new Map()) as typeof rendered;
+    resolveDetail();
+    await deferredDetail;
+
+    expect(invalidated).toEqual(['task:deferred-task']);
+    expect(selection).toEqual({
+      selectedTaskId: null,
+      activeHtmlTaskId: null,
+      activeViralAnalysisId: null,
+      activeView: 'history',
+    });
+    expect(rendered).toEqual({ tasks: [], events: [], detail: null });
+
+    const app = main.slice(main.indexOf('function App()'), main.indexOf('\nfunction ViralAnalyzerPage'));
+    const incoming = app.slice(app.indexOf('const applyIncomingDelta'), app.indexOf('async function reconcile'));
+    const browserApply = app.slice(app.indexOf('function applyState'), app.indexOf('async function openTaskDetail'));
+    expect(incoming).toContain('applyHistoryBarrier(delta)');
+    expect(browserApply).toContain('applyHistoryBarrier(next)');
+    expect(browserApply.indexOf('applyHistoryBarrier(next)')).toBeLessThan(browserApply.indexOf('claimMutationResult(next'));
+  });
+
+  it('constructs fallback tombstones exhaustively without AppMutationResult casts', async () => {
+    const main = (await rendererSourcesPromise).requiredFile('src/main.tsx');
+    const source = main.slice(main.indexOf('type FallbackTombstoneEntry'), main.indexOf('\nfunction App()'));
+
+    expect(source).toContain('function fallbackTombstoneResult');
+    expect(source).toContain("case 'task':");
+    expect(source).toContain("case 'viral-analysis':");
+    expect(source).toContain("case 'image-lab':");
+    expect(source).toContain("case 'voice-lab':");
+    expect(source).not.toContain('as AppMutationResult');
+  });
+
+  it('guards reconciliation details against tombstones delivered in the same response', async () => {
+    const main = (await rendererSourcesPromise).requiredFile('src/main.tsx');
+    const app = main.slice(main.indexOf('function App()'), main.indexOf('\nfunction ViralAnalyzerPage'));
+    const reconcile = app.slice(app.indexOf('async function reconcile'), app.indexOf('const coordinator = createAppDeltaCoordinator'));
+
+    expect(reconcile.indexOf('const taskResponseRevision =')).toBeLessThan(reconcile.indexOf('await api.reconcileDeltas'));
+    expect(reconcile.indexOf('const viralResponseRevision =')).toBeLessThan(reconcile.indexOf('await api.reconcileDeltas'));
+    expect(reconcile).toContain('const guardedResult =');
+    expect(reconcile).toContain("isHistoryResponseCurrent('task'");
+    expect(reconcile).toContain("isHistoryResponseCurrent('viral-analysis'");
+    expect(reconcile).toContain('mergeReconciliationSlices(currentState, guardedResult)');
+    expect(reconcile).not.toContain('mergeReconciliationSlices(currentState, result)');
+  });
+
+  it('merges coordinator revision ledgers without dropping a not-yet-contiguous tombstone barrier', async () => {
+    const main = (await rendererSourcesPromise).requiredFile('src/main.tsx');
+    const helper = main.slice(main.indexOf('function replaceHistoryRevisionMap'), main.indexOf('function captureHistoryResponseRevision'));
+
+    expect(helper).not.toContain('target.clear()');
+    expect(helper).toContain('Math.max(');
+    expect(helper).toContain('target.set(');
+  });
+
+  it('persists real four-family browser governance and filters tombstoned ids from later local reads', async () => {
+    const main = (await rendererSourcesPromise).requiredFile('src/main.tsx');
+    const fallback = main.slice(main.indexOf('function makeFallbackApi'), main.indexOf('\nfunction App()'));
+
+    expect(main).toContain("const fallbackGovernanceStorageKey = 'storydream-history-governance-v1'");
+    expect(main).toContain('fallbackEnvelopeVersion');
+    expect(fallback).toContain('readFallbackEnvelope()');
+    expect(fallback).toContain('commitFallbackEnvelope(');
+    expect(fallback).toContain('filterFallbackTombstones(');
+    expect(fallback).not.toContain('writeFallbackGovernance(');
+    expect(fallback).not.toContain('desktopHistoryGovernanceUnavailable');
+    for (const method of [
+      'archiveTask',
+      'restoreTask',
+      'deleteTaskPermanently',
+      'archiveViralAnalysis',
+      'restoreViralAnalysis',
+      'deleteViralAnalysisPermanently',
+      'archiveImageLabRecord',
+      'restoreImageLabRecord',
+      'deleteImageLabRecordPermanently',
+      'archiveVoiceLabRecord',
+      'restoreVoiceLabRecord',
+      'deleteVoiceLabRecordPermanently',
+    ]) {
+      const start = fallback.indexOf(`async ${method}(`);
+      expect(start, `${method} is implemented`).toBeGreaterThan(-1);
+      const nextMethod = fallback.indexOf('\n    async ', start + 10);
+      const section = fallback.slice(start, nextMethod === -1 ? fallback.length : nextMethod);
+      expect(section, `${method} persists a local mutation`).toMatch(/archiveFallbackHistory|restoreFallbackHistory|deleteFallbackHistory/u);
+    }
+    expect(fallback).toContain("cleanupState: 'unmanaged-legacy'");
+    expect(fallback).not.toMatch(/\brm\s*\(/u);
+    expect(fallback).not.toMatch(/\bunlink\s*\(/u);
+  });
+
+  it('keeps browser tombstones durable across API recreation and blocks a late persisted task snapshot', async () => {
+    const main = (await rendererSourcesPromise).requiredFile('src/main.tsx');
+    const source = main.slice(main.indexOf('type FallbackTombstoneEntry'), main.indexOf('\nfunction App()'));
+    const compiled = ts.transpileModule(source, {
+      compilerOptions: { module: ts.ModuleKind.None, target: ts.ScriptTarget.ES2022 },
+    }).outputText;
+    const storage = new Map<string, string>();
+    const localStorage = {
+      getItem: (key: string) => storage.get(key) ?? null,
+      setItem: (key: string, value: string) => storage.set(key, value),
+      removeItem: (key: string) => storage.delete(key),
+    };
+    const initial = {
+      config: {},
+      secretStatus: {},
+      tasks: [{
+        id: 'browser-task',
+        title: 'Browser task',
+        inputText: 'input',
+        status: 'paused',
+        archivedAt: null,
+        outputDir: 'D:/external-do-not-delete',
+      }],
+      events: [{ taskId: 'browser-task', type: 'created', detail: '', ts: 1 }],
+      viralAnalyses: [],
+      viralEvents: [],
+      promptTemplates: [],
+      draftTemplates: [],
+      imageLabRecords: [],
+      voiceLabRecords: [],
+      customStyles: [],
+      customCoverTemplates: [],
+      creditTransactions: [],
+      minimaxCloneVoices: [],
+      account: {},
+      activation: {},
+      ui: {},
+    };
+    storage.set('storydream-state', JSON.stringify(initial));
+    const makeFallbackApi = new Function(
+      'localStorage',
+      'initialState',
+      'cloneState',
+      'hydrateState',
+      'stripConfigSecrets',
+      'taskToSummary',
+      `${compiled}\nreturn makeFallbackApi;`,
+    )(
+      localStorage,
+      initial,
+      (state: unknown) => structuredClone(state),
+      (state: unknown) => structuredClone(state),
+      (config: unknown) => config,
+      (task: Record<string, unknown>) => ({ ...task, inputPreview: String(task.inputText ?? '') }),
+    ) as (setState: (state: typeof initial) => void) => {
+      archiveTask(id: string): Promise<AppMutationResult>;
+      deleteTaskPermanently(id: string): Promise<AppMutationResult>;
+      getTaskDetail(id: string): Promise<Record<string, unknown> | null>;
+      listTaskEvents(id: string): Promise<{ items: unknown[] }>;
+      getBootstrap(): Promise<BootstrapState>;
+    };
+
+    const states: typeof initial[] = [];
+    const firstApi = makeFallbackApi((state) => states.push(state));
+    const archived = await firstApi.archiveTask('browser-task');
+    const deleted = await firstApi.deleteTaskPermanently('browser-task');
+    const duplicate = await firstApi.deleteTaskPermanently('browser-task');
+
+    expect(archived).toMatchObject({ kind: 'task-upsert', revision: 1 });
+    expect(deleted).toEqual({ kind: 'task-tombstone', id: 'browser-task', revision: 2 });
+    expect(duplicate).toEqual(deleted);
+    expect(states.at(-1)?.tasks).toEqual([]);
+    expect(states.at(-1)?.events).toEqual([]);
+    expect(JSON.parse(storage.get('storydream-history-governance-v1') ?? '{}')).toMatchObject({
+      revision: 2,
+      tombstones: { task: { 'browser-task': { revision: 2, cleanupState: 'unmanaged-legacy' } } },
+    });
+
+    storage.set('storydream-state', JSON.stringify(initial));
+    const secondApi = makeFallbackApi(() => undefined);
+    expect(await secondApi.getTaskDetail('browser-task')).toBeNull();
+    expect((await secondApi.listTaskEvents('browser-task')).items).toEqual([]);
+    expect((await secondApi.getBootstrap()).revision).toBe(2);
+  });
+
+  it.each([
+    { name: 'archive', archivedAt: null, mode: 'governance' as const, action: 'archive' as const },
+    { name: 'restore', archivedAt: '2026-01-01T00:00:00.000Z', mode: 'governance' as const, action: 'restore' as const },
+    { name: 'ordinary saveUi', archivedAt: null, mode: 'governance' as const, action: 'save-ui' as const },
+    { name: 'delete', archivedAt: '2026-01-01T00:00:00.000Z', mode: 'delete-state' as const, action: 'delete' as const },
+  ])('keeps browser state, governance, and React unchanged when the $name commit fails', async ({ archivedAt, mode, action }) => {
+    const main = (await rendererSourcesPromise).requiredFile('src/main.tsx');
+    const source = main.slice(main.indexOf('type FallbackTombstoneEntry'), main.indexOf('\nfunction App()'));
+    const compiled = ts.transpileModule(source, {
+      compilerOptions: { module: ts.ModuleKind.None, target: ts.ScriptTarget.ES2022 },
+    }).outputText;
+    const base = {
+      config: {},
+      secretStatus: {},
+      tasks: [{
+        id: 'atomic-task',
+        title: 'Atomic task',
+        inputText: 'input',
+        status: 'paused',
+        archivedAt: null as string | null,
+        outputDir: 'D:/external-do-not-delete',
+      }],
+      events: [{ taskId: 'atomic-task', type: 'created', detail: '', ts: 1 }],
+      viralAnalyses: [],
+      viralEvents: [],
+      promptTemplates: [],
+      draftTemplates: [],
+      imageLabRecords: [],
+      voiceLabRecords: [],
+      customStyles: [],
+      customCoverTemplates: [],
+      creditTransactions: [],
+      minimaxCloneVoices: [],
+      account: {},
+      activation: {},
+      ui: { activeView: 'new-task' },
+    };
+    type FallbackApi = {
+      archiveTask(id: string): Promise<AppMutationResult>;
+      restoreTask(id: string): Promise<AppMutationResult>;
+      deleteTaskPermanently(id: string): Promise<AppMutationResult>;
+      saveUiPreferences(ui: Record<string, unknown>): Promise<AppMutationResult | null>;
+    };
+    const createCase = (archivedAt: string | null, mode: 'governance' | 'delete-state') => {
+      const initial = structuredClone({
+        ...base,
+        tasks: [{ ...base.tasks[0], archivedAt }],
+      });
+      const storage = new Map<string, string>([
+        ['storydream-state', JSON.stringify(initial)],
+        ['storydream-history-governance-v1', JSON.stringify({ revision: 0, tombstones: {} })],
+      ]);
+      let legacyLedgerWritten = false;
+      const localStorage = {
+        getItem: (key: string) => storage.get(key) ?? null,
+        setItem: (key: string, value: string) => {
+          if (key === 'storydream-history-governance-v1') {
+            const parsed = JSON.parse(value) as { version?: number };
+            if (mode === 'governance' || parsed.version === 1) throw new Error('injected commit failure');
+            storage.set(key, value);
+            legacyLedgerWritten = true;
+            return;
+          }
+          if (mode === 'delete-state' && key === 'storydream-state' && legacyLedgerWritten) {
+            throw new Error('injected commit failure');
+          }
+          storage.set(key, value);
+        },
+        removeItem: (key: string) => storage.delete(key),
+      };
+      const makeFallbackApi = new Function(
+        'localStorage',
+        'initialState',
+        'cloneState',
+        'hydrateState',
+        'stripConfigSecrets',
+        'taskToSummary',
+        `${compiled}\nreturn makeFallbackApi;`,
+      )(
+        localStorage,
+        initial,
+        (state: unknown) => structuredClone(state),
+        (state: unknown) => structuredClone(state),
+        (config: unknown) => config,
+        (task: Record<string, unknown>) => ({ ...task, inputPreview: String(task.inputText ?? '') }),
+      ) as (setState: (state: typeof initial) => void) => FallbackApi;
+      const states: Array<typeof initial> = [];
+      return {
+        api: makeFallbackApi((state) => states.push(state)),
+        before: [...storage.entries()],
+        states,
+        storage,
+      };
+    };
+
+    const fixture = createCase(archivedAt, mode);
+    const mutation = action === 'archive'
+      ? fixture.api.archiveTask('atomic-task')
+      : action === 'restore'
+        ? fixture.api.restoreTask('atomic-task')
+        : action === 'save-ui'
+          ? fixture.api.saveUiPreferences({ activeView: 'history' })
+          : fixture.api.deleteTaskPermanently('atomic-task');
+    await expect(mutation).rejects.toThrow('injected commit failure');
+    expect([...fixture.storage.entries()]).toEqual(fixture.before);
+    expect(fixture.states).toEqual([]);
+  });
+
   it('reads tracked renderer sources as an aggregate and by exact module', async () => {
     const renderer = await rendererSourcesPromise;
 
@@ -1626,7 +2038,7 @@ describe('product shell ui', () => {
     expect(app).toContain('let snapshotInstalling = true');
     expect(app).toContain('const bufferedMutationResults = new Map<number, AppMutationResult>()');
     expect(app).toContain('bufferedMutationResults.size >= MAX_RENDERER_DELTA_BUFFER');
-    expect(app).toContain("delta.kind === 'state-patch'");
+    expect(app).toContain("delta.kind !== 'task-event'");
     expect(app).toContain('installAuthoritativeSnapshot');
     expect(app).toContain('recoverSnapshotInstallation');
     expect(countOccurrences(app, 'recoverSnapshotInstallation(')).toBeGreaterThanOrEqual(2);
@@ -1666,7 +2078,7 @@ describe('product shell ui', () => {
   it('claims live and browser mutations before scheduling pure state updaters', async () => {
     const main = (await rendererSourcesPromise).requiredFile('src/main.tsx');
     const app = main.slice(main.indexOf('function App()'), main.indexOf('function NavButton'));
-    const livePatch = app.slice(app.indexOf('const applyStatePatch'), app.indexOf('const requestReconciliation'));
+    const livePatch = app.slice(app.indexOf('const applyMutationDelta'), app.indexOf('const requestReconciliation'));
     const browserApply = app.slice(app.indexOf('function applyState('), app.indexOf('async function openTaskDetail'));
 
     expect(main).toContain('claimMutationResult');
@@ -1696,7 +2108,7 @@ describe('product shell ui', () => {
     const app = main.slice(main.indexOf('function App()'), main.indexOf('function NavButton'));
     const viralPage = main.slice(main.indexOf('function ViralAnalyzerPage'), main.indexOf('function NewTaskPage'));
 
-    expect(app).toContain('viralAnalysisId: activeViralAnalysisIdRef.current ?? undefined');
+    expect(app).toContain('viralAnalysisId: requestedViralId ?? undefined');
     expect(app).toContain('mergeReconciliationSlices');
     expect(app).toContain('refreshViralEvents');
     expect(viralPage).toContain('viralEventRefreshKey(selected)');

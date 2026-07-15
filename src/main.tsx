@@ -61,6 +61,7 @@ import type {
   DraftTemplate,
   DraftTextBorder,
   HistoryFamily,
+  HistoryListInput,
   HistoryPage,
   ImageLabGenerateInput,
   ImageProviderProfile,
@@ -103,19 +104,28 @@ import type {
   VoiceLabSummary,
 } from './shared/types';
 import type { StoryDreamApi } from './shared/storydream-api';
-import { createAppDeltaCoordinator, MAX_RENDERER_DELTA_BUFFER, type DeltaViewState, type RevisionGap } from './shared/state-delta';
+import {
+  createAppDeltaCoordinator,
+  MAX_RENDERER_DELTA_BUFFER,
+  type DeltaViewState,
+  type HistoryRevisionLedger,
+  type RevisionGap,
+} from './shared/state-delta';
 import {
   applyAppMutationResult,
   applyBufferedMutationResults,
+  applyHistorySelectionBarrier,
   applyLocalMutationResponse,
   claimMutationResult,
   collectCursorPages,
   createRequestGenerationGuard,
+  historyEntityRevisionKey,
   imageLabSummaryToRecord,
   mergeBootstrapTemplateDetails,
   mergeDeltaViewSlices,
   mergeReconciliationSlices,
   raiseMutationRevisionFloor,
+  shouldApplyDeltaViewTransition,
   taskDetailRefreshKey,
   taskSummaryToTask,
   taskToSummary,
@@ -502,6 +512,92 @@ function mergeDeltaView(current: AppState, deltaState: DeltaViewState): AppState
   return mergeDeltaViewSlices(current, deltaState);
 }
 
+type HistoryDeltaIdentity = { family: HistoryFamily; id: string; tombstone: boolean };
+type HistoryResponseRevision = { entityRevision: number; tombstoneRevision: number };
+
+function historyDeltaIdentity(delta: AppDelta): HistoryDeltaIdentity | null {
+  if (delta.kind === 'task-upsert') return { family: 'task', id: delta.task.id, tombstone: false };
+  if (delta.kind === 'viral-upsert') return { family: 'viral-analysis', id: delta.record.id, tombstone: false };
+  if (delta.kind === 'task-tombstone') return { family: 'task', id: delta.id, tombstone: true };
+  if (delta.kind === 'viral-tombstone') return { family: 'viral-analysis', id: delta.id, tombstone: true };
+  if (delta.kind === 'image-lab-tombstone') return { family: 'image-lab', id: delta.id, tombstone: true };
+  if (delta.kind === 'voice-lab-tombstone') return { family: 'voice-lab', id: delta.id, tombstone: true };
+  if (delta.kind !== 'state-patch') return null;
+  if (delta.patch.kind === 'image-lab-upsert') {
+    return { family: 'image-lab', id: delta.patch.record.id, tombstone: false };
+  }
+  if (delta.patch.kind === 'voice-lab-upsert') {
+    return { family: 'voice-lab', id: delta.patch.record.id, tombstone: false };
+  }
+  return null;
+}
+
+function recordHistoryDeltaRevision(
+  entityRevisions: Map<string, number>,
+  tombstoneRevisions: Map<string, number>,
+  delta: AppDelta,
+): HistoryDeltaIdentity | null {
+  const identity = historyDeltaIdentity(delta);
+  if (!identity) return null;
+  const key = historyEntityRevisionKey(identity.family, identity.id);
+  const entityRevision = entityRevisions.get(key) ?? -1;
+  const tombstoneRevision = tombstoneRevisions.get(key) ?? -1;
+  if (identity.tombstone) {
+    if (delta.revision < Math.max(entityRevision, tombstoneRevision)) return null;
+    entityRevisions.delete(key);
+    tombstoneRevisions.set(key, delta.revision);
+    return identity;
+  }
+  if (tombstoneRevision >= 0 || delta.revision <= entityRevision) return null;
+  entityRevisions.set(key, delta.revision);
+  return identity;
+}
+
+function registerHistoryDeltaBarrier(
+  entityRevisions: Map<string, number>,
+  tombstoneRevisions: Map<string, number>,
+  delta: AppDelta,
+  invalidate: (family: HistoryFamily, id: string) => void,
+): void {
+  const identity = recordHistoryDeltaRevision(entityRevisions, tombstoneRevisions, delta);
+  if (identity?.tombstone) invalidate(identity.family, identity.id);
+}
+
+function replaceHistoryRevisionMap(target: Map<string, number>, ledger: HistoryRevisionLedger | undefined): void {
+  for (const [family, revisions] of Object.entries(ledger ?? {}) as Array<[HistoryFamily, Record<string, number>]>) {
+    for (const [id, revision] of Object.entries(revisions)) {
+      const key = historyEntityRevisionKey(family, id);
+      target.set(key, Math.max(target.get(key) ?? -1, revision));
+    }
+  }
+}
+
+function captureHistoryResponseRevision(
+  family: HistoryFamily,
+  id: string,
+  entityRevisions: Map<string, number>,
+  tombstoneRevisions: Map<string, number>,
+): HistoryResponseRevision {
+  const key = historyEntityRevisionKey(family, id);
+  return {
+    entityRevision: entityRevisions.get(key) ?? -1,
+    tombstoneRevision: tombstoneRevisions.get(key) ?? -1,
+  };
+}
+
+function isHistoryResponseCurrent(
+  family: HistoryFamily,
+  id: string,
+  captured: HistoryResponseRevision,
+  entityRevisions: Map<string, number>,
+  tombstoneRevisions: Map<string, number>,
+): boolean {
+  const current = captureHistoryResponseRevision(family, id, entityRevisions, tombstoneRevisions);
+  return captured.tombstoneRevision < 0
+    && current.entityRevision === captured.entityRevision
+    && current.tombstoneRevision === captured.tombstoneRevision;
+}
+
 function mergeDefaultCustomStyles(styles: CustomStyle[] | undefined): CustomStyle[] {
   const current = new Map((styles ?? []).map((style) => [style.id, style]));
   const builtinIds = new Set(defaultCustomStyles.map((style) => style.id));
@@ -511,8 +607,105 @@ function mergeDefaultCustomStyles(styles: CustomStyle[] | undefined): CustomStyl
   ];
 }
 
-function desktopHistoryGovernanceUnavailable(): never {
-  throw new Error('浏览器预览不支持历史记录治理，请在 Electron 桌面端操作。');
+type FallbackTombstoneEntry = {
+  revision: number;
+  cleanupState: 'unmanaged-legacy';
+};
+
+type FallbackGovernanceState = {
+  revision: number;
+  tombstones: Partial<Record<HistoryFamily, Record<string, FallbackTombstoneEntry>>>;
+};
+
+function fallbackTombstoneResult(
+  family: HistoryFamily,
+  id: string,
+  revision: number,
+): AppMutationResult {
+  switch (family) {
+    case 'task':
+      return { kind: 'task-tombstone', id, revision };
+    case 'viral-analysis':
+      return { kind: 'viral-tombstone', id, revision };
+    case 'image-lab':
+      return { kind: 'image-lab-tombstone', id, revision };
+    case 'voice-lab':
+      return { kind: 'voice-lab-tombstone', id, revision };
+  }
+}
+
+const fallbackGovernanceStorageKey = 'storydream-history-governance-v1';
+const fallbackEnvelopeVersion = 1 as const;
+
+type FallbackStorageEnvelope = FallbackGovernanceState & {
+  version: typeof fallbackEnvelopeVersion;
+  state: AppState;
+};
+
+function parseFallbackGovernance(value: unknown): FallbackGovernanceState {
+  const empty: FallbackGovernanceState = { revision: 0, tombstones: {} };
+  if (!value || typeof value !== 'object') return empty;
+  const parsed = value as Partial<FallbackGovernanceState>;
+  const revision = Number.isSafeInteger(parsed.revision) && Number(parsed.revision) >= 0
+    ? Number(parsed.revision)
+    : 0;
+  const tombstones: FallbackGovernanceState['tombstones'] = {};
+  for (const family of ['task', 'viral-analysis', 'image-lab', 'voice-lab'] as HistoryFamily[]) {
+    const incoming = parsed.tombstones?.[family];
+    if (!incoming || typeof incoming !== 'object') continue;
+    for (const [id, entry] of Object.entries(incoming)) {
+      if (!Number.isSafeInteger(entry?.revision) || entry.revision < 0) continue;
+      (tombstones[family] ??= {})[id] = {
+        revision: entry.revision,
+        cleanupState: 'unmanaged-legacy',
+      };
+    }
+  }
+  return { revision, tombstones };
+}
+
+function readFallbackEnvelope(): FallbackStorageEnvelope {
+  let stored: Partial<FallbackStorageEnvelope> | null = null;
+  const rawEnvelope = localStorage.getItem(fallbackGovernanceStorageKey);
+  if (rawEnvelope) {
+    try {
+      stored = JSON.parse(rawEnvelope) as Partial<FallbackStorageEnvelope>;
+    } catch {
+      stored = null;
+    }
+  }
+  const governance = parseFallbackGovernance(stored);
+  let sourceState: AppState;
+  if (stored?.version === fallbackEnvelopeVersion && stored.state && typeof stored.state === 'object') {
+    sourceState = hydrateState(stored.state as AppState);
+  } else {
+    const rawState = localStorage.getItem('storydream-state') ?? localStorage.getItem('storybound-state');
+    sourceState = rawState ? hydrateState(JSON.parse(rawState) as AppState) : cloneState(initialState);
+  }
+  const filtered = filterFallbackTombstones(sourceState, governance);
+  return {
+    version: fallbackEnvelopeVersion,
+    ...governance,
+    state: { ...filtered, config: stripConfigSecrets(filtered.config), secretStatus: {} },
+  };
+}
+
+function commitFallbackEnvelope(envelope: FallbackStorageEnvelope): void {
+  // One synchronous tab-local write; localStorage provides neither cross-tab CAS nor crash transactions.
+  localStorage.setItem(fallbackGovernanceStorageKey, JSON.stringify(envelope));
+}
+
+function filterFallbackTombstones(state: AppState, governance: FallbackGovernanceState): AppState {
+  const deleted = (family: HistoryFamily, id: string) => Boolean(governance.tombstones[family]?.[id]);
+  return {
+    ...state,
+    tasks: state.tasks.filter((task) => !deleted('task', task.id)),
+    events: state.events.filter((event) => !deleted('task', event.taskId)),
+    viralAnalyses: state.viralAnalyses.filter((record) => !deleted('viral-analysis', record.id)),
+    viralEvents: state.viralEvents.filter((event) => !deleted('viral-analysis', event.analysisId)),
+    imageLabRecords: state.imageLabRecords.filter((record) => !deleted('image-lab', record.id)),
+    voiceLabRecords: state.voiceLabRecords.filter((record) => !deleted('voice-lab', record.id)),
+  };
 }
 
 function fallbackHistoryPage<F extends HistoryFamily, T>(family: F, items: T[]): HistoryPage<F, T> {
@@ -526,12 +719,13 @@ function fallbackHistoryPage<F extends HistoryFamily, T>(family: F, items: T[]):
 }
 
 function makeFallbackApi(setState: (state: AppState) => void): StoryDreamApi {
-  const read = () => {
-    const raw = localStorage.getItem('storydream-state') ?? localStorage.getItem('storybound-state');
-    const next = raw ? hydrateState(JSON.parse(raw) as AppState) : cloneState(initialState);
-    const sanitized = { ...next, config: stripConfigSecrets(next.config), secretStatus: {} };
-    localStorage.setItem('storydream-state', JSON.stringify(sanitized));
-    localStorage.removeItem('storybound-state');
+  const readEnvelope = () => readFallbackEnvelope();
+  const read = () => readEnvelope().state;
+  const commitState = (state: AppState, governance: FallbackGovernanceState): AppState => {
+    const filtered = filterFallbackTombstones(hydrateState(state), governance);
+    const sanitized = { ...filtered, config: stripConfigSecrets(filtered.config), secretStatus: {} };
+    commitFallbackEnvelope({ version: fallbackEnvelopeVersion, ...governance, state: sanitized });
+    setState(sanitized);
     return sanitized;
   };
   const readBookSelections = () => {
@@ -547,21 +741,20 @@ function makeFallbackApi(setState: (state: AppState) => void): StoryDreamApi {
     localStorage.setItem('storybound-book-selections', JSON.stringify(records));
     return records;
   };
-  let fallbackRevision = 0;
   const changed = (left: unknown, right: unknown) => JSON.stringify(left) !== JSON.stringify(right);
-  const mutationForState = (previous: AppState, next: AppState): AppMutationResult | null => {
+  const mutationForState = (previous: AppState, next: AppState, revision: number): AppMutationResult | null => {
     const task = next.tasks.find((item) => {
       const old = previous.tasks.find((candidate) => candidate.id === item.id);
       return !old || changed(old, item);
     });
-    if (task) return { kind: 'task-upsert', task: taskToSummary(task), revision: ++fallbackRevision };
+    if (task) return { kind: 'task-upsert', task: taskToSummary(task), revision };
     const viral = next.viralAnalyses.find((item) => {
       const old = previous.viralAnalyses.find((candidate) => candidate.id === item.id);
       return !old || changed(old, item);
     });
     if (viral) {
       const { settings: _settings, resultPath: _resultPath, videoPath: _videoPath, ...record } = viral;
-      return { kind: 'viral-upsert', record, revision: ++fallbackRevision };
+      return { kind: 'viral-upsert', record, revision };
     }
     let patch: Extract<AppDelta, { kind: 'state-patch' }>['patch'] | null = null;
     if (changed(previous.config, next.config)) patch = { kind: 'config', config: next.config, secretStatus: {} };
@@ -591,16 +784,151 @@ function makeFallbackApi(setState: (state: AppState) => void): StoryDreamApi {
     } else if (changed(previous.account, next.account)) patch = { kind: 'account', account: next.account };
     else if (changed(previous.activation, next.activation)) patch = { kind: 'activation', activation: next.activation };
     else if (changed(previous.ui, next.ui)) patch = { kind: 'ui', ui: next.ui };
-    return patch ? { kind: 'state-patch', patch, revision: ++fallbackRevision } : null;
+    return patch ? { kind: 'state-patch', patch, revision } : null;
   };
   const persist = (state: AppState): AppMutationResult | null => {
-    const previous = read();
-    const next = hydrateState(state);
+    const previous = readEnvelope();
+    const next = filterFallbackTombstones(hydrateState(state), previous);
     const sanitized = { ...next, config: stripConfigSecrets(next.config), secretStatus: {} };
-    localStorage.setItem('storydream-state', JSON.stringify(sanitized));
-    localStorage.removeItem('storybound-state');
-    setState(sanitized);
-    return mutationForState(previous, sanitized);
+    const revision = previous.revision + 1;
+    const mutation = mutationForState(previous.state, sanitized, revision);
+    commitState(sanitized, {
+      revision: mutation ? revision : previous.revision,
+      tombstones: previous.tombstones,
+    });
+    return mutation;
+  };
+
+  const historyRecord = (state: AppState, family: HistoryFamily, id: string) => {
+    if (family === 'task') return state.tasks.find((record) => record.id === id);
+    if (family === 'viral-analysis') return state.viralAnalyses.find((record) => record.id === id);
+    if (family === 'image-lab') return state.imageLabRecords.find((record) => record.id === id);
+    return state.voiceLabRecords.find((record) => record.id === id);
+  };
+
+  const commitFallbackHistoryUpsert = (
+    family: HistoryFamily,
+    state: AppState,
+    id: string,
+  ): AppMutationResult => {
+    const current = readEnvelope();
+    const revision = current.revision + 1;
+    const saved = commitState(state, { revision, tombstones: current.tombstones });
+    if (family === 'task') {
+      const task = saved.tasks.find((record) => record.id === id);
+      if (!task) throw new Error(`Task not found: ${id}`);
+      return { kind: 'task-upsert', task: taskToSummary(task), revision };
+    }
+    if (family === 'viral-analysis') {
+      const record = saved.viralAnalyses.find((item) => item.id === id);
+      if (!record) throw new Error(`Viral analysis not found: ${id}`);
+      const { settings: _settings, resultPath: _resultPath, videoPath: _videoPath, ...summary } = record;
+      return { kind: 'viral-upsert', record: summary, revision };
+    }
+    if (family === 'image-lab') {
+      const record = saved.imageLabRecords.find((item) => item.id === id);
+      if (!record) throw new Error(`Image lab record not found: ${id}`);
+      const { prompt, referenceImagePaths: _paths, referenceImagePath: _path, ...summary } = record;
+      return {
+        kind: 'state-patch',
+        patch: { kind: 'image-lab-upsert', record: { ...summary, promptPreview: prompt.slice(0, 160) } },
+        revision,
+      };
+    }
+    const record = saved.voiceLabRecords.find((item) => item.id === id);
+    if (!record) throw new Error(`Voice lab record not found: ${id}`);
+    const { text, ...summary } = record;
+    return {
+      kind: 'state-patch',
+      patch: { kind: 'voice-lab-upsert', record: { ...summary, textPreview: text.slice(0, 160) } },
+      revision,
+    };
+  };
+
+  const archiveFallbackHistory = (family: HistoryFamily, id: string): AppMutationResult => {
+    const state = read();
+    const record = historyRecord(state, family, id);
+    if (!record) throw new Error(`History record not found or deleted: ${family}/${id}`);
+    if ((family === 'task' || family === 'viral-analysis')
+      && (record.status === 'pending' || record.status === 'running')) {
+      throw new Error('HISTORY_ACTIVE: Pending or running history cannot be archived.');
+    }
+    const archivedAt = record.archivedAt ?? new Date().toISOString();
+    if (family === 'task') {
+      return commitFallbackHistoryUpsert(family, {
+        ...state,
+        tasks: state.tasks.map((item) => item.id === id ? { ...item, archivedAt } : item),
+      }, id);
+    }
+    if (family === 'viral-analysis') {
+      return commitFallbackHistoryUpsert(family, {
+        ...state,
+        viralAnalyses: state.viralAnalyses.map((item) => item.id === id ? { ...item, archivedAt } : item),
+      }, id);
+    }
+    if (family === 'image-lab') {
+      return commitFallbackHistoryUpsert(family, {
+        ...state,
+        imageLabRecords: state.imageLabRecords.map((item) => item.id === id ? { ...item, archivedAt } : item),
+      }, id);
+    }
+    return commitFallbackHistoryUpsert(family, {
+      ...state,
+      voiceLabRecords: state.voiceLabRecords.map((item) => item.id === id ? { ...item, archivedAt } : item),
+    }, id);
+  };
+
+  const restoreFallbackHistory = (family: HistoryFamily, id: string): AppMutationResult => {
+    const state = read();
+    if (!historyRecord(state, family, id)) throw new Error(`History record not found or deleted: ${family}/${id}`);
+    if (family === 'task') {
+      return commitFallbackHistoryUpsert(family, {
+        ...state,
+        tasks: state.tasks.map((item) => item.id === id ? { ...item, archivedAt: null } : item),
+      }, id);
+    }
+    if (family === 'viral-analysis') {
+      return commitFallbackHistoryUpsert(family, {
+        ...state,
+        viralAnalyses: state.viralAnalyses.map((item) => item.id === id ? { ...item, archivedAt: null } : item),
+      }, id);
+    }
+    if (family === 'image-lab') {
+      return commitFallbackHistoryUpsert(family, {
+        ...state,
+        imageLabRecords: state.imageLabRecords.map((item) => item.id === id ? { ...item, archivedAt: null } : item),
+      }, id);
+    }
+    return commitFallbackHistoryUpsert(family, {
+      ...state,
+      voiceLabRecords: state.voiceLabRecords.map((item) => item.id === id ? { ...item, archivedAt: null } : item),
+    }, id);
+  };
+
+  const deleteFallbackHistory = (family: HistoryFamily, id: string): AppMutationResult => {
+    const current = readEnvelope();
+    const existing = current.tombstones[family]?.[id];
+    if (existing) return fallbackTombstoneResult(family, id, existing.revision);
+    const state = current.state;
+    const record = historyRecord(state, family, id);
+    if (!record) throw new Error(`History record not found: ${family}/${id}`);
+    if (!record.archivedAt) throw new Error('HISTORY_NOT_ARCHIVED: Permanent deletion requires an archived history record.');
+    const revision = current.revision + 1;
+    const entry: FallbackTombstoneEntry = { revision, cleanupState: 'unmanaged-legacy' };
+    const tombstones = {
+      ...current.tombstones,
+      [family]: { ...current.tombstones[family], [id]: entry },
+    };
+    commitState(state, { revision, tombstones });
+    return fallbackTombstoneResult(family, id, revision);
+  };
+
+  const matchesArchiveFilter = (record: { archivedAt?: string | null }, filter: 'active' | 'archived' = 'active') => (
+    filter === 'archived' ? Boolean(record.archivedAt) : !record.archivedAt
+  );
+  const matchesFallbackQuery = (query: string | undefined, values: unknown[]) => {
+    const normalized = query?.trim().toLocaleLowerCase();
+    return !normalized || values.some((value) => String(value ?? '').toLocaleLowerCase().includes(normalized));
   };
 
   return {
@@ -608,20 +936,21 @@ function makeFallbackApi(setState: (state: AppState) => void): StoryDreamApi {
       return read();
     },
     async getBootstrap() {
-      const state = read();
+      const envelope = readEnvelope();
+      const state = envelope.state;
       return {
-        revision: 0,
+        revision: envelope.revision,
         config: state.config,
         secretStatus: {},
-        tasks: fallbackHistoryPage('task', state.tasks.map(taskToSummary)),
-        viralAnalyses: fallbackHistoryPage('viral-analysis', state.viralAnalyses),
+        tasks: fallbackHistoryPage('task', state.tasks.filter((record) => !record.archivedAt).map(taskToSummary)),
+        viralAnalyses: fallbackHistoryPage('viral-analysis', state.viralAnalyses.filter((record) => !record.archivedAt)),
         imageLabRecords: fallbackHistoryPage(
           'image-lab',
-          state.imageLabRecords.map(({ prompt, referenceImagePaths: _paths, referenceImagePath: _path, ...record }) => ({ ...record, promptPreview: prompt.slice(0, 160) })),
+          state.imageLabRecords.filter((record) => !record.archivedAt).map(({ prompt, referenceImagePaths: _paths, referenceImagePath: _path, ...record }) => ({ ...record, promptPreview: prompt.slice(0, 160) })),
         ),
         voiceLabRecords: fallbackHistoryPage(
           'voice-lab',
-          state.voiceLabRecords.map(({ text, ...record }) => ({ ...record, textPreview: text.slice(0, 160) })),
+          state.voiceLabRecords.filter((record) => !record.archivedAt).map(({ text, ...record }) => ({ ...record, textPreview: text.slice(0, 160) })),
         ),
         promptTemplates: {
           items: state.promptTemplates.map(({ content: _content, stepPrompts: _steps, imageSeedPoolsJson: _seeds, ...summary }) => summary),
@@ -647,11 +976,13 @@ function makeFallbackApi(setState: (state: AppState) => void): StoryDreamApi {
       } satisfies BootstrapState;
     },
     async reconcileDeltas(input) {
-      const state = read();
+      const envelope = readEnvelope();
+      const state = envelope.state;
+      const revision = envelope.revision;
       return {
-        revision: input.sinceRevision,
+        revision,
         deltas: [],
-        resetRequired: false,
+        resetRequired: input.forceReset === true || input.sinceRevision < revision,
         task: input.taskId ? state.tasks.find((task) => task.id === input.taskId) ?? null : null,
         taskEvents: input.taskId
           ? state.events.filter((event) => event.taskId === input.taskId && Number.isInteger(event.seq)) as Array<TaskEvent & { seq: number }>
@@ -660,17 +991,25 @@ function makeFallbackApi(setState: (state: AppState) => void): StoryDreamApi {
         viralEvents: input.viralAnalysisId ? state.viralEvents.filter((event) => event.analysisId === input.viralAnalysisId) : [],
       };
     },
-    async listTasks() {
-      return fallbackHistoryPage('task', read().tasks.map(taskToSummary));
+    async listTasks(request: HistoryListInput<'task'> = {}) {
+      const tasks = read().tasks.filter((task) => {
+        if (!matchesArchiveFilter(task, request.filter)) return false;
+        if (request.status && task.status !== request.status) return false;
+        if (request.statuses && !request.statuses.includes(task.status)) return false;
+        const taskType = task.taskType?.trim() || (task.taskKind === 'music-mv' ? 'music-mv' : 'story');
+        if (request.taskType && taskType !== request.taskType) return false;
+        return matchesFallbackQuery(request.query, [task.title, task.inputText, task.aiKeyword]);
+      });
+      return fallbackHistoryPage('task', tasks.map(taskToSummary));
     },
-    async archiveTask() {
-      return desktopHistoryGovernanceUnavailable();
+    async archiveTask(id: string) {
+      return archiveFallbackHistory('task', id);
     },
-    async restoreTask() {
-      return desktopHistoryGovernanceUnavailable();
+    async restoreTask(id: string) {
+      return restoreFallbackHistory('task', id);
     },
-    async deleteTaskPermanently() {
-      return desktopHistoryGovernanceUnavailable();
+    async deleteTaskPermanently(id: string) {
+      return deleteFallbackHistory('task', id);
     },
     async getTaskDetail(id) {
       return read().tasks.find((task) => task.id === id) ?? null;
@@ -681,17 +1020,22 @@ function makeFallbackApi(setState: (state: AppState) => void): StoryDreamApi {
         nextCursor: null,
       };
     },
-    async listViralAnalyses() {
-      return fallbackHistoryPage('viral-analysis', read().viralAnalyses);
+    async listViralAnalyses(request: HistoryListInput<'viral-analysis'> = {}) {
+      const records = read().viralAnalyses.filter((record) => (
+        matchesArchiveFilter(record, request.filter)
+        && (!request.status || record.status === request.status)
+        && matchesFallbackQuery(request.query, [record.title, record.url, record.platform])
+      ));
+      return fallbackHistoryPage('viral-analysis', records);
     },
-    async archiveViralAnalysis() {
-      return desktopHistoryGovernanceUnavailable();
+    async archiveViralAnalysis(id: string) {
+      return archiveFallbackHistory('viral-analysis', id);
     },
-    async restoreViralAnalysis() {
-      return desktopHistoryGovernanceUnavailable();
+    async restoreViralAnalysis(id: string) {
+      return restoreFallbackHistory('viral-analysis', id);
     },
-    async deleteViralAnalysisPermanently() {
-      return desktopHistoryGovernanceUnavailable();
+    async deleteViralAnalysisPermanently(id: string) {
+      return deleteFallbackHistory('viral-analysis', id);
     },
     async getViralAnalysisDetail(id) {
       return read().viralAnalyses.find((record) => record.id === id) ?? null;
@@ -699,38 +1043,50 @@ function makeFallbackApi(setState: (state: AppState) => void): StoryDreamApi {
     async listViralEvents(analysisId) {
       return { items: read().viralEvents.filter((event) => event.analysisId === analysisId), nextCursor: null };
     },
-    async listImageLabRecords() {
+    async listImageLabRecords(request: HistoryListInput<'image-lab'> = {}) {
       return fallbackHistoryPage(
         'image-lab',
-        read().imageLabRecords.map(({ prompt, referenceImagePaths: _paths, referenceImagePath: _path, ...record }) => ({ ...record, promptPreview: prompt.slice(0, 160) })),
+        read().imageLabRecords
+          .filter((record) => (
+            matchesArchiveFilter(record, request.filter)
+            && (!request.status || record.status === request.status)
+            && matchesFallbackQuery(request.query, [record.prompt, record.provider, record.style])
+          ))
+          .map(({ prompt, referenceImagePaths: _paths, referenceImagePath: _path, ...record }) => ({ ...record, promptPreview: prompt.slice(0, 160) })),
       );
     },
-    async archiveImageLabRecord() {
-      return desktopHistoryGovernanceUnavailable();
+    async archiveImageLabRecord(id: string) {
+      return archiveFallbackHistory('image-lab', id);
     },
-    async restoreImageLabRecord() {
-      return desktopHistoryGovernanceUnavailable();
+    async restoreImageLabRecord(id: string) {
+      return restoreFallbackHistory('image-lab', id);
     },
-    async deleteImageLabRecordPermanently() {
-      return desktopHistoryGovernanceUnavailable();
+    async deleteImageLabRecordPermanently(id: string) {
+      return deleteFallbackHistory('image-lab', id);
     },
     async getImageLabRecordDetail(id) {
       return read().imageLabRecords.find((record) => record.id === id) ?? null;
     },
-    async listVoiceLabRecords() {
+    async listVoiceLabRecords(request: HistoryListInput<'voice-lab'> = {}) {
       return fallbackHistoryPage(
         'voice-lab',
-        read().voiceLabRecords.map(({ text, ...record }) => ({ ...record, textPreview: text.slice(0, 160) })),
+        read().voiceLabRecords
+          .filter((record) => (
+            matchesArchiveFilter(record, request.filter)
+            && (!request.status || record.status === request.status)
+            && matchesFallbackQuery(request.query, [record.text, record.voiceLabel, record.provider])
+          ))
+          .map(({ text, ...record }) => ({ ...record, textPreview: text.slice(0, 160) })),
       );
     },
-    async archiveVoiceLabRecord() {
-      return desktopHistoryGovernanceUnavailable();
+    async archiveVoiceLabRecord(id: string) {
+      return archiveFallbackHistory('voice-lab', id);
     },
-    async restoreVoiceLabRecord() {
-      return desktopHistoryGovernanceUnavailable();
+    async restoreVoiceLabRecord(id: string) {
+      return restoreFallbackHistory('voice-lab', id);
     },
-    async deleteVoiceLabRecordPermanently() {
-      return desktopHistoryGovernanceUnavailable();
+    async deleteVoiceLabRecordPermanently(id: string) {
+      return deleteFallbackHistory('voice-lab', id);
     },
     async getVoiceLabRecordDetail(id) {
       return read().voiceLabRecords.find((record) => record.id === id) ?? null;
@@ -1213,47 +1569,109 @@ function App() {
   const shellAction = useAsyncAction();
   const revisionRef = useRef(0);
   const mutationRevisionsRef = useRef(new Map<string, number>());
+  const historyEntityRevisionsRef = useRef(new Map<string, number>());
+  const historyTombstoneRevisionsRef = useRef(new Map<string, number>());
+  const activeViewRef = useRef<ShellView>('new-task');
   const selectedTaskIdRef = useRef<string | null>(null);
   const activeHtmlTaskIdRef = useRef<string | null>(null);
   const activeViralAnalysisIdRef = useRef<string | null>(null);
   const taskDetailGuard = useMemo(() => createRequestGenerationGuard(), []);
   const viralDetailGuard = useMemo(() => createRequestGenerationGuard(), []);
 
+  const applyHistoryBarrier = useCallback((delta: AppDelta) => {
+    registerHistoryDeltaBarrier(
+      historyEntityRevisionsRef.current,
+      historyTombstoneRevisionsRef.current,
+      delta,
+      (family, id) => {
+        const selection = applyHistorySelectionBarrier({
+          selectedTaskId: selectedTaskIdRef.current,
+          activeHtmlTaskId: activeHtmlTaskIdRef.current,
+          activeViralAnalysisId: activeViralAnalysisIdRef.current,
+          activeView: activeViewRef.current,
+        }, family, id);
+        selectedTaskIdRef.current = selection.selectedTaskId;
+        activeHtmlTaskIdRef.current = selection.activeHtmlTaskId;
+        activeViralAnalysisIdRef.current = selection.activeViralAnalysisId;
+        activeViewRef.current = selection.activeView;
+        setSelectedTaskId(selection.selectedTaskId);
+        setActiveView(selection.activeView);
+        if (family === 'task') {
+          taskDetailGuard.invalidate(id);
+        } else if (family === 'viral-analysis') {
+          viralDetailGuard.invalidate(id);
+        }
+      },
+    );
+  }, [taskDetailGuard, viralDetailGuard]);
+
   const refreshTaskDetail = useCallback(async (taskId: string) => {
     const generation = taskDetailGuard.begin(taskId);
+    const responseRevision = captureHistoryResponseRevision(
+      'task',
+      taskId,
+      historyEntityRevisionsRef.current,
+      historyTombstoneRevisionsRef.current,
+    );
     try {
+      if (responseRevision.tombstoneRevision >= 0) return;
       const [detail, eventPage] = await Promise.all([
         api.getTaskDetail(taskId),
         api.listTaskEvents(taskId, { limit: 100 }),
       ]);
-      if (!taskDetailGuard.isCurrent(taskId, generation) || !detail) return;
-      setState((current) => mergeReconciliationSlices(current, {
-        task: detail,
-        taskEvents: eventPage.items,
-        viralAnalysis: null,
-        viralEvents: [],
-      }));
+      if (!taskDetailGuard.isCurrent(taskId, generation) || !detail
+        || !isHistoryResponseCurrent('task', taskId, responseRevision, historyEntityRevisionsRef.current, historyTombstoneRevisionsRef.current)) return;
+      setState((current) => isHistoryResponseCurrent(
+        'task',
+        taskId,
+        responseRevision,
+        historyEntityRevisionsRef.current,
+        historyTombstoneRevisionsRef.current,
+      ) ? mergeReconciliationSlices(current, {
+          task: detail,
+          taskEvents: eventPage.items,
+          viralAnalysis: null,
+          viralEvents: [],
+        }) : current);
     } catch (error) {
       if (taskDetailGuard.isCurrent(taskId, generation)) shellAction.reportError(error);
+    } finally {
+      taskDetailGuard.finish(taskId, generation);
     }
   }, [api, shellAction.reportError, taskDetailGuard]);
 
   const refreshViralEvents = useCallback(async (analysisId: string) => {
     const generation = viralDetailGuard.begin(analysisId);
+    const responseRevision = captureHistoryResponseRevision(
+      'viral-analysis',
+      analysisId,
+      historyEntityRevisionsRef.current,
+      historyTombstoneRevisionsRef.current,
+    );
     try {
+      if (responseRevision.tombstoneRevision >= 0) return;
       const [detail, eventPage] = await Promise.all([
         api.getViralAnalysisDetail(analysisId),
         api.listViralEvents(analysisId, { limit: 100 }),
       ]);
-      if (!viralDetailGuard.isCurrent(analysisId, generation)) return;
-      setState((current) => mergeReconciliationSlices(current, {
-        task: null,
-        taskEvents: [],
-        viralAnalysis: detail,
-        viralEvents: eventPage.items,
-      }));
+      if (!viralDetailGuard.isCurrent(analysisId, generation)
+        || !isHistoryResponseCurrent('viral-analysis', analysisId, responseRevision, historyEntityRevisionsRef.current, historyTombstoneRevisionsRef.current)) return;
+      setState((current) => isHistoryResponseCurrent(
+        'viral-analysis',
+        analysisId,
+        responseRevision,
+        historyEntityRevisionsRef.current,
+        historyTombstoneRevisionsRef.current,
+      ) ? mergeReconciliationSlices(current, {
+          task: null,
+          taskEvents: [],
+          viralAnalysis: detail,
+          viralEvents: eventPage.items,
+        }) : current);
     } catch (error) {
       if (viralDetailGuard.isCurrent(analysisId, generation)) shellAction.reportError(error);
+    } finally {
+      viralDetailGuard.finish(analysisId, generation);
     }
   }, [api, shellAction.reportError, viralDetailGuard]);
 
@@ -1270,6 +1688,10 @@ function App() {
   }, [selectedTaskId]);
 
   useEffect(() => {
+    activeViewRef.current = activeView;
+  }, [activeView]);
+
+  useEffect(() => {
     let disposed = false;
     let reconciling = false;
     let reconcileAgain = false;
@@ -1279,13 +1701,18 @@ function App() {
     let snapshotInstalling = true;
     let mutationBufferOverflowed = false;
     const bufferedMutationResults = new Map<number, AppMutationResult>();
-    const applyDeltaState = (next: DeltaViewState | null) => {
+    const applyDeltaState = (
+      next: DeltaViewState | null,
+      previous?: DeltaViewState | null,
+    ) => {
       if (!next || disposed) return;
+      if (previous !== undefined && !shouldApplyDeltaViewTransition(previous, next)) return;
       revisionRef.current = next.revision;
+      replaceHistoryRevisionMap(historyEntityRevisionsRef.current, next.entityRevisions);
+      replaceHistoryRevisionMap(historyTombstoneRevisionsRef.current, next.tombstoneRevisions);
       setState((current) => mergeDeltaView(current, next));
     };
-    const applyStatePatch = (delta: AppDelta) => {
-      if (delta.kind !== 'state-patch') return;
+    const applyMutationDelta = (delta: AppMutationResult) => {
       const claimedRevisions = claimMutationResult(delta, mutationRevisionsRef.current);
       if (!claimedRevisions) return;
       setState((current) => applyAppMutationResult(current, delta, new Map(claimedRevisions)));
@@ -1308,7 +1735,7 @@ function App() {
       }
     };
     const bufferMutationResult = (result: AppMutationResult) => {
-      if (result.kind !== 'state-patch' || mutationBufferOverflowed) return;
+      if (mutationBufferOverflowed) return;
       if (!bufferedMutationResults.has(result.revision) && bufferedMutationResults.size >= MAX_RENDERER_DELTA_BUFFER) {
         mutationBufferOverflowed = true;
         requestReconciliation(true);
@@ -1380,11 +1807,13 @@ function App() {
       });
     };
     const applyIncomingDelta = (delta: AppDelta) => {
-      if (delta.kind === 'state-patch') {
+      applyHistoryBarrier(delta);
+      if (delta.kind !== 'task-event') {
         if (snapshotInstalling) bufferMutationResult(delta);
-        else applyStatePatch(delta);
+        else applyMutationDelta(delta);
       }
-      applyDeltaState(coordinator.receive(delta));
+      const previous = coordinator.current();
+      applyDeltaState(coordinator.receive(delta), previous);
     };
     async function reconcile(_gap?: RevisionGap, forceReset = false) {
       if (disposed) return;
@@ -1400,10 +1829,18 @@ function App() {
       }
       reconciling = true;
       try {
+        const requestedTaskId = selectedTaskIdRef.current ?? activeHtmlTaskIdRef.current;
+        const requestedViralId = activeViralAnalysisIdRef.current;
+        const taskResponseRevision = requestedTaskId
+          ? captureHistoryResponseRevision('task', requestedTaskId, historyEntityRevisionsRef.current, historyTombstoneRevisionsRef.current)
+          : null;
+        const viralResponseRevision = requestedViralId
+          ? captureHistoryResponseRevision('viral-analysis', requestedViralId, historyEntityRevisionsRef.current, historyTombstoneRevisionsRef.current)
+          : null;
         const result = await api.reconcileDeltas({
           sinceRevision: revisionRef.current,
-          taskId: selectedTaskIdRef.current ?? activeHtmlTaskIdRef.current ?? undefined,
-          viralAnalysisId: activeViralAnalysisIdRef.current ?? undefined,
+          taskId: requestedTaskId ?? undefined,
+          viralAnalysisId: requestedViralId ?? undefined,
           forceReset,
         });
         if (disposed) return;
@@ -1418,9 +1855,30 @@ function App() {
             tasks: bootstrap.tasks.items,
             events: result.taskEvents,
             viralAnalyses: bootstrap.viralAnalyses.items,
+            imageLabRecords: bootstrap.imageLabRecords.items,
+            voiceLabRecords: bootstrap.voiceLabRecords.items,
           });
           revisionRef.current = replayed.revision;
-          const rebuiltResetState = mergeReconciliationSlices(mergeDeltaView(bootstrapToState(bootstrap), replayed), result);
+          const guardedResult = {
+            ...result,
+            task: requestedTaskId && taskResponseRevision
+              && isHistoryResponseCurrent('task', requestedTaskId, taskResponseRevision, historyEntityRevisionsRef.current, historyTombstoneRevisionsRef.current)
+              ? result.task
+              : null,
+            taskEvents: requestedTaskId && taskResponseRevision
+              && isHistoryResponseCurrent('task', requestedTaskId, taskResponseRevision, historyEntityRevisionsRef.current, historyTombstoneRevisionsRef.current)
+              ? result.taskEvents
+              : [],
+            viralAnalysis: requestedViralId && viralResponseRevision
+              && isHistoryResponseCurrent('viral-analysis', requestedViralId, viralResponseRevision, historyEntityRevisionsRef.current, historyTombstoneRevisionsRef.current)
+              ? result.viralAnalysis
+              : null,
+            viralEvents: requestedViralId && viralResponseRevision
+              && isHistoryResponseCurrent('viral-analysis', requestedViralId, viralResponseRevision, historyEntityRevisionsRef.current, historyTombstoneRevisionsRef.current)
+              ? result.viralEvents
+              : [],
+          };
+          const rebuiltResetState = mergeReconciliationSlices(mergeDeltaView(bootstrapToState(bootstrap), replayed), guardedResult);
           installAuthoritativeSnapshot(rebuiltResetState, bootstrap.revision, replayed.revision, true);
           resetInProgress = false;
           const activeTaskId = selectedTaskIdRef.current ?? activeHtmlTaskIdRef.current;
@@ -1430,10 +1888,29 @@ function App() {
           return;
         }
         result.deltas.forEach(applyIncomingDelta);
+        const guardedResult = {
+          ...result,
+          task: requestedTaskId && taskResponseRevision
+            && isHistoryResponseCurrent('task', requestedTaskId, taskResponseRevision, historyEntityRevisionsRef.current, historyTombstoneRevisionsRef.current)
+            ? result.task
+            : null,
+          taskEvents: requestedTaskId && taskResponseRevision
+            && isHistoryResponseCurrent('task', requestedTaskId, taskResponseRevision, historyEntityRevisionsRef.current, historyTombstoneRevisionsRef.current)
+            ? result.taskEvents
+            : [],
+          viralAnalysis: requestedViralId && viralResponseRevision
+            && isHistoryResponseCurrent('viral-analysis', requestedViralId, viralResponseRevision, historyEntityRevisionsRef.current, historyTombstoneRevisionsRef.current)
+            ? result.viralAnalysis
+            : null,
+          viralEvents: requestedViralId && viralResponseRevision
+            && isHistoryResponseCurrent('viral-analysis', requestedViralId, viralResponseRevision, historyEntityRevisionsRef.current, historyTombstoneRevisionsRef.current)
+            ? result.viralEvents
+            : [],
+        };
         const current = coordinator.current();
         if (current && result.revision === current.revision) {
           const eventsBySeq = new Map(current.events.map((event) => [event.seq, event]));
-          result.taskEvents.forEach((event) => eventsBySeq.set(event.seq, event));
+          guardedResult.taskEvents.forEach((event) => eventsBySeq.set(event.seq, event));
           const synced = coordinator.bootstrap({
             ...current,
             revision: result.revision,
@@ -1441,7 +1918,7 @@ function App() {
           });
           applyDeltaState(synced);
         }
-        setState((currentState) => mergeReconciliationSlices(currentState, result));
+        setState((currentState) => mergeReconciliationSlices(currentState, guardedResult));
       } catch (error) {
         if (resetInProgress) {
           const current = coordinator.current();
@@ -1478,6 +1955,8 @@ function App() {
         tasks: bootstrap.tasks.items,
         events: [],
         viralAnalyses: bootstrap.viralAnalyses.items,
+        imageLabRecords: bootstrap.imageLabRecords.items,
+        voiceLabRecords: bootstrap.voiceLabRecords.items,
       });
       revisionRef.current = replayed.revision;
       installAuthoritativeSnapshot(
@@ -1502,7 +1981,7 @@ function App() {
       window.clearInterval(reconciliationTimer);
       unsubscribe();
     };
-  }, [api, refreshTaskDetail, refreshViralEvents, shellAction.reportError]);
+  }, [api, applyHistoryBarrier, refreshTaskDetail, refreshViralEvents, shellAction.reportError]);
 
   useEffect(() => {
     if (!selectedTaskId) return;
@@ -1527,6 +2006,7 @@ function App() {
 
   function applyState(next: AppMutationResult | null) {
     if (isBrowserPreview && next) {
+      applyHistoryBarrier(next);
       const claimedRevisions = claimMutationResult(next, mutationRevisionsRef.current);
       if (!claimedRevisions) return;
       setState((current) => applyLocalMutationResponse(current, next, new Map(claimedRevisions), true));
@@ -1560,7 +2040,11 @@ function App() {
     void shellAction.run(() => api.windowControl('close'));
   }
 
-  const selectedTask = state.tasks.find((task) => task.id === selectedTaskId) ?? state.tasks[0] ?? null;
+  const selectedTask = selectedTaskId
+    ? state.tasks.find((task) => task.id === selectedTaskId) ?? null
+    : activeView === 'task-detail'
+      ? null
+      : state.tasks[0] ?? null;
   const recentTasks = state.tasks.slice(0, 3);
   const trialDaysLabel = state.activation.expiresAt
     ? `${Math.max(0, Math.ceil((new Date(state.activation.expiresAt).getTime() - Date.now()) / 86400000))} 天`

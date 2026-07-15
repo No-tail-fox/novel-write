@@ -4,10 +4,12 @@ import type {
   AppState,
   CursorPage,
   DraftTemplate,
+  HistoryFamily,
   ImageLabRecord,
   ImageLabSummary,
   PromptTemplate,
   SequencedTaskEvent,
+  ShellView,
   Task,
   TaskEvent,
   TaskSummary,
@@ -33,19 +35,58 @@ export interface BootstrapTemplateSlices {
 
 export interface RequestGenerationGuard {
   begin: (id: string) => number;
+  finish: (id: string, token: number) => void;
+  invalidate: (id: string) => void;
   isCurrent: (id: string, generation: number) => boolean;
 }
 
 export function createRequestGenerationGuard(): RequestGenerationGuard {
   const generations = new Map<string, number>();
+  let nextToken = 0;
   return {
     begin(id) {
-      const generation = (generations.get(id) ?? 0) + 1;
-      generations.set(id, generation);
-      return generation;
+      nextToken += 1;
+      generations.set(id, nextToken);
+      return nextToken;
     },
+    finish(id, token) {
+      if (generations.get(id) === token) generations.delete(id);
+    },
+    invalidate: (id) => { generations.delete(id); },
     isCurrent: (id, generation) => generations.get(id) === generation,
   };
+}
+
+export interface HistorySelectionBarrierState {
+  selectedTaskId: string | null;
+  activeHtmlTaskId: string | null;
+  activeViralAnalysisId: string | null;
+  activeView: ShellView;
+}
+
+export function applyHistorySelectionBarrier(
+  current: HistorySelectionBarrierState,
+  family: HistoryFamily,
+  id: string,
+): HistorySelectionBarrierState {
+  if (family === 'task') {
+    const selectedDeleted = current.selectedTaskId === id;
+    const activeHtmlDeleted = current.activeHtmlTaskId === id;
+    if (!selectedDeleted && !activeHtmlDeleted) return current;
+    return {
+      ...current,
+      selectedTaskId: selectedDeleted ? null : current.selectedTaskId,
+      activeHtmlTaskId: activeHtmlDeleted ? null : current.activeHtmlTaskId,
+      activeView: selectedDeleted && current.activeView === 'task-detail' ? 'history' : current.activeView,
+    };
+  }
+  if (family === 'viral-analysis') {
+    return {
+      ...current,
+      activeViralAnalysisId: current.activeViralAnalysisId === id ? null : current.activeViralAnalysisId,
+    };
+  }
+  return current;
 }
 
 type MutationState = AppState & { secretStatus?: Partial<Record<string, boolean>> };
@@ -67,12 +108,15 @@ export const mutationRevisionSlices = [
 export function raiseMutationRevisionFloor(revisions: Map<string, number>, revision: number): void {
   for (const slice of mutationRevisionSlices) {
     if ((revisions.get(slice) ?? -1) < revision) revisions.set(slice, revision);
+    if ((revisions.get(`floor:${slice}`) ?? -1) < revision) revisions.set(`floor:${slice}`, revision);
   }
 }
 
 function mutationSlice(result: AppMutationResult): string {
-  if (result.kind === 'task-upsert') return 'tasks';
-  if (result.kind === 'viral-upsert') return 'viralAnalyses';
+  if (result.kind === 'task-upsert' || result.kind === 'task-tombstone') return 'tasks';
+  if (result.kind === 'viral-upsert' || result.kind === 'viral-tombstone') return 'viralAnalyses';
+  if (result.kind === 'image-lab-tombstone') return 'imageLabRecords';
+  if (result.kind === 'voice-lab-tombstone') return 'voiceLabRecords';
   const kind = result.patch.kind;
   if (kind === 'prompt-template-upsert' || kind === 'prompt-templates-reset') return 'promptTemplates';
   if (kind === 'custom-style-upsert') return 'customStyles';
@@ -82,14 +126,73 @@ function mutationSlice(result: AppMutationResult): string {
   return kind;
 }
 
+export function historyEntityRevisionKey(family: HistoryFamily, id: string): string {
+  return `history:${family}:${id}`;
+}
+
+function historyTombstoneRevisionKey(family: HistoryFamily, id: string): string {
+  return `history-tombstone:${family}:${id}`;
+}
+
+function isHistoryTombstone(result: AppMutationResult): boolean {
+  return result.kind === 'task-tombstone'
+    || result.kind === 'viral-tombstone'
+    || result.kind === 'image-lab-tombstone'
+    || result.kind === 'voice-lab-tombstone';
+}
+
+function mutationEntity(result: AppMutationResult): { family: HistoryFamily; id: string } | null {
+  if (result.kind === 'task-upsert') return { family: 'task', id: result.task.id };
+  if (result.kind === 'task-tombstone') return { family: 'task', id: result.id };
+  if (result.kind === 'viral-upsert') return { family: 'viral-analysis', id: result.record.id };
+  if (result.kind === 'viral-tombstone') return { family: 'viral-analysis', id: result.id };
+  if (result.kind === 'image-lab-tombstone') return { family: 'image-lab', id: result.id };
+  if (result.kind === 'voice-lab-tombstone') return { family: 'voice-lab', id: result.id };
+  if (result.kind !== 'state-patch') return null;
+  if (result.patch.kind === 'image-lab-upsert') return { family: 'image-lab', id: result.patch.record.id };
+  if (result.patch.kind === 'voice-lab-upsert') return { family: 'voice-lab', id: result.patch.record.id };
+  return null;
+}
+
+function mutationRevisionFloor(result: AppMutationResult, revisions: Map<string, number>): number {
+  const slice = mutationSlice(result);
+  const entity = mutationEntity(result);
+  if (!entity) return revisions.get(slice) ?? -1;
+  return Math.max(
+    revisions.get(`floor:${slice}`) ?? -1,
+    revisions.get(historyEntityRevisionKey(entity.family, entity.id)) ?? -1,
+    revisions.get(historyTombstoneRevisionKey(entity.family, entity.id)) ?? -1,
+  );
+}
+
+function blockedByHistoryTombstone(result: AppMutationResult, revisions: Map<string, number>): boolean {
+  const entity = mutationEntity(result);
+  return Boolean(
+    entity
+    && !isHistoryTombstone(result)
+    && revisions.has(historyTombstoneRevisionKey(entity.family, entity.id)),
+  );
+}
+
+function recordMutationRevision(result: AppMutationResult, revisions: Map<string, number>): void {
+  const slice = mutationSlice(result);
+  revisions.set(slice, Math.max(revisions.get(slice) ?? -1, result.revision));
+  const entity = mutationEntity(result);
+  if (!entity) return;
+  revisions.set(historyEntityRevisionKey(entity.family, entity.id), result.revision);
+  if (isHistoryTombstone(result)) {
+    revisions.set(historyTombstoneRevisionKey(entity.family, entity.id), result.revision);
+  }
+}
+
 export function claimMutationResult(
   result: AppMutationResult,
   revisions: Map<string, number>,
 ): Map<string, number> | null {
-  const slice = mutationSlice(result);
-  if (result.revision <= (revisions.get(slice) ?? -1)) return null;
+  if (blockedByHistoryTombstone(result, revisions)) return null;
+  if (result.revision <= mutationRevisionFloor(result, revisions)) return null;
   const preFloor = new Map(revisions);
-  revisions.set(slice, result.revision);
+  recordMutationRevision(result, revisions);
   return preFloor;
 }
 
@@ -104,9 +207,29 @@ export function applyAppMutationResult<T extends MutationState>(
   result: AppMutationResult,
   revisions: Map<string, number>,
 ): T {
-  const slice = mutationSlice(result);
-  if (result.revision <= (revisions.get(slice) ?? -1)) return state;
-  revisions.set(slice, result.revision);
+  if (blockedByHistoryTombstone(result, revisions)) return state;
+  if (result.revision <= mutationRevisionFloor(result, revisions)) return state;
+  recordMutationRevision(result, revisions);
+  if (result.kind === 'task-tombstone') {
+    return {
+      ...state,
+      tasks: state.tasks.filter((task) => task.id !== result.id),
+      events: state.events.filter((event) => event.taskId !== result.id),
+    };
+  }
+  if (result.kind === 'viral-tombstone') {
+    return {
+      ...state,
+      viralAnalyses: state.viralAnalyses.filter((record) => record.id !== result.id),
+      viralEvents: state.viralEvents.filter((event) => event.analysisId !== result.id),
+    };
+  }
+  if (result.kind === 'image-lab-tombstone') {
+    return { ...state, imageLabRecords: state.imageLabRecords.filter((record) => record.id !== result.id) };
+  }
+  if (result.kind === 'voice-lab-tombstone') {
+    return { ...state, voiceLabRecords: state.voiceLabRecords.filter((record) => record.id !== result.id) };
+  }
   if (result.kind === 'task-upsert') {
     const detail = state.tasks.find((task) => task.id === result.task.id);
     return { ...state, tasks: upsertEntity(state.tasks, taskSummaryToTask(result.task, detail)) };
@@ -268,16 +391,37 @@ function mergeViralEvents(current: ViralAnalysisEvent[], incoming: ViralAnalysis
     .slice(-MAX_RENDERER_EVENT_HISTORY);
 }
 
+export function shouldApplyDeltaViewTransition(
+  previous: DeltaViewState | null,
+  next: DeltaViewState | null,
+): boolean {
+  return next !== null && next !== previous;
+}
+
 export function mergeDeltaViewSlices<
-  T extends { tasks: Task[]; events: TaskEvent[]; viralAnalyses: ViralAnalysisRecord[] },
+  T extends {
+    tasks: Task[];
+    events: TaskEvent[];
+    viralAnalyses: ViralAnalysisRecord[];
+    viralEvents: ViralAnalysisEvent[];
+    imageLabRecords: ImageLabRecord[];
+    voiceLabRecords: VoiceLabRecord[];
+  },
 >(current: T, incoming: DeltaViewState): T {
   const taskDetails = new Map(current.tasks.map((task) => [task.id, task]));
   const viralDetails = new Map(current.viralAnalyses.map((record) => [record.id, record]));
+  const imageDetails = new Map(current.imageLabRecords.map((record) => [record.id, record]));
+  const voiceDetails = new Map(current.voiceLabRecords.map((record) => [record.id, record]));
+  const deletedTasks = new Set(Object.keys(incoming.tombstoneRevisions?.task ?? {}));
+  const deletedViral = new Set(Object.keys(incoming.tombstoneRevisions?.['viral-analysis'] ?? {}));
   return {
     ...current,
     tasks: incoming.tasks.map((summary) => taskSummaryToTask(summary, taskDetails.get(summary.id))),
-    events: mergeTaskEvents(current.events, incoming.events),
+    events: mergeTaskEvents(current.events, incoming.events).filter((event) => !deletedTasks.has(event.taskId)),
     viralAnalyses: incoming.viralAnalyses.map((summary) => viralSummaryToRecord(summary, viralDetails.get(summary.id))),
+    viralEvents: current.viralEvents.filter((event) => !deletedViral.has(event.analysisId)),
+    imageLabRecords: incoming.imageLabRecords.map((summary) => imageLabSummaryToRecord(summary, imageDetails.get(summary.id))),
+    voiceLabRecords: incoming.voiceLabRecords.map((summary) => voiceLabSummaryToRecord(summary, voiceDetails.get(summary.id))),
   };
 }
 

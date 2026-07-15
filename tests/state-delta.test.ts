@@ -4,7 +4,7 @@ import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
 import { ConfigService } from '../electron/config-service';
 import { defaultConfig, defaultPromptTemplates } from '@shared/config';
-import { createAppDeltaCoordinator, type DeltaViewState } from '@shared/state-delta';
+import { createAppDeltaCoordinator, reduceAppDelta, type DeltaViewState } from '@shared/state-delta';
 import * as reconciliationModule from '@shared/state-reconciliation';
 import {
   mergeBootstrapTemplateDetails,
@@ -25,6 +25,7 @@ import type {
   PromptTemplate,
   TaskSummary,
   ViralAnalysisSummary,
+  VoiceLabSummary,
 } from '@shared/types';
 
 function taskSummary(id: string, status: TaskSummary['status'] = 'pending'): TaskSummary {
@@ -66,7 +67,14 @@ function taskSummary(id: string, status: TaskSummary['status'] = 'pending'): Tas
 }
 
 function viewState(revision: number, tasks: TaskSummary[] = []): DeltaViewState {
-  return { revision, tasks, events: [], viralAnalyses: [] };
+  return {
+    revision,
+    tasks,
+    events: [],
+    viralAnalyses: [],
+    imageLabRecords: [],
+    voiceLabRecords: [],
+  } as DeltaViewState;
 }
 
 function viralSummary(id: string, progress = 0): ViralAnalysisSummary {
@@ -83,6 +91,40 @@ function viralSummary(id: string, progress = 0): ViralAnalysisSummary {
     startedAt: null,
     completedAt: null,
     lastHeartbeatAt: null,
+  };
+}
+
+function imageSummary(id: string): ImageLabSummary {
+  return {
+    id,
+    promptPreview: id,
+    ratio: '9:16',
+    style: 'photo-real',
+    provider: 'mock',
+    imagePath: '',
+    status: 'generated',
+    errorMessage: '',
+    resolution: '1K',
+    smartMode: 'text-to-image',
+    upstreamTaskId: null,
+    createdAt: '2026-01-01T00:00:00.000Z',
+    finishedAt: '2026-01-01T00:00:01.000Z',
+  };
+}
+
+function voiceSummary(id: string): VoiceLabSummary {
+  return {
+    id,
+    textPreview: id,
+    provider: 'mock',
+    voiceId: 'voice',
+    voiceLabel: 'Voice',
+    speed: 1,
+    audioPath: '',
+    status: 'generated',
+    errorMessage: '',
+    createdAt: '2026-01-01T00:00:00.000Z',
+    finishedAt: '2026-01-01T00:00:01.000Z',
   };
 }
 
@@ -105,6 +147,225 @@ function mutationState(overrides: Record<string, unknown> = {}): Record<string, 
 }
 
 describe('app state delta coordination', () => {
+  it('keeps four-family tombstones terminal across every later upsert and task event', () => {
+    const task = taskSummary('task-tombstone');
+    const viral = viralSummary('viral-tombstone');
+    const image = imageSummary('image-tombstone');
+    const voice = voiceSummary('voice-tombstone');
+    const initial = {
+      ...viewState(8, [task]),
+      events: [{
+        seq: 1,
+        taskId: task.id,
+        type: 'created',
+        step: null,
+        agent: null,
+        tool: null,
+        detail: 'created',
+        dataJson: null,
+        ts: 1,
+      }],
+      viralAnalyses: [viral],
+      imageLabRecords: [image],
+      voiceLabRecords: [voice],
+    } as DeltaViewState;
+
+    const deletedTask = reduceAppDelta(initial, { kind: 'task-tombstone', id: task.id, revision: 9 } as AppDelta);
+    const staleTask = reduceAppDelta(deletedTask, { kind: 'task-upsert', task: { ...task, status: 'completed' }, revision: 9 });
+    expect(staleTask.tasks).toEqual([]);
+    expect(staleTask.events).toEqual([]);
+    const restoredTask = reduceAppDelta(staleTask, { kind: 'task-upsert', task: { ...task, status: 'paused' }, revision: 10 });
+    expect(restoredTask.tasks).toEqual([]);
+    expect(restoredTask.revision).toBe(10);
+    const lateTaskEvent = reduceAppDelta(restoredTask, {
+      kind: 'task-event',
+      event: { ...initial.events[0], seq: 2, detail: 'late' },
+      revision: 11,
+    });
+    expect(lateTaskEvent.events).toEqual([]);
+    expect(lateTaskEvent.revision).toBe(11);
+
+    const deletedViral = reduceAppDelta(initial, { kind: 'viral-tombstone', id: viral.id, revision: 9 } as AppDelta);
+    const staleViral = reduceAppDelta(deletedViral, { kind: 'viral-upsert', record: { ...viral, progress: 1 }, revision: 8 });
+    expect(staleViral.viralAnalyses).toEqual([]);
+    const restoredViral = reduceAppDelta(staleViral, { kind: 'viral-upsert', record: { ...viral, progress: 0.5 }, revision: 10 });
+    expect(restoredViral.viralAnalyses).toEqual([]);
+
+    const deletedImage = reduceAppDelta(initial, { kind: 'image-lab-tombstone', id: image.id, revision: 9 } as AppDelta);
+    const staleImage = reduceAppDelta(deletedImage, {
+      kind: 'state-patch',
+      patch: { kind: 'image-lab-upsert', record: { ...image, promptPreview: 'stale' } },
+      revision: 9,
+    });
+    expect(staleImage.imageLabRecords).toEqual([]);
+    const restoredImage = reduceAppDelta(staleImage, {
+      kind: 'state-patch',
+      patch: { kind: 'image-lab-upsert', record: { ...image, promptPreview: 'restored' } },
+      revision: 10,
+    });
+    expect(restoredImage.imageLabRecords).toEqual([]);
+
+    const deletedVoice = reduceAppDelta(initial, { kind: 'voice-lab-tombstone', id: voice.id, revision: 9 } as AppDelta);
+    const staleVoice = reduceAppDelta(deletedVoice, {
+      kind: 'state-patch',
+      patch: { kind: 'voice-lab-upsert', record: { ...voice, textPreview: 'stale' } },
+      revision: 9,
+    });
+    expect(staleVoice.voiceLabRecords).toEqual([]);
+    const restoredVoice = reduceAppDelta(staleVoice, {
+      kind: 'state-patch',
+      patch: { kind: 'voice-lab-upsert', record: { ...voice, textPreview: 'restored' } },
+      revision: 10,
+    });
+    expect(restoredVoice.voiceLabRecords).toEqual([]);
+  });
+
+  it('filters known and reset-live tombstones from a newer authoritative snapshot', () => {
+    const known = createAppDeltaCoordinator(() => undefined);
+    known.bootstrap(viewState(8, [taskSummary('known-deleted')]));
+    known.receive({ kind: 'task-tombstone', id: 'known-deleted', revision: 9 } as AppDelta);
+    known.beginReset();
+    const knownReset = known.reset(viewState(10, [taskSummary('known-deleted')]));
+    expect(knownReset.tasks).toEqual([]);
+
+    const live = createAppDeltaCoordinator(() => undefined);
+    live.bootstrap({
+      ...viewState(8),
+      imageLabRecords: [imageSummary('live-deleted')],
+    } as DeltaViewState);
+    live.beginReset();
+    live.receive({ kind: 'image-lab-tombstone', id: 'live-deleted', revision: 9 } as AppDelta);
+    const liveReset = live.reset({
+      ...viewState(10),
+      imageLabRecords: [imageSummary('live-deleted')],
+    } as DeltaViewState);
+    expect(liveReset.imageLabRecords).toEqual([]);
+  });
+
+  it('rejects a higher-revision task event replayed during reset after a terminal tombstone', () => {
+    const task = taskSummary('reset-event-deleted');
+    const coordinator = createAppDeltaCoordinator(() => undefined);
+    coordinator.bootstrap(viewState(8, [task]));
+    coordinator.receive({ kind: 'task-tombstone', id: task.id, revision: 9 } as AppDelta);
+    coordinator.beginReset();
+    coordinator.receive({
+      kind: 'task-event',
+      event: {
+        seq: 11,
+        taskId: task.id,
+        type: 'late-reset-event',
+        step: null,
+        agent: null,
+        tool: null,
+        detail: 'must stay deleted',
+        dataJson: null,
+        ts: 11,
+      },
+      revision: 11,
+    });
+
+    const reset = coordinator.reset({
+      ...viewState(12, [task]),
+      events: [],
+    });
+
+    expect(reset.revision).toBe(12);
+    expect(reset.tasks).toEqual([]);
+    expect(reset.events).toEqual([]);
+  });
+
+  it('tracks mutation revisions per entity so deleting one id does not suppress another id', () => {
+    const helpers = reconciliationModule as unknown as {
+      applyAppMutationResult: (
+        state: ReturnType<typeof mutationState>,
+        result: AppMutationResult,
+        revisions: Map<string, number>,
+      ) => ReturnType<typeof mutationState>;
+      claimMutationResult: (
+        result: AppMutationResult,
+        revisions: Map<string, number>,
+      ) => Map<string, number> | null;
+    };
+    const first = taskSummaryToTask(taskSummary('deleted-task'));
+    const second = taskSummaryToTask(taskSummary('unrelated-task'));
+    const revisions = new Map<string, number>();
+    const initial = mutationState({
+      tasks: [first],
+      events: [{ taskId: first.id, type: 'created', detail: '', ts: 1 }],
+    });
+
+    const deleted = helpers.applyAppMutationResult(
+      initial,
+      { kind: 'task-tombstone', id: first.id, revision: 9 } as AppMutationResult,
+      revisions,
+    );
+    const newerSameId = helpers.applyAppMutationResult(
+      deleted,
+      { kind: 'task-upsert', task: taskSummary(first.id, 'completed'), revision: 10 },
+      revisions,
+    );
+    const olderOtherId = helpers.applyAppMutationResult(
+      newerSameId,
+      { kind: 'task-upsert', task: taskSummary(second.id, 'running'), revision: 8 },
+      revisions,
+    );
+
+    expect(newerSameId.tasks).toEqual([]);
+    expect(newerSameId.events).toEqual([]);
+    expect(olderOtherId.tasks).toEqual([expect.objectContaining({ id: second.id, status: 'running' })]);
+
+    const claimedRevisions = new Map<string, number>();
+    expect(helpers.claimMutationResult(
+      { kind: 'task-tombstone', id: first.id, revision: 9 } as AppMutationResult,
+      claimedRevisions,
+    )).toBeInstanceOf(Map);
+    expect(helpers.claimMutationResult(
+      { kind: 'task-upsert', task: taskSummary(first.id, 'completed'), revision: 10 },
+      claimedRevisions,
+    )).toBeNull();
+    expect(helpers.claimMutationResult(
+      { kind: 'task-upsert', task: taskSummary(second.id, 'running'), revision: 8 },
+      claimedRevisions,
+    )).toBeInstanceOf(Map);
+  });
+
+  it('does not merge an unchanged coordinator snapshot after a gap tombstone updater', () => {
+    const helpers = reconciliationModule as unknown as {
+      applyAppMutationResult: (
+        state: ReturnType<typeof mutationState>,
+        result: AppMutationResult,
+        revisions: Map<string, number>,
+      ) => ReturnType<typeof mutationState>;
+      shouldApplyDeltaViewTransition?: (
+        previous: DeltaViewState | null,
+        next: DeltaViewState | null,
+      ) => boolean;
+    };
+    expect(typeof helpers.shouldApplyDeltaViewTransition).toBe('function');
+    if (!helpers.shouldApplyDeltaViewTransition) return;
+
+    const task = taskSummary('gap-deleted');
+    const coordinator = createAppDeltaCoordinator(() => undefined);
+    coordinator.bootstrap(viewState(1, [task]));
+    const previous = coordinator.current();
+    const next = coordinator.receive({ kind: 'task-tombstone', id: task.id, revision: 3 } as AppDelta);
+    const local = helpers.applyAppMutationResult(
+      mutationState({
+        tasks: [taskSummaryToTask(task)],
+        events: [{ taskId: task.id, type: 'created', detail: '', ts: 1 }],
+      }),
+      { kind: 'task-tombstone', id: task.id, revision: 3 } as AppMutationResult,
+      new Map(),
+    );
+
+    expect(next).toBe(previous);
+    const final = helpers.shouldApplyDeltaViewTransition(previous, next)
+      ? reconciliationModule.mergeDeltaViewSlices(local as never, next!)
+      : local;
+    expect(final.tasks).toEqual([]);
+    expect(final.events).toEqual([]);
+  });
+
   it('consumes every cursor page without duplicating summaries', async () => {
     const collectCursorPages = (reconciliationModule as unknown as {
       collectCursorPages?: <T>(
@@ -168,6 +429,9 @@ describe('app state delta coordination', () => {
       tasks: ReturnType<typeof taskSummaryToTask>[];
       events: Array<{ seq: number; taskId: string; type: string; detail: string; ts: number }>;
       viralAnalyses: ReturnType<typeof viralSummaryToRecord>[];
+      viralEvents: [];
+      imageLabRecords: [];
+      voiceLabRecords: [];
     };
     const mergeDeltaViewSlices = (reconciliationModule as unknown as {
       mergeDeltaViewSlices?: (current: DeltaSlices, incoming: DeltaViewState) => DeltaSlices;
@@ -183,6 +447,9 @@ describe('app state delta coordination', () => {
       tasks: [taskSummaryToTask(taskSummary('task-1', 'running'))],
       events: history,
       viralAnalyses: [],
+      viralEvents: [],
+      imageLabRecords: [],
+      voiceLabRecords: [],
     };
 
     const merged = mergeDeltaViewSlices?.(current, viewState(7, [taskSummary('task-1', 'completed')]));
@@ -196,6 +463,9 @@ describe('app state delta coordination', () => {
       tasks: ReturnType<typeof taskSummaryToTask>[];
       events: Array<{ seq: number; taskId: string; type: string; detail: string; ts: number }>;
       viralAnalyses: ReturnType<typeof viralSummaryToRecord>[];
+      viralEvents: [];
+      imageLabRecords: [];
+      voiceLabRecords: [];
     };
     const mergeDeltaViewSlices = (reconciliationModule as unknown as {
       mergeDeltaViewSlices?: (current: DeltaSlices, incoming: DeltaViewState) => DeltaSlices;
@@ -220,7 +490,14 @@ describe('app state delta coordination', () => {
     };
 
     const merged = mergeDeltaViewSlices?.(
-      { tasks: [taskSummaryToTask(taskSummary('task-1'))], events: history, viralAnalyses: [] },
+      {
+        tasks: [taskSummaryToTask(taskSummary('task-1'))],
+        events: history,
+        viralAnalyses: [],
+        viralEvents: [],
+        imageLabRecords: [],
+        voiceLabRecords: [],
+      },
       { ...viewState(521, [taskSummary('task-1')]), events: [incomingEvent] },
     );
 
@@ -364,6 +641,79 @@ describe('app state delta coordination', () => {
     expect(guard?.isCurrent('html-1', first)).toBe(false);
     expect(guard?.isCurrent('html-1', second)).toBe(true);
     expect(guard?.isCurrent('html-2', other)).toBe(true);
+  });
+
+  it('retires globally monotonic detail tokens without retaining finished or invalidated ids', () => {
+    const createRequestGenerationGuard = (reconciliationModule as unknown as {
+      createRequestGenerationGuard?: () => {
+        begin: (id: string) => number;
+        finish?: (id: string, token: number) => void;
+        invalidate?: (id: string) => void;
+        isCurrent: (id: string, token: number) => boolean;
+      };
+    }).createRequestGenerationGuard;
+    const guard = createRequestGenerationGuard?.();
+    expect(typeof guard?.finish).toBe('function');
+    expect(typeof guard?.invalidate).toBe('function');
+    if (!guard?.finish || !guard.invalidate) return;
+
+    const issued = Array.from({ length: 256 }, (_, index) => ({
+      id: `detail-${index}`,
+      token: guard.begin(`detail-${index}`),
+    }));
+    issued.forEach(({ id, token }) => guard.finish!(id, token));
+    issued.forEach(({ id, token }) => expect(guard.isCurrent(id, token)).toBe(false));
+
+    const resumed = guard.begin('detail-0');
+    expect(resumed).toBeGreaterThan(Math.max(...issued.map(({ token }) => token)));
+    guard.invalidate('detail-0');
+    expect(guard.isCurrent('detail-0', resumed)).toBe(false);
+    const afterInvalidation = guard.begin('detail-0');
+    expect(afterInvalidation).toBeGreaterThan(resumed);
+
+    const superseded = guard.begin('same-id');
+    const current = guard.begin('same-id');
+    guard.finish('same-id', superseded);
+    expect(guard.isCurrent('same-id', current)).toBe(true);
+    guard.finish('same-id', current);
+    expect(guard.isCurrent('same-id', current)).toBe(false);
+  });
+
+  it('keeps another selected task detail open while clearing only a matching HTML task ref', () => {
+    const applyHistorySelectionBarrier = (reconciliationModule as unknown as {
+      applyHistorySelectionBarrier?: (
+        state: {
+          selectedTaskId: string | null;
+          activeHtmlTaskId: string | null;
+          activeViralAnalysisId: string | null;
+          activeView: string;
+        },
+        family: 'task',
+        id: string,
+      ) => {
+        selectedTaskId: string | null;
+        activeHtmlTaskId: string | null;
+        activeViralAnalysisId: string | null;
+        activeView: string;
+      };
+    }).applyHistorySelectionBarrier;
+    expect(typeof applyHistorySelectionBarrier).toBe('function');
+    if (!applyHistorySelectionBarrier) return;
+
+    const viewingOther = {
+      selectedTaskId: 'task-b',
+      activeHtmlTaskId: null,
+      activeViralAnalysisId: null,
+      activeView: 'task-detail',
+    };
+    expect(applyHistorySelectionBarrier(viewingOther, 'task', 'task-a')).toBe(viewingOther);
+    expect(applyHistorySelectionBarrier({
+      ...viewingOther,
+      activeHtmlTaskId: 'task-a',
+    }, 'task', 'task-a')).toEqual({
+      ...viewingOther,
+      activeHtmlTaskId: null,
+    });
   });
 
   it('ignores an older revisioned mutation response for the same state slice', () => {

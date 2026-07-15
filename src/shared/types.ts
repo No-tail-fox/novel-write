@@ -1333,9 +1333,22 @@ export type AppDelta =
   | { kind: 'task-upsert'; task: TaskSummary; revision: number }
   | { kind: 'task-event'; event: SequencedTaskEvent; revision: number }
   | { kind: 'viral-upsert'; record: ViralAnalysisSummary; revision: number }
-  | { kind: 'state-patch'; patch: AppStatePatch; revision: number };
+  | { kind: 'state-patch'; patch: AppStatePatch; revision: number }
+  | TaskTombstoneResult
+  | ViralAnalysisTombstoneResult
+  | ImageLabTombstoneResult
+  | VoiceLabTombstoneResult;
 
-export type AppMutationResult = Extract<AppDelta, { kind: 'task-upsert' | 'viral-upsert' | 'state-patch' }>;
+export type AppMutationResult = Extract<AppDelta, {
+  kind:
+    | 'task-upsert'
+    | 'viral-upsert'
+    | 'state-patch'
+    | 'task-tombstone'
+    | 'viral-tombstone'
+    | 'image-lab-tombstone'
+    | 'voice-lab-tombstone';
+}>;
 
 export interface AppDeltaReconcileRequest {
   sinceRevision: number;

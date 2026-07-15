@@ -3,6 +3,52 @@ import { describe, expect, it } from 'vitest';
 import { INVOKE_CHANNELS } from '../src/shared/storydream-api';
 
 describe('electron ipc contract', () => {
+  it('publishes history governance only after successful persistence and returns the published revision', async () => {
+    const main = await readFile(new URL('../electron/main.ts', import.meta.url), 'utf8');
+    const payload = main.slice(main.indexOf('type AppDeltaPayload'), main.indexOf('function publishAppDelta'));
+
+    for (const kind of [
+      'task-tombstone',
+      'viral-tombstone',
+      'image-lab-tombstone',
+      'voice-lab-tombstone',
+    ]) {
+      expect(payload).toContain(`kind: '${kind}'`);
+    }
+
+    for (const [channel, method, publishKind] of [
+      ['task:archive', 'archiveTask', 'task-upsert'],
+      ['task:restore', 'restoreTask', 'task-upsert'],
+      ['viral:archive', 'archiveViralAnalysis', 'viral-upsert'],
+      ['viral:restore', 'restoreViralAnalysis', 'viral-upsert'],
+      ['image-lab:archive', 'archiveImageLabRecord', 'image-lab-upsert'],
+      ['image-lab:restore', 'restoreImageLabRecord', 'image-lab-upsert'],
+      ['voice-lab:archive', 'archiveVoiceLabRecord', 'voice-lab-upsert'],
+      ['voice-lab:restore', 'restoreVoiceLabRecord', 'voice-lab-upsert'],
+    ] as const) {
+      const handler = handlerSource(main, channel);
+      const persisted = handler.indexOf(`await database.${method}(id)`);
+      const published = handler.indexOf(`kind: '${publishKind}'`);
+      expect(persisted, `${channel} awaits persistence`).toBeGreaterThan(-1);
+      expect(published, `${channel} publishes its upsert`).toBeGreaterThan(persisted);
+      expect(handler).toContain('return await');
+    }
+
+    for (const [channel, family, publishKind] of [
+      ['task:delete', 'task', 'task-tombstone'],
+      ['viral:delete', 'viral-analysis', 'viral-tombstone'],
+      ['image-lab:delete', 'image-lab', 'image-lab-tombstone'],
+      ['voice-lab:delete', 'voice-lab', 'voice-lab-tombstone'],
+    ] as const) {
+      const handler = handlerSource(main, channel);
+      const deleted = handler.indexOf(`await deleteHistoryPermanently(database, '${family}', id)`);
+      const published = handler.indexOf(`kind: '${publishKind}'`);
+      expect(deleted, `${channel} awaits database/quarantine deletion`).toBeGreaterThan(-1);
+      expect(published, `${channel} publishes its tombstone`).toBeGreaterThan(deleted);
+      expect(handler).toContain('return await');
+    }
+  });
+
   it('keeps runner integration timeouts at the committed heavy-test baseline', async () => {
     const runnerTests = await readFile(new URL('./runner.test.ts', import.meta.url), 'utf8');
 
@@ -116,7 +162,11 @@ describe('electron ipc contract', () => {
     ] as const) {
       const handler = handlerSource(main, channel);
       expect(handler).toContain(`runHistoryGovernanceMutation('${family}', id`);
-      expect(handler).toContain(`database.${method}(id)`);
+      if (channel.endsWith(':delete')) {
+        expect(handler).toContain(`deleteHistoryPermanently(database, '${family}', id)`);
+      } else {
+        expect(handler).toContain(`database.${method}(id)`);
+      }
     }
   });
 
