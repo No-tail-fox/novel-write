@@ -24,7 +24,7 @@ import { runTask } from '../src/shared/runner';
 import { runStoryboundMediaSidecar } from '../src/shared/storybound-sidecar';
 import { FileDatabase } from '../src/shared/storage';
 import { createHtmlVideoRuntimeProviders, createTaskRuntimeProviders } from '../src/shared/task-runtime-providers';
-import type { AccountProfile, ActivationState, AppConfig, AppDelta, AppDeltaReconcileRequest, AppDeltaReconcileResult, AppStatePatch, BookSelectionInput, ConfigTestTarget, CreateTaskInput, CreateViralAnalysisInput, CursorRequest, CustomStyle, CustomStyleGenerateInput, DraftTemplate, HistoryListRequest, HtmlVideoPipelineDataV2, ImageLabGenerateInput, ImageLabRecord, ImageLabSummary, LlmConfig, PromptTemplate, ProviderModelListRequest, ResearchCopyComposeInput, SequencedTaskEvent, Task, TaskStatus, TaskStepRerunMode, UiPreferences, ViralAnalysisRecord, ViralAnalysisStatus, ViralProductionTaskOptions, VolcengineSpeakerListRequest, VoiceLabGenerateInput, VoiceLabRecord, VoiceLabSummary } from '../src/shared/types';
+import type { AccountProfile, ActivationState, AppConfig, AppDelta, AppDeltaReconcileRequest, AppDeltaReconcileResult, AppStatePatch, BookSelectionInput, ConfigTestTarget, CreateTaskInput, CreateViralAnalysisInput, CursorRequest, CustomStyle, CustomStyleGenerateInput, DraftTemplate, HistoryFamily, HistoryListRequest, HtmlVideoPipelineDataV2, ImageLabGenerateInput, ImageLabRecord, ImageLabSummary, LlmConfig, PromptTemplate, ProviderModelListRequest, ResearchCopyComposeInput, SequencedTaskEvent, Task, TaskStatus, TaskStepRerunMode, UiPreferences, ViralAnalysisRecord, ViralAnalysisStatus, ViralProductionTaskOptions, VolcengineSpeakerListRequest, VoiceLabGenerateInput, VoiceLabRecord, VoiceLabSummary } from '../src/shared/types';
 import { createViralProductionTaskInput, detectViralPlatform, runViralAnalysis } from '../src/shared/viral-analysis';
 import { createViralRuntimeProviders } from '../src/shared/viral-runtime';
 import { listVolcengineSpeakers } from '../src/shared/volcengine-speakers';
@@ -43,12 +43,15 @@ import { createElectronHtmlVideoRenderer } from './html-video-renderer';
 import { createTrustedIpcRegistrar } from './ipc';
 import { ConfigService } from './config-service';
 import { CredentialVault } from './credential-vault';
+import { HistoryActivityRegistry, type HistoryActivityReservation } from './history-activity-registry';
 import { backfillLegacyManagedHistoryStorage, resolveManagedHistoryWorkDir } from './managed-history-paths';
 import {
   finalizeTaskRunIntent,
   requestTaskRunIntent,
   runLatestTaskControlRequest,
   stopTaskRunBeforeArtifactMutation,
+  takeHistoryActivityReservation,
+  type LatestTaskControlRequestState,
   type TaskRunIntent,
   type TaskRunIntentState,
 } from './task-run-lifecycle';
@@ -78,17 +81,21 @@ let mainWindowPolicyInstalled = false;
 let db: FileDatabase | null = null;
 let configService: ConfigService | null = null;
 interface RunningTaskRun extends TaskRunIntentState {
+  activityReservation: HistoryActivityReservation | null;
   completion: Promise<void>;
 }
 
 interface RunningViralAnalysisRun {
+  activityReservation: HistoryActivityReservation | null;
   controller: AbortController;
   completion: Promise<void>;
 }
 
 const runningTasks = new Map<string, RunningTaskRun>();
-const latestTaskControlRequests = new Map<string, symbol>();
+const latestTaskControlRequests = new Map<string, LatestTaskControlRequestState>();
 const runningViralAnalyses = new Map<string, RunningViralAnalysisRun>();
+const latestViralControlRequests = new Map<string, LatestTaskControlRequestState>();
+const historyActivityRegistry = new HistoryActivityRegistry();
 const appDeltaHistoryLimit = 512;
 const appDeltaHistory: AppDelta[] = [];
 let appRevision = 0;
@@ -197,6 +204,26 @@ async function getDb(): Promise<FileDatabase> {
   db = database;
   configService = service;
   return database;
+}
+
+async function runHistoryGovernanceMutation<T>(
+  family: HistoryFamily,
+  id: string,
+  mutate: (database: FileDatabase) => Promise<T>,
+): Promise<T> {
+  const reservation = historyActivityRegistry.reserveGovernance(family, id);
+  try {
+    if (family === 'task' && runningTasks.has(id)) {
+      throw new Error('HISTORY_ACTIVE: task has an active runtime handle.');
+    }
+    if (family === 'viral-analysis' && runningViralAnalyses.has(id)) {
+      throw new Error('HISTORY_ACTIVE: viral-analysis has an active runtime handle.');
+    }
+    const database = await getDb();
+    return await mutate(database);
+  } finally {
+    reservation.release();
+  }
 }
 
 async function getConfigService(): Promise<ConfigService> {
@@ -451,23 +478,46 @@ async function buildRunOptions(database: FileDatabase, task: Task, workDir: stri
   };
 }
 
-function startTaskRun(database: FileDatabase, task: Task, workDir: string): boolean {
-  if (isShuttingDown || runningTasks.has(task.id)) return false;
-  return isHtmlVideoTask(task)
-    ? startHtmlVideoTaskRun(database, task, workDir)
-    : startStandardTaskRun(database, task, workDir);
+function startTaskRun(
+  database: FileDatabase,
+  task: Task,
+  workDir: string,
+  activityReservation: HistoryActivityReservation,
+): boolean {
+  if (isShuttingDown || runningTasks.has(task.id)) {
+    activityReservation.release();
+    return false;
+  }
+  try {
+    return isHtmlVideoTask(task)
+      ? startHtmlVideoTaskRun(database, task, workDir, activityReservation)
+      : startStandardTaskRun(database, task, workDir, activityReservation);
+  } catch (error) {
+    activityReservation.release();
+    throw error;
+  }
 }
 
-function startStandardTaskRun(database: FileDatabase, task: Task, workDir: string): boolean {
-  return startOwnedTaskRun(database, task, workDir, 'Background task', async (controller) => {
+function startStandardTaskRun(
+  database: FileDatabase,
+  task: Task,
+  workDir: string,
+  activityReservation: HistoryActivityReservation,
+): boolean {
+  return startOwnedTaskRun(database, task, workDir, activityReservation, 'Background task', async (controller) => {
     await runTask(database, { ...task, status: 'pending', errorMessage: '' }, await buildRunOptions(database, task, workDir, controller));
   });
 }
 
-function startHtmlVideoTaskRun(database: FileDatabase, task: Task, workDir: string): boolean {
+function startHtmlVideoTaskRun(
+  database: FileDatabase,
+  task: Task,
+  workDir: string,
+  activityReservation: HistoryActivityReservation,
+): boolean {
   const recovery = recoverHtmlVideoPipelineDataForRetry(task);
   const runnableTask = recovery ? { ...task, ...recovery } : task;
-  return startOwnedTaskRun(database, task, workDir, 'HTML video task', async (controller) => {
+  return startOwnedTaskRun(database, task, workDir, activityReservation, 'HTML video task', async (controller) => {
     await runHtmlVideoTask(database, runnableTask, workDir, controller, recovery);
   });
 }
@@ -476,22 +526,27 @@ function startOwnedTaskRun(
   database: FileDatabase,
   task: Task,
   workDir: string,
+  activityReservation: HistoryActivityReservation,
   label: string,
   execute: (controller: AbortController) => Promise<void>,
 ): boolean {
   const controller = new AbortController();
   const run: RunningTaskRun = {
+    activityReservation,
     controller,
     intent: null,
     completion: Promise.resolve(),
   };
   runningTasks.set(task.id, run);
   run.completion = (async () => {
+    let reservationTransferred = false;
     try {
-      await execute(controller);
-    } catch (error) {
-      console.error(`${label} failed`, error);
-    } finally {
+      try {
+        await execute(controller);
+      } catch (error) {
+        console.error(`${label} failed`, error);
+      }
+
       const currentRun = runningTasks.get(task.id);
       let restartTask: Task | null = null;
       try {
@@ -504,8 +559,17 @@ function startOwnedTaskRun(
       } finally {
         if (runningTasks.get(task.id) === run) runningTasks.delete(task.id);
       }
-      if (restartTask && !isShuttingDown) startTaskRun(database, restartTask, workDir);
+      if (restartTask && !isShuttingDown) {
+        const restartReservation = takeHistoryActivityReservation(run);
+        reservationTransferred = startTaskRun(database, restartTask, workDir, restartReservation);
+      }
       if (!isShuttingDown) await publishTaskUpsert(database, task.id);
+    } finally {
+      if (runningTasks.get(task.id) === run) runningTasks.delete(task.id);
+      if (!reservationTransferred && run.activityReservation === activityReservation) {
+        run.activityReservation = null;
+        activityReservation.release();
+      }
     }
   })();
   void run.completion.catch((error) => {
@@ -734,20 +798,35 @@ async function resumeTaskRun(
   task: Task,
   workDir: string,
   shouldStart: () => boolean = () => true,
-): Promise<void> {
-  if (isShuttingDown) return;
+  transferReservation?: () => HistoryActivityReservation,
+): Promise<boolean> {
+  if (isShuttingDown) return false;
   const existingRun = runningTasks.get(task.id);
   if (existingRun) {
+    if (!existingRun.activityReservation) {
+      if (!transferReservation) {
+        throw new Error('HISTORY_ACTIVITY_RESERVATION_REQUIRED: A task restart requires an active reservation.');
+      }
+      existingRun.activityReservation = transferReservation();
+    }
     requestTaskRunIntent(existingRun, 'restart', '用户重试');
     await database.updateTask(task.id, {
       errorMessage: '正在停止当前运行，随后继续重试。',
       lastHeartbeatAt: new Date().toISOString(),
     });
-    return;
+    return false;
   }
   await database.updateTask(task.id, { status: 'pending', errorMessage: '' });
-  if (!shouldStart()) return;
-  startTaskRun(database, { ...task, status: 'pending', errorMessage: '' }, workDir);
+  if (!shouldStart()) return false;
+  if (!transferReservation) {
+    throw new Error('HISTORY_ACTIVITY_RESERVATION_REQUIRED: A task run requires an active reservation.');
+  }
+  return startTaskRun(
+    database,
+    { ...task, status: 'pending', errorMessage: '' },
+    workDir,
+    transferReservation(),
+  );
 }
 
 async function resumeLatestTaskRun(
@@ -755,17 +834,27 @@ async function resumeLatestTaskRun(
   taskId: string,
   workDir: string,
   isCurrent: () => boolean,
-): Promise<void> {
-  if (!isCurrent()) return;
+  transferReservation: () => HistoryActivityReservation,
+): Promise<boolean> {
+  if (!isCurrent()) return false;
   const updatedTask = (await database.getState()).tasks.find((item) => item.id === taskId);
-  if (!updatedTask || !isCurrent()) return;
-  await resumeTaskRun(database, updatedTask, workDir, isCurrent);
+  if (!updatedTask || !isCurrent()) return false;
+  return resumeTaskRun(database, updatedTask, workDir, isCurrent, transferReservation);
 }
 
-function startViralAnalysisRun(database: FileDatabase, record: ViralAnalysisRecord, workDir: string): boolean {
-  if (isShuttingDown || runningViralAnalyses.has(record.id)) return false;
+function startViralAnalysisRun(
+  database: FileDatabase,
+  record: ViralAnalysisRecord,
+  workDir: string,
+  activityReservation: HistoryActivityReservation,
+): boolean {
+  if (isShuttingDown || runningViralAnalyses.has(record.id)) {
+    activityReservation.release();
+    return false;
+  }
   const controller = new AbortController();
   const run: RunningViralAnalysisRun = {
+    activityReservation,
     controller,
     completion: Promise.resolve(),
   };
@@ -831,10 +920,17 @@ function startViralAnalysisRun(database: FileDatabase, record: ViralAnalysisReco
         lastHeartbeatAt: new Date().toISOString(),
       });
     } finally {
-      if (runningViralAnalyses.get(record.id) === run) {
-        runningViralAnalyses.delete(record.id);
+      try {
+        if (runningViralAnalyses.get(record.id) === run) {
+          runningViralAnalyses.delete(record.id);
+        }
+        if (!isShuttingDown) await publishViralUpsert(database, record.id);
+      } finally {
+        if (run.activityReservation === activityReservation) {
+          run.activityReservation = null;
+          activityReservation.release();
+        }
       }
-      if (!isShuttingDown) await publishViralUpsert(database, record.id);
     }
   })();
   void run.completion.catch((error) => {
@@ -843,14 +939,14 @@ function startViralAnalysisRun(database: FileDatabase, record: ViralAnalysisReco
   return true;
 }
 
-async function resumeViralAnalysisRun(database: FileDatabase, record: ViralAnalysisRecord, workDir: string): Promise<void> {
-  if (isShuttingDown) return;
-  const existingRun = runningViralAnalyses.get(record.id);
-  if (existingRun) {
-    if (!existingRun.controller.signal.aborted) existingRun.controller.abort('用户重试');
-    await existingRun.completion.catch(() => undefined);
-  }
-  if (isShuttingDown) return;
+async function resumeViralAnalysisRun(
+  database: FileDatabase,
+  record: ViralAnalysisRecord,
+  workDir: string,
+  isCurrent: () => boolean,
+  transferReservation: () => HistoryActivityReservation,
+): Promise<boolean> {
+  if (isShuttingDown || !isCurrent()) return false;
   await database.updateViralAnalysis(record.id, {
     status: 'pending',
     currentStage: 'queued',
@@ -859,7 +955,13 @@ async function resumeViralAnalysisRun(database: FileDatabase, record: ViralAnaly
     completedAt: null,
     lastHeartbeatAt: new Date().toISOString(),
   });
-  startViralAnalysisRun(database, { ...record, status: 'pending', currentStage: 'queued', progress: 0, errorMessage: '' }, workDir);
+  if (isShuttingDown || !isCurrent()) return false;
+  return startViralAnalysisRun(
+    database,
+    { ...record, status: 'pending', currentStage: 'queued', progress: 0, errorMessage: '' },
+    workDir,
+    transferReservation(),
+  );
 }
 
 async function reconcileAppDeltas(database: FileDatabase, input: AppDeltaReconcileRequest): Promise<AppDeltaReconcileResult> {
@@ -927,6 +1029,30 @@ trustedHandle('image-lab:list', async (_event, request: Extract<HistoryListReque
 trustedHandle('image-lab:get-detail', async (_event, id: string) => (await getDb()).getImageLabRecordDetail(id));
 trustedHandle('voice-lab:list', async (_event, request: Extract<HistoryListRequest, { family: 'voice-lab' }>) => (await getDb()).listVoiceLabRecords(request));
 trustedHandle('voice-lab:get-detail', async (_event, id: string) => (await getDb()).getVoiceLabRecordDetail(id));
+trustedHandle('task:archive', (_event, id: string) =>
+  runHistoryGovernanceMutation('task', id, (database) => database.archiveTask(id)));
+trustedHandle('task:restore', (_event, id: string) =>
+  runHistoryGovernanceMutation('task', id, (database) => database.restoreTask(id)));
+trustedHandle('task:delete', (_event, id: string) =>
+  runHistoryGovernanceMutation('task', id, (database) => database.deleteTaskPermanently(id)));
+trustedHandle('viral:archive', (_event, id: string) =>
+  runHistoryGovernanceMutation('viral-analysis', id, (database) => database.archiveViralAnalysis(id)));
+trustedHandle('viral:restore', (_event, id: string) =>
+  runHistoryGovernanceMutation('viral-analysis', id, (database) => database.restoreViralAnalysis(id)));
+trustedHandle('viral:delete', (_event, id: string) =>
+  runHistoryGovernanceMutation('viral-analysis', id, (database) => database.deleteViralAnalysisPermanently(id)));
+trustedHandle('image-lab:archive', (_event, id: string) =>
+  runHistoryGovernanceMutation('image-lab', id, (database) => database.archiveImageLabRecord(id)));
+trustedHandle('image-lab:restore', (_event, id: string) =>
+  runHistoryGovernanceMutation('image-lab', id, (database) => database.restoreImageLabRecord(id)));
+trustedHandle('image-lab:delete', (_event, id: string) =>
+  runHistoryGovernanceMutation('image-lab', id, (database) => database.deleteImageLabRecordPermanently(id)));
+trustedHandle('voice-lab:archive', (_event, id: string) =>
+  runHistoryGovernanceMutation('voice-lab', id, (database) => database.archiveVoiceLabRecord(id)));
+trustedHandle('voice-lab:restore', (_event, id: string) =>
+  runHistoryGovernanceMutation('voice-lab', id, (database) => database.restoreVoiceLabRecord(id)));
+trustedHandle('voice-lab:delete', (_event, id: string) =>
+  runHistoryGovernanceMutation('voice-lab', id, (database) => database.deleteVoiceLabRecordPermanently(id)));
 trustedHandle('prompt-template:list', async (_event, request: CursorRequest) => (await getDb()).listPromptTemplateSummaries(request));
 trustedHandle('prompt-template:get-detail', async (_event, id: string) => (await getDb()).getPromptTemplateDetail(id));
 trustedHandle('draft-template:list', async (_event, request: CursorRequest) => (await getDb()).listDraftTemplateSummaries(request));
@@ -1031,34 +1157,39 @@ trustedHandle('draft-template:save', async (_event, template: DraftTemplate) => 
 });
 
 trustedHandle('image-lab:generate', async (_event, input: ImageLabGenerateInput) => {
-  const database = await getDb();
   const id = input.id ?? randomUUID();
-  const record = {
-    ...input,
-    id,
-    provider: input.provider ?? 'mock',
-    status: 'failed' as const,
-    errorMessage: 'Image generation was interrupted before completion.',
-    finishedAt: null,
-  };
-  const initial = await database.addImageLabRecord(record);
+  const activityReservation = historyActivityRegistry.reserveActive('image-lab', id);
   try {
-    const runtimeConfig = await (await getConfigService()).getRuntimeConfig();
-    const generatedRecord = await generateImageLabRecord(
-      runtimeConfig,
-      imageLabWorkDir({ managedStorageKey: initial.managedStorageKey }),
-      { ...input, id },
-    );
-    const saved = await database.updateImageLabRecord(id, generatedRecord);
-    return publishStatePatch({ kind: 'image-lab-upsert', record: imageLabSummary(saved) });
-  } catch (error) {
-    const failed = await database.updateImageLabRecord(id, {
+    const database = await getDb();
+    const record = {
+      ...input,
+      id,
+      provider: input.provider ?? 'mock',
       status: 'failed',
-      errorMessage: error instanceof Error ? error.message : String(error),
-      finishedAt: new Date().toISOString(),
-    });
-    await publishStatePatch({ kind: 'image-lab-upsert', record: imageLabSummary(failed) });
-    throw error;
+      errorMessage: 'Image generation was interrupted before completion.',
+      finishedAt: null,
+    } as const;
+    const initial = await database.addImageLabRecord(record);
+    try {
+      const runtimeConfig = await (await getConfigService()).getRuntimeConfig();
+      const generatedRecord = await generateImageLabRecord(
+        runtimeConfig,
+        imageLabWorkDir({ managedStorageKey: initial.managedStorageKey }),
+        { ...input, id },
+      );
+      const saved = await database.updateImageLabRecord(id, generatedRecord);
+      return await publishStatePatch({ kind: 'image-lab-upsert', record: imageLabSummary(saved) });
+    } catch (error) {
+      const failed = await database.updateImageLabRecord(id, {
+        status: 'failed',
+        errorMessage: error instanceof Error ? error.message : String(error),
+        finishedAt: new Date().toISOString(),
+      });
+      await publishStatePatch({ kind: 'image-lab-upsert', record: imageLabSummary(failed) });
+      throw error;
+    }
+  } finally {
+    activityReservation.release();
   }
 });
 
@@ -1069,33 +1200,38 @@ trustedHandle('image-lab:add-record', async (_event, input) => {
 });
 
 trustedHandle('voice-lab:generate', async (_event, input: VoiceLabGenerateInput) => {
-  const database = await getDb();
   const id = input.id ?? randomUUID();
-  const record = {
-    ...input,
-    id,
-    status: 'failed' as const,
-    errorMessage: 'Voice generation was interrupted before completion.',
-    finishedAt: null,
-  };
-  const initial = await database.addVoiceLabRecord(record);
+  const activityReservation = historyActivityRegistry.reserveActive('voice-lab', id);
   try {
-    const runtimeConfig = await (await getConfigService()).getRuntimeConfig();
-    const generatedRecord = await generateConfiguredVoicePreview(
-      runtimeConfig,
-      voiceLabWorkDir({ managedStorageKey: initial.managedStorageKey }),
-      { ...input, id },
-    );
-    const saved = await database.updateVoiceLabRecord(id, generatedRecord);
-    return publishStatePatch({ kind: 'voice-lab-upsert', record: voiceLabSummary(saved) });
-  } catch (error) {
-    const failed = await database.updateVoiceLabRecord(id, {
+    const database = await getDb();
+    const record = {
+      ...input,
+      id,
       status: 'failed',
-      errorMessage: error instanceof Error ? error.message : String(error),
-      finishedAt: new Date().toISOString(),
-    });
-    await publishStatePatch({ kind: 'voice-lab-upsert', record: voiceLabSummary(failed) });
-    throw error;
+      errorMessage: 'Voice generation was interrupted before completion.',
+      finishedAt: null,
+    } as const;
+    const initial = await database.addVoiceLabRecord(record);
+    try {
+      const runtimeConfig = await (await getConfigService()).getRuntimeConfig();
+      const generatedRecord = await generateConfiguredVoicePreview(
+        runtimeConfig,
+        voiceLabWorkDir({ managedStorageKey: initial.managedStorageKey }),
+        { ...input, id },
+      );
+      const saved = await database.updateVoiceLabRecord(id, generatedRecord);
+      return await publishStatePatch({ kind: 'voice-lab-upsert', record: voiceLabSummary(saved) });
+    } catch (error) {
+      const failed = await database.updateVoiceLabRecord(id, {
+        status: 'failed',
+        errorMessage: error instanceof Error ? error.message : String(error),
+        finishedAt: new Date().toISOString(),
+      });
+      await publishStatePatch({ kind: 'voice-lab-upsert', record: voiceLabSummary(failed) });
+      throw error;
+    }
+  } finally {
+    activityReservation.release();
   }
 });
 
@@ -1154,10 +1290,16 @@ trustedHandle('html-video:create-task', async (_event, input: CreateTaskInput) =
     pipelineStep: input.pipelineStep ?? 'rewrite',
     pipelineData: input.pipelineData ?? '{}',
   });
-  const workDir = taskWorkDir(task);
-  const delta = await publishTaskUpsert(database, task.id);
-  startTaskRun(database, task, workDir);
-  return delta;
+  const activityReservation = historyActivityRegistry.reserveActive('task', task.id);
+  let reservationTransferred = false;
+  try {
+    const workDir = taskWorkDir(task);
+    const delta = await publishTaskUpsert(database, task.id);
+    reservationTransferred = startTaskRun(database, task, workDir, activityReservation);
+    return delta;
+  } finally {
+    if (!reservationTransferred) activityReservation.release();
+  }
 });
 
 trustedHandle('html-video:open-preview', async (_event, input: { id: string; sceneIndex?: number }) => {
@@ -1199,10 +1341,16 @@ async function getHtmlVideoTask(database: FileDatabase, id: string): Promise<Tas
 trustedHandle('task:create-and-run', async (_event, input: CreateTaskInput) => {
   const database = await getDb();
   const task = await database.createTask(input);
-  const workDir = taskWorkDir(task);
-  const delta = await publishTaskUpsert(database, task.id);
-  startTaskRun(database, task, workDir);
-  return delta;
+  const activityReservation = historyActivityRegistry.reserveActive('task', task.id);
+  let reservationTransferred = false;
+  try {
+    const workDir = taskWorkDir(task);
+    const delta = await publishTaskUpsert(database, task.id);
+    reservationTransferred = startTaskRun(database, task, workDir, activityReservation);
+    return delta;
+  } finally {
+    if (!reservationTransferred) activityReservation.release();
+  }
 });
 
 trustedHandle('viral:create-and-run', async (_event, input: CreateViralAnalysisInput) => {
@@ -1211,47 +1359,84 @@ trustedHandle('viral:create-and-run', async (_event, input: CreateViralAnalysisI
     ...input,
     platform: input.platform && input.platform !== 'unknown' ? input.platform : detectViralPlatform(input.url),
   });
-  const workDir = viralAnalysisWorkDir(record);
-  const delta = await publishViralUpsert(database, record.id);
-  startViralAnalysisRun(database, record, workDir);
-  return delta;
+  const activityReservation = historyActivityRegistry.reserveActive('viral-analysis', record.id);
+  let reservationTransferred = false;
+  try {
+    const workDir = viralAnalysisWorkDir(record);
+    const delta = await publishViralUpsert(database, record.id);
+    reservationTransferred = startViralAnalysisRun(database, record, workDir, activityReservation);
+    return delta;
+  } finally {
+    if (!reservationTransferred) activityReservation.release();
+  }
 });
 
 trustedHandle('viral:update-status', async (_event, input: { id: string; status: ViralAnalysisStatus }) => {
-  const database = await getDb();
-  const state = await database.getState();
-  const record = state.viralAnalyses.find((item) => item.id === input.id);
-  if (!record) return null;
-  if (input.status === 'running') {
-    const workDir = viralAnalysisWorkDir(record);
-    await resumeViralAnalysisRun(database, record, workDir);
-    return publishViralUpsert(database, record.id);
+  const isControlRequest = input.status === 'running' || input.status === 'paused' || input.status === 'cancelled';
+  if (!isControlRequest) {
+    const database = await getDb();
+    const record = (await database.getState()).viralAnalyses.find((item) => item.id === input.id);
+    return record ? publishViralUpsert(database, input.id) : null;
   }
-  if (input.status === 'paused' || input.status === 'cancelled') {
-    const run = runningViralAnalyses.get(input.id);
-    if (run && !run.controller.signal.aborted) {
-      run.controller.abort(input.status === 'cancelled' ? '用户取消' : '用户暂停');
+  const existingRunAtEntry = runningViralAnalyses.get(input.id);
+  return runLatestTaskControlRequest(latestViralControlRequests, input.id, async (isCurrent, transferReservation) => {
+    if (existingRunAtEntry && isCurrent() && !existingRunAtEntry.controller.signal.aborted) {
+      existingRunAtEntry.controller.abort(
+        input.status === 'cancelled' ? '用户取消' : input.status === 'paused' ? '用户暂停' : '用户重试',
+      );
     }
-    await database.updateViralAnalysis(input.id, {
-      status: input.status,
-      errorMessage: input.status === 'cancelled' ? '用户取消' : record.errorMessage,
-      lastHeartbeatAt: new Date().toISOString(),
-    });
+    if (existingRunAtEntry) await existingRunAtEntry.completion.catch(() => undefined);
+    if (!isCurrent()) return null;
+    const database = await getDb();
+    if (!isCurrent()) return null;
+    const state = await database.getState();
+    if (!isCurrent()) return null;
+    const record = state.viralAnalyses.find((item) => item.id === input.id);
+    if (!record) return null;
+    if (input.status === 'running') {
+      const workDir = viralAnalysisWorkDir(record);
+      await resumeViralAnalysisRun(database, record, workDir, isCurrent, transferReservation);
+      if (!isCurrent()) return null;
+      return publishViralUpsert(database, record.id);
+    }
+    if (input.status === 'paused' || input.status === 'cancelled') {
+      await database.updateViralAnalysis(input.id, {
+        status: input.status,
+        errorMessage: input.status === 'cancelled' ? '用户取消' : record.errorMessage,
+        lastHeartbeatAt: new Date().toISOString(),
+      });
+      if (!isCurrent()) return null;
+      return publishViralUpsert(database, input.id);
+    }
     return publishViralUpsert(database, input.id);
-  }
-  return publishViralUpsert(database, input.id);
+  }, () => existingRunAtEntry?.activityReservation
+    ? takeHistoryActivityReservation(existingRunAtEntry)
+    : historyActivityRegistry.reserveActive('viral-analysis', input.id));
 });
 
 trustedHandle('viral:retry', async (_event, id: string) => {
-  const database = await getDb();
-  const state = await database.getState();
-  const record = state.viralAnalyses.find((item) => item.id === id);
-  if (record) {
-    const workDir = viralAnalysisWorkDir(record);
-    await resumeViralAnalysisRun(database, record, workDir);
-    return publishViralUpsert(database, id);
-  }
-  return null;
+  const existingRunAtEntry = runningViralAnalyses.get(id);
+  return runLatestTaskControlRequest(latestViralControlRequests, id, async (isCurrent, transferReservation) => {
+    if (existingRunAtEntry && isCurrent() && !existingRunAtEntry.controller.signal.aborted) {
+      existingRunAtEntry.controller.abort('用户重试');
+    }
+    if (existingRunAtEntry) await existingRunAtEntry.completion.catch(() => undefined);
+    if (!isCurrent()) return null;
+    const database = await getDb();
+    if (!isCurrent()) return null;
+    const state = await database.getState();
+    if (!isCurrent()) return null;
+    const record = state.viralAnalyses.find((item) => item.id === id);
+    if (record) {
+      const workDir = viralAnalysisWorkDir(record);
+      await resumeViralAnalysisRun(database, record, workDir, isCurrent, transferReservation);
+      if (!isCurrent()) return null;
+      return publishViralUpsert(database, id);
+    }
+    return null;
+  }, () => existingRunAtEntry?.activityReservation
+    ? takeHistoryActivityReservation(existingRunAtEntry)
+    : historyActivityRegistry.reserveActive('viral-analysis', id));
 });
 
 trustedHandle('viral:get-result', async (_event, id: string) => {
@@ -1270,16 +1455,45 @@ trustedHandle('viral:create-production-task', async (_event, input: { id: string
   const result = JSON.parse(await readFile(record.resultPath, 'utf8'));
   const taskInput = createViralProductionTaskInput(result, input.options);
   const task = await database.createTask(taskInput);
-  const workDir = taskWorkDir(task);
-  const delta = await publishTaskUpsert(database, task.id);
-  startTaskRun(database, task, workDir);
-  return delta;
+  const activityReservation = historyActivityRegistry.reserveActive('task', task.id);
+  let reservationTransferred = false;
+  try {
+    const workDir = taskWorkDir(task);
+    const delta = await publishTaskUpsert(database, task.id);
+    reservationTransferred = startTaskRun(database, task, workDir, activityReservation);
+    return delta;
+  } finally {
+    if (!reservationTransferred) activityReservation.release();
+  }
 });
 
 trustedHandle('task:update-status', async (_event, input: { id: string; status: TaskStatus }) => {
   const isControlRequest = input.status === 'running' || input.status === 'paused' || input.status === 'cancelled';
   if (!isControlRequest) return null;
-  return runLatestTaskControlRequest(latestTaskControlRequests, input.id, async (isCurrent) => {
+  const existingControlRun = runningTasks.get(input.id);
+  const existingActiveRun = input.status === 'running' && existingControlRun?.activityReservation
+    ? existingControlRun
+    : undefined;
+  return runLatestTaskControlRequest(latestTaskControlRequests, input.id, async (isCurrent, transferReservation) => {
+    if (existingControlRun && isCurrent()) {
+      if (input.status === 'running' && !existingControlRun.activityReservation) {
+        existingControlRun.activityReservation = transferReservation();
+      }
+      const intent = input.status === 'running'
+        ? 'restart'
+        : input.status === 'paused'
+          ? 'paused'
+          : 'cancelled';
+      requestTaskRunIntent(
+        existingControlRun,
+        intent,
+        input.status === 'cancelled' ? '用户取消' : input.status === 'paused' ? '用户暂停' : '用户重试',
+      );
+      if (input.status === 'paused' || input.status === 'cancelled') {
+        await existingControlRun.completion?.catch(() => undefined);
+        if (!isCurrent()) return null;
+      }
+    }
     const database = await getDb();
     const state = await database.getState();
     const task = state.tasks.find((item) => item.id === input.id);
@@ -1287,10 +1501,22 @@ trustedHandle('task:update-status', async (_event, input: { id: string; status: 
       return null;
     }
     const workDir = input.status === 'running' ? taskWorkDir(task) : null;
+    if (input.status === 'running' && existingActiveRun) {
+      if (isCurrent() && runningTasks.get(input.id) === existingActiveRun && existingActiveRun.intent === 'restart') {
+        await database.updateTask(input.id, {
+          errorMessage: '正在停止当前运行，随后继续重试。',
+          lastHeartbeatAt: new Date().toISOString(),
+        });
+      }
+      return publishTaskUpsert(database, input.id);
+    }
     const existingRun = runningTasks.get(input.id);
     let controlledRun = existingRun;
     if (existingRun) {
       if (input.status === 'running') {
+        if (!existingRun.activityReservation) {
+          existingRun.activityReservation = transferReservation();
+        }
         requestTaskRunIntent(existingRun, 'restart', '用户重试');
       } else if (input.status === 'paused' || input.status === 'cancelled') {
         requestTaskRunIntent(
@@ -1303,7 +1529,7 @@ trustedHandle('task:update-status', async (_event, input: { id: string; status: 
     if (input.status === 'running') {
       if (workDir === null) throw new Error('Managed task work directory is unavailable.');
       if (!existingRun) {
-        await resumeTaskRun(database, task, workDir, isCurrent);
+        await resumeTaskRun(database, task, workDir, isCurrent, transferReservation);
       } else if (isCurrent() && runningTasks.get(input.id) === existingRun && existingRun.intent === 'restart') {
         await database.updateTask(input.id, {
           errorMessage: '正在停止当前运行，随后继续重试。',
@@ -1343,11 +1569,22 @@ trustedHandle('task:update-status', async (_event, input: { id: string; status: 
       }
     }
     return publishTaskUpsert(database, input.id);
-  });
+  }, input.status === 'running' && existingControlRun?.activityReservation
+    ? undefined
+    : () => existingControlRun?.activityReservation
+      ? takeHistoryActivityReservation(existingControlRun)
+      : historyActivityRegistry.reserveActive('task', input.id));
 });
 
 trustedHandle('task:retry', async (_event, id: string) => {
-  return runLatestTaskControlRequest(latestTaskControlRequests, id, async (isCurrent) => {
+  const existingRunAtEntry = runningTasks.get(id);
+  return runLatestTaskControlRequest(latestTaskControlRequests, id, async (isCurrent, transferReservation) => {
+    if (existingRunAtEntry && isCurrent()) {
+      if (!existingRunAtEntry.activityReservation) {
+        existingRunAtEntry.activityReservation = transferReservation();
+      }
+      requestTaskRunIntent(existingRunAtEntry, 'restart', '用户重试');
+    }
     const database = await getDb();
     const state = await database.getState();
     const task = state.tasks.find((item) => item.id === id);
@@ -1355,10 +1592,24 @@ trustedHandle('task:retry', async (_event, id: string) => {
       return null;
     }
     const workDir = taskWorkDir(task);
+    if (existingRunAtEntry) {
+      if (isCurrent() && runningTasks.get(id) === existingRunAtEntry && existingRunAtEntry.intent === 'restart') {
+        await database.updateTask(id, {
+          errorMessage: '正在停止当前运行，随后继续重试。',
+          lastHeartbeatAt: new Date().toISOString(),
+        });
+      }
+      return publishTaskUpsert(database, id);
+    }
     const existingRun = runningTasks.get(id);
-    if (existingRun) requestTaskRunIntent(existingRun, 'restart', '用户重试');
+    if (existingRun) {
+      if (!existingRun.activityReservation) {
+        existingRun.activityReservation = transferReservation();
+      }
+      requestTaskRunIntent(existingRun, 'restart', '用户重试');
+    }
     if (!existingRun) {
-      await resumeTaskRun(database, task, workDir, isCurrent);
+      await resumeTaskRun(database, task, workDir, isCurrent, transferReservation);
     } else if (isCurrent() && runningTasks.get(id) === existingRun && existingRun.intent === 'restart') {
       await database.updateTask(id, {
         errorMessage: '正在停止当前运行，随后继续重试。',
@@ -1366,11 +1617,17 @@ trustedHandle('task:retry', async (_event, id: string) => {
       });
     }
     return publishTaskUpsert(database, id);
-  });
+  }, existingRunAtEntry?.activityReservation
+    ? undefined
+    : () => historyActivityRegistry.reserveActive('task', id));
 });
 
 trustedHandle('task:regenerate-image', async (_event, input: { id: string; sceneId: number }) => {
-  return runLatestTaskControlRequest(latestTaskControlRequests, input.id, async (isCurrent) => {
+  const existingActiveRun = runningTasks.get(input.id);
+  return runLatestTaskControlRequest(latestTaskControlRequests, input.id, async (isCurrent, transferReservation) => {
+    if (!await stopTaskRunBeforeArtifactMutation(() => runningTasks.get(input.id), isCurrent)) {
+      return null;
+    }
     const database = await getDb();
     if (!isCurrent()) return null;
     const state = await database.getState();
@@ -1385,9 +1642,6 @@ trustedHandle('task:regenerate-image', async (_event, input: { id: string; scene
     }
 
     const sceneId = Number(input.sceneId);
-    if (!await stopTaskRunBeforeArtifactMutation(() => runningTasks.get(input.id), isCurrent)) {
-      return null;
-    }
     await markSceneImageForRegeneration(task.artifactStatePath, sceneId);
     if (!isCurrent()) return null;
     await database.updateTask(task.id, {
@@ -1410,13 +1664,19 @@ trustedHandle('task:regenerate-image', async (_event, input: { id: string; scene
     });
     await publishTaskEvent(event);
     if (!isCurrent()) return null;
-    await resumeLatestTaskRun(database, task.id, workDir, isCurrent);
+    await resumeLatestTaskRun(database, task.id, workDir, isCurrent, transferReservation);
     return publishTaskUpsert(database, task.id);
-  });
+  }, () => existingActiveRun?.activityReservation
+    ? takeHistoryActivityReservation(existingActiveRun)
+    : historyActivityRegistry.reserveActive('task', input.id));
 });
 
 trustedHandle('task:regenerate-narration', async (_event, input: { id: string; sceneId: number }) => {
-  return runLatestTaskControlRequest(latestTaskControlRequests, input.id, async (isCurrent) => {
+  const existingActiveRun = runningTasks.get(input.id);
+  return runLatestTaskControlRequest(latestTaskControlRequests, input.id, async (isCurrent, transferReservation) => {
+    if (!await stopTaskRunBeforeArtifactMutation(() => runningTasks.get(input.id), isCurrent)) {
+      return null;
+    }
     const database = await getDb();
     if (!isCurrent()) return null;
     const state = await database.getState();
@@ -1431,9 +1691,6 @@ trustedHandle('task:regenerate-narration', async (_event, input: { id: string; s
     }
 
     const sceneId = Number(input.sceneId);
-    if (!await stopTaskRunBeforeArtifactMutation(() => runningTasks.get(input.id), isCurrent)) {
-      return null;
-    }
     await markSceneNarrationForRegeneration(task.artifactStatePath, sceneId);
     if (!isCurrent()) return null;
     await database.updateTask(task.id, {
@@ -1456,13 +1713,19 @@ trustedHandle('task:regenerate-narration', async (_event, input: { id: string; s
     });
     await publishTaskEvent(event);
     if (!isCurrent()) return null;
-    await resumeLatestTaskRun(database, task.id, workDir, isCurrent);
+    await resumeLatestTaskRun(database, task.id, workDir, isCurrent, transferReservation);
     return publishTaskUpsert(database, task.id);
-  });
+  }, () => existingActiveRun?.activityReservation
+    ? takeHistoryActivityReservation(existingActiveRun)
+    : historyActivityRegistry.reserveActive('task', input.id));
 });
 
 trustedHandle('task:update-image-prompt', async (_event, input: { id: string; sceneId: number; prompt: string }) => {
+  const existingActiveRun = runningTasks.get(input.id);
   return runLatestTaskControlRequest(latestTaskControlRequests, input.id, async (isCurrent) => {
+    if (!await stopTaskRunBeforeArtifactMutation(() => runningTasks.get(input.id), isCurrent)) {
+      return null;
+    }
     const database = await getDb();
     if (!isCurrent()) return null;
     const state = await database.getState();
@@ -1477,9 +1740,6 @@ trustedHandle('task:update-image-prompt', async (_event, input: { id: string; sc
     }
 
     const sceneId = Number(input.sceneId);
-    if (!await stopTaskRunBeforeArtifactMutation(() => runningTasks.get(input.id), isCurrent)) {
-      return null;
-    }
     const result = await updateSceneImagePrompt(task.artifactStatePath, sceneId, input.prompt);
     if (!isCurrent()) return null;
     const event = await database.addTaskEvent(task.id, {
@@ -1491,11 +1751,17 @@ trustedHandle('task:update-image-prompt', async (_event, input: { id: string; sc
     });
     await publishTaskEvent(event);
     return publishTaskUpsert(database, task.id);
-  });
+  }, () => existingActiveRun?.activityReservation
+    ? takeHistoryActivityReservation(existingActiveRun)
+    : historyActivityRegistry.reserveActive('task', input.id));
 });
 
 trustedHandle('task:rerun-step', async (_event, input: { id: string; step: number; mode: TaskStepRerunMode }) => {
-  return runLatestTaskControlRequest(latestTaskControlRequests, input.id, async (isCurrent) => {
+  const existingActiveRun = runningTasks.get(input.id);
+  return runLatestTaskControlRequest(latestTaskControlRequests, input.id, async (isCurrent, transferReservation) => {
+    if (!await stopTaskRunBeforeArtifactMutation(() => runningTasks.get(input.id), isCurrent)) {
+      return null;
+    }
     const database = await getDb();
     if (!isCurrent()) return null;
     const state = await database.getState();
@@ -1510,9 +1776,6 @@ trustedHandle('task:rerun-step', async (_event, input: { id: string; step: numbe
     }
 
     const step = Number(input.step);
-    if (!await stopTaskRunBeforeArtifactMutation(() => runningTasks.get(input.id), isCurrent)) {
-      return null;
-    }
     const result = await markTaskStepForRerun(task.artifactStatePath, step, input.mode);
     if (!isCurrent()) return null;
     const detail = result.mode === 'rewrite' ? `改写第 ${step + 1} 步后继续` : `重新生成第 ${step + 1} 步后继续`;
@@ -1536,9 +1799,11 @@ trustedHandle('task:rerun-step', async (_event, input: { id: string; step: numbe
     });
     await publishTaskEvent(event);
     if (!isCurrent()) return null;
-    await resumeLatestTaskRun(database, task.id, workDir, isCurrent);
+    await resumeLatestTaskRun(database, task.id, workDir, isCurrent, transferReservation);
     return publishTaskUpsert(database, task.id);
-  });
+  }, () => existingActiveRun?.activityReservation
+    ? takeHistoryActivityReservation(existingActiveRun)
+    : historyActivityRegistry.reserveActive('task', input.id));
 });
 
 trustedHandle('task:get-artifacts', async (_event, id: string) => {
@@ -1820,6 +2085,7 @@ async function checkStoryboundSidecarDependencies(): Promise<{ status: 'pass' | 
 async function shutdownApplication(): Promise<void> {
   isShuttingDown = true;
   acceptingAppDeltas = false;
+  historyActivityRegistry.close();
   const completions: Promise<void>[] = [];
 
   for (const run of runningTasks.values()) {
@@ -1833,6 +2099,7 @@ async function shutdownApplication(): Promise<void> {
   }
 
   await Promise.allSettled(completions);
+  await historyActivityRegistry.waitForIdle();
   await deltaPublishQueue;
   const database = db;
   if (database) {

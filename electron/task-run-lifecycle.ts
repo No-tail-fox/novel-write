@@ -1,3 +1,5 @@
+import type { HistoryActivityReservation } from './history-activity-registry';
+
 export type TaskRunIntent = 'paused' | 'cancelled' | 'restart';
 
 export interface TaskRunIntentState {
@@ -5,22 +7,75 @@ export interface TaskRunIntentState {
   intent: TaskRunIntent | null;
 }
 
+export interface HistoryActivityReservationOwner {
+  activityReservation: HistoryActivityReservation | null;
+}
+
+export function takeHistoryActivityReservation(
+  owner: HistoryActivityReservationOwner,
+): HistoryActivityReservation {
+  if (!owner.activityReservation) {
+    throw new Error('HISTORY_ACTIVITY_RESERVATION_TRANSFERRED: The active reservation is unavailable.');
+  }
+  const reservation = owner.activityReservation;
+  owner.activityReservation = null;
+  return reservation;
+}
+
 interface CompletableTaskRun extends TaskRunIntentState {
   completion: Promise<void>;
 }
 
+export interface LatestTaskControlRequestState {
+  token: symbol;
+  activityReservation: HistoryActivityReservation | null;
+}
+
+type ActivityReservationSource = HistoryActivityReservation | (() => HistoryActivityReservation);
+
+function acquireHistoryActivityReservation(source: ActivityReservationSource): HistoryActivityReservation {
+  return typeof source === 'function' ? source() : source;
+}
+
 export async function runLatestTaskControlRequest<T>(
-  requests: Map<string, symbol>,
+  requests: Map<string, LatestTaskControlRequestState> | Map<string, symbol>,
   taskId: string,
-  operation: (isCurrent: () => boolean) => Promise<T>,
+  operation: (
+    isCurrent: () => boolean,
+    transferReservation: () => HistoryActivityReservation,
+  ) => Promise<T>,
+  activityReservationSource?: ActivityReservationSource,
 ): Promise<T> {
-  const token = Symbol(taskId);
-  requests.set(taskId, token);
-  const isCurrent = () => requests.get(taskId) === token;
+  const requestStates = requests as Map<string, LatestTaskControlRequestState | symbol>;
+  const previousValue = requestStates.get(taskId);
+  const previous = typeof previousValue === 'object' ? previousValue : undefined;
+  const request: LatestTaskControlRequestState = {
+    token: Symbol(taskId),
+    activityReservation: previous?.activityReservation ?? null,
+  };
+  if (previous) previous.activityReservation = null;
+  requestStates.set(taskId, request);
+  const isCurrent = () => {
+    const current = requestStates.get(taskId);
+    return typeof current === 'object' && current.token === request.token;
+  };
+  const transferReservation = () => {
+    if (!request.activityReservation) {
+      throw new Error('HISTORY_ACTIVITY_RESERVATION_TRANSFERRED: The active reservation is unavailable.');
+    }
+    const transferred = request.activityReservation;
+    request.activityReservation = null;
+    return transferred;
+  };
   try {
-    return await operation(isCurrent);
+    if (!request.activityReservation && activityReservationSource) {
+      request.activityReservation = acquireHistoryActivityReservation(activityReservationSource);
+    }
+    return await operation(isCurrent, transferReservation);
   } finally {
-    if (isCurrent()) requests.delete(taskId);
+    if (isCurrent()) requestStates.delete(taskId);
+    request.activityReservation?.release();
+    request.activityReservation = null;
   }
 }
 

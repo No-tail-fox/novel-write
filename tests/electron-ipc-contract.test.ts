@@ -86,6 +86,132 @@ describe('electron ipc contract', () => {
     }
   });
 
+  it('serializes every history governance handler through a synchronous governing reservation', async () => {
+    const main = await readFile(new URL('../electron/main.ts', import.meta.url), 'utf8');
+    const helperStart = main.indexOf('async function runHistoryGovernanceMutation');
+    const helperEnd = main.indexOf('\n}', helperStart) + 2;
+    const helper = main.slice(helperStart, helperEnd);
+
+    expect(helperStart).toBeGreaterThan(-1);
+    expect(helper.indexOf('reserveGovernance(family, id)')).toBeGreaterThan(-1);
+    expect(helper.indexOf('reserveGovernance(family, id)')).toBeLessThan(helper.indexOf('await getDb()'));
+    expect(helper).toContain("family === 'task' && runningTasks.has(id)");
+    expect(helper).toContain("family === 'viral-analysis' && runningViralAnalyses.has(id)");
+    expect(helper).toContain('finally');
+    expect(helper).toContain('reservation.release()');
+
+    for (const [channel, family, method] of [
+      ['task:archive', 'task', 'archiveTask'],
+      ['task:restore', 'task', 'restoreTask'],
+      ['task:delete', 'task', 'deleteTaskPermanently'],
+      ['viral:archive', 'viral-analysis', 'archiveViralAnalysis'],
+      ['viral:restore', 'viral-analysis', 'restoreViralAnalysis'],
+      ['viral:delete', 'viral-analysis', 'deleteViralAnalysisPermanently'],
+      ['image-lab:archive', 'image-lab', 'archiveImageLabRecord'],
+      ['image-lab:restore', 'image-lab', 'restoreImageLabRecord'],
+      ['image-lab:delete', 'image-lab', 'deleteImageLabRecordPermanently'],
+      ['voice-lab:archive', 'voice-lab', 'archiveVoiceLabRecord'],
+      ['voice-lab:restore', 'voice-lab', 'restoreVoiceLabRecord'],
+      ['voice-lab:delete', 'voice-lab', 'deleteVoiceLabRecordPermanently'],
+    ] as const) {
+      const handler = handlerSource(main, channel);
+      expect(handler).toContain(`runHistoryGovernanceMutation('${family}', id`);
+      expect(handler).toContain(`database.${method}(id)`);
+    }
+  });
+
+  it('acquires active history through latest-control coordination or before direct provider work', async () => {
+    const main = await readFile(new URL('../electron/main.ts', import.meta.url), 'utf8');
+    const lifecycle = await readFile(new URL('../electron/task-run-lifecycle.ts', import.meta.url), 'utf8');
+
+    for (const [channel, family, idExpression] of [
+      ['task:update-status', 'task', 'input.id'],
+      ['task:retry', 'task', 'id'],
+      ['task:regenerate-image', 'task', 'input.id'],
+      ['task:regenerate-narration', 'task', 'input.id'],
+      ['task:update-image-prompt', 'task', 'input.id'],
+      ['task:rerun-step', 'task', 'input.id'],
+      ['viral:update-status', 'viral-analysis', 'input.id'],
+      ['viral:retry', 'viral-analysis', 'id'],
+    ] as const) {
+      const handler = handlerSource(main, channel);
+      const coordinator = handler.indexOf('return runLatestTaskControlRequest(');
+      const reservation = handler.indexOf(`reserveActive('${family}', ${idExpression})`);
+      expect(coordinator, `${channel} enters latest-control coordination`).toBeGreaterThan(-1);
+      expect(reservation, `${channel} supplies active acquisition`).toBeGreaterThan(coordinator);
+    }
+    expect(lifecycle.indexOf('acquireHistoryActivityReservation(activityReservationSource)'))
+      .toBeLessThan(lifecycle.indexOf('return await operation(isCurrent, transferReservation)'));
+
+    for (const [channel, family, idExpression, firstAsyncWork] of [
+      ['image-lab:generate', 'image-lab', 'id', 'await getDb()'],
+      ['voice-lab:generate', 'voice-lab', 'id', 'await getDb()'],
+    ] as const) {
+      const handler = handlerSource(main, channel);
+      const reservation = handler.indexOf(`reserveActive('${family}', ${idExpression})`);
+      expect(reservation, `${channel} reserves its active ID`).toBeGreaterThan(-1);
+      expect(reservation, `${channel} reserves before work`).toBeLessThan(handler.indexOf(firstAsyncWork));
+      expect(handler).toContain('finally');
+    }
+
+    for (const [channel, family, createCall, workCall] of [
+      ['task:create-and-run', 'task', 'await database.createTask', 'taskWorkDir(task)'],
+      ['html-video:create-task', 'task', 'await database.createTask', 'taskWorkDir(task)'],
+      ['viral:create-and-run', 'viral-analysis', 'await database.createViralAnalysis', 'viralAnalysisWorkDir(record)'],
+      ['viral:create-production-task', 'task', 'await database.createTask', 'taskWorkDir(task)'],
+    ] as const) {
+      const handler = handlerSource(main, channel);
+      const created = handler.indexOf(createCall);
+      const reserved = handler.indexOf(`reserveActive('${family}'`);
+      expect(created).toBeGreaterThan(-1);
+      expect(reserved).toBeGreaterThan(created);
+      expect(reserved).toBeLessThan(handler.indexOf(workCall));
+      expect(handler).toContain('finally');
+      expect(handler).toContain('activityReservation.release()');
+    }
+  });
+
+  it('keeps active reservations through terminal persistence and releases all four families in finally', async () => {
+    const main = await readFile(new URL('../electron/main.ts', import.meta.url), 'utf8');
+    const taskOwner = main.slice(main.indexOf('function startOwnedTaskRun'), main.indexOf('async function applyTaskRunIntent'));
+    const viralOwner = main.slice(main.indexOf('function startViralAnalysisRun'), main.indexOf('async function resumeViralAnalysisRun'));
+
+    expect(taskOwner.indexOf('await execute(controller)')).toBeLessThan(taskOwner.lastIndexOf('activityReservation.release()'));
+    expect(taskOwner).toContain('startTaskRun(database, restartTask, workDir, restartReservation)');
+    expect(viralOwner.indexOf("status: 'completed'")).toBeLessThan(viralOwner.lastIndexOf('activityReservation.release()'));
+    expect(viralOwner.indexOf("status: cancelled ? 'cancelled' : 'failed'")).toBeLessThan(viralOwner.lastIndexOf('activityReservation.release()'));
+
+    for (const [channel, terminalUpdate] of [
+      ['image-lab:generate', 'database.updateImageLabRecord'],
+      ['voice-lab:generate', 'database.updateVoiceLabRecord'],
+    ] as const) {
+      const handler = handlerSource(main, channel);
+      expect(handler).toContain('finally');
+      expect(handler.lastIndexOf(terminalUpdate)).toBeLessThan(handler.lastIndexOf('activityReservation.release()'));
+    }
+  });
+
+  it('reuses or transfers existing runtime reservations without duplicate active acquisition', async () => {
+    const main = await readFile(new URL('../electron/main.ts', import.meta.url), 'utf8');
+    const taskStatus = handlerSource(main, 'task:update-status');
+    const taskRetry = handlerSource(main, 'task:retry');
+    const viralStatus = handlerSource(main, 'viral:update-status');
+    const viralRetry = handlerSource(main, 'viral:retry');
+
+    expect(taskStatus).toContain('existingControlRun?.activityReservation');
+    expect(taskRetry).toContain('existingRunAtEntry?.activityReservation');
+    expect(viralStatus).toContain('takeHistoryActivityReservation(existingRunAtEntry)');
+    expect(viralRetry).toContain('takeHistoryActivityReservation(existingRunAtEntry)');
+    for (const channel of [
+      'task:regenerate-image',
+      'task:regenerate-narration',
+      'task:update-image-prompt',
+      'task:rerun-step',
+    ]) {
+      expect(handlerSource(main, channel)).toContain('takeHistoryActivityReservation(existingActiveRun)');
+    }
+  });
+
   it('returns exact four-family history pages through the shared API and preload bridge', async () => {
     const apiContract = await readFile(new URL('../src/shared/storydream-api.ts', import.meta.url), 'utf8');
     const preload = await readFile(new URL('../electron/preload.ts', import.meta.url), 'utf8');
@@ -203,10 +329,10 @@ describe('electron ipc contract', () => {
     expect(viralList).not.toContain('SELECT *');
     expect(viralList).not.toContain('settings_json');
     expect(imageList).not.toContain('SELECT *');
-    expect(imageList).toContain('substr(prompt');
+    expect(storage).toMatch(/const imageLabSummaryColumns[\s\S]*?substr\(prompt/u);
     expect(imageList).not.toContain('reference_image_paths_json');
     expect(voiceList).not.toContain('SELECT *');
-    expect(voiceList).toContain('substr(text');
+    expect(storage).toMatch(/const voiceLabSummaryColumns[\s\S]*?substr\(text/u);
     expect(listHelper).not.toContain('SELECT *');
     expect(draftList).not.toContain('SELECT id, data');
   });
@@ -243,7 +369,7 @@ describe('electron ipc contract', () => {
 
     expect(handler).toContain('const delta = await publishTaskUpsert(database, task.id)');
     expect(handler).toContain('const workDir = taskWorkDir(task)');
-    expect(handler).toContain('startTaskRun(database, task, workDir)');
+    expect(handler).toContain('startTaskRun(database, task, workDir, activityReservation)');
     expect(handler).toContain('return delta');
     expect(handler).not.toContain('getPublicState()');
     expect(main.match(/return getPublicState\(\)/gu)).toHaveLength(1);
@@ -261,8 +387,8 @@ describe('electron ipc contract', () => {
     expect(main).toContain("input.status === 'running'");
     const retryHandler = main.slice(main.indexOf("trustedHandle('task:retry'"), main.indexOf("trustedHandle('diagnostics:run'"));
     expect(retryHandler).toContain("requestTaskRunIntent(existingRun, 'restart', '用户重试')");
-    expect(retryHandler).toContain('runLatestTaskControlRequest(latestTaskControlRequests, id, async (isCurrent) => {');
-    expect(retryHandler).toContain('await resumeTaskRun(database, task, workDir, isCurrent)');
+    expect(retryHandler).toContain('runLatestTaskControlRequest(latestTaskControlRequests, id, async (isCurrent, transferReservation) => {');
+    expect(retryHandler).toContain('await resumeTaskRun(database, task, workDir, isCurrent, transferReservation)');
     expect(retryHandler).not.toContain('runTask(');
   });
 
@@ -273,7 +399,7 @@ describe('electron ipc contract', () => {
     const requestIntent = statusHandler.indexOf('requestTaskRunIntent(');
     const firstAwait = statusHandler.indexOf('await getDb()');
     expect(requestIntent).toBeGreaterThan(-1);
-    expect(requestIntent).toBeGreaterThan(firstAwait);
+    expect(requestIntent).toBeLessThan(firstAwait);
     expect(statusHandler).toContain('latestTaskControlRequests');
     expect(statusHandler).not.toContain('existingRun.controller.abort');
     expect(statusHandler).not.toContain('runningTasks.delete(input.id)');
@@ -508,10 +634,10 @@ describe('electron ipc contract', () => {
     const regenerateHandler = main.slice(main.indexOf("trustedHandle('task:regenerate-image'"), main.indexOf("trustedHandle('task:get-artifacts'"));
 
     expect(main).toContain('markSceneImageForRegeneration');
-    expect(regenerateHandler).toContain('runLatestTaskControlRequest(latestTaskControlRequests, input.id, async (isCurrent) => {');
+    expect(regenerateHandler).toContain('runLatestTaskControlRequest(latestTaskControlRequests, input.id, async (isCurrent, transferReservation) => {');
     expect(regenerateHandler).toContain('retryFromStep: 4');
     expect(regenerateHandler).toContain('failedStep: 4');
-    expect(regenerateHandler).toContain('resumeLatestTaskRun(database, task.id, workDir, isCurrent)');
+    expect(regenerateHandler).toContain('resumeLatestTaskRun(database, task.id, workDir, isCurrent, transferReservation)');
     expect(regenerateHandler).not.toContain('runTask(');
     expect(preload).toContain('regenerateTaskImage');
     expect(preload).toContain('task:regenerate-image');
@@ -525,10 +651,10 @@ describe('electron ipc contract', () => {
     const regenerateHandler = main.slice(main.indexOf("trustedHandle('task:regenerate-narration'"), main.indexOf("trustedHandle('task:get-artifacts'"));
 
     expect(main).toContain('markSceneNarrationForRegeneration');
-    expect(regenerateHandler).toContain('runLatestTaskControlRequest(latestTaskControlRequests, input.id, async (isCurrent) => {');
+    expect(regenerateHandler).toContain('runLatestTaskControlRequest(latestTaskControlRequests, input.id, async (isCurrent, transferReservation) => {');
     expect(regenerateHandler).toContain('retryFromStep: 5');
     expect(regenerateHandler).toContain('failedStep: 5');
-    expect(regenerateHandler).toContain('resumeLatestTaskRun(database, task.id, workDir, isCurrent)');
+    expect(regenerateHandler).toContain('resumeLatestTaskRun(database, task.id, workDir, isCurrent, transferReservation)');
     expect(regenerateHandler).not.toContain('runTask(');
     expect(preload).toContain('regenerateTaskNarration');
     expect(preload).toContain('task:regenerate-narration');
@@ -559,10 +685,10 @@ describe('electron ipc contract', () => {
     const rerunHandler = main.slice(main.indexOf("trustedHandle('task:rerun-step'"), main.indexOf("trustedHandle('task:get-artifacts'"));
 
     expect(main).toContain('markTaskStepForRerun');
-    expect(rerunHandler).toContain('runLatestTaskControlRequest(latestTaskControlRequests, input.id, async (isCurrent) => {');
+    expect(rerunHandler).toContain('runLatestTaskControlRequest(latestTaskControlRequests, input.id, async (isCurrent, transferReservation) => {');
     expect(rerunHandler).toContain('retryFromStep: step');
     expect(rerunHandler).toContain('failedStep: step');
-    expect(rerunHandler).toContain('resumeLatestTaskRun(database, task.id, workDir, isCurrent)');
+    expect(rerunHandler).toContain('resumeLatestTaskRun(database, task.id, workDir, isCurrent, transferReservation)');
     expect(rerunHandler).not.toContain('runTask(');
     expect(preload).toContain('rerunTaskStep');
     expect(preload).toContain('task:rerun-step');
@@ -570,3 +696,10 @@ describe('electron ipc contract', () => {
     expect(apiContract).toContain('rerunTaskStep: (id: string, step: number, mode: TaskStepRerunMode) => Promise<AppMutationResult | null>');
   });
 });
+
+function handlerSource(source: string, channel: string): string {
+  const start = source.indexOf(`trustedHandle('${channel}'`);
+  const end = source.indexOf('\ntrustedHandle(', start + 1);
+  if (start < 0) throw new Error(`Missing trusted IPC handler: ${channel}`);
+  return source.slice(start, end < 0 ? source.length : end);
+}
