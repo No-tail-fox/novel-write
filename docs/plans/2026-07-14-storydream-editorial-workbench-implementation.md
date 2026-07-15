@@ -122,6 +122,7 @@ git commit -m "test: make renderer contracts module aware"
 - Modify: `src/main.tsx`
 - Modify: `tests/electron-ipc-contract.test.ts`
 - Modify: `tests/ipc-contract.test.ts`
+- Modify: `tests/product-shell-ui.test.ts`
 
 **Step 1: Write failing inventory tests**
 
@@ -133,22 +134,24 @@ expectTypeOf(storyDreamApi).toMatchTypeOf<StoryDreamApi>();
 
 Keep `onAppDelta` as a separately audited event subscription, not an invoke channel.
 
+Migrate existing renderer source audits from duplicated method text in `src/vite-env.d.ts` to the canonical `src/shared/storydream-api.ts`; preserve every assertion for public state/config types, local book/person methods, window controls, and config testing.
+
 **Step 2: Run RED**
 
 ```powershell
-scripts\run-npm-node.cmd node_modules\vitest\vitest.mjs run tests\ipc-inventory.test.ts tests\electron-ipc-contract.test.ts tests\ipc-contract.test.ts --pool=threads --maxWorkers=1
+scripts\run-npm-node.cmd node_modules\vitest\vitest.mjs run tests\ipc-inventory.test.ts tests\electron-ipc-contract.test.ts tests\ipc-contract.test.ts tests\product-shell-ui.test.ts --pool=threads --maxWorkers=1
 ```
 
 Expected: FAIL because the shared interface/inventory does not exist.
 
 **Step 3: Implement one source of truth**
 
-Move `StoryDreamApi` to `src/shared/storydream-api.ts`. Make preload use `satisfies StoryDreamApi`; make `vite-env.d.ts` reference the shared interface rather than duplicating method signatures. Replace hard-coded channel-count tests with exact set equality.
+Move `StoryDreamApi` to `src/shared/storydream-api.ts`. Make preload use `satisfies StoryDreamApi`; make `vite-env.d.ts` reference the shared interface rather than duplicating method signatures. Replace hard-coded channel-count tests with exact set equality, and point product-shell source contracts at the shared owner instead of preserving duplicate audit text in `vite-env.d.ts`.
 
 **Step 4: Run GREEN and both typechecks**
 
 ```powershell
-scripts\run-npm-node.cmd node_modules\vitest\vitest.mjs run tests\ipc-inventory.test.ts tests\electron-ipc-contract.test.ts tests\ipc-contract.test.ts --pool=threads --maxWorkers=1
+scripts\run-npm-node.cmd node_modules\vitest\vitest.mjs run tests\ipc-inventory.test.ts tests\electron-ipc-contract.test.ts tests\ipc-contract.test.ts tests\product-shell-ui.test.ts --pool=threads --maxWorkers=1
 scripts\run-npm-node.cmd node_modules\typescript\bin\tsc -p tsconfig.json --noEmit
 scripts\run-npm-node.cmd node_modules\typescript\bin\tsc -p tsconfig.electron.json --noEmit
 ```
@@ -156,7 +159,7 @@ scripts\run-npm-node.cmd node_modules\typescript\bin\tsc -p tsconfig.electron.js
 **Step 5: Commit**
 
 ```powershell
-git add src/shared/storydream-api.ts src/shared/ipc-contract.ts electron/preload.ts src/vite-env.d.ts src/main.tsx tests/ipc-inventory.test.ts tests/electron-ipc-contract.test.ts tests/ipc-contract.test.ts
+git add src/shared/storydream-api.ts src/shared/ipc-contract.ts electron/preload.ts src/vite-env.d.ts src/main.tsx tests/ipc-inventory.test.ts tests/electron-ipc-contract.test.ts tests/ipc-contract.test.ts tests/product-shell-ui.test.ts
 git commit -m "refactor: centralize renderer ipc contract"
 ```
 
