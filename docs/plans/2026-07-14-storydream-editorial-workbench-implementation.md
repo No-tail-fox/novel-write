@@ -170,6 +170,7 @@ git commit -m "refactor: centralize renderer ipc contract"
 - Modify: `src/shared/ipc-contract.ts`
 - Modify: `src/shared/storydream-api.ts`
 - Modify: `electron/preload.ts`
+- Modify: `src/main.tsx`
 - Modify: `tests/ipc-contract.test.ts`
 - Modify: `tests/ipc-inventory.test.ts`
 - Modify: `tests/electron-ipc-contract.test.ts`
@@ -197,6 +198,8 @@ Implement `HistoryFamily`, `HistoryArchiveFilter`, `TaskHistoryStatusFilter`, `H
 
 Use a dedicated governance ID schema; do not reuse the broad generic `idSchema`.
 
+Keep the existing list return shape until Task 5 implements `HistoryPage` in storage and Electron. Because the 12 governance methods are required on `StoryDreamApi`, add explicit browser-fallback methods that reject with one bounded desktop-only diagnostic; Task 9 replaces those placeholders with real fallback governance.
+
 **Step 4: Run GREEN and typechecks**
 
 ```powershell
@@ -208,7 +211,7 @@ scripts\run-npm-node.cmd node_modules\typescript\bin\tsc -p tsconfig.electron.js
 **Step 5: Commit**
 
 ```powershell
-git add src/shared/types.ts src/shared/ipc-contract.ts src/shared/storydream-api.ts electron/preload.ts tests/ipc-contract.test.ts tests/ipc-inventory.test.ts tests/electron-ipc-contract.test.ts
+git add src/shared/types.ts src/shared/ipc-contract.ts src/shared/storydream-api.ts electron/preload.ts src/main.tsx tests/ipc-contract.test.ts tests/ipc-inventory.test.ts tests/electron-ipc-contract.test.ts
 git commit -m "feat: define typed history governance contracts"
 ```
 
