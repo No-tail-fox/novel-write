@@ -1,5 +1,82 @@
+import { spawnSync } from 'node:child_process';
 import { readFile } from 'node:fs/promises';
+import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
+
+const projectRoot = fileURLToPath(new URL('..', import.meta.url));
+const nodeWrapper = fileURLToPath(new URL('../scripts/run-npm-node.cmd', import.meta.url));
+const commandProcessor =
+  process.env.ComSpec ?? `${process.env.SystemRoot ?? 'C:\\Windows'}\\System32\\cmd.exe`;
+
+interface WrapperEnvironmentOptions {
+  npmNodeExecPath?: string;
+  path?: string;
+}
+
+function runNodeWrapper(args: string[], options: WrapperEnvironmentOptions = {}) {
+  const env: NodeJS.ProcessEnv = { ...process.env };
+
+  for (const name of Object.keys(env)) {
+    const normalizedName = name.toLowerCase();
+    if (normalizedName === 'npm_node_execpath' || (options.path !== undefined && normalizedName === 'path')) {
+      delete env[name];
+    }
+  }
+  if (options.npmNodeExecPath !== undefined) {
+    env.npm_node_execpath = options.npmNodeExecPath;
+  }
+  if (options.path !== undefined) {
+    env.Path = options.path;
+  }
+
+  return spawnSync(commandProcessor, ['/d', '/s', '/c', nodeWrapper, ...args], {
+    cwd: projectRoot,
+    encoding: 'utf8',
+    env,
+  });
+}
+
+describe('Node tool wrapper', () => {
+  it('runs Vitest from a PATH-resolvable Node when npm does not inject one', () => {
+    const result = runNodeWrapper(['node_modules\\vitest\\vitest.mjs', '--version']);
+
+    expect(result.error).toBeUndefined();
+    expect(result.status).toBe(0);
+    expect(result.stdout).toMatch(/^vitest\/\d+\.\d+\.\d+/mu);
+    expect(result.stderr).toBe('');
+  });
+
+  it('uses the npm-injected Node when PATH cannot resolve one', () => {
+    const result = runNodeWrapper(['-p', 'process.execPath'], {
+      npmNodeExecPath: process.execPath,
+      path: '',
+    });
+
+    expect(result.error).toBeUndefined();
+    expect(result.status).toBe(0);
+    expect(result.stdout.trim().toLowerCase()).toBe(process.execPath.toLowerCase());
+    expect(result.stderr).toBe('');
+  });
+
+  it('emits one bounded diagnostic when neither npm nor PATH provides Node', () => {
+    const result = runNodeWrapper(['-e', 'process.exitCode=0'], { path: '' });
+
+    expect(result.error).toBeUndefined();
+    expect(result.status).toBe(1);
+    expect(result.stdout).toBe('');
+    expect(result.stderr).toMatch(/^Node executable is not available from npm or PATH\.\r?\n$/u);
+    expect(Buffer.byteLength(result.stderr, 'utf8')).toBeLessThan(96);
+  });
+
+  it('preserves the child process exit code', () => {
+    const result = runNodeWrapper(['-e', 'process.exitCode=37']);
+
+    expect(result.error).toBeUndefined();
+    expect(result.status).toBe(37);
+    expect(result.stdout).toBe('');
+    expect(result.stderr).toBe('');
+  });
+});
 
 describe('one-click startup script', () => {
   it('runs npm PowerShell tasks through npm absolute Node executable', async () => {
