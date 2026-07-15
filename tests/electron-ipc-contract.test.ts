@@ -1,5 +1,6 @@
 import { readFile } from 'node:fs/promises';
 import { describe, expect, it } from 'vitest';
+import { INVOKE_CHANNELS } from '../src/shared/storydream-api';
 
 describe('electron ipc contract', () => {
   it('keeps runner integration timeouts at the committed heavy-test baseline', async () => {
@@ -36,6 +37,15 @@ describe('electron ipc contract', () => {
     expect(security).toContain('event.sender !== win.webContents');
     expect(security).toContain('event.senderFrame !== win.webContents.mainFrame');
     expect(security).toContain('isAllowedRendererNavigation');
+  });
+
+  it('declares both renderer bridges through the shared API contract', async () => {
+    const viteEnv = await readFile(new URL('../src/vite-env.d.ts', import.meta.url), 'utf8');
+
+    expect(viteEnv).toContain("import type { StoryDreamApi } from './shared/storydream-api';");
+    expect(viteEnv).toContain('storydream?: StoryDreamApi;');
+    expect(viteEnv).toContain('storybound?: StoryDreamApi;');
+    expect(viteEnv).not.toContain('getState:');
   });
 
   it('exposes product shell persistence channels to the renderer', async () => {
@@ -99,7 +109,8 @@ describe('electron ipc contract', () => {
       expect(preload).toContain(channel);
       expect(main).toContain(channel);
     }
-    expect((preload.match(/invokeTrusted\('/gu) ?? []).length).toBe(71);
+    const preloadInvokeChannels = [...preload.matchAll(/invokeTrusted(?:<[^>]+>)?\('([^']+)'/gu)].map((match) => match[1]);
+    expect(preloadInvokeChannels).toEqual(INVOKE_CHANNELS);
   });
 
   it('keeps bootstrap list SQL off heavy record and template body columns', async () => {
@@ -124,15 +135,15 @@ describe('electron ipc contract', () => {
   it('exposes viral analyzer state and production-task handoff to the renderer', async () => {
     const main = await readFile(new URL('../electron/main.ts', import.meta.url), 'utf8');
     const preload = await readFile(new URL('../electron/preload.ts', import.meta.url), 'utf8');
-    const viteEnv = await readFile(new URL('../src/vite-env.d.ts', import.meta.url), 'utf8');
+    const apiContract = await readFile(new URL('../src/shared/storydream-api.ts', import.meta.url), 'utf8');
 
     expect(main).toContain('startViralAnalysisRun');
     expect(main).toContain('runViralAnalysis');
     expect(main).toContain('createViralProductionTaskInput');
     expect(preload).toContain('createAndRunViralAnalysis');
     expect(preload).toContain('createProductionTaskFromViral');
-    expect(viteEnv).toContain('createAndRunViralAnalysis');
-    expect(viteEnv).toContain('createProductionTaskFromViral');
+    expect(apiContract).toContain('createAndRunViralAnalysis');
+    expect(apiContract).toContain('createProductionTaskFromViral');
   });
 
   it('publishes the initial running viral summary before waiting for runtime events', async () => {
@@ -191,7 +202,7 @@ describe('electron ipc contract', () => {
   it('pushes revisioned app deltas and exposes narrow bootstrap APIs', async () => {
     const main = await readFile(new URL('../electron/main.ts', import.meta.url), 'utf8');
     const preload = await readFile(new URL('../electron/preload.ts', import.meta.url), 'utf8');
-    const viteEnv = await readFile(new URL('../src/vite-env.d.ts', import.meta.url), 'utf8');
+    const apiContract = await readFile(new URL('../src/shared/storydream-api.ts', import.meta.url), 'utf8');
 
     expect(main).toContain('publishAppDelta');
     expect(main).toContain("target.webContents.send('app:delta', delta)");
@@ -208,14 +219,14 @@ describe('electron ipc contract', () => {
     expect(preload).toContain('saveCustomStyle');
     expect(preload).toContain('generateCustomStyleDraft');
     expect(preload).toContain('getTaskArtifacts');
-    expect(viteEnv).toContain('callback: (delta: AppDelta) => void');
-    expect(viteEnv).toContain('testLlmConfig');
-    expect(viteEnv).toContain('listProviderModels');
-    expect(viteEnv).toContain('listVolcengineSpeakers');
-    expect(viteEnv).toContain('composeResearchCopy');
-    expect(viteEnv).toContain('saveCustomStyle');
-    expect(viteEnv).toContain('generateCustomStyleDraft');
-    expect(viteEnv).toContain('getTaskArtifacts');
+    expect(apiContract).toContain('callback: (delta: AppDelta) => void');
+    expect(apiContract).toContain('testLlmConfig');
+    expect(apiContract).toContain('listProviderModels');
+    expect(apiContract).toContain('listVolcengineSpeakers');
+    expect(apiContract).toContain('composeResearchCopy');
+    expect(apiContract).toContain('saveCustomStyle');
+    expect(apiContract).toContain('generateCustomStyleDraft');
+    expect(apiContract).toContain('getTaskArtifacts');
   });
 
   it('publishes committed runner events and narrow heartbeat task summaries', async () => {
@@ -234,7 +245,7 @@ describe('electron ipc contract', () => {
   it('exposes safe local image data URLs for task artifact thumbnails', async () => {
     const main = await readFile(new URL('../electron/main.ts', import.meta.url), 'utf8');
     const preload = await readFile(new URL('../electron/preload.ts', import.meta.url), 'utf8');
-    const viteEnv = await readFile(new URL('../src/vite-env.d.ts', import.meta.url), 'utf8');
+    const apiContract = await readFile(new URL('../src/shared/storydream-api.ts', import.meta.url), 'utf8');
 
     expect(main).toContain("trustedHandle('asset:read-data-url'");
     expect(main).toContain('readLocalImageDataUrl');
@@ -242,13 +253,13 @@ describe('electron ipc contract', () => {
     expect(main).toContain('Unsupported preview image extension');
     expect(preload).toContain('readAssetDataUrl');
     expect(preload).toContain('asset:read-data-url');
-    expect(viteEnv).toContain('readAssetDataUrl: (path: string) => Promise<string>');
+    expect(apiContract).toContain('readAssetDataUrl: (path: string) => Promise<string>');
   });
 
   it('routes image lab submissions through the configured real image generator', async () => {
     const main = await readFile(new URL('../electron/main.ts', import.meta.url), 'utf8');
     const preload = await readFile(new URL('../electron/preload.ts', import.meta.url), 'utf8');
-    const viteEnv = await readFile(new URL('../src/vite-env.d.ts', import.meta.url), 'utf8');
+    const apiContract = await readFile(new URL('../src/shared/storydream-api.ts', import.meta.url), 'utf8');
     const handler = main.slice(main.indexOf("trustedHandle('image-lab:generate'"), main.indexOf("trustedHandle('image-lab:add-record'"));
 
     expect(main).toContain('generateImageLabRecord');
@@ -256,13 +267,13 @@ describe('electron ipc contract', () => {
     expect(handler).toContain('database.addImageLabRecord(record)');
     expect(preload).toContain('generateImageLab');
     expect(preload).toContain('image-lab:generate');
-    expect(viteEnv).toContain('generateImageLab: (input: ImageLabGenerateInput) => Promise<AppMutationResult | null>');
+    expect(apiContract).toContain('generateImageLab: (input: ImageLabGenerateInput) => Promise<AppMutationResult | null>');
   });
 
   it('routes voice lab preview generation through the configured TTS provider', async () => {
     const main = await readFile(new URL('../electron/main.ts', import.meta.url), 'utf8');
     const preload = await readFile(new URL('../electron/preload.ts', import.meta.url), 'utf8');
-    const viteEnv = await readFile(new URL('../src/vite-env.d.ts', import.meta.url), 'utf8');
+    const apiContract = await readFile(new URL('../src/shared/storydream-api.ts', import.meta.url), 'utf8');
     const handler = main.slice(main.indexOf("trustedHandle('voice-lab:generate'"), main.indexOf("trustedHandle('account:save'"));
 
     expect(main).toContain('generateConfiguredVoicePreview');
@@ -270,39 +281,39 @@ describe('electron ipc contract', () => {
     expect(handler).toContain('database.addVoiceLabRecord(record)');
     expect(preload).toContain('generateVoiceLabPreview');
     expect(preload).toContain('voice-lab:generate');
-    expect(viteEnv).toContain('generateVoiceLabPreview: (input: VoiceLabGenerateInput) => Promise<AppMutationResult | null>');
+    expect(apiContract).toContain('generateVoiceLabPreview: (input: VoiceLabGenerateInput) => Promise<AppMutationResult | null>');
   });
 
   it('exposes a safe local image picker for draft template background images', async () => {
     const main = await readFile(new URL('../electron/main.ts', import.meta.url), 'utf8');
     const preload = await readFile(new URL('../electron/preload.ts', import.meta.url), 'utf8');
-    const viteEnv = await readFile(new URL('../src/vite-env.d.ts', import.meta.url), 'utf8');
+    const apiContract = await readFile(new URL('../src/shared/storydream-api.ts', import.meta.url), 'utf8');
 
     expect(main).toContain("trustedHandle('local-image:select'");
     expect(main).toContain('dialog.showOpenDialog');
     expect(main).toContain("properties: ['openFile']");
     expect(preload).toContain('selectLocalImage');
     expect(preload).toContain('local-image:select');
-    expect(viteEnv).toContain('selectLocalImage: () => Promise<string | null>');
+    expect(apiContract).toContain('selectLocalImage: () => Promise<string | null>');
   });
 
   it('exposes a safe local audio picker for uploaded BGM files', async () => {
     const main = await readFile(new URL('../electron/main.ts', import.meta.url), 'utf8');
     const preload = await readFile(new URL('../electron/preload.ts', import.meta.url), 'utf8');
-    const viteEnv = await readFile(new URL('../src/vite-env.d.ts', import.meta.url), 'utf8');
+    const apiContract = await readFile(new URL('../src/shared/storydream-api.ts', import.meta.url), 'utf8');
 
     expect(main).toContain("trustedHandle('local-audio:select'");
     expect(main).toContain('selectLocalAudio');
     expect(main).toContain("extensions: ['mp3', 'wav', 'm4a', 'aac', 'ogg', 'flac']");
     expect(preload).toContain('selectLocalAudio');
     expect(preload).toContain('local-audio:select');
-    expect(viteEnv).toContain('selectLocalAudio: () => Promise<string | null>');
+    expect(apiContract).toContain('selectLocalAudio: () => Promise<string | null>');
   });
 
   it('exposes Jianying draft folder detection and folder picking to the renderer', async () => {
     const main = await readFile(new URL('../electron/main.ts', import.meta.url), 'utf8');
     const preload = await readFile(new URL('../electron/preload.ts', import.meta.url), 'utf8');
-    const viteEnv = await readFile(new URL('../src/vite-env.d.ts', import.meta.url), 'utf8');
+    const apiContract = await readFile(new URL('../src/shared/storydream-api.ts', import.meta.url), 'utf8');
 
     expect(main).toContain("trustedHandle('local-folder:select'");
     expect(main).toContain("properties: ['openDirectory']");
@@ -312,14 +323,14 @@ describe('electron ipc contract', () => {
     expect(preload).toContain('local-folder:select');
     expect(preload).toContain('detectJianyingDraftPath');
     expect(preload).toContain('jianying:draft-path:detect');
-    expect(viteEnv).toContain('selectLocalFolder: () => Promise<string | null>');
-    expect(viteEnv).toContain('detectJianyingDraftPath: () => Promise<string>');
+    expect(apiContract).toContain('selectLocalFolder: () => Promise<string | null>');
+    expect(apiContract).toContain('detectJianyingDraftPath: () => Promise<string>');
   });
 
   it('exposes viral cookie file picking and a persistent login browser', async () => {
     const main = await readFile(new URL('../electron/main.ts', import.meta.url), 'utf8');
     const preload = await readFile(new URL('../electron/preload.ts', import.meta.url), 'utf8');
-    const viteEnv = await readFile(new URL('../src/vite-env.d.ts', import.meta.url), 'utf8');
+    const apiContract = await readFile(new URL('../src/shared/storydream-api.ts', import.meta.url), 'utf8');
 
     expect(main).toContain("trustedHandle('cookie-file:select'");
     expect(main).toContain("trustedHandle('viral:open-login-window'");
@@ -330,20 +341,20 @@ describe('electron ipc contract', () => {
     expect(preload).toContain('selectCookieFile');
     expect(preload).toContain('openViralLoginWindow');
     expect(preload).toContain('openViralLoginWindow: (): Promise<string | null>');
-    expect(viteEnv).toContain('selectCookieFile: () => Promise<string | null>');
-    expect(viteEnv).toContain('openViralLoginWindow: () => Promise<string | null>');
+    expect(apiContract).toContain('selectCookieFile: () => Promise<string | null>');
+    expect(apiContract).toContain('openViralLoginWindow: () => Promise<string | null>');
   });
 
   it('exposes pyJianYingDraft effect catalog loading to the renderer', async () => {
     const main = await readFile(new URL('../electron/main.ts', import.meta.url), 'utf8');
     const preload = await readFile(new URL('../electron/preload.ts', import.meta.url), 'utf8');
-    const viteEnv = await readFile(new URL('../src/vite-env.d.ts', import.meta.url), 'utf8');
+    const apiContract = await readFile(new URL('../src/shared/storydream-api.ts', import.meta.url), 'utf8');
 
     expect(main).toContain("trustedHandle('jianying:effect-catalog'");
     expect(main).toContain('loadJianyingEffectCatalog');
     expect(preload).toContain('getJianyingEffectCatalog');
     expect(preload).toContain('jianying:effect-catalog');
-    expect(viteEnv).toContain('getJianyingEffectCatalog: () => Promise<JianyingEffectCatalog>');
+    expect(apiContract).toContain('getJianyingEffectCatalog: () => Promise<JianyingEffectCatalog>');
   });
 
   it('checks Storybound-compatible sidecar dependencies in diagnostics', async () => {
@@ -357,7 +368,7 @@ describe('electron ipc contract', () => {
   it('keeps HTML video capture behind a typed dedicated runner and narrow preview IPC', async () => {
     const main = await readFile(new URL('../electron/main.ts', import.meta.url), 'utf8');
     const preload = await readFile(new URL('../electron/preload.ts', import.meta.url), 'utf8');
-    const viteEnv = await readFile(new URL('../src/vite-env.d.ts', import.meta.url), 'utf8');
+    const apiContract = await readFile(new URL('../src/shared/storydream-api.ts', import.meta.url), 'utf8');
     const renderer = await readFile(new URL('../electron/html-video-renderer.ts', import.meta.url), 'utf8');
 
     expect(main).toContain("trustedHandle('html-video:create-task'");
@@ -371,15 +382,15 @@ describe('electron ipc contract', () => {
     expect(preload).toContain('createHtmlVideoTask');
     expect(preload).toContain('openHtmlVideoPreview');
     expect(preload).toContain('getHtmlVideoMediaUrl');
-    expect(viteEnv).toContain('createHtmlVideoTask: (input: CreateTaskInput) => Promise<AppMutationResult | null>');
-    expect(viteEnv).toContain('openHtmlVideoPreview: (id: string, sceneIndex?: number) => Promise<void>');
-    expect(viteEnv).toContain('getHtmlVideoMediaUrl: (id: string, path: string) => Promise<string>');
+    expect(apiContract).toContain('createHtmlVideoTask: (input: CreateTaskInput) => Promise<AppMutationResult | null>');
+    expect(apiContract).toContain('openHtmlVideoPreview: (id: string, sceneIndex?: number) => Promise<void>');
+    expect(apiContract).toContain('getHtmlVideoMediaUrl: (id: string, path: string) => Promise<string>');
     expect(preload).not.toContain('eval_in_window');
     expect(preload).not.toContain('capture_webview_by_label');
     expect(preload).not.toContain('executeJavaScript');
-    expect(viteEnv).not.toContain('eval_in_window');
-    expect(viteEnv).not.toContain('capture_webview_by_label');
-    expect(viteEnv).not.toContain('executeJavaScript');
+    expect(apiContract).not.toContain('eval_in_window');
+    expect(apiContract).not.toContain('capture_webview_by_label');
+    expect(apiContract).not.toContain('executeJavaScript');
     expect(main).not.toContain("trustedHandle('eval_in_window'");
     expect(main).not.toContain("trustedHandle('capture_webview_by_label'");
     expect(main).not.toContain("trustedHandle('executeJavaScript'");
@@ -413,7 +424,7 @@ describe('electron ipc contract', () => {
   it('regenerates a single scene image through cache invalidation and background resume', async () => {
     const main = await readFile(new URL('../electron/main.ts', import.meta.url), 'utf8');
     const preload = await readFile(new URL('../electron/preload.ts', import.meta.url), 'utf8');
-    const viteEnv = await readFile(new URL('../src/vite-env.d.ts', import.meta.url), 'utf8');
+    const apiContract = await readFile(new URL('../src/shared/storydream-api.ts', import.meta.url), 'utf8');
     const regenerateHandler = main.slice(main.indexOf("trustedHandle('task:regenerate-image'"), main.indexOf("trustedHandle('task:get-artifacts'"));
 
     expect(main).toContain('markSceneImageForRegeneration');
@@ -424,13 +435,13 @@ describe('electron ipc contract', () => {
     expect(regenerateHandler).not.toContain('runTask(');
     expect(preload).toContain('regenerateTaskImage');
     expect(preload).toContain('task:regenerate-image');
-    expect(viteEnv).toContain('regenerateTaskImage: (id: string, sceneId: number) => Promise<AppMutationResult | null>');
+    expect(apiContract).toContain('regenerateTaskImage: (id: string, sceneId: number) => Promise<AppMutationResult | null>');
   });
 
   it('regenerates a single scene narration through cache invalidation and background resume', async () => {
     const main = await readFile(new URL('../electron/main.ts', import.meta.url), 'utf8');
     const preload = await readFile(new URL('../electron/preload.ts', import.meta.url), 'utf8');
-    const viteEnv = await readFile(new URL('../src/vite-env.d.ts', import.meta.url), 'utf8');
+    const apiContract = await readFile(new URL('../src/shared/storydream-api.ts', import.meta.url), 'utf8');
     const regenerateHandler = main.slice(main.indexOf("trustedHandle('task:regenerate-narration'"), main.indexOf("trustedHandle('task:get-artifacts'"));
 
     expect(main).toContain('markSceneNarrationForRegeneration');
@@ -441,13 +452,13 @@ describe('electron ipc contract', () => {
     expect(regenerateHandler).not.toContain('runTask(');
     expect(preload).toContain('regenerateTaskNarration');
     expect(preload).toContain('task:regenerate-narration');
-    expect(viteEnv).toContain('regenerateTaskNarration: (id: string, sceneId: number) => Promise<AppMutationResult | null>');
+    expect(apiContract).toContain('regenerateTaskNarration: (id: string, sceneId: number) => Promise<AppMutationResult | null>');
   });
 
   it('updates one scene image prompt through a narrow task artifact API', async () => {
     const main = await readFile(new URL('../electron/main.ts', import.meta.url), 'utf8');
     const preload = await readFile(new URL('../electron/preload.ts', import.meta.url), 'utf8');
-    const viteEnv = await readFile(new URL('../src/vite-env.d.ts', import.meta.url), 'utf8');
+    const apiContract = await readFile(new URL('../src/shared/storydream-api.ts', import.meta.url), 'utf8');
     const updateHandler = main.slice(main.indexOf("trustedHandle('task:update-image-prompt'"), main.indexOf("trustedHandle('task:rerun-step'"));
 
     expect(main).toContain("trustedHandle('task:update-image-prompt'");
@@ -458,13 +469,13 @@ describe('electron ipc contract', () => {
     expect(updateHandler).not.toContain('resumeTaskRun(database, updatedTask)');
     expect(preload).toContain('updateTaskImagePrompt');
     expect(preload).toContain('task:update-image-prompt');
-    expect(viteEnv).toContain('updateTaskImagePrompt: (id: string, sceneId: number, prompt: string) => Promise<AppMutationResult | null>');
+    expect(apiContract).toContain('updateTaskImagePrompt: (id: string, sceneId: number, prompt: string) => Promise<AppMutationResult | null>');
   });
 
   it('reruns an artifact pipeline step through cache invalidation and background resume', async () => {
     const main = await readFile(new URL('../electron/main.ts', import.meta.url), 'utf8');
     const preload = await readFile(new URL('../electron/preload.ts', import.meta.url), 'utf8');
-    const viteEnv = await readFile(new URL('../src/vite-env.d.ts', import.meta.url), 'utf8');
+    const apiContract = await readFile(new URL('../src/shared/storydream-api.ts', import.meta.url), 'utf8');
     const rerunHandler = main.slice(main.indexOf("trustedHandle('task:rerun-step'"), main.indexOf("trustedHandle('task:get-artifacts'"));
 
     expect(main).toContain('markTaskStepForRerun');
@@ -475,7 +486,7 @@ describe('electron ipc contract', () => {
     expect(rerunHandler).not.toContain('runTask(');
     expect(preload).toContain('rerunTaskStep');
     expect(preload).toContain('task:rerun-step');
-    expect(viteEnv).toContain('TaskStepRerunMode');
-    expect(viteEnv).toContain('rerunTaskStep: (id: string, step: number, mode: TaskStepRerunMode) => Promise<AppMutationResult | null>');
+    expect(apiContract).toContain('TaskStepRerunMode');
+    expect(apiContract).toContain('rerunTaskStep: (id: string, step: number, mode: TaskStepRerunMode) => Promise<AppMutationResult | null>');
   });
 });

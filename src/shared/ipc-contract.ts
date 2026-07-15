@@ -6,6 +6,7 @@ import {
   MAX_HTML_VIDEO_SOURCE_CHARS,
   parseHtmlVideoPipelineData,
 } from './html-video-workflow';
+import { INVOKE_CHANNELS, type InvokeChannel } from './storydream-api';
 
 export const MAX_TASK_TEXT = 1_000_000;
 export const MAX_IPC_TEXT = 65_536;
@@ -516,10 +517,10 @@ export const ipcInputSchemas = {
   'diagnostics:run': z.void(),
   'path:open': pathSchema,
   'window:control': z.enum(['minimize', 'toggle-maximize', 'close']),
-} as const;
+} as const satisfies Record<InvokeChannel, z.ZodType>;
 
-export type IpcChannel = keyof typeof ipcInputSchemas;
-export const IPC_CHANNELS = Object.freeze(Object.keys(ipcInputSchemas) as IpcChannel[]);
+export type IpcChannel = InvokeChannel;
+export const IPC_CHANNELS = INVOKE_CHANNELS;
 export type IpcInput<C extends IpcChannel> = z.output<(typeof ipcInputSchemas)[C]>;
 
 export type IpcResult<T> =

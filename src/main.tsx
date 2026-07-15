@@ -100,6 +100,7 @@ import type {
   VoiceLabRecord,
   VoiceLabSummary,
 } from './shared/types';
+import type { StoryDreamApi } from './shared/storydream-api';
 import { createAppDeltaCoordinator, MAX_RENDERER_DELTA_BUFFER, type DeltaViewState, type RevisionGap } from './shared/state-delta';
 import {
   applyAppMutationResult,
@@ -385,7 +386,6 @@ const pipelineSteps = [
   { index: 6, title: 'Step 6 草稿导出', hint: '写入剪映草稿输出目录', agent: 'Draft' },
 ] as const;
 
-type StoryDreamApi = NonNullable<Window['storydream']>;
 type ApplyMutationResult = (result: AppMutationResult | null) => void;
 
 function taskFromMutation(result: AppMutationResult | null): TaskSummary | null {

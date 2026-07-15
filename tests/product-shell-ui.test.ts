@@ -89,7 +89,7 @@ describe('product shell ui', () => {
 
   it('keeps saved provider secrets out of renderer state, DOM values, and browser persistence', async () => {
     const main = (await rendererSourcesPromise).requiredFile('src/main.tsx');
-    const viteEnv = await readFile(new URL('../src/vite-env.d.ts', import.meta.url), 'utf8');
+    const apiContract = await readFile(new URL('../src/shared/storydream-api.ts', import.meta.url), 'utf8');
     const preload = await readFile(new URL('../electron/preload.ts', import.meta.url), 'utf8');
     const electronMain = await readFile(new URL('../electron/main.ts', import.meta.url), 'utf8');
 
@@ -105,8 +105,8 @@ describe('product shell ui', () => {
     expect(main).toContain('stripConfigSecrets(next.config)');
     expect(main).not.toContain('function maskConfigured');
     expect(main).not.toContain('value.slice(0, 2)');
-    expect(viteEnv).toContain('PublicAppState');
-    expect(viteEnv).toContain('SaveConfigInput');
+    expect(apiContract).toContain('PublicAppState');
+    expect(apiContract).toContain('SaveConfigInput');
     expect(preload).toContain('SaveConfigInput');
     expect(electronMain).toContain('ConfigService');
     expect(electronMain).toContain('getPublicState()');
@@ -196,6 +196,7 @@ describe('product shell ui', () => {
     const preload = await readFile(new URL('../electron/preload.ts', import.meta.url), 'utf8');
     const main = await readFile(new URL('../electron/main.ts', import.meta.url), 'utf8');
     const viteEnv = await readFile(new URL('../src/vite-env.d.ts', import.meta.url), 'utf8');
+    const apiContract = await readFile(new URL('../src/shared/storydream-api.ts', import.meta.url), 'utf8');
 
     for (const api of [
       'listBookSelections',
@@ -209,11 +210,13 @@ describe('product shell ui', () => {
       'listPersonAssetImages',
     ]) {
       expect(preload).toContain(api);
-      expect(viteEnv).toContain(api);
+      expect(apiContract).toContain(api);
     }
 
-    expect(viteEnv).not.toContain('Partial<LocalBookPersonAssetApi>');
-    expect(viteEnv).toContain('& LocalBookPersonAssetApi');
+    expect(apiContract).not.toContain('Partial<LocalBookPersonAssetApi>');
+    expect(apiContract).toContain('& LocalBookPersonAssetApi');
+    expect(viteEnv).toContain("import type { StoryDreamApi } from './shared/storydream-api';");
+    expect(viteEnv).not.toContain('LocalBookPersonAssetApi');
 
     for (const channel of [
       'book-selection:list',
@@ -728,7 +731,7 @@ describe('product shell ui', () => {
   it('uses the dark renderer chrome as the only title bar and removes the trial strip', async () => {
     const main = (await rendererSourcesPromise).requiredFile('src/main.tsx');
     const css = await readFile(new URL('../src/styles.css', import.meta.url), 'utf8');
-    const viteEnv = await readFile(new URL('../src/vite-env.d.ts', import.meta.url), 'utf8');
+    const apiContract = await readFile(new URL('../src/shared/storydream-api.ts', import.meta.url), 'utf8');
 
     expect(main).toContain('window-control-button');
     expect(main).toContain("api.windowControl('minimize')");
@@ -742,7 +745,7 @@ describe('product shell ui', () => {
     expect(css).toContain('-webkit-app-region: no-drag');
     expect(css).not.toContain('.trial-strip');
     expect(css).not.toContain('.activation-link');
-    expect(viteEnv).toContain("windowControl: (action: 'minimize' | 'toggle-maximize' | 'close') => Promise<void>");
+    expect(apiContract).toContain("windowControl: (action: 'minimize' | 'toggle-maximize' | 'close') => Promise<void>");
   });
 
   it('gives the queue task list more horizontal room than the event history pane', async () => {
@@ -1667,11 +1670,11 @@ describe('product shell ui', () => {
 
   it('shows save and test actions for each settings configuration section', async () => {
     const main = (await rendererSourcesPromise).requiredFile('src/main.tsx');
-    const viteEnv = await readFile(new URL('../src/vite-env.d.ts', import.meta.url), 'utf8');
+    const apiContract = await readFile(new URL('../src/shared/storydream-api.ts', import.meta.url), 'utf8');
     const preload = await readFile(new URL('../electron/preload.ts', import.meta.url), 'utf8');
     const electronMain = await readFile(new URL('../electron/main.ts', import.meta.url), 'utf8');
 
-    expect(viteEnv).toContain('testAppConfig');
+    expect(apiContract).toContain('testAppConfig');
     expect(preload).toContain('config:test');
     expect(electronMain).toContain('config:test');
     expect(main).toContain('testCurrentConfig');

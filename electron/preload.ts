@@ -52,6 +52,7 @@ import type {
 } from '../src/shared/types';
 import type { PublicAppState, SaveConfigInput, SecretChanges } from '../src/shared/config-secrets';
 import type { PersonAssetImage, PersonAssetSummary } from '../src/shared/person-assets';
+import type { StoryDreamApi } from '../src/shared/storydream-api';
 import { unwrapIpcResult, type IpcChannel } from '../src/shared/ipc-contract';
 import { appErrorFromPayload, serializeAppErrorForBridge } from '../src/shared/app-error';
 
@@ -63,7 +64,7 @@ async function invokeTrusted<T = unknown>(channel: IpcChannel, input?: unknown):
   return unwrapIpcResult<T>(result);
 }
 
-const storyDreamApi = {
+export const storyDreamApi = {
   getState: (): Promise<PublicAppState> => invokeTrusted('app:get-state'),
   getBootstrap: (): Promise<BootstrapState> => invokeTrusted('app:get-bootstrap'),
   reconcileDeltas: (input: AppDeltaReconcileRequest): Promise<AppDeltaReconcileResult> => invokeTrusted('app:reconcile-deltas', input),
@@ -143,9 +144,11 @@ const storyDreamApi = {
   onAppDelta: (callback: (delta: AppDelta) => void) => {
     const listener = (_event: unknown, delta: AppDelta) => callback(delta);
     ipcRenderer.on('app:delta', listener);
-    return () => ipcRenderer.off('app:delta', listener);
+    return () => {
+      ipcRenderer.off('app:delta', listener);
+    };
   },
-};
+} satisfies StoryDreamApi;
 
 contextBridge.exposeInMainWorld('storydream', storyDreamApi);
 contextBridge.exposeInMainWorld('storybound', storyDreamApi);

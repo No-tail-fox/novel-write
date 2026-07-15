@@ -1,4 +1,3 @@
-import { readFile } from 'node:fs/promises';
 import { describe, expect, it } from 'vitest';
 
 async function loadContract() {
@@ -7,6 +6,10 @@ async function loadContract() {
 
 async function loadGateway() {
   return import('../electron/ipc').catch(() => null);
+}
+
+async function loadStoryDreamApiContract() {
+  return import('../src/shared/storydream-api').catch(() => null);
 }
 
 describe('IPC runtime contract', () => {
@@ -95,20 +98,15 @@ describe('IPC runtime contract', () => {
     ).toMatchObject({ platform: 'douyin' });
   });
 
-  it('defines one runtime schema for every preload invoke channel', async () => {
+  it('defines one runtime schema for every canonical invoke channel', async () => {
     const contract = await loadContract();
+    const apiContract = await loadStoryDreamApiContract();
     expect(contract).not.toBeNull();
-    if (!contract) return;
+    expect(apiContract).not.toBeNull();
+    if (!contract || !apiContract) return;
 
-    const preload = await readFile(new URL('../electron/preload.ts', import.meta.url), 'utf8');
-    const invokedChannels = [
-      ...preload.matchAll(/(?:ipcRenderer\.invoke|invokeTrusted)\('([^']+)'/g),
-    ].map((match) => match[1]);
-    const uniqueChannels = [...new Set(invokedChannels)].sort();
-
-    expect(uniqueChannels).toHaveLength(71);
-    expect([...contract.IPC_CHANNELS].sort()).toEqual(uniqueChannels);
-    expect(Object.keys(contract.ipcInputSchemas).sort()).toEqual(uniqueChannels);
+    expect(contract.IPC_CHANNELS).toBe(apiContract.INVOKE_CHANNELS);
+    expect(new Set(Object.keys(contract.ipcInputSchemas))).toEqual(new Set(apiContract.INVOKE_CHANNELS));
   });
 
   it('rejects untrusted senders and invalid payloads before running handlers', async () => {
