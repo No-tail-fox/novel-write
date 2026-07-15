@@ -3,10 +3,10 @@ import { mkdir, mkdtemp, readdir, readFile, rm, writeFile } from 'node:fs/promis
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { FileDatabase as PersistentFileDatabase, type FileDatabaseDependencies } from '@shared/storage';
-import { runTask } from '@shared/runner';
+import { runTask as runTaskWithManagedWorkDir, type RunTaskOptions } from '@shared/runner';
 import { markTaskStepForRerun } from '@shared/pipeline-cache';
 import { createPersonAsset, importPersonAssetFiles } from '@shared/person-assets';
-import type { CustomCoverTemplate, ImagePrompt, PipelineArtifact, StoryboardScene, TaskStatus } from '@shared/types';
+import type { CustomCoverTemplate, ImagePrompt, PipelineArtifact, StoryboardScene, Task, TaskStatus } from '@shared/types';
 import type { PyJianYingBridgeInput } from '@shared/jianying-bridge';
 import type { StoryboundSidecarInput } from '@shared/storybound-sidecar';
 import type { ConfiguredJsonLlm, JsonLlm, LlmJsonRequest } from '@shared/llm-provider';
@@ -51,11 +51,51 @@ async function openRunnerDatabase(file: string): Promise<FileDatabase> {
 
 const FileDatabase = { open: openRunnerDatabase };
 
+async function runTask(
+  db: FileDatabase,
+  task: Task,
+  options: Omit<RunTaskOptions, 'workDir'> & { workDir?: string },
+): Promise<Task> {
+  return runTaskWithManagedWorkDir(db, task, {
+    ...options,
+    workDir: options.workDir ?? managedTaskWorkDir(options.appDataDir, task),
+  });
+}
+
+function managedTaskWorkDir(appDataDir: string, task: Pick<Task, 'managedStorageKey'>): string {
+  if (!task.managedStorageKey) throw new Error('Test task is missing a managed storage key.');
+  return join(appDataDir, 'tasks', task.managedStorageKey);
+}
+
 function mockConfiguredLlm(run: JsonLlm): ConfiguredJsonLlm {
   return { protocol: 'anthropic', run };
 }
 
 describe('task runner', () => {
+  it('rejects a missing managed work directory before filesystem or provider activity', async () => {
+    const dir = await mkdtemp(join(tmpdir(), 'storybound-runner-managed-workdir-'));
+    const db = await FileDatabase.open(join(dir, 'data.db'));
+    let providerCalls = 0;
+    try {
+      const task = await db.createTask({ title: 'Managed workdir required', inputText: sampleInput });
+      const unsafeOptions: Omit<RunTaskOptions, 'workDir'> = {
+        appDataDir: dir,
+        generatePipelineArtifact: async () => {
+          providerCalls += 1;
+          return makeArtifact();
+        },
+      };
+      await expect(
+        Reflect.apply(runTaskWithManagedWorkDir, undefined, [db, task, unsafeOptions]),
+      ).rejects.toThrow('MANAGED_WORK_DIR_REQUIRED');
+      expect(providerCalls).toBe(0);
+      await expect(readdir(join(dir, 'tasks'))).rejects.toMatchObject({ code: 'ENOENT' });
+    } finally {
+      await db.close();
+      await rm(dir, { recursive: true, force: true });
+    }
+  });
+
   it('uses local person materials instead of AI image generation when materialSource is local', async () => {
     const dir = await mkdtemp(join(tmpdir(), 'storybound-runner-local-materials-'));
     const db = await FileDatabase.open(join(dir, 'data.db'));
@@ -92,7 +132,7 @@ describe('task runner', () => {
         draftWriterOptions: { runBridge: fakeBridge },
       });
 
-      const meta = JSON.parse(await readFile(join(dir, 'tasks', task.id, '04-local-meta.json'), 'utf8'));
+      const meta = JSON.parse(await readFile(join(managedTaskWorkDir(dir, task), '04-local-meta.json'), 'utf8'));
       expect(meta.person).toBe('迟子建');
       const completed = (await db.getState()).tasks.find((item) => item.id === task.id);
       expect(completed?.status).toBe('completed');
@@ -975,7 +1015,7 @@ describe('task runner', () => {
         draftWriterOptions: { runBridge: fakeBridge },
       });
 
-      const storedScenes = JSON.parse(await readFile(join(dir, 'tasks', task.id, '02-sentences.json'), 'utf8')) as StoryboardScene[];
+      const storedScenes = JSON.parse(await readFile(join(managedTaskWorkDir(dir, task), '02-sentences.json'), 'utf8')) as StoryboardScene[];
       expect(storedScenes.map((scene) => scene.cap)).toEqual(['Scene 1', 'Scene 2', 'Scene 3']);
     } finally {
       await db.close();
@@ -1037,7 +1077,7 @@ describe('task runner', () => {
         draftWriterOptions: { runBridge: fakeBridge },
       });
 
-      const storedScenes = JSON.parse(await readFile(join(dir, 'tasks', task.id, '02-sentences.json'), 'utf8')) as StoryboardScene[];
+      const storedScenes = JSON.parse(await readFile(join(managedTaskWorkDir(dir, task), '02-sentences.json'), 'utf8')) as StoryboardScene[];
       expect(storedScenes).toMatchObject([
         { cap: 'Scene 1', descPrompt: 'visual prompt 1' },
         { cap: 'Scene 2', descPrompt: 'visual prompt 2' },
@@ -1103,7 +1143,7 @@ describe('task runner', () => {
         draftWriterOptions: { runBridge: fakeBridge },
       });
 
-      const storedScenes = JSON.parse(await readFile(join(dir, 'tasks', task.id, '02-sentences.json'), 'utf8')) as StoryboardScene[];
+      const storedScenes = JSON.parse(await readFile(join(managedTaskWorkDir(dir, task), '02-sentences.json'), 'utf8')) as StoryboardScene[];
       expect(storedScenes.map((scene) => scene.cap)).toEqual([
         '那一年他十八岁，独自踏上了北上的列车。',
         '窗外风景飞退，他心跳加速。',
@@ -1193,7 +1233,7 @@ describe('task runner', () => {
         draftWriterOptions: { runBridge: fakeBridge },
       });
 
-      const storedScenes = JSON.parse(await readFile(join(dir, 'tasks', task.id, '02-sentences.json'), 'utf8')) as StoryboardScene[];
+      const storedScenes = JSON.parse(await readFile(join(managedTaskWorkDir(dir, task), '02-sentences.json'), 'utf8')) as StoryboardScene[];
       expect(storedScenes.map((scene) => scene.cap)).toEqual([
         '他很早就进工厂做童工。',
         '但他没有。',
@@ -1553,7 +1593,7 @@ describe('task runner', () => {
         expect(content).not.toContain('Target word count range: 80-122 Chinese characters.');
       }
       expect(requests.some((request) => request.name === 'rewrite-target-length-repair-1')).toBe(true);
-      await expect(readFile(join(dir, 'tasks', task.id, '01-rewritten-copy.md'), 'utf8')).resolves.toBe(repairedCopy);
+      await expect(readFile(join(managedTaskWorkDir(dir, task), '01-rewritten-copy.md'), 'utf8')).resolves.toBe(repairedCopy);
     } finally {
       await db.close();
       await rm(dir, { recursive: true, force: true });
@@ -1612,7 +1652,7 @@ describe('task runner', () => {
         [9, 10, 11, 12, 13, 14, 15, 16],
         [17],
       ]);
-      const prompts = JSON.parse(await readFile(join(dir, 'tasks', task.id, '03-image-prompts.json'), 'utf8')) as ImagePrompt[];
+      const prompts = JSON.parse(await readFile(join(managedTaskWorkDir(dir, task), '03-image-prompts.json'), 'utf8')) as ImagePrompt[];
       expect(prompts.map((prompt) => prompt.sceneId)).toEqual(scenes.map((scene) => scene.id));
     } finally {
       await db.close();
@@ -1660,10 +1700,10 @@ describe('task runner', () => {
       const draftMeta = JSON.parse(await readFile(join(completed.outputDir, 'draft_meta_info.json'), 'utf8'));
       expect(imageCalls[0].scenes.map((scene) => scene.id)).toEqual([0]);
       expect(imageCalls[0].prompts[0].prompt).toContain('Short-video cover');
-      expect(pipeline.assets.cover[0].path).toBe(join(dir, 'tasks', task.id, 'cover-image.png'));
-      expect(await readFile(join(dir, 'tasks', task.id, 'cover-image.png'))).toEqual(tinyPng);
-      expect(draftPayloads[0].coverImagePath).toBe(join(dir, 'tasks', task.id, 'cover-image.png'));
-      expect(draftMeta.draft_cover).toBe(join(dir, 'tasks', task.id, 'cover-image.png'));
+      expect(pipeline.assets.cover[0].path).toBe(join(managedTaskWorkDir(dir, task), 'cover-image.png'));
+      expect(await readFile(join(managedTaskWorkDir(dir, task), 'cover-image.png'))).toEqual(tinyPng);
+      expect(draftPayloads[0].coverImagePath).toBe(join(managedTaskWorkDir(dir, task), 'cover-image.png'));
+      expect(draftMeta.draft_cover).toBe(join(managedTaskWorkDir(dir, task), 'cover-image.png'));
     } finally {
       await db.close();
       await rm(dir, { recursive: true, force: true });
@@ -2049,7 +2089,7 @@ describe('task runner', () => {
       });
 
       const completed = (await db.getState()).tasks[0];
-      const workDir = join(dir, 'tasks', task.id);
+      const workDir = managedTaskWorkDir(dir, task);
       expect(completed).toMatchObject({
         status: 'completed',
         currentStep: 4,
@@ -2256,7 +2296,7 @@ describe('task runner', () => {
         draftWriterOptions: { runBridge: fakeBridge },
       });
 
-      const workDir = join(dir, 'tasks', task.id);
+      const workDir = managedTaskWorkDir(dir, task);
       await expect(readFile(join(workDir, '01-rewritten-copy.md'), 'utf8')).resolves.toContain('Round 2 line one');
       await expect(readFile(join(workDir, '00-cover-title.json'), 'utf8')).resolves.toContain('Cover 2');
       const evaluations = JSON.parse(await readFile(join(workDir, '01-rewrite-evaluations.json'), 'utf8'));
@@ -2362,7 +2402,7 @@ describe('task runner', () => {
       expect(reviewPrompt).not.toContain('rewrittenCopy');
       expect(rewritePrompt).not.toContain('Target word count range: 96-144 Chinese characters.');
       expect(requests.some((request) => request.name === 'rewrite-target-length-repair-1')).toBe(true);
-      await expect(readFile(join(dir, 'tasks', task.id, '01-rewritten-copy.md'), 'utf8')).resolves.toBe(repairedCopy);
+      await expect(readFile(join(managedTaskWorkDir(dir, task), '01-rewritten-copy.md'), 'utf8')).resolves.toBe(repairedCopy);
     } finally {
       await db.close();
       await rm(dir, { recursive: true, force: true });
@@ -2445,8 +2485,8 @@ describe('task runner', () => {
 
       expect(requests.some((request) => request.name === 'rewrite-target-length-repair-2')).toBe(true);
       expect(requests.some((request) => request.name === 'rewrite-target-length-repair-3')).toBe(false);
-      await expect(readFile(join(dir, 'tasks', task.id, '01-rewritten-copy.md'), 'utf8')).resolves.toBe(nearMissCopy);
-      const evaluations = JSON.parse(await readFile(join(dir, 'tasks', task.id, '01-rewrite-evaluations.json'), 'utf8'));
+      await expect(readFile(join(managedTaskWorkDir(dir, task), '01-rewritten-copy.md'), 'utf8')).resolves.toBe(nearMissCopy);
+      const evaluations = JSON.parse(await readFile(join(managedTaskWorkDir(dir, task), '01-rewrite-evaluations.json'), 'utf8'));
       expect(evaluations.wordCountWarning).toBeUndefined();
     } finally {
       await db.close();
@@ -2522,8 +2562,8 @@ describe('task runner', () => {
 
       expect(requests.some((request) => request.name === 'rewrite-target-length-repair-1')).toBe(true);
       expect(requests.some((request) => request.name === 'rewrite-target-length-repair-2')).toBe(false);
-      await expect(readFile(join(dir, 'tasks', task.id, '01-rewritten-copy.md'), 'utf8')).resolves.toBe(compressedCopy);
-      const evaluations = JSON.parse(await readFile(join(dir, 'tasks', task.id, '01-rewrite-evaluations.json'), 'utf8'));
+      await expect(readFile(join(managedTaskWorkDir(dir, task), '01-rewritten-copy.md'), 'utf8')).resolves.toBe(compressedCopy);
+      const evaluations = JSON.parse(await readFile(join(managedTaskWorkDir(dir, task), '01-rewrite-evaluations.json'), 'utf8'));
       expect(evaluations.wordCountWarning).toBeUndefined();
     } finally {
       await db.close();
@@ -2591,7 +2631,7 @@ describe('task runner', () => {
       });
 
       expect(requests.some((request) => request.name === 'storyboard-target-scenes-repair-1')).toBe(true);
-      const storedScenes = JSON.parse(await readFile(join(dir, 'tasks', task.id, '02-sentences.json'), 'utf8')) as StoryboardScene[];
+      const storedScenes = JSON.parse(await readFile(join(managedTaskWorkDir(dir, task), '02-sentences.json'), 'utf8')) as StoryboardScene[];
       expect(storedScenes).toHaveLength(4);
     } finally {
       await db.close();
@@ -2651,7 +2691,7 @@ describe('task runner', () => {
         draftWriterOptions: { runBridge: fakeBridge },
       });
 
-      const storedScenes = JSON.parse(await readFile(join(dir, 'tasks', task.id, '02-sentences.json'), 'utf8')) as StoryboardScene[];
+      const storedScenes = JSON.parse(await readFile(join(managedTaskWorkDir(dir, task), '02-sentences.json'), 'utf8')) as StoryboardScene[];
       expect(storedScenes).toHaveLength(12);
       expect(storedScenes[0]).toMatchObject({ id: 1, cap: 'Scene 1' });
     } finally {
@@ -2687,7 +2727,7 @@ describe('task runner', () => {
         draftWriterOptions: { runBridge: fakeBridge },
       });
 
-      const workDir = join(dir, 'tasks', task.id);
+      const workDir = managedTaskWorkDir(dir, task);
       const musicPlan = JSON.parse(await readFile(join(workDir, '02-music-plan.json'), 'utf8'));
       const scenes = JSON.parse(await readFile(join(workDir, '02-sentences.json'), 'utf8')) as StoryboardScene[];
       const prompts = JSON.parse(await readFile(join(workDir, '03-image-prompts.json'), 'utf8')) as ImagePrompt[];
@@ -2748,7 +2788,7 @@ describe('task runner', () => {
       expect(capturedPayloads).toHaveLength(1);
       expect(capturedPayloads[0]).toMatchObject({
         mode: 'music_mv',
-        work_dir: join(dir, 'tasks', task.id),
+        work_dir: managedTaskWorkDir(dir, task),
         audio_path: songPath,
         material_source: 'ai',
         jianying_draft_path: draftRootDir,
@@ -3077,7 +3117,7 @@ describe('task runner', () => {
         style: 'photo-real',
         speaker: 'voice',
       });
-      const workDir = join(dir, 'tasks', task.id);
+      const workDir = managedTaskWorkDir(dir, task);
       const pipelineDir = join(workDir, 'pipeline');
       const statePath = join(pipelineDir, 'state.json');
       const oldArtifact: PipelineArtifact = {
@@ -3309,7 +3349,7 @@ async function runRewriteControlScenario(input: {
 
     const state = await db.getState();
     return {
-      finalCopy: await readFile(join(dir, 'tasks', task.id, '01-rewritten-copy.md'), 'utf8'),
+      finalCopy: await readFile(join(managedTaskWorkDir(dir, task), '01-rewritten-copy.md'), 'utf8'),
       requests,
       storedKeepPromotion: state.tasks.find((item) => item.id === task.id)?.keepPromotion ?? true,
     };

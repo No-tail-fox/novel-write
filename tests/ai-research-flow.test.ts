@@ -4,7 +4,7 @@ import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
 import { FileDatabase } from '@shared/storage';
 import { runTask } from '@shared/runner';
-import type { ImagePrompt, PipelineArtifact, StoryboardScene } from '@shared/types';
+import type { ImagePrompt, PipelineArtifact, StoryboardScene, Task } from '@shared/types';
 import type { ConfiguredJsonLlm, JsonLlm, LlmJsonRequest } from '@shared/llm-provider';
 import type { PyJianYingBridgeInput } from '@shared/jianying-bridge';
 
@@ -42,6 +42,7 @@ describe('AI creation research flow', () => {
 
       await runTask(db, task, {
         appDataDir: dir,
+        workDir: managedTaskWorkDir(dir, task),
         resolveAiSourceContext: async () => ({
           query: 'Wu Zetian comeback',
           sections: [
@@ -67,7 +68,7 @@ describe('AI creation research flow', () => {
 
       const state = await db.getState();
       const completed = state.tasks[0];
-      const workDir = join(dir, 'tasks', task.id);
+      const workDir = managedTaskWorkDir(dir, task);
       const sourceContext = JSON.parse(await readFile(join(workDir, '00-source-context.json'), 'utf8')) as { sections: Array<{ title: string }> };
       const sourceContextMarkdown = await readFile(join(workDir, '00-source-context.md'), 'utf8');
       const reviewInput = llmRequests.find((request) => request.name === 'review')?.messages.map((message) => message.content).join('\n') ?? '';
@@ -87,6 +88,11 @@ describe('AI creation research flow', () => {
     }
   });
 });
+
+function managedTaskWorkDir(appDataDir: string, task: Pick<Task, 'managedStorageKey'>): string {
+  if (!task.managedStorageKey) throw new Error('Test task is missing a managed storage key.');
+  return join(appDataDir, 'tasks', task.managedStorageKey);
+}
 
 function mockConfiguredLlm(run: JsonLlm): ConfiguredJsonLlm {
   return { protocol: 'anthropic', run };

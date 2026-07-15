@@ -564,12 +564,13 @@ describe('task runtime providers', () => {
       await expect(
         runTask(db, task, {
           appDataDir: dir,
+          workDir: managedTaskWorkDir(dir, task),
           resolveAiSourceContext: async () => ({
             query: task.aiKeyword,
             sections: [{ source: 'web', title: 'Search result', content: 'Wu Zetian returns to the court.' }],
             warnings: [],
           }),
-          ...createTaskRuntimeProviders(defaultConfig, join(dir, 'tasks', task.id)),
+          ...createTaskRuntimeProviders(defaultConfig, managedTaskWorkDir(dir, task)),
         }),
       ).rejects.toThrow(/LLM provider is not configured/);
 
@@ -623,4 +624,9 @@ async function withRuntimeTask(run: (task: Task, workDir: string) => Promise<voi
     await db.close();
     await rm(dir, { recursive: true, force: true });
   }
+}
+
+function managedTaskWorkDir(appDataDir: string, task: Pick<Task, 'managedStorageKey'>): string {
+  if (!task.managedStorageKey) throw new Error('Test task is missing a managed storage key.');
+  return join(appDataDir, 'tasks', task.managedStorageKey);
 }

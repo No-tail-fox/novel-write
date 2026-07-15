@@ -4,7 +4,7 @@ import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
 import { FileDatabase } from '@shared/storage';
 import { runTask } from '@shared/runner';
-import type { ImagePrompt, PipelineArtifact, StoryboardScene } from '@shared/types';
+import type { ImagePrompt, PipelineArtifact, StoryboardScene, Task } from '@shared/types';
 import type { PyJianYingBridgeInput } from '@shared/jianying-bridge';
 
 const sampleInput =
@@ -142,6 +142,7 @@ describe('high parity StoryDream shell model', () => {
 
       await runTask(db, task, {
         appDataDir: dir,
+        workDir: managedTaskWorkDir(dir, task),
         generatePipelineArtifact: async () => makeArtifact(),
         generateImages: async (scenes) => writeSceneAssets(mediaDir, scenes, 'png', tinyPng),
         synthesizeNarration: async (scenes) => writeSceneAssets(mediaDir, scenes, 'wav', wavTone(1200)),
@@ -151,7 +152,7 @@ describe('high parity StoryDream shell model', () => {
       const completed = state.tasks[0];
       const draftFiles = await readdir(completed.outputDir);
       const draftContent = JSON.parse(await readFile(join(completed.outputDir, 'draft_content.json'), 'utf8'));
-      const workDir = join(dir, 'tasks', task.id);
+      const workDir = managedTaskWorkDir(dir, task);
       const workFiles = await readdir(workDir);
       const prompts = JSON.parse(await readFile(join(workDir, '03-image-prompts.json'), 'utf8'));
       const diagnostics = JSON.parse(await readFile(join(workDir, 'diagnostics.json'), 'utf8'));
@@ -183,6 +184,11 @@ describe('high parity StoryDream shell model', () => {
     expect(css).toContain('.segmented');
   });
 });
+
+function managedTaskWorkDir(appDataDir: string, task: Pick<Task, 'managedStorageKey'>): string {
+  if (!task.managedStorageKey) throw new Error('Test task is missing a managed storage key.');
+  return join(appDataDir, 'tasks', task.managedStorageKey);
+}
 
 async function writeSceneAssets(
   mediaDir: string,

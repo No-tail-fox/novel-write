@@ -24,7 +24,7 @@ import { runTask } from '../src/shared/runner';
 import { runStoryboundMediaSidecar } from '../src/shared/storybound-sidecar';
 import { FileDatabase } from '../src/shared/storage';
 import { createHtmlVideoRuntimeProviders, createTaskRuntimeProviders } from '../src/shared/task-runtime-providers';
-import type { AccountProfile, ActivationState, AppConfig, AppDelta, AppDeltaReconcileRequest, AppDeltaReconcileResult, AppStatePatch, BookSelectionInput, ConfigTestTarget, CreateTaskInput, CreateViralAnalysisInput, CursorRequest, CustomStyle, CustomStyleGenerateInput, DraftTemplate, HtmlVideoPipelineDataV2, ImageLabGenerateInput, ImageLabRecord, ImageLabSummary, LlmConfig, PromptTemplate, ProviderModelListRequest, ResearchCopyComposeInput, SequencedTaskEvent, Task, TaskStatus, TaskStepRerunMode, UiPreferences, ViralAnalysisRecord, ViralAnalysisStatus, ViralProductionTaskOptions, VolcengineSpeakerListRequest, VoiceLabGenerateInput, VoiceLabRecord, VoiceLabSummary } from '../src/shared/types';
+import type { AccountProfile, ActivationState, AppConfig, AppDelta, AppDeltaReconcileRequest, AppDeltaReconcileResult, AppStatePatch, BookSelectionInput, ConfigTestTarget, CreateTaskInput, CreateViralAnalysisInput, CursorRequest, CustomStyle, CustomStyleGenerateInput, DraftTemplate, HistoryListRequest, HtmlVideoPipelineDataV2, ImageLabGenerateInput, ImageLabRecord, ImageLabSummary, LlmConfig, PromptTemplate, ProviderModelListRequest, ResearchCopyComposeInput, SequencedTaskEvent, Task, TaskStatus, TaskStepRerunMode, UiPreferences, ViralAnalysisRecord, ViralAnalysisStatus, ViralProductionTaskOptions, VolcengineSpeakerListRequest, VoiceLabGenerateInput, VoiceLabRecord, VoiceLabSummary } from '../src/shared/types';
 import { createViralProductionTaskInput, detectViralPlatform, runViralAnalysis } from '../src/shared/viral-analysis';
 import { createViralRuntimeProviders } from '../src/shared/viral-runtime';
 import { listVolcengineSpeakers } from '../src/shared/volcengine-speakers';
@@ -43,6 +43,7 @@ import { createElectronHtmlVideoRenderer } from './html-video-renderer';
 import { createTrustedIpcRegistrar } from './ipc';
 import { ConfigService } from './config-service';
 import { CredentialVault } from './credential-vault';
+import { backfillLegacyManagedHistoryStorage, resolveManagedHistoryWorkDir } from './managed-history-paths';
 import {
   finalizeTaskRunIntent,
   requestTaskRunIntent,
@@ -182,6 +183,12 @@ async function getDb(): Promise<FileDatabase> {
     }),
   });
   try {
+    const candidates = await database.listMissingManagedStorageKeys();
+    await backfillLegacyManagedHistoryStorage(
+      dir,
+      candidates,
+      (family, id, managedStorageKey) => database.backfillManagedStorageKey(family, id, managedStorageKey),
+    );
     await service.migrateLegacySecrets();
     await ensureRuntimeJianyingDraftPath(database, service);
   } catch (error) {
@@ -375,12 +382,15 @@ function voiceLabSummary(record: VoiceLabRecord): VoiceLabSummary {
   return { ...summary, textPreview: text.slice(0, 160) };
 }
 
-function taskWorkDir(task: Pick<Task, 'id'>): string {
-  return join(app.getPath('userData'), appDataName, 'tasks', task.id);
+function taskWorkDir(task: Pick<Task, 'managedStorageKey'>): string {
+  return resolveManagedHistoryWorkDir(appDataDir(), 'task', task.managedStorageKey);
 }
 
-function htmlVideoTaskDirectory(taskId: string) {
-  return ensureHtmlVideoTaskWorkDir(app.getPath('userData'), appDataName, taskId);
+async function htmlVideoTaskDirectory(taskId: string) {
+  const task = await (await getDb()).getTaskDetail(taskId);
+  if (!task) throw new Error(`HTML_VIDEO_TASK_NOT_FOUND: ${taskId}`);
+  resolveManagedHistoryWorkDir(appDataDir(), 'task', task.managedStorageKey);
+  return ensureHtmlVideoTaskWorkDir(app.getPath('userData'), appDataName, task.managedStorageKey ?? '');
 }
 
 function registerHtmlVideoMediaProtocol(): void {
@@ -397,16 +407,16 @@ function registerHtmlVideoMediaProtocol(): void {
   });
 }
 
-function viralAnalysisWorkDir(record: Pick<ViralAnalysisRecord, 'id'>): string {
-  return join(app.getPath('userData'), appDataName, 'viral-analyses', record.id);
+function viralAnalysisWorkDir(record: Pick<ViralAnalysisRecord, 'managedStorageKey'>): string {
+  return resolveManagedHistoryWorkDir(appDataDir(), 'viral-analysis', record.managedStorageKey);
 }
 
-function imageLabWorkDir(id: string): string {
-  return join(app.getPath('userData'), appDataName, 'image-lab', id);
+function imageLabWorkDir(record: Pick<ImageLabRecord, 'managedStorageKey'>): string {
+  return resolveManagedHistoryWorkDir(appDataDir(), 'image-lab', record.managedStorageKey);
 }
 
-function voiceLabWorkDir(id: string): string {
-  return join(app.getPath('userData'), appDataName, 'voice-lab', id);
+function voiceLabWorkDir(record: Pick<VoiceLabRecord, 'managedStorageKey'>): string {
+  return resolveManagedHistoryWorkDir(appDataDir(), 'voice-lab', record.managedStorageKey);
 }
 
 function appDataDir(): string {
@@ -456,6 +466,7 @@ async function buildRunOptions(database: FileDatabase, task: Task, controller: A
   const [state, runtimeConfig] = await Promise.all([database.getState(), (await getConfigService()).getRuntimeConfig()]);
   return {
     appDataDir: appDataDir(),
+    workDir: taskWorkDir(task),
     signal: controller.signal,
     resolveAiSourceContext: createAiSourceResearcher(runtimeConfig),
     ...createTaskRuntimeProviders(runtimeConfig, taskWorkDir(task), task),
@@ -574,7 +585,7 @@ async function runHtmlVideoTask(
   const startedAt = task.startedAt ?? new Date().toISOString();
   let lastState: HtmlVideoPipelineDataV2 | null = null;
   try {
-    const taskDirectory = await ensureHtmlVideoTaskWorkDir(app.getPath('userData'), appDataName, task.id);
+    const taskDirectory = await ensureHtmlVideoTaskWorkDir(app.getPath('userData'), appDataName, task.managedStorageKey ?? '');
     workDir = taskDirectory.workDir.canonicalPath;
     const initialState = parseHtmlVideoPipelineData(task.pipelineData);
     lastState = initialState;
@@ -798,10 +809,11 @@ function startViralAnalysisRun(database: FileDatabase, record: ViralAnalysisReco
         lastHeartbeatAt: startedAt,
       });
       await publishViralUpsert(database, record.id);
+      const workDir = viralAnalysisWorkDir(record);
       const completed = await runViralAnalysis(record, {
-        workDir: viralAnalysisWorkDir(record),
+        workDir,
         signal: controller.signal,
-        ...createViralRuntimeProviders(runtimeConfig, viralAnalysisWorkDir(record)),
+        ...createViralRuntimeProviders(runtimeConfig, workDir),
         emit: async (event) => {
           await database.addViralAnalysisEvent(record.id, {
             type: event.type,
@@ -930,17 +942,17 @@ trustedHandle('app:reconcile-deltas', async (_event, input: AppDeltaReconcileReq
   return reconcileAppDeltas(await getDb(), input);
 });
 
-trustedHandle('task:list', async (_event, request: CursorRequest) => (await getDb()).listTaskSummaries(request));
+trustedHandle('task:list', async (_event, request: Extract<HistoryListRequest, { family: 'task' }>) => (await getDb()).listTaskSummaries(request));
 trustedHandle('task:get-detail', async (_event, id: string) => (await getDb()).getTaskDetail(id));
 trustedHandle('task:list-events', async (_event, input: { taskId: string } & CursorRequest) =>
   (await getDb()).listTaskEvents(input.taskId, input));
-trustedHandle('viral:list', async (_event, request: CursorRequest) => (await getDb()).listViralAnalyses(request));
+trustedHandle('viral:list', async (_event, request: Extract<HistoryListRequest, { family: 'viral-analysis' }>) => (await getDb()).listViralAnalyses(request));
 trustedHandle('viral:get-detail', async (_event, id: string) => (await getDb()).getViralAnalysisDetail(id));
 trustedHandle('viral:list-events', async (_event, input: { analysisId: string } & CursorRequest) =>
   (await getDb()).listViralAnalysisEvents(input.analysisId, input));
-trustedHandle('image-lab:list', async (_event, request: CursorRequest) => (await getDb()).listImageLabRecords(request));
+trustedHandle('image-lab:list', async (_event, request: Extract<HistoryListRequest, { family: 'image-lab' }>) => (await getDb()).listImageLabRecords(request));
 trustedHandle('image-lab:get-detail', async (_event, id: string) => (await getDb()).getImageLabRecordDetail(id));
-trustedHandle('voice-lab:list', async (_event, request: CursorRequest) => (await getDb()).listVoiceLabRecords(request));
+trustedHandle('voice-lab:list', async (_event, request: Extract<HistoryListRequest, { family: 'voice-lab' }>) => (await getDb()).listVoiceLabRecords(request));
 trustedHandle('voice-lab:get-detail', async (_event, id: string) => (await getDb()).getVoiceLabRecordDetail(id));
 trustedHandle('prompt-template:list', async (_event, request: CursorRequest) => (await getDb()).listPromptTemplateSummaries(request));
 trustedHandle('prompt-template:get-detail', async (_event, id: string) => (await getDb()).getPromptTemplateDetail(id));
@@ -1047,11 +1059,34 @@ trustedHandle('draft-template:save', async (_event, template: DraftTemplate) => 
 
 trustedHandle('image-lab:generate', async (_event, input: ImageLabGenerateInput) => {
   const database = await getDb();
-  const runtimeConfig = await (await getConfigService()).getRuntimeConfig();
   const id = input.id ?? randomUUID();
-  const record = await generateImageLabRecord(runtimeConfig, imageLabWorkDir(id), { ...input, id });
-  const saved = await database.addImageLabRecord(record);
-  return publishStatePatch({ kind: 'image-lab-upsert', record: imageLabSummary(saved) });
+  const record = {
+    ...input,
+    id,
+    provider: input.provider ?? 'mock',
+    status: 'failed' as const,
+    errorMessage: 'Image generation was interrupted before completion.',
+    finishedAt: null,
+  };
+  const initial = await database.addImageLabRecord(record);
+  try {
+    const runtimeConfig = await (await getConfigService()).getRuntimeConfig();
+    const generatedRecord = await generateImageLabRecord(
+      runtimeConfig,
+      imageLabWorkDir({ managedStorageKey: initial.managedStorageKey }),
+      { ...input, id },
+    );
+    const saved = await database.updateImageLabRecord(id, generatedRecord);
+    return publishStatePatch({ kind: 'image-lab-upsert', record: imageLabSummary(saved) });
+  } catch (error) {
+    const failed = await database.updateImageLabRecord(id, {
+      status: 'failed',
+      errorMessage: error instanceof Error ? error.message : String(error),
+      finishedAt: new Date().toISOString(),
+    });
+    await publishStatePatch({ kind: 'image-lab-upsert', record: imageLabSummary(failed) });
+    throw error;
+  }
 });
 
 trustedHandle('image-lab:add-record', async (_event, input) => {
@@ -1062,11 +1097,33 @@ trustedHandle('image-lab:add-record', async (_event, input) => {
 
 trustedHandle('voice-lab:generate', async (_event, input: VoiceLabGenerateInput) => {
   const database = await getDb();
-  const runtimeConfig = await (await getConfigService()).getRuntimeConfig();
   const id = input.id ?? randomUUID();
-  const record = await generateConfiguredVoicePreview(runtimeConfig, voiceLabWorkDir(id), { ...input, id });
-  const saved = await database.addVoiceLabRecord(record);
-  return publishStatePatch({ kind: 'voice-lab-upsert', record: voiceLabSummary(saved) });
+  const record = {
+    ...input,
+    id,
+    status: 'failed' as const,
+    errorMessage: 'Voice generation was interrupted before completion.',
+    finishedAt: null,
+  };
+  const initial = await database.addVoiceLabRecord(record);
+  try {
+    const runtimeConfig = await (await getConfigService()).getRuntimeConfig();
+    const generatedRecord = await generateConfiguredVoicePreview(
+      runtimeConfig,
+      voiceLabWorkDir({ managedStorageKey: initial.managedStorageKey }),
+      { ...input, id },
+    );
+    const saved = await database.updateVoiceLabRecord(id, generatedRecord);
+    return publishStatePatch({ kind: 'voice-lab-upsert', record: voiceLabSummary(saved) });
+  } catch (error) {
+    const failed = await database.updateVoiceLabRecord(id, {
+      status: 'failed',
+      errorMessage: error instanceof Error ? error.message : String(error),
+      finishedAt: new Date().toISOString(),
+    });
+    await publishStatePatch({ kind: 'voice-lab-upsert', record: voiceLabSummary(failed) });
+    throw error;
+  }
 });
 
 trustedHandle('account:save', async (_event, account: AccountProfile) => {

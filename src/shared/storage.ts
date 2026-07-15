@@ -1,6 +1,6 @@
 import { mkdir, open as openFile, readFile, readdir, rename, rm } from 'node:fs/promises';
 import { basename, dirname, join } from 'node:path';
-import { randomUUID } from 'node:crypto';
+import { createHash, randomBytes, randomUUID } from 'node:crypto';
 import initSqlJs, { type Database, type SqlJsStatic, type SqlValue } from 'sql.js';
 import type {
   AccountProfile,
@@ -17,6 +17,9 @@ import type {
   CustomStyle,
   DraftTemplate,
   DraftTemplateSummary,
+  HistoryFamily,
+  HistoryListInput,
+  HistoryPage,
   ImageLabRecord,
   ImageLabSummary,
   MinimaxCloneVoice,
@@ -70,6 +73,11 @@ interface AddViralEventInput {
   detail: string;
   dataJson?: string | null;
   ts?: number;
+}
+
+interface HistorySqlFilter {
+  sql: string;
+  params: SqlValue[];
 }
 
 type PromptTemplateInput = Omit<PromptTemplate, 'description' | 'isBuiltin' | 'updatedAt'> &
@@ -130,6 +138,11 @@ function json<T>(value: T): string {
   return JSON.stringify(value);
 }
 
+function toNullableSqlValue(value: unknown): SqlValue {
+  if (value === null || value === undefined) return null;
+  return typeof value === 'number' ? value : String(value);
+}
+
 function parseJson<T>(value: unknown, fallback: T): T {
   if (typeof value !== 'string' || value.length === 0) return fallback;
   try {
@@ -144,7 +157,7 @@ const DEFAULT_STORAGE_PAGE_LIMIT = 50;
 const TASK_INPUT_PREVIEW_LIMIT = 160;
 const RECORD_TEXT_PREVIEW_LIMIT = 160;
 const taskSummaryColumns = `
-  id, title, task_kind, processing_mode, publish_mode, status, current_step,
+  id, archived_at, managed_storage_key, title, task_kind, processing_mode, publish_mode, status, current_step,
   track, style, speaker, ratio, template_id, bgm_id, output_dir, error_message,
   created_at, completed_at, started_at, last_heartbeat_at, mode, ai_keyword,
   prompt_template_id, prompt_template_type, reference_image_path, rewrite_intensity,
@@ -164,6 +177,92 @@ function clampPageLimit(limit: number | undefined): number {
 
 function encodeCursor(value: Record<string, string | number>): string {
   return Buffer.from(JSON.stringify(value), 'utf8').toString('base64url');
+}
+
+const taskStatusOrder: TaskStatus[] = ['draft', 'pending', 'running', 'paused', 'completed', 'failed', 'cancelled'];
+
+interface HistoryCursorBinding {
+  version: 1;
+  family: HistoryFamily;
+  filter: 'active' | 'archived';
+  status: string;
+  statuses: string;
+  taskType: string;
+  queryHash: string;
+}
+
+interface HistorySortCursor {
+  sort: string;
+  id: string;
+}
+
+function createManagedStorageKey(): string {
+  return randomBytes(24).toString('hex');
+}
+
+function normalizeHistoryQuery(query: string | undefined): string {
+  return query?.trim() ?? '';
+}
+
+function historyQueryHash(query: string): string {
+  return createHash('sha256').update(query, 'utf8').digest('base64url');
+}
+
+function escapeLikeLiteral(value: string): string {
+  return value.replace(/[\\%_]/gu, (character) => `\\${character}`);
+}
+
+function canonicalTaskStatuses(request: HistoryListInput<'task'>): TaskStatus[] {
+  const requested = request.statuses ?? (request.status ? [request.status] : []);
+  const statusSet = new Set(requested);
+  return taskStatusOrder.filter((status) => statusSet.has(status));
+}
+
+function historyCursorBinding(input: {
+  family: HistoryFamily;
+  filter?: 'active' | 'archived';
+  status?: string;
+  statuses?: readonly string[];
+  taskType?: string;
+  query?: string;
+}): HistoryCursorBinding {
+  return {
+    version: 1,
+    family: input.family,
+    filter: input.filter ?? 'active',
+    status: input.status ?? '',
+    statuses: input.statuses?.join(',') ?? '',
+    taskType: input.taskType ?? '',
+    queryHash: historyQueryHash(normalizeHistoryQuery(input.query)),
+  };
+}
+
+function parseHistoryCursor(
+  cursor: string | null | undefined,
+  expected: HistoryCursorBinding,
+): HistorySortCursor | null {
+  const parsed = decodeCursor(cursor);
+  if (!parsed) return null;
+  const expectedKeys = ['family', 'filter', 'id', 'queryHash', 'sort', 'status', 'statuses', 'taskType', 'version'];
+  if (
+    Object.keys(parsed).sort().join(',') !== expectedKeys.join(',')
+    || parsed.version !== expected.version
+    || parsed.family !== expected.family
+    || parsed.filter !== expected.filter
+    || parsed.status !== expected.status
+    || parsed.statuses !== expected.statuses
+    || parsed.taskType !== expected.taskType
+    || parsed.queryHash !== expected.queryHash
+    || typeof parsed.sort !== 'string'
+    || typeof parsed.id !== 'string'
+  ) {
+    throw new Error('CURSOR_INVALID: Cursor does not match the requested history view.');
+  }
+  return { sort: parsed.sort, id: parsed.id };
+}
+
+function encodeHistoryCursor(binding: HistoryCursorBinding, cursor: HistorySortCursor): string {
+  return Buffer.from(JSON.stringify({ ...binding, ...cursor }), 'utf8').toString('base64url');
 }
 
 function decodeCursor(cursor: string | null | undefined): Record<string, unknown> | null {
@@ -439,6 +538,8 @@ export class FileDatabase {
       CREATE TABLE IF NOT EXISTS config (id INTEGER PRIMARY KEY CHECK (id = 1), data TEXT NOT NULL);
       CREATE TABLE IF NOT EXISTS tasks (
         id TEXT PRIMARY KEY,
+        archived_at TEXT,
+        managed_storage_key TEXT,
         title TEXT DEFAULT '',
         input_text TEXT NOT NULL,
         task_kind TEXT DEFAULT 'story',
@@ -525,6 +626,8 @@ export class FileDatabase {
       CREATE INDEX IF NOT EXISTS idx_task_events_task_id ON task_events(task_id, seq);
       CREATE TABLE IF NOT EXISTS viral_analyses (
         id TEXT PRIMARY KEY,
+        archived_at TEXT,
+        managed_storage_key TEXT,
         url TEXT NOT NULL,
         platform TEXT NOT NULL,
         title TEXT DEFAULT '',
@@ -621,6 +724,8 @@ export class FileDatabase {
       );
       CREATE TABLE IF NOT EXISTS image_lab_records (
         id TEXT PRIMARY KEY,
+        archived_at TEXT,
+        managed_storage_key TEXT,
         prompt TEXT NOT NULL,
         ratio TEXT NOT NULL,
         style TEXT NOT NULL,
@@ -654,6 +759,8 @@ export class FileDatabase {
       );
       CREATE TABLE IF NOT EXISTS voice_lab_records (
         id TEXT PRIMARY KEY,
+        archived_at TEXT,
+        managed_storage_key TEXT,
         text TEXT NOT NULL,
         provider TEXT NOT NULL,
         voice_id TEXT NOT NULL,
@@ -664,6 +771,13 @@ export class FileDatabase {
         error_msg TEXT DEFAULT '',
         created_at TEXT NOT NULL,
         finished_at TEXT
+      );
+      CREATE TABLE IF NOT EXISTS history_tombstones (
+        family TEXT NOT NULL,
+        entity_id TEXT NOT NULL,
+        managed_storage_key TEXT,
+        deleted_at TEXT NOT NULL,
+        PRIMARY KEY (family, entity_id)
       );
       CREATE TABLE IF NOT EXISTS account_profile (id INTEGER PRIMARY KEY CHECK (id = 1), data TEXT NOT NULL);
       CREATE TABLE IF NOT EXISTS activation_state (id INTEGER PRIMARY KEY CHECK (id = 1), data TEXT NOT NULL);
@@ -756,6 +870,8 @@ export class FileDatabase {
       ['cover_image_mode', "TEXT DEFAULT 'off'"],
       ['cover_template_id', "TEXT DEFAULT 'cinematic-poster'"],
       ['html_video_foreground', 'INTEGER DEFAULT NULL'],
+      ['archived_at', 'TEXT DEFAULT NULL'],
+      ['managed_storage_key', 'TEXT DEFAULT NULL'],
     ] as const) {
       addColumnIfMissing(this.db, 'tasks', column, definition);
     }
@@ -779,9 +895,33 @@ export class FileDatabase {
       ['reference_image_path', "TEXT DEFAULT ''"],
       ['upstream_task_id', 'TEXT'],
       ['finished_at', 'TEXT'],
+      ['archived_at', 'TEXT DEFAULT NULL'],
+      ['managed_storage_key', 'TEXT DEFAULT NULL'],
     ] as const) {
       addColumnIfMissing(this.db, 'image_lab_records', column, definition);
     }
+    for (const table of ['viral_analyses', 'voice_lab_records'] as const) {
+      addColumnIfMissing(this.db, table, 'archived_at', 'TEXT DEFAULT NULL');
+      addColumnIfMissing(this.db, table, 'managed_storage_key', 'TEXT DEFAULT NULL');
+    }
+    this.db.run(`
+      CREATE INDEX IF NOT EXISTS idx_tasks_active_history
+        ON tasks(created_at DESC, id DESC) WHERE archived_at IS NULL;
+      CREATE INDEX IF NOT EXISTS idx_tasks_archived_history
+        ON tasks(archived_at DESC, id DESC) WHERE archived_at IS NOT NULL;
+      CREATE INDEX IF NOT EXISTS idx_viral_analyses_active_history
+        ON viral_analyses(created_at DESC, id DESC) WHERE archived_at IS NULL;
+      CREATE INDEX IF NOT EXISTS idx_viral_analyses_archived_history
+        ON viral_analyses(archived_at DESC, id DESC) WHERE archived_at IS NOT NULL;
+      CREATE INDEX IF NOT EXISTS idx_image_lab_records_active_history
+        ON image_lab_records(created_at DESC, id DESC) WHERE archived_at IS NULL;
+      CREATE INDEX IF NOT EXISTS idx_image_lab_records_archived_history
+        ON image_lab_records(archived_at DESC, id DESC) WHERE archived_at IS NOT NULL;
+      CREATE INDEX IF NOT EXISTS idx_voice_lab_records_active_history
+        ON voice_lab_records(created_at DESC, id DESC) WHERE archived_at IS NULL;
+      CREATE INDEX IF NOT EXISTS idx_voice_lab_records_archived_history
+        ON voice_lab_records(archived_at DESC, id DESC) WHERE archived_at IS NOT NULL;
+    `);
 
     const config = getFirstRow<{ data: string }>(this.db, 'SELECT data FROM config WHERE id = 1');
     if (!config) {
@@ -1065,6 +1205,8 @@ export class FileDatabase {
       const now = input.createdAt ?? new Date().toISOString();
       const record: ImageLabRecord = {
         id: input.id ?? randomUUID(),
+        archivedAt: null,
+        managedStorageKey: createManagedStorageKey(),
         prompt: input.prompt,
         ratio: input.ratio,
         style: input.style,
@@ -1082,11 +1224,13 @@ export class FileDatabase {
       };
       this.db.run(
         `INSERT INTO image_lab_records
-         (id, prompt, ratio, style, provider, image_path, status, error_msg, resolution, smart_mode, reference_image_paths_json, reference_image_path, upstream_task_id, created_at, finished_at)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-        [
-          record.id,
-          record.prompt,
+         (id, archived_at, managed_storage_key, prompt, ratio, style, provider, image_path, status, error_msg, resolution, smart_mode, reference_image_paths_json, reference_image_path, upstream_task_id, created_at, finished_at)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+         [
+           record.id,
+           record.archivedAt ?? null,
+           record.managedStorageKey ?? null,
+           record.prompt,
           record.ratio,
           record.style,
           record.provider,
@@ -1123,6 +1267,64 @@ export class FileDatabase {
         ],
       );
       return record;
+    });
+  }
+
+  async updateImageLabRecord(
+    id: string,
+    patch: Partial<
+      Pick<
+        ImageLabRecord,
+        | 'provider'
+        | 'imagePath'
+        | 'status'
+        | 'errorMessage'
+        | 'resolution'
+        | 'smartMode'
+        | 'referenceImagePaths'
+        | 'referenceImagePath'
+        | 'upstreamTaskId'
+        | 'finishedAt'
+      >
+    >,
+  ): Promise<ImageLabRecord> {
+    return this.enqueueCommit(() => {
+      const mapping: Array<[keyof typeof patch, string, (value: unknown) => SqlValue]> = [
+        ['provider', 'provider', toNullableSqlValue],
+        ['imagePath', 'image_path', toNullableSqlValue],
+        ['status', 'status', toNullableSqlValue],
+        ['errorMessage', 'error_msg', toNullableSqlValue],
+        ['resolution', 'resolution', toNullableSqlValue],
+        ['smartMode', 'smart_mode', toNullableSqlValue],
+        ['referenceImagePaths', 'reference_image_paths_json', (value) => json(value ?? [])],
+        ['referenceImagePath', 'reference_image_path', toNullableSqlValue],
+        ['upstreamTaskId', 'upstream_task_id', toNullableSqlValue],
+        ['finishedAt', 'finished_at', toNullableSqlValue],
+      ];
+      const entries = mapping.filter(([key]) => key in patch);
+      if (entries.length > 0) {
+        const values = entries.map(([key, , serialize]) => serialize(patch[key]));
+        values.push(id);
+        this.db.run(`UPDATE image_lab_records SET ${entries.map(([, column]) => `${column} = ?`).join(', ')} WHERE id = ?`, values);
+        this.db.run(
+          `UPDATE playground_jobs SET
+           style_id = (SELECT style FROM image_lab_records WHERE id = ?),
+           provider = (SELECT provider FROM image_lab_records WHERE id = ?),
+           ratio = (SELECT ratio FROM image_lab_records WHERE id = ?),
+           image_path = (SELECT image_path FROM image_lab_records WHERE id = ?),
+           status = (SELECT status FROM image_lab_records WHERE id = ?),
+           error_msg = (SELECT error_msg FROM image_lab_records WHERE id = ?),
+           reference_image_path = (SELECT reference_image_path FROM image_lab_records WHERE id = ?),
+           upstream_task_id = (SELECT upstream_task_id FROM image_lab_records WHERE id = ?),
+           model = (SELECT smart_mode FROM image_lab_records WHERE id = ?),
+           finished_at = (SELECT CASE WHEN finished_at IS NULL THEN NULL ELSE CAST(strftime('%s', finished_at) AS INTEGER) * 1000 END FROM image_lab_records WHERE id = ?)
+           WHERE id = ?`,
+          [id, id, id, id, id, id, id, id, id, id, id],
+        );
+      }
+      const row = getFirstRow<Record<string, unknown>>(this.db, 'SELECT * FROM image_lab_records WHERE id = ?', [id]);
+      if (!row) throw new Error(`IMAGE_LAB_RECORD_NOT_FOUND: ${id}`);
+      return rowToImageLabRecord(row);
     });
   }
 
@@ -1186,9 +1388,11 @@ export class FileDatabase {
     const configRow = getFirstRow<{ data: string }>(this.db, 'SELECT data FROM config WHERE id = 1');
     const config = configRow ? mergeConfig(parseJson(configRow.data, defaultConfig)) : defaultConfig;
     const explicitStoryboardSceneCount = normalizeStoryboardSceneCount(input.targetScenes ?? input.storyboardSceneCount) ?? undefined;
-    const task: Task = {
-      id: randomUUID(),
-      title: input.title ?? '',
+      const task: Task = {
+        id: randomUUID(),
+        archivedAt: null,
+        managedStorageKey: createManagedStorageKey(),
+        title: input.title ?? '',
       inputText: input.inputText,
       taskKind: input.taskKind ?? 'story',
       processingMode: input.processingMode ?? 'full-auto',
@@ -1237,7 +1441,7 @@ export class FileDatabase {
       fixedIntro: input.fixedIntro ?? null,
       outroCta: input.outroCta ?? null,
       lockIntroSentences: normalizeLockIntroSentences(input.lockIntroSentences),
-      taskType: input.taskType ?? input.taskKind ?? 'story',
+      taskType: normalizeLegacyTaskType(input.taskType, input.taskKind),
       pipelineStep: input.pipelineStep ?? 'new',
       pipelineData: input.pipelineData ?? '{}',
       targetLength: input.targetLength,
@@ -1253,7 +1457,7 @@ export class FileDatabase {
     };
     this.db.run(
       `INSERT INTO tasks (
-        id, title, input_text, task_kind, processing_mode, publish_mode, status, current_step, track, style, speaker, ratio, template_id,
+        id, archived_at, managed_storage_key, title, input_text, task_kind, processing_mode, publish_mode, status, current_step, track, style, speaker, ratio, template_id,
         bgm_id, pause_points, output_dir, error_message, created_at, completed_at, started_at, last_heartbeat_at,
         mode, ai_keyword, ai_sources, selected_sources, extra_requirements, prompt_template_id, prompt_template_type,
         image_prompt_reference, reference_image_path, rewrite_intensity, narrative_pov, keep_promotion, tts_provider,
@@ -1262,9 +1466,11 @@ export class FileDatabase {
         task_type, pipeline_step, pipeline_data, target_length, target_scenes, script_format,
         podcast_image_mode, podcast_speakers, podcast_speaker_a, podcast_speaker_b, cover_image_mode, cover_template_id,
         html_video_foreground
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       [
         task.id,
+        task.archivedAt ?? null,
+        task.managedStorageKey ?? null,
         task.title,
         task.inputText,
         task.taskKind,
@@ -1337,6 +1543,8 @@ export class FileDatabase {
       const now = new Date().toISOString();
       const record: ViralAnalysisRecord = {
         id: randomUUID(),
+        archivedAt: null,
+        managedStorageKey: createManagedStorageKey(),
         url: input.url.trim(),
         platform: input.platform ?? 'unknown',
         title: input.title ?? '',
@@ -1354,11 +1562,13 @@ export class FileDatabase {
       };
       this.db.run(
         `INSERT INTO viral_analyses (
-          id, url, platform, title, status, current_stage, progress, settings_json,
+          id, archived_at, managed_storage_key, url, platform, title, status, current_stage, progress, settings_json,
           result_path, video_path, error_message, created_at, started_at, completed_at, last_heartbeat_at
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
         [
           record.id,
+          record.archivedAt ?? null,
+          record.managedStorageKey ?? null,
           record.url,
           record.platform,
           record.title,
@@ -1385,6 +1595,8 @@ export class FileDatabase {
       const status = input.status ?? 'generated';
       const record: VoiceLabRecord = {
         id: input.id ?? randomUUID(),
+        archivedAt: null,
+        managedStorageKey: createManagedStorageKey(),
         text: input.text,
         provider: input.provider,
         voiceId: input.voiceId,
@@ -1398,10 +1610,12 @@ export class FileDatabase {
       };
       this.db.run(
         `INSERT INTO voice_lab_records
-         (id, text, provider, voice_id, voice_label, speed, audio_path, status, error_msg, created_at, finished_at)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+         (id, archived_at, managed_storage_key, text, provider, voice_id, voice_label, speed, audio_path, status, error_msg, created_at, finished_at)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
         [
           record.id,
+          record.archivedAt ?? null,
+          record.managedStorageKey ?? null,
           record.text,
           record.provider,
           record.voiceId,
@@ -1416,6 +1630,70 @@ export class FileDatabase {
       );
       return record;
     });
+  }
+
+  async updateVoiceLabRecord(
+    id: string,
+    patch: Partial<Pick<VoiceLabRecord, 'provider' | 'voiceLabel' | 'audioPath' | 'status' | 'errorMessage' | 'finishedAt'>>,
+  ): Promise<VoiceLabRecord> {
+    return this.enqueueCommit(() => {
+      const mapping: Array<[keyof typeof patch, string]> = [
+        ['provider', 'provider'],
+        ['voiceLabel', 'voice_label'],
+        ['audioPath', 'audio_path'],
+        ['status', 'status'],
+        ['errorMessage', 'error_msg'],
+        ['finishedAt', 'finished_at'],
+      ];
+      const entries = mapping.filter(([key]) => key in patch);
+      if (entries.length > 0) {
+        const values = entries.map(([key]) => patch[key] ?? null) as SqlValue[];
+        values.push(id);
+        this.db.run(`UPDATE voice_lab_records SET ${entries.map(([, column]) => `${column} = ?`).join(', ')} WHERE id = ?`, values);
+      }
+      const row = getFirstRow<Record<string, unknown>>(this.db, 'SELECT * FROM voice_lab_records WHERE id = ?', [id]);
+      if (!row) throw new Error(`VOICE_LAB_RECORD_NOT_FOUND: ${id}`);
+      return rowToVoiceLabRecord(row);
+    });
+  }
+
+  async backfillManagedStorageKey(family: HistoryFamily, id: string, managedStorageKey: string): Promise<boolean> {
+    if (
+      !/^[A-Za-z0-9][A-Za-z0-9_-]{0,255}$/u.test(managedStorageKey)
+      || /^(?:CON|PRN|AUX|NUL|COM[1-9]|LPT[1-9])$/iu.test(managedStorageKey)
+    ) {
+      throw new Error('MANAGED_STORAGE_KEY_INVALID: Cannot persist an invalid managed storage key.');
+    }
+    const table: Record<HistoryFamily, string> = {
+      task: 'tasks',
+      'viral-analysis': 'viral_analyses',
+      'image-lab': 'image_lab_records',
+      'voice-lab': 'voice_lab_records',
+    };
+    return this.enqueueCommit(() => {
+      this.db.run(
+        `UPDATE ${table[family]} SET managed_storage_key = ? WHERE id = ? AND managed_storage_key IS NULL`,
+        [managedStorageKey, id],
+      );
+      return this.db.getRowsModified() === 1;
+    });
+  }
+
+  async listMissingManagedStorageKeys(): Promise<
+    Array<{ family: HistoryFamily; id: string; managedStorageKey: null }>
+  > {
+    await this.waitForWrites();
+    return getRows<{ family: string; id: string; managed_storage_key: null }>(
+      this.db,
+      `SELECT 'task' AS family, id, managed_storage_key FROM tasks WHERE managed_storage_key IS NULL
+       UNION ALL
+       SELECT 'viral-analysis' AS family, id, managed_storage_key FROM viral_analyses WHERE managed_storage_key IS NULL
+       UNION ALL
+       SELECT 'image-lab' AS family, id, managed_storage_key FROM image_lab_records WHERE managed_storage_key IS NULL
+       UNION ALL
+       SELECT 'voice-lab' AS family, id, managed_storage_key FROM voice_lab_records WHERE managed_storage_key IS NULL
+       ORDER BY family ASC, id ASC`,
+    ).map((row) => ({ family: row.family as HistoryFamily, id: String(row.id), managedStorageKey: null }));
   }
 
   async updateViralAnalysis(
@@ -1528,24 +1806,35 @@ export class FileDatabase {
     });
   }
 
-  async listTaskSummaries(request: CursorRequest = {}): Promise<CursorPage<TaskSummary>> {
-    await this.waitForWrites();
-    const limit = clampPageLimit(request.limit);
-    const cursor = createdIdCursor(request.cursor);
-    const where = cursor ? 'WHERE created_at < ? OR (created_at = ? AND id < ?)' : '';
-    const params: SqlValue[] = cursor ? [cursor.createdAt, cursor.createdAt, cursor.id, limit + 1] : [limit + 1];
-    const rows = getRows<Record<string, unknown>>(
-      this.db,
-      `SELECT ${taskSummaryColumns} FROM tasks ${where} ORDER BY created_at DESC, id DESC LIMIT ?`,
-      params,
-    );
-    const hasMore = rows.length > limit;
-    const pageRows = rows.slice(0, limit);
-    const last = pageRows.at(-1);
-    return {
-      items: pageRows.map(rowToTaskSummary),
-      nextCursor: hasMore && last ? encodeCursor({ createdAt: String(last.created_at), id: String(last.id) }) : null,
-    };
+  async listTaskSummaries(request: HistoryListInput<'task'> = {}): Promise<HistoryPage<'task', TaskSummary>> {
+    const statuses = canonicalTaskStatuses(request);
+    const filters: HistorySqlFilter[] = [];
+    if (statuses.length > 0) {
+      filters.push({ sql: `status IN (${statuses.map(() => '?').join(', ')})`, params: statuses });
+    }
+    if (request.taskType) {
+      filters.push({
+        sql: `${normalizedTaskTypeSql()} = ?`,
+        params: [request.taskType],
+      });
+    }
+    return this.listHistoryRecords({
+      family: 'task',
+      table: 'tasks',
+      columns: taskSummaryColumns,
+      searchColumns: ['title', 'input_text', 'ai_keyword'],
+      mapRow: rowToTaskSummary,
+      request,
+      binding: historyCursorBinding({
+        family: 'task',
+        filter: request.filter,
+        status: request.status,
+        statuses: request.statuses ? statuses : undefined,
+        taskType: request.taskType,
+        query: request.query,
+      }),
+      filters,
+    });
   }
 
   async getTaskSummary(id: string): Promise<TaskSummary | null> {
@@ -1575,34 +1864,27 @@ export class FileDatabase {
     return { items, nextCursor: hasMore && items.length > 0 ? encodeCursor({ seq: items[0].seq }) : null };
   }
 
-  async listViralAnalyses(request: CursorRequest = {}): Promise<CursorPage<ViralAnalysisSummary>> {
-    await this.waitForWrites();
-    const limit = clampPageLimit(request.limit);
-    const cursor = createdIdCursor(request.cursor);
-    const where = cursor ? 'WHERE created_at < ? OR (created_at = ? AND id < ?)' : '';
-    const params: SqlValue[] = cursor ? [cursor.createdAt, cursor.createdAt, cursor.id, limit + 1] : [limit + 1];
-    const rows = getRows<Record<string, unknown>>(
-      this.db,
-      `SELECT id, url, platform, title, status, current_stage, progress,
+  async listViralAnalyses(request: HistoryListInput<'viral-analysis'> = {}): Promise<HistoryPage<'viral-analysis', ViralAnalysisSummary>> {
+    const filters = request.status ? [{ sql: 'status = ?', params: [request.status] }] : [];
+    return this.listHistoryRecords({
+      family: 'viral-analysis',
+      table: 'viral_analyses',
+      columns: `id, archived_at, managed_storage_key, url, platform, title, status, current_stage, progress,
         substr(error_message, 1, 1024) AS error_message,
-        created_at, started_at, completed_at, last_heartbeat_at
-       FROM viral_analyses ${where} ORDER BY created_at DESC, id DESC LIMIT ?`,
-      params,
-    );
-    const hasMore = rows.length > limit;
-    const pageRows = rows.slice(0, limit);
-    const last = pageRows.at(-1);
-    return {
-      items: pageRows.map(rowToViralAnalysisSummary),
-      nextCursor: hasMore && last ? encodeCursor({ createdAt: String(last.created_at), id: String(last.id) }) : null,
-    };
+        created_at, started_at, completed_at, last_heartbeat_at`,
+      searchColumns: ['title', 'url', 'platform'],
+      mapRow: rowToViralAnalysisSummary,
+      request,
+      binding: historyCursorBinding({ family: 'viral-analysis', filter: request.filter, status: request.status, query: request.query }),
+      filters,
+    });
   }
 
   async getViralAnalysisSummary(id: string): Promise<ViralAnalysisSummary | null> {
     await this.waitForWrites();
     const row = getFirstRow<Record<string, unknown>>(
       this.db,
-      `SELECT id, url, platform, title, status, current_stage, progress,
+      `SELECT id, archived_at, managed_storage_key, url, platform, title, status, current_stage, progress,
         substr(error_message, 1, 1024) AS error_message,
         created_at, started_at, completed_at, last_heartbeat_at
        FROM viral_analyses WHERE id = ?`,
@@ -1633,15 +1915,20 @@ export class FileDatabase {
     return { items, nextCursor: hasMore && Number.isSafeInteger(oldestSeq) ? encodeCursor({ seq: oldestSeq }) : null };
   }
 
-  async listImageLabRecords(request: CursorRequest = {}): Promise<CursorPage<ImageLabSummary>> {
-    return this.listCreatedRecords(
-      'image_lab_records',
-      `id, substr(prompt, 1, ${RECORD_TEXT_PREVIEW_LIMIT}) AS prompt_preview,
+  async listImageLabRecords(request: HistoryListInput<'image-lab'> = {}): Promise<HistoryPage<'image-lab', ImageLabSummary>> {
+    const filters = request.status ? [{ sql: 'status = ?', params: [request.status] }] : [];
+    return this.listHistoryRecords({
+      family: 'image-lab',
+      table: 'image_lab_records',
+      columns: `id, archived_at, managed_storage_key, substr(prompt, 1, ${RECORD_TEXT_PREVIEW_LIMIT}) AS prompt_preview,
        ratio, style, provider, image_path, status, substr(error_msg, 1, 1024) AS error_msg,
        resolution, smart_mode, upstream_task_id, created_at, finished_at`,
-      rowToImageLabSummary,
+      searchColumns: ['prompt', 'provider', 'style'],
+      mapRow: rowToImageLabSummary,
       request,
-    );
+      binding: historyCursorBinding({ family: 'image-lab', filter: request.filter, status: request.status, query: request.query }),
+      filters,
+    });
   }
 
   async getImageLabRecordDetail(id: string): Promise<ImageLabRecord | null> {
@@ -1650,15 +1937,20 @@ export class FileDatabase {
     return row ? rowToImageLabRecord(row) : null;
   }
 
-  async listVoiceLabRecords(request: CursorRequest = {}): Promise<CursorPage<VoiceLabSummary>> {
-    return this.listCreatedRecords(
-      'voice_lab_records',
-      `id, substr(text, 1, ${RECORD_TEXT_PREVIEW_LIMIT}) AS text_preview,
+  async listVoiceLabRecords(request: HistoryListInput<'voice-lab'> = {}): Promise<HistoryPage<'voice-lab', VoiceLabSummary>> {
+    const filters = request.status ? [{ sql: 'status = ?', params: [request.status] }] : [];
+    return this.listHistoryRecords({
+      family: 'voice-lab',
+      table: 'voice_lab_records',
+      columns: `id, archived_at, managed_storage_key, substr(text, 1, ${RECORD_TEXT_PREVIEW_LIMIT}) AS text_preview,
        provider, voice_id, voice_label, speed, audio_path, status,
        substr(error_msg, 1, 1024) AS error_msg, created_at, finished_at`,
-      rowToVoiceLabSummary,
+      searchColumns: ['text', 'voice_label', 'provider'],
+      mapRow: rowToVoiceLabSummary,
       request,
-    );
+      binding: historyCursorBinding({ family: 'voice-lab', filter: request.filter, status: request.status, query: request.query }),
+      filters,
+    });
   }
 
   async getVoiceLabRecordDetail(id: string): Promise<VoiceLabRecord | null> {
@@ -1751,24 +2043,61 @@ export class FileDatabase {
     };
   }
 
-  private async listCreatedRecords<T>(
-    table: 'image_lab_records' | 'voice_lab_records',
-    columns: string,
-    mapRow: (row: Record<string, unknown>) => T,
-    request: CursorRequest,
-  ): Promise<CursorPage<T>> {
+  private async listHistoryRecords<F extends HistoryFamily, T>(input: {
+    family: F;
+    table: 'tasks' | 'viral_analyses' | 'image_lab_records' | 'voice_lab_records';
+    columns: string;
+    searchColumns: string[];
+    mapRow: (row: Record<string, unknown>) => T;
+    request: { filter?: 'active' | 'archived'; query?: string; cursor?: string | null; limit?: number };
+    binding: HistoryCursorBinding;
+    filters: HistorySqlFilter[];
+  }): Promise<HistoryPage<F, T>> {
     await this.waitForWrites();
-    const limit = clampPageLimit(request.limit);
-    const cursor = createdIdCursor(request.cursor);
-    const where = cursor ? 'WHERE created_at < ? OR (created_at = ? AND id < ?)' : '';
-    const params: SqlValue[] = cursor ? [cursor.createdAt, cursor.createdAt, cursor.id, limit + 1] : [limit + 1];
-    const rows = getRows<Record<string, unknown>>(this.db, `SELECT ${columns} FROM ${table} ${where} ORDER BY created_at DESC, id DESC LIMIT ?`, params);
+    const limit = clampPageLimit(input.request.limit);
+    const filter = input.request.filter ?? 'active';
+    const sortColumn = filter === 'archived' ? 'archived_at' : 'created_at';
+    const clauses = [filter === 'archived' ? 'archived_at IS NOT NULL' : 'archived_at IS NULL'];
+    const params: SqlValue[] = [];
+    for (const sqlFilter of input.filters) {
+      clauses.push(sqlFilter.sql);
+      params.push(...sqlFilter.params);
+    }
+    const query = normalizeHistoryQuery(input.request.query);
+    if (query) {
+      clauses.push(`(${input.searchColumns.map((column) => `${column} LIKE ? ESCAPE '\\'`).join(' OR ')})`);
+      const pattern = `%${escapeLikeLiteral(query)}%`;
+      params.push(...input.searchColumns.map(() => pattern));
+    }
+    const baseWhere = `WHERE ${clauses.join(' AND ')}`;
+    const totalCount = Number(
+      getFirstRow<{ total_count: number }>(this.db, `SELECT COUNT(*) AS total_count FROM ${input.table} ${baseWhere}`, params)?.total_count ?? 0,
+    );
+    const cursor = parseHistoryCursor(input.request.cursor, input.binding);
+    const pageClauses = [...clauses];
+    const pageParams = [...params];
+    if (cursor) {
+      pageClauses.push(`(${sortColumn} < ? OR (${sortColumn} = ? AND id < ?))`);
+      pageParams.push(cursor.sort, cursor.sort, cursor.id);
+    }
+    pageParams.push(limit + 1);
+    const rows = getRows<Record<string, unknown>>(
+      this.db,
+      `SELECT ${input.columns} FROM ${input.table} WHERE ${pageClauses.join(' AND ')} ORDER BY ${sortColumn} DESC, id DESC LIMIT ?`,
+      pageParams,
+    );
     const hasMore = rows.length > limit;
     const pageRows = rows.slice(0, limit);
     const last = pageRows.at(-1);
+    const nextCursor = hasMore && last
+      ? encodeHistoryCursor(input.binding, { sort: String(last[sortColumn]), id: String(last.id) })
+      : null;
     return {
-      items: pageRows.map(mapRow),
-      nextCursor: hasMore && last ? encodeCursor({ createdAt: String(last.created_at), id: String(last.id) }) : null,
+      family: input.family,
+      items: pageRows.map(input.mapRow),
+      totalCount,
+      hasMore: nextCursor !== null,
+      nextCursor,
     };
   }
 
@@ -1914,6 +2243,8 @@ function rowToBookSelectionRecord(row: Record<string, unknown>): BookSelectionRe
 function rowToTask(row: Record<string, unknown>): Task {
   return {
     id: String(row.id),
+    archivedAt: row.archived_at ? String(row.archived_at) : null,
+    managedStorageKey: row.managed_storage_key ? String(row.managed_storage_key) : null,
     title: String(row.title ?? ''),
     inputText: String(row.input_text ?? ''),
     taskKind: normalizeTaskKind(row.task_kind),
@@ -1962,7 +2293,7 @@ function rowToTask(row: Record<string, unknown>): Task {
     fixedIntro: row.fixed_intro === null || row.fixed_intro === undefined ? null : String(row.fixed_intro),
     outroCta: row.outro_cta === null || row.outro_cta === undefined ? null : String(row.outro_cta),
     lockIntroSentences: normalizeLockIntroSentences(row.lock_intro_sentences),
-    taskType: String(row.task_type ?? normalizeTaskKind(row.task_kind)),
+    taskType: normalizeLegacyTaskType(row.task_type, row.task_kind),
     pipelineStep: String(row.pipeline_step ?? 'new'),
     pipelineData: String(row.pipeline_data ?? '{}'),
     targetLength: row.target_length === null || row.target_length === undefined ? undefined : Number(row.target_length),
@@ -1979,6 +2310,18 @@ function rowToTask(row: Record<string, unknown>): Task {
       ? undefined
       : Number(row.html_video_foreground) === 1,
   };
+}
+
+function normalizedTaskTypeSql(): string {
+  return `CASE
+    WHEN trim(coalesce(task_type, '')) = '' THEN CASE WHEN task_kind = 'music-mv' THEN 'music-mv' ELSE 'story' END
+    ELSE trim(task_type)
+  END`;
+}
+
+function normalizeLegacyTaskType(value: unknown, taskKind: unknown): string {
+  const normalized = typeof value === 'string' ? value.trim() : '';
+  return normalized || normalizeTaskKind(taskKind);
 }
 
 function normalizeTaskKind(value: unknown): Task['taskKind'] {
@@ -2031,6 +2374,8 @@ function rowToEvent(row: Record<string, unknown>): TaskEvent {
 function rowToViralAnalysis(row: Record<string, unknown>): ViralAnalysisRecord {
   return {
     id: String(row.id),
+    archivedAt: row.archived_at ? String(row.archived_at) : null,
+    managedStorageKey: row.managed_storage_key ? String(row.managed_storage_key) : null,
     url: String(row.url ?? ''),
     platform: String(row.platform ?? 'unknown') as ViralAnalysisRecord['platform'],
     title: String(row.title ?? ''),
@@ -2056,6 +2401,8 @@ function rowToViralAnalysis(row: Record<string, unknown>): ViralAnalysisRecord {
 function rowToViralAnalysisSummary(row: Record<string, unknown>): ViralAnalysisSummary {
   return {
     id: String(row.id),
+    archivedAt: row.archived_at ? String(row.archived_at) : null,
+    managedStorageKey: row.managed_storage_key ? String(row.managed_storage_key) : null,
     url: String(row.url ?? ''),
     platform: String(row.platform ?? 'unknown') as ViralAnalysisRecord['platform'],
     title: String(row.title ?? ''),
@@ -2114,6 +2461,8 @@ function rowToDraftTemplate(row: Record<string, unknown>): DraftTemplate {
 function rowToImageLabRecord(row: Record<string, unknown>): ImageLabRecord {
   return {
     id: String(row.id),
+    archivedAt: row.archived_at ? String(row.archived_at) : null,
+    managedStorageKey: row.managed_storage_key ? String(row.managed_storage_key) : null,
     prompt: String(row.prompt ?? ''),
     ratio: String(row.ratio ?? '9:16'),
     style: String(row.style ?? 'photo-real'),
@@ -2134,6 +2483,8 @@ function rowToImageLabRecord(row: Record<string, unknown>): ImageLabRecord {
 function rowToImageLabSummary(row: Record<string, unknown>): ImageLabSummary {
   return {
     id: String(row.id),
+    archivedAt: row.archived_at ? String(row.archived_at) : null,
+    managedStorageKey: row.managed_storage_key ? String(row.managed_storage_key) : null,
     promptPreview: String(row.prompt_preview ?? ''),
     ratio: String(row.ratio ?? '9:16'),
     style: String(row.style ?? 'photo-real'),
@@ -2152,6 +2503,8 @@ function rowToImageLabSummary(row: Record<string, unknown>): ImageLabSummary {
 function rowToVoiceLabRecord(row: Record<string, unknown>): VoiceLabRecord {
   return {
     id: String(row.id),
+    archivedAt: row.archived_at ? String(row.archived_at) : null,
+    managedStorageKey: row.managed_storage_key ? String(row.managed_storage_key) : null,
     text: String(row.text ?? ''),
     provider: String(row.provider ?? 'volcengine') as VoiceLabRecord['provider'],
     voiceId: String(row.voice_id ?? ''),
@@ -2168,6 +2521,8 @@ function rowToVoiceLabRecord(row: Record<string, unknown>): VoiceLabRecord {
 function rowToVoiceLabSummary(row: Record<string, unknown>): VoiceLabSummary {
   return {
     id: String(row.id),
+    archivedAt: row.archived_at ? String(row.archived_at) : null,
+    managedStorageKey: row.managed_storage_key ? String(row.managed_storage_key) : null,
     textPreview: String(row.text_preview ?? ''),
     provider: String(row.provider ?? 'volcengine') as VoiceLabRecord['provider'],
     voiceId: String(row.voice_id ?? ''),

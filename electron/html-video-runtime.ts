@@ -3,6 +3,7 @@ import type { BigIntStats } from 'node:fs';
 import { copyFile, link, lstat, mkdir, readdir, realpath, rename, rm, rmdir, stat, statfs, unlink, writeFile } from 'node:fs/promises';
 import { basename, dirname, extname, isAbsolute, join, relative, resolve } from 'node:path';
 import { AppError } from '../src/shared/app-error';
+import { resolveManagedHistoryWorkDir } from './managed-history-paths';
 import {
   buildHtmlVideoExportInput,
   type HtmlVideoExportInput,
@@ -128,13 +129,13 @@ export interface HtmlVideoMediaResource {
 export async function ensureHtmlVideoTaskWorkDir(
   trustedAppDataRoot: string,
   appDataDirectoryName: string,
-  taskId: string,
+  managedStorageKey: string,
 ): Promise<HtmlVideoTaskDirectoryIdentity> {
   const appDataName = validateHtmlVideoTaskId(appDataDirectoryName);
-  const checkedTaskId = validateHtmlVideoTaskId(taskId);
   const trustedRoot = await realpath(trustedAppDataRoot);
+  resolveManagedHistoryWorkDir(join(trustedRoot, appDataName), 'task', managedStorageKey);
   const trustedTaskRoot = await ensureTaskLocalDirectory(trustedRoot, [appDataName, 'tasks']);
-  const workDir = await ensureTaskLocalDirectory(trustedTaskRoot, [checkedTaskId]);
+  const workDir = await ensureTaskLocalDirectory(trustedTaskRoot, [managedStorageKey]);
   return Object.freeze({
     trustedTaskRoot: await pinHtmlVideoDirectory(trustedTaskRoot),
     workDir: await pinHtmlVideoDirectory(workDir),

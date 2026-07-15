@@ -16,6 +16,7 @@ import { withPipelineStateLock } from './pipeline-cache';
 
 export interface RunTaskOptions {
   appDataDir: string;
+  workDir: string;
   onEvent?: (event: SequencedTaskEvent) => void;
   signal?: AbortSignal;
   onHeartbeat?: (taskId: string, step: number, detail: string) => Promise<void>;
@@ -219,7 +220,8 @@ function todayTitle(input: string): string {
 }
 
 export async function runTask(db: FileDatabase, task: Task, options: RunTaskOptions): Promise<Task> {
-  const statePath = join(options.appDataDir, 'tasks', task.id, 'pipeline', 'state.json');
+  const workDir = requireManagedWorkDir(options);
+  const statePath = join(workDir, 'pipeline', 'state.json');
   return withPipelineStateLock(statePath, () => runTaskWithPipelineStateLock(db, task, options));
 }
 
@@ -244,7 +246,7 @@ async function runTaskWithPipelineStateLock(db: FileDatabase, task: Task, option
     throw new Error(message);
   }
 
-  const workDir = join(options.appDataDir, 'tasks', task.id);
+  const workDir = requireManagedWorkDir(options);
   const pipelineDir = join(workDir, 'pipeline');
   const statePath = join(pipelineDir, 'state.json');
   await mkdir(pipelineDir, { recursive: true });
@@ -445,6 +447,12 @@ async function runTaskWithPipelineStateLock(db: FileDatabase, task: Task, option
     await emit('step_error', step, stepAgents[step] ?? null, message);
     throw error;
   }
+}
+
+function requireManagedWorkDir(options: RunTaskOptions): string {
+  const workDir = options.workDir;
+  if (!workDir) throw new Error('MANAGED_WORK_DIR_REQUIRED: Task runner requires a canonical managed work directory.');
+  return workDir;
 }
 
 async function ensureContentArtifact(input: {

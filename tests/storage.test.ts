@@ -503,6 +503,63 @@ describe('file database', () => {
     }
   });
 
+  it('promotes staged image records to the canonical provider result in both storage tables', async () => {
+    const dir = await mkdtemp(join(tmpdir(), 'storybound-db-staged-image-lab-'));
+    const file = join(dir, 'app.db');
+    try {
+      const db = await FileDatabase.open(file);
+      const staged = await db.addImageLabRecord({
+        prompt: 'Provider selected cover',
+        ratio: '16:9',
+        style: 'photo-real',
+        provider: 'mock',
+        status: 'failed',
+        resolution: '2K',
+        smartMode: 'text-to-image',
+        finishedAt: null,
+      });
+      const promoted = await db.updateImageLabRecord(staged.id, {
+        provider: 'gpt_image',
+        imagePath: 'D:/out/provider-cover.png',
+        status: 'generated',
+        errorMessage: '',
+        resolution: '4K',
+        smartMode: 'podcast-cover',
+        referenceImagePaths: ['D:/refs/provider.png'],
+        referenceImagePath: 'D:/refs/provider.png',
+        upstreamTaskId: 'upstream-provider-task',
+        finishedAt: '2026-07-15T00:00:00.000Z',
+      });
+      expect(promoted).toMatchObject({
+        provider: 'gpt_image',
+        resolution: '4K',
+        smartMode: 'podcast-cover',
+        referenceImagePaths: ['D:/refs/provider.png'],
+        referenceImagePath: 'D:/refs/provider.png',
+        upstreamTaskId: 'upstream-provider-task',
+      });
+      await db.close();
+
+      const SQL = await initSqlJs();
+      const sqlite = new SQL.Database(await readFile(file));
+      const playground = sqlite.exec(
+        'SELECT provider, image_path, status, reference_image_path, upstream_task_id, model FROM playground_jobs WHERE id = ?',
+        [staged.id],
+      )[0]?.values[0];
+      expect(playground).toEqual([
+        'gpt_image',
+        'D:/out/provider-cover.png',
+        'generated',
+        'D:/refs/provider.png',
+        'upstream-provider-task',
+        'podcast-cover',
+      ]);
+      sqlite.close();
+    } finally {
+      await rm(dir, { recursive: true, force: true });
+    }
+  });
+
   it('seeds StoryDream cinematic cover templates and image styles', async () => {
     const dir = await mkdtemp(join(tmpdir(), 'storybound-db-cover-template-seeds-'));
     const file = join(dir, 'app.db');
@@ -629,6 +686,50 @@ describe('file database', () => {
       expect(state.tasks[0].selectedSources).toEqual([
         { source: 'web', title: 'Selected article', url: 'https://example.test/a', content: 'Selected page body.' },
       ]);
+      await reopened.close();
+    } finally {
+      await rm(dir, { recursive: true, force: true });
+    }
+  });
+
+  it('persists database-owned storage keys independently from caller business ids', async () => {
+    const dir = await mkdtemp(join(tmpdir(), 'storydream-db-managed-keys-'));
+    const file = join(dir, 'app.db');
+    try {
+      const db = await FileDatabase.open(file);
+      const task = await db.createTask({ title: 'Managed task', inputText: 'task' });
+      const viral = await db.createViralAnalysis({
+        url: 'https://example.test/managed',
+        settings: { track: 'story', style: 'photo-real', ratio: '9:16', templateId: 'portrait' },
+      });
+      const image = await db.addImageLabRecord({
+        id: 'caller-image-id',
+        prompt: 'managed image',
+        ratio: '9:16',
+        style: 'photo-real',
+        provider: 'mock',
+      });
+      const voice = await db.addVoiceLabRecord({
+        id: 'caller-voice-id',
+        text: 'managed voice',
+        provider: 'mock',
+        voiceId: 'voice',
+        speed: 1,
+      });
+      const originalKeys = [task, viral, image, voice].map((record) => record.managedStorageKey);
+      expect(originalKeys.every((key) => typeof key === 'string' && /^[a-z0-9_-]{16,128}$/u.test(key))).toBe(true);
+      expect(image.managedStorageKey).not.toBe(image.id);
+      expect(voice.managedStorageKey).not.toBe(voice.id);
+      await db.close();
+
+      const reopened = await FileDatabase.open(file);
+      const state = await reopened.getState();
+      expect([
+        state.tasks.find((record) => record.id === task.id)?.managedStorageKey,
+        state.viralAnalyses.find((record) => record.id === viral.id)?.managedStorageKey,
+        state.imageLabRecords.find((record) => record.id === image.id)?.managedStorageKey,
+        state.voiceLabRecords.find((record) => record.id === voice.id)?.managedStorageKey,
+      ]).toEqual(originalKeys);
       await reopened.close();
     } finally {
       await rm(dir, { recursive: true, force: true });

@@ -13,6 +13,7 @@ const electronPath = createRequire(import.meta.url)('electron') as string;
 const timeoutMs = 180_000;
 const maxOutputBytes = 4 * 1024 * 1024;
 const durationToleranceS = 0.4;
+const smokeManagedStorageKey = '0123456789abcdef0123456789abcdef0123456789abcdef';
 
 interface HtmlVideoSmokeReport {
   outputPath: string;
@@ -33,7 +34,7 @@ async function main(): Promise<void> {
   await runSmokeWithTempRoot({
     createTempRoot: () => mkdtemp(join(tmpdir(), 'storydream-html-video-smoke-')),
     run: async ({ tempRoot, signal }) => {
-      const workDir = join(tempRoot, 'storydream-smoke', 'tasks', 'task-1');
+      const workDir = join(tempRoot, 'storydream-smoke', 'tasks', smokeManagedStorageKey);
       const reportPath = join(tempRoot, 'report.json');
       const bundlePath = join(tempRoot, 'electron-smoke.mjs');
       await mkdir(workDir, { recursive: true });
@@ -177,7 +178,11 @@ async function probeMedia(path, signal) {
 
 async function runAfterReady() {
   await writePhase('app-ready');
-  const taskDirectory = await ensureHtmlVideoTaskWorkDir(trustedAppDataRoot, 'storydream-smoke', 'task-1');
+  const taskDirectory = await ensureHtmlVideoTaskWorkDir(
+    trustedAppDataRoot,
+    'storydream-smoke',
+    ${JSON.stringify(smokeManagedStorageKey)},
+  );
   keepAliveWindow = new BrowserWindow({
     show: false,
     webPreferences: {

@@ -21,6 +21,7 @@ import type {
   CursorPage,
   CursorRequest,
   DraftTemplateSummary,
+  HistoryListInput,
   ImageLabSummary,
   PromptTemplateSummary,
   TaskSummary,
@@ -33,10 +34,10 @@ const MIGRATION_MARKER = 'config-secrets.v1.migrated';
 export interface ConfigDatabase {
   getState: () => Promise<AppState>;
   getBootstrapMetadata: () => Promise<Pick<AppState, 'config' | 'customStyles' | 'customCoverTemplates' | 'creditTransactions' | 'minimaxCloneVoices' | 'account' | 'activation' | 'ui'>>;
-  listTaskSummaries: (request?: CursorRequest) => Promise<CursorPage<TaskSummary>>;
-  listViralAnalyses: (request?: CursorRequest) => Promise<CursorPage<ViralAnalysisSummary>>;
-  listImageLabRecords: (request?: CursorRequest) => Promise<CursorPage<ImageLabSummary>>;
-  listVoiceLabRecords: (request?: CursorRequest) => Promise<CursorPage<VoiceLabSummary>>;
+  listTaskSummaries: (request?: HistoryListInput<'task'>) => Promise<CursorPage<TaskSummary>>;
+  listViralAnalyses: (request?: HistoryListInput<'viral-analysis'>) => Promise<CursorPage<ViralAnalysisSummary>>;
+  listImageLabRecords: (request?: HistoryListInput<'image-lab'>) => Promise<CursorPage<ImageLabSummary>>;
+  listVoiceLabRecords: (request?: HistoryListInput<'voice-lab'>) => Promise<CursorPage<VoiceLabSummary>>;
   listPromptTemplateSummaries: (request?: CursorRequest) => Promise<CursorPage<PromptTemplateSummary>>;
   listDraftTemplateSummaries: (request?: CursorRequest) => Promise<CursorPage<DraftTemplateSummary>>;
   upsertConfig: (config: AppConfig) => Promise<void>;
@@ -170,10 +171,10 @@ export class ConfigService {
     await this.migrateLegacySecrets();
     const [metadata, tasks, viralAnalyses, imageLabRecords, voiceLabRecords, promptTemplates, draftTemplates, secrets] = await Promise.all([
       this.options.database.getBootstrapMetadata(),
-      this.options.database.listTaskSummaries(),
-      this.options.database.listViralAnalyses(),
-      this.options.database.listImageLabRecords(),
-      this.options.database.listVoiceLabRecords(),
+      this.options.database.listTaskSummaries({ filter: 'active' }),
+      this.options.database.listViralAnalyses({ filter: 'active' }),
+      this.options.database.listImageLabRecords({ filter: 'active' }),
+      this.options.database.listVoiceLabRecords({ filter: 'active' }),
       this.options.database.listPromptTemplateSummaries(),
       this.options.database.listDraftTemplateSummaries(),
       this.options.vault.load(),

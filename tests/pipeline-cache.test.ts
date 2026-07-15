@@ -5,7 +5,7 @@ import { join, relative } from 'node:path';
 import { FileDatabase } from '@shared/storage';
 import { runTask } from '@shared/runner';
 import { markSceneImageForRegeneration, markSceneNarrationForRegeneration, markTaskStepForRerun, updateSceneImagePrompt } from '@shared/pipeline-cache';
-import type { ImagePrompt, PipelineArtifact, StoryboardScene, TaskStepRerunMode } from '@shared/types';
+import type { ImagePrompt, PipelineArtifact, StoryboardScene, Task, TaskStepRerunMode } from '@shared/types';
 import type { PyJianYingBridgeInput } from '@shared/jianying-bridge';
 
 const tinyPng = Buffer.from(
@@ -34,10 +34,11 @@ describe('pipeline cache and retry', () => {
       const config = (await db.getState()).config;
       await db.upsertConfig({ ...config, jianying: { ...config.jianying, draftPath: draftRootDir } });
       const task = await db.createTask({ title: 'Concurrent Draft', inputText: 'source text' });
-      const statePath = join(dir, 'tasks', task.id, 'pipeline', 'state.json');
+      const statePath = join(managedTaskWorkDir(dir, task), 'pipeline', 'state.json');
 
       await runTask(db, task, {
         appDataDir: dir,
+        workDir: managedTaskWorkDir(dir, task),
         imageConcurrency: 2,
         generatePipelineArtifact: async () => artifact,
         generateImages: async (missingScenes) => {
@@ -109,6 +110,7 @@ describe('pipeline cache and retry', () => {
       await expect(
         runTask(db, task, {
           appDataDir: dir,
+          workDir: managedTaskWorkDir(dir, task),
           generatePipelineArtifact: async () => {
             llmRuns += 1;
             return artifact;
@@ -135,7 +137,7 @@ describe('pipeline cache and retry', () => {
 
       const failedState = await db.getState();
       const failedTask = failedState.tasks[0];
-      const statePath = join(dir, 'tasks', task.id, 'pipeline', 'state.json');
+      const statePath = join(managedTaskWorkDir(dir, task), 'pipeline', 'state.json');
       const cachedAfterFailure = JSON.parse(await readFile(statePath, 'utf8'));
 
       expect(failedTask.status).toBe('paused');
@@ -147,6 +149,7 @@ describe('pipeline cache and retry', () => {
 
       await runTask(db, { ...failedTask, status: 'pending', errorMessage: '' }, {
         appDataDir: dir,
+        workDir: managedTaskWorkDir(dir, failedTask),
         generatePipelineArtifact: async () => {
           llmRuns += 1;
           return artifact;
@@ -635,6 +638,11 @@ describe('pipeline cache and retry', () => {
     }
   });
 });
+
+function managedTaskWorkDir(appDataDir: string, task: Pick<Task, 'managedStorageKey'>): string {
+  if (!task.managedStorageKey) throw new Error('Test task is missing a managed storage key.');
+  return join(appDataDir, 'tasks', task.managedStorageKey);
+}
 
 function createArtifact(title: string, scenes: StoryboardScene[]): PipelineArtifact {
   return {

@@ -21,6 +21,7 @@ import type { BgmItem, HtmlVideoCompositionSnapshot, HtmlVideoScenePlan } from '
 
 const expectedHtmlVideoBgmMaxBytes = 256 * 1024 * 1024;
 const expectedHtmlVideoBgmDiskReserveBytes = 64 * 1024 * 1024;
+const managedTestStorageKey = '0123456789abcdef0123456789abcdef0123456789abcdef';
 
 describe('Electron HTML video runtime contract', () => {
   it('provides a dedicated runtime adapter with bounded canvas and media preflight', async () => {
@@ -48,10 +49,11 @@ describe('Electron HTML video runtime contract', () => {
   });
 
   it('routes create, pause, cancel, resume, retry, preview, and output through the HTML runner lifecycle', async () => {
-    const [main, preload, viteEnv, ipcContract, indexHtml] = await Promise.all([
+    const [main, preload, viteEnv, apiContract, ipcContract, indexHtml] = await Promise.all([
       readFile(new URL('../electron/main.ts', import.meta.url), 'utf8'),
       readFile(new URL('../electron/preload.ts', import.meta.url), 'utf8'),
       readFile(new URL('../src/vite-env.d.ts', import.meta.url), 'utf8'),
+      readFile(new URL('../src/shared/storydream-api.ts', import.meta.url), 'utf8'),
       readFile(new URL('../src/shared/ipc-contract.ts', import.meta.url), 'utf8'),
       readFile(new URL('../index.html', import.meta.url), 'utf8'),
     ]);
@@ -77,8 +79,10 @@ describe('Electron HTML video runtime contract', () => {
     }
     expect(preload).toContain('openHtmlVideoPreview');
     expect(preload).toContain('getHtmlVideoMediaUrl');
-    expect(viteEnv).toContain('openHtmlVideoPreview: (id: string, sceneIndex?: number) => Promise<void>');
-    expect(viteEnv).toContain('getHtmlVideoMediaUrl: (id: string, path: string) => Promise<string>');
+    expect(apiContract).toContain('openHtmlVideoPreview: (id: string, sceneIndex?: number) => Promise<void>');
+    expect(apiContract).toContain('getHtmlVideoMediaUrl: (id: string, path: string) => Promise<string>');
+    expect(viteEnv).toContain("import type { StoryDreamApi } from './shared/storydream-api';");
+    expect(viteEnv).not.toContain('openHtmlVideoPreview:');
     expect(ipcContract).toContain("'html-video:open-preview': htmlVideoPreviewSchema");
     expect(ipcContract).toContain("'html-video:media-url': htmlVideoMediaSchema");
     expect(indexHtml).toContain('storydream-media:');
@@ -190,7 +194,7 @@ describe('Electron HTML video runtime contract', () => {
     expect(tryStart).toBeGreaterThan(-1);
     expect(catchStart).toBeGreaterThan(tryStart);
     for (const initialization of [
-      "await ensureHtmlVideoTaskWorkDir(app.getPath('userData'), appDataName, task.id)",
+      "await ensureHtmlVideoTaskWorkDir(app.getPath('userData'), appDataName, task.managedStorageKey ?? '')",
       "status: 'running',",
       'await publishTaskUpsert(database, task.id);',
     ]) {
@@ -208,7 +212,7 @@ describe('Electron HTML video runtime contract', () => {
       main.indexOf('async function probeHtmlVideoMedia'),
     );
     const ensureDirectory = runner.indexOf(
-      "await ensureHtmlVideoTaskWorkDir(app.getPath('userData'), appDataName, task.id)",
+      "await ensureHtmlVideoTaskWorkDir(app.getPath('userData'), appDataName, task.managedStorageKey ?? '')",
     );
     const firstTaskWrite = runner.indexOf('await database.updateTask(task.id, {');
 
@@ -277,7 +281,7 @@ describe('Electron HTML video runtime contract', () => {
     const outsideMedia = join(outsideDir, 'external.mp4');
 
     try {
-      const taskDirectory = await ensureHtmlVideoTaskWorkDir(trustedRoot, 'storydream', 'task-1');
+      const taskDirectory = await ensureHtmlVideoTaskWorkDir(trustedRoot, 'storydream', managedTestStorageKey);
       const workDir = taskDirectory.workDir.canonicalPath;
       await writeFile(outsideMedia, Buffer.from('external media'));
       await rm(workDir, { recursive: true, force: true });
@@ -1312,7 +1316,7 @@ describe('Electron HTML video runtime contract', () => {
       await writeFile(sentinelPath, Buffer.from('outside task data'));
       await symlink(
         await realpath(outsideDir),
-        join(tasksRoot, 'task-1'),
+        join(tasksRoot, managedTestStorageKey),
         process.platform === 'win32' ? 'junction' : 'dir',
       );
       const outsideEntries = await readdir(outsideDir);
@@ -1321,7 +1325,7 @@ describe('Electron HTML video runtime contract', () => {
 
       expect(typeof ensureTaskWorkDir).toBe('function');
       if (typeof ensureTaskWorkDir !== 'function') return;
-      await expect(ensureTaskWorkDir(trustedRoot, 'storydream', 'task-1')).rejects.toMatchObject({
+      await expect(ensureTaskWorkDir(trustedRoot, 'storydream', managedTestStorageKey)).rejects.toMatchObject({
         code: 'HTML_VIDEO_MEDIA_PATH_INVALID',
       });
       expect(await readFile(sentinelPath, 'utf8')).toBe('outside task data');
@@ -1341,7 +1345,7 @@ describe('Electron HTML video runtime contract', () => {
     const sentinelPath = join(outsideDir, 'sentinel.txt');
     let probeCalls = 0;
     try {
-      const taskDirectory = await ensureHtmlVideoTaskWorkDir(trustedAppDataRoot, 'storydream', 'task-1');
+      const taskDirectory = await ensureHtmlVideoTaskWorkDir(trustedAppDataRoot, 'storydream', managedTestStorageKey);
       const workDir = taskDirectory.workDir.canonicalPath;
       await Promise.all([
         writeFile(sourcePath, Buffer.from('source audio')),
@@ -1381,11 +1385,11 @@ describe('Electron HTML video runtime contract', () => {
       const trustedAppDataRoot = await mkdtemp(join(tmpdir(), 'storydream-html-pinned-root-'));
       const outsideTasksRoot = await mkdtemp(join(tmpdir(), 'storydream-html-replacement-tasks-'));
       const sourcePath = join(trustedAppDataRoot, 'source.wav');
-      const outsideTaskDir = join(outsideTasksRoot, 'task-1');
+      const outsideTaskDir = join(outsideTasksRoot, managedTestStorageKey);
       const outsideSentinel = join(outsideTaskDir, 'sentinel.txt');
       let probeCalls = 0;
       try {
-        const taskDirectory = await ensureHtmlVideoTaskWorkDir(trustedAppDataRoot, 'storydream', 'task-1');
+        const taskDirectory = await ensureHtmlVideoTaskWorkDir(trustedAppDataRoot, 'storydream', managedTestStorageKey);
         await mkdir(outsideTaskDir);
         await Promise.all([
           writeFile(sourcePath, Buffer.from('source audio')),
@@ -2286,7 +2290,7 @@ describe('Electron HTML video runtime contract', () => {
     const voicePath = join(outsideDir, 'voice.wav');
     let probeCalls = 0;
     try {
-      const taskDirectory = await ensureHtmlVideoTaskWorkDir(trustedAppDataRoot, 'storydream', 'task-1');
+      const taskDirectory = await ensureHtmlVideoTaskWorkDir(trustedAppDataRoot, 'storydream', managedTestStorageKey);
       const workDir = taskDirectory.workDir.canonicalPath;
       await writeFile(voicePath, Buffer.from('outside voice'));
       await rename(workDir, join(dirname(workDir), 'detached-task-1'));
@@ -2692,7 +2696,7 @@ function taskDirectoryFor(workDir: string): HtmlVideoTaskDirectoryIdentity {
 
 async function withRuntimeDir(run: (workDir: string) => Promise<void>): Promise<void> {
   const trustedRoot = await mkdtemp(join(tmpdir(), 'storydream-html-electron-root-'));
-  const taskDirectory = await ensureHtmlVideoTaskWorkDir(trustedRoot, 'storydream-test', 'task-1');
+  const taskDirectory = await ensureHtmlVideoTaskWorkDir(trustedRoot, 'storydream-test', managedTestStorageKey);
   const workDir = taskDirectory.workDir.canonicalPath;
   testTaskDirectories.set(workDir, taskDirectory);
   try {

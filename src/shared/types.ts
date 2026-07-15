@@ -300,6 +300,8 @@ export interface AppConfig {
 
 export interface Task {
   id: string;
+  archivedAt?: string | null;
+  managedStorageKey?: string | null;
   title: string;
   inputText: string;
   taskKind: TaskKind;
@@ -747,6 +749,8 @@ export interface CustomStyleGenerateInput {
 
 export interface ImageLabRecord {
   id: string;
+  archivedAt?: string | null;
+  managedStorageKey?: string | null;
   prompt: string;
   ratio: string;
   style: string;
@@ -774,6 +778,8 @@ export type ImageLabGenerateInput = Pick<ImageLabRecord, 'prompt' | 'ratio' | 's
 
 export interface VoiceLabRecord {
   id: string;
+  archivedAt?: string | null;
+  managedStorageKey?: string | null;
   text: string;
   provider: TtsProvider;
   voiceId: string;
@@ -953,6 +959,8 @@ export interface CreateViralAnalysisInput {
 
 export interface ViralAnalysisRecord {
   id: string;
+  archivedAt?: string | null;
+  managedStorageKey?: string | null;
   url: string;
   platform: ViralPlatform;
   title: string;
