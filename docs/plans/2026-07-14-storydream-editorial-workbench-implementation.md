@@ -379,6 +379,7 @@ git commit -m "feat: serialize history governance with active runs"
 - Modify: `electron/main.ts`
 - Modify: `src/shared/storage.ts`
 - Modify: `tests/history-governance.test.ts`
+- Modify: `tests/html-video-electron.test.ts`
 
 **Step 1: Write filesystem RED tests**
 
@@ -393,7 +394,7 @@ await expect(removeQuarantineTreeNoFollow(staged)).rejects.toThrow(/identity/i);
 **Step 2: Run RED**
 
 ```powershell
-scripts\run-npm-node.cmd node_modules\vitest\vitest.mjs run tests\history-managed-paths.test.ts tests\history-governance.test.ts --pool=threads --maxWorkers=1
+scripts\run-npm-node.cmd node_modules\vitest\vitest.mjs run tests\history-managed-paths.test.ts tests\history-governance.test.ts tests\html-video-electron.test.ts --pool=threads --maxWorkers=1
 scripts\run-npm-node.cmd node_modules\typescript\bin\tsc -p tsconfig.electron.json --noEmit
 ```
 
@@ -410,7 +411,7 @@ scripts\run-npm-node.cmd node_modules\vitest\vitest.mjs run tests\history-manage
 **Step 5: Commit**
 
 ```powershell
-git add electron/managed-history-paths.ts electron/main.ts src/shared/storage.ts tests/history-managed-paths.test.ts tests/history-governance.test.ts
+git add electron/managed-history-paths.ts electron/main.ts src/shared/storage.ts tests/history-managed-paths.test.ts tests/history-governance.test.ts tests/html-video-electron.test.ts
 git commit -m "feat: quarantine managed history data before deletion"
 ```
 
