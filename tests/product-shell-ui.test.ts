@@ -1569,6 +1569,42 @@ describe('product shell ui', () => {
     expect(css).toContain('.test-result');
   });
 
+  it('preserves governed history pages through bootstrap and constructs complete browser fallback pages', async () => {
+    const main = (await rendererSourcesPromise).requiredFile('src/main.tsx');
+    const loader = main.slice(main.indexOf('async function loadCompleteBootstrap'), main.indexOf('type ModelListKey'));
+    const pageFactory = main.slice(main.indexOf('function fallbackHistoryPage'), main.indexOf('function makeFallbackApi'));
+    const fallback = main.slice(main.indexOf('function makeFallbackApi'), main.indexOf('function App()'));
+    const bootstrap = fallback.slice(fallback.indexOf('async getBootstrap()'), fallback.indexOf('async reconcileDeltas'));
+    const families = [
+      ['tasks', 'listTasks', 'task'],
+      ['viralAnalyses', 'listViralAnalyses', 'viral-analysis'],
+      ['imageLabRecords', 'listImageLabRecords', 'image-lab'],
+      ['voiceLabRecords', 'listVoiceLabRecords', 'voice-lab'],
+    ] as const;
+
+    expect(loader).toContain('...bootstrap');
+    expect(loader).toContain('collectCursorPages(bootstrap.promptTemplates');
+    expect(loader).toContain('collectCursorPages(bootstrap.draftTemplates');
+    expect(pageFactory).toContain('family: F');
+    expect(pageFactory).toContain('totalCount: items.length');
+    expect(pageFactory).toContain('hasMore: false');
+    expect(pageFactory).toContain('nextCursor: null');
+
+    for (const [property, method, family] of families) {
+      expect(loader, `${property} keeps the server-owned first page`).not.toContain(`collectCursorPages(bootstrap.${property}`);
+      expect(loader, `${property} metadata is not overwritten`).not.toContain(`${property}:`);
+      expect(bootstrap, `browser bootstrap owns ${property}`).toMatch(
+        new RegExp(`${property}:\\s*fallbackHistoryPage\\(\\s*'${family}'`, 'u'),
+      );
+      const methodStart = fallback.indexOf(`async ${method}`);
+      const methodEnd = fallback.indexOf('\n    async ', methodStart + 10);
+      expect(methodStart, `${method} fallback exists`).toBeGreaterThan(-1);
+      expect(fallback.slice(methodStart, methodEnd), `${method} constructs a complete page`).toMatch(
+        new RegExp(`fallbackHistoryPage\\(\\s*'${family}'`, 'u'),
+      );
+    }
+  });
+
   it('queues reconciliation gaps that arrive in flight and preserves loaded template details on reset', async () => {
     const main = (await rendererSourcesPromise).requiredFile('src/main.tsx');
     const app = main.slice(main.indexOf('function App()'), main.indexOf('function NavButton'));

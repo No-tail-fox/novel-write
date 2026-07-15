@@ -20,6 +20,7 @@ import type {
   CustomStyleGenerateInput,
   DraftTemplate,
   DraftTemplateSummary,
+  HistoryPage,
   HistoryListInput,
   ImageLabGenerateInput,
   ImageLabRecord,
@@ -163,24 +164,24 @@ export type StoryDreamApi = {
   getState: () => Promise<AppState>;
   getBootstrap: () => Promise<BootstrapState>;
   reconcileDeltas: (input: AppDeltaReconcileRequest) => Promise<AppDeltaReconcileResult>;
-  listTasks: (request?: HistoryListInput<'task'>) => Promise<CursorPage<TaskSummary>>;
+  listTasks: (request?: HistoryListInput<'task'>) => Promise<HistoryPage<'task', TaskSummary>>;
   archiveTask: (id: string) => Promise<TaskSummary>;
   restoreTask: (id: string) => Promise<TaskSummary>;
   deleteTaskPermanently: (id: string) => Promise<TaskTombstoneResult>;
   getTaskDetail: (id: string) => Promise<Task | null>;
   listTaskEvents: (taskId: string, request?: CursorRequest) => Promise<CursorPage<SequencedTaskEvent>>;
-  listViralAnalyses: (request?: HistoryListInput<'viral-analysis'>) => Promise<CursorPage<ViralAnalysisSummary>>;
+  listViralAnalyses: (request?: HistoryListInput<'viral-analysis'>) => Promise<HistoryPage<'viral-analysis', ViralAnalysisSummary>>;
   archiveViralAnalysis: (id: string) => Promise<ViralAnalysisSummary>;
   restoreViralAnalysis: (id: string) => Promise<ViralAnalysisSummary>;
   deleteViralAnalysisPermanently: (id: string) => Promise<ViralAnalysisTombstoneResult>;
   getViralAnalysisDetail: (id: string) => Promise<ViralAnalysisRecord | null>;
   listViralEvents: (analysisId: string, request?: CursorRequest) => Promise<CursorPage<ViralAnalysisEvent>>;
-  listImageLabRecords: (request?: HistoryListInput<'image-lab'>) => Promise<CursorPage<ImageLabSummary>>;
+  listImageLabRecords: (request?: HistoryListInput<'image-lab'>) => Promise<HistoryPage<'image-lab', ImageLabSummary>>;
   archiveImageLabRecord: (id: string) => Promise<ImageLabSummary>;
   restoreImageLabRecord: (id: string) => Promise<ImageLabSummary>;
   deleteImageLabRecordPermanently: (id: string) => Promise<ImageLabTombstoneResult>;
   getImageLabRecordDetail: (id: string) => Promise<ImageLabRecord | null>;
-  listVoiceLabRecords: (request?: HistoryListInput<'voice-lab'>) => Promise<CursorPage<VoiceLabSummary>>;
+  listVoiceLabRecords: (request?: HistoryListInput<'voice-lab'>) => Promise<HistoryPage<'voice-lab', VoiceLabSummary>>;
   archiveVoiceLabRecord: (id: string) => Promise<VoiceLabSummary>;
   restoreVoiceLabRecord: (id: string) => Promise<VoiceLabSummary>;
   deleteVoiceLabRecordPermanently: (id: string) => Promise<VoiceLabTombstoneResult>;

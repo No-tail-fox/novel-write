@@ -60,6 +60,8 @@ import type {
   CustomStyle,
   DraftTemplate,
   DraftTextBorder,
+  HistoryFamily,
+  HistoryPage,
   ImageLabGenerateInput,
   ImageProviderProfile,
   ImageLabRecord,
@@ -402,20 +404,12 @@ function configFromMutation(result: AppMutationResult | null): AppConfig {
 }
 
 async function loadCompleteBootstrap(api: StoryDreamApi, bootstrap: BootstrapState): Promise<BootstrapState> {
-  const [tasks, viralAnalyses, imageLabRecords, voiceLabRecords, promptTemplates, draftTemplates] = await Promise.all([
-    collectCursorPages(bootstrap.tasks, (cursor) => api.listTasks({ cursor, limit: 100 })),
-    collectCursorPages(bootstrap.viralAnalyses, (cursor) => api.listViralAnalyses({ cursor, limit: 100 })),
-    collectCursorPages(bootstrap.imageLabRecords, (cursor) => api.listImageLabRecords({ cursor, limit: 100 })),
-    collectCursorPages(bootstrap.voiceLabRecords, (cursor) => api.listVoiceLabRecords({ cursor, limit: 100 })),
+  const [promptTemplates, draftTemplates] = await Promise.all([
     collectCursorPages(bootstrap.promptTemplates, (cursor) => api.listPromptTemplates({ cursor, limit: 100 })),
     collectCursorPages(bootstrap.draftTemplates, (cursor) => api.listDraftTemplates({ cursor, limit: 100 })),
   ]);
   return {
     ...bootstrap,
-    tasks: { items: tasks, nextCursor: null },
-    viralAnalyses: { items: viralAnalyses, nextCursor: null },
-    imageLabRecords: { items: imageLabRecords, nextCursor: null },
-    voiceLabRecords: { items: voiceLabRecords, nextCursor: null },
     promptTemplates: { items: promptTemplates, nextCursor: null },
     draftTemplates: { items: draftTemplates, nextCursor: null },
   };
@@ -521,6 +515,16 @@ function desktopHistoryGovernanceUnavailable(): never {
   throw new Error('浏览器预览不支持历史记录治理，请在 Electron 桌面端操作。');
 }
 
+function fallbackHistoryPage<F extends HistoryFamily, T>(family: F, items: T[]): HistoryPage<F, T> {
+  return {
+    family,
+    items,
+    totalCount: items.length,
+    hasMore: false,
+    nextCursor: null,
+  };
+}
+
 function makeFallbackApi(setState: (state: AppState) => void): StoryDreamApi {
   const read = () => {
     const raw = localStorage.getItem('storydream-state') ?? localStorage.getItem('storybound-state');
@@ -609,16 +613,16 @@ function makeFallbackApi(setState: (state: AppState) => void): StoryDreamApi {
         revision: 0,
         config: state.config,
         secretStatus: {},
-        tasks: { items: state.tasks.map(taskToSummary), nextCursor: null },
-        viralAnalyses: { items: state.viralAnalyses, nextCursor: null },
-        imageLabRecords: {
-          items: state.imageLabRecords.map(({ prompt, referenceImagePaths: _paths, referenceImagePath: _path, ...record }) => ({ ...record, promptPreview: prompt.slice(0, 160) })),
-          nextCursor: null,
-        },
-        voiceLabRecords: {
-          items: state.voiceLabRecords.map(({ text, ...record }) => ({ ...record, textPreview: text.slice(0, 160) })),
-          nextCursor: null,
-        },
+        tasks: fallbackHistoryPage('task', state.tasks.map(taskToSummary)),
+        viralAnalyses: fallbackHistoryPage('viral-analysis', state.viralAnalyses),
+        imageLabRecords: fallbackHistoryPage(
+          'image-lab',
+          state.imageLabRecords.map(({ prompt, referenceImagePaths: _paths, referenceImagePath: _path, ...record }) => ({ ...record, promptPreview: prompt.slice(0, 160) })),
+        ),
+        voiceLabRecords: fallbackHistoryPage(
+          'voice-lab',
+          state.voiceLabRecords.map(({ text, ...record }) => ({ ...record, textPreview: text.slice(0, 160) })),
+        ),
         promptTemplates: {
           items: state.promptTemplates.map(({ content: _content, stepPrompts: _steps, imageSeedPoolsJson: _seeds, ...summary }) => summary),
           nextCursor: null,
@@ -657,7 +661,7 @@ function makeFallbackApi(setState: (state: AppState) => void): StoryDreamApi {
       };
     },
     async listTasks() {
-      return { items: read().tasks.map(taskToSummary), nextCursor: null };
+      return fallbackHistoryPage('task', read().tasks.map(taskToSummary));
     },
     async archiveTask() {
       return desktopHistoryGovernanceUnavailable();
@@ -678,7 +682,7 @@ function makeFallbackApi(setState: (state: AppState) => void): StoryDreamApi {
       };
     },
     async listViralAnalyses() {
-      return { items: read().viralAnalyses, nextCursor: null };
+      return fallbackHistoryPage('viral-analysis', read().viralAnalyses);
     },
     async archiveViralAnalysis() {
       return desktopHistoryGovernanceUnavailable();
@@ -696,10 +700,10 @@ function makeFallbackApi(setState: (state: AppState) => void): StoryDreamApi {
       return { items: read().viralEvents.filter((event) => event.analysisId === analysisId), nextCursor: null };
     },
     async listImageLabRecords() {
-      return {
-        items: read().imageLabRecords.map(({ prompt, referenceImagePaths: _paths, referenceImagePath: _path, ...record }) => ({ ...record, promptPreview: prompt.slice(0, 160) })),
-        nextCursor: null,
-      };
+      return fallbackHistoryPage(
+        'image-lab',
+        read().imageLabRecords.map(({ prompt, referenceImagePaths: _paths, referenceImagePath: _path, ...record }) => ({ ...record, promptPreview: prompt.slice(0, 160) })),
+      );
     },
     async archiveImageLabRecord() {
       return desktopHistoryGovernanceUnavailable();
@@ -714,7 +718,10 @@ function makeFallbackApi(setState: (state: AppState) => void): StoryDreamApi {
       return read().imageLabRecords.find((record) => record.id === id) ?? null;
     },
     async listVoiceLabRecords() {
-      return { items: read().voiceLabRecords.map(({ text, ...record }) => ({ ...record, textPreview: text.slice(0, 160) })), nextCursor: null };
+      return fallbackHistoryPage(
+        'voice-lab',
+        read().voiceLabRecords.map(({ text, ...record }) => ({ ...record, textPreview: text.slice(0, 160) })),
+      );
     },
     async archiveVoiceLabRecord() {
       return desktopHistoryGovernanceUnavailable();

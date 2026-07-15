@@ -22,6 +22,7 @@ import type {
   CursorRequest,
   DraftTemplateSummary,
   HistoryListInput,
+  HistoryPage,
   ImageLabSummary,
   PromptTemplateSummary,
   TaskSummary,
@@ -34,10 +35,10 @@ const MIGRATION_MARKER = 'config-secrets.v1.migrated';
 export interface ConfigDatabase {
   getState: () => Promise<AppState>;
   getBootstrapMetadata: () => Promise<Pick<AppState, 'config' | 'customStyles' | 'customCoverTemplates' | 'creditTransactions' | 'minimaxCloneVoices' | 'account' | 'activation' | 'ui'>>;
-  listTaskSummaries: (request?: HistoryListInput<'task'>) => Promise<CursorPage<TaskSummary>>;
-  listViralAnalyses: (request?: HistoryListInput<'viral-analysis'>) => Promise<CursorPage<ViralAnalysisSummary>>;
-  listImageLabRecords: (request?: HistoryListInput<'image-lab'>) => Promise<CursorPage<ImageLabSummary>>;
-  listVoiceLabRecords: (request?: HistoryListInput<'voice-lab'>) => Promise<CursorPage<VoiceLabSummary>>;
+  listTaskSummaries: (request?: HistoryListInput<'task'>) => Promise<HistoryPage<'task', TaskSummary>>;
+  listViralAnalyses: (request?: HistoryListInput<'viral-analysis'>) => Promise<HistoryPage<'viral-analysis', ViralAnalysisSummary>>;
+  listImageLabRecords: (request?: HistoryListInput<'image-lab'>) => Promise<HistoryPage<'image-lab', ImageLabSummary>>;
+  listVoiceLabRecords: (request?: HistoryListInput<'voice-lab'>) => Promise<HistoryPage<'voice-lab', VoiceLabSummary>>;
   listPromptTemplateSummaries: (request?: CursorRequest) => Promise<CursorPage<PromptTemplateSummary>>;
   listDraftTemplateSummaries: (request?: CursorRequest) => Promise<CursorPage<DraftTemplateSummary>>;
   upsertConfig: (config: AppConfig) => Promise<void>;

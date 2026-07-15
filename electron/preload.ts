@@ -24,6 +24,7 @@ import type {
   HistoryFamily,
   HistoryListInput,
   HistoryListRequest,
+  HistoryPage,
   ImageLabGenerateInput,
   ImageLabRecord,
   ImageLabSummary,
@@ -136,7 +137,7 @@ export const storyDreamApi = {
   getState: (): Promise<PublicAppState> => invokeTrusted('app:get-state'),
   getBootstrap: (): Promise<BootstrapState> => invokeTrusted('app:get-bootstrap'),
   reconcileDeltas: (input: AppDeltaReconcileRequest): Promise<AppDeltaReconcileResult> => invokeTrusted('app:reconcile-deltas', input),
-  listTasks: async (request: HistoryListInput<'task'> = {}): Promise<CursorPage<TaskSummary>> =>
+  listTasks: async (request: HistoryListInput<'task'> = {}): Promise<HistoryPage<'task', TaskSummary>> =>
     invokeTrusted('task:list', normalizeTaskHistoryRequest(request)),
   archiveTask: (id: string): Promise<TaskSummary> => invokeTrusted('task:archive', id),
   restoreTask: (id: string): Promise<TaskSummary> => invokeTrusted('task:restore', id),
@@ -144,7 +145,7 @@ export const storyDreamApi = {
   getTaskDetail: (id: string): Promise<Task | null> => invokeTrusted('task:get-detail', id),
   listTaskEvents: (taskId: string, request: CursorRequest = {}): Promise<CursorPage<SequencedTaskEvent>> =>
     invokeTrusted('task:list-events', { taskId, ...request }),
-  listViralAnalyses: async (request: HistoryListInput<'viral-analysis'> = {}): Promise<CursorPage<ViralAnalysisSummary>> =>
+  listViralAnalyses: async (request: HistoryListInput<'viral-analysis'> = {}): Promise<HistoryPage<'viral-analysis', ViralAnalysisSummary>> =>
     invokeTrusted('viral:list', normalizeViralHistoryRequest(request)),
   archiveViralAnalysis: (id: string): Promise<ViralAnalysisSummary> => invokeTrusted('viral:archive', id),
   restoreViralAnalysis: (id: string): Promise<ViralAnalysisSummary> => invokeTrusted('viral:restore', id),
@@ -152,13 +153,13 @@ export const storyDreamApi = {
   getViralAnalysisDetail: (id: string): Promise<ViralAnalysisRecord | null> => invokeTrusted('viral:get-detail', id),
   listViralEvents: (analysisId: string, request: CursorRequest = {}): Promise<CursorPage<ViralAnalysisEvent>> =>
     invokeTrusted('viral:list-events', { analysisId, ...request }),
-  listImageLabRecords: async (request: HistoryListInput<'image-lab'> = {}): Promise<CursorPage<ImageLabSummary>> =>
+  listImageLabRecords: async (request: HistoryListInput<'image-lab'> = {}): Promise<HistoryPage<'image-lab', ImageLabSummary>> =>
     invokeTrusted('image-lab:list', normalizeImageLabHistoryRequest(request)),
   archiveImageLabRecord: (id: string): Promise<ImageLabSummary> => invokeTrusted('image-lab:archive', id),
   restoreImageLabRecord: (id: string): Promise<ImageLabSummary> => invokeTrusted('image-lab:restore', id),
   deleteImageLabRecordPermanently: (id: string): Promise<ImageLabTombstoneResult> => invokeTrusted('image-lab:delete', id),
   getImageLabRecordDetail: (id: string): Promise<ImageLabRecord | null> => invokeTrusted('image-lab:get-detail', id),
-  listVoiceLabRecords: async (request: HistoryListInput<'voice-lab'> = {}): Promise<CursorPage<VoiceLabSummary>> =>
+  listVoiceLabRecords: async (request: HistoryListInput<'voice-lab'> = {}): Promise<HistoryPage<'voice-lab', VoiceLabSummary>> =>
     invokeTrusted('voice-lab:list', normalizeVoiceLabHistoryRequest(request)),
   archiveVoiceLabRecord: (id: string): Promise<VoiceLabSummary> => invokeTrusted('voice-lab:archive', id),
   restoreVoiceLabRecord: (id: string): Promise<VoiceLabSummary> => invokeTrusted('voice-lab:restore', id),

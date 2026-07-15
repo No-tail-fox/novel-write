@@ -1302,10 +1302,10 @@ export interface BootstrapState {
   revision: number;
   config: AppConfig;
   secretStatus: Partial<Record<string, boolean>>;
-  tasks: CursorPage<TaskSummary>;
-  viralAnalyses: CursorPage<ViralAnalysisSummary>;
-  imageLabRecords: CursorPage<ImageLabSummary>;
-  voiceLabRecords: CursorPage<VoiceLabSummary>;
+  tasks: HistoryPage<'task', TaskSummary>;
+  viralAnalyses: HistoryPage<'viral-analysis', ViralAnalysisSummary>;
+  imageLabRecords: HistoryPage<'image-lab', ImageLabSummary>;
+  voiceLabRecords: HistoryPage<'voice-lab', VoiceLabSummary>;
   promptTemplates: CursorPage<PromptTemplateSummary>;
   draftTemplates: CursorPage<DraftTemplateSummary>;
   customStyles: CustomStyle[];

@@ -86,6 +86,47 @@ describe('electron ipc contract', () => {
     }
   });
 
+  it('returns exact four-family history pages through the shared API and preload bridge', async () => {
+    const apiContract = await readFile(new URL('../src/shared/storydream-api.ts', import.meta.url), 'utf8');
+    const preload = await readFile(new URL('../electron/preload.ts', import.meta.url), 'utf8');
+    const contracts = [
+      ['listTasks', 'archiveTask', "HistoryPage<'task', TaskSummary>"],
+      ['listViralAnalyses', 'archiveViralAnalysis', "HistoryPage<'viral-analysis', ViralAnalysisSummary>"],
+      ['listImageLabRecords', 'archiveImageLabRecord', "HistoryPage<'image-lab', ImageLabSummary>"],
+      ['listVoiceLabRecords', 'archiveVoiceLabRecord', "HistoryPage<'voice-lab', VoiceLabSummary>"],
+    ] as const;
+
+    for (const [method, nextMethod, returnType] of contracts) {
+      for (const [owner, source] of [['StoryDreamApi', apiContract], ['preload', preload]] as const) {
+        const start = source.indexOf(`${method}:`);
+        const end = source.indexOf(`${nextMethod}:`, start);
+        expect(start, `${owner}.${method} is declared`).toBeGreaterThan(-1);
+        expect(end, `${owner}.${method} has a bounded declaration`).toBeGreaterThan(start);
+        expect(source.slice(start, end), `${owner}.${method} preserves history metadata`).toContain(`Promise<${returnType}>`);
+      }
+    }
+  });
+
+  it('requires complete history pages from the bootstrap database boundary', async () => {
+    const configService = await readFile(new URL('../electron/config-service.ts', import.meta.url), 'utf8');
+    const contracts = [
+      ['listTaskSummaries', 'listViralAnalyses', "HistoryPage<'task', TaskSummary>"],
+      ['listViralAnalyses', 'listImageLabRecords', "HistoryPage<'viral-analysis', ViralAnalysisSummary>"],
+      ['listImageLabRecords', 'listVoiceLabRecords', "HistoryPage<'image-lab', ImageLabSummary>"],
+      ['listVoiceLabRecords', 'listPromptTemplateSummaries', "HistoryPage<'voice-lab', VoiceLabSummary>"],
+    ] as const;
+
+    for (const [method, nextMethod, returnType] of contracts) {
+      const start = configService.indexOf(`${method}:`);
+      const end = configService.indexOf(`${nextMethod}:`, start);
+      expect(start, `ConfigDatabase.${method} is declared`).toBeGreaterThan(-1);
+      expect(end, `ConfigDatabase.${method} has a bounded declaration`).toBeGreaterThan(start);
+      expect(configService.slice(start, end), `ConfigDatabase.${method} preserves history metadata`).toContain(
+        `Promise<${returnType}>`,
+      );
+    }
+  });
+
   it('exposes product shell persistence channels to the renderer', async () => {
     const preload = await readFile(new URL('../electron/preload.ts', import.meta.url), 'utf8');
     const main = await readFile(new URL('../electron/main.ts', import.meta.url), 'utf8');
