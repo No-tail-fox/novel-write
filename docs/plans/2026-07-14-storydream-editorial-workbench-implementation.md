@@ -226,8 +226,13 @@ git commit -m "feat: define typed history governance contracts"
 - Modify: `electron/config-service.ts`
 - Modify: `electron/main.ts`
 - Modify: `electron/html-video-runtime.ts`
+- Modify: `scripts/smoke-html-video.ts`
 - Modify: `tests/storage.test.ts`
 - Modify: `tests/runner.test.ts`
+- Modify: `tests/ai-research-flow.test.ts`
+- Modify: `tests/high-parity.test.ts`
+- Modify: `tests/pipeline-cache.test.ts`
+- Modify: `tests/task-runtime-providers.test.ts`
 - Modify: `tests/html-video-electron.test.ts`
 - Create: `tests/history-governance.test.ts`
 
@@ -260,7 +265,7 @@ Create the shared Electron path helper now with lexical containment, key validat
 **Step 4: Run GREEN**
 
 ```powershell
-scripts\run-npm-node.cmd node_modules\vitest\vitest.mjs run tests\history-governance.test.ts tests\history-managed-paths.test.ts tests\storage.test.ts tests\runner.test.ts tests\html-video-electron.test.ts tests\state-delta.test.ts --pool=threads --maxWorkers=1
+scripts\run-npm-node.cmd node_modules\vitest\vitest.mjs run tests\history-governance.test.ts tests\history-managed-paths.test.ts tests\storage.test.ts tests\runner.test.ts tests\ai-research-flow.test.ts tests\high-parity.test.ts tests\pipeline-cache.test.ts tests\task-runtime-providers.test.ts tests\html-video-electron.test.ts tests\state-delta.test.ts --pool=threads --maxWorkers=1
 scripts\run-npm-node.cmd node_modules\typescript\bin\tsc -p tsconfig.json --noEmit
 scripts\run-npm-node.cmd node_modules\typescript\bin\tsc -p tsconfig.electron.json --noEmit
 ```
@@ -268,7 +273,7 @@ scripts\run-npm-node.cmd node_modules\typescript\bin\tsc -p tsconfig.electron.js
 **Step 5: Commit**
 
 ```powershell
-git add electron/managed-history-paths.ts src/shared/types.ts src/shared/storage.ts src/shared/runner.ts electron/config-service.ts electron/main.ts electron/html-video-runtime.ts tests/history-managed-paths.test.ts tests/storage.test.ts tests/runner.test.ts tests/html-video-electron.test.ts tests/history-governance.test.ts
+git add electron/managed-history-paths.ts src/shared/types.ts src/shared/storage.ts src/shared/runner.ts electron/config-service.ts electron/main.ts electron/html-video-runtime.ts scripts/smoke-html-video.ts tests/history-managed-paths.test.ts tests/storage.test.ts tests/runner.test.ts tests/ai-research-flow.test.ts tests/high-parity.test.ts tests/pipeline-cache.test.ts tests/task-runtime-providers.test.ts tests/html-video-electron.test.ts tests/history-governance.test.ts
 git commit -m "feat: add managed history storage and pagination"
 ```
 
