@@ -420,12 +420,15 @@ git commit -m "feat: quarantine managed history data before deletion"
 
 **Files:**
 - Modify: `src/shared/types.ts`
+- Modify: `src/shared/storydream-api.ts`
 - Modify: `src/shared/state-delta.ts`
 - Modify: `src/shared/state-reconciliation.ts`
 - Modify: `electron/main.ts`
+- Modify: `electron/preload.ts`
 - Modify: `src/main.tsx`
 - Modify: `tests/state-delta.test.ts`
 - Modify: `tests/electron-ipc-contract.test.ts`
+- Modify: `tests/ipc-inventory.test.ts`
 - Modify: `tests/product-shell-ui.test.ts`
 
 **Step 1: Write anti-resurrection RED tests**
@@ -451,7 +454,7 @@ Update `AppDelta`, `AppMutationResult`, reducer, reconciliation, revision slices
 **Step 4: Run GREEN and typechecks**
 
 ```powershell
-scripts\run-npm-node.cmd node_modules\vitest\vitest.mjs run tests\state-delta.test.ts tests\electron-ipc-contract.test.ts tests\product-shell-ui.test.ts --pool=threads --maxWorkers=1
+scripts\run-npm-node.cmd node_modules\vitest\vitest.mjs run tests\state-delta.test.ts tests\electron-ipc-contract.test.ts tests\ipc-inventory.test.ts tests\product-shell-ui.test.ts --pool=threads --maxWorkers=1
 scripts\run-npm-node.cmd node_modules\typescript\bin\tsc -p tsconfig.json --noEmit
 scripts\run-npm-node.cmd node_modules\typescript\bin\tsc -p tsconfig.electron.json --noEmit
 ```
@@ -459,7 +462,7 @@ scripts\run-npm-node.cmd node_modules\typescript\bin\tsc -p tsconfig.electron.js
 **Step 5: Commit**
 
 ```powershell
-git add src/shared/types.ts src/shared/state-delta.ts src/shared/state-reconciliation.ts electron/main.ts src/main.tsx tests/state-delta.test.ts tests/electron-ipc-contract.test.ts tests/product-shell-ui.test.ts
+git add src/shared/types.ts src/shared/storydream-api.ts src/shared/state-delta.ts src/shared/state-reconciliation.ts electron/main.ts electron/preload.ts src/main.tsx tests/state-delta.test.ts tests/electron-ipc-contract.test.ts tests/ipc-inventory.test.ts tests/product-shell-ui.test.ts
 git commit -m "feat: reconcile history tombstones across processes"
 ```
 
