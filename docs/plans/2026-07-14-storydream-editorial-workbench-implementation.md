@@ -221,11 +221,14 @@ git commit -m "feat: define typed history governance contracts"
 - Create: `electron/managed-history-paths.ts`
 - Create: `tests/history-managed-paths.test.ts`
 - Modify: `src/shared/types.ts`
+- Modify: `src/shared/storydream-api.ts`
 - Modify: `src/shared/storage.ts`
 - Modify: `src/shared/runner.ts`
 - Modify: `electron/config-service.ts`
 - Modify: `electron/main.ts`
+- Modify: `electron/preload.ts`
 - Modify: `electron/html-video-runtime.ts`
+- Modify: `src/main.tsx`
 - Modify: `scripts/smoke-html-video.ts`
 - Modify: `tests/storage.test.ts`
 - Modify: `tests/runner.test.ts`
@@ -234,6 +237,8 @@ git commit -m "feat: define typed history governance contracts"
 - Modify: `tests/pipeline-cache.test.ts`
 - Modify: `tests/task-runtime-providers.test.ts`
 - Modify: `tests/html-video-electron.test.ts`
+- Modify: `tests/electron-ipc-contract.test.ts`
+- Modify: `tests/product-shell-ui.test.ts`
 - Create: `tests/history-governance.test.ts`
 
 **Step 1: Write pagination and migration RED tests**
@@ -262,10 +267,12 @@ Add `archived_at` and `managed_storage_key` to task/viral/image/voice tables, in
 
 Create the shared Electron path helper now with lexical containment, key validation, and family roots; Task 8 extends it with identity-aware quarantine. Change `electron/main.ts`, HTML workdir construction, and `src/shared/runner.ts` so a canonical managed work directory is injected and no runner reconstructs `tasks/<business-id>`. Cursor payload binds version, family, canonical filter/status/statuses/taskType/query hash, sort value, and ID. Electron/config-service bootstrap requests one active page per family only. Renderer-side automatic all-cursor consumption remains explicitly owned by Task 10.
 
+Complete the server-page contract end to end now: the four `StoryDreamApi`/preload list methods and the four `BootstrapState` families return `HistoryPage`, while browser fallback list/bootstrap paths construct or preserve `family`, `totalCount`, `hasMore`, and `nextCursor`. Do not automatically consume every cursor; that remains Task 10.
+
 **Step 4: Run GREEN**
 
 ```powershell
-scripts\run-npm-node.cmd node_modules\vitest\vitest.mjs run tests\history-governance.test.ts tests\history-managed-paths.test.ts tests\storage.test.ts tests\runner.test.ts tests\ai-research-flow.test.ts tests\high-parity.test.ts tests\pipeline-cache.test.ts tests\task-runtime-providers.test.ts tests\html-video-electron.test.ts tests\state-delta.test.ts --pool=threads --maxWorkers=1
+scripts\run-npm-node.cmd node_modules\vitest\vitest.mjs run tests\history-governance.test.ts tests\history-managed-paths.test.ts tests\storage.test.ts tests\runner.test.ts tests\ai-research-flow.test.ts tests\high-parity.test.ts tests\pipeline-cache.test.ts tests\task-runtime-providers.test.ts tests\html-video-electron.test.ts tests\state-delta.test.ts tests\electron-ipc-contract.test.ts tests\product-shell-ui.test.ts --pool=threads --maxWorkers=1
 scripts\run-npm-node.cmd node_modules\typescript\bin\tsc -p tsconfig.json --noEmit
 scripts\run-npm-node.cmd node_modules\typescript\bin\tsc -p tsconfig.electron.json --noEmit
 ```
@@ -273,7 +280,7 @@ scripts\run-npm-node.cmd node_modules\typescript\bin\tsc -p tsconfig.electron.js
 **Step 5: Commit**
 
 ```powershell
-git add electron/managed-history-paths.ts src/shared/types.ts src/shared/storage.ts src/shared/runner.ts electron/config-service.ts electron/main.ts electron/html-video-runtime.ts scripts/smoke-html-video.ts tests/history-managed-paths.test.ts tests/storage.test.ts tests/runner.test.ts tests/ai-research-flow.test.ts tests/high-parity.test.ts tests/pipeline-cache.test.ts tests/task-runtime-providers.test.ts tests/html-video-electron.test.ts tests/history-governance.test.ts
+git add electron/managed-history-paths.ts src/shared/types.ts src/shared/storydream-api.ts src/shared/storage.ts src/shared/runner.ts electron/config-service.ts electron/main.ts electron/preload.ts electron/html-video-runtime.ts src/main.tsx scripts/smoke-html-video.ts tests/history-managed-paths.test.ts tests/storage.test.ts tests/runner.test.ts tests/ai-research-flow.test.ts tests/high-parity.test.ts tests/pipeline-cache.test.ts tests/task-runtime-providers.test.ts tests/html-video-electron.test.ts tests/electron-ipc-contract.test.ts tests/product-shell-ui.test.ts tests/history-governance.test.ts
 git commit -m "feat: add managed history storage and pagination"
 ```
 
