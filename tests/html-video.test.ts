@@ -347,6 +347,17 @@ describe('HTML video pipeline V2 contract', () => {
     expect(() => parseHtmlVideoPipelineData(JSON.stringify(pipeline))).toThrow(/artifactSize|file|4000000|maximum/i);
   });
 
+  it('accepts only canonical SHA-256 step artifact hashes', () => {
+    const pipeline = JSON.parse(JSON.stringify(createHtmlVideoPipelineData('场景。'))) as {
+      steps: Record<string, Record<string, unknown>>;
+    };
+    pipeline.steps.rewrite.artifactHash = 'not-a-sha256';
+    expect(() => parseHtmlVideoPipelineData(JSON.stringify(pipeline))).toThrow(/artifactHash|hash|SHA-256/i);
+
+    pipeline.steps.rewrite.artifactHash = 'a'.repeat(64);
+    expect(parseHtmlVideoPipelineData(JSON.stringify(pipeline)).steps.rewrite.artifactHash).toBe('a'.repeat(64));
+  });
+
   it('bounds V2 and legacy artifact arrays and rejects ambiguous relationships', () => {
     const scene = createHtmlVideoPipelineData('场景。').scenes[0];
     const background: HtmlVideoAsset = { sceneIndex: 1, kind: 'bg', slot: 0, src: 'D:/bg.png' };

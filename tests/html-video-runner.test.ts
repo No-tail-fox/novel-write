@@ -14,6 +14,7 @@ import {
   MAX_HTML_VIDEO_PIPELINE_FILE_BYTES,
   MAX_HTML_VIDEO_SOURCE_CHARS,
   MAX_HTML_VIDEO_SCENES,
+  MAX_HTML_VIDEO_WARNINGS,
   createHtmlVideoPipelineData,
   htmlVideoVisibleSteps,
   parseHtmlVideoPipelineData,
@@ -32,6 +33,22 @@ describe('HTML video runner module', () => {
     expect(existsSync(new URL('../src/shared/html-video-runner.ts', import.meta.url))).toBe(true);
   });
 
+  it('pins digest reads to validated handles, expected sizes, and cancellation checks', async () => {
+    const source = await readFile(new URL('../src/shared/html-video-runner.ts', import.meta.url), 'utf8');
+    const hashStart = source.indexOf('async function hashFile(');
+    const hashEnd = source.indexOf('async function readBoundedUtf8File(', hashStart);
+    const hashBlock = source.slice(hashStart, hashEnd);
+
+    expect(hashStart).toBeGreaterThan(-1);
+    expect(hashBlock).toContain('openValidatedLocalFile');
+    expect(hashBlock).toContain('expectedSize');
+    expect(hashBlock).toContain('throwIfAborted(signal)');
+    expect(hashBlock).not.toContain("await open(path, 'r')");
+    expect(source).toContain('MAX_HTML_VIDEO_MEDIA_FILE_BYTES');
+    expect(source).toContain("handle.stat({ bigint: true })");
+    expect(source).toContain('isSameFileIdentity');
+  });
+
   it('runs all six steps in order and atomically checkpoints their artifacts', async () => {
     await withTempRunner(async (workDir) => {
       const runtime = createFakeRuntime(workDir);
@@ -45,10 +62,14 @@ describe('HTML video runner module', () => {
         expect(result.steps[step].inputHash).toMatch(/^[a-f0-9]{64}$/);
         expect(result.steps[step].artifactPath).toMatch(new RegExp(`^steps[\\\\/]${step}\\.json$`));
         expect(result.steps[step].artifactSize).toBeGreaterThan(0);
+        expect(result.steps[step].artifactHash).toMatch(/^[a-f0-9]{64}$/);
       }
 
       const checkpoint = await readCheckpoint(workDir);
       expect(checkpoint).toMatchObject({ version: 2, current: 'done' });
+      for (const step of htmlVideoVisibleSteps) {
+        expect(checkpoint.steps[step].artifactHash).toBe(result.steps[step].artifactHash);
+      }
       expect(await realpath(checkpoint.output!.path)).toBe(await realpath(join(workDir, 'final.mp4')));
       expect(runtime.checkpoints.at(-1)).toMatchObject({ current: 'done', revision: checkpoint.revision });
       expect(existsSync(join(workDir, 'html-video-pipeline.v2.json'))).toBe(true);
@@ -67,6 +88,41 @@ describe('HTML video runner module', () => {
       expect(result.scenes.map((scene) => scene.narration)).toEqual(['第一句。', '第二句。']);
       expect(result.warnings.join('\n')).toMatch(/LLM|分句/);
       expect(runtime.calls).toEqual(['assets', 'voice', 'preview', 'render']);
+    });
+  });
+
+  it('keeps deterministic fallback warnings within the persisted schema limit', async () => {
+    await withTempRunner(async (workDir) => {
+      const input = createRunnerInput('bounded-fallback-warnings', '第一句。\n\n第二句。');
+      input.state.warnings = Array.from({ length: MAX_HTML_VIDEO_WARNINGS }, (_, index) => `existing-${index}`);
+      const runtime = createFakeRuntime(workDir);
+      delete runtime.options.rewrite;
+      delete runtime.options.plan;
+
+      const result = await runHtmlVideoPipeline(input, runtime.options);
+
+      expect(result.warnings).toHaveLength(MAX_HTML_VIDEO_WARNINGS);
+      expect(result.warnings).toEqual(expect.arrayContaining([
+        expect.stringMatching(/仅执行分句/u),
+        expect.stringMatching(/确定性场景规划/u),
+      ]));
+      expect(() => parseHtmlVideoPipelineData(JSON.stringify(result))).not.toThrow();
+      expect((await readCheckpoint(workDir)).warnings).toEqual(result.warnings);
+    });
+  });
+
+  it('keeps checkpoint recovery warnings within the persisted schema limit', async () => {
+    await withTempRunner(async (workDir) => {
+      const input = createRunnerInput('bounded-recovery-warnings');
+      input.state.warnings = Array.from({ length: MAX_HTML_VIDEO_WARNINGS }, (_, index) => `existing-${index}`);
+      await writeFile(join(workDir, 'html-video-pipeline.v2.json'), '{', 'utf8');
+      const runtime = createFakeRuntime(workDir);
+
+      const result = await runHtmlVideoPipeline(input, runtime.options);
+
+      expect(result.warnings).toHaveLength(MAX_HTML_VIDEO_WARNINGS);
+      expect(result.warnings).toEqual(expect.arrayContaining([expect.stringMatching(/checkpoint.*损坏|数据库快照/u)]));
+      expect(() => parseHtmlVideoPipelineData(JSON.stringify(result))).not.toThrow();
     });
   });
 
@@ -515,6 +571,29 @@ describe('HTML video runner module', () => {
     await withTempRunner((workDir) => assertProviderFailure(workDir, 'voice', 'TTS_PROVIDER_NOT_CONFIGURED: 请先配置配音服务。'));
   });
 
+  it('preserves the provider error when its failed-state checkpoint callback rejects', async () => {
+    await withTempRunner(async (workDir) => {
+      const runtime = createFakeRuntime(workDir, {
+        failStep: 'assets',
+        failureMessage: 'IMAGE_PROVIDER_NOT_CONFIGURED: 请先配置图片服务。',
+      });
+      runtime.options.onCheckpoint = async (state) => {
+        runtime.checkpoints.push(structuredClone(state));
+        if (state.steps.assets.status === 'failed') throw new Error('CHECKPOINT_STORE_FAILED');
+      };
+
+      await expect(runHtmlVideoPipeline(createRunnerInput('provider-checkpoint-failure'), runtime.options)).rejects.toMatchObject({
+        code: 'IMAGE_PROVIDER_NOT_CONFIGURED',
+        cause: expect.objectContaining({ message: 'CHECKPOINT_STORE_FAILED' }),
+      });
+
+      expect(await readCheckpoint(workDir)).toMatchObject({
+        current: 'assets',
+        steps: { assets: { status: 'failed' } },
+      });
+    });
+  });
+
   it('resumes from the first invalid artifact while skipping validated upstream steps', async () => {
     await withTempRunner(async (workDir) => {
       const first = createFakeRuntime(workDir, { failStep: 'preview', failureMessage: 'PREVIEW_FAILED: preview unavailable' });
@@ -531,6 +610,37 @@ describe('HTML video runner module', () => {
       expect(resumed.calls).toEqual(['assets', 'voice', 'preview', 'render']);
       expect(resumed.calls).not.toContain('rewrite');
       expect(resumed.calls).not.toContain('planning');
+    });
+  });
+
+  it('does not invalidate completed steps when cancellation interrupts digest validation', async () => {
+    await withTempRunner(async (workDir) => {
+      const initial = createFakeRuntime(workDir);
+      await runHtmlVideoPipeline(createRunnerInput('cancel-during-digest'), initial.options);
+      const before = await readCheckpoint(workDir);
+      const cancellation = new DOMException('cancelled while hashing', 'AbortError');
+      let digestAbortChecks = 0;
+      const signal = {
+        get aborted() {
+          const hashing = new Error().stack?.includes('hashFile') === true;
+          if (hashing) digestAbortChecks += 1;
+          return hashing;
+        },
+        reason: cancellation,
+      } as unknown as AbortSignal;
+      const resumed = createFakeRuntime(workDir);
+      resumed.options.signal = signal;
+
+      await expect(runHtmlVideoPipeline(createRunnerInput('cancel-during-digest'), resumed.options))
+        .rejects.toMatchObject({ name: 'AbortError' });
+
+      expect(digestAbortChecks).toBeGreaterThan(0);
+      expect(await readCheckpoint(workDir)).toEqual(before);
+      expect(resumed.calls).toEqual([]);
+      const retry = createFakeRuntime(workDir);
+      await expect(runHtmlVideoPipeline(createRunnerInput('cancel-during-digest'), retry.options))
+        .resolves.toMatchObject({ current: 'done' });
+      expect(retry.calls).toEqual([]);
     });
   });
 
@@ -586,6 +696,109 @@ describe('HTML video runner module', () => {
 
       expect(result.current).toBe('done');
       expect(resumed.calls).toEqual([...htmlVideoVisibleSteps]);
+    });
+  });
+
+  it('reruns from assets when a completed media file is replaced with the same size', async () => {
+    await withTempRunner(async (workDir) => {
+      const initial = createFakeRuntime(workDir);
+      const completed = await runHtmlVideoPipeline(createRunnerInput('same-size-media-replacement'), initial.options);
+      const assetPath = completed.assets.find((asset) => asset.kind === 'bg')?.src;
+      expect(assetPath).toBeTruthy();
+      const original = await readFile(assetPath!);
+      await writeFile(assetPath!, Buffer.alloc(original.length, 0x78));
+
+      const resumed = createFakeRuntime(workDir);
+      const result = await runHtmlVideoPipeline(createRunnerInput('same-size-media-replacement'), resumed.options);
+
+      expect(result.current).toBe('done');
+      expect(resumed.calls).toEqual(['assets', 'voice', 'preview', 'render']);
+    });
+  });
+
+  it('rejects preview output when an input asset changes during provider consumption', async () => {
+    await withTempRunner(async (workDir) => {
+      const runtime = createFakeRuntime(workDir);
+      const createPreviews = runtime.options.createPreviews;
+      runtime.options.createPreviews = async (input) => {
+        const output = await createPreviews(input);
+        await replaceFileWithSameSize(input.assets.find((asset) => asset.kind === 'bg')!.src);
+        return output;
+      };
+
+      await expect(runHtmlVideoPipeline(createRunnerInput('preview-input-race'), runtime.options))
+        .rejects.toMatchObject({ code: 'HTML_VIDEO_PREVIEW_FAILED' });
+
+      expect(runtime.calls).toEqual(['rewrite', 'planning', 'assets', 'voice', 'preview']);
+      expect(await readCheckpoint(workDir)).toMatchObject({
+        current: 'preview',
+        steps: { preview: { status: 'failed' }, render: { status: 'pending' } },
+      });
+    });
+  });
+
+  it('isolates runner state from provider input mutations', async () => {
+    await withTempRunner(async (workDir) => {
+      const runtime = createFakeRuntime(workDir);
+      const createPreviews = runtime.options.createPreviews;
+      runtime.options.createPreviews = async (input) => {
+        input.scenes[0].narration = 'provider-mutated narration';
+        input.config.style = 'provider-mutated-style';
+        return createPreviews(input);
+      };
+
+      const result = await runHtmlVideoPipeline(createRunnerInput('provider-input-isolation'), runtime.options);
+
+      expect(result.scenes[0].narration).toBe('第一句。');
+      expect(result.config.style).toBe('modern-film');
+    });
+  });
+
+  it('rejects render output when a composition changes during provider consumption', async () => {
+    await withTempRunner(async (workDir) => {
+      const runtime = createFakeRuntime(workDir);
+      const render = runtime.options.render;
+      runtime.options.render = async (input) => {
+        const output = await render(input);
+        await replaceFileWithSameSize(input.compositions[0].htmlPath!);
+        return output;
+      };
+
+      await expect(runHtmlVideoPipeline(createRunnerInput('render-input-race'), runtime.options))
+        .rejects.toMatchObject({ code: 'HTML_VIDEO_RENDER_FAILED' });
+
+      expect(runtime.calls).toEqual([...htmlVideoVisibleSteps]);
+      expect(await readCheckpoint(workDir)).toMatchObject({
+        current: 'render',
+        steps: { render: { status: 'failed' } },
+      });
+    });
+  });
+
+  it('loads old digest-free checkpoints and conservatively reruns from assets', async () => {
+    await withTempRunner(async (workDir) => {
+      const initial = createFakeRuntime(workDir);
+      const completed = await runHtmlVideoPipeline(createRunnerInput('legacy-digest-free-checkpoint'), initial.options);
+      for (const step of htmlVideoVisibleSteps) {
+        const stepState = completed.steps[step];
+        const artifactPath = join(workDir, stepState.artifactPath!);
+        const artifact = JSON.parse(await readFile(artifactPath, 'utf8')) as Record<string, unknown>;
+        delete artifact.__storydreamFileDigests;
+        const serialized = `${JSON.stringify(artifact, null, 2)}\n`;
+        await writeFile(artifactPath, serialized, 'utf8');
+        stepState.artifactSize = Buffer.byteLength(serialized);
+        delete stepState.artifactHash;
+      }
+      await writeFile(
+        join(workDir, 'html-video-pipeline.v2.json'),
+        `${JSON.stringify(completed, null, 2)}\n`,
+        'utf8',
+      );
+
+      const resumed = createFakeRuntime(workDir);
+      await expect(runHtmlVideoPipeline(createRunnerInput('legacy-digest-free-checkpoint'), resumed.options))
+        .resolves.toMatchObject({ current: 'done' });
+      expect(resumed.calls).toEqual(['assets', 'voice', 'preview', 'render']);
     });
   });
 
@@ -687,6 +900,72 @@ describe('HTML video runner module', () => {
       expect(checkpoint.current).toBe('rewrite');
       expect(checkpoint.steps.rewrite.status).toBe('cancelled');
       expect(runtime.calls).toEqual([]);
+    });
+  });
+
+  it('preserves cancellation when its cancelled-state checkpoint callback rejects', async () => {
+    await withTempRunner(async (workDir) => {
+      const controller = new AbortController();
+      controller.abort(new DOMException('cancelled before start', 'AbortError'));
+      const runtime = createFakeRuntime(workDir);
+      runtime.options.signal = controller.signal;
+      runtime.options.onCheckpoint = async (state) => {
+        runtime.checkpoints.push(structuredClone(state));
+        if (state.steps.rewrite.status === 'cancelled') throw new Error('CANCEL_CHECKPOINT_FAILED');
+      };
+
+      await expect(runHtmlVideoPipeline(createRunnerInput('cancel-checkpoint-failure'), runtime.options)).rejects.toMatchObject({
+        name: 'AbortError',
+        cause: expect.objectContaining({ message: 'CANCEL_CHECKPOINT_FAILED' }),
+      });
+
+      expect(await readCheckpoint(workDir)).toMatchObject({
+        current: 'rewrite',
+        steps: { rewrite: { status: 'cancelled' } },
+      });
+    });
+  });
+
+  it('retains an existing cancellation cause and records checkpoint failure separately', async () => {
+    await withTempRunner(async (workDir) => {
+      const originalCause = new Error('original cancellation cause');
+      const cancellation = new DOMException('cancelled before start', 'AbortError') as DOMException & { cause?: unknown };
+      Object.defineProperty(cancellation, 'cause', { value: originalCause, configurable: true });
+      const controller = new AbortController();
+      controller.abort(cancellation);
+      const runtime = createFakeRuntime(workDir);
+      runtime.options.signal = controller.signal;
+      runtime.options.onCheckpoint = async (state) => {
+        runtime.checkpoints.push(structuredClone(state));
+        if (state.steps.rewrite.status === 'cancelled') throw new Error('SECONDARY_CHECKPOINT_FAILED');
+      };
+
+      const error = await runHtmlVideoPipeline(createRunnerInput('existing-cause'), runtime.options)
+        .then(() => null, (reason: unknown) => reason) as Error & { cause?: unknown; checkpointError?: unknown };
+
+      expect(error).toBe(cancellation);
+      expect(error.cause).toBe(originalCause);
+      expect(error.checkpointError).toMatchObject({ message: 'SECONDARY_CHECKPOINT_FAILED' });
+    });
+  });
+
+  it('retains checkpoint diagnostics when the primary cancellation error is frozen', async () => {
+    await withTempRunner(async (workDir) => {
+      const cancellation = Object.freeze(new DOMException('cancelled before start', 'AbortError'));
+      const controller = new AbortController();
+      controller.abort(cancellation);
+      const runtime = createFakeRuntime(workDir);
+      runtime.options.signal = controller.signal;
+      runtime.options.onCheckpoint = async (state) => {
+        runtime.checkpoints.push(structuredClone(state));
+        if (state.steps.rewrite.status === 'cancelled') throw new Error('FROZEN_CHECKPOINT_FAILED');
+      };
+
+      const error = await runHtmlVideoPipeline(createRunnerInput('frozen-cause'), runtime.options)
+        .then(() => null, (reason: unknown) => reason) as Error & { checkpointError?: unknown };
+
+      expect(error).toMatchObject({ name: 'AbortError', message: 'cancelled before start' });
+      expect(error.checkpointError).toMatchObject({ message: 'FROZEN_CHECKPOINT_FAILED' });
     });
   });
 
@@ -841,6 +1120,14 @@ function buildTestScenes(segments: string[]): HtmlVideoScenePlan[] {
 
 function splitTestText(text: string): string[] {
   return text.split(/\n{2,}|(?<=[。！？!?])\s*/u).map((item) => item.trim()).filter(Boolean);
+}
+
+async function replaceFileWithSameSize(path: string): Promise<void> {
+  const value = await readFile(path);
+  if (value.length === 0) throw new Error('Test file must not be empty.');
+  const replacement = Buffer.from(value);
+  replacement[0] = replacement[0] ^ 0xff;
+  await writeFile(path, replacement);
 }
 
 async function readCheckpoint(workDir: string): Promise<HtmlVideoPipelineDataV2> {

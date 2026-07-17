@@ -33,6 +33,7 @@ export const MAX_HTML_VIDEO_PATH_CHARS = 4096;
 const MAX_HTML_VIDEO_DISPLAY_LIST_ITEMS = 32;
 const MAX_HTML_VIDEO_DISPLAY_TEXT_CHARS = 1024;
 const MAX_HTML_VIDEO_CONFIG_ENTRIES = 32;
+const sha256Pattern = /^[a-f0-9]{64}$/u;
 
 export const htmlVideoVisibleSteps = [
   'rewrite',
@@ -530,6 +531,10 @@ function parseStepState(value: unknown, field: string): HtmlVideoStepState {
   if (typeof record.status !== 'string' || !stepStatuses.has(record.status as HtmlVideoStepStatus)) {
     throw invalidPipeline(`${field}.status is invalid`);
   }
+  const artifactHash = optionalBoundedString(record.artifactHash, `${field}.artifactHash`, 64);
+  if (artifactHash !== undefined && !sha256Pattern.test(artifactHash)) {
+    throw invalidPipeline(`${field}.artifactHash must be a SHA-256 digest`);
+  }
   return {
     status: record.status as HtmlVideoStepStatus,
     ...(optionalBoundedString(record.inputHash, `${field}.inputHash`, 128) === undefined ? {} : { inputHash: String(record.inputHash) }),
@@ -539,6 +544,7 @@ function parseStepState(value: unknown, field: string): HtmlVideoStepState {
       `${field}.artifactSize`,
       MAX_HTML_VIDEO_PIPELINE_FILE_BYTES,
     ) === undefined ? {} : { artifactSize: Number(record.artifactSize) }),
+    ...(artifactHash === undefined ? {} : { artifactHash }),
     ...(optionalBoundedString(record.error, `${field}.error`, MAX_HTML_VIDEO_WARNING_CHARS) === undefined ? {} : { error: String(record.error) }),
     ...(optionalNonNegativeInteger(record.startedAt, `${field}.startedAt`) === undefined ? {} : { startedAt: Number(record.startedAt) }),
     ...(optionalNonNegativeInteger(record.completedAt, `${field}.completedAt`) === undefined ? {} : { completedAt: Number(record.completedAt) }),

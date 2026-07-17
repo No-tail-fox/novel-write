@@ -377,6 +377,7 @@ export interface HtmlVideoStepState {
   inputHash?: string;
   artifactPath?: string;
   artifactSize?: number;
+  artifactHash?: string;
   error?: string;
   startedAt?: number;
   completedAt?: number;
