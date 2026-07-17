@@ -3,6 +3,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
 import { ConfigService } from '../electron/config-service';
+import { createHistoryPageStore } from '../src/features/history/history-page-store';
 import { defaultConfig, defaultPromptTemplates } from '@shared/config';
 import { createAppDeltaCoordinator, reduceAppDelta, type DeltaViewState } from '@shared/state-delta';
 import * as reconciliationModule from '@shared/state-reconciliation';
@@ -218,6 +219,23 @@ describe('app state delta coordination', () => {
       revision: 10,
     });
     expect(restoredVoice.voiceLabRecords).toEqual([]);
+  });
+
+  it('uses the App tombstone ledger to reject deleted ids from a late history page', () => {
+    const coordinator = createAppDeltaCoordinator(() => undefined);
+    coordinator.bootstrap(viewState(8));
+    coordinator.receive({ kind: 'task-tombstone', id: 'deleted-during-page-load', revision: 9 } as AppDelta);
+    const store = createHistoryPageStore<'task', { id: string }>('task');
+    const request = store.begin({ family: 'task', filter: 'archived' });
+
+    expect(store.accept(request.token, {
+      family: 'task',
+      items: [{ id: 'deleted-during-page-load' }, { id: 'safe' }],
+      totalCount: 2,
+      hasMore: false,
+      nextCursor: null,
+    }, (family, id) => coordinator.current()?.tombstoneRevisions?.[family]?.[id] !== undefined)).toBe(true);
+    expect(store.current().page?.items).toEqual([{ id: 'safe' }]);
   });
 
   it('filters known and reset-live tombstones from a newer authoritative snapshot', () => {

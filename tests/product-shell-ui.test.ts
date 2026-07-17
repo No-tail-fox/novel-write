@@ -8,6 +8,191 @@ import { readRendererSources } from './helpers/renderer-source';
 const rendererSourcesPromise = readRendererSources();
 
 describe('product shell ui', () => {
+  it('loads query-safe task history pages without creating another global delta owner', async () => {
+    const main = (await rendererSourcesPromise).requiredFile('src/main.tsx');
+    const hook = await readFile(new URL('../src/features/history/use-history-page.ts', import.meta.url), 'utf8');
+    const history = main.slice(main.indexOf('function HistoryPage'), main.indexOf('function TaskDetailPage'));
+    const bootstrap = main.slice(main.indexOf('async function loadCompleteBootstrap'), main.indexOf('type ModelListKey'));
+    const app = main.slice(main.indexOf('function App()'), main.indexOf('\nfunction ViralAnalyzerPage'));
+    const install = app.slice(app.indexOf('const installAuthoritativeSnapshot'), app.indexOf('const recoverSnapshotInstallation'));
+
+    expect(main).toContain("from './features/history/use-history-page'");
+    expect(main).toContain('isHistoryTombstoned');
+    expect(main).toContain('historyFamilyEpochs');
+    expect(main).not.toContain('historyTombstoneEpochs');
+    expect(history).toContain('familyEpoch');
+    expect(history).not.toContain('tombstoneEpoch');
+    expect(main).toContain('familyEpoch={historyFamilyEpochs.task ?? 0}');
+    expect(history).toContain('useHistoryPage');
+    expect(history).toContain('api.listTasks');
+    expect(history).toContain('historyPage.previous');
+    expect(history).toContain('historyPage.next');
+    expect(history).toContain('historyPage.reload');
+    expect(history).toContain('disabled={historyPage.loading || !historyPage.page?.nextCursor}');
+    expect(history).not.toContain('!historyPage.page || historyPage.page.nextCursor === null');
+    expect(history).not.toContain('state.tasks.filter');
+    expect(hook).toContain('store.begin(');
+    expect(hook).toContain('store.accept(');
+    expect(hook).toContain('createHistoryPageRequestController');
+    expect(hook).toContain('useLayoutEffect');
+    expect(hook).toContain('useSyncExternalStore');
+    expect(hook).toContain('useSyncExternalStore(controller.subscribe, controller.current, controller.current)');
+    expect(hook).not.toContain('forceRender');
+    expect(hook).not.toContain('controller.subscribe(()');
+    expect(hook).toContain('controller.activate(');
+    expect(hook).toContain('isTombstoned');
+    expect(hook).not.toContain('onAppDelta');
+    expect(hook).not.toContain('getBootstrap');
+    expect(hook).not.toContain('reconcileDeltas');
+    expect(hook).toContain('familyEpoch?: number');
+    expect(hook).not.toContain('tombstoneEpoch');
+    expect(install).toContain('refreshHistoryFamilies(allHistoryFamilies)');
+    expect(countOccurrences(app, 'api.onAppDelta(')).toBe(1);
+    for (const property of ['tasks', 'viralAnalyses', 'imageLabRecords', 'voiceLabRecords']) {
+      expect(bootstrap).not.toContain(`collectCursorPages(bootstrap.${property}`);
+    }
+  });
+
+  it('advances family generations for accepted history identities and snapshots', async () => {
+    const main = (await rendererSourcesPromise).requiredFile('src/main.tsx');
+    const source = main.slice(main.indexOf('type HistoryDeltaIdentity'), main.indexOf('function mergeDefaultCustomStyles'));
+    expect(source).toContain('function advanceHistoryFamilyEpochs');
+    expect(source).toContain('const allHistoryFamilies');
+    if (!source.includes('function advanceHistoryFamilyEpochs') || !source.includes('const allHistoryFamilies')) return;
+
+    const compiled = ts.transpileModule(source, {
+      compilerOptions: { module: ts.ModuleKind.None, target: ts.ScriptTarget.ES2022 },
+    }).outputText;
+    const helpers = new Function(
+      'historyEntityRevisionKey',
+      `${compiled}\nreturn { advanceHistoryFamilyEpochs, allHistoryFamilies, registerHistoryDeltaBarrier };`,
+    )((family: string, id: string) => `history:${family}:${id}`) as {
+      advanceHistoryFamilyEpochs(
+        current: Partial<Record<string, number>>,
+        families: readonly string[],
+      ): Partial<Record<string, number>>;
+      allHistoryFamilies: readonly string[];
+      registerHistoryDeltaBarrier(
+        entities: Map<string, number>,
+        tombstones: Map<string, number>,
+        delta: AppMutationResult,
+        invalidate: (family: string, id: string) => void,
+        accepted: (family: string) => void,
+      ): void;
+    };
+    const entities = new Map<string, number>();
+    const tombstones = new Map<string, number>();
+    const invalidated: string[] = [];
+    const accepted: string[] = [];
+    let epochs: Partial<Record<string, number>> = {};
+    const register = (delta: AppMutationResult) => helpers.registerHistoryDeltaBarrier(
+      entities,
+      tombstones,
+      delta,
+      (family, id) => invalidated.push(`${family}:${id}`),
+      (family) => {
+        accepted.push(family);
+        epochs = helpers.advanceHistoryFamilyEpochs(epochs, [family]);
+      },
+    );
+
+    const taskUpsert = { kind: 'task-upsert', task: { id: 'task-epoch' }, revision: 5 } as AppMutationResult;
+    register(taskUpsert);
+    expect(epochs).toEqual({ task: 1 });
+    expect(invalidated).toEqual([]);
+    const acceptedTaskEpoch = epochs;
+    register(taskUpsert);
+    register({ ...taskUpsert, revision: 4 });
+    expect(epochs).toBe(acceptedTaskEpoch);
+    expect(accepted).toEqual(['task']);
+
+    register({ kind: 'task-tombstone', id: 'task-epoch', revision: 6 } as AppMutationResult);
+    register({ kind: 'viral-upsert', record: { id: 'viral-epoch' }, revision: 7 } as AppMutationResult);
+    register({
+      kind: 'state-patch',
+      patch: { kind: 'image-lab-upsert', record: { id: 'image-epoch' } },
+      revision: 8,
+    } as AppMutationResult);
+    register({
+      kind: 'state-patch',
+      patch: { kind: 'voice-lab-upsert', record: { id: 'voice-epoch' } },
+      revision: 9,
+    } as AppMutationResult);
+    expect(epochs).toEqual({ task: 2, 'viral-analysis': 1, 'image-lab': 1, 'voice-lab': 1 });
+    expect(accepted).toEqual(['task', 'task', 'viral-analysis', 'image-lab', 'voice-lab']);
+    expect(invalidated).toEqual(['task:task-epoch']);
+
+    expect(helpers.allHistoryFamilies).toEqual(['task', 'viral-analysis', 'image-lab', 'voice-lab']);
+    const forced = helpers.advanceHistoryFamilyEpochs(epochs, helpers.allHistoryFamilies);
+    expect(forced).toEqual({ task: 3, 'viral-analysis': 2, 'image-lab': 2, 'voice-lab': 2 });
+
+    epochs = forced;
+    const beforePostSnapshotUpsert = epochs;
+    const postSnapshotUpsert = {
+      kind: 'task-upsert',
+      task: { id: 'task-after-snapshot' },
+      revision: forced.task,
+    } as AppMutationResult;
+    register(postSnapshotUpsert);
+    expect(epochs).not.toBe(beforePostSnapshotUpsert);
+    expect(epochs.task).toBeGreaterThan(beforePostSnapshotUpsert.task ?? 0);
+    const afterPostSnapshotUpsert = epochs;
+    register(postSnapshotUpsert);
+    register({ ...postSnapshotUpsert, revision: (postSnapshotUpsert.revision ?? 0) - 1 });
+    expect(epochs).toBe(afterPostSnapshotUpsert);
+  });
+
+  it('accepts a same-revision tombstone only once', async () => {
+    const main = (await rendererSourcesPromise).requiredFile('src/main.tsx');
+    const source = main.slice(main.indexOf('type HistoryDeltaIdentity'), main.indexOf('function mergeDefaultCustomStyles'));
+    const compiled = ts.transpileModule(source, {
+      compilerOptions: { module: ts.ModuleKind.None, target: ts.ScriptTarget.ES2022 },
+    }).outputText;
+    const helpers = new Function(
+      'historyEntityRevisionKey',
+      `${compiled}\nreturn { advanceHistoryFamilyEpochs, registerHistoryDeltaBarrier };`,
+    )((family: string, id: string) => `history:${family}:${id}`) as {
+      advanceHistoryFamilyEpochs(
+        current: Partial<Record<string, number>>,
+        families: readonly string[],
+      ): Partial<Record<string, number>>;
+      registerHistoryDeltaBarrier(
+        entities: Map<string, number>,
+        tombstones: Map<string, number>,
+        delta: AppMutationResult,
+        invalidate: (family: string, id: string) => void,
+        accepted: (family: string) => void,
+      ): void;
+    };
+    const entities = new Map<string, number>();
+    const tombstones = new Map<string, number>();
+    const invalidated: string[] = [];
+    let epochs: Partial<Record<string, number>> = {};
+    const register = (delta: AppMutationResult) => helpers.registerHistoryDeltaBarrier(
+      entities,
+      tombstones,
+      delta,
+      (family, id) => invalidated.push(`${family}:${id}`),
+      (family) => {
+        epochs = helpers.advanceHistoryFamilyEpochs(epochs, [family]);
+      },
+    );
+    const upsert = { kind: 'task-upsert', task: { id: 'same-revision' }, revision: 5 } as AppMutationResult;
+    const tombstone = { kind: 'task-tombstone', id: 'same-revision', revision: 5 } as AppMutationResult;
+
+    register(upsert);
+    const afterUpsert = epochs;
+    register(tombstone);
+    expect(invalidated).toEqual(['task:same-revision']);
+    const afterTombstone = epochs;
+    register(tombstone);
+
+    expect(invalidated).toEqual(['task:same-revision']);
+    expect(epochs).toBe(afterTombstone);
+    expect(afterTombstone).not.toBe(afterUpsert);
+    expect(afterTombstone.task).toBeGreaterThan(afterUpsert.task ?? 0);
+  });
+
   it('owns history tombstone revisions in App and rejects late detail responses after deletion', async () => {
     const main = (await rendererSourcesPromise).requiredFile('src/main.tsx');
     const app = main.slice(main.indexOf('function App()'), main.indexOf('\nfunction ViralAnalyzerPage'));

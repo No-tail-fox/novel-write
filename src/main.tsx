@@ -4,6 +4,8 @@ import {
   Bell,
   Bot,
   BookOpen,
+  ChevronLeft,
+  ChevronRight,
   Circle,
   Coins,
   Copy,
@@ -62,6 +64,7 @@ import type {
   DraftTextBorder,
   HistoryFamily,
   HistoryListInput,
+  HistoryListRequest,
   HistoryPage,
   ImageLabGenerateInput,
   ImageProviderProfile,
@@ -140,6 +143,7 @@ import {
   type SecretId,
 } from './shared/config-secrets';
 import type { PersonAssetImage, PersonAssetSummary } from './shared/person-assets';
+import { useHistoryPage } from './features/history/use-history-page';
 import { configTargetStatus, normalizeAppConfig, validateConfigTarget } from './shared/config-utils';
 import {
   activeImageProfileId,
@@ -514,6 +518,21 @@ function mergeDeltaView(current: AppState, deltaState: DeltaViewState): AppState
 
 type HistoryDeltaIdentity = { family: HistoryFamily; id: string; tombstone: boolean };
 type HistoryResponseRevision = { entityRevision: number; tombstoneRevision: number };
+type HistoryFamilyEpochs = Partial<Record<HistoryFamily, number>>;
+
+const allHistoryFamilies: readonly HistoryFamily[] = ['task', 'viral-analysis', 'image-lab', 'voice-lab'];
+
+function advanceHistoryFamilyEpochs(
+  current: HistoryFamilyEpochs,
+  families: readonly HistoryFamily[],
+): HistoryFamilyEpochs {
+  let next = current;
+  for (const family of families) {
+    if (next === current) next = { ...current };
+    next[family] = (current[family] ?? 0) + 1;
+  }
+  return next;
+}
 
 function historyDeltaIdentity(delta: AppDelta): HistoryDeltaIdentity | null {
   if (delta.kind === 'task-upsert') return { family: 'task', id: delta.task.id, tombstone: false };
@@ -543,7 +562,7 @@ function recordHistoryDeltaRevision(
   const entityRevision = entityRevisions.get(key) ?? -1;
   const tombstoneRevision = tombstoneRevisions.get(key) ?? -1;
   if (identity.tombstone) {
-    if (delta.revision < Math.max(entityRevision, tombstoneRevision)) return null;
+    if (delta.revision < entityRevision || delta.revision <= tombstoneRevision) return null;
     entityRevisions.delete(key);
     tombstoneRevisions.set(key, delta.revision);
     return identity;
@@ -558,9 +577,12 @@ function registerHistoryDeltaBarrier(
   tombstoneRevisions: Map<string, number>,
   delta: AppDelta,
   invalidate: (family: HistoryFamily, id: string) => void,
+  accepted?: (family: HistoryFamily) => void,
 ): void {
   const identity = recordHistoryDeltaRevision(entityRevisions, tombstoneRevisions, delta);
-  if (identity?.tombstone) invalidate(identity.family, identity.id);
+  if (!identity) return;
+  accepted?.(identity.family);
+  if (identity.tombstone) invalidate(identity.family, identity.id);
 }
 
 function replaceHistoryRevisionMap(target: Map<string, number>, ledger: HistoryRevisionLedger | undefined): void {
@@ -1563,6 +1585,7 @@ function App() {
   const [state, setState] = useState<AppState>(cloneState(initialState));
   const [activeView, setActiveView] = useState<ShellView>('new-task');
   const [selectedTaskId, setSelectedTaskId] = useState<string | null>(null);
+  const [historyFamilyEpochs, setHistoryFamilyEpochs] = useState<HistoryFamilyEpochs>({});
   const [saveTone, setSaveTone] = useState<'saved' | 'saving' | 'dirty'>('saved');
   const isBrowserPreview = !window.storydream && !window.storybound;
   const api = useMemo(() => window.storydream ?? window.storybound ?? makeFallbackApi(setState), []);
@@ -1577,6 +1600,14 @@ function App() {
   const activeViralAnalysisIdRef = useRef<string | null>(null);
   const taskDetailGuard = useMemo(() => createRequestGenerationGuard(), []);
   const viralDetailGuard = useMemo(() => createRequestGenerationGuard(), []);
+  const isHistoryTombstoned = useCallback((family: HistoryFamily, id: string) => (
+    historyTombstoneRevisionsRef.current.has(historyEntityRevisionKey(family, id))
+  ), []);
+  const refreshHistoryFamilies = useCallback((
+    families: readonly HistoryFamily[],
+  ) => {
+    setHistoryFamilyEpochs((current) => advanceHistoryFamilyEpochs(current, families));
+  }, []);
 
   const applyHistoryBarrier = useCallback((delta: AppDelta) => {
     registerHistoryDeltaBarrier(
@@ -1602,8 +1633,9 @@ function App() {
           viralDetailGuard.invalidate(id);
         }
       },
+      (family) => refreshHistoryFamilies([family]),
     );
-  }, [taskDetailGuard, viralDetailGuard]);
+  }, [refreshHistoryFamilies, taskDetailGuard, viralDetailGuard]);
 
   const refreshTaskDetail = useCallback(async (taskId: string) => {
     const generation = taskDetailGuard.begin(taskId);
@@ -1783,6 +1815,7 @@ function App() {
         );
         return replayed;
       });
+      refreshHistoryFamilies(allHistoryFamilies);
     };
     const recoverSnapshotInstallation = (snapshotRevision: number, replayedRevision: number) => {
       const buffered = takeBufferedMutationResults();
@@ -1981,7 +2014,7 @@ function App() {
       window.clearInterval(reconciliationTimer);
       unsubscribe();
     };
-  }, [api, applyHistoryBarrier, refreshTaskDetail, refreshViralEvents, shellAction.reportError]);
+  }, [api, applyHistoryBarrier, refreshHistoryFamilies, refreshTaskDetail, refreshViralEvents, shellAction.reportError]);
 
   useEffect(() => {
     if (!selectedTaskId) return;
@@ -2156,7 +2189,14 @@ function App() {
           {activeView === 'benchmark' ? <BenchmarkImportPage api={api} applyState={applyState} openTaskDetail={openTaskDetail} isBrowserPreview={isBrowserPreview} /> : null}
           {activeView === 'person-assets' ? <PersonAssetsPage api={api} isBrowserPreview={isBrowserPreview} /> : null}
           {activeView === 'queue' ? <QueuePage api={api} state={state} applyState={applyState} openNewTask={() => navigate('new-task')} openTaskDetail={openTaskDetail} isBrowserPreview={isBrowserPreview} /> : null}
-          {activeView === 'history' ? <HistoryPage api={api} state={state} openTaskDetail={openTaskDetail} /> : null}
+          {activeView === 'history' ? (
+            <HistoryPage
+              api={api}
+              openTaskDetail={openTaskDetail}
+              isTombstoned={isHistoryTombstoned}
+              familyEpoch={historyFamilyEpochs.task ?? 0}
+            />
+          ) : null}
           {activeView === 'task-detail' ? <TaskDetailPage api={api} state={state} task={selectedTask} applyState={applyState} close={() => navigate('history')} isBrowserPreview={isBrowserPreview} /> : null}
           {activeView === 'image-lab' ? <ImageLabPage api={api} state={state} applyState={applyState} /> : null}
           {activeView === 'voice-lab' ? <VoiceLabPage api={api} state={state} applyState={applyState} /> : null}
@@ -4915,11 +4955,39 @@ function QueuePage({
   );
 }
 
-function HistoryPage({ api, state, openTaskDetail }: { api: StoryDreamApi; state: AppState; openTaskDetail: (taskId: string) => void }) {
+function HistoryPage({
+  api,
+  openTaskDetail,
+  isTombstoned,
+  familyEpoch,
+}: {
+  api: StoryDreamApi;
+  openTaskDetail: (taskId: string) => void;
+  isTombstoned: (family: 'task', id: string) => boolean;
+  familyEpoch: number;
+}) {
   const [filter, setFilter] = useState<'all' | TaskStatus>('all');
   const [query, setQuery] = useState('');
   const historyAction = useAsyncAction();
-  const tasks = state.tasks.filter((task) => (filter === 'all' || task.status === filter) && `${task.title}${task.inputText}`.includes(query));
+  const request = useMemo<Extract<HistoryListRequest, { family: 'task' }>>(() => ({
+    family: 'task',
+    filter: 'active',
+    ...(filter === 'all' ? {} : { status: filter }),
+    ...(query.trim() ? { query } : {}),
+    limit: 50,
+  }), [filter, query]);
+  const loadPage = useCallback((next: Extract<HistoryListRequest, { family: 'task' }>) => {
+    const { family: _family, ...input } = next;
+    return api.listTasks(input);
+  }, [api]);
+  const historyPage = useHistoryPage<'task', TaskSummary>({
+    family: 'task',
+    request,
+    loadPage,
+    isTombstoned,
+    familyEpoch,
+  });
+  const tasks = historyPage.page?.items ?? [];
   async function openHistoryOutput(path: string) {
     await historyAction.run(() => api.openPath(path));
   }
@@ -4935,6 +5003,43 @@ function HistoryPage({ api, state, openTaskDetail }: { api: StoryDreamApi; state
         </div>
         <input className="search-input" value={query} placeholder="搜索任务" onChange={(event) => setQuery(event.target.value)} />
       </div>
+      <div className="panel-title-row">
+        <span className="subtle-copy">
+          {historyPage.page ? `${historyPage.page.totalCount} 条记录` : historyPage.loading ? '正在加载' : '暂无记录'}
+        </span>
+        <div className="chip-row" aria-label="历史分页">
+          <button
+            className="mini-button"
+            type="button"
+            title="上一页"
+            aria-label="上一页"
+            disabled={historyPage.loading || !historyPage.hasPrevious}
+            onClick={historyPage.previous}
+          >
+            <ChevronLeft size={14} />
+          </button>
+          <button
+            className="mini-button"
+            type="button"
+            title="重新加载"
+            aria-label="重新加载"
+            disabled={historyPage.loading}
+            onClick={historyPage.reload}
+          >
+            <RotateCcw size={14} />
+          </button>
+          <button
+            className="mini-button"
+            type="button"
+            title="下一页"
+            aria-label="下一页"
+            disabled={historyPage.loading || !historyPage.page?.nextCursor}
+            onClick={historyPage.next}
+          >
+            <ChevronRight size={14} />
+          </button>
+        </div>
+      </div>
       <div className="history-table">
         <div className="table-head">
           <span>任务</span>
@@ -4943,7 +5048,8 @@ function HistoryPage({ api, state, openTaskDetail }: { api: StoryDreamApi; state
           <span>创建时间</span>
           <span>输出</span>
         </div>
-        {tasks.length === 0 ? <EmptyState title="暂无历史任务" /> : null}
+        {historyPage.loading && tasks.length === 0 ? <EmptyState title="正在加载历史任务" /> : null}
+        {!historyPage.loading && tasks.length === 0 ? <EmptyState title="暂无历史任务" /> : null}
         {tasks.map((task) => (
           <div className="table-row clickable" key={task.id} role="button" tabIndex={0} onClick={() => openTaskDetail(task.id)} onKeyDown={(event) => event.key === 'Enter' && openTaskDetail(task.id)}>
             <strong>{task.title || '未命名任务'}</strong>
@@ -4956,6 +5062,7 @@ function HistoryPage({ api, state, openTaskDetail }: { api: StoryDreamApi; state
           </div>
         ))}
       </div>
+      {historyPage.error ? <div className="inline-feedback error">{historyPage.error.message}</div> : null}
       <InlineActionFeedback feedback={historyAction.feedback} />
     </section>
   );
