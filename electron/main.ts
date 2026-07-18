@@ -24,7 +24,7 @@ import { runTask } from '../src/shared/runner';
 import { runStoryboundMediaSidecar } from '../src/shared/storybound-sidecar';
 import { FileDatabase, type HistoryDeletionCleanup, type HistoryTombstone } from '../src/shared/storage';
 import { createHtmlVideoRuntimeProviders, createTaskRuntimeProviders } from '../src/shared/task-runtime-providers';
-import type { AccountProfile, ActivationState, AppConfig, AppDelta, AppDeltaReconcileRequest, AppDeltaReconcileResult, AppStatePatch, BookSelectionInput, ConfigTestTarget, CreateTaskInput, CreateViralAnalysisInput, CursorRequest, CustomStyle, CustomStyleGenerateInput, DraftTemplate, HistoryFamily, HistoryListRequest, HtmlVideoPipelineDataV2, ImageLabGenerateInput, ImageLabRecord, ImageLabSummary, LlmConfig, PromptTemplate, ProviderModelListRequest, ResearchCopyComposeInput, SequencedTaskEvent, Task, TaskStatus, TaskStepRerunMode, UiPreferences, ViralAnalysisRecord, ViralAnalysisStatus, ViralProductionTaskOptions, VolcengineSpeakerListRequest, VoiceLabGenerateInput, VoiceLabRecord, VoiceLabSummary } from '../src/shared/types';
+import type { AccountProfile, ActivationState, AppConfig, AppDelta, AppDeltaReconcileRequest, AppDeltaReconcileResult, AppStatePatch, BookSelectionInput, ConfigTestTarget, CreateTaskInput, CreateViralAnalysisInput, CursorRequest, CustomStyle, CustomStyleGenerateInput, DraftTemplate, HistoryFamily, HistoryListRequest, HtmlVideoConfigChange, HtmlVideoPipelineDataV2, ImageLabGenerateInput, ImageLabRecord, ImageLabSummary, LlmConfig, PromptTemplate, ProviderModelListRequest, ResearchCopyComposeInput, SequencedTaskEvent, Task, TaskStatus, TaskStepRerunMode, UiPreferences, ViralAnalysisRecord, ViralAnalysisStatus, ViralProductionTaskOptions, VolcengineSpeakerListRequest, VoiceLabGenerateInput, VoiceLabRecord, VoiceLabSummary } from '../src/shared/types';
 import { createViralProductionTaskInput, detectViralPlatform, runViralAnalysis } from '../src/shared/viral-analysis';
 import { createViralRuntimeProviders } from '../src/shared/viral-runtime';
 import { listVolcengineSpeakers } from '../src/shared/volcengine-speakers';
@@ -1415,6 +1415,12 @@ trustedHandle('html-video:create-task', async (_event, input: CreateTaskInput) =
     if (!reservationTransferred) activityReservation.release();
   }
 });
+
+trustedHandle('html-video:update-config', (_event, input: { id: string; changes: HtmlVideoConfigChange[] }) =>
+  runHistoryGovernanceMutation('task', input.id, async (database) => {
+    const result = await database.updateHtmlVideoTaskConfig(input.id, input.changes);
+    return await enqueueAppDelta(() => ({ kind: 'task-upsert', task: result.task }));
+  }));
 
 trustedHandle('html-video:open-preview', async (_event, input: { id: string; sceneIndex?: number }) => {
   const database = await getDb();

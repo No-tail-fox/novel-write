@@ -4,6 +4,8 @@ import type {
   CreateTaskInput,
   HtmlVideoAsset,
   HtmlVideoCompositionSnapshot,
+  HtmlVideoConfigChange,
+  HtmlVideoEditableConfigField,
   HtmlVideoJobConfig,
   HtmlVideoOutput,
   HtmlVideoPipelineData,
@@ -18,6 +20,10 @@ import type {
   Task,
   TaskStatus,
 } from './types';
+import {
+  HTML_VIDEO_CONTROL_MANIFEST_V1,
+  HTML_VIDEO_EDITABLE_CONTROL_FIELDS,
+} from './html-video-control-manifest';
 import {
   htmlVideoAspectRatioOrDefault,
   createHtmlVideoJobConfig,
@@ -299,6 +305,103 @@ export function createHtmlVideoTaskInput(input: { copy: string } & HtmlVideoJobC
     coverTemplateId: config.coverTemplate,
     htmlVideoForeground: config.foreground,
   };
+}
+
+export interface HtmlVideoConfigChangeResult {
+  pipeline: HtmlVideoPipelineDataV2;
+  changedFields: HtmlVideoEditableConfigField[];
+  invalidateFrom: HtmlVideoVisibleStep;
+  legacyMirrors: Partial<Pick<
+    Task,
+    | 'style'
+    | 'speaker'
+    | 'ttsProvider'
+    | 'ttsSpeed'
+    | 'bgmId'
+    | 'htmlVideoForeground'
+    | 'targetScenes'
+    | 'storyboardSceneCount'
+    | 'ratio'
+  >>;
+}
+
+export function applyHtmlVideoConfigChanges(
+  value: HtmlVideoPipelineDataV2,
+  changes: readonly HtmlVideoConfigChange[],
+): HtmlVideoConfigChangeResult {
+  if (changes.length < 1 || changes.length > HTML_VIDEO_EDITABLE_CONTROL_FIELDS.length) {
+    throw new AppError('HTML_VIDEO_CONFIG_PATCH_INVALID', 'HTML 视频配置更新必须包含 1 到 10 个字段。');
+  }
+
+  const pipeline = parseHtmlVideoPipelineData(JSON.stringify(value));
+  const seen = new Set<string>();
+  const configChanges: HtmlVideoJobConfig = {};
+  const changedFields: HtmlVideoEditableConfigField[] = [];
+  for (const change of changes as ReadonlyArray<{ field: string; value: unknown }>) {
+    if (seen.has(change.field)) {
+      throw new AppError('HTML_VIDEO_CONFIG_PATCH_DUPLICATE', `HTML 视频配置字段重复：${change.field}`);
+    }
+    seen.add(change.field);
+    if (!HTML_VIDEO_EDITABLE_CONTROL_FIELDS.includes(change.field as HtmlVideoEditableConfigField)
+      || HTML_VIDEO_CONTROL_MANIFEST_V1[change.field as keyof typeof HTML_VIDEO_CONTROL_MANIFEST_V1]?.availability !== 'editable') {
+      throw new AppError('HTML_VIDEO_CONFIG_READ_ONLY', `HTML 视频配置字段不可编辑：${change.field}`);
+    }
+    const parsed = preserveHtmlVideoJobConfig({ [change.field]: change.value });
+    Object.assign(configChanges, parsed);
+    if (pipeline.config[change.field as keyof HtmlVideoJobConfig] !== parsed[change.field as keyof HtmlVideoJobConfig]) {
+      changedFields.push(change.field as HtmlVideoEditableConfigField);
+    }
+  }
+  if (changedFields.length === 0) {
+    throw new AppError('HTML_VIDEO_CONFIG_UNCHANGED', 'HTML 视频配置没有发生变化。');
+  }
+
+  const invalidateFrom = changedFields.reduce<HtmlVideoVisibleStep>((earliest, field) => {
+    const candidate = HTML_VIDEO_CONTROL_MANIFEST_V1[field].invalidateFrom;
+    if (!candidate) throw new AppError('HTML_VIDEO_CONFIG_READ_ONLY', `HTML 视频配置字段不可编辑：${field}`);
+    return htmlVideoVisibleSteps.indexOf(candidate) < htmlVideoVisibleSteps.indexOf(earliest)
+      ? candidate
+      : earliest;
+  }, HTML_VIDEO_CONTROL_MANIFEST_V1[changedFields[0]].invalidateFrom as HtmlVideoVisibleStep);
+  const invalidated = invalidateHtmlVideoPipeline(pipeline, invalidateFrom);
+  invalidated.config = { ...invalidated.config, ...configChanges };
+  invalidated.revision = pipeline.revision + 1;
+  delete invalidated.configSnapshotHash;
+
+  const legacyMirrors: HtmlVideoConfigChangeResult['legacyMirrors'] = {};
+  for (const field of changedFields) {
+    const nextValue = invalidated.config[field];
+    if (field === 'style') legacyMirrors.style = String(nextValue);
+    else if (field === 'voiceId') legacyMirrors.speaker = String(nextValue);
+    else if (field === 'ttsProvider') legacyMirrors.ttsProvider = nextValue as Task['ttsProvider'];
+    else if (field === 'ttsSpeed') legacyMirrors.ttsSpeed = Number(nextValue);
+    else if (field === 'bgmId') legacyMirrors.bgmId = String(nextValue);
+    else if (field === 'foreground') legacyMirrors.htmlVideoForeground = Boolean(nextValue);
+    else if (field === 'maxScenes') {
+      legacyMirrors.targetScenes = Number(nextValue);
+      legacyMirrors.storyboardSceneCount = Number(nextValue);
+    } else if (field === 'ratio') legacyMirrors.ratio = String(nextValue);
+  }
+
+  return { pipeline: invalidated, changedFields, invalidateFrom, legacyMirrors };
+}
+
+export function invalidateHtmlVideoPipeline(
+  value: HtmlVideoPipelineDataV2,
+  fromStep: HtmlVideoVisibleStep,
+): HtmlVideoPipelineDataV2 {
+  const state = parseHtmlVideoPipelineData(JSON.stringify(value));
+  const fromIndex = htmlVideoVisibleSteps.indexOf(fromStep);
+  if (fromIndex < 0) throw new AppError('HTML_VIDEO_STEP_INVALID', 'HTML video rerun step is invalid.');
+
+  for (const step of htmlVideoVisibleSteps.slice(fromIndex)) state.steps[step] = { status: 'pending' };
+  if (fromIndex <= htmlVideoVisibleSteps.indexOf('planning')) state.scenes = [];
+  if (fromIndex <= htmlVideoVisibleSteps.indexOf('assets')) state.assets = [];
+  if (fromIndex <= htmlVideoVisibleSteps.indexOf('voice')) state.voices = [];
+  if (fromIndex <= htmlVideoVisibleSteps.indexOf('preview')) state.compositions = [];
+  if (fromIndex <= htmlVideoVisibleSteps.indexOf('render')) delete state.output;
+  state.current = fromStep;
+  return state;
 }
 
 export function isHtmlVideoTask(task: Pick<Task, 'taskType'>): boolean {

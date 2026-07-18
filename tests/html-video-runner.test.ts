@@ -16,6 +16,7 @@ import {
   MAX_HTML_VIDEO_SOURCE_CHARS,
   MAX_HTML_VIDEO_SCENES,
   MAX_HTML_VIDEO_WARNINGS,
+  applyHtmlVideoConfigChanges,
   createHtmlVideoPipelineData,
   htmlVideoVisibleSteps,
   parseHtmlVideoPipelineData,
@@ -1104,6 +1105,48 @@ describe('HTML video runner module', () => {
       expect(result.config).toMatchObject({ foreground: false, style: 'recovered-style' });
       expect(result.scenes.some((scene) => scene.narration === '旧快照。')).toBe(false);
       expect(result.assets.some((asset) => asset.kind === 'fg')).toBe(false);
+    });
+  });
+
+  it('prefers a newer canonical database revision over an older valid disk checkpoint', async () => {
+    await withTempRunner(async (workDir) => {
+      const initial = createFakeRuntime(workDir);
+      const completed = await runHtmlVideoPipeline(createRunnerInput('database-config-revision'), initial.options);
+      const authoritative = applyHtmlVideoConfigChanges(completed, [
+        { field: 'style', value: 'database-authoritative-style' },
+      ]).pipeline;
+      expect(authoritative.revision).toBeGreaterThan(completed.revision);
+
+      const resumed = createFakeRuntime(workDir);
+      const result = await runHtmlVideoPipeline({
+        ...createRunnerInput('database-config-revision'),
+        state: authoritative,
+      }, resumed.options);
+
+      expect(result.config.style).toBe('database-authoritative-style');
+      expect(resumed.calls).toEqual(['assets', 'voice', 'preview', 'render']);
+    });
+  });
+
+  it('prefers canonical database config when disk and database revisions are equal but divergent', async () => {
+    await withTempRunner(async (workDir) => {
+      const initial = createFakeRuntime(workDir);
+      const completed = await runHtmlVideoPipeline(createRunnerInput('equal-config-revision'), initial.options);
+      const authoritative = applyHtmlVideoConfigChanges(completed, [
+        { field: 'style', value: 'equal-revision-database-style' },
+      ]).pipeline;
+      const staleDisk = structuredClone(completed);
+      staleDisk.revision = authoritative.revision;
+      await writeFile(join(workDir, 'html-video-pipeline.v2.json'), JSON.stringify(staleDisk), 'utf8');
+
+      const resumed = createFakeRuntime(workDir);
+      const result = await runHtmlVideoPipeline({
+        ...createRunnerInput('equal-config-revision'),
+        state: authoritative,
+      }, resumed.options);
+
+      expect(result.config.style).toBe('equal-revision-database-style');
+      expect(resumed.calls).toEqual(['assets', 'voice', 'preview', 'render']);
     });
   });
 

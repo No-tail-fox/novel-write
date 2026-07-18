@@ -640,6 +640,34 @@ h2 {
   white-space: nowrap;
 }
 
+.hv-config-editor {
+  min-width: 0;
+  margin-top: 12px;
+  border-top: 1px solid var(--line);
+  padding-top: 12px;
+}
+
+.hv-config-editor h4 {
+  margin: 0;
+  font-size: 14px;
+}
+
+.hv-config-editor-grid {
+  width: 100%;
+  min-width: 0;
+  margin: 0;
+  border: 0;
+  padding: 12px 0 0;
+}
+
+.hv-config-editor-grid > div {
+  min-width: 0;
+}
+
+.hv-config-editor-grid .field {
+  margin-bottom: 0;
+}
+
 .hv-main {
   display: grid;
   grid-template-columns: 220px minmax(0, 1fr);
@@ -1001,6 +1029,10 @@ h2 {
 
   .hv-run-controls {
     justify-content: flex-start;
+  }
+
+  .hv-config-editor-grid {
+    grid-template-columns: 1fr;
   }
 }
 

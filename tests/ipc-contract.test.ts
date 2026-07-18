@@ -88,6 +88,36 @@ describe('IPC runtime contract', () => {
       storyboardSceneCount: 30,
     })).toMatchObject({ targetScenes: 30, storyboardSceneCount: 30 });
 
+    const htmlVideoUpdateSchema = contract.ipcInputSchemas['html-video:update-config'];
+    expect(htmlVideoUpdateSchema.parse({
+      id: 'html-task-1',
+      changes: [
+        { field: 'ttsProvider', value: 'minimax' },
+        { field: 'ttsSpeed', value: 1.25 },
+        { field: 'bgmVolume', value: 'medium' },
+        { field: 'transitionType', value: 'dissolve' },
+        { field: 'ratio', value: '4:3' },
+      ],
+    })).toMatchObject({ id: 'html-task-1' });
+    for (const invalidChange of [
+      { field: 'captionPreset', value: 'karaoke' },
+      { field: 'coverImageMode', value: 'off' },
+      { field: 'draftTemplate', value: 'draft-1' },
+      { field: 'ttsProvider', value: 'unknown-provider' },
+      { field: 'ttsSpeed', value: 10.01 },
+      { field: 'bgmVolume', value: 'silent' },
+      { field: 'transitionType', value: 'unknown-transition' },
+      { field: 'ratio', value: '3:2' },
+      { field: 'unknownField', value: true },
+    ]) {
+      expect(() => htmlVideoUpdateSchema.parse({ id: 'html-task-1', changes: [invalidChange] })).toThrow();
+    }
+    expect(() => htmlVideoUpdateSchema.parse({ id: 'html-task-1', changes: [] })).toThrow();
+    expect(() => htmlVideoUpdateSchema.parse({
+      id: 'html-task-1',
+      changes: [{ field: 'style', value: 'a' }, { field: 'style', value: 'b' }],
+    })).toThrow();
+
     expect(contract.createTaskSchema.parse({
       inputText: 'hello',
       targetScenes: 500,

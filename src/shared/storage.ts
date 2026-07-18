@@ -20,6 +20,7 @@ import type {
   HistoryFamily,
   HistoryListInput,
   HistoryPage,
+  HtmlVideoConfigChange,
   ImageLabRecord,
   ImageLabSummary,
   MinimaxCloneVoice,
@@ -39,6 +40,7 @@ import type {
   VoiceLabRecord,
   VoiceLabSummary,
 } from './types';
+import { applyHtmlVideoConfigChanges, htmlVideoVisibleSteps, parseHtmlVideoPipelineData } from './html-video-workflow';
 import { normalizeAppConfig } from './config-utils';
 import { stripConfigSecrets } from './config-secrets';
 import { normalizeStoryboardSceneCount } from './content-metrics';
@@ -73,6 +75,12 @@ interface AddViralEventInput {
   detail: string;
   dataJson?: string | null;
   ts?: number;
+}
+
+export interface HtmlVideoTaskConfigMutationResult {
+  task: TaskSummary;
+  event: SequencedTaskEvent;
+  changedFields: HtmlVideoConfigChange['field'][];
 }
 
 interface HistorySqlFilter {
@@ -2252,6 +2260,104 @@ export class FileDatabase {
     await this.enqueueCommit(() => {
       this.assertHistoryWritable('task', id);
       if (sets.length > 0) this.db.run(`UPDATE tasks SET ${sets.join(', ')} WHERE id = ?`, values);
+    });
+  }
+
+  async updateHtmlVideoTaskConfig(
+    id: string,
+    changes: readonly HtmlVideoConfigChange[],
+  ): Promise<HtmlVideoTaskConfigMutationResult> {
+    return this.enqueueCommit(() => {
+      this.assertHistoryWritable('task', id);
+      const row = getFirstRow<Record<string, unknown>>(this.db, 'SELECT * FROM tasks WHERE id = ?', [id]);
+      if (!row) throw new Error(`HTML_VIDEO_TASK_NOT_FOUND: ${id}`);
+      const task = rowToTask(row);
+      if (task.taskType !== 'html-video') {
+        throw new Error(`HTML_VIDEO_TASK_INVALID: ${id} is not an HTML video task.`);
+      }
+      if (task.status === 'pending' || task.status === 'running') {
+        throw new Error(`HTML_VIDEO_CONFIG_ACTIVE: ${id} is ${task.status} and cannot be edited.`);
+      }
+
+      const applied = applyHtmlVideoConfigChanges(
+        parseHtmlVideoPipelineData(task.pipelineData),
+        changes,
+      );
+      const currentStep = htmlVideoVisibleSteps.indexOf(applied.invalidateFrom);
+      const now = new Date().toISOString();
+      const nextTask: Task = {
+        ...task,
+        ...applied.legacyMirrors,
+        status: 'paused',
+        currentStep,
+        pipelineStep: applied.invalidateFrom,
+        pipelineData: JSON.stringify(applied.pipeline),
+        errorMessage: '',
+        completedAt: null,
+        failedStep: null,
+        retryFromStep: null,
+        lastHeartbeatAt: now,
+      };
+      this.db.run(
+        `UPDATE tasks SET
+          status = ?, current_step = ?, pipeline_step = ?, pipeline_data = ?, error_message = ?, completed_at = ?,
+          failed_step = ?, retry_from_step = ?, last_heartbeat_at = ?, style = ?, speaker = ?, tts_provider = ?,
+          tts_speed = ?, bgm_id = ?, html_video_foreground = ?, target_scenes = ?, storyboard_scene_count = ?, ratio = ?
+         WHERE id = ?`,
+        [
+          nextTask.status,
+          nextTask.currentStep,
+          nextTask.pipelineStep ?? 'rewrite',
+          nextTask.pipelineData ?? '{}',
+          nextTask.errorMessage,
+          nextTask.completedAt,
+          nextTask.failedStep,
+          nextTask.retryFromStep,
+          nextTask.lastHeartbeatAt,
+          nextTask.style,
+          nextTask.speaker,
+          nextTask.ttsProvider,
+          nextTask.ttsSpeed,
+          nextTask.bgmId,
+          nextTask.htmlVideoForeground === undefined ? null : nextTask.htmlVideoForeground ? 1 : 0,
+          nextTask.targetScenes ?? null,
+          nextTask.storyboardSceneCount ?? null,
+          nextTask.ratio,
+          id,
+        ],
+      );
+
+      const event: TaskEvent = {
+        taskId: id,
+        type: 'config_update',
+        step: currentStep,
+        agent: 'HTML Video',
+        tool: null,
+        detail: `已更新 HTML 视频参数，从${applied.invalidateFrom}阶段继续。`,
+        dataJson: JSON.stringify({
+          changedFields: applied.changedFields,
+          invalidateFrom: applied.invalidateFrom,
+        }),
+        ts: Date.now(),
+      };
+      this.db.run(
+        `INSERT INTO task_events (task_id, type, step, agent, tool, detail, data_json, ts)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+        [event.taskId, event.type, event.step, event.agent, event.tool, event.detail, event.dataJson, event.ts],
+      );
+      const seq = getFirstRow<{ seq: number }>(this.db, 'SELECT last_insert_rowid() AS seq')?.seq;
+      if (!Number.isSafeInteger(seq)) throw new Error('TASK_EVENT_SEQUENCE_MISSING: Event was not assigned a sequence.');
+      const updatedRow = getFirstRow<Record<string, unknown>>(
+        this.db,
+        `SELECT ${taskSummaryColumns} FROM tasks WHERE id = ?`,
+        [id],
+      );
+      if (!updatedRow) throw new Error(`HTML_VIDEO_TASK_NOT_FOUND: ${id}`);
+      return {
+        task: rowToTaskSummary(updatedRow),
+        event: { ...event, seq: Number(seq) },
+        changedFields: [...applied.changedFields],
+      };
     });
   }
 

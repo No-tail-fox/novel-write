@@ -15,6 +15,7 @@ import {
   MAX_HTML_VIDEO_PIPELINE_FILE_BYTES,
   MAX_HTML_VIDEO_PIPELINE_JSON_CHARS,
   htmlVideoVisibleSteps,
+  invalidateHtmlVideoPipeline,
   parseHtmlVideoPipelineData,
   planHtmlVideoScenes,
   validateHtmlVideoAssets,
@@ -22,6 +23,7 @@ import {
   validateHtmlVideoScenePlans,
   validateHtmlVideoVoices,
 } from './html-video-workflow';
+export { invalidateHtmlVideoPipeline } from './html-video-workflow';
 import type {
   HtmlVideoAsset,
   HtmlVideoCompositionSnapshot,
@@ -179,26 +181,6 @@ export async function runHtmlVideoPipeline(
   } finally {
     activeHtmlVideoTasks.delete(taskId);
   }
-}
-
-export function invalidateHtmlVideoPipeline(
-  value: HtmlVideoPipelineDataV2,
-  fromStep: HtmlVideoVisibleStep,
-): HtmlVideoPipelineDataV2 {
-  const state = cloneValidatedState(value);
-  const fromIndex = htmlVideoVisibleSteps.indexOf(fromStep);
-  if (fromIndex < 0) throw new AppError('HTML_VIDEO_STEP_INVALID', 'HTML video rerun step is invalid.');
-
-  for (const step of htmlVideoVisibleSteps.slice(fromIndex)) {
-    state.steps[step] = { status: 'pending' };
-  }
-  if (fromIndex <= htmlVideoVisibleSteps.indexOf('planning')) state.scenes = [];
-  if (fromIndex <= htmlVideoVisibleSteps.indexOf('assets')) state.assets = [];
-  if (fromIndex <= htmlVideoVisibleSteps.indexOf('voice')) state.voices = [];
-  if (fromIndex <= htmlVideoVisibleSteps.indexOf('preview')) state.compositions = [];
-  if (fromIndex <= htmlVideoVisibleSteps.indexOf('render')) delete state.output;
-  state.current = fromStep;
-  return state;
 }
 
 export async function synchronizeHtmlVideoPipelineCheckpoint(
@@ -647,7 +629,8 @@ async function loadCheckpoint(workDir: string, fallback: HtmlVideoPipelineDataV2
     throw error;
   }
   try {
-    return cloneValidatedState(parseHtmlVideoPipelineData(value));
+    const checkpoint = cloneValidatedState(parseHtmlVideoPipelineData(value));
+    return checkpoint.revision > fallback.revision ? checkpoint : cloneValidatedState(fallback);
   } catch {
     return recoveredCheckpoint(fallback);
   }

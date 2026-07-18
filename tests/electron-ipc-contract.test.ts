@@ -879,6 +879,11 @@ describe('electron ipc contract', () => {
     const renderer = await readFile(new URL('../electron/html-video-renderer.ts', import.meta.url), 'utf8');
 
     expect(main).toContain("trustedHandle('html-video:create-task'");
+    const configUpdate = handlerSource(main, 'html-video:update-config');
+    expect(configUpdate).toContain("runHistoryGovernanceMutation('task', input.id");
+    expect(configUpdate).toContain('database.updateHtmlVideoTaskConfig(input.id, input.changes)');
+    expect(configUpdate).toContain("kind: 'task-upsert'");
+    expect(configUpdate).not.toContain('publishTaskEvent');
     expect(main).toContain('createElectronHtmlVideoRuntime');
     expect(main).toContain('runHtmlVideoPipeline');
     expect(main).toContain('startHtmlVideoTaskRun');
@@ -887,9 +892,11 @@ describe('electron ipc contract', () => {
     expect(renderer).toContain('capturePage');
     expect(renderer).toContain('frame_%04d.jpg');
     expect(preload).toContain('createHtmlVideoTask');
+    expect(preload).toContain("invokeTrusted('html-video:update-config', { id, changes })");
     expect(preload).toContain('openHtmlVideoPreview');
     expect(preload).toContain('getHtmlVideoMediaUrl');
     expect(apiContract).toContain('createHtmlVideoTask: (input: CreateTaskInput) => Promise<AppMutationResult | null>');
+    expect(apiContract).toContain('updateHtmlVideoConfig: (id: string, changes: HtmlVideoConfigChange[]) => Promise<AppMutationResult | null>');
     expect(apiContract).toContain('openHtmlVideoPreview: (id: string, sceneIndex?: number) => Promise<void>');
     expect(apiContract).toContain('getHtmlVideoMediaUrl: (id: string, path: string) => Promise<string>');
     expect(preload).not.toContain('eval_in_window');

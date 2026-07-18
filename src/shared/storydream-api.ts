@@ -21,6 +21,7 @@ import type {
   DraftTemplate,
   DraftTemplateSummary,
   HistoryPage,
+  HtmlVideoConfigChange,
   HistoryListInput,
   ImageLabGenerateInput,
   ImageLabRecord,
@@ -117,6 +118,7 @@ export const INVOKE_CHANNELS = Object.freeze([
   'person-assets:list-images',
   'person-assets:open-directory',
   'html-video:create-task',
+  'html-video:update-config',
   'html-video:open-preview',
   'html-video:media-url',
   'task:create-and-run',
@@ -209,6 +211,7 @@ export type StoryDreamApi = {
   saveActivation: (activation: ActivationState) => Promise<AppMutationResult | null>;
   saveUiPreferences: (ui: UiPreferences) => Promise<AppMutationResult | null>;
   createHtmlVideoTask: (input: CreateTaskInput) => Promise<AppMutationResult | null>;
+  updateHtmlVideoConfig: (id: string, changes: HtmlVideoConfigChange[]) => Promise<AppMutationResult | null>;
   openHtmlVideoPreview: (id: string, sceneIndex?: number) => Promise<void>;
   getHtmlVideoMediaUrl: (id: string, path: string) => Promise<string>;
   createAndRunTask: (input: CreateTaskInput) => Promise<AppMutationResult | null>;

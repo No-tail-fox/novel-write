@@ -467,6 +467,30 @@ export interface HtmlVideoJobConfig {
   ratio?: string;
 }
 
+export type HtmlVideoEditableConfigField =
+  | 'style'
+  | 'voiceId'
+  | 'ttsProvider'
+  | 'ttsSpeed'
+  | 'bgmId'
+  | 'bgmVolume'
+  | 'transitionType'
+  | 'foreground'
+  | 'maxScenes'
+  | 'ratio';
+
+export type HtmlVideoConfigChange =
+  | { field: 'style'; value: string }
+  | { field: 'voiceId'; value: string }
+  | { field: 'ttsProvider'; value: TtsProvider }
+  | { field: 'ttsSpeed'; value: number }
+  | { field: 'bgmId'; value: string }
+  | { field: 'bgmVolume'; value: 'soft' | 'medium' | 'loud' }
+  | { field: 'transitionType'; value: 'fade' | 'dissolve' | 'wipeleft' | 'wiperight' | 'slideleft' | 'slideright' }
+  | { field: 'foreground'; value: boolean }
+  | { field: 'maxScenes'; value: number }
+  | { field: 'ratio'; value: '9:16' | '16:9' | '1:1' | '4:3' };
+
 export interface HtmlVideoPipelineDataV2 {
   version: 2;
   revision: number;

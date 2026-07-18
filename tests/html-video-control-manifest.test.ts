@@ -14,13 +14,14 @@ import {
   HTML_VIDEO_CONTROL_MANIFEST_VERSION,
 } from '@shared/html-video-control-manifest';
 import {
+  applyHtmlVideoConfigChanges,
   createHtmlVideoPipelineData,
   createHtmlVideoTaskInput,
   parseHtmlVideoPipelineData,
   tabForHtmlVideoStep,
   taskProgressLabel,
 } from '@shared/html-video-workflow';
-import type { HtmlVideoJobConfig, HtmlVideoVisibleStep } from '@shared/types';
+import type { HtmlVideoConfigChange, HtmlVideoJobConfig, HtmlVideoVisibleStep } from '@shared/types';
 
 const APPROVED_HTML_VIDEO_FIELDS = [
   'style',
@@ -321,5 +322,52 @@ describe('HTML video control manifest', () => {
     expect(tabForHtmlVideoStep('cover')).toBe('text');
     expect(taskProgressLabel({ taskType: 'html-video', currentStep: 4 })).toBe('4/6');
     expect(taskProgressLabel({ taskType: 'standard', currentStep: 4 })).toBe('4/7');
+  });
+
+  it('applies only consumer-backed config changes and invalidates from the earliest declared stage', () => {
+    const pipeline = createHtmlVideoPipelineData('Task 16 config mutation');
+    pipeline.current = 'done';
+    for (const step of Object.keys(pipeline.steps) as HtmlVideoVisibleStep[]) {
+      pipeline.steps[step] = {
+        status: 'completed',
+        inputHash: `${step}-input`,
+        artifactPath: `steps/${step}.json`,
+        artifactSize: 10,
+      };
+    }
+    pipeline.output = { path: 'final.mp4', sizeBytes: 100 };
+
+    const result = applyHtmlVideoConfigChanges(pipeline, [
+      { field: 'transitionType', value: 'dissolve' },
+      { field: 'style', value: 'ink-editorial' },
+    ]);
+
+    expect(result.changedFields).toEqual(['transitionType', 'style']);
+    expect(result.invalidateFrom).toBe('assets');
+    expect(result.pipeline.config).toMatchObject({ transitionType: 'dissolve', style: 'ink-editorial' });
+    expect(result.pipeline.steps.rewrite).toEqual(pipeline.steps.rewrite);
+    expect(result.pipeline.steps.planning).toEqual(pipeline.steps.planning);
+    expect(result.pipeline.steps.assets).toEqual({ status: 'pending' });
+    expect(result.pipeline.steps.render).toEqual({ status: 'pending' });
+    expect(result.pipeline.scenes).toEqual(pipeline.scenes);
+    expect(result.pipeline).not.toHaveProperty('output');
+    expect(result.pipeline.revision).toBe(pipeline.revision + 1);
+    expect(result.pipeline).not.toHaveProperty('configSnapshotHash');
+  });
+
+  it('rejects read-only-compatible, duplicate, empty, and invalid config changes without mutating the pipeline', () => {
+    const pipeline = createHtmlVideoPipelineData('immutable rejection');
+    const before = JSON.stringify(pipeline);
+    for (const changes of [
+      [{ field: 'captionPreset', value: 'karaoke' }],
+      [{ field: 'coverRatio', value: '1:1' }],
+      [{ field: 'draftTemplate', value: 'draft-1' }],
+      [{ field: 'ratio', value: '9:16' }, { field: 'ratio', value: '1:1' }],
+      [],
+      [{ field: 'ttsSpeed', value: Number.POSITIVE_INFINITY }],
+    ] as unknown as HtmlVideoConfigChange[][]) {
+      expect(() => applyHtmlVideoConfigChanges(pipeline, changes)).toThrow();
+      expect(JSON.stringify(pipeline)).toBe(before);
+    }
   });
 });

@@ -2,9 +2,12 @@ import { z } from 'zod';
 import type { AppConfig, DraftTemplate, ImageLabRecord } from './types';
 import { isSecretId, type SaveConfigInput } from './config-secrets';
 import {
+  HTML_VIDEO_BGM_VOLUMES,
+  HTML_VIDEO_RATIOS,
   HTML_VIDEO_TTS_PROVIDERS,
   HTML_VIDEO_TTS_SPEED_MAX,
   HTML_VIDEO_TTS_SPEED_MIN,
+  HTML_VIDEO_TRANSITIONS,
 } from './html-video-config';
 import {
   MAX_HTML_VIDEO_SCENES,
@@ -225,6 +228,33 @@ const htmlVideoMediaSchema = z
     path: pathSchema,
   })
   .strict();
+
+const htmlVideoConfigChangeSchema = z.discriminatedUnion('field', [
+  z.object({ field: z.literal('style'), value: z.string().max(1024) }).strict(),
+  z.object({ field: z.literal('voiceId'), value: z.string().max(1024) }).strict(),
+  z.object({ field: z.literal('ttsProvider'), value: z.enum(HTML_VIDEO_TTS_PROVIDERS) }).strict(),
+  z.object({ field: z.literal('ttsSpeed'), value: finiteNumber.min(HTML_VIDEO_TTS_SPEED_MIN).max(HTML_VIDEO_TTS_SPEED_MAX) }).strict(),
+  z.object({ field: z.literal('bgmId'), value: z.string().max(1024) }).strict(),
+  z.object({ field: z.literal('bgmVolume'), value: z.enum(HTML_VIDEO_BGM_VOLUMES) }).strict(),
+  z.object({ field: z.literal('transitionType'), value: z.enum(HTML_VIDEO_TRANSITIONS) }).strict(),
+  z.object({ field: z.literal('foreground'), value: z.boolean() }).strict(),
+  z.object({ field: z.literal('maxScenes'), value: nonNegativeInteger.min(1).max(MAX_HTML_VIDEO_SCENES) }).strict(),
+  z.object({ field: z.literal('ratio'), value: z.enum(HTML_VIDEO_RATIOS) }).strict(),
+]);
+
+export const htmlVideoConfigUpdateSchema = bounded(z
+  .object({
+    id: governanceIdSchema,
+    changes: z.array(htmlVideoConfigChangeSchema).min(1).max(10),
+  })
+  .strict()
+  .superRefine((input, ctx) => {
+    const seen = new Set<string>();
+    input.changes.forEach((change, index) => {
+      if (seen.has(change.field)) addBoundedIssue(ctx, `Duplicate HTML video config field: ${change.field}.`, ['changes', index, 'field']);
+      seen.add(change.field);
+    });
+  }));
 
 export const sceneActionSchema = z.object({ id: idSchema, sceneId: nonNegativeInteger }).strict();
 export const taskStatusSchema = z.object({ id: idSchema, status: taskStatusValueSchema }).strict();
@@ -575,6 +605,7 @@ export const ipcInputSchemas = {
   'person-assets:import-images': nameSchema,
   'person-assets:open-directory': nameSchema,
   'html-video:create-task': htmlVideoCreateTaskSchema,
+  'html-video:update-config': htmlVideoConfigUpdateSchema,
   'html-video:open-preview': htmlVideoPreviewSchema,
   'html-video:media-url': htmlVideoMediaSchema,
   'task:create-and-run': createTaskSchema,

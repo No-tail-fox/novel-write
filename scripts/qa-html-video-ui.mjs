@@ -16,6 +16,8 @@ const stdout = [];
 const runtimeErrors = [];
 const networkRequests = [];
 const networkResponses = [];
+const htmlVideoEditableFields = ['style', 'voiceId', 'ttsProvider', 'ttsSpeed', 'bgmId', 'bgmVolume', 'transitionType', 'foreground', 'maxScenes', 'ratio'];
+const htmlVideoReadOnlyFields = ['captionPreset', 'captionAnim', 'captionColors', 'coverImageMode', 'coverTemplate', 'coverRatio', 'draftTemplate'];
 let child;
 let cdp;
 let ffmpegPath;
@@ -127,6 +129,17 @@ try {
     20_000,
     'primary completed task',
   );
+  const configControls = await inspectConfigControls(cdp);
+  const expectedEditableFields = [...htmlVideoEditableFields].sort();
+  if (JSON.stringify(configControls.createFields) !== JSON.stringify(expectedEditableFields)) {
+    throw new Error(`HTML video create controls differ from the governed fields: ${configControls.createFields.join(', ')}`);
+  }
+  if (JSON.stringify(configControls.editFields) !== JSON.stringify(expectedEditableFields)) {
+    throw new Error(`HTML video edit controls differ from the governed fields: ${configControls.editFields.join(', ')}`);
+  }
+  if (configControls.readOnlyEditors.length) {
+    throw new Error(`Read-only HTML video controls became editable: ${configControls.readOnlyEditors.join(', ')}`);
+  }
 
   const primaryOutput = await openOutputAndWait(cdp, seededTasks.primary);
   const rangeResponse = await verifyRangeResponse(cdp, primaryOutput.src, seededTasks.primary.outputPath);
@@ -183,6 +196,13 @@ try {
   await evaluate(cdp, `document.querySelector('.hv-video-output')?.scrollIntoView({ block: 'center' })`);
   const compactState = await inspectPage(cdp);
   await saveScreenshot(cdp, compactScreenshot);
+  const configUpdate = await exerciseHtmlVideoConfigUpdate(cdp);
+  if (configUpdate.completedStepCount !== 5) {
+    throw new Error(`Render-only config update preserved ${configUpdate.completedStepCount} completed steps instead of 5.`);
+  }
+  if (configUpdate.renderCompleted || !configUpdate.resumeAvailable || configUpdate.transitionType !== configUpdate.targetTransition) {
+    throw new Error(`HTML video config update did not reach the expected resumable render state: ${JSON.stringify(configUpdate)}`);
+  }
 
   const expectedMissingMediaResponses = networkResponses.filter((response) => (
     response.status === 404 && response.url === sameUrlRecovery.mediaUrl
@@ -233,6 +253,8 @@ try {
     taskSwitchObserved,
     pathSwitchObserved,
     mediaElementRecovery,
+    configControls,
+    configUpdate,
     desktop: desktopState,
     compact: compactState,
     screenshots,
@@ -783,6 +805,77 @@ function waitForFailureState(cdpConnection, selector, failureText, label) {
     10_000,
     `${label} failure state`,
   );
+}
+
+async function inspectConfigControls(cdpConnection) {
+  return evaluate(cdpConnection, `(() => {
+    const createFields = [...document.querySelectorAll('[data-html-video-create-field]')]
+      .map((item) => item.getAttribute('data-html-video-create-field'))
+      .filter(Boolean)
+      .sort();
+    const editFields = [...document.querySelectorAll('[data-html-video-edit-field]')]
+      .map((item) => item.getAttribute('data-html-video-edit-field'))
+      .filter(Boolean)
+      .sort();
+    const readOnlyFields = ${JSON.stringify(htmlVideoReadOnlyFields)};
+    return {
+      createFields,
+      editFields,
+      readOnlyEditors: readOnlyFields.filter((field) => (
+        document.querySelector('[data-html-video-edit-field="' + field + '"]')
+        || document.querySelector('[data-html-video-create-field="' + field + '"]')
+      )),
+    };
+  })()`);
+}
+
+async function exerciseHtmlVideoConfigUpdate(cdpConnection) {
+  const selection = await evaluate(cdpConnection, `(() => {
+    const select = document.querySelector('[data-html-video-edit-field="transitionType"] select');
+    if (!select || select.disabled) return null;
+    const targetTransition = [...select.options].map((option) => option.value).find((value) => value !== select.value);
+    if (!targetTransition) return null;
+    select.value = targetTransition;
+    select.dispatchEvent(new Event('change', { bubbles: true }));
+    return { targetTransition };
+  })()`);
+  if (!selection?.targetTransition) throw new Error('Could not select an alternate HTML video transition.');
+  await delay(100);
+  const saved = await evaluate(cdpConnection, `(() => {
+    const button = [...document.querySelectorAll('.hv-config-editor button')]
+      .find((item) => item.textContent.includes('保存参数'));
+    if (!button || button.disabled) return false;
+    button.click();
+    return true;
+  })()`);
+  if (!saved) throw new Error('HTML video config save button was unavailable.');
+  await waitFor(
+    async () => evaluate(cdpConnection, `(() => {
+      const select = document.querySelector('[data-html-video-edit-field="transitionType"] select');
+      const steps = [...document.querySelectorAll('.hv-step')];
+      const resumeAvailable = [...document.querySelectorAll('.hv-run-controls button')]
+        .some((item) => item.textContent.includes('继续'));
+      return select?.value === ${JSON.stringify(selection.targetTransition)}
+        && steps.length === 6
+        && document.querySelectorAll('.hv-step.done').length === 5
+        && !steps[5]?.classList.contains('done')
+        && resumeAvailable;
+    })()`),
+    15_000,
+    'HTML video config update invalidation',
+  );
+  return evaluate(cdpConnection, `(() => {
+    const select = document.querySelector('[data-html-video-edit-field="transitionType"] select');
+    const steps = [...document.querySelectorAll('.hv-step')];
+    return {
+      targetTransition: ${JSON.stringify(selection.targetTransition)},
+      transitionType: select?.value || '',
+      completedStepCount: document.querySelectorAll('.hv-step.done').length,
+      renderCompleted: Boolean(steps[5]?.classList.contains('done')),
+      resumeAvailable: [...document.querySelectorAll('.hv-run-controls button')]
+        .some((item) => item.textContent.includes('继续')),
+    };
+  })()`);
 }
 
 function isExpectedMissingMedia404(error, expectedMissingMediaUrl, expectedRequestIds) {

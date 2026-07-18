@@ -7,7 +7,8 @@ import { describe, expect, it } from 'vitest';
 import * as htmlVideoRuntimeModule from '../electron/html-video-runtime';
 import { AppError, isCancellation } from '../src/shared/app-error';
 import { MAX_HTML_VIDEO_MEDIA_FILE_BYTES, runHtmlVideoPipeline } from '../src/shared/html-video-runner';
-import { createHtmlVideoPipelineData } from '../src/shared/html-video-workflow';
+import { createHtmlVideoPipelineData, createHtmlVideoTaskInput, parseHtmlVideoPipelineData } from '../src/shared/html-video-workflow';
+import { FileDatabase } from '../src/shared/storage';
 import {
   createHtmlVideoMediaUrl,
   createElectronHtmlVideoRuntime,
@@ -29,6 +30,146 @@ const expectedHtmlVideoBgmDiskReserveBytes = 64 * 1024 * 1024;
 const managedTestStorageKey = '0123456789abcdef0123456789abcdef0123456789abcdef';
 
 describe('Electron HTML video runtime contract', () => {
+  it('atomically persists a legal config update, its mirrors, resumable state, and one event', async () => {
+    const directory = await mkdtemp(join(tmpdir(), 'storydream-html-config-update-'));
+    const databasePath = join(directory, 'app.db');
+    let snapshots = 0;
+    const database = await FileDatabase.open(databasePath, {
+      replaceFile: async (source, target) => {
+        snapshots += 1;
+        await rename(source, target);
+      },
+    });
+    try {
+      const input = createHtmlVideoTaskInput({
+        copy: 'Task 16 atomic config update',
+        style: 'modern-film',
+        voiceId: 'voice-old',
+        ttsProvider: 'volcengine',
+        ttsSpeed: 1,
+        bgmId: '',
+        foreground: true,
+        maxScenes: 8,
+        ratio: '9:16',
+      });
+      const created = await database.createTask(input);
+      const completed = createHtmlVideoPipelineData(input.inputText, JSON.parse(input.pipelineData ?? '{}').config);
+      completed.current = 'done';
+      for (const step of Object.keys(completed.steps) as Array<keyof typeof completed.steps>) {
+        completed.steps[step] = { status: 'completed', artifactPath: `steps/${step}.json`, artifactSize: 10 };
+      }
+      completed.output = { path: 'final.mp4', sizeBytes: 100 };
+      await database.updateTask(created.id, {
+        status: 'completed',
+        currentStep: 6,
+        pipelineStep: 'done',
+        pipelineData: JSON.stringify(completed),
+        completedAt: '2026-07-18T00:00:00.000Z',
+        errorMessage: 'stale completion message',
+        failedStep: 5,
+        retryFromStep: 5,
+      });
+      snapshots = 0;
+
+      const result = await database.updateHtmlVideoTaskConfig(created.id, [
+        { field: 'transitionType', value: 'dissolve' },
+        { field: 'bgmVolume', value: 'medium' },
+        { field: 'voiceId', value: 'voice-new' },
+        { field: 'ttsProvider', value: 'minimax' },
+        { field: 'ttsSpeed', value: 1.25 },
+      ]);
+
+      expect(snapshots).toBe(1);
+      expect(result.changedFields).toEqual([
+        'transitionType',
+        'bgmVolume',
+        'voiceId',
+        'ttsProvider',
+        'ttsSpeed',
+      ]);
+      expect(result.task).toMatchObject({ status: 'paused', currentStep: 3 });
+      const task = await database.getTaskDetail(created.id);
+      expect(task).toMatchObject({
+        status: 'paused',
+        currentStep: 3,
+        pipelineStep: 'voice',
+        completedAt: null,
+        errorMessage: '',
+        failedStep: null,
+        retryFromStep: null,
+        speaker: 'voice-new',
+        ttsProvider: 'minimax',
+        ttsSpeed: 1.25,
+      });
+      const pipeline = parseHtmlVideoPipelineData(task?.pipelineData);
+      expect(pipeline.config).toMatchObject({
+        transitionType: 'dissolve',
+        bgmVolume: 'medium',
+        voiceId: 'voice-new',
+        ttsProvider: 'minimax',
+        ttsSpeed: 1.25,
+      });
+      expect(pipeline.steps.assets).toEqual(completed.steps.assets);
+      expect(pipeline.steps.voice).toEqual({ status: 'pending' });
+      expect(pipeline).not.toHaveProperty('output');
+      const events = await database.listTaskEvents(created.id, { limit: 100 });
+      expect(events.items).toHaveLength(1);
+      expect(events.items[0]).toMatchObject({ type: 'config_update', step: 3 });
+    } finally {
+      await database.close();
+      await rm(directory, { recursive: true, force: true });
+    }
+  });
+
+  it('rejects active, archived, tombstoned, and read-only config updates without side effects', async () => {
+    const directory = await mkdtemp(join(tmpdir(), 'storydream-html-config-reject-'));
+    const database = await FileDatabase.open(join(directory, 'app.db'));
+    try {
+      const create = (copy: string) => database.createTask(createHtmlVideoTaskInput({ copy }));
+      const pending = await create('pending config');
+      const pendingBefore = await database.getTaskDetail(pending.id);
+      await expect(database.updateHtmlVideoTaskConfig(pending.id, [{ field: 'style', value: 'blocked' }]))
+        .rejects.toThrow(/active|pending|running/i);
+      expect(await database.getTaskDetail(pending.id)).toEqual(pendingBefore);
+      expect((await database.listTaskEvents(pending.id, { limit: 100 })).items).toEqual([]);
+
+      const archived = await create('archived config');
+      await database.updateTask(archived.id, { status: 'completed' });
+      await database.archiveTask(archived.id);
+      const archivedBefore = await database.getTaskDetail(archived.id);
+      await expect(database.updateHtmlVideoTaskConfig(archived.id, [{ field: 'ratio', value: '4:3' }]))
+        .rejects.toThrow(/HISTORY_ARCHIVED/);
+      expect(await database.getTaskDetail(archived.id)).toEqual(archivedBefore);
+      expect((await database.listTaskEvents(archived.id, { limit: 100 })).items).toEqual([]);
+
+      const deleted = await create('deleted config');
+      await database.updateTask(deleted.id, { status: 'completed' });
+      await database.archiveTask(deleted.id);
+      await database.deleteTaskPermanently(deleted.id, {
+        cleanupState: 'missing',
+        quarantineName: null,
+        quarantineIdentityJson: '{}',
+        diagnostic: 'Test fixture has no managed directory.',
+      });
+      await expect(database.updateHtmlVideoTaskConfig(deleted.id, [{ field: 'style', value: 'blocked' }]))
+        .rejects.toThrow(/HISTORY_DELETED/);
+      expect((await database.listTaskEvents(deleted.id, { limit: 100 })).items).toEqual([]);
+
+      const readOnly = await create('read only config');
+      await database.updateTask(readOnly.id, { status: 'completed' });
+      const readOnlyBefore = await database.getTaskDetail(readOnly.id);
+      await expect(database.updateHtmlVideoTaskConfig(
+        readOnly.id,
+        [{ field: 'captionPreset', value: 'karaoke' }] as never,
+      )).rejects.toThrow(/不可编辑|read-only|editable/i);
+      expect(await database.getTaskDetail(readOnly.id)).toEqual(readOnlyBefore);
+      expect((await database.listTaskEvents(readOnly.id, { limit: 100 })).items).toEqual([]);
+    } finally {
+      await database.close();
+      await rm(directory, { recursive: true, force: true });
+    }
+  });
+
   it('provides a dedicated runtime adapter with bounded canvas and media preflight', async () => {
     const url = new URL('../electron/html-video-runtime.ts', import.meta.url);
     expect(existsSync(url)).toBe(true);

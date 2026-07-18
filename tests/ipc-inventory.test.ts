@@ -21,7 +21,7 @@ describe('renderer IPC inventory', () => {
   });
 
   it('defines exactly one input schema for every canonical invoke channel', () => {
-    expect(INVOKE_CHANNELS).toHaveLength(84);
+    expect(INVOKE_CHANNELS).toHaveLength(85);
     expect(new Set(INVOKE_CHANNELS).size).toBe(INVOKE_CHANNELS.length);
     expect(new Set(Object.keys(ipcInputSchemas))).toEqual(new Set(INVOKE_CHANNELS));
     expect(INVOKE_CHANNELS).toContain('task:open-output-directory');
@@ -38,6 +38,15 @@ describe('renderer IPC inventory', () => {
       ['person-assets:open-directory', '人物甲'],
     ]);
     expect(storyDreamApi).not.toHaveProperty('openPath');
+  });
+
+  it('routes typed HTML config changes through the dedicated preload channel', async () => {
+    const changes = [{ field: 'transitionType', value: 'dissolve' }] as const;
+    await storyDreamApi.updateHtmlVideoConfig('html-task-1', [...changes]);
+    expect(ipcRenderer.invoke).toHaveBeenCalledWith('html-video:update-config', {
+      id: 'html-task-1',
+      changes,
+    });
   });
 
   it('keeps actual preload invoke calls in exact canonical order', async () => {

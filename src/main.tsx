@@ -72,6 +72,8 @@ import type {
   ImageLabSummary,
   ImageLabSmartMode,
   BgmItem,
+  HtmlVideoConfigChange,
+  HtmlVideoJobConfig,
   HtmlVideoStepStatus,
   HtmlVideoTabKey,
   JianyingEffectCatalog,
@@ -95,6 +97,7 @@ import type {
   TaskStepRerunMode,
   TaskVideoForm,
   TtsProviderProfile,
+  TtsProvider,
   UiPreferences,
   VolcengineSpeaker,
   ViralAnalysisResult,
@@ -215,8 +218,16 @@ import {
 } from './shared/prompt-templates';
 import { createViralTemplateDrafts } from './shared/viral-template-extraction';
 import { defaultPodcastSpeakersForProvider, defaultTaskSpeakerForProvider, normalizeRuntimeTtsProvider, taskSpeakerLabel, ttsVoiceOptionsForProvider, type RuntimeTtsProvider } from './shared/tts-voices';
-import { classifyHtmlVideoTaskMessage, createHtmlVideoTaskInput, fitHtmlVideoOutputSize, htmlVideoSteps, htmlVideoTabs, isHtmlVideoTask, nextHtmlVideoTabKey, safeParseHtmlVideoPipelineData, tabForHtmlVideoStep, taskProgressLabel } from './shared/html-video-workflow';
-import { HTML_VIDEO_JOB_DEFAULTS, HTML_VIDEO_RATIOS } from './shared/html-video-config';
+import { applyHtmlVideoConfigChanges, classifyHtmlVideoTaskMessage, createHtmlVideoTaskInput, fitHtmlVideoOutputSize, htmlVideoSteps, htmlVideoTabs, htmlVideoVisibleSteps, isHtmlVideoTask, nextHtmlVideoTabKey, parseHtmlVideoPipelineData, safeParseHtmlVideoPipelineData, tabForHtmlVideoStep, taskProgressLabel } from './shared/html-video-workflow';
+import {
+  HTML_VIDEO_BGM_VOLUMES,
+  HTML_VIDEO_JOB_DEFAULTS,
+  HTML_VIDEO_RATIOS,
+  HTML_VIDEO_TRANSITIONS,
+  HTML_VIDEO_TTS_PROVIDERS,
+  HTML_VIDEO_TTS_SPEED_MAX,
+  HTML_VIDEO_TTS_SPEED_MIN,
+} from './shared/html-video-config';
 import { HTML_VIDEO_CONTROL_MANIFEST_V1 } from './shared/html-video-control-manifest';
 import { createHtmlVideoMediaCache, htmlVideoMediaElementKey, htmlVideoMediaElementScopeMatches, htmlVideoMediaStatus, loadHtmlVideoMedia, recordHtmlVideoMediaElementFailure, syncHtmlVideoMediaCache, type HtmlVideoMediaElementFailureState, type HtmlVideoMediaElementScope } from './shared/html-video-media';
 import { useAsyncAction, type AsyncActionFeedback } from './ui/async-action';
@@ -1393,6 +1404,43 @@ function makeFallbackApi(setState: (state: AppState) => void): StoryDreamApi {
         { taskId: task.id, type: 'pipeline_ready', step: 0, agent: 'HTML Video', tool: null, detail: 'HTML 动画视频任务已创建，等待改写与分句。', dataJson: task.pipelineData ?? null, ts: Date.now() },
       ];
       return persist({ ...state, tasks: [task, ...state.tasks], events: [...state.events, ...events] });
+    },
+    async updateHtmlVideoConfig(id: string, changes: HtmlVideoConfigChange[]) {
+      const state = read();
+      const task = state.tasks.find((item) => item.id === id);
+      if (!task || task.taskType !== 'html-video') throw new Error(`HTML 视频任务不存在：${id}`);
+      if (task.archivedAt) throw new Error('HISTORY_ARCHIVED: 已归档任务只读。');
+      if (task.status === 'pending' || task.status === 'running') throw new Error('HTML_VIDEO_CONFIG_ACTIVE: 运行中的任务不能编辑参数。');
+      const applied = applyHtmlVideoConfigChanges(parseHtmlVideoPipelineData(task.pipelineData), changes);
+      const currentStep = htmlVideoVisibleSteps.indexOf(applied.invalidateFrom);
+      const updated: Task = {
+        ...task,
+        ...applied.legacyMirrors,
+        status: 'paused',
+        currentStep,
+        pipelineStep: applied.invalidateFrom,
+        pipelineData: JSON.stringify(applied.pipeline),
+        completedAt: null,
+        errorMessage: '',
+        failedStep: null,
+        retryFromStep: null,
+        lastHeartbeatAt: new Date().toISOString(),
+      };
+      const event: TaskEvent = {
+        taskId: id,
+        type: 'config_update',
+        step: currentStep,
+        agent: 'HTML Video',
+        tool: null,
+        detail: `已更新 HTML 视频参数，从${applied.invalidateFrom}阶段继续。`,
+        dataJson: JSON.stringify({ changedFields: applied.changedFields, invalidateFrom: applied.invalidateFrom }),
+        ts: Date.now(),
+      };
+      return persist({
+        ...state,
+        tasks: state.tasks.map((item) => item.id === id ? updated : item),
+        events: [...state.events, event],
+      });
     },
     async openHtmlVideoPreview() {
       throw new Error('浏览器预览仅创建任务快照，未执行特权 HTML 渲染。请在 Electron 桌面端打开预览。');
@@ -4317,6 +4365,11 @@ function HtmlVideoPage({
   const [maxScenes, setMaxScenes] = useState<number>(HTML_VIDEO_JOB_DEFAULTS.maxScenes);
   const [foreground, setForeground] = useState<boolean>(HTML_VIDEO_JOB_DEFAULTS.foreground);
   const [bgmId, setBgmId] = useState(resolveDefaultBgmId(state.config));
+  const [ttsProvider, setTtsProvider] = useState<TtsProvider>(() => normalizeRuntimeTtsProvider(state.config.tts.provider));
+  const [voiceId, setVoiceId] = useState(() => defaultTaskSpeakerForProvider(state.config.tts.provider, state.config));
+  const [ttsSpeed, setTtsSpeed] = useState<number>(HTML_VIDEO_JOB_DEFAULTS.ttsSpeed);
+  const [bgmVolume, setBgmVolume] = useState<HtmlVideoJobConfig['bgmVolume']>(HTML_VIDEO_JOB_DEFAULTS.bgmVolume);
+  const [transitionType, setTransitionType] = useState<HtmlVideoTransition>(HTML_VIDEO_JOB_DEFAULTS.transitionType);
   const [activeTaskId, setActiveTaskId] = useState<string>('');
   const [activeTab, setActiveTab] = useState<HtmlVideoTabKey>('text');
   const [mediaRetryRevision, setMediaRetryRevision] = useState(0);
@@ -4324,6 +4377,8 @@ function HtmlVideoPage({
   const [message, setMessage] = useState('');
   const htmlVideoAction = useAsyncAction();
   const bgmOptions = validBgmItems(state.config);
+  const createVoiceOptions = ttsVoiceOptionsForProvider(ttsProvider);
+  const createStyleOptions = editableHtmlVideoStyleOptions(state.customStyles, style);
   const htmlTasks = state.tasks.filter(isHtmlVideoTask);
   const activeTask = htmlTasks.find((task) => task.id === activeTaskId) ?? htmlTasks[0] ?? null;
   const activeTaskRefreshKey = taskDetailRefreshKey(activeTask);
@@ -4523,9 +4578,11 @@ function HtmlVideoPage({
           bgmId,
           maxScenes,
           foreground,
-          ttsProvider: normalizeRuntimeTtsProvider(state.config.tts.provider),
-          voiceId: defaultTaskSpeakerForProvider(state.config.tts.provider, state.config),
-          ttsSpeed: HTML_VIDEO_JOB_DEFAULTS.ttsSpeed,
+          ttsProvider,
+          voiceId,
+          ttsSpeed,
+          bgmVolume,
+          transitionType,
         }));
         applyState(next);
         const createdTask = taskFromMutation(next);
@@ -4535,6 +4592,12 @@ function HtmlVideoPage({
         setRunning(false);
       }
     }, { onError: (error) => setMessage(error.message) });
+  }
+
+  function changeCreateTtsProvider(value: string) {
+    const provider = value as TtsProvider;
+    setTtsProvider(provider);
+    setVoiceId(ttsVoiceOptionsForProvider(provider)[0]?.id ?? '');
   }
 
   async function setTaskStatus(status: Extract<TaskStatus, 'paused' | 'cancelled' | 'running'>) {
@@ -4598,19 +4661,62 @@ function HtmlVideoPage({
         </Field>
 
         <div className="advanced-grid">
-          <Segmented label="场景上限" value={String(maxScenes)} options={storyboardSceneCountOptions.map(String)} labels={storyboardSceneCountOptions.map((count) => `${count}`)} onChange={(value) => setMaxScenes(Number(value))} />
-          <Segmented label="画布比例" value={ratio} options={[...HTML_VIDEO_RATIOS]} onChange={setRatio} />
-          <Segmented label="前景图" value={foreground ? 'on' : 'off'} options={['on', 'off']} labels={['生成', '跳过']} onChange={(value) => setForeground(value === 'on')} />
+          <div data-html-video-create-field="maxScenes">
+            <Field label="场景上限"><input type="number" min={1} max={30} step={1} value={maxScenes} onChange={(event) => setMaxScenes(Number(event.target.value))} /></Field>
+          </div>
+          <div data-html-video-create-field="ratio">
+            <Segmented label="画布比例" value={ratio} options={[...HTML_VIDEO_RATIOS]} onChange={setRatio} />
+          </div>
+          <div data-html-video-create-field="foreground">
+            <Segmented label="前景图" value={foreground ? 'on' : 'off'} options={['on', 'off']} labels={['生成', '跳过']} onChange={(value) => setForeground(value === 'on')} />
+          </div>
         </div>
 
-        <OptionCloud title="画面风格" options={htmlVideoStyleOptions} value={style} onChange={setStyle} />
+        <div data-html-video-create-field="style">
+          <OptionCloud title="画面风格" options={createStyleOptions} value={style} onChange={setStyle} />
+        </div>
 
-        <span className="field-title">背景音乐</span>
-        <div className="chip-row">
-          <button className={bgmId === '' ? 'chip active' : 'chip'} onClick={() => setBgmId('')}>无配乐</button>
-          {bgmOptions.map((bgm) => (
-            <button key={bgm.id} className={bgmId === bgm.id ? 'chip active' : 'chip'} onClick={() => setBgmId(bgm.id)}>{bgm.title}</button>
-          ))}
+        <div data-html-video-create-field="bgmId">
+          <span className="field-title">背景音乐</span>
+          <div className="chip-row">
+            <button className={bgmId === '' ? 'chip active' : 'chip'} onClick={() => setBgmId('')}>无配乐</button>
+            {bgmOptions.map((bgm) => (
+              <button key={bgm.id} className={bgmId === bgm.id ? 'chip active' : 'chip'} onClick={() => setBgmId(bgm.id)}>{bgm.title}</button>
+            ))}
+          </div>
+        </div>
+
+        <div className="advanced-grid">
+          <div data-html-video-create-field="ttsProvider">
+            <Field label="配音模型">
+              <select value={ttsProvider} onChange={(event) => changeCreateTtsProvider(event.target.value)}>
+                {HTML_VIDEO_TTS_PROVIDERS.map((provider) => <option key={provider} value={provider}>{provider}</option>)}
+              </select>
+            </Field>
+          </div>
+          <div data-html-video-create-field="voiceId">
+            <Field label="音色">
+              <select value={voiceId} onChange={(event) => setVoiceId(event.target.value)}>
+                {voiceId && !createVoiceOptions.some((option) => option.id === voiceId)
+                  ? <option value={voiceId}>{taskSpeakerLabel(ttsProvider, voiceId)}</option>
+                  : null}
+                {createVoiceOptions.map((option) => <option key={option.id} value={option.id}>{option.label}</option>)}
+              </select>
+            </Field>
+          </div>
+          <div data-html-video-create-field="ttsSpeed">
+            <RangeField label="语速" min={HTML_VIDEO_TTS_SPEED_MIN} max={HTML_VIDEO_TTS_SPEED_MAX} step={0.1} value={ttsSpeed} onChange={setTtsSpeed} />
+          </div>
+          <div data-html-video-create-field="bgmVolume">
+            <Segmented label="配乐音量" value={bgmVolume ?? 'soft'} options={[...HTML_VIDEO_BGM_VOLUMES]} labels={['轻', '中', '响']} onChange={(value) => setBgmVolume(value as NonNullable<typeof bgmVolume>)} />
+          </div>
+          <div data-html-video-create-field="transitionType">
+            <Field label="转场">
+              <select value={transitionType} onChange={(event) => setTransitionType(event.target.value as HtmlVideoTransition)}>
+                {HTML_VIDEO_TRANSITIONS.map((transition) => <option key={transition} value={transition}>{transition}</option>)}
+              </select>
+            </Field>
+          </div>
         </div>
 
         {isBrowserPreview ? <span className="local-note">浏览器模式只保存预览快照，不生成本地媒体或视频。</span> : null}
@@ -4689,6 +4795,19 @@ function HtmlVideoPage({
               {pipelineData.warnings.map((warning, index) => <li key={`${index}-${warning}`}>{warning}</li>)}
             </ul>
           </div>
+        ) : null}
+
+        {activeTask && !pipelineParse.error ? (
+          <HtmlVideoConfigEditor
+            key={`${activeTask.id}:${pipelineData.revision}`}
+            api={api}
+            task={activeTask}
+            config={pipelineData.config}
+            appConfig={state.config}
+            customStyles={state.customStyles}
+            applyState={applyState}
+            refreshTaskDetail={refreshTaskDetail}
+          />
         ) : null}
 
         <div className="task-metrics">
@@ -4774,6 +4893,176 @@ function HtmlVideoPage({
         </div>
       </section>
     </div>
+  );
+}
+
+type HtmlVideoTransition = Extract<HtmlVideoConfigChange, { field: 'transitionType' }>['value'];
+
+interface HtmlVideoEditableValues {
+  style: string;
+  voiceId: string;
+  ttsProvider: TtsProvider;
+  ttsSpeed: number;
+  bgmId: string;
+  bgmVolume: 'soft' | 'medium' | 'loud';
+  transitionType: HtmlVideoTransition;
+  foreground: boolean;
+  maxScenes: number;
+  ratio: '9:16' | '16:9' | '1:1' | '4:3';
+}
+
+function editableHtmlVideoValues(config: HtmlVideoJobConfig): Omit<HtmlVideoEditableValues, 'transitionType'> & { transitionType: HtmlVideoTransition } {
+  return {
+    style: config.style ?? HTML_VIDEO_JOB_DEFAULTS.style,
+    voiceId: config.voiceId ?? HTML_VIDEO_JOB_DEFAULTS.voiceId,
+    ttsProvider: config.ttsProvider ?? HTML_VIDEO_JOB_DEFAULTS.ttsProvider,
+    ttsSpeed: config.ttsSpeed ?? HTML_VIDEO_JOB_DEFAULTS.ttsSpeed,
+    bgmId: config.bgmId ?? HTML_VIDEO_JOB_DEFAULTS.bgmId,
+    bgmVolume: config.bgmVolume ?? 'soft',
+    transitionType: (config.transitionType ?? HTML_VIDEO_JOB_DEFAULTS.transitionType) as HtmlVideoTransition,
+    foreground: config.foreground ?? HTML_VIDEO_JOB_DEFAULTS.foreground,
+    maxScenes: config.maxScenes ?? HTML_VIDEO_JOB_DEFAULTS.maxScenes,
+    ratio: (config.ratio ?? HTML_VIDEO_JOB_DEFAULTS.ratio) as HtmlVideoEditableValues['ratio'],
+  };
+}
+
+function editableHtmlVideoStyleOptions(customStyles: CustomStyle[], currentStyle: string): string[][] {
+  const options = new Map(htmlVideoStyleOptions.map((option) => [option[0], option]));
+  for (const style of customStyles) options.set(style.id, [style.id, style.name, '自定义画风']);
+  if (currentStyle && !options.has(currentStyle)) options.set(currentStyle, [currentStyle, currentStyle, '当前任务画风']);
+  return [...options.values()];
+}
+
+function HtmlVideoConfigEditor({
+  api,
+  task,
+  config,
+  appConfig,
+  customStyles,
+  applyState,
+  refreshTaskDetail,
+}: {
+  api: StoryDreamApi;
+  task: Task;
+  config: HtmlVideoJobConfig;
+  appConfig: AppConfig;
+  customStyles: CustomStyle[];
+  applyState: ApplyMutationResult;
+  refreshTaskDetail: (taskId: string) => Promise<void>;
+}) {
+  const initial = editableHtmlVideoValues(config);
+  const [values, setValues] = useState(initial);
+  const [message, setMessage] = useState('');
+  const htmlVideoConfigAction = useAsyncAction();
+  const bgmOptions = validBgmItems(appConfig);
+  const styleOptions = editableHtmlVideoStyleOptions(customStyles, values.style);
+  const voiceOptions = ttsVoiceOptionsForProvider(values.ttsProvider);
+  const disabled = task.status === 'pending' || task.status === 'running' || htmlVideoConfigAction.busy;
+
+  function setValue<K extends keyof typeof values>(field: K, value: (typeof values)[K]) {
+    setValues((current) => ({ ...current, [field]: value }));
+  }
+
+  function changeProvider(value: string) {
+    const ttsProvider = value as TtsProvider;
+    const nextVoice = ttsVoiceOptionsForProvider(ttsProvider)[0]?.id ?? '';
+    setValues((current) => ({ ...current, ttsProvider, voiceId: nextVoice }));
+  }
+
+  async function saveConfig() {
+    const changes: HtmlVideoConfigChange[] = [];
+    for (const field of [
+      'style', 'voiceId', 'ttsProvider', 'ttsSpeed', 'bgmId', 'bgmVolume',
+      'transitionType', 'foreground', 'maxScenes', 'ratio',
+    ] as const) {
+      if (values[field] !== initial[field]) {
+        changes.push({ field, value: values[field] } as HtmlVideoConfigChange);
+      }
+    }
+    if (changes.length === 0) {
+      setMessage('参数没有变化。');
+      return;
+    }
+    await htmlVideoConfigAction.run(async () => {
+      const next = await api.updateHtmlVideoConfig(task.id, changes);
+      applyState(next);
+      await refreshTaskDetail(task.id);
+      setMessage('参数已保存，任务已回到可继续状态。');
+    }, { onError: (error) => setMessage(error.message) });
+  }
+
+  return (
+    <section className="hv-config-editor" aria-label="当前 HTML 视频任务参数">
+      <div className="panel-title-row">
+        <div><h4>任务参数</h4><span>保存后从最早受影响阶段继续</span></div>
+        <button className="mini-button" type="button" onClick={saveConfig} disabled={disabled}>
+          {htmlVideoConfigAction.busy ? <Loader2 className="spin" size={14} /> : <Save size={14} />}保存参数
+        </button>
+      </div>
+      <fieldset className="advanced-grid hv-config-editor-grid" disabled={disabled}>
+        <div data-html-video-edit-field="style">
+          <Field label="画面风格">
+            <select value={values.style} onChange={(event) => setValue('style', event.target.value)} disabled={disabled}>
+              {styleOptions.map(([id, label]) => <option key={id} value={id}>{label}</option>)}
+            </select>
+          </Field>
+        </div>
+        <div data-html-video-edit-field="ttsProvider">
+          <Field label="配音模型">
+            <select value={values.ttsProvider} onChange={(event) => changeProvider(event.target.value)} disabled={disabled}>
+              {HTML_VIDEO_TTS_PROVIDERS.map((provider) => <option key={provider} value={provider}>{provider}</option>)}
+            </select>
+          </Field>
+        </div>
+        <div data-html-video-edit-field="voiceId">
+          <Field label="音色">
+            <select value={values.voiceId} onChange={(event) => setValue('voiceId', event.target.value)} disabled={disabled}>
+              {values.voiceId && !voiceOptions.some((option) => option.id === values.voiceId)
+                ? <option value={values.voiceId}>{taskSpeakerLabel(values.ttsProvider, values.voiceId)}</option>
+                : null}
+              {voiceOptions.map((option) => <option key={option.id} value={option.id}>{option.label}</option>)}
+            </select>
+          </Field>
+        </div>
+        <div data-html-video-edit-field="ttsSpeed">
+          <RangeField label="语速" min={HTML_VIDEO_TTS_SPEED_MIN} max={HTML_VIDEO_TTS_SPEED_MAX} step={0.1} value={values.ttsSpeed} onChange={(value) => setValue('ttsSpeed', value)} />
+        </div>
+        <div data-html-video-edit-field="bgmId">
+          <Field label="背景音乐">
+            <select value={values.bgmId} onChange={(event) => setValue('bgmId', event.target.value)} disabled={disabled}>
+              <option value="">无配乐</option>
+              {values.bgmId && !bgmOptions.some((bgm) => bgm.id === values.bgmId)
+                ? <option value={values.bgmId}>{values.bgmId}（素材库中已缺失）</option>
+                : null}
+              {bgmOptions.map((bgm) => <option key={bgm.id} value={bgm.id}>{bgm.title}</option>)}
+            </select>
+          </Field>
+        </div>
+        <div data-html-video-edit-field="bgmVolume">
+          <Segmented label="配乐音量" value={values.bgmVolume} options={[...HTML_VIDEO_BGM_VOLUMES]} labels={['轻', '中', '响']} onChange={(value) => setValue('bgmVolume', value as typeof values.bgmVolume)} />
+        </div>
+        <div data-html-video-edit-field="transitionType">
+          <Field label="转场">
+            <select value={values.transitionType} onChange={(event) => setValue('transitionType', event.target.value as HtmlVideoTransition)} disabled={disabled}>
+              {HTML_VIDEO_TRANSITIONS.map((transition) => <option key={transition} value={transition}>{transition}</option>)}
+            </select>
+          </Field>
+        </div>
+        <div data-html-video-edit-field="foreground">
+          <ToggleField label="生成前景图" checked={values.foreground} onChange={(value) => setValue('foreground', value)} />
+        </div>
+        <div data-html-video-edit-field="maxScenes">
+          <Field label="场景上限">
+            <input type="number" min={1} max={30} step={1} value={values.maxScenes} onChange={(event) => setValue('maxScenes', Number(event.target.value))} disabled={disabled} />
+          </Field>
+        </div>
+        <div data-html-video-edit-field="ratio">
+          <Segmented label="画布比例" value={values.ratio} options={[...HTML_VIDEO_RATIOS]} onChange={(value) => setValue('ratio', value as typeof values.ratio)} />
+        </div>
+      </fieldset>
+      {message ? <span className="local-note" role="status">{message}</span> : null}
+      <InlineActionFeedback feedback={htmlVideoConfigAction.feedback} />
+    </section>
   );
 }
 

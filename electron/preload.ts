@@ -25,6 +25,7 @@ import type {
   HistoryListInput,
   HistoryListRequest,
   HistoryPage,
+  HtmlVideoConfigChange,
   ImageLabGenerateInput,
   ImageLabRecord,
   ImageLabSummary,
@@ -196,6 +197,8 @@ export const storyDreamApi = {
   listPersonAssetImages: (name: string): Promise<PersonAssetImage[]> => invokeTrusted('person-assets:list-images', name),
   openPersonAssetDirectory: (name: string): Promise<void> => invokeTrusted('person-assets:open-directory', name),
   createHtmlVideoTask: (input: CreateTaskInput) => invokeTrusted('html-video:create-task', input),
+  updateHtmlVideoConfig: (id: string, changes: HtmlVideoConfigChange[]) =>
+    invokeTrusted('html-video:update-config', { id, changes }),
   openHtmlVideoPreview: (id: string, sceneIndex?: number): Promise<void> =>
     invokeTrusted('html-video:open-preview', { id, sceneIndex }),
   getHtmlVideoMediaUrl: (id: string, path: string): Promise<string> =>

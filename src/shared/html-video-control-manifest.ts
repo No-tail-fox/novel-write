@@ -1,4 +1,4 @@
-import type { HtmlVideoJobConfig, HtmlVideoVisibleStep } from './types';
+import type { HtmlVideoEditableConfigField, HtmlVideoJobConfig, HtmlVideoVisibleStep } from './types';
 
 export const HTML_VIDEO_CONTROL_MANIFEST_VERSION = 1 as const;
 
@@ -23,6 +23,18 @@ export const HTML_VIDEO_CONTROL_FIELDS = [
 ] as const satisfies readonly (keyof HtmlVideoJobConfig)[];
 
 export type HtmlVideoControlField = typeof HTML_VIDEO_CONTROL_FIELDS[number];
+export const HTML_VIDEO_EDITABLE_CONTROL_FIELDS = [
+  'style',
+  'voiceId',
+  'ttsProvider',
+  'ttsSpeed',
+  'bgmId',
+  'bgmVolume',
+  'transitionType',
+  'foreground',
+  'maxScenes',
+  'ratio',
+] as const satisfies readonly HtmlVideoEditableConfigField[];
 export type HtmlVideoControlAvailability = 'editable' | 'read-only-compatible';
 export type HtmlVideoControlUiLocation = 'parameters' | 'voice' | 'caption' | 'render' | 'cover' | 'draft';
 

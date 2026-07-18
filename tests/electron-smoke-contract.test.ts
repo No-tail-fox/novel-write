@@ -230,4 +230,19 @@ describe('real Electron smoke contract', () => {
     expect(qa).toContain('rangeResponse.bodyLength !== 32');
     expect(indexHtml).toMatch(/connect-src[^;]*storydream-media:/u);
   });
+
+  it('exercises all governed HTML config controls and render-stage invalidation in real Electron QA', async () => {
+    const qa = await readFile(new URL('../scripts/qa-html-video-ui.mjs', import.meta.url), 'utf8');
+
+    expect(qa).toContain('const configControls = await inspectConfigControls(cdp);');
+    expect(qa).toContain('const configUpdate = await exerciseHtmlVideoConfigUpdate(cdp);');
+    expect(qa).toContain("document.querySelectorAll('[data-html-video-create-field]')");
+    expect(qa).toContain("document.querySelectorAll('[data-html-video-edit-field]')");
+    expect(qa).toContain("['captionPreset', 'captionAnim', 'captionColors', 'coverImageMode', 'coverTemplate', 'coverRatio', 'draftTemplate']");
+    expect(qa).toContain("document.querySelector('[data-html-video-edit-field=\"transitionType\"] select')");
+    expect(qa).toContain("item.textContent.includes('保存参数')");
+    expect(qa).toContain("item.textContent.includes('继续')");
+    expect(qa).toContain('completedStepCount: document.querySelectorAll(\'.hv-step.done\').length');
+    expect(qa).toContain('if (configUpdate.completedStepCount !== 5)');
+  });
 });

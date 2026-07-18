@@ -1073,9 +1073,10 @@ describe('product shell ui', () => {
     expect(main).toContain('safeParseHtmlVideoPipelineData(activeTask?.pipelineData, activeTask?.inputText)');
     expect(main).toContain('pipelineParse.error');
     expect(main).toContain('HTML 视频任务数据损坏');
-    expect(main).toContain('ttsProvider: normalizeRuntimeTtsProvider(state.config.tts.provider)');
-    expect(main).toContain('voiceId: defaultTaskSpeakerForProvider(state.config.tts.provider, state.config)');
-    expect(main).toContain('ttsSpeed: HTML_VIDEO_JOB_DEFAULTS.ttsSpeed');
+    expect(main).toContain('useState<TtsProvider>(() => normalizeRuntimeTtsProvider(state.config.tts.provider))');
+    expect(main).toContain('useState(() => defaultTaskSpeakerForProvider(state.config.tts.provider, state.config))');
+    expect(main).toContain('useState<number>(HTML_VIDEO_JOB_DEFAULTS.ttsSpeed)');
+    expect(main).toMatch(/createHtmlVideoTaskInput\(\{[\s\S]*?ttsProvider,[\s\S]*?voiceId,[\s\S]*?ttsSpeed,/u);
     expect(main).not.toContain("taskKind: 'html-video'");
     expect(types).toContain("export type TaskKind = 'story' | 'music-mv'");
     expect(types).not.toContain("export type TaskKind = 'story' | 'music-mv' | 'html-video'");
@@ -1217,12 +1218,55 @@ describe('product shell ui', () => {
 
   it('uses the shared HTML control manifest without exposing unconsumed editors', async () => {
     const page = (await rendererSourcesPromise).requiredFile('src/main.tsx');
+    const css = await readFile(new URL('../src/styles.css', import.meta.url), 'utf8');
     expect(page).toContain("import { HTML_VIDEO_CONTROL_MANIFEST_V1 } from './shared/html-video-control-manifest'");
     expect(page).toContain('data-html-video-control="transitionType"');
     expect(page).toContain('HTML_VIDEO_CONTROL_MANIFEST_V1.transitionType.availability');
     expect(page).toContain('data-html-video-control="coverRatio"');
     expect(page).toContain('HTML_VIDEO_CONTROL_MANIFEST_V1.coverRatio.availability');
     expect(page).not.toMatch(/value=\{data\.config\.(?:captionPreset|captionAnim|captionColors|coverImageMode|coverTemplate|coverRatio|draftTemplate)\}/u);
+    const editor = page.slice(page.indexOf('function HtmlVideoConfigEditor'), page.indexOf('function HtmlVideoTabPanel'));
+    const editableFields = [
+      'style',
+      'voiceId',
+      'ttsProvider',
+      'ttsSpeed',
+      'bgmId',
+      'bgmVolume',
+      'transitionType',
+      'foreground',
+      'maxScenes',
+      'ratio',
+    ];
+    const readOnlyFields = [
+      'captionPreset',
+      'captionAnim',
+      'captionColors',
+      'coverImageMode',
+      'coverTemplate',
+      'coverRatio',
+      'draftTemplate',
+    ];
+    for (const field of editableFields) {
+      expect(editor).toContain(`data-html-video-edit-field="${field}"`);
+      expect(page).toContain(`data-html-video-create-field="${field}"`);
+    }
+    for (const field of readOnlyFields) {
+      expect(editor).not.toContain(`data-html-video-edit-field="${field}"`);
+    }
+    expect(editor).toContain('api.updateHtmlVideoConfig(task.id, changes)');
+    expect(editor).toContain("task.status === 'pending' || task.status === 'running'");
+    expect(editor).toContain("const disabled = task.status === 'pending' || task.status === 'running' || htmlVideoConfigAction.busy;");
+    expect(editor).not.toContain('const disabled = isBrowserPreview ||');
+    expect(editor).toContain('customStyles: CustomStyle[]');
+    expect(editor).toContain('editableHtmlVideoStyleOptions(customStyles, values.style)');
+    expect(editor).toContain('values.bgmId && !bgmOptions.some((bgm) => bgm.id === values.bgmId)');
+    expect(editor).toContain('<option value={values.bgmId}>{values.bgmId}（素材库中已缺失）</option>');
+    expect(page).toContain('bgmVolume,');
+    expect(page).toContain('transitionType,');
+    expect(css).toMatch(/\.hv-config-editor\s*\{[\s\S]*?border-top:\s*1px solid var\(--line\)/u);
+    expect(css).toMatch(/\.hv-config-editor-grid\s*\{[\s\S]*?border:\s*0/u);
+    expect(css).toMatch(/@media \(max-width: 1180px\)[\s\S]*?\.hv-config-editor-grid[\s\S]*?grid-template-columns:\s*1fr/u);
   });
 
   it('renders governed six-step HTML progress and seven-step ordinary progress in task lists', async () => {
@@ -1242,7 +1286,7 @@ describe('product shell ui', () => {
     expect(htmlPage).toContain('useState<number>(HTML_VIDEO_JOB_DEFAULTS.maxScenes)');
     expect(htmlPage).toContain('useState<boolean>(HTML_VIDEO_JOB_DEFAULTS.foreground)');
     expect(htmlPage).toContain('options={[...HTML_VIDEO_RATIOS]}');
-    expect(htmlPage).toContain('ttsSpeed: HTML_VIDEO_JOB_DEFAULTS.ttsSpeed');
+    expect(htmlPage).toContain('useState<number>(HTML_VIDEO_JOB_DEFAULTS.ttsSpeed)');
     expect(workflow).toContain('htmlVideoAspectRatioOrDefault,');
     expect(workflow).toContain('const aspectRatio = htmlVideoAspectRatioOrDefault(ratio);');
   });
