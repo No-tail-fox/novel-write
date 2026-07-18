@@ -1,4 +1,4 @@
-import { BrowserWindow } from 'electron';
+import { BrowserWindow, type NativeImage } from 'electron';
 import { mkdir, rm, writeFile } from 'node:fs/promises';
 import { dirname, join } from 'node:path';
 import { pathToFileURL } from 'node:url';
@@ -8,6 +8,7 @@ import type {
   HtmlVideoExportResult,
 } from '../src/shared/html-video';
 import { createHtmlVideoComposePayload, type HtmlVideoComposePayload } from '../src/shared/html-video';
+import { AppError } from '../src/shared/app-error';
 import { runStoryboundMediaSidecar } from '../src/shared/storybound-sidecar';
 import type {
   HtmlVideoCanvas,
@@ -120,6 +121,7 @@ async function renderHtmlVideo(
               `HTML scene ${scene.sceneId} frame ${frameNumber} capture`,
               signal,
             );
+            assertCapturedHtmlSceneSize(image, { width: input.canvas_w, height: input.canvas_h });
             const framePath = join(sceneDir, sidecarFramePattern.replace('%04d', String(frameNumber).padStart(4, '0')));
             await writeFile(framePath, image.toJPEG(92));
           }
@@ -167,6 +169,7 @@ async function capturePreview(input: HtmlVideoPreviewCaptureInput): Promise<stri
         'HTML preview capture',
         input.signal,
       );
+      assertCapturedHtmlSceneSize(image, input.canvas);
       await writeFile(input.outputPath, image.toJPEG(88));
       return input.outputPath;
     } finally {
@@ -239,6 +242,7 @@ async function openHiddenHtmlWindow(input: {
     webPreferences: {
       contextIsolation: true,
       nodeIntegration: false,
+      offscreen: true,
       sandbox: true,
     },
   });
@@ -253,6 +257,16 @@ async function openHiddenHtmlWindow(input: {
     if (!window.isDestroyed()) window.destroy();
     throw error;
   }
+}
+
+function assertCapturedHtmlSceneSize(image: NativeImage, canvas: HtmlVideoCanvas): void {
+  const size = image.getSize();
+  if (size.width === canvas.width && size.height === canvas.height) return;
+  throw new AppError(
+    'HTML_VIDEO_CAPTURE_SIZE_MISMATCH',
+    `HTML 视频捕获画布尺寸异常：期望 ${canvas.width}x${canvas.height}，实际 ${size.width}x${size.height}。`,
+    true,
+  );
 }
 
 function checkedLocalHtmlUrl(htmlPath: string, workDir: string): string {

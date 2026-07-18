@@ -2314,6 +2314,7 @@ function buildRuntimeComposition(
     narrationAudio: input.voices.map((voice) => ({ sceneId: voice.sceneIndex, path: voice.src })),
     bgmPath,
     bgmTargetDb: htmlVideoBgmTargetDb(input.config.bgmVolume),
+    captionConfig: input.config,
     fps,
     canvas_w: canvas.width,
     canvas_h: canvas.height,

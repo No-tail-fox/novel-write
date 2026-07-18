@@ -31,16 +31,18 @@ import type {
 } from '@shared/types';
 
 const electronHarness = vi.hoisted(() => {
-  type CaptureImage = { toJPEG(quality: number): Buffer };
+  type CaptureImage = { getSize(): { width: number; height: number }; toJPEG(quality: number): Buffer };
   type ScriptExecutor = (script: string) => Promise<unknown>;
 
   const captureImage: CaptureImage = {
+    getSize: () => ({ ...state.captureSize }),
     toJPEG: () => Buffer.from('jpeg'),
   };
   const state = {
     activeWindows: 0,
     maxActiveWindows: 0,
     captureCalls: 0,
+    captureSize: { width: 320, height: 568 },
     capturePlans: [] as Array<() => Promise<CaptureImage>>,
     executeScripts: [] as string[],
     scriptExecutor: null as ScriptExecutor | null,
@@ -65,7 +67,10 @@ const electronHarness = vi.hoisted(() => {
       },
     };
 
-    constructor(_options: unknown) {
+    readonly options: unknown;
+
+    constructor(options: unknown) {
+      this.options = options;
       state.instances.push(this);
       state.activeWindows += 1;
       state.maxActiveWindows = Math.max(state.maxActiveWindows, state.activeWindows);
@@ -102,6 +107,7 @@ const electronHarness = vi.hoisted(() => {
       state.activeWindows = 0;
       state.maxActiveWindows = 0;
       state.captureCalls = 0;
+      state.captureSize = { width: 320, height: 568 };
       state.capturePlans.length = 0;
       state.executeScripts.length = 0;
       state.scriptExecutor = null;
@@ -910,6 +916,34 @@ describe('HTML video composition contract', () => {
 });
 
 describe('Electron HTML video capture contract', () => {
+  it('uses an offscreen surface for hidden full-canvas capture', async () => {
+    await withRendererTestDir(async (workDir) => {
+      electronHarness.state.scriptExecutor = createReadyScriptExecutor([]);
+
+      await createElectronHtmlVideoRenderer().capturePreview(previewInput(workDir, 'offscreen'));
+
+      expect(electronHarness.state.instances[0]?.options).toMatchObject({
+        show: false,
+        width: 320,
+        height: 568,
+        useContentSize: true,
+        webPreferences: { offscreen: true },
+      });
+    });
+  });
+
+  it('rejects a screen-clamped capture before sending cropped frames to the sidecar', async () => {
+    await withRendererTestDir(async (workDir) => {
+      electronHarness.state.scriptExecutor = createReadyScriptExecutor([]);
+      electronHarness.state.captureSize = { width: 320, height: 417 };
+
+      await expect(createElectronHtmlVideoRenderer().render(rendererInput(workDir)))
+        .rejects.toMatchObject({ code: 'HTML_VIDEO_CAPTURE_SIZE_MISMATCH' });
+      expect(sidecarHarness.run).not.toHaveBeenCalled();
+      await expectFrameDirectoriesMissing(workDir, [1]);
+    });
+  });
+
   it('removes all captured frame directories after a successful render', async () => {
     await withRendererTestDir(async (workDir) => {
       electronHarness.state.scriptExecutor = createReadyScriptExecutor([]);
@@ -1110,7 +1144,7 @@ describe('Electron HTML video capture contract', () => {
 });
 
 function runSceneRuntime(html: string) {
-  const scripts = [...html.matchAll(/<script>([\s\S]*?)<\/script>/g)].map((match) => match[1]);
+  const scripts = [...html.matchAll(/<script(?:\s[^>]*)?>([\s\S]*?)<\/script>/g)].map((match) => match[1]);
   const listeners = new Map<string, Array<() => void>>();
   const animationFrames = new Map<number, (now: number) => void>();
   let animationFrameId = 0;

@@ -473,6 +473,9 @@ export type HtmlVideoEditableConfigField =
   | 'ttsProvider'
   | 'ttsSpeed'
   | 'bgmId'
+  | 'captionPreset'
+  | 'captionAnim'
+  | 'captionColors'
   | 'bgmVolume'
   | 'transitionType'
   | 'foreground'
@@ -485,6 +488,9 @@ export type HtmlVideoConfigChange =
   | { field: 'ttsProvider'; value: TtsProvider }
   | { field: 'ttsSpeed'; value: number }
   | { field: 'bgmId'; value: string }
+  | { field: 'captionPreset'; value: 'classic' | 'editorial' | 'karaoke' }
+  | { field: 'captionAnim'; value: 'none' | 'fade-up' | 'pop' }
+  | { field: 'captionColors'; value: Record<string, string> }
   | { field: 'bgmVolume'; value: 'soft' | 'medium' | 'loud' }
   | { field: 'transitionType'; value: 'fade' | 'dissolve' | 'wipeleft' | 'wiperight' | 'slideleft' | 'slideright' }
   | { field: 'foreground'; value: boolean }

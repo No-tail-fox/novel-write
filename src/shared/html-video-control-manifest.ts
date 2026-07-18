@@ -29,6 +29,9 @@ export const HTML_VIDEO_EDITABLE_CONTROL_FIELDS = [
   'ttsProvider',
   'ttsSpeed',
   'bgmId',
+  'captionPreset',
+  'captionAnim',
+  'captionColors',
   'bgmVolume',
   'transitionType',
   'foreground',
@@ -91,16 +94,16 @@ export const HTML_VIDEO_CONTROL_MANIFEST_V1 = {
     consumerStages: ['render'], invalidateFrom: 'render', availability: 'editable',
   }),
   captionPreset: entry('captionPreset', {
-    schema: 'compatible-string', uiLocation: 'caption', legacyMirror: null,
-    consumerStages: [], invalidateFrom: null, availability: 'read-only-compatible',
+    schema: 'caption-preset', uiLocation: 'caption', legacyMirror: null,
+    consumerStages: ['preview', 'render'], invalidateFrom: 'preview', availability: 'editable',
   }),
   captionAnim: entry('captionAnim', {
-    schema: 'compatible-string', uiLocation: 'caption', legacyMirror: null,
-    consumerStages: [], invalidateFrom: null, availability: 'read-only-compatible',
+    schema: 'caption-animation', uiLocation: 'caption', legacyMirror: null,
+    consumerStages: ['preview', 'render'], invalidateFrom: 'preview', availability: 'editable',
   }),
   captionColors: entry('captionColors', {
     schema: 'caption-colors', uiLocation: 'caption', legacyMirror: null,
-    consumerStages: [], invalidateFrom: null, availability: 'read-only-compatible',
+    consumerStages: ['preview', 'render'], invalidateFrom: 'preview', availability: 'editable',
   }),
   bgmVolume: entry('bgmVolume', {
     schema: 'bgm-volume', uiLocation: 'render', legacyMirror: null,

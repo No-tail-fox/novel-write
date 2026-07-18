@@ -10,6 +10,11 @@ import {
   HTML_VIDEO_TRANSITIONS,
 } from './html-video-config';
 import {
+  HTML_VIDEO_CAPTION_ANIMATIONS,
+  HTML_VIDEO_CAPTION_PRESETS,
+  validateHtmlVideoCaptionColors,
+} from './html-video-captions';
+import {
   MAX_HTML_VIDEO_SCENES,
   MAX_HTML_VIDEO_SOURCE_CHARS,
   parseHtmlVideoPipelineData,
@@ -235,6 +240,19 @@ const htmlVideoConfigChangeSchema = z.discriminatedUnion('field', [
   z.object({ field: z.literal('ttsProvider'), value: z.enum(HTML_VIDEO_TTS_PROVIDERS) }).strict(),
   z.object({ field: z.literal('ttsSpeed'), value: finiteNumber.min(HTML_VIDEO_TTS_SPEED_MIN).max(HTML_VIDEO_TTS_SPEED_MAX) }).strict(),
   z.object({ field: z.literal('bgmId'), value: z.string().max(1024) }).strict(),
+  z.object({ field: z.literal('captionPreset'), value: z.enum(HTML_VIDEO_CAPTION_PRESETS) }).strict(),
+  z.object({ field: z.literal('captionAnim'), value: z.enum(HTML_VIDEO_CAPTION_ANIMATIONS) }).strict(),
+  z.object({
+    field: z.literal('captionColors'),
+    value: z.custom<Record<string, string>>((value) => {
+      try {
+        validateHtmlVideoCaptionColors(value);
+        return true;
+      } catch {
+        return false;
+      }
+    }, 'Invalid HTML video caption colors.'),
+  }).strict(),
   z.object({ field: z.literal('bgmVolume'), value: z.enum(HTML_VIDEO_BGM_VOLUMES) }).strict(),
   z.object({ field: z.literal('transitionType'), value: z.enum(HTML_VIDEO_TRANSITIONS) }).strict(),
   z.object({ field: z.literal('foreground'), value: z.boolean() }).strict(),
@@ -245,7 +263,7 @@ const htmlVideoConfigChangeSchema = z.discriminatedUnion('field', [
 export const htmlVideoConfigUpdateSchema = bounded(z
   .object({
     id: governanceIdSchema,
-    changes: z.array(htmlVideoConfigChangeSchema).min(1).max(10),
+    changes: z.array(htmlVideoConfigChangeSchema).min(1).max(13),
   })
   .strict()
   .superRefine((input, ctx) => {

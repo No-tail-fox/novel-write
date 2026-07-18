@@ -1,5 +1,6 @@
 import { pathToFileURL } from 'node:url';
-import type { PipelineArtifact } from './types';
+import type { HtmlVideoJobConfig, PipelineArtifact } from './types';
+import { resolveHtmlVideoCaptionStyle, type ResolvedHtmlVideoCaptionStyle } from './html-video-captions';
 
 export interface HtmlVideoSceneSource {
   sceneId: number;
@@ -54,6 +55,8 @@ export interface HtmlVideoBuildInput {
   canvas_w: number;
   canvas_h: number;
   transition?: { type: string; duration: number };
+  captionConfig?: Pick<HtmlVideoJobConfig, 'captionPreset' | 'captionAnim' | 'captionColors'>;
+  captionReducedMotion?: boolean;
 }
 
 export interface HtmlVideoExportInput extends HtmlVideoComposition {}
@@ -82,6 +85,10 @@ export interface HtmlVideoComposePayload {
 }
 
 export function buildHtmlVideoExportInput(input: HtmlVideoBuildInput): HtmlVideoComposition {
+  const captionStyle = resolveHtmlVideoCaptionStyle(
+    input.captionConfig ?? {},
+    { reducedMotion: input.captionReducedMotion },
+  );
   const generatedImages = new Map(input.generatedImages.map((asset) => [asset.sceneId, asset.path]));
   const foregroundImages = new Map<number, string[]>();
   for (const asset of input.foregroundImages ?? []) {
@@ -134,6 +141,7 @@ export function buildHtmlVideoExportInput(input: HtmlVideoBuildInput): HtmlVideo
         fps: Math.max(1, Math.round(input.fps || 30)),
         canvas_w: Math.max(1, Math.round(input.canvas_w)),
         canvas_h: Math.max(1, Math.round(input.canvas_h)),
+        captionStyle,
       }),
       duration: roundSeconds(scene.durationMs / 1000),
     })),
@@ -181,20 +189,29 @@ function buildSceneHtml(scene: {
   fps: number;
   canvas_w: number;
   canvas_h: number;
+  captionStyle: ResolvedHtmlVideoCaptionStyle;
 }): string {
   const imageDataUrl = safeAssetUrl(scene.imagePath);
   const audioDataUrl = safeLocalAssetUrl(scene.audioPath);
   const foregroundMarkup = (scene.foregroundPaths ?? [])
     .map((path, index) => `<img class="scene-foreground" data-slot="${index}" src="${safeAssetUrl(path)}" alt="" />`)
     .join('\n    ');
+  const captionColors = scene.captionStyle.colors;
   return `<!doctype html>
 <html lang="zh-CN">
 <head>
   <meta charset="utf-8" />
+  <meta http-equiv="Content-Security-Policy" content="default-src 'none'; img-src file: data:; media-src file: data:; style-src 'nonce-storydream-html-video'; script-src 'nonce-storydream-html-video'" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>${escapeHtml(scene.title)}</title>
-  <style>
-    :root { color-scheme: dark; }
+  <style nonce="storydream-html-video">
+    :root {
+      color-scheme: dark;
+      --caption-text: ${captionColors.text};
+      --caption-accent: ${captionColors.accent};
+      --caption-background: ${captionColors.background};
+      --caption-shadow: ${captionColors.shadow};
+    }
     html, body {
       width: 100%;
       height: 100%;
@@ -266,8 +283,24 @@ function buildSceneHtml(scene: {
       font-size: clamp(18px, 1.65vw, 30px);
       line-height: 1.3;
       color: rgba(240, 247, 248, 0.94);
+      color: var(--caption-text);
       text-shadow: 0 6px 18px rgba(0, 0, 0, 0.42);
+      text-shadow: 0 6px 18px var(--caption-shadow);
       white-space: pre-wrap;
+    }
+    .frame[data-caption-preset="editorial"] .caption {
+      padding: 0.42em 0.62em;
+      border-left: 4px solid var(--caption-accent);
+      background: var(--caption-background);
+      font-family: Georgia, "Microsoft YaHei UI", serif;
+    }
+    .frame[data-caption-preset="karaoke"] .caption {
+      width: fit-content;
+      max-width: 100%;
+      padding: 0.38em 0.7em;
+      border-bottom: 3px solid var(--caption-accent);
+      background: var(--caption-background);
+      font-weight: 800;
     }
     .meta {
       display: inline-flex;
@@ -285,7 +318,7 @@ function buildSceneHtml(scene: {
       opacity: 0;
     }
   </style>
-  <script>
+  <script nonce="storydream-html-video">
     window.__duration = ${scene.duration};
     window.__ready = false;
     let sceneAudio = null;
@@ -309,6 +342,10 @@ function buildSceneHtml(scene: {
       const foregrounds = typeof document.querySelectorAll === 'function' ? document.querySelectorAll('.scene-foreground') : [];
       const veil = document.querySelector('.veil');
       const copy = document.querySelector('.copy');
+      const caption = document.querySelector('.caption');
+      const requestedCaptionAnimation = ${JSON.stringify(scene.captionStyle.animation)};
+      const reduceCaptionMotion = typeof matchMedia === 'function' && matchMedia('(prefers-reduced-motion: reduce)').matches;
+      const captionAnimation = reduceCaptionMotion ? 'none' : requestedCaptionAnimation;
       if (frame) {
         frame.dataset.time = String(next);
         frame.dataset.progress = String(progress);
@@ -324,8 +361,21 @@ function buildSceneHtml(scene: {
         veil.style.opacity = String(0.86 + progress * 0.1);
       }
       if (copy) {
-        copy.style.opacity = String(Math.min(1, 0.72 + eased * 0.28));
-        copy.style.transform = 'translateY(' + ((1 - eased) * 18).toFixed(2) + 'px)';
+        if (captionAnimation === 'fade-up') {
+          copy.style.opacity = String(Math.min(1, 0.72 + eased * 0.28));
+          copy.style.transform = 'translateY(' + ((1 - eased) * 18).toFixed(2) + 'px)';
+        } else {
+          copy.style.opacity = '1';
+          copy.style.transform = 'translateY(0)';
+        }
+      }
+      if (caption) {
+        caption.style.opacity = captionAnimation === 'pop'
+          ? String(Math.min(1, 0.7 + eased * 0.3))
+          : '1';
+        caption.style.transform = captionAnimation === 'pop'
+          ? 'scale(' + (0.92 + eased * 0.08).toFixed(4) + ')'
+          : 'scale(1)';
       }
       return next;
     };
@@ -400,7 +450,7 @@ function buildSceneHtml(scene: {
   </script>
 </head>
 <body>
-  <div class="frame">
+  <div class="frame" data-caption-preset="${scene.captionStyle.preset}" data-caption-animation="${scene.captionStyle.animation}">
     <img class="scene-image" src="${imageDataUrl}" alt="${escapeHtml(scene.caption)}" />
     <audio class="scene-audio" src="${audioDataUrl}" preload="auto"></audio>
     <div class="veil"></div>

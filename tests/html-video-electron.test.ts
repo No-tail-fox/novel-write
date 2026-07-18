@@ -6,7 +6,7 @@ import { basename, dirname, join } from 'node:path';
 import { describe, expect, it } from 'vitest';
 import * as htmlVideoRuntimeModule from '../electron/html-video-runtime';
 import { AppError, isCancellation } from '../src/shared/app-error';
-import { MAX_HTML_VIDEO_MEDIA_FILE_BYTES, runHtmlVideoPipeline } from '../src/shared/html-video-runner';
+import { MAX_HTML_VIDEO_MEDIA_FILE_BYTES, runHtmlVideoPipeline, type HtmlVideoPreviewInput } from '../src/shared/html-video-runner';
 import { createHtmlVideoPipelineData, createHtmlVideoTaskInput, parseHtmlVideoPipelineData } from '../src/shared/html-video-workflow';
 import { FileDatabase } from '../src/shared/storage';
 import {
@@ -160,7 +160,7 @@ describe('Electron HTML video runtime contract', () => {
       const readOnlyBefore = await database.getTaskDetail(readOnly.id);
       await expect(database.updateHtmlVideoTaskConfig(
         readOnly.id,
-        [{ field: 'captionPreset', value: 'karaoke' }] as never,
+        [{ field: 'coverRatio', value: '1:1' }] as never,
       )).rejects.toThrow(/不可编辑|read-only|editable/i);
       expect(await database.getTaskDetail(readOnly.id)).toEqual(readOnlyBefore);
       expect((await database.listTaskEvents(readOnly.id, { limit: 100 })).items).toEqual([]);
@@ -771,6 +771,62 @@ describe('Electron HTML video runtime contract', () => {
         canvas_h: 426,
         transition: { type: 'dissolve', duration: 0.3 },
       });
+    });
+  });
+
+  it('uses identical resolved caption HTML for preview and final render', async () => {
+    await withRuntimeDir(async (workDir) => {
+      const background = join(workDir, 'caption-background.png');
+      const foreground = join(workDir, 'caption-foreground.png');
+      const voice = join(workDir, 'caption-voice.wav');
+      await Promise.all([
+        writeFile(background, Buffer.from('background')),
+        writeFile(foreground, Buffer.from('foreground')),
+        writeFile(voice, Buffer.from('voice')),
+      ]);
+      let previewHtml = '';
+      let renderHtml = '';
+      const runtime = createElectronHtmlVideoRuntime({
+        taskDirectory: taskDirectoryFor(workDir),
+        taskTitle: 'Caption parity',
+        fps: 2,
+        maxLongEdge: 568,
+        renderer: {
+          async capturePreview(input) {
+            previewHtml = await readFile(input.htmlPath, 'utf8');
+            await writeFile(input.outputPath, Buffer.from('thumbnail'));
+            return input.outputPath;
+          },
+          async render(input) {
+            renderHtml = input.scenes[0].html;
+            await writeFile(input.outputPath, Buffer.from('mp4-output'));
+            return {
+              outputPath: input.outputPath,
+              sourceVideoPath: join(input.workDir, '_source.mp4'),
+              duration: input.totalDurationS,
+              taskDir: input.workDir,
+              framesDirs: [],
+            };
+          },
+        },
+        probeMedia: async () => validFinalMediaProbe(1.25),
+        getAvailableDiskBytes: async () => 4 * 1024 * 1024 * 1024,
+      });
+      const input = runtimeInput(background, foreground, voice);
+      input.config = {
+        ...input.config,
+        captionPreset: 'editorial',
+        captionAnim: 'pop',
+        captionColors: { text: '#ffffff', accent: '#11aabb' },
+      };
+      const preview = await runtime.createPreviews(input);
+      await runtime.render({ ...input, compositions: preview.compositions });
+
+      expect(previewHtml).toBe(renderHtml);
+      expect(renderHtml).toContain('data-caption-preset="editorial"');
+      expect(renderHtml).toContain('data-caption-animation="pop"');
+      expect(renderHtml).toContain('--caption-accent: #11aabb;');
+      expect(renderHtml).toContain("matchMedia('(prefers-reduced-motion: reduce)')");
     });
   });
 
@@ -4008,7 +4064,7 @@ describe('Electron HTML video runtime contract', () => {
   });
 });
 
-function runtimeInput(background: string, foreground: string, voice: string) {
+function runtimeInput(background: string, foreground: string, voice: string): HtmlVideoPreviewInput {
   return {
     scenes: htmlScenes(),
     assets: [

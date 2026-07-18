@@ -228,6 +228,19 @@ import {
   HTML_VIDEO_TTS_SPEED_MAX,
   HTML_VIDEO_TTS_SPEED_MIN,
 } from './shared/html-video-config';
+import {
+  HTML_VIDEO_CAPTION_ANIMATIONS,
+  HTML_VIDEO_CAPTION_COLOR_KEYS,
+  HTML_VIDEO_CAPTION_PRESETS,
+  htmlVideoCaptionColorsEqual,
+  htmlVideoCaptionPickerColor,
+  resolveHtmlVideoCaptionStyle,
+  validateHtmlVideoCaptionColors,
+  type HtmlVideoCaptionAnimation,
+  type HtmlVideoCaptionColorOverrides,
+  type HtmlVideoCaptionColorKey,
+  type HtmlVideoCaptionPreset,
+} from './shared/html-video-captions';
 import { HTML_VIDEO_CONTROL_MANIFEST_V1 } from './shared/html-video-control-manifest';
 import { createHtmlVideoMediaCache, htmlVideoMediaElementKey, htmlVideoMediaElementScopeMatches, htmlVideoMediaStatus, loadHtmlVideoMedia, recordHtmlVideoMediaElementFailure, syncHtmlVideoMediaCache, type HtmlVideoMediaElementFailureState, type HtmlVideoMediaElementScope } from './shared/html-video-media';
 import { useAsyncAction, type AsyncActionFeedback } from './ui/async-action';
@@ -4876,9 +4889,12 @@ function HtmlVideoPage({
               aria-busy={mediaLoading}
             >
               <HtmlVideoTabPanel
+                api={api}
                 tab={activeTab}
                 task={activeTask}
                 data={pipelineData}
+                applyState={applyState}
+                refreshTaskDetail={refreshTaskDetail}
                 mediaUrls={mediaUrls}
                 failedMediaPaths={failedMediaPaths}
                 mediaRetryRevision={mediaRetryRevision}
@@ -5066,10 +5082,179 @@ function HtmlVideoConfigEditor({
   );
 }
 
+const htmlVideoCaptionPresetLabels: Record<HtmlVideoCaptionPreset, string> = {
+  classic: '经典',
+  editorial: '编辑部',
+  karaoke: '卡拉 OK',
+};
+const htmlVideoCaptionAnimationLabels: Record<HtmlVideoCaptionAnimation, string> = {
+  none: '无动画',
+  'fade-up': '淡入上浮',
+  pop: '弹入',
+};
+const htmlVideoCaptionColorLabels: Record<HtmlVideoCaptionColorKey, string> = {
+  text: '文字',
+  accent: '强调',
+  background: '底色',
+  shadow: '阴影',
+};
+
+function HtmlVideoCaptionEditor({
+  api,
+  task,
+  config,
+  applyState,
+  refreshTaskDetail,
+  busy,
+}: {
+  api: StoryDreamApi;
+  task: Task;
+  config: HtmlVideoJobConfig;
+  applyState: ApplyMutationResult;
+  refreshTaskDetail: (taskId: string) => Promise<void>;
+  busy: boolean;
+}) {
+  const initial = resolveHtmlVideoCaptionStyle(config);
+  const configColorsKey = JSON.stringify(config.captionColors ?? {});
+  const [preset, setPreset] = useState<HtmlVideoCaptionPreset>(initial.preset);
+  const [animation, setAnimation] = useState<HtmlVideoCaptionAnimation>(initial.requestedAnimation);
+  const [colors, setColors] = useState(initial.colors);
+  const [colorOverrides, setColorOverrides] = useState<HtmlVideoCaptionColorOverrides>({ ...(config.captionColors ?? {}) });
+  const [message, setMessage] = useState('');
+  const captionAction = useAsyncAction();
+  const disabled = busy || task.status === 'pending' || task.status === 'running' || captionAction.busy;
+
+  useEffect(() => {
+    const next = resolveHtmlVideoCaptionStyle(config);
+    setPreset(next.preset);
+    setAnimation(next.requestedAnimation);
+    setColors(next.colors);
+    setColorOverrides({ ...(config.captionColors ?? {}) });
+    setMessage('');
+  }, [task.id, config.captionPreset, config.captionAnim, configColorsKey]);
+
+  function changePreset(value: HtmlVideoCaptionPreset) {
+    setPreset(value);
+    setColors(resolveHtmlVideoCaptionStyle({ captionPreset: value, captionColors: colorOverrides }).colors);
+  }
+
+  function changeColor(key: HtmlVideoCaptionColorKey, value: string) {
+    setColors((current) => ({ ...current, [key]: value }));
+    try {
+      const validated = validateHtmlVideoCaptionColors({ [key]: value });
+      setColorOverrides((current) => ({ ...current, [key]: validated[key] }));
+      setMessage('');
+    } catch {
+      setMessage('颜色代码仅支持 3、4、6 或 8 位十六进制。');
+    }
+  }
+
+  function resetColor(key: HtmlVideoCaptionColorKey) {
+    const next = { ...colorOverrides };
+    delete next[key];
+    setColorOverrides(next);
+    setColors(resolveHtmlVideoCaptionStyle({ captionPreset: preset, captionColors: next }).colors);
+    setMessage('');
+  }
+
+  async function saveCaptionConfig() {
+    try {
+      validateHtmlVideoCaptionColors(colors);
+    } catch {
+      setMessage('请先修正无效的字幕颜色代码。');
+      return;
+    }
+    const changes: HtmlVideoConfigChange[] = [];
+    if (preset !== initial.preset) changes.push({ field: 'captionPreset', value: preset });
+    if (animation !== initial.requestedAnimation) changes.push({ field: 'captionAnim', value: animation });
+    if (!htmlVideoCaptionColorsEqual(config.captionColors, colorOverrides)) {
+      changes.push({ field: 'captionColors', value: colorOverrides });
+    }
+    if (!changes.length) {
+      setMessage('字幕参数没有变化。');
+      return;
+    }
+    await captionAction.run(async () => {
+      const next = await api.updateHtmlVideoConfig(task.id, changes);
+      applyState(next);
+      await refreshTaskDetail(task.id);
+      setMessage('字幕参数已保存。');
+    }, { onError: (error) => setMessage(error.message) });
+  }
+
+  return (
+    <section className="hv-caption-editor" aria-label="字幕样式参数">
+      <div className="panel-title-row">
+        <h4>字幕样式</h4>
+        <button className="mini-button" type="button" disabled={disabled} onClick={saveCaptionConfig}>
+          {captionAction.busy ? <Loader2 className="spin" size={14} /> : <Save size={14} />}保存字幕
+        </button>
+      </div>
+      <fieldset className="hv-caption-editor-grid" disabled={disabled}>
+        <div data-html-video-edit-field="captionPreset">
+          <Field label="字幕预设">
+            <select value={preset} onChange={(event) => changePreset(event.target.value as HtmlVideoCaptionPreset)} disabled={disabled}>
+              {HTML_VIDEO_CAPTION_PRESETS.map((value) => <option key={value} value={value}>{htmlVideoCaptionPresetLabels[value]}</option>)}
+            </select>
+          </Field>
+        </div>
+        <div data-html-video-edit-field="captionAnim">
+          <Field label="字幕动画">
+            <select value={animation} onChange={(event) => setAnimation(event.target.value as HtmlVideoCaptionAnimation)} disabled={disabled}>
+              {HTML_VIDEO_CAPTION_ANIMATIONS.map((value) => <option key={value} value={value}>{htmlVideoCaptionAnimationLabels[value]}</option>)}
+            </select>
+          </Field>
+        </div>
+        <div className="hv-caption-colors" data-html-video-edit-field="captionColors">
+          {HTML_VIDEO_CAPTION_COLOR_KEYS.map((key) => (
+            <div className="hv-caption-color-item" key={key}>
+              <span>{htmlVideoCaptionColorLabels[key]}</span>
+              <div className="hv-caption-color-controls">
+                <input
+                  type="color"
+                  aria-label={`${htmlVideoCaptionColorLabels[key]}颜色选择`}
+                  value={htmlVideoCaptionPickerColor(colors[key])}
+                  disabled={disabled}
+                  onChange={(event) => changeColor(key, event.target.value)}
+                />
+                <input
+                  className="hv-caption-color-code"
+                  type="text"
+                  aria-label={`${htmlVideoCaptionColorLabels[key]}十六进制颜色`}
+                  value={colors[key]}
+                  maxLength={9}
+                  spellCheck={false}
+                  disabled={disabled}
+                  onChange={(event) => changeColor(key, event.target.value)}
+                />
+                <button
+                  className="icon-button hv-caption-color-reset"
+                  type="button"
+                  title="恢复预设颜色"
+                  aria-label={`恢复${htmlVideoCaptionColorLabels[key]}预设颜色`}
+                  disabled={disabled || colorOverrides[key] === undefined}
+                  onClick={() => resetColor(key)}
+                >
+                  <RotateCcw size={13} />
+                </button>
+              </div>
+            </div>
+          ))}
+        </div>
+      </fieldset>
+      {message ? <span className="local-note" role="status">{message}</span> : null}
+      <InlineActionFeedback feedback={captionAction.feedback} />
+    </section>
+  );
+}
+
 function HtmlVideoTabPanel({
+  api,
   tab,
   task,
   data,
+  applyState,
+  refreshTaskDetail,
   mediaUrls,
   failedMediaPaths,
   mediaRetryRevision,
@@ -5079,9 +5264,12 @@ function HtmlVideoTabPanel({
   isBrowserPreview,
   openPreview,
 }: {
+  api: StoryDreamApi;
   tab: HtmlVideoTabKey;
   task: Task | null;
   data: ReturnType<typeof safeParseHtmlVideoPipelineData>['data'];
+  applyState: ApplyMutationResult;
+  refreshTaskDetail: (taskId: string) => Promise<void>;
   mediaUrls: Record<string, string>;
   failedMediaPaths: ReadonlySet<string>;
   mediaRetryRevision: number;
@@ -5207,6 +5395,15 @@ function HtmlVideoTabPanel({
   if (tab === 'preview') {
     return (
       <div className="hv-tab-content">
+        <HtmlVideoCaptionEditor
+          key={task.id}
+          api={api}
+          task={task}
+          config={data.config}
+          applyState={applyState}
+          refreshTaskDetail={refreshTaskDetail}
+          busy={busy}
+        />
         {data.compositions.length ? (
           <div className="hv-media-grid">
             {data.compositions.map((composition) => {

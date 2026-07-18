@@ -97,10 +97,12 @@ describe('IPC runtime contract', () => {
         { field: 'bgmVolume', value: 'medium' },
         { field: 'transitionType', value: 'dissolve' },
         { field: 'ratio', value: '4:3' },
+        { field: 'captionPreset', value: 'editorial' },
+        { field: 'captionAnim', value: 'pop' },
+        { field: 'captionColors', value: { text: '#ffffff', accent: '#11aabb' } },
       ],
     })).toMatchObject({ id: 'html-task-1' });
     for (const invalidChange of [
-      { field: 'captionPreset', value: 'karaoke' },
       { field: 'coverImageMode', value: 'off' },
       { field: 'draftTemplate', value: 'draft-1' },
       { field: 'ttsProvider', value: 'unknown-provider' },
@@ -108,6 +110,10 @@ describe('IPC runtime contract', () => {
       { field: 'bgmVolume', value: 'silent' },
       { field: 'transitionType', value: 'unknown-transition' },
       { field: 'ratio', value: '3:2' },
+      { field: 'captionPreset', value: 'vendor-preset' },
+      { field: 'captionAnim', value: 'spin' },
+      { field: 'captionColors', value: { width: '#ffffff' } },
+      { field: 'captionColors', value: { text: 'red;url(javascript:1)' } },
       { field: 'unknownField', value: true },
     ]) {
       expect(() => htmlVideoUpdateSchema.parse({ id: 'html-task-1', changes: [invalidChange] })).toThrow();
@@ -117,6 +123,24 @@ describe('IPC runtime contract', () => {
       id: 'html-task-1',
       changes: [{ field: 'style', value: 'a' }, { field: 'style', value: 'b' }],
     })).toThrow();
+    expect(htmlVideoUpdateSchema.parse({
+      id: 'html-task-1',
+      changes: [
+        { field: 'style', value: 'editorial' },
+        { field: 'voiceId', value: 'voice' },
+        { field: 'ttsProvider', value: 'minimax' },
+        { field: 'ttsSpeed', value: 1.1 },
+        { field: 'bgmId', value: '' },
+        { field: 'captionPreset', value: 'classic' },
+        { field: 'captionAnim', value: 'none' },
+        { field: 'captionColors', value: { shadow: '#000000aa' } },
+        { field: 'bgmVolume', value: 'soft' },
+        { field: 'transitionType', value: 'fade' },
+        { field: 'foreground', value: true },
+        { field: 'maxScenes', value: 8 },
+        { field: 'ratio', value: '9:16' },
+      ],
+    }).changes).toHaveLength(13);
 
     expect(contract.createTaskSchema.parse({
       inputText: 'hello',

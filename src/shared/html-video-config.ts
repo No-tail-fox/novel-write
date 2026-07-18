@@ -4,6 +4,11 @@ import {
   type HtmlVideoControlField,
 } from './html-video-control-manifest';
 import type { HtmlVideoJobConfig, HtmlVideoVisibleStep } from './types';
+import {
+  validateHtmlVideoCaptionAnimation,
+  validateHtmlVideoCaptionColors,
+  validateHtmlVideoCaptionPreset,
+} from './html-video-captions';
 
 export const HTML_VIDEO_MAX_SCENES = 30;
 export const HTML_VIDEO_TTS_SPEED_MIN = 0.1;
@@ -39,8 +44,6 @@ type HtmlVideoMissingCompatibleField = Exclude<HtmlVideoControlField, HtmlVideoD
 export type HtmlVideoNewJobConfig = HtmlVideoJobConfig & Required<Pick<HtmlVideoJobConfig, HtmlVideoDefaultedField>>;
 
 const MAX_CONFIG_STRING_CHARS = 1024;
-const MAX_CAPTION_COLOR_KEY_CHARS = 128;
-const MAX_CAPTION_COLORS = 32;
 const HTML_VIDEO_DEFAULTED_FIELDS: readonly HtmlVideoDefaultedField[] = [
   'style',
   'voiceId',
@@ -124,8 +127,12 @@ export function preserveHtmlVideoJobConfig(value: unknown): HtmlVideoJobConfig {
       result.maxScenes = Number(current);
     } else if (field === 'ratio') {
       result.ratio = requireEnum(current, field, HTML_VIDEO_RATIOS);
+    } else if (field === 'captionPreset') {
+      result.captionPreset = validateHtmlVideoCaptionPreset(current);
+    } else if (field === 'captionAnim') {
+      result.captionAnim = validateHtmlVideoCaptionAnimation(current);
     } else if (field === 'captionColors') {
-      result.captionColors = requireCaptionColors(current);
+      result.captionColors = validateHtmlVideoCaptionColors(current) as Record<string, string>;
     } else {
       result[field] = requireBoundedString(current, field);
     }
@@ -211,16 +218,6 @@ function cloneHtmlVideoJobConfig(config: HtmlVideoJobConfig): HtmlVideoJobConfig
     ...config,
     ...(config.captionColors ? { captionColors: { ...config.captionColors } } : {}),
   };
-}
-
-function requireCaptionColors(value: unknown): Record<string, string> {
-  if (!isRecord(value)) throw invalidConfig('captionColors is invalid');
-  const entries = Object.entries(value);
-  if (entries.length > MAX_CAPTION_COLORS) throw invalidConfig(`captionColors exceeds ${MAX_CAPTION_COLORS} entries`);
-  return Object.fromEntries(entries.map(([key, color]) => [
-    requireBoundedString(key, 'captionColors key', MAX_CAPTION_COLOR_KEY_CHARS),
-    requireBoundedString(color, `captionColors.${key}`),
-  ]));
 }
 
 function requireBoundedString(value: unknown, field: string, maximum = MAX_CONFIG_STRING_CHARS): string {

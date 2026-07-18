@@ -1,13 +1,14 @@
 import { spawn, spawnSync } from 'node:child_process';
 import { createRequire } from 'node:module';
 import { createServer } from 'node:net';
-import { mkdir, mkdtemp, readFile, readdir, rm, stat, writeFile } from 'node:fs/promises';
+import { copyFile, mkdir, mkdtemp, readFile, readdir, rm, stat, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { basename, dirname, join, resolve } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 
 const rootDir = fileURLToPath(new URL('..', import.meta.url));
 const outputBase = resolve(process.env.STORYDREAM_QA_OUTPUT_DIR || tmpdir());
+const keepQaTempOnFailure = process.env.STORYDREAM_QA_KEEP_TEMP_ON_FAILURE === '1';
 const CDP_CONNECT_TIMEOUT_MS = 10_000;
 const CDP_COMMAND_TIMEOUT_MS = 15_000;
 const WAIT_FOR_CHECK_TIMEOUT_MS = 5_000;
@@ -17,7 +18,7 @@ const runtimeErrors = [];
 const networkRequests = [];
 const networkResponses = [];
 const htmlVideoEditableFields = ['style', 'voiceId', 'ttsProvider', 'ttsSpeed', 'bgmId', 'bgmVolume', 'transitionType', 'foreground', 'maxScenes', 'ratio'];
-const htmlVideoReadOnlyFields = ['captionPreset', 'captionAnim', 'captionColors', 'coverImageMode', 'coverTemplate', 'coverRatio', 'draftTemplate'];
+const htmlVideoReadOnlyFields = ['coverImageMode', 'coverTemplate', 'coverRatio', 'draftTemplate'];
 let child;
 let cdp;
 let ffmpegPath;
@@ -28,6 +29,8 @@ try {
   profileDir = join(qaTempDir, 'profile');
   const desktopScreenshot = join(qaTempDir, 'desktop.png');
   const compactScreenshot = join(qaTempDir, 'compact.png');
+  const captionEditorScreenshot = join(qaTempDir, 'caption-editor.png');
+  const captionPreviewScreenshot = join(qaTempDir, 'caption-preview.png');
   const require = createRequire(join(rootDir, 'package.json'));
   const electronPath = require('electron');
   const { WebSocket } = require('undici');
@@ -203,6 +206,28 @@ try {
   if (configUpdate.renderCompleted || !configUpdate.resumeAvailable || configUpdate.transitionType !== configUpdate.targetTransition) {
     throw new Error(`HTML video config update did not reach the expected resumable render state: ${JSON.stringify(configUpdate)}`);
   }
+  const captionUpdate = await exerciseHtmlVideoCaptionUpdate(cdp, seededTasks.primary.id);
+  if (captionUpdate.completedStepCount !== 4) {
+    throw new Error(`Caption config update preserved ${captionUpdate.completedStepCount} completed steps instead of 4.`);
+  }
+  if (captionUpdate.previewCompleted || captionUpdate.renderCompleted || !captionUpdate.resumeAvailable) {
+    throw new Error(`HTML video caption update did not reach the expected resumable preview state: ${JSON.stringify(captionUpdate)}`);
+  }
+  await evaluate(cdp, `document.querySelector('.hv-caption-editor')?.scrollIntoView({ block: 'center' })`);
+  await delay(200);
+  await saveScreenshot(cdp, captionEditorScreenshot);
+  const captionPreview = await resumeAndCaptureCaptionPreview(
+    cdp,
+    port,
+    target.id,
+    WebSocket,
+    captionPreviewScreenshot,
+    seededTasks.primary.id,
+    captionUpdate,
+  );
+  if (!captionPreview.captionVisible || captionPreview.captionClipped || captionPreview.horizontalOverflow > 0) {
+    throw new Error(`Rendered caption preview is not visibly contained: ${JSON.stringify(captionPreview)}`);
+  }
 
   const expectedMissingMediaResponses = networkResponses.filter((response) => (
     response.status === 404 && response.url === sameUrlRecovery.mediaUrl
@@ -238,11 +263,24 @@ try {
     throw new Error(`Renderer console errors: ${relevantRuntimeErrors.map((error) => error.message).join(' | ')}`);
   }
 
-  const screenshots = await Promise.all([desktopScreenshot, compactScreenshot].map(async (path) => {
+  const screenshotPaths = [desktopScreenshot, compactScreenshot, captionEditorScreenshot, captionPreviewScreenshot];
+  const screenshots = await Promise.all(screenshotPaths.map(async (path) => {
     const value = await stat(path);
     if (value.size <= 0) throw new Error(`Screenshot evidence is empty: ${basename(path)}`);
     return { name: basename(path), size: value.size };
   }));
+  const evidenceDirectory = process.env.STORYDREAM_QA_EVIDENCE_DIR
+    ? resolve(process.env.STORYDREAM_QA_EVIDENCE_DIR)
+    : '';
+  const evidencePaths = [];
+  if (evidenceDirectory) {
+    await mkdir(evidenceDirectory, { recursive: true });
+    for (const path of screenshotPaths) {
+      const evidencePath = join(evidenceDirectory, basename(path));
+      await copyFile(path, evidencePath);
+      evidencePaths.push(evidencePath);
+    }
+  }
   process.stdout.write(`${JSON.stringify({
     status: 'passed',
     pageTitle: identity.title,
@@ -255,15 +293,18 @@ try {
     mediaElementRecovery,
     configControls,
     configUpdate,
+    captionUpdate,
+    captionPreview,
     desktop: desktopState,
     compact: compactState,
     screenshots,
+    evidencePaths,
     runtimeErrors: relevantRuntimeErrors,
   }, null, 2)}\n`);
 } finally {
   cdp?.close();
   await stopChild(child);
-  await removeWithRetry(qaTempDir);
+  if (!keepQaTempOnFailure) await removeWithRetry(qaTempDir);
 }
 
 async function assertBuiltApplication() {
@@ -323,20 +364,24 @@ async function resolveFfmpegPath() {
 async function seedCompletedTasks() {
   const storageUrl = pathToFileURL(join(rootDir, 'src', 'shared', 'storage.ts')).href;
   const workflowUrl = pathToFileURL(join(rootDir, 'src', 'shared', 'html-video-workflow.ts')).href;
-  const [{ FileDatabase }, { createHtmlVideoPipelineData }] = await Promise.all([
+  const runnerUrl = pathToFileURL(join(rootDir, 'src', 'shared', 'html-video-runner.ts')).href;
+  const htmlVideoUrl = pathToFileURL(join(rootDir, 'src', 'shared', 'html-video.ts')).href;
+  const [{ FileDatabase }, { createHtmlVideoPipelineData }, { runHtmlVideoPipeline }, { buildHtmlVideoExportInput }] = await Promise.all([
     import(storageUrl),
     import(workflowUrl),
+    import(runnerUrl),
+    import(htmlVideoUrl),
   ]);
   const appDataDir = join(profileDir, 'storydream');
   await mkdir(appDataDir, { recursive: true });
   const database = await FileDatabase.open(join(appDataDir, 'data.db'));
   try {
-    const secondary = await seedCompletedTask(database, createHtmlVideoPipelineData, appDataDir, {
+    const secondary = await seedCompletedTask(database, createHtmlVideoPipelineData, runHtmlVideoPipeline, buildHtmlVideoExportInput, appDataDir, {
       title: '切换目标输出 QA',
       tone: 550,
     });
     await delay(10);
-    const primary = await seedCompletedTask(database, createHtmlVideoPipelineData, appDataDir, {
+    const primary = await seedCompletedTask(database, createHtmlVideoPipelineData, runHtmlVideoPipeline, buildHtmlVideoExportInput, appDataDir, {
       title: '已完成输出播放 QA',
       tone: 660,
     });
@@ -346,7 +391,7 @@ async function seedCompletedTasks() {
   }
 }
 
-async function seedCompletedTask(database, createHtmlVideoPipelineData, appDataDir, options) {
+async function seedCompletedTask(database, createHtmlVideoPipelineData, runHtmlVideoPipeline, buildHtmlVideoExportInput, appDataDir, options) {
   const pipeline = createHtmlVideoPipelineData(`${options.title}。`, {
     ratio: '9:16',
     style: 'cinematic',
@@ -373,57 +418,87 @@ async function seedCompletedTask(database, createHtmlVideoPipelineData, appDataD
   const retryPath = join(taskDir, 'same-url-retry.png');
   await mkdir(taskDir, { recursive: true });
   const png = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=', 'base64');
-  await Promise.all([
-    writeFile(assetPath, png),
-    writeFile(thumbnailPath, png),
-    writeFile(retryPath, png),
-  ]);
-  createQaAudio(voicePath, options.tone);
-  createQaVideo(outputPath, options.tone);
-  const [assetStat, voiceStat, outputStat] = await Promise.all([
-    stat(assetPath),
-    stat(voicePath),
-    stat(outputPath),
-  ]);
+  await writeFile(retryPath, png);
+  const completed = await runHtmlVideoPipeline({
+    taskId: task.id,
+    sourceText: task.inputText,
+    state: pipeline,
+    ignoreCheckpoint: true,
+  }, {
+    workDir: taskDir,
+    async rewrite(input) {
+      return { rewrittenText: input.sourceText.trim(), segments: [input.sourceText.trim()] };
+    },
+    async plan(input) {
+      const narration = input.segments[0];
+      return {
+        scenes: [{
+          index: 1,
+          narration,
+          title: options.title,
+          captions: ['媒体恢复验证'],
+          sceneTemplate: 'cinematic-title',
+          background: { prompt: '真实 DOM 图片错误恢复验证' },
+          elements: [],
+        }],
+      };
+    },
+    async generateAssets() {
+      await writeFile(assetPath, png);
+      return [{ sceneIndex: 1, kind: 'bg', slot: 0, src: assetPath, prompt: '真实 DOM 图片错误恢复验证' }];
+    },
+    async synthesizeVoices(input) {
+      createQaAudio(voicePath, options.tone);
+      return [{ sceneIndex: 1, src: voicePath, durationSec: 1, text: input.scenes[0].narration }];
+    },
+    async createPreviews(input) {
+      const scene = input.scenes[0];
+      const composition = buildHtmlVideoExportInput({
+        workDir: taskDir,
+        outputPath,
+        title: options.title,
+        artifact: {
+          reviewedText: scene.narration,
+          rewrittenCopy: scene.narration,
+          cover: { title: options.title, subtitle: [], summary: scene.narration, tags: [], comments: [] },
+          scenes: [{ id: 1, cap: scene.narration, descPrompt: scene.background.prompt, durationMs: 1000 }],
+          imagePrompts: [],
+          subtitles: { cues: [], srt: '' },
+        },
+        generatedImages: [{ sceneId: 1, path: assetPath }],
+        narrationAudio: [{ sceneId: 1, path: voicePath }],
+        captionConfig: input.config,
+        fps: 24,
+        canvas_w: 320,
+        canvas_h: 568,
+      });
+      const htmlPath = join(taskDir, 'scene-001.html');
+      await Promise.all([
+        writeFile(htmlPath, composition.scenes[0].html, 'utf8'),
+        writeFile(thumbnailPath, png),
+      ]);
+      return {
+        compositions: [{
+          index: 1,
+          durationSec: 1,
+          canvas: { w: 320, h: 568 },
+          audio: { src: voicePath, durationSec: 1 },
+          background: { src: assetPath },
+          captions: [{ id: 'caption-1', text: '媒体恢复验证', startSec: 0, durationSec: 1 }],
+          htmlPath,
+          thumbnailPath,
+          rev: 1,
+        }],
+      };
+    },
+    async render() {
+      createQaVideo(outputPath, options.tone);
+      const outputStat = await stat(outputPath);
+      return { path: outputPath, sizeBytes: outputStat.size, durationSec: 3 };
+    },
+    async onCheckpoint() {},
+  });
   const now = Date.now();
-  pipeline.current = 'done';
-  pipeline.revision = 6;
-  for (const step of Object.values(pipeline.steps)) {
-    step.status = 'completed';
-    step.startedAt = now - 5_000;
-    step.completedAt = now - 1_000;
-    delete step.error;
-  }
-  pipeline.assets = [{
-    sceneIndex: 1,
-    kind: 'bg',
-    slot: 0,
-    src: assetPath,
-    prompt: '真实 DOM 图片错误恢复验证',
-    sizeBytes: assetStat.size,
-  }];
-  pipeline.voices = [{
-    sceneIndex: 1,
-    src: voicePath,
-    durationSec: 1,
-    text: '真实 DOM 音频错误恢复验证',
-    sizeBytes: voiceStat.size,
-  }];
-  pipeline.compositions = [{
-    index: 1,
-    durationSec: 1,
-    canvas: { w: 320, h: 568 },
-    audio: { src: voicePath, durationSec: 1 },
-    background: { src: assetPath },
-    captions: [{ id: 'caption-1', text: '媒体恢复验证', startSec: 0, durationSec: 1 }],
-    thumbnailPath,
-    rev: 1,
-  }];
-  pipeline.output = {
-    path: outputPath,
-    sizeBytes: outputStat.size,
-    durationSec: 3,
-  };
   await database.updateTask(task.id, {
     status: 'completed',
     currentStep: 6,
@@ -431,7 +506,7 @@ async function seedCompletedTask(database, createHtmlVideoPipelineData, appDataD
     errorMessage: '',
     completedAt: new Date(now).toISOString(),
     pipelineStep: 'done',
-    pipelineData: JSON.stringify(pipeline),
+    pipelineData: JSON.stringify(completed),
   });
   return { id: task.id, title: options.title, taskDir, outputPath, retryPath };
 }
@@ -878,6 +953,279 @@ async function exerciseHtmlVideoConfigUpdate(cdpConnection) {
   })()`);
 }
 
+async function exerciseHtmlVideoCaptionUpdate(cdpConnection, taskId) {
+  if (!await clickTab(cdpConnection, '动画预览')) {
+    throw new Error('Could not open the HTML video preview tab for caption editing.');
+  }
+  await waitFor(
+    async () => evaluate(cdpConnection, `Boolean(
+      document.querySelector('[data-html-video-edit-field="captionPreset"] select')
+      && document.querySelector('[data-html-video-edit-field="captionAnim"] select')
+      && document.querySelector('[data-html-video-edit-field="captionColors"] input[type="color"]')
+    )`),
+    10_000,
+    'HTML video caption controls',
+  );
+  const presetSelection = await evaluate(cdpConnection, `(() => {
+    const preset = document.querySelector('[data-html-video-edit-field="captionPreset"] select');
+    if (!preset || preset.disabled) return null;
+    const targetPreset = [...preset.options].map((option) => option.value).find((value) => value !== preset.value);
+    if (!targetPreset) return null;
+    preset.value = targetPreset;
+    preset.dispatchEvent(new Event('change', { bubbles: true }));
+    return { targetPreset };
+  })()`);
+  if (!presetSelection) throw new Error('Could not change the HTML video caption preset.');
+  await waitFor(
+    async () => evaluate(cdpConnection, `document.querySelector('[data-html-video-edit-field="captionPreset"] select')?.value === ${JSON.stringify(presetSelection.targetPreset)}`),
+    5_000,
+    'HTML video caption preset rerender',
+  );
+  const detailSelection = await evaluate(cdpConnection, `(() => {
+    const animation = document.querySelector('[data-html-video-edit-field="captionAnim"] select');
+    const accent = document.querySelector('input[aria-label="强调十六进制颜色"]');
+    if (!animation || !accent || animation.disabled || accent.disabled) return null;
+    const targetAnimation = [...animation.options].map((option) => option.value).find((value) => value === 'pop')
+      || [...animation.options].map((option) => option.value).find((value) => value !== animation.value);
+    if (!targetAnimation) return null;
+    animation.value = targetAnimation;
+    animation.dispatchEvent(new Event('change', { bubbles: true }));
+    const nativeColorValueSetter = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')?.set;
+    if (!nativeColorValueSetter) return null;
+    nativeColorValueSetter.call(accent, '#11aabbcc');
+    accent.dispatchEvent(new Event('input', { bubbles: true }));
+    accent.dispatchEvent(new Event('change', { bubbles: true }));
+    return { targetAnimation, targetAccent: '#11aabbcc' };
+  })()`);
+  if (!detailSelection) throw new Error('Could not change the HTML video caption animation and colors.');
+  const selection = { ...presetSelection, ...detailSelection };
+  await delay(150);
+  const saved = await evaluate(cdpConnection, `(() => {
+    const button = [...document.querySelectorAll('.hv-caption-editor button')]
+      .find((item) => item.textContent.includes('保存字幕'));
+    if (!button || button.disabled) return false;
+    button.click();
+    return true;
+  })()`);
+  if (!saved) throw new Error('HTML video caption save button was unavailable.');
+  const inspectUpdate = () => evaluate(cdpConnection, `(async () => {
+      const preset = document.querySelector('[data-html-video-edit-field="captionPreset"] select');
+      const animation = document.querySelector('[data-html-video-edit-field="captionAnim"] select');
+      const accent = document.querySelector('input[aria-label="强调十六进制颜色"]');
+      const steps = [...document.querySelectorAll('.hv-step')];
+      const resumeAvailable = [...document.querySelectorAll('.hv-run-controls button')]
+        .some((item) => item.textContent.includes('继续'));
+      const task = await window.storydream.getTaskDetail(${JSON.stringify(taskId)});
+      const storedCaptionColors = task?.pipelineData ? JSON.parse(task.pipelineData).config?.captionColors : null;
+      return {
+        matched: preset?.value === ${JSON.stringify(selection.targetPreset)}
+          && animation?.value === ${JSON.stringify(selection.targetAnimation)}
+          && accent?.value.toLowerCase() === ${JSON.stringify(selection.targetAccent)}
+          && JSON.stringify(storedCaptionColors) === ${JSON.stringify(JSON.stringify({ accent: '#11aabbcc' }))}
+          && steps.length === 6
+          && document.querySelectorAll('.hv-step.done').length === 4
+          && !steps[4]?.classList.contains('done')
+          && !steps[5]?.classList.contains('done')
+          && resumeAvailable,
+        preset: preset?.value || '',
+        animation: animation?.value || '',
+        accent: accent?.value || '',
+        storedCaptionColors,
+        stepClasses: steps.map((step) => step.className),
+        completedStepCount: document.querySelectorAll('.hv-step.done').length,
+        resumeAvailable,
+        feedback: document.querySelector('.hv-caption-editor')?.textContent.trim().slice(-300) || '',
+      };
+    })()`);
+  try {
+    await waitFor(
+      async () => (await inspectUpdate()).matched,
+      15_000,
+      'HTML video caption update invalidation',
+    );
+  } catch (error) {
+    throw new Error(`HTML video caption update did not settle: ${JSON.stringify(await inspectUpdate())}`, { cause: error });
+  }
+  return evaluate(cdpConnection, `(() => {
+    const preset = document.querySelector('[data-html-video-edit-field="captionPreset"] select');
+    const animation = document.querySelector('[data-html-video-edit-field="captionAnim"] select');
+    const steps = [...document.querySelectorAll('.hv-step')];
+    return {
+      targetPreset: ${JSON.stringify(selection.targetPreset)},
+      captionPreset: preset?.value || '',
+      targetAnimation: ${JSON.stringify(selection.targetAnimation)},
+      captionAnimation: animation?.value || '',
+      targetAccent: ${JSON.stringify(selection.targetAccent)},
+      completedStepCount: document.querySelectorAll('.hv-step.done').length,
+      previewCompleted: Boolean(steps[4]?.classList.contains('done')),
+      renderCompleted: Boolean(steps[5]?.classList.contains('done')),
+      resumeAvailable: [...document.querySelectorAll('.hv-run-controls button')]
+        .some((item) => item.textContent.includes('继续')),
+      horizontalOverflow: document.documentElement.scrollWidth - document.documentElement.clientWidth,
+    };
+  })()`);
+}
+
+async function resumeAndCaptureCaptionPreview(
+  cdpConnection,
+  debugPort,
+  mainTargetId,
+  WebSocketConstructor,
+  screenshotPath,
+  taskId,
+  expected,
+) {
+  const resumed = await evaluate(cdpConnection, `(() => {
+    const button = [...document.querySelectorAll('.hv-run-controls button')]
+      .find((item) => item.textContent.includes('继续'));
+    if (!button || button.disabled) return false;
+    button.click();
+    return true;
+  })()`);
+  if (!resumed) throw new Error('HTML video caption preview could not be resumed.');
+  const inspectResume = () => evaluate(cdpConnection, `(async () => {
+      const steps = [...document.querySelectorAll('.hv-step')];
+      const task = await window.storydream.getTaskDetail(${JSON.stringify(taskId)});
+      const events = await window.storydream.listTaskEvents(${JSON.stringify(taskId)}, { limit: 20 });
+      const pipeline = task?.pipelineData ? JSON.parse(task.pipelineData) : null;
+      return {
+        previewReady: pipeline?.steps?.preview?.status === 'completed'
+          && Array.isArray(pipeline?.compositions)
+          && pipeline.compositions.some((composition) => Boolean(composition.htmlPath)),
+        matched: task?.status === 'completed'
+          && pipeline?.current === 'done'
+          && Object.values(pipeline?.steps || {}).every((step) => step?.status === 'completed')
+          && steps.length === 6
+          && steps.every((step) => step.classList.contains('done')),
+        taskStatus: task?.status || '',
+        errorMessage: task?.errorMessage || '',
+        currentStep: task?.currentStep ?? null,
+        pipelineCurrent: pipeline?.current || '',
+        pipelineSteps: pipeline?.steps || null,
+        recentEvents: events?.items?.slice(-5).map((event) => ({ type: event.type, step: event.step, detail: event.detail })) || [],
+        stepClasses: steps.map((step) => step.className),
+      };
+    })()`);
+  try {
+    await waitFor(
+      async () => {
+        const state = await inspectResume();
+        if (state.taskStatus === 'failed') throw new Error(`Caption rerun failed: ${JSON.stringify(state)}`);
+        return state.matched;
+      },
+      180_000,
+      'caption preview and render rerun',
+    );
+  } catch (error) {
+    throw new Error(`Caption preview and render rerun did not settle: ${JSON.stringify({
+      ...await inspectResume(),
+      qaTempDir,
+      electronStderr: Buffer.concat(stderr).toString('utf8').slice(-8000),
+      electronStdout: Buffer.concat(stdout).toString('utf8').slice(-2000),
+    })}`, { cause: error });
+  }
+  const resumeOutcome = await inspectResume();
+  if (!resumeOutcome.previewReady || !resumeOutcome.matched) {
+    throw new Error(`Caption preview rerun did not reach a stable state: ${JSON.stringify(resumeOutcome)}`);
+  }
+  if (!await clickTab(cdpConnection, '动画预览')) {
+    throw new Error('Could not reopen the animation preview tab after caption rerun.');
+  }
+  await waitFor(
+    async () => evaluate(cdpConnection, `(() => {
+      const image = document.querySelector('#html-video-panel .hv-media-item img');
+      return Boolean(image?.complete && image.naturalWidth > 0 && image.naturalHeight > 0);
+    })()`),
+    15_000,
+    'rerendered caption thumbnail',
+  );
+  const thumbnail = await evaluate(cdpConnection, `(() => {
+    const image = document.querySelector('#html-video-panel .hv-media-item img');
+    return { width: image?.naturalWidth ?? 0, height: image?.naturalHeight ?? 0 };
+  })()`);
+  if (thumbnail.width !== 720 || thumbnail.height !== 1280) {
+    throw new Error(`Rendered caption thumbnail has the wrong canvas: ${JSON.stringify(thumbnail)}`);
+  }
+  const opened = await evaluate(cdpConnection, `(() => {
+    const button = [...document.querySelectorAll('#html-video-panel .hv-media-item button')]
+      .find((item) => item.textContent.includes('打开预览'));
+    if (!button || button.disabled) return false;
+    button.click();
+    return true;
+  })()`);
+  if (!opened) throw new Error('Rendered HTML caption preview button was unavailable.');
+
+  const previewTarget = await waitForPageTarget(debugPort, child, (candidate) => (
+    candidate.id !== mainTargetId
+      && candidate.type === 'page'
+      && candidate.webSocketDebuggerUrl
+      && candidate.url.startsWith('file:')
+  ));
+  const previewCdp = await connectCdp(previewTarget.webSocketDebuggerUrl, WebSocketConstructor);
+  const previewRuntimeErrors = [];
+  previewCdp.on('Runtime.exceptionThrown', (params) => {
+    previewRuntimeErrors.push(params.exceptionDetails?.exception?.description || params.exceptionDetails?.text || 'Runtime exception');
+  });
+  previewCdp.on('Runtime.consoleAPICalled', (params) => {
+    if (params.type !== 'error' && params.type !== 'warning') return;
+    previewRuntimeErrors.push(params.args?.map((item) => item.value ?? item.description ?? '').join(' ') || `console.${params.type}`);
+  });
+  try {
+    await Promise.all([
+      previewCdp.send('Page.enable'),
+      previewCdp.send('Runtime.enable'),
+    ]);
+    await waitFor(
+      async () => evaluate(previewCdp, `document.readyState === 'complete' && window.__ready === true && Boolean(document.querySelector('.caption'))`),
+      20_000,
+      'rendered caption scene',
+    );
+    const state = await evaluate(previewCdp, `(() => {
+      const frame = document.querySelector('.frame');
+      const caption = document.querySelector('.caption');
+      if (!frame || !caption) return { captionVisible: false, captionClipped: true, horizontalOverflow: 1 };
+      const frameRect = frame.getBoundingClientRect();
+      const captionRect = caption.getBoundingClientRect();
+      const style = getComputedStyle(caption);
+      return {
+        title: document.title,
+        url: location.href,
+        preset: frame.getAttribute('data-caption-preset'),
+        animation: frame.getAttribute('data-caption-animation'),
+        accent: getComputedStyle(document.documentElement).getPropertyValue('--caption-accent').trim().toLowerCase(),
+        captionText: caption.textContent.trim(),
+        captionVisible: style.display !== 'none'
+          && style.visibility !== 'hidden'
+          && Number(style.opacity) > 0
+          && captionRect.width > 0
+          && captionRect.height > 0,
+        captionClipped: captionRect.left < frameRect.left - 1
+          || captionRect.right > frameRect.right + 1
+          || captionRect.top < frameRect.top - 1
+          || captionRect.bottom > frameRect.bottom + 1,
+        horizontalOverflow: document.documentElement.scrollWidth - document.documentElement.clientWidth,
+        timelinePlaying: window.__tl?.playing === true,
+        hasFrameworkOverlay: Boolean(document.querySelector('vite-error-overlay, nextjs-portal, #webpack-dev-server-client-overlay')),
+        viewport: { width: innerWidth, height: innerHeight },
+      };
+    })()`);
+    if (
+      state.preset !== expected.targetPreset
+      || state.animation !== expected.targetAnimation
+      || state.accent !== expected.targetAccent
+      || state.hasFrameworkOverlay
+      || previewRuntimeErrors.length
+    ) {
+      throw new Error(`Rendered caption config does not match the saved config: ${JSON.stringify({ ...state, runtimeErrors: previewRuntimeErrors })}`);
+    }
+    await saveScreenshot(previewCdp, screenshotPath);
+    return { ...state, thumbnail, resumeOutcome, runtimeErrors: previewRuntimeErrors };
+  } finally {
+    await previewCdp.send('Page.close').catch(() => undefined);
+    previewCdp.close();
+  }
+}
+
 function isExpectedMissingMedia404(error, expectedMissingMediaUrl, expectedRequestIds) {
   return error.source === 'log'
     && error.message.includes('404')
@@ -893,7 +1241,7 @@ async function inspectPage(cdpConnection) {
       const rect = item.getBoundingClientRect();
       return style.display !== 'none' && style.visibility !== 'hidden' && rect.width > 0 && rect.height > 0;
     };
-    const clippedControls = [...document.querySelectorAll('.hv-workspace button, .hv-config button, .hv-workspace select')]
+    const clippedControls = [...document.querySelectorAll('.hv-workspace button, .hv-config button, .hv-workspace select, .hv-workspace input')]
       .filter((item) => isVisible(item))
       .filter((item) => {
         const rect = item.getBoundingClientRect();
@@ -953,6 +1301,22 @@ async function waitForTarget(debugPort, process) {
     await delay(100);
   }
   throw new Error(`Timed out waiting for Electron CDP.\n${Buffer.concat(stderr).toString('utf8').slice(-4000)}`);
+}
+
+async function waitForPageTarget(debugPort, process, predicate) {
+  const deadline = Date.now() + 20_000;
+  while (Date.now() < deadline) {
+    if (process.exitCode !== null) {
+      throw new Error(`Electron exited before the preview target opened (${process.exitCode}).`);
+    }
+    const targets = await fetch(`http://127.0.0.1:${debugPort}/json/list`)
+      .then((response) => response.json())
+      .catch(() => []);
+    const target = targets.find(predicate);
+    if (target) return target;
+    await delay(100);
+  }
+  throw new Error('Timed out waiting for the rendered caption preview target.');
 }
 
 function connectCdp(url, WebSocketConstructor) {

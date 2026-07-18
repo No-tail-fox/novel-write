@@ -668,6 +668,76 @@ h2 {
   margin-bottom: 0;
 }
 
+.hv-caption-editor {
+  min-width: 0;
+  margin-bottom: 14px;
+  padding-bottom: 14px;
+  border-bottom: 1px solid rgba(111, 125, 142, 0.22);
+}
+
+.hv-caption-editor h4 {
+  margin: 0;
+  font-size: 14px;
+}
+
+.hv-caption-editor-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  gap: 12px;
+  min-width: 0;
+  margin: 0;
+  padding: 12px 0 0;
+  border: 0;
+}
+
+.hv-caption-editor-grid .field {
+  margin-bottom: 0;
+}
+
+.hv-caption-colors {
+  grid-column: 1 / -1;
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.hv-caption-color-item {
+  display: grid;
+  gap: 8px;
+  min-width: 0;
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.hv-caption-color-controls {
+  display: grid;
+  grid-template-columns: 36px minmax(0, 1fr) 30px;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+}
+
+.hv-caption-colors input[type='color'] {
+  width: 36px;
+  height: 30px;
+  padding: 2px;
+  border-radius: 4px;
+}
+
+.hv-caption-color-code {
+  width: 100%;
+  min-width: 0;
+  height: 30px;
+  padding: 0 7px;
+  font-family: Consolas, monospace;
+  font-size: 11px;
+}
+
+.hv-caption-color-reset {
+  width: 30px;
+  height: 30px;
+}
+
 .hv-main {
   display: grid;
   grid-template-columns: 220px minmax(0, 1fr);
@@ -1032,6 +1102,11 @@ h2 {
   }
 
   .hv-config-editor-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .hv-caption-editor-grid,
+  .hv-caption-colors {
     grid-template-columns: 1fr;
   }
 }

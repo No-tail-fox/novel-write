@@ -974,7 +974,9 @@ describe('HTML video runner module', () => {
         ttsProvider: 'minimax',
         ttsSpeed: 1.25,
         bgmId: 'bgm-custom',
-        captionPreset: 'compatible-caption',
+        captionPreset: 'editorial',
+        captionAnim: 'pop',
+        captionColors: { text: '#ffffff', accent: '#11aabb' },
         bgmVolume: 'medium',
         transitionType: 'dissolve',
         maxScenes: 12,
@@ -984,14 +986,27 @@ describe('HTML video runner module', () => {
 
       const result = await runHtmlVideoPipeline(input, runtime.options);
 
-      expect(result.config.captionPreset).toBe('compatible-caption');
+      expect(result.config.captionPreset).toBe('editorial');
       expect(captured).toEqual({
         rewrite: { maxScenes: 12 },
         planning: { maxScenes: 12 },
         assets: { style: 'modern-film', foreground: false, ratio: '4:3' },
         voice: { voiceId: 'voice-custom', ttsProvider: 'minimax', ttsSpeed: 1.25 },
-        preview: { ratio: '4:3' },
-        render: { bgmId: 'bgm-custom', bgmVolume: 'medium', transitionType: 'dissolve', ratio: '4:3' },
+        preview: {
+          captionPreset: 'editorial',
+          captionAnim: 'pop',
+          captionColors: { text: '#ffffff', accent: '#11aabb' },
+          ratio: '4:3',
+        },
+        render: {
+          bgmId: 'bgm-custom',
+          captionPreset: 'editorial',
+          captionAnim: 'pop',
+          captionColors: { text: '#ffffff', accent: '#11aabb' },
+          bgmVolume: 'medium',
+          transitionType: 'dissolve',
+          ratio: '4:3',
+        },
       });
       for (const step of Object.keys(capturedSnapshots) as HtmlVideoVisibleStep[]) {
         expect(capturedSnapshots[step]).toEqual(input.state.config);
@@ -1008,23 +1023,23 @@ describe('HTML video runner module', () => {
         .update(JSON.stringify(completed.config))
         .digest('hex');
       expect(completed.configSnapshotHash).toBe(initialSnapshotHash);
-      completed.config.captionPreset = 'compatible-without-consumer';
+      completed.config.captionPreset = 'karaoke';
       await writeFile(join(workDir, 'html-video-pipeline.v2.json'), JSON.stringify(completed), 'utf8');
 
-      const compatibleResume = createFakeRuntime(workDir);
-      const compatible = await runHtmlVideoPipeline(
+      const captionResume = createFakeRuntime(workDir);
+      const captionUpdated = await runHtmlVideoPipeline(
         createRunnerInput('manifest-stage-invalidation'),
-        compatibleResume.options,
+        captionResume.options,
       );
-      expect(compatibleResume.calls).toEqual([]);
-      expect(compatible.config.captionPreset).toBe('compatible-without-consumer');
-      expect(compatible.configSnapshotHash).toBe(createHash('sha256')
-        .update(JSON.stringify(compatible.config))
+      expect(captionResume.calls).toEqual(['preview', 'render']);
+      expect(captionUpdated.config.captionPreset).toBe('karaoke');
+      expect(captionUpdated.configSnapshotHash).toBe(createHash('sha256')
+        .update(JSON.stringify(captionUpdated.config))
         .digest('hex'));
-      expect(compatible.configSnapshotHash).not.toBe(initialSnapshotHash);
+      expect(captionUpdated.configSnapshotHash).not.toBe(initialSnapshotHash);
 
-      compatible.config.transitionType = 'dissolve';
-      await writeFile(join(workDir, 'html-video-pipeline.v2.json'), JSON.stringify(compatible), 'utf8');
+      captionUpdated.config.transitionType = 'dissolve';
+      await writeFile(join(workDir, 'html-video-pipeline.v2.json'), JSON.stringify(captionUpdated), 'utf8');
       const renderResume = createFakeRuntime(workDir);
       const rendered = await runHtmlVideoPipeline(
         createRunnerInput('manifest-stage-invalidation'),

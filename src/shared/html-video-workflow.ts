@@ -32,6 +32,7 @@ import {
   preserveHtmlVideoJobConfig,
   recoverHtmlVideoJobConfig,
 } from './html-video-config';
+import { htmlVideoCaptionColorsEqual } from './html-video-captions';
 
 export const MAX_HTML_VIDEO_PIPELINE_JSON_CHARS = 1_000_000;
 export const MAX_HTML_VIDEO_PIPELINE_FILE_BYTES = MAX_HTML_VIDEO_PIPELINE_JSON_CHARS * 4;
@@ -330,7 +331,10 @@ export function applyHtmlVideoConfigChanges(
   changes: readonly HtmlVideoConfigChange[],
 ): HtmlVideoConfigChangeResult {
   if (changes.length < 1 || changes.length > HTML_VIDEO_EDITABLE_CONTROL_FIELDS.length) {
-    throw new AppError('HTML_VIDEO_CONFIG_PATCH_INVALID', 'HTML 视频配置更新必须包含 1 到 10 个字段。');
+    throw new AppError(
+      'HTML_VIDEO_CONFIG_PATCH_INVALID',
+      `HTML 视频配置更新必须包含 1 到 ${HTML_VIDEO_EDITABLE_CONTROL_FIELDS.length} 个字段。`,
+    );
   }
 
   const pipeline = parseHtmlVideoPipelineData(JSON.stringify(value));
@@ -348,7 +352,15 @@ export function applyHtmlVideoConfigChanges(
     }
     const parsed = preserveHtmlVideoJobConfig({ [change.field]: change.value });
     Object.assign(configChanges, parsed);
-    if (pipeline.config[change.field as keyof HtmlVideoJobConfig] !== parsed[change.field as keyof HtmlVideoJobConfig]) {
+    const currentValue = pipeline.config[change.field as keyof HtmlVideoJobConfig];
+    const nextValue = parsed[change.field as keyof HtmlVideoJobConfig];
+    const unchanged = change.field === 'captionColors'
+      ? htmlVideoCaptionColorsEqual(
+          currentValue as HtmlVideoJobConfig['captionColors'],
+          nextValue as HtmlVideoJobConfig['captionColors'],
+        )
+      : currentValue === nextValue;
+    if (!unchanged) {
       changedFields.push(change.field as HtmlVideoEditableConfigField);
     }
   }

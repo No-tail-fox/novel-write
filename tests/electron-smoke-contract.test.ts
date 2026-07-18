@@ -238,11 +238,32 @@ describe('real Electron smoke contract', () => {
     expect(qa).toContain('const configUpdate = await exerciseHtmlVideoConfigUpdate(cdp);');
     expect(qa).toContain("document.querySelectorAll('[data-html-video-create-field]')");
     expect(qa).toContain("document.querySelectorAll('[data-html-video-edit-field]')");
-    expect(qa).toContain("['captionPreset', 'captionAnim', 'captionColors', 'coverImageMode', 'coverTemplate', 'coverRatio', 'draftTemplate']");
+    expect(qa).toContain("['coverImageMode', 'coverTemplate', 'coverRatio', 'draftTemplate']");
     expect(qa).toContain("document.querySelector('[data-html-video-edit-field=\"transitionType\"] select')");
     expect(qa).toContain("item.textContent.includes('保存参数')");
     expect(qa).toContain("item.textContent.includes('继续')");
     expect(qa).toContain('completedStepCount: document.querySelectorAll(\'.hv-step.done\').length');
     expect(qa).toContain('if (configUpdate.completedStepCount !== 5)');
+  });
+
+  it('exercises preview-only caption controls and preview-stage invalidation in real Electron QA', async () => {
+    const qa = await readFile(new URL('../scripts/qa-html-video-ui.mjs', import.meta.url), 'utf8');
+
+    expect(qa).toContain('const captionUpdate = await exerciseHtmlVideoCaptionUpdate(cdp, seededTasks.primary.id);');
+    expect(qa).toContain("'[data-html-video-edit-field=\"captionPreset\"] select'");
+    expect(qa).toContain("'[data-html-video-edit-field=\"captionAnim\"] select'");
+    expect(qa).toContain("'[data-html-video-edit-field=\"captionColors\"] input[type=\"color\"]'");
+    expect(qa).toContain("'input[aria-label=\"强调十六进制颜色\"]'");
+    expect(qa).toContain("item.textContent.includes('保存字幕')");
+    expect(qa).toContain('if (captionUpdate.completedStepCount !== 4)');
+    expect(qa).toContain('const captionPreview = await resumeAndCaptureCaptionPreview(');
+    expect(qa).toContain("item.textContent.includes('继续')");
+    expect(qa).toContain("data-caption-preset");
+    expect(qa).toContain('caption-preview.png');
+    expect(qa).toContain('captionPreview.captionVisible');
+    expect(qa).toContain("'#html-video-panel .hv-media-item button'");
+    expect(qa).toContain('thumbnail.width !== 720 || thumbnail.height !== 1280');
+    expect(qa).toContain('caption-editor.png');
+    expect(qa).toContain('STORYDREAM_QA_EVIDENCE_DIR');
   });
 });

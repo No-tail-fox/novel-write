@@ -1224,7 +1224,7 @@ describe('product shell ui', () => {
     expect(page).toContain('HTML_VIDEO_CONTROL_MANIFEST_V1.transitionType.availability');
     expect(page).toContain('data-html-video-control="coverRatio"');
     expect(page).toContain('HTML_VIDEO_CONTROL_MANIFEST_V1.coverRatio.availability');
-    expect(page).not.toMatch(/value=\{data\.config\.(?:captionPreset|captionAnim|captionColors|coverImageMode|coverTemplate|coverRatio|draftTemplate)\}/u);
+    expect(page).not.toMatch(/value=\{data\.config\.(?:coverImageMode|coverTemplate|coverRatio|draftTemplate)\}/u);
     const editor = page.slice(page.indexOf('function HtmlVideoConfigEditor'), page.indexOf('function HtmlVideoTabPanel'));
     const editableFields = [
       'style',
@@ -1239,9 +1239,6 @@ describe('product shell ui', () => {
       'ratio',
     ];
     const readOnlyFields = [
-      'captionPreset',
-      'captionAnim',
-      'captionColors',
       'coverImageMode',
       'coverTemplate',
       'coverRatio',
@@ -1264,6 +1261,24 @@ describe('product shell ui', () => {
     expect(editor).toContain('<option value={values.bgmId}>{values.bgmId}（素材库中已缺失）</option>');
     expect(page).toContain('bgmVolume,');
     expect(page).toContain('transitionType,');
+    const captionEditor = page.slice(page.indexOf('function HtmlVideoCaptionEditor'), page.indexOf('function HtmlVideoTabPanel'));
+    for (const field of ['captionPreset', 'captionAnim', 'captionColors']) {
+      expect(captionEditor).toContain(`data-html-video-edit-field="${field}"`);
+    }
+    expect(captionEditor).toContain('api.updateHtmlVideoConfig(task.id, changes)');
+    expect(captionEditor).toContain('HTML_VIDEO_CAPTION_PRESETS');
+    expect(captionEditor).toContain('HTML_VIDEO_CAPTION_ANIMATIONS');
+    expect(captionEditor).toContain('type="color"');
+    expect(captionEditor).toContain('type="text"');
+    expect(captionEditor).toContain('value={colors[key]}');
+    expect(captionEditor).toContain('maxLength={9}');
+    expect(captionEditor).toContain('htmlVideoCaptionPickerColor(colors[key])');
+    expect(captionEditor).toContain('value: colorOverrides');
+    expect(captionEditor).toContain('delete next[key]');
+    expect(captionEditor).not.toContain('.slice(0, 7)');
+    const tabPanel = page.slice(page.indexOf('function HtmlVideoTabPanel'), page.indexOf('function htmlVideoStepClass'));
+    expect(tabPanel).toMatch(/if \(tab === 'preview'\)[\s\S]*?<HtmlVideoCaptionEditor/u);
+    expect(tabPanel).not.toMatch(/if \(tab === '(?:text|assets|voice|cover)'\)[\s\S]{0,1200}<HtmlVideoCaptionEditor/u);
     expect(css).toMatch(/\.hv-config-editor\s*\{[\s\S]*?border-top:\s*1px solid var\(--line\)/u);
     expect(css).toMatch(/\.hv-config-editor-grid\s*\{[\s\S]*?border:\s*0/u);
     expect(css).toMatch(/@media \(max-width: 1180px\)[\s\S]*?\.hv-config-editor-grid[\s\S]*?grid-template-columns:\s*1fr/u);

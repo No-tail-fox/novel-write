@@ -49,9 +49,9 @@ const fullCustomConfig: Required<HtmlVideoJobConfig> = {
   ttsProvider: 'minimax',
   ttsSpeed: 1.25,
   bgmId: 'bgm-custom',
-  captionPreset: 'custom-caption-preset',
-  captionAnim: 'custom-caption-animation',
-  captionColors: { primary: '#ffffff', accent: '#11aabb' },
+  captionPreset: 'editorial',
+  captionAnim: 'pop',
+  captionColors: { text: '#ffffff', accent: '#11aabb' },
   bgmVolume: 'medium',
   transitionType: 'dissolve',
   coverImageMode: 'custom-cover-mode',
@@ -92,13 +92,17 @@ describe('HTML video control manifest', () => {
       invalidateFrom: 'render',
       availability: 'editable',
     }));
+    for (const field of ['captionPreset', 'captionAnim', 'captionColors'] as const) {
+      expect(HTML_VIDEO_CONTROL_MANIFEST_V1[field]).toEqual(expect.objectContaining({
+        consumerStages: ['preview', 'render'],
+        invalidateFrom: 'preview',
+        availability: 'editable',
+      }));
+    }
     expect(Object.entries(HTML_VIDEO_CONTROL_MANIFEST_V1)
       .filter(([, entry]) => entry.availability === 'read-only-compatible')
       .map(([field]) => field)
       .sort()).toEqual([
-        'captionAnim',
-        'captionColors',
-        'captionPreset',
         'coverImageMode',
         'coverRatio',
         'coverTemplate',
@@ -167,10 +171,10 @@ describe('HTML video control manifest', () => {
     expect(first).not.toHaveProperty('bgmVolume');
     expect(first).not.toHaveProperty('draftTemplate');
 
-    const overrideColors = { primary: '#123456' };
+    const overrideColors = { text: '#123456' };
     const overridden = createHtmlVideoJobConfig({ ...fullCustomConfig, captionColors: overrideColors });
-    overrideColors.primary = '#000000';
-    expect(overridden).toEqual({ ...fullCustomConfig, captionColors: { primary: '#123456' } });
+    overrideColors.text = '#000000';
+    expect(overridden).toEqual({ ...fullCustomConfig, captionColors: { text: '#123456' } });
     expect(overridden.captionColors).not.toBe(overrideColors);
   });
 
@@ -220,11 +224,11 @@ describe('HTML video control manifest', () => {
   it('reports defaulted fields during recovery instead of silently replacing missing custom values', () => {
     const recovered = recoverHtmlVideoJobConfig({
       style: 'recovered-custom-style',
-      captionPreset: 'recovered-custom-caption',
+      captionPreset: 'classic',
     });
     expect(recovered.config).toMatchObject({
       style: 'recovered-custom-style',
-      captionPreset: 'recovered-custom-caption',
+      captionPreset: 'classic',
     });
     expect(recovered.defaultedFields).toEqual(expect.arrayContaining([
       'voiceId',
@@ -263,15 +267,14 @@ describe('HTML video control manifest', () => {
     expect(() => preserveHtmlVideoJobConfig(patch as HtmlVideoJobConfig)).toThrow(message);
   });
 
-  it('rejects oversized caption color records and retains custom compatible strings', () => {
+  it('rejects unknown consumed caption values while retaining unrelated compatible strings', () => {
     const captionColors = Object.fromEntries(Array.from({ length: 33 }, (_, index) => [`color-${index}`, '#fff']));
     expect(() => preserveHtmlVideoJobConfig({ captionColors })).toThrow(/captionColors/i);
+    expect(() => preserveHtmlVideoJobConfig({ captionPreset: 'vendor-custom-preset' })).toThrow(/captionPreset/i);
     expect(preserveHtmlVideoJobConfig({
-      captionPreset: 'vendor-custom-preset',
       coverImageMode: 'vendor-custom-cover-mode',
       draftTemplate: 'vendor-custom-draft',
     })).toEqual({
-      captionPreset: 'vendor-custom-preset',
       coverImageMode: 'vendor-custom-cover-mode',
       draftTemplate: 'vendor-custom-draft',
     });
@@ -297,9 +300,17 @@ describe('HTML video control manifest', () => {
       planning: { maxScenes: 12 },
       assets: { style: 'custom-editorial-film', foreground: false, ratio: '4:3' },
       voice: { voiceId: 'voice-custom', ttsProvider: 'minimax', ttsSpeed: 1.25 },
-      preview: { ratio: '4:3' },
+      preview: {
+        captionPreset: 'editorial',
+        captionAnim: 'pop',
+        captionColors: { text: '#ffffff', accent: '#11aabb' },
+        ratio: '4:3',
+      },
       render: {
         bgmId: 'bgm-custom',
+        captionPreset: 'editorial',
+        captionAnim: 'pop',
+        captionColors: { text: '#ffffff', accent: '#11aabb' },
         bgmVolume: 'medium',
         ratio: '4:3',
         transitionType: 'dissolve',
@@ -355,11 +366,46 @@ describe('HTML video control manifest', () => {
     expect(result.pipeline).not.toHaveProperty('configSnapshotHash');
   });
 
+  it('applies caption changes from preview while preserving earlier artifacts', () => {
+    const pipeline = createHtmlVideoPipelineData('Task 17 caption mutation');
+    pipeline.current = 'done';
+    for (const step of Object.keys(pipeline.steps) as HtmlVideoVisibleStep[]) {
+      pipeline.steps[step] = { status: 'completed', inputHash: `${step}-input`, artifactPath: `steps/${step}.json`, artifactSize: 10 };
+    }
+    pipeline.compositions = [{ index: 1, durationSec: 1, canvas: { w: 720, h: 1280 }, audio: { src: 'voice.wav', durationSec: 1 }, background: { src: 'bg.png' }, captions: [] }];
+    pipeline.output = { path: 'final.mp4', sizeBytes: 100 };
+
+    const result = applyHtmlVideoConfigChanges(pipeline, [
+      { field: 'captionPreset', value: 'karaoke' },
+      { field: 'captionAnim', value: 'pop' },
+      { field: 'captionColors', value: { accent: '#36d7c5' } },
+    ]);
+
+    expect(result.changedFields).toEqual(['captionPreset', 'captionAnim', 'captionColors']);
+    expect(result.invalidateFrom).toBe('preview');
+    expect(result.pipeline.steps.voice).toEqual(pipeline.steps.voice);
+    expect(result.pipeline.steps.preview).toEqual({ status: 'pending' });
+    expect(result.pipeline.steps.render).toEqual({ status: 'pending' });
+    expect(result.pipeline.compositions).toEqual([]);
+    expect(result.pipeline).not.toHaveProperty('output');
+    expect(result.pipeline.config.captionColors).toEqual({ accent: '#36d7c5' });
+  });
+
+  it('rejects an identical caption color map regardless of object identity or key order', () => {
+    const pipeline = createHtmlVideoPipelineData('Task 17 caption no-op');
+    pipeline.config.captionColors = { text: '#ffffff', accent: '#36d7c5' };
+    const before = JSON.stringify(pipeline);
+
+    expect(() => applyHtmlVideoConfigChanges(pipeline, [
+      { field: 'captionColors', value: { accent: '#36d7c5', text: '#ffffff' } },
+    ])).toThrow(/没有发生变化|UNCHANGED/i);
+    expect(JSON.stringify(pipeline)).toBe(before);
+  });
+
   it('rejects read-only-compatible, duplicate, empty, and invalid config changes without mutating the pipeline', () => {
     const pipeline = createHtmlVideoPipelineData('immutable rejection');
     const before = JSON.stringify(pipeline);
     for (const changes of [
-      [{ field: 'captionPreset', value: 'karaoke' }],
       [{ field: 'coverRatio', value: '1:1' }],
       [{ field: 'draftTemplate', value: 'draft-1' }],
       [{ field: 'ratio', value: '9:16' }, { field: 'ratio', value: '1:1' }],
