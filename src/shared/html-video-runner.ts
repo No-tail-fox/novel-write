@@ -3,6 +3,12 @@ import { lstat, mkdir, open, realpath, rename, rm, stat } from 'node:fs/promises
 import { dirname, isAbsolute, join, relative, resolve } from 'node:path';
 import { AppError, isCancellation, normalizeAppError } from './app-error';
 import {
+  createHtmlVideoJobConfig,
+  HTML_VIDEO_JOB_DEFAULTS,
+  htmlVideoConfigEnvelopeForStage,
+  htmlVideoConfigForStage,
+} from './html-video-config';
+import {
   MAX_HTML_VIDEO_SCENES,
   MAX_HTML_VIDEO_SOURCE_CHARS,
   MAX_HTML_VIDEO_WARNINGS,
@@ -38,6 +44,7 @@ export interface HtmlVideoRunnerInput {
 export interface HtmlVideoRewriteInput {
   sourceText: string;
   config: HtmlVideoJobConfig;
+  configSnapshot?: HtmlVideoJobConfig;
   signal?: AbortSignal;
 }
 
@@ -48,12 +55,14 @@ export interface HtmlVideoRewriteOutput {
 
 export interface HtmlVideoPlanningInput extends HtmlVideoRewriteOutput {
   config: HtmlVideoJobConfig;
+  configSnapshot?: HtmlVideoJobConfig;
   signal?: AbortSignal;
 }
 
 export interface HtmlVideoAssetInput {
   scenes: HtmlVideoScenePlan[];
   config: HtmlVideoJobConfig;
+  configSnapshot?: HtmlVideoJobConfig;
   signal?: AbortSignal;
 }
 
@@ -196,7 +205,9 @@ export async function synchronizeHtmlVideoPipelineCheckpoint(
   workDir: string,
   state: HtmlVideoPipelineDataV2,
 ): Promise<void> {
-  await atomicWriteJson(join(workDir, checkpointFileName), cloneValidatedState(state));
+  const snapshot = cloneValidatedState(state);
+  snapshot.configSnapshotHash = hashConfigSnapshot(snapshot.config);
+  await atomicWriteJson(join(workDir, checkpointFileName), snapshot);
 }
 
 async function runOwnedPipeline(
@@ -207,6 +218,7 @@ async function runOwnedPipeline(
   let state = input.ignoreCheckpoint
     ? cloneValidatedState(input.state)
     : await loadCheckpoint(options.workDir, input.state);
+  state.configSnapshotHash = hashConfigSnapshot(state.config);
   const context: RunnerContext = {};
 
   if (input.rerunFrom) {
@@ -307,7 +319,11 @@ async function executeStep(
     const maxSegments = state.config.maxScenes ?? MAX_HTML_VIDEO_SCENES;
     const rewrite = options.rewrite
       ? validateRewriteOutput(
-          await options.rewrite({ sourceText, config: structuredClone(state.config), signal: options.signal }),
+          await options.rewrite({
+            sourceText,
+            ...htmlVideoConfigEnvelopeForStage(state.config, 'rewrite'),
+            signal: options.signal,
+          }),
           maxSegments,
         )
       : deterministicRewrite(sourceText, maxSegments);
@@ -321,10 +337,13 @@ async function executeStep(
     const rawScenes = options.plan
       ? (await options.plan({
           ...structuredClone(context.rewrite),
-          config: structuredClone(state.config),
+          ...htmlVideoConfigEnvelopeForStage(state.config, 'planning'),
           signal: options.signal,
         })).scenes
-      : planHtmlVideoScenes(context.rewrite.segments.join('\n\n'), state.config.maxScenes ?? 8);
+      : planHtmlVideoScenes(
+          context.rewrite.segments.join('\n\n'),
+          state.config.maxScenes ?? HTML_VIDEO_JOB_DEFAULTS.maxScenes,
+        );
     if (!options.plan) addWarning(state, '未配置场景规划 LLM，已使用确定性场景规划。');
     state.scenes = validateHtmlVideoScenePlans(
       rawScenes,
@@ -336,7 +355,7 @@ async function executeStep(
   if (step === 'assets') {
     const generated = await options.generateAssets({
       scenes: structuredClone(state.scenes),
-      config: structuredClone(state.config),
+      ...htmlVideoConfigEnvelopeForStage(state.config, 'assets'),
       signal: options.signal,
     });
     state.assets = await validateAssets(options.workDir, state, generated);
@@ -346,7 +365,7 @@ async function executeStep(
   if (step === 'voice') {
     const generated = await options.synthesizeVoices({
       scenes: structuredClone(state.scenes),
-      config: structuredClone(state.config),
+      ...htmlVideoConfigEnvelopeForStage(state.config, 'voice'),
       signal: options.signal,
     });
     state.voices = await validateVoices(options.workDir, state, generated);
@@ -359,7 +378,7 @@ async function executeStep(
       scenes: structuredClone(state.scenes),
       assets: structuredClone(state.assets),
       voices: structuredClone(state.voices),
-      config: structuredClone(state.config),
+      ...htmlVideoConfigEnvelopeForStage(state.config, 'preview'),
       signal: options.signal,
     });
     await revalidateCompletedMediaSteps(options.workDir, state, ['assets', 'voice'], options.signal);
@@ -373,7 +392,7 @@ async function executeStep(
     assets: structuredClone(state.assets),
     voices: structuredClone(state.voices),
     compositions: structuredClone(state.compositions),
-    config: structuredClone(state.config),
+    ...htmlVideoConfigEnvelopeForStage(state.config, 'render'),
     signal: options.signal,
   });
   await revalidateCompletedMediaSteps(options.workDir, state, ['assets', 'voice', 'preview'], options.signal);
@@ -604,18 +623,15 @@ function hashStepInput(
   state: HtmlVideoPipelineDataV2,
   context: RunnerContext,
 ): string {
+  const config = htmlVideoConfigForStage(state.config, step);
   let input: unknown;
-  if (step === 'rewrite') input = { sourceText, config: state.config };
-  else if (step === 'planning') input = { rewrite: context.rewrite, config: state.config };
-  else if (step === 'assets') input = { scenes: state.scenes, config: pickConfig(state.config, ['style', 'ratio', 'foreground']) };
-  else if (step === 'voice') input = { scenes: state.scenes, config: pickConfig(state.config, ['voiceId', 'ttsProvider', 'ttsSpeed']) };
-  else if (step === 'preview') input = { scenes: state.scenes, assets: state.assets, voices: state.voices, config: state.config };
-  else input = { compositions: state.compositions, config: state.config };
+  if (step === 'rewrite') input = { sourceText, config };
+  else if (step === 'planning') input = { rewrite: context.rewrite, config };
+  else if (step === 'assets') input = { scenes: state.scenes, config };
+  else if (step === 'voice') input = { scenes: state.scenes, config };
+  else if (step === 'preview') input = { scenes: state.scenes, assets: state.assets, voices: state.voices, config };
+  else input = { compositions: state.compositions, config };
   return createHash('sha256').update(JSON.stringify({ step, input })).digest('hex');
-}
-
-function pickConfig(config: HtmlVideoJobConfig, keys: Array<keyof HtmlVideoJobConfig>): Partial<HtmlVideoJobConfig> {
-  return Object.fromEntries(keys.filter((key) => config[key] !== undefined).map((key) => [key, config[key]])) as Partial<HtmlVideoJobConfig>;
 }
 
 async function loadCheckpoint(workDir: string, fallback: HtmlVideoPipelineDataV2): Promise<HtmlVideoPipelineDataV2> {
@@ -644,10 +660,21 @@ function recoveredCheckpoint(fallback: HtmlVideoPipelineDataV2): HtmlVideoPipeli
 }
 
 async function persistCheckpoint(state: HtmlVideoPipelineDataV2, options: HtmlVideoRunnerOptions): Promise<void> {
-  const snapshot = cloneValidatedState({ ...state, revision: state.revision + 1 });
+  const snapshot = cloneValidatedState({
+    ...state,
+    revision: state.revision + 1,
+    configSnapshotHash: hashConfigSnapshot(state.config),
+  });
   state.revision = snapshot.revision;
+  state.configSnapshotHash = snapshot.configSnapshotHash;
   await atomicWriteJson(join(options.workDir, checkpointFileName), snapshot);
   await options.onCheckpoint(structuredClone(snapshot));
+}
+
+function hashConfigSnapshot(config: HtmlVideoJobConfig): string {
+  return createHash('sha256')
+    .update(JSON.stringify(createHtmlVideoJobConfig(config)))
+    .digest('hex');
 }
 
 async function persistCheckpointPreservingPrimaryError(

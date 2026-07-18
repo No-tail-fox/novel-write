@@ -13,6 +13,7 @@ import { FileDatabase } from '@shared/storage';
 import { runTask, type RunTaskOptions } from '@shared/runner';
 import type { SceneAsset } from '@shared/draft';
 import { MAX_HTML_VIDEO_SOURCE_CHARS } from '@shared/html-video-workflow';
+import { HTML_VIDEO_JOB_DEFAULTS } from '@shared/html-video-config';
 import type { HtmlVideoScenePlan, Task } from '@shared/types';
 
 afterEach(() => vi.unstubAllGlobals());
@@ -23,6 +24,7 @@ describe('task runtime providers', () => {
     await withRuntimeTask(async (task, workDir) => {
       const providers = createHtmlVideoRuntimeProviders(defaultConfig, workDir, task, {
         measureAudioDuration: async () => 1,
+        jobConfig: {},
       });
       const input = { scenes: htmlScenes(), config: { ratio: '9:16', foreground: true } };
 
@@ -63,6 +65,51 @@ describe('task runtime providers', () => {
         { sceneIndex: 1, kind: 'bg', slot: 0 },
         { sceneIndex: 1, kind: 'fg', slot: 0 },
       ]);
+    });
+  });
+
+  it('does not use Task mirrors as runtime fallbacks for HTML asset or voice providers', async () => {
+    await withRuntimeTask(async (task, workDir) => {
+      Object.assign(task, {
+        style: 'task-mirror-style',
+        ratio: '16:9',
+        speaker: 'task-mirror-voice',
+        ttsProvider: 'minimax',
+        ttsSpeed: 1.8,
+      });
+      const runtimeTasks: Task[] = [];
+      const generateAssets = adaptHtmlVideoAssetGenerator(async (scenes, _prompts, runtimeTask) => {
+        runtimeTasks.push(structuredClone(runtimeTask));
+        return Promise.all(scenes.map(async (scene) => {
+          const path = join(workDir, `owner-asset-${scene.id}.png`);
+          await writeFile(path, Buffer.from('asset'));
+          return { sceneId: scene.id, path };
+        }));
+      }, task);
+      const synthesizeVoices = adaptHtmlVideoNarrationSynthesizer(async (scenes, runtimeTask) => {
+        runtimeTasks.push(structuredClone(runtimeTask));
+        return Promise.all(scenes.map(async (scene) => {
+          const path = join(workDir, `owner-voice-${scene.id}.wav`);
+          await writeFile(path, Buffer.from('voice'));
+          return { sceneId: scene.id, path, text: scene.cap };
+        }));
+      }, task, async () => 1);
+
+      await generateAssets({ scenes: htmlScenes(), config: {} });
+      await synthesizeVoices({ scenes: htmlScenes(), config: {} });
+
+      expect(runtimeTasks).toHaveLength(2);
+      expect(runtimeTasks[0]).toMatchObject({
+        style: HTML_VIDEO_JOB_DEFAULTS.style,
+        ratio: HTML_VIDEO_JOB_DEFAULTS.ratio,
+      });
+      expect(runtimeTasks[1]).toMatchObject({
+        style: HTML_VIDEO_JOB_DEFAULTS.style,
+        ratio: HTML_VIDEO_JOB_DEFAULTS.ratio,
+        speaker: HTML_VIDEO_JOB_DEFAULTS.voiceId,
+        ttsProvider: HTML_VIDEO_JOB_DEFAULTS.ttsProvider,
+        ttsSpeed: HTML_VIDEO_JOB_DEFAULTS.ttsSpeed,
+      });
     });
   });
 
@@ -388,16 +435,44 @@ describe('task runtime providers', () => {
       };
       const providers = createHtmlVideoRuntimeProviders(config, workDir, task, {
         measureAudioDuration: async () => 1,
+        jobConfig: {},
       });
       const signal = new AbortController().signal;
+      const configSnapshot = {
+        maxScenes: 12,
+        transitionType: 'dissolve',
+        captionPreset: 'metadata-only-caption',
+      } as const;
 
-      const rewrite = await providers.rewrite?.({ sourceText: '原始第一幕。', config: {}, signal });
-      const planning = await providers.plan?.({ ...rewrite!, config: {}, signal });
+      const rewrite = await providers.rewrite?.({
+        sourceText: '原始第一幕。',
+        config: { maxScenes: 12 },
+        configSnapshot,
+        signal,
+      });
+      const planning = await providers.plan?.({
+        ...rewrite!,
+        config: { maxScenes: 12 },
+        configSnapshot,
+        signal,
+      });
 
       expect(rewrite).toEqual({ rewrittenText: '改写后的第一幕。', segments: ['改写后的第一幕。'] });
       expect(planning).toEqual({ scenes: htmlScenes() });
       expect(requests).toHaveLength(2);
       expect(requests.every((request) => request.model === 'html-model')).toBe(true);
+      const promptPayloads = requests.map((request) => {
+        const messages = request.messages as Array<{ role: string; content: string }>;
+        const userMessage = [...messages].reverse().find((message) => message.role === 'user');
+        return JSON.parse(userMessage!.content) as Record<string, unknown>;
+      });
+      expect(promptPayloads.map((payload) => payload.config)).toEqual([
+        { maxScenes: 12 },
+        { maxScenes: 12 },
+      ]);
+      expect(JSON.stringify(requests)).not.toContain('configSnapshot');
+      expect(JSON.stringify(requests)).not.toContain('transitionType');
+      expect(JSON.stringify(requests)).not.toContain('metadata-only-caption');
     });
   });
 
@@ -435,6 +510,7 @@ describe('task runtime providers', () => {
       };
       const providers = createHtmlVideoRuntimeProviders(config, workDir, task, {
         measureAudioDuration: async () => 1,
+        jobConfig: {},
       });
       const rewrite = await providers.rewrite?.({ sourceText: '原始第一幕。', config: {} });
       await providers.plan?.({ ...rewrite!, config: {} });
@@ -541,6 +617,40 @@ describe('task runtime providers', () => {
     });
 
     expect(providers.synthesizeNarration).toBeTypeOf('function');
+  });
+
+  it('selects the HTML TTS provider from canonical job config instead of the Task mirror', async () => {
+    const fetchMock = vi.fn(async () => new Response('provider reached', { status: 500 }));
+    vi.stubGlobal('fetch', fetchMock);
+    const config = {
+      ...defaultConfig,
+      tts: {
+        ...defaultConfig.tts,
+        provider: 'mock' as const,
+        volcengine: {
+          ...defaultConfig.tts.volcengine,
+          apiKey: 'job-config-v3-key',
+        },
+      },
+    };
+
+    await withRuntimeTask(async (task, workDir) => {
+      task.ttsProvider = 'mock';
+      const providers = createHtmlVideoRuntimeProviders(config, workDir, task, {
+        measureAudioDuration: async () => 1,
+        jobConfig: {
+          ttsProvider: 'volcengine',
+          voiceId: 'job-config-voice',
+          ttsSpeed: 1,
+        },
+      });
+
+      await providers.synthesizeVoices({
+        scenes: htmlScenes(),
+        config: { ttsProvider: 'volcengine', voiceId: 'job-config-voice', ttsSpeed: 1 },
+      }).catch(() => undefined);
+      expect(fetchMock).toHaveBeenCalled();
+    });
   });
 
   it('pauses at content generation instead of using mock providers when the LLM is not configured', async () => {

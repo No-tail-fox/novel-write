@@ -18,10 +18,18 @@ import type {
   Task,
   TaskStatus,
 } from './types';
+import {
+  htmlVideoAspectRatioOrDefault,
+  createHtmlVideoJobConfig,
+  HTML_VIDEO_JOB_DEFAULTS,
+  HTML_VIDEO_MAX_SCENES,
+  preserveHtmlVideoJobConfig,
+  recoverHtmlVideoJobConfig,
+} from './html-video-config';
 
 export const MAX_HTML_VIDEO_PIPELINE_JSON_CHARS = 1_000_000;
 export const MAX_HTML_VIDEO_PIPELINE_FILE_BYTES = MAX_HTML_VIDEO_PIPELINE_JSON_CHARS * 4;
-export const MAX_HTML_VIDEO_SCENES = 30;
+export const MAX_HTML_VIDEO_SCENES = HTML_VIDEO_MAX_SCENES;
 export const MAX_HTML_VIDEO_SOURCE_CHARS = 16_384;
 export const MAX_HTML_VIDEO_ELEMENTS_PER_SCENE = 4;
 export const MAX_HTML_VIDEO_CAPTIONS_PER_SCENE = 32;
@@ -32,7 +40,6 @@ export const MAX_HTML_VIDEO_PATH_CHARS = 4096;
 
 const MAX_HTML_VIDEO_DISPLAY_LIST_ITEMS = 32;
 const MAX_HTML_VIDEO_DISPLAY_TEXT_CHARS = 1024;
-const MAX_HTML_VIDEO_CONFIG_ENTRIES = 32;
 const sha256Pattern = /^[a-f0-9]{64}$/u;
 
 export const htmlVideoVisibleSteps = [
@@ -74,7 +81,6 @@ const stepToTab: Record<string, HtmlVideoTabKey> = {
 };
 
 const stepStatuses = new Set<HtmlVideoStepStatus>(['pending', 'running', 'completed', 'failed', 'cancelled']);
-const htmlVideoRatioPattern = /^(\d+(?:\.\d+)?)\s*[:/]\s*(\d+(?:\.\d+)?)$/u;
 
 type UnknownRecord = Record<string, unknown>;
 
@@ -120,6 +126,11 @@ export function tabForHtmlVideoStep(step: string | undefined): HtmlVideoTabKey {
   return stepToTab[step || 'rewrite'] ?? 'text';
 }
 
+export function taskProgressLabel(task: Pick<Task, 'taskType' | 'currentStep'>): string {
+  const total = task.taskType === 'html-video' ? htmlVideoVisibleSteps.length : 7;
+  return `${Math.max(0, Math.min(task.currentStep, total))}/${total}`;
+}
+
 export function nextHtmlVideoTabKey(current: HtmlVideoTabKey, key: string): HtmlVideoTabKey | null {
   if (key === 'Home') return htmlVideoTabs[0].key;
   if (key === 'End') return htmlVideoTabs[htmlVideoTabs.length - 1].key;
@@ -142,19 +153,11 @@ export function fitHtmlVideoOutputSize(
   maxHeight: number,
   ratio: string | undefined,
 ): { width: number; height: number; aspectRatio: number } {
-  const aspectRatio = parseHtmlVideoAspectRatio(ratio);
+  const aspectRatio = htmlVideoAspectRatioOrDefault(ratio);
   const availableWidth = containerWidth > 0 ? containerWidth : 0;
   const availableHeight = Number.isFinite(maxHeight) && maxHeight > 0 ? maxHeight : 0;
   const width = Math.min(availableWidth, availableHeight * aspectRatio);
   return { width, height: width / aspectRatio, aspectRatio };
-}
-
-function parseHtmlVideoAspectRatio(ratio: string | undefined): number {
-  const match = ratio?.trim().match(htmlVideoRatioPattern);
-  if (!match) return 9 / 16;
-  const width = Number(match[1]);
-  const height = Number(match[2]);
-  return width > 0 && height > 0 ? width / height : 9 / 16;
 }
 
 export function parseHtmlVideoPipelineData(value: string | undefined): HtmlVideoPipelineData {
@@ -218,21 +221,23 @@ export function recoverHtmlVideoPipelineDataForRetry(
     const maxScenes = validRequestedMaxScenes === undefined
       ? undefined
       : Math.min(validRequestedMaxScenes, MAX_HTML_VIDEO_SCENES);
-    const data = createHtmlVideoPipelineData(task.inputText, {
+    const recovered = recoverHtmlVideoJobConfig({
       ratio: task.ratio,
       style: task.style,
       ttsProvider: task.ttsProvider,
       voiceId: task.speaker,
-      ttsSpeed: Number.isFinite(task.ttsSpeed) && task.ttsSpeed > 0 ? task.ttsSpeed : 1,
+      ttsSpeed: Number.isFinite(task.ttsSpeed) && task.ttsSpeed > 0
+        ? task.ttsSpeed
+        : HTML_VIDEO_JOB_DEFAULTS.ttsSpeed,
       bgmId: task.bgmId,
       maxScenes,
-      foreground: task.htmlVideoForeground ?? true,
-      transitionType: 'fade',
-      coverImageMode: task.coverImageMode ?? 'titled',
-      coverTemplate: task.coverTemplateId ?? 'cinematic-poster',
-      coverRatio: '3:4',
+      foreground: task.htmlVideoForeground ?? HTML_VIDEO_JOB_DEFAULTS.foreground,
+      coverImageMode: task.coverImageMode ?? HTML_VIDEO_JOB_DEFAULTS.coverImageMode,
+      coverTemplate: task.coverTemplateId ?? HTML_VIDEO_JOB_DEFAULTS.coverTemplate,
     });
+    const data = createHtmlVideoPipelineData(task.inputText, recovered.config);
     data.warnings.push('检测到 HTML 视频任务快照损坏，已从原始文案和任务配置重建。');
+    data.warnings.push(...recovered.warnings);
     if (validRequestedMaxScenes !== undefined && validRequestedMaxScenes > MAX_HTML_VIDEO_SCENES) {
       data.warnings.push(`旧任务的场景上限过大，已限制为 ${MAX_HTML_VIDEO_SCENES} 个场景。`);
     }
@@ -253,7 +258,8 @@ export function createHtmlVideoPipelineData(
   if (copy.length > MAX_HTML_VIDEO_SOURCE_CHARS) {
     throw invalidPipeline(`source text exceeds ${MAX_HTML_VIDEO_SOURCE_CHARS} characters`);
   }
-  const scenes = planHtmlVideoScenes(copy, config.maxScenes ?? 8);
+  const resolvedConfig = createHtmlVideoJobConfig(config);
+  const scenes = planHtmlVideoScenes(copy, resolvedConfig.maxScenes);
   const data: HtmlVideoPipelineDataV2 = {
     version: 2,
     revision: 0,
@@ -264,55 +270,34 @@ export function createHtmlVideoPipelineData(
     assets: [],
     voices: [],
     compositions: [],
-    config: cloneConfig(config),
+    config: resolvedConfig,
   };
   return withCompatibilityProjection(data, { videoTitle: titleFromCopy(copy) });
 }
 
-export function createHtmlVideoTaskInput(input: {
-  copy: string;
-  ratio: string;
-  style: string;
-  ttsProvider?: Task['ttsProvider'];
-  voiceId?: string;
-  ttsSpeed?: number;
-  bgmId?: string;
-  maxScenes?: number;
-  foreground?: boolean;
-}): CreateTaskInput {
-  const data = createHtmlVideoPipelineData(input.copy, {
-    ratio: input.ratio,
-    style: input.style,
-    ttsProvider: input.ttsProvider,
-    voiceId: input.voiceId,
-    ttsSpeed: input.ttsSpeed,
-    bgmId: input.bgmId ?? '',
-    maxScenes: input.maxScenes,
-    foreground: input.foreground ?? true,
-    transitionType: 'fade',
-    coverImageMode: 'titled',
-    coverTemplate: 'cinematic-poster',
-    coverRatio: '3:4',
-  });
+export function createHtmlVideoTaskInput(input: { copy: string } & HtmlVideoJobConfig): CreateTaskInput {
+  const { copy, ...requestedConfig } = input;
+  const data = createHtmlVideoPipelineData(copy, requestedConfig);
+  const config = data.config;
   return {
     title: `${dateStamp()} · ${data.videoTitle}`,
-    inputText: input.copy.trim(),
+    inputText: copy.trim(),
     taskKind: 'story',
     taskType: 'html-video',
     pipelineStep: 'rewrite',
     pipelineData: JSON.stringify(data),
     materialSource: 'paste',
     track: 'character-story',
-    style: input.style,
-    speaker: input.voiceId,
-    ttsProvider: input.ttsProvider,
-    ttsSpeed: input.ttsSpeed,
-    ratio: input.ratio,
-    bgmId: input.bgmId ?? '',
-    targetScenes: input.maxScenes,
-    coverImageMode: 'titled',
-    coverTemplateId: 'cinematic-poster',
-    htmlVideoForeground: input.foreground ?? true,
+    style: config.style,
+    speaker: config.voiceId,
+    ttsProvider: config.ttsProvider as Task['ttsProvider'],
+    ttsSpeed: config.ttsSpeed,
+    ratio: config.ratio,
+    bgmId: config.bgmId,
+    targetScenes: config.maxScenes,
+    coverImageMode: config.coverImageMode,
+    coverTemplateId: config.coverTemplate,
+    htmlVideoForeground: config.foreground,
   };
 }
 
@@ -412,6 +397,10 @@ export function validateHtmlVideoCompositions(
 
 function parsePipelineV2(value: UnknownRecord): HtmlVideoPipelineDataV2 {
   const config = parseConfig(value.config, 'config');
+  const configSnapshotHash = optionalBoundedString(value.configSnapshotHash, 'configSnapshotHash', 64);
+  if (configSnapshotHash !== undefined && !sha256Pattern.test(configSnapshotHash)) {
+    throw invalidPipeline('configSnapshotHash must be a SHA-256 digest');
+  }
   const sceneLimit = config.maxScenes ?? MAX_HTML_VIDEO_SCENES;
   const current = requirePipelineStep(value.current, 'current');
   const stepsValue = requireRecord(value.steps, 'steps');
@@ -431,6 +420,7 @@ function parsePipelineV2(value: UnknownRecord): HtmlVideoPipelineDataV2 {
   return {
     version: 2,
     revision: requireNonNegativeInteger(value.revision, 'revision'),
+    ...(configSnapshotHash === undefined ? {} : { configSnapshotHash }),
     current,
     warnings: requireBoundedStringArray(
       value.warnings,
@@ -715,56 +705,16 @@ function parseOutput(value: unknown): HtmlVideoOutput {
 }
 
 function parseConfig(value: unknown, field: string): HtmlVideoJobConfig {
-  const config = requireRecord(value, field);
-  const result: HtmlVideoJobConfig = {};
-  const stringKeys = [
-    'style',
-    'voiceId',
-    'ttsProvider',
-    'bgmId',
-    'captionPreset',
-    'captionAnim',
-    'transitionType',
-    'coverImageMode',
-    'coverTemplate',
-    'coverRatio',
-    'draftTemplate',
-    'ratio',
-  ] as const;
-  for (const key of stringKeys) {
-    const parsed = optionalBoundedString(config[key], `${field}.${key}`, MAX_HTML_VIDEO_DISPLAY_TEXT_CHARS);
-    if (parsed !== undefined) result[key] = parsed;
+  try {
+    return preserveHtmlVideoJobConfig(value);
+  } catch (error) {
+    const message = error instanceof Error ? error.message : `${field} is invalid`;
+    throw invalidPipeline(message);
   }
-  const ttsSpeed = optionalNonNegativeNumber(config.ttsSpeed, `${field}.ttsSpeed`);
-  if (ttsSpeed !== undefined) result.ttsSpeed = ttsSpeed;
-  const maxScenes = optionalHtmlVideoMaxScenes(config.maxScenes, `${field}.maxScenes`);
-  if (maxScenes !== undefined) result.maxScenes = maxScenes;
-  if (config.foreground !== undefined) {
-    if (typeof config.foreground !== 'boolean') throw invalidPipeline(`${field}.foreground is invalid`);
-    result.foreground = config.foreground;
-  }
-  if (config.bgmVolume !== undefined) {
-    if (config.bgmVolume !== 'soft' && config.bgmVolume !== 'medium' && config.bgmVolume !== 'loud') {
-      throw invalidPipeline(`${field}.bgmVolume is invalid`);
-    }
-    result.bgmVolume = config.bgmVolume;
-  }
-  if (config.captionColors !== undefined) {
-    const colors = requireRecord(config.captionColors, `${field}.captionColors`);
-    requireRecordEntryLimit(colors, `${field}.captionColors`, MAX_HTML_VIDEO_CONFIG_ENTRIES);
-    result.captionColors = Object.fromEntries(Object.entries(colors).map(([key, color]) => [
-      requireBoundedString(key, `${field}.captionColors key`, 128),
-      requireBoundedString(color, `${field}.captionColors.${key}`, MAX_HTML_VIDEO_DISPLAY_TEXT_CHARS),
-    ]));
-  }
-  return result;
 }
 
 function cloneConfig(config: HtmlVideoJobConfig): HtmlVideoJobConfig {
-  return {
-    ...config,
-    ...(config.captionColors ? { captionColors: { ...config.captionColors } } : {}),
-  };
+  return preserveHtmlVideoJobConfig(config);
 }
 
 function parseLegacyCover(value: unknown): CoverMetadata | null | undefined {
@@ -890,15 +840,6 @@ function requireBudgetedString(
   budget: TextBudget,
 ): string {
   return consumeTextBudget(requireBoundedString(value, field, maximumCharacters), field, budget);
-}
-
-function requireRecordEntryLimit(record: UnknownRecord, field: string, maximum: number): void {
-  let count = 0;
-  for (const key in record) {
-    if (!Object.prototype.hasOwnProperty.call(record, key)) continue;
-    count += 1;
-    if (count > maximum) throw invalidPipeline(`${field} exceeds the maximum of ${maximum} entries`);
-  }
 }
 
 function requireNonNegativeNumber(value: unknown, field: string): number {

@@ -16,6 +16,7 @@ import {
   MAX_HTML_VIDEO_SOURCE_CHARS,
   validateHtmlVideoScenePlans,
 } from './html-video-workflow';
+import { createHtmlVideoJobConfig } from './html-video-config';
 import type { AppConfig, HtmlVideoAsset, HtmlVideoJobConfig, HtmlVideoScenePlan, HtmlVideoVoiceClip, ImagePrompt, StoryboardScene, Task } from './types';
 import { createConfiguredJsonLlm, type ConfiguredJsonLlm, type LlmMessage } from './llm-provider';
 import { createConfiguredImageGenerator, createConfiguredNarrationSynthesizer, getConfiguredImageConcurrency } from './media-providers';
@@ -26,6 +27,7 @@ type AudioDurationProbe = (path: string, signal?: AbortSignal) => Promise<number
 
 export interface HtmlVideoRuntimeProviderOptions {
   measureAudioDuration: AudioDurationProbe;
+  jobConfig: HtmlVideoJobConfig;
 }
 
 interface HtmlAssetRequest {
@@ -121,19 +123,21 @@ export function createHtmlVideoRuntimeProviders(
   task: Task,
   options: HtmlVideoRuntimeProviderOptions,
 ): Pick<HtmlVideoRunnerOptions, 'rewrite' | 'plan' | 'generateAssets' | 'synthesizeVoices'> {
-  const providers = createTaskRuntimeProviders(config, workDir, task);
+  const resolvedJobConfig = createHtmlVideoJobConfig(options.jobConfig);
+  const runtimeTask = applyHtmlVoiceConfig(applyHtmlTaskConfig(task, resolvedJobConfig), resolvedJobConfig);
+  const providers = createTaskRuntimeProviders(config, workDir, runtimeTask);
   const llmProviders = providers.llm ? createHtmlVideoLlmProviders(providers.llm) : {};
 
   return {
     rewrite: llmProviders.rewrite,
     plan: llmProviders.plan,
     generateAssets: providers.generateImages
-      ? adaptHtmlVideoAssetGenerator(providers.generateImages, task)
+      ? adaptHtmlVideoAssetGenerator(providers.generateImages, runtimeTask)
       : async () => {
           throw new AppError('IMAGE_PROVIDER_NOT_CONFIGURED', '请先配置图片服务。');
         },
     synthesizeVoices: providers.synthesizeNarration
-      ? adaptHtmlVideoNarrationSynthesizer(providers.synthesizeNarration, task, options.measureAudioDuration)
+      ? adaptHtmlVideoNarrationSynthesizer(providers.synthesizeNarration, runtimeTask, options.measureAudioDuration)
       : async () => {
           throw new AppError('TTS_PROVIDER_NOT_CONFIGURED', '请先配置配音服务。');
         },
@@ -316,25 +320,22 @@ function indexProviderAssets(
 }
 
 function applyHtmlTaskConfig(task: Task, config: HtmlVideoJobConfig): Task {
+  const resolved = createHtmlVideoJobConfig(config);
   return {
     ...task,
-    ratio: config.ratio?.trim() || task.ratio,
-    style: config.style?.trim() || task.style,
+    ratio: resolved.ratio,
+    style: resolved.style,
   };
 }
 
 function applyHtmlVoiceConfig(task: Task, config: HtmlVideoJobConfig): Task {
+  const resolved = createHtmlVideoJobConfig(config);
   return {
     ...task,
-    speaker: config.voiceId?.trim() || task.speaker,
-    ttsProvider: resolveTaskTtsProvider(config.ttsProvider, task.ttsProvider),
-    ttsSpeed: Number.isFinite(config.ttsSpeed) && Number(config.ttsSpeed) > 0 ? Number(config.ttsSpeed) : task.ttsSpeed,
+    speaker: resolved.voiceId,
+    ttsProvider: resolved.ttsProvider,
+    ttsSpeed: resolved.ttsSpeed,
   };
-}
-
-function resolveTaskTtsProvider(value: string | undefined, fallback: Task['ttsProvider']): Task['ttsProvider'] {
-  if (value === 'volcengine' || value === 'minimax' || value === 'mock') return value;
-  return fallback;
 }
 
 function hasUsableLlm(config: AppConfig['llm']): boolean {

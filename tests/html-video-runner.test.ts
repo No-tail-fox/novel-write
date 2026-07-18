@@ -23,6 +23,7 @@ import {
 import type {
   HtmlVideoAsset,
   HtmlVideoCompositionSnapshot,
+  HtmlVideoJobConfig,
   HtmlVideoOutput,
   HtmlVideoPipelineDataV2,
   HtmlVideoScenePlan,
@@ -921,6 +922,120 @@ describe('HTML video runner module', () => {
 
       expect(result.scenes[0].narration).toBe('第一句。');
       expect(result.config.style).toBe('modern-film');
+    });
+  });
+
+  it('passes only manifest-declared config consumers to each provider stage', async () => {
+    await withTempRunner(async (workDir) => {
+      const runtime = createFakeRuntime(workDir);
+      const captured: Partial<Record<HtmlVideoVisibleStep, HtmlVideoJobConfig>> = {};
+      const capturedSnapshots: Partial<Record<HtmlVideoVisibleStep, HtmlVideoJobConfig | undefined>> = {};
+      const rewrite = runtime.options.rewrite!;
+      const plan = runtime.options.plan!;
+      const generateAssets = runtime.options.generateAssets;
+      const synthesizeVoices = runtime.options.synthesizeVoices;
+      const createPreviews = runtime.options.createPreviews;
+      const render = runtime.options.render;
+      runtime.options.rewrite = async (input) => {
+        captured.rewrite = structuredClone(input.config);
+        capturedSnapshots.rewrite = structuredClone((input as typeof input & { configSnapshot?: HtmlVideoJobConfig }).configSnapshot);
+        return rewrite(input);
+      };
+      runtime.options.plan = async (input) => {
+        captured.planning = structuredClone(input.config);
+        capturedSnapshots.planning = structuredClone((input as typeof input & { configSnapshot?: HtmlVideoJobConfig }).configSnapshot);
+        return plan(input);
+      };
+      runtime.options.generateAssets = async (input) => {
+        captured.assets = structuredClone(input.config);
+        capturedSnapshots.assets = structuredClone((input as typeof input & { configSnapshot?: HtmlVideoJobConfig }).configSnapshot);
+        return generateAssets(input);
+      };
+      runtime.options.synthesizeVoices = async (input) => {
+        captured.voice = structuredClone(input.config);
+        capturedSnapshots.voice = structuredClone((input as typeof input & { configSnapshot?: HtmlVideoJobConfig }).configSnapshot);
+        return synthesizeVoices(input);
+      };
+      runtime.options.createPreviews = async (input) => {
+        captured.preview = structuredClone(input.config);
+        capturedSnapshots.preview = structuredClone((input as typeof input & { configSnapshot?: HtmlVideoJobConfig }).configSnapshot);
+        return createPreviews(input);
+      };
+      runtime.options.render = async (input) => {
+        captured.render = structuredClone(input.config);
+        capturedSnapshots.render = structuredClone((input as typeof input & { configSnapshot?: HtmlVideoJobConfig }).configSnapshot);
+        return render(input);
+      };
+      const input = createRunnerInput('manifest-provider-config');
+      input.state.config = {
+        ...input.state.config,
+        voiceId: 'voice-custom',
+        ttsProvider: 'minimax',
+        ttsSpeed: 1.25,
+        bgmId: 'bgm-custom',
+        captionPreset: 'compatible-caption',
+        bgmVolume: 'medium',
+        transitionType: 'dissolve',
+        maxScenes: 12,
+        ratio: '4:3',
+        foreground: false,
+      };
+
+      const result = await runHtmlVideoPipeline(input, runtime.options);
+
+      expect(result.config.captionPreset).toBe('compatible-caption');
+      expect(captured).toEqual({
+        rewrite: { maxScenes: 12 },
+        planning: { maxScenes: 12 },
+        assets: { style: 'modern-film', foreground: false, ratio: '4:3' },
+        voice: { voiceId: 'voice-custom', ttsProvider: 'minimax', ttsSpeed: 1.25 },
+        preview: { ratio: '4:3' },
+        render: { bgmId: 'bgm-custom', bgmVolume: 'medium', transitionType: 'dissolve', ratio: '4:3' },
+      });
+      for (const step of Object.keys(capturedSnapshots) as HtmlVideoVisibleStep[]) {
+        expect(capturedSnapshots[step]).toEqual(input.state.config);
+        expect(capturedSnapshots[step]).not.toBe(input.state.config);
+      }
+    });
+  });
+
+  it('invalidates checkpoints only from the manifest-declared consumer stage', async () => {
+    await withTempRunner(async (workDir) => {
+      const initial = createFakeRuntime(workDir);
+      const completed = await runHtmlVideoPipeline(createRunnerInput('manifest-stage-invalidation'), initial.options);
+      const initialSnapshotHash = createHash('sha256')
+        .update(JSON.stringify(completed.config))
+        .digest('hex');
+      expect(completed.configSnapshotHash).toBe(initialSnapshotHash);
+      completed.config.captionPreset = 'compatible-without-consumer';
+      await writeFile(join(workDir, 'html-video-pipeline.v2.json'), JSON.stringify(completed), 'utf8');
+
+      const compatibleResume = createFakeRuntime(workDir);
+      const compatible = await runHtmlVideoPipeline(
+        createRunnerInput('manifest-stage-invalidation'),
+        compatibleResume.options,
+      );
+      expect(compatibleResume.calls).toEqual([]);
+      expect(compatible.config.captionPreset).toBe('compatible-without-consumer');
+      expect(compatible.configSnapshotHash).toBe(createHash('sha256')
+        .update(JSON.stringify(compatible.config))
+        .digest('hex'));
+      expect(compatible.configSnapshotHash).not.toBe(initialSnapshotHash);
+
+      compatible.config.transitionType = 'dissolve';
+      await writeFile(join(workDir, 'html-video-pipeline.v2.json'), JSON.stringify(compatible), 'utf8');
+      const renderResume = createFakeRuntime(workDir);
+      const rendered = await runHtmlVideoPipeline(
+        createRunnerInput('manifest-stage-invalidation'),
+        renderResume.options,
+      );
+      expect(renderResume.calls).toEqual(['render']);
+
+      rendered.config.voiceId = 'changed-voice';
+      await writeFile(join(workDir, 'html-video-pipeline.v2.json'), JSON.stringify(rendered), 'utf8');
+      const voiceResume = createFakeRuntime(workDir);
+      await runHtmlVideoPipeline(createRunnerInput('manifest-stage-invalidation'), voiceResume.options);
+      expect(voiceResume.calls).toEqual(['voice', 'preview', 'render']);
     });
   });
 

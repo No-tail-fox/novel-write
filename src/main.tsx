@@ -215,7 +215,9 @@ import {
 } from './shared/prompt-templates';
 import { createViralTemplateDrafts } from './shared/viral-template-extraction';
 import { defaultPodcastSpeakersForProvider, defaultTaskSpeakerForProvider, normalizeRuntimeTtsProvider, taskSpeakerLabel, ttsVoiceOptionsForProvider, type RuntimeTtsProvider } from './shared/tts-voices';
-import { classifyHtmlVideoTaskMessage, createHtmlVideoTaskInput, fitHtmlVideoOutputSize, htmlVideoSteps, htmlVideoTabs, isHtmlVideoTask, nextHtmlVideoTabKey, safeParseHtmlVideoPipelineData, tabForHtmlVideoStep } from './shared/html-video-workflow';
+import { classifyHtmlVideoTaskMessage, createHtmlVideoTaskInput, fitHtmlVideoOutputSize, htmlVideoSteps, htmlVideoTabs, isHtmlVideoTask, nextHtmlVideoTabKey, safeParseHtmlVideoPipelineData, tabForHtmlVideoStep, taskProgressLabel } from './shared/html-video-workflow';
+import { HTML_VIDEO_JOB_DEFAULTS, HTML_VIDEO_RATIOS } from './shared/html-video-config';
+import { HTML_VIDEO_CONTROL_MANIFEST_V1 } from './shared/html-video-control-manifest';
 import { createHtmlVideoMediaCache, htmlVideoMediaElementKey, htmlVideoMediaElementScopeMatches, htmlVideoMediaStatus, loadHtmlVideoMedia, recordHtmlVideoMediaElementFailure, syncHtmlVideoMediaCache, type HtmlVideoMediaElementFailureState, type HtmlVideoMediaElementScope } from './shared/html-video-media';
 import { useAsyncAction, type AsyncActionFeedback } from './ui/async-action';
 import './styles.css';
@@ -2199,7 +2201,7 @@ function App() {
               {recentTasks.map((task) => (
                 <button key={task.id} className="recent-task-item" onClick={() => openTaskDetail(task.id)}>
                   <strong>{task.title || '未命名任务'}</strong>
-                  <span>{statusLabel(task.status)} · Step {Math.min(task.currentStep, 6)}</span>
+                  <span>{statusLabel(task.status)} · {taskProgressLabel(task)}</span>
                 </button>
               ))}
             </section>
@@ -4310,10 +4312,10 @@ function HtmlVideoPage({
   isBrowserPreview: boolean;
 }) {
   const [copy, setCopy] = useState('武则天十四岁入宫，十二年间几乎没有被命运看见。\n直到唐高宗时代，她重新站回权力中心，用一次次选择改写自己的位置。\n这支视频用 HTML 动画呈现她从才人到天后的关键转折。');
-  const [style, setStyle] = useState('modern-film');
-  const [ratio, setRatio] = useState('9:16');
-  const [maxScenes, setMaxScenes] = useState(8);
-  const [foreground, setForeground] = useState(true);
+  const [style, setStyle] = useState<string>(HTML_VIDEO_JOB_DEFAULTS.style);
+  const [ratio, setRatio] = useState<string>(HTML_VIDEO_JOB_DEFAULTS.ratio);
+  const [maxScenes, setMaxScenes] = useState<number>(HTML_VIDEO_JOB_DEFAULTS.maxScenes);
+  const [foreground, setForeground] = useState<boolean>(HTML_VIDEO_JOB_DEFAULTS.foreground);
   const [bgmId, setBgmId] = useState(resolveDefaultBgmId(state.config));
   const [activeTaskId, setActiveTaskId] = useState<string>('');
   const [activeTab, setActiveTab] = useState<HtmlVideoTabKey>('text');
@@ -4523,7 +4525,7 @@ function HtmlVideoPage({
           foreground,
           ttsProvider: normalizeRuntimeTtsProvider(state.config.tts.provider),
           voiceId: defaultTaskSpeakerForProvider(state.config.tts.provider, state.config),
-          ttsSpeed: 1,
+          ttsSpeed: HTML_VIDEO_JOB_DEFAULTS.ttsSpeed,
         }));
         applyState(next);
         const createdTask = taskFromMutation(next);
@@ -4597,7 +4599,7 @@ function HtmlVideoPage({
 
         <div className="advanced-grid">
           <Segmented label="场景上限" value={String(maxScenes)} options={storyboardSceneCountOptions.map(String)} labels={storyboardSceneCountOptions.map((count) => `${count}`)} onChange={(value) => setMaxScenes(Number(value))} />
-          <Segmented label="画布比例" value={ratio} options={['9:16', '16:9', '1:1', '4:3']} onChange={setRatio} />
+          <Segmented label="画布比例" value={ratio} options={[...HTML_VIDEO_RATIOS]} onChange={setRatio} />
           <Segmented label="前景图" value={foreground ? 'on' : 'off'} options={['on', 'off']} labels={['生成', '跳过']} onChange={(value) => setForeground(value === 'on')} />
         </div>
 
@@ -4991,9 +4993,15 @@ function HtmlVideoTabPanel({
   return (
     <div className="hv-tab-content">
       <div className="task-metrics">
-        <div><small>转场</small><strong>{data.config.transitionType ?? 'fade'}</strong></div>
+        <div
+          data-html-video-control="transitionType"
+          data-control-availability={HTML_VIDEO_CONTROL_MANIFEST_V1.transitionType.availability}
+        ><small>转场</small><strong>{data.config.transitionType ?? HTML_VIDEO_JOB_DEFAULTS.transitionType}</strong></div>
         <div><small>背景音乐</small><strong>{data.config.bgmId || '无'}</strong></div>
-        <div><small>封面比例</small><strong>{data.config.coverRatio ?? '3:4'}</strong></div>
+        <div
+          data-html-video-control="coverRatio"
+          data-control-availability={HTML_VIDEO_CONTROL_MANIFEST_V1.coverRatio.availability}
+        ><small>封面比例</small><strong>{data.config.coverRatio ?? HTML_VIDEO_JOB_DEFAULTS.coverRatio}</strong></div>
       </div>
       {data.output ? (
         <div className="hv-video-output">
@@ -5248,7 +5256,7 @@ function HistoryPage({
           <div className="table-row clickable" key={task.id} role="button" tabIndex={0} onClick={() => openTaskDetail(task.id)} onKeyDown={(event) => event.key === 'Enter' && openTaskDetail(task.id)}>
             <strong>{task.title || '未命名任务'}</strong>
             <StatusPill status={task.status} />
-            <span>{task.currentStep}</span>
+            <span>{taskProgressLabel(task)}</span>
             <span>{formatDate(task.createdAt)}</span>
             <button className="mini-button" disabled={historyAction.busy || !task.outputDir} onClick={(event) => { event.stopPropagation(); if (task.outputDir) void openHistoryOutput(task.id); }}>
               <FolderOpen size={14} />

@@ -1075,7 +1075,7 @@ describe('product shell ui', () => {
     expect(main).toContain('HTML 视频任务数据损坏');
     expect(main).toContain('ttsProvider: normalizeRuntimeTtsProvider(state.config.tts.provider)');
     expect(main).toContain('voiceId: defaultTaskSpeakerForProvider(state.config.tts.provider, state.config)');
-    expect(main).toContain('ttsSpeed: 1');
+    expect(main).toContain('ttsSpeed: HTML_VIDEO_JOB_DEFAULTS.ttsSpeed');
     expect(main).not.toContain("taskKind: 'html-video'");
     expect(types).toContain("export type TaskKind = 'story' | 'music-mv'");
     expect(types).not.toContain("export type TaskKind = 'story' | 'music-mv' | 'html-video'");
@@ -1213,6 +1213,38 @@ describe('product shell ui', () => {
     expect(page).toContain('htmlVideoStepStatusLabel(pipelineData.steps.render.status, activeTask?.status)');
     expect(page).toContain('htmlVideoStepStatusLabel(stepState.status, activeTask?.status)');
     expect(page).toMatch(/status === 'cancelled' && taskStatus === 'paused'[\s\S]*?'已暂停'/);
+  });
+
+  it('uses the shared HTML control manifest without exposing unconsumed editors', async () => {
+    const page = (await rendererSourcesPromise).requiredFile('src/main.tsx');
+    expect(page).toContain("import { HTML_VIDEO_CONTROL_MANIFEST_V1 } from './shared/html-video-control-manifest'");
+    expect(page).toContain('data-html-video-control="transitionType"');
+    expect(page).toContain('HTML_VIDEO_CONTROL_MANIFEST_V1.transitionType.availability');
+    expect(page).toContain('data-html-video-control="coverRatio"');
+    expect(page).toContain('HTML_VIDEO_CONTROL_MANIFEST_V1.coverRatio.availability');
+    expect(page).not.toMatch(/value=\{data\.config\.(?:captionPreset|captionAnim|captionColors|coverImageMode|coverTemplate|coverRatio|draftTemplate)\}/u);
+  });
+
+  it('renders governed six-step HTML progress and seven-step ordinary progress in task lists', async () => {
+    const page = (await rendererSourcesPromise).requiredFile('src/main.tsx');
+    expect(page).toMatch(/from '\.\/shared\/html-video-workflow';/u);
+    expect(page).toContain("{statusLabel(task.status)} · {taskProgressLabel(task)}");
+    expect(page).toContain('<span>{taskProgressLabel(task)}</span>');
+  });
+
+  it('owns HTML task creation and output sizing defaults in the shared config module', async () => {
+    const sources = await rendererSourcesPromise;
+    const page = sources.requiredFile('src/main.tsx');
+    const workflow = sources.requiredFile('src/shared/html-video-workflow.ts');
+    const htmlPage = page.slice(page.indexOf('function HtmlVideoPage('), page.indexOf('function HtmlVideoTabPanel('));
+    expect(htmlPage).toContain('useState<string>(HTML_VIDEO_JOB_DEFAULTS.style)');
+    expect(htmlPage).toContain('useState<string>(HTML_VIDEO_JOB_DEFAULTS.ratio)');
+    expect(htmlPage).toContain('useState<number>(HTML_VIDEO_JOB_DEFAULTS.maxScenes)');
+    expect(htmlPage).toContain('useState<boolean>(HTML_VIDEO_JOB_DEFAULTS.foreground)');
+    expect(htmlPage).toContain('options={[...HTML_VIDEO_RATIOS]}');
+    expect(htmlPage).toContain('ttsSpeed: HTML_VIDEO_JOB_DEFAULTS.ttsSpeed');
+    expect(workflow).toContain('htmlVideoAspectRatioOrDefault,');
+    expect(workflow).toContain('const aspectRatio = htmlVideoAspectRatioOrDefault(ratio);');
   });
 
   it('exposes accessible HTML video tabs and media with the task output ratio', async () => {

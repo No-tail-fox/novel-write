@@ -598,6 +598,41 @@ describe('Electron HTML video runtime contract', () => {
     expect(htmlVideoCanvasForRatio('unexpected', 568)).toEqual({ width: 320, height: 568 });
   });
 
+  it.each([
+    ['missing', undefined, -28],
+    ['soft', 'soft', -28],
+    ['medium', 'medium', -22],
+    ['loud', 'loud', -16],
+  ] as const)('maps %s BGM volume and governed render config into the real composition', async (_label, volume, targetDb) => {
+    await withRuntimeDir(async (workDir) => {
+      let captured: HtmlVideoExportInput | undefined;
+      await renderWithMediaProbe(
+        workDir,
+        async () => ({ ...validFinalMediaProbe(1.25), width: 568, height: 426 }),
+        undefined,
+        undefined,
+        (input) => {
+          captured = structuredClone(input);
+        },
+        (input) => {
+          input.config = {
+            ratio: '4:3',
+            foreground: true,
+            transitionType: 'dissolve',
+            ...(volume === undefined ? {} : { bgmVolume: volume }),
+          };
+        },
+      );
+
+      expect(captured).toMatchObject({
+        bgmTargetDb: targetDb,
+        canvas_w: 568,
+        canvas_h: 426,
+        transition: { type: 'dissolve', duration: 0.3 },
+      });
+    });
+  });
+
   it('skips BGM preparation when the parsed V2 selection is empty', async () => {
     await withRuntimeDir(async (workDir) => {
       let probeCalls = 0;

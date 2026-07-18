@@ -3,6 +3,11 @@ import type { BigIntStats } from 'node:fs';
 import { copyFile, link, lstat, mkdir, open, readdir, realpath, rename, rm, rmdir, stat, statfs, unlink, writeFile } from 'node:fs/promises';
 import { basename, dirname, extname, isAbsolute, join, relative, resolve } from 'node:path';
 import { AppError } from '../src/shared/app-error';
+import {
+  HTML_VIDEO_JOB_DEFAULTS,
+  htmlVideoBgmTargetDb,
+  htmlVideoRatioOrDefault,
+} from '../src/shared/html-video-config';
 import { resolveManagedHistoryWorkDir } from './managed-history-paths';
 import {
   buildHtmlVideoExportInput,
@@ -1026,7 +1031,7 @@ async function resolveHtmlVideoMediaResource(
 
 export function htmlVideoCanvasForRatio(ratio: string | undefined, maxLongEdge = defaultMaxLongEdge): HtmlVideoCanvas {
   const longEdge = Math.max(320, Math.min(1920, Math.round(Number.isFinite(maxLongEdge) ? maxLongEdge : defaultMaxLongEdge)));
-  const normalized = ratio === '16:9' || ratio === '1:1' || ratio === '4:3' ? ratio : '9:16';
+  const normalized = htmlVideoRatioOrDefault(ratio);
   if (normalized === '16:9') return { width: longEdge, height: Math.round(longEdge * 9 / 16) };
   if (normalized === '1:1') return { width: longEdge, height: longEdge };
   if (normalized === '4:3') return { width: longEdge, height: Math.round(longEdge * 3 / 4) };
@@ -2308,12 +2313,12 @@ function buildRuntimeComposition(
       .map((asset) => ({ sceneId: asset.sceneIndex, path: asset.src })),
     narrationAudio: input.voices.map((voice) => ({ sceneId: voice.sceneIndex, path: voice.src })),
     bgmPath,
-    bgmTargetDb: bgmTargetDb(input.config.bgmVolume),
+    bgmTargetDb: htmlVideoBgmTargetDb(input.config.bgmVolume),
     fps,
     canvas_w: canvas.width,
     canvas_h: canvas.height,
     transition: {
-      type: input.config.transitionType?.trim() || 'fade',
+      type: input.config.transitionType ?? HTML_VIDEO_JOB_DEFAULTS.transitionType,
       duration: 0.3,
     },
   });
@@ -2345,12 +2350,6 @@ function captionTimeline(captions: string[], durationSec: number, sceneIndex: nu
     startSec: index * slotDuration,
     durationSec: slotDuration,
   }));
-}
-
-function bgmTargetDb(volume: 'soft' | 'medium' | 'loud' | undefined): number {
-  if (volume === 'loud') return -16;
-  if (volume === 'medium') return -22;
-  return -28;
 }
 
 function assertHtmlVideoOutputDuration(composition: HtmlVideoExportInput, actualDuration: number): void {

@@ -450,7 +450,7 @@ export interface HtmlVideoOutput {
 export interface HtmlVideoJobConfig {
   style?: string;
   voiceId?: string;
-  ttsProvider?: string;
+  ttsProvider?: TtsProvider;
   ttsSpeed?: number;
   bgmId?: string;
   captionPreset?: string;
@@ -470,6 +470,7 @@ export interface HtmlVideoJobConfig {
 export interface HtmlVideoPipelineDataV2 {
   version: 2;
   revision: number;
+  configSnapshotHash?: string;
   current: HtmlVideoPipelineStep;
   warnings: string[];
   steps: Record<HtmlVideoVisibleStep, HtmlVideoStepState>;

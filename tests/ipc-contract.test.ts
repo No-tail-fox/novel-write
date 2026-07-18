@@ -59,6 +59,29 @@ describe('IPC runtime contract', () => {
     expect(() => htmlVideoCreateSchema.parse({ inputText: 'hello', targetScenes: 31 })).toThrow();
     expect(() => htmlVideoCreateSchema.parse({ inputText: 'hello', storyboardSceneCount: 31 })).toThrow();
     expect(() => htmlVideoCreateSchema.parse({ inputText: 'x'.repeat(workflow.MAX_HTML_VIDEO_SOURCE_CHARS + 1) })).toThrow();
+    for (const invalidConfig of [
+      { ttsProvider: 'unknown-provider' },
+      { ttsSpeed: 0.09 },
+      { ttsSpeed: 10.01 },
+      { bgmVolume: 'silent' },
+      { transitionType: 'unknown-transition' },
+      { ratio: '3:2' },
+      { unknownField: true },
+    ]) {
+      const invalidPipeline = workflow.createHtmlVideoPipelineData('hello');
+      Object.assign(invalidPipeline.config, invalidConfig);
+      expect(() => htmlVideoCreateSchema.parse({
+        inputText: 'hello',
+        pipelineData: JSON.stringify(invalidPipeline),
+      })).toThrow();
+    }
+    expect(contract.createTaskSchema.parse({
+      inputText: 'hello',
+      ttsProvider: 'volcengine',
+      ttsSpeed: 0.1,
+    })).toMatchObject({ ttsProvider: 'volcengine', ttsSpeed: 0.1 });
+    expect(() => contract.createTaskSchema.parse({ inputText: 'hello', ttsProvider: 'unknown-provider' })).toThrow();
+    expect(() => contract.createTaskSchema.parse({ inputText: 'hello', ttsSpeed: 10.01 })).toThrow();
     expect(htmlVideoCreateSchema.parse({
       inputText: 'hello',
       targetScenes: 30,

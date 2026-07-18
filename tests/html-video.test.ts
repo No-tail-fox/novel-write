@@ -202,6 +202,14 @@ describe('HTML video pipeline V2 contract', () => {
     expect(tabForHtmlVideoStep('done')).toBe('output');
   });
 
+  it('round-trips only a valid optional full configuration snapshot hash', () => {
+    const pipeline = createHtmlVideoPipelineData('配置快照哈希。');
+    pipeline.configSnapshotHash = 'a'.repeat(64);
+    expect(parseHtmlVideoPipelineData(JSON.stringify(pipeline)).configSnapshotHash).toBe('a'.repeat(64));
+    pipeline.configSnapshotHash = 'not-a-sha256';
+    expect(() => parseHtmlVideoPipelineData(JSON.stringify(pipeline))).toThrow(/configSnapshotHash|SHA-256/i);
+  });
+
   it('normalizes old plan snapshots without losing scenes or generated media', () => {
     const legacy = JSON.stringify({
       pipelineStep: 'plan',
@@ -635,7 +643,11 @@ describe('HTML video pipeline V2 contract', () => {
       expect(parseHtmlVideoPipelineData(patch?.pipelineData)).toMatchObject({
         version: 2,
         current: 'rewrite',
-        warnings: [expect.stringMatching(/损坏.*重建/u)],
+        warnings: [
+          expect.stringMatching(/损坏.*重建/u),
+          expect.stringMatching(/配置恢复.*默认值.*transitionType.*coverRatio/u),
+          expect.stringMatching(/无法从任务镜像恢复.*captionPreset.*draftTemplate/u),
+        ],
         scenes: [{ index: 1 }, { index: 2 }],
         config: {
           ratio: '1:1',

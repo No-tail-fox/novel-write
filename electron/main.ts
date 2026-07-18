@@ -720,6 +720,7 @@ async function runHtmlVideoTask(
     });
     const providers = createHtmlVideoRuntimeProviders(runtimeConfig, workDir, task, {
       measureAudioDuration: runtime.measureAudioDuration,
+      jobConfig: initialState.config,
     });
     const finalState = await runHtmlVideoPipeline({
       taskId: task.id,

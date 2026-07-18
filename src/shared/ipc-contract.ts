@@ -2,6 +2,11 @@ import { z } from 'zod';
 import type { AppConfig, DraftTemplate, ImageLabRecord } from './types';
 import { isSecretId, type SaveConfigInput } from './config-secrets';
 import {
+  HTML_VIDEO_TTS_PROVIDERS,
+  HTML_VIDEO_TTS_SPEED_MAX,
+  HTML_VIDEO_TTS_SPEED_MIN,
+} from './html-video-config';
+import {
   MAX_HTML_VIDEO_SCENES,
   MAX_HTML_VIDEO_SOURCE_CHARS,
   parseHtmlVideoPipelineData,
@@ -160,8 +165,8 @@ export const createTaskSchema = bounded(
       rewriteIntensity: z.enum(['standard', 'deep', 'original']).optional(),
       narrativePov: z.enum(['keep-original', 'first-person', 'third-person']).optional(),
       keepPromotion: z.boolean().optional(),
-      ttsProvider: z.enum(['volcengine', 'minimax', 'mock']).optional(),
-      ttsSpeed: finiteNumber.min(0.1).max(10).optional(),
+      ttsProvider: z.enum(HTML_VIDEO_TTS_PROVIDERS).optional(),
+      ttsSpeed: finiteNumber.min(HTML_VIDEO_TTS_SPEED_MIN).max(HTML_VIDEO_TTS_SPEED_MAX).optional(),
       storyboardSceneCount: nonNegativeInteger.max(500).optional(),
       step3PromptSnapshot: optionalText(MAX_TASK_TEXT),
       musicMv: musicMvSchema.optional(),
@@ -408,7 +413,7 @@ const voiceLabSchema = z
   .object({
     id: optionalText(256),
     text: nonEmptyText(MAX_TASK_TEXT),
-    provider: z.enum(['volcengine', 'minimax', 'mock']),
+    provider: z.enum(HTML_VIDEO_TTS_PROVIDERS),
     voiceId: z.string().max(1024),
     voiceLabel: optionalText(1024),
     speed: finiteNumber.min(0.1).max(10),
