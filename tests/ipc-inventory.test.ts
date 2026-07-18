@@ -21,9 +21,23 @@ describe('renderer IPC inventory', () => {
   });
 
   it('defines exactly one input schema for every canonical invoke channel', () => {
-    expect(INVOKE_CHANNELS).toHaveLength(83);
+    expect(INVOKE_CHANNELS).toHaveLength(84);
     expect(new Set(INVOKE_CHANNELS).size).toBe(INVOKE_CHANNELS.length);
     expect(new Set(Object.keys(ipcInputSchemas))).toEqual(new Set(INVOKE_CHANNELS));
+    expect(INVOKE_CHANNELS).toContain('task:open-output-directory');
+    expect(INVOKE_CHANNELS).toContain('person-assets:open-directory');
+    expect(INVOKE_CHANNELS).not.toContain('path:open');
+  });
+
+  it('routes directory opening through task IDs and person names instead of renderer paths', async () => {
+    await storyDreamApi.openTaskOutputDirectory('task-safe-id');
+    await storyDreamApi.openPersonAssetDirectory('人物甲');
+
+    expect(vi.mocked(ipcRenderer.invoke).mock.calls).toEqual([
+      ['task:open-output-directory', 'task-safe-id'],
+      ['person-assets:open-directory', '人物甲'],
+    ]);
+    expect(storyDreamApi).not.toHaveProperty('openPath');
   });
 
   it('keeps actual preload invoke calls in exact canonical order', async () => {

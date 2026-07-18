@@ -34,13 +34,17 @@ import {
   fetchHtmlVideoMediaResponse,
   createHtmlVideoMediaUrl,
   ensureHtmlVideoTaskWorkDir,
+  htmlVideoMediaResponse,
   htmlVideoMediaScheme,
+  openHtmlVideoMediaFileResponse,
   prepareHtmlVideoBgm,
+  resolveExistingHtmlVideoTaskWorkDir,
   resolveHtmlVideoMediaUrl,
   type HtmlVideoMediaProbeResult,
 } from './html-video-runtime';
 import { createElectronHtmlVideoRenderer } from './html-video-renderer';
 import { createTrustedIpcRegistrar } from './ipc';
+import { openExistingDirectory } from './open-directory';
 import { ConfigService } from './config-service';
 import { CredentialVault } from './credential-vault';
 import { HistoryActivityRegistry, type HistoryActivityReservation } from './history-activity-registry';
@@ -75,6 +79,7 @@ protocol.registerSchemesAsPrivileged([{
     standard: true,
     secure: true,
     supportFetchAPI: true,
+    corsEnabled: true,
     stream: true,
   },
 }]);
@@ -465,7 +470,7 @@ async function htmlVideoTaskDirectory(taskId: string) {
   const task = await (await getDb()).getTaskDetail(taskId);
   if (!task) throw new Error(`HTML_VIDEO_TASK_NOT_FOUND: ${taskId}`);
   resolveManagedHistoryWorkDir(appDataDir(), 'task', task.managedStorageKey);
-  return ensureHtmlVideoTaskWorkDir(app.getPath('userData'), appDataName, task.managedStorageKey ?? '');
+  return resolveExistingHtmlVideoTaskWorkDir(app.getPath('userData'), appDataName, task.managedStorageKey ?? '');
 }
 
 function registerHtmlVideoMediaProtocol(): void {
@@ -474,10 +479,14 @@ function registerHtmlVideoMediaProtocol(): void {
       return await fetchHtmlVideoMediaResponse(
         request.url,
         htmlVideoTaskDirectory,
-        (mediaPath) => net.fetch(pathToFileURL(mediaPath).toString(), { headers: request.headers }),
+        (mediaPath, identity) => openHtmlVideoMediaFileResponse(
+          mediaPath,
+          identity,
+          request.headers.get('range'),
+        ),
       );
     } catch {
-      return new Response(null, { status: 404 });
+      return htmlVideoMediaResponse(null, { status: 404 });
     }
   });
 }
@@ -723,6 +732,7 @@ async function runHtmlVideoTask(
       ...providers,
       createPreviews: runtime.createPreviews,
       render: runtime.render,
+      consumeRenderArtifactDigest: runtime.consumeRenderArtifactDigest,
       onCheckpoint: async (state) => {
         lastState = state;
         await persistHtmlVideoTaskCheckpoint(database, task.id, workDir, state, controller.signal);
@@ -1071,6 +1081,16 @@ trustedHandle('task:list', async (_event, request: Extract<HistoryListRequest, {
 trustedHandle('task:get-detail', async (_event, id: string) => (await getDb()).getTaskDetail(id));
 trustedHandle('task:list-events', async (_event, input: { taskId: string } & CursorRequest) =>
   (await getDb()).listTaskEvents(input.taskId, input));
+trustedHandle('task:open-output-directory', async (_event, id: string) => {
+  const database = await getDb();
+  const task = await database.getTaskDetail(id);
+  if (!task) throw new Error(`任务不存在或已删除：${id}`);
+  const directory = isHtmlVideoTask(task)
+    ? (await htmlVideoTaskDirectory(task.id)).workDir.canonicalPath
+    : task.outputDir.trim();
+  if (!directory) throw new Error('任务尚未生成输出目录。');
+  await openExistingDirectory(directory, (path) => shell.openPath(path));
+});
 trustedHandle('viral:list', async (_event, request: Extract<HistoryListRequest, { family: 'viral-analysis' }>) => (await getDb()).listViralAnalyses(request));
 trustedHandle('viral:get-detail', async (_event, id: string) => (await getDb()).getViralAnalysisDetail(id));
 trustedHandle('viral:list-events', async (_event, input: { analysisId: string } & CursorRequest) =>
@@ -1356,6 +1376,13 @@ trustedHandle('person-assets:rename', async (_event, input: { oldName: string; n
 trustedHandle('person-assets:delete', async (_event, name: string) => deletePersonAsset(personAssetsRoot(), name));
 
 trustedHandle('person-assets:list-images', async (_event, name: string) => listPersonImages(personAssetsRoot(), name));
+
+trustedHandle('person-assets:open-directory', async (_event, name: string) => {
+  const root = personAssetsRoot();
+  const asset = (await listPersonAssets(root)).find((asset) => asset.name === name);
+  if (!asset) throw new Error(`人物素材库不存在或已删除：${name}`);
+  await openExistingDirectory(asset.dir, (path) => shell.openPath(path), { allowedRoot: root });
+});
 
 trustedHandle('person-assets:import-images', async (_event, name: string) => {
   const result = await dialog.showOpenDialog({
@@ -2063,10 +2090,6 @@ trustedHandle('diagnostics:run', async () => {
       { id: 'account-state', label: '账号状态', status: 'pass', detail: state.activation.message },
     ],
   };
-});
-
-trustedHandle('path:open', async (_event, path: string) => {
-  await shell.openPath(path);
 });
 
 async function readLocalImageDataUrl(path: string): Promise<string> {

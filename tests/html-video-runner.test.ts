@@ -1,4 +1,5 @@
 import { existsSync } from 'node:fs';
+import { createHash } from 'node:crypto';
 import { mkdir, mkdtemp, readFile, realpath, rm, unlink, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -22,6 +23,7 @@ import {
 import type {
   HtmlVideoAsset,
   HtmlVideoCompositionSnapshot,
+  HtmlVideoOutput,
   HtmlVideoPipelineDataV2,
   HtmlVideoScenePlan,
   HtmlVideoVisibleStep,
@@ -713,6 +715,174 @@ describe('HTML video runner module', () => {
 
       expect(result.current).toBe('done');
       expect(resumed.calls).toEqual(['assets', 'voice', 'preview', 'render']);
+    });
+  });
+
+  it('writes a trusted render digest into the existing artifact field without hashing provider metadata', async () => {
+    await withTempRunner(async (workDir) => {
+      const runtime = createFakeRuntime(workDir);
+      const render = runtime.options.render;
+      const trustedSha256 = 'a'.repeat(64);
+      let exactOutput: HtmlVideoOutput | undefined;
+      runtime.options.render = async (input) => {
+        exactOutput = await render(input);
+        return exactOutput;
+      };
+      const options = runtime.options as HtmlVideoRunnerOptions & {
+        consumeRenderArtifactDigest?: (
+          output: HtmlVideoOutput,
+          signal?: AbortSignal,
+        ) => Promise<{ size: number; sha256: string }>;
+      };
+      options.consumeRenderArtifactDigest = async (output) => {
+        expect(output).toBe(exactOutput);
+        return { size: Buffer.byteLength('fake-mp4-output'), sha256: trustedSha256 };
+      };
+
+      await runHtmlVideoPipeline(createRunnerInput('trusted-render-digest'), options);
+      const artifact = JSON.parse(await readFile(join(workDir, 'steps', 'render.json'), 'utf8')) as {
+        __storydreamFileDigests: Array<{ path: string; size: number; sha256: string }>;
+      };
+
+      expect(artifact.__storydreamFileDigests).toEqual([{
+        path: 'final.mp4',
+        size: Buffer.byteLength('fake-mp4-output'),
+        sha256: trustedSha256,
+      }]);
+    });
+  });
+
+  it('does not enter the private file hasher after a trusted render proof is consumed', async () => {
+    await withTempRunner(async (workDir) => {
+      const cancellation = new DOMException('unexpected fourth render hash', 'AbortError');
+      let proofConsumed = false;
+      let consumerCalls = 0;
+      let postProofHashChecks = 0;
+      const signal = {
+        get aborted() {
+          const hashingAfterProof = proofConsumed && new Error().stack?.includes('hashFile') === true;
+          if (hashingAfterProof) postProofHashChecks += 1;
+          return hashingAfterProof;
+        },
+        reason: cancellation,
+      } as unknown as AbortSignal;
+      const runtime = createFakeRuntime(workDir);
+      runtime.options.signal = signal;
+      const options = runtime.options as HtmlVideoRunnerOptions & {
+        consumeRenderArtifactDigest?: (
+          output: HtmlVideoOutput,
+          signal?: AbortSignal,
+        ) => Promise<{ size: number; sha256: string }>;
+      };
+      options.consumeRenderArtifactDigest = async () => {
+        consumerCalls += 1;
+        proofConsumed = true;
+        return {
+          size: Buffer.byteLength('fake-mp4-output'),
+          sha256: createHash('sha256').update('fake-mp4-output').digest('hex'),
+        };
+      };
+
+      await expect(runHtmlVideoPipeline(createRunnerInput('no-fourth-render-hash'), options))
+        .resolves.toMatchObject({ current: 'done' });
+      expect(consumerCalls).toBe(1);
+      expect(postProofHashChecks).toBe(0);
+    });
+  });
+
+  it('does not fall back to file hashing when a configured render digest consumer rejects', async () => {
+    await withTempRunner(async (workDir) => {
+      const runtime = createFakeRuntime(workDir);
+      const options = runtime.options as HtmlVideoRunnerOptions & {
+        consumeRenderArtifactDigest?: (
+          output: HtmlVideoOutput,
+          signal?: AbortSignal,
+        ) => Promise<{ size: number; sha256: string }>;
+      };
+      options.consumeRenderArtifactDigest = async () => {
+        throw new Error('TRUSTED_RENDER_PROOF_MISSING');
+      };
+
+      await expect(runHtmlVideoPipeline(createRunnerInput('missing-render-proof'), options))
+        .rejects.toMatchObject({ code: 'HTML_VIDEO_RENDER_FAILED' });
+      expect(await readCheckpoint(workDir)).toMatchObject({
+        current: 'render',
+        steps: { render: { status: 'failed' } },
+      });
+      expect(existsSync(join(workDir, 'steps', 'render.json'))).toBe(false);
+    });
+  });
+
+  it('ignores untrusted digest-shaped output fields when no consumer is configured', async () => {
+    await withTempRunner(async (workDir) => {
+      const runtime = createFakeRuntime(workDir);
+      const render = runtime.options.render;
+      runtime.options.render = async (input) => ({
+        ...await render(input),
+        sha256: 'f'.repeat(64),
+        digest: { size: 1, sha256: 'e'.repeat(64) },
+      } as HtmlVideoOutput);
+
+      await runHtmlVideoPipeline(createRunnerInput('untrusted-output-digest'), runtime.options);
+      const artifact = JSON.parse(await readFile(join(workDir, 'steps', 'render.json'), 'utf8')) as {
+        __storydreamFileDigests: Array<{ path: string; size: number; sha256: string }>;
+      };
+
+      expect(artifact.__storydreamFileDigests).toEqual([{
+        path: 'final.mp4',
+        size: Buffer.byteLength('fake-mp4-output'),
+        sha256: createHash('sha256').update('fake-mp4-output').digest('hex'),
+      }]);
+    });
+  });
+
+  it('rehashes a resumed final and reruns only render after same-size tampering', async () => {
+    await withTempRunner(async (workDir) => {
+      const initial = createFakeRuntime(workDir);
+      const completed = await runHtmlVideoPipeline(createRunnerInput('same-size-final-replacement'), initial.options);
+      expect(completed.output?.path).toBeTruthy();
+      await replaceFileWithSameSize(completed.output!.path);
+
+      const resumed = createFakeRuntime(workDir);
+      const result = await runHtmlVideoPipeline(createRunnerInput('same-size-final-replacement'), resumed.options);
+
+      expect(result.current).toBe('done');
+      expect(resumed.calls).toEqual(['render']);
+    });
+  });
+
+  it('cancels after trusted digest consumption without completing an artifact and can retry', async () => {
+    await withTempRunner(async (workDir) => {
+      const controller = new AbortController();
+      const abortReason = new DOMException('cancelled after digest consumption', 'AbortError');
+      const runtime = createFakeRuntime(workDir);
+      runtime.options.signal = controller.signal;
+      const options = runtime.options as HtmlVideoRunnerOptions & {
+        consumeRenderArtifactDigest?: (
+          output: HtmlVideoOutput,
+          signal?: AbortSignal,
+        ) => Promise<{ size: number; sha256: string }>;
+      };
+      options.consumeRenderArtifactDigest = async () => {
+        controller.abort(abortReason);
+        return {
+          size: Buffer.byteLength('fake-mp4-output'),
+          sha256: createHash('sha256').update('fake-mp4-output').digest('hex'),
+        };
+      };
+
+      await expect(runHtmlVideoPipeline(createRunnerInput('cancel-after-trusted-digest'), options))
+        .rejects.toBe(abortReason);
+      expect(await readCheckpoint(workDir)).toMatchObject({
+        current: 'render',
+        steps: { render: { status: 'cancelled' } },
+      });
+      expect(existsSync(join(workDir, 'steps', 'render.json'))).toBe(false);
+
+      const retry = createFakeRuntime(workDir);
+      await expect(runHtmlVideoPipeline(createRunnerInput('cancel-after-trusted-digest'), retry.options))
+        .resolves.toMatchObject({ current: 'done' });
+      expect(retry.calls).toEqual(['render']);
     });
   });
 

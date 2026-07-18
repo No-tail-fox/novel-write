@@ -876,6 +876,29 @@ h2 {
   margin: 8px 0 6px;
 }
 
+.hv-media-loading {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 7px;
+  color: var(--muted);
+}
+
+.hv-media-state {
+  width: 100%;
+  height: 100%;
+  min-width: 0;
+  display: grid;
+  place-content: center;
+  justify-items: center;
+  gap: 7px;
+  padding: 12px;
+  color: var(--muted);
+  text-align: center;
+  line-height: 1.4;
+  overflow-wrap: anywhere;
+}
+
 .hv-video-output {
   display: grid;
   gap: 12px;
@@ -916,6 +939,30 @@ h2 {
 .hv-output-meta small {
   min-width: 0;
   overflow-wrap: anywhere;
+}
+
+.hv-output-path {
+  min-width: 0;
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  align-items: start;
+  gap: 8px 12px;
+  padding-top: 10px;
+  border-top: 1px solid rgba(111, 125, 142, 0.22);
+}
+
+.hv-output-path small {
+  color: var(--muted);
+}
+
+.hv-output-path code {
+  min-width: 0;
+  color: var(--text);
+  font-size: 12px;
+  line-height: 1.5;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  word-break: break-word;
 }
 
 .hv-output-meta small {

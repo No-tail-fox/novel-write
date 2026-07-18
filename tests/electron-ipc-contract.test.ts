@@ -1,8 +1,259 @@
-import { readFile } from 'node:fs/promises';
+import { mkdir, mkdtemp, readFile, realpath, rename, rm, stat, symlink, writeFile } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
+import { openExistingDirectory } from '../electron/open-directory';
 import { INVOKE_CHANNELS } from '../src/shared/storydream-api';
 
 describe('electron ipc contract', () => {
+  it('opens only existing directories and surfaces shell opener errors', async () => {
+    const root = await mkdtemp(join(tmpdir(), 'storydream-open-directory-'));
+    const filePath = join(root, 'not-a-directory.txt');
+    const targetPath = join(root, 'target');
+    const aliasPath = join(root, 'alias');
+    const opened: string[] = [];
+    try {
+      await Promise.all([
+        writeFile(filePath, 'file', 'utf8'),
+        mkdir(targetPath),
+      ]);
+      await symlink(
+        await realpath(targetPath),
+        aliasPath,
+        process.platform === 'win32' ? 'junction' : 'dir',
+      );
+      await expect(openExistingDirectory(root, async (path) => {
+        opened.push(path);
+        return '';
+      })).resolves.toBeUndefined();
+      await expect(openExistingDirectory(aliasPath, async (path) => {
+        opened.push(path);
+        return '';
+      })).resolves.toBeUndefined();
+      expect(opened).toEqual([await realpath(root), await realpath(aliasPath)]);
+      await expect(openExistingDirectory(filePath, async () => '')).rejects.toThrow(/目录/u);
+      await expect(openExistingDirectory(join(root, 'missing'), async () => '')).rejects.toThrow(/不存在/u);
+      await expect(openExistingDirectory(root, async () => 'Access denied')).rejects.toThrow(/Access denied/u);
+      let longError: Error | null = null;
+      try {
+        await openExistingDirectory(root, async () => 'x'.repeat(10_000));
+      } catch (error) {
+        longError = error as Error;
+      }
+      expect(longError).not.toBeNull();
+      expect(longError!.message.length).toBeLessThanOrEqual(1_100);
+    } finally {
+      await rm(root, { recursive: true, force: true });
+    }
+  });
+
+  it('rejects a directory that escapes its allowed root through a junction', async () => {
+    const root = await mkdtemp(join(tmpdir(), 'storydream-person-root-'));
+    const outside = await mkdtemp(join(tmpdir(), 'storydream-person-outside-'));
+    const aliasPath = join(root, 'escaped-person');
+    let opened = false;
+    try {
+      await symlink(
+        await realpath(outside),
+        aliasPath,
+        process.platform === 'win32' ? 'junction' : 'dir',
+      );
+      await expect(openExistingDirectory(aliasPath, async () => {
+        opened = true;
+        return '';
+      }, { allowedRoot: root })).rejects.toMatchObject({ code: 'DIRECTORY_OUTSIDE_ROOT' });
+      expect(opened).toBe(false);
+    } finally {
+      await Promise.all([
+        rm(root, { recursive: true, force: true }),
+        rm(outside, { recursive: true, force: true }),
+      ]);
+    }
+  });
+
+  it('revalidates a rooted directory after its initial identity is replaced', async () => {
+    const root = await mkdtemp(join(tmpdir(), 'storydream-person-race-root-'));
+    const outside = await mkdtemp(join(tmpdir(), 'storydream-person-race-outside-'));
+    const personPath = join(root, 'person');
+    const detachedPath = join(root, 'detached-person');
+    await mkdir(personPath);
+    const canonicalPersonPath = await realpath(personPath);
+    let swaps = 0;
+    let opened = false;
+    try {
+      await expect(openExistingDirectory(personPath, async () => {
+        opened = true;
+        return '';
+      }, {
+        allowedRoot: root,
+        fileOperations: {
+          stat: async (path) => {
+            const value = await stat(path, { bigint: true });
+            if (path === canonicalPersonPath && swaps === 0) {
+              await rename(path, detachedPath);
+              await symlink(
+                await realpath(outside),
+                path,
+                process.platform === 'win32' ? 'junction' : 'dir',
+              );
+              swaps += 1;
+            }
+            return value;
+          },
+        },
+      })).rejects.toMatchObject({ code: 'DIRECTORY_CHANGED' });
+      expect(swaps).toBe(1);
+      expect(opened).toBe(false);
+    } finally {
+      await Promise.all([
+        rm(root, { recursive: true, force: true }),
+        rm(outside, { recursive: true, force: true }),
+      ]);
+    }
+  });
+
+  it('revalidates the rooted target after the final root check before opening it', async () => {
+    const root = await mkdtemp(join(tmpdir(), 'storydream-person-root-check-race-'));
+    const outside = await mkdtemp(join(tmpdir(), 'storydream-person-root-check-outside-'));
+    const personPath = join(root, 'person');
+    const detachedPath = join(root, 'detached-person');
+    await mkdir(personPath);
+    const canonicalRoot = await realpath(root);
+    let rootStats = 0;
+    let swaps = 0;
+    let opened = false;
+    try {
+      const result = await openExistingDirectory(personPath, async () => {
+        opened = true;
+        return '';
+      }, {
+        allowedRoot: root,
+        fileOperations: {
+          stat: async (path) => {
+            const value = await stat(path, { bigint: true });
+            if (path === canonicalRoot) {
+              rootStats += 1;
+              if (rootStats === 2) {
+                await rename(personPath, detachedPath);
+                await symlink(
+                  await realpath(outside),
+                  personPath,
+                  process.platform === 'win32' ? 'junction' : 'dir',
+                );
+                swaps += 1;
+              }
+            }
+            return value;
+          },
+        },
+      }).then(
+        () => ({ status: 'opened' as const }),
+        (error: unknown) => ({ status: 'rejected' as const, error }),
+      );
+
+      expect(result).toMatchObject({ status: 'rejected' });
+      if (result.status === 'rejected') {
+        expect(['DIRECTORY_CHANGED', 'DIRECTORY_OUTSIDE_ROOT']).toContain(
+          (result.error as { code?: unknown }).code,
+        );
+      }
+      expect(rootStats).toBe(2);
+      expect(swaps).toBe(1);
+      expect(opened).toBe(false);
+    } finally {
+      await Promise.all([
+        rm(root, { recursive: true, force: true }),
+        rm(outside, { recursive: true, force: true }),
+      ]);
+    }
+  });
+
+  it('allows a legitimate child directory whose name starts with two dots', async () => {
+    const root = await mkdtemp(join(tmpdir(), 'storydream-person-dot-root-'));
+    const hiddenPerson = join(root, '..hidden');
+    const opened: string[] = [];
+    try {
+      await mkdir(hiddenPerson);
+      await expect(openExistingDirectory(hiddenPerson, async (path) => {
+        opened.push(path);
+        return '';
+      }, { allowedRoot: root })).resolves.toBeUndefined();
+      expect(opened).toEqual([await realpath(hiddenPerson)]);
+    } finally {
+      await rm(root, { recursive: true, force: true });
+    }
+  });
+
+  it('revalidates an unrestricted task directory before opening it', async () => {
+    const root = await mkdtemp(join(tmpdir(), 'storydream-task-output-race-'));
+    const outside = await mkdtemp(join(tmpdir(), 'storydream-task-output-outside-'));
+    const outputPath = join(root, 'output');
+    const detachedPath = join(root, 'detached-output');
+    await mkdir(outputPath);
+    const canonicalOutputPath = await realpath(outputPath);
+    let swaps = 0;
+    let opened = false;
+    try {
+      await expect(openExistingDirectory(outputPath, async () => {
+        opened = true;
+        return '';
+      }, {
+        fileOperations: {
+          stat: async (path) => {
+            const value = await stat(path, { bigint: true });
+            if (path === canonicalOutputPath && swaps === 0) {
+              await rename(path, detachedPath);
+              await symlink(
+                await realpath(outside),
+                path,
+                process.platform === 'win32' ? 'junction' : 'dir',
+              );
+              swaps += 1;
+            }
+            return value;
+          },
+        },
+      })).rejects.toMatchObject({ code: 'DIRECTORY_CHANGED' });
+      expect(swaps).toBe(1);
+      expect(opened).toBe(false);
+    } finally {
+      await Promise.all([
+        rm(root, { recursive: true, force: true }),
+        rm(outside, { recursive: true, force: true }),
+      ]);
+    }
+  });
+
+  it('keeps renderer directory opening scoped to persisted tasks and existing person assets', async () => {
+    const [main, preload, apiContract, renderer] = await Promise.all([
+      readFile(new URL('../electron/main.ts', import.meta.url), 'utf8'),
+      readFile(new URL('../electron/preload.ts', import.meta.url), 'utf8'),
+      readFile(new URL('../src/shared/storydream-api.ts', import.meta.url), 'utf8'),
+      readFile(new URL('../src/main.tsx', import.meta.url), 'utf8'),
+    ]);
+
+    expect(main).toContain("trustedHandle('task:open-output-directory'");
+    expect(main).toContain("trustedHandle('person-assets:open-directory'");
+    expect(main).toContain('await database.getTaskDetail(id)');
+    expect(main).toContain('isHtmlVideoTask(task)');
+    expect(main).toContain('htmlVideoTaskDirectory(task.id)');
+    expect(main).toContain("return resolveExistingHtmlVideoTaskWorkDir(app.getPath('userData'), appDataName, task.managedStorageKey ?? '');");
+    expect(main).toContain("find((asset) => asset.name === name)");
+    expect(main).toContain('openExistingDirectory');
+    const taskDirectoryHandler = handlerSource(main, 'task:open-output-directory');
+    const personDirectoryHandler = handlerSource(main, 'person-assets:open-directory');
+    expect(personDirectoryHandler).toContain('const root = personAssetsRoot();');
+    expect(personDirectoryHandler).toContain('{ allowedRoot: root }');
+    expect(taskDirectoryHandler).not.toContain('allowedRoot');
+    expect(taskDirectoryHandler).toContain(': task.outputDir.trim()');
+    expect(main).not.toContain("trustedHandle('path:open'");
+    expect(preload).not.toContain('openPath');
+    expect(apiContract).not.toContain('openPath');
+    expect(renderer).not.toContain('api.openPath');
+    expect(renderer).toContain('api.openTaskOutputDirectory(task.id)');
+    expect(renderer).toContain('api.openPersonAssetDirectory(selectedAsset.name)');
+  });
+
   it('publishes history governance only after successful persistence and returns the published revision', async () => {
     const main = await readFile(new URL('../electron/main.ts', import.meta.url), 'utf8');
     const payload = main.slice(main.indexOf('type AppDeltaPayload'), main.indexOf('function publishAppDelta'));

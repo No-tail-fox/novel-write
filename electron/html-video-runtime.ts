@@ -1,6 +1,6 @@
 import { createHash, randomUUID } from 'node:crypto';
 import type { BigIntStats } from 'node:fs';
-import { copyFile, link, lstat, mkdir, readdir, realpath, rename, rm, rmdir, stat, statfs, unlink, writeFile } from 'node:fs/promises';
+import { copyFile, link, lstat, mkdir, open, readdir, realpath, rename, rm, rmdir, stat, statfs, unlink, writeFile } from 'node:fs/promises';
 import { basename, dirname, extname, isAbsolute, join, relative, resolve } from 'node:path';
 import { AppError } from '../src/shared/app-error';
 import { resolveManagedHistoryWorkDir } from './managed-history-paths';
@@ -14,6 +14,7 @@ import type {
   HtmlVideoPreviewOutput,
   HtmlVideoRenderInput,
 } from '../src/shared/html-video-runner';
+import { MAX_HTML_VIDEO_MEDIA_FILE_BYTES } from '../src/shared/html-video-runner';
 import type {
   BgmItem,
   HtmlVideoCompositionSnapshot,
@@ -25,12 +26,14 @@ const defaultFps = 24;
 const defaultMaxLongEdge = 1280;
 const maxRenderFrames = 120_000;
 const renderDiskReserveBytes = 64 * 1024 * 1024;
+const htmlVideoDigestReadChunkBytes = 64 * 1024;
 const estimatedJpegBytesPerPixel = 0.45;
 const htmlVideoBgmExtensions = new Set(['.mp3', '.wav', '.m4a', '.aac', '.ogg', '.flac']);
 const htmlVideoRuntimeStagingDirectoryName = '.html-video-staging';
 const htmlVideoRuntimeStageNamePattern = /^(?:preview|render)-[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/u;
 const htmlVideoRuntimeCleanupStageNamePattern = /^cleanup-[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/u;
 const htmlVideoUuidPattern = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/u;
+const maxHtmlVideoPublicationQuarantinesPerDestination = 32;
 export const htmlVideoBgmMaxBytes = 256 * 1024 * 1024;
 export const htmlVideoBgmDiskReserveBytes = 64 * 1024 * 1024;
 export const htmlVideoMediaScheme = 'storydream-media';
@@ -79,16 +82,34 @@ export interface ElectronHtmlVideoRuntimeOptions {
 export interface HtmlVideoPublicationFileOperations {
   lstat(path: string): Promise<BigIntStats>;
   unlink(path: string): Promise<void>;
+  openDigestFile(
+    path: string,
+    openFile: (candidatePath: string) => Promise<HtmlVideoDigestFile>,
+  ): Promise<HtmlVideoDigestFile>;
+  onDigestRead(path: string, totalBytesRead: number): Promise<void> | void;
+  onDigestFileClosed(path: string): Promise<void> | void;
+  digestByteLimit: number;
+}
+
+export interface HtmlVideoDigestFile {
+  stat(): Promise<BigIntStats>;
+  read(buffer: Buffer, offset: number, length: number, position: number): Promise<{ bytesRead: number }>;
+  close(): Promise<void>;
 }
 
 export interface HtmlVideoStagingFileOperations {
   readdir(path: string): Promise<string[]>;
+  remove(path: string): Promise<void>;
 }
 
 export interface ElectronHtmlVideoRuntime {
   measureAudioDuration(path: string, signal?: AbortSignal): Promise<number>;
   createPreviews(input: HtmlVideoPreviewInput): Promise<HtmlVideoPreviewOutput>;
   render(input: HtmlVideoRenderInput): Promise<HtmlVideoOutput>;
+  consumeRenderArtifactDigest(
+    output: HtmlVideoOutput,
+    signal?: AbortSignal,
+  ): Promise<{ size: number; sha256: string }>;
 }
 
 export interface HtmlVideoRenderPreflightInput {
@@ -142,6 +163,26 @@ export async function ensureHtmlVideoTaskWorkDir(
   });
 }
 
+export async function resolveExistingHtmlVideoTaskWorkDir(
+  trustedAppDataRoot: string,
+  appDataDirectoryName: string,
+  managedStorageKey: string,
+): Promise<HtmlVideoTaskDirectoryIdentity> {
+  const appDataName = validateHtmlVideoTaskId(appDataDirectoryName);
+  const trustedRoot = await realpath(trustedAppDataRoot);
+  const appDataRoot = join(trustedRoot, appDataName);
+  const workDirPath = resolveManagedHistoryWorkDir(appDataRoot, 'task', managedStorageKey);
+  const trustedTaskRootPath = await resolveTaskLocalDirectoryFromPinnedRoot(
+    trustedRoot,
+    join(appDataRoot, 'tasks'),
+  );
+  const workDir = await resolveTaskLocalDirectoryFromPinnedRoot(trustedTaskRootPath, workDirPath);
+  return Object.freeze({
+    trustedTaskRoot: await pinHtmlVideoDirectory(trustedTaskRootPath),
+    workDir: await pinHtmlVideoDirectory(workDir),
+  });
+}
+
 export interface PrepareHtmlVideoBgmOptions {
   taskDirectory: HtmlVideoTaskDirectoryIdentity;
   bgmId: string;
@@ -189,6 +230,7 @@ interface HtmlVideoRuntimeStage {
 interface HtmlVideoStagedFilePublication {
   stagedPath: string;
   destinationPath: string;
+  expectedIdentity?: HtmlVideoPublishedFileIdentity;
 }
 
 interface HtmlVideoPreparedFilePublication extends HtmlVideoStagedFilePublication {
@@ -199,12 +241,38 @@ interface HtmlVideoPreparedFilePublication extends HtmlVideoStagedFilePublicatio
     identity: HtmlVideoPublishedFileIdentity;
   };
   published: boolean;
+  publishedIdentity?: HtmlVideoVerifiedPublishedFileIdentity;
 }
 
 interface HtmlVideoPublishedFileIdentity {
   device: string;
   inode: string;
   size: string;
+  digest?: string;
+}
+
+interface HtmlVideoRenderArtifactIdentity {
+  device: string;
+  inode: string;
+  size: string;
+  modifiedNs: string;
+  changedNs: string;
+}
+
+interface HtmlVideoVerifiedPublishedFileIdentity extends HtmlVideoRenderArtifactIdentity {
+  digest: string | undefined;
+}
+
+interface HtmlVideoPublishedFile {
+  path: string;
+  identity: HtmlVideoVerifiedPublishedFileIdentity;
+}
+
+interface HtmlVideoRenderArtifactProof {
+  path: string;
+  size: number;
+  sha256: string;
+  identity: HtmlVideoRenderArtifactIdentity;
 }
 
 const htmlVideoBgmLocks = new Map<string, HtmlVideoBgmLockEntry>();
@@ -766,7 +834,7 @@ export async function fetchHtmlVideoMediaResponse(
   resolveTaskDirectory: (
     taskId: string,
   ) => HtmlVideoTaskDirectoryIdentity | Promise<HtmlVideoTaskDirectoryIdentity>,
-  fetchMedia: (path: string) => Promise<Response>,
+  fetchMedia: (path: string, identity: HtmlVideoMediaFileIdentity) => Promise<Response>,
 ): Promise<Response> {
   let pinnedTaskId: string | null = null;
   let pinnedTaskDirectory: Promise<HtmlVideoTaskDirectoryIdentity> | null = null;
@@ -780,14 +848,151 @@ export async function fetchHtmlVideoMediaResponse(
   };
 
   const resource = await resolveHtmlVideoMediaResource(value, resolvePinnedTaskDirectory);
-  const response = await fetchMedia(resource.path);
+  const response = await fetchMedia(resource.path, resource.identity);
   try {
     await resolveHtmlVideoMediaResource(value, resolvePinnedTaskDirectory, resource.identity);
-    return response;
+    return htmlVideoMediaResponse(response.body, {
+      status: response.status,
+      statusText: response.statusText,
+      headers: response.headers,
+    });
   } catch (error) {
     await response.body?.cancel().catch(() => undefined);
     throw error;
   }
+}
+
+export function openHtmlVideoMediaRangeResponse(
+  path: string,
+  expectedIdentity: HtmlVideoMediaFileIdentity,
+  rangeHeader: string,
+): Promise<Response> {
+  return openHtmlVideoMediaFileResponse(path, expectedIdentity, rangeHeader);
+}
+
+export async function openHtmlVideoMediaFileResponse(
+  path: string,
+  expectedIdentity: HtmlVideoMediaFileIdentity,
+  rangeHeader: string | null,
+): Promise<Response> {
+  const size = Number(expectedIdentity.size);
+  if (!Number.isSafeInteger(size) || size <= 0) throw invalidHtmlVideoMediaPath();
+  const isPartial = rangeHeader !== null;
+  const range = isPartial ? parseHtmlVideoMediaRange(rangeHeader, size) : { start: 0, end: size - 1 };
+  if (!range) {
+    return new Response(null, {
+      status: 416,
+      statusText: 'Range Not Satisfiable',
+      headers: {
+        'Accept-Ranges': 'bytes',
+        'Content-Length': '0',
+        'Content-Range': `bytes */${size}`,
+      },
+    });
+  }
+
+  const handle = await open(path, 'r');
+  let streamOwnsHandle = false;
+  try {
+    const value = await handle.stat({ bigint: true });
+    if (!value.isFile() || !isSameHtmlVideoMediaHandle(value, expectedIdentity)) {
+      throw invalidHtmlVideoMediaPath();
+    }
+    const length = range.end - range.start + 1;
+    const stream = htmlVideoMediaRangeStream(handle, range.start, length);
+    streamOwnsHandle = true;
+    const headers = new Headers({
+      'Accept-Ranges': 'bytes',
+      'Content-Length': String(length),
+      'Content-Type': htmlVideoMediaContentType(path),
+    });
+    if (isPartial) headers.set('Content-Range', `bytes ${range.start}-${range.end}/${size}`);
+    return new Response(stream, {
+      status: isPartial ? 206 : 200,
+      statusText: isPartial ? 'Partial Content' : 'OK',
+      headers,
+    });
+  } finally {
+    if (!streamOwnsHandle) await handle.close().catch(() => undefined);
+  }
+}
+
+function parseHtmlVideoMediaRange(value: string, size: number): { start: number; end: number } | null {
+  const match = /^bytes=(\d*)-(\d*)$/u.exec(value.trim());
+  if (!match || (!match[1] && !match[2])) return null;
+  if (!match[1]) {
+    const suffixLength = Number(match[2]);
+    if (!Number.isSafeInteger(suffixLength) || suffixLength <= 0) return null;
+    return { start: Math.max(0, size - suffixLength), end: size - 1 };
+  }
+  const start = Number(match[1]);
+  const requestedEnd = match[2] ? Number(match[2]) : size - 1;
+  if (!Number.isSafeInteger(start) || !Number.isSafeInteger(requestedEnd)
+    || start < 0 || start >= size || requestedEnd < start) return null;
+  return { start, end: Math.min(requestedEnd, size - 1) };
+}
+
+function htmlVideoMediaRangeStream(
+  handle: Awaited<ReturnType<typeof open>>,
+  start: number,
+  length: number,
+): ReadableStream<Uint8Array> {
+  let position = start;
+  let remaining = length;
+  let closed = false;
+  let closing: Promise<void> | null = null;
+  const close = () => {
+    closing ??= handle.close().then(() => undefined, () => undefined);
+    return closing;
+  };
+  return new ReadableStream<Uint8Array>({
+    async pull(controller) {
+      if (closed) return;
+      try {
+        const buffer = Buffer.allocUnsafe(Math.min(64 * 1024, remaining));
+        const { bytesRead } = await handle.read(buffer, 0, buffer.length, position);
+        if (bytesRead <= 0) throw new Error('HTML video media range ended before the advertised length.');
+        position += bytesRead;
+        remaining -= bytesRead;
+        controller.enqueue(buffer.subarray(0, bytesRead));
+        if (remaining === 0) {
+          closed = true;
+          await close();
+          controller.close();
+        }
+      } catch (error) {
+        closed = true;
+        await close();
+        controller.error(error);
+      }
+    },
+    async cancel() {
+      closed = true;
+      await close();
+    },
+  });
+}
+
+function htmlVideoMediaContentType(path: string): string {
+  const extension = extname(path).toLowerCase();
+  if (extension === '.mp4') return 'video/mp4';
+  if (extension === '.webm') return 'video/webm';
+  if (extension === '.png') return 'image/png';
+  if (extension === '.jpg' || extension === '.jpeg') return 'image/jpeg';
+  if (extension === '.wav') return 'audio/wav';
+  if (extension === '.mp3') return 'audio/mpeg';
+  if (extension === '.m4a') return 'audio/mp4';
+  if (extension === '.aac') return 'audio/aac';
+  if (extension === '.ogg') return 'audio/ogg';
+  return 'application/octet-stream';
+}
+
+export function htmlVideoMediaResponse(body: BodyInit | null, init: ResponseInit = {}): Response {
+  const headers = new Headers(init.headers);
+  headers.set('Cache-Control', 'no-store, no-cache, must-revalidate');
+  headers.set('Pragma', 'no-cache');
+  headers.set('Expires', '0');
+  return new Response(body, { ...init, headers });
 }
 
 async function resolveHtmlVideoMediaResource(
@@ -869,13 +1074,10 @@ async function withHtmlVideoRuntimeStage<T>(
     throw error;
   } finally {
     try {
-      await removeHtmlVideoRuntimeStage(stage);
+      await removeHtmlVideoRuntimeStage(stage, fileOperations);
     } catch (cleanupError) {
       if (primaryError !== undefined) {
-        throw new AggregateError(
-          [primaryError, cleanupError],
-          'HTML video runtime operation and staging cleanup both failed.',
-        );
+        throw attachHtmlVideoStageCleanupError(primaryError, cleanupError);
       }
       throw cleanupError;
     } finally {
@@ -1103,7 +1305,10 @@ async function validateHtmlVideoRuntimeStage(stage: HtmlVideoRuntimeStage): Prom
   return stageDir;
 }
 
-async function removeHtmlVideoRuntimeStage(stage: HtmlVideoRuntimeStage): Promise<void> {
+async function removeHtmlVideoRuntimeStage(
+  stage: HtmlVideoRuntimeStage,
+  fileOperations: Partial<HtmlVideoStagingFileOperations>,
+): Promise<void> {
   let stageDir: string;
   try {
     stageDir = await validateHtmlVideoRuntimeStage(stage);
@@ -1111,7 +1316,56 @@ async function removeHtmlVideoRuntimeStage(stage: HtmlVideoRuntimeStage): Promis
     if (error instanceof AppError && error.code === 'HTML_VIDEO_MEDIA_PATH_INVALID') return;
     throw error;
   }
+  if (fileOperations.remove) {
+    await fileOperations.remove(stageDir);
+    return;
+  }
   await rm(stageDir, { recursive: true, force: true });
+}
+
+function attachHtmlVideoStageCleanupError(primaryError: unknown, cleanupError: unknown): Error {
+  if (primaryError instanceof AppError) {
+    const wrapped = new AppError(
+      primaryError.code,
+      primaryError.message,
+      primaryError.retryable,
+      primaryError.diagnosticId,
+      primaryError.field,
+    );
+    wrapped.stack = primaryError.stack;
+    Object.defineProperty(wrapped, 'cause', { configurable: true, value: cleanupError });
+    return wrapped;
+  }
+
+  const candidate = primaryError && typeof primaryError === 'object'
+    ? primaryError as { name?: unknown; message?: unknown; stack?: unknown; cause?: unknown }
+    : {};
+  const hasOperationCause = Object.prototype.hasOwnProperty.call(candidate, 'cause');
+  const wrapped = new Error(
+    typeof candidate.message === 'string' ? candidate.message : String(primaryError),
+    { cause: hasOperationCause ? candidate.cause : cleanupError },
+  );
+  if (typeof candidate.name === 'string') wrapped.name = candidate.name;
+  if (typeof candidate.stack === 'string') wrapped.stack = candidate.stack;
+  if (primaryError && typeof primaryError === 'object') {
+    const descriptors = Object.getOwnPropertyDescriptors(primaryError);
+    delete descriptors.cleanupError;
+    Object.defineProperties(wrapped, descriptors);
+  }
+  Object.defineProperty(wrapped, 'cleanupError', {
+    configurable: true,
+    value: cleanupError,
+  });
+  if (!hasOperationCause) {
+    const causeDescriptor = Object.getOwnPropertyDescriptor(wrapped, 'cause');
+    if (!causeDescriptor) {
+      Object.defineProperty(wrapped, 'cause', {
+        configurable: true,
+        value: cleanupError,
+      });
+    }
+  }
+  return wrapped;
 }
 
 async function publishHtmlVideoStagedFiles(
@@ -1119,7 +1373,8 @@ async function publishHtmlVideoStagedFiles(
   stage: HtmlVideoRuntimeStage,
   publications: HtmlVideoStagedFilePublication[],
   fileOperations: Partial<HtmlVideoPublicationFileOperations> = {},
-): Promise<string[]> {
+  signal?: AbortSignal,
+): Promise<HtmlVideoPublishedFile[]> {
   const { workDir } = await validateHtmlVideoTaskDirectory(taskDirectory);
   const stageDir = await validateHtmlVideoRuntimeStage(stage);
   const prepared: HtmlVideoPreparedFilePublication[] = [];
@@ -1128,6 +1383,11 @@ async function publishHtmlVideoStagedFiles(
     const stagedStat = await publicationLstat(fileOperations, stagedPath);
     if (!stagedStat.isFile() || stagedStat.isSymbolicLink() || stagedStat.size <= 0n) {
       throw new AppError('HTML_VIDEO_OUTPUT_INVALID', 'HTML 视频临时产物为空或不可用。', true);
+    }
+    if (publication.expectedIdentity) {
+      if (!isSameHtmlVideoPublishedFile(stagedStat, publication.expectedIdentity)) {
+        throw htmlVideoOutputChanged();
+      }
     }
     const destinationPath = resolve(publication.destinationPath);
     assertTaskLocalPath(workDir, destinationPath);
@@ -1139,7 +1399,7 @@ async function publishHtmlVideoStagedFiles(
     prepared.push({
       stagedPath,
       destinationPath: join(destinationParent, basename(destinationPath)),
-      stagedIdentity: htmlVideoPublishedFileIdentity(stagedStat),
+      stagedIdentity: publication.expectedIdentity ?? htmlVideoPublishedFileIdentity(stagedStat),
       destinationDirectory: await pinHtmlVideoDirectory(destinationParent),
       published: false,
     });
@@ -1152,7 +1412,7 @@ async function publishHtmlVideoStagedFiles(
         await recoverHtmlVideoPublicationQuarantines(publication, fileOperations);
       }
 
-      let publishedPaths: string[];
+      let publishedFiles: HtmlVideoPublishedFile[];
       try {
         for (const publication of prepared) {
           await Promise.all([
@@ -1182,19 +1442,26 @@ async function publishHtmlVideoStagedFiles(
           }
           await rename(publication.stagedPath, publication.destinationPath);
           publication.published = true;
-          const publishedStat = await publicationLstat(fileOperations, publication.destinationPath);
-          if (!isSameHtmlVideoPublishedFile(publishedStat, publication.stagedIdentity)) {
-            throw htmlVideoPublishConflict();
-          }
+          publication.publishedIdentity = await assertHtmlVideoPublishedFileIdentity(
+            publication.destinationPath,
+            publication.stagedIdentity,
+            fileOperations,
+            signal,
+            htmlVideoPublishConflict,
+          );
         }
 
         await Promise.all([
           validateHtmlVideoTaskDirectory(taskDirectory),
           validateHtmlVideoRuntimeStage(stage),
         ]);
-        publishedPaths = await Promise.all(prepared.map(async (publication) => {
+        publishedFiles = await Promise.all(prepared.map(async (publication) => {
           await validateHtmlVideoDirectoryIdentity(publication.destinationDirectory);
-          return taskLocalFile(workDir, publication.destinationPath);
+          if (!publication.publishedIdentity) throw htmlVideoPublishConflict();
+          return {
+            path: await taskLocalFile(workDir, publication.destinationPath),
+            identity: publication.publishedIdentity,
+          };
         }));
       } catch (error) {
         const rollbackErrors = await rollbackHtmlVideoFilePublications(prepared, fileOperations);
@@ -1219,7 +1486,7 @@ async function publishHtmlVideoStagedFiles(
           // The stable files are committed; a later publication safely reaps strict quarantine names.
         }
       }));
-      return publishedPaths;
+      return publishedFiles;
     },
   );
 }
@@ -1251,11 +1518,35 @@ async function recoverHtmlVideoPublicationQuarantines(
   const destinationName = basename(publication.destinationPath);
   const quarantinePrefix = `.${destinationName}.`;
   const quarantineSuffix = '.quarantine';
-  const names = (await readdir(destinationDir)).filter((name) => (
-    name.startsWith(quarantinePrefix)
-    && name.endsWith(quarantineSuffix)
-    && htmlVideoUuidPattern.test(name.slice(quarantinePrefix.length, -quarantineSuffix.length))
-  ));
+  const conflictQuarantineSuffix = '.conflict-quarantine';
+  const names: string[] = [];
+  const conflictNames: string[] = [];
+  for (const name of await readdir(destinationDir)) {
+    if (!name.startsWith(quarantinePrefix)) continue;
+    if (
+      name.endsWith(conflictQuarantineSuffix)
+      && htmlVideoUuidPattern.test(name.slice(
+        quarantinePrefix.length,
+        -conflictQuarantineSuffix.length,
+      ))
+    ) {
+      conflictNames.push(name);
+    } else if (
+      name.endsWith(quarantineSuffix)
+      && htmlVideoUuidPattern.test(name.slice(quarantinePrefix.length, -quarantineSuffix.length))
+    ) {
+      names.push(name);
+    }
+    if (names.length + conflictNames.length > maxHtmlVideoPublicationQuarantinesPerDestination) {
+      throw htmlVideoPublishConflict();
+    }
+  }
+  await reapHtmlVideoConflictQuarantines(
+    publication,
+    destinationDir,
+    conflictNames,
+    fileOperations,
+  );
   if (!names.length) return;
 
   let destination: BigIntStats | undefined;
@@ -1305,21 +1596,85 @@ async function recoverHtmlVideoPublicationQuarantines(
   if (!isSameHtmlVideoPublishedFile(restored, quarantine.identity)) throw htmlVideoPublishConflict();
 }
 
+async function reapHtmlVideoConflictQuarantines(
+  publication: HtmlVideoPreparedFilePublication,
+  destinationDir: string,
+  names: string[],
+  fileOperations: Partial<HtmlVideoPublicationFileOperations>,
+): Promise<void> {
+  for (const name of names) {
+    await validateHtmlVideoDirectoryIdentity(publication.destinationDirectory);
+    const path = join(destinationDir, name);
+    let initial: BigIntStats;
+    try {
+      initial = await publicationLstat(fileOperations, path);
+    } catch (error) {
+      if (isMissingFileError(error)) continue;
+      throw error;
+    }
+    if (initial.isDirectory() && !initial.isSymbolicLink()) continue;
+    if (!initial.isFile() && !initial.isSymbolicLink()) continue;
+
+    await validateHtmlVideoDirectoryIdentity(publication.destinationDirectory);
+    let current: BigIntStats;
+    try {
+      current = await publicationLstat(fileOperations, path);
+    } catch (error) {
+      if (isMissingFileError(error)) continue;
+      throw error;
+    }
+    if (!isSameHtmlVideoPublishedFile(current, htmlVideoPublishedFileIdentity(initial))) {
+      throw htmlVideoPublishConflict();
+    }
+    await publicationUnlink(fileOperations, path);
+  }
+}
+
 async function rollbackHtmlVideoFilePublications(
   publications: HtmlVideoPreparedFilePublication[],
   fileOperations: Partial<HtmlVideoPublicationFileOperations>,
 ): Promise<unknown[]> {
   const errors: unknown[] = [];
   for (const publication of [...publications].reverse()) {
+    let conflictQuarantine: { path: string; identity: HtmlVideoPublishedFileIdentity } | undefined;
+    let conflictVerificationError: unknown;
     try {
       await validateHtmlVideoDirectoryIdentity(publication.destinationDirectory);
       if (publication.published) {
-        const publishedStat = await publicationLstat(fileOperations, publication.destinationPath);
-        if (!isSameHtmlVideoPublishedFile(publishedStat, publication.stagedIdentity)) {
-          throw htmlVideoPublishConflict();
+        let publishedStat: BigIntStats | undefined;
+        try {
+          publishedStat = await publicationLstat(fileOperations, publication.destinationPath);
+        } catch (error) {
+          if (!isMissingFileError(error)) throw error;
+          publication.published = false;
         }
-        await rename(publication.destinationPath, publication.stagedPath);
-        publication.published = false;
+        if (publishedStat) {
+          if (!isSameHtmlVideoPublishedFile(publishedStat, publication.stagedIdentity)) {
+            const conflictIdentity = htmlVideoPublishedFileIdentity(publishedStat);
+            const conflictPath = await unusedHtmlVideoConflictQuarantinePath(
+              publication.destinationPath,
+              fileOperations,
+            );
+            const currentStat = await publicationLstat(fileOperations, publication.destinationPath);
+            if (!isSameHtmlVideoPublishedFile(currentStat, conflictIdentity)) {
+              throw htmlVideoPublishConflict();
+            }
+            await rename(publication.destinationPath, conflictPath);
+            publication.published = false;
+            conflictQuarantine = { path: conflictPath, identity: conflictIdentity };
+            try {
+              const quarantinedStat = await publicationLstat(fileOperations, conflictPath);
+              if (!isSameHtmlVideoPublishedFile(quarantinedStat, conflictIdentity)) {
+                conflictVerificationError = htmlVideoPublishConflict();
+              }
+            } catch (error) {
+              conflictVerificationError = error;
+            }
+          } else {
+            await rename(publication.destinationPath, publication.stagedPath);
+            publication.published = false;
+          }
+        }
       }
       if (publication.backup) {
         const backupStat = await publicationLstat(fileOperations, publication.backup.path);
@@ -1327,10 +1682,26 @@ async function rollbackHtmlVideoFilePublications(
           throw htmlVideoPublishConflict();
         }
         await rename(publication.backup.path, publication.destinationPath);
+        const restoredStat = await publicationLstat(fileOperations, publication.destinationPath);
+        if (!isSameHtmlVideoPublishedFile(restoredStat, publication.backup.identity)) {
+          throw htmlVideoPublishConflict();
+        }
         publication.backup = undefined;
       }
     } catch (error) {
       errors.push(error);
+    }
+    if (conflictVerificationError) errors.push(conflictVerificationError);
+    if (conflictQuarantine) {
+      try {
+        await validateHtmlVideoDirectoryIdentity(publication.destinationDirectory);
+        const quarantinedStat = await publicationLstat(fileOperations, conflictQuarantine.path);
+        if (isSameHtmlVideoPublishedFile(quarantinedStat, conflictQuarantine.identity)) {
+          await publicationUnlink(fileOperations, conflictQuarantine.path);
+        }
+      } catch {
+        // The verified backup is already canonical; retain the conflict outside that path for later diagnosis.
+      }
     }
   }
   return errors;
@@ -1355,11 +1726,62 @@ async function unusedHtmlVideoBackupPath(
   throw htmlVideoPublishConflict();
 }
 
+async function unusedHtmlVideoConflictQuarantinePath(
+  destinationPath: string,
+  fileOperations: Partial<HtmlVideoPublicationFileOperations>,
+): Promise<string> {
+  for (let attempt = 0; attempt < 4; attempt += 1) {
+    const candidate = join(
+      dirname(destinationPath),
+      `.${basename(destinationPath)}.${randomUUID()}.conflict-quarantine`,
+    );
+    try {
+      await publicationLstat(fileOperations, candidate);
+    } catch (error) {
+      if (isMissingFileError(error)) return candidate;
+      throw error;
+    }
+  }
+  throw htmlVideoPublishConflict();
+}
+
 function publicationLstat(
   fileOperations: Partial<HtmlVideoPublicationFileOperations>,
   path: string,
 ): Promise<BigIntStats> {
   return fileOperations.lstat?.(path) ?? lstat(path, { bigint: true });
+}
+
+async function publicationOpenDigestFile(
+  fileOperations: Partial<HtmlVideoPublicationFileOperations>,
+  path: string,
+): Promise<HtmlVideoDigestFile> {
+  let openedFile: HtmlVideoDigestFile | undefined;
+  const openFile = async (candidatePath: string) => {
+    if (openedFile) throw new Error('Only one HTML video digest file may be opened per verification.');
+    const handle = await open(candidatePath, 'r');
+    openedFile = Object.freeze({
+      stat: () => handle.stat({ bigint: true }),
+      async read(buffer: Buffer, offset: number, length: number, position: number) {
+        const result = await handle.read(buffer, offset, length, position);
+        return { bytesRead: result.bytesRead };
+      },
+      close: () => handle.close(),
+    });
+    return openedFile;
+  };
+  try {
+    const selected = fileOperations.openDigestFile
+      ? await fileOperations.openDigestFile(path, openFile)
+      : await openFile(path);
+    if (!openedFile || selected !== openedFile) {
+      throw new Error('HTML video digest hook returned an untrusted file handle.');
+    }
+    return selected;
+  } catch (error) {
+    await openedFile?.close().catch(() => undefined);
+    throw error;
+  }
 }
 
 function publicationUnlink(
@@ -1371,12 +1793,176 @@ function publicationUnlink(
 
 function htmlVideoPublishedFileIdentity(
   value: Pick<BigIntStats, 'dev' | 'ino' | 'size'>,
+  digest?: string,
 ): HtmlVideoPublishedFileIdentity {
   return {
     device: value.dev.toString(),
     inode: value.ino.toString(),
     size: value.size.toString(),
+    ...(digest ? { digest } : {}),
   };
+}
+
+async function pinHtmlVideoPublishedFileIdentity(
+  path: string,
+  fileOperations: Partial<HtmlVideoPublicationFileOperations>,
+  signal?: AbortSignal,
+): Promise<HtmlVideoPublishedFileIdentity> {
+  throwIfAborted(signal);
+  const before = await publicationLstat(fileOperations, path);
+  if (!before.isFile() || before.isSymbolicLink() || before.size <= 0n) {
+    throw new AppError('HTML_VIDEO_OUTPUT_INVALID', 'HTML 视频渲染结果为空。', true);
+  }
+  if (before.size > BigInt(MAX_HTML_VIDEO_MEDIA_FILE_BYTES)) {
+    throw htmlVideoOutputTooLarge();
+  }
+  const verified = await digestHtmlVideoFile(path, before, fileOperations, signal);
+  return htmlVideoPublishedFileIdentity(before, verified.digest);
+}
+
+async function assertHtmlVideoPublishedFileIdentity(
+  path: string,
+  expected: HtmlVideoPublishedFileIdentity,
+  fileOperations: Partial<HtmlVideoPublicationFileOperations>,
+  signal?: AbortSignal,
+  errorFactory: () => AppError = htmlVideoOutputChanged,
+): Promise<HtmlVideoVerifiedPublishedFileIdentity> {
+  throwIfAborted(signal);
+  const before = await publicationLstat(fileOperations, path).catch(() => {
+    throw errorFactory();
+  });
+  if (!before.isFile() || before.isSymbolicLink() || !isSameHtmlVideoPublishedFile(before, expected)) {
+    throw errorFactory();
+  }
+  if (!expected.digest) {
+    const beforeIdentity = htmlVideoRenderArtifactIdentity(before);
+    const after = await publicationLstat(fileOperations, path).catch(() => {
+      throw errorFactory();
+    });
+    if (
+      !after.isFile()
+      || after.isSymbolicLink()
+      || !isSameHtmlVideoPublishedFile(after, expected)
+      || !isSameHtmlVideoRenderArtifactIdentity(after, beforeIdentity)
+    ) {
+      throw errorFactory();
+    }
+    return {
+      ...htmlVideoRenderArtifactIdentity(after),
+      digest: undefined,
+    };
+  }
+  const verified = await digestHtmlVideoFile(path, before, fileOperations, signal, errorFactory);
+  if (verified.digest !== expected.digest) {
+    throw errorFactory();
+  }
+  return {
+    ...verified.identity,
+    digest: expected.digest,
+  };
+}
+
+async function digestHtmlVideoFile(
+  path: string,
+  pinnedPathIdentity: BigIntStats,
+  fileOperations: Partial<HtmlVideoPublicationFileOperations>,
+  signal?: AbortSignal,
+  errorFactory: () => AppError = htmlVideoOutputChanged,
+): Promise<{ digest: string; identity: HtmlVideoRenderArtifactIdentity }> {
+  throwIfAborted(signal);
+  let file: HtmlVideoDigestFile;
+  try {
+    file = await publicationOpenDigestFile(fileOperations, path);
+  } catch {
+    throwIfAborted(signal);
+    throw errorFactory();
+  }
+
+  let primaryError: unknown;
+  try {
+    throwIfAborted(signal);
+    const handleBefore = await file.stat();
+    const digestByteLimit = Math.min(
+      MAX_HTML_VIDEO_MEDIA_FILE_BYTES,
+      Math.max(1, Math.trunc(fileOperations.digestByteLimit ?? MAX_HTML_VIDEO_MEDIA_FILE_BYTES)),
+    );
+    if (!handleBefore.isFile() || handleBefore.isSymbolicLink() || handleBefore.size <= 0n) {
+      throw errorFactory();
+    }
+    if (handleBefore.size > BigInt(digestByteLimit)) {
+      throw htmlVideoOutputTooLarge();
+    }
+    const pinnedIdentity = htmlVideoRenderArtifactIdentity(pinnedPathIdentity);
+    if (!isSameHtmlVideoRenderArtifactIdentity(handleBefore, pinnedIdentity)) {
+      throw errorFactory();
+    }
+
+    const pinnedSize = Number(handleBefore.size);
+    const digest = createHash('sha256');
+    const buffer = Buffer.allocUnsafe(Math.min(htmlVideoDigestReadChunkBytes, pinnedSize));
+    let totalBytesRead = 0;
+    while (totalBytesRead < pinnedSize) {
+      throwIfAborted(signal);
+      const length = Math.min(buffer.length, pinnedSize - totalBytesRead);
+      const { bytesRead } = await file.read(buffer, 0, length, totalBytesRead);
+      if (!Number.isSafeInteger(bytesRead) || bytesRead <= 0) throw errorFactory();
+      if (totalBytesRead + bytesRead > digestByteLimit) throw htmlVideoOutputTooLarge();
+      if (bytesRead > length || totalBytesRead + bytesRead > pinnedSize) throw errorFactory();
+      digest.update(buffer.subarray(0, bytesRead));
+      totalBytesRead += bytesRead;
+      await fileOperations.onDigestRead?.(path, totalBytesRead);
+      throwIfAborted(signal);
+    }
+    if (totalBytesRead !== pinnedSize) throw errorFactory();
+
+    throwIfAborted(signal);
+    const trailing = Buffer.allocUnsafe(1);
+    const trailingRead = await file.read(trailing, 0, 1, pinnedSize);
+    if (!Number.isSafeInteger(trailingRead.bytesRead) || trailingRead.bytesRead < 0) throw errorFactory();
+    if (pinnedSize + trailingRead.bytesRead > digestByteLimit) throw htmlVideoOutputTooLarge();
+    if (trailingRead.bytesRead !== 0) throw errorFactory();
+
+    throwIfAborted(signal);
+    const handleAfter = await file.stat();
+    if (
+      !handleAfter.isFile()
+      || handleAfter.isSymbolicLink()
+      || !isSameHtmlVideoRenderArtifactIdentity(handleAfter, pinnedIdentity)
+    ) {
+      throw errorFactory();
+    }
+    const pathAfter = await publicationLstat(fileOperations, path).catch(() => {
+      throw errorFactory();
+    });
+    if (
+      !pathAfter.isFile()
+      || pathAfter.isSymbolicLink()
+      || !isSameHtmlVideoRenderArtifactIdentity(pathAfter, pinnedIdentity)
+    ) {
+      throw errorFactory();
+    }
+    throwIfAborted(signal);
+    return {
+      digest: digest.digest('hex'),
+      identity: htmlVideoRenderArtifactIdentity(handleAfter),
+    };
+  } catch (error) {
+    primaryError = error;
+    throwIfAborted(signal);
+    if (error instanceof AppError) throw error;
+    throw errorFactory();
+  } finally {
+    try {
+      await file.close();
+      await fileOperations.onDigestFileClosed?.(path);
+      if (primaryError === undefined) throwIfAborted(signal);
+    } catch {
+      if (primaryError === undefined) {
+        throwIfAborted(signal);
+        throw errorFactory();
+      }
+    }
+  }
 }
 
 function isSameHtmlVideoPublishedFile(
@@ -1396,10 +1982,27 @@ function htmlVideoPublishConflict(): AppError {
   );
 }
 
+function htmlVideoOutputChanged(): AppError {
+  return new AppError(
+    'HTML_VIDEO_OUTPUT_CHANGED',
+    'HTML 视频渲染结果在校验期间发生变化，请重试。',
+    true,
+  );
+}
+
+function htmlVideoOutputTooLarge(): AppError {
+  return new AppError(
+    'HTML_VIDEO_OUTPUT_TOO_LARGE',
+    'HTML 视频渲染结果超过 1 GiB 安全校验上限，请降低时长或码率后重试。',
+    true,
+  );
+}
+
 export function createElectronHtmlVideoRuntime(options: ElectronHtmlVideoRuntimeOptions): ElectronHtmlVideoRuntime {
   const fps = clampFps(options.fps ?? defaultFps);
   const maxLongEdge = options.maxLongEdge ?? defaultMaxLongEdge;
   let durationProbeTail = Promise.resolve();
+  const renderArtifactProofs = new WeakMap<HtmlVideoOutput, HtmlVideoRenderArtifactProof>();
 
   return {
     measureAudioDuration(path, signal) {
@@ -1418,6 +2021,36 @@ export function createElectronHtmlVideoRuntime(options: ElectronHtmlVideoRuntime
       });
       durationProbeTail = operation.then(() => undefined, () => undefined);
       return operation;
+    },
+
+    async consumeRenderArtifactDigest(output, signal) {
+      const activeSignal = signal ?? options.signal;
+      throwIfAborted(activeSignal);
+      const proof = renderArtifactProofs.get(output);
+      if (!proof) throw htmlVideoOutputChanged();
+      renderArtifactProofs.delete(output);
+      if (output.path !== proof.path || output.sizeBytes !== proof.size) throw htmlVideoOutputChanged();
+
+      const { workDir } = await validateHtmlVideoTaskDirectory(options.taskDirectory);
+      throwIfAborted(activeSignal);
+      const canonicalPath = await taskLocalFile(workDir, output.path).catch(() => {
+        throw htmlVideoOutputChanged();
+      });
+      if (relative(proof.path, canonicalPath) || relative(join(workDir, 'final.mp4'), canonicalPath)) {
+        throw htmlVideoOutputChanged();
+      }
+      const current = await publicationLstat(options.publicationFileOperations ?? {}, canonicalPath).catch(() => {
+        throw htmlVideoOutputChanged();
+      });
+      if (
+        !current.isFile()
+        || current.isSymbolicLink()
+        || !isSameHtmlVideoRenderArtifactIdentity(current, proof.identity)
+      ) {
+        throw htmlVideoOutputChanged();
+      }
+      throwIfAborted(activeSignal);
+      return { size: proof.size, sha256: proof.sha256 };
     },
 
     async createPreviews(input) {
@@ -1486,7 +2119,7 @@ export function createElectronHtmlVideoRuntime(options: ElectronHtmlVideoRuntime
         }
 
         throwIfAborted(signal);
-        const publishedPaths = await publishHtmlVideoStagedFiles(
+        const publishedFiles = await publishHtmlVideoStagedFiles(
           options.taskDirectory,
           stage,
           pending.flatMap((item) => [
@@ -1502,8 +2135,8 @@ export function createElectronHtmlVideoRuntime(options: ElectronHtmlVideoRuntime
           audio: { src: item.voice.src, durationSec: item.voice.durationSec },
           background: { src: item.background.src },
           captions: captionTimeline(item.sourceScene.captions, item.voice.durationSec, item.sceneId),
-          htmlPath: publishedPaths[index * 2],
-          thumbnailPath: publishedPaths[index * 2 + 1],
+          htmlPath: publishedFiles[index * 2].path,
+          thumbnailPath: publishedFiles[index * 2 + 1].path,
           rev: 1,
         }));
         return { compositions };
@@ -1543,8 +2176,19 @@ export function createElectronHtmlVideoRuntime(options: ElectronHtmlVideoRuntime
           throw new AppError('HTML_VIDEO_OUTPUT_INVALID', 'HTML 视频渲染结果为空。', true);
         }
         throwIfAborted(signal);
+        const probedOutputIdentity = await pinHtmlVideoPublishedFileIdentity(
+          outputPath,
+          options.publicationFileOperations ?? {},
+          signal,
+        );
         const probe = await options.probeMedia(stageDir, outputPath, signal);
         throwIfAborted(signal);
+        await assertHtmlVideoPublishedFileIdentity(
+          outputPath,
+          probedOutputIdentity,
+          options.publicationFileOperations ?? {},
+          signal,
+        );
         if (
           probe.hasAudio !== true
           || probe.hasVideo !== true
@@ -1561,24 +2205,59 @@ export function createElectronHtmlVideoRuntime(options: ElectronHtmlVideoRuntime
           );
         }
         assertHtmlVideoOutputDuration(composition, probe.duration);
-        const [publishedPath] = await publishHtmlVideoStagedFiles(
+        const [publishedFile] = await publishHtmlVideoStagedFiles(
           options.taskDirectory,
           stage,
           [{
             stagedPath: outputPath,
             destinationPath: join(workDir, 'final.mp4'),
+            expectedIdentity: probedOutputIdentity,
           }],
           options.publicationFileOperations,
+          signal,
         );
-        const publishedStat = await stat(publishedPath);
-        return {
+        const publishedPath = publishedFile.path;
+        const { digest, ...publishedIdentity } = publishedFile.identity;
+        if (!digest) throw htmlVideoOutputChanged();
+        const output = Object.freeze({
           path: publishedPath,
-          sizeBytes: publishedStat.size,
+          sizeBytes: Number(publishedIdentity.size),
           durationSec: probe.duration,
-        };
+        });
+        renderArtifactProofs.set(output, {
+          path: publishedPath,
+          size: output.sizeBytes,
+          sha256: digest,
+          identity: publishedIdentity,
+        });
+        return output;
       }, options.stagingFileOperations);
     },
   };
+}
+
+function htmlVideoRenderArtifactIdentity(
+  value: Pick<BigIntStats, 'dev' | 'ino' | 'size' | 'mtimeNs' | 'ctimeNs'>,
+): HtmlVideoRenderArtifactProof['identity'] {
+  return {
+    device: value.dev.toString(),
+    inode: value.ino.toString(),
+    size: value.size.toString(),
+    modifiedNs: value.mtimeNs.toString(),
+    changedNs: value.ctimeNs.toString(),
+  };
+}
+
+function isSameHtmlVideoRenderArtifactIdentity(
+  value: Pick<BigIntStats, 'dev' | 'ino' | 'size' | 'mtimeNs' | 'ctimeNs'>,
+  expected: HtmlVideoRenderArtifactProof['identity'],
+): boolean {
+  const current = htmlVideoRenderArtifactIdentity(value);
+  return current.device === expected.device
+    && current.inode === expected.inode
+    && current.size === expected.size
+    && current.modifiedNs === expected.modifiedNs
+    && current.changedNs === expected.changedNs;
 }
 
 function buildRuntimeComposition(
@@ -1749,6 +2428,16 @@ function isSameHtmlVideoMediaFile(
     && value.inode === expected.inode
     && value.size === expected.size
     && value.modifiedNs === expected.modifiedNs;
+}
+
+function isSameHtmlVideoMediaHandle(
+  value: Pick<BigIntStats, 'dev' | 'ino' | 'size' | 'mtimeNs'>,
+  expected: HtmlVideoMediaFileIdentity,
+): boolean {
+  return value.dev.toString() === expected.device
+    && value.ino.toString() === expected.inode
+    && value.size.toString() === expected.size
+    && value.mtimeNs.toString() === expected.modifiedNs;
 }
 
 function assertTaskLocalPath(root: string, actual: string): void {

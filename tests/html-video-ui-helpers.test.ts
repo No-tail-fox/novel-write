@@ -1,7 +1,10 @@
 import { describe, expect, it, vi } from 'vitest';
 import {
   createHtmlVideoMediaCache,
+  htmlVideoMediaElementKey,
+  htmlVideoMediaStatus,
   loadHtmlVideoMedia,
+  recordHtmlVideoMediaElementFailure,
   syncHtmlVideoMediaCache,
 } from '@shared/html-video-media';
 import {
@@ -13,6 +16,16 @@ import {
 } from '@shared/html-video-workflow';
 
 describe('HTML video media cache', () => {
+  it.each([
+    ['resolved URL', { 'clip.wav': 'storydream-media://task/clip.wav' }, new Set<string>(), false, 'ready'],
+    ['pending request', {}, new Set<string>(), false, 'loading'],
+    ['settled failure', {}, new Set(['clip.wav']), false, 'unavailable'],
+    ['browser fallback', {}, new Set<string>(), true, 'desktop-only'],
+    ['element failure overrides a resolved URL', { 'clip.wav': 'storydream-media://task/clip.wav' }, new Set(['clip.wav']), true, 'unavailable'],
+  ] as const)('classifies %s', (_label, urls, failedPaths, isBrowserPreview, expected) => {
+    expect(htmlVideoMediaStatus('clip.wav', urls, failedPaths, isBrowserPreview)).toBe(expected);
+  });
+
   it('clears a rejected request so an explicit retry can load and cache the URL', async () => {
     const cache = createHtmlVideoMediaCache();
     syncHtmlVideoMediaCache(cache, 'task-1', ['voice.wav']);
@@ -78,6 +91,38 @@ describe('HTML video media cache', () => {
     await expect(stale).resolves.toBe('storydream-media://task-1/scene.png');
     expect(cache.taskId).toBe('task-2');
     expect(cache.urls.size).toBe(0);
+  });
+
+  it('keys media elements by task, path, and retry generation without delimiter collisions', () => {
+    expect(htmlVideoMediaElementKey('task-1', 'scene.png', 0)).toBe('["task-1","scene.png",0]');
+    expect(htmlVideoMediaElementKey('task:1', 'scene.png', 2)).not.toBe(
+      htmlVideoMediaElementKey('task', '1:scene.png', 2),
+    );
+    expect(htmlVideoMediaElementKey('task-1', 'scene.png', 2)).not.toBe(
+      htmlVideoMediaElementKey('task-1', 'scene.png', 3),
+    );
+  });
+
+  it.each([
+    ['task', { taskId: 'task-old', pathKey: '["new.mp4"]', generation: 2 }],
+    ['path set', { taskId: 'task-new', pathKey: '["old.mp4"]', generation: 2 }],
+    ['retry generation', { taskId: 'task-new', pathKey: '["new.mp4"]', generation: 1 }],
+  ] as const)('ignores a late element error from a stale %s scope', (_label, eventScope) => {
+    const currentScope = { taskId: 'task-new', pathKey: '["new.mp4"]', generation: 2 };
+    const current = { ...currentScope, failedPaths: ['new.mp4'] };
+
+    expect(recordHtmlVideoMediaElementFailure(current, eventScope, currentScope, 'old.mp4')).toBe(current);
+    expect(current.failedPaths).toEqual(['new.mp4']);
+  });
+
+  it('records an element error from the current scope without clearing its other failures', () => {
+    const currentScope = { taskId: 'task-new', pathKey: '["first.mp4","second.mp4"]', generation: 2 };
+    const current = { ...currentScope, failedPaths: ['first.mp4'] };
+
+    expect(recordHtmlVideoMediaElementFailure(current, currentScope, currentScope, 'second.mp4')).toEqual({
+      ...currentScope,
+      failedPaths: ['first.mp4', 'second.mp4'],
+    });
   });
 });
 

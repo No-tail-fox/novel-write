@@ -81,11 +81,21 @@ export interface HtmlVideoRunnerOptions {
   synthesizeVoices: (input: HtmlVideoVoiceInput) => Promise<HtmlVideoVoiceClip[]>;
   createPreviews: (input: HtmlVideoPreviewInput) => Promise<HtmlVideoPreviewOutput>;
   render: (input: HtmlVideoRenderInput) => Promise<HtmlVideoOutput>;
+  consumeRenderArtifactDigest?: (
+    output: HtmlVideoOutput,
+    signal?: AbortSignal,
+  ) => Promise<HtmlVideoRenderArtifactDigest>;
   onCheckpoint: (state: HtmlVideoPipelineDataV2) => Promise<void>;
+}
+
+export interface HtmlVideoRenderArtifactDigest {
+  size: number;
+  sha256: string;
 }
 
 interface RunnerContext {
   rewrite?: HtmlVideoRewriteOutput;
+  trustedRenderDigest?: StepFileDigest;
 }
 
 interface StepArtifact {
@@ -131,7 +141,7 @@ interface OpenValidatedLocalFile extends ResolvedLocalFile {
 const checkpointFileName = 'html-video-pipeline.v2.json';
 const stepArtifactDir = 'steps';
 const stepFileDigestsKey = '__storydreamFileDigests';
-const MAX_HTML_VIDEO_MEDIA_FILE_BYTES = 1024 * 1024 * 1024;
+export const MAX_HTML_VIDEO_MEDIA_FILE_BYTES = 1024 * 1024 * 1024;
 const maxAtomicReplaceAttempts = 8;
 const boundedReadChunkBytes = 64 * 1024;
 const activeHtmlVideoTasks = new Set<string>();
@@ -242,7 +252,7 @@ async function runOwnedPipeline(
     try {
       payload = await executeStep(step, input.sourceText, state, context, options);
       throwIfAborted(options.signal);
-      const artifact = await writeStepArtifact(options.workDir, step, payload, state, options.signal);
+      const artifact = await writeStepArtifact(options.workDir, step, payload, state, context, options.signal);
       state.steps[step] = {
         ...state.steps[step],
         status: 'completed',
@@ -368,6 +378,27 @@ async function executeStep(
   });
   await revalidateCompletedMediaSteps(options.workDir, state, ['assets', 'voice', 'preview'], options.signal);
   state.output = await validateOutput(options.workDir, state, generated);
+  context.trustedRenderDigest = undefined;
+  if (options.consumeRenderArtifactDigest) {
+    throwIfAborted(options.signal);
+    const digest = await options.consumeRenderArtifactDigest(generated, options.signal);
+    throwIfAborted(options.signal);
+    if (
+      !Number.isSafeInteger(digest.size)
+      || digest.size <= 0
+      || digest.size !== state.output.sizeBytes
+      || !/^[a-f0-9]{64}$/u.test(digest.sha256)
+    ) {
+      throw new Error('HTML video trusted render digest is invalid.');
+    }
+    const resolved = await resolveLocalFile(options.workDir, state.output.path);
+    throwIfAborted(options.signal);
+    context.trustedRenderDigest = {
+      path: resolved.relativePath,
+      size: digest.size,
+      sha256: digest.sha256,
+    };
+  }
   return { output: state.output };
 }
 
@@ -681,16 +712,33 @@ async function writeStepArtifact(
   step: HtmlVideoVisibleStep,
   payload: unknown,
   state: HtmlVideoPipelineDataV2,
+  context: RunnerContext,
   signal?: AbortSignal,
 ): Promise<StepArtifact> {
   const relativePath = join(stepArtifactDir, `${step}.json`);
   const path = join(workDir, relativePath);
   const record = requireRecord(payload, `${step} artifact`);
-  const written = await atomicWriteJson(path, {
-    ...record,
-    [stepFileDigestsKey]: await createStepFileDigests(workDir, step, state, signal),
-  });
-  return { relativePath, size: written.size, hash: written.hash };
+  throwIfAborted(signal);
+  const fileDigests = await createStepFileDigests(
+    workDir,
+    step,
+    state,
+    signal,
+    new Map(),
+    context.trustedRenderDigest,
+  );
+  throwIfAborted(signal);
+  try {
+    const written = await atomicWriteJson(path, {
+      ...record,
+      [stepFileDigestsKey]: fileDigests,
+    });
+    throwIfAborted(signal);
+    return { relativePath, size: written.size, hash: written.hash };
+  } catch (error) {
+    if (signal?.aborted || isCancellation(error)) await rm(path, { force: true }).catch(() => undefined);
+    throw error;
+  }
 }
 
 async function readStepArtifact(
@@ -760,6 +808,7 @@ async function createStepFileDigests(
   state: HtmlVideoPipelineDataV2,
   signal?: AbortSignal,
   expectedDigests: ReadonlyMap<string, StepFileDigest> = new Map(),
+  trustedRenderDigest?: StepFileDigest,
 ): Promise<StepFileDigest[]> {
   const files = new Map<string, StepFileDigest>();
   for (const reference of stepFileReferences(step, state)) {
@@ -769,8 +818,22 @@ async function createStepFileDigests(
     if (expected && reference.expectedSize !== undefined && expected.size !== reference.expectedSize) {
       throw new Error(`HTML video ${step} artifact size metadata changed.`);
     }
-    const digest = await hashFile(resolved, expected?.size ?? reference.expectedSize, signal);
+    let digest: Pick<StepFileDigest, 'size' | 'sha256'>;
+    if (trustedRenderDigest && step === 'render') {
+      if (
+        resolved.relativePath !== trustedRenderDigest.path
+        || (reference.expectedSize !== undefined && reference.expectedSize !== trustedRenderDigest.size)
+      ) {
+        throw new Error('HTML video trusted render digest does not match the output.');
+      }
+      digest = trustedRenderDigest;
+    } else {
+      digest = await hashFile(resolved, expected?.size ?? reference.expectedSize, signal);
+    }
     files.set(resolved.relativePath, { path: resolved.relativePath, ...digest });
+  }
+  if (trustedRenderDigest && (step !== 'render' || files.get(trustedRenderDigest.path)?.sha256 !== trustedRenderDigest.sha256)) {
+    throw new Error('HTML video trusted render digest is not associated with the render output.');
   }
   if (files.size !== expectedDigests.size && expectedDigests.size > 0) {
     throw new Error(`HTML video ${step} artifact file set changed.`);

@@ -114,7 +114,7 @@ describe('electron window chrome', () => {
 
     expect(html).toContain("default-src 'self'");
     expect(html).toContain("object-src 'none'");
-    expect(html).toContain("connect-src 'self' http://127.0.0.1:* ws://127.0.0.1:*");
+    expect(html).toContain("connect-src 'self' storydream-media: http://127.0.0.1:* ws://127.0.0.1:*");
     expect(html).not.toMatch(/connect-src[^;]*https:\/\//);
   });
 

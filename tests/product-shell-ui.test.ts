@@ -203,16 +203,18 @@ describe('product shell ui', () => {
     expect(app).toContain('historyEntityRevisionsRef');
     expect(app).toContain('historyTombstoneRevisionsRef');
     expect(taskRefresh).toMatch(/captureHistoryResponseRevision\(\s*'task',\s*taskId/u);
-    expect(taskRefresh).toContain("isHistoryResponseCurrent('task', taskId");
+    expect(taskRefresh).toContain('historyResponseDisposition(responseRevision, currentRevision)');
+    expect(taskRefresh).toContain("if (disposition === 'discard') return;");
     expect(taskRefresh).toContain('taskDetailGuard.finish(taskId, generation)');
     expect(viralRefresh).toMatch(/captureHistoryResponseRevision\(\s*'viral-analysis',\s*analysisId/u);
     expect(viralRefresh).toContain("isHistoryResponseCurrent('viral-analysis', analysisId");
     expect(viralRefresh).toContain('viralDetailGuard.finish(analysisId, generation)');
-    const barrier = app.slice(app.indexOf('const applyHistoryBarrier'), app.indexOf('const refreshTaskDetail'));
-    expect(barrier).toContain('registerHistoryDeltaBarrier(');
-    expect(barrier).toContain('applyHistorySelectionBarrier(');
-    expect(barrier).toContain('taskDetailGuard.invalidate(id)');
-    expect(barrier).toContain('viralDetailGuard.invalidate(id)');
+    const barriers = app.slice(app.indexOf('const applyHistoryEntityBarrier'), app.indexOf('const refreshTaskDetail'));
+    expect(barriers).toContain('registerHistoryDeltaBarrier(');
+    expect(barriers).toContain('applyHistorySelectionBarrier(');
+    expect(barriers).toContain('taskDetailGuard.invalidate(id)');
+    expect(barriers).toContain('viralDetailGuard.invalidate(id)');
+    expect(barriers).toMatch(/registerHistoryDeltaBarrier\([\s\S]*?applyHistoryEntityBarrier,/u);
     expect(incoming).toContain('applyHistoryBarrier(delta)');
     expect(app).toContain('imageLabRecords: bootstrap.imageLabRecords.items');
     expect(app).toContain('voiceLabRecords: bootstrap.voiceLabRecords.items');
@@ -1144,6 +1146,61 @@ describe('product shell ui', () => {
     expect(mediaEffect).not.toMatch(/\}, \[[^\]]*activeTask[^\]]*\]\);/);
     expect(page).toContain('setMediaRetryRevision((revision) => revision + 1)');
     expect(page).toContain('<RotateCcw size={14} />重新加载媒体');
+  });
+
+  it('keeps HTML media in a busy loading state until URL requests settle', async () => {
+    const main = (await rendererSourcesPromise).requiredFile('src/main.tsx');
+    const page = main.slice(main.indexOf('function HtmlVideoPage'), main.indexOf('function QueuePage'));
+
+    expect(page).toContain('failedPaths: string[]');
+    expect(page).toContain('const mediaLoading = !isBrowserPreview && mediaPaths.some');
+    expect(page).toContain('aria-busy={mediaLoading}');
+    expect(page).toContain("htmlVideoMediaStatus(clip.src, mediaUrls, failedMediaPaths, isBrowserPreview)");
+    expect(page).toMatch(/voiceStatus === 'loading'[\s\S]*?音频加载中[\s\S]*?voiceStatus === 'unavailable'[\s\S]*?音频文件暂不可用/u);
+    expect(page).toMatch(/outputStatus === 'loading'[\s\S]*?视频加载中[\s\S]*?outputStatus === 'unavailable'[\s\S]*?视频文件暂不可用/u);
+    expect(page).toMatch(/assetStatus === 'loading'[\s\S]*?图片加载中[\s\S]*?assetStatus === 'unavailable'[\s\S]*?图片加载失败[\s\S]*?本地图片仅桌面端可用/u);
+    expect(page).toMatch(/thumbnailStatus === 'loading'[\s\S]*?预览加载中[\s\S]*?thumbnailStatus === 'unavailable'[\s\S]*?预览加载失败[\s\S]*?本地预览仅桌面端可用/u);
+    expect(page).toContain('className="hv-media-state hv-media-loading"');
+    expect(page).toContain('className="hv-media-state" role="status"');
+  });
+
+  it('routes real HTML media element failures through retry generations', async () => {
+    const main = (await rendererSourcesPromise).requiredFile('src/main.tsx');
+    const page = main.slice(main.indexOf('function HtmlVideoPage'), main.indexOf('function QueuePage'));
+
+    expect(page).toContain('mediaElementFailureState');
+    expect(page).toContain('generation: mediaRetryRevision');
+    expect(page).toContain('onMediaElementError={markMediaElementFailed}');
+    expect(page).toContain('onMediaElementReady={markMediaElementReady}');
+    expect(countOccurrences(page, 'onError={() => onMediaElementError(')).toBe(4);
+    expect(countOccurrences(page, 'onLoad={() => onMediaElementReady(')).toBe(2);
+    expect(countOccurrences(page, 'onCanPlay={() => onMediaElementReady(')).toBe(2);
+    expect(countOccurrences(page, 'htmlVideoMediaElementKey(task.id,')).toBe(4);
+  });
+
+  it('rejects late HTML media errors unless their task, path set, and retry generation are still current', async () => {
+    const main = (await rendererSourcesPromise).requiredFile('src/main.tsx');
+    const page = main.slice(main.indexOf('function HtmlVideoPage'), main.indexOf('function QueuePage'));
+    const failureHandler = page.slice(
+      page.indexOf('const markMediaElementFailed'),
+      page.indexOf('const markMediaElementReady'),
+    );
+
+    expect(page).toContain('currentMediaElementScopeRef');
+    expect(failureHandler).toContain('recordHtmlVideoMediaElementFailure');
+    expect(countOccurrences(failureHandler, 'currentMediaElementScopeRef.current')).toBeGreaterThanOrEqual(2);
+  });
+
+  it('shows the exact HTML video output path with overflow-safe wrapping', async () => {
+    const main = (await rendererSourcesPromise).requiredFile('src/main.tsx');
+    const css = await readFile(new URL('../src/styles.css', import.meta.url), 'utf8');
+    const page = main.slice(main.indexOf('function HtmlVideoPage'), main.indexOf('function QueuePage'));
+
+    expect(page).toContain('className="hv-output-path"');
+    expect(page).toContain('<code>{data.output.path}</code>');
+    expect(css).toMatch(/\.hv-output-path code\s*\{[\s\S]*?overflow-wrap:\s*anywhere/u);
+    expect(css).toMatch(/\.hv-output-path code\s*\{[\s\S]*?white-space:\s*pre-wrap/u);
+    expect(css).toMatch(/\.hv-media-state\s*\{[\s\S]*?height:\s*100%[\s\S]*?place-content:\s*center/u);
   });
 
   it('labels paused checkpoints and opens the first composition that has an HTML preview', async () => {
@@ -2210,7 +2267,32 @@ describe('product shell ui', () => {
     expect(app).toContain('let reconcileAgainWithReset = false');
     expect(app).toMatch(/if \(reconciling\) \{\s+reconcileAgain = true;\s+reconcileAgainWithReset \|\|= forceReset;\s+return;\s+\}/u);
     expect(app).toMatch(/if \(reconcileAgain && !disposed && !snapshotInstalling && !reconciling\) \{\s+reconcileAgain = false;\s+const reset = reconcileAgainWithReset;\s+reconcileAgainWithReset = false;\s+void reconcile\(undefined, reset\);\s+\}/u);
-    expect(app).toContain('mergeBootstrapTemplateDetails(current, rebuiltState)');
+    expect(app).toMatch(/mergeAuthoritativeSnapshotDetails\(\s*current,\s*rebuiltState,\s*preserveTemplateDetails,/u);
+    expect(app).toContain('authoritativeTaskDetailIds?: ReadonlySet<string>');
+    expect(app).toContain('guardedResult.task ? new Set([guardedResult.task.id]) : undefined');
+  });
+
+  it('invalidates requested detail before installing a reset that confirms authoritative task absence', async () => {
+    const main = (await rendererSourcesPromise).requiredFile('src/main.tsx');
+    const app = main.slice(main.indexOf('function App()'), main.indexOf('function NavButton'));
+    const refreshTask = app.slice(app.indexOf('const refreshTaskDetail'), app.indexOf('const refreshViralEvents'));
+    const reset = app.slice(app.indexOf('if (result.resetRequired)'), app.indexOf('result.deltas.forEach'));
+
+    expect(refreshTask).toMatch(/dispatchState\(\{[\s\S]*?update: \(current\) => taskDetailGuard\.isCurrent\(taskId, generation\)[\s\S]*?mergeReconciliationSlices[\s\S]*?completionToken,[\s\S]*?\}\);/u);
+    expect(refreshTask).toMatch(/const completionToken = taskDetailCompletionQueue\.defer\(taskId, generation\)[\s\S]*?dispatchState\(/u);
+    expect(app).toContain('const taskDetailCompletionEpoch = trackedState.completionToken');
+    expect(app).not.toContain('setTaskDetailCompletionEpoch');
+    expect(refreshTask).toContain('attempt < MAX_TASK_DETAIL_REVISION_ATTEMPTS');
+    expect(refreshTask).toContain('historyResponseDisposition(responseRevision, currentRevision)');
+    expect(refreshTask).toContain("if (disposition === 'discard') return;");
+    expect(refreshTask).toContain("if (disposition === 'retry') continue;");
+    expect(app).not.toContain('[task-detail-trace]');
+    expect(refreshTask).toMatch(/finally \{\s+if \(!completionDeferred\) taskDetailGuard\.finish\(taskId, generation\);\s+\}/u);
+    expect(app).toContain('taskDetailCompletionQueue.flushThrough(taskDetailCompletionEpoch)');
+    expect(app).not.toContain('taskDetailCompletionQueue.flush()');
+    expect(reset).toContain('authoritativeMissingRequestedTaskId(');
+    expect(reset).toMatch(/authoritativeMissingRequestedTaskId\(\s*requestedTaskId,\s*result\.task,\s*rebuiltResetState\.tasks/u);
+    expect(reset).toMatch(/if \(missingRequestedTaskId\) \{[\s\S]*?applyHistoryEntityBarrier\('task', missingRequestedTaskId\);[\s\S]*?\}\s*installAuthoritativeSnapshot/u);
   });
 
   it('buffers bounded state patches across authoritative snapshot installation and error recovery', async () => {

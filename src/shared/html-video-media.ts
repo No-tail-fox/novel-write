@@ -1,9 +1,56 @@
 export type HtmlVideoMediaLoader = (taskId: string, path: string) => Promise<string>;
+export type HtmlVideoMediaStatus = 'ready' | 'loading' | 'unavailable' | 'desktop-only';
 
 export interface HtmlVideoMediaCache {
   taskId: string;
   urls: Map<string, string>;
   requests: Map<string, Promise<string>>;
+}
+
+export interface HtmlVideoMediaElementScope {
+  taskId: string;
+  pathKey: string;
+  generation: number;
+}
+
+export interface HtmlVideoMediaElementFailureState extends HtmlVideoMediaElementScope {
+  failedPaths: string[];
+}
+
+export function htmlVideoMediaElementScopeMatches(
+  scope: HtmlVideoMediaElementScope,
+  currentScope: HtmlVideoMediaElementScope,
+): boolean {
+  return scope.taskId === currentScope.taskId
+    && scope.pathKey === currentScope.pathKey
+    && scope.generation === currentScope.generation;
+}
+
+export function recordHtmlVideoMediaElementFailure(
+  current: HtmlVideoMediaElementFailureState,
+  eventScope: HtmlVideoMediaElementScope,
+  currentScope: HtmlVideoMediaElementScope,
+  path: string,
+): HtmlVideoMediaElementFailureState {
+  if (!htmlVideoMediaElementScopeMatches(eventScope, currentScope)) return current;
+  const failedPaths = htmlVideoMediaElementScopeMatches(current, eventScope) ? current.failedPaths : [];
+  if (failedPaths.includes(path)) return current;
+  return { ...eventScope, failedPaths: [...failedPaths, path] };
+}
+
+export function htmlVideoMediaStatus(
+  path: string,
+  mediaUrls: Readonly<Record<string, string>>,
+  failedMediaPaths: ReadonlySet<string>,
+  isBrowserPreview: boolean,
+): HtmlVideoMediaStatus {
+  if (failedMediaPaths.has(path)) return 'unavailable';
+  if (mediaUrls[path]) return 'ready';
+  return isBrowserPreview ? 'desktop-only' : 'loading';
+}
+
+export function htmlVideoMediaElementKey(taskId: string, path: string, generation: number): string {
+  return JSON.stringify([taskId, path, generation]);
 }
 
 export function createHtmlVideoMediaCache(): HtmlVideoMediaCache {

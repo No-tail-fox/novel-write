@@ -141,6 +141,7 @@ export const storyDreamApi = {
   getTaskDetail: (id: string): Promise<Task | null> => invokeTrusted('task:get-detail', id),
   listTaskEvents: (taskId: string, request: CursorRequest = {}): Promise<CursorPage<SequencedTaskEvent>> =>
     invokeTrusted('task:list-events', { taskId, ...request }),
+  openTaskOutputDirectory: (id: string): Promise<void> => invokeTrusted('task:open-output-directory', id),
   listViralAnalyses: async (request: HistoryListInput<'viral-analysis'> = {}): Promise<HistoryPage<'viral-analysis', ViralAnalysisSummary>> =>
     invokeTrusted('viral:list', normalizeViralHistoryRequest(request)),
   archiveViralAnalysis: (id: string): Promise<AppMutationResult> => invokeTrusted('viral:archive', id),
@@ -193,6 +194,7 @@ export const storyDreamApi = {
   deletePersonAsset: (name: string): Promise<void> => invokeTrusted('person-assets:delete', name),
   importPersonAssetImages: (name: string): Promise<number> => invokeTrusted('person-assets:import-images', name),
   listPersonAssetImages: (name: string): Promise<PersonAssetImage[]> => invokeTrusted('person-assets:list-images', name),
+  openPersonAssetDirectory: (name: string): Promise<void> => invokeTrusted('person-assets:open-directory', name),
   createHtmlVideoTask: (input: CreateTaskInput) => invokeTrusted('html-video:create-task', input),
   openHtmlVideoPreview: (id: string, sceneIndex?: number): Promise<void> =>
     invokeTrusted('html-video:open-preview', { id, sceneIndex }),
@@ -220,7 +222,6 @@ export const storyDreamApi = {
   detectJianyingDraftPath: (): Promise<string> => invokeTrusted('jianying:draft-path:detect'),
   getJianyingEffectCatalog: (): Promise<JianyingEffectCatalog> => invokeTrusted('jianying:effect-catalog'),
   runDiagnostics: () => invokeTrusted('diagnostics:run'),
-  openPath: (path: string) => invokeTrusted('path:open', path),
   windowControl: (action: 'minimize' | 'toggle-maximize' | 'close') => invokeTrusted('window:control', action),
   onAppDelta: (callback: (delta: AppDelta) => void) => {
     const listener = (_event: unknown, delta: AppDelta) => callback(delta);

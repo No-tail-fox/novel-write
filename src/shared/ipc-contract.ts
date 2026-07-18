@@ -568,6 +568,7 @@ export const ipcInputSchemas = {
   'person-assets:delete': nameSchema,
   'person-assets:list-images': nameSchema,
   'person-assets:import-images': nameSchema,
+  'person-assets:open-directory': nameSchema,
   'html-video:create-task': htmlVideoCreateTaskSchema,
   'html-video:open-preview': htmlVideoPreviewSchema,
   'html-video:media-url': htmlVideoMediaSchema,
@@ -578,6 +579,7 @@ export const ipcInputSchemas = {
   'task:delete': governanceIdSchema,
   'task:get-detail': idOnlySchema,
   'task:list-events': z.object({ taskId: idSchema, cursor: nonEmptyText(4096).nullable().optional(), limit: finiteNumber.optional() }).strict(),
+  'task:open-output-directory': idOnlySchema,
   'viral:create-and-run': createViralAnalysisSchema,
   'viral:list': viralHistoryListSchema,
   'viral:archive': governanceIdSchema,
@@ -605,7 +607,6 @@ export const ipcInputSchemas = {
   'jianying:draft-path:detect': z.void(),
   'jianying:effect-catalog': z.void(),
   'diagnostics:run': z.void(),
-  'path:open': pathSchema,
   'window:control': z.enum(['minimize', 'toggle-maximize', 'close']),
 } as const satisfies Record<InvokeChannel, z.ZodType>;
 

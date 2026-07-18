@@ -33,11 +33,56 @@ export interface BootstrapTemplateSlices {
   draftTemplates: DraftTemplate[];
 }
 
+export interface AuthoritativeSnapshotDetailSlices extends BootstrapTemplateSlices {
+  tasks: Task[];
+}
+
 export interface RequestGenerationGuard {
   begin: (id: string) => number;
   finish: (id: string, token: number) => void;
   invalidate: (id: string) => void;
   isCurrent: (id: string, generation: number) => boolean;
+}
+
+export interface RequestGenerationCompletionQueue {
+  defer: (id: string, generation: number) => number;
+  flushThrough: (completionToken: number) => void;
+}
+
+export interface CompletionTrackedState<T> {
+  value: T;
+  completionToken: number;
+}
+
+export interface CompletionTrackedStateUpdate<T> {
+  update: T | ((current: T) => T);
+  completionToken?: number;
+}
+
+export interface HistoryResponseRevision {
+  entityRevision: number;
+  tombstoneRevision: number;
+}
+
+export function historyResponseDisposition(
+  captured: HistoryResponseRevision,
+  current: HistoryResponseRevision,
+): 'accept' | 'retry' | 'discard' {
+  if (captured.tombstoneRevision >= 0 || current.tombstoneRevision >= 0) return 'discard';
+  return current.entityRevision === captured.entityRevision ? 'accept' : 'retry';
+}
+
+export function reduceCompletionTrackedState<T>(
+  current: CompletionTrackedState<T>,
+  action: CompletionTrackedStateUpdate<T>,
+): CompletionTrackedState<T> {
+  const value = typeof action.update === 'function'
+    ? (action.update as (current: T) => T)(current.value)
+    : action.update;
+  const completionToken = Math.max(current.completionToken, action.completionToken ?? 0);
+  return value === current.value && completionToken === current.completionToken
+    ? current
+    : { value, completionToken };
 }
 
 export function createRequestGenerationGuard(): RequestGenerationGuard {
@@ -54,6 +99,29 @@ export function createRequestGenerationGuard(): RequestGenerationGuard {
     },
     invalidate: (id) => { generations.delete(id); },
     isCurrent: (id, generation) => generations.get(id) === generation,
+  };
+}
+
+export function createRequestGenerationCompletionQueue(
+  guard: RequestGenerationGuard,
+): RequestGenerationCompletionQueue {
+  const pending: Array<{ id: string; generation: number; completionToken: number }> = [];
+  let nextCompletionToken = 0;
+  return {
+    defer(id, generation) {
+      nextCompletionToken += 1;
+      pending.push({ id, generation, completionToken: nextCompletionToken });
+      return nextCompletionToken;
+    },
+    flushThrough(completionToken) {
+      const firstUncommittedIndex = pending.findIndex(
+        (completion) => completion.completionToken > completionToken,
+      );
+      const committedCount = firstUncommittedIndex === -1 ? pending.length : firstUncommittedIndex;
+      for (const completion of pending.splice(0, committedCount)) {
+        guard.finish(completion.id, completion.generation);
+      }
+    },
   };
 }
 
@@ -87,6 +155,15 @@ export function applyHistorySelectionBarrier(
     };
   }
   return current;
+}
+
+export function authoritativeMissingRequestedTaskId(
+  requestedTaskId: string | null | undefined,
+  resultTask: { id: string } | null,
+  authoritativeTasks: readonly { id: string }[],
+): string | null {
+  if (!requestedTaskId || resultTask !== null) return null;
+  return authoritativeTasks.some((task) => task.id === requestedTaskId) ? null : requestedTaskId;
 }
 
 type MutationState = AppState & { secretStatus?: Partial<Record<string, boolean>> };
@@ -495,6 +572,27 @@ export function mergeBootstrapTemplateDetails<T extends BootstrapTemplateSlices>
           ratio: template.canvas.ratio,
         },
       };
+    }),
+  };
+}
+
+export function mergeAuthoritativeSnapshotDetails<T extends AuthoritativeSnapshotDetailSlices>(
+  current: AuthoritativeSnapshotDetailSlices,
+  rebuilt: T,
+  preserveTemplateDetails = true,
+  authoritativeTaskDetailIds?: ReadonlySet<string>,
+): T {
+  const authoritative = preserveTemplateDetails
+    ? mergeBootstrapTemplateDetails(current, rebuilt)
+    : rebuilt;
+  const currentTasks = new Map(current.tasks.map((task) => [task.id, task]));
+  return {
+    ...authoritative,
+    tasks: authoritative.tasks.map((task) => {
+      const detail = authoritativeTaskDetailIds?.has(task.id)
+        ? task
+        : currentTasks.get(task.id);
+      return taskSummaryToTask(taskToSummary(task), detail);
     }),
   };
 }

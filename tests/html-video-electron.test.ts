@@ -1,9 +1,13 @@
-import { existsSync } from 'node:fs';
+import { existsSync, type BigIntStats } from 'node:fs';
+import { createHash } from 'node:crypto';
 import { copyFile, link, lstat, mkdir, mkdtemp, readFile, readdir, realpath, rename, rm, stat, symlink, unlink, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { basename, dirname, join } from 'node:path';
 import { describe, expect, it } from 'vitest';
 import * as htmlVideoRuntimeModule from '../electron/html-video-runtime';
+import { AppError, isCancellation } from '../src/shared/app-error';
+import { MAX_HTML_VIDEO_MEDIA_FILE_BYTES, runHtmlVideoPipeline } from '../src/shared/html-video-runner';
+import { createHtmlVideoPipelineData } from '../src/shared/html-video-workflow';
 import {
   createHtmlVideoMediaUrl,
   createElectronHtmlVideoRuntime,
@@ -13,11 +17,12 @@ import {
   preflightHtmlVideoRender,
   resolveHtmlVideoMediaUrl,
   type ElectronHtmlVideoRuntimeOptions,
+  type HtmlVideoDigestFile,
   type HtmlVideoTaskDirectoryIdentity,
   type HtmlVideoMediaProbeResult,
 } from '../electron/html-video-runtime';
 import { createHtmlVideoComposePayload, type HtmlVideoExportInput } from '@shared/html-video';
-import type { BgmItem, HtmlVideoCompositionSnapshot, HtmlVideoScenePlan } from '@shared/types';
+import type { BgmItem, HtmlVideoCompositionSnapshot, HtmlVideoOutput, HtmlVideoScenePlan } from '@shared/types';
 
 const expectedHtmlVideoBgmMaxBytes = 256 * 1024 * 1024;
 const expectedHtmlVideoBgmDiskReserveBytes = 64 * 1024 * 1024;
@@ -86,16 +91,24 @@ describe('Electron HTML video runtime contract', () => {
     expect(ipcContract).toContain("'html-video:open-preview': htmlVideoPreviewSchema");
     expect(ipcContract).toContain("'html-video:media-url': htmlVideoMediaSchema");
     expect(indexHtml).toContain('storydream-media:');
+    const privilegedScheme = main.slice(
+      main.indexOf('protocol.registerSchemesAsPrivileged'),
+      main.indexOf('const execFileAsync'),
+    );
+    expect(privilegedScheme).toContain('supportFetchAPI: true');
+    expect(privilegedScheme).toContain('corsEnabled: true');
 
     const mediaProtocol = main.slice(
       main.indexOf('function registerHtmlVideoMediaProtocol'),
       main.indexOf('function viralAnalysisWorkDir'),
     );
     const verifiedFetch = mediaProtocol.indexOf('return await fetchHtmlVideoMediaResponse(');
-    const fetchMedia = mediaProtocol.indexOf('(mediaPath) => net.fetch(', verifiedFetch);
+    const fetchMedia = mediaProtocol.indexOf('openHtmlVideoMediaFileResponse(', verifiedFetch);
     expect(mediaProtocol).toContain('htmlVideoTaskDirectory');
+    expect(mediaProtocol).toContain("request.headers.get('range')");
     expect(verifiedFetch).toBeGreaterThan(-1);
     expect(fetchMedia).toBeGreaterThan(verifiedFetch);
+    expect(mediaProtocol).not.toContain('net.fetch(pathToFileURL(');
     expect(mediaProtocol).not.toContain('resolveHtmlVideoMediaUrl(');
 
     const previewAndMediaHandlers = main.slice(
@@ -105,6 +118,7 @@ describe('Electron HTML video runtime contract', () => {
     expect(previewAndMediaHandlers).toContain('await htmlVideoTaskDirectory(task.id)');
     expect(previewAndMediaHandlers).toContain('createHtmlVideoMediaUrl(task.id, taskDirectory');
     expect(previewAndMediaHandlers).not.toMatch(/createHtmlVideoMediaUrl\([^\n]*taskWorkDir/u);
+    expect(main).toContain('consumeRenderArtifactDigest: runtime.consumeRenderArtifactDigest');
   });
 
   it('waits for the old task run and applies only the latest pause, cancel, or retry intent', async () => {
@@ -426,7 +440,7 @@ describe('Electron HTML video runtime contract', () => {
       const response = new Response('stable media');
       let directoryResolutions = 0;
 
-      await expect((fetchMedia as (
+      const fetched = await (fetchMedia as (
         value: string,
         resolveTaskDirectory: (taskId: string) => HtmlVideoTaskDirectoryIdentity,
         load: (path: string) => Promise<Response>,
@@ -440,8 +454,140 @@ describe('Electron HTML video runtime contract', () => {
           expect(path).toBe(await realpath(mediaPath));
           return response;
         },
-      )).resolves.toBe(response);
+      );
+      expect(fetched).not.toBe(response);
+      expect(fetched.status).toBe(response.status);
+      expect(fetched.headers.get('Cache-Control')).toContain('no-store');
+      expect(fetched.headers.get('Pragma')).toBe('no-cache');
+      await expect(fetched.text()).resolves.toBe('stable media');
       expect(directoryResolutions).toBe(1);
+    });
+  });
+
+  it('uses one no-store response helper for successful ranges and failed media requests', async () => {
+    const runtime = await import('../electron/html-video-runtime') as Record<string, unknown>;
+    const createResponse = runtime.htmlVideoMediaResponse;
+    expect(createResponse).toBeTypeOf('function');
+    if (typeof createResponse !== 'function') return;
+
+    const partial = (createResponse as (body: BodyInit | null, init?: ResponseInit) => Response)(
+      'range body',
+      {
+        status: 206,
+        statusText: 'Partial Content',
+        headers: {
+          'Accept-Ranges': 'bytes',
+          'Content-Length': '10',
+          'Content-Range': 'bytes 0-9/20',
+          'Content-Type': 'video/mp4',
+        },
+      },
+    );
+    expect(partial.status).toBe(206);
+    expect(partial.statusText).toBe('Partial Content');
+    expect(partial.headers.get('Accept-Ranges')).toBe('bytes');
+    expect(partial.headers.get('Content-Length')).toBe('10');
+    expect(partial.headers.get('Content-Range')).toBe('bytes 0-9/20');
+    expect(partial.headers.get('Content-Type')).toBe('video/mp4');
+    expect(partial.headers.get('Cache-Control')).toBe('no-store, no-cache, must-revalidate');
+    expect(partial.headers.get('Pragma')).toBe('no-cache');
+    expect(partial.headers.get('Expires')).toBe('0');
+    await expect(partial.text()).resolves.toBe('range body');
+
+    const notFound = (createResponse as (body: BodyInit | null, init?: ResponseInit) => Response)(
+      null,
+      { status: 404 },
+    );
+    expect(notFound.status).toBe(404);
+    expect(notFound.headers.get('Cache-Control')).toBe('no-store, no-cache, must-revalidate');
+    expect(notFound.headers.get('Pragma')).toBe('no-cache');
+    expect(notFound.headers.get('Expires')).toBe('0');
+
+    const main = await readFile(new URL('../electron/main.ts', import.meta.url), 'utf8');
+    const mediaProtocol = main.slice(
+      main.indexOf('function registerHtmlVideoMediaProtocol'),
+      main.indexOf('function viralAnalysisWorkDir'),
+    );
+    expect(mediaProtocol).toContain('return htmlVideoMediaResponse(null, { status: 404 });');
+  });
+
+  it('serves a real pinned media byte range with exact partial-response metadata', async () => {
+    await withRuntimeDir(async (workDir) => {
+      const runtime = await import('../electron/html-video-runtime') as Record<string, unknown>;
+      const fetchMedia = runtime.fetchHtmlVideoMediaResponse;
+      const openRange = runtime.openHtmlVideoMediaRangeResponse;
+      expect(fetchMedia).toBeTypeOf('function');
+      expect(openRange).toBeTypeOf('function');
+      if (typeof fetchMedia !== 'function' || typeof openRange !== 'function') return;
+
+      const mediaPath = join(workDir, 'range.mp4');
+      const bytes = Buffer.from(Array.from({ length: 64 }, (_, index) => index));
+      await writeFile(mediaPath, bytes);
+      const taskDirectory = taskDirectoryFor(workDir);
+      const url = await createHtmlVideoMediaUrl('task-1', taskDirectory, mediaPath);
+      const response = await (fetchMedia as (
+        value: string,
+        resolveTaskDirectory: () => HtmlVideoTaskDirectoryIdentity,
+        load: (path: string, identity: unknown) => Promise<Response>,
+      ) => Promise<Response>)(
+        url,
+        () => taskDirectory,
+        (path, identity) => (openRange as (
+          path: string,
+          identity: unknown,
+          range: string,
+        ) => Promise<Response>)(path, identity, 'bytes=0-31'),
+      );
+
+      expect(response.status).toBe(206);
+      expect(response.headers.get('Accept-Ranges')).toBe('bytes');
+      expect(response.headers.get('Content-Length')).toBe('32');
+      expect(response.headers.get('Content-Range')).toBe('bytes 0-31/64');
+      expect(Buffer.from(await response.arrayBuffer())).toEqual(bytes.subarray(0, 32));
+    });
+  });
+
+  it('rejects a restored-path ordinary media response opened from a replacement inode', async () => {
+    await withRuntimeDir(async (workDir) => {
+      const runtime = await import('../electron/html-video-runtime') as Record<string, unknown>;
+      const fetchMedia = runtime.fetchHtmlVideoMediaResponse;
+      const openMedia = runtime.openHtmlVideoMediaFileResponse;
+      expect(fetchMedia).toBeTypeOf('function');
+      expect(openMedia).toBeTypeOf('function');
+      if (typeof fetchMedia !== 'function' || typeof openMedia !== 'function') return;
+
+      const mediaPath = join(workDir, 'ordinary.mp4');
+      const originalPath = join(workDir, 'ordinary.original.mp4');
+      const original = Buffer.from('original ordinary media');
+      const replacement = Buffer.from('replacement media bytes');
+      await writeFile(mediaPath, original);
+      const taskDirectory = taskDirectoryFor(workDir);
+      const url = await createHtmlVideoMediaUrl('task-1', taskDirectory, mediaPath);
+
+      await expect((fetchMedia as (
+        value: string,
+        resolveTaskDirectory: () => HtmlVideoTaskDirectoryIdentity,
+        load: (path: string, identity: unknown) => Promise<Response>,
+      ) => Promise<Response>)(
+        url,
+        () => taskDirectory,
+        async (path, identity) => {
+          await rename(path, originalPath);
+          await writeFile(path, replacement);
+          try {
+            const response = await (openMedia as (
+              path: string,
+              identity: unknown,
+              range: string | null,
+            ) => Promise<Response>)(path, identity, null);
+            return new Response(await response.arrayBuffer(), response);
+          } finally {
+            await rm(path, { force: true });
+            await rename(originalPath, path);
+          }
+        },
+      )).rejects.toMatchObject({ code: 'HTML_VIDEO_MEDIA_PATH_INVALID' });
+      await expect(readFile(mediaPath)).resolves.toEqual(original);
     });
   });
 
@@ -1338,6 +1484,42 @@ describe('Electron HTML video runtime contract', () => {
     }
   });
 
+  it('resolves only an existing HTML task work directory without recreating a deleted one', async () => {
+    const trustedRoot = await mkdtemp(join(tmpdir(), 'storydream-html-existing-task-root-'));
+    try {
+      const taskDirectory = await ensureHtmlVideoTaskWorkDir(
+        trustedRoot,
+        'storydream',
+        managedTestStorageKey,
+      );
+      const workDir = taskDirectory.workDir.canonicalPath;
+      await rm(workDir, { recursive: true, force: true });
+      const resolveExisting = Reflect.get(htmlVideoRuntimeModule, 'resolveExistingHtmlVideoTaskWorkDir');
+      const resolver = typeof resolveExisting === 'function'
+        ? resolveExisting as typeof ensureHtmlVideoTaskWorkDir
+        : ensureHtmlVideoTaskWorkDir;
+      const outcome = await resolver(trustedRoot, 'storydream', managedTestStorageKey).then(
+        () => ({ status: 'resolved' as const }),
+        (error: unknown) => ({ status: 'rejected' as const, error }),
+      );
+
+      expect({
+        resolverInstalled: typeof resolveExisting === 'function',
+        outcome,
+        workDirExists: existsSync(workDir),
+      }).toMatchObject({
+        resolverInstalled: true,
+        outcome: {
+          status: 'rejected',
+          error: { code: 'HTML_VIDEO_MEDIA_PATH_INVALID' },
+        },
+        workDirExists: false,
+      });
+    } finally {
+      await rm(trustedRoot, { recursive: true, force: true });
+    }
+  });
+
   it('rejects a BGM work directory junction outside its required trusted task root', async () => {
     const trustedAppDataRoot = await mkdtemp(join(tmpdir(), 'storydream-html-trusted-root-'));
     const outsideDir = await mkdtemp(join(tmpdir(), 'storydream-html-workdir-link-target-'));
@@ -2068,6 +2250,171 @@ describe('Electron HTML video runtime contract', () => {
     });
   });
 
+  it('preserves a frozen AppError when the runtime operation and stage cleanup both fail', async () => {
+    await withRuntimeDir(async (workDir) => {
+      const background = join(workDir, 'double-failure-background.png');
+      const foreground = join(workDir, 'double-failure-foreground.png');
+      const voice = join(workDir, 'double-failure-voice.wav');
+      const captureError = Object.freeze(new AppError(
+        'HTML_VIDEO_CAPTURE_FAILED',
+        'Preview capture failed.',
+        true,
+        'diag-double-failure',
+      ));
+      const cleanupError = new Error('stage cleanup failed');
+      await Promise.all([
+        writeFile(background, Buffer.from('background')),
+        writeFile(foreground, Buffer.from('foreground')),
+        writeFile(voice, Buffer.from('voice')),
+      ]);
+      const runtime = createElectronHtmlVideoRuntime({
+        taskDirectory: taskDirectoryFor(workDir),
+        taskTitle: 'Double failure semantics',
+        renderer: {
+          async capturePreview() {
+            throw captureError;
+          },
+          async render() {
+            throw new Error('render was not expected');
+          },
+        },
+        probeMedia: async () => validFinalMediaProbe(),
+        stagingFileOperations: {
+          remove: async () => {
+            throw cleanupError;
+          },
+        },
+      });
+
+      const error = await runtime.createPreviews(runtimeInput(background, foreground, voice)).catch((reason) => reason);
+      expect(error).toMatchObject({
+        name: 'AppError',
+        code: 'HTML_VIDEO_CAPTURE_FAILED',
+        message: 'Preview capture failed.',
+        retryable: true,
+        diagnosticId: 'diag-double-failure',
+      });
+      expect((error as Error & { cause?: unknown }).cause).toBe(cleanupError);
+    });
+  });
+
+  it('preserves cancellation semantics when an aborted operation and stage cleanup both fail', async () => {
+    await withRuntimeDir(async (workDir) => {
+      const background = join(workDir, 'cancel-cleanup-background.png');
+      const foreground = join(workDir, 'cancel-cleanup-foreground.png');
+      const voice = join(workDir, 'cancel-cleanup-voice.wav');
+      const abortError = Object.freeze(Object.assign(new Error('Preview capture cancelled.'), {
+        name: 'AbortError',
+        code: 'ABORT_ERR',
+        retryable: false,
+      }));
+      const cleanupError = new Error('cancelled stage cleanup failed');
+      await Promise.all([
+        writeFile(background, Buffer.from('background')),
+        writeFile(foreground, Buffer.from('foreground')),
+        writeFile(voice, Buffer.from('voice')),
+      ]);
+      const runtime = createElectronHtmlVideoRuntime({
+        taskDirectory: taskDirectoryFor(workDir),
+        taskTitle: 'Cancellation cleanup semantics',
+        renderer: {
+          async capturePreview() {
+            throw abortError;
+          },
+          async render() {
+            throw new Error('render was not expected');
+          },
+        },
+        probeMedia: async () => validFinalMediaProbe(),
+        stagingFileOperations: {
+          remove: async () => {
+            throw cleanupError;
+          },
+        },
+      });
+
+      const error = await runtime.createPreviews(runtimeInput(background, foreground, voice)).catch((reason) => reason);
+      expect(error).toMatchObject({
+        name: 'AbortError',
+        code: 'ABORT_ERR',
+        message: 'Preview capture cancelled.',
+        retryable: false,
+      });
+      expect(isCancellation(error)).toBe(true);
+      expect((error as Error & { cause?: unknown }).cause).toBe(cleanupError);
+    });
+  });
+
+  it('preserves a frozen generic error cause and custom diagnostics separately from cleanup failure', async () => {
+    await withRuntimeDir(async (workDir) => {
+      const background = join(workDir, 'generic-double-failure-background.png');
+      const foreground = join(workDir, 'generic-double-failure-foreground.png');
+      const voice = join(workDir, 'generic-double-failure-voice.wav');
+      const operationCause = new Error('upstream provider connection failed');
+      const providerContext = Object.freeze({ provider: 'custom-image', requestId: 'request-42' });
+      const captureError = new Error('generic preview capture failed', { cause: operationCause }) as Error & {
+        code?: string;
+        retryable?: boolean;
+        diagnosticId?: string;
+        providerContext?: typeof providerContext;
+      };
+      captureError.name = 'ProviderError';
+      captureError.code = 'PROVIDER_CAPTURE_FAILED';
+      captureError.retryable = true;
+      Object.defineProperties(captureError, {
+        diagnosticId: { configurable: true, enumerable: false, value: 'diag-generic-double-failure' },
+        providerContext: { configurable: true, enumerable: true, value: providerContext },
+      });
+      Object.freeze(captureError);
+      const cleanupError = new Error('generic stage cleanup failed');
+      await Promise.all([
+        writeFile(background, Buffer.from('background')),
+        writeFile(foreground, Buffer.from('foreground')),
+        writeFile(voice, Buffer.from('voice')),
+      ]);
+      const runtime = createElectronHtmlVideoRuntime({
+        taskDirectory: taskDirectoryFor(workDir),
+        taskTitle: 'Generic double failure semantics',
+        renderer: {
+          async capturePreview() {
+            throw captureError;
+          },
+          async render() {
+            throw new Error('render was not expected');
+          },
+        },
+        probeMedia: async () => validFinalMediaProbe(),
+        stagingFileOperations: {
+          remove: async () => {
+            throw cleanupError;
+          },
+        },
+      });
+
+      const error = await runtime.createPreviews(runtimeInput(background, foreground, voice)).catch((reason) => reason) as Error & {
+        cause?: unknown;
+        cleanupError?: unknown;
+        code?: string;
+        retryable?: boolean;
+        diagnosticId?: string;
+        providerContext?: typeof providerContext;
+      };
+      expect(error).not.toBe(captureError);
+      expect(error).toMatchObject({
+        name: 'ProviderError',
+        message: 'generic preview capture failed',
+        code: 'PROVIDER_CAPTURE_FAILED',
+        retryable: true,
+        diagnosticId: 'diag-generic-double-failure',
+        providerContext,
+      });
+      expect(error.cause).toBe(operationCause);
+      expect(error.cleanupError).toBe(cleanupError);
+      expect(Object.getOwnPropertyDescriptor(error, 'diagnosticId')?.enumerable).toBe(false);
+      expect(Object.getOwnPropertyDescriptor(error, 'providerContext')?.writable).toBe(false);
+    });
+  });
+
   it('creates task-local HTML thumbnails and validates the rendered MP4', async () => {
     await withRuntimeDir(async (workDir) => {
       const background = join(workDir, 'background.png');
@@ -2337,6 +2684,951 @@ describe('Electron HTML video runtime contract', () => {
       expect(probes[0].path).toBe(join(probes[0].root, 'final.mp4'));
       expect(probes[0].signal).toBe(controller.signal);
       expect(existsSync(probes[0].root)).toBe(false);
+    });
+  });
+
+  it('rejects a staging output replaced during the final media probe without publishing it', async () => {
+    await withRuntimeDir(async (workDir) => {
+      await expect(renderWithMediaProbe(workDir, async (_root, path) => {
+        await unlink(path);
+        await writeFile(path, Buffer.from('tampered!!'));
+        return validFinalMediaProbe(1.1);
+      })).rejects.toMatchObject({
+        code: 'HTML_VIDEO_OUTPUT_CHANGED',
+        retryable: true,
+      });
+      expect(existsSync(join(workDir, 'final.mp4'))).toBe(false);
+    });
+  });
+
+  it('rejects an equal-size in-place staging overwrite during the final media probe', async () => {
+    await withRuntimeDir(async (workDir) => {
+      let beforeInode = 0n;
+      let afterInode = 0n;
+      let beforeSize = 0n;
+      let afterSize = 0n;
+      await expect(renderWithMediaProbe(workDir, async (_root, path) => {
+        const before = await stat(path, { bigint: true });
+        beforeInode = before.ino;
+        beforeSize = before.size;
+        await writeFile(path, Buffer.from('tampered!!'));
+        const after = await stat(path, { bigint: true });
+        afterInode = after.ino;
+        afterSize = after.size;
+        return validFinalMediaProbe(1.1);
+      })).rejects.toMatchObject({
+        code: 'HTML_VIDEO_OUTPUT_CHANGED',
+        retryable: true,
+      });
+      expect(afterInode).toBe(beforeInode);
+      expect(afterSize).toBe(beforeSize);
+      expect(existsSync(join(workDir, 'final.mp4'))).toBe(false);
+    });
+  });
+
+  it('rolls back an equal-size in-place overwrite after publication rename', async () => {
+    await withRuntimeDir(async (workDir) => {
+      let mutations = 0;
+      let beforeInode = 0n;
+      let afterInode = 0n;
+      let beforeSize = 0n;
+      let afterSize = 0n;
+      await expect(renderWithMediaProbe(
+        workDir,
+        async () => validFinalMediaProbe(1.1),
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        (options) => {
+          options.publicationFileOperations = {
+            lstat: async (path) => {
+              const value = await lstat(path, { bigint: true });
+              if (path === join(workDir, 'final.mp4') && mutations === 0) {
+                beforeInode = value.ino;
+                beforeSize = value.size;
+                await writeFile(path, Buffer.from('tampered!!'));
+                const after = await lstat(path, { bigint: true });
+                afterInode = after.ino;
+                afterSize = after.size;
+                mutations += 1;
+              }
+              return value;
+            },
+          };
+        },
+      )).rejects.toMatchObject({
+        code: 'HTML_VIDEO_PUBLISH_CONFLICT',
+        retryable: true,
+      });
+      expect(mutations).toBe(1);
+      expect(afterInode).toBe(beforeInode);
+      expect(afterSize).toBe(beforeSize);
+      expect(existsSync(join(workDir, 'final.mp4'))).toBe(false);
+    });
+  });
+
+  it('quarantines a different-inode publication conflict and restores the previous final repeatedly', async () => {
+    await withRuntimeDir(async (workDir) => {
+      const finalPath = join(workDir, 'final.mp4');
+
+      for (let round = 1; round <= 2; round += 1) {
+        await writeFile(finalPath, Buffer.from('verified-old'));
+        const foreignPath = join(workDir, `.foreign-final-${round}.mp4`);
+        await writeFile(foreignPath, Buffer.from('foreign!!!'));
+        let canonicalLstatCalls = 0;
+        let publishedInode = 0n;
+        let foreignInode = 0n;
+
+        const error = await renderWithMediaProbe(
+          workDir,
+          async () => validFinalMediaProbe(1.1),
+          undefined,
+          undefined,
+          undefined,
+          undefined,
+          (options) => {
+            options.publicationFileOperations = {
+              lstat: async (path) => {
+                const value = await lstat(path, { bigint: true });
+                if (path === finalPath) {
+                  canonicalLstatCalls += 1;
+                  if (foreignInode === 0n && value.size === BigInt(Buffer.byteLength('mp4-output'))) {
+                    publishedInode = value.ino;
+                    await unlink(finalPath);
+                    await rename(foreignPath, finalPath);
+                    foreignInode = (await lstat(finalPath, { bigint: true })).ino;
+                    expect(foreignInode).not.toBe(publishedInode);
+                  }
+                }
+                return value;
+              },
+            };
+          },
+        ).catch((reason) => reason);
+
+        expect(error).not.toBeInstanceOf(AggregateError);
+        expect(error).toMatchObject({
+          code: 'HTML_VIDEO_PUBLISH_CONFLICT',
+          retryable: true,
+        });
+        expect(canonicalLstatCalls).toBeGreaterThanOrEqual(4);
+        expect(foreignInode).not.toBe(0n);
+        expect(await readFile(finalPath, 'utf8')).toBe('verified-old');
+        expect(existsSync(foreignPath)).toBe(false);
+        expect((await readdir(workDir)).filter((name) => name.endsWith('.quarantine'))).toEqual([]);
+        expect((await readdir(workDir)).filter((name) => name.endsWith('.conflict-quarantine'))).toEqual([]);
+      }
+    });
+  });
+
+  it('restores the previous final repeatedly when the published final disappears before rollback', async () => {
+    await withRuntimeDir(async (workDir) => {
+      const finalPath = join(workDir, 'final.mp4');
+
+      for (let round = 1; round <= 2; round += 1) {
+        const previousFinal = `verified-old-${round}`;
+        await writeFile(finalPath, Buffer.from(previousFinal));
+        let deletedPublishedFinal = false;
+
+        const error = await renderWithMediaProbe(
+          workDir,
+          async () => validFinalMediaProbe(1.1),
+          undefined,
+          undefined,
+          undefined,
+          undefined,
+          (options) => {
+            options.publicationFileOperations = {
+              lstat: async (path) => {
+                const value = await lstat(path, { bigint: true });
+                if (
+                  path === finalPath
+                  && !deletedPublishedFinal
+                  && value.size === BigInt(Buffer.byteLength('mp4-output'))
+                ) {
+                  await unlink(finalPath);
+                  deletedPublishedFinal = true;
+                  Object.defineProperty(value, 'size', { value: value.size + 1n });
+                }
+                return value;
+              },
+            };
+          },
+        ).catch((reason) => reason);
+
+        expect(error).not.toBeInstanceOf(AggregateError);
+        expect(error).toMatchObject({
+          code: 'HTML_VIDEO_PUBLISH_CONFLICT',
+          retryable: true,
+        });
+        expect(deletedPublishedFinal).toBe(true);
+        await expect(readFile(finalPath, 'utf8')).resolves.toBe(previousFinal);
+        expect((await readdir(workDir)).filter((name) => name.endsWith('.quarantine'))).toEqual([]);
+        expect((await readdir(workDir)).filter((name) => name.endsWith('.conflict-quarantine'))).toEqual([]);
+      }
+    });
+  });
+
+  it('restores the previous final after moving a conflict even when conflict quarantine verification races', async () => {
+    await withRuntimeDir(async (workDir) => {
+      const finalPath = join(workDir, 'final.mp4');
+      const foreignPath = join(workDir, '.foreign-final-race.mp4');
+      const quarantineRacePath = join(workDir, '.foreign-quarantine-race.mp4');
+      await Promise.all([
+        writeFile(finalPath, Buffer.from('verified-old')),
+        writeFile(foreignPath, Buffer.from('foreign!!!')),
+        writeFile(quarantineRacePath, Buffer.from('raced!!!!!')),
+      ]);
+      let publishedReplaced = false;
+      let quarantineReplaced = false;
+
+      const error = await renderWithMediaProbe(
+        workDir,
+        async () => validFinalMediaProbe(1.1),
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        (options) => {
+          options.publicationFileOperations = {
+            lstat: async (path) => {
+              const value = await lstat(path, { bigint: true });
+              if (
+                path === finalPath
+                && !publishedReplaced
+                && value.size === BigInt(Buffer.byteLength('mp4-output'))
+              ) {
+                await unlink(finalPath);
+                await rename(foreignPath, finalPath);
+                publishedReplaced = true;
+                return value;
+              }
+              if (path.endsWith('.conflict-quarantine') && !quarantineReplaced) {
+                await unlink(path);
+                await rename(quarantineRacePath, path);
+                quarantineReplaced = true;
+                return lstat(path, { bigint: true });
+              }
+              return value;
+            },
+          };
+        },
+      ).catch((reason) => reason);
+
+      expect(error).toBeInstanceOf(AggregateError);
+      expect((error as AggregateError).errors).toEqual(expect.arrayContaining([
+        expect.objectContaining({ code: 'HTML_VIDEO_PUBLISH_CONFLICT' }),
+      ]));
+      expect(publishedReplaced).toBe(true);
+      expect(quarantineReplaced).toBe(true);
+      await expect(readFile(finalPath, 'utf8')).resolves.toBe('verified-old');
+      expect((await readdir(workDir)).filter((name) => name.endsWith('.quarantine'))).toEqual([]);
+      const [conflictQuarantineName] = (await readdir(workDir))
+        .filter((name) => name.endsWith('.conflict-quarantine'));
+      expect(conflictQuarantineName).toBeTruthy();
+      await expect(readFile(join(workDir, conflictQuarantineName), 'utf8')).resolves.toBe('raced!!!!!');
+
+      const retried = await renderWithMediaProbe(
+        workDir,
+        async () => validFinalMediaProbe(1.1),
+      );
+
+      expect(retried.path).toBe(finalPath);
+      await expect(readFile(finalPath, 'utf8')).resolves.toBe('mp4-output');
+      expect((await readdir(workDir)).filter((name) => name.endsWith('.conflict-quarantine'))).toEqual([]);
+    });
+  });
+
+  it('reaps only strict conflict quarantine files and links without restoring or recursing', async () => {
+    await withRuntimeDir(async (workDir) => {
+      const outsideDir = await mkdtemp(join(tmpdir(), 'storydream-html-conflict-quarantine-link-'));
+      const finalPath = join(workDir, 'final.mp4');
+      const strictFile = join(workDir, '.final.mp4.00000000-0000-4000-8000-000000000005.conflict-quarantine');
+      const strictLink = join(workDir, '.final.mp4.00000000-0000-4000-8000-000000000006.conflict-quarantine');
+      const strictDirectory = join(workDir, '.final.mp4.00000000-0000-4000-8000-000000000007.conflict-quarantine');
+      const similarName = join(workDir, '.final.mp4.not-a-uuid.conflict-quarantine');
+      const outsideSentinel = join(outsideDir, 'sentinel.txt');
+      const directorySentinel = join(strictDirectory, 'sentinel.txt');
+      try {
+        await Promise.all([
+          writeFile(finalPath, Buffer.from('verified-old')),
+          writeFile(strictFile, Buffer.from('never restore this conflict')),
+          mkdir(strictDirectory, { recursive: true }),
+          writeFile(similarName, Buffer.from('not runtime-owned')),
+          writeFile(outsideSentinel, Buffer.from('outside conflict sentinel')),
+        ]);
+        await writeFile(directorySentinel, Buffer.from('directory sentinel'));
+        await symlink(
+          outsideDir,
+          strictLink,
+          process.platform === 'win32' ? 'junction' : 'dir',
+        );
+
+        const output = await renderWithMediaProbe(
+          workDir,
+          async () => validFinalMediaProbe(1.1),
+        );
+
+        expect(output.path).toBe(finalPath);
+        await expect(readFile(finalPath, 'utf8')).resolves.toBe('mp4-output');
+        expect(existsSync(strictFile)).toBe(false);
+        expect(existsSync(strictLink)).toBe(false);
+        await expect(readFile(outsideSentinel, 'utf8')).resolves.toBe('outside conflict sentinel');
+        await expect(readFile(directorySentinel, 'utf8')).resolves.toBe('directory sentinel');
+        await expect(readFile(similarName, 'utf8')).resolves.toBe('not runtime-owned');
+      } finally {
+        await rm(outsideDir, { recursive: true, force: true });
+      }
+    });
+  });
+
+  it('does not unlink a strict conflict quarantine whose identity changes during cleanup', async () => {
+    await withRuntimeDir(async (workDir) => {
+      const finalPath = join(workDir, 'final.mp4');
+      const quarantinePath = join(
+        workDir,
+        '.final.mp4.00000000-0000-4000-8000-000000000008.conflict-quarantine',
+      );
+      const replacementPath = join(workDir, '.replacement-conflict-quarantine');
+      await Promise.all([
+        writeFile(finalPath, Buffer.from('verified-old')),
+        writeFile(quarantinePath, Buffer.from('original conflict')),
+        writeFile(replacementPath, Buffer.from('replacement conflict')),
+      ]);
+      let quarantineLstatCalls = 0;
+
+      const error = await renderWithMediaProbe(
+        workDir,
+        async () => validFinalMediaProbe(1.1),
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        (options) => {
+          options.publicationFileOperations = {
+            lstat: async (path) => {
+              const value = await lstat(path, { bigint: true });
+              if (path === quarantinePath) {
+                quarantineLstatCalls += 1;
+                if (quarantineLstatCalls === 1) {
+                  await unlink(quarantinePath);
+                  await rename(replacementPath, quarantinePath);
+                }
+              }
+              return value;
+            },
+          };
+        },
+      ).catch((reason) => reason);
+
+      expect(error).toMatchObject({
+        code: 'HTML_VIDEO_PUBLISH_CONFLICT',
+        retryable: true,
+      });
+      expect(quarantineLstatCalls).toBe(2);
+      await expect(readFile(finalPath, 'utf8')).resolves.toBe('verified-old');
+      await expect(readFile(quarantinePath, 'utf8')).resolves.toBe('replacement conflict');
+    });
+  });
+
+  it('bounds strict conflict quarantine cleanup before touching an excessive set', async () => {
+    await withRuntimeDir(async (workDir) => {
+      const finalPath = join(workDir, 'final.mp4');
+      const quarantinePaths = Array.from({ length: 33 }, (_, index) => join(
+        workDir,
+        `.final.mp4.00000000-0000-4000-8000-${index.toString(16).padStart(12, '0')}.conflict-quarantine`,
+      ));
+      await writeFile(finalPath, Buffer.from('verified-old'));
+      await Promise.all(quarantinePaths.map((path, index) => writeFile(path, Buffer.from(`conflict-${index}`))));
+
+      const error = await renderWithMediaProbe(
+        workDir,
+        async () => validFinalMediaProbe(1.1),
+      ).catch((reason) => reason);
+
+      expect(error).toMatchObject({
+        code: 'HTML_VIDEO_PUBLISH_CONFLICT',
+        retryable: true,
+      });
+      await expect(readFile(finalPath, 'utf8')).resolves.toBe('verified-old');
+      expect((await readdir(workDir)).filter((name) => name.endsWith('.conflict-quarantine'))).toHaveLength(33);
+    });
+  });
+
+  it('preserves cancellation when aborted during final output digest reading', async () => {
+    await withRuntimeDir(async (workDir) => {
+      const controller = new AbortController();
+      const abortReason = new DOMException('Final output digest cancelled.', 'AbortError');
+      let yieldedChunks = 0;
+      let probeCalls = 0;
+      await expect(renderWithMediaProbe(
+        workDir,
+        async () => {
+          probeCalls += 1;
+          return validFinalMediaProbe(1.1);
+        },
+        controller.signal,
+        undefined,
+        undefined,
+        undefined,
+        (options) => {
+          options.publicationFileOperations = {
+            openDigestFile: async (path, openFile) => openFile(path),
+            onDigestRead: () => {
+              yieldedChunks += 1;
+              controller.abort(abortReason);
+            },
+          };
+        },
+      )).rejects.toBe(abortReason);
+      expect(yieldedChunks).toBeGreaterThan(0);
+      expect(probeCalls).toBe(0);
+      expect(existsSync(join(workDir, 'final.mp4'))).toBe(false);
+    });
+  });
+
+  it('preserves cancellation when the third digest handle closes', async () => {
+    await withRuntimeDir(async (workDir) => {
+      const controller = new AbortController();
+      const abortReason = new DOMException('Third digest close cancelled.', 'AbortError');
+      let opens = 0;
+      const runtime = await createRenderRuntimeWithMediaProbe(
+        workDir,
+        async () => validFinalMediaProbe(1.1),
+        (options) => {
+          options.publicationFileOperations = {
+            openDigestFile: async (path, openFile) => {
+              opens += 1;
+              return openFile(path);
+            },
+            onDigestFileClosed: () => {
+              if (opens === 3) controller.abort(abortReason);
+            },
+          };
+        },
+      );
+
+      await expect(runtime.render({
+        ...createRenderRuntimeInput(workDir),
+        signal: controller.signal,
+      })).rejects.toBe(abortReason);
+      expect(opens).toBe(3);
+    });
+  });
+
+  it('rejects foreign digest bytes instead of proving the final path and consumer artifact', async () => {
+    await withRuntimeDir(async (workDir) => {
+      const foreignPath = join(workDir, 'foreign-digest-stream.mp4');
+      await writeFile(foreignPath, Buffer.alloc(20, 0x66));
+      let digestReads = 0;
+      const runtime = await createRenderRuntimeWithMediaProbe(
+        workDir,
+        async () => validFinalMediaProbe(1.1),
+        (options) => {
+          options.publicationFileOperations = {
+            openDigestFile: async (_path, openFile) => {
+              digestReads += 1;
+              return openFile(foreignPath);
+            },
+          };
+        },
+      );
+      const outcome = await runtime.render(createRenderRuntimeInput(workDir)).then(async (output) => ({
+        status: 'accepted' as const,
+        proof: await runtime.consumeRenderArtifactDigest(output),
+      }), (error: unknown) => ({ status: 'rejected' as const, error }));
+
+      expect({ digestReads, outcome }).toMatchObject({
+        outcome: {
+          status: 'rejected',
+          error: { code: 'HTML_VIDEO_OUTPUT_CHANGED' },
+        },
+      });
+      expect(digestReads).toBe(1);
+    });
+  });
+
+  it('rejects a same-size digest handle opened on a foreign inode', async () => {
+    await withRuntimeDir(async (workDir) => {
+      const foreignPath = join(workDir, 'foreign-final.mp4');
+      await writeFile(foreignPath, Buffer.from('foreign!!!'));
+      let opens = 0;
+      let openedFile: HtmlVideoDigestFile | undefined;
+
+      await expect(renderWithMediaProbe(
+        workDir,
+        async () => validFinalMediaProbe(1.1),
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        (options) => {
+          options.publicationFileOperations = {
+            openDigestFile: async (_path, openFile) => {
+              opens += 1;
+              openedFile = await openFile(foreignPath);
+              return openedFile;
+            },
+          };
+        },
+      )).rejects.toMatchObject({ code: 'HTML_VIDEO_OUTPUT_CHANGED' });
+      expect(opens).toBe(1);
+      await expect(openedFile!.stat()).rejects.toBeTruthy();
+    });
+  });
+
+  it('rejects a same-size path replacement after opening the verified digest handle', async () => {
+    await withRuntimeDir(async (workDir) => {
+      let opens = 0;
+      let swapped = false;
+      let openedFile: HtmlVideoDigestFile | undefined;
+
+      await expect(renderWithMediaProbe(
+        workDir,
+        async () => validFinalMediaProbe(1.1),
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        (options) => {
+          options.publicationFileOperations = {
+            openDigestFile: async (path, openFile) => {
+              opens += 1;
+              const detachedPath = `${path}.opened`;
+              const replacementPath = `${path}.replacement`;
+              await writeFile(replacementPath, Buffer.from('foreign!!!'));
+              await rename(path, detachedPath);
+              await rename(replacementPath, path);
+              swapped = true;
+              openedFile = await openFile(detachedPath);
+              return openedFile;
+            },
+          };
+        },
+      )).rejects.toMatchObject({ code: 'HTML_VIDEO_OUTPUT_CHANGED' });
+      expect(opens).toBe(1);
+      expect(swapped).toBe(true);
+      await expect(openedFile!.stat()).rejects.toBeTruthy();
+    });
+  });
+
+  it('rejects a digest handle that reaches EOF before the pinned size', async () => {
+    await withRuntimeDir(async (workDir) => {
+      const shortPath = join(workDir, 'short-digest-stream.mp4');
+      await writeFile(shortPath, Buffer.alloc(5, 0x73));
+      let openedFile: HtmlVideoDigestFile | undefined;
+
+      await expect(renderWithMediaProbe(
+        workDir,
+        async () => validFinalMediaProbe(1.1),
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        (options) => {
+          options.publicationFileOperations = {
+            openDigestFile: async (_path, openFile) => {
+              openedFile = await openFile(shortPath);
+              return openedFile;
+            },
+          };
+        },
+      )).rejects.toMatchObject({ code: 'HTML_VIDEO_OUTPUT_CHANGED' });
+      await expect(openedFile!.stat()).rejects.toBeTruthy();
+    });
+  });
+
+  it('rejects a digest handle whose real file is longer than the pinned size', async () => {
+    await withRuntimeDir(async (workDir) => {
+      const longPath = join(workDir, 'long-digest-stream.mp4');
+      await writeFile(longPath, Buffer.alloc(11, 0x6c));
+      let openedFile: HtmlVideoDigestFile | undefined;
+
+      await expect(renderWithMediaProbe(
+        workDir,
+        async () => validFinalMediaProbe(1.1),
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        (options) => {
+          options.publicationFileOperations = {
+            openDigestFile: async (_path, openFile) => {
+              openedFile = await openFile(longPath);
+              return openedFile;
+            },
+          };
+        },
+      )).rejects.toMatchObject({ code: 'HTML_VIDEO_OUTPUT_CHANGED' });
+      await expect(openedFile!.stat()).rejects.toBeTruthy();
+    });
+  });
+
+  it('rejects an oversized digest handle before reading and still closes it', async () => {
+    await withRuntimeDir(async (workDir) => {
+      let openedFile: HtmlVideoDigestFile | undefined;
+
+      await expect(renderWithMediaProbe(
+        workDir,
+        async () => validFinalMediaProbe(1.1),
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        (options) => {
+          options.publicationFileOperations = {
+            digestByteLimit: Buffer.byteLength('mp4-output') - 1,
+            openDigestFile: async (path, openFile) => {
+              openedFile = await openFile(path);
+              return openedFile;
+            },
+          };
+        },
+      )).rejects.toMatchObject({ code: 'HTML_VIDEO_OUTPUT_TOO_LARGE' });
+      await expect(openedFile!.stat()).rejects.toBeTruthy();
+    });
+  });
+
+  it('hashes a successful final output exactly before probe, after probe, and after rename', async () => {
+    await withRuntimeDir(async (workDir) => {
+      let digestReads = 0;
+      const runtime = await createRenderRuntimeWithMediaProbe(
+        workDir,
+        async () => validFinalMediaProbe(1.1),
+        (options) => {
+          options.publicationFileOperations = {
+            openDigestFile: async (path, openFile) => {
+              digestReads += 1;
+              return openFile(path);
+            },
+          };
+        },
+      );
+      const output = await runtime.render(createRenderRuntimeInput(workDir));
+      const consumeDigest = (runtime as unknown as {
+        consumeRenderArtifactDigest?: (
+          output: HtmlVideoOutput,
+          signal?: AbortSignal,
+        ) => Promise<{ size: number; sha256: string }>;
+      }).consumeRenderArtifactDigest;
+
+      expect(output.path).toBe(join(workDir, 'final.mp4'));
+      expect(digestReads).toBe(3);
+      expect(Object.isFrozen(output)).toBe(true);
+      expect(consumeDigest).toBeTypeOf('function');
+      if (!consumeDigest) return;
+      await expect(consumeDigest({ ...output })).rejects.toBeTruthy();
+      await expect(consumeDigest(Object.assign({}, output))).rejects.toBeTruthy();
+      await expect(consumeDigest(output)).resolves.toEqual({
+        size: Buffer.byteLength('mp4-output'),
+        sha256: createHash('sha256').update('mp4-output').digest('hex'),
+      });
+      await expect(consumeDigest(output)).rejects.toBeTruthy();
+    });
+  });
+
+  it('rejects a consumed render proof after a same-inode same-size final rewrite', async () => {
+    await withRuntimeDir(async (workDir) => {
+      const runtime = await createRenderRuntimeWithMediaProbe(
+        workDir,
+        async () => validFinalMediaProbe(1.1),
+      );
+      const output = await runtime.render(createRenderRuntimeInput(workDir));
+      const before = await lstat(output.path, { bigint: true });
+      await new Promise((resolveDelay) => setTimeout(resolveDelay, 10));
+      await writeFile(output.path, Buffer.from('tampered!!'));
+      const after = await lstat(output.path, { bigint: true });
+      const consumeDigest = (runtime as unknown as {
+        consumeRenderArtifactDigest?: (
+          output: HtmlVideoOutput,
+          signal?: AbortSignal,
+        ) => Promise<{ size: number; sha256: string }>;
+      }).consumeRenderArtifactDigest;
+
+      expect(after.ino).toBe(before.ino);
+      expect(after.size).toBe(before.size);
+      expect(consumeDigest).toBeTypeOf('function');
+      if (!consumeDigest) return;
+      await expect(consumeDigest(output)).rejects.toMatchObject({ retryable: true });
+    });
+  });
+
+  it('preserves an AbortError when render proof consumption is cancelled', async () => {
+    await withRuntimeDir(async (workDir) => {
+      const runtime = await createRenderRuntimeWithMediaProbe(
+        workDir,
+        async () => validFinalMediaProbe(1.1),
+      );
+      const output = await runtime.render(createRenderRuntimeInput(workDir));
+      const controller = new AbortController();
+      const abortReason = new DOMException('Digest proof consumption cancelled.', 'AbortError');
+      controller.abort(abortReason);
+      const consumeDigest = (runtime as unknown as {
+        consumeRenderArtifactDigest?: (
+          output: HtmlVideoOutput,
+          signal?: AbortSignal,
+        ) => Promise<{ size: number; sha256: string }>;
+      }).consumeRenderArtifactDigest;
+
+      expect(consumeDigest).toBeTypeOf('function');
+      if (!consumeDigest) return;
+      await expect(consumeDigest(output, controller.signal)).rejects.toBe(abortReason);
+    });
+  });
+
+  it('uses the real runtime proof in the runner without a fourth final digest stream', async () => {
+    await withRuntimeDir(async (workDir) => {
+      let digestReads = 0;
+      const runtime = await createRenderRuntimeWithMediaProbe(
+        workDir,
+        async () => validFinalMediaProbe(1.1),
+        (options) => {
+          options.publicationFileOperations = {
+            openDigestFile: async (path, openFile) => {
+              digestReads += 1;
+              return openFile(path);
+            },
+          };
+        },
+      );
+      const consumeRenderArtifactDigest = (runtime as unknown as {
+        consumeRenderArtifactDigest?: (
+          output: HtmlVideoOutput,
+          signal?: AbortSignal,
+        ) => Promise<{ size: number; sha256: string }>;
+      }).consumeRenderArtifactDigest;
+      expect(consumeRenderArtifactDigest).toBeTypeOf('function');
+      if (!consumeRenderArtifactDigest) return;
+      const state = createHtmlVideoPipelineData('第一幕。', {
+        ratio: '9:16',
+        style: 'cinematic',
+        foreground: false,
+      });
+
+      const completed = await runHtmlVideoPipeline({
+        taskId: 'real-runtime-digest',
+        sourceText: '第一幕。',
+        state,
+      }, {
+        workDir,
+        rewrite: async () => ({ rewrittenText: '第一幕。', segments: ['第一幕。'] }),
+        plan: async () => ({ scenes: [singleRuntimeScene()] }),
+        generateAssets: async () => {
+          const path = join(workDir, 'runner-background.png');
+          await writeFile(path, Buffer.from('background'));
+          return [{ sceneIndex: 1, kind: 'bg', slot: 0, src: path }];
+        },
+        synthesizeVoices: async () => {
+          const path = join(workDir, 'runner-voice.wav');
+          await writeFile(path, Buffer.from('voice'));
+          return [{ sceneIndex: 1, src: path, durationSec: 1, text: '第一幕。' }];
+        },
+        createPreviews: runtime.createPreviews,
+        render: runtime.render,
+        consumeRenderArtifactDigest,
+        onCheckpoint: async () => undefined,
+      } as Parameters<typeof runHtmlVideoPipeline>[1] & {
+        consumeRenderArtifactDigest: typeof consumeRenderArtifactDigest;
+      });
+      const artifact = JSON.parse(await readFile(join(workDir, 'steps', 'render.json'), 'utf8')) as {
+        __storydreamFileDigests: Array<{ path: string; size: number; sha256: string }>;
+      };
+
+      expect(completed.current).toBe('done');
+      expect(digestReads).toBe(3);
+      expect(artifact.__storydreamFileDigests).toEqual([{
+        path: 'final.mp4',
+        size: Buffer.byteLength('mp4-output'),
+        sha256: createHash('sha256').update('mp4-output').digest('hex'),
+      }]);
+    });
+  });
+
+  it('rejects an old digest when the published file changes after the D3 identity lstat', async () => {
+    await withRuntimeDir(async (workDir) => {
+      const finalPath = join(workDir, 'final.mp4');
+      let digestReads = 0;
+      let successfulFinalLstats = 0;
+      let d3Identity: BigIntStats | undefined;
+      const runtime = await createRenderRuntimeWithMediaProbe(
+        workDir,
+        async () => validFinalMediaProbe(1.1),
+        (options) => {
+          options.publicationFileOperations = {
+            openDigestFile: async (path, openFile) => {
+              digestReads += 1;
+              return openFile(path);
+            },
+            lstat: async (path) => {
+              const value = await lstat(path, { bigint: true });
+              if (path === finalPath) {
+                successfulFinalLstats += 1;
+                if (successfulFinalLstats === 2) {
+                  d3Identity = value;
+                  await new Promise((resolveDelay) => setTimeout(resolveDelay, 10));
+                  await writeFile(path, Buffer.from('tampered!!'));
+                }
+              }
+              return value;
+            },
+          };
+        },
+      );
+      const consumeRenderArtifactDigest = (runtime as unknown as {
+        consumeRenderArtifactDigest?: (
+          output: HtmlVideoOutput,
+          signal?: AbortSignal,
+        ) => Promise<{ size: number; sha256: string }>;
+      }).consumeRenderArtifactDigest;
+      expect(consumeRenderArtifactDigest).toBeTypeOf('function');
+      if (!consumeRenderArtifactDigest) return;
+      const state = createHtmlVideoPipelineData('第一幕。', {
+        ratio: '9:16',
+        style: 'cinematic',
+        foreground: false,
+      });
+
+      await expect(runHtmlVideoPipeline({
+        taskId: 'd3-identity-bound-digest',
+        sourceText: '第一幕。',
+        state,
+      }, {
+        workDir,
+        rewrite: async () => ({ rewrittenText: '第一幕。', segments: ['第一幕。'] }),
+        plan: async () => ({ scenes: [singleRuntimeScene()] }),
+        generateAssets: async () => {
+          const path = join(workDir, 'd3-runner-background.png');
+          await writeFile(path, Buffer.from('background'));
+          return [{ sceneIndex: 1, kind: 'bg', slot: 0, src: path }];
+        },
+        synthesizeVoices: async () => {
+          const path = join(workDir, 'd3-runner-voice.wav');
+          await writeFile(path, Buffer.from('voice'));
+          return [{ sceneIndex: 1, src: path, durationSec: 1, text: '第一幕。' }];
+        },
+        createPreviews: runtime.createPreviews,
+        render: runtime.render,
+        consumeRenderArtifactDigest,
+        onCheckpoint: async () => undefined,
+      } as Parameters<typeof runHtmlVideoPipeline>[1] & {
+        consumeRenderArtifactDigest: typeof consumeRenderArtifactDigest;
+      })).rejects.toMatchObject({ code: 'HTML_VIDEO_OUTPUT_CHANGED' });
+
+      const current = await lstat(finalPath, { bigint: true });
+      expect(d3Identity).toBeDefined();
+      expect(current.ino).toBe(d3Identity!.ino);
+      expect(current.size).toBe(d3Identity!.size);
+      expect(
+        current.mtimeNs !== d3Identity!.mtimeNs || current.ctimeNs !== d3Identity!.ctimeNs,
+      ).toBe(true);
+      expect(successfulFinalLstats).toBe(3);
+      expect(digestReads).toBe(3);
+      expect(existsSync(join(workDir, 'steps', 'render.json'))).toBe(false);
+    });
+  });
+
+  it('rejects publication when the file changes after the D3 digest yields its old bytes', async () => {
+    await withRuntimeDir(async (workDir) => {
+      const finalPath = join(workDir, 'final.mp4');
+      let digestReads = 0;
+      let d3Identity: BigIntStats | undefined;
+      let mutated = false;
+      const runtime = await createRenderRuntimeWithMediaProbe(
+        workDir,
+        async () => validFinalMediaProbe(1.1),
+        (options) => {
+          options.publicationFileOperations = {
+            openDigestFile: async (path, openFile) => {
+              digestReads += 1;
+              if (digestReads === 3) d3Identity = await lstat(path, { bigint: true });
+              return openFile(path);
+            },
+            onDigestRead: async (path) => {
+              if (digestReads === 3 && !mutated) {
+                mutated = true;
+                await new Promise((resolveDelay) => setTimeout(resolveDelay, 10));
+                await writeFile(path, Buffer.from('tampered!!'));
+              }
+            },
+          };
+        },
+      );
+
+      await expect(runtime.render(createRenderRuntimeInput(workDir))).rejects.toMatchObject({
+        code: 'HTML_VIDEO_PUBLISH_CONFLICT',
+        retryable: true,
+      });
+
+      expect(digestReads).toBe(3);
+      expect(d3Identity).toBeDefined();
+      expect(d3Identity!.size).toBe(BigInt(Buffer.byteLength('tampered!!')));
+      expect(existsSync(finalPath)).toBe(false);
+    });
+  });
+
+  it('rejects an oversized staging output before hashing or probing it', async () => {
+    await withRuntimeDir(async (workDir) => {
+      const background = join(workDir, 'oversized-output-background.png');
+      const foreground = join(workDir, 'oversized-output-foreground.png');
+      const voice = join(workDir, 'oversized-output-voice.wav');
+      let probeCalls = 0;
+      await Promise.all([
+        writeFile(background, Buffer.from('background')),
+        writeFile(foreground, Buffer.from('foreground')),
+        writeFile(voice, Buffer.from('voice')),
+      ]);
+      const runtime = createElectronHtmlVideoRuntime({
+        taskDirectory: taskDirectoryFor(workDir),
+        taskTitle: 'Oversized final output',
+        fps: 2,
+        maxLongEdge: 568,
+        renderer: {
+          async capturePreview() {
+            throw new Error('capturePreview was not expected');
+          },
+          async render(input) {
+            await writeFile(input.outputPath, Buffer.from('mp4-output'));
+            return {
+              outputPath: input.outputPath,
+              sourceVideoPath: join(input.workDir, '_source.mp4'),
+              duration: input.totalDurationS,
+              taskDir: input.workDir,
+              framesDirs: [],
+            };
+          },
+        },
+        probeMedia: async () => {
+          probeCalls += 1;
+          return validFinalMediaProbe(1.1);
+        },
+        getAvailableDiskBytes: async () => 4 * 1024 * 1024 * 1024,
+        publicationFileOperations: {
+          lstat: async (path) => {
+            const value = await lstat(path, { bigint: true });
+            if (path.includes('.html-video-staging') && basename(path) === 'final.mp4') {
+              return new Proxy(value, {
+                get(target, property, receiver) {
+                  return property === 'size'
+                    ? BigInt(1024 * 1024 * 1024 + 1)
+                    : Reflect.get(target, property, receiver);
+                },
+              });
+            }
+            return value;
+          },
+        },
+      });
+
+      await expect(runtime.render({
+        ...runtimeInput(background, foreground, voice),
+        compositions: [],
+      })).rejects.toMatchObject({
+        code: 'HTML_VIDEO_OUTPUT_TOO_LARGE',
+        retryable: true,
+      });
+      expect(probeCalls).toBe(0);
+      expect(existsSync(join(workDir, 'final.mp4'))).toBe(false);
     });
   });
 
@@ -2634,6 +3926,62 @@ function validFinalMediaProbe(duration = 1.2): HtmlVideoMediaProbeResult {
   };
 }
 
+async function createRenderRuntimeWithMediaProbe(
+  workDir: string,
+  probeMedia: ElectronHtmlVideoRuntimeOptions['probeMedia'],
+  configureOptions?: (options: ElectronHtmlVideoRuntimeOptions) => void,
+) {
+  await Promise.all([
+    writeFile(join(workDir, 'render-background.png'), Buffer.from('background')),
+    writeFile(join(workDir, 'render-foreground.png'), Buffer.from('foreground')),
+    writeFile(join(workDir, 'render-voice.wav'), Buffer.from('voice')),
+  ]);
+  const options: ElectronHtmlVideoRuntimeOptions = {
+    taskDirectory: taskDirectoryFor(workDir),
+    taskTitle: 'Trusted render digest',
+    fps: 2,
+    maxLongEdge: 568,
+    renderer: {
+      async capturePreview(input) {
+        await writeFile(input.outputPath, Buffer.from('thumbnail'));
+        return input.outputPath;
+      },
+      async render(input) {
+        await writeFile(input.outputPath, Buffer.from('mp4-output'));
+        return {
+          outputPath: input.outputPath,
+          sourceVideoPath: join(workDir, '_source.mp4'),
+          duration: input.totalDurationS,
+          taskDir: workDir,
+          framesDirs: [],
+        };
+      },
+    },
+    probeMedia,
+    getAvailableDiskBytes: async () => 4 * 1024 * 1024 * 1024,
+  };
+  configureOptions?.(options);
+  return createElectronHtmlVideoRuntime(options);
+}
+
+function createRenderRuntimeInput(workDir: string) {
+  return {
+    ...runtimeInput(
+      join(workDir, 'render-background.png'),
+      join(workDir, 'render-foreground.png'),
+      join(workDir, 'render-voice.wav'),
+    ),
+    compositions: [],
+  };
+}
+
+function singleRuntimeScene(): HtmlVideoScenePlan {
+  return {
+    ...htmlScenes()[0],
+    elements: [],
+  };
+}
+
 async function renderWithMediaProbe(
   workDir: string,
   probeMedia: ElectronHtmlVideoRuntimeOptions['probeMedia'],
@@ -2641,6 +3989,7 @@ async function renderWithMediaProbe(
   bgmPath?: string,
   onRender?: (input: HtmlVideoExportInput) => void,
   configureInput?: (input: ReturnType<typeof runtimeInput>) => void,
+  configureOptions?: (options: ElectronHtmlVideoRuntimeOptions) => void,
 ) {
   const background = join(workDir, 'render-background.png');
   const foreground = join(workDir, 'render-foreground.png');
@@ -2650,7 +3999,7 @@ async function renderWithMediaProbe(
     writeFile(foreground, Buffer.from('foreground')),
     writeFile(voice, Buffer.from('voice')),
   ]);
-  const runtime = createElectronHtmlVideoRuntime({
+  const options: ElectronHtmlVideoRuntimeOptions = {
     taskDirectory: taskDirectoryFor(workDir),
     taskTitle: 'Final media validation',
     fps: 2,
@@ -2674,7 +4023,9 @@ async function renderWithMediaProbe(
     bgmPath,
     probeMedia,
     getAvailableDiskBytes: async () => 4 * 1024 * 1024 * 1024,
-  });
+  };
+  configureOptions?.(options);
+  const runtime = createElectronHtmlVideoRuntime(options);
 
   const input = runtimeInput(background, foreground, voice);
   configureInput?.(input);

@@ -67,6 +67,7 @@ export const INVOKE_CHANNELS = Object.freeze([
   'task:delete',
   'task:get-detail',
   'task:list-events',
+  'task:open-output-directory',
   'viral:list',
   'viral:archive',
   'viral:restore',
@@ -114,6 +115,7 @@ export const INVOKE_CHANNELS = Object.freeze([
   'person-assets:delete',
   'person-assets:import-images',
   'person-assets:list-images',
+  'person-assets:open-directory',
   'html-video:create-task',
   'html-video:open-preview',
   'html-video:media-url',
@@ -139,7 +141,6 @@ export const INVOKE_CHANNELS = Object.freeze([
   'jianying:draft-path:detect',
   'jianying:effect-catalog',
   'diagnostics:run',
-  'path:open',
   'window:control',
 ] as const);
 
@@ -155,6 +156,7 @@ type LocalBookPersonAssetApi = {
   deletePersonAsset: (name: string) => Promise<void>;
   importPersonAssetImages: (name: string) => Promise<number>;
   listPersonAssetImages: (name: string) => Promise<PersonAssetImage[]>;
+  openPersonAssetDirectory: (name: string) => Promise<void>;
 };
 
 export type StoryDreamApi = {
@@ -167,6 +169,7 @@ export type StoryDreamApi = {
   deleteTaskPermanently: (id: string) => Promise<AppMutationResult>;
   getTaskDetail: (id: string) => Promise<Task | null>;
   listTaskEvents: (taskId: string, request?: CursorRequest) => Promise<CursorPage<SequencedTaskEvent>>;
+  openTaskOutputDirectory: (id: string) => Promise<void>;
   listViralAnalyses: (request?: HistoryListInput<'viral-analysis'>) => Promise<HistoryPage<'viral-analysis', ViralAnalysisSummary>>;
   archiveViralAnalysis: (id: string) => Promise<AppMutationResult>;
   restoreViralAnalysis: (id: string) => Promise<AppMutationResult>;
@@ -230,7 +233,6 @@ export type StoryDreamApi = {
   detectJianyingDraftPath: () => Promise<string>;
   getJianyingEffectCatalog: () => Promise<JianyingEffectCatalog>;
   runDiagnostics: () => Promise<{ generatedAt: string; checks: Array<{ id: string; label: string; status: string; detail: string }> }>;
-  openPath: (path: string) => Promise<void>;
   windowControl: (action: 'minimize' | 'toggle-maximize' | 'close') => Promise<void>;
   onAppDelta: (callback: (delta: AppDelta) => void) => () => void;
 } & LocalBookPersonAssetApi;

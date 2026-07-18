@@ -24,6 +24,7 @@ import type {
   DraftTemplate,
   ImageLabSummary,
   PromptTemplate,
+  Task,
   TaskSummary,
   ViralAnalysisSummary,
   VoiceLabSummary,
@@ -697,6 +698,253 @@ describe('app state delta coordination', () => {
     expect(guard.isCurrent('same-id', current)).toBe(false);
   });
 
+  it('keeps a deferred current detail updater valid until its commit completion flushes', () => {
+    const helpers = reconciliationModule as unknown as {
+      createRequestGenerationCompletionQueue?: (
+        guard: ReturnType<typeof reconciliationModule.createRequestGenerationGuard>,
+      ) => {
+        defer: (id: string, generation: number) => number;
+        flushThrough: (completionToken: number) => void;
+      };
+    };
+    expect(typeof helpers.createRequestGenerationCompletionQueue).toBe('function');
+    if (!helpers.createRequestGenerationCompletionQueue) return;
+
+    const taskId = 'deferred-valid-detail';
+    const guard = reconciliationModule.createRequestGenerationGuard();
+    const completions = helpers.createRequestGenerationCompletionQueue(guard);
+    const generation = guard.begin(taskId);
+    const detail = {
+      ...taskSummaryToTask(taskSummary(taskId, 'completed')),
+      inputText: 'deferred detail body',
+    };
+    const state = { tasks: [] as Task[], events: [], viralAnalyses: [], viralEvents: [] };
+    const queuedUpdater = (current: typeof state) => guard.isCurrent(taskId, generation)
+      ? mergeReconciliationSlices(current, {
+          task: detail,
+          taskEvents: [],
+          viralAnalysis: null,
+          viralEvents: [],
+        })
+      : current;
+
+    let completionDeferred = false;
+    let completionToken = 0;
+    try {
+      completionToken = completions.defer(taskId, generation);
+      completionDeferred = true;
+      expect(completionToken).toBeGreaterThan(0);
+    } finally {
+      if (!completionDeferred) guard.finish(taskId, generation);
+    }
+    expect(guard.isCurrent(taskId, generation)).toBe(true);
+    const updated = queuedUpdater(state);
+    completions.flushThrough(completionToken);
+
+    expect(updated.tasks.map((task) => task.id)).toEqual([taskId]);
+    expect(guard.isCurrent(taskId, generation)).toBe(false);
+  });
+
+  it('flushes only detail completions included in the committed render', () => {
+    const createCompletionQueue = (reconciliationModule as unknown as {
+      createRequestGenerationCompletionQueue?: (
+        guard: ReturnType<typeof reconciliationModule.createRequestGenerationGuard>,
+      ) => {
+        defer: (id: string, generation: number) => number;
+        flushThrough: (completionToken: number) => void;
+      };
+    }).createRequestGenerationCompletionQueue;
+    expect(createCompletionQueue).toBeTypeOf('function');
+    if (!createCompletionQueue) return;
+
+    const taskId = 'interleaved-detail-commit';
+    const underlyingGuard = reconciliationModule.createRequestGenerationGuard();
+    const finished: Array<{ id: string; generation: number }> = [];
+    const guard = {
+      ...underlyingGuard,
+      finish(id: string, generation: number) {
+        finished.push({ id, generation });
+        underlyingGuard.finish(id, generation);
+      },
+    };
+    const completions = createCompletionQueue(guard);
+    const generation1 = guard.begin(taskId);
+    const completionToken1 = completions.defer(taskId, generation1);
+
+    // Render 1 has committed, but its effect has not run when render 2 queues a completion.
+    const generation2 = guard.begin(taskId);
+    const completionToken2 = completions.defer(taskId, generation2);
+
+    expect(completionToken2).toBeGreaterThan(completionToken1);
+    completions.flushThrough(completionToken1);
+    expect(finished).toEqual([{ id: taskId, generation: generation1 }]);
+    expect(guard.isCurrent(taskId, generation2)).toBe(true);
+
+    completions.flushThrough(completionToken2);
+    expect(finished).toEqual([
+      { id: taskId, generation: generation1 },
+      { id: taskId, generation: generation2 },
+    ]);
+    expect(guard.isCurrent(taskId, generation2)).toBe(false);
+  });
+
+  it('commits a detail state updater and its completion token atomically', () => {
+    const reduceCompletionTrackedState = (reconciliationModule as unknown as {
+      reduceCompletionTrackedState?: <T>(
+        current: { value: T; completionToken: number },
+        action: { update: T | ((value: T) => T); completionToken?: number },
+      ) => { value: T; completionToken: number };
+    }).reduceCompletionTrackedState;
+    expect(reduceCompletionTrackedState).toBeTypeOf('function');
+    if (!reduceCompletionTrackedState) return;
+
+    const initial = { value: { detail: 'summary', count: 1 }, completionToken: 3 };
+    const committed = reduceCompletionTrackedState(initial, {
+      update: (current) => ({ ...current, detail: 'completed output' }),
+      completionToken: 7,
+    });
+    const ordinaryUpdate = reduceCompletionTrackedState(committed, {
+      update: (current) => ({ ...current, count: current.count + 1 }),
+    });
+    const staleToken = reduceCompletionTrackedState(ordinaryUpdate, {
+      update: ordinaryUpdate.value,
+      completionToken: 5,
+    });
+
+    expect(committed).toEqual({
+      value: { detail: 'completed output', count: 1 },
+      completionToken: 7,
+    });
+    expect(ordinaryUpdate).toEqual({
+      value: { detail: 'completed output', count: 2 },
+      completionToken: 7,
+    });
+    expect(staleToken.completionToken).toBe(7);
+  });
+
+  it('retries a detail response after an entity upsert but discards it after a tombstone', () => {
+    const historyResponseDisposition = (reconciliationModule as unknown as {
+      historyResponseDisposition?: (
+        captured: { entityRevision: number; tombstoneRevision: number },
+        current: { entityRevision: number; tombstoneRevision: number },
+      ) => 'accept' | 'retry' | 'discard';
+    }).historyResponseDisposition;
+    expect(historyResponseDisposition).toBeTypeOf('function');
+    if (!historyResponseDisposition) return;
+
+    expect(historyResponseDisposition(
+      { entityRevision: 10, tombstoneRevision: -1 },
+      { entityRevision: 10, tombstoneRevision: -1 },
+    )).toBe('accept');
+    expect(historyResponseDisposition(
+      { entityRevision: 10, tombstoneRevision: -1 },
+      { entityRevision: 11, tombstoneRevision: -1 },
+    )).toBe('retry');
+    expect(historyResponseDisposition(
+      { entityRevision: 10, tombstoneRevision: -1 },
+      { entityRevision: -1, tombstoneRevision: 12 },
+    )).toBe('discard');
+  });
+
+  it('prevents a queued detail updater from resurrecting an explicitly missing authoritative task', () => {
+    const helpers = reconciliationModule as unknown as {
+      authoritativeMissingRequestedTaskId?: (
+        requestedTaskId: string | null | undefined,
+        resultTask: { id: string } | null,
+        authoritativeTasks: readonly { id: string }[],
+      ) => string | null;
+      createRequestGenerationGuard: typeof reconciliationModule.createRequestGenerationGuard;
+      applyHistorySelectionBarrier: typeof reconciliationModule.applyHistorySelectionBarrier;
+    };
+    const taskId = 'authoritatively-missing-task';
+    const guard = helpers.createRequestGenerationGuard();
+    const generation = guard.begin(taskId);
+    const lateDetail = {
+      ...taskSummaryToTask(taskSummary(taskId, 'completed')),
+      inputText: 'late private detail',
+    };
+    const installed = { tasks: [] as Task[], events: [], viralAnalyses: [], viralEvents: [] };
+    const queuedDetailUpdater = (current: typeof installed) => guard.isCurrent(taskId, generation)
+      ? mergeReconciliationSlices(current, {
+          task: lateDetail,
+          taskEvents: [],
+          viralAnalysis: null,
+          viralEvents: [],
+        })
+      : current;
+    const missingTaskId = helpers.authoritativeMissingRequestedTaskId?.(taskId, null, installed.tasks) ?? null;
+    let selection = {
+      selectedTaskId: taskId,
+      activeHtmlTaskId: taskId,
+      activeViralAnalysisId: null,
+      activeView: 'task-detail' as const,
+    };
+    if (missingTaskId) {
+      guard.invalidate(missingTaskId);
+      selection = helpers.applyHistorySelectionBarrier(selection, 'task', missingTaskId) as typeof selection;
+    }
+    const afterLateDetail = queuedDetailUpdater(installed);
+
+    expect({
+      helperInstalled: typeof helpers.authoritativeMissingRequestedTaskId === 'function',
+      missingTaskId,
+      generationCurrent: guard.isCurrent(taskId, generation),
+      taskIds: afterLateDetail.tasks.map((task) => task.id),
+      selection,
+    }).toEqual({
+      helperInstalled: true,
+      missingTaskId: taskId,
+      generationCurrent: false,
+      taskIds: [],
+      selection: {
+        selectedTaskId: null,
+        activeHtmlTaskId: null,
+        activeViralAnalysisId: null,
+        activeView: 'history',
+      },
+    });
+  });
+
+  it('keeps a requested off-page detail current when reconciliation returned it', () => {
+    const helper = (reconciliationModule as unknown as {
+      authoritativeMissingRequestedTaskId?: (
+        requestedTaskId: string | null | undefined,
+        resultTask: { id: string } | null,
+        authoritativeTasks: readonly { id: string }[],
+      ) => string | null;
+    }).authoritativeMissingRequestedTaskId;
+    const taskId = 'valid-off-page-task';
+    const detail = {
+      ...taskSummaryToTask(taskSummary(taskId, 'running')),
+      inputText: 'valid off-page detail',
+    };
+    const guard = reconciliationModule.createRequestGenerationGuard();
+    const generation = guard.begin(taskId);
+    const missingTaskId = helper?.(taskId, detail, []) ?? null;
+    if (missingTaskId) guard.invalidate(missingTaskId);
+    const state = { tasks: [] as Task[], events: [], viralAnalyses: [], viralEvents: [] };
+    const merged = guard.isCurrent(taskId, generation)
+      ? mergeReconciliationSlices(state, {
+          task: detail,
+          taskEvents: [],
+          viralAnalysis: null,
+          viralEvents: [],
+        })
+      : state;
+
+    expect({
+      helperInstalled: typeof helper === 'function',
+      missingTaskId,
+      generationCurrent: guard.isCurrent(taskId, generation),
+      taskIds: merged.tasks.map((task) => task.id),
+    }).toEqual({
+      helperInstalled: true,
+      missingTaskId: null,
+      generationCurrent: true,
+      taskIds: [taskId],
+    });
+  });
+
   it('keeps another selected task detail open while clearing only a matching HTML task ref', () => {
     const applyHistorySelectionBarrier = (reconciliationModule as unknown as {
       applyHistorySelectionBarrier?: (
@@ -1187,6 +1435,188 @@ describe('app state delta coordination', () => {
     expect(merged.events.map((event) => event.seq)).toEqual([205]);
     expect(merged.viralAnalyses[0]).toMatchObject({ id: 'viral-active', progress: 0.75 });
     expect(merged.viralEvents.map((event) => event.seq)).toEqual([305]);
+  });
+
+  it('preserves loaded task details across an authoritative summary reset without retaining removed tasks', () => {
+    type SnapshotState = {
+      source: 'current' | 'reset';
+      tasks: Task[];
+      promptTemplates: PromptTemplate[];
+      draftTemplates: DraftTemplate[];
+    };
+    const mergeAuthoritativeSnapshotDetails = (reconciliationModule as unknown as {
+      mergeAuthoritativeSnapshotDetails?: (
+        current: SnapshotState,
+        rebuilt: SnapshotState,
+        preserveTemplateDetails?: boolean,
+      ) => SnapshotState;
+    }).mergeAuthoritativeSnapshotDetails;
+    expect(mergeAuthoritativeSnapshotDetails).toBeTypeOf('function');
+    if (!mergeAuthoritativeSnapshotDetails) return;
+
+    const htmlDetail = {
+      ...taskSummaryToTask({
+        ...taskSummary('html-reset-detail', 'running'),
+        taskType: 'html-video',
+        currentStep: 5,
+        pipelineStep: 'render',
+        lastHeartbeatAt: '2026-01-01T00:00:01.000Z',
+      }),
+      inputText: 'full HTML task source',
+      pipelineData: JSON.stringify({
+        version: 2,
+        revision: 6,
+        current: 'done',
+        output: { path: 'final.mp4', sizeBytes: 10, durationSec: 3 },
+      }),
+    };
+    const ordinaryDetail = {
+      ...taskSummaryToTask(taskSummary('ordinary-reset-detail', 'running')),
+      inputText: 'full ordinary task source',
+      productInfo: 'private product detail',
+    };
+    const removedDetail = {
+      ...taskSummaryToTask(taskSummary('removed-by-authority', 'running')),
+      inputText: 'must not survive an authoritative removal',
+    };
+    const current: SnapshotState = {
+      source: 'current',
+      tasks: [htmlDetail, ordinaryDetail, removedDetail],
+      promptTemplates: [],
+      draftTemplates: [],
+    };
+    const rebuilt: SnapshotState = {
+      source: 'reset',
+      tasks: [
+        taskSummaryToTask({
+          ...taskSummary(htmlDetail.id, 'completed'),
+          title: 'Authoritative HTML title',
+          taskType: 'html-video',
+          currentStep: 6,
+          pipelineStep: 'done',
+          lastHeartbeatAt: '2026-01-01T00:00:02.000Z',
+          completedAt: '2026-01-01T00:00:03.000Z',
+        }),
+        taskSummaryToTask({
+          ...taskSummary(ordinaryDetail.id, 'paused'),
+          title: 'Authoritative ordinary title',
+          currentStep: 2,
+          lastHeartbeatAt: '2026-01-01T00:00:04.000Z',
+        }),
+      ],
+      promptTemplates: [],
+      draftTemplates: [],
+    };
+    const updater = (state: SnapshotState) => mergeAuthoritativeSnapshotDetails(state, rebuilt, false);
+
+    const first = updater(current);
+    const second = updater(current);
+    const reset = mergeAuthoritativeSnapshotDetails(current, rebuilt, true);
+    const html = first.tasks.find((task) => task.id === htmlDetail.id);
+    const ordinary = first.tasks.find((task) => task.id === ordinaryDetail.id);
+
+    expect(second).toEqual(first);
+    expect(reset.tasks).toEqual(first.tasks);
+    expect(first.source).toBe('reset');
+    expect(first.tasks.map((task) => task.id)).toEqual([htmlDetail.id, ordinaryDetail.id]);
+    expect(html).toMatchObject({
+      title: 'Authoritative HTML title',
+      status: 'completed',
+      currentStep: 6,
+      pipelineStep: 'done',
+      lastHeartbeatAt: '2026-01-01T00:00:02.000Z',
+      completedAt: '2026-01-01T00:00:03.000Z',
+      inputText: 'full HTML task source',
+      pipelineData: htmlDetail.pipelineData,
+    });
+    expect(JSON.parse(html!.pipelineData ?? '{}').output).toEqual({
+      path: 'final.mp4',
+      sizeBytes: 10,
+      durationSec: 3,
+    });
+    expect(ordinary).toMatchObject({
+      title: 'Authoritative ordinary title',
+      status: 'paused',
+      currentStep: 2,
+      lastHeartbeatAt: '2026-01-01T00:00:04.000Z',
+      inputText: 'full ordinary task source',
+      productInfo: 'private product detail',
+    });
+    expect(current.tasks).toHaveLength(3);
+  });
+
+  it('prefers explicitly fresh authoritative task details over stale or missing current details', () => {
+    type SnapshotState = {
+      tasks: Task[];
+      promptTemplates: PromptTemplate[];
+      draftTemplates: DraftTemplate[];
+    };
+    const mergeAuthoritativeSnapshotDetails = (reconciliationModule as unknown as {
+      mergeAuthoritativeSnapshotDetails?: (
+        current: SnapshotState,
+        rebuilt: SnapshotState,
+        preserveTemplateDetails?: boolean,
+        authoritativeTaskDetailIds?: ReadonlySet<string>,
+      ) => SnapshotState;
+    }).mergeAuthoritativeSnapshotDetails;
+    expect(mergeAuthoritativeSnapshotDetails).toBeTypeOf('function');
+    if (!mergeAuthoritativeSnapshotDetails) return;
+
+    const staleCurrent = {
+      ...taskSummaryToTask(taskSummary('fresh-existing-detail', 'running')),
+      inputText: 'stale current input',
+      productInfo: 'stale current product',
+      pipelineData: JSON.stringify({ version: 2, revision: 4, output: { path: 'stale.mp4' } }),
+    };
+    const freshExisting = {
+      ...taskSummaryToTask({
+        ...taskSummary(staleCurrent.id, 'completed'),
+        title: 'Fresh authoritative detail',
+        currentStep: 6,
+        pipelineStep: 'done',
+      }),
+      inputText: 'fresh rebuilt input',
+      productInfo: 'fresh rebuilt product',
+      pipelineData: JSON.stringify({ version: 2, revision: 7, output: { path: 'fresh.mp4' } }),
+    };
+    const freshWithoutCurrent = {
+      ...taskSummaryToTask({
+        ...taskSummary('fresh-without-current', 'completed'),
+        currentStep: 6,
+      }),
+      inputText: 'fresh new task input',
+      productInfo: 'fresh new task product',
+      pipelineData: JSON.stringify({ version: 2, revision: 3, output: { path: 'new.mp4' } }),
+    };
+    const rebuilt: SnapshotState = {
+      tasks: [freshExisting, freshWithoutCurrent],
+      promptTemplates: [],
+      draftTemplates: [],
+    };
+
+    const merged = mergeAuthoritativeSnapshotDetails(
+      { tasks: [staleCurrent], promptTemplates: [], draftTemplates: [] },
+      rebuilt,
+      false,
+      new Set([freshExisting.id, freshWithoutCurrent.id]),
+    );
+
+    expect(merged.tasks[0]).toMatchObject({
+      title: 'Fresh authoritative detail',
+      status: 'completed',
+      currentStep: 6,
+      pipelineStep: 'done',
+      inputText: 'fresh rebuilt input',
+      productInfo: 'fresh rebuilt product',
+      pipelineData: freshExisting.pipelineData,
+    });
+    expect(merged.tasks[1]).toMatchObject({
+      status: 'completed',
+      currentStep: 6,
+      inputText: 'fresh new task input',
+      productInfo: 'fresh new task product',
+      pipelineData: freshWithoutCurrent.pipelineData,
+    });
   });
 
   it('preserves loaded prompt and draft details while accepting same-version reset summary metadata', () => {

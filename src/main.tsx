@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useLayoutEffect, useMemo, useReducer, useRef, useState } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
 import {
   Bell,
@@ -119,15 +119,19 @@ import {
   applyBufferedMutationResults,
   applyHistorySelectionBarrier,
   applyLocalMutationResponse,
+  authoritativeMissingRequestedTaskId,
   claimMutationResult,
   collectCursorPages,
+  createRequestGenerationCompletionQueue,
   createRequestGenerationGuard,
   historyEntityRevisionKey,
+  historyResponseDisposition,
   imageLabSummaryToRecord,
-  mergeBootstrapTemplateDetails,
+  mergeAuthoritativeSnapshotDetails,
   mergeDeltaViewSlices,
   mergeReconciliationSlices,
   raiseMutationRevisionFloor,
+  reduceCompletionTrackedState,
   shouldApplyDeltaViewTransition,
   taskDetailRefreshKey,
   taskSummaryToTask,
@@ -135,6 +139,7 @@ import {
   viralSummaryToRecord,
   viralEventRefreshKey,
   voiceLabSummaryToRecord,
+  type HistoryResponseRevision,
 } from './shared/state-reconciliation';
 import {
   stripConfigSecrets,
@@ -211,7 +216,7 @@ import {
 import { createViralTemplateDrafts } from './shared/viral-template-extraction';
 import { defaultPodcastSpeakersForProvider, defaultTaskSpeakerForProvider, normalizeRuntimeTtsProvider, taskSpeakerLabel, ttsVoiceOptionsForProvider, type RuntimeTtsProvider } from './shared/tts-voices';
 import { classifyHtmlVideoTaskMessage, createHtmlVideoTaskInput, fitHtmlVideoOutputSize, htmlVideoSteps, htmlVideoTabs, isHtmlVideoTask, nextHtmlVideoTabKey, safeParseHtmlVideoPipelineData, tabForHtmlVideoStep } from './shared/html-video-workflow';
-import { createHtmlVideoMediaCache, loadHtmlVideoMedia, syncHtmlVideoMediaCache } from './shared/html-video-media';
+import { createHtmlVideoMediaCache, htmlVideoMediaElementKey, htmlVideoMediaElementScopeMatches, htmlVideoMediaStatus, loadHtmlVideoMedia, recordHtmlVideoMediaElementFailure, syncHtmlVideoMediaCache, type HtmlVideoMediaElementFailureState, type HtmlVideoMediaElementScope } from './shared/html-video-media';
 import { useAsyncAction, type AsyncActionFeedback } from './ui/async-action';
 import './styles.css';
 
@@ -517,10 +522,10 @@ function mergeDeltaView(current: AppState, deltaState: DeltaViewState): AppState
 }
 
 type HistoryDeltaIdentity = { family: HistoryFamily; id: string; tombstone: boolean };
-type HistoryResponseRevision = { entityRevision: number; tombstoneRevision: number };
 type HistoryFamilyEpochs = Partial<Record<HistoryFamily, number>>;
 
 const allHistoryFamilies: readonly HistoryFamily[] = ['task', 'viral-analysis', 'image-lab', 'voice-lab'];
+const MAX_TASK_DETAIL_REVISION_ATTEMPTS = 3;
 
 function advanceHistoryFamilyEpochs(
   current: HistoryFamilyEpochs,
@@ -1042,6 +1047,9 @@ function makeFallbackApi(setState: (state: AppState) => void): StoryDreamApi {
         nextCursor: null,
       };
     },
+    async openTaskOutputDirectory() {
+      throw new Error('浏览器预览不能打开本地任务目录，请在 Electron 桌面端操作。');
+    },
     async listViralAnalyses(request: HistoryListInput<'viral-analysis'> = {}) {
       const records = read().viralAnalyses.filter((record) => (
         matchesArchiveFilter(record, request.filter)
@@ -1321,6 +1329,9 @@ function makeFallbackApi(setState: (state: AppState) => void): StoryDreamApi {
     async listPersonAssetImages() {
       return [];
     },
+    async openPersonAssetDirectory() {
+      throw new Error('浏览器预览不能打开本地人物素材目录，请在 Electron 桌面端操作。');
+    },
     async createHtmlVideoTask(input: CreateTaskInput) {
       const state = read();
       const now = new Date().toISOString();
@@ -1575,14 +1586,21 @@ function makeFallbackApi(setState: (state: AppState) => void): StoryDreamApi {
         ],
       };
     },
-    openPath: async () => undefined,
     windowControl: async () => undefined,
     onAppDelta: () => () => undefined,
   };
 }
 
 function App() {
-  const [state, setState] = useState<AppState>(cloneState(initialState));
+  const [trackedState, dispatchState] = useReducer(
+    reduceCompletionTrackedState<AppState>,
+    { value: cloneState(initialState), completionToken: 0 },
+  );
+  const state = trackedState.value;
+  const taskDetailCompletionEpoch = trackedState.completionToken;
+  const setState = useCallback((update: React.SetStateAction<AppState>) => {
+    dispatchState({ update });
+  }, []);
   const [activeView, setActiveView] = useState<ShellView>('new-task');
   const [selectedTaskId, setSelectedTaskId] = useState<string | null>(null);
   const [historyFamilyEpochs, setHistoryFamilyEpochs] = useState<HistoryFamilyEpochs>({});
@@ -1599,6 +1617,10 @@ function App() {
   const activeHtmlTaskIdRef = useRef<string | null>(null);
   const activeViralAnalysisIdRef = useRef<string | null>(null);
   const taskDetailGuard = useMemo(() => createRequestGenerationGuard(), []);
+  const taskDetailCompletionQueue = useMemo(
+    () => createRequestGenerationCompletionQueue(taskDetailGuard),
+    [taskDetailGuard],
+  );
   const viralDetailGuard = useMemo(() => createRequestGenerationGuard(), []);
   const isHistoryTombstoned = useCallback((family: HistoryFamily, id: string) => (
     historyTombstoneRevisionsRef.current.has(historyEntityRevisionKey(family, id))
@@ -1609,68 +1631,88 @@ function App() {
     setHistoryFamilyEpochs((current) => advanceHistoryFamilyEpochs(current, families));
   }, []);
 
+  useEffect(() => {
+    taskDetailCompletionQueue.flushThrough(taskDetailCompletionEpoch);
+  }, [taskDetailCompletionEpoch, taskDetailCompletionQueue]);
+
+  const applyHistoryEntityBarrier = useCallback((family: HistoryFamily, id: string) => {
+    const selection = applyHistorySelectionBarrier({
+      selectedTaskId: selectedTaskIdRef.current,
+      activeHtmlTaskId: activeHtmlTaskIdRef.current,
+      activeViralAnalysisId: activeViralAnalysisIdRef.current,
+      activeView: activeViewRef.current,
+    }, family, id);
+    selectedTaskIdRef.current = selection.selectedTaskId;
+    activeHtmlTaskIdRef.current = selection.activeHtmlTaskId;
+    activeViralAnalysisIdRef.current = selection.activeViralAnalysisId;
+    activeViewRef.current = selection.activeView;
+    setSelectedTaskId(selection.selectedTaskId);
+    setActiveView(selection.activeView);
+    if (family === 'task') {
+      taskDetailGuard.invalidate(id);
+    } else if (family === 'viral-analysis') {
+      viralDetailGuard.invalidate(id);
+    }
+  }, [taskDetailGuard, viralDetailGuard]);
+
   const applyHistoryBarrier = useCallback((delta: AppDelta) => {
     registerHistoryDeltaBarrier(
       historyEntityRevisionsRef.current,
       historyTombstoneRevisionsRef.current,
       delta,
-      (family, id) => {
-        const selection = applyHistorySelectionBarrier({
-          selectedTaskId: selectedTaskIdRef.current,
-          activeHtmlTaskId: activeHtmlTaskIdRef.current,
-          activeViralAnalysisId: activeViralAnalysisIdRef.current,
-          activeView: activeViewRef.current,
-        }, family, id);
-        selectedTaskIdRef.current = selection.selectedTaskId;
-        activeHtmlTaskIdRef.current = selection.activeHtmlTaskId;
-        activeViralAnalysisIdRef.current = selection.activeViralAnalysisId;
-        activeViewRef.current = selection.activeView;
-        setSelectedTaskId(selection.selectedTaskId);
-        setActiveView(selection.activeView);
-        if (family === 'task') {
-          taskDetailGuard.invalidate(id);
-        } else if (family === 'viral-analysis') {
-          viralDetailGuard.invalidate(id);
-        }
-      },
+      applyHistoryEntityBarrier,
       (family) => refreshHistoryFamilies([family]),
     );
-  }, [refreshHistoryFamilies, taskDetailGuard, viralDetailGuard]);
+  }, [applyHistoryEntityBarrier, refreshHistoryFamilies]);
 
   const refreshTaskDetail = useCallback(async (taskId: string) => {
     const generation = taskDetailGuard.begin(taskId);
-    const responseRevision = captureHistoryResponseRevision(
-      'task',
-      taskId,
-      historyEntityRevisionsRef.current,
-      historyTombstoneRevisionsRef.current,
-    );
+    let completionDeferred = false;
     try {
-      if (responseRevision.tombstoneRevision >= 0) return;
-      const [detail, eventPage] = await Promise.all([
-        api.getTaskDetail(taskId),
-        api.listTaskEvents(taskId, { limit: 100 }),
-      ]);
-      if (!taskDetailGuard.isCurrent(taskId, generation) || !detail
-        || !isHistoryResponseCurrent('task', taskId, responseRevision, historyEntityRevisionsRef.current, historyTombstoneRevisionsRef.current)) return;
-      setState((current) => isHistoryResponseCurrent(
-        'task',
-        taskId,
-        responseRevision,
-        historyEntityRevisionsRef.current,
-        historyTombstoneRevisionsRef.current,
-      ) ? mergeReconciliationSlices(current, {
-          task: detail,
-          taskEvents: eventPage.items,
-          viralAnalysis: null,
-          viralEvents: [],
-        }) : current);
+      for (let attempt = 0; attempt < MAX_TASK_DETAIL_REVISION_ATTEMPTS; attempt += 1) {
+        const responseRevision = captureHistoryResponseRevision(
+          'task',
+          taskId,
+          historyEntityRevisionsRef.current,
+          historyTombstoneRevisionsRef.current,
+        );
+        if (responseRevision.tombstoneRevision >= 0) return;
+        const [detail, eventPage] = await Promise.all([
+          api.getTaskDetail(taskId),
+          api.listTaskEvents(taskId, { limit: 100 }),
+        ]);
+        if (!taskDetailGuard.isCurrent(taskId, generation) || !detail) return;
+        const currentRevision = captureHistoryResponseRevision(
+          'task',
+          taskId,
+          historyEntityRevisionsRef.current,
+          historyTombstoneRevisionsRef.current,
+        );
+        const disposition = historyResponseDisposition(responseRevision, currentRevision);
+        if (disposition === 'discard') return;
+        if (disposition === 'retry') continue;
+
+        const completionToken = taskDetailCompletionQueue.defer(taskId, generation);
+        completionDeferred = true;
+        dispatchState({
+          update: (current) => taskDetailGuard.isCurrent(taskId, generation)
+            ? mergeReconciliationSlices(current, {
+                task: detail,
+                taskEvents: eventPage.items,
+                viralAnalysis: null,
+                viralEvents: [],
+              })
+            : current,
+          completionToken,
+        });
+        return;
+      }
     } catch (error) {
       if (taskDetailGuard.isCurrent(taskId, generation)) shellAction.reportError(error);
     } finally {
-      taskDetailGuard.finish(taskId, generation);
+      if (!completionDeferred) taskDetailGuard.finish(taskId, generation);
     }
-  }, [api, shellAction.reportError, taskDetailGuard]);
+  }, [api, shellAction.reportError, taskDetailCompletionQueue, taskDetailGuard]);
 
   const refreshViralEvents = useCallback(async (analysisId: string) => {
     const generation = viralDetailGuard.begin(analysisId);
@@ -1791,6 +1833,7 @@ function App() {
       snapshotRevision: number,
       replayedRevision: number,
       preserveTemplateDetails: boolean,
+      authoritativeTaskDetailIds?: ReadonlySet<string>,
     ) => {
       const buffered = takeBufferedMutationResults();
       raiseMutationRevisionFloor(mutationRevisionsRef.current, snapshotRevision);
@@ -1804,9 +1847,12 @@ function App() {
       snapshotInstalling = false;
       setState((current) => {
         const localMutationRevisions = new Map(replayRevisionFloor);
-        const authoritative = preserveTemplateDetails
-          ? mergeBootstrapTemplateDetails(current, rebuiltState)
-          : rebuiltState;
+        const authoritative = mergeAuthoritativeSnapshotDetails(
+          current,
+          rebuiltState,
+          preserveTemplateDetails,
+          authoritativeTaskDetailIds,
+        );
         const replayed = applyBufferedMutationResults(
           authoritative,
           buffered,
@@ -1912,7 +1958,21 @@ function App() {
               : [],
           };
           const rebuiltResetState = mergeReconciliationSlices(mergeDeltaView(bootstrapToState(bootstrap), replayed), guardedResult);
-          installAuthoritativeSnapshot(rebuiltResetState, bootstrap.revision, replayed.revision, true);
+          const missingRequestedTaskId = authoritativeMissingRequestedTaskId(
+            requestedTaskId,
+            result.task,
+            rebuiltResetState.tasks,
+          );
+          if (missingRequestedTaskId) {
+            applyHistoryEntityBarrier('task', missingRequestedTaskId);
+          }
+          installAuthoritativeSnapshot(
+            rebuiltResetState,
+            bootstrap.revision,
+            replayed.revision,
+            true,
+            guardedResult.task ? new Set([guardedResult.task.id]) : undefined,
+          );
           resetInProgress = false;
           const activeTaskId = selectedTaskIdRef.current ?? activeHtmlTaskIdRef.current;
           if (activeTaskId) void refreshTaskDetail(activeTaskId);
@@ -3974,7 +4034,7 @@ function PersonAssetsPage({ api, isBrowserPreview }: { api: StoryDreamApi; isBro
     await personAction.run(async () => {
       setPendingAction('open');
       try {
-        await api.openPath(selectedAsset.dir);
+        await api.openPersonAssetDirectory(selectedAsset.name);
       } finally {
         setPendingAction(null);
       }
@@ -4287,23 +4347,59 @@ function HtmlVideoPage({
   const mediaPathKey = JSON.stringify(mediaPaths);
   const mediaCacheRef = useRef(createHtmlVideoMediaCache());
   const mediaRequestGeneration = useRef(0);
+  const currentMediaElementScopeRef = useRef<HtmlVideoMediaElementScope>({
+    taskId: mediaTaskId,
+    pathKey: mediaPathKey,
+    generation: mediaRetryRevision,
+  });
   const htmlVideoTabRefs = useRef<Partial<Record<HtmlVideoTabKey, HTMLButtonElement | null>>>({});
   const [mediaState, setMediaState] = useState<{ taskId: string; urls: Record<string, string> }>({ taskId: '', urls: {} });
-  const [mediaErrorState, setMediaErrorState] = useState<{ taskId: string; pathKey: string; message: string }>({
+  const [mediaErrorState, setMediaErrorState] = useState<{ taskId: string; pathKey: string; message: string; failedPaths: string[] }>({
     taskId: '',
     pathKey: '',
     message: '',
+    failedPaths: [],
+  });
+  const [mediaElementFailureState, setMediaElementFailureState] = useState<HtmlVideoMediaElementFailureState>({
+    taskId: '', pathKey: '', generation: 0, failedPaths: [],
   });
   const mediaUrls: Record<string, string> = !isBrowserPreview && mediaState.taskId === mediaTaskId
     ? Object.fromEntries(mediaPaths.filter((path) => mediaState.urls[path]).map((path) => [path, mediaState.urls[path]]))
     : {};
-  const mediaError = mediaErrorState.taskId === mediaTaskId && mediaErrorState.pathKey === mediaPathKey
+  const mediaUrlError = mediaErrorState.taskId === mediaTaskId && mediaErrorState.pathKey === mediaPathKey
     ? mediaErrorState.message
     : '';
+  const failedMediaUrlPaths = new Set(
+    mediaErrorState.taskId === mediaTaskId && mediaErrorState.pathKey === mediaPathKey
+      ? mediaErrorState.failedPaths
+      : [],
+  );
+  const failedMediaElementPaths = new Set(
+    mediaElementFailureState.taskId === mediaTaskId
+      && mediaElementFailureState.pathKey === mediaPathKey
+      && mediaElementFailureState.generation === mediaRetryRevision
+      ? mediaElementFailureState.failedPaths
+      : [],
+  );
+  const failedMediaPaths = new Set([...failedMediaUrlPaths, ...failedMediaElementPaths]);
+  const mediaError = mediaUrlError || (failedMediaElementPaths.size
+    ? '部分媒体文件加载失败，可重新加载媒体。'
+    : '');
+  const mediaLoading = !isBrowserPreview && mediaPaths.some(
+    (path) => !mediaUrls[path] && !failedMediaPaths.has(path),
+  );
   const taskBusy = running || htmlVideoAction.busy;
   const taskMessageKind = activeTask
     ? classifyHtmlVideoTaskMessage(activeTask.status, activeTask.errorMessage)
     : null;
+
+  useLayoutEffect(() => {
+    currentMediaElementScopeRef.current = {
+      taskId: mediaTaskId,
+      pathKey: mediaPathKey,
+      generation: mediaRetryRevision,
+    };
+  }, [mediaPathKey, mediaRetryRevision, mediaTaskId]);
 
   useEffect(() => {
     if (!activeTaskId && htmlTasks[0]) {
@@ -4337,7 +4433,7 @@ function HtmlVideoPage({
       setMediaState((current) => current.taskId === mediaTaskId && Object.keys(current.urls).length === 0
         ? current
         : { taskId: mediaTaskId, urls: {} });
-      setMediaErrorState({ taskId: mediaTaskId, pathKey: mediaPathKey, message: '' });
+      setMediaErrorState({ taskId: mediaTaskId, pathKey: mediaPathKey, message: '', failedPaths: [] });
       return () => {
         disposed = true;
       };
@@ -4348,6 +4444,10 @@ function HtmlVideoPage({
       const url = cache.urls.get(path);
       return url ? [[path, url]] : [];
     }));
+    setMediaState((current) => current.taskId === mediaTaskId && current.urls === retainedUrls
+      ? current
+      : { taskId: mediaTaskId, urls: retainedUrls });
+    setMediaErrorState({ taskId: mediaTaskId, pathKey: mediaPathKey, message: '', failedPaths: [] });
     const pathRequests = paths.map(async (path) => {
       try {
         const url = await loadHtmlVideoMedia(
@@ -4361,10 +4461,6 @@ function HtmlVideoPage({
         return [path, null] as const;
       }
     });
-    setMediaState((current) => current.taskId === mediaTaskId && current.urls === retainedUrls
-      ? current
-      : { taskId: mediaTaskId, urls: retainedUrls });
-    setMediaErrorState({ taskId: mediaTaskId, pathKey: mediaPathKey, message: '' });
 
     void Promise.all(pathRequests).then((entries) => {
       if (disposed || generation !== mediaRequestGeneration.current) return;
@@ -4376,6 +4472,7 @@ function HtmlVideoPage({
         taskId: mediaTaskId,
         pathKey: mediaPathKey,
         message: entries.every(([, url]) => Boolean(url)) ? '' : '部分媒体文件不可用，可重试任务或检查任务目录。',
+        failedPaths: entries.flatMap(([path, url]) => url ? [] : [path]),
       });
     });
 
@@ -4383,6 +4480,30 @@ function HtmlVideoPage({
       disposed = true;
     };
   }, [api, isBrowserPreview, mediaPathKey, mediaRetryRevision, mediaTaskId]);
+
+  const markMediaElementFailed = useCallback((path: string) => {
+    const eventScope = { taskId: mediaTaskId, pathKey: mediaPathKey, generation: mediaRetryRevision };
+    if (!mediaTaskId || !htmlVideoMediaElementScopeMatches(eventScope, currentMediaElementScopeRef.current)) return;
+    setMediaElementFailureState((current) => recordHtmlVideoMediaElementFailure(
+      current,
+      eventScope,
+      currentMediaElementScopeRef.current,
+      path,
+    ));
+  }, [mediaPathKey, mediaRetryRevision, mediaTaskId]);
+
+  const markMediaElementReady = useCallback((path: string) => {
+    const eventScope = { taskId: mediaTaskId, pathKey: mediaPathKey, generation: mediaRetryRevision };
+    if (!htmlVideoMediaElementScopeMatches(eventScope, currentMediaElementScopeRef.current)) return;
+    setMediaElementFailureState((current) => {
+      if (
+        !htmlVideoMediaElementScopeMatches(eventScope, currentMediaElementScopeRef.current)
+        || !htmlVideoMediaElementScopeMatches(current, eventScope)
+        || !current.failedPaths.includes(path)
+      ) return current;
+      return { ...current, failedPaths: current.failedPaths.filter((failedPath) => failedPath !== path) };
+    });
+  }, [mediaPathKey, mediaRetryRevision, mediaTaskId]);
 
   async function createHtmlVideoTask() {
     if (!copy.trim()) {
@@ -4443,7 +4564,7 @@ function HtmlVideoPage({
   async function openOutputDirectory() {
     if (!activeTask?.outputDir) return;
     await htmlVideoAction.run(
-      () => api.openPath(activeTask.outputDir),
+      () => api.openTaskOutputDirectory(activeTask.id),
       { onError: (error) => setMessage(error.message) },
     );
   }
@@ -4631,12 +4752,17 @@ function HtmlVideoPage({
               id="html-video-panel"
               role="tabpanel"
               aria-labelledby={`html-video-tab-${activeTab}`}
+              aria-busy={mediaLoading}
             >
               <HtmlVideoTabPanel
                 tab={activeTab}
                 task={activeTask}
                 data={pipelineData}
                 mediaUrls={mediaUrls}
+                failedMediaPaths={failedMediaPaths}
+                mediaRetryRevision={mediaRetryRevision}
+                onMediaElementError={markMediaElementFailed}
+                onMediaElementReady={markMediaElementReady}
                 busy={taskBusy}
                 isBrowserPreview={isBrowserPreview}
                 openPreview={openPreview}
@@ -4654,6 +4780,10 @@ function HtmlVideoTabPanel({
   task,
   data,
   mediaUrls,
+  failedMediaPaths,
+  mediaRetryRevision,
+  onMediaElementError,
+  onMediaElementReady,
   busy,
   isBrowserPreview,
   openPreview,
@@ -4662,6 +4792,10 @@ function HtmlVideoTabPanel({
   task: Task | null;
   data: ReturnType<typeof safeParseHtmlVideoPipelineData>['data'];
   mediaUrls: Record<string, string>;
+  failedMediaPaths: ReadonlySet<string>;
+  mediaRetryRevision: number;
+  onMediaElementError: (path: string) => void;
+  onMediaElementReady: (path: string) => void;
   busy: boolean;
   isBrowserPreview: boolean;
   openPreview: (sceneIndex?: number) => Promise<void>;
@@ -4695,12 +4829,27 @@ function HtmlVideoTabPanel({
           <div className="hv-media-grid">
             {data.assets.map((asset) => {
               const url = mediaUrls[asset.src];
+              const assetStatus = htmlVideoMediaStatus(asset.src, mediaUrls, failedMediaPaths, isBrowserPreview);
               return (
                 <figure className="hv-media-item" key={`${asset.sceneIndex}-${asset.kind}-${asset.slot}`}>
-                  <div className="hv-media-frame">
-                    {url ? (
-                      <img src={url} alt={`场景 ${asset.sceneIndex}${asset.kind === 'bg' ? '背景图' : '前景图'}`} loading="lazy" decoding="async" />
-                    ) : <ImageIcon size={24} />}
+                  <div className="hv-media-frame" aria-busy={assetStatus === 'loading'}>
+                    {assetStatus === 'ready' && url ? (
+                      <img
+                        key={htmlVideoMediaElementKey(task.id, asset.src, mediaRetryRevision)}
+                        src={url}
+                        alt={`场景 ${asset.sceneIndex}${asset.kind === 'bg' ? '背景图' : '前景图'}`}
+                        loading="lazy"
+                        decoding="async"
+                        onError={() => onMediaElementError(asset.src)}
+                        onLoad={() => onMediaElementReady(asset.src)}
+                      />
+                    ) : assetStatus === 'loading' ? (
+                      <span className="hv-media-state hv-media-loading" role="status"><Loader2 className="spin" size={18} />图片加载中</span>
+                    ) : assetStatus === 'unavailable' ? (
+                      <span className="hv-media-state" role="status" aria-live="polite"><ImageIcon size={22} aria-hidden="true" />图片加载失败</span>
+                    ) : (
+                      <span className="hv-media-state" role="status"><ImageIcon size={22} aria-hidden="true" />本地图片仅桌面端可用</span>
+                    )}
                   </div>
                   <figcaption>
                     <strong>场景 {asset.sceneIndex} · {asset.kind === 'bg' ? '背景图' : `前景图 ${asset.slot + 1}`}</strong>
@@ -4732,11 +4881,26 @@ function HtmlVideoTabPanel({
           <div className="artifact-scene-list">
             {data.voices.map((clip) => {
               const url = mediaUrls[clip.src];
+              const voiceStatus = htmlVideoMediaStatus(clip.src, mediaUrls, failedMediaPaths, isBrowserPreview);
               return (
                 <div key={`${clip.sceneIndex}-${clip.src}`}>
                   <strong>场景 {clip.sceneIndex} 配音</strong>
                   <p>{clip.text ?? '旁白音频'}</p>
-                  {url ? <audio controls preload="metadata" src={url} aria-label={`场景 ${clip.sceneIndex} 配音`} /> : <small>音频文件暂不可用</small>}
+                  {voiceStatus === 'ready' && url ? (
+                    <audio
+                      key={htmlVideoMediaElementKey(task.id, clip.src, mediaRetryRevision)}
+                      controls
+                      preload="metadata"
+                      src={url}
+                      aria-label={`场景 ${clip.sceneIndex} 配音`}
+                      onError={() => onMediaElementError(clip.src)}
+                      onCanPlay={() => onMediaElementReady(clip.src)}
+                    />
+                  ) : voiceStatus === 'loading' ? (
+                    <small className="hv-media-loading" role="status"><Loader2 className="spin" size={14} />音频加载中</small>
+                  ) : voiceStatus === 'unavailable' ? (
+                    <small>音频文件暂不可用</small>
+                  ) : <small>本地音频请在 Electron 桌面端查看</small>}
                   <small>{clip.durationSec.toFixed(1)} 秒</small>
                 </div>
               );
@@ -4757,10 +4921,27 @@ function HtmlVideoTabPanel({
             {data.compositions.map((composition) => {
               const thumbnailPath = composition.thumbnailPath ?? composition.background.src;
               const thumbnailUrl = mediaUrls[thumbnailPath];
+              const thumbnailStatus = htmlVideoMediaStatus(thumbnailPath, mediaUrls, failedMediaPaths, isBrowserPreview);
               return (
                 <figure className="hv-media-item" key={composition.index}>
-                  <div className="hv-media-frame">
-                    {thumbnailUrl ? <img src={thumbnailUrl} alt={`场景 ${composition.index} 动画预览`} loading="lazy" decoding="async" /> : <Play size={24} />}
+                  <div className="hv-media-frame" aria-busy={thumbnailStatus === 'loading'}>
+                    {thumbnailStatus === 'ready' && thumbnailUrl ? (
+                      <img
+                        key={htmlVideoMediaElementKey(task.id, thumbnailPath, mediaRetryRevision)}
+                        src={thumbnailUrl}
+                        alt={`场景 ${composition.index} 动画预览`}
+                        loading="lazy"
+                        decoding="async"
+                        onError={() => onMediaElementError(thumbnailPath)}
+                        onLoad={() => onMediaElementReady(thumbnailPath)}
+                      />
+                    ) : thumbnailStatus === 'loading' ? (
+                      <span className="hv-media-state hv-media-loading" role="status"><Loader2 className="spin" size={18} />预览加载中</span>
+                    ) : thumbnailStatus === 'unavailable' ? (
+                      <span className="hv-media-state" role="status" aria-live="polite"><Play size={22} aria-hidden="true" />预览加载失败</span>
+                    ) : (
+                      <span className="hv-media-state" role="status"><Play size={22} aria-hidden="true" />本地预览仅桌面端可用</span>
+                    )}
                   </div>
                   <figcaption>
                     <strong>动画预览 · 场景 {composition.index}</strong>
@@ -4797,6 +4978,9 @@ function HtmlVideoTabPanel({
   }
 
   const outputUrl = data.output ? mediaUrls[data.output.path] : '';
+  const outputStatus = data.output
+    ? htmlVideoMediaStatus(data.output.path, mediaUrls, failedMediaPaths, isBrowserPreview)
+    : 'desktop-only';
   const outputSize = fitHtmlVideoOutputSize(Number.POSITIVE_INFINITY, 520, data.config.ratio || task.ratio);
   const outputStyle: React.CSSProperties = {
     width: '100%',
@@ -4813,23 +4997,33 @@ function HtmlVideoTabPanel({
       </div>
       {data.output ? (
         <div className="hv-video-output">
-          {outputUrl ? (
+          {outputStatus === 'ready' && outputUrl ? (
             <video
+              key={htmlVideoMediaElementKey(task.id, data.output.path, mediaRetryRevision)}
               controls
               preload="metadata"
               src={outputUrl}
               aria-label={`${task.title || 'HTML 动画视频'}成片预览`}
               style={outputStyle}
+              onError={() => onMediaElementError(data.output!.path)}
+              onCanPlay={() => onMediaElementReady(data.output!.path)}
             />
           ) : (
-            <div className="hv-video-placeholder" style={outputStyle}>
-              <Play size={28} />
-              <span>视频文件暂不可用</span>
+            <div className="hv-video-placeholder" style={outputStyle} aria-busy={outputStatus === 'loading'} role={outputStatus === 'loading' ? 'status' : undefined}>
+              {outputStatus === 'loading' ? (
+                <><Loader2 className="spin" size={28} /><span>视频加载中</span></>
+              ) : outputStatus === 'unavailable' ? (
+                <><Play size={28} /><span>视频文件暂不可用</span></>
+              ) : <><Play size={28} /><span>本地视频请在 Electron 桌面端查看</span></>}
             </div>
           )}
           <div className="hv-output-meta">
             <strong>{task.title}</strong>
             <small>{formatFileSize(data.output.sizeBytes)}{data.output.durationSec ? ` · ${data.output.durationSec.toFixed(1)} 秒` : ''}</small>
+          </div>
+          <div className="hv-output-path">
+            <small>输出路径</small>
+            <code>{data.output.path}</code>
           </div>
         </div>
       ) : <EmptyState title="等待出片" />}
@@ -4899,8 +5093,8 @@ function QueuePage({
       applyState(await api.retryTask(task.id));
     });
   }
-  async function openQueueOutput(path: string) {
-    await queueAction.run(() => api.openPath(path));
+  async function openQueueOutput(taskId: string) {
+    await queueAction.run(() => api.openTaskOutputDirectory(taskId));
   }
   return (
     <div className="queue-layout">
@@ -4930,7 +5124,7 @@ function QueuePage({
                 {task.status === 'running' || task.status === 'pending' ? <button className="mini-button" onClick={() => setStatus(task, 'cancelled')}>取消</button> : null}
                 {task.status === 'paused' || task.status === 'failed' ? <button className="mini-button" disabled={isBrowserPreview} onClick={() => resumeTask(task)}>继续</button> : null}
                 {task.status === 'paused' || task.status === 'failed' ? <button className="mini-button" disabled={isBrowserPreview} onClick={() => resumeTask(task)}>重试</button> : null}
-                <button className="mini-button" disabled={queueAction.busy || task.status !== 'completed' || !task.outputDir} onClick={() => task.outputDir && openQueueOutput(task.outputDir)}>
+                <button className="mini-button" disabled={queueAction.busy || task.status !== 'completed' || !task.outputDir} onClick={() => task.outputDir && openQueueOutput(task.id)}>
                   <FolderOpen size={14} />
                 </button>
               </div>
@@ -4942,7 +5136,7 @@ function QueuePage({
         <div className="panel-title-row">
           <h2>步骤事件</h2>
           {latestTask?.status === 'completed' && latestTask.outputDir ? (
-            <button className="ghost-action" disabled={queueAction.busy} onClick={() => openQueueOutput(latestTask.outputDir)}>
+            <button className="ghost-action" disabled={queueAction.busy} onClick={() => openQueueOutput(latestTask.id)}>
               <FolderOpen size={15} />
               打开剪映草稿
             </button>
@@ -4988,8 +5182,8 @@ function HistoryPage({
     familyEpoch,
   });
   const tasks = historyPage.page?.items ?? [];
-  async function openHistoryOutput(path: string) {
-    await historyAction.run(() => api.openPath(path));
+  async function openHistoryOutput(taskId: string) {
+    await historyAction.run(() => api.openTaskOutputDirectory(taskId));
   }
   return (
     <section className="panel full-panel">
@@ -5056,7 +5250,7 @@ function HistoryPage({
             <StatusPill status={task.status} />
             <span>{task.currentStep}</span>
             <span>{formatDate(task.createdAt)}</span>
-            <button className="mini-button" disabled={historyAction.busy || !task.outputDir} onClick={(event) => { event.stopPropagation(); if (task.outputDir) void openHistoryOutput(task.outputDir); }}>
+            <button className="mini-button" disabled={historyAction.busy || !task.outputDir} onClick={(event) => { event.stopPropagation(); if (task.outputDir) void openHistoryOutput(task.id); }}>
               <FolderOpen size={14} />
             </button>
           </div>
@@ -5282,7 +5476,7 @@ function ArtifactPreviewContent({
   }
 
   async function openArtifactOutput() {
-    await artifactAction.run(() => api.openPath(task.outputDir));
+    await artifactAction.run(() => api.openTaskOutputDirectory(task.id));
   }
 
   const artifactStepActions = (step: number) => (
