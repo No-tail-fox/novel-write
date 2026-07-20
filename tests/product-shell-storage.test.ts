@@ -275,7 +275,10 @@ describe('product shell storage', () => {
         caption: { ...draft!.caption, x: undefined as unknown as number },
         disclaimer: { visible: true, text: 'Legacy disclaimer' },
       } as unknown as typeof draft;
-      await db.upsertDraftTemplate(legacyTemplate!);
+      (db as unknown as { db: { run: (sql: string, params?: unknown[]) => void } }).db.run(
+        'UPDATE draft_templates SET data = ? WHERE id = ?',
+        [JSON.stringify(legacyTemplate), legacyTemplate!.id],
+      );
       await db.close();
 
       const reopened = await FileDatabase.open(file);

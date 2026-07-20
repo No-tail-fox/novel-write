@@ -13,6 +13,24 @@ async function loadStoryDreamApiContract() {
 }
 
 describe('IPC runtime contract', () => {
+  it('validates complete draft templates at every nested IPC boundary', async () => {
+    const contract = await loadContract();
+    expect(contract).not.toBeNull();
+    if (!contract) return;
+    const { draftTemplates } = await import('../src/shared/templates');
+    const schema = contract.ipcInputSchemas['draft-template:save'];
+
+    expect(schema.parse(structuredClone(draftTemplates[0]))).toEqual(draftTemplates[0]);
+    expect(() => schema.parse({
+      ...structuredClone(draftTemplates[0]),
+      caption: { ...structuredClone(draftTemplates[0].caption), background: { ...draftTemplates[0].caption.background, extra: true } },
+    })).toThrow();
+    expect(() => schema.parse({
+      ...structuredClone(draftTemplates[0]),
+      image: { ...draftTemplates[0].image, animation: 'unknown-animation' },
+    })).toThrow();
+  });
+
   it('bounds task text, arrays, finite scene IDs, statuses, paths, and unknown fields', async () => {
     const contract = await loadContract();
     expect(contract).not.toBeNull();

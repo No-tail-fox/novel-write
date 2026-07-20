@@ -74,6 +74,7 @@ import {
   defaultUiPreferences,
 } from './config';
 import { loadDefaultPromptTemplates } from './prompt-template-loader';
+import { parseDraftTemplate } from './draft-template-contract';
 import { draftTemplates, normalizeDraftTemplate } from './templates';
 export { defaultConfig } from './config';
 
@@ -1601,17 +1602,18 @@ export class FileDatabase {
   }
 
   async upsertDraftTemplate(template: DraftTemplate): Promise<DraftTemplate> {
+    const canonicalTemplate = parseDraftTemplate(template);
     return this.enqueueCommit(() => {
       const updatedAt = new Date().toISOString();
-      const storedTemplate = { ...template, updatedAt };
+      const storedTemplate = { ...canonicalTemplate, updatedAt };
       this.db.run('INSERT OR REPLACE INTO draft_templates (id, data, is_builtin, name, canvas_width, canvas_height, canvas_ratio, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)', [
-        template.id,
+        canonicalTemplate.id,
         json(storedTemplate),
-        template.isDefault ? 1 : 0,
-        template.name,
-        template.canvas.width,
-        template.canvas.height,
-        template.canvas.ratio,
+        canonicalTemplate.isDefault ? 1 : 0,
+        canonicalTemplate.name,
+        canonicalTemplate.canvas.width,
+        canonicalTemplate.canvas.height,
+        canonicalTemplate.canvas.ratio,
         updatedAt,
       ]);
       return storedTemplate;

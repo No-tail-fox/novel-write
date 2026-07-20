@@ -1,5 +1,6 @@
 import { z } from 'zod';
-import type { AppConfig, DraftTemplate, ImageLabRecord } from './types';
+import type { AppConfig, ImageLabRecord } from './types';
+import { draftTemplateSchema } from './draft-template-contract';
 import { isSecretId, type SaveConfigInput } from './config-secrets';
 import {
   HTML_VIDEO_BGM_VOLUMES,
@@ -536,11 +537,6 @@ const secretChangesSchema = bounded(
 const saveConfigInputSchema = z
   .object({ config: appConfigSchema, secretChanges: secretChangesSchema })
   .strict() as z.ZodType<SaveConfigInput>;
-const draftTemplateSchema = boundedObjectSchema.refine(
-  (value) => typeof value.id === 'string' && typeof value.name === 'string',
-  'Draft template requires id and name.',
-) as unknown as z.ZodType<DraftTemplate>;
-
 export const ipcInputSchemas = {
   'app:get-state': z.void(),
   'app:get-bootstrap': z.void(),
