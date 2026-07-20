@@ -237,6 +237,7 @@ import {
   resolvePromptTemplateDefaultStyleIds,
   selectStepPromptTemplate,
   selectTaskPromptTemplate,
+  type TemplateOption,
 } from './shared/prompt-templates';
 import { createViralTemplateDrafts } from './shared/viral-template-extraction';
 import { defaultPodcastSpeakersForProvider, defaultTaskSpeakerForProvider, normalizeRuntimeTtsProvider, taskSpeakerLabel, ttsVoiceOptionsForProvider, type RuntimeTtsProvider } from './shared/tts-voices';
@@ -271,6 +272,12 @@ import {
 import { HTML_VIDEO_CONTROL_MANIFEST_V1 } from './shared/html-video-control-manifest';
 import { createHtmlVideoMediaCache, htmlVideoMediaElementKey, htmlVideoMediaElementScopeMatches, htmlVideoMediaStatus, loadHtmlVideoMedia, recordHtmlVideoMediaElementFailure, syncHtmlVideoMediaCache, type HtmlVideoMediaElementFailureState, type HtmlVideoMediaElementScope } from './shared/html-video-media';
 import { useAsyncAction, type AsyncActionFeedback } from './ui/async-action';
+import { FormField as Field } from './components/FormField';
+import { SegmentedControl as Segmented } from './components/SegmentedControl';
+import { ToggleField } from './components/ToggleField';
+import { RangeField } from './components/RangeField';
+import { OptionGroup as OptionCloud } from './components/OptionGroup';
+import { Accordion } from './components/Accordion';
 import './styles.css';
 
 const sampleText =
@@ -340,7 +347,7 @@ const contentTracks = [
   ['food-v2', '美食探店V2', '城市街角小店的烟火气'],
 ];
 
-const styleOptions = [
+const styleOptions: TemplateOption[] = [
   ['black-white', '黑白摄影', '纪实感'],
   ['photo-real', '写实彩色', '质感胶片'],
   ['oil-paint', '油画风格', '印象写意'],
@@ -4339,7 +4346,7 @@ function MusicMvPage({
   const bgmOptions = validBgmItems(state.config);
   const lyricLines = lyrics.split(/\n/u).map((line) => line.trim()).filter(Boolean);
   const musicMvStyleOptions = styleOptions;
-  const musicMvDraftTemplateOptions = state.draftTemplates.map((template) => [template.id, template.name, `出图 ${template.image.ratio}`]);
+  const musicMvDraftTemplateOptions = state.draftTemplates.map((template): TemplateOption => [template.id, template.name, `出图 ${template.image.ratio}`]);
 
   async function selectMusicMvAudio() {
     await musicAction.run(async () => {
@@ -5109,7 +5116,7 @@ function editableHtmlVideoValues(config: HtmlVideoJobConfig): Omit<HtmlVideoEdit
   };
 }
 
-function editableHtmlVideoStyleOptions(customStyles: CustomStyle[], currentStyle: string): string[][] {
+function editableHtmlVideoStyleOptions(customStyles: CustomStyle[], currentStyle: string): TemplateOption[] {
   const options = new Map(htmlVideoStyleOptions.map((option) => [option[0], option]));
   for (const style of customStyles) options.set(style.id, [style.id, style.name, '自定义画风']);
   if (currentStyle && !options.has(currentStyle)) options.set(currentStyle, [currentStyle, currentStyle, '当前任务画风']);
@@ -10289,54 +10296,12 @@ function ModelPicker({
   );
 }
 
-function Field({ label, hint, children }: { label: string; hint?: string; children: React.ReactNode }) {
-  return <label className="field"><span>{label}{hint ? <small>{hint}</small> : null}</span>{children}</label>;
-}
-
-function ToggleField({ label, checked, onChange }: { label: string; checked: boolean; onChange: (checked: boolean) => void }) {
-  return (
-    <div className="draft-toggle-row">
-      <span>{label}</span>
-      <label className="draft-toggle-field draft-toggle-control">
-        <input type="checkbox" checked={checked} onChange={(event) => onChange(event.target.checked)} />
-        <span className="draft-toggle-box" aria-hidden="true">{checked ? '✓' : ''}</span>
-        <span>{checked ? '开启' : '关闭'}</span>
-      </label>
-    </div>
-  );
-}
-
 function ColorField({ label, value, onChange }: { label: string; value: string; onChange: (value: string) => void }) {
   return (
     <Field label={label}>
       <div className="draft-color-field">
         <input type="color" value={normalizeColorInput(value)} onChange={(event) => onChange(event.target.value)} />
         <input value={value} onChange={(event) => onChange(event.target.value)} />
-      </div>
-    </Field>
-  );
-}
-
-function RangeField({
-  label,
-  min,
-  max,
-  step,
-  value,
-  onChange,
-}: {
-  label: string;
-  min: number;
-  max: number;
-  step: number;
-  value: number;
-  onChange: (value: number) => void;
-}) {
-  return (
-    <Field label={label}>
-      <div className="draft-range-field">
-        <input type="range" min={min} max={max} step={step} value={value} onChange={(event) => onChange(Number(event.target.value))} />
-        <input type="number" min={min} max={max} step={step} value={value} onChange={(event) => onChange(Number(event.target.value))} />
       </div>
     </Field>
   );
@@ -10359,47 +10324,6 @@ function TextBorderControls({
         <RangeField label="描边宽度" min={0} max={60} step={1} value={border.width} onChange={(value) => onChange({ width: value })} />
         <RangeField label="描边透明度" min={0} max={1} step={0.05} value={border.alpha} onChange={(value) => onChange({ alpha: value })} />
       </div>
-    </div>
-  );
-}
-
-function Segmented({ label, value, options, labels, onChange }: { label: string; value: string; options: string[]; labels?: string[]; onChange: (value: string) => void }) {
-  return (
-    <div className="field">
-      {label ? <span>{label}</span> : null}
-      <div className="segmented">
-        {options.map((option, index) => (
-          <button key={option} className={option === value ? 'selected' : ''} onClick={() => onChange(option)} type="button">
-            {labels?.[index] ?? option}
-          </button>
-        ))}
-      </div>
-    </div>
-  );
-}
-
-function OptionCloud({ title, options, value, onChange }: { title: string; options: string[][]; value: string; onChange: (value: string) => void }) {
-  return (
-    <div>
-      <span className="field-title">{title}</span>
-      <div className="option-cloud">
-        {options.map(([id, label, hint]) => (
-          <button key={id} className={value === id ? 'option-pill active' : 'option-pill'} onClick={() => onChange(id)}>
-            <strong>{label}</strong>
-            {hint ? <small>{hint}</small> : null}
-          </button>
-        ))}
-      </div>
-    </div>
-  );
-}
-
-function Accordion({ title, open = false, children }: { title: string; open?: boolean; children: React.ReactNode }) {
-  const [expanded, setExpanded] = useState(open);
-  return (
-    <div className={expanded ? 'accordion open' : 'accordion'}>
-      <button onClick={() => setExpanded(!expanded)}>› {title}</button>
-      {expanded ? <div>{children}</div> : null}
     </div>
   );
 }

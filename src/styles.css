@@ -1406,6 +1406,17 @@ em {
   margin-bottom: 14px;
 }
 
+.form-field {
+  min-width: 0;
+  margin-inline: 0;
+  padding: 0;
+  border: 0;
+}
+
+.form-field-label {
+  padding: 0;
+}
+
 .settings-inline-actions {
   display: flex;
   flex-wrap: wrap;
@@ -1414,6 +1425,7 @@ em {
 }
 
 .field > span,
+.field > .form-field-label,
 .config-input > span,
 .field-title {
   display: block;
@@ -4101,6 +4113,7 @@ textarea {
 }
 
 .draft-controls .field > span,
+.draft-controls .field > .form-field-label,
 .draft-controls .field-title {
   margin-bottom: 4px;
   font-size: 12px;
@@ -5082,7 +5095,8 @@ textarea {
   margin-bottom: 0;
 }
 
-.viral-template-preview-section .field > span {
+.viral-template-preview-section .field > span,
+.viral-template-preview-section .field > .form-field-label {
   margin-bottom: 6px;
 }
 

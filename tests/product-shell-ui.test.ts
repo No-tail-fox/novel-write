@@ -1718,12 +1718,14 @@ describe('product shell ui', () => {
   });
 
   it('keeps draft layer controls compact instead of rendering oversized checkbox cards', async () => {
-    const main = (await rendererSourcesPromise).requiredFile('src/main.tsx');
+    const sources = await rendererSourcesPromise;
+    const main = sources.requiredFile('src/main.tsx');
+    const toggle = sources.requiredFile('src/components/ToggleField.tsx');
     const css = await readFile(new URL('../src/styles.css', import.meta.url), 'utf8');
 
-    expect(main.includes('className="draft-toggle-row"')).toBe(true);
-    expect(main.includes('draft-toggle-control')).toBe(true);
-    expect(main.includes('className="draft-toggle-box"')).toBe(true);
+    expect(toggle.includes('className="draft-toggle-row"')).toBe(true);
+    expect(toggle.includes('draft-toggle-control')).toBe(true);
+    expect(toggle.includes('className="draft-toggle-box"')).toBe(true);
     expect(main.includes('className="draft-inline-border-grid"')).toBe(true);
     expect(main.includes('className="draft-border-compact-panel"')).toBe(false);
     expect(main.indexOf('onChange={updateDraftTitleBorder}')).toBeGreaterThan(main.indexOf('onChange={(checked) => updateDraftTitle({ visible: checked })}'));
@@ -2796,7 +2798,8 @@ describe('product shell ui', () => {
     expect(css).toContain('min-height: 30px;');
     expect(css).toContain('grid-template-columns: repeat(2, minmax(0, 1fr));');
     expect(css).toContain('@media (max-width: 720px)');
-    expect(main).toContain('label ? <span>{label}</span> : null');
+    expect((await rendererSourcesPromise).requiredFile('src/components/SegmentedControl.tsx'))
+      .toContain('label ? <span>{label}</span> : null');
   });
 
   it('replicates the StoryDream video form controls for narration and two-host podcast tasks', async () => {
