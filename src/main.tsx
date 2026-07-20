@@ -102,7 +102,7 @@ import type {
   TaskVideoForm,
   TtsProviderProfile,
   TtsProvider,
-  UiPreferences,
+  UiPreferencesUpdate,
   VolcengineSpeaker,
   ViralAnalysisResult,
   ViralAnalysisRecord,
@@ -819,7 +819,9 @@ function makeFallbackApi(setState: (state: AppState) => void): StoryDreamApi {
       return { kind: 'viral-upsert', record, revision };
     }
     let patch: Extract<AppDelta, { kind: 'state-patch' }>['patch'] | null = null;
-    if (changed(previous.config, next.config)) patch = { kind: 'config', config: next.config, secretStatus: {} };
+    if (changed(previous.config, next.config) && changed(previous.ui, next.ui)) {
+      patch = { kind: 'theme-preference', config: next.config, ui: next.ui };
+    } else if (changed(previous.config, next.config)) patch = { kind: 'config', config: next.config, secretStatus: {} };
     else if (changed(previous.promptTemplates, next.promptTemplates)) {
       const changedTemplates = next.promptTemplates.filter((template) => {
         const old = previous.promptTemplates.find((candidate) => candidate.id === template.id);
@@ -1329,8 +1331,14 @@ function makeFallbackApi(setState: (state: AppState) => void): StoryDreamApi {
     async saveActivation(activation: ActivationState) {
       return persist({ ...read(), activation });
     },
-    async saveUiPreferences(ui: UiPreferences) {
-      return persist({ ...read(), ui });
+    async saveUiPreferences(update: UiPreferencesUpdate) {
+      const current = read();
+      const ui = {
+        ...current.ui,
+        ...update,
+        themePreferenceVersion: 1 as const,
+      };
+      return persist({ ...current, ui, config: { ...current.config, ui: { theme: ui.theme } } });
     },
     async listBookSelections(theme) {
       const records = readBookSelections();
@@ -2163,7 +2171,7 @@ function App() {
     setActiveView(view);
     setSaveTone('saving');
     const result = await shellAction.run(async () => {
-      const next = await api.saveUiPreferences({ ...state.ui, activeView: view });
+      const next = await api.saveUiPreferences({ activeView: view });
       applyState(next);
       setSaveTone('saved');
     });
@@ -2187,7 +2195,7 @@ function App() {
     setActiveView('task-detail');
     setSaveTone('saving');
     const result = await shellAction.run(async () => {
-      const next = await api.saveUiPreferences({ ...state.ui, activeView: 'task-detail' });
+      const next = await api.saveUiPreferences({ activeView: 'task-detail' });
       applyState(next);
       setSaveTone('saved');
     });

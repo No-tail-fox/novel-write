@@ -575,6 +575,7 @@ export const defaultActivation: ActivationState = {
 export const defaultUiPreferences: UiPreferences = {
   theme: 'dark',
   activeView: 'new-task',
+  themePreferenceVersion: 1,
 };
 
 export const defaultCreditTransactions: CreditTransaction[] = [

@@ -33,6 +33,7 @@ import type {
   TaskSummary,
   TaskStatus,
   UiPreferences,
+  UiPreferencesUpdate,
   CreateViralAnalysisInput,
   ViralAnalysisEvent,
   ViralAnalysisRecord,
@@ -53,6 +54,12 @@ import {
 } from './html-video-cover';
 import { normalizeAppConfig } from './config-utils';
 import { stripConfigSecrets } from './config-secrets';
+import {
+  canonicalThemePreferencePair,
+  migrateThemePreference,
+  validTheme,
+  type ThemePreferencePair,
+} from './theme-preference';
 import { normalizeStoryboardSceneCount } from './content-metrics';
 import feishuCozeDraftTemplateBundle from '../../data/coze-workflows/feishu-draft-templates.json';
 import {
@@ -598,6 +605,7 @@ export class FileDatabase {
   private closing = false;
   private closed = false;
   private closePromise: Promise<void> | null = null;
+  private themePreferenceUnversionedAtOpen = false;
 
   private constructor(
     private readonly file: string,
@@ -1264,11 +1272,18 @@ export class FileDatabase {
     `);
 
     const config = getFirstRow<{ data: string }>(this.db, 'SELECT data FROM config WHERE id = 1');
-    if (!config) {
-      this.db.run('INSERT INTO config (id, data) VALUES (1, ?)', [json(defaultConfig)]);
-    } else {
-      this.db.run('UPDATE config SET data = ? WHERE id = 1', [json(mergeConfig(parseJson(config.data, defaultConfig)))]);
-    }
+    const rawConfig = config ? parseJson<unknown>(config.data, {}) : defaultConfig;
+    const ui = getFirstRow<{ data: string }>(this.db, 'SELECT data FROM ui_preferences WHERE id = 1');
+    const rawUi = ui ? parseJson<unknown>(ui.data, {}) : {};
+    this.themePreferenceUnversionedAtOpen = !rawUi
+      || typeof rawUi !== 'object'
+      || Array.isArray(rawUi)
+      || (rawUi as Record<string, unknown>).themePreferenceVersion !== 1;
+    const canonicalUi = migrateThemePreference(rawUi, rawConfig);
+    const normalizedConfig = mergeConfig(rawConfig);
+    const pair = canonicalThemePreferencePair(normalizedConfig, canonicalUi);
+    this.db.run('INSERT OR REPLACE INTO config (id, data) VALUES (1, ?)', [json(pair.config)]);
+    this.db.run('INSERT OR REPLACE INTO ui_preferences (id, data) VALUES (1, ?)', [json(pair.ui)]);
     this.recoverInterruptedTasks();
     this.seedShellDefaults();
   }
@@ -1452,10 +1467,23 @@ export class FileDatabase {
     return this.closePromise;
   }
 
-  async upsertConfig(config: AppConfig): Promise<void> {
-    await this.enqueueCommit(() => {
-      this.db.run('INSERT OR REPLACE INTO config (id, data) VALUES (1, ?)', [json(stripConfigSecrets(mergeConfig(config)))]);
+  async upsertConfig(
+    config: AppConfig,
+    options: { legacyThemeCandidate?: boolean } = {},
+  ): Promise<ThemePreferencePair> {
+    const persisted = await this.enqueueCommit(() => {
+      const current = this.readThemePreferencePair();
+      const requested = stripConfigSecrets(mergeConfig(config));
+      const { themePreferenceVersion: _version, ...unversionedUi } = current.ui;
+      const ui = options.legacyThemeCandidate && this.themePreferenceUnversionedAtOpen
+        ? migrateThemePreference(unversionedUi, requested)
+        : current.ui;
+      const pair = canonicalThemePreferencePair(requested, ui);
+      this.writeThemePreferencePair(pair);
+      return pair;
     });
+    if (options.legacyThemeCandidate) this.themePreferenceUnversionedAtOpen = false;
+    return persisted;
   }
 
   async upsertPromptTemplate(input: PromptTemplateInput): Promise<PromptTemplate> {
@@ -1682,10 +1710,33 @@ export class FileDatabase {
     });
   }
 
-  async upsertUiPreferences(ui: UiPreferences): Promise<void> {
-    await this.enqueueCommit(() => {
-      this.db.run('INSERT OR REPLACE INTO ui_preferences (id, data) VALUES (1, ?)', [json({ ...defaultUiPreferences, ...ui })]);
+  async upsertUiPreferences(update: UiPreferencesUpdate): Promise<ThemePreferencePair> {
+    const persisted = await this.enqueueCommit(() => {
+      const current = this.readThemePreferencePair();
+      const nextUi: UiPreferences = {
+        activeView: update.activeView ?? current.ui.activeView,
+        theme: validTheme(update.theme) ?? current.ui.theme,
+        themePreferenceVersion: 1,
+      };
+      const pair = canonicalThemePreferencePair(current.config, nextUi);
+      this.writeThemePreferencePair(pair);
+      return pair;
     });
+    this.themePreferenceUnversionedAtOpen = false;
+    return persisted;
+  }
+
+  private readThemePreferencePair(): ThemePreferencePair {
+    const configRow = getFirstRow<{ data: string }>(this.db, 'SELECT data FROM config WHERE id = 1');
+    const uiRow = getFirstRow<{ data: string }>(this.db, 'SELECT data FROM ui_preferences WHERE id = 1');
+    const config = configRow ? mergeConfig(parseJson(configRow.data, defaultConfig)) : defaultConfig;
+    const ui = migrateThemePreference(uiRow ? parseJson(uiRow.data, {}) : {}, config);
+    return canonicalThemePreferencePair(config, ui);
+  }
+
+  private writeThemePreferencePair(pair: ThemePreferencePair): void {
+    this.db.run('INSERT OR REPLACE INTO config (id, data) VALUES (1, ?)', [json(stripConfigSecrets(pair.config))]);
+    this.db.run('INSERT OR REPLACE INTO ui_preferences (id, data) VALUES (1, ?)', [json(pair.ui)]);
   }
 
   async listBookSelections(theme?: string): Promise<BookSelectionRecord[]> {
@@ -2766,7 +2817,7 @@ export class FileDatabase {
       minimaxCloneVoices: getRows<Record<string, unknown>>(this.db, 'SELECT * FROM minimax_clone_voices ORDER BY last_used_at DESC LIMIT 100').map(rowToMinimaxCloneVoice),
       account: accountRow ? ({ ...defaultAccount, ...parseJson(accountRow.data, defaultAccount) } as AccountProfile) : defaultAccount,
       activation: activationRow ? ({ ...defaultActivation, ...parseJson(activationRow.data, defaultActivation) } as ActivationState) : defaultActivation,
-      ui: uiRow ? ({ ...defaultUiPreferences, ...parseJson(uiRow.data, defaultUiPreferences) } as UiPreferences) : defaultUiPreferences,
+      ui: migrateThemePreference(uiRow ? parseJson(uiRow.data, {}) : {}, configRow ? parseJson(configRow.data, {}) : defaultConfig),
     };
   }
 
@@ -2886,7 +2937,7 @@ export class FileDatabase {
       minimaxCloneVoices: voiceRows.map(rowToMinimaxCloneVoice),
       account: accountRow ? ({ ...defaultAccount, ...parseJson(accountRow.data, defaultAccount) } as AccountProfile) : defaultAccount,
       activation: activationRow ? ({ ...defaultActivation, ...parseJson(activationRow.data, defaultActivation) } as ActivationState) : defaultActivation,
-      ui: uiRow ? ({ ...defaultUiPreferences, ...parseJson(uiRow.data, defaultUiPreferences) } as UiPreferences) : defaultUiPreferences,
+      ui: migrateThemePreference(uiRow ? parseJson(uiRow.data, {}) : {}, configRow ? parseJson(configRow.data, {}) : defaultConfig),
     };
   }
 }

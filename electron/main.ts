@@ -25,7 +25,7 @@ import { runTask } from '../src/shared/runner';
 import { runStoryboundMediaSidecar } from '../src/shared/storybound-sidecar';
 import { FileDatabase, type HistoryDeletionCleanup, type HistoryTombstone } from '../src/shared/storage';
 import { createHtmlVideoRuntimeProviders, createTaskRuntimeProviders } from '../src/shared/task-runtime-providers';
-import type { AccountProfile, ActivationState, AppConfig, AppDelta, AppDeltaReconcileRequest, AppDeltaReconcileResult, AppStatePatch, BookSelectionInput, ConfigTestTarget, CreateTaskInput, CreateViralAnalysisInput, CursorRequest, CustomStyle, CustomStyleGenerateInput, DraftTemplate, HistoryFamily, HistoryListRequest, HtmlVideoConfigChange, HtmlVideoPipelineDataV2, ImageLabGenerateInput, ImageLabRecord, ImageLabSummary, LlmConfig, PromptTemplate, ProviderModelListRequest, ResearchCopyComposeInput, SequencedTaskEvent, Task, TaskStatus, TaskStepRerunMode, UiPreferences, ViralAnalysisRecord, ViralAnalysisStatus, ViralProductionTaskOptions, VolcengineSpeakerListRequest, VoiceLabGenerateInput, VoiceLabRecord, VoiceLabSummary } from '../src/shared/types';
+import type { AccountProfile, ActivationState, AppConfig, AppDelta, AppDeltaReconcileRequest, AppDeltaReconcileResult, AppStatePatch, BookSelectionInput, ConfigTestTarget, CreateTaskInput, CreateViralAnalysisInput, CursorRequest, CustomStyle, CustomStyleGenerateInput, DraftTemplate, HistoryFamily, HistoryListRequest, HtmlVideoConfigChange, HtmlVideoPipelineDataV2, ImageLabGenerateInput, ImageLabRecord, ImageLabSummary, LlmConfig, PromptTemplate, ProviderModelListRequest, ResearchCopyComposeInput, SequencedTaskEvent, Task, TaskStatus, TaskStepRerunMode, UiPreferencesUpdate, ViralAnalysisRecord, ViralAnalysisStatus, ViralProductionTaskOptions, VolcengineSpeakerListRequest, VoiceLabGenerateInput, VoiceLabRecord, VoiceLabSummary } from '../src/shared/types';
 import { createViralProductionTaskInput, detectViralPlatform, runViralAnalysis } from '../src/shared/viral-analysis';
 import { createViralRuntimeProviders } from '../src/shared/viral-runtime';
 import { listVolcengineSpeakers } from '../src/shared/volcengine-speakers';
@@ -372,9 +372,9 @@ async function runSmokeHandshake(): Promise<void> {
       const state = await api.getBootstrap();
       base.ipcStateLoaded = Boolean(state && state.config && Array.isArray(state.tasks?.items));
       if (state && state.ui) {
-        const saved = await api.saveUiPreferences({ ...state.ui, activeView: 'new-task' });
+        const saved = await api.saveUiPreferences({ activeView: 'new-task' });
         base.preloadActionSucceeded = saved?.kind === 'state-patch'
-          && saved.patch.kind === 'ui'
+          && saved.patch.kind === 'theme-preference'
           && saved.patch.ui.activeView === 'new-task';
       }
     } catch {
@@ -1421,10 +1421,10 @@ trustedHandle('activation:save', async (_event, activation: ActivationState) => 
   return publishStatePatch({ kind: 'activation', activation });
 });
 
-trustedHandle('ui:save-preferences', async (_event, ui: UiPreferences) => {
+trustedHandle('ui:save-preferences', async (_event, update: UiPreferencesUpdate) => {
   const database = await getDb();
-  await database.upsertUiPreferences(ui);
-  return publishStatePatch({ kind: 'ui', ui });
+  const persisted = await database.upsertUiPreferences(update);
+  return publishStatePatch({ kind: 'theme-preference', ui: persisted.ui, config: persisted.config });
 });
 
 trustedHandle('book-selection:list', async (_event, theme?: string) => (await getDb()).listBookSelections(theme));

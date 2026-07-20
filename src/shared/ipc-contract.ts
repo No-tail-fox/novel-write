@@ -594,9 +594,9 @@ export const ipcInputSchemas = {
       message: z.string().max(MAX_IPC_TEXT),
     })
     .strict(),
-  'ui:save-preferences': z
-    .object({
-      theme: z.enum(['dark', 'light']),
+  'ui:save-preferences': z.union([
+    z.object({ theme: z.enum(['dark', 'light']) }).strict(),
+    z.object({
       activeView: z.enum([
         'new-task',
         'queue',
@@ -616,8 +616,8 @@ export const ipcInputSchemas = {
         'account',
         'activation',
       ]),
-    })
-    .strict(),
+    }).strict(),
+  ]),
   'book-selection:list': optionalThemeSchema,
   'book-selection:save': z.object({ theme: nonEmptyText(1024), bookId: optionalText(256), data: bookProductSchema }).strict(),
   'book-selection:delete': z.object({ theme: nonEmptyText(1024), bookId: idSchema }).strict(),

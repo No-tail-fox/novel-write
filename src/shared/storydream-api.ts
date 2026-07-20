@@ -42,7 +42,7 @@ import type {
   TaskStatus,
   TaskStepRerunMode,
   TaskSummary,
-  UiPreferences,
+  UiPreferencesUpdate,
   ViralAnalysisEvent,
   ViralAnalysisRecord,
   ViralAnalysisResult,
@@ -210,7 +210,7 @@ export type StoryDreamApi = {
   generateVoiceLabPreview: (input: VoiceLabGenerateInput) => Promise<AppMutationResult | null>;
   saveAccount: (account: AccountProfile) => Promise<AppMutationResult | null>;
   saveActivation: (activation: ActivationState) => Promise<AppMutationResult | null>;
-  saveUiPreferences: (ui: UiPreferences) => Promise<AppMutationResult | null>;
+  saveUiPreferences: (update: UiPreferencesUpdate) => Promise<AppMutationResult | null>;
   createHtmlVideoTask: (input: CreateTaskInput) => Promise<AppMutationResult | null>;
   updateHtmlVideoConfig: (id: string, changes: HtmlVideoConfigChange[]) => Promise<AppMutationResult | null>;
   importHtmlVideoCover: (id: string) => Promise<AppMutationResult | null>;

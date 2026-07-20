@@ -189,18 +189,19 @@ export function raiseMutationRevisionFloor(revisions: Map<string, number>, revis
   }
 }
 
-function mutationSlice(result: AppMutationResult): string {
-  if (result.kind === 'task-upsert' || result.kind === 'task-tombstone') return 'tasks';
-  if (result.kind === 'viral-upsert' || result.kind === 'viral-tombstone') return 'viralAnalyses';
-  if (result.kind === 'image-lab-tombstone') return 'imageLabRecords';
-  if (result.kind === 'voice-lab-tombstone') return 'voiceLabRecords';
+function mutationSlices(result: AppMutationResult): string[] {
+  if (result.kind === 'task-upsert' || result.kind === 'task-tombstone') return ['tasks'];
+  if (result.kind === 'viral-upsert' || result.kind === 'viral-tombstone') return ['viralAnalyses'];
+  if (result.kind === 'image-lab-tombstone') return ['imageLabRecords'];
+  if (result.kind === 'voice-lab-tombstone') return ['voiceLabRecords'];
   const kind = result.patch.kind;
-  if (kind === 'prompt-template-upsert' || kind === 'prompt-templates-reset') return 'promptTemplates';
-  if (kind === 'custom-style-upsert') return 'customStyles';
-  if (kind === 'draft-template-upsert') return 'draftTemplates';
-  if (kind === 'image-lab-upsert') return 'imageLabRecords';
-  if (kind === 'voice-lab-upsert') return 'voiceLabRecords';
-  return kind;
+  if (kind === 'theme-preference') return ['config', 'ui'];
+  if (kind === 'prompt-template-upsert' || kind === 'prompt-templates-reset') return ['promptTemplates'];
+  if (kind === 'custom-style-upsert') return ['customStyles'];
+  if (kind === 'draft-template-upsert') return ['draftTemplates'];
+  if (kind === 'image-lab-upsert') return ['imageLabRecords'];
+  if (kind === 'voice-lab-upsert') return ['voiceLabRecords'];
+  return [kind];
 }
 
 export function historyEntityRevisionKey(family: HistoryFamily, id: string): string {
@@ -232,11 +233,11 @@ function mutationEntity(result: AppMutationResult): { family: HistoryFamily; id:
 }
 
 function mutationRevisionFloor(result: AppMutationResult, revisions: Map<string, number>): number {
-  const slice = mutationSlice(result);
+  const slices = mutationSlices(result);
   const entity = mutationEntity(result);
-  if (!entity) return revisions.get(slice) ?? -1;
+  if (!entity) return Math.max(...slices.map((slice) => revisions.get(slice) ?? -1));
   return Math.max(
-    revisions.get(`floor:${slice}`) ?? -1,
+    ...slices.map((slice) => revisions.get(`floor:${slice}`) ?? -1),
     revisions.get(historyEntityRevisionKey(entity.family, entity.id)) ?? -1,
     revisions.get(historyTombstoneRevisionKey(entity.family, entity.id)) ?? -1,
   );
@@ -252,8 +253,9 @@ function blockedByHistoryTombstone(result: AppMutationResult, revisions: Map<str
 }
 
 function recordMutationRevision(result: AppMutationResult, revisions: Map<string, number>): void {
-  const slice = mutationSlice(result);
-  revisions.set(slice, Math.max(revisions.get(slice) ?? -1, result.revision));
+  for (const slice of mutationSlices(result)) {
+    revisions.set(slice, Math.max(revisions.get(slice) ?? -1, result.revision));
+  }
   const entity = mutationEntity(result);
   if (!entity) return;
   revisions.set(historyEntityRevisionKey(entity.family, entity.id), result.revision);
@@ -317,6 +319,7 @@ export function applyAppMutationResult<T extends MutationState>(
   }
   const patch = result.patch;
   if (patch.kind === 'config') return { ...state, config: patch.config, secretStatus: patch.secretStatus };
+  if (patch.kind === 'theme-preference') return { ...state, config: patch.config, ui: patch.ui };
   if (patch.kind === 'prompt-template-upsert') {
     return { ...state, promptTemplates: upsertEntity(state.promptTemplates, patch.template) };
   }

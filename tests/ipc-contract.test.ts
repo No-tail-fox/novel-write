@@ -316,6 +316,18 @@ describe('IPC runtime contract', () => {
     expect(new Set(Object.keys(contract.ipcInputSchemas))).toEqual(new Set(apiContract.INVOKE_CHANNELS));
   });
 
+  it('separates navigation and theme preference writes', async () => {
+    const contract = await loadContract();
+    expect(contract).not.toBeNull();
+    if (!contract) return;
+
+    const schema = contract.ipcInputSchemas['ui:save-preferences'];
+    expect(schema.parse({ theme: 'light' })).toEqual({ theme: 'light' });
+    expect(schema.parse({ activeView: 'settings' })).toEqual({ activeView: 'settings' });
+    expect(() => schema.parse({ theme: 'light', activeView: 'settings' })).toThrow();
+    expect(() => schema.parse({ themePreferenceVersion: 1 })).toThrow();
+  });
+
   it('rejects untrusted senders and invalid payloads before running handlers', async () => {
     const contract = await loadContract();
     const gateway = await loadGateway();

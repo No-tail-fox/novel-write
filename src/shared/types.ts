@@ -903,7 +903,12 @@ export interface ActivationState {
 export interface UiPreferences {
   theme: ThemeName;
   activeView: ShellView;
+  themePreferenceVersion: 1;
 }
+
+export type UiPreferencesUpdate =
+  | { theme: ThemeName; activeView?: never }
+  | { activeView: ShellView; theme?: never };
 
 export interface CoverMetadata {
   title: string;
@@ -1385,6 +1390,7 @@ export interface BootstrapState {
 
 export type AppStatePatch =
   | { kind: 'config'; config: AppConfig; secretStatus: Partial<Record<string, boolean>> }
+  | { kind: 'theme-preference'; config: AppConfig; ui: UiPreferences }
   | { kind: 'prompt-template-upsert'; template: PromptTemplate }
   | { kind: 'prompt-templates-reset'; templates: PromptTemplateSummary[] }
   | { kind: 'custom-style-upsert'; style: CustomStyle }

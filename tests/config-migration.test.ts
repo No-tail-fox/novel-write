@@ -43,6 +43,71 @@ async function seedLegacyDatabase(file: string, config: AppConfig): Promise<File
 }
 
 describe('config credential migration', () => {
+  it('uses an external legacy theme when the database was unversioned on this startup', async () => {
+    const module = await loadConfigService();
+    expect(module).not.toBeNull();
+    if (!module) return;
+    const dir = await mkdtemp(join(tmpdir(), 'storydream-theme-external-legacy-'));
+    const databasePath = join(dir, 'data.db');
+    const seeded = await FileDatabase.open(databasePath);
+    await seeded.close();
+    const SQL = await initSqlJs();
+    const sqlite = new SQL.Database(await readFile(databasePath));
+    sqlite.run('INSERT OR REPLACE INTO config (id, data) VALUES (1, ?)', [JSON.stringify(defaultConfig)]);
+    sqlite.run('INSERT OR REPLACE INTO ui_preferences (id, data) VALUES (1, ?)', [JSON.stringify({
+      theme: 'dark', activeView: 'history',
+    })]);
+    const bytes = sqlite.export();
+    sqlite.close();
+    await writeFile(databasePath, bytes);
+
+    const database = await FileDatabase.open(databasePath);
+    const vault = new CredentialVault(join(dir, 'secrets.v1.json'), fakeEncryption());
+    try {
+      await writeFile(configFilePath(dir), JSON.stringify({
+        ...structuredClone(defaultConfig),
+        ui: { theme: 'light' },
+      }), 'utf8');
+      const service = new module.ConfigService({ database, dataDir: dir, vault });
+      await service.migrateLegacySecrets();
+
+      const state = await database.getState();
+      expect(state.ui).toEqual({ theme: 'light', activeView: 'history', themePreferenceVersion: 1 });
+      expect(state.config.ui.theme).toBe('light');
+      expect(JSON.parse(await readFile(configFilePath(dir), 'utf8')).ui.theme).toBe('light');
+    } finally {
+      await database.close();
+      await rm(dir, { recursive: true, force: true });
+    }
+  });
+
+  it('keeps a marker-present database theme authoritative over an external legacy config', async () => {
+    const module = await loadConfigService();
+    expect(module).not.toBeNull();
+    if (!module) return;
+    const dir = await mkdtemp(join(tmpdir(), 'storydream-theme-config-migration-'));
+    const database = await FileDatabase.open(join(dir, 'data.db'));
+    const vault = new CredentialVault(join(dir, 'secrets.v1.json'), fakeEncryption());
+    try {
+      await database.upsertUiPreferences({ activeView: 'history' });
+      await writeFile(configFilePath(dir), JSON.stringify({
+        ...structuredClone(defaultConfig),
+        ui: { theme: 'light' },
+      }), 'utf8');
+
+      const service = new module.ConfigService({ database, dataDir: dir, vault });
+      await service.migrateLegacySecrets();
+
+      const state = await database.getState();
+      expect(state.ui).toEqual({ theme: 'dark', activeView: 'history', themePreferenceVersion: 1 });
+      expect(state.config.ui.theme).toBe('dark');
+      expect(JSON.parse(await readFile(configFilePath(dir), 'utf8')).ui.theme).toBe('dark');
+    } finally {
+      await database.close();
+      await rm(dir, { recursive: true, force: true });
+    }
+  });
+
   it('moves SQLite and JSON secrets into the encrypted vault, returns public state, and is idempotent', async () => {
     const module = await loadConfigService();
     expect(module).not.toBeNull();

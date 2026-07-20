@@ -149,6 +149,33 @@ function mutationState(overrides: Record<string, unknown> = {}): Record<string, 
 }
 
 describe('app state delta coordination', () => {
+  it('applies the canonical theme preference and config mirror as one revision', () => {
+    const applyMutation = reconciliationModule.applyAppMutationResult as unknown as (
+      state: Record<string, unknown>,
+      result: AppMutationResult,
+      revisions: Map<string, number>,
+    ) => Record<string, unknown>;
+    const current = mutationState({
+      ui: { theme: 'dark', activeView: 'settings', themePreferenceVersion: 1 },
+      config: { ...structuredClone(defaultConfig), ui: { theme: 'dark' } },
+    });
+    const patched = applyMutation(
+      current,
+      {
+        kind: 'state-patch',
+        revision: 1,
+        patch: {
+          kind: 'theme-preference',
+          config: { ...structuredClone(defaultConfig), ui: { theme: 'light' } },
+          ui: { theme: 'light', activeView: 'settings', themePreferenceVersion: 1 },
+        },
+      },
+      new Map(),
+    );
+    expect(patched.ui).toEqual({ theme: 'light', activeView: 'settings', themePreferenceVersion: 1 });
+    expect((patched.config as typeof defaultConfig).ui.theme).toBe('light');
+  });
+
   it('keeps four-family tombstones terminal across every later upsert and task event', () => {
     const task = taskSummary('task-tombstone');
     const viral = viralSummary('viral-tombstone');

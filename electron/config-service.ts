@@ -29,6 +29,7 @@ import type {
   ViralAnalysisSummary,
   VoiceLabSummary,
 } from '../src/shared/types';
+import type { ThemePreferencePair } from '../src/shared/theme-preference';
 
 const MIGRATION_MARKER = 'config-secrets.v1.migrated';
 
@@ -41,7 +42,10 @@ export interface ConfigDatabase {
   listVoiceLabRecords: (request?: HistoryListInput<'voice-lab'>) => Promise<HistoryPage<'voice-lab', VoiceLabSummary>>;
   listPromptTemplateSummaries: (request?: CursorRequest) => Promise<CursorPage<PromptTemplateSummary>>;
   listDraftTemplateSummaries: (request?: CursorRequest) => Promise<CursorPage<DraftTemplateSummary>>;
-  upsertConfig: (config: AppConfig) => Promise<void>;
+  upsertConfig: (
+    config: AppConfig,
+    options?: { legacyThemeCandidate?: boolean },
+  ) => Promise<ThemePreferencePair>;
 }
 
 export interface ConfigVault {
@@ -222,9 +226,9 @@ export class ConfigService {
       await this.options.vault.save(nextSecrets);
       assertVaultRoundTrip(nextSecrets, await this.options.vault.load());
     }
-    await this.options.database.upsertConfig(sanitized);
-    await saveConfigToFile(this.options.dataDir, sanitized);
-    return { config: sanitized, secretStatus: secretStatus(await this.options.vault.load()) };
+    const persisted = await this.options.database.upsertConfig(sanitized);
+    await saveConfigToFile(this.options.dataDir, persisted.config);
+    return { config: persisted.config, secretStatus: secretStatus(await this.options.vault.load()) };
   }
 
   private async performMigration(): Promise<void> {
@@ -242,10 +246,11 @@ export class ConfigService {
       await this.options.vault.save(mergedSecrets);
       assertVaultRoundTrip(mergedSecrets, await this.options.vault.load());
       const sanitized = stripConfigSecrets(sourceConfig);
-      await this.options.database.upsertConfig(sanitized);
-      if (externalConfig) await saveConfigToFile(this.options.dataDir, sanitized);
+      const persisted = await this.options.database.upsertConfig(sanitized, { legacyThemeCandidate: Boolean(externalConfig) });
+      if (externalConfig) await saveConfigToFile(this.options.dataDir, persisted.config);
     } else if (externalConfig && JSON.stringify(stripConfigSecrets(state.config)) !== JSON.stringify(stripConfigSecrets(externalConfig))) {
-      await this.options.database.upsertConfig(stripConfigSecrets(externalConfig));
+      const persisted = await this.options.database.upsertConfig(stripConfigSecrets(externalConfig), { legacyThemeCandidate: true });
+      await saveConfigToFile(this.options.dataDir, persisted.config);
     }
 
     const markerPath = configMigrationMarkerPath(this.options.dataDir);

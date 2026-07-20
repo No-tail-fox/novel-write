@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from 'vitest';
 import initSqlJs from 'sql.js';
-import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
+import { mkdtemp, readFile, rename, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { FileDatabase } from '@shared/storage';
@@ -21,6 +21,93 @@ function configWithStorageSecret(secret: string) {
 }
 
 describe('file database', () => {
+  async function overwriteThemeRows(file: string, config: unknown, ui: unknown): Promise<void> {
+    const SQL = await initSqlJs();
+    const sqlite = new SQL.Database(await readFile(file));
+    sqlite.run('INSERT OR REPLACE INTO config (id, data) VALUES (1, ?)', [JSON.stringify(config)]);
+    sqlite.run('INSERT OR REPLACE INTO ui_preferences (id, data) VALUES (1, ?)', [JSON.stringify(ui)]);
+    const bytes = sqlite.export();
+    sqlite.close();
+    await writeFile(file, bytes);
+  }
+
+  it('migrates legacy theme ownership atomically and preserves activeView', async () => {
+    const dir = await mkdtemp(join(tmpdir(), 'storydream-theme-owner-migration-'));
+    const file = join(dir, 'app.db');
+    try {
+      const seeded = await FileDatabase.open(file);
+      await seeded.close();
+      await overwriteThemeRows(
+        file,
+        { ...structuredClone(defaultConfig), ui: { theme: 'light' } },
+        { theme: 'dark', activeView: 'history' },
+      );
+
+      const migrated = await FileDatabase.open(file);
+      expect((await migrated.getState())).toMatchObject({
+        ui: { theme: 'light', activeView: 'history', themePreferenceVersion: 1 },
+        config: { ui: { theme: 'light' } },
+      });
+      await migrated.close();
+
+      const restarted = await FileDatabase.open(file);
+      expect((await restarted.getState()).ui).toEqual({
+        theme: 'light', activeView: 'history', themePreferenceVersion: 1,
+      });
+      await restarted.close();
+    } finally {
+      await rm(dir, { recursive: true, force: true });
+    }
+  });
+
+  it('prevents navigation and stale config drafts from overwriting the current theme', async () => {
+    const dir = await mkdtemp(join(tmpdir(), 'storydream-theme-owner-updates-'));
+    const file = join(dir, 'app.db');
+    const db = await FileDatabase.open(file);
+    try {
+      await db.upsertUiPreferences({ theme: 'light' });
+      const navigated = await db.upsertUiPreferences({ activeView: 'settings' });
+      expect(navigated).toMatchObject({
+        ui: { theme: 'light', activeView: 'settings', themePreferenceVersion: 1 },
+        config: { ui: { theme: 'light' } },
+      });
+
+      const saved = await db.upsertConfig({ ...structuredClone(defaultConfig), ui: { theme: 'dark' } });
+      expect(saved).toMatchObject({
+        ui: { theme: 'light', activeView: 'settings', themePreferenceVersion: 1 },
+        config: { ui: { theme: 'light' } },
+      });
+    } finally {
+      await db.close();
+      await rm(dir, { recursive: true, force: true });
+    }
+  });
+
+  it('rolls back both theme owner and config mirror when persistence fails', async () => {
+    const dir = await mkdtemp(join(tmpdir(), 'storydream-theme-owner-rollback-'));
+    const file = join(dir, 'app.db');
+    let rejectReplace = false;
+    const db = await FileDatabase.open(file, {
+      replaceFile: async (source, target) => {
+        if (rejectReplace) throw new Error('injected theme commit failure');
+        await rename(source, target);
+      },
+    });
+    try {
+      rejectReplace = true;
+      await expect(db.upsertUiPreferences({ theme: 'light' })).rejects.toThrow('injected theme commit failure');
+      rejectReplace = false;
+
+      const state = await db.getState();
+      expect(state.ui.theme).toBe('dark');
+      expect(state.config.ui.theme).toBe('dark');
+    } finally {
+      rejectReplace = false;
+      await db.close();
+      await rm(dir, { recursive: true, force: true });
+    }
+  });
+
   it('strips provider credentials from normal config persistence', async () => {
     const dir = await mkdtemp(join(tmpdir(), 'storydream-db-config-redaction-'));
     const file = join(dir, 'app.db');

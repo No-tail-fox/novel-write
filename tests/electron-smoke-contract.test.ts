@@ -33,7 +33,7 @@ describe('real Electron smoke contract', () => {
     expect(main).toContain('api.getBootstrap()');
     expect(main).toContain('api.saveUiPreferences');
     expect(main).toContain("saved?.kind === 'state-patch'");
-    expect(main).toContain("saved.patch.kind === 'ui'");
+    expect(main).toContain("saved.patch.kind === 'theme-preference'");
     expect(main).toContain("saved.patch.ui.activeView === 'new-task'");
     expect(main).toContain('mainWindowPolicyInstalled');
     expect(main).toContain('mainWindow.close()');
