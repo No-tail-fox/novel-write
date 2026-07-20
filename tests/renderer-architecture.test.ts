@@ -97,3 +97,80 @@ describe('renderer shared control architecture', () => {
     expect(accordion).toContain('type="button"');
   });
 });
+
+describe('renderer shared feedback and data architecture', () => {
+  it('moves every feedback and data primitive into one owner module', async () => {
+    const paths = [
+      'src/components/AsyncActionFeedback.tsx',
+      'src/components/ErrorDetails.tsx',
+      'src/components/StatusBadge.tsx',
+      'src/components/EmptyState.tsx',
+      'src/components/EventTimeline.tsx',
+      'src/components/ConfirmDialog.tsx',
+      'src/components/CursorPagination.tsx',
+      'src/components/DataTable.tsx',
+    ];
+    const files = await Promise.all(paths.map(source));
+    files.forEach((file) => expect(file.length).toBeGreaterThan(0));
+
+    const main = await source('src/main.tsx');
+    for (const definition of ['function InlineActionFeedback(', 'function ErrorSummaryButton(', 'function ErrorDetailDialog(', 'function StatusPill(', 'function EmptyState(', 'function EventTimeline(']) {
+      expect(main).not.toContain(definition);
+    }
+  });
+
+  it('keeps real feedback, error, loading, and status semantics', async () => {
+    const [feedback, errors, status, empty] = await Promise.all([
+      source('src/components/AsyncActionFeedback.tsx'),
+      source('src/components/ErrorDetails.tsx'),
+      source('src/components/StatusBadge.tsx'),
+      source('src/components/EmptyState.tsx'),
+    ]);
+    expect(feedback).toContain("feedback.tone === 'error' ? 'alert' : 'status'");
+    expect(errors).toContain('aria-modal="true"');
+    expect(errors).toContain('aria-labelledby={titleId}');
+    expect(errors).toContain('aria-describedby={descriptionId}');
+    expect(errors).toContain('type="button"');
+    expect(status).toContain('status-pill ${status}');
+    for (const variant of ['completed', 'running', 'failed', 'cancelled', 'paused', 'draft']) {
+      expect(status).toContain(`${variant}:`);
+    }
+    expect(empty).toContain("tone === 'loading'");
+    expect(empty).toContain("tone === 'error'");
+    expect(empty).toContain("role={tone === 'error' ? 'alert' : 'status'}");
+  });
+
+  it('provides semantic fixed-layout pagination and table anatomy', async () => {
+    const [pagination, table, css] = await Promise.all([
+      source('src/components/CursorPagination.tsx'),
+      source('src/components/DataTable.tsx'),
+      source('src/styles.css'),
+    ]);
+    for (const label of ['上一页', '重新加载', '下一页']) expect(pagination).toContain(label);
+    expect(pagination).toContain('disabled={busy || !hasPrevious}');
+    expect(pagination).toContain('disabled={busy || !hasNext}');
+    expect(table).toContain('role="table"');
+    expect(table).toContain('role="columnheader"');
+    expect(table).toContain('role="rowgroup"');
+    expect(table).toContain('state?: ReactNode');
+    expect(table).toContain('aria-colspan={columns.length}');
+    expect(css).toContain('grid-template-columns: repeat(3, 32px)');
+    expect(css).toContain('min-height: 120px');
+  });
+
+  it('owns labelled confirmation dialog focus and submission contracts', async () => {
+    const dialog = await source('src/components/ConfirmDialog.tsx');
+    expect(dialog).toContain('nextDialogFocusIndex');
+    expect(dialog).toContain('createConfirmSubmissionGuard');
+    expect(dialog).toContain('aria-labelledby={titleId}');
+    expect(dialog).toContain('aria-describedby={descriptionId}');
+    expect(dialog).toContain("event.key === 'Escape'");
+    expect(dialog).toContain("event.key !== 'Tab'");
+    expect(dialog).toContain('previouslyFocused?.focus()');
+    expect(dialog).toContain('disabled={busy || submitting}');
+    expect(dialog).toContain('tabIndex={-1}');
+    expect(dialog).toContain('focusable.length === 0');
+    expect(dialog).toContain('dialogRef.current?.focus()');
+    expect(dialog).toContain('if (open && (busy || submitting)) dialogRef.current?.focus();');
+  });
+});

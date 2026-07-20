@@ -2190,6 +2190,12 @@ textarea {
   word-break: break-word;
 }
 
+.confirm-dialog-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+}
+
 .local-note {
   display: block;
   margin-top: 8px;
@@ -2202,6 +2208,28 @@ textarea {
 .template-list {
   display: grid;
   gap: 10px;
+}
+
+.cursor-pagination {
+  display: grid;
+  grid-template-columns: repeat(3, 32px);
+  gap: 8px;
+}
+
+.cursor-pagination .mini-button {
+  width: 32px;
+  height: 32px;
+  justify-content: center;
+  padding: 0;
+}
+
+.data-table-body {
+  display: grid;
+}
+
+.data-table-state-row,
+.data-table-state-cell {
+  min-width: 0;
 }
 
 .task-row,
@@ -2232,6 +2260,17 @@ textarea {
   border-color: #3a4b58;
   outline: none;
   background: #182028;
+}
+
+.table-row-primary-action {
+  max-width: 100%;
+  padding: 0;
+  overflow: hidden;
+  background: transparent;
+  font-weight: 700;
+  text-align: left;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .task-row span,

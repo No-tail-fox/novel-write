@@ -4,8 +4,6 @@ import {
   Bell,
   Bot,
   BookOpen,
-  ChevronLeft,
-  ChevronRight,
   Circle,
   Coins,
   Copy,
@@ -271,13 +269,20 @@ import {
 } from './shared/html-video-captions';
 import { HTML_VIDEO_CONTROL_MANIFEST_V1 } from './shared/html-video-control-manifest';
 import { createHtmlVideoMediaCache, htmlVideoMediaElementKey, htmlVideoMediaElementScopeMatches, htmlVideoMediaStatus, loadHtmlVideoMedia, recordHtmlVideoMediaElementFailure, syncHtmlVideoMediaCache, type HtmlVideoMediaElementFailureState, type HtmlVideoMediaElementScope } from './shared/html-video-media';
-import { useAsyncAction, type AsyncActionFeedback } from './ui/async-action';
+import { useAsyncAction } from './ui/async-action';
 import { FormField as Field } from './components/FormField';
 import { SegmentedControl as Segmented } from './components/SegmentedControl';
 import { ToggleField } from './components/ToggleField';
 import { RangeField } from './components/RangeField';
 import { OptionGroup as OptionCloud } from './components/OptionGroup';
 import { Accordion } from './components/Accordion';
+import { AsyncActionFeedback as InlineActionFeedback } from './components/AsyncActionFeedback';
+import { ErrorDetails as ErrorSummaryButton, summarizeErrorMessage } from './components/ErrorDetails';
+import { StatusBadge as StatusPill, taskStatusLabel as statusLabel } from './components/StatusBadge';
+import { EmptyState } from './components/EmptyState';
+import { EventTimeline } from './components/EventTimeline';
+import { CursorPagination } from './components/CursorPagination';
+import { DataTable } from './components/DataTable';
 import './styles.css';
 
 const sampleText =
@@ -6049,61 +6054,45 @@ function HistoryPage({
         <span className="subtle-copy">
           {historyPage.page ? `${historyPage.page.totalCount} 条记录` : historyPage.loading ? '正在加载' : '暂无记录'}
         </span>
-        <div className="chip-row" aria-label="历史分页">
-          <button
-            className="mini-button"
-            type="button"
-            title="上一页"
-            aria-label="上一页"
-            disabled={historyPage.loading || !historyPage.hasPrevious}
-            onClick={historyPage.previous}
-          >
-            <ChevronLeft size={14} />
-          </button>
-          <button
-            className="mini-button"
-            type="button"
-            title="重新加载"
-            aria-label="重新加载"
-            disabled={historyPage.loading}
-            onClick={historyPage.reload}
-          >
-            <RotateCcw size={14} />
-          </button>
-          <button
-            className="mini-button"
-            type="button"
-            title="下一页"
-            aria-label="下一页"
-            disabled={historyPage.loading || !historyPage.page?.nextCursor}
-            onClick={historyPage.next}
-          >
-            <ChevronRight size={14} />
-          </button>
-        </div>
+        <CursorPagination
+          busy={historyPage.loading}
+          hasPrevious={historyPage.hasPrevious}
+          hasNext={Boolean(historyPage.page?.nextCursor)}
+          onPrevious={historyPage.previous}
+          onReload={historyPage.reload}
+          onNext={historyPage.next}
+        />
       </div>
-      <div className="history-table">
-        <div className="table-head">
-          <span>任务</span>
-          <span>状态</span>
-          <span>步骤</span>
-          <span>创建时间</span>
-          <span>输出</span>
-        </div>
-        {historyPage.loading && tasks.length === 0 ? <EmptyState title="正在加载历史任务" /> : null}
-        {!historyPage.loading && tasks.length === 0 ? <EmptyState title="暂无历史任务" /> : null}
+      <DataTable
+        label="历史任务"
+        columns={['任务', '状态', '步骤', '创建时间', '输出']}
+        state={tasks.length === 0 ? (
+          historyPage.loading ? <EmptyState title="正在加载历史任务" tone="loading" /> : <EmptyState title="暂无历史任务" />
+        ) : null}
+      >
         {tasks.map((task) => (
-          <div className="table-row clickable" key={task.id} role="button" tabIndex={0} onClick={() => openTaskDetail(task.id)} onKeyDown={(event) => event.key === 'Enter' && openTaskDetail(task.id)}>
-            <strong>{task.title || '未命名任务'}</strong>
-            <StatusPill status={task.status} />
-            <span>{taskProgressLabel(task)}</span>
-            <span>{formatDate(task.createdAt)}</span>
-            <button className="mini-button" disabled={historyAction.busy || !task.outputDir} onClick={(event) => { event.stopPropagation(); if (task.outputDir) void openHistoryOutput(task.id); }}>
-              <FolderOpen size={14} />
-            </button>
+          <div className="table-row clickable" key={task.id} role="row" onClick={() => openTaskDetail(task.id)}>
+            <span role="cell">
+              <button
+                className="table-row-primary-action"
+                type="button"
+                aria-label={`打开任务 ${task.title || task.id}`}
+                onClick={(event) => { event.stopPropagation(); openTaskDetail(task.id); }}
+              >
+                {task.title || '未命名任务'}
+              </button>
+            </span>
+            <span role="cell"><StatusPill status={task.status} /></span>
+            <span role="cell">{taskProgressLabel(task)}</span>
+            <span role="cell">{formatDate(task.createdAt)}</span>
+            <span role="cell">
+              <button className="mini-button" type="button" aria-label="打开输出目录" disabled={historyAction.busy || !task.outputDir} onClick={(event) => { event.stopPropagation(); if (task.outputDir) void openHistoryOutput(task.id); }}>
+                <FolderOpen size={14} />
+              </button>
+            </span>
           </div>
         ))}
-      </div>
+      </DataTable>
       {historyPage.error ? <div className="inline-feedback error">{historyPage.error.message}</div> : null}
       <InlineActionFeedback feedback={historyAction.feedback} />
     </section>
@@ -10328,79 +10317,8 @@ function TextBorderControls({
   );
 }
 
-function EventTimeline({ events }: { events: TaskEvent[] }) {
-  if (events.length === 0) return <EmptyState title="暂无事件" />;
-  return (
-    <div className="event-list">
-      {events.map((event, index) => (
-        <div className="event-item" key={`${event.seq ?? index}-${event.ts}`}>
-          <span>{event.step ?? '-'}</span>
-          {event.type === 'step_error' ? <ErrorSummaryButton fullMessage={event.detail} title={`步骤 ${event.step ?? '-'} 错误`} compact /> : <p>{event.detail}</p>}
-        </div>
-      ))}
-    </div>
-  );
-}
-
-function StatusPill({ status }: { status: TaskStatus }) {
-  return <span className={`status-pill ${status}`}>{statusLabel(status)}</span>;
-}
-
-function EmptyState({ title }: { title: string }) {
-  return <div className="empty-state"><Database size={20} /><span>{title}</span></div>;
-}
-
 function LocalInfo({ title, value }: { title: string; value: string }) {
   return <div className="local-info"><Info size={18} /><div><strong>{title}</strong><span>{value}</span></div></div>;
-}
-
-function InlineActionFeedback({ feedback }: { feedback: AsyncActionFeedback | null }) {
-  if (!feedback) return null;
-  return (
-    <div className={`inline-action-feedback ${feedback.tone}`} role={feedback.tone === 'error' ? 'alert' : 'status'}>
-      <span>{feedback.message}</span>
-    </div>
-  );
-}
-
-function ErrorSummaryButton({ fullMessage, title, compact = false }: { fullMessage: string; title: string; compact?: boolean }) {
-  const [open, setOpen] = useState(false);
-  if (!fullMessage.trim()) return null;
-  const summary = summarizeErrorMessage(fullMessage);
-  return (
-    <>
-      <button
-        type="button"
-        className={compact ? 'error-summary-button compact' : 'error-summary-button'}
-        onClick={(event) => {
-          event.stopPropagation();
-          setOpen(true);
-        }}
-      >
-        <span className="error-mark">!</span>
-        <span>{summary}</span>
-      </button>
-      {open ? <ErrorDetailDialog title={title} summary={summary} fullMessage={fullMessage} onClose={() => setOpen(false)} /> : null}
-    </>
-  );
-}
-
-function ErrorDetailDialog({ title, summary, fullMessage, onClose }: { title: string; summary: string; fullMessage: string; onClose: () => void }) {
-  return (
-    <div className="error-dialog-backdrop" onClick={onClose}>
-      <section className="error-dialog" role="dialog" aria-modal="true" aria-label={title} onClick={(event) => event.stopPropagation()}>
-        <div className="error-dialog-head">
-          <div>
-            <span className="error-mark">!</span>
-            <strong>{title}</strong>
-          </div>
-          <button className="mini-button" type="button" onClick={onClose}>关闭</button>
-        </div>
-        <p>{summary}</p>
-        <pre>{fullMessage}</pre>
-      </section>
-    </div>
-  );
 }
 
 function ProviderConfigNote({ title, value }: { title: string; value: string }) {
@@ -10629,41 +10547,8 @@ function formatDuration(start: string, end: string | null, now = Date.now()): st
   return minutes > 0 ? `${minutes}:${String(rest).padStart(2, '0')}` : `0:${String(rest).padStart(2, '0')}`;
 }
 
-function statusLabel(status: TaskStatus | 'all'): string {
-  return {
-    all: '全部',
-    draft: '草稿',
-    pending: '等待',
-    running: '运行中',
-    paused: '暂停',
-    completed: '已完成',
-    failed: '失败',
-    cancelled: '已取消',
-  }[status];
-}
-
 function settingsStatusLabel(status: 'pass' | 'warn' | 'fail'): string {
   return status === 'pass' ? '已配置' : status === 'warn' ? '需确认' : '待配置';
-}
-
-function summarizeErrorMessage(message: string): string {
-  const normalized = message.replace(/\s+/g, ' ').trim();
-  if (!normalized) return '发生错误';
-  const imageApiStatus = normalized.match(/Image provider API error \((\d+)\)/i)?.[1];
-  if (imageApiStatus) return `生图接口错误 ${imageApiStatus}`;
-  if (/Python dependency .* is required|ModuleNotFoundError: No module named/i.test(normalized)) {
-    const missing = normalized.match(/No module named ['"]([^'"]+)['"]/i)?.[1] ?? normalized.match(/Python dependency ([\w.-]+)/i)?.[1];
-    return missing ? `Python 运行时缺少依赖：${missing}` : 'Python 运行时依赖缺失';
-  }
-  if (normalized.includes(['Browser preview', 'cannot run the real provider pipeline'].join(' ')) || /浏览器预览无法运行真实供应商流水线/i.test(normalized)) return '浏览器预览无法执行真实任务';
-  if (/Image provider API key is missing/i.test(normalized)) return '生图 API Key 缺失';
-  if (/Image provider is not configured/i.test(normalized)) return '生图配置不完整';
-  if (/Jimeng submit failed/i.test(normalized)) return '即梦提交失败';
-  if (/Jimeng poll failed/i.test(normalized)) return '即梦结果获取失败';
-  if (/LLM provider is not configured/i.test(normalized)) return 'LLM 配置不完整';
-  if (/TTS provider is not configured/i.test(normalized)) return 'TTS 配置不完整';
-  const firstSentence = normalized.split(/[。.!?]/)[0] || normalized;
-  return trimForPreview(firstSentence, 42);
 }
 
 type ImageResolution = '1K' | '2K' | '4K';

@@ -9,7 +9,9 @@ const rendererSourcesPromise = readRendererSources();
 
 describe('product shell ui', () => {
   it('loads query-safe task history pages without creating another global delta owner', async () => {
-    const main = (await rendererSourcesPromise).requiredFile('src/main.tsx');
+    const sources = await rendererSourcesPromise;
+    const main = sources.requiredFile('src/main.tsx');
+    const pagination = sources.requiredFile('src/components/CursorPagination.tsx');
     const hook = await readFile(new URL('../src/features/history/use-history-page.ts', import.meta.url), 'utf8');
     const history = main.slice(main.indexOf('function HistoryPage'), main.indexOf('function TaskDetailPage'));
     const bootstrap = main.slice(main.indexOf('async function loadCompleteBootstrap'), main.indexOf('type ModelListKey'));
@@ -28,7 +30,12 @@ describe('product shell ui', () => {
     expect(history).toContain('historyPage.previous');
     expect(history).toContain('historyPage.next');
     expect(history).toContain('historyPage.reload');
-    expect(history).toContain('disabled={historyPage.loading || !historyPage.page?.nextCursor}');
+    expect(history).toContain('hasNext={Boolean(historyPage.page?.nextCursor)}');
+    expect(pagination).toContain('disabled={busy || !hasNext}');
+    expect(history).toContain('className="table-row clickable" key={task.id} role="row"');
+    expect(history).toContain('className="table-row-primary-action"');
+    expect(history).toContain('aria-label={`打开任务 ${task.title || task.id}`}');
+    expect(history).toContain('event.stopPropagation(); openTaskDetail(task.id);');
     expect(history).not.toContain('!historyPage.page || historyPage.page.nextCursor === null');
     expect(history).not.toContain('state.tasks.filter');
     expect(hook).toContain('store.begin(');
@@ -657,13 +664,15 @@ describe('product shell ui', () => {
   });
 
   it('shows local action feedback and reserves a global banner for state failures', async () => {
-    const main = (await rendererSourcesPromise).requiredFile('src/main.tsx');
+    const sources = await rendererSourcesPromise;
+    const main = sources.requiredFile('src/main.tsx');
+    const feedback = sources.requiredFile('src/components/AsyncActionFeedback.tsx');
     const css = await readFile(new URL('../src/styles.css', import.meta.url), 'utf8');
 
     expect(main).toContain("from './ui/async-action'");
     expect(main).toContain('InlineActionFeedback');
     expect(main).toContain('className="global-action-banner"');
-    expect(main).toContain('className={`inline-action-feedback ${feedback.tone}`}');
+    expect(feedback).toContain('className={`inline-action-feedback ${feedback.tone}`}');
     for (const page of [
       'ViralAnalyzerPage',
       'NewTaskPage',
@@ -1309,7 +1318,7 @@ describe('product shell ui', () => {
     const page = (await rendererSourcesPromise).requiredFile('src/main.tsx');
     expect(page).toMatch(/from '\.\/shared\/html-video-workflow';/u);
     expect(page).toContain("{statusLabel(task.status)} · {taskProgressLabel(task)}");
-    expect(page).toContain('<span>{taskProgressLabel(task)}</span>');
+    expect(page).toContain('<span role="cell">{taskProgressLabel(task)}</span>');
   });
 
   it('owns HTML task creation and output sizing defaults in the shared config module', async () => {
@@ -2825,14 +2834,16 @@ describe('product shell ui', () => {
   });
 
   it('keeps task errors compact with a click-through detail dialog', async () => {
-    const main = (await rendererSourcesPromise).requiredFile('src/main.tsx');
+    const sources = await rendererSourcesPromise;
+    const main = sources.requiredFile('src/main.tsx');
+    const errors = sources.requiredFile('src/components/ErrorDetails.tsx');
     const css = await readFile(new URL('../src/styles.css', import.meta.url), 'utf8');
 
     expect(main).toContain('ErrorSummaryButton');
-    expect(main).toContain('ErrorDetailDialog');
+    expect(errors).toContain('function ErrorDetailDialog');
     expect(main).toContain('summarizeErrorMessage');
-    expect(main).toContain('Python 运行时缺少依赖');
-    expect(main).toContain('Python 运行时依赖缺失');
+    expect(errors).toContain('Python 运行时缺少依赖');
+    expect(errors).toContain('Python 运行时依赖缺失');
     expect(main).toContain('className="mini-button viral-retry-button"');
     expect(main).toContain('fullMessage');
     expect(main).not.toContain('<small className="danger-text">{task.errorMessage}</small>');
