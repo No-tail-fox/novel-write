@@ -20,6 +20,7 @@ import {
   MAX_HTML_VIDEO_SOURCE_CHARS,
   parseHtmlVideoPipelineData,
 } from './html-video-workflow';
+import { HTML_VIDEO_EDITABLE_CONTROL_FIELDS } from './html-video-control-manifest';
 import { INVOKE_CHANNELS, type InvokeChannel } from './storydream-api';
 
 export const MAX_TASK_TEXT = 1_000_000;
@@ -259,6 +260,7 @@ const htmlVideoConfigChangeSchema = z.discriminatedUnion('field', [
   z.object({ field: z.literal('coverImageMode'), value: z.enum(HTML_VIDEO_COVER_MODES) }).strict(),
   z.object({ field: z.literal('coverTemplate'), value: nonEmptyText(256) }).strict(),
   z.object({ field: z.literal('coverRatio'), value: z.enum(HTML_VIDEO_COVER_RATIOS) }).strict(),
+  z.object({ field: z.literal('draftTemplate'), value: z.string().max(256) }).strict(),
   z.object({ field: z.literal('foreground'), value: z.boolean() }).strict(),
   z.object({ field: z.literal('maxScenes'), value: nonNegativeInteger.min(1).max(MAX_HTML_VIDEO_SCENES) }).strict(),
   z.object({ field: z.literal('ratio'), value: z.enum(HTML_VIDEO_RATIOS) }).strict(),
@@ -267,7 +269,7 @@ const htmlVideoConfigChangeSchema = z.discriminatedUnion('field', [
 export const htmlVideoConfigUpdateSchema = bounded(z
   .object({
     id: governanceIdSchema,
-    changes: z.array(htmlVideoConfigChangeSchema).min(1).max(16),
+    changes: z.array(htmlVideoConfigChangeSchema).min(1).max(HTML_VIDEO_EDITABLE_CONTROL_FIELDS.length),
   })
   .strict()
   .superRefine((input, ctx) => {

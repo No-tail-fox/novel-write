@@ -106,10 +106,15 @@ describe('HTML video control manifest', () => {
         availability: 'editable',
       }));
     }
+    expect(HTML_VIDEO_CONTROL_MANIFEST_V1.draftTemplate).toEqual(expect.objectContaining({
+      consumerStages: ['render'],
+      invalidateFrom: 'render',
+      availability: 'editable',
+    }));
     expect(Object.entries(HTML_VIDEO_CONTROL_MANIFEST_V1)
       .filter(([, entry]) => entry.availability === 'read-only-compatible')
       .map(([field]) => field)
-      .sort()).toEqual(['draftTemplate']);
+      .sort()).toEqual([]);
 
     expect(Object.fromEntries(Object.entries(HTML_VIDEO_CONTROL_MANIFEST_V1).map(([field, value]) => [
       field,
@@ -314,6 +319,7 @@ describe('HTML video control manifest', () => {
         coverImageMode: 'auto',
         coverTemplate: 'custom-cover-template',
         coverRatio: '3:4',
+        draftTemplate: 'custom-draft-template',
         ratio: '4:3',
         transitionType: 'dissolve',
       },
@@ -436,11 +442,33 @@ describe('HTML video control manifest', () => {
     });
   });
 
-  it('rejects read-only-compatible, duplicate, empty, and invalid config changes without mutating the pipeline', () => {
+  it('applies draft template changes from render while preserving all five earlier stages', () => {
+    const pipeline = createHtmlVideoPipelineData('Task 19 draft mutation');
+    pipeline.current = 'done';
+    for (const step of Object.keys(pipeline.steps) as HtmlVideoVisibleStep[]) {
+      pipeline.steps[step] = { status: 'completed', inputHash: `${step}-input`, artifactPath: `steps/${step}.json`, artifactSize: 10 };
+    }
+    pipeline.output = { path: 'final.mp4', sizeBytes: 100 };
+
+    const result = applyHtmlVideoConfigChanges(pipeline, [
+      { field: 'draftTemplate', value: 'draft-editorial' },
+    ]);
+
+    expect(result.changedFields).toEqual(['draftTemplate']);
+    expect(result.invalidateFrom).toBe('render');
+    for (const step of ['rewrite', 'planning', 'assets', 'voice', 'preview'] as const) {
+      expect(result.pipeline.steps[step]).toEqual(pipeline.steps[step]);
+    }
+    expect(result.pipeline.steps.render).toEqual({ status: 'pending' });
+    expect(result.pipeline).not.toHaveProperty('output');
+    expect(result.pipeline.config).toMatchObject({ draftTemplate: 'draft-editorial' });
+    expect(result.legacyMirrors).toEqual({});
+  });
+
+  it('rejects duplicate, empty, and invalid config changes without mutating the pipeline', () => {
     const pipeline = createHtmlVideoPipelineData('immutable rejection');
     const before = JSON.stringify(pipeline);
     for (const changes of [
-      [{ field: 'draftTemplate', value: 'draft-1' }],
       [{ field: 'ratio', value: '9:16' }, { field: 'ratio', value: '1:1' }],
       [],
       [{ field: 'ttsSpeed', value: Number.POSITIVE_INFINITY }],

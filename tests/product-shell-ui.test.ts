@@ -1234,13 +1234,12 @@ describe('product shell ui', () => {
       'bgmId',
       'bgmVolume',
       'transitionType',
+      'draftTemplate',
       'foreground',
       'maxScenes',
       'ratio',
     ];
-    const readOnlyFields = [
-      'draftTemplate',
-    ];
+    const readOnlyFields: string[] = [];
     for (const field of editableFields) {
       expect(editor).toContain(`data-html-video-edit-field="${field}"`);
       expect(page).toContain(`data-html-video-create-field="${field}"`);

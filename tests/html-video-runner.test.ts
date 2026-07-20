@@ -22,6 +22,7 @@ import {
   parseHtmlVideoPipelineData,
 } from '@shared/html-video-workflow';
 import type {
+  DraftTemplate,
   HtmlVideoAsset,
   HtmlVideoCompositionSnapshot,
   HtmlVideoJobConfig,
@@ -31,6 +32,7 @@ import type {
   HtmlVideoVisibleStep,
   HtmlVideoVoiceClip,
 } from '@shared/types';
+import { draftTemplates } from '@shared/templates';
 
 describe('HTML video runner module', () => {
   it('provides a dedicated shared runner module', () => {
@@ -1148,6 +1150,71 @@ describe('HTML video runner module', () => {
       expect(providerCalls).toBe(0);
       expect(renderCoverPath).toBe(input.state.coverAsset.path);
       expect(runtime.calls).toEqual([...htmlVideoVisibleSteps]);
+    });
+  });
+
+  it('passes the selected canonical draft template into render', async () => {
+    await withTempRunner(async (workDir) => {
+      const runtime = createFakeRuntime(workDir);
+      const input = createRunnerInput('selected-draft-template-render');
+      const template: DraftTemplate = {
+        ...draftTemplates[0],
+        id: 'html-video-draft-render-a',
+        name: 'HTML 视频草稿渲染 A',
+        canvas: { ...draftTemplates[0].canvas, width: 720, height: 1280 },
+        audio: { ...draftTemplates[0].audio, transitionType: 'slideleft', transitionDurationMs: 360 },
+      };
+      input.state.config.draftTemplate = template.id;
+      let lookupCalls = 0;
+      let capturedTemplate: DraftTemplate | undefined;
+      const render = runtime.options.render;
+      runtime.options.render = async (renderInput) => {
+        capturedTemplate = (renderInput as typeof renderInput & { draftTemplate?: DraftTemplate }).draftTemplate;
+        return render(renderInput);
+      };
+
+      await expect(runHtmlVideoPipeline(input, {
+        ...runtime.options,
+        resolveDraftTemplate: async (id: string) => {
+          lookupCalls += 1;
+          return id === template.id ? template : null;
+        },
+      } as HtmlVideoRunnerOptions & {
+        resolveDraftTemplate: (id: string) => Promise<DraftTemplate | null>;
+      })).resolves.toMatchObject({ current: 'done' });
+
+      expect(lookupCalls).toBe(1);
+      expect(capturedTemplate).toMatchObject({
+        id: template.id,
+        canvas: { width: 720, height: 1280 },
+        audio: { transitionType: 'slideleft', transitionDurationMs: 360 },
+      });
+      expect(capturedTemplate).not.toBe(template);
+      expect(runtime.calls).toEqual([...htmlVideoVisibleSteps]);
+    });
+  });
+
+  it('attributes a missing selected draft template to render before provider output', async () => {
+    await withTempRunner(async (workDir) => {
+      const runtime = createFakeRuntime(workDir);
+      const input = createRunnerInput('missing-draft-template-render');
+      input.state.config.draftTemplate = 'deleted-draft-template';
+      const render = vi.fn(runtime.options.render);
+      runtime.options.render = render;
+
+      await expect(runHtmlVideoPipeline(input, {
+        ...runtime.options,
+        resolveDraftTemplate: async () => null,
+      } as HtmlVideoRunnerOptions & {
+        resolveDraftTemplate: (id: string) => Promise<DraftTemplate | null>;
+      })).rejects.toMatchObject({ code: 'HTML_VIDEO_DRAFT_TEMPLATE_MISSING' });
+
+      expect(render).not.toHaveBeenCalled();
+      expect(runtime.calls).toEqual(['rewrite', 'planning', 'assets', 'voice', 'preview']);
+      expect(await readCheckpoint(workDir)).toMatchObject({
+        current: 'render',
+        steps: { render: { status: 'failed' } },
+      });
     });
   });
 

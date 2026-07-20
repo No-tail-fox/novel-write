@@ -445,6 +445,13 @@ export interface HtmlVideoOutput {
   sizeBytes: number;
   durationSec?: number;
   cover?: CoverMetadata | null;
+  draft?: {
+    draftDir: string;
+    draftContentPath: string;
+    draftMetaPath: string;
+    draftId?: string;
+    sourceVideoPath?: string;
+  };
 }
 
 export type HtmlVideoCoverMode = 'off' | 'auto' | 'manual';
@@ -499,6 +506,7 @@ export type HtmlVideoEditableConfigField =
   | 'coverImageMode'
   | 'coverTemplate'
   | 'coverRatio'
+  | 'draftTemplate'
   | 'foreground'
   | 'maxScenes'
   | 'ratio';
@@ -517,6 +525,7 @@ export type HtmlVideoConfigChange =
   | { field: 'coverImageMode'; value: HtmlVideoCoverMode }
   | { field: 'coverTemplate'; value: string }
   | { field: 'coverRatio'; value: HtmlVideoCoverRatio }
+  | { field: 'draftTemplate'; value: string }
   | { field: 'foreground'; value: boolean }
   | { field: 'maxScenes'; value: number }
   | { field: 'ratio'; value: '9:16' | '16:9' | '1:1' | '4:3' };

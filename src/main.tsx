@@ -4398,6 +4398,7 @@ function HtmlVideoPage({
   const [coverImageMode, setCoverImageMode] = useState<HtmlVideoCoverMode>(HTML_VIDEO_JOB_DEFAULTS.coverImageMode);
   const [coverTemplate, setCoverTemplate] = useState<string>(HTML_VIDEO_JOB_DEFAULTS.coverTemplate);
   const [coverRatio, setCoverRatio] = useState<HtmlVideoCoverRatio>(HTML_VIDEO_JOB_DEFAULTS.coverRatio);
+  const [draftTemplate, setDraftTemplate] = useState<string>('');
   const [activeTaskId, setActiveTaskId] = useState<string>('');
   const [activeTab, setActiveTab] = useState<HtmlVideoTabKey>('text');
   const [mediaRetryRevision, setMediaRetryRevision] = useState(0);
@@ -4615,7 +4616,8 @@ function HtmlVideoPage({
           coverImageMode,
           coverTemplate,
           coverRatio,
-        }));
+          draftTemplate,
+          }));
         applyState(next);
         const createdTask = taskFromMutation(next);
         if (createdTask) setActiveTaskId(createdTask.id);
@@ -4720,6 +4722,17 @@ function HtmlVideoPage({
           </div>
           <div data-html-video-create-field="coverRatio">
             <Segmented label="封面比例" value={coverRatio} options={[...HTML_VIDEO_COVER_RATIOS]} onChange={(value) => setCoverRatio(value as HtmlVideoCoverRatio)} />
+          </div>
+          <div data-html-video-create-field="draftTemplate">
+            <Field label="剪映草稿模板">
+              <select value={draftTemplate} onChange={(event) => setDraftTemplate(event.target.value)}>
+                <option value="">只输出 HTML 视频</option>
+                {draftTemplate && !state.draftTemplates.some((item) => item.id === draftTemplate)
+                  ? <option value={draftTemplate}>{draftTemplate}（目录中已缺失）</option>
+                  : null}
+                {state.draftTemplates.map((template) => <option key={template.id} value={template.id}>{template.name}</option>)}
+              </select>
+            </Field>
           </div>
         </div>
 
@@ -4856,6 +4869,7 @@ function HtmlVideoPage({
             config={pipelineData.config}
             appConfig={state.config}
             customStyles={state.customStyles}
+            draftTemplates={state.draftTemplates}
             applyState={applyState}
             refreshTaskDetail={refreshTaskDetail}
           />
@@ -4964,6 +4978,7 @@ interface HtmlVideoEditableValues {
   foreground: boolean;
   maxScenes: number;
   ratio: '9:16' | '16:9' | '1:1' | '4:3';
+  draftTemplate: string;
 }
 
 function editableHtmlVideoValues(config: HtmlVideoJobConfig): Omit<HtmlVideoEditableValues, 'transitionType'> & { transitionType: HtmlVideoTransition } {
@@ -4978,6 +4993,7 @@ function editableHtmlVideoValues(config: HtmlVideoJobConfig): Omit<HtmlVideoEdit
     foreground: config.foreground ?? HTML_VIDEO_JOB_DEFAULTS.foreground,
     maxScenes: config.maxScenes ?? HTML_VIDEO_JOB_DEFAULTS.maxScenes,
     ratio: (config.ratio ?? HTML_VIDEO_JOB_DEFAULTS.ratio) as HtmlVideoEditableValues['ratio'],
+    draftTemplate: config.draftTemplate ?? '',
   };
 }
 
@@ -4994,6 +5010,7 @@ function HtmlVideoConfigEditor({
   config,
   appConfig,
   customStyles,
+  draftTemplates,
   applyState,
   refreshTaskDetail,
 }: {
@@ -5002,6 +5019,7 @@ function HtmlVideoConfigEditor({
   config: HtmlVideoJobConfig;
   appConfig: AppConfig;
   customStyles: CustomStyle[];
+  draftTemplates: DraftTemplate[];
   applyState: ApplyMutationResult;
   refreshTaskDetail: (taskId: string) => Promise<void>;
 }) {
@@ -5028,7 +5046,7 @@ function HtmlVideoConfigEditor({
     const changes: HtmlVideoConfigChange[] = [];
     for (const field of [
       'style', 'voiceId', 'ttsProvider', 'ttsSpeed', 'bgmId', 'bgmVolume',
-      'transitionType', 'foreground', 'maxScenes', 'ratio',
+      'transitionType', 'foreground', 'maxScenes', 'ratio', 'draftTemplate',
     ] as const) {
       if (values[field] !== initial[field]) {
         changes.push({ field, value: values[field] } as HtmlVideoConfigChange);
@@ -5113,6 +5131,17 @@ function HtmlVideoConfigEditor({
         </div>
         <div data-html-video-edit-field="ratio">
           <Segmented label="画布比例" value={values.ratio} options={[...HTML_VIDEO_RATIOS]} onChange={(value) => setValue('ratio', value as typeof values.ratio)} />
+        </div>
+        <div data-html-video-edit-field="draftTemplate">
+          <Field label="剪映草稿模板">
+            <select value={values.draftTemplate} onChange={(event) => setValue('draftTemplate', event.target.value)} disabled={disabled}>
+              <option value="">只输出 HTML 视频</option>
+              {values.draftTemplate && !draftTemplates.some((template) => template.id === values.draftTemplate)
+                ? <option value={values.draftTemplate}>{values.draftTemplate}（目录中已缺失）</option>
+                : null}
+              {draftTemplates.map((template) => <option key={template.id} value={template.id}>{template.name}</option>)}
+            </select>
+          </Field>
         </div>
       </fieldset>
       {message ? <span className="local-note" role="status">{message}</span> : null}

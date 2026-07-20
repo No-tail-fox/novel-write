@@ -822,6 +822,18 @@ function parseOutput(value: unknown): HtmlVideoOutput {
     sizeBytes: requireNonNegativeInteger(output.sizeBytes, 'output.sizeBytes'),
     ...(optionalNonNegativeNumber(output.durationSec, 'output.durationSec') === undefined ? {} : { durationSec: Number(output.durationSec) }),
     ...(output.cover === undefined ? {} : { cover: parseLegacyCover(output.cover) }),
+    ...(output.draft === undefined ? {} : { draft: parseHtmlVideoDraftOutput(output.draft) }),
+  };
+}
+
+function parseHtmlVideoDraftOutput(value: unknown): NonNullable<HtmlVideoOutput['draft']> {
+  const draft = requireRecord(value, 'output.draft');
+  return {
+    draftDir: requireBoundedString(draft.draftDir, 'output.draft.draftDir', MAX_HTML_VIDEO_PATH_CHARS),
+    draftContentPath: requireBoundedString(draft.draftContentPath, 'output.draft.draftContentPath', MAX_HTML_VIDEO_PATH_CHARS),
+    draftMetaPath: requireBoundedString(draft.draftMetaPath, 'output.draft.draftMetaPath', MAX_HTML_VIDEO_PATH_CHARS),
+    ...(optionalBoundedString(draft.draftId, 'output.draft.draftId', MAX_HTML_VIDEO_DISPLAY_TEXT_CHARS) === undefined ? {} : { draftId: String(draft.draftId) }),
+    ...(optionalBoundedString(draft.sourceVideoPath, 'output.draft.sourceVideoPath', MAX_HTML_VIDEO_PATH_CHARS) === undefined ? {} : { sourceVideoPath: String(draft.sourceVideoPath) }),
   };
 }
 

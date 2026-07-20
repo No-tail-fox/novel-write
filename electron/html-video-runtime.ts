@@ -14,6 +14,7 @@ import {
   type HtmlVideoExportInput,
   type HtmlVideoExportResult,
 } from '../src/shared/html-video';
+import { writeJianyingDraft as writeJianyingDraftOutput, type JianyingDraftWriteResult, type WriteJianyingDraftInput } from '../src/shared/draft';
 import type {
   HtmlVideoPreviewInput,
   HtmlVideoPreviewOutput,
@@ -76,8 +77,10 @@ export interface ElectronHtmlVideoRuntimeOptions {
   fps?: number;
   maxLongEdge?: number;
   bgmPath?: string;
+  draftRootDir?: string;
   signal?: AbortSignal;
   renderer: HtmlVideoRuntimeRenderer;
+  writeJianyingDraft?(input: WriteJianyingDraftInput): Promise<JianyingDraftWriteResult>;
   probeMedia(workDir: string, path: string, signal?: AbortSignal): Promise<HtmlVideoMediaProbeResult>;
   getAvailableDiskBytes?(workDir: string): Promise<number>;
   publicationFileOperations?: Partial<HtmlVideoPublicationFileOperations>;
@@ -2227,10 +2230,50 @@ export function createElectronHtmlVideoRuntime(options: ElectronHtmlVideoRuntime
         const publishedPath = publishedFile.path;
         const { digest, ...publishedIdentity } = publishedFile.identity;
         if (!digest) throw htmlVideoOutputChanged();
+        const draft = input.draftTemplate
+          ? await (options.writeJianyingDraft ?? writeJianyingDraftOutput)({
+              workDir: stageDir,
+              draftRootDir: options.draftRootDir ?? '',
+              title: options.taskTitle,
+              cover: {
+                title: options.taskTitle,
+                subtitle: [],
+                summary: localInput.scenes[0]?.narration ?? options.taskTitle,
+                tags: [],
+                comments: [],
+              },
+              ratio: input.config.ratio ?? HTML_VIDEO_JOB_DEFAULTS.ratio,
+              template: input.draftTemplate,
+              scenes: composition.scenes.map((scene) => ({
+                id: scene.sceneId,
+                cap: scene.caption,
+                descPrompt: scene.description,
+                durationMs: scene.durationMs,
+              })),
+              imagePrompts: [],
+              reviewedText: localInput.scenes.map((scene) => scene.narration).join('\n\n'),
+              rewrittenCopy: localInput.scenes.map((scene) => scene.narration).join('\n\n'),
+              generatedImages: composition.scenes.map((scene) => ({ sceneId: scene.sceneId, path: scene.imagePath })),
+              coverImagePath: coverPath,
+              narrationAudio: composition.scenes.map((scene) => ({ sceneId: scene.sceneId, path: scene.audioPath })),
+              bgm: bgmPath
+                ? { id: 'html-video-bgm', title: 'HTML 视频背景音乐', path: bgmPath, durationMs: 0, volume: 1 }
+                : null,
+            })
+          : undefined;
         const output = Object.freeze({
           path: publishedPath,
           sizeBytes: Number(publishedIdentity.size),
           durationSec: probe.duration,
+          ...(draft ? {
+            draft: {
+              draftDir: draft.draftDir,
+              draftContentPath: draft.draftContentPath,
+              draftMetaPath: draft.draftMetaPath,
+              ...(draft.draftId ? { draftId: draft.draftId } : {}),
+              ...(draft.sourceVideoPath ? { sourceVideoPath: draft.sourceVideoPath } : {}),
+            },
+          } : {}),
         });
         renderArtifactProofs.set(output, {
           path: publishedPath,

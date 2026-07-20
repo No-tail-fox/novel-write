@@ -9,6 +9,7 @@ import { AppError, isCancellation } from '../src/shared/app-error';
 import { MAX_HTML_VIDEO_MEDIA_FILE_BYTES, runHtmlVideoPipeline, type HtmlVideoPreviewInput, type HtmlVideoRenderInput } from '../src/shared/html-video-runner';
 import { createHtmlVideoPipelineData, createHtmlVideoTaskInput, parseHtmlVideoPipelineData } from '../src/shared/html-video-workflow';
 import { FileDatabase } from '../src/shared/storage';
+import { draftTemplates } from '../src/shared/templates';
 import {
   createHtmlVideoMediaUrl,
   createElectronHtmlVideoRuntime,
@@ -24,6 +25,7 @@ import {
 } from '../electron/html-video-runtime';
 import { createHtmlVideoComposePayload, type HtmlVideoExportInput } from '@shared/html-video';
 import type { BgmItem, HtmlVideoCompositionSnapshot, HtmlVideoOutput, HtmlVideoScenePlan } from '@shared/types';
+import type { WriteJianyingDraftInput } from '@shared/draft';
 
 const expectedHtmlVideoBgmMaxBytes = 256 * 1024 * 1024;
 const expectedHtmlVideoBgmDiskReserveBytes = 64 * 1024 * 1024;
@@ -4072,6 +4074,88 @@ describe('Electron HTML video runtime contract', () => {
 
       await runtime.render(input);
       expect(renderedCoverPath).toBe(coverPath);
+    });
+  });
+
+  it('writes a Jianying draft from the selected HTML draft template after publishing the final video', async () => {
+    await withRuntimeDir(async (workDir) => {
+      const draftRootDir = join(workDir, 'jianying-drafts');
+      let draftInput: WriteJianyingDraftInput | undefined;
+      const runtime = await createRenderRuntimeWithMediaProbe(
+        workDir,
+        async () => validFinalMediaProbe(1.25),
+        (options) => {
+          options.draftRootDir = draftRootDir;
+          options.writeJianyingDraft = async (input) => {
+            draftInput = input;
+            return {
+              draftDir: join(draftRootDir, 'Final-media-validation'),
+              draftContentPath: join(draftRootDir, 'Final-media-validation', 'draft_content.json'),
+              draftMetaPath: join(draftRootDir, 'Final-media-validation', 'draft_meta_info.json'),
+              draftId: 'html-video-draft-output',
+              sourceVideoPath: join(workDir, 'render', 'final.mp4'),
+              workDir: input.workDir,
+              assets: {
+                images: input.generatedImages.map((asset) => asset.path),
+                narration: input.narrationAudio.map((asset) => asset.path),
+                bgm: input.bgm?.path ?? null,
+                subtitles: join(input.workDir, 'subtitles.srt'),
+              },
+              diagnostics: { generatedAt: '2026-07-20T00:00:00.000Z', checks: [] },
+            };
+          };
+        },
+      );
+
+      const output = await runtime.render({
+        ...createRenderRuntimeInput(workDir),
+        config: { ratio: '9:16' },
+        draftTemplate: draftTemplates[0],
+      });
+
+      expect(draftInput).toMatchObject({
+        draftRootDir,
+        title: 'Trusted render digest',
+        ratio: '9:16',
+        template: { id: draftTemplates[0].id },
+        scenes: [{ id: 1, durationMs: expect.any(Number) }],
+        bgm: null,
+      });
+      expect(draftInput?.workDir).toContain(join(workDir, '.html-video-staging'));
+      expect(basename(draftInput?.workDir ?? '')).toMatch(/^render-/u);
+      expect(draftInput?.generatedImages[0]?.path).toBe(join(workDir, 'render-background.png'));
+      expect(draftInput?.narrationAudio[0]?.path).toBe(join(workDir, 'render-voice.wav'));
+      expect(output.draft).toEqual({
+        draftDir: join(draftRootDir, 'Final-media-validation'),
+        draftContentPath: join(draftRootDir, 'Final-media-validation', 'draft_content.json'),
+        draftMetaPath: join(draftRootDir, 'Final-media-validation', 'draft_meta_info.json'),
+        draftId: 'html-video-draft-output',
+        sourceVideoPath: join(workDir, 'render', 'final.mp4'),
+      });
+    });
+  });
+
+  it('does not write a Jianying draft when no HTML draft template is selected', async () => {
+    await withRuntimeDir(async (workDir) => {
+      let draftWrites = 0;
+      const runtime = await createRenderRuntimeWithMediaProbe(
+        workDir,
+        async () => validFinalMediaProbe(1.25),
+        (options) => {
+          options.writeJianyingDraft = async () => {
+            draftWrites += 1;
+            throw new Error('writeJianyingDraft was not expected.');
+          };
+        },
+      );
+
+      const output = await runtime.render({
+        ...createRenderRuntimeInput(workDir),
+        config: { ratio: '9:16' },
+      });
+
+      expect(draftWrites).toBe(0);
+      expect(output).not.toHaveProperty('draft');
     });
   });
 

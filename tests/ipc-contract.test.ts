@@ -103,12 +103,12 @@ describe('IPC runtime contract', () => {
         { field: 'coverImageMode', value: 'manual' },
         { field: 'coverTemplate', value: 'cinematic-poster' },
         { field: 'coverRatio', value: '3:4' },
+        { field: 'draftTemplate', value: 'draft-1' },
       ],
     })).toMatchObject({ id: 'html-task-1' });
     for (const invalidChange of [
       { field: 'coverImageMode', value: 'custom' },
       { field: 'coverRatio', value: '4:5' },
-      { field: 'draftTemplate', value: 'draft-1' },
       { field: 'ttsProvider', value: 'unknown-provider' },
       { field: 'ttsSpeed', value: 10.01 },
       { field: 'bgmVolume', value: 'silent' },
@@ -143,11 +143,12 @@ describe('IPC runtime contract', () => {
         { field: 'coverImageMode', value: 'off' },
         { field: 'coverTemplate', value: 'cinematic-poster' },
         { field: 'coverRatio', value: '3:4' },
+        { field: 'draftTemplate', value: '' },
         { field: 'foreground', value: true },
         { field: 'maxScenes', value: 8 },
         { field: 'ratio', value: '9:16' },
       ],
-    }).changes).toHaveLength(16);
+    }).changes).toHaveLength(17);
 
     const importCoverSchema = contract.ipcInputSchemas['html-video:import-cover'];
     expect(importCoverSchema.parse('html-task-1')).toBe('html-task-1');

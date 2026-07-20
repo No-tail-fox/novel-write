@@ -31,9 +31,11 @@ import {
   validateHtmlVideoScenePlans,
   validateHtmlVideoVoices,
 } from './html-video-workflow';
+import { resolveHtmlVideoDraftForRender } from './html-video-draft';
 export { invalidateHtmlVideoPipeline } from './html-video-workflow';
 import type {
   CustomCoverTemplate,
+  DraftTemplate,
   HtmlVideoAsset,
   HtmlVideoCoverAsset,
   HtmlVideoCoverRatio,
@@ -113,6 +115,7 @@ export interface HtmlVideoPreviewOutput {
 export interface HtmlVideoRenderInput extends HtmlVideoPreviewInput {
   compositions: HtmlVideoCompositionSnapshot[];
   coverAsset?: HtmlVideoCoverAsset;
+  draftTemplate?: DraftTemplate;
 }
 
 export interface HtmlVideoRunnerOptions {
@@ -127,6 +130,7 @@ export interface HtmlVideoRunnerOptions {
   taskTitle?: string;
   resolveCoverTemplate?: (id: string) => Promise<CustomCoverTemplate | null>;
   generateCover?: (input: HtmlVideoCoverGenerationInput) => Promise<HtmlVideoCoverAsset>;
+  resolveDraftTemplate?: (id: string) => Promise<DraftTemplate | null>;
   consumeRenderArtifactDigest?: (
     output: HtmlVideoOutput,
     signal?: AbortSignal,
@@ -477,6 +481,10 @@ async function executeStep(
   } else {
     delete state.coverAsset;
   }
+  const draftTemplate = await resolveHtmlVideoDraftForRender({
+    config: state.config,
+    resolveTemplate: options.resolveDraftTemplate ?? (async () => null),
+  });
   state.steps.render.inputHash = hashStepInput('render', sourceText, state, context);
   await revalidateCompletedMediaSteps(options.workDir, state, ['assets', 'voice', 'preview'], options.signal);
   const generated = await options.render({
@@ -485,6 +493,7 @@ async function executeStep(
     voices: structuredClone(state.voices),
     compositions: structuredClone(state.compositions),
     ...(state.coverAsset ? { coverAsset: structuredClone(state.coverAsset) } : {}),
+    ...(draftTemplate ? { draftTemplate: structuredClone(draftTemplate) } : {}),
     ...htmlVideoConfigEnvelopeForStage(state.config, 'render'),
     signal: options.signal,
   });
@@ -737,7 +746,7 @@ function hashStepInput(
   else if (step === 'assets') input = { scenes: state.scenes, config };
   else if (step === 'voice') input = { scenes: state.scenes, config };
   else if (step === 'preview') input = { scenes: state.scenes, assets: state.assets, voices: state.voices, config };
-  else input = { compositions: state.compositions, coverAsset: state.coverAsset, config };
+  else input = { compositions: state.compositions, coverAsset: state.coverAsset, draftTemplate: state.config.draftTemplate, config };
   return createHash('sha256').update(JSON.stringify({ step, input })).digest('hex');
 }
 

@@ -37,6 +37,7 @@ export const HTML_VIDEO_EDITABLE_CONTROL_FIELDS = [
   'coverImageMode',
   'coverTemplate',
   'coverRatio',
+  'draftTemplate',
   'foreground',
   'maxScenes',
   'ratio',
@@ -129,8 +130,8 @@ export const HTML_VIDEO_CONTROL_MANIFEST_V1 = {
     consumerStages: ['render'], invalidateFrom: 'render', availability: 'editable',
   }),
   draftTemplate: entry('draftTemplate', {
-    schema: 'compatible-string', uiLocation: 'draft', legacyMirror: null,
-    consumerStages: [], invalidateFrom: null, availability: 'read-only-compatible',
+    schema: 'draft-template-id', uiLocation: 'draft', legacyMirror: null,
+    consumerStages: ['render'], invalidateFrom: 'render', availability: 'editable',
   }),
   foreground: entry('foreground', {
     schema: 'boolean', uiLocation: 'parameters', legacyMirror: 'htmlVideoForeground',
