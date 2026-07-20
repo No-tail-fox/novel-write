@@ -836,6 +836,17 @@ describe('product shell ui', () => {
     }
   });
 
+  it('keeps the full previous book identity until the canonical save response arrives', async () => {
+    const main = (await rendererSourcesPromise).requiredFile('src/main.tsx');
+    const page = main.slice(main.indexOf('function BookSelectionPage'), main.indexOf('function BenchmarkImportPage'));
+    expect(page).toContain('selectedIdentity');
+    expect(page).toContain('previousIdentity: selectedIdentity');
+    expect(page).toContain("setSelectedIdentity({ theme: record.theme, bookId: record.bookId })");
+    expect(page).toContain("setSelectedIdentity({ theme: saved.theme, bookId: saved.bookId })");
+    expect(page).not.toContain('bookId: selectedBookId || undefined');
+    expect(page).toContain("sessionStorage.setItem('book_product_info', JSON.stringify(record.data))");
+  });
+
   it('adds practical latest Storybound pages and controls to the Chinese shell', async () => {
     const main = (await rendererSourcesPromise).requiredFile('src/main.tsx');
     const css = await readFile(new URL('../src/styles.css', import.meta.url), 'utf8');

@@ -1803,18 +1803,33 @@ export class FileDatabase {
 
   async upsertBookSelection(input: BookSelectionInput): Promise<BookSelectionRecord> {
     return this.enqueueCommit(() => {
+      const theme = input.theme.trim();
+      const bookId = input.bookId?.trim() || randomUUID();
+      const previousIdentity = input.previousIdentity
+        ? { theme: input.previousIdentity.theme.trim(), bookId: input.previousIdentity.bookId.trim() }
+        : null;
       const record: BookSelectionRecord = {
-        theme: input.theme,
-        bookId: input.bookId ?? randomUUID(),
+        theme,
+        bookId,
         data: input.data,
         updatedAt: Date.now(),
       };
-      this.db.run(
-        `INSERT INTO book_selection (theme, book_id, data, updated_at)
-         VALUES (?, ?, ?, ?)
-         ON CONFLICT(theme, book_id) DO UPDATE SET data = excluded.data, updated_at = excluded.updated_at`,
-        [record.theme, record.bookId, json(record.data), record.updatedAt],
-      );
+      const destination = getFirstRow<Record<string, unknown>>(this.db, 'SELECT theme, book_id FROM book_selection WHERE theme = ? AND book_id = ?', [theme, bookId]);
+      if (previousIdentity) {
+        const previous = getFirstRow<Record<string, unknown>>(this.db, 'SELECT theme, book_id FROM book_selection WHERE theme = ? AND book_id = ?', [previousIdentity.theme, previousIdentity.bookId]);
+        if (!previous) throw new Error('BOOK_SELECTION_STALE_IDENTITY: The selected book record no longer exists.');
+        const sameIdentity = previousIdentity.theme === theme && previousIdentity.bookId === bookId;
+        if (!sameIdentity && destination) throw new Error('BOOK_SELECTION_DESTINATION_CONFLICT: Another book selection already uses this theme and ID.');
+        if (sameIdentity) {
+          this.db.run('UPDATE book_selection SET data = ?, updated_at = ? WHERE theme = ? AND book_id = ?', [json(record.data), record.updatedAt, theme, bookId]);
+        } else {
+          this.db.run('DELETE FROM book_selection WHERE theme = ? AND book_id = ?', [previousIdentity.theme, previousIdentity.bookId]);
+          this.db.run('INSERT INTO book_selection (theme, book_id, data, updated_at) VALUES (?, ?, ?, ?)', [theme, bookId, json(record.data), record.updatedAt]);
+        }
+      } else {
+        if (destination) throw new Error('BOOK_SELECTION_DESTINATION_CONFLICT: Another book selection already uses this theme and ID.');
+        this.db.run('INSERT INTO book_selection (theme, book_id, data, updated_at) VALUES (?, ?, ?, ?)', [theme, bookId, json(record.data), record.updatedAt]);
+      }
       return record;
     });
   }

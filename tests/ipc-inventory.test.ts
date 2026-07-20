@@ -54,6 +54,12 @@ describe('renderer IPC inventory', () => {
     expect(ipcRenderer.invoke).toHaveBeenCalledWith('html-video:import-cover', 'html-task-1');
   });
 
+  it('routes book selection saves with the previous composite identity intact', async () => {
+    const input = { theme: 'new', bookId: 'new-id', previousIdentity: { theme: 'old', bookId: 'old-id' }, data: { name: 'Book' } };
+    await storyDreamApi.saveBookSelection(input);
+    expect(ipcRenderer.invoke).toHaveBeenCalledWith('book-selection:save', input);
+  });
+
   it('keeps actual preload invoke calls in exact canonical order', async () => {
     const preload = await readFile(new URL('../electron/preload.ts', import.meta.url), 'utf8');
     const PRELOAD_INVOKE_CHANNELS = extractPreloadInvokeChannels(preload);

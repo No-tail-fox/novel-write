@@ -13,6 +13,17 @@ async function loadStoryDreamApiContract() {
 }
 
 describe('IPC runtime contract', () => {
+  it('requires a strict previous composite identity for book selection updates', async () => {
+    const contract = await loadContract();
+    expect(contract).not.toBeNull();
+    if (!contract) return;
+    const schema = contract.ipcInputSchemas['book-selection:save'];
+    const input = { theme: 'new-theme', bookId: 'new-id', previousIdentity: { theme: 'old-theme', bookId: 'old-id' }, data: { name: 'Book' } };
+    expect(schema.parse(input)).toEqual(input);
+    expect(() => schema.parse({ ...input, previousIdentity: { ...input.previousIdentity, extra: true } })).toThrow();
+    expect(() => schema.parse({ ...input, previousIdentity: { theme: '', bookId: 'old-id' } })).toThrow();
+  });
+
   it('validates complete draft templates at every nested IPC boundary', async () => {
     const contract = await loadContract();
     expect(contract).not.toBeNull();

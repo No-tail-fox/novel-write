@@ -55,6 +55,7 @@ import type {
   AppConfig,
   BootstrapState,
   BookProductInfo,
+  BookSelectionIdentity,
   BookSelectionRecord,
   ConfigTestTarget,
   CreateTaskInput,
@@ -1378,8 +1379,17 @@ function makeFallbackApi(setState: (state: AppState) => void): StoryDreamApi {
     },
     async saveBookSelection(input) {
       const records = readBookSelections();
-      const record = { theme: input.theme, bookId: input.bookId ?? `b-${Date.now()}`, data: input.data, updatedAt: Date.now() };
-      writeBookSelections([record, ...records.filter((item) => !(item.theme === record.theme && item.bookId === record.bookId))]);
+      const record = { theme: input.theme.trim(), bookId: input.bookId?.trim() || `b-${Date.now()}`, data: input.data, updatedAt: Date.now() };
+      const previous = input.previousIdentity;
+      const previousIndex = previous ? records.findIndex((item) => item.theme === previous.theme && item.bookId === previous.bookId) : -1;
+      if (previous && previousIndex < 0) throw new Error('BOOK_SELECTION_STALE_IDENTITY: 所选记录已被修改或删除。');
+      const destinationIndex = records.findIndex((item) => item.theme === record.theme && item.bookId === record.bookId);
+      const sameIdentity = previous?.theme === record.theme && previous?.bookId === record.bookId;
+      if ((!previous && destinationIndex >= 0) || (previous && !sameIdentity && destinationIndex >= 0)) {
+        throw new Error('BOOK_SELECTION_DESTINATION_CONFLICT: 目标主题和书目 ID 已存在。');
+      }
+      const retained = records.filter((_, index) => index !== previousIndex && index !== (sameIdentity ? destinationIndex : -1));
+      writeBookSelections([record, ...retained]);
       return record;
     },
     async deleteBookSelection(theme, bookId) {
@@ -3680,6 +3690,7 @@ function NewTaskPage({
 function BookSelectionPage({ api, navigate }: { api: StoryDreamApi; navigate: (view: ShellView) => void }) {
   const [records, setRecords] = useState<BookSelectionRecord[]>([]);
   const [selectedBookId, setSelectedBookId] = useState('');
+  const [selectedIdentity, setSelectedIdentity] = useState<BookSelectionIdentity | null>(null);
   const [theme, setTheme] = useState('故事带货');
   const [name, setName] = useState('');
   const [author, setAuthor] = useState('');
@@ -3721,6 +3732,7 @@ function BookSelectionPage({ api, navigate }: { api: StoryDreamApi; navigate: (v
 
   function loadRecord(record: BookSelectionRecord) {
     setSelectedBookId(record.bookId);
+    setSelectedIdentity({ theme: record.theme, bookId: record.bookId });
     setTheme(record.theme);
     setName(record.data.name ?? '');
     setAuthor(record.data.author ?? '');
@@ -3738,6 +3750,7 @@ function BookSelectionPage({ api, navigate }: { api: StoryDreamApi; navigate: (v
 
   function clearForm() {
     setSelectedBookId('');
+    setSelectedIdentity(null);
     setName('');
     setAuthor('');
     setCategory('');
@@ -3780,12 +3793,14 @@ function BookSelectionPage({ api, navigate }: { api: StoryDreamApi; navigate: (v
     await bookAction.run(async () => {
       setPendingAction('save');
       try {
-        const record = await api.saveBookSelection({
+        const saved = await api.saveBookSelection({
           theme: theme.trim(),
-          bookId: selectedBookId || undefined,
+          bookId: selectedIdentity?.bookId,
+          previousIdentity: selectedIdentity ?? undefined,
           data: productData(),
         });
-        setSelectedBookId(record.bookId);
+        setSelectedBookId(saved.bookId);
+        setSelectedIdentity({ theme: saved.theme, bookId: saved.bookId });
         await loadSelections();
         setMessage('已保存选品。');
       } finally {
@@ -3799,7 +3814,7 @@ function BookSelectionPage({ api, navigate }: { api: StoryDreamApi; navigate: (v
       setPendingAction(`delete:${record.bookId}`);
       try {
         await api.deleteBookSelection(record.theme, record.bookId);
-        if (selectedBookId === record.bookId) clearForm();
+        if (selectedIdentity?.theme === record.theme && selectedIdentity.bookId === record.bookId) clearForm();
         await loadSelections();
         setMessage('已删除选品。');
       } finally {
@@ -3832,7 +3847,7 @@ function BookSelectionPage({ api, navigate }: { api: StoryDreamApi; navigate: (v
         <div className="selection-card-list">
           {records.length === 0 ? <EmptyState title="暂无选品" /> : null}
           {records.map((record) => (
-            <article key={`${record.theme}-${record.bookId}`} className={record.bookId === selectedBookId ? 'selection-card active' : 'selection-card'}>
+            <article key={`${record.theme}-${record.bookId}`} className={selectedIdentity?.theme === record.theme && selectedIdentity.bookId === record.bookId ? 'selection-card active' : 'selection-card'}>
               <button type="button" className="selection-card-main" onClick={() => loadRecord(record)}>
                 <strong>{record.data.name}</strong>
                 <span>{record.theme} · {record.data.author || record.data.category || '未填分类'}</span>

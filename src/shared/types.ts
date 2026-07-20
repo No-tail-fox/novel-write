@@ -589,9 +589,15 @@ export interface BookSelectionRecord {
   updatedAt: number;
 }
 
+export interface BookSelectionIdentity {
+  theme: string;
+  bookId: string;
+}
+
 export interface BookSelectionInput {
   theme: string;
   bookId?: string;
+  previousIdentity?: BookSelectionIdentity;
   data: BookProductInfo;
 }
 

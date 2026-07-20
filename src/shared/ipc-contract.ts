@@ -622,7 +622,12 @@ export const ipcInputSchemas = {
     }).strict(),
   ]),
   'book-selection:list': optionalThemeSchema,
-  'book-selection:save': z.object({ theme: nonEmptyText(1024), bookId: optionalText(256), data: bookProductSchema }).strict(),
+  'book-selection:save': z.object({
+    theme: nonEmptyText(1024),
+    bookId: optionalText(256),
+    previousIdentity: z.object({ theme: nonEmptyText(1024), bookId: idSchema }).strict().optional(),
+    data: bookProductSchema,
+  }).strict(),
   'book-selection:delete': z.object({ theme: nonEmptyText(1024), bookId: idSchema }).strict(),
   'person-assets:list': z.void(),
   'person-assets:create': nameSchema,

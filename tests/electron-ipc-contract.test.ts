@@ -6,6 +6,17 @@ import { openExistingDirectory } from '../electron/open-directory';
 import { INVOKE_CHANNELS } from '../src/shared/storydream-api';
 
 describe('electron ipc contract', () => {
+  it('passes the strict book selection save request through preload and the trusted handler', async () => {
+    const [main, preload, apiContract] = await Promise.all([
+      readFile(new URL('../electron/main.ts', import.meta.url), 'utf8'),
+      readFile(new URL('../electron/preload.ts', import.meta.url), 'utf8'),
+      readFile(new URL('../src/shared/storydream-api.ts', import.meta.url), 'utf8'),
+    ]);
+    expect(main).toContain("trustedHandle('book-selection:save', async (_event, input: BookSelectionInput) => (await getDb()).upsertBookSelection(input))");
+    expect(preload).toContain("saveBookSelection: (input: BookSelectionInput): Promise<BookSelectionRecord> => invokeTrusted('book-selection:save', input)");
+    expect(apiContract).toContain('saveBookSelection: (input: BookSelectionInput) => Promise<BookSelectionRecord>');
+  });
+
   it('opens only existing directories and surfaces shell opener errors', async () => {
     const root = await mkdtemp(join(tmpdir(), 'storydream-open-directory-'));
     const filePath = join(root, 'not-a-directory.txt');
