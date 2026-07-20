@@ -963,10 +963,12 @@ export interface MusicPlan {
   captionStyle: MusicMvSettings['captionStyle'];
   visualMotif: string;
   audioPath: string;
+  audioDurationMs: number;
   segments: Array<{
     id: number;
     lyric: string;
     section: 'intro' | 'verse' | 'chorus' | 'bridge' | 'outro';
+    startMs: number;
     durationMs: number;
     visualHint: string;
   }>;

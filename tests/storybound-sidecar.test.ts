@@ -206,6 +206,9 @@ describe('Storybound-compatible media sidecar', () => {
       expect(inputPath).toMatch(/storybound-media-sidecar[\\/]input\.json$/);
       expect(script).toContain('def generate_story');
       expect(script).toContain('def generate_music_mv');
+      expect(script).toContain('music_caption_style = str(payload.get("caption_style") or "karaoke")');
+      expect(script).toContain('music_tracks.append({"type": "bgm"');
+      expect(script).toContain('"canvas": music_canvas');
       expect(script).toContain('def generate_compose_render');
       expect(script).toContain('def generate_remix_bgm');
       expect(script).toContain('def convert_audio_16k');

@@ -44,6 +44,10 @@ export interface StoryboundMusicMvInput {
   template?: unknown;
   cover_title?: unknown;
   cover_image_path?: string;
+  bgm_path?: string;
+  ratio?: string;
+  canvas?: { width: number; height: number; ratio: string };
+  caption_style?: 'karaoke' | 'minimal' | 'none';
 }
 
 export interface StoryboundComposeRenderInput {
@@ -624,22 +628,31 @@ def generate_music_mv(payload):
         jieba = None
     assignments = payload.get("assignments") or []
     lyrics = payload.get("lyrics") or []
+    music_caption_style = str(payload.get("caption_style") or "karaoke")
+    music_canvas = payload.get("canvas") or {"ratio": payload.get("ratio") or "original"}
     duration = int(float(payload.get("audio_duration") or 0) * 1000000)
     if duration <= 0:
         duration = total_scene_duration_us(lyrics)
     title = str(payload.get("task_title") or cover_title_text(payload) or "StoryDream Music MV")
+    music_tracks = [
+        {"type": "video", "segments": assignments},
+        {"type": "audio", "segments": [{"path": payload.get("audio_path") or "", "duration": duration, "role": "song"}]},
+    ]
+    if music_caption_style != "none":
+        music_tracks.append({"type": "text", "style": music_caption_style, "segments": lyrics})
+    if payload.get("bgm_path") and payload.get("bgm_path") != payload.get("audio_path"):
+        music_tracks.append({"type": "bgm", "segments": [{"path": payload.get("bgm_path"), "duration": duration}]})
     content = {
         "duration": duration,
+        "canvas": music_canvas,
+        "caption_style": music_caption_style,
         "materials": {
             "videos": assignments,
             "audios": [{"path": payload.get("audio_path") or "", "source": "music_mv"}],
             "texts": lyrics,
+            "bgm": payload.get("bgm_path") or "",
         },
-        "tracks": [
-            {"type": "video", "segments": assignments},
-            {"type": "audio", "segments": [{"path": payload.get("audio_path") or "", "duration": duration}]},
-            {"type": "text", "segments": lyrics},
-        ],
+        "tracks": music_tracks,
         "storybound_contract": payload,
     }
     return create_minimal_draft(payload["jianying_draft_path"], title, content, {"draft_cover": payload.get("cover_image_path") or ""})

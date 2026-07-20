@@ -306,7 +306,10 @@ async function runTaskWithPipelineStateLock(db: FileDatabase, task: Task, option
   try {
     throwIfAborted(options.signal);
     await heartbeat(activeStep ?? 0, 'task started');
-    await ensureContentArtifact({ db, task, options, workDir, emit, markStep, pipeline });
+    const musicMvAudioDurationMs = task.taskKind === 'music-mv'
+      ? await probeMusicMvAudio(task, options, workDir)
+      : undefined;
+    await ensureContentArtifact({ db, task, options, workDir, emit, markStep, pipeline, musicMvAudioDurationMs });
     const artifact = hydrateArtifact(pipeline.artifact);
     if (task.processingMode === 'clip-only') {
       const completedAt = new Date().toISOString();
@@ -362,6 +365,7 @@ async function runTaskWithPipelineStateLock(db: FileDatabase, task: Task, option
             template: normalizedTemplate,
             generatedImages: pipeline.assets.images,
             coverImagePath: pipeline.assets.cover[0]?.path,
+            bgm,
             runSidecar: options.mediaSidecar ?? runStoryboundMediaSidecar,
           })
           : await writeJianyingDraft(
@@ -464,6 +468,7 @@ async function ensureContentArtifact(input: {
   emit: (type: string, step: number | null, agent: string | null, detail: string, data?: unknown) => Promise<void>;
   markStep: (step: number, status: StepStatus, patch?: Partial<PipelineState['steps'][string]>) => Promise<void>;
   pipeline: PipelineState;
+  musicMvAudioDurationMs?: number;
 }): Promise<void> {
   const { db, task, options, workDir, emit, markStep, pipeline } = input;
   throwIfAborted(options.signal);
@@ -506,7 +511,7 @@ async function ensureContentArtifact(input: {
     return;
   }
   if (task.taskKind === 'music-mv') {
-    pipeline.artifact = buildMusicMvArtifact(task, sourceContext ?? undefined);
+    pipeline.artifact = buildMusicMvArtifact(task, sourceContext ?? undefined, input.musicMvAudioDurationMs);
     await writeContentArtifacts(workDir, hydrateArtifact(pipeline.artifact), task);
     for (const step of [0, 1, 2, 3]) {
       await db.updateTask(task.id, { currentStep: step, retryFromStep: step });
@@ -1436,8 +1441,8 @@ function fallbackCharacterCard(task: Task): CharacterCard {
   };
 }
 
-function buildMusicMvArtifact(task: Task, sourceContext?: AiSourceContext): PipelineArtifact {
-  const musicPlan = buildMusicPlan(task);
+function buildMusicMvArtifact(task: Task, sourceContext?: AiSourceContext, audioDurationMs?: number): PipelineArtifact {
+  const musicPlan = buildMusicMvPlan(task, audioDurationMs);
   const scenes: StoryboardScene[] = musicPlan.segments.map((segment) => ({
     id: segment.id,
     cap: segment.lyric,
@@ -1481,6 +1486,7 @@ async function writeMusicMvSidecarDraft(input: {
   template?: DraftTemplate;
   generatedImages: SceneAsset[];
   coverImagePath?: string;
+  bgm?: BgmItem | null;
   runSidecar: (input: StoryboundSidecarInput) => Promise<StoryboundSidecarResult>;
 }): Promise<{
   draftDir: string;
@@ -1501,7 +1507,8 @@ async function writeMusicMvSidecarDraft(input: {
     if (!image?.path) {
       throw new Error(`Missing music MV image asset for scene ${scene.id}.`);
     }
-    const startUs = input.artifact.scenes.slice(0, index).reduce((sum, item) => sum + Math.max(800, item.durationMs), 0) * 1000;
+    const planSegment = input.artifact.musicPlan?.segments.find((segment) => segment.id === scene.id);
+    const startUs = (planSegment?.startMs ?? input.artifact.scenes.slice(0, index).reduce((sum, item) => sum + Math.max(800, item.durationMs), 0)) * 1000;
     const durationUs = Math.max(800, scene.durationMs) * 1000;
     return {
       sceneId: scene.id,
@@ -1516,7 +1523,7 @@ async function writeMusicMvSidecarDraft(input: {
     mode: 'music_mv',
     work_dir: input.workDir,
     audio_path: input.task.musicMv.audioPath,
-    audio_duration: Math.max(0.001, input.artifact.scenes.reduce((sum, scene) => sum + Math.max(800, scene.durationMs), 0) / 1000),
+    audio_duration: Math.max(0.001, (input.artifact.musicPlan?.audioDurationMs ?? input.artifact.scenes.reduce((sum, scene) => sum + Math.max(800, scene.durationMs), 0)) / 1000),
     material_source: input.task.materialSource ?? 'ai',
     assignments: sceneTimings.map((item) => ({
       scene_id: item.sceneId,
@@ -1536,6 +1543,10 @@ async function writeMusicMvSidecarDraft(input: {
     template: input.template,
     cover_title: input.artifact.cover,
     cover_image_path: input.coverImagePath,
+    bgm_path: input.bgm?.path,
+    ratio: input.task.ratio,
+    canvas: input.template?.canvas,
+    caption_style: input.task.musicMv.captionStyle,
   });
   const draftDir = result.draft_dir ?? join(input.draftRootDir, safeDraftName(input.task.title || todayTitle(input.task.inputText)));
   return {
@@ -1554,27 +1565,56 @@ async function writeMusicMvSidecarDraft(input: {
   };
 }
 
-function buildMusicPlan(task: Task): MusicPlan {
+export function buildMusicMvPlan(task: Task, audioDurationMs = 0): MusicPlan {
   const lines = task.inputText
     .replace(/\r/g, '')
     .split(/\n|(?<=[。！？!?；;])/u)
     .map((line) => line.trim())
     .filter(Boolean);
-  const lyrics = lines.length ? lines : [task.title || '音乐MV'];
+  const requestedScenes = normalizeStoryboardSceneCount(task.targetScenes ?? task.storyboardSceneCount) ?? 60;
+  const parsed = (lines.length ? lines : [task.title || '音乐MV']).map((line) => {
+    const match = line.match(/^\[(\d{1,3}):(\d{2}(?:\.\d{1,3})?)\]\s*(.+)$/u);
+    return { lyric: match?.[3]?.trim() || line, startMs: match ? (Number(match[1]) * 60 + Number(match[2])) * 1000 : null };
+  }).slice(0, requestedScenes);
+  const lyrics = parsed.map((item) => item.lyric);
   const durationByMode = task.musicMv.rhythmMode === 'fast-cut' ? 1600 : task.musicMv.rhythmMode === 'slow-cinematic' ? 3600 : 2400;
+  const effectiveDurationMs = audioDurationMs > 0 ? audioDurationMs : durationByMode * lyrics.length;
+  const timed = parsed.every((item) => item.startMs !== null);
   return {
     rhythmMode: task.musicMv.rhythmMode,
     captionStyle: task.musicMv.captionStyle,
     visualMotif: task.musicMv.visualMotif,
     audioPath: task.musicMv.audioPath,
-    segments: lyrics.map((lyric, index) => ({
+    audioDurationMs: effectiveDurationMs,
+    segments: lyrics.map((lyric, index) => {
+      const startMs = timed ? Math.min(effectiveDurationMs, parsed[index].startMs ?? 0) : Math.round(effectiveDurationMs * index / lyrics.length);
+      const nextStartMs = timed && index + 1 < lyrics.length
+        ? Math.min(effectiveDurationMs, parsed[index + 1].startMs ?? effectiveDurationMs)
+        : timed ? effectiveDurationMs : Math.round(effectiveDurationMs * (index + 1) / lyrics.length);
+      return {
       id: index + 1,
       lyric,
       section: musicSection(index, lyrics.length),
-      durationMs: durationByMode,
+      startMs,
+      durationMs: Math.max(1, nextStartMs - startMs),
       visualHint: `${task.musicMv.visualMotif || '围绕歌词情绪'}，镜头跟随歌词 "${lyric}"`,
-    })),
+      };
+    }),
   };
+}
+
+async function probeMusicMvAudio(task: Task, options: RunTaskOptions, workDir: string): Promise<number> {
+  const audioPath = task.musicMv.audioPath.trim();
+  if (!audioPath) throw new Error('Music MV audio validation failed: select a local song audio file.');
+  try {
+    const result = await (options.mediaSidecar ?? runStoryboundMediaSidecar)({ mode: 'probe_media', work_dir: workDir, media_path: audioPath });
+    if (!result.success || result.has_audio === false || !Number.isFinite(result.duration) || Number(result.duration) <= 0) {
+      throw new Error(result.error || 'audio duration is unavailable');
+    }
+    return Number(result.duration) * 1000;
+  } catch (error) {
+    throw new Error(`Music MV audio validation failed: ${error instanceof Error ? error.message : String(error)}`);
+  }
 }
 
 function musicSection(index: number, total: number): MusicPlan['segments'][number]['section'] {

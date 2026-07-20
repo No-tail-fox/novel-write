@@ -2796,6 +2796,9 @@ describe('task runner', () => {
     const mediaDir = join(dir, 'media');
 
     try {
+      const songPath = join(mediaDir, 'clip-song.wav');
+      await mkdir(mediaDir, { recursive: true });
+      await writeFile(songPath, wavTone(7200));
       const task = await db.createTask({
         title: 'Music MV',
         inputText: '雨落下第一句\n霓虹亮起第二句\n副歌把夜色唱亮',
@@ -2806,12 +2809,15 @@ describe('task runner', () => {
           rhythmMode: 'lyric-sync',
           captionStyle: 'karaoke',
           visualMotif: '雨夜霓虹和孤独背影',
-          audioPath: 'D:/music/rain.mp3',
+          audioPath: songPath,
         },
       });
 
       await runTask(db, task, {
         appDataDir: dir,
+        mediaSidecar: async (payload) => payload.mode === 'probe_media'
+          ? { success: true, duration: 7.2, has_audio: true }
+          : Promise.reject(new Error('clip-only must not export')),
         generateImages: async (scenes) => writeSceneAssets(mediaDir, scenes, 'png', tinyPng),
         synthesizeNarration: async (scenes) => writeSceneAssets(mediaDir, scenes, 'wav', wavTone(1200)),
         draftWriterOptions: { runBridge: fakeBridge },
@@ -2867,6 +2873,7 @@ describe('task runner', () => {
         synthesizeNarration: async (scenes) => writeSceneAssets(mediaDir, scenes, 'wav', wavTone(1200)),
         mediaSidecar: async (payload) => {
           capturedPayloads.push(payload);
+          if (payload.mode === 'probe_media') return { success: true, duration: 3.6, has_audio: true };
           const draftDir = join(draftRootDir, 'music-mv-sidecar');
           await mkdir(draftDir, { recursive: true });
           await writeFile(join(draftDir, 'draft_content.json'), '{}', 'utf8');
@@ -2875,8 +2882,9 @@ describe('task runner', () => {
         },
       });
 
-      expect(capturedPayloads).toHaveLength(1);
-      expect(capturedPayloads[0]).toMatchObject({
+      expect(capturedPayloads).toHaveLength(2);
+      expect(capturedPayloads[0]).toMatchObject({ mode: 'probe_media', media_path: songPath });
+      expect(capturedPayloads[1]).toMatchObject({
         mode: 'music_mv',
         work_dir: managedTaskWorkDir(dir, task),
         audio_path: songPath,
@@ -2885,14 +2893,38 @@ describe('task runner', () => {
         task_title: 'Music MV Sidecar',
         cover_title: expect.objectContaining({ title: expect.any(String) }),
         template: expect.objectContaining({ canvas: expect.any(Object) }),
+        ratio: '9:16',
+        caption_style: 'karaoke',
       });
-      expect((capturedPayloads[0] as { assignments?: unknown[] }).assignments).toHaveLength(3);
-      expect((capturedPayloads[0] as { lyrics?: unknown[] }).lyrics).toHaveLength(3);
-      expect((capturedPayloads[0] as { audio_duration?: number }).audio_duration).toBeGreaterThan(0);
+      expect((capturedPayloads[1] as { assignments?: unknown[] }).assignments).toHaveLength(3);
+      expect((capturedPayloads[1] as { lyrics?: unknown[] }).lyrics).toHaveLength(3);
+      expect((capturedPayloads[1] as { audio_duration?: number }).audio_duration).toBeCloseTo(3.6, 1);
       expect((await db.getState()).tasks[0]).toMatchObject({
         status: 'completed',
         outputDir: join(draftRootDir, 'music-mv-sidecar'),
       });
+    } finally {
+      await db.close();
+      await rm(dir, { recursive: true, force: true });
+    }
+  });
+
+  it('rejects Music MV audio before any content or image provider work', async () => {
+    const dir = await mkdtemp(join(tmpdir(), 'storydream-music-mv-audio-first-'));
+    const db = await FileDatabase.open(join(dir, 'data.db'));
+    let providerCalls = 0;
+    try {
+      const task = await db.createTask({
+        title: 'Missing audio', inputText: 'lyrics', taskKind: 'music-mv',
+        musicMv: { rhythmMode: 'lyric-sync', captionStyle: 'karaoke', visualMotif: '', audioPath: join(dir, 'missing.wav') },
+      });
+      await expect(runTask(db, task, {
+        appDataDir: dir,
+        mediaSidecar: async () => { throw new Error('Media file does not exist'); },
+        generatePipelineArtifact: async () => { providerCalls += 1; return makeArtifact(); },
+        generateImages: async () => { providerCalls += 1; return []; },
+      })).rejects.toThrow(/Music MV audio validation failed.*Media file does not exist/);
+      expect(providerCalls).toBe(0);
     } finally {
       await db.close();
       await rm(dir, { recursive: true, force: true });
