@@ -28,6 +28,8 @@ import type {
   ImageLabRecord,
   ImageLabSummary,
   ImageLabTombstoneResult,
+  ImaKnowledgeRequest,
+  ImaKnowledgeResult,
   JianyingEffectCatalog,
   LlmConfig,
   LlmModelTestResult,
@@ -95,6 +97,7 @@ export const INVOKE_CHANNELS = Object.freeze([
   'minimax-clone-voice:list',
   'app:save-config',
   'config:test',
+  'ima:fetch-knowledge',
   'llm:test-config',
   'models:list',
   'volcengine:speakers:list',
@@ -201,6 +204,7 @@ export type StoryDreamApi = {
   listMinimaxCloneVoices: (request?: CursorRequest) => Promise<CountedCursorPage<MinimaxCloneVoice>>;
   saveConfig: (input: SaveConfigInput) => Promise<AppMutationResult | null>;
   testAppConfig: (target: ConfigTestTarget, config: AppConfig, secretChanges?: SecretChanges) => Promise<ConfigTestResult>;
+  fetchImaKnowledge: (input: ImaKnowledgeRequest) => Promise<ImaKnowledgeResult>;
   testLlmConfig: (config: LlmConfig) => Promise<LlmModelTestResult>;
   listProviderModels: (request: ProviderModelListRequest) => Promise<ProviderModelListResult>;
   listVolcengineSpeakers: (request: VolcengineSpeakerListRequest) => Promise<VolcengineSpeakerListResult>;

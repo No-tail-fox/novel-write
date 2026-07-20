@@ -30,6 +30,8 @@ import type {
   ImageLabGenerateInput,
   ImageLabRecord,
   ImageLabSummary,
+  ImaKnowledgeRequest,
+  ImaKnowledgeResult,
   JianyingEffectCatalog,
   LlmConfig,
   MinimaxCloneVoice,
@@ -174,6 +176,7 @@ export const storyDreamApi = {
   saveConfig: (input: SaveConfigInput): Promise<AppMutationResult | null> => invokeTrusted('app:save-config', input),
   testAppConfig: (target: ConfigTestTarget, config: AppConfig, secretChanges: SecretChanges = {}) =>
     invokeTrusted('config:test', { target, config, secretChanges }),
+  fetchImaKnowledge: (input: ImaKnowledgeRequest): Promise<ImaKnowledgeResult> => invokeTrusted('ima:fetch-knowledge', input),
   testLlmConfig: (config: LlmConfig) => invokeTrusted('llm:test-config', config),
   listProviderModels: (request: ProviderModelListRequest): Promise<ProviderModelListResult> => invokeTrusted('models:list', request),
   listVolcengineSpeakers: (request: VolcengineSpeakerListRequest): Promise<VolcengineSpeakerListResult> => invokeTrusted('volcengine:speakers:list', request),

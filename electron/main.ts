@@ -10,6 +10,7 @@ import { readTaskArtifactSnapshot } from '../src/shared/artifact-preview';
 import { isCancellation, normalizeAppError } from '../src/shared/app-error';
 import { fromLlmModelTestResult, testConfigTarget } from '../src/shared/config-utils';
 import { generateImageLabRecord } from '../src/shared/image-lab';
+import { fetchImaKnowledge } from '../src/shared/ima-knowledge';
 import { detectJianyingDraftPath, resolveRuntimeJianyingDraftPath } from '../src/shared/jianying-paths';
 import { loadJianyingEffectCatalog } from '../src/shared/jianying-effects';
 import { runHtmlVideoPipeline, synchronizeHtmlVideoPipelineCheckpoint } from '../src/shared/html-video-runner';
@@ -25,7 +26,7 @@ import { runTask } from '../src/shared/runner';
 import { runStoryboundMediaSidecar } from '../src/shared/storybound-sidecar';
 import { FileDatabase, type HistoryDeletionCleanup, type HistoryTombstone } from '../src/shared/storage';
 import { createHtmlVideoRuntimeProviders, createTaskRuntimeProviders } from '../src/shared/task-runtime-providers';
-import type { AccountProfile, ActivationState, AppConfig, AppDelta, AppDeltaReconcileRequest, AppDeltaReconcileResult, AppStatePatch, BookSelectionInput, ConfigTestTarget, CreateTaskInput, CreateViralAnalysisInput, CursorRequest, CustomStyle, CustomStyleGenerateInput, DraftTemplate, HistoryFamily, HistoryListRequest, HtmlVideoConfigChange, HtmlVideoPipelineDataV2, ImageLabGenerateInput, ImageLabRecord, ImageLabSummary, LlmConfig, PromptTemplate, ProviderModelListRequest, ResearchCopyComposeInput, SequencedTaskEvent, Task, TaskStatus, TaskStepRerunMode, UiPreferencesUpdate, ViralAnalysisRecord, ViralAnalysisResult, ViralAnalysisStatus, ViralProductionTaskOptions, VolcengineSpeakerListRequest, VoiceLabGenerateInput, VoiceLabRecord, VoiceLabSummary } from '../src/shared/types';
+import type { AccountProfile, ActivationState, AppConfig, AppDelta, AppDeltaReconcileRequest, AppDeltaReconcileResult, AppStatePatch, BookSelectionInput, ConfigTestTarget, CreateTaskInput, CreateViralAnalysisInput, CursorRequest, CustomStyle, CustomStyleGenerateInput, DraftTemplate, HistoryFamily, HistoryListRequest, HtmlVideoConfigChange, HtmlVideoPipelineDataV2, ImageLabGenerateInput, ImageLabRecord, ImageLabSummary, ImaKnowledgeRequest, LlmConfig, PromptTemplate, ProviderModelListRequest, ResearchCopyComposeInput, SequencedTaskEvent, Task, TaskStatus, TaskStepRerunMode, UiPreferencesUpdate, ViralAnalysisRecord, ViralAnalysisResult, ViralAnalysisStatus, ViralProductionTaskOptions, VolcengineSpeakerListRequest, VoiceLabGenerateInput, VoiceLabRecord, VoiceLabSummary } from '../src/shared/types';
 import { boundViralDiagnosticText, createViralProductionTaskInput, detectViralPlatform, runViralAnalysis, viralCheckpointResumeState } from '../src/shared/viral-analysis';
 import { createViralRuntimeProviders } from '../src/shared/viral-runtime';
 import { listVolcengineSpeakers } from '../src/shared/volcengine-speakers';
@@ -1298,6 +1299,11 @@ trustedHandle('config:test', async (_event, input) => {
     return fromLlmModelTestResult(await testConfiguredLlm(runtimeConfig.llm));
   }
   return testConfigTarget(input.target, runtimeConfig, { pathExists: existsSync });
+});
+
+trustedHandle('ima:fetch-knowledge', async (_event, input: ImaKnowledgeRequest) => {
+  const runtimeConfig = await (await getConfigService()).getRuntimeConfig();
+  return fetchImaKnowledge(runtimeConfig.ima, input);
 });
 
 trustedHandle('research:web-search', async (_event, query: string) => {

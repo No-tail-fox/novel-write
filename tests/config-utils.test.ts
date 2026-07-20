@@ -4,6 +4,15 @@ import { configTargetStatus, normalizeAppConfig, testConfigTarget, validateConfi
 import { testOpenAiCompatibleImageModel } from '@shared/openai-image';
 
 describe('config validation utilities', () => {
+  it('normalizes editable IMA identifiers without dropping any configured field', () => {
+    const config = normalizeAppConfig({
+      ...defaultConfig,
+      ima: { clientId: ' client ', apiKey: ' secret ', kbId: ' kb-id ', kbName: ' 知识库 ' },
+    });
+
+    expect(config.ima).toEqual({ clientId: 'client', apiKey: 'secret', kbId: 'kb-id', kbName: '知识库' });
+  });
+
   it('rejects an oversized image-provider probe response', async () => {
     const result = await testOpenAiCompatibleImageModel({
       baseUrl: 'https://images.example',

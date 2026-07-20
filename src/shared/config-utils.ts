@@ -432,7 +432,12 @@ export function normalizeAppConfig(input: unknown): AppConfig {
       bgmLibrary,
       defaultBgmId,
     },
-    ima: { ...defaultConfig.ima, ...(partial.ima ?? {}) },
+    ima: {
+      clientId: String(partial.ima?.clientId ?? defaultConfig.ima.clientId).trim(),
+      apiKey: String(partial.ima?.apiKey ?? defaultConfig.ima.apiKey).trim(),
+      kbId: String(partial.ima?.kbId ?? defaultConfig.ima.kbId).trim(),
+      kbName: String(partial.ima?.kbName ?? defaultConfig.ima.kbName).trim(),
+    },
     viral: {
       ...defaultConfig.viral,
       ...(partial.viral ?? {}),

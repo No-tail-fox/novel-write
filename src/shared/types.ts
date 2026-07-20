@@ -118,6 +118,28 @@ export interface ConfigTestResult {
   requestId: string | null;
 }
 
+export interface ImaKnowledgeRequest {
+  query: string;
+}
+
+export interface ImaKnowledgeRecord {
+  id: string;
+  title: string;
+  snippet: string;
+  url?: string;
+}
+
+export interface ImaKnowledgeResult {
+  status: 'pass' | 'fail';
+  detail: string;
+  latencyMs: number;
+  endpoint: string;
+  requestId: string | null;
+  knowledgeBaseId: string;
+  records: ImaKnowledgeRecord[];
+  totalCount: number;
+}
+
 export interface JianyingEffectCatalog {
   status: 'pass' | 'warn' | 'fail';
   detail: string;

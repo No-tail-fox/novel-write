@@ -550,6 +550,7 @@ export const ipcInputSchemas = {
     .strict(),
   'app:save-config': saveConfigInputSchema,
   'config:test': z.object({ target: configTestTargetSchema, config: appConfigSchema, secretChanges: secretChangesSchema }).strict(),
+  'ima:fetch-knowledge': z.object({ query: nonEmptyText(1024) }).strict(),
   'llm:test-config': llmConfigSchema,
   'models:list': providerModelListSchema,
   'volcengine:speakers:list': volcengineSpeakerListSchema,

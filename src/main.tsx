@@ -73,6 +73,7 @@ import type {
   ImageLabRecord,
   ImageLabSummary,
   ImageLabSmartMode,
+  ImaKnowledgeResult,
   BgmItem,
   HtmlVideoConfigChange,
   HtmlVideoCoverAsset,
@@ -1261,6 +1262,18 @@ function makeFallbackApi(setState: (state: AppState) => void): StoryDreamApi {
     async testAppConfig(target, config) {
       return validateConfigTarget(target, config);
     },
+    async fetchImaKnowledge() {
+      return {
+        status: 'fail',
+        detail: '浏览器预览无法安全访问 IMA 知识库，请在 Electron 桌面端使用。',
+        latencyMs: 0,
+        endpoint: 'https://ima.qq.com/openapi/wiki/v1/search_knowledge',
+        requestId: null,
+        knowledgeBaseId: '',
+        records: [],
+        totalCount: 0,
+      };
+    },
     async searchWebSources(query) {
       return {
         query,
@@ -2413,7 +2426,7 @@ function App() {
           {activeView === 'viral-analyzer' ? <ViralAnalyzerPage api={api} state={state} applyState={applyState} refreshViralEvents={refreshViralEvents} onActiveAnalysisChange={onActiveViralAnalysisChange} openTaskDetail={openTaskDetail} isBrowserPreview={isBrowserPreview} /> : null}
           {activeView === 'prompt-templates' ? <PromptTemplatesPage api={api} state={state} applyState={applyState} /> : null}
           {activeView === 'draft-templates' ? <DraftTemplatesPage api={api} state={state} applyState={applyState} /> : null}
-          {activeView === 'settings' ? <SettingsPage api={api} state={state} applyState={applyState} /> : null}
+          {activeView === 'settings' ? <SettingsPage api={api} state={state} applyState={applyState} navigate={navigate} /> : null}
           {activeView === 'account' ? <AccountPage api={api} state={state} applyState={applyState} /> : null}
           {activeView === 'activation' ? <ActivationPage api={api} state={state} applyState={applyState} /> : null}
         </section>
@@ -8835,7 +8848,7 @@ function DraftCanvasLayerBox({
   );
 }
 
-function SettingsPage({ api, state, applyState }: { api: StoryDreamApi; state: AppState; applyState: ApplyMutationResult }) {
+function SettingsPage({ api, state, applyState, navigate }: { api: StoryDreamApi; state: AppState; applyState: ApplyMutationResult; navigate: (view: ShellView) => void }) {
   const [section, setSection] = useState('llm');
   const [draft, setDraft] = useState<AppConfig>(() => normalizeEditableConfigProviders(state.config));
   const [settingsDirty, setSettingsDirty] = useState(false);
@@ -8843,6 +8856,7 @@ function SettingsPage({ api, state, applyState }: { api: StoryDreamApi; state: A
   const [lastAppliedConfigSignature, setLastAppliedConfigSignature] = useState(() => settingsConfigSignature(state.config));
   const [diagnostics, setDiagnostics] = useState('');
   const [configTestResult, setConfigTestResult] = useState('');
+  const [imaKnowledgeResult, setImaKnowledgeResult] = useState<ImaKnowledgeResult | null>(null);
   const [testingConfig, setTestingConfig] = useState(false);
   const [modelLists, setModelLists] = useState<Record<ModelListKey, ProviderModel[]>>({ llm: [], 'gpt-image': [], 'custom-image': [] });
   const [modelListStatus, setModelListStatus] = useState<Partial<Record<ModelListKey, string>>>({});
@@ -9053,6 +9067,14 @@ function SettingsPage({ api, state, applyState }: { api: StoryDreamApi; state: A
       const report = await api.runDiagnostics();
       setDiagnostics(JSON.stringify(report, null, 2));
     });
+  }
+  async function fetchImaKnowledgeFromSettings() {
+    await settingsAction.run(async () => {
+      const savedConfig = await persistSettingsDraft(draft, 'IMA 配置已保存');
+      const result = await api.fetchImaKnowledge({ query: savedConfig.ima.kbName || savedConfig.ima.kbId });
+      setImaKnowledgeResult(result);
+      setConfigTestResult(`[${result.status}] ${result.detail}`);
+    }, { onError: (error) => setConfigTestResult(`[fail] ${error.message}`) });
   }
   async function uploadBgmFromSettings() {
     await settingsAction.run(async () => {
@@ -9379,8 +9401,21 @@ function SettingsPage({ api, state, applyState }: { api: StoryDreamApi; state: A
               onChange={(value) => secrets.change('ima/apiKey', value)}
               onClear={() => secrets.change('ima/apiKey', null)}
             />
+            <ConfigInput label="知识库 ID" value={draft.ima.kbId} onChange={(value) => setSettingsDraft({ ...draft, ima: { ...draft.ima, kbId: value } })} />
             <ConfigInput label="知识库名称" value={draft.ima.kbName} onChange={(value) => setSettingsDraft({ ...draft, ima: { ...draft.ima, kbName: value } })} />
-            <button className="ghost-action">测试并拉取知识库</button>
+            <button className="ghost-action" disabled={settingsAction.busy || savingConfig} onClick={fetchImaKnowledgeFromSettings}>
+              {settingsAction.busy ? <Loader2 className="spin" size={15} /> : <Database size={15} />}
+              测试并拉取知识库
+            </button>
+            {imaKnowledgeResult ? (
+              <div className="test-result">
+                <strong>{imaKnowledgeResult.knowledgeBaseId || 'IMA'}</strong>
+                <span>{imaKnowledgeResult.detail}</span>
+                {imaKnowledgeResult.records.map((record) => (
+                  <div key={record.id}><strong>{record.title}</strong><span>{record.snippet || '无摘要'}</span></div>
+                ))}
+              </div>
+            ) : null}
           </SettingsCard>
         ) : null}
         {section === 'about' ? (
@@ -9392,7 +9427,7 @@ function SettingsPage({ api, state, applyState }: { api: StoryDreamApi; state: A
                 <Copy size={15} />
                 复制诊断报告
               </button>
-              <button className="danger-action"><XCircle size={15} />清理历史</button>
+              <button className="danger-action" onClick={() => navigate('history')}><XCircle size={15} />清理历史</button>
             </div>
             <pre>{diagnostics || '点击检查诊断后显示 LLM、TTS、BGM、剪映目录、账户状态等检查结果。'}</pre>
           </div>
