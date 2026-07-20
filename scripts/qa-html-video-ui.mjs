@@ -33,6 +33,7 @@ try {
   const coverCompactScreenshot = join(qaTempDir, 'cover-compact.png');
   const captionEditorScreenshot = join(qaTempDir, 'caption-editor.png');
   const captionPreviewScreenshot = join(qaTempDir, 'caption-preview.png');
+  const themeLightScreenshot = join(qaTempDir, 'theme-light.png');
   const require = createRequire(join(rootDir, 'package.json'));
   const electronPath = require('electron');
   const { WebSocket } = require('undici');
@@ -117,6 +118,7 @@ try {
   })`);
   const expectedUrl = pathToFileURL(join(rootDir, 'dist-renderer', 'index.html')).href;
   if (identity.url !== expectedUrl) throw new Error(`Unexpected renderer URL: ${identity.url}`);
+  const themePreference = await exerciseThemePreference(cdp, themeLightScreenshot);
   const navClicked = await evaluate(cdp, `(() => {
     const button = [...document.querySelectorAll('button')].find((item) => item.textContent.includes('HTML 动画视频'));
     if (!button) return false;
@@ -278,7 +280,7 @@ try {
     throw new Error(`Renderer console errors: ${relevantRuntimeErrors.map((error) => error.message).join(' | ')}`);
   }
 
-  const screenshotPaths = [desktopScreenshot, compactScreenshot, coverDesktopScreenshot, coverCompactScreenshot, captionEditorScreenshot, captionPreviewScreenshot];
+  const screenshotPaths = [themeLightScreenshot, desktopScreenshot, compactScreenshot, coverDesktopScreenshot, coverCompactScreenshot, captionEditorScreenshot, captionPreviewScreenshot];
   const screenshots = await Promise.all(screenshotPaths.map(async (path) => {
     const value = await stat(path);
     if (value.size <= 0) throw new Error(`Screenshot evidence is empty: ${basename(path)}`);
@@ -300,6 +302,7 @@ try {
     status: 'passed',
     pageTitle: identity.title,
     pageUrl: identity.url,
+    themePreference,
     playback,
     rangeResponse,
     sameUrlMissingThenRestored,
@@ -322,6 +325,97 @@ try {
   cdp?.close();
   await stopChild(child);
   if (!keepQaTempOnFailure) await removeWithRetry(qaTempDir);
+}
+
+async function exerciseThemePreference(cdpConnection, screenshotPath) {
+  await navigateToSettingsAppearance(cdpConnection);
+  const lightClicked = await evaluate(cdpConnection, `(() => {
+    const button = [...document.querySelectorAll('.settings-content .segmented button')]
+      .find((item) => item.textContent.trim() === '浅色');
+    if (!button) return false;
+    button.click();
+    return true;
+  })()`);
+  if (!lightClicked) throw new Error('Light theme selector was not found.');
+  await waitFor(
+    async () => evaluate(cdpConnection, `document.documentElement.dataset.theme === 'light'
+      && document.querySelector('.settings-content .segmented button.selected')?.textContent.trim() === '浅色'`),
+    10_000,
+    'light theme application',
+  );
+  const light = await evaluate(cdpConnection, `(async () => {
+    const bootstrap = await window.storydream.getBootstrap();
+    return {
+      domTheme: document.documentElement.dataset.theme,
+      ready: document.documentElement.dataset.themeReady,
+      storedTheme: bootstrap.ui.theme,
+      mirrorTheme: bootstrap.config.ui.theme,
+      shellBackground: getComputedStyle(document.documentElement).getPropertyValue('--bg').trim(),
+      selectedLabel: document.querySelector('.settings-content .segmented button.selected')?.textContent.trim() || '',
+    };
+  })()`);
+  if (light.domTheme !== 'light' || light.storedTheme !== 'light' || light.mirrorTheme !== 'light') {
+    throw new Error(`Light theme did not persist canonically: ${JSON.stringify(light)}`);
+  }
+  await saveScreenshot(cdpConnection, screenshotPath);
+
+  await cdpConnection.send('Page.reload', { ignoreCache: true });
+  await waitFor(
+    async () => evaluate(cdpConnection, `Boolean(document.querySelector('.app-shell'))
+      && document.documentElement.dataset.themeReady === 'true'
+      && document.documentElement.dataset.theme === 'light'`),
+    20_000,
+    'persisted light theme after reload',
+  );
+  await navigateToSettingsAppearance(cdpConnection);
+  const darkClicked = await evaluate(cdpConnection, `(() => {
+    const button = [...document.querySelectorAll('.settings-content .segmented button')]
+      .find((item) => item.textContent.trim() === '深色');
+    if (!button) return false;
+    button.click();
+    return true;
+  })()`);
+  if (!darkClicked) throw new Error('Dark theme selector was not found.');
+  await waitFor(
+    async () => evaluate(cdpConnection, `document.documentElement.dataset.theme === 'dark'`),
+    10_000,
+    'dark theme restoration',
+  );
+  const restored = await evaluate(cdpConnection, `(async () => {
+    const bootstrap = await window.storydream.getBootstrap();
+    return { domTheme: document.documentElement.dataset.theme, storedTheme: bootstrap.ui.theme, mirrorTheme: bootstrap.config.ui.theme };
+  })()`);
+  if (restored.storedTheme !== 'dark' || restored.mirrorTheme !== 'dark') {
+    throw new Error(`Dark theme restoration did not persist canonically: ${JSON.stringify(restored)}`);
+  }
+  return { light, reloadedTheme: 'light', restored };
+}
+
+async function navigateToSettingsAppearance(cdpConnection) {
+  const settingsClicked = await evaluate(cdpConnection, `(() => {
+    const button = [...document.querySelectorAll('button')].find((item) => item.textContent.includes('系统设置'));
+    if (!button) return false;
+    button.click();
+    return true;
+  })()`);
+  if (!settingsClicked) throw new Error('Settings navigation button was not found.');
+  await waitFor(
+    async () => evaluate(cdpConnection, `Boolean(document.querySelector('.settings-layout'))`),
+    10_000,
+    'settings page',
+  );
+  const appearanceClicked = await evaluate(cdpConnection, `(() => {
+    const button = [...document.querySelectorAll('.settings-tab')].find((item) => item.textContent.includes('外观'));
+    if (!button) return false;
+    button.click();
+    return true;
+  })()`);
+  if (!appearanceClicked) throw new Error('Appearance settings tab was not found.');
+  await waitFor(
+    async () => evaluate(cdpConnection, `document.querySelector('.settings-content .config-card-head strong')?.textContent === '界面主题'`),
+    10_000,
+    'appearance settings',
+  );
 }
 
 async function assertBuiltApplication() {

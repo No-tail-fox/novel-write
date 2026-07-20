@@ -2977,6 +2977,24 @@ describe('product shell ui', () => {
     expect(css).toContain('.narration-preview-card');
     expect(css).toContain('.narration-player');
   });
+
+  it('applies persistent themes before reveal and exposes a real settings selector', async () => {
+    const main = (await rendererSourcesPromise).requiredFile('src/main.tsx');
+    const css = await readFile(new URL('../src/styles.css', import.meta.url), 'utf8');
+    const bootstrap = main.slice(main.indexOf('api.getBootstrap()'), main.indexOf('const reconciliationTimer'));
+    const settings = main.slice(main.indexOf('function SettingsPage'), main.indexOf('function LlmProfileManager'));
+
+    expect(main).toContain('applyStoredTheme(defaultUiPreferences.theme)');
+    expect(main).toContain('applyStoredTheme(state.ui.theme)');
+    expect(bootstrap).toContain('applyStoredTheme(bootstrap.ui.theme)');
+    expect(bootstrap.indexOf('applyStoredTheme(bootstrap.ui.theme)')).toBeLessThan(bootstrap.indexOf('revealThemedApplication()'));
+    expect(settings).toContain("['appearance', Palette, '外观'");
+    expect(settings).toContain("api.saveUiPreferences({ theme: nextTheme })");
+    expect(settings).toContain('changeRuntimeTheme');
+    expect(settings).toContain("section === 'appearance'");
+    expect(css).toContain(":root[data-theme='light']");
+    expect(css).toContain(":root:not([data-theme-ready='true']) #root");
+  });
 });
 
 function countOccurrences(value: string, needle: string): number {

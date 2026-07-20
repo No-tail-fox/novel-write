@@ -354,7 +354,7 @@ async function runSmokeHandshake(): Promise<void> {
     const waitForShell = () => new Promise((resolve) => {
       const deadline = Date.now() + 10000;
       const check = () => {
-        if (document.querySelector('.app-shell') || Date.now() >= deadline) resolve(undefined);
+        if ((document.querySelector('.app-shell') && document.documentElement.dataset.themeReady === 'true') || Date.now() >= deadline) resolve(undefined);
         else setTimeout(check, 50);
       };
       check();

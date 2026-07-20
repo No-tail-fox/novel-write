@@ -29,6 +29,7 @@ describe('real Electron smoke contract', () => {
     expect(setUserData).toBeGreaterThan(-1);
     expect(setUserData).toBeLessThan(ready);
     expect(main).toContain('runSmokeHandshake');
+    expect(main).toContain("document.documentElement.dataset.themeReady === 'true'");
     expect(main).toContain('window.storydream');
     expect(main).toContain('api.getBootstrap()');
     expect(main).toContain('api.saveUiPreferences');

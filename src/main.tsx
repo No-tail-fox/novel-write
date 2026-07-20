@@ -156,6 +156,11 @@ import {
 } from './shared/config-secrets';
 import type { PersonAssetImage, PersonAssetSummary } from './shared/person-assets';
 import { useHistoryPage } from './features/history/use-history-page';
+import {
+  applyStoredTheme,
+  changeRuntimeTheme,
+  revealThemedApplication,
+} from './features/settings/theme-controller';
 import { configTargetStatus, normalizeAppConfig, validateConfigTarget } from './shared/config-utils';
 import {
   activeImageProfileId,
@@ -1705,6 +1710,9 @@ function App() {
     [taskDetailGuard],
   );
   const viralDetailGuard = useMemo(() => createRequestGenerationGuard(), []);
+  useLayoutEffect(() => {
+    applyStoredTheme(state.ui.theme);
+  }, [state.ui.theme]);
   const isHistoryTombstoned = useCallback((family: HistoryFamily, id: string) => (
     historyTombstoneRevisionsRef.current.has(historyEntityRevisionKey(family, id))
   ), []);
@@ -2126,6 +2134,8 @@ function App() {
     });
     api.getBootstrap().then((initialBootstrap) => loadCompleteBootstrap(api, initialBootstrap)).then((bootstrap) => {
       if (disposed) return;
+      applyStoredTheme(bootstrap.ui.theme);
+      revealThemedApplication();
       const replayed = coordinator.bootstrap({
         revision: bootstrap.revision,
         tasks: bootstrap.tasks.items,
@@ -2145,6 +2155,7 @@ function App() {
       flushQueuedReconciliation();
     }).catch((error) => {
       if (disposed) return;
+      revealThemedApplication();
       recoverSnapshotInstallation(revisionRef.current, coordinator.current()?.revision ?? revisionRef.current);
       shellAction.reportError(error);
       requestReconciliation(true);
@@ -8760,6 +8771,7 @@ function SettingsPage({ api, state, applyState }: { api: StoryDreamApi; state: A
   const [selectedImageProfileId, setSelectedImageProfileId] = useState(() => activeImageProfileId(state.config));
   const [selectedTtsProfileId, setSelectedTtsProfileId] = useState(() => activeTtsProfileId(state.config));
   const settingsAction = useAsyncAction();
+  const themeAction = useAsyncAction();
   useEffect(() => {
     if (settingsDirty) return;
     const nextSignature = settingsConfigSignature(state.config);
@@ -9028,6 +9040,16 @@ function SettingsPage({ api, state, applyState }: { api: StoryDreamApi; state: A
     const current = draft.speechToText.timestampGranularities.filter((item) => item !== granularity);
     updateSpeechToTextConfig({ timestampGranularities: checked ? [...current, granularity] : current });
   }
+  async function selectTheme(nextTheme: AppState['ui']['theme']) {
+    await themeAction.run(async () => {
+      const changed = await changeRuntimeTheme({
+        currentTheme: state.ui.theme,
+        nextTheme,
+        persist: () => api.saveUiPreferences({ theme: nextTheme }),
+      });
+      applyState(changed.mutation);
+    }, { onError: (error) => setConfigTestResult(`[fail] ${error.message}`) });
+  }
   const selectedProviderProfileIds = {
     llm: selectedLlmProfileId,
     image: selectedImageProfileId,
@@ -9039,6 +9061,7 @@ function SettingsPage({ api, state, applyState }: { api: StoryDreamApi; state: A
   const settingsBgms = validBgmItems(draft);
   const isSiliconFlowSpeechToText = draft.speechToText.provider === 'siliconflow';
   const sections = [
+    ['appearance', Palette, '外观', '明暗主题', state.ui.theme === 'dark' ? '深色' : '浅色'],
     ['llm', Sparkles, 'LLM', '文案与分镜', settingsStatusLabel(configTargetStatus('llm', draft))],
     ['image', ImageIcon, 'AI 绘图', '分镜图片', settingsStatusLabel(configTargetStatus('image', draft))],
     ['tts', Bot, 'TTS 配音', '每镜语音', settingsStatusLabel(configTargetStatus('tts', draft))],
@@ -9078,6 +9101,18 @@ function SettingsPage({ api, state, applyState }: { api: StoryDreamApi; state: A
           </div>
         </div>
         {configTestResult ? <div className="test-result">{configTestResult}</div> : null}
+        {section === 'appearance' ? (
+          <SettingsCard title="界面主题" status={state.ui.theme === 'dark' ? '深色' : '浅色'}>
+            <Segmented
+              label="主题"
+              value={state.ui.theme}
+              options={['dark', 'light']}
+              labels={['深色', '浅色']}
+              onChange={(value) => void selectTheme(value as AppState['ui']['theme'])}
+            />
+            <InlineActionFeedback feedback={themeAction.feedback} />
+          </SettingsCard>
+        ) : null}
         <InlineActionFeedback feedback={settingsAction.feedback} />
         {section === 'llm' ? (
           <SettingsCard title="LLM 配置档案" status={secrets.configured(profileSecretId('llm', selectedLlmProfileId, 'apiKey')) ? '已配置' : '待配置'}>
@@ -11019,5 +11054,6 @@ if (!rootElement) {
   throw new Error('Missing #root element');
 }
 
+applyStoredTheme(defaultUiPreferences.theme);
 window.__storydreamReactRoot ??= createRoot(rootElement);
 window.__storydreamReactRoot.render(<App />);

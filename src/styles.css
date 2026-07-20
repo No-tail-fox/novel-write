@@ -25,6 +25,48 @@
   letter-spacing: 0;
 }
 
+:root[data-theme='light'] {
+  --bg: #f3f5f7;
+  --surface-ink: #ffffff;
+  --panel: #ffffff;
+  --panel-2: #eef1f4;
+  --panel-3: #e4e8ec;
+  --line: #d8dde3;
+  --muted: #5f6972;
+  --text: #1b1d1f;
+  --cyanprint: #147d92;
+  --paper-warm: #8a6741;
+  --timeline-blue: #2e6fa3;
+  --reel-amber: #9a6200;
+  --danger: #a92d36;
+  --warn: #805300;
+  --ok: #18734a;
+  --shadow: 0 14px 36px rgba(24, 32, 40, 0.12);
+  --focus-ring: 0 0 0 2px rgba(20, 125, 146, 0.24);
+}
+
+:root:not([data-theme-ready='true']) #root {
+  visibility: hidden;
+}
+
+:root[data-theme='light'] .app-shell {
+  background: var(--bg);
+}
+
+:root[data-theme='light'] .window-line {
+  border-bottom-color: var(--line);
+  background: #ffffff;
+}
+
+:root[data-theme='light'] .sidebar {
+  border-right-color: var(--line);
+  background: linear-gradient(180deg, #ffffff 0%, #eef1f4 100%);
+}
+
+:root[data-theme='light'] .window-control-button:hover {
+  background: #e9edf1;
+}
+
 * {
   box-sizing: border-box;
 }
