@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
-import { defaultCustomStyles, defaultPromptTemplates } from '@shared/config';
+import { defaultCustomStyles } from '@shared/config';
+import { defaultPromptTemplates } from '@shared/prompt-template-defaults';
 import { storyboundSystemTemplates } from '@shared/storybound-system-templates';
 import {
   buildImageTemplateStyleOptions,

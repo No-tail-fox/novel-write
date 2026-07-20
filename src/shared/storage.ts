@@ -70,9 +70,9 @@ import {
   defaultCustomCoverTemplates,
   defaultCustomStyles,
   defaultMinimaxCloneVoices,
-  defaultPromptTemplates,
   defaultUiPreferences,
 } from './config';
+import { loadDefaultPromptTemplates } from './prompt-template-loader';
 import { draftTemplates, normalizeDraftTemplate } from './templates';
 export { defaultConfig } from './config';
 
@@ -612,10 +612,11 @@ export class FileDatabase {
     private db: Database,
     private readonly SQL: SqlJsStatic,
     private readonly dependencies: FileDatabaseDependencies,
+    private readonly defaultPromptTemplates: readonly PromptTemplate[],
   ) {}
 
   static async open(file: string, overrides?: Partial<FileDatabaseDependencies>): Promise<FileDatabase> {
-    const SQL = await loadSql();
+    const [SQL, defaultPromptTemplates] = await Promise.all([loadSql(), loadDefaultPromptTemplates()]);
     const dependencies = resolveFileDatabaseDependencies(overrides);
     let database: Database | null = null;
     let primaryExists = true;
@@ -637,7 +638,7 @@ export class FileDatabase {
     }
     database ??= new SQL.Database();
 
-    const instance = new FileDatabase(file, database, SQL, dependencies);
+    const instance = new FileDatabase(file, database, SQL, dependencies, defaultPromptTemplates);
     try {
       instance.migrate();
       await instance.persist();
@@ -1394,14 +1395,14 @@ export class FileDatabase {
   }
 
   private syncBuiltinPromptTemplates(): void {
-    const defaultIds = new Set(defaultPromptTemplates.map((template) => template.id));
+    const defaultIds = new Set(this.defaultPromptTemplates.map((template) => template.id));
     const existingIds = new Set(getRows<{ id: string }>(this.db, 'SELECT id FROM prompt_templates').map((row) => row.id));
     for (const existingId of existingIds) {
       if (!defaultIds.has(existingId)) {
         this.db.run('DELETE FROM prompt_templates WHERE id = ? AND is_builtin = 1', [existingId]);
       }
     }
-    for (const template of defaultPromptTemplates) {
+    for (const template of this.defaultPromptTemplates) {
       this.insertPromptTemplate(template);
     }
   }
@@ -1544,6 +1545,7 @@ export class FileDatabase {
   }
 
   async resetPromptTemplates(): Promise<void> {
+    const defaultPromptTemplates = await loadDefaultPromptTemplates();
     await this.enqueueCommit(() => {
       this.db.run('DELETE FROM prompt_templates WHERE is_builtin = 1');
       for (const template of defaultPromptTemplates) this.insertPromptTemplate({ ...template, updatedAt: new Date().toISOString() });

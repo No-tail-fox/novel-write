@@ -458,6 +458,7 @@ describe('product shell ui', () => {
       'hydrateState',
       'stripConfigSecrets',
       'taskToSummary',
+      'loadDefaultPromptTemplates',
       `${compiled}\nreturn makeFallbackApi;`,
     )(
       localStorage,
@@ -466,6 +467,7 @@ describe('product shell ui', () => {
       (state: unknown) => structuredClone(state),
       (config: unknown) => config,
       (task: Record<string, unknown>) => ({ ...task, inputPreview: String(task.inputText ?? '') }),
+      async () => [],
     ) as (setState: (state: typeof initial) => void) => {
       archiveTask(id: string): Promise<AppMutationResult>;
       deleteTaskPermanently(id: string): Promise<AppMutationResult>;
@@ -574,6 +576,7 @@ describe('product shell ui', () => {
         'hydrateState',
         'stripConfigSecrets',
         'taskToSummary',
+        'loadDefaultPromptTemplates',
         `${compiled}\nreturn makeFallbackApi;`,
       )(
         localStorage,
@@ -582,6 +585,7 @@ describe('product shell ui', () => {
         (state: unknown) => structuredClone(state),
         (config: unknown) => config,
         (task: Record<string, unknown>) => ({ ...task, inputPreview: String(task.inputText ?? '') }),
+        async () => [],
       ) as (setState: (state: typeof initial) => void) => FallbackApi;
       const states: Array<typeof initial> = [];
       return {

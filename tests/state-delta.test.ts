@@ -4,7 +4,8 @@ import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
 import { ConfigService } from '../electron/config-service';
 import { createHistoryPageStore } from '../src/features/history/history-page-store';
-import { defaultConfig, defaultPromptTemplates } from '@shared/config';
+import { defaultConfig } from '@shared/config';
+import { defaultPromptTemplates } from '@shared/prompt-template-defaults';
 import { createAppDeltaCoordinator, reduceAppDelta, type DeltaViewState } from '@shared/state-delta';
 import * as reconciliationModule from '@shared/state-reconciliation';
 import {

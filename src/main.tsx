@@ -85,6 +85,7 @@ import type {
   PodcastSpeakerPair,
   ProcessingMode,
   PromptTemplate,
+  PromptTemplateSummary,
   PromptStepTemplateType,
   PromptTemplateType,
   ProviderModel,
@@ -209,9 +210,10 @@ import {
   defaultCustomCoverTemplates,
   defaultCustomStyles,
   defaultMinimaxCloneVoices,
-  defaultPromptTemplates,
   defaultUiPreferences,
 } from './shared/config';
+import { promptTemplateCatalog } from './shared/prompt-template-catalog';
+import { loadDefaultPromptTemplates } from './shared/prompt-template-loader';
 import { draftTemplates as builtinDraftTemplates, imageAnimations, normalizeDraftTemplate } from './shared/templates';
 import { convertCozeWorkflowToDraftTemplate, convertManyCozeWorkflowsToDraftTemplates, type CozeWorkflowTemplateConversionResult } from './shared/coze-workflow-converter';
 import {
@@ -263,6 +265,12 @@ import './styles.css';
 const sampleText =
   '武曌，通称武则天、武后，是中国历史上唯一的女皇帝。武则天十四岁入宫为唐太宗才人，历经十二年不得升迁。唐高宗时复为昭仪，通过废黜王皇后与萧淑妃，得以立为皇后。并尊号为天后，与唐高宗并称二圣。';
 
+function promptTemplatePlaceholder(summary: PromptTemplateSummary): PromptTemplate {
+  return { ...summary, content: '' };
+}
+
+const initialPromptTemplates = promptTemplateCatalog.map(promptTemplatePlaceholder);
+
 const initialState: AppState = {
   config: defaultConfig,
   secretStatus: {},
@@ -270,7 +278,7 @@ const initialState: AppState = {
   events: [],
   viralAnalyses: [],
   viralEvents: [],
-  promptTemplates: defaultPromptTemplates,
+  promptTemplates: initialPromptTemplates,
   draftTemplates: builtinDraftTemplates,
   imageLabRecords: [],
   voiceLabRecords: [],
@@ -505,7 +513,7 @@ function hydrateState(state: Partial<AppState>): AppState {
     secretStatus: state.secretStatus ?? {},
     tasks: state.tasks ?? [],
     events: state.events ?? [],
-    promptTemplates: state.promptTemplates ?? defaultPromptTemplates,
+    promptTemplates: state.promptTemplates ?? initialPromptTemplates,
     draftTemplates: (state.draftTemplates ?? builtinDraftTemplates).map(normalizeDraftTemplate),
     imageLabRecords: state.imageLabRecords ?? [],
     voiceLabRecords: state.voiceLabRecords ?? [],
@@ -520,7 +528,6 @@ function hydrateState(state: Partial<AppState>): AppState {
 }
 
 function bootstrapToState(bootstrap: BootstrapState): AppState {
-  const promptDefaults = new Map(defaultPromptTemplates.map((template) => [template.id, template]));
   const draftDefaults = new Map(builtinDraftTemplates.map((template) => [template.id, template]));
   return hydrateState({
     config: bootstrap.config,
@@ -529,11 +536,7 @@ function bootstrapToState(bootstrap: BootstrapState): AppState {
     events: [],
     viralAnalyses: bootstrap.viralAnalyses.items.map((summary) => viralSummaryToRecord(summary)),
     viralEvents: [],
-    promptTemplates: bootstrap.promptTemplates.items.map((summary) => ({
-      ...(promptDefaults.get(summary.id) ?? { content: '' }),
-      ...summary,
-      content: promptDefaults.get(summary.id)?.content ?? '',
-    })) as PromptTemplate[],
+    promptTemplates: bootstrap.promptTemplates.items.map(promptTemplatePlaceholder),
     draftTemplates: bootstrap.draftTemplates.items.map((summary) => {
       const base = draftDefaults.get(summary.id) ?? builtinDraftTemplates[0];
       return normalizeDraftTemplate({
@@ -795,6 +798,14 @@ function makeFallbackApi(setState: (state: AppState) => void): StoryDreamApi {
     setState(sanitized);
     return sanitized;
   };
+  const loadFallbackPromptTemplates = async (): Promise<AppState> => {
+    const defaults = await loadDefaultPromptTemplates();
+    const envelope = readEnvelope();
+    const custom = envelope.state.promptTemplates.filter((template) => !template.isBuiltin);
+    const next = { ...envelope.state, promptTemplates: [...defaults, ...custom] as PromptTemplate[] };
+    if (!changed(envelope.state.promptTemplates, next.promptTemplates)) return envelope.state;
+    return commitState(next, { revision: envelope.revision, tombstones: envelope.tombstones });
+  };
   const readBookSelections = () => {
     const raw = localStorage.getItem('storybound-book-selections');
     if (!raw) return [] as BookSelectionRecord[];
@@ -1002,11 +1013,11 @@ function makeFallbackApi(setState: (state: AppState) => void): StoryDreamApi {
 
   return {
     async getState() {
-      return read();
+      return loadFallbackPromptTemplates();
     },
     async getBootstrap() {
+      const state = await loadFallbackPromptTemplates();
       const envelope = readEnvelope();
-      const state = envelope.state;
       return {
         revision: envelope.revision,
         config: state.config,
@@ -1164,13 +1175,14 @@ function makeFallbackApi(setState: (state: AppState) => void): StoryDreamApi {
       return read().voiceLabRecords.find((record) => record.id === id) ?? null;
     },
     async listPromptTemplates() {
+      const state = await loadFallbackPromptTemplates();
       return {
-        items: read().promptTemplates.map(({ content: _content, stepPrompts: _steps, imageSeedPoolsJson: _seeds, ...summary }) => summary),
+        items: state.promptTemplates.map(({ content: _content, stepPrompts: _steps, imageSeedPoolsJson: _seeds, ...summary }) => summary),
         nextCursor: null,
       };
     },
     async getPromptTemplateDetail(id) {
-      return read().promptTemplates.find((template) => template.id === id) ?? null;
+      return (await loadFallbackPromptTemplates()).promptTemplates.find((template) => template.id === id) ?? null;
     },
     async listDraftTemplates() {
       return {
@@ -1251,7 +1263,8 @@ function makeFallbackApi(setState: (state: AppState) => void): StoryDreamApi {
     async resetPromptTemplates() {
       const state = read();
       const custom = state.promptTemplates.filter((template) => !template.isBuiltin);
-      return persist({ ...state, promptTemplates: [...defaultPromptTemplates, ...custom] });
+      const defaults = await loadDefaultPromptTemplates();
+      return persist({ ...state, promptTemplates: [...defaults, ...custom] as PromptTemplate[] });
     },
     async saveCustomStyle(style: CustomStyle) {
       const state = read();
