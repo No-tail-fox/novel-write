@@ -14,6 +14,7 @@ import type {
   ConfigTestTarget,
   CreateTaskInput,
   CreateViralAnalysisInput,
+  CountedCursorPage,
   CursorPage,
   CursorRequest,
   CustomStyle,
@@ -31,6 +32,7 @@ import type {
   ImageLabSummary,
   JianyingEffectCatalog,
   LlmConfig,
+  MinimaxCloneVoice,
   PromptTemplate,
   PromptTemplateSummary,
   ProviderModelListRequest,
@@ -167,6 +169,7 @@ export const storyDreamApi = {
   getPromptTemplateDetail: (id: string): Promise<PromptTemplate | null> => invokeTrusted('prompt-template:get-detail', id),
   listDraftTemplates: (request: CursorRequest = {}): Promise<CursorPage<DraftTemplateSummary>> => invokeTrusted('draft-template:list', request),
   getDraftTemplateDetail: (id: string): Promise<DraftTemplate | null> => invokeTrusted('draft-template:get-detail', id),
+  listMinimaxCloneVoices: (request: CursorRequest = {}): Promise<CountedCursorPage<MinimaxCloneVoice>> => invokeTrusted('minimax-clone-voice:list', request),
   saveConfig: (input: SaveConfigInput): Promise<AppMutationResult | null> => invokeTrusted('app:save-config', input),
   testAppConfig: (target: ConfigTestTarget, config: AppConfig, secretChanges: SecretChanges = {}) =>
     invokeTrusted('config:test', { target, config, secretChanges }),

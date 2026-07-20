@@ -14,6 +14,7 @@ import type {
   ConfigTestTarget,
   CreateTaskInput,
   CreateViralAnalysisInput,
+  CountedCursorPage,
   CursorPage,
   CursorRequest,
   CustomStyle,
@@ -30,6 +31,7 @@ import type {
   JianyingEffectCatalog,
   LlmConfig,
   LlmModelTestResult,
+  MinimaxCloneVoice,
   PromptTemplate,
   PromptTemplateSummary,
   ProviderModelListRequest,
@@ -89,6 +91,7 @@ export const INVOKE_CHANNELS = Object.freeze([
   'prompt-template:get-detail',
   'draft-template:list',
   'draft-template:get-detail',
+  'minimax-clone-voice:list',
   'app:save-config',
   'config:test',
   'llm:test-config',
@@ -193,6 +196,7 @@ export type StoryDreamApi = {
   getPromptTemplateDetail: (id: string) => Promise<PromptTemplate | null>;
   listDraftTemplates: (request?: CursorRequest) => Promise<CursorPage<DraftTemplateSummary>>;
   getDraftTemplateDetail: (id: string) => Promise<DraftTemplate | null>;
+  listMinimaxCloneVoices: (request?: CursorRequest) => Promise<CountedCursorPage<MinimaxCloneVoice>>;
   saveConfig: (input: SaveConfigInput) => Promise<AppMutationResult | null>;
   testAppConfig: (target: ConfigTestTarget, config: AppConfig, secretChanges?: SecretChanges) => Promise<ConfigTestResult>;
   testLlmConfig: (config: LlmConfig) => Promise<LlmModelTestResult>;

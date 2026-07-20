@@ -290,6 +290,12 @@ const cursorPageSchema = z
     limit: finiteNumber.optional(),
   })
   .strict();
+const countedCursorPageSchema = z
+  .object({
+    cursor: nonEmptyText(4096).nullable().optional(),
+    limit: finiteNumber.int().min(1).max(100).optional(),
+  })
+  .strict();
 const historyArchiveFilterSchema = z.enum(['active', 'archived']);
 const historyCursorSchema = z
   .string()
@@ -562,6 +568,7 @@ export const ipcInputSchemas = {
   'draft-template:save': draftTemplateSchema,
   'draft-template:list': cursorPageSchema,
   'draft-template:get-detail': idOnlySchema,
+  'minimax-clone-voice:list': countedCursorPageSchema,
   'image-lab:generate': imageLabSchema,
   'image-lab:list': imageLabHistoryListSchema,
   'image-lab:archive': governanceIdSchema,

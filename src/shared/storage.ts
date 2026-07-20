@@ -10,6 +10,7 @@ import type {
   BookSelectionInput,
   BookSelectionRecord,
   CreateTaskInput,
+  CountedCursorPage,
   CursorPage,
   CursorRequest,
   CreditTransaction,
@@ -428,6 +429,18 @@ function createdIdCursor(cursor: string | null | undefined): { createdAt: string
     throw new Error('CURSOR_INVALID: Expected a created-at cursor.');
   }
   return { createdAt: parsed.createdAt, id: parsed.id };
+}
+
+function cloneVoiceCursor(cursor: string | null | undefined): { lastUsedAt: number; voiceId: string } | null {
+  const parsed = decodeCursor(cursor);
+  if (!parsed) return null;
+  if (Object.keys(parsed).length !== 2
+    || typeof parsed.lastUsedAt !== 'number'
+    || !Number.isSafeInteger(parsed.lastUsedAt)
+    || typeof parsed.voiceId !== 'string') {
+    throw new Error('CURSOR_INVALID: Expected a clone-voice cursor.');
+  }
+  return { lastUsedAt: parsed.lastUsedAt, voiceId: parsed.voiceId };
 }
 
 function sequenceCursor(cursor: string | null | undefined): number | null {
@@ -1541,6 +1554,41 @@ export class FileDatabase {
       };
       this.insertCustomStyle(style);
       return style;
+    });
+  }
+
+  async upsertCustomCoverTemplate(template: CustomCoverTemplate): Promise<CustomCoverTemplate> {
+    return this.enqueueCommit(() => {
+      this.db.run(
+        `INSERT OR REPLACE INTO custom_cover_templates
+         (id, name, description, directions, composition_rule, title_layout, subtitle_layout, plain_hint, created_at, updated_at)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        [
+          template.id,
+          template.name,
+          template.description,
+          template.directions,
+          template.compositionRule,
+          template.titleLayout,
+          template.subtitleLayout,
+          template.plainHint,
+          template.createdAt,
+          template.updatedAt,
+        ],
+      );
+      return template;
+    });
+  }
+
+  async upsertMinimaxCloneVoice(voice: MinimaxCloneVoice): Promise<MinimaxCloneVoice> {
+    return this.enqueueCommit(() => {
+      this.db.run(
+        `INSERT OR REPLACE INTO minimax_clone_voices
+         (voice_id, display_name, source_audio_path, created_at, last_used_at)
+         VALUES (?, ?, ?, ?, ?)`,
+        [voice.voiceId, voice.displayName, voice.sourceAudioPath, voice.createdAt, voice.lastUsedAt],
+      );
+      return voice;
     });
   }
 
@@ -2801,6 +2849,34 @@ export class FileDatabase {
       [id],
     );
     return row ? rowToCustomCoverTemplate(row) : null;
+  }
+
+  async listMinimaxCloneVoices(request: CursorRequest = {}): Promise<CountedCursorPage<MinimaxCloneVoice>> {
+    await this.waitForWrites();
+    const limit = clampPageLimit(request.limit);
+    const cursor = cloneVoiceCursor(request.cursor);
+    const where = cursor ? 'WHERE last_used_at < ? OR (last_used_at = ? AND voice_id < ?)' : '';
+    const params: SqlValue[] = cursor
+      ? [cursor.lastUsedAt, cursor.lastUsedAt, cursor.voiceId, limit + 1]
+      : [limit + 1];
+    const rows = getRows<Record<string, unknown>>(
+      this.db,
+      `SELECT * FROM minimax_clone_voices ${where} ORDER BY last_used_at DESC, voice_id DESC LIMIT ?`,
+      params,
+    );
+    const totalCount = Number(
+      getFirstRow<{ count: number }>(this.db, 'SELECT COUNT(*) AS count FROM minimax_clone_voices')?.count ?? 0,
+    );
+    const hasMore = rows.length > limit;
+    const pageRows = rows.slice(0, limit);
+    const last = pageRows.at(-1);
+    return {
+      items: pageRows.map(rowToMinimaxCloneVoice),
+      totalCount,
+      nextCursor: hasMore && last
+        ? encodeCursor({ lastUsedAt: Number(last.last_used_at), voiceId: String(last.voice_id) })
+        : null,
+    };
   }
 
   async getBootstrapMetadata(): Promise<

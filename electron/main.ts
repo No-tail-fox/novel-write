@@ -1231,6 +1231,7 @@ trustedHandle('prompt-template:list', async (_event, request: CursorRequest) => 
 trustedHandle('prompt-template:get-detail', async (_event, id: string) => (await getDb()).getPromptTemplateDetail(id));
 trustedHandle('draft-template:list', async (_event, request: CursorRequest) => (await getDb()).listDraftTemplateSummaries(request));
 trustedHandle('draft-template:get-detail', async (_event, id: string) => (await getDb()).getDraftTemplateDetail(id));
+trustedHandle('minimax-clone-voice:list', async (_event, request: CursorRequest) => (await getDb()).listMinimaxCloneVoices(request));
 
 trustedHandle('app:save-config', async (_event, input) => {
   const saved = await (await getConfigService()).save(input);

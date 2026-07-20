@@ -1199,6 +1199,14 @@ function makeFallbackApi(setState: (state: AppState) => void): StoryDreamApi {
     async getDraftTemplateDetail(id) {
       return read().draftTemplates.find((template) => template.id === id) ?? null;
     },
+    async listMinimaxCloneVoices(request = {}) {
+      const voices = read().minimaxCloneVoices;
+      const start = request.cursor ? Math.max(0, Number.parseInt(request.cursor, 10) || 0) : 0;
+      const limit = Math.min(100, Math.max(1, Math.trunc(request.limit ?? 50)));
+      const items = voices.slice(start, start + limit);
+      const next = start + items.length;
+      return { items, totalCount: voices.length, nextCursor: next < voices.length ? String(next) : null };
+    },
     async saveConfig(input) {
       if (Object.keys(input.secretChanges).length > 0) {
         throw new Error('浏览器预览不会安全保存接口密钥，请在 Electron 桌面端配置并保存。');

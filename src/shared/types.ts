@@ -737,6 +737,10 @@ export interface CursorPage<T> {
   nextCursor: string | null;
 }
 
+export interface CountedCursorPage<T> extends CursorPage<T> {
+  totalCount: number;
+}
+
 export type TaskSummary = Omit<
   Task,
   | 'inputText'
