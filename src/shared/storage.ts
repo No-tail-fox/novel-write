@@ -76,6 +76,7 @@ import {
 import { loadDefaultPromptTemplates } from './prompt-template-loader';
 import { parseDraftTemplate } from './draft-template-contract';
 import { draftTemplates, normalizeDraftTemplate } from './templates';
+import { isOrdinaryTask, parseOrdinaryCoverMode, resolveOrdinaryCoverTemplate } from '../features/tasks/task-control-manifest';
 export { defaultConfig } from './config';
 
 interface AddEventInput {
@@ -1833,13 +1834,23 @@ export class FileDatabase {
     const configRow = getFirstRow<{ data: string }>(this.db, 'SELECT data FROM config WHERE id = 1');
     const config = configRow ? mergeConfig(parseJson(configRow.data, defaultConfig)) : defaultConfig;
     const explicitStoryboardSceneCount = normalizeStoryboardSceneCount(input.targetScenes ?? input.storyboardSceneCount) ?? undefined;
+    const taskIdentity = {
+      taskKind: input.taskKind ?? 'story',
+      taskType: normalizeLegacyTaskType(input.taskType, input.taskKind),
+    };
+    const coverImageMode = parseOrdinaryCoverMode(input.coverImageMode ?? 'off');
+    if (isOrdinaryTask(taskIdentity)) {
+      const templates = getRows<Record<string, unknown>>(this.db, 'SELECT * FROM custom_cover_templates ORDER BY created_at ASC')
+        .map(rowToCustomCoverTemplate);
+      resolveOrdinaryCoverTemplate(coverImageMode, input.coverTemplateId ?? 'cinematic-poster', templates);
+    }
       const task: Task = {
         id: randomUUID(),
         archivedAt: null,
         managedStorageKey: createManagedStorageKey(),
         title: input.title ?? '',
       inputText: input.inputText,
-      taskKind: input.taskKind ?? 'story',
+      taskKind: taskIdentity.taskKind,
       processingMode: input.processingMode ?? 'full-auto',
       status: 'pending',
       currentStep: 0,
@@ -1886,7 +1897,7 @@ export class FileDatabase {
       fixedIntro: input.fixedIntro ?? null,
       outroCta: input.outroCta ?? null,
       lockIntroSentences: normalizeLockIntroSentences(input.lockIntroSentences),
-      taskType: normalizeLegacyTaskType(input.taskType, input.taskKind),
+      taskType: taskIdentity.taskType,
       pipelineStep: input.pipelineStep ?? 'new',
       pipelineData: input.pipelineData ?? '{}',
       targetLength: input.targetLength,
@@ -1896,7 +1907,7 @@ export class FileDatabase {
       podcastSpeakers: input.podcastSpeakers ?? (input.videoForm === 'two-host-podcast' ? 'kazai-dayi' : null),
       podcastSpeakerA: input.podcastSpeakerA ?? null,
       podcastSpeakerB: input.podcastSpeakerB ?? null,
-      coverImageMode: input.coverImageMode ?? 'off',
+      coverImageMode,
       coverTemplateId: input.coverTemplateId ?? 'cinematic-poster',
       htmlVideoForeground: input.htmlVideoForeground,
     };

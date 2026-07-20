@@ -16,6 +16,13 @@ import {
 } from '@shared/prompt-templates';
 
 describe('prompt template rendering', () => {
+  it('renders the literal promotion boolean even when product metadata exists', () => {
+    const rendered = renderPromptTemplate({ content: '{{keepPromotion}}' }, {
+      task: { keepPromotion: false, productInfo: JSON.stringify({ name: 'Book' }) } as never,
+    });
+    expect(rendered).toBe('false');
+  });
+
   it('matches the embedded StoryDream prompt inventory', () => {
     const taskTemplates = defaultPromptTemplates.filter((template) => template.type === 'task' && template.isBuiltin);
     const globalStepTemplates = defaultPromptTemplates.filter((template) => template.type !== 'task' && template.isBuiltin);

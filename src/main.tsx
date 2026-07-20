@@ -115,6 +115,12 @@ import type {
   VoiceLabSummary,
 } from './shared/types';
 import type { StoryDreamApi } from './shared/storydream-api';
+import { buildTaskCreateInput } from './features/tasks/task-create-input';
+import {
+  ORDINARY_AVAILABLE_COVER_MODES,
+  ORDINARY_COVER_MODE_MANIFEST,
+  type OrdinaryCoverMode,
+} from './features/tasks/task-control-manifest';
 import {
   createAppDeltaCoordinator,
   MAX_RENDERER_DELTA_BUFFER,
@@ -3031,7 +3037,7 @@ function NewTaskPage({
   const [storyboardSceneCount, setStoryboardSceneCount] = useState('');
   const [publishMode, setPublishMode] = useState<'review-rewrite' | 'direct-copy'>('review-rewrite');
   const [videoForm, setVideoForm] = useState<TaskVideoForm>('narration');
-  const [coverImageMode, setCoverImageMode] = useState('off');
+  const [coverImageMode, setCoverImageMode] = useState<OrdinaryCoverMode>('off');
   const [coverTemplateId, setCoverTemplateId] = useState('cinematic-poster');
   const [podcastImageMode, setPodcastImageMode] = useState('multi');
   const [podcastSpeakers, setPodcastSpeakers] = useState<PodcastSpeakerPair>('kazai-dayi');
@@ -3271,7 +3277,7 @@ function NewTaskPage({
     await taskAction.run(async () => {
       setRunning(true);
       try {
-        const next = await api.createAndRunTask({
+        const next = await api.createAndRunTask(buildTaskCreateInput({
         title,
         inputText: mode === 'paste' ? inputText : researchCopy.trim() || `${aiKeyword}\n\n${extraRequirements}`,
         mode,
@@ -3299,7 +3305,7 @@ function NewTaskPage({
         referenceImagePath,
         rewriteIntensity,
         narrativePov,
-        keepPromotion: keepPromotion || Boolean(productInfo),
+        keepPromotion,
         productInfo,
         materialSource,
         materialPerson: materialSource === 'local' ? materialPerson : null,
@@ -3314,7 +3320,7 @@ function NewTaskPage({
         storyboardSceneCount: normalizeTaskStoryboardSceneCount(storyboardSceneCount),
         promptTemplateId: resolvedPromptTemplate?.id ?? null,
         promptTemplateType: 'task',
-        });
+        }, state.customCoverTemplates));
         applyState(next);
         const createdTask = taskFromMutation(next);
         if (createdTask) {
@@ -3486,7 +3492,16 @@ function NewTaskPage({
               ))}
             </select>
           </Field>
-          <Segmented label="封面生成" value={coverImageMode} options={['off', 'auto', 'manual']} labels={['关闭', '自动', '仅封面']} onChange={setCoverImageMode} />
+          <div>
+            <Segmented
+              label="封面生成"
+              value={coverImageMode}
+              options={[...ORDINARY_AVAILABLE_COVER_MODES]}
+              labels={ORDINARY_AVAILABLE_COVER_MODES.map((mode) => ORDINARY_COVER_MODE_MANIFEST[mode].label)}
+              onChange={(value) => setCoverImageMode(value as OrdinaryCoverMode)}
+            />
+            <small className="hint-text">手动封面暂不可用，待专用素材导入与校验完成后开放。</small>
+          </div>
         </div>
 
         <div className="option-two-col">
@@ -3596,7 +3611,7 @@ function NewTaskPage({
             <Segmented label="叙事视角" value={narrativePov} options={povOptions.map(([id]) => id)} labels={povOptions.map(([, label]) => label)} onChange={(value) => setNarrativePov(value as Task['narrativePov'])} />
             <label className="toggle-row">
               <input type="checkbox" checked={keepPromotion} onChange={(event) => setKeepPromotion(event.target.checked)} />
-              带货模式 <small>改写时删除带货段落</small>
+              带货保留 <small>启用后保留原素材中的商品与推广信息</small>
             </label>
             <div className="advanced-section copy-control-section">
               <div className="section-title-row">

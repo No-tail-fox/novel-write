@@ -2720,6 +2720,11 @@ describe('product shell ui', () => {
     expect(page).toContain('coverImageMode');
     expect(page).toContain('podcastImageMode');
     expect(page).toContain('state.customCoverTemplates.map');
+    expect(page).toContain('buildTaskCreateInput');
+    expect(page).not.toContain('keepPromotion: keepPromotion || Boolean(productInfo)');
+    expect(page).toContain('手动封面暂不可用');
+    expect(page).toContain('启用后保留原素材中的商品与推广信息');
+    expect(page).not.toContain('改写时删除带货段落');
   });
 
   it('wires new task reference image upload and task LLM model selection into task creation', async () => {

@@ -13,6 +13,7 @@ import { buildPromptRenderContext, renderPromptTemplate, selectStepPromptTemplat
 import { defaultCustomStyles } from './config';
 import { copyPersonMaterialsForScenes } from './person-assets';
 import { withPipelineStateLock } from './pipeline-cache';
+import { isOrdinaryTask, resolveOrdinaryCoverTemplate } from '../features/tasks/task-control-manifest';
 
 export interface RunTaskOptions {
   appDataDir: string;
@@ -587,8 +588,7 @@ async function ensureContentArtifact(input: {
     await emit('step_start', 1, 'Writer', '标准改写 + 自评迭代');
     const reviewedText = requireString(pipeline.artifact.reviewedText, 'reviewedText');
     const controlPlan = prepareRewriteControls(task, reviewedText);
-    const promotionTask = effectivePromotionTask(task);
-    const rewriteTask = effectiveRewriteTask(promotionTask, controlPlan);
+    const rewriteTask = effectiveRewriteTask(task, controlPlan);
     const rewritePromptContext = buildPromptRenderContext({
       task: rewriteTask,
       taskTemplate,
@@ -608,7 +608,7 @@ async function ensureContentArtifact(input: {
     pipeline.artifact.rewrittenCopy = rewrite.rewrittenCopy;
     pipeline.artifact.rewriteEvaluation = rewrite.evaluation;
     const coverPromptContext = buildPromptRenderContext({
-      task: promotionTask,
+      task,
       taskTemplate,
       customStyles: appState.customStyles,
       sourceContext,
@@ -616,7 +616,7 @@ async function ensureContentArtifact(input: {
     });
     const coverPrompt = joinPromptBlocks([
       renderStepPrompt(promptTemplates, 'cover', coverPromptContext, ''),
-      productInfoRewriteBlock(promotionTask),
+      productInfoRewriteBlock(task),
     ]);
     pipeline.artifact.cover = await generateCoverMetadata(options.llm, {
       coverPrompt,
@@ -941,15 +941,6 @@ function prepareRewriteControls(task: Task, reviewedText: string): RewriteContro
   };
 }
 
-function effectivePromotionTask(task: Task): Task {
-  const keepPromotion = task.keepPromotion || Boolean(task.productInfo?.trim()) || task.track.trim() === 'ecommerce';
-  if (keepPromotion === task.keepPromotion) return task;
-  return {
-    ...task,
-    keepPromotion,
-  };
-}
-
 function effectiveRewriteTask(task: Task, controlPlan: RewriteControlPlan): Task {
   const adjustedTargetLength = adjustedRewriteTargetLength(task, controlPlan);
   if (adjustedTargetLength === task.targetLength) return task;
@@ -994,6 +985,7 @@ function splitLeadingSentences(text: string, count: number): { leading: string; 
 }
 
 function productInfoRewriteBlock(task: Task): string {
+  if (!task.keepPromotion) return '';
   const raw = task.productInfo?.trim();
   if (!raw) return '';
   let parsed: unknown;
@@ -1659,6 +1651,9 @@ async function ensureImages(input: {
     await emit('step_complete', 4, 'Producer', '人物素材库图片已复制', { count: copied.assets.length, origins: copied.origins });
     return;
   }
+  const ordinaryCoverTemplate = isOrdinaryTask(task)
+    ? resolveOrdinaryCoverTemplate(task.coverImageMode ?? 'off', task.coverTemplateId, options.customCoverTemplates ?? [])
+    : null;
   if (!options.generateImages) {
     throw new Error('Image provider is not configured; cannot create real image assets.');
   }
@@ -1669,7 +1664,7 @@ async function ensureImages(input: {
     await markStep(4, 'running');
     await emit('step_start', 4, 'Producer', '生成封面图片素材', { coverTemplateId: task.coverTemplateId });
     const coverScene = buildCoverScene(artifact);
-    const coverPrompt = buildCoverImagePrompt(task, artifact, options.customCoverTemplates);
+    const coverPrompt = buildCoverImagePrompt(task, artifact, ordinaryCoverTemplate ? [ordinaryCoverTemplate] : options.customCoverTemplates);
     const coverAssets = await generateImages([coverScene], [coverPrompt], task, options.signal);
     const coverPath = await persistCoverImage(input.workDir, coverAssets[0], coverPrompt, input);
     pipeline.assets.cover = [{ sceneId: 0, path: coverPath }];
@@ -1767,7 +1762,7 @@ async function ensureNarration(input: {
 }
 
 function shouldGenerateCoverImage(task: Task): boolean {
-  return task.coverImageMode === 'auto' || task.coverImageMode === 'manual' || usesSinglePodcastCover(task);
+  return task.coverImageMode === 'auto' || usesSinglePodcastCover(task);
 }
 
 function usesSinglePodcastCover(task: Task): boolean {

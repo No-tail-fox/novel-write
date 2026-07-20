@@ -10,6 +10,7 @@ import type { CustomCoverTemplate, ImagePrompt, PipelineArtifact, StoryboardScen
 import type { PyJianYingBridgeInput } from '@shared/jianying-bridge';
 import type { StoryboundSidecarInput } from '@shared/storybound-sidecar';
 import type { ConfiguredJsonLlm, JsonLlm, LlmJsonRequest } from '@shared/llm-provider';
+import { defaultCustomCoverTemplates } from '@shared/config';
 
 const sampleInput =
   'Wu Zetian entered the palace at fourteen. Years later, she returned to the center of power and changed the court forever.';
@@ -649,7 +650,7 @@ describe('task runner', () => {
         style: 'photo-real',
         speaker: 'voice',
         targetLength: 100,
-        keepPromotion: false,
+        keepPromotion: true,
         productInfo: JSON.stringify({ name: '额尔古纳河右岸', author: '迟子建', sellPoint: '民族史诗' }),
       },
       reviewedText: sampleInput,
@@ -674,7 +675,7 @@ describe('task runner', () => {
         style: 'photo-real',
         speaker: 'voice',
         targetLength: 300,
-        keepPromotion: false,
+        keepPromotion: true,
         productInfo: JSON.stringify({ name: '额尔古纳河右岸', sellPoint: '民族史诗' }),
         promptTemplateId: 'product-repair-template',
         promptTemplateType: 'task',
@@ -713,6 +714,7 @@ describe('task runner', () => {
         style: 'photo-real',
         speaker: 'voice',
         targetLength: 100,
+        keepPromotion: true,
         productInfo: JSON.stringify({
           name: '额尔古纳河右岸',
           cat: '文学',
@@ -741,7 +743,7 @@ describe('task runner', () => {
     expect(rewritePrompt).not.toContain('C:/secret/materials');
   });
 
-  it('treats product info as promotion context without mutating stored keepPromotion', { timeout: rewriteControlTestTimeoutMs }, async () => {
+  it('keeps an explicit false promotion choice in rewrite prompts when product info exists', { timeout: rewriteControlTestTimeoutMs }, async () => {
     const { requests, storedKeepPromotion } = await runRewriteControlScenario({
       taskInput: {
         title: '商品上下文测试',
@@ -772,11 +774,12 @@ describe('task runner', () => {
     });
 
     const firstRewritePrompt = requests.find((request) => request.name === 'rewrite-round-1')?.messages.map((message) => message.content).join('\n') ?? '';
-    expect(firstRewritePrompt).toContain('Promotion flag: true');
+    expect(firstRewritePrompt).toContain('Promotion flag: false');
+    expect(firstRewritePrompt).not.toContain('本视频带货商品');
     expect(storedKeepPromotion).toBe(false);
   });
 
-  it('treats product info as promotion context in cover prompt templates', { timeout: rewriteControlTestTimeoutMs }, async () => {
+  it('keeps an explicit false promotion choice in cover prompts when product info exists', { timeout: rewriteControlTestTimeoutMs }, async () => {
     const { requests, storedKeepPromotion } = await runRewriteControlScenario({
       taskInput: {
         title: '封面商品上下文测试',
@@ -814,12 +817,9 @@ describe('task runner', () => {
     });
 
     const coverPrompt = requests.find((request) => request.name === 'cover-metadata')?.messages.map((message) => message.content).join('\n') ?? '';
-    expect(coverPrompt).toContain('Cover promotion flag: true');
-    expect(coverPrompt).toContain('本视频带货商品');
-    expect(coverPrompt).toContain('额尔古纳河右岸');
-    expect(coverPrompt).toContain('民族史诗');
-    expect(coverPrompt).toContain('文学');
-    expect(coverPrompt).toContain('鄂温克族');
+    expect(coverPrompt).toContain('Cover promotion flag: false');
+    expect(coverPrompt).not.toContain('本视频带货商品');
+    expect(coverPrompt).not.toContain('额尔古纳河右岸');
     expect(coverPrompt).not.toContain('C:/secret/cover.png');
     expect(coverPrompt).not.toContain('C:/secret/materials');
     expect(storedKeepPromotion).toBe(false);
@@ -1681,6 +1681,7 @@ describe('task runner', () => {
 
       await runTask(db, task, {
         appDataDir: dir,
+        customCoverTemplates: defaultCustomCoverTemplates,
         generatePipelineArtifact: async () => makeArtifact(),
         generateImages: async (scenes, prompts) => {
           imageCalls.push({ scenes, prompts });
@@ -1699,11 +1700,98 @@ describe('task runner', () => {
       const pipeline = JSON.parse(await readFile(completed.artifactStatePath, 'utf8'));
       const draftMeta = JSON.parse(await readFile(join(completed.outputDir, 'draft_meta_info.json'), 'utf8'));
       expect(imageCalls[0].scenes.map((scene) => scene.id)).toEqual([0]);
-      expect(imageCalls[0].prompts[0].prompt).toContain('Short-video cover');
+      expect(imageCalls[0].prompts[0].prompt).toContain(defaultCustomCoverTemplates[0].directions);
+      expect(imageCalls[0].prompts[0].prompt).toContain(defaultCustomCoverTemplates[0].compositionRule);
+      expect(imageCalls[0].prompts[0].prompt).toContain('电影感短视频封面');
       expect(pipeline.assets.cover[0].path).toBe(join(managedTaskWorkDir(dir, task), 'cover-image.png'));
       expect(await readFile(join(managedTaskWorkDir(dir, task), 'cover-image.png'))).toEqual(tinyPng);
       expect(draftPayloads[0].coverImagePath).toBe(join(managedTaskWorkDir(dir, task), 'cover-image.png'));
       expect(draftMeta.draft_cover).toBe(join(managedTaskWorkDir(dir, task), 'cover-image.png'));
+    } finally {
+      await db.close();
+      await rm(dir, { recursive: true, force: true });
+    }
+  });
+
+  it('keeps ordinary cover mode off out of the cover provider and output', async () => {
+    const dir = await mkdtemp(join(tmpdir(), 'storydream-runner-cover-off-'));
+    const db = await FileDatabase.open(join(dir, 'data.db'));
+    const draftRootDir = join(dir, 'JianyingPro Drafts');
+    const mediaDir = join(dir, 'media');
+    const imageSceneIds: number[][] = [];
+    try {
+      await db.upsertConfig({
+        ...(await db.getState()).config,
+        jianying: { ...(await db.getState()).config.jianying, draftPath: draftRootDir },
+      });
+      const task = await db.createTask({ title: 'Cover off', inputText: sampleInput, coverImageMode: 'off' });
+      await runTask(db, task, {
+        appDataDir: dir,
+        customCoverTemplates: defaultCustomCoverTemplates,
+        generatePipelineArtifact: async () => makeArtifact(),
+        generateImages: async (scenes) => {
+          imageSceneIds.push(scenes.map((scene) => scene.id));
+          return writeSceneAssets(mediaDir, scenes, 'png', tinyPng);
+        },
+        synthesizeNarration: async (scenes) => writeSceneAssets(mediaDir, scenes, 'wav', wavTone(1200)),
+        draftWriterOptions: { runBridge: fakeBridge },
+      });
+      expect(imageSceneIds.flat()).not.toContain(0);
+      const completed = (await db.getState()).tasks[0];
+      const pipeline = JSON.parse(await readFile(completed.artifactStatePath, 'utf8'));
+      expect(pipeline.assets.cover).toEqual([]);
+    } finally {
+      await db.close();
+      await rm(dir, { recursive: true, force: true });
+    }
+  });
+
+  it('rejects legacy manual cover mode before any cover provider call', async () => {
+    const dir = await mkdtemp(join(tmpdir(), 'storydream-runner-manual-cover-'));
+    const db = await FileDatabase.open(join(dir, 'data.db'));
+    try {
+      const created = await db.createTask({ title: 'Legacy manual cover', inputText: sampleInput, coverImageMode: 'off' });
+      (db as unknown as { db: { run: (sql: string, params?: unknown[]) => void } }).db.run(
+        'UPDATE tasks SET cover_image_mode = ? WHERE id = ?',
+        ['manual', created.id],
+      );
+      const legacyTask = (await db.getState()).tasks[0];
+      await expect(runTask(db, legacyTask, {
+        appDataDir: dir,
+        customCoverTemplates: defaultCustomCoverTemplates,
+        generatePipelineArtifact: async () => makeArtifact(),
+      })).rejects.toThrow(/ORDINARY_MANUAL_COVER_UNAVAILABLE/);
+    } finally {
+      await db.close();
+      await rm(dir, { recursive: true, force: true });
+    }
+  });
+
+  it('rejects a missing auto cover template before any cover provider call', async () => {
+    const dir = await mkdtemp(join(tmpdir(), 'storydream-runner-missing-cover-template-'));
+    const db = await FileDatabase.open(join(dir, 'data.db'));
+    let imageCalls = 0;
+    try {
+      const created = await db.createTask({
+        title: 'Missing cover template',
+        inputText: sampleInput,
+        coverImageMode: 'off',
+      });
+      (db as unknown as { db: { run: (sql: string, params?: unknown[]) => void } }).db.run(
+        'UPDATE tasks SET cover_image_mode = ?, cover_template_id = ? WHERE id = ?',
+        ['auto', 'missing-cover', created.id],
+      );
+      const legacyTask = (await db.getState()).tasks[0];
+      await expect(runTask(db, legacyTask, {
+        appDataDir: dir,
+        customCoverTemplates: defaultCustomCoverTemplates,
+        generatePipelineArtifact: async () => makeArtifact(),
+        generateImages: async () => {
+          imageCalls += 1;
+          throw new Error('cover provider must not run');
+        },
+      })).rejects.toThrow(/ORDINARY_COVER_TEMPLATE_NOT_FOUND/);
+      expect(imageCalls).toBe(0);
     } finally {
       await db.close();
       await rm(dir, { recursive: true, force: true });
@@ -1731,6 +1819,7 @@ describe('task runner', () => {
 
       await runTask(db, task, {
         appDataDir: dir,
+        customCoverTemplates: defaultCustomCoverTemplates,
         generatePipelineArtifact: async () => makeArtifact(),
         generateImages: async (scenes, prompts) => {
           imageCalls.push({ prompts });
@@ -1740,7 +1829,7 @@ describe('task runner', () => {
         draftWriterOptions: { runBridge: fakeBridge },
       });
 
-      expect(imageCalls[0].prompts[0].prompt).toContain('Podcast cover');
+      expect(imageCalls[0].prompts[0].prompt).toContain('Create a podcast cover');
       expect(imageCalls[0].prompts[0].prompt).toContain('thumbnail');
       expect(imageCalls[0].prompts[0].prompt).toContain('topic signal');
     } finally {
@@ -1775,6 +1864,7 @@ describe('task runner', () => {
         ...(await db.getState()).config,
         jianying: { ...(await db.getState()).config.jianying, draftPath: draftRootDir },
       });
+      await db.upsertCustomCoverTemplate(customCoverTemplates[0]);
       const task = await db.createTask({
         title: 'Noir cover task',
         inputText: sampleInput,
@@ -3110,12 +3200,25 @@ describe('task runner', () => {
         ...(await db.getState()).config,
         jianying: { ...(await db.getState()).config.jianying, draftPath: draftRootDir },
       });
+      await db.upsertPromptTemplate({
+        id: 'rerun-promotion-contract',
+        name: 'Rerun promotion contract',
+        type: 'task',
+        content: 'Task template',
+        isBuiltin: false,
+        baseTrack: 'character-story',
+        stepPrompts: { rewrite: 'Promotion flag: {{keepPromotion}}' },
+      });
       const task = await db.createTask({
         title: 'Rewrite assisted rerun',
         inputText: sampleInput,
         track: 'character-story',
         style: 'photo-real',
         speaker: 'voice',
+        keepPromotion: false,
+        productInfo: JSON.stringify({ name: 'Book', sellPoint: 'Pitch' }),
+        promptTemplateId: 'rerun-promotion-contract',
+        promptTemplateType: 'task',
       });
       const workDir = managedTaskWorkDir(dir, task);
       const pipelineDir = join(workDir, 'pipeline');
@@ -3182,6 +3285,8 @@ describe('task runner', () => {
       const rewriteContent = rewriteRequest?.messages.map((message) => message.content).join('\n') ?? '';
       expect(rewriteContent).toContain('Existing artifact context');
       expect(rewriteContent).toContain('Old rewrite context line');
+      expect(rewriteContent).toContain('Promotion flag: false');
+      expect(rewriteContent).not.toContain('本视频带货商品');
       expect(requests.some((request) => request.step === 0)).toBe(false);
     } finally {
       await db.close();

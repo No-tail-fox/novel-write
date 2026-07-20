@@ -231,6 +231,38 @@ describe('file database', () => {
     }
   });
 
+  it('round-trips explicit false promotion with product info and rejects new manual covers before insert', async () => {
+    const dir = await mkdtemp(join(tmpdir(), 'storydream-ordinary-task-semantics-'));
+    const file = join(dir, 'app.db');
+    try {
+      const db = await FileDatabase.open(file);
+      await db.createTask({
+        title: 'Literal promotion choice',
+        inputText: 'source',
+        keepPromotion: false,
+        productInfo: JSON.stringify({ name: 'Book' }),
+        coverImageMode: 'off',
+      });
+      await expect(db.createTask({
+        title: 'Unsupported manual cover',
+        inputText: 'source',
+        coverImageMode: 'manual',
+      })).rejects.toThrow(/ORDINARY_MANUAL_COVER_UNAVAILABLE/);
+      expect((await db.getState()).tasks).toHaveLength(1);
+      await db.close();
+
+      const reopened = await FileDatabase.open(file);
+      expect((await reopened.getState()).tasks[0]).toMatchObject({
+        keepPromotion: false,
+        productInfo: JSON.stringify({ name: 'Book' }),
+        coverImageMode: 'off',
+      });
+      await reopened.close();
+    } finally {
+      await rm(dir, { recursive: true, force: true });
+    }
+  });
+
   it('persists local book selection records', async () => {
     const dir = await mkdtemp(join(tmpdir(), 'storybound-db-book-selection-'));
     const file = join(dir, 'app.db');
@@ -279,7 +311,7 @@ describe('file database', () => {
         targetScenes: 16,
         scriptFormat: 'short-video',
         coverImageMode: 'auto',
-        coverTemplateId: 'default-cover',
+        coverTemplateId: 'cinematic-poster',
       } as Parameters<typeof db.createTask>[0] & Record<string, unknown>);
 
       const state = await db.getState();
@@ -293,7 +325,7 @@ describe('file database', () => {
         scriptFormat: 'short-video',
         llmProfileId: 'llm-draft',
         coverImageMode: 'auto',
-        coverTemplateId: 'default-cover',
+        coverTemplateId: 'cinematic-poster',
       });
       await db.close();
     } finally {
