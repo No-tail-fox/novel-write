@@ -2228,8 +2228,9 @@ describe('product shell ui', () => {
     expect(main).toContain('selectedTaskId');
     expect(main).toContain('openTaskDetail');
     expect(main).toContain('TaskDetailPage');
-    expect(main).toContain('pipelineSteps');
-    for (const text of ['历史任务', '任务详情', '7 步流水线', '产物预览', '分镜画廊', '配音试听', '等待当前步骤产物落盘']) {
+    expect(main).toContain('taskProgressStages(activeTask)');
+    expect(main).toContain('{progress.total} 步流水线');
+    for (const text of ['历史任务', '任务详情', '产物预览', '分镜画廊', '配音试听', '等待当前步骤产物落盘']) {
       expect(main).toContain(text);
     }
     expect(css).toContain('.task-detail-shell');
@@ -2952,7 +2953,8 @@ describe('product shell ui', () => {
     expect(main).toContain('isBrowserPreview');
     expect(main).toContain('浏览器预览不能执行真实流水线');
     expect(main).toContain('disabled={isBrowserPreview');
-    expect(main).toContain('resumeTask');
+    expect(main).toContain('continueTask');
+    expect(main).toContain('retryFailedTask');
     expect(main).not.toContain("task.status === 'paused' ? 'running' : 'paused'");
   });
 

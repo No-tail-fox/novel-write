@@ -89,6 +89,7 @@ interface AddEventInput {
   detail: string;
   dataJson?: string | null;
   ts?: number;
+  runGeneration?: number;
 }
 
 interface AddViralEventInput {
@@ -282,7 +283,7 @@ const DEFAULT_STORAGE_PAGE_LIMIT = 50;
 const TASK_INPUT_PREVIEW_LIMIT = 160;
 const RECORD_TEXT_PREVIEW_LIMIT = 160;
 const taskSummaryColumns = `
-  id, archived_at, managed_storage_key, title, task_kind, processing_mode, publish_mode, status, current_step,
+  id, archived_at, managed_storage_key, title, task_kind, processing_mode, publish_mode, status, current_step, run_generation,
   track, style, speaker, ratio, template_id, bgm_id, output_dir, error_message,
   created_at, completed_at, started_at, last_heartbeat_at, mode, ai_keyword,
   prompt_template_id, prompt_template_type, reference_image_path, rewrite_intensity,
@@ -466,6 +467,19 @@ function viralSequenceCursor(cursor: string | null | undefined, runGeneration: n
     || !Number.isSafeInteger(parsed.runGeneration)
     || Number(parsed.runGeneration) !== runGeneration) {
     throw new Error('CURSOR_STALE: Viral event cursor belongs to another run generation.');
+  }
+  return Number(parsed.seq);
+}
+
+function taskSequenceCursor(cursor: string | null | undefined, runGeneration: number): number | null {
+  const parsed = decodeCursor(cursor);
+  if (!parsed) return null;
+  if (Object.keys(parsed).length !== 2
+    || !Number.isSafeInteger(parsed.seq)
+    || Number(parsed.seq) < 0
+    || !Number.isSafeInteger(parsed.runGeneration)
+    || Number(parsed.runGeneration) !== runGeneration) {
+    throw new Error('CURSOR_STALE: Task event cursor belongs to another run generation.');
   }
   return Number(parsed.seq);
 }
@@ -881,6 +895,7 @@ export class FileDatabase {
         processing_mode TEXT DEFAULT 'full-auto',
         status TEXT DEFAULT 'pending',
         current_step INTEGER DEFAULT 0,
+        run_generation INTEGER DEFAULT 0,
         track TEXT DEFAULT 'character-story',
         style TEXT DEFAULT 'photo-real',
         speaker TEXT DEFAULT '灿博小叔',
@@ -950,6 +965,7 @@ export class FileDatabase {
       CREATE TABLE IF NOT EXISTS task_events (
         seq INTEGER PRIMARY KEY AUTOINCREMENT,
         task_id TEXT NOT NULL,
+        run_generation INTEGER DEFAULT 0,
         type TEXT NOT NULL,
         step INTEGER,
         agent TEXT,
@@ -1215,9 +1231,11 @@ export class FileDatabase {
       ['html_video_foreground', 'INTEGER DEFAULT NULL'],
       ['archived_at', 'TEXT DEFAULT NULL'],
       ['managed_storage_key', 'TEXT DEFAULT NULL'],
+      ['run_generation', 'INTEGER DEFAULT 0'],
     ] as const) {
       addColumnIfMissing(this.db, 'tasks', column, definition);
     }
+    addColumnIfMissing(this.db, 'task_events', 'run_generation', 'INTEGER DEFAULT 0');
     addColumnIfMissing(this.db, 'prompt_templates', 'data_json', "TEXT DEFAULT '{}'");
     addColumnIfMissing(this.db, 'prompt_templates', 'summary_json', "TEXT DEFAULT '{}'");
     this.backfillPromptTemplateSummaries();
@@ -1918,6 +1936,7 @@ export class FileDatabase {
       processingMode: input.processingMode ?? 'full-auto',
       status: 'pending',
       currentStep: 0,
+      runGeneration: 0,
       track: input.track ?? 'character-story',
       style: input.style ?? 'photo-real',
       speaker: input.speaker ?? defaultConfig.tts.speaker,
@@ -2550,6 +2569,18 @@ export class FileDatabase {
     });
   }
 
+  async beginTaskRun(id: string): Promise<Task> {
+    return this.enqueueCommit(() => {
+      this.assertHistoryWritable('task', id);
+      const row = getFirstRow<Record<string, unknown>>(this.db, 'SELECT * FROM tasks WHERE id = ?', [id]);
+      if (!row) throw new Error(`TASK_NOT_FOUND: ${id}`);
+      if (row.archived_at) throw new Error(`TASK_ARCHIVED: ${id}`);
+      const runGeneration = Number(row.run_generation ?? 0) + 1;
+      this.db.run('UPDATE tasks SET run_generation = ? WHERE id = ?', [runGeneration, id]);
+      return rowToTask({ ...row, run_generation: runGeneration });
+    });
+  }
+
   async updateHtmlVideoTaskConfig(
     id: string,
     changes: readonly HtmlVideoConfigChange[],
@@ -2619,6 +2650,7 @@ export class FileDatabase {
 
       const event: TaskEvent = {
         taskId: id,
+        runGeneration: task.runGeneration,
         type: 'config_update',
         step: currentStep,
         agent: 'HTML Video',
@@ -2631,9 +2663,9 @@ export class FileDatabase {
         ts: Date.now(),
       };
       this.db.run(
-        `INSERT INTO task_events (task_id, type, step, agent, tool, detail, data_json, ts)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
-        [event.taskId, event.type, event.step, event.agent, event.tool, event.detail, event.dataJson, event.ts],
+        `INSERT INTO task_events (task_id, run_generation, type, step, agent, tool, detail, data_json, ts)
+         VALUES (?, (SELECT run_generation FROM tasks WHERE id = ?), ?, ?, ?, ?, ?, ?, ?)`,
+        [event.taskId, event.taskId, event.type, event.step, event.agent, event.tool, event.detail, event.dataJson, event.ts],
       );
       const seq = getFirstRow<{ seq: number }>(this.db, 'SELECT last_insert_rowid() AS seq')?.seq;
       if (!Number.isSafeInteger(seq)) throw new Error('TASK_EVENT_SEQUENCE_MISSING: Event was not assigned a sequence.');
@@ -2722,6 +2754,7 @@ export class FileDatabase {
         );
         const event: TaskEvent = {
           taskId: id,
+          runGeneration: task.runGeneration,
           type: 'cover_import',
           step: 5,
           agent: 'HTML Video',
@@ -2743,9 +2776,9 @@ export class FileDatabase {
           ts: Date.parse(now) || Date.now(),
         };
         this.db.run(
-          `INSERT INTO task_events (task_id, type, step, agent, tool, detail, data_json, ts)
-           VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
-          [event.taskId, event.type, event.step, event.agent, event.tool, event.detail, event.dataJson, event.ts],
+          `INSERT INTO task_events (task_id, run_generation, type, step, agent, tool, detail, data_json, ts)
+           VALUES (?, (SELECT run_generation FROM tasks WHERE id = ?), ?, ?, ?, ?, ?, ?, ?)`,
+          [event.taskId, event.taskId, event.type, event.step, event.agent, event.tool, event.detail, event.dataJson, event.ts],
         );
         const seq = getFirstRow<{ seq: number }>(this.db, 'SELECT last_insert_rowid() AS seq')?.seq;
         if (!Number.isSafeInteger(seq)) throw new Error('TASK_EVENT_SEQUENCE_MISSING: Event was not assigned a sequence.');
@@ -2820,16 +2853,19 @@ export class FileDatabase {
   async listTaskEvents(taskId: string, request: CursorRequest = {}): Promise<CursorPage<SequencedTaskEvent>> {
     await this.waitForWrites();
     const limit = clampPageLimit(request.limit);
-    const cursor = sequenceCursor(request.cursor);
+    const record = getFirstRow<{ run_generation: number }>(this.db, 'SELECT run_generation FROM tasks WHERE id = ?', [taskId]);
+    if (!record) return { items: [], nextCursor: null };
+    const runGeneration = Number(record.run_generation ?? 0);
+    const cursor = taskSequenceCursor(request.cursor, runGeneration);
     const rows = getRows<Record<string, unknown>>(
       this.db,
-      `SELECT * FROM task_events WHERE task_id = ? ${cursor === null ? '' : 'AND seq < ?'} ORDER BY seq DESC LIMIT ?`,
-      cursor === null ? [taskId, limit + 1] : [taskId, cursor, limit + 1],
+      `SELECT * FROM task_events WHERE task_id = ? AND run_generation = ? ${cursor === null ? '' : 'AND seq < ?'} ORDER BY seq DESC LIMIT ?`,
+      cursor === null ? [taskId, runGeneration, limit + 1] : [taskId, runGeneration, cursor, limit + 1],
     );
     const hasMore = rows.length > limit;
     const pageRows = rows.slice(0, limit);
     const items = pageRows.map(rowToSequencedTaskEvent).reverse();
-    return { items, nextCursor: hasMore && items.length > 0 ? encodeCursor({ seq: items[0].seq }) : null };
+    return { items, nextCursor: hasMore && items.length > 0 ? encodeCursor({ seq: items[0].seq, runGeneration }) : null };
   }
 
   async listViralAnalyses(request: HistoryListInput<'viral-analysis'> = {}): Promise<HistoryPage<'viral-analysis', ViralAnalysisSummary>> {
@@ -3102,22 +3138,29 @@ export class FileDatabase {
   }
 
   async addTaskEvent(taskId: string, input: AddEventInput): Promise<SequencedTaskEvent> {
-    const event: TaskEvent = {
-      taskId,
-      type: input.type,
-      step: input.step ?? null,
-      agent: input.agent ?? null,
-      tool: input.tool ?? null,
-      detail: input.detail,
-      dataJson: input.dataJson ?? null,
-      ts: input.ts ?? Date.now(),
-    };
     return this.enqueueCommit(() => {
       this.assertHistoryWritable('task', taskId);
+      const current = getFirstRow<{ run_generation: number }>(this.db, 'SELECT run_generation FROM tasks WHERE id = ?', [taskId]);
+      if (!current) throw new Error(`TASK_NOT_FOUND: ${taskId}`);
+      const runGeneration = Number(current.run_generation ?? 0);
+      if (input.runGeneration !== undefined && input.runGeneration !== runGeneration) {
+        throw new Error(`STALE_TASK_RUN: Event generation ${input.runGeneration} is no longer current.`);
+      }
+      const event: TaskEvent = {
+        taskId,
+        runGeneration,
+        type: input.type,
+        step: input.step ?? null,
+        agent: input.agent ?? null,
+        tool: input.tool ?? null,
+        detail: input.detail,
+        dataJson: input.dataJson ?? null,
+        ts: input.ts ?? Date.now(),
+      };
       this.db.run(
-        `INSERT INTO task_events (task_id, type, step, agent, tool, detail, data_json, ts)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
-        [event.taskId, event.type, event.step, event.agent, event.tool, event.detail, event.dataJson, event.ts],
+        `INSERT INTO task_events (task_id, run_generation, type, step, agent, tool, detail, data_json, ts)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        [event.taskId, event.runGeneration ?? 0, event.type, event.step, event.agent, event.tool, event.detail, event.dataJson, event.ts],
       );
       const seq = getFirstRow<{ seq: number }>(this.db, 'SELECT last_insert_rowid() AS seq')?.seq;
       if (!Number.isSafeInteger(seq)) throw new Error('TASK_EVENT_SEQUENCE_MISSING: Event was not assigned a sequence.');
@@ -3252,6 +3295,7 @@ function rowToTask(row: Record<string, unknown>): Task {
     processingMode: normalizeProcessingMode(row.processing_mode),
     status: String(row.status ?? 'pending') as TaskStatus,
     currentStep: Number(row.current_step ?? 0),
+    runGeneration: Number(row.run_generation ?? 0),
     track: String(row.track ?? 'character-story'),
     style: String(row.style ?? 'photo-real'),
     speaker: String(row.speaker ?? '灿博小叔'),
@@ -3362,6 +3406,7 @@ function rowToEvent(row: Record<string, unknown>): TaskEvent {
   return {
     seq: Number(row.seq),
     taskId: String(row.task_id),
+    runGeneration: Number(row.run_generation ?? 0),
     type: String(row.type),
     step: row.step === null || row.step === undefined ? null : Number(row.step),
     agent: row.agent === null || row.agent === undefined ? null : String(row.agent),

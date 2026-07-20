@@ -80,6 +80,7 @@ describe('Electron HTML video runtime contract', () => {
         { field: 'ttsProvider', value: 'minimax' },
         { field: 'ttsSpeed', value: 1.25 },
       ]);
+      expect(result.event.runGeneration).toBe(result.task.runGeneration);
 
       expect(snapshots).toBe(1);
       expect(result.changedFields).toEqual([
@@ -284,7 +285,8 @@ describe('Electron HTML video runtime contract', () => {
     );
     const finalizeIntent = ownedRun.indexOf('await finalizeTaskRunIntent(');
     const releaseOwnership = ownedRun.indexOf('runningTasks.delete(task.id);');
-    const restart = ownedRun.indexOf('startTaskRun(database, restartTask, workDir, restartReservation);');
+    const beginRestart = ownedRun.indexOf('await database.beginTaskRun(restartTask.id);');
+    const restart = ownedRun.indexOf('startTaskRun(database, restartedTask, workDir, restartReservation);');
 
     expect(main).toContain("from './task-run-lifecycle'");
     expect(main).not.toContain('restartAfterAbort');
@@ -294,7 +296,9 @@ describe('Electron HTML video runtime contract', () => {
     expect(updateStatus).toContain('requestTaskRunIntent(');
     expect(finalizeIntent).toBeGreaterThan(-1);
     expect(releaseOwnership).toBeGreaterThan(finalizeIntent);
+    expect(beginRestart).toBeGreaterThan(releaseOwnership);
     expect(restart).toBeGreaterThan(releaseOwnership);
+    expect(restart).toBeGreaterThan(beginRestart);
   });
 
   it('persists a rebuilt HTML pipeline before a corrupted task is started again', async () => {

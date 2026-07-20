@@ -14,6 +14,7 @@ import { defaultCustomStyles } from './config';
 import { copyPersonMaterialsForScenes } from './person-assets';
 import { withPipelineStateLock } from './pipeline-cache';
 import { isOrdinaryTask, resolveOrdinaryCoverTemplate } from '../features/tasks/task-control-manifest';
+import { taskTerminalStep } from './task-progress';
 
 export interface RunTaskOptions {
   appDataDir: string;
@@ -242,6 +243,7 @@ async function runTaskWithPipelineStateLock(db: FileDatabase, task: Task, option
       step: null,
       agent: 'HTML Video',
       detail: message,
+      runGeneration: task.runGeneration,
     });
     options.onEvent?.(event);
     throw new Error(message);
@@ -275,6 +277,7 @@ async function runTaskWithPipelineStateLock(db: FileDatabase, task: Task, option
       agent,
       detail,
       dataJson: data === undefined ? null : JSON.stringify(data),
+      runGeneration: task.runGeneration,
     });
     options.onEvent?.(event);
   };
@@ -315,7 +318,7 @@ async function runTaskWithPipelineStateLock(db: FileDatabase, task: Task, option
       const completedAt = new Date().toISOString();
       await db.updateTask(task.id, {
         status: 'completed',
-        currentStep: 4,
+        currentStep: taskTerminalStep(task),
         completedAt,
         outputDir: workDir,
         errorMessage: '',
@@ -325,7 +328,7 @@ async function runTaskWithPipelineStateLock(db: FileDatabase, task: Task, option
         lastHeartbeatAt: new Date().toISOString(),
       });
       await emit('step_complete', 3, 'Prompt', 'Clip-only task completed after content artifacts');
-      return { ...task, status: 'completed', currentStep: 4, completedAt, outputDir: workDir, errorMessage: '', failedStep: null, retryFromStep: null, artifactStatePath: statePath, startedAt, lastHeartbeatAt: new Date().toISOString() };
+      return { ...task, status: 'completed', currentStep: taskTerminalStep(task), completedAt, outputDir: workDir, errorMessage: '', failedStep: null, retryFromStep: null, artifactStatePath: statePath, startedAt, lastHeartbeatAt: new Date().toISOString() };
     }
     pauseAtCheckpoint(task, initialStep, 4, 'Task paused for confirmation before image generation.');
     activeStep = 4;
@@ -409,7 +412,7 @@ async function runTaskWithPipelineStateLock(db: FileDatabase, task: Task, option
     const completedAt = new Date().toISOString();
     await db.updateTask(task.id, {
       status: 'completed',
-      currentStep: 7,
+      currentStep: taskTerminalStep(task),
       completedAt,
       outputDir: draftDir,
       errorMessage: '',
@@ -418,7 +421,7 @@ async function runTaskWithPipelineStateLock(db: FileDatabase, task: Task, option
       artifactStatePath: statePath,
       lastHeartbeatAt: new Date().toISOString(),
     });
-    return { ...task, status: 'completed', currentStep: 7, completedAt, outputDir: draftDir, errorMessage: '', failedStep: null, retryFromStep: null, artifactStatePath: statePath, startedAt, lastHeartbeatAt: new Date().toISOString() };
+    return { ...task, status: 'completed', currentStep: taskTerminalStep(task), completedAt, outputDir: draftDir, errorMessage: '', failedStep: null, retryFromStep: null, artifactStatePath: statePath, startedAt, lastHeartbeatAt: new Date().toISOString() };
   } catch (error) {
     if (error instanceof CheckpointPause) {
       await db.updateTask(task.id, {

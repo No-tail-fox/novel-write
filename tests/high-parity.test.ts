@@ -177,7 +177,7 @@ describe('high parity StoryDream shell model', () => {
     const main = await readFile(new URL('../src/main.tsx', import.meta.url), 'utf8');
     const css = await readFile(new URL('../src/styles.css', import.meta.url), 'utf8');
 
-    for (const text of ['pipelineSteps', 'TaskDetailPage', 'MiniMax', 'ImageLabPage', 'DraftTemplatesPage']) {
+    for (const text of ['taskProgressStages', 'TaskDetailPage', 'MiniMax', 'ImageLabPage', 'DraftTemplatesPage']) {
       expect(main).toContain(text);
     }
     expect(css).toContain('.draft-editor-shell');

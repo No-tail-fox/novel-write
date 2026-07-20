@@ -419,6 +419,25 @@ export async function collectViralEventPages(
   return [...byKey.values()].sort((left, right) => (left.seq ?? 0) - (right.seq ?? 0));
 }
 
+export async function collectTaskEventPages(
+  first: CursorPage<SequencedTaskEvent>,
+  load: (cursor: string) => Promise<CursorPage<SequencedTaskEvent>>,
+): Promise<SequencedTaskEvent[]> {
+  const bySequence = new Map<number, SequencedTaskEvent>();
+  const merge = (items: SequencedTaskEvent[]) => items.forEach((event) => bySequence.set(event.seq, event));
+  merge(first.items);
+  const seenCursors = new Set<string>();
+  let cursor = first.nextCursor;
+  while (cursor) {
+    if (seenCursors.has(cursor)) throw new Error('CURSOR_LOOP: Task event pagination returned a repeated cursor.');
+    seenCursors.add(cursor);
+    const page = await load(cursor);
+    merge(page.items);
+    cursor = page.nextCursor;
+  }
+  return [...bySequence.values()].sort((left, right) => left.seq - right.seq);
+}
+
 export function viralSummaryToRecord(summary: ViralAnalysisSummary, detail?: ViralAnalysisRecord | null): ViralAnalysisRecord {
   return {
     settings: { track: 'general-story', style: 'photo-real', ratio: '9:16', templateId: 'default-portrait-9-16' },
@@ -523,10 +542,17 @@ export function mergeDeltaViewSlices<
   const voiceDetails = new Map(current.voiceLabRecords.map((record) => [record.id, record]));
   const deletedTasks = new Set(Object.keys(incoming.tombstoneRevisions?.task ?? {}));
   const deletedViral = new Set(Object.keys(incoming.tombstoneRevisions?.['viral-analysis'] ?? {}));
+  const taskRunGenerations = new Map(incoming.tasks.map((task) => [task.id, task.runGeneration]));
   return {
     ...current,
     tasks: incoming.tasks.map((summary) => taskSummaryToTask(summary, taskDetails.get(summary.id))),
-    events: mergeTaskEvents(current.events, incoming.events).filter((event) => !deletedTasks.has(event.taskId)),
+    events: mergeTaskEvents(current.events, incoming.events).filter((event) => {
+      if (deletedTasks.has(event.taskId)) return false;
+      const runGeneration = taskRunGenerations.get(event.taskId);
+      return runGeneration === undefined
+        || event.runGeneration === undefined
+        || event.runGeneration === runGeneration;
+    }),
     viralAnalyses: incoming.viralAnalyses.map((summary) => viralSummaryToRecord(summary, viralDetails.get(summary.id))),
     viralEvents: current.viralEvents.filter((event) => !deletedViral.has(event.analysisId)),
     imageLabRecords: incoming.imageLabRecords.map((summary) => imageLabSummaryToRecord(summary, imageDetails.get(summary.id))),
@@ -567,7 +593,17 @@ export function mergeReconciliationSlices<T extends ReconciliationSlices>(
   return {
     ...current,
     tasks,
-    events: mergeTaskEvents(current.events, result.taskEvents),
+    events: mergeTaskEvents(
+      result.task?.runGeneration === undefined
+        ? current.events
+        : current.events.filter((event) => event.taskId !== result.task!.id
+          || event.runGeneration === undefined
+          || event.runGeneration === result.task!.runGeneration),
+      result.task?.runGeneration === undefined
+        ? result.taskEvents
+        : result.taskEvents.filter((event) => event.runGeneration === undefined
+          || event.runGeneration === result.task!.runGeneration),
+    ),
     viralAnalyses,
     viralEvents: mergeViralEvents(
       result.viralAnalysis?.runGeneration === undefined

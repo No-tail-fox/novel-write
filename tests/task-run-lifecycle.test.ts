@@ -3,6 +3,7 @@ import { ModuleKind, ScriptTarget, transpileModule } from 'typescript';
 import { describe, expect, it, vi } from 'vitest';
 import { HistoryActivityRegistry } from '../electron/history-activity-registry';
 import * as taskRunLifecycle from '../electron/task-run-lifecycle';
+import { assertTaskLifecycleAction } from '../src/shared/task-progress';
 import {
   finalizeTaskRunIntent,
   requestTaskRunIntent,
@@ -1473,6 +1474,7 @@ interface TaskRunHandlerDependencies {
       patch: Record<string, unknown>,
     ) => Promise<void>;
     addTaskEvent?: (id: string, event: Record<string, unknown>) => Promise<void>;
+    beginTaskRun?: (id: string) => Promise<{ id: string; status?: string; runGeneration?: number }>;
   }>;
   markSceneImageForRegeneration?: (path: string, sceneId: number) => Promise<void>;
   markSceneNarrationForRegeneration?: (path: string, sceneId: number) => Promise<void>;
@@ -1555,7 +1557,11 @@ async function loadStartOwnedTaskRun(dependencies: StartOwnedTaskRunDependencies
     activityReservation: { release(): void },
     label: string,
     execute: (controller: AbortController) => Promise<void>,
-  ) => compiled(database, task, `work/${task.id}`, activityReservation, label, execute);
+  ) => compiled({
+    ...(database as Record<string, unknown>),
+    beginTaskRun: (database as { beginTaskRun?: (id: string) => Promise<{ id: string }> }).beginTaskRun
+      ?? (async () => task),
+  }, task, `work/${task.id}`, activityReservation, label, execute);
 }
 
 async function loadTaskRunHandlers(dependencies: TaskRunHandlerDependencies) {
@@ -1563,6 +1569,33 @@ async function loadTaskRunHandlers(dependencies: TaskRunHandlerDependencies) {
   const latestTaskControlRequests = new Map<string, symbol>();
   const historyActivityRegistry = dependencies.historyActivityRegistry ?? {
     reserveActive: () => ({ release: vi.fn() }),
+  };
+  const latestTasks = new Map<string, Record<string, unknown>>();
+  const getDb = async () => {
+    const database = await dependencies.getDb();
+    return {
+      ...database,
+      async getState() {
+        const state = await database.getState() as { tasks?: Array<Record<string, unknown> & { id: string }> };
+        state.tasks?.forEach((task) => latestTasks.set(task.id, task));
+        return state;
+      },
+      beginTaskRun: database.beginTaskRun ?? (async (id: string) => {
+        const task = latestTasks.get(id);
+        if (!task) throw new Error(`TASK_NOT_FOUND: ${id}`);
+        const begun = { ...task, runGeneration: Number(task.runGeneration ?? 0) + 1 };
+        latestTasks.set(id, begun);
+        return begun as { id: string; status?: string; runGeneration?: number };
+      }),
+    };
+  };
+  const assertLifecycleForHarness = (
+    task: { id: string; archivedAt?: string | null; status?: string },
+    action: Parameters<typeof assertTaskLifecycleAction>[1],
+    options?: Parameters<typeof assertTaskLifecycleAction>[2],
+  ) => {
+    if (task.status === undefined && !task.archivedAt) return;
+    assertTaskLifecycleAction(task as Parameters<typeof assertTaskLifecycleAction>[0], action, options);
   };
   const AsyncFunction = Object.getPrototypeOf(async function () {}).constructor as new (
     ...args: string[]
@@ -1581,6 +1614,8 @@ async function loadTaskRunHandlers(dependencies: TaskRunHandlerDependencies) {
     'requestTaskRunIntent',
     'shouldStart',
     'transferReservation',
+    'beforeStart',
+    'publishTaskUpsert',
     'startTaskRun',
     resumeTaskRunBody,
   );
@@ -1590,6 +1625,7 @@ async function loadTaskRunHandlers(dependencies: TaskRunHandlerDependencies) {
     workDir: string,
     shouldStart: () => boolean = () => true,
     transferReservation?: () => { release(): void },
+    beforeStart?: (task: { id: string; runGeneration?: number }) => Promise<void>,
   ) => compiledResumeTaskRun(
     database,
     task,
@@ -1599,6 +1635,8 @@ async function loadTaskRunHandlers(dependencies: TaskRunHandlerDependencies) {
     requestTaskRunIntent,
     shouldStart,
     transferReservation,
+    beforeStart,
+    async () => null,
     dependencies.startTaskRun,
   );
   const resumeLatestTaskRunBody = extractFunctionBody(
@@ -1612,6 +1650,7 @@ async function loadTaskRunHandlers(dependencies: TaskRunHandlerDependencies) {
     'workDir',
     'isCurrent',
     'transferReservation',
+    'beforeStart',
     'resumeTaskRun',
     resumeLatestTaskRunBody,
   );
@@ -1621,7 +1660,8 @@ async function loadTaskRunHandlers(dependencies: TaskRunHandlerDependencies) {
     workDir: string,
     isCurrent: () => boolean,
     transferReservation: () => { release(): void },
-  ) => compiledResumeLatestTaskRun(database, taskId, workDir, isCurrent, transferReservation, resumeTaskRun);
+    beforeStart?: (task: { id: string; runGeneration?: number }) => Promise<void>,
+  ) => compiledResumeLatestTaskRun(database, taskId, workDir, isCurrent, transferReservation, beforeStart, resumeTaskRun);
   const compiledUpdateStatus = new AsyncFunction(
     '_event',
     'input',
@@ -1636,6 +1676,7 @@ async function loadTaskRunHandlers(dependencies: TaskRunHandlerDependencies) {
     'historyActivityRegistry',
     'takeHistoryActivityReservation',
     'taskWorkDir',
+    'assertTaskLifecycleAction',
     extractHandlerBody(main, 'task:update-status'),
   );
   const compiledRetry = new AsyncFunction(
@@ -1651,6 +1692,7 @@ async function loadTaskRunHandlers(dependencies: TaskRunHandlerDependencies) {
     'publishTaskUpsert',
     'historyActivityRegistry',
     'taskWorkDir',
+    'assertTaskLifecycleAction',
     extractHandlerBody(main, 'task:retry'),
   );
   const actualLatestRequestRunner = Reflect.get(taskRunLifecycle, 'runLatestTaskControlRequest');
@@ -1712,7 +1754,7 @@ async function loadTaskRunHandlers(dependencies: TaskRunHandlerDependencies) {
     'pipelineStepAgents',
   ]);
   const restartHandlerDependencies = [
-    dependencies.getDb,
+    getDb,
     () => ({}),
     latestTaskControlRequests,
     runLatestTaskControlRequest,
@@ -1743,7 +1785,7 @@ async function loadTaskRunHandlers(dependencies: TaskRunHandlerDependencies) {
       return compiledUpdateStatus(
         event,
         input,
-        dependencies.getDb,
+        getDb,
         () => ({}),
         dependencies.runningTasks,
         latestTaskControlRequests,
@@ -1754,13 +1796,14 @@ async function loadTaskRunHandlers(dependencies: TaskRunHandlerDependencies) {
         historyActivityRegistry,
         takeHistoryActivityReservation,
         (task: { id: string }) => `work/${task.id}`,
+        assertLifecycleForHarness,
       );
     },
     retry(event: unknown, id: string) {
       return compiledRetry(
         event,
         id,
-        dependencies.getDb,
+        getDb,
         () => ({}),
         dependencies.runningTasks,
         latestTaskControlRequests,
@@ -1770,6 +1813,7 @@ async function loadTaskRunHandlers(dependencies: TaskRunHandlerDependencies) {
         async () => undefined,
         historyActivityRegistry,
         (task: { id: string }) => `work/${task.id}`,
+        assertLifecycleForHarness,
       );
     },
     regenerateImage(event: unknown, input: { id: string; sceneId: number }) {
@@ -2104,6 +2148,9 @@ async function loadCreatedRunHandler(
   const database = {
     async createTask() {
       return { id: 'created-task', managedStorageKey: 'task-key' };
+    },
+    async beginTaskRun(id: string) {
+      return { id, managedStorageKey: 'task-key', runGeneration: 1 };
     },
     async createViralAnalysis() {
       return { id: 'created-viral', managedStorageKey: 'viral-key' };

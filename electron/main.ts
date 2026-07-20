@@ -26,6 +26,7 @@ import { runTask } from '../src/shared/runner';
 import { runStoryboundMediaSidecar } from '../src/shared/storybound-sidecar';
 import { FileDatabase, type HistoryDeletionCleanup, type HistoryTombstone } from '../src/shared/storage';
 import { createHtmlVideoRuntimeProviders, createTaskRuntimeProviders } from '../src/shared/task-runtime-providers';
+import { assertTaskLifecycleAction } from '../src/shared/task-progress';
 import type { AccountProfile, ActivationState, AppConfig, AppDelta, AppDeltaReconcileRequest, AppDeltaReconcileResult, AppStatePatch, BookSelectionInput, ConfigTestTarget, CreateTaskInput, CreateViralAnalysisInput, CursorRequest, CustomStyle, CustomStyleGenerateInput, DraftTemplate, HistoryFamily, HistoryListRequest, HtmlVideoConfigChange, HtmlVideoPipelineDataV2, ImageLabGenerateInput, ImageLabRecord, ImageLabSummary, ImaKnowledgeRequest, LlmConfig, PromptTemplate, ProviderModelListRequest, ResearchCopyComposeInput, SequencedTaskEvent, Task, TaskStatus, TaskStepRerunMode, UiPreferencesUpdate, ViralAnalysisRecord, ViralAnalysisResult, ViralAnalysisStatus, ViralProductionTaskOptions, VolcengineSpeakerListRequest, VoiceLabGenerateInput, VoiceLabRecord, VoiceLabSummary } from '../src/shared/types';
 import { boundViralDiagnosticText, createViralProductionTaskInput, detectViralPlatform, runViralAnalysis, viralCheckpointResumeState } from '../src/shared/viral-analysis';
 import { createViralRuntimeProviders } from '../src/shared/viral-runtime';
@@ -639,7 +640,9 @@ function startOwnedTaskRun(
       }
       if (restartTask && !isShuttingDown) {
         const restartReservation = takeHistoryActivityReservation(run);
-        reservationTransferred = startTaskRun(database, restartTask, workDir, restartReservation);
+        const restartedTask = await database.beginTaskRun(restartTask.id);
+        await publishTaskUpsert(database, restartTask.id);
+        reservationTransferred = startTaskRun(database, restartedTask, workDir, restartReservation);
       }
       if (!isShuttingDown) await publishTaskUpsert(database, task.id);
     } finally {
@@ -663,6 +666,12 @@ async function applyTaskRunIntent(
 ): Promise<Task | null> {
   const latestTask = (await database.getState()).tasks.find((item) => item.id === taskId);
   if (!latestTask) return null;
+  const action = intent === 'restart' ? 'retry' : intent === 'paused' ? 'pause' : 'cancel';
+  try {
+    assertTaskLifecycleAction(latestTask, action, { hasActiveRun: true });
+  } catch {
+    return null;
+  }
   const now = new Date().toISOString();
   if (intent === 'restart') {
     await database.updateTask(taskId, {
@@ -804,6 +813,7 @@ async function runHtmlVideoTask(
       step,
       agent: null,
       detail: normalized.message,
+      runGeneration: task.runGeneration,
     });
     await publishTaskEvent(event);
     await publishTaskUpsert(database, task.id);
@@ -945,6 +955,7 @@ async function resumeTaskRun(
   workDir: string,
   shouldStart: () => boolean = () => true,
   transferReservation?: () => HistoryActivityReservation,
+  beforeStart?: (runningTask: Task) => Promise<void>,
 ): Promise<boolean> {
   if (isShuttingDown) return false;
   const existingRun = runningTasks.get(task.id);
@@ -967,9 +978,13 @@ async function resumeTaskRun(
   if (!transferReservation) {
     throw new Error('HISTORY_ACTIVITY_RESERVATION_REQUIRED: A task run requires an active reservation.');
   }
+  const runningTask = await database.beginTaskRun(task.id);
+  await publishTaskUpsert(database, task.id);
+  await beforeStart?.(runningTask);
+  if (!shouldStart()) return false;
   return startTaskRun(
     database,
-    { ...task, status: 'pending', errorMessage: '' },
+    { ...runningTask, status: 'pending', errorMessage: '' },
     workDir,
     transferReservation(),
   );
@@ -981,11 +996,12 @@ async function resumeLatestTaskRun(
   workDir: string,
   isCurrent: () => boolean,
   transferReservation: () => HistoryActivityReservation,
+  beforeStart?: (runningTask: Task) => Promise<void>,
 ): Promise<boolean> {
   if (!isCurrent()) return false;
   const updatedTask = (await database.getState()).tasks.find((item) => item.id === taskId);
   if (!updatedTask || !isCurrent()) return false;
-  return resumeTaskRun(database, updatedTask, workDir, isCurrent, transferReservation);
+  return resumeTaskRun(database, updatedTask, workDir, isCurrent, transferReservation, beforeStart);
 }
 
 function startViralAnalysisRun(
@@ -1517,9 +1533,10 @@ trustedHandle('html-video:create-task', async (_event, input: CreateTaskInput) =
   const activityReservation = historyActivityRegistry.reserveActive('task', task.id);
   let reservationTransferred = false;
   try {
+    const runningTask = await database.beginTaskRun(task.id);
     const workDir = taskWorkDir(task);
     const delta = await publishTaskUpsert(database, task.id);
-    reservationTransferred = startTaskRun(database, task, workDir, activityReservation);
+    reservationTransferred = startTaskRun(database, runningTask, workDir, activityReservation);
     return delta;
   } finally {
     if (!reservationTransferred) activityReservation.release();
@@ -1602,9 +1619,10 @@ trustedHandle('task:create-and-run', async (_event, input: CreateTaskInput) => {
   const activityReservation = historyActivityRegistry.reserveActive('task', task.id);
   let reservationTransferred = false;
   try {
+    const runningTask = await database.beginTaskRun(task.id);
     const workDir = taskWorkDir(task);
     const delta = await publishTaskUpsert(database, task.id);
-    reservationTransferred = startTaskRun(database, task, workDir, activityReservation);
+    reservationTransferred = startTaskRun(database, runningTask, workDir, activityReservation);
     return delta;
   } finally {
     if (!reservationTransferred) activityReservation.release();
@@ -1729,9 +1747,10 @@ trustedHandle('viral:create-production-task', async (_event, input: { id: string
   const activityReservation = historyActivityRegistry.reserveActive('task', task.id);
   let reservationTransferred = false;
   try {
+    const runningTask = await database.beginTaskRun(task.id);
     const workDir = taskWorkDir(task);
     const delta = await publishTaskUpsert(database, task.id);
-    reservationTransferred = startTaskRun(database, task, workDir, activityReservation);
+    reservationTransferred = startTaskRun(database, runningTask, workDir, activityReservation);
     return delta;
   } finally {
     if (!reservationTransferred) activityReservation.release();
@@ -1771,6 +1790,9 @@ trustedHandle('task:update-status', async (_event, input: { id: string; status: 
     if (!task || !isCurrent()) {
       return null;
     }
+    assertTaskLifecycleAction(task, input.status === 'running' ? 'continue' : input.status === 'paused' ? 'pause' : 'cancel', {
+      hasActiveRun: Boolean(existingControlRun || runningTasks.get(input.id)),
+    });
     const workDir = input.status === 'running' ? taskWorkDir(task) : null;
     if (input.status === 'running' && existingActiveRun) {
       if (isCurrent() && runningTasks.get(input.id) === existingActiveRun && existingActiveRun.intent === 'restart') {
@@ -1859,9 +1881,10 @@ trustedHandle('task:retry', async (_event, id: string) => {
     const database = await getDb();
     const state = await database.getState();
     const task = state.tasks.find((item) => item.id === id);
-    if (!task || !isCurrent()) {
-      return null;
-    }
+    if (!task || !isCurrent()) return null;
+    assertTaskLifecycleAction(task, 'retry', {
+      hasActiveRun: Boolean(existingRunAtEntry || runningTasks.get(id)),
+    });
     const workDir = taskWorkDir(task);
     if (existingRunAtEntry) {
       if (isCurrent() && runningTasks.get(id) === existingRunAtEntry && existingRunAtEntry.intent === 'restart') {
@@ -1926,16 +1949,17 @@ trustedHandle('task:regenerate-image', async (_event, input: { id: string; scene
       lastHeartbeatAt: new Date().toISOString(),
     });
     if (!isCurrent()) return null;
-    const event = await database.addTaskEvent(task.id, {
-      type: 'step_start',
-      step: 4,
-      agent: 'Producer',
-      detail: `重新生成第 ${sceneId} 张图片`,
-      dataJson: JSON.stringify({ sceneId }),
+    await resumeLatestTaskRun(database, task.id, workDir, isCurrent, transferReservation, async (runningTask) => {
+      const event = await database.addTaskEvent(task.id, {
+        type: 'step_start',
+        step: 4,
+        agent: 'Producer',
+        detail: `重新生成第 ${sceneId} 张图片`,
+        dataJson: JSON.stringify({ sceneId }),
+        runGeneration: runningTask.runGeneration,
+      });
+      await publishTaskEvent(event);
     });
-    await publishTaskEvent(event);
-    if (!isCurrent()) return null;
-    await resumeLatestTaskRun(database, task.id, workDir, isCurrent, transferReservation);
     return publishTaskUpsert(database, task.id);
   }, () => existingActiveRun?.activityReservation
     ? takeHistoryActivityReservation(existingActiveRun)
@@ -1975,16 +1999,17 @@ trustedHandle('task:regenerate-narration', async (_event, input: { id: string; s
       lastHeartbeatAt: new Date().toISOString(),
     });
     if (!isCurrent()) return null;
-    const event = await database.addTaskEvent(task.id, {
-      type: 'step_start',
-      step: 5,
-      agent: 'TTS',
-      detail: `重新生成第 ${sceneId} 段配音`,
-      dataJson: JSON.stringify({ sceneId }),
+    await resumeLatestTaskRun(database, task.id, workDir, isCurrent, transferReservation, async (runningTask) => {
+      const event = await database.addTaskEvent(task.id, {
+        type: 'step_start',
+        step: 5,
+        agent: 'TTS',
+        detail: `重新生成第 ${sceneId} 段配音`,
+        dataJson: JSON.stringify({ sceneId }),
+        runGeneration: runningTask.runGeneration,
+      });
+      await publishTaskEvent(event);
     });
-    await publishTaskEvent(event);
-    if (!isCurrent()) return null;
-    await resumeLatestTaskRun(database, task.id, workDir, isCurrent, transferReservation);
     return publishTaskUpsert(database, task.id);
   }, () => existingActiveRun?.activityReservation
     ? takeHistoryActivityReservation(existingActiveRun)
@@ -2061,16 +2086,17 @@ trustedHandle('task:rerun-step', async (_event, input: { id: string; step: numbe
       lastHeartbeatAt: new Date().toISOString(),
     });
     if (!isCurrent()) return null;
-    const event = await database.addTaskEvent(task.id, {
-      type: 'step_start',
-      step,
-      agent: pipelineStepAgents[step] ?? null,
-      detail,
-      dataJson: JSON.stringify({ step, mode: result.mode, clearedSteps: result.clearedSteps }),
+    await resumeLatestTaskRun(database, task.id, workDir, isCurrent, transferReservation, async (runningTask) => {
+      const event = await database.addTaskEvent(task.id, {
+        type: 'step_start',
+        step,
+        agent: pipelineStepAgents[step] ?? null,
+        detail,
+        dataJson: JSON.stringify({ step, mode: result.mode, clearedSteps: result.clearedSteps }),
+        runGeneration: runningTask.runGeneration,
+      });
+      await publishTaskEvent(event);
     });
-    await publishTaskEvent(event);
-    if (!isCurrent()) return null;
-    await resumeLatestTaskRun(database, task.id, workDir, isCurrent, transferReservation);
     return publishTaskUpsert(database, task.id);
   }, () => existingActiveRun?.activityReservation
     ? takeHistoryActivityReservation(existingActiveRun)

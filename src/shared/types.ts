@@ -331,6 +331,7 @@ export interface Task {
   publishMode: PublishMode;
   status: TaskStatus;
   currentStep: number;
+  runGeneration?: number;
   track: string;
   style: string;
   speaker: string;
@@ -685,6 +686,7 @@ export type CreateTaskInput = Partial<
 export interface TaskEvent {
   id?: string;
   seq?: number;
+  runGeneration?: number;
   taskId: string;
   type: string;
   step: number | null;

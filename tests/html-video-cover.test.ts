@@ -390,7 +390,11 @@ describe('HTML video manual cover import transaction', () => {
 
       expect(calls).toEqual(['prepare', 'promote']);
       expect(result.task).toMatchObject({ status: 'paused', currentStep: 5 });
-      expect(result.event).toMatchObject({ type: 'cover_import', step: 5 });
+      expect(result.event).toMatchObject({
+        type: 'cover_import',
+        step: 5,
+        runGeneration: result.task.runGeneration,
+      });
       const stored = await database.getTaskDetail(task.id);
       const pipeline = createHtmlVideoPipelineData('unused');
       Object.assign(pipeline, JSON.parse(stored?.pipelineData ?? '{}'));

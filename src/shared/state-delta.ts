@@ -129,6 +129,19 @@ function filterKnownTombstones(state: DeltaViewState): DeltaViewState {
   return filtered;
 }
 
+function filterTaskEventsByGeneration(
+  tasks: TaskSummary[],
+  events: SequencedTaskEvent[],
+): SequencedTaskEvent[] {
+  const generations = new Map(tasks.map((task) => [task.id, task.runGeneration]));
+  return events.filter((event) => {
+    const runGeneration = generations.get(event.taskId);
+    return runGeneration === undefined
+      || event.runGeneration === undefined
+      || event.runGeneration === runGeneration;
+  });
+}
+
 function advanceDeltaRevision(
   state: DeltaViewState,
   delta: AppDelta,
@@ -159,7 +172,11 @@ function prepareSnapshot(
     entityRevisions: undefined,
     tombstoneRevisions,
   });
-  return { ...prepared, entityRevisions: seedEntityRevisions(prepared) };
+  const generationFiltered = {
+    ...prepared,
+    events: filterTaskEventsByGeneration(prepared.tasks, prepared.events),
+  };
+  return { ...generationFiltered, entityRevisions: seedEntityRevisions(generationFiltered) };
 }
 
 export function reduceAppDelta(state: DeltaViewState, delta: AppDelta): DeltaViewState {
@@ -196,7 +213,15 @@ export function reduceAppDelta(state: DeltaViewState, delta: AppDelta): DeltaVie
       entityRevisions,
       tombstoneRevisions,
     };
-    if (delta.kind === 'task-upsert') return { ...next, tasks: upsertById(state.tasks, delta.task) };
+    if (delta.kind === 'task-upsert') return {
+      ...next,
+      tasks: upsertById(state.tasks, delta.task),
+      events: delta.task.runGeneration === undefined
+        ? state.events
+        : state.events.filter((event) => event.taskId !== delta.task.id
+          || event.runGeneration === undefined
+          || event.runGeneration === delta.task.runGeneration),
+    };
     if (delta.kind === 'viral-upsert') return { ...next, viralAnalyses: upsertById(state.viralAnalyses, delta.record) };
     if (delta.kind === 'state-patch' && delta.patch.kind === 'image-lab-upsert') {
       return { ...next, imageLabRecords: upsertById(state.imageLabRecords ?? [], delta.patch.record) };
@@ -212,6 +237,12 @@ export function reduceAppDelta(state: DeltaViewState, delta: AppDelta): DeltaVie
   }
   if (delta.kind !== 'task-event') return state;
   if (ledgerRevision(tombstoneRevisions, 'task', delta.event.taskId) >= 0) {
+    return advanceDeltaRevision(state, delta, entityRevisions, tombstoneRevisions);
+  }
+  const task = state.tasks.find((item) => item.id === delta.event.taskId);
+  if (task?.runGeneration !== undefined
+    && delta.event.runGeneration !== undefined
+    && delta.event.runGeneration !== task.runGeneration) {
     return advanceDeltaRevision(state, delta, entityRevisions, tombstoneRevisions);
   }
   const bySeq = new Map<number, SequencedTaskEvent>(state.events.map((event) => [event.seq, event]));
@@ -296,6 +327,10 @@ export function createAppDeltaCoordinator(
     const historyMerged = mergeStaleHistoryDelta(current, delta);
     if (historyMerged !== current || delta.kind !== 'task-event') return historyMerged;
     if (ledgerRevision(current.tombstoneRevisions ?? {}, 'task', delta.event.taskId) >= 0) return current;
+    const task = current.tasks.find((item) => item.id === delta.event.taskId);
+    if (task?.runGeneration !== undefined
+      && delta.event.runGeneration !== undefined
+      && delta.event.runGeneration !== task.runGeneration) return current;
     const bySeq = new Map(current.events.map((event) => [event.seq, event]));
     bySeq.set(delta.event.seq, delta.event);
     return {

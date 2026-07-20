@@ -282,7 +282,7 @@ export const htmlVideoConfigUpdateSchema = bounded(z
   }));
 
 export const sceneActionSchema = z.object({ id: idSchema, sceneId: nonNegativeInteger }).strict();
-export const taskStatusSchema = z.object({ id: idSchema, status: taskStatusValueSchema }).strict();
+export const taskStatusSchema = z.object({ id: idSchema, status: z.enum(['running', 'paused', 'cancelled']) }).strict();
 const viralStatusSchema = z.object({ id: idSchema, status: viralStatusValueSchema }).strict();
 const idOnlySchema = idSchema;
 const cursorPageSchema = z

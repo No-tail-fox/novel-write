@@ -138,6 +138,7 @@ import {
   authoritativeMissingRequestedTaskId,
   claimMutationResult,
   collectCursorPages,
+  collectTaskEventPages,
   collectViralEventPages,
   createRequestGenerationCompletionQueue,
   createRequestGenerationGuard,
@@ -158,6 +159,7 @@ import {
   voiceLabSummaryToRecord,
   type HistoryResponseRevision,
 } from './shared/state-reconciliation';
+import { taskProgressSnapshot, taskProgressStages, taskTerminalStep } from './shared/task-progress';
 import {
   stripConfigSecrets,
   type PublicAppState as AppState,
@@ -453,16 +455,6 @@ const fallbackEffectCatalog: JianyingEffectCatalog = {
   videoEffects: [],
   audioEffects: [],
 };
-
-const pipelineSteps = [
-  { index: 0, title: 'Step 0 预审', hint: '清理广告、重复和敏感表达', agent: 'Reviewer' },
-  { index: 1, title: 'Step 1 三轮改写自评', hint: '三轮改写、评分、自评并生成封面信息', agent: 'Writer' },
-  { index: 2, title: 'Step 2 分镜', hint: '拆成可配图的镜头单元', agent: 'Storyboard' },
-  { index: 3, title: 'Step 3 主角档案与出图提示词', hint: '提取角色档案并生成每镜 prompt', agent: 'Prompt' },
-  { index: 4, title: 'Step 4 批量生图', hint: '并发调用 AI 绘图，暂停后可续跑', agent: 'Producer' },
-  { index: 5, title: 'Step 5 配音', hint: '生成旁白音频和字幕时间轴', agent: 'TTS' },
-  { index: 6, title: 'Step 6 草稿导出', hint: '写入剪映草稿输出目录', agent: 'Draft' },
-] as const;
 
 type ApplyMutationResult = (result: AppMutationResult | null) => void;
 
@@ -1836,6 +1828,10 @@ function App() {
           api.getTaskDetail(taskId),
           api.listTaskEvents(taskId, { limit: 100 }),
         ]);
+        const taskEvents = await collectTaskEventPages(
+          eventPage,
+          (cursor) => api.listTaskEvents(taskId, { cursor, limit: 100 }),
+        );
         if (!taskDetailGuard.isCurrent(taskId, generation) || !detail) return;
         const currentRevision = captureHistoryResponseRevision(
           'task',
@@ -1853,7 +1849,7 @@ function App() {
           update: (current) => taskDetailGuard.isCurrent(taskId, generation)
             ? mergeReconciliationSlices(current, {
                 task: detail,
-                taskEvents: eventPage.items,
+                taskEvents,
                 viralAnalysis: null,
                 viralEvents: [],
               })
@@ -5923,12 +5919,17 @@ function QueuePage({
   const latestTask = state.tasks[0];
   const events = latestTask ? state.events.filter((event) => event.taskId === latestTask.id || event.taskId === 'live') : state.events;
   const queueAction = useAsyncAction();
-  async function setStatus(task: Task, status: TaskStatus) {
+  async function setStatus(task: Task, status: Extract<TaskStatus, 'paused' | 'cancelled'>) {
     await queueAction.run(async () => {
       applyState(await api.updateTaskStatus(task.id, status));
     });
   }
-  async function resumeTask(task: Task) {
+  async function continueTask(task: Task) {
+    await queueAction.run(async () => {
+      applyState(await api.updateTaskStatus(task.id, 'running'));
+    });
+  }
+  async function retryFailedTask(task: Task) {
     await queueAction.run(async () => {
       applyState(await api.retryTask(task.id));
     });
@@ -5962,8 +5963,8 @@ function QueuePage({
               <div className="row-actions" onClick={(event) => event.stopPropagation()}>
                 {task.status === 'running' ? <button className="mini-button" onClick={() => setStatus(task, 'paused')}>暂停</button> : null}
                 {task.status === 'running' || task.status === 'pending' ? <button className="mini-button" onClick={() => setStatus(task, 'cancelled')}>取消</button> : null}
-                {task.status === 'paused' || task.status === 'failed' ? <button className="mini-button" disabled={isBrowserPreview} onClick={() => resumeTask(task)}>继续</button> : null}
-                {task.status === 'paused' || task.status === 'failed' ? <button className="mini-button" disabled={isBrowserPreview} onClick={() => resumeTask(task)}>重试</button> : null}
+                {task.status === 'paused' ? <button className="mini-button" disabled={isBrowserPreview} onClick={() => continueTask(task)}>继续</button> : null}
+                {task.status === 'failed' || task.status === 'cancelled' ? <button className="mini-button" disabled={isBrowserPreview} onClick={() => retryFailedTask(task)}>重试</button> : null}
                 <button className="mini-button" disabled={queueAction.busy || task.status !== 'completed' || !task.outputDir} onClick={() => task.outputDir && openQueueOutput(task.id)}>
                   <FolderOpen size={14} />
                 </button>
@@ -6187,9 +6188,11 @@ function TaskDetailPage({
   }
 
   const activeTask = task;
-  const currentStep = Math.min(Math.max(activeTask.currentStep, 0), pipelineSteps.length - 1);
-  const currentMeta = pipelineSteps[currentStep] ?? pipelineSteps[0];
-  const completedSteps = activeTask.status === 'completed' ? pipelineSteps.length : Math.max(0, activeTask.currentStep);
+  const progress = taskProgressSnapshot(activeTask);
+  const progressStages = taskProgressStages(activeTask);
+  const currentStep = Math.min(Math.max(progress.position - 1, 0), progress.total - 1);
+  const currentMeta = progressStages[currentStep] ?? progressStages[0];
+  const completedSteps = progress.completed;
 
   async function cancelTask() {
     await taskDetailAction.run(async () => {
@@ -6221,7 +6224,7 @@ function TaskDetailPage({
           </div>
           <div className="task-metrics">
             <div><strong>{formatDuration(activeTask.createdAt, activeTask.completedAt, liveNow)}</strong><span>总耗时</span></div>
-            <div><strong>{completedSteps}<small>/{pipelineSteps.length}</small></strong><span>当前步骤</span></div>
+            <div><strong>{completedSteps}<small>/{progress.total}</small></strong><span>当前步骤</span></div>
             <div><strong>{events.length || '-'}</strong><span>事件数</span></div>
           </div>
           <button className="cancel-task-button" disabled={activeTask.status === 'completed' || activeTask.status === 'cancelled'} onClick={cancelTask}>
@@ -6232,12 +6235,12 @@ function TaskDetailPage({
 
         <section className="pipeline-card">
           <div className="pipeline-title">
-            <strong>7 步流水线</strong>
+            <strong>{progress.total} 步流水线</strong>
             <span className="auto-badge">全自动</span>
-            <small>· 全部 7 步执行</small>
+            <small>· 全部 {progress.total} 步执行</small>
           </div>
           <div className="pipeline-list">
-            {pipelineSteps.map((step) => {
+            {progressStages.map((step) => {
               const status = pipelineStepStatus(activeTask, step.index);
               const stepEvent = [...events].reverse().find((event) => event.step === step.index);
               const stepLabel = stepEvent?.detail || statusLabelForStep(status);
@@ -6263,7 +6266,7 @@ function TaskDetailPage({
           <button className={tab === 'storyboard' ? 'active' : ''} onClick={() => setTab('storyboard')}><ImageIcon size={14} />分镜画廊</button>
           <button className={tab === 'audio' ? 'active' : ''} onClick={() => setTab('audio')}><Mic2 size={14} />配音试听</button>
         </div>
-        <ArtifactPreviewContent api={api} task={activeTask} config={state.config} applyState={applyState} tab={tab} snapshot={artifactSnapshot} latestEvent={latestEvent} currentAgent={currentMeta.agent} isBrowserPreview={isBrowserPreview} />
+        <ArtifactPreviewContent api={api} task={activeTask} config={state.config} applyState={applyState} tab={tab} snapshot={artifactSnapshot} latestEvent={latestEvent} currentAgent={currentMeta?.agent ?? 'Runner'} isBrowserPreview={isBrowserPreview} />
       </section>
     </div>
   );
@@ -10689,7 +10692,7 @@ function statusLabelForStep(status: ReturnType<typeof pipelineStepStatus>): stri
 function artifactPanelTitle(task: Task, tab: 'preview' | 'storyboard' | 'audio'): string {
   if (tab === 'storyboard') return task.currentStep >= 2 ? '分镜画廊已跟随流水线准备' : '等待分镜生成';
   if (tab === 'audio') return task.currentStep >= 5 ? '配音与字幕时间轴' : '等待配音生成';
-  return task.currentStep >= 7 ? '最终剪映草稿目录' : '等待当前步骤产物落盘';
+  return task.currentStep >= taskTerminalStep(task) ? '最终剪映草稿目录' : '等待当前步骤产物落盘';
 }
 
 function formatDuration(start: string, end: string | null, now = Date.now()): string {

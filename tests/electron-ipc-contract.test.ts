@@ -489,7 +489,8 @@ describe('electron ipc contract', () => {
     const viralOwner = main.slice(main.indexOf('function startViralAnalysisRun'), main.indexOf('async function resumeViralAnalysisRun'));
 
     expect(taskOwner.indexOf('await execute(controller)')).toBeLessThan(taskOwner.lastIndexOf('activityReservation.release()'));
-    expect(taskOwner).toContain('startTaskRun(database, restartTask, workDir, restartReservation)');
+    expect(taskOwner).toContain('const restartedTask = await database.beginTaskRun(restartTask.id)');
+    expect(taskOwner).toContain('startTaskRun(database, restartedTask, workDir, restartReservation)');
     expect(viralOwner.indexOf("status: 'completed'")).toBeLessThan(viralOwner.lastIndexOf('activityReservation.release()'));
     expect(viralOwner.indexOf("status: cancelled ? 'cancelled' : 'failed'")).toBeLessThan(viralOwner.lastIndexOf('activityReservation.release()'));
 
@@ -681,7 +682,8 @@ describe('electron ipc contract', () => {
 
     expect(handler).toContain('const delta = await publishTaskUpsert(database, task.id)');
     expect(handler).toContain('const workDir = taskWorkDir(task)');
-    expect(handler).toContain('startTaskRun(database, task, workDir, activityReservation)');
+    expect(handler).toContain('const runningTask = await database.beginTaskRun(task.id)');
+    expect(handler).toContain('startTaskRun(database, runningTask, workDir, activityReservation)');
     expect(handler).toContain('return delta');
     expect(handler).not.toContain('getPublicState()');
     expect(main.match(/return getPublicState\(\)/gu)).toHaveLength(1);
@@ -978,7 +980,7 @@ describe('electron ipc contract', () => {
     expect(regenerateHandler).toContain('runLatestTaskControlRequest(latestTaskControlRequests, input.id, async (isCurrent, transferReservation) => {');
     expect(regenerateHandler).toContain('retryFromStep: 4');
     expect(regenerateHandler).toContain('failedStep: 4');
-    expect(regenerateHandler).toContain('resumeLatestTaskRun(database, task.id, workDir, isCurrent, transferReservation)');
+    expect(regenerateHandler).toContain('resumeLatestTaskRun(database, task.id, workDir, isCurrent, transferReservation,');
     expect(regenerateHandler).not.toContain('runTask(');
     expect(preload).toContain('regenerateTaskImage');
     expect(preload).toContain('task:regenerate-image');
@@ -995,7 +997,7 @@ describe('electron ipc contract', () => {
     expect(regenerateHandler).toContain('runLatestTaskControlRequest(latestTaskControlRequests, input.id, async (isCurrent, transferReservation) => {');
     expect(regenerateHandler).toContain('retryFromStep: 5');
     expect(regenerateHandler).toContain('failedStep: 5');
-    expect(regenerateHandler).toContain('resumeLatestTaskRun(database, task.id, workDir, isCurrent, transferReservation)');
+    expect(regenerateHandler).toContain('resumeLatestTaskRun(database, task.id, workDir, isCurrent, transferReservation,');
     expect(regenerateHandler).not.toContain('runTask(');
     expect(preload).toContain('regenerateTaskNarration');
     expect(preload).toContain('task:regenerate-narration');
@@ -1029,7 +1031,7 @@ describe('electron ipc contract', () => {
     expect(rerunHandler).toContain('runLatestTaskControlRequest(latestTaskControlRequests, input.id, async (isCurrent, transferReservation) => {');
     expect(rerunHandler).toContain('retryFromStep: step');
     expect(rerunHandler).toContain('failedStep: step');
-    expect(rerunHandler).toContain('resumeLatestTaskRun(database, task.id, workDir, isCurrent, transferReservation)');
+    expect(rerunHandler).toContain('resumeLatestTaskRun(database, task.id, workDir, isCurrent, transferReservation,');
     expect(rerunHandler).not.toContain('runTask(');
     expect(preload).toContain('rerunTaskStep');
     expect(preload).toContain('task:rerun-step');

@@ -505,6 +505,45 @@ describe('app state delta coordination', () => {
     expect(merged?.events).toEqual(history);
   });
 
+  it('does not resurrect prior-generation detail events when merging a task delta view', () => {
+    type DeltaSlices = {
+      tasks: ReturnType<typeof taskSummaryToTask>[];
+      events: Array<{ seq: number; taskId: string; runGeneration?: number; type: string; detail: string; ts: number }>;
+      viralAnalyses: ReturnType<typeof viralSummaryToRecord>[];
+      viralEvents: [];
+      imageLabRecords: [];
+      voiceLabRecords: [];
+    };
+    const mergeDeltaViewSlices = (reconciliationModule as unknown as {
+      mergeDeltaViewSlices?: (current: DeltaSlices, incoming: DeltaViewState) => DeltaSlices;
+    }).mergeDeltaViewSlices;
+    const currentTask = { ...taskSummary('task-1', 'running'), runGeneration: 1 };
+    const incomingTask = { ...taskSummary('task-1', 'running'), runGeneration: 2 };
+    const staleEvent = {
+      seq: 1,
+      taskId: 'task-1',
+      runGeneration: 1,
+      type: 'history',
+      detail: 'stale generation',
+      ts: 1,
+    };
+
+    const merged = mergeDeltaViewSlices?.(
+      {
+        tasks: [taskSummaryToTask(currentTask)],
+        events: [staleEvent],
+        viralAnalyses: [],
+        viralEvents: [],
+        imageLabRecords: [],
+        voiceLabRecords: [],
+      },
+      viewState(8, [incomingTask]),
+    );
+
+    expect(merged?.tasks[0].runGeneration).toBe(2);
+    expect(merged?.events).toEqual([]);
+  });
+
   it('bounds merged renderer task events to the latest 512 unique sequences', () => {
     type DeltaSlices = {
       tasks: ReturnType<typeof taskSummaryToTask>[];

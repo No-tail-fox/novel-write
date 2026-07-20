@@ -876,7 +876,7 @@ describe('managed history paths', () => {
       expect(handler.match(/taskWorkDir\(task\)/gu)).toHaveLength(1);
       if (resumes) {
         expect(handler).toContain('outputDir: workDir');
-        expect(handler).toContain('resumeLatestTaskRun(database, task.id, workDir, isCurrent, transferReservation)');
+        expect(handler).toContain('resumeLatestTaskRun(database, task.id, workDir, isCurrent, transferReservation,');
       }
     }
   });
