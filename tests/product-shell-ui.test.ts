@@ -1173,10 +1173,10 @@ describe('product shell ui', () => {
     expect(page).toContain('generation: mediaRetryRevision');
     expect(page).toContain('onMediaElementError={markMediaElementFailed}');
     expect(page).toContain('onMediaElementReady={markMediaElementReady}');
-    expect(countOccurrences(page, 'onError={() => onMediaElementError(')).toBe(4);
-    expect(countOccurrences(page, 'onLoad={() => onMediaElementReady(')).toBe(2);
+    expect(countOccurrences(page, 'onError={() => onMediaElementError(')).toBe(5);
+    expect(countOccurrences(page, 'onLoad={() => onMediaElementReady(')).toBe(3);
     expect(countOccurrences(page, 'onCanPlay={() => onMediaElementReady(')).toBe(2);
-    expect(countOccurrences(page, 'htmlVideoMediaElementKey(task.id,')).toBe(4);
+    expect(countOccurrences(page, 'htmlVideoMediaElementKey(task.id,')).toBe(5);
   });
 
   it('rejects late HTML media errors unless their task, path set, and retry generation are still current', async () => {
@@ -1224,7 +1224,7 @@ describe('product shell ui', () => {
     expect(page).toContain('HTML_VIDEO_CONTROL_MANIFEST_V1.transitionType.availability');
     expect(page).toContain('data-html-video-control="coverRatio"');
     expect(page).toContain('HTML_VIDEO_CONTROL_MANIFEST_V1.coverRatio.availability');
-    expect(page).not.toMatch(/value=\{data\.config\.(?:coverImageMode|coverTemplate|coverRatio|draftTemplate)\}/u);
+    expect(page).not.toMatch(/value=\{data\.config\.draftTemplate\}/u);
     const editor = page.slice(page.indexOf('function HtmlVideoConfigEditor'), page.indexOf('function HtmlVideoTabPanel'));
     const editableFields = [
       'style',
@@ -1239,9 +1239,6 @@ describe('product shell ui', () => {
       'ratio',
     ];
     const readOnlyFields = [
-      'coverImageMode',
-      'coverTemplate',
-      'coverRatio',
       'draftTemplate',
     ];
     for (const field of editableFields) {
@@ -1276,7 +1273,17 @@ describe('product shell ui', () => {
     expect(captionEditor).toContain('value: colorOverrides');
     expect(captionEditor).toContain('delete next[key]');
     expect(captionEditor).not.toContain('.slice(0, 7)');
+    const coverEditor = page.slice(page.indexOf('function HtmlVideoCoverEditor'), page.indexOf('function HtmlVideoTabPanel'));
+    expect(coverEditor).toContain('api.importHtmlVideoCover(task.id)');
+    expect(coverEditor).toContain('HTML_VIDEO_COVER_MODES');
+    expect(coverEditor).toContain('HTML_VIDEO_COVER_RATIOS');
+    expect(coverEditor).toContain('data-html-video-edit-field="coverImageMode"');
+    expect(coverEditor).toContain('data-html-video-edit-field="coverTemplate"');
+    expect(coverEditor).toContain('data-html-video-edit-field="coverRatio"');
+    expect(coverEditor).toContain('导入封面');
     const tabPanel = page.slice(page.indexOf('function HtmlVideoTabPanel'), page.indexOf('function htmlVideoStepClass'));
+    expect(tabPanel).toMatch(/if \(tab === 'cover'\)[\s\S]*?<HtmlVideoCoverEditor/u);
+    expect(page).toContain('pipelineData.coverAsset?.path');
     expect(tabPanel).toMatch(/if \(tab === 'preview'\)[\s\S]*?<HtmlVideoCaptionEditor/u);
     expect(tabPanel).not.toMatch(/if \(tab === '(?:text|assets|voice|cover)'\)[\s\S]{0,1200}<HtmlVideoCaptionEditor/u);
     expect(css).toMatch(/\.hv-config-editor\s*\{[\s\S]*?border-top:\s*1px solid var\(--line\)/u);

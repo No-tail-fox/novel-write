@@ -9,6 +9,7 @@ import {
   validateHtmlVideoCaptionColors,
   validateHtmlVideoCaptionPreset,
 } from './html-video-captions';
+import { normalizeHtmlVideoCoverMode, normalizeHtmlVideoCoverRatio } from './html-video-cover';
 
 export const HTML_VIDEO_MAX_SCENES = 30;
 export const HTML_VIDEO_TTS_SPEED_MIN = 0.1;
@@ -77,7 +78,7 @@ export const HTML_VIDEO_JOB_DEFAULTS = {
   captionColors: undefined,
   bgmVolume: undefined,
   transitionType: 'fade',
-  coverImageMode: 'titled',
+  coverImageMode: 'off',
   coverTemplate: 'cinematic-poster',
   coverRatio: '3:4',
   draftTemplate: undefined,
@@ -133,6 +134,18 @@ export function preserveHtmlVideoJobConfig(value: unknown): HtmlVideoJobConfig {
       result.captionAnim = validateHtmlVideoCaptionAnimation(current);
     } else if (field === 'captionColors') {
       result.captionColors = validateHtmlVideoCaptionColors(current) as Record<string, string>;
+    } else if (field === 'coverImageMode') {
+      try {
+        result.coverImageMode = normalizeHtmlVideoCoverMode(current);
+      } catch {
+        throw invalidConfig(`${field} is invalid`);
+      }
+    } else if (field === 'coverRatio') {
+      try {
+        result.coverRatio = normalizeHtmlVideoCoverRatio(current);
+      } catch {
+        throw invalidConfig(`${field} is invalid`);
+      }
     } else {
       result[field] = requireBoundedString(current, field);
     }

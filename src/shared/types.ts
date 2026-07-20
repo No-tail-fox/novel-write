@@ -447,6 +447,24 @@ export interface HtmlVideoOutput {
   cover?: CoverMetadata | null;
 }
 
+export type HtmlVideoCoverMode = 'off' | 'auto' | 'manual';
+export type HtmlVideoCoverRatio = '3:4' | '1:1' | '16:9' | '9:16';
+
+export interface HtmlVideoCoverAsset {
+  version: 1;
+  revision: number;
+  mode: Exclude<HtmlVideoCoverMode, 'off'>;
+  path: string;
+  sizeBytes: number;
+  width: number;
+  height: number;
+  mimeType: 'image/png' | 'image/jpeg' | 'image/webp';
+  sha256: string;
+  ratio: HtmlVideoCoverRatio;
+  createdAt: string;
+  templateId?: string;
+}
+
 export interface HtmlVideoJobConfig {
   style?: string;
   voiceId?: string;
@@ -458,9 +476,9 @@ export interface HtmlVideoJobConfig {
   captionColors?: Record<string, string>;
   bgmVolume?: 'soft' | 'medium' | 'loud';
   transitionType?: string;
-  coverImageMode?: string;
+  coverImageMode?: HtmlVideoCoverMode;
   coverTemplate?: string;
-  coverRatio?: string;
+  coverRatio?: HtmlVideoCoverRatio;
   draftTemplate?: string;
   foreground?: boolean;
   maxScenes?: number;
@@ -478,6 +496,9 @@ export type HtmlVideoEditableConfigField =
   | 'captionColors'
   | 'bgmVolume'
   | 'transitionType'
+  | 'coverImageMode'
+  | 'coverTemplate'
+  | 'coverRatio'
   | 'foreground'
   | 'maxScenes'
   | 'ratio';
@@ -493,6 +514,9 @@ export type HtmlVideoConfigChange =
   | { field: 'captionColors'; value: Record<string, string> }
   | { field: 'bgmVolume'; value: 'soft' | 'medium' | 'loud' }
   | { field: 'transitionType'; value: 'fade' | 'dissolve' | 'wipeleft' | 'wiperight' | 'slideleft' | 'slideright' }
+  | { field: 'coverImageMode'; value: HtmlVideoCoverMode }
+  | { field: 'coverTemplate'; value: string }
+  | { field: 'coverRatio'; value: HtmlVideoCoverRatio }
   | { field: 'foreground'; value: boolean }
   | { field: 'maxScenes'; value: number }
   | { field: 'ratio'; value: '9:16' | '16:9' | '1:1' | '4:3' };
@@ -508,6 +532,7 @@ export interface HtmlVideoPipelineDataV2 {
   assets: HtmlVideoAsset[];
   voices: HtmlVideoVoiceClip[];
   compositions: HtmlVideoCompositionSnapshot[];
+  coverAsset?: HtmlVideoCoverAsset;
   output?: HtmlVideoOutput;
   config: HtmlVideoJobConfig;
 }

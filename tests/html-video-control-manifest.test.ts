@@ -54,9 +54,9 @@ const fullCustomConfig: Required<HtmlVideoJobConfig> = {
   captionColors: { text: '#ffffff', accent: '#11aabb' },
   bgmVolume: 'medium',
   transitionType: 'dissolve',
-  coverImageMode: 'custom-cover-mode',
+  coverImageMode: 'auto',
   coverTemplate: 'custom-cover-template',
-  coverRatio: 'custom-cover-ratio',
+  coverRatio: '3:4',
   draftTemplate: 'custom-draft-template',
   foreground: false,
   maxScenes: 12,
@@ -99,15 +99,17 @@ describe('HTML video control manifest', () => {
         availability: 'editable',
       }));
     }
+    for (const field of ['coverImageMode', 'coverTemplate', 'coverRatio'] as const) {
+      expect(HTML_VIDEO_CONTROL_MANIFEST_V1[field]).toEqual(expect.objectContaining({
+        consumerStages: ['render'],
+        invalidateFrom: 'render',
+        availability: 'editable',
+      }));
+    }
     expect(Object.entries(HTML_VIDEO_CONTROL_MANIFEST_V1)
       .filter(([, entry]) => entry.availability === 'read-only-compatible')
       .map(([field]) => field)
-      .sort()).toEqual([
-        'coverImageMode',
-        'coverRatio',
-        'coverTemplate',
-        'draftTemplate',
-      ]);
+      .sort()).toEqual(['draftTemplate']);
 
     expect(Object.fromEntries(Object.entries(HTML_VIDEO_CONTROL_MANIFEST_V1).map(([field, value]) => [
       field,
@@ -157,7 +159,7 @@ describe('HTML video control manifest', () => {
       ttsSpeed: 1,
       bgmId: '',
       transitionType: 'fade',
-      coverImageMode: 'titled',
+      coverImageMode: 'off',
       coverTemplate: 'cinematic-poster',
       coverRatio: '3:4',
       foreground: true,
@@ -271,13 +273,10 @@ describe('HTML video control manifest', () => {
     const captionColors = Object.fromEntries(Array.from({ length: 33 }, (_, index) => [`color-${index}`, '#fff']));
     expect(() => preserveHtmlVideoJobConfig({ captionColors })).toThrow(/captionColors/i);
     expect(() => preserveHtmlVideoJobConfig({ captionPreset: 'vendor-custom-preset' })).toThrow(/captionPreset/i);
-    expect(preserveHtmlVideoJobConfig({
-      coverImageMode: 'vendor-custom-cover-mode',
-      draftTemplate: 'vendor-custom-draft',
-    })).toEqual({
-      coverImageMode: 'vendor-custom-cover-mode',
-      draftTemplate: 'vendor-custom-draft',
-    });
+    expect(() => preserveHtmlVideoJobConfig({ coverImageMode: 'vendor-custom-cover-mode' }))
+      .toThrow(/coverImageMode/i);
+    expect(preserveHtmlVideoJobConfig({ draftTemplate: 'vendor-custom-draft' }))
+      .toEqual({ draftTemplate: 'vendor-custom-draft' });
   });
 
   it('keeps missing BGM volume equivalent to soft without persisting a synthetic value', () => {
@@ -312,6 +311,9 @@ describe('HTML video control manifest', () => {
         captionAnim: 'pop',
         captionColors: { text: '#ffffff', accent: '#11aabb' },
         bgmVolume: 'medium',
+        coverImageMode: 'auto',
+        coverTemplate: 'custom-cover-template',
+        coverRatio: '3:4',
         ratio: '4:3',
         transitionType: 'dissolve',
       },
@@ -402,11 +404,42 @@ describe('HTML video control manifest', () => {
     expect(JSON.stringify(pipeline)).toBe(before);
   });
 
+  it('applies cover changes from render while preserving all five earlier stages', () => {
+    const pipeline = createHtmlVideoPipelineData('Task 18 cover mutation');
+    pipeline.current = 'done';
+    for (const step of Object.keys(pipeline.steps) as HtmlVideoVisibleStep[]) {
+      pipeline.steps[step] = { status: 'completed', inputHash: `${step}-input`, artifactPath: `steps/${step}.json`, artifactSize: 10 };
+    }
+    pipeline.output = { path: 'final.mp4', sizeBytes: 100 };
+
+    const result = applyHtmlVideoConfigChanges(pipeline, [
+      { field: 'coverImageMode', value: 'auto' },
+      { field: 'coverTemplate', value: 'cover-editorial' },
+      { field: 'coverRatio', value: '1:1' },
+    ]);
+
+    expect(result.changedFields).toEqual(['coverImageMode', 'coverTemplate', 'coverRatio']);
+    expect(result.invalidateFrom).toBe('render');
+    for (const step of ['rewrite', 'planning', 'assets', 'voice', 'preview'] as const) {
+      expect(result.pipeline.steps[step]).toEqual(pipeline.steps[step]);
+    }
+    expect(result.pipeline.steps.render).toEqual({ status: 'pending' });
+    expect(result.pipeline).not.toHaveProperty('output');
+    expect(result.pipeline.config).toMatchObject({
+      coverImageMode: 'auto',
+      coverTemplate: 'cover-editorial',
+      coverRatio: '1:1',
+    });
+    expect(result.legacyMirrors).toEqual({
+      coverImageMode: 'auto',
+      coverTemplateId: 'cover-editorial',
+    });
+  });
+
   it('rejects read-only-compatible, duplicate, empty, and invalid config changes without mutating the pipeline', () => {
     const pipeline = createHtmlVideoPipelineData('immutable rejection');
     const before = JSON.stringify(pipeline);
     for (const changes of [
-      [{ field: 'coverRatio', value: '1:1' }],
       [{ field: 'draftTemplate', value: 'draft-1' }],
       [{ field: 'ratio', value: '9:16' }, { field: 'ratio', value: '1:1' }],
       [],

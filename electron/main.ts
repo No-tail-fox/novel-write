@@ -1,8 +1,8 @@
-import { app, BrowserWindow, dialog, ipcMain, Menu, net, protocol, safeStorage, shell, type Cookie } from 'electron';
+import { app, BrowserWindow, dialog, ipcMain, Menu, nativeImage, net, protocol, safeStorage, shell, type Cookie } from 'electron';
 import { execFile } from 'node:child_process';
-import { randomUUID } from 'node:crypto';
+import { createHash, randomUUID } from 'node:crypto';
 import { existsSync } from 'node:fs';
-import { mkdir, readFile, writeFile } from 'node:fs/promises';
+import { mkdir, readFile, rename, rm, stat, writeFile } from 'node:fs/promises';
 import { dirname, extname, isAbsolute, join, relative, resolve } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { promisify } from 'node:util';
@@ -13,6 +13,7 @@ import { generateImageLabRecord } from '../src/shared/image-lab';
 import { detectJianyingDraftPath, resolveRuntimeJianyingDraftPath } from '../src/shared/jianying-paths';
 import { loadJianyingEffectCatalog } from '../src/shared/jianying-effects';
 import { runHtmlVideoPipeline, synchronizeHtmlVideoPipelineCheckpoint } from '../src/shared/html-video-runner';
+import { MAX_HTML_VIDEO_COVER_BYTES, type HtmlVideoCoverImageProcessor, type HtmlVideoCoverInspection } from '../src/shared/html-video-cover';
 import { htmlVideoVisibleSteps, isHtmlVideoTask, parseHtmlVideoPipelineData, recoverHtmlVideoPipelineDataForRetry, type HtmlVideoPipelineRetryPatch } from '../src/shared/html-video-workflow';
 import { generateConfiguredVoicePreview } from '../src/shared/media-providers';
 import { createPersonAsset, deletePersonAsset, importPersonAssetFiles, listPersonAssets, listPersonImages, renamePersonAsset } from '../src/shared/person-assets';
@@ -721,6 +722,7 @@ async function runHtmlVideoTask(
     const providers = createHtmlVideoRuntimeProviders(runtimeConfig, workDir, task, {
       measureAudioDuration: runtime.measureAudioDuration,
       jobConfig: initialState.config,
+      prepareCoverImage: prepareHtmlVideoCoverImage,
     });
     const finalState = await runHtmlVideoPipeline({
       taskId: task.id,
@@ -731,6 +733,8 @@ async function runHtmlVideoTask(
       workDir,
       signal: controller.signal,
       ...providers,
+      taskTitle: task.title,
+      resolveCoverTemplate: (id) => database.getCustomCoverTemplateDetail(id),
       createPreviews: runtime.createPreviews,
       render: runtime.render,
       consumeRenderArtifactDigest: runtime.consumeRenderArtifactDigest,
@@ -805,6 +809,67 @@ async function probeHtmlVideoMedia(
     height: result.height,
   };
 }
+
+async function inspectHtmlVideoCoverImage(sourcePath: string): Promise<HtmlVideoCoverInspection> {
+  const value = await stat(sourcePath);
+  if (!value.isFile() || value.size <= 0 || value.size > MAX_HTML_VIDEO_COVER_BYTES) {
+    throw new Error(`HTML_VIDEO_COVER_SOURCE_INVALID: 封面图片必须是 1 到 ${MAX_HTML_VIDEO_COVER_BYTES} 字节的普通文件。`);
+  }
+  const extension = extname(sourcePath).toLowerCase();
+  const mimeType = extension === '.png'
+    ? 'image/png'
+    : extension === '.jpg' || extension === '.jpeg'
+      ? 'image/jpeg'
+      : extension === '.webp'
+        ? 'image/webp'
+        : '';
+  if (!mimeType) throw new Error('HTML_VIDEO_COVER_SOURCE_INVALID: 封面图片格式不受支持。');
+  const image = nativeImage.createFromPath(sourcePath);
+  if (image.isEmpty()) throw new Error('HTML_VIDEO_COVER_SOURCE_INVALID: 无法解码所选封面图片。');
+  const size = image.getSize();
+  return {
+    sourcePath,
+    exists: true,
+    isFile: true,
+    sizeBytes: value.size,
+    width: size.width,
+    height: size.height,
+    mimeType,
+  };
+}
+
+const prepareHtmlVideoCoverImage: HtmlVideoCoverImageProcessor = async (input) => {
+  input.signal?.throwIfAborted();
+  const value = await stat(input.sourcePath);
+  if (!value.isFile() || value.size <= 0 || value.size > MAX_HTML_VIDEO_COVER_BYTES) {
+    throw new Error('HTML_VIDEO_COVER_SOURCE_INVALID: 封面图片文件大小无效。');
+  }
+  const source = nativeImage.createFromPath(input.sourcePath);
+  if (source.isEmpty()) throw new Error('HTML_VIDEO_COVER_SOURCE_INVALID: 无法解码封面图片。');
+  const resized = source.resize({
+    width: input.dimensions.width,
+    height: input.dimensions.height,
+    quality: 'best',
+  });
+  const size = resized.getSize();
+  if (size.width !== input.dimensions.width || size.height !== input.dimensions.height) {
+    throw new Error('HTML_VIDEO_COVER_DIMENSIONS_INVALID: 无法生成精确尺寸的封面图片。');
+  }
+  input.signal?.throwIfAborted();
+  const bytes = resized.toPNG();
+  if (bytes.length <= 0 || bytes.length > MAX_HTML_VIDEO_COVER_BYTES) {
+    throw new Error('HTML_VIDEO_COVER_OUTPUT_INVALID: 规范化后的封面图片大小无效。');
+  }
+  await writeFile(input.destinationPath, bytes, { flag: 'wx' });
+  input.signal?.throwIfAborted();
+  return {
+    sizeBytes: bytes.length,
+    width: size.width,
+    height: size.height,
+    mimeType: 'image/png',
+    sha256: createHash('sha256').update(bytes).digest('hex'),
+  };
+};
 
 async function persistHtmlVideoTaskCheckpoint(
   database: FileDatabase,
@@ -1420,6 +1485,34 @@ trustedHandle('html-video:update-config', (_event, input: { id: string; changes:
   runHistoryGovernanceMutation('task', input.id, async (database) => {
     const result = await database.updateHtmlVideoTaskConfig(input.id, input.changes);
     return await enqueueAppDelta(() => ({ kind: 'task-upsert', task: result.task }));
+  }));
+
+trustedHandle('html-video:import-cover', (_event, id: string) =>
+  runHistoryGovernanceMutation('task', id, async (database) => {
+    const task = await database.getTaskDetail(id);
+    if (!task || !isHtmlVideoTask(task)) {
+      throw new Error('HTML_VIDEO_TASK_NOT_FOUND: HTML 视频任务不存在。');
+    }
+    if (task.archivedAt) throw new Error('HISTORY_ARCHIVED: 已归档任务只读。');
+    if (task.status === 'pending' || task.status === 'running') {
+      throw new Error(`HTML_VIDEO_COVER_ACTIVE: ${id} is ${task.status} and cannot import a cover.`);
+    }
+    const result = await dialog.showOpenDialog({
+      title: '导入 HTML 视频封面',
+      properties: ['openFile'],
+      filters: [{ name: 'Images', extensions: ['png', 'jpg', 'jpeg', 'webp'] }],
+    });
+    if (result.canceled || !result.filePaths[0]) return null;
+    const sourcePath = result.filePaths[0];
+    const inspection = await inspectHtmlVideoCoverImage(sourcePath);
+    await database.importHtmlVideoCover(id, inspection, {
+      prepareImage: prepareHtmlVideoCoverImage,
+      promoteFile: (source, target) => rename(source, target),
+      removeFile: async (path) => { await rm(path, { force: true }); },
+      ensureDirectory: async (path) => { await mkdir(path, { recursive: true }); },
+      now: () => new Date().toISOString(),
+    });
+    return publishTaskUpsert(database, id);
   }));
 
 trustedHandle('html-video:open-preview', async (_event, input: { id: string; sceneIndex?: number }) => {

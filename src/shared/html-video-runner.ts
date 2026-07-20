@@ -9,6 +9,14 @@ import {
   htmlVideoConfigForStage,
 } from './html-video-config';
 import {
+  buildHtmlVideoCoverPrompt,
+  htmlVideoCoverDimensions,
+  normalizeHtmlVideoCoverMode,
+  normalizeHtmlVideoCoverRatio,
+  resolveHtmlVideoCoverTemplate,
+  validateHtmlVideoCoverAsset,
+} from './html-video-cover';
+import {
   MAX_HTML_VIDEO_SCENES,
   MAX_HTML_VIDEO_SOURCE_CHARS,
   MAX_HTML_VIDEO_WARNINGS,
@@ -25,7 +33,10 @@ import {
 } from './html-video-workflow';
 export { invalidateHtmlVideoPipeline } from './html-video-workflow';
 import type {
+  CustomCoverTemplate,
   HtmlVideoAsset,
+  HtmlVideoCoverAsset,
+  HtmlVideoCoverRatio,
   HtmlVideoCompositionSnapshot,
   HtmlVideoJobConfig,
   HtmlVideoOutput,
@@ -34,6 +45,26 @@ import type {
   HtmlVideoVisibleStep,
   HtmlVideoVoiceClip,
 } from './types';
+
+export interface HtmlVideoCoverGenerationInput {
+  taskTitle: string;
+  summary: string;
+  ratio: HtmlVideoCoverRatio;
+  revision: number;
+  dimensions: { width: number; height: number };
+  template: CustomCoverTemplate;
+  prompt: string;
+  config: HtmlVideoJobConfig;
+  signal?: AbortSignal;
+}
+
+export interface ResolveHtmlVideoCoverForRenderInput {
+  state: HtmlVideoPipelineDataV2;
+  taskTitle: string;
+  resolveTemplate: (id: string) => Promise<CustomCoverTemplate | null>;
+  generateCover?: (input: HtmlVideoCoverGenerationInput) => Promise<HtmlVideoCoverAsset>;
+  signal?: AbortSignal;
+}
 
 export interface HtmlVideoRunnerInput {
   taskId: string;
@@ -81,6 +112,7 @@ export interface HtmlVideoPreviewOutput {
 
 export interface HtmlVideoRenderInput extends HtmlVideoPreviewInput {
   compositions: HtmlVideoCompositionSnapshot[];
+  coverAsset?: HtmlVideoCoverAsset;
 }
 
 export interface HtmlVideoRunnerOptions {
@@ -92,6 +124,9 @@ export interface HtmlVideoRunnerOptions {
   synthesizeVoices: (input: HtmlVideoVoiceInput) => Promise<HtmlVideoVoiceClip[]>;
   createPreviews: (input: HtmlVideoPreviewInput) => Promise<HtmlVideoPreviewOutput>;
   render: (input: HtmlVideoRenderInput) => Promise<HtmlVideoOutput>;
+  taskTitle?: string;
+  resolveCoverTemplate?: (id: string) => Promise<CustomCoverTemplate | null>;
+  generateCover?: (input: HtmlVideoCoverGenerationInput) => Promise<HtmlVideoCoverAsset>;
   consumeRenderArtifactDigest?: (
     output: HtmlVideoOutput,
     signal?: AbortSignal,
@@ -158,6 +193,68 @@ const boundedReadChunkBytes = 64 * 1024;
 const activeHtmlVideoTasks = new Set<string>();
 
 class InvalidPipelineFileError extends Error {}
+
+export async function resolveHtmlVideoCoverForRender(
+  input: ResolveHtmlVideoCoverForRenderInput,
+): Promise<HtmlVideoCoverAsset | undefined> {
+  const mode = normalizeHtmlVideoCoverMode(
+    input.state.config.coverImageMode ?? HTML_VIDEO_JOB_DEFAULTS.coverImageMode,
+  );
+  if (mode === 'off') return undefined;
+
+  const ratio = normalizeHtmlVideoCoverRatio(
+    input.state.config.coverRatio ?? HTML_VIDEO_JOB_DEFAULTS.coverRatio,
+  );
+  if (mode === 'manual') {
+    if (!input.state.coverAsset) {
+      throw new AppError('HTML_VIDEO_MANUAL_COVER_MISSING', 'Manual HTML video cover is missing.');
+    }
+    const asset = validateHtmlVideoCoverAsset(input.state.coverAsset);
+    if (asset.mode !== 'manual') {
+      throw new AppError('HTML_VIDEO_MANUAL_COVER_INVALID', 'Manual HTML video cover artifact is invalid.');
+    }
+    if (asset.ratio !== ratio) {
+      throw new AppError('HTML_VIDEO_MANUAL_COVER_RATIO_MISMATCH', 'Manual HTML video cover ratio does not match the selected ratio.');
+    }
+    return asset;
+  }
+
+  const templateId = input.state.config.coverTemplate?.trim();
+  if (!templateId) {
+    throw new AppError('HTML_VIDEO_COVER_TEMPLATE_MISSING', 'HTML video cover template is missing.');
+  }
+  const storedTemplate = await input.resolveTemplate(templateId);
+  if (!storedTemplate) {
+    throw new AppError('HTML_VIDEO_COVER_TEMPLATE_MISSING', `HTML video cover template is missing: ${templateId}`);
+  }
+  const template = resolveHtmlVideoCoverTemplate([storedTemplate], templateId);
+  if (input.state.coverAsset) {
+    const existing = validateHtmlVideoCoverAsset(input.state.coverAsset);
+    if (existing.mode === 'auto' && existing.ratio === ratio && existing.templateId === templateId) {
+      return existing;
+    }
+  }
+  if (!input.generateCover) {
+    throw new AppError('IMAGE_PROVIDER_NOT_CONFIGURED', 'Image provider is required for automatic HTML video covers.');
+  }
+
+  const summary = input.state.scenes[0]?.narration ?? input.taskTitle;
+  const generated = validateHtmlVideoCoverAsset(await input.generateCover({
+    taskTitle: input.taskTitle,
+    summary,
+    ratio,
+    revision: (input.state.coverAsset?.revision ?? 0) + 1,
+    dimensions: htmlVideoCoverDimensions(ratio),
+    template,
+    prompt: buildHtmlVideoCoverPrompt({ taskTitle: input.taskTitle, summary, template, ratio }),
+    config: structuredClone(input.state.config),
+    signal: input.signal,
+  }));
+  if (generated.mode !== 'auto' || generated.ratio !== ratio || generated.templateId !== templateId) {
+    throw new AppError('HTML_VIDEO_COVER_PROVIDER_INVALID', 'Automatic HTML video cover artifact does not match the request.');
+  }
+  return generated;
+}
 
 export async function runHtmlVideoPipeline(
   input: HtmlVideoRunnerInput,
@@ -368,12 +465,26 @@ async function executeStep(
     return { compositions: state.compositions };
   }
 
+  const coverAsset = await resolveHtmlVideoCoverForRender({
+    state,
+    taskTitle: options.taskTitle ?? state.scenes[0]?.title ?? 'HTML video',
+    resolveTemplate: options.resolveCoverTemplate ?? (async () => null),
+    generateCover: options.generateCover,
+    signal: options.signal,
+  });
+  if (coverAsset) {
+    state.coverAsset = await validateCoverAssetFile(options.workDir, coverAsset, options.signal);
+  } else {
+    delete state.coverAsset;
+  }
+  state.steps.render.inputHash = hashStepInput('render', sourceText, state, context);
   await revalidateCompletedMediaSteps(options.workDir, state, ['assets', 'voice', 'preview'], options.signal);
   const generated = await options.render({
     scenes: structuredClone(state.scenes),
     assets: structuredClone(state.assets),
     voices: structuredClone(state.voices),
     compositions: structuredClone(state.compositions),
+    ...(state.coverAsset ? { coverAsset: structuredClone(state.coverAsset) } : {}),
     ...htmlVideoConfigEnvelopeForStage(state.config, 'render'),
     signal: options.signal,
   });
@@ -535,6 +646,20 @@ async function validateOutput(
   return { ...output, path, sizeBytes: file.size };
 }
 
+async function validateCoverAssetFile(
+  workDir: string,
+  value: HtmlVideoCoverAsset,
+  signal?: AbortSignal,
+): Promise<HtmlVideoCoverAsset> {
+  const asset = validateHtmlVideoCoverAsset(value);
+  const resolved = await resolveLocalFile(workDir, asset.path);
+  const digest = await hashFile(resolved, asset.sizeBytes, signal);
+  if (digest.size !== asset.sizeBytes || digest.sha256 !== asset.sha256) {
+    throw new Error('HTML video cover artifact file digest changed.');
+  }
+  return asset;
+}
+
 function validatePatchedState(
   state: HtmlVideoPipelineDataV2,
   patch: Partial<Record<'scenes' | 'assets' | 'voices' | 'compositions' | 'output', unknown>>,
@@ -612,7 +737,7 @@ function hashStepInput(
   else if (step === 'assets') input = { scenes: state.scenes, config };
   else if (step === 'voice') input = { scenes: state.scenes, config };
   else if (step === 'preview') input = { scenes: state.scenes, assets: state.assets, voices: state.voices, config };
-  else input = { compositions: state.compositions, config };
+  else input = { compositions: state.compositions, coverAsset: state.coverAsset, config };
   return createHash('sha256').update(JSON.stringify({ step, input })).digest('hex');
 }
 
@@ -829,7 +954,7 @@ async function createStepFileDigests(
       throw new Error(`HTML video ${step} artifact size metadata changed.`);
     }
     let digest: Pick<StepFileDigest, 'size' | 'sha256'>;
-    if (trustedRenderDigest && step === 'render') {
+    if (trustedRenderDigest && step === 'render' && resolved.relativePath === trustedRenderDigest.path) {
       if (
         resolved.relativePath !== trustedRenderDigest.path
         || (reference.expectedSize !== undefined && reference.expectedSize !== trustedRenderDigest.size)
@@ -869,7 +994,10 @@ function stepFileReferences(step: HtmlVideoVisibleStep, state: HtmlVideoPipeline
     ]);
   }
   if (step === 'render' && state.output?.path) {
-    return [{ path: state.output.path, expectedSize: positiveFileSize(state.output.sizeBytes) }];
+    return [
+      ...(state.coverAsset ? [{ path: state.coverAsset.path, expectedSize: state.coverAsset.sizeBytes }] : []),
+      { path: state.output.path, expectedSize: positiveFileSize(state.output.sizeBytes) },
+    ];
   }
   return [];
 }

@@ -738,6 +738,76 @@ h2 {
   height: 30px;
 }
 
+.hv-cover-editor {
+  min-width: 0;
+  margin-bottom: 14px;
+  padding-bottom: 14px;
+  border-bottom: 1px solid rgba(111, 125, 142, 0.22);
+}
+
+.hv-cover-editor h4 {
+  margin: 0;
+  font-size: 14px;
+}
+
+.hv-cover-actions {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 6px;
+}
+
+.hv-cover-editor-grid,
+.hv-cover-create-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 12px;
+  min-width: 0;
+  margin: 0;
+  padding: 12px 0 0;
+  border: 0;
+}
+
+.hv-cover-editor-grid > div,
+.hv-cover-create-grid > div {
+  min-width: 0;
+}
+
+.hv-cover-editor-grid .field,
+.hv-cover-create-grid .field {
+  margin-bottom: 0;
+}
+
+.hv-cover-artifact-meta {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: space-between;
+  gap: 6px 14px;
+  margin-top: 12px;
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.hv-cover-artifact-meta strong {
+  color: var(--text);
+}
+
+.hv-cover-error {
+  margin-top: 10px;
+  color: var(--danger);
+  overflow-wrap: anywhere;
+}
+
+.hv-cover-preview {
+  width: 100%;
+  max-width: 420px;
+  justify-self: center;
+}
+
+.hv-cover-preview .hv-media-frame {
+  max-height: 520px;
+}
+
 .hv-main {
   display: grid;
   grid-template-columns: 220px minmax(0, 1fr);
@@ -1106,7 +1176,9 @@ h2 {
   }
 
   .hv-caption-editor-grid,
-  .hv-caption-colors {
+  .hv-caption-colors,
+  .hv-cover-editor-grid,
+  .hv-cover-create-grid {
     grid-template-columns: 1fr;
   }
 }

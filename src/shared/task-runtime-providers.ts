@@ -17,6 +17,9 @@ import {
   validateHtmlVideoScenePlans,
 } from './html-video-workflow';
 import { createHtmlVideoJobConfig } from './html-video-config';
+import { createHtmlVideoCoverAsset, type HtmlVideoCoverImageProcessor } from './html-video-cover';
+import { mkdir } from 'node:fs/promises';
+import { join } from 'node:path';
 import type { AppConfig, HtmlVideoAsset, HtmlVideoJobConfig, HtmlVideoScenePlan, HtmlVideoVoiceClip, ImagePrompt, StoryboardScene, Task } from './types';
 import { createConfiguredJsonLlm, type ConfiguredJsonLlm, type LlmMessage } from './llm-provider';
 import { createConfiguredImageGenerator, createConfiguredNarrationSynthesizer, getConfiguredImageConcurrency } from './media-providers';
@@ -28,6 +31,7 @@ type AudioDurationProbe = (path: string, signal?: AbortSignal) => Promise<number
 export interface HtmlVideoRuntimeProviderOptions {
   measureAudioDuration: AudioDurationProbe;
   jobConfig: HtmlVideoJobConfig;
+  prepareCoverImage?: HtmlVideoCoverImageProcessor;
 }
 
 interface HtmlAssetRequest {
@@ -122,7 +126,7 @@ export function createHtmlVideoRuntimeProviders(
   workDir: string,
   task: Task,
   options: HtmlVideoRuntimeProviderOptions,
-): Pick<HtmlVideoRunnerOptions, 'rewrite' | 'plan' | 'generateAssets' | 'synthesizeVoices'> {
+): Pick<HtmlVideoRunnerOptions, 'rewrite' | 'plan' | 'generateAssets' | 'synthesizeVoices' | 'generateCover'> {
   const resolvedJobConfig = createHtmlVideoJobConfig(options.jobConfig);
   const runtimeTask = applyHtmlVoiceConfig(applyHtmlTaskConfig(task, resolvedJobConfig), resolvedJobConfig);
   const providers = createTaskRuntimeProviders(config, workDir, runtimeTask);
@@ -136,11 +140,68 @@ export function createHtmlVideoRuntimeProviders(
       : async () => {
           throw new AppError('IMAGE_PROVIDER_NOT_CONFIGURED', '请先配置图片服务。');
         },
+    generateCover: providers.generateImages && options.prepareCoverImage
+      ? adaptHtmlVideoCoverGenerator(providers.generateImages, runtimeTask, workDir, options.prepareCoverImage)
+      : async () => {
+          throw new AppError('IMAGE_PROVIDER_NOT_CONFIGURED', '请先配置可用的封面图片服务。');
+        },
     synthesizeVoices: providers.synthesizeNarration
       ? adaptHtmlVideoNarrationSynthesizer(providers.synthesizeNarration, runtimeTask, options.measureAudioDuration)
       : async () => {
           throw new AppError('TTS_PROVIDER_NOT_CONFIGURED', '请先配置配音服务。');
         },
+  };
+}
+
+export function adaptHtmlVideoCoverGenerator(
+  generator: ImageGenerator,
+  task: Task,
+  workDir: string,
+  prepareCoverImage: HtmlVideoCoverImageProcessor,
+): NonNullable<HtmlVideoRunnerOptions['generateCover']> {
+  return async (input) => {
+    const runtimeTask = {
+      ...applyHtmlTaskConfig(task, input.config),
+      ratio: input.ratio,
+    };
+    const scene: StoryboardScene = {
+      id: 0,
+      cap: input.taskTitle,
+      descPrompt: input.prompt,
+      durationMs: 1000,
+    };
+    const prompt: ImagePrompt = {
+      sceneId: 0,
+      cap: input.taskTitle,
+      prompt: input.prompt,
+      negativePrompt: 'low quality, blurry, watermark, account name, QR code, platform UI, malformed text',
+      style: runtimeTask.style,
+      ratio: input.ratio,
+      characterProfile: '',
+    };
+    const generated = await generator([scene], [prompt], runtimeTask, input.signal);
+    const source = indexProviderAssets(generated, [0], 'IMAGE_PROVIDER_INVALID_OUTPUT').get(0);
+    if (!source?.path) {
+      throw new AppError('IMAGE_PROVIDER_INVALID_OUTPUT', '封面图片服务没有返回有效图片。', true);
+    }
+    const relativePath = `covers/cover-auto-r${input.revision}.png`;
+    const coverDirectory = join(workDir, 'covers');
+    await mkdir(coverDirectory, { recursive: true });
+    const prepared = await prepareCoverImage({
+      sourcePath: source.path,
+      destinationPath: join(workDir, relativePath),
+      dimensions: input.dimensions,
+      signal: input.signal,
+    });
+    return createHtmlVideoCoverAsset({
+      revision: input.revision,
+      mode: 'auto',
+      path: relativePath,
+      ...prepared,
+      ratio: input.ratio,
+      templateId: input.template.id,
+      createdAt: new Date().toISOString(),
+    });
   };
 }
 

@@ -910,6 +910,28 @@ describe('electron ipc contract', () => {
     expect(main).not.toContain("trustedHandle('executeJavaScript'");
   });
 
+  it('imports manual HTML covers under governance without accepting renderer paths', async () => {
+    const [main, preload, apiContract] = await Promise.all([
+      readFile(new URL('../electron/main.ts', import.meta.url), 'utf8'),
+      readFile(new URL('../electron/preload.ts', import.meta.url), 'utf8'),
+      readFile(new URL('../src/shared/storydream-api.ts', import.meta.url), 'utf8'),
+    ]);
+    const start = main.indexOf("trustedHandle('html-video:import-cover'");
+    const end = main.indexOf("trustedHandle('html-video:open-preview'", start);
+    expect(start).toBeGreaterThan(-1);
+    expect(end).toBeGreaterThan(start);
+    const handler = main.slice(start, end);
+    expect(handler).toContain("runHistoryGovernanceMutation('task', id");
+    expect(handler.indexOf('database.getTaskDetail(id)')).toBeLessThan(handler.indexOf('dialog.showOpenDialog'));
+    expect(handler).toContain('inspectHtmlVideoCoverImage');
+    expect(handler).toContain('database.importHtmlVideoCover');
+    expect(handler).toContain('publishTaskUpsert');
+    expect(handler).not.toContain('sourcePath: input');
+    expect(handler).not.toContain('rm(sourcePath');
+    expect(preload).toContain("invokeTrusted('html-video:import-cover', id)");
+    expect(apiContract).toContain('importHtmlVideoCover: (id: string) => Promise<AppMutationResult | null>');
+  });
+
   it('waits for a fully ready hidden HTML scene before capture begins', async () => {
     const renderer = await readFile(new URL('../electron/html-video-renderer.ts', import.meta.url), 'utf8');
     const openHiddenWindow = renderer.slice(renderer.indexOf('async function openHiddenHtmlWindow'));

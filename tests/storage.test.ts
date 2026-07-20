@@ -273,7 +273,7 @@ describe('file database', () => {
       }));
       expect(created).toMatchObject({
         targetScenes: 4,
-        coverImageMode: 'titled',
+        coverImageMode: 'off',
         coverTemplateId: 'cinematic-poster',
         htmlVideoForeground: false,
       });
@@ -282,13 +282,13 @@ describe('file database', () => {
       await db.close();
       const reopened = await FileDatabase.open(file);
       const stored = (await reopened.getState()).tasks[0];
-      expect(stored).toMatchObject({ htmlVideoForeground: false, targetScenes: 4, coverImageMode: 'titled' });
+      expect(stored).toMatchObject({ htmlVideoForeground: false, targetScenes: 4, coverImageMode: 'off' });
       const recovery = recoverHtmlVideoPipelineDataForRetry(stored);
       const recovered = parseHtmlVideoPipelineData(recovery?.pipelineData);
       expect(recovered.config).toMatchObject({
         maxScenes: 4,
         foreground: false,
-        coverImageMode: 'titled',
+        coverImageMode: 'off',
         coverTemplate: 'cinematic-poster',
       });
       await reopened.close();

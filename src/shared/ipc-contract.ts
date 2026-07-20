@@ -9,6 +9,7 @@ import {
   HTML_VIDEO_TTS_SPEED_MIN,
   HTML_VIDEO_TRANSITIONS,
 } from './html-video-config';
+import { HTML_VIDEO_COVER_MODES, HTML_VIDEO_COVER_RATIOS } from './html-video-cover';
 import {
   HTML_VIDEO_CAPTION_ANIMATIONS,
   HTML_VIDEO_CAPTION_PRESETS,
@@ -255,6 +256,9 @@ const htmlVideoConfigChangeSchema = z.discriminatedUnion('field', [
   }).strict(),
   z.object({ field: z.literal('bgmVolume'), value: z.enum(HTML_VIDEO_BGM_VOLUMES) }).strict(),
   z.object({ field: z.literal('transitionType'), value: z.enum(HTML_VIDEO_TRANSITIONS) }).strict(),
+  z.object({ field: z.literal('coverImageMode'), value: z.enum(HTML_VIDEO_COVER_MODES) }).strict(),
+  z.object({ field: z.literal('coverTemplate'), value: nonEmptyText(256) }).strict(),
+  z.object({ field: z.literal('coverRatio'), value: z.enum(HTML_VIDEO_COVER_RATIOS) }).strict(),
   z.object({ field: z.literal('foreground'), value: z.boolean() }).strict(),
   z.object({ field: z.literal('maxScenes'), value: nonNegativeInteger.min(1).max(MAX_HTML_VIDEO_SCENES) }).strict(),
   z.object({ field: z.literal('ratio'), value: z.enum(HTML_VIDEO_RATIOS) }).strict(),
@@ -263,7 +267,7 @@ const htmlVideoConfigChangeSchema = z.discriminatedUnion('field', [
 export const htmlVideoConfigUpdateSchema = bounded(z
   .object({
     id: governanceIdSchema,
-    changes: z.array(htmlVideoConfigChangeSchema).min(1).max(13),
+    changes: z.array(htmlVideoConfigChangeSchema).min(1).max(16),
   })
   .strict()
   .superRefine((input, ctx) => {
@@ -624,6 +628,7 @@ export const ipcInputSchemas = {
   'person-assets:open-directory': nameSchema,
   'html-video:create-task': htmlVideoCreateTaskSchema,
   'html-video:update-config': htmlVideoConfigUpdateSchema,
+  'html-video:import-cover': idOnlySchema,
   'html-video:open-preview': htmlVideoPreviewSchema,
   'html-video:media-url': htmlVideoMediaSchema,
   'task:create-and-run': createTaskSchema,

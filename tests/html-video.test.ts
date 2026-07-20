@@ -663,7 +663,7 @@ describe('HTML video pipeline V2 contract', () => {
           ttsSpeed: 1.2,
           bgmId: 'bgm-recovery',
           maxScenes: 2,
-          coverImageMode: 'titled',
+          coverImageMode: 'auto',
           coverTemplate: 'cinematic-poster',
         },
       });

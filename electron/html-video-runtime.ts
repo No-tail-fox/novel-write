@@ -2070,7 +2070,7 @@ export function createElectronHtmlVideoRuntime(options: ElectronHtmlVideoRuntime
         ensureTaskLocalDirectory(workDir, ['preview-thumbnails']),
       ]);
       return withHtmlVideoRuntimeStage(options.taskDirectory, 'preview', async (stage, stageDir) => {
-        const composition = buildRuntimeComposition(options, localInput, fps, maxLongEdge, stageDir, undefined);
+        const composition = buildRuntimeComposition(options, localInput, fps, maxLongEdge, stageDir, undefined, undefined);
         const [stageHtmlDir, stageThumbnailDir] = await Promise.all([
           ensureTaskLocalDirectory(stageDir, ['html-scenes']),
           ensureTaskLocalDirectory(stageDir, ['preview-thumbnails']),
@@ -2156,10 +2156,13 @@ export function createElectronHtmlVideoRuntime(options: ElectronHtmlVideoRuntime
         ? await taskLocalFile(workDir, options.bgmPath)
         : undefined;
       const localInput = await resolveTaskLocalRuntimeMedia(workDir, input);
+      const coverPath = input.coverAsset
+        ? await taskLocalFile(workDir, input.coverAsset.path)
+        : undefined;
       await validateHtmlVideoTaskDirectory(options.taskDirectory);
       throwIfAborted(signal);
       return withHtmlVideoRuntimeStage(options.taskDirectory, 'render', async (stage, stageDir) => {
-        const composition = buildRuntimeComposition(options, localInput, fps, maxLongEdge, stageDir, bgmPath);
+        const composition = buildRuntimeComposition(options, localInput, fps, maxLongEdge, stageDir, bgmPath, coverPath);
         await preflightHtmlVideoRender({
           workDir: stageDir,
           canvas: { width: composition.canvas_w, height: composition.canvas_h },
@@ -2272,6 +2275,7 @@ function buildRuntimeComposition(
   maxLongEdge: number,
   workDir: string,
   bgmPath: string | undefined,
+  coverPath: string | undefined,
 ): HtmlVideoExportInput {
   const canvas = htmlVideoCanvasForRatio(input.config.ratio, maxLongEdge);
   const scenes = input.scenes.map((scene) => {
@@ -2312,6 +2316,7 @@ function buildRuntimeComposition(
       .filter((asset) => asset.kind === 'fg')
       .map((asset) => ({ sceneId: asset.sceneIndex, path: asset.src })),
     narrationAudio: input.voices.map((voice) => ({ sceneId: voice.sceneIndex, path: voice.src })),
+    coverPath,
     bgmPath,
     bgmTargetDb: htmlVideoBgmTargetDb(input.config.bgmVolume),
     captionConfig: input.config,

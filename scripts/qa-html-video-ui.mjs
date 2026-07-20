@@ -17,8 +17,8 @@ const stdout = [];
 const runtimeErrors = [];
 const networkRequests = [];
 const networkResponses = [];
-const htmlVideoEditableFields = ['style', 'voiceId', 'ttsProvider', 'ttsSpeed', 'bgmId', 'bgmVolume', 'transitionType', 'foreground', 'maxScenes', 'ratio'];
-const htmlVideoReadOnlyFields = ['coverImageMode', 'coverTemplate', 'coverRatio', 'draftTemplate'];
+const htmlVideoEditableFields = ['style', 'voiceId', 'ttsProvider', 'ttsSpeed', 'bgmId', 'bgmVolume', 'transitionType', 'foreground', 'maxScenes', 'ratio', 'coverImageMode', 'coverTemplate', 'coverRatio'];
+const htmlVideoReadOnlyFields = ['draftTemplate'];
 let child;
 let cdp;
 let ffmpegPath;
@@ -29,6 +29,8 @@ try {
   profileDir = join(qaTempDir, 'profile');
   const desktopScreenshot = join(qaTempDir, 'desktop.png');
   const compactScreenshot = join(qaTempDir, 'compact.png');
+  const coverDesktopScreenshot = join(qaTempDir, 'cover-desktop.png');
+  const coverCompactScreenshot = join(qaTempDir, 'cover-compact.png');
   const captionEditorScreenshot = join(qaTempDir, 'caption-editor.png');
   const captionPreviewScreenshot = join(qaTempDir, 'caption-preview.png');
   const require = createRequire(join(rootDir, 'package.json'));
@@ -133,6 +135,9 @@ try {
     'primary completed task',
   );
   const configControls = await inspectConfigControls(cdp);
+  const coverDesktopState = await inspectCoverPanel(cdp);
+  configControls.editFields = [...new Set([...configControls.editFields, ...coverDesktopState.editFields])].sort();
+  configControls.coverState = coverDesktopState;
   const expectedEditableFields = [...htmlVideoEditableFields].sort();
   if (JSON.stringify(configControls.createFields) !== JSON.stringify(expectedEditableFields)) {
     throw new Error(`HTML video create controls differ from the governed fields: ${configControls.createFields.join(', ')}`);
@@ -143,6 +148,7 @@ try {
   if (configControls.readOnlyEditors.length) {
     throw new Error(`Read-only HTML video controls became editable: ${configControls.readOnlyEditors.join(', ')}`);
   }
+  await saveScreenshot(cdp, coverDesktopScreenshot);
 
   const primaryOutput = await openOutputAndWait(cdp, seededTasks.primary);
   const rangeResponse = await verifyRangeResponse(cdp, primaryOutput.src, seededTasks.primary.outputPath);
@@ -199,6 +205,9 @@ try {
   await evaluate(cdp, `document.querySelector('.hv-video-output')?.scrollIntoView({ block: 'center' })`);
   const compactState = await inspectPage(cdp);
   await saveScreenshot(cdp, compactScreenshot);
+  const coverCompactState = await inspectCoverPanel(cdp);
+  await saveScreenshot(cdp, coverCompactScreenshot);
+  await openOutputAndWait(cdp, seededTasks.primary);
   const configUpdate = await exerciseHtmlVideoConfigUpdate(cdp);
   if (configUpdate.completedStepCount !== 5) {
     throw new Error(`Render-only config update preserved ${configUpdate.completedStepCount} completed steps instead of 5.`);
@@ -253,6 +262,12 @@ try {
   if (!desktopState.video.visible || !compactState.video.visible) throw new Error('Completed output is not visible in both viewports.');
   if (desktopState.horizontalOverflow > 2 || compactState.horizontalOverflow > 2) throw new Error('HTML video page overflows horizontally.');
   if (desktopState.clippedControls.length || compactState.clippedControls.length) throw new Error('HTML video controls are clipped.');
+  if (coverDesktopState.horizontalOverflow > 2 || coverCompactState.horizontalOverflow > 2) throw new Error('HTML video cover panel overflows horizontally.');
+  if (coverDesktopState.clippedControls.length || coverCompactState.clippedControls.length) throw new Error('HTML video cover controls are clipped.');
+  if (coverDesktopState.editFields.join(',') !== 'coverImageMode,coverRatio,coverTemplate'
+    || coverCompactState.editFields.join(',') !== 'coverImageMode,coverRatio,coverTemplate') {
+    throw new Error(`HTML video cover controls were not all rendered: ${JSON.stringify({ coverDesktopState, coverCompactState })}`);
+  }
   if (!(playback.currentTime > 0.2) || playback.readyState < 2 || playback.error) throw new Error('Output playback did not advance.');
   for (const [kind, result] of Object.entries(mediaElementRecovery)) {
     if (!result.errorObserved || !result.retryObserved || !result.staleErrorIgnored || !result.staleReadyIgnored || !result.readyObserved) {
@@ -263,7 +278,7 @@ try {
     throw new Error(`Renderer console errors: ${relevantRuntimeErrors.map((error) => error.message).join(' | ')}`);
   }
 
-  const screenshotPaths = [desktopScreenshot, compactScreenshot, captionEditorScreenshot, captionPreviewScreenshot];
+  const screenshotPaths = [desktopScreenshot, compactScreenshot, coverDesktopScreenshot, coverCompactScreenshot, captionEditorScreenshot, captionPreviewScreenshot];
   const screenshots = await Promise.all(screenshotPaths.map(async (path) => {
     const value = await stat(path);
     if (value.size <= 0) throw new Error(`Screenshot evidence is empty: ${basename(path)}`);
@@ -297,6 +312,8 @@ try {
     captionPreview,
     desktop: desktopState,
     compact: compactState,
+    coverDesktop: coverDesktopState,
+    coverCompact: coverCompactState,
     screenshots,
     evidencePaths,
     runtimeErrors: relevantRuntimeErrors,
@@ -900,6 +917,44 @@ async function inspectConfigControls(cdpConnection) {
         document.querySelector('[data-html-video-edit-field="' + field + '"]')
         || document.querySelector('[data-html-video-create-field="' + field + '"]')
       )),
+    };
+  })()`);
+}
+
+async function inspectCoverPanel(cdpConnection) {
+  const clicked = await clickTab(cdpConnection, '封面');
+  if (!clicked) throw new Error('Cover tab was not found.');
+  await waitFor(
+    async () => evaluate(cdpConnection, `Boolean(document.querySelector('.hv-cover-editor'))`),
+    10_000,
+    'HTML video cover editor',
+  );
+  return evaluate(cdpConnection, `(() => {
+    const isVisible = (item) => {
+      const style = getComputedStyle(item);
+      const rect = item.getBoundingClientRect();
+      return style.display !== 'none' && style.visibility !== 'hidden' && rect.width > 0 && rect.height > 0;
+    };
+    const clippedControls = [...document.querySelectorAll('.hv-cover-editor button, .hv-cover-editor select, .hv-cover-editor input')]
+      .filter((item) => isVisible(item))
+      .filter((item) => {
+        const rect = item.getBoundingClientRect();
+        return rect.left < -1 || rect.right > innerWidth + 1;
+      })
+      .map((item) => item.textContent.trim() || item.getAttribute('aria-label') || item.tagName);
+    const editFields = [...document.querySelectorAll('.hv-cover-editor [data-html-video-edit-field]')]
+      .map((item) => item.getAttribute('data-html-video-edit-field'))
+      .filter(Boolean)
+      .sort();
+    return {
+      activeTab: document.querySelector('.hv-tab.active')?.textContent.trim() || '',
+      dimensionsText: document.querySelector('.hv-cover-editor .panel-title-row span')?.textContent.trim() || '',
+      importDisabled: Boolean([...document.querySelectorAll('.hv-cover-actions button')]
+        .find((item) => item.textContent.includes('导入封面'))?.disabled),
+      editFields,
+      horizontalOverflow: document.documentElement.scrollWidth - document.documentElement.clientWidth,
+      clippedControls,
+      viewport: { width: innerWidth, height: innerHeight },
     };
   })()`);
 }

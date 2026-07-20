@@ -34,6 +34,9 @@ export const HTML_VIDEO_EDITABLE_CONTROL_FIELDS = [
   'captionColors',
   'bgmVolume',
   'transitionType',
+  'coverImageMode',
+  'coverTemplate',
+  'coverRatio',
   'foreground',
   'maxScenes',
   'ratio',
@@ -114,16 +117,16 @@ export const HTML_VIDEO_CONTROL_MANIFEST_V1 = {
     consumerStages: ['render'], invalidateFrom: 'render', availability: 'editable',
   }),
   coverImageMode: entry('coverImageMode', {
-    schema: 'compatible-string', uiLocation: 'cover', legacyMirror: 'coverImageMode',
-    consumerStages: [], invalidateFrom: null, availability: 'read-only-compatible',
+    schema: 'cover-mode', uiLocation: 'cover', legacyMirror: 'coverImageMode',
+    consumerStages: ['render'], invalidateFrom: 'render', availability: 'editable',
   }),
   coverTemplate: entry('coverTemplate', {
-    schema: 'compatible-string', uiLocation: 'cover', legacyMirror: 'coverTemplateId',
-    consumerStages: [], invalidateFrom: null, availability: 'read-only-compatible',
+    schema: 'cover-template-id', uiLocation: 'cover', legacyMirror: 'coverTemplateId',
+    consumerStages: ['render'], invalidateFrom: 'render', availability: 'editable',
   }),
   coverRatio: entry('coverRatio', {
-    schema: 'compatible-string', uiLocation: 'cover', legacyMirror: null,
-    consumerStages: [], invalidateFrom: null, availability: 'read-only-compatible',
+    schema: 'cover-ratio', uiLocation: 'cover', legacyMirror: null,
+    consumerStages: ['render'], invalidateFrom: 'render', availability: 'editable',
   }),
   draftTemplate: entry('draftTemplate', {
     schema: 'compatible-string', uiLocation: 'draft', legacyMirror: null,

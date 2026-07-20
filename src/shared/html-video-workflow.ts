@@ -33,6 +33,7 @@ import {
   recoverHtmlVideoJobConfig,
 } from './html-video-config';
 import { htmlVideoCaptionColorsEqual } from './html-video-captions';
+import { normalizeHtmlVideoCoverMode, validateHtmlVideoCoverAsset } from './html-video-cover';
 
 export const MAX_HTML_VIDEO_PIPELINE_JSON_CHARS = 1_000_000;
 export const MAX_HTML_VIDEO_PIPELINE_FILE_BYTES = MAX_HTML_VIDEO_PIPELINE_JSON_CHARS * 4;
@@ -239,7 +240,7 @@ export function recoverHtmlVideoPipelineDataForRetry(
       bgmId: task.bgmId,
       maxScenes,
       foreground: task.htmlVideoForeground ?? HTML_VIDEO_JOB_DEFAULTS.foreground,
-      coverImageMode: task.coverImageMode ?? HTML_VIDEO_JOB_DEFAULTS.coverImageMode,
+      coverImageMode: normalizeHtmlVideoCoverMode(task.coverImageMode ?? HTML_VIDEO_JOB_DEFAULTS.coverImageMode),
       coverTemplate: task.coverTemplateId ?? HTML_VIDEO_JOB_DEFAULTS.coverTemplate,
     });
     const data = createHtmlVideoPipelineData(task.inputText, recovered.config);
@@ -319,6 +320,8 @@ export interface HtmlVideoConfigChangeResult {
     | 'ttsProvider'
     | 'ttsSpeed'
     | 'bgmId'
+    | 'coverImageMode'
+    | 'coverTemplateId'
     | 'htmlVideoForeground'
     | 'targetScenes'
     | 'storyboardSceneCount'
@@ -388,6 +391,8 @@ export function applyHtmlVideoConfigChanges(
     else if (field === 'ttsProvider') legacyMirrors.ttsProvider = nextValue as Task['ttsProvider'];
     else if (field === 'ttsSpeed') legacyMirrors.ttsSpeed = Number(nextValue);
     else if (field === 'bgmId') legacyMirrors.bgmId = String(nextValue);
+    else if (field === 'coverImageMode') legacyMirrors.coverImageMode = String(nextValue);
+    else if (field === 'coverTemplate') legacyMirrors.coverTemplateId = String(nextValue);
     else if (field === 'foreground') legacyMirrors.htmlVideoForeground = Boolean(nextValue);
     else if (field === 'maxScenes') {
       legacyMirrors.targetScenes = Number(nextValue);
@@ -548,6 +553,7 @@ function parsePipelineV2(value: UnknownRecord): HtmlVideoPipelineDataV2 {
     assets,
     voices,
     compositions,
+    ...(value.coverAsset === undefined ? {} : { coverAsset: validateHtmlVideoCoverAsset(value.coverAsset) }),
     ...(value.output === undefined ? {} : { output: parseOutput(value.output) }),
     config,
   };

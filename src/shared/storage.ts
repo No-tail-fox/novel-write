@@ -21,6 +21,7 @@ import type {
   HistoryListInput,
   HistoryPage,
   HtmlVideoConfigChange,
+  HtmlVideoCoverAsset,
   ImageLabRecord,
   ImageLabSummary,
   MinimaxCloneVoice,
@@ -40,7 +41,16 @@ import type {
   VoiceLabRecord,
   VoiceLabSummary,
 } from './types';
-import { applyHtmlVideoConfigChanges, htmlVideoVisibleSteps, parseHtmlVideoPipelineData } from './html-video-workflow';
+import { applyHtmlVideoConfigChanges, htmlVideoVisibleSteps, invalidateHtmlVideoPipeline, parseHtmlVideoPipelineData } from './html-video-workflow';
+import {
+  createHtmlVideoCoverAsset,
+  htmlVideoCoverDimensions,
+  normalizeHtmlVideoCoverMode,
+  normalizeHtmlVideoCoverRatio,
+  validateHtmlVideoCoverInspection,
+  type HtmlVideoCoverImageProcessor,
+  type HtmlVideoCoverInspection,
+} from './html-video-cover';
 import { normalizeAppConfig } from './config-utils';
 import { stripConfigSecrets } from './config-secrets';
 import { normalizeStoryboardSceneCount } from './content-metrics';
@@ -81,6 +91,20 @@ export interface HtmlVideoTaskConfigMutationResult {
   task: TaskSummary;
   event: SequencedTaskEvent;
   changedFields: HtmlVideoConfigChange['field'][];
+}
+
+export interface HtmlVideoCoverImportOperations {
+  prepareImage: HtmlVideoCoverImageProcessor;
+  promoteFile: (source: string, target: string) => Promise<void>;
+  removeFile: (path: string) => Promise<void>;
+  ensureDirectory: (path: string) => Promise<void>;
+  now: () => string;
+}
+
+export interface HtmlVideoTaskCoverMutationResult {
+  task: TaskSummary;
+  event: SequencedTaskEvent;
+  coverAsset: HtmlVideoCoverAsset;
 }
 
 interface HistorySqlFilter {
@@ -625,6 +649,27 @@ export class FileDatabase {
       const previous = this.db.export();
       try {
         const value = mutation();
+        const next = this.db.export();
+        await atomicWriteDatabase(this.file, next, this.dependencies);
+        return value;
+      } catch (error) {
+        this.db.close();
+        this.db = new this.SQL.Database(previous);
+        throw error;
+      }
+    });
+    this.writeTail = operation.then(() => undefined, () => undefined);
+    return operation;
+  }
+
+  private enqueueAsyncCommit<T>(mutation: () => Promise<T>): Promise<T> {
+    if (this.closing || this.closed) {
+      return Promise.reject(new Error(this.closed ? 'Database is closed.' : 'Database is closing.'));
+    }
+    const operation = this.writeTail.then(async () => {
+      const previous = this.db.export();
+      try {
+        const value = await mutation();
         const next = this.db.export();
         await atomicWriteDatabase(this.file, next, this.dependencies);
         return value;
@@ -2302,7 +2347,8 @@ export class FileDatabase {
         `UPDATE tasks SET
           status = ?, current_step = ?, pipeline_step = ?, pipeline_data = ?, error_message = ?, completed_at = ?,
           failed_step = ?, retry_from_step = ?, last_heartbeat_at = ?, style = ?, speaker = ?, tts_provider = ?,
-          tts_speed = ?, bgm_id = ?, html_video_foreground = ?, target_scenes = ?, storyboard_scene_count = ?, ratio = ?
+          tts_speed = ?, bgm_id = ?, html_video_foreground = ?, target_scenes = ?, storyboard_scene_count = ?, ratio = ?,
+          cover_image_mode = ?, cover_template_id = ?
          WHERE id = ?`,
         [
           nextTask.status,
@@ -2323,6 +2369,8 @@ export class FileDatabase {
           nextTask.targetScenes ?? null,
           nextTask.storyboardSceneCount ?? null,
           nextTask.ratio,
+          nextTask.coverImageMode ?? null,
+          nextTask.coverTemplateId ?? null,
           id,
         ],
       );
@@ -2359,6 +2407,129 @@ export class FileDatabase {
         changedFields: [...applied.changedFields],
       };
     });
+  }
+
+  async importHtmlVideoCover(
+    id: string,
+    source: HtmlVideoCoverInspection,
+    operations: HtmlVideoCoverImportOperations,
+  ): Promise<HtmlVideoTaskCoverMutationResult> {
+    const importPaths: { staged: string | null; promoted: string | null } = {
+      staged: null,
+      promoted: null,
+    };
+    try {
+      return await this.enqueueAsyncCommit(async () => {
+        this.assertHistoryWritable('task', id);
+        const row = getFirstRow<Record<string, unknown>>(this.db, 'SELECT * FROM tasks WHERE id = ?', [id]);
+        if (!row) throw new Error(`HTML_VIDEO_TASK_NOT_FOUND: ${id}`);
+        const task = rowToTask(row);
+        if (task.taskType !== 'html-video') {
+          throw new Error(`HTML_VIDEO_TASK_INVALID: ${id} is not an HTML video task.`);
+        }
+        if (task.status === 'pending' || task.status === 'running') {
+          throw new Error(`HTML_VIDEO_COVER_ACTIVE: ${id} is ${task.status} and cannot import a cover.`);
+        }
+        if (!task.managedStorageKey || !/^[A-Za-z0-9][A-Za-z0-9_-]{0,255}$/u.test(task.managedStorageKey)) {
+          throw new Error(`HTML_VIDEO_COVER_STORAGE_INVALID: ${id} has no managed storage key.`);
+        }
+
+        const pipeline = parseHtmlVideoPipelineData(task.pipelineData);
+        const mode = normalizeHtmlVideoCoverMode(pipeline.config.coverImageMode ?? 'off');
+        if (mode !== 'manual') {
+          throw new Error('HTML_VIDEO_COVER_MODE_INVALID: Select manual cover mode before importing an image.');
+        }
+        const ratio = normalizeHtmlVideoCoverRatio(pipeline.config.coverRatio ?? '3:4');
+        validateHtmlVideoCoverInspection(source, ratio);
+
+        const coverDirectory = join(dirname(this.file), 'tasks', task.managedStorageKey, 'covers');
+        await operations.ensureDirectory(coverDirectory);
+        const revision = (pipeline.coverAsset?.revision ?? 0) + 1;
+        const relativePath = `covers/cover-manual-r${revision}.png`;
+        const finalPath = join(dirname(this.file), 'tasks', task.managedStorageKey, relativePath);
+        importPaths.staged = join(coverDirectory, `.cover-manual-r${revision}-${randomUUID()}.tmp`);
+        const prepared = await operations.prepareImage({
+          sourcePath: source.sourcePath,
+          destinationPath: importPaths.staged,
+          dimensions: htmlVideoCoverDimensions(ratio),
+        });
+        const coverAsset = createHtmlVideoCoverAsset({
+          revision,
+          mode: 'manual',
+          path: relativePath,
+          ...prepared,
+          ratio,
+          createdAt: operations.now(),
+        });
+        await operations.promoteFile(importPaths.staged, finalPath);
+        importPaths.staged = null;
+        importPaths.promoted = finalPath;
+
+        const invalidated = invalidateHtmlVideoPipeline(pipeline, 'render');
+        invalidated.coverAsset = coverAsset;
+        invalidated.config = { ...invalidated.config, coverImageMode: 'manual' };
+        invalidated.revision = pipeline.revision + 1;
+        delete invalidated.configSnapshotHash;
+        const now = operations.now();
+        this.db.run(
+          `UPDATE tasks SET
+            status = 'paused', current_step = 5, pipeline_step = 'render', pipeline_data = ?, error_message = '',
+            completed_at = NULL, failed_step = NULL, retry_from_step = NULL, last_heartbeat_at = ?, cover_image_mode = 'manual'
+           WHERE id = ?`,
+          [JSON.stringify(invalidated), now, id],
+        );
+        const event: TaskEvent = {
+          taskId: id,
+          type: 'cover_import',
+          step: 5,
+          agent: 'HTML Video',
+          tool: null,
+          detail: '已导入手动封面，从出片阶段继续。',
+          dataJson: JSON.stringify({
+            coverAsset: {
+              version: coverAsset.version,
+              revision: coverAsset.revision,
+              path: coverAsset.path,
+              ratio: coverAsset.ratio,
+              width: coverAsset.width,
+              height: coverAsset.height,
+              sizeBytes: coverAsset.sizeBytes,
+              sha256: coverAsset.sha256,
+            },
+            invalidateFrom: 'render',
+          }),
+          ts: Date.parse(now) || Date.now(),
+        };
+        this.db.run(
+          `INSERT INTO task_events (task_id, type, step, agent, tool, detail, data_json, ts)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+          [event.taskId, event.type, event.step, event.agent, event.tool, event.detail, event.dataJson, event.ts],
+        );
+        const seq = getFirstRow<{ seq: number }>(this.db, 'SELECT last_insert_rowid() AS seq')?.seq;
+        if (!Number.isSafeInteger(seq)) throw new Error('TASK_EVENT_SEQUENCE_MISSING: Event was not assigned a sequence.');
+        const updatedRow = getFirstRow<Record<string, unknown>>(
+          this.db,
+          `SELECT ${taskSummaryColumns} FROM tasks WHERE id = ?`,
+          [id],
+        );
+        if (!updatedRow) throw new Error(`HTML_VIDEO_TASK_NOT_FOUND: ${id}`);
+        return {
+          task: rowToTaskSummary(updatedRow),
+          event: { ...event, seq: Number(seq) },
+          coverAsset,
+        };
+      });
+    } catch (error) {
+      const cleanup = [importPaths.staged, importPaths.promoted].filter((path): path is string => Boolean(path));
+      for (const path of cleanup) {
+        try {
+          await operations.removeFile(path);
+        } catch {
+          // Preserve the transaction or persistence error.
+        }
+      }
+      throw error;
+    }
   }
 
   async listTaskSummaries(request: HistoryListInput<'task'> = {}): Promise<HistoryPage<'task', TaskSummary>> {
@@ -2567,6 +2738,16 @@ export class FileDatabase {
     await this.waitForWrites();
     const row = getFirstRow<Record<string, unknown>>(this.db, 'SELECT data, updated_at FROM draft_templates WHERE id = ?', [id]);
     return row ? rowToDraftTemplate(row) : null;
+  }
+
+  async getCustomCoverTemplateDetail(id: string): Promise<CustomCoverTemplate | null> {
+    await this.waitForWrites();
+    const row = getFirstRow<Record<string, unknown>>(
+      this.db,
+      'SELECT * FROM custom_cover_templates WHERE id = ?',
+      [id],
+    );
+    return row ? rowToCustomCoverTemplate(row) : null;
   }
 
   async getBootstrapMetadata(): Promise<

@@ -21,7 +21,7 @@ describe('renderer IPC inventory', () => {
   });
 
   it('defines exactly one input schema for every canonical invoke channel', () => {
-    expect(INVOKE_CHANNELS).toHaveLength(85);
+    expect(INVOKE_CHANNELS).toHaveLength(86);
     expect(new Set(INVOKE_CHANNELS).size).toBe(INVOKE_CHANNELS.length);
     expect(new Set(Object.keys(ipcInputSchemas))).toEqual(new Set(INVOKE_CHANNELS));
     expect(INVOKE_CHANNELS).toContain('task:open-output-directory');
@@ -47,6 +47,11 @@ describe('renderer IPC inventory', () => {
       id: 'html-task-1',
       changes,
     });
+  });
+
+  it('routes manual cover import by task id without exposing an external path parameter', async () => {
+    await storyDreamApi.importHtmlVideoCover('html-task-1');
+    expect(ipcRenderer.invoke).toHaveBeenCalledWith('html-video:import-cover', 'html-task-1');
   });
 
   it('keeps actual preload invoke calls in exact canonical order', async () => {

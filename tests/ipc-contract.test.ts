@@ -100,10 +100,14 @@ describe('IPC runtime contract', () => {
         { field: 'captionPreset', value: 'editorial' },
         { field: 'captionAnim', value: 'pop' },
         { field: 'captionColors', value: { text: '#ffffff', accent: '#11aabb' } },
+        { field: 'coverImageMode', value: 'manual' },
+        { field: 'coverTemplate', value: 'cinematic-poster' },
+        { field: 'coverRatio', value: '3:4' },
       ],
     })).toMatchObject({ id: 'html-task-1' });
     for (const invalidChange of [
-      { field: 'coverImageMode', value: 'off' },
+      { field: 'coverImageMode', value: 'custom' },
+      { field: 'coverRatio', value: '4:5' },
       { field: 'draftTemplate', value: 'draft-1' },
       { field: 'ttsProvider', value: 'unknown-provider' },
       { field: 'ttsSpeed', value: 10.01 },
@@ -136,11 +140,19 @@ describe('IPC runtime contract', () => {
         { field: 'captionColors', value: { shadow: '#000000aa' } },
         { field: 'bgmVolume', value: 'soft' },
         { field: 'transitionType', value: 'fade' },
+        { field: 'coverImageMode', value: 'off' },
+        { field: 'coverTemplate', value: 'cinematic-poster' },
+        { field: 'coverRatio', value: '3:4' },
         { field: 'foreground', value: true },
         { field: 'maxScenes', value: 8 },
         { field: 'ratio', value: '9:16' },
       ],
-    }).changes).toHaveLength(13);
+    }).changes).toHaveLength(16);
+
+    const importCoverSchema = contract.ipcInputSchemas['html-video:import-cover'];
+    expect(importCoverSchema.parse('html-task-1')).toBe('html-task-1');
+    expect(() => importCoverSchema.parse('')).toThrow();
+    expect(() => importCoverSchema.parse({ id: 'html-task-1', sourcePath: 'C:/outside.png' })).toThrow();
 
     expect(contract.createTaskSchema.parse({
       inputText: 'hello',

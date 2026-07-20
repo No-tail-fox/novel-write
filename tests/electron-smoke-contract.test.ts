@@ -238,7 +238,8 @@ describe('real Electron smoke contract', () => {
     expect(qa).toContain('const configUpdate = await exerciseHtmlVideoConfigUpdate(cdp);');
     expect(qa).toContain("document.querySelectorAll('[data-html-video-create-field]')");
     expect(qa).toContain("document.querySelectorAll('[data-html-video-edit-field]')");
-    expect(qa).toContain("['coverImageMode', 'coverTemplate', 'coverRatio', 'draftTemplate']");
+    expect(qa).toContain("'coverImageMode', 'coverTemplate', 'coverRatio'");
+    expect(qa).toContain("const htmlVideoReadOnlyFields = ['draftTemplate']");
     expect(qa).toContain("document.querySelector('[data-html-video-edit-field=\"transitionType\"] select')");
     expect(qa).toContain("item.textContent.includes('保存参数')");
     expect(qa).toContain("item.textContent.includes('继续')");

@@ -6,7 +6,7 @@ import { basename, dirname, join } from 'node:path';
 import { describe, expect, it } from 'vitest';
 import * as htmlVideoRuntimeModule from '../electron/html-video-runtime';
 import { AppError, isCancellation } from '../src/shared/app-error';
-import { MAX_HTML_VIDEO_MEDIA_FILE_BYTES, runHtmlVideoPipeline, type HtmlVideoPreviewInput } from '../src/shared/html-video-runner';
+import { MAX_HTML_VIDEO_MEDIA_FILE_BYTES, runHtmlVideoPipeline, type HtmlVideoPreviewInput, type HtmlVideoRenderInput } from '../src/shared/html-video-runner';
 import { createHtmlVideoPipelineData, createHtmlVideoTaskInput, parseHtmlVideoPipelineData } from '../src/shared/html-video-workflow';
 import { FileDatabase } from '../src/shared/storage';
 import {
@@ -155,15 +155,19 @@ describe('Electron HTML video runtime contract', () => {
         .rejects.toThrow(/HISTORY_DELETED/);
       expect((await database.listTaskEvents(deleted.id, { limit: 100 })).items).toEqual([]);
 
-      const readOnly = await create('read only config');
-      await database.updateTask(readOnly.id, { status: 'completed' });
-      const readOnlyBefore = await database.getTaskDetail(readOnly.id);
+      const coverEditable = await create('cover editable config');
+      await database.updateTask(coverEditable.id, { status: 'completed' });
       await expect(database.updateHtmlVideoTaskConfig(
-        readOnly.id,
-        [{ field: 'coverRatio', value: '1:1' }] as never,
-      )).rejects.toThrow(/不可编辑|read-only|editable/i);
-      expect(await database.getTaskDetail(readOnly.id)).toEqual(readOnlyBefore);
-      expect((await database.listTaskEvents(readOnly.id, { limit: 100 })).items).toEqual([]);
+        coverEditable.id,
+        [{ field: 'coverRatio', value: '1:1' }],
+      )).resolves.toMatchObject({ changedFields: ['coverRatio'] });
+      expect(await database.getTaskDetail(coverEditable.id)).toMatchObject({
+        status: 'paused',
+        currentStep: 5,
+        pipelineStep: 'render',
+      });
+      expect((await database.listTaskEvents(coverEditable.id, { limit: 100 })).items)
+        .toEqual([expect.objectContaining({ type: 'config_update', step: 5 })]);
     } finally {
       await database.close();
       await rm(directory, { recursive: true, force: true });
@@ -4028,6 +4032,46 @@ describe('Electron HTML video runtime contract', () => {
       }, {
         getAvailableDiskBytes: async () => 1024,
       })).rejects.toMatchObject({ code: 'HTML_VIDEO_DISK_SPACE_LOW' });
+    });
+  });
+
+  it('passes only the validated task-managed cover path into the existing render composition', async () => {
+    await withRuntimeDir(async (workDir) => {
+      const coverDirectory = join(workDir, 'covers');
+      const coverPath = join(coverDirectory, 'cover-manual-r1.png');
+      await mkdir(coverDirectory, { recursive: true });
+      await writeFile(coverPath, Buffer.from('cover'));
+      let renderedCoverPath = '';
+      const runtime = await createRenderRuntimeWithMediaProbe(
+        workDir,
+        async () => validFinalMediaProbe(2.2),
+        (options) => {
+          const render = options.renderer.render;
+          options.renderer.render = async (input) => {
+            renderedCoverPath = input.coverPath ?? '';
+            return render(input);
+          };
+        },
+      );
+      const input: HtmlVideoRenderInput = {
+        ...createRenderRuntimeInput(workDir),
+        coverAsset: {
+          version: 1,
+          revision: 1,
+          mode: 'manual',
+          path: 'covers/cover-manual-r1.png',
+          sizeBytes: 5,
+          width: 768,
+          height: 1024,
+          mimeType: 'image/png',
+          sha256: 'f'.repeat(64),
+          ratio: '3:4',
+          createdAt: '2026-07-18T00:00:00.000Z',
+        },
+      };
+
+      await runtime.render(input);
+      expect(renderedCoverPath).toBe(coverPath);
     });
   });
 

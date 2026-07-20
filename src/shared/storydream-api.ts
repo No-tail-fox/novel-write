@@ -119,6 +119,7 @@ export const INVOKE_CHANNELS = Object.freeze([
   'person-assets:open-directory',
   'html-video:create-task',
   'html-video:update-config',
+  'html-video:import-cover',
   'html-video:open-preview',
   'html-video:media-url',
   'task:create-and-run',
@@ -212,6 +213,7 @@ export type StoryDreamApi = {
   saveUiPreferences: (ui: UiPreferences) => Promise<AppMutationResult | null>;
   createHtmlVideoTask: (input: CreateTaskInput) => Promise<AppMutationResult | null>;
   updateHtmlVideoConfig: (id: string, changes: HtmlVideoConfigChange[]) => Promise<AppMutationResult | null>;
+  importHtmlVideoCover: (id: string) => Promise<AppMutationResult | null>;
   openHtmlVideoPreview: (id: string, sceneIndex?: number) => Promise<void>;
   getHtmlVideoMediaUrl: (id: string, path: string) => Promise<string>;
   createAndRunTask: (input: CreateTaskInput) => Promise<AppMutationResult | null>;

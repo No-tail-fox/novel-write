@@ -199,6 +199,8 @@ export const storyDreamApi = {
   createHtmlVideoTask: (input: CreateTaskInput) => invokeTrusted('html-video:create-task', input),
   updateHtmlVideoConfig: (id: string, changes: HtmlVideoConfigChange[]) =>
     invokeTrusted('html-video:update-config', { id, changes }),
+  importHtmlVideoCover: (id: string): Promise<AppMutationResult | null> =>
+    invokeTrusted('html-video:import-cover', id),
   openHtmlVideoPreview: (id: string, sceneIndex?: number): Promise<void> =>
     invokeTrusted('html-video:open-preview', { id, sceneIndex }),
   getHtmlVideoMediaUrl: (id: string, path: string): Promise<string> =>

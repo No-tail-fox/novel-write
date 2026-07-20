@@ -1005,6 +1005,9 @@ describe('HTML video runner module', () => {
           captionColors: { text: '#ffffff', accent: '#11aabb' },
           bgmVolume: 'medium',
           transitionType: 'dissolve',
+          coverImageMode: 'off',
+          coverTemplate: 'cinematic-poster',
+          coverRatio: '3:4',
           ratio: '4:3',
         },
       });
@@ -1073,6 +1076,78 @@ describe('HTML video runner module', () => {
         current: 'render',
         steps: { render: { status: 'failed' } },
       });
+    });
+  });
+
+  it('attributes a missing automatic cover template to render without calling the cover provider', async () => {
+    await withTempRunner(async (workDir) => {
+      const runtime = createFakeRuntime(workDir);
+      const input = createRunnerInput('missing-auto-cover-template');
+      input.state.config.coverImageMode = 'auto';
+      input.state.config.coverTemplate = 'deleted-template';
+      input.state.config.coverRatio = '3:4';
+      let providerCalls = 0;
+      Object.assign(runtime.options, {
+        taskTitle: 'Missing automatic cover template',
+        resolveCoverTemplate: async () => null,
+        generateCover: async () => {
+          providerCalls += 1;
+          throw new Error('cover provider must not run');
+        },
+      });
+
+      await expect(runHtmlVideoPipeline(input, runtime.options))
+        .rejects.toMatchObject({ code: 'HTML_VIDEO_COVER_TEMPLATE_MISSING' });
+      expect(providerCalls).toBe(0);
+      expect(runtime.calls).toEqual(['rewrite', 'planning', 'assets', 'voice', 'preview']);
+      expect(await readCheckpoint(workDir)).toMatchObject({
+        current: 'render',
+        steps: { render: { status: 'failed' } },
+      });
+    });
+  });
+
+  it('passes the validated manual cover artifact into render without calling the cover provider', async () => {
+    await withTempRunner(async (workDir) => {
+      const runtime = createFakeRuntime(workDir);
+      const input = createRunnerInput('manual-cover-render-input');
+      input.state.config.coverImageMode = 'manual';
+      input.state.config.coverRatio = '3:4';
+      input.state.coverAsset = {
+        version: 1,
+        revision: 1,
+        mode: 'manual',
+        path: 'covers/cover-manual-r1.png',
+        sizeBytes: 8,
+        width: 768,
+        height: 1024,
+        mimeType: 'image/png',
+        sha256: createHash('sha256').update('cover-ok').digest('hex'),
+        ratio: '3:4',
+        createdAt: '2026-07-18T00:00:00.000Z',
+      };
+      await mkdir(join(workDir, 'covers'), { recursive: true });
+      await writeFile(join(workDir, input.state.coverAsset.path), Buffer.from('cover-ok'));
+      let providerCalls = 0;
+      let renderCoverPath = '';
+      const render = runtime.options.render;
+      runtime.options.render = async (renderInput) => {
+        renderCoverPath = renderInput.coverAsset?.path ?? '';
+        return render(renderInput);
+      };
+      Object.assign(runtime.options, {
+        taskTitle: 'Manual cover render input',
+        resolveCoverTemplate: async () => null,
+        generateCover: async () => {
+          providerCalls += 1;
+          throw new Error('manual cover must not fall back to provider');
+        },
+      });
+
+      await expect(runHtmlVideoPipeline(input, runtime.options)).resolves.toMatchObject({ current: 'done' });
+      expect(providerCalls).toBe(0);
+      expect(renderCoverPath).toBe(input.state.coverAsset.path);
+      expect(runtime.calls).toEqual([...htmlVideoVisibleSteps]);
     });
   });
 
