@@ -1040,6 +1040,31 @@ export interface CreateViralAnalysisInput {
   settings: ViralAnalysisSettings;
 }
 
+export interface ViralAnalysisCheckpoint {
+  runGeneration: number;
+  downloaded?: {
+    source: ViralVideoSource;
+    videoPath: string;
+    provider: ViralDownloadProvider;
+    normalizedUrl: string;
+    usedCookieSource: ViralCookieSource;
+  };
+  extracted?: {
+    audioPath: string;
+    frames: Array<{ timestamp: number; framePath: string }>;
+  };
+  transcript?: ViralTranscriptSegment[];
+  frames?: ViralFrameAnalysis[];
+  contentBreakdown?: ViralContentBreakdown;
+  recreation?: ViralRecreationDraft;
+  completed?: { resultPath: string; videoPath: string };
+}
+
+export interface ViralTemplateSaveInput {
+  storyTemplate: PromptTemplate;
+  imageTemplate: CustomStyle;
+}
+
 export interface ViralAnalysisRecord {
   id: string;
   archivedAt?: string | null;
@@ -1050,7 +1075,10 @@ export interface ViralAnalysisRecord {
   status: ViralAnalysisStatus;
   currentStage: ViralAnalysisStage;
   progress: number;
+  runGeneration?: number;
+  resultGeneration?: number | null;
   settings: ViralAnalysisSettings;
+  checkpoint?: ViralAnalysisCheckpoint | null;
   resultPath: string;
   videoPath: string;
   errorMessage: string;
@@ -1060,12 +1088,13 @@ export interface ViralAnalysisRecord {
   lastHeartbeatAt: string | null;
 }
 
-export type ViralAnalysisSummary = Omit<ViralAnalysisRecord, 'settings' | 'resultPath' | 'videoPath'>;
+export type ViralAnalysisSummary = Omit<ViralAnalysisRecord, 'settings' | 'checkpoint' | 'resultPath' | 'videoPath'>;
 
 export interface ViralAnalysisEvent {
   id?: string;
   seq?: number;
   analysisId: string;
+  runGeneration?: number;
   type: string;
   stage: ViralAnalysisStage | string;
   detail: string;
@@ -1406,6 +1435,7 @@ export type AppStatePatch =
   | { kind: 'prompt-template-upsert'; template: PromptTemplate }
   | { kind: 'prompt-templates-reset'; templates: PromptTemplateSummary[] }
   | { kind: 'custom-style-upsert'; style: CustomStyle }
+  | { kind: 'viral-templates-upsert'; storyTemplate: PromptTemplate; imageTemplate: CustomStyle }
   | { kind: 'draft-template-upsert'; template: DraftTemplate }
   | { kind: 'image-lab-upsert'; record: ImageLabSummary }
   | { kind: 'voice-lab-upsert'; record: VoiceLabSummary }

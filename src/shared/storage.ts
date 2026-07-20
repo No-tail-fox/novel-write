@@ -37,9 +37,11 @@ import type {
   UiPreferencesUpdate,
   CreateViralAnalysisInput,
   ViralAnalysisEvent,
+  ViralAnalysisCheckpoint,
   ViralAnalysisRecord,
   ViralAnalysisSummary,
   ViralAnalysisStage,
+  ViralTemplateSaveInput,
   VoiceLabRecord,
   VoiceLabSummary,
 } from './types';
@@ -93,6 +95,7 @@ interface AddViralEventInput {
   type: string;
   stage: ViralAnalysisStage | string;
   detail: string;
+  runGeneration?: number;
   dataJson?: string | null;
   ts?: number;
 }
@@ -292,7 +295,7 @@ const taskSummaryColumns = `
   substr(input_text, 1, ${TASK_INPUT_PREVIEW_LIMIT}) AS input_preview
 `;
 const viralAnalysisSummaryColumns = `
-  id, archived_at, managed_storage_key, url, platform, title, status, current_stage, progress,
+  id, archived_at, managed_storage_key, url, platform, title, status, current_stage, progress, run_generation, result_generation,
   substr(error_message, 1, 1024) AS error_message,
   created_at, started_at, completed_at, last_heartbeat_at
 `;
@@ -450,6 +453,19 @@ function sequenceCursor(cursor: string | null | undefined): number | null {
   if (!parsed) return null;
   if (Object.keys(parsed).length !== 1 || !Number.isSafeInteger(parsed.seq) || Number(parsed.seq) < 0) {
     throw new Error('CURSOR_INVALID: Expected an event sequence cursor.');
+  }
+  return Number(parsed.seq);
+}
+
+function viralSequenceCursor(cursor: string | null | undefined, runGeneration: number): number | null {
+  const parsed = decodeCursor(cursor);
+  if (!parsed) return null;
+  if (Object.keys(parsed).length !== 2
+    || !Number.isSafeInteger(parsed.seq)
+    || Number(parsed.seq) < 0
+    || !Number.isSafeInteger(parsed.runGeneration)
+    || Number(parsed.runGeneration) !== runGeneration) {
+    throw new Error('CURSOR_STALE: Viral event cursor belongs to another run generation.');
   }
   return Number(parsed.seq);
 }
@@ -953,7 +969,10 @@ export class FileDatabase {
         status TEXT NOT NULL,
         current_stage TEXT NOT NULL,
         progress REAL DEFAULT 0,
+        run_generation INTEGER DEFAULT 0,
+        result_generation INTEGER,
         settings_json TEXT NOT NULL,
+        checkpoint_json TEXT,
         result_path TEXT DEFAULT '',
         video_path TEXT DEFAULT '',
         error_message TEXT DEFAULT '',
@@ -965,6 +984,7 @@ export class FileDatabase {
       CREATE TABLE IF NOT EXISTS viral_analysis_events (
         seq INTEGER PRIMARY KEY AUTOINCREMENT,
         analysis_id TEXT NOT NULL,
+        run_generation INTEGER DEFAULT 0,
         type TEXT NOT NULL,
         stage TEXT NOT NULL,
         detail TEXT NOT NULL,
@@ -1227,6 +1247,15 @@ export class FileDatabase {
       addColumnIfMissing(this.db, table, 'archived_at', 'TEXT DEFAULT NULL');
       addColumnIfMissing(this.db, table, 'managed_storage_key', 'TEXT DEFAULT NULL');
     }
+    addColumnIfMissing(this.db, 'viral_analyses', 'run_generation', 'INTEGER DEFAULT 0');
+    addColumnIfMissing(this.db, 'viral_analyses', 'result_generation', 'INTEGER DEFAULT NULL');
+    addColumnIfMissing(this.db, 'viral_analyses', 'checkpoint_json', 'TEXT DEFAULT NULL');
+    addColumnIfMissing(this.db, 'viral_analysis_events', 'run_generation', 'INTEGER DEFAULT 0');
+    this.db.run(
+      `UPDATE viral_analyses
+       SET status = 'paused', error_message = '检测到上次异常退出，可从已保存阶段继续。'
+       WHERE status = 'running'`,
+    );
     for (const [column, definition] of [
       ['cleanup_state', "TEXT NOT NULL DEFAULT 'pending'"],
       ['quarantine_name', 'TEXT DEFAULT NULL'],
@@ -1556,6 +1585,26 @@ export class FileDatabase {
       };
       this.insertCustomStyle(style);
       return style;
+    });
+  }
+
+  async saveViralTemplatesAtomically(input: ViralTemplateSaveInput): Promise<ViralTemplateSaveInput> {
+    return this.enqueueCommit(() => {
+      const now = new Date().toISOString();
+      const storyTemplate: PromptTemplate = {
+        ...input.storyTemplate,
+        description: input.storyTemplate.description ?? '',
+        isBuiltin: false,
+        updatedAt: input.storyTemplate.updatedAt || now,
+      };
+      const imageTemplate: CustomStyle = {
+        ...input.imageTemplate,
+        createdAt: input.imageTemplate.createdAt || now,
+        updatedAt: input.imageTemplate.updatedAt || now,
+      };
+      this.insertCustomStyle(imageTemplate);
+      this.insertPromptTemplate(storyTemplate);
+      return { storyTemplate, imageTemplate };
     });
   }
 
@@ -2023,7 +2072,10 @@ export class FileDatabase {
         status: 'pending',
         currentStage: 'queued',
         progress: 0,
+        runGeneration: 0,
+        resultGeneration: null,
         settings: input.settings,
+        checkpoint: null,
         resultPath: '',
         videoPath: '',
         errorMessage: '',
@@ -2035,9 +2087,9 @@ export class FileDatabase {
       this.assertHistoryWritable('viral-analysis', record.id);
       this.db.run(
         `INSERT INTO viral_analyses (
-          id, archived_at, managed_storage_key, url, platform, title, status, current_stage, progress, settings_json,
-          result_path, video_path, error_message, created_at, started_at, completed_at, last_heartbeat_at
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+          id, archived_at, managed_storage_key, url, platform, title, status, current_stage, progress, run_generation, result_generation, settings_json,
+          checkpoint_json, result_path, video_path, error_message, created_at, started_at, completed_at, last_heartbeat_at
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
         [
           record.id,
           record.archivedAt ?? null,
@@ -2048,7 +2100,10 @@ export class FileDatabase {
           record.status,
           record.currentStage,
           record.progress,
+          record.runGeneration ?? 0,
+          record.resultGeneration ?? null,
           json(record.settings),
+          null,
           record.resultPath,
           record.videoPath,
           record.errorMessage,
@@ -2328,7 +2383,7 @@ export class FileDatabase {
 
   async updateViralAnalysis(
     id: string,
-    patch: Partial<Pick<ViralAnalysisRecord, 'status' | 'currentStage' | 'progress' | 'title' | 'resultPath' | 'videoPath' | 'errorMessage' | 'startedAt' | 'completedAt' | 'lastHeartbeatAt'>>,
+    patch: Partial<Pick<ViralAnalysisRecord, 'status' | 'currentStage' | 'progress' | 'title' | 'resultPath' | 'videoPath' | 'errorMessage' | 'startedAt' | 'completedAt' | 'lastHeartbeatAt' | 'checkpoint' | 'resultGeneration'>>,
   ): Promise<void> {
     const sets: string[] = [];
     const values: SqlValue[] = [];
@@ -2343,12 +2398,14 @@ export class FileDatabase {
       startedAt: 'started_at',
       completedAt: 'completed_at',
       lastHeartbeatAt: 'last_heartbeat_at',
+      checkpoint: 'checkpoint_json',
+      resultGeneration: 'result_generation',
     };
     for (const [key, column] of Object.entries(map)) {
       if (key in patch) {
         sets.push(`${column} = ?`);
         const value = patch[key as keyof typeof patch];
-        values.push(value === null || value === undefined ? null : typeof value === 'number' ? value : String(value));
+        values.push(viralPatchSqlValue(key, value));
       }
     }
     if (sets.length > 0) values.push(id);
@@ -2358,9 +2415,59 @@ export class FileDatabase {
     });
   }
 
+  async beginViralAnalysisRun(id: string): Promise<ViralAnalysisRecord> {
+    return this.enqueueCommit(() => {
+      this.assertHistoryWritable('viral-analysis', id);
+      const current = getFirstRow<Record<string, unknown>>(this.db, 'SELECT * FROM viral_analyses WHERE id = ?', [id]);
+      if (!current) throw new Error(`VIRAL_ANALYSIS_NOT_FOUND: ${id}`);
+      const runGeneration = Number(current.run_generation ?? 0) + 1;
+      const previousCheckpoint = rowToViralAnalysis(current).checkpoint;
+      const checkpoint = previousCheckpoint
+        ? (({ completed: _completed, ...rest }) => ({ ...rest, runGeneration }))(previousCheckpoint)
+        : null;
+      this.db.run(
+        `UPDATE viral_analyses
+         SET run_generation = ?, result_generation = NULL, status = 'pending', result_path = '', video_path = '',
+             checkpoint_json = ?, error_message = '', completed_at = NULL, last_heartbeat_at = ?
+         WHERE id = ?`,
+        [runGeneration, serializeViralCheckpoint(checkpoint), new Date().toISOString(), id],
+      );
+      const row = getFirstRow<Record<string, unknown>>(this.db, 'SELECT * FROM viral_analyses WHERE id = ?', [id]);
+      if (!row) throw new Error(`VIRAL_ANALYSIS_NOT_FOUND: ${id}`);
+      return rowToViralAnalysis(row);
+    });
+  }
+
+  async updateViralAnalysisForGeneration(
+    id: string,
+    runGeneration: number,
+    patch: Partial<Pick<ViralAnalysisRecord, 'status' | 'currentStage' | 'progress' | 'title' | 'resultPath' | 'videoPath' | 'errorMessage' | 'startedAt' | 'completedAt' | 'lastHeartbeatAt' | 'checkpoint' | 'resultGeneration'>>,
+  ): Promise<boolean> {
+    const sets: string[] = [];
+    const values: SqlValue[] = [];
+    const map: Record<string, string> = {
+      status: 'status', currentStage: 'current_stage', progress: 'progress', title: 'title', resultPath: 'result_path',
+      videoPath: 'video_path', errorMessage: 'error_message', startedAt: 'started_at', completedAt: 'completed_at',
+      lastHeartbeatAt: 'last_heartbeat_at', checkpoint: 'checkpoint_json',
+      resultGeneration: 'result_generation',
+    };
+    for (const [key, column] of Object.entries(map)) {
+      if (!(key in patch)) continue;
+      sets.push(`${column} = ?`);
+      values.push(viralPatchSqlValue(key, patch[key as keyof typeof patch]));
+    }
+    if (sets.length === 0) return true;
+    return this.enqueueCommit(() => {
+      this.assertHistoryWritable('viral-analysis', id);
+      this.db.run(`UPDATE viral_analyses SET ${sets.join(', ')} WHERE id = ? AND run_generation = ?`, [...values, id, runGeneration]);
+      return this.db.getRowsModified() === 1;
+    });
+  }
+
   async addViralAnalysisEvent(analysisId: string, input: AddViralEventInput): Promise<ViralAnalysisEvent> {
     const event: ViralAnalysisEvent = {
       analysisId,
+      runGeneration: input.runGeneration ?? 0,
       type: input.type,
       stage: input.stage,
       detail: input.detail,
@@ -2369,10 +2476,16 @@ export class FileDatabase {
     };
     return this.enqueueCommit(() => {
       this.assertHistoryWritable('viral-analysis', analysisId);
+      if (input.runGeneration !== undefined) {
+        const current = getFirstRow<{ run_generation: number }>(this.db, 'SELECT run_generation FROM viral_analyses WHERE id = ?', [analysisId]);
+        if (!current || Number(current.run_generation) !== input.runGeneration) {
+          throw new Error(`STALE_VIRAL_RUN: Event generation ${input.runGeneration} is no longer current.`);
+        }
+      }
       this.db.run(
-        `INSERT INTO viral_analysis_events (analysis_id, type, stage, detail, data_json, ts)
-         VALUES (?, ?, ?, ?, ?, ?)`,
-        [event.analysisId, event.type, event.stage, event.detail, event.dataJson, event.ts],
+        `INSERT INTO viral_analysis_events (analysis_id, run_generation, type, stage, detail, data_json, ts)
+         VALUES (?, ?, ?, ?, ?, ?, ?)`,
+        [event.analysisId, event.runGeneration ?? 0, event.type, event.stage, boundViralStorageText(event.detail, 4096), boundViralEventDataJson(event.dataJson), event.ts],
       );
       const seq = getFirstRow<{ seq: number }>(this.db, 'SELECT last_insert_rowid() AS seq')?.seq;
       return { ...event, seq };
@@ -2752,17 +2865,20 @@ export class FileDatabase {
   async listViralAnalysisEvents(analysisId: string, request: CursorRequest = {}): Promise<CursorPage<ViralAnalysisEvent>> {
     await this.waitForWrites();
     const limit = clampPageLimit(request.limit);
-    const cursor = sequenceCursor(request.cursor);
+    const record = getFirstRow<{ run_generation: number }>(this.db, 'SELECT run_generation FROM viral_analyses WHERE id = ?', [analysisId]);
+    if (!record) return { items: [], nextCursor: null };
+    const runGeneration = Number(record.run_generation ?? 0);
+    const cursor = viralSequenceCursor(request.cursor, runGeneration);
     const rows = getRows<Record<string, unknown>>(
       this.db,
-      `SELECT * FROM viral_analysis_events WHERE analysis_id = ? ${cursor === null ? '' : 'AND seq < ?'} ORDER BY seq DESC LIMIT ?`,
-      cursor === null ? [analysisId, limit + 1] : [analysisId, cursor, limit + 1],
+      `SELECT * FROM viral_analysis_events WHERE analysis_id = ? AND run_generation = ? ${cursor === null ? '' : 'AND seq < ?'} ORDER BY seq DESC LIMIT ?`,
+      cursor === null ? [analysisId, runGeneration, limit + 1] : [analysisId, runGeneration, cursor, limit + 1],
     );
     const hasMore = rows.length > limit;
     const pageRows = rows.slice(0, limit);
     const items = pageRows.map(rowToViralEvent).reverse();
     const oldestSeq = Number(pageRows.at(-1)?.seq);
-    return { items, nextCursor: hasMore && Number.isSafeInteger(oldestSeq) ? encodeCursor({ seq: oldestSeq }) : null };
+    return { items, nextCursor: hasMore && Number.isSafeInteger(oldestSeq) ? encodeCursor({ seq: oldestSeq, runGeneration }) : null };
   }
 
   async listImageLabRecords(request: HistoryListInput<'image-lab'> = {}): Promise<HistoryPage<'image-lab', ImageLabSummary>> {
@@ -3256,6 +3372,37 @@ function rowToEvent(row: Record<string, unknown>): TaskEvent {
   };
 }
 
+function boundViralStorageText(value: unknown, maxChars: number): string | null {
+  if (value === null || value === undefined) return null;
+  const text = String(value);
+  if (text.length <= maxChars) return text;
+  return `${text.slice(0, Math.max(0, maxChars - 14))}...[truncated]`;
+}
+
+function boundViralEventDataJson(value: string | null | undefined): string | null {
+  if (value === null || value === undefined) return null;
+  try {
+    JSON.parse(value);
+  } catch {
+    return json({ invalid: true, preview: value.slice(0, 4096) });
+  }
+  if (value.length <= 262_144) return value;
+  return json({ truncated: true, preview: value.slice(0, 4096) });
+}
+
+function serializeViralCheckpoint(checkpoint: ViralAnalysisCheckpoint | null | undefined): string | null {
+  if (!checkpoint) return null;
+  const serialized = json(checkpoint);
+  if (serialized.length > 2 * 1024 * 1024) throw new Error('VIRAL_CHECKPOINT_TOO_LARGE: Recovery checkpoint exceeds 2 MiB.');
+  return serialized;
+}
+
+function viralPatchSqlValue(key: string, value: unknown): SqlValue {
+  if (key === 'checkpoint') return serializeViralCheckpoint(value as ViralAnalysisCheckpoint | null | undefined);
+  if (key === 'errorMessage') return boundViralStorageText(value, 4096);
+  return value === null || value === undefined ? null : typeof value === 'number' ? value : String(value);
+}
+
 function rowToViralAnalysis(row: Record<string, unknown>): ViralAnalysisRecord {
   return {
     id: String(row.id),
@@ -3267,12 +3414,15 @@ function rowToViralAnalysis(row: Record<string, unknown>): ViralAnalysisRecord {
     status: String(row.status ?? 'pending') as ViralAnalysisRecord['status'],
     currentStage: String(row.current_stage ?? 'queued') as ViralAnalysisRecord['currentStage'],
     progress: Number(row.progress ?? 0),
+    runGeneration: Number(row.run_generation ?? 0),
+    resultGeneration: row.result_generation === null || row.result_generation === undefined ? null : Number(row.result_generation),
     settings: parseJson(String(row.settings_json ?? '{}'), {
       track: 'general-story',
       style: 'photo-real',
       ratio: '9:16',
       templateId: 'default-portrait-9-16',
     }),
+    checkpoint: row.checkpoint_json ? parseJson<ViralAnalysisCheckpoint | null>(String(row.checkpoint_json), null) : null,
     resultPath: String(row.result_path ?? ''),
     videoPath: String(row.video_path ?? ''),
     errorMessage: String(row.error_message ?? ''),
@@ -3294,6 +3444,8 @@ function rowToViralAnalysisSummary(row: Record<string, unknown>): ViralAnalysisS
     status: String(row.status ?? 'pending') as ViralAnalysisRecord['status'],
     currentStage: String(row.current_stage ?? 'queued') as ViralAnalysisRecord['currentStage'],
     progress: Number(row.progress ?? 0),
+    runGeneration: Number(row.run_generation ?? 0),
+    resultGeneration: row.result_generation === null || row.result_generation === undefined ? null : Number(row.result_generation),
     errorMessage: String(row.error_message ?? ''),
     createdAt: String(row.created_at ?? new Date().toISOString()),
     startedAt: row.started_at ? String(row.started_at) : null,
@@ -3306,6 +3458,7 @@ function rowToViralEvent(row: Record<string, unknown>): ViralAnalysisEvent {
   return {
     seq: Number(row.seq),
     analysisId: String(row.analysis_id),
+    runGeneration: Number(row.run_generation ?? 0),
     type: String(row.type),
     stage: String(row.stage),
     detail: String(row.detail ?? ''),

@@ -51,6 +51,7 @@ import type {
   ViralAnalysisStatus,
   ViralAnalysisSummary,
   ViralProductionTaskOptions,
+  ViralTemplateSaveInput,
   VoiceLabGenerateInput,
   VoiceLabRecord,
   VoiceLabSummary,
@@ -102,6 +103,7 @@ export const INVOKE_CHANNELS = Object.freeze([
   'prompt-template:save',
   'prompt-template:reset',
   'custom-style:save',
+  'viral:save-templates',
   'custom-style:generate-draft',
   'draft-template:save',
   'image-lab:generate',
@@ -207,6 +209,7 @@ export type StoryDreamApi = {
   savePromptTemplate: (template: PromptTemplate) => Promise<AppMutationResult | null>;
   resetPromptTemplates: () => Promise<AppMutationResult | null>;
   saveCustomStyle: (style: CustomStyle) => Promise<AppMutationResult | null>;
+  saveViralTemplates: (input: ViralTemplateSaveInput) => Promise<AppMutationResult | null>;
   generateCustomStyleDraft: (input: CustomStyleGenerateInput) => Promise<CustomStyle>;
   saveDraftTemplate: (template: DraftTemplate) => Promise<AppMutationResult | null>;
   generateImageLab: (input: ImageLabGenerateInput) => Promise<AppMutationResult | null>;

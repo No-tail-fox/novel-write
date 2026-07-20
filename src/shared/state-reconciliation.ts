@@ -198,6 +198,7 @@ function mutationSlices(result: AppMutationResult): string[] {
   if (kind === 'theme-preference') return ['config', 'ui'];
   if (kind === 'prompt-template-upsert' || kind === 'prompt-templates-reset') return ['promptTemplates'];
   if (kind === 'custom-style-upsert') return ['customStyles'];
+  if (kind === 'viral-templates-upsert') return ['promptTemplates', 'customStyles'];
   if (kind === 'draft-template-upsert') return ['draftTemplates'];
   if (kind === 'image-lab-upsert') return ['imageLabRecords'];
   if (kind === 'voice-lab-upsert') return ['voiceLabRecords'];
@@ -335,6 +336,13 @@ export function applyAppMutationResult<T extends MutationState>(
     return { ...state, promptTemplates: [...builtins, ...custom] };
   }
   if (patch.kind === 'custom-style-upsert') return { ...state, customStyles: upsertEntity(state.customStyles, patch.style) };
+  if (patch.kind === 'viral-templates-upsert') {
+    return {
+      ...state,
+      promptTemplates: upsertEntity(state.promptTemplates, patch.storyTemplate),
+      customStyles: upsertEntity(state.customStyles, patch.imageTemplate),
+    };
+  }
   if (patch.kind === 'draft-template-upsert') return { ...state, draftTemplates: upsertEntity(state.draftTemplates, patch.template) };
   if (patch.kind === 'image-lab-upsert') {
     const detail = state.imageLabRecords.find((record) => record.id === patch.record.id);
@@ -388,6 +396,27 @@ export async function collectCursorPages<T extends { id: string }>(
     cursor = page.nextCursor;
   }
   return [...byId.values()];
+}
+
+export async function collectViralEventPages(
+  first: CursorPage<ViralAnalysisEvent>,
+  load: (cursor: string) => Promise<CursorPage<ViralAnalysisEvent>>,
+): Promise<ViralAnalysisEvent[]> {
+  const byKey = new Map<string | number, ViralAnalysisEvent>();
+  const merge = (items: ViralAnalysisEvent[]) => {
+    items.forEach((event) => byKey.set(event.seq ?? event.id ?? `${event.analysisId}:${event.ts}:${event.type}`, event));
+  };
+  merge(first.items);
+  const seenCursors = new Set<string>();
+  let cursor = first.nextCursor;
+  while (cursor) {
+    if (seenCursors.has(cursor)) throw new Error('CURSOR_LOOP: Viral event pagination returned a repeated cursor.');
+    seenCursors.add(cursor);
+    const page = await load(cursor);
+    merge(page.items);
+    cursor = page.nextCursor;
+  }
+  return [...byKey.values()].sort((left, right) => (left.seq ?? 0) - (right.seq ?? 0));
 }
 
 export function viralSummaryToRecord(summary: ViralAnalysisSummary, detail?: ViralAnalysisRecord | null): ViralAnalysisRecord {
@@ -540,7 +569,17 @@ export function mergeReconciliationSlices<T extends ReconciliationSlices>(
     tasks,
     events: mergeTaskEvents(current.events, result.taskEvents),
     viralAnalyses,
-    viralEvents: mergeViralEvents(current.viralEvents, result.viralEvents),
+    viralEvents: mergeViralEvents(
+      result.viralAnalysis?.runGeneration === undefined
+        ? current.viralEvents
+        : current.viralEvents.filter((event) => event.analysisId !== result.viralAnalysis!.id
+          || event.runGeneration === undefined
+          || event.runGeneration === result.viralAnalysis!.runGeneration),
+      result.viralAnalysis?.runGeneration === undefined
+        ? result.viralEvents
+        : result.viralEvents.filter((event) => event.runGeneration === undefined
+          || event.runGeneration === result.viralAnalysis!.runGeneration),
+    ),
   };
 }
 

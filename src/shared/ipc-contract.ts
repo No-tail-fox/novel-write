@@ -560,6 +560,7 @@ export const ipcInputSchemas = {
   'prompt-template:get-detail': idOnlySchema,
   'prompt-template:reset': z.void(),
   'custom-style:save': customStyleSchema,
+  'viral:save-templates': z.object({ storyTemplate: promptTemplateSchema, imageTemplate: customStyleSchema }).strict(),
   'custom-style:generate-draft': z.object({ prompt: nonEmptyText(MAX_TASK_TEXT), baseStyle: customStyleSchema }).strict(),
   'draft-template:save': draftTemplateSchema,
   'draft-template:list': cursorPageSchema,

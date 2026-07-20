@@ -25,8 +25,8 @@ import { runTask } from '../src/shared/runner';
 import { runStoryboundMediaSidecar } from '../src/shared/storybound-sidecar';
 import { FileDatabase, type HistoryDeletionCleanup, type HistoryTombstone } from '../src/shared/storage';
 import { createHtmlVideoRuntimeProviders, createTaskRuntimeProviders } from '../src/shared/task-runtime-providers';
-import type { AccountProfile, ActivationState, AppConfig, AppDelta, AppDeltaReconcileRequest, AppDeltaReconcileResult, AppStatePatch, BookSelectionInput, ConfigTestTarget, CreateTaskInput, CreateViralAnalysisInput, CursorRequest, CustomStyle, CustomStyleGenerateInput, DraftTemplate, HistoryFamily, HistoryListRequest, HtmlVideoConfigChange, HtmlVideoPipelineDataV2, ImageLabGenerateInput, ImageLabRecord, ImageLabSummary, LlmConfig, PromptTemplate, ProviderModelListRequest, ResearchCopyComposeInput, SequencedTaskEvent, Task, TaskStatus, TaskStepRerunMode, UiPreferencesUpdate, ViralAnalysisRecord, ViralAnalysisStatus, ViralProductionTaskOptions, VolcengineSpeakerListRequest, VoiceLabGenerateInput, VoiceLabRecord, VoiceLabSummary } from '../src/shared/types';
-import { createViralProductionTaskInput, detectViralPlatform, runViralAnalysis } from '../src/shared/viral-analysis';
+import type { AccountProfile, ActivationState, AppConfig, AppDelta, AppDeltaReconcileRequest, AppDeltaReconcileResult, AppStatePatch, BookSelectionInput, ConfigTestTarget, CreateTaskInput, CreateViralAnalysisInput, CursorRequest, CustomStyle, CustomStyleGenerateInput, DraftTemplate, HistoryFamily, HistoryListRequest, HtmlVideoConfigChange, HtmlVideoPipelineDataV2, ImageLabGenerateInput, ImageLabRecord, ImageLabSummary, LlmConfig, PromptTemplate, ProviderModelListRequest, ResearchCopyComposeInput, SequencedTaskEvent, Task, TaskStatus, TaskStepRerunMode, UiPreferencesUpdate, ViralAnalysisRecord, ViralAnalysisResult, ViralAnalysisStatus, ViralProductionTaskOptions, VolcengineSpeakerListRequest, VoiceLabGenerateInput, VoiceLabRecord, VoiceLabSummary } from '../src/shared/types';
+import { boundViralDiagnosticText, createViralProductionTaskInput, detectViralPlatform, runViralAnalysis, viralCheckpointResumeState } from '../src/shared/viral-analysis';
 import { createViralRuntimeProviders } from '../src/shared/viral-runtime';
 import { listVolcengineSpeakers } from '../src/shared/volcengine-speakers';
 import { getRendererIndexPath } from './paths';
@@ -284,8 +284,15 @@ async function getConfigService(): Promise<ConfigService> {
   return configService;
 }
 
+function publicViralAnalysisDetail(record: ViralAnalysisRecord | null): ViralAnalysisRecord | null {
+  if (!record) return null;
+  const { checkpoint: _checkpoint, ...detail } = record;
+  return detail;
+}
+
 async function getPublicState() {
-  return (await getConfigService()).getPublicState();
+  const state = await (await getConfigService()).getPublicState();
+  return { ...state, viralAnalyses: state.viralAnalyses.map((record) => publicViralAnalysisDetail(record)!) };
 }
 
 async function ensureRuntimeJianyingDraftPath(database: FileDatabase, service: ConfigService): Promise<void> {
@@ -518,6 +525,16 @@ function viralCookieDir(): string {
 
 function viralCookieFilePath(): string {
   return join(viralCookieDir(), 'douyin-cookies.txt');
+}
+
+async function readViralAnalysisResult(path: string): Promise<ViralAnalysisResult> {
+  const bytes = await readFile(path);
+  if (bytes.byteLength > 8 * 1024 * 1024) throw new Error('VIRAL_REPORT_TOO_LARGE: Report exceeds 8 MiB.');
+  try {
+    return JSON.parse(bytes.toString('utf8')) as ViralAnalysisResult;
+  } catch (error) {
+    throw new Error(`VIRAL_REPORT_INVALID: ${boundViralDiagnosticText(error)}`);
+  }
 }
 
 async function buildRunOptions(database: FileDatabase, task: Task, workDir: string, controller: AbortController) {
@@ -989,62 +1006,79 @@ function startViralAnalysisRun(
   runningViralAnalyses.set(record.id, run);
   run.completion = (async () => {
     const startedAt = new Date().toISOString();
+    const runGeneration = record.runGeneration ?? 0;
+    const resumeState = viralCheckpointResumeState(record.checkpoint);
+    let lastStage = resumeState.stage;
     try {
       const runtimeConfig = await (await getConfigService()).getRuntimeConfig();
-      await database.updateViralAnalysis(record.id, {
+      if (!await database.updateViralAnalysisForGeneration(record.id, runGeneration, {
         status: 'running',
-        currentStage: 'downloading',
-        progress: 0.05,
+        currentStage: resumeState.stage,
+        progress: resumeState.progress,
         errorMessage: '',
         startedAt,
         lastHeartbeatAt: startedAt,
-      });
+      })) return;
       await publishViralUpsert(database, record.id);
       const completed = await runViralAnalysis(record, {
         workDir,
         signal: controller.signal,
+        resumeFrom: record.checkpoint,
+        persistCheckpoint: async (checkpoint) => {
+          if (!await database.updateViralAnalysisForGeneration(record.id, runGeneration, { checkpoint })) {
+            throw new Error('STALE_VIRAL_RUN: Checkpoint generation is no longer current.');
+          }
+        },
         ...createViralRuntimeProviders(runtimeConfig, workDir),
         emit: async (event) => {
+          lastStage = event.stage as ViralAnalysisRecord['currentStage'];
           await database.addViralAnalysisEvent(record.id, {
             type: event.type,
             stage: event.stage,
             detail: event.detail,
             dataJson: event.data === undefined ? null : JSON.stringify(event.data),
+            runGeneration,
           });
           const patch: Parameters<FileDatabase['updateViralAnalysis']>[1] = {
             currentStage: event.stage as ViralAnalysisRecord['currentStage'],
             lastHeartbeatAt: new Date().toISOString(),
           };
           if (typeof event.progress === 'number') patch.progress = event.progress;
-          await database.updateViralAnalysis(record.id, {
+          if (!await database.updateViralAnalysisForGeneration(record.id, runGeneration, {
             ...patch,
-          });
+          })) throw new Error('STALE_VIRAL_RUN: Event generation is no longer current.');
           await publishViralUpsert(database, record.id);
         },
       });
       const completedAt = new Date().toISOString();
-      await database.updateViralAnalysis(record.id, {
+      await database.updateViralAnalysisForGeneration(record.id, runGeneration, {
         status: 'completed',
         currentStage: 'completed',
         progress: 1,
         resultPath: completed.resultPath,
         videoPath: completed.videoPath,
+        resultGeneration: runGeneration,
         title: completed.result.source.title || record.title,
         completedAt,
         lastHeartbeatAt: completedAt,
       });
     } catch (error) {
-      const message = error instanceof Error ? error.message : String(error);
-      const cancelled = controller.signal.aborted || /abort|cancel|取消/i.test(message);
+      const message = boundViralDiagnosticText(error);
+      const paused = controller.signal.aborted && /暂停/i.test(String(controller.signal.reason ?? message));
+      const cancelled = controller.signal.aborted && !paused;
+      const terminalStatus = paused ? 'paused' : cancelled ? 'cancelled' : 'failed';
       await database.addViralAnalysisEvent(record.id, {
-        type: 'error',
-        stage: cancelled ? 'failed' : 'failed',
-        detail: message,
+        type: paused ? 'paused' : cancelled ? 'cancelled' : 'error',
+        stage: paused || cancelled ? lastStage : 'failed',
+        detail: paused ? '用户暂停' : cancelled ? '用户取消' : message,
+        runGeneration,
+      }).catch((eventError) => {
+        if (!/STALE_VIRAL_RUN/.test(String(eventError))) throw eventError;
       });
-      await database.updateViralAnalysis(record.id, {
-        status: cancelled ? 'cancelled' : 'failed',
-        currentStage: 'failed',
-        errorMessage: message,
+      await database.updateViralAnalysisForGeneration(record.id, runGeneration, {
+        status: terminalStatus,
+        currentStage: paused || cancelled ? lastStage : 'failed',
+        errorMessage: paused ? '' : cancelled ? '用户取消' : message,
         lastHeartbeatAt: new Date().toISOString(),
       });
     } finally {
@@ -1075,18 +1109,13 @@ async function resumeViralAnalysisRun(
   transferReservation: () => HistoryActivityReservation,
 ): Promise<boolean> {
   if (isShuttingDown || !isCurrent()) return false;
-  await database.updateViralAnalysis(record.id, {
-    status: 'pending',
-    currentStage: 'queued',
-    progress: 0,
-    errorMessage: '',
-    completedAt: null,
-    lastHeartbeatAt: new Date().toISOString(),
-  });
+  const begun = await database.beginViralAnalysisRun(record.id);
+  const checkpoint = begun.checkpoint ? { ...begun.checkpoint, runGeneration: begun.runGeneration ?? 0 } : null;
+  await database.updateViralAnalysisForGeneration(record.id, begun.runGeneration ?? 0, { checkpoint });
   if (isShuttingDown || !isCurrent()) return false;
   return startViralAnalysisRun(
     database,
-    { ...record, status: 'pending', currentStage: 'queued', progress: 0, errorMessage: '' },
+    { ...begun, checkpoint },
     workDir,
     transferReservation(),
   );
@@ -1100,7 +1129,9 @@ async function reconcileAppDeltas(database: FileDatabase, input: AppDeltaReconci
   const [task, taskEvents, viralAnalysis, viralEvents] = await Promise.all([
     input.taskId ? database.getTaskDetail(input.taskId) : Promise.resolve(null),
     input.taskId ? database.listTaskEvents(input.taskId, { limit: 100 }) : Promise.resolve({ items: [], nextCursor: null }),
-    input.viralAnalysisId ? database.getViralAnalysisDetail(input.viralAnalysisId) : Promise.resolve(null),
+    input.viralAnalysisId
+      ? database.getViralAnalysisDetail(input.viralAnalysisId).then(publicViralAnalysisDetail)
+      : Promise.resolve(null),
     input.viralAnalysisId ? database.listViralAnalysisEvents(input.viralAnalysisId, { limit: 100 }) : Promise.resolve({ items: [], nextCursor: null }),
   ]);
   return {
@@ -1160,7 +1191,7 @@ trustedHandle('task:open-output-directory', async (_event, id: string) => {
   await openExistingDirectory(directory, (path) => shell.openPath(path));
 });
 trustedHandle('viral:list', async (_event, request: Extract<HistoryListRequest, { family: 'viral-analysis' }>) => (await getDb()).listViralAnalyses(request));
-trustedHandle('viral:get-detail', async (_event, id: string) => (await getDb()).getViralAnalysisDetail(id));
+trustedHandle('viral:get-detail', async (_event, id: string) => publicViralAnalysisDetail(await (await getDb()).getViralAnalysisDetail(id)));
 trustedHandle('viral:list-events', async (_event, input: { analysisId: string } & CursorRequest) =>
   (await getDb()).listViralAnalysisEvents(input.analysisId, input));
 trustedHandle('image-lab:list', async (_event, request: Extract<HistoryListRequest, { family: 'image-lab' }>) => (await getDb()).listImageLabRecords(request));
@@ -1302,6 +1333,11 @@ trustedHandle('custom-style:save', async (_event, style: CustomStyle) => {
   const database = await getDb();
   const saved = await database.upsertCustomStyle(style);
   return publishStatePatch({ kind: 'custom-style-upsert', style: saved });
+});
+
+trustedHandle('viral:save-templates', async (_event, input) => {
+  const saved = await (await getDb()).saveViralTemplatesAtomically(input);
+  return publishStatePatch({ kind: 'viral-templates-upsert', ...saved });
 });
 
 trustedHandle('custom-style:generate-draft', async (_event, input: CustomStyleGenerateInput): Promise<CustomStyle> => {
@@ -1578,9 +1614,10 @@ trustedHandle('viral:create-and-run', async (_event, input: CreateViralAnalysisI
   const activityReservation = historyActivityRegistry.reserveActive('viral-analysis', record.id);
   let reservationTransferred = false;
   try {
+    const runningRecord = await database.beginViralAnalysisRun(record.id);
     const workDir = viralAnalysisWorkDir(record);
     const delta = await publishViralUpsert(database, record.id);
-    reservationTransferred = startViralAnalysisRun(database, record, workDir, activityReservation);
+    reservationTransferred = startViralAnalysisRun(database, runningRecord, workDir, activityReservation);
     return delta;
   } finally {
     if (!reservationTransferred) activityReservation.release();
@@ -1659,17 +1696,29 @@ trustedHandle('viral:get-result', async (_event, id: string) => {
   const database = await getDb();
   const state = await database.getState();
   const record = state.viralAnalyses.find((item) => item.id === id);
-  if (!record?.resultPath) throw new Error(`Viral analysis result is not available: ${id}`);
-  return JSON.parse(await readFile(record.resultPath, 'utf8'));
+  if (!record?.resultPath
+    || record.status !== 'completed'
+    || record.resultGeneration !== record.runGeneration) throw new Error(`Viral analysis result is not available for the current generation: ${id}`);
+  return readViralAnalysisResult(record.resultPath);
 });
 
 trustedHandle('viral:create-production-task', async (_event, input: { id: string; options?: ViralProductionTaskOptions }) => {
   const database = await getDb();
   const state = await database.getState();
   const record = state.viralAnalyses.find((item) => item.id === input.id);
-  if (!record?.resultPath) throw new Error(`Viral analysis result is not available: ${input.id}`);
-  const result = JSON.parse(await readFile(record.resultPath, 'utf8'));
-  const taskInput = createViralProductionTaskInput(result, input.options);
+  if (!record?.resultPath
+    || record.status !== 'completed'
+    || record.resultGeneration !== record.runGeneration) throw new Error(`Viral analysis result is not available for the current generation: ${input.id}`);
+  if (record.archivedAt) throw new Error(`VIRAL_ANALYSIS_ARCHIVED: ${input.id}`);
+  const result = await readViralAnalysisResult(record.resultPath);
+  const taskInput = createViralProductionTaskInput(result, {
+    track: record.settings.track,
+    style: record.settings.style,
+    ratio: record.settings.ratio,
+    templateId: record.settings.templateId,
+    storyboardSceneCount: record.settings.storyboardSceneCount,
+    ...input.options,
+  });
   const task = await database.createTask(taskInput);
   const activityReservation = historyActivityRegistry.reserveActive('task', task.id);
   let reservationTransferred = false;

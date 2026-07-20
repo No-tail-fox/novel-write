@@ -1929,7 +1929,10 @@ async function loadViralRunHarness(dependencies: ViralRunHarnessDependencies) {
   }>();
   const database = {
     addViralAnalysisEvent: async () => undefined,
-    updateViralAnalysis: dependencies.updateViralAnalysis,
+    updateViralAnalysisForGeneration: async (id: string, _generation: number, patch: Record<string, unknown>) => {
+      await dependencies.updateViralAnalysis(id, patch);
+      return true;
+    },
   };
   const FunctionConstructor = Function as unknown as new (
     ...args: string[]
@@ -1950,6 +1953,8 @@ async function loadViralRunHarness(dependencies: ViralRunHarnessDependencies) {
     'publishViralUpsert',
     'runViralAnalysis',
     'createViralRuntimeProviders',
+    'viralCheckpointResumeState',
+    'boundViralDiagnosticText',
     `${compiledSource}\nreturn startViralAnalysisRun;`,
   );
   const start = factory(
@@ -1959,6 +1964,8 @@ async function loadViralRunHarness(dependencies: ViralRunHarnessDependencies) {
     async () => undefined,
     dependencies.runViralAnalysis,
     () => ({}),
+    () => ({ stage: 'downloading', progress: 0.05 }),
+    (error: unknown) => error instanceof Error ? error.message : String(error),
   ) as (
     database: unknown,
     record: ReturnType<typeof viralRecord>,
@@ -1975,6 +1982,8 @@ function viralRecord(id: string) {
     status: 'pending',
     currentStage: 'queued',
     progress: 0,
+    runGeneration: 1,
+    checkpoint: null,
   };
 }
 
@@ -2088,6 +2097,7 @@ async function loadCreatedRunHandler(
     'startViralAnalysisRun',
     'detectViralPlatform',
     'readFile',
+    'readViralAnalysisResult',
     'createViralProductionTaskInput',
     `${compiledSource}\nreturn createdRunHandler;`,
   );
@@ -2098,9 +2108,16 @@ async function loadCreatedRunHandler(
     async createViralAnalysis() {
       return { id: 'created-viral', managedStorageKey: 'viral-key' };
     },
+    async beginViralAnalysisRun(id: string) {
+      return { id, managedStorageKey: 'viral-key', runGeneration: 1, checkpoint: null };
+    },
     async getState() {
       return {
-        viralAnalyses: [{ id: 'source-viral', resultPath: 'source.json' }],
+        viralAnalyses: [{
+          id: 'source-viral', resultPath: 'source.json', archivedAt: null,
+          status: 'completed', runGeneration: 1, resultGeneration: 1,
+          settings: { track: 'ecommerce', style: 'photo-real', ratio: '9:16', templateId: 'template' },
+        }],
       };
     },
   };
@@ -2119,6 +2136,7 @@ async function loadCreatedRunHandler(
     start,
     () => 'unknown',
     async () => '{}',
+    async () => ({ recreation: { taskDefaults: {} } }),
     () => ({ inputText: 'production task' }),
   ) as (_event: unknown, input: Record<string, unknown>) => Promise<unknown>;
   return (input: Record<string, unknown>) => compiled(undefined, input);

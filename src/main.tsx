@@ -137,6 +137,7 @@ import {
   authoritativeMissingRequestedTaskId,
   claimMutationResult,
   collectCursorPages,
+  collectViralEventPages,
   createRequestGenerationCompletionQueue,
   createRequestGenerationGuard,
   historyEntityRevisionKey,
@@ -1287,6 +1288,19 @@ function makeFallbackApi(setState: (state: AppState) => void): StoryDreamApi {
       const now = new Date().toISOString();
       return persist({ ...state, customStyles: [{ ...style, updatedAt: now, createdAt: style.createdAt || now }, ...next] });
     },
+    async saveViralTemplates(input) {
+      const state = read();
+      const promptTemplates = [
+        { ...input.storyTemplate, isBuiltin: false, updatedAt: new Date().toISOString() },
+        ...state.promptTemplates.filter((item) => item.id !== input.storyTemplate.id),
+      ];
+      const now = new Date().toISOString();
+      const customStyles = [
+        { ...input.imageTemplate, createdAt: input.imageTemplate.createdAt || now, updatedAt: input.imageTemplate.updatedAt || now },
+        ...state.customStyles.filter((item) => item.id !== input.imageTemplate.id),
+      ];
+      return persist({ ...state, promptTemplates, customStyles });
+    },
     async generateCustomStyleDraft(input) {
       return { ...input.baseStyle, ...buildImageStyleDraftFromPrompt(input.prompt, input.baseStyle) };
     },
@@ -1856,6 +1870,7 @@ function App() {
         api.getViralAnalysisDetail(analysisId),
         api.listViralEvents(analysisId, { limit: 100 }),
       ]);
+      const events = await collectViralEventPages(eventPage, (cursor) => api.listViralEvents(analysisId, { cursor, limit: 100 }));
       if (!viralDetailGuard.isCurrent(analysisId, generation)
         || !isHistoryResponseCurrent('viral-analysis', analysisId, responseRevision, historyEntityRevisionsRef.current, historyTombstoneRevisionsRef.current)) return;
       setState((current) => isHistoryResponseCurrent(
@@ -1868,7 +1883,9 @@ function App() {
           task: null,
           taskEvents: [],
           viralAnalysis: detail,
-          viralEvents: eventPage.items,
+          viralEvents: events.filter((event) => detail?.runGeneration === undefined
+            || event.runGeneration === undefined
+            || event.runGeneration === detail.runGeneration),
         }) : current);
     } catch (error) {
       if (viralDetailGuard.isCurrent(analysisId, generation)) shellAction.reportError(error);
@@ -2449,6 +2466,7 @@ function ViralAnalyzerPage({
   const [message, setMessage] = useState('');
   const viralAction = useAsyncAction();
   const selected = state.viralAnalyses.find((item) => item.id === selectedId) ?? state.viralAnalyses[0] ?? null;
+  const selectedArchived = Boolean(selected?.archivedAt);
   const selectedEvents = selected ? state.viralEvents.filter((event) => event.analysisId === selected.id) : [];
   const selectedEventRefreshKey = viralEventRefreshKey(selected);
   const detectedPlatform = detectBrowserViralPlatform(url);
@@ -2557,10 +2575,10 @@ function ViralAnalyzerPage({
     if (!selected) return;
     await viralAction.run(async () => {
       const next = await api.createProductionTaskFromViral(selected.id, {
-        track,
-        style,
-        ratio,
-        templateId,
+        track: selected.settings.track,
+        style: selected.settings.style,
+        ratio: selected.settings.ratio,
+        templateId: selected.settings.templateId,
         storyboardSceneCount: result?.recreation.taskDefaults.storyboardSceneCount ?? 12,
       });
       applyState(next);
@@ -2575,12 +2593,11 @@ function ViralAnalyzerPage({
       const drafts = createViralTemplateDrafts(result, {
         storyTemplateName: input.storyTemplateName,
         imageTemplateName: input.imageTemplateName,
-        track,
-        style,
-        draftTemplateId: templateId,
+        track: selected.settings.track,
+        style: selected.settings.style,
+        draftTemplateId: selected.settings.templateId,
       });
-      await api.saveCustomStyle(drafts.imageTemplate);
-      const next = await api.savePromptTemplate(drafts.storyTemplate);
+      const next = await api.saveViralTemplates(drafts);
       applyState(next);
       setMessage('已保存故事模板和图片模板，可在提示词模板中继续编辑。');
     });
@@ -2588,11 +2605,22 @@ function ViralAnalyzerPage({
   }
 
   async function retryAnalysis() {
-    if (!selected) return;
+    if (!selected || selectedArchived) return;
     await viralAction.run(async () => {
       applyState(await api.retryViralAnalysis(selected.id));
     });
   }
+
+  async function updateAnalysisStatus(status: ViralAnalysisStatus) {
+    if (!selected || selectedArchived) return;
+    await viralAction.run(async () => {
+      applyState(await api.updateViralAnalysisStatus(selected.id, status));
+    });
+  }
+
+  const pauseAnalysis = () => updateAnalysisStatus('paused');
+  const cancelAnalysis = () => updateAnalysisStatus('cancelled');
+  const resumeAnalysis = () => updateAnalysisStatus('running');
 
   return (
     <div className="viral-analyzer-layout">
@@ -2710,9 +2738,12 @@ function ViralAnalyzerPage({
       <section className="panel viral-report-panel viral-result-drawer">
         <div className="panel-title-row">
           <h3>拆解报告</h3>
-          {selected?.status === 'failed' || selected?.status === 'cancelled' ? <button className="mini-button viral-retry-button" type="button" disabled={viralAction.busy} onClick={retryAnalysis}><RotateCcw size={14} />重试</button> : null}
+          {!selectedArchived && selected?.status === 'running' ? <button className="mini-button" type="button" disabled={viralAction.busy} onClick={pauseAnalysis}>暂停</button> : null}
+          {!selectedArchived && (selected?.status === 'pending' || selected?.status === 'running' || selected?.status === 'paused') ? <button className="mini-button" type="button" disabled={viralAction.busy} onClick={cancelAnalysis}>取消</button> : null}
+          {!selectedArchived && selected?.status === 'paused' ? <button className="mini-button" type="button" disabled={viralAction.busy} onClick={resumeAnalysis}>继续</button> : null}
+          {!selectedArchived && (selected?.status === 'failed' || selected?.status === 'cancelled') ? <button className="mini-button viral-retry-button" type="button" disabled={viralAction.busy} onClick={retryAnalysis}><RotateCcw size={14} />重试</button> : null}
         </div>
-        {result ? <ViralReport result={result} createProductionTask={createProductionTask} saveTemplates={saveViralTemplates} /> : <p className="muted-text">任务完成后显示开头、结构、结尾、爆点和复刻方案。</p>}
+        {result ? <ViralReport result={result} readOnly={selectedArchived} createProductionTask={createProductionTask} saveTemplates={saveViralTemplates} /> : <p className="muted-text">任务完成后显示开头、结构、结尾、爆点和复刻方案。</p>}
       </section>
     </div>
   );
@@ -2766,10 +2797,12 @@ type ViralInsightTab = 'copy' | 'prompt';
 
 function ViralReport({
   result,
+  readOnly,
   createProductionTask,
   saveTemplates,
 }: {
   result: ViralAnalysisResult;
+  readOnly: boolean;
   createProductionTask: () => void;
   saveTemplates: (input: { storyTemplateName: string; imageTemplateName: string }) => Promise<void>;
 }) {
@@ -2859,11 +2892,11 @@ function ViralReport({
         </div>
         {templateSaveError ? <p className="form-error">{templateSaveError}</p> : null}
         <div className="viral-followup-actions">
-          <button className="primary-action" disabled={savingTemplates || !storyTemplateName.trim() || !imageTemplateName.trim()} onClick={() => void handleSaveTemplates()}>
+          <button className="primary-action" disabled={readOnly || savingTemplates || !storyTemplateName.trim() || !imageTemplateName.trim()} onClick={() => void handleSaveTemplates()}>
             {savingTemplates ? <Loader2 className="spin" size={16} /> : <Save size={16} />}
             {savingTemplates ? '保存中' : '保存为模板'}
           </button>
-          <button className="ghost-action viral-create-production-task" onClick={createProductionTask}>
+          <button className="ghost-action viral-create-production-task" disabled={readOnly} onClick={createProductionTask}>
             <Wand2 size={16} />
             生成新任务
           </button>

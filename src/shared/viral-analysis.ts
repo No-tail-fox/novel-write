@@ -10,6 +10,7 @@ import type {
   ViralAnalysisRecord,
   ViralRecreationDraft,
   ViralAnalysisSettings,
+  ViralAnalysisCheckpoint,
   ViralTranscriptSegment,
   ViralVideoSource,
   ViralPlatform,
@@ -55,6 +56,8 @@ export interface ViralMediaExtractionRequest {
 export interface RunViralAnalysisOptions {
   workDir: string;
   signal?: AbortSignal;
+  resumeFrom?: ViralAnalysisCheckpoint | null;
+  persistCheckpoint?: (checkpoint: ViralAnalysisCheckpoint) => Promise<void>;
   emit?: (event: Pick<ViralAnalysisEvent, 'type' | 'stage' | 'detail'> & { progress?: number; data?: unknown }) => Promise<void>;
   download: (record: ViralAnalysisRecord, workDir: string, signal?: AbortSignal) => Promise<ViralMediaDownloadResult>;
   extract: (videoPath: string, workDir: string, signal?: AbortSignal, request?: ViralMediaExtractionRequest) => Promise<ViralMediaExtractionResult>;
@@ -68,6 +71,28 @@ export interface CompletedViralAnalysisRun {
   result: ViralAnalysisResult;
   resultPath: string;
   videoPath: string;
+}
+
+const VIRAL_DIAGNOSTIC_MAX_CHARS = 4096;
+
+export function boundViralDiagnosticText(value: unknown): string {
+  const text = value instanceof Error ? value.message : String(value ?? '');
+  if (text.length <= VIRAL_DIAGNOSTIC_MAX_CHARS) return text;
+  return `${text.slice(0, VIRAL_DIAGNOSTIC_MAX_CHARS - 14)}...[truncated]`;
+}
+
+export function viralCheckpointResumeState(checkpoint?: ViralAnalysisCheckpoint | null): {
+  stage: ViralAnalysisRecord['currentStage'];
+  progress: number;
+} {
+  if (checkpoint?.completed) return { stage: 'completed', progress: 1 };
+  if (checkpoint?.recreation) return { stage: 'recreating', progress: 0.88 };
+  if (checkpoint?.contentBreakdown) return { stage: 'recreating', progress: 0.88 };
+  if (checkpoint?.frames) return { stage: 'breaking_down', progress: 0.72 };
+  if (checkpoint?.transcript) return { stage: 'analyzing_frames', progress: 0.45 };
+  if (checkpoint?.extracted) return { stage: 'transcribing', progress: 0.32 };
+  if (checkpoint?.downloaded) return { stage: 'extracting', progress: 0.18 };
+  return { stage: 'downloading', progress: 0.05 };
 }
 
 export const VIRAL_SOURCE_DOMAINS = {
@@ -137,79 +162,130 @@ export function normalizeViralSourceUrl(url: string, platform: ViralPlatform): s
 export async function runViralAnalysis(record: ViralAnalysisRecord, options: RunViralAnalysisOptions): Promise<CompletedViralAnalysisRun> {
   await mkdir(options.workDir, { recursive: true });
 
+  const checkpoint: ViralAnalysisCheckpoint = options.resumeFrom
+    ? structuredClone(options.resumeFrom)
+    : { runGeneration: record.runGeneration ?? 0 };
+  if (record.runGeneration !== undefined && checkpoint.runGeneration !== record.runGeneration) {
+    throw new Error('STALE_VIRAL_RUN: Recovery checkpoint belongs to another run generation.');
+  }
+  const persistCheckpoint = async () => options.persistCheckpoint?.(structuredClone(checkpoint));
+
   const emit = async (type: string, stage: ViralAnalysisEvent['stage'], detail: string, progress: number, data?: unknown) => {
     throwIfAborted(options.signal);
     await options.emit?.({ type, stage, detail, progress, data });
   };
 
-  await emit('stage_start', 'downloading', 'Downloading source video', 0.05);
-  const downloaded = await options.download(record, options.workDir, options.signal);
-  await emit('stage_done', 'downloading', 'Downloaded source video', 0.16, {
-    provider: downloaded.provider,
-    normalizedUrl: downloaded.normalizedUrl,
-    usedCookieSource: downloaded.usedCookieSource,
-    metadataTitle: downloaded.source.title,
-  });
-
-  await emit('stage_start', 'extracting', 'Extracting audio and frames', 0.18);
-  const extractionRequest: ViralMediaExtractionRequest = {
-    keyFrameCount: normalizeKeyFrameCount(record.settings.keyFrameCount),
-    sourceDurationSeconds: normalizeDurationSeconds(downloaded.source.duration),
-  };
-  const extracted = await options.extract(downloaded.videoPath, options.workDir, options.signal, extractionRequest);
-
-  await emit('stage_start', 'transcribing', 'Transcribing narration', 0.32);
-  const transcript = await options.transcribe(extracted.audioPath, options.signal);
-
-  await emit('stage_start', 'analyzing_frames', 'Analyzing key frames', 0.45);
-  const uniqueFrames = await filterUniqueExtractedFrames(extracted.frames);
-  const frames: ViralFrameAnalysis[] = [];
-  const showFrameProgress = uniqueFrames.length > 1;
-  for (const [index, frame] of uniqueFrames.entries()) {
-    throwIfAborted(options.signal);
-    if (showFrameProgress) {
-      const current = index + 1;
-      await emit(
-        'stage_progress',
-        'analyzing_frames',
-        `Analyzing key frames (${current}/${uniqueFrames.length})`,
-        0.45 + (current / uniqueFrames.length) * 0.24,
-        { current, total: uniqueFrames.length, timestamp: frame.timestamp },
-      );
-    }
-    const previous = index > 0 ? uniqueFrames[index - 1] : null;
-    frames.push(await options.analyzeFrame(frame, previous, downloaded.source, options.signal));
+  let downloaded = checkpoint.downloaded;
+  if (!downloaded) {
+    await emit('stage_start', 'downloading', 'Downloading source video', 0.05);
+    const next = await options.download(record, options.workDir, options.signal);
+    downloaded = {
+      source: next.source,
+      videoPath: next.videoPath,
+      provider: next.provider,
+      normalizedUrl: next.normalizedUrl,
+      usedCookieSource: next.usedCookieSource,
+    };
+    checkpoint.downloaded = downloaded;
+    await persistCheckpoint();
+    await emit('stage_done', 'downloading', 'Downloaded source video', 0.16, {
+      provider: downloaded.provider,
+      normalizedUrl: downloaded.normalizedUrl,
+      usedCookieSource: downloaded.usedCookieSource,
+      metadataTitle: downloaded.source.title,
+    });
   }
+  if (!downloaded) throw new Error('VIRAL_CHECKPOINT_INVALID: Download stage is missing.');
 
-  await emit('stage_start', 'breaking_down', 'Breaking down opening, structure, ending, and viral points', 0.72);
-  const breakdownInput = {
-    title: downloaded.source.title,
-    author: downloaded.source.author,
-    transcriptText: transcript.map((segment) => segment.text).join('\n'),
-    frameSummary: frames.map((frame) => `${frame.timestamp}s: ${frame.visualDescription}`).join('\n'),
-  };
-  const contentBreakdown = await options.analyzeBreakdown(breakdownInput, options.signal);
+  let extracted = checkpoint.extracted;
+  if (!extracted) {
+    await emit('stage_start', 'extracting', 'Extracting audio and frames', 0.18);
+    const extractionRequest: ViralMediaExtractionRequest = {
+      keyFrameCount: normalizeKeyFrameCount(record.settings.keyFrameCount),
+      sourceDurationSeconds: normalizeDurationSeconds(downloaded.source.duration),
+    };
+    extracted = await options.extract(downloaded.videoPath, options.workDir, options.signal, extractionRequest);
+    checkpoint.extracted = extracted;
+    await persistCheckpoint();
+  }
+  if (!extracted) throw new Error('VIRAL_CHECKPOINT_INVALID: Extraction stage is missing.');
 
-  await emit('stage_start', 'recreating', 'Creating structure-level recreation draft', 0.88);
-  const recreation = normalizeViralRecreationDraft(
-    await options.createRecreation(
-    {
-      track: record.settings.track,
-      extraRequirements: record.settings.extraRequirements ?? '',
-      result: {
-        source: downloaded.source,
-        transcript,
-        frames,
-        contentBreakdown,
-        recreation: emptyRecreation(record.settings),
-        createdAt: new Date().toISOString(),
+  let transcript = checkpoint.transcript;
+  if (!transcript) {
+    await emit('stage_start', 'transcribing', 'Transcribing narration', 0.32);
+    transcript = await options.transcribe(extracted.audioPath, options.signal);
+    checkpoint.transcript = transcript;
+    await persistCheckpoint();
+  }
+  if (!transcript) throw new Error('VIRAL_CHECKPOINT_INVALID: Transcript stage is missing.');
+
+  let frames = checkpoint.frames;
+  if (!frames) {
+    await emit('stage_start', 'analyzing_frames', 'Analyzing key frames', 0.45);
+    const uniqueFrames = await filterUniqueExtractedFrames(extracted.frames);
+    frames = [];
+    const showFrameProgress = uniqueFrames.length > 1;
+    for (const [index, frame] of uniqueFrames.entries()) {
+      throwIfAborted(options.signal);
+      if (showFrameProgress) {
+        const current = index + 1;
+        await emit(
+          'stage_progress',
+          'analyzing_frames',
+          `Analyzing key frames (${current}/${uniqueFrames.length})`,
+          0.45 + (current / uniqueFrames.length) * 0.24,
+          { current, total: uniqueFrames.length, timestamp: frame.timestamp },
+        );
+      }
+      const previous = index > 0 ? uniqueFrames[index - 1] : null;
+      frames.push(await options.analyzeFrame(frame, previous, downloaded.source, options.signal));
+    }
+    checkpoint.frames = frames;
+    await persistCheckpoint();
+  }
+  if (!frames) throw new Error('VIRAL_CHECKPOINT_INVALID: Frame stage is missing.');
+
+  let contentBreakdown = checkpoint.contentBreakdown;
+  if (!contentBreakdown) {
+    await emit('stage_start', 'breaking_down', 'Breaking down opening, structure, ending, and viral points', 0.72);
+    const breakdownInput = {
+      title: downloaded.source.title,
+      author: downloaded.source.author,
+      transcriptText: transcript.map((segment) => segment.text).join('\n'),
+      frameSummary: frames.map((frame) => `${frame.timestamp}s: ${frame.visualDescription}`).join('\n'),
+    };
+    contentBreakdown = await options.analyzeBreakdown(breakdownInput, options.signal);
+    checkpoint.contentBreakdown = contentBreakdown;
+    await persistCheckpoint();
+  }
+  if (!contentBreakdown) throw new Error('VIRAL_CHECKPOINT_INVALID: Breakdown stage is missing.');
+
+  let recreation = checkpoint.recreation;
+  if (!recreation) {
+    await emit('stage_start', 'recreating', 'Creating structure-level recreation draft', 0.88);
+    recreation = normalizeViralRecreationDraft(
+      await options.createRecreation(
+      {
+        track: record.settings.track,
+        extraRequirements: record.settings.extraRequirements ?? '',
+        result: {
+          source: downloaded.source,
+          transcript,
+          frames,
+          contentBreakdown,
+          recreation: emptyRecreation(record.settings),
+          createdAt: new Date().toISOString(),
+        },
       },
-    },
-    options.signal,
-    ),
-    contentBreakdown,
-    record.settings,
-  );
+      options.signal,
+      ),
+      contentBreakdown,
+      record.settings,
+    );
+    checkpoint.recreation = recreation;
+    await persistCheckpoint();
+  }
+  if (!recreation) throw new Error('VIRAL_CHECKPOINT_INVALID: Recreation stage is missing.');
 
   const result: ViralAnalysisResult = {
     source: downloaded.source,
@@ -219,8 +295,10 @@ export async function runViralAnalysis(record: ViralAnalysisRecord, options: Run
     recreation,
     createdAt: new Date().toISOString(),
   };
-  const resultPath = join(options.workDir, 'viral-analysis-result.json');
+  const resultPath = join(options.workDir, `viral-analysis-result-${checkpoint.runGeneration}.json`);
   await writeFile(resultPath, JSON.stringify(result, null, 2), 'utf8');
+  checkpoint.completed = { resultPath, videoPath: downloaded.videoPath };
+  await persistCheckpoint();
   await emit('done', 'completed', 'Viral analysis completed', 1, { resultPath });
   return { result, resultPath, videoPath: downloaded.videoPath };
 }
