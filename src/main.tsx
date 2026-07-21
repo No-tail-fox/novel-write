@@ -44,32 +44,26 @@ import {
   XCircle,
 } from 'lucide-react';
 import type {
-  AccountProfile,
   ActivationState,
   AiSourceContext,
   AiSourceSection,
   AppDelta,
   AppMutationResult,
   AppConfig,
-  BootstrapState,
   BookProductInfo,
   BookSelectionIdentity,
   BookSelectionRecord,
   ConfigTestTarget,
   CreateTaskInput,
-  CreateViralAnalysisInput,
   CustomCoverTemplate,
   CustomStyle,
   DraftTemplate,
   DraftTextBorder,
   HistoryFamily,
-  HistoryListInput,
   HistoryListRequest,
-  HistoryPage,
   ImageLabGenerateInput,
   ImageProviderProfile,
   ImageLabRecord,
-  ImageLabSummary,
   ImageLabSmartMode,
   ImaKnowledgeResult,
   BgmItem,
@@ -85,7 +79,6 @@ import type {
   PodcastSpeakerPair,
   ProcessingMode,
   PromptTemplate,
-  PromptTemplateSummary,
   PromptStepTemplateType,
   PromptTemplateType,
   ProviderModel,
@@ -103,16 +96,13 @@ import type {
   TaskVideoForm,
   TtsProviderProfile,
   TtsProvider,
-  UiPreferencesUpdate,
   VolcengineSpeaker,
   ViralAnalysisResult,
   ViralAnalysisRecord,
-  ViralAnalysisSummary,
   ViralAnalysisStatus,
   ViralPlatform,
   VoiceLabGenerateInput,
   VoiceLabRecord,
-  VoiceLabSummary,
 } from './shared/types';
 import type { StoryDreamApi } from './shared/storydream-api';
 import { buildTaskCreateInput } from './features/tasks/task-create-input';
@@ -125,7 +115,6 @@ import {
   createAppDeltaCoordinator,
   MAX_RENDERER_DELTA_BUFFER,
   type DeltaViewState,
-  type HistoryRevisionLedger,
   type RevisionGap,
 } from './shared/state-delta';
 import {
@@ -135,35 +124,23 @@ import {
   applyLocalMutationResponse,
   authoritativeMissingRequestedTaskId,
   claimMutationResult,
-  collectCursorPages,
   collectTaskEventPages,
   collectViralEventPages,
   createRequestGenerationCompletionQueue,
   createRequestGenerationGuard,
   historyEntityRevisionKey,
   historyResponseDisposition,
-  imageLabSummaryToRecord,
   mergeAuthoritativeSnapshotDetails,
-  mergeDeltaViewSlices,
   mergeReconciliationSlices,
   raiseMutationRevisionFloor,
   reduceCompletionTrackedState,
   shouldApplyDeltaViewTransition,
   taskDetailRefreshKey,
   taskSummaryToTask,
-  taskToSummary,
-  viralSummaryToRecord,
   viralEventRefreshKey,
-  voiceLabSummaryToRecord,
-  type HistoryResponseRevision,
 } from './shared/state-reconciliation';
 import { taskProgressSnapshot, taskProgressStages, taskTerminalStep } from './shared/task-progress';
-import {
-  stripConfigSecrets,
-  type PublicAppState as AppState,
-  type SecretChanges,
-  type SecretId,
-} from './shared/config-secrets';
+import type { SecretChanges, SecretId } from './shared/config-secrets';
 import type { PersonAssetImage, PersonAssetSummary } from './shared/person-assets';
 import { useHistoryPage } from './features/history/use-history-page';
 import {
@@ -171,7 +148,7 @@ import {
   changeRuntimeTheme,
   revealThemedApplication,
 } from './features/settings/theme-controller';
-import { configTargetStatus, normalizeAppConfig, validateConfigTarget } from './shared/config-utils';
+import { configTargetStatus, normalizeAppConfig } from './shared/config-utils';
 import {
   activeImageProfileId,
   activeLlmProfileId,
@@ -211,19 +188,8 @@ import {
   storyboardSceneCountRange,
   targetWordCountRange,
 } from './shared/content-metrics';
-import {
-  defaultAccount,
-  defaultActivation,
-  defaultConfig,
-  defaultCreditTransactions,
-  defaultCustomCoverTemplates,
-  defaultCustomStyles,
-  defaultMinimaxCloneVoices,
-  defaultUiPreferences,
-} from './shared/config';
-import { promptTemplateCatalog } from './shared/prompt-template-catalog';
-import { loadDefaultPromptTemplates } from './shared/prompt-template-loader';
-import { draftTemplates as builtinDraftTemplates, imageAnimations, normalizeDraftTemplate } from './shared/templates';
+import { defaultConfig, defaultCustomStyles, defaultUiPreferences } from './shared/config';
+import { draftTemplates as builtinDraftTemplates, imageAnimations } from './shared/templates';
 import { convertCozeWorkflowToDraftTemplate, convertManyCozeWorkflowsToDraftTemplates, type CozeWorkflowTemplateConversionResult } from './shared/coze-workflow-converter';
 import {
   buildImageTemplateStyleOptions,
@@ -239,7 +205,7 @@ import {
 } from './shared/prompt-templates';
 import { createViralTemplateDrafts } from './shared/viral-template-extraction';
 import { defaultPodcastSpeakersForProvider, defaultTaskSpeakerForProvider, normalizeRuntimeTtsProvider, taskSpeakerLabel, ttsVoiceOptionsForProvider, type RuntimeTtsProvider } from './shared/tts-voices';
-import { applyHtmlVideoConfigChanges, classifyHtmlVideoTaskMessage, createHtmlVideoTaskInput, fitHtmlVideoOutputSize, htmlVideoSteps, htmlVideoTabs, htmlVideoVisibleSteps, isHtmlVideoTask, nextHtmlVideoTabKey, parseHtmlVideoPipelineData, safeParseHtmlVideoPipelineData, tabForHtmlVideoStep, taskProgressLabel } from './shared/html-video-workflow';
+import { classifyHtmlVideoTaskMessage, createHtmlVideoTaskInput, fitHtmlVideoOutputSize, htmlVideoSteps, htmlVideoTabs, isHtmlVideoTask, nextHtmlVideoTabKey, safeParseHtmlVideoPipelineData, tabForHtmlVideoStep, taskProgressLabel } from './shared/html-video-workflow';
 import {
   HTML_VIDEO_BGM_VOLUMES,
   HTML_VIDEO_JOB_DEFAULTS,
@@ -283,217 +249,60 @@ import { EmptyState } from './components/EmptyState';
 import { EventTimeline } from './components/EventTimeline';
 import { CursorPagination } from './components/CursorPagination';
 import { DataTable } from './components/DataTable';
+import {
+  navigationItemForView,
+  newTaskPrimaryAction,
+  pageSubtitle,
+  primaryNavItems,
+  secondaryNavItems,
+  type NavigationItem as NavItem,
+} from './app/navigation';
+import {
+  advanceHistoryFamilyEpochs,
+  allHistoryFamilies,
+  bootstrapToState,
+  captureHistoryResponseRevision,
+  cloneState,
+  configFromMutation,
+  initialState,
+  isHistoryResponseCurrent,
+  loadCompleteBootstrap,
+  MAX_TASK_DETAIL_REVISION_ATTEMPTS,
+  mergeDeltaView,
+  registerHistoryDeltaBarrier,
+  replaceHistoryRevisionMap,
+  taskFromMutation,
+  viralFromMutation,
+  type HistoryFamilyEpochs,
+} from './app/app-state';
+import { makeFallbackApi } from './app/browser-fallback';
+import type { ApplyMutationResult, RendererAppState as AppState } from './app/route-types';
+import {
+  contentTracks,
+  fallbackEffectCatalog,
+  htmlVideoStyleOptions,
+  pauseOptions,
+  povOptions,
+  promptStepEditorDefinitions,
+  promptTemplateReferenceOptions,
+  promptTemplateStep3SkeletonOptions,
+  promptTemplateTypeLabels,
+  promptTemplateTypeOptions,
+  promptTemplateVariableDefinitions,
+  promptTemplateVariables,
+  ratioOptions,
+  rewriteOptions,
+  sampleText,
+  siliconFlowSpeechToTextBaseUrl,
+  siliconFlowSpeechToTextModels,
+  smartImageModeOptions,
+  storyboardSceneCountOptions,
+  styleOptions,
+  volcengineVoicePresets,
+  type PromptTemplateVariableScope,
+} from './shared/editorial-options';
 import './styles.css';
 
-const sampleText =
-  '武曌，通称武则天、武后，是中国历史上唯一的女皇帝。武则天十四岁入宫为唐太宗才人，历经十二年不得升迁。唐高宗时复为昭仪，通过废黜王皇后与萧淑妃，得以立为皇后。并尊号为天后，与唐高宗并称二圣。';
-
-function promptTemplatePlaceholder(summary: PromptTemplateSummary): PromptTemplate {
-  return { ...summary, content: '' };
-}
-
-const initialPromptTemplates = promptTemplateCatalog.map(promptTemplatePlaceholder);
-
-const initialState: AppState = {
-  config: defaultConfig,
-  secretStatus: {},
-  tasks: [],
-  events: [],
-  viralAnalyses: [],
-  viralEvents: [],
-  promptTemplates: initialPromptTemplates,
-  draftTemplates: builtinDraftTemplates,
-  imageLabRecords: [],
-  voiceLabRecords: [],
-  customStyles: defaultCustomStyles,
-  customCoverTemplates: defaultCustomCoverTemplates,
-  creditTransactions: defaultCreditTransactions,
-  minimaxCloneVoices: defaultMinimaxCloneVoices,
-  account: defaultAccount,
-  activation: defaultActivation,
-  ui: defaultUiPreferences,
-};
-
-type NavItem = { view: ShellView; label: string; hint: string; icon: React.ComponentType<{ size?: number }> };
-
-const primaryNavItems: NavItem[] = [
-  { view: 'new-task', label: '新建任务', hint: '素材成片', icon: Plus },
-  { view: 'book-selection', label: '选品助手', hint: '商品卖点', icon: BookOpen },
-  { view: 'benchmark', label: '对标导入', hint: '文案二改', icon: Radar },
-  { view: 'person-assets', label: '人物素材库', hint: '真图分镜', icon: Images },
-  { view: 'queue', label: '任务队列', hint: '运行进度', icon: ListChecks },
-  { view: 'history', label: '历史任务', hint: '本地记录', icon: History },
-  { view: 'image-lab', label: '画图实验室', hint: '分镜图片', icon: FlaskConical },
-  { view: 'voice-lab', label: '配音实验室', hint: '音色试听', icon: Mic2 },
-  { view: 'music-mv', label: '音乐 MV', hint: '歌词成片', icon: Music },
-  { view: 'viral-analyzer', label: '爆款拆解', hint: '拉片复刻', icon: Flame },
-  { view: 'prompt-templates', label: '提示词模板', hint: '代理提示词', icon: Sparkles },
-  { view: 'draft-templates', label: '草稿模板', hint: '剪映画布', icon: LayoutTemplate },
-  { view: 'settings', label: '系统设置', hint: 'API 与路径', icon: Settings },
-  { view: 'account', label: '账户中心', hint: '资料与积分', icon: Circle },
-  { view: 'activation', label: '激活管理', hint: '试用与授权', icon: KeyRound },
-];
-
-const secondaryNavItems: NavItem[] = [
-  { view: 'html-video', label: 'HTML 动画视频', hint: 'HTML 渲染', icon: Play },
-];
-
-const navItems: NavItem[] = [...primaryNavItems, ...secondaryNavItems];
-
-const contentTracks = [
-  ['character-story', '人物故事', '历史人物 / 名人传记'],
-  ['health-book', '健康图书', '健康养生 / 医学知识'],
-  ['culture-science', '文化科普', '华夏文化 / 传统民俗'],
-  ['picture-book', '绘本故事', '儿童绘本 / 睡前故事'],
-  ['ecommerce', '电商带货', '产品种草 / 好物推荐'],
-  ['mind-soup', '心灵鸡汤', '情感治愈 / 励志感悟'],
-  ['folk-story', '民间故事', '虚构传说 / 因果寓言'],
-  ['general-story', '通用故事', '通用写实风格'],
-  ['food-v2', '美食探店V2', '城市街角小店的烟火气'],
-];
-
-const styleOptions: TemplateOption[] = [
-  ['black-white', '黑白摄影', '纪实感'],
-  ['photo-real', '写实彩色', '质感胶片'],
-  ['oil-paint', '油画风格', '印象写意'],
-  ['modern-film', '现代电影', '宽屏调色'],
-  ['ancient-film', '古风电影', '古代史诗'],
-  ['retro-film', '复古胶片', '80年代街拍'],
-  ['watercolor', '水彩治愈', '柔和晕染'],
-  ['magazine', '杂志插画', '极简色块'],
-  ['pixar-3d', '皮克斯 3D', '动画质感'],
-  ['ink', '中国水墨', '文人意境'],
-  ['folk', '民间故事工笔风', '工笔叙事'],
-  ['ghibli', '吉卜力', '治愈日漫'],
-];
-const htmlVideoStyleOptions = styleOptions;
-
-const ratioOptions = ['21:9', '16:9', '3:2', '4:3', '1:1', '3:4', '2:3', '9:16'];
-const smartImageModeOptions: Array<[ImageLabSmartMode, string, string]> = [
-  ['cover', '封面', '短视频主封面'],
-  ['blog-cover', '博客封面', '文章首图 / 横版主图'],
-  ['podcast-cover', '播客封面', '节目感双人或主题封面'],
-  ['video-narration', '旁白视频', '单人讲述主视觉'],
-  ['two-host-podcast', '双人播客', '两位主播一问一答'],
-  ['reference-edit', '参考图编辑', '参考图一致性改图'],
-];
-const storyboardSceneCountOptions = [8, 12, 16, 20, 30];
-const siliconFlowSpeechToTextBaseUrl = 'https://api.siliconflow.cn/v1';
-const siliconFlowSpeechToTextModels = ['FunAudioLLM/SenseVoiceSmall', 'TeleAI/TeleSpeechASR'];
-const volcengineVoicePresets = [
-  ['Vivi 2.0', 'zh_female_vv_uranus_bigtts'],
-  ['云舟 2.0', 'zh_male_m191_uranus_bigtts'],
-  ['爽快思思 2.0', 'zh_female_shuangkuaisisi_uranus_bigtts'],
-  ['儒雅青年 2.0', 'zh_male_ruyaqingnian_uranus_bigtts'],
-  ['悬疑解说 2.0', 'zh_male_xuanyijieshuo_uranus_bigtts'],
-] as const;
-const pauseOptions: Array<[PausePoint, string]> = [
-  ['none', '不暂停'],
-  ['critical', '关键节点'],
-  ['every-step', '每步确认'],
-  ['custom', '自定义'],
-];
-const rewriteOptions: Array<[RewriteIntensity, string]> = [
-  ['standard', '标准改写'],
-  ['deep', '深度改写'],
-  ['original', '高度原创'],
-];
-const povOptions = [
-  ['keep-original', '保持原文'],
-  ['first-person', '第一人称'],
-  ['third-person', '第三人称'],
-] as const;
-const promptTemplateTypeOptions: Array<PromptTemplateType | 'all'> = ['all', 'task', 'review', 'rewrite', 'cover', 'storyboard', 'image-prompt'];
-const promptTemplateTypeLabels: Record<PromptTemplateType | 'all', string> = {
-  all: '全部类型',
-  task: '任务模板',
-  review: '预审提示词',
-  rewrite: '改写提示词',
-  cover: '封面元数据提示词',
-  storyboard: '分镜提示词',
-  'image-prompt': '出图提示词',
-};
-type PromptTemplateVariableScope = PromptTemplateType;
-const promptTemplateVariableDefinitions = [
-  { key: 'inputText', label: '原文素材', description: '新建任务里粘贴或导入的原始文案', scopes: ['task', 'review'] },
-  { key: 'title', label: '任务标题', description: '当前任务标题或自动生成标题', scopes: ['task', 'review', 'rewrite', 'cover'] },
-  { key: 'sourceContext', label: '联网资料', description: 'AI 搜索或知识库带回来的参考资料', scopes: ['review'] },
-  { key: 'reviewedText', label: '预审结果', description: 'Step 0 清洗、去重后的事实素材', scopes: ['rewrite', 'cover'] },
-  { key: 'rewrittenCopy', label: '改写正文', description: 'Step 1 改写后的口播文案', scopes: ['storyboard'] },
-  { key: 'scenesJson', label: '分镜数据', description: 'Step 2 拆出来的分镜 JSON', scopes: ['image-prompt'] },
-  { key: 'track', label: '内容赛道', description: '人物故事、健康图书、电商等赛道', scopes: ['task', 'review', 'rewrite', 'cover', 'storyboard', 'image-prompt'] },
-  { key: 'style', label: '画风', description: '任务选择的出图风格', scopes: ['task', 'storyboard', 'image-prompt'] },
-  { key: 'ratio', label: '画面比例', description: '9:16、16:9 等画布比例', scopes: ['task', 'storyboard', 'image-prompt'] },
-  { key: 'extraRequirements', label: '额外要求', description: '新建任务里填写的补充要求', scopes: ['task', 'review', 'rewrite', 'cover', 'storyboard', 'image-prompt'] },
-  { key: 'rewriteIntensity', label: '改写强度', description: '新建任务高级设置里的改写强度', scopes: ['rewrite'] },
-  { key: 'narrativePov', label: '叙事视角', description: '新建任务高级设置里的叙事视角', scopes: ['rewrite'] },
-  { key: 'keepPromotion', label: '保留带货', description: '新建任务高级设置里的带货保留开关', scopes: ['rewrite', 'cover'] },
-  { key: 'aiKeyword', label: 'AI 关键词', description: 'AI 创作模式里的检索关键词', scopes: ['task', 'review', 'rewrite', 'cover'] },
-  { key: 'taskTemplateContent', label: '任务模板指令', description: '当前模板的任务总指令渲染结果；不要放在任务总指令内', scopes: ['review', 'rewrite', 'cover', 'storyboard', 'image-prompt'] },
-  { key: 'taskTemplateName', label: '任务模板名称', description: '当前故事模板名称', scopes: ['review', 'rewrite', 'cover', 'storyboard', 'image-prompt'] },
-  { key: 'defaultStyles', label: '默认画风', description: '当前故事模板绑定的默认图像模板', scopes: ['task', 'storyboard', 'image-prompt'] },
-  { key: 'defaultDraftTemplateId', label: '默认草稿模板', description: '当前故事模板绑定的剪映草稿模板 ID', scopes: ['task'] },
-  { key: 'characterPolicy', label: '角色档案策略', description: '当前故事模板是否强制提取或跳过角色档案', scopes: ['task', 'image-prompt'] },
-  { key: 'step3SkeletonModules', label: 'Step 3 骨架', description: '当前故事模板启用的绘图骨架模块', scopes: ['storyboard', 'image-prompt'] },
-  { key: 'referenceKind', label: '参考图类型', description: '当前故事模板使用的人脸、产品或无参考图类型', scopes: ['storyboard', 'image-prompt'] },
-  { key: 'stylePrefix', label: '风格前缀', description: '当前图像模板的 prefix，会注入 Step 3 出图提示词', scopes: ['image-prompt'] },
-  { key: 'styleSuffix', label: '风格后缀', description: '当前图像模板的 suffix，会注入 Step 3 出图提示词', scopes: ['image-prompt'] },
-  { key: 'styleAllowColor', label: '允许色彩词', description: '当前图像模板是否允许在画面里使用具体色彩词', scopes: ['image-prompt'] },
-  { key: 'styleNegativePrompt', label: '负面提示词', description: '当前图像模板的 negative prompt', scopes: ['image-prompt'] },
-  { key: 'referenceImagePath', label: '参考图路径', description: '新建任务上传或填写的参考图本地路径', scopes: ['image-prompt'] },
-  { key: 'imagePromptReference', label: '生图参考', description: '爆款拆解或用户补充的画面参考提示', scopes: ['image-prompt'] },
-  { key: 'characterCard', label: '角色档案', description: 'Step 3 前提取出的角色一致性 JSON', scopes: ['image-prompt'] },
-  { key: 'imageSeedPoolsJson', label: '图片种子池', description: '当前故事模板携带的 StoryDream 图片种子池 JSON', scopes: ['image-prompt'] },
-] satisfies Array<{ key: string; label: string; description: string; scopes: PromptTemplateVariableScope[] }>;
-const promptTemplateVariables = promptTemplateVariableDefinitions.map((item) => item.key);
-const promptStepEditorDefinitions: Array<{ type: PromptStepTemplateType; label: string; hint: string }> = [
-  { type: 'review', label: 'Step 0 预审', hint: '清理输入素材、保留事实顺序、去掉重复表达' },
-  { type: 'rewrite', label: 'Step 1 改写', hint: '控制口播文案的语言、节奏和结构' },
-  { type: 'cover', label: 'Step 1 元数据', hint: '生成标题、摘要、标签和评论的规则' },
-  { type: 'storyboard', label: 'Step 2 分镜', hint: '控制分镜拆句、镜头节奏和场景数量' },
-  { type: 'image-prompt', label: 'Step 3 出图', hint: '控制出图提示词、角色一致性和安全规则' },
-];
-const promptTemplateStep3SkeletonOptions = ['跨年代', '防台词文字', '产品一致性'];
-const promptTemplateReferenceOptions: Array<[NonNullable<PromptTemplate['referenceKind']>, string]> = [
-  ['none', '无'],
-  ['face', '人脸'],
-  ['product', '产品'],
-];
-const fallbackEffectCatalog: JianyingEffectCatalog = {
-  status: 'warn',
-  detail: '未读取到剪映特效目录，已使用本地基础转场清单。',
-  transitions: ['叠化'],
-  filters: [],
-  videoEffects: [],
-  audioEffects: [],
-};
-
-type ApplyMutationResult = (result: AppMutationResult | null) => void;
-
-function taskFromMutation(result: AppMutationResult | null): TaskSummary | null {
-  return result?.kind === 'task-upsert' ? result.task : null;
-}
-
-function viralFromMutation(result: AppMutationResult | null): ViralAnalysisSummary | null {
-  return result?.kind === 'viral-upsert' ? result.record : null;
-}
-
-function configFromMutation(result: AppMutationResult | null): AppConfig {
-  if (result?.kind === 'state-patch' && result.patch.kind === 'config') return result.patch.config;
-  throw new Error('CONFIG_MUTATION_INVALID: Save did not return a config patch.');
-}
-
-async function loadCompleteBootstrap(api: StoryDreamApi, bootstrap: BootstrapState): Promise<BootstrapState> {
-  const [promptTemplates, draftTemplates] = await Promise.all([
-    collectCursorPages(bootstrap.promptTemplates, (cursor) => api.listPromptTemplates({ cursor, limit: 100 })),
-    collectCursorPages(bootstrap.draftTemplates, (cursor) => api.listDraftTemplates({ cursor, limit: 100 })),
-  ]);
-  return {
-    ...bootstrap,
-    promptTemplates: { items: promptTemplates, nextCursor: null },
-    draftTemplates: { items: draftTemplates, nextCursor: null },
-  };
-}
 type ModelListKey = 'llm' | 'gpt-image' | 'custom-image';
 type SecretEditor = {
   value: (id: SecretId) => string;
@@ -513,1239 +322,6 @@ const DRAFT_TEXT_WIDTH_MAX = 2;
 type DraftDragSnapshot =
   | { mode: 'move'; layer: DraftCanvasLayer; pointerId: number; startX: number; startY: number; template: DraftTemplate }
   | { mode: 'resize'; layer: Exclude<DraftCanvasLayer, 'image'>; pointerId: number; startX: number; startY: number; template: DraftTemplate };
-
-function cloneState(state: AppState): AppState {
-  return JSON.parse(JSON.stringify(state)) as AppState;
-}
-
-function hydrateState(state: Partial<AppState>): AppState {
-  return {
-    ...cloneState(initialState),
-    ...state,
-    config: stripConfigSecrets(normalizeAppConfig(state.config ?? defaultConfig)),
-    secretStatus: state.secretStatus ?? {},
-    tasks: state.tasks ?? [],
-    events: state.events ?? [],
-    promptTemplates: state.promptTemplates ?? initialPromptTemplates,
-    draftTemplates: (state.draftTemplates ?? builtinDraftTemplates).map(normalizeDraftTemplate),
-    imageLabRecords: state.imageLabRecords ?? [],
-    voiceLabRecords: state.voiceLabRecords ?? [],
-    customStyles: mergeDefaultCustomStyles(state.customStyles),
-    customCoverTemplates: state.customCoverTemplates ?? defaultCustomCoverTemplates,
-    creditTransactions: state.creditTransactions ?? defaultCreditTransactions,
-    minimaxCloneVoices: state.minimaxCloneVoices ?? [],
-    account: { ...defaultAccount, ...(state.account ?? {}) },
-    activation: { ...defaultActivation, ...(state.activation ?? {}) },
-    ui: { ...defaultUiPreferences, ...(state.ui ?? {}) },
-  };
-}
-
-function bootstrapToState(bootstrap: BootstrapState): AppState {
-  const draftDefaults = new Map(builtinDraftTemplates.map((template) => [template.id, template]));
-  return hydrateState({
-    config: bootstrap.config,
-    secretStatus: bootstrap.secretStatus,
-    tasks: bootstrap.tasks.items.map((task) => taskSummaryToTask(task)),
-    events: [],
-    viralAnalyses: bootstrap.viralAnalyses.items.map((summary) => viralSummaryToRecord(summary)),
-    viralEvents: [],
-    promptTemplates: bootstrap.promptTemplates.items.map(promptTemplatePlaceholder),
-    draftTemplates: bootstrap.draftTemplates.items.map((summary) => {
-      const base = draftDefaults.get(summary.id) ?? builtinDraftTemplates[0];
-      return normalizeDraftTemplate({
-        ...base,
-        id: summary.id,
-        name: summary.name,
-        isDefault: summary.isDefault,
-        updatedAt: summary.updatedAt,
-        canvas: { ...base.canvas, ...summary.canvas },
-      });
-    }),
-    imageLabRecords: bootstrap.imageLabRecords.items.map((summary) => imageLabSummaryToRecord(summary)),
-    voiceLabRecords: bootstrap.voiceLabRecords.items.map((summary) => voiceLabSummaryToRecord(summary)),
-    customStyles: bootstrap.customStyles,
-    customCoverTemplates: bootstrap.customCoverTemplates,
-    creditTransactions: bootstrap.creditTransactions,
-    minimaxCloneVoices: bootstrap.minimaxCloneVoices,
-    account: bootstrap.account,
-    activation: bootstrap.activation,
-    ui: bootstrap.ui,
-  });
-}
-
-function mergeDeltaView(current: AppState, deltaState: DeltaViewState): AppState {
-  return mergeDeltaViewSlices(current, deltaState);
-}
-
-type HistoryDeltaIdentity = { family: HistoryFamily; id: string; tombstone: boolean };
-type HistoryFamilyEpochs = Partial<Record<HistoryFamily, number>>;
-
-const allHistoryFamilies: readonly HistoryFamily[] = ['task', 'viral-analysis', 'image-lab', 'voice-lab'];
-const MAX_TASK_DETAIL_REVISION_ATTEMPTS = 3;
-
-function advanceHistoryFamilyEpochs(
-  current: HistoryFamilyEpochs,
-  families: readonly HistoryFamily[],
-): HistoryFamilyEpochs {
-  let next = current;
-  for (const family of families) {
-    if (next === current) next = { ...current };
-    next[family] = (current[family] ?? 0) + 1;
-  }
-  return next;
-}
-
-function historyDeltaIdentity(delta: AppDelta): HistoryDeltaIdentity | null {
-  if (delta.kind === 'task-upsert') return { family: 'task', id: delta.task.id, tombstone: false };
-  if (delta.kind === 'viral-upsert') return { family: 'viral-analysis', id: delta.record.id, tombstone: false };
-  if (delta.kind === 'task-tombstone') return { family: 'task', id: delta.id, tombstone: true };
-  if (delta.kind === 'viral-tombstone') return { family: 'viral-analysis', id: delta.id, tombstone: true };
-  if (delta.kind === 'image-lab-tombstone') return { family: 'image-lab', id: delta.id, tombstone: true };
-  if (delta.kind === 'voice-lab-tombstone') return { family: 'voice-lab', id: delta.id, tombstone: true };
-  if (delta.kind !== 'state-patch') return null;
-  if (delta.patch.kind === 'image-lab-upsert') {
-    return { family: 'image-lab', id: delta.patch.record.id, tombstone: false };
-  }
-  if (delta.patch.kind === 'voice-lab-upsert') {
-    return { family: 'voice-lab', id: delta.patch.record.id, tombstone: false };
-  }
-  return null;
-}
-
-function recordHistoryDeltaRevision(
-  entityRevisions: Map<string, number>,
-  tombstoneRevisions: Map<string, number>,
-  delta: AppDelta,
-): HistoryDeltaIdentity | null {
-  const identity = historyDeltaIdentity(delta);
-  if (!identity) return null;
-  const key = historyEntityRevisionKey(identity.family, identity.id);
-  const entityRevision = entityRevisions.get(key) ?? -1;
-  const tombstoneRevision = tombstoneRevisions.get(key) ?? -1;
-  if (identity.tombstone) {
-    if (delta.revision < entityRevision || delta.revision <= tombstoneRevision) return null;
-    entityRevisions.delete(key);
-    tombstoneRevisions.set(key, delta.revision);
-    return identity;
-  }
-  if (tombstoneRevision >= 0 || delta.revision <= entityRevision) return null;
-  entityRevisions.set(key, delta.revision);
-  return identity;
-}
-
-function registerHistoryDeltaBarrier(
-  entityRevisions: Map<string, number>,
-  tombstoneRevisions: Map<string, number>,
-  delta: AppDelta,
-  invalidate: (family: HistoryFamily, id: string) => void,
-  accepted?: (family: HistoryFamily) => void,
-): void {
-  const identity = recordHistoryDeltaRevision(entityRevisions, tombstoneRevisions, delta);
-  if (!identity) return;
-  accepted?.(identity.family);
-  if (identity.tombstone) invalidate(identity.family, identity.id);
-}
-
-function replaceHistoryRevisionMap(target: Map<string, number>, ledger: HistoryRevisionLedger | undefined): void {
-  for (const [family, revisions] of Object.entries(ledger ?? {}) as Array<[HistoryFamily, Record<string, number>]>) {
-    for (const [id, revision] of Object.entries(revisions)) {
-      const key = historyEntityRevisionKey(family, id);
-      target.set(key, Math.max(target.get(key) ?? -1, revision));
-    }
-  }
-}
-
-function captureHistoryResponseRevision(
-  family: HistoryFamily,
-  id: string,
-  entityRevisions: Map<string, number>,
-  tombstoneRevisions: Map<string, number>,
-): HistoryResponseRevision {
-  const key = historyEntityRevisionKey(family, id);
-  return {
-    entityRevision: entityRevisions.get(key) ?? -1,
-    tombstoneRevision: tombstoneRevisions.get(key) ?? -1,
-  };
-}
-
-function isHistoryResponseCurrent(
-  family: HistoryFamily,
-  id: string,
-  captured: HistoryResponseRevision,
-  entityRevisions: Map<string, number>,
-  tombstoneRevisions: Map<string, number>,
-): boolean {
-  const current = captureHistoryResponseRevision(family, id, entityRevisions, tombstoneRevisions);
-  return captured.tombstoneRevision < 0
-    && current.entityRevision === captured.entityRevision
-    && current.tombstoneRevision === captured.tombstoneRevision;
-}
-
-function mergeDefaultCustomStyles(styles: CustomStyle[] | undefined): CustomStyle[] {
-  const current = new Map((styles ?? []).map((style) => [style.id, style]));
-  const builtinIds = new Set(defaultCustomStyles.map((style) => style.id));
-  return [
-    ...defaultCustomStyles.map((style) => current.get(style.id) ?? style),
-    ...(styles ?? []).filter((style) => !builtinIds.has(style.id)),
-  ];
-}
-
-type FallbackTombstoneEntry = {
-  revision: number;
-  cleanupState: 'unmanaged-legacy';
-};
-
-type FallbackGovernanceState = {
-  revision: number;
-  tombstones: Partial<Record<HistoryFamily, Record<string, FallbackTombstoneEntry>>>;
-};
-
-function fallbackTombstoneResult(
-  family: HistoryFamily,
-  id: string,
-  revision: number,
-): AppMutationResult {
-  switch (family) {
-    case 'task':
-      return { kind: 'task-tombstone', id, revision };
-    case 'viral-analysis':
-      return { kind: 'viral-tombstone', id, revision };
-    case 'image-lab':
-      return { kind: 'image-lab-tombstone', id, revision };
-    case 'voice-lab':
-      return { kind: 'voice-lab-tombstone', id, revision };
-  }
-}
-
-const fallbackGovernanceStorageKey = 'storydream-history-governance-v1';
-const fallbackEnvelopeVersion = 1 as const;
-
-type FallbackStorageEnvelope = FallbackGovernanceState & {
-  version: typeof fallbackEnvelopeVersion;
-  state: AppState;
-};
-
-function parseFallbackGovernance(value: unknown): FallbackGovernanceState {
-  const empty: FallbackGovernanceState = { revision: 0, tombstones: {} };
-  if (!value || typeof value !== 'object') return empty;
-  const parsed = value as Partial<FallbackGovernanceState>;
-  const revision = Number.isSafeInteger(parsed.revision) && Number(parsed.revision) >= 0
-    ? Number(parsed.revision)
-    : 0;
-  const tombstones: FallbackGovernanceState['tombstones'] = {};
-  for (const family of ['task', 'viral-analysis', 'image-lab', 'voice-lab'] as HistoryFamily[]) {
-    const incoming = parsed.tombstones?.[family];
-    if (!incoming || typeof incoming !== 'object') continue;
-    for (const [id, entry] of Object.entries(incoming)) {
-      if (!Number.isSafeInteger(entry?.revision) || entry.revision < 0) continue;
-      (tombstones[family] ??= {})[id] = {
-        revision: entry.revision,
-        cleanupState: 'unmanaged-legacy',
-      };
-    }
-  }
-  return { revision, tombstones };
-}
-
-function readFallbackEnvelope(): FallbackStorageEnvelope {
-  let stored: Partial<FallbackStorageEnvelope> | null = null;
-  const rawEnvelope = localStorage.getItem(fallbackGovernanceStorageKey);
-  if (rawEnvelope) {
-    try {
-      stored = JSON.parse(rawEnvelope) as Partial<FallbackStorageEnvelope>;
-    } catch {
-      stored = null;
-    }
-  }
-  const governance = parseFallbackGovernance(stored);
-  let sourceState: AppState;
-  if (stored?.version === fallbackEnvelopeVersion && stored.state && typeof stored.state === 'object') {
-    sourceState = hydrateState(stored.state as AppState);
-  } else {
-    const rawState = localStorage.getItem('storydream-state') ?? localStorage.getItem('storybound-state');
-    sourceState = rawState ? hydrateState(JSON.parse(rawState) as AppState) : cloneState(initialState);
-  }
-  const filtered = filterFallbackTombstones(sourceState, governance);
-  return {
-    version: fallbackEnvelopeVersion,
-    ...governance,
-    state: { ...filtered, config: stripConfigSecrets(filtered.config), secretStatus: {} },
-  };
-}
-
-function commitFallbackEnvelope(envelope: FallbackStorageEnvelope): void {
-  // One synchronous tab-local write; localStorage provides neither cross-tab CAS nor crash transactions.
-  localStorage.setItem(fallbackGovernanceStorageKey, JSON.stringify(envelope));
-}
-
-function filterFallbackTombstones(state: AppState, governance: FallbackGovernanceState): AppState {
-  const deleted = (family: HistoryFamily, id: string) => Boolean(governance.tombstones[family]?.[id]);
-  return {
-    ...state,
-    tasks: state.tasks.filter((task) => !deleted('task', task.id)),
-    events: state.events.filter((event) => !deleted('task', event.taskId)),
-    viralAnalyses: state.viralAnalyses.filter((record) => !deleted('viral-analysis', record.id)),
-    viralEvents: state.viralEvents.filter((event) => !deleted('viral-analysis', event.analysisId)),
-    imageLabRecords: state.imageLabRecords.filter((record) => !deleted('image-lab', record.id)),
-    voiceLabRecords: state.voiceLabRecords.filter((record) => !deleted('voice-lab', record.id)),
-  };
-}
-
-function fallbackHistoryPage<F extends HistoryFamily, T>(family: F, items: T[]): HistoryPage<F, T> {
-  return {
-    family,
-    items,
-    totalCount: items.length,
-    hasMore: false,
-    nextCursor: null,
-  };
-}
-
-function makeFallbackApi(setState: (state: AppState) => void): StoryDreamApi {
-  const readEnvelope = () => readFallbackEnvelope();
-  const read = () => readEnvelope().state;
-  const commitState = (state: AppState, governance: FallbackGovernanceState): AppState => {
-    const filtered = filterFallbackTombstones(hydrateState(state), governance);
-    const sanitized = { ...filtered, config: stripConfigSecrets(filtered.config), secretStatus: {} };
-    commitFallbackEnvelope({ version: fallbackEnvelopeVersion, ...governance, state: sanitized });
-    setState(sanitized);
-    return sanitized;
-  };
-  const loadFallbackPromptTemplates = async (): Promise<AppState> => {
-    const defaults = await loadDefaultPromptTemplates();
-    const envelope = readEnvelope();
-    const custom = envelope.state.promptTemplates.filter((template) => !template.isBuiltin);
-    const next = { ...envelope.state, promptTemplates: [...defaults, ...custom] as PromptTemplate[] };
-    if (!changed(envelope.state.promptTemplates, next.promptTemplates)) return envelope.state;
-    return commitState(next, { revision: envelope.revision, tombstones: envelope.tombstones });
-  };
-  const readBookSelections = () => {
-    const raw = localStorage.getItem('storybound-book-selections');
-    if (!raw) return [] as BookSelectionRecord[];
-    try {
-      return JSON.parse(raw) as BookSelectionRecord[];
-    } catch {
-      return [] as BookSelectionRecord[];
-    }
-  };
-  const writeBookSelections = (records: BookSelectionRecord[]) => {
-    localStorage.setItem('storybound-book-selections', JSON.stringify(records));
-    return records;
-  };
-  const changed = (left: unknown, right: unknown) => JSON.stringify(left) !== JSON.stringify(right);
-  const mutationForState = (previous: AppState, next: AppState, revision: number): AppMutationResult | null => {
-    const task = next.tasks.find((item) => {
-      const old = previous.tasks.find((candidate) => candidate.id === item.id);
-      return !old || changed(old, item);
-    });
-    if (task) return { kind: 'task-upsert', task: taskToSummary(task), revision };
-    const viral = next.viralAnalyses.find((item) => {
-      const old = previous.viralAnalyses.find((candidate) => candidate.id === item.id);
-      return !old || changed(old, item);
-    });
-    if (viral) {
-      const { settings: _settings, resultPath: _resultPath, videoPath: _videoPath, ...record } = viral;
-      return { kind: 'viral-upsert', record, revision };
-    }
-    let patch: Extract<AppDelta, { kind: 'state-patch' }>['patch'] | null = null;
-    if (changed(previous.config, next.config) && changed(previous.ui, next.ui)) {
-      patch = { kind: 'theme-preference', config: next.config, ui: next.ui };
-    } else if (changed(previous.config, next.config)) patch = { kind: 'config', config: next.config, secretStatus: {} };
-    else if (changed(previous.promptTemplates, next.promptTemplates)) {
-      const changedTemplates = next.promptTemplates.filter((template) => {
-        const old = previous.promptTemplates.find((candidate) => candidate.id === template.id);
-        return !old || changed(old, template);
-      });
-      patch = changedTemplates.length === 1
-        ? { kind: 'prompt-template-upsert', template: changedTemplates[0] }
-        : {
-            kind: 'prompt-templates-reset',
-            templates: next.promptTemplates.filter((template) => template.isBuiltin).map(({ content: _content, stepPrompts: _steps, imageSeedPoolsJson: _seeds, ...summary }) => summary),
-          };
-    } else if (changed(previous.customStyles, next.customStyles)) {
-      const style = next.customStyles.find((item) => !previous.customStyles.some((old) => old.id === item.id && !changed(old, item)));
-      if (style) patch = { kind: 'custom-style-upsert', style };
-    } else if (changed(previous.draftTemplates, next.draftTemplates)) {
-      const template = next.draftTemplates.find((item) => !previous.draftTemplates.some((old) => old.id === item.id && !changed(old, item)));
-      if (template) patch = { kind: 'draft-template-upsert', template };
-    } else if (changed(previous.imageLabRecords, next.imageLabRecords) && next.imageLabRecords[0]) {
-      const { prompt, referenceImagePaths: _paths, referenceImagePath: _path, ...record } = next.imageLabRecords[0];
-      patch = { kind: 'image-lab-upsert', record: { ...record, promptPreview: prompt.slice(0, 160) } };
-    } else if (changed(previous.voiceLabRecords, next.voiceLabRecords) && next.voiceLabRecords[0]) {
-      const { text, ...record } = next.voiceLabRecords[0];
-      patch = { kind: 'voice-lab-upsert', record: { ...record, textPreview: text.slice(0, 160) } };
-    } else if (changed(previous.account, next.account)) patch = { kind: 'account', account: next.account };
-    else if (changed(previous.activation, next.activation)) patch = { kind: 'activation', activation: next.activation };
-    else if (changed(previous.ui, next.ui)) patch = { kind: 'ui', ui: next.ui };
-    return patch ? { kind: 'state-patch', patch, revision } : null;
-  };
-  const persist = (state: AppState): AppMutationResult | null => {
-    const previous = readEnvelope();
-    const next = filterFallbackTombstones(hydrateState(state), previous);
-    const sanitized = { ...next, config: stripConfigSecrets(next.config), secretStatus: {} };
-    const revision = previous.revision + 1;
-    const mutation = mutationForState(previous.state, sanitized, revision);
-    commitState(sanitized, {
-      revision: mutation ? revision : previous.revision,
-      tombstones: previous.tombstones,
-    });
-    return mutation;
-  };
-
-  const historyRecord = (state: AppState, family: HistoryFamily, id: string) => {
-    if (family === 'task') return state.tasks.find((record) => record.id === id);
-    if (family === 'viral-analysis') return state.viralAnalyses.find((record) => record.id === id);
-    if (family === 'image-lab') return state.imageLabRecords.find((record) => record.id === id);
-    return state.voiceLabRecords.find((record) => record.id === id);
-  };
-
-  const commitFallbackHistoryUpsert = (
-    family: HistoryFamily,
-    state: AppState,
-    id: string,
-  ): AppMutationResult => {
-    const current = readEnvelope();
-    const revision = current.revision + 1;
-    const saved = commitState(state, { revision, tombstones: current.tombstones });
-    if (family === 'task') {
-      const task = saved.tasks.find((record) => record.id === id);
-      if (!task) throw new Error(`Task not found: ${id}`);
-      return { kind: 'task-upsert', task: taskToSummary(task), revision };
-    }
-    if (family === 'viral-analysis') {
-      const record = saved.viralAnalyses.find((item) => item.id === id);
-      if (!record) throw new Error(`Viral analysis not found: ${id}`);
-      const { settings: _settings, resultPath: _resultPath, videoPath: _videoPath, ...summary } = record;
-      return { kind: 'viral-upsert', record: summary, revision };
-    }
-    if (family === 'image-lab') {
-      const record = saved.imageLabRecords.find((item) => item.id === id);
-      if (!record) throw new Error(`Image lab record not found: ${id}`);
-      const { prompt, referenceImagePaths: _paths, referenceImagePath: _path, ...summary } = record;
-      return {
-        kind: 'state-patch',
-        patch: { kind: 'image-lab-upsert', record: { ...summary, promptPreview: prompt.slice(0, 160) } },
-        revision,
-      };
-    }
-    const record = saved.voiceLabRecords.find((item) => item.id === id);
-    if (!record) throw new Error(`Voice lab record not found: ${id}`);
-    const { text, ...summary } = record;
-    return {
-      kind: 'state-patch',
-      patch: { kind: 'voice-lab-upsert', record: { ...summary, textPreview: text.slice(0, 160) } },
-      revision,
-    };
-  };
-
-  const archiveFallbackHistory = (family: HistoryFamily, id: string): AppMutationResult => {
-    const state = read();
-    const record = historyRecord(state, family, id);
-    if (!record) throw new Error(`History record not found or deleted: ${family}/${id}`);
-    if ((family === 'task' || family === 'viral-analysis')
-      && (record.status === 'pending' || record.status === 'running')) {
-      throw new Error('HISTORY_ACTIVE: Pending or running history cannot be archived.');
-    }
-    const archivedAt = record.archivedAt ?? new Date().toISOString();
-    if (family === 'task') {
-      return commitFallbackHistoryUpsert(family, {
-        ...state,
-        tasks: state.tasks.map((item) => item.id === id ? { ...item, archivedAt } : item),
-      }, id);
-    }
-    if (family === 'viral-analysis') {
-      return commitFallbackHistoryUpsert(family, {
-        ...state,
-        viralAnalyses: state.viralAnalyses.map((item) => item.id === id ? { ...item, archivedAt } : item),
-      }, id);
-    }
-    if (family === 'image-lab') {
-      return commitFallbackHistoryUpsert(family, {
-        ...state,
-        imageLabRecords: state.imageLabRecords.map((item) => item.id === id ? { ...item, archivedAt } : item),
-      }, id);
-    }
-    return commitFallbackHistoryUpsert(family, {
-      ...state,
-      voiceLabRecords: state.voiceLabRecords.map((item) => item.id === id ? { ...item, archivedAt } : item),
-    }, id);
-  };
-
-  const restoreFallbackHistory = (family: HistoryFamily, id: string): AppMutationResult => {
-    const state = read();
-    if (!historyRecord(state, family, id)) throw new Error(`History record not found or deleted: ${family}/${id}`);
-    if (family === 'task') {
-      return commitFallbackHistoryUpsert(family, {
-        ...state,
-        tasks: state.tasks.map((item) => item.id === id ? { ...item, archivedAt: null } : item),
-      }, id);
-    }
-    if (family === 'viral-analysis') {
-      return commitFallbackHistoryUpsert(family, {
-        ...state,
-        viralAnalyses: state.viralAnalyses.map((item) => item.id === id ? { ...item, archivedAt: null } : item),
-      }, id);
-    }
-    if (family === 'image-lab') {
-      return commitFallbackHistoryUpsert(family, {
-        ...state,
-        imageLabRecords: state.imageLabRecords.map((item) => item.id === id ? { ...item, archivedAt: null } : item),
-      }, id);
-    }
-    return commitFallbackHistoryUpsert(family, {
-      ...state,
-      voiceLabRecords: state.voiceLabRecords.map((item) => item.id === id ? { ...item, archivedAt: null } : item),
-    }, id);
-  };
-
-  const deleteFallbackHistory = (family: HistoryFamily, id: string): AppMutationResult => {
-    const current = readEnvelope();
-    const existing = current.tombstones[family]?.[id];
-    if (existing) return fallbackTombstoneResult(family, id, existing.revision);
-    const state = current.state;
-    const record = historyRecord(state, family, id);
-    if (!record) throw new Error(`History record not found: ${family}/${id}`);
-    if (!record.archivedAt) throw new Error('HISTORY_NOT_ARCHIVED: Permanent deletion requires an archived history record.');
-    const revision = current.revision + 1;
-    const entry: FallbackTombstoneEntry = { revision, cleanupState: 'unmanaged-legacy' };
-    const tombstones = {
-      ...current.tombstones,
-      [family]: { ...current.tombstones[family], [id]: entry },
-    };
-    commitState(state, { revision, tombstones });
-    return fallbackTombstoneResult(family, id, revision);
-  };
-
-  const matchesArchiveFilter = (record: { archivedAt?: string | null }, filter: 'active' | 'archived' = 'active') => (
-    filter === 'archived' ? Boolean(record.archivedAt) : !record.archivedAt
-  );
-  const matchesFallbackQuery = (query: string | undefined, values: unknown[]) => {
-    const normalized = query?.trim().toLocaleLowerCase();
-    return !normalized || values.some((value) => String(value ?? '').toLocaleLowerCase().includes(normalized));
-  };
-
-  return {
-    async getState() {
-      return loadFallbackPromptTemplates();
-    },
-    async getBootstrap() {
-      const state = await loadFallbackPromptTemplates();
-      const envelope = readEnvelope();
-      return {
-        revision: envelope.revision,
-        config: state.config,
-        secretStatus: {},
-        tasks: fallbackHistoryPage('task', state.tasks.filter((record) => !record.archivedAt).map(taskToSummary)),
-        viralAnalyses: fallbackHistoryPage('viral-analysis', state.viralAnalyses.filter((record) => !record.archivedAt)),
-        imageLabRecords: fallbackHistoryPage(
-          'image-lab',
-          state.imageLabRecords.filter((record) => !record.archivedAt).map(({ prompt, referenceImagePaths: _paths, referenceImagePath: _path, ...record }) => ({ ...record, promptPreview: prompt.slice(0, 160) })),
-        ),
-        voiceLabRecords: fallbackHistoryPage(
-          'voice-lab',
-          state.voiceLabRecords.filter((record) => !record.archivedAt).map(({ text, ...record }) => ({ ...record, textPreview: text.slice(0, 160) })),
-        ),
-        promptTemplates: {
-          items: state.promptTemplates.map(({ content: _content, stepPrompts: _steps, imageSeedPoolsJson: _seeds, ...summary }) => summary),
-          nextCursor: null,
-        },
-        draftTemplates: {
-          items: state.draftTemplates.map((template) => ({
-            id: template.id,
-            name: template.name,
-            isDefault: template.isDefault,
-            canvas: { width: template.canvas.width, height: template.canvas.height, ratio: template.canvas.ratio },
-            updatedAt: '',
-          })),
-          nextCursor: null,
-        },
-        customStyles: state.customStyles,
-        customCoverTemplates: state.customCoverTemplates,
-        creditTransactions: state.creditTransactions,
-        minimaxCloneVoices: state.minimaxCloneVoices,
-        account: state.account,
-        activation: state.activation,
-        ui: state.ui,
-      } satisfies BootstrapState;
-    },
-    async reconcileDeltas(input) {
-      const envelope = readEnvelope();
-      const state = envelope.state;
-      const revision = envelope.revision;
-      return {
-        revision,
-        deltas: [],
-        resetRequired: input.forceReset === true || input.sinceRevision < revision,
-        task: input.taskId ? state.tasks.find((task) => task.id === input.taskId) ?? null : null,
-        taskEvents: input.taskId
-          ? state.events.filter((event) => event.taskId === input.taskId && Number.isInteger(event.seq)) as Array<TaskEvent & { seq: number }>
-          : [],
-        viralAnalysis: input.viralAnalysisId ? state.viralAnalyses.find((record) => record.id === input.viralAnalysisId) ?? null : null,
-        viralEvents: input.viralAnalysisId ? state.viralEvents.filter((event) => event.analysisId === input.viralAnalysisId) : [],
-      };
-    },
-    async listTasks(request: HistoryListInput<'task'> = {}) {
-      const tasks = read().tasks.filter((task) => {
-        if (!matchesArchiveFilter(task, request.filter)) return false;
-        if (request.status && task.status !== request.status) return false;
-        if (request.statuses && !request.statuses.includes(task.status)) return false;
-        const taskType = task.taskType?.trim() || (task.taskKind === 'music-mv' ? 'music-mv' : 'story');
-        if (request.taskType && taskType !== request.taskType) return false;
-        return matchesFallbackQuery(request.query, [task.title, task.inputText, task.aiKeyword]);
-      });
-      return fallbackHistoryPage('task', tasks.map(taskToSummary));
-    },
-    async archiveTask(id: string) {
-      return archiveFallbackHistory('task', id);
-    },
-    async restoreTask(id: string) {
-      return restoreFallbackHistory('task', id);
-    },
-    async deleteTaskPermanently(id: string) {
-      return deleteFallbackHistory('task', id);
-    },
-    async getTaskDetail(id) {
-      return read().tasks.find((task) => task.id === id) ?? null;
-    },
-    async listTaskEvents(taskId) {
-      return {
-        items: read().events.filter((event) => event.taskId === taskId && Number.isInteger(event.seq)) as Array<TaskEvent & { seq: number }>,
-        nextCursor: null,
-      };
-    },
-    async openTaskOutputDirectory() {
-      throw new Error('浏览器预览不能打开本地任务目录，请在 Electron 桌面端操作。');
-    },
-    async listViralAnalyses(request: HistoryListInput<'viral-analysis'> = {}) {
-      const records = read().viralAnalyses.filter((record) => (
-        matchesArchiveFilter(record, request.filter)
-        && (!request.status || record.status === request.status)
-        && matchesFallbackQuery(request.query, [record.title, record.url, record.platform])
-      ));
-      return fallbackHistoryPage('viral-analysis', records);
-    },
-    async archiveViralAnalysis(id: string) {
-      return archiveFallbackHistory('viral-analysis', id);
-    },
-    async restoreViralAnalysis(id: string) {
-      return restoreFallbackHistory('viral-analysis', id);
-    },
-    async deleteViralAnalysisPermanently(id: string) {
-      return deleteFallbackHistory('viral-analysis', id);
-    },
-    async getViralAnalysisDetail(id) {
-      return read().viralAnalyses.find((record) => record.id === id) ?? null;
-    },
-    async listViralEvents(analysisId) {
-      return { items: read().viralEvents.filter((event) => event.analysisId === analysisId), nextCursor: null };
-    },
-    async listImageLabRecords(request: HistoryListInput<'image-lab'> = {}) {
-      return fallbackHistoryPage(
-        'image-lab',
-        read().imageLabRecords
-          .filter((record) => (
-            matchesArchiveFilter(record, request.filter)
-            && (!request.status || record.status === request.status)
-            && matchesFallbackQuery(request.query, [record.prompt, record.provider, record.style])
-          ))
-          .map(({ prompt, referenceImagePaths: _paths, referenceImagePath: _path, ...record }) => ({ ...record, promptPreview: prompt.slice(0, 160) })),
-      );
-    },
-    async archiveImageLabRecord(id: string) {
-      return archiveFallbackHistory('image-lab', id);
-    },
-    async restoreImageLabRecord(id: string) {
-      return restoreFallbackHistory('image-lab', id);
-    },
-    async deleteImageLabRecordPermanently(id: string) {
-      return deleteFallbackHistory('image-lab', id);
-    },
-    async getImageLabRecordDetail(id) {
-      return read().imageLabRecords.find((record) => record.id === id) ?? null;
-    },
-    async listVoiceLabRecords(request: HistoryListInput<'voice-lab'> = {}) {
-      return fallbackHistoryPage(
-        'voice-lab',
-        read().voiceLabRecords
-          .filter((record) => (
-            matchesArchiveFilter(record, request.filter)
-            && (!request.status || record.status === request.status)
-            && matchesFallbackQuery(request.query, [record.text, record.voiceLabel, record.provider])
-          ))
-          .map(({ text, ...record }) => ({ ...record, textPreview: text.slice(0, 160) })),
-      );
-    },
-    async archiveVoiceLabRecord(id: string) {
-      return archiveFallbackHistory('voice-lab', id);
-    },
-    async restoreVoiceLabRecord(id: string) {
-      return restoreFallbackHistory('voice-lab', id);
-    },
-    async deleteVoiceLabRecordPermanently(id: string) {
-      return deleteFallbackHistory('voice-lab', id);
-    },
-    async getVoiceLabRecordDetail(id) {
-      return read().voiceLabRecords.find((record) => record.id === id) ?? null;
-    },
-    async listPromptTemplates() {
-      const state = await loadFallbackPromptTemplates();
-      return {
-        items: state.promptTemplates.map(({ content: _content, stepPrompts: _steps, imageSeedPoolsJson: _seeds, ...summary }) => summary),
-        nextCursor: null,
-      };
-    },
-    async getPromptTemplateDetail(id) {
-      return (await loadFallbackPromptTemplates()).promptTemplates.find((template) => template.id === id) ?? null;
-    },
-    async listDraftTemplates() {
-      return {
-        items: read().draftTemplates.map((template) => ({
-          id: template.id,
-          name: template.name,
-          isDefault: template.isDefault,
-          canvas: { width: template.canvas.width, height: template.canvas.height, ratio: template.canvas.ratio },
-          updatedAt: '',
-        })),
-        nextCursor: null,
-      };
-    },
-    async getDraftTemplateDetail(id) {
-      return read().draftTemplates.find((template) => template.id === id) ?? null;
-    },
-    async listMinimaxCloneVoices(request = {}) {
-      const voices = read().minimaxCloneVoices;
-      const start = request.cursor ? Math.max(0, Number.parseInt(request.cursor, 10) || 0) : 0;
-      const limit = Math.min(100, Math.max(1, Math.trunc(request.limit ?? 50)));
-      const items = voices.slice(start, start + limit);
-      const next = start + items.length;
-      return { items, totalCount: voices.length, nextCursor: next < voices.length ? String(next) : null };
-    },
-    async saveConfig(input) {
-      if (Object.keys(input.secretChanges).length > 0) {
-        throw new Error('浏览器预览不会安全保存接口密钥，请在 Electron 桌面端配置并保存。');
-      }
-      return persist({ ...read(), config: input.config });
-    },
-    async testLlmConfig(config) {
-      const endpoint =
-        config.protocol === 'anthropic'
-          ? `${config.baseUrl || 'https://api.anthropic.com'}/v1/messages`
-          : `${config.baseUrl || 'https://api.openai.com'}/v1/chat/completions`;
-      return {
-        status: config.apiKey ? 'warn' : 'fail',
-        detail: config.apiKey ? '浏览器预览无法调用模型测试接口，请在 Electron 桌面端测试。' : '接口密钥未填写，请先补全模型凭证。',
-        latencyMs: 0,
-        model: config.model,
-        endpoint,
-        requestId: null,
-      };
-    },
-    async listProviderModels(request) {
-      const baseUrl = request.baseUrl.trim().replace(/\/+$/, '');
-      const endpoint = `${baseUrl || (request.protocol === 'anthropic' ? 'https://api.anthropic.com' : 'https://api.openai.com')}/v1/models`;
-      return {
-        status: 'warn',
-        detail: '浏览器预览无法安全加载模型列表，请在 Electron 桌面端使用。',
-        latencyMs: 0,
-        endpoint,
-        models: [],
-      };
-    },
-    async listVolcengineSpeakers() {
-      const speakers = volcengineVoicePresets.map(([name, voiceType]) => ({ voiceType, name }));
-      return {
-        status: 'warn',
-        detail: '浏览器预览无法调用火山 OpenAPI，已展示本地预设音色。请在 Electron 桌面端加载全部音色。',
-        latencyMs: 0,
-        endpoint: 'https://open.volcengineapi.com/?Action=ListSpeakers&Version=2025-05-20',
-        speakers,
-        total: speakers.length,
-        requestId: null,
-      };
-    },
-    async testAppConfig(target, config) {
-      return validateConfigTarget(target, config);
-    },
-    async fetchImaKnowledge() {
-      return {
-        status: 'fail',
-        detail: '浏览器预览无法安全访问 IMA 知识库，请在 Electron 桌面端使用。',
-        latencyMs: 0,
-        endpoint: 'https://ima.qq.com/openapi/wiki/v1/search_knowledge',
-        requestId: null,
-        knowledgeBaseId: '',
-        records: [],
-        totalCount: 0,
-      };
-    },
-    async searchWebSources(query) {
-      return {
-        query,
-        sections: [],
-        warnings: ['浏览器预览无法直接抓取网页正文，请在 Electron 桌面端使用搜索。'],
-      };
-    },
-    async composeResearchCopy() {
-      throw new Error('浏览器预览无法调用真实 LLM 生成文案，请在 Electron 桌面端配置模型后使用。');
-    },
-    async savePromptTemplate(template: PromptTemplate) {
-      const state = read();
-      const next = state.promptTemplates.filter((item) => item.id !== template.id);
-      return persist({ ...state, promptTemplates: [{ ...template, updatedAt: new Date().toISOString() }, ...next] });
-    },
-    async resetPromptTemplates() {
-      const state = read();
-      const custom = state.promptTemplates.filter((template) => !template.isBuiltin);
-      const defaults = await loadDefaultPromptTemplates();
-      return persist({ ...state, promptTemplates: [...defaults, ...custom] as PromptTemplate[] });
-    },
-    async saveCustomStyle(style: CustomStyle) {
-      const state = read();
-      const next = state.customStyles.filter((item) => item.id !== style.id);
-      const now = new Date().toISOString();
-      return persist({ ...state, customStyles: [{ ...style, updatedAt: now, createdAt: style.createdAt || now }, ...next] });
-    },
-    async saveViralTemplates(input) {
-      const state = read();
-      const promptTemplates = [
-        { ...input.storyTemplate, isBuiltin: false, updatedAt: new Date().toISOString() },
-        ...state.promptTemplates.filter((item) => item.id !== input.storyTemplate.id),
-      ];
-      const now = new Date().toISOString();
-      const customStyles = [
-        { ...input.imageTemplate, createdAt: input.imageTemplate.createdAt || now, updatedAt: input.imageTemplate.updatedAt || now },
-        ...state.customStyles.filter((item) => item.id !== input.imageTemplate.id),
-      ];
-      return persist({ ...state, promptTemplates, customStyles });
-    },
-    async generateCustomStyleDraft(input) {
-      return { ...input.baseStyle, ...buildImageStyleDraftFromPrompt(input.prompt, input.baseStyle) };
-    },
-    async saveDraftTemplate(template: DraftTemplate) {
-      const state = read();
-      const exists = state.draftTemplates.some((item) => item.id === template.id);
-      const templates = exists ? state.draftTemplates.map((item) => (item.id === template.id ? template : item)) : [template, ...state.draftTemplates];
-      return persist({ ...state, draftTemplates: templates });
-    },
-    async generateImageLab(input: ImageLabGenerateInput) {
-      const state = read();
-      const now = new Date().toISOString();
-      const record: ImageLabRecord = {
-        id: input.id ?? crypto.randomUUID(),
-        prompt: input.prompt,
-        ratio: input.ratio,
-        style: input.style,
-        provider: state.config.imageProvider,
-        imagePath: '',
-        status: 'failed',
-        errorMessage: '浏览器预览无法调用真实生图模型，请在 Electron 桌面端使用。',
-        resolution: input.resolution ?? activeImageResolution(state.config),
-        smartMode: input.smartMode ?? 'text-to-image',
-        referenceImagePaths: input.referenceImagePaths?.length ? input.referenceImagePaths : input.referenceImagePath ? [input.referenceImagePath] : [],
-        referenceImagePath: input.referenceImagePath ?? '',
-        upstreamTaskId: input.upstreamTaskId ?? null,
-        createdAt: input.createdAt ?? now,
-        finishedAt: now,
-      };
-      return persist({ ...state, imageLabRecords: [record, ...state.imageLabRecords] });
-    },
-    async generateVoiceLabPreview(input: VoiceLabGenerateInput) {
-      const state = read();
-      const now = new Date().toISOString();
-      const record: VoiceLabRecord = {
-        id: input.id ?? crypto.randomUUID(),
-        text: input.text,
-        provider: input.provider,
-        voiceId: input.voiceId,
-        voiceLabel: input.voiceLabel ?? taskSpeakerLabel(input.provider, input.voiceId),
-        speed: input.speed,
-        audioPath: '',
-        status: 'failed',
-        errorMessage: '浏览器预览不能调用真实 TTS，请在 Electron 桌面端生成试听。',
-        createdAt: input.createdAt ?? now,
-        finishedAt: now,
-      };
-      return persist({ ...state, voiceLabRecords: [record, ...state.voiceLabRecords] });
-    },
-    async addImageLabRecord(input: Partial<ImageLabRecord> & Pick<ImageLabRecord, 'prompt' | 'ratio' | 'style' | 'provider'>) {
-      const state = read();
-      const now = new Date().toISOString();
-      const record: ImageLabRecord = {
-        id: input.id ?? crypto.randomUUID(),
-        prompt: input.prompt,
-        ratio: input.ratio,
-        style: input.style,
-        provider: input.provider,
-        imagePath: input.imagePath ?? '',
-        status: input.status ?? 'failed',
-        errorMessage: input.errorMessage ?? '',
-        resolution: input.resolution ?? '2K',
-        smartMode: input.smartMode ?? 'text-to-image',
-        referenceImagePaths: input.referenceImagePaths?.length ? input.referenceImagePaths : input.referenceImagePath ? [input.referenceImagePath] : [],
-        referenceImagePath: input.referenceImagePath ?? '',
-        upstreamTaskId: input.upstreamTaskId ?? null,
-        createdAt: input.createdAt ?? now,
-        finishedAt: input.finishedAt ?? now,
-      };
-      return persist({ ...state, imageLabRecords: [record, ...state.imageLabRecords] });
-    },
-    async saveAccount(account: AccountProfile) {
-      return persist({ ...read(), account });
-    },
-    async saveActivation(activation: ActivationState) {
-      return persist({ ...read(), activation });
-    },
-    async saveUiPreferences(update: UiPreferencesUpdate) {
-      const current = read();
-      const ui = {
-        ...current.ui,
-        ...update,
-        themePreferenceVersion: 1 as const,
-      };
-      return persist({ ...current, ui, config: { ...current.config, ui: { theme: ui.theme } } });
-    },
-    async listBookSelections(theme) {
-      const records = readBookSelections();
-      return theme ? records.filter((record) => record.theme === theme) : records;
-    },
-    async saveBookSelection(input) {
-      const records = readBookSelections();
-      const record = { theme: input.theme.trim(), bookId: input.bookId?.trim() || `b-${Date.now()}`, data: input.data, updatedAt: Date.now() };
-      const previous = input.previousIdentity;
-      const previousIndex = previous ? records.findIndex((item) => item.theme === previous.theme && item.bookId === previous.bookId) : -1;
-      if (previous && previousIndex < 0) throw new Error('BOOK_SELECTION_STALE_IDENTITY: 所选记录已被修改或删除。');
-      const destinationIndex = records.findIndex((item) => item.theme === record.theme && item.bookId === record.bookId);
-      const sameIdentity = previous?.theme === record.theme && previous?.bookId === record.bookId;
-      if ((!previous && destinationIndex >= 0) || (previous && !sameIdentity && destinationIndex >= 0)) {
-        throw new Error('BOOK_SELECTION_DESTINATION_CONFLICT: 目标主题和书目 ID 已存在。');
-      }
-      const retained = records.filter((_, index) => index !== previousIndex && index !== (sameIdentity ? destinationIndex : -1));
-      writeBookSelections([record, ...retained]);
-      return record;
-    },
-    async deleteBookSelection(theme, bookId) {
-      writeBookSelections(readBookSelections().filter((record) => !(record.theme === theme && record.bookId === bookId)));
-      return undefined;
-    },
-    async listPersonAssets() {
-      return [];
-    },
-    async createPersonAsset(name) {
-      return { name, count: 0, dir: '', updatedAt: Date.now() };
-    },
-    async renamePersonAsset(_oldName, newName) {
-      return newName;
-    },
-    async deletePersonAsset() {
-      return undefined;
-    },
-    async importPersonAssetImages() {
-      return 0;
-    },
-    async listPersonAssetImages() {
-      return [];
-    },
-    async openPersonAssetDirectory() {
-      throw new Error('浏览器预览不能打开本地人物素材目录，请在 Electron 桌面端操作。');
-    },
-    async createHtmlVideoTask(input: CreateTaskInput) {
-      const state = read();
-      const now = new Date().toISOString();
-      const task: Task = {
-        id: crypto.randomUUID(),
-        title: input.title || input.inputText.slice(0, 18) || 'HTML 动画视频',
-        inputText: input.inputText,
-        taskKind: 'story',
-        processingMode: input.processingMode ?? 'full-auto',
-        publishMode: input.publishMode ?? 'review-rewrite',
-        status: 'draft',
-        currentStep: 0,
-        track: input.track ?? 'character-story',
-        style: input.style ?? 'modern-film',
-        speaker: input.speaker ?? '灿博小叔',
-        ratio: input.ratio ?? '9:16',
-        templateId: input.templateId ?? 'default-portrait-9-16',
-        bgmId: input.bgmId ?? state.config.jianying.defaultBgmId ?? '',
-        pausePoints: input.pausePoints ?? [],
-        outputDir: '',
-        errorMessage: '',
-        createdAt: now,
-        completedAt: null,
-        startedAt: null,
-        lastHeartbeatAt: null,
-        mode: input.mode ?? 'paste',
-        aiKeyword: input.aiKeyword ?? '',
-        aiSources: input.aiSources ?? [],
-        selectedSources: input.selectedSources ?? [],
-        extraRequirements: input.extraRequirements ?? '',
-        imagePromptReference: input.imagePromptReference ?? '',
-        promptTemplateId: input.promptTemplateId ?? null,
-        promptTemplateType: input.promptTemplateType ?? null,
-        referenceImagePath: input.referenceImagePath ?? '',
-        rewriteIntensity: input.rewriteIntensity ?? 'standard',
-        narrativePov: input.narrativePov ?? 'keep-original',
-        keepPromotion: input.keepPromotion ?? false,
-        ttsProvider: input.ttsProvider ?? 'volcengine',
-        ttsSpeed: input.ttsSpeed ?? 1,
-        storyboardSceneCount: input.targetScenes ?? input.storyboardSceneCount,
-        targetLength: input.targetLength,
-        targetScenes: input.targetScenes ?? input.storyboardSceneCount,
-        step3PromptSnapshot: input.step3PromptSnapshot ?? '',
-        musicMv: input.musicMv ?? { rhythmMode: 'lyric-sync', captionStyle: 'karaoke', visualMotif: '', audioPath: '' },
-        videoForm: input.videoForm ?? 'narration',
-        failedStep: null,
-        retryFromStep: null,
-        artifactStatePath: '',
-        materialSource: input.materialSource ?? 'paste',
-        taskType: 'html-video',
-        pipelineStep: input.pipelineStep ?? 'rewrite',
-        pipelineData: input.pipelineData ?? '{}',
-        coverImageMode: input.coverImageMode ?? 'off',
-        coverTemplateId: input.coverTemplateId ?? 'cinematic-poster',
-      };
-      const events: TaskEvent[] = [
-        { taskId: task.id, type: 'pipeline_ready', step: 0, agent: 'HTML Video', tool: null, detail: 'HTML 动画视频任务已创建，等待改写与分句。', dataJson: task.pipelineData ?? null, ts: Date.now() },
-      ];
-      return persist({ ...state, tasks: [task, ...state.tasks], events: [...state.events, ...events] });
-    },
-    async updateHtmlVideoConfig(id: string, changes: HtmlVideoConfigChange[]) {
-      const state = read();
-      const task = state.tasks.find((item) => item.id === id);
-      if (!task || task.taskType !== 'html-video') throw new Error(`HTML 视频任务不存在：${id}`);
-      if (task.archivedAt) throw new Error('HISTORY_ARCHIVED: 已归档任务只读。');
-      if (task.status === 'pending' || task.status === 'running') throw new Error('HTML_VIDEO_CONFIG_ACTIVE: 运行中的任务不能编辑参数。');
-      const applied = applyHtmlVideoConfigChanges(parseHtmlVideoPipelineData(task.pipelineData), changes);
-      const currentStep = htmlVideoVisibleSteps.indexOf(applied.invalidateFrom);
-      const updated: Task = {
-        ...task,
-        ...applied.legacyMirrors,
-        status: 'paused',
-        currentStep,
-        pipelineStep: applied.invalidateFrom,
-        pipelineData: JSON.stringify(applied.pipeline),
-        completedAt: null,
-        errorMessage: '',
-        failedStep: null,
-        retryFromStep: null,
-        lastHeartbeatAt: new Date().toISOString(),
-      };
-      const event: TaskEvent = {
-        taskId: id,
-        type: 'config_update',
-        step: currentStep,
-        agent: 'HTML Video',
-        tool: null,
-        detail: `已更新 HTML 视频参数，从${applied.invalidateFrom}阶段继续。`,
-        dataJson: JSON.stringify({ changedFields: applied.changedFields, invalidateFrom: applied.invalidateFrom }),
-        ts: Date.now(),
-      };
-      return persist({
-        ...state,
-        tasks: state.tasks.map((item) => item.id === id ? updated : item),
-        events: [...state.events, event],
-      });
-    },
-    async importHtmlVideoCover() {
-      throw new Error('浏览器预览不能导入本地封面，请在 Electron 桌面端操作。');
-    },
-    async openHtmlVideoPreview() {
-      throw new Error('浏览器预览仅创建任务快照，未执行特权 HTML 渲染。请在 Electron 桌面端打开预览。');
-    },
-    async getHtmlVideoMediaUrl() {
-      throw new Error('浏览器预览仅创建任务快照，未执行特权 HTML 渲染。请在 Electron 桌面端读取媒体。');
-    },
-    async createAndRunTask(input: CreateTaskInput) {
-      const browserPipelineError =
-        '浏览器预览无法运行真实供应商流水线。请在 Electron 桌面端配置 LLM、生图、TTS、Python 和 pyJianYingDraft 后执行。';
-      const state = read();
-      const task: Task = {
-        id: crypto.randomUUID(),
-        title: input.title || input.inputText.slice(0, 18) || 'New task',
-        inputText: input.inputText,
-        taskKind: input.taskKind ?? 'story',
-        processingMode: input.processingMode ?? 'full-auto',
-        publishMode: input.publishMode ?? 'review-rewrite',
-        status: 'paused',
-        currentStep: 0,
-        track: input.track ?? 'character-story',
-        style: input.style ?? 'photo-real',
-        speaker: input.speaker ?? '灿博小叔',
-        ratio: input.ratio ?? '9:16',
-        templateId: input.templateId ?? 'default-portrait-9-16',
-        bgmId: input.bgmId ?? state.config.jianying.defaultBgmId ?? '',
-        pausePoints: input.pausePoints ?? [],
-        outputDir: '',
-        errorMessage: browserPipelineError,
-        createdAt: new Date().toISOString(),
-        completedAt: null,
-        startedAt: null,
-        lastHeartbeatAt: null,
-        mode: input.mode ?? 'paste',
-        aiKeyword: input.aiKeyword ?? '',
-        aiSources: input.aiSources ?? [],
-        selectedSources: input.selectedSources ?? [],
-        extraRequirements: input.extraRequirements ?? '',
-        imagePromptReference: input.imagePromptReference ?? '',
-        promptTemplateId: input.promptTemplateId ?? null,
-        promptTemplateType: input.promptTemplateType ?? null,
-        referenceImagePath: input.referenceImagePath ?? '',
-        rewriteIntensity: input.rewriteIntensity ?? 'standard',
-        narrativePov: input.narrativePov ?? 'keep-original',
-        keepPromotion: input.keepPromotion ?? false,
-        ttsProvider: input.ttsProvider ?? 'volcengine',
-        ttsSpeed: input.ttsSpeed ?? 1,
-        storyboardSceneCount: input.targetScenes ?? input.storyboardSceneCount,
-        targetLength: input.targetLength,
-        targetScenes: input.targetScenes ?? input.storyboardSceneCount,
-        step3PromptSnapshot: input.step3PromptSnapshot ?? '',
-        musicMv: input.musicMv ?? { rhythmMode: 'lyric-sync', captionStyle: 'karaoke', visualMotif: '', audioPath: '' },
-        videoForm: input.videoForm ?? 'narration',
-        failedStep: 0,
-        retryFromStep: 0,
-        artifactStatePath: '',
-        materialSource: input.materialSource ?? 'ai',
-        productInfo: input.productInfo ?? null,
-        materialPerson: input.materialPerson ?? null,
-        draftDir: input.draftDir ?? null,
-        fixedIntro: input.fixedIntro ?? null,
-        outroCta: input.outroCta ?? null,
-        lockIntroSentences: input.lockIntroSentences ?? 0,
-      };
-      const events: TaskEvent[] = [
-        { taskId: task.id, type: 'step_error', step: 0, agent: 'Reviewer', tool: null, detail: browserPipelineError, dataJson: null, ts: Date.now() },
-      ];
-      return persist({ ...state, tasks: [task, ...state.tasks], events: [...state.events, ...events] });
-    },
-    async createAndRunViralAnalysis(input: CreateViralAnalysisInput) {
-      const state = read();
-      const now = new Date().toISOString();
-      const id = crypto.randomUUID();
-      return persist({
-        ...state,
-        viralAnalyses: [
-          {
-            id,
-            url: input.url,
-            platform: input.platform ?? detectBrowserViralPlatform(input.url),
-            title: input.title ?? input.url,
-            status: 'paused',
-            currentStage: 'failed',
-            progress: 0,
-            settings: input.settings,
-            resultPath: '',
-            videoPath: '',
-            errorMessage: '浏览器预览无法运行爆款视频拆解。请在 Electron 桌面端下载并处理视频。',
-            createdAt: now,
-            startedAt: now,
-            completedAt: null,
-            lastHeartbeatAt: now,
-          },
-          ...state.viralAnalyses,
-        ],
-        viralEvents: [
-          ...state.viralEvents,
-          {
-            analysisId: id,
-            type: 'error',
-            stage: 'failed',
-            detail: '浏览器预览无法运行爆款视频拆解。请在 Electron 桌面端下载并处理视频。',
-            dataJson: null,
-            ts: Date.now(),
-          },
-        ],
-      });
-    },
-    async updateViralAnalysisStatus(id: string, status: ViralAnalysisStatus) {
-      const state = read();
-      return persist({ ...state, viralAnalyses: state.viralAnalyses.map((item) => (item.id === id ? { ...item, status } : item)) });
-    },
-    async retryViralAnalysis(id: string) {
-      const state = read();
-      return persist({ ...state, viralAnalyses: state.viralAnalyses.map((item) => (item.id === id ? { ...item, status: 'pending', errorMessage: '' } : item)) });
-    },
-    async getViralAnalysisResult(id: string): Promise<ViralAnalysisResult> {
-      const state = read();
-      const record = state.viralAnalyses.find((item) => item.id === id);
-      throw new Error(`浏览器预览无法读取爆款拆解结果：${record?.title ?? id}`);
-    },
-    async createProductionTaskFromViral(id: string) {
-      throw new Error(`浏览器预览无法从爆款拆解创建成片任务：${id}`);
-    },
-    async updateTaskStatus(id: string, status: TaskStatus) {
-      const state = read();
-      return persist({ ...state, tasks: state.tasks.map((task) => (task.id === id ? { ...task, status, errorMessage: status === 'cancelled' ? '用户取消' : task.errorMessage } : task)) });
-    },
-    async retryTask(id: string) {
-      const state = read();
-      return persist({ ...state, tasks: state.tasks.map((task) => (task.id === id ? { ...task, status: 'pending', errorMessage: '' } : task)) });
-    },
-    async regenerateTaskImage() {
-      throw new Error('浏览器预览不能重新生成真实图片，请在 Electron 应用中操作。');
-    },
-    async regenerateTaskNarration() {
-      throw new Error('浏览器预览不能重新生成真实配音，请在 Electron 应用中操作。');
-    },
-    async updateTaskImagePrompt() {
-      throw new Error('浏览器预览不能修改真实任务提示词，请在 Electron 应用中操作。');
-    },
-    async rerunTaskStep() {
-      throw new Error('浏览器预览不能重新执行真实流水线步骤，请在 Electron 应用中操作。');
-    },
-    async getTaskArtifacts(id: string) {
-      const task = read().tasks.find((item) => item.id === id);
-      return {
-        available: false,
-        message: '浏览器预览无法读取本地任务产物，请在 Electron 桌面端查看。',
-        taskId: id,
-        statePath: task?.artifactStatePath ?? '',
-        outputDir: task?.outputDir ?? '',
-        updatedAt: null,
-        steps: {},
-        artifact: {},
-        assets: { cover: [], images: [], imageErrors: [], narration: [] },
-        draft: null,
-      };
-    },
-    async readAssetDataUrl() {
-      throw new Error('浏览器预览不能读取本地媒体预览，请在 Electron 应用中查看。');
-    },
-    async selectLocalImage() {
-      return null;
-    },
-    async selectLocalAudio() {
-      return null;
-    },
-    async selectLocalFolder() {
-      return null;
-    },
-    async selectCookieFile() {
-      return null;
-    },
-    async openViralLoginWindow() {
-      throw new Error('浏览器预览不能打开抖音登录窗口，请在 Electron 桌面端操作。');
-    },
-    async detectJianyingDraftPath() {
-      return '';
-    },
-    async getJianyingEffectCatalog() {
-      return fallbackEffectCatalog;
-    },
-    async runDiagnostics() {
-      const state = read();
-      return {
-        generatedAt: new Date().toISOString(),
-        checks: [
-          { id: 'llm-config', label: 'LLM 配置完整性', status: state.config.llm.apiKey ? 'pass' : 'warn', detail: state.config.llm.model },
-          { id: 'tts-config', label: 'TTS 凭证已填写', status: state.config.tts.volcengine.apiKey || state.config.tts.accessKey ? 'pass' : 'warn', detail: state.config.tts.provider },
-          { id: 'jianying-sidecar', label: '剪映草稿目录', status: state.config.jianying.draftPath ? 'pass' : 'warn', detail: state.config.jianying.draftPath },
-          { id: 'account-state', label: '账户状态', status: 'pass', detail: state.activation.message },
-        ],
-      };
-    },
-    windowControl: async () => undefined,
-    onAppDelta: () => () => undefined,
-  };
-}
 
 function App() {
   const [trackedState, dispatchState] = useReducer(
@@ -2311,7 +887,8 @@ function App() {
   const trialDaysLabel = state.activation.expiresAt
     ? `${Math.max(0, Math.ceil((new Date(state.activation.expiresAt).getTime() - Date.now()) / 86400000))} 天`
     : '本地试用';
-  const activeNav = activeView === 'task-detail' ? { label: '任务详情', hint: '单任务流水线' } : navItems.find((item) => item.view === activeView) ?? navItems[0];
+  const activeNav = navigationItemForView(activeView);
+  const NewTaskIcon = newTaskPrimaryAction.icon;
 
   return (
     <main className="app-shell">
@@ -2344,15 +921,15 @@ function App() {
             <Bell size={16} className="brand-bell" />
           </div>
 
-          <button className="new-task-button" onClick={() => navigate('new-task')}>
-            <Plus size={16} />
-            <span>新建任务</span>
+          <button className="new-task-button" onClick={() => navigate(newTaskPrimaryAction.view)}>
+            <NewTaskIcon size={16} />
+            <span>{newTaskPrimaryAction.label}</span>
             <kbd>Ctrl+N</kbd>
           </button>
 
           <nav className="nav-list">
             <span className="nav-section-label">主线工作流</span>
-            {primaryNavItems.filter((item) => item.view !== 'new-task').map((item) => (
+            {primaryNavItems.map((item) => (
               <NavButton key={item.view} item={item} active={activeView === item.view} navigate={navigate} />
             ))}
             <span className="nav-section-label secondary">扩展工具</span>
@@ -5152,7 +3729,7 @@ function HtmlVideoConfigEditor({
   const [message, setMessage] = useState('');
   const htmlVideoConfigAction = useAsyncAction();
   const bgmOptions = validBgmItems(appConfig);
-  const styleOptions = editableHtmlVideoStyleOptions(customStyles, values.style);
+  const htmlVideoStyleChoices = editableHtmlVideoStyleOptions(customStyles, values.style);
   const voiceOptions = ttsVoiceOptionsForProvider(values.ttsProvider);
   const disabled = task.status === 'pending' || task.status === 'running' || htmlVideoConfigAction.busy;
 
@@ -5200,7 +3777,7 @@ function HtmlVideoConfigEditor({
         <div data-html-video-edit-field="style">
           <Field label="画面风格">
             <select value={values.style} onChange={(event) => setValue('style', event.target.value)} disabled={disabled}>
-              {styleOptions.map(([id, label]) => <option key={id} value={id}>{label}</option>)}
+              {htmlVideoStyleChoices.map(([id, label]) => <option key={id} value={id}>{label}</option>)}
             </select>
           </Field>
         </div>
@@ -10487,29 +9064,6 @@ function addUploadedBgm(config: AppConfig, audioPath: string): { config: AppConf
 function audioTitleFromPath(path: string): string {
   const filename = path.split(/[\\/]/u).pop() || 'BGM';
   return filename.replace(/\.[^.]+$/u, '') || filename;
-}
-
-function pageSubtitle(view: ShellView): string {
-  const map: Partial<Record<ShellView, string>> = {
-    'new-task': '粘贴一段人物故事，几分钟后在剪映里打开',
-    'book-selection': '维护本地商品书单，把卖点带入新任务或对标导入',
-    benchmark: '导入对标文案，本地二改后直接创建带货任务',
-    'person-assets': '管理本地人物真图素材，供分镜阶段保持角色一致',
-    queue: '查看当前任务、步骤事件、失败重试和输出状态',
-    history: '按时间浏览已完成、失败、取消和草稿任务',
-    'task-detail': '查看单个任务的独立执行状态和流水线',
-    'image-lab': '单独测试文生图、图像参考和分镜图片提示词',
-    'music-mv': '按歌词节奏生成音乐 MV 分镜、字幕和剪映草稿',
-    'viral-analyzer': '拆解爆款短视频的开头、结构、结尾和爆点',
-    'prompt-templates': '管理系统模板、克隆、导入 JSON 和本地编辑',
-    'draft-templates': '调整画布、图片区域、字幕、免责声明和音频参数',
-    settings: '配置 API 凭证、本地路径、TTS、IMA 与诊断',
-    account: '管理本机账号资料、设备和模拟余额',
-    activation: '管理本地激活状态与试用说明',
-  };
-  if (view === 'voice-lab') return '单独试听豆包与 MiniMax 音色，保存本地试听记录';
-  if (view === 'html-video') return '文案、素材、配音、动画预览、封面和出片的独立 HTML 视频工作台';
-  return map[view] ?? '';
 }
 
 function pipelineStepStatus(task: Task, step: number): 'pending' | 'running' | 'completed' | 'failed' | 'cancelled' {

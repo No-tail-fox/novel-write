@@ -34,14 +34,15 @@ describe('prompt corpus isolation', () => {
   });
 
   it('awaits the corpus only at database seeding, reset, and browser fallback boundaries', async () => {
-    const [storage, renderer] = await Promise.all([
+    const [storage, appState, browserFallback] = await Promise.all([
       source('src/shared/storage.ts'),
-      source('src/main.tsx'),
+      source('src/app/app-state.ts'),
+      source('src/app/browser-fallback.ts'),
     ]);
     const open = storage.slice(storage.indexOf('static async open'), storage.indexOf('private enqueueCommit'));
     const reset = storage.slice(storage.indexOf('async resetPromptTemplates'), storage.indexOf('async upsertDraftTemplate'));
-    const bootstrap = renderer.slice(renderer.indexOf('function bootstrapToState'), renderer.indexOf('function readFallbackEnvelope'));
-    const fallback = renderer.slice(renderer.indexOf('function makeFallbackApi'), renderer.indexOf('function App()'));
+    const bootstrap = appState.slice(appState.indexOf('export function bootstrapToState'), appState.indexOf('export function mergeDeltaView'));
+    const fallback = browserFallback.slice(browserFallback.indexOf('export function makeFallbackApi'));
 
     expect(open).toContain('Promise.all([loadSql(), loadDefaultPromptTemplates()])');
     expect(open.indexOf('loadDefaultPromptTemplates()')).toBeLessThan(open.indexOf('instance.migrate()'));

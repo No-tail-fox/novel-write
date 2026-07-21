@@ -6,6 +6,14 @@ import type { AppMutationResult, BootstrapState } from '../src/shared/types';
 import { readRendererSources } from './helpers/renderer-source';
 
 const rendererSourcesPromise = readRendererSources();
+const appStateSourcePromise = readFile(new URL('../src/app/app-state.ts', import.meta.url), 'utf8');
+const browserFallbackSourcePromise = readFile(new URL('../src/app/browser-fallback.ts', import.meta.url), 'utf8');
+const navigationSourcePromise = readFile(new URL('../src/app/navigation.ts', import.meta.url), 'utf8');
+const editorialOptionsSourcePromise = readFile(new URL('../src/shared/editorial-options.ts', import.meta.url), 'utf8');
+
+function stripModuleExports(source: string): string {
+  return source.replace(/^export\s+/gmu, '');
+}
 
 describe('product shell ui', () => {
   it('loads query-safe task history pages without creating another global delta owner', async () => {
@@ -14,7 +22,8 @@ describe('product shell ui', () => {
     const pagination = sources.requiredFile('src/components/CursorPagination.tsx');
     const hook = await readFile(new URL('../src/features/history/use-history-page.ts', import.meta.url), 'utf8');
     const history = main.slice(main.indexOf('function HistoryPage'), main.indexOf('function TaskDetailPage'));
-    const bootstrap = main.slice(main.indexOf('async function loadCompleteBootstrap'), main.indexOf('type ModelListKey'));
+    const appState = await appStateSourcePromise;
+    const bootstrap = appState.slice(appState.indexOf('export async function loadCompleteBootstrap'), appState.indexOf('export function cloneState'));
     const app = main.slice(main.indexOf('function App()'), main.indexOf('\nfunction ViralAnalyzerPage'));
     const install = app.slice(app.indexOf('const installAuthoritativeSnapshot'), app.indexOf('const recoverSnapshotInstallation'));
 
@@ -61,8 +70,8 @@ describe('product shell ui', () => {
   });
 
   it('advances family generations for accepted history identities and snapshots', async () => {
-    const main = (await rendererSourcesPromise).requiredFile('src/main.tsx');
-    const source = main.slice(main.indexOf('type HistoryDeltaIdentity'), main.indexOf('function mergeDefaultCustomStyles'));
+    const appState = await appStateSourcePromise;
+    const source = stripModuleExports(appState.slice(appState.indexOf('type HistoryDeltaIdentity'), appState.indexOf('export function mergeDefaultCustomStyles')));
     expect(source).toContain('function advanceHistoryFamilyEpochs');
     expect(source).toContain('const allHistoryFamilies');
     if (!source.includes('function advanceHistoryFamilyEpochs') || !source.includes('const allHistoryFamilies')) return;
@@ -150,8 +159,8 @@ describe('product shell ui', () => {
   });
 
   it('accepts a same-revision tombstone only once', async () => {
-    const main = (await rendererSourcesPromise).requiredFile('src/main.tsx');
-    const source = main.slice(main.indexOf('type HistoryDeltaIdentity'), main.indexOf('function mergeDefaultCustomStyles'));
+    const appState = await appStateSourcePromise;
+    const source = stripModuleExports(appState.slice(appState.indexOf('type HistoryDeltaIdentity'), appState.indexOf('export function mergeDefaultCustomStyles')));
     const compiled = ts.transpileModule(source, {
       compilerOptions: { module: ts.ModuleKind.None, target: ts.ScriptTarget.ES2022 },
     }).outputText;
@@ -230,7 +239,8 @@ describe('product shell ui', () => {
 
   it('invalidates a deferred detail response through the shared desktop and browser tombstone barrier', async () => {
     const main = (await rendererSourcesPromise).requiredFile('src/main.tsx');
-    const source = main.slice(main.indexOf('type HistoryDeltaIdentity'), main.indexOf('function mergeDefaultCustomStyles'));
+    const appState = await appStateSourcePromise;
+    const source = stripModuleExports(appState.slice(appState.indexOf('type HistoryDeltaIdentity'), appState.indexOf('export function mergeDefaultCustomStyles')));
     expect(source).toContain('function registerHistoryDeltaBarrier');
     if (!source.includes('function registerHistoryDeltaBarrier')) return;
 
@@ -349,8 +359,7 @@ describe('product shell ui', () => {
   });
 
   it('constructs fallback tombstones exhaustively without AppMutationResult casts', async () => {
-    const main = (await rendererSourcesPromise).requiredFile('src/main.tsx');
-    const source = main.slice(main.indexOf('type FallbackTombstoneEntry'), main.indexOf('\nfunction App()'));
+    const source = await browserFallbackSourcePromise;
 
     expect(source).toContain('function fallbackTombstoneResult');
     expect(source).toContain("case 'task':");
@@ -375,8 +384,8 @@ describe('product shell ui', () => {
   });
 
   it('merges coordinator revision ledgers without dropping a not-yet-contiguous tombstone barrier', async () => {
-    const main = (await rendererSourcesPromise).requiredFile('src/main.tsx');
-    const helper = main.slice(main.indexOf('function replaceHistoryRevisionMap'), main.indexOf('function captureHistoryResponseRevision'));
+    const appState = await appStateSourcePromise;
+    const helper = appState.slice(appState.indexOf('export function replaceHistoryRevisionMap'), appState.indexOf('export function captureHistoryResponseRevision'));
 
     expect(helper).not.toContain('target.clear()');
     expect(helper).toContain('Math.max(');
@@ -384,11 +393,11 @@ describe('product shell ui', () => {
   });
 
   it('persists real four-family browser governance and filters tombstoned ids from later local reads', async () => {
-    const main = (await rendererSourcesPromise).requiredFile('src/main.tsx');
-    const fallback = main.slice(main.indexOf('function makeFallbackApi'), main.indexOf('\nfunction App()'));
+    const browserFallback = await browserFallbackSourcePromise;
+    const fallback = browserFallback.slice(browserFallback.indexOf('export function makeFallbackApi'));
 
-    expect(main).toContain("const fallbackGovernanceStorageKey = 'storydream-history-governance-v1'");
-    expect(main).toContain('fallbackEnvelopeVersion');
+    expect(browserFallback).toContain("const fallbackGovernanceStorageKey = 'storydream-history-governance-v1'");
+    expect(browserFallback).toContain('fallbackEnvelopeVersion');
     expect(fallback).toContain('readFallbackEnvelope()');
     expect(fallback).toContain('commitFallbackEnvelope(');
     expect(fallback).toContain('filterFallbackTombstones(');
@@ -420,8 +429,8 @@ describe('product shell ui', () => {
   });
 
   it('keeps browser tombstones durable across API recreation and blocks a late persisted task snapshot', async () => {
-    const main = (await rendererSourcesPromise).requiredFile('src/main.tsx');
-    const source = main.slice(main.indexOf('type FallbackTombstoneEntry'), main.indexOf('\nfunction App()'));
+    const browserFallback = await browserFallbackSourcePromise;
+    const source = stripModuleExports(browserFallback.slice(browserFallback.indexOf('type FallbackTombstoneEntry')));
     const compiled = ts.transpileModule(source, {
       compilerOptions: { module: ts.ModuleKind.None, target: ts.ScriptTarget.ES2022 },
     }).outputText;
@@ -512,8 +521,8 @@ describe('product shell ui', () => {
     { name: 'ordinary saveUi', archivedAt: null, mode: 'governance' as const, action: 'save-ui' as const },
     { name: 'delete', archivedAt: '2026-01-01T00:00:00.000Z', mode: 'delete-state' as const, action: 'delete' as const },
   ])('keeps browser state, governance, and React unchanged when the $name commit fails', async ({ archivedAt, mode, action }) => {
-    const main = (await rendererSourcesPromise).requiredFile('src/main.tsx');
-    const source = main.slice(main.indexOf('type FallbackTombstoneEntry'), main.indexOf('\nfunction App()'));
+    const browserFallback = await browserFallbackSourcePromise;
+    const source = stripModuleExports(browserFallback.slice(browserFallback.indexOf('type FallbackTombstoneEntry')));
     const compiled = ts.transpileModule(source, {
       compilerOptions: { module: ts.ModuleKind.None, target: ts.ScriptTarget.ES2022 },
     }).outputText;
@@ -701,11 +710,14 @@ describe('product shell ui', () => {
 
   it('keeps saved provider secrets out of renderer state, DOM values, and browser persistence', async () => {
     const main = (await rendererSourcesPromise).requiredFile('src/main.tsx');
+    const appState = await appStateSourcePromise;
+    const browserFallback = await browserFallbackSourcePromise;
     const apiContract = await readFile(new URL('../src/shared/storydream-api.ts', import.meta.url), 'utf8');
     const preload = await readFile(new URL('../electron/preload.ts', import.meta.url), 'utf8');
     const electronMain = await readFile(new URL('../electron/main.ts', import.meta.url), 'utf8');
 
-    expect(main).toContain('stripConfigSecrets');
+    expect(`${appState}\n${browserFallback}`).toContain('stripConfigSecrets');
+    expect(main).not.toContain('stripConfigSecrets(');
     expect(main).toContain("from './shared/config-secrets'");
     expect(main).toContain('secretChanges');
     expect(main).toContain('SecretInput');
@@ -714,7 +726,7 @@ describe('product shell ui', () => {
     expect(main).toContain('EyeOff');
     expect(main).toContain('onClear');
     expect(main).toContain('secretChanges: {}');
-    expect(main).toContain('stripConfigSecrets(next.config)');
+    expect(browserFallback).toContain('stripConfigSecrets(next.config)');
     expect(main).not.toContain('function maskConfigured');
     expect(main).not.toContain('value.slice(0, 2)');
     expect(apiContract).toContain('PublicAppState');
@@ -727,7 +739,8 @@ describe('product shell ui', () => {
 
   it('does not claim that browser preview securely saved edited provider secrets', async () => {
     const main = (await rendererSourcesPromise).requiredFile('src/main.tsx');
-    const fallbackSave = main.slice(main.indexOf('async saveConfig(input)'), main.indexOf('async testLlmConfig'));
+    const browserFallback = await browserFallbackSourcePromise;
+    const fallbackSave = browserFallback.slice(browserFallback.indexOf('async saveConfig(input)'), browserFallback.indexOf('async testLlmConfig'));
     const settingsCommit = main.slice(main.indexOf('async function commitAndApplySettingsDraft'), main.indexOf('function clearProviderModels'));
 
     expect(fallbackSave).toContain('Object.keys(input.secretChanges).length > 0');
@@ -738,8 +751,9 @@ describe('product shell ui', () => {
 
   it('keeps Node-only provider networking out of the browser fallback bundle', async () => {
     const main = (await rendererSourcesPromise).requiredFile('src/main.tsx');
+    const browserFallback = await browserFallbackSourcePromise;
     const configUtils = await readFile(new URL('../src/shared/config-utils.ts', import.meta.url), 'utf8');
-    const fallbackModels = main.slice(main.indexOf('async listProviderModels(request)'), main.indexOf('async listVolcengineSpeakers'));
+    const fallbackModels = browserFallback.slice(browserFallback.indexOf('async listProviderModels(request)'), browserFallback.indexOf('async listVolcengineSpeakers'));
 
     expect(main).not.toContain("from './shared/llm-provider'");
     expect(configUtils).not.toContain("from './openai-image'");
@@ -751,6 +765,8 @@ describe('product shell ui', () => {
 
   it('presents a Chinese StoryDream-first desktop shell with main workflow and secondary modules', async () => {
     const main = (await rendererSourcesPromise).requiredFile('src/main.tsx');
+    const navigation = await navigationSourcePromise;
+    const shellSource = `${main}\n${navigation}`;
     const css = await readFile(new URL('../src/styles.css', import.meta.url), 'utf8');
 
     for (const text of [
@@ -772,13 +788,13 @@ describe('product shell ui', () => {
       '系统设置',
       '爆款拆解',
     ]) {
-      expect(main).toContain(text);
+      expect(shellSource).toContain(text);
     }
 
     expect(main).toContain('primaryNavItems');
     expect(main).toContain('secondaryNavItems');
     expect(main.indexOf('主线工作流')).toBeLessThan(main.indexOf('扩展工具'));
-    expect(main.indexOf('新建任务')).toBeLessThan(main.indexOf('爆款拆解'));
+    expect(navigation.indexOf('新建任务')).toBeLessThan(navigation.indexOf('爆款拆解'));
     expect(main).toContain('className="trial-activation-bar"');
     expect(main).toContain('className="recent-task-strip"');
     expect(main).toContain('navigate(\'account\')');
@@ -790,12 +806,12 @@ describe('product shell ui', () => {
   });
 
   it('keeps the viral analyzer visible in the main workflow navigation', async () => {
-    const main = (await rendererSourcesPromise).requiredFile('src/main.tsx');
-    const primaryStart = main.indexOf('const primaryNavItems');
-    const primaryEnd = main.indexOf('const secondaryNavItems');
-    const secondaryEnd = main.indexOf('const navItems');
-    const primaryNav = main.slice(primaryStart, primaryEnd);
-    const secondaryNav = main.slice(primaryEnd, secondaryEnd);
+    const navigation = await navigationSourcePromise;
+    const primaryStart = navigation.indexOf('export const primaryNavItems');
+    const primaryEnd = navigation.indexOf('export const secondaryNavItems');
+    const secondaryEnd = navigation.indexOf('export const sidebarNavItems');
+    const primaryNav = navigation.slice(primaryStart, primaryEnd);
+    const secondaryNav = navigation.slice(primaryEnd, secondaryEnd);
 
     expect(primaryNav).toContain("view: 'viral-analyzer'");
     expect(primaryNav).toContain("label: '爆款拆解'");
@@ -966,15 +982,17 @@ describe('product shell ui', () => {
 
   it('keeps browser preview fallback errors in Chinese', async () => {
     const main = (await rendererSourcesPromise).requiredFile('src/main.tsx');
+    const browserFallback = await browserFallbackSourcePromise;
+    const browserSources = `${main}\n${browserFallback}`;
 
-    expect(main).not.toContain('Browser preview cannot');
-    expect(main).not.toContain('API key is missing; fill it before testing the model.');
-    expect(main).not.toContain('Fallback Jianying effect catalog.');
-    expect(main).not.toContain('Viral analysis result is not available in browser preview');
-    expect(main).not.toContain('Viral recreation is not available in browser preview');
-    expect(main).not.toContain('Python runtime dependency missing');
-    expect(main).toContain('浏览器预览无法运行真实供应商流水线');
-    expect(main).toContain('浏览器预览无法运行爆款视频拆解');
+    expect(browserSources).not.toContain('Browser preview cannot');
+    expect(browserSources).not.toContain('API key is missing; fill it before testing the model.');
+    expect(browserSources).not.toContain('Fallback Jianying effect catalog.');
+    expect(browserSources).not.toContain('Viral analysis result is not available in browser preview');
+    expect(browserSources).not.toContain('Viral recreation is not available in browser preview');
+    expect(browserSources).not.toContain('Python runtime dependency missing');
+    expect(browserSources).toContain('浏览器预览无法运行真实供应商流水线');
+    expect(browserSources).toContain('浏览器预览无法运行爆款视频拆解');
   });
 
   it('keeps all visible StoryDream pipeline labels in Chinese', async () => {
@@ -1579,10 +1597,11 @@ describe('product shell ui', () => {
 
   it('supports dragging draft template regions directly on the preview canvas', async () => {
     const main = (await rendererSourcesPromise).requiredFile('src/main.tsx');
+    const appState = await appStateSourcePromise;
     const css = await readFile(new URL('../src/styles.css', import.meta.url), 'utf8');
 
-    expect(main).toContain("normalizeDraftTemplate");
-    expect(main).toContain("draftTemplates: (state.draftTemplates ?? builtinDraftTemplates).map(normalizeDraftTemplate)");
+    expect(appState).toContain("normalizeDraftTemplate");
+    expect(appState).toContain("draftTemplates: (state.draftTemplates ?? builtinDraftTemplates).map(normalizeDraftTemplate)");
     expect(main).toContain('EditableDraftCanvas');
     expect(main).toContain('DraftCanvasLayer');
     expect(main).toContain('handleDraftCanvasPointerDown');
@@ -1991,13 +2010,15 @@ describe('product shell ui', () => {
 
   it('lets each task prompt template configure the AI prompts used by every pipeline step', async () => {
     const main = (await rendererSourcesPromise).requiredFile('src/main.tsx');
+    const options = await editorialOptionsSourcePromise;
+    const promptSources = `${main}\n${options}`;
     const css = await readFile(new URL('../src/styles.css', import.meta.url), 'utf8');
 
     for (const symbol of ['promptStepEditorDefinitions', 'updatePromptTemplateStepPrompt', 'stepPrompts', 'prompt-step-editor-list', 'prompt-step-editor-card']) {
-      expect(main).toContain(symbol);
+      expect(promptSources).toContain(symbol);
     }
     for (const text of ['AI 步骤设置', 'Step 0 预审', 'Step 1 改写', 'Step 1 元数据', 'Step 2 分镜', 'Step 3 出图']) {
-      expect(main).toContain(text);
+      expect(promptSources).toContain(text);
     }
     expect(css).toContain('.prompt-step-editor-list');
     expect(css).toContain('.prompt-step-editor-card');
@@ -2044,6 +2065,8 @@ describe('product shell ui', () => {
 
   it('uses Chinese labels for prompt template types and variable insertion chips', async () => {
     const main = (await rendererSourcesPromise).requiredFile('src/main.tsx');
+    const options = await editorialOptionsSourcePromise;
+    const promptSources = `${main}\n${options}`;
     const css = await readFile(new URL('../src/styles.css', import.meta.url), 'utf8');
 
     expect(main).toContain('promptTemplateTypeLabels');
@@ -2053,13 +2076,13 @@ describe('product shell ui', () => {
     expect(css).toContain('.prompt-template-variable-chip');
 
     for (const text of ['任务模板', '预审提示词', '改写提示词', '出图提示词', '原文素材', '联网资料', '预审结果', '改写正文', '额外要求']) {
-      expect(main).toContain(text);
+      expect(promptSources).toContain(text);
     }
     expect(main).not.toContain('>{`{{${item}}}`}</button>');
   });
 
   it('documents the canonical StoryDream runtime variables in the template editor', async () => {
-    const main = (await rendererSourcesPromise).requiredFile('src/main.tsx');
+    const options = await editorialOptionsSourcePromise;
 
     for (const key of [
       'taskTemplateName',
@@ -2077,16 +2100,17 @@ describe('product shell ui', () => {
       'characterCard',
       'imageSeedPoolsJson',
     ]) {
-      expect(main).toContain(`key: '${key}'`);
+      expect(options).toContain(`key: '${key}'`);
     }
   });
 
   it('keeps targetLength and storyboard scene count out of visible prompt variable scopes', async () => {
     const main = (await rendererSourcesPromise).requiredFile('src/main.tsx');
+    const options = await editorialOptionsSourcePromise;
 
-    expect(main).not.toContain("key: 'targetLength'");
-    expect(main).not.toContain("key: 'targetLengthRange'");
-    expect(main).not.toContain("key: 'storyboardSceneCount'");
+    expect(options).not.toContain("key: 'targetLength'");
+    expect(options).not.toContain("key: 'targetLengthRange'");
+    expect(options).not.toContain("key: 'storyboardSceneCount'");
     expect(main).toContain("step.type === 'review' || step.type === 'rewrite'");
     expect(main).toContain('<PromptVariablePicker');
     expect(main).toContain('scope={step.type}');
@@ -2094,6 +2118,8 @@ describe('product shell ui', () => {
 
   it('splits prompt template management into story and image template tabs', async () => {
     const main = (await rendererSourcesPromise).requiredFile('src/main.tsx');
+    const appState = await appStateSourcePromise;
+    const promptSources = `${main}\n${appState}`;
     const css = await readFile(new URL('../src/styles.css', import.meta.url), 'utf8');
 
     for (const symbol of [
@@ -2107,7 +2133,7 @@ describe('product shell ui', () => {
       'baseImageTemplateId',
       'mergeDefaultCustomStyles',
     ]) {
-      expect(main).toContain(symbol);
+      expect(promptSources).toContain(symbol);
     }
     for (const text of ['故事模板', '图像模板', 'AI 快速生成', '基于系统风格', '前缀（prefix）', '后缀（suffix）', '负面提示词（negativePrompt）', '色彩模式']) {
       expect(main).toContain(text);
@@ -2139,6 +2165,8 @@ describe('product shell ui', () => {
 
   it('keeps prompt variables usable inside every template textarea', async () => {
     const main = (await rendererSourcesPromise).requiredFile('src/main.tsx');
+    const options = await editorialOptionsSourcePromise;
+    const promptSources = `${main}\n${options}`;
     const css = await readFile(new URL('../src/styles.css', import.meta.url), 'utf8');
 
     for (const symbol of [
@@ -2161,7 +2189,7 @@ describe('product shell ui', () => {
       'keepPromotion',
       'aiKeyword',
     ]) {
-      expect(main).toContain(symbol);
+      expect(promptSources).toContain(symbol);
     }
     expect(main).not.toContain('promptTemplateVariableDefinitions.map((item) => (');
     expect(css).toContain('.prompt-variable-suggest');
@@ -2348,10 +2376,11 @@ describe('product shell ui', () => {
   });
 
   it('preserves governed history pages through bootstrap and constructs complete browser fallback pages', async () => {
-    const main = (await rendererSourcesPromise).requiredFile('src/main.tsx');
-    const loader = main.slice(main.indexOf('async function loadCompleteBootstrap'), main.indexOf('type ModelListKey'));
-    const pageFactory = main.slice(main.indexOf('function fallbackHistoryPage'), main.indexOf('function makeFallbackApi'));
-    const fallback = main.slice(main.indexOf('function makeFallbackApi'), main.indexOf('function App()'));
+    const appState = await appStateSourcePromise;
+    const browserFallback = await browserFallbackSourcePromise;
+    const loader = appState.slice(appState.indexOf('export async function loadCompleteBootstrap'), appState.indexOf('export function cloneState'));
+    const pageFactory = browserFallback.slice(browserFallback.indexOf('function fallbackHistoryPage'), browserFallback.indexOf('export function makeFallbackApi'));
+    const fallback = browserFallback.slice(browserFallback.indexOf('export function makeFallbackApi'));
     const bootstrap = fallback.slice(fallback.indexOf('async getBootstrap()'), fallback.indexOf('async reconcileDeltas'));
     const families = [
       ['tasks', 'listTasks', 'task'],
@@ -2438,8 +2467,9 @@ describe('product shell ui', () => {
 
   it('uses app deltas as the sole Electron mutation owner and keeps response application local to browser fallback', async () => {
     const main = (await rendererSourcesPromise).requiredFile('src/main.tsx');
+    const browserFallback = await browserFallbackSourcePromise;
     const applyState = main.slice(main.indexOf('function applyState('), main.indexOf('async function openTaskDetail'));
-    const fallback = main.slice(main.indexOf('function makeFallbackApi('), main.indexOf('function App()'));
+    const fallback = browserFallback.slice(browserFallback.indexOf('export function makeFallbackApi('));
 
     expect(main).toContain('applyLocalMutationResponse');
     expect(applyState).toContain('if (isBrowserPreview && next)');
@@ -2672,6 +2702,7 @@ describe('product shell ui', () => {
 
   it('exposes simplified Volcengine V3 TTS settings with a single API key and preset voice defaults', async () => {
     const main = (await rendererSourcesPromise).requiredFile('src/main.tsx');
+    const options = await editorialOptionsSourcePromise;
     const manager = main.slice(main.indexOf('function TtsProfileManager'), main.indexOf('function AccountPage'));
 
     expect(main).toContain('volcengineVoicePresets');
@@ -2686,7 +2717,7 @@ describe('product shell ui', () => {
     expect(manager).toContain('默认音色');
     expect(manager).toContain('自定义 voice_type');
     expect(manager).toContain('voice_type');
-    expect(main).toContain('zh_female_vv_uranus_bigtts');
+    expect(options).toContain('zh_female_vv_uranus_bigtts');
   });
 
   it('uses provider-specific task voice defaults in the new task form', async () => {

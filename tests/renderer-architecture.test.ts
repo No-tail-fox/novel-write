@@ -174,3 +174,57 @@ describe('renderer shared feedback and data architecture', () => {
     expect(dialog).toContain('if (open && (busy || submitting)) dialogRef.current?.focus();');
   });
 });
+
+describe('renderer application ownership architecture', () => {
+  it('isolates state and browser fallback without importing React pages', async () => {
+    const [appState, fallback, main] = await Promise.all([
+      source('src/app/app-state.ts'),
+      source('src/app/browser-fallback.ts'),
+      source('src/main.tsx'),
+    ]);
+    expect(appState.length).toBeGreaterThan(0);
+    expect(fallback.length).toBeGreaterThan(0);
+    expect(appState).not.toContain("from '../main'");
+    expect(appState).not.toContain("from 'react'");
+    expect(fallback).not.toContain("from '../main'");
+    expect(fallback).not.toContain("from 'react'");
+    for (const symbol of ['initialState', 'hydrateState', 'bootstrapToState', 'mergeDeltaView', 'registerHistoryDeltaBarrier']) {
+      expect(appState).toContain(`export ${symbol === 'initialState' ? 'const' : 'function'} ${symbol}`);
+    }
+    expect(fallback).toContain("fallbackGovernanceStorageKey = 'storydream-history-governance-v1'");
+    expect(fallback).toContain('export function makeFallbackApi');
+    expect(main).not.toContain('function makeFallbackApi(');
+  });
+
+  it('owns one new-task action and exactly fifteen sidebar entries', async () => {
+    const navigation = await import('../src/app/navigation');
+    expect(navigation.newTaskPrimaryAction.view).toBe('new-task');
+    expect(navigation.sidebarNavItems).toHaveLength(15);
+    expect(new Set(navigation.sidebarNavItems.map((item) => item.view)).size).toBe(15);
+    expect(navigation.navigationItems).toHaveLength(16);
+    expect(navigation.navigationItemForView('task-detail')).toMatchObject({ label: '任务详情', hint: '单任务流水线' });
+  });
+
+  it('keeps route state public and feature-neutral', async () => {
+    const routes = await source('src/app/route-types.ts');
+    expect(routes).toContain("import type { PublicAppState } from '../shared/config-secrets'");
+    expect(routes).toContain('export type RendererAppState = PublicAppState');
+    expect(routes).not.toMatch(/\bAppState\b/u);
+    expect(routes).not.toContain('apiKey');
+    expect(routes).not.toContain('secretStatus: Record');
+  });
+
+  it('moves shared editorial catalogs into one JSX-free owner', async () => {
+    const [options, main] = await Promise.all([
+      source('src/shared/editorial-options.ts'),
+      source('src/main.tsx'),
+    ]);
+    for (const symbol of ['contentTracks', 'styleOptions', 'ratioOptions', 'smartImageModeOptions', 'pauseOptions', 'rewriteOptions', 'promptTemplateVariableDefinitions']) {
+      expect(options).toContain(`export const ${symbol}`);
+      expect(main).not.toContain(`const ${symbol}`);
+    }
+    expect(options).not.toContain('<div');
+    expect(options).not.toContain('<button');
+    expect(options).not.toContain('React.');
+  });
+});
