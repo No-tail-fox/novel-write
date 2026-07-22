@@ -7,19 +7,22 @@ const source = (path: string) => readFile(new URL(`../${path}`, import.meta.url)
 
 describe('prompt corpus isolation', () => {
   it('keeps the heavy corpus outside lightweight renderer and persistence modules', async () => {
-    const files = await Promise.all([
+    const [main, promptPage, promptEditor, config, storage, stateDelta, stateReconciliation] = await Promise.all([
       'src/main.tsx',
+      'src/features/templates/PromptTemplatesPage.tsx',
+      'src/features/templates/PromptTemplateEditor.tsx',
       'src/shared/config.ts',
       'src/shared/storage.ts',
       'src/shared/state-delta.ts',
       'src/shared/state-reconciliation.ts',
     ].map(source));
+    const files = [main, promptPage, promptEditor, config, storage, stateDelta, stateReconciliation];
 
     for (const contents of files) {
       expect(contents).not.toMatch(/from ['"].*storybound-system-templates/);
       expect(contents).not.toMatch(/import\s*\{[^}]*defaultPromptTemplates[^}]*\}\s*from ['"].*config/);
     }
-    expect(files[1]).not.toContain('export const defaultPromptTemplates');
+    expect(config).not.toContain('export const defaultPromptTemplates');
   });
 
   it('loads one canonical corpus through a retryable module-scope dynamic loader', async () => {

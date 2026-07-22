@@ -1575,7 +1575,7 @@ describe('product shell ui', () => {
   });
 
   it('presents draft templates as a gallery before opening the editor', async () => {
-    const main = (await rendererSourcesPromise).requiredFile('src/main.tsx');
+    const main = (await rendererSourcesPromise).requiredFile('src/features/templates/DraftTemplatesPage.tsx');
     const css = await readFile(new URL('../src/styles.css', import.meta.url), 'utf8');
 
     for (const text of ['默认竖屏', '竖屏4:3', '横屏16:9', '编辑', '复制', '新模板', '返回模板列表']) {
@@ -1589,7 +1589,7 @@ describe('product shell ui', () => {
   });
 
   it('imports copied Coze workflow source as a draft template preset', async () => {
-    const main = (await rendererSourcesPromise).requiredFile('src/main.tsx');
+    const main = (await rendererSourcesPromise).requiredFile('src/features/templates/DraftTemplatesPage.tsx');
     const css = await readFile(new URL('../src/styles.css', import.meta.url), 'utf8');
     const toolbarSnippet = main.slice(main.indexOf('className="panel-title-row draft-template-toolbar"'), main.indexOf('<section className="draft-template-gallery">'));
 
@@ -1620,7 +1620,11 @@ describe('product shell ui', () => {
   });
 
   it('supports dragging draft template regions directly on the preview canvas', async () => {
-    const main = (await rendererSourcesPromise).requiredFile('src/main.tsx');
+    const sources = await rendererSourcesPromise;
+    const main = [
+      sources.requiredFile('src/features/templates/DraftTemplatesPage.tsx'),
+      sources.requiredFile('src/features/templates/DraftCanvas.tsx'),
+    ].join('\n');
     const appState = await appStateSourcePromise;
     const css = await readFile(new URL('../src/styles.css', import.meta.url), 'utf8');
 
@@ -1642,7 +1646,7 @@ describe('product shell ui', () => {
   });
 
   it('renders draft preview layers with visibility and style fields', async () => {
-    const main = (await rendererSourcesPromise).requiredFile('src/main.tsx');
+    const main = (await rendererSourcesPromise).requiredFile('src/features/templates/DraftCanvas.tsx');
 
     expect(main).toContain('template.image.visible ?');
     expect(main).toContain('draftTextLayerStyle(template.title');
@@ -1663,7 +1667,7 @@ describe('product shell ui', () => {
   });
 
   it('does not reset unsaved draft template drag edits during state refreshes', async () => {
-    const main = (await rendererSourcesPromise).requiredFile('src/main.tsx');
+    const main = (await rendererSourcesPromise).requiredFile('src/features/templates/DraftTemplatesPage.tsx');
 
     expect(main).toContain('[editingId]');
     expect(main).toContain('const currentEditingTemplate = state.draftTemplates.find');
@@ -1671,7 +1675,11 @@ describe('product shell ui', () => {
   });
 
   it('applies draft canvas ratio changes and selects background images from the editor', async () => {
-    const main = (await rendererSourcesPromise).requiredFile('src/main.tsx');
+    const sources = await rendererSourcesPromise;
+    const main = [
+      sources.requiredFile('src/features/templates/DraftTemplatesPage.tsx'),
+      sources.requiredFile('src/features/templates/DraftCanvas.tsx'),
+    ].join('\n');
     const css = await readFile(new URL('../src/styles.css', import.meta.url), 'utf8');
 
     expect(main).toContain('applyDraftCanvasRatio');
@@ -1687,7 +1695,7 @@ describe('product shell ui', () => {
   });
 
   it('exposes complete grouped controls for draft template layers', async () => {
-    const main = (await rendererSourcesPromise).requiredFile('src/main.tsx');
+    const main = (await rendererSourcesPromise).requiredFile('src/features/templates/DraftTemplatesPage.tsx');
     const css = await readFile(new URL('../src/styles.css', import.meta.url), 'utf8');
 
     expect(main).toContain('ColorField');
@@ -1714,7 +1722,11 @@ describe('product shell ui', () => {
   });
 
   it('exposes text border controls and preview stroke for draft text layers', async () => {
-    const main = (await rendererSourcesPromise).requiredFile('src/main.tsx');
+    const sources = await rendererSourcesPromise;
+    const main = [
+      sources.requiredFile('src/features/templates/DraftTemplatesPage.tsx'),
+      sources.requiredFile('src/features/templates/DraftCanvas.tsx'),
+    ].join('\n');
     const css = await readFile(new URL('../src/styles.css', import.meta.url), 'utf8');
 
     for (const symbol of [
@@ -1723,7 +1735,7 @@ describe('product shell ui', () => {
       'updateDraftSubtitleBorder',
       'updateDraftCaptionBorder',
       'updateDraftDisclaimerBorder',
-      'draftTextBorderStyle',
+      'draftTextStrokeStyle',
       'template.title.border',
       'template.subtitle.border',
       'template.caption.border',
@@ -1741,7 +1753,11 @@ describe('product shell ui', () => {
   });
 
   it('exposes StoryDream text style controls for every draft text layer', async () => {
-    const main = (await rendererSourcesPromise).requiredFile('src/main.tsx');
+    const sources = await rendererSourcesPromise;
+    const main = [
+      sources.requiredFile('src/features/templates/DraftTemplatesPage.tsx'),
+      sources.requiredFile('src/features/templates/DraftCanvas.tsx'),
+    ].join('\n');
 
     for (const symbol of [
       'updateDraftTitle({ underline: checked })',
@@ -1771,7 +1787,7 @@ describe('product shell ui', () => {
 
   it('keeps draft layer controls compact instead of rendering oversized checkbox cards', async () => {
     const sources = await rendererSourcesPromise;
-    const main = sources.requiredFile('src/main.tsx');
+    const main = sources.requiredFile('src/features/templates/DraftTemplatesPage.tsx');
     const toggle = sources.requiredFile('src/components/ToggleField.tsx');
     const css = await readFile(new URL('../src/styles.css', import.meta.url), 'utf8');
 
@@ -1813,7 +1829,11 @@ describe('product shell ui', () => {
   });
 
   it('sizes the focused draft preview to the available viewport height', async () => {
-    const main = (await rendererSourcesPromise).requiredFile('src/main.tsx');
+    const sources = await rendererSourcesPromise;
+    const main = [
+      sources.requiredFile('src/features/templates/DraftTemplatesPage.tsx'),
+      sources.requiredFile('src/features/templates/DraftCanvas.tsx'),
+    ].join('\n');
     const css = await readFile(new URL('../src/styles.css', import.meta.url), 'utf8');
 
     expect(main).toContain("'--draft-canvas-ratio'");
@@ -1822,7 +1842,7 @@ describe('product shell ui', () => {
   });
 
   it('uses a preview-safe text stroke instead of rendering StoryDream 40px borders as giant shadows', async () => {
-    const main = (await rendererSourcesPromise).requiredFile('src/main.tsx');
+    const main = (await rendererSourcesPromise).requiredFile('src/features/templates/DraftCanvas.tsx');
     const css = await readFile(new URL('../src/styles.css', import.meta.url), 'utf8');
 
     expect(main).toContain('draftTextStrokeStyle');
@@ -1836,7 +1856,11 @@ describe('product shell ui', () => {
   });
 
   it('lets draft template text boxes be resized instead of using a fixed 80 percent width', async () => {
-    const main = (await rendererSourcesPromise).requiredFile('src/main.tsx');
+    const sources = await rendererSourcesPromise;
+    const main = [
+      sources.requiredFile('src/features/templates/DraftTemplatesPage.tsx'),
+      sources.requiredFile('src/features/templates/DraftCanvas.tsx'),
+    ].join('\n');
     const css = await readFile(new URL('../src/styles.css', import.meta.url), 'utf8');
 
     expect(main).toContain('resizeDraftLayerWidth');
@@ -1866,7 +1890,7 @@ describe('product shell ui', () => {
   });
 
   it('shows the full learned Jianying animation list in draft template controls', async () => {
-    const main = (await rendererSourcesPromise).requiredFile('src/main.tsx');
+    const main = (await rendererSourcesPromise).requiredFile('src/features/templates/DraftTemplatesPage.tsx');
     const templates = await readFile(new URL('../src/shared/templates.ts', import.meta.url), 'utf8');
 
     expect(main).toContain('options={imageAnimations}');
@@ -1904,7 +1928,7 @@ describe('product shell ui', () => {
   });
 
   it('loads Jianying effect catalogs and exposes conservative draft effect controls', async () => {
-    const main = (await rendererSourcesPromise).requiredFile('src/main.tsx');
+    const main = (await rendererSourcesPromise).requiredFile('src/features/templates/DraftTemplatesPage.tsx');
 
     expect(main).toContain('getJianyingEffectCatalog');
     expect(main).toContain('effectCatalog');
@@ -1919,7 +1943,7 @@ describe('product shell ui', () => {
   });
 
   it('sizes the draft preview from the canvas ratio instead of a fixed width', async () => {
-    const main = (await rendererSourcesPromise).requiredFile('src/main.tsx');
+    const main = (await rendererSourcesPromise).requiredFile('src/features/templates/DraftCanvas.tsx');
     const css = await readFile(new URL('../src/styles.css', import.meta.url), 'utf8');
 
     expect(main).toContain('draftPreviewWidth');
@@ -1942,7 +1966,11 @@ describe('product shell ui', () => {
   });
 
   it('manages prompt templates with filters, metadata, variables, and save-as-new-template behavior', async () => {
-    const main = (await rendererSourcesPromise).requiredFile('src/main.tsx');
+    const sources = await rendererSourcesPromise;
+    const main = [
+      sources.requiredFile('src/features/templates/PromptTemplatesPage.tsx'),
+      sources.requiredFile('src/features/templates/PromptTemplateEditor.tsx'),
+    ].join('\n');
     const css = await readFile(new URL('../src/styles.css', import.meta.url), 'utf8');
 
     for (const symbol of [
@@ -1969,7 +1997,7 @@ describe('product shell ui', () => {
   });
 
   it('builds prompt template track filters from saved templates so custom tracks remain visible', async () => {
-    const main = (await rendererSourcesPromise).requiredFile('src/main.tsx');
+    const main = (await rendererSourcesPromise).requiredFile('src/features/templates/PromptTemplatesPage.tsx');
     const filterSnippet = main.slice(main.indexOf('<Field label="赛道筛选">'), main.indexOf('<section className="prompt-template-list story-template-gallery">'));
 
     expect(main).toContain('promptTemplateTrackOptions');
@@ -1979,7 +2007,7 @@ describe('product shell ui', () => {
   });
 
   it('preserves custom prompt template ids on save while forking built-in templates', async () => {
-    const main = (await rendererSourcesPromise).requiredFile('src/main.tsx');
+    const main = (await rendererSourcesPromise).requiredFile('src/features/templates/PromptTemplatesPage.tsx');
     const saveSnippet = main.slice(main.indexOf('async function savePromptTemplateDraft()'), main.indexOf('async function duplicateTemplate'));
     const duplicateSnippet = main.slice(main.indexOf('async function duplicateTemplate'), main.indexOf('async function duplicate()'));
 
@@ -1994,7 +2022,11 @@ describe('product shell ui', () => {
   });
 
   it('uses saved template tracks when binding prompt templates to content tracks', async () => {
-    const main = (await rendererSourcesPromise).requiredFile('src/main.tsx');
+    const sources = await rendererSourcesPromise;
+    const main = [
+      sources.requiredFile('src/features/templates/PromptTemplatesPage.tsx'),
+      sources.requiredFile('src/features/templates/PromptTemplateEditor.tsx'),
+    ].join('\n');
     const bindingSnippet = main.slice(main.indexOf('<Field label="绑定赛道">'), main.indexOf('</Field>', main.indexOf('<Field label="绑定赛道">')));
 
     expect(main).toContain('promptTemplateBindingTrackOptions');
@@ -2003,7 +2035,7 @@ describe('product shell ui', () => {
   });
 
   it('binds newly created prompt templates to the active track filter when present', async () => {
-    const main = (await rendererSourcesPromise).requiredFile('src/main.tsx');
+    const main = (await rendererSourcesPromise).requiredFile('src/features/templates/PromptTemplatesPage.tsx');
     const createSnippet = main.slice(main.indexOf('async function createPromptTemplate()'), main.indexOf('async function saveCustomStyleDraft()'));
 
     expect(createSnippet).toContain("const baseTrack = templateTrackFilter === 'all' ? 'general-story' : templateTrackFilter");
@@ -2021,7 +2053,7 @@ describe('product shell ui', () => {
   });
 
   it('opens prompt template details from the whole row without hijacking row action buttons', async () => {
-    const main = (await rendererSourcesPromise).requiredFile('src/main.tsx');
+    const main = (await rendererSourcesPromise).requiredFile('src/features/templates/PromptTemplatesPage.tsx');
     const css = await readFile(new URL('../src/styles.css', import.meta.url), 'utf8');
 
     expect(main).toContain('handlePromptTemplateRowKeyDown');
@@ -2033,7 +2065,7 @@ describe('product shell ui', () => {
   });
 
   it('lets each task prompt template configure the AI prompts used by every pipeline step', async () => {
-    const main = (await rendererSourcesPromise).requiredFile('src/main.tsx');
+    const main = (await rendererSourcesPromise).requiredFile('src/features/templates/PromptTemplateEditor.tsx');
     const options = await editorialOptionsSourcePromise;
     const promptSources = `${main}\n${options}`;
     const css = await readFile(new URL('../src/styles.css', import.meta.url), 'utf8');
@@ -2049,7 +2081,7 @@ describe('product shell ui', () => {
   });
 
   it('keeps prompt editing to a single content entry while preserving image seed pools', async () => {
-    const main = (await rendererSourcesPromise).requiredFile('src/main.tsx');
+    const main = (await rendererSourcesPromise).requiredFile('src/features/templates/PromptTemplateEditor.tsx');
     const storage = await readFile(new URL('../src/shared/storage.ts', import.meta.url), 'utf8');
 
     for (const symbol of [
@@ -2068,7 +2100,7 @@ describe('product shell ui', () => {
   });
 
   it('presents prompt template details as basics, content settings, and step default prompts', async () => {
-    const main = (await rendererSourcesPromise).requiredFile('src/main.tsx');
+    const main = (await rendererSourcesPromise).requiredFile('src/features/templates/PromptTemplateEditor.tsx');
     const css = await readFile(new URL('../src/styles.css', import.meta.url), 'utf8');
 
     for (const symbol of [
@@ -2088,7 +2120,7 @@ describe('product shell ui', () => {
   });
 
   it('uses Chinese labels for prompt template types and variable insertion chips', async () => {
-    const main = (await rendererSourcesPromise).requiredFile('src/main.tsx');
+    const main = (await rendererSourcesPromise).requiredFile('src/features/templates/PromptTemplateEditor.tsx');
     const options = await editorialOptionsSourcePromise;
     const promptSources = `${main}\n${options}`;
     const css = await readFile(new URL('../src/styles.css', import.meta.url), 'utf8');
@@ -2129,7 +2161,7 @@ describe('product shell ui', () => {
   });
 
   it('keeps targetLength and storyboard scene count out of visible prompt variable scopes', async () => {
-    const main = (await rendererSourcesPromise).requiredFile('src/main.tsx');
+    const main = (await rendererSourcesPromise).requiredFile('src/features/templates/PromptTemplateEditor.tsx');
     const options = await editorialOptionsSourcePromise;
 
     expect(options).not.toContain("key: 'targetLength'");
@@ -2141,7 +2173,11 @@ describe('product shell ui', () => {
   });
 
   it('splits prompt template management into story and image template tabs', async () => {
-    const main = (await rendererSourcesPromise).requiredFile('src/main.tsx');
+    const sources = await rendererSourcesPromise;
+    const main = [
+      sources.requiredFile('src/features/templates/PromptTemplatesPage.tsx'),
+      sources.requiredFile('src/features/templates/PromptTemplateEditor.tsx'),
+    ].join('\n');
     const appState = await appStateSourcePromise;
     const promptSources = `${main}\n${appState}`;
     const css = await readFile(new URL('../src/styles.css', import.meta.url), 'utf8');
@@ -2168,7 +2204,11 @@ describe('product shell ui', () => {
   });
 
   it('shows visible feedback while generating image template fields', async () => {
-    const main = (await rendererSourcesPromise).requiredFile('src/main.tsx');
+    const sources = await rendererSourcesPromise;
+    const main = [
+      sources.requiredFile('src/features/templates/PromptTemplatesPage.tsx'),
+      sources.requiredFile('src/features/templates/PromptTemplateEditor.tsx'),
+    ].join('\n');
     const css = await readFile(new URL('../src/styles.css', import.meta.url), 'utf8');
 
     for (const symbol of [
@@ -2188,7 +2228,7 @@ describe('product shell ui', () => {
   });
 
   it('keeps prompt variables usable inside every template textarea', async () => {
-    const main = (await rendererSourcesPromise).requiredFile('src/main.tsx');
+    const main = (await rendererSourcesPromise).requiredFile('src/features/templates/PromptTemplateEditor.tsx');
     const options = await editorialOptionsSourcePromise;
     const promptSources = `${main}\n${options}`;
     const css = await readFile(new URL('../src/styles.css', import.meta.url), 'utf8');
@@ -2221,7 +2261,11 @@ describe('product shell ui', () => {
   });
 
   it('supports import, export, and clone for story and image templates without overwriting existing ids', async () => {
-    const main = (await rendererSourcesPromise).requiredFile('src/main.tsx');
+    const sources = await rendererSourcesPromise;
+    const main = [
+      sources.requiredFile('src/features/templates/PromptTemplatesPage.tsx'),
+      sources.requiredFile('src/features/templates/PromptTemplateEditor.tsx'),
+    ].join('\n');
 
     for (const symbol of [
       'exportPromptTemplateJson',

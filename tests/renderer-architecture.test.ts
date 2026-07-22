@@ -389,3 +389,44 @@ describe('media workflow feature ownership architecture', () => {
     expect(viralReport).toContain('export function ViralReport(');
   });
 });
+
+describe('template feature ownership architecture', () => {
+  const pagePaths = [
+    'src/features/templates/PromptTemplatesPage.tsx',
+    'src/features/templates/PromptTemplateEditor.tsx',
+    'src/features/templates/DraftTemplatesPage.tsx',
+    'src/features/templates/DraftCanvas.tsx',
+  ];
+
+  it('owns template pages and editors in dedicated feature modules', async () => {
+    const pages = await Promise.all(pagePaths.map(source));
+    pages.forEach((page) => expect(page.length).toBeGreaterThan(0));
+
+    const main = await source('src/main.tsx');
+    for (const definition of ['function PromptTemplatesPage(', 'function PromptTemplateEditor(', 'function DraftTemplatesPage(', 'function DraftTemplatePreview(', 'function EditableDraftCanvas(']) {
+      expect(main).not.toContain(definition);
+    }
+  });
+
+  it('keeps template features independent from bootstrap, secrets, and barrels', async () => {
+    const pages = await Promise.all(pagePaths.map(source));
+    for (const page of pages) {
+      expect(page).not.toContain("from '../../main'");
+      expect(page).not.toContain("from '../../app/app-state'");
+      expect(page).not.toContain("from '../../app/browser-fallback'");
+      expect(page).not.toContain("from '../../shared/config-secrets'");
+      expect(page).not.toMatch(/from ['"]\.\/index['"]/u);
+    }
+  });
+
+  it('separates prompt editors and draft canvas ownership from their route pages', async () => {
+    const [promptPage, promptEditor, draftPage, draftCanvas] = await Promise.all(pagePaths.map(source));
+    expect(promptPage).not.toContain('function PromptTemplateEditor(');
+    expect(promptEditor).toContain('export function PromptTemplateEditor(');
+    expect(draftPage).not.toContain('function EditableDraftCanvas(');
+    expect(draftPage).not.toContain('function DraftTemplatePreview(');
+    expect(draftCanvas).toContain('export function EditableDraftCanvas(');
+    expect(draftCanvas).toContain('export function DraftTemplatePreview(');
+    expect(draftCanvas).toContain('export function resizeDraftLayerWidth(');
+  });
+});
