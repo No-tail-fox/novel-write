@@ -545,6 +545,25 @@ describe('renderer application composition architecture', () => {
     expect(loading).toContain('正在加载');
   });
 
+  it('lazy-loads all seventeen route pages behind one stable content fallback', async () => {
+    const [routes, registry] = await Promise.all([
+      source('src/app/AppRoutes.tsx'),
+      source('src/app/route-registry.ts'),
+    ]);
+    const dynamicRoutes = [...registry.matchAll(/import\('([^']+)'\)\.then\(\(module\) => \(\{ default: module\.([A-Za-z0-9]+) \}\)\)/gu)];
+
+    expect(routes).toContain("import { Suspense } from 'react'");
+    expect(routes).toContain("import { RouteLoadingState } from './RouteLoadingState'");
+    expect(routes).toContain("from './route-registry'");
+    expect(registry).toContain("import { lazy } from 'react'");
+    expect(routes).toContain('<Suspense fallback={<RouteLoadingState />}>');
+    expect(routes).toContain('</Suspense>');
+    expect(dynamicRoutes).toHaveLength(17);
+    expect(new Set(dynamicRoutes.map((match) => match[1])).size).toBe(17);
+    expect(new Set(dynamicRoutes.map((match) => match[2])).size).toBe(17);
+    expect(`${routes}\n${registry}`).not.toMatch(/^import \{ [A-Za-z0-9]+Page \} from '\.\.\/features\//gmu);
+  });
+
   it('resets only errors owned by the previous route key before rendering the next route', () => {
     const boundaryType = RouteErrorBoundary as unknown as {
       getDerivedStateFromError(error: Error): { error: Error };

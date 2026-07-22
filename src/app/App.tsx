@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useLayoutEffect, useMemo, useReducer, useRef, useState } from "react";
+import React, { startTransition, useCallback, useEffect, useLayoutEffect, useMemo, useReducer, useRef, useState } from "react";
 import type { AppDelta, AppMutationResult, HistoryFamily, ShellView } from "../shared/types";
 import { createAppDeltaCoordinator, MAX_RENDERER_DELTA_BUFFER, type DeltaViewState, type RevisionGap } from "../shared/state-delta";
 import { applyAppMutationResult, applyBufferedMutationResults, applyHistorySelectionBarrier, applyLocalMutationResponse, authoritativeMissingRequestedTaskId, claimMutationResult, collectTaskEventPages, collectViralEventPages, createRequestGenerationCompletionQueue, createRequestGenerationGuard, historyEntityRevisionKey, historyResponseDisposition, mergeAuthoritativeSnapshotDetails, mergeReconciliationSlices, raiseMutationRevisionFloor, reduceCompletionTrackedState, shouldApplyDeltaViewTransition } from "../shared/state-reconciliation";
@@ -518,10 +518,12 @@ export function App() {
   }, [refreshTaskDetail, selectedTaskId]);
 
   async function navigate(view: ShellView) {
-    if (view !== 'task-detail') {
-      setSelectedTaskId(null);
-    }
-    setActiveView(view);
+    startTransition(() => {
+      if (view !== 'task-detail') {
+        setSelectedTaskId(null);
+      }
+      setActiveView(view);
+    });
     setSaveTone('saving');
     const result = await shellAction.run(async () => {
       const next = await api.saveUiPreferences({ activeView: view });
@@ -544,8 +546,10 @@ export function App() {
   }
 
   async function openTaskDetail(taskId: string) {
-    setSelectedTaskId(taskId);
-    setActiveView('task-detail');
+    startTransition(() => {
+      setSelectedTaskId(taskId);
+      setActiveView('task-detail');
+    });
     setSaveTone('saving');
     const result = await shellAction.run(async () => {
       const next = await api.saveUiPreferences({ activeView: 'task-detail' });

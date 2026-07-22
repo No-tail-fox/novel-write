@@ -14,6 +14,7 @@ import {
   type NavigationItem as NavItem,
 } from './navigation';
 import type { ShellView } from '../shared/types';
+import { preloadRoute } from './route-registry';
 
 export type SaveTone = 'saved' | 'saving' | 'dirty';
 
@@ -80,7 +81,12 @@ export function AppShell({
             <Bell size={16} className="brand-bell" />
           </div>
 
-          <button className="new-task-button" onClick={() => navigate(newTaskPrimaryAction.view)}>
+          <button
+            className="new-task-button"
+            onClick={() => navigate(newTaskPrimaryAction.view)}
+            onMouseEnter={() => preloadRouteIntent(newTaskPrimaryAction.view)}
+            onFocus={() => preloadRouteIntent(newTaskPrimaryAction.view)}
+          >
             <NewTaskIcon size={16} />
             <span>{newTaskPrimaryAction.label}</span>
             <kbd>Ctrl+N</kbd>
@@ -102,24 +108,45 @@ export function AppShell({
               <span className="nav-section-label">最近任务</span>
               {recentTasks.length === 0 ? <small>暂无任务</small> : null}
               {recentTasks.map((task) => (
-                <button key={task.id} className="recent-task-item" onClick={() => openTaskDetail(task.id)}>
+                <button
+                  key={task.id}
+                  className="recent-task-item"
+                  onClick={() => openTaskDetail(task.id)}
+                  onMouseEnter={() => preloadRouteIntent('task-detail')}
+                  onFocus={() => preloadRouteIntent('task-detail')}
+                >
                   <strong>{task.title || '未命名任务'}</strong>
                   <span>{statusLabel(task.status)} · {taskProgressLabel(task)}</span>
                 </button>
               ))}
             </section>
-            <button className="trial-activation-bar" onClick={() => navigate('activation')}>
+            <button
+              className="trial-activation-bar"
+              onClick={() => navigate('activation')}
+              onMouseEnter={() => preloadRouteIntent('activation')}
+              onFocus={() => preloadRouteIntent('activation')}
+            >
               <KeyRound size={15} />
               <span>试用剩余</span>
               <strong>{trialDaysLabel}</strong>
             </button>
             <div className="account-entry-grid">
-              <button className="credit-chip" onClick={() => navigate('account')}>
+              <button
+                className="credit-chip"
+                onClick={() => navigate('account')}
+                onMouseEnter={() => preloadRouteIntent('account')}
+                onFocus={() => preloadRouteIntent('account')}
+              >
                 <Coins size={15} />
                 积分明细
                 <span>{state.account.balance.toFixed(2)}</span>
               </button>
-              <button className="feedback-link" onClick={() => navigate('account')}>
+              <button
+                className="feedback-link"
+                onClick={() => navigate('account')}
+                onMouseEnter={() => preloadRouteIntent('account')}
+                onFocus={() => preloadRouteIntent('account')}
+              >
                 <Info size={14} />
                 账户中心
               </button>
@@ -158,10 +185,19 @@ export function AppShell({
 function NavButton({ item, active, navigate }: { item: NavItem; active: boolean; navigate: (view: ShellView) => void }) {
   const Icon = item.icon;
   return (
-    <button className={active ? 'nav-item active' : 'nav-item'} onClick={() => navigate(item.view)}>
+    <button
+      className={active ? 'nav-item active' : 'nav-item'}
+      onClick={() => navigate(item.view)}
+      onMouseEnter={() => preloadRouteIntent(item.view)}
+      onFocus={() => preloadRouteIntent(item.view)}
+    >
       <Icon size={16} />
       <span>{item.label}</span>
       <small>{item.hint}</small>
     </button>
   );
+}
+
+function preloadRouteIntent(view: ShellView): void {
+  void preloadRoute(view).catch(() => undefined);
 }

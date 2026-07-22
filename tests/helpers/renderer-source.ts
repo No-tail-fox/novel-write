@@ -58,7 +58,7 @@ export function collectReachableSources(sources: ReadonlyMap<string, string>, en
     const source = sources.get(path);
     if (source === undefined) throw new Error(`Required renderer source is not tracked: ${path}`);
     reachable.set(path, source);
-    for (const specifier of staticRuntimeImports(source, path)) {
+    for (const specifier of runtimeModuleImports(source, path)) {
       const dependency = resolveRendererImport(sources, path, specifier);
       if (dependency && !reachable.has(dependency)) pending.push(dependency);
     }
@@ -66,30 +66,42 @@ export function collectReachableSources(sources: ReadonlyMap<string, string>, en
   return reachable;
 }
 
-function staticRuntimeImports(source: string, path: string): string[] {
+function runtimeModuleImports(source: string, path: string): string[] {
   const sourceFile = ts.createSourceFile(path, source, ts.ScriptTarget.Latest, true, path.endsWith('.tsx') ? ts.ScriptKind.TSX : ts.ScriptKind.TS);
-  return sourceFile.statements.flatMap((statement) => {
-    if (ts.isImportDeclaration(statement) && ts.isStringLiteral(statement.moduleSpecifier)) {
-      if (statement.importClause?.isTypeOnly) return [];
-      const bindings = statement.importClause?.namedBindings;
+  const specifiers = new Set<string>();
+  function visit(node: ts.Node): void {
+    if (ts.isImportDeclaration(node) && ts.isStringLiteral(node.moduleSpecifier)) {
+      if (node.importClause?.isTypeOnly) return;
+      const bindings = node.importClause?.namedBindings;
       if (bindings && ts.isNamedImports(bindings)
-        && !statement.importClause?.name
+        && !node.importClause?.name
         && bindings.elements.length > 0
-        && bindings.elements.every((element) => element.isTypeOnly)) return [];
-      return [statement.moduleSpecifier.text];
+        && bindings.elements.every((element) => element.isTypeOnly)) return;
+      specifiers.add(node.moduleSpecifier.text);
+      return;
     }
-    if (ts.isExportDeclaration(statement)
-      && statement.moduleSpecifier
-      && ts.isStringLiteral(statement.moduleSpecifier)
-      && !statement.isTypeOnly) {
-      if (statement.exportClause
-        && ts.isNamedExports(statement.exportClause)
-        && statement.exportClause.elements.length > 0
-        && statement.exportClause.elements.every((element) => element.isTypeOnly)) return [];
-      return [statement.moduleSpecifier.text];
+    if (ts.isExportDeclaration(node)
+      && node.moduleSpecifier
+      && ts.isStringLiteral(node.moduleSpecifier)
+      && !node.isTypeOnly) {
+      if (node.exportClause
+        && ts.isNamedExports(node.exportClause)
+        && node.exportClause.elements.length > 0
+        && node.exportClause.elements.every((element) => element.isTypeOnly)) return;
+      specifiers.add(node.moduleSpecifier.text);
+      return;
     }
-    return [];
-  });
+    if (ts.isCallExpression(node)
+      && node.expression.kind === ts.SyntaxKind.ImportKeyword
+      && node.arguments.length === 1
+      && ts.isStringLiteral(node.arguments[0])) {
+      specifiers.add(node.arguments[0].text);
+      return;
+    }
+    ts.forEachChild(node, visit);
+  }
+  visit(sourceFile);
+  return [...specifiers];
 }
 
 function resolveRendererImport(sources: ReadonlyMap<string, string>, importer: string, specifier: string): string | null {

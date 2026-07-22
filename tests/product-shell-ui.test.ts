@@ -648,15 +648,17 @@ describe('product shell ui', () => {
     if (!collectReachableSources) return;
 
     const sources = new Map([
-      ['src/entry.ts', "export { screen } from './barrel.js';"],
+      ['src/entry.ts', "export { screen } from './barrel.js';\nvoid import('./lazy.js');"],
       ['src/barrel.ts', "export { screen } from './screen';"],
       ['src/screen.tsx', 'export const screen = null;'],
+      ['src/lazy.ts', 'export const lazyScreen = null;'],
     ]);
-    expect([...collectReachableSources(sources, 'src/entry.ts').keys()]).toEqual([
+    expect(new Set(collectReachableSources(sources, 'src/entry.ts').keys())).toEqual(new Set([
       'src/entry.ts',
       'src/barrel.ts',
       'src/screen.tsx',
-    ]);
+      'src/lazy.ts',
+    ]));
     expect(() => collectReachableSources(
       new Map([['src/entry.ts', "export { missing } from './missing.js';"]]),
       'src/entry.ts',

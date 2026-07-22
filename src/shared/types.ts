@@ -1,23 +1,25 @@
 export type TaskStatus = 'draft' | 'pending' | 'running' | 'paused' | 'completed' | 'failed' | 'cancelled';
 export type ThemeName = 'dark' | 'light';
-export type ShellView =
-  | 'new-task'
-  | 'queue'
-  | 'history'
-  | 'task-detail'
-  | 'html-video'
-  | 'image-lab'
-  | 'voice-lab'
-  | 'music-mv'
-  | 'book-selection'
-  | 'benchmark'
-  | 'person-assets'
-  | 'viral-analyzer'
-  | 'prompt-templates'
-  | 'draft-templates'
-  | 'settings'
-  | 'account'
-  | 'activation';
+export const SHELL_VIEWS = [
+  'new-task',
+  'queue',
+  'history',
+  'task-detail',
+  'html-video',
+  'image-lab',
+  'voice-lab',
+  'music-mv',
+  'book-selection',
+  'benchmark',
+  'person-assets',
+  'viral-analyzer',
+  'prompt-templates',
+  'draft-templates',
+  'settings',
+  'account',
+  'activation',
+] as const;
+export type ShellView = (typeof SHELL_VIEWS)[number];
 
 export type TaskMode = 'paste' | 'ai';
 export type TaskKind = 'story' | 'music-mv';

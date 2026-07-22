@@ -1,23 +1,29 @@
-import { AccountPage } from '../features/account/AccountPage';
-import { ActivationPage } from '../features/account/ActivationPage';
-import { BenchmarkImportPage } from '../features/labs/BenchmarkImportPage';
-import { BookSelectionPage } from '../features/labs/BookSelectionPage';
-import { ImageLabPage } from '../features/labs/ImageLabPage';
-import { PersonAssetsPage } from '../features/labs/PersonAssetsPage';
-import { VoiceLabPage } from '../features/labs/VoiceLabPage';
-import { HtmlVideoPage } from '../features/html-video/HtmlVideoPage';
-import { MusicMvPage } from '../features/music-mv/MusicMvPage';
-import { DraftTemplatesPage } from '../features/templates/DraftTemplatesPage';
-import { PromptTemplatesPage } from '../features/templates/PromptTemplatesPage';
-import { HistoryPage } from '../features/tasks/HistoryPage';
-import { NewTaskPage } from '../features/tasks/NewTaskPage';
-import { QueuePage } from '../features/tasks/QueuePage';
-import { TaskDetailPage } from '../features/tasks/TaskDetailPage';
-import { ViralAnalyzerPage } from '../features/viral/ViralAnalyzerPage';
-import { SettingsPage } from '../features/settings/SettingsPage';
+import { Suspense } from 'react';
 import type { StoryDreamApi } from '../shared/storydream-api';
 import type { HistoryFamily, ShellView, Task } from '../shared/types';
+import { RouteLoadingState } from './RouteLoadingState';
+import { routeComponents } from './route-registry';
 import type { ApplyMutationResult, RendererAppState as AppState } from './route-types';
+
+const {
+  'new-task': NewTaskPage,
+  'queue': QueuePage,
+  'history': HistoryPage,
+  'task-detail': TaskDetailPage,
+  'html-video': HtmlVideoPage,
+  'image-lab': ImageLabPage,
+  'voice-lab': VoiceLabPage,
+  'music-mv': MusicMvPage,
+  'book-selection': BookSelectionPage,
+  'benchmark': BenchmarkImportPage,
+  'person-assets': PersonAssetsPage,
+  'viral-analyzer': ViralAnalyzerPage,
+  'prompt-templates': PromptTemplatesPage,
+  'draft-templates': DraftTemplatesPage,
+  'settings': SettingsPage,
+  'account': AccountPage,
+  'activation': ActivationPage,
+} = routeComponents;
 
 export function AppRoutes({
   activeView,
@@ -51,7 +57,7 @@ export function AppRoutes({
   isBrowserPreview: boolean;
 }) {
   return (
-    <>
+    <Suspense fallback={<RouteLoadingState />}>
       {activeView === 'new-task' ? <NewTaskPage api={api} state={state} applyState={applyState} openTaskDetail={openTaskDetail} isBrowserPreview={isBrowserPreview} /> : null}
       {activeView === 'book-selection' ? <BookSelectionPage api={api} navigate={navigate} /> : null}
       {activeView === 'benchmark' ? <BenchmarkImportPage api={api} applyState={applyState} openTaskDetail={openTaskDetail} isBrowserPreview={isBrowserPreview} /> : null}
@@ -76,6 +82,6 @@ export function AppRoutes({
       {activeView === 'settings' ? <SettingsPage api={api} state={state} applyState={applyState} navigate={navigate} /> : null}
       {activeView === 'account' ? <AccountPage api={api} state={state} applyState={applyState} /> : null}
       {activeView === 'activation' ? <ActivationPage api={api} state={state} applyState={applyState} /> : null}
-    </>
+    </Suspense>
   );
 }
