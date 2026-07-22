@@ -293,8 +293,10 @@ describe('Viral lifecycle and event contracts', () => {
     expect(bounded.length).toBeLessThanOrEqual(4096);
     expect(bounded).toContain('provider failed');
 
-    const main = await readFile(new URL('../src/main.tsx', import.meta.url), 'utf8');
-    const page = main.slice(main.indexOf('function ViralAnalyzerPage'), main.indexOf('function NewTaskPage'));
+    const [main, page] = await Promise.all([
+      readFile(new URL('../src/main.tsx', import.meta.url), 'utf8'),
+      readFile(new URL('../src/features/viral/ViralAnalyzerPage.tsx', import.meta.url), 'utf8'),
+    ]);
     const save = page.slice(page.indexOf('async function saveViralTemplates'), page.indexOf('async function retryAnalysis'));
     expect(main).toContain('collectViralEventPages');
     expect(save).toContain('api.saveViralTemplates');

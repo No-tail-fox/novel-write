@@ -345,3 +345,47 @@ describe('local tool and lab feature ownership architecture', () => {
     }
   });
 });
+
+describe('media workflow feature ownership architecture', () => {
+  const pagePaths = [
+    'src/features/music-mv/MusicMvPage.tsx',
+    'src/features/html-video/HtmlVideoPage.tsx',
+    'src/features/html-video/HtmlVideoTabPanel.tsx',
+    'src/features/viral/ViralAnalyzerPage.tsx',
+    'src/features/viral/ViralReport.tsx',
+  ];
+
+  it('owns each media workflow surface in its feature module', async () => {
+    const pages = await Promise.all(pagePaths.map(source));
+    pages.forEach((page) => expect(page.length).toBeGreaterThan(0));
+
+    const main = await source('src/main.tsx');
+    for (const definition of ['function MusicMvPage(', 'function HtmlVideoPage(', 'function HtmlVideoTabPanel(', 'function ViralAnalyzerPage(', 'function ViralReport(']) {
+      expect(main).not.toContain(definition);
+    }
+  });
+
+  it('keeps media workflows independent from bootstrap, secrets, and barrels', async () => {
+    const pages = await Promise.all(pagePaths.map(source));
+    for (const page of pages) {
+      expect(page).not.toContain("from '../../main'");
+      expect(page).not.toContain("from '../../app/app-state'");
+      expect(page).not.toContain("from '../../app/browser-fallback'");
+      expect(page).not.toContain("from '../../shared/config-secrets'");
+      expect(page).not.toMatch(/from ['"]\.\/index['"]/u);
+    }
+  });
+
+  it('keeps HTML tabs and viral reports owned outside their route components', async () => {
+    const [htmlPage, htmlTabs, viralPage, viralReport] = await Promise.all([
+      source('src/features/html-video/HtmlVideoPage.tsx'),
+      source('src/features/html-video/HtmlVideoTabPanel.tsx'),
+      source('src/features/viral/ViralAnalyzerPage.tsx'),
+      source('src/features/viral/ViralReport.tsx'),
+    ]);
+    expect(htmlPage).not.toContain('function HtmlVideoTabPanel(');
+    expect(htmlTabs).toContain('export function HtmlVideoTabPanel(');
+    expect(viralPage).not.toContain('function ViralReport(');
+    expect(viralReport).toContain('export function ViralReport(');
+  });
+});

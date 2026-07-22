@@ -24,7 +24,7 @@ describe('product shell ui', () => {
     const history = sources.requiredFile('src/features/tasks/HistoryPage.tsx');
     const appState = await appStateSourcePromise;
     const bootstrap = appState.slice(appState.indexOf('export async function loadCompleteBootstrap'), appState.indexOf('export function cloneState'));
-    const app = main.slice(main.indexOf('function App()'), main.indexOf('\nfunction ViralAnalyzerPage'));
+    const app = main.slice(main.indexOf('function App()'), main.indexOf('\nfunction NavButton'));
     const install = app.slice(app.indexOf('const installAuthoritativeSnapshot'), app.indexOf('const recoverSnapshotInstallation'));
 
     expect(history).toContain("from '../history/use-history-page'");
@@ -211,7 +211,7 @@ describe('product shell ui', () => {
 
   it('owns history tombstone revisions in App and rejects late detail responses after deletion', async () => {
     const main = (await rendererSourcesPromise).requiredFile('src/main.tsx');
-    const app = main.slice(main.indexOf('function App()'), main.indexOf('\nfunction ViralAnalyzerPage'));
+    const app = main.slice(main.indexOf('function App()'), main.indexOf('\nfunction NavButton'));
     const taskRefresh = app.slice(app.indexOf('const refreshTaskDetail'), app.indexOf('const refreshViralEvents'));
     const viralRefresh = app.slice(app.indexOf('const refreshViralEvents'), app.indexOf('const onActiveHtmlTaskChange'));
     const incoming = app.slice(app.indexOf('const applyIncomingDelta'), app.indexOf('async function reconcile'));
@@ -350,7 +350,7 @@ describe('product shell ui', () => {
     });
     expect(rendered).toEqual({ tasks: [], events: [], detail: null });
 
-    const app = main.slice(main.indexOf('function App()'), main.indexOf('\nfunction ViralAnalyzerPage'));
+    const app = main.slice(main.indexOf('function App()'), main.indexOf('\nfunction NavButton'));
     const incoming = app.slice(app.indexOf('const applyIncomingDelta'), app.indexOf('async function reconcile'));
     const browserApply = app.slice(app.indexOf('function applyState'), app.indexOf('async function openTaskDetail'));
     expect(incoming).toContain('applyHistoryBarrier(delta)');
@@ -371,7 +371,7 @@ describe('product shell ui', () => {
 
   it('guards reconciliation details against tombstones delivered in the same response', async () => {
     const main = (await rendererSourcesPromise).requiredFile('src/main.tsx');
-    const app = main.slice(main.indexOf('function App()'), main.indexOf('\nfunction ViralAnalyzerPage'));
+    const app = main.slice(main.indexOf('function App()'), main.indexOf('\nfunction NavButton'));
     const reconcile = app.slice(app.indexOf('async function reconcile'), app.indexOf('const coordinator = createAppDeltaCoordinator'));
 
     expect(reconcile.indexOf('const taskResponseRevision =')).toBeLessThan(reconcile.indexOf('await api.reconcileDeltas'));
@@ -710,7 +710,12 @@ describe('product shell ui', () => {
   });
 
   it('keeps saved provider secrets out of renderer state, DOM values, and browser persistence', async () => {
-    const main = (await rendererSourcesPromise).requiredFile('src/main.tsx');
+    const sources = await rendererSourcesPromise;
+    const main = sources.requiredFile('src/main.tsx');
+    const mediaConfigOwners = [
+      sources.requiredFile('src/features/music-mv/MusicMvPage.tsx'),
+      sources.requiredFile('src/features/viral/ViralAnalyzerPage.tsx'),
+    ].join('\n');
     const appState = await appStateSourcePromise;
     const browserFallback = await browserFallbackSourcePromise;
     const apiContract = await readFile(new URL('../src/shared/storydream-api.ts', import.meta.url), 'utf8');
@@ -726,7 +731,7 @@ describe('product shell ui', () => {
     expect(main).toContain('Eye');
     expect(main).toContain('EyeOff');
     expect(main).toContain('onClear');
-    expect(main).toContain('secretChanges: {}');
+    expect(mediaConfigOwners).toContain('secretChanges: {}');
     expect(browserFallback).toContain('stripConfigSecrets(next.config)');
     expect(main).not.toContain('function maskConfigured');
     expect(main).not.toContain('value.slice(0, 2)');
@@ -1061,13 +1066,15 @@ describe('product shell ui', () => {
   });
 
   it('adds a complete music MV page and sends MV task settings into task creation', async () => {
-    const main = (await rendererSourcesPromise).requiredFile('src/main.tsx');
+    const sources = await rendererSourcesPromise;
+    const main = sources.requiredFile('src/main.tsx');
+    const musicPage = sources.requiredFile('src/features/music-mv/MusicMvPage.tsx');
     const css = await readFile(new URL('../src/styles.css', import.meta.url), 'utf8');
     const types = await readFile(new URL('../src/shared/types.ts', import.meta.url), 'utf8');
 
+    expect(main).toContain("'music-mv'");
+    expect(main).toContain('MusicMvPage');
     for (const symbol of [
-      "'music-mv'",
-      'MusicMvPage',
       'music-mv-layout',
       'musicMvRhythmMode',
       'musicMvCaptionStyle',
@@ -1078,7 +1085,7 @@ describe('product shell ui', () => {
       'setProcessingMode',
       'musicMv:',
     ]) {
-      expect(main).toContain(symbol);
+      expect(musicPage).toContain(symbol);
     }
 
     expect(types).toContain("export type ProcessingMode = 'full-auto' | 'semi-auto' | 'clip-only'");
@@ -1088,16 +1095,20 @@ describe('product shell ui', () => {
   });
 
   it('adds the Storybound HTML animation workspace without routing through the story pipeline', async () => {
-    const main = (await rendererSourcesPromise).requiredFile('src/main.tsx');
+    const sources = await rendererSourcesPromise;
+    const main = sources.requiredFile('src/main.tsx');
+    const htmlPage = sources.requiredFile('src/features/html-video/HtmlVideoPage.tsx');
+    const htmlTabs = sources.requiredFile('src/features/html-video/HtmlVideoTabPanel.tsx');
+    const htmlSources = `${main}\n${htmlPage}\n${htmlTabs}`;
     const css = await readFile(new URL('../src/styles.css', import.meta.url), 'utf8');
     const types = await readFile(new URL('../src/shared/types.ts', import.meta.url), 'utf8');
     const workflow = await readFile(new URL('../src/shared/html-video-workflow.ts', import.meta.url), 'utf8');
     const preload = await readFile(new URL('../electron/preload.ts', import.meta.url), 'utf8');
     const electronMain = await readFile(new URL('../electron/main.ts', import.meta.url), 'utf8');
 
+    expect(main).toContain("'html-video'");
+    expect(main).toContain('HtmlVideoPage');
     for (const symbol of [
-      "'html-video'",
-      'HtmlVideoPage',
       'hv-layout',
       'createHtmlVideoTask',
       'htmlVideoSteps',
@@ -1106,22 +1117,22 @@ describe('product shell ui', () => {
       '动画预览',
       '逐帧截图',
     ]) {
-      expect(main).toContain(symbol);
+      expect(htmlPage).toContain(symbol);
     }
     for (const label of ['改写 + 分句', '场景规划', '素材（图片）', '配音', '动画预览', '出片']) {
       expect(workflow).toContain(label);
     }
 
-    expect(main).not.toContain('HTML Animation');
-    expect(main).not.toContain('Generate HTML Video');
-    expect(main).toContain('safeParseHtmlVideoPipelineData(activeTask?.pipelineData, activeTask?.inputText)');
-    expect(main).toContain('pipelineParse.error');
-    expect(main).toContain('HTML 视频任务数据损坏');
-    expect(main).toContain('useState<TtsProvider>(() => normalizeRuntimeTtsProvider(state.config.tts.provider))');
-    expect(main).toContain('useState(() => defaultTaskSpeakerForProvider(state.config.tts.provider, state.config))');
-    expect(main).toContain('useState<number>(HTML_VIDEO_JOB_DEFAULTS.ttsSpeed)');
-    expect(main).toMatch(/createHtmlVideoTaskInput\(\{[\s\S]*?ttsProvider,[\s\S]*?voiceId,[\s\S]*?ttsSpeed,/u);
-    expect(main).not.toContain("taskKind: 'html-video'");
+    expect(htmlSources).not.toContain('HTML Animation');
+    expect(htmlSources).not.toContain('Generate HTML Video');
+    expect(htmlPage).toContain('safeParseHtmlVideoPipelineData(activeTask?.pipelineData, activeTask?.inputText)');
+    expect(htmlPage).toContain('pipelineParse.error');
+    expect(htmlPage).toContain('HTML 视频任务数据损坏');
+    expect(htmlPage).toContain('useState<TtsProvider>(() => normalizeRuntimeTtsProvider(state.config.tts.provider))');
+    expect(htmlPage).toContain('useState(() => defaultTaskSpeakerForProvider(state.config.tts.provider, state.config))');
+    expect(htmlPage).toContain('useState<number>(HTML_VIDEO_JOB_DEFAULTS.ttsSpeed)');
+    expect(htmlPage).toMatch(/createHtmlVideoTaskInput\(\{[\s\S]*?ttsProvider,[\s\S]*?voiceId,[\s\S]*?ttsSpeed,/u);
+    expect(htmlSources).not.toContain("taskKind: 'html-video'");
     expect(types).toContain("export type TaskKind = 'story' | 'music-mv'");
     expect(types).not.toContain("export type TaskKind = 'story' | 'music-mv' | 'html-video'");
     expect(workflow).toContain("taskKind: 'story'");
@@ -1137,7 +1148,6 @@ describe('product shell ui', () => {
       'getHtmlVideoMediaUrl',
       'updateTaskStatus',
       'retryTask',
-      '<video',
       'pipelineData.steps',
       '暂停',
       '取消',
@@ -1145,8 +1155,9 @@ describe('product shell ui', () => {
       '重试',
       '打开目录',
     ]) {
-      expect(main).toContain(symbol);
+      expect(htmlPage).toContain(symbol);
     }
+    expect(htmlTabs).toContain('<video');
     expect(css).toContain('.hv-layout');
     expect(css).toContain('.hv-rail');
     expect(css).toContain('.hv-tab');
@@ -1155,9 +1166,8 @@ describe('product shell ui', () => {
   });
 
   it('keeps HTML video task, step, and pipeline diagnostics visible without expanding long errors', async () => {
-    const main = (await rendererSourcesPromise).requiredFile('src/main.tsx');
+    const page = (await rendererSourcesPromise).requiredFile('src/features/html-video/HtmlVideoPage.tsx');
     const css = await readFile(new URL('../src/styles.css', import.meta.url), 'utf8');
-    const page = main.slice(main.indexOf('function HtmlVideoPage'), main.indexOf('function TaskDetailPage'));
 
     expect(page).toContain('classifyHtmlVideoTaskMessage(activeTask.status, activeTask.errorMessage)');
     expect(page).toMatch(/taskMessageKind === 'error'[\s\S]*?className="hv-workspace-error"\s+role="alert"\s+aria-live="assertive"[\s\S]*?<ErrorSummaryButton/);
@@ -1174,8 +1184,7 @@ describe('product shell ui', () => {
   });
 
   it('loads HTML video media incrementally from stable primitive effect dependencies', async () => {
-    const main = (await rendererSourcesPromise).requiredFile('src/main.tsx');
-    const page = main.slice(main.indexOf('function HtmlVideoPage'), main.indexOf('function TaskDetailPage'));
+    const page = (await rendererSourcesPromise).requiredFile('src/features/html-video/HtmlVideoPage.tsx');
     const mediaEffect = page.slice(page.indexOf('useEffect(() => {\n    const generation ='), page.indexOf('async function createHtmlVideoTask'));
 
     expect(page).toContain("const mediaTaskId = activeTask?.id ?? '';");
@@ -1194,8 +1203,11 @@ describe('product shell ui', () => {
   });
 
   it('keeps HTML media in a busy loading state until URL requests settle', async () => {
-    const main = (await rendererSourcesPromise).requiredFile('src/main.tsx');
-    const page = main.slice(main.indexOf('function HtmlVideoPage'), main.indexOf('function TaskDetailPage'));
+    const sources = await rendererSourcesPromise;
+    const page = [
+      sources.requiredFile('src/features/html-video/HtmlVideoPage.tsx'),
+      sources.requiredFile('src/features/html-video/HtmlVideoTabPanel.tsx'),
+    ].join('\n');
 
     expect(page).toContain('failedPaths: string[]');
     expect(page).toContain('const mediaLoading = !isBrowserPreview && mediaPaths.some');
@@ -1210,8 +1222,11 @@ describe('product shell ui', () => {
   });
 
   it('routes real HTML media element failures through retry generations', async () => {
-    const main = (await rendererSourcesPromise).requiredFile('src/main.tsx');
-    const page = main.slice(main.indexOf('function HtmlVideoPage'), main.indexOf('function TaskDetailPage'));
+    const sources = await rendererSourcesPromise;
+    const page = [
+      sources.requiredFile('src/features/html-video/HtmlVideoPage.tsx'),
+      sources.requiredFile('src/features/html-video/HtmlVideoTabPanel.tsx'),
+    ].join('\n');
 
     expect(page).toContain('mediaElementFailureState');
     expect(page).toContain('generation: mediaRetryRevision');
@@ -1224,8 +1239,7 @@ describe('product shell ui', () => {
   });
 
   it('rejects late HTML media errors unless their task, path set, and retry generation are still current', async () => {
-    const main = (await rendererSourcesPromise).requiredFile('src/main.tsx');
-    const page = main.slice(main.indexOf('function HtmlVideoPage'), main.indexOf('function TaskDetailPage'));
+    const page = (await rendererSourcesPromise).requiredFile('src/features/html-video/HtmlVideoPage.tsx');
     const failureHandler = page.slice(
       page.indexOf('const markMediaElementFailed'),
       page.indexOf('const markMediaElementReady'),
@@ -1237,9 +1251,8 @@ describe('product shell ui', () => {
   });
 
   it('shows the exact HTML video output path with overflow-safe wrapping', async () => {
-    const main = (await rendererSourcesPromise).requiredFile('src/main.tsx');
+    const page = (await rendererSourcesPromise).requiredFile('src/features/html-video/HtmlVideoTabPanel.tsx');
     const css = await readFile(new URL('../src/styles.css', import.meta.url), 'utf8');
-    const page = main.slice(main.indexOf('function HtmlVideoPage'), main.indexOf('function TaskDetailPage'));
 
     expect(page).toContain('className="hv-output-path"');
     expect(page).toContain('<code>{data.output.path}</code>');
@@ -1249,8 +1262,7 @@ describe('product shell ui', () => {
   });
 
   it('labels paused checkpoints and opens the first composition that has an HTML preview', async () => {
-    const main = (await rendererSourcesPromise).requiredFile('src/main.tsx');
-    const page = main.slice(main.indexOf('function HtmlVideoPage'), main.indexOf('function TaskDetailPage'));
+    const page = (await rendererSourcesPromise).requiredFile('src/features/html-video/HtmlVideoPage.tsx');
 
     expect(page).toContain('pipelineData.compositions.find((composition) => Boolean(composition.htmlPath))');
     expect(page).toContain('openPreview(firstPreviewComposition.index)');
@@ -1261,15 +1273,18 @@ describe('product shell ui', () => {
   });
 
   it('uses the shared HTML control manifest without exposing unconsumed editors', async () => {
-    const page = (await rendererSourcesPromise).requiredFile('src/main.tsx');
+    const sources = await rendererSourcesPromise;
+    const htmlPage = sources.requiredFile('src/features/html-video/HtmlVideoPage.tsx');
+    const htmlTabs = sources.requiredFile('src/features/html-video/HtmlVideoTabPanel.tsx');
+    const page = `${htmlPage}\n${htmlTabs}`;
     const css = await readFile(new URL('../src/styles.css', import.meta.url), 'utf8');
-    expect(page).toContain("import { HTML_VIDEO_CONTROL_MANIFEST_V1 } from './shared/html-video-control-manifest'");
+    expect(htmlTabs).toContain("import { HTML_VIDEO_CONTROL_MANIFEST_V1 } from '../../shared/html-video-control-manifest'");
     expect(page).toContain('data-html-video-control="transitionType"');
     expect(page).toContain('HTML_VIDEO_CONTROL_MANIFEST_V1.transitionType.availability');
     expect(page).toContain('data-html-video-control="coverRatio"');
     expect(page).toContain('HTML_VIDEO_CONTROL_MANIFEST_V1.coverRatio.availability');
     expect(page).not.toMatch(/value=\{data\.config\.draftTemplate\}/u);
-    const editor = page.slice(page.indexOf('function HtmlVideoConfigEditor'), page.indexOf('function HtmlVideoTabPanel'));
+    const editor = htmlPage.slice(htmlPage.indexOf('function HtmlVideoConfigEditor'));
     const editableFields = [
       'style',
       'voiceId',
@@ -1286,7 +1301,7 @@ describe('product shell ui', () => {
     const readOnlyFields: string[] = [];
     for (const field of editableFields) {
       expect(editor).toContain(`data-html-video-edit-field="${field}"`);
-      expect(page).toContain(`data-html-video-create-field="${field}"`);
+      expect(htmlPage).toContain(`data-html-video-create-field="${field}"`);
     }
     for (const field of readOnlyFields) {
       expect(editor).not.toContain(`data-html-video-edit-field="${field}"`);
@@ -1301,7 +1316,7 @@ describe('product shell ui', () => {
     expect(editor).toContain('<option value={values.bgmId}>{values.bgmId}（素材库中已缺失）</option>');
     expect(page).toContain('bgmVolume,');
     expect(page).toContain('transitionType,');
-    const captionEditor = page.slice(page.indexOf('function HtmlVideoCaptionEditor'), page.indexOf('function HtmlVideoTabPanel'));
+    const captionEditor = htmlTabs.slice(htmlTabs.indexOf('function HtmlVideoCaptionEditor'), htmlTabs.indexOf('function HtmlVideoCoverEditor'));
     for (const field of ['captionPreset', 'captionAnim', 'captionColors']) {
       expect(captionEditor).toContain(`data-html-video-edit-field="${field}"`);
     }
@@ -1316,7 +1331,7 @@ describe('product shell ui', () => {
     expect(captionEditor).toContain('value: colorOverrides');
     expect(captionEditor).toContain('delete next[key]');
     expect(captionEditor).not.toContain('.slice(0, 7)');
-    const coverEditor = page.slice(page.indexOf('function HtmlVideoCoverEditor'), page.indexOf('function HtmlVideoTabPanel'));
+    const coverEditor = htmlTabs.slice(htmlTabs.indexOf('function HtmlVideoCoverEditor'), htmlTabs.indexOf('export function HtmlVideoTabPanel'));
     expect(coverEditor).toContain('api.importHtmlVideoCover(task.id)');
     expect(coverEditor).toContain('HTML_VIDEO_COVER_MODES');
     expect(coverEditor).toContain('HTML_VIDEO_COVER_RATIOS');
@@ -1324,7 +1339,7 @@ describe('product shell ui', () => {
     expect(coverEditor).toContain('data-html-video-edit-field="coverTemplate"');
     expect(coverEditor).toContain('data-html-video-edit-field="coverRatio"');
     expect(coverEditor).toContain('导入封面');
-    const tabPanel = page.slice(page.indexOf('function HtmlVideoTabPanel'), page.indexOf('function htmlVideoStepClass'));
+    const tabPanel = htmlTabs.slice(htmlTabs.indexOf('export function HtmlVideoTabPanel'), htmlTabs.indexOf('function formatFileSize'));
     expect(tabPanel).toMatch(/if \(tab === 'cover'\)[\s\S]*?<HtmlVideoCoverEditor/u);
     expect(page).toContain('pipelineData.coverAsset?.path');
     expect(tabPanel).toMatch(/if \(tab === 'preview'\)[\s\S]*?<HtmlVideoCaptionEditor/u);
@@ -1343,9 +1358,8 @@ describe('product shell ui', () => {
 
   it('owns HTML task creation and output sizing defaults in the shared config module', async () => {
     const sources = await rendererSourcesPromise;
-    const page = sources.requiredFile('src/main.tsx');
+    const htmlPage = sources.requiredFile('src/features/html-video/HtmlVideoPage.tsx');
     const workflow = sources.requiredFile('src/shared/html-video-workflow.ts');
-    const htmlPage = page.slice(page.indexOf('function HtmlVideoPage('), page.indexOf('function HtmlVideoTabPanel('));
     expect(htmlPage).toContain('useState<string>(HTML_VIDEO_JOB_DEFAULTS.style)');
     expect(htmlPage).toContain('useState<string>(HTML_VIDEO_JOB_DEFAULTS.ratio)');
     expect(htmlPage).toContain('useState<number>(HTML_VIDEO_JOB_DEFAULTS.maxScenes)');
@@ -1357,9 +1371,12 @@ describe('product shell ui', () => {
   });
 
   it('exposes accessible HTML video tabs and media with the task output ratio', async () => {
-    const main = (await rendererSourcesPromise).requiredFile('src/main.tsx');
+    const sources = await rendererSourcesPromise;
+    const page = [
+      sources.requiredFile('src/features/html-video/HtmlVideoPage.tsx'),
+      sources.requiredFile('src/features/html-video/HtmlVideoTabPanel.tsx'),
+    ].join('\n');
     const css = await readFile(new URL('../src/styles.css', import.meta.url), 'utf8');
-    const page = main.slice(main.indexOf('function HtmlVideoPage'), main.indexOf('function TaskDetailPage'));
     const outputRule = css.match(/\.hv-video-output video,\s*\.hv-video-placeholder\s*\{[\s\S]*?\}/)?.[0] ?? '';
 
     expect(page).toContain('role="tablist" aria-label="HTML 动画视频内容"');
@@ -1386,8 +1403,7 @@ describe('product shell ui', () => {
   });
 
   it('moves focus with all standard HTML video tab navigation keys', async () => {
-    const main = (await rendererSourcesPromise).requiredFile('src/main.tsx');
-    const page = main.slice(main.indexOf('function HtmlVideoPage'), main.indexOf('function HtmlVideoTabPanel'));
+    const page = (await rendererSourcesPromise).requiredFile('src/features/html-video/HtmlVideoPage.tsx');
 
     expect(page).toContain('nextHtmlVideoTabKey(tabKey, event.key)');
     expect(page).toContain('onKeyDown={(event) => handleHtmlVideoTabKeyDown(event, tab.key)}');
@@ -1398,14 +1414,18 @@ describe('product shell ui', () => {
   });
 
   it('wires the viral analyzer page into the shell with report and selectable follow-up controls', async () => {
-    const main = (await rendererSourcesPromise).requiredFile('src/main.tsx');
+    const sources = await rendererSourcesPromise;
+    const main = sources.requiredFile('src/main.tsx');
+    const viralPage = sources.requiredFile('src/features/viral/ViralAnalyzerPage.tsx');
+    const report = sources.requiredFile('src/features/viral/ViralReport.tsx');
+    const viralSources = `${main}\n${viralPage}\n${report}`;
     const css = await readFile(new URL('../src/styles.css', import.meta.url), 'utf8');
 
-    expect(main).not.toContain("from './shared/viral-analysis'");
-    expect(main).toContain("from './shared/viral-template-extraction'");
+    expect(viralSources).not.toContain("from './shared/viral-analysis'");
+    expect(viralPage).toContain("from '../../shared/viral-template-extraction'");
 
+    expect(main).toContain('ViralAnalyzerPage');
     for (const symbol of [
-      'ViralAnalyzerPage',
       'createAndRunViralAnalysis',
       'createProductionTaskFromViral',
       'viral-analyzer-layout',
@@ -1416,6 +1436,12 @@ describe('product shell ui', () => {
       'viral-stage-timeline',
       'viral-stage-node',
       'viral-result-drawer',
+      'saveViralTemplates',
+      'api.saveViralTemplates',
+    ]) {
+      expect(viralPage).toContain(symbol);
+    }
+    for (const symbol of [
       'viral-insight-tabs',
       'viral-frame-insights',
       'viral-copy-breakdown',
@@ -1426,22 +1452,21 @@ describe('product shell ui', () => {
       'viral-template-name-grid',
       'viral-followup-actions',
       'viral-create-production-task',
-      'saveViralTemplates',
-      'api.savePromptTemplate',
-      'api.saveCustomStyle',
     ]) {
-      expect(main).toContain(symbol);
+      expect(report).toContain(symbol);
     }
+    expect(viralPage).not.toContain('api.savePromptTemplate');
+    expect(viralPage).not.toContain('api.saveCustomStyle');
 
     for (const text of ['爆款拆解', '开头', '结构', '结尾', '爆点', '文案拆解', '原文案', '提示词拆解', '后续操作', '保存为模板', '生成新任务', '故事模板名', '图片模板名']) {
-      expect(main).toContain(text);
+      expect(viralSources).toContain(text);
     }
-    expect(main).not.toContain('特效拆解');
-    expect(main).not.toContain("type ViralInsightTab = 'prompt' | 'effects'");
-    expect(main).toContain('latestViralEventForStage');
-    expect(main).not.toContain('selectedEvents.find((event) => event.stage === stage)');
+    expect(viralSources).not.toContain('特效拆解');
+    expect(viralSources).not.toContain("type ViralInsightTab = 'prompt' | 'effects'");
+    expect(viralPage).toContain('latestViralEventForStage');
+    expect(viralPage).not.toContain('selectedEvents.find((event) => event.stage === stage)');
 
-    const viralReport = main.slice(main.indexOf('function ViralReport'), main.indexOf('function viralTranscriptText'));
+    const viralReport = report.slice(report.indexOf('export function ViralReport'), report.indexOf('function viralTranscriptText'));
     expect(viralReport).toContain('uniqueViralPromptFrames(result.frames)');
     expect(viralReport).not.toContain('slice(0, 8)');
     expect(viralReport).toContain('关键帧数量');
@@ -1476,23 +1501,21 @@ describe('product shell ui', () => {
   });
 
   it('keeps viral source detection independent from manual platform selection and avoids native select popups', async () => {
-    const main = (await rendererSourcesPromise).requiredFile('src/main.tsx');
+    const page = (await rendererSourcesPromise).requiredFile('src/features/viral/ViralAnalyzerPage.tsx');
     const css = await readFile(new URL('../src/styles.css', import.meta.url), 'utf8');
-    const page = main.slice(main.indexOf('function ViralAnalyzerPage'), main.indexOf('const viralStages'));
     const platformSnippet = page.slice(page.indexOf('className="segmented viral-platform-picker"'), page.indexOf('<p className="viral-source-status">'));
 
     expect(page).toContain('sourceMode');
     expect(page).toContain('selectedPlatformForAnalysis');
-    expect(main).toContain('viral-choice-grid');
+    expect(page).toContain('viral-choice-grid');
     expect(platformSnippet).not.toContain('<select');
     expect(css).toContain('.viral-source-status');
     expect(css).toContain('.viral-choice-button.active');
   });
 
   it('uses a compact dropdown for viral analyzer draft templates', async () => {
-    const main = (await rendererSourcesPromise).requiredFile('src/main.tsx');
+    const page = (await rendererSourcesPromise).requiredFile('src/features/viral/ViralAnalyzerPage.tsx');
     const css = await readFile(new URL('../src/styles.css', import.meta.url), 'utf8');
-    const page = main.slice(main.indexOf('function ViralAnalyzerPage'), main.indexOf('const viralStages'));
 
     expect(page).toContain('<Field label="草稿模板">');
     expect(page).toContain('className="viral-draft-template-select"');
@@ -1505,9 +1528,8 @@ describe('product shell ui', () => {
   });
 
   it('surfaces Douyin login and cookie file controls in the viral analyzer', async () => {
-    const main = (await rendererSourcesPromise).requiredFile('src/main.tsx');
+    const page = (await rendererSourcesPromise).requiredFile('src/features/viral/ViralAnalyzerPage.tsx');
     const css = await readFile(new URL('../src/styles.css', import.meta.url), 'utf8');
-    const page = main.slice(main.indexOf('function ViralAnalyzerPage'), main.indexOf('const viralStages'));
 
     expect(page).toContain('api.openViralLoginWindow');
     expect(page).toContain('api.selectCookieFile');
@@ -2522,9 +2544,10 @@ describe('product shell ui', () => {
   });
 
   it('loads active HTML task details on bootstrap and checkpoint summary changes', async () => {
-    const main = (await rendererSourcesPromise).requiredFile('src/main.tsx');
+    const sources = await rendererSourcesPromise;
+    const main = sources.requiredFile('src/main.tsx');
     const app = main.slice(main.indexOf('function App()'), main.indexOf('function NavButton'));
-    const htmlPage = main.slice(main.indexOf('function HtmlVideoPage'), main.indexOf('function HtmlVideoTabPanel'));
+    const htmlPage = sources.requiredFile('src/features/html-video/HtmlVideoPage.tsx');
 
     expect(app).toContain('activeHtmlTaskIdRef');
     expect(app).toContain('refreshTaskDetail');
@@ -2534,9 +2557,10 @@ describe('product shell ui', () => {
   });
 
   it('loads active viral events and includes both active entities in reconciliation', async () => {
-    const main = (await rendererSourcesPromise).requiredFile('src/main.tsx');
+    const sources = await rendererSourcesPromise;
+    const main = sources.requiredFile('src/main.tsx');
     const app = main.slice(main.indexOf('function App()'), main.indexOf('function NavButton'));
-    const viralPage = main.slice(main.indexOf('function ViralAnalyzerPage'), main.indexOf('function BookSelectionPage'));
+    const viralPage = sources.requiredFile('src/features/viral/ViralAnalyzerPage.tsx');
 
     expect(app).toContain('viralAnalysisId: requestedViralId ?? undefined');
     expect(app).toContain('mergeReconciliationSlices');
@@ -2579,7 +2603,9 @@ describe('product shell ui', () => {
   });
 
   it('adds speech-to-text API settings for viral analyzer transcription', async () => {
-    const main = (await rendererSourcesPromise).requiredFile('src/main.tsx');
+    const sources = await rendererSourcesPromise;
+    const main = sources.requiredFile('src/main.tsx');
+    const viralPage = sources.requiredFile('src/features/viral/ViralAnalyzerPage.tsx');
 
     for (const text of [
       '语音转文字',
@@ -2608,7 +2634,6 @@ describe('product shell ui', () => {
     expect(settingsPage).toContain("section === 'speechToText'");
     expect(settingsPage).toContain('updateSpeechToTextConfig');
 
-    const viralPage = main.slice(main.indexOf('function ViralAnalyzerPage'), main.indexOf('const viralStages'));
     expect(viralPage).not.toContain('whisperModel');
     expect(viralPage).not.toContain('huggingFaceEndpoint');
   });
@@ -2873,19 +2898,25 @@ describe('product shell ui', () => {
   it('keeps task errors compact with a click-through detail dialog', async () => {
     const sources = await rendererSourcesPromise;
     const main = sources.requiredFile('src/main.tsx');
+    const errorOwners = [
+      main,
+      sources.requiredFile('src/features/tasks/TaskDetailPage.tsx'),
+      sources.requiredFile('src/features/html-video/HtmlVideoPage.tsx'),
+      sources.requiredFile('src/features/viral/ViralAnalyzerPage.tsx'),
+    ].join('\n');
     const artifact = sources.requiredFile('src/features/tasks/TaskArtifactPreview.tsx');
     const errors = sources.requiredFile('src/components/ErrorDetails.tsx');
     const css = await readFile(new URL('../src/styles.css', import.meta.url), 'utf8');
 
-    expect(main).toContain('ErrorSummaryButton');
+    expect(errorOwners).toContain('ErrorSummaryButton');
     expect(errors).toContain('function ErrorDetailDialog');
     expect(artifact).toContain('summarizeErrorMessage');
     expect(errors).toContain('Python 运行时缺少依赖');
     expect(errors).toContain('Python 运行时依赖缺失');
-    expect(main).toContain('className="mini-button viral-retry-button"');
-    expect(main).toContain('fullMessage');
-    expect(main).not.toContain('<small className="danger-text">{task.errorMessage}</small>');
-    expect(main).not.toContain("stepEvent?.detail ?? statusLabelForStep(status)");
+    expect(errorOwners).toContain('className="mini-button viral-retry-button"');
+    expect(errorOwners).toContain('fullMessage');
+    expect(errorOwners).not.toContain('<small className="danger-text">{task.errorMessage}</small>');
+    expect(errorOwners).not.toContain("stepEvent?.detail ?? statusLabelForStep(status)");
     expect(css).toContain('.error-summary-button');
     expect(css).toContain('.error-dialog');
     expect(css).toContain('.error-summary-button > span:last-child');
