@@ -863,8 +863,7 @@ describe('product shell ui', () => {
   });
 
   it('keeps the full previous book identity until the canonical save response arrives', async () => {
-    const main = (await rendererSourcesPromise).requiredFile('src/main.tsx');
-    const page = main.slice(main.indexOf('function BookSelectionPage'), main.indexOf('function BenchmarkImportPage'));
+    const page = (await rendererSourcesPromise).requiredFile('src/features/labs/BookSelectionPage.tsx');
     expect(page).toContain('selectedIdentity');
     expect(page).toContain('previousIdentity: selectedIdentity');
     expect(page).toContain("setSelectedIdentity({ theme: record.theme, bookId: record.bookId })");
@@ -1032,6 +1031,8 @@ describe('product shell ui', () => {
 
   it('adds a standalone voice lab for provider voice previews and history playback', async () => {
     const main = (await rendererSourcesPromise).requiredFile('src/main.tsx');
+    const voiceLab = (await rendererSourcesPromise).requiredFile('src/features/labs/VoiceLabPage.tsx');
+    const voiceSources = `${main}\n${voiceLab}`;
     const css = await readFile(new URL('../src/styles.css', import.meta.url), 'utf8');
     const preload = await readFile(new URL('../electron/preload.ts', import.meta.url), 'utf8');
 
@@ -1049,7 +1050,7 @@ describe('product shell ui', () => {
       'ttsVoiceOptionsForProvider',
       'taskSpeakerLabel',
     ]) {
-      expect(main).toContain(symbol);
+      expect(voiceSources).toContain(symbol);
     }
 
     expect(preload).toContain('generateVoiceLabPreview');
@@ -2730,6 +2731,7 @@ describe('product shell ui', () => {
 
   it('uses provider-specific task voice defaults in the new task form', async () => {
     const main = (await rendererSourcesPromise).requiredFile('src/main.tsx');
+    const newTask = (await rendererSourcesPromise).requiredFile('src/features/tasks/NewTaskPage.tsx');
     const voices = await readFile(new URL('../src/shared/tts-voices.ts', import.meta.url), 'utf8');
 
     for (const symbol of [
@@ -2742,7 +2744,7 @@ describe('product shell ui', () => {
       'zh_female_vv_uranus_bigtts',
       'male-qn-qingse',
     ]) {
-      expect(main + voices).toContain(symbol);
+      expect(newTask + voices).toContain(symbol);
     }
     expect(main).not.toContain("const voiceOptions = ['东方浩然', '灿博小叔', '温柔小雅', '爽快思思', '更多音色...'];");
     expect(main).not.toContain('>更多音色...</button>');
@@ -2918,22 +2920,22 @@ describe('product shell ui', () => {
   });
 
   it('runs image lab requests through real generation and renders returned image records', async () => {
-    const main = (await rendererSourcesPromise).requiredFile('src/main.tsx');
+    const page = (await rendererSourcesPromise).requiredFile('src/features/labs/ImageLabPage.tsx');
     const css = await readFile(new URL('../src/styles.css', import.meta.url), 'utf8');
 
-    expect(main).toContain('api.generateImageLab');
-    expect(main).not.toContain("status: state.config.image.apiKey ? 'generated' : 'mock'");
-    expect(main).not.toContain('预计消耗：本地模拟');
-    expect(main).toContain('record.imagePath ?');
-    expect(main).toContain("record.status === 'failed'");
+    expect(page).toContain('api.generateImageLab');
+    expect(page).not.toContain("status: state.config.image.apiKey ? 'generated' : 'mock'");
+    expect(page).not.toContain('预计消耗：本地模拟');
+    expect(page).toContain('record.imagePath ?');
+    expect(page).toContain("record.status === 'failed'");
     expect(css).toContain('.image-record img');
     expect(css).toContain('.image-record.failed');
   });
 
   it('exposes the StoryDream smart image modes in image lab generation', async () => {
-    const main = (await rendererSourcesPromise).requiredFile('src/main.tsx');
+    const page = (await rendererSourcesPromise).requiredFile('src/features/labs/ImageLabPage.tsx');
+    const helpers = (await rendererSourcesPromise).requiredFile('src/features/labs/image-lab-helpers.ts');
     const css = await readFile(new URL('../src/styles.css', import.meta.url), 'utf8');
-    const page = main.slice(main.indexOf('function ImageLabPage'), main.indexOf('function VoiceLabPage'));
 
     for (const text of ['智慧生图', '文生图', '图像参考', '参考图', '需求描述', '出图数量上限', '比例', '分辨率', '最近生成']) {
       expect(page).toContain(text);
@@ -2954,7 +2956,7 @@ describe('product shell ui', () => {
     expect(page).toContain('image-lab-ratio-grid');
     expect(page).toContain('referenceImagePaths');
     expect(page).toContain('resolveImageLabSmartMode(tab, baseSmartMode, references)');
-    expect(main).toContain("tab === 'smart' && references.length > 0 ? 'reference-edit'");
+    expect(helpers).toContain("tab === 'smart' && references.length > 0 ? 'reference-edit'");
     expect(page).toContain("Math.min(10, imageLabOutputCount)");
     expect(page).toContain('max={10}');
     expect(css).toContain('.image-lab-workbench');
@@ -2969,15 +2971,15 @@ describe('product shell ui', () => {
   });
 
   it('separates smart generation and reference editing modes in image lab copy', async () => {
-    const main = (await rendererSourcesPromise).requiredFile('src/main.tsx');
-    const page = main.slice(main.indexOf('function ImageLabPage'), main.indexOf('function VoiceLabPage'));
+    const page = (await rendererSourcesPromise).requiredFile('src/features/labs/ImageLabPage.tsx');
+    const helpers = (await rendererSourcesPromise).requiredFile('src/features/labs/image-lab-helpers.ts');
 
     expect(page).toContain('referenceModeDescription');
     expect(page).toContain('智慧生图');
     expect(page).toContain('图像参考');
     expect(page).toContain('智能规划多张图，可带参考图');
     expect(page).toContain('参考图编辑/延展，需要先添加参考图');
-    expect(page).toContain("tab === 'reference' ? 'reference-edit'");
+    expect(helpers).toContain("tab === 'reference' ? 'reference-edit'");
   });
 
   it('keeps the image lab page padded and scrollable under the fixed page header', async () => {

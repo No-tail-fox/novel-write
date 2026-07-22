@@ -303,3 +303,45 @@ describe('task feature ownership architecture', () => {
     expect(main).not.toContain('function formatDuration(');
   });
 });
+
+describe('local tool and lab feature ownership architecture', () => {
+  const pagePaths = [
+    'src/features/labs/BookSelectionPage.tsx',
+    'src/features/labs/BenchmarkImportPage.tsx',
+    'src/features/labs/PersonAssetsPage.tsx',
+    'src/features/labs/ImageLabPage.tsx',
+    'src/features/labs/VoiceLabPage.tsx',
+  ];
+
+  it('owns every local tool and lab page in a dedicated module', async () => {
+    const pages = await Promise.all(pagePaths.map(source));
+    pages.forEach((page) => expect(page.length).toBeGreaterThan(0));
+
+    const main = await source('src/main.tsx');
+    for (const definition of ['function BookSelectionPage(', 'function BenchmarkImportPage(', 'function PersonAssetsPage(', 'function ImageLabPage(', 'function VoiceLabPage(']) {
+      expect(main).not.toContain(definition);
+    }
+  });
+
+  it('keeps local tool route props independent from app bootstrap, secrets, and barrels', async () => {
+    const pages = await Promise.all(pagePaths.map(source));
+    for (const page of pages) {
+      expect(page).not.toContain("from '../../main'");
+      expect(page).not.toContain("from '../../app/app-state'");
+      expect(page).not.toContain("from '../../app/browser-fallback'");
+      expect(page).not.toContain("from '../../shared/config-secrets'");
+      expect(page).not.toMatch(/from ['"]\.\/index['"]/u);
+    }
+  });
+
+  it('owns image-lab calculations outside the renderer entry', async () => {
+    const [helpers, main] = await Promise.all([
+      source('src/features/labs/image-lab-helpers.ts'),
+      source('src/main.tsx'),
+    ]);
+    for (const symbol of ['smartImageModeLabel', 'resolveImageLabSmartMode', 'parseReferenceImagePaths']) {
+      expect(helpers).toContain(`export function ${symbol}`);
+      expect(main).not.toContain(`function ${symbol}`);
+    }
+  });
+});
