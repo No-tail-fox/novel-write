@@ -430,3 +430,54 @@ describe('template feature ownership architecture', () => {
     expect(draftCanvas).toContain('export function resizeDraftLayerWidth(');
   });
 });
+
+describe('system page feature ownership architecture', () => {
+  const pagePaths = [
+    'src/features/settings/SettingsPage.tsx',
+    'src/features/settings/ProviderProfileManagers.tsx',
+    'src/features/settings/settings-controls.tsx',
+    'src/features/account/AccountPage.tsx',
+    'src/features/account/ActivationPage.tsx',
+  ];
+
+  it('owns settings, provider profiles, account, and activation in dedicated feature modules', async () => {
+    const pages = await Promise.all(pagePaths.map(source));
+    pages.forEach((page) => expect(page.length).toBeGreaterThan(0));
+
+    const main = await source('src/main.tsx');
+    for (const definition of [
+      'function SettingsPage(',
+      'function LlmProfileManager(',
+      'function ImageProfileManager(',
+      'function TtsProfileManager(',
+      'function AccountPage(',
+      'function ActivationPage(',
+      'function SettingsCard(',
+      'function ModelPicker(',
+    ]) {
+      expect(main).not.toContain(definition);
+    }
+  });
+
+  it('keeps system pages independent from bootstrap and browser fallback ownership', async () => {
+    const pages = await Promise.all(pagePaths.map(source));
+    for (const page of pages) {
+      expect(page).not.toContain("from '../../main'");
+      expect(page).not.toContain("from '../../app/app-state'");
+      expect(page).not.toContain("from '../../app/browser-fallback'");
+      expect(page).not.toMatch(/from ['"]\.\/index['"]/u);
+    }
+  });
+
+  it('keeps provider managers and shared settings controls outside the settings route', async () => {
+    const [settingsPage, managers, controls] = await Promise.all(pagePaths.slice(0, 3).map(source));
+    for (const definition of ['function LlmProfileManager(', 'function ImageProfileManager(', 'function TtsProfileManager(']) {
+      expect(settingsPage).not.toContain(definition);
+      expect(managers).toContain(`export ${definition}`);
+    }
+    for (const definition of ['function SettingsCard(', 'function ModelPicker(']) {
+      expect(settingsPage).not.toContain(definition);
+      expect(controls).toContain(`export ${definition}`);
+    }
+  });
+});

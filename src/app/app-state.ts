@@ -25,7 +25,6 @@ import {
 import type { DeltaViewState, HistoryRevisionLedger } from '../shared/state-delta';
 import { draftTemplates as builtinDraftTemplates, normalizeDraftTemplate } from '../shared/templates';
 import type {
-  AppConfig,
   AppDelta,
   AppMutationResult,
   BootstrapState,
@@ -71,11 +70,6 @@ export function taskFromMutation(result: AppMutationResult | null): TaskSummary 
 
 export function viralFromMutation(result: AppMutationResult | null): ViralAnalysisSummary | null {
   return result?.kind === 'viral-upsert' ? result.record : null;
-}
-
-export function configFromMutation(result: AppMutationResult | null): AppConfig {
-  if (result?.kind === 'state-patch' && result.patch.kind === 'config') return result.patch.config;
-  throw new Error('CONFIG_MUTATION_INVALID: Save did not return a config patch.');
 }
 
 export async function loadCompleteBootstrap(api: StoryDreamApi, bootstrap: BootstrapState): Promise<BootstrapState> {

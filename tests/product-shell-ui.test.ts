@@ -679,7 +679,7 @@ describe('product shell ui', () => {
     const feedback = sources.requiredFile('src/components/AsyncActionFeedback.tsx');
     const css = await readFile(new URL('../src/styles.css', import.meta.url), 'utf8');
 
-    expect(main).toContain("from './ui/async-action'");
+    expect(renderer).toMatch(/from ["'](?:\.\.\/|\.\/)+ui\/async-action["']/u);
     expect(main).toContain('InlineActionFeedback');
     expect(main).toContain('className="global-action-banner"');
     expect(feedback).toContain('className={`inline-action-feedback ${feedback.tone}`}');
@@ -712,6 +712,11 @@ describe('product shell ui', () => {
   it('keeps saved provider secrets out of renderer state, DOM values, and browser persistence', async () => {
     const sources = await rendererSourcesPromise;
     const main = sources.requiredFile('src/main.tsx');
+    const settingsOwners = [
+      sources.requiredFile('src/features/settings/SettingsPage.tsx'),
+      sources.requiredFile('src/features/settings/ProviderProfileManagers.tsx'),
+      sources.requiredFile('src/features/settings/settings-controls.tsx'),
+    ].join('\n');
     const mediaConfigOwners = [
       sources.requiredFile('src/features/music-mv/MusicMvPage.tsx'),
       sources.requiredFile('src/features/viral/ViralAnalyzerPage.tsx'),
@@ -724,13 +729,13 @@ describe('product shell ui', () => {
 
     expect(`${appState}\n${browserFallback}`).toContain('stripConfigSecrets');
     expect(main).not.toContain('stripConfigSecrets(');
-    expect(main).toContain("from './shared/config-secrets'");
-    expect(main).toContain('secretChanges');
-    expect(main).toContain('SecretInput');
-    expect(main).toContain("type={revealed ? 'text' : 'password'}");
-    expect(main).toContain('Eye');
-    expect(main).toContain('EyeOff');
-    expect(main).toContain('onClear');
+    expect(settingsOwners).toContain('../../shared/config-secrets');
+    expect(settingsOwners).toContain('secretChanges');
+    expect(settingsOwners).toContain('SecretInput');
+    expect(settingsOwners).toContain("type={revealed ? 'text' : 'password'}");
+    expect(settingsOwners).toContain('Eye');
+    expect(settingsOwners).toContain('EyeOff');
+    expect(settingsOwners).toContain('onClear');
     expect(mediaConfigOwners).toContain('secretChanges: {}');
     expect(browserFallback).toContain('stripConfigSecrets(next.config)');
     expect(main).not.toContain('function maskConfigured');
@@ -744,10 +749,10 @@ describe('product shell ui', () => {
   });
 
   it('does not claim that browser preview securely saved edited provider secrets', async () => {
-    const main = (await rendererSourcesPromise).requiredFile('src/main.tsx');
+    const settingsPage = (await rendererSourcesPromise).requiredFile('src/features/settings/SettingsPage.tsx');
     const browserFallback = await browserFallbackSourcePromise;
     const fallbackSave = browserFallback.slice(browserFallback.indexOf('async saveConfig(input)'), browserFallback.indexOf('async testLlmConfig'));
-    const settingsCommit = main.slice(main.indexOf('async function commitAndApplySettingsDraft'), main.indexOf('function clearProviderModels'));
+    const settingsCommit = settingsPage.slice(settingsPage.indexOf('async function commitAndApplySettingsDraft'), settingsPage.indexOf('function clearProviderModels'));
 
     expect(fallbackSave).toContain('Object.keys(input.secretChanges).length > 0');
     expect(fallbackSave).toContain('浏览器预览不会安全保存接口密钥');
@@ -1351,7 +1356,7 @@ describe('product shell ui', () => {
 
   it('renders governed six-step HTML progress and seven-step ordinary progress in task lists', async () => {
     const page = (await rendererSourcesPromise).all;
-    expect(page).toMatch(/from '\.\/shared\/html-video-workflow';/u);
+    expect(page).toMatch(/from ["']\.\/shared\/html-video-workflow["'];/u);
     expect(page).toContain("{statusLabel(task.status)} · {taskProgressLabel(task)}");
     expect(page).toContain('<span role="cell">{taskProgressLabel(task)}</span>');
   });
@@ -1917,14 +1922,14 @@ describe('product shell ui', () => {
   });
 
   it('offers auto-detect and folder-pick actions for the Jianying draft path setting', async () => {
-    const main = (await rendererSourcesPromise).requiredFile('src/main.tsx');
+    const settingsPage = (await rendererSourcesPromise).requiredFile('src/features/settings/SettingsPage.tsx');
 
-    expect(main).toContain('detectJianyingDraftPath');
-    expect(main).toContain('selectLocalFolder');
-    expect(main).toContain('autoDetectJianyingDraftPath');
-    expect(main).toContain('pickJianyingDraftPath');
-    expect(main).toContain('自动检测');
-    expect(main).toContain('选择目录');
+    expect(settingsPage).toContain('detectJianyingDraftPath');
+    expect(settingsPage).toContain('selectLocalFolder');
+    expect(settingsPage).toContain('autoDetectJianyingDraftPath');
+    expect(settingsPage).toContain('pickJianyingDraftPath');
+    expect(settingsPage).toContain('自动检测');
+    expect(settingsPage).toContain('选择目录');
   });
 
   it('loads Jianying effect catalogs and exposes conservative draft effect controls', async () => {
@@ -2328,6 +2333,7 @@ describe('product shell ui', () => {
 
   it('supports opening a selected task in a screenshot-style pipeline detail view', async () => {
     const main = (await rendererSourcesPromise).requiredFile('src/main.tsx');
+    const settingsPage = (await rendererSourcesPromise).requiredFile('src/features/settings/SettingsPage.tsx');
     const detail = (await rendererSourcesPromise).requiredFile('src/features/tasks/TaskDetailPage.tsx');
     const artifact = (await rendererSourcesPromise).requiredFile('src/features/tasks/TaskArtifactPreview.tsx');
     const types = await readFile(new URL('../src/shared/types.ts', import.meta.url), 'utf8');
@@ -2435,6 +2441,7 @@ describe('product shell ui', () => {
 
   it('uses one bootstrap and delta updates without a one-second full-state heartbeat', async () => {
     const main = (await rendererSourcesPromise).requiredFile('src/main.tsx');
+    const settingsPage = (await rendererSourcesPromise).requiredFile('src/features/settings/SettingsPage.tsx');
     const detail = (await rendererSourcesPromise).requiredFile('src/features/tasks/TaskDetailPage.tsx');
     const css = await readFile(new URL('../src/styles.css', import.meta.url), 'utf8');
 
@@ -2444,9 +2451,9 @@ describe('product shell ui', () => {
     expect(main).not.toContain('liveRefreshMs');
     expect(main).not.toContain('api.getState()');
     expect(detail).toContain('liveNow');
-    expect(main).toContain('testCurrentConfig');
-    expect(main).toContain('保存并测试');
-    expect(main).not.toContain('测试模型可用性');
+    expect(settingsPage).toContain('testCurrentConfig');
+    expect(settingsPage).toContain('保存并测试');
+    expect(settingsPage).not.toContain('测试模型可用性');
     expect(css).toContain('.test-result');
   });
 
@@ -2488,7 +2495,8 @@ describe('product shell ui', () => {
   });
 
   it('queues reconciliation gaps that arrive in flight and preserves loaded template details on reset', async () => {
-    const main = (await rendererSourcesPromise).requiredFile('src/main.tsx');
+    const sources = await rendererSourcesPromise;
+    const main = sources.requiredFile('src/main.tsx');
     const app = main.slice(main.indexOf('function App()'), main.indexOf('function NavButton'));
 
     expect(app).toContain('let reconcileAgain = false');
@@ -2615,7 +2623,10 @@ describe('product shell ui', () => {
   });
 
   it('shows save and test actions for each settings configuration section', async () => {
-    const main = (await rendererSourcesPromise).requiredFile('src/main.tsx');
+    const sources = await rendererSourcesPromise;
+    const settingsPage = sources.requiredFile('src/features/settings/SettingsPage.tsx');
+    const settingsManagers = sources.requiredFile('src/features/settings/ProviderProfileManagers.tsx');
+    const settingsOwners = `${settingsPage}\n${settingsManagers}`;
     const apiContract = await readFile(new URL('../src/shared/storydream-api.ts', import.meta.url), 'utf8');
     const preload = await readFile(new URL('../electron/preload.ts', import.meta.url), 'utf8');
     const electronMain = await readFile(new URL('../electron/main.ts', import.meta.url), 'utf8');
@@ -2623,32 +2634,32 @@ describe('product shell ui', () => {
     expect(apiContract).toContain('testAppConfig');
     expect(preload).toContain('config:test');
     expect(electronMain).toContain('config:test');
-    expect(main).toContain('testCurrentConfig');
-    expect(main).toContain('保存并测试');
-    expect(main).toContain('buildConfigForSelectedProfileTest');
-    expect(main).toContain('activateSelectedProviderProfileForTarget');
-    const testSnippet = main.slice(main.indexOf('async function testCurrentConfig()'), main.indexOf('async function refreshProviderModels'));
+    expect(settingsPage).toContain('testCurrentConfig');
+    expect(settingsPage).toContain('保存并测试');
+    expect(settingsPage).toContain('buildConfigForSelectedProfileTest');
+    expect(settingsPage).toContain('activateSelectedProviderProfileForTarget');
+    const testSnippet = settingsPage.slice(settingsPage.indexOf('async function testCurrentConfig()'), settingsPage.indexOf('async function refreshProviderModels'));
     const secureSaveCall = 'api.saveConfig({ config: normalizeEditableConfigProviders(nextDraft), secretChanges })';
     expect(testSnippet.indexOf('const nextDraft = activateSelectedProviderProfileForTarget')).toBeLessThan(testSnippet.indexOf(secureSaveCall));
     expect(testSnippet.indexOf(secureSaveCall)).toBeLessThan(testSnippet.indexOf('api.testAppConfig(target, testConfig)'));
-    expect(main).toContain('selectedLlmProfileId');
-    expect(main).toContain('selectedImageProfileId');
-    expect(main).toContain('selectedTtsProfileId');
-    expect(main).toContain('onSelectedProfileIdChange');
-    expect(main).toContain('GPT Image 接口地址');
-    expect(main).toContain('GPT Image 模型');
-    expect(main).toContain('自定义接口密钥');
-    expect(main).toContain('自定义模型');
-    expect(main).toContain('即梦访问密钥 ID');
-    expect(main).toContain('即梦访问密钥 Secret');
-    expect(main).toContain('即梦请求 Key');
-    expect(main).toContain('MiniMax 模型');
-    expect(main).toContain('MiniMax 音色 ID');
+    expect(settingsOwners).toContain('selectedLlmProfileId');
+    expect(settingsOwners).toContain('selectedImageProfileId');
+    expect(settingsOwners).toContain('selectedTtsProfileId');
+    expect(settingsOwners).toContain('onSelectedProfileIdChange');
+    expect(settingsOwners).toContain('GPT Image 接口地址');
+    expect(settingsOwners).toContain('GPT Image 模型');
+    expect(settingsOwners).toContain('自定义接口密钥');
+    expect(settingsOwners).toContain('自定义模型');
+    expect(settingsOwners).toContain('即梦访问密钥 ID');
+    expect(settingsOwners).toContain('即梦访问密钥 Secret');
+    expect(settingsOwners).toContain('即梦请求 Key');
+    expect(settingsOwners).toContain('MiniMax 模型');
+    expect(settingsOwners).toContain('MiniMax 音色 ID');
   });
 
   it('adds speech-to-text API settings for viral analyzer transcription', async () => {
     const sources = await rendererSourcesPromise;
-    const main = sources.requiredFile('src/main.tsx');
+    const settingsPage = sources.requiredFile('src/features/settings/SettingsPage.tsx');
     const viralPage = sources.requiredFile('src/features/viral/ViralAnalyzerPage.tsx');
 
     for (const text of [
@@ -2670,10 +2681,9 @@ describe('product shell ui', () => {
       'FunAudioLLM/SenseVoiceSmall',
       'TeleAI/TeleSpeechASR',
     ]) {
-      expect(main).toContain(text);
+      expect(settingsPage).toContain(text);
     }
 
-    const settingsPage = main.slice(main.indexOf('function SettingsPage'), main.indexOf('function LlmProfileManager'));
     expect(settingsPage).toContain("configTargetStatus('speechToText', draft)");
     expect(settingsPage).toContain("section === 'speechToText'");
     expect(settingsPage).toContain('updateSpeechToTextConfig');
@@ -2683,74 +2693,86 @@ describe('product shell ui', () => {
   });
 
   it('loads model lists from configured provider URLs before selecting a model', async () => {
-    const main = (await rendererSourcesPromise).requiredFile('src/main.tsx');
+    const sources = await rendererSourcesPromise;
+    const settingsOwners = [
+      sources.requiredFile('src/features/settings/SettingsPage.tsx'),
+      sources.requiredFile('src/features/settings/ProviderProfileManagers.tsx'),
+      sources.requiredFile('src/features/settings/settings-controls.tsx'),
+    ].join('\n');
     const css = await readFile(new URL('../src/styles.css', import.meta.url), 'utf8');
     const preload = await readFile(new URL('../electron/preload.ts', import.meta.url), 'utf8');
     const electronMain = await readFile(new URL('../electron/main.ts', import.meta.url), 'utf8');
 
     expect(preload).toContain('listProviderModels');
     expect(electronMain).toContain('models:list');
-    expect(main).toContain('ModelPicker');
-    expect(main).toContain('LlmProfileManager');
-    expect(main).toContain('refreshProviderModels');
-    expect(main).toContain('clearProviderModels');
-    expect(main).toContain('listProviderModels');
-    expect(main).toContain('获取模型');
-    expect(main).toContain('key={`llm-${selectedProfile.id}`}');
-    expect(main).toContain('key={`gpt-image-${selectedProfile.id}`}');
-    expect(main).toContain('key={`custom-image-${selectedProfile.id}`}');
-    expect(main).toContain("clearProviderModels('llm')");
-    expect(main).toContain("onClearModels('gpt-image')");
-    expect(main).toContain("onClearModels('custom-image')");
+    expect(settingsOwners).toContain('ModelPicker');
+    expect(settingsOwners).toContain('LlmProfileManager');
+    expect(settingsOwners).toContain('refreshProviderModels');
+    expect(settingsOwners).toContain('clearProviderModels');
+    expect(settingsOwners).toContain('listProviderModels');
+    expect(settingsOwners).toContain('获取模型');
+    expect(settingsOwners).toContain('key={`llm-${selectedProfile.id}`}');
+    expect(settingsOwners).toContain('key={`gpt-image-${selectedProfile.id}`}');
+    expect(settingsOwners).toContain('key={`custom-image-${selectedProfile.id}`}');
+    expect(settingsOwners).toContain("clearProviderModels('llm')");
+    expect(settingsOwners).toContain("onClearModels('gpt-image')");
+    expect(settingsOwners).toContain("onClearModels('custom-image')");
     expect(css).toContain('.model-picker');
     expect(css).toContain('.model-list-status');
   });
 
   it('keeps unsaved settings edits when app state refreshes in the background', async () => {
-    const main = (await rendererSourcesPromise).requiredFile('src/main.tsx');
+    const settingsPage = (await rendererSourcesPromise).requiredFile('src/features/settings/SettingsPage.tsx');
 
-    expect(main).toContain('settingsDirty');
-    expect(main).toContain('setSettingsDraft');
-    expect(main).toContain('commitSettingsDraft');
-    expect(main).toContain('lastAppliedConfigSignature');
-    expect(main).toContain('if (settingsDirty) return');
+    expect(settingsPage).toContain('settingsDirty');
+    expect(settingsPage).toContain('setSettingsDraft');
+    expect(settingsPage).toContain('commitSettingsDraft');
+    expect(settingsPage).toContain('lastAppliedConfigSignature');
+    expect(settingsPage).toContain('if (settingsDirty) return');
   });
 
   it('manages multiple LLM configuration profiles from a switcher-style list', async () => {
-    const main = (await rendererSourcesPromise).requiredFile('src/main.tsx');
+    const sources = await rendererSourcesPromise;
+    const settingsOwners = `${sources.requiredFile('src/features/settings/SettingsPage.tsx')}\n${sources.requiredFile('src/features/settings/ProviderProfileManagers.tsx')}`;
     const css = await readFile(new URL('../src/styles.css', import.meta.url), 'utf8');
 
-    expect(main).toContain('LlmProfileManager');
-    expect(main).toContain('activateLlmProfile');
-    expect(main).toContain('activeLlmProfileId');
-    expect(main).toContain('enableLlmProfile');
-    expect(main).toContain('addLlmProfile');
-    expect(main).toContain('copyLlmProfile');
-    expect(main).toContain('removeLlmProfile');
-    expect(main).toContain('新增配置');
-    expect(main).toContain('启用');
-    expect(main).toContain('data-profile-card');
+    expect(settingsOwners).toContain('LlmProfileManager');
+    expect(settingsOwners).toContain('activateLlmProfile');
+    expect(settingsOwners).toContain('activeLlmProfileId');
+    expect(settingsOwners).toContain('enableLlmProfile');
+    expect(settingsOwners).toContain('addLlmProfile');
+    expect(settingsOwners).toContain('copyLlmProfile');
+    expect(settingsOwners).toContain('removeLlmProfile');
+    expect(settingsOwners).toContain('新增配置');
+    expect(settingsOwners).toContain('启用');
+    expect(settingsOwners).toContain('data-profile-card');
     expect(css).toContain('.profile-switcher-list');
     expect(css).toContain('.provider-profile-card');
     expect(css).toContain('.provider-profile-card.active');
   });
 
   it('manages image and TTS providers with the same profile activation pattern', async () => {
-    const main = (await rendererSourcesPromise).requiredFile('src/main.tsx');
+    const sources = await rendererSourcesPromise;
+    const settingsOwners = `${sources.requiredFile('src/features/settings/SettingsPage.tsx')}\n${sources.requiredFile('src/features/settings/ProviderProfileManagers.tsx')}`;
 
-    expect(main).toContain('ImageProfileManager');
-    expect(main).toContain('TtsProfileManager');
-    expect(main).toContain('activateImageProfile');
-    expect(main).toContain('activateTtsProfile');
-    expect(main).toContain('activeImageProfileId');
-    expect(main).toContain('activeTtsProfileId');
-    expect(main).toContain('enableImageProfile');
-    expect(main).toContain('enableTtsProfile');
-    expect(main).toContain('commitAndApplySettingsDraft');
+    expect(settingsOwners).toContain('ImageProfileManager');
+    expect(settingsOwners).toContain('TtsProfileManager');
+    expect(settingsOwners).toContain('activateImageProfile');
+    expect(settingsOwners).toContain('activateTtsProfile');
+    expect(settingsOwners).toContain('activeImageProfileId');
+    expect(settingsOwners).toContain('activeTtsProfileId');
+    expect(settingsOwners).toContain('enableImageProfile');
+    expect(settingsOwners).toContain('enableTtsProfile');
+    expect(settingsOwners).toContain('commitAndApplySettingsDraft');
   });
 
   it('scopes provider-specific settings instead of showing every credential at once', async () => {
-    const main = (await rendererSourcesPromise).requiredFile('src/main.tsx');
+    const sources = await rendererSourcesPromise;
+    const settingsOwners = [
+      sources.requiredFile('src/features/settings/SettingsPage.tsx'),
+      sources.requiredFile('src/features/settings/ProviderProfileManagers.tsx'),
+      sources.requiredFile('src/features/settings/settings-controls.tsx'),
+    ].join('\n');
 
     for (const branch of [
       "selectedProvider === 'openai'",
@@ -2761,45 +2783,48 @@ describe('product shell ui', () => {
       "provider === 'volcengine'",
       "provider === 'minimax'",
     ]) {
-      expect(main).toContain(branch);
+      expect(settingsOwners).toContain(branch);
     }
-    expect(main).toContain("options={['openai', 'custom', 'anthropic']}");
-    expect(main).toContain("options={['gpt_image', 'jimeng', 'custom']}");
-    expect(main).toContain("options={['volcengine', 'minimax']}");
-    expect(main).toContain('normalizeEditableConfigProviders');
-    expect(main).not.toContain("options={['gpt_image', 'jimeng', 'custom', 'mock']}");
-    expect(main).not.toContain("options={['volcengine', 'minimax', 'mock']}");
-    expect(main).not.toContain("draft.imageProvider === 'mock'");
-    expect(main).not.toContain("draft.tts.provider === 'mock'");
-    expect(main).not.toContain('即梦 SESSION ID');
-    expect(main).not.toContain('代理 URL');
-    expect(main).toContain('activeImageResolution');
-    expect(main).toContain('setImageResolution');
-    expect(main).toContain('ProviderConfigNote');
+    expect(settingsOwners).toContain("options={['openai', 'custom', 'anthropic']}");
+    expect(settingsOwners).toContain("options={['gpt_image', 'jimeng', 'custom']}");
+    expect(settingsOwners).toContain("options={['volcengine', 'minimax']}");
+    expect(settingsOwners).toContain('normalizeEditableConfigProviders');
+    expect(settingsOwners).not.toContain("options={['gpt_image', 'jimeng', 'custom', 'mock']}");
+    expect(settingsOwners).not.toContain("options={['volcengine', 'minimax', 'mock']}");
+    expect(settingsOwners).not.toContain("draft.imageProvider === 'mock'");
+    expect(settingsOwners).not.toContain("draft.tts.provider === 'mock'");
+    expect(settingsOwners).not.toContain('即梦 SESSION ID');
+    expect(settingsOwners).not.toContain('代理 URL');
+    expect(settingsOwners).toContain('activeImageResolution');
+    expect(settingsOwners).toContain('setImageResolution');
+    expect(settingsOwners).toContain('ProviderConfigNote');
   });
 
   it('exposes simplified Volcengine V3 TTS settings with a single API key and preset voice defaults', async () => {
-    const main = (await rendererSourcesPromise).requiredFile('src/main.tsx');
+    const sources = await rendererSourcesPromise;
+    const managers = sources.requiredFile('src/features/settings/ProviderProfileManagers.tsx');
+    const controls = sources.requiredFile('src/features/settings/settings-controls.tsx');
+    const settingsOwners = `${managers}\n${controls}`;
     const options = await editorialOptionsSourcePromise;
-    const manager = main.slice(main.indexOf('function TtsProfileManager'), main.indexOf('function AccountPage'));
 
-    expect(main).toContain('volcengineVoicePresets');
-    expect(manager).toContain('火山 TTS 接口密钥');
-    expect(manager).not.toContain('音色列表访问密钥 ID');
-    expect(manager).not.toContain('音色列表访问密钥 Secret');
-    expect(manager).not.toContain('加载全部音色');
-    expect(manager).not.toContain('资源 ID');
-    expect(manager).not.toContain('端点地址');
-    expect(main).toContain('V3 HTTP Chunked');
-    expect(main).toContain('volcenginePresetVoiceValue');
-    expect(manager).toContain('默认音色');
-    expect(manager).toContain('自定义 voice_type');
-    expect(manager).toContain('voice_type');
+    expect(controls).toContain('volcengineVoicePresets');
+    expect(managers).toContain('火山 TTS 接口密钥');
+    expect(managers).not.toContain('音色列表访问密钥 ID');
+    expect(managers).not.toContain('音色列表访问密钥 Secret');
+    expect(managers).not.toContain('加载全部音色');
+    expect(managers).not.toContain('资源 ID');
+    expect(managers).not.toContain('端点地址');
+    expect(settingsOwners).toContain('V3 HTTP Chunked');
+    expect(settingsOwners).toContain('volcenginePresetVoiceValue');
+    expect(managers).toContain('默认音色');
+    expect(managers).toContain('自定义 voice_type');
+    expect(managers).toContain('voice_type');
     expect(options).toContain('zh_female_vv_uranus_bigtts');
   });
 
   it('uses provider-specific task voice defaults in the new task form', async () => {
     const main = (await rendererSourcesPromise).requiredFile('src/main.tsx');
+    const settings = (await rendererSourcesPromise).requiredFile('src/features/settings/SettingsPage.tsx');
     const newTask = (await rendererSourcesPromise).requiredFile('src/features/tasks/NewTaskPage.tsx');
     const voices = await readFile(new URL('../src/shared/tts-voices.ts', import.meta.url), 'utf8');
 
@@ -3129,10 +3154,9 @@ describe('product shell ui', () => {
 
   it('applies persistent themes before reveal and exposes a real settings selector', async () => {
     const main = (await rendererSourcesPromise).requiredFile('src/main.tsx');
+    const settings = (await rendererSourcesPromise).requiredFile('src/features/settings/SettingsPage.tsx');
     const css = await readFile(new URL('../src/styles.css', import.meta.url), 'utf8');
     const bootstrap = main.slice(main.indexOf('api.getBootstrap()'), main.indexOf('const reconciliationTimer'));
-    const settings = main.slice(main.indexOf('function SettingsPage'), main.indexOf('function LlmProfileManager'));
-
     expect(main).toContain('applyStoredTheme(defaultUiPreferences.theme)');
     expect(main).toContain('applyStoredTheme(state.ui.theme)');
     expect(bootstrap).toContain('applyStoredTheme(bootstrap.ui.theme)');

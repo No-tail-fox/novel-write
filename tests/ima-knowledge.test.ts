@@ -159,8 +159,7 @@ describe('IMA knowledge boundary', () => {
   });
 
   it('wires the visible fetch action and governed cleanup navigation without dropping kbId', async () => {
-    const main = await readFile(new URL('../src/main.tsx', import.meta.url), 'utf8');
-    const settings = main.slice(main.indexOf('function SettingsPage'), main.indexOf('function LlmProfileManager'));
+    const settings = await readFile(new URL('../src/features/settings/SettingsPage.tsx', import.meta.url), 'utf8');
 
     expect(settings).toContain('fetchImaKnowledgeFromSettings');
     expect(settings).toContain('await api.fetchImaKnowledge({ query:');
