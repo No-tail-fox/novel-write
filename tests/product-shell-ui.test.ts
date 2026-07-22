@@ -21,13 +21,13 @@ describe('product shell ui', () => {
     const main = sources.requiredFile('src/main.tsx');
     const pagination = sources.requiredFile('src/components/CursorPagination.tsx');
     const hook = await readFile(new URL('../src/features/history/use-history-page.ts', import.meta.url), 'utf8');
-    const history = main.slice(main.indexOf('function HistoryPage'), main.indexOf('function TaskDetailPage'));
+    const history = sources.requiredFile('src/features/tasks/HistoryPage.tsx');
     const appState = await appStateSourcePromise;
     const bootstrap = appState.slice(appState.indexOf('export async function loadCompleteBootstrap'), appState.indexOf('export function cloneState'));
     const app = main.slice(main.indexOf('function App()'), main.indexOf('\nfunction ViralAnalyzerPage'));
     const install = app.slice(app.indexOf('const installAuthoritativeSnapshot'), app.indexOf('const recoverSnapshotInstallation'));
 
-    expect(main).toContain("from './features/history/use-history-page'");
+    expect(history).toContain("from '../history/use-history-page'");
     expect(main).toContain('isHistoryTombstoned');
     expect(main).toContain('historyFamilyEpochs');
     expect(main).not.toContain('historyTombstoneEpochs');
@@ -675,6 +675,7 @@ describe('product shell ui', () => {
   it('shows local action feedback and reserves a global banner for state failures', async () => {
     const sources = await rendererSourcesPromise;
     const main = sources.requiredFile('src/main.tsx');
+    const renderer = sources.all;
     const feedback = sources.requiredFile('src/components/AsyncActionFeedback.tsx');
     const css = await readFile(new URL('../src/styles.css', import.meta.url), 'utf8');
 
@@ -698,10 +699,10 @@ describe('product shell ui', () => {
       'AccountPage',
       'ActivationPage',
     ]) {
-      const start = main.indexOf(`function ${page}(`);
+      const start = renderer.indexOf(`function ${page}(`);
       expect(start, `${page} is present`).toBeGreaterThan(-1);
-      const nextComponent = main.indexOf('\nfunction ', start + 10);
-      const section = main.slice(start, nextComponent === -1 ? main.length : nextComponent);
+      const nextComponent = renderer.indexOf('\nfunction ', start + 10);
+      const section = renderer.slice(start, nextComponent === -1 ? renderer.length : nextComponent);
       expect(section, `${page} owns local feedback`).toContain('<InlineActionFeedback');
     }
     expect(css).toContain('.inline-action-feedback');
@@ -873,7 +874,7 @@ describe('product shell ui', () => {
   });
 
   it('adds practical latest Storybound pages and controls to the Chinese shell', async () => {
-    const main = (await rendererSourcesPromise).requiredFile('src/main.tsx');
+    const main = (await rendererSourcesPromise).all;
     const css = await readFile(new URL('../src/styles.css', import.meta.url), 'utf8');
 
     for (const text of [
@@ -1155,7 +1156,7 @@ describe('product shell ui', () => {
   it('keeps HTML video task, step, and pipeline diagnostics visible without expanding long errors', async () => {
     const main = (await rendererSourcesPromise).requiredFile('src/main.tsx');
     const css = await readFile(new URL('../src/styles.css', import.meta.url), 'utf8');
-    const page = main.slice(main.indexOf('function HtmlVideoPage'), main.indexOf('function QueuePage'));
+    const page = main.slice(main.indexOf('function HtmlVideoPage'), main.indexOf('function TaskDetailPage'));
 
     expect(page).toContain('classifyHtmlVideoTaskMessage(activeTask.status, activeTask.errorMessage)');
     expect(page).toMatch(/taskMessageKind === 'error'[\s\S]*?className="hv-workspace-error"\s+role="alert"\s+aria-live="assertive"[\s\S]*?<ErrorSummaryButton/);
@@ -1173,7 +1174,7 @@ describe('product shell ui', () => {
 
   it('loads HTML video media incrementally from stable primitive effect dependencies', async () => {
     const main = (await rendererSourcesPromise).requiredFile('src/main.tsx');
-    const page = main.slice(main.indexOf('function HtmlVideoPage'), main.indexOf('function QueuePage'));
+    const page = main.slice(main.indexOf('function HtmlVideoPage'), main.indexOf('function TaskDetailPage'));
     const mediaEffect = page.slice(page.indexOf('useEffect(() => {\n    const generation ='), page.indexOf('async function createHtmlVideoTask'));
 
     expect(page).toContain("const mediaTaskId = activeTask?.id ?? '';");
@@ -1193,7 +1194,7 @@ describe('product shell ui', () => {
 
   it('keeps HTML media in a busy loading state until URL requests settle', async () => {
     const main = (await rendererSourcesPromise).requiredFile('src/main.tsx');
-    const page = main.slice(main.indexOf('function HtmlVideoPage'), main.indexOf('function QueuePage'));
+    const page = main.slice(main.indexOf('function HtmlVideoPage'), main.indexOf('function TaskDetailPage'));
 
     expect(page).toContain('failedPaths: string[]');
     expect(page).toContain('const mediaLoading = !isBrowserPreview && mediaPaths.some');
@@ -1209,7 +1210,7 @@ describe('product shell ui', () => {
 
   it('routes real HTML media element failures through retry generations', async () => {
     const main = (await rendererSourcesPromise).requiredFile('src/main.tsx');
-    const page = main.slice(main.indexOf('function HtmlVideoPage'), main.indexOf('function QueuePage'));
+    const page = main.slice(main.indexOf('function HtmlVideoPage'), main.indexOf('function TaskDetailPage'));
 
     expect(page).toContain('mediaElementFailureState');
     expect(page).toContain('generation: mediaRetryRevision');
@@ -1223,7 +1224,7 @@ describe('product shell ui', () => {
 
   it('rejects late HTML media errors unless their task, path set, and retry generation are still current', async () => {
     const main = (await rendererSourcesPromise).requiredFile('src/main.tsx');
-    const page = main.slice(main.indexOf('function HtmlVideoPage'), main.indexOf('function QueuePage'));
+    const page = main.slice(main.indexOf('function HtmlVideoPage'), main.indexOf('function TaskDetailPage'));
     const failureHandler = page.slice(
       page.indexOf('const markMediaElementFailed'),
       page.indexOf('const markMediaElementReady'),
@@ -1237,7 +1238,7 @@ describe('product shell ui', () => {
   it('shows the exact HTML video output path with overflow-safe wrapping', async () => {
     const main = (await rendererSourcesPromise).requiredFile('src/main.tsx');
     const css = await readFile(new URL('../src/styles.css', import.meta.url), 'utf8');
-    const page = main.slice(main.indexOf('function HtmlVideoPage'), main.indexOf('function QueuePage'));
+    const page = main.slice(main.indexOf('function HtmlVideoPage'), main.indexOf('function TaskDetailPage'));
 
     expect(page).toContain('className="hv-output-path"');
     expect(page).toContain('<code>{data.output.path}</code>');
@@ -1248,7 +1249,7 @@ describe('product shell ui', () => {
 
   it('labels paused checkpoints and opens the first composition that has an HTML preview', async () => {
     const main = (await rendererSourcesPromise).requiredFile('src/main.tsx');
-    const page = main.slice(main.indexOf('function HtmlVideoPage'), main.indexOf('function QueuePage'));
+    const page = main.slice(main.indexOf('function HtmlVideoPage'), main.indexOf('function TaskDetailPage'));
 
     expect(page).toContain('pipelineData.compositions.find((composition) => Boolean(composition.htmlPath))');
     expect(page).toContain('openPreview(firstPreviewComposition.index)');
@@ -1333,7 +1334,7 @@ describe('product shell ui', () => {
   });
 
   it('renders governed six-step HTML progress and seven-step ordinary progress in task lists', async () => {
-    const page = (await rendererSourcesPromise).requiredFile('src/main.tsx');
+    const page = (await rendererSourcesPromise).all;
     expect(page).toMatch(/from '\.\/shared\/html-video-workflow';/u);
     expect(page).toContain("{statusLabel(task.status)} · {taskProgressLabel(task)}");
     expect(page).toContain('<span role="cell">{taskProgressLabel(task)}</span>');
@@ -1357,7 +1358,7 @@ describe('product shell ui', () => {
   it('exposes accessible HTML video tabs and media with the task output ratio', async () => {
     const main = (await rendererSourcesPromise).requiredFile('src/main.tsx');
     const css = await readFile(new URL('../src/styles.css', import.meta.url), 'utf8');
-    const page = main.slice(main.indexOf('function HtmlVideoPage'), main.indexOf('function QueuePage'));
+    const page = main.slice(main.indexOf('function HtmlVideoPage'), main.indexOf('function TaskDetailPage'));
     const outputRule = css.match(/\.hv-video-output video,\s*\.hv-video-placeholder\s*\{[\s\S]*?\}/)?.[0] ?? '';
 
     expect(page).toContain('role="tablist" aria-label="HTML 动画视频内容"');
@@ -1542,7 +1543,7 @@ describe('product shell ui', () => {
   });
 
   it('gives the queue task list more horizontal room than the event history pane', async () => {
-    const main = (await rendererSourcesPromise).requiredFile('src/main.tsx');
+    const main = (await rendererSourcesPromise).requiredFile('src/features/tasks/QueuePage.tsx');
     const css = await readFile(new URL('../src/styles.css', import.meta.url), 'utf8');
 
     expect(main).toContain('className="queue-layout"');
@@ -1853,7 +1854,7 @@ describe('product shell ui', () => {
   });
 
   it('wires uploaded BGM management into settings and new task defaults', async () => {
-    const main = (await rendererSourcesPromise).requiredFile('src/main.tsx');
+    const main = (await rendererSourcesPromise).all;
     const css = await readFile(new URL('../src/styles.css', import.meta.url), 'utf8');
 
     expect(main).toContain('selectLocalAudio');
@@ -1906,7 +1907,7 @@ describe('product shell ui', () => {
   });
 
   it('auto-matches prompt templates from task track and exposes an advanced override', async () => {
-    const main = (await rendererSourcesPromise).requiredFile('src/main.tsx');
+    const main = (await rendererSourcesPromise).requiredFile('src/features/tasks/NewTaskPage.tsx');
 
     expect(main).toContain('resolvePromptTemplateForTrack');
     expect(main).toContain('promptTemplateOverrideId');
@@ -2217,7 +2218,7 @@ describe('product shell ui', () => {
   });
 
   it('syncs all story template defaults when changing story templates in new task', async () => {
-    const main = (await rendererSourcesPromise).requiredFile('src/main.tsx');
+    const main = (await rendererSourcesPromise).all;
 
     expect(main).toContain('handleStoryTemplateChange');
     expect(main).toContain('setTrack(nextTrack)');
@@ -2242,7 +2243,7 @@ describe('product shell ui', () => {
   });
 
   it('keeps new-task draft template choices limited to the saved default/user templates', async () => {
-    const main = (await rendererSourcesPromise).requiredFile('src/main.tsx');
+    const main = (await rendererSourcesPromise).requiredFile('src/features/tasks/NewTaskPage.tsx');
     const css = await readFile(new URL('../src/styles.css', import.meta.url), 'utf8');
 
     expect(main).toContain('defaultTaskDraftTemplateId');
@@ -2260,6 +2261,8 @@ describe('product shell ui', () => {
 
   it('supports opening a selected task in a screenshot-style pipeline detail view', async () => {
     const main = (await rendererSourcesPromise).requiredFile('src/main.tsx');
+    const detail = (await rendererSourcesPromise).requiredFile('src/features/tasks/TaskDetailPage.tsx');
+    const artifact = (await rendererSourcesPromise).requiredFile('src/features/tasks/TaskArtifactPreview.tsx');
     const types = await readFile(new URL('../src/shared/types.ts', import.meta.url), 'utf8');
     const css = await readFile(new URL('../src/styles.css', import.meta.url), 'utf8');
 
@@ -2267,10 +2270,10 @@ describe('product shell ui', () => {
     expect(main).toContain('selectedTaskId');
     expect(main).toContain('openTaskDetail');
     expect(main).toContain('TaskDetailPage');
-    expect(main).toContain('taskProgressStages(activeTask)');
-    expect(main).toContain('{progress.total} 步流水线');
+    expect(detail).toContain('taskProgressStages(activeTask)');
+    expect(detail).toContain('{progress.total} 步流水线');
     for (const text of ['历史任务', '任务详情', '产物预览', '分镜画廊', '配音试听', '等待当前步骤产物落盘']) {
-      expect(main).toContain(text);
+      expect(`${main}\n${detail}\n${artifact}`).toContain(text);
     }
     expect(css).toContain('.task-detail-shell');
     expect(css).toContain('.pipeline-step');
@@ -2278,17 +2281,19 @@ describe('product shell ui', () => {
   });
 
   it('loads and renders all pipeline artifact steps in task detail preview tabs', async () => {
-    const main = (await rendererSourcesPromise).requiredFile('src/main.tsx');
+    const detail = (await rendererSourcesPromise).requiredFile('src/features/tasks/TaskDetailPage.tsx');
+    const artifact = (await rendererSourcesPromise).requiredFile('src/features/tasks/TaskArtifactPreview.tsx');
+    const taskSources = `${detail}\n${artifact}`;
     const css = await readFile(new URL('../src/styles.css', import.meta.url), 'utf8');
     const preload = await readFile(new URL('../electron/preload.ts', import.meta.url), 'utf8');
     const electronMain = await readFile(new URL('../electron/main.ts', import.meta.url), 'utf8');
 
     expect(preload).toContain('getTaskArtifacts');
     expect(electronMain).toContain('task:get-artifacts');
-    expect(main).toContain('getTaskArtifacts');
-    expect(main).toContain('ArtifactPreviewContent');
+    expect(taskSources).toContain('getTaskArtifacts');
+    expect(taskSources).toContain('ArtifactPreviewContent');
     for (const text of ['文案预审', '改写产物', '封面信息', '分镜分句', '绘图提示词', '批量生图', '配音字幕', '草稿输出']) {
-      expect(main).toContain(text);
+      expect(taskSources).toContain(text);
     }
     expect(css).toContain('.artifact-section');
     expect(css).toContain('.artifact-text-block');
@@ -2296,7 +2301,7 @@ describe('product shell ui', () => {
   });
 
   it('renders per-scene image provider errors below the matching storyboard gallery card', async () => {
-    const main = (await rendererSourcesPromise).requiredFile('src/main.tsx');
+    const main = (await rendererSourcesPromise).requiredFile('src/features/tasks/TaskArtifactPreview.tsx');
     const css = await readFile(new URL('../src/styles.css', import.meta.url), 'utf8');
 
     expect(main).toContain('const imageErrors = snapshot?.assets.imageErrors ?? []');
@@ -2306,7 +2311,7 @@ describe('product shell ui', () => {
   });
 
   it('shows per-step rerun controls in artifact preview sections', async () => {
-    const main = (await rendererSourcesPromise).requiredFile('src/main.tsx');
+    const main = (await rendererSourcesPromise).requiredFile('src/features/tasks/TaskArtifactPreview.tsx');
     const css = await readFile(new URL('../src/styles.css', import.meta.url), 'utf8');
     const preload = await readFile(new URL('../electron/preload.ts', import.meta.url), 'utf8');
 
@@ -2321,7 +2326,9 @@ describe('product shell ui', () => {
   });
 
   it('refreshes task artifact snapshots while image generation is still running', async () => {
-    const main = (await rendererSourcesPromise).requiredFile('src/main.tsx');
+    const detail = (await rendererSourcesPromise).requiredFile('src/features/tasks/TaskDetailPage.tsx');
+    const artifact = (await rendererSourcesPromise).requiredFile('src/features/tasks/TaskArtifactPreview.tsx');
+    const main = `${detail}\n${artifact}`;
 
     expect(main).toContain('artifactRefreshKey');
     expect(main).toContain('artifactRefreshTick');
@@ -2333,7 +2340,7 @@ describe('product shell ui', () => {
   });
 
   it('keeps the storyboard gallery tab focused on batch images and scene sentences', async () => {
-    const main = (await rendererSourcesPromise).requiredFile('src/main.tsx');
+    const main = (await rendererSourcesPromise).requiredFile('src/features/tasks/TaskArtifactPreview.tsx');
 
     const storyboardStart = main.indexOf("{tab === 'storyboard' ? (");
     const audioStart = main.indexOf("{tab === 'audio' ? (", storyboardStart);
@@ -2353,7 +2360,7 @@ describe('product shell ui', () => {
   });
 
   it('does not keep the duplicate legacy artifact preview card in task detail', async () => {
-    const main = (await rendererSourcesPromise).requiredFile('src/main.tsx');
+    const main = (await rendererSourcesPromise).requiredFile('src/features/tasks/TaskDetailPage.tsx');
 
     expect(main).not.toContain('legacy-artifact-preview');
     expect(countOccurrences(main, '<ArtifactPreviewContent')).toBe(1);
@@ -2361,6 +2368,7 @@ describe('product shell ui', () => {
 
   it('uses one bootstrap and delta updates without a one-second full-state heartbeat', async () => {
     const main = (await rendererSourcesPromise).requiredFile('src/main.tsx');
+    const detail = (await rendererSourcesPromise).requiredFile('src/features/tasks/TaskDetailPage.tsx');
     const css = await readFile(new URL('../src/styles.css', import.meta.url), 'utf8');
 
     expect(main).toContain('api.getBootstrap()');
@@ -2368,7 +2376,7 @@ describe('product shell ui', () => {
     expect(main).toContain('api.reconcileDeltas');
     expect(main).not.toContain('liveRefreshMs');
     expect(main).not.toContain('api.getState()');
-    expect(main).toContain('liveNow');
+    expect(detail).toContain('liveNow');
     expect(main).toContain('testCurrentConfig');
     expect(main).toContain('保存并测试');
     expect(main).not.toContain('测试模型可用性');
@@ -2527,7 +2535,7 @@ describe('product shell ui', () => {
   it('loads active viral events and includes both active entities in reconciliation', async () => {
     const main = (await rendererSourcesPromise).requiredFile('src/main.tsx');
     const app = main.slice(main.indexOf('function App()'), main.indexOf('function NavButton'));
-    const viralPage = main.slice(main.indexOf('function ViralAnalyzerPage'), main.indexOf('function NewTaskPage'));
+    const viralPage = main.slice(main.indexOf('function ViralAnalyzerPage'), main.indexOf('function BookSelectionPage'));
 
     expect(app).toContain('viralAnalysisId: requestedViralId ?? undefined');
     expect(app).toContain('mergeReconciliationSlices');
@@ -2741,7 +2749,7 @@ describe('product shell ui', () => {
   });
 
   it('syncs new-task content and style choices from story and image templates', async () => {
-    const main = (await rendererSourcesPromise).requiredFile('src/main.tsx');
+    const main = (await rendererSourcesPromise).all;
 
     expect(main).toContain('buildStoryTemplateTrackOptions');
     expect(main).toContain('buildStoryTemplateOptions');
@@ -2762,8 +2770,7 @@ describe('product shell ui', () => {
   });
 
   it('exposes StoryDream cover and podcast image controls in the new task form', async () => {
-    const main = (await rendererSourcesPromise).requiredFile('src/main.tsx');
-    const page = main.slice(main.indexOf('function NewTaskPage'), main.indexOf('function MusicMvPage'));
+    const page = (await rendererSourcesPromise).requiredFile('src/features/tasks/NewTaskPage.tsx');
 
     expect(page).toContain('封面模板');
     expect(page).toContain('封面生成');
@@ -2782,8 +2789,7 @@ describe('product shell ui', () => {
   });
 
   it('wires new task reference image upload and task LLM model selection into task creation', async () => {
-    const main = (await rendererSourcesPromise).requiredFile('src/main.tsx');
-    const page = main.slice(main.indexOf('function NewTaskPage'), main.indexOf('function MusicMvPage'));
+    const page = (await rendererSourcesPromise).requiredFile('src/features/tasks/NewTaskPage.tsx');
 
     expect(page).toContain('selectedTaskLlmProfileId');
     expect(page).toContain('llmProfileId: selectedTaskLlmProfileId');
@@ -2795,9 +2801,8 @@ describe('product shell ui', () => {
   });
 
   it('keeps target word and scene controls visible in the new task form', async () => {
-    const main = (await rendererSourcesPromise).requiredFile('src/main.tsx');
     const css = await readFile(new URL('../src/styles.css', import.meta.url), 'utf8');
-    const page = main.slice(main.indexOf('function NewTaskPage'), main.indexOf('function MusicMvPage'));
+    const page = (await rendererSourcesPromise).requiredFile('src/features/tasks/NewTaskPage.tsx');
 
     expect(page).toContain('targetLength');
     expect(page).toContain('字（±20%，留空跟随原文）');
@@ -2843,8 +2848,7 @@ describe('product shell ui', () => {
   });
 
   it('replicates the StoryDream video form controls for narration and two-host podcast tasks', async () => {
-    const main = (await rendererSourcesPromise).requiredFile('src/main.tsx');
-    const page = main.slice(main.indexOf('function NewTaskPage'), main.indexOf('function MusicMvPage'));
+    const page = (await rendererSourcesPromise).requiredFile('src/features/tasks/NewTaskPage.tsx');
 
     for (const text of ['视频形态', '旁白视频', '双人播客', '配图方式', '按分镜配图', '单图封面', '主播组合', '咔仔 x 大壹', '刘飞 x 潇磊']) {
       expect(page).toContain(text);
@@ -2867,12 +2871,13 @@ describe('product shell ui', () => {
   it('keeps task errors compact with a click-through detail dialog', async () => {
     const sources = await rendererSourcesPromise;
     const main = sources.requiredFile('src/main.tsx');
+    const artifact = sources.requiredFile('src/features/tasks/TaskArtifactPreview.tsx');
     const errors = sources.requiredFile('src/components/ErrorDetails.tsx');
     const css = await readFile(new URL('../src/styles.css', import.meta.url), 'utf8');
 
     expect(main).toContain('ErrorSummaryButton');
     expect(errors).toContain('function ErrorDetailDialog');
-    expect(main).toContain('summarizeErrorMessage');
+    expect(artifact).toContain('summarizeErrorMessage');
     expect(errors).toContain('Python 运行时缺少依赖');
     expect(errors).toContain('Python 运行时依赖缺失');
     expect(main).toContain('className="mini-button viral-retry-button"');
@@ -2886,9 +2891,9 @@ describe('product shell ui', () => {
   });
 
   it('lets AI creation search real web sources and select them for generation', async () => {
-    const main = (await rendererSourcesPromise).requiredFile('src/main.tsx');
+    const main = (await rendererSourcesPromise).requiredFile('src/features/tasks/NewTaskPage.tsx');
     const css = await readFile(new URL('../src/styles.css', import.meta.url), 'utf8');
-    const composeSection = main.slice(main.indexOf('async function composeResearchCopy()'), main.indexOf('async function createAndRunTask'));
+    const composeSection = main.slice(main.indexOf('async function composeResearchCopy()'), main.indexOf('async function addBgmFromTask'));
 
     expect(main).toContain('searchWebSources');
     expect(main).toContain('composeResearchCopy');
@@ -2993,7 +2998,7 @@ describe('product shell ui', () => {
   });
 
   it('blocks real task execution in browser preview mode and avoids fake running states', async () => {
-    const main = (await rendererSourcesPromise).requiredFile('src/main.tsx');
+    const main = (await rendererSourcesPromise).all;
 
     expect(main).toContain('isBrowserPreview');
     expect(main).toContain('浏览器预览不能执行真实流水线');
@@ -3004,7 +3009,7 @@ describe('product shell ui', () => {
   });
 
   it('shows live image thumbnails with concurrency context and per-scene regeneration controls', async () => {
-    const main = (await rendererSourcesPromise).requiredFile('src/main.tsx');
+    const main = (await rendererSourcesPromise).requiredFile('src/features/tasks/TaskArtifactPreview.tsx');
     const css = await readFile(new URL('../src/styles.css', import.meta.url), 'utf8');
     const preload = await readFile(new URL('../electron/preload.ts', import.meta.url), 'utf8');
 
@@ -3030,7 +3035,7 @@ describe('product shell ui', () => {
   });
 
   it('shows playable narration previews with per-scene regeneration controls', async () => {
-    const main = (await rendererSourcesPromise).requiredFile('src/main.tsx');
+    const main = (await rendererSourcesPromise).requiredFile('src/features/tasks/TaskArtifactPreview.tsx');
     const css = await readFile(new URL('../src/styles.css', import.meta.url), 'utf8');
     const preload = await readFile(new URL('../electron/preload.ts', import.meta.url), 'utf8');
 

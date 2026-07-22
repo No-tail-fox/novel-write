@@ -163,6 +163,17 @@ describe('real Electron smoke contract', () => {
     expect(qa).not.toMatch(/playwright|puppeteer/u);
   });
 
+  it('waits for the themed application shell before capturing visible page identity', async () => {
+    const qa = await readFile(new URL('../scripts/qa-html-video-ui.mjs', import.meta.url), 'utf8');
+    const identityIndex = qa.indexOf('const identity = await evaluate');
+    const readiness = qa.slice(
+      qa.lastIndexOf('await waitFor(', identityIndex),
+      identityIndex,
+    );
+
+    expect(readiness).toContain("document.documentElement.dataset.themeReady === 'true'");
+  });
+
   it('builds immediately before running the HTML video Electron QA gate', async () => {
     const manifest = JSON.parse(await readFile(new URL('../package.json', import.meta.url), 'utf8')) as {
       scripts?: Record<string, string>;

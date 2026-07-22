@@ -1,5 +1,7 @@
 import { readFile } from 'node:fs/promises';
 import { describe, expect, it } from 'vitest';
+import { styleLabel } from '../src/features/tasks/task-formatters';
+import { styleOptions } from '../src/shared/editorial-options';
 
 async function source(path: string): Promise<string> {
   return readFile(new URL(`../${path}`, import.meta.url), 'utf8').catch(() => '');
@@ -226,5 +228,78 @@ describe('renderer application ownership architecture', () => {
     expect(options).not.toContain('<div');
     expect(options).not.toContain('<button');
     expect(options).not.toContain('React.');
+  });
+});
+
+describe('task feature ownership architecture', () => {
+  it('retains every built-in editorial label when the custom style catalog is empty', () => {
+    for (const [id, label] of styleOptions) {
+      expect(styleLabel(id, [])).toBe(label);
+    }
+  });
+
+  it('owns every task page and pure helper in a dedicated module', async () => {
+    const paths = [
+      'src/features/tasks/NewTaskPage.tsx',
+      'src/features/tasks/QueuePage.tsx',
+      'src/features/tasks/HistoryPage.tsx',
+      'src/features/tasks/TaskDetailPage.tsx',
+      'src/features/tasks/TaskArtifactPreview.tsx',
+      'src/features/tasks/task-pipeline.ts',
+      'src/features/tasks/task-formatters.ts',
+    ];
+    const files = await Promise.all(paths.map(source));
+    files.forEach((file) => expect(file.length).toBeGreaterThan(0));
+
+    const main = await source('src/main.tsx');
+    for (const definition of ['function NewTaskPage(', 'function QueuePage(', 'function HistoryPage(', 'function TaskDetailPage(', 'function ArtifactPreviewContent(']) {
+      expect(main).not.toContain(definition);
+    }
+  });
+
+  it('keeps task pages independent from app bootstrap, secrets, and barrels', async () => {
+    const pages = await Promise.all([
+      source('src/features/tasks/NewTaskPage.tsx'),
+      source('src/features/tasks/QueuePage.tsx'),
+      source('src/features/tasks/HistoryPage.tsx'),
+      source('src/features/tasks/TaskDetailPage.tsx'),
+      source('src/features/tasks/TaskArtifactPreview.tsx'),
+    ]);
+    for (const page of pages) {
+      expect(page).not.toContain("from '../../main'");
+      expect(page).not.toContain("from '../../app/app-state'");
+      expect(page).not.toContain("from '../../app/browser-fallback'");
+      expect(page).not.toContain("from '../../shared/config-secrets'");
+      expect(page).not.toMatch(/from ['"]\.\/index['"]/u);
+    }
+  });
+
+  it('retains the complete 51-field ordinary task input contract', async () => {
+    const [types, builder, page] = await Promise.all([
+      source('src/shared/types.ts'),
+      source('src/features/tasks/task-create-input.ts'),
+      source('src/features/tasks/NewTaskPage.tsx'),
+    ]);
+    const createInput = types.slice(types.indexOf('export type CreateTaskInput'), types.indexOf('export interface TaskEvent'));
+    const fields = [...createInput.matchAll(/^\s*\| '([^']+)'/gmu)].map((match) => match[1]);
+    expect(fields).toHaveLength(51);
+    expect(builder).toContain('...input');
+    const explicitlyOwned = fields.filter((field) => page.includes(field));
+    expect(explicitlyOwned.length).toBeGreaterThanOrEqual(35);
+    expect(new Set(explicitlyOwned).size).toBe(explicitlyOwned.length);
+  });
+
+  it('owns canonical pipeline and task formatting helpers outside the renderer entry', async () => {
+    const [pipeline, formatters, main] = await Promise.all([
+      source('src/features/tasks/task-pipeline.ts'),
+      source('src/features/tasks/task-formatters.ts'),
+      source('src/main.tsx'),
+    ]);
+    for (const symbol of ['pipelineStepStatus', 'statusLabelForStep', 'artifactPanelTitle', 'snapshotStepStatus', 'imageProgressLabel']) {
+      expect(`${pipeline}\n${formatters}`).toContain(`export function ${symbol}`);
+      expect(main).not.toContain(`function ${symbol}(`);
+    }
+    expect(formatters).toContain('export function formatDuration');
+    expect(main).not.toContain('function formatDuration(');
   });
 });

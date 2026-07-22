@@ -236,11 +236,12 @@ describe('electron ipc contract', () => {
   });
 
   it('keeps renderer directory opening scoped to persisted tasks and existing person assets', async () => {
-    const [main, preload, apiContract, renderer] = await Promise.all([
+    const [main, preload, apiContract, renderer, artifact] = await Promise.all([
       readFile(new URL('../electron/main.ts', import.meta.url), 'utf8'),
       readFile(new URL('../electron/preload.ts', import.meta.url), 'utf8'),
       readFile(new URL('../src/shared/storydream-api.ts', import.meta.url), 'utf8'),
       readFile(new URL('../src/main.tsx', import.meta.url), 'utf8'),
+      readFile(new URL('../src/features/tasks/TaskArtifactPreview.tsx', import.meta.url), 'utf8'),
     ]);
 
     expect(main).toContain("trustedHandle('task:open-output-directory'");
@@ -261,7 +262,7 @@ describe('electron ipc contract', () => {
     expect(preload).not.toContain('openPath');
     expect(apiContract).not.toContain('openPath');
     expect(renderer).not.toContain('api.openPath');
-    expect(renderer).toContain('api.openTaskOutputDirectory(task.id)');
+    expect(artifact).toContain('api.openTaskOutputDirectory(task.id)');
     expect(renderer).toContain('api.openPersonAssetDirectory(selectedAsset.name)');
   });
 

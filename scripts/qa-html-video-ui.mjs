@@ -105,7 +105,8 @@ try {
     mobile: false,
   });
   await waitFor(
-    async () => evaluate(cdp, `Boolean(document.querySelector('.app-shell'))`),
+    async () => evaluate(cdp, `Boolean(document.querySelector('.app-shell'))
+      && document.documentElement.dataset.themeReady === 'true'`),
     20_000,
     'application shell',
   );

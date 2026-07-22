@@ -103,8 +103,8 @@ describe('task operation contracts', () => {
 
   it('makes task detail consume every cursor page and removes inline progress guesses', async () => {
     const main = await readFile(new URL('../src/main.tsx', import.meta.url), 'utf8');
+    const detail = await readFile(new URL('../src/features/tasks/TaskDetailPage.tsx', import.meta.url), 'utf8');
     const refresh = main.slice(main.indexOf('const refreshTaskDetail'), main.indexOf('const refreshViralEvents'));
-    const detail = main.slice(main.indexOf('function TaskDetailPage'), main.indexOf('function ArtifactPreviewPanel'));
 
     expect(refresh).toContain('collectTaskEventPages');
     expect(refresh).toContain('api.listTaskEvents(taskId, { cursor, limit: 100 })');
@@ -132,8 +132,7 @@ describe('task operation contracts', () => {
   });
 
   it('maps continue, retry, and cancel to distinct legal queue commands', async () => {
-    const main = await readFile(new URL('../src/main.tsx', import.meta.url), 'utf8');
-    const queue = main.slice(main.indexOf('function QueuePage'), main.indexOf('function HistoryPage'));
+    const queue = await readFile(new URL('../src/features/tasks/QueuePage.tsx', import.meta.url), 'utf8');
 
     expect(queue).toContain('continueTask');
     expect(queue).toContain("api.updateTaskStatus(task.id, 'running')");

@@ -175,10 +175,12 @@ describe('high parity StoryDream shell model', () => {
 
   it('renders observed high-parity feature structure in the React shell source', async () => {
     const main = await readFile(new URL('../src/main.tsx', import.meta.url), 'utf8');
+    const detail = await readFile(new URL('../src/features/tasks/TaskDetailPage.tsx', import.meta.url), 'utf8');
+    const shell = `${main}\n${detail}`;
     const css = await readFile(new URL('../src/styles.css', import.meta.url), 'utf8');
 
     for (const text of ['taskProgressStages', 'TaskDetailPage', 'MiniMax', 'ImageLabPage', 'DraftTemplatesPage']) {
-      expect(main).toContain(text);
+      expect(shell).toContain(text);
     }
     expect(css).toContain('.draft-editor-shell');
     expect(css).toContain('.segmented');
