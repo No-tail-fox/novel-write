@@ -294,7 +294,7 @@ describe('Viral lifecycle and event contracts', () => {
     expect(bounded).toContain('provider failed');
 
     const [main, page] = await Promise.all([
-      readFile(new URL('../src/main.tsx', import.meta.url), 'utf8'),
+      readFile(new URL('../src/app/App.tsx', import.meta.url), 'utf8'),
       readFile(new URL('../src/features/viral/ViralAnalyzerPage.tsx', import.meta.url), 'utf8'),
     ]);
     const save = page.slice(page.indexOf('async function saveViralTemplates'), page.indexOf('async function retryAnalysis'));

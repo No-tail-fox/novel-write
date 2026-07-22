@@ -14,7 +14,7 @@ describe('StoryDream branding', () => {
     };
     const index = await readFile(new URL('../index.html', import.meta.url), 'utf8');
     const electronMain = await readFile(new URL('../electron/main.ts', import.meta.url), 'utf8');
-    const renderer = await readFile(new URL('../src/main.tsx', import.meta.url), 'utf8');
+    const renderer = await readFile(new URL('../src/app/AppShell.tsx', import.meta.url), 'utf8');
     const readme = await readFile(new URL('../README.md', import.meta.url), 'utf8');
     const startScript = await readFile(new URL('../start-storydream.ps1', import.meta.url), 'utf8');
     const packageScript = await readFile(new URL('../scripts/package-win.ps1', import.meta.url), 'utf8');

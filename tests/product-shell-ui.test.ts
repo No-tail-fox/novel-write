@@ -4,6 +4,7 @@ import { describe, expect, it } from 'vitest';
 import * as reconciliationModule from '../src/shared/state-reconciliation';
 import type { AppMutationResult, BootstrapState } from '../src/shared/types';
 import { readRendererSources } from './helpers/renderer-source';
+import * as rendererSourceHelpers from './helpers/renderer-source';
 
 const rendererSourcesPromise = readRendererSources();
 const appStateSourcePromise = readFile(new URL('../src/app/app-state.ts', import.meta.url), 'utf8');
@@ -18,13 +19,14 @@ function stripModuleExports(source: string): string {
 describe('product shell ui', () => {
   it('loads query-safe task history pages without creating another global delta owner', async () => {
     const sources = await rendererSourcesPromise;
-    const main = sources.requiredFile('src/main.tsx');
+    const main = sources.requiredFile('src/app/App.tsx');
+    const routes = sources.requiredFile('src/app/AppRoutes.tsx');
     const pagination = sources.requiredFile('src/components/CursorPagination.tsx');
     const hook = await readFile(new URL('../src/features/history/use-history-page.ts', import.meta.url), 'utf8');
     const history = sources.requiredFile('src/features/tasks/HistoryPage.tsx');
     const appState = await appStateSourcePromise;
     const bootstrap = appState.slice(appState.indexOf('export async function loadCompleteBootstrap'), appState.indexOf('export function cloneState'));
-    const app = main.slice(main.indexOf('function App()'), main.indexOf('\nfunction NavButton'));
+    const app = main;
     const install = app.slice(app.indexOf('const installAuthoritativeSnapshot'), app.indexOf('const recoverSnapshotInstallation'));
 
     expect(history).toContain("from '../history/use-history-page'");
@@ -33,7 +35,8 @@ describe('product shell ui', () => {
     expect(main).not.toContain('historyTombstoneEpochs');
     expect(history).toContain('familyEpoch');
     expect(history).not.toContain('tombstoneEpoch');
-    expect(main).toContain('familyEpoch={historyFamilyEpochs.task ?? 0}');
+    expect(app).toContain('historyFamilyEpoch={historyFamilyEpochs.task ?? 0}');
+    expect(routes).toContain('familyEpoch={historyFamilyEpoch}');
     expect(history).toContain('useHistoryPage');
     expect(history).toContain('api.listTasks');
     expect(history).toContain('historyPage.previous');
@@ -210,8 +213,8 @@ describe('product shell ui', () => {
   });
 
   it('owns history tombstone revisions in App and rejects late detail responses after deletion', async () => {
-    const main = (await rendererSourcesPromise).requiredFile('src/main.tsx');
-    const app = main.slice(main.indexOf('function App()'), main.indexOf('\nfunction NavButton'));
+    const main = (await rendererSourcesPromise).requiredFile('src/app/App.tsx');
+    const app = main;
     const taskRefresh = app.slice(app.indexOf('const refreshTaskDetail'), app.indexOf('const refreshViralEvents'));
     const viralRefresh = app.slice(app.indexOf('const refreshViralEvents'), app.indexOf('const onActiveHtmlTaskChange'));
     const incoming = app.slice(app.indexOf('const applyIncomingDelta'), app.indexOf('async function reconcile'));
@@ -238,7 +241,7 @@ describe('product shell ui', () => {
   });
 
   it('invalidates a deferred detail response through the shared desktop and browser tombstone barrier', async () => {
-    const main = (await rendererSourcesPromise).requiredFile('src/main.tsx');
+    const main = (await rendererSourcesPromise).requiredFile('src/app/App.tsx');
     const appState = await appStateSourcePromise;
     const source = stripModuleExports(appState.slice(appState.indexOf('type HistoryDeltaIdentity'), appState.indexOf('export function mergeDefaultCustomStyles')));
     expect(source).toContain('function registerHistoryDeltaBarrier');
@@ -350,7 +353,7 @@ describe('product shell ui', () => {
     });
     expect(rendered).toEqual({ tasks: [], events: [], detail: null });
 
-    const app = main.slice(main.indexOf('function App()'), main.indexOf('\nfunction NavButton'));
+    const app = main;
     const incoming = app.slice(app.indexOf('const applyIncomingDelta'), app.indexOf('async function reconcile'));
     const browserApply = app.slice(app.indexOf('function applyState'), app.indexOf('async function openTaskDetail'));
     expect(incoming).toContain('applyHistoryBarrier(delta)');
@@ -370,8 +373,8 @@ describe('product shell ui', () => {
   });
 
   it('guards reconciliation details against tombstones delivered in the same response', async () => {
-    const main = (await rendererSourcesPromise).requiredFile('src/main.tsx');
-    const app = main.slice(main.indexOf('function App()'), main.indexOf('\nfunction NavButton'));
+    const main = (await rendererSourcesPromise).requiredFile('src/app/App.tsx');
+    const app = main;
     const reconcile = app.slice(app.indexOf('async function reconcile'), app.indexOf('const coordinator = createAppDeltaCoordinator'));
 
     expect(reconcile.indexOf('const taskResponseRevision =')).toBeLessThan(reconcile.indexOf('await api.reconcileDeltas'));
@@ -627,12 +630,37 @@ describe('product shell ui', () => {
 
   it('reads tracked renderer sources as an aggregate and by exact module', async () => {
     const renderer = await rendererSourcesPromise;
+    const reachable = renderer.reachableFrom('src/main.tsx');
 
     expect(renderer.all).toContain('useAsyncAction');
     expect(renderer.file('src/main.tsx')).toContain('createRoot');
     expect(renderer.file('src/not-present.ts')).toBeNull();
     expect(renderer.requiredFile('src/main.tsx')).toContain('createRoot');
+    expect([...reachable.keys()]).toContain('src/app/App.tsx');
     expect(() => renderer.requiredFile('src/not-present.ts')).toThrow('Required renderer source is not tracked: src/not-present.ts');
+  });
+
+  it('follows runtime re-exports and rejects unresolved local renderer imports', () => {
+    const collectReachableSources = (rendererSourceHelpers as unknown as {
+      collectReachableSources?: (sources: ReadonlyMap<string, string>, entryPath: string) => ReadonlyMap<string, string>;
+    }).collectReachableSources;
+    expect(typeof collectReachableSources).toBe('function');
+    if (!collectReachableSources) return;
+
+    const sources = new Map([
+      ['src/entry.ts', "export { screen } from './barrel.js';"],
+      ['src/barrel.ts', "export { screen } from './screen';"],
+      ['src/screen.tsx', 'export const screen = null;'],
+    ]);
+    expect([...collectReachableSources(sources, 'src/entry.ts').keys()]).toEqual([
+      'src/entry.ts',
+      'src/barrel.ts',
+      'src/screen.tsx',
+    ]);
+    expect(() => collectReachableSources(
+      new Map([['src/entry.ts', "export { missing } from './missing.js';"]]),
+      'src/entry.ts',
+    )).toThrow("Cannot resolve local renderer import './missing.js' from src/entry.ts");
   });
 
   it('normalizes privileged IPC failures before they reach renderer actions', async () => {
@@ -649,8 +677,8 @@ describe('product shell ui', () => {
   });
 
   it('delegates every named privileged async UI handler to the shared action helper', async () => {
-    const main = (await rendererSourcesPromise).requiredFile('src/main.tsx');
-    const sourceFile = ts.createSourceFile('main.tsx', main, ts.ScriptTarget.Latest, true, ts.ScriptKind.TSX);
+    const app = (await rendererSourcesPromise).requiredFile('src/app/App.tsx');
+    const sourceFile = ts.createSourceFile('App.tsx', app, ts.ScriptTarget.Latest, true, ts.ScriptKind.TSX);
     const uncovered: string[] = [];
 
     function isAsync(node: ts.FunctionLikeDeclaration): boolean {
@@ -674,14 +702,14 @@ describe('product shell ui', () => {
 
   it('shows local action feedback and reserves a global banner for state failures', async () => {
     const sources = await rendererSourcesPromise;
-    const main = sources.requiredFile('src/main.tsx');
+    const shell = sources.requiredFile('src/app/AppShell.tsx');
     const renderer = sources.all;
     const feedback = sources.requiredFile('src/components/AsyncActionFeedback.tsx');
     const css = await readFile(new URL('../src/styles.css', import.meta.url), 'utf8');
 
     expect(renderer).toMatch(/from ["'](?:\.\.\/|\.\/)+ui\/async-action["']/u);
-    expect(main).toContain('InlineActionFeedback');
-    expect(main).toContain('className="global-action-banner"');
+    expect(shell).toContain('InlineActionFeedback');
+    expect(shell).toContain('className="global-action-banner"');
     expect(feedback).toContain('className={`inline-action-feedback ${feedback.tone}`}');
     for (const page of [
       'ViralAnalyzerPage',
@@ -711,7 +739,11 @@ describe('product shell ui', () => {
 
   it('keeps saved provider secrets out of renderer state, DOM values, and browser persistence', async () => {
     const sources = await rendererSourcesPromise;
-    const main = sources.requiredFile('src/main.tsx');
+    const applicationOwners = [
+      sources.requiredFile('src/app/App.tsx'),
+      sources.requiredFile('src/app/AppShell.tsx'),
+      sources.requiredFile('src/app/AppRoutes.tsx'),
+    ].join('\n');
     const settingsOwners = [
       sources.requiredFile('src/features/settings/SettingsPage.tsx'),
       sources.requiredFile('src/features/settings/ProviderProfileManagers.tsx'),
@@ -726,9 +758,10 @@ describe('product shell ui', () => {
     const apiContract = await readFile(new URL('../src/shared/storydream-api.ts', import.meta.url), 'utf8');
     const preload = await readFile(new URL('../electron/preload.ts', import.meta.url), 'utf8');
     const electronMain = await readFile(new URL('../electron/main.ts', import.meta.url), 'utf8');
+    const secretSensitiveOwners = `${applicationOwners}\n${settingsOwners}`;
 
     expect(`${appState}\n${browserFallback}`).toContain('stripConfigSecrets');
-    expect(main).not.toContain('stripConfigSecrets(');
+    expect(secretSensitiveOwners).not.toContain('stripConfigSecrets(');
     expect(settingsOwners).toContain('../../shared/config-secrets');
     expect(settingsOwners).toContain('secretChanges');
     expect(settingsOwners).toContain('SecretInput');
@@ -738,8 +771,8 @@ describe('product shell ui', () => {
     expect(settingsOwners).toContain('onClear');
     expect(mediaConfigOwners).toContain('secretChanges: {}');
     expect(browserFallback).toContain('stripConfigSecrets(next.config)');
-    expect(main).not.toContain('function maskConfigured');
-    expect(main).not.toContain('value.slice(0, 2)');
+    expect(secretSensitiveOwners).not.toContain('function maskConfigured');
+    expect(secretSensitiveOwners).not.toContain('value.slice(0, 2)');
     expect(apiContract).toContain('PublicAppState');
     expect(apiContract).toContain('SaveConfigInput');
     expect(preload).toContain('SaveConfigInput');
@@ -761,12 +794,12 @@ describe('product shell ui', () => {
   });
 
   it('keeps Node-only provider networking out of the browser fallback bundle', async () => {
-    const main = (await rendererSourcesPromise).requiredFile('src/main.tsx');
+    const reachable = (await rendererSourcesPromise).reachableFrom('src/main.tsx');
     const browserFallback = await browserFallbackSourcePromise;
     const configUtils = await readFile(new URL('../src/shared/config-utils.ts', import.meta.url), 'utf8');
     const fallbackModels = browserFallback.slice(browserFallback.indexOf('async listProviderModels(request)'), browserFallback.indexOf('async listVolcengineSpeakers'));
 
-    expect(main).not.toContain("from './shared/llm-provider'");
+    expect([...reachable.keys()]).not.toContain('src/shared/llm-provider.ts');
     expect(configUtils).not.toContain("from './openai-image'");
     expect(configUtils).toContain("await import('./openai-image')");
     expect(fallbackModels).not.toContain('listConfiguredProviderModels');
@@ -775,7 +808,7 @@ describe('product shell ui', () => {
   });
 
   it('presents a Chinese StoryDream-first desktop shell with main workflow and secondary modules', async () => {
-    const main = (await rendererSourcesPromise).requiredFile('src/main.tsx');
+    const main = (await rendererSourcesPromise).requiredFile('src/app/AppShell.tsx');
     const navigation = await navigationSourcePromise;
     const shellSource = `${main}\n${navigation}`;
     const css = await readFile(new URL('../src/styles.css', import.meta.url), 'utf8');
@@ -991,9 +1024,8 @@ describe('product shell ui', () => {
   });
 
   it('keeps browser preview fallback errors in Chinese', async () => {
-    const main = (await rendererSourcesPromise).requiredFile('src/main.tsx');
     const browserFallback = await browserFallbackSourcePromise;
-    const browserSources = `${main}\n${browserFallback}`;
+    const browserSources = browserFallback;
 
     expect(browserSources).not.toContain('Browser preview cannot');
     expect(browserSources).not.toContain('API key is missing; fill it before testing the model.');
@@ -1039,10 +1071,35 @@ describe('product shell ui', () => {
     expect(css).toContain('--accent');
   });
 
+  it('keeps the exact seventeen route branches in the application route owner', async () => {
+    const routes = (await rendererSourcesPromise).requiredFile('src/app/AppRoutes.tsx');
+    const routedViews = [...routes.matchAll(/activeView === '([^']+)'/gu)].map((match) => match[1]);
+    expect(routedViews).toEqual([
+      'new-task',
+      'book-selection',
+      'benchmark',
+      'person-assets',
+      'queue',
+      'history',
+      'task-detail',
+      'image-lab',
+      'voice-lab',
+      'music-mv',
+      'html-video',
+      'viral-analyzer',
+      'prompt-templates',
+      'draft-templates',
+      'settings',
+      'account',
+      'activation',
+    ]);
+    expect(new Set(routedViews).size).toBe(17);
+  });
+
   it('adds a standalone voice lab for provider voice previews and history playback', async () => {
-    const main = (await rendererSourcesPromise).requiredFile('src/main.tsx');
+    const routes = (await rendererSourcesPromise).requiredFile('src/app/AppRoutes.tsx');
     const voiceLab = (await rendererSourcesPromise).requiredFile('src/features/labs/VoiceLabPage.tsx');
-    const voiceSources = `${main}\n${voiceLab}`;
+    const voiceSources = `${routes}\n${voiceLab}`;
     const css = await readFile(new URL('../src/styles.css', import.meta.url), 'utf8');
     const preload = await readFile(new URL('../electron/preload.ts', import.meta.url), 'utf8');
 
@@ -1072,7 +1129,7 @@ describe('product shell ui', () => {
 
   it('adds a complete music MV page and sends MV task settings into task creation', async () => {
     const sources = await rendererSourcesPromise;
-    const main = sources.requiredFile('src/main.tsx');
+    const main = sources.requiredFile('src/app/AppRoutes.tsx');
     const musicPage = sources.requiredFile('src/features/music-mv/MusicMvPage.tsx');
     const css = await readFile(new URL('../src/styles.css', import.meta.url), 'utf8');
     const types = await readFile(new URL('../src/shared/types.ts', import.meta.url), 'utf8');
@@ -1101,7 +1158,7 @@ describe('product shell ui', () => {
 
   it('adds the Storybound HTML animation workspace without routing through the story pipeline', async () => {
     const sources = await rendererSourcesPromise;
-    const main = sources.requiredFile('src/main.tsx');
+    const main = sources.requiredFile('src/app/AppRoutes.tsx');
     const htmlPage = sources.requiredFile('src/features/html-video/HtmlVideoPage.tsx');
     const htmlTabs = sources.requiredFile('src/features/html-video/HtmlVideoTabPanel.tsx');
     const htmlSources = `${main}\n${htmlPage}\n${htmlTabs}`;
@@ -1356,7 +1413,7 @@ describe('product shell ui', () => {
 
   it('renders governed six-step HTML progress and seven-step ordinary progress in task lists', async () => {
     const page = (await rendererSourcesPromise).all;
-    expect(page).toMatch(/from ["']\.\/shared\/html-video-workflow["'];/u);
+    expect(page).toMatch(/from ["'](?:\.\/|\.\.\/)shared\/html-video-workflow["'];/u);
     expect(page).toContain("{statusLabel(task.status)} · {taskProgressLabel(task)}");
     expect(page).toContain('<span role="cell">{taskProgressLabel(task)}</span>');
   });
@@ -1420,7 +1477,7 @@ describe('product shell ui', () => {
 
   it('wires the viral analyzer page into the shell with report and selectable follow-up controls', async () => {
     const sources = await rendererSourcesPromise;
-    const main = sources.requiredFile('src/main.tsx');
+    const main = sources.requiredFile('src/app/AppRoutes.tsx');
     const viralPage = sources.requiredFile('src/features/viral/ViralAnalyzerPage.tsx');
     const report = sources.requiredFile('src/features/viral/ViralReport.tsx');
     const viralSources = `${main}\n${viralPage}\n${report}`;
@@ -1551,17 +1608,18 @@ describe('product shell ui', () => {
   });
 
   it('uses the dark renderer chrome as the only title bar and removes the trial strip', async () => {
-    const main = (await rendererSourcesPromise).requiredFile('src/main.tsx');
+    const app = (await rendererSourcesPromise).requiredFile('src/app/App.tsx');
+    const shell = (await rendererSourcesPromise).requiredFile('src/app/AppShell.tsx');
     const css = await readFile(new URL('../src/styles.css', import.meta.url), 'utf8');
     const apiContract = await readFile(new URL('../src/shared/storydream-api.ts', import.meta.url), 'utf8');
 
-    expect(main).toContain('window-control-button');
-    expect(main).toContain("api.windowControl('minimize')");
-    expect(main).toContain("api.windowControl('toggle-maximize')");
-    expect(main).toContain("api.windowControl('close')");
-    expect(main).not.toContain('className="trial-strip"');
-    expect(main).not.toContain('className="activation-link"');
-    expect(main).not.toContain('获取激活码');
+    expect(shell).toContain('window-control-button');
+    expect(app).toContain("api.windowControl('minimize')");
+    expect(app).toContain("api.windowControl('toggle-maximize')");
+    expect(app).toContain("api.windowControl('close')");
+    expect(shell).not.toContain('className="trial-strip"');
+    expect(shell).not.toContain('className="activation-link"');
+    expect(shell).not.toContain('获取激活码');
     expect(css).toContain('grid-template-rows: 34px 1fr');
     expect(css).toContain('-webkit-app-region: drag');
     expect(css).toContain('-webkit-app-region: no-drag');
@@ -2332,7 +2390,8 @@ describe('product shell ui', () => {
   });
 
   it('supports opening a selected task in a screenshot-style pipeline detail view', async () => {
-    const main = (await rendererSourcesPromise).requiredFile('src/main.tsx');
+    const main = (await rendererSourcesPromise).requiredFile('src/app/App.tsx');
+    const routes = (await rendererSourcesPromise).requiredFile('src/app/AppRoutes.tsx');
     const settingsPage = (await rendererSourcesPromise).requiredFile('src/features/settings/SettingsPage.tsx');
     const detail = (await rendererSourcesPromise).requiredFile('src/features/tasks/TaskDetailPage.tsx');
     const artifact = (await rendererSourcesPromise).requiredFile('src/features/tasks/TaskArtifactPreview.tsx');
@@ -2342,11 +2401,11 @@ describe('product shell ui', () => {
     expect(types).toContain("'task-detail'");
     expect(main).toContain('selectedTaskId');
     expect(main).toContain('openTaskDetail');
-    expect(main).toContain('TaskDetailPage');
+    expect(routes).toContain('TaskDetailPage');
     expect(detail).toContain('taskProgressStages(activeTask)');
     expect(detail).toContain('{progress.total} 步流水线');
     for (const text of ['历史任务', '任务详情', '产物预览', '分镜画廊', '配音试听', '等待当前步骤产物落盘']) {
-      expect(`${main}\n${detail}\n${artifact}`).toContain(text);
+      expect(`${main}\n${routes}\n${detail}\n${artifact}`).toContain(text);
     }
     expect(css).toContain('.task-detail-shell');
     expect(css).toContain('.pipeline-step');
@@ -2440,7 +2499,7 @@ describe('product shell ui', () => {
   });
 
   it('uses one bootstrap and delta updates without a one-second full-state heartbeat', async () => {
-    const main = (await rendererSourcesPromise).requiredFile('src/main.tsx');
+    const main = (await rendererSourcesPromise).requiredFile('src/app/App.tsx');
     const settingsPage = (await rendererSourcesPromise).requiredFile('src/features/settings/SettingsPage.tsx');
     const detail = (await rendererSourcesPromise).requiredFile('src/features/tasks/TaskDetailPage.tsx');
     const css = await readFile(new URL('../src/styles.css', import.meta.url), 'utf8');
@@ -2496,8 +2555,8 @@ describe('product shell ui', () => {
 
   it('queues reconciliation gaps that arrive in flight and preserves loaded template details on reset', async () => {
     const sources = await rendererSourcesPromise;
-    const main = sources.requiredFile('src/main.tsx');
-    const app = main.slice(main.indexOf('function App()'), main.indexOf('function NavButton'));
+    const main = sources.requiredFile('src/app/App.tsx');
+    const app = main;
 
     expect(app).toContain('let reconcileAgain = false');
     expect(app).toContain('let reconcileAgainWithReset = false');
@@ -2509,8 +2568,8 @@ describe('product shell ui', () => {
   });
 
   it('invalidates requested detail before installing a reset that confirms authoritative task absence', async () => {
-    const main = (await rendererSourcesPromise).requiredFile('src/main.tsx');
-    const app = main.slice(main.indexOf('function App()'), main.indexOf('function NavButton'));
+    const main = (await rendererSourcesPromise).requiredFile('src/app/App.tsx');
+    const app = main;
     const refreshTask = app.slice(app.indexOf('const refreshTaskDetail'), app.indexOf('const refreshViralEvents'));
     const reset = app.slice(app.indexOf('if (result.resetRequired)'), app.indexOf('result.deltas.forEach'));
 
@@ -2532,8 +2591,8 @@ describe('product shell ui', () => {
   });
 
   it('buffers bounded state patches across authoritative snapshot installation and error recovery', async () => {
-    const main = (await rendererSourcesPromise).requiredFile('src/main.tsx');
-    const app = main.slice(main.indexOf('function App()'), main.indexOf('function NavButton'));
+    const main = (await rendererSourcesPromise).requiredFile('src/app/App.tsx');
+    const app = main;
 
     expect(main).toContain('MAX_RENDERER_DELTA_BUFFER');
     expect(main).toContain('applyBufferedMutationResults');
@@ -2549,7 +2608,7 @@ describe('product shell ui', () => {
   });
 
   it('uses app deltas as the sole Electron mutation owner and keeps response application local to browser fallback', async () => {
-    const main = (await rendererSourcesPromise).requiredFile('src/main.tsx');
+    const main = (await rendererSourcesPromise).requiredFile('src/app/App.tsx');
     const browserFallback = await browserFallbackSourcePromise;
     const applyState = main.slice(main.indexOf('function applyState('), main.indexOf('async function openTaskDetail'));
     const fallback = browserFallback.slice(browserFallback.indexOf('export function makeFallbackApi('));
@@ -2562,8 +2621,8 @@ describe('product shell ui', () => {
   });
 
   it('keeps authoritative snapshot replay updaters pure under StrictMode double invocation', async () => {
-    const main = (await rendererSourcesPromise).requiredFile('src/main.tsx');
-    const app = main.slice(main.indexOf('function App()'), main.indexOf('function NavButton'));
+    const main = (await rendererSourcesPromise).requiredFile('src/app/App.tsx');
+    const app = main;
     const install = app.slice(app.indexOf('const installAuthoritativeSnapshot'), app.indexOf('const recoverSnapshotInstallation'));
     const recover = app.slice(app.indexOf('const recoverSnapshotInstallation'), app.indexOf('const applyIncomingDelta'));
 
@@ -2580,8 +2639,8 @@ describe('product shell ui', () => {
   });
 
   it('claims live and browser mutations before scheduling pure state updaters', async () => {
-    const main = (await rendererSourcesPromise).requiredFile('src/main.tsx');
-    const app = main.slice(main.indexOf('function App()'), main.indexOf('function NavButton'));
+    const main = (await rendererSourcesPromise).requiredFile('src/app/App.tsx');
+    const app = main;
     const livePatch = app.slice(app.indexOf('const applyMutationDelta'), app.indexOf('const requestReconciliation'));
     const browserApply = app.slice(app.indexOf('function applyState('), app.indexOf('async function openTaskDetail'));
 
@@ -2597,8 +2656,8 @@ describe('product shell ui', () => {
 
   it('loads active HTML task details on bootstrap and checkpoint summary changes', async () => {
     const sources = await rendererSourcesPromise;
-    const main = sources.requiredFile('src/main.tsx');
-    const app = main.slice(main.indexOf('function App()'), main.indexOf('function NavButton'));
+    const main = sources.requiredFile('src/app/App.tsx');
+    const app = main;
     const htmlPage = sources.requiredFile('src/features/html-video/HtmlVideoPage.tsx');
 
     expect(app).toContain('activeHtmlTaskIdRef');
@@ -2610,8 +2669,8 @@ describe('product shell ui', () => {
 
   it('loads active viral events and includes both active entities in reconciliation', async () => {
     const sources = await rendererSourcesPromise;
-    const main = sources.requiredFile('src/main.tsx');
-    const app = main.slice(main.indexOf('function App()'), main.indexOf('function NavButton'));
+    const main = sources.requiredFile('src/app/App.tsx');
+    const app = main;
     const viralPage = sources.requiredFile('src/features/viral/ViralAnalyzerPage.tsx');
 
     expect(app).toContain('viralAnalysisId: requestedViralId ?? undefined');
@@ -2823,7 +2882,6 @@ describe('product shell ui', () => {
   });
 
   it('uses provider-specific task voice defaults in the new task form', async () => {
-    const main = (await rendererSourcesPromise).requiredFile('src/main.tsx');
     const settings = (await rendererSourcesPromise).requiredFile('src/features/settings/SettingsPage.tsx');
     const newTask = (await rendererSourcesPromise).requiredFile('src/features/tasks/NewTaskPage.tsx');
     const voices = await readFile(new URL('../src/shared/tts-voices.ts', import.meta.url), 'utf8');
@@ -2840,8 +2898,8 @@ describe('product shell ui', () => {
     ]) {
       expect(newTask + voices).toContain(symbol);
     }
-    expect(main).not.toContain("const voiceOptions = ['东方浩然', '灿博小叔', '温柔小雅', '爽快思思', '更多音色...'];");
-    expect(main).not.toContain('>更多音色...</button>');
+    expect(newTask).not.toContain("const voiceOptions = ['东方浩然', '灿博小叔', '温柔小雅', '爽快思思', '更多音色...'];");
+    expect(newTask).not.toContain('>更多音色...</button>');
   });
 
   it('syncs new-task content and style choices from story and image templates', async () => {
@@ -2966,9 +3024,7 @@ describe('product shell ui', () => {
 
   it('keeps task errors compact with a click-through detail dialog', async () => {
     const sources = await rendererSourcesPromise;
-    const main = sources.requiredFile('src/main.tsx');
     const errorOwners = [
-      main,
       sources.requiredFile('src/features/tasks/TaskDetailPage.tsx'),
       sources.requiredFile('src/features/html-video/HtmlVideoPage.tsx'),
       sources.requiredFile('src/features/viral/ViralAnalyzerPage.tsx'),
@@ -3153,7 +3209,7 @@ describe('product shell ui', () => {
   });
 
   it('applies persistent themes before reveal and exposes a real settings selector', async () => {
-    const main = (await rendererSourcesPromise).requiredFile('src/main.tsx');
+    const main = (await rendererSourcesPromise).requiredFile('src/app/App.tsx');
     const settings = (await rendererSourcesPromise).requiredFile('src/features/settings/SettingsPage.tsx');
     const css = await readFile(new URL('../src/styles.css', import.meta.url), 'utf8');
     const bootstrap = main.slice(main.indexOf('api.getBootstrap()'), main.indexOf('const reconciliationTimer'));

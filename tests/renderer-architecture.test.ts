@@ -1,10 +1,22 @@
 import { readFile } from 'node:fs/promises';
 import { describe, expect, it } from 'vitest';
+import { RouteErrorBoundary } from '../src/app/RouteErrorBoundary';
 import { styleLabel } from '../src/features/tasks/task-formatters';
 import { styleOptions } from '../src/shared/editorial-options';
 
 async function source(path: string): Promise<string> {
   return readFile(new URL(`../${path}`, import.meta.url), 'utf8').catch(() => '');
+}
+
+const applicationCompositionPaths = [
+  'src/main.tsx',
+  'src/app/App.tsx',
+  'src/app/AppShell.tsx',
+  'src/app/AppRoutes.tsx',
+];
+
+async function applicationCompositionSource(): Promise<string> {
+  return (await Promise.all(applicationCompositionPaths.map(source))).join('\n');
 }
 
 describe('renderer shared control architecture', () => {
@@ -19,9 +31,9 @@ describe('renderer shared control architecture', () => {
     ]);
     files.forEach((file) => expect(file.length).toBeGreaterThan(0));
 
-    const main = await source('src/main.tsx');
+    const composition = await applicationCompositionSource();
     for (const definition of ['function Field(', 'function Segmented(', 'function ToggleField(', 'function RangeField(', 'function OptionCloud(', 'function Accordion(']) {
-      expect(main).not.toContain(definition);
+      expect(composition).not.toContain(definition);
     }
   });
 
@@ -115,9 +127,9 @@ describe('renderer shared feedback and data architecture', () => {
     const files = await Promise.all(paths.map(source));
     files.forEach((file) => expect(file.length).toBeGreaterThan(0));
 
-    const main = await source('src/main.tsx');
+    const composition = await applicationCompositionSource();
     for (const definition of ['function InlineActionFeedback(', 'function ErrorSummaryButton(', 'function ErrorDetailDialog(', 'function StatusPill(', 'function EmptyState(', 'function EventTimeline(']) {
-      expect(main).not.toContain(definition);
+      expect(composition).not.toContain(definition);
     }
   });
 
@@ -179,10 +191,10 @@ describe('renderer shared feedback and data architecture', () => {
 
 describe('renderer application ownership architecture', () => {
   it('isolates state and browser fallback without importing React pages', async () => {
-    const [appState, fallback, main] = await Promise.all([
+    const [appState, fallback, composition] = await Promise.all([
       source('src/app/app-state.ts'),
       source('src/app/browser-fallback.ts'),
-      source('src/main.tsx'),
+      applicationCompositionSource(),
     ]);
     expect(appState.length).toBeGreaterThan(0);
     expect(fallback.length).toBeGreaterThan(0);
@@ -195,7 +207,7 @@ describe('renderer application ownership architecture', () => {
     }
     expect(fallback).toContain("fallbackGovernanceStorageKey = 'storydream-history-governance-v1'");
     expect(fallback).toContain('export function makeFallbackApi');
-    expect(main).not.toContain('function makeFallbackApi(');
+    expect(composition).not.toContain('function makeFallbackApi(');
   });
 
   it('owns one new-task action and exactly fifteen sidebar entries', async () => {
@@ -217,13 +229,13 @@ describe('renderer application ownership architecture', () => {
   });
 
   it('moves shared editorial catalogs into one JSX-free owner', async () => {
-    const [options, main] = await Promise.all([
+    const [options, composition] = await Promise.all([
       source('src/shared/editorial-options.ts'),
-      source('src/main.tsx'),
+      applicationCompositionSource(),
     ]);
     for (const symbol of ['contentTracks', 'styleOptions', 'ratioOptions', 'smartImageModeOptions', 'pauseOptions', 'rewriteOptions', 'promptTemplateVariableDefinitions']) {
       expect(options).toContain(`export const ${symbol}`);
-      expect(main).not.toContain(`const ${symbol}`);
+      expect(composition).not.toContain(`const ${symbol}`);
     }
     expect(options).not.toContain('<div');
     expect(options).not.toContain('<button');
@@ -251,9 +263,9 @@ describe('task feature ownership architecture', () => {
     const files = await Promise.all(paths.map(source));
     files.forEach((file) => expect(file.length).toBeGreaterThan(0));
 
-    const main = await source('src/main.tsx');
+    const composition = await applicationCompositionSource();
     for (const definition of ['function NewTaskPage(', 'function QueuePage(', 'function HistoryPage(', 'function TaskDetailPage(', 'function ArtifactPreviewContent(']) {
-      expect(main).not.toContain(definition);
+      expect(composition).not.toContain(definition);
     }
   });
 
@@ -290,17 +302,17 @@ describe('task feature ownership architecture', () => {
   });
 
   it('owns canonical pipeline and task formatting helpers outside the renderer entry', async () => {
-    const [pipeline, formatters, main] = await Promise.all([
+    const [pipeline, formatters, composition] = await Promise.all([
       source('src/features/tasks/task-pipeline.ts'),
       source('src/features/tasks/task-formatters.ts'),
-      source('src/main.tsx'),
+      applicationCompositionSource(),
     ]);
     for (const symbol of ['pipelineStepStatus', 'statusLabelForStep', 'artifactPanelTitle', 'snapshotStepStatus', 'imageProgressLabel']) {
       expect(`${pipeline}\n${formatters}`).toContain(`export function ${symbol}`);
-      expect(main).not.toContain(`function ${symbol}(`);
+      expect(composition).not.toContain(`function ${symbol}(`);
     }
     expect(formatters).toContain('export function formatDuration');
-    expect(main).not.toContain('function formatDuration(');
+    expect(composition).not.toContain('function formatDuration(');
   });
 });
 
@@ -317,9 +329,9 @@ describe('local tool and lab feature ownership architecture', () => {
     const pages = await Promise.all(pagePaths.map(source));
     pages.forEach((page) => expect(page.length).toBeGreaterThan(0));
 
-    const main = await source('src/main.tsx');
+    const composition = await applicationCompositionSource();
     for (const definition of ['function BookSelectionPage(', 'function BenchmarkImportPage(', 'function PersonAssetsPage(', 'function ImageLabPage(', 'function VoiceLabPage(']) {
-      expect(main).not.toContain(definition);
+      expect(composition).not.toContain(definition);
     }
   });
 
@@ -335,13 +347,13 @@ describe('local tool and lab feature ownership architecture', () => {
   });
 
   it('owns image-lab calculations outside the renderer entry', async () => {
-    const [helpers, main] = await Promise.all([
+    const [helpers, composition] = await Promise.all([
       source('src/features/labs/image-lab-helpers.ts'),
-      source('src/main.tsx'),
+      applicationCompositionSource(),
     ]);
     for (const symbol of ['smartImageModeLabel', 'resolveImageLabSmartMode', 'parseReferenceImagePaths']) {
       expect(helpers).toContain(`export function ${symbol}`);
-      expect(main).not.toContain(`function ${symbol}`);
+      expect(composition).not.toContain(`function ${symbol}`);
     }
   });
 });
@@ -359,9 +371,9 @@ describe('media workflow feature ownership architecture', () => {
     const pages = await Promise.all(pagePaths.map(source));
     pages.forEach((page) => expect(page.length).toBeGreaterThan(0));
 
-    const main = await source('src/main.tsx');
+    const composition = await applicationCompositionSource();
     for (const definition of ['function MusicMvPage(', 'function HtmlVideoPage(', 'function HtmlVideoTabPanel(', 'function ViralAnalyzerPage(', 'function ViralReport(']) {
-      expect(main).not.toContain(definition);
+      expect(composition).not.toContain(definition);
     }
   });
 
@@ -402,9 +414,9 @@ describe('template feature ownership architecture', () => {
     const pages = await Promise.all(pagePaths.map(source));
     pages.forEach((page) => expect(page.length).toBeGreaterThan(0));
 
-    const main = await source('src/main.tsx');
+    const composition = await applicationCompositionSource();
     for (const definition of ['function PromptTemplatesPage(', 'function PromptTemplateEditor(', 'function DraftTemplatesPage(', 'function DraftTemplatePreview(', 'function EditableDraftCanvas(']) {
-      expect(main).not.toContain(definition);
+      expect(composition).not.toContain(definition);
     }
   });
 
@@ -444,7 +456,7 @@ describe('system page feature ownership architecture', () => {
     const pages = await Promise.all(pagePaths.map(source));
     pages.forEach((page) => expect(page.length).toBeGreaterThan(0));
 
-    const main = await source('src/main.tsx');
+    const composition = await applicationCompositionSource();
     for (const definition of [
       'function SettingsPage(',
       'function LlmProfileManager(',
@@ -455,7 +467,7 @@ describe('system page feature ownership architecture', () => {
       'function SettingsCard(',
       'function ModelPicker(',
     ]) {
-      expect(main).not.toContain(definition);
+      expect(composition).not.toContain(definition);
     }
   });
 
@@ -479,5 +491,102 @@ describe('system page feature ownership architecture', () => {
       expect(settingsPage).not.toContain(definition);
       expect(controls).toContain(`export ${definition}`);
     }
+  });
+});
+
+describe('renderer application composition architecture', () => {
+  const appPaths = [
+    'src/app/App.tsx',
+    'src/app/AppShell.tsx',
+    'src/app/AppRoutes.tsx',
+    'src/app/RouteErrorBoundary.tsx',
+    'src/app/RouteLoadingState.tsx',
+  ];
+
+  it('keeps the renderer entry limited to style setup and App mounting', async () => {
+    const [main, ...owners] = await Promise.all([
+      source('src/main.tsx'),
+      ...appPaths.map(source),
+    ]);
+    owners.forEach((owner) => expect(owner.length).toBeGreaterThan(0));
+    expect(main).toContain("import { App } from './app/App'");
+    expect(main).toContain("import './styles.css'");
+    expect(main).toContain('createRoot(rootElement)');
+    expect(main).toContain('<App />');
+    for (const implementation of ['function App(', 'function NavButton(', 'api.getBootstrap(', 'api.onAppDelta(', 'primaryNavItems.map(']) {
+      expect(main).not.toContain(implementation);
+    }
+    expect(main.length).toBeLessThan(1_200);
+  });
+
+  it('separates runtime state, shell chrome, and static route composition', async () => {
+    const [app, shell, routes] = await Promise.all(appPaths.slice(0, 3).map(source));
+    for (const symbol of ['api.getBootstrap(', 'api.onAppDelta(', 'api.reconcileDeltas(', 'refreshTaskDetail', 'refreshViralEvents', 'applyStoredTheme']) {
+      expect(app).toContain(symbol);
+    }
+    for (const symbol of ['window-controls', 'primaryNavItems.map(', 'secondaryNavItems.map(', 'recent-task-strip', 'global-action-banner']) {
+      expect(shell).toContain(symbol);
+    }
+    for (const symbol of ['NewTaskPage', 'TaskDetailPage', 'HtmlVideoPage', 'PromptTemplatesPage', 'SettingsPage', 'ActivationPage']) {
+      expect(routes).toContain(symbol);
+    }
+    expect(shell).not.toContain("from '../features/");
+    expect(routes).not.toContain('api.onAppDelta(');
+  });
+
+  it('provides bounded route loading and recoverable route errors', async () => {
+    const [boundary, loading] = await Promise.all(appPaths.slice(3).map(source));
+    expect(boundary).toContain('getDerivedStateFromError');
+    expect(boundary).toContain('componentDidCatch');
+    expect(boundary).toContain('重新加载页面');
+    expect(boundary).toContain('返回新建任务');
+    expect(loading).toContain('role="status"');
+    expect(loading).toContain('route-loading-state');
+    expect(loading).toContain('正在加载');
+  });
+
+  it('resets only errors owned by the previous route key before rendering the next route', () => {
+    const boundaryType = RouteErrorBoundary as unknown as {
+      getDerivedStateFromError(error: Error): { error: Error };
+      getDerivedStateFromProps(
+        props: { resetKey: 'new-task' | 'settings' },
+        state: { error: Error | null; resetKey: 'new-task' | 'settings' },
+      ): { error: null; resetKey: 'new-task' | 'settings' } | null;
+    };
+    expect(typeof boundaryType.getDerivedStateFromProps).toBe('function');
+    if (typeof boundaryType.getDerivedStateFromProps !== 'function') return;
+
+    const previousError = new Error('old route failed');
+    expect(boundaryType.getDerivedStateFromProps(
+      { resetKey: 'settings' },
+      { error: previousError, resetKey: 'new-task' },
+    )).toEqual({ error: null, resetKey: 'settings' });
+
+    const capturedOnNextRoute = {
+      error: boundaryType.getDerivedStateFromError(new Error('next route failed')).error,
+      resetKey: 'settings' as const,
+    };
+    expect(boundaryType.getDerivedStateFromProps({ resetKey: 'settings' }, capturedOnNextRoute)).toBeNull();
+    expect(capturedOnNextRoute.error.message).toBe('next route failed');
+  });
+
+  it('clears a failed new-task route before navigating back to that same route key', () => {
+    const navigated: string[] = [];
+    const boundary = new RouteErrorBoundary({
+      children: null,
+      resetKey: 'new-task',
+      onNavigate: (view) => navigated.push(view),
+    });
+    boundary.state = { ...boundary.state, error: new Error('new task failed') };
+    boundary.setState = ((update: { error: Error | null }, callback?: () => void) => {
+      boundary.state = { ...boundary.state, ...update };
+      callback?.();
+    }) as typeof boundary.setState;
+    const returnToNewTask = (boundary as unknown as { returnToNewTask?: () => void }).returnToNewTask;
+
+    expect(typeof returnToNewTask).toBe('function');
+    returnToNewTask?.();
+    expect(boundary.state.error).toBeNull();
+    expect(navigated).toEqual(['new-task']);
   });
 });

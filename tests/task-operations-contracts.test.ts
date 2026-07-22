@@ -102,7 +102,7 @@ describe('task operation contracts', () => {
   });
 
   it('makes task detail consume every cursor page and removes inline progress guesses', async () => {
-    const main = await readFile(new URL('../src/main.tsx', import.meta.url), 'utf8');
+    const main = await readFile(new URL('../src/app/App.tsx', import.meta.url), 'utf8');
     const detail = await readFile(new URL('../src/features/tasks/TaskDetailPage.tsx', import.meta.url), 'utf8');
     const refresh = main.slice(main.indexOf('const refreshTaskDetail'), main.indexOf('const refreshViralEvents'));
 
