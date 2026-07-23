@@ -50,7 +50,7 @@ export function ViralReport({
   }
 
   return (
-    <>
+    <div data-media-canvas="viral-report">
       <div className="viral-report-grid">
         <ViralReportCard title="开头" value={breakdown.opening.type} detail={breakdown.opening.analysis} />
         <ViralReportCard title="结构" value={breakdown.structure.type} detail={breakdown.structure.analysis} />
@@ -113,7 +113,7 @@ export function ViralReport({
           </button>
         </div>
       </div>
-    </>
+    </div>
   );
 }
 

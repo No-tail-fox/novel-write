@@ -167,7 +167,7 @@ export function MusicMvPage({
         {message ? <span className="local-note">{message}</span> : null}
         <InlineActionFeedback feedback={musicAction.feedback} />
       </section>
-      <aside className="music-mv-preview panel">
+      <aside className="music-mv-preview panel" data-media-canvas="music-mv-timeline-audio">
         <h3>MV 结构预览</h3>
         <div className="task-metrics">
           <div><small>歌词行</small><strong>{lyricLines.length}</strong></div>

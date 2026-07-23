@@ -82,7 +82,7 @@ export function VoiceLabPage({ api, state, applyState }: { api: StoryDreamApi; s
           {generating ? '生成中' : '生成试听'}
         </button>
       </section>
-      <section className="panel voice-lab-history">
+      <section className="panel voice-lab-history" data-media-canvas="voice-lab">
         <div className="panel-title-row">
           <div>
             <h2>历史试听</h2>

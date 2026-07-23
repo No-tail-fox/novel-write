@@ -1,0 +1,71 @@
+:root {
+  --shell-bg: #101214;
+  --shell-surface: #15181b;
+  --shell-surface-raised: #1b1f23;
+  --shell-border: #343a40;
+  --shell-text: #f4f6f8;
+  --shell-muted: #b1b8be;
+  --shell-accent: #f2614b;
+  --shell-accent-strong: #ff755f;
+  --shell-focus: #f2614b;
+  --shell-focus-contrast: #101214;
+
+  --media-bg: #101316;
+  --media-surface: #181c20;
+  --media-border: #343b42;
+  --media-text: #f4f6f8;
+  --media-muted: #aeb6bd;
+
+  --bg: var(--shell-bg);
+  --surface-ink: var(--shell-surface-raised);
+  --panel: var(--shell-surface);
+  --panel-2: var(--shell-surface-raised);
+  --panel-3: #24292e;
+  --line: var(--shell-border);
+  --muted: var(--shell-muted);
+  --text: var(--shell-text);
+  --cyanprint: #67c9d4;
+  --paper-warm: #c8b594;
+  --timeline-blue: #3477ad;
+  --reel-amber: #e0a34c;
+  --accent: var(--shell-accent);
+  --accent-2: var(--reel-amber);
+  --danger: #ff6666;
+  --warn: #e0a34c;
+  --ok: #65b883;
+  --shadow: 0 10px 30px rgba(0, 0, 0, 0.24);
+  --focus-ring: 0 0 0 2px var(--shell-focus), 0 0 0 4px var(--shell-focus-contrast);
+}
+
+:root[data-theme='light'] {
+  --shell-bg: #ffffff;
+  --shell-surface: #f4f5f6;
+  --shell-surface-raised: #ffffff;
+  --shell-border: #dedfe1;
+  --shell-text: #15171a;
+  --shell-muted: #626870;
+  --shell-accent: #cf3f2d;
+  --shell-accent-strong: #a92f21;
+  --shell-focus: #cf3f2d;
+  --shell-focus-contrast: #ffffff;
+
+  --bg: var(--shell-bg);
+  --surface-ink: var(--shell-surface-raised);
+  --panel: var(--shell-surface-raised);
+  --panel-2: var(--shell-surface);
+  --panel-3: #eaebed;
+  --line: var(--shell-border);
+  --muted: var(--shell-muted);
+  --text: var(--shell-text);
+  --cyanprint: #176d7c;
+  --paper-warm: #765d3f;
+  --timeline-blue: #2e6fa3;
+  --reel-amber: #875700;
+  --accent: var(--shell-accent);
+  --accent-2: var(--reel-amber);
+  --danger: #a92d36;
+  --warn: #805300;
+  --ok: #18734a;
+  --shadow: 0 8px 24px rgba(24, 28, 32, 0.08);
+  --focus-ring: 0 0 0 2px var(--shell-focus), 0 0 0 4px var(--shell-focus-contrast);
+}

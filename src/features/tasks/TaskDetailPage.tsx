@@ -168,7 +168,7 @@ export function TaskDetailPage({
         </section>
       </aside>
 
-      <section className="task-detail-main">
+      <section className="task-detail-main" data-media-canvas="task-artifact">
         <InlineActionFeedback feedback={taskDetailAction.feedback} />
         <div className="artifact-tabs">
           <button className={tab === 'preview' ? 'active' : ''} onClick={() => setTab('preview')}><FileJson size={14} />产物预览</button>

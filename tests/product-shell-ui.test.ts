@@ -1020,9 +1020,10 @@ describe('product shell ui', () => {
 
   it('uses a restrained storyboard-console visual system instead of a generic neon shell', async () => {
     const css = await readFile(new URL('../src/styles.css', import.meta.url), 'utf8');
+    const tokens = await readFile(new URL('../src/styles/tokens.css', import.meta.url), 'utf8');
 
     for (const token of ['--cyanprint', '--paper-warm', '--timeline-blue', '--surface-ink', '--shadow', '--focus-ring']) {
-      expect(css).toContain(token);
+      expect(tokens).toContain(token);
     }
 
     expect(css).toContain('.app-shell::before');
@@ -3299,6 +3300,8 @@ describe('product shell ui', () => {
     const main = (await rendererSourcesPromise).requiredFile('src/app/App.tsx');
     const settings = (await rendererSourcesPromise).requiredFile('src/features/settings/SettingsPage.tsx');
     const css = await readFile(new URL('../src/styles.css', import.meta.url), 'utf8');
+    const tokens = await readFile(new URL('../src/styles/tokens.css', import.meta.url), 'utf8');
+    const base = await readFile(new URL('../src/styles/base.css', import.meta.url), 'utf8');
     const bootstrap = main.slice(main.indexOf('api.getBootstrap()'), main.indexOf('const reconciliationTimer'));
     expect(main).toContain('applyStoredTheme(defaultUiPreferences.theme)');
     expect(main).toContain('applyStoredTheme(state.ui.theme)');
@@ -3308,8 +3311,9 @@ describe('product shell ui', () => {
     expect(settings).toContain("api.saveUiPreferences({ theme: nextTheme })");
     expect(settings).toContain('changeRuntimeTheme');
     expect(settings).toContain("section === 'appearance'");
-    expect(css).toContain(":root[data-theme='light']");
-    expect(css).toContain(":root:not([data-theme-ready='true']) #root");
+    expect(tokens).toContain(":root[data-theme='light']");
+    expect(base).toContain(":root:not([data-theme-ready='true']) #root");
+    expect(css).toContain("@import './styles/tokens.css'");
   });
 });
 

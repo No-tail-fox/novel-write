@@ -557,7 +557,7 @@ export function HtmlVideoPage({
             })}
           </aside>
 
-          <div className="hv-stage">
+          <div className="hv-stage" data-media-canvas="html-video">
             <div className="hv-tabs" role="tablist" aria-label="HTML 动画视频内容">
               {htmlVideoTabs.map((tab) => (
                 <button

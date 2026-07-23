@@ -17,7 +17,7 @@ export function DraftTemplatePreview({ template, compact = false }: { template: 
   const captionSize = compact ? Math.max(7, template.caption.fontSize * 0.42) : template.caption.fontSize;
   const disclaimerSize = compact ? Math.max(6, template.disclaimer.fontSize * 0.42) : template.disclaimer.fontSize;
   return (
-    <div className={compact ? 'draft-preview-mini' : 'draft-preview-large'} style={draftTemplateCanvasStyle(template)}>
+    <div className={compact ? 'draft-preview-mini' : 'draft-preview-large'} data-media-canvas="draft-canvas" style={draftTemplateCanvasStyle(template)}>
       {template.image.visible ? (
         <div className="draft-image" style={{ top: `${template.image.top * 100}%`, height: `${template.image.height * 100}%` }}>
           <div className="draft-image-media" style={draftImageMediaStyle(template)} />
@@ -153,6 +153,7 @@ export function EditableDraftCanvas({
     <div
       ref={canvasRef}
       className="editable-draft-canvas draft-preview-large"
+      data-media-canvas="draft-canvas"
       style={draftTemplateCanvasStyle(template)}
       onPointerMove={handlePointerMove}
       onPointerUp={stopDrag}

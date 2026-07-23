@@ -1,0 +1,16 @@
+[data-media-canvas] {
+  color-scheme: dark;
+  border-color: var(--media-border);
+  background: var(--media-bg);
+  color: var(--media-text);
+}
+
+[data-media-canvas] :where(small, .hint-text, .muted-text) {
+  color: var(--media-muted);
+}
+
+[data-media-canvas] :where(input, select, textarea, audio) {
+  border-color: var(--media-border);
+  background-color: var(--media-surface);
+  color: var(--media-text);
+}

@@ -239,7 +239,7 @@ export function ImageLabPage({ api, state, applyState }: { api: StoryDreamApi; s
       <section className="image-lab-recent">
         <h3>最近生成 · {state.imageLabRecords.length}</h3>
         {state.imageLabRecords.length === 0 ? <EmptyState title="暂无画图记录" /> : null}
-        <div className="image-grid-panel">
+        <div className="image-grid-panel" data-media-canvas="image-lab">
           {state.imageLabRecords.map((record) => (
           <article className={`image-record ${record.status}`} key={record.id}>
             <div className="lab-image-preview">

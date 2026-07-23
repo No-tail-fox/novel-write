@@ -4,7 +4,7 @@ import { tmpdir } from 'node:os';
 import { basename, dirname, isAbsolute, join, relative, resolve } from 'node:path';
 import type { BrowserWindow } from 'electron';
 
-export const editorialQaScopes = ['all', 'shell', 'workflow', 'labs', 'system'] as const;
+export const editorialQaScopes = ['all', 'theme-smoke', 'shell', 'workflow', 'labs', 'system'] as const;
 export type EditorialQaScope = (typeof editorialQaScopes)[number];
 export type EditorialQaEnvironment = Partial<Record<
   | 'STORYDREAM_QA_RUN_ROOT'
@@ -42,6 +42,12 @@ export const editorialQaMatrix = {
     system: ['prompt-templates', 'draft-templates', 'settings', 'account', 'activation'],
   },
 } as const;
+
+const qaComputedTokenNames = [
+  '--shell-bg', '--shell-surface', '--shell-border', '--shell-text', '--shell-muted',
+  '--shell-focus', '--shell-focus-contrast', '--media-bg', '--media-surface',
+  '--media-border', '--media-text', '--media-muted',
+] as const;
 
 export function resolveEditorialQaConfig(
   environment: EditorialQaEnvironment = process.env,
@@ -120,8 +126,8 @@ export async function captureEditorialQa(
         const png = image.toPNG();
         const capturePath = join(config.captures, `${view}-${theme}-${viewport.name}.png`);
         await writeFile(capturePath, png, { flag: 'wx' });
-        await assertCapturePng(capturePath, png, viewport.width, viewport.height);
-        captures.push({ view, theme, viewport: viewport.name, path: basename(capturePath), visibleText: state.visibleText });
+        await assertCapturePng(capturePath, png, image.toBitmap(), viewport.width, viewport.height);
+        captures.push({ view, theme, viewport: viewport.name, path: basename(capturePath), visibleText: state.visibleText, tokens: state.tokens });
       }
     }
   }
@@ -141,6 +147,7 @@ interface EditorialQaCapture {
   viewport: string;
   path: string;
   visibleText: string;
+  tokens: Record<string, string>;
 }
 
 interface QaScenarioState {
@@ -149,10 +156,12 @@ interface QaScenarioState {
   height: number;
   scale: number;
   visibleText: string;
+  tokens: Record<string, string>;
 }
 
 function viewsForScope(scope: EditorialQaScope): readonly string[] {
   if (scope === 'all') return Object.values(editorialQaMatrix.views).flat();
+  if (scope === 'theme-smoke') return ['new-task'];
   return editorialQaMatrix.views[scope];
 }
 
@@ -189,29 +198,42 @@ function qaScenarioScript(view: string, theme: string): string {
     };
     const api = window.storydream;
     if (api) await api.saveUiPreferences({ theme: ${JSON.stringify(theme)} });
+    const themeReady = await waitFor(() => document.documentElement.dataset.theme === ${JSON.stringify(theme)});
     const nav = document.querySelector('[data-nav-view=${JSON.stringify(view)}]');
     if (nav instanceof HTMLButtonElement) nav.click();
-    const ready = await waitFor(() => document.querySelector('.app-shell')
+    const ready = themeReady && await waitFor(() => document.querySelector('.app-shell')
       && document.documentElement.dataset.themeReady === 'true'
       && document.querySelector('[data-shell-view=${JSON.stringify(view)}]'));
     await document.fonts.ready;
     await new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve)));
     document.activeElement instanceof HTMLElement && document.activeElement.blur();
+    const computed = getComputedStyle(document.documentElement);
+    const tokens = Object.fromEntries(${JSON.stringify(qaComputedTokenNames)}.map((name) => [name, computed.getPropertyValue(name).trim()]));
     return {
       ready,
       width: window.innerWidth,
       height: window.innerHeight,
       scale: window.devicePixelRatio,
       visibleText: document.body.innerText.replace(/\\s+/g, ' ').trim().slice(0, 1000),
+      tokens,
     };
   })()`;
 }
 
-async function assertCapturePng(path: string, png: Buffer, width: number, height: number): Promise<void> {
+async function assertCapturePng(path: string, png: Buffer, bitmap: Buffer, width: number, height: number): Promise<void> {
   const info = await stat(path);
   if (info.size !== png.byteLength || png.byteLength < 256) throw new Error('Editorial QA capture is empty.');
   if (png.subarray(0, 8).compare(Buffer.from([137, 80, 78, 71, 13, 10, 26, 10])) !== 0) throw new Error('Editorial QA capture is not PNG.');
   const pngWidth = png.readUInt32BE(16);
   const pngHeight = png.readUInt32BE(20);
   if (pngWidth !== width || pngHeight !== height) throw new Error(`Editorial QA capture dimensions differ from ${width}x${height}.`);
+  const sampledPixels = new Set<string>();
+  const pixelCount = Math.floor(bitmap.byteLength / 4);
+  const stride = Math.max(1, Math.floor(pixelCount / 2048));
+  for (let pixel = 0; pixel < pixelCount; pixel += stride) {
+    const offset = pixel * 4;
+    sampledPixels.add(bitmap.subarray(offset, offset + 4).toString('hex'));
+    if (sampledPixels.size >= 16) break;
+  }
+  if (sampledPixels.size < 4) throw new Error('Editorial QA capture has insufficient pixel variance.');
 }

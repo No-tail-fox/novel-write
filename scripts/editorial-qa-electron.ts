@@ -16,7 +16,7 @@ interface QaReport {
   processId: number;
   ownedProcessIds: number[];
   remainingOwnedProcessIds: number[];
-  captures: Array<{ path: string }>;
+  captures: Array<{ path: string; theme: string; tokens: Record<string, string> }>;
 }
 
 async function main(): Promise<void> {
@@ -74,6 +74,7 @@ async function main(): Promise<void> {
         throw new Error(`Editorial QA left owned processes alive: ${remaining.join(', ') || qaReport.remainingOwnedProcessIds.join(', ')}`);
       }
       if (!qaReport.captures.length) throw new Error('Editorial QA did not produce any captures.');
+      if (scope === 'theme-smoke') validateThemeSmoke(qaReport);
       artifactDirectory = await mkdtemp(join(tmpdir(), 'storydream-editorial-artifacts-'));
       await copyFile(report, join(artifactDirectory, 'report.json'));
       await mkdir(join(artifactDirectory, 'captures'));
@@ -85,6 +86,22 @@ async function main(): Promise<void> {
     cleanup: (tempRoot) => rm(tempRoot, { recursive: true, force: true, maxRetries: 5 }),
   });
   process.stdout.write(`Editorial QA artifacts: ${artifactDirectory}\n`);
+}
+
+function validateThemeSmoke(report: QaReport): void {
+  const light = report.captures.find((capture) => capture.theme === 'light');
+  const dark = report.captures.find((capture) => capture.theme === 'dark');
+  if (!light || !dark) throw new Error('Editorial theme smoke requires light and dark captures.');
+  for (const name of ['--shell-bg', '--shell-surface', '--shell-border', '--shell-text', '--shell-muted']) {
+    if (!light.tokens[name] || !dark.tokens[name] || light.tokens[name] === dark.tokens[name]) {
+      throw new Error(`Editorial shell token did not change across themes: ${name}`);
+    }
+  }
+  for (const name of ['--media-bg', '--media-surface', '--media-border', '--media-text', '--media-muted']) {
+    if (!light.tokens[name] || light.tokens[name] !== dark.tokens[name]) {
+      throw new Error(`Editorial media token changed across themes: ${name}`);
+    }
+  }
 }
 
 function readScope(args: readonly string[]): string {
