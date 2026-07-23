@@ -26,6 +26,8 @@ import type {
   ImageLabRecord,
   ImageLabSummary,
   MinimaxCloneVoice,
+  OrdinaryTaskCoverAsset,
+  OrdinaryTaskCoverRatio,
   PromptTemplate,
   PromptTemplateSummary,
   SequencedTaskEvent,
@@ -55,6 +57,14 @@ import {
   type HtmlVideoCoverImageProcessor,
   type HtmlVideoCoverInspection,
 } from './html-video-cover';
+import {
+  createOrdinaryTaskCoverAsset,
+  ordinaryTaskCoverDimensions,
+  validateOrdinaryTaskCoverAsset,
+  validateOrdinaryTaskCoverInspection,
+  type OrdinaryTaskCoverImageProcessor,
+  type OrdinaryTaskCoverInspection,
+} from './ordinary-task-cover';
 import { normalizeAppConfig } from './config-utils';
 import { stripConfigSecrets } from './config-secrets';
 import {
@@ -119,6 +129,14 @@ export interface HtmlVideoTaskCoverMutationResult {
   task: TaskSummary;
   event: SequencedTaskEvent;
   coverAsset: HtmlVideoCoverAsset;
+}
+
+export interface OrdinaryTaskCoverImportOperations {
+  prepareImage: OrdinaryTaskCoverImageProcessor;
+  promoteFile: (source: string, target: string) => Promise<void>;
+  removeFile: (path: string) => Promise<void>;
+  ensureDirectory: (path: string) => Promise<void>;
+  now: () => string;
 }
 
 interface HistorySqlFilter {
@@ -961,6 +979,7 @@ export class FileDatabase {
         video_intro_duration INTEGER DEFAULT 0,
         cover_image_mode TEXT DEFAULT 'off',
         cover_template_id TEXT DEFAULT 'cinematic-poster',
+        ordinary_cover_asset_json TEXT DEFAULT NULL,
         html_video_foreground INTEGER DEFAULT NULL
       );
       CREATE TABLE IF NOT EXISTS book_selection (
@@ -1236,6 +1255,7 @@ export class FileDatabase {
       ['video_intro_duration', 'INTEGER DEFAULT 0'],
       ['cover_image_mode', "TEXT DEFAULT 'off'"],
       ['cover_template_id', "TEXT DEFAULT 'cinematic-poster'"],
+      ['ordinary_cover_asset_json', 'TEXT DEFAULT NULL'],
       ['html_video_foreground', 'INTEGER DEFAULT NULL'],
       ['archived_at', 'TEXT DEFAULT NULL'],
       ['managed_storage_key', 'TEXT DEFAULT NULL'],
@@ -1919,7 +1939,56 @@ export class FileDatabase {
     return this.enqueueCommit(() => this.insertTask(input));
   }
 
-  private insertTask(input: CreateTaskInput): Task {
+  async createTaskWithOrdinaryCover(
+    input: CreateTaskInput,
+    source: OrdinaryTaskCoverInspection & { sourceBytes: Uint8Array },
+    ratio: OrdinaryTaskCoverRatio,
+    operations: OrdinaryTaskCoverImportOperations,
+  ): Promise<Task> {
+    let stagedPath: string | null = null;
+    let promotedPath: string | null = null;
+    try {
+      return await this.enqueueAsyncCommit(async () => {
+        validateOrdinaryTaskCoverInspection(source, ratio);
+        const task = this.insertTask({ ...input, coverImageMode: 'manual', manualCoverAssetId: undefined }, true);
+        if (!isOrdinaryTask(task) || !task.managedStorageKey) {
+          throw new Error('ORDINARY_MANUAL_COVER_TASK_INVALID: Cover can only be bound to an ordinary managed task.');
+        }
+        const coverDirectory = join(dirname(this.file), 'tasks', task.managedStorageKey, 'covers');
+        await operations.ensureDirectory(coverDirectory);
+        stagedPath = join(coverDirectory, `.cover-manual-${randomUUID()}.tmp`);
+        const prepared = await operations.prepareImage({
+          sourcePath: source.sourcePath,
+          sourceBytes: source.sourceBytes,
+          destinationPath: stagedPath,
+          dimensions: ordinaryTaskCoverDimensions(ratio),
+        });
+        const asset = createOrdinaryTaskCoverAsset({
+          path: 'covers/cover-manual.png',
+          originalName: basename(source.originalName || source.sourcePath).slice(0, 512),
+          ...prepared,
+          ratio,
+          createdAt: operations.now(),
+        });
+        promotedPath = join(coverDirectory, 'cover-manual.png');
+        await operations.promoteFile(stagedPath, promotedPath);
+        stagedPath = null;
+        this.db.run(
+          `UPDATE tasks SET cover_image_mode = 'manual', ordinary_cover_asset_json = ? WHERE id = ?`,
+          [JSON.stringify(asset), task.id],
+        );
+        const row = getFirstRow<Record<string, unknown>>(this.db, 'SELECT * FROM tasks WHERE id = ?', [task.id]);
+        if (!row) throw new Error(`ORDINARY_MANUAL_COVER_TASK_NOT_FOUND: ${task.id}`);
+        return rowToTask(row);
+      });
+    } catch (error) {
+      if (stagedPath) await operations.removeFile(stagedPath).catch(() => undefined);
+      if (promotedPath) await operations.removeFile(promotedPath).catch(() => undefined);
+      throw error;
+    }
+  }
+
+  private insertTask(input: CreateTaskInput, allowBoundManualCover = false): Task {
     const now = new Date().toISOString();
     const configRow = getFirstRow<{ data: string }>(this.db, 'SELECT data FROM config WHERE id = 1');
     const config = configRow ? mergeConfig(parseJson(configRow.data, defaultConfig)) : defaultConfig;
@@ -1933,6 +2002,12 @@ export class FileDatabase {
       const templates = getRows<Record<string, unknown>>(this.db, 'SELECT * FROM custom_cover_templates ORDER BY created_at ASC')
         .map(rowToCustomCoverTemplate);
       resolveOrdinaryCoverTemplate(coverImageMode, input.coverTemplateId ?? 'cinematic-poster', templates);
+      if (coverImageMode === 'manual' && !allowBoundManualCover) {
+        throw new Error('ORDINARY_MANUAL_COVER_REQUIRED: Manual mode requires a validated managed cover asset.');
+      }
+      if (coverImageMode !== 'manual' && input.manualCoverAssetId) {
+        throw new Error('ORDINARY_MANUAL_COVER_MODE_MISMATCH: A manual cover asset id requires manual mode.');
+      }
     }
       const task: Task = {
         id: randomUUID(),
@@ -2000,6 +2075,7 @@ export class FileDatabase {
       podcastSpeakerB: input.podcastSpeakerB ?? null,
       coverImageMode,
       coverTemplateId: input.coverTemplateId ?? 'cinematic-poster',
+      ordinaryCoverAsset: null,
       htmlVideoForeground: input.htmlVideoForeground,
     };
     this.assertHistoryWritable('task', task.id);
@@ -2012,9 +2088,9 @@ export class FileDatabase {
         tts_speed, storyboard_scene_count, step3_prompt_snapshot, music_mv_json, failed_step, retry_from_step, artifact_state_path,
         video_form, llm_profile_id, material_source, product_info, material_person, draft_dir, fixed_intro, outro_cta, lock_intro_sentences,
         task_type, pipeline_step, pipeline_data, target_length, target_scenes, script_format,
-        podcast_image_mode, podcast_speakers, podcast_speaker_a, podcast_speaker_b, cover_image_mode, cover_template_id,
+        podcast_image_mode, podcast_speakers, podcast_speaker_a, podcast_speaker_b, cover_image_mode, cover_template_id, ordinary_cover_asset_json,
         html_video_foreground
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       [
         task.id,
         task.archivedAt ?? null,
@@ -2080,6 +2156,7 @@ export class FileDatabase {
         task.podcastSpeakerB ?? null,
         task.coverImageMode ?? 'off',
         task.coverTemplateId ?? 'cinematic-poster',
+        task.ordinaryCoverAsset ? JSON.stringify(task.ordinaryCoverAsset) : null,
         task.htmlVideoForeground === undefined ? null : task.htmlVideoForeground ? 1 : 0,
       ],
     );
@@ -3359,10 +3436,20 @@ function rowToTask(row: Record<string, unknown>): Task {
     podcastSpeakerB: row.podcast_speaker_b === null || row.podcast_speaker_b === undefined ? null : String(row.podcast_speaker_b),
     coverImageMode: String(row.cover_image_mode ?? 'off'),
     coverTemplateId: String(row.cover_template_id ?? 'cinematic-poster'),
+    ordinaryCoverAsset: parseOrdinaryCoverAsset(row.ordinary_cover_asset_json),
     htmlVideoForeground: row.html_video_foreground === null || row.html_video_foreground === undefined
       ? undefined
       : Number(row.html_video_foreground) === 1,
   };
+}
+
+function parseOrdinaryCoverAsset(value: unknown): OrdinaryTaskCoverAsset | null {
+  if (typeof value !== 'string' || !value) return null;
+  try {
+    return validateOrdinaryTaskCoverAsset(JSON.parse(value));
+  } catch {
+    return null;
+  }
 }
 
 function normalizedTaskTypeSql(): string {

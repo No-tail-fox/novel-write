@@ -35,5 +35,24 @@ describe('three-stage new task workbench', () => {
     expect(css).toMatch(/\.new-task-stage-panel \.new-task-track-options \.option-cloud\s*\{[\s\S]*repeat\(3,/u);
     expect(css).not.toContain('var(--shell-surface-muted)');
     expect(css).not.toMatch(/font-size:\s*clamp\(/u);
+    expect(css).toContain('.new-task-summary-actions > .primary-action:disabled');
+    expect(css).toContain('background: var(--shell-border);');
+    expect(css).toContain('cursor: not-allowed;');
+  });
+
+  it('offers ordinary manual cover import without exposing a path input', async () => {
+    const [page, draft, api] = await Promise.all([
+      readFile(new URL('../src/features/tasks/NewTaskPage.tsx', import.meta.url), 'utf8'),
+      readFile(new URL('../src/features/tasks/new-task-draft.ts', import.meta.url), 'utf8'),
+      readFile(new URL('../src/shared/storydream-api.ts', import.meta.url), 'utf8'),
+    ]);
+
+    expect(page).toContain('api.importOrdinaryTaskCover(');
+    expect(page).toContain('导入手动封面');
+    expect(page).toContain('manualCoverAssetId: manualCoverAsset?.id');
+    expect(page).toContain("coverImageMode === 'manual' && !manualCoverAsset");
+    expect(page).not.toContain('manualCoverPath');
+    expect(draft).toContain('manualCoverAsset?: OrdinaryTaskCoverSelection');
+    expect(api).toContain('importOrdinaryTaskCover: (ratio: OrdinaryTaskCoverRatio)');
   });
 });

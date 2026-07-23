@@ -35,6 +35,8 @@ import type {
   LlmConfig,
   LlmModelTestResult,
   MinimaxCloneVoice,
+  OrdinaryTaskCoverRatio,
+  OrdinaryTaskCoverSelection,
   PromptTemplate,
   PromptTemplateSummary,
   ProviderModelListRequest,
@@ -129,6 +131,7 @@ export const INVOKE_CHANNELS = Object.freeze([
   'html-video:create-task',
   'html-video:update-config',
   'html-video:import-cover',
+  'task:import-cover',
   'html-video:open-preview',
   'html-video:media-url',
   'task:create-and-run',
@@ -226,6 +229,7 @@ export type StoryDreamApi = {
   createHtmlVideoTask: (input: CreateTaskInput) => Promise<AppMutationResult | null>;
   updateHtmlVideoConfig: (id: string, changes: HtmlVideoConfigChange[]) => Promise<AppMutationResult | null>;
   importHtmlVideoCover: (id: string) => Promise<AppMutationResult | null>;
+  importOrdinaryTaskCover: (ratio: OrdinaryTaskCoverRatio) => Promise<OrdinaryTaskCoverSelection | null>;
   openHtmlVideoPreview: (id: string, sceneIndex?: number) => Promise<void>;
   getHtmlVideoMediaUrl: (id: string, path: string) => Promise<string>;
   createAndRunTask: (input: CreateTaskInput) => Promise<AppMutationResult | null>;

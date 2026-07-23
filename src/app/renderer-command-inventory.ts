@@ -121,6 +121,7 @@ export const rendererCommandInventory = {
   generateImageLab: command(owner('image-lab', 'src/features/labs/ImageLabPage.tsx', 'addRecord', 'addRecord', '智能生成', productShellTest)),
   generateVoiceLabPreview: command(owner('voice-lab', 'src/features/labs/VoiceLabPage.tsx', 'generatePreview', 'generatePreview', '生成试听', productShellTest)),
   importHtmlVideoCover: command(owner('html-video', 'src/features/html-video/HtmlVideoTabPanel.tsx', 'importManualCover', 'onClick={importManualCover}', '导入封面', 'tests/html-video-cover.test.ts')),
+  importOrdinaryTaskCover: command(owner('new-task', 'src/features/tasks/NewTaskPage.tsx', 'importOrdinaryTaskCover', 'onClick={importOrdinaryTaskCover}', '导入手动封面', 'tests/new-task-workbench-ui.test.ts')),
   importPersonAssetImages: command(owner('person-assets', 'src/features/labs/PersonAssetsPage.tsx', 'importImages', 'onClick={importImages}', '导入图片', productShellTest)),
   listProviderModels: command(owner(
     'settings',

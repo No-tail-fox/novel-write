@@ -6,11 +6,11 @@ import {
 } from '../src/features/tasks/task-control-manifest';
 
 describe('ordinary task semantic manifest', () => {
-  it('exposes off and auto while marking manual unavailable', () => {
+  it('exposes off, auto, and manual after the managed import contract is available', () => {
     expect(ORDINARY_COVER_MODE_MANIFEST).toEqual({
       off: expect.objectContaining({ available: true }),
       auto: expect.objectContaining({ available: true }),
-      manual: expect.objectContaining({ available: false }),
+      manual: expect.objectContaining({ available: true }),
     });
   });
 
@@ -20,8 +20,7 @@ describe('ordinary task semantic manifest', () => {
       .toEqual(defaultCustomCoverTemplates[0]);
     expect(() => resolveOrdinaryCoverTemplate('auto', 'missing', defaultCustomCoverTemplates))
       .toThrow(/ORDINARY_COVER_TEMPLATE_NOT_FOUND/);
-    expect(() => resolveOrdinaryCoverTemplate('manual', 'cinematic-poster', defaultCustomCoverTemplates))
-      .toThrow(/ORDINARY_MANUAL_COVER_UNAVAILABLE/);
+    expect(resolveOrdinaryCoverTemplate('manual', 'cinematic-poster', defaultCustomCoverTemplates)).toBeNull();
   });
 
   it('rejects an incomplete selected auto template', () => {

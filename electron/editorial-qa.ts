@@ -135,12 +135,19 @@ export async function captureEditorialQa(
     if (captureCase.stage && (!state.stageStatePreserved || state.layout.summaryPlacement !== expectedPlacement)) {
       throw new Error(`Editorial QA new-task interaction/layout failed in ${captureCase.id}.`);
     }
+    if (captureCase.stage === 'output' && (
+      state.manualCover.state !== 'required'
+      || !state.manualCover.importVisible
+      || !state.manualCover.createDisabled
+    )) {
+      throw new Error(`Editorial QA manual-cover state failed in ${captureCase.id}.`);
+    }
     const image = await window.webContents.capturePage();
     const png = image.toPNG();
     const capturePath = join(config.captures, `${captureCase.id}.png`);
     await writeFile(capturePath, png, { flag: 'wx' });
     await assertCapturePng(capturePath, png, image.toBitmap(), viewport.width, viewport.height);
-    captures.push({ view: captureCase.view, stage: captureCase.stage, theme: captureCase.theme, viewport: viewport.name, path: basename(capturePath), visibleText: state.visibleText, tokens: state.tokens });
+    captures.push({ view: captureCase.view, stage: captureCase.stage, theme: captureCase.theme, viewport: viewport.name, path: basename(capturePath), visibleText: state.visibleText, tokens: state.tokens, manualCover: state.manualCover });
   }
   const ownedProcessIds = [...new Set(getMetrics().map((metric) => metric.pid).filter((pid) => Number.isSafeInteger(pid) && pid > 0))];
   await writeFile(config.report, `${JSON.stringify({
@@ -160,6 +167,7 @@ interface EditorialQaCapture {
   path: string;
   visibleText: string;
   tokens: Record<string, string>;
+  manualCover: QaScenarioState['manualCover'];
 }
 
 interface EditorialQaCaptureCase {
@@ -178,6 +186,11 @@ interface QaScenarioState {
   visibleText: string;
   tokens: Record<string, string>;
   stageStatePreserved: boolean;
+  manualCover: {
+    state: string;
+    importVisible: boolean;
+    createDisabled: boolean;
+  };
   layout: {
     horizontalOverflow: number;
     clippedPrimaryControls: string[];
@@ -269,6 +282,13 @@ function qaScenarioScript(view: string, theme: string, stage?: string): string {
       const stageTab = document.querySelector('[data-new-task-stage-tab="' + stage + '"]');
       if (stageTab instanceof HTMLButtonElement) stageTab.click();
       ready = ready && await waitFor(() => document.querySelector('[data-new-task-stage="' + stage + '"]'));
+      if (stage === 'output') {
+        const coverModeGroup = document.querySelector('[role="group"][aria-label="封面生成"]');
+        const manualButton = [...(coverModeGroup?.querySelectorAll('button') ?? [])]
+          .find((button) => button.textContent?.trim() === '手动封面');
+        if (manualButton instanceof HTMLButtonElement) manualButton.click();
+        ready = ready && await waitFor(() => document.querySelector('[data-manual-cover-state="required"]'));
+      }
     }
     await document.fonts.ready;
     await new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve)));
@@ -292,6 +312,11 @@ function qaScenarioScript(view: string, theme: string, stage?: string): string {
         return rect.width > 0 && (rect.left < -1 || rect.right > window.innerWidth + 1);
       })
       .map((element) => element.getAttribute('aria-label') || element.textContent?.trim().slice(0, 40) || element.tagName);
+    const manualCoverElement = document.querySelector('[data-manual-cover-state]');
+    const manualImportButton = [...document.querySelectorAll('.manual-cover-import button')]
+      .find((button) => button.textContent?.includes('导入手动封面'));
+    const createButton = [...document.querySelectorAll('.new-task-summary-actions button')]
+      .find((button) => button.textContent?.includes('创建并开始任务'));
     return {
       ready,
       width: window.innerWidth,
@@ -300,6 +325,11 @@ function qaScenarioScript(view: string, theme: string, stage?: string): string {
       visibleText: document.body.innerText.replace(/\\s+/g, ' ').trim().slice(0, 1000),
       tokens,
       stageStatePreserved,
+      manualCover: {
+        state: manualCoverElement?.getAttribute('data-manual-cover-state') ?? 'inactive',
+        importVisible: manualImportButton instanceof HTMLButtonElement && getComputedStyle(manualImportButton).display !== 'none',
+        createDisabled: createButton instanceof HTMLButtonElement && createButton.disabled,
+      },
       layout: {
         horizontalOverflow: Math.max(0, document.documentElement.scrollWidth - window.innerWidth),
         clippedPrimaryControls,

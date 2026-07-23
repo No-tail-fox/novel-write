@@ -37,6 +37,8 @@ import {
 } from '../../shared/tts-voices';
 import type {
   AiSourceContext,
+  OrdinaryTaskCoverRatio,
+  OrdinaryTaskCoverSelection,
   PausePoint,
   PodcastSpeakerPair,
   ProcessingMode,
@@ -45,6 +47,7 @@ import type {
   TaskMode,
   TaskVideoForm,
 } from '../../shared/types';
+import { ordinaryTaskCoverDimensions, validateOrdinaryTaskCoverSelection } from '../../shared/ordinary-task-cover';
 import { useAsyncAction } from '../../ui/async-action';
 import { buildTaskCreateInput } from './task-create-input';
 import {
@@ -173,6 +176,7 @@ export function NewTaskPage({
   const [videoForm, setVideoForm] = useState<TaskVideoForm>('narration');
   const [coverImageMode, setCoverImageMode] = useState<OrdinaryCoverMode>('off');
   const [coverTemplateId, setCoverTemplateId] = useState('cinematic-poster');
+  const [manualCoverAsset, setManualCoverAsset] = useState<OrdinaryTaskCoverSelection | null>(null);
   const [podcastImageMode, setPodcastImageMode] = useState('multi');
   const [podcastSpeakers, setPodcastSpeakers] = useState<PodcastSpeakerPair>('kazai-dayi');
   const [running, setRunning] = useState(false);
@@ -261,6 +265,7 @@ export function NewTaskPage({
         videoForm,
         coverImageMode,
         coverTemplateId,
+        manualCoverAsset: manualCoverAsset ?? undefined,
         podcastImageMode,
         podcastSpeakers,
         selectedSearchSourceIds,
@@ -309,8 +314,15 @@ export function NewTaskPage({
     if (typeof values.storyboardSceneCount === 'string') setStoryboardSceneCount(values.storyboardSceneCount);
     if (values.publishMode === 'review-rewrite' || values.publishMode === 'direct-copy') setPublishMode(values.publishMode);
     if (values.videoForm === 'narration' || values.videoForm === 'two-host-podcast') setVideoForm(values.videoForm);
-    if (values.coverImageMode === 'off' || values.coverImageMode === 'auto') setCoverImageMode(values.coverImageMode);
+    if (values.coverImageMode === 'off' || values.coverImageMode === 'auto' || values.coverImageMode === 'manual') setCoverImageMode(values.coverImageMode);
     if (typeof values.coverTemplateId === 'string') setCoverTemplateId(values.coverTemplateId);
+    if (values.manualCoverAsset) {
+      try {
+        setManualCoverAsset(validateOrdinaryTaskCoverSelection(values.manualCoverAsset));
+      } catch {
+        setManualCoverAsset(null);
+      }
+    }
     if (typeof values.podcastImageMode === 'string') setPodcastImageMode(values.podcastImageMode);
     if (values.podcastSpeakers === 'kazai-dayi' || values.podcastSpeakers === 'liufei-xiaolei') setPodcastSpeakers(values.podcastSpeakers);
     if (Array.isArray(values.selectedSearchSourceIds)) setSelectedSearchSourceIds(values.selectedSearchSourceIds.filter((value): value is string => typeof value === 'string'));
@@ -384,7 +396,7 @@ export function NewTaskPage({
     ratioManuallyOverridden, ttsProvider, speaker, bgmId, referenceImagePath, pausePoint,
     processingMode, rewriteIntensity, narrativePov, keepPromotion, productInfo, materialSource,
     materialPerson, fixedIntro, outroCta, lockIntroSentences, ttsSpeed, targetLength,
-    storyboardSceneCount, publishMode, videoForm, coverImageMode, coverTemplateId,
+    storyboardSceneCount, publishMode, videoForm, coverImageMode, coverTemplateId, manualCoverAsset,
     podcastImageMode, podcastSpeakers, selectedSearchSourceIds, searchContext, researchCopy,
   ]);
 
@@ -423,6 +435,10 @@ export function NewTaskPage({
       setSelectedTaskLlmProfileId(state.config.activeLlmProfileId || state.config.llm.id || state.config.llmProfiles[0]?.id || '');
     }
   }, [state.config.activeLlmProfileId, state.config.llm.id, state.config.llmProfiles, selectedTaskLlmProfileId]);
+
+  useEffect(() => {
+    if (manualCoverAsset && manualCoverAsset.ratio !== ratio) setManualCoverAsset(null);
+  }, [ratio, manualCoverAsset]);
 
   useEffect(() => {
     if (!styleManuallyOverridden && resolvedPromptTemplate) {
@@ -558,6 +574,24 @@ export function NewTaskPage({
     });
   }
 
+  async function importOrdinaryTaskCover() {
+    if (isBrowserPreview) {
+      setDraftNotice('浏览器预览不能导入本地封面，请在 Electron 应用中操作。');
+      return;
+    }
+    if (!['9:16', '4:3', '1:1', '16:9'].includes(ratio)) {
+      setDraftNotice('当前画面比例不支持手动封面，请先选择 9:16、4:3、1:1 或 16:9。');
+      return;
+    }
+    await taskAction.run(async () => {
+      const selected = await api.importOrdinaryTaskCover(ratio as OrdinaryTaskCoverRatio);
+      if (!selected) return;
+      setManualCoverAsset(selected);
+      setCoverImageMode('manual');
+      setDraftNotice(`已导入手动封面：${selected.originalName}`);
+    }, { onError: (error) => setDraftNotice(error.message) });
+  }
+
   async function run() {
     if (isBrowserPreview) {
       setDraftNotice('浏览器预览不能执行真实流水线，请在 Electron 应用中运行任务。');
@@ -569,6 +603,10 @@ export function NewTaskPage({
     }
     if (materialSource === 'local' && (!selectedMaterialAsset || selectedMaterialAsset.count <= 0)) {
       setDraftNotice('所选人物素材至少导入 1 张图片后才能创建任务。');
+      return;
+    }
+    if (coverImageMode === 'manual' && !manualCoverAsset) {
+      setDraftNotice('请先导入与当前画面比例一致的手动封面。');
       return;
     }
     setDraftNotice('');
@@ -592,6 +630,7 @@ export function NewTaskPage({
         videoForm,
         coverImageMode,
         coverTemplateId,
+        manualCoverAssetId: manualCoverAsset?.id,
         podcastImageMode,
         podcastSpeakers: videoForm === 'two-host-podcast' ? podcastSpeakers : null,
         podcastSpeakerA: videoForm === 'two-host-podcast' ? podcastVoiceDefaults.podcastSpeakerA : null,
@@ -842,8 +881,14 @@ export function NewTaskPage({
               </div>
               <div className="new-task-field-grid">
                 <Field label="封面模板" hint={coverTemplateHint}><select className="cover-template-select" value={coverTemplateId} onChange={(event) => setCoverTemplateId(event.target.value)}>{coverTemplateSelectOptions.map(([id, label, hint]) => <option key={id} value={id}>{hint ? `${label} · ${id}` : label}</option>)}</select></Field>
-                <div><Segmented label="封面生成" value={coverImageMode} options={[...ORDINARY_AVAILABLE_COVER_MODES]} labels={ORDINARY_AVAILABLE_COVER_MODES.map((mode) => ORDINARY_COVER_MODE_MANIFEST[mode].label)} onChange={(value) => setCoverImageMode(value as OrdinaryCoverMode)} /><small className="hint-text">手动封面暂不可用，待专用素材导入与校验完成后开放。</small></div>
+                <div><Segmented label="封面生成" value={coverImageMode} options={[...ORDINARY_AVAILABLE_COVER_MODES]} labels={ORDINARY_AVAILABLE_COVER_MODES.map((mode) => ORDINARY_COVER_MODE_MANIFEST[mode].label)} onChange={(value) => setCoverImageMode(value as OrdinaryCoverMode)} /><small className="hint-text">自动模式使用封面模板；手动模式使用已校验的本地图片。</small></div>
               </div>
+              {coverImageMode === 'manual' ? (
+                <div className="manual-cover-import" data-manual-cover-state={manualCoverAsset ? 'ready' : 'required'}>
+                  <div><strong>{manualCoverAsset ? manualCoverAsset.originalName : '尚未导入手动封面'}</strong><span>{manualCoverAsset ? `${manualCoverAsset.width} × ${manualCoverAsset.height} · ${(manualCoverAsset.sizeBytes / 1024 / 1024).toFixed(2)} MB` : `需要 ${ordinaryTaskCoverDimensions(ratio as OrdinaryTaskCoverRatio).width} × ${ordinaryTaskCoverDimensions(ratio as OrdinaryTaskCoverRatio).height} 的 PNG / JPG / WebP`}</span></div>
+                  <button type="button" className="ghost-action" disabled={taskAction.busy || isBrowserPreview} onClick={importOrdinaryTaskCover}><Upload size={15} />导入手动封面</button>
+                </div>
+              ) : null}
               <Field label="主角参考图" hint="可选"><div className="upload-row"><input value={referenceImagePath} placeholder="上传后出现主角的分镜会以这张为基础保持人物一致" onChange={(event) => setReferenceImagePath(event.target.value)} /><button type="button" className="ghost-action" disabled={taskAction.busy} onClick={selectTaskReferenceImage}><Upload size={15} />上传主角参考图</button></div></Field>
             </section>
           ) : null}
@@ -863,6 +908,7 @@ export function NewTaskPage({
             <div><dt>画面比例</dt><dd>{ratio}</dd></div>
             <div><dt>配音角色</dt><dd>{videoForm === 'two-host-podcast' ? podcastSpeakers : taskSpeakerLabel(ttsProvider, speaker)}</dd></div>
             <div><dt>草稿模板</dt><dd>{draftTemplateLabel(templateId, state.draftTemplates)}</dd></div>
+            <div><dt>封面方式</dt><dd>{coverImageMode === 'manual' ? (manualCoverAsset?.originalName ?? '待导入') : ORDINARY_COVER_MODE_MANIFEST[coverImageMode].label}</dd></div>
           </dl>
           <div className="new-task-readiness">
             <span className={selectedTaskLlmProfileId ? 'ready' : ''}><Check size={15} />LLM {selectedTaskLlmProfileId ? '已配置' : '未配置'}</span>
@@ -870,7 +916,7 @@ export function NewTaskPage({
             <span className={state.config.jianying.draftPath ? 'ready' : ''}><Check size={15} />剪映目录{state.config.jianying.draftPath ? '可写' : '未配置'}</span>
           </div>
           <div className="new-task-summary-actions">
-            <button type="button" className="primary-action" onClick={run} disabled={running || isBrowserPreview || isLocalMaterialInvalid || (mode === 'paste' ? inputText.trim().length === 0 : aiKeyword.trim().length === 0)}>
+            <button type="button" className="primary-action" onClick={run} disabled={running || isBrowserPreview || isLocalMaterialInvalid || (coverImageMode === 'manual' && !manualCoverAsset) || (mode === 'paste' ? inputText.trim().length === 0 : aiKeyword.trim().length === 0)}>
               {running ? <Loader2 className="spin" size={17} /> : <Play size={17} />}{running ? '运行中' : '创建并开始任务'}
             </button>
             <div className="new-task-draft-actions">

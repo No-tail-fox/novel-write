@@ -3,7 +3,7 @@ import { execFile } from 'node:child_process';
 import { createHash, randomUUID } from 'node:crypto';
 import { existsSync } from 'node:fs';
 import { mkdir, readFile, rename, rm, stat, writeFile } from 'node:fs/promises';
-import { dirname, extname, isAbsolute, join, relative, resolve } from 'node:path';
+import { basename, dirname, extname, isAbsolute, join, relative, resolve } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { promisify } from 'node:util';
 import { readTaskArtifactSnapshot } from '../src/shared/artifact-preview';
@@ -15,6 +15,16 @@ import { detectJianyingDraftPath, resolveRuntimeJianyingDraftPath } from '../src
 import { loadJianyingEffectCatalog } from '../src/shared/jianying-effects';
 import { runHtmlVideoPipeline, synchronizeHtmlVideoPipelineCheckpoint } from '../src/shared/html-video-runner';
 import { MAX_HTML_VIDEO_COVER_BYTES, type HtmlVideoCoverImageProcessor, type HtmlVideoCoverInspection } from '../src/shared/html-video-cover';
+import {
+  MAX_ORDINARY_TASK_COVER_BYTES,
+  createOrdinaryTaskCoverAsset,
+  createOrdinaryTaskCoverSelection,
+  ordinaryTaskCoverDimensions,
+  validateOrdinaryTaskCoverInspection,
+  validateOrdinaryTaskCoverSelection,
+  type OrdinaryTaskCoverImageProcessor,
+  type OrdinaryTaskCoverInspection,
+} from '../src/shared/ordinary-task-cover';
 import { htmlVideoVisibleSteps, isHtmlVideoTask, parseHtmlVideoPipelineData, recoverHtmlVideoPipelineDataForRetry, type HtmlVideoPipelineRetryPatch } from '../src/shared/html-video-workflow';
 import { generateConfiguredVoicePreview } from '../src/shared/media-providers';
 import { createPersonAsset, deletePersonAsset, importPersonAssetFiles, listPersonAssets, listPersonImages, renamePersonAsset } from '../src/shared/person-assets';
@@ -27,7 +37,7 @@ import { runStoryboundMediaSidecar } from '../src/shared/storybound-sidecar';
 import { FileDatabase, type HistoryDeletionCleanup, type HistoryTombstone } from '../src/shared/storage';
 import { createHtmlVideoRuntimeProviders, createTaskRuntimeProviders } from '../src/shared/task-runtime-providers';
 import { assertTaskLifecycleAction } from '../src/shared/task-progress';
-import type { AccountProfile, ActivationState, AppConfig, AppDelta, AppDeltaReconcileRequest, AppDeltaReconcileResult, AppStatePatch, BookSelectionInput, ConfigTestTarget, CreateTaskInput, CreateViralAnalysisInput, CursorRequest, CustomStyle, CustomStyleGenerateInput, DraftTemplate, HistoryFamily, HistoryListRequest, HtmlVideoConfigChange, HtmlVideoPipelineDataV2, ImageLabGenerateInput, ImageLabRecord, ImageLabSummary, ImaKnowledgeRequest, LlmConfig, PromptTemplate, ProviderModelListRequest, ResearchCopyComposeInput, SequencedTaskEvent, Task, TaskStatus, TaskStepRerunMode, UiPreferencesUpdate, ViralAnalysisRecord, ViralAnalysisResult, ViralAnalysisStatus, ViralProductionTaskOptions, VolcengineSpeakerListRequest, VoiceLabGenerateInput, VoiceLabRecord, VoiceLabSummary } from '../src/shared/types';
+import type { AccountProfile, ActivationState, AppConfig, AppDelta, AppDeltaReconcileRequest, AppDeltaReconcileResult, AppStatePatch, BookSelectionInput, ConfigTestTarget, CreateTaskInput, CreateViralAnalysisInput, CursorRequest, CustomStyle, CustomStyleGenerateInput, DraftTemplate, HistoryFamily, HistoryListRequest, HtmlVideoConfigChange, HtmlVideoPipelineDataV2, ImageLabGenerateInput, ImageLabRecord, ImageLabSummary, ImaKnowledgeRequest, LlmConfig, OrdinaryTaskCoverRatio, OrdinaryTaskCoverSelection, PromptTemplate, ProviderModelListRequest, ResearchCopyComposeInput, SequencedTaskEvent, Task, TaskStatus, TaskStepRerunMode, UiPreferencesUpdate, ViralAnalysisRecord, ViralAnalysisResult, ViralAnalysisStatus, ViralProductionTaskOptions, VolcengineSpeakerListRequest, VoiceLabGenerateInput, VoiceLabRecord, VoiceLabSummary } from '../src/shared/types';
 import { boundViralDiagnosticText, createViralProductionTaskInput, detectViralPlatform, runViralAnalysis, viralCheckpointResumeState } from '../src/shared/viral-analysis';
 import { createViralRuntimeProviders } from '../src/shared/viral-runtime';
 import { listVolcengineSpeakers } from '../src/shared/volcengine-speakers';
@@ -917,6 +927,137 @@ const prepareHtmlVideoCoverImage: HtmlVideoCoverImageProcessor = async (input) =
   };
 };
 
+function ordinaryTaskCoverPendingPaths(id: string): { image: string; metadata: string } {
+  if (!/^[a-f0-9]{8}-[a-f0-9]{4}-[1-5][a-f0-9]{3}-[89ab][a-f0-9]{3}-[a-f0-9]{12}$/iu.test(id)) {
+    throw new Error('ORDINARY_MANUAL_COVER_ID_INVALID: 手动封面资产标识无效。');
+  }
+  const root = join(appDataDir(), 'pending-task-covers');
+  return { image: join(root, `${id}.png`), metadata: join(root, `${id}.json`) };
+}
+
+async function inspectOrdinaryTaskCoverImage(
+  sourcePath: string,
+  ratio: OrdinaryTaskCoverRatio,
+): Promise<OrdinaryTaskCoverInspection & { sourceBytes: Uint8Array }> {
+  const value = await stat(sourcePath);
+  if (!value.isFile()) {
+    throw new Error('ORDINARY_MANUAL_COVER_SOURCE_INVALID: 封面图片必须是普通文件。');
+  }
+  const sourceBytes = await readFile(sourcePath);
+  if (sourceBytes.length <= 0 || sourceBytes.length > MAX_ORDINARY_TASK_COVER_BYTES) {
+    throw new Error(`ORDINARY_MANUAL_COVER_SOURCE_INVALID: 封面图片必须是 1 到 ${MAX_ORDINARY_TASK_COVER_BYTES} 字节的普通文件。`);
+  }
+  const extension = extname(sourcePath).toLowerCase();
+  const mimeType = extension === '.png'
+    ? 'image/png'
+    : extension === '.jpg' || extension === '.jpeg'
+      ? 'image/jpeg'
+      : extension === '.webp'
+        ? 'image/webp'
+        : '';
+  if (!mimeType) throw new Error('ORDINARY_MANUAL_COVER_SOURCE_INVALID: 封面图片格式不受支持。');
+  const image = nativeImage.createFromBuffer(sourceBytes);
+  if (image.isEmpty()) throw new Error('ORDINARY_MANUAL_COVER_SOURCE_INVALID: 无法解码所选封面图片。');
+  const size = image.getSize();
+  const inspection = validateOrdinaryTaskCoverInspection({
+    sourcePath,
+    exists: true,
+    isFile: true,
+    sizeBytes: sourceBytes.length,
+    width: size.width,
+    height: size.height,
+    mimeType,
+    originalName: basename(sourcePath),
+  }, ratio);
+  return { ...inspection, sourceBytes };
+}
+
+const prepareOrdinaryTaskCoverImage: OrdinaryTaskCoverImageProcessor = async (input) => {
+  const source = nativeImage.createFromBuffer(Buffer.from(input.sourceBytes));
+  if (source.isEmpty()) throw new Error('ORDINARY_MANUAL_COVER_SOURCE_INVALID: 无法解码封面图片。');
+  const resized = source.resize({ width: input.dimensions.width, height: input.dimensions.height, quality: 'best' });
+  const size = resized.getSize();
+  if (size.width !== input.dimensions.width || size.height !== input.dimensions.height) {
+    throw new Error('ORDINARY_MANUAL_COVER_DIMENSIONS_INVALID: 无法生成精确尺寸的封面图片。');
+  }
+  const bytes = resized.toPNG();
+  if (bytes.length <= 0 || bytes.length > MAX_ORDINARY_TASK_COVER_BYTES) {
+    throw new Error('ORDINARY_MANUAL_COVER_OUTPUT_INVALID: 规范化后的封面图片大小无效。');
+  }
+  await writeFile(input.destinationPath, bytes, { flag: 'wx' });
+  return {
+    sizeBytes: bytes.length,
+    width: size.width,
+    height: size.height,
+    mimeType: 'image/png',
+    sha256: createHash('sha256').update(bytes).digest('hex'),
+  };
+};
+
+async function stageOrdinaryTaskCover(
+  inspection: OrdinaryTaskCoverInspection & { sourceBytes: Uint8Array },
+  ratio: OrdinaryTaskCoverRatio,
+): Promise<OrdinaryTaskCoverSelection> {
+  validateOrdinaryTaskCoverInspection(inspection, ratio);
+  const id = randomUUID();
+  const paths = ordinaryTaskCoverPendingPaths(id);
+  const root = dirname(paths.image);
+  const tempImage = join(root, `.${id}-${randomUUID()}.tmp`);
+  await mkdir(root, { recursive: true });
+  try {
+    const prepared = await prepareOrdinaryTaskCoverImage({
+      sourcePath: inspection.sourcePath,
+      sourceBytes: inspection.sourceBytes,
+      destinationPath: tempImage,
+      dimensions: ordinaryTaskCoverDimensions(ratio),
+    });
+    const asset = createOrdinaryTaskCoverAsset({
+      path: 'covers/cover-manual.png',
+      originalName: basename(inspection.originalName || inspection.sourcePath).slice(0, 512),
+      ...prepared,
+      ratio,
+      createdAt: new Date().toISOString(),
+    });
+    const selection = createOrdinaryTaskCoverSelection(id, asset);
+    await rename(tempImage, paths.image);
+    await writeFile(paths.metadata, JSON.stringify(selection), { encoding: 'utf8', flag: 'wx' });
+    return selection;
+  } catch (error) {
+    await Promise.all([
+      rm(tempImage, { force: true }),
+      rm(paths.image, { force: true }),
+      rm(paths.metadata, { force: true }),
+    ]).catch(() => undefined);
+    throw error;
+  }
+}
+
+async function readStagedOrdinaryTaskCover(id: string): Promise<{
+  selection: OrdinaryTaskCoverSelection;
+  inspection: OrdinaryTaskCoverInspection;
+  bytes: Uint8Array;
+}> {
+  const paths = ordinaryTaskCoverPendingPaths(id);
+  const selection = validateOrdinaryTaskCoverSelection(JSON.parse(await readFile(paths.metadata, 'utf8')));
+  if (selection.id !== id) throw new Error('ORDINARY_MANUAL_COVER_ID_INVALID: 手动封面元数据不匹配。');
+  const inspected = await inspectOrdinaryTaskCoverImage(paths.image, selection.ratio);
+  const { sourceBytes: bytes, ...inspection } = inspected;
+  const sha256 = createHash('sha256').update(bytes).digest('hex');
+  if (bytes.length !== selection.sizeBytes || sha256 !== selection.sha256) {
+    throw new Error('ORDINARY_MANUAL_COVER_TAMPERED: 手动封面暂存文件已变化，请重新导入。');
+  }
+  return {
+    selection,
+    inspection: { ...inspection, originalName: selection.originalName },
+    bytes,
+  };
+}
+
+async function removeStagedOrdinaryTaskCover(id: string): Promise<void> {
+  const paths = ordinaryTaskCoverPendingPaths(id);
+  await Promise.all([rm(paths.image, { force: true }), rm(paths.metadata, { force: true })]);
+}
+
 async function persistHtmlVideoTaskCheckpoint(
   database: FileDatabase,
   taskId: string,
@@ -1645,9 +1786,42 @@ async function getHtmlVideoTask(database: FileDatabase, id: string): Promise<Tas
   return task;
 }
 
+trustedHandle('task:import-cover', async (_event, ratio: OrdinaryTaskCoverRatio) => {
+  const result = await dialog.showOpenDialog({
+    title: `导入普通任务封面（${ratio}）`,
+    properties: ['openFile'],
+    filters: [{ name: 'Images', extensions: ['png', 'jpg', 'jpeg', 'webp'] }],
+  });
+  if (result.canceled || !result.filePaths[0]) return null;
+  const inspection = await inspectOrdinaryTaskCoverImage(result.filePaths[0], ratio);
+  return stageOrdinaryTaskCover(inspection, ratio);
+});
+
 trustedHandle('task:create-and-run', async (_event, input: CreateTaskInput) => {
   const database = await getDb();
-  const task = await database.createTask(input);
+  let task: Task;
+  if (input.coverImageMode === 'manual') {
+    if (!input.manualCoverAssetId) {
+      throw new Error('ORDINARY_MANUAL_COVER_REQUIRED: 请先导入手动封面。');
+    }
+    const staged = await readStagedOrdinaryTaskCover(input.manualCoverAssetId);
+    if ((input.ratio ?? '9:16') !== staged.selection.ratio) {
+      throw new Error('ORDINARY_MANUAL_COVER_RATIO_MISMATCH: 当前画面比例与已导入封面不一致，请重新导入。');
+    }
+    task = await database.createTaskWithOrdinaryCover({ ...input }, { ...staged.inspection, sourceBytes: staged.bytes }, staged.selection.ratio, {
+      prepareImage: prepareOrdinaryTaskCoverImage,
+      promoteFile: (source, target) => rename(source, target),
+      removeFile: async (path) => { await rm(path, { force: true }); },
+      ensureDirectory: async (path) => { await mkdir(path, { recursive: true }); },
+      now: () => new Date().toISOString(),
+    });
+    await removeStagedOrdinaryTaskCover(input.manualCoverAssetId).catch(() => undefined);
+  } else {
+    if (input.manualCoverAssetId) {
+      throw new Error('ORDINARY_MANUAL_COVER_MODE_MISMATCH: 手动封面资产只能用于手动封面模式。');
+    }
+    task = await database.createTask(input);
+  }
   const activityReservation = historyActivityRegistry.reserveActive('task', task.id);
   let reservationTransferred = false;
   try {

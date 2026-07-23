@@ -917,6 +917,9 @@ export function makeFallbackApi(setState: (state: AppState) => void): StoryDream
     async importHtmlVideoCover() {
       throw new Error('浏览器预览不能导入本地封面，请在 Electron 桌面端操作。');
     },
+    async importOrdinaryTaskCover() {
+      throw new Error('浏览器预览不能导入普通任务封面，请在 Electron 桌面端操作。');
+    },
     async openHtmlVideoPreview() {
       throw new Error('浏览器预览仅创建任务快照，未执行特权 HTML 渲染。请在 Electron 桌面端打开预览。');
     },

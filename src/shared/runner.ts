@@ -1,4 +1,5 @@
 import { copyFile, mkdir, readFile, writeFile } from 'node:fs/promises';
+import { createHash } from 'node:crypto';
 import { join } from 'node:path';
 import type { AiSourceContext, BgmItem, CharacterCard, CoverMetadata, CustomCoverTemplate, DraftTemplate, ImagePrompt, MusicPlan, PipelineArtifact, PromptStepTemplateType, PromptTemplate, RewriteEvaluationResult, SequencedTaskEvent, StoryboardScene, Task, TaskArtifactImageErrorPreview, TaskStepRerunMode } from './types';
 import { buildCoverMetadata, buildSubtitleTrack } from './story';
@@ -15,6 +16,7 @@ import { copyPersonMaterialsForScenes } from './person-assets';
 import { withPipelineStateLock } from './pipeline-cache';
 import { isOrdinaryTask, resolveOrdinaryCoverTemplate } from '../features/tasks/task-control-manifest';
 import { taskTerminalStep } from './task-progress';
+import { validateOrdinaryTaskCoverAsset } from './ordinary-task-cover';
 
 export interface RunTaskOptions {
   appDataDir: string;
@@ -1671,6 +1673,23 @@ async function ensureImages(input: {
 }): Promise<void> {
   const { db, task, artifact, options, emit, markStep, pipeline } = input;
   throwIfAborted(options.signal);
+  if (isOrdinaryTask(task) && task.coverImageMode === 'manual' && pipeline.assets.cover.length === 0) {
+    const asset = validateOrdinaryTaskCoverAsset(task.ordinaryCoverAsset);
+    if (!task.managedStorageKey) {
+      throw new Error('ORDINARY_MANUAL_COVER_STORAGE_INVALID: Task has no managed storage key.');
+    }
+    if (task.ratio !== asset.ratio) {
+      throw new Error('ORDINARY_MANUAL_COVER_RATIO_MISMATCH: Task ratio does not match the managed cover.');
+    }
+    const coverPath = join(input.workDir, ...asset.path.split('/'));
+    const coverBytes = await readFile(coverPath);
+    const coverHash = createHash('sha256').update(coverBytes).digest('hex');
+    if (coverBytes.length !== asset.sizeBytes || coverHash !== asset.sha256) {
+      throw new Error('ORDINARY_MANUAL_COVER_TAMPERED: Managed cover asset does not match its metadata.');
+    }
+    pipeline.assets.cover = [{ sceneId: 0, path: coverPath }];
+    await emit('cover_ready', 4, 'Producer', '已使用手动封面图片素材', { path: asset.path, ratio: asset.ratio });
+  }
   if (task.materialSource === 'local') {
     const person = task.materialPerson?.trim();
     if (!person) {

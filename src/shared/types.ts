@@ -388,7 +388,29 @@ export interface Task {
   podcastSpeakerB?: string | null;
   coverImageMode?: string;
   coverTemplateId?: string;
+  ordinaryCoverAsset?: OrdinaryTaskCoverAsset | null;
+  manualCoverAssetId?: string;
   htmlVideoForeground?: boolean;
+}
+
+export type OrdinaryTaskCoverRatio = '9:16' | '4:3' | '1:1' | '16:9';
+
+export interface OrdinaryTaskCoverSelection {
+  id: string;
+  originalName: string;
+  sizeBytes: number;
+  width: number;
+  height: number;
+  mimeType: 'image/png';
+  sha256: string;
+  ratio: OrdinaryTaskCoverRatio;
+  createdAt: string;
+}
+
+export interface OrdinaryTaskCoverAsset extends Omit<OrdinaryTaskCoverSelection, 'id'> {
+  version: 1;
+  mode: 'manual';
+  path: string;
 }
 
 export type HtmlVideoVisibleStep = 'rewrite' | 'planning' | 'assets' | 'voice' | 'preview' | 'render';
@@ -679,11 +701,10 @@ export type CreateTaskInput = Partial<
     | 'podcastSpeakerB'
     | 'coverImageMode'
     | 'coverTemplateId'
+    | 'manualCoverAssetId'
     | 'htmlVideoForeground'
   >
-> & {
-  inputText: string;
-};
+> & { inputText: string };
 
 export interface TaskEvent {
   id?: string;

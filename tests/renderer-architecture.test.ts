@@ -286,7 +286,7 @@ describe('task feature ownership architecture', () => {
     }
   });
 
-  it('retains the complete 51-field ordinary task input contract', async () => {
+  it('retains the complete ordinary task input contract, including the managed cover id', async () => {
     const [types, builder, page] = await Promise.all([
       source('src/shared/types.ts'),
       source('src/features/tasks/task-create-input.ts'),
@@ -294,7 +294,7 @@ describe('task feature ownership architecture', () => {
     ]);
     const createInput = types.slice(types.indexOf('export type CreateTaskInput'), types.indexOf('export interface TaskEvent'));
     const fields = [...createInput.matchAll(/^\s*\| '([^']+)'/gmu)].map((match) => match[1]);
-    expect(fields).toHaveLength(51);
+    expect(fields).toHaveLength(52);
     expect(builder).toContain('...input');
     const explicitlyOwned = fields.filter((field) => page.includes(field));
     expect(explicitlyOwned.length).toBeGreaterThanOrEqual(35);

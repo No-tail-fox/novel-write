@@ -184,6 +184,10 @@ describe('IPC runtime contract', () => {
     expect(() => importCoverSchema.parse('')).toThrow();
     expect(() => importCoverSchema.parse({ id: 'html-task-1', sourcePath: 'C:/outside.png' })).toThrow();
 
+    const ordinaryImportCoverSchema = contract.ipcInputSchemas['task:import-cover'];
+    expect(ordinaryImportCoverSchema.parse('9:16')).toBe('9:16');
+    expect(() => ordinaryImportCoverSchema.parse({ ratio: '9:16', sourcePath: 'C:/outside.png' })).toThrow();
+
     expect(contract.createTaskSchema.parse({
       inputText: 'hello',
       targetScenes: 500,

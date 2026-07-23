@@ -1,8 +1,9 @@
 import { describe, expect, it, vi } from 'vitest';
 import initSqlJs from 'sql.js';
-import { mkdtemp, readFile, rename, rm, writeFile } from 'node:fs/promises';
+import { mkdir, mkdtemp, readFile, rename, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import { createHash } from 'node:crypto';
 import { FileDatabase } from '@shared/storage';
 import { defaultConfig } from '@shared/config';
 import { convertCozeWorkflowToDraftTemplate } from '@shared/coze-workflow-converter';
@@ -177,6 +178,7 @@ describe('file database', () => {
         'script_format',
         'cover_image_mode',
         'cover_template_id',
+        'ordinary_cover_asset_json',
       ]));
 
       const promptColumns = sqlite.exec('PRAGMA table_info(user_prompt_templates)')[0]?.values.map((row) => String(row[1])) ?? [];
@@ -247,7 +249,7 @@ describe('file database', () => {
         title: 'Unsupported manual cover',
         inputText: 'source',
         coverImageMode: 'manual',
-      })).rejects.toThrow(/ORDINARY_MANUAL_COVER_UNAVAILABLE/);
+      })).rejects.toThrow(/ORDINARY_MANUAL_COVER_REQUIRED/);
       expect((await db.getState()).tasks).toHaveLength(1);
       await db.close();
 
@@ -258,6 +260,56 @@ describe('file database', () => {
         coverImageMode: 'off',
       });
       await reopened.close();
+    } finally {
+      await rm(dir, { recursive: true, force: true });
+    }
+  });
+
+  it('atomically binds a validated ordinary cover into task-managed storage', async () => {
+    const dir = await mkdtemp(join(tmpdir(), 'storydream-ordinary-managed-cover-'));
+    const file = join(dir, 'app.db');
+    const sourcePath = join(dir, 'selected.jpg');
+    const managedBytes = Buffer.from('normalized-managed-cover');
+    try {
+      await writeFile(sourcePath, 'selected-source');
+      const db = await FileDatabase.open(file);
+      const task = await db.createTaskWithOrdinaryCover({
+        title: 'Manual cover task',
+        inputText: 'source',
+        ratio: '9:16',
+        coverImageMode: 'manual',
+        manualCoverAssetId: '1f3de8ea-6775-43ab-971c-1e922eb19a57',
+      }, {
+        sourcePath,
+        sourceBytes: Buffer.from('verified-source-bytes'),
+        exists: true,
+        isFile: true,
+        sizeBytes: 1024,
+        width: 720,
+        height: 1280,
+        mimeType: 'image/jpeg',
+        originalName: 'selected.jpg',
+      }, '9:16', {
+        prepareImage: async ({ destinationPath, sourceBytes }) => {
+          expect(sourceBytes).toEqual(Buffer.from('verified-source-bytes'));
+          await writeFile(destinationPath, managedBytes, { flag: 'wx' });
+          return {
+            sizeBytes: managedBytes.length,
+            width: 720,
+            height: 1280,
+            mimeType: 'image/png',
+            sha256: createHash('sha256').update(managedBytes).digest('hex'),
+          };
+        },
+        promoteFile: (source, target) => rename(source, target),
+        removeFile: async (path) => { await rm(path, { force: true }); },
+        ensureDirectory: async (path) => { await mkdir(path, { recursive: true }); },
+        now: () => '2026-07-23T00:00:00.000Z',
+      });
+      expect(task.coverImageMode).toBe('manual');
+      expect(task.ordinaryCoverAsset).toMatchObject({ path: 'covers/cover-manual.png', ratio: '9:16' });
+      expect(await readFile(join(dir, 'tasks', task.managedStorageKey!, 'covers', 'cover-manual.png'))).toEqual(managedBytes);
+      await db.close();
     } finally {
       await rm(dir, { recursive: true, force: true });
     }

@@ -36,6 +36,8 @@ import type {
   JianyingEffectCatalog,
   LlmConfig,
   MinimaxCloneVoice,
+  OrdinaryTaskCoverRatio,
+  OrdinaryTaskCoverSelection,
   PromptTemplate,
   PromptTemplateSummary,
   ProviderModelListRequest,
@@ -210,6 +212,8 @@ export const storyDreamApi = {
     invokeTrusted('html-video:update-config', { id, changes }),
   importHtmlVideoCover: (id: string): Promise<AppMutationResult | null> =>
     invokeTrusted('html-video:import-cover', id),
+  importOrdinaryTaskCover: (ratio: OrdinaryTaskCoverRatio): Promise<OrdinaryTaskCoverSelection | null> =>
+    invokeTrusted('task:import-cover', ratio),
   openHtmlVideoPreview: (id: string, sceneIndex?: number): Promise<void> =>
     invokeTrusted('html-video:open-preview', { id, sceneIndex }),
   getHtmlVideoMediaUrl: (id: string, path: string): Promise<string> =>

@@ -55,6 +55,7 @@ export const NEW_TASK_CREATE_FIELD_STAGE = {
   podcastSpeakerB: 'system',
   coverImageMode: 'output',
   coverTemplateId: 'output',
+  manualCoverAssetId: 'output',
   htmlVideoForeground: 'system',
 } as const satisfies Record<keyof CreateTaskInput, NewTaskFieldStage>;
 
@@ -72,7 +73,7 @@ export const NEW_TASK_PAUSE_OPTIONS = pauseOptions.filter(([id]) => id !== 'cust
 export const ORDINARY_COVER_MODE_MANIFEST = {
   off: { label: '关闭', available: true },
   auto: { label: '自动', available: true },
-  manual: { label: '手动封面', available: false },
+  manual: { label: '手动封面', available: true },
 } as const;
 
 export type OrdinaryCoverMode = keyof typeof ORDINARY_COVER_MODE_MANIFEST;
@@ -94,9 +95,7 @@ export function resolveOrdinaryCoverTemplate(
 ): CustomCoverTemplate | null {
   const mode = parseOrdinaryCoverMode(modeInput ?? 'off');
   if (mode === 'off') return null;
-  if (mode === 'manual') {
-    throw new Error('ORDINARY_MANUAL_COVER_UNAVAILABLE: 手动封面暂不可用，请先使用关闭或自动封面。');
-  }
+  if (mode === 'manual') return null;
   const selected = templates.find((template) => template.id === templateId);
   if (!selected) {
     throw new Error(`ORDINARY_COVER_TEMPLATE_NOT_FOUND: Cover template does not exist: ${templateId ?? ''}`);

@@ -42,6 +42,11 @@ describe('editorial Electron QA configuration', () => {
     }
     expect(source).toContain("document.querySelector('[data-new-task-stage-tab=\"' + stage + '\"]')");
     expect(source).toContain('stageStatePreserved = reopenedTitle instanceof HTMLInputElement');
+    expect(source).toContain("button.textContent?.trim() === '手动封面'");
+    expect(source).toContain("document.querySelector('[data-manual-cover-state=\"required\"]')");
+    expect(source).toContain("state.manualCover.state !== 'required'");
+    expect(source).toContain('!state.manualCover.importVisible');
+    expect(source).toContain('!state.manualCover.createDisabled');
     expect(source).toContain('horizontalOverflow: Math.max(0, document.documentElement.scrollWidth - window.innerWidth)');
     expect(source).toContain("const expectedPlacement = viewport.name === 'compact' ? 'below' : 'right';");
   });

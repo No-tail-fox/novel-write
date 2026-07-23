@@ -1,6 +1,7 @@
 import type {
   AiSourceContext,
   NarrativePov,
+  OrdinaryTaskCoverSelection,
   PausePoint,
   PodcastSpeakerPair,
   ProcessingMode,
@@ -54,6 +55,7 @@ export interface NewTaskDraftValues {
   videoForm?: TaskVideoForm;
   coverImageMode?: OrdinaryCoverMode;
   coverTemplateId?: string;
+  manualCoverAsset?: OrdinaryTaskCoverSelection;
   podcastImageMode?: string;
   podcastSpeakers?: PodcastSpeakerPair;
   selectedSearchSourceIds?: string[];

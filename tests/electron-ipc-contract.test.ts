@@ -17,6 +17,25 @@ describe('electron ipc contract', () => {
     expect(apiContract).toContain('saveBookSelection: (input: BookSelectionInput) => Promise<BookSelectionRecord>');
   });
 
+  it('keeps ordinary manual-cover selection and paths in the main process', async () => {
+    const [main, preload, apiContract] = await Promise.all([
+      readFile(new URL('../electron/main.ts', import.meta.url), 'utf8'),
+      readFile(new URL('../electron/preload.ts', import.meta.url), 'utf8'),
+      readFile(new URL('../src/shared/storydream-api.ts', import.meta.url), 'utf8'),
+    ]);
+    const start = main.indexOf("trustedHandle('task:import-cover'");
+    const end = main.indexOf("trustedHandle('task:create-and-run'", start);
+    const handler = main.slice(start, end);
+
+    expect(start).toBeGreaterThan(-1);
+    expect(handler).toContain('dialog.showOpenDialog');
+    expect(handler).toContain('inspectOrdinaryTaskCoverImage');
+    expect(handler).toContain('stageOrdinaryTaskCover');
+    expect(preload).toContain("invokeTrusted('task:import-cover', ratio)");
+    expect(apiContract).toContain('importOrdinaryTaskCover: (ratio: OrdinaryTaskCoverRatio)');
+    expect(handler).not.toContain('input.sourcePath');
+  });
+
   it('opens only existing directories and surfaces shell opener errors', async () => {
     const root = await mkdtemp(join(tmpdir(), 'storydream-open-directory-'));
     const filePath = join(root, 'not-a-directory.txt');

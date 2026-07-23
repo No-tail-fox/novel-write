@@ -967,7 +967,7 @@ describe('product shell ui', () => {
       'api.createAndRunTask',
       '请先选择人物素材。',
       '所选人物素材至少导入 1 张图片后才能创建任务。',
-      'disabled={running || isBrowserPreview || isLocalMaterialInvalid || (mode === \'paste\' ? inputText.trim().length === 0 : aiKeyword.trim().length === 0)}',
+      'disabled={running || isBrowserPreview || isLocalMaterialInvalid || (coverImageMode === \'manual\' && !manualCoverAsset) || (mode === \'paste\' ? inputText.trim().length === 0 : aiKeyword.trim().length === 0)}',
       'catch (error)',
       'error instanceof Error ? error.message : String(error)',
     ]) {
@@ -2998,7 +2998,9 @@ describe('product shell ui', () => {
     expect(page).toContain('state.customCoverTemplates.map');
     expect(page).toContain('buildTaskCreateInput');
     expect(page).not.toContain('keepPromotion: keepPromotion || Boolean(productInfo)');
-    expect(page).toContain('手动封面暂不可用');
+    expect(page).toContain('导入手动封面');
+    expect(page).toContain('api.importOrdinaryTaskCover');
+    expect(page).toContain("coverImageMode === 'manual' && !manualCoverAsset");
     expect(page).toContain('启用后保留原素材中的商品与推广信息');
     expect(page).not.toContain('改写时删除带货段落');
   });

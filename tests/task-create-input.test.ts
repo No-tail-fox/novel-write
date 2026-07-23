@@ -30,10 +30,23 @@ describe('ordinary task create input', () => {
     }, defaultCustomCoverTemplates)).toThrow(/ORDINARY_COVER_TEMPLATE_NOT_FOUND/);
   });
 
-  it('rejects manual cover creation until a validated manual asset contract exists', () => {
+  it('accepts manual only with an opaque managed import id and never a renderer path', () => {
+    expect(buildTaskCreateInput({
+      inputText: 'source',
+      coverImageMode: 'manual',
+      manualCoverAssetId: '1f3de8ea-6775-43ab-971c-1e922eb19a57',
+    }, defaultCustomCoverTemplates)).toMatchObject({
+      coverImageMode: 'manual',
+      manualCoverAssetId: '1f3de8ea-6775-43ab-971c-1e922eb19a57',
+    });
     expect(() => buildTaskCreateInput({
       inputText: 'source',
       coverImageMode: 'manual',
-    }, defaultCustomCoverTemplates)).toThrow(/ORDINARY_MANUAL_COVER_UNAVAILABLE/);
+    }, defaultCustomCoverTemplates)).toThrow(/ORDINARY_MANUAL_COVER_REQUIRED/);
+    expect(() => buildTaskCreateInput({
+      inputText: 'source',
+      coverImageMode: 'manual',
+      manualCoverAssetId: 'C:/outside/cover.png',
+    }, defaultCustomCoverTemplates)).toThrow(/ORDINARY_MANUAL_COVER_ID_INVALID/);
   });
 });

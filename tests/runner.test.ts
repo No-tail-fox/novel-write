@@ -1,7 +1,8 @@
 import { describe, expect, it } from 'vitest';
-import { mkdir, mkdtemp, readdir, readFile, rm, writeFile } from 'node:fs/promises';
+import { mkdir, mkdtemp, readdir, readFile, rename, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import { createHash } from 'node:crypto';
 import { FileDatabase as PersistentFileDatabase, type FileDatabaseDependencies } from '@shared/storage';
 import { runTask as runTaskWithManagedWorkDir, type RunTaskOptions } from '@shared/runner';
 import { markTaskStepForRerun } from '@shared/pipeline-cache';
@@ -1713,6 +1714,82 @@ describe('task runner', () => {
     }
   });
 
+  it('uses the managed manual cover without calling the automatic cover provider and passes it to Jianying', async () => {
+    const dir = await mkdtemp(join(tmpdir(), 'storybound-runner-manual-managed-cover-'));
+    const db = await FileDatabase.open(join(dir, 'data.db'));
+    const draftRootDir = join(dir, 'JianyingPro Drafts');
+    const mediaDir = join(dir, 'media');
+    const sourcePath = join(dir, 'selected-cover.png');
+    const imageSceneIds: number[][] = [];
+    const draftPayloads: PyJianYingBridgeInput[] = [];
+    try {
+      await writeFile(sourcePath, tinyPng);
+      await db.upsertConfig({
+        ...(await db.getState()).config,
+        jianying: { ...(await db.getState()).config.jianying, draftPath: draftRootDir },
+      });
+      const task = await db.createTaskWithOrdinaryCover({
+        title: 'Manual cover task',
+        inputText: sampleInput,
+        ratio: '9:16',
+        coverImageMode: 'manual',
+        manualCoverAssetId: '1f3de8ea-6775-43ab-971c-1e922eb19a57',
+      }, {
+        sourcePath,
+        sourceBytes: tinyPng,
+        exists: true,
+        isFile: true,
+        sizeBytes: tinyPng.length,
+        width: 720,
+        height: 1280,
+        mimeType: 'image/png',
+        originalName: 'selected-cover.png',
+      }, '9:16', {
+        prepareImage: async ({ destinationPath }) => {
+          await writeFile(destinationPath, tinyPng, { flag: 'wx' });
+          return {
+            sizeBytes: tinyPng.length,
+            width: 720,
+            height: 1280,
+            mimeType: 'image/png',
+            sha256: createHash('sha256').update(tinyPng).digest('hex'),
+          };
+        },
+        promoteFile: (source, target) => rename(source, target),
+        removeFile: async (path) => { await rm(path, { force: true }); },
+        ensureDirectory: async (path) => { await mkdir(path, { recursive: true }); },
+        now: () => '2026-07-23T00:00:00.000Z',
+      });
+
+      await runTask(db, task, {
+        appDataDir: dir,
+        customCoverTemplates: defaultCustomCoverTemplates,
+        generatePipelineArtifact: async () => makeArtifact(),
+        generateImages: async (scenes) => {
+          imageSceneIds.push(scenes.map((scene) => scene.id));
+          return writeSceneAssets(mediaDir, scenes, 'png', tinyPng);
+        },
+        synthesizeNarration: async (scenes) => writeSceneAssets(mediaDir, scenes, 'wav', wavTone(1200)),
+        draftWriterOptions: {
+          runBridge: async (payload) => {
+            draftPayloads.push(payload);
+            return fakeBridge(payload);
+          },
+        },
+      });
+
+      const completed = (await db.getState()).tasks[0];
+      const managedCoverPath = join(managedTaskWorkDir(dir, task), 'covers', 'cover-manual.png');
+      const pipeline = JSON.parse(await readFile(completed.artifactStatePath, 'utf8'));
+      expect(imageSceneIds.flat()).not.toContain(0);
+      expect(pipeline.assets.cover).toEqual([{ sceneId: 0, path: managedCoverPath }]);
+      expect(draftPayloads[0].coverImagePath).toBe(managedCoverPath);
+    } finally {
+      await db.close();
+      await rm(dir, { recursive: true, force: true });
+    }
+  });
+
   it('keeps ordinary cover mode off out of the cover provider and output', async () => {
     const dir = await mkdtemp(join(tmpdir(), 'storydream-runner-cover-off-'));
     const db = await FileDatabase.open(join(dir, 'data.db'));
@@ -1760,7 +1837,7 @@ describe('task runner', () => {
         appDataDir: dir,
         customCoverTemplates: defaultCustomCoverTemplates,
         generatePipelineArtifact: async () => makeArtifact(),
-      })).rejects.toThrow(/ORDINARY_MANUAL_COVER_UNAVAILABLE/);
+      })).rejects.toThrow(/ORDINARY_MANUAL_COVER_ASSET_INVALID/);
     } finally {
       await db.close();
       await rm(dir, { recursive: true, force: true });
