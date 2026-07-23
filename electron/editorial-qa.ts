@@ -32,7 +32,7 @@ export interface EditorialQaConfig {
 export const editorialQaMatrix = {
   themes: ['dark', 'light'] as const,
   viewports: [
-    { name: 'desktop', width: 1320, height: 860 },
+    { name: 'desktop', width: 1440, height: 900 },
     { name: 'compact', width: 1080, height: 720 },
   ],
   views: {

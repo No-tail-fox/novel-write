@@ -1,5 +1,5 @@
 import type { ReactNode } from 'react';
-import { Bell, Coins, Info, KeyRound, Maximize2, Minus, X } from 'lucide-react';
+import { Bell, Coins, History, Info, KeyRound, Maximize2, Minus, Moon, Sun, X } from 'lucide-react';
 import { AsyncActionFeedback as InlineActionFeedback } from '../components/AsyncActionFeedback';
 import { taskStatusLabel as statusLabel } from '../components/StatusBadge';
 import { taskProgressLabel } from '../shared/html-video-workflow';
@@ -30,6 +30,7 @@ export function AppShell({
   minimizeWindow,
   toggleMaximizeWindow,
   closeWindow,
+  toggleTheme,
   children,
 }: {
   activeView: ShellView;
@@ -43,6 +44,7 @@ export function AppShell({
   minimizeWindow: () => void;
   toggleMaximizeWindow: () => void;
   closeWindow: () => void;
+  toggleTheme: () => void;
   children: ReactNode;
 }) {
   const recentTasks = state.tasks.slice(0, 3);
@@ -51,9 +53,10 @@ export function AppShell({
     : '本地试用';
   const activeNav = navigationItemForView(activeView);
   const NewTaskIcon = newTaskPrimaryAction.icon;
+  const themeLabel = state.ui.theme === 'light' ? '切换深色主题' : '切换浅色主题';
 
   return (
-    <main className="app-shell" aria-busy={busy} data-shell-view={activeView}>
+    <main className="app-shell" aria-busy={busy} data-editorial-shell data-shell-view={activeView}>
       <div className="window-line">
         <div className="window-title">
           <div className="app-mark">S</div>
@@ -85,6 +88,8 @@ export function AppShell({
 
           <button
             className="new-task-button"
+            aria-label={newTaskPrimaryAction.label}
+            title={`${newTaskPrimaryAction.label} · ${newTaskPrimaryAction.hint}`}
             disabled={busy}
             onClick={() => navigate(newTaskPrimaryAction.view)}
             onMouseEnter={() => preloadRouteIntent(newTaskPrimaryAction.view)}
@@ -107,6 +112,16 @@ export function AppShell({
           </nav>
 
           <div className="sidebar-bottom">
+            <button
+              className="recent-task-compact"
+              type="button"
+              aria-label="最近任务"
+              title="最近任务"
+              disabled={busy}
+              onClick={() => recentTasks[0] ? openTaskDetail(recentTasks[0].id) : navigate('history')}
+            >
+              <History size={16} />
+            </button>
             <section className="recent-task-strip">
               <span className="nav-section-label">最近任务</span>
               {recentTasks.length === 0 ? <small>暂无任务</small> : null}
@@ -144,8 +159,8 @@ export function AppShell({
                 onFocus={() => preloadRouteIntent('account')}
               >
                 <Coins size={15} />
-                积分明细
-                <span>{state.account.balance.toFixed(2)}</span>
+                <span className="credit-label">积分明细</span>
+                <span className="credit-balance">{state.account.balance.toFixed(2)}</span>
               </button>
               <button
                 className="feedback-link"
@@ -176,6 +191,9 @@ export function AppShell({
               <span />
               {saveTone === 'saving' ? '保存中' : saveTone === 'dirty' ? '有未保存改动' : '所有改动已保存'}
             </div>
+            <button className="theme-toggle" type="button" aria-label={themeLabel} title={themeLabel} disabled={busy} onClick={toggleTheme}>
+              {state.ui.theme === 'light' ? <Moon size={15} /> : <Sun size={15} />}
+            </button>
           </header>
           {feedback ? (
             <div className="global-action-banner">
@@ -195,6 +213,8 @@ function NavButton({ item, active, busy, navigate }: { item: NavItem; active: bo
     <button
       className={active ? 'nav-item active' : 'nav-item'}
       data-nav-view={item.view}
+      aria-label={item.label}
+      title={`${item.label} · ${item.hint}`}
       disabled={busy}
       onClick={() => navigate(item.view)}
       onMouseEnter={() => preloadRouteIntent(item.view)}

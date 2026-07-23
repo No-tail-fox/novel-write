@@ -573,6 +573,14 @@ export function App() {
     void shellAction.run(() => api.windowControl('close'));
   }
 
+  function toggleTheme() {
+    const theme = state.ui.theme === 'light' ? 'dark' : 'light';
+    applyStoredTheme(theme);
+    void shellAction.run(async () => {
+      applyState(await api.saveUiPreferences({ theme }));
+    });
+  }
+
   const selectedTask = selectedTaskId
     ? state.tasks.find((task) => task.id === selectedTaskId) ?? null
     : activeView === 'task-detail'
@@ -591,6 +599,7 @@ export function App() {
       minimizeWindow={minimizeWindow}
       toggleMaximizeWindow={toggleMaximizeWindow}
       closeWindow={closeWindow}
+      toggleTheme={toggleTheme}
     >
       <RouteErrorBoundary resetKey={activeView} onNavigate={navigate}>
         <AppRoutes
