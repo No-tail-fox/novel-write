@@ -86,7 +86,7 @@ describe('one-click startup script', () => {
     const wrapper = await readFile(new URL('../scripts/run-npm-powershell.cmd', import.meta.url), 'utf8');
     const nodeWrapper = await readFile(new URL('../scripts/run-npm-node.cmd', import.meta.url), 'utf8');
 
-    for (const name of ['build', 'package:win', 'smoke:electron', 'test', 'test:watch', 'typecheck']) {
+    for (const name of ['build', 'package:win', 'smoke:electron', 'qa:editorial', 'test', 'test:watch', 'typecheck']) {
       expect(packageJson.scripts[name]).toContain('run-npm-powershell.cmd');
       expect(packageJson.scripts[name]).not.toMatch(/^node\s/u);
     }

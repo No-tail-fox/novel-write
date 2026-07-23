@@ -50,6 +50,7 @@ import { createTrustedIpcRegistrar } from './ipc';
 import { openExistingDirectory } from './open-directory';
 import { importManagedImageLabRecord } from './image-lab-import';
 import { writeWindowsManagedFile } from './windows-managed-file';
+import { captureEditorialQa, resolveEditorialQaConfig } from './editorial-qa';
 import { ConfigService } from './config-service';
 import { CredentialVault } from './credential-vault';
 import { HistoryActivityRegistry, type HistoryActivityReservation } from './history-activity-registry';
@@ -135,9 +136,11 @@ interface SmokeReport {
   shellRendered: boolean;
 }
 
+const editorialQaConfig = resolveEditorialQaConfig();
 const smokeConfig = resolveSmokeConfig();
-if (smokeConfig) {
-  app.setPath('userData', smokeConfig.userDataPath);
+if (smokeConfig || editorialQaConfig) {
+  app.commandLine.appendSwitch('force-device-scale-factor', '1');
+  app.setPath('userData', smokeConfig?.userDataPath ?? editorialQaConfig!.userData);
 }
 const isPrimaryInstance = app.requestSingleInstanceLock();
 if (!isPrimaryInstance) {
@@ -336,6 +339,7 @@ async function createWindow(): Promise<void> {
     backgroundColor: '#101114',
     autoHideMenuBar: true,
     frame: false,
+    useContentSize: true,
     webPreferences: {
       preload: join(__dirname, 'preload.js'),
       contextIsolation: true,
@@ -403,6 +407,16 @@ async function runSmokeHandshake(): Promise<void> {
     shellRendered: rendererResult.shellRendered === true,
   };
   await writeFile(smokeConfig.outputPath, `${JSON.stringify(report, null, 2)}\n`, 'utf8');
+  mainWindow.close();
+  if (process.platform === 'darwin') app.quit();
+}
+
+async function runEditorialQaCapture(): Promise<void> {
+  if (!editorialQaConfig) return;
+  if (!mainWindow || mainWindow.isDestroyed()) {
+    throw new Error('Editorial QA main window is unavailable.');
+  }
+  await captureEditorialQa(mainWindow, editorialQaConfig, () => app.getAppMetrics());
   mainWindow.close();
   if (process.platform === 'darwin') app.quit();
 }
@@ -2430,6 +2444,7 @@ if (isPrimaryInstance) {
     registerHtmlVideoMediaProtocol();
     await createWindow();
     await runSmokeHandshake();
+    await runEditorialQaCapture();
   }).catch(async (error) => {
     console.error('Application startup failed', error);
     process.exitCode = 1;

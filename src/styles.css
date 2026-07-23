@@ -1430,7 +1430,7 @@ em {
 .field-title {
   display: block;
   margin-bottom: 8px;
-  color: #dce7f4;
+  color: var(--text);
   font-weight: 700;
 }
 
@@ -1473,7 +1473,7 @@ textarea {
   border: 1px solid var(--line);
   border-radius: 7px;
   padding: 8px 10px;
-  background: #0c1117;
+  background: var(--surface-ink);
   color: var(--text);
   outline: none;
 }

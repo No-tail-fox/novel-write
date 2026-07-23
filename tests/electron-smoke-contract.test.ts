@@ -3,15 +3,15 @@ import { describe, expect, it } from 'vitest';
 
 describe('real Electron smoke contract', () => {
   it('launches the packaged application main instead of constructing a harness window', async () => {
-    const smoke = await readFile(new URL('../scripts/smoke-electron.cjs', import.meta.url), 'utf8');
+    const smoke = await readFile(new URL('../scripts/smoke-electron.ts', import.meta.url), 'utf8');
     const powershell = await readFile(new URL('../scripts/smoke-electron.ps1', import.meta.url), 'utf8');
 
-    expect(smoke).toContain("spawn(electronPath, ['.']");
+    expect(smoke).toContain("runBoundedProcess(electronPath, ['.']");
     expect(smoke).toContain('STORYDREAM_SMOKE_OUTPUT');
     expect(smoke).toContain('STORYDREAM_SMOKE_USER_DATA');
     expect(smoke).toContain('mkdtemp');
     expect(smoke).toContain('timeoutMs');
-    expect(smoke).toContain('process.exitCode = 1');
+    expect(smoke).toContain('setSmokeFailureExitCode(process)');
     expect(smoke).not.toContain('new BrowserWindow');
     expect(smoke).not.toContain('loadFile(indexPath)');
     expect(powershell).toContain('run-npm-node.cmd');
@@ -76,7 +76,7 @@ describe('real Electron smoke contract', () => {
   });
 
   it('requires every fixed smoke assertion and propagates child failures', async () => {
-    const smoke = await readFile(new URL('../scripts/smoke-electron.cjs', import.meta.url), 'utf8');
+    const smoke = await readFile(new URL('../scripts/smoke-electron.ts', import.meta.url), 'utf8');
 
     for (const field of [
       'mainLoaded',
@@ -88,11 +88,11 @@ describe('real Electron smoke contract', () => {
     ]) {
       expect(smoke).toContain(field);
     }
-    expect(smoke).toContain('childResult.code !== 0');
+    expect(smoke).toContain('child.code !== 0');
     expect(smoke).toContain('failedAssertions');
-    expect(smoke).toContain('delete childEnvironment.ELECTRON_RUN_AS_NODE');
+    expect(smoke).toContain('delete env.ELECTRON_RUN_AS_NODE');
     expect(smoke).toContain("VITE_DEV_SERVER_URL: ''");
-    expect(smoke).toContain("throw new Error('Electron smoke failed");
+    expect(smoke).toContain('throw new Error(`Electron smoke failed');
   });
 
   it('installs graceful HTML smoke signals before temporary work and cleans up after abort', async () => {

@@ -53,7 +53,7 @@ export function AppShell({
   const NewTaskIcon = newTaskPrimaryAction.icon;
 
   return (
-    <main className="app-shell" aria-busy={busy}>
+    <main className="app-shell" aria-busy={busy} data-shell-view={activeView}>
       <div className="window-line">
         <div className="window-title">
           <div className="app-mark">S</div>
@@ -194,6 +194,7 @@ function NavButton({ item, active, busy, navigate }: { item: NavItem; active: bo
   return (
     <button
       className={active ? 'nav-item active' : 'nav-item'}
+      data-nav-view={item.view}
       disabled={busy}
       onClick={() => navigate(item.view)}
       onMouseEnter={() => preloadRouteIntent(item.view)}

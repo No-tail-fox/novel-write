@@ -11,6 +11,7 @@ export interface BoundedProcessOptions {
 }
 
 export interface BoundedProcessResult {
+  pid: number;
   code: number | null;
   signal: NodeJS.Signals | null;
   stdout: string;
@@ -94,6 +95,7 @@ export function runBoundedProcess(
         return;
       }
       resolve({
+        pid: child.pid ?? 0,
         ...closeResult,
         stdout: Buffer.concat(stdoutChunks, stdoutBytes).toString('utf8'),
         stderr: Buffer.concat(stderrChunks, stderrBytes).toString('utf8'),

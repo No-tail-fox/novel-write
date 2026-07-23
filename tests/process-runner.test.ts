@@ -19,6 +19,8 @@ describe('bounded process runner', () => {
     ], baseOptions);
 
     expect(result).toMatchObject({ code: 0, signal: null, stdout: 'normal-out', stderr: 'normal-error' });
+    expect(result.pid).toEqual(expect.any(Number));
+    expect(result.pid).toBeGreaterThan(0);
   });
 
   it('returns bounded output and the numeric code for a nonzero exit', async () => {
