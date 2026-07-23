@@ -1,5 +1,73 @@
 import { CUSTOM_COVER_TEMPLATE_FIELDS } from '../../shared/editorial-data-contracts';
-import type { CustomCoverTemplate, Task } from '../../shared/types';
+import { pauseOptions } from '../../shared/editorial-options';
+import type { CreateTaskInput, CustomCoverTemplate, Task } from '../../shared/types';
+
+export type NewTaskFieldStage = 'material' | 'creative' | 'output' | 'system';
+
+export const NEW_TASK_CREATE_FIELD_STAGE = {
+  title: 'material',
+  inputText: 'material',
+  taskKind: 'system',
+  processingMode: 'creative',
+  publishMode: 'creative',
+  mode: 'material',
+  aiKeyword: 'material',
+  aiSources: 'material',
+  selectedSources: 'material',
+  extraRequirements: 'material',
+  imagePromptReference: 'system',
+  track: 'creative',
+  style: 'creative',
+  speaker: 'output',
+  ratio: 'output',
+  templateId: 'creative',
+  bgmId: 'output',
+  pausePoints: 'output',
+  promptTemplateId: 'creative',
+  promptTemplateType: 'system',
+  referenceImagePath: 'output',
+  rewriteIntensity: 'creative',
+  narrativePov: 'creative',
+  keepPromotion: 'creative',
+  ttsProvider: 'output',
+  ttsSpeed: 'output',
+  storyboardSceneCount: 'output',
+  step3PromptSnapshot: 'system',
+  musicMv: 'system',
+  videoForm: 'creative',
+  llmProfileId: 'output',
+  materialSource: 'material',
+  productInfo: 'material',
+  materialPerson: 'material',
+  draftDir: 'system',
+  fixedIntro: 'material',
+  outroCta: 'material',
+  lockIntroSentences: 'material',
+  taskType: 'system',
+  pipelineStep: 'system',
+  pipelineData: 'system',
+  targetLength: 'output',
+  targetScenes: 'output',
+  scriptFormat: 'system',
+  podcastImageMode: 'creative',
+  podcastSpeakers: 'creative',
+  podcastSpeakerA: 'system',
+  podcastSpeakerB: 'system',
+  coverImageMode: 'output',
+  coverTemplateId: 'output',
+  htmlVideoForeground: 'system',
+} as const satisfies Record<keyof CreateTaskInput, NewTaskFieldStage>;
+
+export const NEW_TASK_CREATE_FIELDS_BY_STAGE = {
+  material: Object.keys(NEW_TASK_CREATE_FIELD_STAGE).filter((field) => NEW_TASK_CREATE_FIELD_STAGE[field as keyof CreateTaskInput] === 'material'),
+  creative: Object.keys(NEW_TASK_CREATE_FIELD_STAGE).filter((field) => NEW_TASK_CREATE_FIELD_STAGE[field as keyof CreateTaskInput] === 'creative'),
+  output: Object.keys(NEW_TASK_CREATE_FIELD_STAGE).filter((field) => NEW_TASK_CREATE_FIELD_STAGE[field as keyof CreateTaskInput] === 'output'),
+  system: Object.keys(NEW_TASK_CREATE_FIELD_STAGE).filter((field) => NEW_TASK_CREATE_FIELD_STAGE[field as keyof CreateTaskInput] === 'system'),
+} as const;
+
+// The legacy `custom` value has no step selector. Keep it readable from old tasks,
+// but do not offer a control that cannot produce a complete configuration.
+export const NEW_TASK_PAUSE_OPTIONS = pauseOptions.filter(([id]) => id !== 'custom');
 
 export const ORDINARY_COVER_MODE_MANIFEST = {
   off: { label: '关闭', available: true },

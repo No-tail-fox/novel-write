@@ -16,7 +16,7 @@ export interface RendererSources {
 }
 
 export async function readRendererSources(): Promise<RendererSources> {
-  const { stdout } = await execFileAsync('git', ['ls-files', '-z', '--', 'src'], {
+  const { stdout } = await execFileAsync('git', ['ls-files', '-z', '--cached', '--others', '--exclude-standard', '--', 'src'], {
     cwd: projectRoot,
     encoding: 'utf8',
   });

@@ -101,7 +101,7 @@ export const rendererCommandInventory = {
   archiveVoiceLabRecord: command(owner('history', 'src/features/tasks/HistoryPage.tsx', 'archiveRecord', 'archiveRecord(record)', '归档', historyTest)),
   composeResearchCopy: command(owner('new-task', 'src/features/tasks/NewTaskPage.tsx', 'composeResearchCopy', 'onClick={composeResearchCopy}', '结合所选页面信息生成文案', productShellTest)),
   createAndRunTask: command(
-    owner('new-task', 'src/features/tasks/NewTaskPage.tsx', 'run', 'onClick={run}', '开始生成', productShellTest),
+    owner('new-task', 'src/features/tasks/NewTaskPage.tsx', 'run', 'onClick={run}', '创建并开始任务', productShellTest),
     owner('benchmark', 'src/features/labs/BenchmarkImportPage.tsx', 'createBenchmarkTask', 'onClick={createBenchmarkTask}', '用此文案创建任务', productShellTest),
     owner('music-mv', 'src/features/music-mv/MusicMvPage.tsx', 'runMusicMv', 'onClick={runMusicMv}', '生成音乐 MV', productShellTest),
   ),
@@ -216,6 +216,7 @@ export const rendererCommandInventory = {
     owner('shell', 'src/app/App.tsx', 'navigate', "navigate('account')", '积分明细', productShellTest, 'src/app/AppShell.tsx', undefined, undefined, undefined, bridgeChain(['src/app/App.tsx', 'navigate={navigate}'])),
     owner('shell', 'src/app/App.tsx', 'navigate', "navigate('account')", '账户中心', productShellTest, 'src/app/AppShell.tsx', undefined, undefined, undefined, bridgeChain(['src/app/App.tsx', 'navigate={navigate}'])),
     owner('shell', 'src/app/App.tsx', 'openTaskDetail', 'openTaskDetail(task.id)', '未命名任务', productShellTest, 'src/app/AppShell.tsx', undefined, undefined, undefined, bridgeChain(['src/app/App.tsx', 'openTaskDetail={openTaskDetail}'])),
+    owner('shell', 'src/app/App.tsx', 'toggleTheme', 'onClick={toggleTheme}', 'themeLabel', productShellTest, 'src/app/AppShell.tsx', undefined, 'src/app/AppShell.tsx', undefined, bridgeChain(['src/app/App.tsx', 'toggleTheme={toggleTheme}'])),
   ),
   saveViralTemplates: command(owner('viral-analyzer', 'src/features/viral/ViralAnalyzerPage.tsx', 'saveViralTemplates', 'handleSaveTemplates', '保存为模板', productShellTest, 'src/features/viral/ViralReport.tsx', undefined, 'src/features/viral/ViralAnalyzerPage.tsx', undefined, bridgeChain(['src/features/viral/ViralAnalyzerPage.tsx', 'saveTemplates={saveViralTemplates}'], ['src/features/viral/ViralReport.tsx', 'await saveTemplates({']))),
   searchWebSources: command(owner('new-task', 'src/features/tasks/NewTaskPage.tsx', 'searchWebSources', 'onClick={searchWebSources}', '搜索', productShellTest)),

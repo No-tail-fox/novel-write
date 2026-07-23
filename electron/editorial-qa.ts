@@ -4,7 +4,7 @@ import { tmpdir } from 'node:os';
 import { basename, dirname, isAbsolute, join, relative, resolve } from 'node:path';
 import type { BrowserWindow } from 'electron';
 
-export const editorialQaScopes = ['all', 'theme-smoke', 'shell', 'workflow', 'labs', 'system'] as const;
+export const editorialQaScopes = ['all', 'theme-smoke', 'shell', 'new-task', 'workflow', 'labs', 'system'] as const;
 export type EditorialQaScope = (typeof editorialQaScopes)[number];
 export type EditorialQaEnvironment = Partial<Record<
   | 'STORYDREAM_QA_RUN_ROOT'
@@ -41,6 +41,12 @@ export const editorialQaMatrix = {
     labs: ['image-lab', 'voice-lab', 'book-selection', 'benchmark', 'person-assets'],
     system: ['prompt-templates', 'draft-templates', 'settings', 'account', 'activation'],
   },
+  newTaskStates: [
+    { id: 'new-task-material-desktop', view: 'new-task', stage: 'material', theme: 'light', viewport: 'desktop' },
+    { id: 'new-task-creative-desktop', view: 'new-task', stage: 'creative', theme: 'light', viewport: 'desktop' },
+    { id: 'new-task-output-desktop', view: 'new-task', stage: 'output', theme: 'light', viewport: 'desktop' },
+    { id: 'new-task-material-compact', view: 'new-task', stage: 'material', theme: 'light', viewport: 'compact' },
+  ],
 } as const;
 
 const qaComputedTokenNames = [
@@ -112,24 +118,29 @@ export async function captureEditorialQa(
 ): Promise<void> {
   await mkdir(config.captures, { recursive: true });
   const captures: EditorialQaCapture[] = [];
-  const views = viewsForScope(config.scope);
+  const cases = captureCasesForScope(config.scope);
   await window.webContents.executeJavaScript(qaCssAndReadinessScript(), true);
-  for (const theme of editorialQaMatrix.themes) {
-    for (const viewport of editorialQaMatrix.viewports) {
-      window.setContentSize(viewport.width, viewport.height);
-      for (const view of views) {
-        const state = await window.webContents.executeJavaScript(qaScenarioScript(view, theme), true) as QaScenarioState;
-        if (!state.ready || state.width !== viewport.width || state.height !== viewport.height || state.scale !== 1) {
-          throw new Error(`Editorial QA scenario did not reach a stable ${view}/${theme}/${viewport.name} state.`);
-        }
-        const image = await window.webContents.capturePage();
-        const png = image.toPNG();
-        const capturePath = join(config.captures, `${view}-${theme}-${viewport.name}.png`);
-        await writeFile(capturePath, png, { flag: 'wx' });
-        await assertCapturePng(capturePath, png, image.toBitmap(), viewport.width, viewport.height);
-        captures.push({ view, theme, viewport: viewport.name, path: basename(capturePath), visibleText: state.visibleText, tokens: state.tokens });
-      }
+  for (const captureCase of cases) {
+    const viewport = editorialQaMatrix.viewports.find((candidate) => candidate.name === captureCase.viewport);
+    if (!viewport) throw new Error(`Editorial QA viewport is unknown: ${captureCase.viewport}`);
+    window.setContentSize(viewport.width, viewport.height);
+    const state = await window.webContents.executeJavaScript(qaScenarioScript(captureCase.view, captureCase.theme, captureCase.stage), true) as QaScenarioState;
+    if (!state.ready || state.width !== viewport.width || state.height !== viewport.height || state.scale !== 1) {
+      throw new Error(`Editorial QA scenario did not reach a stable ${captureCase.id} state.`);
     }
+    if (state.layout.horizontalOverflow > 1 || state.layout.clippedPrimaryControls.length > 0) {
+      throw new Error(`Editorial QA found clipped controls in ${captureCase.id}: ${state.layout.clippedPrimaryControls.join(', ')}`);
+    }
+    const expectedPlacement = viewport.name === 'compact' ? 'below' : 'right';
+    if (captureCase.stage && (!state.stageStatePreserved || state.layout.summaryPlacement !== expectedPlacement)) {
+      throw new Error(`Editorial QA new-task interaction/layout failed in ${captureCase.id}.`);
+    }
+    const image = await window.webContents.capturePage();
+    const png = image.toPNG();
+    const capturePath = join(config.captures, `${captureCase.id}.png`);
+    await writeFile(capturePath, png, { flag: 'wx' });
+    await assertCapturePng(capturePath, png, image.toBitmap(), viewport.width, viewport.height);
+    captures.push({ view: captureCase.view, stage: captureCase.stage, theme: captureCase.theme, viewport: viewport.name, path: basename(capturePath), visibleText: state.visibleText, tokens: state.tokens });
   }
   const ownedProcessIds = [...new Set(getMetrics().map((metric) => metric.pid).filter((pid) => Number.isSafeInteger(pid) && pid > 0))];
   await writeFile(config.report, `${JSON.stringify({
@@ -143,11 +154,20 @@ export async function captureEditorialQa(
 
 interface EditorialQaCapture {
   view: string;
+  stage?: string;
   theme: string;
   viewport: string;
   path: string;
   visibleText: string;
   tokens: Record<string, string>;
+}
+
+interface EditorialQaCaptureCase {
+  id: string;
+  view: string;
+  stage?: string;
+  theme: string;
+  viewport: string;
 }
 
 interface QaScenarioState {
@@ -157,12 +177,30 @@ interface QaScenarioState {
   scale: number;
   visibleText: string;
   tokens: Record<string, string>;
+  stageStatePreserved: boolean;
+  layout: {
+    horizontalOverflow: number;
+    clippedPrimaryControls: string[];
+    summaryPlacement: 'right' | 'below' | 'unknown';
+  };
 }
 
-function viewsForScope(scope: EditorialQaScope): readonly string[] {
-  if (scope === 'all') return Object.values(editorialQaMatrix.views).flat();
-  if (scope === 'theme-smoke') return ['new-task'];
-  return editorialQaMatrix.views[scope];
+function captureCasesForScope(scope: EditorialQaScope): EditorialQaCaptureCase[] {
+  if (scope === 'new-task') return [...editorialQaMatrix.newTaskStates];
+  const views = scope === 'theme-smoke'
+    ? ['new-task']
+    : scope === 'all'
+      ? Object.values(editorialQaMatrix.views).flat()
+      : editorialQaMatrix.views[scope];
+  const cases = editorialQaMatrix.themes.flatMap((theme) => editorialQaMatrix.viewports.flatMap((viewport) => (
+    views.map((view) => ({
+      id: `${view}-${theme}-${viewport.name}`,
+      view,
+      theme,
+      viewport: viewport.name,
+    }))
+  )));
+  return scope === 'all' ? [...cases, ...editorialQaMatrix.newTaskStates] : cases;
 }
 
 function assertStrictDescendant(parent: string, child: string, label: string): void {
@@ -189,7 +227,7 @@ function qaCssAndReadinessScript(): string {
   })()`;
 }
 
-function qaScenarioScript(view: string, theme: string): string {
+function qaScenarioScript(view: string, theme: string, stage?: string): string {
   return `(async () => {
     const waitFor = async (check, timeout = 10000) => {
       const until = Date.now() + timeout;
@@ -201,14 +239,59 @@ function qaScenarioScript(view: string, theme: string): string {
     const themeReady = await waitFor(() => document.documentElement.dataset.theme === ${JSON.stringify(theme)});
     const nav = document.querySelector('[data-nav-view=${JSON.stringify(view)}]');
     if (nav instanceof HTMLButtonElement) nav.click();
-    const ready = themeReady && await waitFor(() => document.querySelector('.app-shell')
+    let ready = themeReady && await waitFor(() => document.querySelector('.app-shell')
       && document.documentElement.dataset.themeReady === 'true'
       && document.querySelector('[data-shell-view=${JSON.stringify(view)}]'));
+    const stage = ${JSON.stringify(stage ?? '')};
+    let stageStatePreserved = true;
+    if (stage) {
+      const materialTab = document.querySelector('[data-new-task-stage-tab="material"]');
+      if (materialTab instanceof HTMLButtonElement) materialTab.click();
+      await waitFor(() => document.querySelector('[data-new-task-stage="material"]'));
+      const titleInput = document.querySelector('[data-new-task-stage="material"] input');
+      if (titleInput instanceof HTMLInputElement) {
+        const originalTitle = titleInput.value;
+        const setter = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')?.set;
+        setter?.call(titleInput, originalTitle + ' QA');
+        titleInput.dispatchEvent(new Event('input', { bubbles: true }));
+        const creativeTab = document.querySelector('[data-new-task-stage-tab="creative"]');
+        if (creativeTab instanceof HTMLButtonElement) creativeTab.click();
+        await waitFor(() => document.querySelector('[data-new-task-stage="creative"]'));
+        materialTab.click();
+        await waitFor(() => document.querySelector('[data-new-task-stage="material"]'));
+        const reopenedTitle = document.querySelector('[data-new-task-stage="material"] input');
+        stageStatePreserved = reopenedTitle instanceof HTMLInputElement && reopenedTitle.value === originalTitle + ' QA';
+        if (reopenedTitle instanceof HTMLInputElement) {
+          setter?.call(reopenedTitle, originalTitle);
+          reopenedTitle.dispatchEvent(new Event('input', { bubbles: true }));
+        }
+      }
+      const stageTab = document.querySelector('[data-new-task-stage-tab="' + stage + '"]');
+      if (stageTab instanceof HTMLButtonElement) stageTab.click();
+      ready = ready && await waitFor(() => document.querySelector('[data-new-task-stage="' + stage + '"]'));
+    }
     await document.fonts.ready;
     await new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve)));
     document.activeElement instanceof HTMLElement && document.activeElement.blur();
     const computed = getComputedStyle(document.documentElement);
     const tokens = Object.fromEntries(${JSON.stringify(qaComputedTokenNames)}.map((name) => [name, computed.getPropertyValue(name).trim()]));
+    const editor = document.querySelector('.new-task-editor')?.getBoundingClientRect();
+    const summary = document.querySelector('.new-task-summary')?.getBoundingClientRect();
+    const summaryPlacement = !editor || !summary
+      ? 'unknown'
+      : summary.left >= editor.right - 1
+        ? 'right'
+        : summary.top >= editor.bottom - 1
+          ? 'below'
+          : 'unknown';
+    const clippedPrimaryControls = [...document.querySelectorAll('.new-task-workbench button, .new-task-workbench input, .new-task-workbench select, .new-task-workbench textarea')]
+      .filter((element) => {
+        const style = getComputedStyle(element);
+        if (style.display === 'none' || style.visibility === 'hidden') return false;
+        const rect = element.getBoundingClientRect();
+        return rect.width > 0 && (rect.left < -1 || rect.right > window.innerWidth + 1);
+      })
+      .map((element) => element.getAttribute('aria-label') || element.textContent?.trim().slice(0, 40) || element.tagName);
     return {
       ready,
       width: window.innerWidth,
@@ -216,6 +299,12 @@ function qaScenarioScript(view: string, theme: string): string {
       scale: window.devicePixelRatio,
       visibleText: document.body.innerText.replace(/\\s+/g, ' ').trim().slice(0, 1000),
       tokens,
+      stageStatePreserved,
+      layout: {
+        horizontalOverflow: Math.max(0, document.documentElement.scrollWidth - window.innerWidth),
+        clippedPrimaryControls,
+        summaryPlacement,
+      },
     };
   })()`;
 }

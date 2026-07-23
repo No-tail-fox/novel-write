@@ -2392,7 +2392,7 @@ describe('product shell ui', () => {
     const css = await readFile(new URL('../src/styles.css', import.meta.url), 'utf8');
 
     expect(main).toContain('defaultTaskDraftTemplateId');
-    expect(main).toContain('options={state.draftTemplates.map((template) => [template.id, template.name, `出图 ${template.image.ratio}`])}');
+    expect(main).toContain('state.draftTemplates.map((template) => <option key={template.id} value={template.id}>');
     expect(main).not.toContain('feishuCozeDraftTemplateBundle');
     expect(main).not.toContain('bundledDraftTemplateOptionIds');
     expect(main).not.toContain('isBundledDraftTemplateOption');
@@ -2973,7 +2973,10 @@ describe('product shell ui', () => {
     expect(main).toContain('options={storyTemplateOptions}');
     expect(main).toContain('value={selectedStoryTemplateId}');
     expect(main).toContain('handleStoryTemplateChange');
-    expect(main).toContain('options={imageTemplateStyleOptions}');
+    expect(main).toContain('imageTemplateStyleOptions.map(([id, label, hint])');
+    expect(main).toContain('onChange={(event) => handleStyleChange(event.target.value)}');
+    expect(main).toContain('state.draftTemplates.map((template) => <option');
+    expect(main).toContain('onChange={(event) => handleDraftTemplateChange(event.target.value)}');
     expect(main).toContain('buildTaskPromptTemplateOptions(state.promptTemplates, track)');
     expect(main).toContain('taskPromptTemplateOptions.map(([id, label, hint])');
     expect(main).toContain('value={promptTemplateOverrideId || resolvedPromptTemplate?.id || \'\'}');
@@ -3013,7 +3016,7 @@ describe('product shell ui', () => {
   });
 
   it('keeps target word and scene controls visible in the new task form', async () => {
-    const css = await readFile(new URL('../src/styles.css', import.meta.url), 'utf8');
+    const css = await readFile(new URL('../src/styles/features/new-task.css', import.meta.url), 'utf8');
     const page = (await rendererSourcesPromise).requiredFile('src/features/tasks/NewTaskPage.tsx');
 
     expect(page).toContain('targetLength');
@@ -3033,28 +3036,29 @@ describe('product shell ui', () => {
     expect(page).toContain('placeholder={storyboardScenePreviewRange ?');
     expect(page).toContain('setInputText(event.target.value);');
     expect(page).not.toContain('options={targetLengthOptions.map(String)}');
-    const targetControlsIndex = page.indexOf('<div className="target-controls-row">');
-    const advancedIndex = page.indexOf('<button className="advanced-toggle"');
+    const outputStage = page.slice(page.indexOf("activeStage === 'output'"));
+    const creativeStage = page.slice(page.indexOf("activeStage === 'creative'"), page.indexOf("activeStage === 'output'"));
+    const targetControlsIndex = outputStage.indexOf('<label className="target-number-field">');
+    const advancedIndex = creativeStage.indexOf('className="advanced-toggle"');
     expect(targetControlsIndex).toBeGreaterThan(-1);
     expect(advancedIndex).toBeGreaterThan(-1);
-    expect(targetControlsIndex).toBeLessThan(advancedIndex);
+    expect(outputStage).toContain('data-create-fields={NEW_TASK_CREATE_FIELDS_BY_STAGE.output.join');
+    expect(creativeStage).toContain('data-create-fields={NEW_TASK_CREATE_FIELDS_BY_STAGE.creative.join');
 
-    expect(css).toContain('.target-controls-row {');
+    expect(css).toContain('.new-task-field-grid {');
     expect(css).toContain('display: grid;');
-    expect(css).toContain('grid-template-columns: repeat(3, minmax(0, 1fr));');
+    expect(css).toContain('grid-template-columns: repeat(2, minmax(0, 1fr));');
     expect(css).toContain('align-items: start;');
-    expect(css).toContain('gap: 12px 16px;');
-    expect(css).toContain('.target-number-field {');
+    expect(css).toContain('gap: 12px;');
+    expect(css).toContain('.new-task-stage-panel .target-number-field {');
     expect(css).toContain('display: grid;');
-    expect(css).toContain('gap: 4px;');
+    expect(css).toContain('gap: 5px;');
     expect(css).toContain('font-size: 12px;');
     expect(css).toContain('font-size: 11px;');
-    expect(css).toContain('white-space: normal;');
     expect(css).toContain('overflow-wrap: anywhere;');
-    expect(css).toContain('.target-controls-row .segmented button');
+    expect(css).toContain('.new-task-stage-panel .segmented button');
     expect(css).toContain('min-height: 30px;');
-    expect(css).toContain('grid-template-columns: repeat(2, minmax(0, 1fr));');
-    expect(css).toContain('@media (max-width: 720px)');
+    expect(css).toContain('@media (max-width: 760px)');
     expect((await rendererSourcesPromise).requiredFile('src/components/SegmentedControl.tsx'))
       .toContain('label ? <span>{label}</span> : null');
   });

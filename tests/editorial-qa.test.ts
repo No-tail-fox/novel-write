@@ -26,8 +26,24 @@ describe('editorial Electron QA configuration', () => {
   });
 
   it('only accepts known capture scopes before Electron is launched', () => {
-    expect(editorialQaScopes).toEqual(['all', 'theme-smoke', 'shell', 'workflow', 'labs', 'system']);
+    expect(editorialQaScopes).toEqual(['all', 'theme-smoke', 'shell', 'new-task', 'workflow', 'labs', 'system']);
     expect(() => resolveEditorialQaConfig({ STORYDREAM_QA_SCOPE: 'unknown' }, tmpdir())).toThrow('Unknown editorial QA scope');
+  });
+
+  it('captures the four accepted new-task states without multiplying unrelated themes and viewports', async () => {
+    const source = await (await import('node:fs/promises')).readFile(new URL('../electron/editorial-qa.ts', import.meta.url), 'utf8');
+    for (const state of [
+      "{ id: 'new-task-material-desktop', view: 'new-task', stage: 'material', theme: 'light', viewport: 'desktop' }",
+      "{ id: 'new-task-creative-desktop', view: 'new-task', stage: 'creative', theme: 'light', viewport: 'desktop' }",
+      "{ id: 'new-task-output-desktop', view: 'new-task', stage: 'output', theme: 'light', viewport: 'desktop' }",
+      "{ id: 'new-task-material-compact', view: 'new-task', stage: 'material', theme: 'light', viewport: 'compact' }",
+    ]) {
+      expect(source).toContain(state);
+    }
+    expect(source).toContain("document.querySelector('[data-new-task-stage-tab=\"' + stage + '\"]')");
+    expect(source).toContain('stageStatePreserved = reopenedTitle instanceof HTMLInputElement');
+    expect(source).toContain('horizontalOverflow: Math.max(0, document.documentElement.scrollWidth - window.innerWidth)');
+    expect(source).toContain("const expectedPlacement = viewport.name === 'compact' ? 'below' : 'right';");
   });
 
   it('keeps the real Electron capture contract on native capturePage and deterministic matrices', async () => {
