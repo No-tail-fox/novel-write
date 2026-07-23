@@ -128,7 +128,7 @@ interface HistorySqlFilter {
 
 type PromptTemplateInput = Omit<PromptTemplate, 'description' | 'isBuiltin' | 'updatedAt'> &
   Partial<Pick<PromptTemplate, 'description' | 'isBuiltin' | 'updatedAt'>>;
-type ImageLabRecordInput = Partial<Omit<ImageLabRecord, 'createdAt' | 'finishedAt' | 'status'>> &
+export type ImageLabRecordInput = Partial<Omit<ImageLabRecord, 'createdAt' | 'finishedAt' | 'status'>> &
   Pick<ImageLabRecord, 'prompt' | 'ratio' | 'style' | 'provider'> & {
     status?: ImageLabRecord['status'];
     createdAt?: string;
@@ -346,6 +346,14 @@ interface HistorySortCursor {
 
 function createManagedStorageKey(): string {
   return randomBytes(24).toString('hex');
+}
+
+function requireManagedStorageKey(value: string): string {
+  if (!/^[A-Za-z0-9][A-Za-z0-9_-]{0,255}$/u.test(value)
+    || /^(?:CON|PRN|AUX|NUL|COM[1-9]|LPT[1-9])$/iu.test(value)) {
+    throw new Error('MANAGED_STORAGE_KEY_INVALID: Cannot persist an invalid managed storage key.');
+  }
+  return value;
 }
 
 function normalizeHistoryQuery(query: string | undefined): string {
@@ -1694,7 +1702,7 @@ export class FileDatabase {
       const record: ImageLabRecord = {
         id: input.id ?? randomUUID(),
         archivedAt: null,
-        managedStorageKey: createManagedStorageKey(),
+        managedStorageKey: requireManagedStorageKey(input.managedStorageKey ?? createManagedStorageKey()),
         prompt: input.prompt,
         ratio: input.ratio,
         style: input.style,

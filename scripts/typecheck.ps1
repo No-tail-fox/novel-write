@@ -12,3 +12,6 @@ if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 
 node "node_modules/typescript/bin/tsc" -p tsconfig.electron.json --noEmit
 if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+
+node "node_modules/typescript/bin/tsc" -p tsconfig.scripts.json --noEmit
+if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }

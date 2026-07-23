@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { Bot, Copy, Database, FolderOpen, Image as ImageIcon, Info, KeyRound, Loader2, Mic2, Palette, Save, Search, Sparkles, Upload, Wand2, XCircle } from "lucide-react";
+import { Bot, Copy, Database, FlaskConical, FolderOpen, Image as ImageIcon, Info, KeyRound, Loader2, Mic2, Palette, Save, Search, Sparkles, Upload, Wand2, XCircle } from "lucide-react";
 import type { AppConfig, ConfigTestTarget, ImaKnowledgeResult, ProviderModel, ProviderModelListRequest, ShellView, TtsProviderProfile, VolcengineSpeaker } from "../../shared/types";
 import type { StoryDreamApi } from "../../shared/storydream-api";
 import { addUploadedBgm, resolveDefaultBgmId, validBgmItems } from "../tasks/task-formatters";
@@ -24,6 +24,7 @@ import {
   SecretInput,
   SettingsCard,
   configFromMutation,
+  hasPendingLlmSecretChange,
   mergeVolcengineSpeakers,
   profileSecretId,
   setDraftModel,
@@ -171,6 +172,24 @@ export function SettingsPage({ api, state, applyState, navigate }: { api: StoryD
         setConfigTestResult(`[${result.status}] ${result.detail}`);
       } finally {
         setSavingConfig(false);
+        setTestingConfig(false);
+      }
+    }, { onError: (error) => setConfigTestResult(`[fail] ${error.message}`) });
+  }
+  async function testSelectedLlmConfig() {
+    if (selectedLlmTestBlocked) {
+      setConfigTestResult(selectedLlmSecretPending
+        ? '[warn] 当前 LLM 密钥有未保存变更，请先保存配置或使用“保存并测试”。'
+        : '[warn] 当前 LLM 配置档案尚未保存，请先保存配置或使用“保存并测试”。');
+      return;
+    }
+    await settingsAction.run(async () => {
+      setTestingConfig(true);
+      setConfigTestResult('正在测试当前 LLM...');
+      try {
+        const result = await api.testLlmConfig(selectedLlmTestConfig.llm);
+        setConfigTestResult(`[${result.status}] ${result.detail}`);
+      } finally {
         setTestingConfig(false);
       }
     }, { onError: (error) => setConfigTestResult(`[fail] ${error.message}`) });
@@ -347,6 +366,10 @@ export function SettingsPage({ api, state, applyState, navigate }: { api: StoryD
     tts: selectedTtsProfileId,
   };
   const selectedLlmTestConfig = buildConfigForSelectedProfileTest(draft, 'llm', selectedProviderProfileIds);
+  const selectedLlmSecretPending = hasPendingLlmSecretChange(secretChanges, selectedLlmTestConfig.llm.id);
+  const selectedLlmProfilePersisted = state.config.llmProfiles.some((profile) => profile.id === selectedLlmTestConfig.llm.id)
+    || state.config.llm.id === selectedLlmTestConfig.llm.id;
+  const selectedLlmTestBlocked = selectedLlmSecretPending || !selectedLlmProfilePersisted;
   const selectedImageTestConfig = buildConfigForSelectedProfileTest(draft, 'image', selectedProviderProfileIds);
   const selectedTtsTestConfig = buildConfigForSelectedProfileTest(draft, 'tts', selectedProviderProfileIds);
   const settingsBgms = validBgmItems(draft);
@@ -381,6 +404,12 @@ export function SettingsPage({ api, state, applyState, navigate }: { api: StoryD
             <div><h2>{sections.find(([id]) => id === section)?.[2]}</h2><span>配置 API 凭证与本地路径</span></div>
           </div>
           <div className="button-row">
+            {section === 'llm' ? (
+              <button className="ghost-action" type="button" title={selectedLlmTestBlocked ? '请先保存当前 LLM 配置档案或密钥变更' : '仅测试当前 LLM'} disabled={testingConfig || savingConfig || settingsAction.busy || selectedLlmTestBlocked} onClick={testSelectedLlmConfig}>
+                {testingConfig ? <Loader2 className="spin" size={15} /> : <FlaskConical size={15} />}
+                仅测试当前 LLM
+              </button>
+            ) : null}
             <button className="ghost-action" disabled={testingConfig || savingConfig} onClick={testCurrentConfig}>
               {testingConfig ? <Loader2 className="spin" size={15} /> : <Sparkles size={15} />}
               保存并测试
@@ -399,6 +428,7 @@ export function SettingsPage({ api, state, applyState, navigate }: { api: StoryD
               value={state.ui.theme}
               options={['dark', 'light']}
               labels={['深色', '浅色']}
+              disabled={themeAction.busy}
               onChange={(value) => void selectTheme(value as AppState['ui']['theme'])}
             />
             <InlineActionFeedback feedback={themeAction.feedback} />
@@ -549,11 +579,11 @@ export function SettingsPage({ api, state, applyState, navigate }: { api: StoryD
           <SettingsCard title="剪映草稿与 BGM" status={draft.jianying.draftPath ? '已配置' : '待配置'}>
             <ConfigInput label="草稿目录" value={draft.jianying.draftPath} onChange={(value) => setSettingsDraft({ ...draft, jianying: { ...draft.jianying, draftPath: value } })} />
             <div className="settings-inline-actions">
-              <button className="ghost-action" type="button" onClick={autoDetectJianyingDraftPath}><Search size={15} />自动检测</button>
-              <button className="ghost-action" type="button" onClick={pickJianyingDraftPath}><FolderOpen size={15} />选择目录</button>
+              <button className="ghost-action" type="button" disabled={settingsAction.busy} onClick={autoDetectJianyingDraftPath}><Search size={15} />自动检测</button>
+              <button className="ghost-action" type="button" disabled={settingsAction.busy} onClick={pickJianyingDraftPath}><FolderOpen size={15} />选择目录</button>
             </div>
             <LocalInfo title="BGM 库" value={settingsBgms.length ? settingsBgms.map((bgm) => bgm.title).join('、') : 'BGM 库为空'} />
-            <button className="ghost-action" type="button" onClick={uploadBgmFromSettings}><Upload size={15} />+ 添加 BGM 文件</button>
+            <button className="ghost-action" type="button" disabled={settingsAction.busy} onClick={uploadBgmFromSettings}><Upload size={15} />+ 添加 BGM 文件</button>
             <div className="bgm-library-list">
               {settingsBgms.length === 0 ? <div className="bgm-library-empty">BGM 库为空</div> : null}
               {settingsBgms.map((bgm) => (
@@ -607,7 +637,7 @@ export function SettingsPage({ api, state, applyState, navigate }: { api: StoryD
           <div className="diagnostics-card">
             <LocalInfo title="视频故事创作助手" value="v0.10.4 · beta · Windows · 本地数据目录" />
             <div className="button-row">
-              <button className="ghost-action" onClick={runDiagnostics}>检查诊断</button>
+              <button className="ghost-action" disabled={settingsAction.busy} onClick={runDiagnostics}>检查诊断</button>
               <button className="ghost-action" onClick={() => navigator.clipboard?.writeText(diagnostics)}>
                 <Copy size={15} />
                 复制诊断报告

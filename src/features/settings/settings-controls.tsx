@@ -1,7 +1,7 @@
 import React, { useState } from "react";
 import { Eye, EyeOff, Info, Loader2, RotateCcw, Trash2 } from "lucide-react";
 import type { AppConfig, AppMutationResult, ImageProviderProfile, ProviderModel, TtsProviderProfile, VolcengineSpeaker } from "../../shared/types";
-import type { SecretId } from "../../shared/config-secrets";
+import type { SecretChanges, SecretId } from "../../shared/config-secrets";
 import { imageProfileCustomImage, imageProfileGptImage, imageProfileJimeng, normalizeEditableConfigProviders, saveLlmProfile, ttsProfileMinimax, ttsProfileVolcengine } from "../../shared/provider-profile-utils";
 import { volcengineVoicePresets } from '../../shared/editorial-options';
 
@@ -18,6 +18,11 @@ export function profileSecretId(domain: 'llm' | 'image' | 'tts', profileId: stri
   const stableId = profileId?.trim();
   if (!stableId) throw new Error('Provider profile requires a stable id.');
   return `${domain}/${encodeURIComponent(stableId)}/${suffix}` as SecretId;
+}
+
+export function hasPendingLlmSecretChange(secretChanges: SecretChanges, profileId: string | undefined): boolean {
+  const secretId = profileSecretId('llm', profileId, 'apiKey');
+  return Object.prototype.hasOwnProperty.call(secretChanges, secretId);
 }
 
 export function configFromMutation(result: AppMutationResult | null): AppConfig {

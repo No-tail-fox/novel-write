@@ -92,7 +92,7 @@ export function PromptTemplateEditor({
                   <h2>查看图像模板 · {imageDraft.name}</h2>
                 </div>
                 <div className="button-row">
-                  <button className="ghost-action" onClick={() => void duplicateImageTemplate(imageDraft)}>
+                  <button className="ghost-action" disabled={promptTemplateAction.busy} onClick={() => void duplicateImageTemplate(imageDraft)}>
                     <Copy size={15} />
                     克隆
                   </button>
@@ -100,13 +100,13 @@ export function PromptTemplateEditor({
                     <FileJson size={15} />
                     导出 JSON
                   </button>
-                  <button className="ghost-action" onClick={() => void importImageTemplateJson()}>
+                  <button className="ghost-action" disabled={promptTemplateAction.busy} onClick={() => void importImageTemplateJson()}>
                     <FileJson size={15} />
                     导入 JSON
                   </button>
-                  <button className="primary-action slim" onClick={saveCustomStyleDraft}>
+                  <button className="primary-action slim" disabled={promptTemplateAction.busy} onClick={saveCustomStyleDraft}>
                     <Save size={15} />
-                    保存
+                    保存修改
                   </button>
                 </div>
               </div>
@@ -192,7 +192,7 @@ export function PromptTemplateEditor({
                 <h2>查看系统模板 · {draft.name}</h2>
               </div>
               <div className="button-row">
-                <button className="ghost-action" onClick={duplicate}>
+                <button className="ghost-action" disabled={promptTemplateAction.busy} onClick={duplicate}>
                   <Copy size={15} />
                   克隆
                 </button>
@@ -200,11 +200,11 @@ export function PromptTemplateEditor({
                   <FileJson size={15} />
                   导出 JSON
                 </button>
-                <button className="ghost-action" onClick={() => void importPromptTemplateJson()}>
+                <button className="ghost-action" disabled={promptTemplateAction.busy} onClick={() => void importPromptTemplateJson()}>
                   <FileJson size={15} />
                   导入 JSON
                 </button>
-                <button className="primary-action slim" onClick={savePromptTemplateDraft}>
+                <button className="primary-action slim" disabled={promptTemplateAction.busy} onClick={savePromptTemplateDraft}>
                   <Save size={15} />
                   {draft.isBuiltin ? '保存为自定义模板' : '保存修改'}
                 </button>

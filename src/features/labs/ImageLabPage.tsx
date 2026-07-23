@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { Image as ImageIcon, Loader2, Wand2 } from 'lucide-react';
+import { Image as ImageIcon, ImagePlus, Loader2, Wand2 } from 'lucide-react';
 import { EmptyState } from '../../components/EmptyState';
 import { ErrorDetails as ErrorSummaryButton } from '../../components/ErrorDetails';
 import { FormField as Field } from '../../components/FormField';
@@ -103,6 +103,27 @@ export function ImageLabPage({ api, state, applyState }: { api: StoryDreamApi; s
     }, { onError: (error) => setSubmitError(error.message) });
   }
 
+  async function importCompletedImage() {
+    if (generating || imageLabAction.busy || !prompt.trim()) return;
+    await imageLabAction.run(async () => {
+      setSubmitError('');
+      const imagePath = await api.selectLocalImage();
+      if (!imagePath) return;
+      const nextState = await api.addImageLabRecord({
+        prompt,
+        ratio,
+        style,
+        provider: state.config.imageProvider,
+        imagePath,
+        resolution,
+        smartMode: resolvedSmartMode,
+        referenceImagePath: references[0] ?? '',
+        referenceImagePaths: references,
+      });
+      applyState(nextState);
+    }, { onError: (error) => setSubmitError(error.message) });
+  }
+
   return (
     <div className="image-lab-page">
       <section className="panel image-lab-workbench">
@@ -115,9 +136,9 @@ export function ImageLabPage({ api, state, applyState }: { api: StoryDreamApi; s
               <small>建议统一 IP 形象，最多 {referenceLimit} 张 · 已选 {references.length}</small>
             </div>
             <div className="image-lab-dropzone">
-              <button className="image-lab-upload-card" type="button" onClick={selectImageLabReferenceImage}>
+              <button className="image-lab-upload-card" type="button" disabled={imageLabAction.busy} onClick={selectImageLabReferenceImage}>
                 <ImageIcon size={18} />
-                添加
+                添加参考图
               </button>
               <span>
                 <strong>选择或粘贴本地图片路径作为参考</strong>
@@ -191,6 +212,10 @@ export function ImageLabPage({ api, state, applyState }: { api: StoryDreamApi; s
         <OptionCloud title="风格" options={styleOptions} value={style} onChange={setStyle} />
         <Segmented label="分辨率" value={resolution} options={['1K', '2K', '4K']} onChange={(value) => setResolution(value as ImageResolution)} />
         <div className="image-lab-footer">
+          <button className="ghost-action" type="button" onClick={importCompletedImage} disabled={generating || imageLabAction.busy || !prompt.trim()}>
+            <ImagePlus size={17} />
+            导入成品
+          </button>
           <button className="primary-action" onClick={addRecord} disabled={generating || !prompt.trim() || (resolvedSmartMode === 'reference-edit' && references.length === 0)}>
             {generating ? <Loader2 className="spin" size={17} /> : <Wand2 size={17} />}
             {generating ? '生成中' : '智能生成'}

@@ -99,6 +99,15 @@ describe('one-click startup script', () => {
     expect(nodeWrapper).not.toContain('I:\\nodejs');
   });
 
+  it('typechecks renderer, Electron, and repository TypeScript scripts', async () => {
+    const typecheck = await readFile(new URL('../scripts/typecheck.ps1', import.meta.url), 'utf8');
+    const scriptsConfig = await readFile(new URL('../tsconfig.scripts.json', import.meta.url), 'utf8').catch(() => '');
+
+    expect(typecheck).toContain('tsconfig.scripts.json');
+    expect(scriptsConfig.length).toBeGreaterThan(0);
+    expect(scriptsConfig).toContain('scripts/**/*.ts');
+  });
+
   it('cleans stale Electron output and syntax-checks the generated main process before launch', async () => {
     const script = await readFile(new URL('../start-storydream.ps1', import.meta.url), 'utf8');
 

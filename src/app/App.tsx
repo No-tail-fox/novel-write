@@ -584,6 +584,7 @@ export function App() {
       state={state}
       saveTone={saveTone}
       isBrowserPreview={isBrowserPreview}
+      busy={shellAction.busy}
       feedback={shellAction.feedback}
       navigate={navigate}
       openTaskDetail={openTaskDetail}
@@ -601,7 +602,7 @@ export function App() {
           navigate={navigate}
           openTaskDetail={openTaskDetail}
           isHistoryTombstoned={isHistoryTombstoned}
-          historyFamilyEpoch={historyFamilyEpochs.task ?? 0}
+          historyFamilyEpochs={historyFamilyEpochs}
           refreshTaskDetail={refreshTaskDetail}
           onActiveHtmlTaskChange={onActiveHtmlTaskChange}
           refreshViralEvents={refreshViralEvents}

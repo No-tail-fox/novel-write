@@ -134,6 +134,7 @@ export function LlmProfileManager({
                   <button
                     className="primary-action slim"
                     type="button"
+                    aria-label={`启用 LLM 配置 ${profile.name}`}
                     disabled={saving}
                     onClick={(event) => {
                       event.stopPropagation();
@@ -380,6 +381,7 @@ export function ImageProfileManager({
                   <button
                     className="primary-action slim"
                     type="button"
+                    aria-label={`启用绘图配置 ${profile.name}`}
                     disabled={saving}
                     onClick={(event) => {
                       event.stopPropagation();
@@ -601,6 +603,7 @@ export function TtsProfileManager({
                   <button
                     className="primary-action slim"
                     type="button"
+                    aria-label={`启用 TTS 配置 ${profile.name}`}
                     disabled={saving}
                     onClick={(event) => {
                       event.stopPropagation();

@@ -1,5 +1,5 @@
 import { z } from 'zod';
-import type { AppConfig, ImageLabRecord } from './types';
+import type { AppConfig, ImageLabImportInput } from './types';
 import { draftTemplateSchema } from './draft-template-contract';
 import { isSecretId, type SaveConfigInput } from './config-secrets';
 import {
@@ -466,9 +466,20 @@ const imageLabSchema = z
   })
   .strict();
 
-const imageLabAddRecordSchema = imageLabSchema.and(z.object({ provider: nonEmptyText(128) })) as z.ZodType<
-  Partial<ImageLabRecord> & Pick<ImageLabRecord, 'prompt' | 'ratio' | 'style' | 'provider'>
->;
+const imageLabAddRecordSchema = z
+  .object({
+    prompt: nonEmptyText(MAX_TASK_TEXT),
+    ratio: nonEmptyText(128),
+    style: z.string().max(1024),
+    provider: nonEmptyText(128),
+    imagePath: pathSchema,
+    resolution: z.enum(['1K', '2K', '4K']).optional(),
+    smartMode: z.enum(['text-to-image', 'cover', 'blog-cover', 'podcast-cover', 'video-narration', 'two-host-podcast', 'reference-edit']).optional(),
+    referenceImagePath: optionalText(MAX_IPC_PATH),
+    referenceImagePaths: z.array(pathSchema).max(MAX_IPC_ARRAY_ITEMS).optional(),
+    upstreamTaskId: z.string().max(256).nullable().optional(),
+  })
+  .strict() satisfies z.ZodType<ImageLabImportInput>;
 
 const voiceLabSchema = z
   .object({

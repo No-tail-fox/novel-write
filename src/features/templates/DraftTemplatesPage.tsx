@@ -207,7 +207,7 @@ export function DraftTemplatesPage({ api, state, applyState }: { api: StoryDream
           <input className="template-name-input" value={draft.name} onChange={(event) => setDraft({ ...draft, name: event.target.value })} />
           <div className="button-row">
             <button className="ghost-action" onClick={() => setDraft(editingTemplate ? cloneDraftTemplate(editingTemplate) : draft)}>取消</button>
-            <button className="primary-action slim" onClick={save}><Save size={15} />保存</button>
+            <button className="primary-action slim" disabled={draftTemplateAction.busy} onClick={save}><Save size={15} />保存</button>
           </div>
         </div>
         <InlineActionFeedback feedback={draftTemplateAction.feedback} />
@@ -219,7 +219,7 @@ export function DraftTemplatesPage({ api, state, applyState }: { api: StoryDream
                 <h2>{draft.name}</h2>
                 <span className="hint-text">{draft.canvas.ratio} · {draft.canvas.width}x{draft.canvas.height} · {draft.image.animation}</span>
               </div>
-              <button className="ghost-action" onClick={() => copyTemplate(draft)}><Copy size={15} />复制</button>
+              <button className="ghost-action" disabled={draftTemplateAction.busy} onClick={() => copyTemplate(draft)}><Copy size={15} />复制</button>
             </div>
             <EditableDraftCanvas template={draft} selectedLayer={selectedLayer} onSelectLayer={setSelectedLayer} onChange={setDraft} />
           </section>
@@ -237,7 +237,7 @@ export function DraftTemplatesPage({ api, state, applyState }: { api: StoryDream
               <Field label="背景图">
                 <div className="draft-background-field">
                   <input value={draft.canvas.backgroundImage} onChange={(event) => setDraft({ ...draft, canvas: { ...draft.canvas, backgroundImage: event.target.value } })} placeholder="留空 = 无背景图" />
-                  <button className="ghost-action" type="button" onClick={selectDraftBackgroundImage}><FolderOpen size={14} />浏览</button>
+                  <button className="ghost-action" type="button" disabled={draftTemplateAction.busy} onClick={selectDraftBackgroundImage}><FolderOpen size={14} />浏览</button>
                   <button className="ghost-action" type="button" onClick={() => setDraft({ ...draft, canvas: { ...draft.canvas, backgroundImage: '' } })}>清空</button>
                 </div>
               </Field>
@@ -386,7 +386,7 @@ export function DraftTemplatesPage({ api, state, applyState }: { api: StoryDream
         </div>
         <div className="button-row">
           <button className="ghost-action" type="button" onClick={() => setCozeImportOpen(true)}><Upload size={15} />导入 Coze 模板</button>
-          <button className="primary-action slim" onClick={createTemplate}><Plus size={15} />新模板</button>
+          <button className="primary-action slim" aria-label="新建草稿模板" disabled={draftTemplateAction.busy} onClick={createTemplate}><Plus size={15} />新模板</button>
         </div>
       </div>
       <InlineActionFeedback feedback={draftTemplateAction.feedback} />
@@ -401,8 +401,8 @@ export function DraftTemplatesPage({ api, state, applyState }: { api: StoryDream
               </div>
               <div className="button-row">
                 <button className="ghost-action" type="button" onClick={previewCozeWorkflowTemplate}>预览转换</button>
-                <button className="primary-action slim" type="button" disabled={!cozeWorkflowSource.trim()} onClick={saveCozeWorkflowTemplate}><Upload size={15} />导入 Coze 模板</button>
-                <button className="ghost-action" type="button" disabled={!cozeWorkflowSource.trim()} onClick={saveAllCozeWorkflowTemplates}>全部导入</button>
+                <button className="primary-action slim" type="button" disabled={draftTemplateAction.busy || !cozeWorkflowSource.trim()} onClick={saveCozeWorkflowTemplate}><Upload size={15} />导入 Coze 模板</button>
+                <button className="ghost-action" type="button" disabled={draftTemplateAction.busy || !cozeWorkflowSource.trim()} onClick={saveAllCozeWorkflowTemplates}>全部导入</button>
                 <button className="mini-button" type="button" onClick={() => setCozeImportOpen(false)}>关闭</button>
               </div>
             </div>
@@ -453,11 +453,11 @@ export function DraftTemplatesPage({ api, state, applyState }: { api: StoryDream
             </div>
             <div className="row-actions">
               <button className="ghost-action" onClick={() => openEditor(template)}><LayoutTemplate size={15} />编辑</button>
-              <button className="ghost-action" onClick={() => copyTemplate(template)}><Copy size={15} />复制</button>
+              <button className="ghost-action" disabled={draftTemplateAction.busy} onClick={() => copyTemplate(template)}><Copy size={15} />复制</button>
             </div>
           </article>
         ))}
-        <button className="draft-template-card new-template-card" onClick={createTemplate} type="button">
+        <button className="draft-template-card new-template-card" aria-label="从默认模板新建草稿模板" disabled={draftTemplateAction.busy} onClick={createTemplate} type="button">
           <Plus size={24} />
           <strong>新模板</strong>
           <span>从默认竖屏复制一份本地配置</span>

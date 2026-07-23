@@ -855,6 +855,29 @@ describe('file database', () => {
     }
   });
 
+  it('uses a main-process supplied managed key for an image import without coupling it to the record id', async () => {
+    const dir = await mkdtemp(join(tmpdir(), 'storydream-db-import-managed-key-'));
+    const file = join(dir, 'app.db');
+    try {
+      const db = await FileDatabase.open(file);
+      const record = await db.addImageLabRecord({
+        id: 'renderer-business-id',
+        managedStorageKey: 'main-generated-managed-key',
+        prompt: 'Managed imported image',
+        ratio: '9:16',
+        style: 'photo-real',
+        provider: 'mock',
+        imagePath: join(dir, 'image-lab', 'main-generated-managed-key', 'imported.png'),
+        status: 'generated',
+      });
+      expect(record.managedStorageKey).toBe('main-generated-managed-key');
+      expect(record.managedStorageKey).not.toBe(record.id);
+      await db.close();
+    } finally {
+      await rm(dir, { recursive: true, force: true });
+    }
+  });
+
   it('persists voice lab preview records across reloads', async () => {
     const dir = await mkdtemp(join(tmpdir(), 'storybound-db-voice-lab-'));
     const file = join(dir, 'app.db');

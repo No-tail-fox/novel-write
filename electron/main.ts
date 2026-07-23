@@ -48,6 +48,8 @@ import {
 import { createElectronHtmlVideoRenderer } from './html-video-renderer';
 import { createTrustedIpcRegistrar } from './ipc';
 import { openExistingDirectory } from './open-directory';
+import { importManagedImageLabRecord } from './image-lab-import';
+import { writeWindowsManagedFile } from './windows-managed-file';
 import { ConfigService } from './config-service';
 import { CredentialVault } from './credential-vault';
 import { HistoryActivityRegistry, type HistoryActivityReservation } from './history-activity-registry';
@@ -1289,7 +1291,11 @@ trustedHandle('app:save-config', async (_event, input) => {
 trustedHandle('llm:test-config', async (_event, config: LlmConfig) => {
   if (config.apiKey) return testConfiguredLlm(config);
   const runtime = await (await getConfigService()).getRuntimeConfig();
-  const stored = runtime.llmProfiles.find((profile) => profile.id === config.id) ?? runtime.llm;
+  const stored = runtime.llmProfiles.find((profile) => profile.id === config.id)
+    ?? (runtime.llm.id === config.id ? runtime.llm : null);
+  if (!stored) {
+    throw new Error('LLM_TEST_PROFILE_NOT_PERSISTED: Save the selected LLM profile before testing it.');
+  }
   return testConfiguredLlm({ ...config, apiKey: stored.apiKey });
 });
 
@@ -1428,7 +1434,19 @@ trustedHandle('image-lab:generate', async (_event, input: ImageLabGenerateInput)
 
 trustedHandle('image-lab:add-record', async (_event, input) => {
   const database = await getDb();
-  const saved = await database.addImageLabRecord(input);
+  const saved = await importManagedImageLabRecord(
+    appDataDir(),
+    input,
+    (record) => database.addImageLabRecord(record),
+    {
+      inspectImage: (bytes) => {
+        const image = nativeImage.createFromBuffer(bytes);
+        if (image.isEmpty()) throw new Error('IMAGE_LAB_IMPORT_SOURCE_INVALID: Electron could not decode the selected image.');
+        return image.getSize();
+      },
+      writeDestination: writeWindowsManagedFile,
+    },
+  );
   return publishStatePatch({ kind: 'image-lab-upsert', record: imageLabSummary(saved) });
 });
 

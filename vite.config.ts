@@ -1,10 +1,11 @@
 import { defineConfig } from 'vite';
 import react from '@vitejs/plugin-react';
 import { resolve } from 'node:path';
+import { rendererBundleBudgetPlugin } from './scripts/renderer-bundle-budget';
 
 export default defineConfig({
   base: './',
-  plugins: [react()],
+  plugins: [react(), rendererBundleBudgetPlugin()],
   resolve: {
     alias: {
       '@': resolve(__dirname, 'src'),

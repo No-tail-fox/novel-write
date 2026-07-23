@@ -34,7 +34,7 @@ export function AppRoutes({
   navigate,
   openTaskDetail,
   isHistoryTombstoned,
-  historyFamilyEpoch,
+  historyFamilyEpochs,
   refreshTaskDetail,
   onActiveHtmlTaskChange,
   refreshViralEvents,
@@ -49,7 +49,7 @@ export function AppRoutes({
   navigate: (view: ShellView) => void;
   openTaskDetail: (taskId: string) => void;
   isHistoryTombstoned: (family: HistoryFamily, id: string) => boolean;
-  historyFamilyEpoch: number;
+  historyFamilyEpochs: Partial<Record<HistoryFamily, number>>;
   refreshTaskDetail: (taskId: string) => Promise<void>;
   onActiveHtmlTaskChange: (taskId: string) => void;
   refreshViralEvents: (analysisId: string) => Promise<void>;
@@ -66,9 +66,10 @@ export function AppRoutes({
       {activeView === 'history' ? (
         <HistoryPage
           api={api}
+          applyState={applyState}
           openTaskDetail={openTaskDetail}
           isTombstoned={isHistoryTombstoned}
-          familyEpoch={historyFamilyEpoch}
+          familyEpochs={historyFamilyEpochs}
         />
       ) : null}
       {activeView === 'task-detail' ? <TaskDetailPage api={api} state={state} task={selectedTask} applyState={applyState} close={() => navigate('history')} isBrowserPreview={isBrowserPreview} /> : null}

@@ -878,6 +878,9 @@ export type ImageLabSmartMode = 'text-to-image' | 'cover' | 'blog-cover' | 'podc
 export type ImageLabGenerateInput = Pick<ImageLabRecord, 'prompt' | 'ratio' | 'style'> &
   Partial<Pick<ImageLabRecord, 'id' | 'provider' | 'resolution' | 'smartMode' | 'referenceImagePath' | 'referenceImagePaths' | 'upstreamTaskId' | 'createdAt'>>;
 
+export type ImageLabImportInput = Pick<ImageLabRecord, 'prompt' | 'ratio' | 'style' | 'provider' | 'imagePath'> &
+  Partial<Pick<ImageLabRecord, 'resolution' | 'smartMode' | 'referenceImagePath' | 'referenceImagePaths' | 'upstreamTaskId'>>;
+
 export interface VoiceLabRecord {
   id: string;
   archivedAt?: string | null;

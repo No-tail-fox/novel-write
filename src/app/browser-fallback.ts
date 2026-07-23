@@ -27,6 +27,7 @@ import type {
   HistoryPage,
   HtmlVideoConfigChange,
   ImageLabGenerateInput,
+  ImageLabImportInput,
   ImageLabRecord,
   PromptTemplate,
   Task,
@@ -753,27 +754,9 @@ export function makeFallbackApi(setState: (state: AppState) => void): StoryDream
       };
       return persist({ ...state, voiceLabRecords: [record, ...state.voiceLabRecords] });
     },
-    async addImageLabRecord(input: Partial<ImageLabRecord> & Pick<ImageLabRecord, 'prompt' | 'ratio' | 'style' | 'provider'>) {
-      const state = read();
-      const now = new Date().toISOString();
-      const record: ImageLabRecord = {
-        id: input.id ?? crypto.randomUUID(),
-        prompt: input.prompt,
-        ratio: input.ratio,
-        style: input.style,
-        provider: input.provider,
-        imagePath: input.imagePath ?? '',
-        status: input.status ?? 'failed',
-        errorMessage: input.errorMessage ?? '',
-        resolution: input.resolution ?? '2K',
-        smartMode: input.smartMode ?? 'text-to-image',
-        referenceImagePaths: input.referenceImagePaths?.length ? input.referenceImagePaths : input.referenceImagePath ? [input.referenceImagePath] : [],
-        referenceImagePath: input.referenceImagePath ?? '',
-        upstreamTaskId: input.upstreamTaskId ?? null,
-        createdAt: input.createdAt ?? now,
-        finishedAt: input.finishedAt ?? now,
-      };
-      return persist({ ...state, imageLabRecords: [record, ...state.imageLabRecords] });
+    async addImageLabRecord(input: ImageLabImportInput) {
+      void input;
+      throw new Error('IMAGE_LAB_IMPORT_REQUIRES_ELECTRON: 浏览器预览不能导入受管图片。');
     },
     async saveAccount(account: AccountProfile) {
       return persist({ ...read(), account });

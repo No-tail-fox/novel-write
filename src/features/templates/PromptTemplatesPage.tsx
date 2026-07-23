@@ -316,7 +316,7 @@ export function PromptTemplatesPage({ api, state, applyState }: { api: StoryDrea
               <RotateCcw size={14} />
               重置
             </button>
-            <button className="primary-action slim" onClick={promptTemplateLibraryTab === 'story' ? createPromptTemplate : createImageTemplate}>
+            <button className="primary-action slim" disabled={promptTemplateAction.busy} onClick={promptTemplateLibraryTab === 'story' ? createPromptTemplate : createImageTemplate}>
               <Plus size={14} />
               新建模板
             </button>
@@ -366,7 +366,7 @@ export function PromptTemplatesPage({ api, state, applyState }: { api: StoryDrea
                     <button className="ghost-action compact-action" onClick={(event) => { event.stopPropagation(); openPromptTemplateDetail(template); }}>
                       查看
                     </button>
-                    <button className="ghost-action compact-action" onClick={(event) => { event.stopPropagation(); void duplicateTemplate(template); }}>
+                    <button className="ghost-action compact-action" disabled={promptTemplateAction.busy} onClick={(event) => { event.stopPropagation(); void duplicateTemplate(template); }}>
                       <Copy size={14} />
                       克隆
                     </button>
@@ -405,7 +405,7 @@ export function PromptTemplatesPage({ api, state, applyState }: { api: StoryDrea
                   <button className="ghost-action compact-action" onClick={(event) => { event.stopPropagation(); openImageTemplateDetail(style); }}>
                     查看
                   </button>
-                  <button className="ghost-action compact-action" onClick={(event) => { event.stopPropagation(); void duplicateImageTemplate(style); }}>
+                  <button className="ghost-action compact-action" disabled={promptTemplateAction.busy} onClick={(event) => { event.stopPropagation(); void duplicateImageTemplate(style); }}>
                     <Copy size={14} />
                     克隆
                   </button>

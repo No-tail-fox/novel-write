@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { defaultConfig } from '@shared/config';
 import type { AppConfig, ImageProviderProfile, TtsProviderProfile } from '@shared/types';
+import { hasPendingLlmSecretChange } from '../src/features/settings/settings-controls';
 
 async function loadConfigSecrets() {
   return import('../src/shared/config-secrets').catch(() => null);
@@ -79,6 +80,15 @@ function configWithUniqueSecrets(): { config: AppConfig; sentinels: string[] } {
 
   return { config, sentinels };
 }
+
+describe('selected LLM secret test guard', () => {
+  it('blocks direct tests for new, replaced, and cleared selected-profile secrets only', () => {
+    expect(hasPendingLlmSecretChange({ 'llm/profile-a/apiKey': 'new-key' }, 'profile-a')).toBe(true);
+    expect(hasPendingLlmSecretChange({ 'llm/profile-a/apiKey': null }, 'profile-a')).toBe(true);
+    expect(hasPendingLlmSecretChange({ 'llm/profile-b/apiKey': 'other-key' }, 'profile-a')).toBe(false);
+    expect(hasPendingLlmSecretChange({}, 'profile-a')).toBe(false);
+  });
+});
 
 describe('config secret inventory', () => {
   it('extracts, strips, and reapplies every top-level and profile secret without loss', async () => {

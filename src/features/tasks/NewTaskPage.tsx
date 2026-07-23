@@ -699,13 +699,13 @@ export function NewTaskPage({
               {bgm.title}
             </button>
           ))}
-          <button className="chip" onClick={addBgmFromTask}><Plus size={14} />添加</button>
+          <button className="chip" disabled={taskAction.busy} onClick={addBgmFromTask}><Plus size={14} />添加</button>
         </div>
 
         <Field label="主角参考图" hint="可选">
           <div className="upload-row">
             <input value={referenceImagePath} placeholder="上传后出现主角的分镜会以这张为基础保持人物一致" onChange={(event) => setReferenceImagePath(event.target.value)} />
-            <button className="ghost-action" onClick={selectTaskReferenceImage}>
+            <button className="ghost-action" disabled={taskAction.busy} onClick={selectTaskReferenceImage}>
               <Upload size={15} />
               上传主角参考图
             </button>

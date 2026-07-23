@@ -25,6 +25,7 @@ import type {
   HtmlVideoConfigChange,
   HistoryListInput,
   ImageLabGenerateInput,
+  ImageLabImportInput,
   ImageLabRecord,
   ImageLabSummary,
   ImageLabTombstoneResult,
@@ -217,7 +218,7 @@ export type StoryDreamApi = {
   generateCustomStyleDraft: (input: CustomStyleGenerateInput) => Promise<CustomStyle>;
   saveDraftTemplate: (template: DraftTemplate) => Promise<AppMutationResult | null>;
   generateImageLab: (input: ImageLabGenerateInput) => Promise<AppMutationResult | null>;
-  addImageLabRecord: (input: Partial<ImageLabRecord> & Pick<ImageLabRecord, 'prompt' | 'ratio' | 'style' | 'provider'>) => Promise<AppMutationResult | null>;
+  addImageLabRecord: (input: ImageLabImportInput) => Promise<AppMutationResult | null>;
   generateVoiceLabPreview: (input: VoiceLabGenerateInput) => Promise<AppMutationResult | null>;
   saveAccount: (account: AccountProfile) => Promise<AppMutationResult | null>;
   saveActivation: (activation: ActivationState) => Promise<AppMutationResult | null>;

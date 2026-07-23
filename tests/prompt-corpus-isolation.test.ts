@@ -92,11 +92,19 @@ describe('prompt corpus isolation', () => {
   });
 
   it('emits the prompt corpus as a non-entry Vite chunk', async () => {
-    const result = await build({
-      configFile: fileURLToPath(new URL('../vite.config.ts', import.meta.url)),
-      logLevel: 'silent',
-      build: { write: false, manifest: true },
-    }) as Rollup.RollupOutput;
+    const previousNodeEnv = process.env.NODE_ENV;
+    let result: Rollup.RollupOutput;
+    try {
+      process.env.NODE_ENV = 'production';
+      result = await build({
+        configFile: fileURLToPath(new URL('../vite.config.ts', import.meta.url)),
+        logLevel: 'silent',
+        build: { write: false, manifest: true, emptyOutDir: false },
+      }) as Rollup.RollupOutput;
+    } finally {
+      if (previousNodeEnv === undefined) delete process.env.NODE_ENV;
+      else process.env.NODE_ENV = previousNodeEnv;
+    }
     const chunks = result.output.filter((output): output is Rollup.OutputChunk => output.type === 'chunk');
     const entry = chunks.find((chunk) => chunk.isEntry);
     const corpus = chunks.find((chunk) => Object.keys(chunk.modules).some((id) => id.endsWith('/storybound-system-templates.ts')));

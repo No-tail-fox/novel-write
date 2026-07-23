@@ -152,7 +152,7 @@ export function MusicMvPage({
         <Field label="音频文件">
           <div className="upload-row">
             <input value={musicMvAudioPath} onChange={(event) => setMusicMvAudioPath(event.target.value)} placeholder="可选择本地歌曲或伴奏" />
-            <button className="ghost-action" onClick={selectMusicMvAudio}><FolderOpen size={15} />选择音频</button>
+            <button className="ghost-action" disabled={musicAction.busy} onClick={selectMusicMvAudio}><FolderOpen size={15} />选择音频</button>
           </div>
         </Field>
 

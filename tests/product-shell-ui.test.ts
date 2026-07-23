@@ -35,19 +35,26 @@ describe('product shell ui', () => {
     expect(main).not.toContain('historyTombstoneEpochs');
     expect(history).toContain('familyEpoch');
     expect(history).not.toContain('tombstoneEpoch');
-    expect(app).toContain('historyFamilyEpoch={historyFamilyEpochs.task ?? 0}');
-    expect(routes).toContain('familyEpoch={historyFamilyEpoch}');
+    expect(app).toContain('historyFamilyEpochs={historyFamilyEpochs}');
+    expect(routes).toContain('familyEpochs={historyFamilyEpochs}');
+    expect(routes).toContain('applyState={applyState}');
+    expect(history).toContain('familyEpoch: familyEpochs[family] ?? 0');
     expect(history).toContain('useHistoryPage');
     expect(history).toContain('api.listTasks');
     expect(history).toContain('historyPage.previous');
     expect(history).toContain('historyPage.next');
     expect(history).toContain('historyPage.reload');
+    expect(history).toContain('const historyBusy = historyAction.busy || historyPage.loading;');
+    expect(history).toContain('disabled={historyBusy || Boolean(pendingDelete)}');
+    expect(history).toContain('busy={historyBusy}');
+    expect(history).toContain('disabled={historyBusy}');
+    expect(history).not.toContain('disabled={historyAction.busy}');
     expect(history).toContain('hasNext={Boolean(historyPage.page?.nextCursor)}');
     expect(pagination).toContain('disabled={busy || !hasNext}');
-    expect(history).toContain('className="table-row clickable" key={task.id} role="row"');
+    expect(history).toContain("className={family === 'task' ? 'table-row clickable' : 'table-row'} key={record.id} role=\"row\"");
     expect(history).toContain('className="table-row-primary-action"');
-    expect(history).toContain('aria-label={`打开任务 ${task.title || task.id}`}');
-    expect(history).toContain('event.stopPropagation(); openTaskDetail(task.id);');
+    expect(history).toContain('aria-label={`打开任务 ${row.title}`}');
+    expect(history).toContain('event.stopPropagation(); openTaskDetail(record.id);');
     expect(history).not.toContain('!historyPage.page || historyPage.page.nextCursor === null');
     expect(history).not.toContain('state.tasks.filter');
     expect(hook).toContain('store.begin(');
@@ -957,6 +964,7 @@ describe('product shell ui', () => {
       "sessionStorage.removeItem('benchmark_search')",
       'const selectedMaterialAsset = personAssets.find((asset) => asset.name === materialPerson) ?? null;',
       'const isLocalMaterialInvalid = materialSource === \'local\' && (!materialPerson || !selectedMaterialAsset || selectedMaterialAsset.count <= 0);',
+      'api.createAndRunTask',
       '请先选择人物素材。',
       '所选人物素材至少导入 1 张图片后才能创建任务。',
       'disabled={running || isBrowserPreview || isLocalMaterialInvalid || (mode === \'paste\' ? inputText.trim().length === 0 : aiKeyword.trim().length === 0)}',
@@ -1417,7 +1425,7 @@ describe('product shell ui', () => {
     const page = (await rendererSourcesPromise).all;
     expect(page).toMatch(/from ["'](?:\.\/|\.\.\/)shared\/html-video-workflow["'];/u);
     expect(page).toContain("{statusLabel(task.status)} · {taskProgressLabel(task)}");
-    expect(page).toContain('<span role="cell">{taskProgressLabel(task)}</span>');
+    expect(page).toContain('detail: taskProgressLabel(task)');
   });
 
   it('owns HTML task creation and output sizing defaults in the shared config module', async () => {
@@ -1619,6 +1627,10 @@ describe('product shell ui', () => {
     expect(app).toContain("api.windowControl('minimize')");
     expect(app).toContain("api.windowControl('toggle-maximize')");
     expect(app).toContain("api.windowControl('close')");
+    expect(app).toContain('busy={shellAction.busy}');
+    expect(shell).toContain('busy: boolean;');
+    expect(shell).toContain('disabled={busy}');
+    expect(shell).toContain('item={item} active={activeView === item.view} busy={busy}');
     expect(shell).not.toContain('className="trial-strip"');
     expect(shell).not.toContain('className="activation-link"');
     expect(shell).not.toContain('获取激活码');
@@ -2718,6 +2730,49 @@ describe('product shell ui', () => {
     expect(settingsOwners).toContain('MiniMax 音色 ID');
   });
 
+  it('tests the selected LLM profile without mutating the saved configuration', async () => {
+    const settingsPage = (await rendererSourcesPromise).requiredFile('src/features/settings/SettingsPage.tsx');
+    const testSnippet = settingsPage.slice(
+      settingsPage.indexOf('async function testSelectedLlmConfig()'),
+      settingsPage.indexOf('async function refreshProviderModels'),
+    );
+
+    expect(settingsPage).toContain('仅测试当前 LLM');
+    expect(testSnippet).toContain('api.testLlmConfig(selectedLlmTestConfig.llm)');
+    expect(testSnippet).toContain('if (selectedLlmTestBlocked)');
+    expect(testSnippet).toContain('setConfigTestResult(`[${result.status}] ${result.detail}`)');
+    expect(testSnippet).not.toContain('api.saveConfig');
+    expect(settingsPage).toContain("section === 'llm'");
+    expect(settingsPage).toContain('hasPendingLlmSecretChange(secretChanges, selectedLlmTestConfig.llm.id)');
+    expect(settingsPage).toContain('const selectedLlmProfilePersisted = state.config.llmProfiles.some((profile) => profile.id === selectedLlmTestConfig.llm.id)');
+    expect(settingsPage).toContain('const selectedLlmTestBlocked = selectedLlmSecretPending || !selectedLlmProfilePersisted;');
+    expect(settingsPage).toContain('disabled={testingConfig || savingConfig || settingsAction.busy || selectedLlmTestBlocked}');
+
+    const electronMain = await readFile(new URL('../electron/main.ts', import.meta.url), 'utf8');
+    const mainHandler = electronMain.slice(electronMain.indexOf("trustedHandle('llm:test-config'"), electronMain.indexOf("trustedHandle('models:list'"));
+    expect(mainHandler).not.toContain('?? runtime.llm');
+    expect(mainHandler).toContain('LLM_TEST_PROFILE_NOT_PERSISTED');
+  });
+
+  it('keeps renderer command owners attached to their route modules', async () => {
+    const sources = await rendererSourcesPromise;
+    const expectations: Array<[string, string[]]> = [
+      ['src/app/App.tsx', ['saveUiPreferences', 'windowControl']],
+      ['src/features/account/AccountPage.tsx', ['saveAccount']],
+      ['src/features/account/ActivationPage.tsx', ['saveActivation']],
+      ['src/features/settings/SettingsPage.tsx', ['runDiagnostics', 'saveConfig', 'testAppConfig']],
+      ['src/features/tasks/NewTaskPage.tsx', ['createAndRunTask', 'searchWebSources']],
+      ['src/features/tasks/TaskArtifactPreview.tsx', ['regenerateTaskNarration', 'rerunTaskStep', 'updateTaskImagePrompt']],
+      ['src/features/templates/PromptTemplatesPage.tsx', ['resetPromptTemplates']],
+      ['src/features/viral/ViralAnalyzerPage.tsx', ['retryViralAnalysis', 'selectCookieFile', 'updateViralAnalysisStatus']],
+    ];
+
+    for (const [path, methods] of expectations) {
+      const source = sources.requiredFile(path);
+      for (const method of methods) expect(source, `${path} owns ${method}`).toContain(`api.${method}`);
+    }
+  });
+
   it('adds speech-to-text API settings for viral analyzer transcription', async () => {
     const sources = await rendererSourcesPromise;
     const settingsPage = sources.requiredFile('src/features/settings/SettingsPage.tsx');
@@ -3088,6 +3143,36 @@ describe('product shell ui', () => {
     expect(page).toContain("record.status === 'failed'");
     expect(css).toContain('.image-record img');
     expect(css).toContain('.image-record.failed');
+  });
+
+  it('imports a completed local image into image lab history with the current parameters', async () => {
+    const page = (await rendererSourcesPromise).requiredFile('src/features/labs/ImageLabPage.tsx');
+    const importSnippet = page.slice(
+      page.indexOf('async function importCompletedImage()'),
+      page.indexOf('return ('),
+    );
+
+    expect(page).toContain('导入成品');
+    expect(importSnippet).toContain('const imagePath = await api.selectLocalImage()');
+    expect(importSnippet).toContain('api.addImageLabRecord({');
+    for (const parameter of [
+      'prompt,',
+      'ratio,',
+      'style,',
+      'provider: state.config.imageProvider,',
+      'imagePath,',
+      'resolution,',
+      'smartMode: resolvedSmartMode,',
+      'referenceImagePath: references[0] ?? \'\',',
+      'referenceImagePaths: references,',
+    ]) {
+      expect(importSnippet).toContain(parameter);
+    }
+    for (const mainProcessOwnedField of ['id:', 'managedStorageKey:', 'status:', 'finishedAt:']) {
+      expect(importSnippet).not.toContain(mainProcessOwnedField);
+    }
+    expect(importSnippet.indexOf('api.selectLocalImage()')).toBeLessThan(importSnippet.indexOf('api.addImageLabRecord({'));
+    expect(importSnippet).toContain('applyState(nextState)');
   });
 
   it('exposes the StoryDream smart image modes in image lab generation', async () => {

@@ -1,5 +1,5 @@
 import { createHash, randomBytes } from 'node:crypto';
-import { lstat, readdir, realpath, rename, rmdir, unlink } from 'node:fs/promises';
+import { lstat, mkdir, readdir, realpath, rename, rmdir, unlink } from 'node:fs/promises';
 import { basename, dirname, isAbsolute, join, relative, resolve } from 'node:path';
 import type { HistoryFamily } from '../src/shared/types';
 
@@ -96,6 +96,18 @@ interface ManagedHistoryIdentity {
   version: 1;
   dev: string;
   ino: string;
+}
+
+export interface ManagedHistoryWorkDirectoryAnchor {
+  path: string;
+  identityJson: string;
+  assertCurrent(): Promise<void>;
+}
+
+export interface ManagedHistoryDirectoryCreationOperations {
+  lstat: (path: string) => Promise<ManagedHistoryStats>;
+  realpath: (path: string) => Promise<string>;
+  mkdir: (path: string) => Promise<void>;
 }
 
 const quarantineTokenPattern = /^[a-f0-9]{32}$/u;
@@ -210,12 +222,69 @@ async function assertUnchangedDirectory(
   path: string,
   expected: ManagedHistoryIdentity,
   label: string,
-  operations: ManagedHistoryFileOperations,
+  operations: Pick<ManagedHistoryFileOperations, 'lstat'>,
 ): Promise<ManagedHistoryStats> {
   const stat = await operations.lstat(path);
   assertManagedDirectory(stat, label);
   assertSameHistoryIdentity(stat, expected, label);
   return stat;
+}
+
+export async function createManagedHistoryWorkDirectory(
+  appDataDir: string,
+  family: HistoryFamily,
+  managedStorageKey: string,
+  overrides: Partial<ManagedHistoryDirectoryCreationOperations> = {},
+): Promise<ManagedHistoryWorkDirectoryAnchor> {
+  const operations: ManagedHistoryDirectoryCreationOperations = {
+    lstat: overrides.lstat ?? ((path) => lstat(path, { bigint: true })),
+    realpath: overrides.realpath ?? ((path) => realpath(path)),
+    mkdir: overrides.mkdir ?? ((path) => mkdir(path)),
+  };
+  const applicationRoot = resolve(appDataDir);
+  const familyRoot = managedHistoryFamilyRoot(applicationRoot, family);
+  const workDir = resolveManagedHistoryWorkDir(applicationRoot, family, managedStorageKey);
+  const applicationStat = await operations.lstat(applicationRoot);
+  assertManagedDirectory(applicationStat, 'Managed app data root');
+  const applicationIdentity = historyIdentity(applicationStat);
+  try {
+    await operations.mkdir(familyRoot);
+  } catch (error) {
+    if (!isErrno(error, 'EEXIST')) throw error;
+  }
+  const rootStat = await operations.lstat(familyRoot);
+  assertManagedDirectory(rootStat, 'Managed family root');
+  const rootIdentity = historyIdentity(rootStat);
+  const [canonicalApplication, canonicalRoot] = await Promise.all([
+    operations.realpath(applicationRoot),
+    operations.realpath(familyRoot),
+  ]);
+  assertCanonicalDirectChild(canonicalApplication, canonicalRoot);
+  await assertUnchangedDirectory(applicationRoot, applicationIdentity, 'Managed app data root', operations);
+  await assertUnchangedDirectory(familyRoot, rootIdentity, 'Managed family root', operations);
+  await operations.mkdir(workDir);
+  const workDirStat = await operations.lstat(workDir);
+  assertManagedDirectory(workDirStat, 'Managed history directory');
+  const workDirIdentity = historyIdentity(workDirStat);
+
+  async function assertCurrent(): Promise<void> {
+    await assertUnchangedDirectory(applicationRoot, applicationIdentity, 'Managed app data root', operations);
+    await assertUnchangedDirectory(familyRoot, rootIdentity, 'Managed family root', operations);
+    await assertUnchangedDirectory(workDir, workDirIdentity, 'Managed history directory', operations);
+    const [currentApplication, currentRoot, currentWorkDir] = await Promise.all([
+      operations.realpath(applicationRoot),
+      operations.realpath(familyRoot),
+      operations.realpath(workDir),
+    ]);
+    assertCanonicalDirectChild(currentApplication, currentRoot);
+    assertCanonicalDirectChild(currentRoot, currentWorkDir);
+    await assertUnchangedDirectory(applicationRoot, applicationIdentity, 'Managed app data root', operations);
+    await assertUnchangedDirectory(familyRoot, rootIdentity, 'Managed family root', operations);
+    await assertUnchangedDirectory(workDir, workDirIdentity, 'Managed history directory', operations);
+  }
+
+  await assertCurrent();
+  return { path: workDir, identityJson: JSON.stringify(workDirIdentity), assertCurrent };
 }
 
 async function assertRollbackTargetMissing(
@@ -236,6 +305,7 @@ export async function stageManagedHistoryDirectory(
   family: HistoryFamily,
   managedStorageKey: string,
   overrides: Partial<ManagedHistoryFileOperations> = {},
+  expectedIdentityJson?: string,
 ): Promise<StagedManagedHistoryDirectory | null> {
   const applicationRoot = resolve(appDataDir);
   const originalPath = resolveManagedHistoryWorkDir(applicationRoot, family, managedStorageKey);
@@ -265,6 +335,9 @@ export async function stageManagedHistoryDirectory(
     throw error;
   }
   assertManagedDirectory(originalStat, 'Managed history directory');
+  if (expectedIdentityJson) {
+    assertSameHistoryIdentity(originalStat, parseHistoryIdentity(expectedIdentityJson), 'Managed history directory');
+  }
   const applicationIdentity = historyIdentity(applicationStat);
   const rootIdentity = historyIdentity(rootStat);
   const originalIdentity = historyIdentity(originalStat);

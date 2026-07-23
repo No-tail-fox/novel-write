@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { Flame, RotateCcw, Search } from 'lucide-react';
+import { Flame, Loader2, RotateCcw, Search } from 'lucide-react';
 import { ErrorDetails as ErrorSummaryButton } from '../../components/ErrorDetails';
 import { FormField as Field } from '../../components/FormField';
 import { AsyncActionFeedback as InlineActionFeedback } from '../../components/AsyncActionFeedback';
@@ -230,9 +230,9 @@ export function ViralAnalyzerPage({
           <p className="viral-source-status">
             {sourceMode === 'auto' ? `自动识别：${viralPlatformLabel(detectedPlatform)}` : `手动指定：${viralPlatformLabel(selectedPlatformForAnalysis)}`}
           </p>
-          <button className="primary-action viral-start-action" disabled={isBrowserPreview && false} onClick={startAnalysis}>
-            <Search size={16} />
-            开始拆解
+          <button className="primary-action viral-start-action" disabled={viralAction.busy} onClick={startAnalysis}>
+            {viralAction.busy ? <Loader2 className="spin" size={16} /> : <Search size={16} />}
+            {viralAction.busy ? '拆解中' : '开始拆解'}
           </button>
           <div className="viral-settings-grid">
             <Field label="关键帧数量">
@@ -261,8 +261,8 @@ export function ViralAnalyzerPage({
           </div>
           <div className="viral-cookie-tools">
             <div className="settings-inline-actions">
-              <button className="mini-button" type="button" onClick={openDouyinLogin}>打开抖音登录窗口</button>
-              <button className="mini-button" type="button" onClick={chooseCookieFile}>选择 Cookie 文件</button>
+              <button className="mini-button" type="button" disabled={viralAction.busy} onClick={openDouyinLogin}>打开抖音登录窗口</button>
+              <button className="mini-button" type="button" disabled={viralAction.busy} onClick={chooseCookieFile}>选择 Cookie 文件</button>
             </div>
             <Field label="Cookie 文件">
               <div className="viral-cookie-input-row">
@@ -270,11 +270,12 @@ export function ViralAnalyzerPage({
                   id="viral-cookie-input"
                   className="text-input"
                   value={cookieFilePath}
+                  disabled={viralAction.busy}
                   onChange={(event) => setCookieFilePath(event.target.value)}
                   onBlur={() => saveViralCookiePath(cookieFilePath)}
                   placeholder="C:\\Users\\you\\Downloads\\cookies.txt"
                 />
-                {cookieFilePath ? <button className="mini-button" type="button" onClick={() => saveViralCookiePath('')}>清空</button> : null}
+                {cookieFilePath ? <button className="mini-button" type="button" disabled={viralAction.busy} onClick={() => saveViralCookiePath('')}>清空</button> : null}
               </div>
             </Field>
             <p className="muted-text">抖音风控时先点登录窗口完成登录；关闭窗口后会自动写入本应用的 Cookie 文件。也可以手动选择 Netscape cookies.txt。</p>

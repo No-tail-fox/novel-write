@@ -70,11 +70,11 @@ export function QueuePage({
               </div>
               <StatusPill status={task.status} />
               <div className="row-actions" onClick={(event) => event.stopPropagation()}>
-                {task.status === 'running' ? <button className="mini-button" onClick={() => setStatus(task, 'paused')}>暂停</button> : null}
-                {task.status === 'running' || task.status === 'pending' ? <button className="mini-button" onClick={() => setStatus(task, 'cancelled')}>取消</button> : null}
-                {task.status === 'paused' ? <button className="mini-button" disabled={isBrowserPreview} onClick={() => continueTask(task)}>继续</button> : null}
-                {task.status === 'failed' || task.status === 'cancelled' ? <button className="mini-button" disabled={isBrowserPreview} onClick={() => retryFailedTask(task)}>重试</button> : null}
-                <button className="mini-button" disabled={queueAction.busy || task.status !== 'completed' || !task.outputDir} onClick={() => task.outputDir && openQueueOutput(task.id)}>
+                {task.status === 'running' ? <button className="mini-button" disabled={queueAction.busy || isBrowserPreview} onClick={() => setStatus(task, 'paused')}>暂停</button> : null}
+                {task.status === 'running' || task.status === 'pending' ? <button className="mini-button" disabled={queueAction.busy || isBrowserPreview} onClick={() => setStatus(task, 'cancelled')}>取消</button> : null}
+                {task.status === 'paused' ? <button className="mini-button" disabled={queueAction.busy || isBrowserPreview} onClick={() => continueTask(task)}>继续</button> : null}
+                {task.status === 'failed' || task.status === 'cancelled' ? <button className="mini-button" disabled={queueAction.busy || isBrowserPreview} onClick={() => retryFailedTask(task)}>重试</button> : null}
+                <button className="mini-button" title="打开任务输出目录" aria-label="打开任务输出目录" disabled={queueAction.busy || task.status !== 'completed' || !task.outputDir} onClick={() => task.outputDir && openQueueOutput(task.id)}>
                   <FolderOpen size={14} />
                 </button>
               </div>

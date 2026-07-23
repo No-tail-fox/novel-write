@@ -2251,6 +2251,15 @@ textarea {
   background: var(--panel-2);
 }
 
+.history-page .table-row,
+.history-page .table-head {
+  grid-template-columns: minmax(220px, 1fr) 100px 80px 170px minmax(190px, auto);
+}
+
+.history-page .row-actions {
+  flex-wrap: nowrap;
+}
+
 .clickable {
   cursor: pointer;
 }

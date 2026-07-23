@@ -23,6 +23,7 @@ export function AppShell({
   state,
   saveTone,
   isBrowserPreview,
+  busy,
   feedback,
   navigate,
   openTaskDetail,
@@ -35,6 +36,7 @@ export function AppShell({
   state: AppState;
   saveTone: SaveTone;
   isBrowserPreview: boolean;
+  busy: boolean;
   feedback: AsyncActionFeedback | null;
   navigate: (view: ShellView) => void;
   openTaskDetail: (taskId: string) => void;
@@ -51,20 +53,20 @@ export function AppShell({
   const NewTaskIcon = newTaskPrimaryAction.icon;
 
   return (
-    <main className="app-shell">
+    <main className="app-shell" aria-busy={busy}>
       <div className="window-line">
         <div className="window-title">
           <div className="app-mark">S</div>
           <strong>StoryDream</strong>
         </div>
         <div className="window-controls" aria-label="窗体控制">
-          <button className="window-control-button" type="button" aria-label="最小化" onClick={minimizeWindow}>
+          <button className="window-control-button" type="button" aria-label="最小化" disabled={busy} onClick={minimizeWindow}>
             <Minus size={14} />
           </button>
-          <button className="window-control-button" type="button" aria-label="最大化" onClick={toggleMaximizeWindow}>
+          <button className="window-control-button" type="button" aria-label="最大化" disabled={busy} onClick={toggleMaximizeWindow}>
             <Maximize2 size={14} />
           </button>
-          <button className="window-control-button close" type="button" aria-label="关闭" onClick={closeWindow}>
+          <button className="window-control-button close" type="button" aria-label="关闭" disabled={busy} onClick={closeWindow}>
             <X size={14} />
           </button>
         </div>
@@ -83,6 +85,7 @@ export function AppShell({
 
           <button
             className="new-task-button"
+            disabled={busy}
             onClick={() => navigate(newTaskPrimaryAction.view)}
             onMouseEnter={() => preloadRouteIntent(newTaskPrimaryAction.view)}
             onFocus={() => preloadRouteIntent(newTaskPrimaryAction.view)}
@@ -95,11 +98,11 @@ export function AppShell({
           <nav className="nav-list">
             <span className="nav-section-label">主线工作流</span>
             {primaryNavItems.map((item) => (
-              <NavButton key={item.view} item={item} active={activeView === item.view} navigate={navigate} />
+              <NavButton key={item.view} item={item} active={activeView === item.view} busy={busy} navigate={navigate} />
             ))}
             <span className="nav-section-label secondary">扩展工具</span>
             {secondaryNavItems.map((item) => (
-              <NavButton key={item.view} item={item} active={activeView === item.view} navigate={navigate} />
+              <NavButton key={item.view} item={item} active={activeView === item.view} busy={busy} navigate={navigate} />
             ))}
           </nav>
 
@@ -111,6 +114,7 @@ export function AppShell({
                 <button
                   key={task.id}
                   className="recent-task-item"
+                  disabled={busy}
                   onClick={() => openTaskDetail(task.id)}
                   onMouseEnter={() => preloadRouteIntent('task-detail')}
                   onFocus={() => preloadRouteIntent('task-detail')}
@@ -122,6 +126,7 @@ export function AppShell({
             </section>
             <button
               className="trial-activation-bar"
+              disabled={busy}
               onClick={() => navigate('activation')}
               onMouseEnter={() => preloadRouteIntent('activation')}
               onFocus={() => preloadRouteIntent('activation')}
@@ -133,6 +138,7 @@ export function AppShell({
             <div className="account-entry-grid">
               <button
                 className="credit-chip"
+                disabled={busy}
                 onClick={() => navigate('account')}
                 onMouseEnter={() => preloadRouteIntent('account')}
                 onFocus={() => preloadRouteIntent('account')}
@@ -143,6 +149,7 @@ export function AppShell({
               </button>
               <button
                 className="feedback-link"
+                disabled={busy}
                 onClick={() => navigate('account')}
                 onMouseEnter={() => preloadRouteIntent('account')}
                 onFocus={() => preloadRouteIntent('account')}
@@ -182,11 +189,12 @@ export function AppShell({
   );
 }
 
-function NavButton({ item, active, navigate }: { item: NavItem; active: boolean; navigate: (view: ShellView) => void }) {
+function NavButton({ item, active, busy, navigate }: { item: NavItem; active: boolean; busy: boolean; navigate: (view: ShellView) => void }) {
   const Icon = item.icon;
   return (
     <button
       className={active ? 'nav-item active' : 'nav-item'}
+      disabled={busy}
       onClick={() => navigate(item.view)}
       onMouseEnter={() => preloadRouteIntent(item.view)}
       onFocus={() => preloadRouteIntent(item.view)}
