@@ -54,6 +54,7 @@ export function AppShell({
   const activeNav = navigationItemForView(activeView);
   const NewTaskIcon = newTaskPrimaryAction.icon;
   const themeLabel = state.ui.theme === 'light' ? '切换深色主题' : '切换浅色主题';
+  const taskOperationsView = activeView === 'queue' || activeView === 'history' || activeView === 'task-detail';
 
   return (
     <main className="app-shell" aria-busy={busy} data-editorial-shell data-shell-view={activeView}>
@@ -88,6 +89,7 @@ export function AppShell({
 
           <button
             className="new-task-button"
+            data-nav-view={newTaskPrimaryAction.view}
             aria-label={newTaskPrimaryAction.label}
             title={`${newTaskPrimaryAction.label} · ${newTaskPrimaryAction.hint}`}
             disabled={busy}
@@ -177,10 +179,11 @@ export function AppShell({
         </aside>
 
         <section className="content">
-          <header className="page-head">
+          <header className={taskOperationsView ? 'page-head task-operations-page-head' : 'page-head'}>
             <div>
+              {taskOperationsView ? <span className="page-breadcrumb">StoryDream / 创作生产</span> : null}
               <h1>{activeNav.label}</h1>
-              <p>{pageSubtitle(activeView)}</p>
+              {taskOperationsView ? null : <p>{pageSubtitle(activeView)}</p>}
               {isBrowserPreview ? <span className="local-note">浏览器预览不能执行真实流水线，请在 Electron 应用中运行任务。</span> : null}
             </div>
             <div className="top-notice">

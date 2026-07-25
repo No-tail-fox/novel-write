@@ -15,6 +15,8 @@ import { collectTaskEventPages } from '../src/shared/state-reconciliation';
 import { FileDatabase } from '../src/shared/storage';
 import { ipcInputSchemas } from '../src/shared/ipc-contract';
 import type { Task } from '../src/shared/types';
+import { formatTaskOperationTime } from '../src/features/tasks/task-formatters';
+import { taskOperationStageTitle, taskOperationStatusLabel } from '../src/features/tasks/task-pipeline';
 
 function task(overrides: Partial<Task> = {}): Task {
   return {
@@ -84,6 +86,17 @@ function task(overrides: Partial<Task> = {}): Task {
 }
 
 describe('task operation contracts', () => {
+  it('uses concise concept labels and relative operation timestamps without changing task state', () => {
+    expect(taskOperationStageTitle('Step 1 三轮改写自评')).toBe('三轮改写');
+    expect(taskOperationStageTitle('Step 3 主角档案与出图提示词')).toBe('角色与提示词');
+    expect(taskOperationStatusLabel(task({ status: 'running', currentStep: 4 }))).toBe('生成图片');
+    expect(taskOperationStatusLabel(task({ status: 'paused', currentStep: 4 }))).toBe('已暂停');
+
+    const now = new Date(2026, 6, 25, 15, 0).getTime();
+    expect(formatTaskOperationTime(new Date(2026, 6, 25, 14, 30).toISOString(), now)).toBe('今天 14:30');
+    expect(formatTaskOperationTime(new Date(2026, 6, 24, 21, 8).toISOString(), now)).toBe('昨天 21:08');
+  });
+
   it('centralizes seven ordinary stages and one-based step positions', () => {
     expect(ORDINARY_TASK_STAGES).toHaveLength(7);
     expect(taskStepPosition(4)).toBe(5);
@@ -138,10 +151,11 @@ describe('task operation contracts', () => {
     expect(queue).toContain("api.updateTaskStatus(task.id, 'running')");
     expect(queue).toContain('retryFailedTask');
     expect(queue).toContain('api.retryTask(task.id)');
-    expect(queue.match(/>继续<\/button>/gu)).toHaveLength(1);
-    expect(queue.match(/>重试<\/button>/gu)).toHaveLength(1);
+    expect(queue.match(/aria-label="继续任务"/gu)).toHaveLength(1);
+    expect(queue.match(/aria-label="重试任务"/gu)).toHaveLength(1);
     expect(queue).toContain("task.status === 'paused'");
-    expect(queue).toContain("task.status === 'failed' || task.status === 'cancelled'");
+    expect(queue).toContain("task.status === 'paused' || task.status === 'failed' || task.status === 'cancelled'");
+    expect(queue).toContain("task.status === 'completed' && task.outputDir");
   });
 
   it('isolates task event writes and cursors by persisted run generation', async () => {

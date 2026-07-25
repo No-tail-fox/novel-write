@@ -153,6 +153,10 @@ if (smokeConfig || editorialQaConfig) {
   app.setPath('userData', smokeConfig?.userDataPath ?? editorialQaConfig!.userData);
 }
 const isPrimaryInstance = app.requestSingleInstanceLock();
+if (!isPrimaryInstance && (smokeConfig || editorialQaConfig)) {
+  console.error('Isolated Electron verification could not acquire its userData-scoped instance lock.');
+  process.exitCode = 1;
+}
 if (!isPrimaryInstance) {
   app.quit();
 }
@@ -239,6 +243,7 @@ async function initializeDatabase(): Promise<FileDatabase> {
     await reapHistoryQuarantines(dir, database);
     await service.migrateLegacySecrets();
     await ensureRuntimeJianyingDraftPath(database, service);
+    await seedTaskOperationsEditorialQa(database, dir);
     if (isShuttingDown) {
       throw new Error('DATABASE_INITIALIZATION_CANCELLED: Application shutdown started before database publication.');
     }
@@ -248,6 +253,107 @@ async function initializeDatabase(): Promise<FileDatabase> {
   } catch (error) {
     await database.close().catch(() => undefined);
     throw error;
+  }
+}
+
+async function seedTaskOperationsEditorialQa(database: FileDatabase, dataDir: string): Promise<void> {
+  if (editorialQaConfig?.scope !== 'task-operations' && editorialQaConfig?.scope !== 'workflow' && editorialQaConfig?.scope !== 'all') return;
+  const createFixture = async (title: string) => {
+    await new Promise((resolveDelay) => setTimeout(resolveDelay, 2));
+    return database.createTask({
+      title,
+      inputText: `${title}的本地确定性 QA 素材`,
+      mode: 'ai',
+      track: 'character-story',
+      ratio: '9:16',
+      storyboardSceneCount: 12,
+      targetScenes: 12,
+      coverImageMode: 'off',
+    });
+  };
+
+  const archived = await createFixture('QA 永久删除验证记录');
+  await database.updateTask(archived.id, { status: 'completed', currentStep: 7, completedAt: new Date().toISOString() });
+  await database.archiveTask(archived.id);
+
+  const completed = await createFixture('丝绸之路文化科普');
+  const completedOutput = join(dataDir, 'qa-task-operations', 'completed-output');
+  await mkdir(completedOutput, { recursive: true });
+  await database.updateTask(completed.id, {
+    status: 'completed',
+    currentStep: 7,
+    outputDir: completedOutput,
+    completedAt: new Date().toISOString(),
+  });
+
+  const paused = await createFixture('夏日轻食产品短片');
+  await database.updateTask(paused.id, { status: 'paused', currentStep: 4, errorMessage: '等待用户继续任务' });
+
+  const running = await createFixture('武则天：从深宫才人到一代女皇');
+  const fixtureRoot = join(dataDir, 'qa-task-operations', 'running-task');
+  const pipelineDir = join(fixtureRoot, 'pipeline');
+  const statePath = join(pipelineDir, 'state.json');
+  await mkdir(pipelineDir, { recursive: true });
+  const scenes = Array.from({ length: 12 }, (_, index) => ({
+    id: index + 1,
+    cap: ['十四岁入宫', '重返长安', '权力中心', '登临帝位'][index] ?? `历史场景 ${index + 1}`,
+    descPrompt: `武则天人物故事场景 ${index + 1}`,
+    durationMs: 4200,
+  }));
+  await writeFile(statePath, `${JSON.stringify({
+    version: 1,
+    taskId: running.id,
+    updatedAt: new Date().toISOString(),
+    steps: {
+      0: { status: 'completed' },
+      1: { status: 'completed' },
+      2: { status: 'completed' },
+      3: { status: 'completed' },
+      4: { status: 'running' },
+      5: { status: 'pending' },
+      6: { status: 'pending' },
+    },
+    artifact: {
+      reviewedText: '武则天人物生平预审文案。',
+      rewrittenCopy: '从深宫才人到一代女皇的故事改写。',
+      scenes,
+      imagePrompts: scenes.map((scene) => ({
+        sceneId: scene.id,
+        cap: scene.cap,
+        prompt: scene.descPrompt,
+        negativePrompt: '',
+        style: 'photo-real',
+        ratio: '9:16',
+        characterProfile: '武则天人物一致性档案',
+      })),
+    },
+    assets: {
+      images: scenes.slice(0, 8).map((scene) => ({ sceneId: scene.id, path: join(fixtureRoot, 'images', `scene-${scene.id}.png`) })),
+      narration: [],
+    },
+  }, null, 2)}\n`, 'utf8');
+  const startedAt = new Date().toISOString();
+  await database.updateTask(running.id, {
+    status: 'running',
+    currentStep: 4,
+    outputDir: fixtureRoot,
+    artifactStatePath: statePath,
+    startedAt,
+    lastHeartbeatAt: startedAt,
+  });
+  const eventFixtures = [
+    { step: 2, agent: 'Storyboard', detail: 'Step 2 分镜 · 共 12 个场景' },
+    { step: 3, agent: 'Prompt', detail: 'Step 3 角色与提示词已完成' },
+    { step: 4, agent: 'Producer', detail: 'Step 4 批量生图 · 已完成 8 / 12' },
+  ];
+  for (const [index, event] of eventFixtures.entries()) {
+    await database.addTaskEvent(running.id, {
+      type: index === eventFixtures.length - 1 ? 'step_progress' : 'step_complete',
+      step: event.step,
+      agent: event.agent,
+      detail: event.detail,
+      ts: Date.now() + index,
+    });
   }
 }
 
@@ -354,6 +460,7 @@ async function createWindow(): Promise<void> {
       preload: join(__dirname, 'preload.js'),
       contextIsolation: true,
       nodeIntegration: false,
+      backgroundThrottling: !editorialQaConfig,
       sandbox: true,
     },
   });
@@ -361,12 +468,13 @@ async function createWindow(): Promise<void> {
   attachMainWindowSecurity(mainWindow, rendererPolicy);
   mainWindowPolicyInstalled = true;
 
+  await getDb();
+
   if (rendererPolicy.mode === 'development') {
     await mainWindow.loadURL(rendererPolicy.entryUrl);
   } else {
     await mainWindow.loadFile(rendererIndexPath);
   }
-  await getDb();
 }
 
 async function runSmokeHandshake(): Promise<void> {

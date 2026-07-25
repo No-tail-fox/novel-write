@@ -1,16 +1,18 @@
 import { useEffect, useState } from 'react';
-import { Copy, FileJson, Image as ImageIcon, Loader2, Mic2, XCircle } from 'lucide-react';
+import { Copy, Loader2, Pause, Play, RotateCcw, XCircle } from 'lucide-react';
 import { EmptyState } from '../../components/EmptyState';
 import { ErrorDetails as ErrorSummaryButton } from '../../components/ErrorDetails';
 import { AsyncActionFeedback as InlineActionFeedback } from '../../components/AsyncActionFeedback';
+import { StatusBadge as StatusPill } from '../../components/StatusBadge';
 import type { ApplyMutationResult, RendererAppState as AppState } from '../../app/route-types';
 import { taskProgressSnapshot, taskProgressStages } from '../../shared/task-progress';
 import type { StoryDreamApi } from '../../shared/storydream-api';
 import type { Task, TaskArtifactSnapshot } from '../../shared/types';
 import { useAsyncAction } from '../../ui/async-action';
-import { ArtifactPreviewContent } from './TaskArtifactPreview';
-import { formatDuration } from './task-formatters';
-import { pipelineStepStatus, snapshotStepStatus, statusLabelForStep } from './task-pipeline';
+import { ArtifactPreviewContent, type TaskArtifactTab } from './TaskArtifactPreview';
+import { formatDate, formatDuration } from './task-formatters';
+import { pipelineStepStatus, snapshotStepStatus, statusLabelForStep, taskOperationStageTitle, taskOperationStatusLabel } from './task-pipeline';
+import '../../styles/features/task-operations.css';
 
 export function TaskDetailPage({
   api,
@@ -27,7 +29,7 @@ export function TaskDetailPage({
   close: () => void;
   isBrowserPreview: boolean;
 }) {
-  const [tab, setTab] = useState<'preview' | 'storyboard' | 'audio'>('preview');
+  const [tab, setTab] = useState<TaskArtifactTab>('preview');
   const [liveNow, setLiveNow] = useState(Date.now());
   const [artifactSnapshot, setArtifactSnapshot] = useState<TaskArtifactSnapshot | null>(null);
   const [artifactRefreshTick, setArtifactRefreshTick] = useState(0);
@@ -101,81 +103,75 @@ export function TaskDetailPage({
   const progressStages = taskProgressStages(activeTask);
   const currentStep = Math.min(Math.max(progress.position - 1, 0), progress.total - 1);
   const currentMeta = progressStages[currentStep] ?? progressStages[0];
-  const completedSteps = progress.completed;
-
-  async function cancelTask() {
+  async function setTaskStatus(status: 'paused' | 'running' | 'cancelled') {
     await taskDetailAction.run(async () => {
-      applyState(await api.updateTaskStatus(activeTask.id, 'cancelled'));
+      applyState(await api.updateTaskStatus(activeTask.id, status));
+    });
+  }
+
+  async function retryTask() {
+    await taskDetailAction.run(async () => {
+      applyState(await api.retryTask(activeTask.id));
     });
   }
 
   return (
-    <div className="task-detail-shell">
-      <div className="task-detail-bar">
-        <div className="breadcrumb">
-          <button onClick={close}>历史任务</button>
-          <span>/</span>
-          <strong>任务详情</strong>
+    <div className="task-detail-shell" data-task-operations="detail">
+      <header className="task-detail-bar">
+        <div className="task-detail-identity">
+          <button className="task-detail-back" onClick={close}>← 返回历史任务</button>
+          <div>
+            <h2>{activeTask.title || '未命名任务'}</h2>
+            <span>{activeTask.mode === 'ai' ? 'AI 创作' : '粘贴文案'} · {activeTask.ratio} · 创建于 {formatDate(activeTask.createdAt)}</span>
+          </div>
+          <StatusPill status={activeTask.status} label={`${taskOperationStatusLabel(activeTask)} · ${progress.position} / ${progress.total}`} />
         </div>
-        <button className="mini-button" onClick={close}>
-          <XCircle size={14} />
-          关闭
-        </button>
-      </div>
-
-      <aside className="task-detail-sidebar">
-        <section className="task-summary-card">
-          <div className="task-id-line">
-            <span>{activeTask.id}</span>
-            <button className="icon-button" title="复制任务 ID" onClick={() => navigator.clipboard?.writeText(activeTask.id)}>
-              <Copy size={14} />
-            </button>
+        <div className="task-detail-actions">
+          <div className="task-detail-metrics">
+            <span><strong>{formatDuration(activeTask.createdAt, activeTask.completedAt, liveNow)}</strong> 总耗时</span>
+            <span><strong>{progress.position}/{progress.total}</strong> 当前步骤</span>
+            <span><strong>{events.length || '-'}</strong> 事件</span>
           </div>
-          <div className="task-metrics">
-            <div><strong>{formatDuration(activeTask.createdAt, activeTask.completedAt, liveNow)}</strong><span>总耗时</span></div>
-            <div><strong>{completedSteps}<small>/{progress.total}</small></strong><span>当前步骤</span></div>
-            <div><strong>{events.length || '-'}</strong><span>事件数</span></div>
-          </div>
-          <button className="cancel-task-button" disabled={activeTask.status === 'completed' || activeTask.status === 'cancelled'} onClick={cancelTask}>
+          <button className="icon-button" title="复制任务 ID" aria-label="复制任务 ID" onClick={() => navigator.clipboard?.writeText(activeTask.id)}><Copy size={14} /></button>
+          {activeTask.status === 'running' ? <button className="task-detail-run-control" disabled={taskDetailAction.busy || isBrowserPreview} onClick={() => setTaskStatus('paused')}><Pause size={14} />暂停任务</button> : null}
+          {activeTask.status === 'paused' ? <button className="task-detail-run-control" disabled={taskDetailAction.busy || isBrowserPreview} onClick={() => setTaskStatus('running')}><Play size={14} />继续任务</button> : null}
+          {activeTask.status === 'running' || activeTask.status === 'paused' || activeTask.status === 'failed' || activeTask.status === 'cancelled' ? <button className="task-detail-run-control accent" disabled={taskDetailAction.busy || isBrowserPreview} onClick={retryTask}><RotateCcw size={14} />重试当前步骤</button> : null}
+          <button className="cancel-task-button" disabled={taskDetailAction.busy || isBrowserPreview || activeTask.status === 'completed' || activeTask.status === 'cancelled'} onClick={() => setTaskStatus('cancelled')}>
             <XCircle size={14} />
             取消任务
           </button>
-        </section>
+        </div>
+      </header>
 
-        <section className="pipeline-card">
-          <div className="pipeline-title">
-            <strong>{progress.total} 步流水线</strong>
-            <span className="auto-badge">全自动</span>
-            <small>· 全部 {progress.total} 步执行</small>
-          </div>
-          <div className="pipeline-list">
-            {progressStages.map((step) => {
-              const status = pipelineStepStatus(activeTask, step.index);
-              const stepEvent = [...events].reverse().find((event) => event.step === step.index);
-              const stepLabel = stepEvent?.detail || statusLabelForStep(status);
-              return (
-                <div className={`pipeline-step ${status}`} key={step.index}>
-                  <div className="pipeline-node">{status === 'running' ? <Loader2 className="spin" size={14} /> : step.index + 1}</div>
-                  <div>
-                    <strong>{step.title}</strong>
-                    <span>{step.hint}</span>
-                    {status === 'running' ? <small>进行中</small> : stepEvent?.type === 'step_error' ? <ErrorSummaryButton fullMessage={stepEvent.detail} title={step.title} compact /> : <small>{stepLabel}</small>}
-                  </div>
-                </div>
-              );
-            })}
-          </div>
-        </section>
-      </aside>
+      <div className="task-stage-track" aria-label={`${progress.total} 步流水线`}>
+        {progressStages.map((step) => {
+          const status = pipelineStepStatus(activeTask, step.index);
+          const stepEvent = [...events].reverse().find((event) => event.step === step.index);
+          const sceneCount = artifactSnapshot?.artifact.scenes?.length ?? snapshotImageCount;
+          const stepLabel = step.index === 4 && status === 'running' && sceneCount
+            ? `${snapshotImageCount} / ${sceneCount}`
+            : status === 'completed'
+              ? '完成'
+              : statusLabelForStep(status).replace('等待中', '等待');
+          return (
+            <div className={`pipeline-step ${status}`} key={step.index}>
+              <div className="pipeline-node">{status === 'running' ? <Loader2 className="spin" size={14} /> : step.index}</div>
+              <div><strong>{taskOperationStageTitle(step.title)}</strong>{stepEvent?.type === 'step_error' ? <ErrorSummaryButton fullMessage={stepEvent.detail} title={step.title} compact /> : <small>{stepLabel}</small>}</div>
+            </div>
+          );
+        })}
+      </div>
 
-      <section className="task-detail-main" data-media-canvas="task-artifact">
+      <section className="task-detail-main" data-media-owner="task-artifact">
         <InlineActionFeedback feedback={taskDetailAction.feedback} />
         <div className="artifact-tabs">
-          <button className={tab === 'preview' ? 'active' : ''} onClick={() => setTab('preview')}><FileJson size={14} />产物预览</button>
-          <button className={tab === 'storyboard' ? 'active' : ''} onClick={() => setTab('storyboard')}><ImageIcon size={14} />分镜画廊</button>
-          <button className={tab === 'audio' ? 'active' : ''} onClick={() => setTab('audio')}><Mic2 size={14} />配音试听</button>
+          <button className={tab === 'preview' ? 'active' : ''} onClick={() => setTab('preview')}>结果</button>
+          <button className={tab === 'storyboard' ? 'active' : ''} onClick={() => setTab('storyboard')}>分镜</button>
+          <button className={tab === 'images' ? 'active' : ''} onClick={() => setTab('images')}>图片</button>
+          <button className={tab === 'audio' ? 'active' : ''} onClick={() => setTab('audio')}>配音</button>
+          <button className={tab === 'events' ? 'active' : ''} onClick={() => setTab('events')}>事件</button>
         </div>
-        <ArtifactPreviewContent api={api} task={activeTask} config={state.config} applyState={applyState} tab={tab} snapshot={artifactSnapshot} latestEvent={latestEvent} currentAgent={currentMeta?.agent ?? 'Runner'} isBrowserPreview={isBrowserPreview} />
+        <ArtifactPreviewContent api={api} task={activeTask} config={state.config} applyState={applyState} tab={tab} snapshot={artifactSnapshot} events={events} latestEvent={latestEvent} currentAgent={currentMeta?.agent ?? 'Runner'} isBrowserPreview={isBrowserPreview} />
       </section>
     </div>
   );

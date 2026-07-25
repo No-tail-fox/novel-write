@@ -50,7 +50,7 @@ describe('editorial workbench theme contract', () => {
   });
 
   it.each([
-    ['task artifact', '../src/features/tasks/TaskDetailPage.tsx', 'task-artifact'],
+    ['task artifact', '../src/features/tasks/TaskArtifactPreview.tsx', 'task-artifact'],
     ['HTML video', '../src/features/html-video/HtmlVideoPage.tsx', 'html-video'],
     ['image lab', '../src/features/labs/ImageLabPage.tsx', 'image-lab'],
     ['voice lab', '../src/features/labs/VoiceLabPage.tsx', 'voice-lab'],

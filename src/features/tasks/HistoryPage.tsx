@@ -1,5 +1,5 @@
 import { useCallback, useMemo, useState } from 'react';
-import { Archive, FolderOpen, RotateCcw, Trash2 } from 'lucide-react';
+import { Archive, ArrowUpRight, RotateCcw, SlidersHorizontal, Trash2 } from 'lucide-react';
 import { AsyncActionFeedback as InlineActionFeedback } from '../../components/AsyncActionFeedback';
 import { ConfirmDialog } from '../../components/ConfirmDialog';
 import { CursorPagination } from '../../components/CursorPagination';
@@ -7,7 +7,8 @@ import { DataTable } from '../../components/DataTable';
 import { EmptyState } from '../../components/EmptyState';
 import { SegmentedControl as Segmented } from '../../components/SegmentedControl';
 import { StatusBadge as StatusPill, taskStatusLabel as statusLabel } from '../../components/StatusBadge';
-import { taskProgressLabel } from '../../shared/html-video-workflow';
+import { contentTracks } from '../../shared/editorial-options';
+import { taskProgressSnapshot } from '../../shared/task-progress';
 import type { StoryDreamApi } from '../../shared/storydream-api';
 import type {
   AppMutationResult,
@@ -23,7 +24,9 @@ import type {
 } from '../../shared/types';
 import { useAsyncAction } from '../../ui/async-action';
 import { useHistoryPage } from '../history/use-history-page';
-import { formatDate } from './task-formatters';
+import { formatDate, formatTaskOperationTime } from './task-formatters';
+import { taskOperationStatusLabel } from './task-pipeline';
+import '../../styles/features/task-operations.css';
 
 type HistoryRecord = TaskSummary | ViralAnalysisSummary | ImageLabSummary | VoiceLabSummary;
 type PendingHistoryDelete = { family: HistoryFamily; record: HistoryRecord };
@@ -31,7 +34,9 @@ type PendingHistoryDelete = { family: HistoryFamily; record: HistoryRecord };
 const historyFamilies = ['task', 'viral-analysis', 'image-lab', 'voice-lab'] as const satisfies readonly HistoryFamily[];
 const historyFamilyLabels = ['任务', '爆款拆解', '图片', '配音'] as const;
 const historyArchiveFilters = ['active', 'archived'] as const satisfies readonly HistoryArchiveFilter[];
-const historyArchiveFilterLabels = ['当前记录', '归档记录'] as const;
+const historyArchiveFilterLabels = ['活跃任务', '已归档'] as const;
+const historyTaskStatuses = ['all', 'draft', 'completed', 'running', 'failed', 'cancelled'] as const;
+const trackLabelById = new Map(contentTracks.map(([id, label]) => [id, label] as const));
 
 export function HistoryPage({
   api,
@@ -89,10 +94,6 @@ export function HistoryPage({
   const historyBusy = historyAction.busy || historyPage.loading;
   const records = historyPage.page?.items ?? [];
 
-  async function openHistoryOutput(taskId: string) {
-    await historyAction.run(() => api.openTaskOutputDirectory(taskId));
-  }
-
   async function archiveRecord(record: HistoryRecord) {
     await historyAction.run(async () => {
       let result: AppMutationResult;
@@ -132,27 +133,103 @@ export function HistoryPage({
   }
 
   return (
-    <section className="panel full-panel history-page">
-      <div className="panel-title-row">
-        <Segmented label="记录类型" value={family} options={historyFamilies} labels={historyFamilyLabels} onChange={setFamily} disabled={historyBusy || Boolean(pendingDelete)} />
-        <Segmented label="记录范围" value={archiveFilter} options={historyArchiveFilters} labels={historyArchiveFilterLabels} onChange={setArchiveFilter} disabled={historyBusy || Boolean(pendingDelete)} />
+    <section className="task-operations-view history-page" data-task-operations="history" data-history-family={family}>
+      <div className="task-history-toolbar">
+        <div className="task-history-segments">
+          <Segmented label="记录范围" value={archiveFilter} options={historyArchiveFilters} labels={historyArchiveFilterLabels} onChange={setArchiveFilter} disabled={historyBusy || Boolean(pendingDelete)} />
+        </div>
+        <input className="search-input" aria-label="搜索历史记录" value={query} placeholder={family === 'task' ? '搜索任务标题' : '搜索记录'} disabled={historyBusy || Boolean(pendingDelete)} onChange={(event) => setQuery(event.target.value)} />
       </div>
-      <div className="panel-title-row">
+      <div className="task-history-filter-row">
         {family === 'task' ? (
-          <div className="chip-row">
-            {(['all', 'draft', 'completed', 'running', 'failed', 'cancelled'] as const).map((item) => (
-              <button key={item} type="button" className={statusFilter === item ? 'chip active' : 'chip'} disabled={historyBusy || Boolean(pendingDelete)} onClick={() => setStatusFilter(item)}>
-                {statusLabel(item)}
-              </button>
-            ))}
-          </div>
+          <label className="task-history-status-select">
+            <span>状态</span>
+            <select aria-label="状态" value={statusFilter} disabled={historyBusy || Boolean(pendingDelete)} onChange={(event) => setStatusFilter(event.target.value as 'all' | TaskStatus)}>
+              {historyTaskStatuses.map((item) => <option key={item} value={item}>{statusLabel(item)}</option>)}
+            </select>
+          </label>
         ) : <span className="subtle-copy">{historyFamilyLabels[historyFamilies.indexOf(family)]}历史记录</span>}
-        <input className="search-input" value={query} placeholder={family === 'task' ? '搜索任务' : '搜索记录'} disabled={historyBusy || Boolean(pendingDelete)} onChange={(event) => setQuery(event.target.value)} />
+        <details className="task-history-more-filters">
+          <summary aria-label="筛选记录类型" title="筛选记录类型"><SlidersHorizontal size={15} /></summary>
+          <label>
+            <span>记录类型</span>
+            <select aria-label="记录类型" value={family} disabled={historyBusy || Boolean(pendingDelete)} onChange={(event) => setFamily(event.target.value as HistoryFamily)}>
+              {historyFamilies.map((item, index) => <option key={item} value={item}>{historyFamilyLabels[index]}</option>)}
+            </select>
+          </label>
+        </details>
       </div>
-      <div className="panel-title-row">
-        <span className="subtle-copy">
-          {historyPage.page ? `${historyPage.page.totalCount} 条记录` : historyPage.loading ? '正在加载' : '暂无记录'}
-        </span>
+      <DataTable
+        label="历史任务"
+        columns={family === 'task' ? ['任务', '类型', '当前状态', '进度', '更新时间', '操作'] : ['记录', '状态', '详情', '创建时间', '操作']}
+        state={records.length === 0 ? (
+          historyPage.loading ? <EmptyState title="正在加载历史记录" tone="loading" /> : <EmptyState title="暂无历史记录" />
+        ) : null}
+      >
+        {records.map((record) => {
+          const row = historyRecordRow(family, record);
+          if (family === 'task') {
+            const task = record as TaskSummary;
+            const progress = taskProgressSnapshot(task);
+            const displayProgress = task.status === 'running' ? progress.position : progress.completed;
+            const percent = Math.round((displayProgress / Math.max(1, progress.total)) * 100);
+            return (
+              <div className="table-row clickable" key={record.id} role="row" onClick={() => openTaskDetail(record.id)}>
+                <span className="task-history-title" role="cell">
+                  <button className="table-row-primary-action" type="button" aria-label={`打开任务 ${row.title}`} onClick={(event) => { event.stopPropagation(); openTaskDetail(record.id); }}>
+                    {row.title}
+                  </button>
+                  <small>{task.targetScenes || task.storyboardSceneCount || 0} 个场景 · {task.ratio}</small>
+                </span>
+                <span role="cell">{trackLabelById.get(task.track) || task.track}</span>
+                <span role="cell"><StatusPill status={task.status} label={taskOperationStatusLabel(task)} /></span>
+                <span className="task-history-progress" role="cell">
+                  <span role="progressbar" aria-label={`${row.title}进度`} aria-valuemin={0} aria-valuemax={progress.total} aria-valuenow={displayProgress}><i style={{ width: `${percent}%` }} /></span>
+                  <small>{displayProgress} / {progress.total}{task.status === 'completed' ? ' 完成' : ''}</small>
+                </span>
+                <span role="cell">{formatTaskOperationTime(task.lastHeartbeatAt || task.completedAt || task.createdAt)}</span>
+                <span role="cell">
+                  <span className="row-actions" onClick={(event) => event.stopPropagation()}>
+                    {archiveFilter === 'active' ? (
+                      <>
+                        <button className="icon-button task-history-action" type="button" title="打开任务详情" aria-label="打开任务详情" disabled={historyBusy} onClick={() => openTaskDetail(record.id)}><ArrowUpRight size={14} /></button>
+                        <button className="icon-button task-history-action" type="button" title="归档任务" aria-label="归档任务" disabled={historyBusy} onClick={() => void archiveRecord(record)}><Archive size={14} /></button>
+                      </>
+                    ) : (
+                      <>
+                        <button className="icon-button task-history-action" type="button" title="恢复任务" aria-label="恢复任务" disabled={historyBusy} onClick={() => void restoreRecord(record)}><RotateCcw size={14} /></button>
+                        <button className="icon-button task-history-action danger-action" type="button" title="永久删除记录" aria-label="永久删除记录" disabled={historyBusy} onClick={() => setPendingDelete({ family, record })}><Trash2 size={14} /></button>
+                      </>
+                    )}
+                  </span>
+                </span>
+              </div>
+            );
+          }
+          return (
+            <div className="table-row" key={record.id} role="row">
+              <span role="cell">{row.title}</span>
+              <span role="cell">{row.status}</span>
+              <span role="cell">{row.detail}</span>
+              <span role="cell">{formatDate(record.createdAt)}</span>
+              <span role="cell">
+                <span className="row-actions" onClick={(event) => event.stopPropagation()}>
+                  {archiveFilter === 'active' ? (
+                    <button className="icon-button task-history-action" type="button" title="归档记录" aria-label="归档记录" disabled={historyBusy} onClick={() => void archiveRecord(record)}><Archive size={14} /></button>
+                  ) : (
+                    <>
+                      <button className="icon-button task-history-action" type="button" title="恢复记录" aria-label="恢复记录" disabled={historyBusy} onClick={() => void restoreRecord(record)}><RotateCcw size={14} /></button>
+                      <button className="icon-button task-history-action danger-action" type="button" title="永久删除记录" aria-label="永久删除记录" disabled={historyBusy} onClick={() => setPendingDelete({ family, record })}><Trash2 size={14} /></button>
+                    </>
+                  )}
+                </span>
+              </span>
+            </div>
+          );
+        })}
+      </DataTable>
+      <div className="task-history-pagination-row">
+        <span className="subtle-copy">{historyPage.page ? `共 ${historyPage.page.totalCount} 条记录 · 每页最多 50 条` : historyPage.loading ? '正在加载' : '暂无记录'}</span>
         <CursorPagination
           busy={historyBusy}
           hasPrevious={historyPage.hasPrevious}
@@ -162,48 +239,6 @@ export function HistoryPage({
           onNext={historyPage.next}
         />
       </div>
-      <DataTable
-        label="历史任务"
-        columns={family === 'task' ? ['任务', '状态', '进度', '创建时间', '输出'] : ['记录', '状态', '详情', '创建时间', '操作']}
-        state={records.length === 0 ? (
-          historyPage.loading ? <EmptyState title="正在加载历史记录" tone="loading" /> : <EmptyState title="暂无历史记录" />
-        ) : null}
-      >
-        {records.map((record) => {
-          const row = historyRecordRow(family, record);
-          return (
-            <div className={family === 'task' ? 'table-row clickable' : 'table-row'} key={record.id} role="row" onClick={() => family === 'task' && openTaskDetail(record.id)}>
-              <span role="cell">
-                {family === 'task' ? (
-                  <button className="table-row-primary-action" type="button" aria-label={`打开任务 ${row.title}`} onClick={(event) => { event.stopPropagation(); openTaskDetail(record.id); }}>
-                    {row.title}
-                  </button>
-                ) : row.title}
-              </span>
-              <span role="cell">{family === 'task' ? <StatusPill status={(record as TaskSummary).status} /> : row.status}</span>
-              <span role="cell">{row.detail}</span>
-              <span role="cell">{formatDate(record.createdAt)}</span>
-              <span role="cell">
-                <span className="row-actions" onClick={(event) => event.stopPropagation()}>
-                  {family === 'task' && archiveFilter === 'active' ? (
-                    <button className="mini-button" type="button" aria-label="打开输出目录" disabled={historyBusy || !(record as TaskSummary).outputDir} onClick={() => void openHistoryOutput(record.id)}>
-                      <FolderOpen size={14} />
-                    </button>
-                  ) : null}
-                  {archiveFilter === 'active' ? (
-                    <button className="mini-button" type="button" disabled={historyBusy} onClick={() => void archiveRecord(record)}><Archive size={14} />归档</button>
-                  ) : (
-                    <>
-                      <button className="mini-button" type="button" disabled={historyBusy} onClick={() => void restoreRecord(record)}><RotateCcw size={14} />恢复</button>
-                      <button className="mini-button danger-action" type="button" disabled={historyBusy} onClick={() => setPendingDelete({ family, record })}><Trash2 size={14} />永久删除</button>
-                    </>
-                  )}
-                </span>
-              </span>
-            </div>
-          );
-        })}
-      </DataTable>
       {historyPage.error ? <div className="inline-feedback error">{historyPage.error.message}</div> : null}
       <InlineActionFeedback feedback={historyAction.feedback} />
       <ConfirmDialog
@@ -223,7 +258,8 @@ export function HistoryPage({
 function historyRecordRow(family: HistoryFamily, record: HistoryRecord): { title: string; status: string; detail: string } {
   if (family === 'task') {
     const task = record as TaskSummary;
-    return { title: task.title || '未命名任务', status: statusLabel(task.status), detail: taskProgressLabel(task) };
+    const progress = taskProgressSnapshot(task);
+    return { title: task.title || '未命名任务', status: statusLabel(task.status), detail: `${progress.completed} / ${progress.total}` };
   }
   if (family === 'viral-analysis') {
     const analysis = record as ViralAnalysisSummary;

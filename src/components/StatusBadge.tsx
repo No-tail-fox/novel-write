@@ -14,6 +14,6 @@ export function taskStatusLabel(status: TaskStatus | 'all'): string {
   return status === 'all' ? '全部' : taskStatusLabels[status];
 }
 
-export function StatusBadge({ status }: { status: TaskStatus }) {
-  return <span className={`status-pill ${status}`}>{taskStatusLabel(status)}</span>;
+export function StatusBadge({ status, label }: { status: TaskStatus; label?: string }) {
+  return <span className={`status-pill ${status}`}>{label ?? taskStatusLabel(status)}</span>;
 }

@@ -51,7 +51,8 @@ describe('product shell ui', () => {
     expect(history).not.toContain('disabled={historyAction.busy}');
     expect(history).toContain('hasNext={Boolean(historyPage.page?.nextCursor)}');
     expect(pagination).toContain('disabled={busy || !hasNext}');
-    expect(history).toContain("className={family === 'task' ? 'table-row clickable' : 'table-row'} key={record.id} role=\"row\"");
+    expect(history).toContain('className="table-row clickable" key={record.id} role="row"');
+    expect(history).toContain('className="table-row" key={record.id} role="row"');
     expect(history).toContain('className="table-row-primary-action"');
     expect(history).toContain('aria-label={`打开任务 ${row.title}`}');
     expect(history).toContain('event.stopPropagation(); openTaskDetail(record.id);');
@@ -1426,7 +1427,7 @@ describe('product shell ui', () => {
     const page = (await rendererSourcesPromise).all;
     expect(page).toMatch(/from ["'](?:\.\/|\.\.\/)shared\/html-video-workflow["'];/u);
     expect(page).toContain("{statusLabel(task.status)} · {taskProgressLabel(task)}");
-    expect(page).toContain('detail: taskProgressLabel(task)');
+    expect(page).toContain('const progress = taskProgressSnapshot(task);');
   });
 
   it('owns HTML task creation and output sizing defaults in the shared config module', async () => {
@@ -1645,11 +1646,11 @@ describe('product shell ui', () => {
 
   it('gives the queue task list more horizontal room than the event history pane', async () => {
     const main = (await rendererSourcesPromise).requiredFile('src/features/tasks/QueuePage.tsx');
-    const css = await readFile(new URL('../src/styles.css', import.meta.url), 'utf8');
+    const css = await readFile(new URL('../src/styles/features/task-operations.css', import.meta.url), 'utf8');
 
-    expect(main).toContain('className="queue-layout"');
-    expect(css).toContain('.queue-layout');
-    expect(css).toContain('grid-template-columns: minmax(520px, 1.35fr) minmax(320px, 0.75fr)');
+    expect(main).toContain('className="task-operations-view task-queue-view"');
+    expect(css).toContain('.task-queue-view');
+    expect(css).toContain('grid-template-columns: minmax(0, 1fr) 280px;');
   });
 
   it('presents draft templates as a gallery before opening the editor', async () => {
@@ -2419,7 +2420,7 @@ describe('product shell ui', () => {
     expect(routes).toContain('TaskDetailPage');
     expect(detail).toContain('taskProgressStages(activeTask)');
     expect(detail).toContain('{progress.total} 步流水线');
-    for (const text of ['历史任务', '任务详情', '产物预览', '分镜画廊', '配音试听', '等待当前步骤产物落盘']) {
+    for (const text of ['历史任务', '任务详情', '结果', '分镜', '图片', '配音', '事件', '等待当前步骤产物落盘']) {
       expect(`${main}\n${routes}\n${detail}\n${artifact}`).toContain(text);
     }
     expect(css).toContain('.task-detail-shell');
@@ -2486,23 +2487,24 @@ describe('product shell ui', () => {
     expect(main).toContain('图片进度');
   });
 
-  it('keeps the storyboard gallery tab focused on batch images and scene sentences', async () => {
+  it('keeps storyboard sentences and generated images in independent task detail tabs', async () => {
     const main = (await rendererSourcesPromise).requiredFile('src/features/tasks/TaskArtifactPreview.tsx');
 
     const storyboardStart = main.indexOf("{tab === 'storyboard' ? (");
-    const audioStart = main.indexOf("{tab === 'audio' ? (", storyboardStart);
-    const storyboardBranch = main.slice(storyboardStart, audioStart);
-    const batchImagesIndex = storyboardBranch.indexOf('ArtifactSection title="批量生图"');
-    const scenesIndex = storyboardBranch.indexOf('ArtifactSection title="分镜分句"', batchImagesIndex);
+    const imagesStart = main.indexOf("{tab === 'images' ? (", storyboardStart);
+    const audioStart = main.indexOf("{tab === 'audio' ? (", imagesStart);
+    const storyboardBranch = main.slice(storyboardStart, imagesStart);
+    const imagesBranch = main.slice(imagesStart, audioStart);
 
     expect(storyboardStart).toBeGreaterThan(-1);
-    expect(audioStart).toBeGreaterThan(storyboardStart);
-    expect(batchImagesIndex).toBeGreaterThan(-1);
-    expect(scenesIndex).toBeGreaterThan(batchImagesIndex);
-    expect(storyboardBranch).toContain('ImageGenerationGallery');
+    expect(imagesStart).toBeGreaterThan(storyboardStart);
+    expect(audioStart).toBeGreaterThan(imagesStart);
     expect(storyboardBranch).toContain('ArtifactSceneList');
+    expect(storyboardBranch).not.toContain('ImageGenerationGallery');
+    expect(imagesBranch).toContain('ArtifactSection title="批量生图"');
+    expect(imagesBranch).toContain('ImageGenerationGallery');
+    expect(imagesBranch).not.toContain('ArtifactSceneList');
     expect(storyboardBranch).not.toContain('storyboard-gallery-hero');
-    expect(storyboardBranch).not.toContain('ArtifactSection title="全部图片"');
     expect(storyboardBranch).not.toContain('ArtifactSection title="绘图提示词"');
   });
 

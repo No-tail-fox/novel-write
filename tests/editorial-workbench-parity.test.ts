@@ -47,13 +47,13 @@ describe('editorial workbench functional parity inventory', () => {
   it('preserves the accepted task-history copy while adding other history families', async () => {
     const [history, css] = await Promise.all([
       readFile(new URL('../src/features/tasks/HistoryPage.tsx', import.meta.url), 'utf8'),
-      readFile(new URL('../src/styles.css', import.meta.url), 'utf8'),
+      readFile(new URL('../src/styles/features/task-operations.css', import.meta.url), 'utf8'),
     ]);
-    expect(history).toContain("placeholder={family === 'task' ? '搜索任务' : '搜索记录'}");
-    expect(history).toContain("family === 'task' ? ['任务', '状态', '进度', '创建时间', '输出']");
+    expect(history).toContain("placeholder={family === 'task' ? '搜索任务标题' : '搜索记录'}");
+    expect(history).toContain("family === 'task' ? ['任务', '类型', '当前状态', '进度', '更新时间', '操作']");
     expect(history).toContain("['记录', '状态', '详情', '创建时间', '操作']");
-    expect(history).toContain('className="panel full-panel history-page"');
-    expect(css).toMatch(/\.history-page \.table-row,[\s\S]*?grid-template-columns:[\s\S]*?minmax\(190px, auto\)/u);
-    expect(css).toMatch(/\.history-page \.row-actions[\s\S]*?flex-wrap:\s*nowrap/u);
+    expect(history).toContain('className="task-operations-view history-page"');
+    expect(css).toMatch(/\.history-page\[data-task-operations="history"\] \.table-head,[\s\S]*?grid-template-columns:[\s\S]*?minmax\(180px, auto\)/u);
+    expect(css).toMatch(/\.history-page\[data-task-operations="history"\] \.row-actions[\s\S]*?flex-wrap:\s*nowrap/u);
   });
 });

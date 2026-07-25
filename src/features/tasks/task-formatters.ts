@@ -58,6 +58,25 @@ export function formatDate(value: string): string {
   return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')} ${String(date.getHours()).padStart(2, '0')}:${String(date.getMinutes()).padStart(2, '0')}`;
 }
 
+export function formatTaskOperationTime(value: string, now = Date.now()): string {
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return value;
+  const current = new Date(now);
+  const clock = `${String(date.getHours()).padStart(2, '0')}:${String(date.getMinutes()).padStart(2, '0')}`;
+  const sameDay = date.getFullYear() === current.getFullYear()
+    && date.getMonth() === current.getMonth()
+    && date.getDate() === current.getDate();
+  if (sameDay && Math.abs(current.getTime() - date.getTime()) < 60_000) return '刚刚';
+  if (sameDay) return `今天 ${clock}`;
+  const yesterday = new Date(current);
+  yesterday.setDate(current.getDate() - 1);
+  const isYesterday = date.getFullYear() === yesterday.getFullYear()
+    && date.getMonth() === yesterday.getMonth()
+    && date.getDate() === yesterday.getDate();
+  if (isYesterday) return `昨天 ${clock}`;
+  return `${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')} ${clock}`;
+}
+
 export function resolvePromptTemplateForTrack(
   templates: PromptTemplate[],
   track: string,

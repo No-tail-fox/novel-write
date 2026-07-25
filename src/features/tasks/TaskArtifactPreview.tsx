@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState, type ReactNode } from 'react';
 import { Database, FolderOpen, Image as ImageIcon, Loader2, Pencil, RotateCcw, Save, Wand2, X, XCircle } from 'lucide-react';
 import { ErrorDetails as ErrorSummaryButton, summarizeErrorMessage } from '../../components/ErrorDetails';
 import { AsyncActionFeedback as InlineActionFeedback } from '../../components/AsyncActionFeedback';
+import { EventTimeline } from '../../components/EventTimeline';
 import { StatusBadge as StatusPill, taskStatusLabel as statusLabel } from '../../components/StatusBadge';
 import type { ApplyMutationResult } from '../../app/route-types';
 import type { StoryDreamApi } from '../../shared/storydream-api';
@@ -22,7 +23,9 @@ import {
   toLocalImageUrl,
   trimForPreview,
 } from './task-formatters';
-import { artifactPanelTitle, imageProgressLabel, snapshotStepStatus } from './task-pipeline';
+import { artifactPanelTitle, imageProgressLabel, snapshotStepStatus, type ArtifactPanelTab } from './task-pipeline';
+
+export type TaskArtifactTab = ArtifactPanelTab;
 
 export function ArtifactPreviewContent({
   api,
@@ -31,6 +34,7 @@ export function ArtifactPreviewContent({
   applyState,
   tab,
   snapshot,
+  events,
   latestEvent,
   currentAgent,
   isBrowserPreview,
@@ -39,8 +43,9 @@ export function ArtifactPreviewContent({
   task: Task;
   config: AppConfig;
   applyState: ApplyMutationResult;
-  tab: 'preview' | 'storyboard' | 'audio';
+  tab: TaskArtifactTab;
   snapshot: TaskArtifactSnapshot | null;
+  events: readonly TaskEvent[];
   latestEvent: TaskEvent | null;
   currentAgent: string;
   isBrowserPreview: boolean;
@@ -54,6 +59,13 @@ export function ArtifactPreviewContent({
   const imageErrors = snapshot?.assets.imageErrors ?? [];
   const narrationAssets = snapshot?.assets.narration ?? [];
   const imageProgress = imageProgressLabel(scenes.length, imageAssets.length, snapshotStepStatus(snapshot, 4));
+  const sceneRailItems = scenes.length
+    ? scenes
+    : Array.from({ length: Math.min(4, Math.max(1, imageAssets.length)) }, (_, index) => ({ id: index + 1, cap: `场景 ${index + 1}`, descPrompt: '' }));
+  const [selectedSceneId, setSelectedSceneId] = useState<number | null>(null);
+  const selectedScene = sceneRailItems.find((scene) => scene.id === selectedSceneId) ?? sceneRailItems[0];
+  const [mediaTitle, ...mediaSubtitleParts] = (task.title || '未命名任务').split(/[：:]/u);
+  const mediaSubtitle = mediaSubtitleParts.join('：') || trimForPreview(selectedScene?.cap || task.inputText, 28);
   const [rerunningStepAction, setRerunningStepAction] = useState<string | null>(null);
   const artifactAction = useAsyncAction();
   const canRerunStep = !isBrowserPreview && task.status !== 'running' && task.status !== 'pending' && Boolean(task.artifactStatePath);
@@ -86,6 +98,43 @@ export function ArtifactPreviewContent({
 
   return (
     <div className="artifact-preview">
+      <div className="task-media-workspace">
+        <section className="task-media-canvas" data-media-canvas="task-artifact">
+          <div className="task-media-frame">
+            <span>{task.track === 'character-story' ? '人物故事' : task.mode === 'ai' ? 'AI 创作任务' : '内容任务'} · 第 {selectedScene?.id ?? 1} 幕</span>
+            <i className="task-media-frame-accent" aria-hidden="true" />
+            <strong>{mediaTitle}</strong>
+            <p>{mediaSubtitle}</p>
+            <small>场景 {String(imageAssets.length).padStart(2, '0')} / {String(scenes.length || imageAssets.length || 0).padStart(2, '0')}</small>
+          </div>
+          <div className="task-media-progress"><ImageIcon size={15} /><span><i style={{ width: `${Math.round((imageAssets.length / Math.max(1, scenes.length || imageAssets.length)) * 100)}%` }} /></span><small>{imageAssets.length} / {scenes.length || imageAssets.length || 0}</small></div>
+        </section>
+        <aside className="task-scene-rail">
+          <div><h3>场景图片</h3><span>{imageAssets.length} / {scenes.length || imageAssets.length || 0} 已生成</span></div>
+          <div className="task-scene-list">
+            {sceneRailItems.map((scene, index) => (
+              <button type="button" className={`task-scene-item ${index < imageAssets.length ? 'complete' : index === imageAssets.length && task.status === 'running' ? 'running' : 'pending'} ${selectedScene?.id === scene.id ? 'selected' : ''}`} key={scene.id} onClick={() => setSelectedSceneId(scene.id)}>
+                <span>{String(index + 1).padStart(2, '0')}</span>
+                <div><strong>{trimForPreview(scene.cap, 18) || `场景 ${index + 1}`}</strong><small>{index < imageAssets.length ? '已生成' : index === imageAssets.length && task.status === 'running' ? '生成中' : '等待生成'}</small></div>
+              </button>
+            ))}
+          </div>
+        </aside>
+      </div>
+
+      <div className="preview-meta-grid">
+        <div><small>任务</small><strong>{task.title || '未命名任务'}</strong></div>
+        <div><small>状态</small><strong>{statusLabel(task.status)}</strong></div>
+        <div><small>当前代理</small><strong>{currentAgent}</strong></div>
+        <div><small>图片进度</small><strong>{imageProgress}</strong></div>
+        <div><small>产物更新时间</small><strong>{snapshot?.updatedAt ? formatDate(snapshot.updatedAt) : '等待生成'}</strong></div>
+        <div><small>输出目录</small><strong>{task.outputDir || '等待生成'}</strong></div>
+        <div><small>失败步骤</small><strong>{task.failedStep ?? '-'}</strong></div>
+        <div><small>状态文件</small><strong>{task.artifactStatePath || '等待生成'}</strong></div>
+        <div><small>最近心跳</small><strong>{task.lastHeartbeatAt ? formatDate(task.lastHeartbeatAt) : '等待运行'}</strong></div>
+        <div><small>恢复步骤</small><strong>{task.retryFromStep ?? '-'}</strong></div>
+      </div>
+
       <div className="artifact-preview-head">
         <div className="preview-empty-icon">{task.status === 'running' ? <Loader2 className="spin" size={22} /> : <Database size={22} />}</div>
         <div>
@@ -100,19 +149,6 @@ export function ArtifactPreviewContent({
         ) : null}
       </div>
       <InlineActionFeedback feedback={artifactAction.feedback} />
-
-      <div className="preview-meta-grid">
-        <div><small>任务</small><strong>{task.title || '未命名任务'}</strong></div>
-        <div><small>状态</small><strong>{statusLabel(task.status)}</strong></div>
-        <div><small>当前代理</small><strong>{currentAgent}</strong></div>
-        <div><small>图片进度</small><strong>{imageProgress}</strong></div>
-        <div><small>产物更新时间</small><strong>{snapshot?.updatedAt ? formatDate(snapshot.updatedAt) : '等待生成'}</strong></div>
-        <div><small>输出目录</small><strong>{task.outputDir || '等待生成'}</strong></div>
-        <div><small>失败步骤</small><strong>{task.failedStep ?? '-'}</strong></div>
-        <div><small>状态文件</small><strong>{task.artifactStatePath || '等待生成'}</strong></div>
-        <div><small>最近心跳</small><strong>{task.lastHeartbeatAt ? formatDate(task.lastHeartbeatAt) : '等待运行'}</strong></div>
-        <div><small>恢复步骤</small><strong>{task.retryFromStep ?? '-'}</strong></div>
-      </div>
 
       {tab === 'preview' ? (
         <div className="artifact-section-stack">
@@ -200,6 +236,14 @@ export function ArtifactPreviewContent({
 
       {tab === 'storyboard' ? (
         <div className="artifact-section-stack">
+          <ArtifactSection title="分镜分句" badge={`${scenes.length} 条`}>
+            <ArtifactSceneList scenes={scenes} imagePrompts={imagePrompts} images={imageAssets} />
+          </ArtifactSection>
+        </div>
+      ) : null}
+
+      {tab === 'images' ? (
+        <div className="artifact-section-stack">
           <ArtifactSection title="批量生图" badge={`${imageAssets.length} 张`}>
             <ImageGenerationGallery
               api={api}
@@ -212,9 +256,6 @@ export function ArtifactPreviewContent({
               isBrowserPreview={isBrowserPreview}
               applyState={applyState}
             />
-          </ArtifactSection>
-          <ArtifactSection title="分镜分句" badge={`${scenes.length} 条`}>
-            <ArtifactSceneList scenes={scenes} imagePrompts={imagePrompts} images={imageAssets} />
           </ArtifactSection>
         </div>
       ) : null}
@@ -242,6 +283,14 @@ export function ArtifactPreviewContent({
                 ))}
               </div>
             ) : <ArtifactEmpty text="等待字幕时间轴" />}
+          </ArtifactSection>
+        </div>
+      ) : null}
+
+      {tab === 'events' ? (
+        <div className="artifact-section-stack">
+          <ArtifactSection title="任务事件" badge={`${events.length} 条`}>
+            <EventTimeline events={events} />
           </ArtifactSection>
         </div>
       ) : null}

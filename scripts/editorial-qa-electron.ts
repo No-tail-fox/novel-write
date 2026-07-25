@@ -1,21 +1,29 @@
+import { existsSync } from 'node:fs';
 import { copyFile, mkdir, mkdtemp, readFile, readdir, rm, writeFile } from 'node:fs/promises';
 import { createRequire } from 'node:module';
 import { tmpdir } from 'node:os';
 import { basename, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { randomBytes } from 'node:crypto';
-import { editorialQaScopes, resolveEditorialQaConfig } from '../electron/editorial-qa';
+import {
+  editorialQaExpectedCaptureCount,
+  editorialQaScopes,
+  resolveEditorialQaConfig,
+  type EditorialQaScope,
+} from '../electron/editorial-qa';
 import { redactProcessOutput, runBoundedProcess } from '../src/shared/process-runner';
 import { formatSmokeError, runSmokeWithTempRoot, setSmokeFailureExitCode } from './smoke-signal-lifecycle';
 
 const rootDir = fileURLToPath(new URL('..', import.meta.url));
-const timeoutMs = 180_000;
+const timeoutMs = 420_000;
 const maxOutputBytes = 1024 * 1024;
 
 interface QaReport {
+  scope: string;
   processId: number;
   ownedProcessIds: number[];
   remainingOwnedProcessIds: number[];
+  activeCapture?: string | null;
   captures: Array<{ path: string; theme: string; tokens: Record<string, string> }>;
 }
 
@@ -56,24 +64,51 @@ async function main(): Promise<void> {
       });
       // Recreate the consumed one-use sentinel after validation; the child consumes it for real.
       await writeFile(sentinel, token, { encoding: 'utf8', flag: 'wx' });
-      const child = await runBoundedProcess(electronPath, ['.'], {
-        cwd: rootDir,
-        env: qaEnvironment,
-        signal,
-        timeoutMs,
-        maxStdoutBytes: maxOutputBytes,
-        maxStderrBytes: maxOutputBytes,
-      });
+      let child: Awaited<ReturnType<typeof runBoundedProcess>>;
+      try {
+        child = await runBoundedProcess(electronPath, ['.'], {
+          cwd: rootDir,
+          env: qaEnvironment,
+          signal,
+          timeoutMs,
+          maxStdoutBytes: maxOutputBytes,
+          maxStderrBytes: maxOutputBytes,
+        });
+      } catch (error) {
+        const progress = await partialEditorialQaProgress(report);
+        if (progress) {
+          const lastCapture = progress.lastCapture ? ` Last capture: ${progress.lastCapture}.` : '';
+          const activeCapture = progress.activeCapture ? ` Active capture: ${progress.activeCapture}.` : '';
+          throw new Error(`Editorial QA child did not complete; partial capture progress: ${progress.captureCount} captures.${lastCapture}${activeCapture} ${error instanceof Error ? error.message : String(error)}`);
+        }
+        throw error;
+      }
       if (child.code !== 0) {
         const detail = redactProcessOutput(child.stderr).trim().slice(-4000);
         throw new Error(`Editorial QA Electron child ${child.pid} exited with ${child.code ?? child.signal}.${detail ? `\n${detail}` : ''}`);
+      }
+      if (!existsSync(report)) {
+        const detail = redactProcessOutput(`${child.stdout}\n${child.stderr}`).trim().slice(-4000);
+        throw new Error(`Editorial QA Electron child ${child.pid} exited without a report.${detail ? `\n${detail}` : ''}`);
       }
       const qaReport = JSON.parse(await readFile(report, 'utf8')) as QaReport;
       const remaining = await remainingOwnedProcesses(qaReport.ownedProcessIds, 5_000);
       if (qaReport.processId <= 0 || qaReport.remainingOwnedProcessIds.length || remaining.length) {
         throw new Error(`Editorial QA left owned processes alive: ${remaining.join(', ') || qaReport.remainingOwnedProcessIds.join(', ')}`);
       }
-      if (!qaReport.captures.length) throw new Error('Editorial QA did not produce any captures.');
+      const expectedCaptureCount = editorialQaExpectedCaptureCount(scope);
+      const uniqueCaptureCount = new Set(qaReport.captures.map((capture) => capture.path)).size;
+      if (
+        qaReport.scope !== scope
+        || qaReport.captures.length !== expectedCaptureCount
+        || uniqueCaptureCount !== expectedCaptureCount
+        || qaReport.activeCapture !== null
+      ) {
+        const detail = redactProcessOutput(`${child.stdout}\n${child.stderr}`).trim().slice(-4000);
+        throw new Error(
+          `Editorial QA incomplete capture report for ${scope}: expected ${expectedCaptureCount}, received ${qaReport.captures.length}, unique ${uniqueCaptureCount}, active ${qaReport.activeCapture ?? 'none'}.${detail ? `\n${detail}` : ''}`,
+        );
+      }
       if (scope === 'theme-smoke') validateThemeSmoke(qaReport);
       artifactDirectory = await mkdtemp(join(tmpdir(), 'storydream-editorial-artifacts-'));
       await copyFile(report, join(artifactDirectory, 'report.json'));
@@ -104,14 +139,24 @@ function validateThemeSmoke(report: QaReport): void {
   }
 }
 
-function readScope(args: readonly string[]): string {
+function readScope(args: readonly string[]): EditorialQaScope {
   const values = args.filter((value) => value.startsWith('--scope='));
   if (args.length !== values.length || values.length > 1) throw new Error('Usage: editorial-qa-electron.ts [--scope=<scope>]');
   const scope = values[0]?.slice('--scope='.length) || 'all';
   if (!editorialQaScopes.includes(scope as (typeof editorialQaScopes)[number])) {
     throw new Error(`Unknown editorial QA scope: ${scope}`);
   }
-  return scope;
+  return scope as EditorialQaScope;
+}
+
+async function partialEditorialQaProgress(reportPath: string): Promise<{ captureCount: number; lastCapture: string | null; activeCapture: string | null } | null> {
+  try {
+    const report = JSON.parse(await readFile(reportPath, 'utf8')) as QaReport;
+    const lastCapture = report.captures.at(-1)?.path ?? null;
+    return { captureCount: report.captures.length, lastCapture, activeCapture: report.activeCapture ?? null };
+  } catch {
+    return null;
+  }
 }
 
 async function remainingOwnedProcesses(pids: readonly number[], timeoutMs: number): Promise<number[]> {

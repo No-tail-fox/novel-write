@@ -122,6 +122,29 @@
   letter-spacing: 0;
 }
 
+.app-shell[data-editorial-shell] .page-head.task-operations-page-head {
+  min-height: 73px;
+  padding-top: 8px;
+  padding-bottom: 8px;
+}
+
+.app-shell[data-editorial-shell]:has(.task-operations-page-head) .content {
+  grid-template-rows: 73px minmax(0, 1fr);
+}
+
+.app-shell[data-editorial-shell] .task-operations-page-head .page-breadcrumb {
+  display: block;
+  margin-bottom: 3px;
+  color: var(--shell-muted);
+  font-size: 11px;
+  line-height: 1.2;
+}
+
+.app-shell[data-editorial-shell] .task-operations-page-head h1 {
+  font-size: 20px;
+  line-height: 1.25;
+}
+
 .app-shell[data-editorial-shell] .top-notice,
 .app-shell[data-editorial-shell] .save-state {
   border: 0;

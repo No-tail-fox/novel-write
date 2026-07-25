@@ -4,7 +4,7 @@ import { tmpdir } from 'node:os';
 import { basename, dirname, isAbsolute, join, relative, resolve } from 'node:path';
 import type { BrowserWindow } from 'electron';
 
-export const editorialQaScopes = ['all', 'theme-smoke', 'shell', 'new-task', 'workflow', 'labs', 'system'] as const;
+export const editorialQaScopes = ['all', 'theme-smoke', 'shell', 'new-task', 'task-operations', 'workflow', 'labs', 'system'] as const;
 export type EditorialQaScope = (typeof editorialQaScopes)[number];
 export type EditorialQaEnvironment = Partial<Record<
   | 'STORYDREAM_QA_RUN_ROOT'
@@ -47,6 +47,12 @@ export const editorialQaMatrix = {
     { id: 'new-task-output-desktop', view: 'new-task', stage: 'output', theme: 'light', viewport: 'desktop' },
     { id: 'new-task-material-compact', view: 'new-task', stage: 'material', theme: 'light', viewport: 'compact' },
   ],
+  taskOperationStates: [
+    { id: 'queue-operations-desktop', view: 'queue', theme: 'light', viewport: 'desktop' },
+    { id: 'history-operations-desktop', view: 'history', theme: 'light', viewport: 'desktop' },
+    { id: 'task-detail-operations-desktop', view: 'task-detail', theme: 'light', viewport: 'desktop' },
+    { id: 'history-operations-compact', view: 'history', theme: 'light', viewport: 'compact' },
+  ],
 } as const;
 
 const qaComputedTokenNames = [
@@ -54,6 +60,7 @@ const qaComputedTokenNames = [
   '--shell-focus', '--shell-focus-contrast', '--media-bg', '--media-surface',
   '--media-border', '--media-text', '--media-muted',
 ] as const;
+const editorialQaOperationTimeoutMs = 30_000;
 
 export function resolveEditorialQaConfig(
   environment: EditorialQaEnvironment = process.env,
@@ -120,13 +127,19 @@ export async function captureEditorialQa(
   const captures: EditorialQaCapture[] = [];
   const cases = captureCasesForScope(config.scope);
   await window.webContents.executeJavaScript(qaCssAndReadinessScript(), true);
+  await writeEditorialQaReport(config, captures, getMetrics);
   for (const captureCase of cases) {
     const viewport = editorialQaMatrix.viewports.find((candidate) => candidate.name === captureCase.viewport);
     if (!viewport) throw new Error(`Editorial QA viewport is unknown: ${captureCase.viewport}`);
+    await writeEditorialQaReport(config, captures, getMetrics, { activeCapture: captureCase.id });
     window.setContentSize(viewport.width, viewport.height);
-    const state = await window.webContents.executeJavaScript(qaScenarioScript(captureCase.view, captureCase.theme, captureCase.stage), true) as QaScenarioState;
+    const state = await withEditorialQaTimeout(
+      window.webContents.executeJavaScript(qaScenarioScript(captureCase.id, captureCase.view, captureCase.theme, captureCase.stage), true) as Promise<QaScenarioState>,
+      editorialQaOperationTimeoutMs,
+      `${captureCase.id} scenario`,
+    );
     if (!state.ready || state.width !== viewport.width || state.height !== viewport.height || state.scale !== 1) {
-      throw new Error(`Editorial QA scenario did not reach a stable ${captureCase.id} state.`);
+      throw new Error(`Editorial QA scenario did not reach a stable ${captureCase.id} state: ${JSON.stringify(state)}`);
     }
     if (state.layout.horizontalOverflow > 1 || state.layout.clippedPrimaryControls.length > 0) {
       throw new Error(`Editorial QA found clipped controls in ${captureCase.id}: ${state.layout.clippedPrimaryControls.join(', ')}`);
@@ -142,21 +155,78 @@ export async function captureEditorialQa(
     )) {
       throw new Error(`Editorial QA manual-cover state failed in ${captureCase.id}.`);
     }
-    const image = await window.webContents.capturePage();
+    if (captureCase.id === 'history-operations-desktop' && (!state.deleteDialogFocusWrapped || !state.deleteDialogEscapeRestored)) {
+      throw new Error('Editorial QA history delete-dialog keyboard lifecycle failed.');
+    }
+    await new Promise((resolveDelay) => setTimeout(resolveDelay, 80));
+    await withEditorialQaTimeout(
+      window.webContents.executeJavaScript(qaCompositorSettlingScript(), true),
+      editorialQaOperationTimeoutMs,
+      `${captureCase.id} compositor settling`,
+    );
+    const image = await withEditorialQaTimeout(
+      captureEditorialQaPage(window, captureCase.id),
+      editorialQaOperationTimeoutMs,
+      `${captureCase.id} capturePage`,
+    );
     const png = image.toPNG();
     const capturePath = join(config.captures, `${captureCase.id}.png`);
     await writeFile(capturePath, png, { flag: 'wx' });
     await assertCapturePng(capturePath, png, image.toBitmap(), viewport.width, viewport.height);
-    captures.push({ view: captureCase.view, stage: captureCase.stage, theme: captureCase.theme, viewport: viewport.name, path: basename(capturePath), visibleText: state.visibleText, tokens: state.tokens, manualCover: state.manualCover });
+    captures.push({ view: captureCase.view, stage: captureCase.stage, theme: captureCase.theme, viewport: viewport.name, path: basename(capturePath), visibleText: state.visibleText, tokens: state.tokens, manualCover: state.manualCover, deleteDialogFocusWrapped: state.deleteDialogFocusWrapped, deleteDialogEscapeRestored: state.deleteDialogEscapeRestored });
+    await writeEditorialQaReport(config, captures, getMetrics);
   }
+  await writeEditorialQaReport(config, captures, getMetrics);
+}
+
+async function writeEditorialQaReport(
+  config: EditorialQaConfig,
+  captures: readonly EditorialQaCapture[],
+  getMetrics: () => Array<{ pid: number }>,
+  options: { activeCapture: string | null } = { activeCapture: null },
+): Promise<void> {
   const ownedProcessIds = [...new Set(getMetrics().map((metric) => metric.pid).filter((pid) => Number.isSafeInteger(pid) && pid > 0))];
   await writeFile(config.report, `${JSON.stringify({
     scope: config.scope,
     processId: process.pid,
     ownedProcessIds,
     remainingOwnedProcessIds: [],
+    activeCapture: options.activeCapture,
     captures,
   }, null, 2)}\n`, 'utf8');
+}
+
+async function withEditorialQaTimeout<T>(operation: Promise<T>, timeoutMs: number, label: string): Promise<T> {
+  let timeout: NodeJS.Timeout | undefined;
+  try {
+    return await Promise.race([
+      operation,
+      new Promise<never>((_resolve, reject) => {
+        timeout = setTimeout(() => reject(new Error(`Editorial QA ${label} timed out.`)), timeoutMs);
+      }),
+    ]);
+  } catch (error) {
+    if (error instanceof Error && error.message.startsWith('Editorial QA ')) throw error;
+    throw new Error(`Editorial QA ${label} failed: ${error instanceof Error ? error.message : String(error)}`);
+  } finally {
+    if (timeout) clearTimeout(timeout);
+  }
+}
+
+async function captureEditorialQaPage(window: BrowserWindow, captureId: string) {
+  let lastError: unknown;
+  for (let attempt = 1; attempt <= 3; attempt += 1) {
+    try {
+      return await window.webContents.capturePage();
+    } catch (error) {
+      lastError = error;
+      if (attempt < 3) {
+        await new Promise((resolveDelay) => setTimeout(resolveDelay, 160));
+        await window.webContents.executeJavaScript(qaCompositorSettlingScript(), true);
+      }
+    }
+  }
+  throw new Error(`Editorial QA ${captureId} capturePage failed after 3 attempts: ${lastError instanceof Error ? lastError.message : String(lastError)}`);
 }
 
 interface EditorialQaCapture {
@@ -168,6 +238,8 @@ interface EditorialQaCapture {
   visibleText: string;
   tokens: Record<string, string>;
   manualCover: QaScenarioState['manualCover'];
+  deleteDialogFocusWrapped: boolean;
+  deleteDialogEscapeRestored: boolean;
 }
 
 interface EditorialQaCaptureCase {
@@ -191,6 +263,8 @@ interface QaScenarioState {
     importVisible: boolean;
     createDisabled: boolean;
   };
+  deleteDialogFocusWrapped: boolean;
+  deleteDialogEscapeRestored: boolean;
   layout: {
     horizontalOverflow: number;
     clippedPrimaryControls: string[];
@@ -200,11 +274,23 @@ interface QaScenarioState {
 
 function captureCasesForScope(scope: EditorialQaScope): EditorialQaCaptureCase[] {
   if (scope === 'new-task') return [...editorialQaMatrix.newTaskStates];
+  if (scope === 'task-operations') return [...editorialQaMatrix.taskOperationStates];
+  if (scope === 'all') {
+    const cases = Object.entries(editorialQaMatrix.views).flatMap(([group, groupViews]) => (
+      editorialQaMatrix.themes.flatMap((theme) => editorialQaMatrix.viewports.flatMap((viewport) => (
+        groupViews.map((view) => ({
+          id: `${group}-${view}-${theme}-${viewport.name}`,
+          view,
+          theme,
+          viewport: viewport.name,
+        }))
+      )))
+    ));
+    return [...cases, ...editorialQaMatrix.newTaskStates, ...editorialQaMatrix.taskOperationStates];
+  }
   const views = scope === 'theme-smoke'
     ? ['new-task']
-    : scope === 'all'
-      ? Object.values(editorialQaMatrix.views).flat()
-      : editorialQaMatrix.views[scope];
+    : editorialQaMatrix.views[scope];
   const cases = editorialQaMatrix.themes.flatMap((theme) => editorialQaMatrix.viewports.flatMap((viewport) => (
     views.map((view) => ({
       id: `${view}-${theme}-${viewport.name}`,
@@ -213,7 +299,15 @@ function captureCasesForScope(scope: EditorialQaScope): EditorialQaCaptureCase[]
       viewport: viewport.name,
     }))
   )));
-  return scope === 'all' ? [...cases, ...editorialQaMatrix.newTaskStates] : cases;
+  return cases;
+}
+
+export function editorialQaExpectedCaptureCount(scope: EditorialQaScope): number {
+  return captureCasesForScope(scope).length;
+}
+
+export function editorialQaCaptureIds(scope: EditorialQaScope): readonly string[] {
+  return captureCasesForScope(scope).map((captureCase) => captureCase.id);
 }
 
 function assertStrictDescendant(parent: string, child: string, label: string): void {
@@ -240,21 +334,123 @@ function qaCssAndReadinessScript(): string {
   })()`;
 }
 
-function qaScenarioScript(view: string, theme: string, stage?: string): string {
+function qaCompositorSettlingScript(): string {
+  return `new Promise((resolve) => {
+    let settled = false;
+    let fallback;
+    const finish = () => {
+      if (settled) return;
+      settled = true;
+      if (fallback) clearTimeout(fallback);
+      resolve();
+    };
+    fallback = setTimeout(finish, 160);
+    requestAnimationFrame(() => requestAnimationFrame(finish));
+  })`;
+}
+
+function qaScenarioScript(id: string, view: string, theme: string, stage?: string): string {
   return `(async () => {
     const waitFor = async (check, timeout = 10000) => {
       const until = Date.now() + timeout;
       while (!check()) { if (Date.now() >= until) return false; await new Promise((resolve) => setTimeout(resolve, 25)); }
       return true;
     };
+    const withTimeout = async (operation, timeout, message) => {
+      let timer;
+      try {
+        return await Promise.race([
+          operation,
+          new Promise((_, reject) => { timer = setTimeout(() => reject(new Error(message)), timeout); }),
+        ]);
+      } finally {
+        if (timer) clearTimeout(timer);
+      }
+    };
+    const settleCompositor = () => new Promise((resolve) => {
+      let settled = false;
+      let fallback;
+      const finish = () => {
+        if (settled) return;
+        settled = true;
+        if (fallback) clearTimeout(fallback);
+        resolve();
+      };
+      fallback = setTimeout(finish, 160);
+      requestAnimationFrame(() => requestAnimationFrame(finish));
+    });
+    const initialShellReady = await waitFor(() => document.querySelector('.app-shell')
+      && document.documentElement.dataset.themeReady === 'true');
     const api = window.storydream;
-    if (api) await api.saveUiPreferences({ theme: ${JSON.stringify(theme)} });
+    if (api && document.documentElement.dataset.theme !== ${JSON.stringify(theme)}) {
+      await withTimeout(api.saveUiPreferences({ theme: ${JSON.stringify(theme)} }), 10000, 'theme preference timed out');
+    }
     const themeReady = await waitFor(() => document.documentElement.dataset.theme === ${JSON.stringify(theme)});
-    const nav = document.querySelector('[data-nav-view=${JSON.stringify(view)}]');
+    const scenarioId = ${JSON.stringify(id)};
+    const targetView = ${JSON.stringify(view)};
+    const navView = targetView === 'task-detail' ? 'queue' : targetView;
+    const nav = document.querySelector('[data-nav-view="' + navView + '"]');
     if (nav instanceof HTMLButtonElement) nav.click();
-    let ready = themeReady && await waitFor(() => document.querySelector('.app-shell')
+    if (targetView === 'task-detail') {
+      await waitFor(() => document.querySelector('[data-task-operations="queue"]'));
+      const detailRow = [...document.querySelectorAll('.task-queue-row')]
+        .find((row) => row.textContent?.includes('武则天：从深宫才人到一代女皇'));
+      if (detailRow instanceof HTMLElement) detailRow.click();
+    }
+    let ready = initialShellReady && themeReady && await waitFor(() => document.querySelector('.app-shell')
       && document.documentElement.dataset.themeReady === 'true'
-      && document.querySelector('[data-shell-view=${JSON.stringify(view)}]'));
+      && document.querySelector('[data-shell-view="' + targetView + '"]'));
+    let deleteDialogFocusWrapped = scenarioId !== 'history-operations-desktop';
+    let deleteDialogEscapeRestored = scenarioId !== 'history-operations-desktop';
+    if (scenarioId === 'queue-operations-desktop') {
+      ready = ready && await waitFor(() => document.querySelector('.task-event-rail')?.textContent?.includes('Step 4 批量生图'));
+    }
+    if (scenarioId === 'history-operations-desktop') {
+      const archiveGroup = document.querySelector('[role="group"][aria-label="记录范围"]');
+      const archivedButton = [...(archiveGroup?.querySelectorAll('button') ?? [])]
+        .find((button) => button.textContent?.trim() === '已归档');
+      ready = ready && await waitFor(() => archivedButton instanceof HTMLButtonElement && !archivedButton.disabled);
+      if (archivedButton instanceof HTMLButtonElement && !archivedButton.disabled) archivedButton.click();
+      ready = ready && await waitFor(() => [...document.querySelectorAll('.history-page .table-row')]
+        .some((row) => row.textContent?.includes('QA 永久删除验证记录')));
+      const deleteButton = [...document.querySelectorAll('.history-page .row-actions button')]
+        .find((button) => button.getAttribute('aria-label') === '永久删除记录');
+      if (deleteButton instanceof HTMLButtonElement) {
+        deleteButton.focus();
+        deleteButton.click();
+        ready = ready && await waitFor(() => document.querySelector('.confirm-dialog'));
+        await new Promise((resolve) => queueMicrotask(resolve));
+        const dialog = document.querySelector('.confirm-dialog');
+        const focusable = [...(dialog?.querySelectorAll('[data-dialog-focus]:not([disabled])') ?? [])];
+        const first = focusable[0];
+        const last = focusable.at(-1);
+        let forwardWrapped = false;
+        let backwardWrapped = false;
+        if (dialog instanceof HTMLElement && first instanceof HTMLElement && last instanceof HTMLElement) {
+          last.focus();
+          dialog.dispatchEvent(new KeyboardEvent('keydown', { key: 'Tab', bubbles: true, cancelable: true }));
+          forwardWrapped = document.activeElement === first;
+          first.focus();
+          dialog.dispatchEvent(new KeyboardEvent('keydown', { key: 'Tab', shiftKey: true, bubbles: true, cancelable: true }));
+          backwardWrapped = document.activeElement === last;
+          dialog.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true, cancelable: true }));
+          await waitFor(() => !document.querySelector('.confirm-dialog'));
+          await new Promise((resolve) => queueMicrotask(resolve));
+          deleteDialogFocusWrapped = forwardWrapped && backwardWrapped;
+          deleteDialogEscapeRestored = document.activeElement === deleteButton;
+        }
+      }
+      const activeButton = [...(archiveGroup?.querySelectorAll('button') ?? [])]
+        .find((button) => button.textContent?.trim() === '活跃任务');
+      ready = ready && await waitFor(() => activeButton instanceof HTMLButtonElement && !activeButton.disabled);
+      if (activeButton instanceof HTMLButtonElement && !activeButton.disabled) activeButton.click();
+      ready = ready && await waitFor(() => [...document.querySelectorAll('.history-page .table-row')]
+        .some((row) => row.textContent?.includes('武则天：从深宫才人到一代女皇')));
+    }
+    if (scenarioId === 'task-detail-operations-desktop') {
+      ready = ready && await waitFor(() => document.querySelector('.task-media-progress')?.textContent?.includes('8 / 12')
+        && document.querySelector('.task-scene-rail')?.textContent?.includes('8 / 12 已生成'));
+    }
     const stage = ${JSON.stringify(stage ?? '')};
     let stageStatePreserved = true;
     if (stage) {
@@ -290,8 +486,12 @@ function qaScenarioScript(view: string, theme: string, stage?: string): string {
         ready = ready && await waitFor(() => document.querySelector('[data-manual-cover-state="required"]'));
       }
     }
-    await document.fonts.ready;
-    await new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve)));
+    await withTimeout(document.fonts.ready, 10000, 'font readiness timed out');
+    await withTimeout(
+      settleCompositor(),
+      10000,
+      'scenario compositor settling timed out',
+    );
     document.activeElement instanceof HTMLElement && document.activeElement.blur();
     const computed = getComputedStyle(document.documentElement);
     const tokens = Object.fromEntries(${JSON.stringify(qaComputedTokenNames)}.map((name) => [name, computed.getPropertyValue(name).trim()]));
@@ -304,7 +504,7 @@ function qaScenarioScript(view: string, theme: string, stage?: string): string {
         : summary.top >= editor.bottom - 1
           ? 'below'
           : 'unknown';
-    const clippedPrimaryControls = [...document.querySelectorAll('.new-task-workbench button, .new-task-workbench input, .new-task-workbench select, .new-task-workbench textarea')]
+    const clippedPrimaryControls = [...document.querySelectorAll('.new-task-workbench button, .new-task-workbench input, .new-task-workbench select, .new-task-workbench textarea, [data-task-operations] button, [data-task-operations] input, [data-task-operations] select')]
       .filter((element) => {
         const style = getComputedStyle(element);
         if (style.display === 'none' || style.visibility === 'hidden') return false;
@@ -325,6 +525,8 @@ function qaScenarioScript(view: string, theme: string, stage?: string): string {
       visibleText: document.body.innerText.replace(/\\s+/g, ' ').trim().slice(0, 1000),
       tokens,
       stageStatePreserved,
+      deleteDialogFocusWrapped,
+      deleteDialogEscapeRestored,
       manualCover: {
         state: manualCoverElement?.getAttribute('data-manual-cover-state') ?? 'inactive',
         importVisible: manualImportButton instanceof HTMLButtonElement && getComputedStyle(manualImportButton).display !== 'none',

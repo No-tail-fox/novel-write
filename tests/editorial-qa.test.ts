@@ -3,6 +3,8 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
 import {
+  editorialQaCaptureIds,
+  editorialQaExpectedCaptureCount,
   editorialQaScopes,
   resolveEditorialQaConfig,
   type EditorialQaEnvironment,
@@ -26,8 +28,25 @@ describe('editorial Electron QA configuration', () => {
   });
 
   it('only accepts known capture scopes before Electron is launched', () => {
-    expect(editorialQaScopes).toEqual(['all', 'theme-smoke', 'shell', 'new-task', 'workflow', 'labs', 'system']);
+    expect(editorialQaScopes).toEqual(['all', 'theme-smoke', 'shell', 'new-task', 'task-operations', 'workflow', 'labs', 'system']);
     expect(() => resolveEditorialQaConfig({ STORYDREAM_QA_SCOPE: 'unknown' }, tmpdir())).toThrow('Unknown editorial QA scope');
+  });
+
+  it('defines the exact completed capture count for every QA scope', () => {
+    expect(Object.fromEntries(editorialQaScopes.map((scope) => [scope, editorialQaExpectedCaptureCount(scope)]))).toEqual({
+      all: 80,
+      'theme-smoke': 4,
+      shell: 4,
+      'new-task': 4,
+      'task-operations': 4,
+      workflow: 28,
+      labs: 20,
+      system: 20,
+    });
+    for (const scope of editorialQaScopes) {
+      const ids = editorialQaCaptureIds(scope);
+      expect(new Set(ids).size, `${scope} capture ids`).toBe(ids.length);
+    }
   });
 
   it('captures the four accepted new-task states without multiplying unrelated themes and viewports', async () => {
@@ -49,18 +68,42 @@ describe('editorial Electron QA configuration', () => {
     expect(source).toContain('!state.manualCover.createDisabled');
     expect(source).toContain('horizontalOverflow: Math.max(0, document.documentElement.scrollWidth - window.innerWidth)');
     expect(source).toContain("const expectedPlacement = viewport.name === 'compact' ? 'below' : 'right';");
+    expect(source).toContain('editorialQaOperationTimeoutMs');
+    expect(source).toContain('withEditorialQaTimeout(');
+    expect(source).toContain('activeCapture: captureCase.id');
+    expect(source).toContain('const initialShellReady = await waitFor');
+    expect(source).toContain('theme preference timed out');
+    expect(source).toContain('font readiness timed out');
+    expect(source).toContain('qaCompositorSettlingScript()');
+    expect(source).toContain('fallback = setTimeout(finish, 160)');
+    expect(source).toContain('requestAnimationFrame(() => requestAnimationFrame(finish))');
+    expect(source).toContain('captureEditorialQaPage(window, captureCase.id)');
+    expect(source).toContain('capturePage failed after 3 attempts');
+    expect(source).toContain('Editorial QA ${label} failed:');
   });
 
   it('keeps the real Electron capture contract on native capturePage and deterministic matrices', async () => {
     const harness = await (await import('node:fs/promises')).readFile(new URL('../scripts/editorial-qa-electron.ts', import.meta.url), 'utf8');
     const main = await (await import('node:fs/promises')).readFile(new URL('../electron/main.ts', import.meta.url), 'utf8');
+    const shell = await (await import('node:fs/promises')).readFile(new URL('../src/app/AppShell.tsx', import.meta.url), 'utf8');
     expect(harness).toContain('mkdtemp(join(tmpdir(), \'storydream-editorial-qa-\'))');
     expect(harness).toContain('STORYDREAM_QA_RUN_TOKEN');
     expect(harness).toContain('runBoundedProcess');
+    expect(harness).toContain('const timeoutMs = 420_000;');
+    expect(harness).toContain('partialEditorialQaProgress');
+    expect(harness).toContain('partial capture progress');
+    expect(harness).toContain('Active capture:');
+    expect(harness).toContain('editorialQaExpectedCaptureCount(scope)');
+    expect(harness).toContain('qaReport.activeCapture !== null');
+    expect(harness).toContain('incomplete capture report');
     expect(harness).not.toMatch(/taskkill\s+\/IM|playwright|puppeteer/u);
     expect(main).toContain('force-device-scale-factor');
     expect(main).toContain('useContentSize: true');
+    expect(main).toContain('backgroundThrottling: !editorialQaConfig');
     expect(main).toContain('captureEditorialQa');
+    expect(main).toContain("editorialQaConfig?.scope !== 'workflow'");
+    expect(shell).toContain('data-nav-view={newTaskPrimaryAction.view}');
+    expect(await (await import('node:fs/promises')).readFile(new URL('../electron/editorial-qa.ts', import.meta.url), 'utf8')).toContain('await writeEditorialQaReport');
   });
 
   it('keeps editable form text readable in both shell themes', async () => {
