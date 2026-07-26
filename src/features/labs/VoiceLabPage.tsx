@@ -10,6 +10,7 @@ import type { StoryDreamApi } from '../../shared/storydream-api';
 import { defaultTaskSpeakerForProvider, normalizeRuntimeTtsProvider, taskSpeakerLabel, ttsVoiceOptionsForProvider, type RuntimeTtsProvider } from '../../shared/tts-voices';
 import { useAsyncAction } from '../../ui/async-action';
 import { formatDate, toLocalAssetUrl } from '../tasks/task-formatters';
+import '../../styles/features/local-labs.css';
 
 export function VoiceLabPage({ api, state, applyState }: { api: StoryDreamApi; state: AppState; applyState: ApplyMutationResult }) {
   const [text, setText] = useState('配音实验室试听文案：用稳定、清晰、有情绪的声音讲完这一段故事。');
@@ -56,8 +57,8 @@ export function VoiceLabPage({ api, state, applyState }: { api: StoryDreamApi; s
   }
 
   return (
-    <div className="voice-lab-layout lab-layout">
-      <section className="panel">
+    <div className="local-lab-workbench voice-lab-layout lab-layout" data-local-lab-workbench="voice-lab">
+      <section className="local-lab-rail voice-lab-controls">
         <Field label="试听文案">
           <textarea className="prompt-box voice-lab-text" value={text} onChange={(event) => setText(event.target.value)} />
         </Field>
@@ -82,7 +83,7 @@ export function VoiceLabPage({ api, state, applyState }: { api: StoryDreamApi; s
           {generating ? '生成中' : '生成试听'}
         </button>
       </section>
-      <section className="panel voice-lab-history" data-media-canvas="voice-lab">
+      <section className="local-lab-media voice-lab-history" data-media-canvas="voice-lab">
         <div className="panel-title-row">
           <div>
             <h2>历史试听</h2>

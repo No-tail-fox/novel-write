@@ -6,6 +6,7 @@ import { AsyncActionFeedback as InlineActionFeedback } from '../../components/As
 import type { StoryDreamApi } from '../../shared/storydream-api';
 import type { PersonAssetImage, PersonAssetSummary } from '../../shared/person-assets';
 import { useAsyncAction } from '../../ui/async-action';
+import '../../styles/features/local-labs.css';
 
 export function PersonAssetsPage({ api, isBrowserPreview }: { api: StoryDreamApi; isBrowserPreview: boolean }) {
   const [people, setPeople] = useState<PersonAssetSummary[]>([]);
@@ -164,8 +165,8 @@ export function PersonAssetsPage({ api, isBrowserPreview }: { api: StoryDreamApi
   }
 
   return (
-    <div className="person-assets-layout">
-      <section className="panel person-list-panel">
+    <div className="local-lab-workbench person-assets-layout" data-local-lab-workbench="person-assets">
+      <section className="local-lab-rail person-list-panel">
         <div className="panel-title-row">
           <div>
             <h2>人物素材库</h2>
@@ -190,7 +191,7 @@ export function PersonAssetsPage({ api, isBrowserPreview }: { api: StoryDreamApi
         </div>
       </section>
 
-      <section className="panel person-assets-panel">
+      <section className="local-lab-main person-assets-panel">
         <div className="panel-title-row">
           <div>
             <h3>{selectedName || '选择人物'}</h3>
@@ -225,7 +226,7 @@ export function PersonAssetsPage({ api, isBrowserPreview }: { api: StoryDreamApi
           </div>
         ) : null}
 
-        <div className="person-image-grid">
+        <div className="person-image-grid" data-media-canvas="person-assets">
           {images.length === 0 ? <EmptyState title="暂无图片" /> : null}
           {images.map((image) => (
             <article className="person-image-card" key={image.path}>

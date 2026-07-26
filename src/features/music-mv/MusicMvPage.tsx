@@ -4,6 +4,7 @@ import { FormField as Field } from '../../components/FormField';
 import { OptionGroup as OptionCloud } from '../../components/OptionGroup';
 import { SegmentedControl as Segmented } from '../../components/SegmentedControl';
 import { AsyncActionFeedback as InlineActionFeedback } from '../../components/AsyncActionFeedback';
+import { AspectRatioSwatch } from '../../components/AspectRatioSwatch';
 import type { ApplyMutationResult, RendererAppState as AppState } from '../../app/route-types';
 import type { StoryDreamApi } from '../../shared/storydream-api';
 import type { PausePoint, ProcessingMode, Task } from '../../shared/types';
@@ -138,7 +139,7 @@ export function MusicMvPage({
             <div className="ratio-grid">
               {['9:16', '4:3', '1:1', '16:9'].map((item) => (
                 <button key={item} className={ratio === item ? 'chip active' : 'chip'} onClick={() => setRatio(item)}>
-                  <span className="ratio-icon" />
+                  <AspectRatioSwatch ratio={item} />
                   {item}
                 </button>
               ))}

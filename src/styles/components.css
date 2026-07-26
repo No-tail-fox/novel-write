@@ -21,3 +21,20 @@ textarea:disabled {
 .danger-action {
   border-radius: 6px;
 }
+
+.aspect-ratio-swatch {
+  width: 26px;
+  height: 24px;
+  flex: 0 0 26px;
+  display: grid;
+  place-items: center;
+}
+
+.aspect-ratio-swatch-shape {
+  width: min(24px, calc(22px * var(--aspect-ratio-value)));
+  max-height: 22px;
+  aspect-ratio: var(--aspect-ratio-value);
+  border: 1px solid currentColor;
+  border-radius: 2px;
+  box-sizing: border-box;
+}

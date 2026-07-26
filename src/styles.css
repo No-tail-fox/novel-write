@@ -1620,13 +1620,6 @@ textarea {
   grid-template-columns: repeat(2, minmax(0, 120px));
 }
 
-.ratio-icon {
-  width: 18px;
-  height: 22px;
-  border: 1px solid currentColor;
-  border-radius: 3px;
-}
-
 .upload-row {
   display: grid;
   grid-template-columns: 1fr auto;
@@ -3227,26 +3220,6 @@ textarea {
   border-color: #e9edf2;
   background: #f2f6fb;
   color: #05080d;
-}
-
-.ratio-icon {
-  display: inline-block;
-  width: 24px;
-  height: 14px;
-  border: 1px solid currentColor;
-  border-radius: 2px;
-}
-
-.ratio-1-1 {
-  width: 20px;
-  height: 20px;
-}
-
-.ratio-3-4,
-.ratio-2-3,
-.ratio-9-16 {
-  width: 14px;
-  height: 24px;
 }
 
 .image-lab-footer {

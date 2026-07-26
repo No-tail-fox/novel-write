@@ -6,6 +6,7 @@ import { FormField as Field } from '../../components/FormField';
 import { OptionGroup as OptionCloud } from '../../components/OptionGroup';
 import { SegmentedControl as Segmented } from '../../components/SegmentedControl';
 import { AsyncActionFeedback as InlineActionFeedback } from '../../components/AsyncActionFeedback';
+import { AspectRatioSwatch } from '../../components/AspectRatioSwatch';
 import type { ApplyMutationResult, RendererAppState as AppState } from '../../app/route-types';
 import type { StoryDreamApi } from '../../shared/storydream-api';
 import type { AppMutationResult, ImageLabSmartMode } from '../../shared/types';
@@ -13,6 +14,7 @@ import { styleOptions } from '../../shared/editorial-options';
 import { useAsyncAction } from '../../ui/async-action';
 import { formatDate, toLocalImageUrl } from '../tasks/task-formatters';
 import { parseReferenceImagePaths, resolveImageLabSmartMode, smartImageModeLabel } from './image-lab-helpers';
+import '../../styles/features/local-labs.css';
 
 type ImageResolution = '1K' | '2K' | '4K';
 
@@ -125,12 +127,14 @@ export function ImageLabPage({ api, state, applyState }: { api: StoryDreamApi; s
   }
 
   return (
-    <div className="image-lab-page">
-      <section className="panel image-lab-workbench">
+    <div className="local-lab-workbench image-lab-page" data-local-lab-workbench="image-lab">
+      <section className="local-lab-main image-lab-workbench">
         <Segmented label="模式" value={tab} options={['smart', 'text', 'reference']} labels={['智慧生图', '文生图', '图像参考']} onChange={(value) => setTab(value as 'smart' | 'text' | 'reference')} />
         <div className="image-lab-mode-note">{referenceModeDescription}</div>
-        {tab !== 'text' ? (
-          <div className="image-lab-reference-block">
+        <div className="image-lab-editor-grid">
+          <div className="image-lab-primary-column">
+            {tab !== 'text' ? (
+              <div className="image-lab-reference-block">
             <div className="image-lab-section-head">
               <strong>参考图</strong>
               <small>建议统一 IP 形象，最多 {referenceLimit} 张 · 已选 {references.length}</small>
@@ -178,23 +182,25 @@ export function ImageLabPage({ api, state, applyState }: { api: StoryDreamApi; s
               ) : <span className="image-lab-reference-empty">暂未添加参考图路径</span>}
               {hiddenReferenceCount > 0 ? <span className="image-lab-reference-overflow">已忽略超出上限的 {hiddenReferenceCount} 张</span> : null}
             </div>
+              </div>
+            ) : null}
+            <Field label="需求描述">
+              <textarea className="prompt-box image-lab-prompt" value={prompt} placeholder="例如：根据食谱内容，规划 2-3 张美食教程图，合成品图、灵魂文案、制作步骤，不要点赞元素" onChange={(event) => setPrompt(event.target.value)} />
+            </Field>
+            {tab !== 'text' ? (
+              <div className="image-lab-slider">
+                <div className="image-lab-section-head">
+                  <strong>出图数量上限</strong>
+                  <small>普通上限设为 10 张</small>
+                </div>
+                <input type="range" min={1} max={10} step={1} value={imageLabOutputCount} onChange={(event) => setImageLabOutputCount(Number(event.target.value))} />
+                <strong>{imageLabOutputCount} 张</strong>
+                <small>AI 会读懂需求，规划成最多 10 张图；每张图文案需进图里。</small>
+              </div>
+            ) : null}
           </div>
-        ) : null}
-        <Field label="需求描述">
-          <textarea className="prompt-box image-lab-prompt" value={prompt} placeholder="例如：根据食谱内容，规划 2-3 张美食教程图，合成品图、灵魂文案、制作步骤，不要点赞元素" onChange={(event) => setPrompt(event.target.value)} />
-        </Field>
-        {tab !== 'text' ? (
-          <div className="image-lab-slider">
-            <div className="image-lab-section-head">
-              <strong>出图数量上限</strong>
-              <small>普通上限设为 10 张</small>
-            </div>
-            <input type="range" min={1} max={10} step={1} value={imageLabOutputCount} onChange={(event) => setImageLabOutputCount(Number(event.target.value))} />
-            <strong>{imageLabOutputCount} 张</strong>
-            <small>AI 会读懂需求，规划成最多 10 张图；每张图文案需进图里。</small>
-          </div>
-        ) : null}
-        <div className="image-lab-control-group">
+          <aside className="image-lab-inspector">
+            <div className="image-lab-control-group">
           <div className="image-lab-section-head">
             <strong>比例</strong>
             <small>可多选体验保留为单选，已选 {ratio}</small>
@@ -202,28 +208,30 @@ export function ImageLabPage({ api, state, applyState }: { api: StoryDreamApi; s
           <div className="image-lab-ratio-grid">
             {imageLabRatioChoices.map(([value, label]) => (
               <button key={value} className={ratio === value ? 'selected' : ''} onClick={() => setRatio(value)} type="button">
-                <span className={`ratio-icon ratio-${value.replace(':', '-')}`} />
+                <AspectRatioSwatch ratio={value} />
                 <strong>{value}</strong>
                 <small>{label}</small>
               </button>
             ))}
           </div>
+            </div>
+            <OptionCloud title="风格" options={styleOptions} value={style} onChange={setStyle} />
+            <Segmented label="分辨率" value={resolution} options={['1K', '2K', '4K']} onChange={(value) => setResolution(value as ImageResolution)} />
+            <div className="image-lab-footer">
+              <button className="ghost-action" type="button" onClick={importCompletedImage} disabled={generating || imageLabAction.busy || !prompt.trim()}>
+                <ImagePlus size={17} />
+                导入成品
+              </button>
+              <button className="primary-action" onClick={addRecord} disabled={generating || !prompt.trim() || (resolvedSmartMode === 'reference-edit' && references.length === 0)}>
+                {generating ? <Loader2 className="spin" size={17} /> : <Wand2 size={17} />}
+                {generating ? '生成中' : '智能生成'}
+              </button>
+              <div className="provider-line">当前 Provider：<strong>{state.config.imageProvider}</strong> · {smartImageModeLabel(resolvedSmartMode)} · 预计消耗 ￥{estimatedCost}</div>
+            </div>
+            {submitError ? <ErrorSummaryButton compact title="画图实验室提交失败" fullMessage={submitError} /> : null}
+            <InlineActionFeedback feedback={imageLabAction.feedback} />
+          </aside>
         </div>
-        <OptionCloud title="风格" options={styleOptions} value={style} onChange={setStyle} />
-        <Segmented label="分辨率" value={resolution} options={['1K', '2K', '4K']} onChange={(value) => setResolution(value as ImageResolution)} />
-        <div className="image-lab-footer">
-          <button className="ghost-action" type="button" onClick={importCompletedImage} disabled={generating || imageLabAction.busy || !prompt.trim()}>
-            <ImagePlus size={17} />
-            导入成品
-          </button>
-          <button className="primary-action" onClick={addRecord} disabled={generating || !prompt.trim() || (resolvedSmartMode === 'reference-edit' && references.length === 0)}>
-            {generating ? <Loader2 className="spin" size={17} /> : <Wand2 size={17} />}
-            {generating ? '生成中' : '智能生成'}
-          </button>
-          <div className="provider-line">当前 Provider：<strong>{state.config.imageProvider}</strong> · {smartImageModeLabel(resolvedSmartMode)} · 预计消耗 ￥{estimatedCost}</div>
-        </div>
-        {submitError ? <ErrorSummaryButton compact title="画图实验室提交失败" fullMessage={submitError} /> : null}
-        <InlineActionFeedback feedback={imageLabAction.feedback} />
       </section>
       {expandedReferenceImage ? (
         <div className="error-dialog-backdrop" onClick={() => setExpandedReferenceImage('')}>
@@ -236,10 +244,10 @@ export function ImageLabPage({ api, state, applyState }: { api: StoryDreamApi; s
           </section>
         </div>
       ) : null}
-      <section className="image-lab-recent">
+      <section className="local-lab-media image-lab-recent" data-media-canvas="image-lab">
         <h3>最近生成 · {state.imageLabRecords.length}</h3>
         {state.imageLabRecords.length === 0 ? <EmptyState title="暂无画图记录" /> : null}
-        <div className="image-grid-panel" data-media-canvas="image-lab">
+        <div className="image-grid-panel">
           {state.imageLabRecords.map((record) => (
           <article className={`image-record ${record.status}`} key={record.id}>
             <div className="lab-image-preview">

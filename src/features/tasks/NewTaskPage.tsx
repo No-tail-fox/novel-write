@@ -5,6 +5,7 @@ import { OptionGroup as OptionCloud } from '../../components/OptionGroup';
 import { SegmentedControl as Segmented } from '../../components/SegmentedControl';
 import { EmptyState } from '../../components/EmptyState';
 import { AsyncActionFeedback as InlineActionFeedback } from '../../components/AsyncActionFeedback';
+import { AspectRatioSwatch } from '../../components/AspectRatioSwatch';
 import type { RendererAppState as AppState, ApplyMutationResult } from '../../app/route-types';
 import {
   countVisibleCharacters,
@@ -865,7 +866,7 @@ export function NewTaskPage({
                 <label className="target-number-field"><span>目标分镜数</span><input type="number" min="1" max="60" step="1" value={storyboardSceneCount} placeholder={storyboardScenePreviewRange ? `自动（${storyboardScenePreviewRange.target}）` : '自动'} onChange={(event) => setStoryboardSceneCount(event.target.value)} /><small>个（±10%，建议每镜 25-45 字）</small></label>
               </div>
               <div className="new-task-field-grid">
-                <div><span className="field-title">AI 出图比例 <small>{ratioManuallyOverridden ? '已手动覆盖' : '已跟随草稿模板'}</small></span><div className="ratio-grid">{['9:16', '4:3', '1:1', '16:9'].map((item) => <button type="button" key={item} className={ratio === item ? 'chip active' : 'chip'} onClick={() => handleRatioChange(item)}><span className="ratio-icon" />{item}</button>)}</div></div>
+                <div><span className="field-title">AI 出图比例 <small>{ratioManuallyOverridden ? '已手动覆盖' : '已跟随草稿模板'}</small></span><div className="ratio-grid">{['9:16', '4:3', '1:1', '16:9'].map((item) => <button type="button" key={item} className={ratio === item ? 'chip active' : 'chip'} onClick={() => handleRatioChange(item)}><AspectRatioSwatch ratio={item} />{item}</button>)}</div></div>
                 <Segmented label="暂停确认" value={pausePoint} options={NEW_TASK_PAUSE_OPTIONS.map(([id]) => id)} labels={NEW_TASK_PAUSE_OPTIONS.map(([, label]) => label)} onChange={(value) => setPausePoint(value as PausePoint)} />
               </div>
               <div className="new-task-field-grid">

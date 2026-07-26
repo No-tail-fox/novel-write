@@ -7,6 +7,7 @@ import type { StoryDreamApi } from '../../shared/storydream-api';
 import type { BookProductInfo, BookSelectionIdentity, BookSelectionRecord, ShellView } from '../../shared/types';
 import { useAsyncAction } from '../../ui/async-action';
 import { emptyToUndefined } from '../tasks/task-formatters';
+import '../../styles/features/local-labs.css';
 
 export function BookSelectionPage({ api, navigate }: { api: StoryDreamApi; navigate: (view: ShellView) => void }) {
   const [records, setRecords] = useState<BookSelectionRecord[]>([]);
@@ -153,8 +154,8 @@ export function BookSelectionPage({ api, navigate }: { api: StoryDreamApi; navig
   }
 
   return (
-    <div className="selection-grid">
-      <section className="panel selection-list-panel">
+    <div className="local-lab-workbench selection-grid" data-local-lab-workbench="book-selection">
+      <section className="local-lab-rail selection-list-panel">
         <div className="panel-title-row">
           <div>
             <h2>选品助手</h2>
@@ -184,7 +185,7 @@ export function BookSelectionPage({ api, navigate }: { api: StoryDreamApi; navig
         </div>
       </section>
 
-      <section className="panel selection-editor-panel">
+      <section className="local-lab-main selection-editor-panel">
         <div className="panel-title-row">
           <div>
             <h3>{selectedBookId ? '编辑选品' : '新增选品'}</h3>

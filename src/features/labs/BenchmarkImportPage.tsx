@@ -7,6 +7,7 @@ import type { StoryDreamApi } from '../../shared/storydream-api';
 import { countVisibleCharacters } from '../../shared/content-metrics';
 import { useAsyncAction } from '../../ui/async-action';
 import { parseBookProductInfo, productInfoSummary, taskFromMutation } from '../tasks/task-formatters';
+import '../../styles/features/local-labs.css';
 
 export function BenchmarkImportPage({
   api,
@@ -71,8 +72,8 @@ export function BenchmarkImportPage({
   }
 
   return (
-    <div className="benchmark-import-layout">
-      <section className="panel benchmark-source-panel">
+    <div className="local-lab-workbench benchmark-import-layout" data-local-lab-workbench="benchmark">
+      <section className="local-lab-rail benchmark-source-panel">
         <div className="panel-title-row">
           <div>
             <h2>对标导入</h2>
@@ -95,7 +96,7 @@ export function BenchmarkImportPage({
         </div>
       </section>
 
-      <section className="panel benchmark-script-panel">
+      <section className="local-lab-main benchmark-script-panel">
         <div className="panel-title-row">
           <div>
             <h3>对标文案</h3>

@@ -55,4 +55,24 @@ describe('three-stage new task workbench', () => {
     expect(draft).toContain('manualCoverAsset?: OrdinaryTaskCoverSelection');
     expect(api).toContain('importOrdinaryTaskCover: (ratio: OrdinaryTaskCoverRatio)');
   });
+
+  it('renders every image ratio through one numerically faithful stable swatch', async () => {
+    const [component, newTask, musicMv, imageLab, css] = await Promise.all([
+      readFile(new URL('../src/components/AspectRatioSwatch.tsx', import.meta.url), 'utf8'),
+      readFile(new URL('../src/features/tasks/NewTaskPage.tsx', import.meta.url), 'utf8'),
+      readFile(new URL('../src/features/music-mv/MusicMvPage.tsx', import.meta.url), 'utf8'),
+      readFile(new URL('../src/features/labs/ImageLabPage.tsx', import.meta.url), 'utf8'),
+      readFile(new URL('../src/styles/components.css', import.meta.url), 'utf8'),
+    ]);
+
+    expect(component).toContain("const [width, height] = ratio.split(':').map(Number)");
+    expect(component).toContain("'--aspect-ratio-value': normalizedWidth / normalizedHeight");
+    expect(component).toContain('className="aspect-ratio-swatch"');
+    expect(component).toContain('className="aspect-ratio-swatch-shape"');
+    expect(newTask).toContain('<AspectRatioSwatch ratio={item} />');
+    expect(musicMv).toContain('<AspectRatioSwatch ratio={item} />');
+    expect(imageLab).toContain('<AspectRatioSwatch ratio={value} />');
+    expect(css).toMatch(/\.aspect-ratio-swatch\s*\{[\s\S]*width:\s*26px;[\s\S]*height:\s*24px;/u);
+    expect(css).toMatch(/\.aspect-ratio-swatch-shape\s*\{[\s\S]*width:\s*min\(24px, calc\(22px \* var\(--aspect-ratio-value\)\)\);[\s\S]*aspect-ratio:\s*var\(--aspect-ratio-value\);/u);
+  });
 });
