@@ -58,6 +58,12 @@
   font-weight: 500;
 }
 
+.app-shell[data-editorial-shell] .nav-group {
+  min-width: 0;
+  display: grid;
+  gap: 1px;
+}
+
 .app-shell[data-editorial-shell] .nav-item {
   min-height: 32px;
   border-radius: 5px;

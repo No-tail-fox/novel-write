@@ -26,18 +26,31 @@ export interface NavigationItem {
   icon: ComponentType<{ size?: number }>;
 }
 
+export interface NavigationGroup {
+  id: 'production' | 'asset-lab' | 'template-system';
+  label: string;
+  items: NavigationItem[];
+}
+
 export const newTaskPrimaryAction: NavigationItem = { view: 'new-task', label: '新建任务', hint: '素材成片', icon: Plus };
 
-export const primaryNavItems: NavigationItem[] = [
+export const productionNavItems: NavigationItem[] = [
   { view: 'book-selection', label: '选品助手', hint: '商品卖点', icon: BookOpen },
   { view: 'benchmark', label: '对标导入', hint: '文案二改', icon: Radar },
   { view: 'person-assets', label: '人物素材库', hint: '真图分镜', icon: Images },
   { view: 'queue', label: '任务队列', hint: '运行进度', icon: ListChecks },
   { view: 'history', label: '历史任务', hint: '本地记录', icon: History },
+];
+
+export const assetLabNavItems: NavigationItem[] = [
   { view: 'image-lab', label: '画图实验室', hint: '分镜图片', icon: FlaskConical },
   { view: 'voice-lab', label: '配音实验室', hint: '音色试听', icon: Mic2 },
   { view: 'music-mv', label: '音乐 MV', hint: '歌词成片', icon: Music },
   { view: 'viral-analyzer', label: '爆款拆解', hint: '拉片复刻', icon: Flame },
+  { view: 'html-video', label: 'HTML 动画视频', hint: 'HTML 渲染', icon: Play },
+];
+
+export const templateSystemNavItems: NavigationItem[] = [
   { view: 'prompt-templates', label: '提示词模板', hint: '代理提示词', icon: Sparkles },
   { view: 'draft-templates', label: '草稿模板', hint: '剪映画布', icon: LayoutTemplate },
   { view: 'settings', label: '系统设置', hint: 'API 与路径', icon: Settings },
@@ -45,11 +58,13 @@ export const primaryNavItems: NavigationItem[] = [
   { view: 'activation', label: '激活管理', hint: '试用与授权', icon: KeyRound },
 ];
 
-export const secondaryNavItems: NavigationItem[] = [
-  { view: 'html-video', label: 'HTML 动画视频', hint: 'HTML 渲染', icon: Play },
+export const sidebarNavGroups: NavigationGroup[] = [
+  { id: 'production', label: '创作生产', items: productionNavItems },
+  { id: 'asset-lab', label: '素材与实验', items: assetLabNavItems },
+  { id: 'template-system', label: '模板与系统', items: templateSystemNavItems },
 ];
 
-export const sidebarNavItems: NavigationItem[] = [...primaryNavItems, ...secondaryNavItems];
+export const sidebarNavItems: NavigationItem[] = sidebarNavGroups.flatMap((group) => group.items);
 export const navigationItems: NavigationItem[] = [newTaskPrimaryAction, ...sidebarNavItems];
 export const taskDetailNavigationItem = { label: '任务详情', hint: '单任务流水线' } as const;
 

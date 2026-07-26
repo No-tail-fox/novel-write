@@ -817,15 +817,16 @@ describe('product shell ui', () => {
     expect(fallbackModels).toContain('models: []');
   });
 
-  it('presents a Chinese StoryDream-first desktop shell with main workflow and secondary modules', async () => {
+  it('presents the accepted three-category StoryDream sidebar without dropping shell utilities', async () => {
     const main = (await rendererSourcesPromise).requiredFile('src/app/AppShell.tsx');
     const navigation = await navigationSourcePromise;
     const shellSource = `${main}\n${navigation}`;
     const css = await readFile(new URL('../src/styles.css', import.meta.url), 'utf8');
 
     for (const text of [
-      '主线工作流',
-      '扩展工具',
+      '创作生产',
+      '素材与实验',
+      '模板与系统',
       '最近任务',
       '试用剩余',
       '激活管理',
@@ -845,9 +846,9 @@ describe('product shell ui', () => {
       expect(shellSource).toContain(text);
     }
 
-    expect(main).toContain('primaryNavItems');
-    expect(main).toContain('secondaryNavItems');
-    expect(main.indexOf('主线工作流')).toBeLessThan(main.indexOf('扩展工具'));
+    expect(main).toContain('sidebarNavGroups.map');
+    expect(navigation.indexOf("label: '创作生产'")).toBeLessThan(navigation.indexOf("label: '素材与实验'"));
+    expect(navigation.indexOf("label: '素材与实验'")).toBeLessThan(navigation.indexOf("label: '模板与系统'"));
     expect(navigation.indexOf('新建任务')).toBeLessThan(navigation.indexOf('爆款拆解'));
     expect(main).toContain('className="trial-activation-bar"');
     expect(main).toContain('className="recent-task-strip"');
@@ -859,19 +860,18 @@ describe('product shell ui', () => {
     expect(css).toContain('.account-entry-grid');
   });
 
-  it('keeps the viral analyzer visible in the main workflow navigation', async () => {
+  it('keeps all five material and experiment routes together in concept order', async () => {
     const navigation = await navigationSourcePromise;
-    const primaryStart = navigation.indexOf('export const primaryNavItems');
-    const primaryEnd = navigation.indexOf('export const secondaryNavItems');
-    const secondaryEnd = navigation.indexOf('export const sidebarNavItems');
-    const primaryNav = navigation.slice(primaryStart, primaryEnd);
-    const secondaryNav = navigation.slice(primaryEnd, secondaryEnd);
+    const assetStart = navigation.indexOf('export const assetLabNavItems');
+    const assetEnd = navigation.indexOf('export const templateSystemNavItems');
+    const assetNav = navigation.slice(assetStart, assetEnd);
 
-    expect(primaryNav).toContain("view: 'viral-analyzer'");
-    expect(primaryNav).toContain("label: '爆款拆解'");
-    expect(secondaryNav).not.toContain("view: 'viral-analyzer'");
-    expect(primaryNav.indexOf("view: 'music-mv'")).toBeLessThan(primaryNav.indexOf("view: 'viral-analyzer'"));
-    expect(primaryNav.indexOf("view: 'viral-analyzer'")).toBeLessThan(primaryNav.indexOf("view: 'prompt-templates'"));
+    for (const view of ['image-lab', 'voice-lab', 'music-mv', 'viral-analyzer', 'html-video']) {
+      expect(assetNav).toContain(`view: '${view}'`);
+    }
+    expect(assetNav).not.toContain("view: 'prompt-templates'");
+    expect(assetNav.indexOf("view: 'music-mv'")).toBeLessThan(assetNav.indexOf("view: 'viral-analyzer'"));
+    expect(assetNav.indexOf("view: 'viral-analyzer'")).toBeLessThan(assetNav.indexOf("view: 'html-video'"));
   });
 
   it('exposes local book selection and person asset APIs through preload', async () => {

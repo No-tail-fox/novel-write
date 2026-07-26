@@ -9,8 +9,7 @@ import {
   navigationItemForView,
   newTaskPrimaryAction,
   pageSubtitle,
-  primaryNavItems,
-  secondaryNavItems,
+  sidebarNavGroups,
   type NavigationItem as NavItem,
 } from './navigation';
 import type { ShellView } from '../shared/types';
@@ -103,13 +102,13 @@ export function AppShell({
           </button>
 
           <nav className="nav-list">
-            <span className="nav-section-label">主线工作流</span>
-            {primaryNavItems.map((item) => (
-              <NavButton key={item.view} item={item} active={activeView === item.view} busy={busy} navigate={navigate} />
-            ))}
-            <span className="nav-section-label secondary">扩展工具</span>
-            {secondaryNavItems.map((item) => (
-              <NavButton key={item.view} item={item} active={activeView === item.view} busy={busy} navigate={navigate} />
+            {sidebarNavGroups.map((group) => (
+              <div key={group.id} className="nav-group" role="group" aria-label={group.label}>
+                <span className="nav-section-label">{group.label}</span>
+                {group.items.map((item) => (
+                  <NavButton key={item.view} item={item} active={activeView === item.view} busy={busy} navigate={navigate} />
+                ))}
+              </div>
             ))}
           </nav>
 

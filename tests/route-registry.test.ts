@@ -1,6 +1,6 @@
 import { readFile } from 'node:fs/promises';
 import { describe, expect, it } from 'vitest';
-import { navigationItems, newTaskPrimaryAction, sidebarNavItems } from '../src/app/navigation';
+import { navigationItems, newTaskPrimaryAction, sidebarNavGroups, sidebarNavItems } from '../src/app/navigation';
 
 const expectedViews = [
   'new-task',
@@ -61,6 +61,8 @@ describe('renderer route registry', () => {
 
   it('keeps new task separate, fifteen sidebar entries, and task detail route-only', () => {
     expect(newTaskPrimaryAction.view).toBe('new-task');
+    expect(sidebarNavGroups.map((group) => group.label)).toEqual(['创作生产', '素材与实验', '模板与系统']);
+    expect(sidebarNavGroups.map((group) => group.items.length)).toEqual([5, 5, 5]);
     expect(sidebarNavItems).toHaveLength(15);
     expect(new Set(sidebarNavItems.map((item) => item.view)).size).toBe(15);
     expect(sidebarNavItems.map((item) => item.view)).not.toContain('new-task');

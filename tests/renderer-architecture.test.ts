@@ -513,7 +513,7 @@ describe('renderer application composition architecture', () => {
     expect(main).toContain("import './styles.css'");
     expect(main).toContain('createRoot(rootElement)');
     expect(main).toContain('<App />');
-    for (const implementation of ['function App(', 'function NavButton(', 'api.getBootstrap(', 'api.onAppDelta(', 'primaryNavItems.map(']) {
+    for (const implementation of ['function App(', 'function NavButton(', 'api.getBootstrap(', 'api.onAppDelta(', 'sidebarNavGroups.map(']) {
       expect(main).not.toContain(implementation);
     }
     expect(main.length).toBeLessThan(1_200);
@@ -524,7 +524,7 @@ describe('renderer application composition architecture', () => {
     for (const symbol of ['api.getBootstrap(', 'api.onAppDelta(', 'api.reconcileDeltas(', 'refreshTaskDetail', 'refreshViralEvents', 'applyStoredTheme']) {
       expect(app).toContain(symbol);
     }
-    for (const symbol of ['window-controls', 'primaryNavItems.map(', 'secondaryNavItems.map(', 'recent-task-strip', 'global-action-banner']) {
+    for (const symbol of ['window-controls', 'sidebarNavGroups.map(', 'group.items.map(', 'recent-task-strip', 'global-action-banner']) {
       expect(shell).toContain(symbol);
     }
     for (const symbol of ['NewTaskPage', 'TaskDetailPage', 'HtmlVideoPage', 'PromptTemplatesPage', 'SettingsPage', 'ActivationPage']) {

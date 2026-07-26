@@ -17,7 +17,7 @@ export const approvedEditorialInventories = {
   ], 'src/shared/types.ts', 'src/app/route-registry.ts', 'tests/route-registry.test.ts'),
   sidebarViews: inventory([
     'book-selection', 'benchmark', 'person-assets', 'queue', 'history', 'image-lab', 'voice-lab', 'music-mv',
-    'viral-analyzer', 'prompt-templates', 'draft-templates', 'settings', 'account', 'activation', 'html-video',
+    'viral-analyzer', 'html-video', 'prompt-templates', 'draft-templates', 'settings', 'account', 'activation',
   ], 'src/app/navigation.ts', 'src/app/AppShell.tsx', 'tests/route-registry.test.ts'),
   createTaskInputFields: inventory([
     'title', 'inputText', 'taskKind', 'processingMode', 'publishMode', 'mode', 'aiKeyword', 'aiSources',

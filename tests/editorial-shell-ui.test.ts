@@ -7,10 +7,12 @@ describe('editorial workbench shell', () => {
     const views = [...navigation.matchAll(/\{ view: '([^']+)', label:/gu)].map((match) => match[1]);
     expect(views).toEqual([
       'new-task', 'book-selection', 'benchmark', 'person-assets', 'queue', 'history',
-      'image-lab', 'voice-lab', 'music-mv', 'viral-analyzer', 'prompt-templates',
-      'draft-templates', 'settings', 'account', 'activation', 'html-video',
+      'image-lab', 'voice-lab', 'music-mv', 'viral-analyzer', 'html-video',
+      'prompt-templates', 'draft-templates', 'settings', 'account', 'activation',
     ]);
     expect(navigation).toContain('navigationItems: NavigationItem[] = [newTaskPrimaryAction, ...sidebarNavItems]');
+    expect(navigation).toContain('export const sidebarNavGroups');
+    for (const label of ['创作生产', '素材与实验', '模板与系统']) expect(navigation).toContain(`label: '${label}'`);
   });
 
   it('keeps status, recent task, account, trial, and a real theme control in the shell', async () => {
