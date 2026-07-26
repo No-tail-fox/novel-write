@@ -25,7 +25,7 @@ import {
   type OrdinaryTaskCoverImageProcessor,
   type OrdinaryTaskCoverInspection,
 } from '../src/shared/ordinary-task-cover';
-import { htmlVideoVisibleSteps, isHtmlVideoTask, parseHtmlVideoPipelineData, recoverHtmlVideoPipelineDataForRetry, type HtmlVideoPipelineRetryPatch } from '../src/shared/html-video-workflow';
+import { createHtmlVideoTaskInput, htmlVideoVisibleSteps, isHtmlVideoTask, parseHtmlVideoPipelineData, recoverHtmlVideoPipelineDataForRetry, type HtmlVideoPipelineRetryPatch } from '../src/shared/html-video-workflow';
 import { generateConfiguredVoicePreview } from '../src/shared/media-providers';
 import { createPersonAsset, deletePersonAsset, importPersonAssetFiles, listPersonAssets, listPersonImages, renamePersonAsset } from '../src/shared/person-assets';
 import { createConfiguredJsonLlm, createConfiguredTextLlm, listConfiguredProviderModels, testConfiguredLlm } from '../src/shared/llm-provider';
@@ -244,6 +244,7 @@ async function initializeDatabase(): Promise<FileDatabase> {
     await service.migrateLegacySecrets();
     await ensureRuntimeJianyingDraftPath(database, service);
     await seedTaskOperationsEditorialQa(database, dir);
+    await seedHtmlVideoEditorialQa(database);
     if (isShuttingDown) {
       throw new Error('DATABASE_INITIALIZATION_CANCELLED: Application shutdown started before database publication.');
     }
@@ -355,6 +356,160 @@ async function seedTaskOperationsEditorialQa(database: FileDatabase, dataDir: st
       ts: Date.now() + index,
     });
   }
+}
+
+async function seedHtmlVideoEditorialQa(database: FileDatabase): Promise<void> {
+  if (editorialQaConfig?.scope !== 'html-video' && editorialQaConfig?.scope !== 'workflow' && editorialQaConfig?.scope !== 'all') return;
+  const copy = [
+    '武则天十四岁入宫，十二年间几乎没有被命运看见。',
+    '直到唐高宗时代，她重新站回权力中心。',
+    '一次次选择，最终改写了她在历史中的位置。',
+  ].join('\n\n');
+  const input = createHtmlVideoTaskInput({
+    copy,
+    style: 'modern-cinematic',
+    voiceId: 'qa-editorial-voice',
+    ttsProvider: 'mock',
+    ttsSpeed: 1,
+    bgmId: '',
+    captionPreset: 'editorial',
+    captionAnim: 'fade-up',
+    bgmVolume: 'soft',
+    transitionType: 'fade',
+    coverImageMode: 'auto',
+    coverTemplate: 'cinematic-poster',
+    coverRatio: '9:16',
+    draftTemplate: '',
+    foreground: true,
+    maxScenes: 3,
+    ratio: '9:16',
+  });
+  const task = await database.createTask({ ...input, title: '武则天：权力之路 HTML 动画' });
+  if (!task.managedStorageKey) throw new Error('Editorial QA HTML video fixture has no managed storage key.');
+  const taskDirectory = await ensureHtmlVideoTaskWorkDir(app.getPath('userData'), appDataName, task.managedStorageKey);
+  const workDir = taskDirectory.workDir.canonicalPath;
+  const pipeline = parseHtmlVideoPipelineData(task.pipelineData);
+  const sceneMedia = pipeline.scenes.map((scene) => ({
+    scene,
+    backgroundPath: join(workDir, `scene-${scene.index}-background.png`),
+    foregroundPath: join(workDir, `scene-${scene.index}-foreground.png`),
+    thumbnailPath: join(workDir, `scene-${scene.index}-thumbnail.png`),
+    voicePath: join(workDir, `scene-${scene.index}.wav`),
+    htmlPath: join(workDir, `scene-${scene.index}.html`),
+  }));
+  await Promise.all(sceneMedia.flatMap(({ scene, backgroundPath, foregroundPath, thumbnailPath, voicePath, htmlPath }) => {
+    const previewPng = editorialQaHtmlVideoPreviewPng(scene.index);
+    return [
+      writeFile(backgroundPath, previewPng),
+      writeFile(foregroundPath, previewPng),
+      writeFile(thumbnailPath, previewPng),
+      writeFile(voicePath, editorialQaWavTone(900 + scene.index * 120, 220 + scene.index * 45)),
+      writeFile(htmlPath, `<!doctype html><html lang="zh-CN"><body><main><h1>${scene.title}</h1><p>${scene.narration}</p></main></body></html>`, 'utf8'),
+    ];
+  }));
+  pipeline.revision = 4;
+  pipeline.current = 'preview';
+  pipeline.steps = {
+    rewrite: { status: 'completed' },
+    planning: { status: 'completed' },
+    assets: { status: 'completed' },
+    voice: { status: 'completed' },
+    preview: { status: 'running' },
+    render: { status: 'pending' },
+  };
+  pipeline.assets = sceneMedia.flatMap(({ scene, backgroundPath, foregroundPath }) => [
+    {
+      sceneIndex: scene.index,
+      kind: 'bg' as const,
+      slot: 0,
+      src: backgroundPath,
+      prompt: scene.background.prompt,
+    },
+    {
+      sceneIndex: scene.index,
+      kind: 'fg' as const,
+      slot: scene.elements[0]?.slot ?? 0,
+      src: foregroundPath,
+      prompt: scene.elements[0]?.prompt,
+    },
+  ]);
+  pipeline.voices = sceneMedia.map(({ scene, voicePath }) => ({
+    sceneIndex: scene.index,
+    src: voicePath,
+    durationSec: 1.02,
+    text: scene.narration,
+  }));
+  pipeline.compositions = sceneMedia.map(({ scene, backgroundPath, thumbnailPath, voicePath, htmlPath }) => ({
+    index: scene.index,
+    durationSec: 4 + scene.index,
+    canvas: { w: 720, h: 1280 },
+    audio: { src: voicePath, durationSec: 1.02 },
+    background: { src: backgroundPath },
+    captions: scene.captions.map((text, index) => ({
+      id: `${scene.index}-${index + 1}`,
+      text,
+      startSec: index * 1.2,
+      durationSec: 1.2,
+    })),
+    htmlPath,
+    thumbnailPath,
+    rev: 1,
+  }));
+  const startedAt = new Date().toISOString();
+  await database.updateTask(task.id, {
+    status: 'running',
+    currentStep: 4,
+    pipelineStep: 'preview',
+    pipelineData: JSON.stringify(pipeline),
+    outputDir: workDir,
+    startedAt,
+    lastHeartbeatAt: startedAt,
+  });
+}
+
+function editorialQaHtmlVideoPreviewPng(sceneIndex: number): Buffer {
+  const width = 360;
+  const height = 640;
+  const bitmap = Buffer.alloc(width * height * 4);
+  const accents = [[43, 63, 143], [115, 58, 91], [44, 103, 72]] as const;
+  const accent = accents[(sceneIndex - 1) % accents.length];
+  for (let y = 0; y < height; y += 1) {
+    for (let x = 0; x < width; x += 1) {
+      const offset = (y * width + x) * 4;
+      const isAccent = (y > 238 && y < 250) || (y > 510 && x > 38 && x < width - 38);
+      const shade = isAccent ? accent : y < 120 ? [24, 29, 34] : [16, 19, 22];
+      bitmap[offset] = shade[2];
+      bitmap[offset + 1] = shade[1];
+      bitmap[offset + 2] = shade[0];
+      bitmap[offset + 3] = 255;
+    }
+  }
+  return nativeImage.createFromBitmap(bitmap, { width, height, scaleFactor: 1 }).toPNG();
+}
+
+function editorialQaWavTone(durationMs: number, frequency: number): Buffer {
+  const sampleRate = 8_000;
+  const samples = Math.max(1, Math.floor((sampleRate * durationMs) / 1_000));
+  const dataSize = samples * 2;
+  const buffer = Buffer.alloc(44 + dataSize);
+  buffer.write('RIFF', 0);
+  buffer.writeUInt32LE(36 + dataSize, 4);
+  buffer.write('WAVE', 8);
+  buffer.write('fmt ', 12);
+  buffer.writeUInt32LE(16, 16);
+  buffer.writeUInt16LE(1, 20);
+  buffer.writeUInt16LE(1, 22);
+  buffer.writeUInt32LE(sampleRate, 24);
+  buffer.writeUInt32LE(sampleRate * 2, 28);
+  buffer.writeUInt16LE(2, 32);
+  buffer.writeUInt16LE(16, 34);
+  buffer.write('data', 36);
+  buffer.writeUInt32LE(dataSize, 40);
+  for (let index = 0; index < samples; index += 1) {
+    const value = Math.round(Math.sin((index / sampleRate) * Math.PI * 2 * frequency) * 8_000);
+    buffer.writeInt16LE(value, 44 + index * 2);
+  }
+  return buffer;
 }
 
 async function runHistoryGovernanceMutation<T>(

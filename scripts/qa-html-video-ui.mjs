@@ -128,12 +128,12 @@ try {
   })()`);
   if (!navClicked) throw new Error('HTML video navigation button was not found.');
   await waitFor(
-    async () => evaluate(cdp, `document.querySelector('.hv-config h2')?.textContent === 'HTML 动画视频'`),
+    async () => evaluate(cdp, `document.querySelector('.hv-studio-panel-heading h2')?.textContent === '制作参数'`),
     10_000,
     'HTML video page',
   );
   await waitFor(
-    async () => evaluate(cdp, `document.querySelectorAll('.hv-step').length === 6 && document.querySelector('.hv-workspace h3')?.textContent.includes(${JSON.stringify(seededTasks.primary.title)})`),
+    async () => evaluate(cdp, `document.querySelectorAll('.hv-studio-run-rail .hv-step').length === 6 && document.querySelector('.hv-studio-canvas-heading strong')?.textContent.includes(${JSON.stringify(seededTasks.primary.title)})`),
     20_000,
     'primary completed task',
   );
@@ -673,7 +673,7 @@ async function openOutputAndWait(cdpConnection, task) {
     await waitFor(
       async () => evaluate(cdpConnection, `(() => {
         const video = document.querySelector('.hv-video-output video');
-        return Boolean(document.querySelector('.hv-workspace h3')?.textContent.includes(${JSON.stringify(title)})
+        return Boolean(document.querySelector('.hv-studio-canvas-heading strong')?.textContent.includes(${JSON.stringify(title)})
           && video?.src && video.readyState >= 1 && Number.isFinite(video.duration) && video.duration > 0);
       })()`),
       20_000,
@@ -694,7 +694,7 @@ async function openOutputAndWait(cdpConnection, task) {
       ]);
       const video = document.querySelector('.hv-video-output video');
       return {
-        heading: document.querySelector('.hv-workspace h3')?.textContent || '',
+        heading: document.querySelector('.hv-studio-canvas-heading strong')?.textContent || '',
         panelText: document.querySelector('#html-video-panel')?.textContent || '',
         alerts: [...document.querySelectorAll('[role="alert"]')].map((item) => item.textContent?.trim() || ''),
         directTaskDetail,
@@ -1391,7 +1391,7 @@ async function inspectPage(cdpConnection) {
       const rect = item.getBoundingClientRect();
       return style.display !== 'none' && style.visibility !== 'hidden' && rect.width > 0 && rect.height > 0;
     };
-    const clippedControls = [...document.querySelectorAll('.hv-workspace button, .hv-config button, .hv-workspace select, .hv-workspace input')]
+    const clippedControls = [...document.querySelectorAll('.hv-studio button, .hv-studio select, .hv-studio input, .hv-studio textarea')]
       .filter((item) => isVisible(item))
       .filter((item) => {
         const rect = item.getBoundingClientRect();
@@ -1400,8 +1400,8 @@ async function inspectPage(cdpConnection) {
       .map((item) => item.textContent.trim() || item.getAttribute('aria-label') || item.tagName);
     const video = document.querySelector('.hv-video-output video');
     return {
-      heading: document.querySelector('.hv-config h2')?.textContent.trim() || '',
-      taskHeading: document.querySelector('.hv-workspace h3')?.textContent.trim() || '',
+      heading: document.querySelector('.hv-studio-panel-heading h2')?.textContent.trim() || '',
+      taskHeading: document.querySelector('.hv-studio-canvas-heading strong')?.textContent.trim() || '',
       stepCount: document.querySelectorAll('.hv-step').length,
       stepsCompleted: document.querySelectorAll('.hv-step').length === 6
         && document.querySelectorAll('.hv-step.done').length === 6

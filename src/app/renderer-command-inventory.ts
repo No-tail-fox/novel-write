@@ -106,7 +106,7 @@ export const rendererCommandInventory = {
     owner('music-mv', 'src/features/music-mv/MusicMvPage.tsx', 'runMusicMv', 'onClick={runMusicMv}', '生成音乐 MV', productShellTest),
   ),
   createAndRunViralAnalysis: command(owner('viral-analyzer', 'src/features/viral/ViralAnalyzerPage.tsx', 'startAnalysis', 'onClick={startAnalysis}', '开始拆解', productShellTest, undefined, { disabled: 'disabled={viralAction.busy}', loading: 'viralAction.busy ? <Loader2', error: 'InlineActionFeedback' })),
-  createHtmlVideoTask: command(owner('html-video', 'src/features/html-video/HtmlVideoPage.tsx', 'createHtmlVideoTask', 'createHtmlVideoTask', '创建并生成', 'tests/html-video.test.ts')),
+  createHtmlVideoTask: command(owner('html-video', 'src/features/html-video/HtmlVideoPage.tsx', 'createHtmlVideoTask', 'createHtmlVideoTask', '创建并开始渲染', 'tests/html-video.test.ts')),
   createPersonAsset: command(owner('person-assets', 'src/features/labs/PersonAssetsPage.tsx', 'createPerson', 'onClick={createPerson}', '创建', productShellTest)),
   createProductionTaskFromViral: command(owner('viral-analyzer', 'src/features/viral/ViralAnalyzerPage.tsx', 'createProductionTask', 'onClick={createProductionTask}', '生成新任务', productShellTest, 'src/features/viral/ViralReport.tsx', undefined, 'src/features/viral/ViralAnalyzerPage.tsx', undefined, bridgeChain(['src/features/viral/ViralAnalyzerPage.tsx', 'createProductionTask={createProductionTask}']))),
   deleteBookSelection: command(owner('book-selection', 'src/features/labs/BookSelectionPage.tsx', 'deleteSelection', 'deleteSelection(record)', '删除', productShellTest)),

@@ -1174,7 +1174,10 @@ describe('product shell ui', () => {
     const htmlPage = sources.requiredFile('src/features/html-video/HtmlVideoPage.tsx');
     const htmlTabs = sources.requiredFile('src/features/html-video/HtmlVideoTabPanel.tsx');
     const htmlSources = `${main}\n${htmlPage}\n${htmlTabs}`;
-    const css = await readFile(new URL('../src/styles.css', import.meta.url), 'utf8');
+    const [css, htmlFeatureCss] = await Promise.all([
+      readFile(new URL('../src/styles.css', import.meta.url), 'utf8'),
+      readFile(new URL('../src/styles/features/html-video.css', import.meta.url), 'utf8'),
+    ]);
     const types = await readFile(new URL('../src/shared/types.ts', import.meta.url), 'utf8');
     const workflow = await readFile(new URL('../src/shared/html-video-workflow.ts', import.meta.url), 'utf8');
     const preload = await readFile(new URL('../electron/preload.ts', import.meta.url), 'utf8');
@@ -1183,7 +1186,7 @@ describe('product shell ui', () => {
     expect(main).toContain("'html-video'");
     expect(main).toContain('HtmlVideoPage');
     for (const symbol of [
-      'hv-layout',
+      'hv-studio',
       'createHtmlVideoTask',
       'htmlVideoSteps',
       'htmlVideoTabs',
@@ -1232,11 +1235,11 @@ describe('product shell ui', () => {
       expect(htmlPage).toContain(symbol);
     }
     expect(htmlTabs).toContain('<video');
-    expect(css).toContain('.hv-layout');
-    expect(css).toContain('.hv-rail');
-    expect(css).toContain('.hv-tab');
+    expect(htmlFeatureCss).toContain('.hv-studio');
+    expect(htmlFeatureCss).toContain('.hv-studio-run-rail');
+    expect(htmlFeatureCss).toContain('.hv-tab');
     expect(css).toContain('.hv-media-grid');
-    expect(css).toContain('.hv-run-controls');
+    expect(htmlFeatureCss).toContain('.hv-run-controls');
   });
 
   it('keeps HTML video task, step, and pipeline diagnostics visible without expanding long errors', async () => {
@@ -1247,7 +1250,7 @@ describe('product shell ui', () => {
     expect(page).toMatch(/taskMessageKind === 'error'[\s\S]*?className="hv-workspace-error"\s+role="alert"\s+aria-live="assertive"[\s\S]*?<ErrorSummaryButton/);
     expect(page).toMatch(/taskMessageKind === 'status'[\s\S]*?className="hv-workspace-status"\s+role="status"\s+aria-live="polite"/);
     expect(page).toContain('fullMessage={activeTask.errorMessage}');
-    expect(page).toMatch(/stepState\.error\s*\?\s*\([\s\S]*?className="hv-step-error"\s+role="alert"\s+aria-live="assertive"[\s\S]*?<ErrorSummaryButton/);
+    expect(page).toMatch(/stepState\.error\s*\?\s*<div\s+className="hv-step-error"\s+role="alert"\s+aria-live="assertive"[\s\S]*?<ErrorSummaryButton/);
     expect(page).toContain('pipelineData.warnings.length');
     expect(page).toContain('className="hv-warning-list" role="status" aria-live="polite"');
     expect(css).toContain('.hv-workspace-error');

@@ -4,7 +4,7 @@ import { tmpdir } from 'node:os';
 import { basename, dirname, isAbsolute, join, relative, resolve } from 'node:path';
 import type { BrowserWindow } from 'electron';
 
-export const editorialQaScopes = ['all', 'theme-smoke', 'shell', 'new-task', 'task-operations', 'workflow', 'labs', 'system'] as const;
+export const editorialQaScopes = ['all', 'theme-smoke', 'shell', 'new-task', 'task-operations', 'html-video', 'workflow', 'labs', 'system'] as const;
 export type EditorialQaScope = (typeof editorialQaScopes)[number];
 export type EditorialQaEnvironment = Partial<Record<
   | 'STORYDREAM_QA_RUN_ROOT'
@@ -52,6 +52,10 @@ export const editorialQaMatrix = {
     { id: 'history-operations-desktop', view: 'history', theme: 'light', viewport: 'desktop' },
     { id: 'task-detail-operations-desktop', view: 'task-detail', theme: 'light', viewport: 'desktop' },
     { id: 'history-operations-compact', view: 'history', theme: 'light', viewport: 'compact' },
+  ],
+  htmlVideoStudioStates: [
+    { id: 'html-video-studio-light-desktop', view: 'html-video', theme: 'light', viewport: 'desktop' },
+    { id: 'html-video-studio-light-compact', view: 'html-video', theme: 'light', viewport: 'compact' },
   ],
 } as const;
 
@@ -157,6 +161,12 @@ export async function captureEditorialQa(
     }
     if (captureCase.id === 'history-operations-desktop' && (!state.deleteDialogFocusWrapped || !state.deleteDialogEscapeRestored)) {
       throw new Error('Editorial QA history delete-dialog keyboard lifecycle failed.');
+    }
+    if (captureCase.id.startsWith('html-video-studio') && state.layout.htmlVideoStudioPlacement !== (viewport.name === 'compact' ? 'stacked' : 'three-column')) {
+      throw new Error(`Editorial QA HTML studio layout failed in ${captureCase.id}: ${state.layout.htmlVideoStudioPlacement}.`);
+    }
+    if (captureCase.id === 'html-video-studio-light-compact' && state.layout.htmlVideoCompactParameterOrder !== 'parameters-first') {
+      throw new Error(`Editorial QA HTML studio compact parameter order failed: ${state.layout.htmlVideoCompactParameterOrder}.`);
     }
     await new Promise((resolveDelay) => setTimeout(resolveDelay, 80));
     await withEditorialQaTimeout(
@@ -269,12 +279,15 @@ interface QaScenarioState {
     horizontalOverflow: number;
     clippedPrimaryControls: string[];
     summaryPlacement: 'right' | 'below' | 'unknown';
+    htmlVideoStudioPlacement: 'three-column' | 'stacked' | 'unknown';
+    htmlVideoCompactParameterOrder: 'parameters-first' | 'invalid' | 'unknown';
   };
 }
 
 function captureCasesForScope(scope: EditorialQaScope): EditorialQaCaptureCase[] {
   if (scope === 'new-task') return [...editorialQaMatrix.newTaskStates];
   if (scope === 'task-operations') return [...editorialQaMatrix.taskOperationStates];
+  if (scope === 'html-video') return [...editorialQaMatrix.htmlVideoStudioStates];
   if (scope === 'all') {
     const cases = Object.entries(editorialQaMatrix.views).flatMap(([group, groupViews]) => (
       editorialQaMatrix.themes.flatMap((theme) => editorialQaMatrix.viewports.flatMap((viewport) => (
@@ -286,7 +299,7 @@ function captureCasesForScope(scope: EditorialQaScope): EditorialQaCaptureCase[]
         }))
       )))
     ));
-    return [...cases, ...editorialQaMatrix.newTaskStates, ...editorialQaMatrix.taskOperationStates];
+    return [...cases, ...editorialQaMatrix.newTaskStates, ...editorialQaMatrix.taskOperationStates, ...editorialQaMatrix.htmlVideoStudioStates];
   }
   const views = scope === 'theme-smoke'
     ? ['new-task']
@@ -451,6 +464,19 @@ function qaScenarioScript(id: string, view: string, theme: string, stage?: strin
       ready = ready && await waitFor(() => document.querySelector('.task-media-progress')?.textContent?.includes('8 / 12')
         && document.querySelector('.task-scene-rail')?.textContent?.includes('8 / 12 已生成'));
     }
+    if (scenarioId.startsWith('html-video-studio')) {
+      ready = ready && await waitFor(() => {
+        const previewImage = document.querySelector('img[alt*="动画预览"]');
+        return document.querySelector('[data-html-video-studio="html-video"]')
+          && document.querySelector('[data-media-canvas="html-video"]')
+          && document.querySelector('.hv-studio-run-rail')?.textContent?.includes('4/6')
+          && previewImage instanceof HTMLImageElement
+          && previewImage.complete
+          && previewImage.naturalWidth > 0
+          && document.querySelector('.hv-timeline-track span')
+          && document.querySelector('.hv-timeline-audio i');
+      });
+    }
     const stage = ${JSON.stringify(stage ?? '')};
     let stageStatePreserved = true;
     if (stage) {
@@ -501,10 +527,29 @@ function qaScenarioScript(id: string, view: string, theme: string, stage?: strin
       ? 'unknown'
       : summary.left >= editor.right - 1
         ? 'right'
-        : summary.top >= editor.bottom - 1
-          ? 'below'
+          : summary.top >= editor.bottom - 1
+            ? 'below'
+            : 'unknown';
+    const studio = document.querySelector('[data-html-video-studio="html-video"]');
+    const studioRegions = studio ? [...studio.querySelectorAll('.hv-studio-parameters, .hv-studio-canvas, .hv-studio-run-rail')].map((region) => region.getBoundingClientRect()) : [];
+    const htmlVideoStudioPlacement = studioRegions.length !== 3
+      ? 'unknown'
+      : studioRegions[1].left >= studioRegions[0].right - 1 && studioRegions[2].left >= studioRegions[1].right - 1
+        ? 'three-column'
+        : studioRegions[1].top >= studioRegions[0].bottom - 1 && studioRegions[2].top >= studioRegions[1].bottom - 1
+          ? 'stacked'
           : 'unknown';
-    const clippedPrimaryControls = [...document.querySelectorAll('.new-task-workbench button, .new-task-workbench input, .new-task-workbench select, .new-task-workbench textarea, [data-task-operations] button, [data-task-operations] input, [data-task-operations] select')]
+    const htmlVideoParameterContent = studio?.querySelector('.hv-config-editor') ?? studio?.querySelector('.hv-create-details[open]');
+    const htmlVideoParameterContentRect = htmlVideoParameterContent?.getBoundingClientRect();
+    const htmlVideoCompactParameterOrder = studioRegions.length !== 3 || !htmlVideoParameterContentRect
+      ? 'unknown'
+      : htmlVideoParameterContentRect.height > 0
+        && htmlVideoParameterContentRect.top >= studioRegions[0].top - 1
+        && htmlVideoParameterContentRect.bottom <= studioRegions[0].bottom + 1
+        && studioRegions[0].bottom <= studioRegions[1].top + 1
+        ? 'parameters-first'
+        : 'invalid';
+    const clippedPrimaryControls = [...document.querySelectorAll('.new-task-workbench button, .new-task-workbench input, .new-task-workbench select, .new-task-workbench textarea, [data-task-operations] button, [data-task-operations] input, [data-task-operations] select, [data-html-video-studio] button, [data-html-video-studio] input, [data-html-video-studio] select, [data-html-video-studio] textarea')]
       .filter((element) => {
         const style = getComputedStyle(element);
         if (style.display === 'none' || style.visibility === 'hidden') return false;
@@ -536,6 +581,8 @@ function qaScenarioScript(id: string, view: string, theme: string, stage?: strin
         horizontalOverflow: Math.max(0, document.documentElement.scrollWidth - window.innerWidth),
         clippedPrimaryControls,
         summaryPlacement,
+        htmlVideoStudioPlacement,
+        htmlVideoCompactParameterOrder,
       },
     };
   })()`;

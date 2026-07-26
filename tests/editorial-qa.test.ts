@@ -28,17 +28,18 @@ describe('editorial Electron QA configuration', () => {
   });
 
   it('only accepts known capture scopes before Electron is launched', () => {
-    expect(editorialQaScopes).toEqual(['all', 'theme-smoke', 'shell', 'new-task', 'task-operations', 'workflow', 'labs', 'system']);
+    expect(editorialQaScopes).toEqual(['all', 'theme-smoke', 'shell', 'new-task', 'task-operations', 'html-video', 'workflow', 'labs', 'system']);
     expect(() => resolveEditorialQaConfig({ STORYDREAM_QA_SCOPE: 'unknown' }, tmpdir())).toThrow('Unknown editorial QA scope');
   });
 
   it('defines the exact completed capture count for every QA scope', () => {
     expect(Object.fromEntries(editorialQaScopes.map((scope) => [scope, editorialQaExpectedCaptureCount(scope)]))).toEqual({
-      all: 80,
+      all: 82,
       'theme-smoke': 4,
       shell: 4,
       'new-task': 4,
       'task-operations': 4,
+      'html-video': 2,
       workflow: 28,
       labs: 20,
       system: 20,

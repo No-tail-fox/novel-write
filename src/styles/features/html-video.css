@@ -1,0 +1,628 @@
+.hv-studio {
+  height: 100%;
+  min-height: 0;
+  display: grid;
+  grid-template-columns: minmax(220px, 260px) minmax(0, 1fr) minmax(220px, 250px);
+  overflow: hidden;
+  background: var(--shell-surface-raised);
+}
+
+.hv-studio-parameters,
+.hv-studio-canvas,
+.hv-studio-run-rail {
+  min-width: 0;
+  min-height: 0;
+  background: var(--shell-surface-raised);
+}
+
+.hv-studio-parameters {
+  overflow: auto;
+  border-right: 1px solid var(--shell-border);
+  padding: 18px 14px;
+}
+
+.hv-studio-canvas {
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr);
+  gap: 12px;
+  overflow: hidden;
+  border-right: 1px solid var(--shell-border);
+  padding: 18px;
+}
+
+.hv-studio-run-rail {
+  display: flex;
+  flex-direction: column;
+  overflow: auto;
+  padding: 18px 14px;
+}
+
+.hv-studio-panel-heading,
+.hv-studio-canvas-heading,
+.hv-run-rail-heading {
+  min-width: 0;
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.hv-studio-panel-heading h2,
+.hv-run-rail-heading h3 {
+  margin: 0;
+  color: var(--shell-text);
+  font-size: 18px;
+  font-weight: 700;
+  line-height: 1.25;
+}
+
+.hv-studio-panel-heading span,
+.hv-studio-canvas-heading span,
+.hv-run-rail-heading span {
+  display: block;
+  margin-top: 4px;
+  color: var(--shell-muted);
+  font-size: 12px;
+  line-height: 1.35;
+}
+
+.hv-studio-panel-heading .primary-action {
+  min-width: 94px;
+  min-height: 34px;
+  flex: 0 0 auto;
+  border-radius: 6px;
+  background: var(--shell-accent);
+  color: #fff;
+  font-size: 12px;
+}
+
+.hv-studio-parameters > .field {
+  margin: 16px 0 0;
+}
+
+.hv-studio-parameters .field,
+.hv-studio-parameters .field-title,
+.hv-studio-parameters .option-group-title {
+  color: var(--shell-text);
+  font-size: 12px;
+}
+
+.hv-studio-parameters input,
+.hv-studio-parameters select,
+.hv-studio-parameters textarea {
+  border-color: var(--shell-border);
+  border-radius: 6px;
+  background: var(--shell-surface-raised);
+  color: var(--shell-text);
+  font-size: 12px;
+}
+
+.hv-studio-parameters .source-textarea {
+  min-height: 112px;
+  resize: vertical;
+}
+
+.hv-studio-parameters .advanced-grid,
+.hv-studio-parameters .hv-cover-create-grid,
+.hv-studio-parameters .hv-config-editor-grid {
+  grid-template-columns: 1fr;
+  gap: 10px;
+}
+
+.hv-studio-parameters .option-group-grid {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.hv-studio-parameters .option-group button,
+.hv-studio-parameters .chip-row .chip,
+.hv-studio-parameters .segmented button {
+  min-height: 28px;
+  border-color: var(--shell-border);
+  border-radius: 5px;
+  background: var(--shell-surface-raised);
+  color: var(--shell-text);
+  font-size: 11px;
+}
+
+.hv-studio-parameters .option-group button.active,
+.hv-studio-parameters .chip-row .chip.active,
+.hv-studio-parameters .segmented button.selected {
+  border-color: var(--shell-accent);
+  background: var(--shell-accent);
+  color: #fff;
+}
+
+.hv-create-details {
+  margin-top: 14px;
+  border-top: 1px solid var(--shell-border);
+  border-bottom: 1px solid var(--shell-border);
+}
+
+.hv-create-details > summary {
+  min-height: 38px;
+  display: flex;
+  align-items: center;
+  color: var(--shell-text);
+  cursor: pointer;
+  font-size: 13px;
+  font-weight: 650;
+  list-style: none;
+}
+
+.hv-create-details > summary::-webkit-details-marker {
+  display: none;
+}
+
+.hv-create-details > summary::after {
+  margin-left: auto;
+  color: var(--shell-muted);
+  content: '+';
+  font-size: 17px;
+  font-weight: 400;
+}
+
+.hv-create-details[open] > summary::after {
+  content: '-';
+}
+
+.hv-create-form {
+  display: grid;
+  gap: 12px;
+  padding: 2px 0 14px;
+}
+
+.hv-studio-parameters .hv-config-editor {
+  margin-top: 16px;
+  border: 0;
+  border-top: 1px solid var(--shell-border);
+  border-radius: 0;
+  padding: 14px 0 0;
+  background: transparent;
+}
+
+.hv-studio-parameters .hv-config-editor .panel-title-row {
+  margin-bottom: 10px;
+}
+
+.hv-studio-parameters .hv-config-editor h3 {
+  margin: 0;
+  color: var(--shell-text);
+  font-size: 14px;
+}
+
+.hv-studio-parameters .hv-config-editor .mini-button {
+  min-height: 28px;
+  border-color: var(--shell-border);
+  background: var(--shell-surface-raised);
+  color: var(--shell-text);
+  font-size: 11px;
+}
+
+.hv-studio-canvas-heading {
+  min-height: 36px;
+  align-items: center;
+}
+
+.hv-studio-canvas-heading strong {
+  display: block;
+  overflow: hidden;
+  color: var(--shell-text);
+  font-size: 14px;
+  font-weight: 700;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.hv-studio-canvas-ratio {
+  flex: 0 0 auto;
+  border: 1px solid var(--shell-border);
+  border-radius: 5px;
+  padding: 4px 7px;
+  color: var(--shell-muted);
+}
+
+.hv-studio-media-canvas {
+  min-height: 0;
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr) auto;
+  overflow: hidden;
+  border: 1px solid var(--media-border);
+  border-radius: 6px;
+  background: var(--media-bg);
+  color: var(--media-text);
+}
+
+.hv-studio .hv-tabs {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  overflow-x: auto;
+  border-bottom: 1px solid var(--media-border);
+  padding: 8px 10px;
+  background: var(--media-surface);
+}
+
+.hv-studio .hv-tab {
+  min-width: 46px;
+  min-height: 28px;
+  flex: 0 0 auto;
+  border: 1px solid transparent;
+  border-radius: 5px;
+  background: transparent;
+  color: var(--media-muted);
+  font-size: 12px;
+}
+
+.hv-studio .hv-tab:hover,
+.hv-studio .hv-tab:focus-visible {
+  border-color: var(--media-border);
+  color: var(--media-text);
+}
+
+.hv-studio .hv-tab.active {
+  border-color: var(--shell-accent);
+  background: var(--shell-accent);
+  color: #fff;
+}
+
+.hv-studio-media-panel {
+  min-height: 0;
+  overflow: auto;
+}
+
+.hv-studio .hv-tab-content {
+  min-height: 100%;
+  border: 0;
+  border-radius: 0;
+  padding: 18px;
+  background: transparent;
+  color: var(--media-text);
+}
+
+.hv-studio .hv-tab-content .empty-state,
+.hv-studio .hv-tab-content .artifact-scene-list > div,
+.hv-studio .hv-tab-content .hv-media-item,
+.hv-studio .hv-caption-editor,
+.hv-studio .hv-cover-editor,
+.hv-studio .hv-video-output {
+  border-color: var(--media-border);
+  background: var(--media-surface);
+  color: var(--media-text);
+}
+
+.hv-studio .hv-tab-content p,
+.hv-studio .hv-tab-content small,
+.hv-studio .hv-tab-content figcaption {
+  color: var(--media-muted);
+}
+
+.hv-studio .hv-tab-content .field,
+.hv-studio .hv-tab-content .field-title,
+.hv-studio .hv-tab-content .task-metrics small {
+  color: var(--media-text);
+}
+
+.hv-studio .hv-tab-content input,
+.hv-studio .hv-tab-content select,
+.hv-studio .hv-tab-content textarea,
+.hv-studio .hv-tab-content .mini-button,
+.hv-studio .hv-tab-content .segmented button {
+  border-color: var(--media-border);
+  background: #101316;
+  color: var(--media-text);
+}
+
+.hv-studio .hv-tab-content .segmented button.selected {
+  border-color: var(--shell-accent);
+  background: var(--shell-accent);
+  color: #fff;
+}
+
+.hv-studio .hv-media-frame,
+.hv-studio .hv-video-placeholder {
+  border-color: var(--media-border);
+  background: #101316;
+}
+
+.hv-media-error {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  border-bottom: 1px solid rgba(207, 63, 45, 0.65);
+  padding: 8px 12px;
+  background: rgba(207, 63, 45, 0.16);
+  color: #ffd6cf;
+  font-size: 12px;
+}
+
+.hv-timeline {
+  display: grid;
+  grid-template-columns: 38px minmax(0, 1fr);
+  gap: 6px 9px;
+  border-top: 1px solid var(--media-border);
+  padding: 10px;
+  background: var(--media-surface);
+}
+
+.hv-timeline-label {
+  display: grid;
+  place-items: center start;
+  color: var(--media-muted);
+  font-size: 11px;
+}
+
+.hv-timeline-track,
+.hv-timeline-audio {
+  min-height: 30px;
+  display: flex;
+  gap: 4px;
+  overflow: hidden;
+}
+
+.hv-timeline-track span {
+  min-width: 56px;
+  display: grid;
+  place-items: center;
+  border-radius: 3px;
+  background: color-mix(in srgb, var(--timeline-blue) 55%, var(--media-surface));
+  color: #fff;
+  font-size: 11px;
+}
+
+.hv-timeline-track span:nth-child(3n + 2) {
+  background: color-mix(in srgb, var(--reel-amber) 52%, var(--media-surface));
+}
+
+.hv-timeline-track span:nth-child(3n) {
+  background: color-mix(in srgb, var(--ok) 52%, var(--media-surface));
+}
+
+.hv-timeline small {
+  display: grid;
+  place-items: center start;
+  color: var(--media-muted);
+  font-size: 11px;
+}
+
+.hv-timeline-audio {
+  align-items: center;
+  padding: 0 8px;
+  background: #101316;
+}
+
+.hv-timeline-audio i {
+  width: 3px;
+  height: 13px;
+  display: block;
+  border-radius: 1px;
+  background: var(--media-muted);
+  box-shadow: 7px 4px 0 var(--media-muted), 14px -3px 0 var(--media-muted), 21px 2px 0 var(--media-muted);
+}
+
+.hv-run-rail-heading strong {
+  flex: 0 0 auto;
+  color: var(--shell-text);
+  font-size: 12px;
+}
+
+.hv-run-progress {
+  height: 4px;
+  overflow: hidden;
+  margin: 12px 0 14px;
+  border-radius: 2px;
+  background: var(--shell-surface);
+}
+
+.hv-run-progress i {
+  height: 100%;
+  display: block;
+  background: var(--shell-accent);
+}
+
+.hv-studio-run-rail .task-metrics {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 1px;
+  margin: 0 0 12px;
+  border: 1px solid var(--shell-border);
+  background: var(--shell-border);
+}
+
+.hv-studio-run-rail .task-metrics > div {
+  min-height: 48px;
+  padding: 8px;
+  background: var(--shell-surface-raised);
+}
+
+.hv-studio-run-rail .task-metrics small {
+  display: block;
+  color: var(--shell-muted);
+  font-size: 10px;
+}
+
+.hv-studio-run-rail .task-metrics strong {
+  display: block;
+  margin-top: 4px;
+  color: var(--shell-text);
+  font-size: 13px;
+}
+
+.hv-run-steps {
+  display: grid;
+  gap: 6px;
+}
+
+.hv-studio-run-rail .hv-step {
+  min-width: 0;
+  display: grid;
+  grid-template-columns: 24px minmax(0, 1fr);
+  align-items: center;
+  gap: 9px;
+  min-height: 48px;
+  padding: 7px 0;
+  border: 0;
+  border-bottom: 1px solid var(--shell-border);
+  border-radius: 0;
+  background: transparent;
+}
+
+.hv-studio-run-rail .hv-step > span {
+  width: 24px;
+  height: 24px;
+  display: grid;
+  place-items: center;
+  border-radius: 50%;
+  background: var(--shell-surface);
+  color: var(--shell-muted);
+  font-size: 11px;
+}
+
+.hv-studio-run-rail .hv-step strong,
+.hv-studio-run-rail .hv-step small {
+  display: block;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.hv-studio-run-rail .hv-step strong {
+  color: var(--shell-text);
+  font-size: 12px;
+}
+
+.hv-studio-run-rail .hv-step small {
+  margin-top: 3px;
+  color: var(--shell-muted);
+  font-size: 10px;
+}
+
+.hv-studio-run-rail .hv-step.done > span {
+  background: var(--ok);
+  color: #fff;
+}
+
+.hv-studio-run-rail .hv-step.running {
+  border-left: 3px solid var(--shell-accent);
+  margin-left: -8px;
+  padding-left: 5px;
+  background: color-mix(in srgb, var(--shell-accent) 8%, var(--shell-surface-raised));
+}
+
+.hv-studio-run-rail .hv-step.running > span {
+  background: var(--shell-text);
+  color: #fff;
+}
+
+.hv-studio-run-rail .hv-step.failed > span {
+  background: var(--danger);
+  color: #fff;
+}
+
+.hv-studio-run-rail .hv-run-controls {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+  margin-top: 14px;
+  border-top: 1px solid var(--shell-border);
+  padding-top: 14px;
+}
+
+.hv-studio-run-rail .hv-run-controls .mini-button {
+  min-height: 30px;
+  justify-content: center;
+  border-color: var(--shell-border);
+  background: var(--shell-surface-raised);
+  color: var(--shell-text);
+  font-size: 11px;
+}
+
+.hv-studio-run-rail .hv-run-controls .mini-button:hover:not(:disabled) {
+  border-color: var(--shell-accent);
+  color: var(--shell-accent);
+}
+
+.hv-studio .hv-warning-list,
+.hv-studio .hv-workspace-error,
+.hv-studio .hv-workspace-status {
+  margin: 0 0 12px;
+  border-radius: 0;
+  font-size: 12px;
+}
+
+.hv-studio .hv-warning-list {
+  border-left: 2px solid var(--reel-amber);
+  background: color-mix(in srgb, var(--reel-amber) 10%, var(--shell-surface-raised));
+}
+
+.hv-studio .hv-workspace-error {
+  border-left: 2px solid var(--danger);
+  background: color-mix(in srgb, var(--danger) 8%, var(--shell-surface-raised));
+}
+
+.hv-studio .hv-workspace-status {
+  border-left: 2px solid var(--shell-accent);
+  padding: 8px 10px;
+}
+
+@media (max-width: 1080px) {
+  .hv-studio {
+    height: auto;
+    min-height: 100%;
+    grid-template-columns: minmax(0, 1fr);
+    grid-template-rows: max-content minmax(520px, 1fr) max-content;
+    overflow: auto;
+  }
+
+  .hv-studio-parameters,
+  .hv-studio-canvas,
+  .hv-studio-run-rail {
+    overflow: visible;
+    border-right: 0;
+    border-bottom: 1px solid var(--shell-border);
+    padding: 16px 18px;
+  }
+
+  .hv-studio-parameters {
+    min-height: max-content;
+    align-self: start;
+  }
+
+  .hv-studio-parameters .advanced-grid,
+  .hv-studio-parameters .hv-cover-create-grid,
+  .hv-studio-parameters .hv-config-editor-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .hv-studio-run-rail .hv-run-steps {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+@media (max-width: 700px) {
+  .hv-studio-panel-heading,
+  .hv-studio-canvas-heading,
+  .hv-run-rail-heading {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+
+  .hv-studio-parameters .advanced-grid,
+  .hv-studio-parameters .hv-cover-create-grid,
+  .hv-studio-parameters .hv-config-editor-grid,
+  .hv-studio-run-rail .hv-run-steps {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .hv-studio-run-rail .hv-run-controls {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .hv-studio *,
+  .hv-studio *::before,
+  .hv-studio *::after {
+    scroll-behavior: auto !important;
+    transition-duration: 0.01ms !important;
+  }
+}
