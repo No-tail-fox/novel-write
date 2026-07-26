@@ -1,6 +1,13 @@
 import { defaultConfig } from './config';
 import { normalizeOpenAiImageBaseUrl } from './openai-image-config';
-import { isArkModelApiKey, normalizeVolcengineV3Speaker, VOLCENGINE_TTS_ARK_KEY_MESSAGE } from './volcengine-tts';
+import {
+  isArkModelApiKey,
+  normalizeVolcengineTtsApiSettings,
+  normalizeVolcengineV3Speaker,
+  resolveVolcengineTtsApiVersion,
+  resolveVolcengineTtsEndpoint,
+  VOLCENGINE_TTS_ARK_KEY_MESSAGE,
+} from './volcengine-tts';
 import type {
   AppConfig,
   BgmItem,
@@ -239,15 +246,20 @@ function normalizeImageProfiles(partial: Partial<AppConfig>): {
 
 function normalizeTtsProfile(profile: Partial<TtsProviderProfile>, index: number): TtsProviderProfile {
   const provider = normalizeTtsProvider(profile.provider);
-  const rawVolcengine = { ...defaultConfig.tts.volcengine, ...(profile.volcengine ?? {}) };
+  const sourceVolcengine: Partial<AppConfig['tts']['volcengine']> = profile.volcengine
+    ?? (profile.appId || profile.accessKey
+      ? { appId: profile.appId ?? '', accessKey: profile.accessKey ?? '', speaker: profile.speaker ?? '' }
+      : defaultConfig.tts.volcengine);
+  const rawVolcengine = { ...defaultConfig.tts.volcengine, ...sourceVolcengine };
+  const apiSettings = normalizeVolcengineTtsApiSettings(sourceVolcengine);
   const speaker = normalizeVolcengineV3Speaker(profile.speaker ?? rawVolcengine.speaker) || defaultConfig.tts.volcengine.speaker;
   const volcengine = {
     ...rawVolcengine,
+    ...apiSettings,
     apiKey: rawVolcengine.apiKey ?? '',
-    appId: profile.appId ?? rawVolcengine.appId,
-    accessKey: profile.accessKey ?? rawVolcengine.accessKey,
+    appId: rawVolcengine.appId || profile.appId || '',
+    accessKey: rawVolcengine.accessKey || profile.accessKey || '',
     speaker,
-    endpoint: rawVolcengine.endpoint?.trim() || defaultConfig.tts.volcengine.endpoint,
     resourceId: rawVolcengine.resourceId?.trim() || defaultConfig.tts.volcengine.resourceId,
   };
   const minimax = { ...defaultConfig.tts.minimax, ...(profile.minimax ?? {}) };
@@ -257,9 +269,9 @@ function normalizeTtsProfile(profile: Partial<TtsProviderProfile>, index: number
     name: profile.name?.trim() || defaultTtsProfileName(provider, index),
     enabled: Boolean(profile.enabled),
     provider,
-    appId: profile.appId ?? volcengine.appId,
-    accessKey: profile.accessKey ?? volcengine.accessKey,
-    speaker,
+    appId: volcengine.appId,
+    accessKey: volcengine.accessKey,
+    speaker: volcengine.speaker,
     volcengine,
     minimax,
   };
@@ -271,11 +283,19 @@ function defaultTtsProfileName(provider: TtsProviderProfile['provider'], index: 
 }
 
 function ttsProfileFromLegacy(partial: Partial<AppConfig>): TtsProviderProfile {
+  const partialTts = partial.tts as Partial<AppConfig['tts']> | undefined;
   const tts = {
     ...defaultConfig.tts,
-    ...(partial.tts ?? {}),
-    volcengine: { ...defaultConfig.tts.volcengine, ...(partial.tts?.volcengine ?? {}) },
-    minimax: { ...defaultConfig.tts.minimax, ...(partial.tts?.minimax ?? {}) },
+    ...(partialTts ?? {}),
+    volcengine: partialTts
+      ? {
+          ...(partialTts.volcengine ?? {}),
+          appId: partialTts.volcengine?.appId || partialTts.appId || '',
+          accessKey: partialTts.volcengine?.accessKey || partialTts.accessKey || '',
+          speaker: partialTts.volcengine?.speaker || partialTts.speaker || defaultConfig.tts.volcengine.speaker,
+        }
+      : defaultConfig.tts.volcengine,
+    minimax: { ...defaultConfig.tts.minimax, ...(partialTts?.minimax ?? {}) },
   };
   const provider = normalizeTtsProvider(tts.provider);
   return normalizeTtsProfile(
@@ -645,14 +665,15 @@ function validateTtsConfig(config: AppConfig, startedAt: number): ConfigTestResu
     });
   }
 
-  const volcengineApiKey = config.tts.volcengine.apiKey?.trim() ?? '';
-  if (volcengineApiKey) {
+  const volcengineApiVersion = resolveVolcengineTtsApiVersion(config.tts.volcengine);
+  if (volcengineApiVersion === 'v3') {
+    const volcengineApiKey = config.tts.volcengine.apiKey?.trim() ?? '';
     if (isArkModelApiKey(volcengineApiKey)) {
       return buildResult({
         target: 'tts',
         startedAt,
         status: 'fail',
-        endpoint: config.tts.volcengine.endpoint || 'https://openspeech.bytedance.com/api/v3/tts/unidirectional',
+        endpoint: resolveVolcengineTtsEndpoint(config.tts.volcengine),
         detail: VOLCENGINE_TTS_ARK_KEY_MESSAGE,
       });
     }
@@ -665,7 +686,7 @@ function validateTtsConfig(config: AppConfig, startedAt: number): ConfigTestResu
       target: 'tts',
       startedAt,
       status: missing.length ? 'fail' : 'pass',
-      endpoint: config.tts.volcengine.endpoint || 'https://openspeech.bytedance.com/api/v3/tts/unidirectional',
+      endpoint: resolveVolcengineTtsEndpoint(config.tts.volcengine),
       detail: missing.length ? `火山 TTS V3 缺少：${missing.join('、')}。` : `火山 TTS V3 配置已可用于任务：${config.tts.volcengine.resourceId || 'seed-tts-2.0'} · ${config.tts.volcengine.speaker || config.tts.speaker}`,
     });
   }
@@ -678,8 +699,8 @@ function validateTtsConfig(config: AppConfig, startedAt: number): ConfigTestResu
     target: 'tts',
     startedAt,
     status: missing.length ? 'fail' : 'pass',
-    endpoint: config.tts.volcengine.endpoint?.includes('/api/v3/') ? 'https://openspeech.bytedance.com/api/v1/tts' : config.tts.volcengine.endpoint || 'https://openspeech.bytedance.com/api/v1/tts',
-    detail: missing.length ? `火山 TTS 缺少：${missing.join('、')}。` : `火山 TTS 配置已可用于任务：${config.tts.volcengine.speaker || config.tts.speaker}`,
+    endpoint: resolveVolcengineTtsEndpoint(config.tts.volcengine),
+    detail: missing.length ? `火山 TTS 旧版缺少：${missing.join('、')}。` : `火山 TTS 旧版配置已可用于任务：${config.tts.volcengine.speaker || config.tts.speaker}`,
   });
 }
 

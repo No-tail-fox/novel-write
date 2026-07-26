@@ -28,19 +28,20 @@ describe('editorial Electron QA configuration', () => {
   });
 
   it('only accepts known capture scopes before Electron is launched', () => {
-    expect(editorialQaScopes).toEqual(['all', 'theme-smoke', 'shell', 'new-task', 'task-operations', 'html-video', 'clone-voice', 'workflow', 'labs', 'system']);
+    expect(editorialQaScopes).toEqual(['all', 'theme-smoke', 'shell', 'new-task', 'task-operations', 'html-video', 'clone-voice', 'volcengine-tts', 'workflow', 'labs', 'system']);
     expect(() => resolveEditorialQaConfig({ STORYDREAM_QA_SCOPE: 'unknown' }, tmpdir())).toThrow('Unknown editorial QA scope');
   });
 
   it('defines the exact completed capture count for every QA scope', () => {
     expect(Object.fromEntries(editorialQaScopes.map((scope) => [scope, editorialQaExpectedCaptureCount(scope)]))).toEqual({
-      all: 86,
+      all: 88,
       'theme-smoke': 4,
       shell: 4,
       'new-task': 4,
       'task-operations': 4,
       'html-video': 2,
       'clone-voice': 4,
+      'volcengine-tts': 2,
       workflow: 28,
       labs: 20,
       system: 20,
@@ -105,6 +106,24 @@ describe('editorial Electron QA configuration', () => {
     expect(styles).toContain(":root[data-theme='light'] .settings-content .provider-config-note");
     expect(styles).toContain(":root[data-theme='light'] .settings-content .ghost-action");
     expect(styles).toContain(":root[data-theme='light'] .settings-content .segmented button.selected");
+  });
+
+  it('exercises Volcengine V3 and legacy switching without clearing either endpoint', async () => {
+    const source = await (await import('node:fs/promises')).readFile(new URL('../electron/editorial-qa.ts', import.meta.url), 'utf8');
+    expect(editorialQaCaptureIds('volcengine-tts')).toEqual([
+      'volcengine-v3-light-desktop',
+      'volcengine-legacy-dark-compact',
+    ]);
+    expect(source).toContain("'[role=\"group\"][aria-label=\"接口版本\"]'");
+    expect(source).toContain('button.textContent?.trim() === label');
+    expect(source).toContain("selectVersion('新版 V3', 'V3 接口地址')");
+    expect(source).toContain("selectVersion('旧版接口', '旧版接口地址')");
+    expect(source).toContain("findSettingsInput('V3 接口地址')");
+    expect(source).toContain("findSettingsInput('旧版接口地址')");
+    expect(source).toContain("setInputValue(v3Endpoint, 'https://qa-v3.example/api/v3/tts/unidirectional')");
+    expect(source).toContain("setInputValue(legacyEndpoint, 'https://qa-legacy.example/api/v1/tts')");
+    expect(source).toContain('state.volcengineVersion.v3ValuePreserved');
+    expect(source).toContain('state.volcengineVersion.legacyValuePreserved');
   });
 
   it('keeps the real Electron capture contract on native capturePage and deterministic matrices', async () => {

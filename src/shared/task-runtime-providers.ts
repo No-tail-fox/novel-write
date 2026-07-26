@@ -18,6 +18,7 @@ import {
 } from './html-video-workflow';
 import { createHtmlVideoJobConfig } from './html-video-config';
 import { createHtmlVideoCoverAsset, type HtmlVideoCoverImageProcessor } from './html-video-cover';
+import { resolveVolcengineTtsApiVersion } from './volcengine-tts';
 import { mkdir } from 'node:fs/promises';
 import { join } from 'node:path';
 import type { AppConfig, HtmlVideoAsset, HtmlVideoJobConfig, HtmlVideoScenePlan, HtmlVideoVoiceClip, ImagePrompt, StoryboardScene, Task } from './types';
@@ -421,8 +422,11 @@ function hasUsableTtsProvider(config: AppConfig, taskProvider?: Task['ttsProvide
       && (config.tts.minimax.model || profile?.minimax?.model)?.trim(),
     );
   }
-  if ((config.tts.volcengine.apiKey || profile?.volcengine?.apiKey)?.trim()) return true;
-  const appId = config.tts.volcengine.appId || profile?.volcengine?.appId || profile?.appId || config.tts.appId;
-  const accessKey = config.tts.volcengine.accessKey || profile?.volcengine?.accessKey || profile?.accessKey || config.tts.accessKey;
+  const volcengine = profile?.volcengine ?? config.tts.volcengine;
+  if (resolveVolcengineTtsApiVersion(volcengine) === 'v3') {
+    return Boolean((volcengine.apiKey || config.tts.volcengine.apiKey)?.trim());
+  }
+  const appId = volcengine.appId || profile?.appId || config.tts.volcengine.appId || config.tts.appId;
+  const accessKey = volcengine.accessKey || profile?.accessKey || config.tts.volcengine.accessKey || config.tts.accessKey;
   return Boolean(appId?.trim() && accessKey?.trim());
 }

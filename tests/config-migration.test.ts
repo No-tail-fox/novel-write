@@ -30,6 +30,44 @@ function configWithLlmSecret(secret: string): AppConfig {
   });
 }
 
+function configWithVaultOnlyVolcengineProfiles(): AppConfig {
+  const config = structuredClone(defaultConfig);
+  const versionlessVolcengine = {
+    ...config.tts.volcengine,
+    apiKey: '',
+  };
+  delete versionlessVolcengine.apiVersion;
+  const explicitLegacyVolcengine = {
+    ...config.tts.volcengine,
+    apiVersion: 'legacy' as const,
+    apiKey: '',
+    appId: 'explicit-legacy-app',
+    accessKey: '',
+  };
+  return {
+    ...config,
+    tts: {
+      ...config.tts,
+      volcengine: versionlessVolcengine,
+    },
+    ttsProfiles: [
+      {
+        ...config.ttsProfiles[0],
+        id: 'vault-only-v3',
+        enabled: true,
+        volcengine: versionlessVolcengine,
+      },
+      {
+        ...config.ttsProfiles[0],
+        id: 'explicit-legacy',
+        enabled: false,
+        volcengine: explicitLegacyVolcengine,
+      },
+    ],
+    activeTtsProfileId: 'vault-only-v3',
+  };
+}
+
 async function seedLegacyDatabase(file: string, config: AppConfig): Promise<FileDatabase> {
   const created = await FileDatabase.open(file);
   await created.close();
@@ -146,6 +184,42 @@ describe('config credential migration', () => {
       expect(await readFile(vaultPath, 'utf8')).toBe(beforeSecondRun);
       await expect(access(module.configMigrationMarkerPath(dir))).resolves.toBeUndefined();
       expect((await readdir(dir)).filter((name) => name.endsWith('.tmp'))).toEqual([]);
+    } finally {
+      await database.close();
+      await rm(dir, { recursive: true, force: true });
+    }
+  });
+
+  it('infers a versionless Volcengine profile from vault-only credentials without overriding explicit legacy', async () => {
+    const module = await loadConfigService();
+    expect(module).not.toBeNull();
+    if (!module) return;
+    const dir = await mkdtemp(join(tmpdir(), 'storydream-volcengine-vault-version-'));
+    const databasePath = join(dir, 'data.db');
+    const vault = new CredentialVault(join(dir, 'secrets.v1.json'), fakeEncryption());
+    const database = await seedLegacyDatabase(databasePath, configWithVaultOnlyVolcengineProfiles());
+    try {
+      await vault.save({
+        'tts/vault-only-v3/volcengine/apiKey': 'vault-only-v3-key',
+        'tts/explicit-legacy/volcengine/apiKey': 'stored-but-not-selected-v3-key',
+      });
+      const service = new module.ConfigService({ database, dataDir: dir, vault });
+
+      const publicState = await service.getPublicState();
+      expect(publicState.config.tts.volcengine.apiVersion).toBe('v3');
+      expect(publicState.config.tts.volcengine.apiKey).toBe('');
+      expect(publicState.config.ttsProfiles.find((profile) => profile.id === 'vault-only-v3')?.volcengine?.apiVersion).toBe('v3');
+      expect(publicState.config.ttsProfiles.find((profile) => profile.id === 'explicit-legacy')?.volcengine?.apiVersion).toBe('legacy');
+
+      const previewConfig = await service.getRuntimeConfigFor({ config: publicState.config, secretChanges: {} });
+      expect(previewConfig.tts.volcengine.apiVersion).toBe('v3');
+      expect(previewConfig.tts.volcengine.apiKey).toBe('vault-only-v3-key');
+
+      await service.save({ config: publicState.config, secretChanges: {} });
+      const runtimeConfig = await service.getRuntimeConfig();
+      expect(runtimeConfig.tts.volcengine.apiVersion).toBe('v3');
+      expect(runtimeConfig.tts.volcengine.apiKey).toBe('vault-only-v3-key');
+      expect(runtimeConfig.ttsProfiles.find((profile) => profile.id === 'explicit-legacy')?.volcengine?.apiVersion).toBe('legacy');
     } finally {
       await database.close();
       await rm(dir, { recursive: true, force: true });

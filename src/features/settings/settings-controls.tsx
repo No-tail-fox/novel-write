@@ -292,6 +292,7 @@ export function ttsProviderLabel(provider: TtsProviderProfile['provider']): stri
 
 export function ttsProfileSummary(profile: TtsProviderProfile): string {
   if (profile.provider === 'minimax') return ttsProfileMinimax(profile).model || '未选择模型';
-  const speaker = ttsProfileVolcengine(profile).speaker;
-  return volcengineVoicePresetLabel(speaker) || speaker || '未选择音色';
+  const volcengine = ttsProfileVolcengine(profile);
+  const speaker = volcengineVoicePresetLabel(volcengine.speaker) || volcengine.speaker || '未选择音色';
+  return `${volcengine.apiVersion === 'legacy' ? '旧版接口' : '新版 V3'} · ${speaker}`;
 }

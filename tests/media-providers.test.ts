@@ -535,6 +535,7 @@ describe('configured media providers', () => {
           provider: 'volcengine',
           volcengine: {
             ...defaultConfig.tts.volcengine,
+            apiVersion: 'legacy',
             appId: 'appid',
             accessKey: 'token',
             speaker: 'voice-volc',

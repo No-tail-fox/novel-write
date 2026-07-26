@@ -1,6 +1,7 @@
 import { cloneState, hydrateState, initialState } from './app-state';
 import { stripConfigSecrets, type PublicAppState } from '../shared/config-secrets';
 import { fallbackEffectCatalog, volcengineVoicePresets } from '../shared/editorial-options';
+import { resolveVolcengineTtsApiVersion } from '../shared/volcengine-tts';
 import { validateConfigTarget } from '../shared/config-utils';
 import {
   applyHtmlVideoConfigChanges,
@@ -1128,11 +1129,17 @@ export function makeFallbackApi(setState: (state: AppState) => void): StoryDream
     },
     async runDiagnostics() {
       const state = read();
+      const volcengineVersion = resolveVolcengineTtsApiVersion(state.config.tts.volcengine);
+      const ttsReady = state.config.tts.provider === 'minimax'
+        ? Boolean(state.config.tts.minimax.apiKey)
+        : volcengineVersion === 'v3'
+          ? Boolean(state.config.tts.volcengine.apiKey)
+          : Boolean((state.config.tts.volcengine.appId || state.config.tts.appId) && (state.config.tts.volcengine.accessKey || state.config.tts.accessKey));
       return {
         generatedAt: new Date().toISOString(),
         checks: [
           { id: 'llm-config', label: 'LLM 配置完整性', status: state.config.llm.apiKey ? 'pass' : 'warn', detail: state.config.llm.model },
-          { id: 'tts-config', label: 'TTS 凭证已填写', status: state.config.tts.volcengine.apiKey || state.config.tts.accessKey ? 'pass' : 'warn', detail: state.config.tts.provider },
+          { id: 'tts-config', label: 'TTS 凭证已填写', status: ttsReady ? 'pass' : 'warn', detail: state.config.tts.provider === 'volcengine' ? `volcengine · ${volcengineVersion}` : state.config.tts.provider },
           { id: 'jianying-sidecar', label: '剪映草稿目录', status: state.config.jianying.draftPath ? 'pass' : 'warn', detail: state.config.jianying.draftPath },
           { id: 'account-state', label: '账户状态', status: 'pass', detail: state.activation.message },
         ],

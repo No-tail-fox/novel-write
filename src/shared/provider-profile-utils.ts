@@ -1,5 +1,6 @@
 import { defaultConfig } from './config';
 import { normalizeAppConfig } from './config-utils';
+import { normalizeVolcengineTtsApiSettings } from './volcengine-tts';
 import type { AppConfig, ConfigTestTarget, ImageProviderProfile, TtsProviderProfile } from './types';
 
 export type EditableLlmProvider = 'openai' | 'custom' | 'anthropic';
@@ -235,11 +236,16 @@ export function activeTtsProfileId(config: AppConfig): string {
 }
 
 export function ttsProfileVolcengine(profile: TtsProviderProfile): AppConfig['tts']['volcengine'] {
-  const merged = { ...defaultConfig.tts.volcengine, ...(profile.volcengine ?? {}) };
+  const source: Partial<AppConfig['tts']['volcengine']> = profile.volcengine
+    ?? (profile.appId || profile.accessKey
+      ? { appId: profile.appId ?? '', accessKey: profile.accessKey ?? '', speaker: profile.speaker ?? '' }
+      : defaultConfig.tts.volcengine);
+  const merged = { ...defaultConfig.tts.volcengine, ...source };
   return {
     ...merged,
-    appId: profile.appId ?? merged.appId,
-    accessKey: profile.accessKey ?? merged.accessKey,
+    ...normalizeVolcengineTtsApiSettings(source),
+    appId: merged.appId || profile.appId || '',
+    accessKey: merged.accessKey || profile.accessKey || '',
     speaker: profile.speaker ?? merged.speaker,
   };
 }
@@ -257,9 +263,9 @@ export function normalizeTtsProfileForUi(profile: TtsProviderProfile, index: num
     name: profile.name?.trim() || (provider === 'volcengine' ? '火山引擎' : index === 0 ? 'MiniMax' : `配音配置 ${index + 1}`),
     enabled: Boolean(profile.enabled),
     provider,
-    appId: profile.appId ?? volcengine.appId,
-    accessKey: profile.accessKey ?? volcengine.accessKey,
-    speaker: profile.speaker ?? volcengine.speaker,
+    appId: volcengine.appId,
+    accessKey: volcengine.accessKey,
+    speaker: volcengine.speaker,
     volcengine,
     minimax,
   };

@@ -126,6 +126,14 @@ function canonicalizeActiveSecrets(config: AppConfig, input: ConfigSecrets, pref
   return secrets;
 }
 
+function normalizeConfigWithSecrets(config: AppConfig, secrets: ConfigSecrets): AppConfig {
+  const normalized = normalizeAppConfig(config);
+  return normalizeAppConfig(applyConfigSecrets(
+    normalized,
+    canonicalizeActiveSecrets(normalized, secrets, false),
+  ));
+}
+
 function assertVaultRoundTrip(expected: ConfigSecrets, actual: ConfigSecrets): void {
   const expectedEntries = Object.entries(expected).sort(([left], [right]) => left.localeCompare(right));
   const actualEntries = Object.entries(actual).sort(([left], [right]) => left.localeCompare(right));
@@ -167,7 +175,7 @@ export class ConfigService {
     const [state, secrets] = await Promise.all([this.options.database.getState(), this.options.vault.load()]);
     return {
       ...state,
-      config: stripConfigSecrets(normalizeAppConfig(state.config)),
+      config: stripConfigSecrets(normalizeConfigWithSecrets(state.config, secrets)),
       secretStatus: secretStatus(secrets),
     };
   }
@@ -187,7 +195,7 @@ export class ConfigService {
     return {
       ...metadata,
       revision,
-      config: stripConfigSecrets(normalizeAppConfig(metadata.config)),
+      config: stripConfigSecrets(normalizeConfigWithSecrets(metadata.config, secrets)),
       secretStatus: secretStatus(secrets),
       tasks,
       viralAnalyses,
@@ -201,15 +209,13 @@ export class ConfigService {
   async getRuntimeConfig(): Promise<AppConfig> {
     await this.migrateLegacySecrets();
     const [metadata, secrets] = await Promise.all([this.options.database.getBootstrapMetadata(), this.options.vault.load()]);
-    return normalizeAppConfig(applyConfigSecrets(metadata.config, canonicalizeActiveSecrets(metadata.config, secrets, false)));
+    return normalizeConfigWithSecrets(metadata.config, secrets);
   }
 
   async getRuntimeConfigFor(input: SaveConfigInput): Promise<AppConfig> {
     await this.migrateLegacySecrets();
     const stored = await this.options.vault.load();
-    const config = stripConfigSecrets(normalizeAppConfig(input.config));
-    const secrets = canonicalizeActiveSecrets(config, mergeSecretChanges(stored, input.secretChanges), false);
-    return normalizeAppConfig(applyConfigSecrets(config, secrets));
+    return normalizeConfigWithSecrets(input.config, mergeSecretChanges(stored, input.secretChanges));
   }
 
   async resolveSecret(secretId: string | undefined, candidate: string): Promise<string> {
@@ -220,9 +226,15 @@ export class ConfigService {
 
   async save(input: SaveConfigInput): Promise<PublicConfigState> {
     await this.migrateLegacySecrets();
-    const sanitized = stripConfigSecrets(normalizeAppConfig(input.config));
+    const storedSecrets = await this.options.vault.load();
+    const normalizedInput = normalizeAppConfig(input.config);
+    const nextSecrets = canonicalizeActiveSecrets(
+      normalizedInput,
+      mergeSecretChanges(storedSecrets, input.secretChanges),
+      false,
+    );
+    const sanitized = stripConfigSecrets(normalizeConfigWithSecrets(normalizedInput, nextSecrets));
     if (Object.keys(input.secretChanges).length > 0) {
-      const nextSecrets = canonicalizeActiveSecrets(sanitized, mergeSecretChanges(await this.options.vault.load(), input.secretChanges), false);
       await this.options.vault.save(nextSecrets);
       assertVaultRoundTrip(nextSecrets, await this.options.vault.load());
     }

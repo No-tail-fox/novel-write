@@ -1,6 +1,6 @@
 import { useEffect, useMemo } from "react";
 import { Copy, Loader2, Palette, Play, Plus, Search, XCircle } from "lucide-react";
-import type { AppConfig, ImageProviderProfile, MinimaxCloneVoice, ProviderModel, ProviderModelListRequest, TtsProviderProfile, VolcengineSpeaker } from "../../shared/types";
+import type { AppConfig, ImageProviderProfile, MinimaxCloneVoice, ProviderModel, ProviderModelListRequest, TtsProviderProfile, VolcengineSpeaker, VolcengineTtsApiVersion } from "../../shared/types";
 import { ArtifactEmpty } from "../tasks/TaskArtifactPreview";
 import { activeImageProfileId, activeLlmProfileId, activeTtsProfileId, addImageProfile, addLlmProfile, addTtsProfile, copyImageProfile, copyLlmProfile, copyTtsProfile, editableLlmProfileProvider, imageProfileCustomImage, imageProfileGptImage, imageProfileJimeng, normalizedImageProfiles, normalizedTtsProfiles, removeImageProfile, removeLlmProfile, removeTtsProfile, saveImageProfile, saveLlmProfile, saveTtsProfile, ttsProfileMinimax, ttsProfileVolcengine } from "../../shared/provider-profile-utils";
 import { defaultConfig } from "../../shared/config";
@@ -535,6 +535,7 @@ export function TtsProfileManager({
   const volcengineApiKeyId = profileSecretId('tts', selectedProfile.id, 'volcengine/apiKey');
   const volcengineAccessKeyId = profileSecretId('tts', selectedProfile.id, 'volcengine/accessKeyId');
   const volcengineSecretAccessKeyId = profileSecretId('tts', selectedProfile.id, 'volcengine/secretAccessKey');
+  const volcengineLegacyAccessKeyId = profileSecretId('tts', selectedProfile.id, 'volcengine/accessKey');
   const minimaxApiKeyId = profileSecretId('tts', selectedProfile.id, 'minimax/apiKey');
 
   function updateSelectedProfile(profile: TtsProviderProfile) {
@@ -643,17 +644,38 @@ export function TtsProfileManager({
         />
         {provider === 'volcengine' ? (
           <>
-            <ProviderConfigNote title="火山引擎 TTS" value="V3 HTTP Chunked 使用新版控制台 TTS 接口密钥；资源与端点使用系统默认配置。" />
-            <SecretInput label="火山 TTS 接口密钥" value={secrets.value(volcengineApiKeyId)} configured={secrets.configured(volcengineApiKeyId)} onChange={(value) => secrets.change(volcengineApiKeyId, value)} onClear={() => secrets.change(volcengineApiKeyId, null)} />
-            <SecretInput label="音色访问密钥 ID" value={secrets.value(volcengineAccessKeyId)} configured={secrets.configured(volcengineAccessKeyId)} onChange={(value) => secrets.change(volcengineAccessKeyId, value)} onClear={() => secrets.change(volcengineAccessKeyId, null)} />
-            <SecretInput label="音色访问密钥 Secret" value={secrets.value(volcengineSecretAccessKeyId)} configured={secrets.configured(volcengineSecretAccessKeyId)} onChange={(value) => secrets.change(volcengineSecretAccessKeyId, value)} onClear={() => secrets.change(volcengineSecretAccessKeyId, null)} />
-            <div className="settings-inline-actions">
-              <button className="ghost-action" type="button" disabled={loadingVolcengineSpeakers} onClick={() => onRefreshVolcengineSpeakers(selectedProfile)}>
-                {loadingVolcengineSpeakers ? <Loader2 className="spin" size={15} /> : <Search size={15} />}
-                加载音色
-              </button>
-              {volcengineSpeakerStatus ? <span>{volcengineSpeakerStatus}</span> : null}
-            </div>
+            <Segmented
+              label="接口版本"
+              value={volcengine.apiVersion ?? 'v3'}
+              options={['v3', 'legacy']}
+              labels={['新版 V3', '旧版接口']}
+              onChange={(value) => updateSelectedProfile({ ...selectedProfile, volcengine: { ...volcengine, apiVersion: value as VolcengineTtsApiVersion, apiVersionExplicit: true } })}
+            />
+            {volcengine.apiVersion === 'legacy' ? (
+              <>
+                <ProviderConfigNote title="火山引擎 TTS 旧版" value="旧版 JSON 接口使用 App ID、Access Token 与 Cluster；已保存的 V3 参数会继续保留。" />
+                <ConfigInput label="旧版 App ID" value={volcengine.appId} onChange={(value) => updateSelectedProfile({ ...selectedProfile, appId: value, volcengine: { ...volcengine, appId: value } })} />
+                <SecretInput label="旧版 Access Token" value={secrets.value(volcengineLegacyAccessKeyId)} configured={secrets.configured(volcengineLegacyAccessKeyId)} onChange={(value) => secrets.change(volcengineLegacyAccessKeyId, value)} onClear={() => secrets.change(volcengineLegacyAccessKeyId, null)} />
+                <ConfigInput label="旧版 Cluster" value={volcengine.cluster ?? ''} onChange={(value) => updateSelectedProfile({ ...selectedProfile, volcengine: { ...volcengine, cluster: value } })} />
+                <ConfigInput label="旧版接口地址" value={volcengine.legacyEndpoint ?? ''} onChange={(value) => updateSelectedProfile({ ...selectedProfile, volcengine: { ...volcengine, legacyEndpoint: value } })} />
+              </>
+            ) : (
+              <>
+                <ProviderConfigNote title="火山引擎 TTS V3" value="V3 HTTP Chunked 使用新版控制台 TTS API Key 与 Resource ID；已保存的旧版参数会继续保留。" />
+                <SecretInput label="火山 TTS 接口密钥" value={secrets.value(volcengineApiKeyId)} configured={secrets.configured(volcengineApiKeyId)} onChange={(value) => secrets.change(volcengineApiKeyId, value)} onClear={() => secrets.change(volcengineApiKeyId, null)} />
+                <ConfigInput label="V3 Resource ID" value={volcengine.resourceId ?? ''} onChange={(value) => updateSelectedProfile({ ...selectedProfile, volcengine: { ...volcengine, resourceId: value } })} />
+                <ConfigInput label="V3 接口地址" value={volcengine.v3Endpoint ?? ''} onChange={(value) => updateSelectedProfile({ ...selectedProfile, volcengine: { ...volcengine, v3Endpoint: value } })} />
+                <SecretInput label="音色列表访问密钥 ID" value={secrets.value(volcengineAccessKeyId)} configured={secrets.configured(volcengineAccessKeyId)} onChange={(value) => secrets.change(volcengineAccessKeyId, value)} onClear={() => secrets.change(volcengineAccessKeyId, null)} />
+                <SecretInput label="音色列表访问密钥 Secret" value={secrets.value(volcengineSecretAccessKeyId)} configured={secrets.configured(volcengineSecretAccessKeyId)} onChange={(value) => secrets.change(volcengineSecretAccessKeyId, value)} onClear={() => secrets.change(volcengineSecretAccessKeyId, null)} />
+                <div className="settings-inline-actions">
+                  <button className="ghost-action" type="button" disabled={loadingVolcengineSpeakers} onClick={() => onRefreshVolcengineSpeakers(selectedProfile)}>
+                    {loadingVolcengineSpeakers ? <Loader2 className="spin" size={15} /> : <Search size={15} />}
+                    加载音色
+                  </button>
+                  {volcengineSpeakerStatus ? <span>{volcengineSpeakerStatus}</span> : null}
+                </div>
+              </>
+            )}
             <Field label="默认音色">
               <div className="model-picker">
                 <select value={voiceSelection} onChange={(event) => updateVolcengineVoice(event.target.value === 'custom' ? '' : event.target.value)}>

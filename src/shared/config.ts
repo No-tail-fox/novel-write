@@ -8,7 +8,11 @@ import type {
   MinimaxCloneVoice,
   UiPreferences,
 } from './types';
-import { DEFAULT_VOLCENGINE_TTS_V3_SPEAKER } from './volcengine-tts';
+import {
+  DEFAULT_VOLCENGINE_TTS_LEGACY_ENDPOINT,
+  DEFAULT_VOLCENGINE_TTS_V3_ENDPOINT,
+  DEFAULT_VOLCENGINE_TTS_V3_SPEAKER,
+} from './volcengine-tts';
 
 const updatedAt = '2026-05-26T00:00:00.000Z';
 
@@ -112,6 +116,7 @@ export const defaultConfig: AppConfig = {
     accessKey: '',
     speaker: DEFAULT_VOLCENGINE_TTS_V3_SPEAKER,
     volcengine: {
+      apiVersion: 'v3',
       apiKey: '',
       accessKeyId: '',
       secretAccessKey: '',
@@ -119,7 +124,9 @@ export const defaultConfig: AppConfig = {
       accessKey: '',
       speaker: DEFAULT_VOLCENGINE_TTS_V3_SPEAKER,
       cluster: 'volcano_tts',
-      endpoint: 'https://openspeech.bytedance.com/api/v3/tts/unidirectional',
+      endpoint: DEFAULT_VOLCENGINE_TTS_V3_ENDPOINT,
+      v3Endpoint: DEFAULT_VOLCENGINE_TTS_V3_ENDPOINT,
+      legacyEndpoint: DEFAULT_VOLCENGINE_TTS_LEGACY_ENDPOINT,
       resourceId: 'seed-tts-2.0',
     },
     minimax: {
@@ -138,6 +145,7 @@ export const defaultConfig: AppConfig = {
       accessKey: '',
       speaker: DEFAULT_VOLCENGINE_TTS_V3_SPEAKER,
       volcengine: {
+        apiVersion: 'v3',
         apiKey: '',
         accessKeyId: '',
         secretAccessKey: '',
@@ -145,7 +153,9 @@ export const defaultConfig: AppConfig = {
         accessKey: '',
         speaker: DEFAULT_VOLCENGINE_TTS_V3_SPEAKER,
         cluster: 'volcano_tts',
-        endpoint: 'https://openspeech.bytedance.com/api/v3/tts/unidirectional',
+        endpoint: DEFAULT_VOLCENGINE_TTS_V3_ENDPOINT,
+        v3Endpoint: DEFAULT_VOLCENGINE_TTS_V3_ENDPOINT,
+        legacyEndpoint: DEFAULT_VOLCENGINE_TTS_LEGACY_ENDPOINT,
         resourceId: 'seed-tts-2.0',
       },
     },

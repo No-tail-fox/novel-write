@@ -2922,7 +2922,7 @@ describe('product shell ui', () => {
     expect(settingsOwners).toContain('ProviderConfigNote');
   });
 
-  it('exposes simplified Volcengine V3 TTS settings with a single API key and preset voice defaults', async () => {
+  it('exposes explicit Volcengine V3 and legacy TTS settings without dropping either parameter set', async () => {
     const sources = await rendererSourcesPromise;
     const managers = sources.requiredFile('src/features/settings/ProviderProfileManagers.tsx');
     const controls = sources.requiredFile('src/features/settings/settings-controls.tsx');
@@ -2930,13 +2930,20 @@ describe('product shell ui', () => {
     const options = await editorialOptionsSourcePromise;
 
     expect(controls).toContain('volcengineVoicePresets');
+    expect(managers).toContain("options={['v3', 'legacy']}");
+    expect(managers).toContain("labels={['新版 V3', '旧版接口']}");
     expect(managers).toContain('火山 TTS 接口密钥');
-    expect(managers).not.toContain('音色列表访问密钥 ID');
-    expect(managers).not.toContain('音色列表访问密钥 Secret');
+    expect(managers).toContain('V3 Resource ID');
+    expect(managers).toContain('V3 接口地址');
+    expect(managers).toContain('音色列表访问密钥 ID');
+    expect(managers).toContain('音色列表访问密钥 Secret');
+    expect(managers).toContain('旧版 App ID');
+    expect(managers).toContain('旧版 Access Token');
+    expect(managers).toContain('旧版 Cluster');
+    expect(managers).toContain('旧版接口地址');
     expect(managers).not.toContain('加载全部音色');
-    expect(managers).not.toContain('资源 ID');
-    expect(managers).not.toContain('端点地址');
     expect(settingsOwners).toContain('V3 HTTP Chunked');
+    expect(settingsOwners).toContain('旧版 JSON 接口');
     expect(settingsOwners).toContain('volcenginePresetVoiceValue');
     expect(managers).toContain('默认音色');
     expect(managers).toContain('自定义 voice_type');

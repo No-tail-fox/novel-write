@@ -42,6 +42,7 @@ import type { AccountProfile, ActivationState, AppConfig, AppDelta, AppDeltaReco
 import { boundViralDiagnosticText, createViralProductionTaskInput, detectViralPlatform, runViralAnalysis, viralCheckpointResumeState } from '../src/shared/viral-analysis';
 import { createViralRuntimeProviders } from '../src/shared/viral-runtime';
 import { listVolcengineSpeakers } from '../src/shared/volcengine-speakers';
+import { resolveVolcengineTtsApiVersion } from '../src/shared/volcengine-tts';
 import { getRendererIndexPath } from './paths';
 import {
   createElectronHtmlVideoRuntime,
@@ -2800,7 +2801,9 @@ function imageConfigStatus(config: AppConfig): 'pass' | 'warn' | 'fail' {
 function ttsConfigStatus(config: AppConfig): 'pass' | 'warn' | 'fail' {
   if (config.tts.provider === 'mock') return 'fail';
   if (config.tts.provider === 'minimax') return config.tts.minimax.apiKey ? 'pass' : 'warn';
-  if (config.tts.volcengine.apiKey) return 'pass';
+  if (resolveVolcengineTtsApiVersion(config.tts.volcengine) === 'v3') {
+    return config.tts.volcengine.apiKey ? 'pass' : 'warn';
+  }
   return (config.tts.volcengine.appId || config.tts.appId) && (config.tts.volcengine.accessKey || config.tts.accessKey) ? 'pass' : 'warn';
 }
 

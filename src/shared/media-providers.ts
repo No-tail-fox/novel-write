@@ -7,7 +7,7 @@ import { fetchWithTimeout } from './http';
 import { readJsonBounded, readTextBounded } from './network-policy';
 import { buildOpenAiImageGenerationBody, normalizeOpenAiImageBaseUrl } from './openai-image';
 import { buildOpenAiImageEditFormData } from './openai-image-edit';
-import { isArkModelApiKey, normalizeVolcengineV3Speaker, VOLCENGINE_TTS_ARK_KEY_MESSAGE } from './volcengine-tts';
+import { isArkModelApiKey, normalizeVolcengineTtsApiSettings, normalizeVolcengineV3Speaker, VOLCENGINE_TTS_ARK_KEY_MESSAGE } from './volcengine-tts';
 import { defaultPodcastSpeakersForProvider, normalizeRuntimeTtsProvider, type RuntimeTtsProvider, volcengineResourceIdForTaskSpeaker } from './tts-voices';
 import { splitPodcastDialogue, type PodcastDialogueTurn } from './podcast-dialogue';
 
@@ -100,7 +100,7 @@ export function createConfiguredNarrationSynthesizer(config: AppConfig, workDir:
     const providerProfile = config.ttsProfiles.find((profile) => profile.provider === provider && profile.enabled) ?? config.ttsProfiles.find((profile) => profile.provider === provider);
     const profileVolcengine = providerProfile?.volcengine;
     const profileMinimax = providerProfile?.minimax;
-    const volcengine = {
+    const rawVolcengine = {
       ...config.tts.volcengine,
       apiKey: config.tts.volcengine.apiKey || profileVolcengine?.apiKey,
       accessKeyId: config.tts.volcengine.accessKeyId || profileVolcengine?.accessKeyId,
@@ -111,6 +111,11 @@ export function createConfiguredNarrationSynthesizer(config: AppConfig, workDir:
       cluster: config.tts.volcengine.cluster || profileVolcengine?.cluster,
       endpoint: config.tts.volcengine.endpoint || profileVolcengine?.endpoint,
       resourceId: config.tts.volcengine.resourceId || profileVolcengine?.resourceId,
+    };
+    const volcengineApiSource = config.tts.provider === provider ? rawVolcengine : profileVolcengine ?? rawVolcengine;
+    const volcengine = {
+      ...rawVolcengine,
+      ...normalizeVolcengineTtsApiSettings(volcengineApiSource),
     };
     const minimax = {
       ...config.tts.minimax,
@@ -127,6 +132,7 @@ export function createConfiguredNarrationSynthesizer(config: AppConfig, workDir:
         scenes,
         task,
         workDir,
+        apiVersion: volcengine.apiVersion,
         apiKey: volcengine.apiKey ?? '',
         resourceId: taskProvider ? volcengineResourceIdForTaskSpeaker(speaker, volcengine.resourceId || 'seed-tts-2.0') : volcengine.resourceId || 'seed-tts-2.0',
         appId: volcengine.appId || providerProfile?.appId || config.tts.appId,
@@ -587,6 +593,7 @@ async function synthesizeVolcengineNarration(input: {
   scenes: StoryboardScene[];
   task: Task;
   workDir: string;
+  apiVersion: 'v3' | 'legacy';
   apiKey?: string;
   resourceId: string;
   appId: string;
@@ -596,7 +603,7 @@ async function synthesizeVolcengineNarration(input: {
   endpoint: string;
   signal?: AbortSignal;
 }): Promise<SceneAsset[]> {
-  if (input.apiKey) {
+  if (input.apiVersion === 'v3') {
     return synthesizeVolcengineV3Narration(input);
   }
   if (!input.appId || !input.accessKey) {

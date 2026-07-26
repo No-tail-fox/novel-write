@@ -31,6 +31,7 @@ export type PromptTemplateType = 'review' | 'rewrite' | 'cover' | 'storyboard' |
 export type PromptStepTemplateType = Exclude<PromptTemplateType, 'task'>;
 export type ImageProvider = 'gpt_image' | 'jimeng' | 'custom' | 'mock';
 export type TtsProvider = 'volcengine' | 'minimax' | 'mock';
+export type VolcengineTtsApiVersion = 'v3' | 'legacy';
 export type PausePoint = 'none' | 'critical' | 'every-step' | 'custom';
 export type RewriteIntensity = 'standard' | 'deep' | 'original';
 export type NarrativePov = 'keep-original' | 'first-person' | 'third-person';
@@ -201,6 +202,8 @@ export interface TtsConfig {
   accessKey: string;
   speaker: string;
   volcengine: {
+    apiVersion?: VolcengineTtsApiVersion;
+    apiVersionExplicit?: boolean;
     apiKey?: string;
     accessKeyId?: string;
     secretAccessKey?: string;
@@ -209,6 +212,8 @@ export interface TtsConfig {
     speaker: string;
     cluster?: string;
     endpoint?: string;
+    v3Endpoint?: string;
+    legacyEndpoint?: string;
     resourceId?: string;
   };
   minimax: {

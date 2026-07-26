@@ -4,7 +4,7 @@ import { tmpdir } from 'node:os';
 import { basename, dirname, isAbsolute, join, relative, resolve } from 'node:path';
 import type { BrowserWindow } from 'electron';
 
-export const editorialQaScopes = ['all', 'theme-smoke', 'shell', 'new-task', 'task-operations', 'html-video', 'clone-voice', 'workflow', 'labs', 'system'] as const;
+export const editorialQaScopes = ['all', 'theme-smoke', 'shell', 'new-task', 'task-operations', 'html-video', 'clone-voice', 'volcengine-tts', 'workflow', 'labs', 'system'] as const;
 export type EditorialQaScope = (typeof editorialQaScopes)[number];
 export type EditorialQaEnvironment = Partial<Record<
   | 'STORYDREAM_QA_RUN_ROOT'
@@ -62,6 +62,10 @@ export const editorialQaMatrix = {
     { id: 'minimax-clone-voice-edit-dark-desktop', view: 'settings', theme: 'dark', viewport: 'desktop' },
     { id: 'minimax-clone-voice-delete-light-compact', view: 'settings', theme: 'light', viewport: 'compact' },
     { id: 'minimax-clone-voice-empty-dark-compact', view: 'settings', theme: 'dark', viewport: 'compact' },
+  ],
+  volcengineTtsStates: [
+    { id: 'volcengine-v3-light-desktop', view: 'settings', theme: 'light', viewport: 'desktop' },
+    { id: 'volcengine-legacy-dark-compact', view: 'settings', theme: 'dark', viewport: 'compact' },
   ],
 } as const;
 
@@ -186,6 +190,15 @@ export async function captureEditorialQa(
     if (captureCase.id === 'minimax-clone-voice-empty-dark-compact' && !state.cloneVoice.empty) {
       throw new Error(`Editorial QA MiniMax clone-voice empty state failed: ${JSON.stringify(state.cloneVoice)}.`);
     }
+    if (captureCase.id.startsWith('volcengine-') && (
+      !state.volcengineVersion.v3ValuePreserved
+      || !state.volcengineVersion.legacyValuePreserved
+      || state.volcengineVersion.selected !== (captureCase.id.includes('-legacy-') ? '旧版接口' : '新版 V3')
+      || state.volcengineVersion.v3FieldsVisible === captureCase.id.includes('-legacy-')
+      || state.volcengineVersion.legacyFieldsVisible !== captureCase.id.includes('-legacy-')
+    )) {
+      throw new Error(`Editorial QA Volcengine version switch failed: ${JSON.stringify(state.volcengineVersion)}.`);
+    }
     await new Promise((resolveDelay) => setTimeout(resolveDelay, 80));
     await withEditorialQaTimeout(
       window.webContents.executeJavaScript(qaCompositorSettlingScript(), true),
@@ -201,7 +214,7 @@ export async function captureEditorialQa(
     const capturePath = join(config.captures, `${captureCase.id}.png`);
     await writeFile(capturePath, png, { flag: 'wx' });
     await assertCapturePng(capturePath, png, image.toBitmap(), viewport.width, viewport.height);
-    captures.push({ view: captureCase.view, stage: captureCase.stage, theme: captureCase.theme, viewport: viewport.name, path: basename(capturePath), visibleText: state.visibleText, tokens: state.tokens, manualCover: state.manualCover, cloneVoice: state.cloneVoice, deleteDialogFocusWrapped: state.deleteDialogFocusWrapped, deleteDialogEscapeRestored: state.deleteDialogEscapeRestored });
+    captures.push({ view: captureCase.view, stage: captureCase.stage, theme: captureCase.theme, viewport: viewport.name, path: basename(capturePath), visibleText: state.visibleText, tokens: state.tokens, manualCover: state.manualCover, cloneVoice: state.cloneVoice, volcengineVersion: state.volcengineVersion, deleteDialogFocusWrapped: state.deleteDialogFocusWrapped, deleteDialogEscapeRestored: state.deleteDialogEscapeRestored });
     await writeEditorialQaReport(config, captures, getMetrics);
   }
   await writeEditorialQaReport(config, captures, getMetrics);
@@ -267,6 +280,7 @@ interface EditorialQaCapture {
   tokens: Record<string, string>;
   manualCover: QaScenarioState['manualCover'];
   cloneVoice: QaScenarioState['cloneVoice'];
+  volcengineVersion: QaScenarioState['volcengineVersion'];
   deleteDialogFocusWrapped: boolean;
   deleteDialogEscapeRestored: boolean;
 }
@@ -299,6 +313,13 @@ interface QaScenarioState {
     deleted: boolean;
     empty: boolean;
   };
+  volcengineVersion: {
+    selected: string;
+    v3FieldsVisible: boolean;
+    legacyFieldsVisible: boolean;
+    v3ValuePreserved: boolean;
+    legacyValuePreserved: boolean;
+  };
   deleteDialogFocusWrapped: boolean;
   deleteDialogEscapeRestored: boolean;
   layout: {
@@ -315,6 +336,7 @@ function captureCasesForScope(scope: EditorialQaScope): EditorialQaCaptureCase[]
   if (scope === 'task-operations') return [...editorialQaMatrix.taskOperationStates];
   if (scope === 'html-video') return [...editorialQaMatrix.htmlVideoStudioStates];
   if (scope === 'clone-voice') return [...editorialQaMatrix.cloneVoiceStates];
+  if (scope === 'volcengine-tts') return [...editorialQaMatrix.volcengineTtsStates];
   if (scope === 'all') {
     const cases = Object.entries(editorialQaMatrix.views).flatMap(([group, groupViews]) => (
       editorialQaMatrix.themes.flatMap((theme) => editorialQaMatrix.viewports.flatMap((viewport) => (
@@ -326,7 +348,7 @@ function captureCasesForScope(scope: EditorialQaScope): EditorialQaCaptureCase[]
         }))
       )))
     ));
-    return [...cases, ...editorialQaMatrix.newTaskStates, ...editorialQaMatrix.taskOperationStates, ...editorialQaMatrix.htmlVideoStudioStates, ...editorialQaMatrix.cloneVoiceStates];
+    return [...cases, ...editorialQaMatrix.newTaskStates, ...editorialQaMatrix.taskOperationStates, ...editorialQaMatrix.htmlVideoStudioStates, ...editorialQaMatrix.cloneVoiceStates, ...editorialQaMatrix.volcengineTtsStates];
   }
   const views = scope === 'theme-smoke'
     ? ['new-task']
@@ -565,6 +587,43 @@ function qaScenarioScript(id: string, view: string, theme: string, stage?: strin
       }
       document.querySelector('.minimax-clone-voice-manager')?.scrollIntoView({ block: 'center', inline: 'nearest' });
     }
+    const volcengineVersion = { selected: '', v3FieldsVisible: false, legacyFieldsVisible: false, v3ValuePreserved: false, legacyValuePreserved: false };
+    if (scenarioId.startsWith('volcengine-')) {
+      const ttsTab = [...document.querySelectorAll('.settings-tab')]
+        .find((button) => button.textContent?.includes('TTS 配音'));
+      if (ttsTab instanceof HTMLButtonElement) ttsTab.click();
+      const versionGroupSelector = '[role="group"][aria-label="接口版本"]';
+      ready = ready && await waitFor(() => document.querySelector(versionGroupSelector));
+      const versionButton = (label) => [...(document.querySelector(versionGroupSelector)?.querySelectorAll('button') ?? [])]
+        .find((button) => button.textContent?.trim() === label);
+      const findSettingsInput = (label) => [...document.querySelectorAll('.profile-editor-grid label.config-input')]
+        .find((field) => field.querySelector(':scope > span')?.textContent?.trim() === label)
+        ?.querySelector('input');
+      const selectVersion = async (label, expectedField) => {
+        const button = versionButton(label);
+        if (button instanceof HTMLButtonElement) button.click();
+        return waitFor(() => findSettingsInput(expectedField) instanceof HTMLInputElement);
+      };
+      ready = ready && await selectVersion('新版 V3', 'V3 接口地址');
+      const v3Endpoint = findSettingsInput('V3 接口地址');
+      if (v3Endpoint instanceof HTMLInputElement) setInputValue(v3Endpoint, 'https://qa-v3.example/api/v3/tts/unidirectional');
+      ready = ready && await waitFor(() => findSettingsInput('V3 接口地址')?.value === 'https://qa-v3.example/api/v3/tts/unidirectional');
+      ready = ready && await selectVersion('旧版接口', '旧版接口地址');
+      const legacyEndpoint = findSettingsInput('旧版接口地址');
+      if (legacyEndpoint instanceof HTMLInputElement) setInputValue(legacyEndpoint, 'https://qa-legacy.example/api/v1/tts');
+      ready = ready && await waitFor(() => findSettingsInput('旧版接口地址')?.value === 'https://qa-legacy.example/api/v1/tts');
+      ready = ready && await selectVersion('新版 V3', 'V3 接口地址');
+      volcengineVersion.v3ValuePreserved = findSettingsInput('V3 接口地址')?.value === 'https://qa-v3.example/api/v3/tts/unidirectional';
+      ready = ready && await selectVersion('旧版接口', '旧版接口地址');
+      volcengineVersion.legacyValuePreserved = findSettingsInput('旧版接口地址')?.value === 'https://qa-legacy.example/api/v1/tts';
+      const finalLabel = scenarioId.includes('-legacy-') ? '旧版接口' : '新版 V3';
+      const finalField = scenarioId.includes('-legacy-') ? '旧版接口地址' : 'V3 接口地址';
+      ready = ready && await selectVersion(finalLabel, finalField);
+      volcengineVersion.selected = document.querySelector(versionGroupSelector + ' button[aria-pressed="true"]')?.textContent?.trim() ?? '';
+      volcengineVersion.v3FieldsVisible = findSettingsInput('V3 接口地址') instanceof HTMLInputElement;
+      volcengineVersion.legacyFieldsVisible = findSettingsInput('旧版接口地址') instanceof HTMLInputElement;
+      findSettingsInput(finalField)?.scrollIntoView({ block: 'center', inline: 'nearest' });
+    }
     const stage = ${JSON.stringify(stage ?? '')};
     let stageStatePreserved = true;
     if (stage) {
@@ -637,7 +696,7 @@ function qaScenarioScript(id: string, view: string, theme: string, stage?: strin
         && studioRegions[0].bottom <= studioRegions[1].top + 1
         ? 'parameters-first'
         : 'invalid';
-    const clippedPrimaryControls = [...document.querySelectorAll('.new-task-workbench button, .new-task-workbench input, .new-task-workbench select, .new-task-workbench textarea, [data-task-operations] button, [data-task-operations] input, [data-task-operations] select, [data-html-video-studio] button, [data-html-video-studio] input, [data-html-video-studio] select, [data-html-video-studio] textarea, .minimax-clone-voice-manager button, .minimax-clone-voice-manager input, .minimax-clone-voice-manager select, .minimax-clone-voice-manager textarea')]
+    const clippedPrimaryControls = [...document.querySelectorAll('.new-task-workbench button, .new-task-workbench input, .new-task-workbench select, .new-task-workbench textarea, [data-task-operations] button, [data-task-operations] input, [data-task-operations] select, [data-html-video-studio] button, [data-html-video-studio] input, [data-html-video-studio] select, [data-html-video-studio] textarea, .minimax-clone-voice-manager button, .minimax-clone-voice-manager input, .minimax-clone-voice-manager select, .minimax-clone-voice-manager textarea, .settings-content .profile-editor-grid button, .settings-content .profile-editor-grid input, .settings-content .profile-editor-grid select')]
       .filter((element) => {
         const style = getComputedStyle(element);
         if (style.display === 'none' || style.visibility === 'hidden') return false;
@@ -666,6 +725,7 @@ function qaScenarioScript(id: string, view: string, theme: string, stage?: strin
         createDisabled: createButton instanceof HTMLButtonElement && createButton.disabled,
       },
       cloneVoice,
+      volcengineVersion,
       layout: {
         horizontalOverflow: Math.max(0, document.documentElement.scrollWidth - window.innerWidth),
         clippedPrimaryControls,
