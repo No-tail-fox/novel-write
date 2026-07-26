@@ -83,7 +83,7 @@ export function VoiceLabPage({ api, state, applyState }: { api: StoryDreamApi; s
           {generating ? '生成中' : '生成试听'}
         </button>
       </section>
-      <section className="local-lab-media voice-lab-history" data-media-canvas="voice-lab">
+      <section className="local-lab-media voice-lab-history">
         <div className="panel-title-row">
           <div>
             <h2>历史试听</h2>
@@ -98,7 +98,7 @@ export function VoiceLabPage({ api, state, applyState }: { api: StoryDreamApi; s
               <small>{record.provider} · {record.speed}x · {formatDate(record.createdAt)}</small>
             </div>
             <p>{record.text}</p>
-            {record.audioPath ? <audio className="voice-lab-player" controls preload="metadata" src={toLocalAssetUrl(record.audioPath)} /> : null}
+            {record.audioPath ? <audio className="voice-lab-player" data-media-canvas="voice-lab" controls preload="metadata" src={toLocalAssetUrl(record.audioPath)} /> : null}
             {!record.audioPath && record.status === 'failed' ? <div className="voice-lab-player error">未生成音频</div> : null}
             {record.errorMessage ? <ErrorSummaryButton compact title="配音失败" fullMessage={record.errorMessage} /> : null}
             {record.audioPath ? <small>{record.audioPath}</small> : null}

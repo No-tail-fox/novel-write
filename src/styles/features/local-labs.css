@@ -30,11 +30,11 @@
 
 .local-lab-media {
   min-height: 320px;
-  border: 1px solid var(--media-border);
+  border: 1px solid var(--shell-border);
   border-radius: 4px;
   padding: 16px;
-  background: var(--media-bg);
-  color: var(--media-text);
+  background: var(--shell-surface);
+  color: var(--shell-text);
 }
 
 [data-local-lab-workbench] .panel-title-row {
@@ -280,11 +280,11 @@
   min-height: 320px;
   overflow: auto;
   align-content: start;
-  border: 1px solid var(--media-border);
+  border: 1px solid var(--shell-border);
   border-radius: 4px;
   padding: 12px;
-  background: var(--media-bg);
-  color: var(--media-text);
+  background: var(--shell-surface);
+  color: var(--shell-text);
 }
 
 .person-image-grid > .empty-state {
@@ -293,14 +293,13 @@
 }
 
 .person-image-card {
-  border-color: var(--media-border);
+  border-color: var(--shell-border);
   border-radius: 4px;
-  background: var(--media-surface);
+  background: var(--shell-surface-raised);
 }
 
-.person-image-card span,
-.person-image-placeholder {
-  color: var(--media-muted);
+.person-image-card span {
+  color: var(--shell-muted);
 }
 
 .voice-lab-layout {
@@ -340,24 +339,24 @@
 }
 
 .voice-lab-history .panel-title-row {
-  border-color: var(--media-border);
+  border-color: var(--shell-border);
 }
 
 .voice-lab-history .hint-text,
 .voice-lab-history .empty-state,
 .voice-lab-history .voice-record small {
-  color: var(--media-muted);
+  color: var(--shell-muted);
 }
 
 .voice-record {
-  border-color: var(--media-border);
+  border-color: var(--shell-border);
   border-radius: 4px;
-  background: var(--media-surface);
-  color: var(--media-text);
+  background: var(--shell-surface-raised);
+  color: var(--shell-text);
 }
 
 .voice-record p {
-  color: var(--media-text);
+  color: var(--shell-text);
 }
 
 .image-lab-page {
@@ -408,49 +407,49 @@
 
 .image-lab-reference-block {
   gap: 8px;
-  border: 1px solid var(--media-border);
+  border: 1px solid var(--shell-border);
   border-radius: 4px;
   padding: 12px;
-  background: var(--media-bg);
-  color: var(--media-text);
+  background: var(--shell-surface);
+  color: var(--shell-text);
 }
 
 .image-lab-reference-block .image-lab-section-head small,
 .image-lab-reference-block .image-lab-dropzone small {
-  color: var(--media-muted);
+  color: var(--shell-muted);
 }
 
 .image-lab-dropzone {
   min-height: 92px;
-  border-color: var(--media-border);
+  border-color: var(--shell-border);
   border-radius: 4px;
   padding: 10px;
-  background: var(--media-surface);
-  color: var(--media-text);
+  background: var(--shell-surface-raised);
+  color: var(--shell-text);
 }
 
 .image-lab-upload-card {
   width: 72px;
   min-width: 72px;
   height: 68px;
-  border-color: var(--media-border);
+  border-color: var(--shell-border);
   border-radius: 4px;
-  background: var(--media-bg);
-  color: var(--media-muted);
+  background: var(--shell-surface);
+  color: var(--shell-muted);
 }
 
 .image-lab-reference-block textarea {
-  border-color: var(--media-border);
-  background: var(--media-surface);
-  color: var(--media-text);
+  border-color: var(--shell-border);
+  background: var(--shell-surface-raised);
+  color: var(--shell-text);
 }
 
 .image-lab-reference-empty,
 .image-lab-reference-overflow {
-  border-color: var(--media-border);
+  border-color: var(--shell-border);
   border-radius: 4px;
-  background: var(--media-surface);
-  color: var(--media-muted);
+  background: var(--shell-surface-raised);
+  color: var(--shell-muted);
 }
 
 .image-lab-prompt {
@@ -530,7 +529,7 @@
 
 .image-lab-recent .empty-state {
   min-height: 180px;
-  color: var(--media-muted);
+  color: var(--shell-muted);
 }
 
 .image-lab-recent .image-grid-panel {
@@ -538,14 +537,20 @@
 }
 
 .image-lab-recent .image-record {
-  border-color: var(--media-border);
+  border-color: var(--shell-border);
   border-radius: 4px;
-  background: var(--media-surface);
-  color: var(--media-text);
+  background: var(--shell-surface-raised);
+  color: var(--shell-text);
 }
 
 .image-lab-recent .image-record small {
-  color: var(--media-muted);
+  color: var(--shell-muted);
+}
+
+.lab-image-preview[data-media-canvas] {
+  border: 1px solid var(--media-border);
+  background: var(--media-bg);
+  color: var(--media-text);
 }
 
 @media (max-width: 1120px) {

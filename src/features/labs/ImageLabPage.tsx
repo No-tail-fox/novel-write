@@ -244,13 +244,13 @@ export function ImageLabPage({ api, state, applyState }: { api: StoryDreamApi; s
           </section>
         </div>
       ) : null}
-      <section className="local-lab-media image-lab-recent" data-media-canvas="image-lab">
+      <section className="local-lab-media image-lab-recent">
         <h3>最近生成 · {state.imageLabRecords.length}</h3>
         {state.imageLabRecords.length === 0 ? <EmptyState title="暂无画图记录" /> : null}
         <div className="image-grid-panel">
           {state.imageLabRecords.map((record) => (
           <article className={`image-record ${record.status}`} key={record.id}>
-            <div className="lab-image-preview">
+            <div className="lab-image-preview" data-media-canvas="image-lab">
               {record.imagePath ? <img src={toLocalImageUrl(record.imagePath)} alt={record.prompt} loading="lazy" /> : (
                 <>
                   <ImageIcon size={28} />

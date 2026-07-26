@@ -226,11 +226,13 @@ export function PersonAssetsPage({ api, isBrowserPreview }: { api: StoryDreamApi
           </div>
         ) : null}
 
-        <div className="person-image-grid" data-media-canvas="person-assets">
+        <div className="person-image-grid">
           {images.length === 0 ? <EmptyState title="暂无图片" /> : null}
           {images.map((image) => (
             <article className="person-image-card" key={image.path}>
-              {imageUrls[image.path] ? <img src={imageUrls[image.path]} alt={image.name} /> : <div className="person-image-placeholder">{image.name}</div>}
+              {imageUrls[image.path]
+                ? <img src={imageUrls[image.path]} alt={image.name} data-media-canvas="person-assets" />
+                : <div className="person-image-placeholder" data-media-canvas="person-assets">{image.name}</div>}
               <span title={image.path}>{image.name}</span>
             </article>
           ))}

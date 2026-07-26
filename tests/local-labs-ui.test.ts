@@ -31,7 +31,7 @@ describe('local and lab editorial workbenches', () => {
     expect(css).toContain('grid-template-columns: minmax(0, 1fr);');
   });
 
-  it('keeps image, voice, and person media regions dark and theme invariant', async () => {
+  it('uses shell surfaces around media and reserves dark ownership for actual media', async () => {
     const [imageLab, voiceLab, personAssets, css] = await Promise.all([
       readFile(new URL('../src/features/labs/ImageLabPage.tsx', import.meta.url), 'utf8'),
       readFile(new URL('../src/features/labs/VoiceLabPage.tsx', import.meta.url), 'utf8'),
@@ -39,11 +39,15 @@ describe('local and lab editorial workbenches', () => {
       readFile(new URL('../src/styles/features/local-labs.css', import.meta.url), 'utf8'),
     ]);
 
-    expect(imageLab).toContain('className="local-lab-media image-lab-recent" data-media-canvas="image-lab"');
-    expect(voiceLab).toContain('className="local-lab-media voice-lab-history" data-media-canvas="voice-lab"');
-    expect(personAssets).toContain('className="person-image-grid" data-media-canvas="person-assets"');
-    expect(css).toMatch(/\.local-lab-media\s*\{[\s\S]*background:\s*var\(--media-bg\);[\s\S]*color:\s*var\(--media-text\);/u);
-    expect(css).toMatch(/\.person-image-grid\s*\{[\s\S]*min-height:\s*320px;[\s\S]*background:\s*var\(--media-bg\);/u);
+    expect(imageLab).toContain('className="lab-image-preview" data-media-canvas="image-lab"');
+    expect(voiceLab).toContain('data-media-canvas="voice-lab"');
+    expect(personAssets).toContain('data-media-canvas="person-assets"');
+    expect(imageLab).not.toContain('className="local-lab-media image-lab-recent" data-media-canvas');
+    expect(voiceLab).not.toContain('className="local-lab-media voice-lab-history" data-media-canvas');
+    expect(personAssets).not.toContain('className="person-image-grid" data-media-canvas');
+    expect(css).toMatch(/\.local-lab-media\s*\{[\s\S]*background:\s*var\(--shell-surface\);[\s\S]*color:\s*var\(--shell-text\);/u);
+    expect(css).toMatch(/\.person-image-grid\s*\{[\s\S]*min-height:\s*320px;[\s\S]*background:\s*var\(--shell-surface\);/u);
+    expect(css).toMatch(/\.image-lab-reference-block\s*\{[\s\S]*background:\s*var\(--shell-surface\);[\s\S]*color:\s*var\(--shell-text\);/u);
   });
 
   it('retains the complete local and lab command surface', async () => {
