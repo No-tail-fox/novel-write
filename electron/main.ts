@@ -27,6 +27,7 @@ import {
 } from '../src/shared/ordinary-task-cover';
 import { createHtmlVideoTaskInput, htmlVideoVisibleSteps, isHtmlVideoTask, parseHtmlVideoPipelineData, recoverHtmlVideoPipelineDataForRetry, type HtmlVideoPipelineRetryPatch } from '../src/shared/html-video-workflow';
 import { generateConfiguredVoicePreview } from '../src/shared/media-providers';
+import { mergeMinimaxCloneVoice } from '../src/shared/minimax-clone-voices';
 import { createPersonAsset, deletePersonAsset, importPersonAssetFiles, listPersonAssets, listPersonImages, renamePersonAsset } from '../src/shared/person-assets';
 import { createConfiguredJsonLlm, createConfiguredTextLlm, listConfiguredProviderModels, testConfiguredLlm } from '../src/shared/llm-provider';
 import { markSceneImageForRegeneration, markSceneNarrationForRegeneration, markTaskStepForRerun, updateSceneImagePrompt } from '../src/shared/pipeline-cache';
@@ -37,7 +38,7 @@ import { runStoryboundMediaSidecar } from '../src/shared/storybound-sidecar';
 import { FileDatabase, type HistoryDeletionCleanup, type HistoryTombstone } from '../src/shared/storage';
 import { createHtmlVideoRuntimeProviders, createTaskRuntimeProviders } from '../src/shared/task-runtime-providers';
 import { assertTaskLifecycleAction } from '../src/shared/task-progress';
-import type { AccountProfile, ActivationState, AppConfig, AppDelta, AppDeltaReconcileRequest, AppDeltaReconcileResult, AppStatePatch, BookSelectionInput, ConfigTestTarget, CreateTaskInput, CreateViralAnalysisInput, CursorRequest, CustomStyle, CustomStyleGenerateInput, DraftTemplate, HistoryFamily, HistoryListRequest, HtmlVideoConfigChange, HtmlVideoPipelineDataV2, ImageLabGenerateInput, ImageLabRecord, ImageLabSummary, ImaKnowledgeRequest, LlmConfig, OrdinaryTaskCoverRatio, OrdinaryTaskCoverSelection, PromptTemplate, ProviderModelListRequest, ResearchCopyComposeInput, SequencedTaskEvent, Task, TaskStatus, TaskStepRerunMode, UiPreferencesUpdate, ViralAnalysisRecord, ViralAnalysisResult, ViralAnalysisStatus, ViralProductionTaskOptions, VolcengineSpeakerListRequest, VoiceLabGenerateInput, VoiceLabRecord, VoiceLabSummary } from '../src/shared/types';
+import type { AccountProfile, ActivationState, AppConfig, AppDelta, AppDeltaReconcileRequest, AppDeltaReconcileResult, AppStatePatch, BookSelectionInput, ConfigTestTarget, CreateTaskInput, CreateViralAnalysisInput, CursorRequest, CustomStyle, CustomStyleGenerateInput, DraftTemplate, HistoryFamily, HistoryListRequest, HtmlVideoConfigChange, HtmlVideoPipelineDataV2, ImageLabGenerateInput, ImageLabRecord, ImageLabSummary, ImaKnowledgeRequest, LlmConfig, MinimaxCloneVoiceInput, OrdinaryTaskCoverRatio, OrdinaryTaskCoverSelection, PromptTemplate, ProviderModelListRequest, ResearchCopyComposeInput, SequencedTaskEvent, Task, TaskStatus, TaskStepRerunMode, UiPreferencesUpdate, ViralAnalysisRecord, ViralAnalysisResult, ViralAnalysisStatus, ViralProductionTaskOptions, VolcengineSpeakerListRequest, VoiceLabGenerateInput, VoiceLabRecord, VoiceLabSummary } from '../src/shared/types';
 import { boundViralDiagnosticText, createViralProductionTaskInput, detectViralPlatform, runViralAnalysis, viralCheckpointResumeState } from '../src/shared/viral-analysis';
 import { createViralRuntimeProviders } from '../src/shared/viral-runtime';
 import { listVolcengineSpeakers } from '../src/shared/volcengine-speakers';
@@ -1700,6 +1701,17 @@ trustedHandle('prompt-template:get-detail', async (_event, id: string) => (await
 trustedHandle('draft-template:list', async (_event, request: CursorRequest) => (await getDb()).listDraftTemplateSummaries(request));
 trustedHandle('draft-template:get-detail', async (_event, id: string) => (await getDb()).getDraftTemplateDetail(id));
 trustedHandle('minimax-clone-voice:list', async (_event, request: CursorRequest) => (await getDb()).listMinimaxCloneVoices(request));
+trustedHandle('minimax-clone-voice:save', async (_event, input: MinimaxCloneVoiceInput) => {
+  const database = await getDb();
+  const existing = await database.getMinimaxCloneVoice(input.voiceId);
+  const voice = await database.upsertMinimaxCloneVoice(mergeMinimaxCloneVoice(existing, input));
+  return publishStatePatch({ kind: 'minimax-clone-voice-upsert', voice });
+});
+trustedHandle('minimax-clone-voice:delete', async (_event, voiceId: string) => {
+  const database = await getDb();
+  await database.deleteMinimaxCloneVoice(voiceId);
+  return publishStatePatch({ kind: 'minimax-clone-voice-delete', voiceId });
+});
 
 trustedHandle('app:save-config', async (_event, input) => {
   const saved = await (await getConfigService()).save(input);
@@ -2602,6 +2614,9 @@ async function selectLocalFolder(): Promise<string | null> {
 }
 
 async function selectLocalAudio(): Promise<string | null> {
+  if (editorialQaConfig?.scope === 'clone-voice' || editorialQaConfig?.scope === 'all') {
+    return join(editorialQaConfig.root, 'qa-minimax-source.wav');
+  }
   const result = await dialog.showOpenDialog({
     title: '选择 BGM 音频',
     properties: ['openFile'],

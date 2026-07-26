@@ -16,6 +16,7 @@ import { AsyncActionFeedback as InlineActionFeedback } from "../../components/As
 import type { ApplyMutationResult, RendererAppState as AppState } from "../../app/route-types";
 import { siliconFlowSpeechToTextBaseUrl, siliconFlowSpeechToTextModels } from "../../shared/editorial-options";
 import { ImageProfileManager, LlmProfileManager, TtsProfileManager } from './ProviderProfileManagers';
+import { MinimaxCloneVoiceManager } from './MinimaxCloneVoiceManager';
 import {
   ConfigInput,
   ConfigNumberInput,
@@ -54,6 +55,7 @@ export function SettingsPage({ api, state, applyState, navigate }: { api: StoryD
   const [selectedLlmProfileId, setSelectedLlmProfileId] = useState(() => activeLlmProfileId(state.config));
   const [selectedImageProfileId, setSelectedImageProfileId] = useState(() => activeImageProfileId(state.config));
   const [selectedTtsProfileId, setSelectedTtsProfileId] = useState(() => activeTtsProfileId(state.config));
+  const [minimaxCloneVoiceCatalog, setMinimaxCloneVoiceCatalog] = useState(() => state.minimaxCloneVoices);
   const settingsAction = useAsyncAction();
   const themeAction = useAsyncAction();
   useEffect(() => {
@@ -64,6 +66,9 @@ export function SettingsPage({ api, state, applyState, navigate }: { api: StoryD
     setSecretChanges({});
     setLastAppliedConfigSignature(nextSignature);
   }, [lastAppliedConfigSignature, settingsDirty, state.config]);
+  useEffect(() => {
+    setMinimaxCloneVoiceCatalog(state.minimaxCloneVoices);
+  }, [state.minimaxCloneVoices]);
   function setSettingsDraft(next: AppConfig | ((current: AppConfig) => AppConfig)) {
     setSettingsDirty(true);
     setDraft(next);
@@ -483,7 +488,7 @@ export function SettingsPage({ api, state, applyState, navigate }: { api: StoryD
             <TtsProfileManager
               config={draft}
               selectedProfileId={selectedTtsProfileId}
-              cloneVoiceCount={state.minimaxCloneVoices.length}
+              cloneVoices={minimaxCloneVoiceCatalog}
               volcengineSpeakers={volcengineSpeakers}
               loadingVolcengineSpeakers={loadingVolcengineSpeakers}
               volcengineSpeakerStatus={volcengineSpeakerStatus}
@@ -493,6 +498,12 @@ export function SettingsPage({ api, state, applyState, navigate }: { api: StoryD
               onSelectedProfileIdChange={setSelectedTtsProfileId}
               onActivate={activateTtsProfile}
               onRefreshVolcengineSpeakers={refreshVolcengineSpeakers}
+            />
+            <MinimaxCloneVoiceManager
+              api={api}
+              applyState={applyState}
+              initialVoices={minimaxCloneVoiceCatalog}
+              onCatalogChange={setMinimaxCloneVoiceCatalog}
             />
           </SettingsCard>
         ) : null}

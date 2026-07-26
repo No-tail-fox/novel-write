@@ -1689,6 +1689,29 @@ export class FileDatabase {
     });
   }
 
+  async getMinimaxCloneVoice(voiceId: string): Promise<MinimaxCloneVoice | null> {
+    await this.waitForWrites();
+    const row = getFirstRow<Record<string, unknown>>(
+      this.db,
+      'SELECT * FROM minimax_clone_voices WHERE voice_id = ?',
+      [voiceId],
+    );
+    return row ? rowToMinimaxCloneVoice(row) : null;
+  }
+
+  async deleteMinimaxCloneVoice(voiceId: string): Promise<boolean> {
+    return this.enqueueCommit(() => {
+      const exists = getFirstRow<{ voice_id: string }>(
+        this.db,
+        'SELECT voice_id FROM minimax_clone_voices WHERE voice_id = ?',
+        [voiceId],
+      );
+      if (!exists) return false;
+      this.db.run('DELETE FROM minimax_clone_voices WHERE voice_id = ?', [voiceId]);
+      return true;
+    });
+  }
+
   async resetPromptTemplates(): Promise<void> {
     const defaultPromptTemplates = await loadDefaultPromptTemplates();
     await this.enqueueCommit(() => {

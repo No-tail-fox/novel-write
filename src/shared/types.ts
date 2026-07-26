@@ -943,6 +943,12 @@ export interface MinimaxCloneVoice {
   lastUsedAt: number;
 }
 
+export interface MinimaxCloneVoiceInput {
+  voiceId: string;
+  displayName: string;
+  sourceAudioPath: string;
+}
+
 export interface AccountProfile {
   displayName: string;
   email: string;
@@ -1487,6 +1493,8 @@ export type AppStatePatch =
   | { kind: 'custom-style-upsert'; style: CustomStyle }
   | { kind: 'viral-templates-upsert'; storyTemplate: PromptTemplate; imageTemplate: CustomStyle }
   | { kind: 'draft-template-upsert'; template: DraftTemplate }
+  | { kind: 'minimax-clone-voice-upsert'; voice: MinimaxCloneVoice }
+  | { kind: 'minimax-clone-voice-delete'; voiceId: string }
   | { kind: 'image-lab-upsert'; record: ImageLabSummary }
   | { kind: 'voice-lab-upsert'; record: VoiceLabSummary }
   | { kind: 'account'; account: AccountProfile }

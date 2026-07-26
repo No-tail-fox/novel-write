@@ -28,18 +28,19 @@ describe('editorial Electron QA configuration', () => {
   });
 
   it('only accepts known capture scopes before Electron is launched', () => {
-    expect(editorialQaScopes).toEqual(['all', 'theme-smoke', 'shell', 'new-task', 'task-operations', 'html-video', 'workflow', 'labs', 'system']);
+    expect(editorialQaScopes).toEqual(['all', 'theme-smoke', 'shell', 'new-task', 'task-operations', 'html-video', 'clone-voice', 'workflow', 'labs', 'system']);
     expect(() => resolveEditorialQaConfig({ STORYDREAM_QA_SCOPE: 'unknown' }, tmpdir())).toThrow('Unknown editorial QA scope');
   });
 
   it('defines the exact completed capture count for every QA scope', () => {
     expect(Object.fromEntries(editorialQaScopes.map((scope) => [scope, editorialQaExpectedCaptureCount(scope)]))).toEqual({
-      all: 82,
+      all: 86,
       'theme-smoke': 4,
       shell: 4,
       'new-task': 4,
       'task-operations': 4,
       'html-video': 2,
+      'clone-voice': 4,
       workflow: 28,
       labs: 20,
       system: 20,
@@ -81,6 +82,29 @@ describe('editorial Electron QA configuration', () => {
     expect(source).toContain('captureEditorialQaPage(window, captureCase.id)');
     expect(source).toContain('capturePage failed after 3 attempts');
     expect(source).toContain('Editorial QA ${label} failed:');
+  });
+
+  it('exercises MiniMax clone-voice CRUD across both themes and viewports', async () => {
+    const source = await (await import('node:fs/promises')).readFile(new URL('../electron/editorial-qa.ts', import.meta.url), 'utf8');
+    expect(editorialQaCaptureIds('clone-voice')).toEqual([
+      'minimax-clone-voice-create-light-desktop',
+      'minimax-clone-voice-edit-dark-desktop',
+      'minimax-clone-voice-delete-light-compact',
+      'minimax-clone-voice-empty-dark-compact',
+    ]);
+    expect(source).toContain("button.textContent?.includes('登记音色')");
+    expect(source).toContain("sourceButton instanceof HTMLButtonElement");
+    expect(source).toContain("inputs[2].value.endsWith('qa-minimax-source.wav')");
+    expect(source).toContain("button.textContent?.includes('保存记录')");
+    expect(source).toContain('button[title="编辑音色记录"]');
+    expect(source).toContain('button[title="确认删除音色记录"]');
+    expect(source).toContain('.minimax-clone-voice-manager button');
+    expect(source).toContain("scrollIntoView({ block: 'center', inline: 'nearest' })");
+    const styles = await (await import('node:fs/promises')).readFile(new URL('../src/styles.css', import.meta.url), 'utf8');
+    expect(styles).toContain(":root[data-theme='light'] .settings-content .provider-profile-card");
+    expect(styles).toContain(":root[data-theme='light'] .settings-content .provider-config-note");
+    expect(styles).toContain(":root[data-theme='light'] .settings-content .ghost-action");
+    expect(styles).toContain(":root[data-theme='light'] .settings-content .segmented button.selected");
   });
 
   it('keeps the real Electron capture contract on native capturePage and deterministic matrices', async () => {

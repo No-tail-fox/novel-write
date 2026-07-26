@@ -4,7 +4,7 @@ import { tmpdir } from 'node:os';
 import { basename, dirname, isAbsolute, join, relative, resolve } from 'node:path';
 import type { BrowserWindow } from 'electron';
 
-export const editorialQaScopes = ['all', 'theme-smoke', 'shell', 'new-task', 'task-operations', 'html-video', 'workflow', 'labs', 'system'] as const;
+export const editorialQaScopes = ['all', 'theme-smoke', 'shell', 'new-task', 'task-operations', 'html-video', 'clone-voice', 'workflow', 'labs', 'system'] as const;
 export type EditorialQaScope = (typeof editorialQaScopes)[number];
 export type EditorialQaEnvironment = Partial<Record<
   | 'STORYDREAM_QA_RUN_ROOT'
@@ -56,6 +56,12 @@ export const editorialQaMatrix = {
   htmlVideoStudioStates: [
     { id: 'html-video-studio-light-desktop', view: 'html-video', theme: 'light', viewport: 'desktop' },
     { id: 'html-video-studio-light-compact', view: 'html-video', theme: 'light', viewport: 'compact' },
+  ],
+  cloneVoiceStates: [
+    { id: 'minimax-clone-voice-create-light-desktop', view: 'settings', theme: 'light', viewport: 'desktop' },
+    { id: 'minimax-clone-voice-edit-dark-desktop', view: 'settings', theme: 'dark', viewport: 'desktop' },
+    { id: 'minimax-clone-voice-delete-light-compact', view: 'settings', theme: 'light', viewport: 'compact' },
+    { id: 'minimax-clone-voice-empty-dark-compact', view: 'settings', theme: 'dark', viewport: 'compact' },
   ],
 } as const;
 
@@ -168,6 +174,18 @@ export async function captureEditorialQa(
     if (captureCase.id === 'html-video-studio-light-compact' && state.layout.htmlVideoCompactParameterOrder !== 'parameters-first') {
       throw new Error(`Editorial QA HTML studio compact parameter order failed: ${state.layout.htmlVideoCompactParameterOrder}.`);
     }
+    if (captureCase.id === 'minimax-clone-voice-create-light-desktop' && (!state.cloneVoice.sourceAudioSelected || !state.cloneVoice.created)) {
+      throw new Error(`Editorial QA MiniMax clone-voice create failed: ${JSON.stringify(state.cloneVoice)}.`);
+    }
+    if (captureCase.id === 'minimax-clone-voice-edit-dark-desktop' && !state.cloneVoice.edited) {
+      throw new Error(`Editorial QA MiniMax clone-voice edit failed: ${JSON.stringify(state.cloneVoice)}.`);
+    }
+    if (captureCase.id === 'minimax-clone-voice-delete-light-compact' && !state.cloneVoice.deleted) {
+      throw new Error(`Editorial QA MiniMax clone-voice delete failed: ${JSON.stringify(state.cloneVoice)}.`);
+    }
+    if (captureCase.id === 'minimax-clone-voice-empty-dark-compact' && !state.cloneVoice.empty) {
+      throw new Error(`Editorial QA MiniMax clone-voice empty state failed: ${JSON.stringify(state.cloneVoice)}.`);
+    }
     await new Promise((resolveDelay) => setTimeout(resolveDelay, 80));
     await withEditorialQaTimeout(
       window.webContents.executeJavaScript(qaCompositorSettlingScript(), true),
@@ -183,7 +201,7 @@ export async function captureEditorialQa(
     const capturePath = join(config.captures, `${captureCase.id}.png`);
     await writeFile(capturePath, png, { flag: 'wx' });
     await assertCapturePng(capturePath, png, image.toBitmap(), viewport.width, viewport.height);
-    captures.push({ view: captureCase.view, stage: captureCase.stage, theme: captureCase.theme, viewport: viewport.name, path: basename(capturePath), visibleText: state.visibleText, tokens: state.tokens, manualCover: state.manualCover, deleteDialogFocusWrapped: state.deleteDialogFocusWrapped, deleteDialogEscapeRestored: state.deleteDialogEscapeRestored });
+    captures.push({ view: captureCase.view, stage: captureCase.stage, theme: captureCase.theme, viewport: viewport.name, path: basename(capturePath), visibleText: state.visibleText, tokens: state.tokens, manualCover: state.manualCover, cloneVoice: state.cloneVoice, deleteDialogFocusWrapped: state.deleteDialogFocusWrapped, deleteDialogEscapeRestored: state.deleteDialogEscapeRestored });
     await writeEditorialQaReport(config, captures, getMetrics);
   }
   await writeEditorialQaReport(config, captures, getMetrics);
@@ -248,6 +266,7 @@ interface EditorialQaCapture {
   visibleText: string;
   tokens: Record<string, string>;
   manualCover: QaScenarioState['manualCover'];
+  cloneVoice: QaScenarioState['cloneVoice'];
   deleteDialogFocusWrapped: boolean;
   deleteDialogEscapeRestored: boolean;
 }
@@ -273,6 +292,13 @@ interface QaScenarioState {
     importVisible: boolean;
     createDisabled: boolean;
   };
+  cloneVoice: {
+    sourceAudioSelected: boolean;
+    created: boolean;
+    edited: boolean;
+    deleted: boolean;
+    empty: boolean;
+  };
   deleteDialogFocusWrapped: boolean;
   deleteDialogEscapeRestored: boolean;
   layout: {
@@ -288,6 +314,7 @@ function captureCasesForScope(scope: EditorialQaScope): EditorialQaCaptureCase[]
   if (scope === 'new-task') return [...editorialQaMatrix.newTaskStates];
   if (scope === 'task-operations') return [...editorialQaMatrix.taskOperationStates];
   if (scope === 'html-video') return [...editorialQaMatrix.htmlVideoStudioStates];
+  if (scope === 'clone-voice') return [...editorialQaMatrix.cloneVoiceStates];
   if (scope === 'all') {
     const cases = Object.entries(editorialQaMatrix.views).flatMap(([group, groupViews]) => (
       editorialQaMatrix.themes.flatMap((theme) => editorialQaMatrix.viewports.flatMap((viewport) => (
@@ -299,7 +326,7 @@ function captureCasesForScope(scope: EditorialQaScope): EditorialQaCaptureCase[]
         }))
       )))
     ));
-    return [...cases, ...editorialQaMatrix.newTaskStates, ...editorialQaMatrix.taskOperationStates, ...editorialQaMatrix.htmlVideoStudioStates];
+    return [...cases, ...editorialQaMatrix.newTaskStates, ...editorialQaMatrix.taskOperationStates, ...editorialQaMatrix.htmlVideoStudioStates, ...editorialQaMatrix.cloneVoiceStates];
   }
   const views = scope === 'theme-smoke'
     ? ['new-task']
@@ -392,6 +419,11 @@ function qaScenarioScript(id: string, view: string, theme: string, stage?: strin
       fallback = setTimeout(finish, 160);
       requestAnimationFrame(() => requestAnimationFrame(finish));
     });
+    const setInputValue = (input, value) => {
+      const setter = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')?.set;
+      setter?.call(input, value);
+      input.dispatchEvent(new Event('input', { bubbles: true }));
+    };
     const initialShellReady = await waitFor(() => document.querySelector('.app-shell')
       && document.documentElement.dataset.themeReady === 'true');
     const api = window.storydream;
@@ -477,6 +509,62 @@ function qaScenarioScript(id: string, view: string, theme: string, stage?: strin
           && document.querySelector('.hv-timeline-audio i');
       });
     }
+    const cloneVoice = { sourceAudioSelected: false, created: false, edited: false, deleted: false, empty: false };
+    if (scenarioId.startsWith('minimax-clone-voice-')) {
+      const ttsTab = [...document.querySelectorAll('.settings-tab')]
+        .find((button) => button.textContent?.includes('TTS 配音'));
+      if (ttsTab instanceof HTMLButtonElement) ttsTab.click();
+      ready = ready && await waitFor(() => document.querySelector('.minimax-clone-voice-manager')
+        && !document.querySelector('.minimax-clone-voice-empty .spin'));
+      const findVoiceRow = () => [...document.querySelectorAll('.minimax-clone-voice-row')]
+        .find((row) => row.textContent?.includes('qa-minimax-voice-001'));
+      if (scenarioId === 'minimax-clone-voice-create-light-desktop') {
+        const createButton = [...document.querySelectorAll('.minimax-clone-voice-manager button')]
+          .find((button) => button.textContent?.includes('登记音色'));
+        if (createButton instanceof HTMLButtonElement) createButton.click();
+        ready = ready && await waitFor(() => document.querySelector('.minimax-clone-voice-editor'));
+        const inputs = [...document.querySelectorAll('.minimax-clone-voice-editor input')];
+        if (inputs[0] instanceof HTMLInputElement) setInputValue(inputs[0], 'qa-minimax-voice-001');
+        if (inputs[1] instanceof HTMLInputElement) setInputValue(inputs[1], 'QA 克隆音色');
+        const sourceButton = document.querySelector('.minimax-clone-voice-editor button[aria-label="选择来源音频"]');
+        if (sourceButton instanceof HTMLButtonElement) sourceButton.click();
+        ready = ready && await waitFor(() => inputs[2] instanceof HTMLInputElement && inputs[2].value.endsWith('qa-minimax-source.wav'));
+        cloneVoice.sourceAudioSelected = inputs[2] instanceof HTMLInputElement && inputs[2].value.endsWith('qa-minimax-source.wav');
+        const saveButton = [...document.querySelectorAll('.minimax-clone-voice-editor button')]
+          .find((button) => button.textContent?.includes('保存记录'));
+        if (saveButton instanceof HTMLButtonElement) saveButton.click();
+        ready = ready && await waitFor(() => Boolean(findVoiceRow()));
+        cloneVoice.created = Boolean(findVoiceRow()?.textContent?.includes('QA 克隆音色'));
+      }
+      if (scenarioId === 'minimax-clone-voice-edit-dark-desktop') {
+        const row = findVoiceRow();
+        const editButton = row?.querySelector('button[title="编辑音色记录"]');
+        if (editButton instanceof HTMLButtonElement) editButton.click();
+        ready = ready && await waitFor(() => document.querySelector('.minimax-clone-voice-editor'));
+        const nameInput = document.querySelectorAll('.minimax-clone-voice-editor input')[1];
+        if (nameInput instanceof HTMLInputElement) setInputValue(nameInput, 'QA 克隆音色已编辑');
+        const saveButton = [...document.querySelectorAll('.minimax-clone-voice-editor button')]
+          .find((button) => button.textContent?.includes('保存记录'));
+        if (saveButton instanceof HTMLButtonElement) saveButton.click();
+        ready = ready && await waitFor(() => Boolean(findVoiceRow()?.textContent?.includes('QA 克隆音色已编辑')));
+        cloneVoice.edited = Boolean(findVoiceRow()?.textContent?.includes('QA 克隆音色已编辑'));
+      }
+      if (scenarioId === 'minimax-clone-voice-delete-light-compact') {
+        const row = findVoiceRow();
+        const deleteButton = row?.querySelector('button[title="删除音色记录"]');
+        if (deleteButton instanceof HTMLButtonElement) deleteButton.click();
+        ready = ready && await waitFor(() => findVoiceRow()?.querySelector('button[title="确认删除音色记录"]'));
+        const confirmButton = findVoiceRow()?.querySelector('button[title="确认删除音色记录"]');
+        if (confirmButton instanceof HTMLButtonElement) confirmButton.click();
+        ready = ready && await waitFor(() => !findVoiceRow());
+        cloneVoice.deleted = !findVoiceRow();
+      }
+      if (scenarioId === 'minimax-clone-voice-empty-dark-compact') {
+        ready = ready && await waitFor(() => document.querySelector('.minimax-clone-voice-empty')?.textContent?.includes('尚未登记'));
+        cloneVoice.empty = Boolean(document.querySelector('.minimax-clone-voice-empty')?.textContent?.includes('尚未登记'));
+      }
+      document.querySelector('.minimax-clone-voice-manager')?.scrollIntoView({ block: 'center', inline: 'nearest' });
+    }
     const stage = ${JSON.stringify(stage ?? '')};
     let stageStatePreserved = true;
     if (stage) {
@@ -549,7 +637,7 @@ function qaScenarioScript(id: string, view: string, theme: string, stage?: strin
         && studioRegions[0].bottom <= studioRegions[1].top + 1
         ? 'parameters-first'
         : 'invalid';
-    const clippedPrimaryControls = [...document.querySelectorAll('.new-task-workbench button, .new-task-workbench input, .new-task-workbench select, .new-task-workbench textarea, [data-task-operations] button, [data-task-operations] input, [data-task-operations] select, [data-html-video-studio] button, [data-html-video-studio] input, [data-html-video-studio] select, [data-html-video-studio] textarea')]
+    const clippedPrimaryControls = [...document.querySelectorAll('.new-task-workbench button, .new-task-workbench input, .new-task-workbench select, .new-task-workbench textarea, [data-task-operations] button, [data-task-operations] input, [data-task-operations] select, [data-html-video-studio] button, [data-html-video-studio] input, [data-html-video-studio] select, [data-html-video-studio] textarea, .minimax-clone-voice-manager button, .minimax-clone-voice-manager input, .minimax-clone-voice-manager select, .minimax-clone-voice-manager textarea')]
       .filter((element) => {
         const style = getComputedStyle(element);
         if (style.display === 'none' || style.visibility === 'hidden') return false;
@@ -577,6 +665,7 @@ function qaScenarioScript(id: string, view: string, theme: string, stage?: strin
         importVisible: manualImportButton instanceof HTMLButtonElement && getComputedStyle(manualImportButton).display !== 'none',
         createDisabled: createButton instanceof HTMLButtonElement && createButton.disabled,
       },
+      cloneVoice,
       layout: {
         horizontalOverflow: Math.max(0, document.documentElement.scrollWidth - window.innerWidth),
         clippedPrimaryControls,

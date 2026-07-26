@@ -175,6 +175,7 @@ export const mutationRevisionSlices = [
   'promptTemplates',
   'customStyles',
   'draftTemplates',
+  'minimaxCloneVoices',
   'imageLabRecords',
   'voiceLabRecords',
   'account',
@@ -200,6 +201,7 @@ function mutationSlices(result: AppMutationResult): string[] {
   if (kind === 'custom-style-upsert') return ['customStyles'];
   if (kind === 'viral-templates-upsert') return ['promptTemplates', 'customStyles'];
   if (kind === 'draft-template-upsert') return ['draftTemplates'];
+  if (kind === 'minimax-clone-voice-upsert' || kind === 'minimax-clone-voice-delete') return ['minimaxCloneVoices'];
   if (kind === 'image-lab-upsert') return ['imageLabRecords'];
   if (kind === 'voice-lab-upsert') return ['voiceLabRecords'];
   return [kind];
@@ -344,6 +346,16 @@ export function applyAppMutationResult<T extends MutationState>(
     };
   }
   if (patch.kind === 'draft-template-upsert') return { ...state, draftTemplates: upsertEntity(state.draftTemplates, patch.template) };
+  if (patch.kind === 'minimax-clone-voice-upsert') {
+    const existingIndex = state.minimaxCloneVoices.findIndex((voice) => voice.voiceId === patch.voice.voiceId);
+    const minimaxCloneVoices = existingIndex < 0
+      ? [patch.voice, ...state.minimaxCloneVoices]
+      : state.minimaxCloneVoices.map((voice, index) => index === existingIndex ? patch.voice : voice);
+    return { ...state, minimaxCloneVoices };
+  }
+  if (patch.kind === 'minimax-clone-voice-delete') {
+    return { ...state, minimaxCloneVoices: state.minimaxCloneVoices.filter((voice) => voice.voiceId !== patch.voiceId) };
+  }
   if (patch.kind === 'image-lab-upsert') {
     const detail = state.imageLabRecords.find((record) => record.id === patch.record.id);
     return { ...state, imageLabRecords: upsertEntity(state.imageLabRecords, imageLabSummaryToRecord(patch.record, detail)) };

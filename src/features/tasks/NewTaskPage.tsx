@@ -204,7 +204,7 @@ export function NewTaskPage({
   const availableStyleIds = state.customStyles.map((customStyle) => customStyle.id);
   const availableDraftTemplateIds = state.draftTemplates.map((draftTemplate) => draftTemplate.id);
   const bgmOptions = validBgmItems(state.config);
-  const ttsVoiceOptions = ttsVoiceOptionsForProvider(ttsProvider);
+  const ttsVoiceOptions = ttsVoiceOptionsForProvider(ttsProvider, state.minimaxCloneVoices);
   const podcastVoiceDefaults = defaultPodcastSpeakersForProvider(ttsProvider, podcastSpeakers);
   const storyboardScenePreviewRange = storyboardSceneCountPreviewRange(inputText, targetLength);
   const storyDreamCoverTemplateIds = ['cinematic-poster', 'podcast-cover'];
@@ -874,7 +874,7 @@ export function NewTaskPage({
                 <Segmented label="配音语速" value={String(ttsSpeed)} options={['0.85', '1', '1.15', '1.3']} labels={['慢速 0.85x', '默认 1.0x', '快速 1.15x', '更快 1.3x']} onChange={(value) => setTtsSpeed(Number(value))} />
               </div>
               {videoForm !== 'two-host-podcast' ? (
-                <><div className="chip-row">{ttsVoiceOptions.map((voice) => <button type="button" key={voice.id} className={speaker === voice.id ? 'chip active' : 'chip'} title={voice.id} onClick={() => setSpeaker(voice.id)}><Mic2 size={14} />{voice.label}</button>)}</div><span className="hint-text">当前默认配音员：{taskSpeakerLabel(ttsProvider, speaker)} · {speaker}</span></>
+                <><div className="chip-row">{ttsVoiceOptions.map((voice) => <button type="button" key={voice.id} className={speaker === voice.id ? 'chip active' : 'chip'} title={voice.id} onClick={() => setSpeaker(voice.id)}><Mic2 size={14} />{voice.label}</button>)}</div><span className="hint-text">当前默认配音员：{taskSpeakerLabel(ttsProvider, speaker, state.minimaxCloneVoices)} · {speaker}</span></>
               ) : <span className="hint-text">双人播客会按主播组合自动拆分 A/B 音色，当前模型：{ttsProvider}</span>}
               <div className="new-task-field-grid">
                 <div><span className="field-title">背景音乐</span><div className="chip-row"><button type="button" className={bgmId === '' ? 'chip active' : 'chip'} onClick={() => setBgmId('')}>无 BGM</button>{bgmOptions.map((bgm) => <button type="button" key={bgm.id} className={bgmId === bgm.id ? 'chip active' : 'chip'} onClick={() => setBgmId(bgm.id)}>{bgm.title}</button>)}<button type="button" className="chip" disabled={taskAction.busy} onClick={addBgmFromTask}><Plus size={14} />添加</button></div></div>
@@ -907,7 +907,7 @@ export function NewTaskPage({
             <div><dt>目标长度</dt><dd>{targetLength ? `${targetLength} 字` : '跟随原文'}</dd></div>
             <div><dt>分镜数量</dt><dd>{executionSceneCount ? `${executionSceneCount} 个场景` : '自动计算'}</dd></div>
             <div><dt>画面比例</dt><dd>{ratio}</dd></div>
-            <div><dt>配音角色</dt><dd>{videoForm === 'two-host-podcast' ? podcastSpeakers : taskSpeakerLabel(ttsProvider, speaker)}</dd></div>
+            <div><dt>配音角色</dt><dd>{videoForm === 'two-host-podcast' ? podcastSpeakers : taskSpeakerLabel(ttsProvider, speaker, state.minimaxCloneVoices)}</dd></div>
             <div><dt>草稿模板</dt><dd>{draftTemplateLabel(templateId, state.draftTemplates)}</dd></div>
             <div><dt>封面方式</dt><dd>{coverImageMode === 'manual' ? (manualCoverAsset?.originalName ?? '待导入') : ORDINARY_COVER_MODE_MANIFEST[coverImageMode].label}</dd></div>
           </dl>

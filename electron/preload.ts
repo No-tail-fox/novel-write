@@ -36,6 +36,7 @@ import type {
   JianyingEffectCatalog,
   LlmConfig,
   MinimaxCloneVoice,
+  MinimaxCloneVoiceInput,
   OrdinaryTaskCoverRatio,
   OrdinaryTaskCoverSelection,
   PromptTemplate,
@@ -176,6 +177,8 @@ export const storyDreamApi = {
   listDraftTemplates: (request: CursorRequest = {}): Promise<CursorPage<DraftTemplateSummary>> => invokeTrusted('draft-template:list', request),
   getDraftTemplateDetail: (id: string): Promise<DraftTemplate | null> => invokeTrusted('draft-template:get-detail', id),
   listMinimaxCloneVoices: (request: CursorRequest = {}): Promise<CountedCursorPage<MinimaxCloneVoice>> => invokeTrusted('minimax-clone-voice:list', request),
+  saveMinimaxCloneVoice: (input: MinimaxCloneVoiceInput): Promise<AppMutationResult | null> => invokeTrusted('minimax-clone-voice:save', input),
+  deleteMinimaxCloneVoice: (voiceId: string): Promise<AppMutationResult | null> => invokeTrusted('minimax-clone-voice:delete', voiceId),
   saveConfig: (input: SaveConfigInput): Promise<AppMutationResult | null> => invokeTrusted('app:save-config', input),
   testAppConfig: (target: ConfigTestTarget, config: AppConfig, secretChanges: SecretChanges = {}) =>
     invokeTrusted('config:test', { target, config, secretChanges }),

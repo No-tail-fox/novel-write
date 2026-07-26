@@ -1,4 +1,4 @@
-import type { AppConfig, PodcastSpeakerPair, TtsProvider } from './types';
+import type { AppConfig, MinimaxCloneVoice, PodcastSpeakerPair, TtsProvider } from './types';
 import { DEFAULT_VOLCENGINE_TTS_V3_SPEAKER, normalizeVolcengineV3Speaker } from './volcengine-tts';
 
 export type RuntimeTtsProvider = Exclude<TtsProvider, 'mock'>;
@@ -55,8 +55,19 @@ export function normalizeRuntimeTtsProvider(provider: TtsProvider | string | nul
   return provider === 'minimax' ? 'minimax' : 'volcengine';
 }
 
-export function ttsVoiceOptionsForProvider(provider: TtsProvider | string | null | undefined): TtsVoiceOption[] {
-  return normalizeRuntimeTtsProvider(provider) === 'minimax' ? MINIMAX_TASK_VOICE_OPTIONS : VOLCENGINE_TASK_VOICE_OPTIONS;
+export function ttsVoiceOptionsForProvider(
+  provider: TtsProvider | string | null | undefined,
+  cloneVoices: readonly MinimaxCloneVoice[] = [],
+): TtsVoiceOption[] {
+  if (normalizeRuntimeTtsProvider(provider) !== 'minimax') return VOLCENGINE_TASK_VOICE_OPTIONS;
+  const seen = new Set(MINIMAX_TASK_VOICE_OPTIONS.map((option) => option.id));
+  const clonedOptions: TtsVoiceOption[] = [];
+  for (const voice of cloneVoices) {
+    if (!voice.voiceId || seen.has(voice.voiceId)) continue;
+    seen.add(voice.voiceId);
+    clonedOptions.push({ id: voice.voiceId, label: voice.displayName || voice.voiceId, hint: '克隆音色' });
+  }
+  return [...MINIMAX_TASK_VOICE_OPTIONS, ...clonedOptions];
 }
 
 export function defaultTaskSpeakerForProvider(provider: TtsProvider | string | null | undefined, config: AppConfig): string {
@@ -67,8 +78,12 @@ export function defaultTaskSpeakerForProvider(provider: TtsProvider | string | n
   return normalizeVolcengineV3Speaker(config.tts.volcengine.speaker || config.tts.speaker || VOLCENGINE_TASK_VOICE_OPTIONS[0].id);
 }
 
-export function taskSpeakerLabel(provider: TtsProvider | string | null | undefined, speaker: string): string {
-  return ttsVoiceOptionsForProvider(provider).find((option) => option.id === speaker)?.label ?? speaker;
+export function taskSpeakerLabel(
+  provider: TtsProvider | string | null | undefined,
+  speaker: string,
+  cloneVoices: readonly MinimaxCloneVoice[] = [],
+): string {
+  return ttsVoiceOptionsForProvider(provider, cloneVoices).find((option) => option.id === speaker)?.label ?? speaker;
 }
 
 export function defaultPodcastSpeakersForProvider(provider: TtsProvider | string | null | undefined, pair: string | null | undefined): PodcastSpeakerDefaults {

@@ -35,6 +35,7 @@ import type {
   LlmConfig,
   LlmModelTestResult,
   MinimaxCloneVoice,
+  MinimaxCloneVoiceInput,
   OrdinaryTaskCoverRatio,
   OrdinaryTaskCoverSelection,
   PromptTemplate,
@@ -98,6 +99,8 @@ export const INVOKE_CHANNELS = Object.freeze([
   'draft-template:list',
   'draft-template:get-detail',
   'minimax-clone-voice:list',
+  'minimax-clone-voice:save',
+  'minimax-clone-voice:delete',
   'app:save-config',
   'config:test',
   'ima:fetch-knowledge',
@@ -206,6 +209,8 @@ export type StoryDreamApi = {
   listDraftTemplates: (request?: CursorRequest) => Promise<CursorPage<DraftTemplateSummary>>;
   getDraftTemplateDetail: (id: string) => Promise<DraftTemplate | null>;
   listMinimaxCloneVoices: (request?: CursorRequest) => Promise<CountedCursorPage<MinimaxCloneVoice>>;
+  saveMinimaxCloneVoice: (input: MinimaxCloneVoiceInput) => Promise<AppMutationResult | null>;
+  deleteMinimaxCloneVoice: (voiceId: string) => Promise<AppMutationResult | null>;
   saveConfig: (input: SaveConfigInput) => Promise<AppMutationResult | null>;
   testAppConfig: (target: ConfigTestTarget, config: AppConfig, secretChanges?: SecretChanges) => Promise<ConfigTestResult>;
   fetchImaKnowledge: (input: ImaKnowledgeRequest) => Promise<ImaKnowledgeResult>;

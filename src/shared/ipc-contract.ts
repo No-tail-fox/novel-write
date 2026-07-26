@@ -36,6 +36,10 @@ const nonEmptyText = (max = MAX_IPC_TEXT) => z.string().max(max).refine((value) 
 const optionalText = (max = MAX_IPC_TEXT) => z.string().max(max).optional();
 const nullableText = (max = MAX_IPC_TEXT) => z.string().max(max).nullable().optional();
 const idSchema = nonEmptyText(256);
+const minimaxCloneVoiceIdSchema = z
+  .string()
+  .max(256)
+  .regex(/^[A-Za-z0-9._:-]+$/u, 'Invalid MiniMax voice id.');
 const governanceIdSchema = z
   .string()
   .regex(/^[A-Za-z0-9_-]{1,256}$/u, 'Invalid governance id.')
@@ -580,6 +584,12 @@ export const ipcInputSchemas = {
   'draft-template:list': cursorPageSchema,
   'draft-template:get-detail': idOnlySchema,
   'minimax-clone-voice:list': countedCursorPageSchema,
+  'minimax-clone-voice:save': z.object({
+    voiceId: minimaxCloneVoiceIdSchema,
+    displayName: nonEmptyText(256),
+    sourceAudioPath: z.string().max(MAX_IPC_PATH).refine((value) => !value.includes('\0'), 'Path contains a null byte.'),
+  }).strict(),
+  'minimax-clone-voice:delete': minimaxCloneVoiceIdSchema,
   'image-lab:generate': imageLabSchema,
   'image-lab:list': imageLabHistoryListSchema,
   'image-lab:archive': governanceIdSchema,

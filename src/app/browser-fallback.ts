@@ -8,6 +8,7 @@ import {
   parseHtmlVideoPipelineData,
 } from '../shared/html-video-workflow';
 import { loadDefaultPromptTemplates } from '../shared/prompt-template-loader';
+import { mergeMinimaxCloneVoice } from '../shared/minimax-clone-voices';
 import { taskToSummary } from '../shared/state-reconciliation';
 import type { StoryDreamApi } from '../shared/storydream-api';
 import { taskSpeakerLabel } from '../shared/tts-voices';
@@ -261,6 +262,14 @@ export function makeFallbackApi(setState: (state: AppState) => void): StoryDream
     } else if (changed(previous.voiceLabRecords, next.voiceLabRecords) && next.voiceLabRecords[0]) {
       const { text, ...record } = next.voiceLabRecords[0];
       patch = { kind: 'voice-lab-upsert', record: { ...record, textPreview: text.slice(0, 160) } };
+    } else if (changed(previous.minimaxCloneVoices, next.minimaxCloneVoices)) {
+      const changedVoice = next.minimaxCloneVoices.find((voice) => {
+        const existing = previous.minimaxCloneVoices.find((candidate) => candidate.voiceId === voice.voiceId);
+        return !existing || changed(existing, voice);
+      });
+      const deletedVoice = previous.minimaxCloneVoices.find((voice) => !next.minimaxCloneVoices.some((candidate) => candidate.voiceId === voice.voiceId));
+      if (changedVoice) patch = { kind: 'minimax-clone-voice-upsert', voice: changedVoice };
+      else if (deletedVoice) patch = { kind: 'minimax-clone-voice-delete', voiceId: deletedVoice.voiceId };
     } else if (changed(previous.account, next.account)) patch = { kind: 'account', account: next.account };
     else if (changed(previous.activation, next.activation)) patch = { kind: 'activation', activation: next.activation };
     else if (changed(previous.ui, next.ui)) patch = { kind: 'ui', ui: next.ui };
@@ -607,6 +616,21 @@ export function makeFallbackApi(setState: (state: AppState) => void): StoryDream
       const next = start + items.length;
       return { items, totalCount: voices.length, nextCursor: next < voices.length ? String(next) : null };
     },
+    async saveMinimaxCloneVoice(input) {
+      const state = read();
+      const existing = state.minimaxCloneVoices.find((voice) => voice.voiceId === input.voiceId) ?? null;
+      const voice = mergeMinimaxCloneVoice(existing, input);
+      return persist({
+        ...state,
+        minimaxCloneVoices: existing
+          ? state.minimaxCloneVoices.map((item) => item.voiceId === voice.voiceId ? voice : item)
+          : [voice, ...state.minimaxCloneVoices],
+      });
+    },
+    async deleteMinimaxCloneVoice(voiceId) {
+      const state = read();
+      return persist({ ...state, minimaxCloneVoices: state.minimaxCloneVoices.filter((voice) => voice.voiceId !== voiceId) });
+    },
     async saveConfig(input) {
       if (Object.keys(input.secretChanges).length > 0) {
         throw new Error('浏览器预览不会安全保存接口密钥，请在 Electron 桌面端配置并保存。');
@@ -744,7 +768,7 @@ export function makeFallbackApi(setState: (state: AppState) => void): StoryDream
         text: input.text,
         provider: input.provider,
         voiceId: input.voiceId,
-        voiceLabel: input.voiceLabel ?? taskSpeakerLabel(input.provider, input.voiceId),
+        voiceLabel: input.voiceLabel ?? taskSpeakerLabel(input.provider, input.voiceId, state.minimaxCloneVoices),
         speed: input.speed,
         audioPath: '',
         status: 'failed',

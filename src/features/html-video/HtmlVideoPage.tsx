@@ -9,7 +9,7 @@ import { ToggleField } from '../../components/ToggleField';
 import { AsyncActionFeedback as InlineActionFeedback } from '../../components/AsyncActionFeedback';
 import type { ApplyMutationResult, RendererAppState as AppState } from '../../app/route-types';
 import type { StoryDreamApi } from '../../shared/storydream-api';
-import type { AppConfig, CustomStyle, DraftTemplate, HtmlVideoConfigChange, HtmlVideoCoverMode, HtmlVideoCoverRatio, HtmlVideoJobConfig, HtmlVideoStepStatus, HtmlVideoTabKey, Task, TaskStatus, TtsProvider } from '../../shared/types';
+import type { AppConfig, CustomStyle, DraftTemplate, HtmlVideoConfigChange, HtmlVideoCoverMode, HtmlVideoCoverRatio, HtmlVideoJobConfig, HtmlVideoStepStatus, HtmlVideoTabKey, MinimaxCloneVoice, Task, TaskStatus, TtsProvider } from '../../shared/types';
 import type { TemplateOption } from '../../shared/prompt-templates';
 import { htmlVideoStyleOptions } from '../../shared/editorial-options';
 import { HTML_VIDEO_BGM_VOLUMES, HTML_VIDEO_JOB_DEFAULTS, HTML_VIDEO_RATIOS, HTML_VIDEO_TRANSITIONS, HTML_VIDEO_TTS_PROVIDERS, HTML_VIDEO_TTS_SPEED_MAX, HTML_VIDEO_TTS_SPEED_MIN } from '../../shared/html-video-config';
@@ -60,7 +60,7 @@ export function HtmlVideoPage({
   const [message, setMessage] = useState('');
   const htmlVideoAction = useAsyncAction();
   const bgmOptions = validBgmItems(state.config);
-  const createVoiceOptions = ttsVoiceOptionsForProvider(ttsProvider);
+  const createVoiceOptions = ttsVoiceOptionsForProvider(ttsProvider, state.minimaxCloneVoices);
   const createStyleOptions = editableHtmlVideoStyleOptions(state.customStyles, style);
   const htmlTasks = state.tasks.filter(isHtmlVideoTask);
   const activeTask = htmlTasks.find((task) => task.id === activeTaskId) ?? htmlTasks[0] ?? null;
@@ -288,7 +288,7 @@ export function HtmlVideoPage({
   function changeCreateTtsProvider(value: string) {
     const provider = value as TtsProvider;
     setTtsProvider(provider);
-    setVoiceId(ttsVoiceOptionsForProvider(provider)[0]?.id ?? '');
+    setVoiceId(ttsVoiceOptionsForProvider(provider, state.minimaxCloneVoices)[0]?.id ?? '');
   }
 
   async function setTaskStatus(status: Extract<TaskStatus, 'paused' | 'cancelled' | 'running'>) {
@@ -431,7 +431,7 @@ export function HtmlVideoPage({
             <Field label="音色">
               <select value={voiceId} onChange={(event) => setVoiceId(event.target.value)}>
                 {voiceId && !createVoiceOptions.some((option) => option.id === voiceId)
-                  ? <option value={voiceId}>{taskSpeakerLabel(ttsProvider, voiceId)}</option>
+                  ? <option value={voiceId}>{taskSpeakerLabel(ttsProvider, voiceId, state.minimaxCloneVoices)}</option>
                   : null}
                 {createVoiceOptions.map((option) => <option key={option.id} value={option.id}>{option.label}</option>)}
               </select>
@@ -467,6 +467,7 @@ export function HtmlVideoPage({
             appConfig={state.config}
             customStyles={state.customStyles}
             draftTemplates={state.draftTemplates}
+            cloneVoices={state.minimaxCloneVoices}
             applyState={applyState}
             refreshTaskDetail={refreshTaskDetail}
           />
@@ -651,6 +652,7 @@ function HtmlVideoConfigEditor({
   appConfig,
   customStyles,
   draftTemplates,
+  cloneVoices,
   applyState,
   refreshTaskDetail,
 }: {
@@ -660,6 +662,7 @@ function HtmlVideoConfigEditor({
   appConfig: AppConfig;
   customStyles: CustomStyle[];
   draftTemplates: DraftTemplate[];
+  cloneVoices: readonly MinimaxCloneVoice[];
   applyState: ApplyMutationResult;
   refreshTaskDetail: (taskId: string) => Promise<void>;
 }) {
@@ -669,7 +672,7 @@ function HtmlVideoConfigEditor({
   const htmlVideoConfigAction = useAsyncAction();
   const bgmOptions = validBgmItems(appConfig);
   const htmlVideoStyleChoices = editableHtmlVideoStyleOptions(customStyles, values.style);
-  const voiceOptions = ttsVoiceOptionsForProvider(values.ttsProvider);
+  const voiceOptions = ttsVoiceOptionsForProvider(values.ttsProvider, cloneVoices);
   const disabled = task.status === 'pending' || task.status === 'running' || htmlVideoConfigAction.busy;
 
   function setValue<K extends keyof typeof values>(field: K, value: (typeof values)[K]) {
@@ -678,7 +681,7 @@ function HtmlVideoConfigEditor({
 
   function changeProvider(value: string) {
     const ttsProvider = value as TtsProvider;
-    const nextVoice = ttsVoiceOptionsForProvider(ttsProvider)[0]?.id ?? '';
+    const nextVoice = ttsVoiceOptionsForProvider(ttsProvider, cloneVoices)[0]?.id ?? '';
     setValues((current) => ({ ...current, ttsProvider, voiceId: nextVoice }));
   }
 
@@ -731,7 +734,7 @@ function HtmlVideoConfigEditor({
           <Field label="音色">
             <select value={values.voiceId} onChange={(event) => setValue('voiceId', event.target.value)} disabled={disabled}>
               {values.voiceId && !voiceOptions.some((option) => option.id === values.voiceId)
-                ? <option value={values.voiceId}>{taskSpeakerLabel(values.ttsProvider, values.voiceId)}</option>
+                ? <option value={values.voiceId}>{taskSpeakerLabel(values.ttsProvider, values.voiceId, cloneVoices)}</option>
                 : null}
               {voiceOptions.map((option) => <option key={option.id} value={option.id}>{option.label}</option>)}
             </select>

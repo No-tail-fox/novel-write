@@ -20,15 +20,15 @@ export function VoiceLabPage({ api, state, applyState }: { api: StoryDreamApi; s
   const [generating, setGenerating] = useState(false);
   const [submitError, setSubmitError] = useState('');
   const voiceLabAction = useAsyncAction();
-  const voiceOptions = ttsVoiceOptionsForProvider(voiceProvider);
-  const selectedVoiceLabel = taskSpeakerLabel(voiceProvider, voiceId);
+  const voiceOptions = ttsVoiceOptionsForProvider(voiceProvider, state.minimaxCloneVoices);
+  const selectedVoiceLabel = taskSpeakerLabel(voiceProvider, voiceId, state.minimaxCloneVoices);
 
   useEffect(() => {
-    const options = ttsVoiceOptionsForProvider(voiceProvider);
+    const options = ttsVoiceOptionsForProvider(voiceProvider, state.minimaxCloneVoices);
     if (!options.some((option) => option.id === voiceId)) {
       setVoiceId(defaultTaskSpeakerForProvider(voiceProvider, state.config));
     }
-  }, [state.config, voiceId, voiceProvider]);
+  }, [state.config, state.minimaxCloneVoices, voiceId, voiceProvider]);
 
   function changeProvider(provider: string) {
     const nextProvider = normalizeRuntimeTtsProvider(provider);

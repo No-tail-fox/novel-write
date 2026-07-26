@@ -1,16 +1,16 @@
 import { useEffect, useMemo } from "react";
 import { Copy, Loader2, Palette, Play, Plus, Search, XCircle } from "lucide-react";
-import type { AppConfig, ImageProviderProfile, ProviderModel, ProviderModelListRequest, TtsProviderProfile, VolcengineSpeaker } from "../../shared/types";
+import type { AppConfig, ImageProviderProfile, MinimaxCloneVoice, ProviderModel, ProviderModelListRequest, TtsProviderProfile, VolcengineSpeaker } from "../../shared/types";
 import { ArtifactEmpty } from "../tasks/TaskArtifactPreview";
 import { activeImageProfileId, activeLlmProfileId, activeTtsProfileId, addImageProfile, addLlmProfile, addTtsProfile, copyImageProfile, copyLlmProfile, copyTtsProfile, editableLlmProfileProvider, imageProfileCustomImage, imageProfileGptImage, imageProfileJimeng, normalizedImageProfiles, normalizedTtsProfiles, removeImageProfile, removeLlmProfile, removeTtsProfile, saveImageProfile, saveLlmProfile, saveTtsProfile, ttsProfileMinimax, ttsProfileVolcengine } from "../../shared/provider-profile-utils";
 import { defaultConfig } from "../../shared/config";
+import { ttsVoiceOptionsForProvider } from '../../shared/tts-voices';
 import { FormField as Field } from "../../components/FormField";
 import { SegmentedControl as Segmented } from "../../components/SegmentedControl";
 import {
   ConfigInput,
   ConfigNumberInput,
   ConfigTextarea,
-  LocalInfo,
   ModelPicker,
   ProviderConfigNote,
   SecretInput,
@@ -488,7 +488,7 @@ export function ImageProfileManager({
 export function TtsProfileManager({
   config,
   selectedProfileId,
-  cloneVoiceCount,
+  cloneVoices,
   volcengineSpeakers,
   loadingVolcengineSpeakers,
   volcengineSpeakerStatus,
@@ -501,7 +501,7 @@ export function TtsProfileManager({
 }: {
   config: AppConfig;
   selectedProfileId: string;
-  cloneVoiceCount: number;
+  cloneVoices: readonly MinimaxCloneVoice[];
   volcengineSpeakers: VolcengineSpeaker[];
   loadingVolcengineSpeakers: boolean;
   volcengineSpeakerStatus?: string;
@@ -529,6 +529,8 @@ export function TtsProfileManager({
   const provider = selectedProfile.provider;
   const volcengine = ttsProfileVolcengine(selectedProfile);
   const minimax = ttsProfileMinimax(selectedProfile);
+  const minimaxVoiceOptions = ttsVoiceOptionsForProvider('minimax', cloneVoices);
+  const minimaxVoiceSelection = minimaxVoiceOptions.some((voice) => voice.id === minimax.voiceId) ? minimax.voiceId : 'custom';
   const voiceSelection = volcenginePresetVoiceValue(volcengine.speaker, availableVolcengineVoices);
   const volcengineApiKeyId = profileSecretId('tts', selectedProfile.id, 'volcengine/apiKey');
   const volcengineAccessKeyId = profileSecretId('tts', selectedProfile.id, 'volcengine/accessKeyId');
@@ -674,8 +676,15 @@ export function TtsProfileManager({
             <ProviderConfigNote title="MiniMax TTS" value="填写接口密钥、模型和音色 ID。" />
             <SecretInput label="MiniMax 接口密钥" value={secrets.value(minimaxApiKeyId)} configured={secrets.configured(minimaxApiKeyId)} onChange={(value) => secrets.change(minimaxApiKeyId, value)} onClear={() => secrets.change(minimaxApiKeyId, null)} />
             <ConfigInput label="MiniMax 模型" value={minimax.model} onChange={(value) => updateSelectedProfile({ ...selectedProfile, minimax: { ...minimax, model: value } })} />
-            <ConfigInput label="MiniMax 音色 ID" value={minimax.voiceId} onChange={(value) => updateSelectedProfile({ ...selectedProfile, minimax: { ...minimax, voiceId: value } })} />
-            <LocalInfo title="克隆音色" value={`${cloneVoiceCount} 个本地记录，可后续接入 MiniMax 克隆接口。`} />
+            <Field label="MiniMax 音色 ID">
+              <select value={minimaxVoiceSelection} onChange={(event) => updateSelectedProfile({ ...selectedProfile, minimax: { ...minimax, voiceId: event.target.value === 'custom' ? '' : event.target.value } })}>
+                {minimaxVoiceOptions.map((voice) => <option key={voice.id} value={voice.id}>{voice.label} · {voice.hint}</option>)}
+                <option value="custom">自定义 voice_id</option>
+              </select>
+            </Field>
+            {minimaxVoiceSelection === 'custom' ? (
+              <ConfigInput label="自定义 MiniMax 音色 ID" value={minimax.voiceId} onChange={(value) => updateSelectedProfile({ ...selectedProfile, minimax: { ...minimax, voiceId: value } })} />
+            ) : null}
           </>
         ) : null}
       </div>
