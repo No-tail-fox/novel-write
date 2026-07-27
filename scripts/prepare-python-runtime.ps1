@@ -10,7 +10,13 @@ $PythonVersion = "3.12.4"
 $PythonTag = "312"
 $PackageNames = @("pyJianYingDraft", "faster-whisper", "playwright", "httpx", "imageio-ffmpeg", "pydub", "jieba", "browser-cookie3", "pycryptodomex", "PyYAML", "gmssl", "aiofiles")
 $PipIndexUrl = "https://pypi.org/simple"
-$RuntimeId = "python-$PythonVersion-storydream-media-runtime-v5"
+$DownloadManifestPath = Join-Path $PSScriptRoot "runtime-downloads.json"
+$Downloads = Get-Content -LiteralPath $DownloadManifestPath -Raw | ConvertFrom-Json
+if ($Downloads.version -ne 1 -or $null -eq $Downloads.artifacts.pythonEmbed -or $null -eq $Downloads.artifacts.getPip) {
+  throw "RUNTIME_DOWNLOAD_MANIFEST_INVALID: Expected versioned Python and get-pip artifacts."
+}
+$ManifestHash = (Get-FileHash -Algorithm SHA256 -LiteralPath $DownloadManifestPath).Hash.ToLowerInvariant()
+$RuntimeId = "python-$PythonVersion-storydream-media-runtime-v6"
 $VendorDir = Join-Path $Root "vendor\python"
 $CacheDir = Join-Path $Root ".cache\python-runtime"
 $ZipPath = Join-Path $CacheDir "python-$PythonVersion-embed-amd64.zip"
@@ -27,12 +33,53 @@ function Assert-UnderRoot([string]$Path) {
   }
 }
 
-function Test-RuntimeReady {
-  if (!(Test-Path -LiteralPath $PythonExe) -or !(Test-Path -LiteralPath $ReadyFile)) {
+function Get-ExpectedSha256([object]$Artifact) {
+  $url = [string]$Artifact.url
+  $sha256 = ([string]$Artifact.sha256).ToLowerInvariant()
+  $uri = $null
+  if (![Uri]::TryCreate($url, [UriKind]::Absolute, [ref]$uri) -or $uri.Scheme -ne "https" -or $sha256 -notmatch "^[a-f0-9]{64}$") {
+    throw "RUNTIME_DOWNLOAD_MANIFEST_INVALID: Artifact URL or SHA-256 is invalid."
+  }
+  return $sha256
+}
+
+function Assert-FileSha256([string]$Path, [string]$ExpectedSha256) {
+  $actual = (Get-FileHash -Algorithm SHA256 -LiteralPath $Path).Hash.ToLowerInvariant()
+  if ($actual -ne $ExpectedSha256) {
+    throw "RUNTIME_DOWNLOAD_INTEGRITY_FAILED: SHA-256 mismatch for $Path."
+  }
+}
+
+function Ensure-VerifiedDownload([object]$Artifact, [string]$Path) {
+  $expectedSha256 = Get-ExpectedSha256 $Artifact
+  if (Test-Path -LiteralPath $Path -PathType Leaf) {
+    try {
+      Assert-FileSha256 $Path $expectedSha256
+      return
+    } catch {
+      Write-Warning "[python-runtime] Removing cached artifact with invalid SHA-256: $Path"
+      Remove-Item -LiteralPath $Path -Force
+    }
+  }
+  Write-Host "[python-runtime] Downloading $($Artifact.url)"
+  Invoke-WebRequest -Uri $Artifact.url -OutFile $Path -UseBasicParsing
+  Assert-FileSha256 $Path $expectedSha256
+}
+
+function Test-RuntimeMarkerCurrent {
+  if (!(Test-Path -LiteralPath $ReadyFile -PathType Leaf)) {
     return $false
   }
-  $marker = Get-Content -LiteralPath $ReadyFile -Raw
-  if (!$marker.Contains("runtime=$RuntimeId")) {
+  try {
+    $marker = Get-Content -LiteralPath $ReadyFile -Raw
+    return $marker.Contains("runtime=$RuntimeId") -and $marker.Contains("manifest_sha256=$ManifestHash")
+  } catch {
+    return $false
+  }
+}
+
+function Test-RuntimeReady {
+  if (!(Test-Path -LiteralPath $PythonExe) -or !(Test-RuntimeMarkerCurrent)) {
     return $false
   }
   try {
@@ -51,8 +98,14 @@ if (Test-RuntimeReady) {
 Assert-UnderRoot $VendorDir
 Assert-UnderRoot $CacheDir
 
-New-Item -ItemType Directory -Force -Path $VendorDir | Out-Null
 New-Item -ItemType Directory -Force -Path $CacheDir | Out-Null
+
+if ((Test-Path -LiteralPath $PythonExe) -and !(Test-RuntimeMarkerCurrent)) {
+  Write-Host "[python-runtime] Removing runtime without a current verified-download marker: $VendorDir"
+  Remove-Item -LiteralPath $VendorDir -Recurse -Force
+}
+
+New-Item -ItemType Directory -Force -Path $VendorDir | Out-Null
 
 if (!(Test-Path -LiteralPath $PythonExe)) {
   if (Test-Path -LiteralPath $VendorDir) {
@@ -61,11 +114,7 @@ if (!(Test-Path -LiteralPath $PythonExe)) {
     New-Item -ItemType Directory -Force -Path $VendorDir | Out-Null
   }
 
-  if (!(Test-Path -LiteralPath $ZipPath)) {
-    $pythonUrl = "https://www.python.org/ftp/python/$PythonVersion/python-$PythonVersion-embed-amd64.zip"
-    Write-Host "[python-runtime] Downloading $pythonUrl"
-    Invoke-WebRequest -Uri $pythonUrl -OutFile $ZipPath -UseBasicParsing
-  }
+  Ensure-VerifiedDownload $Downloads.artifacts.pythonEmbed $ZipPath
 
   Write-Host "[python-runtime] Expanding embedded Python $PythonVersion"
   Expand-Archive -LiteralPath $ZipPath -DestinationPath $VendorDir -Force
@@ -84,10 +133,7 @@ $env:PYTHONNOUSERSITE = "1"
 $env:PYTHONPATH = ""
 $env:PLAYWRIGHT_BROWSERS_PATH = $PlaywrightBrowsersPath
 
-if (!(Test-Path -LiteralPath $GetPipPath)) {
-  Write-Host "[python-runtime] Downloading get-pip.py"
-  Invoke-WebRequest -Uri "https://bootstrap.pypa.io/get-pip.py" -OutFile $GetPipPath -UseBasicParsing
-}
+Ensure-VerifiedDownload $Downloads.artifacts.getPip $GetPipPath
 
 Write-Host "[python-runtime] Installing pip"
 & $PythonExe $GetPipPath --no-warn-script-location --index-url $PipIndexUrl
@@ -110,5 +156,5 @@ if (Test-Path -LiteralPath $PthPath) {
 & $PythonExe -c "import pyJianYingDraft, faster_whisper, playwright, httpx, imageio_ffmpeg, browser_cookie3, yaml, gmssl, aiofiles; import pydub, jieba; import Cryptodome; print('storydream media runtime ready')"
 if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 
-Set-Content -LiteralPath $ReadyFile -Value "runtime=$RuntimeId`npython=$PythonVersion`npackages=$($PackageNames -join ',')" -Encoding ASCII
+Set-Content -LiteralPath $ReadyFile -Value "runtime=$RuntimeId`npython=$PythonVersion`nmanifest_sha256=$ManifestHash`npackages=$($PackageNames -join ',')" -Encoding ASCII
 Write-Host "[python-runtime] Ready: $VendorDir"
