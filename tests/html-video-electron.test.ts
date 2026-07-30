@@ -698,6 +698,44 @@ describe('Electron HTML video runtime contract', () => {
     });
   });
 
+  it('serves managed HyperFrames HTML and runtime JavaScript with executable content types', async () => {
+    await withRuntimeDir(async (workDir) => {
+      const runtime = await import('../electron/html-video-runtime') as Record<string, unknown>;
+      const fetchMedia = runtime.fetchHtmlVideoMediaResponse;
+      const openMedia = runtime.openHtmlVideoMediaFileResponse;
+      expect(fetchMedia).toBeTypeOf('function');
+      expect(openMedia).toBeTypeOf('function');
+      if (typeof fetchMedia !== 'function' || typeof openMedia !== 'function') return;
+
+      const taskDirectory = taskDirectoryFor(workDir);
+      const fixtures = [
+        ['scene-001.html', '<!doctype html><title>HyperFrames</title>', 'text/html; charset=utf-8'],
+        ['hyperframe.runtime.gsap.iife.js', 'window.__hf = {};', 'text/javascript; charset=utf-8'],
+        ['untrusted.bin', 'opaque', 'application/octet-stream'],
+      ] as const;
+      for (const [name, body, contentType] of fixtures) {
+        const path = join(workDir, name);
+        await writeFile(path, body, 'utf8');
+        const url = await createHtmlVideoMediaUrl('task-1', taskDirectory, path);
+        const response = await (fetchMedia as (
+          value: string,
+          resolveTaskDirectory: () => HtmlVideoTaskDirectoryIdentity,
+          load: (path: string, identity: unknown) => Promise<Response>,
+        ) => Promise<Response>)(
+          url,
+          () => taskDirectory,
+          (resolvedPath, identity) => (openMedia as (
+            path: string,
+            identity: unknown,
+            range: string | null,
+          ) => Promise<Response>)(resolvedPath, identity, null),
+        );
+        expect(response.headers.get('Content-Type')).toBe(contentType);
+        await expect(response.text()).resolves.toBe(body);
+      }
+    });
+  });
+
   it('rejects a restored-path ordinary media response opened from a replacement inode', async () => {
     await withRuntimeDir(async (workDir) => {
       const runtime = await import('../electron/html-video-runtime') as Record<string, unknown>;

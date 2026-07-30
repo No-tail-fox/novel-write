@@ -20,8 +20,11 @@ import { defaultTaskSpeakerForProvider, normalizeRuntimeTtsProvider, taskSpeaker
 import { taskDetailRefreshKey } from '../../shared/state-reconciliation';
 import { useAsyncAction } from '../../ui/async-action';
 import { resolveDefaultBgmId, taskFromMutation, validBgmItems } from '../tasks/task-formatters';
+import { HtmlVideoAuthoringWorkspace } from './HtmlVideoAuthoringWorkspace';
 import { HtmlVideoTabPanel } from './HtmlVideoTabPanel';
 import '../../styles/features/html-video.css';
+
+type HtmlVideoWorkspaceMode = 'automatic' | 'authoring';
 
 export function HtmlVideoPage({
   api,
@@ -55,6 +58,7 @@ export function HtmlVideoPage({
   const [draftTemplate, setDraftTemplate] = useState<string>('');
   const [activeTaskId, setActiveTaskId] = useState<string>('');
   const [activeTab, setActiveTab] = useState<HtmlVideoTabKey>('text');
+  const [workspaceMode, setWorkspaceMode] = useState<HtmlVideoWorkspaceMode>('automatic');
   const [mediaRetryRevision, setMediaRetryRevision] = useState(0);
   const [running, setRunning] = useState(false);
   const [message, setMessage] = useState('');
@@ -167,6 +171,12 @@ export function HtmlVideoPage({
   useEffect(() => {
     setActiveTab(derivedTab);
   }, [derivedTab, activeTask?.id]);
+
+  useEffect(() => {
+    if (workspaceMode === 'authoring' && (!activeTask || pipelineData.compositions.length === 0 || pipelineParse.error)) {
+      setWorkspaceMode('automatic');
+    }
+  }, [activeTask, pipelineData.compositions.length, pipelineParse.error, workspaceMode]);
 
   useEffect(() => {
     const generation = ++mediaRequestGeneration.current;
@@ -480,7 +490,21 @@ export function HtmlVideoPage({
             <strong>{activeTask?.title ?? '等待创建 HTML 动画视频任务'}</strong>
             <span>{activeTask ? `当前阶段：${htmlVideoPipelineStepLabel(activeStep)}` : '创建后在此查看文案、素材、配音、预览、封面和出片。'}</span>
           </div>
-          <span className="hv-studio-canvas-ratio">{pipelineData.config.ratio ?? ratio}</span>
+          <div className="hv-studio-canvas-actions">
+            <div className="hv-workspace-mode" role="group" aria-label="HTML 动画工作区模式">
+              <button type="button" className={workspaceMode === 'automatic' ? 'active' : ''} aria-pressed={workspaceMode === 'automatic'} onClick={() => setWorkspaceMode('automatic')}>自动制作</button>
+              <button
+                type="button"
+                className={workspaceMode === 'authoring' ? 'active' : ''}
+                aria-pressed={workspaceMode === 'authoring'}
+                disabled={!activeTask || pipelineData.compositions.length === 0 || Boolean(pipelineParse.error)}
+                onClick={() => setWorkspaceMode('authoring')}
+              >
+                可视编排
+              </button>
+            </div>
+            <span className="hv-studio-canvas-ratio">{pipelineData.config.ratio ?? ratio}</span>
+          </div>
         </div>
         {pipelineParse.error && activeTask ? (
           <div className="hv-workspace-error" role="alert" aria-live="assertive">
@@ -493,7 +517,18 @@ export function HtmlVideoPage({
         ) : taskMessageKind === 'status' && activeTask ? (
           <div className="hv-workspace-status" role="status" aria-live="polite">{activeTask.errorMessage}</div>
         ) : null}
-        <div className="hv-studio-media-canvas" data-media-canvas="html-video">
+        {workspaceMode === 'authoring' && activeTask && pipelineData.compositions.length ? (
+          <HtmlVideoAuthoringWorkspace
+            key={activeTask.id}
+            api={api}
+            taskId={activeTask.id}
+            taskStatus={activeTask.status}
+            scenes={pipelineData.compositions}
+            applyState={applyState}
+            refreshTaskDetail={refreshTaskDetail}
+            isBrowserPreview={isBrowserPreview}
+          />
+        ) : <div className="hv-studio-media-canvas" data-media-canvas="html-video">
           <div className="hv-tabs" role="tablist" aria-label="HTML 动画视频内容">
             {htmlVideoTabs.map((tab) => (
               <button
@@ -554,7 +589,7 @@ export function HtmlVideoPage({
               {pipelineData.voiceClips.length ? pipelineData.voiceClips.map((clip) => <i key={`${clip.sceneIndex}-${clip.src}`} />) : <small>等待配音生成</small>}
             </div>
           </div>
-        </div>
+        </div>}
       </section>
 
       <aside className="hv-studio-run-rail" aria-label="HTML 动画视频渲染进度">

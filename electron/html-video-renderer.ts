@@ -215,7 +215,7 @@ async function openPreview(input: {
     window.webContents.setZoomFactor(scale);
     window.show();
     await withRendererTimeout(
-      window.webContents.executeJavaScript('Promise.resolve(window.__tl.play()).then(() => true)'),
+      window.webContents.executeJavaScript('(() => { window.__tl.play(); return true; })()'),
       hiddenFrameTimeoutMs,
       'HTML preview play',
       input.signal,
@@ -317,9 +317,12 @@ async function waitForHiddenHtmlSceneReady(window: BrowserWindow): Promise<void>
 }
 
 async function seekHiddenHtmlSceneFrame(window: BrowserWindow, time: number): Promise<void> {
-  await withRendererTimeout(window.webContents.executeJavaScript(`Promise.resolve(window.__tl.seek(${JSON.stringify(time)})).then(() => new Promise((resolve) => {
-    requestAnimationFrame(() => requestAnimationFrame(() => resolve(true)));
-  }))`), hiddenFrameTimeoutMs, 'HTML scene frame seek', windowSignals.get(window));
+  await withRendererTimeout(window.webContents.executeJavaScript(`(() => {
+    window.__tl.seek(${JSON.stringify(time)}, false);
+    return new Promise((resolve) => {
+      requestAnimationFrame(() => requestAnimationFrame(() => resolve(true)));
+    });
+  })()`), hiddenFrameTimeoutMs, 'HTML scene frame seek', windowSignals.get(window));
 }
 
 function withRendererTimeout<T>(

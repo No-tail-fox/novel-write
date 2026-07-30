@@ -33,6 +33,8 @@ try {
   const coverCompactScreenshot = join(qaTempDir, 'cover-compact.png');
   const captionEditorScreenshot = join(qaTempDir, 'caption-editor.png');
   const captionPreviewScreenshot = join(qaTempDir, 'caption-preview.png');
+  const authoringDesktopScreenshot = join(qaTempDir, 'authoring-desktop.png');
+  const authoringCompactScreenshot = join(qaTempDir, 'authoring-compact.png');
   const themeLightScreenshot = join(qaTempDir, 'theme-light.png');
   const require = createRequire(join(rootDir, 'package.json'));
   const electronPath = require('electron');
@@ -152,6 +154,7 @@ try {
     throw new Error(`Read-only HTML video controls became editable: ${configControls.readOnlyEditors.join(', ')}`);
   }
   await saveScreenshot(cdp, coverDesktopScreenshot);
+  const authoringDesktop = await exerciseHyperframesAuthoring(cdp, authoringDesktopScreenshot);
 
   const primaryOutput = await openOutputAndWait(cdp, seededTasks.primary);
   const rangeResponse = await verifyRangeResponse(cdp, primaryOutput.src, seededTasks.primary.outputPath);
@@ -210,6 +213,7 @@ try {
   await saveScreenshot(cdp, compactScreenshot);
   const coverCompactState = await inspectCoverPanel(cdp);
   await saveScreenshot(cdp, coverCompactScreenshot);
+  const authoringCompact = await exerciseHyperframesAuthoring(cdp, authoringCompactScreenshot);
   await openOutputAndWait(cdp, seededTasks.primary);
   const configUpdate = await exerciseHtmlVideoConfigUpdate(cdp);
   if (configUpdate.completedStepCount !== 5) {
@@ -267,6 +271,8 @@ try {
   if (desktopState.clippedControls.length || compactState.clippedControls.length) throw new Error('HTML video controls are clipped.');
   if (coverDesktopState.horizontalOverflow > 2 || coverCompactState.horizontalOverflow > 2) throw new Error('HTML video cover panel overflows horizontally.');
   if (coverDesktopState.clippedControls.length || coverCompactState.clippedControls.length) throw new Error('HTML video cover controls are clipped.');
+  if (authoringDesktop.horizontalOverflow > 2 || authoringCompact.horizontalOverflow > 2) throw new Error('HyperFrames authoring workspace overflows horizontally.');
+  if (authoringDesktop.clippedControls.length || authoringCompact.clippedControls.length) throw new Error('HyperFrames authoring controls are clipped.');
   if (coverDesktopState.editFields.join(',') !== 'coverImageMode,coverRatio,coverTemplate'
     || coverCompactState.editFields.join(',') !== 'coverImageMode,coverRatio,coverTemplate') {
     throw new Error(`HTML video cover controls were not all rendered: ${JSON.stringify({ coverDesktopState, coverCompactState })}`);
@@ -281,7 +287,7 @@ try {
     throw new Error(`Renderer console errors: ${relevantRuntimeErrors.map((error) => error.message).join(' | ')}`);
   }
 
-  const screenshotPaths = [themeLightScreenshot, desktopScreenshot, compactScreenshot, coverDesktopScreenshot, coverCompactScreenshot, captionEditorScreenshot, captionPreviewScreenshot];
+  const screenshotPaths = [themeLightScreenshot, desktopScreenshot, compactScreenshot, coverDesktopScreenshot, coverCompactScreenshot, authoringDesktopScreenshot, authoringCompactScreenshot, captionEditorScreenshot, captionPreviewScreenshot];
   const screenshots = await Promise.all(screenshotPaths.map(async (path) => {
     const value = await stat(path);
     if (value.size <= 0) throw new Error(`Screenshot evidence is empty: ${basename(path)}`);
@@ -318,6 +324,8 @@ try {
     compact: compactState,
     coverDesktop: coverDesktopState,
     coverCompact: coverCompactState,
+    authoringDesktop,
+    authoringCompact,
     screenshots,
     evidencePaths,
     runtimeErrors: relevantRuntimeErrors,
@@ -390,6 +398,201 @@ async function exerciseThemePreference(cdpConnection, screenshotPath) {
     throw new Error(`Dark theme restoration did not persist canonically: ${JSON.stringify(restored)}`);
   }
   return { light, reloadedTheme: 'light', restored };
+}
+
+async function exerciseHyperframesAuthoring(cdpConnection, screenshotPath) {
+  await setShellTheme(cdpConnection, 'light');
+  await evaluate(cdpConnection, `(() => {
+    globalThis.__storydreamQaHyperframesRuntime = null;
+    if (globalThis.__storydreamQaHyperframesProbeInstalled) return true;
+    globalThis.__storydreamQaHyperframesProbeInstalled = true;
+    addEventListener('message', (event) => {
+      const payload = event.data;
+      const iframe = document.querySelector('hyperframes-player')?.iframeElement;
+      if (!iframe || event.source !== iframe.contentWindow) return;
+      if (!payload || payload.type !== 'storydream:hyperframes-runtime-ready') return;
+      globalThis.__storydreamQaHyperframesRuntime = {
+        compositionId: typeof payload.compositionId === 'string' ? payload.compositionId : '',
+        hasGsap: payload.hasGsap === true,
+        compositionReady: payload.compositionReady === true,
+        timelineKeys: Array.isArray(payload.timelineKeys) ? payload.timelineKeys.filter((item) => typeof item === 'string') : [],
+        timelineDuration: Number.isFinite(payload.timelineDuration) ? payload.timelineDuration : 0,
+      };
+    });
+    return true;
+  })()`);
+  const authoringClicked = await evaluate(cdpConnection, `(() => {
+    const button = [...document.querySelectorAll('.hv-workspace-mode button')]
+      .find((item) => item.textContent.trim() === '可视编排');
+    if (!button || button.disabled) return false;
+    button.click();
+    return true;
+  })()`);
+  if (!authoringClicked) throw new Error('HyperFrames authoring mode was unavailable.');
+  const inspectPlayer = () => evaluate(cdpConnection, `(() => {
+      const workspace = document.querySelector('.hv-authoring-workspace');
+      const player = document.querySelector('hyperframes-player');
+      return {
+        workspace: Boolean(workspace),
+        player: Boolean(player),
+        ready: player?.ready === true,
+        sourceUrl: player?.getAttribute('src') || '',
+        iframeUrl: player?.iframeElement?.src || '',
+        iframeReadyState: player?.iframeElement?.contentDocument?.readyState || '',
+        emptyText: document.querySelector('.hv-authoring-empty')?.textContent.trim() || '',
+        runtime: globalThis.__storydreamQaHyperframesRuntime || {},
+      };
+    })()`);
+  try {
+    await waitFor(
+      async () => {
+        const player = await inspectPlayer();
+        const runtime = player.runtime ?? {};
+        return player.workspace
+          && player.player
+          && player.ready
+          && player.iframeUrl
+          && runtime.hasGsap
+          && runtime.compositionReady
+          && runtime.timelineKeys.length > 0
+          && runtime.timelineDuration > 0;
+      },
+      20_000,
+      'HyperFrames Player readiness',
+    );
+  } catch (error) {
+    throw new Error(`HyperFrames Player did not become ready: ${JSON.stringify({
+      player: await inspectPlayer(),
+      networkRequests: networkRequests.slice(-20),
+      networkResponses: networkResponses.slice(-20),
+      runtimeErrors: runtimeErrors.slice(-20),
+      electronStderr: Buffer.concat(stderr).toString('utf8').slice(-4000),
+    })}`, { cause: error });
+  }
+
+  const panelLabels = ['源码', '属性', '检查', '渲染队列'];
+  const panels = [];
+  for (const label of panelLabels) {
+    const clicked = await evaluate(cdpConnection, `(() => {
+      const button = [...document.querySelectorAll('.hv-authoring-panels button')]
+        .find((item) => item.textContent.trim().startsWith(${JSON.stringify(label)}));
+      if (!button) return false;
+      button.click();
+      return true;
+    })()`);
+    if (!clicked) throw new Error(`HyperFrames ${label} panel was unavailable.`);
+    if (label === '检查') {
+      const inspectLint = () => evaluate(cdpConnection, `({
+        panelTitle: document.querySelector('.hv-authoring-panel-title')?.textContent.trim() || '',
+        status: document.querySelector('.hv-authoring-statusbar')?.textContent.trim() || '',
+        findings: [...document.querySelectorAll('.hv-authoring-lint-finding')]
+          .map((item) => ({ className: item.className, text: item.textContent.trim() })),
+      })`);
+      try {
+        await waitFor(
+          async () => (await inspectLint()).status.includes('检查通过'),
+          15_000,
+          'HyperFrames official lint',
+        );
+      } catch (error) {
+        throw new Error(`HyperFrames official lint did not settle: ${JSON.stringify(await inspectLint())}`, { cause: error });
+      }
+    }
+    await delay(100);
+    panels.push(await evaluate(cdpConnection, `({
+      label: ${JSON.stringify(label)},
+      ariaLabel: document.querySelector('.hv-authoring-inspector')?.getAttribute('aria-label') || '',
+      title: document.querySelector('.hv-authoring-panel-title strong')?.textContent.trim() || '',
+    })`));
+  }
+
+  await evaluate(cdpConnection, `(() => {
+    const button = [...document.querySelectorAll('.hv-authoring-panels button')]
+      .find((item) => item.textContent.trim() === '属性');
+    button?.click();
+  })()`);
+  await delay(120);
+  const state = await evaluate(cdpConnection, `(() => {
+    const player = document.querySelector('hyperframes-player');
+    const iframeUrl = player?.iframeElement?.src || '';
+    const workspace = document.querySelector('.hv-authoring-workspace');
+    const isVisible = (item) => {
+      const style = getComputedStyle(item);
+      const rect = item.getBoundingClientRect();
+      return style.display !== 'none' && style.visibility !== 'hidden' && rect.width > 0 && rect.height > 0;
+    };
+    const clippedControls = [...workspace.querySelectorAll('button, select, input, textarea')]
+      .filter((item) => isVisible(item))
+      .filter((item) => {
+        const rect = item.getBoundingClientRect();
+        return rect.left < -1 || rect.right > innerWidth + 1;
+      })
+      .map((item) => item.textContent.trim() || item.getAttribute('aria-label') || item.tagName);
+    const trackLabels = [...document.querySelectorAll('.hv-authoring-track-line')]
+      .map((item) => item.textContent.trim());
+    return {
+      ready: player?.ready === true,
+      iframeUrl,
+      iframeProtocolTrusted: iframeUrl.startsWith('storydream-media:'),
+      panels: ${JSON.stringify(panels)},
+      lintPassed: Boolean(document.querySelector('.hv-authoring-statusbar')?.textContent.includes('检查通过')),
+      lintFindingCount: document.querySelectorAll('.hv-authoring-lint-finding').length,
+      lintErrorCount: document.querySelectorAll('.hv-authoring-lint-finding.error').length,
+      trackLabels,
+      clipCount: document.querySelectorAll('.hv-authoring-clip').length,
+      timelineVisible: Boolean(document.querySelector('[data-hyperframes-timeline]') && isVisible(document.querySelector('[data-hyperframes-timeline]'))),
+      stepCount: document.querySelectorAll('.hv-studio-run-rail .hv-step').length,
+      parameterRailVisible: Boolean(document.querySelector('.hv-studio-parameters') && isVisible(document.querySelector('.hv-studio-parameters'))),
+      horizontalOverflow: document.documentElement.scrollWidth - document.documentElement.clientWidth,
+      clippedControls,
+      viewport: { width: innerWidth, height: innerHeight },
+    };
+  })()`);
+  if (!state.ready || !state.iframeUrl.startsWith('storydream-media:') || !state.iframeProtocolTrusted) {
+    throw new Error(`HyperFrames Player did not use the trusted composition URL: ${JSON.stringify(state)}`);
+  }
+  if (state.panels.length !== 4 || !state.lintPassed || !state.timelineVisible || state.clipCount < 4) {
+    throw new Error(`HyperFrames authoring tools are incomplete: ${JSON.stringify(state)}`);
+  }
+  if (state.trackLabels.join(',') !== 'T0,T1,T20,T21' || state.stepCount !== 6 || !state.parameterRailVisible) {
+    throw new Error(`HyperFrames authoring lost semantic tracks, parameters, or lifecycle state: ${JSON.stringify(state)}`);
+  }
+  await saveScreenshot(cdpConnection, screenshotPath);
+
+  const automaticClicked = await evaluate(cdpConnection, `(() => {
+    const button = [...document.querySelectorAll('.hv-workspace-mode button')]
+      .find((item) => item.textContent.trim() === '自动制作');
+    if (!button) return false;
+    button.click();
+    return true;
+  })()`);
+  if (!automaticClicked) throw new Error('Could not return to automatic HTML video mode.');
+  await waitFor(
+    async () => evaluate(cdpConnection, `!document.querySelector('.hv-authoring-workspace')`),
+    10_000,
+    'automatic HTML video mode restoration',
+  );
+  await setShellTheme(cdpConnection, 'dark');
+  return state;
+}
+
+async function setShellTheme(cdpConnection, theme) {
+  const current = await evaluate(cdpConnection, 'document.documentElement.dataset.theme');
+  if (current === theme) return;
+  const label = theme === 'light' ? '切换浅色主题' : '切换深色主题';
+  const selector = `button[aria-label="${label}"]`;
+  const clicked = await evaluate(cdpConnection, `(() => {
+    const button = document.querySelector(${JSON.stringify(selector)});
+    if (!button) return false;
+    button.click();
+    return true;
+  })()`);
+  if (!clicked) throw new Error(`Could not switch the shell to ${theme} theme.`);
+  await waitFor(
+    async () => evaluate(cdpConnection, `document.documentElement.dataset.theme === ${JSON.stringify(theme)}`),
+    10_000,
+    `${theme} theme`,
+  );
 }
 
 async function navigateToSettingsAppearance(cdpConnection) {
@@ -523,12 +726,21 @@ async function seedCompletedTask(database, createHtmlVideoPipelineData, runHtmlV
   });
   if (!task.managedStorageKey) throw new Error('Seeded task has no managed storage key.');
   const taskDir = join(appDataDir, 'tasks', task.managedStorageKey);
+  const htmlDir = join(taskDir, 'html-scenes');
   const assetPath = join(taskDir, 'scene-001.png');
   const voicePath = join(taskDir, 'scene-001.wav');
   const thumbnailPath = join(taskDir, 'scene-001-thumbnail.png');
   const outputPath = join(taskDir, 'final.mp4');
   const retryPath = join(taskDir, 'same-url-retry.png');
-  await mkdir(taskDir, { recursive: true });
+  await mkdir(htmlDir, { recursive: true });
+  await copyFile(
+    join(rootDir, 'dist-electron', 'electron', 'gsap.min.js'),
+    join(htmlDir, 'gsap.min.js'),
+  );
+  await copyFile(
+    join(rootDir, 'dist-electron', 'electron', 'hyperframe.runtime.gsap.iife.js'),
+    join(htmlDir, 'hyperframe.runtime.gsap.iife.js'),
+  );
   const png = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=', 'base64');
   await writeFile(retryPath, png);
   const completed = await runHtmlVideoPipeline({
@@ -584,7 +796,7 @@ async function seedCompletedTask(database, createHtmlVideoPipelineData, runHtmlV
         canvas_w: 320,
         canvas_h: 568,
       });
-      const htmlPath = join(taskDir, 'scene-001.html');
+      const htmlPath = join(htmlDir, 'scene-001.html');
       await Promise.all([
         writeFile(htmlPath, composition.scenes[0].html, 'utf8'),
         writeFile(thumbnailPath, png),

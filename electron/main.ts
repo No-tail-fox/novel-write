@@ -26,6 +26,7 @@ import {
   type OrdinaryTaskCoverInspection,
 } from '../src/shared/ordinary-task-cover';
 import { createHtmlVideoTaskInput, htmlVideoVisibleSteps, isHtmlVideoTask, parseHtmlVideoPipelineData, recoverHtmlVideoPipelineDataForRetry, type HtmlVideoPipelineRetryPatch } from '../src/shared/html-video-workflow';
+import { assertHyperframesSource, GSAP_RUNTIME_FILENAME, HYPERFRAMES_RUNTIME_FILENAME, MAX_HYPERFRAMES_SOURCE_BYTES } from '../src/shared/hyperframes';
 import { generateConfiguredVoicePreview } from '../src/shared/media-providers';
 import { mergeMinimaxCloneVoice } from '../src/shared/minimax-clone-voices';
 import { createPersonAsset, deletePersonAsset, importPersonAssetFiles, listPersonAssets, listPersonImages, renamePersonAsset } from '../src/shared/person-assets';
@@ -38,7 +39,7 @@ import { runStoryboundMediaSidecar } from '../src/shared/storybound-sidecar';
 import { FileDatabase, type HistoryDeletionCleanup, type HistoryTombstone } from '../src/shared/storage';
 import { createHtmlVideoRuntimeProviders, createTaskRuntimeProviders } from '../src/shared/task-runtime-providers';
 import { assertTaskLifecycleAction } from '../src/shared/task-progress';
-import type { AccountProfile, ActivationState, AppConfig, AppDelta, AppDeltaReconcileRequest, AppDeltaReconcileResult, AppStatePatch, BookSelectionInput, ConfigTestTarget, CreateTaskInput, CreateViralAnalysisInput, CursorRequest, CustomStyle, CustomStyleGenerateInput, DraftTemplate, HistoryFamily, HistoryListRequest, HtmlVideoConfigChange, HtmlVideoPipelineDataV2, ImageLabGenerateInput, ImageLabRecord, ImageLabSummary, ImaKnowledgeRequest, LlmConfig, MinimaxCloneVoiceInput, OrdinaryTaskCoverRatio, OrdinaryTaskCoverSelection, PromptTemplate, ProviderModelListRequest, ResearchCopyComposeInput, SequencedTaskEvent, Task, TaskStatus, TaskStepRerunMode, UiPreferencesUpdate, ViralAnalysisRecord, ViralAnalysisResult, ViralAnalysisStatus, ViralProductionTaskOptions, VolcengineSpeakerListRequest, VoiceLabGenerateInput, VoiceLabRecord, VoiceLabSummary } from '../src/shared/types';
+import type { AccountProfile, ActivationState, AppConfig, AppDelta, AppDeltaReconcileRequest, AppDeltaReconcileResult, AppStatePatch, BookSelectionInput, ConfigTestTarget, CreateTaskInput, CreateViralAnalysisInput, CursorRequest, CustomStyle, CustomStyleGenerateInput, DraftTemplate, HistoryFamily, HistoryListRequest, HtmlVideoCompositionSource, HtmlVideoCompositionSourceLintInput, HtmlVideoCompositionSourceSaveInput, HtmlVideoConfigChange, HtmlVideoPipelineDataV2, ImageLabGenerateInput, ImageLabRecord, ImageLabSummary, ImaKnowledgeRequest, LlmConfig, MinimaxCloneVoiceInput, OrdinaryTaskCoverRatio, OrdinaryTaskCoverSelection, PromptTemplate, ProviderModelListRequest, ResearchCopyComposeInput, SequencedTaskEvent, Task, TaskStatus, TaskStepRerunMode, UiPreferencesUpdate, ViralAnalysisRecord, ViralAnalysisResult, ViralAnalysisStatus, ViralProductionTaskOptions, VolcengineSpeakerListRequest, VoiceLabGenerateInput, VoiceLabRecord, VoiceLabSummary } from '../src/shared/types';
 import { boundViralDiagnosticText, createViralProductionTaskInput, detectViralPlatform, runViralAnalysis, viralCheckpointResumeState } from '../src/shared/viral-analysis';
 import { createViralRuntimeProviders } from '../src/shared/viral-runtime';
 import { listVolcengineSpeakers } from '../src/shared/volcengine-speakers';
@@ -1037,6 +1038,8 @@ async function runHtmlVideoTask(
       signal: controller.signal,
       renderer,
       probeMedia,
+      gsapRuntimePath: join(dirname(fileURLToPath(import.meta.url)), GSAP_RUNTIME_FILENAME),
+      hyperframesRuntimePath: join(dirname(fileURLToPath(import.meta.url)), HYPERFRAMES_RUNTIME_FILENAME),
     });
     const providers = createHtmlVideoRuntimeProviders(runtimeConfig, workDir, task, {
       measureAudioDuration: runtime.measureAudioDuration,
@@ -2026,6 +2029,39 @@ trustedHandle('html-video:import-cover', (_event, id: string) =>
     return publishTaskUpsert(database, id);
   }));
 
+trustedHandle('html-video:composition-source:get', async (_event, input: { taskId: string; sceneIndex: number }) => {
+  const database = await getDb();
+  return loadHtmlVideoCompositionSource(database, input.taskId, input.sceneIndex);
+});
+
+trustedHandle('html-video:composition-source:lint', async (_event, input: HtmlVideoCompositionSourceLintInput) => {
+  assertHyperframesSource(input.source);
+  const task = await getHtmlVideoTask(await getDb(), input.taskId);
+  const composition = parseHtmlVideoPipelineData(task.pipelineData).compositions.find((item) => item.index === input.sceneIndex);
+  if (!composition?.htmlPath) {
+    throw new Error(`HTML_VIDEO_COMPOSITION_NOT_FOUND: Scene ${input.sceneIndex} has no editable composition.`);
+  }
+  const { lintHyperframeHtml } = await import('@hyperframes/lint/browser');
+  const result = await lintHyperframeHtml(input.source, { filePath: `scene-${String(input.sceneIndex).padStart(3, '0')}.html` });
+  return result.findings;
+});
+
+trustedHandle('html-video:composition-source:save', (_event, input: HtmlVideoCompositionSourceSaveInput) =>
+  runHistoryGovernanceMutation('task', input.taskId, async (database) => {
+    const result = await database.updateHtmlVideoCompositionSource(input, {
+      ensureDirectory: async (path) => { await mkdir(path, { recursive: true }); },
+      writeSource: async (path, source) => { await writeFile(path, source, { encoding: 'utf8', flag: 'wx' }); },
+      moveFile: (source, target) => rename(source, target),
+      removeFile: async (path) => { await rm(path, { force: true }); },
+      now: () => new Date().toISOString(),
+    });
+    const [composition, mutation] = await Promise.all([
+      loadHtmlVideoCompositionSource(database, input.taskId, input.sceneIndex),
+      enqueueAppDelta(() => ({ kind: 'task-upsert', task: result.task })),
+    ]);
+    return { composition, mutation };
+  }));
+
 trustedHandle('html-video:open-preview', async (_event, input: { id: string; sceneIndex?: number }) => {
   const database = await getDb();
   const task = await getHtmlVideoTask(database, input.id);
@@ -2053,6 +2089,40 @@ trustedHandle('html-video:media-url', async (_event, input: { id: string; path: 
   const taskDirectory = await htmlVideoTaskDirectory(task.id);
   return createHtmlVideoMediaUrl(task.id, taskDirectory, input.path);
 });
+
+async function loadHtmlVideoCompositionSource(
+  database: FileDatabase,
+  taskId: string,
+  sceneIndex: number,
+): Promise<HtmlVideoCompositionSource> {
+  const task = await getHtmlVideoTask(database, taskId);
+  const pipeline = parseHtmlVideoPipelineData(task.pipelineData);
+  const composition = pipeline.compositions.find((item) => item.index === sceneIndex);
+  if (!composition?.htmlPath) {
+    throw new Error(`HTML_VIDEO_COMPOSITION_NOT_FOUND: Scene ${sceneIndex} has no editable composition.`);
+  }
+  const taskDirectory = await htmlVideoTaskDirectory(taskId);
+  const mediaUrl = await createHtmlVideoMediaUrl(taskId, taskDirectory, composition.htmlPath);
+  const sourcePath = await resolveHtmlVideoMediaUrl(mediaUrl, () => taskDirectory);
+  const sourceStat = await stat(sourcePath);
+  if (!sourceStat.isFile() || sourceStat.size <= 0 || sourceStat.size > MAX_HYPERFRAMES_SOURCE_BYTES) {
+    throw new Error('HYPERFRAMES_SOURCE_INVALID: HTML 源码文件为空或超过大小限制。');
+  }
+  const source = await readFile(sourcePath, 'utf8');
+  const thumbnailUrl = composition.thumbnailPath
+    ? await createHtmlVideoMediaUrl(taskId, taskDirectory, composition.thumbnailPath)
+    : undefined;
+  return {
+    taskId,
+    sceneIndex,
+    revision: composition.rev ?? 1,
+    source,
+    mediaUrl,
+    ...(thumbnailUrl ? { thumbnailUrl } : {}),
+    durationSec: composition.durationSec,
+    canvas: composition.canvas,
+  };
+}
 
 async function getHtmlVideoTask(database: FileDatabase, id: string): Promise<Task> {
   const task = await database.getTaskDetail(id);

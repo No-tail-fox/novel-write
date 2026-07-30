@@ -25,11 +25,9 @@ describe('HTML video caption consumers', () => {
     expect(html).toContain('data-caption-preset="classic"');
     expect(html).toContain('data-caption-animation="fade-up"');
     expect(html).toContain('color: rgba(240, 247, 248, 0.94);');
-    expect(html).toContain("copy.style.opacity = String(Math.min(1, 0.72 + eased * 0.28));");
-    expect(html).toContain("copy.style.transform = 'translateY(' + ((1 - eased) * 18).toFixed(2) + 'px)';");
-    expect(html).toContain("caption.style.opacity = captionAnimation === 'pop'");
-    expect(html).toContain(": '1';");
-    expect(html).not.toContain("caption.style.opacity = captionAnimation === 'none'");
+    expect(html).toContain("tl.fromTo('#scene-copy', { opacity: 0.72, y: 18 }, { opacity: 1, y: 0");
+    expect(html).toContain("const captionAnimation = reduceCaptionMotion ? 'none' : \"fade-up\"");
+    expect(html).not.toContain('requestAnimationFrame');
   });
 
   it('resolves fixed preset tokens and validated semantic color overrides', () => {
@@ -55,8 +53,8 @@ describe('HTML video caption consumers', () => {
     expect(html).toContain('--caption-accent: #22ccaa;');
     expect(html).toContain('--caption-background: #101418cc;');
     expect(html).toContain('--caption-shadow: #000000aa;');
-    expect(html).toContain("caption.style.transform = captionAnimation === 'pop'");
-    expect(html).toContain("? 'scale(' + (0.92 + eased * 0.08).toFixed(4) + ')'");
+    expect(html).toContain("tl.fromTo('#scene-copy .caption', { opacity: 0.7, scale: 0.92 }, { opacity: 1, scale: 1");
+    expect(html).toContain("ease: 'back.out(1.4)'");
   });
 
   it.each([

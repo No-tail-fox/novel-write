@@ -1,5 +1,5 @@
 import { mkdir, open as openFile, readFile, readdir, rename, rm } from 'node:fs/promises';
-import { basename, dirname, join } from 'node:path';
+import { basename, dirname, join, relative, resolve } from 'node:path';
 import { createHash, randomBytes, randomUUID } from 'node:crypto';
 import initSqlJs, { type Database, type SqlJsStatic, type SqlValue } from 'sql.js';
 import type {
@@ -22,6 +22,8 @@ import type {
   HistoryListInput,
   HistoryPage,
   HtmlVideoConfigChange,
+  HtmlVideoCompositionSnapshot,
+  HtmlVideoCompositionSourceSaveInput,
   HtmlVideoCoverAsset,
   ImageLabRecord,
   ImageLabSummary,
@@ -48,6 +50,7 @@ import type {
   VoiceLabSummary,
 } from './types';
 import { applyHtmlVideoConfigChanges, htmlVideoVisibleSteps, invalidateHtmlVideoPipeline, parseHtmlVideoPipelineData } from './html-video-workflow';
+import { assertHyperframesSource } from './hyperframes';
 import {
   createHtmlVideoCoverAsset,
   htmlVideoCoverDimensions,
@@ -129,6 +132,21 @@ export interface HtmlVideoTaskCoverMutationResult {
   task: TaskSummary;
   event: SequencedTaskEvent;
   coverAsset: HtmlVideoCoverAsset;
+}
+
+export interface HtmlVideoCompositionSourceFileOperations {
+  ensureDirectory: (path: string) => Promise<void>;
+  writeSource: (path: string, source: string) => Promise<void>;
+  moveFile: (source: string, target: string) => Promise<void>;
+  removeFile: (path: string) => Promise<void>;
+  now: () => string;
+}
+
+export interface HtmlVideoCompositionSourceMutationResult {
+  task: TaskSummary;
+  event: SequencedTaskEvent;
+  composition: HtmlVideoCompositionSnapshot;
+  sourcePath: string;
 }
 
 export interface OrdinaryTaskCoverImportOperations {
@@ -2789,6 +2807,153 @@ export class FileDatabase {
         changedFields: [...applied.changedFields],
       };
     });
+  }
+
+  async updateHtmlVideoCompositionSource(
+    input: HtmlVideoCompositionSourceSaveInput,
+    operations: HtmlVideoCompositionSourceFileOperations,
+  ): Promise<HtmlVideoCompositionSourceMutationResult> {
+    assertHyperframesSource(input.source);
+    const paths: {
+      staged: string | null;
+      backup: string | null;
+      target: string | null;
+      backedUp: boolean;
+      promoted: boolean;
+    } = {
+      staged: null,
+      backup: null,
+      target: null,
+      backedUp: false,
+      promoted: false,
+    };
+
+    let result: HtmlVideoCompositionSourceMutationResult;
+    try {
+      result = await this.enqueueAsyncCommit(async () => {
+        const { taskId, sceneIndex, expectedRevision, source } = input;
+        this.assertHistoryWritable('task', taskId);
+        const row = getFirstRow<Record<string, unknown>>(this.db, 'SELECT * FROM tasks WHERE id = ?', [taskId]);
+        if (!row) throw new Error(`HTML_VIDEO_TASK_NOT_FOUND: ${taskId}`);
+        const task = rowToTask(row);
+        if (task.taskType !== 'html-video') {
+          throw new Error(`HTML_VIDEO_TASK_INVALID: ${taskId} is not an HTML video task.`);
+        }
+        if (task.status === 'pending' || task.status === 'running') {
+          throw new Error(`HTML_VIDEO_SOURCE_ACTIVE: ${taskId} is ${task.status} and cannot be edited.`);
+        }
+        if (!task.managedStorageKey || !/^[A-Za-z0-9][A-Za-z0-9_-]{0,255}$/u.test(task.managedStorageKey)) {
+          throw new Error(`HTML_VIDEO_SOURCE_STORAGE_INVALID: ${taskId} has no managed storage key.`);
+        }
+
+        const pipeline = parseHtmlVideoPipelineData(task.pipelineData);
+        const compositionIndex = pipeline.compositions.findIndex((item) => item.index === sceneIndex);
+        const composition = pipeline.compositions[compositionIndex];
+        if (!composition?.htmlPath) {
+          throw new Error(`HTML_VIDEO_COMPOSITION_NOT_FOUND: Scene ${sceneIndex} has no editable composition.`);
+        }
+        const currentRevision = composition.rev ?? 1;
+        if (currentRevision !== expectedRevision) {
+          throw new Error(`HTML_VIDEO_SOURCE_CONFLICT: Expected revision ${expectedRevision}, current revision is ${currentRevision}.`);
+        }
+
+        const taskRoot = join(dirname(this.file), 'tasks', task.managedStorageKey);
+        const htmlDirectory = join(taskRoot, 'html-scenes');
+        const filename = `scene-${String(sceneIndex).padStart(3, '0')}.html`;
+        const targetPath = join(htmlDirectory, filename);
+        if (relative(resolve(targetPath), resolve(composition.htmlPath))) {
+          throw new Error('HTML_VIDEO_SOURCE_PATH_INVALID: Composition path is outside its managed scene slot.');
+        }
+
+        await operations.ensureDirectory(htmlDirectory);
+        paths.target = targetPath;
+        paths.staged = join(htmlDirectory, `.${filename}.${randomUUID()}.tmp`);
+        paths.backup = join(htmlDirectory, `.${filename}.${randomUUID()}.bak`);
+        await operations.writeSource(paths.staged, source);
+        await operations.moveFile(targetPath, paths.backup);
+        paths.backedUp = true;
+        await operations.moveFile(paths.staged, targetPath);
+        paths.staged = null;
+        paths.promoted = true;
+
+        const nextComposition: HtmlVideoCompositionSnapshot = {
+          ...composition,
+          rev: currentRevision + 1,
+        };
+        const invalidated = invalidateHtmlVideoPipeline(pipeline, 'render');
+        invalidated.compositions = invalidated.compositions.map((item, index) => (
+          index === compositionIndex ? nextComposition : item
+        ));
+        invalidated.revision = pipeline.revision + 1;
+        delete invalidated.configSnapshotHash;
+        const renderStep = htmlVideoVisibleSteps.indexOf('render');
+        const now = operations.now();
+        this.db.run(
+          `UPDATE tasks SET
+            status = 'paused', current_step = ?, pipeline_step = 'render', pipeline_data = ?, error_message = '',
+            completed_at = NULL, failed_step = NULL, retry_from_step = NULL, last_heartbeat_at = ?
+           WHERE id = ?`,
+          [renderStep, JSON.stringify(invalidated), now, taskId],
+        );
+
+        const event: TaskEvent = {
+          taskId,
+          runGeneration: task.runGeneration,
+          type: 'composition_source_update',
+          step: renderStep,
+          agent: 'HyperFrames Studio',
+          tool: 'source-editor',
+          detail: `已保存场景 ${sceneIndex} 的 HTML 动画源码，从出片阶段继续。`,
+          dataJson: JSON.stringify({
+            sceneIndex,
+            previousRevision: currentRevision,
+            revision: nextComposition.rev,
+            invalidateFrom: 'render',
+          }),
+          ts: Date.parse(now) || Date.now(),
+        };
+        this.db.run(
+          `INSERT INTO task_events (task_id, run_generation, type, step, agent, tool, detail, data_json, ts)
+           VALUES (?, (SELECT run_generation FROM tasks WHERE id = ?), ?, ?, ?, ?, ?, ?, ?)`,
+          [event.taskId, event.taskId, event.type, event.step, event.agent, event.tool, event.detail, event.dataJson, event.ts],
+        );
+        const seq = getFirstRow<{ seq: number }>(this.db, 'SELECT last_insert_rowid() AS seq')?.seq;
+        if (!Number.isSafeInteger(seq)) throw new Error('TASK_EVENT_SEQUENCE_MISSING: Event was not assigned a sequence.');
+        const updatedRow = getFirstRow<Record<string, unknown>>(
+          this.db,
+          `SELECT ${taskSummaryColumns} FROM tasks WHERE id = ?`,
+          [taskId],
+        );
+        if (!updatedRow) throw new Error(`HTML_VIDEO_TASK_NOT_FOUND: ${taskId}`);
+        return {
+          task: rowToTaskSummary(updatedRow),
+          event: { ...event, seq: Number(seq) },
+          composition: nextComposition,
+          sourcePath: targetPath,
+        };
+      });
+    } catch (error) {
+      try {
+        if (paths.promoted && paths.target) await operations.removeFile(paths.target);
+        if (paths.backedUp && paths.backup && paths.target) {
+          await operations.moveFile(paths.backup, paths.target);
+          paths.backup = null;
+        }
+        if (paths.staged) await operations.removeFile(paths.staged);
+      } catch {
+        // Preserve the source or database error; recovery copies remain task-local.
+      }
+      throw error;
+    }
+
+    if (paths.backup) {
+      try {
+        await operations.removeFile(paths.backup);
+      } catch {
+        // The committed source remains valid; stale hidden backups are harmless.
+      }
+    }
+    return result;
   }
 
   async importHtmlVideoCover(

@@ -280,4 +280,25 @@ describe('real Electron smoke contract', () => {
     expect(qa).toContain('caption-editor.png');
     expect(qa).toContain('STORYDREAM_QA_EVIDENCE_DIR');
   });
+
+  it('captures the official HyperFrames authoring workspace in both supported viewports', async () => {
+    const qa = await readFile(new URL('../scripts/qa-html-video-ui.mjs', import.meta.url), 'utf8');
+
+    expect(qa).toContain('const authoringDesktop = await exerciseHyperframesAuthoring(');
+    expect(qa).toContain('const authoringCompact = await exerciseHyperframesAuthoring(');
+    expect(qa).toContain('authoring-desktop.png');
+    expect(qa).toContain('authoring-compact.png');
+    expect(qa).toContain("item.textContent.trim() === '可视编排'");
+    expect(qa).toContain("document.querySelector('.hv-authoring-workspace')");
+    expect(qa).toContain('player?.ready === true');
+    expect(qa).toContain('player?.iframeElement?.src');
+    expect(qa).toContain("iframeUrl.startsWith('storydream-media:')");
+    expect(qa).toContain("['源码', '属性', '检查', '渲染队列']");
+    expect(qa).toContain("document.querySelector('.hv-authoring-statusbar')");
+    expect(qa).toContain("document.querySelectorAll('.hv-authoring-lint-finding.error')");
+    expect(qa).toContain("document.querySelectorAll('.hv-authoring-track-line')");
+    expect(qa).toContain("document.querySelectorAll('.hv-authoring-clip')");
+    expect(qa).toContain('authoringDesktop.horizontalOverflow');
+    expect(qa).toContain('authoringCompact.clippedControls.length');
+  });
 });

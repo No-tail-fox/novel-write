@@ -821,45 +821,45 @@ describe('HTML video composition contract', () => {
     expect(input.scenes[0].html).toContain('scene-1-fg.png');
 
     const runtime = runSceneRuntime(input.scenes[0].html);
+    expect(runtime.timeline.options).toEqual({ paused: true });
+    expect(runtime.timeline.fromToCalls.map(([selector]) => selector)).toEqual(expect.arrayContaining([
+      '#scene-background',
+      '#scene-veil',
+      '#foreground-1',
+      '#scene-copy',
+    ]));
+    expect(runtime.window.__timelines['storydream-scene-1']).toBe(runtime.timeline);
     runtime.fireDomContentLoaded();
     expect(runtime.window.__ready).toBe(true);
     expect(runtime.window.__tl.seek).toEqual(expect.any(Function));
-
-    runtime.window.__tl.seek(0.6);
-    expect(runtime.document.documentElement.dataset.time).toBe('0.6');
-    expect(runtime.document.documentElement.dataset.progress).toBe('0.5');
-    expect(runtime.document.documentElement.style.getPropertyValue('--scene-time')).toBe('0.6s');
-    expect(runtime.document.documentElement.style.getPropertyValue('--scene-progress')).toBe('0.5');
-    expect(runtime.elements.frame.dataset.time).toBe('0.6');
-    expect(runtime.elements.frame.dataset.progress).toBe('0.5');
-    expect(runtime.elements.image.style.transform).toContain('scale(');
-    expect(runtime.elements.copy.style.opacity).not.toBe('');
-
-    runtime.window.__tl.seek(2);
-    expect(runtime.document.documentElement.dataset.time).toBe('1.2');
-    expect(runtime.document.documentElement.dataset.progress).toBe('1');
+    expect(runtime.timeline.seekCalls).toEqual([0]);
+    expect(runtime.timeline.pauseCalls).toBe(1);
+    expect(runtime.postedMessages).toEqual([
+      expect.objectContaining({
+        type: 'storydream:hyperframes-runtime-ready',
+        compositionId: 'storydream-scene-1',
+        hasGsap: true,
+        compositionReady: true,
+        timelineKeys: ['storydream-scene-1'],
+        timelineDuration: 1.2,
+      }),
+    ]);
   });
 
-  it('plays the scene timeline from the RAF clock, loops, and keeps narration synchronized', async () => {
+  it('delegates playback to the registered HyperFrames GSAP timeline', () => {
     const html = buildRuntimeSceneHtml();
     const runtime = runSceneRuntime(html);
     runtime.fireDomContentLoaded();
 
     expect(html).toContain('scene-audio');
-    expect(runtime.window.__tl.play()).toBe(0);
-    runtime.advanceAnimationTo(300);
-    expect(runtime.window.__tl.current).toBeCloseTo(0.3, 5);
-
-    runtime.advanceAnimationTo(1_300);
-    expect(runtime.window.__tl.current).toBeCloseTo(0.1, 5);
-    expect(runtime.audio.currentTime).toBeCloseTo(0.1, 5);
-    expect(runtime.audio.playCalls).toBeGreaterThan(0);
-
-    const pausedAt = runtime.window.__tl.pause();
-    runtime.advanceAnimationTo(1_600);
-    await Promise.resolve();
-    expect(runtime.window.__tl.current).toBe(pausedAt);
-    expect(runtime.audio.pauseCalls).toBe(1);
+    expect(html).toContain('src="./hyperframe.runtime.gsap.iife.js"');
+    expect(html).not.toContain('requestAnimationFrame');
+    runtime.window.__tl.play();
+    runtime.window.__tl.seek(0.3, false);
+    runtime.window.__tl.pause();
+    expect(runtime.timeline.playCalls).toBe(1);
+    expect(runtime.timeline.seekCalls).toEqual([0, 0.3]);
+    expect(runtime.timeline.pauseCalls).toBe(2);
   });
 
   it('creates the recovered compose_render payload after frame capture', () => {
@@ -1146,63 +1146,59 @@ describe('Electron HTML video capture contract', () => {
 function runSceneRuntime(html: string) {
   const scripts = [...html.matchAll(/<script(?:\s[^>]*)?>([\s\S]*?)<\/script>/g)].map((match) => match[1]);
   const listeners = new Map<string, Array<() => void>>();
-  const animationFrames = new Map<number, (now: number) => void>();
-  let animationFrameId = 0;
-  let now = 0;
-  const audio = {
-    currentTime: 0,
-    loop: false,
+  const postedMessages: unknown[] = [];
+  const timeline = {
+    options: null as { paused: boolean } | null,
+    fromToCalls: [] as unknown[][],
+    setCalls: [] as unknown[][],
+    seekCalls: [] as number[],
     playCalls: 0,
     pauseCalls: 0,
+    fromTo(...args: unknown[]) {
+      this.fromToCalls.push(args);
+      return this;
+    },
+    set(...args: unknown[]) {
+      this.setCalls.push(args);
+      return this;
+    },
+    seek(time: number, _suppressEvents?: boolean) {
+      this.seekCalls.push(time);
+      return this;
+    },
     play() {
       this.playCalls += 1;
-      return Promise.reject(new Error('autoplay denied'));
+      return this;
     },
     pause() {
       this.pauseCalls += 1;
+      return this;
+    },
+    duration() {
+      return Number(this.setCalls.at(-1)?.[2] ?? 0);
     },
   };
-  const elements = {
-    root: createFakeElement(),
-    body: createFakeElement(),
-    frame: createFakeElement(),
-    image: createFakeElement(),
-    veil: createFakeElement(),
-    copy: createFakeElement(),
-  };
-  const document = {
-    documentElement: elements.root,
-    body: elements.body,
-    querySelector(selector: string) {
-      const bySelector: Record<string, unknown> = {
-        '.frame': elements.frame,
-        '.scene-image': elements.image,
-        '.scene-audio': audio,
-        '.veil': elements.veil,
-        '.copy': elements.copy,
-      };
-      return bySelector[selector] ?? null;
-    },
-    querySelectorAll() {
-      return [];
+  const gsap = {
+    timeline(options: { paused: boolean }) {
+      timeline.options = options;
+      return timeline;
     },
   };
   const window = {
+    __timelines: {} as Record<string, typeof timeline>,
+    gsap,
+    parent: {
+      postMessage(message: unknown) {
+        postedMessages.push(message);
+      },
+    },
     addEventListener(event: string, listener: () => void) {
       listeners.set(event, [...(listeners.get(event) ?? []), listener]);
     },
   };
   const context = vm.createContext({
-    cancelAnimationFrame(id: number) {
-      animationFrames.delete(id);
-    },
-    document,
-    performance: { now: () => now },
-    requestAnimationFrame(callback: (time: number) => void) {
-      animationFrameId += 1;
-      animationFrames.set(animationFrameId, callback);
-      return animationFrameId;
-    },
+    gsap,
+    matchMedia: () => ({ matches: false }),
     window,
   });
   for (const script of scripts) {
@@ -1210,44 +1206,14 @@ function runSceneRuntime(html: string) {
   }
 
   return {
-    document,
-    elements,
-    audio,
+    timeline,
+    postedMessages,
     window: window as typeof window & {
       __ready: boolean;
-      __tl: {
-        current: number;
-        duration: number;
-        seek(time: number): number;
-        play(): number;
-        pause(): number;
-      };
-    },
-    advanceAnimationTo(next: number) {
-      now = next;
-      const callbacks = [...animationFrames.values()];
-      animationFrames.clear();
-      for (const callback of callbacks) callback(now);
+      __tl: typeof timeline;
     },
     fireDomContentLoaded() {
       for (const listener of listeners.get('DOMContentLoaded') ?? []) listener();
-    },
-  };
-}
-
-function createFakeElement() {
-  const properties = new Map<string, string>();
-  return {
-    dataset: {} as Record<string, string>,
-    style: {
-      opacity: '',
-      transform: '',
-      setProperty(name: string, value: string) {
-        properties.set(name, value);
-      },
-      getPropertyValue(name: string) {
-        return properties.get(name) ?? '';
-      },
     },
   };
 }

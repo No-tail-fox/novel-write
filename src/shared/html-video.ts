@@ -1,6 +1,7 @@
 import { pathToFileURL } from 'node:url';
 import type { HtmlVideoJobConfig, PipelineArtifact } from './types';
 import { resolveHtmlVideoCaptionStyle, type ResolvedHtmlVideoCaptionStyle } from './html-video-captions';
+import { GSAP_RUNTIME_FILENAME, HYPERFRAMES_RUNTIME_FILENAME } from './hyperframes';
 
 export interface HtmlVideoSceneSource {
   sceneId: number;
@@ -131,6 +132,7 @@ export function buildHtmlVideoExportInput(input: HtmlVideoBuildInput): HtmlVideo
     scenes: scenes.map((scene) => ({
       ...scene,
       html: buildSceneHtml({
+        sceneId: scene.sceneId,
         title: scene.title,
         caption: scene.caption,
         description: scene.description,
@@ -179,6 +181,7 @@ export function createHtmlVideoComposePayload(
 }
 
 function buildSceneHtml(scene: {
+  sceneId: number;
   title: string;
   caption: string;
   description: string;
@@ -191,20 +194,26 @@ function buildSceneHtml(scene: {
   canvas_h: number;
   captionStyle: ResolvedHtmlVideoCaptionStyle;
 }): string {
+  const compositionId = `storydream-scene-${scene.sceneId}`;
   const imageDataUrl = safeAssetUrl(scene.imagePath);
   const audioDataUrl = safeLocalAssetUrl(scene.audioPath);
   const foregroundMarkup = (scene.foregroundPaths ?? [])
-    .map((path, index) => `<img class="scene-foreground" data-slot="${index}" src="${safeAssetUrl(path)}" alt="" />`)
+    .map((path, index) => `<img id="foreground-${index + 1}" class="clip scene-foreground" data-slot="${index}" data-start="0" data-duration="${scene.duration}" data-track-index="${index + 2}" src="${safeAssetUrl(path)}" alt="" />`)
     .join('\n    ');
   const captionColors = scene.captionStyle.colors;
   return `<!doctype html>
 <html lang="zh-CN">
 <head>
   <meta charset="utf-8" />
-  <meta http-equiv="Content-Security-Policy" content="default-src 'none'; img-src file: data:; media-src file: data:; style-src 'nonce-storydream-html-video'; script-src 'nonce-storydream-html-video'" />
+  <meta http-equiv="Content-Security-Policy" content="default-src 'none'; img-src file: data: blob: storydream-media:; media-src file: data: blob: storydream-media:; style-src 'nonce-storydream-html-video'; script-src 'nonce-storydream-html-video' file: storydream-media:" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>${escapeHtml(scene.title)}</title>
   <style nonce="storydream-html-video">
+    @font-face {
+      font-family: "Microsoft YaHei UI";
+      src: local("Microsoft YaHei UI"), local("Microsoft YaHei");
+      font-display: block;
+    }
     :root {
       color-scheme: dark;
       --caption-text: ${captionColors.text};
@@ -292,7 +301,7 @@ function buildSceneHtml(scene: {
       padding: 0.42em 0.62em;
       border-left: 4px solid var(--caption-accent);
       background: var(--caption-background);
-      font-family: Georgia, "Microsoft YaHei UI", serif;
+      font-family: "EB Garamond", "Microsoft YaHei UI", serif;
     }
     .frame[data-caption-preset="karaoke"] .caption {
       width: fit-content;
@@ -318,150 +327,58 @@ function buildSceneHtml(scene: {
       opacity: 0;
     }
   </style>
-  <script nonce="storydream-html-video">
-    window.__duration = ${scene.duration};
-    window.__ready = false;
-    let sceneAudio = null;
-    let playbackFrame = null;
-    let playbackStartedAt = 0;
-    let playbackStartedFrom = 0;
-    let playbackCycle = 0;
-    const applyTimelineTime = (time) => {
-      const next = Math.max(0, Math.min(${scene.duration}, Number(time) || 0));
-      const progress = ${scene.duration} > 0 ? next / ${scene.duration} : 0;
-      const eased = 1 - Math.pow(1 - progress, 2);
-      window.__tl.current = next;
-      document.documentElement.style.setProperty('--scene-time', next + 's');
-      document.documentElement.style.setProperty('--scene-progress', String(progress));
-      document.documentElement.dataset.time = String(next);
-      document.documentElement.dataset.progress = String(progress);
-      document.body.dataset.time = String(next);
-      document.body.dataset.progress = String(progress);
-      const frame = document.querySelector('.frame');
-      const image = document.querySelector('.scene-image');
-      const foregrounds = typeof document.querySelectorAll === 'function' ? document.querySelectorAll('.scene-foreground') : [];
-      const veil = document.querySelector('.veil');
-      const copy = document.querySelector('.copy');
-      const caption = document.querySelector('.caption');
-      const requestedCaptionAnimation = ${JSON.stringify(scene.captionStyle.animation)};
-      const reduceCaptionMotion = typeof matchMedia === 'function' && matchMedia('(prefers-reduced-motion: reduce)').matches;
-      const captionAnimation = reduceCaptionMotion ? 'none' : requestedCaptionAnimation;
-      if (frame) {
-        frame.dataset.time = String(next);
-        frame.dataset.progress = String(progress);
-      }
-      if (image) {
-        image.style.transform = 'scale(' + (1.04 + progress * 0.035).toFixed(4) + ')';
-      }
-      Array.from(foregrounds).forEach((foreground, index) => {
-        const direction = index % 2 === 0 ? 1 : -1;
-        foreground.style.transform = 'translate(' + (direction * (1 - eased) * 8).toFixed(2) + 'px, ' + ((1 - eased) * 14).toFixed(2) + 'px) scale(' + (0.98 + eased * 0.02).toFixed(4) + ')';
-      });
-      if (veil) {
-        veil.style.opacity = String(0.86 + progress * 0.1);
-      }
-      if (copy) {
-        if (captionAnimation === 'fade-up') {
-          copy.style.opacity = String(Math.min(1, 0.72 + eased * 0.28));
-          copy.style.transform = 'translateY(' + ((1 - eased) * 18).toFixed(2) + 'px)';
-        } else {
-          copy.style.opacity = '1';
-          copy.style.transform = 'translateY(0)';
-        }
-      }
-      if (caption) {
-        caption.style.opacity = captionAnimation === 'pop'
-          ? String(Math.min(1, 0.7 + eased * 0.3))
-          : '1';
-        caption.style.transform = captionAnimation === 'pop'
-          ? 'scale(' + (0.92 + eased * 0.08).toFixed(4) + ')'
-          : 'scale(1)';
-      }
-      return next;
-    };
-    const syncAudioTime = (time) => {
-      if (!sceneAudio) return;
-      try {
-        sceneAudio.currentTime = time;
-      } catch {}
-    };
-    const playNarration = () => {
-      if (!sceneAudio) return;
-      const result = sceneAudio.play();
-      if (result && typeof result.catch === 'function') result.catch(() => undefined);
-    };
-    const advancePlayback = (now) => {
-      if (!window.__tl.playing) return;
-      const elapsed = Math.max(0, (now - playbackStartedAt) / 1000);
-      const rawTime = playbackStartedFrom + elapsed;
-      const cycle = ${scene.duration} > 0 ? Math.floor(rawTime / ${scene.duration}) : 0;
-      const next = ${scene.duration} > 0 ? rawTime % ${scene.duration} : 0;
-      applyTimelineTime(next);
-      if (cycle !== playbackCycle) {
-        playbackCycle = cycle;
-        syncAudioTime(next);
-        playNarration();
-      }
-      playbackFrame = requestAnimationFrame(advancePlayback);
-    };
-    window.__tl = {
-      current: 0,
-      duration: ${scene.duration},
-      playing: false,
-      seek(time) {
-        const next = applyTimelineTime(time);
-        syncAudioTime(next);
-        if (this.playing) {
-          playbackStartedAt = performance.now();
-          playbackStartedFrom = next;
-          playbackCycle = 0;
-        }
-        return next;
-      },
-      play() {
-        if (this.playing) return this.current;
-        if (this.current >= this.duration) this.seek(0);
-        this.playing = true;
-        playbackStartedAt = performance.now();
-        playbackStartedFrom = this.current;
-        playbackCycle = 0;
-        syncAudioTime(this.current);
-        playNarration();
-        playbackFrame = requestAnimationFrame(advancePlayback);
-        return this.current;
-      },
-      pause() {
-        this.playing = false;
-        if (playbackFrame !== null) {
-          cancelAnimationFrame(playbackFrame);
-          playbackFrame = null;
-        }
-        if (sceneAudio) sceneAudio.pause();
-        return this.current;
-      }
-    };
-    window.__audioPath = ${JSON.stringify(scene.audioPath)};
-    window.addEventListener('DOMContentLoaded', () => {
-      sceneAudio = document.querySelector('.scene-audio');
-      if (sceneAudio) sceneAudio.loop = true;
-      window.__ready = true;
-      window.__tl.seek(0);
-    });
-  </script>
+  <script nonce="storydream-html-video" src="./${GSAP_RUNTIME_FILENAME}"></script>
+  <script nonce="storydream-html-video" src="./${HYPERFRAMES_RUNTIME_FILENAME}"></script>
 </head>
 <body>
-  <div class="frame" data-caption-preset="${scene.captionStyle.preset}" data-caption-animation="${scene.captionStyle.animation}">
-    <img class="scene-image" src="${imageDataUrl}" alt="${escapeHtml(scene.caption)}" />
-    <audio class="scene-audio" src="${audioDataUrl}" preload="auto"></audio>
-    <div class="veil"></div>
+  <div id="${compositionId}" class="frame" data-composition-id="${compositionId}" data-start="0" data-duration="${scene.duration}" data-width="${scene.canvas_w}" data-height="${scene.canvas_h}" data-caption-preset="${scene.captionStyle.preset}" data-caption-animation="${scene.captionStyle.animation}">
+    <img id="scene-background" class="clip scene-image" data-start="0" data-duration="${scene.duration}" data-track-index="0" src="${imageDataUrl}" alt="${escapeHtml(scene.caption)}" />
+    <audio id="scene-narration" class="clip scene-audio" data-start="0" data-duration="${scene.duration}" data-track-index="1" data-volume="1" src="${audioDataUrl}" preload="auto"></audio>
+    <div id="scene-veil" class="clip veil" data-start="0" data-duration="${scene.duration}" data-track-index="20"></div>
     ${foregroundMarkup}
-    <div class="copy">
+    <div id="scene-copy" class="clip copy" data-start="0" data-duration="${scene.duration}" data-track-index="21">
       <div class="title">${escapeHtml(scene.title)}</div>
       <div class="caption">${escapeHtml(scene.caption)}</div>
       <div class="meta">${escapeHtml(scene.description)}</div>
     </div>
     <div class="ready-indicator">ready</div>
   </div>
+  <script nonce="storydream-html-video">
+    window.__duration = ${scene.duration};
+    window.__ready = false;
+    window.__timelines = window.__timelines || {};
+    const tl = gsap.timeline({ paused: true });
+    tl.fromTo('#scene-background', { scale: 1.04 }, { scale: 1.075, duration: ${scene.duration}, ease: 'none' }, 0);
+    tl.fromTo('#scene-veil', { opacity: 0.86 }, { opacity: 0.96, duration: ${scene.duration}, ease: 'none' }, 0);
+    ${foregroundMarkup ? (scene.foregroundPaths ?? []).map((_, index) => {
+      const direction = index % 2 === 0 ? 1 : -1;
+      return `tl.fromTo('#foreground-${index + 1}', { x: ${direction * 8}, y: 14, scale: 0.98 }, { x: 0, y: 0, scale: 1, duration: ${scene.duration}, ease: 'power2.out' }, 0);`;
+    }).join('\n    ') : ''}
+    const reduceCaptionMotion = typeof matchMedia === 'function' && matchMedia('(prefers-reduced-motion: reduce)').matches;
+    const captionAnimation = reduceCaptionMotion ? 'none' : ${JSON.stringify(scene.captionStyle.animation)};
+    if (captionAnimation === 'fade-up') {
+      tl.fromTo('#scene-copy', { opacity: 0.72, y: 18 }, { opacity: 1, y: 0, duration: ${Math.min(scene.duration, 0.72)}, ease: 'power2.out' }, 0);
+    } else if (captionAnimation === 'pop') {
+      tl.fromTo('#scene-copy .caption', { opacity: 0.7, scale: 0.92 }, { opacity: 1, scale: 1, duration: ${Math.min(scene.duration, 0.6)}, ease: 'back.out(1.4)' }, 0);
+    }
+    tl.set({}, {}, ${scene.duration});
+    window.__tl = tl;
+    window.__timelines['${compositionId}'] = tl;
+    window.__audioPath = ${JSON.stringify(scene.audioPath)};
+    window.addEventListener('DOMContentLoaded', () => {
+      window.__ready = true;
+      window.__tl.seek(0, false);
+      window.__tl.pause();
+      window.parent.postMessage({
+        type: 'storydream:hyperframes-runtime-ready',
+        compositionId: '${compositionId}',
+        hasGsap: typeof window.gsap?.timeline === 'function',
+        compositionReady: window.__ready === true,
+        timelineKeys: Object.keys(window.__timelines),
+        timelineDuration: window.__tl.duration(),
+      }, '*');
+    });
+  </script>
 </body>
 </html>`;
 }

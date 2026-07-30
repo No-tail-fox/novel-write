@@ -8,7 +8,9 @@ import { FileDatabase } from '@shared/storage';
 import { defaultConfig } from '@shared/config';
 import { convertCozeWorkflowToDraftTemplate } from '@shared/coze-workflow-converter';
 import {
+  createHtmlVideoPipelineData,
   createHtmlVideoTaskInput,
+  htmlVideoVisibleSteps,
   parseHtmlVideoPipelineData,
   recoverHtmlVideoPipelineDataForRetry,
 } from '@shared/html-video-workflow';
@@ -421,6 +423,112 @@ describe('file database', () => {
       });
       await reopened.close();
     } finally {
+      await rm(dir, { recursive: true, force: true });
+    }
+  });
+
+  it('atomically saves versioned HTML composition source and rolls back file and database failures', async () => {
+    const dir = await mkdtemp(join(tmpdir(), 'storydream-db-html-video-source-'));
+    const file = join(dir, 'app.db');
+    let rejectDatabaseReplace = false;
+    const db = await FileDatabase.open(file, {
+      replaceFile: async (source, target) => {
+        if (rejectDatabaseReplace) throw new Error('injected composition database commit failure');
+        await rename(source, target);
+      },
+    });
+    const sourceV1 = '<!doctype html><html><body><main data-composition-id="scene-1" data-duration="2"></main></body></html>';
+    const sourceV2 = sourceV1.replace('</main>', '<p>saved revision two</p></main>');
+    const sourceV3 = sourceV1.replace('</main>', '<p>must roll back</p></main>');
+    const fileOperations = {
+      ensureDirectory: async (path: string) => { await mkdir(path, { recursive: true }); },
+      writeSource: async (path: string, source: string) => { await writeFile(path, source, 'utf8'); },
+      moveFile: async (source: string, target: string) => { await rename(source, target); },
+      removeFile: async (path: string) => { await rm(path, { force: true }); },
+      now: () => '2026-07-30T10:00:00.000Z',
+    };
+
+    try {
+      const task = await db.createTask(createHtmlVideoTaskInput({ copy: '源码修订测试。' }));
+      if (!task.managedStorageKey) throw new Error('HTML video source fixture has no managed storage key.');
+      const htmlPath = join(dir, 'tasks', task.managedStorageKey, 'html-scenes', 'scene-001.html');
+      await mkdir(join(htmlPath, '..'), { recursive: true });
+      await writeFile(htmlPath, sourceV1, 'utf8');
+
+      const pipeline = createHtmlVideoPipelineData(task.inputText, {});
+      pipeline.revision = 7;
+      pipeline.current = 'done';
+      for (const step of htmlVideoVisibleSteps) pipeline.steps[step] = { status: 'completed' };
+      pipeline.compositions = [{
+        index: 1,
+        durationSec: 2,
+        canvas: { w: 1080, h: 1920 },
+        audio: { src: join(dir, 'voice.wav'), durationSec: 2 },
+        background: { src: join(dir, 'background.png') },
+        captions: [],
+        htmlPath,
+        thumbnailPath: join(dir, 'thumbnail.png'),
+        rev: 1,
+      }];
+      pipeline.output = { path: join(dir, 'final.mp4'), sizeBytes: 2048, durationSec: 2 };
+      await db.updateTask(task.id, {
+        status: 'completed',
+        currentStep: 6,
+        pipelineStep: 'done',
+        pipelineData: JSON.stringify(pipeline),
+      });
+
+      const saved = await db.updateHtmlVideoCompositionSource({
+        taskId: task.id,
+        sceneIndex: 1,
+        expectedRevision: 1,
+        source: sourceV2,
+      }, fileOperations);
+      expect(saved.composition.rev).toBe(2);
+      expect(await readFile(htmlPath, 'utf8')).toBe(sourceV2);
+
+      const afterSave = (await db.getState()).tasks.find((item) => item.id === task.id);
+      const savedPipeline = parseHtmlVideoPipelineData(afterSave?.pipelineData);
+      expect(afterSave).toMatchObject({ status: 'paused', currentStep: 5, pipelineStep: 'render' });
+      expect(savedPipeline.revision).toBe(8);
+      expect(savedPipeline.compositions).toEqual([{ ...pipeline.compositions[0], rev: 2 }]);
+      expect(savedPipeline.steps.preview.status).toBe('completed');
+      expect(savedPipeline.steps.render.status).toBe('pending');
+      expect(savedPipeline.output).toBeUndefined();
+
+      await expect(db.updateHtmlVideoCompositionSource({
+        taskId: task.id,
+        sceneIndex: 1,
+        expectedRevision: 1,
+        source: sourceV3,
+      }, fileOperations)).rejects.toThrow('HTML_VIDEO_SOURCE_CONFLICT');
+      expect(await readFile(htmlPath, 'utf8')).toBe(sourceV2);
+
+      await db.updateTask(task.id, { status: 'running' });
+      await expect(db.updateHtmlVideoCompositionSource({
+        taskId: task.id,
+        sceneIndex: 1,
+        expectedRevision: 2,
+        source: sourceV3,
+      }, fileOperations)).rejects.toThrow('HTML_VIDEO_SOURCE_ACTIVE');
+      expect(await readFile(htmlPath, 'utf8')).toBe(sourceV2);
+
+      await db.updateTask(task.id, { status: 'paused' });
+      rejectDatabaseReplace = true;
+      await expect(db.updateHtmlVideoCompositionSource({
+        taskId: task.id,
+        sceneIndex: 1,
+        expectedRevision: 2,
+        source: sourceV3,
+      }, fileOperations)).rejects.toThrow('injected composition database commit failure');
+      rejectDatabaseReplace = false;
+
+      expect(await readFile(htmlPath, 'utf8')).toBe(sourceV2);
+      const afterFailure = (await db.getState()).tasks.find((item) => item.id === task.id);
+      expect(parseHtmlVideoPipelineData(afterFailure?.pipelineData).compositions[0].rev).toBe(2);
+    } finally {
+      rejectDatabaseReplace = false;
+      await db.close();
       await rm(dir, { recursive: true, force: true });
     }
   });

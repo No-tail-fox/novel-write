@@ -23,6 +23,11 @@ import type {
   DraftTemplateSummary,
   HistoryPage,
   HtmlVideoConfigChange,
+  HtmlVideoCompositionSource,
+  HtmlVideoCompositionSourceLintInput,
+  HtmlVideoCompositionSourceSaveInput,
+  HtmlVideoCompositionSourceSaveResult,
+  HtmlVideoLintFinding,
   HistoryListInput,
   ImageLabGenerateInput,
   ImageLabImportInput,
@@ -134,6 +139,9 @@ export const INVOKE_CHANNELS = Object.freeze([
   'html-video:create-task',
   'html-video:update-config',
   'html-video:import-cover',
+  'html-video:composition-source:get',
+  'html-video:composition-source:lint',
+  'html-video:composition-source:save',
   'task:import-cover',
   'html-video:open-preview',
   'html-video:media-url',
@@ -234,6 +242,9 @@ export type StoryDreamApi = {
   createHtmlVideoTask: (input: CreateTaskInput) => Promise<AppMutationResult | null>;
   updateHtmlVideoConfig: (id: string, changes: HtmlVideoConfigChange[]) => Promise<AppMutationResult | null>;
   importHtmlVideoCover: (id: string) => Promise<AppMutationResult | null>;
+  getHtmlVideoCompositionSource: (taskId: string, sceneIndex: number) => Promise<HtmlVideoCompositionSource>;
+  lintHtmlVideoCompositionSource: (input: HtmlVideoCompositionSourceLintInput) => Promise<HtmlVideoLintFinding[]>;
+  saveHtmlVideoCompositionSource: (input: HtmlVideoCompositionSourceSaveInput) => Promise<HtmlVideoCompositionSourceSaveResult>;
   importOrdinaryTaskCover: (ratio: OrdinaryTaskCoverRatio) => Promise<OrdinaryTaskCoverSelection | null>;
   openHtmlVideoPreview: (id: string, sceneIndex?: number) => Promise<void>;
   getHtmlVideoMediaUrl: (id: string, path: string) => Promise<string>;

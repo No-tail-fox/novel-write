@@ -21,7 +21,7 @@ describe('renderer IPC inventory', () => {
   });
 
   it('defines exactly one input schema for every canonical invoke channel', () => {
-    expect(INVOKE_CHANNELS).toHaveLength(92);
+    expect(INVOKE_CHANNELS).toHaveLength(95);
     expect(new Set(INVOKE_CHANNELS).size).toBe(INVOKE_CHANNELS.length);
     expect(new Set(Object.keys(ipcInputSchemas))).toEqual(new Set(INVOKE_CHANNELS));
     expect(INVOKE_CHANNELS).toContain('task:open-output-directory');
@@ -52,6 +52,12 @@ describe('renderer IPC inventory', () => {
   it('routes manual cover import by task id without exposing an external path parameter', async () => {
     await storyDreamApi.importHtmlVideoCover('html-task-1');
     expect(ipcRenderer.invoke).toHaveBeenCalledWith('html-video:import-cover', 'html-task-1');
+  });
+
+  it('routes bounded HyperFrames lint through the trusted main-process channel', async () => {
+    const input = { taskId: 'html-task-1', sceneIndex: 1, source: '<!doctype html><html></html>' };
+    await storyDreamApi.lintHtmlVideoCompositionSource(input);
+    expect(ipcRenderer.invoke).toHaveBeenCalledWith('html-video:composition-source:lint', input);
   });
 
   it('routes ordinary cover import by ratio without exposing an external path parameter', async () => {

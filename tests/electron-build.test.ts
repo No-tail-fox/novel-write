@@ -11,6 +11,10 @@ describe('electron build', () => {
     };
 
     expect(script).toMatch(/external:\s*\[[^\]]*['"]electron['"][^\]]*['"]sql\.js['"][^\]]*['"]undici['"][^\]]*\]/s);
+    expect(script).toContain("import { createRequire as __storydreamCreateRequire } from 'node:module'");
+    expect(script).toContain('const require = __storydreamCreateRequire(import.meta.url)');
+    expect(script).toContain("'node_modules/gsap/dist/gsap.min.js'");
+    expect(script).toContain("'dist-electron/electron/gsap.min.js'");
     expect(packageJson.dependencies).toMatchObject({
       'sql.js': expect.any(String),
       undici: '^6.27.0',
@@ -20,6 +24,7 @@ describe('electron build', () => {
     expect(packageJson.devDependencies).toMatchObject({
       concurrently: '^9.2.1',
       esbuild: '^0.28.1',
+      gsap: '3.12.5',
       vite: '^8.1.4',
     });
     expect(packageJson.overrides).toMatchObject({ 'shell-quote': '1.9.0' });

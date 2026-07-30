@@ -28,6 +28,7 @@ import type {
   HistoryListInput,
   HistoryPage,
   HtmlVideoConfigChange,
+  HtmlVideoCompositionSourceSaveInput,
   ImageLabGenerateInput,
   ImageLabImportInput,
   ImageLabRecord,
@@ -941,6 +942,15 @@ export function makeFallbackApi(setState: (state: AppState) => void): StoryDream
     },
     async importHtmlVideoCover() {
       throw new Error('浏览器预览不能导入本地封面，请在 Electron 桌面端操作。');
+    },
+    async getHtmlVideoCompositionSource() {
+      throw new Error('浏览器预览不能读取任务目录内的 HTML 源码，请在 Electron 桌面端操作。');
+    },
+    async lintHtmlVideoCompositionSource() {
+      throw new Error('浏览器预览不能运行桌面端 HyperFrames 源码检查。');
+    },
+    async saveHtmlVideoCompositionSource(_input: HtmlVideoCompositionSourceSaveInput) {
+      throw new Error('浏览器预览不能写入任务目录内的 HTML 源码，请在 Electron 桌面端操作。');
     },
     async importOrdinaryTaskCover() {
       throw new Error('浏览器预览不能导入普通任务封面，请在 Electron 桌面端操作。');

@@ -988,6 +988,10 @@ describe('electron ipc contract', () => {
     expect(captureLoop).toContain("sidecarFramePattern.replace('%04d', String(frameNumber).padStart(4, '0'))");
     expect(captureLoop).toContain('await seekHiddenHtmlSceneFrame(window, time)');
     expect(renderer).toContain('requestAnimationFrame');
+    expect(renderer).toContain('window.__tl.seek(${JSON.stringify(time)}, false);');
+    expect(renderer).toContain('window.__tl.play(); return true;');
+    expect(renderer).not.toContain('Promise.resolve(window.__tl.seek');
+    expect(renderer).not.toContain('Promise.resolve(window.__tl.play())');
     expect(captureLoop).toContain('capturePage');
   });
 

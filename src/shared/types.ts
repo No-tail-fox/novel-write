@@ -475,6 +475,58 @@ export interface HtmlVideoCompositionSnapshot {
   rev?: number;
 }
 
+export interface HtmlVideoCompositionSource {
+  taskId: string;
+  sceneIndex: number;
+  revision: number;
+  source: string;
+  mediaUrl: string;
+  thumbnailUrl?: string;
+  durationSec: number;
+  canvas: {
+    w: number;
+    h: number;
+  };
+}
+
+export interface HtmlVideoCompositionSourceSaveInput {
+  taskId: string;
+  sceneIndex: number;
+  expectedRevision: number;
+  source: string;
+}
+
+export interface HtmlVideoCompositionSourceLintInput {
+  taskId: string;
+  sceneIndex: number;
+  source: string;
+}
+
+export interface HtmlVideoCompositionSourceSaveResult {
+  composition: HtmlVideoCompositionSource;
+  mutation: AppMutationResult | null;
+}
+
+export interface HtmlVideoClipInfo {
+  id: string;
+  tagName: string;
+  label: string;
+  startSec: number;
+  durationSec: number;
+  trackIndex: number;
+  mediaStartSec?: number;
+  zIndex?: number;
+}
+
+export interface HtmlVideoLintFinding {
+  code: string;
+  severity: 'error' | 'warning' | 'info';
+  message: string;
+  fixHint?: string;
+  selector?: string;
+  snippet?: string;
+}
+
 export interface HtmlVideoAsset {
   sceneIndex: number;
   kind: 'bg' | 'fg';

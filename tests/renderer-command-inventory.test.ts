@@ -11,6 +11,7 @@ const queryOnlyMethods = new Set([
   'getImageLabRecordDetail', 'listVoiceLabRecords', 'getVoiceLabRecordDetail', 'listPromptTemplates',
   'getPromptTemplateDetail', 'listDraftTemplates', 'getDraftTemplateDetail', 'listMinimaxCloneVoices',
   'listBookSelections', 'listPersonAssets', 'listPersonAssetImages', 'getHtmlVideoMediaUrl',
+  'getHtmlVideoCompositionSource', 'lintHtmlVideoCompositionSource',
   'getViralAnalysisResult', 'getTaskArtifacts', 'readAssetDataUrl', 'getJianyingEffectCatalog', 'onAppDelta',
 ]);
 

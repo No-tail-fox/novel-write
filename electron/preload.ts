@@ -27,6 +27,11 @@ import type {
   HistoryListRequest,
   HistoryPage,
   HtmlVideoConfigChange,
+  HtmlVideoCompositionSource,
+  HtmlVideoCompositionSourceLintInput,
+  HtmlVideoCompositionSourceSaveInput,
+  HtmlVideoCompositionSourceSaveResult,
+  HtmlVideoLintFinding,
   ImageLabGenerateInput,
   ImageLabImportInput,
   ImageLabRecord,
@@ -215,6 +220,12 @@ export const storyDreamApi = {
     invokeTrusted('html-video:update-config', { id, changes }),
   importHtmlVideoCover: (id: string): Promise<AppMutationResult | null> =>
     invokeTrusted('html-video:import-cover', id),
+  getHtmlVideoCompositionSource: (taskId: string, sceneIndex: number): Promise<HtmlVideoCompositionSource> =>
+    invokeTrusted('html-video:composition-source:get', { taskId, sceneIndex }),
+  lintHtmlVideoCompositionSource: (input: HtmlVideoCompositionSourceLintInput): Promise<HtmlVideoLintFinding[]> =>
+    invokeTrusted('html-video:composition-source:lint', input),
+  saveHtmlVideoCompositionSource: (input: HtmlVideoCompositionSourceSaveInput): Promise<HtmlVideoCompositionSourceSaveResult> =>
+    invokeTrusted('html-video:composition-source:save', input),
   importOrdinaryTaskCover: (ratio: OrdinaryTaskCoverRatio): Promise<OrdinaryTaskCoverSelection | null> =>
     invokeTrusted('task:import-cover', ratio),
   openHtmlVideoPreview: (id: string, sceneIndex?: number): Promise<void> =>

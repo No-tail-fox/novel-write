@@ -1,6 +1,6 @@
 import { createHash, randomUUID } from 'node:crypto';
 import type { BigIntStats } from 'node:fs';
-import { copyFile, link, lstat, mkdir, open, readdir, realpath, rename, rm, rmdir, stat, statfs, unlink, writeFile } from 'node:fs/promises';
+import { copyFile, link, lstat, mkdir, open, readFile, readdir, realpath, rename, rm, rmdir, stat, statfs, unlink, writeFile } from 'node:fs/promises';
 import { basename, dirname, extname, isAbsolute, join, relative, resolve } from 'node:path';
 import { AppError } from '../src/shared/app-error';
 import {
@@ -21,6 +21,7 @@ import type {
   HtmlVideoRenderInput,
 } from '../src/shared/html-video-runner';
 import { MAX_HTML_VIDEO_MEDIA_FILE_BYTES } from '../src/shared/html-video-runner';
+import { GSAP_RUNTIME_FILENAME, HYPERFRAMES_RUNTIME_FILENAME, MAX_HYPERFRAMES_SOURCE_BYTES } from '../src/shared/hyperframes';
 import type {
   BgmItem,
   HtmlVideoCompositionSnapshot,
@@ -85,6 +86,8 @@ export interface ElectronHtmlVideoRuntimeOptions {
   getAvailableDiskBytes?(workDir: string): Promise<number>;
   publicationFileOperations?: Partial<HtmlVideoPublicationFileOperations>;
   stagingFileOperations?: Partial<HtmlVideoStagingFileOperations>;
+  gsapRuntimePath?: string;
+  hyperframesRuntimePath?: string;
 }
 
 export interface HtmlVideoPublicationFileOperations {
@@ -983,6 +986,8 @@ function htmlVideoMediaRangeStream(
 
 function htmlVideoMediaContentType(path: string): string {
   const extension = extname(path).toLowerCase();
+  if (extension === '.html' || extension === '.htm') return 'text/html; charset=utf-8';
+  if (extension === '.js' || extension === '.mjs') return 'text/javascript; charset=utf-8';
   if (extension === '.mp4') return 'video/mp4';
   if (extension === '.webm') return 'video/webm';
   if (extension === '.png') return 'image/png';
@@ -2078,6 +2083,7 @@ export function createElectronHtmlVideoRuntime(options: ElectronHtmlVideoRuntime
           ensureTaskLocalDirectory(stageDir, ['html-scenes']),
           ensureTaskLocalDirectory(stageDir, ['preview-thumbnails']),
         ]);
+        const stagedAnimationRuntimes = await stageHtmlVideoAnimationRuntimes(options, stageHtmlDir);
         const pending: Array<{
           sceneId: number;
           sourceScene: HtmlVideoPreviewInput['scenes'][number];
@@ -2130,10 +2136,20 @@ export function createElectronHtmlVideoRuntime(options: ElectronHtmlVideoRuntime
         const publishedFiles = await publishHtmlVideoStagedFiles(
           options.taskDirectory,
           stage,
-          pending.flatMap((item) => [
-            { stagedPath: item.stagedHtmlPath, destinationPath: item.htmlPath },
-            { stagedPath: item.stagedThumbnailPath, destinationPath: item.thumbnailPath },
-          ]),
+          [
+            {
+              stagedPath: stagedAnimationRuntimes.gsapRuntimePath,
+              destinationPath: join(htmlDir, GSAP_RUNTIME_FILENAME),
+            },
+            {
+              stagedPath: stagedAnimationRuntimes.hyperframesRuntimePath,
+              destinationPath: join(htmlDir, HYPERFRAMES_RUNTIME_FILENAME),
+            },
+            ...pending.flatMap((item) => [
+              { stagedPath: item.stagedHtmlPath, destinationPath: item.htmlPath },
+              { stagedPath: item.stagedThumbnailPath, destinationPath: item.thumbnailPath },
+            ]),
+          ],
           options.publicationFileOperations,
         );
         const compositions = pending.map<HtmlVideoCompositionSnapshot>((item, index) => ({
@@ -2143,8 +2159,8 @@ export function createElectronHtmlVideoRuntime(options: ElectronHtmlVideoRuntime
           audio: { src: item.voice.src, durationSec: item.voice.durationSec },
           background: { src: item.background.src },
           captions: captionTimeline(item.sourceScene.captions, item.voice.durationSec, item.sceneId),
-          htmlPath: publishedFiles[index * 2].path,
-          thumbnailPath: publishedFiles[index * 2 + 1].path,
+          htmlPath: publishedFiles[index * 2 + 2].path,
+          thumbnailPath: publishedFiles[index * 2 + 3].path,
           rev: 1,
         }));
         return { compositions };
@@ -2159,6 +2175,7 @@ export function createElectronHtmlVideoRuntime(options: ElectronHtmlVideoRuntime
         ? await taskLocalFile(workDir, options.bgmPath)
         : undefined;
       const localInput = await resolveTaskLocalRuntimeMedia(workDir, input);
+      const savedSources = await loadHtmlVideoCompositionSources(workDir, input.compositions);
       const coverPath = input.coverAsset
         ? await taskLocalFile(workDir, input.coverAsset.path)
         : undefined;
@@ -2166,6 +2183,11 @@ export function createElectronHtmlVideoRuntime(options: ElectronHtmlVideoRuntime
       throwIfAborted(signal);
       return withHtmlVideoRuntimeStage(options.taskDirectory, 'render', async (stage, stageDir) => {
         const composition = buildRuntimeComposition(options, localInput, fps, maxLongEdge, stageDir, bgmPath, coverPath);
+        composition.scenes.forEach((scene) => {
+          scene.html = savedSources.get(scene.sceneId) ?? scene.html;
+        });
+        const stageHtmlDir = await ensureTaskLocalDirectory(stageDir, ['html-scenes']);
+        await stageHtmlVideoAnimationRuntimes(options, stageHtmlDir);
         await preflightHtmlVideoRender({
           workDir: stageDir,
           canvas: { width: composition.canvas_w, height: composition.canvas_h },
@@ -2309,6 +2331,78 @@ function isSameHtmlVideoRenderArtifactIdentity(
     && current.size === expected.size
     && current.modifiedNs === expected.modifiedNs
     && current.changedNs === expected.changedNs;
+}
+
+export async function loadHtmlVideoCompositionSources(
+  workDir: string,
+  compositions: readonly HtmlVideoCompositionSnapshot[],
+): Promise<Map<number, string>> {
+  const sources = new Map<number, string>();
+  for (const composition of compositions) {
+    if (!composition.htmlPath) continue;
+    const sourcePath = await taskLocalFile(workDir, composition.htmlPath);
+    const sourceStat = await stat(sourcePath);
+    if (!sourceStat.isFile() || sourceStat.size <= 0 || sourceStat.size > MAX_HYPERFRAMES_SOURCE_BYTES) {
+      throw new AppError(
+        'HYPERFRAMES_SOURCE_INVALID',
+        `场景 ${composition.index} 的 HTML 源码为空或超过大小限制。`,
+        true,
+      );
+    }
+    const source = await readFile(sourcePath, 'utf8');
+    if (!source.trim() || source.includes('\0')) {
+      throw new AppError('HYPERFRAMES_SOURCE_INVALID', `场景 ${composition.index} 的 HTML 源码无效。`, true);
+    }
+    sources.set(composition.index, source);
+  }
+  return sources;
+}
+
+async function stageHtmlVideoAnimationRuntimes(
+  options: ElectronHtmlVideoRuntimeOptions,
+  htmlDirectory: string,
+): Promise<{ gsapRuntimePath: string; hyperframesRuntimePath: string }> {
+  const [gsapRuntimePath, hyperframesRuntimePath] = await Promise.all([
+    stageHtmlVideoAnimationRuntime(
+      options.gsapRuntimePath ?? join(process.cwd(), 'node_modules', 'gsap', 'dist', 'gsap.min.js'),
+      htmlDirectory,
+      GSAP_RUNTIME_FILENAME,
+      'GSAP',
+      'GSAP',
+    ),
+    stageHtmlVideoAnimationRuntime(
+      options.hyperframesRuntimePath
+        ?? join(process.cwd(), 'node_modules', '@hyperframes', 'core', 'dist', 'hyperframe.runtime.iife.js'),
+      htmlDirectory,
+      HYPERFRAMES_RUNTIME_FILENAME,
+      'HyperFrames',
+      'HYPERFRAMES',
+    ),
+  ]);
+  return { gsapRuntimePath, hyperframesRuntimePath };
+}
+
+async function stageHtmlVideoAnimationRuntime(
+  configuredPath: string,
+  htmlDirectory: string,
+  filename: string,
+  runtimeName: string,
+  errorCodePrefix: 'GSAP' | 'HYPERFRAMES',
+): Promise<string> {
+  const runtimePath = await realpath(configuredPath).catch(() => {
+    throw new AppError(`${errorCodePrefix}_RUNTIME_UNAVAILABLE`, `${runtimeName} 本地运行时缺失，请重新安装或修复应用。`, true);
+  });
+  const runtimeStat = await stat(runtimePath);
+  if (!runtimeStat.isFile() || runtimeStat.size <= 0 || runtimeStat.size > 2 * 1024 * 1024) {
+    throw new AppError(`${errorCodePrefix}_RUNTIME_INVALID`, `${runtimeName} 本地运行时文件无效。`, true);
+  }
+  const destinationPath = join(htmlDirectory, filename);
+  await copyFile(runtimePath, destinationPath);
+  const destinationStat = await stat(destinationPath);
+  if (!destinationStat.isFile() || destinationStat.size !== runtimeStat.size) {
+    throw new AppError(`${errorCodePrefix}_RUNTIME_INVALID`, `${runtimeName} 本地运行时复制不完整。`, true);
+  }
+  return destinationPath;
 }
 
 function buildRuntimeComposition(

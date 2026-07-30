@@ -211,6 +211,16 @@ export const rendererCommandInventory = {
     owner('draft-templates', 'src/features/templates/DraftTemplatesPage.tsx', 'saveCozeWorkflowTemplate', 'onClick={saveCozeWorkflowTemplate}', '导入 Coze 模板', productShellTest),
     owner('draft-templates', 'src/features/templates/DraftTemplatesPage.tsx', 'saveAllCozeWorkflowTemplates', 'onClick={saveAllCozeWorkflowTemplates}', '全部导入', productShellTest),
   ),
+  saveHtmlVideoCompositionSource: command(owner(
+    'html-video',
+    'src/features/html-video/HtmlVideoAuthoringWorkspace.tsx',
+    'saveHtmlVideoCompositionSource',
+    'onClick={saveHtmlVideoCompositionSource}',
+    '保存',
+    'tests/hyperframes-studio.test.ts',
+    undefined,
+    { disabled: 'disabled={!canSave}', loading: 'sourceAction.busy ? <Loader2', error: 'setStatusMessage(error.message)' },
+  )),
   saveMinimaxCloneVoice: command(owner(
     'settings',
     'src/features/settings/MinimaxCloneVoiceManager.tsx',

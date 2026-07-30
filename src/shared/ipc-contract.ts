@@ -24,6 +24,7 @@ import {
 import { HTML_VIDEO_EDITABLE_CONTROL_FIELDS } from './html-video-control-manifest';
 import { INVOKE_CHANNELS, type InvokeChannel } from './storydream-api';
 import { ORDINARY_TASK_COVER_RATIOS } from './ordinary-task-cover';
+import { MAX_HYPERFRAMES_SOURCE_BYTES } from './hyperframes';
 
 export const MAX_TASK_TEXT = 1_000_000;
 export const MAX_IPC_TEXT = 65_536;
@@ -31,6 +32,7 @@ export const MAX_IPC_ARRAY_ITEMS = 500;
 export const MAX_IPC_OBJECT_KEYS = 256;
 export const MAX_IPC_DEPTH = 12;
 export const MAX_IPC_PATH = 4096;
+export { MAX_HYPERFRAMES_SOURCE_BYTES } from './hyperframes';
 
 const nonEmptyText = (max = MAX_IPC_TEXT) => z.string().max(max).refine((value) => value.trim().length > 0, 'Value is required.');
 const optionalText = (max = MAX_IPC_TEXT) => z.string().max(max).optional();
@@ -242,6 +244,30 @@ const htmlVideoMediaSchema = z
     path: pathSchema,
   })
   .strict();
+
+const htmlVideoCompositionSourceGetSchema = z
+  .object({
+    taskId: governanceIdSchema,
+    sceneIndex: nonNegativeInteger.min(1).max(10_000),
+  })
+  .strict();
+
+const htmlVideoCompositionSourceLintSchema = bounded(z
+  .object({
+    taskId: governanceIdSchema,
+    sceneIndex: nonNegativeInteger.min(1).max(10_000),
+    source: z.string().min(1).max(MAX_HYPERFRAMES_SOURCE_BYTES),
+  })
+  .strict());
+
+const htmlVideoCompositionSourceSaveSchema = bounded(z
+  .object({
+    taskId: governanceIdSchema,
+    sceneIndex: nonNegativeInteger.min(1).max(10_000),
+    expectedRevision: nonNegativeInteger.max(Number.MAX_SAFE_INTEGER),
+    source: z.string().min(1).max(MAX_HYPERFRAMES_SOURCE_BYTES),
+  })
+  .strict());
 
 const htmlVideoConfigChangeSchema = z.discriminatedUnion('field', [
   z.object({ field: z.literal('style'), value: z.string().max(1024) }).strict(),
@@ -664,6 +690,9 @@ export const ipcInputSchemas = {
   'html-video:create-task': htmlVideoCreateTaskSchema,
   'html-video:update-config': htmlVideoConfigUpdateSchema,
   'html-video:import-cover': idOnlySchema,
+  'html-video:composition-source:get': htmlVideoCompositionSourceGetSchema,
+  'html-video:composition-source:lint': htmlVideoCompositionSourceLintSchema,
+  'html-video:composition-source:save': htmlVideoCompositionSourceSaveSchema,
   'task:import-cover': z.enum(ORDINARY_TASK_COVER_RATIOS),
   'html-video:open-preview': htmlVideoPreviewSchema,
   'html-video:media-url': htmlVideoMediaSchema,
