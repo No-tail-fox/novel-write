@@ -313,6 +313,41 @@ describe('history governance storage', () => {
     await db.close();
   });
 
+  it('persists task favorites, filters them through cursor-bound history pages, and keeps archived tasks read-only', async () => {
+    const { db } = await createDatabase('storydream-history-favorites-');
+    const favorite = await db.createTask({ title: 'Favorite task', inputText: 'keep this' });
+    const ordinary = await db.createTask({ title: 'Ordinary task', inputText: 'leave this' });
+
+    expect(favorite.isFavorite).toBe(false);
+    expect(ordinary.isFavorite).toBe(false);
+    expect(await db.setTaskFavorite(favorite.id, true)).toMatchObject({ id: favorite.id, isFavorite: true });
+
+    const first = await db.listTaskSummaries({ filter: 'active', favorite: true, limit: 1 });
+    expect(first).toMatchObject({ family: 'task', totalCount: 1, hasMore: false });
+    expect(first.items.map((task) => task.id)).toEqual([favorite.id]);
+    expect((await db.listTaskSummaries({ filter: 'active' })).items.map((task) => task.id)).toEqual(expect.arrayContaining([favorite.id, ordinary.id]));
+
+    await db.updateTask(favorite.id, { status: 'completed' });
+    await db.archiveTask(favorite.id);
+    await expect(db.setTaskFavorite(favorite.id, false)).rejects.toThrow(/archived|read.only/i);
+    expect((await db.getTaskDetail(favorite.id))?.isFavorite).toBe(true);
+    await db.close();
+  });
+
+  it('binds task favorite mode into history cursors', async () => {
+    const { db } = await createDatabase('storydream-history-favorite-cursors-');
+    const firstTask = await db.createTask({ title: 'Favorite cursor 1', inputText: 'cursor' });
+    const secondTask = await db.createTask({ title: 'Favorite cursor 2', inputText: 'cursor' });
+    await Promise.all([
+      db.setTaskFavorite(firstTask.id, true),
+      db.setTaskFavorite(secondTask.id, true),
+    ]);
+    const first = await db.listTaskSummaries({ filter: 'active', favorite: true, limit: 1 });
+    expect(first.nextCursor).not.toBeNull();
+    await expect(db.listTaskSummaries({ filter: 'active', cursor: first.nextCursor })).rejects.toThrow('CURSOR_INVALID');
+    await db.close();
+  });
+
   it('searches complete persisted fields and treats LIKE metacharacters literally', async () => {
     const { db } = await createDatabase('storydream-history-search-');
     const tailToken = 'needle-after-preview';

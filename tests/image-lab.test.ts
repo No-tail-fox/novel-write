@@ -2,7 +2,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { generateImageLabRecord } from '@shared/image-lab';
+import { generateImageLabRecord, selectImageLabProviderConfig } from '@shared/image-lab';
 import { defaultConfig } from '@shared/config';
 import type { AppConfig } from '@shared/types';
 
@@ -11,6 +11,39 @@ afterEach(() => {
 });
 
 describe('image lab generation', () => {
+  it('switches a page-level provider request onto the matching configured image profile', () => {
+    const config: AppConfig = {
+      ...defaultConfig,
+      imageProfiles: [
+        { ...defaultConfig.imageProfiles[0], id: 'gpt-active', enabled: true },
+        {
+          id: 'custom-lab',
+          name: '内网绘图',
+          enabled: false,
+          provider: 'custom',
+          customImage: {
+            ...defaultConfig.customImage,
+            displayName: '内网绘图',
+            baseUrl: 'https://custom.example',
+            apiKey: 'custom-key',
+            model: 'custom-model',
+          },
+        },
+      ],
+      activeImageProfileId: 'gpt-active',
+    };
+
+    const selected = selectImageLabProviderConfig(config, 'custom');
+
+    expect(selected.imageProvider).toBe('custom');
+    expect(selected.activeImageProfileId).toBe('custom-lab');
+    expect(selected.customImage).toMatchObject({
+      baseUrl: 'https://custom.example',
+      apiKey: 'custom-key',
+      model: 'custom-model',
+    });
+  });
+
   it('calls the configured image provider and returns a generated record with the real file path', async () => {
     const dir = await mkdtemp(join(tmpdir(), 'storybound-image-lab-'));
     const imageBytes = Buffer.from('lab-image');

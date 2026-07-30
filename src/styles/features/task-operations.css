@@ -351,6 +351,7 @@
   min-width: 0;
   display: flex;
   align-items: center;
+  gap: 10px;
 }
 
 .task-history-segments > .field > span {
@@ -491,6 +492,12 @@
   color: var(--shell-accent);
 }
 
+.history-page[data-task-operations="history"] .task-history-action.favorite-action.active {
+  border-color: var(--shell-accent);
+  background: color-mix(in srgb, var(--shell-accent) 10%, var(--shell-surface-raised));
+  color: var(--shell-accent-strong);
+}
+
 .history-page[data-task-operations="history"] .task-history-action.danger-action:hover:not(:disabled) {
   border-color: var(--danger);
   color: var(--danger);
@@ -514,7 +521,7 @@
 
 .history-page[data-history-family="task"] .table-head,
 .history-page[data-history-family="task"] .table-row {
-  grid-template-columns: minmax(260px, 1fr) 104px 112px 160px 150px 76px;
+  grid-template-columns: minmax(260px, 1fr) 104px 112px 160px 150px 108px;
 }
 
 .history-page[data-task-operations="history"] .table-head {

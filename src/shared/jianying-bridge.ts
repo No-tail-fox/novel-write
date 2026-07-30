@@ -3,7 +3,7 @@ import { mkdir, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { promisify } from 'node:util';
 import { resolvePythonRuntimeInfo, type PythonRuntimeInfo } from './python-runtime';
-import type { BgmItem, DraftTextBorder } from './types';
+import type { BgmItem, DraftImageBorderSides, DraftImageMotion, DraftTextBorder } from './types';
 
 const execFileAsync = promisify(execFile);
 
@@ -24,6 +24,18 @@ export interface PyJianYingBridgeInput {
     height: number;
     fit: 'cover' | 'contain';
     animation: string;
+    motion?: DraftImageMotion;
+    motionStrength?: number;
+  };
+  frame?: {
+    enabled: boolean;
+    headerColor: string;
+    headerColorEnd: string;
+    footerColor: string;
+    footerColorEnd: string;
+    imageBorderColor: string;
+    imageBorderWidth: number;
+    imageBorderSides: DraftImageBorderSides;
   };
   caption: {
     visible: boolean;
@@ -315,6 +327,77 @@ def clamp_number(value, default, minimum, maximum):
     return max(minimum, min(maximum, parsed))
 
 
+def gradient_rgba_row(width, start_color, end_color):
+    width = max(1, int(width))
+    start = color_to_bytes(start_color)
+    end = color_to_bytes(end_color)
+    if width == 1:
+        return start + b"\xff"
+    row = bytearray()
+    for index in range(width):
+        progress = index / (width - 1)
+        row.extend(bytes(int(round(start[channel] + (end[channel] - start[channel]) * progress)) for channel in range(3)))
+        row.append(255)
+    return bytes(row)
+
+
+def create_frame_overlay_png(path, canvas, image_area, frame):
+    if not frame or not frame.get("enabled", False):
+        return None
+    width = max(1, int(canvas.get("width", 1080) or 1080))
+    height = max(1, int(canvas.get("height", 1920) or 1920))
+    image_top = int(round(clamp_number(image_area.get("top"), 0, 0, 1) * height))
+    image_height = int(round(clamp_number(image_area.get("height"), 1, 0, 1 - (image_top / height)) * height))
+    image_bottom = max(image_top, min(height, image_top + image_height))
+    border_width = int(round(clamp_number(frame.get("imageBorderWidth"), 0, 0, min(width, height) / 2)))
+    border_sides = str(frame.get("imageBorderSides") or "all")
+    transparent_pixel = b"\x00\x00\x00\x00"
+    transparent_row = transparent_pixel * width
+    border_pixel = color_to_bytes(frame.get("imageBorderColor", "#000000")) + b"\xff"
+    horizontal_border_row = border_pixel * width
+    side_width = min(border_width, width // 2)
+    vertical_border_row = border_pixel * side_width + transparent_pixel * (width - side_width * 2) + border_pixel * side_width
+    header_row = gradient_rgba_row(width, frame.get("headerColor", "#000000"), frame.get("headerColorEnd", "#000000"))
+    footer_row = gradient_rgba_row(width, frame.get("footerColor", "#000000"), frame.get("footerColorEnd", "#000000"))
+    has_horizontal = border_width > 0 and border_sides in ("all", "horizontal")
+    has_vertical = border_width > 0 and border_sides in ("all", "vertical")
+    if image_top <= 0 and image_bottom >= height and not has_horizontal and not has_vertical:
+        return None
+    os.makedirs(os.path.dirname(path), exist_ok=True)
+    compressor = zlib.compressobj(6)
+    with open(path, "wb") as handle:
+        handle.write(b"\x89PNG\r\n\x1a\n")
+        handle.write(png_chunk(b"IHDR", struct.pack(">IIBBBBB", width, height, 8, 6, 0, 0, 0)))
+        for y in range(height):
+            if y < image_top:
+                row = header_row
+            elif y >= image_bottom:
+                row = footer_row
+            elif has_horizontal and (y < image_top + border_width or y >= image_bottom - border_width):
+                row = horizontal_border_row
+            elif has_vertical:
+                row = vertical_border_row
+            else:
+                row = transparent_row
+            compressed = compressor.compress(b"\x00" + row)
+            if compressed:
+                handle.write(png_chunk(b"IDAT", compressed))
+        final = compressor.flush()
+        if final:
+            handle.write(png_chunk(b"IDAT", final))
+        handle.write(png_chunk(b"IEND", b""))
+    return path
+
+
+def prepare_frame_overlay_asset(payload, materials_dir):
+    return create_frame_overlay_png(
+        os.path.join(materials_dir, "frame", "frame-overlay.png"),
+        payload.get("canvas") or {},
+        payload.get("imageArea") or {},
+        payload.get("frame") or {},
+    )
+
+
 def editor_text_y_to_jianying(value, default=0):
     return -clamp_number(value, default, -1.0, 1.0)
 
@@ -353,6 +436,40 @@ def apply_image_animation(segment, animation_name):
     animation_type = resolve_image_animation(animation_name)
     if animation_type:
         segment.add_animation(animation_type)
+
+
+def apply_camera_motion(segment, image_area, image_layout, duration):
+    motion = str(image_area.get("motion") or "").strip()
+    if not motion:
+        return False
+    if motion not in ("zoom_in", "zoom_out", "zoom_pan_up", "zoom_pan_down", "pan_left", "pan_right"):
+        raise ValueError(f"Unknown camera motion: {motion}")
+    duration = max(1, int(duration or 0))
+    strength = clamp_number(image_area.get("motionStrength"), 1, 0.5, 2)
+    base_scale = float(image_layout.get("scale") or 1)
+    base_y = float(image_layout.get("transform_y") or 0)
+    motion_scale = base_scale * (1 + strength * 0.08)
+    pan = strength * 0.04
+    keyframe = draft.KeyframeProperty
+
+    if motion == "zoom_in":
+        scale_start, scale_end = base_scale, motion_scale
+    elif motion == "zoom_out":
+        scale_start, scale_end = motion_scale, base_scale
+    else:
+        scale_start, scale_end = (base_scale, motion_scale) if motion.startswith("zoom_") else (motion_scale, motion_scale)
+    segment.add_keyframe(keyframe.uniform_scale, 0, scale_start)
+    segment.add_keyframe(keyframe.uniform_scale, duration, scale_end)
+
+    if motion in ("zoom_pan_up", "zoom_pan_down"):
+        direction = 1 if motion == "zoom_pan_up" else -1
+        segment.add_keyframe(keyframe.position_y, 0, base_y - direction * pan)
+        segment.add_keyframe(keyframe.position_y, duration, base_y + direction * pan)
+    elif motion in ("pan_left", "pan_right"):
+        direction = -1 if motion == "pan_left" else 1
+        segment.add_keyframe(keyframe.position_x, 0, -direction * pan)
+        segment.add_keyframe(keyframe.position_x, duration, direction * pan)
+    return True
 
 
 def resolve_image_layout(image_area, canvas, material):
@@ -419,7 +536,7 @@ def copy_asset(source_path, target_dir, filename_stem, fallback_ext):
     return target_path
 
 
-def patch_meta(meta_path, payload, draft_dir, duration, background_path, image_paths, cover_image_path, narration_paths, bgm_path):
+def patch_meta(meta_path, payload, draft_dir, duration, background_path, frame_overlay_path, image_paths, cover_image_path, narration_paths, bgm_path):
     try:
         with open(meta_path, "r", encoding="utf-8") as handle:
             meta = json.load(handle)
@@ -433,7 +550,7 @@ def patch_meta(meta_path, payload, draft_dir, duration, background_path, image_p
         "tm_duration": duration,
     })
     meta["draft_materials"] = [
-        {"type": 0, "value": [background_path] + image_paths},
+        {"type": 0, "value": [background_path] + ([frame_overlay_path] if frame_overlay_path else []) + image_paths},
         {"type": 1, "value": narration_paths},
         {"type": 2, "value": [bgm_path] if bgm_path else []},
         {"type": 3, "value": []},
@@ -691,6 +808,8 @@ def main():
     background_track = "background_track"
     script.add_track(draft.TrackType.video, background_track)
     script.add_track(draft.TrackType.video, "images")
+    if (payload.get("frame") or {}).get("enabled", False):
+        script.add_track(draft.TrackType.video, "frame_overlay")
     script.add_track(draft.TrackType.audio, "narration")
 
     scenes = payload.get("scenes") or []
@@ -755,6 +874,7 @@ def main():
     video_effect_type = resolve_enum("VideoSceneEffectType", effects.get("videoEffectType"))
     audio_effect_type = resolve_enum("AudioSceneEffectType", effects.get("audioEffectType"))
     background_path = prepare_background_asset(payload, materials_dir)
+    frame_overlay_path = prepare_frame_overlay_asset(payload, materials_dir)
     background_material = draft.VideoMaterial(background_path)
     background_segment = draft.VideoSegment(
         background_material,
@@ -763,6 +883,15 @@ def main():
         clip_settings=draft.ClipSettings(scale_x=1.0, scale_y=1.0),
     )
     script.add_segment(background_segment, background_track)
+    if frame_overlay_path:
+        frame_material = draft.VideoMaterial(frame_overlay_path)
+        frame_segment = draft.VideoSegment(
+            frame_material,
+            draft.Timerange(0, total_duration),
+            source_timerange=draft.Timerange(0, total_duration),
+            clip_settings=draft.ClipSettings(scale_x=1.0, scale_y=1.0),
+        )
+        script.add_segment(frame_segment, "frame_overlay")
 
     for index, scene in enumerate(timeline):
         scene_id = int(scene["sceneId"])
@@ -789,7 +918,8 @@ def main():
                     size=image_layout["mask_height"],
                     rect_width=image_layout["mask_width"],
                 )
-            apply_image_animation(image_segment, image_area.get("animation"))
+            if not apply_camera_motion(image_segment, image_area, image_layout, duration):
+                apply_image_animation(image_segment, image_area.get("animation"))
             if filter_type:
                 image_segment.add_filter(filter_type)
             if video_effect_type:
@@ -887,7 +1017,7 @@ def main():
     copied_images = [image_by_scene[int(scene["sceneId"])] for scene in scenes]
     copied_narration = [item["path"] for scene in scenes for item in audio_items_by_scene[int(scene["sceneId"])]]
     cover_image_path = norm(payload.get("coverImagePath") or "")
-    patch_meta(meta_path, payload, draft_dir, script.duration, background_path, copied_images, cover_image_path, copied_narration, bgm_path)
+    patch_meta(meta_path, payload, draft_dir, script.duration, background_path, frame_overlay_path, copied_images, cover_image_path, copied_narration, bgm_path)
     print(json.dumps({
         "ok": True,
         "draftDir": draft_dir,

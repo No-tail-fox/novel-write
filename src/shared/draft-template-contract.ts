@@ -1,5 +1,5 @@
 import { z } from 'zod';
-import { imageAnimations } from './templates';
+import { draftImageMotions, imageAnimations } from './templates';
 import type { DraftTemplate } from './types';
 
 const MAX_TEXT = 65_536;
@@ -60,6 +60,18 @@ export const draftTemplateSchema: z.ZodType<DraftTemplate> = z.object({
     top: coordinate,
     height: finite.min(0).max(2),
     animation: z.string().max(256).refine((value) => imageAnimations.includes(value), 'Unknown image animation.'),
+    motion: z.enum(draftImageMotions.map((option) => option.value) as [DraftTemplate['image']['motion'], ...DraftTemplate['image']['motion'][]]),
+    motionStrength: finite.min(0.5).max(2),
+  }).strict(),
+  frame: z.object({
+    enabled: z.boolean(),
+    headerColor: color,
+    headerColorEnd: color,
+    footerColor: color,
+    footerColorEnd: color,
+    imageBorderColor: color,
+    imageBorderWidth: finite.min(0).max(500),
+    imageBorderSides: z.enum(['all', 'horizontal', 'vertical']),
   }).strict(),
   title: textLayerSchema,
   subtitle: textLayerSchema,

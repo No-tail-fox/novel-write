@@ -131,7 +131,7 @@ export const HTML_VIDEO_CONTROL_MANIFEST_V1 = {
   }),
   draftTemplate: entry('draftTemplate', {
     schema: 'draft-template-id', uiLocation: 'draft', legacyMirror: null,
-    consumerStages: ['render'], invalidateFrom: 'render', availability: 'editable',
+    consumerStages: ['preview', 'render'], invalidateFrom: 'preview', availability: 'editable',
   }),
   foreground: entry('foreground', {
     schema: 'boolean', uiLocation: 'parameters', legacyMirror: 'htmlVideoForeground',

@@ -77,6 +77,7 @@ export const INVOKE_CHANNELS = Object.freeze([
   'app:get-bootstrap',
   'app:reconcile-deltas',
   'task:list',
+  'task:set-favorite',
   'task:archive',
   'task:restore',
   'task:delete',
@@ -94,6 +95,7 @@ export const INVOKE_CHANNELS = Object.freeze([
   'image-lab:restore',
   'image-lab:delete',
   'image-lab:get-detail',
+  'image-lab:open-output-directory',
   'voice-lab:list',
   'voice-lab:archive',
   'voice-lab:restore',
@@ -190,6 +192,7 @@ export type StoryDreamApi = {
   getBootstrap: () => Promise<BootstrapState>;
   reconcileDeltas: (input: AppDeltaReconcileRequest) => Promise<AppDeltaReconcileResult>;
   listTasks: (request?: HistoryListInput<'task'>) => Promise<HistoryPage<'task', TaskSummary>>;
+  setTaskFavorite: (id: string, isFavorite: boolean) => Promise<AppMutationResult>;
   archiveTask: (id: string) => Promise<AppMutationResult>;
   restoreTask: (id: string) => Promise<AppMutationResult>;
   deleteTaskPermanently: (id: string) => Promise<AppMutationResult>;
@@ -207,6 +210,7 @@ export type StoryDreamApi = {
   restoreImageLabRecord: (id: string) => Promise<AppMutationResult>;
   deleteImageLabRecordPermanently: (id: string) => Promise<AppMutationResult>;
   getImageLabRecordDetail: (id: string) => Promise<ImageLabRecord | null>;
+  openImageLabOutputDirectory: (id: string) => Promise<void>;
   listVoiceLabRecords: (request?: HistoryListInput<'voice-lab'>) => Promise<HistoryPage<'voice-lab', VoiceLabSummary>>;
   archiveVoiceLabRecord: (id: string) => Promise<AppMutationResult>;
   restoreVoiceLabRecord: (id: string) => Promise<AppMutationResult>;

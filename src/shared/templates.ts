@@ -1,4 +1,4 @@
-import type { DraftTemplate } from './types';
+import type { DraftImageMotion, DraftTemplate } from './types';
 
 const noBorder = {
   color: '#000000',
@@ -97,6 +97,27 @@ const audioBase = {
   videoEffectType: '',
   audioEffectType: '',
 };
+
+const neutralFrame: DraftTemplate['frame'] = {
+  enabled: false,
+  headerColor: '#000000',
+  headerColorEnd: '#000000',
+  footerColor: '#000000',
+  footerColorEnd: '#000000',
+  imageBorderColor: '#000000',
+  imageBorderWidth: 0,
+  imageBorderSides: 'all',
+};
+
+export const draftImageMotions: ReadonlyArray<{ value: DraftImageMotion; label: string }> = [
+  { value: '', label: '关闭运镜' },
+  { value: 'zoom_in', label: '推近' },
+  { value: 'zoom_out', label: '拉远' },
+  { value: 'zoom_pan_up', label: '推近并上移' },
+  { value: 'zoom_pan_down', label: '推近并下移' },
+  { value: 'pan_left', label: '向左平移' },
+  { value: 'pan_right', label: '向右平移' },
+];
 
 export const imageAnimations = [
   '无动画',
@@ -231,7 +252,8 @@ export const draftTemplates: DraftTemplate[] = [
     name: '默认竖屏',
     isDefault: true,
     canvas: { width: 1080, height: 1920, ratio: '9:16', backgroundColor: '#000000', backgroundImage: '' },
-    image: { visible: true, ratio: '9:16', fit: 'cover', top: 0, height: 1, animation: '缩放' },
+    image: { visible: true, ratio: '9:16', fit: 'cover', top: 0, height: 1, animation: '缩放', motion: '', motionStrength: 1 },
+    frame: neutralFrame,
     title: titleBase,
     subtitle: subtitleBase,
     caption: { ...captionBase, y: -0.21510416666666668 },
@@ -243,7 +265,8 @@ export const draftTemplates: DraftTemplate[] = [
     name: '竖屏4:3',
     isDefault: true,
     canvas: { width: 1080, height: 1920, ratio: '9:16', backgroundColor: '#000000', backgroundImage: '' },
-    image: { visible: true, ratio: '4:3', fit: 'cover', top: 0.2890625, height: 0.421875, animation: '缩放' },
+    image: { visible: true, ratio: '4:3', fit: 'cover', top: 0.2890625, height: 0.421875, animation: '缩放', motion: '', motionStrength: 1 },
+    frame: neutralFrame,
     title: { ...titleBase, y: 0.8357783211083945, fontSize: 20, underline: false },
     subtitle: { ...subtitleBase, y: 0.5953125 },
     caption: { ...captionBase, y: -0.5572916666666666 },
@@ -255,7 +278,8 @@ export const draftTemplates: DraftTemplate[] = [
     name: '横屏16:9',
     isDefault: true,
     canvas: { width: 1920, height: 1080, ratio: '16:9', backgroundColor: '#000000', backgroundImage: '' },
-    image: { visible: true, ratio: '16:9', fit: 'cover', top: 0, height: 1, animation: '缩放' },
+    image: { visible: true, ratio: '16:9', fit: 'cover', top: 0, height: 1, animation: '缩放', motion: '', motionStrength: 1 },
+    frame: neutralFrame,
     title: { ...titleBase, y: 0.12777777777777777, fontSize: 20, underline: false },
     subtitle: { ...subtitleBase, y: -0.43333333333333335, fontSize: 8 },
     caption: { ...captionBase, y: -0.6425925925925926, fontSize: 8 },
@@ -280,7 +304,13 @@ export function normalizeDraftTemplate(template: Partial<DraftTemplate>): DraftT
     ...fallback,
     ...template,
     canvas: { ...fallback.canvas, ...template.canvas },
-    image: { ...fallback.image, ...template.image },
+    image: {
+      ...fallback.image,
+      ...template.image,
+      motion: normalizeImageMotion(template.image?.motion),
+      motionStrength: clampNumber(template.image?.motionStrength, 1, 0.5, 2),
+    },
+    frame: normalizeFrame(template.frame),
     title: {
       ...fallback.title,
       ...template.title,
@@ -375,5 +405,26 @@ function normalizeCaptionBackground(value: unknown, fallback = captionBase.backg
     color: finiteString(input.color, fallback.color),
     alpha: finiteNumber(input.alpha, fallback.alpha),
     roundRadius: finiteNumber(input.roundRadius, fallback.roundRadius),
+  };
+}
+
+function normalizeImageMotion(value: unknown): DraftImageMotion {
+  return draftImageMotions.some((option) => option.value === value) ? value as DraftImageMotion : '';
+}
+
+function normalizeFrame(value: unknown): DraftTemplate['frame'] {
+  const input = value && typeof value === 'object' ? value as Partial<DraftTemplate['frame']> : {};
+  const imageBorderSides = input.imageBorderSides === 'horizontal' || input.imageBorderSides === 'vertical' || input.imageBorderSides === 'all'
+    ? input.imageBorderSides
+    : neutralFrame.imageBorderSides;
+  return {
+    enabled: typeof input.enabled === 'boolean' ? input.enabled : neutralFrame.enabled,
+    headerColor: finiteString(input.headerColor, neutralFrame.headerColor),
+    headerColorEnd: finiteString(input.headerColorEnd, neutralFrame.headerColorEnd),
+    footerColor: finiteString(input.footerColor, neutralFrame.footerColor),
+    footerColorEnd: finiteString(input.footerColorEnd, neutralFrame.footerColorEnd),
+    imageBorderColor: finiteString(input.imageBorderColor, neutralFrame.imageBorderColor),
+    imageBorderWidth: clampNumber(input.imageBorderWidth, neutralFrame.imageBorderWidth, 0, 500),
+    imageBorderSides,
   };
 }

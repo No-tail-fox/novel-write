@@ -331,6 +331,7 @@ export interface Task {
   id: string;
   archivedAt?: string | null;
   managedStorageKey?: string | null;
+  isFavorite?: boolean;
   title: string;
   inputText: string;
   taskKind: TaskKind;
@@ -796,6 +797,7 @@ export type HistoryListRequest =
       family: 'task';
       filter: HistoryArchiveFilter;
       taskType?: 'story' | 'music-mv' | 'html-video';
+      favorite?: boolean;
       query?: string;
       cursor?: string | null;
       limit?: number;
@@ -1424,6 +1426,18 @@ export interface DraftTemplate {
     top: number;
     height: number;
     animation: string;
+    motion: DraftImageMotion;
+    motionStrength: number;
+  };
+  frame: {
+    enabled: boolean;
+    headerColor: string;
+    headerColorEnd: string;
+    footerColor: string;
+    footerColorEnd: string;
+    imageBorderColor: string;
+    imageBorderWidth: number;
+    imageBorderSides: DraftImageBorderSides;
   };
   title: {
     visible: boolean;
@@ -1508,6 +1522,10 @@ export interface DraftTemplate {
     audioEffectType: string;
   };
 }
+
+export type DraftImageMotion = '' | 'zoom_in' | 'zoom_out' | 'zoom_pan_up' | 'zoom_pan_down' | 'pan_left' | 'pan_right';
+
+export type DraftImageBorderSides = 'all' | 'horizontal' | 'vertical';
 
 export interface DraftTextBorder {
   color: string;

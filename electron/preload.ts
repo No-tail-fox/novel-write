@@ -115,6 +115,7 @@ function normalizeTaskHistoryRequest(request: HistoryListInput<'task'>): Extract
   const base = {
     ...normalizeHistoryBase('task', request),
     ...(request.taskType !== undefined ? { taskType: request.taskType } : {}),
+    ...(request.favorite !== undefined ? { favorite: request.favorite } : {}),
   };
   if (request.statuses !== undefined) return { ...base, statuses: request.statuses };
   return {
@@ -150,6 +151,7 @@ export const storyDreamApi = {
   reconcileDeltas: (input: AppDeltaReconcileRequest): Promise<AppDeltaReconcileResult> => invokeTrusted('app:reconcile-deltas', input),
   listTasks: async (request: HistoryListInput<'task'> = {}): Promise<HistoryPage<'task', TaskSummary>> =>
     invokeTrusted('task:list', normalizeTaskHistoryRequest(request)),
+  setTaskFavorite: (id: string, isFavorite: boolean): Promise<AppMutationResult> => invokeTrusted('task:set-favorite', { id, isFavorite }),
   archiveTask: (id: string): Promise<AppMutationResult> => invokeTrusted('task:archive', id),
   restoreTask: (id: string): Promise<AppMutationResult> => invokeTrusted('task:restore', id),
   deleteTaskPermanently: (id: string): Promise<AppMutationResult> => invokeTrusted('task:delete', id),
@@ -171,6 +173,7 @@ export const storyDreamApi = {
   restoreImageLabRecord: (id: string): Promise<AppMutationResult> => invokeTrusted('image-lab:restore', id),
   deleteImageLabRecordPermanently: (id: string): Promise<AppMutationResult> => invokeTrusted('image-lab:delete', id),
   getImageLabRecordDetail: (id: string): Promise<ImageLabRecord | null> => invokeTrusted('image-lab:get-detail', id),
+  openImageLabOutputDirectory: (id: string): Promise<void> => invokeTrusted('image-lab:open-output-directory', id),
   listVoiceLabRecords: async (request: HistoryListInput<'voice-lab'> = {}): Promise<HistoryPage<'voice-lab', VoiceLabSummary>> =>
     invokeTrusted('voice-lab:list', normalizeVoiceLabHistoryRequest(request)),
   archiveVoiceLabRecord: (id: string): Promise<AppMutationResult> => invokeTrusted('voice-lab:archive', id),

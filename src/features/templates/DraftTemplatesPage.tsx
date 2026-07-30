@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from 'react';
 import { Copy, FolderOpen, LayoutTemplate, Plus, Save, Upload } from 'lucide-react';
 import type { AppMutationResult, DraftTemplate, DraftTextBorder, JianyingEffectCatalog } from '../../shared/types';
 import type { StoryDreamApi } from '../../shared/storydream-api';
-import { draftTemplates as builtinDraftTemplates, imageAnimations } from '../../shared/templates';
+import { draftImageMotions, draftTemplates as builtinDraftTemplates, imageAnimations } from '../../shared/templates';
 import { convertCozeWorkflowToDraftTemplate, convertManyCozeWorkflowsToDraftTemplates, type CozeWorkflowTemplateConversionResult } from '../../shared/coze-workflow-converter';
 import { useAsyncAction } from '../../ui/async-action';
 import { FormField as Field } from '../../components/FormField';
@@ -159,6 +159,10 @@ export function DraftTemplatesPage({ api, state, applyState }: { api: StoryDream
     setDraft((current) => (current ? { ...current, image: { ...current.image, ...patch } } : current));
   }
 
+  function updateDraftFrame(patch: Partial<DraftTemplate['frame']>) {
+    setDraft((current) => (current ? { ...current, frame: { ...current.frame, ...patch } } : current));
+  }
+
   function updateDraftTitle(patch: Partial<DraftTemplate['title']>) {
     setDraft((current) => (current ? { ...current, title: { ...current.title, ...patch } } : current));
   }
@@ -250,6 +254,32 @@ export function DraftTemplatesPage({ api, state, applyState }: { api: StoryDream
               <RangeField label="垂直位置" min={-1} max={1} step={0.01} value={draft.image.top} onChange={(value) => updateDraftImage({ top: value })} />
               <RangeField label="高度占比" min={0.1} max={1} step={0.01} value={draft.image.height} onChange={(value) => updateDraftImage({ height: value })} />
               <Segmented label="动画效果" value={draft.image.animation} options={imageAnimations} onChange={(value) => updateDraftImage({ animation: value })} />
+            </Accordion>
+            <Accordion title="运镜">
+              <Field label="运镜方式">
+                <select value={draft.image.motion} onChange={(event) => updateDraftImage({ motion: event.target.value as DraftTemplate['image']['motion'] })}>
+                  {draftImageMotions.map((option) => <option key={option.value || 'none'} value={option.value}>{option.label}</option>)}
+                </select>
+              </Field>
+              <RangeField label="运镜强度" min={0.5} max={2} step={0.1} value={draft.image.motionStrength} onChange={(value) => updateDraftImage({ motionStrength: value })} />
+            </Accordion>
+            <Accordion title="分栏画框">
+              <ToggleField label="启用画框" checked={draft.frame.enabled} onChange={(enabled) => updateDraftFrame({ enabled })} />
+              <div className="draft-frame-color-grid">
+                <ColorField label="顶部起始色" value={draft.frame.headerColor} onChange={(headerColor) => updateDraftFrame({ headerColor })} />
+                <ColorField label="顶部结束色" value={draft.frame.headerColorEnd} onChange={(headerColorEnd) => updateDraftFrame({ headerColorEnd })} />
+                <ColorField label="底部起始色" value={draft.frame.footerColor} onChange={(footerColor) => updateDraftFrame({ footerColor })} />
+                <ColorField label="底部结束色" value={draft.frame.footerColorEnd} onChange={(footerColorEnd) => updateDraftFrame({ footerColorEnd })} />
+              </div>
+              <ColorField label="图片边框色" value={draft.frame.imageBorderColor} onChange={(imageBorderColor) => updateDraftFrame({ imageBorderColor })} />
+              <RangeField label="图片边框宽度" min={0} max={120} step={1} value={draft.frame.imageBorderWidth} onChange={(imageBorderWidth) => updateDraftFrame({ imageBorderWidth })} />
+              <Field label="边框方向">
+                <select value={draft.frame.imageBorderSides} onChange={(event) => updateDraftFrame({ imageBorderSides: event.target.value as DraftTemplate['frame']['imageBorderSides'] })}>
+                  <option value="all">四边</option>
+                  <option value="horizontal">上下</option>
+                  <option value="vertical">左右</option>
+                </select>
+              </Field>
             </Accordion>
             <Accordion title="主标题">
               <ToggleField label="显示" checked={draft.title.visible} onChange={(checked) => updateDraftTitle({ visible: checked })} />
@@ -449,7 +479,7 @@ export function DraftTemplatesPage({ api, state, applyState }: { api: StoryDream
                 {template.isDefault ? <small>系统默认</small> : <small>本地自定义</small>}
               </div>
               <span>{template.canvas.ratio} · {template.canvas.width}x{template.canvas.height}</span>
-              <span>图片 {template.image.ratio} · {template.image.fit} · {template.image.animation}</span>
+              <span>图片 {template.image.ratio} · {template.image.fit} · {draftImageMotions.find((option) => option.value === template.image.motion)?.label ?? template.image.animation}</span>
             </div>
             <div className="row-actions">
               <button className="ghost-action" onClick={() => openEditor(template)}><LayoutTemplate size={15} />编辑</button>

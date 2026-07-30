@@ -487,11 +487,22 @@ export function makeFallbackApi(setState: (state: AppState) => void): StoryDream
         if (!matchesArchiveFilter(task, request.filter)) return false;
         if (request.status && task.status !== request.status) return false;
         if (request.statuses && !request.statuses.includes(task.status)) return false;
+        if (request.favorite !== undefined && Boolean(task.isFavorite) !== request.favorite) return false;
         const taskType = task.taskType?.trim() || (task.taskKind === 'music-mv' ? 'music-mv' : 'story');
         if (request.taskType && taskType !== request.taskType) return false;
         return matchesFallbackQuery(request.query, [task.title, task.inputText, task.aiKeyword]);
       });
       return fallbackHistoryPage('task', tasks.map(taskToSummary));
+    },
+    async setTaskFavorite(id: string, isFavorite: boolean) {
+      const state = read();
+      const task = state.tasks.find((item) => item.id === id);
+      if (!task) throw new Error(`Task not found: ${id}`);
+      if (task.archivedAt) throw new Error('HISTORY_ARCHIVED: 已归档任务只读。');
+      return commitFallbackHistoryUpsert('task', {
+        ...state,
+        tasks: state.tasks.map((item) => item.id === id ? { ...item, isFavorite } : item),
+      }, id);
     },
     async archiveTask(id: string) {
       return archiveFallbackHistory('task', id);
@@ -560,6 +571,9 @@ export function makeFallbackApi(setState: (state: AppState) => void): StoryDream
     },
     async getImageLabRecordDetail(id) {
       return read().imageLabRecords.find((record) => record.id === id) ?? null;
+    },
+    async openImageLabOutputDirectory() {
+      throw new Error('浏览器预览不能打开本地图片任务目录，请在 Electron 桌面端操作。');
     },
     async listVoiceLabRecords(request: HistoryListInput<'voice-lab'> = {}) {
       return fallbackHistoryPage(

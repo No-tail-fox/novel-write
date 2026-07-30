@@ -3916,6 +3916,67 @@ textarea {
     repeating-linear-gradient(45deg, rgba(255, 255, 255, 0.06) 0 8px, transparent 8px 16px);
 }
 
+.draft-frame-chrome,
+.draft-frame-band {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+}
+
+.draft-frame-band {
+  right: 0;
+  z-index: 0;
+}
+
+.draft-frame-header {
+  bottom: auto;
+}
+
+.draft-frame-footer {
+  height: auto;
+}
+
+.draft-image {
+  z-index: 1;
+  overflow: hidden;
+}
+
+@keyframes draft-motion-zoom_in {
+  from { transform: scale(1); }
+  to { transform: scale(var(--draft-motion-scale)); }
+}
+
+@keyframes draft-motion-zoom_out {
+  from { transform: scale(var(--draft-motion-scale)); }
+  to { transform: scale(1); }
+}
+
+@keyframes draft-motion-zoom_pan_up {
+  from { transform: translateY(var(--draft-motion-pan)) scale(1); }
+  to { transform: translateY(calc(var(--draft-motion-pan) * -1)) scale(var(--draft-motion-scale)); }
+}
+
+@keyframes draft-motion-zoom_pan_down {
+  from { transform: translateY(calc(var(--draft-motion-pan) * -1)) scale(1); }
+  to { transform: translateY(var(--draft-motion-pan)) scale(var(--draft-motion-scale)); }
+}
+
+@keyframes draft-motion-pan_left {
+  from { transform: translateX(var(--draft-motion-pan)) scale(var(--draft-motion-scale)); }
+  to { transform: translateX(calc(var(--draft-motion-pan) * -1)) scale(var(--draft-motion-scale)); }
+}
+
+@keyframes draft-motion-pan_right {
+  from { transform: translateX(calc(var(--draft-motion-pan) * -1)) scale(var(--draft-motion-scale)); }
+  to { transform: translateX(var(--draft-motion-pan)) scale(var(--draft-motion-scale)); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .draft-image-media[data-motion]:not([data-motion='none']) {
+    animation: none;
+  }
+}
+
 .editable-draft-canvas {
   touch-action: none;
   user-select: none;
@@ -3991,6 +4052,7 @@ textarea {
   white-space: pre-line;
   overflow-wrap: anywhere;
   line-height: 1.15;
+  z-index: 2;
 }
 
 .editable-draft-canvas .draft-title,
@@ -4058,6 +4120,18 @@ textarea {
   display: grid;
   align-items: center;
   gap: 8px;
+}
+
+.draft-frame-color-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0 10px;
+}
+
+@media (max-width: 1120px) {
+  .draft-frame-color-grid {
+    grid-template-columns: minmax(0, 1fr);
+  }
 }
 
 .draft-color-field {

@@ -2407,7 +2407,7 @@ async function stageHtmlVideoAnimationRuntime(
 
 function buildRuntimeComposition(
   options: ElectronHtmlVideoRuntimeOptions,
-  input: Pick<HtmlVideoPreviewInput, 'scenes' | 'assets' | 'voices' | 'config'>,
+  input: Pick<HtmlVideoPreviewInput, 'scenes' | 'assets' | 'voices' | 'config' | 'draftTemplate'>,
   fps: number,
   maxLongEdge: number,
   workDir: string,
@@ -2457,6 +2457,7 @@ function buildRuntimeComposition(
     bgmPath,
     bgmTargetDb: htmlVideoBgmTargetDb(input.config.bgmVolume),
     captionConfig: input.config,
+    draftTemplate: input.draftTemplate,
     fps,
     canvas_w: canvas.width,
     canvas_h: canvas.height,
@@ -2469,8 +2470,8 @@ function buildRuntimeComposition(
 
 async function resolveTaskLocalRuntimeMedia(
   workDir: string,
-  input: Pick<HtmlVideoPreviewInput, 'scenes' | 'assets' | 'voices' | 'config'>,
-): Promise<Pick<HtmlVideoPreviewInput, 'scenes' | 'assets' | 'voices' | 'config'>> {
+  input: Pick<HtmlVideoPreviewInput, 'scenes' | 'assets' | 'voices' | 'config' | 'draftTemplate'>,
+): Promise<Pick<HtmlVideoPreviewInput, 'scenes' | 'assets' | 'voices' | 'config' | 'draftTemplate'>> {
   const [assets, voices] = await Promise.all([
     Promise.all(input.assets.map(async (asset) => ({
       ...asset,

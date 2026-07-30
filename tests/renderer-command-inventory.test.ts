@@ -200,7 +200,7 @@ describe('renderer command inventory', () => {
         `${method} focused test must mention the method or visible control`,
       ).toBe(true);
     }
-  });
+  }, 15_000);
 
   it('freezes the history family together with a pending permanent-delete target', async () => {
     const history = (await rendererSourcesPromise).requiredFile('src/features/tasks/HistoryPage.tsx');

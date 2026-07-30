@@ -1,5 +1,5 @@
 import { useCallback, useMemo, useState } from 'react';
-import { Archive, ArrowUpRight, RotateCcw, SlidersHorizontal, Trash2 } from 'lucide-react';
+import { Archive, ArrowUpRight, RotateCcw, SlidersHorizontal, Star, Trash2 } from 'lucide-react';
 import { AsyncActionFeedback as InlineActionFeedback } from '../../components/AsyncActionFeedback';
 import { ConfirmDialog } from '../../components/ConfirmDialog';
 import { CursorPagination } from '../../components/CursorPagination';
@@ -34,6 +34,8 @@ const historyFamilies = ['task', 'viral-analysis', 'image-lab', 'voice-lab'] as 
 const historyFamilyLabels = ['任务', '爆款拆解', '图片', '配音'] as const;
 const historyArchiveFilters = ['active', 'archived'] as const satisfies readonly HistoryArchiveFilter[];
 const historyArchiveFilterLabels = ['活跃任务', '已归档'] as const;
+const historyFavoriteFilters = ['all', 'favorites'] as const;
+const historyFavoriteFilterLabels = ['全部任务', '收藏任务'] as const;
 const historyTaskStatuses = ['all', 'draft', 'completed', 'running', 'failed', 'cancelled'] as const;
 
 export function HistoryPage({
@@ -52,6 +54,7 @@ export function HistoryPage({
   const [family, setFamily] = useState<HistoryFamily>('task');
   const [archiveFilter, setArchiveFilter] = useState<HistoryArchiveFilter>('active');
   const [statusFilter, setStatusFilter] = useState<'all' | TaskStatus>('all');
+  const [favoriteFilter, setFavoriteFilter] = useState<'all' | 'favorites'>('all');
   const [query, setQuery] = useState('');
   const [pendingDelete, setPendingDelete] = useState<PendingHistoryDelete | null>(null);
   const historyAction = useAsyncAction();
@@ -61,11 +64,16 @@ export function HistoryPage({
       ...(query.trim() ? { query } : {}),
       limit: 50,
     };
-    if (family === 'task') return { ...base, family: 'task', ...(statusFilter === 'all' ? {} : { status: statusFilter }) };
+    if (family === 'task') return {
+      ...base,
+      family: 'task',
+      favorite: favoriteFilter === 'favorites' ? true : undefined,
+      ...(statusFilter === 'all' ? {} : { status: statusFilter }),
+    };
     if (family === 'viral-analysis') return { ...base, family: 'viral-analysis' };
     if (family === 'image-lab') return { ...base, family: 'image-lab' };
     return { ...base, family: 'voice-lab' };
-  }, [archiveFilter, family, query, statusFilter]);
+  }, [archiveFilter, family, favoriteFilter, query, statusFilter]);
   const loadPage = useCallback(async (next: HistoryListRequest): Promise<HistoryPageResult<HistoryFamily, HistoryRecord>> => {
     if (next.family === 'task') {
       const { family: _family, ...input } = next;
@@ -116,6 +124,14 @@ export function HistoryPage({
     });
   }
 
+  async function toggleTaskFavorite(task: TaskSummary) {
+    await historyAction.run(async () => {
+      const result = await api.setTaskFavorite(task.id, !task.isFavorite);
+      applyState(result);
+      historyPage.reload();
+    });
+  }
+
   async function deleteRecordPermanently() {
     if (!pendingDelete) return;
     await historyAction.run(async () => {
@@ -135,6 +151,9 @@ export function HistoryPage({
       <div className="task-history-toolbar">
         <div className="task-history-segments">
           <Segmented label="记录范围" value={archiveFilter} options={historyArchiveFilters} labels={historyArchiveFilterLabels} onChange={setArchiveFilter} disabled={historyBusy || Boolean(pendingDelete)} />
+          {family === 'task' ? (
+            <Segmented label="收藏范围" value={favoriteFilter} options={historyFavoriteFilters} labels={historyFavoriteFilterLabels} onChange={(value) => setFavoriteFilter(value as 'all' | 'favorites')} disabled={historyBusy || Boolean(pendingDelete)} />
+          ) : null}
         </div>
         <input className="search-input" aria-label="搜索历史记录" value={query} placeholder={family === 'task' ? '搜索任务标题' : '搜索记录'} disabled={historyBusy || Boolean(pendingDelete)} onChange={(event) => setQuery(event.target.value)} />
       </div>
@@ -190,6 +209,17 @@ export function HistoryPage({
                   <span className="row-actions" onClick={(event) => event.stopPropagation()}>
                     {archiveFilter === 'active' ? (
                       <>
+                        <button
+                          className={`icon-button task-history-action favorite-action${task.isFavorite ? ' active' : ''}`}
+                          type="button"
+                          title={task.isFavorite ? '取消收藏' : '添加收藏'}
+                          aria-label={task.isFavorite ? '取消收藏' : '添加收藏'}
+                          aria-pressed={Boolean(task.isFavorite)}
+                          disabled={historyBusy}
+                          onClick={() => void toggleTaskFavorite(task)}
+                        >
+                          <Star size={14} fill={task.isFavorite ? 'currentColor' : 'none'} />
+                        </button>
                         <button className="icon-button task-history-action" type="button" title="打开任务详情" aria-label="打开任务详情" disabled={historyBusy} onClick={() => openTaskDetail(record.id)}><ArrowUpRight size={14} /></button>
                         <button className="icon-button task-history-action" type="button" title="归档任务" aria-label="归档任务" disabled={historyBusy} onClick={() => void archiveRecord(record)}><Archive size={14} /></button>
                       </>

@@ -1,5 +1,5 @@
 import { pathToFileURL } from 'node:url';
-import type { HtmlVideoJobConfig, PipelineArtifact } from './types';
+import type { DraftTemplate, HtmlVideoJobConfig, PipelineArtifact } from './types';
 import { resolveHtmlVideoCaptionStyle, type ResolvedHtmlVideoCaptionStyle } from './html-video-captions';
 import { GSAP_RUNTIME_FILENAME, HYPERFRAMES_RUNTIME_FILENAME } from './hyperframes';
 
@@ -58,6 +58,7 @@ export interface HtmlVideoBuildInput {
   transition?: { type: string; duration: number };
   captionConfig?: Pick<HtmlVideoJobConfig, 'captionPreset' | 'captionAnim' | 'captionColors'>;
   captionReducedMotion?: boolean;
+  draftTemplate?: DraftTemplate;
 }
 
 export interface HtmlVideoExportInput extends HtmlVideoComposition {}
@@ -144,6 +145,7 @@ export function buildHtmlVideoExportInput(input: HtmlVideoBuildInput): HtmlVideo
         canvas_w: Math.max(1, Math.round(input.canvas_w)),
         canvas_h: Math.max(1, Math.round(input.canvas_h)),
         captionStyle,
+        draftTemplate: input.draftTemplate,
       }),
       duration: roundSeconds(scene.durationMs / 1000),
     })),
@@ -193,6 +195,7 @@ function buildSceneHtml(scene: {
   canvas_w: number;
   canvas_h: number;
   captionStyle: ResolvedHtmlVideoCaptionStyle;
+  draftTemplate?: DraftTemplate;
 }): string {
   const compositionId = `storydream-scene-${scene.sceneId}`;
   const imageDataUrl = safeAssetUrl(scene.imagePath);
@@ -201,6 +204,8 @@ function buildSceneHtml(scene: {
     .map((path, index) => `<img id="foreground-${index + 1}" class="clip scene-foreground" data-slot="${index}" data-start="0" data-duration="${scene.duration}" data-track-index="${index + 2}" src="${safeAssetUrl(path)}" alt="" />`)
     .join('\n    ');
   const captionColors = scene.captionStyle.colors;
+  const layout = resolveDraftTemplateHtmlLayout(scene.draftTemplate, scene.canvas_w, scene.canvas_h);
+  const motionTween = draftTemplateMotionTween(scene.draftTemplate, scene.duration);
   return `<!doctype html>
 <html lang="zh-CN">
 <head>
@@ -241,14 +246,42 @@ function buildSceneHtml(scene: {
       overflow: hidden;
       background: linear-gradient(180deg, #101417, #060708);
     }
+    .draft-frame-band {
+      position: absolute;
+      left: 0;
+      right: 0;
+      z-index: 0;
+      pointer-events: none;
+    }
+    .draft-frame-header {
+      top: 0;
+      height: ${layout.headerHeightPercent}%;
+      background: ${layout.headerBackground};
+    }
+    .draft-frame-footer {
+      top: ${layout.footerTopPercent}%;
+      bottom: 0;
+      background: ${layout.footerBackground};
+    }
+    .scene-image-region {
+      position: absolute;
+      left: 0;
+      top: ${layout.imageTopPercent}%;
+      width: 100%;
+      height: ${layout.imageHeightPercent}%;
+      z-index: 0;
+      overflow: hidden;
+      box-sizing: border-box;
+      ${layout.imageBorderCss}
+    }
     .scene-image {
       position: absolute;
       inset: 0;
       width: 100%;
       height: 100%;
-      object-fit: cover;
+      object-fit: ${layout.imageFit};
       opacity: 0.92;
-      transform: scale(calc(1.04 + var(--scene-progress, 0) * 0.035));
+      transform-origin: center;
     }
     .scene-foreground {
       position: absolute;
@@ -331,8 +364,9 @@ function buildSceneHtml(scene: {
   <script nonce="storydream-html-video" src="./${HYPERFRAMES_RUNTIME_FILENAME}"></script>
 </head>
 <body>
-  <div id="${compositionId}" class="frame" data-composition-id="${compositionId}" data-start="0" data-duration="${scene.duration}" data-width="${scene.canvas_w}" data-height="${scene.canvas_h}" data-caption-preset="${scene.captionStyle.preset}" data-caption-animation="${scene.captionStyle.animation}">
-    <img id="scene-background" class="clip scene-image" data-start="0" data-duration="${scene.duration}" data-track-index="0" src="${imageDataUrl}" alt="${escapeHtml(scene.caption)}" />
+  <div id="${compositionId}" class="frame" data-composition-id="${compositionId}" data-start="0" data-duration="${scene.duration}" data-width="${scene.canvas_w}" data-height="${scene.canvas_h}" data-caption-preset="${scene.captionStyle.preset}" data-caption-animation="${scene.captionStyle.animation}" data-draft-motion="${layout.motion || 'legacy'}" data-draft-frame="${layout.frameEnabled}">
+    ${layout.frameEnabled ? '<div class="draft-frame-band draft-frame-header"></div><div class="draft-frame-band draft-frame-footer"></div>' : ''}
+    <div class="scene-image-region"><img id="scene-background" class="clip scene-image" data-start="0" data-duration="${scene.duration}" data-track-index="0" src="${imageDataUrl}" alt="${escapeHtml(scene.caption)}" /></div>
     <audio id="scene-narration" class="clip scene-audio" data-start="0" data-duration="${scene.duration}" data-track-index="1" data-volume="1" src="${audioDataUrl}" preload="auto"></audio>
     <div id="scene-veil" class="clip veil" data-start="0" data-duration="${scene.duration}" data-track-index="20"></div>
     ${foregroundMarkup}
@@ -348,7 +382,7 @@ function buildSceneHtml(scene: {
     window.__ready = false;
     window.__timelines = window.__timelines || {};
     const tl = gsap.timeline({ paused: true });
-    tl.fromTo('#scene-background', { scale: 1.04 }, { scale: 1.075, duration: ${scene.duration}, ease: 'none' }, 0);
+    ${motionTween}
     tl.fromTo('#scene-veil', { opacity: 0.86 }, { opacity: 0.96, duration: ${scene.duration}, ease: 'none' }, 0);
     ${foregroundMarkup ? (scene.foregroundPaths ?? []).map((_, index) => {
       const direction = index % 2 === 0 ? 1 : -1;
@@ -381,6 +415,58 @@ function buildSceneHtml(scene: {
   </script>
 </body>
 </html>`;
+}
+
+function resolveDraftTemplateHtmlLayout(template: DraftTemplate | undefined, canvasWidth: number, canvasHeight: number) {
+  const imageTop = template ? clampNumber(template.image.top, 0, 1) : 0;
+  const imageHeight = template ? clampNumber(template.image.height, 0, 1 - imageTop) : 1;
+  const footerTop = clampNumber(imageTop + imageHeight, 0, 1);
+  const frame = template?.frame;
+  const frameEnabled = frame?.enabled === true;
+  const borderScale = template
+    ? Math.min(canvasWidth / Math.max(1, template.canvas.width), canvasHeight / Math.max(1, template.canvas.height))
+    : 1;
+  const borderWidth = frameEnabled ? Math.max(0, (frame?.imageBorderWidth ?? 0) * borderScale) : 0;
+  const border = `${roundCssNumber(borderWidth)}px solid ${frame?.imageBorderColor ?? '#000000'}`;
+  let imageBorderCss = '';
+  if (borderWidth > 0 && frame?.imageBorderSides === 'horizontal') imageBorderCss = `border-top: ${border}; border-bottom: ${border};`;
+  else if (borderWidth > 0 && frame?.imageBorderSides === 'vertical') imageBorderCss = `border-left: ${border}; border-right: ${border};`;
+  else if (borderWidth > 0) imageBorderCss = `border: ${border};`;
+  return {
+    frameEnabled,
+    headerHeightPercent: roundCssNumber(imageTop * 100),
+    footerTopPercent: roundCssNumber(footerTop * 100),
+    imageTopPercent: roundCssNumber(imageTop * 100),
+    imageHeightPercent: roundCssNumber(imageHeight * 100),
+    imageFit: template?.image.fit ?? 'cover',
+    imageBorderCss,
+    headerBackground: frameEnabled ? `linear-gradient(90deg, ${frame.headerColor}, ${frame.headerColorEnd})` : 'transparent',
+    footerBackground: frameEnabled ? `linear-gradient(90deg, ${frame.footerColor}, ${frame.footerColorEnd})` : 'transparent',
+    motion: template?.image.motion ?? '',
+  };
+}
+
+function draftTemplateMotionTween(template: DraftTemplate | undefined, duration: number): string {
+  const motion = template?.image.motion ?? '';
+  const strength = clampNumber(template?.image.motionStrength ?? 1, 0.5, 2);
+  const scale = roundCssNumber(1 + strength * 0.08);
+  const pan = roundCssNumber(strength * 4);
+  const timing = `duration: ${duration}, ease: 'none'`;
+  if (motion === 'zoom_in') return `tl.fromTo('#scene-background', { scale: 1 }, { scale: ${scale}, ${timing} }, 0);`;
+  if (motion === 'zoom_out') return `tl.fromTo('#scene-background', { scale: ${scale} }, { scale: 1, ${timing} }, 0);`;
+  if (motion === 'zoom_pan_up') return `tl.fromTo('#scene-background', { scale: 1, yPercent: ${pan} }, { scale: ${scale}, yPercent: ${-pan}, ${timing} }, 0);`;
+  if (motion === 'zoom_pan_down') return `tl.fromTo('#scene-background', { scale: 1, yPercent: ${-pan} }, { scale: ${scale}, yPercent: ${pan}, ${timing} }, 0);`;
+  if (motion === 'pan_left') return `tl.fromTo('#scene-background', { scale: ${scale}, xPercent: ${pan} }, { scale: ${scale}, xPercent: ${-pan}, ${timing} }, 0);`;
+  if (motion === 'pan_right') return `tl.fromTo('#scene-background', { scale: ${scale}, xPercent: ${-pan} }, { scale: ${scale}, xPercent: ${pan}, ${timing} }, 0);`;
+  return `tl.fromTo('#scene-background', { scale: 1.04 }, { scale: 1.075, ${timing} }, 0);`;
+}
+
+function clampNumber(value: number, min: number, max: number): number {
+  return Math.min(max, Math.max(min, Number.isFinite(value) ? value : min));
+}
+
+function roundCssNumber(value: number): number {
+  return Math.round(value * 10_000) / 10_000;
 }
 
 function safeAssetUrl(path: string): string {

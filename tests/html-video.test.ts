@@ -22,6 +22,7 @@ import {
   tabForHtmlVideoStep,
   validateHtmlVideoScenePlans,
 } from '@shared/html-video-workflow';
+import { draftTemplates } from '@shared/templates';
 import type {
   HtmlVideoAsset,
   HtmlVideoCompositionSnapshot,
@@ -843,6 +844,51 @@ describe('HTML video composition contract', () => {
         timelineKeys: ['storydream-scene-1'],
         timelineDuration: 1.2,
       }),
+    ]);
+  });
+
+  it('applies draft frame layout and camera motion to generated HyperFrames scenes', () => {
+    const template = structuredClone(draftTemplates[1]);
+    template.image.motion = 'zoom_pan_up';
+    template.image.motionStrength = 1.5;
+    template.frame = {
+      enabled: true,
+      headerColor: '#112233',
+      headerColorEnd: '#334455',
+      footerColor: '#556677',
+      footerColorEnd: '#778899',
+      imageBorderColor: '#abcdef',
+      imageBorderWidth: 16,
+      imageBorderSides: 'horizontal',
+    };
+    const input = buildHtmlVideoExportInput({
+      workDir: 'D:/tasks/html-video-template',
+      outputPath: 'D:/tasks/html-video-template/final.mp4',
+      title: 'Template motion story',
+      artifact,
+      generatedImages: artifact.scenes.map((scene) => ({ sceneId: scene.id, path: `D:/media/scene-${scene.id}.png` })),
+      narrationAudio: artifact.scenes.map((scene) => ({ sceneId: scene.id, path: `D:/media/scene-${scene.id}.wav` })),
+      draftTemplate: template,
+      fps: 30,
+      canvas_w: 1080,
+      canvas_h: 1920,
+    });
+
+    const html = input.scenes[0].html;
+    expect(html).toContain('data-draft-motion="zoom_pan_up"');
+    expect(html).toContain('data-draft-frame="true"');
+    expect(html).toContain('top: 28.9063%');
+    expect(html).toContain('height: 42.1875%');
+    expect(html).toContain('linear-gradient(90deg, #112233, #334455)');
+    expect(html).toContain('linear-gradient(90deg, #556677, #778899)');
+    expect(html).toContain('border-top: 16px solid #abcdef');
+    expect(html).toContain('border-bottom: 16px solid #abcdef');
+    const runtime = runSceneRuntime(html);
+    expect(runtime.timeline.fromToCalls).toContainEqual([
+      '#scene-background',
+      { scale: 1, yPercent: 6 },
+      { scale: 1.12, yPercent: -6, duration: 1.2, ease: 'none' },
+      0,
     ]);
   });
 

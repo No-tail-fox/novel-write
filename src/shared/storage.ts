@@ -319,7 +319,7 @@ const DEFAULT_STORAGE_PAGE_LIMIT = 50;
 const TASK_INPUT_PREVIEW_LIMIT = 160;
 const RECORD_TEXT_PREVIEW_LIMIT = 160;
 const taskSummaryColumns = `
-  id, archived_at, managed_storage_key, title, task_kind, processing_mode, publish_mode, status, current_step, run_generation,
+  id, archived_at, managed_storage_key, is_favorite, title, task_kind, processing_mode, publish_mode, status, current_step, run_generation,
   track, style, speaker, ratio, template_id, bgm_id, output_dir, error_message,
   created_at, completed_at, started_at, last_heartbeat_at, mode, ai_keyword,
   prompt_template_id, prompt_template_type, reference_image_path, rewrite_intensity,
@@ -366,8 +366,9 @@ function encodeCursor(value: Record<string, string | number>): string {
 const taskStatusOrder: TaskStatus[] = ['draft', 'pending', 'running', 'paused', 'completed', 'failed', 'cancelled'];
 
 interface HistoryCursorBinding {
-  version: 1;
+  version: 2;
   family: HistoryFamily;
+  favorite: string;
   filter: 'active' | 'archived';
   status: string;
   statuses: string;
@@ -412,6 +413,7 @@ function canonicalTaskStatuses(request: HistoryListInput<'task'>): TaskStatus[] 
 
 function historyCursorBinding(input: {
   family: HistoryFamily;
+  favorite?: boolean;
   filter?: 'active' | 'archived';
   status?: string;
   statuses?: readonly string[];
@@ -419,8 +421,9 @@ function historyCursorBinding(input: {
   query?: string;
 }): HistoryCursorBinding {
   return {
-    version: 1,
+    version: 2,
     family: input.family,
+    favorite: input.favorite === undefined ? '' : input.favorite ? '1' : '0',
     filter: input.filter ?? 'active',
     status: input.status ?? '',
     statuses: input.statuses?.join(',') ?? '',
@@ -435,11 +438,12 @@ function parseHistoryCursor(
 ): HistorySortCursor | null {
   const parsed = decodeCursor(cursor);
   if (!parsed) return null;
-  const expectedKeys = ['family', 'filter', 'id', 'queryHash', 'sort', 'status', 'statuses', 'taskType', 'version'];
+  const expectedKeys = ['family', 'favorite', 'filter', 'id', 'queryHash', 'sort', 'status', 'statuses', 'taskType', 'version'];
   if (
     Object.keys(parsed).sort().join(',') !== expectedKeys.join(',')
     || parsed.version !== expected.version
     || parsed.family !== expected.family
+    || parsed.favorite !== expected.favorite
     || parsed.filter !== expected.filter
     || parsed.status !== expected.status
     || parsed.statuses !== expected.statuses
@@ -933,6 +937,7 @@ export class FileDatabase {
         id TEXT PRIMARY KEY,
         archived_at TEXT,
         managed_storage_key TEXT,
+        is_favorite INTEGER NOT NULL DEFAULT 0,
         title TEXT DEFAULT '',
         input_text TEXT NOT NULL,
         task_kind TEXT DEFAULT 'story',
@@ -1277,6 +1282,7 @@ export class FileDatabase {
       ['html_video_foreground', 'INTEGER DEFAULT NULL'],
       ['archived_at', 'TEXT DEFAULT NULL'],
       ['managed_storage_key', 'TEXT DEFAULT NULL'],
+      ['is_favorite', 'INTEGER NOT NULL DEFAULT 0'],
       ['run_generation', 'INTEGER DEFAULT 0'],
     ] as const) {
       addColumnIfMissing(this.db, 'tasks', column, definition);
@@ -1366,6 +1372,8 @@ export class FileDatabase {
         ON tasks(created_at DESC, id DESC) WHERE archived_at IS NULL;
       CREATE INDEX IF NOT EXISTS idx_tasks_archived_history
         ON tasks(archived_at DESC, id DESC) WHERE archived_at IS NOT NULL;
+      CREATE INDEX IF NOT EXISTS idx_tasks_favorite_history
+        ON tasks(is_favorite, created_at DESC, id DESC) WHERE archived_at IS NULL AND is_favorite = 1;
       CREATE INDEX IF NOT EXISTS idx_viral_analyses_active_history
         ON viral_analyses(created_at DESC, id DESC) WHERE archived_at IS NULL;
       CREATE INDEX IF NOT EXISTS idx_viral_analyses_archived_history
@@ -2054,6 +2062,7 @@ export class FileDatabase {
         id: randomUUID(),
         archivedAt: null,
         managedStorageKey: createManagedStorageKey(),
+        isFavorite: false,
         title: input.title ?? '',
       inputText: input.inputText,
       taskKind: taskIdentity.taskKind,
@@ -3092,6 +3101,9 @@ export class FileDatabase {
         params: [request.taskType],
       });
     }
+    if (request.favorite !== undefined) {
+      filters.push({ sql: 'is_favorite = ?', params: [request.favorite ? 1 : 0] });
+    }
     return this.listHistoryRecords({
       family: 'task',
       table: 'tasks',
@@ -3105,6 +3117,7 @@ export class FileDatabase {
         status: request.status,
         statuses: request.statuses ? statuses : undefined,
         taskType: request.taskType,
+        favorite: request.favorite,
         query: request.query,
       }),
       filters,
@@ -3115,6 +3128,17 @@ export class FileDatabase {
     await this.waitForWrites();
     const row = getFirstRow<Record<string, unknown>>(this.db, `SELECT ${taskSummaryColumns} FROM tasks WHERE id = ?`, [id]);
     return row ? rowToTaskSummary(row) : null;
+  }
+
+  async setTaskFavorite(id: string, isFavorite: boolean): Promise<TaskSummary> {
+    return this.enqueueCommit(() => {
+      this.assertHistoryWritable('task', id);
+      this.db.run('UPDATE tasks SET is_favorite = ? WHERE id = ?', [isFavorite ? 1 : 0, id]);
+      if (this.db.getRowsModified() !== 1) throw new Error(`TASK_NOT_FOUND: ${id}`);
+      const row = getFirstRow<Record<string, unknown>>(this.db, `SELECT ${taskSummaryColumns} FROM tasks WHERE id = ?`, [id]);
+      if (!row) throw new Error(`TASK_NOT_FOUND: ${id}`);
+      return rowToTaskSummary(row);
+    });
   }
 
   async getTaskDetail(id: string): Promise<Task | null> {
@@ -3562,6 +3586,7 @@ function rowToTask(row: Record<string, unknown>): Task {
     id: String(row.id),
     archivedAt: row.archived_at ? String(row.archived_at) : null,
     managedStorageKey: row.managed_storage_key ? String(row.managed_storage_key) : null,
+    isFavorite: Number(row.is_favorite ?? 0) === 1,
     title: String(row.title ?? ''),
     inputText: String(row.input_text ?? ''),
     taskKind: normalizeTaskKind(row.task_kind),

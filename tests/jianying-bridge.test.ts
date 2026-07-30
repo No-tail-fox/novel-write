@@ -5,7 +5,7 @@ import { join } from 'node:path';
 import { runPyJianYingDraftBridge, writePyJianYingBridgeInput, writePyJianYingBridgeScript } from '@shared/jianying-bridge';
 
 function defaultBridgeImageArea(animation = '') {
-  return { visible: true, ratio: '9:16', top: 0, height: 1, fit: 'cover' as const, animation };
+  return { visible: true, ratio: '9:16', top: 0, height: 1, fit: 'cover' as const, animation, motion: '' as const, motionStrength: 1 };
 }
 
 function defaultBridgeCaption() {
@@ -38,6 +38,16 @@ describe('pyJianYingDraft bridge input', () => {
         title: 'Bridge Draft',
         canvas: { width: 1080, height: 1920, backgroundColor: '#123456', backgroundImage: join(dir, 'background.png') },
         imageArea: { visible: true, ratio: '4:3', top: 0, height: 1280, fit: 'cover', animation: '缩放' },
+        frame: {
+          enabled: true,
+          headerColor: '#112233',
+          headerColorEnd: '#334455',
+          footerColor: '#556677',
+          footerColorEnd: '#778899',
+          imageBorderColor: '#abcdef',
+          imageBorderWidth: 12,
+          imageBorderSides: 'horizontal',
+        },
         caption: {
           visible: true,
           fontSize: 44,
@@ -73,6 +83,7 @@ describe('pyJianYingDraft bridge input', () => {
       expect(payload.narration[0]).toMatchObject({ sceneId: 1, path: join(dir, 'voice.mp3') });
       expect(payload.canvas).toEqual({ width: 1080, height: 1920, backgroundColor: '#123456', backgroundImage: join(dir, 'background.png') });
       expect(payload.imageArea).toMatchObject({ visible: true });
+      expect(payload.frame).toMatchObject({ enabled: true, imageBorderWidth: 12, imageBorderSides: 'horizontal' });
       expect(payload.caption).toMatchObject({
         visible: true,
         x: 0.2,
@@ -130,6 +141,13 @@ describe('pyJianYingDraft bridge input', () => {
       expect(script).toContain('align=int(caption.get("align", 1))');
       expect(script).toContain('max_line_width=clamp_number(config.get("width"), 0.8, 0.1, 2.0)');
       expect(script).toContain('max_line_width=clamp_number(caption.get("width"), 0.8, 0.1, 2.0)');
+      expect(script).toContain('def apply_camera_motion');
+      expect(script).toContain('segment.add_keyframe(keyframe.uniform_scale');
+      expect(script).toContain('segment.add_keyframe(keyframe.position_x');
+      expect(script).toContain('segment.add_keyframe(keyframe.position_y');
+      expect(script).toContain('def create_frame_overlay_png');
+      expect(script).toContain('frame-overlay.png');
+      expect(script).toContain('draft.TrackType.video, "frame_overlay"');
     } finally {
       await rm(dir, { recursive: true, force: true });
     }
@@ -144,6 +162,73 @@ describe('pyJianYingDraft bridge input', () => {
 
       expect(script).toContain('raise ValueError(f"Unknown image animation');
       expect(script).toContain('resolve_image_animation');
+    } finally {
+      await rm(dir, { recursive: true, force: true });
+    }
+  });
+
+  it('writes camera keyframes and a transparent frame overlay into the generated draft', async () => {
+    const dir = await mkdtemp(join(tmpdir(), 'storybound-jy-motion-frame-'));
+    const draftDir = join(dir, 'Draft Root', 'Motion Frame Draft');
+    const bridgeDir = join(dir, 'pyjianying-bridge');
+
+    try {
+      await writePyJianYingBridgeScript(dir);
+      await writeFile(join(bridgeDir, 'pyJianYingDraft.py'), fakePyJianYingDraftModule, 'utf8');
+      const voice = join(dir, 'voice.wav');
+      const image = join(dir, 'image.png');
+      const subtitles = join(dir, 'subtitles.srt');
+      await writeFile(voice, wavTone(1200));
+      await writeFile(image, Buffer.from('image'));
+      await writeFile(subtitles, '', 'utf8');
+
+      await runPyJianYingDraftBridge({
+        workDir: dir,
+        draftDir,
+        title: 'Motion Frame Draft',
+        canvas: { width: 1080, height: 1920, backgroundColor: '#000000', backgroundImage: '' },
+        imageArea: {
+          visible: true,
+          ratio: '4:3',
+          top: 0.25,
+          height: 0.5,
+          fit: 'cover',
+          animation: '缩放',
+          motion: 'zoom_pan_up',
+          motionStrength: 1.5,
+        },
+        frame: {
+          enabled: true,
+          headerColor: '#112233',
+          headerColorEnd: '#334455',
+          footerColor: '#556677',
+          footerColorEnd: '#778899',
+          imageBorderColor: '#abcdef',
+          imageBorderWidth: 12,
+          imageBorderSides: 'horizontal',
+        },
+        caption: { ...defaultBridgeCaption(), visible: false },
+        scenes: [{ sceneId: 1, startUs: 0, durationUs: 1_200_000, text: 'motion' }],
+        images: [{ sceneId: 1, path: image }],
+        narration: [{ sceneId: 1, path: voice }],
+        subtitlesSrtPath: subtitles,
+        bgm: null,
+        totalDurationUs: 1_200_000,
+        volumes: { narration: 1, bgm: 0.3 },
+      });
+
+      const content = JSON.parse(await readFile(join(draftDir, 'draft_content.json'), 'utf8'));
+      const imageSegment = content.tracks.find((track: { name: string }) => track.name === 'images').segments[0];
+      const frameTrack = content.tracks.find((track: { name: string }) => track.name === 'frame_overlay');
+      expect(imageSegment.keyframes).toEqual(expect.arrayContaining([
+        expect.objectContaining({ property: 'UNIFORM_SCALE', time_offset: 0 }),
+        expect.objectContaining({ property: 'UNIFORM_SCALE', time_offset: 1_200_000 }),
+        expect.objectContaining({ property: 'KFTypePositionY', time_offset: 0 }),
+        expect.objectContaining({ property: 'KFTypePositionY', time_offset: 1_200_000 }),
+      ]));
+      expect(frameTrack.segments).toHaveLength(1);
+      const overlay = await readFile(join(draftDir, 'materials', 'frame', 'frame-overlay.png'));
+      expect(overlay.subarray(0, 8)).toEqual(Buffer.from([137, 80, 78, 71, 13, 10, 26, 10]));
     } finally {
       await rm(dir, { recursive: true, force: true });
     }
@@ -708,6 +793,12 @@ class TextBorder:
         self.kwargs = kwargs
 
 
+class KeyframeProperty:
+    position_x = "KFTypePositionX"
+    position_y = "KFTypePositionY"
+    uniform_scale = "UNIFORM_SCALE"
+
+
 class TextSegment:
     def __init__(self, text, target_timerange, *, style=None, clip_settings=None, border=None, background=None, shadow=None):
         self.text = text
@@ -743,6 +834,7 @@ class VideoSegment:
         self.speed = speed
         self.volume = volume
         self.clip_settings = clip_settings
+        self.keyframes = []
 
     def add_transition(self, *args, **kwargs):
         return self
@@ -754,6 +846,10 @@ class VideoSegment:
         return self
 
     def add_animation(self, *args, **kwargs):
+        return self
+
+    def add_keyframe(self, property_type, time_offset, value):
+        self.keyframes.append({"property": property_type, "time_offset": int(time_offset), "value": float(value)})
         return self
 
 
@@ -828,6 +924,7 @@ class Script:
                             "volume": segment.volume,
                             "text": getattr(segment, "text", None),
                             "clip_settings": getattr(getattr(segment, "clip_settings", None), "kwargs", None),
+                            "keyframes": getattr(segment, "keyframes", []),
                         }
                         for segment in track["segments"]
                     ],

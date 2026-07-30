@@ -1619,6 +1619,11 @@ trustedHandle('app:reconcile-deltas', async (_event, input: AppDeltaReconcileReq
 });
 
 trustedHandle('task:list', async (_event, request: Extract<HistoryListRequest, { family: 'task' }>) => (await getDb()).listTaskSummaries(request));
+trustedHandle('task:set-favorite', (_event, input: { id: string; isFavorite: boolean }) =>
+  runHistoryGovernanceMutation('task', input.id, async (database) => {
+    const task = await database.setTaskFavorite(input.id, input.isFavorite);
+    return await enqueueAppDelta(() => ({ kind: 'task-upsert', task }));
+  }));
 trustedHandle('task:get-detail', async (_event, id: string) => (await getDb()).getTaskDetail(id));
 trustedHandle('task:list-events', async (_event, input: { taskId: string } & CursorRequest) =>
   (await getDb()).listTaskEvents(input.taskId, input));
@@ -1638,6 +1643,12 @@ trustedHandle('viral:list-events', async (_event, input: { analysisId: string } 
   (await getDb()).listViralAnalysisEvents(input.analysisId, input));
 trustedHandle('image-lab:list', async (_event, request: Extract<HistoryListRequest, { family: 'image-lab' }>) => (await getDb()).listImageLabRecords(request));
 trustedHandle('image-lab:get-detail', async (_event, id: string) => (await getDb()).getImageLabRecordDetail(id));
+trustedHandle('image-lab:open-output-directory', async (_event, id: string) => {
+  const database = await getDb();
+  const record = await database.getImageLabRecordDetail(id);
+  if (!record) throw new Error(`图片任务不存在或已删除：${id}`);
+  await openExistingDirectory(imageLabWorkDir(record), (path) => shell.openPath(path));
+});
 trustedHandle('voice-lab:list', async (_event, request: Extract<HistoryListRequest, { family: 'voice-lab' }>) => (await getDb()).listVoiceLabRecords(request));
 trustedHandle('voice-lab:get-detail', async (_event, id: string) => (await getDb()).getVoiceLabRecordDetail(id));
 trustedHandle('task:archive', (_event, id: string) =>

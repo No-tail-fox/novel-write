@@ -107,8 +107,8 @@ describe('HTML video control manifest', () => {
       }));
     }
     expect(HTML_VIDEO_CONTROL_MANIFEST_V1.draftTemplate).toEqual(expect.objectContaining({
-      consumerStages: ['render'],
-      invalidateFrom: 'render',
+      consumerStages: ['preview', 'render'],
+      invalidateFrom: 'preview',
       availability: 'editable',
     }));
     expect(Object.entries(HTML_VIDEO_CONTROL_MANIFEST_V1)
@@ -308,6 +308,7 @@ describe('HTML video control manifest', () => {
         captionPreset: 'editorial',
         captionAnim: 'pop',
         captionColors: { text: '#ffffff', accent: '#11aabb' },
+        draftTemplate: 'custom-draft-template',
         ratio: '4:3',
       },
       render: {
@@ -442,7 +443,7 @@ describe('HTML video control manifest', () => {
     });
   });
 
-  it('applies draft template changes from render while preserving all five earlier stages', () => {
+  it('applies draft template changes from preview while preserving the four earlier stages', () => {
     const pipeline = createHtmlVideoPipelineData('Task 19 draft mutation');
     pipeline.current = 'done';
     for (const step of Object.keys(pipeline.steps) as HtmlVideoVisibleStep[]) {
@@ -455,11 +456,13 @@ describe('HTML video control manifest', () => {
     ]);
 
     expect(result.changedFields).toEqual(['draftTemplate']);
-    expect(result.invalidateFrom).toBe('render');
-    for (const step of ['rewrite', 'planning', 'assets', 'voice', 'preview'] as const) {
+    expect(result.invalidateFrom).toBe('preview');
+    for (const step of ['rewrite', 'planning', 'assets', 'voice'] as const) {
       expect(result.pipeline.steps[step]).toEqual(pipeline.steps[step]);
     }
+    expect(result.pipeline.steps.preview).toEqual({ status: 'pending' });
     expect(result.pipeline.steps.render).toEqual({ status: 'pending' });
+    expect(result.pipeline.compositions).toEqual([]);
     expect(result.pipeline).not.toHaveProperty('output');
     expect(result.pipeline.config).toMatchObject({ draftTemplate: 'draft-editorial' });
     expect(result.legacyMirrors).toEqual({});

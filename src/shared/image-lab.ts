@@ -1,15 +1,17 @@
 import { randomUUID } from 'node:crypto';
 import { defaultConfig, defaultCustomStyles } from './config';
 import { createConfiguredImageGenerator } from './media-providers';
+import { enableImageProfile, normalizedImageProfiles } from './provider-profile-utils';
 import type { AppConfig, ImageLabGenerateInput, ImageLabRecord, ImageLabSmartMode, ImagePrompt, StoryboardScene, Task } from './types';
 
 export async function generateImageLabRecord(config: AppConfig, workDir: string, input: ImageLabGenerateInput, signal?: AbortSignal): Promise<ImageLabRecord> {
+  const providerConfig = selectImageLabProviderConfig(config, input.provider);
   const id = input.id ?? randomUUID();
   const createdAt = input.createdAt ?? new Date().toISOString();
-  const baseRecord = createBaseRecord(config, input, id, createdAt);
+  const baseRecord = createBaseRecord(providerConfig, input, id, createdAt);
   const referenceImagePaths = normalizeReferenceImagePaths(input);
   const prompt = buildImageLabPrompt(input.prompt, input.style, input.smartMode ?? 'text-to-image', referenceImagePaths.length > 0);
-  const generator = createConfiguredImageGenerator(applyImageLabRequestSize(config, input), workDir);
+  const generator = createConfiguredImageGenerator(applyImageLabRequestSize(providerConfig, input), workDir);
   const scene: StoryboardScene = {
     id: 1,
     cap: input.prompt,
@@ -52,6 +54,16 @@ export async function generateImageLabRecord(config: AppConfig, workDir: string,
       finishedAt: new Date().toISOString(),
     };
   }
+}
+
+export function selectImageLabProviderConfig(config: AppConfig, requestedProvider: ImageLabGenerateInput['provider']): AppConfig {
+  if (!requestedProvider || requestedProvider === config.imageProvider) return config;
+  if (requestedProvider !== 'gpt_image' && requestedProvider !== 'jimeng' && requestedProvider !== 'custom') {
+    throw new Error(`Unsupported image lab provider: ${requestedProvider}`);
+  }
+  const profile = normalizedImageProfiles(config).find((candidate) => candidate.provider === requestedProvider);
+  if (profile?.id) return enableImageProfile(config, profile.id);
+  return { ...config, imageProvider: requestedProvider };
 }
 
 function createBaseRecord(config: AppConfig, input: ImageLabGenerateInput, id: string, createdAt: string): ImageLabRecord {

@@ -254,17 +254,19 @@ describe('electron ipc contract', () => {
     }
   });
 
-  it('keeps renderer directory opening scoped to persisted tasks and existing person assets', async () => {
-    const [main, preload, apiContract, renderer, artifact, personAssets] = await Promise.all([
+  it('keeps renderer directory opening scoped to persisted tasks, image jobs, and existing person assets', async () => {
+    const [main, preload, apiContract, renderer, artifact, imageLab, personAssets] = await Promise.all([
       readFile(new URL('../electron/main.ts', import.meta.url), 'utf8'),
       readFile(new URL('../electron/preload.ts', import.meta.url), 'utf8'),
       readFile(new URL('../src/shared/storydream-api.ts', import.meta.url), 'utf8'),
       readFile(new URL('../src/main.tsx', import.meta.url), 'utf8'),
       readFile(new URL('../src/features/tasks/TaskArtifactPreview.tsx', import.meta.url), 'utf8'),
+      readFile(new URL('../src/features/labs/ImageLabPage.tsx', import.meta.url), 'utf8'),
       readFile(new URL('../src/features/labs/PersonAssetsPage.tsx', import.meta.url), 'utf8'),
     ]);
 
     expect(main).toContain("trustedHandle('task:open-output-directory'");
+    expect(main).toContain("trustedHandle('image-lab:open-output-directory'");
     expect(main).toContain("trustedHandle('person-assets:open-directory'");
     expect(main).toContain('await database.getTaskDetail(id)');
     expect(main).toContain('isHtmlVideoTask(task)');
@@ -273,16 +275,20 @@ describe('electron ipc contract', () => {
     expect(main).toContain("find((asset) => asset.name === name)");
     expect(main).toContain('openExistingDirectory');
     const taskDirectoryHandler = handlerSource(main, 'task:open-output-directory');
+    const imageLabDirectoryHandler = handlerSource(main, 'image-lab:open-output-directory');
     const personDirectoryHandler = handlerSource(main, 'person-assets:open-directory');
     expect(personDirectoryHandler).toContain('const root = personAssetsRoot();');
     expect(personDirectoryHandler).toContain('{ allowedRoot: root }');
     expect(taskDirectoryHandler).not.toContain('allowedRoot');
     expect(taskDirectoryHandler).toContain(': task.outputDir.trim()');
+    expect(imageLabDirectoryHandler).toContain('database.getImageLabRecordDetail(id)');
+    expect(imageLabDirectoryHandler).toContain('imageLabWorkDir(record)');
     expect(main).not.toContain("trustedHandle('path:open'");
     expect(preload).not.toContain('openPath');
     expect(apiContract).not.toContain('openPath');
     expect(renderer).not.toContain('api.openPath');
     expect(artifact).toContain('api.openTaskOutputDirectory(task.id)');
+    expect(imageLab).toContain('api.openImageLabOutputDirectory(record.id)');
     expect(personAssets).toContain('api.openPersonAssetDirectory(selectedAsset.name)');
   });
 

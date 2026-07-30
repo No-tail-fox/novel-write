@@ -1194,7 +1194,7 @@ describe('HTML video runner module', () => {
     });
   });
 
-  it('attributes a missing selected draft template to render before provider output', async () => {
+  it('attributes a missing selected draft template to preview before generating inconsistent HTML', async () => {
     await withTempRunner(async (workDir) => {
       const runtime = createFakeRuntime(workDir);
       const input = createRunnerInput('missing-draft-template-render');
@@ -1210,10 +1210,10 @@ describe('HTML video runner module', () => {
       })).rejects.toMatchObject({ code: 'HTML_VIDEO_DRAFT_TEMPLATE_MISSING' });
 
       expect(render).not.toHaveBeenCalled();
-      expect(runtime.calls).toEqual(['rewrite', 'planning', 'assets', 'voice', 'preview']);
+      expect(runtime.calls).toEqual(['rewrite', 'planning', 'assets', 'voice']);
       expect(await readCheckpoint(workDir)).toMatchObject({
-        current: 'render',
-        steps: { render: { status: 'failed' } },
+        current: 'preview',
+        steps: { preview: { status: 'failed' } },
       });
     });
   });

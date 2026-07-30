@@ -81,7 +81,7 @@ describe('local and lab editorial workbenches', () => {
     }
     for (const label of ['来源链接', '账号 / 标题', '关键词', '素材来源', '对标文案']) expect(benchmark).toContain(label);
     for (const label of ['人物名称', '创建', '重命名', '删除', '打开目录', '导入图片']) expect(person).toContain(label);
-    for (const label of ['模式', '参考图', '需求描述', '出图数量上限', '比例', '风格', '分辨率', '导入成品', '智能生成']) expect(image).toContain(label);
+    for (const label of ['模式', '参考图', '需求描述', '每组合数量', '多选比例', '多选风格', '分辨率', '导入成品', '智能生成']) expect(image).toContain(label);
     for (const label of ['试听文案', '配音模型', '音色', '语速', '生成试听', '历史试听']) expect(voice).toContain(label);
   });
 });

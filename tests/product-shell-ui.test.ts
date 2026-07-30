@@ -80,6 +80,22 @@ describe('product shell ui', () => {
     }
   });
 
+  it('exposes persisted task favorites as a history filter and per-row command', async () => {
+    const history = (await rendererSourcesPromise).requiredFile('src/features/tasks/HistoryPage.tsx');
+    const css = await readFile(new URL('../src/styles/features/task-operations.css', import.meta.url), 'utf8');
+
+    expect(history).toContain("const [favoriteFilter, setFavoriteFilter] = useState<'all' | 'favorites'>('all')");
+    expect(history).toContain("favorite: favoriteFilter === 'favorites' ? true : undefined");
+    expect(history).toContain('api.setTaskFavorite(task.id, !task.isFavorite)');
+    expect(history).toContain('toggleTaskFavorite');
+    expect(history).toContain('全部任务');
+    expect(history).toContain('收藏任务');
+    expect(history).toContain('取消收藏');
+    expect(history).toContain('添加收藏');
+    expect(history).toContain('<Star');
+    expect(css).toContain('.task-history-action.favorite-action');
+  });
+
   it('advances family generations for accepted history identities and snapshots', async () => {
     const appState = await appStateSourcePromise;
     const source = stripModuleExports(appState.slice(appState.indexOf('type HistoryDeltaIdentity'), appState.indexOf('export function mergeDefaultCustomStyles')));
@@ -1748,6 +1764,27 @@ describe('product shell ui', () => {
     expect(main).toContain('colorWithAlpha');
   });
 
+  it('edits and previews Storybound-compatible camera motion and frame layout', async () => {
+    const sources = await rendererSourcesPromise;
+    const page = sources.requiredFile('src/features/templates/DraftTemplatesPage.tsx');
+    const canvas = sources.requiredFile('src/features/templates/DraftCanvas.tsx');
+    const css = await readFile(new URL('../src/styles.css', import.meta.url), 'utf8');
+
+    for (const text of ['运镜方式', '运镜强度', '分栏画框', '启用画框', '顶部起始色', '顶部结束色', '底部起始色', '底部结束色', '图片边框色', '图片边框宽度', '边框方向']) {
+      expect(page).toContain(text);
+    }
+    expect(page).toContain('draftImageMotions.map');
+    expect(page).toContain('min={0.5} max={2} step={0.1}');
+    expect(page).toContain('updateDraftFrame');
+    expect(canvas).toContain('DraftFrameChrome');
+    expect(canvas).toContain('draftImageMotionStyle');
+    expect(canvas).toContain('draftImageFrameStyle');
+    expect(canvas).toContain('data-motion={template.image.motion');
+    expect(css).toContain('@keyframes draft-motion-zoom_in');
+    expect(css).toContain('@keyframes draft-motion-pan_right');
+    expect(css).toContain('@media (prefers-reduced-motion: reduce)');
+  });
+
   it('does not reset unsaved draft template drag edits during state refreshes', async () => {
     const main = (await rendererSourcesPromise).requiredFile('src/features/templates/DraftTemplatesPage.tsx');
 
@@ -3166,6 +3203,34 @@ describe('product shell ui', () => {
     expect(css).toContain('.image-record.failed');
   });
 
+  it('matches Storybound playground batch, provider switching, and recovery tools without dropping existing parameters', async () => {
+    const page = (await rendererSourcesPromise).requiredFile('src/features/labs/ImageLabPage.tsx');
+    const helpers = (await rendererSourcesPromise).requiredFile('src/features/labs/image-lab-helpers.ts');
+    const css = await readFile(new URL('../src/styles/features/local-labs.css', import.meta.url), 'utf8');
+
+    expect(page).toContain('buildImageLabBatchInputs');
+    expect(page).toContain('selectedRatios');
+    expect(page).toContain('selectedStyles');
+    expect(page).toContain('provider');
+    expect(page).toContain('batchRequestCount');
+    expect(page).toContain('retryImageLabRecord');
+    expect(page).toContain('retryFailedImageLabRecords');
+    expect(page).toContain('refillImageLabPrompt');
+    expect(page).toContain('copyImageLabTaskId');
+    expect(page).toContain('api.openImageLabOutputDirectory(record.id)');
+    expect(page).toContain('api.getImageLabRecordDetail(record.id)');
+    expect(page).toContain('applyState(nextState)');
+    for (const text of ['多选比例', '多选风格', '每组合数量', '重试全部失败项', '重试', '回填提示词', '复制任务 ID', '打开目录']) {
+      expect(page).toContain(text);
+    }
+    for (const parameter of ['prompt', 'ratio', 'style', 'provider', 'resolution', 'smartMode', 'referenceImagePath', 'referenceImagePaths']) {
+      expect(helpers).toContain(parameter);
+    }
+    expect(css).toContain('.image-lab-style-grid');
+    expect(css).toContain('.image-record-actions');
+    expect(css).toContain('.image-lab-batch-summary');
+  });
+
   it('imports a completed local image into image lab history with the current parameters', async () => {
     const page = (await rendererSourcesPromise).requiredFile('src/features/labs/ImageLabPage.tsx');
     const importSnippet = page.slice(
@@ -3178,9 +3243,9 @@ describe('product shell ui', () => {
     expect(importSnippet).toContain('api.addImageLabRecord({');
     for (const parameter of [
       'prompt,',
-      'ratio,',
-      'style,',
-      'provider: state.config.imageProvider,',
+      'ratio: selectedRatios[0],',
+      'style: selectedStyles[0],',
+      'provider,',
       'imagePath,',
       'resolution,',
       'smartMode: resolvedSmartMode,',
@@ -3201,7 +3266,7 @@ describe('product shell ui', () => {
     const helpers = (await rendererSourcesPromise).requiredFile('src/features/labs/image-lab-helpers.ts');
     const css = await readFile(new URL('../src/styles.css', import.meta.url), 'utf8');
 
-    for (const text of ['智慧生图', '文生图', '图像参考', '参考图', '需求描述', '出图数量上限', '比例', '分辨率', '最近生成']) {
+    for (const text of ['智慧生图', '文生图', '图像参考', '参考图', '需求描述', '每组合数量', '多选比例', '多选风格', '分辨率', '最近生成']) {
       expect(page).toContain(text);
     }
     expect(page).not.toContain('className="image-lab-header"');

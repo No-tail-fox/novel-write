@@ -18,9 +18,10 @@ export function DraftTemplatePreview({ template, compact = false }: { template: 
   const disclaimerSize = compact ? Math.max(6, template.disclaimer.fontSize * 0.42) : template.disclaimer.fontSize;
   return (
     <div className={compact ? 'draft-preview-mini' : 'draft-preview-large'} data-media-canvas="draft-canvas" style={draftTemplateCanvasStyle(template)}>
+      <DraftFrameChrome template={template} />
       {template.image.visible ? (
-        <div className="draft-image" style={{ top: `${template.image.top * 100}%`, height: `${template.image.height * 100}%` }}>
-          <div className="draft-image-media" style={draftImageMediaStyle(template)} />
+        <div className="draft-image" style={{ top: `${template.image.top * 100}%`, height: `${template.image.height * 100}%`, ...draftImageFrameStyle(template) }}>
+          <div className="draft-image-media" data-motion={template.image.motion || 'none'} style={{ ...draftImageMediaStyle(template), ...draftImageMotionStyle(template) }} />
         </div>
       ) : null}
       {template.title.visible ? (
@@ -159,14 +160,15 @@ export function EditableDraftCanvas({
       onPointerUp={stopDrag}
       onPointerCancel={stopDrag}
     >
+      <DraftFrameChrome template={template} />
       {template.image.visible ? (
         <div
           className={selectedLayer === 'image' ? 'draft-layer image-layer selected' : 'draft-layer image-layer'}
           data-layer="image"
-          style={{ top: `${template.image.top * 100}%`, height: `${template.image.height * 100}%` }}
+          style={{ top: `${template.image.top * 100}%`, height: `${template.image.height * 100}%`, ...draftImageFrameStyle(template) }}
           onPointerDown={(event) => handleDraftCanvasPointerDown('image', event)}
         >
-          <div className="draft-image-media" style={draftImageMediaStyle(template)} />
+          <div className="draft-image-media" data-motion={template.image.motion || 'none'} style={{ ...draftImageMediaStyle(template), ...draftImageMotionStyle(template) }} />
           <span>图片区域</span>
           <i className="draft-layer-handle" />
         </div>
@@ -243,6 +245,24 @@ export function EditableDraftCanvas({
           </DraftCanvasText>
         </DraftCanvasLayerBox>
       ) : null}
+    </div>
+  );
+}
+
+function DraftFrameChrome({ template }: { template: DraftTemplate }) {
+  if (!template.frame.enabled) return null;
+  const headerHeight = clamp(template.image.top, 0, 1) * 100;
+  const footerTop = clamp(template.image.top + template.image.height, 0, 1) * 100;
+  return (
+    <div className="draft-frame-chrome" aria-hidden="true" data-frame-enabled="true">
+      <div
+        className="draft-frame-band draft-frame-header"
+        style={{ height: `${headerHeight}%`, background: `linear-gradient(90deg, ${template.frame.headerColor}, ${template.frame.headerColorEnd})` }}
+      />
+      <div
+        className="draft-frame-band draft-frame-footer"
+        style={{ top: `${footerTop}%`, bottom: 0, background: `linear-gradient(90deg, ${template.frame.footerColor}, ${template.frame.footerColorEnd})` }}
+      />
     </div>
   );
 }
@@ -380,6 +400,36 @@ export function draftImageMediaStyle(template: DraftTemplate): React.CSSProperti
     height: '100%',
     width: '100%',
   };
+}
+
+export function draftImageMotionStyle(template: DraftTemplate): React.CSSProperties {
+  const { motion, motionStrength } = template.image;
+  if (!motion) return {};
+  const style = {
+    '--draft-motion-scale': 1 + 0.08 * clamp(motionStrength, 0.5, 2),
+    '--draft-motion-pan': `${4 * clamp(motionStrength, 0.5, 2)}%`,
+    animationName: `draft-motion-${motion}`,
+    animationDuration: `${Math.max(4, 8 / clamp(motionStrength, 0.5, 2))}s`,
+    animationTimingFunction: 'ease-in-out',
+    animationIterationCount: 'infinite',
+    animationDirection: 'alternate',
+    transformOrigin: 'center',
+    willChange: 'transform',
+  } as React.CSSProperties & Record<string, string | number>;
+  return style;
+}
+
+export function draftImageFrameStyle(template: DraftTemplate): React.CSSProperties {
+  if (!template.frame.enabled || template.frame.imageBorderWidth <= 0) return {};
+  const width = Math.min(16, template.frame.imageBorderWidth / 8);
+  const border = `${width}px solid ${template.frame.imageBorderColor}`;
+  if (template.frame.imageBorderSides === 'horizontal') {
+    return { borderTop: border, borderBottom: border, boxSizing: 'border-box' };
+  }
+  if (template.frame.imageBorderSides === 'vertical') {
+    return { borderLeft: border, borderRight: border, boxSizing: 'border-box' };
+  }
+  return { border, boxSizing: 'border-box' };
 }
 
 export function draftImageAspectRatio(ratio: string): string {

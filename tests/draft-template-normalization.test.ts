@@ -20,6 +20,16 @@ describe('draft template normalization', () => {
       name: '默认竖屏',
       canvas: { width: 1080, height: 1920, ratio: '9:16', backgroundColor: '#000000' },
       image: { ratio: '9:16', fit: 'cover', top: 0, height: 1, animation: '缩放' },
+      frame: {
+        enabled: false,
+        headerColor: '#000000',
+        headerColorEnd: '#000000',
+        footerColor: '#000000',
+        footerColorEnd: '#000000',
+        imageBorderColor: '#000000',
+        imageBorderWidth: 0,
+        imageBorderSides: 'all',
+      },
       title: {
         x: 0,
         y: 0.04739583333333333,
@@ -121,6 +131,17 @@ describe('draft template normalization', () => {
     const normalized = normalizeDraftTemplate(legacyTemplate);
 
     expect(normalized.image.visible).toBe(true);
+    expect(normalized.image).toMatchObject({ motion: '', motionStrength: 1 });
+    expect(normalized.frame).toEqual({
+      enabled: false,
+      headerColor: '#000000',
+      headerColorEnd: '#000000',
+      footerColor: '#000000',
+      footerColorEnd: '#000000',
+      imageBorderColor: '#000000',
+      imageBorderWidth: 0,
+      imageBorderSides: 'all',
+    });
     expect(normalized.title).toMatchObject({
       x: 0,
       y: 0.04739583333333333,
@@ -274,6 +295,51 @@ describe('draft template normalization', () => {
       videoEffectType: '',
       audioEffectType: '',
     });
+  });
+
+  it('preserves verified camera motion and frame settings while repairing stale values', () => {
+    const fallback = draftTemplates[0];
+    const normalized = normalizeDraftTemplate({
+      ...fallback,
+      image: { ...fallback.image, motion: 'zoom_pan_up', motionStrength: 1.75 },
+      frame: {
+        enabled: true,
+        headerColor: '#112233',
+        headerColorEnd: '#334455',
+        footerColor: '#556677',
+        footerColorEnd: '#778899',
+        imageBorderColor: '#abcdef',
+        imageBorderWidth: 16,
+        imageBorderSides: 'horizontal',
+      },
+    });
+
+    expect(normalized.image).toMatchObject({ motion: 'zoom_pan_up', motionStrength: 1.75 });
+    expect(normalized.frame).toEqual({
+      enabled: true,
+      headerColor: '#112233',
+      headerColorEnd: '#334455',
+      footerColor: '#556677',
+      footerColorEnd: '#778899',
+      imageBorderColor: '#abcdef',
+      imageBorderWidth: 16,
+      imageBorderSides: 'horizontal',
+    });
+
+    const repaired = normalizeDraftTemplate({
+      ...fallback,
+      image: { ...fallback.image, motion: 'spin' as never, motionStrength: Number.NaN },
+      frame: {
+        ...fallback.frame,
+        enabled: 'yes' as never,
+        headerColor: '',
+        imageBorderWidth: Number.NaN,
+        imageBorderSides: 'diagonal' as never,
+      },
+    });
+
+    expect(repaired.image).toMatchObject({ motion: '', motionStrength: 1 });
+    expect(repaired.frame).toEqual(fallback.frame);
   });
 
   it('only exposes image animations that pyJianYingDraft can resolve', () => {

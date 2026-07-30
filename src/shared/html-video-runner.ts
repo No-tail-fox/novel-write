@@ -106,6 +106,7 @@ export interface HtmlVideoVoiceInput extends HtmlVideoAssetInput {}
 export interface HtmlVideoPreviewInput extends HtmlVideoAssetInput {
   assets: HtmlVideoAsset[];
   voices: HtmlVideoVoiceClip[];
+  draftTemplate?: DraftTemplate;
 }
 
 export interface HtmlVideoPreviewOutput {
@@ -146,6 +147,8 @@ export interface HtmlVideoRenderArtifactDigest {
 interface RunnerContext {
   rewrite?: HtmlVideoRewriteOutput;
   trustedRenderDigest?: StepFileDigest;
+  draftTemplate?: DraftTemplate;
+  draftTemplateResolved?: boolean;
 }
 
 interface StepArtifact {
@@ -457,10 +460,12 @@ async function executeStep(
 
   if (step === 'preview') {
     await revalidateCompletedMediaSteps(options.workDir, state, ['assets', 'voice'], options.signal);
+    const draftTemplate = await resolveRunnerDraftTemplate(state, options, context);
     const generated = await options.createPreviews({
       scenes: structuredClone(state.scenes),
       assets: structuredClone(state.assets),
       voices: structuredClone(state.voices),
+      ...(draftTemplate ? { draftTemplate: structuredClone(draftTemplate) } : {}),
       ...htmlVideoConfigEnvelopeForStage(state.config, 'preview'),
       signal: options.signal,
     });
@@ -481,10 +486,7 @@ async function executeStep(
   } else {
     delete state.coverAsset;
   }
-  const draftTemplate = await resolveHtmlVideoDraftForRender({
-    config: state.config,
-    resolveTemplate: options.resolveDraftTemplate ?? (async () => null),
-  });
+  const draftTemplate = await resolveRunnerDraftTemplate(state, options, context);
   state.steps.render.inputHash = hashStepInput('render', sourceText, state, context);
   await revalidateCompletedMediaSteps(options.workDir, state, ['assets', 'voice', 'preview'], options.signal);
   const generated = await options.render({
@@ -521,6 +523,20 @@ async function executeStep(
     };
   }
   return { output: state.output };
+}
+
+async function resolveRunnerDraftTemplate(
+  state: HtmlVideoPipelineDataV2,
+  options: HtmlVideoRunnerOptions,
+  context: RunnerContext,
+): Promise<DraftTemplate | undefined> {
+  if (context.draftTemplateResolved) return context.draftTemplate;
+  context.draftTemplate = await resolveHtmlVideoDraftForRender({
+    config: state.config,
+    resolveTemplate: options.resolveDraftTemplate ?? (async () => null),
+  });
+  context.draftTemplateResolved = true;
+  return context.draftTemplate;
 }
 
 async function revalidateCompletedMediaSteps(

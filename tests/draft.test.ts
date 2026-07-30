@@ -145,6 +145,13 @@ describe('draft writer', () => {
           visible: true,
           ratio: '9:16',
           animation: expect.any(String),
+          motion: '',
+          motionStrength: 1,
+        },
+        frame: {
+          enabled: false,
+          imageBorderWidth: 0,
+          imageBorderSides: 'all',
         },
         caption: {
           visible: true,

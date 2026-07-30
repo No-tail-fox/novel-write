@@ -216,7 +216,10 @@ function createBridgePayload(input: {
       height: input.template.image.height,
       fit: input.template.image.fit,
       animation: input.template.image.animation,
+      motion: input.template.image.motion,
+      motionStrength: input.template.image.motionStrength,
     },
+    frame: { ...input.template.frame },
     caption: {
       visible: input.template.caption.visible,
       fontSize: input.template.caption.fontSize,
