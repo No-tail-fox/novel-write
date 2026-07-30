@@ -1891,6 +1891,8 @@ describe('product shell ui', () => {
     expect(css.includes('.draft-toggle-row')).toBe(true);
     expect(css.includes('.draft-toggle-control')).toBe(true);
     expect(css.includes('.draft-toggle-box')).toBe(true);
+    expect(css).toMatch(/\.draft-toggle-box \{[\s\S]*?background: var\(--shell-surface-raised\);[\s\S]*?color: var\(--shell-text\);/u);
+    expect(css).toMatch(/\.draft-toggle-control input\[type='checkbox'\]:checked \+ \.draft-toggle-box \{[\s\S]*?border-color: var\(--shell-accent\);[\s\S]*?background: var\(--shell-accent\);[\s\S]*?color: var\(--shell-focus-contrast\);/u);
     expect(css.includes('.draft-border-compact-panel')).toBe(false);
     expect(css.includes('.draft-inline-border-grid')).toBe(true);
     expect(css.includes('grid-template-columns: repeat(3, minmax(0, 1fr))')).toBe(true);

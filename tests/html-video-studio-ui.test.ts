@@ -47,6 +47,35 @@ describe('HTML video editorial studio', () => {
     expect(tabPanel).toContain('onCanPlay');
   });
 
+  it('uses theme-aware contrast ink on solid studio controls and lifecycle states', async () => {
+    const styles = await source('../src/styles/features/html-video.css');
+    const solidForegroundRules = [
+      '.hv-studio-panel-heading .primary-action',
+      '.hv-studio-parameters .segmented button.selected',
+      '.hv-studio-run-rail .hv-step.done > span',
+      '.hv-studio-run-rail .hv-step.running > span',
+      '.hv-studio-run-rail .hv-step.failed > span',
+    ];
+
+    for (const selector of solidForegroundRules) {
+      const rule = styles.slice(styles.indexOf(`${selector} {`));
+      expect(rule, selector).toMatch(/^.*?\{[\s\S]*?color: var\(--shell-focus-contrast\);/u);
+    }
+    for (const selector of [
+      '.hv-studio .hv-tab.active',
+      '.hv-studio .hv-tab-content .segmented button.selected',
+    ]) {
+      const rule = styles.slice(styles.indexOf(`${selector} {`));
+      expect(rule, selector).toMatch(/^.*?\{[\s\S]*?background: var\(--media-accent\);[\s\S]*?color: var\(--media-accent-contrast\);/u);
+    }
+    expect(styles).toContain('var(--media-timeline-blue) 55%');
+    expect(styles).toContain('var(--media-reel-amber) 52%');
+    expect(styles).toContain('var(--media-ok) 52%');
+    expect(styles).toMatch(/\.hv-studio \.hv-caption-color-item,[\s\S]*?\.hv-studio \.hv-media-loading \{[\s\S]*?color: var\(--media-muted\);/u);
+    expect(styles).toMatch(/\.hv-studio \.hv-tab-content \.field > \.form-field-label \{[\s\S]*?color: var\(--media-text\);/u);
+    expect(styles).toMatch(/\.hv-studio \.hv-caption-color-reset \{[\s\S]*?border-color: var\(--media-border\);[\s\S]*?background: #101316;[\s\S]*?color: var\(--media-muted\);/u);
+  });
+
   it('adds a dedicated real-Electron capture scope for desktop and compact HTML studio states', async () => {
     const [qa, electronMain, htmlVideoQa] = await Promise.all([
       source('../electron/editorial-qa.ts'),

@@ -28,6 +28,31 @@ describe('editorial task operations surfaces', () => {
     expect(css).toContain('.task-operations-view .status-pill::before');
   });
 
+  it('keeps task-operation status and solid accent controls readable in both themes', async () => {
+    const css = await source('../src/styles/features/task-operations.css');
+
+    expect(css).toMatch(/\.task-operations-view \.status-pill\.running,[\s\S]*?color: var\(--shell-accent-strong\);/u);
+    for (const selector of [
+      '.task-queue-filters button.active',
+      '.history-page[data-task-operations="history"] .chip.active',
+      '.task-detail-shell[data-task-operations="detail"] .task-detail-run-control.accent',
+      '.task-stage-track .pipeline-step.completed .pipeline-node',
+      '.task-detail-shell[data-task-operations="detail"] .artifact-tabs button.active',
+    ]) {
+      const block = css.slice(css.indexOf(selector), css.indexOf('}', css.indexOf(selector)) + 1);
+      expect(block, selector).toContain('color: var(--shell-focus-contrast);');
+    }
+    expect(css).not.toMatch(/background: var\(--(?:shell-accent|ok)\);\s*color: #fff;/u);
+    expect(css).toMatch(/\.task-detail-shell\[data-task-operations="detail"\] \.preview-meta-grid div \{[\s\S]*?background: var\(--shell-surface\);/u);
+    expect(css).toMatch(/\.task-detail-shell\[data-task-operations="detail"\] \.preview-meta-grid small \{[\s\S]*?color: var\(--shell-muted\);/u);
+    expect(css).toMatch(/\.task-detail-shell\[data-task-operations="detail"\] \.preview-meta-grid strong \{[\s\S]*?color: var\(--shell-text\);/u);
+    const workspaceStart = css.indexOf('.task-media-workspace {');
+    const workspaceRule = css.slice(workspaceStart, css.indexOf('}', workspaceStart) + 1);
+    expect(workspaceRule).toContain('background: var(--media-bg);');
+    expect(css).toMatch(/\.task-media-frame-accent \{[\s\S]*?background: var\(--media-accent\);/u);
+    expect(css).toMatch(/\.task-media-progress i \{[\s\S]*?background: var\(--media-accent\);/u);
+  });
+
   it('keeps history governance in a flat responsive table', async () => {
     const [page, css] = await Promise.all([
       source('../src/features/tasks/HistoryPage.tsx'),
@@ -40,7 +65,7 @@ describe('editorial task operations surfaces', () => {
     expect(page).toContain('aria-label="状态"');
     expect(page).toContain("historyArchiveFilterLabels = ['活跃任务', '已归档']");
     expect(page).toContain("['任务', '类型', '当前状态', '进度', '更新时间', '操作']");
-    expect(page).toContain('contentTracks');
+    expect(page).toContain('taskHistoryTypeLabel(task)');
     expect(page).toContain('aria-label="归档任务"');
     expect(page).toContain('aria-label="归档记录"');
     expect(page).toContain('aria-label="恢复任务"');

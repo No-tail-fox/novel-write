@@ -1,5 +1,6 @@
 import { normalizeStoryboardSceneCount, normalizeTargetLength } from '../../shared/content-metrics';
 import { defaultCustomStyles } from '../../shared/config';
+import { contentTracks } from '../../shared/editorial-options';
 import { selectTaskPromptTemplate } from '../../shared/prompt-templates';
 import type {
   AiSourceSection,
@@ -12,6 +13,8 @@ import type {
   TaskSummary,
   CustomStyle,
 } from '../../shared/types';
+
+const taskTrackLabelById = new Map(contentTracks.map(([id, label]) => [id, label] as const));
 
 export function formatDuration(start: string, end: string | null, now = Date.now()): string {
   const startMs = new Date(start).getTime();
@@ -75,6 +78,12 @@ export function formatTaskOperationTime(value: string, now = Date.now()): string
     && date.getDate() === yesterday.getDate();
   if (isYesterday) return `昨天 ${clock}`;
   return `${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')} ${clock}`;
+}
+
+export function taskHistoryTypeLabel(task: Pick<TaskSummary, 'taskType' | 'track'>): string {
+  if (task.taskType === 'html-video') return 'HTML 动画';
+  if (task.taskType === 'music-mv') return '音乐 MV';
+  return taskTrackLabelById.get(task.track) ?? task.track;
 }
 
 export function resolvePromptTemplateForTrack(

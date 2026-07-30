@@ -6,7 +6,10 @@ const tokenNames = [
   'shell-text', 'shell-muted', 'shell-accent', 'shell-accent-strong',
   'shell-focus', 'shell-focus-contrast',
 ] as const;
-const mediaTokenNames = ['media-bg', 'media-surface', 'media-border', 'media-text', 'media-muted'] as const;
+const mediaTokenNames = [
+  'media-bg', 'media-surface', 'media-border', 'media-text', 'media-muted',
+  'media-accent', 'media-accent-contrast', 'media-timeline-blue', 'media-reel-amber', 'media-ok',
+] as const;
 
 describe('editorial workbench theme contract', () => {
   it('defines every shell theme token and each invariant media token', async () => {
@@ -35,6 +38,19 @@ describe('editorial workbench theme contract', () => {
     expect(css).not.toMatch(/gradient-orb|bokeh|glow-orb/iu);
   });
 
+  it('keeps shared segmented controls readable across shell themes', async () => {
+    const css = await source('../src/styles.css');
+    const rule = (selector: string) => {
+      const start = css.indexOf(`${selector} {`);
+      return css.slice(start, css.indexOf('}', start) + 1);
+    };
+
+    expect(rule('.segmented button')).toContain('background: var(--shell-surface-raised);');
+    expect(rule('.segmented button')).toContain('color: var(--shell-text);');
+    expect(rule('.segmented button.selected')).toContain('background: var(--shell-accent);');
+    expect(rule('.segmented button.selected')).toContain('color: var(--shell-focus-contrast);');
+  });
+
   it('keeps media canvases theme-invariant with readable contrast', async () => {
     const tokens = await source('../src/styles/tokens.css');
     const media = await source('../src/styles/media-canvas.css');
@@ -44,9 +60,41 @@ describe('editorial workbench theme contract', () => {
     expect(contrast('#f4f6f8', '#101316')).toBeGreaterThanOrEqual(4.5);
     expect(contrast('#aeb6bd', '#101316')).toBeGreaterThanOrEqual(4.5);
     expect(contrast('#cf3f2d', '#ffffff')).toBeGreaterThanOrEqual(3);
+    expect(contrast('#101214', '#f2614b')).toBeGreaterThanOrEqual(4.5);
     for (const name of mediaTokenNames) {
       expect(lightThemeBlock(tokens)).not.toContain(`--${name}:`);
     }
+  });
+
+  it('keeps the Music MV preview entirely inside the invariant media palette', async () => {
+    const css = await source('../src/styles.css');
+
+    expect(css).toMatch(/\.music-mv-preview\[data-media-canvas\] \{[\s\S]*?background: var\(--media-bg\);[\s\S]*?color: var\(--media-text\);/u);
+    expect(css).toMatch(/\.music-mv-preview h3,[\s\S]*?\.music-mv-preview \.artifact-scene-list strong \{[\s\S]*?color: var\(--media-text\);/u);
+    expect(css).toMatch(/\.music-mv-preview \.task-metrics small,[\s\S]*?color: var\(--media-muted\);/u);
+    expect(css).toMatch(/\.music-mv-preview \.artifact-scene-list div \{[\s\S]*?border-color: var\(--media-border\);[\s\S]*?background: var\(--media-surface\);/u);
+  });
+
+  it('keeps the Viral input form in the operational shell and its report in the media palette', async () => {
+    const input = await source('../src/features/viral/ViralAnalyzerPage.tsx');
+    const report = await source('../src/features/viral/ViralReport.tsx');
+
+    expect(input).not.toContain('data-media-canvas="viral-source"');
+    expect(input).toContain('className="panel viral-input-panel"');
+    expect(report).toContain('data-media-canvas="viral-report"');
+  });
+
+  it('keeps Viral operational selections and counts readable in both shell themes', async () => {
+    const css = await source('../src/styles.css');
+    const rule = (selector: string) => {
+      const start = css.indexOf(`${selector} {`);
+      return css.slice(start, css.indexOf('}', start) + 1);
+    };
+
+    expect(rule('.panel-count')).toContain('color: var(--shell-accent-strong);');
+    expect(rule('.viral-choice-button.active')).toContain('background: color-mix(in srgb, var(--shell-accent) 10%, var(--shell-surface-raised));');
+    expect(rule('.viral-choice-button.active')).toContain('color: var(--shell-accent-strong);');
+    expect(rule('.viral-choice-button.active small')).toContain('color: var(--shell-accent-strong);');
   });
 
   it.each([
@@ -56,7 +104,6 @@ describe('editorial workbench theme contract', () => {
     ['voice lab', '../src/features/labs/VoiceLabPage.tsx', 'voice-lab'],
     ['draft canvas', '../src/features/templates/DraftCanvas.tsx', 'draft-canvas'],
     ['Music MV', '../src/features/music-mv/MusicMvPage.tsx', 'music-mv-timeline-audio'],
-    ['Viral source', '../src/features/viral/ViralAnalyzerPage.tsx', 'viral-source'],
     ['Viral report', '../src/features/viral/ViralReport.tsx', 'viral-report'],
   ])('marks the %s media owner', async (_label, path, id) => {
     expect(await source(path)).toContain(`data-media-canvas="${id}"`);

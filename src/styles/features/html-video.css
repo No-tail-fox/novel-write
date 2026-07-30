@@ -72,7 +72,7 @@
   flex: 0 0 auto;
   border-radius: 6px;
   background: var(--shell-accent);
-  color: #fff;
+  color: var(--shell-focus-contrast);
   font-size: 12px;
 }
 
@@ -129,7 +129,7 @@
 .hv-studio-parameters .segmented button.selected {
   border-color: var(--shell-accent);
   background: var(--shell-accent);
-  color: #fff;
+  color: var(--shell-focus-contrast);
 }
 
 .hv-create-details {
@@ -260,9 +260,9 @@
 }
 
 .hv-studio .hv-tab.active {
-  border-color: var(--shell-accent);
-  background: var(--shell-accent);
-  color: #fff;
+  border-color: var(--media-accent);
+  background: var(--media-accent);
+  color: var(--media-accent-contrast);
 }
 
 .hv-studio-media-panel {
@@ -302,6 +302,15 @@
   color: var(--media-text);
 }
 
+.hv-studio .hv-tab-content .field > .form-field-label {
+  color: var(--media-text);
+}
+
+.hv-studio .hv-caption-color-item,
+.hv-studio .hv-media-loading {
+  color: var(--media-muted);
+}
+
 .hv-studio .hv-tab-content input,
 .hv-studio .hv-tab-content select,
 .hv-studio .hv-tab-content textarea,
@@ -313,9 +322,15 @@
 }
 
 .hv-studio .hv-tab-content .segmented button.selected {
-  border-color: var(--shell-accent);
-  background: var(--shell-accent);
-  color: #fff;
+  border-color: var(--media-accent);
+  background: var(--media-accent);
+  color: var(--media-accent-contrast);
+}
+
+.hv-studio .hv-caption-color-reset {
+  border-color: var(--media-border);
+  background: #101316;
+  color: var(--media-muted);
 }
 
 .hv-studio .hv-media-frame,
@@ -365,17 +380,17 @@
   display: grid;
   place-items: center;
   border-radius: 3px;
-  background: color-mix(in srgb, var(--timeline-blue) 55%, var(--media-surface));
+  background: color-mix(in srgb, var(--media-timeline-blue) 55%, var(--media-surface));
   color: #fff;
   font-size: 11px;
 }
 
 .hv-timeline-track span:nth-child(3n + 2) {
-  background: color-mix(in srgb, var(--reel-amber) 52%, var(--media-surface));
+  background: color-mix(in srgb, var(--media-reel-amber) 52%, var(--media-surface));
 }
 
 .hv-timeline-track span:nth-child(3n) {
-  background: color-mix(in srgb, var(--ok) 52%, var(--media-surface));
+  background: color-mix(in srgb, var(--media-ok) 52%, var(--media-surface));
 }
 
 .hv-timeline small {
@@ -498,7 +513,7 @@
 
 .hv-studio-run-rail .hv-step.done > span {
   background: var(--ok);
-  color: #fff;
+  color: var(--shell-focus-contrast);
 }
 
 .hv-studio-run-rail .hv-step.running {
@@ -510,12 +525,12 @@
 
 .hv-studio-run-rail .hv-step.running > span {
   background: var(--shell-text);
-  color: #fff;
+  color: var(--shell-focus-contrast);
 }
 
 .hv-studio-run-rail .hv-step.failed > span {
   background: var(--danger);
-  color: #fff;
+  color: var(--shell-focus-contrast);
 }
 
 .hv-studio-run-rail .hv-run-controls {

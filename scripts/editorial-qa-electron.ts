@@ -6,9 +6,11 @@ import { basename, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { randomBytes } from 'node:crypto';
 import {
+  editorialQaCaptureIdsByRequirement,
   editorialQaExpectedCaptureCount,
   editorialQaScopes,
   resolveEditorialQaConfig,
+  type EditorialQaCapture,
   type EditorialQaScope,
 } from '../electron/editorial-qa';
 import { redactProcessOutput, runBoundedProcess } from '../src/shared/process-runner';
@@ -24,7 +26,7 @@ interface QaReport {
   ownedProcessIds: number[];
   remainingOwnedProcessIds: number[];
   activeCapture?: string | null;
-  captures: Array<{ path: string; theme: string; tokens: Record<string, string> }>;
+  captures: EditorialQaCapture[];
 }
 
 async function main(): Promise<void> {
@@ -109,6 +111,8 @@ async function main(): Promise<void> {
           `Editorial QA incomplete capture report for ${scope}: expected ${expectedCaptureCount}, received ${qaReport.captures.length}, unique ${uniqueCaptureCount}, active ${qaReport.activeCapture ?? 'none'}.${detail ? `\n${detail}` : ''}`,
         );
       }
+      validateCanonicalEvidence(qaReport);
+      validateMediaThemeInvariants(qaReport);
       if (scope === 'theme-smoke') validateThemeSmoke(qaReport);
       artifactDirectory = await mkdtemp(join(tmpdir(), 'storydream-editorial-artifacts-'));
       await copyFile(report, join(artifactDirectory, 'report.json'));
@@ -118,9 +122,87 @@ async function main(): Promise<void> {
         await copyFile(join(captures, capture.path), join(artifactDirectory, 'captures', capture.path));
       }
     },
-    cleanup: (tempRoot) => rm(tempRoot, { recursive: true, force: true, maxRetries: 5 }),
+    cleanup: async (tempRoot) => {
+      if (process.env.STORYDREAM_EDITORIAL_KEEP_TEMP === '1') {
+        process.stderr.write(`Editorial QA kept temp root: ${tempRoot}\n`);
+        return;
+      }
+      await rm(tempRoot, { recursive: true, force: true, maxRetries: 5 });
+    },
   });
   process.stdout.write(`Editorial QA artifacts: ${artifactDirectory}\n`);
+}
+
+function validateCanonicalEvidence(report: QaReport): void {
+  const requiredCaptures = report.captures.filter((capture) => capture.requirement === 'required');
+  if (report.scope === 'all') {
+    const expectedRequired = editorialQaCaptureIdsByRequirement('required');
+    const expectedSupplemental = editorialQaCaptureIdsByRequirement('supplemental');
+    const actualRequired = new Set(requiredCaptures.map((capture) => capture.id));
+    const actualSupplemental = new Set(report.captures.filter((capture) => capture.requirement === 'supplemental').map((capture) => capture.id));
+    if (
+      actualRequired.size !== expectedRequired.length
+      || actualSupplemental.size !== expectedSupplemental.length
+      || expectedRequired.some((id) => !actualRequired.has(id))
+      || expectedSupplemental.some((id) => !actualSupplemental.has(id))
+    ) {
+      throw new Error(`Editorial QA canonical classification is incomplete: ${actualRequired.size} required, ${actualSupplemental.size} supplemental.`);
+    }
+  }
+  const invalid = requiredCaptures.filter((capture) => (
+    !capture.evidence?.identity.matched
+    || capture.evidence.identity.meaningfulTextLength < 20
+    || capture.evidence.identity.rootChildCount < 1
+    || !capture.evidence.interaction.performed
+    || !capture.evidence.interaction.verified
+    || Object.values({
+      ...capture.evidence.runtime,
+      ...capture.evidence.content,
+      iconOnlyAccessibleNameGaps: capture.evidence.accessibility.iconOnlyAccessibleNameGaps,
+      iconOnlyTooltipGaps: capture.evidence.accessibility.iconOnlyTooltipGaps,
+      textContrastFailures: capture.evidence.accessibility.textContrastFailures,
+      focusContrastFailures: capture.evidence.accessibility.focusContrastFailures,
+      interactiveOverlaps: capture.evidence.layout.interactiveOverlaps,
+      mediaFailures: capture.evidence.media.failures,
+    }).some((values) => values.length > 0)
+    || capture.evidence.media.bitmaps.length !== capture.evidence.media.regions.length
+    || capture.evidence.media.bitmaps.some((bitmap) => (
+      !/^[a-f0-9]{64}$/u.test(bitmap.sha256)
+      || !Number.isFinite(bitmap.pixelVariance)
+      || bitmap.pixelVariance < 0
+      || bitmap.width < 16
+      || bitmap.height < 16
+    ))
+  ));
+  if (invalid.length > 0) {
+    throw new Error(`Editorial QA required evidence is incomplete: ${invalid.map((capture) => capture.id).join(', ')}.`);
+  }
+}
+
+function validateMediaThemeInvariants(report: QaReport): void {
+  const byId = new Map(report.captures.map((capture) => [capture.id, capture]));
+  for (const darkCapture of report.captures.filter((capture) => capture.theme === 'dark')) {
+    const lightCapture = byId.get(darkCapture.id.replace('-dark-', '-light-'));
+    if (!lightCapture) continue;
+    const darkBitmaps = darkCapture.evidence.media.bitmaps;
+    const lightBitmaps = lightCapture.evidence.media.bitmaps;
+    if (darkBitmaps.length !== lightBitmaps.length) {
+      throw new Error(`Editorial media bitmap set changed across themes: ${darkCapture.id}.`);
+    }
+    const lightByKey = new Map(lightBitmaps.map((bitmap) => [bitmap.key, bitmap]));
+    for (const darkBitmap of darkBitmaps) {
+      const lightBitmap = lightByKey.get(darkBitmap.key);
+      if (
+        !lightBitmap
+        || darkBitmap.kind !== lightBitmap.kind
+        || darkBitmap.width !== lightBitmap.width
+        || darkBitmap.height !== lightBitmap.height
+        || darkBitmap.sha256 !== lightBitmap.sha256
+      ) {
+        throw new Error(`Editorial media bitmap changed across themes: ${darkCapture.id} ${darkBitmap.key}.`);
+      }
+    }
+  }
 }
 
 function validateThemeSmoke(report: QaReport): void {

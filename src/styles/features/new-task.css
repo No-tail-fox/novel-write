@@ -42,11 +42,11 @@
 .new-task-stage-tabs button.active {
   border-color: var(--shell-accent);
   background: var(--shell-accent);
-  color: #ffffff;
+  color: var(--shell-focus-contrast);
 }
 
 .new-task-stage-tabs button.active span {
-  background: #ffffff;
+  background: var(--shell-focus-contrast);
   color: var(--shell-accent);
 }
 
@@ -157,7 +157,7 @@
 .new-task-source-actions button.active {
   border-color: var(--shell-accent);
   background: var(--shell-accent);
-  color: #ffffff;
+  color: var(--shell-focus-contrast);
 }
 
 .new-task-inline-fields,
@@ -219,7 +219,7 @@
 .new-task-stage-panel .video-form-option.active {
   border-color: var(--shell-accent);
   background: color-mix(in srgb, var(--shell-accent) 10%, var(--shell-surface-raised));
-  color: var(--shell-accent);
+  color: var(--shell-accent-strong);
 }
 
 .new-task-stage-panel .option-pill strong,
@@ -274,7 +274,7 @@
 .new-task-stage-panel .segmented button.selected {
   border-color: var(--shell-accent);
   background: color-mix(in srgb, var(--shell-accent) 10%, var(--shell-surface-raised));
-  color: var(--shell-accent);
+  color: var(--shell-accent-strong);
 }
 
 .new-task-stage-panel .advanced-toggle {
@@ -329,7 +329,7 @@
 .new-task-stage-panel .chip.active {
   border-color: var(--shell-accent);
   background: color-mix(in srgb, var(--shell-accent) 10%, var(--shell-surface-raised));
-  color: var(--shell-accent);
+  color: var(--shell-accent-strong);
 }
 
 .new-task-stage-footer {
@@ -405,7 +405,7 @@
   padding: 3px 7px;
   border-radius: 10px;
   background: color-mix(in srgb, var(--shell-focus) 12%, transparent);
-  color: var(--shell-focus);
+  color: var(--shell-accent-strong);
   font-size: 11px;
 }
 

@@ -15,7 +15,7 @@ import { collectTaskEventPages } from '../src/shared/state-reconciliation';
 import { FileDatabase } from '../src/shared/storage';
 import { ipcInputSchemas } from '../src/shared/ipc-contract';
 import type { Task } from '../src/shared/types';
-import { formatTaskOperationTime } from '../src/features/tasks/task-formatters';
+import { formatTaskOperationTime, taskHistoryTypeLabel } from '../src/features/tasks/task-formatters';
 import { taskOperationStageTitle, taskOperationStatusLabel } from '../src/features/tasks/task-pipeline';
 
 function task(overrides: Partial<Task> = {}): Task {
@@ -86,6 +86,12 @@ function task(overrides: Partial<Task> = {}): Task {
 }
 
 describe('task operation contracts', () => {
+  it('formats history task types without hiding specialized workflows behind story tracks', () => {
+    expect(taskHistoryTypeLabel(task({ taskType: 'html-video', track: 'character-story' }))).toBe('HTML 动画');
+    expect(taskHistoryTypeLabel(task({ taskType: 'music-mv', track: 'music-mv' }))).toBe('音乐 MV');
+    expect(taskHistoryTypeLabel(task({ taskType: 'story', track: 'character-story' }))).toBe('人物故事');
+  });
+
   it('uses concise concept labels and relative operation timestamps without changing task state', () => {
     expect(taskOperationStageTitle('Step 1 三轮改写自评')).toBe('三轮改写');
     expect(taskOperationStageTitle('Step 3 主角档案与出图提示词')).toBe('角色与提示词');

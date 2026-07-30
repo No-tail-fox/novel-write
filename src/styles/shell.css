@@ -35,7 +35,7 @@
 .app-shell[data-editorial-shell] .primary-action {
   border-radius: 6px;
   background: var(--shell-accent);
-  color: #ffffff;
+  color: var(--shell-focus-contrast);
   box-shadow: none;
   font-weight: 500;
 }
@@ -93,6 +93,10 @@
 
 .app-shell[data-editorial-shell] .recent-task-compact {
   display: none;
+}
+
+.app-shell[data-editorial-shell] .trial-activation-bar strong {
+  color: var(--shell-text);
 }
 
 .app-shell[data-editorial-shell] .content {
@@ -168,6 +172,23 @@
   border-radius: 6px;
   background: var(--shell-surface-raised);
   color: var(--shell-muted);
+}
+
+.app-shell[data-shell-view='activation'] .segmented button {
+  border-color: var(--shell-border);
+  background: var(--shell-surface-raised);
+  color: var(--shell-text);
+}
+
+.app-shell[data-shell-view='activation'] .segmented button.selected {
+  border-color: var(--shell-focus);
+  background: var(--shell-focus);
+  color: var(--shell-focus-contrast);
+}
+
+.app-shell[data-shell-view='activation'] .status-pill.paused {
+  background: color-mix(in srgb, var(--shell-focus) 10%, var(--shell-surface-raised));
+  color: var(--shell-text);
 }
 
 @media (max-width: 1120px) {

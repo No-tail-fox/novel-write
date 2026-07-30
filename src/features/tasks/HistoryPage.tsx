@@ -7,7 +7,6 @@ import { DataTable } from '../../components/DataTable';
 import { EmptyState } from '../../components/EmptyState';
 import { SegmentedControl as Segmented } from '../../components/SegmentedControl';
 import { StatusBadge as StatusPill, taskStatusLabel as statusLabel } from '../../components/StatusBadge';
-import { contentTracks } from '../../shared/editorial-options';
 import { taskProgressSnapshot } from '../../shared/task-progress';
 import type { StoryDreamApi } from '../../shared/storydream-api';
 import type {
@@ -24,7 +23,7 @@ import type {
 } from '../../shared/types';
 import { useAsyncAction } from '../../ui/async-action';
 import { useHistoryPage } from '../history/use-history-page';
-import { formatDate, formatTaskOperationTime } from './task-formatters';
+import { formatDate, formatTaskOperationTime, taskHistoryTypeLabel } from './task-formatters';
 import { taskOperationStatusLabel } from './task-pipeline';
 import '../../styles/features/task-operations.css';
 
@@ -36,7 +35,6 @@ const historyFamilyLabels = ['任务', '爆款拆解', '图片', '配音'] as co
 const historyArchiveFilters = ['active', 'archived'] as const satisfies readonly HistoryArchiveFilter[];
 const historyArchiveFilterLabels = ['活跃任务', '已归档'] as const;
 const historyTaskStatuses = ['all', 'draft', 'completed', 'running', 'failed', 'cancelled'] as const;
-const trackLabelById = new Map(contentTracks.map(([id, label]) => [id, label] as const));
 
 export function HistoryPage({
   api,
@@ -181,7 +179,7 @@ export function HistoryPage({
                   </button>
                   <small>{task.targetScenes || task.storyboardSceneCount || 0} 个场景 · {task.ratio}</small>
                 </span>
-                <span role="cell">{trackLabelById.get(task.track) || task.track}</span>
+                <span role="cell">{taskHistoryTypeLabel(task)}</span>
                 <span role="cell"><StatusPill status={task.status} label={taskOperationStatusLabel(task)} /></span>
                 <span className="task-history-progress" role="cell">
                   <span role="progressbar" aria-label={`${row.title}进度`} aria-valuemin={0} aria-valuemax={progress.total} aria-valuenow={displayProgress}><i style={{ width: `${percent}%` }} /></span>

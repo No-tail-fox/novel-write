@@ -3,7 +3,9 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
 import {
+  editorialQaCaptureRequirement,
   editorialQaCaptureIds,
+  editorialQaCaptureIdsByRequirement,
   editorialQaExpectedCaptureCount,
   editorialQaScopes,
   resolveEditorialQaConfig,
@@ -52,6 +54,163 @@ describe('editorial Electron QA configuration', () => {
     }
   });
 
+  it('classifies the canonical 67 required captures separately from 21 supplemental states', () => {
+    const required = editorialQaCaptureIdsByRequirement('required');
+    const supplemental = editorialQaCaptureIdsByRequirement('supplemental');
+    const all = editorialQaCaptureIds('all');
+
+    expect(required).toHaveLength(67);
+    expect(supplemental).toHaveLength(21);
+    expect(new Set([...required, ...supplemental])).toEqual(new Set(all));
+    expect(required.filter((id) => supplemental.includes(id))).toEqual([]);
+    expect(required).toEqual(expect.arrayContaining([
+      'workflow-new-task-dark-desktop',
+      'workflow-task-detail-dark-desktop',
+      'workflow-task-detail-light-desktop',
+      'new-task-material-desktop',
+      'new-task-creative-desktop',
+      'new-task-output-desktop',
+      'new-task-material-compact',
+    ]));
+    expect([...supplemental].sort()).toEqual([
+      'history-operations-compact',
+      'history-operations-desktop',
+      'html-video-studio-light-compact',
+      'html-video-studio-light-desktop',
+      'minimax-clone-voice-create-light-desktop',
+      'minimax-clone-voice-delete-light-compact',
+      'minimax-clone-voice-edit-dark-desktop',
+      'minimax-clone-voice-empty-dark-compact',
+      'queue-operations-desktop',
+      'shell-new-task-dark-compact',
+      'shell-new-task-dark-desktop',
+      'shell-new-task-light-compact',
+      'shell-new-task-light-desktop',
+      'task-detail-operations-desktop',
+      'volcengine-legacy-dark-compact',
+      'volcengine-v3-light-desktop',
+      'workflow-new-task-dark-compact',
+      'workflow-new-task-light-compact',
+      'workflow-new-task-light-desktop',
+      'workflow-task-detail-dark-compact',
+      'workflow-task-detail-light-compact',
+    ].sort());
+    expect(editorialQaCaptureRequirement('workflow-queue-light-desktop')).toBe('required');
+    expect(editorialQaCaptureRequirement('queue-operations-desktop')).toBe('supplemental');
+    expect(() => editorialQaCaptureRequirement('missing-capture')).toThrow('unknown capture id');
+  });
+
+  it('requires complete cross-cutting evidence for every canonical capture report', async () => {
+    const source = await (await import('node:fs/promises')).readFile(new URL('../electron/editorial-qa.ts', import.meta.url), 'utf8');
+    const runner = await (await import('node:fs/promises')).readFile(new URL('../scripts/editorial-qa-electron.ts', import.meta.url), 'utf8');
+
+    expect(source).toContain('requirement: editorialQaCaptureRequirement(captureCase.id)');
+    for (const evidenceSection of ['identity', 'runtime', 'content', 'accessibility', 'layout', 'interaction', 'media']) {
+      expect(source, `${evidenceSection} evidence`).toContain(`${evidenceSection}: {`);
+    }
+    for (const failureField of [
+      'frameworkOverlays',
+      'consoleErrors',
+      'pageErrors',
+      'renderErrors',
+      'unresolvedTokens',
+      'iconOnlyAccessibleNameGaps',
+      'iconOnlyTooltipGaps',
+      'textContrastFailures',
+      'focusContrastFailures',
+      'interactiveOverlaps',
+    ]) {
+      expect(source, `${failureField} gate`).toContain(failureField);
+    }
+    expect(source).toContain('crossCuttingEvidenceFailures(state.evidence)');
+    expect(source).toContain('evidence.identity.matched');
+    expect(source).toContain('evidence.interaction.verified');
+    expect(source).toContain('nav instanceof HTMLElement && interactiveElements.includes(nav)');
+    expect(source).toContain('Editorial QA cross-cutting evidence failed');
+    expect(runner).toContain('validateCanonicalEvidence(qaReport)');
+    expect(runner).toContain("capture.requirement === 'required'");
+    expect(runner).toContain('capture.evidence?.identity.matched');
+    expect(runner).toContain('capture.evidence.interaction.verified');
+  });
+
+  it('records native media bitmap hashes and compares matching regions across shell themes', async () => {
+    const source = await (await import('node:fs/promises')).readFile(new URL('../electron/editorial-qa.ts', import.meta.url), 'utf8');
+    const runner = await (await import('node:fs/promises')).readFile(new URL('../scripts/editorial-qa-electron.ts', import.meta.url), 'utf8');
+
+    expect(source).toContain("createHash('sha256')");
+    expect(source).toContain('collectMediaBitmapEvidence(image, state.evidence.media.regions)');
+    expect(source).toContain('const roundedClipInset = (element) => {');
+    expect(source).toContain('bitmapInset: roundedClipInset(element)');
+    expect(source).toContain('x: region.x + inset');
+    expect(source).toContain('const cropWidth = region.width - (inset * 2)');
+    expect(source).toContain('width: cropWidth');
+    expect(source).toContain("sha256: createHash('sha256').update(bitmap).digest('hex')");
+    expect(source).toContain('pixelVariance: bitmapPixelVariance(bitmap)');
+    expect(source).toContain('state.evidence.media.bitmaps = mediaBitmaps');
+    expect(runner).toContain('validateMediaThemeInvariants(qaReport)');
+    expect(runner).toContain('capture.evidence.media.bitmaps');
+    expect(runner).toContain('darkBitmap.sha256 !== lightBitmap.sha256');
+    expect(runner).toContain('Editorial media bitmap changed across themes');
+  });
+
+  it('waits for every HTML animation preview before collecting theme evidence', async () => {
+    const source = await (await import('node:fs/promises')).readFile(new URL('../electron/editorial-qa.ts', import.meta.url), 'utf8');
+
+    expect(source).toContain("if (targetView === 'html-video') {");
+    expect(source).not.toContain("if (scenarioId.startsWith('html-video-studio')) {");
+    expect(source).toContain("document.querySelectorAll('.hv-tab-content .hv-media-frame')");
+    expect(source).toContain("document.querySelectorAll('.hv-tab-content img[alt*=\"动画预览\"]')");
+    expect(source).toContain("!document.querySelector('.hv-tab-content .hv-media-loading')");
+    expect(source).toContain('previewImages.length === previewFrames.length');
+    expect(source).toContain('previewImages.every((image) => image.complete && image.naturalWidth > 0)');
+    expect(source).not.toContain("const previewImage = document.querySelector('img[alt*=\"动画预览\"]')");
+  });
+
+  it('excludes scroll-clipped descendants from interactive obstruction evidence', async () => {
+    const source = await (await import('node:fs/promises')).readFile(new URL('../electron/editorial-qa.ts', import.meta.url), 'utf8');
+
+    expect(source).toContain('const visibleRect = (element) => {');
+    expect(source).toContain("const clipsX = ['auto', 'hidden', 'scroll', 'clip'].includes(style.overflowX);");
+    expect(source).toContain("const clipsY = ['auto', 'hidden', 'scroll', 'clip'].includes(style.overflowY);");
+    expect(source).toContain('const rect = visibleRect(element);');
+    expect(source).toContain('if (!rect) return null;');
+  });
+
+  it('excludes closed disclosure content while retaining its summary control', async () => {
+    const source = await (await import('node:fs/promises')).readFile(new URL('../electron/editorial-qa.ts', import.meta.url), 'utf8');
+
+    expect(source).toContain("const closedDetails = element.closest('details:not([open])');");
+    expect(source).toContain("const visibleSummary = closedDetails?.querySelector(':scope > summary');");
+    expect(source).toContain('if (closedDetails && !visibleSummary?.contains(element)) return false;');
+  });
+
+  it('keeps icon-only window controls discoverable and accent fills readable in both themes', async () => {
+    const shell = await (await import('node:fs/promises')).readFile(new URL('../src/app/AppShell.tsx', import.meta.url), 'utf8');
+    const shellStyles = await (await import('node:fs/promises')).readFile(new URL('../src/styles/shell.css', import.meta.url), 'utf8');
+    const newTaskStyles = await (await import('node:fs/promises')).readFile(new URL('../src/styles/features/new-task.css', import.meta.url), 'utf8');
+
+    for (const label of ['最小化', '最大化', '关闭']) {
+      expect(shell).toContain(`aria-label="${label}" title="${label}"`);
+    }
+    expect(shellStyles).toMatch(/\.app-shell\[data-editorial-shell\] \.new-task-button,[\s\S]*?\.primary-action \{[\s\S]*?color: var\(--shell-focus-contrast\);/u);
+    expect(shellStyles).toMatch(/\.app-shell\[data-editorial-shell\] \.trial-activation-bar strong \{[\s\S]*?color: var\(--shell-text\);/u);
+    expect(newTaskStyles).toMatch(/\.new-task-stage-tabs button\.active \{[\s\S]*?color: var\(--shell-focus-contrast\);/u);
+    expect(newTaskStyles).toMatch(/\.new-task-stage-tabs button\.active span \{[\s\S]*?background: var\(--shell-focus-contrast\);/u);
+    expect(newTaskStyles).toMatch(/\.new-task-source-actions button\.active \{[\s\S]*?color: var\(--shell-focus-contrast\);/u);
+    expect(newTaskStyles).toMatch(/\.new-task-stage-panel \.option-pill\.active,[\s\S]*?\.video-form-option\.active \{[\s\S]*?color: var\(--shell-accent-strong\);/u);
+    expect(newTaskStyles).toMatch(/\.new-task-stage-panel \.segmented button\.selected \{[\s\S]*?color: var\(--shell-accent-strong\);/u);
+    expect(newTaskStyles).toMatch(/\.new-task-stage-panel \.chip\.active \{[\s\S]*?color: var\(--shell-accent-strong\);/u);
+    expect(newTaskStyles).toMatch(/\.new-task-summary-title small \{[\s\S]*?color: var\(--shell-accent-strong\);/u);
+  });
+
+  it('keeps activation status and all three plan choices readable in the light shell', async () => {
+    const shellStyles = await (await import('node:fs/promises')).readFile(new URL('../src/styles/shell.css', import.meta.url), 'utf8');
+
+    expect(shellStyles).toMatch(/\.app-shell\[data-shell-view='activation'\] \.segmented button \{[\s\S]*?background: var\(--shell-surface-raised\);[\s\S]*?color: var\(--shell-text\);/u);
+    expect(shellStyles).toMatch(/\.app-shell\[data-shell-view='activation'\] \.segmented button\.selected \{[\s\S]*?background: var\(--shell-focus\);[\s\S]*?color: var\(--shell-focus-contrast\);/u);
+    expect(shellStyles).toMatch(/\.app-shell\[data-shell-view='activation'\] \.status-pill\.paused \{[\s\S]*?color: var\(--shell-text\);/u);
+  });
+
   it('captures the four accepted new-task states without multiplying unrelated themes and viewports', async () => {
     const source = await (await import('node:fs/promises')).readFile(new URL('../electron/editorial-qa.ts', import.meta.url), 'utf8');
     for (const state of [
@@ -83,6 +242,52 @@ describe('editorial Electron QA configuration', () => {
     expect(source).toContain('captureEditorialQaPage(window, captureCase.id)');
     expect(source).toContain('capturePage failed after 3 attempts');
     expect(source).toContain('Editorial QA ${label} failed:');
+  });
+
+  it('binds queue operation evidence to the rendered latest task instead of fixture order', async () => {
+    const source = await (await import('node:fs/promises')).readFile(new URL('../electron/editorial-qa.ts', import.meta.url), 'utf8');
+    const queueScenario = source.slice(
+      source.indexOf("if (scenarioId === 'queue-operations-desktop')"),
+      source.indexOf("if (scenarioId === 'history-operations-desktop')"),
+    );
+
+    expect(queueScenario).toContain("document.querySelector('.task-queue-row strong')");
+    expect(queueScenario).toContain("document.querySelector('.task-event-rail-head')");
+    expect(queueScenario).toContain("railText.includes(latestQueueTitle)");
+    expect(queueScenario).toContain("eventStateText.includes('暂无事件') || document.querySelector('.task-event-item')");
+    expect(queueScenario).not.toContain('Step 4 批量生图');
+  });
+
+  it('records and gates the rendered HTML animation type in every History capture', async () => {
+    const source = await (await import('node:fs/promises')).readFile(new URL('../electron/editorial-qa.ts', import.meta.url), 'utf8');
+    const main = await (await import('node:fs/promises')).readFile(new URL('../electron/main.ts', import.meta.url), 'utf8');
+    const htmlFixture = main.slice(
+      main.indexOf('async function seedHtmlVideoEditorialQa'),
+      main.indexOf('async function createWindow'),
+    );
+
+    expect(source).toContain("row.textContent?.includes('武则天：权力之路 HTML 动画')");
+    expect(source).toContain("querySelector('[role=\"cell\"]:nth-child(2)')");
+    expect(source).toContain("historyHtmlTypeLabel !== 'HTML 动画'");
+    expect(source).toContain('historyHtmlTypeLabel: state.historyHtmlTypeLabel');
+    expect(htmlFixture).toContain("editorialQaConfig?.scope !== 'task-operations'");
+  });
+
+  it('opens the accepted Prompt Template editor state for the light desktop concept capture', async () => {
+    const source = await (await import('node:fs/promises')).readFile(new URL('../electron/editorial-qa.ts', import.meta.url), 'utf8');
+
+    expect(source).toContain("targetView === 'prompt-templates'");
+    expect(source).toContain("document.documentElement.dataset.theme === 'light'");
+    expect(source).toContain('window.innerWidth === 1440');
+    expect(source).toContain("document.querySelectorAll('.prompt-template-row')");
+    expect(source).toContain("row.textContent?.includes('人物故事')");
+    expect(source).toContain("button.textContent?.trim() === '查看'");
+    expect(source).toContain("document.querySelector('.prompt-template-detail')");
+    expect(source).toContain('const unresolvedTextRoot = document.body.cloneNode(true);');
+    expect(source).toContain("unresolvedTextRoot.querySelectorAll('.prompt-template-variable-chip, .prompt-variable-editor textarea')");
+    expect(source).toContain('unresolvedTextRoot.textContent');
+    expect(source).toContain("promptTemplateEditorOpen !== true");
+    expect(source).toContain('promptTemplateEditorOpen: state.promptTemplateEditorOpen');
   });
 
   it('exercises MiniMax clone-voice CRUD across both themes and viewports', async () => {
@@ -154,6 +359,23 @@ describe('editorial Electron QA configuration', () => {
     const styles = await (await import('node:fs/promises')).readFile(new URL('../src/styles.css', import.meta.url), 'utf8');
     expect(styles).toContain('background: var(--surface-ink);');
     expect(styles).toContain('color: var(--text);');
+  });
+
+  it('measures readable template operations without repainting preview canvases', async () => {
+    const source = await (await import('node:fs/promises')).readFile(new URL('../electron/editorial-qa.ts', import.meta.url), 'utf8');
+    const styles = await (await import('node:fs/promises')).readFile(new URL('../src/styles.css', import.meta.url), 'utf8');
+
+    expect(source).toContain('templateOperationalContrast');
+    expect(source).toContain("'.prompt-template-row, .prompt-template-gallery .ghost-action, .prompt-template-gallery .chip'");
+    expect(source).toContain("'.draft-template-toolbar .ghost-action, .draft-template-card .ghost-action, .new-template-card'");
+    expect(source).toContain('contrastRatio < 4.5');
+    expect(source).toContain("value.startsWith('color(srgb')");
+    expect(source).toContain('channels.slice(0, 3).map((channel) => channel * 255)');
+    expect(source).toContain('state.templateOperationalContrast.failures.length > 0');
+    expect(styles).toMatch(/\.chip,\s*\n\.ghost-action,[\s\S]*?\.mini-button \{[\s\S]*?background: var\(--panel-2\);/u);
+    expect(styles).toContain('background: var(--surface-ink);\n  color: var(--text);');
+    expect(styles).toContain('.draft-template-thumb {');
+    expect(styles).toContain('background: #090d12;');
   });
 
   it('accepts a parent-created temp root and consumes its regular sentinel once', async () => {

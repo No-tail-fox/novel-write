@@ -1,11 +1,13 @@
 import { existsSync, lstatSync, readFileSync, realpathSync, unlinkSync } from 'node:fs';
+import { createHash } from 'node:crypto';
 import { mkdir, stat, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { basename, dirname, isAbsolute, join, relative, resolve } from 'node:path';
-import type { BrowserWindow } from 'electron';
+import type { BrowserWindow, NativeImage } from 'electron';
 
 export const editorialQaScopes = ['all', 'theme-smoke', 'shell', 'new-task', 'task-operations', 'html-video', 'clone-voice', 'volcengine-tts', 'workflow', 'labs', 'system'] as const;
 export type EditorialQaScope = (typeof editorialQaScopes)[number];
+export type EditorialQaCaptureRequirement = 'required' | 'supplemental';
 export type EditorialQaEnvironment = Partial<Record<
   | 'STORYDREAM_QA_RUN_ROOT'
   | 'STORYDREAM_QA_RUN_TOKEN'
@@ -72,7 +74,8 @@ export const editorialQaMatrix = {
 const qaComputedTokenNames = [
   '--shell-bg', '--shell-surface', '--shell-border', '--shell-text', '--shell-muted',
   '--shell-focus', '--shell-focus-contrast', '--media-bg', '--media-surface',
-  '--media-border', '--media-text', '--media-muted',
+  '--media-border', '--media-text', '--media-muted', '--media-accent', '--media-accent-contrast',
+  '--media-timeline-blue', '--media-reel-amber', '--media-ok',
 ] as const;
 const editorialQaOperationTimeoutMs = 30_000;
 
@@ -172,6 +175,12 @@ export async function captureEditorialQa(
     if (captureCase.id === 'history-operations-desktop' && (!state.deleteDialogFocusWrapped || !state.deleteDialogEscapeRestored)) {
       throw new Error('Editorial QA history delete-dialog keyboard lifecycle failed.');
     }
+    if (captureCase.view === 'history' && state.historyHtmlTypeLabel !== 'HTML 动画') {
+      throw new Error(`Editorial QA History HTML type label failed in ${captureCase.id}: ${state.historyHtmlTypeLabel}.`);
+    }
+    if (captureCase.view === 'prompt-templates' && captureCase.theme === 'light' && viewport.name === 'desktop' && state.promptTemplateEditorOpen !== true) {
+      throw new Error('Editorial QA Prompt Template editor state failed.');
+    }
     if (captureCase.id.startsWith('html-video-studio') && state.layout.htmlVideoStudioPlacement !== (viewport.name === 'compact' ? 'stacked' : 'three-column')) {
       throw new Error(`Editorial QA HTML studio layout failed in ${captureCase.id}: ${state.layout.htmlVideoStudioPlacement}.`);
     }
@@ -199,6 +208,13 @@ export async function captureEditorialQa(
     )) {
       throw new Error(`Editorial QA Volcengine version switch failed: ${JSON.stringify(state.volcengineVersion)}.`);
     }
+    if (state.templateOperationalContrast.failures.length > 0) {
+      throw new Error(`Editorial QA template contrast failed in ${captureCase.id}: ${state.templateOperationalContrast.failures.join(', ')}.`);
+    }
+    const evidenceFailures = crossCuttingEvidenceFailures(state.evidence);
+    if (evidenceFailures.length > 0) {
+      throw new Error(`Editorial QA cross-cutting evidence failed in ${captureCase.id}: ${evidenceFailures.join(', ')}.`);
+    }
     await new Promise((resolveDelay) => setTimeout(resolveDelay, 80));
     await withEditorialQaTimeout(
       window.webContents.executeJavaScript(qaCompositorSettlingScript(), true),
@@ -210,11 +226,32 @@ export async function captureEditorialQa(
       editorialQaOperationTimeoutMs,
       `${captureCase.id} capturePage`,
     );
+    const mediaBitmaps = collectMediaBitmapEvidence(image, state.evidence.media.regions);
+    state.evidence.media.bitmaps = mediaBitmaps;
     const png = image.toPNG();
     const capturePath = join(config.captures, `${captureCase.id}.png`);
     await writeFile(capturePath, png, { flag: 'wx' });
     await assertCapturePng(capturePath, png, image.toBitmap(), viewport.width, viewport.height);
-    captures.push({ view: captureCase.view, stage: captureCase.stage, theme: captureCase.theme, viewport: viewport.name, path: basename(capturePath), visibleText: state.visibleText, tokens: state.tokens, manualCover: state.manualCover, cloneVoice: state.cloneVoice, volcengineVersion: state.volcengineVersion, deleteDialogFocusWrapped: state.deleteDialogFocusWrapped, deleteDialogEscapeRestored: state.deleteDialogEscapeRestored });
+    captures.push({
+      id: captureCase.id,
+      requirement: editorialQaCaptureRequirement(captureCase.id),
+      view: captureCase.view,
+      stage: captureCase.stage,
+      theme: captureCase.theme,
+      viewport: viewport.name,
+      path: basename(capturePath),
+      visibleText: state.visibleText,
+      tokens: state.tokens,
+      evidence: state.evidence,
+      templateOperationalContrast: state.templateOperationalContrast,
+      manualCover: state.manualCover,
+      cloneVoice: state.cloneVoice,
+      volcengineVersion: state.volcengineVersion,
+      historyHtmlTypeLabel: state.historyHtmlTypeLabel,
+      promptTemplateEditorOpen: state.promptTemplateEditorOpen,
+      deleteDialogFocusWrapped: state.deleteDialogFocusWrapped,
+      deleteDialogEscapeRestored: state.deleteDialogEscapeRestored,
+    });
     await writeEditorialQaReport(config, captures, getMetrics);
   }
   await writeEditorialQaReport(config, captures, getMetrics);
@@ -270,7 +307,71 @@ async function captureEditorialQaPage(window: BrowserWindow, captureId: string) 
   throw new Error(`Editorial QA ${captureId} capturePage failed after 3 attempts: ${lastError instanceof Error ? lastError.message : String(lastError)}`);
 }
 
-interface EditorialQaCapture {
+export interface EditorialQaCaptureEvidence {
+  identity: {
+    expectedView: string;
+    actualView: string;
+    title: string;
+    url: string;
+    meaningfulTextLength: number;
+    rootChildCount: number;
+    matched: boolean;
+  };
+  runtime: {
+    frameworkOverlays: string[];
+    consoleErrors: string[];
+    pageErrors: string[];
+    renderErrors: string[];
+  };
+  content: {
+    unresolvedTokens: string[];
+  };
+  accessibility: {
+    iconOnlyAccessibleNameGaps: string[];
+    iconOnlyTooltipGaps: string[];
+    textContrastSamples: Array<{ label: string; contrastRatio: number; threshold: number }>;
+    textContrastFailures: string[];
+    focusContrastSamples: Array<{ label: string; contrastRatio: number }>;
+    focusContrastFailures: string[];
+  };
+  layout: {
+    interactiveOverlaps: string[];
+  };
+  interaction: {
+    kind: string;
+    target: string;
+    performed: boolean;
+    verified: boolean;
+  };
+  media: {
+    regions: Array<{
+      key: string;
+      kind: string;
+      x: number;
+      y: number;
+      width: number;
+      height: number;
+      pixelWidth: number;
+      pixelHeight: number;
+      bitmapInset: number;
+    }>;
+    bitmaps: Array<{
+      key: string;
+      kind: string;
+      x: number;
+      y: number;
+      width: number;
+      height: number;
+      sha256: string;
+      pixelVariance: number;
+    }>;
+    failures: string[];
+  };
+}
+
+export interface EditorialQaCapture {
+  id: string;
+  requirement: EditorialQaCaptureRequirement;
   view: string;
   stage?: string;
   theme: string;
@@ -278,9 +379,13 @@ interface EditorialQaCapture {
   path: string;
   visibleText: string;
   tokens: Record<string, string>;
+  evidence: EditorialQaCaptureEvidence;
+  templateOperationalContrast: QaScenarioState['templateOperationalContrast'];
   manualCover: QaScenarioState['manualCover'];
   cloneVoice: QaScenarioState['cloneVoice'];
   volcengineVersion: QaScenarioState['volcengineVersion'];
+  historyHtmlTypeLabel: string;
+  promptTemplateEditorOpen: boolean;
   deleteDialogFocusWrapped: boolean;
   deleteDialogEscapeRestored: boolean;
 }
@@ -300,6 +405,16 @@ interface QaScenarioState {
   scale: number;
   visibleText: string;
   tokens: Record<string, string>;
+  evidence: EditorialQaCaptureEvidence;
+  templateOperationalContrast: {
+    samples: Array<{
+      label: string;
+      color: string;
+      backgroundColor: string;
+      contrastRatio: number;
+    }>;
+    failures: string[];
+  };
   stageStatePreserved: boolean;
   manualCover: {
     state: string;
@@ -320,6 +435,8 @@ interface QaScenarioState {
     v3ValuePreserved: boolean;
     legacyValuePreserved: boolean;
   };
+  historyHtmlTypeLabel: string;
+  promptTemplateEditorOpen: boolean;
   deleteDialogFocusWrapped: boolean;
   deleteDialogEscapeRestored: boolean;
   layout: {
@@ -372,6 +489,64 @@ export function editorialQaCaptureIds(scope: EditorialQaScope): readonly string[
   return captureCasesForScope(scope).map((captureCase) => captureCase.id);
 }
 
+export function editorialQaCaptureIdsByRequirement(requirement: EditorialQaCaptureRequirement): readonly string[] {
+  const allIds = editorialQaCaptureIds('all');
+  const requiredIds = new Set<string>();
+  for (const [group, views] of Object.entries(editorialQaMatrix.views)) {
+    if (group === 'shell') continue;
+    for (const view of views) {
+      if (view === 'new-task' || view === 'task-detail') continue;
+      for (const theme of editorialQaMatrix.themes) {
+        for (const viewport of editorialQaMatrix.viewports) {
+          requiredIds.add(`${group}-${view}-${theme}-${viewport.name}`);
+        }
+      }
+    }
+  }
+  requiredIds.add('workflow-new-task-dark-desktop');
+  requiredIds.add('workflow-task-detail-dark-desktop');
+  requiredIds.add('workflow-task-detail-light-desktop');
+  for (const captureCase of editorialQaMatrix.newTaskStates) requiredIds.add(captureCase.id);
+
+  const classified = allIds.filter((id) => requirement === 'required' ? requiredIds.has(id) : !requiredIds.has(id));
+  if (requiredIds.size !== 67 || allIds.length - requiredIds.size !== 21) {
+    throw new Error(`Editorial QA canonical classification drifted: ${requiredIds.size} required of ${allIds.length}.`);
+  }
+  return classified;
+}
+
+export function editorialQaCaptureRequirement(captureId: string): EditorialQaCaptureRequirement {
+  if (editorialQaCaptureIdsByRequirement('required').includes(captureId)) return 'required';
+  if (editorialQaCaptureIdsByRequirement('supplemental').includes(captureId)) return 'supplemental';
+  const scopedIds = editorialQaScopes
+    .filter((scope) => scope !== 'all')
+    .flatMap((scope) => editorialQaCaptureIds(scope));
+  if (scopedIds.includes(captureId)) return 'required';
+  throw new Error(`Editorial QA unknown capture id: ${captureId}.`);
+}
+
+function crossCuttingEvidenceFailures(evidence: EditorialQaCaptureEvidence): string[] {
+  const failures: string[] = [];
+  if (!evidence.identity.matched || evidence.identity.meaningfulTextLength < 20 || evidence.identity.rootChildCount < 1) failures.push('identity/nonblank DOM');
+  for (const [label, values] of Object.entries({
+    frameworkOverlays: evidence.runtime.frameworkOverlays,
+    consoleErrors: evidence.runtime.consoleErrors,
+    pageErrors: evidence.runtime.pageErrors,
+    renderErrors: evidence.runtime.renderErrors,
+    unresolvedTokens: evidence.content.unresolvedTokens,
+    iconOnlyAccessibleNameGaps: evidence.accessibility.iconOnlyAccessibleNameGaps,
+    iconOnlyTooltipGaps: evidence.accessibility.iconOnlyTooltipGaps,
+    textContrastFailures: evidence.accessibility.textContrastFailures,
+    focusContrastFailures: evidence.accessibility.focusContrastFailures,
+    interactiveOverlaps: evidence.layout.interactiveOverlaps,
+    mediaFailures: evidence.media.failures,
+  })) {
+    if (values.length > 0) failures.push(`${label}: ${values.slice(0, 5).join(' | ')}`);
+  }
+  if (!evidence.interaction.performed || !evidence.interaction.verified) failures.push('non-destructive interaction');
+  return failures;
+}
+
 function assertStrictDescendant(parent: string, child: string, label: string): void {
   const relation = relative(parent, child);
   if (!relation || relation.startsWith('..') || isAbsolute(relation)) throw new Error(`${label} must be a strict descendant of its trusted parent.`);
@@ -393,6 +568,26 @@ function qaCssAndReadinessScript(): string {
     style.dataset.editorialQa = 'true';
     style.textContent = '*,*::before,*::after{animation:none!important;transition:none!important;caret-color:transparent!important}';
     document.head.append(style);
+    if (!window.__storydreamEditorialQaRuntime) {
+      const runtime = { consoleErrors: [], pageErrors: [], cursor: { consoleErrors: 0, pageErrors: 0 } };
+      const describe = (value) => {
+        if (value instanceof Error) return value.stack || value.message;
+        if (typeof value === 'string') return value;
+        try { return JSON.stringify(value); } catch { return String(value); }
+      };
+      const remember = (target, value) => {
+        target.push(String(value).replace(/\\s+/g, ' ').trim().slice(0, 500));
+        if (target.length > 100) target.splice(0, target.length - 100);
+      };
+      const originalConsoleError = console.error.bind(console);
+      console.error = (...values) => {
+        remember(runtime.consoleErrors, values.map(describe).join(' '));
+        originalConsoleError(...values);
+      };
+      window.addEventListener('error', (event) => remember(runtime.pageErrors, event.error?.stack || event.message || 'window error'));
+      window.addEventListener('unhandledrejection', (event) => remember(runtime.pageErrors, 'Unhandled rejection: ' + describe(event.reason)));
+      window.__storydreamEditorialQaRuntime = runtime;
+    }
   })()`;
 }
 
@@ -413,6 +608,8 @@ function qaCompositorSettlingScript(): string {
 
 function qaScenarioScript(id: string, view: string, theme: string, stage?: string): string {
   return `(async () => {
+    const runtimeEvidence = window.__storydreamEditorialQaRuntime || { consoleErrors: [], pageErrors: [], cursor: { consoleErrors: 0, pageErrors: 0 } };
+    const runtimeCursor = { ...runtimeEvidence.cursor };
     const waitFor = async (check, timeout = 10000) => {
       const until = Date.now() + timeout;
       while (!check()) { if (Date.now() >= until) return false; await new Promise((resolve) => setTimeout(resolve, 25)); }
@@ -470,7 +667,14 @@ function qaScenarioScript(id: string, view: string, theme: string, stage?: strin
     let deleteDialogFocusWrapped = scenarioId !== 'history-operations-desktop';
     let deleteDialogEscapeRestored = scenarioId !== 'history-operations-desktop';
     if (scenarioId === 'queue-operations-desktop') {
-      ready = ready && await waitFor(() => document.querySelector('.task-event-rail')?.textContent?.includes('Step 4 批量生图'));
+      const latestQueueTitle = document.querySelector('.task-queue-row strong')?.textContent?.trim() ?? '';
+      ready = ready && await waitFor(() => {
+        const railText = document.querySelector('.task-event-rail-head')?.textContent ?? '';
+        const eventStateText = document.querySelector('.task-event-rail')?.textContent ?? '';
+        return latestQueueTitle.length > 0
+          && railText.includes(latestQueueTitle)
+          && (eventStateText.includes('暂无事件') || document.querySelector('.task-event-item'));
+      });
     }
     if (scenarioId === 'history-operations-desktop') {
       const archiveGroup = document.querySelector('[role="group"][aria-label="记录范围"]');
@@ -514,22 +718,48 @@ function qaScenarioScript(id: string, view: string, theme: string, stage?: strin
       ready = ready && await waitFor(() => [...document.querySelectorAll('.history-page .table-row')]
         .some((row) => row.textContent?.includes('武则天：从深宫才人到一代女皇')));
     }
+    let historyHtmlTypeLabel = '';
+    if (targetView === 'history') {
+      const findHtmlHistoryRow = () => [...document.querySelectorAll('.history-page .table-row')]
+        .find((row) => row.textContent?.includes('武则天：权力之路 HTML 动画'));
+      ready = ready && await waitFor(() => Boolean(findHtmlHistoryRow()));
+      historyHtmlTypeLabel = findHtmlHistoryRow()
+        ?.querySelector('[role="cell"]:nth-child(2)')
+        ?.textContent
+        ?.trim() ?? '';
+    }
     if (scenarioId === 'task-detail-operations-desktop') {
       ready = ready && await waitFor(() => document.querySelector('.task-media-progress')?.textContent?.includes('8 / 12')
         && document.querySelector('.task-scene-rail')?.textContent?.includes('8 / 12 已生成'));
     }
-    if (scenarioId.startsWith('html-video-studio')) {
+    if (targetView === 'html-video') {
       ready = ready && await waitFor(() => {
-        const previewImage = document.querySelector('img[alt*="动画预览"]');
+        const previewFrames = [...document.querySelectorAll('.hv-tab-content .hv-media-frame')];
+        const previewImages = [...document.querySelectorAll('.hv-tab-content img[alt*="动画预览"]')];
         return document.querySelector('[data-html-video-studio="html-video"]')
           && document.querySelector('[data-media-canvas="html-video"]')
           && document.querySelector('.hv-studio-run-rail')?.textContent?.includes('4/6')
-          && previewImage instanceof HTMLImageElement
-          && previewImage.complete
-          && previewImage.naturalWidth > 0
+          && previewFrames.length > 0
+          && !document.querySelector('.hv-tab-content .hv-media-loading')
+          && previewImages.length === previewFrames.length
+          && previewImages.every((image) => image.complete && image.naturalWidth > 0)
           && document.querySelector('.hv-timeline-track span')
           && document.querySelector('.hv-timeline-audio i');
       });
+    }
+    let promptTemplateEditorOpen = false;
+    if (targetView === 'prompt-templates'
+      && document.documentElement.dataset.theme === 'light'
+      && window.innerWidth === 1440) {
+      const templateRow = [...document.querySelectorAll('.prompt-template-row')]
+        .find((row) => row.textContent?.includes('人物故事'));
+      const viewButton = [...(templateRow?.querySelectorAll('button') ?? [])]
+        .find((button) => button.textContent?.trim() === '查看');
+      if (viewButton instanceof HTMLButtonElement) viewButton.click();
+      ready = ready && await waitFor(() => document.querySelector('.prompt-template-detail')?.textContent?.includes('人物故事')
+        && document.querySelector('.prompt-template-variable-chip'));
+      promptTemplateEditorOpen = Boolean(document.querySelector('.prompt-template-detail')?.textContent?.includes('人物故事')
+        && document.querySelector('.prompt-template-variable-chip'));
     }
     const cloneVoice = { sourceAudioSelected: false, created: false, edited: false, deleted: false, empty: false };
     if (scenarioId.startsWith('minimax-clone-voice-')) {
@@ -668,6 +898,310 @@ function qaScenarioScript(id: string, view: string, theme: string, stage?: strin
     document.activeElement instanceof HTMLElement && document.activeElement.blur();
     const computed = getComputedStyle(document.documentElement);
     const tokens = Object.fromEntries(${JSON.stringify(qaComputedTokenNames)}.map((name) => [name, computed.getPropertyValue(name).trim()]));
+    const promptTemplateOperationalSelector = '.prompt-template-row, .prompt-template-gallery .ghost-action, .prompt-template-gallery .chip';
+    const draftTemplateOperationalSelector = '.draft-template-toolbar .ghost-action, .draft-template-card .ghost-action, .new-template-card';
+    const templateOperationalSelector = targetView === 'prompt-templates'
+      ? promptTemplateOperationalSelector
+      : targetView === 'draft-templates'
+        ? draftTemplateOperationalSelector
+        : '';
+    const parseCssColor = (value) => {
+      if (!value || value === 'transparent') return [0, 0, 0, 0];
+      if (value.startsWith('#')) {
+        const hex = value.slice(1);
+        const expanded = hex.length === 3 ? [...hex].map((part) => part + part).join('') : hex;
+        return [Number.parseInt(expanded.slice(0, 2), 16), Number.parseInt(expanded.slice(2, 4), 16), Number.parseInt(expanded.slice(4, 6), 16), 1];
+      }
+      const channels = (value.match(/[0-9.]+/g) ?? []).map(Number);
+      const rgb = value.startsWith('color(srgb')
+        ? channels.slice(0, 3).map((channel) => channel * 255)
+        : channels.slice(0, 3);
+      return [...rgb, channels[3] ?? 1];
+    };
+    const parseRgb = (value) => parseCssColor(value).slice(0, 3);
+    const relativeLuminance = (channels) => {
+      const linear = channels.map((channel) => {
+        const normalized = channel / 255;
+        return normalized <= 0.03928 ? normalized / 12.92 : ((normalized + 0.055) / 1.055) ** 2.4;
+      });
+      return (0.2126 * linear[0]) + (0.7152 * linear[1]) + (0.0722 * linear[2]);
+    };
+    const colorContrast = (first, second) => {
+      const firstLuminance = relativeLuminance(first);
+      const secondLuminance = relativeLuminance(second);
+      return (Math.max(firstLuminance, secondLuminance) + 0.05) / (Math.min(firstLuminance, secondLuminance) + 0.05);
+    };
+    const compositeColor = (foreground, background) => {
+      const alpha = Math.max(0, Math.min(1, foreground[3] ?? 1));
+      return foreground.slice(0, 3).map((channel, index) => (channel * alpha) + (background[index] * (1 - alpha)));
+    };
+    const templateOperationalSamples = templateOperationalSelector
+      ? [...document.querySelectorAll(templateOperationalSelector)]
+        .filter((element) => {
+          const style = getComputedStyle(element);
+          const rect = element.getBoundingClientRect();
+          return style.display !== 'none' && style.visibility !== 'hidden' && rect.width > 0 && rect.height > 0;
+        })
+        .map((element, index) => {
+          const style = getComputedStyle(element);
+          const foreground = relativeLuminance(parseRgb(style.color));
+          const background = relativeLuminance(parseRgb(style.backgroundColor));
+          const contrastRatio = (Math.max(foreground, background) + 0.05) / (Math.min(foreground, background) + 0.05);
+          return {
+            label: element.getAttribute('aria-label') || element.textContent?.trim().replace(/\\s+/g, ' ').slice(0, 48) || targetView + '-' + (index + 1),
+            color: style.color,
+            backgroundColor: style.backgroundColor,
+            contrastRatio: Number(contrastRatio.toFixed(2)),
+          };
+        })
+      : [];
+    const templateOperationalContrast = {
+      samples: templateOperationalSamples,
+      failures: templateOperationalSamples.filter(({ contrastRatio }) => contrastRatio < 4.5).map(({ label, contrastRatio }) => label + ' (' + contrastRatio + ':1)'),
+    };
+    const visibleRect = (element) => {
+      const rect = element.getBoundingClientRect();
+      let left = Math.max(0, rect.left);
+      let top = Math.max(0, rect.top);
+      let right = Math.min(window.innerWidth, rect.right);
+      let bottom = Math.min(window.innerHeight, rect.bottom);
+      let ancestor = element.parentElement;
+      while (ancestor) {
+        const style = getComputedStyle(ancestor);
+        const clipsX = ['auto', 'hidden', 'scroll', 'clip'].includes(style.overflowX);
+        const clipsY = ['auto', 'hidden', 'scroll', 'clip'].includes(style.overflowY);
+        if (clipsX || clipsY) {
+          const ancestorRect = ancestor.getBoundingClientRect();
+          if (clipsX) {
+            left = Math.max(left, ancestorRect.left);
+            right = Math.min(right, ancestorRect.right);
+          }
+          if (clipsY) {
+            top = Math.max(top, ancestorRect.top);
+            bottom = Math.min(bottom, ancestorRect.bottom);
+          }
+        }
+        ancestor = ancestor.parentElement;
+      }
+      if (right <= left || bottom <= top) return null;
+      return { left, top, right, bottom, width: right - left, height: bottom - top };
+    };
+    const visibleElement = (element) => {
+      const closedDetails = element.closest('details:not([open])');
+      const visibleSummary = closedDetails?.querySelector(':scope > summary');
+      if (closedDetails && !visibleSummary?.contains(element)) return false;
+      const style = getComputedStyle(element);
+      return style.display !== 'none'
+        && style.visibility !== 'hidden'
+        && Number(style.opacity) > 0
+        && Boolean(visibleRect(element));
+    };
+    const evidenceLabel = (element, fallback) => element.getAttribute('aria-label')
+      || element.getAttribute('title')
+      || element.textContent?.trim().replace(/\\s+/g, ' ').slice(0, 48)
+      || element.getAttribute('name')
+      || fallback;
+    const resolveBackgroundColor = (element) => {
+      const layers = [];
+      let current = element;
+      while (current) {
+        const style = getComputedStyle(current);
+        if (style.backgroundImage && style.backgroundImage !== 'none') return null;
+        const layer = parseCssColor(style.backgroundColor);
+        if ((layer[3] ?? 0) > 0) {
+          layers.push(layer);
+          if ((layer[3] ?? 0) >= 0.99) break;
+        }
+        current = current.parentElement;
+      }
+      let result = [255, 255, 255];
+      for (const layer of layers.reverse()) result = compositeColor(layer, result);
+      return result;
+    };
+    const textContrastSamples = [...document.querySelectorAll('h1, h2, h3, h4, p, span, small, strong, label, button, a, input, select, textarea, summary, td, th, li')]
+      .filter((element) => {
+        if (!visibleElement(element) || element.matches(':disabled, [aria-disabled="true"]')) return false;
+        const directText = [...element.childNodes].some((node) => node.nodeType === Node.TEXT_NODE && node.textContent?.trim());
+        return directText || element.matches('input, select, textarea');
+      })
+      .map((element, index) => {
+        const style = getComputedStyle(element);
+        const background = resolveBackgroundColor(element);
+        if (!background) return null;
+        const foreground = compositeColor(parseCssColor(style.color), background);
+        const contrastRatio = colorContrast(foreground, background);
+        const fontSize = Number.parseFloat(style.fontSize);
+        const fontWeight = Number.parseInt(style.fontWeight, 10) || 400;
+        const threshold = fontSize >= 24 || (fontSize >= 18.66 && fontWeight >= 700) ? 3 : 4.5;
+        return {
+          label: evidenceLabel(element, element.tagName + '-' + (index + 1)),
+          contrastRatio: Number(contrastRatio.toFixed(2)),
+          threshold,
+        };
+      })
+      .filter(Boolean);
+    const textContrastFailures = textContrastSamples
+      .filter(({ contrastRatio, threshold }) => contrastRatio < threshold)
+      .map(({ label, contrastRatio, threshold }) => label + ' (' + contrastRatio + ':1 < ' + threshold + ':1)')
+      .slice(0, 20);
+    const focusColor = parseRgb(tokens['--shell-focus']);
+    const focusContrastSamples = ['--shell-bg', '--shell-surface', '--shell-surface-raised'].map((token) => ({
+      label: '--shell-focus on ' + token,
+      contrastRatio: Number(colorContrast(focusColor, parseRgb(computed.getPropertyValue(token).trim())).toFixed(2)),
+    }));
+    const focusContrastFailures = focusContrastSamples
+      .filter(({ contrastRatio }) => contrastRatio < 3)
+      .map(({ label, contrastRatio }) => label + ' (' + contrastRatio + ':1)');
+    const interactiveElements = [...document.querySelectorAll('button, a[href], input, select, textarea, summary, [role="button"], [tabindex]:not([tabindex="-1"])')]
+      .filter((element) => visibleElement(element) && !element.matches(':disabled, [aria-disabled="true"]'));
+    const iconOnlyElements = interactiveElements.filter((element) => {
+      const text = element.textContent?.replace(/\\s+/g, ' ').trim() ?? '';
+      return text.length === 0 && Boolean(element.querySelector('svg, img, i') || element.matches('input[type="button"], input[type="image"]'));
+    });
+    const labelledByText = (element) => (element.getAttribute('aria-labelledby') ?? '')
+      .split(/\\s+/)
+      .filter(Boolean)
+      .map((id) => document.getElementById(id)?.textContent?.trim() ?? '')
+      .join(' ')
+      .trim();
+    const iconOnlyAccessibleNameGaps = iconOnlyElements
+      .filter((element) => !element.getAttribute('aria-label') && !element.getAttribute('title') && !labelledByText(element) && !element.querySelector('svg title, img[alt]:not([alt=""])'))
+      .map((element, index) => evidenceLabel(element, element.tagName + '-icon-' + (index + 1)));
+    const iconOnlyTooltipGaps = iconOnlyElements
+      .filter((element) => !element.getAttribute('title') && !element.getAttribute('aria-describedby') && !element.getAttribute('data-tooltip'))
+      .map((element, index) => evidenceLabel(element, element.tagName + '-tooltip-' + (index + 1)));
+    const interactiveOverlaps = interactiveElements
+      .map((element, index) => {
+        const rect = visibleRect(element);
+        if (!rect) return null;
+        const x = Math.max(0, Math.min(window.innerWidth - 1, rect.left + (rect.width / 2)));
+        const y = Math.max(0, Math.min(window.innerHeight - 1, rect.top + (rect.height / 2)));
+        const hit = document.elementFromPoint(x, y);
+        if (!hit || element === hit || element.contains(hit) || hit.contains(element) || getComputedStyle(hit).pointerEvents === 'none') return null;
+        return evidenceLabel(element, element.tagName + '-' + (index + 1)) + ' blocked by ' + evidenceLabel(hit, hit.tagName);
+      })
+      .filter(Boolean)
+      .slice(0, 20);
+    const interactionTarget = nav instanceof HTMLElement && interactiveElements.includes(nav)
+      ? nav
+      : interactiveElements.find((element) => element instanceof HTMLElement);
+    let interactionPerformed = false;
+    let interactionVerified = false;
+    if (interactionTarget instanceof HTMLElement) {
+      interactionPerformed = true;
+      interactionTarget.focus({ preventScroll: true });
+      interactionVerified = document.activeElement === interactionTarget;
+      interactionTarget.blur();
+    }
+    const roundedClipInset = (element) => {
+      let inset = 0;
+      let current = element;
+      while (current) {
+        const style = getComputedStyle(current);
+        const clips = current === element
+          || ['auto', 'hidden', 'scroll', 'clip'].includes(style.overflowX)
+          || ['auto', 'hidden', 'scroll', 'clip'].includes(style.overflowY);
+        if (clips) {
+          inset = Math.max(inset, ...[
+            style.borderTopLeftRadius,
+            style.borderTopRightRadius,
+            style.borderBottomRightRadius,
+            style.borderBottomLeftRadius,
+          ].map((value) => Number.parseFloat(value) || 0));
+        }
+        current = current.parentElement;
+      }
+      return Math.min(12, Math.ceil(inset));
+    };
+    const mediaRegions = [...document.querySelectorAll('[data-media-canvas]')]
+      .filter(visibleElement)
+      .map((element, index) => {
+        const rect = visibleRect(element);
+        if (!rect) return null;
+        const x = Math.max(0, Math.floor(rect.left));
+        const y = Math.max(0, Math.floor(rect.top));
+        const right = Math.min(window.innerWidth, Math.ceil(rect.right));
+        const bottom = Math.min(window.innerHeight, Math.ceil(rect.bottom));
+        return {
+          key: (element.getAttribute('data-media-canvas') || 'media') + '-' + (index + 1),
+          kind: element.getAttribute('data-media-canvas') || '',
+          x,
+          y,
+          width: Math.max(0, right - x),
+          height: Math.max(0, bottom - y),
+          pixelWidth: Math.max(0, Math.round(rect.width * window.devicePixelRatio)),
+          pixelHeight: Math.max(0, Math.round(rect.height * window.devicePixelRatio)),
+          bitmapInset: roundedClipInset(element),
+        };
+      })
+      .filter(Boolean);
+    const mediaFailures = mediaRegions
+      .filter((region) => !region.kind || region.width < 16 || region.height < 16 || region.pixelWidth < 16 || region.pixelHeight < 16)
+      .map((region) => region.key + ' invalid bounds');
+    const meaningfulText = document.body.innerText.replace(/\\s+/g, ' ').trim();
+    const unresolvedTextRoot = document.body.cloneNode(true);
+    unresolvedTextRoot.querySelectorAll('.prompt-template-variable-chip, .prompt-variable-editor textarea')
+      .forEach((element) => element.remove());
+    const unresolvedText = (unresolvedTextRoot.textContent ?? '').replace(/\\s+/g, ' ').trim();
+    const unresolvedTokens = [...new Set(unresolvedText.match(/\\{\\{[^{}]{1,80}\\}\\}|\\[object Object\\]|\\bundefined\\b|translation\\.missing/giu) ?? [])].slice(0, 20);
+    const frameworkOverlays = [
+      'vite-error-overlay',
+      'nextjs-portal',
+      '#webpack-dev-server-client-overlay',
+      '[data-nextjs-dialog-overlay]',
+      '[data-vite-dev-id]',
+    ].filter((selector) => document.querySelector(selector));
+    const renderErrors = [...document.querySelectorAll('.route-error-state')]
+      .filter(visibleElement)
+      .map((element) => element.textContent?.trim().replace(/\\s+/g, ' ').slice(0, 200) || 'route error');
+    const consoleErrors = runtimeEvidence.consoleErrors.slice(runtimeCursor.consoleErrors);
+    const pageErrors = runtimeEvidence.pageErrors.slice(runtimeCursor.pageErrors);
+    runtimeEvidence.cursor = { consoleErrors: runtimeEvidence.consoleErrors.length, pageErrors: runtimeEvidence.pageErrors.length };
+    const shellElement = document.querySelector('[data-editorial-shell]');
+    const actualView = shellElement?.getAttribute('data-shell-view') ?? '';
+    const rootChildCount = document.querySelector('#root')?.childElementCount ?? 0;
+    const evidence = {
+      identity: {
+        expectedView: targetView,
+        actualView,
+        title: document.title,
+        url: location.href,
+        meaningfulTextLength: meaningfulText.length,
+        rootChildCount,
+        matched: actualView === targetView && meaningfulText.length >= 20 && rootChildCount > 0,
+      },
+      runtime: {
+        frameworkOverlays,
+        consoleErrors,
+        pageErrors,
+        renderErrors,
+      },
+      content: {
+        unresolvedTokens,
+      },
+      accessibility: {
+        iconOnlyAccessibleNameGaps,
+        iconOnlyTooltipGaps,
+        textContrastSamples: textContrastSamples.slice(0, 300),
+        textContrastFailures,
+        focusContrastSamples,
+        focusContrastFailures,
+      },
+      layout: {
+        interactiveOverlaps,
+      },
+      interaction: {
+        kind: 'focus-control',
+        target: interactionTarget instanceof Element ? evidenceLabel(interactionTarget, interactionTarget.tagName) : '',
+        performed: interactionPerformed,
+        verified: interactionVerified,
+      },
+      media: {
+        regions: mediaRegions,
+        bitmaps: [],
+        failures: mediaFailures,
+      },
+    };
     const editor = document.querySelector('.new-task-editor')?.getBoundingClientRect();
     const summary = document.querySelector('.new-task-summary')?.getBoundingClientRect();
     const summaryPlacement = !editor || !summary
@@ -714,8 +1248,10 @@ function qaScenarioScript(id: string, view: string, theme: string, stage?: strin
       width: window.innerWidth,
       height: window.innerHeight,
       scale: window.devicePixelRatio,
-      visibleText: document.body.innerText.replace(/\\s+/g, ' ').trim().slice(0, 1000),
+      visibleText: meaningfulText.slice(0, 1000),
       tokens,
+      evidence,
+      templateOperationalContrast,
       stageStatePreserved,
       deleteDialogFocusWrapped,
       deleteDialogEscapeRestored,
@@ -726,6 +1262,8 @@ function qaScenarioScript(id: string, view: string, theme: string, stage?: strin
       },
       cloneVoice,
       volcengineVersion,
+      historyHtmlTypeLabel,
+      promptTemplateEditorOpen,
       layout: {
         horizontalOverflow: Math.max(0, document.documentElement.scrollWidth - window.innerWidth),
         clippedPrimaryControls,
@@ -735,6 +1273,74 @@ function qaScenarioScript(id: string, view: string, theme: string, stage?: strin
       },
     };
   })()`;
+}
+
+function collectMediaBitmapEvidence(
+  image: NativeImage,
+  regions: EditorialQaCaptureEvidence['media']['regions'],
+): EditorialQaCaptureEvidence['media']['bitmaps'] {
+  const imageSize = image.getSize();
+  return regions.map((region) => {
+    if (
+      region.x < 0
+      || region.y < 0
+      || region.width < 1
+      || region.height < 1
+      || region.x + region.width > imageSize.width
+      || region.y + region.height > imageSize.height
+    ) {
+      throw new Error(`Editorial QA media region is outside the native capture: ${region.key}.`);
+    }
+    const inset = Math.min(
+      Math.max(0, Math.ceil(region.bitmapInset)),
+      Math.floor((region.width - 16) / 2),
+      Math.floor((region.height - 16) / 2),
+    );
+    const cropWidth = region.width - (inset * 2);
+    const cropHeight = region.height - (inset * 2);
+    const cropped = image.crop({
+      x: region.x + inset,
+      y: region.y + inset,
+      width: cropWidth,
+      height: cropHeight,
+    });
+    const croppedSize = cropped.getSize();
+    const bitmap = cropped.toBitmap();
+    if (
+      croppedSize.width !== cropWidth
+      || croppedSize.height !== cropHeight
+      || bitmap.byteLength !== cropWidth * cropHeight * 4
+    ) {
+      throw new Error(`Editorial QA media crop dimensions are invalid: ${region.key}.`);
+    }
+    return {
+      key: region.key,
+      kind: region.kind,
+      x: region.x + inset,
+      y: region.y + inset,
+      width: croppedSize.width,
+      height: croppedSize.height,
+      sha256: createHash('sha256').update(bitmap).digest('hex'),
+      pixelVariance: bitmapPixelVariance(bitmap),
+    };
+  });
+}
+
+function bitmapPixelVariance(bitmap: Buffer): number {
+  const pixelCount = Math.floor(bitmap.byteLength / 4);
+  const stride = Math.max(1, Math.floor(pixelCount / 4096));
+  let samples = 0;
+  let mean = 0;
+  let squaredDifference = 0;
+  for (let pixel = 0; pixel < pixelCount; pixel += stride) {
+    const offset = pixel * 4;
+    const luminance = (0.0722 * bitmap[offset]) + (0.7152 * bitmap[offset + 1]) + (0.2126 * bitmap[offset + 2]);
+    samples += 1;
+    const delta = luminance - mean;
+    mean += delta / samples;
+    squaredDifference += delta * (luminance - mean);
+  }
+  return Number((samples > 1 ? squaredDifference / samples : 0).toFixed(4));
 }
 
 async function assertCapturePng(path: string, png: Buffer, bitmap: Buffer, width: number, height: number): Promise<void> {

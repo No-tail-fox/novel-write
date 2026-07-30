@@ -63,13 +63,13 @@ export function AppShell({
           <strong>StoryDream</strong>
         </div>
         <div className="window-controls" aria-label="窗体控制">
-          <button className="window-control-button" type="button" aria-label="最小化" disabled={busy} onClick={minimizeWindow}>
+          <button className="window-control-button" type="button" aria-label="最小化" title="最小化" disabled={busy} onClick={minimizeWindow}>
             <Minus size={14} />
           </button>
-          <button className="window-control-button" type="button" aria-label="最大化" disabled={busy} onClick={toggleMaximizeWindow}>
+          <button className="window-control-button" type="button" aria-label="最大化" title="最大化" disabled={busy} onClick={toggleMaximizeWindow}>
             <Maximize2 size={14} />
           </button>
-          <button className="window-control-button close" type="button" aria-label="关闭" disabled={busy} onClick={closeWindow}>
+          <button className="window-control-button close" type="button" aria-label="关闭" title="关闭" disabled={busy} onClick={closeWindow}>
             <X size={14} />
           </button>
         </div>

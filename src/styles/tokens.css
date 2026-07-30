@@ -15,6 +15,11 @@
   --media-border: #343b42;
   --media-text: #f4f6f8;
   --media-muted: #aeb6bd;
+  --media-accent: #f2614b;
+  --media-accent-contrast: #101214;
+  --media-timeline-blue: #3477ad;
+  --media-reel-amber: #e0a34c;
+  --media-ok: #65b883;
 
   --bg: var(--shell-bg);
   --surface-ink: var(--shell-surface-raised);

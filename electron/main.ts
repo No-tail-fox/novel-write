@@ -361,7 +361,7 @@ async function seedTaskOperationsEditorialQa(database: FileDatabase, dataDir: st
 }
 
 async function seedHtmlVideoEditorialQa(database: FileDatabase): Promise<void> {
-  if (editorialQaConfig?.scope !== 'html-video' && editorialQaConfig?.scope !== 'workflow' && editorialQaConfig?.scope !== 'all') return;
+  if (editorialQaConfig?.scope !== 'html-video' && editorialQaConfig?.scope !== 'task-operations' && editorialQaConfig?.scope !== 'workflow' && editorialQaConfig?.scope !== 'all') return;
   const copy = [
     '武则天十四岁入宫，十二年间几乎没有被命运看见。',
     '直到唐高宗时代，她重新站回权力中心。',

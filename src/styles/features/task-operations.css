@@ -34,7 +34,7 @@
 
 .task-operations-view .status-pill.running,
 .task-detail-shell[data-task-operations="detail"] .status-pill.running {
-  color: var(--timeline-blue);
+  color: var(--shell-accent-strong);
 }
 
 .task-operations-view .status-pill.completed,
@@ -117,7 +117,7 @@
 .task-queue-filters button.active {
   border-color: var(--shell-accent);
   background: var(--shell-accent);
-  color: #fff;
+  color: var(--shell-focus-contrast);
 }
 
 .task-queue-concurrency {
@@ -463,7 +463,7 @@
 .history-page[data-task-operations="history"] .chip.active {
   border-color: var(--shell-accent);
   background: var(--shell-accent);
-  color: #fff;
+  color: var(--shell-focus-contrast);
   font-weight: 650;
 }
 
@@ -668,7 +668,7 @@
 .task-detail-shell[data-task-operations="detail"] .task-detail-run-control.accent {
   border-color: var(--shell-accent);
   background: var(--shell-accent);
-  color: #fff;
+  color: var(--shell-focus-contrast);
 }
 
 .task-stage-track {
@@ -735,7 +735,7 @@
 .task-stage-track .pipeline-step.completed .pipeline-node {
   border-color: var(--ok);
   background: var(--ok);
-  color: #fff;
+  color: var(--shell-focus-contrast);
 }
 
 .task-detail-shell[data-task-operations="detail"] .task-detail-main {
@@ -770,7 +770,7 @@
 .task-detail-shell[data-task-operations="detail"] .artifact-tabs button.active {
   border-color: var(--shell-accent);
   background: var(--shell-accent);
-  color: #fff;
+  color: var(--shell-focus-contrast);
 }
 
 .task-detail-shell[data-task-operations="detail"] .artifact-preview {
@@ -805,6 +805,7 @@
   overflow: hidden;
   border: 1px solid var(--media-border);
   border-radius: 6px;
+  background: var(--media-bg);
 }
 
 .task-media-canvas {
@@ -841,7 +842,7 @@
   width: 44px;
   height: 4px;
   display: block;
-  background: var(--shell-accent);
+  background: var(--media-accent);
 }
 
 .task-media-frame strong {
@@ -881,7 +882,7 @@
 .task-media-progress i {
   display: block;
   height: 100%;
-  background: var(--shell-accent);
+  background: var(--media-accent);
 }
 
 .task-media-progress small {
@@ -979,6 +980,19 @@
 
 .task-detail-shell[data-task-operations="detail"] .preview-meta-grid {
   margin-top: 0;
+}
+
+.task-detail-shell[data-task-operations="detail"] .preview-meta-grid div {
+  border-color: var(--shell-border);
+  background: var(--shell-surface);
+}
+
+.task-detail-shell[data-task-operations="detail"] .preview-meta-grid small {
+  color: var(--shell-muted);
+}
+
+.task-detail-shell[data-task-operations="detail"] .preview-meta-grid strong {
+  color: var(--shell-text);
 }
 
 @media (max-width: 1180px) {

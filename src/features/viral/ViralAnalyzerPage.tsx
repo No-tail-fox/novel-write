@@ -210,7 +210,7 @@ export function ViralAnalyzerPage({
   return (
     <div className="viral-analyzer-layout">
       <div className="viral-workbench">
-        <section className="panel viral-input-panel" data-media-canvas="viral-source">
+        <section className="panel viral-input-panel">
           <div className="panel-title-row">
             <div>
               <h2>爆款拆解</h2>
