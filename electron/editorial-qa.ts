@@ -53,6 +53,7 @@ export const editorialQaMatrix = {
     { id: 'queue-operations-desktop', view: 'queue', theme: 'light', viewport: 'desktop' },
     { id: 'history-operations-desktop', view: 'history', theme: 'light', viewport: 'desktop' },
     { id: 'task-detail-operations-desktop', view: 'task-detail', theme: 'light', viewport: 'desktop' },
+    { id: 'task-detail-borrowed-image-desktop', view: 'task-detail', theme: 'light', viewport: 'desktop' },
     { id: 'history-operations-compact', view: 'history', theme: 'light', viewport: 'compact' },
   ],
   htmlVideoStudioStates: [
@@ -165,6 +166,9 @@ export async function captureEditorialQa(
     if (captureCase.stage && (!state.stageStatePreserved || !state.presetStatePreserved || state.layout.summaryPlacement !== expectedPlacement)) {
       throw new Error(`Editorial QA new-task interaction/layout failed in ${captureCase.id}.`);
     }
+    if (captureCase.stage === 'output' && !state.autoBorrowImageStatePreserved) {
+      throw new Error(`Editorial QA image-borrow toggle failed in ${captureCase.id}.`);
+    }
     if (captureCase.stage === 'output' && (
       state.manualCover.state !== 'required'
       || !state.manualCover.importVisible
@@ -177,6 +181,9 @@ export async function captureEditorialQa(
     }
     if (captureCase.view === 'history' && state.historyHtmlTypeLabel !== 'HTML 动画') {
       throw new Error(`Editorial QA History HTML type label failed in ${captureCase.id}: ${state.historyHtmlTypeLabel}.`);
+    }
+    if (captureCase.view === 'task-detail' && state.borrowedImageLabel !== '借 #1') {
+      throw new Error(`Editorial QA borrowed-image label failed in ${captureCase.id}: ${state.borrowedImageLabel}.`);
     }
     if (captureCase.view === 'prompt-templates' && captureCase.theme === 'light' && viewport.name === 'desktop' && state.promptTemplateEditorOpen !== true) {
       throw new Error('Editorial QA Prompt Template editor state failed.');
@@ -250,6 +257,8 @@ export async function captureEditorialQa(
       historyHtmlTypeLabel: state.historyHtmlTypeLabel,
       promptTemplateEditorOpen: state.promptTemplateEditorOpen,
       presetStatePreserved: state.presetStatePreserved,
+      autoBorrowImageStatePreserved: state.autoBorrowImageStatePreserved,
+      borrowedImageLabel: state.borrowedImageLabel,
       deleteDialogFocusWrapped: state.deleteDialogFocusWrapped,
       deleteDialogEscapeRestored: state.deleteDialogEscapeRestored,
     });
@@ -388,6 +397,8 @@ export interface EditorialQaCapture {
   historyHtmlTypeLabel: string;
   promptTemplateEditorOpen: boolean;
   presetStatePreserved: boolean;
+  autoBorrowImageStatePreserved: boolean;
+  borrowedImageLabel: string;
   deleteDialogFocusWrapped: boolean;
   deleteDialogEscapeRestored: boolean;
 }
@@ -419,6 +430,8 @@ interface QaScenarioState {
   };
   stageStatePreserved: boolean;
   presetStatePreserved: boolean;
+  autoBorrowImageStatePreserved: boolean;
+  borrowedImageLabel: string;
   manualCover: {
     state: string;
     importVisible: boolean;
@@ -512,7 +525,7 @@ export function editorialQaCaptureIdsByRequirement(requirement: EditorialQaCaptu
   for (const captureCase of editorialQaMatrix.newTaskStates) requiredIds.add(captureCase.id);
 
   const classified = allIds.filter((id) => requirement === 'required' ? requiredIds.has(id) : !requiredIds.has(id));
-  if (requiredIds.size !== 67 || allIds.length - requiredIds.size !== 21) {
+  if (requiredIds.size !== 67 || allIds.length - requiredIds.size !== 22) {
     throw new Error(`Editorial QA canonical classification drifted: ${requiredIds.size} required of ${allIds.length}.`);
   }
   return classified;
@@ -667,6 +680,10 @@ function qaScenarioScript(id: string, view: string, theme: string, stage?: strin
     let ready = initialShellReady && themeReady && await waitFor(() => document.querySelector('.app-shell')
       && document.documentElement.dataset.themeReady === 'true'
       && document.querySelector('[data-shell-view="' + targetView + '"]'));
+    if (targetView === 'task-detail') {
+      ready = ready && await waitFor(() => [...document.querySelectorAll('.image-preview-title span')]
+        .some((element) => element.textContent?.trim() === '借 #1'));
+    }
     let deleteDialogFocusWrapped = scenarioId !== 'history-operations-desktop';
     let deleteDialogEscapeRestored = scenarioId !== 'history-operations-desktop';
     if (scenarioId === 'queue-operations-desktop') {
@@ -734,6 +751,23 @@ function qaScenarioScript(id: string, view: string, theme: string, stage?: strin
     if (scenarioId === 'task-detail-operations-desktop') {
       ready = ready && await waitFor(() => document.querySelector('.task-media-progress')?.textContent?.includes('8 / 12')
         && document.querySelector('.task-scene-rail')?.textContent?.includes('8 / 12 已生成'));
+    }
+    if (scenarioId === 'task-detail-borrowed-image-desktop') {
+      ready = ready && await waitFor(() => {
+        const borrowedCard = document.querySelector('.image-preview-card.borrowed');
+        const borrowedImage = borrowedCard?.querySelector('img');
+        return borrowedCard instanceof HTMLElement
+          && borrowedImage instanceof HTMLImageElement
+          && borrowedImage.complete
+          && borrowedImage.naturalWidth > 0
+          && borrowedCard.textContent?.includes('借 #1') === true
+          && borrowedCard.textContent?.includes('原始生成失败：') === true;
+      });
+      const borrowedCard = document.querySelector('.image-preview-card.borrowed');
+      if (borrowedCard instanceof HTMLElement) {
+        borrowedCard.scrollIntoView({ block: 'center' });
+        await settleCompositor();
+      }
     }
     if (targetView === 'html-video') {
       ready = ready && await waitFor(() => {
@@ -860,6 +894,7 @@ function qaScenarioScript(id: string, view: string, theme: string, stage?: strin
     const stage = ${JSON.stringify(stage ?? '')};
     let stageStatePreserved = true;
     let presetStatePreserved = true;
+    let autoBorrowImageStatePreserved = true;
     if (stage) {
       const materialTab = document.querySelector('[data-new-task-stage-tab="material"]');
       if (materialTab instanceof HTMLButtonElement) materialTab.click();
@@ -891,6 +926,11 @@ function qaScenarioScript(id: string, view: string, theme: string, stage?: strin
           .find((button) => button.textContent?.trim() === '手动封面');
         if (manualButton instanceof HTMLButtonElement) manualButton.click();
         ready = ready && await waitFor(() => document.querySelector('[data-manual-cover-state="required"]'));
+        const borrowToggle = document.querySelector('.new-task-borrow-toggle input');
+        if (borrowToggle instanceof HTMLInputElement && !borrowToggle.checked) borrowToggle.click();
+        autoBorrowImageStatePreserved = borrowToggle instanceof HTMLInputElement
+          && await waitFor(() => borrowToggle.checked);
+        ready = ready && autoBorrowImageStatePreserved;
       }
       if (stage === 'material') {
         const presetNameInput = document.querySelector('input[aria-label="预设名称"]');
@@ -1282,6 +1322,8 @@ function qaScenarioScript(id: string, view: string, theme: string, stage?: strin
       .find((button) => button.textContent?.includes('导入手动封面'));
     const createButton = [...document.querySelectorAll('.new-task-summary-actions button')]
       .find((button) => button.textContent?.includes('创建并开始任务'));
+    const borrowedImageLabel = [...document.querySelectorAll('.image-preview-title span')]
+      .find((element) => element.textContent?.trim().startsWith('借 #'))?.textContent?.trim() ?? '';
     return {
       ready,
       width: window.innerWidth,
@@ -1293,6 +1335,8 @@ function qaScenarioScript(id: string, view: string, theme: string, stage?: strin
       templateOperationalContrast,
       stageStatePreserved,
       presetStatePreserved,
+      autoBorrowImageStatePreserved,
+      borrowedImageLabel,
       deleteDialogFocusWrapped,
       deleteDialogEscapeRestored,
       manualCover: {

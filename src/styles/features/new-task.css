@@ -168,6 +168,21 @@
   align-items: start;
 }
 
+.new-task-borrow-toggle {
+  min-height: 38px;
+  margin: 0;
+  padding: 8px 10px;
+  border: 1px solid var(--shell-border);
+  border-radius: 5px;
+  background: var(--shell-surface-raised);
+  color: var(--shell-text);
+  font-size: 13px;
+}
+
+.new-task-borrow-toggle input {
+  accent-color: var(--shell-accent);
+}
+
 .new-task-check-grid {
   display: grid;
   grid-template-columns: repeat(3, minmax(0, 1fr));

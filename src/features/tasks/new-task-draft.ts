@@ -58,6 +58,7 @@ export interface NewTaskDraftValues {
   coverImageMode?: OrdinaryCoverMode;
   coverTemplateId?: string;
   manualCoverAsset?: OrdinaryTaskCoverSelection;
+  autoBorrowImage?: boolean;
   podcastImageMode?: string;
   podcastSpeakers?: PodcastSpeakerPair;
   selectedSearchSourceIds?: string[];

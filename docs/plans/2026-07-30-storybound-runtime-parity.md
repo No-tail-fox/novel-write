@@ -27,7 +27,7 @@ Storybound is a Tauri/WebView2 shell backed by SQLite plus native `draft-generat
 | Playground video result | `video_path` column only; all five local values are null | No Image Lab video result | Unverified schema reservation | Defer until a working rendered/task artifact exists |
 | Voice Lab and clone voices | Voice Lab route, `minimax_clone_voices`, Sherpa/ONNX sidecars | Voice Lab and operational MiniMax clone management | Equivalent | Preserve |
 | Uploaded task narration | `voice_source`, `uploaded_voice_path`; rendered workflow says STT splits final narration by scene | TTS and clone voices, but no task-level uploaded narration | Storybound-only local, high complexity | Defer until scene-alignment/runtime design is proven |
-| Failed-image neighbor borrowing | `auto_borrow_image`; rendered Create toggle | Missing | Storybound-only local | Implement after current image retry semantics are reconciled |
+| Failed-image neighbor borrowing | `auto_borrow_image`; rendered Create toggle plus predecessor-first/original-source runtime evidence | Default-off `autoBorrowImage`, settled generation, predecessor-first/leading forward fallback, per-scene managed copies, `borrowedFrom`, retained diagnostics, and real-image regeneration replacement | Equivalent local | Delivered end to end; empty/all-failed output remains strict |
 | Cover poster modes | `cover_primary`, `cover_extra`, `cover_local_path`; rendered none/titled/text-free/local modes | Cover generation plus ordinary-task manual cover import | Similar but not equivalent | Extend only with real cover artifact ownership |
 | Task favorites | `is_favorite`; rendered Favorites filter and per-row toggle | SQLite-backed favorite state, History filter and active-row star toggle | Equivalent local | Delivered with archive immutability |
 | Creation drafts and presets | Rendered save-as-draft and save-preset commands | Complete autosaved creation draft plus named local presets with save/apply/delete and full snapshot ownership | Equivalent local | Delivered; manual cover requires safe re-import |
@@ -42,7 +42,8 @@ Storybound is a Tauri/WebView2 shell backed by SQLite plus native `draft-generat
 2. [Completed] Image Lab batch/recovery tools: verified rendered workflow with matching persisted jobs; unified into the existing route.
 3. [Completed] Task favorites: verified column plus rendered filter/action with local persistence and UI ownership.
 4. [Completed] Creation drafts/presets: existing complete draft snapshot was retained and extended with bounded named presets instead of duplicating form state.
-5. Next evidence gate: neighbor-image fallback, cover-mode expansion, uploaded narration, dynamic storyboards, and network materials require independently proven runtime and artifact semantics before implementation.
+5. [Completed] Failed-image neighbor borrowing: runtime/checkpoint, SQLite/IPC, New Task draft/preset, Task Detail diagnostics, Jianying-compatible scene ownership, and single-scene regeneration now share one default-off contract.
+6. Next evidence gate: cover-mode expansion, uploaded narration, dynamic storyboards, and network materials require independently proven runtime and artifact semantics before implementation.
 
 ## Safety Boundaries
 

@@ -2820,6 +2820,14 @@ textarea {
   border-color: color-mix(in srgb, var(--danger) 70%, var(--line));
 }
 
+.image-preview-card.borrowed {
+  border-color: color-mix(in srgb, #d3a73d 68%, var(--line));
+}
+
+.image-preview-card.borrowed .image-preview-title span {
+  color: #e6c66d;
+}
+
 .image-preview-card.failed .image-thumb {
   border-color: color-mix(in srgb, var(--danger) 65%, var(--line));
 }

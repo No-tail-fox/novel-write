@@ -56,6 +56,7 @@ export const NEW_TASK_CREATE_FIELD_STAGE = {
   coverImageMode: 'output',
   coverTemplateId: 'output',
   manualCoverAssetId: 'output',
+  autoBorrowImage: 'output',
   htmlVideoForeground: 'system',
 } as const satisfies Record<keyof CreateTaskInput, NewTaskFieldStage>;
 

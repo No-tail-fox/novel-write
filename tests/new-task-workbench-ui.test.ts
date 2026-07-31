@@ -56,6 +56,25 @@ describe('three-stage new task workbench', () => {
     expect(api).toContain('importOrdinaryTaskCover: (ratio: OrdinaryTaskCoverRatio)');
   });
 
+  it('persists the default-off failed-image borrowing control through the complete task snapshot', async () => {
+    const [page, draft, types, ipc, detail] = await Promise.all([
+      readFile(new URL('../src/features/tasks/NewTaskPage.tsx', import.meta.url), 'utf8'),
+      readFile(new URL('../src/features/tasks/new-task-draft.ts', import.meta.url), 'utf8'),
+      readFile(new URL('../src/shared/types.ts', import.meta.url), 'utf8'),
+      readFile(new URL('../src/shared/ipc-contract.ts', import.meta.url), 'utf8'),
+      readFile(new URL('../src/features/tasks/TaskArtifactPreview.tsx', import.meta.url), 'utf8'),
+    ]);
+
+    expect(page).toContain("const [autoBorrowImage, setAutoBorrowImage] = useState(false)");
+    expect(page).toContain('checked={autoBorrowImage}');
+    expect(page).toContain('相邻镜头补位');
+    expect(page).toContain('autoBorrowImage,');
+    expect(draft).toContain('autoBorrowImage?: boolean');
+    expect(types).toContain('autoBorrowImage?: boolean');
+    expect(ipc).toContain('autoBorrowImage: z.boolean().optional()');
+    expect(detail).toContain('image.borrowedFrom ? `借 #${image.borrowedFrom}`');
+  });
+
   it('reuses the complete task snapshot for named creation presets', async () => {
     const [page, draft, css] = await Promise.all([
       readFile(new URL('../src/features/tasks/NewTaskPage.tsx', import.meta.url), 'utf8'),

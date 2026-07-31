@@ -506,8 +506,10 @@ function ImageGenerationGallery({
           const imageError = imageErrorBySceneId.get(scene.id);
           const previewUrl = image ? imagePreviewUrls[image.path] : '';
           const previewError = image ? imagePreviewErrors[image.path] : '';
-          const cardState = image ? 'ready' : imageError ? 'failed' : 'pending';
-          const statusText = image ? '已生成' : imageError ? '生成失败' : task.status === 'running' ? '等待/生成中' : '未生成';
+          const cardState = image?.borrowedFrom !== undefined ? 'borrowed' : image ? 'ready' : imageError ? 'failed' : 'pending';
+          const statusText = image
+            ? image.borrowedFrom ? `借 #${image.borrowedFrom}` : '已生成'
+            : imageError ? '生成失败' : task.status === 'running' ? '等待/生成中' : '未生成';
           const promptText = prompt?.prompt ?? scene.descPrompt;
           const isEditingPrompt = editingPromptSceneId === scene.id;
           const isSavingPrompt = savingPromptSceneId === scene.id;
@@ -528,7 +530,7 @@ function ImageGenerationGallery({
                 </div>
                 <p>{trimForPreview(promptText, 180)}</p>
                 {image ? <small>{image.path}</small> : <small>等待 provider 返回真实图片</small>}
-                {imageError ? <div className="artifact-image-error" title={imageError.message}>{summarizeErrorMessage(imageError.message)}</div> : null}
+                {imageError ? <div className="artifact-image-error" title={imageError.message}>{image?.borrowedFrom ? '原始生成失败：' : ''}{summarizeErrorMessage(imageError.message)}</div> : null}
                 {previewError ? <small className="danger-text">{previewError}</small> : null}
               </div>
               <div className="image-preview-actions">

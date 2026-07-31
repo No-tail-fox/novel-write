@@ -42,7 +42,7 @@ describe('task artifact preview reader', () => {
             subtitles: { cues: [{ index: 1, startMs: 0, endMs: 1200, text: 'Scene line' }], srt: '1\\n00:00:00,000 --> 00:00:01,200\\nScene line\\n' },
           },
           assets: {
-            images: [{ sceneId: 1, path: join(dir, 'images', 'scene-1.png') }],
+            images: [{ sceneId: 1, path: join(dir, 'images', 'scene-1.png'), borrowedFrom: 3 }],
             narration: [{ sceneId: 1, path: join(dir, 'audio', 'scene-1.wav') }],
           },
           draft: { draftDir: join(dir, 'draft'), draftContentPath: join(dir, 'draft', 'draft_content.json'), draftMetaPath: join(dir, 'draft', 'draft_meta_info.json') },
@@ -62,6 +62,7 @@ describe('task artifact preview reader', () => {
     expect(snapshot.artifact.scenes?.[0]?.cap).toBe('Scene line');
     expect(snapshot.artifact.imagePrompts?.[0]?.prompt).toBe('Image prompt');
     expect(snapshot.assets.images[0].path).toContain('scene-1.png');
+    expect(snapshot.assets.images[0].borrowedFrom).toBe(3);
     expect(snapshot.assets.narration[0].path).toContain('scene-1.wav');
     expect(snapshot.draft?.draftDir).toContain('draft');
   });

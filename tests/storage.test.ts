@@ -217,6 +217,7 @@ describe('file database', () => {
         fixedIntro: '今天先别急着划走。',
         outroCta: '想看{主角}，去橱窗找这本书。',
         lockIntroSentences: 3,
+        autoBorrowImage: true,
       });
 
       const state = await db.getState();
@@ -228,7 +229,10 @@ describe('file database', () => {
         fixedIntro: '今天先别急着划走。',
         outroCta: '想看{主角}，去橱窗找这本书。',
         lockIntroSentences: 3,
+        autoBorrowImage: true,
       });
+      const defaultTask = await db.createTask({ inputText: '默认严格失败' });
+      expect(defaultTask.autoBorrowImage).toBe(false);
       await db.close();
     } finally {
       await rm(dir, { recursive: true, force: true });

@@ -188,6 +188,7 @@ export function NewTaskPage({
   const [coverImageMode, setCoverImageMode] = useState<OrdinaryCoverMode>('off');
   const [coverTemplateId, setCoverTemplateId] = useState('cinematic-poster');
   const [manualCoverAsset, setManualCoverAsset] = useState<OrdinaryTaskCoverSelection | null>(null);
+  const [autoBorrowImage, setAutoBorrowImage] = useState(false);
   const [podcastImageMode, setPodcastImageMode] = useState('multi');
   const [podcastSpeakers, setPodcastSpeakers] = useState<PodcastSpeakerPair>('kazai-dayi');
   const [running, setRunning] = useState(false);
@@ -280,6 +281,7 @@ export function NewTaskPage({
         coverImageMode,
         coverTemplateId,
         manualCoverAsset: manualCoverAsset ?? undefined,
+        autoBorrowImage,
         podcastImageMode,
         podcastSpeakers,
         selectedSearchSourceIds,
@@ -330,6 +332,7 @@ export function NewTaskPage({
     if (values.videoForm === 'narration' || values.videoForm === 'two-host-podcast') setVideoForm(values.videoForm);
     if (values.coverImageMode === 'off' || values.coverImageMode === 'auto' || values.coverImageMode === 'manual') setCoverImageMode(values.coverImageMode);
     if (typeof values.coverTemplateId === 'string') setCoverTemplateId(values.coverTemplateId);
+    if (typeof values.autoBorrowImage === 'boolean') setAutoBorrowImage(values.autoBorrowImage);
     if (values.manualCoverAsset) {
       try {
         setManualCoverAsset(validateOrdinaryTaskCoverSelection(values.manualCoverAsset));
@@ -460,7 +463,7 @@ export function NewTaskPage({
     ratioManuallyOverridden, ttsProvider, speaker, bgmId, referenceImagePath, pausePoint,
     processingMode, rewriteIntensity, narrativePov, keepPromotion, productInfo, materialSource,
     materialPerson, fixedIntro, outroCta, lockIntroSentences, ttsSpeed, targetLength,
-    storyboardSceneCount, publishMode, videoForm, coverImageMode, coverTemplateId, manualCoverAsset,
+    storyboardSceneCount, publishMode, videoForm, coverImageMode, coverTemplateId, manualCoverAsset, autoBorrowImage,
     podcastImageMode, podcastSpeakers, selectedSearchSourceIds, searchContext, researchCopy,
   ]);
 
@@ -695,6 +698,7 @@ export function NewTaskPage({
         coverImageMode,
         coverTemplateId,
         manualCoverAssetId: manualCoverAsset?.id,
+        autoBorrowImage,
         podcastImageMode,
         podcastSpeakers: videoForm === 'two-host-podcast' ? podcastSpeakers : null,
         podcastSpeakerA: videoForm === 'two-host-podcast' ? podcastVoiceDefaults.podcastSpeakerA : null,
@@ -954,6 +958,10 @@ export function NewTaskPage({
                 </div>
               ) : null}
               <Field label="主角参考图" hint="可选"><div className="upload-row"><input value={referenceImagePath} placeholder="上传后出现主角的分镜会以这张为基础保持人物一致" onChange={(event) => setReferenceImagePath(event.target.value)} /><button type="button" className="ghost-action" disabled={taskAction.busy} onClick={selectTaskReferenceImage}><Upload size={15} />上传主角参考图</button></div></Field>
+              <label className="new-task-borrow-toggle toggle-row" title="开启后，生图失败的镜头会在全部尝试结束后借用最近的可用图片。">
+                <input type="checkbox" checked={autoBorrowImage} onChange={(event) => setAutoBorrowImage(event.target.checked)} />
+                <span>相邻镜头补位</span>
+              </label>
             </section>
           ) : null}
 
@@ -973,6 +981,7 @@ export function NewTaskPage({
             <div><dt>配音角色</dt><dd>{videoForm === 'two-host-podcast' ? podcastSpeakers : taskSpeakerLabel(ttsProvider, speaker, state.minimaxCloneVoices)}</dd></div>
             <div><dt>草稿模板</dt><dd>{draftTemplateLabel(templateId, state.draftTemplates)}</dd></div>
             <div><dt>封面方式</dt><dd>{coverImageMode === 'manual' ? (manualCoverAsset?.originalName ?? '待导入') : ORDINARY_COVER_MODE_MANIFEST[coverImageMode].label}</dd></div>
+            <div><dt>失败补位</dt><dd>{autoBorrowImage ? '已启用' : '关闭'}</dd></div>
           </dl>
           <div className="new-task-readiness">
             <span className={selectedTaskLlmProfileId ? 'ready' : ''}><Check size={15} />LLM {selectedTaskLlmProfileId ? '已配置' : '未配置'}</span>

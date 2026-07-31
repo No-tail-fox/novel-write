@@ -27,7 +27,7 @@ export const approvedEditorialInventories = {
     'step3PromptSnapshot', 'musicMv', 'videoForm', 'llmProfileId', 'materialSource', 'productInfo',
     'materialPerson', 'draftDir', 'fixedIntro', 'outroCta', 'lockIntroSentences', 'taskType', 'pipelineStep',
     'pipelineData', 'targetLength', 'targetScenes', 'scriptFormat', 'podcastImageMode', 'podcastSpeakers',
-    'podcastSpeakerA', 'podcastSpeakerB', 'coverImageMode', 'coverTemplateId', 'manualCoverAssetId', 'htmlVideoForeground',
+    'podcastSpeakerA', 'podcastSpeakerB', 'coverImageMode', 'coverTemplateId', 'manualCoverAssetId', 'autoBorrowImage', 'htmlVideoForeground',
   ], 'src/shared/types.ts', 'src/features/tasks/task-create-input.ts', 'tests/renderer-architecture.test.ts'),
   htmlVideoFields: inventory([
     'style', 'voiceId', 'ttsProvider', 'ttsSpeed', 'bgmId', 'captionPreset', 'captionAnim', 'captionColors',

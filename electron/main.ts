@@ -296,13 +296,20 @@ async function seedTaskOperationsEditorialQa(database: FileDatabase, dataDir: st
   const running = await createFixture('武则天：从深宫才人到一代女皇');
   const fixtureRoot = join(dataDir, 'qa-task-operations', 'running-task');
   const pipelineDir = join(fixtureRoot, 'pipeline');
+  const imageDir = join(fixtureRoot, 'images');
   const statePath = join(pipelineDir, 'state.json');
-  await mkdir(pipelineDir, { recursive: true });
+  await Promise.all([mkdir(pipelineDir, { recursive: true }), mkdir(imageDir, { recursive: true })]);
   const scenes = Array.from({ length: 12 }, (_, index) => ({
     id: index + 1,
     cap: ['十四岁入宫', '重返长安', '权力中心', '登临帝位'][index] ?? `历史场景 ${index + 1}`,
     descPrompt: `武则天人物故事场景 ${index + 1}`,
     durationMs: 4200,
+  }));
+  const imageAssets = await Promise.all(scenes.slice(0, 8).map(async (scene) => {
+    const path = join(imageDir, `scene-${scene.id}.png`);
+    const borrowedFrom = scene.id === 2 ? 1 : undefined;
+    await writeFile(path, editorialQaHtmlVideoPreviewPng(borrowedFrom ?? scene.id));
+    return { sceneId: scene.id, path, borrowedFrom };
   }));
   await writeFile(statePath, `${JSON.stringify({
     version: 1,
@@ -332,7 +339,8 @@ async function seedTaskOperationsEditorialQa(database: FileDatabase, dataDir: st
       })),
     },
     assets: {
-      images: scenes.slice(0, 8).map((scene) => ({ sceneId: scene.id, path: join(fixtureRoot, 'images', `scene-${scene.id}.png`) })),
+      images: imageAssets,
+      imageErrors: [{ sceneId: 2, message: 'QA Provider 拒绝了第 2 张图片，已借用相邻镜头。' }],
       narration: [],
     },
   }, null, 2)}\n`, 'utf8');

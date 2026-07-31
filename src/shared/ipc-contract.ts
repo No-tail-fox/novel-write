@@ -210,6 +210,7 @@ export const createTaskSchema = bounded(
       coverImageMode: optionalText(128),
       coverTemplateId: optionalText(256),
       manualCoverAssetId: z.string().uuid().optional(),
+      autoBorrowImage: z.boolean().optional(),
       htmlVideoForeground: z.boolean().optional(),
     })
     .strict(),

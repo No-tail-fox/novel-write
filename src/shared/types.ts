@@ -396,6 +396,7 @@ export interface Task {
   coverTemplateId?: string;
   ordinaryCoverAsset?: OrdinaryTaskCoverAsset | null;
   manualCoverAssetId?: string;
+  autoBorrowImage?: boolean;
   htmlVideoForeground?: boolean;
 }
 
@@ -760,6 +761,7 @@ export type CreateTaskInput = Partial<
     | 'coverImageMode'
     | 'coverTemplateId'
     | 'manualCoverAssetId'
+    | 'autoBorrowImage'
     | 'htmlVideoForeground'
   >
 > & { inputText: string };
@@ -1373,6 +1375,7 @@ export interface TaskArtifactStepPreview {
 export interface TaskArtifactAssetPreview {
   sceneId: number;
   path: string;
+  borrowedFrom?: number;
   speaker?: 'A' | 'B';
   turnIndex?: number;
   text?: string;

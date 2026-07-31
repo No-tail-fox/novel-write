@@ -911,6 +911,7 @@ export function makeFallbackApi(setState: (state: AppState) => void): StoryDream
         pipelineData: input.pipelineData ?? '{}',
         coverImageMode: input.coverImageMode ?? 'off',
         coverTemplateId: input.coverTemplateId ?? 'cinematic-poster',
+        autoBorrowImage: input.autoBorrowImage ?? false,
       };
       const events: TaskEvent[] = [
         { taskId: task.id, type: 'pipeline_ready', step: 0, agent: 'HTML Video', tool: null, detail: 'HTML 动画视频任务已创建，等待改写与分句。', dataJson: task.pipelineData ?? null, ts: Date.now() },
@@ -1013,6 +1014,7 @@ export function makeFallbackApi(setState: (state: AppState) => void): StoryDream
         rewriteIntensity: input.rewriteIntensity ?? 'standard',
         narrativePov: input.narrativePov ?? 'keep-original',
         keepPromotion: input.keepPromotion ?? false,
+        autoBorrowImage: input.autoBorrowImage ?? false,
         ttsProvider: input.ttsProvider ?? 'volcengine',
         ttsSpeed: input.ttsSpeed ?? 1,
         storyboardSceneCount: input.targetScenes ?? input.storyboardSceneCount,

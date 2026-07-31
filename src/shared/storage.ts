@@ -328,7 +328,7 @@ const taskSummaryColumns = `
   material_source, draft_dir,
   lock_intro_sentences, task_type, pipeline_step, target_length, target_scenes,
   script_format, podcast_image_mode, podcast_speaker_a,
-  podcast_speaker_b, cover_image_mode, cover_template_id, html_video_foreground,
+  podcast_speaker_b, cover_image_mode, cover_template_id, auto_borrow_image, html_video_foreground,
   substr(input_text, 1, ${TASK_INPUT_PREVIEW_LIMIT}) AS input_preview
 `;
 const viralAnalysisSummaryColumns = `
@@ -1003,6 +1003,7 @@ export class FileDatabase {
         cover_image_mode TEXT DEFAULT 'off',
         cover_template_id TEXT DEFAULT 'cinematic-poster',
         ordinary_cover_asset_json TEXT DEFAULT NULL,
+        auto_borrow_image INTEGER NOT NULL DEFAULT 0,
         html_video_foreground INTEGER DEFAULT NULL
       );
       CREATE TABLE IF NOT EXISTS book_selection (
@@ -1279,6 +1280,7 @@ export class FileDatabase {
       ['cover_image_mode', "TEXT DEFAULT 'off'"],
       ['cover_template_id', "TEXT DEFAULT 'cinematic-poster'"],
       ['ordinary_cover_asset_json', 'TEXT DEFAULT NULL'],
+      ['auto_borrow_image', 'INTEGER NOT NULL DEFAULT 0'],
       ['html_video_foreground', 'INTEGER DEFAULT NULL'],
       ['archived_at', 'TEXT DEFAULT NULL'],
       ['managed_storage_key', 'TEXT DEFAULT NULL'],
@@ -2126,6 +2128,7 @@ export class FileDatabase {
       coverImageMode,
       coverTemplateId: input.coverTemplateId ?? 'cinematic-poster',
       ordinaryCoverAsset: null,
+      autoBorrowImage: input.autoBorrowImage ?? false,
       htmlVideoForeground: input.htmlVideoForeground,
     };
     this.assertHistoryWritable('task', task.id);
@@ -2210,6 +2213,9 @@ export class FileDatabase {
         task.htmlVideoForeground === undefined ? null : task.htmlVideoForeground ? 1 : 0,
       ],
     );
+    if (task.autoBorrowImage) {
+      this.db.run('UPDATE tasks SET auto_borrow_image = 1 WHERE id = ?', [task.id]);
+    }
     return task;
   }
 
@@ -3650,6 +3656,7 @@ function rowToTask(row: Record<string, unknown>): Task {
     coverImageMode: String(row.cover_image_mode ?? 'off'),
     coverTemplateId: String(row.cover_template_id ?? 'cinematic-poster'),
     ordinaryCoverAsset: parseOrdinaryCoverAsset(row.ordinary_cover_asset_json),
+    autoBorrowImage: Number(row.auto_borrow_image ?? 0) === 1,
     htmlVideoForeground: row.html_video_foreground === null || row.html_video_foreground === undefined
       ? undefined
       : Number(row.html_video_foreground) === 1,

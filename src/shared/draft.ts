@@ -10,6 +10,7 @@ import { runStoryboundMediaSidecar, type StoryboundSidecarInput, type Storybound
 export interface SceneAsset {
   sceneId: number;
   path: string;
+  borrowedFrom?: number;
   speaker?: 'A' | 'B';
   turnIndex?: number;
   text?: string;

@@ -36,11 +36,11 @@ describe('editorial Electron QA configuration', () => {
 
   it('defines the exact completed capture count for every QA scope', () => {
     expect(Object.fromEntries(editorialQaScopes.map((scope) => [scope, editorialQaExpectedCaptureCount(scope)]))).toEqual({
-      all: 88,
+      all: 89,
       'theme-smoke': 4,
       shell: 4,
       'new-task': 4,
-      'task-operations': 4,
+      'task-operations': 5,
       'html-video': 2,
       'clone-voice': 4,
       'volcengine-tts': 2,
@@ -54,13 +54,13 @@ describe('editorial Electron QA configuration', () => {
     }
   });
 
-  it('classifies the canonical 67 required captures separately from 21 supplemental states', () => {
+  it('classifies the canonical 67 required captures separately from 22 supplemental states', () => {
     const required = editorialQaCaptureIdsByRequirement('required');
     const supplemental = editorialQaCaptureIdsByRequirement('supplemental');
     const all = editorialQaCaptureIds('all');
 
     expect(required).toHaveLength(67);
-    expect(supplemental).toHaveLength(21);
+    expect(supplemental).toHaveLength(22);
     expect(new Set([...required, ...supplemental])).toEqual(new Set(all));
     expect(required.filter((id) => supplemental.includes(id))).toEqual([]);
     expect(required).toEqual(expect.arrayContaining([
@@ -87,6 +87,7 @@ describe('editorial Electron QA configuration', () => {
       'shell-new-task-light-compact',
       'shell-new-task-light-desktop',
       'task-detail-operations-desktop',
+      'task-detail-borrowed-image-desktop',
       'volcengine-legacy-dark-compact',
       'volcengine-v3-light-desktop',
       'workflow-new-task-dark-compact',
@@ -275,6 +276,22 @@ describe('editorial Electron QA configuration', () => {
     expect(source).toContain("historyHtmlTypeLabel !== 'HTML 动画'");
     expect(source).toContain('historyHtmlTypeLabel: state.historyHtmlTypeLabel');
     expect(htmlFixture).toContain("editorialQaConfig?.scope !== 'task-operations'");
+  });
+
+  it('gates the failed-image borrowing control and borrowed task-detail evidence', async () => {
+    const [source, main] = await Promise.all([
+      (await import('node:fs/promises')).readFile(new URL('../electron/editorial-qa.ts', import.meta.url), 'utf8'),
+      (await import('node:fs/promises')).readFile(new URL('../electron/main.ts', import.meta.url), 'utf8'),
+    ]);
+
+    expect(source).toContain("document.querySelector('.new-task-borrow-toggle input')");
+    expect(source).toContain('state.autoBorrowImageStatePreserved');
+    expect(source).toContain("state.borrowedImageLabel !== '借 #1'");
+    expect(source).toContain("document.querySelectorAll('.image-preview-title span')");
+    expect(source).toContain("document.querySelector('.image-preview-card.borrowed')");
+    expect(source).toContain("borrowedCard.scrollIntoView({ block: 'center' })");
+    expect(main).toContain("borrowedFrom = scene.id === 2 ? 1 : undefined");
+    expect(main).toContain("imageErrors: [{ sceneId: 2");
   });
 
   it('opens the accepted Prompt Template editor state for the light desktop concept capture', async () => {

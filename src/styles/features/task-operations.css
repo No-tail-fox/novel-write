@@ -989,6 +989,19 @@
   margin-top: 0;
 }
 
+.task-detail-shell[data-task-operations="detail"] .artifact-scene-list div,
+.task-detail-shell[data-task-operations="detail"] .artifact-source-list div,
+.task-detail-shell[data-task-operations="detail"] .artifact-path-list span,
+.task-detail-shell[data-task-operations="detail"] .artifact-cover-grid div,
+.task-detail-shell[data-task-operations="detail"] .image-generation-toolbar span,
+.task-detail-shell[data-task-operations="detail"] .image-preview-card {
+  --text: var(--media-text);
+  --muted: var(--media-muted);
+  --panel-2: var(--media-surface);
+  --line: var(--media-border);
+  color: var(--media-text);
+}
+
 .task-detail-shell[data-task-operations="detail"] .preview-meta-grid div {
   border-color: var(--shell-border);
   background: var(--shell-surface);

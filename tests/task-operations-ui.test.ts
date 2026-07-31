@@ -51,6 +51,14 @@ describe('editorial task operations surfaces', () => {
     expect(workspaceRule).toContain('background: var(--media-bg);');
     expect(css).toMatch(/\.task-media-frame-accent \{[\s\S]*?background: var\(--media-accent\);/u);
     expect(css).toMatch(/\.task-media-progress i \{[\s\S]*?background: var\(--media-accent\);/u);
+    const artifactMediaStart = css.indexOf('.task-detail-shell[data-task-operations="detail"] .artifact-scene-list div,');
+    const artifactMediaRule = css.slice(artifactMediaStart, css.indexOf('}', artifactMediaStart) + 1);
+    expect(artifactMediaStart).toBeGreaterThan(-1);
+    expect(artifactMediaRule).toContain('--text: var(--media-text);');
+    expect(artifactMediaRule).toContain('--muted: var(--media-muted);');
+    expect(artifactMediaRule).toContain('--panel-2: var(--media-surface);');
+    expect(artifactMediaRule).toContain('--line: var(--media-border);');
+    expect(artifactMediaRule).toContain('color: var(--media-text);');
   });
 
   it('keeps history governance in a flat responsive table', async () => {

@@ -3083,13 +3083,15 @@ describe('task runner', () => {
         speaker: 'voice',
       });
       const artifact = makeArtifact();
-      artifact.scenes = artifact.scenes.slice(0, 2);
+      artifact.scenes = artifact.scenes.slice(0, 3);
       artifact.imagePrompts = makePrompts(artifact.scenes);
+      const attemptedSceneIds: number[] = [];
 
       await expect(runTask(db, task, {
         appDataDir: dir,
         generatePipelineArtifact: async () => artifact,
         generateImages: async (scenes) => {
+          attemptedSceneIds.push(...scenes.map((scene) => scene.id));
           if (scenes.some((scene) => scene.id === 2)) {
             throw new Error(providerError);
           }
@@ -3106,6 +3108,148 @@ describe('task runner', () => {
 
       expect(state.tasks[0]).toMatchObject({ status: 'paused', currentStep: 4, failedStep: 4 });
       expect(pipeline.assets?.imageErrors).toEqual([{ sceneId: 2, message: providerError }]);
+      expect(attemptedSceneIds).toEqual([1, 2]);
+    } finally {
+      await db.close();
+      await rm(dir, { recursive: true, force: true });
+    }
+  });
+
+  it('borrows the nearest successful predecessor after all image attempts settle', async () => {
+    const dir = await mkdtemp(join(tmpdir(), 'storybound-runner-image-borrow-previous-'));
+    const db = await FileDatabase.open(join(dir, 'data.db'));
+    const mediaDir = join(dir, 'media');
+    const draftRootDir = join(dir, 'JianyingPro Drafts');
+    const providerError = 'scene 2 generation failed';
+
+    try {
+      await db.upsertConfig({
+        ...(await db.getState()).config,
+        jianying: { ...(await db.getState()).config.jianying, draftPath: draftRootDir },
+      });
+      const task = await db.createTask({ title: 'Borrow previous', inputText: sampleInput, autoBorrowImage: true });
+      const artifact = makeArtifact();
+      artifact.scenes = artifact.scenes.slice(0, 3);
+      artifact.imagePrompts = makePrompts(artifact.scenes);
+
+      await runTask(db, task, {
+        appDataDir: dir,
+        generatePipelineArtifact: async () => artifact,
+        generateImages: async (scenes) => {
+          if (scenes[0]?.id === 2) throw new Error(providerError);
+          return writeSceneAssets(mediaDir, scenes, 'png', tinyPng);
+        },
+        synthesizeNarration: async (scenes) => writeSceneAssets(mediaDir, scenes, 'wav', wavTone(1200)),
+        draftWriterOptions: { runBridge: fakeBridge },
+      });
+
+      const state = await db.getState();
+      const pipeline = JSON.parse(await readFile(state.tasks[0].artifactStatePath, 'utf8')) as {
+        assets: { images: Array<{ sceneId: number; path: string; borrowedFrom?: number }>; imageErrors: Array<{ sceneId: number; message: string }> };
+      };
+      const borrowed = pipeline.assets.images.find((asset) => asset.sceneId === 2);
+      const source = pipeline.assets.images.find((asset) => asset.sceneId === 1);
+
+      expect(state.tasks[0].status).toBe('completed');
+      expect(pipeline.assets.images).toHaveLength(3);
+      expect(borrowed).toMatchObject({ sceneId: 2, borrowedFrom: 1 });
+      expect(borrowed?.path).not.toBe(source?.path);
+      expect(await readFile(borrowed!.path)).toEqual(await readFile(source!.path));
+      expect(pipeline.assets.imageErrors).toEqual([{ sceneId: 2, message: providerError }]);
+      expect(state.events.some((event) => event.type === 'image_borrowed' && event.detail.includes('2') && event.detail.includes('1'))).toBe(true);
+    } finally {
+      await db.close();
+      await rm(dir, { recursive: true, force: true });
+    }
+  });
+
+  it('falls forward for leading consecutive failures and records the original source scene', async () => {
+    const dir = await mkdtemp(join(tmpdir(), 'storybound-runner-image-borrow-forward-'));
+    const db = await FileDatabase.open(join(dir, 'data.db'));
+    const mediaDir = join(dir, 'media');
+    const draftRootDir = join(dir, 'JianyingPro Drafts');
+
+    try {
+      await db.upsertConfig({
+        ...(await db.getState()).config,
+        jianying: { ...(await db.getState()).config.jianying, draftPath: draftRootDir },
+      });
+      const task = await db.createTask({ title: 'Borrow forward', inputText: sampleInput, autoBorrowImage: true });
+      const artifact = makeArtifact();
+      artifact.scenes = artifact.scenes.slice(0, 3);
+      artifact.imagePrompts = makePrompts(artifact.scenes);
+
+      await runTask(db, task, {
+        appDataDir: dir,
+        imageConcurrency: 1,
+        generatePipelineArtifact: async () => artifact,
+        generateImages: async (scenes) => {
+          if ((scenes[0]?.id ?? 0) < 3) throw new Error(`scene ${scenes[0]?.id} generation failed`);
+          return writeSceneAssets(mediaDir, scenes, 'png', tinyPng);
+        },
+        synthesizeNarration: async (scenes) => writeSceneAssets(mediaDir, scenes, 'wav', wavTone(1200)),
+        draftWriterOptions: { runBridge: fakeBridge },
+      });
+
+      const state = await db.getState();
+      const pipeline = JSON.parse(await readFile(state.tasks[0].artifactStatePath, 'utf8')) as {
+        assets: { images: Array<{ sceneId: number; path: string; borrowedFrom?: number }> };
+      };
+      expect(state.tasks[0].status).toBe('completed');
+      expect(pipeline.assets.images.map((asset) => ({ sceneId: asset.sceneId, borrowedFrom: asset.borrowedFrom }))).toEqual([
+        { sceneId: 1, borrowedFrom: 3 },
+        { sceneId: 2, borrowedFrom: 3 },
+        { sceneId: 3, borrowedFrom: undefined },
+      ]);
+      expect(new Set(pipeline.assets.images.map((asset) => asset.path)).size).toBe(3);
+    } finally {
+      await db.close();
+      await rm(dir, { recursive: true, force: true });
+    }
+  });
+
+  it('still fails when automatic borrowing has no successful source image', async () => {
+    const dir = await mkdtemp(join(tmpdir(), 'storybound-runner-image-borrow-all-failed-'));
+    const db = await FileDatabase.open(join(dir, 'data.db'));
+
+    try {
+      const task = await db.createTask({ title: 'Borrow all failed', inputText: sampleInput, autoBorrowImage: true });
+      const artifact = makeArtifact();
+      artifact.scenes = artifact.scenes.slice(0, 3);
+      artifact.imagePrompts = makePrompts(artifact.scenes);
+      await expect(runTask(db, task, {
+        appDataDir: dir,
+        imageConcurrency: 1,
+        generatePipelineArtifact: async () => artifact,
+        generateImages: async (scenes) => { throw new Error(`scene ${scenes[0]?.id} failed`); },
+      })).rejects.toThrow(/successful|usable|all image/i);
+
+      const state = await db.getState();
+      const pipeline = JSON.parse(await readFile(state.tasks[0].artifactStatePath, 'utf8')) as { assets: { images: unknown[]; imageErrors: unknown[] } };
+      expect(state.tasks[0]).toMatchObject({ status: 'paused', currentStep: 4, failedStep: 4 });
+      expect(pipeline.assets.images).toEqual([]);
+      expect(pipeline.assets.imageErrors).toHaveLength(3);
+    } finally {
+      await db.close();
+      await rm(dir, { recursive: true, force: true });
+    }
+  });
+
+  it('rejects an empty provider result instead of marking image generation complete', async () => {
+    const dir = await mkdtemp(join(tmpdir(), 'storybound-runner-image-provider-empty-'));
+    const db = await FileDatabase.open(join(dir, 'data.db'));
+
+    try {
+      const task = await db.createTask({ title: 'Empty image provider', inputText: sampleInput });
+      const artifact = makeArtifact();
+      artifact.scenes = artifact.scenes.slice(0, 2);
+      artifact.imagePrompts = makePrompts(artifact.scenes);
+      await expect(runTask(db, task, {
+        appDataDir: dir,
+        generatePipelineArtifact: async () => artifact,
+        generateImages: async () => [],
+      })).rejects.toThrow(/provider.*return|return.*scene|image asset/i);
+      expect((await db.getState()).tasks[0]).toMatchObject({ status: 'paused', currentStep: 4, failedStep: 4 });
     } finally {
       await db.close();
       await rm(dir, { recursive: true, force: true });

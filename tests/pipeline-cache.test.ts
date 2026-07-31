@@ -217,8 +217,9 @@ describe('pipeline cache and retry', () => {
             assets: {
               images: [
                 { sceneId: 1, path: '1.png' },
-                { sceneId: 2, path: '2.png' },
+                { sceneId: 2, path: '2.png', borrowedFrom: 1 },
               ],
+              imageErrors: [{ sceneId: 2, message: 'provider failed before borrowing' }],
               narration: [
                 { sceneId: 1, path: '1.mp3' },
                 { sceneId: 2, path: '2.mp3' },
@@ -241,6 +242,7 @@ describe('pipeline cache and retry', () => {
 
       expect(result.removed).toBe(true);
       expect(next.assets.images).toEqual([{ sceneId: 1, path: '1.png' }]);
+      expect(next.assets.imageErrors).toEqual([]);
       expect(next.assets.narration).toEqual([
         { sceneId: 1, path: '1.mp3' },
         { sceneId: 2, path: '2.mp3' },

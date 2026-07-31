@@ -1,6 +1,6 @@
 import { copyFile, mkdir, readFile, writeFile } from 'node:fs/promises';
 import { createHash } from 'node:crypto';
-import { join } from 'node:path';
+import { extname, join } from 'node:path';
 import type { AiSourceContext, BgmItem, CharacterCard, CoverMetadata, CustomCoverTemplate, DraftTemplate, ImagePrompt, MusicPlan, PipelineArtifact, PromptStepTemplateType, PromptTemplate, RewriteEvaluationResult, SequencedTaskEvent, StoryboardScene, Task, TaskArtifactImageErrorPreview, TaskStepRerunMode } from './types';
 import { buildCoverMetadata, buildSubtitleTrack } from './story';
 import { writeJianyingDraft, type SceneAsset, type WriteJianyingDraftOptions } from './draft';
@@ -1762,7 +1762,10 @@ async function ensureImages(input: {
     throwIfAborted(options.signal);
     let generatedImages: SceneAsset[];
     try {
-      generatedImages = await generateImages([scene], artifact.imagePrompts, task, options.signal);
+      generatedImages = validateGeneratedSceneImages(
+        scene,
+        await generateImages([scene], artifact.imagePrompts, task, options.signal),
+      );
     } catch (error) {
       if (options.signal?.aborted) throw error;
       const message = error instanceof Error ? error.message : String(error);
@@ -1772,7 +1775,8 @@ async function ensureImages(input: {
         await heartbeatTask(db, task.id, options, 4, `image scene ${scene.id} failed`);
       });
       await persistImageQueue;
-      throw error;
+      if (!task.autoBorrowImage) throw error;
+      return;
     }
     persistImageQueue = persistImageQueue.then(async () => {
       pipeline.assets.images = mergeAssets(pipeline.assets.images, generatedImages);
@@ -1784,8 +1788,36 @@ async function ensureImages(input: {
     throwIfAborted(options.signal);
   });
   await persistImageQueue;
-  await markStep(4, 'completed');
-  await emit('step_complete', 4, 'Producer', '真实图片素材已生成', { count: pipeline.assets.images.length });
+  if (task.autoBorrowImage) {
+    const unresolved = missingScenes(artifact.scenes, pipeline.assets.images);
+    if (unresolved.length > 0 && pipeline.assets.images.length === 0) {
+      throw new Error('Automatic image borrowing requires at least one successful source image.');
+    }
+    for (const scene of artifact.scenes) {
+      if (pipeline.assets.images.some((asset) => asset.sceneId === scene.id)) continue;
+      const source = findBorrowSource(artifact.scenes, pipeline.assets.images, scene.id);
+      if (!source) {
+        throw new Error(`Automatic image borrowing could not find a usable source for scene ${scene.id}.`);
+      }
+      const borrowed = await materializeBorrowedImage(input.workDir, scene.id, source);
+      pipeline.assets.images = mergeAssets(pipeline.assets.images, [borrowed]);
+      await markStep(4, 'running', { outputPath: pipeline.assets.images.map((asset) => asset.path).join('\n') });
+      await emit('image_borrowed', 4, 'Producer', `第 ${scene.id} 张图片借用第 ${borrowed.borrowedFrom} 张`, {
+        sceneId: scene.id,
+        borrowedFrom: borrowed.borrowedFrom,
+        path: borrowed.path,
+      });
+    }
+  }
+  const unresolved = missingScenes(artifact.scenes, pipeline.assets.images);
+  if (unresolved.length > 0) {
+    throw new Error(`Image provider did not return usable assets for scenes: ${unresolved.map((scene) => scene.id).join(', ')}.`);
+  }
+  await markStep(4, 'completed', { outputPath: pipeline.assets.images.map((asset) => asset.path).join('\n'), error: undefined });
+  await emit('step_complete', 4, 'Producer', task.autoBorrowImage ? '真实图片素材与相邻镜头补位已完成' : '真实图片素材已生成', {
+    count: pipeline.assets.images.length,
+    borrowed: pipeline.assets.images.filter((asset) => asset.borrowedFrom !== undefined).length,
+  });
 }
 
 async function ensureNarration(input: {
@@ -2387,6 +2419,45 @@ function mergeAssets(existing: SceneAsset[], incoming: SceneAsset[]): SceneAsset
   for (const asset of existing) map.set(asset.sceneId, asset);
   for (const asset of incoming) map.set(asset.sceneId, asset);
   return [...map.values()].sort((a, b) => a.sceneId - b.sceneId);
+}
+
+function validateGeneratedSceneImages(scene: StoryboardScene, assets: SceneAsset[]): SceneAsset[] {
+  if (!Array.isArray(assets) || assets.length !== 1) {
+    throw new Error(`Image provider did not return exactly one image asset for scene ${scene.id}.`);
+  }
+  const asset = assets[0];
+  if (asset.sceneId !== scene.id || typeof asset.path !== 'string' || !asset.path.trim()) {
+    throw new Error(`Image provider returned an unusable image asset for scene ${scene.id}.`);
+  }
+  return [{ ...asset, borrowedFrom: undefined }];
+}
+
+function findBorrowSource(scenes: StoryboardScene[], assets: SceneAsset[], targetSceneId: number): SceneAsset | null {
+  const targetIndex = scenes.findIndex((scene) => scene.id === targetSceneId);
+  if (targetIndex < 0) return null;
+  const bySceneId = new Map(assets.map((asset) => [asset.sceneId, asset] as const));
+  for (let index = targetIndex - 1; index >= 0; index -= 1) {
+    const asset = bySceneId.get(scenes[index].id);
+    if (asset) return asset;
+  }
+  for (let index = targetIndex + 1; index < scenes.length; index += 1) {
+    const asset = bySceneId.get(scenes[index].id);
+    if (asset) return asset;
+  }
+  return null;
+}
+
+async function materializeBorrowedImage(workDir: string, sceneId: number, source: SceneAsset): Promise<SceneAsset> {
+  const extension = extname(source.path).toLowerCase() || '.png';
+  const outputDir = join(workDir, 'provider-images');
+  const path = join(outputDir, `${String(sceneId).padStart(3, '0')}${extension}`);
+  await mkdir(outputDir, { recursive: true });
+  await copyFile(source.path, path);
+  return {
+    sceneId,
+    path,
+    borrowedFrom: source.borrowedFrom ?? source.sceneId,
+  };
 }
 
 function upsertImageError(existing: TaskArtifactImageErrorPreview[], sceneId: number, message: string): TaskArtifactImageErrorPreview[] {
