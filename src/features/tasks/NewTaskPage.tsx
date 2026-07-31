@@ -230,6 +230,11 @@ export function NewTaskPage({
   const selectedMaterialAsset = personAssets.find((asset) => asset.name === materialPerson) ?? null;
   const isLocalMaterialInvalid = materialSource === 'local' && (!materialPerson || !selectedMaterialAsset || selectedMaterialAsset.count <= 0);
   const sourceText = mode === 'paste' ? inputText : researchCopy.trim() || `${aiKeyword}\n\n${extraRequirements}`;
+  const createTaskDisabled = running
+    || isBrowserPreview
+    || isLocalMaterialInvalid
+    || (coverImageMode === 'manual' && !manualCoverAsset)
+    || (mode === 'paste' ? inputText.trim().length === 0 : aiKeyword.trim().length === 0);
   const executionSceneCount = normalizeTaskStoryboardSceneCount(storyboardSceneCount)
     ?? storyboardScenePreviewRange?.target
     ?? null;
@@ -659,6 +664,10 @@ export function NewTaskPage({
     }, { onError: (error) => setDraftNotice(error.message) });
   }
 
+  function advanceStage() {
+    setActiveStage(activeStage === 'material' ? 'creative' : 'output');
+  }
+
   async function run() {
     if (isBrowserPreview) {
       setDraftNotice('浏览器预览不能执行真实流水线，请在 Electron 应用中运行任务。');
@@ -967,7 +976,15 @@ export function NewTaskPage({
 
           <footer className="new-task-stage-footer">
             <button type="button" className="ghost-action" disabled={activeStage === 'material'} onClick={() => setActiveStage(activeStage === 'output' ? 'creative' : 'material')}>上一步</button>
-            <button type="button" className="ghost-action" disabled={activeStage === 'output'} onClick={() => setActiveStage(activeStage === 'material' ? 'creative' : 'output')}>下一步</button>
+            <button
+              type="button"
+              className={activeStage === 'output' ? 'primary-action' : 'ghost-action'}
+              disabled={activeStage === 'output' ? createTaskDisabled : false}
+              onClick={activeStage === 'output' ? run : advanceStage}
+            >
+              {activeStage === 'output' ? <Play size={15} /> : null}
+              {activeStage === 'output' ? '开始创作' : '下一步'}
+            </button>
           </footer>
         </main>
 
@@ -989,7 +1006,7 @@ export function NewTaskPage({
             <span className={state.config.jianying.draftPath ? 'ready' : ''}><Check size={15} />剪映目录{state.config.jianying.draftPath ? '可写' : '未配置'}</span>
           </div>
           <div className="new-task-summary-actions">
-            <button type="button" className="primary-action" onClick={run} disabled={running || isBrowserPreview || isLocalMaterialInvalid || (coverImageMode === 'manual' && !manualCoverAsset) || (mode === 'paste' ? inputText.trim().length === 0 : aiKeyword.trim().length === 0)}>
+            <button type="button" className="primary-action" onClick={run} disabled={createTaskDisabled}>
               {running ? <Loader2 className="spin" size={17} /> : <Play size={17} />}{running ? '运行中' : '创建并开始任务'}
             </button>
             <div className="new-task-draft-actions">

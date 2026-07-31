@@ -51,14 +51,33 @@ describe('editorial task operations surfaces', () => {
     expect(workspaceRule).toContain('background: var(--media-bg);');
     expect(css).toMatch(/\.task-media-frame-accent \{[\s\S]*?background: var\(--media-accent\);/u);
     expect(css).toMatch(/\.task-media-progress i \{[\s\S]*?background: var\(--media-accent\);/u);
-    const artifactMediaStart = css.indexOf('.task-detail-shell[data-task-operations="detail"] .artifact-scene-list div,');
+    const artifactSurfaceStart = css.indexOf('.task-detail-shell[data-task-operations="detail"] .artifact-section {');
+    const artifactSurfaceRule = css.slice(artifactSurfaceStart, css.indexOf('}', artifactSurfaceStart) + 1);
+    expect(artifactSurfaceStart).toBeGreaterThan(-1);
+    expect(artifactSurfaceRule).toContain('background: var(--shell-surface-raised);');
+    expect(artifactSurfaceRule).toContain('color: var(--shell-text);');
+
+    const artifactOperationStart = css.indexOf('.task-detail-shell[data-task-operations="detail"] .artifact-text-block,');
+    const artifactOperationRule = css.slice(artifactOperationStart, css.indexOf('}', artifactOperationStart) + 1);
+    expect(artifactOperationStart).toBeGreaterThan(-1);
+    for (const selector of ['.artifact-source-list div', '.artifact-scene-list div', '.artifact-cover-grid div', '.artifact-path-list span', '.artifact-empty']) {
+      expect(artifactOperationRule, selector).toContain(selector);
+    }
+    expect(artifactOperationRule).toContain('background: var(--shell-surface);');
+    expect(artifactOperationRule).toContain('color: var(--shell-text);');
+    expect(css).toMatch(/\.task-detail-shell\[data-task-operations="detail"\] \.artifact-empty,[\s\S]*?color: var\(--shell-muted\);/u);
+
+    const artifactMediaStart = css.indexOf('.task-detail-shell[data-task-operations="detail"] .image-preview-card,');
     const artifactMediaRule = css.slice(artifactMediaStart, css.indexOf('}', artifactMediaStart) + 1);
     expect(artifactMediaStart).toBeGreaterThan(-1);
+    expect(artifactMediaRule).toContain('.artifact-image-card');
     expect(artifactMediaRule).toContain('--text: var(--media-text);');
     expect(artifactMediaRule).toContain('--muted: var(--media-muted);');
     expect(artifactMediaRule).toContain('--panel-2: var(--media-surface);');
     expect(artifactMediaRule).toContain('--line: var(--media-border);');
     expect(artifactMediaRule).toContain('color: var(--media-text);');
+    expect(artifactMediaRule).not.toContain('.artifact-source-list');
+    expect(artifactMediaRule).not.toContain('.artifact-scene-list');
   });
 
   it('keeps history governance in a flat responsive table', async () => {

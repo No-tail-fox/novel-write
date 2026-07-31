@@ -993,16 +993,55 @@
   margin-top: 0;
 }
 
-.task-detail-shell[data-task-operations="detail"] .artifact-scene-list div,
+.task-detail-shell[data-task-operations="detail"] .artifact-section {
+  --text: var(--shell-text);
+  --muted: var(--shell-muted);
+  --panel-2: var(--shell-surface);
+  --line: var(--shell-border);
+  border-color: var(--shell-border);
+  background: var(--shell-surface-raised);
+  color: var(--shell-text);
+}
+
+.task-detail-shell[data-task-operations="detail"] .artifact-text-block,
 .task-detail-shell[data-task-operations="detail"] .artifact-source-list div,
-.task-detail-shell[data-task-operations="detail"] .artifact-path-list span,
+.task-detail-shell[data-task-operations="detail"] .artifact-scene-list div,
 .task-detail-shell[data-task-operations="detail"] .artifact-cover-grid div,
+.task-detail-shell[data-task-operations="detail"] .artifact-path-list span,
 .task-detail-shell[data-task-operations="detail"] .image-generation-toolbar span,
-.task-detail-shell[data-task-operations="detail"] .image-preview-card {
+.task-detail-shell[data-task-operations="detail"] .narration-preview-card,
+.task-detail-shell[data-task-operations="detail"] .narration-player.loading,
+.task-detail-shell[data-task-operations="detail"] .narration-player.error,
+.task-detail-shell[data-task-operations="detail"] .artifact-empty {
+  border-color: var(--shell-border);
+  background: var(--shell-surface);
+  color: var(--shell-text);
+}
+
+.task-detail-shell[data-task-operations="detail"] .artifact-source-list p,
+.task-detail-shell[data-task-operations="detail"] .artifact-scene-list p,
+.task-detail-shell[data-task-operations="detail"] .artifact-cover-grid p,
+.task-detail-shell[data-task-operations="detail"] .narration-preview-card p {
+  color: var(--shell-text);
+}
+
+.task-detail-shell[data-task-operations="detail"] .artifact-empty,
+.task-detail-shell[data-task-operations="detail"] .narration-player.loading {
+  color: var(--shell-muted);
+}
+
+.task-detail-shell[data-task-operations="detail"] .narration-player.error {
+  color: var(--danger);
+}
+
+.task-detail-shell[data-task-operations="detail"] .image-preview-card,
+.task-detail-shell[data-task-operations="detail"] .artifact-image-card {
   --text: var(--media-text);
   --muted: var(--media-muted);
   --panel-2: var(--media-surface);
   --line: var(--media-border);
+  border-color: var(--media-border);
+  background: var(--media-surface);
   color: var(--media-text);
 }
 

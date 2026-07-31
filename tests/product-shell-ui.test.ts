@@ -984,7 +984,9 @@ describe('product shell ui', () => {
       'api.createAndRunTask',
       '请先选择人物素材。',
       '所选人物素材至少导入 1 张图片后才能创建任务。',
-      'disabled={running || isBrowserPreview || isLocalMaterialInvalid || (coverImageMode === \'manual\' && !manualCoverAsset) || (mode === \'paste\' ? inputText.trim().length === 0 : aiKeyword.trim().length === 0)}',
+      'const createTaskDisabled = running',
+      'disabled={createTaskDisabled}',
+      "disabled={activeStage === 'output' ? createTaskDisabled : false}",
       'catch (error)',
       'error instanceof Error ? error.message : String(error)',
     ]) {

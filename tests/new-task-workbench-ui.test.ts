@@ -23,6 +23,20 @@ describe('three-stage new task workbench', () => {
     expect(page).toContain('草稿模板');
   });
 
+  it('turns the third-stage next action into the existing creation command', async () => {
+    const page = await readFile(new URL('../src/features/tasks/NewTaskPage.tsx', import.meta.url), 'utf8');
+    const footer = page.slice(page.indexOf('<footer className="new-task-stage-footer">'), page.indexOf('</footer>', page.indexOf('<footer className="new-task-stage-footer">')));
+
+    expect(page).toContain('const createTaskDisabled =');
+    expect(footer).toContain("className={activeStage === 'output' ? 'primary-action' : 'ghost-action'}");
+    expect(footer).toContain("onClick={activeStage === 'output' ? run : advanceStage}");
+    expect(footer).toContain("disabled={activeStage === 'output' ? createTaskDisabled : false}");
+    expect(footer).toContain("{activeStage === 'output' ? '开始创作' : '下一步'}");
+    expect(page.match(/onClick=\{run\}/gu)).toHaveLength(1);
+    expect(page.match(/disabled=\{createTaskDisabled\}/gu)).toHaveLength(1);
+    expect(page).toContain('api.createAndRunTask(buildTaskCreateInput({');
+  });
+
   it('keeps the accepted open desktop geometry and compact summary stacking', async () => {
     const css = await readFile(new URL('../src/styles/features/new-task.css', import.meta.url), 'utf8');
 
@@ -36,6 +50,7 @@ describe('three-stage new task workbench', () => {
     expect(css).not.toContain('var(--shell-surface-muted)');
     expect(css).not.toMatch(/font-size:\s*clamp\(/u);
     expect(css).toContain('.new-task-summary-actions > .primary-action:disabled');
+    expect(css).toContain('.new-task-stage-footer > .primary-action:disabled');
     expect(css).toContain('background: var(--shell-border);');
     expect(css).toContain('cursor: not-allowed;');
   });

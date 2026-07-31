@@ -358,6 +358,11 @@
   border-top: 1px solid var(--shell-border);
 }
 
+.new-task-stage-footer > .primary-action {
+  min-height: 30px;
+  justify-content: center;
+}
+
 .new-task-editor .ghost-action,
 .new-task-summary .ghost-action {
   min-height: 30px;
@@ -518,7 +523,9 @@
 }
 
 .new-task-summary-actions > .primary-action:disabled,
-.new-task-summary-actions > .primary-action:disabled:hover {
+.new-task-summary-actions > .primary-action:disabled:hover,
+.new-task-stage-footer > .primary-action:disabled,
+.new-task-stage-footer > .primary-action:disabled:hover {
   background: var(--shell-border);
   color: var(--shell-muted);
   box-shadow: none;
