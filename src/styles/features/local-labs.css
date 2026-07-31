@@ -348,6 +348,10 @@
   color: var(--shell-muted);
 }
 
+.voice-lab-history > .empty-state {
+  min-height: calc(100% - 58px);
+}
+
 .voice-record {
   border-color: var(--shell-border);
   border-radius: 4px;
@@ -596,6 +600,10 @@
 .image-lab-recent .empty-state {
   min-height: 180px;
   color: var(--shell-muted);
+}
+
+.image-lab-recent > .empty-state {
+  min-height: calc(100% - 54px);
 }
 
 .image-lab-recent .image-grid-panel {

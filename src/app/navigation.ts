@@ -35,11 +35,11 @@ export interface NavigationGroup {
 export const newTaskPrimaryAction: NavigationItem = { view: 'new-task', label: '新建任务', hint: '素材成片', icon: Plus };
 
 export const productionNavItems: NavigationItem[] = [
+  { view: 'queue', label: '任务队列', hint: '运行进度', icon: ListChecks },
+  { view: 'history', label: '历史任务', hint: '本地记录', icon: History },
   { view: 'book-selection', label: '选品助手', hint: '商品卖点', icon: BookOpen },
   { view: 'benchmark', label: '对标导入', hint: '文案二改', icon: Radar },
   { view: 'person-assets', label: '人物素材库', hint: '真图分镜', icon: Images },
-  { view: 'queue', label: '任务队列', hint: '运行进度', icon: ListChecks },
-  { view: 'history', label: '历史任务', hint: '本地记录', icon: History },
 ];
 
 export const assetLabNavItems: NavigationItem[] = [

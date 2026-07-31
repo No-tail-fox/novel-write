@@ -1014,6 +1014,24 @@ describe('product shell ui', () => {
     expect(css).toContain('display: none;');
   });
 
+  it('uses the stronger accent token for readable active navigation text', async () => {
+    const css = await readFile(new URL('../src/styles/shell.css', import.meta.url), 'utf8');
+    const activeNavigation = css.match(
+      /\.app-shell\[data-editorial-shell\] \.nav-item\.active,[\s\S]*?\}/u,
+    )?.[0] ?? '';
+
+    expect(activeNavigation).toContain('color: var(--shell-accent-strong);');
+    expect(activeNavigation).not.toContain('color: var(--shell-accent);');
+  });
+
+  it('uses an accessible icon-library grip for provider profile cards', async () => {
+    const source = (await rendererSourcesPromise).requiredFile('src/features/settings/ProviderProfileManagers.tsx');
+
+    expect(source).toContain('GripVertical');
+    expect(source).toContain('<GripVertical aria-hidden="true" className="profile-drag-dot" />');
+    expect(source).not.toContain('⋮⋮');
+  });
+
   it('shows the whole sidebar menu and lets the lower task area shrink instead', async () => {
     const css = await readFile(new URL('../src/styles.css', import.meta.url), 'utf8');
     const navListBlock = css.match(/\.nav-list\s*\{[^}]+\}/)?.[0] ?? '';
@@ -3165,6 +3183,8 @@ describe('product shell ui', () => {
     const errorSummaryRule = css.slice(errorSummaryStart, css.indexOf('}', errorSummaryStart) + 1);
     const inlineFeedbackStart = css.indexOf('.inline-action-feedback {');
     const inlineFeedbackRule = css.slice(inlineFeedbackStart, css.indexOf('}', inlineFeedbackStart) + 1);
+    const errorDialogStart = css.indexOf('.error-dialog {');
+    const errorDialogRule = css.slice(errorDialogStart, css.indexOf('}', errorDialogStart) + 1);
     expect(errorSummaryRule).toContain('color: var(--danger);');
     expect(errorSummaryRule).toContain('background: color-mix(in srgb, var(--danger) 8%, var(--shell-surface-raised));');
     expect(errorSummaryRule).toContain('border: 1px solid color-mix(in srgb, var(--danger) 36%, var(--shell-border));');
@@ -3172,6 +3192,57 @@ describe('product shell ui', () => {
     expect(inlineFeedbackRule).toContain('background: color-mix(in srgb, var(--danger) 8%, var(--shell-surface-raised));');
     expect(errorSummaryRule).not.toContain('#ffd7d8');
     expect(inlineFeedbackRule).not.toContain('#ffd7d8');
+    expect(errorDialogRule).toContain('color: var(--media-text);');
+    expect(css).toContain('section.error-dialog .error-dialog-head > div > strong {');
+    expect(css).toContain('.error-dialog-head .mini-button {');
+    expect(css).toContain('.error-summary-button .error-mark {');
+    expect(css).toContain('.error-dialog .error-mark {');
+  });
+
+  it('wraps the task-detail identity and actions before controls can leave the viewport', async () => {
+    const css = await readFile(new URL('../src/styles/features/task-operations.css', import.meta.url), 'utf8');
+    const barStart = css.indexOf('.task-detail-shell[data-task-operations="detail"] .task-detail-bar {');
+    const barRule = css.slice(barStart, css.indexOf('}', barStart) + 1);
+    const identityStart = css.indexOf('.task-detail-identity {', barStart);
+    const identityRule = css.slice(identityStart, css.indexOf('}', identityStart) + 1);
+    const actionsStart = css.indexOf('.task-detail-actions {', identityStart);
+    const actionsRule = css.slice(actionsStart, css.indexOf('}', actionsStart) + 1);
+
+    expect(barRule).toContain('flex-wrap: wrap;');
+    expect(identityRule).toContain('flex: 1 1 560px;');
+    expect(actionsRule).toContain('flex-wrap: wrap;');
+    expect(actionsRule).toContain('justify-content: flex-end;');
+  });
+
+  it('keeps shared operational controls theme-owned across every shell surface', async () => {
+    const css = await readFile(new URL('../src/styles.css', import.meta.url), 'utf8');
+    const labs = await readFile(new URL('../src/styles/features/local-labs.css', import.meta.url), 'utf8');
+
+    const scrollbarRule = css.slice(css.indexOf('* {\n  scrollbar-width:'), css.indexOf('.source-textarea {'));
+    const iconButtonStart = css.lastIndexOf('\n.icon-button {') + 1;
+    const iconButtonRule = css.slice(iconButtonStart, css.indexOf('}', iconButtonStart) + 1);
+    const emptyStateStart = css.indexOf('.empty-state {');
+    const emptyStateRule = css.slice(emptyStateStart, css.indexOf('}', emptyStateStart) + 1);
+    const statusPillStart = css.indexOf('.status-pill {');
+    const statusPillRule = css.slice(statusPillStart, css.indexOf('}', statusPillStart) + 1);
+
+    expect(scrollbarRule).toContain('scrollbar-color: color-mix(in srgb, var(--shell-muted) 58%, transparent) var(--shell-surface);');
+    expect(scrollbarRule).toContain('background: var(--shell-surface);');
+    expect(iconButtonRule).toContain('background: var(--shell-surface-raised);');
+    expect(iconButtonRule).toContain('color: var(--shell-muted);');
+    expect(css).toContain('.icon-button:hover:not(:disabled) {');
+    expect(css).toContain('input:hover:not(:disabled)');
+    expect(css).toContain('.option-pill:hover:not(:disabled)');
+    expect(emptyStateRule).toContain('background: color-mix(in srgb, var(--shell-muted) 4%, var(--shell-surface-raised));');
+    expect(css).toContain('.empty-state > svg {');
+    expect(statusPillRule).toContain('background: color-mix(in srgb, var(--shell-muted) 10%, var(--shell-surface-raised));');
+    expect(css).toMatch(/\.ai-search-results \{[\s\S]*?background: var\(--shell-surface-raised\);/u);
+    expect(css).toMatch(/\.search-source-card \{[\s\S]*?background: var\(--shell-surface\);/u);
+    expect(css).toMatch(/\.search-source-card p \{[\s\S]*?color: var\(--shell-text\);/u);
+    expect(css).toContain(".app-shell[data-shell-view='account'] .account-panel {");
+    expect(css).toContain(".app-shell[data-shell-view='activation'] .two-column {");
+    expect(labs).toContain('.voice-lab-history > .empty-state {');
+    expect(labs).toContain('.image-lab-recent > .empty-state {');
   });
 
   it('lets AI creation search real web sources and select them for generation', async () => {

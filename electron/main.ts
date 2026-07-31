@@ -301,6 +301,12 @@ async function seedTaskOperationsEditorialQa(database: FileDatabase, dataDir: st
     retryFromStep: 1,
     errorMessage: 'HTML video planning step failed',
   });
+  await database.addTaskEvent(failed.id, {
+    type: 'step_error',
+    step: 1,
+    agent: 'Planner',
+    detail: 'HTML video planning step failed',
+  });
 
   const running = await createFixture('武则天：从深宫才人到一代女皇');
   const fixtureRoot = join(dataDir, 'qa-task-operations', 'running-task');

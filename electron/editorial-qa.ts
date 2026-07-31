@@ -54,6 +54,7 @@ export const editorialQaMatrix = {
     { id: 'history-operations-desktop', view: 'history', theme: 'light', viewport: 'desktop' },
     { id: 'task-detail-operations-desktop', view: 'task-detail', theme: 'light', viewport: 'desktop' },
     { id: 'task-detail-borrowed-image-desktop', view: 'task-detail', theme: 'light', viewport: 'desktop' },
+    { id: 'task-detail-error-dialog-compact', view: 'task-detail', theme: 'light', viewport: 'compact' },
     { id: 'history-operations-compact', view: 'history', theme: 'light', viewport: 'compact' },
   ],
   htmlVideoStudioStates: [
@@ -179,10 +180,13 @@ export async function captureEditorialQa(
     if (captureCase.id === 'history-operations-desktop' && (!state.deleteDialogFocusWrapped || !state.deleteDialogEscapeRestored)) {
       throw new Error('Editorial QA history delete-dialog keyboard lifecycle failed.');
     }
+    if (captureCase.id === 'task-detail-error-dialog-compact' && !state.errorDialogOpen) {
+      throw new Error('Editorial QA failed-task error dialog did not remain open and fully visible.');
+    }
     if (captureCase.view === 'history' && state.historyHtmlTypeLabel !== 'HTML 动画') {
       throw new Error(`Editorial QA History HTML type label failed in ${captureCase.id}: ${state.historyHtmlTypeLabel}.`);
     }
-    if (captureCase.view === 'task-detail' && state.borrowedImageLabel !== '借 #1') {
+    if (captureCase.view === 'task-detail' && captureCase.id !== 'task-detail-error-dialog-compact' && state.borrowedImageLabel !== '借 #1') {
       throw new Error(`Editorial QA borrowed-image label failed in ${captureCase.id}: ${state.borrowedImageLabel}.`);
     }
     if (captureCase.view === 'prompt-templates' && captureCase.theme === 'light' && viewport.name === 'desktop' && state.promptTemplateEditorOpen !== true) {
@@ -259,6 +263,7 @@ export async function captureEditorialQa(
       presetStatePreserved: state.presetStatePreserved,
       autoBorrowImageStatePreserved: state.autoBorrowImageStatePreserved,
       borrowedImageLabel: state.borrowedImageLabel,
+      errorDialogOpen: state.errorDialogOpen,
       deleteDialogFocusWrapped: state.deleteDialogFocusWrapped,
       deleteDialogEscapeRestored: state.deleteDialogEscapeRestored,
     });
@@ -399,6 +404,7 @@ export interface EditorialQaCapture {
   presetStatePreserved: boolean;
   autoBorrowImageStatePreserved: boolean;
   borrowedImageLabel: string;
+  errorDialogOpen: boolean;
   deleteDialogFocusWrapped: boolean;
   deleteDialogEscapeRestored: boolean;
 }
@@ -432,6 +438,7 @@ interface QaScenarioState {
   presetStatePreserved: boolean;
   autoBorrowImageStatePreserved: boolean;
   borrowedImageLabel: string;
+  errorDialogOpen: boolean;
   manualCover: {
     state: string;
     importVisible: boolean;
@@ -525,7 +532,7 @@ export function editorialQaCaptureIdsByRequirement(requirement: EditorialQaCaptu
   for (const captureCase of editorialQaMatrix.newTaskStates) requiredIds.add(captureCase.id);
 
   const classified = allIds.filter((id) => requirement === 'required' ? requiredIds.has(id) : !requiredIds.has(id));
-  if (requiredIds.size !== 67 || allIds.length - requiredIds.size !== 22) {
+  if (requiredIds.size !== 67 || allIds.length - requiredIds.size !== 23) {
     throw new Error(`Editorial QA canonical classification drifted: ${requiredIds.size} required of ${allIds.length}.`);
   }
   return classified;
@@ -673,19 +680,23 @@ function qaScenarioScript(id: string, view: string, theme: string, stage?: strin
     if (nav instanceof HTMLButtonElement) nav.click();
     if (targetView === 'task-detail') {
       await waitFor(() => document.querySelector('[data-task-operations="queue"]'));
+      const detailTitle = scenarioId === 'task-detail-error-dialog-compact'
+        ? 'QA 浅色错误提示'
+        : '武则天：从深宫才人到一代女皇';
       const detailRow = [...document.querySelectorAll('.task-queue-row')]
-        .find((row) => row.textContent?.includes('武则天：从深宫才人到一代女皇'));
+        .find((row) => row.textContent?.includes(detailTitle));
       if (detailRow instanceof HTMLElement) detailRow.click();
     }
     let ready = initialShellReady && themeReady && await waitFor(() => document.querySelector('.app-shell')
       && document.documentElement.dataset.themeReady === 'true'
       && document.querySelector('[data-shell-view="' + targetView + '"]'));
-    if (targetView === 'task-detail') {
+    if (targetView === 'task-detail' && scenarioId !== 'task-detail-error-dialog-compact') {
       ready = ready && await waitFor(() => [...document.querySelectorAll('.image-preview-title span')]
         .some((element) => element.textContent?.trim() === '借 #1'));
     }
     let deleteDialogFocusWrapped = scenarioId !== 'history-operations-desktop';
     let deleteDialogEscapeRestored = scenarioId !== 'history-operations-desktop';
+    let errorDialogOpen = false;
     if (scenarioId === 'queue-operations-desktop') {
       const latestQueueTitle = document.querySelector('.task-queue-row strong')?.textContent?.trim() ?? '';
       ready = ready && await waitFor(() => {
@@ -709,6 +720,32 @@ function qaScenarioScript(id: string, view: string, theme: string, stage?: strin
         if (closeButton instanceof HTMLButtonElement) closeButton.click();
         ready = ready && await waitFor(() => !document.querySelector('.error-dialog'));
       }
+    }
+    if (scenarioId === 'task-detail-error-dialog-compact') {
+      let errorSummary = null;
+      const errorSummaryReady = await waitFor(() => {
+        const candidate = document.querySelector('.task-detail-shell .error-summary-button');
+        if (!(candidate instanceof HTMLButtonElement)) return false;
+        errorSummary = candidate;
+        return true;
+      });
+      ready = ready && errorSummaryReady;
+      if (errorSummary instanceof HTMLButtonElement) errorSummary.click();
+      const errorDialogReady = await waitFor(() => {
+        const dialog = document.querySelector('.error-dialog');
+        const title = dialog?.querySelector('.error-dialog-head strong');
+        const closeButton = dialog?.querySelector('.error-dialog-head .mini-button');
+        if (!(dialog instanceof HTMLElement) || !(title instanceof HTMLElement) || !(closeButton instanceof HTMLButtonElement)) return false;
+        const rect = dialog.getBoundingClientRect();
+        return dialog.textContent?.includes('HTML video planning step failed') === true
+          && title.textContent?.trim().length > 0
+          && rect.left >= 0
+          && rect.top >= 0
+          && rect.right <= window.innerWidth
+          && rect.bottom <= window.innerHeight;
+      });
+      ready = ready && errorDialogReady;
+      errorDialogOpen = errorDialogReady && Boolean(document.querySelector('.error-dialog'));
     }
     if (scenarioId === 'history-operations-desktop') {
       const archiveGroup = document.querySelector('[role="group"][aria-label="记录范围"]');
@@ -1111,7 +1148,21 @@ function qaScenarioScript(id: string, view: string, theme: string, stage?: strin
       for (const layer of layers.reverse()) result = compositeColor(layer, result);
       return result;
     };
-    const textContrastSamples = [...document.querySelectorAll('h1, h2, h3, h4, p, span, small, strong, label, button, a, input, select, textarea, summary, td, th, li')]
+    const activeModal = [...document.querySelectorAll('[aria-modal="true"]')].find((element) => {
+      const style = getComputedStyle(element);
+      const rect = element.getBoundingClientRect();
+      return style.display !== 'none'
+        && style.visibility !== 'hidden'
+        && Number(style.opacity) > 0
+        && rect.width > 0
+        && rect.height > 0
+        && rect.right > 0
+        && rect.bottom > 0
+        && rect.left < window.innerWidth
+        && rect.top < window.innerHeight;
+    });
+    const evidenceRoot = activeModal ?? document;
+    const textContrastSamples = [...evidenceRoot.querySelectorAll('h1, h2, h3, h4, p, span, small, strong, label, button, a, input, select, textarea, summary, td, th, li')]
       .filter((element) => {
         if (!visibleElement(element) || element.matches(':disabled, [aria-disabled="true"]')) return false;
         const directText = [...element.childNodes].some((node) => node.nodeType === Node.TEXT_NODE && node.textContent?.trim());
@@ -1145,7 +1196,7 @@ function qaScenarioScript(id: string, view: string, theme: string, stage?: strin
     const focusContrastFailures = focusContrastSamples
       .filter(({ contrastRatio }) => contrastRatio < 3)
       .map(({ label, contrastRatio }) => label + ' (' + contrastRatio + ':1)');
-    const interactiveElements = [...document.querySelectorAll('button, a[href], input, select, textarea, summary, [role="button"], [tabindex]:not([tabindex="-1"])')]
+    const interactiveElements = [...evidenceRoot.querySelectorAll('button, a[href], input, select, textarea, summary, [role="button"], [tabindex]:not([tabindex="-1"])')]
       .filter((element) => visibleElement(element) && !element.matches(':disabled, [aria-disabled="true"]'));
     const iconOnlyElements = interactiveElements.filter((element) => {
       const text = element.textContent?.replace(/\\s+/g, ' ').trim() ?? '';
@@ -1351,6 +1402,7 @@ function qaScenarioScript(id: string, view: string, theme: string, stage?: strin
       presetStatePreserved,
       autoBorrowImageStatePreserved,
       borrowedImageLabel,
+      errorDialogOpen,
       deleteDialogFocusWrapped,
       deleteDialogEscapeRestored,
       manualCover: {

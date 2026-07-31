@@ -73,7 +73,7 @@
 .app-shell[data-editorial-shell] .nav-item.active,
 .app-shell[data-editorial-shell] .nav-item:hover {
   background: color-mix(in srgb, var(--shell-accent) 10%, transparent);
-  color: var(--shell-accent);
+  color: var(--shell-accent-strong);
 }
 
 .app-shell[data-editorial-shell] .nav-item.active::before {

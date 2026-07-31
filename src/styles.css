@@ -1231,7 +1231,7 @@ h2 {
   padding: 10px;
   border: 1px solid var(--line);
   border-radius: 8px;
-  background: #0b1118;
+  background: var(--shell-surface-raised);
   box-shadow: var(--shadow);
 }
 
@@ -1419,6 +1419,19 @@ textarea {
   background: var(--surface-ink);
   color: var(--text);
   outline: none;
+  transition: border-color 140ms ease, background-color 140ms ease, box-shadow 140ms ease;
+}
+
+input::placeholder,
+textarea::placeholder {
+  color: var(--shell-muted);
+  opacity: 0.78;
+}
+
+input:hover:not(:disabled),
+select:hover:not(:disabled),
+textarea:hover:not(:disabled) {
+  border-color: color-mix(in srgb, var(--shell-muted) 54%, var(--shell-border));
 }
 
 input[type='checkbox'] {
@@ -1453,7 +1466,7 @@ textarea {
 
 * {
   scrollbar-width: thin;
-  scrollbar-color: #5f6b78 #0b1016;
+  scrollbar-color: color-mix(in srgb, var(--shell-muted) 58%, transparent) var(--shell-surface);
 }
 
 *::-webkit-scrollbar {
@@ -1462,18 +1475,18 @@ textarea {
 }
 
 *::-webkit-scrollbar-track {
-  background: #0b1016;
+  background: var(--shell-surface);
   border-radius: 999px;
 }
 
 *::-webkit-scrollbar-thumb {
-  background: #5f6b78;
-  border: 2px solid #0b1016;
+  background: color-mix(in srgb, var(--shell-muted) 58%, transparent);
+  border: 2px solid var(--shell-surface);
   border-radius: 999px;
 }
 
 *::-webkit-scrollbar-thumb:hover {
-  background: #7b8796;
+  background: var(--shell-muted);
 }
 
 .source-textarea {
@@ -1621,6 +1634,7 @@ textarea {
 .option-pill {
   min-height: 36px;
   padding: 8px 12px;
+  transition: border-color 140ms ease, background-color 140ms ease, color 140ms ease;
 }
 
 .chip,
@@ -1633,6 +1647,30 @@ textarea {
   padding: 0 11px;
   background: var(--panel-2);
   color: var(--text);
+  transition: border-color 140ms ease, background-color 140ms ease, color 140ms ease;
+}
+
+.option-pill:hover:not(:disabled),
+.chip:hover:not(:disabled),
+.ghost-action:hover:not(:disabled),
+.mini-button:hover:not(:disabled) {
+  border-color: color-mix(in srgb, var(--shell-focus) 38%, var(--shell-border));
+  background: color-mix(in srgb, var(--shell-focus) 6%, var(--shell-surface-raised));
+  color: var(--shell-text);
+}
+
+.danger-action:hover:not(:disabled) {
+  border-color: color-mix(in srgb, var(--danger) 54%, var(--shell-border));
+  background: color-mix(in srgb, var(--danger) 8%, var(--shell-surface-raised));
+  color: var(--danger);
+}
+
+.option-pill:disabled,
+.chip:disabled,
+.ghost-action:disabled,
+.danger-action:disabled,
+.mini-button:disabled {
+  opacity: 0.5;
 }
 
 .danger-action {
@@ -2069,11 +2107,15 @@ textarea {
   line-height: 1;
 }
 
-.task-row .error-summary-button span,
-.pipeline-step .error-summary-button span {
+.task-row .error-summary-button > span:last-child,
+.pipeline-step .error-summary-button > span:last-child {
   display: inline-grid;
   margin-top: 0;
   color: inherit;
+}
+
+.error-summary-button .error-mark {
+  color: var(--shell-focus-contrast);
 }
 
 .error-dialog-backdrop {
@@ -2087,6 +2129,12 @@ textarea {
 }
 
 .error-dialog {
+  --text: var(--media-text);
+  --muted: var(--media-muted);
+  --line: var(--media-border);
+  --shell-text: var(--media-text);
+  --shell-muted: var(--media-muted);
+  --shell-border: var(--media-border);
   display: grid;
   gap: 12px;
   width: min(680px, calc(100vw - 36px));
@@ -2095,6 +2143,7 @@ textarea {
   border: 1px solid #513238;
   border-radius: 8px;
   background: #11151b;
+  color: var(--media-text);
   box-shadow: 0 24px 70px rgba(0, 0, 0, 0.5);
 }
 
@@ -2106,13 +2155,40 @@ textarea {
 }
 
 .error-dialog-head > div {
+  min-width: 0;
   display: inline-flex;
+  flex: 1 1 auto;
   align-items: center;
   gap: 8px;
 }
 
+section.error-dialog .error-dialog-head > div > strong {
+  display: block;
+  min-width: 0;
+  color: var(--media-text);
+  overflow: visible;
+  text-overflow: clip;
+  overflow-wrap: anywhere;
+  white-space: normal;
+}
+
+.error-dialog .error-mark {
+  display: inline-grid;
+  margin-top: 0;
+  color: var(--shell-focus-contrast);
+}
+
+.error-dialog-head .mini-button {
+  flex: 0 0 auto;
+  border-color: var(--media-border);
+  background: var(--media-surface);
+  color: var(--media-text);
+}
+
 .error-dialog p {
+  margin: 0;
   color: #ffd7d8;
+  overflow-wrap: anywhere;
 }
 
 .error-dialog pre {
@@ -2120,7 +2196,7 @@ textarea {
   overflow: auto;
   margin: 0;
   padding: 12px;
-  border: 1px solid var(--line);
+  border: 1px solid var(--media-border);
   border-radius: 7px;
   background: #080c12;
   color: #dce7f4;
@@ -2204,9 +2280,9 @@ textarea {
 
 .clickable:hover,
 .clickable:focus-visible {
-  border-color: #3a4b58;
+  border-color: color-mix(in srgb, var(--shell-focus) 32%, var(--shell-border));
   outline: none;
-  background: #182028;
+  background: color-mix(in srgb, var(--shell-focus) 6%, var(--shell-surface-raised));
 }
 
 .table-row-primary-action {
@@ -2327,7 +2403,15 @@ textarea {
   height: 28px;
   border: 1px solid var(--line);
   border-radius: 6px;
-  background: #0e141b;
+  background: var(--shell-surface-raised);
+  color: var(--shell-muted);
+  transition: border-color 140ms ease, background-color 140ms ease, color 140ms ease;
+}
+
+.icon-button:hover:not(:disabled) {
+  border-color: color-mix(in srgb, var(--shell-focus) 38%, var(--shell-border));
+  background: color-mix(in srgb, var(--shell-focus) 6%, var(--shell-surface-raised));
+  color: var(--shell-text);
 }
 
 .task-metrics {
@@ -3041,29 +3125,29 @@ textarea {
   min-width: 66px;
   border-radius: 99px;
   padding: 0 10px;
-  background: #26303b;
+  background: color-mix(in srgb, var(--shell-muted) 10%, var(--shell-surface-raised));
   color: var(--muted);
 }
 
 .status-pill.completed {
-  background: #0f3327;
+  background: color-mix(in srgb, var(--ok) 10%, var(--shell-surface-raised));
   color: var(--ok);
 }
 
 .status-pill.running {
-  background: #102d3b;
-  color: var(--accent-2);
+  background: color-mix(in srgb, var(--shell-focus) 10%, var(--shell-surface-raised));
+  color: var(--shell-accent-strong);
 }
 
 .status-pill.failed,
 .status-pill.cancelled {
-  background: #3a171d;
+  background: color-mix(in srgb, var(--danger) 10%, var(--shell-surface-raised));
   color: var(--danger);
 }
 
 .status-pill.paused,
 .status-pill.draft {
-  background: #342b16;
+  background: color-mix(in srgb, var(--warn) 10%, var(--shell-surface-raised));
   color: var(--warn);
 }
 
@@ -4521,9 +4605,11 @@ textarea {
 }
 
 .profile-drag-dot {
-  color: #5c6878;
-  letter-spacing: -2px;
-  writing-mode: vertical-rl;
+  display: block;
+  width: 16px;
+  height: 16px;
+  flex: none;
+  color: var(--shell-muted);
 }
 
 .profile-avatar {
@@ -4688,7 +4774,7 @@ textarea {
   border: 1px solid var(--line);
   border-radius: 8px;
   padding: 12px;
-  background: #0b1016;
+  background: var(--shell-surface-raised);
 }
 
 .ai-search-results-scroll {
@@ -4712,7 +4798,7 @@ textarea {
   border: 1px solid var(--line);
   border-radius: 7px;
   padding: 10px;
-  background: #10161d;
+  background: var(--shell-surface);
 }
 
 .search-source-card strong,
@@ -4730,7 +4816,7 @@ textarea {
 
 .search-source-card p {
   margin: 8px 0 0;
-  color: #c9d5e4;
+  color: var(--shell-text);
   line-height: 1.5;
 }
 
@@ -4760,9 +4846,39 @@ textarea {
   place-items: center;
   min-height: 120px;
   gap: 8px;
+  padding: 20px;
   color: var(--muted);
-  border: 1px dashed var(--line);
+  border: 1px dashed color-mix(in srgb, var(--shell-muted) 36%, var(--shell-border));
   border-radius: 8px;
+  background: color-mix(in srgb, var(--shell-muted) 4%, var(--shell-surface-raised));
+  text-align: center;
+}
+
+.empty-state > svg {
+  width: 40px;
+  height: 40px;
+  padding: 9px;
+  border: 1px solid color-mix(in srgb, var(--shell-focus) 28%, var(--shell-border));
+  border-radius: 8px;
+  background: color-mix(in srgb, var(--shell-focus) 7%, var(--shell-surface-raised));
+  color: var(--shell-accent-strong);
+}
+
+.empty-state > span {
+  color: var(--shell-text);
+  font-weight: 600;
+}
+
+.empty-state > small {
+  max-width: 44ch;
+  color: var(--shell-muted);
+  line-height: 1.5;
+}
+
+.empty-state.error > svg {
+  border-color: color-mix(in srgb, var(--danger) 34%, var(--shell-border));
+  background: color-mix(in srgb, var(--danger) 8%, var(--shell-surface-raised));
+  color: var(--danger);
 }
 
 .spin {
@@ -5425,4 +5541,16 @@ textarea {
   .minimax-clone-voice-editor-actions {
     grid-column: 1;
   }
+}
+
+.app-shell[data-shell-view='account'] .account-panel {
+  align-self: start;
+  justify-self: start;
+  width: min(920px, calc(100% - 52px));
+  margin: 20px 26px;
+}
+
+.app-shell[data-shell-view='activation'] .two-column {
+  align-content: start;
+  align-items: start;
 }

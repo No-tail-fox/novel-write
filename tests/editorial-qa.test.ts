@@ -36,11 +36,11 @@ describe('editorial Electron QA configuration', () => {
 
   it('defines the exact completed capture count for every QA scope', () => {
     expect(Object.fromEntries(editorialQaScopes.map((scope) => [scope, editorialQaExpectedCaptureCount(scope)]))).toEqual({
-      all: 89,
+      all: 90,
       'theme-smoke': 4,
       shell: 4,
       'new-task': 4,
-      'task-operations': 5,
+      'task-operations': 6,
       'html-video': 2,
       'clone-voice': 4,
       'volcengine-tts': 2,
@@ -54,13 +54,13 @@ describe('editorial Electron QA configuration', () => {
     }
   });
 
-  it('classifies the canonical 67 required captures separately from 22 supplemental states', () => {
+  it('classifies the canonical 67 required captures separately from 23 supplemental states', () => {
     const required = editorialQaCaptureIdsByRequirement('required');
     const supplemental = editorialQaCaptureIdsByRequirement('supplemental');
     const all = editorialQaCaptureIds('all');
 
     expect(required).toHaveLength(67);
-    expect(supplemental).toHaveLength(22);
+    expect(supplemental).toHaveLength(23);
     expect(new Set([...required, ...supplemental])).toEqual(new Set(all));
     expect(required.filter((id) => supplemental.includes(id))).toEqual([]);
     expect(required).toEqual(expect.arrayContaining([
@@ -88,6 +88,7 @@ describe('editorial Electron QA configuration', () => {
       'shell-new-task-light-desktop',
       'task-detail-operations-desktop',
       'task-detail-borrowed-image-desktop',
+      'task-detail-error-dialog-compact',
       'volcengine-legacy-dark-compact',
       'volcengine-v3-light-desktop',
       'workflow-new-task-dark-compact',
@@ -279,6 +280,13 @@ describe('editorial Electron QA configuration', () => {
     expect(queueScenario).toContain("querySelector('.error-summary-button')");
     expect(queueScenario).toContain("document.querySelector('.error-dialog')");
     expect(queueScenario).toContain("button.textContent?.trim() === '关闭'");
+    expect(editorialQaCaptureIds('task-operations')).toContain('task-detail-error-dialog-compact');
+    expect(source).toContain("scenarioId === 'task-detail-error-dialog-compact'");
+    expect(source).toContain("document.querySelector('.task-detail-shell .error-summary-button')");
+    expect(source).toContain('state.errorDialogOpen');
+    expect(source).toContain('const evidenceRoot = activeModal ?? document');
+    expect(source).toContain("evidenceRoot.querySelectorAll('h1, h2, h3, h4");
+    expect(source).toContain('rect.left < window.innerWidth');
   });
 
   it('records and gates the rendered HTML animation type in every History capture', async () => {

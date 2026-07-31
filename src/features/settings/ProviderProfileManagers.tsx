@@ -1,5 +1,5 @@
 import { useEffect, useMemo } from "react";
-import { Copy, Loader2, Palette, Play, Plus, Search, XCircle } from "lucide-react";
+import { Copy, GripVertical, Loader2, Palette, Play, Plus, Search, XCircle } from "lucide-react";
 import type { AppConfig, ImageProviderProfile, MinimaxCloneVoice, ProviderModel, ProviderModelListRequest, TtsProviderProfile, VolcengineSpeaker, VolcengineTtsApiVersion } from "../../shared/types";
 import { ArtifactEmpty } from "../tasks/TaskArtifactPreview";
 import { activeImageProfileId, activeLlmProfileId, activeTtsProfileId, addImageProfile, addLlmProfile, addTtsProfile, copyImageProfile, copyLlmProfile, copyTtsProfile, editableLlmProfileProvider, imageProfileCustomImage, imageProfileGptImage, imageProfileJimeng, normalizedImageProfiles, normalizedTtsProfiles, removeImageProfile, removeLlmProfile, removeTtsProfile, saveImageProfile, saveLlmProfile, saveTtsProfile, ttsProfileMinimax, ttsProfileVolcengine } from "../../shared/provider-profile-utils";
@@ -120,7 +120,7 @@ export function LlmProfileManager({
               onClick={() => onSelectedProfileIdChange(profile.id!)}
               onKeyDown={(event) => event.key === 'Enter' && onSelectedProfileIdChange(profile.id!)}
             >
-              <div className="profile-drag-dot">⋮⋮</div>
+              <GripVertical aria-hidden="true" className="profile-drag-dot" />
               <div className="profile-avatar">{profile.name?.slice(0, 1).toUpperCase() || 'C'}</div>
               <div className="profile-copy">
                 <strong>{profile.name || '未命名配置'}</strong>
@@ -367,7 +367,7 @@ export function ImageProfileManager({
               onClick={() => onSelectedProfileIdChange(profile.id!)}
               onKeyDown={(event) => event.key === 'Enter' && onSelectedProfileIdChange(profile.id!)}
             >
-              <div className="profile-drag-dot">⋮⋮</div>
+              <GripVertical aria-hidden="true" className="profile-drag-dot" />
               <div className="profile-avatar">{profile.name?.slice(0, 1).toUpperCase() || 'I'}</div>
               <div className="profile-copy">
                 <strong>{profile.name || '未命名绘图配置'}</strong>
@@ -592,7 +592,7 @@ export function TtsProfileManager({
               onClick={() => onSelectedProfileIdChange(profile.id!)}
               onKeyDown={(event) => event.key === 'Enter' && onSelectedProfileIdChange(profile.id!)}
             >
-              <div className="profile-drag-dot">⋮⋮</div>
+              <GripVertical aria-hidden="true" className="profile-drag-dot" />
               <div className="profile-avatar">{profile.name?.slice(0, 1).toUpperCase() || 'T'}</div>
               <div className="profile-copy">
                 <strong>{profile.name || '未命名 TTS 配置'}</strong>

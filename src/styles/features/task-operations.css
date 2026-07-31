@@ -605,6 +605,7 @@
   grid-column: 1;
   min-width: 0;
   min-height: 74px;
+  flex-wrap: wrap;
   gap: 18px;
 }
 
@@ -617,6 +618,7 @@
 }
 
 .task-detail-identity {
+  flex: 1 1 560px;
   gap: 14px;
 }
 
@@ -640,7 +642,9 @@
 }
 
 .task-detail-actions {
-  flex: 0 0 auto;
+  flex: 1 1 480px;
+  flex-wrap: wrap;
+  justify-content: flex-end;
   gap: 9px;
 }
 
@@ -1058,7 +1062,14 @@
 
   .task-detail-actions {
     width: 100%;
+    flex: 0 0 auto;
     flex-direction: row;
+    justify-content: flex-start;
+  }
+
+  .task-detail-identity {
+    width: 100%;
+    flex: 0 0 auto;
   }
 
   .task-stage-track {
