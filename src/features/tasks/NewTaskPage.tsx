@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { Check, FileText, Link2, Loader2, Mic2, Play, Plus, RotateCcw, Save, Search, Upload, Wand2 } from 'lucide-react';
+import { Check, FileText, Link2, Loader2, Mic2, Play, Plus, RotateCcw, Save, Search, Trash2, Upload, Wand2 } from 'lucide-react';
 import { FormField as Field } from '../../components/FormField';
 import { OptionGroup as OptionCloud } from '../../components/OptionGroup';
 import { SegmentedControl as Segmented } from '../../components/SegmentedControl';
@@ -53,9 +53,15 @@ import { useAsyncAction } from '../../ui/async-action';
 import { buildTaskCreateInput } from './task-create-input';
 import {
   clearNewTaskDraft,
+  createNewTaskPreset,
+  deleteNewTaskPreset,
   readNewTaskDraft,
+  readNewTaskPresets,
+  upsertNewTaskPreset,
   writeNewTaskDraft,
+  writeNewTaskPresets,
   type NewTaskDraftSnapshot,
+  type NewTaskPreset,
 } from './new-task-draft';
 import {
   NEW_TASK_CREATE_FIELDS_BY_STAGE,
@@ -90,6 +96,10 @@ type NewTaskStage = 'material' | 'creative' | 'output';
 function deriveTaskTitle(text: string): string {
   const firstLine = text.trim().split(/[。！？!?\n]/u).find(Boolean)?.trim() ?? '';
   return firstLine.slice(0, 42);
+}
+
+function newTaskPresetId(): string {
+  return `preset-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`;
 }
 
 const NEW_TASK_STAGE_META: ReadonlyArray<{ id: NewTaskStage; label: string; heading: string; description: string }> = [
@@ -191,6 +201,9 @@ export function NewTaskPage({
   const [researchCopyMessage, setResearchCopyMessage] = useState('');
   const [draftReady, setDraftReady] = useState(false);
   const [hasSavedDraft, setHasSavedDraft] = useState(false);
+  const [taskPresets, setTaskPresets] = useState<NewTaskPreset[]>(() => []);
+  const [selectedPresetId, setSelectedPresetId] = useState('');
+  const [presetName, setPresetName] = useState('');
   const taskAction = useAsyncAction();
 
   const searchSections = (searchContext?.sections ?? []).slice(0, 10);
@@ -323,7 +336,7 @@ export function NewTaskPage({
       } catch {
         setManualCoverAsset(null);
       }
-    }
+    } else setManualCoverAsset(null);
     if (typeof values.podcastImageMode === 'string') setPodcastImageMode(values.podcastImageMode);
     if (values.podcastSpeakers === 'kazai-dayi' || values.podcastSpeakers === 'liufei-xiaolei') setPodcastSpeakers(values.podcastSpeakers);
     if (Array.isArray(values.selectedSearchSourceIds)) setSelectedSearchSourceIds(values.selectedSearchSourceIds.filter((value): value is string => typeof value === 'string'));
@@ -347,6 +360,55 @@ export function NewTaskPage({
     }
     applyDraftSnapshot(draft);
     setDraftNotice('已恢复本地任务草稿。');
+  }
+
+  function saveTaskPreset(): void {
+    const name = presetName.trim().replace(/\s+/gu, ' ').slice(0, 60);
+    if (!name) {
+      setDraftNotice('请先填写预设名称。');
+      return;
+    }
+    const existing = taskPresets.find((preset) => preset.name === name);
+    const preset = createNewTaskPreset({
+      id: existing?.id ?? newTaskPresetId(),
+      name,
+      snapshot: createDraftSnapshot(),
+    });
+    const next = upsertNewTaskPreset(taskPresets, preset);
+    writeNewTaskPresets(window.localStorage, next);
+    setTaskPresets(next);
+    setSelectedPresetId(preset.id);
+    setPresetName(preset.name);
+    setDraftNotice(`已保存预设“${preset.name}”。`);
+  }
+
+  function selectTaskPreset(id: string): void {
+    setSelectedPresetId(id);
+    const preset = taskPresets.find((item) => item.id === id);
+    if (preset) setPresetName(preset.name);
+  }
+
+  function applyTaskPreset(): void {
+    const preset = taskPresets.find((item) => item.id === selectedPresetId);
+    if (!preset) {
+      setDraftNotice('请先选择要应用的预设。');
+      return;
+    }
+    applyDraftSnapshot(preset.snapshot);
+    setDraftNotice(preset.snapshot.values.coverImageMode === 'manual'
+      ? `已应用预设“${preset.name}”，请重新导入手动封面。`
+      : `已应用预设“${preset.name}”。`);
+  }
+
+  function deleteTaskPreset(): void {
+    const preset = taskPresets.find((item) => item.id === selectedPresetId);
+    if (!preset) return;
+    const next = deleteNewTaskPreset(taskPresets, preset.id);
+    writeNewTaskPresets(window.localStorage, next);
+    setTaskPresets(next);
+    setSelectedPresetId('');
+    setPresetName('');
+    setDraftNotice(`已删除预设“${preset.name}”。`);
   }
 
   function importBenchmarkScript(): void {
@@ -383,6 +445,7 @@ export function NewTaskPage({
       applyDraftSnapshot(draft);
       setHasSavedDraft(true);
     }
+    setTaskPresets(readNewTaskPresets(window.localStorage));
     setDraftReady(true);
   }, []);
 
@@ -924,6 +987,21 @@ export function NewTaskPage({
               <button type="button" className="ghost-action" onClick={saveDraft}><Save size={14} />保存草稿</button>
               <button type="button" className="ghost-action" disabled={!hasSavedDraft} onClick={restoreDraft}><RotateCcw size={14} />恢复草稿</button>
             </div>
+            <section className="new-task-preset-panel" aria-label="创建预设">
+              <div className="new-task-preset-heading"><strong>创建预设</strong><span>{taskPresets.length} 个已保存</span></div>
+              <div className="new-task-preset-save-row">
+                <input aria-label="预设名称" value={presetName} maxLength={60} placeholder="预设名称" onChange={(event) => setPresetName(event.target.value)} />
+                <button type="button" className="ghost-action" onClick={saveTaskPreset}><Save size={14} />保存为预设</button>
+              </div>
+              <div className="new-task-preset-apply-row">
+                <select aria-label="选择创建预设" value={selectedPresetId} onChange={(event) => selectTaskPreset(event.target.value)}>
+                  <option value="">选择预设</option>
+                  {taskPresets.map((preset) => <option key={preset.id} value={preset.id}>{preset.name}</option>)}
+                </select>
+                <button type="button" className="ghost-action" disabled={!selectedPresetId} onClick={applyTaskPreset}><RotateCcw size={14} />应用预设</button>
+                <button type="button" className="icon-button" title="删除预设" aria-label="删除预设" disabled={!selectedPresetId} onClick={deleteTaskPreset}><Trash2 size={14} /></button>
+              </div>
+            </section>
           </div>
           <p>创建后进入任务队列，可在任务详情中暂停、重试或重新生成单个步骤。</p>
           <span className="new-task-runtime-note">{isBrowserPreview ? '浏览器预览不能执行真实流水线' : '试用已用尽时仍保留本地生成能力'}</span>

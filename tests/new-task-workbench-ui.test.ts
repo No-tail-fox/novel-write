@@ -56,6 +56,26 @@ describe('three-stage new task workbench', () => {
     expect(api).toContain('importOrdinaryTaskCover: (ratio: OrdinaryTaskCoverRatio)');
   });
 
+  it('reuses the complete task snapshot for named creation presets', async () => {
+    const [page, draft, css] = await Promise.all([
+      readFile(new URL('../src/features/tasks/NewTaskPage.tsx', import.meta.url), 'utf8'),
+      readFile(new URL('../src/features/tasks/new-task-draft.ts', import.meta.url), 'utf8'),
+      readFile(new URL('../src/styles/features/new-task.css', import.meta.url), 'utf8'),
+    ]);
+
+    expect(draft).toContain("NEW_TASK_PRESET_STORAGE_KEY = 'storydream.new-task-presets.v1'");
+    expect(draft).toContain('createNewTaskPreset');
+    expect(draft).toContain('manualCoverAsset: undefined');
+    expect(page).toContain('saveTaskPreset');
+    expect(page).toContain('applyTaskPreset');
+    expect(page).toContain('deleteTaskPreset');
+    expect(page).toContain('保存为预设');
+    expect(page).toContain('应用预设');
+    expect(page).toContain('删除预设');
+    expect(page).toContain('selectTaskPreset(event.target.value)');
+    expect(css).toMatch(/\.new-task-preset-panel \.icon-button\s*\{[\s\S]*background:\s*var\(--shell-surface-raised\);[\s\S]*color:\s*var\(--shell-muted\);/u);
+  });
+
   it('renders every image ratio through one numerically faithful stable swatch', async () => {
     const [component, newTask, musicMv, imageLab, css] = await Promise.all([
       readFile(new URL('../src/components/AspectRatioSwatch.tsx', import.meta.url), 'utf8'),

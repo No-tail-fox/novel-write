@@ -30,7 +30,7 @@ Storybound is a Tauri/WebView2 shell backed by SQLite plus native `draft-generat
 | Failed-image neighbor borrowing | `auto_borrow_image`; rendered Create toggle | Missing | Storybound-only local | Implement after current image retry semantics are reconciled |
 | Cover poster modes | `cover_primary`, `cover_extra`, `cover_local_path`; rendered none/titled/text-free/local modes | Cover generation plus ordinary-task manual cover import | Similar but not equivalent | Extend only with real cover artifact ownership |
 | Task favorites | `is_favorite`; rendered Favorites filter and per-row toggle | SQLite-backed favorite state, History filter and active-row star toggle | Equivalent local | Delivered with archive immutability |
-| Creation drafts and presets | Rendered save-as-draft and save-preset commands | Task status includes draft, but no complete creation-draft/preset workflow | Storybound-only local | Separate later group |
+| Creation drafts and presets | Rendered save-as-draft and save-preset commands | Complete autosaved creation draft plus named local presets with save/apply/delete and full snapshot ownership | Equivalent local | Delivered; manual cover requires safe re-import |
 | Dynamic storyboard | Rendered RunningHub image-to-video controls and key requirement | No equivalent service contract | External-provider capability | Defer pending provider configuration/runtime design |
 | Network scene materials | Rendered network-material source | Viral Analyzer can ingest source video, but ordinary tasks do not fetch stock per scene | Similar adjacent capability | Defer pending licensing/source policy |
 | Creation Market | Rendered empty point-priced market with buy/publish ownership | Local editors only | Server/account-bound | Do not create a false local market |
@@ -41,7 +41,8 @@ Storybound is a Tauri/WebView2 shell backed by SQLite plus native `draft-generat
 1. [Completed] Draft motion and frame contract: strongest evidence, local, output-visible, and compatible with existing template ownership.
 2. [Completed] Image Lab batch/recovery tools: verified rendered workflow with matching persisted jobs; unified into the existing route.
 3. [Completed] Task favorites: verified column plus rendered filter/action with local persistence and UI ownership.
-4. Next evidence gate: neighbor-image fallback, cover-mode expansion, uploaded narration, creation drafts/presets, dynamic storyboards, and network materials require independently proven runtime and artifact semantics before implementation.
+4. [Completed] Creation drafts/presets: existing complete draft snapshot was retained and extended with bounded named presets instead of duplicating form state.
+5. Next evidence gate: neighbor-image fallback, cover-mode expansion, uploaded narration, dynamic storyboards, and network materials require independently proven runtime and artifact semantics before implementation.
 
 ## Safety Boundaries
 

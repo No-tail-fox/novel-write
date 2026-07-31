@@ -223,6 +223,10 @@ describe('editorial Electron QA configuration', () => {
     }
     expect(source).toContain("document.querySelector('[data-new-task-stage-tab=\"' + stage + '\"]')");
     expect(source).toContain('stageStatePreserved = reopenedTitle instanceof HTMLInputElement');
+    expect(source).toContain('presetStatePreserved = saved && await waitFor');
+    expect(source).toContain("input[aria-label=\"预设名称\"]");
+    expect(source).toContain("option.textContent === 'QA 创建预设'");
+    expect(source).toContain('!state.presetStatePreserved');
     expect(source).toContain("button.textContent?.trim() === '手动封面'");
     expect(source).toContain("document.querySelector('[data-manual-cover-state=\"required\"]')");
     expect(source).toContain("state.manualCover.state !== 'required'");

@@ -162,7 +162,7 @@ export async function captureEditorialQa(
       throw new Error(`Editorial QA found clipped controls in ${captureCase.id}: ${state.layout.clippedPrimaryControls.join(', ')}`);
     }
     const expectedPlacement = viewport.name === 'compact' ? 'below' : 'right';
-    if (captureCase.stage && (!state.stageStatePreserved || state.layout.summaryPlacement !== expectedPlacement)) {
+    if (captureCase.stage && (!state.stageStatePreserved || !state.presetStatePreserved || state.layout.summaryPlacement !== expectedPlacement)) {
       throw new Error(`Editorial QA new-task interaction/layout failed in ${captureCase.id}.`);
     }
     if (captureCase.stage === 'output' && (
@@ -249,6 +249,7 @@ export async function captureEditorialQa(
       volcengineVersion: state.volcengineVersion,
       historyHtmlTypeLabel: state.historyHtmlTypeLabel,
       promptTemplateEditorOpen: state.promptTemplateEditorOpen,
+      presetStatePreserved: state.presetStatePreserved,
       deleteDialogFocusWrapped: state.deleteDialogFocusWrapped,
       deleteDialogEscapeRestored: state.deleteDialogEscapeRestored,
     });
@@ -386,6 +387,7 @@ export interface EditorialQaCapture {
   volcengineVersion: QaScenarioState['volcengineVersion'];
   historyHtmlTypeLabel: string;
   promptTemplateEditorOpen: boolean;
+  presetStatePreserved: boolean;
   deleteDialogFocusWrapped: boolean;
   deleteDialogEscapeRestored: boolean;
 }
@@ -416,6 +418,7 @@ interface QaScenarioState {
     failures: string[];
   };
   stageStatePreserved: boolean;
+  presetStatePreserved: boolean;
   manualCover: {
     state: string;
     importVisible: boolean;
@@ -856,6 +859,7 @@ function qaScenarioScript(id: string, view: string, theme: string, stage?: strin
     }
     const stage = ${JSON.stringify(stage ?? '')};
     let stageStatePreserved = true;
+    let presetStatePreserved = true;
     if (stage) {
       const materialTab = document.querySelector('[data-new-task-stage-tab="material"]');
       if (materialTab instanceof HTMLButtonElement) materialTab.click();
@@ -887,6 +891,41 @@ function qaScenarioScript(id: string, view: string, theme: string, stage?: strin
           .find((button) => button.textContent?.trim() === '手动封面');
         if (manualButton instanceof HTMLButtonElement) manualButton.click();
         ready = ready && await waitFor(() => document.querySelector('[data-manual-cover-state="required"]'));
+      }
+      if (stage === 'material') {
+        const presetNameInput = document.querySelector('input[aria-label="预设名称"]');
+        const presetSelect = document.querySelector('select[aria-label="选择创建预设"]');
+        const savePresetButton = [...document.querySelectorAll('.new-task-preset-save-row button')]
+          .find((button) => button.textContent?.includes('保存为预设'));
+        const applyPresetButton = [...document.querySelectorAll('.new-task-preset-apply-row button')]
+          .find((button) => button.textContent?.includes('应用预设'));
+        const presetTitleInput = document.querySelector('[data-new-task-stage="material"] input');
+        if (!(presetNameInput instanceof HTMLInputElement)
+          || !(presetSelect instanceof HTMLSelectElement)
+          || !(savePresetButton instanceof HTMLButtonElement)
+          || !(applyPresetButton instanceof HTMLButtonElement)
+          || !(presetTitleInput instanceof HTMLInputElement)) {
+          presetStatePreserved = false;
+        } else {
+          const setter = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')?.set;
+          const originalPresetTitle = presetTitleInput.value;
+          const expectedPresetTitle = originalPresetTitle + ' QA 预设';
+          setter?.call(presetTitleInput, expectedPresetTitle);
+          presetTitleInput.dispatchEvent(new Event('input', { bubbles: true }));
+          setter?.call(presetNameInput, 'QA 创建预设');
+          presetNameInput.dispatchEvent(new Event('input', { bubbles: true }));
+          savePresetButton.click();
+          const saved = await waitFor(() => [...presetSelect.options].some((option) => option.textContent === 'QA 创建预设'));
+          setter?.call(presetTitleInput, expectedPresetTitle + ' 已修改');
+          presetTitleInput.dispatchEvent(new Event('input', { bubbles: true }));
+          applyPresetButton.click();
+          presetStatePreserved = saved && await waitFor(() => presetTitleInput.value === expectedPresetTitle);
+          ready = ready && presetStatePreserved;
+          if (presetStatePreserved) {
+            setter?.call(presetTitleInput, originalPresetTitle);
+            presetTitleInput.dispatchEvent(new Event('input', { bubbles: true }));
+          }
+        }
       }
     }
     await withTimeout(document.fonts.ready, 10000, 'font readiness timed out');
@@ -1253,6 +1292,7 @@ function qaScenarioScript(id: string, view: string, theme: string, stage?: strin
       evidence,
       templateOperationalContrast,
       stageStatePreserved,
+      presetStatePreserved,
       deleteDialogFocusWrapped,
       deleteDialogEscapeRestored,
       manualCover: {

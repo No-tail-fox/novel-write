@@ -519,6 +519,77 @@
   gap: 6px;
 }
 
+.new-task-preset-panel {
+  display: grid;
+  gap: 6px;
+  padding-top: 10px;
+  border-top: 1px solid var(--shell-border);
+}
+
+.new-task-preset-heading {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.new-task-preset-heading strong {
+  color: var(--shell-text);
+  font-size: 12px;
+}
+
+.new-task-preset-heading span {
+  color: var(--shell-muted);
+  font-size: 11px;
+}
+
+.new-task-preset-save-row,
+.new-task-preset-apply-row {
+  display: grid;
+  align-items: center;
+  gap: 6px;
+}
+
+.new-task-preset-save-row {
+  grid-template-columns: minmax(0, 1fr) auto;
+}
+
+.new-task-preset-apply-row {
+  grid-template-columns: minmax(0, 1fr) auto 30px;
+}
+
+.new-task-preset-panel input,
+.new-task-preset-panel select {
+  min-width: 0;
+  min-height: 30px;
+  padding: 5px 8px;
+  border: 1px solid var(--shell-border);
+  border-radius: 4px;
+  background: var(--shell-surface-raised);
+  color: var(--shell-text);
+  font: inherit;
+  font-size: 12px;
+}
+
+.new-task-preset-panel .ghost-action {
+  min-height: 30px;
+  white-space: nowrap;
+}
+
+.new-task-preset-panel .icon-button {
+  width: 30px;
+  height: 30px;
+  padding: 0;
+  border: 1px solid var(--shell-border);
+  background: var(--shell-surface-raised);
+  color: var(--shell-muted);
+}
+
+.new-task-preset-panel .icon-button:hover:not(:disabled) {
+  border-color: var(--shell-focus);
+  color: var(--shell-text);
+}
+
 .new-task-summary > p,
 .new-task-runtime-note,
 .new-task-summary .local-note {
