@@ -695,6 +695,20 @@ function qaScenarioScript(id: string, view: string, theme: string, stage?: strin
           && railText.includes(latestQueueTitle)
           && (eventStateText.includes('暂无事件') || document.querySelector('.task-event-item'));
       });
+      const failedRow = [...document.querySelectorAll('.task-queue-row')]
+        .find((row) => row.textContent?.includes('QA 浅色错误提示'));
+      const errorSummary = failedRow?.querySelector('.error-summary-button');
+      ready = ready
+        && errorSummary instanceof HTMLButtonElement
+        && errorSummary.textContent?.includes('HTML video planning step failed') === true;
+      if (errorSummary instanceof HTMLButtonElement) {
+        errorSummary.click();
+        ready = ready && await waitFor(() => document.querySelector('.error-dialog')?.textContent?.includes('HTML video planning step failed'));
+        const closeButton = [...(document.querySelector('.error-dialog')?.querySelectorAll('button') ?? [])]
+          .find((button) => button.textContent?.trim() === '关闭');
+        if (closeButton instanceof HTMLButtonElement) closeButton.click();
+        ready = ready && await waitFor(() => !document.querySelector('.error-dialog'));
+      }
     }
     if (scenarioId === 'history-operations-desktop') {
       const archiveGroup = document.querySelector('[role="group"][aria-label="记录范围"]');

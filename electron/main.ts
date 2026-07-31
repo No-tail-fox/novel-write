@@ -293,6 +293,15 @@ async function seedTaskOperationsEditorialQa(database: FileDatabase, dataDir: st
   const paused = await createFixture('夏日轻食产品短片');
   await database.updateTask(paused.id, { status: 'paused', currentStep: 4, errorMessage: '等待用户继续任务' });
 
+  const failed = await createFixture('QA 浅色错误提示');
+  await database.updateTask(failed.id, {
+    status: 'failed',
+    currentStep: 1,
+    failedStep: 1,
+    retryFromStep: 1,
+    errorMessage: 'HTML video planning step failed',
+  });
+
   const running = await createFixture('武则天：从深宫才人到一代女皇');
   const fixtureRoot = join(dataDir, 'qa-task-operations', 'running-task');
   const pipelineDir = join(fixtureRoot, 'pipeline');

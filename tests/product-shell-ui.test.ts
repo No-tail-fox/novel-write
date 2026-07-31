@@ -3161,6 +3161,17 @@ describe('product shell ui', () => {
     expect(css).toContain('.error-dialog');
     expect(css).toContain('.error-summary-button > span:last-child');
     expect(css).toContain('.viral-retry-button');
+    const errorSummaryStart = css.lastIndexOf('\n.error-summary-button {') + 1;
+    const errorSummaryRule = css.slice(errorSummaryStart, css.indexOf('}', errorSummaryStart) + 1);
+    const inlineFeedbackStart = css.indexOf('.inline-action-feedback {');
+    const inlineFeedbackRule = css.slice(inlineFeedbackStart, css.indexOf('}', inlineFeedbackStart) + 1);
+    expect(errorSummaryRule).toContain('color: var(--danger);');
+    expect(errorSummaryRule).toContain('background: color-mix(in srgb, var(--danger) 8%, var(--shell-surface-raised));');
+    expect(errorSummaryRule).toContain('border: 1px solid color-mix(in srgb, var(--danger) 36%, var(--shell-border));');
+    expect(inlineFeedbackRule).toContain('color: var(--danger);');
+    expect(inlineFeedbackRule).toContain('background: color-mix(in srgb, var(--danger) 8%, var(--shell-surface-raised));');
+    expect(errorSummaryRule).not.toContain('#ffd7d8');
+    expect(inlineFeedbackRule).not.toContain('#ffd7d8');
   });
 
   it('lets AI creation search real web sources and select them for generation', async () => {

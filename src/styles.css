@@ -2034,10 +2034,10 @@ textarea {
   min-height: 28px;
   margin-top: 6px;
   padding: 4px 8px;
-  border: 1px solid rgba(255, 93, 97, 0.45);
+  border: 1px solid color-mix(in srgb, var(--danger) 36%, var(--shell-border));
   border-radius: 7px;
-  background: rgba(255, 93, 97, 0.08);
-  color: #ffd7d8;
+  background: color-mix(in srgb, var(--danger) 8%, var(--shell-surface-raised));
+  color: var(--danger);
   text-align: left;
 }
 
@@ -2063,7 +2063,7 @@ textarea {
   height: 18px;
   border-radius: 99px;
   background: var(--danger);
-  color: #100c0d;
+  color: var(--shell-focus-contrast);
   font-size: 12px;
   font-weight: 900;
   line-height: 1;
@@ -4393,8 +4393,8 @@ textarea {
   margin: 10px 0 0;
   padding: 8px 12px;
   border-left: 3px solid var(--danger);
-  background: rgba(255, 93, 97, 0.08);
-  color: #ffd7d8;
+  background: color-mix(in srgb, var(--danger) 8%, var(--shell-surface-raised));
+  color: var(--danger);
   line-height: 1.5;
   overflow-wrap: anywhere;
 }

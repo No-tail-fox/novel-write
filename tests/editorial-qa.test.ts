@@ -263,6 +263,24 @@ describe('editorial Electron QA configuration', () => {
     expect(queueScenario).not.toContain('Step 4 批量生图');
   });
 
+  it('renders and exercises the shared light-theme error summary in the real queue', async () => {
+    const [source, main] = await Promise.all([
+      (await import('node:fs/promises')).readFile(new URL('../electron/editorial-qa.ts', import.meta.url), 'utf8'),
+      (await import('node:fs/promises')).readFile(new URL('../electron/main.ts', import.meta.url), 'utf8'),
+    ]);
+    const queueScenario = source.slice(
+      source.indexOf("if (scenarioId === 'queue-operations-desktop')"),
+      source.indexOf("if (scenarioId === 'history-operations-desktop')"),
+    );
+
+    expect(main).toContain("createFixture('QA 浅色错误提示')");
+    expect(main).toContain("errorMessage: 'HTML video planning step failed'");
+    expect(queueScenario).toContain("row.textContent?.includes('QA 浅色错误提示')");
+    expect(queueScenario).toContain("querySelector('.error-summary-button')");
+    expect(queueScenario).toContain("document.querySelector('.error-dialog')");
+    expect(queueScenario).toContain("button.textContent?.trim() === '关闭'");
+  });
+
   it('records and gates the rendered HTML animation type in every History capture', async () => {
     const source = await (await import('node:fs/promises')).readFile(new URL('../electron/editorial-qa.ts', import.meta.url), 'utf8');
     const main = await (await import('node:fs/promises')).readFile(new URL('../electron/main.ts', import.meta.url), 'utf8');
