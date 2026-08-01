@@ -341,7 +341,7 @@ describe('electron ipc contract', () => {
   it('keeps runner integration timeouts at the committed heavy-test baseline', async () => {
     const runnerTests = await readFile(new URL('./runner.test.ts', import.meta.url), 'utf8');
 
-    expect((runnerTests.match(/rewriteControlTestTimeoutMs/gu) ?? []).length).toBe(18);
+    expect((runnerTests.match(/rewriteControlTestTimeoutMs/gu) ?? []).length).toBe(19);
   });
 
   it('routes every privileged invoke through one trusted registration and result boundary', async () => {

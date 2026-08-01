@@ -1,5 +1,7 @@
 ﻿import { mkdir, readFile, writeFile } from 'node:fs/promises';
 import { dirname, join } from 'node:path';
+import { randomUUID } from 'node:crypto';
+import { rename, rm } from 'node:fs/promises';
 import type { AppConfig } from './types';
 import { normalizeAppConfig } from './config-utils';
 import { defaultConfig } from './config';
@@ -40,7 +42,15 @@ export async function loadConfigFromFileStrict(dataDir: string): Promise<AppConf
 export async function saveConfigToFile(dataDir: string, config: AppConfig): Promise<void> {
   const filePath = configFilePath(dataDir);
   await mkdir(dirname(filePath), { recursive: true });
-  await writeFile(filePath, JSON.stringify(stripConfigSecrets(normalizeAppConfig(config)), null, 2), 'utf-8');
+  const tempPath = `${filePath}.${randomUUID()}.tmp`;
+  const serialized = `${JSON.stringify(stripConfigSecrets(normalizeAppConfig(config)), null, 2)}\n`;
+  try {
+    await writeFile(tempPath, serialized, { encoding: 'utf8', flag: 'wx' });
+    await rename(tempPath, filePath);
+  } catch (error) {
+    await rm(tempPath, { force: true }).catch(() => undefined);
+    throw error;
+  }
 }
 
 export async function writeDefaultConfigFile(dataDir: string): Promise<void> {

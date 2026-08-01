@@ -2,7 +2,7 @@ import { app, BrowserWindow, dialog, ipcMain, Menu, nativeImage, net, protocol, 
 import { execFile } from 'node:child_process';
 import { createHash, randomUUID } from 'node:crypto';
 import { existsSync } from 'node:fs';
-import { mkdir, readFile, rename, rm, stat, writeFile } from 'node:fs/promises';
+import { copyFile, mkdir, readFile, rename, rm, stat, writeFile } from 'node:fs/promises';
 import { basename, dirname, extname, isAbsolute, join, relative, resolve } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { promisify } from 'node:util';
@@ -25,7 +25,7 @@ import {
   type OrdinaryTaskCoverImageProcessor,
   type OrdinaryTaskCoverInspection,
 } from '../src/shared/ordinary-task-cover';
-import { createHtmlVideoTaskInput, htmlVideoVisibleSteps, isHtmlVideoTask, parseHtmlVideoPipelineData, recoverHtmlVideoPipelineDataForRetry, type HtmlVideoPipelineRetryPatch } from '../src/shared/html-video-workflow';
+import { applyHtmlVideoSceneChanges, createHtmlVideoTaskInput, htmlVideoVisibleSteps, isHtmlVideoTask, parseHtmlVideoPipelineData, recoverHtmlVideoPipelineDataForRetry, type HtmlVideoPipelineRetryPatch } from '../src/shared/html-video-workflow';
 import { assertHyperframesSource, GSAP_RUNTIME_FILENAME, HYPERFRAMES_RUNTIME_FILENAME, MAX_HYPERFRAMES_SOURCE_BYTES } from '../src/shared/hyperframes';
 import { generateConfiguredVoicePreview } from '../src/shared/media-providers';
 import { mergeMinimaxCloneVoice } from '../src/shared/minimax-clone-voices';
@@ -33,13 +33,13 @@ import { createPersonAsset, deletePersonAsset, importPersonAssetFiles, listPerso
 import { createConfiguredJsonLlm, createConfiguredTextLlm, listConfiguredProviderModels, testConfiguredLlm } from '../src/shared/llm-provider';
 import { markSceneImageForRegeneration, markSceneNarrationForRegeneration, markTaskStepForRerun, updateSceneImagePrompt } from '../src/shared/pipeline-cache';
 import { resolvePythonRuntimeInfo, setDefaultPythonRuntimeAppRoot } from '../src/shared/python-runtime';
-import { composeCopyFromSources, createAiSourceResearcher, searchWebSources } from '../src/shared/research';
+import { composeCopyFromSources, createAiSourceResearcher, researchSearchErrorMessage, searchWebSources, searchWebSourcesDetailed } from '../src/shared/research';
 import { runTask } from '../src/shared/runner';
 import { runStoryboundMediaSidecar } from '../src/shared/storybound-sidecar';
 import { FileDatabase, type HistoryDeletionCleanup, type HistoryTombstone } from '../src/shared/storage';
 import { createHtmlVideoRuntimeProviders, createTaskRuntimeProviders } from '../src/shared/task-runtime-providers';
 import { assertTaskLifecycleAction } from '../src/shared/task-progress';
-import type { AccountProfile, ActivationState, AppConfig, AppDelta, AppDeltaReconcileRequest, AppDeltaReconcileResult, AppStatePatch, BookSelectionInput, ConfigTestTarget, CreateTaskInput, CreateViralAnalysisInput, CursorRequest, CustomStyle, CustomStyleGenerateInput, DraftTemplate, HistoryFamily, HistoryListRequest, HtmlVideoCompositionSource, HtmlVideoCompositionSourceLintInput, HtmlVideoCompositionSourceSaveInput, HtmlVideoConfigChange, HtmlVideoPipelineDataV2, ImageLabGenerateInput, ImageLabRecord, ImageLabSummary, ImaKnowledgeRequest, LlmConfig, MinimaxCloneVoiceInput, OrdinaryTaskCoverRatio, OrdinaryTaskCoverSelection, PromptTemplate, ProviderModelListRequest, ResearchCopyComposeInput, SequencedTaskEvent, Task, TaskStatus, TaskStepRerunMode, UiPreferencesUpdate, ViralAnalysisRecord, ViralAnalysisResult, ViralAnalysisStatus, ViralProductionTaskOptions, VolcengineSpeakerListRequest, VoiceLabGenerateInput, VoiceLabRecord, VoiceLabSummary } from '../src/shared/types';
+import type { AccountProfile, ActivationState, AppConfig, AppDelta, AppDeltaReconcileRequest, AppDeltaReconcileResult, AppStatePatch, BookSelectionInput, ConfigTestTarget, CreateTaskInput, CreateViralAnalysisInput, CursorRequest, CustomStyle, CustomStyleGenerateInput, DraftTemplate, HistoryFamily, HistoryListRequest, HtmlVideoAsset, HtmlVideoAssetTarget, HtmlVideoCompositionSource, HtmlVideoCompositionSourceLintInput, HtmlVideoCompositionSourceSaveInput, HtmlVideoConfigChange, HtmlVideoPipelineDataV2, HtmlVideoSceneChange, HtmlVideoVoiceClip, ImageLabGenerateInput, ImageLabRecord, ImageLabSummary, ImaKnowledgeRequest, LlmConfig, MinimaxCloneVoiceInput, OrdinaryTaskCoverRatio, OrdinaryTaskCoverSelection, PromptTemplate, ProviderModelListRequest, ResearchCopyComposeInput, SequencedTaskEvent, Task, TaskStatus, TaskStepRerunMode, UiPreferencesUpdate, ViralAnalysisRecord, ViralAnalysisResult, ViralAnalysisStatus, ViralProductionTaskOptions, VolcengineSpeakerListRequest, VoiceLabGenerateInput, VoiceLabRecord, VoiceLabSummary, WebSearchRequest } from '../src/shared/types';
 import { boundViralDiagnosticText, createViralProductionTaskInput, detectViralPlatform, runViralAnalysis, viralCheckpointResumeState } from '../src/shared/viral-analysis';
 import { createViralRuntimeProviders } from '../src/shared/viral-runtime';
 import { listVolcengineSpeakers } from '../src/shared/volcengine-speakers';
@@ -261,7 +261,53 @@ async function initializeDatabase(): Promise<FileDatabase> {
 }
 
 async function seedTaskOperationsEditorialQa(database: FileDatabase, dataDir: string): Promise<void> {
-  if (editorialQaConfig?.scope !== 'task-operations' && editorialQaConfig?.scope !== 'workflow' && editorialQaConfig?.scope !== 'all') return;
+  const taskOperationsScope = editorialQaConfig?.scope === 'task-operations'
+    || editorialQaConfig?.scope === 'workflow'
+    || editorialQaConfig?.scope === 'all';
+  const draftTemplateGalleryScope = editorialQaConfig?.scope === 'system';
+  if (!taskOperationsScope && !draftTemplateGalleryScope) return;
+  const selectedTemplateId = 'qa-selected-draft-template';
+  const selectedTemplateBase = await database.getDraftTemplateDetail('builtin-portrait-4-3');
+  if (!selectedTemplateBase) throw new Error('Editorial QA draft template fixture base is missing.');
+  await database.upsertDraftTemplate({
+    ...selectedTemplateBase,
+    id: selectedTemplateId,
+    name: 'QA 已选草稿模板',
+    isDefault: false,
+    canvas: { ...selectedTemplateBase.canvas, backgroundColor: '#071d24' },
+    image: { ...selectedTemplateBase.image, top: 0.22, height: 0.44 },
+    frame: {
+      ...selectedTemplateBase.frame,
+      enabled: true,
+      headerColor: '#12303a',
+      headerColorEnd: '#174b50',
+      footerColor: '#0b1720',
+      footerColorEnd: '#122b35',
+      imageBorderColor: '#38f2b0',
+      imageBorderWidth: 5,
+    },
+    title: {
+      ...selectedTemplateBase.title,
+      x: 0.08,
+      y: 0.76,
+      width: 0.76,
+      fontSize: 31,
+      color: '#38f2b0',
+      underline: false,
+    },
+    subtitle: {
+      ...selectedTemplateBase.subtitle,
+      x: -0.08,
+      y: 0.56,
+      width: 0.68,
+      fontSize: 15,
+      color: '#fff6c9',
+      bold: true,
+    },
+    caption: { ...selectedTemplateBase.caption, y: -0.65, fontSize: 14, color: '#f8fafc' },
+    disclaimer: { ...selectedTemplateBase.disclaimer, fontSize: 9, color: '#9ad7cc', alpha: 0.82 },
+  });
+  if (!taskOperationsScope) return;
   const createFixture = async (title: string) => {
     await new Promise((resolveDelay) => setTimeout(resolveDelay, 2));
     return database.createTask({
@@ -270,6 +316,7 @@ async function seedTaskOperationsEditorialQa(database: FileDatabase, dataDir: st
       mode: 'ai',
       track: 'character-story',
       ratio: '9:16',
+      templateId: selectedTemplateId,
       storyboardSceneCount: 12,
       targetScenes: 12,
       coverImageMode: 'off',
@@ -341,7 +388,14 @@ async function seedTaskOperationsEditorialQa(database: FileDatabase, dataDir: st
     },
     artifact: {
       reviewedText: '武则天人物生平预审文案。',
-      rewrittenCopy: '从深宫才人到一代女皇的故事改写。',
+      rewrittenCopy: '武则天在深宫沉默十二年。后来武则天走出低谷，最终成为中国历史上唯一的女皇。',
+      cover: {
+        title: '武则天',
+        subtitle: ['深宫沉默十二年', '最后走成唯一女皇'],
+        summary: '从深宫才人到一代女皇的故事。',
+        tags: ['#人物故事', '#武则天'],
+        comments: [],
+      },
       scenes,
       imagePrompts: scenes.map((scene) => ({
         sceneId: scene.id,
@@ -686,10 +740,13 @@ async function runSmokeHandshake(): Promise<void> {
       const state = await api.getBootstrap();
       base.ipcStateLoaded = Boolean(state && state.config && Array.isArray(state.tasks?.items));
       if (state && state.ui) {
-        const saved = await api.saveUiPreferences({ activeView: 'new-task' });
-        base.preloadActionSucceeded = saved?.kind === 'state-patch'
-          && saved.patch.kind === 'theme-preference'
-          && saved.patch.ui.activeView === 'new-task';
+        const savedConfig = await api.saveConfig({ config: state.config, secretChanges: {} });
+        const savedPreferences = await api.saveUiPreferences({ activeView: 'new-task' });
+        base.preloadActionSucceeded = savedConfig?.kind === 'state-patch'
+          && savedConfig.patch.kind === 'config'
+          && savedPreferences?.kind === 'state-patch'
+          && savedPreferences.patch.kind === 'theme-preference'
+          && savedPreferences.patch.ui.activeView === 'new-task';
       }
     } catch {
       return base;
@@ -1796,15 +1853,18 @@ trustedHandle('ima:fetch-knowledge', async (_event, input: ImaKnowledgeRequest) 
   return fetchImaKnowledge(runtimeConfig.ima, input);
 });
 
-trustedHandle('research:web-search', async (_event, query: string) => {
-  const trimmed = query.trim();
+trustedHandle('research:web-search', async (_event, input: string | WebSearchRequest) => {
+  const trimmed = (typeof input === 'string' ? input : input.query).trim();
   if (!trimmed) {
     return { query: trimmed, sections: [], warnings: ['请输入关键词后再搜索。'] };
   }
   try {
+    if (typeof input !== 'string') {
+      return await searchWebSourcesDetailed({ query: trimmed, providers: input.providers });
+    }
     return { query: trimmed, sections: await searchWebSources(trimmed), warnings: [] };
   } catch (error) {
-    return { query: trimmed, sections: [], warnings: [error instanceof Error ? error.message : String(error)] };
+    return { query: trimmed, sections: [], warnings: [researchSearchErrorMessage(error)] };
   }
 });
 
@@ -1861,6 +1921,13 @@ trustedHandle('draft-template:save', async (_event, template: DraftTemplate) => 
   const database = await getDb();
   const saved = await database.upsertDraftTemplate(template);
   return publishStatePatch({ kind: 'draft-template-upsert', template: saved });
+});
+
+trustedHandle('draft-template:delete', async (_event, id: string) => {
+  const database = await getDb();
+  const deleted = await database.deleteDraftTemplate(id);
+  if (!deleted) throw new Error(`DRAFT_TEMPLATE_NOT_FOUND: ${id}`);
+  return publishStatePatch({ kind: 'draft-template-delete', templateId: id });
 });
 
 trustedHandle('image-lab:generate', async (_event, input: ImageLabGenerateInput) => {
@@ -2035,6 +2102,67 @@ trustedHandle('html-video:update-config', (_event, input: { id: string; changes:
     return await enqueueAppDelta(() => ({ kind: 'task-upsert', task: result.task }));
   }));
 
+trustedHandle('html-video:update-scene', (_event, input: { id: string; sceneIndex: number; changes: HtmlVideoSceneChange[] }) =>
+  runHistoryGovernanceMutation('task', input.id, async (database) => {
+    const task = await getEditableHtmlVideoTask(database, input.id);
+    let pipeline = applyHtmlVideoSceneChanges(
+      parseHtmlVideoPipelineData(task.pipelineData),
+      input.sceneIndex,
+      input.changes,
+    );
+    if (input.changes.some((change) => htmlVideoSceneChangeAffectsPreview(change.field))) {
+      pipeline = await rebuildHtmlVideoEditorialPreviews(database, task, pipeline);
+    }
+    return persistHtmlVideoEditorialMutation(database, task, pipeline, {
+      type: 'html_video_scene_update',
+      tool: 'scene-editor',
+      detail: `已更新场景 ${input.sceneIndex} 的标题、字幕或动态版式。`,
+      data: { sceneIndex: input.sceneIndex, fields: input.changes.map((change) => change.field) },
+    });
+  }));
+
+trustedHandle('html-video:replace-asset', (_event, input: { id: string; target: HtmlVideoAssetTarget }) =>
+  runHistoryGovernanceMutation('task', input.id, async (database) => {
+    const task = await getEditableHtmlVideoTask(database, input.id);
+    const selected = await dialog.showOpenDialog({
+      title: input.target.kind === 'bg' ? '替换场景背景图' : '替换场景前景图',
+      properties: ['openFile'],
+      filters: [{ name: 'Images', extensions: ['png', 'jpg', 'jpeg', 'webp'] }],
+    });
+    if (selected.canceled || !selected.filePaths[0]) return null;
+    const pipeline = await replaceHtmlVideoEditorialAsset(database, task, parseHtmlVideoPipelineData(task.pipelineData), input.target, selected.filePaths[0]);
+    return persistHtmlVideoEditorialMutation(database, task, pipeline, {
+      type: 'html_video_asset_replace',
+      tool: 'asset-replace',
+      detail: `已替换场景 ${input.target.sceneIndex} 的${input.target.kind === 'bg' ? '背景图' : `前景 ${input.target.slot + 1}`}。`,
+      data: input.target,
+    });
+  }));
+
+trustedHandle('html-video:regenerate-asset', (_event, input: { id: string; target: HtmlVideoAssetTarget }) =>
+  runHistoryGovernanceMutation('task', input.id, async (database) => {
+    const task = await getEditableHtmlVideoTask(database, input.id);
+    const pipeline = await regenerateHtmlVideoEditorialAsset(database, task, parseHtmlVideoPipelineData(task.pipelineData), input.target);
+    return persistHtmlVideoEditorialMutation(database, task, pipeline, {
+      type: 'html_video_asset_regenerate',
+      tool: 'image-provider',
+      detail: `已重画场景 ${input.target.sceneIndex} 的${input.target.kind === 'bg' ? '背景图' : `前景 ${input.target.slot + 1}`}。`,
+      data: input.target,
+    });
+  }));
+
+trustedHandle('html-video:regenerate-voice', (_event, input: { id: string; sceneIndex: number }) =>
+  runHistoryGovernanceMutation('task', input.id, async (database) => {
+    const task = await getEditableHtmlVideoTask(database, input.id);
+    const pipeline = await regenerateHtmlVideoEditorialVoice(database, task, parseHtmlVideoPipelineData(task.pipelineData), input.sceneIndex);
+    return persistHtmlVideoEditorialMutation(database, task, pipeline, {
+      type: 'html_video_voice_regenerate',
+      tool: 'tts-provider',
+      detail: `已重新生成场景 ${input.sceneIndex} 的配音。`,
+      data: { sceneIndex: input.sceneIndex },
+    });
+  }));
+
 trustedHandle('html-video:import-cover', (_event, id: string) =>
   runHistoryGovernanceMutation('task', id, async (database) => {
     const task = await database.getTaskDetail(id);
@@ -2164,6 +2292,235 @@ async function getHtmlVideoTask(database: FileDatabase, id: string): Promise<Tas
     throw new Error('HTML_VIDEO_TASK_NOT_FOUND: HTML 视频任务不存在。');
   }
   return task;
+}
+
+async function getEditableHtmlVideoTask(database: FileDatabase, id: string): Promise<Task> {
+  const task = await getHtmlVideoTask(database, id);
+  if (task.archivedAt) throw new Error('HISTORY_ARCHIVED: 已归档任务只读。');
+  if (task.status === 'pending' || task.status === 'running') {
+    throw new Error(`HTML_VIDEO_EDITOR_ACTIVE: ${id} is ${task.status} and cannot be edited.`);
+  }
+  return task;
+}
+
+function htmlVideoSceneChangeAffectsPreview(field: HtmlVideoSceneChange['field']): boolean {
+  return !['narration', 'backgroundPrompt', 'elementPrompt'].includes(field);
+}
+
+async function createHtmlVideoEditorialRuntime(task: Task) {
+  const taskDirectory = await htmlVideoTaskDirectory(task.id);
+  const runtimeConfig = await (await getConfigService()).getRuntimeConfig();
+  const runtime = createElectronHtmlVideoRuntime({
+    taskDirectory,
+    taskTitle: task.title,
+    draftRootDir: runtimeConfig.jianying.draftPath,
+    renderer: createElectronHtmlVideoRenderer(),
+    probeMedia: probeHtmlVideoMedia,
+    gsapRuntimePath: join(dirname(fileURLToPath(import.meta.url)), GSAP_RUNTIME_FILENAME),
+    hyperframesRuntimePath: join(dirname(fileURLToPath(import.meta.url)), HYPERFRAMES_RUNTIME_FILENAME),
+  });
+  return { taskDirectory, runtimeConfig, runtime };
+}
+
+async function rebuildHtmlVideoEditorialPreviews(
+  database: FileDatabase,
+  task: Task,
+  pipeline: HtmlVideoPipelineDataV2,
+): Promise<HtmlVideoPipelineDataV2> {
+  const complete = pipeline.scenes.length > 0 && pipeline.scenes.every((scene) => (
+    pipeline.assets.some((asset) => asset.sceneIndex === scene.index && asset.kind === 'bg')
+    && pipeline.voices.some((voice) => voice.sceneIndex === scene.index && voice.durationSec > 0)
+  ));
+  if (!complete) return pipeline;
+  const { runtime } = await createHtmlVideoEditorialRuntime(task);
+  const draftTemplate = pipeline.config.draftTemplate
+    ? await database.getDraftTemplateDetail(pipeline.config.draftTemplate)
+    : undefined;
+  const previousRevisions = new Map(pipeline.compositions.map((composition) => [composition.index, composition.rev ?? 1]));
+  const previews = await runtime.createPreviews({
+    scenes: pipeline.scenes,
+    assets: pipeline.assets,
+    voices: pipeline.voices,
+    config: pipeline.config,
+    ...(draftTemplate ? { draftTemplate } : {}),
+  });
+  pipeline.compositions = previews.compositions.map((composition) => ({
+    ...composition,
+    rev: (previousRevisions.get(composition.index) ?? 0) + 1,
+  }));
+  pipeline.steps.preview = { status: 'completed', completedAt: Date.now() };
+  pipeline.steps.render = { status: 'pending' };
+  pipeline.current = 'render';
+  delete pipeline.output;
+  delete pipeline.configSnapshotHash;
+  return pipeline;
+}
+
+interface HtmlVideoEditorialEvent {
+  type: string;
+  tool: string;
+  detail: string;
+  data: unknown;
+}
+
+async function persistHtmlVideoEditorialMutation(
+  database: FileDatabase,
+  task: Task,
+  pipeline: HtmlVideoPipelineDataV2,
+  event: HtmlVideoEditorialEvent,
+) {
+  const taskDirectory = await htmlVideoTaskDirectory(task.id);
+  await synchronizeHtmlVideoPipelineCheckpoint(taskDirectory.workDir.canonicalPath, pipeline);
+  const currentStep = pipeline.current === 'done'
+    ? htmlVideoVisibleSteps.length
+    : Math.max(0, htmlVideoVisibleSteps.indexOf(pipeline.current));
+  const needsRender = pipeline.current === 'render';
+  const now = new Date().toISOString();
+  await database.updateTask(task.id, {
+    pipelineData: JSON.stringify(pipeline),
+    pipelineStep: pipeline.current,
+    currentStep,
+    ...(needsRender ? { status: 'paused', completedAt: null } : {}),
+    errorMessage: '',
+    failedStep: null,
+    retryFromStep: null,
+    lastHeartbeatAt: now,
+  });
+  await database.addTaskEvent(task.id, {
+    type: event.type,
+    step: currentStep,
+    agent: 'HTML Video',
+    tool: event.tool,
+    detail: event.detail,
+    dataJson: JSON.stringify(event.data),
+    ts: Date.now(),
+  });
+  return publishTaskUpsert(database, task.id);
+}
+
+async function replaceHtmlVideoEditorialAsset(
+  database: FileDatabase,
+  task: Task,
+  pipeline: HtmlVideoPipelineDataV2,
+  target: HtmlVideoAssetTarget,
+  sourcePath: string,
+): Promise<HtmlVideoPipelineDataV2> {
+  const scene = pipeline.scenes.find((item) => item.index === target.sceneIndex);
+  if (!scene) throw new Error(`HTML_VIDEO_SCENE_NOT_FOUND: ${target.sceneIndex}`);
+  if (target.kind === 'fg' && !scene.elements.some((element) => element.slot === target.slot)) {
+    throw new Error(`HTML_VIDEO_ELEMENT_NOT_FOUND: ${target.sceneIndex}/${target.slot}`);
+  }
+  const extension = extname(sourcePath).toLowerCase();
+  if (!['.png', '.jpg', '.jpeg', '.webp'].includes(extension)) {
+    throw new Error('HTML_VIDEO_ASSET_INVALID: 仅支持 PNG、JPG、JPEG 或 WebP 图片。');
+  }
+  const sourceStat = await stat(sourcePath);
+  if (!sourceStat.isFile() || sourceStat.size <= 0 || sourceStat.size > 512 * 1024 * 1024) {
+    throw new Error('HTML_VIDEO_ASSET_INVALID: 图片为空或超过 512 MiB。');
+  }
+  const taskDirectory = await htmlVideoTaskDirectory(task.id);
+  const directory = join(taskDirectory.workDir.canonicalPath, 'editorial-assets');
+  await mkdir(directory, { recursive: true });
+  const destination = join(
+    directory,
+    `scene-${String(target.sceneIndex).padStart(3, '0')}-${target.kind}-${target.slot}-${randomUUID()}${extension}`,
+  );
+  await copyFile(sourcePath, destination);
+  const copied = await stat(destination);
+  const existing = pipeline.assets.find((asset) => (
+    asset.sceneIndex === target.sceneIndex && asset.kind === target.kind && asset.slot === target.slot
+  ));
+  const prompt = target.kind === 'bg'
+    ? scene.background.prompt
+    : scene.elements.find((element) => element.slot === target.slot)?.prompt;
+  const replacement: HtmlVideoAsset = {
+    sceneIndex: target.sceneIndex,
+    kind: target.kind,
+    slot: target.slot,
+    src: destination,
+    ...(prompt ? { prompt } : {}),
+    sizeBytes: copied.size,
+  };
+  pipeline.assets = existing
+    ? pipeline.assets.map((asset) => asset === existing ? replacement : asset)
+    : [...pipeline.assets, replacement];
+  pipeline.revision += 1;
+  delete pipeline.configSnapshotHash;
+  return rebuildHtmlVideoEditorialPreviews(database, task, pipeline);
+}
+
+async function regenerateHtmlVideoEditorialAsset(
+  database: FileDatabase,
+  task: Task,
+  pipeline: HtmlVideoPipelineDataV2,
+  target: HtmlVideoAssetTarget,
+): Promise<HtmlVideoPipelineDataV2> {
+  const scene = pipeline.scenes.find((item) => item.index === target.sceneIndex);
+  if (!scene) throw new Error(`HTML_VIDEO_SCENE_NOT_FOUND: ${target.sceneIndex}`);
+  const { taskDirectory, runtimeConfig, runtime } = await createHtmlVideoEditorialRuntime(task);
+  const stageDirectory = join(taskDirectory.workDir.canonicalPath, '.editorial-regenerate', randomUUID());
+  await mkdir(stageDirectory, { recursive: true });
+  try {
+    const providers = createHtmlVideoRuntimeProviders(runtimeConfig, stageDirectory, task, {
+      measureAudioDuration: runtime.measureAudioDuration,
+      jobConfig: pipeline.config,
+      prepareCoverImage: prepareHtmlVideoCoverImage,
+    });
+    const requestedScene = target.kind === 'bg'
+      ? { ...scene, elements: [] }
+      : { ...scene, elements: scene.elements.filter((element) => element.slot === target.slot) };
+    if (target.kind === 'fg' && requestedScene.elements.length === 0) {
+      throw new Error(`HTML_VIDEO_ELEMENT_NOT_FOUND: ${target.sceneIndex}/${target.slot}`);
+    }
+    const generated = await providers.generateAssets({
+      scenes: [requestedScene],
+      config: { ...pipeline.config, foreground: target.kind === 'fg' },
+    });
+    const selected = generated.find((asset) => asset.kind === target.kind && asset.slot === target.slot);
+    if (!selected) throw new Error('HTML_VIDEO_ASSET_GENERATION_FAILED: 图片服务没有返回目标素材。');
+    return await replaceHtmlVideoEditorialAsset(database, task, pipeline, target, selected.src);
+  } finally {
+    await rm(stageDirectory, { recursive: true, force: true });
+  }
+}
+
+async function regenerateHtmlVideoEditorialVoice(
+  database: FileDatabase,
+  task: Task,
+  pipeline: HtmlVideoPipelineDataV2,
+  sceneIndex: number,
+): Promise<HtmlVideoPipelineDataV2> {
+  const scene = pipeline.scenes.find((item) => item.index === sceneIndex);
+  if (!scene) throw new Error(`HTML_VIDEO_SCENE_NOT_FOUND: ${sceneIndex}`);
+  const { taskDirectory, runtimeConfig, runtime } = await createHtmlVideoEditorialRuntime(task);
+  const stageDirectory = join(taskDirectory.workDir.canonicalPath, '.editorial-regenerate', randomUUID());
+  await mkdir(stageDirectory, { recursive: true });
+  try {
+    const providers = createHtmlVideoRuntimeProviders(runtimeConfig, stageDirectory, task, {
+      measureAudioDuration: runtime.measureAudioDuration,
+      jobConfig: pipeline.config,
+      prepareCoverImage: prepareHtmlVideoCoverImage,
+    });
+    const generated = await providers.synthesizeVoices({ scenes: [scene], config: pipeline.config });
+    const voice = generated[0];
+    if (!voice) throw new Error('HTML_VIDEO_VOICE_GENERATION_FAILED: 配音服务没有返回音频。');
+    const extension = extname(voice.src).toLowerCase() || '.wav';
+    const directory = join(taskDirectory.workDir.canonicalPath, 'editorial-voices');
+    await mkdir(directory, { recursive: true });
+    const destination = join(directory, `scene-${String(sceneIndex).padStart(3, '0')}-${randomUUID()}${extension}`);
+    await copyFile(voice.src, destination);
+    const copied = await stat(destination);
+    const replacement: HtmlVideoVoiceClip = { ...voice, sceneIndex, src: destination, sizeBytes: copied.size };
+    const existing = pipeline.voices.find((item) => item.sceneIndex === sceneIndex);
+    pipeline.voices = existing
+      ? pipeline.voices.map((item) => item === existing ? replacement : item)
+      : [...pipeline.voices, replacement];
+    pipeline.revision += 1;
+    delete pipeline.configSnapshotHash;
+    return await rebuildHtmlVideoEditorialPreviews(database, task, pipeline);
+  } finally {
+    await rm(stageDirectory, { recursive: true, force: true });
+  }
 }
 
 trustedHandle('task:import-cover', async (_event, ratio: OrdinaryTaskCoverRatio) => {
@@ -2453,6 +2810,27 @@ trustedHandle('task:update-status', async (_event, input: { id: string; status: 
     : () => existingControlRun?.activityReservation
       ? takeHistoryActivityReservation(existingControlRun)
       : historyActivityRegistry.reserveActive('task', input.id));
+});
+
+trustedHandle('task:update-template', async (_event, input: { id: string; templateId: string }) => {
+  const database = await getDb();
+  const [task, template] = await Promise.all([
+    database.getTaskDetail(input.id),
+    database.getDraftTemplateDetail(input.templateId),
+  ]);
+  if (!task) throw new Error(`Task not found: ${input.id}`);
+  if (isHtmlVideoTask(task)) throw new Error('HTML video tasks manage their layout template in the HTML animation workspace.');
+  if (!template) throw new Error(`Draft template not found: ${input.templateId}`);
+  await database.updateTask(input.id, { templateId: template.id });
+  const event = await database.addTaskEvent(input.id, {
+    type: 'template_updated',
+    step: null,
+    agent: 'Draft',
+    detail: `草稿模板已切换为“${template.name}”`,
+    dataJson: JSON.stringify({ templateId: template.id }),
+  });
+  await publishTaskEvent(event);
+  return publishTaskUpsert(database, input.id);
 });
 
 trustedHandle('task:retry', async (_event, id: string) => {

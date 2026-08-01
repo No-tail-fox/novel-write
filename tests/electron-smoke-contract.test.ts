@@ -32,10 +32,13 @@ describe('real Electron smoke contract', () => {
     expect(main).toContain("document.documentElement.dataset.themeReady === 'true'");
     expect(main).toContain('window.storydream');
     expect(main).toContain('api.getBootstrap()');
+    expect(main).toContain('api.saveConfig');
     expect(main).toContain('api.saveUiPreferences');
-    expect(main).toContain("saved?.kind === 'state-patch'");
-    expect(main).toContain("saved.patch.kind === 'theme-preference'");
-    expect(main).toContain("saved.patch.ui.activeView === 'new-task'");
+    expect(main).toContain("savedConfig?.kind === 'state-patch'");
+    expect(main).toContain("savedConfig.patch.kind === 'config'");
+    expect(main).toContain("savedPreferences?.kind === 'state-patch'");
+    expect(main).toContain("savedPreferences.patch.kind === 'theme-preference'");
+    expect(main).toContain("savedPreferences.patch.ui.activeView === 'new-task'");
     expect(main).toContain('mainWindowPolicyInstalled');
     expect(main).toContain('mainWindow.close()');
     for (const field of [
@@ -246,7 +249,10 @@ describe('real Electron smoke contract', () => {
   it('exercises all governed HTML config controls and render-stage invalidation in real Electron QA', async () => {
     const qa = await readFile(new URL('../scripts/qa-html-video-ui.mjs', import.meta.url), 'utf8');
 
-    expect(qa).toContain('const configControls = await inspectConfigControls(cdp);');
+    expect(qa).toContain('const creationControls = await inspectConfigControls(cdp);');
+    expect(qa).toContain('const workspaceControls = await inspectConfigControls(cdp);');
+    expect(qa).toContain('createFields: creationControls.createFields');
+    expect(qa).toContain('editFields: workspaceControls.editFields');
     expect(qa).toContain('const configUpdate = await exerciseHtmlVideoConfigUpdate(cdp);');
     expect(qa).toContain("document.querySelectorAll('[data-html-video-create-field]')");
     expect(qa).toContain("document.querySelectorAll('[data-html-video-edit-field]')");
@@ -275,7 +281,8 @@ describe('real Electron smoke contract', () => {
     expect(qa).toContain("data-caption-preset");
     expect(qa).toContain('caption-preview.png');
     expect(qa).toContain('captionPreview.captionVisible');
-    expect(qa).toContain("'#html-video-panel .hv-media-item button'");
+    expect(qa).toContain("document.querySelector('#html-video-panel .hv-reference-thumb img')");
+    expect(qa).toContain("document.querySelector('#html-video-panel .hv-reference-phone iframe')");
     expect(qa).toContain('thumbnail.width !== 720 || thumbnail.height !== 1280');
     expect(qa).toContain('caption-editor.png');
     expect(qa).toContain('STORYDREAM_QA_EVIDENCE_DIR');

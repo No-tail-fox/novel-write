@@ -14,6 +14,8 @@ export interface BaseLlmJsonRequest {
   name: string;
   messages: LlmMessage[];
   signal?: AbortSignal;
+  jsonRoot?: 'object' | 'array';
+  jsonMode?: 'required' | 'none';
 }
 
 export interface OpenAiCompatibleJsonRequest extends BaseLlmJsonRequest {
@@ -249,7 +251,7 @@ async function fetchLlmJsonWithRetries(endpoint: string, config: LlmConfig, requ
         'Content-Type': 'application/json',
         Authorization: `Bearer ${config.apiKey}`,
       },
-      body: JSON.stringify(buildRequestBody(config, request.messages)),
+      body: JSON.stringify(buildRequestBody(config, request)),
     });
     if (!TRANSIENT_LLM_STATUS_CODES.has(response.status) || attempt === maxAttempts) {
       return response;
@@ -273,7 +275,7 @@ async function fetchAnthropicJsonWithRetries(endpoint: string, config: LlmConfig
         'x-api-key': config.apiKey,
         'anthropic-version': ANTHROPIC_VERSION,
       },
-      body: JSON.stringify(buildAnthropicRequestBody(config, request.messages, request.anthropic?.toolInputSchema)),
+      body: JSON.stringify(buildAnthropicRequestBody(config, request)),
     });
     if (!TRANSIENT_LLM_STATUS_CODES.has(response.status) || attempt === maxAttempts) {
       return response;
@@ -381,14 +383,20 @@ function abortSignalError(signal: AbortSignal | undefined, label: string): Error
   return new Error(`${label} aborted.`);
 }
 
-function buildRequestBody(config: LlmConfig, messages: LlmMessage[]): Record<string, unknown> {
-  const baseBody: Record<string, unknown> = {
+function buildRequestBody(config: LlmConfig, request: OpenAiCompatibleJsonRequest): Record<string, unknown> {
+  const body: Record<string, unknown> = {
+    ...parseRequestParamsJson(config.requestParamsJson),
     model: config.model,
-    messages,
-    response_format: { type: 'json_object' },
+    messages: request.messages,
   };
-  const extra = parseRequestParamsJson(config.requestParamsJson);
-  return { ...extra, ...baseBody };
+  if (request.jsonRoot === 'array' || request.jsonMode === 'none') {
+    delete body.response_format;
+    delete body.tools;
+    delete body.tool_choice;
+  } else {
+    body.response_format = { type: 'json_object' };
+  }
+  return body;
 }
 
 function buildTextRequestBody(config: LlmConfig, request: OpenAiCompatibleTextRequest): Record<string, unknown> {
@@ -405,14 +413,14 @@ function buildTextRequestBody(config: LlmConfig, request: OpenAiCompatibleTextRe
   return body;
 }
 
-function buildAnthropicRequestBody(config: LlmConfig, messages: LlmMessage[], toolInputSchema?: Record<string, unknown>): Record<string, unknown> {
+function buildAnthropicRequestBody(config: LlmConfig, request: AnthropicMessagesJsonRequest): Record<string, unknown> {
   const extra = parseRequestParamsJson(config.requestParamsJson);
-  const system = messages
+  const system = request.messages
     .filter((message) => message.role === 'system')
     .map((message) => message.content.trim())
     .filter(Boolean)
     .join('\n\n');
-  const anthropicMessages = messages
+  const anthropicMessages = request.messages
     .filter((message) => message.role !== 'system')
     .map((message) => ({
       role: message.role,
@@ -423,9 +431,15 @@ function buildAnthropicRequestBody(config: LlmConfig, messages: LlmMessage[], to
     model: config.model,
     max_tokens: normalizeAnthropicMaxTokens(extra.max_tokens, DEFAULT_ANTHROPIC_MAX_TOKENS),
     messages: anthropicMessages,
-    tools: [buildAnthropicJsonTool(toolInputSchema)],
-    tool_choice: { type: 'tool', name: ANTHROPIC_JSON_TOOL_NAME },
   };
+  if (request.jsonRoot === 'array' || request.jsonMode === 'none') {
+    delete body.response_format;
+    delete body.tools;
+    delete body.tool_choice;
+  } else {
+    body.tools = [buildAnthropicJsonTool(request.anthropic?.toolInputSchema)];
+    body.tool_choice = { type: 'tool', name: ANTHROPIC_JSON_TOOL_NAME };
+  }
   if (system) body.system = system;
   return body;
 }
@@ -512,10 +526,14 @@ export async function testOpenAiCompatibleLlm(config: LlmConfig, fetchImpl: type
           Authorization: `Bearer ${config.apiKey}`,
         },
         body: JSON.stringify({
-          ...buildRequestBody(config, [
-            { role: 'system', content: 'Return strict JSON only.' },
-            { role: 'user', content: 'Return {"ok":true} to confirm this model is usable.' },
-          ]),
+          ...buildRequestBody(config, {
+            step: 0,
+            name: 'model-test',
+            messages: [
+              { role: 'system', content: 'Return strict JSON only.' },
+              { role: 'user', content: 'Return {"ok":true} to confirm this model is usable.' },
+            ],
+          }),
           model,
           max_tokens: 20,
         }),
@@ -598,10 +616,14 @@ export async function testAnthropicMessagesLlm(config: LlmConfig, fetchImpl: typ
           'anthropic-version': ANTHROPIC_VERSION,
         },
         body: JSON.stringify({
-          ...buildAnthropicRequestBody(config, [
-            { role: 'system', content: 'Return strict JSON only.' },
-            { role: 'user', content: 'Return {"ok":true} to confirm this model is usable.' },
-          ]),
+          ...buildAnthropicRequestBody(config, {
+            step: 0,
+            name: 'model-test',
+            messages: [
+              { role: 'system', content: 'Return strict JSON only.' },
+              { role: 'user', content: 'Return {"ok":true} to confirm this model is usable.' },
+            ],
+          }),
           model,
           max_tokens: 20,
         }),

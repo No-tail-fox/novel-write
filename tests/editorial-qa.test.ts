@@ -36,11 +36,11 @@ describe('editorial Electron QA configuration', () => {
 
   it('defines the exact completed capture count for every QA scope', () => {
     expect(Object.fromEntries(editorialQaScopes.map((scope) => [scope, editorialQaExpectedCaptureCount(scope)]))).toEqual({
-      all: 90,
+      all: 91,
       'theme-smoke': 4,
       shell: 4,
       'new-task': 4,
-      'task-operations': 6,
+      'task-operations': 7,
       'html-video': 2,
       'clone-voice': 4,
       'volcengine-tts': 2,
@@ -54,13 +54,13 @@ describe('editorial Electron QA configuration', () => {
     }
   });
 
-  it('classifies the canonical 67 required captures separately from 23 supplemental states', () => {
+  it('classifies the canonical 67 required captures separately from 24 supplemental states', () => {
     const required = editorialQaCaptureIdsByRequirement('required');
     const supplemental = editorialQaCaptureIdsByRequirement('supplemental');
     const all = editorialQaCaptureIds('all');
 
     expect(required).toHaveLength(67);
-    expect(supplemental).toHaveLength(23);
+    expect(supplemental).toHaveLength(24);
     expect(new Set([...required, ...supplemental])).toEqual(new Set(all));
     expect(required.filter((id) => supplemental.includes(id))).toEqual([]);
     expect(required).toEqual(expect.arrayContaining([
@@ -89,6 +89,7 @@ describe('editorial Electron QA configuration', () => {
       'task-detail-operations-desktop',
       'task-detail-borrowed-image-desktop',
       'task-detail-error-dialog-compact',
+      'task-detail-template-menu-dark-desktop',
       'volcengine-legacy-dark-compact',
       'volcengine-v3-light-desktop',
       'workflow-new-task-dark-compact',
@@ -152,6 +153,8 @@ describe('editorial Electron QA configuration', () => {
     expect(runner).toContain('validateMediaThemeInvariants(qaReport)');
     expect(runner).toContain('capture.evidence.media.bitmaps');
     expect(runner).toContain('darkBitmap.sha256 !== lightBitmap.sha256');
+    expect(runner).toContain("darkCapture.view === 'draft-templates' && darkBitmap.kind === 'draft-canvas'");
+    expect(runner).toContain('(!themeAwareEditorCanvas && darkBitmap.sha256 !== lightBitmap.sha256)');
     expect(runner).toContain('Editorial media bitmap changed across themes');
   });
 
@@ -160,8 +163,9 @@ describe('editorial Electron QA configuration', () => {
 
     expect(source).toContain("if (targetView === 'html-video') {");
     expect(source).not.toContain("if (scenarioId.startsWith('html-video-studio')) {");
-    expect(source).toContain("document.querySelectorAll('.hv-tab-content .hv-media-frame')");
-    expect(source).toContain("document.querySelectorAll('.hv-tab-content img[alt*=\"动画预览\"]')");
+    expect(source).toContain("document.querySelectorAll('.hv-reference-thumb')");
+    expect(source).toContain("document.querySelectorAll('.hv-reference-thumb img')");
+    expect(source).toContain("document.querySelector('.hv-reference-phone iframe')");
     expect(source).toContain("!document.querySelector('.hv-tab-content .hv-media-loading')");
     expect(source).toContain('previewImages.length === previewFrames.length');
     expect(source).toContain('previewImages.every((image) => image.complete && image.naturalWidth > 0)');
@@ -414,7 +418,7 @@ describe('editorial Electron QA configuration', () => {
 
     expect(source).toContain('templateOperationalContrast');
     expect(source).toContain("'.prompt-template-row, .prompt-template-gallery .ghost-action, .prompt-template-gallery .chip'");
-    expect(source).toContain("'.draft-template-toolbar .ghost-action, .draft-template-card .ghost-action, .new-template-card'");
+    expect(source).toContain("'.draft-template-toolbar .ghost-action, .draft-template-card .ghost-action, .draft-template-card .danger-action, .new-template-card'");
     expect(source).toContain('contrastRatio < 4.5');
     expect(source).toContain("value.startsWith('color(srgb')");
     expect(source).toContain('channels.slice(0, 3).map((channel) => channel * 255)');

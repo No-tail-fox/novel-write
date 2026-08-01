@@ -210,6 +210,31 @@ describe('configured media providers', () => {
     }
   });
 
+  it('explains an unavailable upstream image account without automatically retrying', async () => {
+    const dir = await mkdtemp(join(tmpdir(), 'storybound-provider-image-unavailable-'));
+    const fetchMock = vi.fn(async () => new Response(
+      JSON.stringify({ error: { message: 'No available compatible accounts', type: 'api_error' } }),
+      { status: 503, headers: { 'content-type': 'application/json' } },
+    ));
+    vi.stubGlobal('fetch', fetchMock);
+
+    try {
+      const config: AppConfig = {
+        ...defaultConfig,
+        imageProvider: 'gpt_image',
+        gptImage: { ...defaultConfig.gptImage, apiKey: 'image-key', baseUrl: 'https://image.example', model: 'gpt-image-2' },
+      };
+      const generate = createConfiguredImageGenerator(config, dir);
+
+      await expect(generate([scene], [prompt], task)).rejects.toThrow(
+        /图片服务当前没有可用于模型 "gpt-image-2" 的上游账号或通道/u,
+      );
+      expect(fetchMock).toHaveBeenCalledTimes(1);
+    } finally {
+      await rm(dir, { recursive: true, force: true });
+    }
+  });
+
   it('does not download a loopback image URL returned by a provider API', async () => {
     const dir = await mkdtemp(join(tmpdir(), 'storybound-provider-image-private-download-'));
     const requests: string[] = [];

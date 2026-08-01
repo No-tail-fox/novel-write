@@ -10,6 +10,7 @@ import {
   type HtmlVideoRunnerInput,
   type HtmlVideoRunnerOptions,
 } from '@shared/html-video-runner';
+import { AppError } from '@shared/app-error';
 import {
   MAX_HTML_VIDEO_PIPELINE_JSON_CHARS,
   MAX_HTML_VIDEO_PIPELINE_FILE_BYTES,
@@ -94,6 +95,21 @@ describe('HTML video runner module', () => {
       expect(result.scenes.map((scene) => scene.narration)).toEqual(['第一句。', '第二句。']);
       expect(result.warnings.join('\n')).toMatch(/LLM|分句/);
       expect(runtime.calls).toEqual(['assets', 'voice', 'preview', 'render']);
+    });
+  });
+
+  it('continues with local scenes when a configured planner rejects strict JSON mode', async () => {
+    await withTempRunner(async (workDir) => {
+      const runtime = createFakeRuntime(workDir);
+      runtime.options.plan = async () => {
+        throw new AppError('HTML_VIDEO_LLM_SCHEMA_CONFLICT', '场景规划返回了格式错误：strict JSON schema conflict', true);
+      };
+
+      const result = await runHtmlVideoPipeline(createRunnerInput('planner-json-fallback', '第一句。\n\n第二句。'), runtime.options);
+
+      expect(result.current).toBe('done');
+      expect(result.scenes.map((scene) => scene.narration)).toEqual(['第一句。', '第二句。']);
+      expect(result.warnings.join('\n')).toContain('已改用本地分镜规划');
     });
   });
 

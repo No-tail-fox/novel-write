@@ -2,7 +2,8 @@ import { copyFile, mkdir, readFile, writeFile } from 'node:fs/promises';
 import { createHash } from 'node:crypto';
 import { extname, join } from 'node:path';
 import type { AiSourceContext, BgmItem, CharacterCard, CoverMetadata, CustomCoverTemplate, DraftTemplate, ImagePrompt, MusicPlan, PipelineArtifact, PromptStepTemplateType, PromptTemplate, RewriteEvaluationResult, SequencedTaskEvent, StoryboardScene, Task, TaskArtifactImageErrorPreview, TaskStepRerunMode } from './types';
-import { buildCoverMetadata, buildSubtitleTrack } from './story';
+import { buildCoverMetadata, buildSubtitleTrack, normalizeStoryboardSceneLengths } from './story';
+import { characterCoverDisplayRules, isCharacterStoryTrack, resolveCoverDisplayMetadata } from './cover-copy';
 import { writeJianyingDraft, type SceneAsset, type WriteJianyingDraftOptions } from './draft';
 import { runStoryboundMediaSidecar, type StoryboundSidecarInput, type StoryboundSidecarResult } from './storybound-sidecar';
 import type { FileDatabase } from './storage';
@@ -67,6 +68,7 @@ interface LlmJsonStepRequest {
   name: string;
   messages: LlmMessage[];
   signal?: AbortSignal;
+  jsonRoot?: 'object' | 'array';
   anthropicToolInputSchema?: Record<string, unknown>;
 }
 
@@ -76,6 +78,20 @@ interface RenderedStepPrompt {
 }
 
 type TaskEventEmitter = (type: string, step: number | null, agent: string | null, detail: string, data?: unknown) => Promise<void>;
+
+const storyboardSceneSplittingRules = [
+  '影视分镜拆分硬规则：',
+  '1. 只切分，不改写；所有分镜 cap 顺序拼接后必须完整还原最终成稿。',
+  '2. 第一完整句单独作为开场分镜；后续每个分镜承载同一画面的 1-3 个完整句。',
+  '3. 每个分镜推荐 25-45 个中文字符，绝对不得超过 55 个字符；少于 15 字的片段通常与相邻画面合并。',
+  '4. 保留完整主语、动作、因果和情绪，不按每个逗号机械切镜。',
+  '5. 每项仅输出该分镜末尾连续 10-20 个原文字符作为尾部锚点。',
+].join('\n');
+
+const storyboardTailAnchorSystemPrompt = [
+  '只输出一个 JSON 字符串数组，每项是最终成稿中的分镜尾部锚点。不要输出 JSON 对象、解释或 Markdown。',
+  storyboardSceneSplittingRules,
+].join('\n');
 
 const stepAgents: Record<number, string> = {
   0: 'Reviewer',
@@ -88,6 +104,7 @@ const stepAgents: Record<number, string> = {
 };
 
 const imagePromptBatchSize = 8;
+const storyboardFormatAttempts = 3;
 const rewriteTargetLengthRepairAttempts = 2;
 const rewriteTargetLengthRepairBuffer = 120;
 const stringJsonSchema = { type: 'string' };
@@ -315,7 +332,7 @@ async function runTaskWithPipelineStateLock(db: FileDatabase, task: Task, option
       ? await probeMusicMvAudio(task, options, workDir)
       : undefined;
     await ensureContentArtifact({ db, task, options, workDir, emit, markStep, pipeline, musicMvAudioDurationMs });
-    const artifact = hydrateArtifact(pipeline.artifact);
+    const artifact = hydrateArtifact(pipeline.artifact, task);
     if (task.processingMode === 'clip-only') {
       const completedAt = new Date().toISOString();
       await db.updateTask(task.id, {
@@ -357,13 +374,17 @@ async function runTaskWithPipelineStateLock(db: FileDatabase, task: Task, option
       await heartbeat(6, 'draft running');
       await emit('step_start', 6, 'Draft', '写入剪映草稿目录');
       const state = await db.getState();
+      const latestTask = state.tasks.find((item) => item.id === task.id);
+      const draftTask = latestTask?.templateId && latestTask.templateId !== task.templateId
+        ? { ...task, templateId: latestTask.templateId }
+        : task;
       const bgm = resolveBgm(state.config.jianying.bgmLibrary, task.bgmId);
-      const template = state.draftTemplates.find((item) => item.id === task.templateId);
+      const template = state.draftTemplates.find((item) => item.id === draftTask.templateId);
       const normalizedTemplate = template ? normalizeDraftTemplate(template) : undefined;
       const draft =
         task.taskKind === 'music-mv'
           ? await writeMusicMvSidecarDraft({
-            task,
+            task: draftTask,
             artifact,
             workDir,
             draftRootDir: state.config.jianying.draftPath,
@@ -380,7 +401,7 @@ async function runTaskWithPipelineStateLock(db: FileDatabase, task: Task, option
               title: task.title || todayTitle(task.inputText),
               cover: artifact.cover,
               ratio: task.ratio,
-              templateId: task.templateId,
+              templateId: draftTask.templateId,
               template: normalizedTemplate,
               scenes: artifact.scenes,
               imagePrompts: artifact.imagePrompts,
@@ -477,14 +498,16 @@ async function ensureContentArtifact(input: {
 }): Promise<void> {
   const { db, task, options, workDir, emit, markStep, pipeline } = input;
   throwIfAborted(options.signal);
+  const appState = await db.getState();
+  const subtitleMaxCharsPerLine = appState.draftTemplates.find((template) => template.id === task.templateId)?.caption.maxCharsPerLine ?? 12;
   if (hasCompleteContentArtifact(pipeline)) {
-    const artifact = hydrateArtifact(pipeline.artifact);
+    const artifact = hydrateArtifact(pipeline.artifact, task, subtitleMaxCharsPerLine);
     pipeline.artifact.subtitles = artifact.subtitles;
     await writeContentArtifacts(workDir, artifact, task);
     return;
   }
   if (hasCompleteContentData(pipeline)) {
-    const artifact = hydrateArtifact(pipeline.artifact);
+    const artifact = hydrateArtifact(pipeline.artifact, task, subtitleMaxCharsPerLine);
     pipeline.artifact.subtitles = artifact.subtitles;
     await writeContentArtifacts(workDir, artifact, task);
     for (const step of [0, 1, 2, 3]) {
@@ -504,10 +527,10 @@ async function ensureContentArtifact(input: {
     pipeline.artifact = {
       ...artifact,
       imagePrompts: applyTaskReferenceImagesToPrompts(artifact.imagePrompts, task),
-      subtitles: buildSubtitleTrack(artifact.scenes),
+      subtitles: buildSubtitleTrack(artifact.scenes, { maxCharsPerLine: subtitleMaxCharsPerLine }),
       sourceContext: sourceContext ?? artifact.sourceContext,
     };
-    await writeContentArtifacts(workDir, hydrateArtifact(pipeline.artifact), task);
+    await writeContentArtifacts(workDir, hydrateArtifact(pipeline.artifact, task, subtitleMaxCharsPerLine), task);
     for (const step of [0, 1, 2, 3]) {
       await db.updateTask(task.id, { currentStep: step, retryFromStep: step });
       await markStep(step, 'completed', { outputPath: contentOutputPath(workDir, step) });
@@ -516,8 +539,12 @@ async function ensureContentArtifact(input: {
     return;
   }
   if (task.taskKind === 'music-mv') {
-    pipeline.artifact = buildMusicMvArtifact(task, sourceContext ?? undefined, input.musicMvAudioDurationMs);
-    await writeContentArtifacts(workDir, hydrateArtifact(pipeline.artifact), task);
+    const musicArtifact = buildMusicMvArtifact(task, sourceContext ?? undefined, input.musicMvAudioDurationMs);
+    pipeline.artifact = {
+      ...musicArtifact,
+      subtitles: buildSubtitleTrack(musicArtifact.scenes, { maxCharsPerLine: subtitleMaxCharsPerLine }),
+    };
+    await writeContentArtifacts(workDir, hydrateArtifact(pipeline.artifact, task, subtitleMaxCharsPerLine), task);
     for (const step of [0, 1, 2, 3]) {
       await db.updateTask(task.id, { currentStep: step, retryFromStep: step });
       await markStep(step, 'completed', { outputPath: contentOutputPath(workDir, step) });
@@ -528,7 +555,6 @@ async function ensureContentArtifact(input: {
   if (!options.llm) {
     throw new Error('LLM provider is not configured; cannot run real content generation.');
   }
-  const appState = await db.getState();
   const promptTemplates = appState.promptTemplates;
   const taskTemplate = selectTaskPromptTemplate(promptTemplates, { track: task.track, promptTemplateId: task.promptTemplateId });
   const promptContext = (): PromptRenderContext => buildPromptRenderContext({ task, taskTemplate, customStyles: appState.customStyles, sourceContext, artifact: pipeline.artifact });
@@ -615,7 +641,7 @@ async function ensureContentArtifact(input: {
       rerunContext: rewriteContextForStep(pipeline, 1),
       emit,
     });
-    pipeline.artifact.rewrittenCopy = rewrite.rewrittenCopy;
+    pipeline.artifact.rewrittenCopy = applyFinalRewriteControls(rewrite.rewrittenCopy, task, controlPlan);
     pipeline.artifact.rewriteEvaluation = rewrite.evaluation;
     const coverPromptContext = buildPromptRenderContext({
       task,
@@ -631,10 +657,10 @@ async function ensureContentArtifact(input: {
     pipeline.artifact.cover = await generateCoverMetadata(options.llm, {
       coverPrompt,
       rewrittenCopy: pipeline.artifact.rewrittenCopy,
+      track: task.track,
       signal: options.signal,
       emit,
     });
-    pipeline.artifact.rewrittenCopy = applyFinalRewriteControls(rewrite.rewrittenCopy, task, pipeline.artifact.cover.title, controlPlan);
     await writeFile(join(workDir, '01-rewritten-copy.md'), pipeline.artifact.rewrittenCopy, 'utf8');
     await writeFile(join(workDir, '00-cover-title.json'), JSON.stringify(pipeline.artifact.cover, null, 2), 'utf8');
     await writeFile(join(workDir, '01-rewrite-evaluations.json'), JSON.stringify(pipeline.artifact.rewriteEvaluation, null, 2), 'utf8');
@@ -643,7 +669,7 @@ async function ensureContentArtifact(input: {
     }
     await markStep(1, 'completed', { outputPath: join(workDir, '01-rewritten-copy.md') });
     await heartbeatTask(db, task.id, options, 1, 'LLM rewrite completed');
-    await emit('step_complete', 1, 'Writer', `改写完成（${pipeline.artifact.rewrittenCopy.length} 字 · 3 轮取最优，采用第 ${pipeline.artifact.rewriteEvaluation.bestRound} 轮）`, { evaluation: pipeline.artifact.rewriteEvaluation });
+    await emit('step_complete', 1, 'Writer', `最终成稿与封面信息已生成（${pipeline.artifact.rewrittenCopy.length} 字 · 3 轮取最优，采用第 ${pipeline.artifact.rewriteEvaluation.bestRound} 轮）`, { evaluation: pipeline.artifact.rewriteEvaluation });
   }
 
   if (directCopyPublish && !isStepCompleted(pipeline, 0)) {
@@ -672,27 +698,53 @@ async function ensureContentArtifact(input: {
     const rewrittenCopy = requireString(pipeline.artifact.rewrittenCopy, 'rewrittenCopy');
     const storyboardSceneCount = normalizeStoryboardSceneCount(task.targetScenes);
     const storyboardPrompt = renderStepPrompt(promptTemplates, 'storyboard', promptContext(), rewrittenCopy);
-    const storyboard = await runLlmJson<unknown>(options.llm, {
-      step: 2,
-      name: 'storyboard',
-      signal: options.signal,
-      messages: [
-        { role: 'system', content: 'Return strict JSON only. Schema: ["tail anchor", "..."].' },
-        {
-          role: 'user',
-          content: joinPromptBlocks([
-            'Storyboard instructions:',
-            storyboardPrompt,
-            extraRequirementsInstruction(task, storyboardPrompt),
-            taskModeInstructions(task),
-            'Rewritten copy:',
-            rewrittenCopy,
-            rewriteContextForStep(pipeline, 2),
-          ]),
-        },
-      ],
-    });
-    let storyboardScenes = normalizeStoryboardResponse(storyboard.json, storyboard.raw, rewrittenCopy);
+    let storyboardScenes: StoryboardScene[] | null = null;
+    let storyboardRequestId: string | null = null;
+    let storyboardFailure = '未知错误';
+    for (let attempt = 1; attempt <= storyboardFormatAttempts; attempt += 1) {
+      try {
+        const storyboard = await runLlmJson<unknown>(options.llm, {
+          step: 2,
+          name: attempt === 1 ? 'storyboard' : `storyboard-format-retry-${attempt}`,
+          signal: options.signal,
+          jsonRoot: 'array',
+          messages: [
+            { role: 'system', content: storyboardTailAnchorSystemPrompt },
+            {
+              role: 'user',
+              content: joinPromptBlocks([
+                'Storyboard instructions:',
+                storyboardPrompt,
+                extraRequirementsInstruction(task, storyboardPrompt),
+                taskModeInstructions(task),
+                'Rewritten copy:',
+                rewrittenCopy,
+                storyboardSceneSplittingRules,
+                rewriteContextForStep(pipeline, 2),
+                attempt > 1
+                  ? `上次分镜尝试失败：${storyboardFailure.slice(0, 300)}\n请修复该问题，只输出 JSON 字符串数组。`
+                  : '',
+              ]),
+            },
+          ],
+        });
+        storyboardScenes = normalizeStoryboardResponse(storyboard.json, storyboard.raw, rewrittenCopy);
+        storyboardRequestId = storyboard.requestId;
+        break;
+      } catch (error) {
+        if (options.signal?.aborted || (error instanceof DOMException && error.name === 'AbortError')) throw error;
+        storyboardFailure = error instanceof Error ? error.message : String(error);
+        if (attempt < storyboardFormatAttempts) {
+          await emit('step_progress', 2, 'Storyboard', `第 ${attempt} 次分镜格式校验未通过，正在自动重试`, {
+            attempt,
+            error: storyboardFailure.slice(0, 300),
+          });
+        }
+      }
+    }
+    if (!storyboardScenes) {
+      throw new Error(`Step 2 分镜失败：${storyboardFailure}`);
+    }
     if (!isStoryboardSceneCountAcceptable(storyboardScenes, storyboardSceneCount, rewrittenCopy)) {
       storyboardScenes = await repairStoryboardToTargetSceneCount(options.llm, {
         task,
@@ -708,7 +760,7 @@ async function ensureContentArtifact(input: {
     await writeFile(join(workDir, '02-sentences.json'), JSON.stringify(pipeline.artifact.scenes, null, 2), 'utf8');
     await markStep(2, 'completed', { outputPath: join(workDir, '02-sentences.json') });
     await heartbeatTask(db, task.id, options, 2, 'LLM storyboard completed');
-    await emit('step_complete', 2, 'Storyboard', `分镜 ${pipeline.artifact.scenes.length} 个`, { requestId: storyboard.requestId });
+    await emit('step_complete', 2, 'Storyboard', `分镜 ${pipeline.artifact.scenes.length} 个`, { requestId: storyboardRequestId });
   }
 
   if (!pipeline.artifact.characterCard) {
@@ -763,8 +815,8 @@ async function ensureContentArtifact(input: {
   if (!pipeline.artifact.scenes) {
     throw new Error('Pipeline scenes are missing; retry from storyboard step.');
   }
-  pipeline.artifact.subtitles = buildSubtitleTrack(pipeline.artifact.scenes);
-  await writeContentArtifacts(workDir, hydrateArtifact(pipeline.artifact), task);
+  pipeline.artifact.subtitles = buildSubtitleTrack(pipeline.artifact.scenes, { maxCharsPerLine: subtitleMaxCharsPerLine });
+  await writeContentArtifacts(workDir, hydrateArtifact(pipeline.artifact, task, subtitleMaxCharsPerLine), task);
 }
 
 function renderStepPrompt(templates: PromptTemplate[], type: PromptStepTemplateType, context: PromptRenderContext, fallback: string): string {
@@ -921,6 +973,7 @@ function runLlmJson<T = unknown>(llm: ConfiguredJsonLlm, request: LlmJsonStepReq
     name: request.name,
     messages: request.messages,
     signal: request.signal,
+    jsonRoot: request.jsonRoot,
   };
   if (llm.protocol === 'anthropic') {
     const anthropicRequest: AnthropicMessagesJsonRequest = request.anthropicToolInputSchema
@@ -1034,11 +1087,11 @@ function productInfoRewriteBlock(task: Task): string {
   ]);
 }
 
-function applyFinalRewriteControls(copy: string, task: Task, coverTitle: string | undefined, controlPlan: RewriteControlPlan): string {
+function applyFinalRewriteControls(copy: string, task: Task, controlPlan: RewriteControlPlan): string {
   if (isDialogueScript(task)) return copy;
   const intro = controlPlan.lockedIntro.trim() || (controlPlan.applyTaskFixedIntro ? task.fixedIntro?.trim() : '') || '';
   const outroTemplate = task.outroCta?.trim() ?? '';
-  const protagonist = coverTitle?.trim() || task.title.trim() || '主角';
+  const protagonist = task.title.trim() || task.aiKeyword.trim() || '主角';
   const outro = outroTemplate ? outroTemplate.replace(/\{主角\}/g, protagonist) : '';
   if (!intro && !outro) return copy;
   return joinPromptBlocks([intro, copy, outro]);
@@ -1206,7 +1259,7 @@ async function runRewriteRounds(
 
 async function generateCoverMetadata(
   llm: ConfiguredJsonLlm,
-  input: { coverPrompt: string; rewrittenCopy: string; signal?: AbortSignal; emit?: TaskEventEmitter },
+  input: { coverPrompt: string; rewrittenCopy: string; track: string; signal?: AbortSignal; emit?: TaskEventEmitter },
 ): Promise<CoverMetadata> {
   await input.emit?.('step_detail', 1, 'Writer', '生成封面标题与种子留言...');
   const cover = await runLlmJson<{ cover: CoverMetadata }>(llm, {
@@ -1222,6 +1275,7 @@ async function generateCoverMetadata(
           'Cover metadata generation.',
           'Cover instructions:',
           input.coverPrompt,
+          isCharacterStoryTrack(input.track) ? characterCoverDisplayRules : '',
           'Final rewritten copy:',
           input.rewrittenCopy,
         ]),
@@ -1230,9 +1284,9 @@ async function generateCoverMetadata(
   });
   const result = cover.json && typeof cover.json === 'object' ? cover.json as { cover?: unknown } : {};
   try {
-    return normalizeCover(result.cover);
+    return resolveCoverDisplayMetadata(normalizeCover(result.cover), { track: input.track, sourceText: input.rewrittenCopy });
   } catch {
-    return buildCoverMetadata(input.rewrittenCopy);
+    return resolveCoverDisplayMetadata(buildCoverMetadata(input.rewrittenCopy), { track: input.track, sourceText: input.rewrittenCopy });
   }
 }
 
@@ -1347,8 +1401,9 @@ async function repairStoryboardToTargetSceneCount(
       step: 2,
       name: `storyboard-target-scenes-repair-${attempt}`,
       signal: input.signal,
+      jsonRoot: 'array',
       messages: [
-        { role: 'system', content: 'Return strict JSON only. Schema: ["tail anchor", "..."].' },
+        { role: 'system', content: storyboardTailAnchorSystemPrompt },
         {
           role: 'user',
           content: joinPromptBlocks([
@@ -1361,6 +1416,7 @@ async function repairStoryboardToTargetSceneCount(
             taskModeInstructions(input.task),
             'Rewritten copy:',
             input.rewrittenCopy,
+            storyboardSceneSplittingRules,
             'Current short storyboard:',
             JSON.stringify(current, null, 2),
             'Please return only the tail-anchor JSON string array; do not return {id, cap} objects.',
@@ -1969,17 +2025,19 @@ async function writeContentArtifacts(workDir: string, artifact: PipelineArtifact
   await writeFile(join(workDir, 'subtitles.srt'), artifact.subtitles.srt, 'utf8');
 }
 
-function hydrateArtifact(input: Partial<PipelineArtifact>): PipelineArtifact {
+function hydrateArtifact(input: Partial<PipelineArtifact>, task?: Pick<Task, 'track'>, subtitleMaxCharsPerLine?: number): PipelineArtifact {
   if (!input.reviewedText || !input.rewrittenCopy || !input.cover || !input.scenes || !input.imagePrompts) {
     throw new Error('Pipeline content artifact is incomplete; retry from LLM steps.');
   }
   return {
     reviewedText: input.reviewedText,
     rewrittenCopy: input.rewrittenCopy,
-    cover: input.cover,
+    cover: resolveCoverDisplayMetadata(input.cover, { track: task?.track, sourceText: input.rewrittenCopy }),
     scenes: input.scenes,
     imagePrompts: input.imagePrompts,
-    subtitles: input.subtitles ?? buildSubtitleTrack(input.scenes),
+    subtitles: subtitleMaxCharsPerLine === undefined
+      ? input.subtitles ?? buildSubtitleTrack(input.scenes)
+      : buildSubtitleTrack(input.scenes, { maxCharsPerLine: subtitleMaxCharsPerLine }),
     sourceContext: input.sourceContext,
     musicPlan: input.musicPlan,
     characterCard: input.characterCard,
@@ -2014,7 +2072,7 @@ function normalizeScenes(input: unknown): StoryboardScene[] {
   if (!Array.isArray(input) || input.length === 0) {
     throw new Error('LLM storyboard response did not include scenes.');
   }
-  return input.map((scene, index) => {
+  const scenes = input.map((scene, index) => {
     const item = scene as Partial<StoryboardScene> & { desc_prompt?: unknown };
     const cap = requireString(item.cap, `scenes[${index}].cap`);
     return {
@@ -2024,9 +2082,14 @@ function normalizeScenes(input: unknown): StoryboardScene[] {
       durationMs: Math.max(800, Number(item.durationMs ?? estimateSceneDurationMs(cap))),
     };
   });
+  return normalizeStoryboardSceneLengths(scenes);
 }
 
 function normalizeStoryboardResponse(input: unknown, raw = '', rewrittenCopy = ''): StoryboardScene[] {
+  const responseError = extractStoryboardResponseError(input);
+  if (responseError) {
+    throw new Error(`LLM storyboard response reported an error: ${responseError}.${storyboardResponseDebugHint(input, raw)}`);
+  }
   const anchors = extractStoryboardTailAnchors(input);
   if (anchors) {
     return normalizeStoryboardTailAnchors(anchors, rewrittenCopy, input, raw);
@@ -2036,6 +2099,38 @@ function normalizeStoryboardResponse(input: unknown, raw = '', rewrittenCopy = '
     throw new Error(`LLM storyboard response did not include scenes.${storyboardResponseDebugHint(input, raw)}`);
   }
   return normalizeScenes(scenes);
+}
+
+function extractStoryboardResponseError(input: unknown): string | null {
+  const parsedInput = maybeParseStoryboardJson(input);
+  if (parsedInput !== input) return extractStoryboardResponseError(parsedInput);
+  if (!input || typeof input !== 'object' || Array.isArray(input)) return null;
+  const record = input as Record<string, unknown>;
+  for (const key of ['error', 'errors']) {
+    if (!(key in record) || record[key] === null || record[key] === undefined) continue;
+    const detail = storyboardResponseErrorDetail(record[key]);
+    if (detail) return detail;
+  }
+  if (record.ok === false || record.success === false) {
+    return storyboardResponseErrorDetail(record.message ?? record.detail ?? record.reason) || 'provider reported an unsuccessful storyboard response';
+  }
+  for (const key of ['data', 'result', 'output', 'response']) {
+    const nested = record[key];
+    if (!nested || typeof nested !== 'object') continue;
+    const nestedError = extractStoryboardResponseError(nested);
+    if (nestedError) return nestedError;
+  }
+  return null;
+}
+
+function storyboardResponseErrorDetail(value: unknown): string {
+  if (typeof value === 'string') return value.trim();
+  try {
+    const serialized = JSON.stringify(value);
+    return (serialized ?? String(value)).slice(0, 300);
+  } catch {
+    return String(value).slice(0, 300);
+  }
 }
 
 function normalizeStoryboardTailAnchors(anchors: string[], rewrittenCopy: string, input: unknown, raw: string): StoryboardScene[] {
@@ -2055,24 +2150,97 @@ function normalizeStoryboardTailAnchors(anchors: string[], rewrittenCopy: string
   if (extracted.scenes.length === 0) {
     throw new Error(`LLM storyboard response did not produce scenes from tail anchors.${storyboardResponseDebugHint(input, raw)}`);
   }
-  return extracted.scenes;
+  return normalizeStoryboardSceneLengths(extracted.scenes);
 }
 
-function extractStoryboardTailAnchors(input: unknown): string[] | undefined {
+const STORYBOARD_TAIL_ANCHOR_KEYS = new Set([
+  'anchor',
+  'anchors',
+  'tailanchor',
+  'tailanchors',
+  'cutanchor',
+  'cutanchors',
+  'endinganchor',
+  'endinganchors',
+  '锚点',
+  '尾锚',
+  '尾锚点',
+  '尾部锚点',
+  '分镜锚点',
+  '切分锚点',
+  '句尾锚点',
+]);
+
+const STORYBOARD_TAIL_ANCHOR_CONTAINER_KEYS = new Set([
+  'scene',
+  'scenes',
+  'storyboard',
+  'storyboards',
+  'scenelist',
+  'sentences',
+  'shots',
+  'items',
+  'list',
+  'values',
+  'data',
+  'result',
+  'output',
+  'content',
+  'response',
+  '分镜',
+  '分镜列表',
+  '镜头',
+  '镜头列表',
+]);
+
+function extractStoryboardTailAnchors(input: unknown, allowPlainText = false): string[] | undefined {
   const parsedInput = maybeParseStoryboardJson(input);
   if (parsedInput !== input) {
-    return extractStoryboardTailAnchors(parsedInput);
+    return extractStoryboardTailAnchors(parsedInput, allowPlainText);
+  }
+  if (typeof input === 'string') {
+    return allowPlainText ? parseStoryboardTailAnchorText(input) : undefined;
   }
   if (Array.isArray(input)) {
     return input.every((item) => typeof item === 'string') ? input.map((item) => item.trim()) : undefined;
   }
   if (!input || typeof input !== 'object') return undefined;
   const record = input as Record<string, unknown>;
-  for (const key of ['anchors', 'tailAnchors', 'tail_anchors', 'cutAnchors', 'scenes', 'storyboard', 'storyboards', 'sceneList', 'sentences', 'shots', 'data', 'result', 'output']) {
-    const anchors = extractStoryboardTailAnchors(record[key]);
+  const entries = Object.entries(record);
+
+  for (const [key, value] of entries) {
+    if (!STORYBOARD_TAIL_ANCHOR_KEYS.has(normalizeStoryboardResponseKey(key))) continue;
+    const anchors = extractStoryboardTailAnchors(value, true);
     if (anchors) return anchors;
   }
+
+  for (const [key, value] of entries) {
+    if (!STORYBOARD_TAIL_ANCHOR_CONTAINER_KEYS.has(normalizeStoryboardResponseKey(key))) continue;
+    const anchors = extractStoryboardTailAnchors(value);
+    if (anchors) return anchors;
+  }
+
+  if (entries.length === 1) {
+    return extractStoryboardTailAnchors(entries[0][1], true);
+  }
   return undefined;
+}
+
+function normalizeStoryboardResponseKey(value: string): string {
+  return value.trim().toLowerCase().replace(/[\s_-]+/gu, '');
+}
+
+function parseStoryboardTailAnchorText(value: string): string[] | undefined {
+  const lines = stripJsonCodeFence(value)
+    .split(/\r?\n/u)
+    .map((line) => line.trim())
+    .filter(Boolean)
+    .map((line) => line
+      .replace(/^(?:[-*•]\s*|\d+[.)、:：]\s*)/u, '')
+      .replace(/^["'“](.*)["'”][,，]?$/u, '$1')
+      .trim())
+    .filter(Boolean);
+  return lines.length > 0 ? lines : undefined;
 }
 
 function validateStoryboardTailAnchorArray(anchors: string[]): string | null {

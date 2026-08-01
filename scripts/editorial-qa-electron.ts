@@ -192,12 +192,13 @@ function validateMediaThemeInvariants(report: QaReport): void {
     const lightByKey = new Map(lightBitmaps.map((bitmap) => [bitmap.key, bitmap]));
     for (const darkBitmap of darkBitmaps) {
       const lightBitmap = lightByKey.get(darkBitmap.key);
+      const themeAwareEditorCanvas = darkCapture.view === 'draft-templates' && darkBitmap.kind === 'draft-canvas';
       if (
         !lightBitmap
         || darkBitmap.kind !== lightBitmap.kind
         || darkBitmap.width !== lightBitmap.width
         || darkBitmap.height !== lightBitmap.height
-        || darkBitmap.sha256 !== lightBitmap.sha256
+        || (!themeAwareEditorCanvas && darkBitmap.sha256 !== lightBitmap.sha256)
       ) {
         throw new Error(`Editorial media bitmap changed across themes: ${darkCapture.id} ${darkBitmap.key}.`);
       }

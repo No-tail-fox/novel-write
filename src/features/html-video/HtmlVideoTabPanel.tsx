@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { Eye, Image as ImageIcon, Loader2, Play, RotateCcw, Save, Upload } from 'lucide-react';
+import { Image as ImageIcon, Loader2, Play, RotateCcw, Save, Upload } from 'lucide-react';
 import { EmptyState } from '../../components/EmptyState';
 import { FormField as Field } from '../../components/FormField';
 import { SegmentedControl as Segmented } from '../../components/SegmentedControl';
@@ -12,9 +12,14 @@ import { HTML_VIDEO_CONTROL_MANIFEST_V1 } from '../../shared/html-video-control-
 import { HTML_VIDEO_COVER_MODES, HTML_VIDEO_COVER_RATIOS, htmlVideoCoverDimensions } from '../../shared/html-video-cover';
 import { HTML_VIDEO_JOB_DEFAULTS } from '../../shared/html-video-config';
 import { htmlVideoMediaElementKey, htmlVideoMediaStatus } from '../../shared/html-video-media';
-import { fitHtmlVideoOutputSize, safeParseHtmlVideoPipelineData } from '../../shared/html-video-workflow';
+import { fitHtmlVideoOutputSize, htmlVideoUserFacingError, safeParseHtmlVideoPipelineData } from '../../shared/html-video-workflow';
 import { useAsyncAction } from '../../ui/async-action';
-import { trimForPreview } from '../tasks/task-formatters';
+import {
+  HtmlVideoStoryboundAssetsPanel,
+  HtmlVideoStoryboundPreviewPanel,
+  HtmlVideoStoryboundTextPanel,
+  HtmlVideoStoryboundVoicePanel,
+} from './HtmlVideoStoryboundPanels';
 
 const htmlVideoCaptionPresetLabels: Record<HtmlVideoCaptionPreset, string> = {
   classic: '经典',
@@ -307,6 +312,50 @@ function HtmlVideoCoverEditor({
   );
 }
 
+const htmlVideoStepLabels = {
+  rewrite: '改写与分句',
+  planning: '场景规划',
+  assets: '素材生成',
+  voice: '配音生成',
+  preview: '动画预览',
+  render: '出片',
+} as const;
+
+function HtmlVideoWorkflowBlocked({
+  tab,
+  task,
+  data,
+  busy,
+  onRetry,
+}: {
+  tab: HtmlVideoTabKey;
+  task: Task;
+  data: ReturnType<typeof safeParseHtmlVideoPipelineData>['data'];
+  busy: boolean;
+  onRetry: () => Promise<void>;
+}) {
+  const failedStep = (Object.keys(htmlVideoStepLabels) as Array<keyof typeof htmlVideoStepLabels>)
+    .find((step) => data.steps[step].status === 'failed');
+  const nextStep = failedStep
+    ?? (Object.keys(htmlVideoStepLabels) as Array<keyof typeof htmlVideoStepLabels>)
+      .find((step) => data.steps[step].status !== 'completed')
+    ?? 'render';
+  const detail = failedStep
+    ? htmlVideoUserFacingError(data.steps[failedStep].error || task.errorMessage || `${htmlVideoStepLabels[failedStep]}未完成。`)
+    : `${htmlVideoStepLabels[nextStep]}完成后，这里会显示${tab === 'preview' ? '可播放的动画' : tab === 'cover' ? '封面内容' : tab === 'output' ? '成片文件' : '对应素材'}。`;
+  return (
+    <section className="hv-workflow-blocked" aria-live="polite">
+      <strong>{failedStep ? `${htmlVideoStepLabels[failedStep]}未完成` : '等待上一步完成'}</strong>
+      <p>{detail}</p>
+      {failedStep ? (
+        <button className="mini-button" type="button" disabled={busy} onClick={() => void onRetry()}>
+          <RotateCcw size={14} />从{htmlVideoStepLabels[failedStep]}重试
+        </button>
+      ) : null}
+    </section>
+  );
+}
+
 export function HtmlVideoTabPanel({
   api,
   tab,
@@ -323,6 +372,7 @@ export function HtmlVideoTabPanel({
   busy,
   isBrowserPreview,
   openPreview,
+  onRetry,
 }: {
   api: StoryDreamApi;
   tab: HtmlVideoTabKey;
@@ -339,174 +389,52 @@ export function HtmlVideoTabPanel({
   busy: boolean;
   isBrowserPreview: boolean;
   openPreview: (sceneIndex?: number) => Promise<void>;
+  onRetry: () => Promise<void>;
 }) {
   if (!task) {
     return <EmptyState title="暂无 HTML 动画视频任务" />;
   }
 
-  if (tab === 'text') {
-    return (
-      <div className="hv-tab-content">
-        {data.scenes.length ? (
-          <div className="artifact-scene-list">
-            {data.scenes.map((scene) => (
-              <div key={scene.index}>
-                <strong>{scene.index}. {scene.title}</strong>
-                <p>{scene.narration}</p>
-                <small>{scene.captions.join(' / ')}</small>
-              </div>
-            ))}
-          </div>
-        ) : <EmptyState title="等待文案改写与场景规划" />}
-      </div>
-    );
-  }
+  const editorialProps = {
+    api,
+    task,
+    data,
+    applyState,
+    refreshTaskDetail,
+    mediaUrls,
+    failedMediaPaths,
+    mediaRetryRevision,
+    onMediaElementError,
+    onMediaElementReady,
+    busy,
+    isBrowserPreview,
+  };
+  const planningFailed = data.steps.planning.status === 'failed';
+  const noScenes = data.scenes.length === 0;
+  const blocked = () => <HtmlVideoWorkflowBlocked tab={tab} task={task} data={data} busy={busy} onRetry={onRetry} />;
 
-  if (tab === 'assets') {
-    return (
-      <div className="hv-tab-content">
-        {data.assets.length ? (
-          <div className="hv-media-grid">
-            {data.assets.map((asset) => {
-              const url = mediaUrls[asset.src];
-              const assetStatus = htmlVideoMediaStatus(asset.src, mediaUrls, failedMediaPaths, isBrowserPreview);
-              return (
-                <figure className="hv-media-item" key={`${asset.sceneIndex}-${asset.kind}-${asset.slot}`}>
-                  <div className="hv-media-frame" aria-busy={assetStatus === 'loading'}>
-                    {assetStatus === 'ready' && url ? (
-                      <img
-                        key={htmlVideoMediaElementKey(task.id, asset.src, mediaRetryRevision)}
-                        src={url}
-                        alt={`场景 ${asset.sceneIndex}${asset.kind === 'bg' ? '背景图' : '前景图'}`}
-                        loading="lazy"
-                        decoding="async"
-                        onError={() => onMediaElementError(asset.src)}
-                        onLoad={() => onMediaElementReady(asset.src)}
-                      />
-                    ) : assetStatus === 'loading' ? (
-                      <span className="hv-media-state hv-media-loading" role="status"><Loader2 className="spin" size={18} />图片加载中</span>
-                    ) : assetStatus === 'unavailable' ? (
-                      <span className="hv-media-state" role="status" aria-live="polite"><ImageIcon size={22} aria-hidden="true" />图片加载失败</span>
-                    ) : (
-                      <span className="hv-media-state" role="status"><ImageIcon size={22} aria-hidden="true" />本地图片仅桌面端可用</span>
-                    )}
-                  </div>
-                  <figcaption>
-                    <strong>场景 {asset.sceneIndex} · {asset.kind === 'bg' ? '背景图' : `前景图 ${asset.slot + 1}`}</strong>
-                    {asset.prompt ? <small>{trimForPreview(asset.prompt, 90)}</small> : null}
-                  </figcaption>
-                </figure>
-              );
-            })}
-          </div>
-        ) : data.scenes.length ? (
-          <div className="artifact-scene-list">
-            {data.scenes.map((scene) => (
-              <div key={scene.index}>
-                <strong>场景 {scene.index} 素材提示词</strong>
-                <p>背景图：{scene.background.prompt}</p>
-                {scene.elements.map((element) => <small key={element.slot}>透明前景图：{element.prompt}</small>)}
-              </div>
-            ))}
-          </div>
-        ) : <EmptyState title="等待素材生成" />}
-      </div>
-    );
+  if (planningFailed || noScenes) {
+    return <div className="hv-tab-content">{blocked()}</div>;
   }
-
-  if (tab === 'voice') {
-    return (
-      <div className="hv-tab-content">
-        {data.voiceClips.length ? (
-          <div className="artifact-scene-list">
-            {data.voices.map((clip) => {
-              const url = mediaUrls[clip.src];
-              const voiceStatus = htmlVideoMediaStatus(clip.src, mediaUrls, failedMediaPaths, isBrowserPreview);
-              return (
-                <div key={`${clip.sceneIndex}-${clip.src}`}>
-                  <strong>场景 {clip.sceneIndex} 配音</strong>
-                  <p>{clip.text ?? '旁白音频'}</p>
-                  {voiceStatus === 'ready' && url ? (
-                    <audio
-                      key={htmlVideoMediaElementKey(task.id, clip.src, mediaRetryRevision)}
-                      controls
-                      preload="metadata"
-                      src={url}
-                      aria-label={`场景 ${clip.sceneIndex} 配音`}
-                      onError={() => onMediaElementError(clip.src)}
-                      onCanPlay={() => onMediaElementReady(clip.src)}
-                    />
-                  ) : voiceStatus === 'loading' ? (
-                    <small className="hv-media-loading" role="status"><Loader2 className="spin" size={14} />音频加载中</small>
-                  ) : voiceStatus === 'unavailable' ? (
-                    <small>音频文件暂不可用</small>
-                  ) : <small>本地音频请在 Electron 桌面端查看</small>}
-                  <small>{clip.durationSec.toFixed(1)} 秒</small>
-                </div>
-              );
-            })}
-          </div>
-        ) : (
-          <EmptyState title="等待配音生成" />
-        )}
-      </div>
-    );
-  }
-
   if (tab === 'preview') {
+    if (!data.compositions.length) {
+      return (
+        <div className="hv-tab-content">
+          <HtmlVideoCaptionEditor key={task.id} api={api} task={task} config={data.config} applyState={applyState} refreshTaskDetail={refreshTaskDetail} busy={busy} />
+          {blocked()}
+        </div>
+      );
+    }
     return (
       <div className="hv-tab-content">
-        <HtmlVideoCaptionEditor
-          key={task.id}
-          api={api}
-          task={task}
-          config={data.config}
-          applyState={applyState}
-          refreshTaskDetail={refreshTaskDetail}
-          busy={busy}
-        />
-        {data.compositions.length ? (
-          <div className="hv-media-grid">
-            {data.compositions.map((composition) => {
-              const thumbnailPath = composition.thumbnailPath ?? composition.background.src;
-              const thumbnailUrl = mediaUrls[thumbnailPath];
-              const thumbnailStatus = htmlVideoMediaStatus(thumbnailPath, mediaUrls, failedMediaPaths, isBrowserPreview);
-              return (
-                <figure className="hv-media-item" key={composition.index}>
-                  <div className="hv-media-frame" aria-busy={thumbnailStatus === 'loading'}>
-                    {thumbnailStatus === 'ready' && thumbnailUrl ? (
-                      <img
-                        key={htmlVideoMediaElementKey(task.id, thumbnailPath, mediaRetryRevision)}
-                        src={thumbnailUrl}
-                        alt={`场景 ${composition.index} 动画预览`}
-                        loading="lazy"
-                        decoding="async"
-                        onError={() => onMediaElementError(thumbnailPath)}
-                        onLoad={() => onMediaElementReady(thumbnailPath)}
-                      />
-                    ) : thumbnailStatus === 'loading' ? (
-                      <span className="hv-media-state hv-media-loading" role="status"><Loader2 className="spin" size={18} />预览加载中</span>
-                    ) : thumbnailStatus === 'unavailable' ? (
-                      <span className="hv-media-state" role="status" aria-live="polite"><Play size={22} aria-hidden="true" />预览加载失败</span>
-                    ) : (
-                      <span className="hv-media-state" role="status"><Play size={22} aria-hidden="true" />本地预览仅桌面端可用</span>
-                    )}
-                  </div>
-                  <figcaption>
-                    <strong>动画预览 · 场景 {composition.index}</strong>
-                    <small>{composition.canvas.w}x{composition.canvas.h} · {composition.durationSec.toFixed(1)} 秒 · {composition.captions.length} 条字幕</small>
-                    <button className="mini-button" disabled={busy || isBrowserPreview || !composition.htmlPath} onClick={() => openPreview(composition.index)}>
-                      <Eye size={14} />打开预览
-                    </button>
-                  </figcaption>
-                </figure>
-              );
-            })}
-          </div>
-        ) : <EmptyState title="等待动画预览" />}
+        <HtmlVideoCaptionEditor key={task.id} api={api} task={task} config={data.config} applyState={applyState} refreshTaskDetail={refreshTaskDetail} busy={busy} />
+        <HtmlVideoStoryboundPreviewPanel {...editorialProps} />
       </div>
     );
   }
+  if (tab === 'text') return <HtmlVideoStoryboundTextPanel {...editorialProps} />;
+  if (tab === 'assets') return <HtmlVideoStoryboundAssetsPanel {...editorialProps} />;
+  if (tab === 'voice') return <HtmlVideoStoryboundVoicePanel {...editorialProps} />;
 
   if (tab === 'cover') {
     const coverPath = data.coverAsset?.path;

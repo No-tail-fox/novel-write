@@ -2451,13 +2451,14 @@ function buildRuntimeComposition(
       .map((asset) => ({ sceneId: asset.sceneIndex, path: asset.src })),
     foregroundImages: input.assets
       .filter((asset) => asset.kind === 'fg')
-      .map((asset) => ({ sceneId: asset.sceneIndex, path: asset.src })),
+      .map((asset) => ({ sceneId: asset.sceneIndex, path: asset.src, slot: asset.slot })),
     narrationAudio: input.voices.map((voice) => ({ sceneId: voice.sceneIndex, path: voice.src })),
     coverPath,
     bgmPath,
     bgmTargetDb: htmlVideoBgmTargetDb(input.config.bgmVolume),
     captionConfig: input.config,
     draftTemplate: input.draftTemplate,
+    scenePlans: input.scenes,
     fps,
     canvas_w: canvas.width,
     canvas_h: canvas.height,

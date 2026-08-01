@@ -10,6 +10,7 @@ import {
 import {
   classifyHtmlVideoTaskMessage,
   fitHtmlVideoOutputSize,
+  htmlVideoUserFacingError,
   MAX_HTML_VIDEO_SOURCE_CHARS,
   nextHtmlVideoTabKey,
   safeParseHtmlVideoPipelineData,
@@ -156,6 +157,22 @@ describe('HTML video task message semantics', () => {
 
   it('omits empty task feedback', () => {
     expect(classifyHtmlVideoTaskMessage('failed', '   ')).toBeNull();
+  });
+
+  it.each([
+    ['HTML video rewrite step failed.', '文案改写失败。请从文案改写重试。'],
+    ['HTML video planning step failed.', '场景规划失败。请从场景规划重试。'],
+    ['HTML video assets step failed', '素材生成失败。请从素材生成重试。'],
+    ['HTML video voice step failed.', '配音生成失败。请从配音生成重试。'],
+    ['HTML video preview step failed.', '动画预览失败。请从动画预览重试。'],
+    ['HTML video render step failed.', '出片失败。请从出片重试。'],
+  ])('localizes legacy persisted error "%s"', (message, expected) => {
+    expect(htmlVideoUserFacingError(message)).toBe(expected);
+  });
+
+  it('preserves detailed provider errors without discarding diagnostics', () => {
+    const message = 'LLM storyboard response did not include scenes.';
+    expect(htmlVideoUserFacingError(message)).toBe(message);
   });
 });
 

@@ -38,6 +38,53 @@ export interface OpenAiImageProbeInput {
 const IMAGE_PROBE_PROMPT = 'Configuration smoke test: a simple geometric icon on a plain background, no text.';
 const IMAGE_PROBE_RESPONSE_MAX_BYTES = 64 * 1024 * 1024;
 
+export type OpenAiImageProviderOperation = 'generation' | 'edit' | 'async-submit' | 'async-poll' | 'model-test';
+
+export function formatOpenAiImageProviderError(input: {
+  status: number;
+  bodyText: string;
+  model: string;
+  operation: OpenAiImageProviderOperation;
+}): string {
+  const prefix = input.operation === 'edit'
+    ? 'Image provider edit API error'
+    : input.operation === 'async-submit'
+      ? 'Image provider async submit error'
+      : input.operation === 'async-poll'
+        ? 'Image provider async poll error'
+        : input.operation === 'model-test'
+          ? 'Image model test error'
+          : 'Image provider API error';
+  const detail = extractImageProviderErrorDetail(input.bodyText);
+  if (input.status === 503 && /no available compatible accounts/iu.test(detail)) {
+    return `${prefix} (${input.status}): 图片服务当前没有可用于模型 "${input.model}" 的上游账号或通道。API Key 和模型清单可能仍然正常；请稍后仅重试生图步骤，或切换其他图片服务/模型。上游信息: ${detail}`;
+  }
+  if (input.status === 503) {
+    return `${prefix} (${input.status}): 图片服务暂时不可用，请稍后仅重试生图步骤，或切换其他图片服务。上游信息: ${detail}`;
+  }
+  return `${prefix} (${input.status}): ${detail}`;
+}
+
+function extractImageProviderErrorDetail(bodyText: string): string {
+  const fallback = bodyText.replace(/\s+/gu, ' ').trim().slice(0, 600) || 'empty provider response';
+  try {
+    const parsed = JSON.parse(bodyText) as {
+      error?: string | { message?: unknown };
+      message?: unknown;
+    };
+    const message = typeof parsed.error === 'string'
+      ? parsed.error
+      : typeof parsed.error?.message === 'string'
+        ? parsed.error.message
+        : typeof parsed.message === 'string'
+          ? parsed.message
+          : '';
+    return message.replace(/\s+/gu, ' ').trim().slice(0, 600) || fallback;
+  } catch {
+    return fallback;
+  }
+}
+
 export function buildOpenAiImageGenerationBody(input: {
   model: string;
   prompt: string;
@@ -98,7 +145,12 @@ export async function testOpenAiCompatibleImageModel(input: OpenAiImageProbeInpu
         ...baseResult,
         latencyMs,
         status: 'fail',
-        detail: `Image model test failed with HTTP ${response.status}: ${bodyText.slice(0, 300)}`,
+        detail: formatOpenAiImageProviderError({
+          status: response.status,
+          bodyText,
+          model: input.model,
+          operation: 'model-test',
+        }),
       };
     }
 

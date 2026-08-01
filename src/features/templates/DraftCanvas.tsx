@@ -11,7 +11,23 @@ export type DraftDragSnapshot =
   | { mode: 'move'; layer: DraftCanvasLayer; pointerId: number; startX: number; startY: number; template: DraftTemplate }
   | { mode: 'resize'; layer: Exclude<DraftCanvasLayer, 'image'>; pointerId: number; startX: number; startY: number; template: DraftTemplate };
 
-export function DraftTemplatePreview({ template, compact = false }: { template: DraftTemplate; compact?: boolean }) {
+export function DraftTemplatePreview({
+  template,
+  compact = false,
+  imageUrl,
+  titleText,
+  subtitleText,
+  captionText,
+  disclaimerText,
+}: {
+  template: DraftTemplate;
+  compact?: boolean;
+  imageUrl?: string;
+  titleText?: string;
+  subtitleText?: string;
+  captionText?: string;
+  disclaimerText?: string;
+}) {
   const titleSize = compact ? Math.max(9, template.title.fontSize * 0.28) : template.title.fontSize;
   const subtitleSize = compact ? Math.max(7, template.subtitle.fontSize * 0.28) : template.subtitle.fontSize;
   const captionSize = compact ? Math.max(7, template.caption.fontSize * 0.42) : template.caption.fontSize;
@@ -21,7 +37,17 @@ export function DraftTemplatePreview({ template, compact = false }: { template: 
       <DraftFrameChrome template={template} />
       {template.image.visible ? (
         <div className="draft-image" style={{ top: `${template.image.top * 100}%`, height: `${template.image.height * 100}%`, ...draftImageFrameStyle(template) }}>
-          <div className="draft-image-media" data-motion={template.image.motion || 'none'} style={{ ...draftImageMediaStyle(template), ...draftImageMotionStyle(template) }} />
+          {imageUrl ? (
+            <img
+              className="draft-image-media draft-image-asset"
+              data-motion={template.image.motion || 'none'}
+              src={imageUrl}
+              alt=""
+              style={{ ...draftImageMediaStyle(template), ...draftImageMotionStyle(template), objectFit: template.image.fit }}
+            />
+          ) : (
+            <div className="draft-image-media" data-motion={template.image.motion || 'none'} style={{ ...draftImageMediaStyle(template), ...draftImageMotionStyle(template) }} />
+          )}
         </div>
       ) : null}
       {template.title.visible ? (
@@ -33,7 +59,7 @@ export function DraftTemplatePreview({ template, compact = false }: { template: 
           border={template.title.border}
           style={draftTextLayerStyle(template.title, titleSize, template.title.bold ? 800 : 500)}
         >
-          {template.title.text}
+          {titleText ?? template.title.text}
         </DraftCanvasText>
       ) : null}
       {template.subtitle.visible ? (
@@ -45,7 +71,7 @@ export function DraftTemplatePreview({ template, compact = false }: { template: 
           border={template.subtitle.border}
           style={draftTextLayerStyle(template.subtitle, subtitleSize, template.subtitle.bold ? 800 : 500)}
         >
-          {template.subtitle.text}
+          {subtitleText ?? template.subtitle.text}
         </DraftCanvasText>
       ) : null}
       {template.caption.visible ? (
@@ -69,7 +95,7 @@ export function DraftTemplatePreview({ template, compact = false }: { template: 
             padding: compact ? '2px 8px' : '4px 10px',
           }}
         >
-          字幕预览
+          {captionText ?? '字幕预览'}
         </DraftCanvasText>
       ) : null}
       {template.disclaimer.visible ? (
@@ -81,7 +107,7 @@ export function DraftTemplatePreview({ template, compact = false }: { template: 
           border={template.disclaimer.border}
           style={draftTextLayerStyle(template.disclaimer, disclaimerSize, template.disclaimer.bold ? 700 : 500)}
         >
-          {template.disclaimer.text}
+          {disclaimerText ?? template.disclaimer.text}
         </DraftCanvasText>
       ) : null}
     </div>

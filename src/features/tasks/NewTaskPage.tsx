@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { Check, FileText, Link2, Loader2, Mic2, Play, Plus, RotateCcw, Save, Search, Trash2, Upload, Wand2 } from 'lucide-react';
 import { FormField as Field } from '../../components/FormField';
 import { OptionGroup as OptionCloud } from '../../components/OptionGroup';
@@ -47,6 +47,7 @@ import type {
   Task,
   TaskMode,
   TaskVideoForm,
+  WebSearchProvider,
 } from '../../shared/types';
 import { ordinaryTaskCoverDimensions, validateOrdinaryTaskCoverSelection } from '../../shared/ordinary-task-cover';
 import { useAsyncAction } from '../../ui/async-action';
@@ -108,6 +109,21 @@ const NEW_TASK_STAGE_META: ReadonlyArray<{ id: NewTaskStage; label: string; head
   { id: 'output', label: '输出设置', heading: '输出设置', description: '配音、分镜、封面与剪映草稿' },
 ];
 
+const WEB_SEARCH_PROVIDER_OPTIONS: ReadonlyArray<{ id: WebSearchProvider; label: string; domain: string }> = [
+  { id: 'bing', label: '必应', domain: 'bing.com' },
+  { id: 'baidu', label: '百度', domain: 'baidu.com' },
+  { id: 'sogou', label: '搜狗', domain: 'sogou.com' },
+  { id: 'toutiao', label: '头条', domain: 'toutiao.com' },
+];
+
+function isWebSearchProvider(value: unknown): value is WebSearchProvider {
+  return WEB_SEARCH_PROVIDER_OPTIONS.some((option) => option.id === value);
+}
+
+function webSearchProviderLabel(provider: WebSearchProvider | undefined): string {
+  return WEB_SEARCH_PROVIDER_OPTIONS.find((option) => option.id === provider)?.label ?? '网页';
+}
+
 function ContentMetricsSummary({
   text,
   targetLength,
@@ -152,6 +168,7 @@ export function NewTaskPage({
   const [inputText, setInputText] = useState(sampleText);
   const [aiKeyword, setAiKeyword] = useState('武则天回宫');
   const [aiSources, setAiSources] = useState(['web']);
+  const [webSearchProviders, setWebSearchProviders] = useState<WebSearchProvider[]>(() => WEB_SEARCH_PROVIDER_OPTIONS.map((option) => option.id));
   const [extraRequirements, setExtraRequirements] = useState('字数控制在 500 字左右，聚焦人物转折经历，语气偏感性');
   const [track, setTrack] = useState('character-story');
   const [style, setStyle] = useState('photo-real');
@@ -193,7 +210,6 @@ export function NewTaskPage({
   const [podcastSpeakers, setPodcastSpeakers] = useState<PodcastSpeakerPair>('kazai-dayi');
   const [running, setRunning] = useState(false);
   const [draftNotice, setDraftNotice] = useState('');
-  const [searchingSources, setSearchingSources] = useState(false);
   const [searchContext, setSearchContext] = useState<AiSourceContext | null>(null);
   const [selectedSearchSourceIds, setSelectedSearchSourceIds] = useState<string[]>([]);
   const [searchMessage, setSearchMessage] = useState('');
@@ -205,9 +221,11 @@ export function NewTaskPage({
   const [taskPresets, setTaskPresets] = useState<NewTaskPreset[]>(() => []);
   const [selectedPresetId, setSelectedPresetId] = useState('');
   const [presetName, setPresetName] = useState('');
+  const searchRequestIdRef = useRef(0);
+  const searchAction = useAsyncAction();
   const taskAction = useAsyncAction();
 
-  const searchSections = (searchContext?.sections ?? []).slice(0, 10);
+  const searchSections = searchContext?.query === aiKeyword.trim() ? searchContext.sections.slice(0, 10) : [];
   const selectedSources = searchSections.filter((source, index) => selectedSearchSourceIds.includes(sourceKey(source, index)));
   const taskPromptTemplates = state.promptTemplates.filter((template) => template.type === 'task');
   const storyTemplateOptions = buildStoryTemplateOptions(taskPromptTemplates);
@@ -252,6 +270,7 @@ export function NewTaskPage({
         mode,
         aiKeyword,
         aiSources,
+        webSearchProviders,
         extraRequirements,
         track,
         style,
@@ -298,12 +317,17 @@ export function NewTaskPage({
 
   function applyDraftSnapshot(draft: NewTaskDraftSnapshot): void {
     const values = draft.values;
+    searchRequestIdRef.current += 1;
     setActiveStage(draft.activeStage);
     if (typeof values.title === 'string') setTitle(values.title);
     if (typeof values.inputText === 'string') setInputText(values.inputText);
     if (values.mode === 'paste' || values.mode === 'ai') setMode(values.mode);
     if (typeof values.aiKeyword === 'string') setAiKeyword(values.aiKeyword);
     if (Array.isArray(values.aiSources)) setAiSources(values.aiSources.filter((value): value is string => typeof value === 'string'));
+    if (Array.isArray(values.webSearchProviders)) {
+      const restoredProviders = values.webSearchProviders.filter(isWebSearchProvider);
+      if (restoredProviders.length > 0) setWebSearchProviders([...new Set(restoredProviders)]);
+    }
     if (typeof values.extraRequirements === 'string') setExtraRequirements(values.extraRequirements);
     if (typeof values.track === 'string') setTrack(values.track);
     if (typeof values.style === 'string') setStyle(values.style);
@@ -462,7 +486,7 @@ export function NewTaskPage({
     writeNewTaskDraft(window.localStorage, createDraftSnapshot());
     setHasSavedDraft(true);
   }, [
-    draftReady, activeStage, title, inputText, mode, aiKeyword, aiSources, extraRequirements,
+    draftReady, activeStage, title, inputText, mode, aiKeyword, aiSources, webSearchProviders, extraRequirements,
     track, style, templateId, ratio, selectedTaskLlmProfileId, promptTemplateOverrideId,
     promptTemplateManuallyOverridden, styleManuallyOverridden, draftTemplateManuallyOverridden,
     ratioManuallyOverridden, ttsProvider, speaker, bgmId, referenceImagePath, pausePoint,
@@ -581,25 +605,60 @@ export function NewTaskPage({
     setSpeaker(nextSpeaker);
   }
 
+  function invalidateSearchResults(): void {
+    searchRequestIdRef.current += 1;
+    searchAction.clearFeedback();
+    setSearchContext(null);
+    setSelectedSearchSourceIds([]);
+    setSearchMessage('');
+    setResearchCopy('');
+    setResearchCopyMessage('');
+  }
+
+  function handleAiKeywordChange(nextKeyword: string): void {
+    if (nextKeyword !== aiKeyword) invalidateSearchResults();
+    setAiKeyword(nextKeyword);
+  }
+
+  function handleWebSearchProviderChange(provider: WebSearchProvider): void {
+    const nextProviders = webSearchProviders.includes(provider)
+      ? webSearchProviders.filter((item) => item !== provider)
+      : WEB_SEARCH_PROVIDER_OPTIONS.map((option) => option.id).filter((item) => item === provider || webSearchProviders.includes(item));
+    invalidateSearchResults();
+    setWebSearchProviders(nextProviders);
+  }
+
   async function searchWebSources() {
     const keyword = aiKeyword.trim();
     if (!keyword) {
       setSearchMessage('请先输入关键词。');
       return;
     }
-    await taskAction.run(async () => {
-      setSearchingSources(true);
-      setSearchMessage('正在从 Bing 搜索并读取网页正文...');
-      try {
-        const context = await api.searchWebSources(keyword);
-        const limitedContext = { ...context, sections: context.sections.slice(0, 10) };
-        setSearchContext(limitedContext);
-        setSelectedSearchSourceIds([]);
-        setSearchMessage(context.warnings.length ? context.warnings.join('；') : `已获取前 ${limitedContext.sections.length} 条网页资料，请勾选要使用的页面。`);
-      } finally {
-        setSearchingSources(false);
-      }
-    }, { onError: (error) => setSearchMessage(error.message) });
+    if (webSearchProviders.length === 0) {
+      setSearchMessage('请至少选择一个搜索渠道。');
+      return;
+    }
+    const requestId = ++searchRequestIdRef.current;
+    const providerNames = WEB_SEARCH_PROVIDER_OPTIONS
+      .filter((option) => webSearchProviders.includes(option.id))
+      .map((option) => option.label)
+      .join('、');
+    await searchAction.run(async () => {
+      setSearchMessage(`正在从${providerNames}搜索并读取网页正文...`);
+      const context = await api.searchWebSources({ query: keyword, providers: webSearchProviders });
+      if (searchRequestIdRef.current !== requestId) return;
+      const limitedContext = { ...context, sections: context.sections.slice(0, 10) };
+      setSearchContext(limitedContext);
+      setSelectedSearchSourceIds([]);
+      const summary = limitedContext.sections.length > 0
+        ? `已获取 ${limitedContext.sections.length} 条精准网页资料，请勾选要使用的页面。`
+        : '未找到标题或正文与当前关键词精确匹配的网页。';
+      setSearchMessage([...context.warnings, summary].join('；'));
+    }, {
+      onError: (error) => {
+        if (searchRequestIdRef.current === requestId) setSearchMessage(error.message);
+      },
+    });
   }
 
   async function composeResearchCopy() {
@@ -803,7 +862,7 @@ export function NewTaskPage({
                 <div className="ai-create-panel">
                   <div className="new-task-inline-fields">
                     <Field label="关键词">
-                      <input value={aiKeyword} onChange={(event) => setAiKeyword(event.target.value)} placeholder="例如：钱学森回国 / 张桂梅 / 苹果秋季发布会" />
+                      <input value={aiKeyword} onChange={(event) => handleAiKeywordChange(event.target.value)} placeholder="例如：钱学森回国 / 张桂梅 / 苹果秋季发布会" />
                     </Field>
                     <Field label="额外要求" hint="可选">
                       <input className="extra-requirements-input" value={extraRequirements} onChange={(event) => setExtraRequirements(event.target.value)} />
@@ -811,25 +870,57 @@ export function NewTaskPage({
                   </div>
                   <span className="field-title">数据源</span>
                   <div className="new-task-check-grid">
-                    <label className="check-row"><input type="checkbox" checked={aiSources.includes('web')} onChange={() => setAiSources(toggleArray(aiSources, 'web'))} />全网搜索 <small>Bing + 搜狗 + 百度 + 360 与正文来源</small></label>
+                    <label className="check-row"><input type="checkbox" checked={aiSources.includes('web')} onChange={() => setAiSources(toggleArray(aiSources, 'web'))} />全网搜索 <small>必应、百度、搜狗、头条与正文来源</small></label>
                     <label className="check-row"><input type="checkbox" checked={aiSources.includes('builtin-knowledge')} onChange={() => setAiSources(toggleArray(aiSources, 'builtin-knowledge'))} />AI 内置知识补全 <small>允许模型补全细节</small></label>
                     <label className="check-row muted"><input type="checkbox" checked={aiSources.includes('ima')} onChange={() => setAiSources(toggleArray(aiSources, 'ima'))} />IMA 知识库 <small>使用系统设置中的知识库</small></label>
                   </div>
-                  <button type="button" className="ghost-action" disabled={searchingSources || !aiKeyword.trim()} onClick={searchWebSources}>
-                    {searchingSources ? <Loader2 className="spin" size={15} /> : <Search size={15} />}搜索
+                  <div className="web-search-provider-panel">
+                    <span className="field-title">搜索渠道</span>
+                    <div className="web-search-provider-grid">
+                      {WEB_SEARCH_PROVIDER_OPTIONS.map((provider) => (
+                        <label className="web-search-provider" key={provider.id}>
+                          <input
+                            type="checkbox"
+                            checked={webSearchProviders.includes(provider.id)}
+                            onChange={() => handleWebSearchProviderChange(provider.id)}
+                          />
+                          <span><strong>{provider.label}</strong><small>{provider.domain}</small></span>
+                        </label>
+                      ))}
+                    </div>
+                  </div>
+                  <button type="button" className="ghost-action" disabled={searchAction.busy || !aiKeyword.trim() || webSearchProviders.length === 0} onClick={searchWebSources}>
+                    {searchAction.busy ? <Loader2 className="spin" size={15} /> : <Search size={15} />}搜索
                   </button>
                   {searchMessage ? <div className="test-result">{searchMessage}</div> : null}
-                  {searchContext ? (
+                  <InlineActionFeedback feedback={searchAction.feedback} />
+                  {searchContext && searchContext.query === aiKeyword.trim() ? (
                     <div className="ai-search-block">
                       <div className="ai-search-results ai-search-results-scroll">
-                        <div className="panel-title-row"><h3>网页候选（前 10 条）</h3><small>{selectedSources.length}/{searchContext.sections.length} 已选择</small></div>
-                        {searchContext.sections.length === 0 ? <EmptyState title="暂无可用网页资料" /> : null}
-                        {searchContext.sections.map((source, index) => {
+                        <div className="panel-title-row ai-search-title-row">
+                          <div><h3>网页候选（前 10 条）</h3><small>实际查询：{searchContext.query}</small></div>
+                          <small>{selectedSources.length}/{searchSections.length} 已选择</small>
+                        </div>
+                        {searchContext.providerStatuses?.length ? (
+                          <div className="web-search-provider-statuses">
+                            {searchContext.providerStatuses.map((status) => (
+                              <span className="web-search-provider-status" data-state={status.state} key={status.provider}>
+                                {status.label} · {status.state === 'ready' ? `${status.count} 条` : status.state === 'empty' ? '无精准结果' : '失败'}
+                              </span>
+                            ))}
+                          </div>
+                        ) : null}
+                        {searchSections.length === 0 ? <EmptyState title="暂无可用网页资料" /> : null}
+                        {searchSections.map((source, index) => {
                           const id = sourceKey(source, index);
                           return (
                             <label className="search-source-card" key={id}>
                               <input type="checkbox" checked={selectedSearchSourceIds.includes(id)} onChange={() => setSelectedSearchSourceIds(toggleArray(selectedSearchSourceIds, id))} />
-                              <div><strong>{source.title}</strong>{source.url ? <span>{source.url}</span> : null}<p>{(source.content || source.snippet || '').slice(0, 220)}</p></div>
+                              <div>
+                                <div className="search-source-heading"><span className="search-source-provider">{webSearchProviderLabel(source.provider)}</span><strong>{source.title}</strong></div>
+                                {source.url ? <span className="search-source-url">{source.url}</span> : null}
+                                <p>{(source.content || source.snippet || '').slice(0, 220)}</p>
+                              </div>
                             </label>
                           );
                         })}

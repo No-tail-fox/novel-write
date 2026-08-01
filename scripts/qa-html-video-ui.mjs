@@ -29,6 +29,8 @@ try {
   profileDir = join(qaTempDir, 'profile');
   const desktopScreenshot = join(qaTempDir, 'desktop.png');
   const compactScreenshot = join(qaTempDir, 'compact.png');
+  const creationDesktopScreenshot = join(qaTempDir, 'creation-desktop.png');
+  const creationCompactScreenshot = join(qaTempDir, 'creation-compact.png');
   const coverDesktopScreenshot = join(qaTempDir, 'cover-desktop.png');
   const coverCompactScreenshot = join(qaTempDir, 'cover-compact.png');
   const captionEditorScreenshot = join(qaTempDir, 'caption-editor.png');
@@ -36,6 +38,8 @@ try {
   const authoringDesktopScreenshot = join(qaTempDir, 'authoring-desktop.png');
   const authoringCompactScreenshot = join(qaTempDir, 'authoring-compact.png');
   const themeLightScreenshot = join(qaTempDir, 'theme-light.png');
+  const outputLightScreenshot = join(qaTempDir, 'output-light.png');
+  const failedLightScreenshot = join(qaTempDir, 'failed-light.png');
   const require = createRequire(join(rootDir, 'package.json'));
   const electronPath = require('electron');
   const { WebSocket } = require('undici');
@@ -130,16 +134,42 @@ try {
   })()`);
   if (!navClicked) throw new Error('HTML video navigation button was not found.');
   await waitFor(
-    async () => evaluate(cdp, `document.querySelector('.hv-studio-panel-heading h2')?.textContent === '制作参数'`),
+    async () => evaluate(cdp, `Boolean(document.querySelector('[data-html-video-create-page="true"] .hv-create-sheet'))
+      && !document.querySelector('.hv-studio[data-has-task="true"]')`),
     10_000,
-    'HTML video page',
+    'HTML video creation page',
   );
+  const creationDesktop = await inspectCreationPage(cdp);
+  await saveScreenshot(cdp, creationDesktopScreenshot);
+  await cdp.send('Emulation.setDeviceMetricsOverride', {
+    width: 1080,
+    height: 720,
+    deviceScaleFactor: 1,
+    mobile: false,
+  });
+  await delay(300);
+  const creationCompact = await inspectCreationPage(cdp);
+  await saveScreenshot(cdp, creationCompactScreenshot);
+  await cdp.send('Emulation.setDeviceMetricsOverride', {
+    width: 1320,
+    height: 860,
+    deviceScaleFactor: 1,
+    mobile: false,
+  });
+  await delay(300);
+  const creationControls = await inspectConfigControls(cdp);
+  await selectHtmlVideoTask(cdp, seededTasks.primary);
   await waitFor(
     async () => evaluate(cdp, `document.querySelectorAll('.hv-studio-run-rail .hv-step').length === 6 && document.querySelector('.hv-studio-canvas-heading strong')?.textContent.includes(${JSON.stringify(seededTasks.primary.title)})`),
     20_000,
     'primary completed task',
   );
-  const configControls = await inspectConfigControls(cdp);
+  const workspaceControls = await inspectConfigControls(cdp);
+  const configControls = {
+    createFields: creationControls.createFields,
+    editFields: workspaceControls.editFields,
+    readOnlyEditors: [...new Set([...creationControls.readOnlyEditors, ...workspaceControls.readOnlyEditors])],
+  };
   const coverDesktopState = await inspectCoverPanel(cdp);
   configControls.editFields = [...new Set([...configControls.editFields, ...coverDesktopState.editFields])].sort();
   configControls.coverState = coverDesktopState;
@@ -172,7 +202,7 @@ try {
   const mediaElementRecovery = {
     asset: await exerciseMediaElementState(cdp, {
       tabLabel: '素材',
-      selector: '.hv-media-frame img',
+      selector: '.hv-reference-asset-frame img',
       failureText: '图片加载失败',
       successEvent: 'load',
     }),
@@ -184,7 +214,7 @@ try {
     }),
     thumbnail: await exerciseMediaElementState(cdp, {
       tabLabel: '动画预览',
-      selector: '.hv-media-frame img',
+      selector: '.hv-reference-thumb img',
       failureText: '预览加载失败',
       successEvent: 'load',
     }),
@@ -196,8 +226,25 @@ try {
     }),
   };
 
+  await setShellTheme(cdp, 'light');
   await evaluate(cdp, `document.querySelector('.hv-video-output')?.scrollIntoView({ block: 'center' })`);
   await delay(250);
+  const lightOutputFooter = await inspectLightOutputFooter(cdp);
+  if (lightOutputFooter.theme !== 'light' || lightOutputFooter.failures.length) {
+    throw new Error(`Light output footer is not readable: ${JSON.stringify(lightOutputFooter)}`);
+  }
+  await saveScreenshot(cdp, outputLightScreenshot);
+  const failedLightWorkspace = await inspectFailedTaskLightWorkspace(cdp, seededTasks.failed);
+  if (failedLightWorkspace.failures.length
+    || failedLightWorkspace.rawLegacyErrorVisible
+    || failedLightWorkspace.retryText !== '从场景规划重试'
+    || !failedLightWorkspace.controlSurfaceIsDark) {
+    throw new Error(`Light failed-task workspace is not readable or localized: ${JSON.stringify(failedLightWorkspace)}`);
+  }
+  await saveScreenshot(cdp, failedLightScreenshot);
+  await selectHtmlVideoTask(cdp, seededTasks.primary);
+  await setShellTheme(cdp, 'dark');
+  await delay(150);
   const desktopState = await inspectPage(cdp);
   await saveScreenshot(cdp, desktopScreenshot);
 
@@ -234,9 +281,6 @@ try {
   await saveScreenshot(cdp, captionEditorScreenshot);
   const captionPreview = await resumeAndCaptureCaptionPreview(
     cdp,
-    port,
-    target.id,
-    WebSocket,
     captionPreviewScreenshot,
     seededTasks.primary.id,
     captionUpdate,
@@ -261,6 +305,10 @@ try {
   if (identity.bodyTextLength < 100 || identity.hasFrameworkOverlay) {
     throw new Error('Application shell is blank or covered by a framework error overlay.');
   }
+  if (creationDesktop.horizontalOverflow > 2 || creationCompact.horizontalOverflow > 2) throw new Error('HTML video creation page overflows horizontally.');
+  if (creationDesktop.clippedControls.length || creationCompact.clippedControls.length) throw new Error('HTML video creation controls are clipped.');
+  if (creationDesktop.workspaceVisible || creationCompact.workspaceVisible) throw new Error('HTML video workspace rendered before a task was selected.');
+  if (creationDesktop.sectionTitles.join(',') !== '文案,画面,封面海报,配音,输出') throw new Error(`HTML video creation sections differ from the reference flow: ${creationDesktop.sectionTitles.join(',')}`);
   if (!taskSwitchObserved || !pathSwitchObserved) throw new Error('Task and path switching was not observed.');
   if (!sameUrlMissingThenRestored) throw new Error('The same media URL did not recover after a no-store 404.');
   if (desktopState.stepCount !== 6 || compactState.stepCount !== 6) throw new Error('Six-step rail was not rendered.');
@@ -287,7 +335,7 @@ try {
     throw new Error(`Renderer console errors: ${relevantRuntimeErrors.map((error) => error.message).join(' | ')}`);
   }
 
-  const screenshotPaths = [themeLightScreenshot, desktopScreenshot, compactScreenshot, coverDesktopScreenshot, coverCompactScreenshot, authoringDesktopScreenshot, authoringCompactScreenshot, captionEditorScreenshot, captionPreviewScreenshot];
+  const screenshotPaths = [themeLightScreenshot, creationDesktopScreenshot, creationCompactScreenshot, outputLightScreenshot, failedLightScreenshot, desktopScreenshot, compactScreenshot, coverDesktopScreenshot, coverCompactScreenshot, authoringDesktopScreenshot, authoringCompactScreenshot, captionEditorScreenshot, captionPreviewScreenshot];
   const screenshots = await Promise.all(screenshotPaths.map(async (path) => {
     const value = await stat(path);
     if (value.size <= 0) throw new Error(`Screenshot evidence is empty: ${basename(path)}`);
@@ -310,6 +358,10 @@ try {
     pageTitle: identity.title,
     pageUrl: identity.url,
     themePreference,
+    creationDesktop,
+    creationCompact,
+    lightOutputFooter,
+    failedLightWorkspace,
     playback,
     rangeResponse,
     sameUrlMissingThenRestored,
@@ -398,6 +450,181 @@ async function exerciseThemePreference(cdpConnection, screenshotPath) {
     throw new Error(`Dark theme restoration did not persist canonically: ${JSON.stringify(restored)}`);
   }
   return { light, reloadedTheme: 'light', restored };
+}
+
+async function inspectLightOutputFooter(cdpConnection) {
+  return evaluate(cdpConnection, `(() => {
+    const parseColor = (value) => {
+      const channels = (value.match(/[0-9.]+/g) || []).map(Number);
+      return channels.slice(0, 3);
+    };
+    const luminance = (channels) => {
+      const linear = channels.map((channel) => {
+        const value = channel / 255;
+        return value <= 0.03928 ? value / 12.92 : ((value + 0.055) / 1.055) ** 2.4;
+      });
+      return (0.2126 * linear[0]) + (0.7152 * linear[1]) + (0.0722 * linear[2]);
+    };
+    const contrast = (first, second) => {
+      const a = luminance(first);
+      const b = luminance(second);
+      return (Math.max(a, b) + 0.05) / (Math.min(a, b) + 0.05);
+    };
+    const output = document.querySelector('.hv-video-output');
+    const backgroundColor = output ? getComputedStyle(output).backgroundColor : '';
+    const background = parseColor(backgroundColor);
+    const selectors = {
+      title: '.hv-output-meta strong',
+      metadata: '.hv-output-meta small',
+      pathLabel: '.hv-output-path small',
+      path: '.hv-output-path code',
+    };
+    const samples = Object.entries(selectors).map(([label, selector]) => {
+      const element = document.querySelector(selector);
+      const style = element ? getComputedStyle(element) : null;
+      return {
+        label,
+        text: element?.textContent?.trim() || '',
+        color: style?.color || '',
+        backgroundColor,
+        fontSize: style?.fontSize || '',
+        contrastRatio: style && background.length === 3
+          ? Number(contrast(parseColor(style.color), background).toFixed(2))
+          : 0,
+      };
+    });
+    return {
+      theme: document.documentElement.dataset.theme || '',
+      outputFound: Boolean(output),
+      samples,
+      failures: samples
+        .filter((sample) => !sample.text || sample.contrastRatio < 4.5)
+        .map((sample) => sample.label + ' (' + sample.contrastRatio + ':1)'),
+    };
+  })()`);
+}
+
+async function selectHtmlVideoTask(cdpConnection, task) {
+  const selected = await evaluate(cdpConnection, `(() => {
+    const select = document.querySelector('select[aria-label="打开已有 HTML 动画视频任务"]')
+      || document.querySelector('select[aria-label="切换 HTML 动画视频任务"]');
+    if (!select || ![...select.options].some((option) => option.value === ${JSON.stringify(task.id)})) return false;
+    select.value = ${JSON.stringify(task.id)};
+    select.dispatchEvent(new Event('change', { bubbles: true }));
+    return true;
+  })()`);
+  if (!selected) throw new Error(`HTML video task selector did not contain ${task.title}.`);
+  await waitFor(
+    async () => evaluate(cdpConnection, `document.querySelector('select[aria-label="切换 HTML 动画视频任务"]')?.value === ${JSON.stringify(task.id)}
+      && document.querySelector('.hv-studio-panel-heading h2')?.textContent.includes(${JSON.stringify(task.title)})`),
+    10_000,
+    `HTML video task ${task.title}`,
+  );
+}
+
+async function inspectFailedTaskLightWorkspace(cdpConnection, task) {
+  await setShellTheme(cdpConnection, 'light');
+  await selectHtmlVideoTask(cdpConnection, task);
+  await waitFor(
+    async () => evaluate(cdpConnection, `Boolean(document.querySelector('.hv-workflow-blocked'))
+      && document.querySelector('.hv-studio')?.innerText.includes('场景规划失败')`),
+    10_000,
+    'localized failed HTML video workspace',
+  );
+  return evaluate(cdpConnection, `(() => {
+    const parseColor = (value) => {
+      const channels = (value.match(/[0-9.]+/g) || []).map(Number);
+      return value.startsWith('color(srgb')
+        ? channels.slice(0, 3).map((channel) => channel * 255)
+        : channels.slice(0, 3);
+    };
+    const luminance = (channels) => {
+      const linear = channels.map((channel) => {
+        const value = channel / 255;
+        return value <= 0.03928 ? value / 12.92 : ((value + 0.055) / 1.055) ** 2.4;
+      });
+      return (0.2126 * linear[0]) + (0.7152 * linear[1]) + (0.0722 * linear[2]);
+    };
+    const contrast = (first, second) => {
+      const a = luminance(first);
+      const b = luminance(second);
+      return (Math.max(a, b) + 0.05) / (Math.min(a, b) + 0.05);
+    };
+    const effectiveBackground = (element) => {
+      let current = element;
+      while (current) {
+        const value = getComputedStyle(current).backgroundColor;
+        const channels = (value.match(/[0-9.]+/g) || []).map(Number);
+        const alpha = value.startsWith('rgba') ? channels[3] : 1;
+        if (value && alpha !== 0) return value;
+        current = current.parentElement;
+      }
+      return 'rgb(255, 255, 255)';
+    };
+    const candidates = [];
+    const add = (label, selector) => {
+      [...document.querySelectorAll(selector)].forEach((element, index) => {
+        candidates.push({ label: label + (index ? '-' + (index + 1) : ''), element });
+      });
+    };
+    add('task-heading', '.hv-studio-panel-heading h2');
+    add('task-selector', '.hv-studio-parameters select[aria-label="切换 HTML 动画视频任务"]');
+    add('task-settings', '.hv-reference-task-settings > summary');
+    add('step-title', '.hv-studio-run-rail .hv-step strong');
+    add('step-description', '.hv-studio-run-rail .hv-step small');
+    add('error-summary', '.hv-studio .error-summary-button');
+    add('error-mark', '.hv-studio .error-summary-button .error-mark');
+    add('run-control', '.hv-run-controls .mini-button');
+    add('blocked-title', '.hv-workflow-blocked > strong');
+    add('blocked-detail', '.hv-workflow-blocked > p');
+    add('blocked-action', '.hv-workflow-blocked > .mini-button');
+    const samples = candidates.map(({ label, element }) => {
+      const style = getComputedStyle(element);
+      const backgroundColor = effectiveBackground(element);
+      const foreground = parseColor(style.color);
+      const background = parseColor(backgroundColor);
+      return {
+        label,
+        text: element.textContent?.trim() || '',
+        color: style.color,
+        backgroundColor,
+        fontSize: style.fontSize,
+        contrastRatio: foreground.length === 3 && background.length === 3
+          ? Number(contrast(foreground, background).toFixed(2))
+          : 0,
+      };
+    });
+    const studio = document.querySelector('.hv-studio');
+    const select = document.querySelector('.hv-studio-parameters select[aria-label="切换 HTML 动画视频任务"]');
+    const selectBackground = select ? getComputedStyle(select).backgroundColor : '';
+    const selectBackgroundChannels = parseColor(selectBackground);
+    const retryText = document.querySelector('.hv-workflow-blocked > .mini-button')?.textContent?.trim() || '';
+    return {
+      theme: document.documentElement.dataset.theme || '',
+      selectedTaskId: select?.value || '',
+      rawLegacyErrorVisible: Boolean(studio?.innerText.includes('HTML video planning step failed')),
+      localizedErrorVisible: Boolean(studio?.innerText.includes('场景规划失败')),
+      retryText,
+      selectBackground,
+      controlSurfaceIsDark: selectBackgroundChannels.length === 3 && luminance(selectBackgroundChannels) < 0.2,
+      tokens: studio ? Object.fromEntries([
+        '--shell-text',
+        '--shell-muted',
+        '--shell-border',
+        '--shell-surface',
+        '--shell-surface-raised',
+        '--shell-focus',
+        '--shell-focus-contrast',
+        '--text',
+        '--muted',
+        '--line',
+      ].map((token) => [token, getComputedStyle(studio).getPropertyValue(token).trim()])) : {},
+      samples,
+      failures: samples
+        .filter((sample) => !sample.text || sample.contrastRatio < 4.5)
+        .map((sample) => sample.label + ' (' + sample.contrastRatio + ':1)'),
+    };
+  })()`);
 }
 
 async function exerciseHyperframesAuthoring(cdpConnection, screenshotPath) {
@@ -691,6 +918,8 @@ async function seedCompletedTasks() {
   await mkdir(appDataDir, { recursive: true });
   const database = await FileDatabase.open(join(appDataDir, 'data.db'));
   try {
+    const failed = await seedFailedTask(database, createHtmlVideoPipelineData, appDataDir);
+    await delay(10);
     const secondary = await seedCompletedTask(database, createHtmlVideoPipelineData, runHtmlVideoPipeline, buildHtmlVideoExportInput, appDataDir, {
       title: '切换目标输出 QA',
       tone: 550,
@@ -700,10 +929,48 @@ async function seedCompletedTasks() {
       title: '已完成输出播放 QA',
       tone: 660,
     });
-    return { primary, secondary };
+    return { primary, secondary, failed };
   } finally {
     await database.close();
   }
+}
+
+async function seedFailedTask(database, createHtmlVideoPipelineData, appDataDir) {
+  const title = '浅色失败任务 QA';
+  const errorMessage = 'HTML video planning step failed.';
+  const pipeline = createHtmlVideoPipelineData(`${title}。`, {
+    ratio: '9:16',
+    style: 'cinematic',
+    foreground: false,
+  });
+  pipeline.current = 'planning';
+  pipeline.scenes = [];
+  pipeline.steps.rewrite = { status: 'completed' };
+  pipeline.steps.planning = { status: 'failed', error: errorMessage };
+  const task = await database.createTask({
+    title,
+    inputText: `${title}。`,
+    taskKind: 'story',
+    taskType: 'html-video',
+    ratio: '9:16',
+    style: 'cinematic',
+    pipelineStep: 'planning',
+    pipelineData: JSON.stringify(pipeline),
+  });
+  if (!task.managedStorageKey) throw new Error('Seeded failed task has no managed storage key.');
+  const taskDir = join(appDataDir, 'tasks', task.managedStorageKey);
+  await mkdir(taskDir, { recursive: true });
+  await database.updateTask(task.id, {
+    status: 'failed',
+    currentStep: 1,
+    failedStep: 'planning',
+    retryFromStep: 'planning',
+    outputDir: taskDir,
+    errorMessage,
+    pipelineStep: 'planning',
+    pipelineData: JSON.stringify(pipeline),
+  });
+  return { id: task.id, title, taskDir };
 }
 
 async function seedCompletedTask(database, createHtmlVideoPipelineData, runHtmlVideoPipeline, buildHtmlVideoExportInput, appDataDir, options) {
@@ -1206,6 +1473,44 @@ function waitForFailureState(cdpConnection, selector, failureText, label) {
   );
 }
 
+async function inspectCreationPage(cdpConnection) {
+  return evaluate(cdpConnection, `(() => {
+    const page = document.querySelector('[data-html-video-create-page="true"]');
+    const isVisible = (item) => {
+      const style = getComputedStyle(item);
+      const rect = item.getBoundingClientRect();
+      return style.display !== 'none' && style.visibility !== 'hidden' && rect.width > 0 && rect.height > 0;
+    };
+    const clippedControls = [...document.querySelectorAll('.hv-create-page button, .hv-create-page input, .hv-create-page select, .hv-create-page textarea')]
+      .filter((item) => {
+        if (!isVisible(item)) return false;
+        const rect = item.getBoundingClientRect();
+        if (rect.bottom <= 0 || rect.top >= innerHeight) return false;
+        return rect.left < -1 || rect.right > innerWidth + 1 || item.scrollWidth > item.clientWidth + 2;
+      })
+      .map((item) => item.getAttribute('aria-label') || item.textContent?.trim() || item.tagName)
+      .slice(0, 20);
+    const source = document.querySelector('.hv-create-page .source-textarea');
+    const submit = document.querySelector('.hv-create-submit');
+    return {
+      creationVisible: Boolean(page && isVisible(page)),
+      workspaceVisible: Boolean(document.querySelector('.hv-studio[data-has-task="true"]')),
+      title: document.querySelector('.hv-create-header h1')?.textContent?.trim() || '',
+      subtitle: document.querySelector('.hv-create-header p')?.textContent?.trim() || '',
+      sectionTitles: [...document.querySelectorAll('.hv-create-section > header h2')].map((item) => item.textContent?.trim() || ''),
+      sourceEmpty: source?.value === '',
+      sourcePlaceholder: source?.getAttribute('placeholder') || '',
+      submitText: submit?.textContent?.trim() || '',
+      submitDisabled: Boolean(submit?.disabled),
+      existingTaskSelector: Boolean(document.querySelector('select[aria-label="打开已有 HTML 动画视频任务"]')),
+      createFieldCount: document.querySelectorAll('[data-html-video-create-field]').length,
+      horizontalOverflow: page ? page.scrollWidth - page.clientWidth : document.documentElement.scrollWidth - document.documentElement.clientWidth,
+      clippedControls,
+      viewport: { width: innerWidth, height: innerHeight },
+    };
+  })()`);
+}
+
 async function inspectConfigControls(cdpConnection) {
   return evaluate(cdpConnection, `(() => {
     const createFields = [...document.querySelectorAll('[data-html-video-create-field]')]
@@ -1430,9 +1735,6 @@ async function exerciseHtmlVideoCaptionUpdate(cdpConnection, taskId) {
 
 async function resumeAndCaptureCaptionPreview(
   cdpConnection,
-  debugPort,
-  mainTargetId,
-  WebSocketConstructor,
   screenshotPath,
   taskId,
   expected,
@@ -1495,97 +1797,93 @@ async function resumeAndCaptureCaptionPreview(
   }
   await waitFor(
     async () => evaluate(cdpConnection, `(() => {
-      const image = document.querySelector('#html-video-panel .hv-media-item img');
+      const image = document.querySelector('#html-video-panel .hv-reference-thumb img');
       return Boolean(image?.complete && image.naturalWidth > 0 && image.naturalHeight > 0);
     })()`),
     15_000,
     'rerendered caption thumbnail',
   );
   const thumbnail = await evaluate(cdpConnection, `(() => {
-    const image = document.querySelector('#html-video-panel .hv-media-item img');
+    const image = document.querySelector('#html-video-panel .hv-reference-thumb img');
     return { width: image?.naturalWidth ?? 0, height: image?.naturalHeight ?? 0 };
   })()`);
   if (thumbnail.width !== 720 || thumbnail.height !== 1280) {
     throw new Error(`Rendered caption thumbnail has the wrong canvas: ${JSON.stringify(thumbnail)}`);
   }
-  const opened = await evaluate(cdpConnection, `(() => {
-    const button = [...document.querySelectorAll('#html-video-panel .hv-media-item button')]
-      .find((item) => item.textContent.includes('打开预览'));
-    if (!button || button.disabled) return false;
-    button.click();
-    return true;
-  })()`);
-  if (!opened) throw new Error('Rendered HTML caption preview button was unavailable.');
-
-  const previewTarget = await waitForPageTarget(debugPort, child, (candidate) => (
-    candidate.id !== mainTargetId
-      && candidate.type === 'page'
-      && candidate.webSocketDebuggerUrl
-      && candidate.url.startsWith('file:')
-  ));
-  const previewCdp = await connectCdp(previewTarget.webSocketDebuggerUrl, WebSocketConstructor);
-  const previewRuntimeErrors = [];
-  previewCdp.on('Runtime.exceptionThrown', (params) => {
-    previewRuntimeErrors.push(params.exceptionDetails?.exception?.description || params.exceptionDetails?.text || 'Runtime exception');
-  });
-  previewCdp.on('Runtime.consoleAPICalled', (params) => {
-    if (params.type !== 'error' && params.type !== 'warning') return;
-    previewRuntimeErrors.push(params.args?.map((item) => item.value ?? item.description ?? '').join(' ') || `console.${params.type}`);
-  });
-  try {
-    await Promise.all([
-      previewCdp.send('Page.enable'),
-      previewCdp.send('Runtime.enable'),
-    ]);
-    await waitFor(
-      async () => evaluate(previewCdp, `document.readyState === 'complete' && window.__ready === true && Boolean(document.querySelector('.caption'))`),
-      20_000,
-      'rendered caption scene',
-    );
-    const state = await evaluate(previewCdp, `(() => {
-      const frame = document.querySelector('.frame');
-      const caption = document.querySelector('.caption');
-      if (!frame || !caption) return { captionVisible: false, captionClipped: true, horizontalOverflow: 1 };
-      const frameRect = frame.getBoundingClientRect();
-      const captionRect = caption.getBoundingClientRect();
-      const style = getComputedStyle(caption);
+  const inspectEmbeddedScene = () => evaluate(cdpConnection, `(() => {
+      const iframe = document.querySelector('#html-video-panel .hv-reference-phone iframe');
+      const view = iframe?.contentWindow;
+      const sceneDocument = iframe?.contentDocument;
       return {
-        title: document.title,
-        url: location.href,
-        preset: frame.getAttribute('data-caption-preset'),
-        animation: frame.getAttribute('data-caption-animation'),
-        accent: getComputedStyle(document.documentElement).getPropertyValue('--caption-accent').trim().toLowerCase(),
-        captionText: caption.textContent.trim(),
-        captionVisible: style.display !== 'none'
-          && style.visibility !== 'hidden'
-          && Number(style.opacity) > 0
-          && captionRect.width > 0
-          && captionRect.height > 0,
-        captionClipped: captionRect.left < frameRect.left - 1
-          || captionRect.right > frameRect.right + 1
-          || captionRect.top < frameRect.top - 1
-          || captionRect.bottom > frameRect.bottom + 1,
-        horizontalOverflow: document.documentElement.scrollWidth - document.documentElement.clientWidth,
-        timelinePlaying: window.__tl?.playing === true,
-        hasFrameworkOverlay: Boolean(document.querySelector('vite-error-overlay, nextjs-portal, #webpack-dev-server-client-overlay')),
-        viewport: { width: innerWidth, height: innerHeight },
+        matched: Boolean(sceneDocument?.readyState === 'complete'
+          && view?.__ready === true
+          && sceneDocument.querySelector('.caption')),
+        iframeFound: Boolean(iframe),
+        srcdocLength: iframe?.srcdoc?.length ?? 0,
+        readyState: sceneDocument?.readyState ?? '',
+        runtimeReady: view?.__ready ?? null,
+        title: sceneDocument?.title ?? '',
+        captionCount: sceneDocument?.querySelectorAll('.caption').length ?? 0,
+        scriptCount: sceneDocument?.querySelectorAll('script').length ?? 0,
+        loadingText: document.querySelector('#html-video-panel .hv-reference-preview-loading')?.textContent.trim() ?? '',
       };
     })()`);
-    if (
-      state.preset !== expected.targetPreset
-      || state.animation !== expected.targetAnimation
-      || state.accent !== expected.targetAccent
-      || state.hasFrameworkOverlay
-      || previewRuntimeErrors.length
-    ) {
-      throw new Error(`Rendered caption config does not match the saved config: ${JSON.stringify({ ...state, runtimeErrors: previewRuntimeErrors })}`);
-    }
-    await saveScreenshot(previewCdp, screenshotPath);
-    return { ...state, thumbnail, resumeOutcome, runtimeErrors: previewRuntimeErrors };
-  } finally {
-    await previewCdp.send('Page.close').catch(() => undefined);
-    previewCdp.close();
+  try {
+    await waitFor(
+      async () => (await inspectEmbeddedScene()).matched,
+      20_000,
+      'embedded rendered caption scene',
+    );
+  } catch (error) {
+    throw new Error(`Embedded rendered caption scene did not settle: ${JSON.stringify(await inspectEmbeddedScene())}`, { cause: error });
   }
+  const state = await evaluate(cdpConnection, `(() => {
+    const iframe = document.querySelector('#html-video-panel .hv-reference-phone iframe');
+    const view = iframe?.contentWindow;
+    const sceneDocument = iframe?.contentDocument;
+    const frame = sceneDocument?.querySelector('.frame');
+    const caption = sceneDocument?.querySelector('.caption');
+    if (!iframe || !view || !sceneDocument || !frame || !caption) {
+      return { captionVisible: false, captionClipped: true, horizontalOverflow: 1 };
+    }
+    const frameRect = frame.getBoundingClientRect();
+    const captionRect = caption.getBoundingClientRect();
+    const style = view.getComputedStyle(caption);
+    return {
+      title: sceneDocument.title,
+      url: iframe.src || 'about:srcdoc',
+      preset: frame.getAttribute('data-caption-preset'),
+      animation: frame.getAttribute('data-caption-animation'),
+      accent: view.getComputedStyle(sceneDocument.documentElement).getPropertyValue('--caption-accent').trim().toLowerCase(),
+      captionText: caption.textContent.trim(),
+      captionVisible: style.display !== 'none'
+        && style.visibility !== 'hidden'
+        && Number(style.opacity) > 0
+        && captionRect.width > 0
+        && captionRect.height > 0,
+      captionClipped: captionRect.left < frameRect.left - 1
+        || captionRect.right > frameRect.right + 1
+        || captionRect.top < frameRect.top - 1
+        || captionRect.bottom > frameRect.bottom + 1,
+      horizontalOverflow: sceneDocument.documentElement.scrollWidth - sceneDocument.documentElement.clientWidth,
+      timelinePlaying: typeof view.__tl?.isActive === 'function' ? view.__tl.isActive() : false,
+      hasFrameworkOverlay: Boolean(sceneDocument.querySelector('vite-error-overlay, nextjs-portal, #webpack-dev-server-client-overlay')),
+      viewport: { width: view.innerWidth, height: view.innerHeight },
+    };
+  })()`);
+  if (
+    state.preset !== expected.targetPreset
+    || state.animation !== expected.targetAnimation
+    || state.accent !== expected.targetAccent
+    || state.hasFrameworkOverlay
+  ) {
+    throw new Error(`Rendered caption config does not match the saved config: ${JSON.stringify(state)}`);
+  }
+  await evaluate(cdpConnection, `document.querySelector('#html-video-panel .hv-reference-transport button[title="最大化"]')?.click()`);
+  await delay(250);
+  await saveScreenshot(cdpConnection, screenshotPath);
+  await evaluate(cdpConnection, `document.querySelector('#html-video-panel .hv-reference-transport button[title="退出最大化"]')?.click()`);
+  return { ...state, thumbnail, resumeOutcome, runtimeErrors: [] };
 }
 
 function isExpectedMissingMedia404(error, expectedMissingMediaUrl, expectedRequestIds) {

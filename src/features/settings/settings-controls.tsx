@@ -1,7 +1,7 @@
 import React, { useState } from "react";
 import { Eye, EyeOff, Info, Loader2, RotateCcw, Trash2 } from "lucide-react";
 import type { AppConfig, AppMutationResult, ImageProviderProfile, ProviderModel, TtsProviderProfile, VolcengineSpeaker } from "../../shared/types";
-import type { SecretChanges, SecretId } from "../../shared/config-secrets";
+import { applyConfigSecrets, type ConfigSecrets, type SecretChanges, type SecretId, type SecretStatus } from "../../shared/config-secrets";
 import { imageProfileCustomImage, imageProfileGptImage, imageProfileJimeng, normalizeEditableConfigProviders, saveLlmProfile, ttsProfileMinimax, ttsProfileVolcengine } from "../../shared/provider-profile-utils";
 import { volcengineVoicePresets } from '../../shared/editorial-options';
 
@@ -23,6 +23,46 @@ export function profileSecretId(domain: 'llm' | 'image' | 'tts', profileId: stri
 export function hasPendingLlmSecretChange(secretChanges: SecretChanges, profileId: string | undefined): boolean {
   const secretId = profileSecretId('llm', profileId, 'apiKey');
   return Object.prototype.hasOwnProperty.call(secretChanges, secretId);
+}
+
+export function configWithCredentialStatus(
+  config: AppConfig,
+  secretStatus: SecretStatus,
+  pendingChanges: SecretChanges = {},
+): AppConfig {
+  const placeholders: ConfigSecrets = {};
+  for (const [id, configured] of Object.entries(secretStatus)) {
+    if (configured === true) placeholders[id as SecretId] = 'configured';
+  }
+  for (const [id, value] of Object.entries(pendingChanges)) {
+    if (value === null) delete placeholders[id as SecretId];
+    else if (typeof value === 'string' && value.length > 0) placeholders[id as SecretId] = 'configured';
+  }
+  projectActiveProfileCredentialStatus(config, placeholders);
+  return applyConfigSecrets(config, placeholders);
+}
+
+function projectActiveProfileCredentialStatus(config: AppConfig, placeholders: ConfigSecrets): void {
+  const copyWhenConfigured = (from: SecretId, to: SecretId) => {
+    if (placeholders[from]) placeholders[to] = 'configured';
+  };
+  const llmId = encodeURIComponent(config.activeLlmProfileId || config.llmProfiles.find((profile) => profile.enabled)?.id || config.llm.id || 'default-llm');
+  copyWhenConfigured(`llm/${llmId}/apiKey`, 'llm/@active/apiKey');
+
+  const imageId = encodeURIComponent(config.activeImageProfileId || config.imageProfiles.find((profile) => profile.enabled)?.id || 'default-image');
+  copyWhenConfigured(`image/${imageId}/gptImage/apiKey`, 'image/@active/gptImage/apiKey');
+  copyWhenConfigured(`image/${imageId}/jimeng/sessionId`, 'image/@active/jimeng/sessionId');
+  copyWhenConfigured(`image/${imageId}/jimeng/accessKeyId`, 'image/@active/jimeng/accessKeyId');
+  copyWhenConfigured(`image/${imageId}/jimeng/secretAccessKey`, 'image/@active/jimeng/secretAccessKey');
+  copyWhenConfigured(`image/${imageId}/customImage/apiKey`, 'image/@active/customImage/apiKey');
+
+  const ttsId = encodeURIComponent(config.activeTtsProfileId || config.ttsProfiles.find((profile) => profile.enabled)?.id || 'default-tts');
+  copyWhenConfigured(`tts/${ttsId}/accessKey`, 'tts/@active/accessKey');
+  copyWhenConfigured(`tts/${ttsId}/volcengine/apiKey`, 'tts/@active/volcengine/apiKey');
+  copyWhenConfigured(`tts/${ttsId}/volcengine/accessKeyId`, 'tts/@active/volcengine/accessKeyId');
+  copyWhenConfigured(`tts/${ttsId}/volcengine/secretAccessKey`, 'tts/@active/volcengine/secretAccessKey');
+  copyWhenConfigured(`tts/${ttsId}/volcengine/accessKey`, 'tts/@active/volcengine/accessKey');
+  copyWhenConfigured(`tts/${ttsId}/minimax/apiKey`, 'tts/@active/minimax/apiKey');
 }
 
 export function configFromMutation(result: AppMutationResult | null): AppConfig {

@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
-import { Copy, FolderOpen, LayoutTemplate, Plus, Save, Upload } from 'lucide-react';
+import { Copy, FolderOpen, LayoutTemplate, Plus, Save, Trash2, Upload } from 'lucide-react';
 import type { AppMutationResult, DraftTemplate, DraftTextBorder, JianyingEffectCatalog } from '../../shared/types';
 import type { StoryDreamApi } from '../../shared/storydream-api';
 import { draftImageMotions, draftTemplates as builtinDraftTemplates, imageAnimations } from '../../shared/templates';
@@ -11,6 +11,7 @@ import { ToggleField } from '../../components/ToggleField';
 import { RangeField } from '../../components/RangeField';
 import { Accordion } from '../../components/Accordion';
 import { AsyncActionFeedback as InlineActionFeedback } from '../../components/AsyncActionFeedback';
+import { ConfirmDialog } from '../../components/ConfirmDialog';
 import type { ApplyMutationResult, RendererAppState as AppState } from '../../app/route-types';
 import { fallbackEffectCatalog } from '../../shared/editorial-options';
 import { DRAFT_TEXT_WIDTH_MAX, DRAFT_TEXT_WIDTH_MIN, DraftTemplatePreview, EditableDraftCanvas, applyDraftCanvasRatio, applyDraftImageRatio, clamp, cloneDraftTemplate, firstVisibleDraftLayer, isDraftLayerVisible, normalizeColorInput, type DraftCanvasLayer } from './DraftCanvas';
@@ -20,6 +21,14 @@ export function DraftTemplatesPage({ api, state, applyState }: { api: StoryDream
   const editingTemplate = editingId ? state.draftTemplates.find((template) => template.id === editingId) ?? null : null;
   const [draft, setDraft] = useState<DraftTemplate | null>(null);
   const [selectedLayer, setSelectedLayer] = useState<DraftCanvasLayer>('title');
+  const [expandedLayerPanels, setExpandedLayerPanels] = useState<Record<DraftCanvasLayer, boolean>>({
+    image: true,
+    title: false,
+    subtitle: false,
+    caption: false,
+    disclaimer: false,
+  });
+  const [layerPanelScrollRequest, setLayerPanelScrollRequest] = useState<{ layer: DraftCanvasLayer; id: number } | null>(null);
   const [effectCatalog, setEffectCatalog] = useState<JianyingEffectCatalog>(fallbackEffectCatalog);
   const [cozeWorkflowSource, setCozeWorkflowSource] = useState('');
   const [cozeImportName, setCozeImportName] = useState('');
@@ -27,8 +36,11 @@ export function DraftTemplatesPage({ api, state, applyState }: { api: StoryDream
   const [cozeImportResults, setCozeImportResults] = useState<CozeWorkflowTemplateConversionResult[]>([]);
   const [cozeImportError, setCozeImportError] = useState('');
   const [cozeImportOpen, setCozeImportOpen] = useState(false);
+  const [pendingDeleteTemplate, setPendingDeleteTemplate] = useState<DraftTemplate | null>(null);
   const draftTemplateAction = useAsyncAction();
   const draftDetailGeneration = useRef(0);
+  const draftControlsRef = useRef<HTMLElement | null>(null);
+  const editorReady = Boolean(editingId && draft);
 
   useEffect(() => {
     // Rehydrate only when switching templates; state refreshes must not overwrite unsaved drag edits.
@@ -56,8 +68,47 @@ export function DraftTemplatesPage({ api, state, applyState }: { api: StoryDream
 
   useEffect(() => {
     if (!draft || isDraftLayerVisible(draft, selectedLayer)) return;
-    setSelectedLayer(firstVisibleDraftLayer(draft));
+    const nextLayer = firstVisibleDraftLayer(draft);
+    setSelectedLayer(nextLayer);
+    setExpandedLayerPanels((current) => (current[nextLayer] ? current : { ...current, [nextLayer]: true }));
+    setLayerPanelScrollRequest((current) => ({ layer: nextLayer, id: (current?.id ?? 0) + 1 }));
   }, [draft, selectedLayer]);
+
+  useEffect(() => {
+    if (!editorReady || !draft) return;
+    const nextLayer = isDraftLayerVisible(draft, selectedLayer) ? selectedLayer : firstVisibleDraftLayer(draft);
+    setSelectedLayer(nextLayer);
+    setExpandedLayerPanels((current) => (current[nextLayer] ? current : { ...current, [nextLayer]: true }));
+    setLayerPanelScrollRequest((current) => ({ layer: nextLayer, id: (current?.id ?? 0) + 1 }));
+  }, [editingId, editorReady]);
+
+  useEffect(() => {
+    const controls = draftControlsRef.current;
+    if (!editorReady || !layerPanelScrollRequest || !controls) return;
+
+    const frame = window.requestAnimationFrame(() => {
+      const panel = controls.querySelector<HTMLElement>(`[data-draft-layer-panel="${layerPanelScrollRequest.layer}"]`);
+      if (!panel) return;
+      const containerRect = controls.getBoundingClientRect();
+      const panelRect = panel.getBoundingClientRect();
+      controls.scrollTo({
+        top: Math.max(0, controls.scrollTop + panelRect.top - containerRect.top - 8),
+        behavior: 'smooth',
+      });
+    });
+
+    return () => window.cancelAnimationFrame(frame);
+  }, [editorReady, layerPanelScrollRequest]);
+
+  function handleDraftLayerSelection(layer: DraftCanvasLayer) {
+    setSelectedLayer(layer);
+    setExpandedLayerPanels((current) => (current[layer] ? current : { ...current, [layer]: true }));
+    setLayerPanelScrollRequest((current) => ({ layer, id: (current?.id ?? 0) + 1 }));
+  }
+
+  function handleLayerPanelExpanded(layer: DraftCanvasLayer, expanded: boolean) {
+    setExpandedLayerPanels((current) => ({ ...current, [layer]: expanded }));
+  }
 
   async function save() {
     if (!draft) return;
@@ -81,6 +132,15 @@ export function DraftTemplatesPage({ api, state, applyState }: { api: StoryDream
     await draftTemplateAction.run(async () => {
       applyState(await api.saveDraftTemplate(next));
       setEditingId(next.id);
+    });
+  }
+
+  async function deleteTemplate() {
+    const template = pendingDeleteTemplate;
+    if (!template || template.isDefault) return;
+    await draftTemplateAction.run(async () => {
+      applyState(await api.deleteDraftTemplate(template.id));
+      setPendingDeleteTemplate(null);
     });
   }
 
@@ -225,10 +285,10 @@ export function DraftTemplatesPage({ api, state, applyState }: { api: StoryDream
               </div>
               <button className="ghost-action" disabled={draftTemplateAction.busy} onClick={() => copyTemplate(draft)}><Copy size={15} />复制</button>
             </div>
-            <EditableDraftCanvas template={draft} selectedLayer={selectedLayer} onSelectLayer={setSelectedLayer} onChange={setDraft} />
+            <EditableDraftCanvas template={draft} selectedLayer={selectedLayer} onSelectLayer={handleDraftLayerSelection} onChange={setDraft} />
           </section>
 
-          <section className="panel draft-controls">
+          <section ref={draftControlsRef} className="panel draft-controls">
             <Accordion title="画布设置" open>
               <Segmented label="比例" value={draft.canvas.ratio} options={['9:16', '4:3', '1:1', '16:9']} onChange={(value) => setDraft(applyDraftCanvasRatio(draft, value))} />
               <Field label="尺寸"><input value={`${draft.canvas.width}x${draft.canvas.height}`} readOnly /></Field>
@@ -246,15 +306,17 @@ export function DraftTemplatesPage({ api, state, applyState }: { api: StoryDream
                 </div>
               </Field>
             </Accordion>
-            <Accordion title="图片区域" open>
-              <ToggleField label="显示" checked={draft.image.visible} onChange={(checked) => updateDraftImage({ visible: checked })} />
-              <Segmented label="图片比例" value={draft.image.ratio} options={['9:16', '4:3', '16:9']} onChange={(value) => setDraft(applyDraftImageRatio(draft, value))} />
-              <Segmented label="适配" value={draft.image.fit} options={['cover', 'contain']} onChange={(value) => updateDraftImage({ fit: value as 'cover' | 'contain' })} />
-              <Field label="坐标"><input value={`top ${draft.image.top.toFixed(2)}, height ${draft.image.height.toFixed(2)}`} readOnly /></Field>
-              <RangeField label="垂直位置" min={-1} max={1} step={0.01} value={draft.image.top} onChange={(value) => updateDraftImage({ top: value })} />
-              <RangeField label="高度占比" min={0.1} max={1} step={0.01} value={draft.image.height} onChange={(value) => updateDraftImage({ height: value })} />
-              <Segmented label="动画效果" value={draft.image.animation} options={imageAnimations} onChange={(value) => updateDraftImage({ animation: value })} />
-            </Accordion>
+            <div data-draft-layer-panel="image">
+              <Accordion title="图片区域" expanded={expandedLayerPanels.image} onExpandedChange={(expanded) => handleLayerPanelExpanded('image', expanded)}>
+                <ToggleField label="显示" checked={draft.image.visible} onChange={(checked) => updateDraftImage({ visible: checked })} />
+                <Segmented label="图片比例" value={draft.image.ratio} options={['9:16', '4:3', '16:9']} onChange={(value) => setDraft(applyDraftImageRatio(draft, value))} />
+                <Segmented label="适配" value={draft.image.fit} options={['cover', 'contain']} onChange={(value) => updateDraftImage({ fit: value as 'cover' | 'contain' })} />
+                <Field label="坐标"><input value={`top ${draft.image.top.toFixed(2)}, height ${draft.image.height.toFixed(2)}`} readOnly /></Field>
+                <RangeField label="垂直位置" min={-1} max={1} step={0.01} value={draft.image.top} onChange={(value) => updateDraftImage({ top: value })} />
+                <RangeField label="高度占比" min={0.1} max={1} step={0.01} value={draft.image.height} onChange={(value) => updateDraftImage({ height: value })} />
+                <Segmented label="动画效果" value={draft.image.animation} options={imageAnimations} onChange={(value) => updateDraftImage({ animation: value })} />
+              </Accordion>
+            </div>
             <Accordion title="运镜">
               <Field label="运镜方式">
                 <select value={draft.image.motion} onChange={(event) => updateDraftImage({ motion: event.target.value as DraftTemplate['image']['motion'] })}>
@@ -281,7 +343,8 @@ export function DraftTemplatesPage({ api, state, applyState }: { api: StoryDream
                 </select>
               </Field>
             </Accordion>
-            <Accordion title="主标题">
+            <div data-draft-layer-panel="title">
+            <Accordion title="主标题" expanded={expandedLayerPanels.title} onExpandedChange={(expanded) => handleLayerPanelExpanded('title', expanded)}>
               <ToggleField label="显示" checked={draft.title.visible} onChange={(checked) => updateDraftTitle({ visible: checked })} />
               <Field label="文字"><input value={draft.title.text} onChange={(event) => updateDraftTitle({ text: event.target.value })} /></Field>
               <Field label="坐标"><input value={`${draft.title.x.toFixed(2)}, ${draft.title.y.toFixed(2)}`} readOnly /></Field>
@@ -302,7 +365,9 @@ export function DraftTemplatesPage({ api, state, applyState }: { api: StoryDream
               <RangeField label="行间距" min={0} max={20} step={1} value={draft.title.lineSpacing} onChange={(value) => updateDraftTitle({ lineSpacing: value })} />
               <TextBorderControls border={draft.title.border} onChange={updateDraftTitleBorder} />
             </Accordion>
-            <Accordion title="副标题">
+            </div>
+            <div data-draft-layer-panel="subtitle">
+            <Accordion title="副标题" expanded={expandedLayerPanels.subtitle} onExpandedChange={(expanded) => handleLayerPanelExpanded('subtitle', expanded)}>
               <ToggleField label="显示" checked={draft.subtitle.visible} onChange={(checked) => updateDraftSubtitle({ visible: checked })} />
               <Field label="文字"><input value={draft.subtitle.text} onChange={(event) => updateDraftSubtitle({ text: event.target.value })} /></Field>
               <Field label="坐标"><input value={`${draft.subtitle.x.toFixed(2)}, ${draft.subtitle.y.toFixed(2)}`} readOnly /></Field>
@@ -323,7 +388,9 @@ export function DraftTemplatesPage({ api, state, applyState }: { api: StoryDream
               <RangeField label="行间距" min={0} max={20} step={1} value={draft.subtitle.lineSpacing} onChange={(value) => updateDraftSubtitle({ lineSpacing: value })} />
               <TextBorderControls border={draft.subtitle.border} onChange={updateDraftSubtitleBorder} />
             </Accordion>
-            <Accordion title="字幕">
+            </div>
+            <div data-draft-layer-panel="caption">
+            <Accordion title="字幕" expanded={expandedLayerPanels.caption} onExpandedChange={(expanded) => handleLayerPanelExpanded('caption', expanded)}>
               <ToggleField label="显示" checked={draft.caption.visible} onChange={(checked) => updateDraftCaption({ visible: checked })} />
               <Field label="坐标"><input value={`${draft.caption.x.toFixed(2)}, ${draft.caption.y.toFixed(2)}`} readOnly /></Field>
               <RangeField label="文本框宽度" min={DRAFT_TEXT_WIDTH_MIN} max={DRAFT_TEXT_WIDTH_MAX} step={0.01} value={draft.caption.width} onChange={updateDraftCaptionWidth} />
@@ -347,7 +414,9 @@ export function DraftTemplatesPage({ api, state, applyState }: { api: StoryDream
               <RangeField label="圆角" min={0} max={1} step={0.05} value={draft.caption.background.roundRadius} onChange={(value) => updateDraftCaptionBackground({ roundRadius: value })} />
               <TextBorderControls border={draft.caption.border} onChange={updateDraftCaptionBorder} />
             </Accordion>
-            <Accordion title="免责声明">
+            </div>
+            <div data-draft-layer-panel="disclaimer">
+            <Accordion title="免责声明" expanded={expandedLayerPanels.disclaimer} onExpandedChange={(expanded) => handleLayerPanelExpanded('disclaimer', expanded)}>
               <ToggleField label="显示" checked={draft.disclaimer.visible} onChange={(checked) => updateDraftDisclaimer({ visible: checked })} />
               <Field label="坐标"><input value={`${draft.disclaimer.x.toFixed(2)}, ${draft.disclaimer.y.toFixed(2)}`} readOnly /></Field>
               <Field label="文字"><input value={draft.disclaimer.text} onChange={(event) => updateDraftDisclaimer({ text: event.target.value })} /></Field>
@@ -368,6 +437,7 @@ export function DraftTemplatesPage({ api, state, applyState }: { api: StoryDream
               <RangeField label="行间距" min={0} max={20} step={1} value={draft.disclaimer.lineSpacing} onChange={(value) => updateDraftDisclaimer({ lineSpacing: value })} />
               <TextBorderControls border={draft.disclaimer.border} onChange={updateDraftDisclaimerBorder} />
             </Accordion>
+            </div>
             <Accordion title="音频设置">
               <Field label="旁白音量"><input type="number" value={draft.audio.narrationVolume} onChange={(event) => setDraft({ ...draft, audio: { ...draft.audio, narrationVolume: Number(event.target.value) } })} /></Field>
               <Field label="BGM 音量"><input type="number" value={draft.audio.bgmVolume} onChange={(event) => setDraft({ ...draft, audio: { ...draft.audio, bgmVolume: Number(event.target.value) } })} /></Field>
@@ -481,9 +551,10 @@ export function DraftTemplatesPage({ api, state, applyState }: { api: StoryDream
               <span>{template.canvas.ratio} · {template.canvas.width}x{template.canvas.height}</span>
               <span>图片 {template.image.ratio} · {template.image.fit} · {draftImageMotions.find((option) => option.value === template.image.motion)?.label ?? template.image.animation}</span>
             </div>
-            <div className="row-actions">
-              <button className="ghost-action" onClick={() => openEditor(template)}><LayoutTemplate size={15} />编辑</button>
-              <button className="ghost-action" disabled={draftTemplateAction.busy} onClick={() => copyTemplate(template)}><Copy size={15} />复制</button>
+            <div className={`draft-template-actions${template.isDefault ? '' : ' has-delete'}`}>
+              <button className="ghost-action" type="button" onClick={() => openEditor(template)}><LayoutTemplate size={15} />编辑</button>
+              <button className="ghost-action" type="button" disabled={draftTemplateAction.busy} onClick={() => copyTemplate(template)}><Copy size={15} />复制</button>
+              {!template.isDefault ? <button className="danger-action" type="button" aria-label={`删除自定义模板 ${template.name}`} disabled={draftTemplateAction.busy} onClick={() => setPendingDeleteTemplate(template)}><Trash2 size={15} />删除</button> : null}
             </div>
           </article>
         ))}
@@ -493,6 +564,16 @@ export function DraftTemplatesPage({ api, state, applyState }: { api: StoryDream
           <span>从默认竖屏复制一份本地配置</span>
         </button>
       </section>
+      <ConfirmDialog
+        open={Boolean(pendingDeleteTemplate)}
+        title="删除自定义模板"
+        description={`确定删除“${pendingDeleteTemplate?.name ?? ''}”吗？删除后不可恢复，引用它的历史任务将回退到默认模板。`}
+        confirmLabel="删除模板"
+        busy={draftTemplateAction.busy}
+        destructive
+        onConfirm={deleteTemplate}
+        onCancel={() => setPendingDeleteTemplate(null)}
+      />
     </div>
   );
 }

@@ -17,6 +17,8 @@ import {
   validateHtmlVideoCaptionColors,
 } from './html-video-captions';
 import {
+  MAX_HTML_VIDEO_CAPTIONS_PER_SCENE,
+  MAX_HTML_VIDEO_ELEMENTS_PER_SCENE,
   MAX_HTML_VIDEO_SCENES,
   MAX_HTML_VIDEO_SOURCE_CHARS,
   parseHtmlVideoPipelineData,
@@ -314,6 +316,44 @@ export const htmlVideoConfigUpdateSchema = bounded(z
     });
   }));
 
+const htmlVideoSceneChangeSchema = z.discriminatedUnion('field', [
+  z.object({ field: z.literal('narration'), value: nonEmptyText(MAX_HTML_VIDEO_SOURCE_CHARS) }).strict(),
+  z.object({ field: z.literal('title'), value: nonEmptyText(MAX_HTML_VIDEO_SOURCE_CHARS) }).strict(),
+  z.object({ field: z.literal('titleHidden'), value: z.boolean() }).strict(),
+  z.object({ field: z.literal('captions'), value: z.array(nonEmptyText(MAX_HTML_VIDEO_SOURCE_CHARS)).min(1).max(MAX_HTML_VIDEO_CAPTIONS_PER_SCENE) }).strict(),
+  z.object({ field: z.literal('sceneTemplate'), value: nonEmptyText(256) }).strict(),
+  z.object({ field: z.literal('foregroundHidden'), value: z.boolean() }).strict(),
+  z.object({ field: z.literal('elementHidden'), slot: nonNegativeInteger.max(MAX_HTML_VIDEO_ELEMENTS_PER_SCENE - 1), value: z.boolean() }).strict(),
+  z.object({ field: z.literal('backgroundPrompt'), value: nonEmptyText(MAX_HTML_VIDEO_SOURCE_CHARS) }).strict(),
+  z.object({ field: z.literal('elementPrompt'), slot: nonNegativeInteger.max(MAX_HTML_VIDEO_ELEMENTS_PER_SCENE - 1), value: nonEmptyText(MAX_HTML_VIDEO_SOURCE_CHARS) }).strict(),
+  z.object({ field: z.literal('titleScale'), value: finiteNumber.min(0.25).max(3) }).strict(),
+  z.object({ field: z.literal('titleTopOverride'), value: finiteNumber.min(0).max(100) }).strict(),
+  z.object({ field: z.literal('captionScale'), value: finiteNumber.min(0.25).max(3) }).strict(),
+  z.object({ field: z.literal('captionYOverride'), value: finiteNumber.min(0).max(100) }).strict(),
+]);
+
+const htmlVideoSceneUpdateSchema = bounded(z.object({
+  id: governanceIdSchema,
+  sceneIndex: nonNegativeInteger.min(1).max(MAX_HTML_VIDEO_SCENES),
+  changes: z.array(htmlVideoSceneChangeSchema).min(1).max(32),
+}).strict());
+
+const htmlVideoAssetTargetSchema = z.object({
+  sceneIndex: nonNegativeInteger.min(1).max(MAX_HTML_VIDEO_SCENES),
+  kind: z.enum(['bg', 'fg']),
+  slot: nonNegativeInteger.max(MAX_HTML_VIDEO_ELEMENTS_PER_SCENE - 1),
+}).strict();
+
+const htmlVideoAssetActionSchema = z.object({
+  id: governanceIdSchema,
+  target: htmlVideoAssetTargetSchema,
+}).strict();
+
+const htmlVideoVoiceActionSchema = z.object({
+  id: governanceIdSchema,
+  sceneIndex: nonNegativeInteger.min(1).max(MAX_HTML_VIDEO_SCENES),
+}).strict();
+
 export const sceneActionSchema = z.object({ id: idSchema, sceneId: nonNegativeInteger }).strict();
 export const taskStatusSchema = z.object({ id: idSchema, status: z.enum(['running', 'paused', 'cancelled']) }).strict();
 const viralStatusSchema = z.object({ id: idSchema, status: viralStatusValueSchema }).strict();
@@ -583,6 +623,17 @@ const secretChangesSchema = bounded(
 const saveConfigInputSchema = z
   .object({ config: appConfigSchema, secretChanges: secretChangesSchema })
   .strict() as z.ZodType<SaveConfigInput>;
+const webSearchProviderSchema = z.enum(['bing', 'baidu', 'sogou', 'toutiao']);
+const webSearchRequestSchema = z
+  .object({
+    query: nonEmptyText(MAX_IPC_TEXT),
+    providers: z
+      .array(webSearchProviderSchema)
+      .min(1)
+      .max(4)
+      .refine((providers) => new Set(providers).size === providers.length, 'Search providers must be unique.'),
+  })
+  .strict();
 export const ipcInputSchemas = {
   'app:get-state': z.void(),
   'app:get-bootstrap': z.void(),
@@ -600,7 +651,7 @@ export const ipcInputSchemas = {
   'llm:test-config': llmConfigSchema,
   'models:list': providerModelListSchema,
   'volcengine:speakers:list': volcengineSpeakerListSchema,
-  'research:web-search': nonEmptyText(MAX_IPC_TEXT),
+  'research:web-search': z.union([nonEmptyText(MAX_IPC_TEXT), webSearchRequestSchema]),
   'research:compose-copy': researchCopyComposeSchema,
   'prompt-template:save': promptTemplateSchema,
   'prompt-template:list': cursorPageSchema,
@@ -612,6 +663,7 @@ export const ipcInputSchemas = {
   'draft-template:save': draftTemplateSchema,
   'draft-template:list': cursorPageSchema,
   'draft-template:get-detail': idOnlySchema,
+  'draft-template:delete': governanceIdSchema,
   'minimax-clone-voice:list': countedCursorPageSchema,
   'minimax-clone-voice:save': z.object({
     voiceId: minimaxCloneVoiceIdSchema,
@@ -693,6 +745,10 @@ export const ipcInputSchemas = {
   'person-assets:open-directory': nameSchema,
   'html-video:create-task': htmlVideoCreateTaskSchema,
   'html-video:update-config': htmlVideoConfigUpdateSchema,
+  'html-video:update-scene': htmlVideoSceneUpdateSchema,
+  'html-video:replace-asset': htmlVideoAssetActionSchema,
+  'html-video:regenerate-asset': htmlVideoAssetActionSchema,
+  'html-video:regenerate-voice': htmlVideoVoiceActionSchema,
   'html-video:import-cover': idOnlySchema,
   'html-video:composition-source:get': htmlVideoCompositionSourceGetSchema,
   'html-video:composition-source:lint': htmlVideoCompositionSourceLintSchema,
@@ -721,6 +777,7 @@ export const ipcInputSchemas = {
   'viral:get-result': idOnlySchema,
   'viral:create-production-task': z.object({ id: idSchema, options: viralProductionOptionsSchema.optional() }).strict(),
   'task:update-status': taskStatusSchema,
+  'task:update-template': z.object({ id: idSchema, templateId: idSchema }).strict(),
   'task:retry': idOnlySchema,
   'task:regenerate-image': sceneActionSchema,
   'task:regenerate-narration': sceneActionSchema,

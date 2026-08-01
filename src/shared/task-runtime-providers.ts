@@ -1,6 +1,6 @@
 import type { RunTaskOptions } from './runner';
 import type { SceneAsset } from './draft';
-import { AppError } from './app-error';
+import { AppError, redactErrorText } from './app-error';
 import type {
   HtmlVideoAssetInput,
   HtmlVideoPlanningInput,
@@ -299,17 +299,19 @@ function createHtmlVideoLlmProviders(
       ],
       htmlRewriteSchema,
       input.signal,
+      ['rewrittenText', 'segments'],
     ),
     plan: async (input: HtmlVideoPlanningInput) => runHtmlVideoJsonLlm<{ scenes: HtmlVideoScenePlan[] }>(
       llm,
       1,
       'html-video-planning',
       [
-        { role: 'system', content: '把旁白规划为 HTML 动画视频场景。只返回 JSON，scenes 必须包含连续 index、narration、title、captions、sceneTemplate、background.prompt 和 elements。前景 elements 的 prompt 应明确透明背景 PNG。' },
+        { role: 'system', content: '把旁白规划为 HTML 动画视频场景。只返回 JSON，scenes 必须包含连续 index、narration、title、captions、sceneTemplate、background.prompt 和 elements。前景 elements 的 prompt 应明确透明背景 PNG。不要返回 JSON Schema、错误对象或解释文字。' },
         { role: 'user', content: JSON.stringify({ rewrittenText: input.rewrittenText, segments: input.segments, config: input.config }) },
       ],
       htmlPlanningSchema,
       input.signal,
+      ['scenes'],
     ),
   };
 }
@@ -321,11 +323,65 @@ async function runHtmlVideoJsonLlm<T>(
   messages: LlmMessage[],
   schema: Record<string, unknown>,
   signal?: AbortSignal,
+  requiredFields: readonly string[] = [],
 ): Promise<T> {
-  const result = llm.protocol === 'anthropic'
-    ? await llm.run<T>({ step, name, messages, signal, anthropic: { toolInputSchema: schema } })
-    : await llm.run<T>({ step, name, messages, signal });
-  return result.json;
+  const run = async (jsonMode: 'required' | 'none'): Promise<T> => {
+    const result = llm.protocol === 'anthropic'
+      ? await llm.run<T>({ step, name, messages, signal, jsonMode, anthropic: { toolInputSchema: schema } })
+      : await llm.run<T>({ step, name, messages, signal, jsonMode });
+    return requireHtmlVideoLlmFields(result.json, requiredFields, name);
+  };
+
+  try {
+    return await run('required');
+  } catch (error) {
+    if (!isHtmlVideoJsonCompatibilityError(error)) throw asHtmlVideoLlmError(name, error);
+    try {
+      return await run('none');
+    } catch (fallbackError) {
+      throw asHtmlVideoLlmError(name, fallbackError);
+    }
+  }
+}
+
+function requireHtmlVideoLlmFields<T>(value: T, requiredFields: readonly string[], name: string): T {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) {
+    throw new AppError('HTML_VIDEO_LLM_INVALID_JSON', `${htmlVideoLlmStageLabel(name)}返回的 JSON 根节点不是对象。`, true);
+  }
+  const record = value as Record<string, unknown>;
+  const providerError = typeof record.error === 'string' ? record.error.trim() : '';
+  if (providerError) {
+    throw new AppError(
+      'HTML_VIDEO_LLM_SCHEMA_CONFLICT',
+      `${htmlVideoLlmStageLabel(name)}返回了格式错误：${redactErrorText(providerError).slice(0, 360)}`,
+      true,
+    );
+  }
+  const missing = requiredFields.filter((field) => !(field in record));
+  if (missing.length) {
+    throw new AppError('HTML_VIDEO_LLM_INVALID_JSON', `${htmlVideoLlmStageLabel(name)}缺少字段：${missing.join('、')}。`, true);
+  }
+  return value;
+}
+
+function isHtmlVideoJsonCompatibilityError(error: unknown): boolean {
+  if (error instanceof AppError && /HTML_VIDEO_LLM_(?:SCHEMA_CONFLICT|INVALID_JSON)/u.test(error.code)) return true;
+  const message = redactErrorText(error instanceof Error ? error.message : String(error));
+  return /(?:strict\s+json|json\s+schema|schema\s+conflict|response_format|structured\s+output|valid\s+json|planning\s+step\s+failed)/iu.test(message);
+}
+
+function asHtmlVideoLlmError(name: string, error: unknown): AppError {
+  if (error instanceof AppError) return error;
+  const detail = redactErrorText(error instanceof Error ? error.message : String(error)).replace(/\s+/gu, ' ').slice(0, 480);
+  return new AppError(
+    'HTML_VIDEO_LLM_OUTPUT_INVALID',
+    `${htmlVideoLlmStageLabel(name)}失败：${detail || '服务没有返回可用的 JSON。'}`,
+    true,
+  );
+}
+
+function htmlVideoLlmStageLabel(name: string): string {
+  return name === 'html-video-planning' ? '场景规划' : '文案改写';
 }
 
 function buildHtmlAssetRequests(input: HtmlVideoAssetInput): HtmlAssetRequest[] {

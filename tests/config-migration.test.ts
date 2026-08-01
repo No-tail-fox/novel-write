@@ -146,6 +146,32 @@ describe('config credential migration', () => {
     }
   });
 
+  it('repairs a stale config copy from the marker-present database without resetting saved providers', async () => {
+    const module = await loadConfigService();
+    expect(module).not.toBeNull();
+    if (!module) return;
+    const dir = await mkdtemp(join(tmpdir(), 'storydream-config-authoritative-'));
+    const database = await FileDatabase.open(join(dir, 'data.db'));
+    const vault = new CredentialVault(join(dir, 'secrets.v1.json'), fakeEncryption());
+    try {
+      const saved = normalizeAppConfig({
+        ...structuredClone(defaultConfig),
+        llm: { ...defaultConfig.llm, model: 'saved-model' },
+        llmProfiles: [{ ...defaultConfig.llmProfiles[0], model: 'saved-model' }],
+      });
+      await database.upsertConfig(saved);
+      await saveConfigToFile(dir, defaultConfig);
+      await writeFile(module.configMigrationMarkerPath(dir), '1\n', 'utf8');
+
+      const service = new module.ConfigService({ database, dataDir: dir, vault });
+      expect((await service.getPublicState()).config.llm.model).toBe('saved-model');
+      expect(JSON.parse(await readFile(configFilePath(dir), 'utf8')).llm.model).toBe('saved-model');
+    } finally {
+      await database.close();
+      await rm(dir, { recursive: true, force: true });
+    }
+  });
+
   it('moves SQLite and JSON secrets into the encrypted vault, returns public state, and is idempotent', async () => {
     const module = await loadConfigService();
     expect(module).not.toBeNull();

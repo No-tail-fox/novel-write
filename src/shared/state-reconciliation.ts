@@ -200,7 +200,7 @@ function mutationSlices(result: AppMutationResult): string[] {
   if (kind === 'prompt-template-upsert' || kind === 'prompt-templates-reset') return ['promptTemplates'];
   if (kind === 'custom-style-upsert') return ['customStyles'];
   if (kind === 'viral-templates-upsert') return ['promptTemplates', 'customStyles'];
-  if (kind === 'draft-template-upsert') return ['draftTemplates'];
+  if (kind === 'draft-template-upsert' || kind === 'draft-template-delete') return ['draftTemplates'];
   if (kind === 'minimax-clone-voice-upsert' || kind === 'minimax-clone-voice-delete') return ['minimaxCloneVoices'];
   if (kind === 'image-lab-upsert') return ['imageLabRecords'];
   if (kind === 'voice-lab-upsert') return ['voiceLabRecords'];
@@ -346,6 +346,9 @@ export function applyAppMutationResult<T extends MutationState>(
     };
   }
   if (patch.kind === 'draft-template-upsert') return { ...state, draftTemplates: upsertEntity(state.draftTemplates, patch.template) };
+  if (patch.kind === 'draft-template-delete') {
+    return { ...state, draftTemplates: state.draftTemplates.filter((template) => template.id !== patch.templateId) };
+  }
   if (patch.kind === 'minimax-clone-voice-upsert') {
     const existingIndex = state.minimaxCloneVoices.findIndex((voice) => voice.voiceId === patch.voice.voiceId);
     const minimaxCloneVoices = existingIndex < 0

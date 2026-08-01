@@ -5,9 +5,12 @@ import { AsyncActionFeedback as InlineActionFeedback } from '../../components/As
 import { EventTimeline } from '../../components/EventTimeline';
 import { StatusBadge as StatusPill, taskStatusLabel as statusLabel } from '../../components/StatusBadge';
 import type { ApplyMutationResult } from '../../app/route-types';
+import { DraftTemplatePreview } from '../templates/DraftCanvas';
 import type { StoryDreamApi } from '../../shared/storydream-api';
+import { buildSubtitleTrack } from '../../shared/story';
 import type {
   AppConfig,
+  DraftTemplate,
   Task,
   TaskArtifactSnapshot,
   TaskEvent,
@@ -24,6 +27,7 @@ import {
   trimForPreview,
 } from './task-formatters';
 import { artifactPanelTitle, imageProgressLabel, snapshotStepStatus, type ArtifactPanelTab } from './task-pipeline';
+import { indexTaskAssetsBySceneId, resolveTaskPreviewContent } from './task-preview-model';
 
 export type TaskArtifactTab = ArtifactPanelTab;
 
@@ -31,6 +35,7 @@ export function ArtifactPreviewContent({
   api,
   task,
   config,
+  draftTemplate,
   applyState,
   tab,
   snapshot,
@@ -42,6 +47,7 @@ export function ArtifactPreviewContent({
   api: StoryDreamApi;
   task: Task;
   config: AppConfig;
+  draftTemplate: DraftTemplate;
   applyState: ApplyMutationResult;
   tab: TaskArtifactTab;
   snapshot: TaskArtifactSnapshot | null;
@@ -54,21 +60,53 @@ export function ArtifactPreviewContent({
   const sourceContext = artifact.sourceContext;
   const scenes = artifact.scenes ?? [];
   const imagePrompts = artifact.imagePrompts ?? [];
-  const subtitles = artifact.subtitles;
+  const subtitles = useMemo(
+    () => scenes.length > 0
+      ? buildSubtitleTrack(scenes, { maxCharsPerLine: draftTemplate.caption.maxCharsPerLine })
+      : artifact.subtitles,
+    [artifact.subtitles, draftTemplate.caption.maxCharsPerLine, scenes],
+  );
   const imageAssets = snapshot?.assets.images ?? [];
   const imageErrors = snapshot?.assets.imageErrors ?? [];
   const narrationAssets = snapshot?.assets.narration ?? [];
-  const imageProgress = imageProgressLabel(scenes.length, imageAssets.length, snapshotStepStatus(snapshot, 4));
+  const imageBySceneId = useMemo(() => indexTaskAssetsBySceneId(imageAssets), [imageAssets]);
+  const generatedImageCount = imageBySceneId.size;
+  const imageProgress = imageProgressLabel(scenes.length, generatedImageCount, snapshotStepStatus(snapshot, 4));
   const sceneRailItems = scenes.length
     ? scenes
     : Array.from({ length: Math.min(4, Math.max(1, imageAssets.length)) }, (_, index) => ({ id: index + 1, cap: `场景 ${index + 1}`, descPrompt: '' }));
   const [selectedSceneId, setSelectedSceneId] = useState<number | null>(null);
   const selectedScene = sceneRailItems.find((scene) => scene.id === selectedSceneId) ?? sceneRailItems[0];
-  const [mediaTitle, ...mediaSubtitleParts] = (task.title || '未命名任务').split(/[：:]/u);
-  const mediaSubtitle = mediaSubtitleParts.join('：') || trimForPreview(selectedScene?.cap || task.inputText, 28);
+  const selectedSceneIndex = Math.max(0, sceneRailItems.findIndex((scene) => scene.id === selectedScene?.id));
+  const selectedImageAsset = selectedScene ? imageBySceneId.get(selectedScene.id) : undefined;
+  const selectedImagePath = selectedImageAsset?.path ?? '';
+  const [selectedImagePreview, setSelectedImagePreview] = useState<{ path: string; url: string; error: string }>({ path: '', url: '', error: '' });
+  const previewContent = resolveTaskPreviewContent({ task, cover: artifact.cover, sourceText: artifact.rewrittenCopy, sceneCap: selectedScene?.cap, template: draftTemplate });
+  const selectedImageUrl = selectedImagePreview.path === selectedImagePath ? selectedImagePreview.url : '';
+  const selectedImageError = selectedImagePreview.path === selectedImagePath ? selectedImagePreview.error : '';
+  const nextPendingSceneId = sceneRailItems.find((scene) => !imageBySceneId.has(scene.id))?.id;
   const [rerunningStepAction, setRerunningStepAction] = useState<string | null>(null);
   const artifactAction = useAsyncAction();
   const canRerunStep = !isBrowserPreview && task.status !== 'running' && task.status !== 'pending' && Boolean(task.artifactStatePath);
+
+  useEffect(() => {
+    if (!selectedImagePath || isBrowserPreview) {
+      setSelectedImagePreview({ path: selectedImagePath, url: '', error: '' });
+      return undefined;
+    }
+    let cancelled = false;
+    setSelectedImagePreview({ path: selectedImagePath, url: '', error: '' });
+    api.readAssetDataUrl(selectedImagePath)
+      .then((url) => {
+        if (!cancelled) setSelectedImagePreview({ path: selectedImagePath, url, error: '' });
+      })
+      .catch((error) => {
+        if (!cancelled) setSelectedImagePreview({ path: selectedImagePath, url: '', error: summarizeErrorMessage(error instanceof Error ? error.message : String(error)) });
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [api, isBrowserPreview, selectedImagePath]);
 
   async function rerunArtifactStep(step: number, mode: TaskStepRerunMode) {
     const key = `${step}:${mode}`;
@@ -100,24 +138,34 @@ export function ArtifactPreviewContent({
     <div className="artifact-preview">
       <div className="task-media-workspace">
         <section className="task-media-canvas" data-media-canvas="task-artifact">
-          <div className="task-media-frame">
-            <span>{task.track === 'character-story' ? '人物故事' : task.mode === 'ai' ? 'AI 创作任务' : '内容任务'} · 第 {selectedScene?.id ?? 1} 幕</span>
-            <i className="task-media-frame-accent" aria-hidden="true" />
-            <strong>{mediaTitle}</strong>
-            <p>{mediaSubtitle}</p>
-            <small>场景 {String(imageAssets.length).padStart(2, '0')} / {String(scenes.length || imageAssets.length || 0).padStart(2, '0')}</small>
+          <div className="task-media-frame" data-draft-template-id={draftTemplate.id} data-preview-scene-id={selectedScene?.id ?? 0}>
+            <DraftTemplatePreview
+              template={draftTemplate}
+              imageUrl={selectedImageUrl}
+              titleText={previewContent.title}
+              subtitleText={previewContent.subtitle}
+              captionText={previewContent.caption}
+              disclaimerText={previewContent.disclaimer}
+            />
+            {!selectedImageAsset ? <div className="task-media-asset-state"><ImageIcon size={22} /><span>等待场景图片</span></div> : null}
+            {selectedImageAsset && !selectedImageUrl && !selectedImageError ? <div className="task-media-asset-state"><Loader2 className="spin" size={22} /><span>正在读取图片</span></div> : null}
+            {selectedImageError ? <div className="task-media-asset-state danger"><XCircle size={22} /><span>图片读取失败</span></div> : null}
           </div>
-          <div className="task-media-progress"><ImageIcon size={15} /><span><i style={{ width: `${Math.round((imageAssets.length / Math.max(1, scenes.length || imageAssets.length)) * 100)}%` }} /></span><small>{imageAssets.length} / {scenes.length || imageAssets.length || 0}</small></div>
+          <div className="task-media-progress"><ImageIcon size={15} /><span><i style={{ width: `${Math.round((generatedImageCount / Math.max(1, scenes.length || generatedImageCount)) * 100)}%` }} /></span><small>{String(selectedSceneIndex + 1).padStart(2, '0')} / {String(scenes.length || generatedImageCount || 0).padStart(2, '0')}</small></div>
         </section>
         <aside className="task-scene-rail">
-          <div><h3>场景图片</h3><span>{imageAssets.length} / {scenes.length || imageAssets.length || 0} 已生成</span></div>
+          <div><h3>场景图片</h3><span>{generatedImageCount} / {scenes.length || generatedImageCount || 0} 已生成</span></div>
           <div className="task-scene-list">
-            {sceneRailItems.map((scene, index) => (
-              <button type="button" className={`task-scene-item ${index < imageAssets.length ? 'complete' : index === imageAssets.length && task.status === 'running' ? 'running' : 'pending'} ${selectedScene?.id === scene.id ? 'selected' : ''}`} key={scene.id} onClick={() => setSelectedSceneId(scene.id)}>
-                <span>{String(index + 1).padStart(2, '0')}</span>
-                <div><strong>{trimForPreview(scene.cap, 18) || `场景 ${index + 1}`}</strong><small>{index < imageAssets.length ? '已生成' : index === imageAssets.length && task.status === 'running' ? '生成中' : '等待生成'}</small></div>
-              </button>
-            ))}
+            {sceneRailItems.map((scene, index) => {
+              const complete = imageBySceneId.has(scene.id);
+              const running = !complete && nextPendingSceneId === scene.id && task.status === 'running';
+              return (
+                <button type="button" className={`task-scene-item ${complete ? 'complete' : running ? 'running' : 'pending'} ${selectedScene?.id === scene.id ? 'selected' : ''}`} key={scene.id} onClick={() => setSelectedSceneId(scene.id)}>
+                  <span>{String(index + 1).padStart(2, '0')}</span>
+                  <div><strong>{trimForPreview(scene.cap, 18) || `场景 ${index + 1}`}</strong><small>{complete ? '已生成' : running ? '生成中' : '等待生成'}</small></div>
+                </button>
+              );
+            })}
           </div>
         </aside>
       </div>
@@ -639,17 +687,17 @@ function NarrationPreviewList({
   const sceneIds = new Set(scenes.map((scene) => scene.id));
   const rows = scenes.length
     ? [
-        ...scenes.map((scene, index) => ({
+        ...scenes.map((scene) => ({
           sceneId: scene.id,
           cap: scene.cap,
-          cue: subtitles?.cues[index],
+          cues: subtitles?.cues.filter((cue) => cue.sceneId === scene.id) ?? [],
           assets: assets.filter((item) => item.sceneId === scene.id).sort(compareNarrationPreviewAssets),
           canRegenerate: true,
         })),
         ...assets.filter((asset) => !sceneIds.has(asset.sceneId)).map((asset) => ({
           sceneId: asset.sceneId,
           cap: '已生成配音',
-          cue: undefined,
+          cues: [],
           assets: [asset],
           canRegenerate: false,
         })),
@@ -657,7 +705,7 @@ function NarrationPreviewList({
     : assets.map((asset) => ({
         sceneId: asset.sceneId,
         cap: '已生成配音',
-        cue: undefined,
+        cues: [],
         assets: [asset],
         canRegenerate: false,
       }));
@@ -670,12 +718,14 @@ function NarrationPreviewList({
       {rows.map((item) => {
         const disabled = isBrowserPreview || task.status === 'running' || task.status === 'pending' || regeneratingSceneId === item.sceneId || !item.canRegenerate;
         const ready = item.assets.length > 0;
+        const firstCue = item.cues[0];
+        const lastCue = item.cues[item.cues.length - 1];
         return (
           <article className={`narration-preview-card ${ready ? 'ready' : 'pending'}`} key={`${item.sceneId}-${item.assets.map((asset) => asset.path).join('|') || 'pending'}`}>
             <div className="narration-preview-head">
               <div>
                 <strong>{item.sceneId}. {item.cap}</strong>
-                {item.cue ? <span>{formatMs(item.cue.startMs)} - {formatMs(item.cue.endMs)}</span> : null}
+                {firstCue && lastCue ? <span>{formatMs(firstCue.startMs)} - {formatMs(lastCue.endMs)} · {item.cues.length} 条短字幕</span> : null}
               </div>
               <span>{ready ? `${item.assets.length} 段可试听` : task.status === 'running' ? '等待/生成中' : '未生成'}</span>
             </div>
@@ -695,7 +745,7 @@ function NarrationPreviewList({
               );
             })}
             {!ready ? <div className="narration-player loading">等待音频落盘</div> : null}
-            {item.cue ? <p>{item.cue.text}</p> : null}
+            {item.cues.length > 0 ? <p>{item.cues.map((cue) => cue.text).join(' / ')}</p> : null}
             {!ready ? <small>等待 TTS 返回真实音频</small> : null}
             <button className="mini-button" disabled={disabled} onClick={() => regenerate(item.sceneId)}>
               {regeneratingSceneId === item.sceneId ? <Loader2 className="spin" size={14} /> : <RotateCcw size={14} />}

@@ -12,6 +12,7 @@ import type {
   HtmlVideoPipelineDataV2,
   HtmlVideoPipelineStep,
   HtmlVideoScenePlan,
+  HtmlVideoSceneChange,
   HtmlVideoStepState,
   HtmlVideoStepStatus,
   HtmlVideoTabKey,
@@ -154,6 +155,23 @@ export function classifyHtmlVideoTaskMessage(
 ): 'error' | 'status' | null {
   if (!message.trim()) return null;
   return status === 'failed' ? 'error' : 'status';
+}
+
+const legacyHtmlVideoStepFailureLabels: Record<string, string> = {
+  rewrite: '文案改写',
+  plan: '场景规划',
+  planning: '场景规划',
+  assets: '素材生成',
+  voice: '配音生成',
+  preview: '动画预览',
+  render: '出片',
+};
+
+export function htmlVideoUserFacingError(message: string): string {
+  const match = /^HTML video (rewrite|plan|planning|assets|voice|preview|render) step failed\.?$/iu.exec(message.trim());
+  if (!match) return message;
+  const label = legacyHtmlVideoStepFailureLabels[match[1].toLowerCase()];
+  return `${label}失败。请从${label}重试。`;
 }
 
 export function fitHtmlVideoOutputSize(
@@ -419,6 +437,48 @@ export function invalidateHtmlVideoPipeline(
   if (fromIndex <= htmlVideoVisibleSteps.indexOf('render')) delete state.output;
   state.current = fromStep;
   return state;
+}
+
+export function applyHtmlVideoSceneChanges(
+  pipeline: HtmlVideoPipelineDataV2,
+  sceneIndex: number,
+  changes: readonly HtmlVideoSceneChange[],
+): HtmlVideoPipelineDataV2 {
+  const next = structuredClone(pipeline);
+  const scene = next.scenes.find((item) => item.index === sceneIndex);
+  if (!scene) throw new AppError('HTML_VIDEO_SCENE_NOT_FOUND', `HTML 视频场景 ${sceneIndex} 不存在。`);
+  for (const change of changes) {
+    switch (change.field) {
+      case 'narration': scene.narration = change.value; break;
+      case 'title': scene.title = change.value; break;
+      case 'titleHidden': scene.titleHidden = change.value; break;
+      case 'captions': scene.captions = [...change.value]; break;
+      case 'sceneTemplate': scene.sceneTemplate = change.value; break;
+      case 'foregroundHidden': scene.foregroundHidden = change.value; break;
+      case 'backgroundPrompt': scene.background.prompt = change.value; break;
+      case 'titleScale': scene.titleScale = change.value; break;
+      case 'titleTopOverride': scene.titleTopOverride = change.value; break;
+      case 'captionScale': scene.captionScale = change.value; break;
+      case 'captionYOverride': scene.captionYOverride = change.value; break;
+      case 'elementHidden': {
+        const slots = new Set(scene.hiddenElementSlots ?? []);
+        if (change.value) slots.add(change.slot);
+        else slots.delete(change.slot);
+        scene.hiddenElementSlots = [...slots].sort((left, right) => left - right);
+        break;
+      }
+      case 'elementPrompt': {
+        const element = scene.elements.find((item) => item.slot === change.slot);
+        if (!element) throw new AppError('HTML_VIDEO_ELEMENT_NOT_FOUND', `场景 ${sceneIndex} 的前景槽位 ${change.slot} 不存在。`);
+        element.prompt = change.value;
+        break;
+      }
+    }
+  }
+  next.scenes = validateHtmlVideoScenePlans(next.scenes, next.config.maxScenes ?? MAX_HTML_VIDEO_SCENES);
+  next.revision = pipeline.revision + 1;
+  delete next.configSnapshotHash;
+  return next;
 }
 
 export function isHtmlVideoTask(task: Pick<Task, 'taskType'>): boolean {
@@ -733,13 +793,30 @@ function parseScenePlan(
   if (new Set(parsedElements.map((element) => element.slot)).size !== parsedElements.length) {
     throw invalidPipeline(`${field}.elements contains duplicate slots`);
   }
+  const hiddenElementSlots = scene.hiddenElementSlots === undefined
+    ? undefined
+    : requireBoundedArray(
+        scene.hiddenElementSlots,
+        `${field}.hiddenElementSlots`,
+        MAX_HTML_VIDEO_ELEMENTS_PER_SCENE,
+      ).map((slot, index) => requireNonNegativeInteger(slot, `${field}.hiddenElementSlots[${index}]`));
+  if (hiddenElementSlots && new Set(hiddenElementSlots).size !== hiddenElementSlots.length) {
+    throw invalidPipeline(`${field}.hiddenElementSlots contains duplicate slots`);
+  }
 
   return {
     index,
     narration,
     title,
+    ...(optionalBoolean(scene.titleHidden, `${field}.titleHidden`) === undefined ? {} : { titleHidden: Boolean(scene.titleHidden) }),
     captions,
     sceneTemplate,
+    ...(optionalBoolean(scene.foregroundHidden, `${field}.foregroundHidden`) === undefined ? {} : { foregroundHidden: Boolean(scene.foregroundHidden) }),
+    ...(hiddenElementSlots === undefined ? {} : { hiddenElementSlots }),
+    ...(optionalBoundedNumber(scene.titleScale, `${field}.titleScale`, 0.25, 3) === undefined ? {} : { titleScale: Number(scene.titleScale) }),
+    ...(optionalBoundedNumber(scene.titleTopOverride, `${field}.titleTopOverride`, 0, 100) === undefined ? {} : { titleTopOverride: Number(scene.titleTopOverride) }),
+    ...(optionalBoundedNumber(scene.captionScale, `${field}.captionScale`, 0.25, 3) === undefined ? {} : { captionScale: Number(scene.captionScale) }),
+    ...(optionalBoundedNumber(scene.captionYOverride, `${field}.captionYOverride`, 0, 100) === undefined ? {} : { captionYOverride: Number(scene.captionYOverride) }),
     background: { prompt: backgroundPrompt },
     elements: parsedElements,
   };
@@ -982,6 +1059,25 @@ function requireNonNegativeNumber(value: unknown, field: string): number {
 
 function optionalNonNegativeNumber(value: unknown, field: string): number | undefined {
   return value === undefined ? undefined : requireNonNegativeNumber(value, field);
+}
+
+function optionalBoundedNumber(
+  value: unknown,
+  field: string,
+  minimum: number,
+  maximum: number,
+): number | undefined {
+  if (value === undefined) return undefined;
+  if (typeof value !== 'number' || !Number.isFinite(value) || value < minimum || value > maximum) {
+    throw invalidPipeline(`${field} must be a number in the range ${minimum}-${maximum}`);
+  }
+  return value;
+}
+
+function optionalBoolean(value: unknown, field: string): boolean | undefined {
+  if (value === undefined) return undefined;
+  if (typeof value !== 'boolean') throw invalidPipeline(`${field} must be a boolean`);
+  return value;
 }
 
 function requireNonNegativeInteger(value: unknown, field: string): number {

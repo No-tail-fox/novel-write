@@ -72,7 +72,7 @@ export function AppRoutes({
           familyEpochs={historyFamilyEpochs}
         />
       ) : null}
-      {activeView === 'task-detail' ? <TaskDetailPage api={api} state={state} task={selectedTask} applyState={applyState} close={() => navigate('history')} isBrowserPreview={isBrowserPreview} /> : null}
+      {activeView === 'task-detail' ? <TaskDetailPage api={api} state={state} task={selectedTask} applyState={applyState} close={() => navigate('history')} openTemplateManager={() => navigate('draft-templates')} isBrowserPreview={isBrowserPreview} /> : null}
       {activeView === 'image-lab' ? <ImageLabPage api={api} state={state} applyState={applyState} /> : null}
       {activeView === 'voice-lab' ? <VoiceLabPage api={api} state={state} applyState={applyState} /> : null}
       {activeView === 'music-mv' ? <MusicMvPage api={api} state={state} applyState={applyState} openTaskDetail={openTaskDetail} isBrowserPreview={isBrowserPreview} /> : null}

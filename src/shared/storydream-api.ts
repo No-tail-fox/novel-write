@@ -23,11 +23,13 @@ import type {
   DraftTemplateSummary,
   HistoryPage,
   HtmlVideoConfigChange,
+  HtmlVideoAssetTarget,
   HtmlVideoCompositionSource,
   HtmlVideoCompositionSourceLintInput,
   HtmlVideoCompositionSourceSaveInput,
   HtmlVideoCompositionSourceSaveResult,
   HtmlVideoLintFinding,
+  HtmlVideoSceneChange,
   HistoryListInput,
   ImageLabGenerateInput,
   ImageLabImportInput,
@@ -68,6 +70,7 @@ import type {
   VoiceLabSummary,
   VolcengineSpeakerListRequest,
   VolcengineSpeakerListResult,
+  WebSearchRequest,
 } from './types';
 import type { PublicAppState as AppState, SaveConfigInput, SecretChanges } from './config-secrets';
 import type { PersonAssetImage, PersonAssetSummary } from './person-assets';
@@ -105,6 +108,7 @@ export const INVOKE_CHANNELS = Object.freeze([
   'prompt-template:get-detail',
   'draft-template:list',
   'draft-template:get-detail',
+  'draft-template:delete',
   'minimax-clone-voice:list',
   'minimax-clone-voice:save',
   'minimax-clone-voice:delete',
@@ -140,6 +144,10 @@ export const INVOKE_CHANNELS = Object.freeze([
   'person-assets:open-directory',
   'html-video:create-task',
   'html-video:update-config',
+  'html-video:update-scene',
+  'html-video:replace-asset',
+  'html-video:regenerate-asset',
+  'html-video:regenerate-voice',
   'html-video:import-cover',
   'html-video:composition-source:get',
   'html-video:composition-source:lint',
@@ -154,6 +162,7 @@ export const INVOKE_CHANNELS = Object.freeze([
   'viral:get-result',
   'viral:create-production-task',
   'task:update-status',
+  'task:update-template',
   'task:retry',
   'task:regenerate-image',
   'task:regenerate-narration',
@@ -229,7 +238,7 @@ export type StoryDreamApi = {
   testLlmConfig: (config: LlmConfig) => Promise<LlmModelTestResult>;
   listProviderModels: (request: ProviderModelListRequest) => Promise<ProviderModelListResult>;
   listVolcengineSpeakers: (request: VolcengineSpeakerListRequest) => Promise<VolcengineSpeakerListResult>;
-  searchWebSources: (query: string) => Promise<AiSourceContext>;
+  searchWebSources: (input: string | WebSearchRequest) => Promise<AiSourceContext>;
   composeResearchCopy: (input: ResearchCopyComposeInput) => Promise<ResearchCopyComposeResult>;
   savePromptTemplate: (template: PromptTemplate) => Promise<AppMutationResult | null>;
   resetPromptTemplates: () => Promise<AppMutationResult | null>;
@@ -237,6 +246,7 @@ export type StoryDreamApi = {
   saveViralTemplates: (input: ViralTemplateSaveInput) => Promise<AppMutationResult | null>;
   generateCustomStyleDraft: (input: CustomStyleGenerateInput) => Promise<CustomStyle>;
   saveDraftTemplate: (template: DraftTemplate) => Promise<AppMutationResult | null>;
+  deleteDraftTemplate: (id: string) => Promise<AppMutationResult | null>;
   generateImageLab: (input: ImageLabGenerateInput) => Promise<AppMutationResult | null>;
   addImageLabRecord: (input: ImageLabImportInput) => Promise<AppMutationResult | null>;
   generateVoiceLabPreview: (input: VoiceLabGenerateInput) => Promise<AppMutationResult | null>;
@@ -245,6 +255,10 @@ export type StoryDreamApi = {
   saveUiPreferences: (update: UiPreferencesUpdate) => Promise<AppMutationResult | null>;
   createHtmlVideoTask: (input: CreateTaskInput) => Promise<AppMutationResult | null>;
   updateHtmlVideoConfig: (id: string, changes: HtmlVideoConfigChange[]) => Promise<AppMutationResult | null>;
+  updateHtmlVideoScene: (id: string, sceneIndex: number, changes: HtmlVideoSceneChange[]) => Promise<AppMutationResult | null>;
+  replaceHtmlVideoAsset: (id: string, target: HtmlVideoAssetTarget) => Promise<AppMutationResult | null>;
+  regenerateHtmlVideoAsset: (id: string, target: HtmlVideoAssetTarget) => Promise<AppMutationResult | null>;
+  regenerateHtmlVideoVoice: (id: string, sceneIndex: number) => Promise<AppMutationResult | null>;
   importHtmlVideoCover: (id: string) => Promise<AppMutationResult | null>;
   getHtmlVideoCompositionSource: (taskId: string, sceneIndex: number) => Promise<HtmlVideoCompositionSource>;
   lintHtmlVideoCompositionSource: (input: HtmlVideoCompositionSourceLintInput) => Promise<HtmlVideoLintFinding[]>;
@@ -259,6 +273,7 @@ export type StoryDreamApi = {
   getViralAnalysisResult: (id: string) => Promise<ViralAnalysisResult>;
   createProductionTaskFromViral: (id: string, options?: ViralProductionTaskOptions) => Promise<AppMutationResult | null>;
   updateTaskStatus: (id: string, status: Extract<TaskStatus, 'running' | 'paused' | 'cancelled'>) => Promise<AppMutationResult | null>;
+  updateTaskTemplate: (id: string, templateId: string) => Promise<AppMutationResult | null>;
   retryTask: (id: string) => Promise<AppMutationResult | null>;
   regenerateTaskImage: (id: string, sceneId: number) => Promise<AppMutationResult | null>;
   regenerateTaskNarration: (id: string, sceneId: number) => Promise<AppMutationResult | null>;

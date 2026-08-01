@@ -13,6 +13,23 @@ async function loadStoryDreamApiContract() {
 }
 
 describe('IPC runtime contract', () => {
+  it('accepts legacy web searches and strictly validates explicit provider requests', async () => {
+    const contract = await loadContract();
+    expect(contract).not.toBeNull();
+    if (!contract) return;
+    const schema = contract.ipcInputSchemas['research:web-search'];
+
+    expect(schema.parse('李在明')).toBe('李在明');
+    expect(schema.parse({ query: '李在明 生平', providers: ['bing', 'baidu', 'sogou', 'toutiao'] })).toEqual({
+      query: '李在明 生平',
+      providers: ['bing', 'baidu', 'sogou', 'toutiao'],
+    });
+    expect(() => schema.parse({ query: '李在明', providers: [] })).toThrow();
+    expect(() => schema.parse({ query: '李在明', providers: ['bing', 'bing'] })).toThrow();
+    expect(() => schema.parse({ query: '李在明', providers: ['google'] })).toThrow();
+    expect(() => schema.parse({ query: '李在明', providers: ['bing'], extra: true })).toThrow();
+  });
+
   it('requires a strict previous composite identity for book selection updates', async () => {
     const contract = await loadContract();
     expect(contract).not.toBeNull();
@@ -67,6 +84,9 @@ describe('IPC runtime contract', () => {
     expect(contract.taskStatusSchema.parse({ id: 'task-1', status: 'paused' })).toEqual({ id: 'task-1', status: 'paused' });
     expect(() => contract.taskStatusSchema.parse({ id: 'task-1', status: 'unknown' })).toThrow();
     expect(() => contract.taskStatusSchema.parse({ id: 'task-1', status: 'paused', extra: true })).toThrow();
+    const taskTemplateSchema = contract.ipcInputSchemas['task:update-template'];
+    expect(taskTemplateSchema.parse({ id: 'task-1', templateId: 'custom-template' })).toEqual({ id: 'task-1', templateId: 'custom-template' });
+    expect(() => taskTemplateSchema.parse({ id: 'task-1', templateId: '', extra: true })).toThrow();
 
     expect(contract.pathSchema.parse('I:/opc/tasks/task-1/output.mp4')).toBe('I:/opc/tasks/task-1/output.mp4');
     expect(() => contract.pathSchema.parse('../secret.txt')).toThrow();
@@ -304,6 +324,7 @@ describe('IPC runtime contract', () => {
       'voice-lab:archive',
       'voice-lab:restore',
       'voice-lab:delete',
+      'draft-template:delete',
     ] as const;
     const invalidIds = [
       '',

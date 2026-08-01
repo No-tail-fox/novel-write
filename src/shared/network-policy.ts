@@ -7,6 +7,7 @@ export type NetworkPurpose = 'public-research' | 'ima-api' | 'ima-document' | 'p
 export interface NetworkPolicy {
   allowPrivate: boolean;
   allowLoopback: boolean;
+  allowProxySyntheticHostnames: boolean;
   allowedSchemes: readonly string[];
   maxRedirects: number;
   maxBytes: number;
@@ -72,6 +73,7 @@ const policyProfiles: Record<NetworkPurpose, NetworkPolicy> = {
   'public-research': {
     allowPrivate: false,
     allowLoopback: false,
+    allowProxySyntheticHostnames: true,
     allowedSchemes: ['http:', 'https:'],
     maxRedirects: 4,
     maxBytes: 2 * MiB,
@@ -81,6 +83,7 @@ const policyProfiles: Record<NetworkPurpose, NetworkPolicy> = {
   'ima-api': {
     allowPrivate: false,
     allowLoopback: false,
+    allowProxySyntheticHostnames: true,
     allowedSchemes: ['https:'],
     maxRedirects: 2,
     maxBytes: 2 * MiB,
@@ -97,6 +100,7 @@ const policyProfiles: Record<NetworkPurpose, NetworkPolicy> = {
   'ima-document': {
     allowPrivate: false,
     allowLoopback: false,
+    allowProxySyntheticHostnames: true,
     allowedSchemes: ['http:', 'https:'],
     maxRedirects: 4,
     maxBytes: 8 * MiB,
@@ -116,6 +120,7 @@ const policyProfiles: Record<NetworkPurpose, NetworkPolicy> = {
   'provider-api': {
     allowPrivate: false,
     allowLoopback: true,
+    allowProxySyntheticHostnames: true,
     allowedSchemes: ['http:', 'https:'],
     maxRedirects: 3,
     maxBytes: 64 * MiB,
@@ -306,7 +311,7 @@ export async function fetchWithNetworkPolicy(input: string | URL, options: Netwo
         return rebuildResponse(response, bytes, currentUrl.href, redirects > 0);
       } catch (error) {
         if (controller.signal.aborted) throw abortReason(controller.signal);
-        throw error;
+        throw unwrapNetworkPolicyCause(error);
       } finally {
         await dispatcher.close().catch(() => undefined);
       }
@@ -390,7 +395,7 @@ function normalizeAddress(entry: NetworkAddress, hostname: string): NetworkAddre
   return { address: stripIpv6Brackets(entry.address.toLowerCase()), family };
 }
 
-type AddressKind = 'public' | 'private' | 'loopback' | 'blocked';
+type AddressKind = 'public' | 'private' | 'loopback' | 'proxy-synthetic' | 'blocked';
 
 function assertAddressAllowed(address: string, url: URL, policy: NetworkPolicy): void {
   const normalized = stripIpv6Brackets(address.toLowerCase());
@@ -408,6 +413,13 @@ function assertAddressKind(kind: AddressKind, address: string, url: URL, policy:
   }
   if (kind === 'private' && !policy.allowPrivate) {
     throw networkError('NETWORK_PRIVATE_BLOCKED', `Private network target ${address} is blocked.`);
+  }
+  if (kind === 'proxy-synthetic') {
+    const hostname = normalizedHostname(url);
+    if (!policy.allowProxySyntheticHostnames || isIP(hostname)) {
+      throw networkError('NETWORK_ADDRESS_BLOCKED', `Reserved network target ${address} is blocked.`);
+    }
+    return;
   }
   if (kind === 'blocked') {
     throw networkError('NETWORK_ADDRESS_BLOCKED', `Reserved network target ${address} is blocked.`);
@@ -430,11 +442,11 @@ function classifyIpv4(address: string): AddressKind {
     || (a === 192 && b === 0 && parts[2] === 0)
     || (a === 192 && b === 88 && parts[2] === 99)
     || (a === 192 && b === 0 && parts[2] === 2)
-    || (a === 198 && (b === 18 || b === 19))
     || (a === 198 && b === 51 && parts[2] === 100)
     || (a === 203 && b === 0 && parts[2] === 113)
     || a >= 224
   ) return 'blocked';
+  if (a === 198 && (b === 18 || b === 19)) return 'proxy-synthetic';
   return 'public';
 }
 
@@ -616,6 +628,16 @@ function dynamicFetch(url: string, init?: RequestInit & { dispatcher?: Dispatche
 function abortReason(signal: AbortSignal): Error {
   if (signal.reason instanceof Error) return signal.reason;
   return networkError('NETWORK_ABORTED', typeof signal.reason === 'string' ? signal.reason : 'Network request aborted.');
+}
+
+function unwrapNetworkPolicyCause(error: unknown): unknown {
+  if (!(error instanceof Error)) return error;
+  let cause: unknown = error.cause;
+  while (cause instanceof Error) {
+    if (cause instanceof NetworkPolicyError) return cause;
+    cause = cause.cause;
+  }
+  return error;
 }
 
 function networkError(code: string, message: string): NetworkPolicyError & NodeJS.ErrnoException {

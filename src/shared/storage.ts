@@ -1767,6 +1767,18 @@ export class FileDatabase {
     });
   }
 
+  async deleteDraftTemplate(id: string): Promise<boolean> {
+    return this.enqueueCommit(() => {
+      const row = getFirstRow<{ is_builtin: number }>(this.db, 'SELECT is_builtin FROM draft_templates WHERE id = ?', [id]);
+      if (!row) return false;
+      if (Number(row.is_builtin) === 1) {
+        throw new Error('DRAFT_TEMPLATE_BUILTIN_DELETE_FORBIDDEN: System draft templates cannot be deleted.');
+      }
+      this.db.run('DELETE FROM draft_templates WHERE id = ? AND is_builtin = 0', [id]);
+      return true;
+    });
+  }
+
   async addImageLabRecord(input: ImageLabRecordInput): Promise<ImageLabRecord> {
     return this.enqueueCommit(() => {
       const now = input.createdAt ?? new Date().toISOString();
@@ -2667,6 +2679,7 @@ export class FileDatabase {
         | 'artifactStatePath'
         | 'startedAt'
         | 'lastHeartbeatAt'
+        | 'templateId'
         | 'step3PromptSnapshot'
         | 'podcastSpeakerA'
         | 'podcastSpeakerB'
@@ -2690,6 +2703,7 @@ export class FileDatabase {
       videoForm: 'video_form',
       startedAt: 'started_at',
       lastHeartbeatAt: 'last_heartbeat_at',
+      templateId: 'template_id',
       step3PromptSnapshot: 'step3_prompt_snapshot',
       podcastSpeakerA: 'podcast_speaker_a',
       podcastSpeakerB: 'podcast_speaker_b',

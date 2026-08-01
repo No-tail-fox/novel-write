@@ -7,7 +7,7 @@ import { FileDatabase as PersistentFileDatabase, type FileDatabaseDependencies }
 import { runTask as runTaskWithManagedWorkDir, type RunTaskOptions } from '@shared/runner';
 import { markTaskStepForRerun } from '@shared/pipeline-cache';
 import { createPersonAsset, importPersonAssetFiles } from '@shared/person-assets';
-import type { CustomCoverTemplate, ImagePrompt, PipelineArtifact, StoryboardScene, Task, TaskStatus } from '@shared/types';
+import type { CoverMetadata, CustomCoverTemplate, ImagePrompt, PipelineArtifact, StoryboardScene, Task, TaskStatus } from '@shared/types';
 import type { PyJianYingBridgeInput } from '@shared/jianying-bridge';
 import type { StoryboundSidecarInput } from '@shared/storybound-sidecar';
 import type { ConfiguredJsonLlm, JsonLlm, LlmJsonRequest } from '@shared/llm-provider';
@@ -487,7 +487,11 @@ describe('task runner', () => {
 
     expect(countOccurrences(finalCopy, fixedIntro)).toBe(1);
     expect(finalCopy).toContain(aiBody);
-    expect(finalCopy).toContain('想读额尔古纳河右岸，去橱窗找这本书。');
+    expect(finalCopy).toContain('想读固定开头测试，去橱窗找这本书。');
+    const coverPrompt = requests.find((request) => request.name === 'cover-metadata')?.messages.map((message) => message.content).join('\n') ?? '';
+    expect(coverPrompt).toContain(fixedIntro);
+    expect(coverPrompt).toContain(aiBody);
+    expect(coverPrompt).toContain('想读固定开头测试，去橱窗找这本书。');
     for (const request of requests.filter((item) => item.name.startsWith('rewrite-round-'))) {
       expect(request.messages.map((message) => message.content).join('\n')).not.toContain(fixedIntro);
     }
@@ -826,6 +830,30 @@ describe('task runner', () => {
     expect(storedKeepPromotion).toBe(false);
   });
 
+  it('turns a bare character name into display-ready title and subtitle hooks', { timeout: rewriteControlTestTimeoutMs }, async () => {
+    const { cover, requests } = await runRewriteControlScenario({
+      taskInput: {
+        title: '李明博人物故事',
+        inputText: '李明博小时候曾靠纸箱充饥。多年后，李明博在66岁生日当天赢下大选。',
+        track: 'character-story',
+        style: 'photo-real',
+        speaker: 'voice',
+      },
+      reviewedText: '李明博小时候曾靠纸箱充饥。多年后，李明博在66岁生日当天赢下大选。',
+      rewrittenCopy: '李明博小时候曾靠纸箱充饥。多年后，李明博在66岁生日当天赢下大选。',
+      coverTitle: '李明博',
+      coverSubtitle: ['他曾靠纸箱充饥', '66岁生日竟赢下大选'],
+      coverTags: ['#人物故事', '#李明博'],
+    });
+
+    const coverPrompt = requests.find((request) => request.name === 'cover-metadata')?.messages.map((message) => message.content).join('\n') ?? '';
+    expect(coverPrompt).toContain('title 严禁只输出人物姓名');
+    expect(cover).toMatchObject({
+      title: '他曾靠纸箱充饥',
+      subtitle: ['66岁生日竟赢下大选'],
+    });
+  });
+
 
   it('passes required rewrite output schema as Anthropic-specific request options', async () => {
     const dir = await mkdtemp(join(tmpdir(), 'storybound-runner-rewrite-schema-'));
@@ -1090,7 +1118,14 @@ describe('task runner', () => {
     }
   });
 
-  it('splits Storybound tail anchors into exact storyboard caps', async () => {
+  it.each([
+    ['a spaced singular key', (anchors: string[]) => ({ 'tail anchor': anchors })],
+    ['a mixed-case hyphenated key', (anchors: string[]) => ({ 'Tail-Anchors': anchors })],
+    ['a Chinese key with a stringified array', (anchors: string[]) => ({ '尾部锚点': JSON.stringify(anchors) })],
+    ['nested result and items containers', (anchors: string[]) => ({ result: { items: anchors } })],
+    ['a numbered plain-text list', (anchors: string[]) => ({ tail_anchor: anchors.map((anchor, index) => `${index + 1}. ${anchor}`).join('\n') })],
+    ['an unknown single-field wrapper', (anchors: string[]) => ({ payload: anchors })],
+  ] as const)('splits Storybound tail anchors from %s into exact storyboard caps', async (variant, wrapResponse) => {
     const dir = await mkdtemp(join(tmpdir(), 'storybound-runner-storyboard-tail-anchors-'));
     const db = await FileDatabase.open(join(dir, 'data.db'));
     const draftRootDir = join(dir, 'JianyingPro Drafts');
@@ -1105,7 +1140,7 @@ describe('task runner', () => {
         jianying: { ...(await db.getState()).config.jianying, draftPath: draftRootDir },
       });
       const task = await db.createTask({
-        title: 'Tail anchor storyboard task',
+        title: `Tail anchor storyboard task: ${variant}`,
         inputText: rewrittenCopy,
         track: 'character-story',
         style: 'photo-real',
@@ -1125,7 +1160,10 @@ describe('task runner', () => {
           };
         }
         if (request.name === 'rewrite-evaluation') return { json: { bestRound: 1, evaluations: [] } as T, raw: '{}', requestId: 'rewrite-eval' };
-        if (request.step === 2) return { json: anchors as T, raw: JSON.stringify(anchors), requestId: 'storyboard' };
+        if (request.step === 2) {
+          const response = wrapResponse(anchors);
+          return { json: response as T, raw: JSON.stringify(response), requestId: 'storyboard' };
+        }
         if (request.name === 'character-card') {
           return {
             json: { characterCard: { summary: 'same person', characters: [], consistencyRules: [] } } as T,
@@ -1155,7 +1193,85 @@ describe('task runner', () => {
       const storyboardContent = storyboardRequest?.messages.map((message) => message.content).join('\n') ?? '';
       expect(storyboardContent).toContain('JSON 字符串数组');
       expect(storyboardContent).toContain('尾部锚点');
+      expect(storyboardRequest?.jsonRoot).toBe('array');
       expect(storyboardRequest?.anthropic?.toolInputSchema).toBeUndefined();
+    } finally {
+      await db.close();
+      await rm(dir, { recursive: true, force: true });
+    }
+  });
+
+  it('retries an explicit storyboard error object with failure feedback', async () => {
+    const dir = await mkdtemp(join(tmpdir(), 'storybound-runner-storyboard-error-retry-'));
+    const db = await FileDatabase.open(join(dir, 'data.db'));
+    const draftRootDir = join(dir, 'JianyingPro Drafts');
+    const mediaDir = join(dir, 'media');
+    const rewrittenCopy = '那一年他十八岁，独自踏上了北上的列车。窗外风景飞退，他心跳加速。他没说话，也没回头，就这样走了。';
+    const anchors = ['独自踏上了北上的列车。', '他心跳加速。', '也没回头，就这样走了。'];
+    const requests: LlmJsonRequest[] = [];
+
+    try {
+      await db.upsertConfig({
+        ...(await db.getState()).config,
+        jianying: { ...(await db.getState()).config.jianying, draftPath: draftRootDir },
+      });
+      const task = await db.createTask({
+        title: 'Storyboard error retry task',
+        inputText: rewrittenCopy,
+        track: 'character-story',
+        style: 'photo-real',
+        speaker: 'voice',
+        storyboardSceneCount: 3,
+        targetScenes: 3,
+      });
+
+      const llm: JsonLlm = async <T,>(request: LlmJsonRequest) => {
+        requests.push(request);
+        if (request.step === 0) return { json: { reviewedText: rewrittenCopy } as T, raw: '{}', requestId: 'review' };
+        if (request.name.startsWith('rewrite-round-')) {
+          return {
+            json: { rewrittenCopy, cover: { title: '列车', subtitle: [], summary: 'summary', tags: [], comments: [] } } as T,
+            raw: '{}',
+            requestId: request.name,
+          };
+        }
+        if (request.name === 'rewrite-evaluation') return { json: { bestRound: 1, evaluations: [] } as T, raw: '{}', requestId: 'rewrite-eval' };
+        if (request.step === 2) {
+          const storyboardAttempt = requests.filter((item) => item.step === 2).length;
+          if (storyboardAttempt === 1) {
+            const response = { error: 'strict JSON schema conflict' };
+            return { json: response as T, raw: JSON.stringify(response), requestId: 'storyboard-error' };
+          }
+          return { json: anchors as T, raw: JSON.stringify(anchors), requestId: 'storyboard-retry' };
+        }
+        if (request.name === 'character-card') {
+          return {
+            json: { characterCard: { summary: 'same person', characters: [], consistencyRules: [] } } as T,
+            raw: '{}',
+            requestId: 'character-card',
+          };
+        }
+        return { json: { imagePrompts: makePrompts(extractScenesFromPrompt(request)) } as T, raw: '{}', requestId: `prompts-${request.step}` };
+      };
+
+      await runTask(db, task, {
+        appDataDir: dir,
+        llm: mockConfiguredLlm(llm),
+        generateImages: async (inputScenes) => writeSceneAssets(mediaDir, inputScenes, 'png', tinyPng),
+        synthesizeNarration: async (inputScenes) => writeSceneAssets(mediaDir, inputScenes, 'wav', wavTone(1200)),
+        draftWriterOptions: { runBridge: fakeBridge },
+      });
+
+      const storyboardRequests = requests.filter((request) => request.step === 2);
+      expect(storyboardRequests).toHaveLength(2);
+      expect(storyboardRequests.every((request) => request.jsonRoot === 'array')).toBe(true);
+      expect(storyboardRequests[1].messages.map((message) => message.content).join('\n')).toContain('strict JSON schema conflict');
+      const storedScenes = JSON.parse(await readFile(join(managedTaskWorkDir(dir, task), '02-sentences.json'), 'utf8')) as StoryboardScene[];
+      expect(storedScenes.map((scene) => scene.cap)).toEqual([
+        '那一年他十八岁，独自踏上了北上的列车。',
+        '窗外风景飞退，他心跳加速。',
+        '他没说话，也没回头，就这样走了。',
+      ]);
     } finally {
       await db.close();
       await rm(dir, { recursive: true, force: true });
@@ -3413,7 +3529,7 @@ describe('task runner', () => {
             requestId: 'rewrite',
           };
         }
-        if (request.step === 2 && calls[2] === 1) {
+        if (request.step === 2 && calls[2] <= 3) {
           throw new Error('storyboard provider failed');
         }
         if (request.step === 2) return { json: { scenes: makeArtifact().scenes } as T, raw: '{}', requestId: 'storyboard' };
@@ -3433,7 +3549,7 @@ describe('task runner', () => {
         draftWriterOptions: { runBridge: fakeBridge },
       });
 
-      expect(calls).toMatchObject({ 0: 1, 1: 5, 2: 2, 3: 2 });
+      expect(calls).toMatchObject({ 0: 1, 1: 5, 2: 4, 3: 2 });
       expect((await db.getState()).tasks[0].status).toBe('completed');
     } finally {
       await db.close();
@@ -3650,9 +3766,11 @@ async function runRewriteControlScenario(input: {
   reviewedText: string;
   rewrittenCopy: string;
   coverTitle: string;
+  coverSubtitle?: string[];
+  coverTags?: string[];
   repairRewrite?: string;
   configureDb?: (db: FileDatabase) => Promise<void>;
-}): Promise<{ finalCopy: string; requests: LlmJsonRequest[]; storedKeepPromotion: boolean }> {
+}): Promise<{ finalCopy: string; cover: CoverMetadata; requests: LlmJsonRequest[]; storedKeepPromotion: boolean }> {
   const dir = await mkdtemp(join(tmpdir(), 'storybound-runner-rewrite-controls-'));
   const db = await FileDatabase.open(join(dir, 'data.db'));
   const draftRootDir = join(dir, 'JianyingPro Drafts');
@@ -3681,7 +3799,7 @@ async function runRewriteControlScenario(input: {
       }
       if (request.name === 'cover-metadata') {
         return {
-          json: { cover: { title: input.coverTitle, subtitle: [], summary: 'summary', tags: [], comments: [] } } as T,
+          json: { cover: { title: input.coverTitle, subtitle: input.coverSubtitle ?? [], summary: 'summary', tags: input.coverTags ?? [], comments: [] } } as T,
           raw: '{}',
           requestId: 'cover-metadata',
         };
@@ -3706,8 +3824,10 @@ async function runRewriteControlScenario(input: {
     });
 
     const state = await db.getState();
+    const taskWorkDir = managedTaskWorkDir(dir, task);
     return {
-      finalCopy: await readFile(join(managedTaskWorkDir(dir, task), '01-rewritten-copy.md'), 'utf8'),
+      finalCopy: await readFile(join(taskWorkDir, '01-rewritten-copy.md'), 'utf8'),
+      cover: JSON.parse(await readFile(join(taskWorkDir, '00-cover-title.json'), 'utf8')) as CoverMetadata,
       requests,
       storedKeepPromotion: state.tasks.find((item) => item.id === task.id)?.keepPromotion ?? true,
     };

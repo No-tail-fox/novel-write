@@ -244,7 +244,16 @@ export class ConfigService {
   }
 
   private async performMigration(): Promise<void> {
+    const markerPath = configMigrationMarkerPath(this.options.dataDir);
     const state = await this.options.database.getBootstrapMetadata();
+
+    // After the one-time secret migration, the database is the source of truth.
+    // A stale config.json must not overwrite settings saved in the desktop app.
+    if (await fileExists(markerPath)) {
+      await saveConfigToFile(this.options.dataDir, state.config);
+      return;
+    }
+
     const externalConfig = await loadConfigFromFileStrict(this.options.dataDir);
     const sourceConfig = normalizeAppConfig(externalConfig ?? state.config);
     const legacySecrets: ConfigSecrets = {
@@ -265,7 +274,6 @@ export class ConfigService {
       await saveConfigToFile(this.options.dataDir, persisted.config);
     }
 
-    const markerPath = configMigrationMarkerPath(this.options.dataDir);
     if (!(await fileExists(markerPath))) {
       await mkdir(this.options.dataDir, { recursive: true });
       await writeFile(markerPath, '1\n', { encoding: 'utf8', mode: 0o600, flag: 'wx' });

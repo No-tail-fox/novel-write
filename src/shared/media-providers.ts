@@ -5,7 +5,7 @@ import type { AppConfig, ImagePrompt, StoryboardScene, Task, VoiceLabGenerateInp
 import type { SceneAsset } from './draft';
 import { fetchWithTimeout } from './http';
 import { readJsonBounded, readTextBounded } from './network-policy';
-import { buildOpenAiImageGenerationBody, normalizeOpenAiImageBaseUrl } from './openai-image';
+import { buildOpenAiImageGenerationBody, formatOpenAiImageProviderError, normalizeOpenAiImageBaseUrl } from './openai-image';
 import { buildOpenAiImageEditFormData } from './openai-image-edit';
 import { isArkModelApiKey, normalizeVolcengineTtsApiSettings, normalizeVolcengineV3Speaker, VOLCENGINE_TTS_ARK_KEY_MESSAGE } from './volcengine-tts';
 import { defaultPodcastSpeakersForProvider, normalizeRuntimeTtsProvider, type RuntimeTtsProvider, volcengineResourceIdForTaskSpeaker } from './tts-voices';
@@ -383,7 +383,12 @@ async function generateOpenAiCompatibleImageSync(input: {
     })),
   });
   if (!response.ok) {
-    throw new Error(`Image provider API error (${response.status}): ${await readTextBounded(response, PROVIDER_RESPONSE_MAX_BYTES)}`);
+    throw new Error(formatOpenAiImageProviderError({
+      status: response.status,
+      bodyText: await readTextBounded(response, PROVIDER_RESPONSE_MAX_BYTES),
+      model: input.model,
+      operation: 'generation',
+    }));
   }
   return readJsonBounded<{ data?: Array<{ b64_json?: string; url?: string }> }>(response, PROVIDER_RESPONSE_MAX_BYTES);
 }
@@ -417,7 +422,12 @@ async function generateOpenAiCompatibleImageEdit(input: {
     body: form,
   });
   if (!response.ok) {
-    throw new Error(`Image provider edit API error (${response.status}): ${await readTextBounded(response, PROVIDER_RESPONSE_MAX_BYTES)}`);
+    throw new Error(formatOpenAiImageProviderError({
+      status: response.status,
+      bodyText: await readTextBounded(response, PROVIDER_RESPONSE_MAX_BYTES),
+      model: input.model,
+      operation: 'edit',
+    }));
   }
   return readJsonBounded<{ data?: Array<{ b64_json?: string; url?: string }> }>(response, PROVIDER_RESPONSE_MAX_BYTES);
 }
@@ -452,7 +462,12 @@ async function generateOpenAiCompatibleImageAsync(input: {
     })),
   });
   if (!response.ok) {
-    throw new Error(`Image provider async submit error (${response.status}): ${await readTextBounded(response, PROVIDER_RESPONSE_MAX_BYTES)}`);
+    throw new Error(formatOpenAiImageProviderError({
+      status: response.status,
+      bodyText: await readTextBounded(response, PROVIDER_RESPONSE_MAX_BYTES),
+      model: input.model,
+      operation: 'async-submit',
+    }));
   }
   const submitBody = await readJsonBounded<OpenAiAsyncImageSubmitResponse>(response, PROVIDER_RESPONSE_MAX_BYTES);
   const taskId = resolveOpenAiAsyncTaskId(submitBody);
@@ -481,6 +496,7 @@ type OpenAiAsyncImagePollResponse = {
 async function pollOpenAiCompatibleImageTask(input: {
   baseUrl: string;
   apiKey: string;
+  model: string;
   taskId: string;
   timeoutMs: number;
   pollIntervalMs: number;
@@ -498,7 +514,12 @@ async function pollOpenAiCompatibleImageTask(input: {
       },
     });
     if (!response.ok) {
-      throw new Error(`Image provider async poll error (${response.status}): ${await readTextBounded(response, PROVIDER_RESPONSE_MAX_BYTES)}`);
+      throw new Error(formatOpenAiImageProviderError({
+        status: response.status,
+        bodyText: await readTextBounded(response, PROVIDER_RESPONSE_MAX_BYTES),
+        model: input.model,
+        operation: 'async-poll',
+      }));
     }
     const body = await readJsonBounded<OpenAiAsyncImagePollResponse>(response, PROVIDER_RESPONSE_MAX_BYTES);
     const data = body.data ?? body.result?.data ?? body.output;

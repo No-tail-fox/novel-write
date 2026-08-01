@@ -45,7 +45,7 @@ describe('draft writer', () => {
     const draftRootDir = join(dir, 'JianyingPro Drafts');
     const workDir = join(dir, 'work');
     const scenes: StoryboardScene[] = [
-      { id: 1, cap: 'First line', descPrompt: 'prompt 1', durationMs: 1200 },
+      { id: 1, cap: '公元649年唐太宗去世，武则天重新回到宫廷。', descPrompt: 'prompt 1', durationMs: 1200 },
       { id: 2, cap: 'Second line', descPrompt: 'prompt 2', durationMs: 1400 },
     ];
     const images = await writeAssets(workDir, scenes, 'png', twoByTwoPng);
@@ -133,6 +133,11 @@ describe('draft writer', () => {
       expect(output.assets.images).toHaveLength(2);
       expect(output.assets.narration).toHaveLength(2);
       expect(output.diagnostics.checks.find((check) => check.id === 'jianying-draft')?.status).toBe('pass');
+      expect(output.diagnostics.checks.find((check) => check.id === 'subtitle-track')?.status).toBe('pass');
+      const subtitlesSrt = await readFile(output.assets.subtitles, 'utf8');
+      expect(subtitlesSrt).toContain('公元649年');
+      expect(subtitlesSrt).not.toContain('，');
+      expect((subtitlesSrt.match(/--> /g) ?? []).length).toBeGreaterThan(scenes.length);
       expect(bridgePayloads).toHaveLength(1);
       expect(bridgePayloads[0]).toMatchObject({
         title: 'Real Draft',
@@ -214,8 +219,14 @@ describe('draft writer', () => {
           },
         },
         scenes: [
-          { sceneId: 1, startUs: 0, durationUs: 1_200_000, text: 'First line' },
-          { sceneId: 2, startUs: 1_200_000, durationUs: 1_400_000, text: 'Second line' },
+          {
+            sceneId: 1,
+            startUs: 0,
+            durationUs: 1_200_000,
+            text: '公元649年唐太宗去世，武则天重新回到宫廷。',
+            captions: expect.arrayContaining([expect.stringContaining('公元649年')]),
+          },
+          { sceneId: 2, startUs: 1_200_000, durationUs: 1_400_000, text: 'Second line', captions: ['Secondline'] },
         ],
       });
       expect((bridgePayloads[0] as { images: Array<{ path: string }>; draftDir: string }).images.some((asset) => asset.path.startsWith(output.draftDir))).toBe(false);

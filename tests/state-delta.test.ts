@@ -150,6 +150,25 @@ function mutationState(overrides: Record<string, unknown> = {}): Record<string, 
 }
 
 describe('app state delta coordination', () => {
+  it('removes a deleted draft template through the canonical state patch', () => {
+    const applyMutation = reconciliationModule.applyAppMutationResult as unknown as (
+      state: Record<string, unknown>,
+      result: AppMutationResult,
+      revisions: Map<string, number>,
+    ) => Record<string, unknown>;
+    const template = { ...structuredClone(builtinDraftTemplates[0]), id: 'custom-delete-me', isDefault: false };
+    const revisions = new Map<string, number>();
+
+    const patched = applyMutation(
+      mutationState({ draftTemplates: [builtinDraftTemplates[0], template] }),
+      { kind: 'state-patch', revision: 3, patch: { kind: 'draft-template-delete', templateId: template.id } },
+      revisions,
+    );
+
+    expect((patched.draftTemplates as DraftTemplate[]).map((item) => item.id)).toEqual([builtinDraftTemplates[0].id]);
+    expect(revisions.get('draftTemplates')).toBe(3);
+  });
+
   it('applies the canonical theme preference and config mirror as one revision', () => {
     const applyMutation = reconciliationModule.applyAppMutationResult as unknown as (
       state: Record<string, unknown>,

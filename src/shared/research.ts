@@ -1,11 +1,28 @@
 import type { ConfiguredTextLlm } from './llm-provider';
 import { targetWordCountRange } from './content-metrics';
 import { fetchWithNetworkPolicy, readTextBounded, type NetworkPurpose } from './network-policy';
-import type { AiSourceContext, AiSourceSection, AppConfig, ImaConfig, ResearchCopyComposeInput, ResearchCopyComposeResult, Task } from './types';
+import type {
+  AiSourceContext,
+  AiSourceSection,
+  AppConfig,
+  ImaConfig,
+  ResearchCopyComposeInput,
+  ResearchCopyComposeResult,
+  Task,
+  WebSearchProvider,
+  WebSearchProviderStatus,
+  WebSearchRequest,
+} from './types';
 
 type FetchLike = (url: string, init?: RequestInit) => Promise<Response>;
-type SearchResultItem = Omit<AiSourceSection, 'source'>;
+type SearchResultItem = Omit<AiSourceSection, 'source' | 'provider'>;
 type StoryboundReferenceMaterial = Pick<AiSourceSection, 'title' | 'content' | 'snippet' | 'url' | 'source'>;
+
+interface SearchProviderOutcome {
+  provider: WebSearchProvider;
+  items: AiSourceSection[];
+  error?: Error;
+}
 
 export interface StoryboundAiCreationSystemPromptInput {
   trackName: string;
@@ -35,6 +52,18 @@ const SEARCH_PAGE_MAX_BYTES = 2 * 1024 * 1024;
 const ARTICLE_PAGE_MAX_BYTES = 4 * 1024 * 1024;
 const IMA_API_MAX_BYTES = 2 * 1024 * 1024;
 const IMA_DOCUMENT_MAX_BYTES = 8 * 1024 * 1024;
+const SEARCH_RESULTS_LIMIT = 10;
+const SEARCH_HYDRATION_CANDIDATE_LIMIT = 20;
+
+export const DEFAULT_WEB_SEARCH_PROVIDERS: readonly WebSearchProvider[] = ['bing', 'sogou'];
+export const ALL_WEB_SEARCH_PROVIDERS: readonly WebSearchProvider[] = ['bing', 'baidu', 'sogou', 'toutiao'];
+
+export const WEB_SEARCH_PROVIDER_LABELS: Record<WebSearchProvider, string> = {
+  bing: '必应',
+  baidu: '百度',
+  sogou: '搜狗',
+  toutiao: '头条',
+};
 
 const storyboundTrackMap: Record<string, StoryboundTrackInfo> = {
   'character-story': { trackName: '人物故事', trackTag: '纪实人物' },
@@ -224,33 +253,176 @@ export function formatAiSourceContext(task: Pick<Task, 'aiKeyword' | 'aiSources'
 }
 
 export async function searchWebSources(query: string, fetchImpl: FetchLike = fetch): Promise<AiSourceSection[]> {
-  const searchItems: AiSourceSection[] = [];
-  let searchError: unknown = null;
-
-  const searchResults = await Promise.allSettled([searchBingHtml(query, fetchImpl), searchSogouHtml(query, fetchImpl)]);
-  for (const result of searchResults) {
-    if (result.status === 'fulfilled') {
-      searchItems.push(...result.value);
-    } else {
-      searchError ??= result.reason;
-    }
+  const context = await searchWebSourcesDetailed(
+    { query, providers: [...DEFAULT_WEB_SEARCH_PROVIDERS] },
+    fetchImpl,
+  );
+  if (context.sections.length === 0 && context.providerStatuses?.every((status) => status.state === 'failed')) {
+    throw new Error(context.warnings.join('; ') || 'All web search providers failed.');
   }
+  return context.sections;
+}
 
-  if (searchItems.length === 0 && searchError) {
-    throw searchError instanceof Error ? searchError : new Error(String(searchError));
-  }
+export async function searchWebSourcesDetailed(input: WebSearchRequest, fetchImpl: FetchLike = fetch): Promise<AiSourceContext> {
+  const query = input.query.trim();
+  const providers = normalizeWebSearchProviders(input.providers);
+  if (!query) return { query, sections: [], warnings: [], providerStatuses: [] };
 
-  const rankedItems = rankSearchItems(query, searchItems);
-  return Promise.all(rankedItems.slice(0, 10).map(async (item) => {
-    let content = item.content;
-    if (item.url) {
-      const pageText = await fetchPageText(item.url, fetchImpl).catch(() => '');
-      if (pageText) {
-        content = pageText;
-      }
+  const outcomes = await Promise.all(providers.map(async (provider): Promise<SearchProviderOutcome> => {
+    try {
+      return { provider, items: await searchProvider(provider, query, fetchImpl) };
+    } catch (error) {
+      return { provider, items: [], error: error instanceof Error ? error : new Error(String(error)) };
     }
-    return { ...item, snippet: item.content, content };
   }));
+  const searchItems = outcomes.flatMap((outcome) => outcome.items);
+  const hydrationCandidates = selectHydrationCandidates(query, providers, searchItems);
+  const hydrated = await runLimited(hydrationCandidates, 5, async (item) => hydratePreciseSearchItem(query, item, fetchImpl));
+  const preciseItems = hydrated.filter((item): item is AiSourceSection => item !== null);
+  const sections = diversifySearchProviders(query, providers, preciseItems).slice(0, SEARCH_RESULTS_LIMIT);
+  const providerStatuses = buildProviderStatuses(providers, outcomes, preciseItems);
+  const warnings = providerStatuses
+    .filter((status) => status.state === 'failed')
+    .map((status) => `${status.label}搜索失败：${status.message || '连接失败'}`);
+  return { query, sections, warnings, providerStatuses };
+}
+
+function normalizeWebSearchProviders(providers: readonly WebSearchProvider[]): WebSearchProvider[] {
+  const requested = providers.length > 0 ? providers : DEFAULT_WEB_SEARCH_PROVIDERS;
+  return [...new Set(requested)].filter((provider): provider is WebSearchProvider => ALL_WEB_SEARCH_PROVIDERS.includes(provider));
+}
+
+async function searchProvider(provider: WebSearchProvider, query: string, fetchImpl: FetchLike): Promise<AiSourceSection[]> {
+  switch (provider) {
+    case 'bing': return searchBingHtml(query, fetchImpl);
+    case 'baidu': return searchBaiduHtml(query, fetchImpl);
+    case 'sogou': return searchSogouHtml(query, fetchImpl);
+    case 'toutiao': return searchToutiaoHtml(query, fetchImpl);
+  }
+}
+
+function selectHydrationCandidates(
+  query: string,
+  providers: readonly WebSearchProvider[],
+  items: AiSourceSection[],
+): AiSourceSection[] {
+  const queues = providers.map((provider) => rankSearchItems(
+    query,
+    items.filter((item) => item.provider === provider),
+  ).slice(0, SEARCH_RESULTS_LIMIT));
+  const selected: AiSourceSection[] = [];
+  for (let index = 0; selected.length < SEARCH_HYDRATION_CANDIDATE_LIMIT; index += 1) {
+    let foundCandidate = false;
+    for (const queue of queues) {
+      const item = queue[index];
+      if (!item) continue;
+      selected.push(item);
+      foundCandidate = true;
+      if (selected.length >= SEARCH_HYDRATION_CANDIDATE_LIMIT) break;
+    }
+    if (!foundCandidate) break;
+  }
+  return rankSearchItems(query, selected);
+}
+
+async function hydratePreciseSearchItem(
+  query: string,
+  item: AiSourceSection,
+  fetchImpl: FetchLike,
+): Promise<AiSourceSection | null> {
+  const snippet = item.content;
+  const snapshot = item.url
+    ? await fetchPageSnapshot(item.url, fetchImpl).catch(() => ({ url: item.url ?? '', content: '' }))
+    : { url: '', content: '' };
+  if (isSearchAccessInterstitial(snapshot.url)) return null;
+  if (hasCjk(query) && !matchesStrongSearchTerm(query, item.title) && !matchesStrongSearchTerm(query, snapshot.content)) {
+    return null;
+  }
+  return {
+    ...item,
+    url: snapshot.url || item.url,
+    snippet,
+    content: snapshot.content || item.content,
+  };
+}
+
+function diversifySearchProviders(
+  query: string,
+  providers: readonly WebSearchProvider[],
+  items: AiSourceSection[],
+): AiSourceSection[] {
+  const ranked = [...items].sort((a, b) => preciseSearchScore(query, b) - preciseSearchScore(query, a));
+  const selected: AiSourceSection[] = [];
+  const selectedKeys = new Set<string>();
+  for (const provider of providers) {
+    const item = ranked.find((candidate) => candidate.provider === provider && !selectedKeys.has(searchItemDedupeKey(candidate)));
+    if (!item) continue;
+    selected.push(item);
+    selectedKeys.add(searchItemDedupeKey(item));
+  }
+  for (const item of ranked) {
+    const key = searchItemDedupeKey(item);
+    if (selectedKeys.has(key)) continue;
+    selected.push(item);
+    selectedKeys.add(key);
+  }
+  return selected;
+}
+
+function preciseSearchScore(query: string, item: AiSourceSection): number {
+  const titleMatch = matchesStrongSearchTerm(query, item.title) ? 100 : 0;
+  const contentMatch = matchesStrongSearchTerm(query, item.content) ? 30 : 0;
+  return titleMatch + contentMatch + referenceTier(item) * 40 + referenceQualityScore(item);
+}
+
+function searchItemDedupeKey(item: AiSourceSection): string {
+  return normalizeDedupeKey(item.url || item.title);
+}
+
+function isSearchAccessInterstitial(url: string): boolean {
+  try {
+    const parsed = new URL(url);
+    const host = parsed.hostname.toLowerCase();
+    const path = parsed.pathname.toLowerCase();
+    return (/(^|\.)sogou\.com$/u.test(host) && path.startsWith('/antispider'))
+      || (/(^|\.)baidu\.com$/u.test(host) && /\/(?:wappass|captcha|verify)(?:\/|$)/u.test(path))
+      || (/(^|\.)bing\.com$/u.test(host) && /\/(?:sorry|captcha)(?:\/|$)/u.test(path))
+      || (/(^|\.)toutiao\.com$/u.test(host) && /\/(?:captcha|verify)(?:\/|$)/u.test(path));
+  } catch {
+    return false;
+  }
+}
+
+function buildProviderStatuses(
+  providers: readonly WebSearchProvider[],
+  outcomes: readonly SearchProviderOutcome[],
+  preciseItems: readonly AiSourceSection[],
+): WebSearchProviderStatus[] {
+  return providers.map((provider) => {
+    const outcome = outcomes.find((item) => item.provider === provider);
+    const count = preciseItems.filter((item) => item.provider === provider).length;
+    if (outcome?.error) {
+      return { provider, label: WEB_SEARCH_PROVIDER_LABELS[provider], state: 'failed', count: 0, message: outcome.error.message };
+    }
+    return { provider, label: WEB_SEARCH_PROVIDER_LABELS[provider], state: count > 0 ? 'ready' : 'empty', count };
+  });
+}
+
+export function researchSearchErrorMessage(error: unknown): string {
+  const chain: Error[] = [];
+  let current: unknown = error;
+  while (current instanceof Error && !chain.includes(current)) {
+    chain.push(current);
+    current = current.cause;
+  }
+  const coded = chain.find((item) => 'code' in item && typeof (item as NodeJS.ErrnoException).code === 'string') as NodeJS.ErrnoException | undefined;
+  if (coded?.code === 'NETWORK_TIMEOUT') return '网页搜索超时，请检查网络或代理后重试。';
+  if (coded?.code === 'NETWORK_ADDRESS_BLOCKED' && /198\.1[89]\./u.test(coded.message)) {
+    return '检测到代理 Fake-IP，但当前版本未能通过安全校验。请重启软件后重试。';
+  }
+  const detail = chain.map((item) => item.message.trim()).find((message) => message && message !== 'fetch failed');
+  if (detail) return `网页搜索失败：${detail}`;
+  return '网页搜索连接失败，请检查网络或代理后重试。';
 }
 
 async function searchBingHtml(query: string, fetchImpl: FetchLike): Promise<AiSourceSection[]> {
@@ -273,7 +445,7 @@ async function searchBingHtml(query: string, fetchImpl: FetchLike): Promise<AiSo
       }
       const html = await readTextBounded(response, SEARCH_PAGE_MAX_BYTES);
       const items = /<item\b/i.test(html) ? extractRssItems(html) : extractBingItems(html);
-      if (items.length > 0) return items.slice(0, 15).map((item) => ({ source: 'web', ...item }));
+      if (items.length > 0) return items.slice(0, 15).map((item) => ({ source: 'web', provider: 'bing', ...item }));
     } catch (error) {
       lastError = error;
     }
@@ -298,7 +470,31 @@ async function searchSogouHtml(query: string, fetchImpl: FetchLike): Promise<AiS
     ...item,
     url: await resolveSogouResultUrl(item.url ?? '', fetchImpl).catch(() => item.url ?? ''),
   })));
-  return resolvedItems.map((item) => ({ source: 'web', ...item }));
+  return resolvedItems.map((item) => ({ source: 'web', provider: 'sogou', ...item }));
+}
+
+async function searchBaiduHtml(query: string, fetchImpl: FetchLike): Promise<AiSourceSection[]> {
+  const url = `https://www.baidu.com/s?wd=${encodeURIComponent(normalizeStoryboundSearchQuery(query))}`;
+  const response = await fetchBounded(fetchImpl, url, {
+    timeoutMs: 8000,
+    maxBytes: SEARCH_PAGE_MAX_BYTES,
+    accept: 'text/html,application/xhtml+xml,*/*',
+  });
+  if (!response.ok) throw new Error(`Baidu returned ${response.status}`);
+  const html = await readTextBounded(response, SEARCH_PAGE_MAX_BYTES);
+  return extractBaiduItems(html).slice(0, 15).map((item) => ({ source: 'web', provider: 'baidu', ...item }));
+}
+
+async function searchToutiaoHtml(query: string, fetchImpl: FetchLike): Promise<AiSourceSection[]> {
+  const url = `https://so.toutiao.com/search?keyword=${encodeURIComponent(normalizeStoryboundSearchQuery(query))}&pd=information&source=input`;
+  const response = await fetchBounded(fetchImpl, url, {
+    timeoutMs: 8000,
+    maxBytes: SEARCH_PAGE_MAX_BYTES,
+    accept: 'text/html,application/xhtml+xml,*/*',
+  });
+  if (!response.ok) throw new Error(`Toutiao returned ${response.status}`);
+  const html = await readTextBounded(response, SEARCH_PAGE_MAX_BYTES);
+  return extractToutiaoItems(html).slice(0, 15).map((item) => ({ source: 'web', provider: 'toutiao', ...item }));
 }
 
 export async function composeCopyFromSources(llm: ConfiguredTextLlm, input: ResearchCopyComposeInput): Promise<ResearchCopyComposeResult> {
@@ -471,17 +667,21 @@ function stripHtmlToText(input: string): string {
 }
 
 async function fetchPageText(url: string, fetchImpl: FetchLike): Promise<string> {
+  return (await fetchPageSnapshot(url, fetchImpl)).content;
+}
+
+async function fetchPageSnapshot(url: string, fetchImpl: FetchLike): Promise<{ url: string; content: string }> {
   const response = await fetchBounded(fetchImpl, url, {
     timeoutMs: 8000,
     maxBytes: ARTICLE_PAGE_MAX_BYTES,
     accept: 'text/html,application/xhtml+xml,text/plain,*/*',
   });
-  if (!response.ok) return '';
+  if (!response.ok) return { url, content: '' };
   const contentType = response.headers.get('content-type') ?? '';
-  if (!/text\/html|application\/xhtml\+xml|text\/plain/i.test(contentType)) return '';
+  if (!/text\/html|application\/xhtml\+xml|text\/plain/i.test(contentType)) return { url: response.url || url, content: '' };
   const body = await readTextBounded(response, ARTICLE_PAGE_MAX_BYTES);
   const text = contentType.includes('text/plain') ? body : extractReadableText(body);
-  return compactText(text).slice(0, STORYBOUND_REFERENCE_TEXT_LIMIT);
+  return { url: response.url || url, content: compactText(text).slice(0, STORYBOUND_REFERENCE_TEXT_LIMIT) };
 }
 
 async function fetchBounded(
@@ -524,8 +724,7 @@ function extractRssItems(xml: string): Array<Omit<AiSourceSection, 'source'>> {
 }
 
 function normalizeStoryboundSearchQuery(query: string): string {
-  const trimmed = query.trim().replace(/\s+/g, ' ');
-  return trimmed.replace(/\s*(?:故事|生平|简介|资料|介绍|经历|传记|传奇|一生|事迹|信息)\s*$/u, '').trim() || trimmed;
+  return query.trim().replace(/\s+/g, ' ');
 }
 
 function extractBingItems(html: string): SearchResultItem[] {
@@ -556,6 +755,101 @@ function extractSogouItems(html: string): SearchResultItem[] {
       return { title, url, content };
     })
     .filter((item) => item.title && item.content);
+}
+
+function extractBaiduItems(html: string): SearchResultItem[] {
+  const headings = [...html.matchAll(/<h3\b[\s\S]*?<\/h3>/gi)];
+  return headings
+    .map((match, index) => {
+      const titleHtml = match[0];
+      const href = extractAttribute(titleHtml, 'href');
+      const url = normalizeSearchResultUrl(href, 'https://www.baidu.com');
+      const title = cleanXml(titleHtml);
+      const blockStart = (match.index ?? 0) + titleHtml.length;
+      const blockEnd = headings[index + 1]?.index ?? Math.min(html.length, blockStart + 4000);
+      const block = html.slice(blockStart, Math.min(blockEnd, blockStart + 4000));
+      const content = compactText(cleanXml(stripNonContentHtml(block)).replace(title, '')).slice(0, 1200) || title;
+      return { title, url, content };
+    })
+    .filter((item) => item.title && /^https?:\/\//i.test(item.url));
+}
+
+function extractToutiaoItems(html: string): SearchResultItem[] {
+  return [...html.matchAll(/<script\b(?=[^>]*\bdata-for=(?:"ala-data"|'ala-data'))[^>]*>([\s\S]*?)<\/script>/gi)]
+    .map(([, script]) => parseToutiaoFlowData(script))
+    .filter((data): data is Record<string, unknown> => data !== null)
+    .map((data) => {
+      const title = cleanXml(firstNestedString(data, [
+        ['title'],
+        ['display', 'title', 'text'],
+        ['emphasized', 'title'],
+        ['display', 'self_info', 'title'],
+      ]));
+      const content = cleanXml(firstNestedString(data, [
+        ['abstract'],
+        ['display', 'summary', 'text'],
+        ['emphasized', 'summary'],
+        ['data_ext', 'xigua_extra_info', 'summary_content'],
+      ])) || title;
+      const rawUrl = firstNestedString(data, [['article_url'], ['ttsearch_msite_url'], ['display', 'info', 'url']]);
+      const url = normalizeSearchResultUrl(rawUrl, 'https://www.toutiao.com');
+      return { title, url, content: compactText(content) };
+    })
+    .filter((item) => item.title && /^https?:\/\/(?:www\.)?toutiao\.com\/(?:article|group)\//i.test(item.url));
+}
+
+function parseToutiaoFlowData(script: string): Record<string, unknown> | null {
+  const marker = /\bdata\s*:\s*/u.exec(script);
+  if (!marker) return null;
+  const json = extractBalancedJsonObject(script, marker.index + marker[0].length);
+  if (!json) return null;
+  try {
+    const parsed = JSON.parse(json) as unknown;
+    return isRecord(parsed) ? parsed : null;
+  } catch {
+    return null;
+  }
+}
+
+function extractBalancedJsonObject(input: string, fromIndex: number): string {
+  const start = input.indexOf('{', fromIndex);
+  if (start < 0) return '';
+  let depth = 0;
+  let inString = false;
+  let escaped = false;
+  for (let index = start; index < input.length; index += 1) {
+    const char = input[index];
+    if (inString) {
+      if (escaped) escaped = false;
+      else if (char === '\\') escaped = true;
+      else if (char === '"') inString = false;
+      continue;
+    }
+    if (char === '"') {
+      inString = true;
+    } else if (char === '{') {
+      depth += 1;
+    } else if (char === '}') {
+      depth -= 1;
+      if (depth === 0) return input.slice(start, index + 1);
+    }
+  }
+  return '';
+}
+
+function firstNestedString(input: Record<string, unknown>, paths: readonly (readonly string[])[]): string {
+  for (const path of paths) {
+    let current: unknown = input;
+    for (const key of path) {
+      if (!isRecord(current)) {
+        current = undefined;
+        break;
+      }
+      current = current[key];
+    }
+    if (typeof current === 'string' && current.trim()) return current.trim();
+  }
+  return '';
 }
 
 async function resolveSogouResultUrl(url: string, fetchImpl: FetchLike): Promise<string> {
@@ -628,7 +922,7 @@ function rankSearchItems(query: string, items: AiSourceSection[]): AiSourceSecti
   return filteredScored
     .sort((a, b) => (preferReferenceTier ? referenceTier(b.item) - referenceTier(a.item) : 0) || b.score - a.score || a.index - b.index)
     .filter(({ item }) => {
-      const key = normalizeDedupeKey(item.url || item.title);
+      const key = normalizeDedupeKey(item.provider ? `${item.provider}:${item.title}` : item.url || item.title);
       if (seen.has(key)) return false;
       seen.add(key);
       return true;
@@ -710,7 +1004,12 @@ function buildStrongSearchTerms(query: string): string[] {
 }
 
 function extractChineseIntentSubject(compactQuery: string): string {
-  return compactQuery.replace(chineseDeathIntentPattern(), '');
+  return compactQuery.replace(chineseDeathIntentPattern(), '').replace(chineseGenericIntentPattern(), '');
+}
+
+function matchesStrongSearchTerm(query: string, input: string): boolean {
+  const text = normalizeSearchText(input);
+  return buildStrongSearchTerms(query).some((term) => text.includes(term));
 }
 
 function hasChineseIntentSuffix(query: string): boolean {
@@ -719,6 +1018,10 @@ function hasChineseIntentSuffix(query: string): boolean {
 
 function chineseDeathIntentPattern(): RegExp {
   return /(?:\u4e4b\u6b7b|\u6b7b\u4ea1|\u6b7b\u56e0|\u4e3a\u4ec0\u4e48(?:\u4f1a)?\u6b7b|\u4e3a\u5565(?:\u4f1a)?\u6b7b|\u4e3a\u4f55(?:\u4f1a)?\u6b7b|\u600e\u4e48(?:\u4f1a)?\u6b7b\u7684?|\u5982\u4f55\u6b7b|\u6b7b\u4e86\u5417|\u6b7b\u6ca1\u6b7b|\u6700\u540e\u6b7b\u4e86\u6ca1|\u6700\u540e\u6d3b\u4e86\u5417|\u53bb\u4e16|\u9047\u5bb3|\u727a\u7272|\u7ed3\u5c40)$/u;
+}
+
+function chineseGenericIntentPattern(): RegExp {
+  return /(?:故事|生平|简介|资料|介绍|经历|传记|传奇|一生|事迹|信息)$/u;
 }
 
 function hasCjk(input: string): boolean {

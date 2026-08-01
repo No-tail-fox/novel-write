@@ -420,17 +420,30 @@ async function executeStep(
 
   if (step === 'planning') {
     if (!context.rewrite) throw new AppError('HTML_VIDEO_REWRITE_MISSING', 'HTML video rewrite output is missing.');
-    const rawScenes = options.plan
-      ? (await options.plan({
+    let rawScenes: HtmlVideoScenePlan[];
+    if (options.plan) {
+      try {
+        rawScenes = (await options.plan({
           ...structuredClone(context.rewrite),
           ...htmlVideoConfigEnvelopeForStage(state.config, 'planning'),
           signal: options.signal,
-        })).scenes
-      : planHtmlVideoScenes(
+        })).scenes;
+      } catch (error) {
+        const normalized = normalizeAppError(error);
+        if (!isRecoverableHtmlVideoPlanningFormatError(normalized)) throw normalized;
+        rawScenes = planHtmlVideoScenes(
           context.rewrite.segments.join('\n\n'),
           state.config.maxScenes ?? HTML_VIDEO_JOB_DEFAULTS.maxScenes,
         );
-    if (!options.plan) addWarning(state, '未配置场景规划 LLM，已使用确定性场景规划。');
+        addWarning(state, `${normalized.message} 已改用本地分镜规划，可在文案页继续编辑。`);
+      }
+    } else {
+      rawScenes = planHtmlVideoScenes(
+        context.rewrite.segments.join('\n\n'),
+        state.config.maxScenes ?? HTML_VIDEO_JOB_DEFAULTS.maxScenes,
+      );
+      addWarning(state, '未配置场景规划 LLM，已使用确定性场景规划。');
+    }
     state.scenes = validateHtmlVideoScenePlans(
       rawScenes,
       state.config.maxScenes ?? MAX_HTML_VIDEO_SCENES,
@@ -523,6 +536,14 @@ async function executeStep(
     };
   }
   return { output: state.output };
+}
+
+function isRecoverableHtmlVideoPlanningFormatError(error: AppError): boolean {
+  return new Set([
+    'HTML_VIDEO_LLM_SCHEMA_CONFLICT',
+    'HTML_VIDEO_LLM_INVALID_JSON',
+    'HTML_VIDEO_LLM_OUTPUT_INVALID',
+  ]).has(error.code);
 }
 
 async function resolveRunnerDraftTemplate(

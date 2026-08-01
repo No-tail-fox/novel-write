@@ -92,6 +92,7 @@ function bridgeChain(...entries: Array<readonly [source: string, evidence: strin
 
 const productShellTest = 'tests/product-shell-ui.test.ts';
 const historyTest = 'tests/history-governance.test.ts';
+const htmlVideoStudioTest = 'tests/html-video-studio-ui.test.ts';
 
 export const rendererCommandInventory = {
   addImageLabRecord: command(owner('image-lab', 'src/features/labs/ImageLabPage.tsx', 'importCompletedImage', 'importCompletedImage', '导入成品', productShellTest)),
@@ -106,7 +107,7 @@ export const rendererCommandInventory = {
     owner('music-mv', 'src/features/music-mv/MusicMvPage.tsx', 'runMusicMv', 'onClick={runMusicMv}', '生成音乐 MV', productShellTest),
   ),
   createAndRunViralAnalysis: command(owner('viral-analyzer', 'src/features/viral/ViralAnalyzerPage.tsx', 'startAnalysis', 'onClick={startAnalysis}', '开始拆解', productShellTest, undefined, { disabled: 'disabled={viralAction.busy}', loading: 'viralAction.busy ? <Loader2', error: 'InlineActionFeedback' })),
-  createHtmlVideoTask: command(owner('html-video', 'src/features/html-video/HtmlVideoPage.tsx', 'createHtmlVideoTask', 'createHtmlVideoTask', '创建并开始渲染', 'tests/html-video.test.ts')),
+  createHtmlVideoTask: command(owner('html-video', 'src/features/html-video/HtmlVideoPage.tsx', 'createHtmlVideoTask', 'createHtmlVideoTask', '开始生成', 'tests/html-video.test.ts')),
   createPersonAsset: command(owner('person-assets', 'src/features/labs/PersonAssetsPage.tsx', 'createPerson', 'onClick={createPerson}', '创建', productShellTest)),
   createProductionTaskFromViral: command(owner('viral-analyzer', 'src/features/viral/ViralAnalyzerPage.tsx', 'createProductionTask', 'onClick={createProductionTask}', '生成新任务', productShellTest, 'src/features/viral/ViralReport.tsx', undefined, 'src/features/viral/ViralAnalyzerPage.tsx', undefined, bridgeChain(['src/features/viral/ViralAnalyzerPage.tsx', 'createProductionTask={createProductionTask}']))),
   deleteBookSelection: command(owner('book-selection', 'src/features/labs/BookSelectionPage.tsx', 'deleteSelection', 'deleteSelection(record)', '删除', productShellTest)),
@@ -170,12 +171,37 @@ export const rendererCommandInventory = {
     owner('task-detail', 'src/features/tasks/TaskArtifactPreview.tsx', 'openArtifactOutput', 'onClick={openArtifactOutput}', '打开剪映草稿', 'tests/electron-ipc-contract.test.ts'),
   ),
   openViralLoginWindow: command(owner('viral-analyzer', 'src/features/viral/ViralAnalyzerPage.tsx', 'openDouyinLogin', 'onClick={openDouyinLogin}', '打开抖音登录窗口', productShellTest)),
+  regenerateHtmlVideoAsset: command(owner(
+    'html-video',
+    'src/features/html-video/HtmlVideoStoryboundPanels.tsx',
+    'AssetCard',
+    'onClick={() => run(() => api.regenerateHtmlVideoAsset',
+    '重画素材',
+    htmlVideoStudioTest,
+  )),
+  regenerateHtmlVideoVoice: command(owner(
+    'html-video',
+    'src/features/html-video/HtmlVideoStoryboundPanels.tsx',
+    'regenerate',
+    'onClick={regenerate}',
+    '重配',
+    htmlVideoStudioTest,
+  )),
   regenerateTaskImage: command(owner('task-detail', 'src/features/tasks/TaskArtifactPreview.tsx', 'regenerate[1]', 'regenerate(scene.id)', '重新生成', productShellTest)),
   regenerateTaskNarration: command(owner('task-detail', 'src/features/tasks/TaskArtifactPreview.tsx', 'regenerate[2]', 'regenerate(item.sceneId)', '重新生成配音', productShellTest)),
   renamePersonAsset: command(owner('person-assets', 'src/features/labs/PersonAssetsPage.tsx', 'renamePerson', 'onClick={renamePerson}', '重命名', productShellTest)),
+  replaceHtmlVideoAsset: command(owner(
+    'html-video',
+    'src/features/html-video/HtmlVideoStoryboundPanels.tsx',
+    'AssetCard',
+    'onClick={() => run(() => api.replaceHtmlVideoAsset',
+    '本地替换',
+    htmlVideoStudioTest,
+  )),
   rerunTaskStep: command(
     owner('task-detail', 'src/features/tasks/TaskArtifactPreview.tsx', 'rerunArtifactStep', "onAction(step, 'regenerate')", '重新生成', productShellTest, undefined, { disabled: 'disabled={disabled || busy}', loading: 'regenerating ? <Loader2', error: 'InlineActionFeedback' }),
     owner('task-detail', 'src/features/tasks/TaskArtifactPreview.tsx', 'rerunArtifactStep', "onAction(step, 'rewrite')", '改写后继续', productShellTest, undefined, { disabled: 'disabled={disabled || busy}', loading: 'rewriting ? <Loader2', error: 'InlineActionFeedback' }),
+    owner('task-detail', 'src/features/tasks/TaskDetailPage.tsx', 'applyDraftTemplate', 'onClick={applyDraftTemplate}', '应用模板', 'tests/task-operations-ui.test.ts'),
   ),
   resetPromptTemplates: command(owner('prompt-templates', 'src/features/templates/PromptTemplatesPage.tsx', 'resetPromptTemplateLibrary', 'onClick={resetPromptTemplateLibrary}', '重置', productShellTest)),
   restoreImageLabRecord: command(owner('history', 'src/features/tasks/HistoryPage.tsx', 'restoreRecord', 'restoreRecord(record)', '恢复记录', historyTest)),
@@ -222,6 +248,18 @@ export const rendererCommandInventory = {
     owner('draft-templates', 'src/features/templates/DraftTemplatesPage.tsx', 'createTemplate', 'onClick={createTemplate}', 'aria-label="从默认模板新建草稿模板"', productShellTest),
     owner('draft-templates', 'src/features/templates/DraftTemplatesPage.tsx', 'saveCozeWorkflowTemplate', 'onClick={saveCozeWorkflowTemplate}', '导入 Coze 模板', productShellTest),
     owner('draft-templates', 'src/features/templates/DraftTemplatesPage.tsx', 'saveAllCozeWorkflowTemplates', 'onClick={saveAllCozeWorkflowTemplates}', '全部导入', productShellTest),
+  ),
+  deleteDraftTemplate: command(
+    owner(
+      'draft-templates',
+      'src/features/templates/DraftTemplatesPage.tsx',
+      'deleteTemplate',
+      'onConfirm={deleteTemplate}',
+      '删除自定义模板',
+      productShellTest,
+      undefined,
+      { disabled: 'busy={draftTemplateAction.busy}', loading: 'draftTemplateAction.busy', error: 'InlineActionFeedback' },
+    ),
   ),
   saveHtmlVideoCompositionSource: command(owner(
     'html-video',
@@ -284,7 +322,16 @@ export const rendererCommandInventory = {
     owner('html-video', 'src/features/html-video/HtmlVideoTabPanel.tsx', 'saveCaptionConfig', 'onClick={saveCaptionConfig}', '保存字幕', productShellTest),
     owner('html-video', 'src/features/html-video/HtmlVideoTabPanel.tsx', 'saveCoverConfig', 'onClick={saveCoverConfig}', '保存封面', productShellTest),
   ),
+  updateHtmlVideoScene: command(
+    owner('html-video', 'src/features/html-video/HtmlVideoStoryboundPanels.tsx', 'mutate', 'onClick={save}', '保存', htmlVideoStudioTest, undefined, undefined, undefined, ['save', 'mutate']),
+    owner('html-video', 'src/features/html-video/HtmlVideoStoryboundPanels.tsx', 'mutate', "onClick={() => mutate([{ field: 'titleHidden'", '隐藏标题', htmlVideoStudioTest),
+    owner('html-video', 'src/features/html-video/HtmlVideoStoryboundPanels.tsx', 'savePrompt', 'onClick={savePrompt}', '保存提示词', htmlVideoStudioTest),
+    owner('html-video', 'src/features/html-video/HtmlVideoStoryboundPanels.tsx', 'AssetCard', 'onClick={() => run(() => api.updateHtmlVideoScene', '隐藏前景', htmlVideoStudioTest),
+    owner('html-video', 'src/features/html-video/HtmlVideoStoryboundPanels.tsx', 'toggle', "onClick={() => void toggle(item.index, 'foregroundHidden'", '隐藏前景', htmlVideoStudioTest),
+    owner('html-video', 'src/features/html-video/HtmlVideoStoryboundPanels.tsx', 'toggle', "onClick={() => void toggle(item.index, 'titleHidden'", '隐藏标题', htmlVideoStudioTest),
+  ),
   updateTaskImagePrompt: command(owner('task-detail', 'src/features/tasks/TaskArtifactPreview.tsx', 'savePrompt', 'savePrompt(scene.id)', '保存提示词', productShellTest)),
+  updateTaskTemplate: command(owner('task-detail', 'src/features/tasks/TaskDetailPage.tsx', 'applyDraftTemplate', 'onClick={applyDraftTemplate}', '应用模板', productShellTest)),
   updateTaskStatus: command(
     owner('html-video', 'src/features/html-video/HtmlVideoPage.tsx', 'setTaskStatus', "setTaskStatus('paused')", '暂停', 'tests/task-operations-contracts.test.ts', undefined, { disabled: 'disabled={taskBusy || isBrowserPreview}', loading: 'taskBusy', error: 'InlineActionFeedback' }),
     owner('html-video', 'src/features/html-video/HtmlVideoPage.tsx', 'setTaskStatus', "setTaskStatus('cancelled')", '取消', 'tests/task-operations-contracts.test.ts', undefined, { disabled: 'disabled={taskBusy || isBrowserPreview}', loading: 'taskBusy', error: 'InlineActionFeedback' }),

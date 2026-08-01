@@ -90,6 +90,27 @@ function Test-DependenciesReady {
     return $false
   }
 
+  $dependencyCheckScriptPath = "scripts\check-dependencies.cjs"
+  if (-not (Test-Path -LiteralPath $dependencyCheckScriptPath)) {
+    return $false
+  }
+
+  $previousErrorActionPreference = $ErrorActionPreference
+  $ErrorActionPreference = "Continue"
+  try {
+    $dependencyCheckOutput = & $node $dependencyCheckScriptPath 2>&1
+    $dependencyCheckExitCode = $LASTEXITCODE
+  } finally {
+    $ErrorActionPreference = $previousErrorActionPreference
+  }
+
+  if ($dependencyCheckExitCode -ne 0) {
+    if ($dependencyCheckOutput) {
+      Write-Host "[1/4] $dependencyCheckOutput"
+    }
+    return $false
+  }
+
   foreach ($path in @(
     "node_modules\vite\bin\vite.js",
     "node_modules\electron\install.js",
@@ -120,6 +141,10 @@ if (-not (Test-DependenciesReady)) {
   & $npm.Source install --ignore-scripts
   if ($LASTEXITCODE -ne 0) {
     throw "npm install failed with exit code $LASTEXITCODE"
+  }
+
+  if (-not (Test-DependenciesReady)) {
+    throw "Dependencies are still missing or stale after npm install."
   }
 } else {
   Write-Host "[1/4] Dependencies already exist"
@@ -162,6 +187,11 @@ if ($LASTEXITCODE -ne 0) {
 }
 
 Write-Host "[4/4] Launching app..."
+if ($env:STORYDREAM_SKIP_LAUNCH -eq "1") {
+  Write-Host "[4/4] Launch skipped by STORYDREAM_SKIP_LAUNCH"
+  return
+}
+
 & $node "node_modules\electron\cli.js" "."
 if ($LASTEXITCODE -ne 0) {
   throw "Electron exited with code $LASTEXITCODE"

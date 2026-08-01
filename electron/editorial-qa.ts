@@ -53,6 +53,7 @@ export const editorialQaMatrix = {
     { id: 'queue-operations-desktop', view: 'queue', theme: 'light', viewport: 'desktop' },
     { id: 'history-operations-desktop', view: 'history', theme: 'light', viewport: 'desktop' },
     { id: 'task-detail-operations-desktop', view: 'task-detail', theme: 'light', viewport: 'desktop' },
+    { id: 'task-detail-template-menu-dark-desktop', view: 'task-detail', theme: 'dark', viewport: 'desktop' },
     { id: 'task-detail-borrowed-image-desktop', view: 'task-detail', theme: 'light', viewport: 'desktop' },
     { id: 'task-detail-error-dialog-compact', view: 'task-detail', theme: 'light', viewport: 'compact' },
     { id: 'history-operations-compact', view: 'history', theme: 'light', viewport: 'compact' },
@@ -183,6 +184,12 @@ export async function captureEditorialQa(
     if (captureCase.id === 'task-detail-error-dialog-compact' && !state.errorDialogOpen) {
       throw new Error('Editorial QA failed-task error dialog did not remain open and fully visible.');
     }
+    if ((captureCase.id === 'task-detail-operations-desktop' || captureCase.id === 'task-detail-template-menu-dark-desktop') && !state.taskTemplateControlsReady) {
+      throw new Error('Editorial QA task draft-template controls are incomplete.');
+    }
+    if (captureCase.view === 'draft-templates' && !state.draftLayerPanelReady) {
+      throw new Error(`Editorial QA draft-template layer panel did not follow the canvas selection in ${captureCase.id}.`);
+    }
     if (captureCase.view === 'history' && state.historyHtmlTypeLabel !== 'HTML 动画') {
       throw new Error(`Editorial QA History HTML type label failed in ${captureCase.id}: ${state.historyHtmlTypeLabel}.`);
     }
@@ -192,7 +199,7 @@ export async function captureEditorialQa(
     if (captureCase.view === 'prompt-templates' && captureCase.theme === 'light' && viewport.name === 'desktop' && state.promptTemplateEditorOpen !== true) {
       throw new Error('Editorial QA Prompt Template editor state failed.');
     }
-    if (captureCase.id.startsWith('html-video-studio') && state.layout.htmlVideoStudioPlacement !== (viewport.name === 'compact' ? 'stacked' : 'three-column')) {
+    if (captureCase.id.startsWith('html-video-studio') && state.layout.htmlVideoStudioPlacement !== 'two-column') {
       throw new Error(`Editorial QA HTML studio layout failed in ${captureCase.id}: ${state.layout.htmlVideoStudioPlacement}.`);
     }
     if (captureCase.id === 'html-video-studio-light-compact' && state.layout.htmlVideoCompactParameterOrder !== 'parameters-first') {
@@ -266,6 +273,8 @@ export async function captureEditorialQa(
       errorDialogOpen: state.errorDialogOpen,
       deleteDialogFocusWrapped: state.deleteDialogFocusWrapped,
       deleteDialogEscapeRestored: state.deleteDialogEscapeRestored,
+      taskTemplateControlsReady: state.taskTemplateControlsReady,
+      draftLayerPanelReady: state.draftLayerPanelReady,
     });
     await writeEditorialQaReport(config, captures, getMetrics);
   }
@@ -407,6 +416,8 @@ export interface EditorialQaCapture {
   errorDialogOpen: boolean;
   deleteDialogFocusWrapped: boolean;
   deleteDialogEscapeRestored: boolean;
+  taskTemplateControlsReady: boolean;
+  draftLayerPanelReady: boolean;
 }
 
 interface EditorialQaCaptureCase {
@@ -462,12 +473,34 @@ interface QaScenarioState {
   promptTemplateEditorOpen: boolean;
   deleteDialogFocusWrapped: boolean;
   deleteDialogEscapeRestored: boolean;
+  taskTemplateControlsReady: boolean;
+  draftLayerPanelReady: boolean;
   layout: {
     horizontalOverflow: number;
     clippedPrimaryControls: string[];
     summaryPlacement: 'right' | 'below' | 'unknown';
-    htmlVideoStudioPlacement: 'three-column' | 'stacked' | 'unknown';
+    htmlVideoStudioPlacement: 'three-column' | 'two-column' | 'stacked' | 'unknown';
     htmlVideoCompactParameterOrder: 'parameters-first' | 'invalid' | 'unknown';
+  };
+  readiness: {
+    taskDetail: {
+      currentScene: string;
+      generatedScenes: string;
+      templateFrameFound: boolean;
+      templateId: string;
+      previewSceneId: string;
+      previewImageFound: boolean;
+      previewImageComplete: boolean;
+      previewImageNaturalWidth: number;
+      imageTop: string;
+      imageHeight: string;
+      titleText: string;
+      titleFontSize: string;
+      titleColor: string;
+      titleFontFamily: string;
+      subtitleText: string;
+      assetState: string;
+    } | null;
   };
 }
 
@@ -532,7 +565,7 @@ export function editorialQaCaptureIdsByRequirement(requirement: EditorialQaCaptu
   for (const captureCase of editorialQaMatrix.newTaskStates) requiredIds.add(captureCase.id);
 
   const classified = allIds.filter((id) => requirement === 'required' ? requiredIds.has(id) : !requiredIds.has(id));
-  if (requiredIds.size !== 67 || allIds.length - requiredIds.size !== 23) {
+  if (requiredIds.size !== 67 || allIds.length - requiredIds.size !== 24) {
     throw new Error(`Editorial QA canonical classification drifted: ${requiredIds.size} required of ${allIds.length}.`);
   }
   return classified;
@@ -799,9 +832,187 @@ function qaScenarioScript(id: string, view: string, theme: string, stage?: strin
         ?.textContent
         ?.trim() ?? '';
     }
-    if (scenarioId === 'task-detail-operations-desktop') {
-      ready = ready && await waitFor(() => document.querySelector('.task-media-progress')?.textContent?.includes('8 / 12')
-        && document.querySelector('.task-scene-rail')?.textContent?.includes('8 / 12 已生成'));
+    let draftLayerPanelReady = targetView !== 'draft-templates';
+    if (targetView === 'draft-templates') {
+      const templateActionsReady = await waitFor(() => {
+        const actionRow = document.querySelector('.draft-template-actions.has-delete');
+        const buttons = [...(actionRow?.querySelectorAll(':scope > button') ?? [])];
+        if (!(actionRow instanceof HTMLElement) || buttons.length !== 3 || buttons.some((button) => !(button instanceof HTMLButtonElement))) return false;
+        const labels = buttons.map((button) => button.textContent?.trim() ?? '');
+        const rects = buttons.map((button) => button.getBoundingClientRect());
+        const topSpread = Math.max(...rects.map((rect) => rect.top)) - Math.min(...rects.map((rect) => rect.top));
+        const bottomSpread = Math.max(...rects.map((rect) => rect.bottom)) - Math.min(...rects.map((rect) => rect.bottom));
+        const widthSpread = Math.max(...rects.map((rect) => rect.width)) - Math.min(...rects.map((rect) => rect.width));
+        return labels.join('|') === '编辑|复制|删除'
+          && rects.every((rect) => rect.width >= 56 && rect.height >= 34)
+          && topSpread <= 1
+          && bottomSpread <= 1
+          && widthSpread <= 1;
+      });
+      ready = ready && templateActionsReady;
+      const editButton = [...document.querySelectorAll('.draft-template-actions.has-delete button')]
+        .find((button) => button.textContent?.trim() === '编辑');
+      if (editButton instanceof HTMLButtonElement) editButton.click();
+      const editorOpened = await waitFor(() => document.querySelector('.draft-editor-shell.focused .editable-draft-canvas'));
+      ready = ready && editorOpened;
+      if (editorOpened) {
+        const controls = document.querySelector('.draft-controls');
+        const stage = document.querySelector('.draft-stage');
+        const page = document.querySelector('.draft-template-page');
+        const subtitleLayer = document.querySelector('.editable-draft-canvas .draft-layer[data-layer="subtitle"]');
+        if (controls instanceof HTMLElement && stage instanceof HTMLElement && page instanceof HTMLElement && subtitleLayer instanceof HTMLElement) {
+          const pageScrollBefore = page.scrollTop;
+          const stageScrollBefore = stage.scrollTop;
+          const layerRect = subtitleLayer.getBoundingClientRect();
+          Object.defineProperty(subtitleLayer, 'setPointerCapture', { configurable: true, value: () => undefined });
+          subtitleLayer.dispatchEvent(new PointerEvent('pointerdown', {
+            bubbles: true,
+            cancelable: true,
+            pointerId: 71,
+            pointerType: 'mouse',
+            clientX: layerRect.left + layerRect.width / 2,
+            clientY: layerRect.top + layerRect.height / 2,
+            button: 0,
+            buttons: 1,
+          }));
+          delete subtitleLayer.setPointerCapture;
+          document.querySelector('.editable-draft-canvas')?.dispatchEvent(new PointerEvent('pointerup', {
+            bubbles: true,
+            pointerId: 71,
+            pointerType: 'mouse',
+            button: 0,
+          }));
+          draftLayerPanelReady = await waitFor(() => {
+            const selectedLayer = document.querySelector('.editable-draft-canvas .draft-layer[data-layer="subtitle"].selected');
+            const panel = controls.querySelector('[data-draft-layer-panel="subtitle"]');
+            const button = panel?.querySelector(':scope .accordion > button');
+            if (!(selectedLayer instanceof HTMLElement) || !(panel instanceof HTMLElement) || button?.getAttribute('aria-expanded') !== 'true') return false;
+            const controlsRect = controls.getBoundingClientRect();
+            const panelRect = panel.getBoundingClientRect();
+            return panelRect.top >= controlsRect.top + 3
+              && panelRect.top <= controlsRect.top + 24
+              && controls.scrollTop > 0
+              && page.scrollTop === pageScrollBefore
+              && stage.scrollTop === stageScrollBefore;
+          });
+        }
+      }
+    }
+    const taskTemplateScenario = scenarioId === 'task-detail-operations-desktop' || scenarioId === 'task-detail-template-menu-dark-desktop';
+    let taskTemplateControlsReady = !taskTemplateScenario;
+    const collectTaskDetailReadiness = () => {
+      const templateFrame = document.querySelector('.task-media-frame[data-draft-template-id][data-preview-scene-id="1"]');
+      const previewImage = templateFrame?.querySelector('.draft-image-asset');
+      const imageFrame = templateFrame?.querySelector('.draft-image');
+      const title = templateFrame?.querySelector('.draft-title');
+      const subtitle = templateFrame?.querySelector('.draft-subtitle');
+      const titleStyle = title instanceof HTMLElement ? getComputedStyle(title) : null;
+      return {
+        currentScene: document.querySelector('.task-media-progress small')?.textContent?.trim() ?? '',
+        generatedScenes: document.querySelector('.task-scene-rail > div:first-child > span')?.textContent?.trim() ?? '',
+        templateFrameFound: templateFrame instanceof HTMLElement,
+        templateId: templateFrame?.getAttribute('data-draft-template-id') ?? '',
+        previewSceneId: templateFrame?.getAttribute('data-preview-scene-id') ?? '',
+        previewImageFound: previewImage instanceof HTMLImageElement,
+        previewImageComplete: previewImage instanceof HTMLImageElement && previewImage.complete,
+        previewImageNaturalWidth: previewImage instanceof HTMLImageElement ? previewImage.naturalWidth : 0,
+        imageTop: imageFrame instanceof HTMLElement ? imageFrame.style.top : '',
+        imageHeight: imageFrame instanceof HTMLElement ? imageFrame.style.height : '',
+        titleText: title?.textContent?.trim() ?? '',
+        titleFontSize: titleStyle?.fontSize ?? '',
+        titleColor: titleStyle?.color ?? '',
+        titleFontFamily: titleStyle?.fontFamily ?? '',
+        subtitleText: subtitle?.textContent?.trim() ?? '',
+        assetState: templateFrame?.querySelector('.task-media-asset-state')?.textContent?.trim() ?? '',
+      };
+    };
+    let taskDetailReadiness = targetView === 'task-detail' ? collectTaskDetailReadiness() : null;
+    if (taskTemplateScenario) {
+      ready = ready && await waitFor(() => {
+        const state = collectTaskDetailReadiness();
+        const templateFrame = document.querySelector('.task-media-frame[data-draft-template-id][data-preview-scene-id="1"]');
+        const previewImage = templateFrame?.querySelector('.draft-image-asset');
+        return state.currentScene === '01 / 12'
+          && state.generatedScenes === '8 / 12 已生成'
+          && state.templateId === 'qa-selected-draft-template'
+          && state.imageTop === '22%'
+          && state.imageHeight === '44%'
+          && state.titleText === '深宫沉默十二年'
+          && state.titleFontSize === '31px'
+          && state.titleColor === 'rgb(56, 242, 176)'
+          && state.titleFontFamily.includes('Microsoft YaHei')
+          && state.subtitleText === '最后走成唯一女皇'
+          && previewImage instanceof HTMLImageElement
+          && previewImage.complete
+          && previewImage.naturalWidth > 0
+          && !state.assetState;
+      });
+      const templateSelect = document.querySelector('button.task-template-select-trigger[aria-label="选择任务草稿模板"]');
+      const templateApply = document.querySelector('.task-template-apply');
+      const templateManager = document.querySelector('button[aria-label="管理草稿模板"]');
+      const templateSwitcher = document.querySelector('.task-template-switcher');
+      taskTemplateControlsReady = templateSelect instanceof HTMLButtonElement
+        && templateSelect.textContent?.includes('QA 已选草稿模板') === true
+        && templateSelect.getAttribute('aria-haspopup') === 'listbox'
+        && templateApply instanceof HTMLButtonElement
+        && templateApply.disabled
+        && templateApply.textContent?.trim() === '已应用'
+        && templateSwitcher instanceof HTMLElement
+        && templateSwitcher.dataset.appliedTemplateId === 'qa-selected-draft-template'
+        && templateSwitcher.dataset.candidateTemplateId === 'qa-selected-draft-template'
+        && templateSwitcher.dataset.templateState === 'applied'
+        && templateManager instanceof HTMLButtonElement
+        && !templateManager.disabled;
+      if (scenarioId === 'task-detail-template-menu-dark-desktop' && templateSelect instanceof HTMLButtonElement) {
+        templateSelect.click();
+        const menuReady = await waitFor(() => {
+          const menu = document.querySelector('.task-template-select-menu[role="listbox"]');
+          const field = document.querySelector('.task-template-field');
+          const options = [...(menu?.querySelectorAll('[role="option"]') ?? [])];
+          if (!(menu instanceof HTMLElement) || !(field instanceof HTMLElement) || options.length < 2) return false;
+          const menuRect = menu.getBoundingClientRect();
+          const menuBackground = getComputedStyle(menu).backgroundColor;
+          const fieldBackground = getComputedStyle(field).backgroundColor;
+          return templateSelect.getAttribute('aria-expanded') === 'true'
+            && options.some((option) => option.getAttribute('aria-selected') === 'true' && option.textContent?.includes('QA 已选草稿模板'))
+            && menuBackground === fieldBackground
+            && menuBackground !== 'rgb(255, 255, 255)'
+            && menuRect.left >= 0
+            && menuRect.right <= window.innerWidth
+            && menuRect.bottom <= window.innerHeight;
+        });
+        const alternativeOption = document.querySelector('[role="option"][data-template-id="builtin-portrait-4-3"]');
+        if (alternativeOption instanceof HTMLElement) alternativeOption.click();
+        const pendingReady = await waitFor(() => templateApply instanceof HTMLButtonElement
+          && templateSwitcher instanceof HTMLElement
+          && templateSelect.textContent?.includes('竖屏4:3') === true
+          && !templateApply.disabled
+          && templateApply.textContent?.trim() === '应用模板'
+          && getComputedStyle(templateApply).color === 'rgb(16, 18, 20)'
+          && templateSwitcher.dataset.appliedTemplateId === 'qa-selected-draft-template'
+          && templateSwitcher.dataset.candidateTemplateId === 'builtin-portrait-4-3'
+          && templateSwitcher.dataset.templateState === 'pending');
+        const taskShell = document.querySelector('.task-detail-shell[data-task-id]');
+        const taskId = taskShell instanceof HTMLElement ? taskShell.dataset.taskId ?? '' : '';
+        const persistedTask = api && taskId
+          ? await withTimeout(api.getTaskDetail(taskId), 10000, 'task template persistence read timed out')
+          : null;
+        const appliedStayedFixed = persistedTask?.templateId === 'qa-selected-draft-template';
+        if (pendingReady) templateSelect.click();
+        const pendingMenuReady = await waitFor(() => {
+          const menu = document.querySelector('.task-template-select-menu[role="listbox"]');
+          const selectedOption = menu?.querySelector('[role="option"][aria-selected="true"]');
+          return templateSelect.getAttribute('aria-expanded') === 'true'
+            && selectedOption?.getAttribute('data-template-id') === 'builtin-portrait-4-3';
+        });
+        taskTemplateControlsReady = taskTemplateControlsReady
+          && menuReady
+          && pendingReady
+          && appliedStayedFixed
+          && pendingMenuReady;
+      }
+      ready = ready && taskTemplateControlsReady;
+      taskDetailReadiness = collectTaskDetailReadiness();
     }
     if (scenarioId === 'task-detail-borrowed-image-desktop') {
       ready = ready && await waitFor(() => {
@@ -822,8 +1033,9 @@ function qaScenarioScript(id: string, view: string, theme: string, stage?: strin
     }
     if (targetView === 'html-video') {
       ready = ready && await waitFor(() => {
-        const previewFrames = [...document.querySelectorAll('.hv-tab-content .hv-media-frame')];
-        const previewImages = [...document.querySelectorAll('.hv-tab-content img[alt*="动画预览"]')];
+        const previewFrames = [...document.querySelectorAll('.hv-reference-thumb')];
+        const previewImages = [...document.querySelectorAll('.hv-reference-thumb img')];
+        const previewIframe = document.querySelector('.hv-reference-phone iframe');
         return document.querySelector('[data-html-video-studio="html-video"]')
           && document.querySelector('[data-media-canvas="html-video"]')
           && document.querySelector('.hv-studio-run-rail')?.textContent?.includes('4/6')
@@ -831,6 +1043,8 @@ function qaScenarioScript(id: string, view: string, theme: string, stage?: strin
           && !document.querySelector('.hv-tab-content .hv-media-loading')
           && previewImages.length === previewFrames.length
           && previewImages.every((image) => image.complete && image.naturalWidth > 0)
+          && previewIframe instanceof HTMLIFrameElement
+          && previewIframe.contentDocument?.readyState === 'complete'
           && document.querySelector('.hv-timeline-track span')
           && document.querySelector('.hv-timeline-audio i');
       });
@@ -1029,7 +1243,7 @@ function qaScenarioScript(id: string, view: string, theme: string, stage?: strin
     const computed = getComputedStyle(document.documentElement);
     const tokens = Object.fromEntries(${JSON.stringify(qaComputedTokenNames)}.map((name) => [name, computed.getPropertyValue(name).trim()]));
     const promptTemplateOperationalSelector = '.prompt-template-row, .prompt-template-gallery .ghost-action, .prompt-template-gallery .chip';
-    const draftTemplateOperationalSelector = '.draft-template-toolbar .ghost-action, .draft-template-card .ghost-action, .new-template-card';
+    const draftTemplateOperationalSelector = '.draft-template-toolbar .ghost-action, .draft-template-card .ghost-action, .draft-template-card .danger-action, .new-template-card';
     const templateOperationalSelector = targetView === 'prompt-templates'
       ? promptTemplateOperationalSelector
       : targetView === 'draft-templates'
@@ -1359,19 +1573,19 @@ function qaScenarioScript(id: string, view: string, theme: string, stage?: strin
     const studioRegions = studio ? [...studio.querySelectorAll('.hv-studio-parameters, .hv-studio-canvas, .hv-studio-run-rail')].map((region) => region.getBoundingClientRect()) : [];
     const htmlVideoStudioPlacement = studioRegions.length !== 3
       ? 'unknown'
-      : studioRegions[1].left >= studioRegions[0].right - 1 && studioRegions[2].left >= studioRegions[1].right - 1
-        ? 'three-column'
-        : studioRegions[1].top >= studioRegions[0].bottom - 1 && studioRegions[2].top >= studioRegions[1].bottom - 1
-          ? 'stacked'
-          : 'unknown';
-    const htmlVideoParameterContent = studio?.querySelector('.hv-config-editor') ?? studio?.querySelector('.hv-create-details[open]');
-    const htmlVideoParameterContentRect = htmlVideoParameterContent?.getBoundingClientRect();
-    const htmlVideoCompactParameterOrder = studioRegions.length !== 3 || !htmlVideoParameterContentRect
+      : studioRegions[1].left >= studioRegions[0].right - 1
+          && studioRegions[1].left >= studioRegions[2].right - 1
+          && studioRegions[2].top >= studioRegions[0].bottom - 1
+        ? 'two-column'
+        : studioRegions[1].left >= studioRegions[0].right - 1 && studioRegions[2].left >= studioRegions[1].right - 1
+          ? 'three-column'
+          : studioRegions[1].top >= studioRegions[0].bottom - 1 && studioRegions[2].top >= studioRegions[1].bottom - 1
+            ? 'stacked'
+            : 'unknown';
+    const htmlVideoCompactParameterOrder = studioRegions.length !== 3
       ? 'unknown'
-      : htmlVideoParameterContentRect.height > 0
-        && htmlVideoParameterContentRect.top >= studioRegions[0].top - 1
-        && htmlVideoParameterContentRect.bottom <= studioRegions[0].bottom + 1
-        && studioRegions[0].bottom <= studioRegions[1].top + 1
+      : studioRegions[0].top <= studioRegions[2].top
+        && studioRegions[0].bottom <= studioRegions[2].top + 1
         ? 'parameters-first'
         : 'invalid';
     const clippedPrimaryControls = [...document.querySelectorAll('.new-task-workbench button, .new-task-workbench input, .new-task-workbench select, .new-task-workbench textarea, [data-task-operations] button, [data-task-operations] input, [data-task-operations] select, [data-html-video-studio] button, [data-html-video-studio] input, [data-html-video-studio] select, [data-html-video-studio] textarea, .minimax-clone-voice-manager button, .minimax-clone-voice-manager input, .minimax-clone-voice-manager select, .minimax-clone-voice-manager textarea, .settings-content .profile-editor-grid button, .settings-content .profile-editor-grid input, .settings-content .profile-editor-grid select')]
@@ -1405,6 +1619,8 @@ function qaScenarioScript(id: string, view: string, theme: string, stage?: strin
       errorDialogOpen,
       deleteDialogFocusWrapped,
       deleteDialogEscapeRestored,
+      taskTemplateControlsReady,
+      draftLayerPanelReady,
       manualCover: {
         state: manualCoverElement?.getAttribute('data-manual-cover-state') ?? 'inactive',
         importVisible: manualImportButton instanceof HTMLButtonElement && getComputedStyle(manualImportButton).display !== 'none',
@@ -1420,6 +1636,9 @@ function qaScenarioScript(id: string, view: string, theme: string, stage?: strin
         summaryPlacement,
         htmlVideoStudioPlacement,
         htmlVideoCompactParameterOrder,
+      },
+      readiness: {
+        taskDetail: taskDetailReadiness,
       },
     };
   })()`;

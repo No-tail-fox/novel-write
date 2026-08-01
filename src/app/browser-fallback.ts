@@ -5,6 +5,7 @@ import { resolveVolcengineTtsApiVersion } from '../shared/volcengine-tts';
 import { validateConfigTarget } from '../shared/config-utils';
 import {
   applyHtmlVideoConfigChanges,
+  applyHtmlVideoSceneChanges,
   htmlVideoVisibleSteps,
   parseHtmlVideoPipelineData,
 } from '../shared/html-video-workflow';
@@ -28,6 +29,7 @@ import type {
   HistoryListInput,
   HistoryPage,
   HtmlVideoConfigChange,
+  HtmlVideoSceneChange,
   HtmlVideoCompositionSourceSaveInput,
   ImageLabGenerateInput,
   ImageLabImportInput,
@@ -257,7 +259,9 @@ export function makeFallbackApi(setState: (state: AppState) => void): StoryDream
       if (style) patch = { kind: 'custom-style-upsert', style };
     } else if (changed(previous.draftTemplates, next.draftTemplates)) {
       const template = next.draftTemplates.find((item) => !previous.draftTemplates.some((old) => old.id === item.id && !changed(old, item)));
+      const deletedTemplate = previous.draftTemplates.find((item) => !next.draftTemplates.some((candidate) => candidate.id === item.id));
       if (template) patch = { kind: 'draft-template-upsert', template };
+      else if (deletedTemplate) patch = { kind: 'draft-template-delete', templateId: deletedTemplate.id };
     } else if (changed(previous.imageLabRecords, next.imageLabRecords) && next.imageLabRecords[0]) {
       const { prompt, referenceImagePaths: _paths, referenceImagePath: _path, ...record } = next.imageLabRecords[0];
       patch = { kind: 'image-lab-upsert', record: { ...record, promptPreview: prompt.slice(0, 160) } };
@@ -705,7 +709,8 @@ export function makeFallbackApi(setState: (state: AppState) => void): StoryDream
         totalCount: 0,
       };
     },
-    async searchWebSources(query) {
+    async searchWebSources(input) {
+      const query = typeof input === 'string' ? input : input.query;
       return {
         query,
         sections: [],
@@ -753,6 +758,13 @@ export function makeFallbackApi(setState: (state: AppState) => void): StoryDream
       const exists = state.draftTemplates.some((item) => item.id === template.id);
       const templates = exists ? state.draftTemplates.map((item) => (item.id === template.id ? template : item)) : [template, ...state.draftTemplates];
       return persist({ ...state, draftTemplates: templates });
+    },
+    async deleteDraftTemplate(id: string) {
+      const state = read();
+      const template = state.draftTemplates.find((item) => item.id === id);
+      if (!template) throw new Error(`DRAFT_TEMPLATE_NOT_FOUND: ${id}`);
+      if (template.isDefault) throw new Error('DRAFT_TEMPLATE_BUILTIN_DELETE_FORBIDDEN: System draft templates cannot be deleted.');
+      return persist({ ...state, draftTemplates: state.draftTemplates.filter((item) => item.id !== id) });
     },
     async generateImageLab(input: ImageLabGenerateInput) {
       const state = read();
@@ -955,6 +967,24 @@ export function makeFallbackApi(setState: (state: AppState) => void): StoryDream
         events: [...state.events, event],
       });
     },
+    async updateHtmlVideoScene(id: string, sceneIndex: number, changes: HtmlVideoSceneChange[]) {
+      const state = read();
+      const task = state.tasks.find((item) => item.id === id);
+      if (!task || task.taskType !== 'html-video') throw new Error(`HTML 视频任务不存在：${id}`);
+      if (task.archivedAt) throw new Error('HISTORY_ARCHIVED: 已归档任务只读。');
+      const pipeline = applyHtmlVideoSceneChanges(parseHtmlVideoPipelineData(task.pipelineData), sceneIndex, changes);
+      const updated: Task = { ...task, pipelineData: JSON.stringify(pipeline), lastHeartbeatAt: new Date().toISOString() };
+      return persist({ ...state, tasks: state.tasks.map((item) => item.id === id ? updated : item) });
+    },
+    async replaceHtmlVideoAsset() {
+      throw new Error('浏览器预览不能替换本地素材，请在 Electron 桌面端操作。');
+    },
+    async regenerateHtmlVideoAsset() {
+      throw new Error('浏览器预览不能调用图片服务，请在 Electron 桌面端操作。');
+    },
+    async regenerateHtmlVideoVoice() {
+      throw new Error('浏览器预览不能调用配音服务，请在 Electron 桌面端操作。');
+    },
     async importHtmlVideoCover() {
       throw new Error('浏览器预览不能导入本地封面，请在 Electron 桌面端操作。');
     },
@@ -1097,6 +1127,13 @@ export function makeFallbackApi(setState: (state: AppState) => void): StoryDream
     async updateTaskStatus(id: string, status: TaskStatus) {
       const state = read();
       return persist({ ...state, tasks: state.tasks.map((task) => (task.id === id ? { ...task, status, errorMessage: status === 'cancelled' ? '用户取消' : task.errorMessage } : task)) });
+    },
+    async updateTaskTemplate(id: string, templateId: string) {
+      const state = read();
+      if (!state.draftTemplates.some((template) => template.id === templateId)) {
+        throw new Error(`草稿模板不存在：${templateId}`);
+      }
+      return persist({ ...state, tasks: state.tasks.map((task) => (task.id === id ? { ...task, templateId } : task)) });
     },
     async retryTask(id: string) {
       const state = read();

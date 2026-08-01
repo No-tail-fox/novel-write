@@ -112,6 +112,59 @@ describe('OpenAI-compatible LLM JSON adapter', () => {
     });
   });
 
+  it('allows root JSON arrays without forcing object response format', async () => {
+    const requests: Array<Record<string, unknown>> = [];
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (_url: string, init: RequestInit) => {
+        requests.push(JSON.parse(String(init.body)) as Record<string, unknown>);
+        return new Response(JSON.stringify({ choices: [{ message: { content: '["第一段。","第二段。"]' } }], id: 'chatcmpl-array' }), {
+          status: 200,
+          headers: { 'content-type': 'application/json' },
+        });
+      }),
+    );
+
+    const runJson = createOpenAiCompatibleJsonLlm({ ...defaultConfig.llm, apiKey: 'llm-key' });
+    const result = await runJson<string[]>({
+      step: 2,
+      name: 'storyboard',
+      jsonRoot: 'array',
+      messages: [{ role: 'user', content: 'return tail anchors' }],
+    });
+
+    expect(result.json).toEqual(['第一段。', '第二段。']);
+    expect(requests[0]).not.toHaveProperty('response_format');
+    expect(requests[0]).not.toHaveProperty('tools');
+    expect(requests[0]).not.toHaveProperty('tool_choice');
+  });
+
+  it('can retry a JSON task without response_format for compatible providers', async () => {
+    const requests: Array<Record<string, unknown>> = [];
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (_url: string, init: RequestInit) => {
+        requests.push(JSON.parse(String(init.body)) as Record<string, unknown>);
+        return new Response(JSON.stringify({ choices: [{ message: { content: '{"scenes":[]}' } }] }), {
+          status: 200,
+          headers: { 'content-type': 'application/json' },
+        });
+      }),
+    );
+
+    const runJson = createOpenAiCompatibleJsonLlm({ ...defaultConfig.llm, apiKey: 'llm-key' });
+    await runJson({
+      step: 1,
+      name: 'html-video-planning',
+      jsonMode: 'none',
+      messages: [{ role: 'user', content: 'plan scenes' }],
+    });
+
+    expect(requests[0]).not.toHaveProperty('response_format');
+    expect(requests[0]).not.toHaveProperty('tools');
+    expect(requests[0]).not.toHaveProperty('tool_choice');
+  });
+
   it('merges per-profile request params json into chat completions payload', async () => {
     const requests: Array<Record<string, unknown>> = [];
     vi.stubGlobal(
@@ -653,6 +706,46 @@ describe('Anthropic Messages LLM JSON adapter', () => {
         input_schema: { type: 'object', properties: {}, additionalProperties: true },
       },
     ]);
+  });
+
+  it('allows Anthropic root JSON arrays without forcing an object tool', async () => {
+    const requests: Array<Record<string, unknown>> = [];
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (_url: string, init: RequestInit) => {
+        requests.push(JSON.parse(String(init.body)) as Record<string, unknown>);
+        return new Response(
+          JSON.stringify({
+            id: 'msg_array',
+            content: [{ type: 'text', text: '["第一段。","第二段。"]' }],
+          }),
+          { status: 200, headers: { 'content-type': 'application/json' } },
+        );
+      }),
+    );
+
+    const runJson = createConfiguredJsonLlm({
+      ...defaultConfig.llm,
+      provider: 'anthropic',
+      protocol: 'anthropic',
+      apiKey: 'anthropic-key',
+      model: 'claude-sonnet-4-5-20250929',
+    });
+    const result = await runJson.run<string[]>({
+      step: 2,
+      name: 'storyboard',
+      jsonRoot: 'array',
+      messages: [
+        { role: 'system', content: 'Return a JSON string array.' },
+        { role: 'user', content: 'split this copy' },
+      ],
+    });
+
+    expect(result.json).toEqual(['第一段。', '第二段。']);
+    expect(requests[0]).toMatchObject({ system: 'Return a JSON string array.' });
+    expect(requests[0]).not.toHaveProperty('tools');
+    expect(requests[0]).not.toHaveProperty('tool_choice');
+    expect(requests[0]).not.toHaveProperty('response_format');
   });
 
   it('uses Anthropic-specific tool input schema for Anthropic requests', async () => {

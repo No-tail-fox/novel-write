@@ -1282,10 +1282,10 @@ describe('product shell ui', () => {
     const page = (await rendererSourcesPromise).requiredFile('src/features/html-video/HtmlVideoPage.tsx');
     const css = await readFile(new URL('../src/styles.css', import.meta.url), 'utf8');
 
-    expect(page).toContain('classifyHtmlVideoTaskMessage(activeTask.status, activeTask.errorMessage)');
+    expect(page).toContain('classifyHtmlVideoTaskMessage(activeTask.status, taskDisplayMessage)');
     expect(page).toMatch(/taskMessageKind === 'error'[\s\S]*?className="hv-workspace-error"\s+role="alert"\s+aria-live="assertive"[\s\S]*?<ErrorSummaryButton/);
     expect(page).toMatch(/taskMessageKind === 'status'[\s\S]*?className="hv-workspace-status"\s+role="status"\s+aria-live="polite"/);
-    expect(page).toContain('fullMessage={activeTask.errorMessage}');
+    expect(page).toContain('fullMessage={taskDisplayMessage}');
     expect(page).toMatch(/stepState\.error\s*\?\s*<div\s+className="hv-step-error"\s+role="alert"\s+aria-live="assertive"[\s\S]*?<ErrorSummaryButton/);
     expect(page).toContain('pipelineData.warnings.length');
     expect(page).toContain('className="hv-warning-list" role="status" aria-live="polite"');
@@ -1320,12 +1320,13 @@ describe('product shell ui', () => {
     const page = [
       sources.requiredFile('src/features/html-video/HtmlVideoPage.tsx'),
       sources.requiredFile('src/features/html-video/HtmlVideoTabPanel.tsx'),
+      sources.requiredFile('src/features/html-video/HtmlVideoStoryboundPanels.tsx'),
     ].join('\n');
 
     expect(page).toContain('failedPaths: string[]');
     expect(page).toContain('const mediaLoading = !isBrowserPreview && mediaPaths.some');
     expect(page).toContain('aria-busy={mediaLoading}');
-    expect(page).toContain("htmlVideoMediaStatus(clip.src, mediaUrls, failedMediaPaths, isBrowserPreview)");
+    expect(page).toContain('htmlVideoMediaStatus(voice.src, mediaUrls, failedMediaPaths, isBrowserPreview)');
     expect(page).toMatch(/voiceStatus === 'loading'[\s\S]*?音频加载中[\s\S]*?voiceStatus === 'unavailable'[\s\S]*?音频文件暂不可用/u);
     expect(page).toMatch(/outputStatus === 'loading'[\s\S]*?视频加载中[\s\S]*?outputStatus === 'unavailable'[\s\S]*?视频文件暂不可用/u);
     expect(page).toMatch(/assetStatus === 'loading'[\s\S]*?图片加载中[\s\S]*?assetStatus === 'unavailable'[\s\S]*?图片加载失败[\s\S]*?本地图片仅桌面端可用/u);
@@ -1339,6 +1340,7 @@ describe('product shell ui', () => {
     const page = [
       sources.requiredFile('src/features/html-video/HtmlVideoPage.tsx'),
       sources.requiredFile('src/features/html-video/HtmlVideoTabPanel.tsx'),
+      sources.requiredFile('src/features/html-video/HtmlVideoStoryboundPanels.tsx'),
     ].join('\n');
 
     expect(page).toContain('mediaElementFailureState');
@@ -1456,7 +1458,7 @@ describe('product shell ui', () => {
     expect(tabPanel).toMatch(/if \(tab === 'cover'\)[\s\S]*?<HtmlVideoCoverEditor/u);
     expect(page).toContain('pipelineData.coverAsset?.path');
     expect(tabPanel).toMatch(/if \(tab === 'preview'\)[\s\S]*?<HtmlVideoCaptionEditor/u);
-    expect(tabPanel).not.toMatch(/if \(tab === '(?:text|assets|voice|cover)'\)[\s\S]{0,1200}<HtmlVideoCaptionEditor/u);
+    expect(tabPanel).not.toMatch(/if \(tab === '(?:text|assets|voice|cover)'\)[\s\S]{0,600}<HtmlVideoCaptionEditor/u);
     expect(css).toMatch(/\.hv-config-editor\s*\{[\s\S]*?border-top:\s*1px solid var\(--line\)/u);
     expect(css).toMatch(/\.hv-config-editor-grid\s*\{[\s\S]*?border:\s*0/u);
     expect(css).toMatch(/@media \(max-width: 1180px\)[\s\S]*?\.hv-config-editor-grid[\s\S]*?grid-template-columns:\s*1fr/u);
@@ -1488,6 +1490,7 @@ describe('product shell ui', () => {
     const page = [
       sources.requiredFile('src/features/html-video/HtmlVideoPage.tsx'),
       sources.requiredFile('src/features/html-video/HtmlVideoTabPanel.tsx'),
+      sources.requiredFile('src/features/html-video/HtmlVideoStoryboundPanels.tsx'),
     ].join('\n');
     const css = await readFile(new URL('../src/styles.css', import.meta.url), 'utf8');
     const outputRule = css.match(/\.hv-video-output video,\s*\.hv-video-placeholder\s*\{[\s\S]*?\}/)?.[0] ?? '';
@@ -1501,7 +1504,7 @@ describe('product shell ui', () => {
     expect(page).toContain('aria-labelledby={`html-video-tab-${activeTab}`}');
     expect(page).not.toContain('html-video-panel-${tab.key}');
     expect(page).not.toContain('html-video-panel-${activeTab}');
-    expect(page).toContain('aria-label={`场景 ${clip.sceneIndex} 配音`}');
+    expect(page).toContain('aria-label={`场景 ${voice.sceneIndex} 配音`}');
     expect(page).toContain('aria-label={`${task.title || \'HTML 动画视频\'}成片预览`}');
     expect(page).toContain('className="hv-media-error" role="alert"');
     expect(page).toContain('fitHtmlVideoOutputSize(Number.POSITIVE_INFINITY, 520, data.config.ratio || task.ratio)');
@@ -1696,14 +1699,64 @@ describe('product shell ui', () => {
     const main = (await rendererSourcesPromise).requiredFile('src/features/templates/DraftTemplatesPage.tsx');
     const css = await readFile(new URL('../src/styles.css', import.meta.url), 'utf8');
 
-    for (const text of ['默认竖屏', '竖屏4:3', '横屏16:9', '编辑', '复制', '新模板', '返回模板列表']) {
+    for (const text of ['默认竖屏', '竖屏4:3', '横屏16:9', '编辑', '复制', '删除自定义模板', '新模板', '返回模板列表']) {
       expect(main).toContain(text);
     }
 
     expect(main).toContain('draft-template-gallery');
     expect(main).toContain('setEditingId');
+    expect(main).toContain('api.deleteDraftTemplate(template.id)');
+    expect(main).toContain('!template.isDefault');
+    expect(main).toContain("draft-template-actions${template.isDefault ? '' : ' has-delete'}");
+    expect(main).toContain('<Trash2 size={15} />删除');
+    expect(main).toContain('<ConfirmDialog');
     expect(css).toContain('.draft-template-gallery');
     expect(css).toContain('.draft-template-thumb');
+    expect(css).toContain('.draft-template-card:not(.new-template-card)');
+    expect(css).toContain('.draft-template-actions.has-delete');
+    expect(css).toContain('grid-template-columns: repeat(3, minmax(0, 1fr));');
+    const qa = await readFile(new URL('../electron/editorial-qa.ts', import.meta.url), 'utf8');
+    expect(qa).toContain("labels.join('|') === '编辑|复制|删除'");
+    expect(qa).toContain('widthSpread <= 1');
+    expect(qa).toContain('.draft-template-card .danger-action');
+  });
+
+  it('allows an existing task to preview, persist, and manage its draft template', async () => {
+    const [detail, routes, apiContract, preload, main, css] = await Promise.all([
+      readFile(new URL('../src/features/tasks/TaskDetailPage.tsx', import.meta.url), 'utf8'),
+      readFile(new URL('../src/app/AppRoutes.tsx', import.meta.url), 'utf8'),
+      readFile(new URL('../src/shared/storydream-api.ts', import.meta.url), 'utf8'),
+      readFile(new URL('../electron/preload.ts', import.meta.url), 'utf8'),
+      readFile(new URL('../electron/main.ts', import.meta.url), 'utf8'),
+      readFile(new URL('../src/styles/features/task-operations.css', import.meta.url), 'utf8'),
+    ]);
+
+    expect(detail).toContain('选择任务草稿模板');
+    expect(detail).toContain('TaskTemplateSelect');
+    expect(detail).toContain('aria-haspopup="listbox"');
+    expect(detail).toContain('className="task-template-select-menu"');
+    expect(detail).toContain('应用模板');
+    expect(detail).toContain('管理草稿模板');
+    expect(detail).toContain('api.updateTaskTemplate');
+    expect(routes).toContain("openTemplateManager={() => navigate('draft-templates')}");
+    expect(apiContract).toContain("'task:update-template'");
+    expect(apiContract).toContain('updateTaskTemplate: (id: string, templateId: string)');
+    expect(preload).toContain("invokeTrusted('task:update-template', { id, templateId })");
+    expect(main).toContain("trustedHandle('task:update-template'");
+    expect(main).toContain('database.getDraftTemplateDetail(input.templateId)');
+    expect(css).toContain('.task-template-switcher');
+    expect(css).toContain('.task-template-select-menu');
+    expect(css).toContain('background: var(--shell-surface);');
+  });
+
+  it('keeps async success feedback readable across shell themes', async () => {
+    const css = await readFile(new URL('../src/styles.css', import.meta.url), 'utf8');
+    const start = css.indexOf('.inline-action-feedback.success');
+    const rule = css.slice(start, css.indexOf('}', start) + 1);
+    expect(start).toBeGreaterThan(-1);
+    expect(rule).toContain('background: color-mix(in srgb, var(--ok) 10%, var(--shell-surface-raised));');
+    expect(rule).toContain('color: var(--shell-text);');
+    expect(rule).not.toContain('#d8f2cc');
   });
 
   it('imports copied Coze workflow source as a draft template preset', async () => {
@@ -1761,6 +1814,35 @@ describe('product shell ui', () => {
     expect(css).toContain('.draft-layer');
     expect(css).toContain('.draft-layer.selected');
     expect(css).toContain('.draft-layer-handle');
+  });
+
+  it('reveals and scrolls to the matching draft controls when a canvas layer is selected', async () => {
+    const [page, accordion] = await Promise.all([
+      readFile(new URL('../src/features/templates/DraftTemplatesPage.tsx', import.meta.url), 'utf8'),
+      readFile(new URL('../src/components/Accordion.tsx', import.meta.url), 'utf8'),
+    ]);
+
+    expect(page).toContain('onSelectLayer={handleDraftLayerSelection}');
+    expect(page).toContain('ref={draftControlsRef}');
+    expect(page).toContain('setLayerPanelScrollRequest');
+    expect(page).toContain('const editorReady = Boolean(editingId && draft)');
+    expect(page).toContain('controls.scrollTo({');
+    expect(page).toContain('controls.scrollTop + panelRect.top - containerRect.top - 8');
+    expect(page).not.toContain('scrollIntoView');
+    const css = await readFile(new URL('../src/styles.css', import.meta.url), 'utf8');
+    expect(css).toMatch(/\.draft-layer > span\s*\{[\s\S]*?color: #f7fafc;/u);
+    for (const layer of ['image', 'title', 'subtitle', 'caption', 'disclaimer']) {
+      expect(page).toContain(`data-draft-layer-panel="${layer}"`);
+      expect(page).toContain(`expanded={expandedLayerPanels.${layer}}`);
+    }
+    expect(accordion).toContain('expanded?: boolean;');
+    expect(accordion).toContain('onExpandedChange?: (expanded: boolean) => void;');
+    expect(accordion).toContain('controlledExpanded ?? uncontrolledExpanded');
+    const qa = await readFile(new URL('../electron/editorial-qa.ts', import.meta.url), 'utf8');
+    expect(qa).toContain('draftLayerPanelReady');
+    expect(qa).toContain(".draft-layer[data-layer=\"subtitle\"].selected");
+    expect(qa).toContain('page.scrollTop === pageScrollBefore');
+    expect(qa).toContain('stage.scrollTop === stageScrollBefore');
   });
 
   it('renders draft preview layers with visibility and style fields', async () => {
@@ -2776,6 +2858,11 @@ describe('product shell ui', () => {
     expect(settingsPage).toContain('保存并测试');
     expect(settingsPage).toContain('buildConfigForSelectedProfileTest');
     expect(settingsPage).toContain('activateSelectedProviderProfileForTarget');
+    expect(settingsPage).toContain('const saveAction = useAsyncAction();');
+    const saveSnippet = settingsPage.slice(settingsPage.indexOf('async function commitAndApplySettingsDraft'), settingsPage.indexOf('function clearProviderModels'));
+    expect(saveSnippet).toContain('await saveAction.run(');
+    expect(saveSnippet).not.toContain('await settingsAction.run(');
+    expect(settingsPage).toContain('disabled={savingConfig || saveAction.busy}');
     const testSnippet = settingsPage.slice(settingsPage.indexOf('async function testCurrentConfig()'), settingsPage.indexOf('async function refreshProviderModels'));
     const secureSaveCall = 'api.saveConfig({ config: normalizeEditableConfigProviders(nextDraft), secretChanges })';
     expect(testSnippet.indexOf('const nextDraft = activateSelectedProviderProfileForTarget')).toBeLessThan(testSnippet.indexOf(secureSaveCall));
@@ -2865,7 +2952,7 @@ describe('product shell ui', () => {
       expect(settingsPage).toContain(text);
     }
 
-    expect(settingsPage).toContain("configTargetStatus('speechToText', draft)");
+    expect(settingsPage).toContain("configTargetStatus('speechToText', draftWithCredentialStatus)");
     expect(settingsPage).toContain("section === 'speechToText'");
     expect(settingsPage).toContain('updateSpeechToTextConfig');
 
@@ -3173,6 +3260,7 @@ describe('product shell ui', () => {
     expect(artifact).toContain('summarizeErrorMessage');
     expect(errors).toContain('Python 运行时缺少依赖');
     expect(errors).toContain('Python 运行时依赖缺失');
+    expect(errors).toContain('图片服务暂无可用账号');
     expect(errorOwners).toContain('className="mini-button viral-retry-button"');
     expect(errorOwners).toContain('fullMessage');
     expect(errorOwners).not.toContain('<small className="danger-text">{task.errorMessage}</small>');
@@ -3201,7 +3289,7 @@ describe('product shell ui', () => {
     expect(css).toContain('.error-dialog .error-mark {');
   });
 
-  it('wraps the task-detail identity and actions before controls can leave the viewport', async () => {
+  it('keeps the desktop task-detail identity and actions on one row before the compact breakpoint', async () => {
     const css = await readFile(new URL('../src/styles/features/task-operations.css', import.meta.url), 'utf8');
     const barStart = css.indexOf('.task-detail-shell[data-task-operations="detail"] .task-detail-bar {');
     const barRule = css.slice(barStart, css.indexOf('}', barStart) + 1);
@@ -3210,10 +3298,12 @@ describe('product shell ui', () => {
     const actionsStart = css.indexOf('.task-detail-actions {', identityStart);
     const actionsRule = css.slice(actionsStart, css.indexOf('}', actionsStart) + 1);
 
-    expect(barRule).toContain('flex-wrap: wrap;');
-    expect(identityRule).toContain('flex: 1 1 560px;');
-    expect(actionsRule).toContain('flex-wrap: wrap;');
+    expect(barRule).toContain('flex-wrap: nowrap;');
+    expect(identityRule).toContain('flex: 1 1 380px;');
+    expect(actionsRule).toContain('flex: 0 1 auto;');
+    expect(actionsRule).toContain('flex-wrap: nowrap;');
     expect(actionsRule).toContain('justify-content: flex-end;');
+    expect(css).toMatch(/@media \(max-width: 1180px\)[\s\S]*?\.task-detail-shell\[data-task-operations="detail"\] \.task-detail-bar,[\s\S]*?flex-direction: column;/u);
   });
 
   it('keeps shared operational controls theme-owned across every shell surface', async () => {
@@ -3254,7 +3344,18 @@ describe('product shell ui', () => {
 
     expect(main).toContain('searchWebSources');
     expect(main).toContain('composeResearchCopy');
-    expect(main).toContain('Bing + 搜狗 + 百度 + 360');
+    expect(main).toContain('必应、百度、搜狗、头条与正文来源');
+    expect(main).toContain("useState<WebSearchProvider[]>(() => WEB_SEARCH_PROVIDER_OPTIONS.map((option) => option.id))");
+    expect(main).toContain('webSearchProviders,');
+    expect(main).toContain('values.webSearchProviders.filter(isWebSearchProvider)');
+    expect(main).toContain('const searchAction = useAsyncAction()');
+    expect(main).toContain('searchRequestIdRef.current += 1');
+    expect(main).toContain('handleAiKeywordChange(event.target.value)');
+    expect(main).toContain('api.searchWebSources({ query: keyword, providers: webSearchProviders })');
+    expect(main).toContain('searchContext.query === aiKeyword.trim()');
+    expect(main).toContain('实际查询：{searchContext.query}');
+    expect(main).toContain('searchContext.providerStatuses.map');
+    expect(main).toContain('webSearchProviderLabel(source.provider)');
     expect(main).toContain('selectedSearchSourceIds');
     expect(main).toContain('selectedSources');
     expect(main).toContain('ai-search-results');
@@ -3272,6 +3373,8 @@ describe('product shell ui', () => {
     expect(css).toContain('.extra-requirements-input');
     expect(css).toContain('::-webkit-scrollbar');
     expect(css).toContain('.search-source-card');
+    expect(css).toContain('.web-search-provider-statuses');
+    expect(css).toContain('.search-source-provider');
   });
 
   it('runs image lab requests through real generation and renders returned image records', async () => {

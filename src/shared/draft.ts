@@ -66,7 +66,7 @@ export async function writeJianyingDraft(input: WriteJianyingDraftInput, options
   }
 
   const template = normalizeDraftTemplate(input.template ?? getTemplate(input.templateId ?? (input.ratio === '16:9' ? 'builtin-landscape-16-9' : 'default-portrait-9-16')));
-  const subtitles = buildSubtitleTrack(input.scenes);
+  const subtitles = buildSubtitleTrack(input.scenes, { maxCharsPerLine: template.caption.maxCharsPerLine });
   const title = safeDraftName(input.title || input.cover.title || 'storydream-draft');
   const draftDir = join(input.draftRootDir, uniqueDraftFolderName(title));
   const imagesByScene = await collectSceneAssets(input.scenes, input.generatedImages, 'image asset');
@@ -97,7 +97,12 @@ export async function writeJianyingDraft(input: WriteJianyingDraftInput, options
     checks: [
       { id: 'real-images', label: '真实图片素材', status: 'pass', detail: `${sourceImages.length} image files validated and handed to pyJianYingDraft.` },
       { id: 'real-narration', label: '真实旁白音频', status: 'pass', detail: `${sourceNarration.length} narration files validated and handed to pyJianYingDraft.` },
-      { id: 'subtitle-track', label: '字幕时间轴', status: subtitles.cues.length === input.scenes.length ? 'pass' : 'fail', detail: `${subtitles.cues.length} subtitle cues.` },
+      {
+        id: 'subtitle-track',
+        label: '字幕时间轴',
+        status: input.scenes.every((scene) => subtitles.cues.some((cue) => cue.sceneId === scene.id)) ? 'pass' : 'fail',
+        detail: `${input.scenes.length} scenes expanded into ${subtitles.cues.length} short subtitle cues.`,
+      },
       { id: 'jianying-draft', label: '剪映草稿结构', status: 'warn', detail: 'Waiting for pyJianYingDraft bridge output.' },
     ],
   };
@@ -108,6 +113,7 @@ export async function writeJianyingDraft(input: WriteJianyingDraftInput, options
     input,
     title,
     template,
+    subtitles,
     draftDir,
     totalDuration,
     subtitlesFile,
@@ -179,6 +185,7 @@ function createBridgePayload(input: {
   input: WriteJianyingDraftInput;
   title: string;
   template: DraftTemplate;
+  subtitles: SubtitleTrack;
   draftDir: string;
   totalDuration: number;
   subtitlesFile: string;
@@ -197,6 +204,7 @@ function createBridgePayload(input: {
       startUs,
       durationUs,
       text: scene.cap,
+      captions: input.subtitles.cues.filter((cue) => cue.sceneId === scene.id).map((cue) => cue.text),
     };
   });
   const overlayText = resolveOverlayText(input.input, input.template);

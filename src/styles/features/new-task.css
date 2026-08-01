@@ -204,6 +204,64 @@
   display: none;
 }
 
+.web-search-provider-panel {
+  display: grid;
+  gap: 7px;
+  padding-top: 2px;
+}
+
+.web-search-provider-grid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.web-search-provider {
+  min-width: 0;
+  min-height: 40px;
+  display: grid;
+  grid-template-columns: 16px minmax(0, 1fr);
+  align-items: center;
+  gap: 7px;
+  padding: 6px 8px;
+  border: 1px solid var(--shell-border);
+  border-radius: 5px;
+  background: var(--shell-surface-raised);
+  color: var(--shell-text);
+}
+
+.web-search-provider:has(input:checked) {
+  border-color: var(--shell-accent);
+  background: color-mix(in srgb, var(--shell-accent) 8%, var(--shell-surface-raised));
+}
+
+.web-search-provider input {
+  width: 14px;
+  min-height: 14px;
+  margin: 0;
+  accent-color: var(--shell-accent);
+}
+
+.web-search-provider span,
+.web-search-provider strong,
+.web-search-provider small {
+  min-width: 0;
+  display: block;
+  letter-spacing: 0;
+}
+
+.web-search-provider strong {
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.web-search-provider small {
+  margin-top: 1px;
+  color: var(--shell-muted);
+  font-size: 10px;
+  overflow-wrap: anywhere;
+}
+
 .new-task-material-options {
   padding-top: 12px;
   border-top: 1px solid var(--shell-border);
@@ -652,6 +710,7 @@
   .new-task-inline-fields,
   .new-task-field-grid,
   .new-task-check-grid,
+  .web-search-provider-grid,
   .new-task-stage-panel .option-cloud,
   .new-task-stage-panel .template-default-summary,
   .new-task-summary dl,

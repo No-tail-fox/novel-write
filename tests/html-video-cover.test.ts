@@ -298,6 +298,7 @@ describe('HTML video cover render ownership', () => {
   it('adapts one canonical auto-cover request into a versioned managed PNG', async () => {
     const providerCalls: Array<{ prompt: string; ratio: string; taskRatio: string }> = [];
     const prepareCalls: Array<{ sourcePath: string; destinationPath: string; width: number; height: number }> = [];
+    const workDir = await mkdtemp(join(tmpdir(), 'storydream-cover-adapter-'));
     const generate = adaptHtmlVideoCoverGenerator(
       async (scenes, prompts, task) => {
         providerCalls.push({
@@ -308,7 +309,7 @@ describe('HTML video cover render ownership', () => {
         return [{ sceneId: scenes[0].id, path: 'I:/managed/provider-images/000.png' }];
       },
       { id: 'task-cover-adapter', title: 'Adapter task', style: 'modern-film', ratio: '9:16' } as Task,
-      'I:/managed',
+      workDir,
       async (input) => {
         prepareCalls.push({
           sourcePath: input.sourcePath,
@@ -354,7 +355,7 @@ describe('HTML video cover render ownership', () => {
     }]);
     expect(prepareCalls).toEqual([{
       sourcePath: 'I:/managed/provider-images/000.png',
-      destinationPath: 'I:\\managed\\covers\\cover-auto-r4.png',
+      destinationPath: join(workDir, 'covers', 'cover-auto-r4.png'),
       width: 768,
       height: 1024,
     }]);
@@ -369,6 +370,7 @@ describe('HTML video cover render ownership', () => {
       height: 1024,
       sizeBytes: 4096,
     });
+    await rm(workDir, { recursive: true, force: true });
   });
 });
 

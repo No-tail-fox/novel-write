@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import { Bot, Copy, Database, FlaskConical, FolderOpen, Image as ImageIcon, Info, KeyRound, Loader2, Mic2, Palette, Save, Search, Sparkles, Upload, Wand2, XCircle } from "lucide-react";
+import { useMemo } from "react";
 import type { AppConfig, ConfigTestTarget, ImaKnowledgeResult, ProviderModel, ProviderModelListRequest, ShellView, TtsProviderProfile, VolcengineSpeaker } from "../../shared/types";
 import type { StoryDreamApi } from "../../shared/storydream-api";
 import { addUploadedBgm, resolveDefaultBgmId, validBgmItems } from "../tasks/task-formatters";
@@ -25,6 +26,7 @@ import {
   SecretInput,
   SettingsCard,
   configFromMutation,
+  configWithCredentialStatus,
   hasPendingLlmSecretChange,
   mergeVolcengineSpeakers,
   profileSecretId,
@@ -56,6 +58,7 @@ export function SettingsPage({ api, state, applyState, navigate }: { api: StoryD
   const [selectedImageProfileId, setSelectedImageProfileId] = useState(() => activeImageProfileId(state.config));
   const [selectedTtsProfileId, setSelectedTtsProfileId] = useState(() => activeTtsProfileId(state.config));
   const [minimaxCloneVoiceCatalog, setMinimaxCloneVoiceCatalog] = useState(() => state.minimaxCloneVoices);
+  const saveAction = useAsyncAction();
   const settingsAction = useAsyncAction();
   const themeAction = useAsyncAction();
   useEffect(() => {
@@ -94,10 +97,13 @@ export function SettingsPage({ api, state, applyState, navigate }: { api: StoryD
     }
   };
   async function commitAndApplySettingsDraft(nextDraft: AppConfig, successMessage = '配置已保存') {
-    const result = await settingsAction.run(
+    const result = await saveAction.run(
       () => persistSettingsDraft(nextDraft, successMessage),
       { onError: (error) => setConfigTestResult(`[fail] ${error.message}`) },
     );
+    if (!result.ok && result.reason === 'busy') {
+      setConfigTestResult('[warn] 配置正在保存，请稍候。');
+    }
     return result.ok ? result.value : undefined;
   }
   function clearProviderModels(key: ModelListKey) {
@@ -370,24 +376,28 @@ export function SettingsPage({ api, state, applyState, navigate }: { api: StoryD
     image: selectedImageProfileId,
     tts: selectedTtsProfileId,
   };
-  const selectedLlmTestConfig = buildConfigForSelectedProfileTest(draft, 'llm', selectedProviderProfileIds);
+  const draftWithCredentialStatus = useMemo(
+    () => configWithCredentialStatus(draft, state.secretStatus, secretChanges),
+    [draft, secretChanges, state.secretStatus],
+  );
+  const selectedLlmTestConfig = buildConfigForSelectedProfileTest(draftWithCredentialStatus, 'llm', selectedProviderProfileIds);
   const selectedLlmSecretPending = hasPendingLlmSecretChange(secretChanges, selectedLlmTestConfig.llm.id);
   const selectedLlmProfilePersisted = state.config.llmProfiles.some((profile) => profile.id === selectedLlmTestConfig.llm.id)
     || state.config.llm.id === selectedLlmTestConfig.llm.id;
   const selectedLlmTestBlocked = selectedLlmSecretPending || !selectedLlmProfilePersisted;
-  const selectedImageTestConfig = buildConfigForSelectedProfileTest(draft, 'image', selectedProviderProfileIds);
-  const selectedTtsTestConfig = buildConfigForSelectedProfileTest(draft, 'tts', selectedProviderProfileIds);
+  const selectedImageTestConfig = buildConfigForSelectedProfileTest(draftWithCredentialStatus, 'image', selectedProviderProfileIds);
+  const selectedTtsTestConfig = buildConfigForSelectedProfileTest(draftWithCredentialStatus, 'tts', selectedProviderProfileIds);
   const settingsBgms = validBgmItems(draft);
   const isSiliconFlowSpeechToText = draft.speechToText.provider === 'siliconflow';
   const sections = [
     ['appearance', Palette, '外观', '明暗主题', state.ui.theme === 'dark' ? '深色' : '浅色'],
-    ['llm', Sparkles, 'LLM', '文案与分镜', settingsStatusLabel(configTargetStatus('llm', draft))],
-    ['image', ImageIcon, 'AI 绘图', '分镜图片', settingsStatusLabel(configTargetStatus('image', draft))],
-    ['tts', Bot, 'TTS 配音', '每镜语音', settingsStatusLabel(configTargetStatus('tts', draft))],
-    ['speechToText', Mic2, '语音转文字', '爆款拆解转写 API', settingsStatusLabel(configTargetStatus('speechToText', draft))],
-    ['jianying', FolderOpen, '剪映', '草稿目录 · BGM', settingsStatusLabel(configTargetStatus('jianying', draft))],
+    ['llm', Sparkles, 'LLM', '文案与分镜', settingsStatusLabel(configTargetStatus('llm', draftWithCredentialStatus))],
+    ['image', ImageIcon, 'AI 绘图', '分镜图片', settingsStatusLabel(configTargetStatus('image', draftWithCredentialStatus))],
+    ['tts', Bot, 'TTS 配音', '每镜语音', settingsStatusLabel(configTargetStatus('tts', draftWithCredentialStatus))],
+    ['speechToText', Mic2, '语音转文字', '爆款拆解转写 API', settingsStatusLabel(configTargetStatus('speechToText', draftWithCredentialStatus))],
+    ['jianying', FolderOpen, '剪映', '草稿目录 · BGM', settingsStatusLabel(configTargetStatus('jianying', draftWithCredentialStatus))],
     ['activation', KeyRound, '激活与订阅', '试用 · 激活码', state.activation.status],
-    ['creative', Wand2, 'AI 创作', 'IMA 知识库', settingsStatusLabel(configTargetStatus('creative', draft))],
+    ['creative', Wand2, 'AI 创作', 'IMA 知识库', settingsStatusLabel(configTargetStatus('creative', draftWithCredentialStatus))],
     ['about', Info, '关于 · 诊断', '日志 · 重置', '已配置'],
   ] as const;
   return (
@@ -419,7 +429,7 @@ export function SettingsPage({ api, state, applyState, navigate }: { api: StoryD
               {testingConfig ? <Loader2 className="spin" size={15} /> : <Sparkles size={15} />}
               保存并测试
             </button>
-            <button className="primary-action slim" disabled={savingConfig} onClick={save}>
+            <button className="primary-action slim" disabled={savingConfig || saveAction.busy} onClick={save}>
               {savingConfig ? <Loader2 className="spin" size={15} /> : <Save size={15} />}
               保存配置
             </button>
@@ -439,6 +449,7 @@ export function SettingsPage({ api, state, applyState, navigate }: { api: StoryD
             <InlineActionFeedback feedback={themeAction.feedback} />
           </SettingsCard>
         ) : null}
+        <InlineActionFeedback feedback={saveAction.feedback} />
         <InlineActionFeedback feedback={settingsAction.feedback} />
         {section === 'llm' ? (
           <SettingsCard title="LLM 配置档案" status={secrets.configured(profileSecretId('llm', selectedLlmProfileId, 'apiKey')) ? '已配置' : '待配置'}>

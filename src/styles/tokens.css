@@ -7,6 +7,7 @@
   --shell-muted: #b1b8be;
   --shell-accent: #f2614b;
   --shell-accent-strong: #ff755f;
+  --shell-accent-contrast: #101214;
   --shell-focus: #f2614b;
   --shell-focus-contrast: #101214;
 
@@ -51,6 +52,7 @@
   --shell-muted: #626870;
   --shell-accent: #cf3f2d;
   --shell-accent-strong: #a92f21;
+  --shell-accent-contrast: #101214;
   --shell-focus: #cf3f2d;
   --shell-focus-contrast: #ffffff;
 

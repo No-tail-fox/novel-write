@@ -9,6 +9,9 @@ export interface ErrorDetailsProps {
 export function summarizeErrorMessage(message: string): string {
   const normalized = message.replace(/\s+/g, ' ').trim();
   if (!normalized) return '发生错误';
+  if (/No available compatible accounts|没有可用于模型.*上游账号或通道/iu.test(normalized)) {
+    return '图片服务暂无可用账号';
+  }
   const imageApiStatus = normalized.match(/Image provider API error \((\d+)\)/i)?.[1];
   if (imageApiStatus) return `生图接口错误 ${imageApiStatus}`;
   if (/Python dependency .* is required|ModuleNotFoundError: No module named/i.test(normalized)) {

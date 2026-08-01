@@ -5,7 +5,9 @@ import {
   cleanStoryboundAiCreationOutput,
   composeCopyFromSources,
   createAiSourceResearcher,
+  researchSearchErrorMessage,
   searchWebSources,
+  searchWebSourcesDetailed,
 } from '@shared/research';
 import { defaultConfig } from '@shared/config';
 import type { ConfiguredTextLlm, LlmTextRequest, TextLlm } from '@shared/llm-provider';
@@ -64,7 +66,7 @@ describe('AI source research', () => {
     const sections = await searchWebSources('钱学森 生平', async (url) => {
       const rawUrl = String(url);
       requests.push(rawUrl);
-      if (rawUrl === 'https://cn.bing.com/search?q=%E9%92%B1%E5%AD%A6%E6%A3%AE') {
+      if (rawUrl === 'https://cn.bing.com/search?q=%E9%92%B1%E5%AD%A6%E6%A3%AE%20%E7%94%9F%E5%B9%B3') {
         return new Response(
           `<html><body><ol>
             <li class="b_algo"><h2><a href="https://example.test/qian">钱学森回国始末</a></h2><p>一篇可用资料。</p></li>
@@ -88,7 +90,7 @@ describe('AI source research', () => {
       throw new Error(`unexpected request: ${rawUrl}`);
     });
 
-    expect(requests[0]).toBe('https://cn.bing.com/search?q=%E9%92%B1%E5%AD%A6%E6%A3%AE');
+    expect(requests[0]).toBe('https://cn.bing.com/search?q=%E9%92%B1%E5%AD%A6%E6%A3%AE%20%E7%94%9F%E5%B9%B3');
     expect(requests.some((url) => url.includes('format=rss'))).toBe(false);
     expect(sections[0]).toMatchObject({
       source: 'web',
@@ -408,6 +410,149 @@ describe('AI source research', () => {
     expect(sections.map((section) => section.title)).toEqual(['\u4e03\u6d77\u5343\u79cb_\u767e\u5ea6\u767e\u79d1']);
   });
 
+  it('aggregates explicit Bing Baidu Sogou and Toutiao channels with traceable provider status', async () => {
+    const query = '李在明';
+    const context = await searchWebSourcesDetailed(
+      { query, providers: ['bing', 'baidu', 'sogou', 'toutiao'] },
+      async (url) => {
+        const rawUrl = String(url);
+        if (rawUrl.includes('bing.com/search')) {
+          return new Response(
+            '<?xml version="1.0"?><rss><channel><item><title>李在明人物简介</title><link>https://news.example.test/bing</link><description>李在明的人物经历。</description></item></channel></rss>',
+            { status: 200, headers: { 'Content-Type': 'application/rss+xml' } },
+          );
+        }
+        if (rawUrl.includes('baidu.com/s?wd=')) {
+          return new Response(
+            '<html><body><div><h3><a href="https://news.example.test/baidu"><em>李在明</em> - 百度百科</a></h3><div>李在明的生平与经历。</div></div></body></html>',
+            { status: 200, headers: { 'Content-Type': 'text/html' } },
+          );
+        }
+        if (rawUrl.includes('sogou.com/web')) {
+          return new Response(
+            '<html><body><div class="vrwrap"><h3><a href="https://news.example.test/sogou">韩国总统李在明的政治经历</a></h3><p>李在明从律师到总统的经历。</p></div><!-- z --></body></html>',
+            { status: 200, headers: { 'Content-Type': 'text/html' } },
+          );
+        }
+        if (rawUrl.includes('so.toutiao.com/search')) {
+          const data = {
+            article_url: 'https://www.toutiao.com/group/1234567890/',
+            title: '李在明的人生转折',
+            abstract: '头条文章梳理李在明的早年经历。',
+            display: { data_ext: { is_title_full_matched: true } },
+          };
+          return new Response(`<html><body><script data-for="ala-data">window.T && T.flow({ data: ${JSON.stringify(data)} });</script></body></html>`, {
+            status: 200,
+            headers: { 'Content-Type': 'text/html' },
+          });
+        }
+        if (rawUrl.startsWith('https://news.example.test/') || rawUrl.includes('toutiao.com/group/')) {
+          return new Response(`<main>${query}的可验证正文：${rawUrl}</main>`, {
+            status: 200,
+            headers: { 'Content-Type': 'text/html' },
+          });
+        }
+        throw new Error(`unexpected request: ${rawUrl}`);
+      },
+    );
+
+    expect(new Set(context.sections.map((section) => section.provider))).toEqual(new Set(['bing', 'baidu', 'sogou', 'toutiao']));
+    expect(context.sections.every((section) => section.source === 'web')).toBe(true);
+    expect(context.providerStatuses).toEqual([
+      expect.objectContaining({ provider: 'bing', state: 'ready', count: 1 }),
+      expect.objectContaining({ provider: 'baidu', state: 'ready', count: 1 }),
+      expect.objectContaining({ provider: 'sogou', state: 'ready', count: 1 }),
+      expect.objectContaining({ provider: 'toutiao', state: 'ready', count: 1 }),
+    ]);
+  });
+
+  it('rejects a search-snippet hit when neither the result title nor fetched article contains the exact subject', async () => {
+    const context = await searchWebSourcesDetailed(
+      { query: '李在明', providers: ['bing'] },
+      async (url) => {
+        const rawUrl = String(url);
+        if (rawUrl.includes('bing.com/search')) {
+          return new Response(
+            `<?xml version="1.0"?><rss><channel>
+              <item><title>李在明人物资料</title><link>https://example.test/precise</link><description>李在明的人物经历。</description></item>
+              <item><title>原创“李”姓是怎么来的？</title><link>https://example.test/noisy</link><description>李姓的起源。热门推荐：李在明新闻。</description></item>
+            </channel></rss>`,
+            { status: 200, headers: { 'Content-Type': 'application/rss+xml' } },
+          );
+        }
+        if (rawUrl.endsWith('/precise')) {
+          return new Response('<main>李在明的人物正文。</main>', { status: 200, headers: { 'Content-Type': 'text/html' } });
+        }
+        if (rawUrl.endsWith('/noisy')) {
+          return new Response('<main>李姓人口近一亿，历史上建立过多个王朝。</main>', { status: 200, headers: { 'Content-Type': 'text/html' } });
+        }
+        throw new Error(`unexpected request: ${rawUrl}`);
+      },
+    );
+
+    expect(context.sections.map((section) => section.url)).toEqual(['https://example.test/precise']);
+  });
+
+  it('rejects search-engine anti-bot pages even when the original result title matches exactly', async () => {
+    const context = await searchWebSourcesDetailed(
+      { query: '李在明', providers: ['sogou'] },
+      async (url) => {
+        const rawUrl = String(url);
+        if (rawUrl.includes('sogou.com/web')) {
+          return new Response(
+            `<html><body><div class="vrwrap"><h3><a href="https://www.sogou.com/antispider/?from=search">李在明_相关资讯</a></h3><p>李在明相关新闻。</p></div><!-- z --></body></html>`,
+            { status: 200, headers: { 'Content-Type': 'text/html' } },
+          );
+        }
+        if (rawUrl.includes('sogou.com/antispider')) {
+          return new Response('<main>IP：59.152.38.207 访问时间：2026-08-02</main>', {
+            status: 200,
+            headers: { 'Content-Type': 'text/html' },
+          });
+        }
+        throw new Error(`unexpected request: ${rawUrl}`);
+      },
+    );
+
+    expect(context.sections).toEqual([]);
+    expect(context.providerStatuses).toEqual([
+      expect.objectContaining({ provider: 'sogou', state: 'empty', count: 0 }),
+    ]);
+  });
+
+  it('keeps precise results from healthy channels when another selected provider fails', async () => {
+    const context = await searchWebSourcesDetailed(
+      { query: '李在明', providers: ['baidu', 'toutiao'] },
+      async (url) => {
+        const rawUrl = String(url);
+        if (rawUrl.includes('baidu.com/s?wd=')) throw new TypeError('baidu unavailable');
+        if (rawUrl.includes('so.toutiao.com/search')) {
+          const data = {
+            article_url: 'https://www.toutiao.com/group/998877/',
+            title: '李在明人物访谈',
+            abstract: '李在明讲述早年经历。',
+          };
+          return new Response(`<script data-for="ala-data">window.T && T.flow({ data: ${JSON.stringify(data)} });</script>`, {
+            status: 200,
+            headers: { 'Content-Type': 'text/html' },
+          });
+        }
+        if (rawUrl.includes('toutiao.com/group/')) {
+          return new Response('<main>李在明访谈正文。</main>', { status: 200, headers: { 'Content-Type': 'text/html' } });
+        }
+        throw new Error(`unexpected request: ${rawUrl}`);
+      },
+    );
+
+    expect(context.sections).toHaveLength(1);
+    expect(context.sections[0]).toMatchObject({ provider: 'toutiao', title: '李在明人物访谈' });
+    expect(context.providerStatuses).toEqual([
+      expect.objectContaining({ provider: 'baidu', state: 'failed', count: 0 }),
+      expect.objectContaining({ provider: 'toutiao', state: 'ready', count: 1 }),
+    ]);
+    expect(context.warnings[0]).toContain('百度');
+  });
+
   it('composes an editable source copy from selected web pages through the Storybound text LLM flow', async () => {
     const requests: LlmTextRequest[] = [];
     const result = await composeCopyFromSources(
@@ -634,6 +779,23 @@ describe('AI source research', () => {
     expect(called).toBe(false);
     expect(context.sections[0]).toMatchObject({ title: 'Chosen article', content: 'Selected body text for generation.' });
     expect(context.sections.map((section) => section.source)).toEqual(['web', 'builtin-knowledge']);
+  });
+
+  it('turns opaque fetch failures into an actionable search message', () => {
+    expect(researchSearchErrorMessage(new TypeError('fetch failed'))).toBe(
+      '网页搜索连接失败，请检查网络或代理后重试。',
+    );
+  });
+
+  it('recognizes network policy failures hidden in the fetch cause chain', () => {
+    const cause = Object.assign(new Error('Reserved network target 198.18.0.42 is blocked.'), {
+      code: 'NETWORK_ADDRESS_BLOCKED',
+    });
+    const wrapped = new TypeError('fetch failed', { cause });
+
+    expect(researchSearchErrorMessage(wrapped)).toBe(
+      '检测到代理 Fake-IP，但当前版本未能通过安全校验。请重启软件后重试。',
+    );
   });
 });
 

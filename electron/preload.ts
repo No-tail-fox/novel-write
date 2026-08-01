@@ -27,11 +27,13 @@ import type {
   HistoryListRequest,
   HistoryPage,
   HtmlVideoConfigChange,
+  HtmlVideoAssetTarget,
   HtmlVideoCompositionSource,
   HtmlVideoCompositionSourceLintInput,
   HtmlVideoCompositionSourceSaveInput,
   HtmlVideoCompositionSourceSaveResult,
   HtmlVideoLintFinding,
+  HtmlVideoSceneChange,
   ImageLabGenerateInput,
   ImageLabImportInput,
   ImageLabRecord,
@@ -69,6 +71,7 @@ import type {
   VoiceLabGenerateInput,
   VoiceLabRecord,
   VoiceLabSummary,
+  WebSearchRequest,
 } from '../src/shared/types';
 import type { PublicAppState, SaveConfigInput, SecretChanges } from '../src/shared/config-secrets';
 import type { PersonAssetImage, PersonAssetSummary } from '../src/shared/person-assets';
@@ -184,6 +187,7 @@ export const storyDreamApi = {
   getPromptTemplateDetail: (id: string): Promise<PromptTemplate | null> => invokeTrusted('prompt-template:get-detail', id),
   listDraftTemplates: (request: CursorRequest = {}): Promise<CursorPage<DraftTemplateSummary>> => invokeTrusted('draft-template:list', request),
   getDraftTemplateDetail: (id: string): Promise<DraftTemplate | null> => invokeTrusted('draft-template:get-detail', id),
+  deleteDraftTemplate: (id: string): Promise<AppMutationResult | null> => invokeTrusted('draft-template:delete', id),
   listMinimaxCloneVoices: (request: CursorRequest = {}): Promise<CountedCursorPage<MinimaxCloneVoice>> => invokeTrusted('minimax-clone-voice:list', request),
   saveMinimaxCloneVoice: (input: MinimaxCloneVoiceInput): Promise<AppMutationResult | null> => invokeTrusted('minimax-clone-voice:save', input),
   deleteMinimaxCloneVoice: (voiceId: string): Promise<AppMutationResult | null> => invokeTrusted('minimax-clone-voice:delete', voiceId),
@@ -194,7 +198,7 @@ export const storyDreamApi = {
   testLlmConfig: (config: LlmConfig) => invokeTrusted('llm:test-config', config),
   listProviderModels: (request: ProviderModelListRequest): Promise<ProviderModelListResult> => invokeTrusted('models:list', request),
   listVolcengineSpeakers: (request: VolcengineSpeakerListRequest): Promise<VolcengineSpeakerListResult> => invokeTrusted('volcengine:speakers:list', request),
-  searchWebSources: (query: string): Promise<AiSourceContext> => invokeTrusted('research:web-search', query),
+  searchWebSources: (input: string | WebSearchRequest): Promise<AiSourceContext> => invokeTrusted('research:web-search', input),
   composeResearchCopy: (input: ResearchCopyComposeInput): Promise<ResearchCopyComposeResult> => invokeTrusted('research:compose-copy', input),
   savePromptTemplate: (template: PromptTemplate): Promise<AppMutationResult | null> => invokeTrusted('prompt-template:save', template),
   resetPromptTemplates: (): Promise<AppMutationResult | null> => invokeTrusted('prompt-template:reset'),
@@ -221,6 +225,14 @@ export const storyDreamApi = {
   createHtmlVideoTask: (input: CreateTaskInput) => invokeTrusted('html-video:create-task', input),
   updateHtmlVideoConfig: (id: string, changes: HtmlVideoConfigChange[]) =>
     invokeTrusted('html-video:update-config', { id, changes }),
+  updateHtmlVideoScene: (id: string, sceneIndex: number, changes: HtmlVideoSceneChange[]) =>
+    invokeTrusted('html-video:update-scene', { id, sceneIndex, changes }),
+  replaceHtmlVideoAsset: (id: string, target: HtmlVideoAssetTarget) =>
+    invokeTrusted('html-video:replace-asset', { id, target }),
+  regenerateHtmlVideoAsset: (id: string, target: HtmlVideoAssetTarget) =>
+    invokeTrusted('html-video:regenerate-asset', { id, target }),
+  regenerateHtmlVideoVoice: (id: string, sceneIndex: number) =>
+    invokeTrusted('html-video:regenerate-voice', { id, sceneIndex }),
   importHtmlVideoCover: (id: string): Promise<AppMutationResult | null> =>
     invokeTrusted('html-video:import-cover', id),
   getHtmlVideoCompositionSource: (taskId: string, sceneIndex: number): Promise<HtmlVideoCompositionSource> =>
@@ -242,6 +254,7 @@ export const storyDreamApi = {
   getViralAnalysisResult: (id: string): Promise<ViralAnalysisResult> => invokeTrusted('viral:get-result', id),
   createProductionTaskFromViral: (id: string, options?: ViralProductionTaskOptions) => invokeTrusted('viral:create-production-task', { id, options }),
   updateTaskStatus: (id: string, status: Extract<TaskStatus, 'running' | 'paused' | 'cancelled'>) => invokeTrusted('task:update-status', { id, status }),
+  updateTaskTemplate: (id: string, templateId: string) => invokeTrusted('task:update-template', { id, templateId }),
   retryTask: (id: string) => invokeTrusted('task:retry', id),
   regenerateTaskImage: (id: string, sceneId: number) => invokeTrusted('task:regenerate-image', { id, sceneId }),
   regenerateTaskNarration: (id: string, sceneId: number) => invokeTrusted('task:regenerate-narration', { id, sceneId }),

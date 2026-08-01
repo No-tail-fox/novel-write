@@ -441,8 +441,15 @@ export interface HtmlVideoScenePlan {
   index: number;
   narration: string;
   title: string;
+  titleHidden?: boolean;
   captions: string[];
   sceneTemplate: string;
+  foregroundHidden?: boolean;
+  hiddenElementSlots?: number[];
+  titleScale?: number;
+  titleTopOverride?: number;
+  captionScale?: number;
+  captionYOverride?: number;
   background: {
     prompt: string;
   };
@@ -450,6 +457,27 @@ export interface HtmlVideoScenePlan {
     slot: number;
     prompt: string;
   }>;
+}
+
+export type HtmlVideoSceneChange =
+  | { field: 'narration'; value: string }
+  | { field: 'title'; value: string }
+  | { field: 'titleHidden'; value: boolean }
+  | { field: 'captions'; value: string[] }
+  | { field: 'sceneTemplate'; value: string }
+  | { field: 'foregroundHidden'; value: boolean }
+  | { field: 'elementHidden'; slot: number; value: boolean }
+  | { field: 'backgroundPrompt'; value: string }
+  | { field: 'elementPrompt'; slot: number; value: string }
+  | { field: 'titleScale'; value: number }
+  | { field: 'titleTopOverride'; value: number }
+  | { field: 'captionScale'; value: number }
+  | { field: 'captionYOverride'; value: number };
+
+export interface HtmlVideoAssetTarget {
+  sceneIndex: number;
+  kind: HtmlVideoAsset['kind'];
+  slot: number;
 }
 
 export interface HtmlVideoCompositionSnapshot {
@@ -1065,6 +1093,7 @@ export interface StoryboardScene {
 
 export interface SubtitleCue {
   index: number;
+  sceneId?: number;
   startMs: number;
   endMs: number;
   text: string;
@@ -1114,16 +1143,33 @@ export interface RewriteEvaluationResult {
 
 export interface AiSourceSection {
   source: string;
+  provider?: WebSearchProvider;
   title: string;
   url?: string;
   snippet?: string;
   content: string;
 }
 
+export type WebSearchProvider = 'bing' | 'baidu' | 'sogou' | 'toutiao';
+
+export interface WebSearchRequest {
+  query: string;
+  providers: WebSearchProvider[];
+}
+
+export interface WebSearchProviderStatus {
+  provider: WebSearchProvider;
+  label: string;
+  state: 'ready' | 'empty' | 'failed';
+  count: number;
+  message?: string;
+}
+
 export interface AiSourceContext {
   query: string;
   sections: AiSourceSection[];
   warnings: string[];
+  providerStatuses?: WebSearchProviderStatus[];
 }
 
 export interface ResearchCopyComposeInput {
@@ -1571,6 +1617,7 @@ export type AppStatePatch =
   | { kind: 'custom-style-upsert'; style: CustomStyle }
   | { kind: 'viral-templates-upsert'; storyTemplate: PromptTemplate; imageTemplate: CustomStyle }
   | { kind: 'draft-template-upsert'; template: DraftTemplate }
+  | { kind: 'draft-template-delete'; templateId: string }
   | { kind: 'minimax-clone-voice-upsert'; voice: MinimaxCloneVoice }
   | { kind: 'minimax-clone-voice-delete'; voiceId: string }
   | { kind: 'image-lab-upsert'; record: ImageLabSummary }

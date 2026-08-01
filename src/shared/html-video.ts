@@ -1,5 +1,6 @@
 import { pathToFileURL } from 'node:url';
-import type { DraftTemplate, HtmlVideoJobConfig, PipelineArtifact } from './types';
+import { runtimeProtocolMetadata } from '@hyperframes/core/runtime/protocol';
+import type { DraftTemplate, HtmlVideoJobConfig, HtmlVideoScenePlan, PipelineArtifact } from './types';
 import { resolveHtmlVideoCaptionStyle, type ResolvedHtmlVideoCaptionStyle } from './html-video-captions';
 import { GSAP_RUNTIME_FILENAME, HYPERFRAMES_RUNTIME_FILENAME } from './hyperframes';
 
@@ -10,6 +11,7 @@ export interface HtmlVideoSceneSource {
   description: string;
   imagePath: string;
   foregroundPaths?: string[];
+  captions?: string[];
   audioPath: string;
   durationMs: number;
 }
@@ -47,7 +49,7 @@ export interface HtmlVideoBuildInput {
   title: string;
   artifact: PipelineArtifact;
   generatedImages: Array<{ sceneId: number; path: string }>;
-  foregroundImages?: Array<{ sceneId: number; path: string }>;
+  foregroundImages?: Array<{ sceneId: number; path: string; slot?: number }>;
   narrationAudio: Array<{ sceneId: number; path: string }>;
   coverPath?: string;
   bgmPath?: string;
@@ -59,6 +61,7 @@ export interface HtmlVideoBuildInput {
   captionConfig?: Pick<HtmlVideoJobConfig, 'captionPreset' | 'captionAnim' | 'captionColors'>;
   captionReducedMotion?: boolean;
   draftTemplate?: DraftTemplate;
+  scenePlans?: HtmlVideoScenePlan[];
 }
 
 export interface HtmlVideoExportInput extends HtmlVideoComposition {}
@@ -92,9 +95,11 @@ export function buildHtmlVideoExportInput(input: HtmlVideoBuildInput): HtmlVideo
     { reducedMotion: input.captionReducedMotion },
   );
   const generatedImages = new Map(input.generatedImages.map((asset) => [asset.sceneId, asset.path]));
-  const foregroundImages = new Map<number, string[]>();
+  const foregroundImages = new Map<number, Array<{ path: string; slot: number }>>();
   for (const asset of input.foregroundImages ?? []) {
-    foregroundImages.set(asset.sceneId, [...(foregroundImages.get(asset.sceneId) ?? []), asset.path]);
+    const items = foregroundImages.get(asset.sceneId) ?? [];
+    items.push({ path: asset.path, slot: asset.slot ?? items.length });
+    foregroundImages.set(asset.sceneId, items);
   }
   const narrationAudio = new Map(input.narrationAudio.map((asset) => [asset.sceneId, asset.path]));
   const scenes = input.artifact.scenes.map((scene) => {
@@ -106,15 +111,23 @@ export function buildHtmlVideoExportInput(input: HtmlVideoBuildInput): HtmlVideo
     if (!audioPath) {
       throw new Error(`Missing HTML video narration for scene ${scene.id}.`);
     }
+    const plan = input.scenePlans?.find((item) => item.index === scene.id);
+    const hiddenSlots = new Set(plan?.hiddenElementSlots ?? []);
     return {
       sceneId: scene.id,
-      title: input.title,
+      title: plan?.title ?? input.title,
       caption: scene.cap,
+      captions: plan?.captions?.length ? [...plan.captions] : [scene.cap],
       description: scene.descPrompt,
       imagePath,
-      foregroundPaths: foregroundImages.get(scene.id) ?? [],
+      foregroundPaths: plan?.foregroundHidden
+        ? []
+        : (foregroundImages.get(scene.id) ?? [])
+            .filter((asset) => !hiddenSlots.has(asset.slot))
+            .map((asset) => asset.path),
       audioPath,
       durationMs: Math.max(800, Math.round(scene.durationMs)),
+      plan,
     };
   });
 
@@ -136,6 +149,7 @@ export function buildHtmlVideoExportInput(input: HtmlVideoBuildInput): HtmlVideo
         sceneId: scene.sceneId,
         title: scene.title,
         caption: scene.caption,
+        captions: scene.captions,
         description: scene.description,
         imagePath: scene.imagePath,
         foregroundPaths: scene.foregroundPaths,
@@ -146,6 +160,7 @@ export function buildHtmlVideoExportInput(input: HtmlVideoBuildInput): HtmlVideo
         canvas_h: Math.max(1, Math.round(input.canvas_h)),
         captionStyle,
         draftTemplate: input.draftTemplate,
+        plan: scene.plan,
       }),
       duration: roundSeconds(scene.durationMs / 1000),
     })),
@@ -186,6 +201,7 @@ function buildSceneHtml(scene: {
   sceneId: number;
   title: string;
   caption: string;
+  captions: string[];
   description: string;
   imagePath: string;
   foregroundPaths?: string[];
@@ -196,21 +212,45 @@ function buildSceneHtml(scene: {
   canvas_h: number;
   captionStyle: ResolvedHtmlVideoCaptionStyle;
   draftTemplate?: DraftTemplate;
+  plan?: HtmlVideoScenePlan;
 }): string {
   const compositionId = `storydream-scene-${scene.sceneId}`;
+  const hyperframesProtocol = runtimeProtocolMetadata(scene.fps);
   const imageDataUrl = safeAssetUrl(scene.imagePath);
   const audioDataUrl = safeLocalAssetUrl(scene.audioPath);
   const foregroundMarkup = (scene.foregroundPaths ?? [])
     .map((path, index) => `<img id="foreground-${index + 1}" class="clip scene-foreground" data-slot="${index}" data-start="0" data-duration="${scene.duration}" data-track-index="${index + 2}" src="${safeAssetUrl(path)}" alt="" />`)
     .join('\n    ');
+  const captions = scene.captions.length ? scene.captions : [scene.caption];
+  const captionDuration = scene.duration / captions.length;
+  const captionMarkup = captions.map((caption, index) => (
+    `<div id="caption-${index + 1}" class="caption" data-caption-index="${index}" style="opacity:0">${escapeHtml(caption)}</div>`
+  )).join('\n      ');
+  const captionTimeline = captions.map((_, index) => {
+    const start = roundSeconds(index * captionDuration);
+    const end = roundSeconds(Math.min(scene.duration, (index + 1) * captionDuration));
+    const selector = `'#caption-${index + 1}'`;
+    return [
+      `tl.set(${selector}, { opacity: 0 }, 0);`,
+      `tl.fromTo(${selector}, { opacity: 0, y: 12 }, { opacity: 1, y: 0, duration: ${Math.min(0.35, captionDuration / 2)}, ease: 'power2.out' }, ${start});`,
+      `tl.set(${selector}, { opacity: 0 }, ${end});`,
+    ].join('\n    ');
+  }).join('\n    ');
   const captionColors = scene.captionStyle.colors;
   const layout = resolveDraftTemplateHtmlLayout(scene.draftTemplate, scene.canvas_w, scene.canvas_h);
   const motionTween = draftTemplateMotionTween(scene.draftTemplate, scene.duration);
+  const titleScale = clampNumber(scene.plan?.titleScale ?? 1, 0.25, 3);
+  const captionScale = clampNumber(scene.plan?.captionScale ?? 1, 0.25, 3);
+  const titleTop = clampNumber(scene.plan?.titleTopOverride ?? 9, 0, 100);
+  const captionY = clampNumber(scene.plan?.captionYOverride ?? 84, 0, 100);
+  const titleSize = roundCssNumber(Math.max(26, scene.canvas_w * 0.052) * titleScale);
+  const captionSize = roundCssNumber(Math.max(18, scene.canvas_w * 0.034) * captionScale);
+  const sceneTemplate = escapeHtml(scene.plan?.sceneTemplate ?? 'center-focus');
   return `<!doctype html>
 <html lang="zh-CN">
 <head>
   <meta charset="utf-8" />
-  <meta http-equiv="Content-Security-Policy" content="default-src 'none'; img-src file: data: blob: storydream-media:; media-src file: data: blob: storydream-media:; style-src 'nonce-storydream-html-video'; script-src 'nonce-storydream-html-video' file: storydream-media:" />
+  <meta http-equiv="Content-Security-Policy" content="default-src 'none'; img-src file: data: blob: storydream-media:; media-src file: data: blob: storydream-media:; style-src 'nonce-storydream-html-video'; style-src-attr 'unsafe-inline'; script-src 'nonce-storydream-html-video' file: storydream-media:" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>${escapeHtml(scene.title)}</title>
   <style nonce="storydream-html-video">
@@ -245,6 +285,7 @@ function buildSceneHtml(scene: {
       height: ${scene.canvas_h}px;
       overflow: hidden;
       background: linear-gradient(180deg, #101417, #060708);
+      transform-origin: 0 0;
     }
     .draft-frame-band {
       position: absolute;
@@ -307,28 +348,46 @@ function buildSceneHtml(scene: {
     }
     .copy {
       position: absolute;
-      left: 7.5%;
-      right: 7.5%;
-      bottom: 8%;
-      display: grid;
-      gap: 14px;
+      inset: 0;
       z-index: 2;
+      pointer-events: none;
     }
     .title {
-      font-size: clamp(30px, 3.2vw, 52px);
+      position: absolute;
+      top: ${titleTop}%;
+      left: 50%;
+      width: 88%;
+      transform: translateX(-50%);
+      font-size: ${titleSize}px;
       line-height: 1.08;
       font-weight: 800;
       letter-spacing: 0;
+      text-align: center;
+      white-space: nowrap;
       text-shadow: 0 8px 24px rgba(0, 0, 0, 0.5);
     }
+    .captions {
+      position: absolute;
+      top: ${captionY}%;
+      left: 50%;
+      width: 92%;
+      transform: translate(-50%, -50%);
+      text-align: center;
+    }
     .caption {
-      font-size: clamp(18px, 1.65vw, 30px);
+      position: absolute;
+      top: 0;
+      left: 50%;
+      display: inline-block;
+      max-width: 100%;
+      transform: translateX(-50%);
+      font-size: ${captionSize}px;
       line-height: 1.3;
       color: rgba(240, 247, 248, 0.94);
       color: var(--caption-text);
       text-shadow: 0 6px 18px rgba(0, 0, 0, 0.42);
       text-shadow: 0 6px 18px var(--caption-shadow);
-      white-space: pre-wrap;
+      white-space: nowrap;
     }
     .frame[data-caption-preset="editorial"] .caption {
       padding: 0.42em 0.62em;
@@ -343,6 +402,23 @@ function buildSceneHtml(scene: {
       border-bottom: 3px solid var(--caption-accent);
       background: var(--caption-background);
       font-weight: 800;
+    }
+    .frame[data-scene-template="split-left"] .scene-foreground {
+      inset: 12% 45% 4% 2%;
+      width: 53%;
+      height: 84%;
+      object-position: left bottom;
+    }
+    .frame[data-scene-template="split-right"] .scene-foreground {
+      inset: 12% 2% 4% 45%;
+      width: 53%;
+      height: 84%;
+      object-position: right bottom;
+    }
+    .frame[data-scene-template="lower-third"] .scene-foreground {
+      inset: 18% 8% 20%;
+      width: 84%;
+      height: 62%;
     }
     .meta {
       display: inline-flex;
@@ -364,15 +440,15 @@ function buildSceneHtml(scene: {
   <script nonce="storydream-html-video" src="./${HYPERFRAMES_RUNTIME_FILENAME}"></script>
 </head>
 <body>
-  <div id="${compositionId}" class="frame" data-composition-id="${compositionId}" data-start="0" data-duration="${scene.duration}" data-width="${scene.canvas_w}" data-height="${scene.canvas_h}" data-caption-preset="${scene.captionStyle.preset}" data-caption-animation="${scene.captionStyle.animation}" data-draft-motion="${layout.motion || 'legacy'}" data-draft-frame="${layout.frameEnabled}">
+  <div id="${compositionId}" class="frame" data-composition-id="${compositionId}" data-start="0" data-duration="${scene.duration}" data-width="${scene.canvas_w}" data-height="${scene.canvas_h}" data-caption-preset="${scene.captionStyle.preset}" data-caption-animation="${scene.captionStyle.animation}" data-scene-template="${sceneTemplate}" data-draft-motion="${layout.motion || 'legacy'}" data-draft-frame="${layout.frameEnabled}">
     ${layout.frameEnabled ? '<div class="draft-frame-band draft-frame-header"></div><div class="draft-frame-band draft-frame-footer"></div>' : ''}
     <div class="scene-image-region"><img id="scene-background" class="clip scene-image" data-start="0" data-duration="${scene.duration}" data-track-index="0" src="${imageDataUrl}" alt="${escapeHtml(scene.caption)}" /></div>
     <audio id="scene-narration" class="clip scene-audio" data-start="0" data-duration="${scene.duration}" data-track-index="1" data-volume="1" src="${audioDataUrl}" preload="auto"></audio>
     <div id="scene-veil" class="clip veil" data-start="0" data-duration="${scene.duration}" data-track-index="20"></div>
     ${foregroundMarkup}
     <div id="scene-copy" class="clip copy" data-start="0" data-duration="${scene.duration}" data-track-index="21">
-      <div class="title">${escapeHtml(scene.title)}</div>
-      <div class="caption">${escapeHtml(scene.caption)}</div>
+      ${scene.plan?.titleHidden ? '' : `<div class="title">${escapeHtml(scene.title)}</div>`}
+      <div class="captions">${captionMarkup}</div>
       <div class="meta">${escapeHtml(scene.description)}</div>
     </div>
     <div class="ready-indicator">ready</div>
@@ -381,6 +457,10 @@ function buildSceneHtml(scene: {
     window.__duration = ${scene.duration};
     window.__ready = false;
     window.__timelines = window.__timelines || {};
+    const hyperframesProtocol = ${JSON.stringify(hyperframesProtocol)};
+    function postHyperframesMessage(type, payload = {}) {
+      window.parent.postMessage({ source: 'hf-preview', ...hyperframesProtocol, type, ...payload }, '*');
+    }
     const tl = gsap.timeline({ paused: true });
     ${motionTween}
     tl.fromTo('#scene-veil', { opacity: 0.86 }, { opacity: 0.96, duration: ${scene.duration}, ease: 'none' }, 0);
@@ -395,14 +475,76 @@ function buildSceneHtml(scene: {
     } else if (captionAnimation === 'pop') {
       tl.fromTo('#scene-copy .caption', { opacity: 0.7, scale: 0.92 }, { opacity: 1, scale: 1, duration: ${Math.min(scene.duration, 0.6)}, ease: 'back.out(1.4)' }, 0);
     }
+    ${captionTimeline}
     tl.set({}, {}, ${scene.duration});
     window.__tl = tl;
     window.__timelines['${compositionId}'] = tl;
     window.__audioPath = ${JSON.stringify(scene.audioPath)};
+    function fitScene() {
+      if (typeof document === 'undefined') return;
+      const frame = document.querySelector('.frame');
+      if (!frame) return;
+      const scale = Math.min(window.innerWidth / ${scene.canvas_w}, window.innerHeight / ${scene.canvas_h});
+      frame.style.transform = 'scale(' + scale + ')';
+    }
+    function fitCaps() {
+      if (typeof document === 'undefined') return;
+      const canvas = document.createElement('canvas');
+      const context = canvas.getContext('2d');
+      if (!context) return;
+      for (const caption of document.querySelectorAll('.caption')) {
+        const computed = getComputedStyle(caption);
+        let size = parseFloat(computed.fontSize) || ${captionSize};
+        context.font = computed.fontWeight + ' ' + size + 'px ' + computed.fontFamily;
+        const maximum = ${scene.canvas_w} * 0.84;
+        const measured = context.measureText(caption.textContent || '').width;
+        if (measured > maximum) {
+          size = Math.max(14, size * maximum / measured);
+          caption.style.fontSize = size + 'px';
+        }
+      }
+    }
+    function narrationAudio() {
+      return typeof document === 'undefined' ? null : document.querySelector('#scene-narration');
+    }
+    function postTick() {
+      const time = typeof tl.time === 'function' ? Math.min(tl.time(), window.__duration) : 0;
+      window.parent.postMessage({ type: 'hvtick', time, duration: window.__duration }, '*');
+    }
+    if (typeof tl.eventCallback === 'function') {
+      tl.eventCallback('onUpdate', postTick);
+      tl.eventCallback('onComplete', postTick);
+    }
+    window.addEventListener('message', (event) => {
+      const message = event && event.data;
+      if (!message || typeof message.type !== 'string') return;
+      const audio = narrationAudio();
+      if (message.type === 'hvplay') {
+        tl.play();
+        if (audio) { audio.currentTime = typeof tl.time === 'function' ? tl.time() : 0; void audio.play().catch(() => undefined); }
+        postTick();
+      } else if (message.type === 'hvpause') {
+        tl.pause();
+        audio?.pause();
+        postTick();
+      } else if (message.type === 'hvseek') {
+        const time = Math.max(0, Math.min(window.__duration, Number(message.time) || 0));
+        tl.seek(time, false);
+        if (audio) audio.currentTime = time;
+        window.parent.postMessage({ type: 'hvtick', time, duration: window.__duration }, '*');
+      } else if (message.type === 'hvrestart') {
+        tl.seek(0, false).play();
+        if (audio) { audio.currentTime = 0; void audio.play().catch(() => undefined); }
+        postTick();
+      }
+    });
     window.addEventListener('DOMContentLoaded', () => {
       window.__ready = true;
       window.__tl.seek(0, false);
       window.__tl.pause();
+      fitScene();
+      fitCaps();
+      window.addEventListener('resize', fitScene);
       window.parent.postMessage({
         type: 'storydream:hyperframes-runtime-ready',
         compositionId: '${compositionId}',
@@ -411,6 +553,14 @@ function buildSceneHtml(scene: {
         timelineKeys: Object.keys(window.__timelines),
         timelineDuration: window.__tl.duration(),
       }, '*');
+      postHyperframesMessage('ready');
+      postHyperframesMessage('timeline', {
+        durationInFrames: Math.max(1, Math.round(window.__duration * ${scene.fps})),
+        durationSeconds: window.__duration,
+        compositionWidth: ${scene.canvas_w},
+        compositionHeight: ${scene.canvas_h},
+        scenes: [{ id: '${compositionId}', start: 0, duration: window.__duration }],
+      });
     });
   </script>
 </body>

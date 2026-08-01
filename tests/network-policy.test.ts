@@ -6,6 +6,7 @@ import {
   createPinnedLookup,
   fetchWithNetworkPolicy,
   getNetworkPolicy,
+  NetworkPolicyError,
   readTextBounded,
   type NetworkAddress,
   type NetworkLookup,
@@ -87,6 +88,27 @@ describe('purpose-bound network policy', () => {
     const pinned = createPinnedLookup('https://metadata-attacker.example/', publicPolicy, lookup);
 
     await expect(pinned.resolve()).rejects.toThrow(/network|address|target|blocked|禁止/i);
+  });
+
+  it('accepts proxy synthetic DNS for hostnames while still rejecting literal benchmark addresses', async () => {
+    const lookup: NetworkLookup = async () => [{ address: '198.18.0.42', family: 4 }];
+    const pinned = createPinnedLookup('https://search.example/', publicPolicy, lookup);
+
+    await expect(pinned.resolve()).resolves.toEqual([{ address: '198.18.0.42', family: 4 }]);
+    expect(() => assertNetworkUrl('https://198.18.0.42/', 'public-research')).toThrow(/address|target|blocked|禁止/i);
+  });
+
+  it('unwraps a network policy cause hidden by fetch', async () => {
+    const cause = new NetworkPolicyError(
+      'NETWORK_ADDRESS_BLOCKED',
+      'Reserved network target is blocked.',
+    );
+    const wrapped = new TypeError('fetch failed', { cause });
+
+    await expect(fetchWithNetworkPolicy('https://public.example/', {
+      purpose: 'public-research',
+      fetchImpl: async () => { throw wrapped; },
+    })).rejects.toMatchObject({ code: 'NETWORK_ADDRESS_BLOCKED', message: cause.message });
   });
 
   it('pins the first validated DNS answer for every lookup in one request', async () => {

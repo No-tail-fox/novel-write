@@ -10,6 +10,7 @@ import {
   type HtmlVideoCapturedScene,
 } from '@shared/html-video';
 import {
+  applyHtmlVideoSceneChanges,
   createHtmlVideoPipelineData,
   createHtmlVideoTaskInput,
   htmlVideoSteps,
@@ -424,6 +425,68 @@ describe('HTML video pipeline V2 contract', () => {
       voices: completed.voices,
       compositions: completed.compositions,
     });
+  });
+
+  it('preserves Storybound scene visibility and layout overrides', () => {
+    const pipeline = createHtmlVideoPipelineData('场景。');
+    pipeline.scenes[0] = {
+      ...pipeline.scenes[0],
+      titleHidden: true,
+      foregroundHidden: true,
+      hiddenElementSlots: [0],
+      titleScale: 1.15,
+      titleTopOverride: 9,
+      captionScale: 0.9,
+      captionYOverride: 82,
+    };
+
+    expect(parseHtmlVideoPipelineData(JSON.stringify(pipeline)).scenes[0]).toMatchObject({
+      titleHidden: true,
+      foregroundHidden: true,
+      hiddenElementSlots: [0],
+      titleScale: 1.15,
+      titleTopOverride: 9,
+      captionScale: 0.9,
+      captionYOverride: 82,
+    });
+  });
+
+  it('rejects invalid Storybound scene override values', () => {
+    const invalidBoolean = createHtmlVideoPipelineData('场景。');
+    (invalidBoolean.scenes[0] as unknown as Record<string, unknown>).titleHidden = 'yes';
+    expect(() => parseHtmlVideoPipelineData(JSON.stringify(invalidBoolean))).toThrow(/titleHidden|boolean/i);
+
+    const duplicateSlots = createHtmlVideoPipelineData('场景。');
+    duplicateSlots.scenes[0].hiddenElementSlots = [0, 0];
+    expect(() => parseHtmlVideoPipelineData(JSON.stringify(duplicateSlots))).toThrow(/hiddenElementSlots|duplicate/i);
+
+    const invalidScale = createHtmlVideoPipelineData('场景。');
+    invalidScale.scenes[0].captionScale = 4;
+    expect(() => parseHtmlVideoPipelineData(JSON.stringify(invalidScale))).toThrow(/captionScale|maximum|range/i);
+  });
+
+  it('applies bounded Storybound scene changes without clearing existing media', () => {
+    const pipeline = createHtmlVideoPipelineData('场景。');
+    pipeline.assets = [{ sceneIndex: 1, kind: 'bg', slot: 0, src: 'D:/bg.png' }];
+    pipeline.voices = [validVoice(1)];
+    pipeline.compositions = [validComposition(1)];
+    const next = applyHtmlVideoSceneChanges(pipeline, 1, [
+      { field: 'title', value: '新标题' },
+      { field: 'captions', value: ['字幕一', '字幕二'] },
+      { field: 'sceneTemplate', value: 'split-right' },
+      { field: 'elementHidden', slot: 0, value: true },
+    ]);
+
+    expect(next.scenes[0]).toMatchObject({
+      title: '新标题',
+      captions: ['字幕一', '字幕二'],
+      sceneTemplate: 'split-right',
+      hiddenElementSlots: [0],
+    });
+    expect(next.assets).toEqual(pipeline.assets);
+    expect(next.voices).toEqual(pipeline.voices);
+    expect(next.compositions).toEqual(pipeline.compositions);
+    expect(next.revision).toBe(pipeline.revision + 1);
   });
 
   it('bounds persisted warnings, legacy paths, cover lists, composition captions, and caption colors', () => {
@@ -844,7 +907,69 @@ describe('HTML video composition contract', () => {
         timelineKeys: ['storydream-scene-1'],
         timelineDuration: 1.2,
       }),
+      expect.objectContaining({
+        source: 'hf-preview',
+        type: 'ready',
+        protocolVersion: 1,
+      }),
+      expect.objectContaining({
+        source: 'hf-preview',
+        type: 'timeline',
+        protocolVersion: 1,
+        durationInFrames: 36,
+        durationSeconds: 1.2,
+        compositionWidth: 1080,
+        compositionHeight: 1920,
+        scenes: [{ id: 'storydream-scene-1', start: 0, duration: 1.2 }],
+      }),
     ]);
+  });
+
+  it('uses Storybound scene plans for timed captions, visibility and iframe transport', () => {
+    const scenePlans: HtmlVideoScenePlan[] = artifact.scenes.map((scene, index) => ({
+      index: scene.id,
+      narration: scene.cap,
+      title: index === 0 ? '场景标题' : '第二场景',
+      titleHidden: index === 0,
+      captions: index === 0 ? ['第一条字幕', '第二条字幕'] : [scene.cap],
+      sceneTemplate: index === 0 ? 'split-left' : 'center-focus',
+      foregroundHidden: index === 0,
+      hiddenElementSlots: [],
+      titleScale: 1.1,
+      titleTopOverride: 12,
+      captionScale: 0.9,
+      captionYOverride: 84,
+      background: { prompt: scene.descPrompt },
+      elements: index === 0 ? [{ slot: 0, prompt: '透明前景' }] : [],
+    }));
+    const input = buildHtmlVideoExportInput({
+      workDir: 'D:/tasks/html-video-storybound',
+      outputPath: 'D:/tasks/html-video-storybound/final.mp4',
+      title: '任务标题',
+      artifact,
+      scenePlans,
+      generatedImages: artifact.scenes.map((scene) => ({ sceneId: scene.id, path: `D:/media/${scene.id}.png` })),
+      foregroundImages: [{ sceneId: 1, path: 'D:/media/1-fg.png', slot: 0 }],
+      narrationAudio: artifact.scenes.map((scene) => ({ sceneId: scene.id, path: `D:/media/${scene.id}.wav` })),
+      fps: 30,
+      canvas_w: 1080,
+      canvas_h: 1920,
+    });
+
+    const html = input.scenes[0].html;
+    expect(input.scenes[0]).toMatchObject({ title: '场景标题', captions: ['第一条字幕', '第二条字幕'] });
+    expect(html).not.toContain('class="title">场景标题</div>');
+    expect(html).not.toContain('1-fg.png');
+    expect(html).toContain('data-scene-template="split-left"');
+    expect(html).toContain('第一条字幕');
+    expect(html).toContain('第二条字幕');
+    expect(html).toContain('type: \'hvtick\'');
+    expect(html).toContain("message.type === 'hvplay'");
+    expect(html).toContain("message.type === 'hvpause'");
+    expect(html).toContain("message.type === 'hvseek'");
+    expect(html).toContain("message.type === 'hvrestart'");
+    expect(html).toContain('fitScene');
+    expect(html).toContain('measureText');
   });
 
   it('applies draft frame layout and camera motion to generated HyperFrames scenes', () => {
@@ -900,6 +1025,9 @@ describe('HTML video composition contract', () => {
     expect(html).toContain('scene-audio');
     expect(html).toContain('src="./hyperframe.runtime.gsap.iife.js"');
     expect(html).not.toContain('requestAnimationFrame');
+    expect(html).toContain("tl.eventCallback('onUpdate', postTick)");
+    expect(html).toContain("tl.eventCallback('onComplete', postTick)");
+    expect(html).toContain("message.type === 'hvplay'");
     runtime.window.__tl.play();
     runtime.window.__tl.seek(0.3, false);
     runtime.window.__tl.pause();

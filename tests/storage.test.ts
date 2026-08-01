@@ -391,6 +391,35 @@ describe('file database', () => {
     }
   });
 
+  it('updates the selected draft template without changing generated-media settings', async () => {
+    const dir = await mkdtemp(join(tmpdir(), 'storydream-task-template-switch-'));
+    const file = join(dir, 'app.db');
+    try {
+      const db = await FileDatabase.open(file);
+      const task = await db.createTask({
+        inputText: '切换草稿模板',
+        templateId: 'default-portrait-9-16',
+        ratio: '9:16',
+      });
+      await db.updateTask(task.id, { templateId: 'builtin-landscape-16-9' });
+      const updated = await db.getTaskDetail(task.id);
+      expect(updated).toMatchObject({
+        templateId: 'builtin-landscape-16-9',
+        ratio: '9:16',
+      });
+      await db.close();
+
+      const reopened = await FileDatabase.open(file);
+      await expect(reopened.getTaskDetail(task.id)).resolves.toMatchObject({
+        templateId: 'builtin-landscape-16-9',
+        ratio: '9:16',
+      });
+      await reopened.close();
+    } finally {
+      await rm(dir, { recursive: true, force: true });
+    }
+  });
+
   it('atomically persists the HTML video pipeline step and versioned snapshot', async () => {
     const dir = await mkdtemp(join(tmpdir(), 'storydream-db-html-video-checkpoint-'));
     const file = join(dir, 'app.db');
@@ -1247,6 +1276,31 @@ describe('file database', () => {
       });
       await reopened.close();
     } finally {
+      await rm(dir, { recursive: true, force: true });
+    }
+  });
+
+  it('deletes custom draft templates while protecting system defaults', async () => {
+    const dir = await mkdtemp(join(tmpdir(), 'storybound-db-delete-draft-template-'));
+    const db = await FileDatabase.open(join(dir, 'app.db'));
+    try {
+      const builtin = (await db.getState()).draftTemplates.find((template) => template.isDefault);
+      if (!builtin) throw new Error('Built-in draft template fixture is missing.');
+      const custom = {
+        ...structuredClone(builtin),
+        id: 'custom-delete-me',
+        name: 'Custom delete me',
+        isDefault: false,
+      };
+      await db.upsertDraftTemplate(custom);
+
+      await expect(db.deleteDraftTemplate(builtin.id)).rejects.toThrow('DRAFT_TEMPLATE_BUILTIN_DELETE_FORBIDDEN');
+      expect(await db.deleteDraftTemplate(custom.id)).toBe(true);
+      expect(await db.deleteDraftTemplate(custom.id)).toBe(false);
+      expect(await db.getDraftTemplateDetail(custom.id)).toBeNull();
+      expect(await db.getDraftTemplateDetail(builtin.id)).not.toBeNull();
+    } finally {
+      await db.close();
       await rm(dir, { recursive: true, force: true });
     }
   });

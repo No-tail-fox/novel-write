@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { defaultConfig } from '@shared/config';
 import type { AppConfig, ImageProviderProfile, TtsProviderProfile } from '@shared/types';
-import { hasPendingLlmSecretChange } from '../src/features/settings/settings-controls';
+import { configWithCredentialStatus, hasPendingLlmSecretChange } from '../src/features/settings/settings-controls';
 
 async function loadConfigSecrets() {
   return import('../src/shared/config-secrets').catch(() => null);
@@ -87,6 +87,24 @@ describe('selected LLM secret test guard', () => {
     expect(hasPendingLlmSecretChange({ 'llm/profile-a/apiKey': null }, 'profile-a')).toBe(true);
     expect(hasPendingLlmSecretChange({ 'llm/profile-b/apiKey': 'other-key' }, 'profile-a')).toBe(false);
     expect(hasPendingLlmSecretChange({}, 'profile-a')).toBe(false);
+  });
+});
+
+describe('settings credential status projection', () => {
+  it('uses the encrypted credential status for validation without exposing credential values', () => {
+    const config = structuredClone(defaultConfig);
+    config.tts.provider = 'volcengine';
+    config.tts.volcengine.apiVersion = 'v3';
+    config.tts.volcengine.resourceId = 'seed-tts-2.0';
+    config.tts.volcengine.speaker = 'zh_male_m191_uranus_bigtts';
+
+    const projected = configWithCredentialStatus(config, {
+      'tts/default-tts/volcengine/apiKey': true,
+    });
+
+    expect(projected.tts.volcengine.apiKey).toBe('configured');
+    expect(projected.ttsProfiles[0]?.volcengine?.apiKey).toBe('configured');
+    expect(config.tts.volcengine.apiKey).toBe('');
   });
 });
 

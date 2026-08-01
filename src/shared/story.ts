@@ -70,8 +70,8 @@ export function rewriteSourceText(input: string): string {
 export function buildCoverMetadata(input: string): CoverMetadata {
   if (isWuZetian(input)) {
     return {
-      title: '武则天',
-      subtitle: ['她被深宫遗忘十二年', '却走成唯一女皇'],
+      title: '被遗忘十二年后称帝',
+      subtitle: ['十四岁入宫无人问', '最终走成唯一女皇'],
       summary: '十四岁入宫，十二年没有升迁。武则天从深宫才人走向皇后、二圣与武周，她的翻身从来不是偶然。',
       tags: ['#人物故事', '#武则天', '#唐朝', '#女皇', '#历史', '#逆袭', '#传记', '#短视频文案'],
       comments: [
@@ -86,8 +86,8 @@ export function buildCoverMetadata(input: string): CoverMetadata {
 
   const first = splitSentences(input)[0] ?? '人物故事';
   return {
-    title: first.replace(/[。！？!?；;].*$/u, '').slice(0, 12) || '人物故事',
-    subtitle: ['命运转折', '故事成片'],
+    title: first.replace(/[。！？!?；;].*$/u, '').slice(0, 14) || '命运如何被改写',
+    subtitle: ['一个决定改变余生', '结局远比想象意外'],
     summary: `${first.slice(0, 58)}${first.length > 58 ? '...' : ''}`,
     tags: ['#人物故事', '#短视频', '#故事', '#转折'],
     comments: ['这个故事很有画面感', '结尾有点打动我', '想看完整版本'],
@@ -155,21 +155,277 @@ function srtTime(ms: number): string {
   return `${String(hours).padStart(2, '0')}:${String(minutes).padStart(2, '0')}:${String(seconds).padStart(2, '0')},${String(millis).padStart(3, '0')}`;
 }
 
-export function buildSubtitleTrack(scenes: Pick<StoryboardScene, 'id' | 'cap' | 'durationMs'>[]): SubtitleTrack {
+const defaultCaptionMaxCharsPerLine = 12;
+const minimumCaptionMaxCharsPerLine = 6;
+const maximumCaptionMaxCharsPerLine = 24;
+const storyboardSceneMaxCharacters = 55;
+
+interface CaptionToken {
+  text: string;
+  pauseAfter: number;
+}
+
+export interface SubtitleTrackOptions {
+  maxCharsPerLine?: number;
+}
+
+export function splitCaptionLines(input: string, maxCharsPerLine = defaultCaptionMaxCharsPerLine): string[] {
+  const maxChars = clampCaptionMaxChars(maxCharsPerLine);
+  const tokens = mergeProtectedCaptionTokens(tokenizeCaption(input));
+  if (tokens.length === 0) return [];
+
+  const lines = chooseCaptionLines(tokens, maxChars);
+  const expected = normalizeCaptionComparableText(input);
+  const actual = normalizeCaptionComparableText(lines.join(''));
+  if (actual === expected) return lines;
+  return splitCaptionFallback(expected, maxChars);
+}
+
+export function normalizeStoryboardSceneLengths(
+  scenes: StoryboardScene[],
+  maxCharacters = storyboardSceneMaxCharacters,
+): StoryboardScene[] {
+  const normalizedMax = Math.max(20, Math.round(maxCharacters));
+  return scenes
+    .flatMap((scene) => {
+      const caps = splitStoryboardCap(scene.cap, normalizedMax);
+      if (caps.length === 1 && caps[0] === scene.cap.trim()) return [{ ...scene, cap: caps[0] }];
+      return caps.map((cap) => ({
+        ...scene,
+        cap,
+        descPrompt: cap,
+        durationMs: estimateStorySceneDurationMs(cap),
+      }));
+    })
+    .map((scene, index) => ({ ...scene, id: index + 1 }));
+}
+
+export function splitStoryboardCap(input: string, maxCharacters = storyboardSceneMaxCharacters): string[] {
+  const maxChars = Math.max(20, Math.round(maxCharacters));
+  const pending = input.trim();
+  if (!pending || visibleTextLength(pending) <= maxChars) return pending ? [pending] : [];
+
+  const pieces: string[] = [];
+  let remainder = pending;
+  while (visibleTextLength(remainder) > maxChars) {
+    const chars = Array.from(remainder);
+    const totalLength = visibleTextLength(remainder);
+    const preferred = totalLength - 45 < 15 ? Math.max(20, totalLength - 15) : 45;
+    const breakIndex = findStoryboardBreakIndex(chars, maxChars, preferred);
+    const piece = chars.slice(0, breakIndex).join('').trim();
+    const next = chars.slice(breakIndex).join('').trim();
+    if (!piece || !next) break;
+    pieces.push(piece);
+    remainder = next;
+  }
+  if (remainder.trim()) pieces.push(remainder.trim());
+
+  if (pieces.length > 1) {
+    const tail = pieces[pieces.length - 1];
+    const previous = pieces[pieces.length - 2];
+    if (visibleTextLength(tail) < 15 && visibleTextLength(previous + tail) <= maxChars) {
+      pieces.splice(pieces.length - 2, 2, previous + tail);
+    }
+  }
+  return pieces;
+}
+
+export function buildSubtitleTrack(
+  scenes: Pick<StoryboardScene, 'id' | 'cap' | 'durationMs'>[],
+  options: SubtitleTrackOptions = {},
+): SubtitleTrack {
   let cursor = 0;
-  const cues = scenes.map((scene, index) => {
-    const startMs = cursor;
-    const endMs = cursor + scene.durationMs;
-    cursor = endMs;
-    return {
-      index: index + 1,
-      startMs,
-      endMs,
-      text: scene.cap,
-    };
-  });
+  const cues: SubtitleTrack['cues'] = [];
+  const maxCharsPerLine = clampCaptionMaxChars(options.maxCharsPerLine ?? defaultCaptionMaxCharsPerLine);
+  for (const scene of scenes) {
+    const sceneStartMs = cursor;
+    const sceneDurationMs = Math.max(1, Math.round(Number(scene.durationMs) || 0));
+    const sceneEndMs = sceneStartMs + sceneDurationMs;
+    const lines = splitCaptionLines(scene.cap, maxCharsPerLine);
+    const durations = distributeSubtitleDurations(sceneDurationMs, lines);
+    let cueCursor = sceneStartMs;
+    lines.forEach((text, lineIndex) => {
+      const endMs = lineIndex === lines.length - 1 ? sceneEndMs : cueCursor + durations[lineIndex];
+      cues.push({
+        index: cues.length + 1,
+        sceneId: scene.id,
+        startMs: cueCursor,
+        endMs,
+        text,
+      });
+      cueCursor = endMs;
+    });
+    cursor = sceneEndMs;
+  }
   const srt = cues.map((cue) => `${cue.index}\n${srtTime(cue.startMs)} --> ${srtTime(cue.endMs)}\n${cue.text}\n`).join('\n');
   return { cues, srt };
+}
+
+function tokenizeCaption(input: string): CaptionToken[] {
+  const segmenter = new Intl.Segmenter('zh-CN', { granularity: 'word' });
+  const tokens: CaptionToken[] = [];
+  for (const item of segmenter.segment(input.replace(/\r/gu, ''))) {
+    const raw = item.segment;
+    const clean = raw.replace(/[\p{P}\s]+/gu, '');
+    if (clean) {
+      tokens.push({ text: clean, pauseAfter: 0 });
+      continue;
+    }
+    if (tokens.length > 0) {
+      tokens[tokens.length - 1].pauseAfter = Math.max(tokens[tokens.length - 1].pauseAfter, captionPauseStrength(raw));
+    }
+  }
+  return tokens;
+}
+
+function mergeProtectedCaptionTokens(tokens: CaptionToken[]): CaptionToken[] {
+  const merged: CaptionToken[] = [];
+  for (let index = 0; index < tokens.length; index += 1) {
+    const current = tokens[index];
+    const next = tokens[index + 1];
+    const afterNext = tokens[index + 2];
+    if (/^(?:公元|西元)$/u.test(current.text) && next && /^\d+(?:\.\d+)?$/u.test(next.text) && afterNext && isDateOrCounterSuffix(afterNext.text)) {
+      merged.push({ text: current.text + next.text + afterNext.text, pauseAfter: afterNext.pauseAfter });
+      index += 2;
+      continue;
+    }
+    if (/^第$/u.test(current.text) && next && /^[\d一二三四五六七八九十百千万]+$/u.test(next.text) && afterNext && isDateOrCounterSuffix(afterNext.text)) {
+      merged.push({ text: current.text + next.text + afterNext.text, pauseAfter: afterNext.pauseAfter });
+      index += 2;
+      continue;
+    }
+    if (/^\d+(?:\.\d+)?$/u.test(current.text) && next && isDateOrCounterSuffix(next.text)) {
+      merged.push({ text: current.text + next.text, pauseAfter: next.pauseAfter });
+      index += 1;
+      continue;
+    }
+    merged.push(current);
+  }
+  return merged;
+}
+
+function chooseCaptionLines(tokens: CaptionToken[], maxChars: number): string[] {
+  interface Candidate {
+    lines: string[];
+    penalty: number;
+  }
+  const memo = new Map<number, Candidate>();
+  const solve = (start: number): Candidate => {
+    if (start >= tokens.length) return { lines: [], penalty: 0 };
+    const cached = memo.get(start);
+    if (cached) return cached;
+    const candidates: Candidate[] = [];
+    const collect = (preventLeadingParticle: boolean) => {
+      let text = '';
+      for (let end = start; end < tokens.length; end += 1) {
+        text += tokens[end].text;
+        const length = visibleTextLength(text);
+        if (length > maxChars && end > start) break;
+        if (preventLeadingParticle && end + 1 < tokens.length && /^的/u.test(tokens[end + 1].text)) continue;
+        const tail = solve(end + 1);
+        const shortfall = Math.max(0, maxChars - 2 - length);
+        candidates.push({
+          lines: [text, ...tail.lines],
+          penalty: tail.penalty + shortfall * shortfall + Math.abs(maxChars - length) * 0.2 - tokens[end].pauseAfter * 4,
+        });
+        if (length > maxChars) break;
+      }
+    };
+    collect(true);
+    if (candidates.length === 0) collect(false);
+    candidates.sort((left, right) => left.lines.length - right.lines.length || left.penalty - right.penalty);
+    const selected = candidates[0] ?? { lines: [tokens[start].text], penalty: 0 };
+    memo.set(start, selected);
+    return selected;
+  };
+  return solve(0).lines;
+}
+
+function splitCaptionFallback(input: string, maxChars: number): string[] {
+  const chars = Array.from(input);
+  const lines: string[] = [];
+  for (let index = 0; index < chars.length; index += maxChars) {
+    lines.push(chars.slice(index, index + maxChars).join(''));
+  }
+  for (let index = 1; index < lines.length; index += 1) {
+    if (!lines[index].startsWith('的') || lines[index - 1].length === 0) continue;
+    const previousChars = Array.from(lines[index - 1]);
+    const prefix = previousChars.pop();
+    if (!prefix) continue;
+    lines[index - 1] = previousChars.join('');
+    lines[index] = prefix + lines[index];
+  }
+  return lines.filter(Boolean);
+}
+
+function distributeSubtitleDurations(totalDurationMs: number, lines: string[]): number[] {
+  if (lines.length === 0) return [];
+  if (lines.length === 1) return [totalDurationMs];
+  const minimumDurationMs = 600;
+  const weights = lines.map((line) => Math.max(1, visibleTextLength(line)));
+  const weightTotal = weights.reduce((sum, weight) => sum + weight, 0);
+  const reserve = totalDurationMs >= minimumDurationMs * lines.length ? minimumDurationMs : 0;
+  const distributable = totalDurationMs - reserve * lines.length;
+  const durations = weights.map((weight) => reserve + Math.max(1, Math.floor(distributable * weight / weightTotal)));
+  const delta = totalDurationMs - durations.reduce((sum, duration) => sum + duration, 0);
+  durations[durations.length - 1] += delta;
+  return durations;
+}
+
+function findStoryboardBreakIndex(chars: string[], maxChars: number, preferred: number): number {
+  const candidates: Array<{ index: number; visible: number; score: number }> = [];
+  let visible = 0;
+  for (let index = 0; index < chars.length; index += 1) {
+    if (!/\s/u.test(chars[index])) visible += 1;
+    if (visible > maxChars) break;
+    const strength = storyboardBoundaryStrength(chars[index]);
+    if (visible >= 20 && strength > 0) {
+      candidates.push({ index: index + 1, visible, score: strength * 100 - Math.abs(preferred - visible) });
+    }
+  }
+  candidates.sort((left, right) => right.score - left.score || right.visible - left.visible);
+  if (candidates.length > 0) return candidates[0].index;
+
+  visible = 0;
+  for (let index = 0; index < chars.length; index += 1) {
+    if (!/\s/u.test(chars[index])) visible += 1;
+    if (visible >= Math.min(preferred, maxChars)) return index + 1;
+  }
+  return Math.min(chars.length, maxChars);
+}
+
+function storyboardBoundaryStrength(char: string): number {
+  if (/[。！？!?；;]/u.test(char)) return 3;
+  if (/[，,、：:]/u.test(char)) return 2;
+  if (/[—…]/u.test(char)) return 1;
+  return 0;
+}
+
+function captionPauseStrength(value: string): number {
+  if (/[。！？!?；;\n]/u.test(value)) return 3;
+  if (/[，,、：:]/u.test(value)) return 2;
+  return /[\p{P}]/u.test(value) ? 1 : 0;
+}
+
+function isDateOrCounterSuffix(value: string): boolean {
+  return /^(?:年|月|日|号|岁|时|分|秒|点|届|集|章|期|季|代|世纪)$/u.test(value);
+}
+
+function clampCaptionMaxChars(value: number): number {
+  const parsed = Number.isFinite(value) ? Math.round(value) : defaultCaptionMaxCharsPerLine;
+  return Math.min(maximumCaptionMaxCharsPerLine, Math.max(minimumCaptionMaxCharsPerLine, parsed));
+}
+
+function normalizeCaptionComparableText(value: string): string {
+  return value.replace(/[\p{P}\s]+/gu, '');
+}
+
+function visibleTextLength(value: string): number {
+  return Array.from(value.replace(/\s+/gu, '')).length;
+}
+
+function estimateStorySceneDurationMs(cap: string): number {
+  return Math.max(1200, Math.round((visibleTextLength(cap) / 5) * 1000));
 }
 
 export async function buildStoryPackage(

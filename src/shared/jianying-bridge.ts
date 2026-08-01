@@ -108,7 +108,7 @@ export interface PyJianYingBridgeInput {
       border: DraftTextBorder;
     };
   };
-  scenes?: Array<{ sceneId: number; startUs: number; durationUs: number; text: string }>;
+  scenes?: Array<{ sceneId: number; startUs: number; durationUs: number; text: string; captions?: string[] }>;
   images: Array<{ sceneId: number; path: string }>;
   coverImagePath?: string;
   narration: Array<{ sceneId: number; path: string; speaker?: 'A' | 'B'; turnIndex?: number; text?: string }>;
@@ -593,21 +593,23 @@ def resolve_caption_chars_per_line(caption, canvas):
     font_size = clamp_number(caption.get("fontSize"), 12, 1, 200)
     letter_spacing = clamp_number(caption.get("letterSpacing"), 0, 0, 100)
     estimated_char_width = max(1.0, font_size * 3.2 + letter_spacing)
-    return int(clamp_number(round((canvas_width * text_width) / estimated_char_width), 12, 4, 80))
+    width_limit = int(clamp_number(round((canvas_width * text_width) / estimated_char_width), 12, 6, 24))
+    configured_limit = int(clamp_number(caption.get("maxCharsPerLine"), 12, 6, 24))
+    return min(width_limit, configured_limit)
 
 
 def split_caption_text(text, chars_per_line):
     text = str(text or "").strip()
     if not text:
         return []
-    line_chars = int(clamp_number(chars_per_line, 18, 1, 80))
-    max_chars = max(1, line_chars * 2)
-    min_chars = min(line_chars, max_chars)
+    line_chars = int(clamp_number(chars_per_line, 12, 6, 24))
+    max_chars = line_chars
+    min_chars = max(1, line_chars - 2)
     punctuation = set("，。！？；、,.!?;:")
     cues = []
 
     def push_piece(piece):
-        piece = str(piece or "").strip()
+        piece = re.sub(r"[，。！？；、：,.!?;:]", "", str(piece or "")).strip()
         if not piece:
             return
         while len(piece) > max_chars:
@@ -656,6 +658,11 @@ def split_caption_text(text, chars_per_line):
             balanced[-1] = balanced[-1] + cue
         else:
             balanced.append(cue)
+    for index in range(1, len(balanced)):
+        if balanced[index].startswith("的") and balanced[index - 1]:
+            prefix = balanced[index - 1][-1]
+            balanced[index - 1] = balanced[index - 1][:-1]
+            balanced[index] = prefix + balanced[index]
     return balanced
 
 
@@ -688,7 +695,8 @@ def expand_timed_subtitles(timeline, caption_config=None, canvas_config=None):
     expanded = []
     chars_per_line = resolve_caption_chars_per_line(caption_config, canvas_config)
     for item in timeline:
-        cue_texts = split_caption_text(item.get("text"), chars_per_line)
+        supplied_captions = [str(text or "").strip() for text in (item.get("captions") or []) if str(text or "").strip()]
+        cue_texts = [piece for text in supplied_captions for piece in split_caption_text(text, chars_per_line)] or split_caption_text(item.get("text"), chars_per_line)
         if not cue_texts:
             continue
         durations = distribute_subtitle_durations(int(item["durationUs"]), cue_texts)
@@ -858,6 +866,7 @@ def main():
             "durationUs": scene_duration,
             "audioDurationUs": audio_duration,
             "text": scene.get("text", ""),
+            "captions": scene.get("captions") or [],
         })
         cursor += scene_duration
     total_duration = max(cursor, int(payload.get("totalDurationUs") or 0))

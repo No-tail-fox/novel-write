@@ -125,6 +125,7 @@ describe('HTML video caption consumers', () => {
     expect(html).toContain('http-equiv="Content-Security-Policy"');
     expect(html).toContain("script-src 'nonce-storydream-html-video'");
     expect(html).toContain("style-src 'nonce-storydream-html-video'");
+    expect(html).toContain("style-src-attr 'unsafe-inline'");
     expect(html).toContain('<style nonce="storydream-html-video">');
     expect(html).toContain('<script nonce="storydream-html-video">');
     expect(html).not.toContain("'unsafe-eval'");

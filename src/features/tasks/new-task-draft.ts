@@ -8,6 +8,7 @@ import type {
   RewriteIntensity,
   TaskMode,
   TaskVideoForm,
+  WebSearchProvider,
 } from '../../shared/types';
 import type { RuntimeTtsProvider } from '../../shared/tts-voices';
 import type { OrdinaryCoverMode } from './task-control-manifest';
@@ -24,6 +25,7 @@ export interface NewTaskDraftValues {
   mode?: TaskMode;
   aiKeyword?: string;
   aiSources?: string[];
+  webSearchProviders?: WebSearchProvider[];
   extraRequirements?: string;
   track?: string;
   style?: string;
