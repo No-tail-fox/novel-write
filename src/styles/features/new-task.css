@@ -168,6 +168,24 @@
   align-items: start;
 }
 
+.new-task-quality-override {
+  min-height: 72px;
+  display: grid;
+  align-content: start;
+  gap: 6px;
+}
+
+.new-task-quality-override .draft-toggle-row {
+  margin: 0;
+  font-size: 12px;
+}
+
+.new-task-quality-override .hint-text {
+  min-height: 30px;
+  display: flex;
+  align-items: center;
+}
+
 .new-task-borrow-toggle {
   min-height: 38px;
   margin: 0;

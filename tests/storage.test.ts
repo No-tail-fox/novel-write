@@ -218,6 +218,7 @@ describe('file database', () => {
         outroCta: '想看{主角}，去橱窗找这本书。',
         lockIntroSentences: 3,
         autoBorrowImage: true,
+        imageQuality: 'low',
       });
 
       const state = await db.getState();
@@ -230,6 +231,7 @@ describe('file database', () => {
         outroCta: '想看{主角}，去橱窗找这本书。',
         lockIntroSentences: 3,
         autoBorrowImage: true,
+        imageQuality: 'low',
       });
       const defaultTask = await db.createTask({ inputText: '默认严格失败' });
       expect(defaultTask.autoBorrowImage).toBe(false);
@@ -787,6 +789,7 @@ describe('file database', () => {
         status: 'generated',
         resolution: '2K',
         smartMode: 'podcast-cover',
+        quality: 'high',
         referenceImagePaths: ['D:/refs/a.png', 'D:/refs/b.png'],
         upstreamTaskId: 'task-upstream',
         finishedAt: '2026-06-16T00:00:00.000Z',
@@ -798,6 +801,7 @@ describe('file database', () => {
       expect(state.imageLabRecords[0]).toMatchObject({
         id: record.id,
         smartMode: 'podcast-cover',
+        quality: 'high',
         referenceImagePaths: ['D:/refs/a.png', 'D:/refs/b.png'],
       });
       await reopened.close();
@@ -805,8 +809,8 @@ describe('file database', () => {
       const SQL = await initSqlJs();
       const raw = await readFile(file);
       const sqlite = new SQL.Database(raw);
-      const labRows = sqlite.exec('SELECT smart_mode, reference_image_paths_json FROM image_lab_records WHERE id = ?', [record.id])[0]?.values ?? [];
-      expect(labRows[0]).toEqual(['podcast-cover', JSON.stringify(['D:/refs/a.png', 'D:/refs/b.png'])]);
+      const labRows = sqlite.exec('SELECT smart_mode, quality, reference_image_paths_json FROM image_lab_records WHERE id = ?', [record.id])[0]?.values ?? [];
+      expect(labRows[0]).toEqual(['podcast-cover', 'high', JSON.stringify(['D:/refs/a.png', 'D:/refs/b.png'])]);
       const playgroundRows = sqlite.exec('SELECT id, prompt, image_path, status, reference_image_path, upstream_task_id FROM playground_jobs WHERE id = ?', [record.id])[0]?.values ?? [];
       expect(playgroundRows[0]).toEqual([record.id, 'Podcast cover', 'D:/out/podcast-cover.png', 'generated', 'D:/refs/a.png', 'task-upstream']);
       sqlite.close();

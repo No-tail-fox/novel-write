@@ -1,4 +1,4 @@
-import { useId, useState } from 'react';
+import { useEffect, useId, useRef, useState, type KeyboardEvent } from 'react';
 
 export interface ErrorDetailsProps {
   fullMessage: string;
@@ -11,6 +11,9 @@ export function summarizeErrorMessage(message: string): string {
   if (!normalized) return '发生错误';
   if (/No available compatible accounts|没有可用于模型.*上游账号或通道/iu.test(normalized)) {
     return '图片服务暂无可用账号';
+  }
+  if (/Image provider.*\(402\)|金币余额不足|账户余额不足|套餐额度不可用/iu.test(normalized)) {
+    return '图片服务余额不足';
   }
   const imageApiStatus = normalized.match(/Image provider API error \((\d+)\)/i)?.[1];
   if (imageApiStatus) return `生图接口错误 ${imageApiStatus}`;
@@ -62,25 +65,52 @@ function ErrorDetailDialog({ title, summary, fullMessage, onClose }: ErrorDetail
   const id = useId();
   const titleId = `${id}-title`;
   const descriptionId = `${id}-description`;
+  const dialogRef = useRef<HTMLElement>(null);
+  const closeButtonRef = useRef<HTMLButtonElement>(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    const previouslyFocused = document.activeElement instanceof HTMLElement ? document.activeElement : null;
+    queueMicrotask(() => {
+      if (!cancelled) closeButtonRef.current?.focus();
+    });
+    return () => {
+      cancelled = true;
+      previouslyFocused?.focus();
+    };
+  }, []);
+
+  function handleKeyDown(event: KeyboardEvent<HTMLElement>) {
+    if (event.key === 'Escape') {
+      event.preventDefault();
+      onClose();
+      return;
+    }
+    if (event.key === 'Tab') {
+      event.preventDefault();
+      closeButtonRef.current?.focus();
+    }
+  }
+
   return (
     <div className="error-dialog-backdrop" onClick={onClose}>
       <section
+        ref={dialogRef}
         className="error-dialog"
         role="dialog"
+        tabIndex={-1}
         aria-modal="true"
         aria-labelledby={titleId}
         aria-describedby={descriptionId}
         onClick={(event) => event.stopPropagation()}
-        onKeyDown={(event) => {
-          if (event.key === 'Escape') onClose();
-        }}
+        onKeyDown={handleKeyDown}
       >
         <div className="error-dialog-head">
           <div>
             <span className="error-mark">!</span>
             <strong id={titleId}>{title}</strong>
           </div>
-          <button className="mini-button" type="button" onClick={onClose}>关闭</button>
+          <button ref={closeButtonRef} data-dialog-focus className="mini-button" type="button" onClick={onClose}>关闭</button>
         </div>
         <p id={descriptionId}>{summary}</p>
         <pre>{fullMessage}</pre>

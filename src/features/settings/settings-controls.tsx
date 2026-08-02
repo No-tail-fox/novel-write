@@ -3,6 +3,7 @@ import { Eye, EyeOff, Info, Loader2, RotateCcw, Trash2 } from "lucide-react";
 import type { AppConfig, AppMutationResult, ImageProviderProfile, ProviderModel, TtsProviderProfile, VolcengineSpeaker } from "../../shared/types";
 import { applyConfigSecrets, type ConfigSecrets, type SecretChanges, type SecretId, type SecretStatus } from "../../shared/config-secrets";
 import { imageProfileCustomImage, imageProfileGptImage, imageProfileJimeng, normalizeEditableConfigProviders, saveLlmProfile, ttsProfileMinimax, ttsProfileVolcengine } from "../../shared/provider-profile-utils";
+import { imageGenerationQualityLabel } from '../../shared/image-quality';
 import { volcengineVoicePresets } from '../../shared/editorial-options';
 
 export type ModelListKey = 'llm' | 'gpt-image' | 'custom-image';
@@ -322,8 +323,12 @@ export function imageProviderLabel(provider: ImageProviderProfile['provider']): 
 
 export function imageProfileSummary(profile: ImageProviderProfile): string {
   if (profile.provider === 'jimeng') return imageProfileJimeng(profile).reqKey || imageProfileJimeng(profile).model || '未配置 Req Key';
-  if (profile.provider === 'custom') return imageProfileCustomImage(profile).model || '未选择模型';
-  return imageProfileGptImage(profile).model || '未选择模型';
+  if (profile.provider === 'custom') {
+    const config = imageProfileCustomImage(profile);
+    return `${config.model || '未选择模型'} · ${imageGenerationQualityLabel(config.quality ?? 'medium')}质量`;
+  }
+  const config = imageProfileGptImage(profile);
+  return `${config.model || '未选择模型'} · ${imageGenerationQualityLabel(config.quality ?? 'medium')}质量`;
 }
 
 export function ttsProviderLabel(provider: TtsProviderProfile['provider']): string {

@@ -65,6 +65,7 @@ export interface ResolveHtmlVideoCoverForRenderInput {
   taskTitle: string;
   resolveTemplate: (id: string) => Promise<CustomCoverTemplate | null>;
   generateCover?: (input: HtmlVideoCoverGenerationInput) => Promise<HtmlVideoCoverAsset>;
+  force?: boolean;
   signal?: AbortSignal;
 }
 
@@ -235,7 +236,7 @@ export async function resolveHtmlVideoCoverForRender(
     throw new AppError('HTML_VIDEO_COVER_TEMPLATE_MISSING', `HTML video cover template is missing: ${templateId}`);
   }
   const template = resolveHtmlVideoCoverTemplate([storedTemplate], templateId);
-  if (input.state.coverAsset) {
+  if (input.state.coverAsset && !input.force) {
     const existing = validateHtmlVideoCoverAsset(input.state.coverAsset);
     if (existing.mode === 'auto' && existing.ratio === ratio && existing.templateId === templateId) {
       return existing;
@@ -253,7 +254,8 @@ export async function resolveHtmlVideoCoverForRender(
     revision: (input.state.coverAsset?.revision ?? 0) + 1,
     dimensions: htmlVideoCoverDimensions(ratio),
     template,
-    prompt: buildHtmlVideoCoverPrompt({ taskTitle: input.taskTitle, summary, template, ratio }),
+    prompt: input.state.config.coverPrompt?.trim()
+      || buildHtmlVideoCoverPrompt({ taskTitle: input.taskTitle, summary, template, ratio }),
     config: structuredClone(input.state.config),
     signal: input.signal,
   }));

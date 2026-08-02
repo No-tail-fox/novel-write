@@ -64,6 +64,7 @@ const HTML_VIDEO_MISSING_COMPATIBLE_FIELDS: readonly HtmlVideoMissingCompatibleF
   'captionAnim',
   'captionColors',
   'bgmVolume',
+  'coverPrompt',
   'draftTemplate',
 ];
 
@@ -81,6 +82,7 @@ export const HTML_VIDEO_JOB_DEFAULTS = {
   coverImageMode: 'off',
   coverTemplate: 'cinematic-poster',
   coverRatio: '3:4',
+  coverPrompt: undefined,
   draftTemplate: undefined,
   foreground: true,
   maxScenes: 8,
@@ -146,6 +148,8 @@ export function preserveHtmlVideoJobConfig(value: unknown): HtmlVideoJobConfig {
       } catch {
         throw invalidConfig(`${field} is invalid`);
       }
+    } else if (field === 'coverPrompt') {
+      result.coverPrompt = requireBoundedString(current, field, 16_384);
     } else {
       result[field] = requireBoundedString(current, field);
     }

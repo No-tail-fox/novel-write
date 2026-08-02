@@ -238,6 +238,8 @@ describe('Storybound-compatible media sidecar', () => {
       expect(script).toContain('"-filter_complex"');
       expect(script).toContain('xfade=transition=');
       expect(script).toContain('acrossfade=d=');
+      expect(script).toContain('cover_fps = str(first_scene.get("fps") or 24)');
+      expect(script).toContain('"-framerate",\n            cover_fps');
       expect(script).not.toContain('"-f", "concat"');
       expect(script).not.toContain('"concat.txt"');
     } finally {
@@ -277,6 +279,50 @@ describe('Storybound-compatible media sidecar', () => {
         mode: 'compose_render',
         work_dir: dir,
         scenes: [{ frames_dir: framesDir, audio_path: audioPath, fps: 1 }],
+        output_path: outputPath,
+      });
+      const probe = await runStoryboundMediaSidecar({
+        mode: 'probe_media',
+        work_dir: dir,
+        media_path: outputPath,
+      });
+
+      expect(probe).toMatchObject({
+        success: true,
+        has_audio: true,
+        has_video: true,
+        width: 2,
+        height: 2,
+      });
+    } finally {
+      await rm(dir, { recursive: true, force: true });
+    }
+  }, 30_000);
+
+  it('matches the cover frame rate to the scene before applying xfade', async () => {
+    const dir = await mkdtemp(join(tmpdir(), 'storydream-sidecar-cover-fps-'));
+    const framesDir = join(dir, 'frames');
+    const audioPath = join(dir, 'voice.wav');
+    const coverPath = join(dir, 'cover.png');
+    const outputPath = join(dir, 'output.mp4');
+    const image = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAIAAAACCAYAAABytg0kAAAAAXNSR0IArs4c6QAAAARnQU1BAACxjwv8YQUAAAAJcEhZcwAADsMAAA7DAcdvqGQAAAAVSURBVBhXY/jPAEQNIIrhPxD8/w8AQ9QJeKxchO4AAAAASUVORK5CYII=', 'base64');
+
+    try {
+      await mkdir(framesDir, { recursive: true });
+      await Promise.all([
+        writeFile(join(framesDir, '0001.png'), image),
+        writeFile(coverPath, image),
+        writeFile(audioPath, wavTone(900)),
+      ]);
+
+      await runStoryboundMediaSidecar({
+        mode: 'compose_render',
+        work_dir: dir,
+        scenes: [{ frames_dir: framesDir, audio_path: audioPath, fps: 24 }],
+        cover_path: coverPath,
+        cover_duration_s: 0.9,
+        canvas_w: 2,
+        canvas_h: 2,
         output_path: outputPath,
       });
       const probe = await runStoryboundMediaSidecar({

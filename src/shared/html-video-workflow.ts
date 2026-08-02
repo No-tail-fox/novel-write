@@ -456,6 +456,18 @@ export function applyHtmlVideoSceneChanges(
       case 'sceneTemplate': scene.sceneTemplate = change.value; break;
       case 'foregroundHidden': scene.foregroundHidden = change.value; break;
       case 'backgroundPrompt': scene.background.prompt = change.value; break;
+      case 'addElement': {
+        if (scene.elements.length >= MAX_HTML_VIDEO_ELEMENTS_PER_SCENE) {
+          throw new AppError('HTML_VIDEO_ELEMENT_LIMIT', `场景 ${sceneIndex} 最多包含 ${MAX_HTML_VIDEO_ELEMENTS_PER_SCENE} 个前景。`);
+        }
+        const usedSlots = new Set(scene.elements.map((element) => element.slot));
+        const slot = Array.from({ length: MAX_HTML_VIDEO_ELEMENTS_PER_SCENE }, (_, index) => index)
+          .find((candidate) => !usedSlots.has(candidate));
+        if (slot === undefined) throw new AppError('HTML_VIDEO_ELEMENT_LIMIT', `场景 ${sceneIndex} 没有可用的前景槽位。`);
+        scene.elements.push({ slot, prompt: change.value });
+        scene.elements.sort((left, right) => left.slot - right.slot);
+        break;
+      }
       case 'titleScale': scene.titleScale = change.value; break;
       case 'titleTopOverride': scene.titleTopOverride = change.value; break;
       case 'captionScale': scene.captionScale = change.value; break;
@@ -477,6 +489,21 @@ export function applyHtmlVideoSceneChanges(
   }
   next.scenes = validateHtmlVideoScenePlans(next.scenes, next.config.maxScenes ?? MAX_HTML_VIDEO_SCENES);
   next.revision = pipeline.revision + 1;
+  delete next.configSnapshotHash;
+  return next;
+}
+
+export function prepareHtmlVideoPipelineForRerender(
+  pipeline: HtmlVideoPipelineDataV2,
+): HtmlVideoPipelineDataV2 {
+  const next = parseHtmlVideoPipelineData(JSON.stringify(pipeline));
+  if (next.compositions.length === 0) {
+    throw new AppError('HTML_VIDEO_PREVIEW_MISSING', '请先生成动画预览，再重新出片。');
+  }
+  next.steps.render = { status: 'pending' };
+  next.current = 'render';
+  delete next.output;
+  next.revision += 1;
   delete next.configSnapshotHash;
   return next;
 }

@@ -145,9 +145,12 @@ export const INVOKE_CHANNELS = Object.freeze([
   'html-video:create-task',
   'html-video:update-config',
   'html-video:update-scene',
+  'html-video:add-asset',
   'html-video:replace-asset',
   'html-video:regenerate-asset',
   'html-video:regenerate-voice',
+  'html-video:regenerate-cover',
+  'html-video:rerender',
   'html-video:import-cover',
   'html-video:composition-source:get',
   'html-video:composition-source:lint',
@@ -256,9 +259,12 @@ export type StoryDreamApi = {
   createHtmlVideoTask: (input: CreateTaskInput) => Promise<AppMutationResult | null>;
   updateHtmlVideoConfig: (id: string, changes: HtmlVideoConfigChange[]) => Promise<AppMutationResult | null>;
   updateHtmlVideoScene: (id: string, sceneIndex: number, changes: HtmlVideoSceneChange[]) => Promise<AppMutationResult | null>;
+  addHtmlVideoAsset: (id: string, sceneIndex: number, prompt: string) => Promise<AppMutationResult | null>;
   replaceHtmlVideoAsset: (id: string, target: HtmlVideoAssetTarget) => Promise<AppMutationResult | null>;
   regenerateHtmlVideoAsset: (id: string, target: HtmlVideoAssetTarget) => Promise<AppMutationResult | null>;
   regenerateHtmlVideoVoice: (id: string, sceneIndex: number) => Promise<AppMutationResult | null>;
+  regenerateHtmlVideoCover: (id: string) => Promise<AppMutationResult | null>;
+  rerenderHtmlVideo: (id: string) => Promise<AppMutationResult | null>;
   importHtmlVideoCover: (id: string) => Promise<AppMutationResult | null>;
   getHtmlVideoCompositionSource: (taskId: string, sceneIndex: number) => Promise<HtmlVideoCompositionSource>;
   lintHtmlVideoCompositionSource: (input: HtmlVideoCompositionSourceLintInput) => Promise<HtmlVideoLintFinding[]>;

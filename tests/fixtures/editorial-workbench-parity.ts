@@ -22,7 +22,7 @@ export const approvedEditorialInventories = {
   createTaskInputFields: inventory([
     'title', 'inputText', 'taskKind', 'processingMode', 'publishMode', 'mode', 'aiKeyword', 'aiSources',
     'selectedSources', 'extraRequirements', 'imagePromptReference', 'track', 'style', 'speaker', 'ratio',
-    'templateId', 'bgmId', 'pausePoints', 'promptTemplateId', 'promptTemplateType', 'referenceImagePath',
+    'imageQuality', 'templateId', 'bgmId', 'pausePoints', 'promptTemplateId', 'promptTemplateType', 'referenceImagePath',
     'rewriteIntensity', 'narrativePov', 'keepPromotion', 'ttsProvider', 'ttsSpeed', 'storyboardSceneCount',
     'step3PromptSnapshot', 'musicMv', 'videoForm', 'llmProfileId', 'materialSource', 'productInfo',
     'materialPerson', 'draftDir', 'fixedIntro', 'outroCta', 'lockIntroSentences', 'taskType', 'pipelineStep',
@@ -31,7 +31,7 @@ export const approvedEditorialInventories = {
   ], 'src/shared/types.ts', 'src/features/tasks/task-create-input.ts', 'tests/renderer-architecture.test.ts'),
   htmlVideoFields: inventory([
     'style', 'voiceId', 'ttsProvider', 'ttsSpeed', 'bgmId', 'captionPreset', 'captionAnim', 'captionColors',
-    'bgmVolume', 'transitionType', 'coverImageMode', 'coverTemplate', 'coverRatio', 'draftTemplate',
+    'bgmVolume', 'transitionType', 'coverImageMode', 'coverTemplate', 'coverRatio', 'coverPrompt', 'draftTemplate',
     'foreground', 'maxScenes', 'ratio',
   ], 'src/shared/html-video-control-manifest.ts', 'src/features/html-video/HtmlVideoPage.tsx', 'tests/html-video-control-manifest.test.ts'),
   imageSmartModes: inventory([

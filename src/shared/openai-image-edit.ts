@@ -1,12 +1,13 @@
 import { readFile } from 'node:fs/promises';
 import { basename, extname } from 'node:path';
-import { resolveOpenAiImageQuality, resolveOpenAiImageSize, type OpenAiImageResolution } from './openai-image';
+import { resolveOpenAiImageQuality, resolveOpenAiImageSize, type OpenAiImageQuality, type OpenAiImageResolution } from './openai-image';
 
 export async function buildOpenAiImageEditFormData(input: {
   model: string;
   prompt: string;
   ratio: string;
   resolution: OpenAiImageResolution;
+  quality?: OpenAiImageQuality;
   referenceImagePaths: string[];
 }): Promise<FormData> {
   if (input.referenceImagePaths.length < 1) {
@@ -19,7 +20,7 @@ export async function buildOpenAiImageEditFormData(input: {
   form.set('model', input.model);
   form.set('prompt', input.prompt);
   form.set('size', resolveOpenAiImageSize(input.ratio));
-  form.set('quality', resolveOpenAiImageQuality(input.resolution));
+  form.set('quality', input.quality ?? resolveOpenAiImageQuality(input.resolution));
   form.set('output_format', 'png');
   for (const path of input.referenceImagePaths) {
     const bytes = await readFile(path);

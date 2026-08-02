@@ -72,10 +72,12 @@ describe('image lab generation', () => {
         style: 'photo-real',
         provider: 'gpt_image',
         resolution: '2K',
+        quality: 'high',
       });
 
       expect(record.status).toBe('generated');
       expect(record.provider).toBe('gpt_image');
+      expect(record.quality).toBe('high');
       expect(record.imagePath).toMatch(/provider-images/);
       expect(await readFile(record.imagePath, 'utf8')).toBe('lab-image');
       expect(requests[0].url).toBe('https://image.example/v1/images/generations');
@@ -83,7 +85,7 @@ describe('image lab generation', () => {
         model: 'gpt-image-2',
         prompt: expect.stringContaining('Tang palace portrait'),
         size: '1024x1024',
-        quality: 'medium',
+        quality: 'high',
       });
     } finally {
       await rm(dir, { recursive: true, force: true });
@@ -186,6 +188,7 @@ describe('image lab generation', () => {
         ratio: '16:9',
         style: 'photo-real',
         smartMode: 'reference-edit',
+        quality: 'low',
         referenceImagePaths: [first, second],
       });
 
@@ -198,6 +201,7 @@ describe('image lab generation', () => {
       expect(form.get('model')).toBe('gpt-image-2');
       expect(form.get('prompt')).toContain('Keep the host identity');
       expect(form.get('size')).toBe('1536x1024');
+      expect(form.get('quality')).toBe('low');
       expect(form.getAll('image')).toHaveLength(2);
     } finally {
       await rm(dir, { recursive: true, force: true });

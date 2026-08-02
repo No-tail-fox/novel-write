@@ -1,7 +1,9 @@
 import { createHash, randomUUID } from 'node:crypto';
 import type { BigIntStats } from 'node:fs';
 import { copyFile, link, lstat, mkdir, open, readFile, readdir, realpath, rename, rm, rmdir, stat, statfs, unlink, writeFile } from 'node:fs/promises';
-import { basename, dirname, extname, isAbsolute, join, relative, resolve } from 'node:path';
+import { basename, dirname, extname, isAbsolute, join, relative, resolve, sep } from 'node:path';
+import { fileURLToPath, pathToFileURL } from 'node:url';
+import { parseHTMLContent } from '@hyperframes/core/compiler/html-document';
 import { AppError } from '../src/shared/app-error';
 import {
   HTML_VIDEO_JOB_DEFAULTS,
@@ -153,9 +155,20 @@ export interface HtmlVideoMediaFileIdentity {
   readonly modifiedNs: string;
 }
 
-export interface HtmlVideoMediaResource {
+interface HtmlVideoPinnedMediaResource {
   readonly path: string;
   readonly identity: HtmlVideoMediaFileIdentity;
+}
+
+export interface HtmlVideoMediaResource extends HtmlVideoPinnedMediaResource {
+  readonly taskId: string;
+  readonly taskDirectory: HtmlVideoTaskDirectoryIdentity;
+}
+
+export interface HtmlVideoMediaFetchContext {
+  readonly requestUrl: string;
+  readonly taskId: string;
+  readonly taskDirectory: HtmlVideoTaskDirectoryIdentity;
 }
 
 export async function ensureHtmlVideoTaskWorkDir(
@@ -845,7 +858,11 @@ export async function fetchHtmlVideoMediaResponse(
   resolveTaskDirectory: (
     taskId: string,
   ) => HtmlVideoTaskDirectoryIdentity | Promise<HtmlVideoTaskDirectoryIdentity>,
-  fetchMedia: (path: string, identity: HtmlVideoMediaFileIdentity) => Promise<Response>,
+  fetchMedia: (
+    path: string,
+    identity: HtmlVideoMediaFileIdentity,
+    context: HtmlVideoMediaFetchContext,
+  ) => Promise<Response>,
 ): Promise<Response> {
   let pinnedTaskId: string | null = null;
   let pinnedTaskDirectory: Promise<HtmlVideoTaskDirectoryIdentity> | null = null;
@@ -859,7 +876,11 @@ export async function fetchHtmlVideoMediaResponse(
   };
 
   const resource = await resolveHtmlVideoMediaResource(value, resolvePinnedTaskDirectory);
-  const response = await fetchMedia(resource.path, resource.identity);
+  const response = await fetchMedia(resource.path, resource.identity, {
+    requestUrl: value,
+    taskId: resource.taskId,
+    taskDirectory: resource.taskDirectory,
+  });
   try {
     await resolveHtmlVideoMediaResource(value, resolvePinnedTaskDirectory, resource.identity);
     return htmlVideoMediaResponse(response.body, {
@@ -926,6 +947,48 @@ export async function openHtmlVideoMediaFileResponse(
   } finally {
     if (!streamOwnsHandle) await handle.close().catch(() => undefined);
   }
+}
+
+export async function openHtmlVideoCompositionMediaResponse(
+  path: string,
+  expectedIdentity: HtmlVideoMediaFileIdentity,
+  context: HtmlVideoMediaFetchContext,
+  rangeHeader: string | null,
+): Promise<Response> {
+  const response = await openHtmlVideoMediaFileResponse(path, expectedIdentity, rangeHeader);
+  if (rangeHeader !== null || !/\.html?$/iu.test(path) || response.status !== 200) return response;
+  const source = await response.text();
+  const rewritten = await rewriteHtmlVideoCompositionMediaUrls(source, path, context);
+  const headers = new Headers(response.headers);
+  headers.set('Content-Length', String(new TextEncoder().encode(rewritten).byteLength));
+  return new Response(rewritten, {
+    status: response.status,
+    statusText: response.statusText,
+    headers,
+  });
+}
+
+export async function rewriteHtmlVideoCompositionMediaUrls(
+  source: string,
+  sourcePath: string,
+  context: HtmlVideoMediaFetchContext,
+): Promise<string> {
+  const document = parseHTMLContent(source);
+  const elements = [...document.querySelectorAll<HTMLElement>('[src]')];
+  await Promise.all(elements.map(async (element) => {
+    const reference = element.getAttribute('src')?.trim();
+    if (!reference || /^(?:data|blob|https?|storydream-media):/iu.test(reference)) return;
+    const localPath = reference.startsWith('file:')
+      ? fileURLToPath(reference)
+      : fileURLToPath(new URL(reference, pathToFileURL(`${dirname(sourcePath)}${sep}`)));
+    const mediaUrl = await createHtmlVideoMediaUrl(
+      context.taskId,
+      context.taskDirectory,
+      localPath,
+    );
+    element.setAttribute('src', mediaUrl);
+  }));
+  return `<!doctype html>\n${document.documentElement.outerHTML}`;
 }
 
 function parseHtmlVideoMediaRange(value: string, size: number): { start: number; end: number } | null {
@@ -1034,7 +1097,7 @@ async function resolveHtmlVideoMediaResource(
   if (expectedIdentity && !isSameHtmlVideoMediaFile(resource.identity, expectedIdentity)) {
     throw invalidHtmlVideoMediaPath();
   }
-  return resource;
+  return { ...resource, taskId, taskDirectory };
 }
 
 export function htmlVideoCanvasForRatio(ratio: string | undefined, maxLongEdge = defaultMaxLongEdge): HtmlVideoCanvas {
@@ -2545,7 +2608,7 @@ async function taskLocalFile(workDir: string, path: string): Promise<string> {
   return actual;
 }
 
-async function pinHtmlVideoMediaFile(workDir: string, path: string): Promise<HtmlVideoMediaResource> {
+async function pinHtmlVideoMediaFile(workDir: string, path: string): Promise<HtmlVideoPinnedMediaResource> {
   const canonicalPath = await taskLocalFile(workDir, path);
   const value = await lstat(canonicalPath, { bigint: true });
   if (!value.isFile() || value.isSymbolicLink() || value.size <= 0n) {

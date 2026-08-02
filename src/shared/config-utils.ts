@@ -1,4 +1,5 @@
 import { defaultConfig } from './config';
+import { normalizeImageGenerationQuality } from './image-quality';
 import { normalizeOpenAiImageBaseUrl } from './openai-image-config';
 import {
   isArkModelApiKey,
@@ -134,9 +135,17 @@ function buildConfigProfileId(prefix: string, source: string, index: number): st
 
 function normalizeImageProfile(profile: Partial<ImageProviderProfile>, index: number): ImageProviderProfile {
   const provider = normalizeImageProvider(profile.provider);
-  const gptImage = { ...defaultConfig.gptImage, ...(profile.gptImage ?? {}) };
+  const gptImage = {
+    ...defaultConfig.gptImage,
+    ...(profile.gptImage ?? {}),
+    quality: normalizeImageGenerationQuality(profile.gptImage?.quality, defaultConfig.gptImage.quality),
+  };
   const jimeng = { ...defaultConfig.jimeng, ...(profile.jimeng ?? {}) };
-  const customImage = { ...defaultConfig.customImage, ...(profile.customImage ?? {}) };
+  const customImage = {
+    ...defaultConfig.customImage,
+    ...(profile.customImage ?? {}),
+    quality: normalizeImageGenerationQuality(profile.customImage?.quality, defaultConfig.customImage.quality),
+  };
   const model = provider === 'jimeng' ? jimeng.reqKey || jimeng.model : provider === 'custom' ? customImage.model : gptImage.model;
   const endpoint = provider === 'jimeng' ? jimeng.endpoint : provider === 'custom' ? customImage.baseUrl : gptImage.baseUrl || 'openai';
   const id = profile.id?.trim() || buildConfigProfileId('image', `${provider}-${endpoint}-${model || 'model'}-${index}`, index);
@@ -557,6 +566,7 @@ export async function testConfigTarget(target: ConfigTestTarget, input: AppConfi
     model: image.model,
     ratio: image.ratio,
     resolution: image.resolution,
+    quality: image.quality,
     fetchImpl: options.fetchImpl,
   });
 
@@ -735,6 +745,7 @@ function activeOpenAiImageConfig(config: AppConfig): {
   model: string;
   ratio: string;
   resolution: '1K' | '2K' | '4K';
+  quality: NonNullable<AppConfig['gptImage']['quality']>;
 } {
   if (config.imageProvider === 'custom') {
     return {
@@ -743,6 +754,7 @@ function activeOpenAiImageConfig(config: AppConfig): {
       model: config.customImage.model,
       ratio: config.customImage.ratio,
       resolution: config.customImage.resolution ?? '2K',
+      quality: normalizeImageGenerationQuality(config.customImage.quality),
     };
   }
 
@@ -752,5 +764,6 @@ function activeOpenAiImageConfig(config: AppConfig): {
     model: config.gptImage.model || config.image.model,
     ratio: config.gptImage.ratio || config.image.ratio,
     resolution: config.gptImage.resolution ?? config.image.resolution ?? '2K',
+    quality: normalizeImageGenerationQuality(config.gptImage.quality ?? config.image.quality),
   };
 }

@@ -1,16 +1,16 @@
 import React, { useEffect, useState } from 'react';
-import { Image as ImageIcon, Loader2, Play, RotateCcw, Save, Upload } from 'lucide-react';
+import { Copy, FolderOpen, Image as ImageIcon, Loader2, Music2, Play, RefreshCw, RotateCcw, Save, Upload, WandSparkles } from 'lucide-react';
 import { EmptyState } from '../../components/EmptyState';
 import { FormField as Field } from '../../components/FormField';
 import { SegmentedControl as Segmented } from '../../components/SegmentedControl';
 import { AsyncActionFeedback as InlineActionFeedback } from '../../components/AsyncActionFeedback';
 import type { ApplyMutationResult } from '../../app/route-types';
 import type { StoryDreamApi } from '../../shared/storydream-api';
-import type { CustomCoverTemplate, HtmlVideoConfigChange, HtmlVideoCoverAsset, HtmlVideoCoverMode, HtmlVideoCoverRatio, HtmlVideoJobConfig, HtmlVideoTabKey, Task } from '../../shared/types';
+import type { BgmItem, CustomCoverTemplate, HtmlVideoConfigChange, HtmlVideoCoverAsset, HtmlVideoCoverMode, HtmlVideoCoverRatio, HtmlVideoJobConfig, HtmlVideoTabKey, MinimaxCloneVoice, Task } from '../../shared/types';
 import { HTML_VIDEO_CAPTION_ANIMATIONS, HTML_VIDEO_CAPTION_COLOR_KEYS, HTML_VIDEO_CAPTION_PRESETS, htmlVideoCaptionColorsEqual, htmlVideoCaptionPickerColor, resolveHtmlVideoCaptionStyle, validateHtmlVideoCaptionColors, type HtmlVideoCaptionAnimation, type HtmlVideoCaptionColorKey, type HtmlVideoCaptionColorOverrides, type HtmlVideoCaptionPreset } from '../../shared/html-video-captions';
 import { HTML_VIDEO_CONTROL_MANIFEST_V1 } from '../../shared/html-video-control-manifest';
-import { HTML_VIDEO_COVER_MODES, HTML_VIDEO_COVER_RATIOS, htmlVideoCoverDimensions } from '../../shared/html-video-cover';
-import { HTML_VIDEO_JOB_DEFAULTS } from '../../shared/html-video-config';
+import { HTML_VIDEO_COVER_MODES, HTML_VIDEO_COVER_RATIOS, buildHtmlVideoCoverPrompt, htmlVideoCoverDimensions } from '../../shared/html-video-cover';
+import { HTML_VIDEO_BGM_VOLUMES, HTML_VIDEO_JOB_DEFAULTS, HTML_VIDEO_TRANSITIONS } from '../../shared/html-video-config';
 import { htmlVideoMediaElementKey, htmlVideoMediaStatus } from '../../shared/html-video-media';
 import { fitHtmlVideoOutputSize, htmlVideoUserFacingError, safeParseHtmlVideoPipelineData } from '../../shared/html-video-workflow';
 import { useAsyncAction } from '../../ui/async-action';
@@ -195,22 +195,26 @@ function HtmlVideoCoverEditor({
   config,
   coverAsset,
   templates,
+  summary,
   renderError,
   applyState,
   refreshTaskDetail,
   busy,
   isBrowserPreview,
+  openOutputDirectory,
 }: {
   api: StoryDreamApi;
   task: Task;
   config: HtmlVideoJobConfig;
   coverAsset?: HtmlVideoCoverAsset;
   templates: CustomCoverTemplate[];
+  summary: string;
   renderError?: string;
   applyState: ApplyMutationResult;
   refreshTaskDetail: (taskId: string) => Promise<void>;
   busy: boolean;
   isBrowserPreview: boolean;
+  openOutputDirectory: () => Promise<void>;
 }) {
   const initialMode = config.coverImageMode ?? HTML_VIDEO_JOB_DEFAULTS.coverImageMode;
   const initialTemplate = config.coverTemplate ?? HTML_VIDEO_JOB_DEFAULTS.coverTemplate;
@@ -218,24 +222,56 @@ function HtmlVideoCoverEditor({
   const [mode, setMode] = useState<HtmlVideoCoverMode>(initialMode);
   const [templateId, setTemplateId] = useState(initialTemplate);
   const [ratio, setRatio] = useState<HtmlVideoCoverRatio>(initialRatio);
+  const [prompt, setPrompt] = useState(
+    config.coverPrompt?.trim() || createCoverPrompt(task.title, summary, templates, initialTemplate, initialRatio),
+  );
+  const [usesDefaultPrompt, setUsesDefaultPrompt] = useState(!config.coverPrompt?.trim());
   const [message, setMessage] = useState('');
   const coverAction = useAsyncAction();
   const taskActive = task.status === 'pending' || task.status === 'running';
   const disabled = busy || taskActive || coverAction.busy;
   const dimensions = htmlVideoCoverDimensions(ratio);
+  const selectedTemplate = templates.find((item) => item.id === templateId);
 
   useEffect(() => {
-    setMode(config.coverImageMode ?? HTML_VIDEO_JOB_DEFAULTS.coverImageMode);
-    setTemplateId(config.coverTemplate ?? HTML_VIDEO_JOB_DEFAULTS.coverTemplate);
-    setRatio(config.coverRatio ?? HTML_VIDEO_JOB_DEFAULTS.coverRatio);
+    const nextMode = config.coverImageMode ?? HTML_VIDEO_JOB_DEFAULTS.coverImageMode;
+    const nextTemplate = config.coverTemplate ?? HTML_VIDEO_JOB_DEFAULTS.coverTemplate;
+    const nextRatio = config.coverRatio ?? HTML_VIDEO_JOB_DEFAULTS.coverRatio;
+    setMode(nextMode);
+    setTemplateId(nextTemplate);
+    setRatio(nextRatio);
+    setPrompt(config.coverPrompt?.trim() || createCoverPrompt(task.title, summary, templates, nextTemplate, nextRatio));
+    setUsesDefaultPrompt(!config.coverPrompt?.trim());
     setMessage('');
-  }, [task.id, config.coverImageMode, config.coverTemplate, config.coverRatio]);
+  }, [task.id, task.title, summary, templates, config.coverImageMode, config.coverTemplate, config.coverRatio, config.coverPrompt]);
 
-  async function saveCoverConfig() {
+  function pendingChanges(): HtmlVideoConfigChange[] {
     const changes: HtmlVideoConfigChange[] = [];
     if (mode !== initialMode) changes.push({ field: 'coverImageMode', value: mode });
     if (templateId !== initialTemplate) changes.push({ field: 'coverTemplate', value: templateId });
     if (ratio !== initialRatio) changes.push({ field: 'coverRatio', value: ratio });
+    const nextPrompt = usesDefaultPrompt ? '' : prompt.trim();
+    if (nextPrompt !== (config.coverPrompt ?? '')) changes.push({ field: 'coverPrompt', value: nextPrompt });
+    return changes;
+  }
+
+  function chooseTemplate(value: string) {
+    setTemplateId(value);
+    if (usesDefaultPrompt) setPrompt(createCoverPrompt(task.title, summary, templates, value, ratio));
+  }
+
+  function chooseRatio(value: HtmlVideoCoverRatio) {
+    setRatio(value);
+    if (usesDefaultPrompt) setPrompt(createCoverPrompt(task.title, summary, templates, templateId, value));
+  }
+
+  function resetPrompt() {
+    setUsesDefaultPrompt(true);
+    setPrompt(createCoverPrompt(task.title, summary, templates, templateId, ratio));
+  }
+
+  async function saveCoverConfig() {
+    const changes = pendingChanges();
     if (!changes.length) {
       setMessage('封面参数没有变化。');
       return;
@@ -247,16 +283,35 @@ function HtmlVideoCoverEditor({
     }, { onError: (error) => setMessage(error.message) });
   }
 
-  async function importManualCover() {
-    if (config.coverImageMode !== 'manual') {
-      setMessage('请先保存手动封面模式。');
-      return;
-    }
+  async function regenerateCover() {
+    if (mode !== 'auto') return;
     await coverAction.run(async () => {
+      const changes = pendingChanges();
+      if (changes.length) applyState(await api.updateHtmlVideoConfig(task.id, changes));
+      applyState(await api.regenerateHtmlVideoCover(task.id));
+      await refreshTaskDetail(task.id);
+      setMessage('封面已按当前参数重画。');
+    }, { onError: (error) => setMessage(error.message) });
+  }
+
+  async function importManualCover() {
+    if (mode !== 'manual') return;
+    await coverAction.run(async () => {
+      const changes = pendingChanges();
+      if (changes.length) applyState(await api.updateHtmlVideoConfig(task.id, changes));
       const next = await api.importHtmlVideoCover(task.id);
-      if (next) applyState(next);
+      if (!next) return;
+      applyState(next);
       await refreshTaskDetail(task.id);
       setMessage('手动封面已导入。');
+    }, { onError: (error) => setMessage(error.message) });
+  }
+
+  async function copyPrompt() {
+    if (!prompt.trim()) return;
+    await coverAction.run(async () => {
+      await navigator.clipboard.writeText(prompt.trim());
+      setMessage('封面提示词已复制。');
     }, { onError: (error) => setMessage(error.message) });
   }
 
@@ -264,18 +319,22 @@ function HtmlVideoCoverEditor({
     <section className="hv-cover-editor" aria-label="封面参数">
       <div className="panel-title-row">
         <div>
-          <h4>封面参数</h4>
-          <span>{dimensions.width}x{dimensions.height}</span>
+          <h4>封面设置</h4>
+          <span>{dimensions.width}x{dimensions.height} · {coverAsset ? `第 ${coverAsset.revision} 版` : '尚未生成'}</span>
         </div>
         <div className="hv-cover-actions">
+          <button className="mini-button primary" type="button" disabled={disabled || isBrowserPreview || mode !== 'auto' || !selectedTemplate} onClick={regenerateCover}>
+            {coverAction.busy ? <Loader2 className="spin" size={14} /> : <WandSparkles size={14} />}重画封面
+          </button>
           <button
             className="mini-button"
             type="button"
-            disabled={disabled || isBrowserPreview || config.coverImageMode !== 'manual'}
+            disabled={disabled || isBrowserPreview || mode !== 'manual'}
             onClick={importManualCover}
           >
-            {coverAction.busy ? <Loader2 className="spin" size={14} /> : <Upload size={14} />}导入封面
+            <Upload size={14} />换本地封面
           </button>
+          <button className="mini-button" type="button" disabled={disabled || !coverAsset || !task.outputDir} onClick={openOutputDirectory}><FolderOpen size={14} />打开封面</button>
           <button className="mini-button" type="button" disabled={disabled} onClick={saveCoverConfig}>
             <Save size={14} />保存封面
           </button>
@@ -285,20 +344,27 @@ function HtmlVideoCoverEditor({
         <div data-html-video-edit-field="coverImageMode">
           <Segmented label="模式" value={mode} options={[...HTML_VIDEO_COVER_MODES]} labels={['关闭', '自动', '手动']} onChange={(value) => setMode(value as HtmlVideoCoverMode)} />
         </div>
-        <div data-html-video-edit-field="coverTemplate">
-          <Field label="模板">
-            <select value={templateId} disabled={disabled} onChange={(event) => setTemplateId(event.target.value)}>
-              {templateId && !templates.some((item) => item.id === templateId)
-                ? <option value={templateId}>{templateId}（目录中已缺失）</option>
-                : null}
-              {templates.map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}
-            </select>
-          </Field>
-        </div>
         <div data-html-video-edit-field="coverRatio">
-          <Segmented label="比例" value={ratio} options={[...HTML_VIDEO_COVER_RATIOS]} onChange={(value) => setRatio(value as HtmlVideoCoverRatio)} />
+          <Segmented label="比例" value={ratio} options={[...HTML_VIDEO_COVER_RATIOS]} onChange={(value) => chooseRatio(value as HtmlVideoCoverRatio)} />
         </div>
       </fieldset>
+      {mode !== 'off' ? <>
+        <div className="hv-cover-template-section" data-html-video-edit-field="coverTemplate">
+          <strong>封面模板</strong>
+          <div className="hv-cover-template-options" role="listbox" aria-label="封面模板">
+            {templates.map((item) => <button key={item.id} type="button" role="option" aria-selected={item.id === templateId} className={item.id === templateId ? 'selected' : ''} onClick={() => chooseTemplate(item.id)}>{item.name}</button>)}
+          </div>
+        </div>
+        {selectedTemplate ? <dl className="hv-cover-template-summary">
+          <div><dt>构图方向</dt><dd>{selectedTemplate.compositionRule}</dd></div>
+          <div><dt>标题文字</dt><dd>{selectedTemplate.titleLayout}</dd></div>
+          <div><dt>副标题</dt><dd>{selectedTemplate.subtitleLayout}</dd></div>
+        </dl> : <div className="hv-cover-error" role="alert">当前封面模板已不存在，请重新选择。</div>}
+        <label className="hv-cover-prompt" data-html-video-edit-field="coverPrompt">
+          <span><strong>封面提示词</strong><button type="button" title="恢复模板默认提示词" disabled={disabled || usesDefaultPrompt} onClick={resetPrompt}><RotateCcw size={13} /></button><button type="button" title="复制提示词" disabled={!prompt.trim()} onClick={copyPrompt}><Copy size={13} /></button></span>
+          <textarea value={prompt} rows={6} disabled={disabled || mode !== 'auto'} onChange={(event) => { setPrompt(event.target.value); setUsesDefaultPrompt(false); }} />
+        </label>
+      </> : null}
       {coverAsset ? (
         <div className="hv-cover-artifact-meta">
           <strong>{coverAsset.mode === 'manual' ? '手动封面' : '自动封面'} · r{coverAsset.revision}</strong>
@@ -310,6 +376,17 @@ function HtmlVideoCoverEditor({
       <InlineActionFeedback feedback={coverAction.feedback} />
     </section>
   );
+}
+
+function createCoverPrompt(
+  taskTitle: string,
+  summary: string,
+  templates: readonly CustomCoverTemplate[],
+  templateId: string,
+  ratio: HtmlVideoCoverRatio,
+): string {
+  const template = templates.find((item) => item.id === templateId);
+  return template ? buildHtmlVideoCoverPrompt({ taskTitle, summary, template, ratio }) : '';
 }
 
 const htmlVideoStepLabels = {
@@ -356,6 +433,72 @@ function HtmlVideoWorkflowBlocked({
   );
 }
 
+function HtmlVideoOutputActions({
+  api,
+  task,
+  config,
+  bgmOptions,
+  applyState,
+  refreshTaskDetail,
+  busy,
+  isBrowserPreview,
+  openOutputDirectory,
+}: {
+  api: StoryDreamApi;
+  task: Task;
+  config: HtmlVideoJobConfig;
+  bgmOptions: readonly BgmItem[];
+  applyState: ApplyMutationResult;
+  refreshTaskDetail: (taskId: string) => Promise<void>;
+  busy: boolean;
+  isBrowserPreview: boolean;
+  openOutputDirectory: () => Promise<void>;
+}) {
+  const action = useAsyncAction();
+  const [bgmId, setBgmId] = useState(config.bgmId ?? '');
+  const [bgmVolume, setBgmVolume] = useState(config.bgmVolume ?? 'soft');
+  const [transitionType, setTransitionType] = useState<Extract<HtmlVideoConfigChange, { field: 'transitionType' }>['value']>(
+    (config.transitionType ?? HTML_VIDEO_JOB_DEFAULTS.transitionType) as Extract<HtmlVideoConfigChange, { field: 'transitionType' }>['value'],
+  );
+  const locked = busy || action.busy || task.status === 'running' || task.status === 'pending' || isBrowserPreview;
+
+  useEffect(() => {
+    setBgmId(config.bgmId ?? '');
+    setBgmVolume(config.bgmVolume ?? 'soft');
+    setTransitionType((config.transitionType ?? HTML_VIDEO_JOB_DEFAULTS.transitionType) as Extract<HtmlVideoConfigChange, { field: 'transitionType' }>['value']);
+  }, [config.bgmId, config.bgmVolume, config.transitionType, task.id]);
+
+  async function rerender() {
+    await action.run(async () => {
+      const changes: HtmlVideoConfigChange[] = [];
+      if (bgmId !== (config.bgmId ?? '')) changes.push({ field: 'bgmId', value: bgmId });
+      if (bgmVolume !== (config.bgmVolume ?? 'soft')) changes.push({ field: 'bgmVolume', value: bgmVolume });
+      if (transitionType !== (config.transitionType ?? HTML_VIDEO_JOB_DEFAULTS.transitionType)) changes.push({ field: 'transitionType', value: transitionType });
+      applyState(changes.length
+        ? await api.updateHtmlVideoConfig(task.id, changes)
+        : await api.rerenderHtmlVideo(task.id));
+      await refreshTaskDetail(task.id);
+      applyState(await api.updateTaskStatus(task.id, 'running'));
+      await refreshTaskDetail(task.id);
+    });
+  }
+
+  return (
+    <section className="hv-output-actions" aria-label="出片设置">
+      <div className="hv-output-control">
+        <label><span>背景音乐</span><select value={bgmId} disabled={locked} onChange={(event) => setBgmId(event.target.value)}><option value="">无配乐</option>{bgmId && !bgmOptions.some((item) => item.id === bgmId) ? <option value={bgmId}>{bgmId}（已缺失）</option> : null}{bgmOptions.map((item) => <option key={item.id} value={item.id}>{item.title}</option>)}</select></label>
+        <label><span>配乐音量</span><select value={bgmVolume} disabled={locked} onChange={(event) => setBgmVolume(event.target.value as typeof bgmVolume)}>{HTML_VIDEO_BGM_VOLUMES.map((value, index) => <option key={value} value={value}>{['轻', '中', '响'][index]}</option>)}</select></label>
+        <label><span>场景转场</span><select value={transitionType} disabled={locked} onChange={(event) => setTransitionType(event.target.value as typeof transitionType)}>{HTML_VIDEO_TRANSITIONS.map((value) => <option key={value} value={value}>{value}</option>)}</select></label>
+      </div>
+      <div className="hv-output-buttons">
+        <button className="mini-button primary" type="button" disabled={!task.outputDir || isBrowserPreview} onClick={openOutputDirectory}><FolderOpen size={14} />打开目录</button>
+        <button className="mini-button" type="button" disabled={locked} onClick={rerender}>{action.busy ? <Loader2 className="spin" size={14} /> : <RefreshCw size={14} />}重新出片</button>
+      </div>
+      <InlineActionFeedback feedback={action.feedback} />
+    </section>
+  );
+}
+
 export function HtmlVideoTabPanel({
   api,
   tab,
@@ -373,6 +516,9 @@ export function HtmlVideoTabPanel({
   isBrowserPreview,
   openPreview,
   onRetry,
+  cloneVoices,
+  bgmOptions,
+  openOutputDirectory,
 }: {
   api: StoryDreamApi;
   tab: HtmlVideoTabKey;
@@ -390,6 +536,9 @@ export function HtmlVideoTabPanel({
   isBrowserPreview: boolean;
   openPreview: (sceneIndex?: number) => Promise<void>;
   onRetry: () => Promise<void>;
+  cloneVoices: readonly MinimaxCloneVoice[];
+  bgmOptions: readonly BgmItem[];
+  openOutputDirectory: () => Promise<void>;
 }) {
   if (!task) {
     return <EmptyState title="暂无 HTML 动画视频任务" />;
@@ -408,6 +557,7 @@ export function HtmlVideoTabPanel({
     onMediaElementReady,
     busy,
     isBrowserPreview,
+    cloneVoices,
   };
   const planningFailed = data.steps.planning.status === 'failed';
   const noScenes = data.scenes.length === 0;
@@ -426,7 +576,7 @@ export function HtmlVideoTabPanel({
       );
     }
     return (
-      <div className="hv-tab-content">
+      <div className="hv-tab-content hv-cover-workspace">
         <HtmlVideoCaptionEditor key={task.id} api={api} task={task} config={data.config} applyState={applyState} refreshTaskDetail={refreshTaskDetail} busy={busy} />
         <HtmlVideoStoryboundPreviewPanel {...editorialProps} />
       </div>
@@ -444,49 +594,53 @@ export function HtmlVideoTabPanel({
       : 'desktop-only';
     const coverDimensions = htmlVideoCoverDimensions(data.config.coverRatio ?? HTML_VIDEO_JOB_DEFAULTS.coverRatio);
     return (
-      <div className="hv-tab-content">
-        <HtmlVideoCoverEditor
-          key={task.id}
-          api={api}
-          task={task}
-          config={data.config}
-          coverAsset={data.coverAsset}
-          templates={customCoverTemplates}
-          renderError={data.steps.render.error}
-          applyState={applyState}
-          refreshTaskDetail={refreshTaskDetail}
-          busy={busy}
-          isBrowserPreview={isBrowserPreview}
-        />
-        {data.config.coverImageMode === 'off' ? (
-          <EmptyState title="封面已关闭" />
-        ) : coverPath ? (
-          <figure className="hv-media-item hv-cover-preview">
-            <div className="hv-media-frame" style={{ aspectRatio: `${coverDimensions.width} / ${coverDimensions.height}` }} aria-busy={coverStatus === 'loading'}>
-              {coverStatus === 'ready' && coverUrl ? (
-                <img
-                  key={htmlVideoMediaElementKey(task.id, coverPath, mediaRetryRevision)}
-                  src={coverUrl}
-                  alt="HTML 视频封面预览"
-                  onError={() => onMediaElementError(coverPath)}
-                  onLoad={() => onMediaElementReady(coverPath)}
-                />
-              ) : coverStatus === 'loading' ? (
-                <span className="hv-media-state hv-media-loading" role="status"><Loader2 className="spin" size={18} />封面加载中</span>
-              ) : coverStatus === 'unavailable' ? (
-                <span className="hv-media-state" role="status"><ImageIcon size={22} />封面加载失败</span>
-              ) : (
-                <span className="hv-media-state" role="status"><ImageIcon size={22} />本地封面仅桌面端可用</span>
-              )}
-            </div>
-            <figcaption>
-              <strong>{task.title}</strong>
-              <small>{data.coverAsset?.path}</small>
-            </figcaption>
-          </figure>
-        ) : (
-          <EmptyState title="等待封面生成" />
-        )}
+      <div className="hv-tab-content hv-cover-workspace">
+        <div className="hv-cover-layout">
+          <section className="hv-cover-preview-pane" aria-label="封面预览">
+            <header className="hv-reference-panel-head"><strong>封面预览</strong><span>{coverDimensions.width}x{coverDimensions.height}</span></header>
+            {data.config.coverImageMode === 'off' ? (
+              <EmptyState title="封面已关闭" />
+            ) : coverPath ? (
+              <figure className="hv-media-item hv-cover-preview">
+                <div className="hv-media-frame" style={{ aspectRatio: `${coverDimensions.width} / ${coverDimensions.height}` }} aria-busy={coverStatus === 'loading'}>
+                  {coverStatus === 'ready' && coverUrl ? (
+                    <img
+                      key={htmlVideoMediaElementKey(task.id, coverPath, mediaRetryRevision)}
+                      src={coverUrl}
+                      alt="HTML 视频封面预览"
+                      onError={() => onMediaElementError(coverPath)}
+                      onLoad={() => onMediaElementReady(coverPath)}
+                    />
+                  ) : coverStatus === 'loading' ? (
+                    <span className="hv-media-state hv-media-loading" role="status"><Loader2 className="spin" size={18} />封面加载中</span>
+                  ) : coverStatus === 'unavailable' ? (
+                    <span className="hv-media-state" role="status"><ImageIcon size={22} />封面加载失败</span>
+                  ) : (
+                    <span className="hv-media-state" role="status"><ImageIcon size={22} />本地封面仅桌面端可用</span>
+                  )}
+                </div>
+                <figcaption><strong>{task.title}</strong><small>{data.coverAsset?.path}</small></figcaption>
+              </figure>
+            ) : (
+              <EmptyState title="等待封面生成" />
+            )}
+          </section>
+          <HtmlVideoCoverEditor
+            key={task.id}
+            api={api}
+            task={task}
+            config={data.config}
+            coverAsset={data.coverAsset}
+            templates={customCoverTemplates}
+            summary={data.scenes[0]?.narration ?? task.inputText}
+            renderError={data.steps.render.error}
+            applyState={applyState}
+            refreshTaskDetail={refreshTaskDetail}
+            busy={busy}
+            isBrowserPreview={isBrowserPreview}
+            openOutputDirectory={openOutputDirectory}
+          />
+        </div>
       </div>
     );
   }
@@ -503,20 +657,11 @@ export function HtmlVideoTabPanel({
     aspectRatio: String(outputSize.aspectRatio),
   };
   return (
-    <div className="hv-tab-content">
-      <div className="task-metrics">
-        <div
-          data-html-video-control="transitionType"
-          data-control-availability={HTML_VIDEO_CONTROL_MANIFEST_V1.transitionType.availability}
-        ><small>转场</small><strong>{data.config.transitionType ?? HTML_VIDEO_JOB_DEFAULTS.transitionType}</strong></div>
-        <div><small>背景音乐</small><strong>{data.config.bgmId || '无'}</strong></div>
-        <div
-          data-html-video-control="coverRatio"
-          data-control-availability={HTML_VIDEO_CONTROL_MANIFEST_V1.coverRatio.availability}
-        ><small>封面比例</small><strong>{data.config.coverRatio ?? HTML_VIDEO_JOB_DEFAULTS.coverRatio}</strong></div>
-      </div>
+    <div className="hv-tab-content hv-output-workspace">
+      <header className="hv-reference-panel-head"><strong>出片</strong><span>逐帧截图 → ffmpeg 合成 mp4</span></header>
       {data.output ? (
         <div className="hv-video-output">
+          <strong className="hv-output-ready"><span />成片已生成</strong>
           {outputStatus === 'ready' && outputUrl ? (
             <video
               key={htmlVideoMediaElementKey(task.id, data.output.path, mediaRetryRevision)}
@@ -547,6 +692,12 @@ export function HtmlVideoTabPanel({
           </div>
         </div>
       ) : <EmptyState title="等待出片" />}
+      <HtmlVideoOutputActions api={api} task={task} config={data.config} bgmOptions={bgmOptions} applyState={applyState} refreshTaskDetail={refreshTaskDetail} busy={busy} isBrowserPreview={isBrowserPreview} openOutputDirectory={openOutputDirectory} />
+      <div className="hv-output-contracts" aria-hidden="true">
+        <span data-html-video-control="transitionType" data-control-availability={HTML_VIDEO_CONTROL_MANIFEST_V1.transitionType.availability} />
+        <span data-html-video-control="coverRatio" data-control-availability={HTML_VIDEO_CONTROL_MANIFEST_V1.coverRatio.availability} />
+        <Music2 size={14} />
+      </div>
     </div>
   );
 }

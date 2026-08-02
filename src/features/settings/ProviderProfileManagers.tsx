@@ -1,6 +1,6 @@
 import { useEffect, useMemo } from "react";
 import { Copy, GripVertical, Loader2, Palette, Play, Plus, Search, XCircle } from "lucide-react";
-import type { AppConfig, ImageProviderProfile, MinimaxCloneVoice, ProviderModel, ProviderModelListRequest, TtsProviderProfile, VolcengineSpeaker, VolcengineTtsApiVersion } from "../../shared/types";
+import type { AppConfig, ImageGenerationQuality, ImageProviderProfile, MinimaxCloneVoice, ProviderModel, ProviderModelListRequest, TtsProviderProfile, VolcengineSpeaker, VolcengineTtsApiVersion } from "../../shared/types";
 import { ArtifactEmpty } from "../tasks/TaskArtifactPreview";
 import { activeImageProfileId, activeLlmProfileId, activeTtsProfileId, addImageProfile, addLlmProfile, addTtsProfile, copyImageProfile, copyLlmProfile, copyTtsProfile, editableLlmProfileProvider, imageProfileCustomImage, imageProfileGptImage, imageProfileJimeng, normalizedImageProfiles, normalizedTtsProfiles, removeImageProfile, removeLlmProfile, removeTtsProfile, saveImageProfile, saveLlmProfile, saveTtsProfile, ttsProfileMinimax, ttsProfileVolcengine } from "../../shared/provider-profile-utils";
 import { defaultConfig } from "../../shared/config";
@@ -442,6 +442,7 @@ export function ImageProfileManager({
               onChange={(value) => updateSelectedProfile({ ...selectedProfile, gptImage: { ...gptImage, model: value } })}
             />
             <Segmented label="分辨率" value={gptImage.resolution ?? '2K'} options={['1K', '2K', '4K']} onChange={(value) => updateSelectedProfile({ ...selectedProfile, gptImage: { ...gptImage, resolution: value as ImageResolution } })} />
+            <Segmented label="默认质量" value={gptImage.quality ?? 'medium'} options={['low', 'medium', 'high']} labels={['低成本', '标准', '高质量']} onChange={(value) => updateSelectedProfile({ ...selectedProfile, gptImage: { ...gptImage, quality: value as ImageGenerationQuality } })} />
             <Field label="并发"><input type="range" min="1" max="6" value={gptImage.concurrency} onChange={(event) => updateSelectedProfile({ ...selectedProfile, gptImage: { ...gptImage, concurrency: Number(event.target.value) } })} /></Field>
           </>
         ) : null}
@@ -477,6 +478,7 @@ export function ImageProfileManager({
               onChange={(value) => updateSelectedProfile({ ...selectedProfile, customImage: { ...customImage, model: value } })}
             />
             <Segmented label="分辨率" value={customImage.resolution ?? '2K'} options={['1K', '2K', '4K']} onChange={(value) => updateSelectedProfile({ ...selectedProfile, customImage: { ...customImage, resolution: value as ImageResolution } })} />
+            <Segmented label="默认质量" value={customImage.quality ?? 'medium'} options={['low', 'medium', 'high']} labels={['低成本', '标准', '高质量']} onChange={(value) => updateSelectedProfile({ ...selectedProfile, customImage: { ...customImage, quality: value as ImageGenerationQuality } })} />
             <Field label="并发"><input type="range" min="1" max="6" value={customImage.concurrency} onChange={(event) => updateSelectedProfile({ ...selectedProfile, customImage: { ...customImage, concurrency: Number(event.target.value) } })} /></Field>
           </>
         ) : null}

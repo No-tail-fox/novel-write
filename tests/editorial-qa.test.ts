@@ -36,11 +36,11 @@ describe('editorial Electron QA configuration', () => {
 
   it('defines the exact completed capture count for every QA scope', () => {
     expect(Object.fromEntries(editorialQaScopes.map((scope) => [scope, editorialQaExpectedCaptureCount(scope)]))).toEqual({
-      all: 91,
+      all: 92,
       'theme-smoke': 4,
       shell: 4,
       'new-task': 4,
-      'task-operations': 7,
+      'task-operations': 8,
       'html-video': 2,
       'clone-voice': 4,
       'volcengine-tts': 2,
@@ -54,13 +54,13 @@ describe('editorial Electron QA configuration', () => {
     }
   });
 
-  it('classifies the canonical 67 required captures separately from 24 supplemental states', () => {
+  it('classifies the canonical 67 required captures separately from 25 supplemental states', () => {
     const required = editorialQaCaptureIdsByRequirement('required');
     const supplemental = editorialQaCaptureIdsByRequirement('supplemental');
     const all = editorialQaCaptureIds('all');
 
     expect(required).toHaveLength(67);
-    expect(supplemental).toHaveLength(24);
+    expect(supplemental).toHaveLength(25);
     expect(new Set([...required, ...supplemental])).toEqual(new Set(all));
     expect(required.filter((id) => supplemental.includes(id))).toEqual([]);
     expect(required).toEqual(expect.arrayContaining([
@@ -89,6 +89,7 @@ describe('editorial Electron QA configuration', () => {
       'task-detail-operations-desktop',
       'task-detail-borrowed-image-desktop',
       'task-detail-error-dialog-compact',
+      'task-detail-error-summary-desktop',
       'task-detail-template-menu-dark-desktop',
       'volcengine-legacy-dark-compact',
       'volcengine-v3-light-desktop',
@@ -129,7 +130,12 @@ describe('editorial Electron QA configuration', () => {
     expect(source).toContain('evidence.identity.matched');
     expect(source).toContain('evidence.interaction.verified');
     expect(source).toContain('nav instanceof HTMLElement && interactiveElements.includes(nav)');
+    expect(source).toContain('activeModal.contains(document.activeElement)');
+    expect(source).toContain('let interactionVerified = interactionPerformed');
+    expect(source).toContain("document.querySelectorAll('[role=\"listbox\"], [role=\"menu\"]')");
+    expect(source).toContain('!activePopup.contains(element) && activePopup.contains(hit)');
     expect(source).toContain('Editorial QA cross-cutting evidence failed');
+    expect(source).toContain('JSON.stringify(state.evidence.interaction)');
     expect(runner).toContain('validateCanonicalEvidence(qaReport)');
     expect(runner).toContain("capture.requirement === 'required'");
     expect(runner).toContain('capture.evidence?.identity.matched');

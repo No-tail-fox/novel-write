@@ -3,6 +3,7 @@ import { runtimeProtocolMetadata } from '@hyperframes/core/runtime/protocol';
 import type { DraftTemplate, HtmlVideoJobConfig, HtmlVideoScenePlan, PipelineArtifact } from './types';
 import { resolveHtmlVideoCaptionStyle, type ResolvedHtmlVideoCaptionStyle } from './html-video-captions';
 import { GSAP_RUNTIME_FILENAME, HYPERFRAMES_RUNTIME_FILENAME } from './hyperframes';
+import { htmlVideoSceneTemplate } from './html-video-scene-templates';
 
 export interface HtmlVideoSceneSource {
   sceneId: number;
@@ -241,11 +242,12 @@ function buildSceneHtml(scene: {
   const motionTween = draftTemplateMotionTween(scene.draftTemplate, scene.duration);
   const titleScale = clampNumber(scene.plan?.titleScale ?? 1, 0.25, 3);
   const captionScale = clampNumber(scene.plan?.captionScale ?? 1, 0.25, 3);
-  const titleTop = clampNumber(scene.plan?.titleTopOverride ?? 9, 0, 100);
-  const captionY = clampNumber(scene.plan?.captionYOverride ?? 84, 0, 100);
+  const template = htmlVideoSceneTemplate(scene.plan?.sceneTemplate);
+  const titleTop = clampNumber(scene.plan?.titleTopOverride ?? template.titleTop, 0, 100);
+  const captionY = clampNumber(scene.plan?.captionYOverride ?? template.captionY, 0, 100);
   const titleSize = roundCssNumber(Math.max(26, scene.canvas_w * 0.052) * titleScale);
   const captionSize = roundCssNumber(Math.max(18, scene.canvas_w * 0.034) * captionScale);
-  const sceneTemplate = escapeHtml(scene.plan?.sceneTemplate ?? 'center-focus');
+  const sceneTemplate = escapeHtml(template.id);
   return `<!doctype html>
 <html lang="zh-CN">
 <head>
@@ -403,31 +405,141 @@ function buildSceneHtml(scene: {
       background: var(--caption-background);
       font-weight: 800;
     }
-    .frame[data-scene-template="split-left"] .scene-foreground {
-      inset: 12% 45% 4% 2%;
-      width: 53%;
-      height: 84%;
-      object-position: left bottom;
-    }
-    .frame[data-scene-template="split-right"] .scene-foreground {
-      inset: 12% 2% 4% 45%;
-      width: 53%;
-      height: 84%;
+    .frame[data-scene-template="left-text-right-object"] .scene-foreground,
+    .frame[data-scene-template="rule-of-thirds"] .scene-foreground {
+      inset: 13% 0 4% 43%;
+      width: 57%;
+      height: 83%;
       object-position: right bottom;
     }
-    .frame[data-scene-template="lower-third"] .scene-foreground {
-      inset: 18% 8% 20%;
-      width: 84%;
-      height: 62%;
+    .frame[data-scene-template="left-text-right-object"] .title,
+    .frame[data-scene-template="left-text-right-object"] .captions,
+    .frame[data-scene-template="rule-of-thirds"] .title,
+    .frame[data-scene-template="rule-of-thirds"] .captions {
+      left: 6%;
+      width: 48%;
+      transform: none;
+      text-align: left;
+    }
+    .frame[data-scene-template="right-text-left-object"] .scene-foreground {
+      inset: 13% 43% 4% 0;
+      width: 57%;
+      height: 83%;
+      object-position: left bottom;
+    }
+    .frame[data-scene-template="right-text-left-object"] .title,
+    .frame[data-scene-template="right-text-left-object"] .captions {
+      left: 48%;
+      width: 46%;
+      transform: none;
+      text-align: right;
+    }
+    .frame[data-scene-template="three-float"] .scene-foreground {
+      inset: 23% auto 14%;
+      width: 42%;
+      height: 63%;
+    }
+    .frame[data-scene-template="three-float"] #foreground-1 { left: -3%; }
+    .frame[data-scene-template="three-float"] #foreground-2 { left: 29%; z-index: 3; }
+    .frame[data-scene-template="three-float"] #foreground-3 { right: -3%; }
+    .frame[data-scene-template="full-quote"] .scene-image,
+    .frame[data-scene-template="quote-card"] .scene-image,
+    .frame[data-scene-template="big-number"] .scene-image {
+      opacity: 0.45;
+      filter: saturate(0.72) brightness(0.72);
+    }
+    .frame[data-scene-template="full-quote"] .scene-foreground { opacity: 0.28; }
+    .frame[data-scene-template="full-quote"] .title,
+    .frame[data-scene-template="big-number"] .title {
+      width: 82%;
+      font-size: ${roundCssNumber(titleSize * 1.5)}px;
+      line-height: 1.16;
+      white-space: normal;
+    }
+    .frame[data-scene-template="full-image"] .veil { opacity: 0.58; }
+    .frame[data-scene-template="person-focus"] .scene-foreground {
+      inset: 12% -8% -4%;
+      width: 116%;
+      height: 92%;
+    }
+    .frame[data-scene-template="split-compare"]::after {
+      content: '';
+      position: absolute;
+      inset: 0 49.6%;
+      z-index: 4;
+      width: 0.8%;
+      background: var(--caption-accent);
+      opacity: 0.8;
+    }
+    .frame[data-scene-template="split-compare"] .scene-image-region { right: 50%; width: 50%; }
+    .frame[data-scene-template="split-compare"] .scene-foreground {
+      inset: 10% 0 8% 50%;
+      width: 50%;
+      height: 82%;
+    }
+    .frame[data-scene-template="center-burst"] .scene-foreground {
+      inset: 10% -8% -4%;
+      width: 116%;
+      height: 94%;
+      filter: drop-shadow(0 0 34px rgba(255, 211, 92, 0.42));
+    }
+    .frame[data-scene-template="grid-four"] .scene-foreground {
+      inset: auto;
+      width: 48%;
+      height: 38%;
+      object-position: center bottom;
+    }
+    .frame[data-scene-template="grid-four"] #foreground-1 { top: 13%; left: 2%; }
+    .frame[data-scene-template="grid-four"] #foreground-2 { top: 13%; right: 2%; }
+    .frame[data-scene-template="grid-four"] #foreground-3 { bottom: 13%; left: 2%; }
+    .frame[data-scene-template="grid-four"] #foreground-4 { right: 2%; bottom: 13%; }
+    .frame[data-scene-template="quote-card"] .copy {
+      inset: 18% 7% 20%;
+      border: 1px solid rgba(255, 255, 255, 0.24);
+      background: rgba(7, 9, 10, 0.72);
+      box-shadow: 0 28px 80px rgba(0, 0, 0, 0.38);
+    }
+    .frame[data-scene-template="quote-card"] .title { top: 18%; }
+    .frame[data-scene-template="quote-card"] .captions { top: 70%; }
+    .frame[data-scene-template="top-object-bottom-text"] .scene-foreground {
+      inset: 2% 7% 38%;
+      width: 86%;
+      height: 60%;
+      object-position: center bottom;
+    }
+    .frame[data-scene-template="top-object-bottom-text"] .copy {
+      top: 50%;
+      background: linear-gradient(180deg, transparent, rgba(5, 7, 8, 0.9) 28%);
+    }
+    .frame[data-scene-template="diagonal-flow"] .scene-foreground {
+      inset: 16% -8% 1% 30%;
+      width: 82%;
+      height: 83%;
+      transform: rotate(-4deg);
+    }
+    .frame[data-scene-template="diagonal-flow"] .title {
+      left: 5%;
+      width: 62%;
+      transform: rotate(-4deg);
+      text-align: left;
+    }
+    .frame[data-scene-template="orbit-focus"] .scene-foreground {
+      inset: auto;
+      width: 42%;
+      height: 42%;
+    }
+    .frame[data-scene-template="orbit-focus"] #foreground-1 { top: 12%; left: 29%; }
+    .frame[data-scene-template="orbit-focus"] #foreground-2 { top: 32%; right: 0; }
+    .frame[data-scene-template="orbit-focus"] #foreground-3 { bottom: 10%; left: 29%; }
+    .frame[data-scene-template="orbit-focus"] #foreground-4 { top: 32%; left: 0; }
+    .frame[data-scene-template="parallax-focus"] .scene-image { filter: saturate(0.86) contrast(1.08); }
+    .frame[data-scene-template="parallax-focus"] .scene-foreground {
+      inset: 7% -7% -7%;
+      width: 114%;
+      height: 100%;
     }
     .meta {
-      display: inline-flex;
-      gap: 10px;
-      align-items: center;
-      color: rgba(229, 241, 242, 0.7);
-      font-size: 12px;
-      text-transform: uppercase;
-      letter-spacing: 0.08em;
+      display: none;
     }
     .ready-indicator {
       position: absolute;
@@ -442,7 +554,7 @@ function buildSceneHtml(scene: {
 <body>
   <div id="${compositionId}" class="frame" data-composition-id="${compositionId}" data-start="0" data-duration="${scene.duration}" data-width="${scene.canvas_w}" data-height="${scene.canvas_h}" data-caption-preset="${scene.captionStyle.preset}" data-caption-animation="${scene.captionStyle.animation}" data-scene-template="${sceneTemplate}" data-draft-motion="${layout.motion || 'legacy'}" data-draft-frame="${layout.frameEnabled}">
     ${layout.frameEnabled ? '<div class="draft-frame-band draft-frame-header"></div><div class="draft-frame-band draft-frame-footer"></div>' : ''}
-    <div class="scene-image-region"><img id="scene-background" class="clip scene-image" data-start="0" data-duration="${scene.duration}" data-track-index="0" src="${imageDataUrl}" alt="${escapeHtml(scene.caption)}" /></div>
+    <div class="scene-image-region"><img id="scene-background" class="clip scene-image" data-start="0" data-duration="${scene.duration}" data-track-index="0" src="${imageDataUrl}" alt="" /></div>
     <audio id="scene-narration" class="clip scene-audio" data-start="0" data-duration="${scene.duration}" data-track-index="1" data-volume="1" src="${audioDataUrl}" preload="auto"></audio>
     <div id="scene-veil" class="clip veil" data-start="0" data-duration="${scene.duration}" data-track-index="20"></div>
     ${foregroundMarkup}
@@ -460,6 +572,40 @@ function buildSceneHtml(scene: {
     const hyperframesProtocol = ${JSON.stringify(hyperframesProtocol)};
     function postHyperframesMessage(type, payload = {}) {
       window.parent.postMessage({ source: 'hf-preview', ...hyperframesProtocol, type, ...payload }, '*');
+    }
+    function postStorydreamRuntimeReady() {
+      const canInspectMedia = typeof document !== 'undefined';
+      const background = canInspectMedia ? document.querySelector('#scene-background') : null;
+      const report = () => {
+        const mediaReferences = canInspectMedia
+          ? Array.from(document.querySelectorAll('[src]'))
+            .map((item) => item.getAttribute('src') || '')
+            .filter(Boolean)
+          : [];
+        window.parent.postMessage({
+          type: 'storydream:hyperframes-runtime-ready',
+          compositionId: '${compositionId}',
+          hasGsap: typeof window.gsap?.timeline === 'function',
+          compositionReady: window.__ready === true,
+          timelineKeys: Object.keys(window.__timelines),
+          timelineDuration: window.__tl.duration(),
+          backgroundReady: !canInspectMedia || Boolean(background?.complete && background.naturalWidth > 0 && background.naturalHeight > 0),
+          mediaReferences,
+        }, '*');
+      };
+      if (!background || background.complete) {
+        report();
+        return;
+      }
+      let settled = false;
+      const finish = () => {
+        if (settled) return;
+        settled = true;
+        report();
+      };
+      background.addEventListener('load', finish, { once: true });
+      background.addEventListener('error', finish, { once: true });
+      window.setTimeout(finish, 5000);
     }
     const tl = gsap.timeline({ paused: true });
     ${motionTween}
@@ -545,14 +691,7 @@ function buildSceneHtml(scene: {
       fitScene();
       fitCaps();
       window.addEventListener('resize', fitScene);
-      window.parent.postMessage({
-        type: 'storydream:hyperframes-runtime-ready',
-        compositionId: '${compositionId}',
-        hasGsap: typeof window.gsap?.timeline === 'function',
-        compositionReady: window.__ready === true,
-        timelineKeys: Object.keys(window.__timelines),
-        timelineDuration: window.__tl.duration(),
-      }, '*');
+      postStorydreamRuntimeReady();
       postHyperframesMessage('ready');
       postHyperframesMessage('timeline', {
         durationInFrames: Math.max(1, Math.round(window.__duration * ${scene.fps})),

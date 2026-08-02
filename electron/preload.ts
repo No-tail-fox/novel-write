@@ -227,12 +227,18 @@ export const storyDreamApi = {
     invokeTrusted('html-video:update-config', { id, changes }),
   updateHtmlVideoScene: (id: string, sceneIndex: number, changes: HtmlVideoSceneChange[]) =>
     invokeTrusted('html-video:update-scene', { id, sceneIndex, changes }),
+  addHtmlVideoAsset: (id: string, sceneIndex: number, prompt: string) =>
+    invokeTrusted('html-video:add-asset', { id, sceneIndex, prompt }),
   replaceHtmlVideoAsset: (id: string, target: HtmlVideoAssetTarget) =>
     invokeTrusted('html-video:replace-asset', { id, target }),
   regenerateHtmlVideoAsset: (id: string, target: HtmlVideoAssetTarget) =>
     invokeTrusted('html-video:regenerate-asset', { id, target }),
   regenerateHtmlVideoVoice: (id: string, sceneIndex: number) =>
     invokeTrusted('html-video:regenerate-voice', { id, sceneIndex }),
+  regenerateHtmlVideoCover: (id: string): Promise<AppMutationResult | null> =>
+    invokeTrusted('html-video:regenerate-cover', id),
+  rerenderHtmlVideo: (id: string): Promise<AppMutationResult | null> =>
+    invokeTrusted('html-video:rerender', id),
   importHtmlVideoCover: (id: string): Promise<AppMutationResult | null> =>
     invokeTrusted('html-video:import-cover', id),
   getHtmlVideoCompositionSource: (taskId: string, sceneIndex: number): Promise<HtmlVideoCompositionSource> =>

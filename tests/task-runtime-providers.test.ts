@@ -14,7 +14,7 @@ import { runTask, type RunTaskOptions } from '@shared/runner';
 import type { SceneAsset } from '@shared/draft';
 import { MAX_HTML_VIDEO_SOURCE_CHARS } from '@shared/html-video-workflow';
 import { HTML_VIDEO_JOB_DEFAULTS } from '@shared/html-video-config';
-import type { HtmlVideoScenePlan, Task } from '@shared/types';
+import type { AppConfig, HtmlVideoScenePlan, ImagePrompt, StoryboardScene, Task } from '@shared/types';
 
 afterEach(() => vi.unstubAllGlobals());
 
@@ -573,6 +573,50 @@ describe('task runtime providers', () => {
     await providers.llm?.run({ step: 0, name: 'profile-check', messages: [{ role: 'user', content: 'Return {"ok":true}' }] });
 
     expect(requests[0]).toMatchObject({ model: 'draft-model' });
+  });
+
+  it('overrides only image quality while keeping the configured provider, model, resolution, and concurrency', async () => {
+    const requests: Array<{ url: string; body: Record<string, unknown> }> = [];
+    vi.stubGlobal('fetch', vi.fn(async (url: string, init: RequestInit) => {
+      requests.push({ url, body: JSON.parse(String(init.body)) });
+      return new Response(JSON.stringify({ data: [{ b64_json: Buffer.from('task-image').toString('base64') }] }), {
+        status: 200,
+        headers: { 'content-type': 'application/json' },
+      });
+    }));
+    const config: AppConfig = {
+      ...defaultConfig,
+      imageProvider: 'gpt_image',
+      gptImage: {
+        ...defaultConfig.gptImage,
+        baseUrl: 'https://active-image.example',
+        apiKey: 'active-key',
+        model: 'active-image-model',
+        resolution: '2K',
+        quality: 'medium',
+        concurrency: 2,
+      },
+    };
+    const scene: StoryboardScene = { id: 1, cap: 'Task image', descPrompt: 'task image prompt', durationMs: 1200 };
+    const prompt: ImagePrompt = {
+      sceneId: 1,
+      cap: scene.cap,
+      prompt: 'task image prompt',
+      negativePrompt: '',
+      style: 'photo-real',
+      ratio: '9:16',
+      characterProfile: '',
+    };
+
+    await withRuntimeTask(async (task, workDir) => {
+      task.imageQuality = 'high';
+      const providers = createTaskRuntimeProviders(config, workDir, task);
+      expect(providers.imageConcurrency).toBe(2);
+      await providers.generateImages?.([scene], [prompt], task);
+    });
+
+    expect(requests[0].url).toBe('https://active-image.example/v1/images/generations');
+    expect(requests[0].body).toMatchObject({ model: 'active-image-model', size: '1024x1536', quality: 'high' });
   });
 
   it('treats Volcengine V3 API key settings as a usable TTS provider', () => {

@@ -19,6 +19,12 @@ describe('three-stage new task workbench', () => {
     expect(page).toContain('目标长度');
     expect(page).toContain('分镜数量');
     expect(page).toContain('画面比例');
+    expect(page).toContain('生图质量');
+    expect(page).toContain('覆盖生图质量');
+    expect(page).toContain('checked={imageQualityOverrideEnabled}');
+    expect(page).toContain('imageQuality: imageQualityOverrideEnabled ? imageQuality : null');
+    expect(page).not.toContain('生图配置');
+    expect(page).not.toContain('生图分辨率');
     expect(page).toContain('配音角色');
     expect(page).toContain('草稿模板');
   });

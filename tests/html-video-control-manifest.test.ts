@@ -37,6 +37,7 @@ const APPROVED_HTML_VIDEO_FIELDS = [
   'coverImageMode',
   'coverTemplate',
   'coverRatio',
+  'coverPrompt',
   'draftTemplate',
   'foreground',
   'maxScenes',
@@ -57,6 +58,7 @@ const fullCustomConfig: Required<HtmlVideoJobConfig> = {
   coverImageMode: 'auto',
   coverTemplate: 'custom-cover-template',
   coverRatio: '3:4',
+  coverPrompt: 'custom cover prompt',
   draftTemplate: 'custom-draft-template',
   foreground: false,
   maxScenes: 12,
@@ -64,7 +66,7 @@ const fullCustomConfig: Required<HtmlVideoJobConfig> = {
 };
 
 describe('HTML video control manifest', () => {
-  it('governs exactly all 17 approved fields with complete metadata', () => {
+  it('governs exactly all 18 approved fields with complete metadata', () => {
     expect(HTML_VIDEO_CONTROL_MANIFEST_VERSION).toBe(1);
     expect([...HTML_VIDEO_CONTROL_FIELDS].sort()).toEqual([...APPROVED_HTML_VIDEO_FIELDS].sort());
     expect(Object.keys(HTML_VIDEO_CONTROL_MANIFEST_V1).sort()).toEqual([...APPROVED_HTML_VIDEO_FIELDS].sort());
@@ -133,6 +135,7 @@ describe('HTML video control manifest', () => {
       coverImageMode: 'coverImageMode',
       coverTemplate: 'coverTemplateId',
       coverRatio: null,
+      coverPrompt: null,
       draftTemplate: null,
       foreground: 'htmlVideoForeground',
       maxScenes: 'targetScenes|storyboardSceneCount',
@@ -247,12 +250,14 @@ describe('HTML video control manifest', () => {
       'captionAnim',
       'captionColors',
       'bgmVolume',
+      'coverPrompt',
       'draftTemplate',
     ]));
     expect(recovered.missingCompatibleFields).toEqual([
       'captionAnim',
       'captionColors',
       'bgmVolume',
+      'coverPrompt',
       'draftTemplate',
     ]);
     expect(recovered.warnings).toEqual([
@@ -320,6 +325,7 @@ describe('HTML video control manifest', () => {
         coverImageMode: 'auto',
         coverTemplate: 'custom-cover-template',
         coverRatio: '3:4',
+        coverPrompt: 'custom cover prompt',
         draftTemplate: 'custom-draft-template',
         ratio: '4:3',
         transitionType: 'dissolve',

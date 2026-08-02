@@ -269,6 +269,7 @@ describe('config validation utilities', () => {
         baseUrl: 'https://input.codes',
         apiKey: 'image-key',
         model: 'gpt-image-2',
+        quality: 'high' as const,
       },
     };
 
@@ -281,7 +282,7 @@ describe('config validation utilities', () => {
     expect(requests[0].body).toMatchObject({
       model: 'gpt-image-2',
       size: '1024x1536',
-      quality: 'medium',
+      quality: 'high',
       output_format: 'png',
       moderation: 'auto',
     });

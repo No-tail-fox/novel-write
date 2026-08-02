@@ -16,6 +16,7 @@ export const HTML_VIDEO_CONTROL_FIELDS = [
   'coverImageMode',
   'coverTemplate',
   'coverRatio',
+  'coverPrompt',
   'draftTemplate',
   'foreground',
   'maxScenes',
@@ -37,6 +38,7 @@ export const HTML_VIDEO_EDITABLE_CONTROL_FIELDS = [
   'coverImageMode',
   'coverTemplate',
   'coverRatio',
+  'coverPrompt',
   'draftTemplate',
   'foreground',
   'maxScenes',
@@ -127,6 +129,10 @@ export const HTML_VIDEO_CONTROL_MANIFEST_V1 = {
   }),
   coverRatio: entry('coverRatio', {
     schema: 'cover-ratio', uiLocation: 'cover', legacyMirror: null,
+    consumerStages: ['render'], invalidateFrom: 'render', availability: 'editable',
+  }),
+  coverPrompt: entry('coverPrompt', {
+    schema: 'bounded-string', uiLocation: 'cover', legacyMirror: null,
     consumerStages: ['render'], invalidateFrom: 'render', availability: 'editable',
   }),
   draftTemplate: entry('draftTemplate', {

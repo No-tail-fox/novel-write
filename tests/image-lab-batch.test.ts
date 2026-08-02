@@ -11,6 +11,7 @@ describe('image lab batch and recovery helpers', () => {
       quantity: 2,
       provider: 'jimeng',
       resolution: '2K',
+      quality: 'high',
       smartMode: 'podcast-cover',
       referenceImagePaths: ['C:\\refs\\host.png'],
     });
@@ -29,6 +30,7 @@ describe('image lab batch and recovery helpers', () => {
     expect(inputs[0]).toMatchObject({
       provider: 'jimeng',
       resolution: '2K',
+      quality: 'high',
       smartMode: 'podcast-cover',
       referenceImagePath: 'C:\\refs\\host.png',
       referenceImagePaths: ['C:\\refs\\host.png'],
@@ -70,6 +72,7 @@ describe('image lab batch and recovery helpers', () => {
       status: 'failed',
       errorMessage: 'timeout',
       resolution: '4K',
+      quality: 'high',
       smartMode: 'reference-edit',
       referenceImagePaths: ['C:\\refs\\a.png', 'C:\\refs\\b.png'],
       referenceImagePath: 'C:\\refs\\a.png',
@@ -86,6 +89,7 @@ describe('image lab batch and recovery helpers', () => {
       style: record.style,
       provider: 'custom',
       resolution: record.resolution,
+      quality: 'high',
       smartMode: record.smartMode,
       referenceImagePath: record.referenceImagePath,
       referenceImagePaths: record.referenceImagePaths,

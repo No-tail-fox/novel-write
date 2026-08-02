@@ -8,7 +8,7 @@ import { AsyncActionFeedback as InlineActionFeedback } from '../../components/As
 import { AspectRatioSwatch } from '../../components/AspectRatioSwatch';
 import type { ApplyMutationResult, RendererAppState as AppState } from '../../app/route-types';
 import type { StoryDreamApi } from '../../shared/storydream-api';
-import type { ImageLabGenerateInput, ImageLabRecord, ImageLabSmartMode } from '../../shared/types';
+import type { ImageGenerationQuality, ImageLabGenerateInput, ImageLabRecord, ImageLabSmartMode } from '../../shared/types';
 import { smartImageModeOptions, styleOptions } from '../../shared/editorial-options';
 import { useAsyncAction } from '../../ui/async-action';
 import { formatDate, toLocalImageUrl } from '../tasks/task-formatters';
@@ -21,6 +21,7 @@ import {
   smartImageModeLabel,
 } from './image-lab-helpers';
 import '../../styles/features/local-labs.css';
+import { imageGenerationQualityLabel, normalizeImageGenerationQuality } from '../../shared/image-quality';
 
 type ImageResolution = ImageLabRecord['resolution'];
 type ImageLabProviderChoice = 'gpt_image' | 'jimeng' | 'custom';
@@ -55,6 +56,11 @@ export function ImageLabPage({ api, state, applyState }: { api: StoryDreamApi; s
     isImageLabProviderChoice(state.config.imageProvider) ? state.config.imageProvider : 'gpt_image',
   );
   const [resolution, setResolution] = useState<ImageResolution>('1K');
+  const [quality, setQuality] = useState<ImageGenerationQuality>(() => normalizeImageGenerationQuality(
+    state.config.imageProvider === 'custom'
+      ? state.config.customImage.quality
+      : state.config.gptImage.quality ?? state.config.image.quality,
+  ));
   const [referenceImagePath, setReferenceImagePath] = useState('');
   const [referencePasteDraft, setReferencePasteDraft] = useState('');
   const [imageLabOutputCount, setImageLabOutputCount] = useState(3);
@@ -76,8 +82,7 @@ export function ImageLabPage({ api, state, applyState }: { api: StoryDreamApi; s
   const resolvedSmartMode = resolveImageLabSmartMode(tab, baseSmartMode, references);
   const quantity = Math.max(1, Math.min(10, imageLabOutputCount));
   const batchRequestCount = selectedRatios.length * selectedStyles.length * quantity;
-  const unitCost = resolution === '1K' ? 0.08 : resolution === '2K' ? 0.16 : 0.32;
-  const estimatedCost = (unitCost * batchRequestCount).toFixed(2);
+  const supportsImageQuality = provider !== 'jimeng';
   const failedRecords = state.imageLabRecords.filter((record) => record.status === 'failed');
 
   async function selectImageLabReferenceImage() {
@@ -134,6 +139,7 @@ export function ImageLabPage({ api, state, applyState }: { api: StoryDreamApi; s
         quantity,
         provider,
         resolution,
+        quality,
         smartMode: resolvedSmartMode,
         referenceImagePaths: references,
       }));
@@ -153,6 +159,7 @@ export function ImageLabPage({ api, state, applyState }: { api: StoryDreamApi; s
         provider,
         imagePath,
         resolution,
+        quality,
         smartMode: resolvedSmartMode,
         referenceImagePath: references[0] ?? '',
         referenceImagePaths: references,
@@ -313,6 +320,7 @@ export function ImageLabPage({ api, state, applyState }: { api: StoryDreamApi; s
               </div>
             </div>
             <Segmented label="分辨率" value={resolution} options={['1K', '2K', '4K']} onChange={(value) => setResolution(value as ImageResolution)} />
+            {supportsImageQuality ? <Segmented label="生成质量" value={quality} options={['low', 'medium', 'high']} labels={['低成本', '标准', '高质量']} onChange={(value) => setQuality(value as ImageGenerationQuality)} /> : null}
             <Field label="Provider">
               <select value={provider} onChange={(event) => setProvider(event.target.value as ImageLabProviderChoice)}>
                 {imageLabProviderChoices.map(([value, label]) => <option value={value} key={value}>{label}</option>)}
@@ -320,7 +328,7 @@ export function ImageLabPage({ api, state, applyState }: { api: StoryDreamApi; s
             </Field>
             <div className="image-lab-batch-summary">
               <strong>{selectedRatios.length} 比例 × {selectedStyles.length} 风格 × {quantity} 张</strong>
-              <span>共 {batchRequestCount} 个任务 · 预计 ￥{estimatedCost}</span>
+              <span>共 {batchRequestCount} 个任务 · {supportsImageQuality ? `${imageGenerationQualityLabel(quality)}质量` : `${resolution} 分辨率`}</span>
             </div>
             <div className="image-lab-footer">
               <button className="ghost-action" type="button" onClick={importCompletedImage} disabled={generating || imageLabAction.busy || !prompt.trim()}>
@@ -373,7 +381,7 @@ export function ImageLabPage({ api, state, applyState }: { api: StoryDreamApi; s
                 )}
               </div>
               <strong title={record.prompt}>{record.prompt}</strong>
-              <small>{record.provider} · {record.ratio} · {record.resolution} · {smartImageModeLabel(record.smartMode)} · {formatDate(record.createdAt)}</small>
+              <small>{record.provider} · {record.ratio} · {record.resolution}{record.provider === 'jimeng' ? '' : ` · ${imageGenerationQualityLabel(record.quality ?? 'medium')}质量`} · {smartImageModeLabel(record.smartMode)} · {formatDate(record.createdAt)}</small>
               {record.errorMessage ? <ErrorSummaryButton compact title="生图失败" fullMessage={record.errorMessage} /> : null}
               <div className="image-record-actions">
                 {record.status === 'failed' ? (

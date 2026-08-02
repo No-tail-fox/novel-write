@@ -3,6 +3,7 @@ import { createHash } from 'node:crypto';
 import { copyFile, link, lstat, mkdir, mkdtemp, readFile, readdir, realpath, rename, rm, stat, symlink, unlink, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { basename, dirname, join } from 'node:path';
+import { pathToFileURL } from 'node:url';
 import { describe, expect, it } from 'vitest';
 import * as htmlVideoRuntimeModule from '../electron/html-video-runtime';
 import { AppError, isCancellation } from '../src/shared/app-error';
@@ -15,6 +16,7 @@ import {
   createElectronHtmlVideoRuntime,
   ensureHtmlVideoTaskWorkDir,
   htmlVideoCanvasForRatio,
+  openHtmlVideoCompositionMediaResponse,
   prepareHtmlVideoBgm,
   preflightHtmlVideoRender,
   resolveHtmlVideoMediaUrl,
@@ -251,7 +253,7 @@ describe('Electron HTML video runtime contract', () => {
       main.indexOf('function viralAnalysisWorkDir'),
     );
     const verifiedFetch = mediaProtocol.indexOf('return await fetchHtmlVideoMediaResponse(');
-    const fetchMedia = mediaProtocol.indexOf('openHtmlVideoMediaFileResponse(', verifiedFetch);
+    const fetchMedia = mediaProtocol.indexOf('openHtmlVideoCompositionMediaResponse(', verifiedFetch);
     expect(mediaProtocol).toContain('htmlVideoTaskDirectory');
     expect(mediaProtocol).toContain("request.headers.get('range')");
     expect(verifiedFetch).toBeGreaterThan(-1);
@@ -732,6 +734,59 @@ describe('Electron HTML video runtime contract', () => {
         );
         expect(response.headers.get('Content-Type')).toBe(contentType);
         await expect(response.text()).resolves.toBe(body);
+      }
+    });
+  });
+
+  it('rewrites composition scripts, images, and audio to task-pinned media URLs', async () => {
+    await withRuntimeDir(async (workDir) => {
+      const htmlDir = join(workDir, 'html-scenes');
+      const htmlPath = join(htmlDir, 'scene-001.html');
+      const runtimePath = join(htmlDir, 'gsap.min.js');
+      const imagePath = join(workDir, 'scene-001.png');
+      const audioPath = join(workDir, 'scene-001.wav');
+      await mkdir(htmlDir);
+      await Promise.all([
+        writeFile(runtimePath, 'window.gsap = {};', 'utf8'),
+        writeFile(imagePath, Buffer.from('image')),
+        writeFile(audioPath, Buffer.from('audio')),
+      ]);
+      await writeFile(htmlPath, `<!doctype html><html><head><script src="./gsap.min.js"></script></head><body><img src="${pathToFileURL(imagePath)}"><audio src="${pathToFileURL(audioPath)}"></audio></body></html>`, 'utf8');
+
+      const taskDirectory = taskDirectoryFor(workDir);
+      const url = await createHtmlVideoMediaUrl('task-1', taskDirectory, htmlPath);
+      const response = await htmlVideoRuntimeModule.fetchHtmlVideoMediaResponse(
+        url,
+        () => taskDirectory,
+        (path, identity, context) => openHtmlVideoCompositionMediaResponse(path, identity, context, null),
+      );
+      const body = await response.text();
+
+      expect(body).not.toContain('file:');
+      expect(body.match(/src="storydream-media:\/\/task\/task-1\//gu)).toHaveLength(3);
+      expect(body).toContain('/html-scenes/gsap.min.js');
+      expect(body).toContain('/scene-001.png');
+      expect(body).toContain('/scene-001.wav');
+      expect(response.headers.get('Content-Length')).toBe(String(Buffer.byteLength(body)));
+    });
+  });
+
+  it('rejects a composition file URL that escapes the pinned task directory', async () => {
+    await withRuntimeDir(async (workDir) => {
+      const outsidePath = `${workDir}-outside.png`;
+      const htmlPath = join(workDir, 'scene-escape.html');
+      try {
+        await writeFile(outsidePath, Buffer.from('outside'));
+        await writeFile(htmlPath, `<img src="${pathToFileURL(outsidePath)}">`, 'utf8');
+        const taskDirectory = taskDirectoryFor(workDir);
+        const url = await createHtmlVideoMediaUrl('task-1', taskDirectory, htmlPath);
+        await expect(htmlVideoRuntimeModule.fetchHtmlVideoMediaResponse(
+          url,
+          () => taskDirectory,
+          (path, identity, context) => openHtmlVideoCompositionMediaResponse(path, identity, context, null),
+        )).rejects.toMatchObject({ code: 'HTML_VIDEO_MEDIA_PATH_INVALID' });
+      } finally {
+        await rm(outsidePath, { force: true });
       }
     });
   });

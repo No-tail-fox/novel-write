@@ -6,6 +6,7 @@ import { validateConfigTarget } from '../shared/config-utils';
 import {
   applyHtmlVideoConfigChanges,
   applyHtmlVideoSceneChanges,
+  prepareHtmlVideoPipelineForRerender,
   htmlVideoVisibleSteps,
   parseHtmlVideoPipelineData,
 } from '../shared/html-video-workflow';
@@ -779,6 +780,7 @@ export function makeFallbackApi(setState: (state: AppState) => void): StoryDream
         status: 'failed',
         errorMessage: '浏览器预览无法调用真实生图模型，请在 Electron 桌面端使用。',
         resolution: input.resolution ?? activeImageResolution(state.config),
+        quality: input.quality ?? 'medium',
         smartMode: input.smartMode ?? 'text-to-image',
         referenceImagePaths: input.referenceImagePaths?.length ? input.referenceImagePaths : input.referenceImagePath ? [input.referenceImagePath] : [],
         referenceImagePath: input.referenceImagePath ?? '',
@@ -976,6 +978,9 @@ export function makeFallbackApi(setState: (state: AppState) => void): StoryDream
       const updated: Task = { ...task, pipelineData: JSON.stringify(pipeline), lastHeartbeatAt: new Date().toISOString() };
       return persist({ ...state, tasks: state.tasks.map((item) => item.id === id ? updated : item) });
     },
+    async addHtmlVideoAsset() {
+      throw new Error('浏览器预览不能添加本地素材，请在 Electron 桌面端操作。');
+    },
     async replaceHtmlVideoAsset() {
       throw new Error('浏览器预览不能替换本地素材，请在 Electron 桌面端操作。');
     },
@@ -984,6 +989,25 @@ export function makeFallbackApi(setState: (state: AppState) => void): StoryDream
     },
     async regenerateHtmlVideoVoice() {
       throw new Error('浏览器预览不能调用配音服务，请在 Electron 桌面端操作。');
+    },
+    async regenerateHtmlVideoCover() {
+      throw new Error('浏览器预览不能调用图片服务，请在 Electron 桌面端操作。');
+    },
+    async rerenderHtmlVideo(id: string) {
+      const state = read();
+      const task = state.tasks.find((item) => item.id === id);
+      if (!task || task.taskType !== 'html-video') throw new Error(`HTML 视频任务不存在：${id}`);
+      const pipeline = prepareHtmlVideoPipelineForRerender(parseHtmlVideoPipelineData(task.pipelineData));
+      const updated: Task = {
+        ...task,
+        status: 'paused',
+        currentStep: htmlVideoVisibleSteps.indexOf('render'),
+        pipelineStep: 'render',
+        pipelineData: JSON.stringify(pipeline),
+        completedAt: null,
+        errorMessage: '',
+      };
+      return persist({ ...state, tasks: state.tasks.map((item) => item.id === id ? updated : item) });
     },
     async importHtmlVideoCover() {
       throw new Error('浏览器预览不能导入本地封面，请在 Electron 桌面端操作。');

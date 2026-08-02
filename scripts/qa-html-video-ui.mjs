@@ -1,4 +1,5 @@
 import { spawn, spawnSync } from 'node:child_process';
+import { createHash } from 'node:crypto';
 import { createRequire } from 'node:module';
 import { createServer } from 'node:net';
 import { copyFile, mkdir, mkdtemp, readFile, readdir, rm, stat, writeFile } from 'node:fs/promises';
@@ -17,7 +18,8 @@ const stdout = [];
 const runtimeErrors = [];
 const networkRequests = [];
 const networkResponses = [];
-const htmlVideoEditableFields = ['style', 'voiceId', 'ttsProvider', 'ttsSpeed', 'bgmId', 'bgmVolume', 'transitionType', 'foreground', 'maxScenes', 'ratio', 'coverImageMode', 'coverTemplate', 'coverRatio', 'draftTemplate'];
+const htmlVideoCreateFields = ['style', 'voiceId', 'ttsProvider', 'ttsSpeed', 'bgmId', 'bgmVolume', 'transitionType', 'foreground', 'maxScenes', 'ratio', 'coverImageMode', 'coverTemplate', 'coverRatio', 'draftTemplate'];
+const htmlVideoEditableFields = [...htmlVideoCreateFields, 'coverPrompt'];
 const htmlVideoReadOnlyFields = [];
 let child;
 let cdp;
@@ -173,8 +175,9 @@ try {
   const coverDesktopState = await inspectCoverPanel(cdp);
   configControls.editFields = [...new Set([...configControls.editFields, ...coverDesktopState.editFields])].sort();
   configControls.coverState = coverDesktopState;
+  const expectedCreateFields = [...htmlVideoCreateFields].sort();
   const expectedEditableFields = [...htmlVideoEditableFields].sort();
-  if (JSON.stringify(configControls.createFields) !== JSON.stringify(expectedEditableFields)) {
+  if (JSON.stringify(configControls.createFields) !== JSON.stringify(expectedCreateFields)) {
     throw new Error(`HTML video create controls differ from the governed fields: ${configControls.createFields.join(', ')}`);
   }
   if (JSON.stringify(configControls.editFields) !== JSON.stringify(expectedEditableFields)) {
@@ -233,6 +236,7 @@ try {
   if (lightOutputFooter.theme !== 'light' || lightOutputFooter.failures.length) {
     throw new Error(`Light output footer is not readable: ${JSON.stringify(lightOutputFooter)}`);
   }
+  await resetHtmlVideoPanelScroll(cdp);
   await saveScreenshot(cdp, outputLightScreenshot);
   const failedLightWorkspace = await inspectFailedTaskLightWorkspace(cdp, seededTasks.failed);
   if (failedLightWorkspace.failures.length
@@ -255,7 +259,7 @@ try {
     mobile: false,
   });
   await delay(350);
-  await evaluate(cdp, `document.querySelector('.hv-video-output')?.scrollIntoView({ block: 'center' })`);
+  await resetHtmlVideoPanelScroll(cdp);
   const compactState = await inspectPage(cdp);
   await saveScreenshot(cdp, compactScreenshot);
   const coverCompactState = await inspectCoverPanel(cdp);
@@ -317,12 +321,17 @@ try {
   if (!desktopState.video.visible || !compactState.video.visible) throw new Error('Completed output is not visible in both viewports.');
   if (desktopState.horizontalOverflow > 2 || compactState.horizontalOverflow > 2) throw new Error('HTML video page overflows horizontally.');
   if (desktopState.clippedControls.length || compactState.clippedControls.length) throw new Error('HTML video controls are clipped.');
-  if (coverDesktopState.horizontalOverflow > 2 || coverCompactState.horizontalOverflow > 2) throw new Error('HTML video cover panel overflows horizontally.');
-  if (coverDesktopState.clippedControls.length || coverCompactState.clippedControls.length) throw new Error('HTML video cover controls are clipped.');
+  if (coverDesktopState.horizontalOverflow > 2 || coverCompactState.horizontalOverflow > 2
+    || coverDesktopState.surfaceHorizontalOverflow > 2 || coverCompactState.surfaceHorizontalOverflow > 2) {
+    throw new Error(`HTML video cover panel overflows horizontally: ${JSON.stringify({ coverDesktopState, coverCompactState })}`);
+  }
+  if (coverDesktopState.clippedControls.length || coverCompactState.clippedControls.length) {
+    throw new Error(`HTML video cover controls are clipped: ${JSON.stringify({ coverDesktopState, coverCompactState })}`);
+  }
   if (authoringDesktop.horizontalOverflow > 2 || authoringCompact.horizontalOverflow > 2) throw new Error('HyperFrames authoring workspace overflows horizontally.');
   if (authoringDesktop.clippedControls.length || authoringCompact.clippedControls.length) throw new Error('HyperFrames authoring controls are clipped.');
-  if (coverDesktopState.editFields.join(',') !== 'coverImageMode,coverRatio,coverTemplate'
-    || coverCompactState.editFields.join(',') !== 'coverImageMode,coverRatio,coverTemplate') {
+  if (coverDesktopState.editFields.join(',') !== 'coverImageMode,coverPrompt,coverRatio,coverTemplate'
+    || coverCompactState.editFields.join(',') !== 'coverImageMode,coverPrompt,coverRatio,coverTemplate') {
     throw new Error(`HTML video cover controls were not all rendered: ${JSON.stringify({ coverDesktopState, coverCompactState })}`);
   }
   if (!(playback.currentTime > 0.2) || playback.readyState < 2 || playback.error) throw new Error('Output playback did not advance.');
@@ -644,6 +653,10 @@ async function exerciseHyperframesAuthoring(cdpConnection, screenshotPath) {
         compositionReady: payload.compositionReady === true,
         timelineKeys: Array.isArray(payload.timelineKeys) ? payload.timelineKeys.filter((item) => typeof item === 'string') : [],
         timelineDuration: Number.isFinite(payload.timelineDuration) ? payload.timelineDuration : 0,
+        backgroundReady: payload.backgroundReady === true,
+        mediaReferences: Array.isArray(payload.mediaReferences)
+          ? payload.mediaReferences.filter((item) => typeof item === 'string')
+          : [],
       };
     });
     return true;
@@ -664,6 +677,7 @@ async function exerciseHyperframesAuthoring(cdpConnection, screenshotPath) {
         player: Boolean(player),
         ready: player?.ready === true,
         sourceUrl: player?.getAttribute('src') || '',
+        sourceMode: player?.hasAttribute('src') ? 'src' : 'unknown',
         iframeUrl: player?.iframeElement?.src || '',
         iframeReadyState: player?.iframeElement?.contentDocument?.readyState || '',
         emptyText: document.querySelector('.hv-authoring-empty')?.textContent.trim() || '',
@@ -678,11 +692,15 @@ async function exerciseHyperframesAuthoring(cdpConnection, screenshotPath) {
         return player.workspace
           && player.player
           && player.ready
-          && player.iframeUrl
+          && player.sourceMode === 'src'
+          && player.iframeUrl.startsWith('storydream-media:')
           && runtime.hasGsap
           && runtime.compositionReady
           && runtime.timelineKeys.length > 0
-          && runtime.timelineDuration > 0;
+          && runtime.timelineDuration > 0
+          && runtime.backgroundReady
+          && runtime.mediaReferences.length > 0
+          && runtime.mediaReferences.every((reference) => reference.startsWith('storydream-media:'));
       },
       20_000,
       'HyperFrames Player readiness',
@@ -742,6 +760,8 @@ async function exerciseHyperframesAuthoring(cdpConnection, screenshotPath) {
   const state = await evaluate(cdpConnection, `(() => {
     const player = document.querySelector('hyperframes-player');
     const iframeUrl = player?.iframeElement?.src || '';
+    const runtime = globalThis.__storydreamQaHyperframesRuntime || {};
+    const mediaReferences = Array.isArray(runtime.mediaReferences) ? runtime.mediaReferences : [];
     const workspace = document.querySelector('.hv-authoring-workspace');
     const isVisible = (item) => {
       const style = getComputedStyle(item);
@@ -759,8 +779,16 @@ async function exerciseHyperframesAuthoring(cdpConnection, screenshotPath) {
       .map((item) => item.textContent.trim());
     return {
       ready: player?.ready === true,
+      backgroundReady: runtime.backgroundReady === true,
+      sourceMode: player?.hasAttribute('src') ? 'src' : 'unknown',
       iframeUrl,
-      iframeProtocolTrusted: iframeUrl.startsWith('storydream-media:'),
+      iframeDocumentUrl: player?.iframeElement?.contentDocument?.URL || '',
+      iframeReadyState: player?.iframeElement?.contentDocument?.readyState || '',
+      iframeHtmlPreview: player?.iframeElement?.contentDocument?.documentElement?.outerHTML.slice(0, 500) || '',
+      iframeProtocolTrusted: iframeUrl.startsWith('storydream-media:')
+        && mediaReferences.length > 0
+        && mediaReferences.every((reference) => reference.startsWith('storydream-media:')),
+      mediaReferences,
       panels: ${JSON.stringify(panels)},
       lintPassed: Boolean(document.querySelector('.hv-authoring-statusbar')?.textContent.includes('检查通过')),
       lintFindingCount: document.querySelectorAll('.hv-authoring-lint-finding').length,
@@ -775,8 +803,14 @@ async function exerciseHyperframesAuthoring(cdpConnection, screenshotPath) {
       viewport: { width: innerWidth, height: innerHeight },
     };
   })()`);
-  if (!state.ready || !state.iframeUrl.startsWith('storydream-media:') || !state.iframeProtocolTrusted) {
-    throw new Error(`HyperFrames Player did not use the trusted composition URL: ${JSON.stringify(state)}`);
+  if (!state.ready || !state.backgroundReady || state.sourceMode !== 'src' || !state.iframeProtocolTrusted) {
+    throw new Error(`HyperFrames Player did not load trusted task-local composition media: ${JSON.stringify({
+      ...state,
+      networkRequests: networkRequests.slice(-20),
+      networkResponses: networkResponses.slice(-20),
+      runtimeErrors: runtimeErrors.slice(-20),
+      electronStderr: Buffer.concat(stderr).toString('utf8').slice(-4000),
+    })}`);
   }
   if (state.panels.length !== 4 || !state.lintPassed || !state.timelineVisible || state.clipCount < 4) {
     throw new Error(`HyperFrames authoring tools are incomplete: ${JSON.stringify(state)}`);
@@ -998,6 +1032,7 @@ async function seedCompletedTask(database, createHtmlVideoPipelineData, runHtmlV
   const voicePath = join(taskDir, 'scene-001.wav');
   const thumbnailPath = join(taskDir, 'scene-001-thumbnail.png');
   const outputPath = join(taskDir, 'final.mp4');
+  const coverPath = join(taskDir, 'covers', 'cover-auto-r1.png');
   const retryPath = join(taskDir, 'same-url-retry.png');
   await mkdir(htmlDir, { recursive: true });
   await copyFile(
@@ -1089,6 +1124,28 @@ async function seedCompletedTask(database, createHtmlVideoPipelineData, runHtmlV
     },
     async onCheckpoint() {},
   });
+  await mkdir(dirname(coverPath), { recursive: true });
+  createQaCover(coverPath);
+  const coverBytes = await readFile(coverPath);
+  const coverStat = await stat(coverPath);
+  completed.config.coverImageMode = 'auto';
+  completed.config.coverTemplate = 'cinematic-poster';
+  completed.config.coverRatio = '3:4';
+  completed.config.coverPrompt = '电影海报感，主体清晰，标题区域留出稳定空间。';
+  completed.coverAsset = {
+    version: 1,
+    revision: 1,
+    mode: 'auto',
+    path: 'covers/cover-auto-r1.png',
+    sizeBytes: coverStat.size,
+    width: 768,
+    height: 1024,
+    mimeType: 'image/png',
+    sha256: createHash('sha256').update(coverBytes).digest('hex'),
+    ratio: '3:4',
+    createdAt: new Date().toISOString(),
+    templateId: 'cinematic-poster',
+  };
   const now = Date.now();
   await database.updateTask(task.id, {
     status: 'completed',
@@ -1109,6 +1166,15 @@ function createQaAudio(outputPath, tone) {
     '-c:a', 'pcm_s16le',
     outputPath,
   ], 'audio');
+}
+
+function createQaCover(outputPath) {
+  runFfmpeg([
+    '-f', 'lavfi',
+    '-i', 'testsrc2=size=768x1024:rate=1',
+    '-frames:v', '1',
+    outputPath,
+  ], 'cover');
 }
 
 function createQaVideo(outputPath, tone) {
@@ -1451,6 +1517,15 @@ function clickTab(cdpConnection, tabLabel) {
   })()`);
 }
 
+function resetHtmlVideoPanelScroll(cdpConnection) {
+  return evaluate(cdpConnection, `(() => {
+    const panel = document.querySelector('.hv-studio-media-panel');
+    if (!panel) return false;
+    panel.scrollTo({ top: 0, left: 0, behavior: 'auto' });
+    return panel.scrollTop === 0 && panel.scrollLeft === 0;
+  })()`);
+}
+
 function clickMediaRetry(cdpConnection) {
   return evaluate(cdpConnection, `(() => {
     const button = [...document.querySelectorAll('.hv-media-error button')]
@@ -1558,6 +1633,9 @@ async function inspectCoverPanel(cdpConnection) {
       .map((item) => item.getAttribute('data-html-video-edit-field'))
       .filter(Boolean)
       .sort();
+    const surfaceHorizontalOverflow = Math.max(0, ...[...document.querySelectorAll(
+      '.hv-tab-content, .hv-cover-workspace, .hv-cover-layout, .hv-cover-editor',
+    )].map((item) => item.scrollWidth - item.clientWidth));
     return {
       activeTab: document.querySelector('.hv-tab.active')?.textContent.trim() || '',
       dimensionsText: document.querySelector('.hv-cover-editor .panel-title-row span')?.textContent.trim() || '',
@@ -1565,6 +1643,7 @@ async function inspectCoverPanel(cdpConnection) {
         .find((item) => item.textContent.includes('导入封面'))?.disabled),
       editFields,
       horizontalOverflow: document.documentElement.scrollWidth - document.documentElement.clientWidth,
+      surfaceHorizontalOverflow,
       clippedControls,
       viewport: { width: innerWidth, height: innerHeight },
     };

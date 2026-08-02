@@ -4,6 +4,40 @@ import { describe, expect, it } from 'vitest';
 const source = (path: string) => readFile(new URL(path, import.meta.url), 'utf8');
 
 describe('HTML video editorial studio', () => {
+  it('exposes Storybound voice, foreground, preset, and rerender controls', async () => {
+    const [panels, tabs, templates, main, styles] = await Promise.all([
+      source('../src/features/html-video/HtmlVideoStoryboundPanels.tsx'),
+      source('../src/features/html-video/HtmlVideoTabPanel.tsx'),
+      source('../src/shared/html-video-scene-templates.ts'),
+      source('../electron/main.ts'),
+      source('../src/styles/features/html-video.css'),
+    ]);
+    expect(panels).toContain('onClick={applyVoiceSettings}');
+    expect(panels).toContain('应用并重配全部');
+    expect(panels).toContain('手动添加前景');
+    expect(panels).toContain('api.addHtmlVideoAsset(task.id, scene.index, prompt.trim())');
+    expect(panels).not.toContain("api.updateHtmlVideoScene(task.id, scene.index, [{ field: 'addElement'");
+    expect(panels).toContain('HTML_VIDEO_SCENE_TEMPLATES.map');
+    expect(tabs).toContain('api.regenerateHtmlVideoCover(task.id)');
+    expect(tabs).toContain('data-html-video-edit-field="coverPrompt"');
+    expect(tabs).toContain('重画封面');
+    expect(tabs).toContain('api.rerenderHtmlVideo(task.id)');
+    expect(tabs).toContain('onClick={rerender}');
+    expect(tabs).toContain('重新出片');
+    expect(templates.match(/id: '/gu)).toHaveLength(17);
+    expect(styles).toContain('.hv-cover-workspace {\n  container-type: inline-size;');
+    expect(styles).toContain('@container (max-width: 650px)');
+    expect(styles).toContain('.hv-cover-editor-grid {\n  display: grid;\n  grid-template-columns: 1fr;');
+
+    const addAssetHandler = main.slice(
+      main.indexOf("trustedHandle('html-video:add-asset'"),
+      main.indexOf("trustedHandle('html-video:replace-asset'"),
+    );
+    expect(addAssetHandler.indexOf('dialog.showOpenDialog')).toBeLessThan(addAssetHandler.indexOf('applyHtmlVideoSceneChanges'));
+    expect(addAssetHandler).toContain('replaceHtmlVideoEditorialAsset');
+    expect(addAssetHandler).toContain('persistHtmlVideoEditorialMutation');
+  });
+
   it('opens on the dedicated creation page before entering a task workspace', async () => {
     const [page, styles, qa] = await Promise.all([
       source('../src/features/html-video/HtmlVideoPage.tsx'),
@@ -25,6 +59,7 @@ describe('HTML video editorial studio', () => {
     expect(page).not.toContain('className="hv-create-details"');
     expect(styles).toContain('.hv-create-page {');
     expect(styles).toContain('.hv-create-sheet {');
+    expect(qa).toContain('surfaceHorizontalOverflow');
     expect(styles).toContain('.hv-create-section {');
     expect(styles).not.toContain('.hv-create-details');
     expect(qa).toContain('inspectCreationPage');
@@ -62,7 +97,7 @@ describe('HTML video editorial studio', () => {
       source('../src/shared/html-video-control-manifest.ts'),
     ]);
     expect(manifest).toContain('HTML_VIDEO_CONTROL_MANIFEST_V1');
-    expect((manifest.match(/availability: 'editable'/g) ?? []).length).toBe(17);
+    expect((manifest.match(/availability: 'editable'/g) ?? []).length).toBe(18);
     expect(page).toContain('htmlVideoSteps.map');
     expect(page).toContain('taskProgressLabel');
     expect(page).toContain("setTaskStatus('paused')");

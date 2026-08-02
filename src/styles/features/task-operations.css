@@ -690,13 +690,13 @@
 
 .task-stage-track .pipeline-step {
   min-width: 0;
-  min-height: 62px;
+  min-height: 68px;
   display: grid;
-  grid-template-columns: 28px minmax(0, 1fr);
+  grid-template-columns: 24px minmax(0, 1fr);
   align-items: center;
-  gap: 7px;
+  gap: 6px;
   border-right: 1px solid var(--shell-border);
-  padding: 8px 10px;
+  padding: 8px;
 }
 
 .task-stage-track .pipeline-step:last-child {
@@ -708,8 +708,8 @@
 }
 
 .task-stage-track .pipeline-node {
-  width: 24px;
-  height: 24px;
+  width: 22px;
+  height: 22px;
   border-radius: 50%;
   background: var(--shell-surface);
   font-size: 11px;
@@ -717,6 +717,9 @@
 
 .task-stage-track .pipeline-step > div:last-child {
   min-width: 0;
+  display: grid;
+  align-content: center;
+  gap: 4px;
 }
 
 .task-stage-track .pipeline-step strong,
@@ -733,9 +736,41 @@
 }
 
 .task-stage-track .pipeline-step small {
-  margin-top: 3px;
+  margin-top: 0;
   color: var(--shell-muted);
   font-size: 10px;
+}
+
+.task-stage-track .pipeline-step .error-summary-button.compact {
+  width: 100%;
+  max-width: 100%;
+  min-width: 0;
+  min-height: 22px;
+  margin-top: 0;
+  gap: 5px;
+  overflow: hidden;
+  border-radius: 5px;
+  padding: 2px 6px;
+  font-size: 10px;
+  line-height: 1;
+}
+
+.task-stage-track .pipeline-step .error-summary-button.compact .error-mark {
+  width: 14px;
+  height: 14px;
+  display: grid;
+  place-items: center;
+  margin-top: 0;
+  font-size: 10px;
+  line-height: 1;
+}
+
+.task-stage-track .pipeline-step .error-summary-button.compact > span:last-child {
+  min-width: 0;
+  display: block;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .task-stage-track .pipeline-step.running {
@@ -761,6 +796,10 @@
   position: sticky;
   z-index: 3;
   top: 0;
+  width: 100%;
+  max-width: none;
+  display: flex;
+  align-items: center;
   border: 0;
   border-radius: 0;
   padding: 0 0 10px;
@@ -778,11 +817,14 @@
 
 .artifact-tab-list {
   flex: 0 0 auto;
+  flex-wrap: wrap;
   gap: 6px;
 }
 
 .task-template-switcher {
-  flex: 0 1 auto;
+  flex: 1 1 360px;
+  justify-content: flex-end;
+  max-width: 430px;
   gap: 6px;
   margin-left: auto;
 }
@@ -1148,6 +1190,28 @@
   color: var(--shell-text);
 }
 
+.task-detail-shell[data-task-operations="detail"] .artifact-section .panel-title-row {
+  min-width: 0;
+  align-items: flex-start;
+  margin-bottom: 0;
+}
+
+.task-detail-shell[data-task-operations="detail"] .artifact-section .panel-title-row h3 {
+  min-width: 0;
+  flex: 1 1 auto;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.task-detail-shell[data-task-operations="detail"] .artifact-section-actions {
+  flex: 0 1 auto;
+}
+
+.task-detail-shell[data-task-operations="detail"] .artifact-section-actions small {
+  flex: 0 0 auto;
+}
+
 .task-detail-shell[data-task-operations="detail"] .artifact-text-block,
 .task-detail-shell[data-task-operations="detail"] .artifact-source-list div,
 .task-detail-shell[data-task-operations="detail"] .artifact-scene-list div,
@@ -1246,6 +1310,7 @@
 
   .task-template-switcher {
     width: 100%;
+    max-width: none;
     margin-left: 0;
   }
 

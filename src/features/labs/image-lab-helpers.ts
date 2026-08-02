@@ -1,5 +1,5 @@
 import { smartImageModeOptions } from '../../shared/editorial-options';
-import type { ImageLabGenerateInput, ImageLabRecord, ImageLabSmartMode } from '../../shared/types';
+import type { ImageGenerationQuality, ImageLabGenerateInput, ImageLabRecord, ImageLabSmartMode } from '../../shared/types';
 
 type ImageLabProviderChoice = 'gpt_image' | 'jimeng' | 'custom';
 
@@ -10,6 +10,7 @@ export interface ImageLabBatchSeed {
   quantity: number;
   provider: ImageLabProviderChoice;
   resolution: ImageLabRecord['resolution'];
+  quality?: ImageGenerationQuality;
   smartMode: ImageLabSmartMode;
   referenceImagePaths: string[];
 }
@@ -30,6 +31,7 @@ export function buildImageLabBatchInputs(seed: ImageLabBatchSeed): ImageLabGener
           style,
           provider: seed.provider,
           resolution: seed.resolution,
+          quality: seed.quality ?? 'medium',
           smartMode: seed.smartMode,
           referenceImagePath: referenceImagePaths[0] ?? '',
           referenceImagePaths,
@@ -49,6 +51,7 @@ export function imageLabRetryInput(record: ImageLabRecord): ImageLabGenerateInpu
     style: record.style,
     ...(provider ? { provider } : {}),
     resolution: record.resolution,
+    quality: record.quality ?? 'medium',
     smartMode: record.smartMode,
     referenceImagePath: record.referenceImagePath,
     referenceImagePaths: [...record.referenceImagePaths],

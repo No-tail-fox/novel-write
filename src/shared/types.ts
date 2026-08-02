@@ -152,6 +152,8 @@ export interface JianyingEffectCatalog {
   audioEffects: string[];
 }
 
+export type ImageGenerationQuality = 'low' | 'medium' | 'high';
+
 export interface ImageConfig {
   baseUrl: string;
   apiKey: string;
@@ -159,6 +161,7 @@ export interface ImageConfig {
   ratio: string;
   concurrency: number;
   resolution?: '1K' | '2K' | '4K';
+  quality?: ImageGenerationQuality;
   proxyUrl?: string;
   timeoutMs?: number;
 }
@@ -344,6 +347,7 @@ export interface Task {
   style: string;
   speaker: string;
   ratio: string;
+  imageQuality?: ImageGenerationQuality | null;
   templateId: string;
   bgmId: string;
   pausePoints: PausePoint[];
@@ -468,6 +472,7 @@ export type HtmlVideoSceneChange =
   | { field: 'foregroundHidden'; value: boolean }
   | { field: 'elementHidden'; slot: number; value: boolean }
   | { field: 'backgroundPrompt'; value: string }
+  | { field: 'addElement'; value: string }
   | { field: 'elementPrompt'; slot: number; value: string }
   | { field: 'titleScale'; value: number }
   | { field: 'titleTopOverride'; value: number }
@@ -620,6 +625,7 @@ export interface HtmlVideoJobConfig {
   coverImageMode?: HtmlVideoCoverMode;
   coverTemplate?: string;
   coverRatio?: HtmlVideoCoverRatio;
+  coverPrompt?: string;
   draftTemplate?: string;
   foreground?: boolean;
   maxScenes?: number;
@@ -640,6 +646,7 @@ export type HtmlVideoEditableConfigField =
   | 'coverImageMode'
   | 'coverTemplate'
   | 'coverRatio'
+  | 'coverPrompt'
   | 'draftTemplate'
   | 'foreground'
   | 'maxScenes'
@@ -659,6 +666,7 @@ export type HtmlVideoConfigChange =
   | { field: 'coverImageMode'; value: HtmlVideoCoverMode }
   | { field: 'coverTemplate'; value: string }
   | { field: 'coverRatio'; value: HtmlVideoCoverRatio }
+  | { field: 'coverPrompt'; value: string }
   | { field: 'draftTemplate'; value: string }
   | { field: 'foreground'; value: boolean }
   | { field: 'maxScenes'; value: number }
@@ -753,6 +761,7 @@ export type CreateTaskInput = Partial<
     | 'style'
     | 'speaker'
     | 'ratio'
+    | 'imageQuality'
     | 'templateId'
     | 'bgmId'
     | 'pausePoints'
@@ -971,6 +980,7 @@ export interface ImageLabRecord {
   status: 'mock' | 'generated' | 'failed';
   errorMessage: string;
   resolution: '1K' | '2K' | '4K';
+  quality?: ImageGenerationQuality;
   smartMode: ImageLabSmartMode;
   referenceImagePaths: string[];
   referenceImagePath: string;
@@ -986,10 +996,10 @@ export type ImageLabSummary = Omit<ImageLabRecord, 'prompt' | 'referenceImagePat
 export type ImageLabSmartMode = 'text-to-image' | 'cover' | 'blog-cover' | 'podcast-cover' | 'video-narration' | 'two-host-podcast' | 'reference-edit';
 
 export type ImageLabGenerateInput = Pick<ImageLabRecord, 'prompt' | 'ratio' | 'style'> &
-  Partial<Pick<ImageLabRecord, 'id' | 'provider' | 'resolution' | 'smartMode' | 'referenceImagePath' | 'referenceImagePaths' | 'upstreamTaskId' | 'createdAt'>>;
+  Partial<Pick<ImageLabRecord, 'id' | 'provider' | 'resolution' | 'quality' | 'smartMode' | 'referenceImagePath' | 'referenceImagePaths' | 'upstreamTaskId' | 'createdAt'>>;
 
 export type ImageLabImportInput = Pick<ImageLabRecord, 'prompt' | 'ratio' | 'style' | 'provider' | 'imagePath'> &
-  Partial<Pick<ImageLabRecord, 'resolution' | 'smartMode' | 'referenceImagePath' | 'referenceImagePaths' | 'upstreamTaskId'>>;
+  Partial<Pick<ImageLabRecord, 'resolution' | 'quality' | 'smartMode' | 'referenceImagePath' | 'referenceImagePaths' | 'upstreamTaskId'>>;
 
 export interface VoiceLabRecord {
   id: string;

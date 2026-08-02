@@ -57,8 +57,10 @@ describe('HyperFrames HTML animation integration', () => {
     );
     expect(html).toContain("window.__timelines['storydream-scene-1'] = tl");
     expect(html).toContain("type: 'storydream:hyperframes-runtime-ready'");
+    expect(html).toContain('backgroundReady: !canInspectMedia');
+    expect(html).toContain("document.querySelectorAll('[src]')");
     expect(html.indexOf("window.__timelines['storydream-scene-1'] = tl")).toBeLessThan(
-      html.indexOf("type: 'storydream:hyperframes-runtime-ready'"),
+      html.lastIndexOf('postStorydreamRuntimeReady();'),
     );
     const gsapRuntime = 'src="./gsap.min.js"';
     const hyperframesRuntime = 'src="./hyperframe.runtime.gsap.iife.js"';

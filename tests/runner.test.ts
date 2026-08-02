@@ -2022,9 +2022,9 @@ describe('task runner', () => {
         draftWriterOptions: { runBridge: fakeBridge },
       });
 
-      expect(imageCalls[0].prompts[0].prompt).toContain('Create a podcast cover');
-      expect(imageCalls[0].prompts[0].prompt).toContain('thumbnail');
-      expect(imageCalls[0].prompts[0].prompt).toContain('topic signal');
+      expect(imageCalls[0].prompts[0].prompt).toContain('创作一张缩略图尺寸下仍清晰可读的播客封面');
+      expect(imageCalls[0].prompts[0].prompt).toContain('稳定的节目识别');
+      expect(imageCalls[0].prompts[0].prompt).toContain('单一主题信号');
     } finally {
       await db.close();
       await rm(dir, { recursive: true, force: true });

@@ -1,8 +1,9 @@
 import { randomUUID } from 'node:crypto';
 import { defaultConfig, defaultCustomStyles } from './config';
+import { normalizeImageGenerationQuality } from './image-quality';
 import { createConfiguredImageGenerator } from './media-providers';
 import { enableImageProfile, normalizedImageProfiles } from './provider-profile-utils';
-import type { AppConfig, ImageLabGenerateInput, ImageLabRecord, ImageLabSmartMode, ImagePrompt, StoryboardScene, Task } from './types';
+import type { AppConfig, ImageGenerationQuality, ImageLabGenerateInput, ImageLabRecord, ImageLabSmartMode, ImagePrompt, StoryboardScene, Task } from './types';
 
 export async function generateImageLabRecord(config: AppConfig, workDir: string, input: ImageLabGenerateInput, signal?: AbortSignal): Promise<ImageLabRecord> {
   const providerConfig = selectImageLabProviderConfig(config, input.provider);
@@ -34,7 +35,7 @@ export async function generateImageLabRecord(config: AppConfig, workDir: string,
       throw new Error('Image lab prompt is required.');
     }
     validateImageLabReferences(input);
-    const assets = await generator([scene], [imagePrompt], createImageLabTask(id, input, createdAt, workDir), signal);
+    const assets = await generator([scene], [imagePrompt], createImageLabTask(id, input, createdAt, workDir, providerConfig), signal);
     const imagePath = assets[0]?.path;
     if (!imagePath) {
       throw new Error('Image provider did not return a generated image path.');
@@ -77,6 +78,7 @@ function createBaseRecord(config: AppConfig, input: ImageLabGenerateInput, id: s
     status: 'failed',
     errorMessage: '',
     resolution: input.resolution ?? activeImageResolution(config),
+    quality: input.quality ?? activeImageQuality(config),
     smartMode: input.smartMode ?? 'text-to-image',
     referenceImagePaths: normalizeReferenceImagePaths(input),
     referenceImagePath: normalizeReferenceImagePaths(input)[0] ?? '',
@@ -104,7 +106,7 @@ function normalizeReferenceImagePaths(input: ImageLabGenerateInput): string[] {
   return input.referenceImagePath?.trim() ? [input.referenceImagePath.trim()] : [];
 }
 
-function createImageLabTask(id: string, input: ImageLabGenerateInput, createdAt: string, workDir: string): Task {
+function createImageLabTask(id: string, input: ImageLabGenerateInput, createdAt: string, workDir: string, config: AppConfig): Task {
   return {
     id: `image-lab-${id}`,
     title: 'Image Lab',
@@ -118,6 +120,7 @@ function createImageLabTask(id: string, input: ImageLabGenerateInput, createdAt:
     style: input.style,
     speaker: '',
     ratio: input.ratio,
+    imageQuality: input.quality ?? activeImageQuality(config),
     templateId: '',
     bgmId: '',
     pausePoints: [],
@@ -153,16 +156,17 @@ function createImageLabTask(id: string, input: ImageLabGenerateInput, createdAt:
 
 function applyImageLabRequestSize(config: AppConfig, input: ImageLabGenerateInput): AppConfig {
   const resolution = input.resolution ?? activeImageResolution(config);
+  const quality = input.quality ?? activeImageQuality(config);
   if (config.imageProvider === 'custom') {
-    return { ...config, customImage: { ...config.customImage, ratio: input.ratio, resolution } };
+    return { ...config, customImage: { ...config.customImage, ratio: input.ratio, resolution, quality } };
   }
   if (config.imageProvider === 'jimeng') {
     return { ...config, jimeng: { ...config.jimeng, ratio: input.ratio, resolution } };
   }
   return {
     ...config,
-    image: { ...config.image, ratio: input.ratio, resolution },
-    gptImage: { ...config.gptImage, ratio: input.ratio, resolution },
+    image: { ...config.image, ratio: input.ratio, resolution, quality },
+    gptImage: { ...config.gptImage, ratio: input.ratio, resolution, quality },
   };
 }
 
@@ -170,6 +174,11 @@ function activeImageResolution(config: AppConfig): ImageLabRecord['resolution'] 
   if (config.imageProvider === 'custom') return config.customImage.resolution ?? defaultConfig.customImage.resolution ?? '2K';
   if (config.imageProvider === 'jimeng') return config.jimeng.resolution;
   return config.gptImage.resolution ?? config.image.resolution ?? '2K';
+}
+
+function activeImageQuality(config: AppConfig): ImageGenerationQuality {
+  if (config.imageProvider === 'custom') return normalizeImageGenerationQuality(config.customImage.quality);
+  return normalizeImageGenerationQuality(config.gptImage.quality ?? config.image.quality);
 }
 
 function buildImageLabPrompt(prompt: string, styleId: string, smartMode: ImageLabSmartMode, hasReferenceImages: boolean): string {

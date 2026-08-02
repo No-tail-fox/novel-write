@@ -788,7 +788,8 @@ def generate_compose_render(payload):
     cover_segment_path = os.path.join(work_dir, "seg_cover.mp4")
     canvas_w = int(payload.get("canvas_w") or 1080)
     canvas_h = int(payload.get("canvas_h") or 1920)
-    for index, scene in enumerate(payload.get("scenes") or []):
+    payload_scenes = payload.get("scenes") or []
+    for index, scene in enumerate(payload_scenes):
         pattern = first_frame_pattern(scene["frames_dir"])
         audio_path = norm(scene["audio_path"])
         scene_duration = media_duration_s(audio_path)
@@ -817,9 +818,13 @@ def generate_compose_render(payload):
     source_path = os.path.join(work_dir, "_source.mp4")
     if payload.get("cover_path"):
         cover_duration = str(float(payload.get("cover_duration_s") or 2))
+        first_scene = payload_scenes[0] if payload_scenes and isinstance(payload_scenes[0], dict) else {}
+        cover_fps = str(first_scene.get("fps") or 24)
         run_ffmpeg([
             "-loop",
             "1",
+            "-framerate",
+            cover_fps,
             "-i",
             norm(payload["cover_path"]),
             "-f",

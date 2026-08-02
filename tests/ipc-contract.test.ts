@@ -152,6 +152,7 @@ describe('IPC runtime contract', () => {
         { field: 'coverImageMode', value: 'manual' },
         { field: 'coverTemplate', value: 'cinematic-poster' },
         { field: 'coverRatio', value: '3:4' },
+        { field: 'coverPrompt', value: 'cinematic cover prompt' },
         { field: 'draftTemplate', value: 'draft-1' },
       ],
     })).toMatchObject({ id: 'html-task-1' });
@@ -192,12 +193,20 @@ describe('IPC runtime contract', () => {
         { field: 'coverImageMode', value: 'off' },
         { field: 'coverTemplate', value: 'cinematic-poster' },
         { field: 'coverRatio', value: '3:4' },
+        { field: 'coverPrompt', value: '' },
         { field: 'draftTemplate', value: '' },
         { field: 'foreground', value: true },
         { field: 'maxScenes', value: 8 },
         { field: 'ratio', value: '9:16' },
       ],
-    }).changes).toHaveLength(17);
+    }).changes).toHaveLength(18);
+
+    expect(contract.ipcInputSchemas['html-video:add-asset'].parse({
+      id: 'html-task-1',
+      sceneIndex: 1,
+      prompt: 'transparent foreground subject',
+    })).toMatchObject({ sceneIndex: 1 });
+    expect(contract.ipcInputSchemas['html-video:regenerate-cover'].parse('html-task-1')).toBe('html-task-1');
 
     const importCoverSchema = contract.ipcInputSchemas['html-video:import-cover'];
     expect(importCoverSchema.parse('html-task-1')).toBe('html-task-1');
@@ -212,7 +221,18 @@ describe('IPC runtime contract', () => {
       inputText: 'hello',
       targetScenes: 500,
       storyboardSceneCount: 500,
-    })).toMatchObject({ targetScenes: 500, storyboardSceneCount: 500 });
+      imageQuality: 'low',
+    })).toMatchObject({ targetScenes: 500, storyboardSceneCount: 500, imageQuality: 'low' });
+    expect(() => contract.createTaskSchema.parse({ inputText: 'hello', imageProfileId: 'image-custom' })).toThrow();
+    expect(() => contract.createTaskSchema.parse({ inputText: 'hello', imageResolution: '4K' })).toThrow();
+    expect(contract.ipcInputSchemas['image-lab:generate'].parse({
+      prompt: 'portrait',
+      ratio: '1:1',
+      style: 'photo-real',
+      provider: 'gpt_image',
+      resolution: '2K',
+      quality: 'high',
+    })).toMatchObject({ quality: 'high' });
     expect(contract.createTaskSchema.parse({ inputText: 'x'.repeat(32_769) }).inputText).toHaveLength(32_769);
   });
 
@@ -228,10 +248,26 @@ describe('IPC runtime contract', () => {
       contract.researchCopyComposeSchema.parse({
         keyword: 'topic',
         extraRequirements: '',
-        selectedSources: [{ source: 'web', title: 'Title', content: 'Body' }],
+        selectedSources: [{
+          source: 'web',
+          provider: 'baidu',
+          title: 'Title',
+          url: 'https://baijiahao.baidu.com/s?id=1',
+          snippet: 'Search result summary',
+          content: 'Body',
+        }],
         targetLength: 1200,
       }),
-    ).toMatchObject({ keyword: 'topic', targetLength: 1200 });
+    ).toMatchObject({
+      keyword: 'topic',
+      targetLength: 1200,
+      selectedSources: [{ provider: 'baidu' }],
+    });
+    expect(() => contract.researchCopyComposeSchema.parse({
+      keyword: 'topic',
+      extraRequirements: '',
+      selectedSources: [{ source: 'web', provider: 'unknown', title: 'Title', content: 'Body' }],
+    })).toThrow();
     expect(
       contract.createViralAnalysisSchema.parse({
         url: 'https://www.douyin.com/video/1',

@@ -1,5 +1,6 @@
 import type {
   AiSourceContext,
+  ImageGenerationQuality,
   NarrativePov,
   OrdinaryTaskCoverSelection,
   PausePoint,
@@ -31,6 +32,7 @@ export interface NewTaskDraftValues {
   style?: string;
   templateId?: string;
   ratio?: string;
+  imageQuality?: 'default' | ImageGenerationQuality;
   selectedTaskLlmProfileId?: string;
   promptTemplateOverrideId?: string;
   promptTemplateManuallyOverridden?: boolean;

@@ -136,11 +136,13 @@ const taskStatusValueSchema = z.enum(['draft', 'pending', 'running', 'paused', '
 const viralStatusValueSchema = z.enum(['pending', 'running', 'paused', 'completed', 'failed', 'cancelled']);
 const taskStepRerunModeSchema = z.enum(['regenerate', 'rewrite']);
 const viralPlatformSchema = z.enum(['douyin', 'kuaishou', 'bilibili', 'unknown']);
+const webSearchProviderSchema = z.enum(['bing', 'baidu', 'sogou', 'toutiao']);
 
 const sourceSectionSchema = bounded(
   z
     .object({
       source: z.string().max(1024),
+      provider: webSearchProviderSchema.optional(),
       title: z.string().max(MAX_IPC_TEXT),
       url: optionalText(MAX_IPC_TEXT),
       snippet: optionalText(MAX_IPC_TEXT),
@@ -174,6 +176,7 @@ export const createTaskSchema = bounded(
       imagePromptReference: optionalText(MAX_TASK_TEXT),
       track: optionalText(1024),
       style: optionalText(1024),
+      imageQuality: z.enum(['low', 'medium', 'high']).nullable().optional(),
       speaker: optionalText(1024),
       ratio: optionalText(128),
       templateId: optionalText(256),
@@ -296,6 +299,7 @@ const htmlVideoConfigChangeSchema = z.discriminatedUnion('field', [
   z.object({ field: z.literal('coverImageMode'), value: z.enum(HTML_VIDEO_COVER_MODES) }).strict(),
   z.object({ field: z.literal('coverTemplate'), value: nonEmptyText(256) }).strict(),
   z.object({ field: z.literal('coverRatio'), value: z.enum(HTML_VIDEO_COVER_RATIOS) }).strict(),
+  z.object({ field: z.literal('coverPrompt'), value: z.string().max(16_384) }).strict(),
   z.object({ field: z.literal('draftTemplate'), value: z.string().max(256) }).strict(),
   z.object({ field: z.literal('foreground'), value: z.boolean() }).strict(),
   z.object({ field: z.literal('maxScenes'), value: nonNegativeInteger.min(1).max(MAX_HTML_VIDEO_SCENES) }).strict(),
@@ -325,6 +329,7 @@ const htmlVideoSceneChangeSchema = z.discriminatedUnion('field', [
   z.object({ field: z.literal('foregroundHidden'), value: z.boolean() }).strict(),
   z.object({ field: z.literal('elementHidden'), slot: nonNegativeInteger.max(MAX_HTML_VIDEO_ELEMENTS_PER_SCENE - 1), value: z.boolean() }).strict(),
   z.object({ field: z.literal('backgroundPrompt'), value: nonEmptyText(MAX_HTML_VIDEO_SOURCE_CHARS) }).strict(),
+  z.object({ field: z.literal('addElement'), value: nonEmptyText(MAX_HTML_VIDEO_SOURCE_CHARS) }).strict(),
   z.object({ field: z.literal('elementPrompt'), slot: nonNegativeInteger.max(MAX_HTML_VIDEO_ELEMENTS_PER_SCENE - 1), value: nonEmptyText(MAX_HTML_VIDEO_SOURCE_CHARS) }).strict(),
   z.object({ field: z.literal('titleScale'), value: finiteNumber.min(0.25).max(3) }).strict(),
   z.object({ field: z.literal('titleTopOverride'), value: finiteNumber.min(0).max(100) }).strict(),
@@ -347,6 +352,12 @@ const htmlVideoAssetTargetSchema = z.object({
 const htmlVideoAssetActionSchema = z.object({
   id: governanceIdSchema,
   target: htmlVideoAssetTargetSchema,
+}).strict();
+
+const htmlVideoAssetAddSchema = z.object({
+  id: governanceIdSchema,
+  sceneIndex: nonNegativeInteger.min(1).max(MAX_HTML_VIDEO_SCENES),
+  prompt: nonEmptyText(MAX_HTML_VIDEO_SOURCE_CHARS),
 }).strict();
 
 const htmlVideoVoiceActionSchema = z.object({
@@ -529,6 +540,7 @@ const imageLabSchema = z
     style: z.string().max(1024),
     provider: z.enum(['gpt_image', 'jimeng', 'custom']).optional(),
     resolution: z.enum(['1K', '2K', '4K']).optional(),
+    quality: z.enum(['low', 'medium', 'high']).optional(),
     smartMode: z.enum(['text-to-image', 'cover', 'blog-cover', 'podcast-cover', 'video-narration', 'two-host-podcast', 'reference-edit']).optional(),
     referenceImagePath: optionalText(MAX_IPC_PATH),
     referenceImagePaths: z.array(pathSchema).max(MAX_IPC_ARRAY_ITEMS).optional(),
@@ -549,6 +561,7 @@ const imageLabAddRecordSchema = z
     provider: nonEmptyText(128),
     imagePath: pathSchema,
     resolution: z.enum(['1K', '2K', '4K']).optional(),
+    quality: z.enum(['low', 'medium', 'high']).optional(),
     smartMode: z.enum(['text-to-image', 'cover', 'blog-cover', 'podcast-cover', 'video-narration', 'two-host-podcast', 'reference-edit']).optional(),
     referenceImagePath: optionalText(MAX_IPC_PATH),
     referenceImagePaths: z.array(pathSchema).max(MAX_IPC_ARRAY_ITEMS).optional(),
@@ -623,7 +636,6 @@ const secretChangesSchema = bounded(
 const saveConfigInputSchema = z
   .object({ config: appConfigSchema, secretChanges: secretChangesSchema })
   .strict() as z.ZodType<SaveConfigInput>;
-const webSearchProviderSchema = z.enum(['bing', 'baidu', 'sogou', 'toutiao']);
 const webSearchRequestSchema = z
   .object({
     query: nonEmptyText(MAX_IPC_TEXT),
@@ -746,9 +758,12 @@ export const ipcInputSchemas = {
   'html-video:create-task': htmlVideoCreateTaskSchema,
   'html-video:update-config': htmlVideoConfigUpdateSchema,
   'html-video:update-scene': htmlVideoSceneUpdateSchema,
+  'html-video:add-asset': htmlVideoAssetAddSchema,
   'html-video:replace-asset': htmlVideoAssetActionSchema,
   'html-video:regenerate-asset': htmlVideoAssetActionSchema,
   'html-video:regenerate-voice': htmlVideoVoiceActionSchema,
+  'html-video:regenerate-cover': idOnlySchema,
+  'html-video:rerender': idOnlySchema,
   'html-video:import-cover': idOnlySchema,
   'html-video:composition-source:get': htmlVideoCompositionSourceGetSchema,
   'html-video:composition-source:lint': htmlVideoCompositionSourceLintSchema,

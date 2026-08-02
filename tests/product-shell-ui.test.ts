@@ -1453,7 +1453,7 @@ describe('product shell ui', () => {
     expect(coverEditor).toContain('data-html-video-edit-field="coverImageMode"');
     expect(coverEditor).toContain('data-html-video-edit-field="coverTemplate"');
     expect(coverEditor).toContain('data-html-video-edit-field="coverRatio"');
-    expect(coverEditor).toContain('导入封面');
+    expect(coverEditor).toContain('换本地封面');
     const tabPanel = htmlTabs.slice(htmlTabs.indexOf('export function HtmlVideoTabPanel'), htmlTabs.indexOf('function formatFileSize'));
     expect(tabPanel).toMatch(/if \(tab === 'cover'\)[\s\S]*?<HtmlVideoCoverEditor/u);
     expect(page).toContain('pipelineData.coverAsset?.path');
@@ -3257,6 +3257,10 @@ describe('product shell ui', () => {
 
     expect(errorOwners).toContain('ErrorSummaryButton');
     expect(errors).toContain('function ErrorDetailDialog');
+    expect(errors).toContain('closeButtonRef.current?.focus()');
+    expect(errors).toContain('previouslyFocused?.focus()');
+    expect(errors).toContain("if (event.key === 'Tab')");
+    expect(errors).toContain('data-dialog-focus');
     expect(artifact).toContain('summarizeErrorMessage');
     expect(errors).toContain('Python 运行时缺少依赖');
     expect(errors).toContain('Python 运行时依赖缺失');

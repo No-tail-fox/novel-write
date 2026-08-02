@@ -1,7 +1,7 @@
 import { mkdir, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { createHash, createHmac, randomUUID } from 'node:crypto';
-import type { AppConfig, ImagePrompt, StoryboardScene, Task, VoiceLabGenerateInput, VoiceLabRecord } from './types';
+import type { AppConfig, ImageGenerationQuality, ImagePrompt, StoryboardScene, Task, VoiceLabGenerateInput, VoiceLabRecord } from './types';
 import type { SceneAsset } from './draft';
 import { fetchWithTimeout } from './http';
 import { readJsonBounded, readTextBounded } from './network-policy';
@@ -57,6 +57,7 @@ export function createConfiguredImageGenerator(config: AppConfig, workDir: strin
         model: config.customImage.model,
         ratio: config.customImage.ratio || task.ratio,
         resolution: config.customImage.resolution ?? '2K',
+        quality: task.imageQuality ?? config.customImage.quality ?? 'medium',
         ratioMappingJson: config.customImage.ratioMappingJson,
         timeoutMs: config.customImage.timeoutMs ?? 180_000,
         asyncMode: config.customImage.asyncMode,
@@ -74,6 +75,7 @@ export function createConfiguredImageGenerator(config: AppConfig, workDir: strin
       model: config.gptImage.model || config.image.model,
       ratio: config.gptImage.ratio || config.image.ratio || task.ratio,
       resolution: config.gptImage.resolution ?? config.image.resolution ?? '2K',
+      quality: task.imageQuality ?? config.gptImage.quality ?? config.image.quality ?? 'medium',
       ratioMappingJson: undefined,
       timeoutMs: config.gptImage.timeoutMs ?? config.image.timeoutMs ?? 180_000,
       asyncMode: false,
@@ -323,6 +325,7 @@ async function generateOpenAiCompatibleImages(input: {
   model: string;
   ratio: string;
   resolution: '1K' | '2K' | '4K';
+  quality: ImageGenerationQuality;
   ratioMappingJson?: string;
   timeoutMs: number;
   asyncMode: boolean;
@@ -361,6 +364,7 @@ async function generateOpenAiCompatibleImageSync(input: {
   prompt: string;
   ratio: string;
   resolution: '1K' | '2K' | '4K';
+  quality: ImageGenerationQuality;
   ratioMappingJson?: string;
   timeoutMs: number;
   signal?: AbortSignal;
@@ -379,6 +383,7 @@ async function generateOpenAiCompatibleImageSync(input: {
       prompt: input.prompt,
       ratio: input.ratio,
       resolution: input.resolution,
+      quality: input.quality,
       ratioMappingJson: input.ratioMappingJson,
     })),
   });
@@ -400,6 +405,7 @@ async function generateOpenAiCompatibleImageEdit(input: {
   prompt: string;
   ratio: string;
   resolution: '1K' | '2K' | '4K';
+  quality: ImageGenerationQuality;
   referenceImagePaths: string[];
   timeoutMs: number;
   signal?: AbortSignal;
@@ -409,6 +415,7 @@ async function generateOpenAiCompatibleImageEdit(input: {
     prompt: input.prompt,
     ratio: input.ratio,
     resolution: input.resolution,
+    quality: input.quality,
     referenceImagePaths: input.referenceImagePaths,
   });
   const response = await fetchWithTimeout(`${input.baseUrl}/images/edits`, {
@@ -439,6 +446,7 @@ async function generateOpenAiCompatibleImageAsync(input: {
   prompt: string;
   ratio: string;
   resolution: '1K' | '2K' | '4K';
+  quality: ImageGenerationQuality;
   ratioMappingJson?: string;
   timeoutMs: number;
   pollIntervalMs: number;
@@ -458,6 +466,7 @@ async function generateOpenAiCompatibleImageAsync(input: {
       prompt: input.prompt,
       ratio: input.ratio,
       resolution: input.resolution,
+      quality: input.quality,
       ratioMappingJson: input.ratioMappingJson,
     })),
   });

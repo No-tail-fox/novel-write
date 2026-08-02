@@ -3,6 +3,7 @@ import { Check, FileText, Link2, Loader2, Mic2, Play, Plus, RotateCcw, Save, Sea
 import { FormField as Field } from '../../components/FormField';
 import { OptionGroup as OptionCloud } from '../../components/OptionGroup';
 import { SegmentedControl as Segmented } from '../../components/SegmentedControl';
+import { ToggleField } from '../../components/ToggleField';
 import { EmptyState } from '../../components/EmptyState';
 import { AsyncActionFeedback as InlineActionFeedback } from '../../components/AsyncActionFeedback';
 import { AspectRatioSwatch } from '../../components/AspectRatioSwatch';
@@ -38,6 +39,7 @@ import {
 } from '../../shared/tts-voices';
 import type {
   AiSourceContext,
+  ImageGenerationQuality,
   OrdinaryTaskCoverRatio,
   OrdinaryTaskCoverSelection,
   PausePoint,
@@ -50,6 +52,7 @@ import type {
   WebSearchProvider,
 } from '../../shared/types';
 import { ordinaryTaskCoverDimensions, validateOrdinaryTaskCoverSelection } from '../../shared/ordinary-task-cover';
+import { imageGenerationQualityLabel, normalizeImageGenerationQuality } from '../../shared/image-quality';
 import { useAsyncAction } from '../../ui/async-action';
 import { buildTaskCreateInput } from './task-create-input';
 import {
@@ -174,6 +177,7 @@ export function NewTaskPage({
   const [style, setStyle] = useState('photo-real');
   const [templateId, setTemplateId] = useState(initialDraftTemplateId);
   const [ratio, setRatio] = useState(() => draftTemplateImageRatio(state.draftTemplates, initialDraftTemplateId));
+  const [imageQuality, setImageQuality] = useState<'default' | ImageGenerationQuality>('default');
   const [selectedTaskLlmProfileId, setSelectedTaskLlmProfileId] = useState(state.config.activeLlmProfileId || state.config.llm.id || state.config.llmProfiles[0]?.id || '');
   const [promptTemplateOverrideId, setPromptTemplateOverrideId] = useState('');
   const [promptTemplateManuallyOverridden, setPromptTemplateManuallyOverridden] = useState(false);
@@ -258,6 +262,11 @@ export function NewTaskPage({
     ?? null;
   const processingModeLabel = processingMode === 'full-auto' ? '全自动' : processingMode === 'semi-auto' ? '半自动' : '只出方案';
   const publishModeLabel = publishMode === 'review-rewrite' ? '审核 + 改写' : '直接复用';
+  const supportsImageQuality = state.config.imageProvider !== 'jimeng';
+  const configuredImageQuality = state.config.imageProvider === 'custom'
+    ? normalizeImageGenerationQuality(state.config.customImage.quality)
+    : normalizeImageGenerationQuality(state.config.gptImage.quality ?? state.config.image.quality);
+  const imageQualityOverrideEnabled = supportsImageQuality && imageQuality !== 'default';
 
   function createDraftSnapshot(savedAt = new Date().toISOString()): NewTaskDraftSnapshot {
     return {
@@ -276,6 +285,7 @@ export function NewTaskPage({
         style,
         templateId,
         ratio,
+        imageQuality,
         selectedTaskLlmProfileId,
         promptTemplateOverrideId,
         promptTemplateManuallyOverridden,
@@ -333,6 +343,7 @@ export function NewTaskPage({
     if (typeof values.style === 'string') setStyle(values.style);
     if (typeof values.templateId === 'string') setTemplateId(values.templateId);
     if (typeof values.ratio === 'string') setRatio(values.ratio);
+    if (values.imageQuality === 'default' || values.imageQuality === 'low' || values.imageQuality === 'medium' || values.imageQuality === 'high') setImageQuality(values.imageQuality);
     if (typeof values.selectedTaskLlmProfileId === 'string') setSelectedTaskLlmProfileId(values.selectedTaskLlmProfileId);
     if (typeof values.promptTemplateOverrideId === 'string') setPromptTemplateOverrideId(values.promptTemplateOverrideId);
     if (typeof values.promptTemplateManuallyOverridden === 'boolean') setPromptTemplateManuallyOverridden(values.promptTemplateManuallyOverridden);
@@ -487,7 +498,7 @@ export function NewTaskPage({
     setHasSavedDraft(true);
   }, [
     draftReady, activeStage, title, inputText, mode, aiKeyword, aiSources, webSearchProviders, extraRequirements,
-    track, style, templateId, ratio, selectedTaskLlmProfileId, promptTemplateOverrideId,
+    track, style, templateId, ratio, imageQuality, selectedTaskLlmProfileId, promptTemplateOverrideId,
     promptTemplateManuallyOverridden, styleManuallyOverridden, draftTemplateManuallyOverridden,
     ratioManuallyOverridden, ttsProvider, speaker, bgmId, referenceImagePath, pausePoint,
     processingMode, rewriteIntensity, narrativePov, keepPromotion, productInfo, materialSource,
@@ -760,6 +771,7 @@ export function NewTaskPage({
         style,
         speaker,
         ratio,
+        imageQuality: imageQualityOverrideEnabled ? imageQuality : null,
         templateId,
         llmProfileId: selectedTaskLlmProfileId,
         videoForm,
@@ -1034,8 +1046,19 @@ export function NewTaskPage({
               </div>
               <div className="new-task-field-grid">
                 <div><span className="field-title">AI 出图比例 <small>{ratioManuallyOverridden ? '已手动覆盖' : '已跟随草稿模板'}</small></span><div className="ratio-grid">{['9:16', '4:3', '1:1', '16:9'].map((item) => <button type="button" key={item} className={ratio === item ? 'chip active' : 'chip'} onClick={() => handleRatioChange(item)}><AspectRatioSwatch ratio={item} />{item}</button>)}</div></div>
-                <Segmented label="暂停确认" value={pausePoint} options={NEW_TASK_PAUSE_OPTIONS.map(([id]) => id)} labels={NEW_TASK_PAUSE_OPTIONS.map(([, label]) => label)} onChange={(value) => setPausePoint(value as PausePoint)} />
+                <div className="new-task-quality-override">
+                  <ToggleField
+                    label="覆盖生图质量"
+                    checked={imageQualityOverrideEnabled}
+                    disabled={!supportsImageQuality}
+                    onChange={(enabled) => setImageQuality(enabled ? configuredImageQuality : 'default')}
+                  />
+                  {imageQualityOverrideEnabled
+                    ? <Segmented label="生图质量" value={imageQuality} options={['low', 'medium', 'high']} labels={['低成本', '标准', '高质量']} onChange={(value) => setImageQuality(value as ImageGenerationQuality)} />
+                    : <span className="hint-text">{supportsImageQuality ? `使用默认：${imageGenerationQualityLabel(configuredImageQuality)}质量` : '质量由即梦服务控制'}</span>}
+                </div>
               </div>
+              <Segmented label="暂停确认" value={pausePoint} options={NEW_TASK_PAUSE_OPTIONS.map(([id]) => id)} labels={NEW_TASK_PAUSE_OPTIONS.map(([, label]) => label)} onChange={(value) => setPausePoint(value as PausePoint)} />
               <div className="new-task-field-grid">
                 <div><span className="field-title">配音员</span><Segmented label="配音模型" value={ttsProvider} options={['volcengine', 'minimax']} labels={['豆包', 'MiniMax']} onChange={handleTtsProviderChange} /></div>
                 <Segmented label="配音语速" value={String(ttsSpeed)} options={['0.85', '1', '1.15', '1.3']} labels={['慢速 0.85x', '默认 1.0x', '快速 1.15x', '更快 1.3x']} onChange={(value) => setTtsSpeed(Number(value))} />
@@ -1045,7 +1068,7 @@ export function NewTaskPage({
               ) : <span className="hint-text">双人播客会按主播组合自动拆分 A/B 音色，当前模型：{ttsProvider}</span>}
               <div className="new-task-field-grid">
                 <div><span className="field-title">背景音乐</span><div className="chip-row"><button type="button" className={bgmId === '' ? 'chip active' : 'chip'} onClick={() => setBgmId('')}>无 BGM</button>{bgmOptions.map((bgm) => <button type="button" key={bgm.id} className={bgmId === bgm.id ? 'chip active' : 'chip'} onClick={() => setBgmId(bgm.id)}>{bgm.title}</button>)}<button type="button" className="chip" disabled={taskAction.busy} onClick={addBgmFromTask}><Plus size={14} />添加</button></div></div>
-                <Field label="任务模型"><select value={selectedTaskLlmProfileId} onChange={(event) => setSelectedTaskLlmProfileId(event.target.value)}>{state.config.llmProfiles.map((profile) => <option key={profile.id ?? profile.model} value={profile.id ?? profile.model}>{profile.provider}: {profile.model}</option>)}</select></Field>
+                <Field label="文本模型"><select value={selectedTaskLlmProfileId} onChange={(event) => setSelectedTaskLlmProfileId(event.target.value)}>{state.config.llmProfiles.map((profile) => <option key={profile.id ?? profile.model} value={profile.id ?? profile.model}>{profile.provider}: {profile.model}</option>)}</select></Field>
               </div>
               <div className="new-task-field-grid">
                 <Field label="封面模板" hint={coverTemplateHint}><select className="cover-template-select" value={coverTemplateId} onChange={(event) => setCoverTemplateId(event.target.value)}>{coverTemplateSelectOptions.map(([id, label, hint]) => <option key={id} value={id}>{hint ? `${label} · ${id}` : label}</option>)}</select></Field>
@@ -1086,6 +1109,7 @@ export function NewTaskPage({
             <div><dt>目标长度</dt><dd>{targetLength ? `${targetLength} 字` : '跟随原文'}</dd></div>
             <div><dt>分镜数量</dt><dd>{executionSceneCount ? `${executionSceneCount} 个场景` : '自动计算'}</dd></div>
             <div><dt>画面比例</dt><dd>{ratio}</dd></div>
+            <div><dt>图片质量</dt><dd>{supportsImageQuality ? (imageQualityOverrideEnabled ? `覆盖为${imageGenerationQualityLabel(imageQuality)}质量` : `默认（${imageGenerationQualityLabel(configuredImageQuality)}质量）`) : '由即梦服务控制'}</dd></div>
             <div><dt>配音角色</dt><dd>{videoForm === 'two-host-podcast' ? podcastSpeakers : taskSpeakerLabel(ttsProvider, speaker, state.minimaxCloneVoices)}</dd></div>
             <div><dt>草稿模板</dt><dd>{draftTemplateLabel(templateId, state.draftTemplates)}</dd></div>
             <div><dt>封面方式</dt><dd>{coverImageMode === 'manual' ? (manualCoverAsset?.originalName ?? '待导入') : ORDINARY_COVER_MODE_MANIFEST[coverImageMode].label}</dd></div>
@@ -1093,7 +1117,7 @@ export function NewTaskPage({
           </dl>
           <div className="new-task-readiness">
             <span className={selectedTaskLlmProfileId ? 'ready' : ''}><Check size={15} />LLM {selectedTaskLlmProfileId ? '已配置' : '未配置'}</span>
-            <span className={state.config.imageProvider ? 'ready' : ''}><Check size={15} />图片服务{state.config.imageProvider ? '已配置' : '未配置'}</span>
+            <span className={state.config.imageProvider !== 'mock' ? 'ready' : ''}><Check size={15} />图片服务{state.config.imageProvider !== 'mock' ? '已配置' : '未配置'}</span>
             <span className={state.config.jianying.draftPath ? 'ready' : ''}><Check size={15} />剪映目录{state.config.jianying.draftPath ? '可写' : '未配置'}</span>
           </div>
           <div className="new-task-summary-actions">

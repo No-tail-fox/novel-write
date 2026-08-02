@@ -10,11 +10,16 @@ import {
   Maximize2,
   Minimize2,
   Pause,
+  Pencil,
   Play,
+  Plus,
   RefreshCw,
   RotateCcw,
   Save,
+  Settings2,
   Upload,
+  Volume2,
+  X,
 } from 'lucide-react';
 import type { ApplyMutationResult } from '../../app/route-types';
 import type { StoryDreamApi } from '../../shared/storydream-api';
@@ -25,18 +30,15 @@ import type {
   HtmlVideoPipelineData,
   HtmlVideoSceneChange,
   HtmlVideoScenePlan,
+  MinimaxCloneVoice,
   Task,
+  TtsProvider,
 } from '../../shared/types';
+import { HTML_VIDEO_TTS_SPEED_MAX, HTML_VIDEO_TTS_SPEED_MIN } from '../../shared/html-video-config';
 import { htmlVideoMediaElementKey, htmlVideoMediaStatus } from '../../shared/html-video-media';
+import { HTML_VIDEO_SCENE_TEMPLATES, htmlVideoSceneTemplate, normalizeHtmlVideoSceneTemplate } from '../../shared/html-video-scene-templates';
+import { normalizeRuntimeTtsProvider, taskSpeakerLabel, ttsVoiceOptionsForProvider } from '../../shared/tts-voices';
 import { useAsyncAction } from '../../ui/async-action';
-
-const sceneTemplateOptions = [
-  ['center-focus', '中心聚焦'],
-  ['split-left', '左右对比'],
-  ['split-right', '左字右物'],
-  ['lower-third', '上物下字'],
-  ['cinematic-title', '电影标题'],
-] as const;
 
 interface EditorialPanelProps {
   api: StoryDreamApi;
@@ -51,12 +53,13 @@ interface EditorialPanelProps {
   onMediaElementReady: (path: string) => void;
   busy: boolean;
   isBrowserPreview: boolean;
+  cloneVoices: readonly MinimaxCloneVoice[];
 }
 
 export function HtmlVideoStoryboundTextPanel(props: EditorialPanelProps) {
   return (
     <section className="hv-reference-panel hv-reference-text" aria-label="HTML 动画文案与场景规划">
-      <header className="hv-reference-panel-head"><strong>改写 + 分句</strong><span>{props.data.scenes.length} 个场景</span></header>
+      <header className="hv-reference-panel-head"><strong>改写 + 分句</strong><span>{props.data.scenes.length} 个场景 · 可编辑成稿</span></header>
       <div className="hv-reference-copy">
         {props.data.scenes.map((scene) => <p key={scene.index}><b>{scene.index}.</b> {scene.narration}</p>)}
       </div>
@@ -70,10 +73,11 @@ export function HtmlVideoStoryboundTextPanel(props: EditorialPanelProps) {
 
 function SceneTextEditor({ api, task, scene, applyState, refreshTaskDetail, busy, isBrowserPreview }: EditorialPanelProps & { scene: HtmlVideoScenePlan }) {
   const action = useAsyncAction();
+  const [narration, setNarration] = useState(scene.narration);
   const [title, setTitle] = useState(scene.title);
   const [captions, setCaptions] = useState(scene.captions.join('\n'));
-  const [template, setTemplate] = useState(scene.sceneTemplate);
-  const locked = busy || action.busy || isBrowserPreview;
+  const [template, setTemplate] = useState(normalizeHtmlVideoSceneTemplate(scene.sceneTemplate));
+  const locked = busy || action.busy || task.status === 'running' || task.status === 'pending' || isBrowserPreview;
 
   async function mutate(changes: HtmlVideoSceneChange[]) {
     await action.run(async () => {
@@ -85,29 +89,38 @@ function SceneTextEditor({ api, task, scene, applyState, refreshTaskDetail, busy
 
   async function save() {
     const lines = captions.split(/\r?\n/u).map((line) => line.trim()).filter(Boolean);
-    if (!title.trim() || lines.length === 0) return;
-    await mutate([
-      { field: 'title', value: title.trim() },
-      { field: 'captions', value: lines },
-      { field: 'sceneTemplate', value: template },
-    ]);
+    if (!narration.trim() || !title.trim() || lines.length === 0) return;
+    const narrationChanged = narration.trim() !== scene.narration;
+    await action.run(async () => {
+      applyState(await api.updateHtmlVideoScene(task.id, scene.index, [
+        { field: 'narration', value: narration.trim() },
+        { field: 'title', value: title.trim() },
+        { field: 'captions', value: lines },
+        { field: 'sceneTemplate', value: template },
+      ]));
+      await refreshTaskDetail(task.id);
+      if (narrationChanged) {
+        applyState(await api.regenerateHtmlVideoVoice(task.id, scene.index));
+        await refreshTaskDetail(task.id);
+      }
+    });
   }
 
   return (
     <article className="hv-reference-scene-card">
       <div className="hv-reference-scene-number">{scene.index}</div>
-      <div className="hv-reference-scene-copy"><strong>{scene.narration}</strong></div>
+      <label className="hv-reference-scene-copy"><span>口播</span><textarea value={narration} onChange={(event) => setNarration(event.target.value)} disabled={locked} rows={2} /></label>
       <label><span>标题</span><input value={title} onChange={(event) => setTitle(event.target.value)} disabled={locked} /></label>
       <label><span>字幕</span><textarea value={captions} onChange={(event) => setCaptions(event.target.value)} disabled={locked} rows={Math.min(4, Math.max(2, scene.captions.length))} /></label>
       <div className="hv-reference-scene-row">
-        <label><span>动态版式</span><select value={template} onChange={(event) => setTemplate(event.target.value)} disabled={locked}>
-          {sceneTemplateOptions.map(([value, label]) => <option key={value} value={value}>{label}</option>)}
+        <label><span>画面预设</span><select value={template} onChange={(event) => setTemplate(normalizeHtmlVideoSceneTemplate(event.target.value))} disabled={locked}>
+          {HTML_VIDEO_SCENE_TEMPLATES.map((option) => <option key={option.id} value={option.id}>{option.label}</option>)}
         </select></label>
         <button className="mini-button" type="button" disabled={locked} onClick={() => mutate([{ field: 'titleHidden', value: !scene.titleHidden }])}>
           {scene.titleHidden ? <Eye size={14} /> : <EyeOff size={14} />}{scene.titleHidden ? '显示标题' : '隐藏标题'}
         </button>
-        <button className="mini-button primary" type="button" disabled={locked || !title.trim() || !captions.trim()} onClick={save}>
-          {action.busy ? <Loader2 className="spin" size={14} /> : <Save size={14} />}保存
+        <button className="mini-button primary" type="button" disabled={locked || !narration.trim() || !title.trim() || !captions.trim()} onClick={save}>
+          {action.busy ? <Loader2 className="spin" size={14} /> : <Save size={14} />}{narration.trim() !== scene.narration ? '保存并重配' : '保存'}
         </button>
       </div>
       <InlineActionFeedback feedback={action.feedback} />
@@ -143,8 +156,48 @@ function SceneAssets(props: EditorialPanelProps & { scene: HtmlVideoScenePlan })
             hidden={scene.foregroundHidden || scene.hiddenElementSlots?.includes(element.slot)}
           />
         ))}
+        <AddForegroundCard {...props} />
       </div>
     </article>
+  );
+}
+
+function AddForegroundCard({ api, task, scene, applyState, refreshTaskDetail, busy, isBrowserPreview }: EditorialPanelProps & { scene: HtmlVideoScenePlan }) {
+  const action = useAsyncAction();
+  const [open, setOpen] = useState(false);
+  const [prompt, setPrompt] = useState('');
+  const locked = busy || action.busy || task.status === 'running' || task.status === 'pending' || isBrowserPreview || scene.elements.length >= 4;
+
+  async function addForeground() {
+    if (!prompt.trim()) return;
+    await action.run(async () => {
+      const mutation = await api.addHtmlVideoAsset(task.id, scene.index, prompt.trim());
+      if (!mutation) return;
+      applyState(mutation);
+      await refreshTaskDetail(task.id);
+      setOpen(false);
+      setPrompt('');
+    });
+  }
+
+  return (
+    <>
+      <button className="hv-reference-add-asset" type="button" disabled={locked} onClick={() => setOpen(true)}>
+        <span><Plus size={20} /></span>
+        <strong>{scene.elements.length >= 4 ? '前景已满' : '手动添加前景'}</strong>
+        <small>PNG / JPG / WebP</small>
+      </button>
+      {open ? (
+        <div className="hv-modal-backdrop" role="presentation" onMouseDown={(event) => event.target === event.currentTarget && setOpen(false)}>
+          <section className="hv-editor-modal" role="dialog" aria-modal="true" aria-label={`为场景 ${scene.index} 添加前景`}>
+            <header><div><strong>添加前景素材</strong><span>场景 {scene.index}</span></div><button type="button" title="关闭" onClick={() => setOpen(false)}><X size={16} /></button></header>
+            <label><span>前景提示词</span><textarea autoFocus rows={4} value={prompt} onChange={(event) => setPrompt(event.target.value)} placeholder="例如：透明背景的人物半身像，侧面光…" /></label>
+            <footer><button className="mini-button" type="button" onClick={() => setOpen(false)}>取消</button><button className="mini-button primary" type="button" disabled={!prompt.trim() || action.busy} onClick={addForeground}>{action.busy ? <Loader2 className="spin" size={14} /> : <Upload size={14} />}选图并添加</button></footer>
+            <InlineActionFeedback feedback={action.feedback} />
+          </section>
+        </div>
+      ) : null}
+    </>
   );
 }
 
@@ -174,7 +227,8 @@ function AssetCard({
 }) {
   const action = useAsyncAction();
   const [draftPrompt, setDraftPrompt] = useState(prompt);
-  const locked = busy || action.busy || isBrowserPreview;
+  const [previewOpen, setPreviewOpen] = useState(false);
+  const locked = busy || action.busy || task.status === 'running' || task.status === 'pending' || isBrowserPreview;
 
   async function run(operation: () => Promise<Awaited<ReturnType<StoryDreamApi['updateHtmlVideoScene']>>>) {
     await action.run(async () => {
@@ -221,12 +275,21 @@ function AssetCard({
       <strong>{target.kind === 'bg' ? 'BG 背景' : `PNG 前景 ${target.slot + 1}`}</strong>
       <textarea value={draftPrompt} onChange={(event) => setDraftPrompt(event.target.value)} rows={3} disabled={locked} />
       <div className="hv-reference-asset-actions">
+        <button type="button" title="预览素材" disabled={assetStatus !== 'ready' || !url} onClick={() => setPreviewOpen(true)}><Eye size={14} /></button>
         <button type="button" title="保存提示词" disabled={locked || draftPrompt.trim() === prompt} onClick={savePrompt}><Save size={14} /></button>
         <button type="button" title="重画素材" disabled={locked} onClick={() => run(() => api.regenerateHtmlVideoAsset(task.id, target))}>{action.busy ? <Loader2 className="spin" size={14} /> : <RefreshCw size={14} />}</button>
         <button type="button" title="本地替换" disabled={locked} onClick={() => run(() => api.replaceHtmlVideoAsset(task.id, target))}><Upload size={14} /></button>
         {target.kind === 'fg' ? <button type="button" title={hidden ? '显示前景' : '隐藏前景'} disabled={locked} onClick={() => run(() => api.updateHtmlVideoScene(task.id, scene.index, [{ field: 'elementHidden', slot: target.slot, value: !hidden }]))}>{hidden ? <Eye size={14} /> : <EyeOff size={14} />}</button> : null}
       </div>
       <InlineActionFeedback feedback={action.feedback} />
+      {previewOpen && url ? (
+        <div className="hv-modal-backdrop" role="presentation" onMouseDown={(event) => event.target === event.currentTarget && setPreviewOpen(false)}>
+          <section className="hv-asset-preview-modal" role="dialog" aria-modal="true" aria-label="素材预览">
+            <header><div><strong>{target.kind === 'bg' ? `场景 ${scene.index} 背景` : `场景 ${scene.index} 前景 ${target.slot + 1}`}</strong><span>{draftPrompt}</span></div><button type="button" title="关闭" onClick={() => setPreviewOpen(false)}><X size={16} /></button></header>
+            <img src={url} alt="素材大图预览" />
+          </section>
+        </div>
+      ) : null}
     </div>
   );
 }
@@ -234,10 +297,71 @@ function AssetCard({
 export function HtmlVideoStoryboundVoicePanel(props: EditorialPanelProps) {
   return (
     <section className="hv-reference-panel hv-reference-voice" aria-label="HTML 动画逐场景配音">
-      <header className="hv-reference-panel-head"><strong>配音员</strong><span>{props.data.config.ttsProvider} · {props.data.config.voiceId}</span></header>
+      <VoiceSettings {...props} />
+      <header className="hv-reference-panel-head"><strong>逐场景配音</strong><span>{props.data.voices.length}/{props.data.scenes.length} 已生成</span></header>
       <div className="hv-reference-voice-list">
         {props.data.scenes.map((scene) => <VoiceRow key={`${scene.index}-${props.data.revision}`} {...props} scene={scene} />)}
       </div>
+    </section>
+  );
+}
+
+function VoiceSettings({ api, task, data, cloneVoices, applyState, refreshTaskDetail, busy, isBrowserPreview }: EditorialPanelProps) {
+  const action = useAsyncAction();
+  const initialProvider = normalizeRuntimeTtsProvider(data.config.ttsProvider);
+  const [provider, setProvider] = useState<TtsProvider>(initialProvider);
+  const [voiceId, setVoiceId] = useState(data.config.voiceId || ttsVoiceOptionsForProvider(initialProvider, cloneVoices)[0]?.id || '');
+  const [speed, setSpeed] = useState(data.config.ttsSpeed ?? 1);
+  const voiceOptions = ttsVoiceOptionsForProvider(provider, cloneVoices);
+  const locked = busy || action.busy || task.status === 'running' || task.status === 'pending' || isBrowserPreview;
+  const changed = provider !== initialProvider || voiceId !== data.config.voiceId || speed !== (data.config.ttsSpeed ?? 1);
+
+  useEffect(() => {
+    const nextProvider = normalizeRuntimeTtsProvider(data.config.ttsProvider);
+    setProvider(nextProvider);
+    setVoiceId(data.config.voiceId || ttsVoiceOptionsForProvider(nextProvider, cloneVoices)[0]?.id || '');
+    setSpeed(data.config.ttsSpeed ?? 1);
+  }, [cloneVoices, data.config.ttsProvider, data.config.ttsSpeed, data.config.voiceId, task.id]);
+
+  function changeProvider(value: TtsProvider) {
+    setProvider(value);
+    setVoiceId(ttsVoiceOptionsForProvider(value, cloneVoices)[0]?.id ?? '');
+  }
+
+  async function applyVoiceSettings() {
+    if (!changed || !voiceId) return;
+    await action.run(async () => {
+      const changes = [
+        ...(provider !== initialProvider ? [{ field: 'ttsProvider' as const, value: provider }] : []),
+        ...(voiceId !== data.config.voiceId ? [{ field: 'voiceId' as const, value: voiceId }] : []),
+        ...(speed !== (data.config.ttsSpeed ?? 1) ? [{ field: 'ttsSpeed' as const, value: speed }] : []),
+      ];
+      applyState(await api.updateHtmlVideoConfig(task.id, changes));
+      await refreshTaskDetail(task.id);
+      applyState(await api.updateTaskStatus(task.id, 'running'));
+      await refreshTaskDetail(task.id);
+    });
+  }
+
+  return (
+    <section className="hv-voice-settings" aria-label="配音设置">
+      <div className="hv-voice-setting-line">
+        <strong>配音员</strong>
+        <div className="hv-voice-provider" role="group" aria-label="配音服务">
+          <button type="button" className={provider === 'volcengine' ? 'active' : ''} disabled={locked} onClick={() => changeProvider('volcengine')}>豆包</button>
+          <button type="button" className={provider === 'minimax' ? 'active' : ''} disabled={locked} onClick={() => changeProvider('minimax')}>MiniMax</button>
+        </div>
+        <label className="hv-voice-speed"><span>语速 {speed.toFixed(1)}x</span><input type="range" min={Math.max(0.5, HTML_VIDEO_TTS_SPEED_MIN)} max={Math.min(2, HTML_VIDEO_TTS_SPEED_MAX)} step={0.1} value={speed} disabled={locked} onChange={(event) => setSpeed(Number(event.target.value))} /></label>
+        <button className="mini-button primary" type="button" disabled={locked || !changed || !voiceId} onClick={applyVoiceSettings}>{action.busy ? <Loader2 className="spin" size={14} /> : <RefreshCw size={14} />}应用并重配全部</button>
+      </div>
+      <div className="hv-voice-choice-list" role="listbox" aria-label="选择音色">
+        {voiceOptions.map((voice) => (
+          <button key={voice.id} type="button" role="option" aria-selected={voiceId === voice.id} className={voiceId === voice.id ? 'active' : ''} disabled={locked} onClick={() => setVoiceId(voice.id)}>
+            <Volume2 size={13} /><span>{voice.label}</span><small>{voice.hint}</small>
+          </button>
+        ))}
+      </div>
+      <InlineActionFeedback feedback={action.feedback} />
     </section>
   );
 }
@@ -256,18 +380,26 @@ function VoiceRow({
   refreshTaskDetail,
   busy,
   isBrowserPreview,
+  cloneVoices,
 }: EditorialPanelProps & { scene: HtmlVideoScenePlan }) {
   const action = useAsyncAction();
+  const [editing, setEditing] = useState(false);
+  const [narration, setNarration] = useState(scene.narration);
   const voice = data.voices.find((item) => item.sceneIndex === scene.index);
   const voiceStatus = voice
     ? htmlVideoMediaStatus(voice.src, mediaUrls, failedMediaPaths, isBrowserPreview)
     : 'desktop-only';
-  const locked = busy || action.busy || isBrowserPreview;
-  async function regenerate() {
+  const locked = busy || action.busy || task.status === 'running' || task.status === 'pending' || isBrowserPreview;
+  async function regenerate(nextNarration = scene.narration) {
     await action.run(async () => {
+      if (nextNarration.trim() !== scene.narration) {
+        applyState(await api.updateHtmlVideoScene(task.id, scene.index, [{ field: 'narration', value: nextNarration.trim() }]));
+        await refreshTaskDetail(task.id);
+      }
       const mutation = await api.regenerateHtmlVideoVoice(task.id, scene.index);
       applyState(mutation);
       await refreshTaskDetail(task.id);
+      setEditing(false);
     });
   }
   return (
@@ -294,8 +426,17 @@ function VoiceRow({
       )}
       <p>{scene.narration}</p>
       <small>{voice ? `${voice.durationSec.toFixed(1)}s` : '-'}</small>
-      <button className="mini-button" type="button" disabled={locked} onClick={regenerate}>{action.busy ? <Loader2 className="spin" size={14} /> : <RefreshCw size={14} />}重配</button>
+      <button className="mini-button" type="button" disabled={locked} onClick={() => setEditing(true)}>{action.busy ? <Loader2 className="spin" size={14} /> : <Settings2 size={14} />}重配</button>
       <InlineActionFeedback feedback={action.feedback} />
+      {editing ? (
+        <div className="hv-modal-backdrop" role="presentation" onMouseDown={(event) => event.target === event.currentTarget && setEditing(false)}>
+          <section className="hv-editor-modal" role="dialog" aria-modal="true" aria-label={`重配场景 ${scene.index}`}>
+            <header><div><strong>重配场景 {scene.index}</strong><span>{taskSpeakerLabel(data.config.ttsProvider, data.config.voiceId ?? '', cloneVoices)} · {(data.config.ttsSpeed ?? 1).toFixed(1)}x</span></div><button type="button" title="关闭" onClick={() => setEditing(false)}><X size={16} /></button></header>
+            <label><span>口播文案</span><textarea autoFocus rows={6} value={narration} onChange={(event) => setNarration(event.target.value)} /></label>
+            <footer><button className="mini-button" type="button" onClick={() => setEditing(false)}>取消</button><button className="mini-button primary" type="button" disabled={!narration.trim() || action.busy} onClick={() => regenerate(narration)}>{action.busy ? <Loader2 className="spin" size={14} /> : <RefreshCw size={14} />}保存并重配</button></footer>
+          </section>
+        </div>
+      ) : null}
     </article>
   );
 }
@@ -321,6 +462,7 @@ export function HtmlVideoStoryboundPreviewPanel(props: EditorialPanelProps) {
   const [playing, setPlaying] = useState(false);
   const [progress, setProgress] = useState(0);
   const [maximized, setMaximized] = useState(false);
+  const [presetSceneIndex, setPresetSceneIndex] = useState<number | null>(null);
   const iframeRef = useRef<HTMLIFrameElement | null>(null);
   const autoplayAll = useRef(false);
   const shouldResume = useRef(false);
@@ -382,6 +524,18 @@ export function HtmlVideoStoryboundPreviewPanel(props: EditorialPanelProps) {
     else { shouldResume.current = true; setActive(0); }
   }
 
+  function playScene(index: number) {
+    autoplayAll.current = false;
+    if (index === active) {
+      post({ type: 'hvrestart' });
+      setProgress(0);
+      setPlaying(true);
+      return;
+    }
+    shouldResume.current = true;
+    setActive(index);
+  }
+
   async function toggle(sceneIndex: number, field: 'foregroundHidden' | 'titleHidden', value: boolean) {
     await action.run(async () => {
       const mutation = await api.updateHtmlVideoScene(task.id, sceneIndex, [{ field, value }]);
@@ -390,10 +544,19 @@ export function HtmlVideoStoryboundPreviewPanel(props: EditorialPanelProps) {
     });
   }
 
+  async function selectTemplate(sceneIndex: number, value: string) {
+    await action.run(async () => {
+      const mutation = await api.updateHtmlVideoScene(task.id, sceneIndex, [{ field: 'sceneTemplate', value }]);
+      applyState(mutation);
+      await refreshTaskDetail(task.id);
+      setPresetSceneIndex(null);
+    });
+  }
+
   if (!composition) return <div className="hv-empty">场景生成中，完成后可在此预览动画。</div>;
   return (
     <section className={`hv-reference-preview${maximized ? ' maxed' : ''}`}>
-      <header className="hv-reference-panel-head"><strong>动画预览</strong><span>WebView 真实渲染 · 所见即所得</span><button className="mini-button" onClick={playAll}><Play size={13} />连播全部</button></header>
+      <header className="hv-reference-panel-head"><strong>动画预览</strong><span>WebView 真实渲染 · 所见即所得</span><button className="mini-button primary" onClick={playAll}><Play size={13} />连播全部</button></header>
       <div className="hv-reference-preview-main">
         <div className="hv-reference-stage">
           <div className="hv-reference-phone" style={{ aspectRatio: `${composition.canvas.w} / ${composition.canvas.h}` }}>
@@ -457,9 +620,11 @@ export function HtmlVideoStoryboundPreviewPanel(props: EditorialPanelProps) {
                     <Loader2 className="spin" size={15} />
                   )}
                 </span>
-                <span><small>场景 {item.index} · {snapshot ? `${snapshot.durationSec.toFixed(1)}s` : '生成中'}</small><b>{item.title}</b><i>{sceneTemplateOptions.find(([value]) => value === item.sceneTemplate)?.[1] ?? item.sceneTemplate}</i></span>
+                <span><small>场景 {item.index} · {snapshot ? `${snapshot.durationSec.toFixed(1)}s` : '生成中'}</small><b>{item.title}</b><i>{htmlVideoSceneTemplate(item.sceneTemplate).label}</i></span>
               </button>
               {snapshot ? <span className="hv-reference-thumb-actions">
+                <button type="button" title={`播放场景 ${item.index}`} onClick={() => playScene(index)}><Play size={12} />播放</button>
+                <button type="button" disabled={busy || action.busy || isBrowserPreview} onClick={() => setPresetSceneIndex(item.index)}><Pencil size={12} />{htmlVideoSceneTemplate(item.sceneTemplate).label}</button>
                 <button
                   type="button"
                   disabled={busy || action.busy || isBrowserPreview}
@@ -476,8 +641,30 @@ export function HtmlVideoStoryboundPreviewPanel(props: EditorialPanelProps) {
         </aside>
       </div>
       <InlineActionFeedback feedback={action.feedback} />
+      {presetSceneIndex !== null ? (
+        <div className="hv-modal-backdrop" role="presentation" onMouseDown={(event) => event.target === event.currentTarget && setPresetSceneIndex(null)}>
+          <section className="hv-template-modal" role="dialog" aria-modal="true" aria-label="选择画面版式">
+            <header><div><strong>选择画面版式</strong><span>17 种 · 场景 {presetSceneIndex}</span></div><button type="button" title="关闭" onClick={() => setPresetSceneIndex(null)}><X size={16} /></button></header>
+            <div className="hv-template-grid">
+              {HTML_VIDEO_SCENE_TEMPLATES.map((template) => {
+                const selected = normalizeHtmlVideoSceneTemplate(data.scenes.find((scene) => scene.index === presetSceneIndex)?.sceneTemplate) === template.id;
+                return (
+                  <button key={template.id} type="button" className={selected ? 'selected' : ''} disabled={action.busy || busy || isBrowserPreview} onClick={() => selectTemplate(presetSceneIndex, template.id)}>
+                    <PresetSwatch variant={template.swatch} />
+                    <span><strong>{template.label}</strong><small>{template.description}</small></span>
+                  </button>
+                );
+              })}
+            </div>
+          </section>
+        </div>
+      ) : null}
     </section>
   );
+}
+
+function PresetSwatch({ variant }: { variant: string }) {
+  return <span className="hv-template-swatch" data-variant={variant} aria-hidden="true"><i /><i /><i /><i /></span>;
 }
 
 function prepareCompositionSrcDoc(source: string, mediaUrl: string, data: HtmlVideoPipelineData, mediaUrls: Record<string, string>): string {

@@ -1,3 +1,36 @@
+# 2026-08-02 Storybound HTML 动画工作台深度对齐
+
+Goal: 以用户提供的 Storybound 十张截图和本地 1.17 参考资源为最高验收标准，重做 HTML 动画任务工作区，使文案、素材、配音、动画预览、封面、出片六个阶段都可直接查看、编辑、试听/播放和验证结果，而不是只展示流水线占位状态。
+
+## Acceptance Criteria
+
+- 文案页同时提供可编辑成稿与逐场景规划，标题、字幕、提示词和画面预设可在场景卡内修改。
+- 素材页按场景展示背景/前景缩略图，支持预览、替换、重新生成和手动新增。
+- 配音页支持供应商、音色、语速选择；每个场景有真实音频播放器和单独重配入口。
+- 动画预览页采用左侧竖屏真实预览、右侧场景列表；17 类画面预设可选，任一场景和全部场景均可播放查看效果。
+- 封面页可预览封面并修改模板、构图、标题模式、比例和提示词。
+- 出片页在完成后直接播放成品并提供打开、背景音乐调整和重新出片。
+- 页面保持 StoryDream 现有主题令牌和 Electron 数据链路，桌面/紧凑窗口无重叠、裁切和横向溢出。
+
+## Phases
+
+- [x] 对照截图、本地 Storybound 1.17 bundle 与现有模块，形成逐标签差异表。
+- [x] 重构 HTML 工作区信息架构、选中场景状态和共享工具栏。
+- [x] 完成文案、素材、配音、动画预览、封面、出片六页交互。
+- [x] 补齐必要 IPC/持久化能力和回归测试。
+- [x] 生产构建、Electron 桌面/紧凑视觉验收、播放与媒体像素检查。
+
+## Errors Encountered
+
+| Error | Attempt | Resolution |
+| --- | --- | --- |
+| 旧计划将“六步页面和流水线闭环存在”视为完整对齐，但实际 UI 仍是空壳/占位。 | 复用旧验收结论。 | 以用户十张截图中的逐场景编辑、媒体预览和播放能力重新定义验收标准。 |
+| `storydream-media://` 组合页中的 `file://` 图片和音频被 Chromium 拦截。 | 只把 HTML 入口改成任务媒体协议。 | 在协议响应中用 HyperFrames 结构化 HTML 解析器重写所有任务内 `[src]`，并继续执行目录、真实路径、inode 和文件身份校验。 |
+| 用 `srcdoc` 可加载媒体，但 Chromium 对 `allow-scripts + allow-same-origin` 给出沙箱警告。 | 将重写后的组合源码直接传给播放器。 | 放弃 `srcdoc`，保留独立 `storydream-media://` iframe，避免扩大同源权限。 |
+| QA 通过父页面读取跨源 iframe 的 `contentDocument`，把浏览器同源保护误判成背景图失败。 | 直接检查 iframe 内图片尺寸和 `[src]`。 | 由受控组合运行时上报背景加载状态和媒体引用；父页只接收当前播放器 iframe 的消息并验证全部 URL 使用受限协议。 |
+
+---
+
 # Storybound 中文全量复刻计划
 
 Goal: 在 `codex/storybound-cn-full-replica` 分支上，以本机 `E:\Storybound` 和 `C:\Users\Administrator\AppData\Local\com.dudumd.storybound` 为参考，把当前项目改成 Storybound-first 的中文桌面工具壳，并保留现有扩展功能为次级模块。
@@ -512,3 +545,43 @@ Goal: 在草稿模板编辑器中点击画布上的主标题、副标题、图�
 | `ui-ux-pro-max` 的 `scripts` 指针解析到不存在的 `C:\Users\Administrator\src\ui-ux-pro-max\scripts`。 | 按技能要求执行设计系统查询。 | 无法运行本机技能脚本；继续采用技能文档中的选择反馈、焦点定位、键盘可达性和稳定布局规则。 |
 | Electron 首轮编辑器截图报告“副标题”标签对比度 `3.87:1`。 | 将原列表态 QA 扩展到真实打开编辑器并选择副标题。 | 把深色标签底上的小字改为近白色，复验对比度失败为 0。 |
 | Electron 媒体主题校验报告编辑画布 SHA-256 不一致。 | 先固定选区色，再保留临时截图做逐像素比较。 | 确认为主题化编辑标记和 GPU 渐变的 1 色阶差异；只对交互编辑画布跳过精确哈希，仍检查尺寸、非空像素和所有视觉/运行时指标。 |
+
+---
+
+# 2026-08-02 Stitch 设计图生成连通性测试
+
+Goal: 通过已接入的 Stitch MCP 创建独立测试项目，生成一张小说写作工作台设计图，下载并校验返回截图，以证明设计生成链路可实际使用。
+
+## Phases
+
+- [x] 获取 `create_project` 与 `generate_screen_from_text` 的准确参数协议。
+- [x] 创建测试项目并只发起一次设计生成。
+- [x] 轮询生成结果并记录后台未在窗口内发布屏幕。
+- [x] 完成可用性结论；因无屏幕资源，本轮无法下载或展示设计图。
+
+## Constraints
+
+- 使用专门的测试项目，不修改用户已有 12 个 Stitch 项目。
+- `generate_screen_from_text` 只调用一次；超时后改用读取接口轮询，不重复提交。
+- 不执行删除、批量编辑或覆盖现有设计。
+
+## Protocol
+
+- `create_project`: `{ title }`。
+- `generate_screen_from_text`: `{ projectId, prompt, deviceType, modelId }`，其中项目 ID 不带 `projects/` 前缀。
+- `list_screens`: `{ projectId }`；`get_screen` 同时要求完整 `name` 与拆分后的 `projectId/screenId`。
+
+## Errors Encountered
+
+| Error | Attempt | Resolution |
+| --- | --- | --- |
+| `generate_screen_from_text` 的 HTTP 等待在客户端 420 秒上限后超时。 | 唯一一次生成请求。 | 严格不重试生成；改用 `list_screens` 每 30 秒查询后台结果。 |
+
+- 轮询 3：`list_screens` 仍返回空对象；生成任务尚未暴露屏幕资源。
+- 轮询 4：`list_screens` 仍返回空对象；生成任务尚未暴露屏幕资源。
+- 轮询 5：`list_screens` 仍返回空对象；生成任务尚未暴露屏幕资源。
+- 轮询 6：`list_screens` 仍返回空对象；生成任务尚未暴露屏幕资源。
+- 轮询 7：`list_screens` 仍返回空对象；生成任务尚未暴露屏幕资源。
+- 轮询 8：`list_screens` 仍返回空对象；生成任务尚未暴露屏幕资源。
+- 轮询 9：`list_screens` 仍返回空对象；生成任务尚未暴露屏幕资源。
+- 轮询 10：`list_screens` 仍返回空对象；本轮轮询窗口结束，未获得可下载屏幕。

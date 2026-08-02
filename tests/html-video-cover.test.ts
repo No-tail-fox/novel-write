@@ -295,6 +295,59 @@ describe('HTML video cover render ownership', () => {
     expect(providerCalls).toBe(1);
   });
 
+  it('uses an edited cover prompt and force-regenerates an otherwise reusable cover', async () => {
+    const state = createHtmlVideoPipelineData('Edited cover prompt.', {
+      coverImageMode: 'auto',
+      coverTemplate: template.id,
+      coverRatio: '3:4',
+      coverPrompt: 'Use this exact custom cover direction.',
+    });
+    state.coverAsset = createHtmlVideoCoverAsset({
+      ...manualAsset,
+      mode: 'auto',
+      revision: 2,
+      templateId: template.id,
+      path: 'covers/cover-auto-r2.png',
+      sha256: 'c'.repeat(64),
+    });
+    const replacement = createHtmlVideoCoverAsset({
+      ...state.coverAsset,
+      revision: 3,
+      path: 'covers/cover-auto-r3.png',
+      sha256: 'd'.repeat(64),
+    });
+    const requests: Array<Parameters<NonNullable<Parameters<typeof resolveHtmlVideoCoverForRender>[0]['generateCover']>>[0]> = [];
+
+    const reused = await resolveHtmlVideoCoverForRender({
+      state,
+      taskTitle: 'Edited cover',
+      resolveTemplate: async () => template,
+      generateCover: async (input) => {
+        requests.push(input);
+        return replacement;
+      },
+    });
+    expect(reused).toEqual(state.coverAsset);
+    expect(requests).toEqual([]);
+
+    const regenerated = await resolveHtmlVideoCoverForRender({
+      state,
+      taskTitle: 'Edited cover',
+      resolveTemplate: async () => template,
+      generateCover: async (input) => {
+        requests.push(input);
+        return replacement;
+      },
+      force: true,
+    });
+    expect(regenerated).toEqual(replacement);
+    expect(requests).toHaveLength(1);
+    expect(requests[0]).toMatchObject({
+      prompt: 'Use this exact custom cover direction.',
+      revision: 3,
+    });
+  });
+
   it('adapts one canonical auto-cover request into a versioned managed PNG', async () => {
     const providerCalls: Array<{ prompt: string; ratio: string; taskRatio: string }> = [];
     const prepareCalls: Array<{ sourcePath: string; destinationPath: string; width: number; height: number }> = [];

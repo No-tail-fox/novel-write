@@ -1,11 +1,12 @@
 import { fetchWithTimeout } from './http';
 import { readTextBounded, type NetworkFetch } from './network-policy';
 import { normalizeOpenAiImageBaseUrl } from './openai-image-config';
+import type { ImageGenerationQuality } from './types';
 
 export { normalizeOpenAiImageBaseUrl } from './openai-image-config';
 
 export type OpenAiImageResolution = '1K' | '2K' | '4K';
-export type OpenAiImageQuality = 'low' | 'medium' | 'high';
+export type OpenAiImageQuality = ImageGenerationQuality;
 
 export interface OpenAiImageGenerationBody {
   model: string;
@@ -31,6 +32,7 @@ export interface OpenAiImageProbeInput {
   model: string;
   ratio: string;
   resolution: OpenAiImageResolution;
+  quality?: OpenAiImageQuality;
   fetchImpl?: typeof fetch;
   timeoutMs?: number;
 }
@@ -56,6 +58,9 @@ export function formatOpenAiImageProviderError(input: {
           ? 'Image model test error'
           : 'Image provider API error';
   const detail = extractImageProviderErrorDetail(input.bodyText);
+  if (input.status === 402) {
+    return `${prefix} (${input.status}): 远程图片服务账户余额不足或套餐额度不可用。此错误由图片服务供应商返回，不是本地参数校验错误；请充值供应商账户，或切换其他图片服务/模型。降低生成质量只能减少后续消耗，无法绕过已无余额的账户。上游信息: ${detail}`;
+  }
   if (input.status === 503 && /no available compatible accounts/iu.test(detail)) {
     return `${prefix} (${input.status}): 图片服务当前没有可用于模型 "${input.model}" 的上游账号或通道。API Key 和模型清单可能仍然正常；请稍后仅重试生图步骤，或切换其他图片服务/模型。上游信息: ${detail}`;
   }
@@ -90,6 +95,7 @@ export function buildOpenAiImageGenerationBody(input: {
   prompt: string;
   ratio: string;
   resolution: OpenAiImageResolution;
+  quality?: OpenAiImageQuality;
   ratioMappingJson?: string;
 }): OpenAiImageGenerationBody {
   const ratioPatch = resolveCustomRatioMapping(input.ratioMappingJson, input.ratio);
@@ -97,7 +103,7 @@ export function buildOpenAiImageGenerationBody(input: {
     model: input.model,
     prompt: input.prompt,
     size: resolveOpenAiImageSize(input.ratio),
-    quality: resolveOpenAiImageQuality(input.resolution),
+    quality: input.quality ?? resolveOpenAiImageQuality(input.resolution),
     output_format: 'png',
     moderation: 'auto',
     ...ratioPatch,
@@ -132,6 +138,7 @@ export async function testOpenAiCompatibleImageModel(input: OpenAiImageProbeInpu
         prompt: IMAGE_PROBE_PROMPT,
         ratio: input.ratio,
         resolution: input.resolution,
+        quality: input.quality,
       })),
       timeoutMs: input.timeoutMs ?? 90000,
       timeoutLabel: 'Image model test',

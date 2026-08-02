@@ -324,7 +324,7 @@ const taskSummaryColumns = `
   created_at, completed_at, started_at, last_heartbeat_at, mode, ai_keyword,
   prompt_template_id, prompt_template_type, reference_image_path, rewrite_intensity,
   narrative_pov, keep_promotion, tts_provider, tts_speed, storyboard_scene_count,
-  failed_step, retry_from_step, artifact_state_path, video_form, llm_profile_id,
+  failed_step, retry_from_step, artifact_state_path, video_form, llm_profile_id, image_quality,
   material_source, draft_dir,
   lock_intro_sentences, task_type, pipeline_step, target_length, target_scenes,
   script_format, podcast_image_mode, podcast_speaker_a,
@@ -339,7 +339,7 @@ const viralAnalysisSummaryColumns = `
 const imageLabSummaryColumns = `
   id, archived_at, managed_storage_key, substr(prompt, 1, ${RECORD_TEXT_PREVIEW_LIMIT}) AS prompt_preview,
   ratio, style, provider, image_path, status, substr(error_msg, 1, 1024) AS error_msg,
-  resolution, smart_mode, upstream_task_id, created_at, finished_at
+  resolution, quality, smart_mode, upstream_task_id, created_at, finished_at
 `;
 const voiceLabSummaryColumns = `
   id, archived_at, managed_storage_key, substr(text, 1, ${RECORD_TEXT_PREVIEW_LIMIT}) AS text_preview,
@@ -981,6 +981,7 @@ export class FileDatabase {
         artifact_state_path TEXT DEFAULT '',
         video_form TEXT DEFAULT 'narration',
         llm_profile_id TEXT,
+        image_quality TEXT DEFAULT NULL,
         material_source TEXT DEFAULT 'ai',
         product_info TEXT DEFAULT NULL,
         material_person TEXT DEFAULT NULL,
@@ -1140,6 +1141,7 @@ export class FileDatabase {
         status TEXT NOT NULL,
         error_msg TEXT DEFAULT '',
         resolution TEXT DEFAULT '2K',
+        quality TEXT DEFAULT 'medium',
         smart_mode TEXT DEFAULT 'text-to-image',
         reference_image_paths_json TEXT DEFAULT '[]',
         reference_image_path TEXT DEFAULT '',
@@ -1256,6 +1258,7 @@ export class FileDatabase {
       ['artifact_state_path', "TEXT DEFAULT ''"],
       ['video_form', "TEXT DEFAULT 'narration'"],
       ['llm_profile_id', 'TEXT'],
+      ['image_quality', 'TEXT DEFAULT NULL'],
       ['started_at', 'TEXT'],
       ['last_heartbeat_at', 'TEXT'],
       ['material_source', "TEXT DEFAULT 'ai'"],
@@ -1305,6 +1308,7 @@ export class FileDatabase {
     for (const [column, definition] of [
       ['error_msg', "TEXT DEFAULT ''"],
       ['resolution', "TEXT DEFAULT '2K'"],
+      ['quality', "TEXT DEFAULT 'medium'"],
       ['smart_mode', "TEXT DEFAULT 'text-to-image'"],
       ['reference_image_paths_json', "TEXT DEFAULT '[]'"],
       ['reference_image_path', "TEXT DEFAULT ''"],
@@ -1794,6 +1798,7 @@ export class FileDatabase {
         status: input.status ?? 'mock',
         errorMessage: input.errorMessage ?? '',
         resolution: input.resolution ?? '2K',
+        quality: input.quality ?? 'medium',
         smartMode: input.smartMode ?? 'text-to-image',
         referenceImagePaths: input.referenceImagePaths ?? (input.referenceImagePath ? [input.referenceImagePath] : []),
         referenceImagePath: input.referenceImagePath ?? '',
@@ -1804,8 +1809,8 @@ export class FileDatabase {
       this.assertHistoryWritable('image-lab', record.id);
       this.db.run(
         `INSERT INTO image_lab_records
-         (id, archived_at, managed_storage_key, prompt, ratio, style, provider, image_path, status, error_msg, resolution, smart_mode, reference_image_paths_json, reference_image_path, upstream_task_id, created_at, finished_at)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+         (id, archived_at, managed_storage_key, prompt, ratio, style, provider, image_path, status, error_msg, resolution, quality, smart_mode, reference_image_paths_json, reference_image_path, upstream_task_id, created_at, finished_at)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
          [
            record.id,
            record.archivedAt ?? null,
@@ -1818,6 +1823,7 @@ export class FileDatabase {
           record.status,
           record.errorMessage,
           record.resolution,
+          record.quality ?? 'medium',
           record.smartMode,
           json(record.referenceImagePaths),
           record.referenceImagePath,
@@ -1860,6 +1866,7 @@ export class FileDatabase {
         | 'status'
         | 'errorMessage'
         | 'resolution'
+        | 'quality'
         | 'smartMode'
         | 'referenceImagePaths'
         | 'referenceImagePath'
@@ -1876,6 +1883,7 @@ export class FileDatabase {
         ['status', 'status', toNullableSqlValue],
         ['errorMessage', 'error_msg', toNullableSqlValue],
         ['resolution', 'resolution', toNullableSqlValue],
+        ['quality', 'quality', toNullableSqlValue],
         ['smartMode', 'smart_mode', toNullableSqlValue],
         ['referenceImagePaths', 'reference_image_paths_json', (value) => json(value ?? [])],
         ['referenceImagePath', 'reference_image_path', toNullableSqlValue],
@@ -2120,6 +2128,7 @@ export class FileDatabase {
       artifactStatePath: '',
       videoForm: input.videoForm ?? 'narration',
       llmProfileId: input.llmProfileId ?? null,
+      imageQuality: input.imageQuality ?? null,
       materialSource: input.materialSource ?? 'ai',
       productInfo: input.productInfo ?? null,
       materialPerson: input.materialPerson ?? null,
@@ -2151,11 +2160,11 @@ export class FileDatabase {
         mode, ai_keyword, ai_sources, selected_sources, extra_requirements, prompt_template_id, prompt_template_type,
         image_prompt_reference, reference_image_path, rewrite_intensity, narrative_pov, keep_promotion, tts_provider,
         tts_speed, storyboard_scene_count, step3_prompt_snapshot, music_mv_json, failed_step, retry_from_step, artifact_state_path,
-        video_form, llm_profile_id, material_source, product_info, material_person, draft_dir, fixed_intro, outro_cta, lock_intro_sentences,
+        video_form, llm_profile_id, image_quality, material_source, product_info, material_person, draft_dir, fixed_intro, outro_cta, lock_intro_sentences,
         task_type, pipeline_step, pipeline_data, target_length, target_scenes, script_format,
         podcast_image_mode, podcast_speakers, podcast_speaker_a, podcast_speaker_b, cover_image_mode, cover_template_id, ordinary_cover_asset_json,
         html_video_foreground
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       [
         task.id,
         task.archivedAt ?? null,
@@ -2202,6 +2211,7 @@ export class FileDatabase {
         task.artifactStatePath,
         task.videoForm ?? 'narration',
         task.llmProfileId ?? null,
+        task.imageQuality ?? null,
         task.materialSource ?? 'ai',
         task.productInfo ?? null,
         task.materialPerson ?? null,
@@ -3649,6 +3659,7 @@ function rowToTask(row: Record<string, unknown>): Task {
     artifactStatePath: String(row.artifact_state_path ?? ''),
     videoForm: normalizeVideoForm(row.video_form),
     llmProfileId: row.llm_profile_id === null || row.llm_profile_id === undefined || row.llm_profile_id === '' ? null : String(row.llm_profile_id),
+    imageQuality: row.image_quality === 'low' || row.image_quality === 'medium' || row.image_quality === 'high' ? row.image_quality : null,
     materialSource: String(row.material_source ?? 'ai'),
     productInfo: row.product_info === null || row.product_info === undefined ? null : String(row.product_info),
     materialPerson: row.material_person === null || row.material_person === undefined ? null : String(row.material_person),
@@ -3883,6 +3894,7 @@ function rowToImageLabRecord(row: Record<string, unknown>): ImageLabRecord {
     status: String(row.status ?? 'mock') as ImageLabRecord['status'],
     errorMessage: String(row.error_msg ?? ''),
     resolution: String(row.resolution ?? '2K') as ImageLabRecord['resolution'],
+    quality: (row.quality === 'low' || row.quality === 'high' ? row.quality : 'medium') as ImageLabRecord['quality'],
     smartMode: String(row.smart_mode ?? 'text-to-image') as ImageLabRecord['smartMode'],
     referenceImagePaths: parseJson(row.reference_image_paths_json, [] as string[]),
     referenceImagePath: String(row.reference_image_path ?? ''),
@@ -3905,6 +3917,7 @@ function rowToImageLabSummary(row: Record<string, unknown>): ImageLabSummary {
     status: String(row.status ?? 'mock') as ImageLabRecord['status'],
     errorMessage: String(row.error_msg ?? ''),
     resolution: String(row.resolution ?? '2K') as ImageLabRecord['resolution'],
+    quality: (row.quality === 'low' || row.quality === 'high' ? row.quality : 'medium') as ImageLabRecord['quality'],
     smartMode: String(row.smart_mode ?? 'text-to-image') as ImageLabRecord['smartMode'],
     upstreamTaskId: row.upstream_task_id ? String(row.upstream_task_id) : null,
     createdAt: String(row.created_at ?? new Date().toISOString()),

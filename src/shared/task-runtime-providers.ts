@@ -112,7 +112,11 @@ const htmlPlanningSchema: Record<string, unknown> = {
   },
 };
 
-export function createTaskRuntimeProviders(config: AppConfig, workDir: string, task?: Partial<Pick<Task, 'llmProfileId' | 'ttsProvider'>>): Pick<RunTaskOptions, 'llm' | 'generateImages' | 'imageConcurrency' | 'synthesizeNarration'> {
+export function createTaskRuntimeProviders(
+  config: AppConfig,
+  workDir: string,
+  task?: Partial<Pick<Task, 'llmProfileId' | 'ttsProvider' | 'imageQuality'>>,
+): Pick<RunTaskOptions, 'llm' | 'generateImages' | 'imageConcurrency' | 'synthesizeNarration'> {
   const llm = task?.llmProfileId ? config.llmProfiles.find((profile) => profile.id === task.llmProfileId) ?? config.llm : config.llm;
   return {
     llm: hasUsableLlm(llm) ? createConfiguredJsonLlm(llm) : undefined,

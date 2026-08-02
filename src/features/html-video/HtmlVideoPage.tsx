@@ -102,6 +102,7 @@ export function HtmlVideoPage({
     generation: mediaRetryRevision,
   });
   const htmlVideoTabRefs = useRef<Partial<Record<HtmlVideoTabKey, HTMLButtonElement | null>>>({});
+  const htmlVideoPanelRef = useRef<HTMLDivElement | null>(null);
   const [mediaState, setMediaState] = useState<{ taskId: string; urls: Record<string, string> }>({ taskId: '', urls: {} });
   const [mediaErrorState, setMediaErrorState] = useState<{ taskId: string; pathKey: string; message: string; failedPaths: string[] }>({
     taskId: '',
@@ -170,6 +171,11 @@ export function HtmlVideoPage({
   useEffect(() => {
     setActiveTab(derivedTab);
   }, [derivedTab, activeTask?.id]);
+
+  useLayoutEffect(() => {
+    if (workspaceMode !== 'automatic') return;
+    htmlVideoPanelRef.current?.scrollTo({ top: 0, left: 0, behavior: 'auto' });
+  }, [activeTab, activeTask?.id, workspaceMode]);
 
   useEffect(() => {
     if (workspaceMode === 'authoring' && (!activeTask || pipelineData.compositions.length === 0 || pipelineParse.error)) {
@@ -643,7 +649,7 @@ export function HtmlVideoPage({
               </button>
             </div>
           ) : null}
-          <div id="html-video-panel" className="hv-studio-media-panel" role="tabpanel" aria-labelledby={`html-video-tab-${activeTab}`} aria-busy={mediaLoading}>
+          <div ref={htmlVideoPanelRef} id="html-video-panel" className="hv-studio-media-panel" role="tabpanel" aria-labelledby={`html-video-tab-${activeTab}`} aria-busy={mediaLoading}>
             <HtmlVideoTabPanel
               api={api}
               tab={activeTab}
@@ -657,11 +663,14 @@ export function HtmlVideoPage({
               mediaRetryRevision={mediaRetryRevision}
               onMediaElementError={markMediaElementFailed}
               onMediaElementReady={markMediaElementReady}
-            busy={taskBusy}
-            isBrowserPreview={isBrowserPreview}
-            openPreview={openPreview}
-            onRetry={retryTask}
-          />
+              busy={taskBusy}
+              isBrowserPreview={isBrowserPreview}
+              openPreview={openPreview}
+              onRetry={retryTask}
+              cloneVoices={state.minimaxCloneVoices}
+              bgmOptions={bgmOptions}
+              openOutputDirectory={openOutputDirectory}
+            />
           </div>
           <div className="hv-timeline" aria-label="HTML 动画视频时间线">
             <span className="hv-timeline-label">画面</span>

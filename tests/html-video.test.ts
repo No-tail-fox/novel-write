@@ -19,10 +19,12 @@ import {
   MAX_HTML_VIDEO_SOURCE_CHARS,
   parseHtmlVideoPipelineData,
   planHtmlVideoScenes,
+  prepareHtmlVideoPipelineForRerender,
   recoverHtmlVideoPipelineDataForRetry,
   tabForHtmlVideoStep,
   validateHtmlVideoScenePlans,
 } from '@shared/html-video-workflow';
+import { HTML_VIDEO_SCENE_TEMPLATES, normalizeHtmlVideoSceneTemplate } from '@shared/html-video-scene-templates';
 import { draftTemplates } from '@shared/templates';
 import type {
   HtmlVideoAsset,
@@ -489,6 +491,40 @@ describe('HTML video pipeline V2 contract', () => {
     expect(next.revision).toBe(pipeline.revision + 1);
   });
 
+  it('adds the next available foreground slot and enforces the four-slot limit', () => {
+    const pipeline = createHtmlVideoPipelineData('场景。');
+    pipeline.scenes[0].elements = [{ slot: 1, prompt: '前景 2' }];
+    const next = applyHtmlVideoSceneChanges(pipeline, 1, [{ field: 'addElement', value: '手动新增前景' }]);
+    expect(next.scenes[0].elements).toEqual([
+      { slot: 0, prompt: '手动新增前景' },
+      { slot: 1, prompt: '前景 2' },
+    ]);
+
+    next.scenes[0].elements = Array.from({ length: 4 }, (_, slot) => ({ slot, prompt: `前景 ${slot + 1}` }));
+    expect(() => applyHtmlVideoSceneChanges(next, 1, [{ field: 'addElement', value: '超出限制' }]))
+      .toThrow(/最多包含 4 个前景/u);
+  });
+
+  it('publishes all 17 Storybound scene presets and normalizes legacy ids', () => {
+    expect(HTML_VIDEO_SCENE_TEMPLATES).toHaveLength(17);
+    expect(new Set(HTML_VIDEO_SCENE_TEMPLATES.map((template) => template.id)).size).toBe(17);
+    expect(normalizeHtmlVideoSceneTemplate('split-left')).toBe('right-text-left-object');
+    expect(normalizeHtmlVideoSceneTemplate('unknown-template')).toBe('center-focus');
+  });
+
+  it('returns a completed composition to the render checkpoint without discarding previews', () => {
+    const pipeline = createHtmlVideoPipelineData('场景。');
+    pipeline.compositions = [validComposition(1)];
+    pipeline.output = { path: 'D:/output.mp4', sizeBytes: 20, durationSec: 1 };
+    pipeline.steps.render = { status: 'completed' };
+    pipeline.current = 'done';
+    const next = prepareHtmlVideoPipelineForRerender(pipeline);
+    expect(next.current).toBe('render');
+    expect(next.steps.render.status).toBe('pending');
+    expect(next.compositions).toEqual(pipeline.compositions);
+    expect(next.output).toBeUndefined();
+  });
+
   it('bounds persisted warnings, legacy paths, cover lists, composition captions, and caption colors', () => {
     const pipeline = createHtmlVideoPipelineData('场景。');
     pipeline.warnings = Array.from({ length: 65 }, () => 'warning');
@@ -906,6 +942,8 @@ describe('HTML video composition contract', () => {
         compositionReady: true,
         timelineKeys: ['storydream-scene-1'],
         timelineDuration: 1.2,
+        backgroundReady: true,
+        mediaReferences: [],
       }),
       expect.objectContaining({
         source: 'hf-preview',
@@ -960,7 +998,7 @@ describe('HTML video composition contract', () => {
     expect(input.scenes[0]).toMatchObject({ title: '场景标题', captions: ['第一条字幕', '第二条字幕'] });
     expect(html).not.toContain('class="title">场景标题</div>');
     expect(html).not.toContain('1-fg.png');
-    expect(html).toContain('data-scene-template="split-left"');
+    expect(html).toContain('data-scene-template="right-text-left-object"');
     expect(html).toContain('第一条字幕');
     expect(html).toContain('第二条字幕');
     expect(html).toContain('type: \'hvtick\'');

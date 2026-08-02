@@ -13,7 +13,7 @@ import { generateImageLabRecord } from '../src/shared/image-lab';
 import { fetchImaKnowledge } from '../src/shared/ima-knowledge';
 import { detectJianyingDraftPath, resolveRuntimeJianyingDraftPath } from '../src/shared/jianying-paths';
 import { loadJianyingEffectCatalog } from '../src/shared/jianying-effects';
-import { runHtmlVideoPipeline, synchronizeHtmlVideoPipelineCheckpoint } from '../src/shared/html-video-runner';
+import { resolveHtmlVideoCoverForRender, runHtmlVideoPipeline, synchronizeHtmlVideoPipelineCheckpoint } from '../src/shared/html-video-runner';
 import { MAX_HTML_VIDEO_COVER_BYTES, type HtmlVideoCoverImageProcessor, type HtmlVideoCoverInspection } from '../src/shared/html-video-cover';
 import {
   MAX_ORDINARY_TASK_COVER_BYTES,
@@ -25,7 +25,7 @@ import {
   type OrdinaryTaskCoverImageProcessor,
   type OrdinaryTaskCoverInspection,
 } from '../src/shared/ordinary-task-cover';
-import { applyHtmlVideoSceneChanges, createHtmlVideoTaskInput, htmlVideoVisibleSteps, isHtmlVideoTask, parseHtmlVideoPipelineData, recoverHtmlVideoPipelineDataForRetry, type HtmlVideoPipelineRetryPatch } from '../src/shared/html-video-workflow';
+import { applyHtmlVideoSceneChanges, createHtmlVideoTaskInput, htmlVideoVisibleSteps, isHtmlVideoTask, MAX_HTML_VIDEO_ELEMENTS_PER_SCENE, parseHtmlVideoPipelineData, prepareHtmlVideoPipelineForRerender, recoverHtmlVideoPipelineDataForRetry, type HtmlVideoPipelineRetryPatch } from '../src/shared/html-video-workflow';
 import { assertHyperframesSource, GSAP_RUNTIME_FILENAME, HYPERFRAMES_RUNTIME_FILENAME, MAX_HYPERFRAMES_SOURCE_BYTES } from '../src/shared/hyperframes';
 import { generateConfiguredVoicePreview } from '../src/shared/media-providers';
 import { mergeMinimaxCloneVoice } from '../src/shared/minimax-clone-voices';
@@ -52,7 +52,7 @@ import {
   ensureHtmlVideoTaskWorkDir,
   htmlVideoMediaResponse,
   htmlVideoMediaScheme,
-  openHtmlVideoMediaFileResponse,
+  openHtmlVideoCompositionMediaResponse,
   prepareHtmlVideoBgm,
   resolveExistingHtmlVideoTaskWorkDir,
   resolveHtmlVideoMediaUrl,
@@ -861,9 +861,10 @@ function registerHtmlVideoMediaProtocol(): void {
       return await fetchHtmlVideoMediaResponse(
         request.url,
         htmlVideoTaskDirectory,
-        (mediaPath, identity) => openHtmlVideoMediaFileResponse(
+        (mediaPath, identity, context) => openHtmlVideoCompositionMediaResponse(
           mediaPath,
           identity,
+          context,
           request.headers.get('range'),
         ),
       );
@@ -2121,6 +2122,42 @@ trustedHandle('html-video:update-scene', (_event, input: { id: string; sceneInde
     });
   }));
 
+trustedHandle('html-video:add-asset', (_event, input: { id: string; sceneIndex: number; prompt: string }) =>
+  runHistoryGovernanceMutation('task', input.id, async (database) => {
+    const task = await getEditableHtmlVideoTask(database, input.id);
+    const selected = await dialog.showOpenDialog({
+      title: '添加场景前景图',
+      properties: ['openFile'],
+      filters: [{ name: 'Images', extensions: ['png', 'jpg', 'jpeg', 'webp'] }],
+    });
+    if (selected.canceled || !selected.filePaths[0]) return null;
+
+    const current = parseHtmlVideoPipelineData(task.pipelineData);
+    const scene = current.scenes.find((item) => item.index === input.sceneIndex);
+    if (!scene) throw new Error(`HTML_VIDEO_SCENE_NOT_FOUND: ${input.sceneIndex}`);
+    const usedSlots = new Set(scene.elements.map((element) => element.slot));
+    const slot = Array.from({ length: MAX_HTML_VIDEO_ELEMENTS_PER_SCENE }, (_, index) => index)
+      .find((candidate) => !usedSlots.has(candidate));
+    if (slot === undefined) {
+      throw new Error(`HTML_VIDEO_ELEMENT_LIMIT: 场景 ${input.sceneIndex} 最多包含 ${MAX_HTML_VIDEO_ELEMENTS_PER_SCENE} 个前景。`);
+    }
+
+    const withElement = applyHtmlVideoSceneChanges(current, input.sceneIndex, [{ field: 'addElement', value: input.prompt.trim() }]);
+    const pipeline = await replaceHtmlVideoEditorialAsset(
+      database,
+      task,
+      withElement,
+      { sceneIndex: input.sceneIndex, kind: 'fg', slot },
+      selected.filePaths[0],
+    );
+    return persistHtmlVideoEditorialMutation(database, task, pipeline, {
+      type: 'html_video_asset_add',
+      tool: 'asset-add',
+      detail: `已为场景 ${input.sceneIndex} 添加前景 ${slot + 1}。`,
+      data: { sceneIndex: input.sceneIndex, slot, prompt: input.prompt.trim() },
+    });
+  }));
+
 trustedHandle('html-video:replace-asset', (_event, input: { id: string; target: HtmlVideoAssetTarget }) =>
   runHistoryGovernanceMutation('task', input.id, async (database) => {
     const task = await getEditableHtmlVideoTask(database, input.id);
@@ -2160,6 +2197,50 @@ trustedHandle('html-video:regenerate-voice', (_event, input: { id: string; scene
       tool: 'tts-provider',
       detail: `已重新生成场景 ${input.sceneIndex} 的配音。`,
       data: { sceneIndex: input.sceneIndex },
+    });
+  }));
+
+trustedHandle('html-video:regenerate-cover', (_event, id: string) =>
+  runHistoryGovernanceMutation('task', id, async (database) => {
+    const task = await getEditableHtmlVideoTask(database, id);
+    const pipeline = parseHtmlVideoPipelineData(task.pipelineData);
+    if (pipeline.config.coverImageMode !== 'auto') {
+      throw new Error('HTML_VIDEO_COVER_MODE_INVALID: 只有自动封面模式可以重画封面。');
+    }
+    const { taskDirectory, runtimeConfig, runtime } = await createHtmlVideoEditorialRuntime(task);
+    const providers = createHtmlVideoRuntimeProviders(runtimeConfig, taskDirectory.workDir.canonicalPath, task, {
+      measureAudioDuration: runtime.measureAudioDuration,
+      jobConfig: pipeline.config,
+      prepareCoverImage: prepareHtmlVideoCoverImage,
+    });
+    const coverAsset = await resolveHtmlVideoCoverForRender({
+      state: pipeline,
+      taskTitle: task.title,
+      resolveTemplate: (templateId) => database.getCustomCoverTemplateDetail(templateId),
+      generateCover: providers.generateCover,
+      force: true,
+    });
+    if (!coverAsset) throw new Error('HTML_VIDEO_COVER_GENERATION_FAILED: 图片服务没有返回封面。');
+    pipeline.coverAsset = coverAsset;
+    pipeline.revision += 1;
+    delete pipeline.configSnapshotHash;
+    return persistHtmlVideoEditorialMutation(database, task, pipeline, {
+      type: 'html_video_cover_regenerate',
+      tool: 'image-provider',
+      detail: '已按当前封面参数重新生成封面。',
+      data: { revision: coverAsset.revision, ratio: coverAsset.ratio, templateId: coverAsset.templateId },
+    });
+  }));
+
+trustedHandle('html-video:rerender', (_event, id: string) =>
+  runHistoryGovernanceMutation('task', id, async (database) => {
+    const task = await getEditableHtmlVideoTask(database, id);
+    const pipeline = prepareHtmlVideoPipelineForRerender(parseHtmlVideoPipelineData(task.pipelineData));
+    return persistHtmlVideoEditorialMutation(database, task, pipeline, {
+      type: 'html_video_rerender',
+      tool: 'video-renderer',
+      detail: '已请求重新出片。',
+      data: { revision: pipeline.revision },
     });
   }));
 
@@ -2304,7 +2385,7 @@ async function getEditableHtmlVideoTask(database: FileDatabase, id: string): Pro
 }
 
 function htmlVideoSceneChangeAffectsPreview(field: HtmlVideoSceneChange['field']): boolean {
-  return !['narration', 'backgroundPrompt', 'elementPrompt'].includes(field);
+  return !['narration', 'backgroundPrompt', 'addElement', 'elementPrompt'].includes(field);
 }
 
 async function createHtmlVideoEditorialRuntime(task: Task) {

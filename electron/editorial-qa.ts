@@ -53,6 +53,7 @@ export const editorialQaMatrix = {
     { id: 'queue-operations-desktop', view: 'queue', theme: 'light', viewport: 'desktop' },
     { id: 'history-operations-desktop', view: 'history', theme: 'light', viewport: 'desktop' },
     { id: 'task-detail-operations-desktop', view: 'task-detail', theme: 'light', viewport: 'desktop' },
+    { id: 'task-detail-error-summary-desktop', view: 'task-detail', theme: 'light', viewport: 'desktop' },
     { id: 'task-detail-template-menu-dark-desktop', view: 'task-detail', theme: 'dark', viewport: 'desktop' },
     { id: 'task-detail-borrowed-image-desktop', view: 'task-detail', theme: 'light', viewport: 'desktop' },
     { id: 'task-detail-error-dialog-compact', view: 'task-detail', theme: 'light', viewport: 'compact' },
@@ -193,7 +194,7 @@ export async function captureEditorialQa(
     if (captureCase.view === 'history' && state.historyHtmlTypeLabel !== 'HTML 动画') {
       throw new Error(`Editorial QA History HTML type label failed in ${captureCase.id}: ${state.historyHtmlTypeLabel}.`);
     }
-    if (captureCase.view === 'task-detail' && captureCase.id !== 'task-detail-error-dialog-compact' && state.borrowedImageLabel !== '借 #1') {
+    if (captureCase.view === 'task-detail' && !['task-detail-error-summary-desktop', 'task-detail-error-dialog-compact'].includes(captureCase.id) && state.borrowedImageLabel !== '借 #1') {
       throw new Error(`Editorial QA borrowed-image label failed in ${captureCase.id}: ${state.borrowedImageLabel}.`);
     }
     if (captureCase.view === 'prompt-templates' && captureCase.theme === 'light' && viewport.name === 'desktop' && state.promptTemplateEditorOpen !== true) {
@@ -231,7 +232,7 @@ export async function captureEditorialQa(
     }
     const evidenceFailures = crossCuttingEvidenceFailures(state.evidence);
     if (evidenceFailures.length > 0) {
-      throw new Error(`Editorial QA cross-cutting evidence failed in ${captureCase.id}: ${evidenceFailures.join(', ')}.`);
+      throw new Error(`Editorial QA cross-cutting evidence failed in ${captureCase.id}: ${evidenceFailures.join(', ')}. Interaction: ${JSON.stringify(state.evidence.interaction)}.`);
     }
     await new Promise((resolveDelay) => setTimeout(resolveDelay, 80));
     await withEditorialQaTimeout(
@@ -565,7 +566,7 @@ export function editorialQaCaptureIdsByRequirement(requirement: EditorialQaCaptu
   for (const captureCase of editorialQaMatrix.newTaskStates) requiredIds.add(captureCase.id);
 
   const classified = allIds.filter((id) => requirement === 'required' ? requiredIds.has(id) : !requiredIds.has(id));
-  if (requiredIds.size !== 67 || allIds.length - requiredIds.size !== 24) {
+  if (requiredIds.size !== 67 || allIds.length - requiredIds.size !== 25) {
     throw new Error(`Editorial QA canonical classification drifted: ${requiredIds.size} required of ${allIds.length}.`);
   }
   return classified;
@@ -708,12 +709,14 @@ function qaScenarioScript(id: string, view: string, theme: string, stage?: strin
     const themeReady = await waitFor(() => document.documentElement.dataset.theme === ${JSON.stringify(theme)});
     const scenarioId = ${JSON.stringify(id)};
     const targetView = ${JSON.stringify(view)};
+    const failedTaskDetailScenario = scenarioId === 'task-detail-error-summary-desktop'
+      || scenarioId === 'task-detail-error-dialog-compact';
     const navView = targetView === 'task-detail' ? 'queue' : targetView;
     const nav = document.querySelector('[data-nav-view="' + navView + '"]');
     if (nav instanceof HTMLButtonElement) nav.click();
     if (targetView === 'task-detail') {
       await waitFor(() => document.querySelector('[data-task-operations="queue"]'));
-      const detailTitle = scenarioId === 'task-detail-error-dialog-compact'
+      const detailTitle = failedTaskDetailScenario
         ? 'QA 浅色错误提示'
         : '武则天：从深宫才人到一代女皇';
       const detailRow = [...document.querySelectorAll('.task-queue-row')]
@@ -723,7 +726,7 @@ function qaScenarioScript(id: string, view: string, theme: string, stage?: strin
     let ready = initialShellReady && themeReady && await waitFor(() => document.querySelector('.app-shell')
       && document.documentElement.dataset.themeReady === 'true'
       && document.querySelector('[data-shell-view="' + targetView + '"]'));
-    if (targetView === 'task-detail' && scenarioId !== 'task-detail-error-dialog-compact') {
+    if (targetView === 'task-detail' && !failedTaskDetailScenario) {
       ready = ready && await waitFor(() => [...document.querySelectorAll('.image-preview-title span')]
         .some((element) => element.textContent?.trim() === '借 #1'));
     }
@@ -753,6 +756,31 @@ function qaScenarioScript(id: string, view: string, theme: string, stage?: strin
         if (closeButton instanceof HTMLButtonElement) closeButton.click();
         ready = ready && await waitFor(() => !document.querySelector('.error-dialog'));
       }
+    }
+    if (scenarioId === 'task-detail-error-summary-desktop') {
+      ready = ready && await waitFor(() => {
+        const step = document.querySelector('.task-stage-track .pipeline-step.failed');
+        const errorSummary = step?.querySelector('.error-summary-button.compact');
+        const errorMark = errorSummary?.querySelector('.error-mark');
+        const errorLabel = errorSummary?.querySelector('span:last-child');
+        if (!(step instanceof HTMLElement) || !(errorSummary instanceof HTMLButtonElement) || !(errorMark instanceof HTMLElement) || !(errorLabel instanceof HTMLElement)) return false;
+        const stepRect = step.getBoundingClientRect();
+        const summaryRect = errorSummary.getBoundingClientRect();
+        const markRect = errorMark.getBoundingClientRect();
+        const markStyle = getComputedStyle(errorMark);
+        const labelStyle = getComputedStyle(errorLabel);
+        return errorSummary.textContent?.trim().length > 0
+          && summaryRect.left >= stepRect.left
+          && summaryRect.right <= stepRect.right + 0.5
+          && summaryRect.width <= stepRect.width
+          && Math.abs((markRect.top + markRect.height / 2) - (summaryRect.top + summaryRect.height / 2)) <= 0.5
+          && markStyle.display === 'grid'
+          && markStyle.marginTop === '0px'
+          && labelStyle.display === 'block'
+          && labelStyle.overflow === 'hidden'
+          && labelStyle.textOverflow === 'ellipsis'
+          && labelStyle.whiteSpace === 'nowrap';
+      });
     }
     if (scenarioId === 'task-detail-error-dialog-compact') {
       let errorSummary = null;
@@ -1428,6 +1456,8 @@ function qaScenarioScript(id: string, view: string, theme: string, stage?: strin
     const iconOnlyTooltipGaps = iconOnlyElements
       .filter((element) => !element.getAttribute('title') && !element.getAttribute('aria-describedby') && !element.getAttribute('data-tooltip'))
       .map((element, index) => evidenceLabel(element, element.tagName + '-tooltip-' + (index + 1)));
+    const activePopup = [...document.querySelectorAll('[role="listbox"], [role="menu"]')]
+      .find((element) => visibleElement(element));
     const interactiveOverlaps = interactiveElements
       .map((element, index) => {
         const rect = visibleRect(element);
@@ -1436,16 +1466,23 @@ function qaScenarioScript(id: string, view: string, theme: string, stage?: strin
         const y = Math.max(0, Math.min(window.innerHeight - 1, rect.top + (rect.height / 2)));
         const hit = document.elementFromPoint(x, y);
         if (!hit || element === hit || element.contains(hit) || hit.contains(element) || getComputedStyle(hit).pointerEvents === 'none') return null;
+        if (activePopup instanceof Element && !activePopup.contains(element) && activePopup.contains(hit)) return null;
         return evidenceLabel(element, element.tagName + '-' + (index + 1)) + ' blocked by ' + evidenceLabel(hit, hit.tagName);
       })
       .filter(Boolean)
       .slice(0, 20);
-    const interactionTarget = nav instanceof HTMLElement && interactiveElements.includes(nav)
-      ? nav
-      : interactiveElements.find((element) => element instanceof HTMLElement);
-    let interactionPerformed = false;
-    let interactionVerified = false;
-    if (interactionTarget instanceof HTMLElement) {
+    const activeModalFocus = activeModal instanceof HTMLElement
+      && document.activeElement instanceof HTMLElement
+      && activeModal.contains(document.activeElement)
+      ? document.activeElement
+      : null;
+    const interactionTarget = activeModalFocus
+      ?? (nav instanceof HTMLElement && interactiveElements.includes(nav)
+        ? nav
+        : interactiveElements.find((element) => element instanceof HTMLElement));
+    let interactionPerformed = activeModalFocus instanceof HTMLElement;
+    let interactionVerified = interactionPerformed;
+    if (interactionTarget instanceof HTMLElement && !interactionVerified) {
       interactionPerformed = true;
       interactionTarget.focus({ preventScroll: true });
       interactionVerified = document.activeElement === interactionTarget;

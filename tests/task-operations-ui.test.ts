@@ -157,6 +157,11 @@ describe('editorial task operations surfaces', () => {
     expect(css).toContain('.task-template-switcher');
     expect(css).toContain('.task-template-apply.active');
     expect(css).toMatch(/\.task-template-apply\.active\s*\{[^}]*color:\s*var\(--shell-accent-contrast\);/u);
+    expect(css).toMatch(/\.task-stage-track \.pipeline-step \.error-summary-button\.compact\s*\{[\s\S]*?width:\s*100%;[\s\S]*?overflow:\s*hidden;/u);
+    expect(css).toMatch(/\.task-stage-track \.pipeline-step \.error-summary-button\.compact \.error-mark\s*\{[\s\S]*?display:\s*grid;[\s\S]*?place-items:\s*center;[\s\S]*?margin-top:\s*0;/u);
+    expect(css).toMatch(/\.task-stage-track \.pipeline-step \.error-summary-button\.compact > span:last-child\s*\{[\s\S]*?display:\s*block;[\s\S]*?text-overflow:\s*ellipsis;/u);
+    expect(css).toMatch(/\.task-detail-shell\[data-task-operations="detail"\] \.artifact-tabs\s*\{[\s\S]*?width:\s*100%;[\s\S]*?display:\s*flex;/u);
+    expect(css).toMatch(/\.task-detail-shell\[data-task-operations="detail"\] \.artifact-section \.panel-title-row\s*\{[\s\S]*?min-width:\s*0;[\s\S]*?margin-bottom:\s*0;/u);
     expect(css).toContain('background: var(--shell-surface);');
     expect(css).toContain('.task-template-select-option[aria-selected="true"]');
     const runner = await source('../src/shared/runner.ts');
@@ -176,6 +181,7 @@ describe('editorial task operations surfaces', () => {
     expect(qa).toContain("{ id: 'queue-operations-desktop'");
     expect(qa).toContain("{ id: 'history-operations-desktop'");
     expect(qa).toContain("{ id: 'task-detail-operations-desktop'");
+    expect(qa).toContain("{ id: 'task-detail-error-summary-desktop'");
     expect(qa).toContain("{ id: 'task-detail-template-menu-dark-desktop'");
     expect(qa).toContain("{ id: 'history-operations-compact'");
     expect(qa).toContain('deleteDialogFocusWrapped');
@@ -184,6 +190,11 @@ describe('editorial task operations surfaces', () => {
     expect(main).toContain('if (!taskOperationsScope && !draftTemplateGalleryScope) return;');
     expect(qa).toContain("scenarioId === 'queue-operations-desktop'");
     expect(qa).toContain("scenarioId === 'task-detail-operations-desktop'");
+    expect(qa).toContain("scenarioId === 'task-detail-error-summary-desktop'");
+    expect(qa).toContain("document.querySelector('.task-stage-track .pipeline-step.failed')");
+    expect(qa).toContain("markStyle.display === 'grid'");
+    expect(qa).toContain("markStyle.marginTop === '0px'");
+    expect(qa).toContain("labelStyle.textOverflow === 'ellipsis'");
     expect(qa).toContain('taskTemplateControlsReady');
     expect(qa).toContain('button.task-template-select-trigger[aria-label="选择任务草稿模板"]');
     expect(qa).toContain("menuBackground !== 'rgb(255, 255, 255)'");

@@ -44,12 +44,14 @@ describe('configured media providers', () => {
         prompt: 'Keep the face and change the background',
         ratio: '16:9',
         resolution: '2K',
+        quality: 'high',
         referenceImagePaths: [first, second],
       });
 
       expect(form.get('model')).toBe('gpt-image-2');
       expect(form.get('prompt')).toBe('Keep the face and change the background');
       expect(form.get('size')).toBe('1536x1024');
+      expect(form.get('quality')).toBe('high');
       const images = form.getAll('image');
       expect(images).toHaveLength(2);
       expect(images[0]).toBeInstanceOf(Blob);
@@ -112,7 +114,7 @@ describe('configured media providers', () => {
         },
       };
       const generate = createConfiguredImageGenerator(config, dir);
-      const assets = await generate([scene], [prompt], task);
+      const assets = await generate([scene], [prompt], { ...task, imageQuality: 'high' });
 
       expect(await readFile(assets[0].path, 'utf8')).toBe('async-image');
       expect(requests[0]).toMatchObject({
@@ -192,7 +194,7 @@ describe('configured media providers', () => {
         gptImage: { ...defaultConfig.gptImage, apiKey: 'image-key', baseUrl: 'https://image.example', model: 'gpt-image-2' },
       };
       const generate = createConfiguredImageGenerator(config, dir);
-      const assets = await generate([scene], [prompt], task);
+      const assets = await generate([scene], [prompt], { ...task, imageQuality: 'high' });
 
       expect(assets).toHaveLength(1);
       expect(await readFile(assets[0].path, 'utf8')).toBe('real-image');
@@ -201,7 +203,7 @@ describe('configured media providers', () => {
         model: 'gpt-image-2',
         prompt: 'visual prompt',
         size: '1024x1536',
-        quality: 'medium',
+        quality: 'high',
         output_format: 'png',
         moderation: 'auto',
       });
@@ -518,6 +520,7 @@ describe('configured media providers', () => {
           secretAccessKey: 'sk',
           reqKey: 'jimeng_t2i_v40',
           region: 'cn-north-1',
+          resolution: '4K',
         },
       };
       const generate = createConfiguredImageGenerator(config, dir);
@@ -526,7 +529,7 @@ describe('configured media providers', () => {
       expect(await readFile(assets[0].path, 'utf8')).toBe('jimeng-image');
       expect(requests[0].url).toContain('CVSync2AsyncSubmitTask');
       expect(requests[1].url).toContain('CVSync2AsyncGetResult');
-      expect(requests[0].body).toMatchObject({ req_key: 'jimeng_t2i_v40', prompt: 'visual prompt' });
+      expect(requests[0].body).toMatchObject({ req_key: 'jimeng_t2i_v40', prompt: 'visual prompt', width: 3040, height: 5404 });
       expect(requests[0].auth).toContain('HMAC-SHA256 Credential=ak/');
     } finally {
       await rm(dir, { recursive: true, force: true });

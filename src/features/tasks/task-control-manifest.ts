@@ -20,6 +20,7 @@ export const NEW_TASK_CREATE_FIELD_STAGE = {
   style: 'creative',
   speaker: 'output',
   ratio: 'output',
+  imageQuality: 'output',
   templateId: 'creative',
   bgmId: 'output',
   pausePoints: 'output',
