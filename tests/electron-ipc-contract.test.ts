@@ -789,6 +789,14 @@ describe('electron ipc contract', () => {
     expect(heartbeat).not.toContain('sendTaskState(');
   });
 
+  it('wires standard production tasks to the real pyJianYingDraft bridge', async () => {
+    const main = await readFile(new URL('../electron/main.ts', import.meta.url), 'utf8');
+    const buildOptions = main.slice(main.indexOf('async function buildRunOptions'), main.indexOf('function startTaskRun'));
+
+    expect(main).toContain("import { runPyJianYingDraftBridge } from '../src/shared/jianying-bridge';");
+    expect(buildOptions).toContain('draftWriterOptions: { runBridge: runPyJianYingDraftBridge }');
+  });
+
   it('exposes safe local image data URLs for task artifact thumbnails', async () => {
     const main = await readFile(new URL('../electron/main.ts', import.meta.url), 'utf8');
     const preload = await readFile(new URL('../electron/preload.ts', import.meta.url), 'utf8');

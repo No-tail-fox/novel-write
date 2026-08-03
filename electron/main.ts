@@ -13,6 +13,7 @@ import { generateImageLabRecord } from '../src/shared/image-lab';
 import { fetchImaKnowledge } from '../src/shared/ima-knowledge';
 import { detectJianyingDraftPath, resolveRuntimeJianyingDraftPath } from '../src/shared/jianying-paths';
 import { loadJianyingEffectCatalog } from '../src/shared/jianying-effects';
+import { runPyJianYingDraftBridge } from '../src/shared/jianying-bridge';
 import { resolveHtmlVideoCoverForRender, runHtmlVideoPipeline, synchronizeHtmlVideoPipelineCheckpoint } from '../src/shared/html-video-runner';
 import { MAX_HTML_VIDEO_COVER_BYTES, type HtmlVideoCoverImageProcessor, type HtmlVideoCoverInspection } from '../src/shared/html-video-cover';
 import {
@@ -920,6 +921,7 @@ async function buildRunOptions(database: FileDatabase, task: Task, workDir: stri
     signal: controller.signal,
     resolveAiSourceContext: createAiSourceResearcher(runtimeConfig),
     ...createTaskRuntimeProviders(runtimeConfig, workDir, task),
+    draftWriterOptions: { runBridge: runPyJianYingDraftBridge },
     customCoverTemplates: state.customCoverTemplates,
     onEvent: (event: SequencedTaskEvent) => {
       void publishTaskEvent(event);

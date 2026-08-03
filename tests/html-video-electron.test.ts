@@ -194,9 +194,13 @@ describe('Electron HTML video runtime contract', () => {
       'statfs',
       'await link(localTemporaryPath, bgmPath);',
       'isExistingFileError',
+      'writeProductionJianyingDraft',
+      'runPyJianYingDraftBridge',
     ]) {
       expect(source).toContain(symbol);
     }
+    expect(source).toContain('writeJianyingDraftOutput(input, { runBridge: runPyJianYingDraftBridge })');
+    expect(source).toContain('options.writeJianyingDraft ?? writeProductionJianyingDraft');
     expect((htmlVideoRuntimeModule as unknown as Record<string, unknown>).htmlVideoBgmMaxBytes)
       .toBe(expectedHtmlVideoBgmMaxBytes);
     expect((htmlVideoRuntimeModule as unknown as Record<string, unknown>).htmlVideoBgmDiskReserveBytes)

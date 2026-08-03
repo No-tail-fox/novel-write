@@ -4,7 +4,7 @@ import { dirname, join } from 'node:path';
 import type { BgmItem, CoverMetadata, DiagnosticsReport, DraftTemplate, ImagePrompt, StoryboardScene, SubtitleTrack } from './types';
 import { buildSubtitleTrack } from './story';
 import { getTemplate, normalizeDraftTemplate } from './templates';
-import type { PyJianYingBridgeInput, PyJianYingBridgeOutput } from './jianying-bridge';
+import { runPyJianYingDraftBridge, type PyJianYingBridgeInput, type PyJianYingBridgeOutput } from './jianying-bridge';
 import { runStoryboundMediaSidecar, type StoryboundSidecarInput, type StoryboundSidecarResult } from './storybound-sidecar';
 
 export interface SceneAsset {
@@ -133,8 +133,9 @@ export async function writeJianyingDraft(input: WriteJianyingDraftInput, options
     coverImagePath,
   });
   try {
-    if (options.runBridge) {
-      const bridge = await options.runBridge(bridgePayload);
+    const runBridge = options.runBridge ?? (options.runSidecar ? undefined : runPyJianYingDraftBridge);
+    if (runBridge) {
+      const bridge = await runBridge(bridgePayload);
       updateDiagnostic(diagnostics, 'jianying-draft', 'pass', 'pyJianYingDraft generated draft_content.json and draft_meta_info.json.');
       await writeFile(join(input.workDir, 'diagnostics.json'), JSON.stringify(diagnostics, null, 2), 'utf8');
       return {

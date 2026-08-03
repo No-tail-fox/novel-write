@@ -17,6 +17,7 @@ import {
   type HtmlVideoExportResult,
 } from '../src/shared/html-video';
 import { writeJianyingDraft as writeJianyingDraftOutput, type JianyingDraftWriteResult, type WriteJianyingDraftInput } from '../src/shared/draft';
+import { runPyJianYingDraftBridge } from '../src/shared/jianying-bridge';
 import type {
   HtmlVideoPreviewInput,
   HtmlVideoPreviewOutput,
@@ -90,6 +91,10 @@ export interface ElectronHtmlVideoRuntimeOptions {
   stagingFileOperations?: Partial<HtmlVideoStagingFileOperations>;
   gsapRuntimePath?: string;
   hyperframesRuntimePath?: string;
+}
+
+async function writeProductionJianyingDraft(input: WriteJianyingDraftInput): Promise<JianyingDraftWriteResult> {
+  return writeJianyingDraftOutput(input, { runBridge: runPyJianYingDraftBridge });
 }
 
 export interface HtmlVideoPublicationFileOperations {
@@ -2316,7 +2321,7 @@ export function createElectronHtmlVideoRuntime(options: ElectronHtmlVideoRuntime
         const { digest, ...publishedIdentity } = publishedFile.identity;
         if (!digest) throw htmlVideoOutputChanged();
         const draft = input.draftTemplate
-          ? await (options.writeJianyingDraft ?? writeJianyingDraftOutput)({
+          ? await (options.writeJianyingDraft ?? writeProductionJianyingDraft)({
               workDir: stageDir,
               draftRootDir: options.draftRootDir ?? '',
               title: options.taskTitle,
