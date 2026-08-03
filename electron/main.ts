@@ -12,6 +12,7 @@ import { fromLlmModelTestResult, testConfigTarget } from '../src/shared/config-u
 import { generateImageLabRecord } from '../src/shared/image-lab';
 import { fetchImaKnowledge } from '../src/shared/ima-knowledge';
 import { detectJianyingDraftPath, resolveRuntimeJianyingDraftPath } from '../src/shared/jianying-paths';
+import { findJianyingExecutable } from '../src/shared/jianying-app';
 import { loadJianyingEffectCatalog } from '../src/shared/jianying-effects';
 import { runPyJianYingDraftBridge } from '../src/shared/jianying-bridge';
 import { resolveHtmlVideoCoverForRender, runHtmlVideoPipeline, synchronizeHtmlVideoPipelineCheckpoint } from '../src/shared/html-video-runner';
@@ -32,7 +33,7 @@ import { generateConfiguredVoicePreview } from '../src/shared/media-providers';
 import { mergeMinimaxCloneVoice } from '../src/shared/minimax-clone-voices';
 import { createPersonAsset, deletePersonAsset, importPersonAssetFiles, listPersonAssets, listPersonImages, renamePersonAsset } from '../src/shared/person-assets';
 import { createConfiguredJsonLlm, createConfiguredTextLlm, listConfiguredProviderModels, testConfiguredLlm } from '../src/shared/llm-provider';
-import { markSceneImageForRegeneration, markSceneImagesForRegeneration, markSceneNarrationForRegeneration, markTaskStepForRerun, replaceSceneImageAssets, updateSceneImagePrompt } from '../src/shared/pipeline-cache';
+import { markSceneImageForRegeneration, markSceneImagesForRegeneration, markSceneNarrationForRegeneration, markTaskDraftForRepack, markTaskStepForRerun, replaceSceneImageAssets, updateSceneImagePrompt, updateTaskSubtitleLines } from '../src/shared/pipeline-cache';
 import { resolvePythonRuntimeInfo, setDefaultPythonRuntimeAppRoot } from '../src/shared/python-runtime';
 import { composeCopyFromSources, createAiSourceResearcher, researchSearchErrorMessage, searchWebSources, searchWebSourcesDetailed } from '../src/shared/research';
 import { runTask } from '../src/shared/runner';
@@ -40,7 +41,7 @@ import { runStoryboundMediaSidecar } from '../src/shared/storybound-sidecar';
 import { FileDatabase, type HistoryDeletionCleanup, type HistoryTombstone } from '../src/shared/storage';
 import { createHtmlVideoRuntimeProviders, createTaskRuntimeProviders } from '../src/shared/task-runtime-providers';
 import { assertTaskLifecycleAction } from '../src/shared/task-progress';
-import type { AccountProfile, ActivationState, AppConfig, AppDelta, AppDeltaReconcileRequest, AppDeltaReconcileResult, AppStatePatch, BookSelectionInput, ConfigTestTarget, CreateTaskInput, CreateViralAnalysisInput, CursorRequest, CustomStyle, CustomStyleGenerateInput, DraftTemplate, HistoryFamily, HistoryListRequest, HtmlVideoAsset, HtmlVideoAssetTarget, HtmlVideoCompositionSource, HtmlVideoCompositionSourceLintInput, HtmlVideoCompositionSourceSaveInput, HtmlVideoConfigChange, HtmlVideoPipelineDataV2, HtmlVideoSceneChange, HtmlVideoVoiceClip, ImageLabGenerateInput, ImageLabRecord, ImageLabSummary, ImaKnowledgeRequest, LlmConfig, MinimaxCloneVoiceInput, OrdinaryTaskCoverRatio, OrdinaryTaskCoverSelection, PromptTemplate, ProviderModelListRequest, ResearchCopyComposeInput, SequencedTaskEvent, Task, TaskImageReplacementSource, TaskStatus, TaskStepRerunMode, UiPreferencesUpdate, ViralAnalysisRecord, ViralAnalysisResult, ViralAnalysisStatus, ViralProductionTaskOptions, VolcengineSpeakerListRequest, VoiceLabGenerateInput, VoiceLabRecord, VoiceLabSummary, WebSearchRequest } from '../src/shared/types';
+import type { AccountProfile, ActivationState, AppConfig, AppDelta, AppDeltaReconcileRequest, AppDeltaReconcileResult, AppStatePatch, BookSelectionInput, ConfigTestTarget, CreateTaskInput, CreateViralAnalysisInput, CursorRequest, CustomStyle, CustomStyleGenerateInput, DraftTemplate, HistoryFamily, HistoryListRequest, HtmlVideoAsset, HtmlVideoAssetTarget, HtmlVideoCompositionSource, HtmlVideoCompositionSourceLintInput, HtmlVideoCompositionSourceSaveInput, HtmlVideoConfigChange, HtmlVideoPipelineDataV2, HtmlVideoSceneChange, HtmlVideoVoiceClip, ImageLabGenerateInput, ImageLabRecord, ImageLabSummary, ImaKnowledgeRequest, LlmConfig, MinimaxCloneVoiceInput, OrdinaryTaskCoverRatio, OrdinaryTaskCoverSelection, PromptTemplate, ProviderModelListRequest, ResearchCopyComposeInput, SequencedTaskEvent, Task, TaskImageReplacementSource, TaskStatus, TaskStepRerunMode, TaskSubtitleSceneLines, UiPreferencesUpdate, ViralAnalysisRecord, ViralAnalysisResult, ViralAnalysisStatus, ViralProductionTaskOptions, VolcengineSpeakerListRequest, VoiceLabGenerateInput, VoiceLabRecord, VoiceLabSummary, WebSearchRequest } from '../src/shared/types';
 import { boundViralDiagnosticText, createViralProductionTaskInput, detectViralPlatform, runViralAnalysis, viralCheckpointResumeState } from '../src/shared/viral-analysis';
 import { createViralRuntimeProviders } from '../src/shared/viral-runtime';
 import { listVolcengineSpeakers } from '../src/shared/volcengine-speakers';
@@ -1793,6 +1794,18 @@ trustedHandle('task:open-output-directory', async (_event, id: string) => {
   if (!directory) throw new Error('任务尚未生成输出目录。');
   await openExistingDirectory(directory, (path) => shell.openPath(path));
 });
+trustedHandle('task:launch-jianying', async (_event, id: string) => {
+  const database = await getDb();
+  const task = await database.getTaskDetail(id);
+  if (!task) throw new Error(`任务不存在或已删除：${id}`);
+  if (isHtmlVideoTask(task)) throw new Error('HTML 动画任务不使用普通剪映草稿交付。');
+  const snapshot = await readTaskArtifactSnapshot(task);
+  if (!snapshot.draft) throw new Error('任务尚未生成可用的剪映草稿。');
+  const executable = await findJianyingExecutable();
+  if (!executable) throw new Error('未找到剪映专业版。请先安装或启动一次剪映，也可以先打开草稿目录手动导入。');
+  const launchError = await shell.openPath(executable);
+  if (launchError) throw new Error(`剪映启动失败：${launchError}`);
+});
 trustedHandle('viral:list', async (_event, request: Extract<HistoryListRequest, { family: 'viral-analysis' }>) => (await getDb()).listViralAnalyses(request));
 trustedHandle('viral:get-detail', async (_event, id: string) => publicViralAnalysisDetail(await (await getDb()).getViralAnalysisDetail(id)));
 trustedHandle('viral:list-events', async (_event, input: { analysisId: string } & CursorRequest) =>
@@ -2976,6 +2989,7 @@ trustedHandle('task:update-template', async (_event, input: { id: string; templa
   if (!task) throw new Error(`Task not found: ${input.id}`);
   if (isHtmlVideoTask(task)) throw new Error('HTML video tasks manage their layout template in the HTML animation workspace.');
   if (!template) throw new Error(`Draft template not found: ${input.templateId}`);
+  if (task.artifactStatePath) await markTaskDraftForRepack(task.artifactStatePath);
   await database.updateTask(input.id, { templateId: template.id });
   const event = await database.addTaskEvent(input.id, {
     type: 'template_updated',
@@ -2983,6 +2997,28 @@ trustedHandle('task:update-template', async (_event, input: { id: string; templa
     agent: 'Draft',
     detail: `草稿模板已切换为“${template.name}”`,
     dataJson: JSON.stringify({ templateId: template.id }),
+  });
+  await publishTaskEvent(event);
+  return publishTaskUpsert(database, input.id);
+});
+
+trustedHandle('task:update-bgm', async (_event, input: { id: string; bgmId: string }) => {
+  const database = await getDb();
+  const state = await database.getState();
+  const task = state.tasks.find((item) => item.id === input.id);
+  if (!task) throw new Error(`Task not found: ${input.id}`);
+  if (isHtmlVideoTask(task)) throw new Error('HTML video tasks manage music in the HTML animation workspace.');
+  const bgmId = input.bgmId.trim();
+  const bgm = bgmId ? state.config.jianying.bgmLibrary.find((item) => item.id === bgmId) : null;
+  if (bgmId && !bgm) throw new Error(`Background music not found: ${bgmId}`);
+  if (task.artifactStatePath) await markTaskDraftForRepack(task.artifactStatePath);
+  await database.updateTask(input.id, { bgmId });
+  const event = await database.addTaskEvent(input.id, {
+    type: 'bgm_updated',
+    step: null,
+    agent: 'Draft',
+    detail: bgm ? `草稿背景音乐已切换为“${bgm.title}”` : '草稿背景音乐已关闭',
+    dataJson: JSON.stringify({ bgmId }),
   });
   await publishTaskEvent(event);
   return publishTaskUpsert(database, input.id);
@@ -3311,6 +3347,33 @@ trustedHandle('task:update-image-prompt', async (_event, input: { id: string; sc
       agent: 'Prompt',
       detail: `已修改第 ${sceneId} 张图片提示词`,
       dataJson: JSON.stringify({ sceneId, promptLength: result.updatedPrompt.prompt.length }),
+    });
+    await publishTaskEvent(event);
+    return publishTaskUpsert(database, task.id);
+  }, () => existingActiveRun?.activityReservation
+    ? takeHistoryActivityReservation(existingActiveRun)
+    : historyActivityRegistry.reserveActive('task', input.id));
+});
+
+trustedHandle('task:update-subtitle-lines', async (_event, input: { id: string; scenes: TaskSubtitleSceneLines[] }) => {
+  const existingActiveRun = runningTasks.get(input.id);
+  return runLatestTaskControlRequest(latestTaskControlRequests, input.id, async (isCurrent) => {
+    if (!await stopTaskRunBeforeArtifactMutation(() => runningTasks.get(input.id), isCurrent)) return null;
+    const database = await getDb();
+    if (!isCurrent()) return null;
+    const task = await database.getTaskDetail(input.id);
+    if (!task) throw new Error(`Task not found: ${input.id}`);
+    if (isHtmlVideoTask(task)) throw new Error('HTML video subtitles are managed in the HTML animation workspace.');
+    if (!task.artifactStatePath) throw new Error('Task artifact state is not available; run the storyboard step before editing subtitles.');
+
+    const result = await updateTaskSubtitleLines(task.artifactStatePath, input.scenes);
+    if (!isCurrent()) return null;
+    const event = await database.addTaskEvent(task.id, {
+      type: 'subtitle_lines_updated',
+      step: 6,
+      agent: 'Draft',
+      detail: `已保存 ${result.sceneCount} 个分镜的字幕断句，草稿待重新打包`,
+      dataJson: JSON.stringify({ sceneCount: result.sceneCount, cueCount: result.subtitles.cues.length }),
     });
     await publishTaskEvent(event);
     return publishTaskUpsert(database, task.id);

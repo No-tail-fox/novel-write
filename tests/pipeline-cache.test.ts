@@ -4,7 +4,7 @@ import { tmpdir } from 'node:os';
 import { join, relative } from 'node:path';
 import { FileDatabase } from '@shared/storage';
 import { runTask } from '@shared/runner';
-import { markSceneImageForRegeneration, markSceneImagesForRegeneration, markSceneNarrationForRegeneration, markTaskStepForRerun, replaceSceneImageAssets, updateSceneImagePrompt } from '@shared/pipeline-cache';
+import { markSceneImageForRegeneration, markSceneImagesForRegeneration, markSceneNarrationForRegeneration, markTaskDraftForRepack, markTaskStepForRerun, replaceSceneImageAssets, updateSceneImagePrompt, updateTaskSubtitleLines } from '@shared/pipeline-cache';
 import type { ImagePrompt, PipelineArtifact, StoryboardScene, Task, TaskStepRerunMode } from '@shared/types';
 import type { PyJianYingBridgeInput } from '@shared/jianying-bridge';
 
@@ -619,6 +619,48 @@ describe('pipeline cache and retry', () => {
       expect(next.steps['5'].status).toBe('completed');
       expect(next.steps['6'].status).toBe('pending');
       expect(next.draft).toBeUndefined();
+    } finally {
+      await rm(dir, { recursive: true, force: true });
+    }
+  });
+
+  it('saves exact storyboard subtitle lines and preserves the previous draft until repack starts', async () => {
+    const dir = await mkdtemp(join(tmpdir(), 'storybound-subtitle-edit-'));
+    const statePath = join(dir, 'pipeline', 'state.json');
+
+    try {
+      await mkdir(join(dir, 'pipeline'), { recursive: true });
+      await writeFile(statePath, JSON.stringify(createCompletedPipelineState('task-subtitle-edit'), null, 2), 'utf8');
+
+      const result = await updateTaskSubtitleLines(statePath, [
+        { sceneId: 1, lines: ['第一行，保留标点', '第二行'] },
+        { sceneId: 2, lines: ['第三行'] },
+      ]);
+      const next = JSON.parse(await readFile(statePath, 'utf8'));
+
+      expect(result.sceneCount).toBe(2);
+      expect(next.artifact.subtitles.cues.map((cue: { text: string }) => cue.text)).toEqual(['第一行，保留标点', '第二行', '第三行']);
+      expect(next.steps['6'].status).toBe('pending');
+      expect(next.draft).toEqual(createCompletedPipelineState('task-subtitle-edit').draft);
+      expect(next.assets.images).toHaveLength(2);
+      expect(next.assets.narration).toHaveLength(2);
+    } finally {
+      await rm(dir, { recursive: true, force: true });
+    }
+  });
+
+  it('marks settings changes for repack without deleting the usable draft', async () => {
+    const dir = await mkdtemp(join(tmpdir(), 'storybound-draft-settings-'));
+    const statePath = join(dir, 'state.json');
+    try {
+      await writeFile(statePath, JSON.stringify(createCompletedPipelineState('task-draft-settings'), null, 2), 'utf8');
+      await markTaskDraftForRepack(statePath);
+      const next = JSON.parse(await readFile(statePath, 'utf8'));
+
+      expect(next.steps['6'].status).toBe('pending');
+      expect(next.steps['6'].completedAt).toBeUndefined();
+      expect(next.draft.draftDir).toBe('draft-dir');
+      expect(next.artifact.subtitles.srt).toContain('one');
     } finally {
       await rm(dir, { recursive: true, force: true });
     }

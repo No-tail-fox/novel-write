@@ -1114,6 +1114,11 @@ export interface SubtitleTrack {
   srt: string;
 }
 
+export interface TaskSubtitleSceneLines {
+  sceneId: number;
+  lines: string[];
+}
+
 export interface MusicPlan {
   rhythmMode: MusicMvSettings['rhythmMode'];
   captionStyle: MusicMvSettings['captionStyle'];

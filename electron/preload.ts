@@ -58,6 +58,7 @@ import type {
   Task,
   TaskSummary,
   TaskStepRerunMode,
+  TaskSubtitleSceneLines,
   TaskStatus,
   UiPreferencesUpdate,
   ViralAnalysisResult,
@@ -149,7 +150,7 @@ function normalizeVoiceLabHistoryRequest(request: HistoryListInput<'voice-lab'>)
   };
 }
 
-export const storyDreamApi = {
+export const storyDreamApi: StoryDreamApi = {
   getState: (): Promise<PublicAppState> => invokeTrusted('app:get-state'),
   getBootstrap: (): Promise<BootstrapState> => invokeTrusted('app:get-bootstrap'),
   reconcileDeltas: (input: AppDeltaReconcileRequest): Promise<AppDeltaReconcileResult> => invokeTrusted('app:reconcile-deltas', input),
@@ -163,6 +164,7 @@ export const storyDreamApi = {
   listTaskEvents: (taskId: string, request: CursorRequest = {}): Promise<CursorPage<SequencedTaskEvent>> =>
     invokeTrusted('task:list-events', { taskId, ...request }),
   openTaskOutputDirectory: (id: string): Promise<void> => invokeTrusted('task:open-output-directory', id),
+  launchJianying: (id: string): Promise<void> => invokeTrusted('task:launch-jianying', id),
   listViralAnalyses: async (request: HistoryListInput<'viral-analysis'> = {}): Promise<HistoryPage<'viral-analysis', ViralAnalysisSummary>> =>
     invokeTrusted('viral:list', normalizeViralHistoryRequest(request)),
   archiveViralAnalysis: (id: string): Promise<AppMutationResult> => invokeTrusted('viral:archive', id),
@@ -262,6 +264,8 @@ export const storyDreamApi = {
   createProductionTaskFromViral: (id: string, options?: ViralProductionTaskOptions) => invokeTrusted('viral:create-production-task', { id, options }),
   updateTaskStatus: (id: string, status: Extract<TaskStatus, 'running' | 'paused' | 'cancelled'>) => invokeTrusted('task:update-status', { id, status }),
   updateTaskTemplate: (id: string, templateId: string) => invokeTrusted('task:update-template', { id, templateId }),
+  updateTaskBgm: (id: string, bgmId: string) => invokeTrusted('task:update-bgm', { id, bgmId }),
+  updateTaskSubtitleLines: (id: string, scenes: TaskSubtitleSceneLines[]) => invokeTrusted('task:update-subtitle-lines', { id, scenes }),
   retryTask: (id: string) => invokeTrusted('task:retry', id),
   regenerateTaskImage: (id: string, sceneId: number) => invokeTrusted('task:regenerate-image', { id, sceneId }),
   regenerateTaskImages: (id: string, sceneIds: number[]) => invokeTrusted('task:regenerate-images', { id, sceneIds }),
@@ -271,6 +275,7 @@ export const storyDreamApi = {
   regenerateTaskNarration: (id: string, sceneId: number) => invokeTrusted('task:regenerate-narration', { id, sceneId }),
   updateTaskImagePrompt: (id: string, sceneId: number, prompt: string) => invokeTrusted('task:update-image-prompt', { id, sceneId, prompt }),
   rerunTaskStep: (id: string, step: number, mode: TaskStepRerunMode) => invokeTrusted('task:rerun-step', { id, step, mode }),
+  repackTaskDraft: (id: string) => storyDreamApi.rerunTaskStep(id, 6, 'regenerate'),
   getTaskArtifacts: (id: string): Promise<TaskArtifactSnapshot> => invokeTrusted('task:get-artifacts', id),
   readAssetDataUrl: (path: string): Promise<string> => invokeTrusted('asset:read-data-url', path),
   selectLocalImage: (): Promise<string | null> => invokeTrusted('local-image:select'),
@@ -289,7 +294,7 @@ export const storyDreamApi = {
       ipcRenderer.off('app:delta', listener);
     };
   },
-} satisfies StoryDreamApi;
+};
 
 contextBridge.exposeInMainWorld('storydream', storyDreamApi);
 contextBridge.exposeInMainWorld('storybound', storyDreamApi);

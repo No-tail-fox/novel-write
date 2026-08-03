@@ -375,10 +375,10 @@ async function runTaskWithPipelineStateLock(db: FileDatabase, task: Task, option
       await emit('step_start', 6, 'Draft', '写入剪映草稿目录');
       const state = await db.getState();
       const latestTask = state.tasks.find((item) => item.id === task.id);
-      const draftTask = latestTask?.templateId && latestTask.templateId !== task.templateId
-        ? { ...task, templateId: latestTask.templateId }
+      const draftTask = latestTask
+        ? { ...task, templateId: latestTask.templateId, bgmId: latestTask.bgmId }
         : task;
-      const bgm = resolveBgm(state.config.jianying.bgmLibrary, task.bgmId);
+      const bgm = resolveBgm(state.config.jianying.bgmLibrary, draftTask.bgmId);
       const template = state.draftTemplates.find((item) => item.id === draftTask.templateId);
       const normalizedTemplate = template ? normalizeDraftTemplate(template) : undefined;
       const draft =
@@ -404,6 +404,7 @@ async function runTaskWithPipelineStateLock(db: FileDatabase, task: Task, option
               templateId: draftTask.templateId,
               template: normalizedTemplate,
               scenes: artifact.scenes,
+              subtitles: artifact.subtitles,
               imagePrompts: artifact.imagePrompts,
               reviewedText: artifact.reviewedText,
               rewrittenCopy: artifact.rewrittenCopy,
@@ -2035,9 +2036,9 @@ function hydrateArtifact(input: Partial<PipelineArtifact>, task?: Pick<Task, 'tr
     cover: resolveCoverDisplayMetadata(input.cover, { track: task?.track, sourceText: input.rewrittenCopy }),
     scenes: input.scenes,
     imagePrompts: input.imagePrompts,
-    subtitles: subtitleMaxCharsPerLine === undefined
-      ? input.subtitles ?? buildSubtitleTrack(input.scenes)
-      : buildSubtitleTrack(input.scenes, { maxCharsPerLine: subtitleMaxCharsPerLine }),
+    subtitles: input.subtitles ?? buildSubtitleTrack(input.scenes, subtitleMaxCharsPerLine === undefined
+      ? undefined
+      : { maxCharsPerLine: subtitleMaxCharsPerLine }),
     sourceContext: input.sourceContext,
     musicPlan: input.musicPlan,
     characterCard: input.characterCard,

@@ -25,6 +25,7 @@ export interface WriteJianyingDraftInput {
   templateId?: string;
   template?: DraftTemplate;
   scenes: StoryboardScene[];
+  subtitles?: SubtitleTrack;
   imagePrompts: ImagePrompt[];
   reviewedText: string;
   rewrittenCopy: string;
@@ -66,7 +67,7 @@ export async function writeJianyingDraft(input: WriteJianyingDraftInput, options
   }
 
   const template = normalizeDraftTemplate(input.template ?? getTemplate(input.templateId ?? (input.ratio === '16:9' ? 'builtin-landscape-16-9' : 'default-portrait-9-16')));
-  const subtitles = buildSubtitleTrack(input.scenes, { maxCharsPerLine: template.caption.maxCharsPerLine });
+  const subtitles = input.subtitles ?? buildSubtitleTrack(input.scenes, { maxCharsPerLine: template.caption.maxCharsPerLine });
   const title = safeDraftName(input.title || input.cover.title || 'storydream-draft');
   const draftDir = join(input.draftRootDir, uniqueDraftFolderName(title));
   const imagesByScene = await collectSceneAssets(input.scenes, input.generatedImages, 'image asset');
@@ -200,12 +201,14 @@ function createBridgePayload(input: {
     const startUs = cursor;
     const durationUs = msToUs(scene.durationMs);
     cursor += durationUs;
+    const sceneCues = input.subtitles.cues.filter((cue) => cue.sceneId === scene.id);
     return {
       sceneId: scene.id,
       startUs,
       durationUs,
       text: scene.cap,
-      captions: input.subtitles.cues.filter((cue) => cue.sceneId === scene.id).map((cue) => cue.text),
+      captions: sceneCues.map((cue) => cue.text),
+      captionDurationsUs: sceneCues.map((cue) => msToUs(cue.endMs - cue.startMs)),
     };
   });
   const overlayText = resolveOverlayText(input.input, input.template);

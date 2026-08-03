@@ -1006,6 +1006,11 @@ function qaScenarioScript(id: string, view: string, theme: string, stage?: strin
         && templateManager instanceof HTMLButtonElement
         && !templateManager.disabled;
       if (scenarioId === 'task-detail-template-menu-dark-desktop' && templateSelect instanceof HTMLButtonElement) {
+        templateSelect.scrollIntoView({ block: 'center' });
+        await waitFor(() => {
+          const triggerRect = templateSelect.getBoundingClientRect();
+          return triggerRect.top >= 0 && triggerRect.bottom <= window.innerHeight;
+        });
         templateSelect.click();
         const menuReady = await waitFor(() => {
           const menu = document.querySelector('.task-template-select-menu[role="listbox"]');

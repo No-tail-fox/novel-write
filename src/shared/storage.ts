@@ -2690,6 +2690,7 @@ export class FileDatabase {
         | 'startedAt'
         | 'lastHeartbeatAt'
         | 'templateId'
+        | 'bgmId'
         | 'step3PromptSnapshot'
         | 'podcastSpeakerA'
         | 'podcastSpeakerB'
@@ -2714,6 +2715,7 @@ export class FileDatabase {
       startedAt: 'started_at',
       lastHeartbeatAt: 'last_heartbeat_at',
       templateId: 'template_id',
+      bgmId: 'bgm_id',
       step3PromptSnapshot: 'step3_prompt_snapshot',
       podcastSpeakerA: 'podcast_speaker_a',
       podcastSpeakerB: 'podcast_speaker_b',

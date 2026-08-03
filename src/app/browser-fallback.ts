@@ -530,6 +530,9 @@ export function makeFallbackApi(setState: (state: AppState) => void): StoryDream
     async openTaskOutputDirectory() {
       throw new Error('浏览器预览不能打开本地任务目录，请在 Electron 桌面端操作。');
     },
+    async launchJianying() {
+      throw new Error('浏览器预览不能启动剪映，请在 Electron 桌面端操作。');
+    },
     async listViralAnalyses(request: HistoryListInput<'viral-analysis'> = {}) {
       const records = read().viralAnalyses.filter((record) => (
         matchesArchiveFilter(record, request.filter)
@@ -1159,6 +1162,16 @@ export function makeFallbackApi(setState: (state: AppState) => void): StoryDream
       }
       return persist({ ...state, tasks: state.tasks.map((task) => (task.id === id ? { ...task, templateId } : task)) });
     },
+    async updateTaskBgm(id: string, bgmId: string) {
+      const state = read();
+      if (bgmId && !state.config.jianying.bgmLibrary.some((item) => item.id === bgmId)) {
+        throw new Error(`背景音乐不存在：${bgmId}`);
+      }
+      return persist({ ...state, tasks: state.tasks.map((task) => (task.id === id ? { ...task, bgmId } : task)) });
+    },
+    async updateTaskSubtitleLines() {
+      throw new Error('浏览器预览不能保存真实任务字幕，请在 Electron 桌面端操作。');
+    },
     async retryTask(id: string) {
       const state = read();
       return persist({ ...state, tasks: state.tasks.map((task) => (task.id === id ? { ...task, status: 'pending', errorMessage: '' } : task)) });
@@ -1186,6 +1199,9 @@ export function makeFallbackApi(setState: (state: AppState) => void): StoryDream
     },
     async rerunTaskStep() {
       throw new Error('浏览器预览不能重新执行真实流水线步骤，请在 Electron 应用中操作。');
+    },
+    async repackTaskDraft() {
+      throw new Error('浏览器预览不能重新打包剪映草稿，请在 Electron 桌面端操作。');
     },
     async getTaskArtifacts(id: string) {
       const task = read().tasks.find((item) => item.id === id);

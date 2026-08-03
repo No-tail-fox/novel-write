@@ -86,6 +86,19 @@ function task(overrides: Partial<Task> = {}): Task {
 }
 
 describe('task operation contracts', () => {
+  it('validates ordinary storyboard editing and draft adjustment IPC inputs', () => {
+    expect(ipcInputSchemas['task:update-subtitle-lines'].parse({
+      id: 'task-1',
+      scenes: [{ sceneId: 1, lines: ['第一行', '第二行'] }],
+    })).toEqual({ id: 'task-1', scenes: [{ sceneId: 1, lines: ['第一行', '第二行'] }] });
+    expect(() => ipcInputSchemas['task:update-subtitle-lines'].parse({
+      id: 'task-1',
+      scenes: [{ sceneId: 1, lines: [''] }],
+    })).toThrow();
+    expect(ipcInputSchemas['task:update-bgm'].parse({ id: 'task-1', bgmId: '' })).toEqual({ id: 'task-1', bgmId: '' });
+    expect(ipcInputSchemas['task:launch-jianying'].parse('task-1')).toBe('task-1');
+  });
+
   it('formats history task types without hiding specialized workflows behind story tracks', () => {
     expect(taskHistoryTypeLabel(task({ taskType: 'html-video', track: 'character-story' }))).toBe('HTML 动画');
     expect(taskHistoryTypeLabel(task({ taskType: 'music-mv', track: 'music-mv' }))).toBe('音乐 MV');

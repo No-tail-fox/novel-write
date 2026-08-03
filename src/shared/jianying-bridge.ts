@@ -108,7 +108,7 @@ export interface PyJianYingBridgeInput {
       border: DraftTextBorder;
     };
   };
-  scenes?: Array<{ sceneId: number; startUs: number; durationUs: number; text: string; captions?: string[] }>;
+  scenes?: Array<{ sceneId: number; startUs: number; durationUs: number; text: string; captions?: string[]; captionDurationsUs?: number[] }>;
   images: Array<{ sceneId: number; path: string }>;
   coverImagePath?: string;
   narration: Array<{ sceneId: number; path: string; speaker?: 'A' | 'B'; turnIndex?: number; text?: string }>;
@@ -701,16 +701,21 @@ def expand_timed_subtitles(timeline, caption_config=None, canvas_config=None):
     chars_per_line = resolve_caption_chars_per_line(caption_config, canvas_config)
     for item in timeline:
         supplied_captions = [str(text or "").strip() for text in (item.get("captions") or []) if str(text or "").strip()]
-        cue_texts = [piece for text in supplied_captions for piece in split_caption_text(text, chars_per_line)] or split_caption_text(item.get("text"), chars_per_line)
+        cue_texts = supplied_captions or split_caption_text(item.get("text"), chars_per_line)
         if not cue_texts:
             continue
-        durations = distribute_subtitle_durations(int(item["durationUs"]), cue_texts)
+        supplied_durations = [max(1, int(value or 0)) for value in (item.get("captionDurationsUs") or [])]
+        if supplied_captions and len(supplied_durations) == len(cue_texts):
+            durations = supplied_durations
+            durations[-1] = max(1, durations[-1] + int(item["durationUs"]) - sum(durations))
+        else:
+            durations = distribute_subtitle_durations(int(item["durationUs"]), cue_texts)
         cursor = int(item["startUs"])
         for text, duration in zip(cue_texts, durations):
             expanded.append({
                 "startUs": cursor,
                 "durationUs": int(duration),
-                "text": wrap_caption_text(text, chars_per_line),
+                "text": text if supplied_captions else wrap_caption_text(text, chars_per_line),
             })
             cursor += int(duration)
     return expanded
@@ -873,6 +878,7 @@ def main():
             "audioDurationUs": audio_duration,
             "text": scene.get("text", ""),
             "captions": scene.get("captions") or [],
+            "captionDurationsUs": scene.get("captionDurationsUs") or [],
         })
         cursor += scene_duration
     total_duration = max(cursor, int(payload.get("totalDurationUs") or 0))

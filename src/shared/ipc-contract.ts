@@ -785,6 +785,7 @@ export const ipcInputSchemas = {
   'task:get-detail': idOnlySchema,
   'task:list-events': z.object({ taskId: idSchema, cursor: nonEmptyText(4096).nullable().optional(), limit: finiteNumber.optional() }).strict(),
   'task:open-output-directory': idOnlySchema,
+  'task:launch-jianying': idOnlySchema,
   'viral:create-and-run': createViralAnalysisSchema,
   'viral:list': viralHistoryListSchema,
   'viral:archive': governanceIdSchema,
@@ -798,6 +799,14 @@ export const ipcInputSchemas = {
   'viral:create-production-task': z.object({ id: idSchema, options: viralProductionOptionsSchema.optional() }).strict(),
   'task:update-status': taskStatusSchema,
   'task:update-template': z.object({ id: idSchema, templateId: idSchema }).strict(),
+  'task:update-bgm': z.object({ id: idSchema, bgmId: z.string().max(256) }).strict(),
+  'task:update-subtitle-lines': z.object({
+    id: idSchema,
+    scenes: z.array(z.object({
+      sceneId: nonNegativeInteger,
+      lines: z.array(nonEmptyText(2000)).min(1).max(MAX_IPC_ARRAY_ITEMS),
+    }).strict()).min(1).max(MAX_IPC_ARRAY_ITEMS),
+  }).strict(),
   'task:retry': idOnlySchema,
   'task:regenerate-image': sceneActionSchema,
   'task:regenerate-images': z.object({ id: idSchema, sceneIds: z.array(nonNegativeInteger).min(1).max(MAX_IPC_ARRAY_ITEMS) }).strict(),

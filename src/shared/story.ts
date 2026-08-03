@@ -1,4 +1,4 @@
-import type { CoverMetadata, ImagePrompt, PipelineArtifact, StoryboardScene, SubtitleTrack } from './types';
+import type { CoverMetadata, ImagePrompt, PipelineArtifact, StoryboardScene, SubtitleTrack, TaskSubtitleSceneLines } from './types';
 
 const negativePrompt = '卡通，动漫，插画，低质量，模糊，变形，畸形肢体，水印，文字，签名，额外手指，重复面孔';
 
@@ -234,14 +234,29 @@ export function buildSubtitleTrack(
   scenes: Pick<StoryboardScene, 'id' | 'cap' | 'durationMs'>[],
   options: SubtitleTrackOptions = {},
 ): SubtitleTrack {
+  const maxCharsPerLine = clampCaptionMaxChars(options.maxCharsPerLine ?? defaultCaptionMaxCharsPerLine);
+  return buildSubtitleTrackFromLineResolver(scenes, (scene) => splitCaptionLines(scene.cap, maxCharsPerLine));
+}
+
+export function buildSubtitleTrackFromSceneLines(
+  scenes: Pick<StoryboardScene, 'id' | 'cap' | 'durationMs'>[],
+  sceneLines: readonly TaskSubtitleSceneLines[],
+): SubtitleTrack {
+  const linesBySceneId = new Map(sceneLines.map((item) => [item.sceneId, item.lines.map((line) => line.trim()).filter(Boolean)] as const));
+  return buildSubtitleTrackFromLineResolver(scenes, (scene) => linesBySceneId.get(scene.id) ?? []);
+}
+
+function buildSubtitleTrackFromLineResolver(
+  scenes: Pick<StoryboardScene, 'id' | 'cap' | 'durationMs'>[],
+  resolveLines: (scene: Pick<StoryboardScene, 'id' | 'cap' | 'durationMs'>) => string[],
+): SubtitleTrack {
   let cursor = 0;
   const cues: SubtitleTrack['cues'] = [];
-  const maxCharsPerLine = clampCaptionMaxChars(options.maxCharsPerLine ?? defaultCaptionMaxCharsPerLine);
   for (const scene of scenes) {
     const sceneStartMs = cursor;
     const sceneDurationMs = Math.max(1, Math.round(Number(scene.durationMs) || 0));
     const sceneEndMs = sceneStartMs + sceneDurationMs;
-    const lines = splitCaptionLines(scene.cap, maxCharsPerLine);
+    const lines = resolveLines(scene);
     const durations = distributeSubtitleDurations(sceneDurationMs, lines);
     let cueCursor = sceneStartMs;
     lines.forEach((text, lineIndex) => {

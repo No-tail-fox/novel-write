@@ -1,6 +1,7 @@
 import { readFile, writeFile } from 'node:fs/promises';
 import { resolve } from 'node:path';
-import type { ImagePrompt, PipelineArtifact, TaskArtifactAssetPreview, TaskArtifactImageErrorPreview, TaskArtifactSnapshot, TaskArtifactStepPreview, TaskStepRerunMode } from './types';
+import { buildSubtitleTrackFromSceneLines } from './story';
+import type { ImagePrompt, PipelineArtifact, SubtitleTrack, TaskArtifactAssetPreview, TaskArtifactImageErrorPreview, TaskArtifactSnapshot, TaskArtifactStepPreview, TaskStepRerunMode, TaskSubtitleSceneLines } from './types';
 
 interface PipelineStateFile {
   version?: number;
@@ -60,6 +61,11 @@ export interface UpdateSceneImagePromptResult {
   updatedPrompt: ImagePrompt;
 }
 
+export interface UpdateTaskSubtitleLinesResult {
+  subtitles: SubtitleTrack;
+  sceneCount: number;
+}
+
 const pipelineStepMin = 0;
 const pipelineStepMax = 6;
 const pipelineStateMutationTails = new Map<string, Promise<void>>();
@@ -91,6 +97,52 @@ export async function markTaskStepForRerun(statePath: string, step: number, mode
 
     await writeFile(normalizedStatePath, JSON.stringify(state, null, 2), 'utf8');
     return { step: rerunStep, mode, clearedSteps };
+  });
+}
+
+export async function markTaskDraftForRepack(statePath: string): Promise<void> {
+  await withPipelineStateLock(statePath, async (normalizedStatePath) => {
+    const state = JSON.parse(await readFile(normalizedStatePath, 'utf8')) as PipelineStateFile;
+    state.steps ??= {};
+    state.steps['6'] = pendingStep(state.steps['6']);
+    state.updatedAt = new Date().toISOString();
+    await writeFile(normalizedStatePath, JSON.stringify(state, null, 2), 'utf8');
+  });
+}
+
+export async function updateTaskSubtitleLines(
+  statePath: string,
+  sceneLines: readonly TaskSubtitleSceneLines[],
+): Promise<UpdateTaskSubtitleLinesResult> {
+  if (sceneLines.length === 0) throw new Error('At least one storyboard subtitle entry is required.');
+  const normalized = sceneLines.map((item) => ({
+    sceneId: Number(item.sceneId),
+    lines: item.lines.map((line) => line.trim()),
+  }));
+  const sceneIds = normalizeSceneIds(normalized.map((item) => item.sceneId), 'subtitle update');
+  if (sceneIds.length !== normalized.length) throw new Error('Storyboard subtitle entries must use unique scene ids.');
+  const emptyLine = normalized.find((item) => item.lines.length === 0 || item.lines.some((line) => !line));
+  if (emptyLine) throw new Error(`Storyboard scene ${emptyLine.sceneId} must contain nonempty subtitle lines.`);
+
+  return withPipelineStateLock(statePath, async (normalizedStatePath) => {
+    const state = JSON.parse(await readFile(normalizedStatePath, 'utf8')) as PipelineStateFile;
+    state.steps ??= {};
+    state.artifact ??= {};
+    const scenes = state.artifact.scenes ?? [];
+    if (scenes.length === 0) throw new Error('Task storyboard is not available for subtitle editing.');
+    const knownSceneIds = scenes.map((scene) => Number(scene.id));
+    const knownSceneIdSet = new Set(knownSceneIds);
+    const unknownSceneId = sceneIds.find((sceneId) => !knownSceneIdSet.has(sceneId));
+    if (unknownSceneId !== undefined) throw new Error(`Scene ${unknownSceneId} is not present in the task storyboard.`);
+    const missingSceneId = knownSceneIds.find((sceneId) => !sceneIds.includes(sceneId));
+    if (missingSceneId !== undefined) throw new Error(`Subtitle lines are missing for storyboard scene ${missingSceneId}.`);
+
+    const subtitles = buildSubtitleTrackFromSceneLines(scenes, normalized);
+    state.artifact.subtitles = subtitles;
+    state.steps['6'] = pendingStep(state.steps['6']);
+    state.updatedAt = new Date().toISOString();
+    await writeFile(normalizedStatePath, JSON.stringify(state, null, 2), 'utf8');
+    return { subtitles, sceneCount: scenes.length };
   });
 }
 

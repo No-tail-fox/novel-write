@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState, type ReactNode } from 'react';
-import { Check, CheckSquare2, ChevronLeft, ChevronRight, ClipboardCopy, ClipboardPaste, Database, Eye, FolderOpen, Image as ImageIcon, Images, ImageUp, Library, Loader2, Pencil, Play, RotateCcw, Save, Square, Upload, Wand2, X, XCircle } from 'lucide-react';
+import { Check, CheckSquare2, ChevronLeft, ChevronRight, ClipboardCopy, ClipboardPaste, Database, Eye, FolderOpen, Image as ImageIcon, Images, ImageUp, Library, Loader2, Pencil, Play, RotateCcw, Save, Scissors, Square, Upload, Wand2, X, XCircle } from 'lucide-react';
 import { ErrorDetails as ErrorSummaryButton, summarizeErrorMessage } from '../../components/ErrorDetails';
 import { AsyncActionFeedback as InlineActionFeedback } from '../../components/AsyncActionFeedback';
 import { EventTimeline } from '../../components/EventTimeline';
@@ -7,7 +7,7 @@ import { StatusBadge as StatusPill, taskStatusLabel as statusLabel } from '../..
 import type { ApplyMutationResult } from '../../app/route-types';
 import { DraftTemplatePreview } from '../templates/DraftCanvas';
 import type { StoryDreamApi } from '../../shared/storydream-api';
-import { buildSubtitleTrack } from '../../shared/story';
+import { buildSubtitleTrack, splitCaptionLines } from '../../shared/story';
 import type {
   AppConfig,
   DraftTemplate,
@@ -16,6 +16,7 @@ import type {
   TaskArtifactSnapshot,
   TaskEvent,
   TaskStepRerunMode,
+  TaskSubtitleSceneLines,
 } from '../../shared/types';
 import { useAsyncAction } from '../../ui/async-action';
 import {
@@ -44,6 +45,7 @@ export function ArtifactPreviewContent({
   latestEvent,
   currentAgent,
   isBrowserPreview,
+  onArtifactChanged,
 }: {
   api: StoryDreamApi;
   task: Task;
@@ -56,15 +58,16 @@ export function ArtifactPreviewContent({
   latestEvent: TaskEvent | null;
   currentAgent: string;
   isBrowserPreview: boolean;
+  onArtifactChanged: () => void;
 }) {
   const artifact = snapshot?.artifact ?? {};
   const sourceContext = artifact.sourceContext;
   const scenes = artifact.scenes ?? [];
   const imagePrompts = artifact.imagePrompts ?? [];
   const subtitles = useMemo(
-    () => scenes.length > 0
+    () => artifact.subtitles ?? (scenes.length > 0
       ? buildSubtitleTrack(scenes, { maxCharsPerLine: draftTemplate.caption.maxCharsPerLine })
-      : artifact.subtitles,
+      : undefined),
     [artifact.subtitles, draftTemplate.caption.maxCharsPerLine, scenes],
   );
   const imageAssets = snapshot?.assets.images ?? [];
@@ -212,7 +215,7 @@ export function ArtifactPreviewContent({
         {task.status === 'completed' && task.outputDir ? (
           <button className="ghost-action" disabled={artifactAction.busy} onClick={openArtifactOutput}>
             <FolderOpen size={15} />
-            打开剪映草稿
+            打开草稿目录
           </button>
         ) : null}
       </div>
@@ -303,11 +306,19 @@ export function ArtifactPreviewContent({
       ) : null}
 
       {tab === 'storyboard' ? (
-        <div className="artifact-section-stack">
-          <ArtifactSection title="分镜分句" badge={`${scenes.length} 条`}>
-            <ArtifactSceneList scenes={scenes} imagePrompts={imagePrompts} images={imageAssets} />
-          </ArtifactSection>
-        </div>
+        <StoryboardSubtitleEditor
+          api={api}
+          task={task}
+          scenes={scenes}
+          subtitles={subtitles}
+          maxCharsPerLine={draftTemplate.caption.maxCharsPerLine}
+          disabled={!canRerunStep}
+          isBrowserPreview={isBrowserPreview}
+          regenerating={rerunningStepAction === '2:regenerate'}
+          applyState={applyState}
+          onAiStoryboard={() => rerunArtifactStep(2, 'regenerate')}
+          onArtifactChanged={onArtifactChanged}
+        />
       ) : null}
 
       {tab === 'images' ? (
@@ -443,6 +454,176 @@ function ArtifactSceneList({
       })}
     </div>
   );
+}
+
+function StoryboardSubtitleEditor({
+  api,
+  task,
+  scenes,
+  subtitles,
+  maxCharsPerLine,
+  disabled,
+  isBrowserPreview,
+  regenerating,
+  applyState,
+  onAiStoryboard,
+  onArtifactChanged,
+}: {
+  api: StoryDreamApi;
+  task: Task;
+  scenes: NonNullable<TaskArtifactSnapshot['artifact']['scenes']>;
+  subtitles: TaskArtifactSnapshot['artifact']['subtitles'];
+  maxCharsPerLine: number;
+  disabled: boolean;
+  isBrowserPreview: boolean;
+  regenerating: boolean;
+  applyState: ApplyMutationResult;
+  onAiStoryboard: () => void | Promise<void>;
+  onArtifactChanged: () => void;
+}) {
+  const editorAction = useAsyncAction();
+  const initialLines = useMemo(
+    () => storyboardSubtitleLines(scenes, subtitles, maxCharsPerLine),
+    [maxCharsPerLine, scenes, subtitles],
+  );
+  const initialSignature = useMemo(() => subtitleLineSignature(scenes, initialLines), [initialLines, scenes]);
+  const [linesBySceneId, setLinesBySceneId] = useState<Record<number, string[]>>(initialLines);
+  const currentSignature = subtitleLineSignature(scenes, linesBySceneId);
+  const dirty = currentSignature !== initialSignature;
+  const invalidSceneIds = scenes
+    .filter((scene) => (linesBySceneId[scene.id] ?? []).length === 0 || (linesBySceneId[scene.id] ?? []).some((line) => !line.trim()))
+    .map((scene) => scene.id);
+  const locked = disabled || editorAction.busy || isBrowserPreview;
+
+  useEffect(() => {
+    setLinesBySceneId(initialLines);
+  }, [initialLines]);
+
+  function updateSceneLines(sceneId: number, value: string) {
+    const lines = value.replace(/\r/gu, '').split('\n');
+    setLinesBySceneId((current) => ({ ...current, [sceneId]: lines }));
+    editorAction.clearFeedback();
+  }
+
+  function resplitSubtitles() {
+    setLinesBySceneId(Object.fromEntries(scenes.map((scene) => [
+      scene.id,
+      splitCaptionLines(scene.cap, maxCharsPerLine),
+    ])));
+    editorAction.clearFeedback();
+  }
+
+  async function copyAllCopy() {
+    await editorAction.run(async () => {
+      if (!navigator.clipboard) throw new Error('当前环境不支持剪贴板写入。');
+      await navigator.clipboard.writeText(scenes.map((scene) => (linesBySceneId[scene.id] ?? []).join('\n')).join('\n\n'));
+    }, { successMessage: '全部字幕文案已复制' });
+  }
+
+  async function saveSubtitleLines() {
+    if (!dirty || invalidSceneIds.length > 0) return;
+    const input: TaskSubtitleSceneLines[] = scenes.map((scene) => ({
+      sceneId: scene.id,
+      lines: (linesBySceneId[scene.id] ?? []).map((line) => line.trim()),
+    }));
+    await editorAction.run(async () => {
+      applyState(await api.updateTaskSubtitleLines(task.id, input));
+      onArtifactChanged();
+    }, { successMessage: '字幕断句已保存，剪映草稿待重新打包' });
+  }
+
+  if (scenes.length === 0) return <ArtifactEmpty text="等待分镜生成" />;
+  return (
+    <section className="storyboard-subtitle-editor" data-dirty={dirty ? 'true' : 'false'}>
+      <header className="storyboard-editor-toolbar">
+        <div>
+          <strong>字幕断句</strong>
+          <span>{scenes.length} 个分镜 · {Object.values(linesBySceneId).reduce((sum, lines) => sum + lines.length, 0)} 行字幕</span>
+        </div>
+        <div className="storyboard-editor-actions">
+          <button className="mini-button" type="button" disabled={locked || dirty} title={dirty ? '请先保存字幕断句' : '重新生成分镜并继续后续步骤'} onClick={() => void onAiStoryboard()}>
+            {regenerating ? <Loader2 className="spin" size={14} /> : <Wand2 size={14} />}
+            AI 重新分镜
+          </button>
+          <button className="mini-button" type="button" disabled={editorAction.busy} onClick={copyAllCopy}>
+            <ClipboardCopy size={14} />
+            复制全部文案
+          </button>
+          <button className="mini-button" type="button" disabled={locked} onClick={resplitSubtitles}>
+            <Scissors size={14} />
+            重新切分字幕
+          </button>
+          <button className="primary-action compact" type="button" disabled={locked || !dirty || invalidSceneIds.length > 0} onClick={saveSubtitleLines}>
+            {editorAction.busy ? <Loader2 className="spin" size={14} /> : <Save size={14} />}
+            保存字幕断句
+          </button>
+        </div>
+      </header>
+      {invalidSceneIds.length > 0 ? <div className="storyboard-editor-warning">分镜 {invalidSceneIds.join('、')} 存在空字幕行，请补全或删除空行后保存。</div> : null}
+      <InlineActionFeedback feedback={editorAction.feedback} />
+      <div className="storyboard-editor-columns" aria-hidden="true">
+        <span>分镜原文</span>
+        <span>字幕行</span>
+      </div>
+      <div className="storyboard-editor-rows">
+        {scenes.map((scene, sceneIndex) => {
+          const lines = linesBySceneId[scene.id] ?? [];
+          return (
+            <article className="storyboard-editor-row" key={scene.id}>
+              <div className="storyboard-source-copy">
+                <small>#{String(sceneIndex + 1).padStart(2, '0')} 分镜原文</small>
+                <p>{scene.cap}</p>
+                <span>{countChars(scene.cap)} 字 · {(scene.durationMs / 1000).toFixed(1)} 秒</span>
+              </div>
+              <div className="storyboard-caption-field">
+                <small>字幕行</small>
+                <div className="storyboard-caption-input">
+                  <div className="storyboard-caption-numbers" aria-hidden="true">
+                    {lines.map((_, index) => <span key={index}>{index + 1}</span>)}
+                  </div>
+                  <textarea
+                    aria-label={`第 ${sceneIndex + 1} 个分镜字幕行`}
+                    disabled={locked}
+                    rows={Math.max(2, lines.length)}
+                    spellCheck={false}
+                    wrap="off"
+                    value={lines.join('\n')}
+                    onChange={(event) => updateSceneLines(scene.id, event.target.value)}
+                  />
+                </div>
+                <span>{lines.length} 行 · {countChars(lines.join(''))} 字</span>
+              </div>
+            </article>
+          );
+        })}
+      </div>
+    </section>
+  );
+}
+
+function storyboardSubtitleLines(
+  scenes: NonNullable<TaskArtifactSnapshot['artifact']['scenes']>,
+  subtitles: TaskArtifactSnapshot['artifact']['subtitles'],
+  maxCharsPerLine: number,
+): Record<number, string[]> {
+  const cuesBySceneId = new Map<number, string[]>();
+  for (const cue of subtitles?.cues ?? []) {
+    if (cue.sceneId === undefined) continue;
+    const lines = cuesBySceneId.get(cue.sceneId) ?? [];
+    lines.push(cue.text);
+    cuesBySceneId.set(cue.sceneId, lines);
+  }
+  return Object.fromEntries(scenes.map((scene) => [
+    scene.id,
+    cuesBySceneId.get(scene.id) ?? splitCaptionLines(scene.cap, maxCharsPerLine),
+  ]));
+}
+
+function subtitleLineSignature(
+  scenes: NonNullable<TaskArtifactSnapshot['artifact']['scenes']>,
+  linesBySceneId: Record<number, string[]>,
+): string {
+  return JSON.stringify(scenes.map((scene) => [scene.id, linesBySceneId[scene.id] ?? []]));
 }
 
 function ArtifactPromptList({ prompts }: { prompts: NonNullable<TaskArtifactSnapshot['artifact']['imagePrompts']> }) {

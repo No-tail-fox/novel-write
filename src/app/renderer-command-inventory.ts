@@ -156,6 +156,7 @@ export const rendererCommandInventory = {
   importOrdinaryTaskCover: command(owner('new-task', 'src/features/tasks/NewTaskPage.tsx', 'importOrdinaryTaskCover', 'onClick={importOrdinaryTaskCover}', '导入手动封面', 'tests/new-task-workbench-ui.test.ts')),
   importPersonAssetImages: command(owner('person-assets', 'src/features/labs/PersonAssetsPage.tsx', 'importImages', 'onClick={importImages}', '导入图片', productShellTest)),
   importTaskImages: command(owner('task-detail', 'src/features/tasks/TaskArtifactPreview.tsx', 'importImages', 'onClick={() => void importImages()}', '批量导入', productShellTest)),
+  launchJianying: command(owner('task-detail', 'src/features/tasks/TaskDetailPage.tsx', 'launchJianying', 'onClick={onLaunchJianying}', '打开剪映', 'tests/task-operations-ui.test.ts')),
   listProviderModels: command(owner(
     'settings',
     'src/features/settings/SettingsPage.tsx',
@@ -179,7 +180,8 @@ export const rendererCommandInventory = {
   openTaskOutputDirectory: command(
     owner('html-video', 'src/features/html-video/HtmlVideoPage.tsx', 'openOutputDirectory', 'onClick={openOutputDirectory}', '打开目录', 'tests/electron-ipc-contract.test.ts'),
     owner('queue', 'src/features/tasks/QueuePage.tsx', 'openQueueOutput', 'openQueueOutput(task.id)', '打开任务输出目录', 'tests/electron-ipc-contract.test.ts'),
-    owner('task-detail', 'src/features/tasks/TaskArtifactPreview.tsx', 'openArtifactOutput', 'onClick={openArtifactOutput}', '打开剪映草稿', 'tests/electron-ipc-contract.test.ts'),
+    owner('task-detail', 'src/features/tasks/TaskArtifactPreview.tsx', 'openArtifactOutput', 'onClick={openArtifactOutput}', '打开草稿目录', 'tests/task-operations-ui.test.ts'),
+    owner('task-detail', 'src/features/tasks/TaskDetailPage.tsx', 'openDraftDirectory', 'onClick={onOpenDirectory}', '草稿目录', 'tests/task-operations-ui.test.ts'),
   ),
   openViralLoginWindow: command(owner('viral-analyzer', 'src/features/viral/ViralAnalyzerPage.tsx', 'openDouyinLogin', 'onClick={openDouyinLogin}', '打开抖音登录窗口', productShellTest)),
   regenerateHtmlVideoAsset: command(owner(
@@ -245,10 +247,10 @@ export const rendererCommandInventory = {
     '重新出片',
     htmlVideoStudioTest,
   )),
+  repackTaskDraft: command(owner('task-detail', 'src/features/tasks/TaskDetailPage.tsx', 'repackDraft', 'onClick={onRepack}', '重新打包', 'tests/task-operations-ui.test.ts')),
   rerunTaskStep: command(
     owner('task-detail', 'src/features/tasks/TaskArtifactPreview.tsx', 'rerunArtifactStep', "onAction(step, 'regenerate')", '重新生成', productShellTest, undefined, { disabled: 'disabled={disabled || busy}', loading: 'regenerating ? <Loader2', error: 'InlineActionFeedback' }),
     owner('task-detail', 'src/features/tasks/TaskArtifactPreview.tsx', 'rerunArtifactStep', "onAction(step, 'rewrite')", '改写后继续', productShellTest, undefined, { disabled: 'disabled={disabled || busy}', loading: 'rewriting ? <Loader2', error: 'InlineActionFeedback' }),
-    owner('task-detail', 'src/features/tasks/TaskDetailPage.tsx', 'applyDraftTemplate', 'onClick={applyDraftTemplate}', '应用模板', 'tests/task-operations-ui.test.ts'),
   ),
   resetPromptTemplates: command(owner('prompt-templates', 'src/features/templates/PromptTemplatesPage.tsx', 'resetPromptTemplateLibrary', 'onClick={resetPromptTemplateLibrary}', '重置', productShellTest)),
   restoreImageLabRecord: command(owner('history', 'src/features/tasks/HistoryPage.tsx', 'restoreRecord', 'restoreRecord(record)', '恢复记录', historyTest)),
@@ -383,8 +385,10 @@ export const rendererCommandInventory = {
     owner('html-video', 'src/features/html-video/HtmlVideoStoryboundPanels.tsx', 'regenerate', 'onClick={() => regenerate(narration)}', '保存并重配', htmlVideoStudioTest),
     owner('html-video', 'src/features/html-video/HtmlVideoStoryboundPanels.tsx', 'selectTemplate', 'onClick={() => selectTemplate(presetSceneIndex, template.id)}', 'template.label', htmlVideoStudioTest),
   ),
+  updateTaskBgm: command(owner('task-detail', 'src/features/tasks/TaskDetailPage.tsx', 'applyDraftBgm', 'onClick={onApplyBgm}', '应用音乐', 'tests/task-operations-ui.test.ts')),
   updateTaskImagePrompt: command(owner('task-detail', 'src/features/tasks/TaskArtifactPreview.tsx', 'submitEditor', 'onClick={() => void submitEditor()}', '保存并重绘', productShellTest)),
-  updateTaskTemplate: command(owner('task-detail', 'src/features/tasks/TaskDetailPage.tsx', 'applyDraftTemplate', 'onClick={applyDraftTemplate}', '应用模板', productShellTest)),
+  updateTaskSubtitleLines: command(owner('task-detail', 'src/features/tasks/TaskArtifactPreview.tsx', 'saveSubtitleLines', 'onClick={saveSubtitleLines}', '保存字幕断句', 'tests/task-operations-ui.test.ts')),
+  updateTaskTemplate: command(owner('task-detail', 'src/features/tasks/TaskDetailPage.tsx', 'applyDraftTemplate', 'onClick={onApplyTemplate}', '应用模板', productShellTest)),
   updateTaskStatus: command(
     owner('html-video', 'src/features/html-video/HtmlVideoPage.tsx', 'setTaskStatus', "setTaskStatus('paused')", '暂停', 'tests/task-operations-contracts.test.ts', undefined, { disabled: 'disabled={taskBusy || isBrowserPreview}', loading: 'taskBusy', error: 'InlineActionFeedback' }),
     owner('html-video', 'src/features/html-video/HtmlVideoPage.tsx', 'setTaskStatus', "setTaskStatus('cancelled')", '取消', 'tests/task-operations-contracts.test.ts', undefined, { disabled: 'disabled={taskBusy || isBrowserPreview}', loading: 'taskBusy', error: 'InlineActionFeedback' }),

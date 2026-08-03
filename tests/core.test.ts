@@ -5,6 +5,7 @@ import {
   buildStoryPackage,
   buildStoryboardScenes,
   buildSubtitleTrack,
+  buildSubtitleTrackFromSceneLines,
   normalizeStoryboardSceneLengths,
   normalizeSourceText,
   reviewSourceText,
@@ -69,6 +70,23 @@ describe('story pipeline', () => {
 
     expect(subtitles.srt).toContain('第一句');
     expect(subtitles.cues).toHaveLength(2);
+  });
+
+  it('builds subtitle timing from exact manually edited scene lines', () => {
+    const subtitles = buildSubtitleTrackFromSceneLines([
+      { id: 1, cap: '第一段原文', durationMs: 2400 },
+      { id: 2, cap: '第二段原文', durationMs: 1200 },
+    ], [
+      { sceneId: 1, lines: ['保留，标点。', '也不再次切分'] },
+      { sceneId: 2, lines: ['最后一行'] },
+    ]);
+
+    expect(subtitles.cues.map((cue) => cue.text)).toEqual(['保留，标点。', '也不再次切分', '最后一行']);
+    expect(subtitles.cues.map((cue) => cue.sceneId)).toEqual([1, 1, 2]);
+    expect(subtitles.cues[0].startMs).toBe(0);
+    expect(subtitles.cues[1].endMs).toBe(2400);
+    expect(subtitles.cues[2]).toMatchObject({ startMs: 2400, endMs: 3600 });
+    expect(subtitles.srt).toContain('保留，标点。');
   });
 
   it('splits scene captions into Storybound-style short display cues without losing text', () => {

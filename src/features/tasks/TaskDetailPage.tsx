@@ -1,5 +1,5 @@
 import { useEffect, useId, useRef, useState } from 'react';
-import { Check, ChevronDown, Copy, LayoutTemplate, Loader2, Pause, Play, RotateCcw, Settings2, XCircle } from 'lucide-react';
+import { Check, CheckCircle2, ChevronDown, Clapperboard, Copy, FolderOpen, LayoutTemplate, Loader2, Music2, PackageCheck, Pause, Play, RotateCcw, Settings2, SlidersHorizontal, XCircle } from 'lucide-react';
 import { EmptyState } from '../../components/EmptyState';
 import { ErrorDetails as ErrorSummaryButton } from '../../components/ErrorDetails';
 import { AsyncActionFeedback as InlineActionFeedback } from '../../components/AsyncActionFeedback';
@@ -7,7 +7,7 @@ import { StatusBadge as StatusPill } from '../../components/StatusBadge';
 import type { ApplyMutationResult, RendererAppState as AppState } from '../../app/route-types';
 import { taskProgressSnapshot, taskProgressStages } from '../../shared/task-progress';
 import type { StoryDreamApi } from '../../shared/storydream-api';
-import type { DraftTemplate, Task, TaskArtifactSnapshot } from '../../shared/types';
+import type { BgmItem, DraftTemplate, Task, TaskArtifactSnapshot } from '../../shared/types';
 import { useAsyncAction } from '../../ui/async-action';
 import { ArtifactPreviewContent, type TaskArtifactTab } from './TaskArtifactPreview';
 import { formatDate, formatDuration } from './task-formatters';
@@ -145,6 +145,160 @@ function TaskTemplateSelect({
   );
 }
 
+function TaskDraftDelivery({
+  task,
+  snapshot,
+  templates,
+  bgmLibrary,
+  templateSelection,
+  selectedTemplateId,
+  selectedBgmId,
+  settingsOpen,
+  settingsDisabled,
+  templateBusy,
+  bgmBusy,
+  draftBusy,
+  isBrowserPreview,
+  onSettingsOpenChange,
+  onTemplateChange,
+  onBgmChange,
+  onApplyTemplate,
+  onApplyBgm,
+  onManageTemplates,
+  onRepack,
+  onOpenDirectory,
+  onLaunchJianying,
+}: {
+  task: Task;
+  snapshot: TaskArtifactSnapshot | null;
+  templates: DraftTemplate[];
+  bgmLibrary: BgmItem[];
+  templateSelection: ReturnType<typeof resolveTaskTemplateSelection>;
+  selectedTemplateId: string;
+  selectedBgmId: string;
+  settingsOpen: boolean;
+  settingsDisabled: boolean;
+  templateBusy: boolean;
+  bgmBusy: boolean;
+  draftBusy: boolean;
+  isBrowserPreview: boolean;
+  onSettingsOpenChange: (open: boolean) => void;
+  onTemplateChange: (templateId: string) => void;
+  onBgmChange: (bgmId: string) => void;
+  onApplyTemplate: () => void;
+  onApplyBgm: () => void;
+  onManageTemplates: () => void;
+  onRepack: () => void;
+  onOpenDirectory: () => void;
+  onLaunchJianying: () => void;
+}) {
+  const templateFieldRef = useRef<HTMLDivElement>(null);
+  const bgmFieldRef = useRef<HTMLSelectElement>(null);
+  const draftStepStatus = snapshotStepStatus(snapshot, 6);
+  const hasDraft = Boolean(snapshot?.draft);
+  const packaging = draftStepStatus === 'running' || (task.status === 'running' && task.currentStep === 6);
+  const settingsLocked = packaging;
+  const pendingRepack = hasDraft && draftStepStatus === 'pending';
+  const templateChanged = templateSelection.canApply;
+  const bgmChanged = selectedBgmId !== task.bgmId;
+  const unsavedSettings = templateChanged || bgmChanged;
+  const appliedTemplate = templates.find((template) => template.id === task.templateId);
+  const appliedBgm = bgmLibrary.find((item) => item.id === task.bgmId);
+  const status = packaging
+    ? { className: 'running', label: '正在打包', detail: '剪映草稿正在重新生成' }
+    : unsavedSettings
+      ? { className: 'editing', label: '调整未保存', detail: '保存模板或音乐后再重新打包' }
+      : pendingRepack
+        ? { className: 'pending', label: '待重新打包', detail: '已保存调整，旧草稿仍可打开' }
+        : hasDraft
+          ? { className: 'ready', label: '剪映草稿已生成', detail: '可继续调整或直接打开剪映' }
+          : { className: 'empty', label: '草稿尚未生成', detail: '完成普通任务流水线后可在此交付' };
+  const repackDisabled = settingsDisabled || draftBusy || isBrowserPreview || !task.artifactStatePath || unsavedSettings;
+
+  function revealSettings(target: 'all' | 'template' | 'bgm') {
+    onSettingsOpenChange(true);
+    window.requestAnimationFrame(() => {
+      if (target === 'template') templateFieldRef.current?.querySelector<HTMLButtonElement>('.task-template-select-trigger')?.focus();
+      if (target === 'bgm') bgmFieldRef.current?.focus();
+    });
+  }
+
+  return (
+    <section className="task-draft-delivery" data-draft-status={status.className}>
+      <div className="task-draft-adjustments" hidden={!settingsOpen}>
+        <div
+          ref={templateFieldRef}
+          className="task-template-switcher"
+          data-applied-template-id={templateSelection.appliedTemplateId}
+          data-candidate-template-id={selectedTemplateId}
+          data-template-state={templateChanged ? 'pending' : templateSelection.appliedTemplateMissing ? 'missing' : 'applied'}
+        >
+          <div className="task-template-field">
+            <LayoutTemplate size={14} />
+            <span>草稿模板</span>
+            <TaskTemplateSelect
+              templates={templates}
+              value={selectedTemplateId}
+              disabled={settingsLocked || templateBusy}
+              onChange={onTemplateChange}
+            />
+          </div>
+          <button
+            type="button"
+            className={templateChanged ? 'task-template-apply active' : 'task-template-apply'}
+            disabled={!templateChanged || settingsLocked || templateBusy}
+            onClick={onApplyTemplate}
+          >
+            {templateBusy ? <Loader2 className="spin" size={14} /> : <Check size={14} />}
+            {templateBusy ? '应用中' : templateChanged ? '应用模板' : templateSelection.appliedTemplateMissing ? '请选择模板' : '已应用'}
+          </button>
+          <button className="icon-button" type="button" title="管理草稿模板" aria-label="管理草稿模板" disabled={templateBusy} onClick={onManageTemplates}><Settings2 size={14} /></button>
+        </div>
+        <div className="task-bgm-switcher">
+          <div className="task-bgm-field">
+            <Music2 size={14} />
+            <label htmlFor="task-draft-bgm">背景音乐</label>
+            <select
+              ref={bgmFieldRef}
+              id="task-draft-bgm"
+              aria-label="选择任务背景音乐"
+              disabled={settingsLocked || bgmBusy}
+              value={selectedBgmId}
+              onChange={(event) => onBgmChange(event.target.value)}
+            >
+              <option value="">不使用背景音乐</option>
+              {bgmLibrary.map((item) => <option value={item.id} key={item.id}>{item.title}</option>)}
+            </select>
+          </div>
+          <button type="button" className={bgmChanged ? 'task-bgm-apply active' : 'task-bgm-apply'} disabled={!bgmChanged || settingsLocked || bgmBusy} onClick={onApplyBgm}>
+            {bgmBusy ? <Loader2 className="spin" size={14} /> : <Check size={14} />}
+            {bgmBusy ? '保存中' : bgmChanged ? '应用音乐' : '已应用'}
+          </button>
+        </div>
+      </div>
+
+      <div className="task-draft-delivery-bar">
+        <div className={`task-draft-status ${status.className}`}>
+          <span>{status.className === 'ready' ? <CheckCircle2 size={18} /> : packaging ? <Loader2 className="spin" size={18} /> : <Clapperboard size={18} />}</span>
+          <div><strong>{status.label}</strong><small>{status.detail}</small></div>
+        </div>
+        <div className="task-draft-current-settings">
+          <span><LayoutTemplate size={13} />{appliedTemplate?.name ?? '模板不可用'}</span>
+          <span><Music2 size={13} />{appliedBgm?.title ?? '无背景音乐'}</span>
+        </div>
+        <div className="task-draft-commands">
+          <button type="button" aria-pressed={settingsOpen} onClick={() => onSettingsOpenChange(!settingsOpen)}><SlidersHorizontal size={14} />调整</button>
+          <button type="button" onClick={() => revealSettings('template')}><LayoutTemplate size={14} />模板</button>
+          <button type="button" onClick={() => revealSettings('bgm')}><Music2 size={14} />音乐</button>
+          <button type="button" disabled={repackDisabled} title={unsavedSettings ? '请先应用模板或音乐调整' : '仅重新执行剪映草稿导出'} onClick={onRepack}><PackageCheck size={14} />重新打包</button>
+          <button type="button" disabled={!hasDraft || draftBusy || isBrowserPreview} onClick={onOpenDirectory}><FolderOpen size={14} />草稿目录</button>
+          <button type="button" className="launch-jianying" disabled={!hasDraft || draftBusy || isBrowserPreview} onClick={onLaunchJianying}><Clapperboard size={14} />打开剪映</button>
+        </div>
+      </div>
+    </section>
+  );
+}
+
 export function TaskDetailPage({
   api,
   state,
@@ -167,9 +321,13 @@ export function TaskDetailPage({
   const [artifactSnapshot, setArtifactSnapshot] = useState<TaskArtifactSnapshot | null>(null);
   const [artifactRefreshTick, setArtifactRefreshTick] = useState(0);
   const [templateSelectionId, setTemplateSelectionId] = useState(task?.templateId ?? '');
+  const [bgmSelectionId, setBgmSelectionId] = useState(task?.bgmId ?? '');
+  const [draftSettingsOpen, setDraftSettingsOpen] = useState(true);
   const [resolvedDraftTemplate, setResolvedDraftTemplate] = useState<{ id: string; template: DraftTemplate } | null>(null);
   const taskDetailAction = useAsyncAction();
   const taskTemplateAction = useAsyncAction();
+  const taskBgmAction = useAsyncAction();
+  const taskDraftAction = useAsyncAction();
   const events = task ? state.events.filter((event) => event.taskId === task.id) : [];
   const latestEvent = [...events].reverse()[0] ?? null;
   const snapshotImageCount = artifactSnapshot?.assets.images.length ?? 0;
@@ -240,6 +398,9 @@ export function TaskDetailPage({
     setTemplateSelectionId(task?.templateId ?? '');
   }, [task?.id, task?.templateId]);
   useEffect(() => {
+    setBgmSelectionId(task?.bgmId ?? '');
+  }, [task?.bgmId, task?.id]);
+  useEffect(() => {
     let cancelled = false;
     const templateId = previewDraftTemplateId;
     if (!templateId) {
@@ -271,6 +432,7 @@ export function TaskDetailPage({
     ? resolvedDraftTemplate.template
     : state.draftTemplates.find((template) => template.id === previewDraftTemplateId) ?? null;
   const draftTemplateChanged = templateSelection.canApply;
+  const draftBgmChanged = bgmSelectionId !== activeTask.bgmId;
   const progress = taskProgressSnapshot(activeTask);
   const progressStages = taskProgressStages(activeTask);
   const currentStep = Math.min(Math.max(progress.position - 1, 0), progress.total - 1);
@@ -291,18 +453,41 @@ export function TaskDetailPage({
     if (!draftTemplateChanged) return;
     const previousTemplateId = activeTask.templateId;
     let templateSaved = false;
-    const rerunDraft = activeTask.status === 'completed' && Boolean(artifactSnapshot?.draft) && !isBrowserPreview;
     const result = await taskTemplateAction.run(async () => {
       applyState(await api.updateTaskTemplate(activeTask.id, selectedDraftTemplateId));
       templateSaved = true;
-      if (rerunDraft) {
-        applyState(await api.rerunTaskStep(activeTask.id, 6, 'regenerate'));
-        setArtifactRefreshTick((tick) => tick + 1);
-      }
+      setArtifactRefreshTick((tick) => tick + 1);
     }, {
-      successMessage: rerunDraft ? '模板已应用，正在重新导出剪映草稿' : '模板已应用，预览与后续草稿已更新',
+      successMessage: '模板已保存，剪映草稿待重新打包',
     });
     if (!result.ok && !templateSaved) setTemplateSelectionId(previousTemplateId);
+  }
+
+  async function applyDraftBgm() {
+    if (!draftBgmChanged) return;
+    const previousBgmId = activeTask.bgmId;
+    let bgmSaved = false;
+    const result = await taskBgmAction.run(async () => {
+      applyState(await api.updateTaskBgm(activeTask.id, bgmSelectionId));
+      bgmSaved = true;
+      setArtifactRefreshTick((tick) => tick + 1);
+    }, { successMessage: '背景音乐已保存，剪映草稿待重新打包' });
+    if (!result.ok && !bgmSaved) setBgmSelectionId(previousBgmId);
+  }
+
+  async function repackDraft() {
+    await taskDraftAction.run(async () => {
+      applyState(await api.repackTaskDraft(activeTask.id));
+      setArtifactRefreshTick((tick) => tick + 1);
+    }, { successMessage: '已开始重新打包剪映草稿' });
+  }
+
+  async function openDraftDirectory() {
+    await taskDraftAction.run(() => api.openTaskOutputDirectory(activeTask.id));
+  }
+
+  async function launchJianying() {
+    await taskDraftAction.run(() => api.launchJianying(activeTask.id));
   }
 
   return (
@@ -362,45 +547,43 @@ export function TaskDetailPage({
             <button className={tab === 'audio' ? 'active' : ''} onClick={() => setTab('audio')}>配音</button>
             <button className={tab === 'events' ? 'active' : ''} onClick={() => setTab('events')}>事件</button>
           </div>
-          <div
-            className="task-template-switcher"
-            data-applied-template-id={templateSelection.appliedTemplateId}
-            data-candidate-template-id={selectedDraftTemplateId}
-            data-template-state={draftTemplateChanged ? 'pending' : templateSelection.appliedTemplateMissing ? 'missing' : 'applied'}
-          >
-            <div className="task-template-field">
-              <LayoutTemplate size={14} />
-              <span>草稿模板</span>
-              <TaskTemplateSelect
-                templates={state.draftTemplates}
-                value={selectedDraftTemplateId}
-                disabled={taskTemplateAction.busy}
-                onChange={(templateId) => {
-                  taskTemplateAction.clearFeedback();
-                  setTemplateSelectionId(templateId);
-                }}
-              />
-            </div>
-            <button
-              type="button"
-              className={draftTemplateChanged ? 'task-template-apply active' : 'task-template-apply'}
-              disabled={!draftTemplateChanged || taskTemplateAction.busy}
-              onClick={applyDraftTemplate}
-            >
-              {taskTemplateAction.busy ? <Loader2 className="spin" size={14} /> : <Check size={14} />}
-              {taskTemplateAction.busy
-                ? '应用中'
-                : draftTemplateChanged
-                  ? '应用模板'
-                  : templateSelection.appliedTemplateMissing ? '请选择模板' : '已应用'}
-            </button>
-            <button className="icon-button" type="button" title="管理草稿模板" aria-label="管理草稿模板" disabled={taskTemplateAction.busy} onClick={openTemplateManager}><Settings2 size={14} /></button>
-          </div>
         </div>
-        <InlineActionFeedback feedback={taskTemplateAction.feedback} />
         {activeDraftTemplate
-          ? <ArtifactPreviewContent api={api} task={activeTask} config={state.config} draftTemplate={activeDraftTemplate} applyState={applyState} tab={tab} snapshot={artifactSnapshot} events={events} latestEvent={latestEvent} currentAgent={currentMeta?.agent ?? 'Runner'} isBrowserPreview={isBrowserPreview} />
+          ? <ArtifactPreviewContent api={api} task={activeTask} config={state.config} draftTemplate={activeDraftTemplate} applyState={applyState} tab={tab} snapshot={artifactSnapshot} events={events} latestEvent={latestEvent} currentAgent={currentMeta?.agent ?? 'Runner'} isBrowserPreview={isBrowserPreview} onArtifactChanged={() => setArtifactRefreshTick((tick) => tick + 1)} />
           : <EmptyState title="暂无可用草稿模板" />}
+        <TaskDraftDelivery
+          task={activeTask}
+          snapshot={artifactSnapshot}
+          templates={state.draftTemplates}
+          bgmLibrary={state.config.jianying.bgmLibrary}
+          templateSelection={templateSelection}
+          selectedTemplateId={selectedDraftTemplateId}
+          selectedBgmId={bgmSelectionId}
+          settingsOpen={draftSettingsOpen}
+          settingsDisabled={activeTask.status === 'running' || activeTask.status === 'pending'}
+          templateBusy={taskTemplateAction.busy}
+          bgmBusy={taskBgmAction.busy}
+          draftBusy={taskDraftAction.busy}
+          isBrowserPreview={isBrowserPreview}
+          onSettingsOpenChange={setDraftSettingsOpen}
+          onTemplateChange={(templateId) => {
+            taskTemplateAction.clearFeedback();
+            setTemplateSelectionId(templateId);
+          }}
+          onBgmChange={(bgmId) => {
+            taskBgmAction.clearFeedback();
+            setBgmSelectionId(bgmId);
+          }}
+          onApplyTemplate={applyDraftTemplate}
+          onApplyBgm={applyDraftBgm}
+          onManageTemplates={openTemplateManager}
+          onRepack={repackDraft}
+          onOpenDirectory={openDraftDirectory}
+          onLaunchJianying={launchJianying}
+        />
+        <InlineActionFeedback feedback={taskTemplateAction.feedback} />
+        <InlineActionFeedback feedback={taskBgmAction.feedback} />
+        <InlineActionFeedback feedback={taskDraftAction.feedback} />
       </section>
     </div>
   );

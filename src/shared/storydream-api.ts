@@ -57,6 +57,7 @@ import type {
   TaskImageReplacementSource,
   TaskStatus,
   TaskStepRerunMode,
+  TaskSubtitleSceneLines,
   TaskSummary,
   UiPreferencesUpdate,
   ViralAnalysisEvent,
@@ -88,6 +89,7 @@ export const INVOKE_CHANNELS = Object.freeze([
   'task:get-detail',
   'task:list-events',
   'task:open-output-directory',
+  'task:launch-jianying',
   'viral:list',
   'viral:archive',
   'viral:restore',
@@ -167,6 +169,8 @@ export const INVOKE_CHANNELS = Object.freeze([
   'viral:create-production-task',
   'task:update-status',
   'task:update-template',
+  'task:update-bgm',
+  'task:update-subtitle-lines',
   'task:retry',
   'task:regenerate-image',
   'task:regenerate-images',
@@ -216,6 +220,7 @@ export type StoryDreamApi = {
   getTaskDetail: (id: string) => Promise<Task | null>;
   listTaskEvents: (taskId: string, request?: CursorRequest) => Promise<CursorPage<SequencedTaskEvent>>;
   openTaskOutputDirectory: (id: string) => Promise<void>;
+  launchJianying: (id: string) => Promise<void>;
   listViralAnalyses: (request?: HistoryListInput<'viral-analysis'>) => Promise<HistoryPage<'viral-analysis', ViralAnalysisSummary>>;
   archiveViralAnalysis: (id: string) => Promise<AppMutationResult>;
   restoreViralAnalysis: (id: string) => Promise<AppMutationResult>;
@@ -285,6 +290,8 @@ export type StoryDreamApi = {
   createProductionTaskFromViral: (id: string, options?: ViralProductionTaskOptions) => Promise<AppMutationResult | null>;
   updateTaskStatus: (id: string, status: Extract<TaskStatus, 'running' | 'paused' | 'cancelled'>) => Promise<AppMutationResult | null>;
   updateTaskTemplate: (id: string, templateId: string) => Promise<AppMutationResult | null>;
+  updateTaskBgm: (id: string, bgmId: string) => Promise<AppMutationResult | null>;
+  updateTaskSubtitleLines: (id: string, scenes: TaskSubtitleSceneLines[]) => Promise<AppMutationResult | null>;
   retryTask: (id: string) => Promise<AppMutationResult | null>;
   regenerateTaskImage: (id: string, sceneId: number) => Promise<AppMutationResult | null>;
   regenerateTaskImages: (id: string, sceneIds: number[]) => Promise<AppMutationResult | null>;
@@ -294,6 +301,7 @@ export type StoryDreamApi = {
   regenerateTaskNarration: (id: string, sceneId: number) => Promise<AppMutationResult | null>;
   updateTaskImagePrompt: (id: string, sceneId: number, prompt: string) => Promise<AppMutationResult | null>;
   rerunTaskStep: (id: string, step: number, mode: TaskStepRerunMode) => Promise<AppMutationResult | null>;
+  repackTaskDraft: (id: string) => Promise<AppMutationResult | null>;
   getTaskArtifacts: (id: string) => Promise<TaskArtifactSnapshot>;
   readAssetDataUrl: (path: string) => Promise<string>;
   selectLocalImage: () => Promise<string | null>;

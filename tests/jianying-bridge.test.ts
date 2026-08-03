@@ -509,6 +509,56 @@ describe('pyJianYingDraft bridge input', () => {
     }
   });
 
+  it('preserves supplied storyboard caption lines without splitting them again', async () => {
+    const dir = await mkdtemp(join(tmpdir(), 'storybound-jy-exact-captions-'));
+    const draftDir = join(dir, 'Draft Root', 'Bridge Draft');
+    const bridgeDir = join(dir, 'pyjianying-bridge');
+
+    try {
+      await writePyJianYingBridgeScript(dir);
+      await writeFile(join(bridgeDir, 'pyJianYingDraft.py'), fakePyJianYingDraftModule, 'utf8');
+      const voice = join(dir, 'voice.wav');
+      const image = join(dir, 'image.png');
+      const subtitles = join(dir, 'subtitles.srt');
+      await writeFile(voice, wavTone(2400));
+      await writeFile(image, Buffer.from('image'));
+      await writeFile(subtitles, '', 'utf8');
+
+      await runPyJianYingDraftBridge({
+        workDir: dir,
+        draftDir,
+        title: 'Exact caption draft',
+        canvas: { width: 1080, height: 1920, backgroundColor: '#000000', backgroundImage: '' },
+        imageArea: defaultBridgeImageArea(),
+        caption: { ...defaultBridgeCaption(), maxCharsPerLine: 6 },
+        scenes: [{
+          sceneId: 1,
+          startUs: 0,
+          durationUs: 2_400_000,
+          text: '这段原文不应覆盖手动字幕',
+          captions: ['手动第一行，保留标点', '手动第二行'],
+          captionDurationsUs: [900_000, 1_500_000],
+        }],
+        images: [{ sceneId: 1, path: image }],
+        narration: [{ sceneId: 1, path: voice }],
+        subtitlesSrtPath: subtitles,
+        bgm: null,
+        totalDurationUs: 2_400_000,
+        volumes: { narration: 1, bgm: 0.3 },
+      });
+
+      const generated = await readFile(join(draftDir, 'materials', 'subtitles', 'subtitles.srt'), 'utf8');
+      const blocks = generated.trim().split(/\r?\n\r?\n/);
+      expect(blocks).toHaveLength(2);
+      expect(blocks[0]).toContain('00:00:00,000 --> 00:00:00,900');
+      expect(blocks[1]).toContain('00:00:00,900 --> 00:00:02,400');
+      expect(generated).toMatch(/\r?\n手动第一行，保留标点\r?\n/u);
+      expect(generated).toMatch(/\r?\n手动第二行\r?\n?/u);
+    } finally {
+      await rm(dir, { recursive: true, force: true });
+    }
+  });
+
   it('does not import subtitle text tracks when captions are hidden', async () => {
     const dir = await mkdtemp(join(tmpdir(), 'storybound-jy-hidden-captions-'));
     const draftDir = join(dir, 'Draft Root', 'Bridge Draft');

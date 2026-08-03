@@ -2648,7 +2648,8 @@ describe('product shell ui', () => {
     expect(storyboardStart).toBeGreaterThan(-1);
     expect(imagesStart).toBeGreaterThan(storyboardStart);
     expect(audioStart).toBeGreaterThan(imagesStart);
-    expect(storyboardBranch).toContain('ArtifactSceneList');
+    expect(storyboardBranch).toContain('StoryboardSubtitleEditor');
+    expect(storyboardBranch).toContain('onAiStoryboard');
     expect(storyboardBranch).not.toContain('ImageGenerationGallery');
     expect(imagesBranch).toContain('ArtifactSection title="批量生图"');
     expect(imagesBranch).toContain('ImageGenerationGallery');

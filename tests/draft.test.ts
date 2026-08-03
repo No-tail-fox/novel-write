@@ -74,6 +74,18 @@ describe('draft writer', () => {
           },
           ratio: '9:16',
           scenes,
+          subtitles: {
+            cues: [
+              { index: 1, sceneId: 1, startMs: 0, endMs: 600, text: '手动第一行，保留标点' },
+              { index: 2, sceneId: 1, startMs: 600, endMs: 1200, text: '手动第二行' },
+              { index: 3, sceneId: 2, startMs: 1200, endMs: 2600, text: '手动第三行' },
+            ],
+            srt: [
+              '1\n00:00:00,000 --> 00:00:00,600\n手动第一行，保留标点\n',
+              '2\n00:00:00,600 --> 00:00:01,200\n手动第二行\n',
+              '3\n00:00:01,200 --> 00:00:02,600\n手动第三行\n',
+            ].join('\n'),
+          },
           imagePrompts: buildImagePrompts(scenes, { inputText: 'Wu Zetian', style: 'photo-real', ratio: '9:16' }),
           reviewedText: 'reviewed',
           rewrittenCopy: 'rewritten',
@@ -135,9 +147,8 @@ describe('draft writer', () => {
       expect(output.diagnostics.checks.find((check) => check.id === 'jianying-draft')?.status).toBe('pass');
       expect(output.diagnostics.checks.find((check) => check.id === 'subtitle-track')?.status).toBe('pass');
       const subtitlesSrt = await readFile(output.assets.subtitles, 'utf8');
-      expect(subtitlesSrt).toContain('公元649年');
-      expect(subtitlesSrt).not.toContain('，');
-      expect((subtitlesSrt.match(/--> /g) ?? []).length).toBeGreaterThan(scenes.length);
+      expect(subtitlesSrt).toContain('手动第一行，保留标点');
+      expect((subtitlesSrt.match(/--> /g) ?? []).length).toBe(3);
       expect(bridgePayloads).toHaveLength(1);
       expect(bridgePayloads[0]).toMatchObject({
         title: 'Real Draft',
@@ -224,9 +235,10 @@ describe('draft writer', () => {
             startUs: 0,
             durationUs: 1_200_000,
             text: '公元649年唐太宗去世，武则天重新回到宫廷。',
-            captions: expect.arrayContaining([expect.stringContaining('公元649年')]),
+            captions: ['手动第一行，保留标点', '手动第二行'],
+            captionDurationsUs: [600_000, 600_000],
           },
-          { sceneId: 2, startUs: 1_200_000, durationUs: 1_400_000, text: 'Second line', captions: ['Secondline'] },
+          { sceneId: 2, startUs: 1_200_000, durationUs: 1_400_000, text: 'Second line', captions: ['手动第三行'], captionDurationsUs: [1_400_000] },
         ],
       });
       expect((bridgePayloads[0] as { images: Array<{ path: string }>; draftDir: string }).images.some((asset) => asset.path.startsWith(output.draftDir))).toBe(false);
