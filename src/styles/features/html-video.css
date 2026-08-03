@@ -3313,3 +3313,143 @@
 .hv-studio[data-has-task="true"] .hv-studio-run-rail .hv-step strong {
   color: var(--shell-text);
 }
+
+/* Final workspace alignment pass. Keep status geometry stable when messages expand. */
+.hv-studio[data-has-task="true"] {
+  --shell-bg: #090c0e;
+  --shell-surface: #101417;
+  --shell-surface-raised: #171d21;
+  --shell-border: #344149;
+  --shell-text: #edf3f5;
+  --shell-muted: #aebbc2;
+  --shell-accent: #f2614b;
+  --shell-accent-strong: #ff755f;
+  --shell-focus: #28c8a0;
+  --shell-focus-contrast: #07110e;
+  --bg: var(--shell-bg);
+  --surface-ink: var(--shell-surface-raised);
+  --panel: var(--shell-surface);
+  --panel-2: var(--shell-surface-raised);
+  --line: var(--shell-border);
+  --muted: var(--shell-muted);
+  --text: var(--shell-text);
+  grid-template-columns: minmax(286px, 304px) minmax(0, 1fr);
+  grid-template-rows: minmax(242px, auto) minmax(0, 1fr);
+}
+
+.hv-studio[data-has-task="true"] .hv-studio-parameters,
+.hv-studio[data-has-task="true"] .hv-studio-run-rail {
+  min-width: 0;
+  box-sizing: border-box;
+}
+
+.hv-studio[data-has-task="true"] .hv-studio-panel-heading,
+.hv-studio[data-has-task="true"] .hv-run-rail-heading {
+  align-items: flex-start;
+}
+
+.hv-studio[data-has-task="true"] .hv-studio-panel-heading .hv-new-task-button {
+  min-height: 32px;
+  align-self: flex-start;
+  white-space: nowrap;
+}
+
+.hv-studio[data-has-task="true"] .hv-run-steps {
+  gap: 0;
+}
+
+.hv-studio[data-has-task="true"] .hv-studio-run-rail .hv-step {
+  align-items: start;
+  grid-template-columns: 30px minmax(0, 1fr);
+  gap: 10px;
+  min-height: 58px;
+  box-sizing: border-box;
+}
+
+.hv-studio[data-has-task="true"] .hv-studio-run-rail .hv-step > span {
+  position: relative;
+  z-index: 1;
+  margin-top: 1px;
+}
+
+.hv-studio[data-has-task="true"] .hv-studio-run-rail .hv-step > div {
+  min-width: 0;
+  display: grid;
+  align-content: start;
+}
+
+.hv-studio[data-has-task="true"] .hv-studio-run-rail .hv-step strong,
+.hv-studio[data-has-task="true"] .hv-studio-run-rail .hv-step small {
+  line-height: 1.35;
+}
+
+.hv-studio[data-has-task="true"] .hv-step-error {
+  min-width: 0;
+  margin-top: 5px;
+}
+
+.hv-studio[data-has-task="true"] .hv-workspace-error {
+  display: flex;
+  align-items: center;
+  min-height: 40px;
+  padding: 6px 10px;
+}
+
+.hv-studio[data-has-task="true"] .hv-workspace-error .error-summary-button,
+.hv-studio[data-has-task="true"] .hv-step-error .error-summary-button {
+  width: fit-content;
+  max-width: 100%;
+  margin-top: 0;
+}
+
+.hv-studio[data-has-task="true"] .hv-studio-media-canvas,
+.hv-studio[data-has-task="true"] .hv-tab-content {
+  min-width: 0;
+  box-sizing: border-box;
+}
+
+.hv-studio[data-has-task="true"] button:focus-visible,
+.hv-studio[data-has-task="true"] input:focus-visible,
+.hv-studio[data-has-task="true"] select:focus-visible,
+.hv-studio[data-has-task="true"] textarea:focus-visible {
+  outline: 2px solid var(--shell-focus);
+  outline-offset: 2px;
+}
+
+@media (max-width: 1080px) {
+  .hv-studio[data-has-task="true"] {
+    grid-template-columns: minmax(250px, 280px) minmax(0, 1fr);
+  }
+}
+
+@media (max-width: 760px) {
+  .hv-studio[data-has-task="true"] {
+    --shell-bg: #090c0e;
+    --shell-surface: #101417;
+    --shell-surface-raised: #171d21;
+    --shell-border: #344149;
+    --shell-text: #edf3f5;
+    --shell-muted: #aebbc2;
+    --shell-accent: #f2614b;
+    --shell-focus: #28c8a0;
+    --shell-focus-contrast: #07110e;
+    --bg: var(--shell-bg);
+    --surface-ink: var(--shell-surface-raised);
+    --panel: var(--shell-surface);
+    --panel-2: var(--shell-surface-raised);
+    --line: var(--shell-border);
+    --muted: var(--shell-muted);
+    --text: var(--shell-text);
+    color-scheme: dark;
+    grid-template-columns: minmax(0, 1fr);
+    grid-template-rows: auto auto minmax(620px, 1fr);
+  }
+
+  .hv-studio[data-has-task="true"] .hv-studio-run-rail .hv-step {
+    min-height: 56px;
+  }
+
+  .hv-studio[data-has-task="true"] .hv-studio-run-rail .hv-step strong {
+    color: var(--shell-text);
+  }
+}

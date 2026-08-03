@@ -2115,7 +2115,30 @@ textarea {
 }
 
 .error-summary-button .error-mark {
-  color: var(--shell-focus-contrast);
+  color: #020405;
+  margin-top: 0;
+  line-height: 0;
+}
+
+.error-summary-button .error-mark svg {
+  display: block;
+  flex: 0 0 auto;
+}
+
+.error-mark {
+  position: relative;
+}
+
+.error-mark-text {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  padding: 0;
+  margin: -1px;
+  border: 0;
+  clip: rect(0 0 0 0);
+  white-space: nowrap;
 }
 
 .error-dialog-backdrop {
@@ -5666,4 +5689,42 @@ section.error-dialog .error-dialog-head > div > strong {
 .app-shell[data-shell-view='activation'] .two-column {
   align-content: start;
   align-items: start;
+}
+
+/* Product-shell layout guardrails. Feedback is a real grid row, not an implicit overflow row. */
+.app-shell[data-editorial-shell] .content:has(> .global-action-banner) {
+  grid-template-rows: auto auto minmax(0, 1fr);
+}
+
+.app-shell[data-editorial-shell] .content > .global-action-banner {
+  min-width: 0;
+  min-height: 0;
+  grid-row: 2;
+  padding: 10px 20px;
+}
+
+.app-shell[data-editorial-shell] .content > .global-action-banner .inline-action-feedback {
+  min-width: 0;
+  border: 1px solid color-mix(in srgb, var(--danger) 34%, var(--shell-border));
+  border-left-width: 3px;
+  border-radius: 6px;
+}
+
+.app-shell[data-editorial-shell] .content > .global-action-banner + * {
+  min-width: 0;
+  min-height: 0;
+}
+
+.app-shell[data-editorial-shell] .panel,
+.app-shell[data-editorial-shell] .task-card,
+.app-shell[data-editorial-shell] .settings-content,
+.app-shell[data-editorial-shell] .image-grid-panel,
+.app-shell[data-editorial-shell] .draft-controls,
+.app-shell[data-editorial-shell] .draft-stage {
+  border-radius: 6px;
+  box-shadow: none;
+}
+
+.app-shell[data-editorial-shell] button:not(:disabled):active {
+  transform: translateY(1px);
 }
