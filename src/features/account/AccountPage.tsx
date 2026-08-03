@@ -28,8 +28,10 @@ export function AccountPage({ api, state, applyState }: { api: StoryDreamApi; st
       <ConfigInput label="显示名称" value={draft.displayName} onChange={(value) => setDraft({ ...draft, displayName: value, avatarInitial: value.slice(0, 1).toUpperCase() || 'S' })} />
       <ConfigInput label="邮箱" value={draft.email} onChange={(value) => setDraft({ ...draft, email: value })} />
       <ConfigInput label="工作区" value={draft.workspace} onChange={(value) => setDraft({ ...draft, workspace: value })} />
-      <button className="primary-action slim" disabled={accountAction.busy} onClick={saveAccountProfile}><Save size={15} />保存资料</button>
-      <InlineActionFeedback feedback={accountAction.feedback} />
+      <div className="account-actions">
+        <button className="primary-action slim" disabled={accountAction.busy} onClick={saveAccountProfile}><Save size={15} />保存资料</button>
+        <InlineActionFeedback feedback={accountAction.feedback} />
+      </div>
       <LocalInfo title="账号与激活关系" value="本地复刻版只显示设备、账户和余额状态，不连接真实登录或付费系统。" />
     </section>
   );

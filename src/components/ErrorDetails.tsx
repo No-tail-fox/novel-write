@@ -47,7 +47,7 @@ export function ErrorDetails({ fullMessage, title, compact = false }: ErrorDetai
           setOpen(true);
         }}
       >
-        <span className="error-mark" aria-hidden="true"><AlertCircle size={18} strokeWidth={2.4} /><span className="error-mark-text">!</span></span>
+        <span className="error-mark" aria-hidden="true"><AlertCircle size={18} strokeWidth={2.4} /></span>
         <span>{summary}</span>
       </button>
       {open ? <ErrorDetailDialog title={title} summary={summary} fullMessage={fullMessage} onClose={() => setOpen(false)} /> : null}
@@ -108,7 +108,7 @@ function ErrorDetailDialog({ title, summary, fullMessage, onClose }: ErrorDetail
       >
         <div className="error-dialog-head">
           <div>
-            <span className="error-mark" aria-hidden="true"><AlertCircle size={18} strokeWidth={2.4} /><span className="error-mark-text">!</span></span>
+            <span className="error-mark" aria-hidden="true"><AlertCircle size={18} strokeWidth={2.4} /></span>
             <strong id={titleId}>{title}</strong>
           </div>
           <button ref={closeButtonRef} data-dialog-focus className="mini-button" type="button" onClick={onClose}>关闭</button>

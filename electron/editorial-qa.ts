@@ -714,6 +714,19 @@ function qaScenarioScript(id: string, view: string, theme: string, stage?: strin
     const navView = targetView === 'task-detail' ? 'queue' : targetView;
     const nav = document.querySelector('[data-nav-view="' + navView + '"]');
     if (nav instanceof HTMLButtonElement) nav.click();
+    if (targetView === 'html-video' && scenarioId.startsWith('html-video-studio')) {
+      await waitFor(() => document.querySelector('.hv-create-history select') || document.querySelector('[data-html-video-studio="html-video"]'));
+      const taskSelect = document.querySelector('.hv-create-history select');
+      if (taskSelect instanceof HTMLSelectElement) {
+        const fixtureOption = [...taskSelect.options]
+          .find((option) => option.textContent?.includes('武则天：权力之路 HTML 动画'));
+        if (fixtureOption) {
+          const setter = Object.getOwnPropertyDescriptor(HTMLSelectElement.prototype, 'value')?.set;
+          setter?.call(taskSelect, fixtureOption.value);
+          taskSelect.dispatchEvent(new Event('change', { bubbles: true }));
+        }
+      }
+    }
     if (targetView === 'task-detail') {
       await waitFor(() => document.querySelector('[data-task-operations="queue"]'));
       const detailTitle = failedTaskDetailScenario
@@ -1059,7 +1072,7 @@ function qaScenarioScript(id: string, view: string, theme: string, stage?: strin
         await settleCompositor();
       }
     }
-    if (targetView === 'html-video') {
+    if (targetView === 'html-video' && scenarioId.startsWith('html-video-studio')) {
       ready = ready && await waitFor(() => {
         const previewFrames = [...document.querySelectorAll('.hv-reference-thumb')];
         const previewImages = [...document.querySelectorAll('.hv-reference-thumb img')];
@@ -1626,9 +1639,8 @@ function qaScenarioScript(id: string, view: string, theme: string, stage?: strin
         ? 'parameters-first'
         : 'invalid';
     const clippedPrimaryControls = [...document.querySelectorAll('.new-task-workbench button, .new-task-workbench input, .new-task-workbench select, .new-task-workbench textarea, [data-task-operations] button, [data-task-operations] input, [data-task-operations] select, [data-html-video-studio] button, [data-html-video-studio] input, [data-html-video-studio] select, [data-html-video-studio] textarea, .minimax-clone-voice-manager button, .minimax-clone-voice-manager input, .minimax-clone-voice-manager select, .minimax-clone-voice-manager textarea, .settings-content .profile-editor-grid button, .settings-content .profile-editor-grid input, .settings-content .profile-editor-grid select')]
+      .filter((element) => visibleElement(element))
       .filter((element) => {
-        const style = getComputedStyle(element);
-        if (style.display === 'none' || style.visibility === 'hidden') return false;
         const rect = element.getBoundingClientRect();
         return rect.width > 0 && (rect.left < -1 || rect.right > window.innerWidth + 1);
       })

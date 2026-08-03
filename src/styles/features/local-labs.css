@@ -292,6 +292,19 @@
   min-height: 294px;
 }
 
+.person-assets-panel:has(.person-image-grid > .empty-state) {
+  grid-template-rows: auto auto auto auto auto;
+  min-height: 0;
+}
+
+.person-assets-panel:has(.person-image-grid > .empty-state) .person-image-grid {
+  min-height: 220px;
+}
+
+.person-assets-panel:has(.person-image-grid > .empty-state) .person-image-grid > .empty-state {
+  min-height: 194px;
+}
+
 .person-image-card {
   border-color: var(--shell-border);
   border-radius: 4px;
@@ -350,6 +363,15 @@
 
 .voice-lab-history > .empty-state {
   min-height: calc(100% - 58px);
+}
+
+.voice-lab-history:has(> .empty-state) {
+  min-height: 280px;
+  max-height: none;
+}
+
+.voice-lab-history:has(> .empty-state) > .empty-state {
+  min-height: 188px;
 }
 
 .voice-record {
@@ -604,6 +626,15 @@
 
 .image-lab-recent > .empty-state {
   min-height: calc(100% - 54px);
+}
+
+.image-lab-recent:has(> .empty-state) {
+  min-height: 280px;
+  max-height: none;
+}
+
+.image-lab-recent:has(> .empty-state) > .empty-state {
+  min-height: 164px;
 }
 
 .image-lab-recent .image-grid-panel {

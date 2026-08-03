@@ -50,6 +50,17 @@ describe('local and lab editorial workbenches', () => {
     expect(css).toMatch(/\.image-lab-reference-block\s*\{[\s\S]*background:\s*var\(--shell-surface\);[\s\S]*color:\s*var\(--shell-text\);/u);
   });
 
+  it('uses proportional empty states without shrinking populated workspaces', async () => {
+    const css = await readFile(new URL('../src/styles/features/local-labs.css', import.meta.url), 'utf8');
+
+    expect(css).toContain('.person-assets-panel:has(.person-image-grid > .empty-state)');
+    expect(css).toContain('.voice-lab-history:has(> .empty-state)');
+    expect(css).toContain('.image-lab-recent:has(> .empty-state)');
+    expect(css).toMatch(/\.person-image-grid\s*\{[\s\S]*?min-height:\s*320px;/u);
+    expect(css).toMatch(/\.voice-lab-history\s*\{[\s\S]*?min-height:\s*calc\(100vh - 166px\);/u);
+    expect(css).toMatch(/\.image-lab-recent\s*\{[\s\S]*?min-height:\s*calc\(100vh - 166px\);/u);
+  });
+
   it('retains the complete local and lab command surface', async () => {
     const sources = await Promise.all(pageContracts.map(([, path]) => readFile(new URL(path, import.meta.url), 'utf8')));
     const joined = sources.join('\n');

@@ -92,6 +92,18 @@ describe('HTML video editorial studio', () => {
     expect(styles).toContain('max-width: 100%;');
   });
 
+  it('keeps the production workspace visually unified across full and compact layouts', async () => {
+    const styles = await source('../src/styles/features/html-video.css');
+    const refinement = styles.slice(styles.indexOf('/* Production workspace visual refinement */'));
+
+    expect(refinement).toContain('--shell-accent');
+    expect(refinement).toContain('border-bottom: 0;');
+    expect(refinement).toContain('box-shadow: inset 0 -2px 0 var(--shell-accent);');
+    expect(refinement).toContain('grid-template-columns: minmax(0, 1fr) clamp(248px, 28%, 292px);');
+    expect(refinement).toMatch(/@media \(max-width: 1080px\)[\s\S]*?\.hv-studio\[data-has-task="true"\] \.hv-run-steps \{[\s\S]*?grid-template-columns: minmax\(0, 1fr\);/u);
+    expect(refinement).not.toContain('#22c7a0');
+  });
+
   it('projects all governed controls and the real six-stage lifecycle into the studio', async () => {
     const [page, tabPanel, storyboundPanels, manifest] = await Promise.all([
       source('../src/features/html-video/HtmlVideoPage.tsx'),

@@ -164,11 +164,14 @@ describe('editorial Electron QA configuration', () => {
     expect(runner).toContain('Editorial media bitmap changed across themes');
   });
 
-  it('waits for every HTML animation preview before collecting theme evidence', async () => {
+  it('waits for every HTML animation preview in dedicated studio scenarios', async () => {
     const source = await (await import('node:fs/promises')).readFile(new URL('../electron/editorial-qa.ts', import.meta.url), 'utf8');
 
-    expect(source).toContain("if (targetView === 'html-video') {");
-    expect(source).not.toContain("if (scenarioId.startsWith('html-video-studio')) {");
+    expect(source).toContain("if (targetView === 'html-video' && scenarioId.startsWith('html-video-studio')) {");
+    expect(source).toContain("document.querySelector('.hv-create-history select')");
+    expect(source).toContain("option.textContent?.includes('武则天：权力之路 HTML 动画')");
+    expect(source).toContain("Object.getOwnPropertyDescriptor(HTMLSelectElement.prototype, 'value')?.set");
+    expect(source).toContain('.filter((element) => visibleElement(element))');
     expect(source).toContain("document.querySelectorAll('.hv-reference-thumb')");
     expect(source).toContain("document.querySelectorAll('.hv-reference-thumb img')");
     expect(source).toContain("document.querySelector('.hv-reference-phone iframe')");

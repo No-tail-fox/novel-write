@@ -3291,6 +3291,8 @@ describe('product shell ui', () => {
     expect(css).toContain('.error-dialog-head .mini-button {');
     expect(css).toContain('.error-summary-button .error-mark {');
     expect(css).toContain('.error-dialog .error-mark {');
+    expect(errors).not.toContain('error-mark-text');
+    expect(css).not.toContain('.error-mark-text');
   });
 
   it('keeps the desktop task-detail identity and actions on one row before the compact breakpoint', async () => {
@@ -3339,6 +3341,18 @@ describe('product shell ui', () => {
     expect(css).toContain(".app-shell[data-shell-view='activation'] .two-column {");
     expect(labs).toContain('.voice-lab-history > .empty-state {');
     expect(labs).toContain('.image-lab-recent > .empty-state {');
+  });
+
+  it('keeps compact settings contextual and separates account actions from local information', async () => {
+    const sources = await rendererSourcesPromise;
+    const account = sources.requiredFile('src/features/account/AccountPage.tsx');
+    const css = await readFile(new URL('../src/styles.css', import.meta.url), 'utf8');
+
+    expect(account).toContain('className="account-actions"');
+    expect(css).toMatch(/@media \(max-width: 1120px\)[\s\S]*?\.settings-layout\s*\{[\s\S]*?grid-template-columns:\s*190px minmax\(0, 1fr\);/u);
+    expect(css).toMatch(/@media \(max-width: 760px\)[\s\S]*?\.settings-layout\s*\{[\s\S]*?grid-template-columns:\s*minmax\(0, 1fr\);/u);
+    expect(css).toMatch(/\.account-actions\s*\{[\s\S]*?border-bottom:\s*1px solid var\(--line\);/u);
+    expect(css).toContain('.account-panel > .local-info {');
   });
 
   it('lets AI creation search real web sources and select them for generation', async () => {

@@ -2099,12 +2099,8 @@ textarea {
   place-items: center;
   width: 18px;
   height: 18px;
-  border-radius: 99px;
-  background: var(--danger);
-  color: var(--shell-focus-contrast);
-  font-size: 12px;
-  font-weight: 900;
-  line-height: 1;
+  color: var(--danger);
+  line-height: 0;
 }
 
 .task-row .error-summary-button > span:last-child,
@@ -2115,7 +2111,7 @@ textarea {
 }
 
 .error-summary-button .error-mark {
-  color: #020405;
+  color: var(--danger);
   margin-top: 0;
   line-height: 0;
 }
@@ -2123,22 +2119,8 @@ textarea {
 .error-summary-button .error-mark svg {
   display: block;
   flex: 0 0 auto;
-}
-
-.error-mark {
-  position: relative;
-}
-
-.error-mark-text {
-  position: absolute;
-  width: 1px;
-  height: 1px;
-  overflow: hidden;
-  padding: 0;
-  margin: -1px;
-  border: 0;
-  clip: rect(0 0 0 0);
-  white-space: nowrap;
+  width: 100%;
+  height: 100%;
 }
 
 .error-dialog-backdrop {
@@ -4411,12 +4393,20 @@ section.error-dialog .error-dialog-head > div > strong {
   display: grid;
   grid-template-columns: 210px minmax(0, 1fr);
   gap: 16px;
+  align-items: start;
 }
 
 .settings-menu {
   display: grid;
   gap: 8px;
   align-content: start;
+  min-width: 0;
+  max-height: calc(100vh - 154px);
+  overflow-y: auto;
+  padding-right: 4px;
+  position: sticky;
+  top: 0;
+  scrollbar-gutter: stable;
 }
 
 .settings-tab {
@@ -4436,6 +4426,15 @@ section.error-dialog .error-dialog-head > div > strong {
   grid-column: 2;
   color: var(--muted);
   font-size: 12px;
+}
+
+.settings-tab strong,
+.settings-tab span,
+.settings-tab small {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .settings-heading {
@@ -4969,6 +4968,47 @@ section.error-dialog .error-dialog-head > div > strong {
   border-radius: 8px;
   padding: 14px;
   background: var(--panel-2);
+}
+
+.account-actions {
+  display: grid;
+  justify-items: start;
+  gap: 10px;
+  margin-top: 2px;
+  padding-bottom: 14px;
+  border-bottom: 1px solid var(--line);
+}
+
+.account-actions .inline-action-feedback {
+  margin-top: 0;
+}
+
+.account-panel > .local-info {
+  display: flex;
+  align-items: flex-start;
+  width: 100%;
+  margin-top: 14px;
+  padding: 10px 12px;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  background: var(--panel-2);
+}
+
+.account-panel > .local-info > svg {
+  flex: 0 0 auto;
+  margin-top: 1px;
+  color: var(--shell-accent-strong);
+}
+
+.account-panel > .local-info > div {
+  display: grid;
+  min-width: 0;
+  gap: 2px;
+}
+
+.account-panel > .local-info span {
+  line-height: 1.5;
+  overflow-wrap: anywhere;
 }
 
 .avatar {
@@ -5610,7 +5650,6 @@ section.error-dialog .error-dialog-head > div > strong {
   .templates-layout,
   .prompt-template-row,
   .draft-editor-shell,
-  .settings-layout,
   .template-meta-grid,
   .image-template-field-grid,
   .prompt-template-advanced-grid,
@@ -5676,6 +5715,36 @@ section.error-dialog .error-dialog-head > div > strong {
   .minimax-clone-voice-editor > .field:nth-child(3),
   .minimax-clone-voice-editor-actions {
     grid-column: 1;
+  }
+
+  .settings-layout {
+    grid-template-columns: 190px minmax(0, 1fr);
+    gap: 12px;
+  }
+
+  .settings-tab {
+    min-height: 54px;
+    padding: 9px;
+  }
+}
+
+@media (max-width: 760px) {
+  .settings-layout {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .settings-menu {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    max-height: none;
+    overflow: visible;
+    padding-right: 0;
+    position: static;
+  }
+}
+
+@media (max-width: 520px) {
+  .settings-menu {
+    grid-template-columns: minmax(0, 1fr);
   }
 }
 
