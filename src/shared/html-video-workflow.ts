@@ -301,8 +301,23 @@ export function createHtmlVideoPipelineData(
   return withCompatibilityProjection(data, { videoTitle: titleFromCopy(copy) });
 }
 
-export function createHtmlVideoTaskInput(input: { copy: string } & HtmlVideoJobConfig): CreateTaskInput {
-  const { copy, ...requestedConfig } = input;
+export function createHtmlVideoTaskInput(input: {
+  copy: string;
+  mode?: Task['mode'];
+  aiKeyword?: string;
+  aiSources?: string[];
+  selectedSources?: Task['selectedSources'];
+  extraRequirements?: string;
+} & HtmlVideoJobConfig): CreateTaskInput {
+  const {
+    copy,
+    mode = 'paste',
+    aiKeyword = '',
+    aiSources = [],
+    selectedSources = [],
+    extraRequirements = '',
+    ...requestedConfig
+  } = input;
   const data = createHtmlVideoPipelineData(copy, requestedConfig);
   const config = data.config;
   return {
@@ -312,7 +327,12 @@ export function createHtmlVideoTaskInput(input: { copy: string } & HtmlVideoJobC
     taskType: 'html-video',
     pipelineStep: 'rewrite',
     pipelineData: JSON.stringify(data),
-    materialSource: 'paste',
+    mode,
+    aiKeyword: aiKeyword.trim(),
+    aiSources,
+    selectedSources,
+    extraRequirements: extraRequirements.trim(),
+    materialSource: mode === 'ai' ? 'ai' : 'paste',
     track: 'character-story',
     style: config.style,
     speaker: config.voiceId,

@@ -212,6 +212,36 @@ describe('HTML video pipeline V2 contract', () => {
     expect(tabForHtmlVideoStep('done')).toBe('output');
   });
 
+  it('preserves AI research intent when creating an HTML video task', () => {
+    const selectedSources = [{
+      source: 'web' as const,
+      provider: 'bing' as const,
+      title: '参考资料',
+      content: '可核对的网页正文',
+      url: 'https://example.com/reference',
+    }];
+    const input = createHtmlVideoTaskInput({
+      copy: '根据资料生成的文案。',
+      mode: 'ai',
+      aiKeyword: ' 人物主题 ',
+      aiSources: ['web'],
+      selectedSources,
+      extraRequirements: ' 500 字左右 ',
+      ratio: '9:16',
+      style: 'modern-film',
+    });
+
+    expect(input).toMatchObject({
+      mode: 'ai',
+      aiKeyword: '人物主题',
+      aiSources: ['web'],
+      selectedSources,
+      extraRequirements: '500 字左右',
+      materialSource: 'ai',
+      taskType: 'html-video',
+    });
+  });
+
   it('round-trips only a valid optional full configuration snapshot hash', () => {
     const pipeline = createHtmlVideoPipelineData('配置快照哈希。');
     pipeline.configSnapshotHash = 'a'.repeat(64);

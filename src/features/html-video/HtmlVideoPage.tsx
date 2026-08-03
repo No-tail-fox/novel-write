@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
-import { Clapperboard, Eye, FileText, FolderOpen, Image as ImageIcon, Loader2, Mic2, Pause, Play, Plus, RotateCcw, Save, Settings2, XCircle } from 'lucide-react';
+import { Clapperboard, Eye, FileText, FolderOpen, Image as ImageIcon, Loader2, Mic2, Pause, Play, Plus, RotateCcw, Save, Search, Settings2, Wand2, XCircle } from 'lucide-react';
 import { ErrorDetails as ErrorSummaryButton } from '../../components/ErrorDetails';
 import { FormField as Field } from '../../components/FormField';
 import { OptionGroup as OptionCloud } from '../../components/OptionGroup';
@@ -22,10 +22,13 @@ import { useAsyncAction } from '../../ui/async-action';
 import { resolveDefaultBgmId, taskFromMutation, validBgmItems } from '../tasks/task-formatters';
 import { HtmlVideoAuthoringWorkspace } from './HtmlVideoAuthoringWorkspace';
 import { HtmlVideoTabPanel } from './HtmlVideoTabPanel';
+import { createHtmlVideoResearchCopy, htmlVideoTaskOptionsFromTasks, listAllHtmlVideoTaskOptions, synchronizedHtmlVideoTaskId } from './html-video-page-workflow';
 import '../../styles/features/html-video.css';
 
 type HtmlVideoWorkspaceMode = 'automatic' | 'authoring';
 type HtmlVideoPageMode = 'create' | 'workspace';
+type HtmlVideoCopyMode = 'paste' | 'ai';
+type HtmlVideoCreatePhase = 'idle' | 'search' | 'compose' | 'create';
 
 export function HtmlVideoPage({
   api,
@@ -43,6 +46,10 @@ export function HtmlVideoPage({
   isBrowserPreview: boolean;
 }) {
   const [copy, setCopy] = useState('');
+  const [copyMode, setCopyMode] = useState<HtmlVideoCopyMode>('paste');
+  const [aiKeyword, setAiKeyword] = useState('');
+  const [extraRequirements, setExtraRequirements] = useState('');
+  const [createPhase, setCreatePhase] = useState<HtmlVideoCreatePhase>('idle');
   const [style, setStyle] = useState<string>(HTML_VIDEO_JOB_DEFAULTS.style);
   const [ratio, setRatio] = useState<string>(HTML_VIDEO_JOB_DEFAULTS.ratio);
   const [maxScenes, setMaxScenes] = useState<number>(HTML_VIDEO_JOB_DEFAULTS.maxScenes);
@@ -58,6 +65,9 @@ export function HtmlVideoPage({
   const [coverRatio, setCoverRatio] = useState<HtmlVideoCoverRatio>(HTML_VIDEO_JOB_DEFAULTS.coverRatio);
   const [draftTemplate, setDraftTemplate] = useState<string>('');
   const [activeTaskId, setActiveTaskId] = useState<string>('');
+  const [htmlTaskOptions, setHtmlTaskOptions] = useState(() => htmlVideoTaskOptionsFromTasks(state.tasks));
+  const [taskListState, setTaskListState] = useState<'loading' | 'ready' | 'error'>('loading');
+  const [taskListMessage, setTaskListMessage] = useState('');
   const [pageMode, setPageMode] = useState<HtmlVideoPageMode>('create');
   const [activeTab, setActiveTab] = useState<HtmlVideoTabKey>('text');
   const [workspaceMode, setWorkspaceMode] = useState<HtmlVideoWorkspaceMode>('automatic');
@@ -146,6 +156,50 @@ export function HtmlVideoPage({
   const taskMessageKind = activeTask
     ? classifyHtmlVideoTaskMessage(activeTask.status, taskDisplayMessage)
     : null;
+  const htmlTaskStateKey = htmlTasks.map((task) => task.id).sort().join('|');
+  const taskSelectValue = pageMode === 'workspace' ? activeTaskId : '';
+  const createInputReady = copyMode === 'paste' ? Boolean(copy.trim()) : Boolean(aiKeyword.trim());
+  const createButtonLabel = createPhase === 'search'
+    ? '正在搜索资料'
+    : createPhase === 'compose'
+      ? '正在创作文案'
+      : createPhase === 'create'
+        ? '正在创建任务'
+        : copyMode === 'ai'
+          ? '搜索并生成'
+          : '开始生成';
+
+  useEffect(() => {
+    let disposed = false;
+    setTaskListState('loading');
+    void listAllHtmlVideoTaskOptions(api).then((tasks) => {
+      if (disposed) return;
+      setHtmlTaskOptions(tasks);
+      setTaskListState('ready');
+      setTaskListMessage('');
+    }).catch((error: unknown) => {
+      if (disposed) return;
+      setHtmlTaskOptions(htmlVideoTaskOptionsFromTasks(state.tasks));
+      setTaskListState('error');
+      setTaskListMessage(error instanceof Error ? error.message : String(error));
+    });
+    return () => {
+      disposed = true;
+    };
+  }, [api, htmlTaskStateKey]);
+
+  useEffect(() => {
+    if (pageMode !== 'workspace' || taskListState !== 'ready') return;
+    const synchronizedId = synchronizedHtmlVideoTaskId(activeTaskId, htmlTaskOptions);
+    if (synchronizedId === activeTaskId) return;
+    if (!synchronizedId) {
+      setActiveTaskId('');
+      setPageMode('create');
+      setMessage('当前 HTML 动画任务已不存在。');
+      return;
+    }
+    void openHtmlVideoTask(synchronizedId);
+  }, [activeTaskId, htmlTaskOptions, pageMode, taskListState]);
 
   useLayoutEffect(() => {
     currentMediaElementScopeRef.current = {
@@ -265,16 +319,40 @@ export function HtmlVideoPage({
   }, [mediaPathKey, mediaRetryRevision, mediaTaskId]);
 
   async function createHtmlVideoTask() {
-    if (!copy.trim()) {
-      setMessage('请先输入文案。');
+    if (!createInputReady) {
+      setMessage(copyMode === 'ai' ? '请先输入创作主题。' : '请先输入文案。');
       return;
     }
     await htmlVideoAction.run(async () => {
       setRunning(true);
       setMessage('');
       try {
+        let generatedCopy = copy.trim();
+        let selectedSources = [] as Awaited<ReturnType<typeof createHtmlVideoResearchCopy>>['selectedSources'];
+        if (copyMode === 'ai') {
+          setCreatePhase('search');
+          setMessage('正在搜索并读取相关网页资料...');
+          const research = await createHtmlVideoResearchCopy(api, {
+            keyword: aiKeyword,
+            extraRequirements,
+            onSourcesReady: (sources) => {
+              setCreatePhase('compose');
+              setMessage(`已获取 ${sources.length} 条网页资料，正在创作文案...`);
+            },
+          });
+          generatedCopy = research.copy;
+          selectedSources = research.selectedSources;
+          setCopy(generatedCopy);
+          setMessage(`已参考 ${selectedSources.length} 条网页资料，正在创建 HTML 动画任务...`);
+        }
+        setCreatePhase('create');
         const next = await api.createHtmlVideoTask(createHtmlVideoTaskInput({
-          copy,
+          copy: generatedCopy,
+          mode: copyMode,
+          aiKeyword: copyMode === 'ai' ? aiKeyword : '',
+          aiSources: copyMode === 'ai' ? ['web'] : [],
+          selectedSources,
+          extraRequirements: copyMode === 'ai' ? extraRequirements : '',
           ratio,
           style,
           bgmId,
@@ -293,11 +371,16 @@ export function HtmlVideoPage({
         applyState(next);
         const createdTask = taskFromMutation(next);
         if (createdTask) {
+          setHtmlTaskOptions((current) => htmlVideoTaskOptionsFromTasks([
+            ...current.map((task) => ({ ...task, taskType: 'html-video' as const })),
+            createdTask,
+          ]));
           setActiveTaskId(createdTask.id);
           setPageMode('workspace');
         }
         setMessage(isBrowserPreview ? '已创建浏览器预览快照，未执行特权渲染。' : 'HTML 动画视频任务已创建并开始生成。');
       } finally {
+        setCreatePhase('idle');
         setRunning(false);
       }
     }, { onError: (error) => setMessage(error.message) });
@@ -309,12 +392,19 @@ export function HtmlVideoPage({
     setVoiceId(ttsVoiceOptionsForProvider(provider, state.minimaxCloneVoices)[0]?.id ?? '');
   }
 
-  function openHtmlVideoTask(taskId: string) {
+  async function openHtmlVideoTask(taskId: string) {
     if (!taskId) return;
-    setActiveTaskId(taskId);
-    setPageMode('workspace');
-    setWorkspaceMode('automatic');
-    setMessage('');
+    try {
+      const detail = await api.getTaskDetail(taskId);
+      if (!detail || !isHtmlVideoTask(detail)) throw new Error('该 HTML 动画任务不存在或已被移除。');
+      await refreshTaskDetail(taskId);
+      setActiveTaskId(taskId);
+      setPageMode('workspace');
+      setWorkspaceMode('automatic');
+      setMessage('');
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : String(error));
+    }
   }
 
   function openHtmlVideoCreation() {
@@ -375,33 +465,52 @@ export function HtmlVideoPage({
               <h1>HTML 动画视频</h1>
               <p>输入文案，AI 自动规划分镜 → 出素材 → 配音 → 生成动画分镜</p>
             </div>
-            {htmlTasks.length ? (
-              <label className="hv-create-history">
-                <span>已有任务</span>
+            <label className="hv-create-history">
+                <span>已有 HTML 任务{taskListState === 'ready' ? ` · ${htmlTaskOptions.length}` : ''}</span>
                 <select
-                  value=""
+                  value={taskSelectValue}
                   aria-label="打开已有 HTML 动画视频任务"
-                  onChange={(event) => openHtmlVideoTask(event.target.value)}
+                  disabled={taskListState === 'loading' && htmlTaskOptions.length === 0}
+                  title={taskListMessage || undefined}
+                  onChange={(event) => void openHtmlVideoTask(event.target.value)}
                 >
-                  <option value="">选择任务...</option>
-                  {htmlTasks.map((task) => <option key={task.id} value={task.id}>{task.title || task.id}</option>)}
+                  <option value="">{taskListState === 'loading' ? '正在同步任务...' : taskListState === 'error' ? '同步失败，显示最近任务' : htmlTaskOptions.length ? '打开已有任务...' : '暂无 HTML 动画任务'}</option>
+                  {htmlTaskOptions.map((task) => <option key={task.id} value={task.id}>{task.title || task.id}</option>)}
                 </select>
               </label>
-            ) : null}
           </header>
 
           <div className="hv-create-sheet">
             <section className="hv-create-section">
-              <header><FileText size={17} /><div><h2>文案</h2><p>粘贴文案 · 处理方式</p></div></header>
-              <div className="hv-create-section-content">
-                <Field label="文案" hint="可直接粘贴口播稿，生成后会自动改写并切分场景">
-                  <textarea
-                    className="source-textarea"
-                    value={copy}
-                    placeholder="在这里粘贴或输入完整口播文案..."
-                    onChange={(event) => setCopy(event.target.value)}
-                  />
-                </Field>
+              <header>{copyMode === 'ai' ? <Wand2 size={17} /> : <FileText size={17} />}<div><h2>文案</h2><p>AI 创作 · 粘贴文案</p></div></header>
+              <div className="hv-create-section-content hv-create-copy-content">
+                <div className="hv-copy-mode" role="group" aria-label="文案来源">
+                  <button type="button" className={copyMode === 'ai' ? 'active' : ''} aria-pressed={copyMode === 'ai'} onClick={() => setCopyMode('ai')}><Wand2 size={15} />AI 创作</button>
+                  <button type="button" className={copyMode === 'paste' ? 'active' : ''} aria-pressed={copyMode === 'paste'} onClick={() => setCopyMode('paste')}><FileText size={15} />粘贴文案</button>
+                </div>
+                {copyMode === 'paste' ? (
+                  <Field label="文案" hint="可直接粘贴口播稿，生成后会自动改写并切分场景">
+                    <textarea
+                      className="source-textarea"
+                      value={copy}
+                      placeholder="在这里粘贴或输入完整口播文案..."
+                      onChange={(event) => setCopy(event.target.value)}
+                    />
+                  </Field>
+                ) : (
+                  <div className="hv-ai-copy-fields">
+                    <Field label="创作主题">
+                      <input value={aiKeyword} placeholder="例如：钱学森回国背后的关键转折" onChange={(event) => setAiKeyword(event.target.value)} />
+                    </Field>
+                    <Field label="创作要求" hint="可选">
+                      <textarea className="hv-ai-requirements" value={extraRequirements} placeholder="例如：500 字左右，突出人物抉择，语气克制" onChange={(event) => setExtraRequirements(event.target.value)} />
+                    </Field>
+                    <div className="hv-auto-research" aria-label="AI 创作会自动搜索网页资料">
+                      <Search size={15} />
+                      <span><strong>自动检索</strong><small>必应 · 百度 · 搜狗 · 头条</small></span>
+                    </div>
+                  </div>
+                )}
               </div>
             </section>
 
@@ -517,9 +626,9 @@ export function HtmlVideoPage({
                 {message ? <span className="local-note" role="status">{message}</span> : null}
                 <InlineActionFeedback feedback={htmlVideoAction.feedback} />
               </div>
-              <button className="primary-action hv-create-submit" type="button" onClick={createHtmlVideoTask} disabled={taskBusy || !copy.trim()}>
+              <button className="primary-action hv-create-submit" type="button" onClick={createHtmlVideoTask} disabled={taskBusy || !createInputReady}>
                 {running ? <Loader2 className="spin" size={16} /> : <Play size={16} />}
-                开始生成
+                {createPhase === 'idle' ? (copyMode === 'ai' ? '搜索并生成' : '开始生成') : createButtonLabel}
               </button>
             </footer>
           </div>
@@ -547,10 +656,10 @@ export function HtmlVideoPage({
           <div><strong>{pipelineData.output?.durationSec?.toFixed(1) ?? '-'}</strong><small>总时长（秒）</small></div>
         </div>
 
-        {htmlTasks.length ? (
+        {htmlTaskOptions.length ? (
           <Field label="HTML 任务">
-            <select value={activeTask.id} onChange={(event) => openHtmlVideoTask(event.target.value)} aria-label="切换 HTML 动画视频任务">
-              {htmlTasks.map((task) => <option key={task.id} value={task.id}>{task.title || task.id}</option>)}
+            <select value={activeTask.id} onChange={(event) => void openHtmlVideoTask(event.target.value)} aria-label="切换 HTML 动画视频任务">
+              {htmlTaskOptions.map((task) => <option key={task.id} value={task.id}>{task.title || task.id}</option>)}
             </select>
           </Field>
         ) : null}

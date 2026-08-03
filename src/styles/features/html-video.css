@@ -110,6 +110,77 @@
   min-width: 0;
 }
 
+.hv-create-copy-content,
+.hv-ai-copy-fields {
+  display: grid;
+  gap: 14px;
+}
+
+.hv-copy-mode {
+  width: fit-content;
+  display: inline-grid;
+  grid-template-columns: repeat(2, minmax(108px, 1fr));
+  gap: 3px;
+  padding: 3px;
+  border: 1px solid var(--shell-border);
+  border-radius: 6px;
+  background: var(--shell-surface);
+}
+
+.hv-copy-mode button {
+  min-height: 32px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  border: 0;
+  border-radius: 4px;
+  background: transparent;
+  color: var(--shell-muted);
+  font-size: 12px;
+  font-weight: 650;
+}
+
+.hv-copy-mode button.active {
+  background: var(--shell-accent);
+  color: var(--shell-focus-contrast);
+  box-shadow: var(--shadow-xs);
+}
+
+.hv-ai-requirements {
+  min-height: 92px;
+  resize: vertical;
+  font-size: 13px;
+  line-height: 1.6;
+}
+
+.hv-auto-research {
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  padding-top: 12px;
+  border-top: 1px solid var(--shell-border);
+  color: var(--shell-accent-strong);
+}
+
+.hv-auto-research span {
+  min-width: 0;
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+}
+
+.hv-auto-research strong {
+  color: var(--shell-text);
+  font-size: 12px;
+}
+
+.hv-auto-research small {
+  color: var(--shell-muted);
+  font-size: 11px;
+}
+
 .hv-create-stack {
   display: grid;
   gap: 18px;
@@ -213,6 +284,16 @@
   .hv-create-history,
   .hv-create-submit {
     width: 100%;
+  }
+
+  .hv-copy-mode {
+    width: 100%;
+  }
+
+  .hv-auto-research span {
+    align-items: flex-start;
+    flex-direction: column;
+    gap: 2px;
   }
 
   .hv-create-section {

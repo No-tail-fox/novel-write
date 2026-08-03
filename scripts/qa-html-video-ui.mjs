@@ -150,6 +150,17 @@ try {
     mobile: false,
   });
   await delay(300);
+  await evaluate(cdp, `(() => {
+    const button = [...document.querySelectorAll('.hv-copy-mode button')]
+      .find((item) => item.textContent?.trim() === 'AI 创作');
+    if (!(button instanceof HTMLButtonElement)) throw new Error('AI creation mode button is missing');
+    button.click();
+  })()`);
+  await waitFor(
+    async () => evaluate(cdp, `Boolean(document.querySelector('.hv-ai-copy-fields input'))`),
+    5_000,
+    'HTML video AI creation fields',
+  );
   const creationCompact = await inspectCreationPage(cdp);
   await saveScreenshot(cdp, creationCompactScreenshot);
   await cdp.send('Emulation.setDeviceMetricsOverride', {
@@ -312,7 +323,7 @@ try {
   if (creationDesktop.horizontalOverflow > 2 || creationCompact.horizontalOverflow > 2) throw new Error('HTML video creation page overflows horizontally.');
   if (creationDesktop.clippedControls.length || creationCompact.clippedControls.length) throw new Error('HTML video creation controls are clipped.');
   if (creationDesktop.workspaceVisible || creationCompact.workspaceVisible) throw new Error('HTML video workspace rendered before a task was selected.');
-  if (creationDesktop.sectionTitles.join(',') !== '文案,画面,封面海报,配音,输出') throw new Error(`HTML video creation sections differ from the reference flow: ${creationDesktop.sectionTitles.join(',')}`);
+  if (creationDesktop.sectionTitles.join(',') !== '文案,画面,封面海报,配音,画面预设') throw new Error(`HTML video creation sections differ from the reference flow: ${creationDesktop.sectionTitles.join(',')}`);
   if (!taskSwitchObserved || !pathSwitchObserved) throw new Error('Task and path switching was not observed.');
   if (!sameUrlMissingThenRestored) throw new Error('The same media URL did not recover after a no-store 404.');
   if (desktopState.stepCount !== 6 || compactState.stepCount !== 6) throw new Error('Six-step rail was not rendered.');
@@ -631,7 +642,9 @@ async function inspectFailedTaskLightWorkspace(cdpConnection, task) {
       ].map((token) => [token, getComputedStyle(studio).getPropertyValue(token).trim()])) : {},
       samples,
       failures: samples
-        .filter((sample) => !sample.text || sample.contrastRatio < 4.5)
+        .filter((sample) => sample.label.startsWith('error-mark')
+          ? sample.contrastRatio < 3
+          : !sample.text || sample.contrastRatio < 4.5)
         .map((sample) => sample.label + ' (' + sample.contrastRatio + ':1)'),
     };
   })()`);

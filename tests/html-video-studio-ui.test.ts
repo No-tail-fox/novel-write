@@ -49,6 +49,15 @@ describe('HTML video editorial studio', () => {
     expect(page).toContain('data-html-video-create-page="true"');
     expect(page).toContain('输入文案，AI 自动规划分镜 → 出素材 → 配音 → 生成动画分镜');
     expect(page).toContain('<h2>文案</h2>');
+    expect(page).toContain('aria-label="文案来源"');
+    expect(page).toContain('AI 创作');
+    expect(page).toContain('粘贴文案');
+    expect(page).toContain('createHtmlVideoResearchCopy');
+    expect(page).toContain('正在搜索资料');
+    expect(page).toContain('正在创作文案');
+    expect(page).toContain('listAllHtmlVideoTaskOptions');
+    expect(page).toContain('taskType: \'html-video\'');
+    expect(page).toContain('value={taskSelectValue}');
     expect(page).toContain('<h2>画面</h2>');
     expect(page).toContain('<h2>封面海报</h2>');
     expect(page).toContain('<h2>配音</h2>');
@@ -63,10 +72,14 @@ describe('HTML video editorial studio', () => {
     expect(styles).toContain('.hv-create-sheet {');
     expect(qa).toContain('surfaceHorizontalOverflow');
     expect(styles).toContain('.hv-create-section {');
+    expect(styles).toContain('.hv-copy-mode {');
+    expect(styles).toContain('.hv-auto-research {');
     expect(styles).not.toContain('.hv-create-details');
     expect(qa).toContain('inspectCreationPage');
     expect(qa).toContain("'creation-desktop.png'");
     expect(qa).toContain("'creation-compact.png'");
+    expect(qa).toContain("item.textContent?.trim() === 'AI 创作'");
+    expect(qa).toContain("document.querySelector('.hv-ai-copy-fields input')");
     expect(qa).toContain('workspace rendered before a task was selected');
   });
 
@@ -247,6 +260,7 @@ describe('HTML video editorial studio', () => {
     expect(htmlVideoQa).toContain("document.querySelector('.hv-studio-canvas-heading strong')");
     expect(htmlVideoQa).toContain("const failedLightScreenshot = join(qaTempDir, 'failed-light.png')");
     expect(htmlVideoQa).toContain('inspectFailedTaskLightWorkspace');
+    expect(htmlVideoQa).toContain("sample.label.startsWith('error-mark')");
     expect(htmlVideoQa).toContain("rawLegacyErrorVisible: Boolean(studio?.innerText.includes('HTML video planning step failed'))");
     expect(htmlVideoQa).toContain("retryText !== '从场景规划重试'");
     expect(qa).toContain("? 'two-column'");
