@@ -234,6 +234,57 @@ describe('pyJianYingDraft bridge input', () => {
     }
   });
 
+  it('keeps a partial image region clipped when decorative frame chrome is disabled', async () => {
+    const dir = await mkdtemp(join(tmpdir(), 'storybound-jy-crop-overlay-'));
+    const draftDir = join(dir, 'Draft Root', 'Crop Overlay Draft');
+    const bridgeDir = join(dir, 'pyjianying-bridge');
+
+    try {
+      await writePyJianYingBridgeScript(dir);
+      await writeFile(join(bridgeDir, 'pyJianYingDraft.py'), fakePyJianYingDraftModule, 'utf8');
+      const voice = join(dir, 'voice.wav');
+      const image = join(dir, 'image.png');
+      const subtitles = join(dir, 'subtitles.srt');
+      await writeFile(voice, wavTone(1200));
+      await writeFile(image, Buffer.from('image'));
+      await writeFile(subtitles, '', 'utf8');
+
+      await runPyJianYingDraftBridge({
+        workDir: dir,
+        draftDir,
+        title: 'Crop Overlay Draft',
+        canvas: { width: 1080, height: 1920, backgroundColor: '#101010', backgroundImage: '' },
+        imageArea: { ...defaultBridgeImageArea(), top: 0.14, height: 0.64 },
+        frame: {
+          enabled: false,
+          headerColor: '#112233',
+          headerColorEnd: '#334455',
+          footerColor: '#556677',
+          footerColorEnd: '#778899',
+          imageBorderColor: '#abcdef',
+          imageBorderWidth: 12,
+          imageBorderSides: 'horizontal',
+        },
+        caption: { ...defaultBridgeCaption(), visible: false },
+        scenes: [{ sceneId: 1, startUs: 0, durationUs: 1_200_000, text: 'cropped image' }],
+        images: [{ sceneId: 1, path: image }],
+        narration: [{ sceneId: 1, path: voice }],
+        subtitlesSrtPath: subtitles,
+        bgm: null,
+        totalDurationUs: 1_200_000,
+        volumes: { narration: 1, bgm: 0.3 },
+      });
+
+      const content = JSON.parse(await readFile(join(draftDir, 'draft_content.json'), 'utf8'));
+      const frameTrack = content.tracks.find((track: { name: string }) => track.name === 'frame_overlay');
+      expect(frameTrack.segments).toHaveLength(1);
+      const overlay = await readFile(join(draftDir, 'materials', 'frame', 'frame-overlay.png'));
+      expect(overlay.subarray(0, 8)).toEqual(Buffer.from([137, 80, 78, 71, 13, 10, 26, 10]));
+    } finally {
+      await rm(dir, { recursive: true, force: true });
+    }
+  });
+
   it('writes the Python bridge script with audio fades, transitions, and optional effects', async () => {
     const dir = await mkdtemp(join(tmpdir(), 'storybound-jy-script-effects-'));
 

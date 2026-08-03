@@ -949,7 +949,7 @@ function qaScenarioScript(id: string, view: string, theme: string, stage?: strin
       const subtitle = templateFrame?.querySelector('.draft-subtitle');
       const titleStyle = title instanceof HTMLElement ? getComputedStyle(title) : null;
       return {
-        currentScene: document.querySelector('.task-media-progress small')?.textContent?.trim() ?? '',
+          currentScene: document.querySelector('.task-media-scene-count')?.textContent?.trim() ?? '',
         generatedScenes: document.querySelector('.task-scene-rail > div:first-child > span')?.textContent?.trim() ?? '',
         templateFrameFound: templateFrame instanceof HTMLElement,
         templateId: templateFrame?.getAttribute('data-draft-template-id') ?? '',
@@ -979,7 +979,8 @@ function qaScenarioScript(id: string, view: string, theme: string, stage?: strin
           && state.imageTop === '22%'
           && state.imageHeight === '44%'
           && state.titleText === '深宫沉默十二年'
-          && state.titleFontSize === '31px'
+            && Number.parseFloat(state.titleFontSize) >= 36
+            && Number.parseFloat(state.titleFontSize) <= 64
           && state.titleColor === 'rgb(56, 242, 176)'
           && state.titleFontFamily.includes('Microsoft YaHei')
           && state.subtitleText === '最后走成唯一女皇'

@@ -4434,6 +4434,7 @@ section.error-dialog .error-dialog-head > div > strong {
   position: relative;
   border: 1px dashed #3a434f;
   overflow: hidden;
+  container-type: inline-size;
   font-family: "Microsoft YaHei UI", "Microsoft YaHei", "PingFang SC", sans-serif;
 }
 

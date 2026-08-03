@@ -28,10 +28,10 @@ export function DraftTemplatePreview({
   captionText?: string;
   disclaimerText?: string;
 }) {
-  const titleSize = compact ? Math.max(9, template.title.fontSize * 0.28) : template.title.fontSize;
-  const subtitleSize = compact ? Math.max(7, template.subtitle.fontSize * 0.28) : template.subtitle.fontSize;
-  const captionSize = compact ? Math.max(7, template.caption.fontSize * 0.42) : template.caption.fontSize;
-  const disclaimerSize = compact ? Math.max(6, template.disclaimer.fontSize * 0.42) : template.disclaimer.fontSize;
+  const titleSize = draftPreviewFontSize(template.title.fontSize, compact, 0.28, 9);
+  const subtitleSize = draftPreviewFontSize(template.subtitle.fontSize, compact, 0.28, 7);
+  const captionSize = draftPreviewFontSize(template.caption.fontSize, compact, 0.42, 7);
+  const disclaimerSize = draftPreviewFontSize(template.disclaimer.fontSize, compact, 0.42, 6);
   return (
     <div className={compact ? 'draft-preview-mini' : 'draft-preview-large'} data-media-canvas="draft-canvas" style={draftTemplateCanvasStyle(template)}>
       <DraftFrameChrome template={template} />
@@ -82,14 +82,7 @@ export function DraftTemplatePreview({
           width={template.caption.width}
           border={template.caption.border}
           style={{
-            color: template.caption.color,
-            fontSize: captionSize,
-            opacity: template.caption.alpha,
-            fontWeight: template.caption.bold ? 700 : 500,
-            textDecoration: template.caption.underline ? 'underline' : 'none',
-            textAlign: draftTextAlign(template.caption.align),
-            letterSpacing: `${template.caption.letterSpacing}px`,
-            lineHeight: `${1 + template.caption.lineSpacing / 10}`,
+            ...draftTextLayerStyle(template.caption, captionSize, template.caption.bold ? 700 : 500),
             backgroundColor: colorWithAlpha(template.caption.background.color, template.caption.background.alpha),
             borderRadius: `${template.caption.background.roundRadius * 24}px`,
             padding: compact ? '2px 8px' : '4px 10px',
@@ -208,7 +201,7 @@ export function EditableDraftCanvas({
             width={1}
             border={template.title.border}
             positioned={false}
-            style={draftTextLayerStyle(template.title, template.title.fontSize, template.title.bold ? 800 : 500)}
+            style={draftTextLayerStyle(template.title, draftPreviewFontSize(template.title.fontSize), template.title.bold ? 800 : 500)}
           >
             {template.title.text}
           </DraftCanvasText>
@@ -223,7 +216,7 @@ export function EditableDraftCanvas({
             width={1}
             border={template.subtitle.border}
             positioned={false}
-            style={draftTextLayerStyle(template.subtitle, template.subtitle.fontSize, template.subtitle.bold ? 800 : 500)}
+            style={draftTextLayerStyle(template.subtitle, draftPreviewFontSize(template.subtitle.fontSize), template.subtitle.bold ? 800 : 500)}
           >
             {template.subtitle.text}
           </DraftCanvasText>
@@ -239,14 +232,7 @@ export function EditableDraftCanvas({
             border={template.caption.border}
             positioned={false}
             style={{
-              color: template.caption.color,
-              fontSize: template.caption.fontSize,
-              opacity: template.caption.alpha,
-              fontWeight: template.caption.bold ? 700 : 500,
-              textDecoration: template.caption.underline ? 'underline' : 'none',
-              textAlign: draftTextAlign(template.caption.align),
-              letterSpacing: `${template.caption.letterSpacing}px`,
-              lineHeight: `${1 + template.caption.lineSpacing / 10}`,
+              ...draftTextLayerStyle(template.caption, draftPreviewFontSize(template.caption.fontSize), template.caption.bold ? 700 : 500),
               backgroundColor: colorWithAlpha(template.caption.background.color, template.caption.background.alpha),
               borderRadius: `${template.caption.background.roundRadius * 24}px`,
               padding: '4px 10px',
@@ -265,7 +251,7 @@ export function EditableDraftCanvas({
             width={1}
             border={template.disclaimer.border}
             positioned={false}
-            style={draftTextLayerStyle(template.disclaimer, template.disclaimer.fontSize, template.disclaimer.bold ? 700 : 500)}
+            style={draftTextLayerStyle(template.disclaimer, draftPreviewFontSize(template.disclaimer.fontSize), template.disclaimer.bold ? 700 : 500)}
           >
             {template.disclaimer.text}
           </DraftCanvasText>
@@ -486,9 +472,9 @@ export function colorWithAlpha(color: string, alpha: number): string {
 export function draftTextStrokeStyle(border?: DraftTextBorder): React.CSSProperties {
   if (!border || border.width <= 0 || border.alpha <= 0) return {};
   const color = colorWithAlpha(border.color, border.alpha);
-  const previewStrokeWidth = Math.min(3, Math.max(1, Math.round(border.width / 16)));
+  const previewStrokeWidth = `clamp(1px, ${Number((border.width / 50).toFixed(4))}cqw, 4px)`;
   return {
-    WebkitTextStroke: `${previewStrokeWidth}px ${color}`,
+    WebkitTextStroke: `${previewStrokeWidth} ${color}`,
     paintOrder: 'stroke fill',
     textShadow: `0 1px 2px ${colorWithAlpha(border.color, Math.min(border.alpha, 0.55))}`,
   };
@@ -496,7 +482,7 @@ export function draftTextStrokeStyle(border?: DraftTextBorder): React.CSSPropert
 
 export function draftTextLayerStyle(
   text: Pick<DraftTemplate['title'], 'color' | 'alpha' | 'underline' | 'align' | 'letterSpacing' | 'lineSpacing'>,
-  fontSize: number,
+  fontSize: React.CSSProperties['fontSize'],
   fontWeight: React.CSSProperties['fontWeight'],
 ): React.CSSProperties {
   return {
@@ -505,10 +491,19 @@ export function draftTextLayerStyle(
     opacity: text.alpha,
     fontWeight,
     textDecoration: text.underline ? 'underline' : 'none',
+    textDecorationColor: text.color,
+    textDecorationThickness: text.underline ? '0.09em' : undefined,
+    textUnderlineOffset: text.underline ? '0.13em' : undefined,
+    textDecorationSkipInk: 'none',
     textAlign: draftTextAlign(text.align),
     letterSpacing: `${text.letterSpacing}px`,
     lineHeight: `${1 + text.lineSpacing / 10}`,
   };
+}
+
+export function draftPreviewFontSize(fontSize: number, compact = false, compactScale = 0.28, compactMinimum = 7): React.CSSProperties['fontSize'] {
+  if (compact) return Math.max(compactMinimum, fontSize * compactScale);
+  return `${Number((fontSize / 1.8).toFixed(4))}cqw`;
 }
 
 export function draftTextWidthStyle(width: number): React.CSSProperties {

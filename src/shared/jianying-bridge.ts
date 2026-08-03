@@ -342,14 +342,14 @@ def gradient_rgba_row(width, start_color, end_color):
 
 
 def create_frame_overlay_png(path, canvas, image_area, frame):
-    if not frame or not frame.get("enabled", False):
-        return None
+    frame = frame or {}
+    frame_enabled = bool(frame.get("enabled", False))
     width = max(1, int(canvas.get("width", 1080) or 1080))
     height = max(1, int(canvas.get("height", 1920) or 1920))
     image_top = int(round(clamp_number(image_area.get("top"), 0, 0, 1) * height))
     image_height = int(round(clamp_number(image_area.get("height"), 1, 0, 1 - (image_top / height)) * height))
     image_bottom = max(image_top, min(height, image_top + image_height))
-    border_width = int(round(clamp_number(frame.get("imageBorderWidth"), 0, 0, min(width, height) / 2)))
+    border_width = int(round(clamp_number(frame.get("imageBorderWidth"), 0, 0, min(width, height) / 2))) if frame_enabled else 0
     border_sides = str(frame.get("imageBorderSides") or "all")
     transparent_pixel = b"\x00\x00\x00\x00"
     transparent_row = transparent_pixel * width
@@ -357,8 +357,13 @@ def create_frame_overlay_png(path, canvas, image_area, frame):
     horizontal_border_row = border_pixel * width
     side_width = min(border_width, width // 2)
     vertical_border_row = border_pixel * side_width + transparent_pixel * (width - side_width * 2) + border_pixel * side_width
-    header_row = gradient_rgba_row(width, frame.get("headerColor", "#000000"), frame.get("headerColorEnd", "#000000"))
-    footer_row = gradient_rgba_row(width, frame.get("footerColor", "#000000"), frame.get("footerColorEnd", "#000000"))
+    canvas_color = canvas.get("backgroundColor", "#000000")
+    header_color = frame.get("headerColor", canvas_color) if frame_enabled else canvas_color
+    header_color_end = frame.get("headerColorEnd", header_color) if frame_enabled else canvas_color
+    footer_color = frame.get("footerColor", canvas_color) if frame_enabled else canvas_color
+    footer_color_end = frame.get("footerColorEnd", footer_color) if frame_enabled else canvas_color
+    header_row = gradient_rgba_row(width, header_color, header_color_end)
+    footer_row = gradient_rgba_row(width, footer_color, footer_color_end)
     has_horizontal = border_width > 0 and border_sides in ("all", "horizontal")
     has_vertical = border_width > 0 and border_sides in ("all", "vertical")
     if image_top <= 0 and image_bottom >= height and not has_horizontal and not has_vertical:
@@ -813,16 +818,17 @@ def main():
         maintrack_adsorb=True,
         allow_replace=True,
     )
+    materials_dir = os.path.join(draft_dir, "materials")
+    frame_overlay_path = prepare_frame_overlay_asset(payload, materials_dir)
     background_track = "background_track"
     script.add_track(draft.TrackType.video, background_track)
     script.add_track(draft.TrackType.video, "images")
-    if (payload.get("frame") or {}).get("enabled", False):
+    if frame_overlay_path:
         script.add_track(draft.TrackType.video, "frame_overlay")
     script.add_track(draft.TrackType.audio, "narration")
 
     scenes = payload.get("scenes") or []
     durations = {int(scene["sceneId"]): int(scene["durationUs"]) for scene in scenes}
-    materials_dir = os.path.join(draft_dir, "materials")
     image_by_scene = {
         int(item["sceneId"]): copy_asset(item["path"], os.path.join(materials_dir, "images"), str(int(item["sceneId"])).zfill(3), ".png")
         for item in payload["images"]
@@ -883,7 +889,6 @@ def main():
     video_effect_type = resolve_enum("VideoSceneEffectType", effects.get("videoEffectType"))
     audio_effect_type = resolve_enum("AudioSceneEffectType", effects.get("audioEffectType"))
     background_path = prepare_background_asset(payload, materials_dir)
-    frame_overlay_path = prepare_frame_overlay_asset(payload, materials_dir)
     background_material = draft.VideoMaterial(background_path)
     background_segment = draft.VideoSegment(
         background_material,

@@ -1852,18 +1852,23 @@ describe('product shell ui', () => {
     expect(main).toContain('draftTextLayerStyle(template.title');
     expect(main).toContain('template.title.bold ? 800 : 500');
     expect(main).toContain('template.subtitle.text');
-    expect(main).toContain('template.caption.alpha');
-    expect(main).toContain('template.caption.underline');
+    expect(main).toContain('draftTextLayerStyle(template.caption');
+    expect(main).toContain("textDecoration: text.underline ? 'underline' : 'none'");
     expect(main).toContain('draftTextLayerStyle(template.subtitle');
     expect(main).toContain('draftTextLayerStyle(template.disclaimer');
     expect(main).toContain('template.disclaimer.fontSize');
     expect(main).toContain('opacity: text.alpha');
     expect(main).toContain("textDecoration: text.underline ? 'underline' : 'none'");
+    expect(main).toContain('textDecorationThickness');
+    expect(main).toContain('textUnderlineOffset');
+    expect(main).toContain("textDecorationSkipInk: 'none'");
     expect(main).toContain('textAlign: draftTextAlign(text.align)');
     expect(main).toContain('letterSpacing: `${text.letterSpacing}px`');
     expect(main).toContain('lineHeight: `${1 + text.lineSpacing / 10}`');
     expect(main).toContain('draftTextAlign');
     expect(main).toContain('colorWithAlpha');
+    expect(main).toContain('draftPreviewFontSize');
+    expect(main).toContain('cqw');
   });
 
   it('edits and previews Storybound-compatible camera motion and frame layout', async () => {

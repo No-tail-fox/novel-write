@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState, type ReactNode } from 'react';
-import { Check, CheckSquare2, ClipboardCopy, ClipboardPaste, Database, Eye, FolderOpen, Image as ImageIcon, Images, ImageUp, Library, Loader2, Pencil, Play, RotateCcw, Save, Square, Upload, Wand2, X, XCircle } from 'lucide-react';
+import { Check, CheckSquare2, ChevronLeft, ChevronRight, ClipboardCopy, ClipboardPaste, Database, Eye, FolderOpen, Image as ImageIcon, Images, ImageUp, Library, Loader2, Pencil, Play, RotateCcw, Save, Square, Upload, Wand2, X, XCircle } from 'lucide-react';
 import { ErrorDetails as ErrorSummaryButton, summarizeErrorMessage } from '../../components/ErrorDetails';
 import { AsyncActionFeedback as InlineActionFeedback } from '../../components/AsyncActionFeedback';
 import { EventTimeline } from '../../components/EventTimeline';
@@ -28,7 +28,7 @@ import {
   trimForPreview,
 } from './task-formatters';
 import { artifactPanelTitle, imageProgressLabel, snapshotStepStatus, type ArtifactPanelTab } from './task-pipeline';
-import { indexTaskAssetsBySceneId, resolveTaskPreviewContent } from './task-preview-model';
+import { indexTaskAssetsBySceneId, resolveTaskPreviewContent, taskPreviewCuesForScene } from './task-preview-model';
 
 export type TaskArtifactTab = ArtifactPanelTab;
 
@@ -79,16 +79,24 @@ export function ArtifactPreviewContent({
   const [selectedSceneId, setSelectedSceneId] = useState<number | null>(null);
   const selectedScene = sceneRailItems.find((scene) => scene.id === selectedSceneId) ?? sceneRailItems[0];
   const selectedSceneIndex = Math.max(0, sceneRailItems.findIndex((scene) => scene.id === selectedScene?.id));
+  const selectedSceneCues = useMemo(() => taskPreviewCuesForScene(subtitles, selectedScene?.id), [selectedScene?.id, subtitles]);
+  const [selectedCueIndex, setSelectedCueIndex] = useState(0);
+  const activeCueIndex = Math.min(selectedCueIndex, Math.max(0, selectedSceneCues.length - 1));
+  const selectedCue = selectedSceneCues[activeCueIndex];
   const selectedImageAsset = selectedScene ? imageBySceneId.get(selectedScene.id) : undefined;
   const selectedImagePath = selectedImageAsset?.path ?? '';
   const [selectedImagePreview, setSelectedImagePreview] = useState<{ path: string; url: string; error: string }>({ path: '', url: '', error: '' });
-  const previewContent = resolveTaskPreviewContent({ task, cover: artifact.cover, sourceText: artifact.rewrittenCopy, sceneCap: selectedScene?.cap, template: draftTemplate });
+  const previewContent = resolveTaskPreviewContent({ task, cover: artifact.cover, sourceText: artifact.rewrittenCopy, sceneCap: selectedScene?.cap, sceneCue: selectedCue?.text, template: draftTemplate });
   const selectedImageUrl = selectedImagePreview.path === selectedImagePath ? selectedImagePreview.url : '';
   const selectedImageError = selectedImagePreview.path === selectedImagePath ? selectedImagePreview.error : '';
   const nextPendingSceneId = sceneRailItems.find((scene) => !imageBySceneId.has(scene.id))?.id;
   const [rerunningStepAction, setRerunningStepAction] = useState<string | null>(null);
   const artifactAction = useAsyncAction();
   const canRerunStep = !isBrowserPreview && task.status !== 'running' && task.status !== 'pending' && Boolean(task.artifactStatePath);
+
+  useEffect(() => {
+    setSelectedCueIndex(0);
+  }, [selectedScene?.id, selectedSceneCues.length]);
 
   useEffect(() => {
     if (!selectedImagePath || isBrowserPreview) {
@@ -152,7 +160,18 @@ export function ArtifactPreviewContent({
             {selectedImageAsset && !selectedImageUrl && !selectedImageError ? <div className="task-media-asset-state"><Loader2 className="spin" size={22} /><span>正在读取图片</span></div> : null}
             {selectedImageError ? <div className="task-media-asset-state danger"><XCircle size={22} /><span>图片读取失败</span></div> : null}
           </div>
-          <div className="task-media-progress"><ImageIcon size={15} /><span><i style={{ width: `${Math.round((generatedImageCount / Math.max(1, scenes.length || generatedImageCount)) * 100)}%` }} /></span><small>{String(selectedSceneIndex + 1).padStart(2, '0')} / {String(scenes.length || generatedImageCount || 0).padStart(2, '0')}</small></div>
+          <div className="task-media-progress">
+            <ImageIcon size={15} />
+            <span><i style={{ width: `${Math.round((generatedImageCount / Math.max(1, scenes.length || generatedImageCount)) * 100)}%` }} /></span>
+            {selectedSceneCues.length > 0 ? (
+              <div className="task-media-cue-control" aria-label="当前场景字幕">
+                <button type="button" title="上一条字幕" aria-label="上一条字幕" disabled={activeCueIndex === 0} onClick={() => setSelectedCueIndex((current) => Math.max(0, current - 1))}><ChevronLeft size={14} /></button>
+                <small>字幕 {activeCueIndex + 1} / {selectedSceneCues.length}</small>
+                <button type="button" title="下一条字幕" aria-label="下一条字幕" disabled={activeCueIndex >= selectedSceneCues.length - 1} onClick={() => setSelectedCueIndex((current) => Math.min(selectedSceneCues.length - 1, current + 1))}><ChevronRight size={14} /></button>
+              </div>
+            ) : <small className="task-media-cue-empty">暂无字幕</small>}
+            <small className="task-media-scene-count">{String(selectedSceneIndex + 1).padStart(2, '0')} / {String(scenes.length || generatedImageCount || 0).padStart(2, '0')}</small>
+          </div>
         </section>
         <aside className="task-scene-rail">
           <div><h3>场景图片</h3><span>{generatedImageCount} / {scenes.length || generatedImageCount || 0} 已生成</span></div>

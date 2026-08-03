@@ -1,4 +1,4 @@
-import type { DraftTemplate, PipelineArtifact, Task, TaskArtifactAssetPreview } from '../../shared/types';
+import type { DraftTemplate, PipelineArtifact, SubtitleCue, SubtitleTrack, Task, TaskArtifactAssetPreview } from '../../shared/types';
 import { resolveCoverDisplayMetadata } from '../../shared/cover-copy';
 
 export interface TaskPreviewContent {
@@ -12,11 +12,17 @@ export function indexTaskAssetsBySceneId<T extends Pick<TaskArtifactAssetPreview
   return new Map(assets.map((asset) => [asset.sceneId, asset] as const));
 }
 
+export function taskPreviewCuesForScene(subtitles: Pick<SubtitleTrack, 'cues'> | undefined, sceneId: number | undefined): SubtitleCue[] {
+  if (!subtitles || sceneId === undefined) return [];
+  return subtitles.cues.filter((cue) => cue.sceneId === sceneId);
+}
+
 export function resolveTaskPreviewContent(input: {
   task: Pick<Task, 'title' | 'track'>;
   cover?: PipelineArtifact['cover'];
   sourceText?: string;
   sceneCap?: string;
+  sceneCue?: string;
   template: DraftTemplate;
 }): TaskPreviewContent {
   const cover = input.cover
@@ -28,7 +34,7 @@ export function resolveTaskPreviewContent(input: {
     subtitle: subtitleLines.length > 0
       ? subtitleLines.join('\n')
       : firstNonEmpty(cover?.summary, input.sceneCap, input.template.subtitle.text),
-    caption: firstNonEmpty(input.sceneCap, '等待分镜字幕'),
+    caption: firstNonEmpty(input.sceneCue, input.sceneCap, '等待分镜字幕'),
     disclaimer: input.template.disclaimer.text,
   };
 }

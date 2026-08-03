@@ -1064,7 +1064,7 @@
   bottom: 17px;
   left: 18px;
   display: grid;
-  grid-template-columns: 18px minmax(0, 1fr) auto;
+  grid-template-columns: 18px minmax(72px, 1fr) auto auto;
   align-items: center;
   gap: 10px;
   color: var(--media-muted);
@@ -1086,6 +1086,43 @@
 .task-media-progress small {
   color: var(--media-text);
   font-size: 11px;
+}
+
+.task-media-cue-control {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  min-width: 0;
+}
+
+.task-media-cue-control button {
+  width: 22px;
+  height: 22px;
+  display: grid;
+  flex: 0 0 22px;
+  place-items: center;
+  border: 1px solid var(--media-border);
+  border-radius: 4px;
+  padding: 0;
+  background: var(--media-surface);
+  color: var(--media-text);
+}
+
+.task-media-cue-control button:hover:not(:disabled),
+.task-media-cue-control button:focus-visible {
+  border-color: var(--media-accent);
+  color: var(--media-accent);
+}
+
+.task-media-cue-control button:disabled {
+  opacity: 0.35;
+  cursor: default;
+}
+
+.task-media-cue-control small,
+.task-media-cue-empty,
+.task-media-scene-count {
+  white-space: nowrap;
 }
 
 .task-scene-rail {

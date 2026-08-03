@@ -147,6 +147,10 @@ describe('editorial task operations surfaces', () => {
     expect(detail).toContain("api.rerunTaskStep(activeTask.id, 6, 'regenerate')");
     expect(detail).toContain('openTemplateManager');
     expect(artifact).toContain('setSelectedSceneId');
+    expect(artifact).toContain('taskPreviewCuesForScene');
+    expect(artifact).toContain('className="task-media-cue-control"');
+    expect(artifact).toContain('aria-label="上一条字幕"');
+    expect(artifact).toContain('aria-label="下一条字幕"');
     expect(artifact).toContain("tab === 'events'");
     expect(artifact).not.toContain('.slice(0, 6)');
     expect(css).toContain('grid-template-columns: minmax(0, 1fr) 260px;');
@@ -209,7 +213,8 @@ describe('editorial task operations surfaces', () => {
     expect(qa).toContain('previewImage.naturalWidth > 0');
     expect(qa).toContain("state.templateId === 'qa-selected-draft-template'");
     expect(qa).toContain("state.imageTop === '22%'");
-    expect(qa).toContain("state.titleFontSize === '31px'");
+    expect(qa).toContain('Number.parseFloat(state.titleFontSize) >= 36');
+    expect(qa).toContain('Number.parseFloat(state.titleFontSize) <= 64');
     expect(qa).toContain("state.titleFontFamily.includes('Microsoft YaHei')");
     expect(main).toContain("templateId: selectedTemplateId");
     expect(css).toContain('font-family: "Microsoft YaHei UI", "Microsoft YaHei", "PingFang SC", sans-serif;');
