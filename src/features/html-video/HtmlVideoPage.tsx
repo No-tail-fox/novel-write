@@ -495,12 +495,12 @@ export function HtmlVideoPage({
             </section>
 
             <section className="hv-create-section">
-              <header><Settings2 size={17} /><div><h2>输出</h2><p>草稿模板 · 生成方式</p></div></header>
+              <header><Settings2 size={17} /><div><h2>画面预设</h2><p>版式 · 动效</p></div></header>
               <div className="hv-create-section-content">
                 <div data-html-video-create-field="draftTemplate">
-                  <Field label="剪映草稿模板">
+                  <Field label="画面样式">
                     <select value={draftTemplate} onChange={(event) => setDraftTemplate(event.target.value)}>
-                      <option value="">只输出 HTML 视频</option>
+                      <option value="">不套用画面预设</option>
                       {draftTemplate && !state.draftTemplates.some((item) => item.id === draftTemplate)
                         ? <option value={draftTemplate}>{draftTemplate}（目录中已缺失）</option>
                         : null}
@@ -906,9 +906,9 @@ function HtmlVideoConfigEditor({
           <Segmented label="画布比例" value={values.ratio} options={[...HTML_VIDEO_RATIOS]} onChange={(value) => setValue('ratio', value as typeof values.ratio)} />
         </div>
         <div data-html-video-edit-field="draftTemplate">
-          <Field label="剪映草稿模板">
+          <Field label="画面预设">
             <select value={values.draftTemplate} onChange={(event) => setValue('draftTemplate', event.target.value)} disabled={disabled}>
-              <option value="">只输出 HTML 视频</option>
+              <option value="">不套用画面预设</option>
               {values.draftTemplate && !draftTemplates.some((template) => template.id === values.draftTemplate)
                 ? <option value={values.draftTemplate}>{values.draftTemplate}（目录中已缺失）</option>
                 : null}

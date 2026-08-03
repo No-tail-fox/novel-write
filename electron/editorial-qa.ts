@@ -740,7 +740,7 @@ function qaScenarioScript(id: string, view: string, theme: string, stage?: strin
       && document.documentElement.dataset.themeReady === 'true'
       && document.querySelector('[data-shell-view="' + targetView + '"]'));
     if (targetView === 'task-detail' && !failedTaskDetailScenario) {
-      ready = ready && await waitFor(() => [...document.querySelectorAll('.image-preview-title span')]
+      ready = ready && await waitFor(() => [...document.querySelectorAll('.image-card-status')]
         .some((element) => element.textContent?.trim() === '借 #1'));
     }
     let deleteDialogFocusWrapped = scenarioId !== 'history-operations-desktop';
@@ -1069,6 +1069,16 @@ function qaScenarioScript(id: string, view: string, theme: string, stage?: strin
       const borrowedCard = document.querySelector('.image-preview-card.borrowed');
       if (borrowedCard instanceof HTMLElement) {
         borrowedCard.scrollIntoView({ block: 'center' });
+        borrowedCard.dataset.qaActionsOpen = 'true';
+        const focusableAction = borrowedCard.querySelector('.image-card-action-panel button:not(:disabled)');
+        if (focusableAction instanceof HTMLButtonElement) focusableAction.focus();
+        ready = ready && await waitFor(() => {
+          const panel = borrowedCard.querySelector('.image-card-action-panel');
+          return panel instanceof HTMLElement
+            && getComputedStyle(panel).opacity === '1'
+            && panel.textContent?.includes('素材库选图') === true
+            && panel.textContent?.includes('参考图编辑') === true;
+        });
         await settleCompositor();
       }
     }
@@ -1650,7 +1660,7 @@ function qaScenarioScript(id: string, view: string, theme: string, stage?: strin
       .find((button) => button.textContent?.includes('导入手动封面'));
     const createButton = [...document.querySelectorAll('.new-task-summary-actions button')]
       .find((button) => button.textContent?.includes('创建并开始任务'));
-    const borrowedImageLabel = [...document.querySelectorAll('.image-preview-title span')]
+    const borrowedImageLabel = [...document.querySelectorAll('.image-card-status')]
       .find((element) => element.textContent?.trim().startsWith('借 #'))?.textContent?.trim() ?? '';
     return {
       ready,

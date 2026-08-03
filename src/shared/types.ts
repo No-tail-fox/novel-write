@@ -1437,6 +1437,11 @@ export interface TaskArtifactAssetPreview {
   text?: string;
 }
 
+export type TaskImageReplacementSource =
+  | { kind: 'local' }
+  | { kind: 'image-lab'; recordId: string }
+  | { kind: 'scene'; sourceSceneId: number };
+
 export interface TaskArtifactImageErrorPreview {
   sceneId: number;
   message: string;

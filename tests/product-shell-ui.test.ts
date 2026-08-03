@@ -3538,7 +3538,7 @@ describe('product shell ui', () => {
 
     expect(main).toContain('isBrowserPreview');
     expect(main).toContain('浏览器预览不能执行真实流水线');
-    expect(main).toContain('disabled={isBrowserPreview');
+    expect(main).toContain("const taskLocked = isBrowserPreview || task.status === 'running' || task.status === 'pending'");
     expect(main).toContain('continueTask');
     expect(main).toContain('retryFailedTask');
     expect(main).not.toContain("task.status === 'paused' ? 'running' : 'paused'");
@@ -3551,23 +3551,37 @@ describe('product shell ui', () => {
 
     expect(preload).toContain('readAssetDataUrl');
     expect(preload).toContain('regenerateTaskImage');
+    expect(preload).toContain('regenerateTaskImages');
+    expect(preload).toContain('replaceTaskImage');
+    expect(preload).toContain('importTaskImages');
+    expect(preload).toContain('referenceEditTaskImage');
     expect(preload).toContain('updateTaskImagePrompt');
     expect(main).toContain('ImageGenerationGallery');
     expect(main).toContain('readAssetDataUrl');
     expect(main).toContain('regenerateTaskImage');
+    expect(main).toContain('regenerateTaskImages');
+    expect(main).toContain('replaceTaskImage');
+    expect(main).toContain('importTaskImages');
+    expect(main).toContain('referenceEditTaskImage');
     expect(main).toContain('updateTaskImagePrompt');
-    expect(main).toContain('editingPromptSceneId');
     expect(main).toContain('修改提示词');
-    expect(main).toContain('保存提示词');
+    expect(main).toContain('保存并重绘');
+    expect(main).toContain('参考图编辑');
+    expect(main).toContain('素材库选图');
+    expect(main).toContain('批量导入');
+    expect(main).toContain('复制图');
+    expect(main).toContain('粘贴图');
     expect(main).toContain('取消');
     expect(main).toContain('activeImageConcurrency');
     expect(main).toContain('imagePreviewUrls');
-    expect(main).toContain('disabled={isBrowserPreview || task.status === \'running\'');
+    expect(main).toContain("const taskLocked = isBrowserPreview || task.status === 'running' || task.status === 'pending'");
     expect(main).toContain('重新生成');
     expect(css).toContain('.image-preview-grid');
     expect(css).toContain('.image-preview-card');
     expect(css).toContain('.image-thumb');
-    expect(css).toContain('.image-prompt-editor');
+    expect(css).toContain('.image-card-action-panel');
+    expect(css).toContain('.image-library-dialog');
+    expect(css).toContain('.image-gallery-editor-dialog');
   });
 
   it('shows playable narration previews with per-scene regeneration controls', async () => {

@@ -1166,6 +1166,18 @@ export function makeFallbackApi(setState: (state: AppState) => void): StoryDream
     async regenerateTaskImage() {
       throw new Error('浏览器预览不能重新生成真实图片，请在 Electron 应用中操作。');
     },
+    async regenerateTaskImages() {
+      throw new Error('浏览器预览不能批量重新生成真实图片，请在 Electron 应用中操作。');
+    },
+    async replaceTaskImage() {
+      throw new Error('浏览器预览不能替换真实任务图片，请在 Electron 应用中操作。');
+    },
+    async importTaskImages() {
+      throw new Error('浏览器预览不能批量导入真实任务图片，请在 Electron 应用中操作。');
+    },
+    async referenceEditTaskImage() {
+      throw new Error('浏览器预览不能编辑真实任务图片，请在 Electron 应用中操作。');
+    },
     async regenerateTaskNarration() {
       throw new Error('浏览器预览不能重新生成真实配音，请在 Electron 应用中操作。');
     },

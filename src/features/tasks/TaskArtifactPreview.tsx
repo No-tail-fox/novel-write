@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState, type ReactNode } from 'react';
-import { Database, FolderOpen, Image as ImageIcon, Loader2, Pencil, RotateCcw, Save, Wand2, X, XCircle } from 'lucide-react';
+import { Check, CheckSquare2, ClipboardCopy, ClipboardPaste, Database, Eye, FolderOpen, Image as ImageIcon, Images, ImageUp, Library, Loader2, Pencil, Play, RotateCcw, Save, Square, Upload, Wand2, X, XCircle } from 'lucide-react';
 import { ErrorDetails as ErrorSummaryButton, summarizeErrorMessage } from '../../components/ErrorDetails';
 import { AsyncActionFeedback as InlineActionFeedback } from '../../components/AsyncActionFeedback';
 import { EventTimeline } from '../../components/EventTimeline';
@@ -11,6 +11,7 @@ import { buildSubtitleTrack } from '../../shared/story';
 import type {
   AppConfig,
   DraftTemplate,
+  ImageLabSummary,
   Task,
   TaskArtifactSnapshot,
   TaskEvent,
@@ -463,15 +464,30 @@ function ImageGenerationGallery({
 }) {
   const [imagePreviewUrls, setImagePreviewUrls] = useState<Record<string, string>>({});
   const [imagePreviewErrors, setImagePreviewErrors] = useState<Record<string, string>>({});
-  const [regeneratingSceneId, setRegeneratingSceneId] = useState<number | null>(null);
-  const [editingPromptSceneId, setEditingPromptSceneId] = useState<number | null>(null);
-  const [editingPromptText, setEditingPromptText] = useState('');
-  const [savingPromptSceneId, setSavingPromptSceneId] = useState<number | null>(null);
+  const [activeSceneId, setActiveSceneId] = useState<number | 'batch' | null>(null);
+  const [editor, setEditor] = useState<{ sceneId: number; mode: 'prompt' | 'reference'; text: string } | null>(null);
+  const [copiedSceneId, setCopiedSceneId] = useState<number | null>(null);
+  const [multiSelect, setMultiSelect] = useState(false);
+  const [selectedSceneIds, setSelectedSceneIds] = useState<Set<number>>(new Set());
+  const [librarySceneId, setLibrarySceneId] = useState<number | null>(null);
+  const [libraryRecords, setLibraryRecords] = useState<ImageLabSummary[]>([]);
+  const [libraryPreviewUrls, setLibraryPreviewUrls] = useState<Record<string, string>>({});
+  const [libraryLoading, setLibraryLoading] = useState(false);
+  const [libraryError, setLibraryError] = useState('');
+  const [libraryQuery, setLibraryQuery] = useState('');
+  const [previewSceneId, setPreviewSceneId] = useState<number | null>(null);
+  const [notice, setNotice] = useState('');
   const imageGenerationAction = useAsyncAction();
   const imagePaths = images.map((asset) => asset.path).join('|');
   const imageBySceneId = useMemo(() => new Map(images.map((asset) => [asset.sceneId, asset] as const)), [images]);
   const promptBySceneId = useMemo(() => new Map(imagePrompts.map((prompt) => [prompt.sceneId, prompt] as const)), [imagePrompts]);
   const imageErrorBySceneId = useMemo(() => new Map(imageErrors.map((item) => [item.sceneId, item] as const)), [imageErrors]);
+  const taskLocked = isBrowserPreview || task.status === 'running' || task.status === 'pending';
+  const filteredLibraryRecords = useMemo(() => {
+    const query = libraryQuery.trim().toLocaleLowerCase();
+    if (!query) return libraryRecords;
+    return libraryRecords.filter((record) => `${record.promptPreview} ${record.style} ${record.provider}`.toLocaleLowerCase().includes(query));
+  }, [libraryQuery, libraryRecords]);
 
   useEffect(() => {
     if (isBrowserPreview || images.length === 0) {
@@ -503,38 +519,139 @@ function ImageGenerationGallery({
     };
   }, [api, imageGenerationAction.reportError, imagePaths, isBrowserPreview]);
 
+  useEffect(() => {
+    if (librarySceneId === null || isBrowserPreview) return undefined;
+    let cancelled = false;
+    setLibraryLoading(true);
+    setLibraryError('');
+    setLibraryRecords([]);
+    setLibraryPreviewUrls({});
+    api.listImageLabRecords({ filter: 'active', status: 'generated', limit: 60 })
+      .then(async (page) => {
+        if (cancelled) return;
+        setLibraryRecords(page.items);
+        const previews = await Promise.all(page.items.map(async (record) => {
+          try {
+            return [record.imagePath, await api.readAssetDataUrl(record.imagePath)] as const;
+          } catch {
+            return [record.imagePath, ''] as const;
+          }
+        }));
+        if (!cancelled) setLibraryPreviewUrls(Object.fromEntries(previews.filter(([, url]) => Boolean(url))));
+      })
+      .catch((error) => {
+        if (!cancelled) setLibraryError(summarizeErrorMessage(error instanceof Error ? error.message : String(error)));
+      })
+      .finally(() => {
+        if (!cancelled) setLibraryLoading(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [api, isBrowserPreview, librarySceneId]);
+
   async function regenerate(sceneId: number) {
-    await imageGenerationAction.run(async () => {
-      setRegeneratingSceneId(sceneId);
-      try {
-        applyState(await api.regenerateTaskImage(task.id, sceneId));
-      } finally {
-        setRegeneratingSceneId(null);
+    setActiveSceneId(sceneId);
+    const result = await imageGenerationAction.run(() => api.regenerateTaskImage(task.id, sceneId));
+    setActiveSceneId(null);
+    if (result.ok) {
+      applyState(result.value);
+      setNotice(`分镜 ${sceneId} 已进入重新生成队列。`);
+    }
+  }
+
+  async function regenerateSelected() {
+    const sceneIds = [...selectedSceneIds].sort((left, right) => left - right);
+    if (sceneIds.length === 0) return;
+    setActiveSceneId('batch');
+    const result = await imageGenerationAction.run(() => api.regenerateTaskImages(task.id, sceneIds));
+    setActiveSceneId(null);
+    if (result.ok) {
+      applyState(result.value);
+      setNotice(`${sceneIds.length} 张图片已进入重新生成队列。`);
+      setSelectedSceneIds(new Set());
+      setMultiSelect(false);
+    }
+  }
+
+  async function importImages() {
+    setActiveSceneId('batch');
+    const result = await imageGenerationAction.run(() => api.importTaskImages(task.id));
+    setActiveSceneId(null);
+    if (result.ok && result.value) {
+      applyState(result.value);
+      setNotice('已按文件名中的分镜编号导入图片。');
+    }
+  }
+
+  async function replaceImage(sceneId: number) {
+    setActiveSceneId(sceneId);
+    const result = await imageGenerationAction.run(() => api.replaceTaskImage(task.id, sceneId, { kind: 'local' }));
+    setActiveSceneId(null);
+    if (result.ok && result.value) {
+      applyState(result.value);
+      setNotice(`分镜 ${sceneId} 已替换。`);
+    }
+  }
+
+  async function pasteImage(sceneId: number) {
+    if (copiedSceneId === null) return;
+    setActiveSceneId(sceneId);
+    const result = await imageGenerationAction.run(() => api.replaceTaskImage(task.id, sceneId, { kind: 'scene', sourceSceneId: copiedSceneId }));
+    setActiveSceneId(null);
+    if (result.ok && result.value) {
+      applyState(result.value);
+      setNotice(`已将分镜 ${copiedSceneId} 的图片粘贴到分镜 ${sceneId}。`);
+    }
+  }
+
+  async function chooseLibraryImage(recordId: string) {
+    if (librarySceneId === null) return;
+    const sceneId = librarySceneId;
+    setActiveSceneId(sceneId);
+    const result = await imageGenerationAction.run(() => api.replaceTaskImage(task.id, sceneId, { kind: 'image-lab', recordId }));
+    setActiveSceneId(null);
+    if (result.ok && result.value) {
+      applyState(result.value);
+      setLibrarySceneId(null);
+      setNotice(`已从素材库替换分镜 ${sceneId}。`);
+    }
+  }
+
+  async function submitEditor() {
+    if (!editor?.text.trim()) return;
+    setActiveSceneId(editor.sceneId);
+    const currentEditor = editor;
+    const result = await imageGenerationAction.run(async () => {
+      if (currentEditor.mode === 'reference') {
+        return api.referenceEditTaskImage(task.id, currentEditor.sceneId, currentEditor.text.trim());
       }
+      applyState(await api.updateTaskImagePrompt(task.id, currentEditor.sceneId, currentEditor.text.trim()));
+      return api.regenerateTaskImage(task.id, currentEditor.sceneId);
+    });
+    setActiveSceneId(null);
+    if (result.ok) {
+      applyState(result.value);
+      setEditor(null);
+      setNotice(currentEditor.mode === 'reference'
+        ? `分镜 ${currentEditor.sceneId} 已完成参考图编辑。`
+        : `分镜 ${currentEditor.sceneId} 已保存提示词并重新生成。`);
+    }
+  }
+
+  function toggleMultiSelect() {
+    setMultiSelect((current) => {
+      if (current) setSelectedSceneIds(new Set());
+      return !current;
     });
   }
 
-  function openPromptEditor(sceneId: number, promptText: string) {
-    setEditingPromptSceneId(sceneId);
-    setEditingPromptText(promptText);
-  }
-
-  function cancelPromptEdit() {
-    setEditingPromptSceneId(null);
-    setEditingPromptText('');
-  }
-
-  async function savePrompt(sceneId: number) {
-    const nextPrompt = editingPromptText.trim();
-    if (!nextPrompt) return;
-    await imageGenerationAction.run(async () => {
-      setSavingPromptSceneId(sceneId);
-      try {
-        applyState(await api.updateTaskImagePrompt(task.id, sceneId, nextPrompt));
-        cancelPromptEdit();
-      } finally {
-        setSavingPromptSceneId(null);
-      }
+  function toggleSceneSelection(sceneId: number) {
+    setSelectedSceneIds((current) => {
+      const next = new Set(current);
+      if (next.has(sceneId)) next.delete(sceneId);
+      else next.add(sceneId);
+      return next;
     });
   }
 
@@ -543,10 +660,31 @@ function ImageGenerationGallery({
   return (
     <div className="image-generation-gallery">
       <div className="image-generation-toolbar">
-        <span>并发数 {concurrency}</span>
-        <span>{images.length}/{scenes.length} 张已落盘</span>
+        <div className="image-generation-summary">
+          <strong>{images.length}<small> / {scenes.length}</small></strong>
+          <span>已生成 · 并发 {concurrency}</span>
+        </div>
+        <div className="image-generation-tools">
+          {multiSelect ? (
+            <>
+              <button type="button" className="gallery-tool-button" disabled={imageGenerationAction.busy} onClick={() => setSelectedSceneIds(new Set(scenes.map((scene) => scene.id)))}><CheckSquare2 size={15} />全选</button>
+              <button type="button" className="gallery-tool-button" disabled={imageGenerationAction.busy || selectedSceneIds.size === 0} onClick={() => setSelectedSceneIds(new Set())}><Square size={15} />清空</button>
+              <button type="button" className="gallery-tool-button primary" disabled={taskLocked || imageGenerationAction.busy || selectedSceneIds.size === 0} onClick={() => void regenerateSelected()}>
+                {activeSceneId === 'batch' ? <Loader2 className="spin" size={15} /> : <RotateCcw size={15} />}批量重绘 {selectedSceneIds.size || ''}
+              </button>
+            </>
+          ) : (
+            <button type="button" className="gallery-tool-button" disabled={taskLocked || imageGenerationAction.busy} onClick={() => void importImages()}>
+              {activeSceneId === 'batch' ? <Loader2 className="spin" size={15} /> : <Upload size={15} />}批量导入
+            </button>
+          )}
+          <button type="button" className={`gallery-tool-button ${multiSelect ? 'active' : ''}`} disabled={imageGenerationAction.busy} onClick={toggleMultiSelect}>
+            {multiSelect ? <X size={15} /> : <CheckSquare2 size={15} />}{multiSelect ? '退出多选' : '多选'}
+          </button>
+        </div>
       </div>
       <InlineActionFeedback feedback={imageGenerationAction.feedback} />
+      {notice ? <div className="image-gallery-notice" role="status"><Check size={14} />{notice}</div> : null}
       <div className="image-preview-grid">
         {scenes.map((scene) => {
           const image = imageBySceneId.get(scene.id);
@@ -559,61 +697,103 @@ function ImageGenerationGallery({
             ? image.borrowedFrom ? `借 #${image.borrowedFrom}` : '已生成'
             : imageError ? '生成失败' : task.status === 'running' ? '等待/生成中' : '未生成';
           const promptText = prompt?.prompt ?? scene.descPrompt;
-          const isEditingPrompt = editingPromptSceneId === scene.id;
-          const isSavingPrompt = savingPromptSceneId === scene.id;
-          const editDisabled = isBrowserPreview || task.status === 'running' || task.status === 'pending' || !prompt || isSavingPrompt;
+          const selected = selectedSceneIds.has(scene.id);
+          const busy = activeSceneId === scene.id;
           return (
-            <article className={`image-preview-card ${cardState}`} key={scene.id}>
-              <div className="image-thumb">
+            <article className={`image-preview-card ${cardState} ${selected ? 'selected' : ''}`} key={scene.id} data-scene-id={scene.id}>
+              <div className="image-thumb" onDoubleClick={() => previewUrl && setPreviewSceneId(scene.id)}>
                 {previewUrl ? <img src={previewUrl} alt={`Scene ${scene.id}`} /> : null}
                 {!previewUrl && image && !previewError ? <span className="thumb-state">读取中</span> : null}
                 {!previewUrl && previewError ? <span className="thumb-state danger">读取失败</span> : null}
                 {!image && imageError ? <XCircle size={24} /> : null}
                 {!image && !imageError ? <ImageIcon size={24} /> : null}
+                {multiSelect ? (
+                  <button type="button" className={`image-select-toggle ${selected ? 'selected' : ''}`} aria-label={`${selected ? '取消选择' : '选择'}分镜 ${scene.id}`} onClick={() => toggleSceneSelection(scene.id)}>
+                    {selected ? <Check size={15} /> : null}
+                  </button>
+                ) : null}
+                <span className={`image-card-status ${cardState}`}>{statusText}</span>
+                {!multiSelect ? (
+                  <div className="image-card-action-panel">
+                    <button type="button" disabled={taskLocked || imageGenerationAction.busy || (!image && !imageError)} onClick={() => void regenerate(scene.id)}>{busy ? <Loader2 className="spin" size={14} /> : <RotateCcw size={14} />}重新生成</button>
+                    <button type="button" disabled={taskLocked || imageGenerationAction.busy || !prompt} onClick={() => setEditor({ sceneId: scene.id, mode: 'prompt', text: promptText })}><Pencil size={14} />改提示词</button>
+                    <button type="button" disabled={taskLocked || imageGenerationAction.busy || !image} onClick={() => setEditor({ sceneId: scene.id, mode: 'reference', text: promptText })}><Wand2 size={14} />参考图编辑</button>
+                    <button type="button" disabled={taskLocked || imageGenerationAction.busy} onClick={() => void replaceImage(scene.id)}><ImageUp size={14} />替换图片</button>
+                    <button type="button" disabled={taskLocked || imageGenerationAction.busy} onClick={() => setLibrarySceneId(scene.id)}><Library size={14} />素材库选图</button>
+                    <button type="button" disabled={!image} onClick={() => { setCopiedSceneId(scene.id); setNotice(`已复制分镜 ${scene.id} 的图片。`); }}><ClipboardCopy size={14} />复制图</button>
+                    {copiedSceneId !== null && copiedSceneId !== scene.id ? <button type="button" disabled={taskLocked || imageGenerationAction.busy} onClick={() => void pasteImage(scene.id)}><ClipboardPaste size={14} />粘贴图</button> : null}
+                    <button type="button" disabled={!previewUrl} onClick={() => setPreviewSceneId(scene.id)}><Eye size={14} />预览</button>
+                    <button type="button" disabled title="需要先接入独立的图生视频服务"><Play size={14} />生成视频</button>
+                  </div>
+                ) : null}
               </div>
               <div className="image-preview-body">
                 <div className="image-preview-title">
                   <strong>{scene.id}. {scene.cap}</strong>
-                  <span>{statusText}</span>
                 </div>
-                <p>{trimForPreview(promptText, 180)}</p>
-                {image ? <small>{image.path}</small> : <small>等待 provider 返回真实图片</small>}
+                <p>{trimForPreview(promptText, 120)}</p>
                 {imageError ? <div className="artifact-image-error" title={imageError.message}>{image?.borrowedFrom ? '原始生成失败：' : ''}{summarizeErrorMessage(imageError.message)}</div> : null}
                 {previewError ? <small className="danger-text">{previewError}</small> : null}
-              </div>
-              <div className="image-preview-actions">
-                <button
-                  className="mini-button"
-                  disabled={isBrowserPreview || task.status === 'running' || task.status === 'pending' || (!image && !imageError) || regeneratingSceneId === scene.id}
-                  onClick={() => regenerate(scene.id)}
-                >
-                  {regeneratingSceneId === scene.id ? <Loader2 className="spin" size={14} /> : <RotateCcw size={14} />}
-                  重新生成
-                </button>
-                <button className="mini-button" disabled={editDisabled} onClick={() => openPromptEditor(scene.id, promptText)}>
-                  <Pencil size={14} />
-                  修改提示词
-                </button>
-                {isEditingPrompt ? (
-                  <div className="image-prompt-editor">
-                    <textarea value={editingPromptText} disabled={isSavingPrompt} onChange={(event) => setEditingPromptText(event.target.value)} />
-                    <div className="image-prompt-editor-actions">
-                      <button className="mini-button" disabled={isSavingPrompt || !editingPromptText.trim()} onClick={() => savePrompt(scene.id)}>
-                        {isSavingPrompt ? <Loader2 className="spin" size={14} /> : <Save size={14} />}
-                        保存提示词
-                      </button>
-                      <button className="mini-button" disabled={isSavingPrompt} onClick={cancelPromptEdit}>
-                        <X size={14} />
-                        取消
-                      </button>
-                    </div>
-                  </div>
-                ) : null}
               </div>
             </article>
           );
         })}
       </div>
+
+      {editor ? (
+        <div className="image-gallery-modal-backdrop" role="presentation" onMouseDown={(event) => event.target === event.currentTarget && !imageGenerationAction.busy && setEditor(null)}>
+          <section className="image-gallery-editor-dialog" role="dialog" aria-modal="true" aria-label={editor.mode === 'reference' ? `参考图编辑分镜 ${editor.sceneId}` : `修改分镜 ${editor.sceneId} 提示词`} onKeyDown={(event) => event.key === 'Escape' && !imageGenerationAction.busy && setEditor(null)}>
+            <header>
+              <div><small>分镜 {String(editor.sceneId).padStart(2, '0')}</small><strong>{editor.mode === 'reference' ? '参考图编辑' : '修改提示词'}</strong></div>
+              <button type="button" title="关闭" aria-label="关闭" disabled={imageGenerationAction.busy} onClick={() => setEditor(null)}><X size={17} /></button>
+            </header>
+            <textarea autoFocus value={editor.text} disabled={imageGenerationAction.busy} onChange={(event) => setEditor({ ...editor, text: event.target.value })} />
+            <footer>
+              <button type="button" className="ghost-action" disabled={imageGenerationAction.busy} onClick={() => setEditor(null)}>取消</button>
+              <button type="button" className="primary-action" disabled={imageGenerationAction.busy || !editor.text.trim()} onClick={() => void submitEditor()}>
+                {imageGenerationAction.busy ? <Loader2 className="spin" size={15} /> : editor.mode === 'reference' ? <Wand2 size={15} /> : <Save size={15} />}
+                {editor.mode === 'reference' ? '开始编辑' : '保存并重绘'}
+              </button>
+            </footer>
+          </section>
+        </div>
+      ) : null}
+
+      {librarySceneId !== null ? (
+        <div className="image-gallery-modal-backdrop" role="presentation" onMouseDown={(event) => event.target === event.currentTarget && !imageGenerationAction.busy && setLibrarySceneId(null)}>
+          <section className="image-library-dialog" role="dialog" aria-modal="true" aria-label={`为分镜 ${librarySceneId} 选择素材`}>
+            <header>
+              <div><small>替换分镜 {String(librarySceneId).padStart(2, '0')}</small><strong>素材库选图</strong></div>
+              <button type="button" title="关闭" aria-label="关闭" disabled={imageGenerationAction.busy} onClick={() => setLibrarySceneId(null)}><X size={17} /></button>
+            </header>
+            <div className="image-library-toolbar">
+              <input aria-label="搜索图片素材" value={libraryQuery} placeholder="搜索提示词、风格或模型" onChange={(event) => setLibraryQuery(event.target.value)} />
+              <button type="button" className="gallery-tool-button" disabled={taskLocked || imageGenerationAction.busy} onClick={() => void replaceImage(librarySceneId)}><ImageUp size={15} />本地图片</button>
+            </div>
+            <div className="image-library-grid">
+              {libraryLoading ? <div className="image-library-state"><Loader2 className="spin" size={20} />正在读取素材</div> : null}
+              {libraryError ? <div className="image-library-state danger"><XCircle size={20} />{libraryError}</div> : null}
+              {!libraryLoading && !libraryError && filteredLibraryRecords.length === 0 ? <div className="image-library-state"><Images size={20} />暂无可用图片</div> : null}
+              {filteredLibraryRecords.map((record) => (
+                <button type="button" className="image-library-item" key={record.id} disabled={imageGenerationAction.busy} onClick={() => void chooseLibraryImage(record.id)}>
+                  <span>{libraryPreviewUrls[record.imagePath] ? <img src={libraryPreviewUrls[record.imagePath]} alt="" /> : <ImageIcon size={21} />}</span>
+                  <strong>{trimForPreview(record.promptPreview, 42) || '未命名素材'}</strong>
+                  <small>{record.provider} · {record.ratio}<i>选用</i></small>
+                </button>
+              ))}
+            </div>
+          </section>
+        </div>
+      ) : null}
+
+      {previewSceneId !== null ? (
+        <div className="image-gallery-modal-backdrop preview" role="presentation" onMouseDown={(event) => event.target === event.currentTarget && setPreviewSceneId(null)}>
+          <section className="image-gallery-preview-dialog" role="dialog" aria-modal="true" aria-label={`预览分镜 ${previewSceneId}`}>
+            {imagePreviewUrls[imageBySceneId.get(previewSceneId)?.path ?? ''] ? <img src={imagePreviewUrls[imageBySceneId.get(previewSceneId)?.path ?? '']} alt={`分镜 ${previewSceneId}`} /> : null}
+            <button type="button" title="关闭预览" aria-label="关闭预览" onClick={() => setPreviewSceneId(null)}><X size={18} /></button>
+          </section>
+        </div>
+      ) : null}
     </div>
   );
 }

@@ -4,7 +4,7 @@ import { tmpdir } from 'node:os';
 import { join, relative } from 'node:path';
 import { FileDatabase } from '@shared/storage';
 import { runTask } from '@shared/runner';
-import { markSceneImageForRegeneration, markSceneNarrationForRegeneration, markTaskStepForRerun, updateSceneImagePrompt } from '@shared/pipeline-cache';
+import { markSceneImageForRegeneration, markSceneImagesForRegeneration, markSceneNarrationForRegeneration, markTaskStepForRerun, replaceSceneImageAssets, updateSceneImagePrompt } from '@shared/pipeline-cache';
 import type { ImagePrompt, PipelineArtifact, StoryboardScene, Task, TaskStepRerunMode } from '@shared/types';
 import type { PyJianYingBridgeInput } from '@shared/jianying-bridge';
 
@@ -251,6 +251,85 @@ describe('pipeline cache and retry', () => {
       expect(next.steps['4'].status).toBe('pending');
       expect(next.steps['4'].outputPath).toBe('1.png');
       expect(next.steps['5'].status).toBe('completed');
+      expect(next.steps['6'].status).toBe('pending');
+      expect(next.draft).toBeUndefined();
+    } finally {
+      await rm(dir, { recursive: true, force: true });
+    }
+  });
+
+  it('replaces managed scene images while preserving narration and invalidating only the draft', async () => {
+    const dir = await mkdtemp(join(tmpdir(), 'storybound-replace-images-'));
+    const statePath = join(dir, 'pipeline', 'state.json');
+    try {
+      await mkdir(join(dir, 'pipeline'), { recursive: true });
+      await writeFile(statePath, JSON.stringify({
+        version: 1,
+        taskId: 'task-replace-images',
+        steps: {
+          '4': { status: 'completed', outputPath: 'old-1.png\nold-2.png' },
+          '5': { status: 'completed', outputPath: '1.mp3\n2.mp3' },
+          '6': { status: 'completed', outputPath: 'draft-dir' },
+        },
+        artifact: {
+          reviewedText: 'reviewed',
+          scenes: [
+            { id: 1, cap: 'one', descPrompt: 'one', durationMs: 1000 },
+            { id: 2, cap: 'two', descPrompt: 'two', durationMs: 1000 },
+          ],
+        },
+        assets: {
+          images: [{ sceneId: 1, path: 'old-1.png' }, { sceneId: 2, path: 'old-2.png' }],
+          imageErrors: [{ sceneId: 2, message: 'old provider failure' }],
+          narration: [{ sceneId: 1, path: '1.mp3' }, { sceneId: 2, path: '2.mp3' }],
+        },
+        draft: { draftDir: 'draft-dir', draftContentPath: 'content.json', draftMetaPath: 'meta.json' },
+      }, null, 2), 'utf8');
+
+      const result = await replaceSceneImageAssets(statePath, [
+        { sceneId: 2, path: 'edited-2.png', borrowedFrom: 1 },
+      ]);
+      const next = JSON.parse(await readFile(statePath, 'utf8'));
+
+      expect(result.replacedSceneIds).toEqual([2]);
+      expect(next.assets.images).toEqual([
+        { sceneId: 1, path: 'old-1.png' },
+        { sceneId: 2, path: 'edited-2.png', borrowedFrom: 1 },
+      ]);
+      expect(next.assets.imageErrors).toEqual([]);
+      expect(next.assets.narration).toEqual([{ sceneId: 1, path: '1.mp3' }, { sceneId: 2, path: '2.mp3' }]);
+      expect(next.artifact.reviewedText).toBe('reviewed');
+      expect(next.steps['4'].status).toBe('completed');
+      expect(next.steps['4'].outputPath).toBe('old-1.png\nedited-2.png');
+      expect(next.steps['5'].status).toBe('completed');
+      expect(next.steps['6'].status).toBe('pending');
+      expect(next.draft).toBeUndefined();
+    } finally {
+      await rm(dir, { recursive: true, force: true });
+    }
+  });
+
+  it('marks multiple selected scene images for regeneration in one state write', async () => {
+    const dir = await mkdtemp(join(tmpdir(), 'storybound-regenerate-images-'));
+    const statePath = join(dir, 'state.json');
+    try {
+      await writeFile(statePath, JSON.stringify({
+        steps: { '4': { status: 'completed' }, '6': { status: 'completed' } },
+        assets: {
+          images: [{ sceneId: 1, path: '1.png' }, { sceneId: 2, path: '2.png' }, { sceneId: 3, path: '3.png' }],
+          imageErrors: [{ sceneId: 2, message: 'two' }, { sceneId: 3, message: 'three' }],
+          narration: [{ sceneId: 2, path: '2.mp3' }],
+        },
+        draft: { draftDir: 'draft', draftContentPath: 'content', draftMetaPath: 'meta' },
+      }, null, 2), 'utf8');
+
+      const result = await markSceneImagesForRegeneration(statePath, [3, 2, 2]);
+      const next = JSON.parse(await readFile(statePath, 'utf8'));
+      expect(result.removedSceneIds.sort()).toEqual([2, 3]);
+      expect(next.assets.images).toEqual([{ sceneId: 1, path: '1.png' }]);
+      expect(next.assets.imageErrors).toEqual([]);
+      expect(next.assets.narration).toEqual([{ sceneId: 2, path: '2.mp3' }]);
+      expect(next.steps['4'].status).toBe('pending');
       expect(next.steps['6'].status).toBe('pending');
       expect(next.draft).toBeUndefined();
     } finally {

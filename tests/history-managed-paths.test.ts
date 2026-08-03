@@ -857,7 +857,8 @@ describe('managed history paths', () => {
   it('guards every task artifact mutation before touching run ownership or artifact files', async () => {
     const main = await readFile(new URL('../electron/main.ts', import.meta.url), 'utf8');
     const entries = [
-      ['task:regenerate-image', 'task:regenerate-narration', 'markSceneImageForRegeneration', true],
+      ['task:regenerate-image', 'task:regenerate-images', 'markSceneImageForRegeneration', true],
+      ['task:regenerate-images', 'task:replace-image', 'markSceneImagesForRegeneration', true],
       ['task:regenerate-narration', 'task:update-image-prompt', 'markSceneNarrationForRegeneration', true],
       ['task:update-image-prompt', 'task:rerun-step', 'updateSceneImagePrompt', false],
       ['task:rerun-step', 'task:get-artifacts', 'markTaskStepForRerun', true],

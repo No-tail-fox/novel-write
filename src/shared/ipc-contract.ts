@@ -366,6 +366,11 @@ const htmlVideoVoiceActionSchema = z.object({
 }).strict();
 
 export const sceneActionSchema = z.object({ id: idSchema, sceneId: nonNegativeInteger }).strict();
+const taskImageReplacementSourceSchema = z.discriminatedUnion('kind', [
+  z.object({ kind: z.literal('local') }).strict(),
+  z.object({ kind: z.literal('image-lab'), recordId: idSchema }).strict(),
+  z.object({ kind: z.literal('scene'), sourceSceneId: nonNegativeInteger }).strict(),
+]);
 export const taskStatusSchema = z.object({ id: idSchema, status: z.enum(['running', 'paused', 'cancelled']) }).strict();
 const viralStatusSchema = z.object({ id: idSchema, status: viralStatusValueSchema }).strict();
 const idOnlySchema = idSchema;
@@ -795,6 +800,10 @@ export const ipcInputSchemas = {
   'task:update-template': z.object({ id: idSchema, templateId: idSchema }).strict(),
   'task:retry': idOnlySchema,
   'task:regenerate-image': sceneActionSchema,
+  'task:regenerate-images': z.object({ id: idSchema, sceneIds: z.array(nonNegativeInteger).min(1).max(MAX_IPC_ARRAY_ITEMS) }).strict(),
+  'task:replace-image': z.object({ id: idSchema, sceneId: nonNegativeInteger, source: taskImageReplacementSourceSchema }).strict(),
+  'task:import-images': idOnlySchema,
+  'task:reference-edit-image': z.object({ id: idSchema, sceneId: nonNegativeInteger, prompt: nonEmptyText(MAX_TASK_TEXT) }).strict(),
   'task:regenerate-narration': sceneActionSchema,
   'task:update-image-prompt': z.object({ id: idSchema, sceneId: nonNegativeInteger, prompt: nonEmptyText(MAX_TASK_TEXT) }).strict(),
   'task:rerun-step': z.object({ id: idSchema, step: nonNegativeInteger.max(6), mode: taskStepRerunModeSchema }).strict(),

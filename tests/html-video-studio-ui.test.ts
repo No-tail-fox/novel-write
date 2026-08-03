@@ -52,7 +52,9 @@ describe('HTML video editorial studio', () => {
     expect(page).toContain('<h2>画面</h2>');
     expect(page).toContain('<h2>封面海报</h2>');
     expect(page).toContain('<h2>配音</h2>');
-    expect(page).toContain('<h2>输出</h2>');
+    expect(page).toContain('<h2>画面预设</h2>');
+    expect(page).toContain('<Field label="画面样式">');
+    expect(page).toContain('<option value="">不套用画面预设</option>');
     expect(page).toContain('aria-label="打开已有 HTML 动画视频任务"');
     expect(page).toContain('setPageMode(\'workspace\')');
     expect(page).toContain('onClick={openHtmlVideoCreation}');

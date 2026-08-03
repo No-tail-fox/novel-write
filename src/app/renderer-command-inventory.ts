@@ -155,6 +155,7 @@ export const rendererCommandInventory = {
   importHtmlVideoCover: command(owner('html-video', 'src/features/html-video/HtmlVideoTabPanel.tsx', 'importManualCover', 'onClick={importManualCover}', '换本地封面', 'tests/html-video-cover.test.ts')),
   importOrdinaryTaskCover: command(owner('new-task', 'src/features/tasks/NewTaskPage.tsx', 'importOrdinaryTaskCover', 'onClick={importOrdinaryTaskCover}', '导入手动封面', 'tests/new-task-workbench-ui.test.ts')),
   importPersonAssetImages: command(owner('person-assets', 'src/features/labs/PersonAssetsPage.tsx', 'importImages', 'onClick={importImages}', '导入图片', productShellTest)),
+  importTaskImages: command(owner('task-detail', 'src/features/tasks/TaskArtifactPreview.tsx', 'importImages', 'onClick={() => void importImages()}', '批量导入', productShellTest)),
   listProviderModels: command(owner(
     'settings',
     'src/features/settings/SettingsPage.tsx',
@@ -215,7 +216,12 @@ export const rendererCommandInventory = {
       htmlVideoStudioTest,
     ),
   ),
-  regenerateTaskImage: command(owner('task-detail', 'src/features/tasks/TaskArtifactPreview.tsx', 'regenerate[1]', 'regenerate(scene.id)', '重新生成', productShellTest)),
+  referenceEditTaskImage: command(owner('task-detail', 'src/features/tasks/TaskArtifactPreview.tsx', 'submitEditor', 'onClick={() => void submitEditor()}', '开始编辑', productShellTest)),
+  regenerateTaskImage: command(
+    owner('task-detail', 'src/features/tasks/TaskArtifactPreview.tsx', 'regenerate[1]', 'regenerate(scene.id)', '重新生成', productShellTest),
+    owner('task-detail', 'src/features/tasks/TaskArtifactPreview.tsx', 'submitEditor', 'onClick={() => void submitEditor()}', '保存并重绘', productShellTest),
+  ),
+  regenerateTaskImages: command(owner('task-detail', 'src/features/tasks/TaskArtifactPreview.tsx', 'regenerateSelected', 'onClick={() => void regenerateSelected()}', '批量重绘', productShellTest)),
   regenerateTaskNarration: command(owner('task-detail', 'src/features/tasks/TaskArtifactPreview.tsx', 'regenerate[2]', 'regenerate(item.sceneId)', '重新生成配音', productShellTest)),
   renamePersonAsset: command(owner('person-assets', 'src/features/labs/PersonAssetsPage.tsx', 'renamePerson', 'onClick={renamePerson}', '重命名', productShellTest)),
   replaceHtmlVideoAsset: command(owner(
@@ -226,6 +232,11 @@ export const rendererCommandInventory = {
     '本地替换',
     htmlVideoStudioTest,
   )),
+  replaceTaskImage: command(
+    owner('task-detail', 'src/features/tasks/TaskArtifactPreview.tsx', 'replaceImage', 'onClick={() => void replaceImage(scene.id)}', '替换图片', productShellTest),
+    owner('task-detail', 'src/features/tasks/TaskArtifactPreview.tsx', 'pasteImage', 'onClick={() => void pasteImage(scene.id)}', '粘贴图', productShellTest),
+    owner('task-detail', 'src/features/tasks/TaskArtifactPreview.tsx', 'chooseLibraryImage', 'onClick={() => void chooseLibraryImage(record.id)}', '选用', productShellTest),
+  ),
   rerenderHtmlVideo: command(owner(
     'html-video',
     'src/features/html-video/HtmlVideoTabPanel.tsx',
@@ -372,7 +383,7 @@ export const rendererCommandInventory = {
     owner('html-video', 'src/features/html-video/HtmlVideoStoryboundPanels.tsx', 'regenerate', 'onClick={() => regenerate(narration)}', '保存并重配', htmlVideoStudioTest),
     owner('html-video', 'src/features/html-video/HtmlVideoStoryboundPanels.tsx', 'selectTemplate', 'onClick={() => selectTemplate(presetSceneIndex, template.id)}', 'template.label', htmlVideoStudioTest),
   ),
-  updateTaskImagePrompt: command(owner('task-detail', 'src/features/tasks/TaskArtifactPreview.tsx', 'savePrompt', 'savePrompt(scene.id)', '保存提示词', productShellTest)),
+  updateTaskImagePrompt: command(owner('task-detail', 'src/features/tasks/TaskArtifactPreview.tsx', 'submitEditor', 'onClick={() => void submitEditor()}', '保存并重绘', productShellTest)),
   updateTaskTemplate: command(owner('task-detail', 'src/features/tasks/TaskDetailPage.tsx', 'applyDraftTemplate', 'onClick={applyDraftTemplate}', '应用模板', productShellTest)),
   updateTaskStatus: command(
     owner('html-video', 'src/features/html-video/HtmlVideoPage.tsx', 'setTaskStatus', "setTaskStatus('paused')", '暂停', 'tests/task-operations-contracts.test.ts', undefined, { disabled: 'disabled={taskBusy || isBrowserPreview}', loading: 'taskBusy', error: 'InlineActionFeedback' }),

@@ -326,7 +326,7 @@ describe('editorial Electron QA configuration', () => {
     expect(source).toContain("document.querySelector('.new-task-borrow-toggle input')");
     expect(source).toContain('state.autoBorrowImageStatePreserved');
     expect(source).toContain("state.borrowedImageLabel !== '借 #1'");
-    expect(source).toContain("document.querySelectorAll('.image-preview-title span')");
+    expect(source).toContain("document.querySelectorAll('.image-card-status')");
     expect(source).toContain("document.querySelector('.image-preview-card.borrowed')");
     expect(source).toContain("borrowedCard.scrollIntoView({ block: 'center' })");
     expect(main).toContain("borrowedFrom = scene.id === 2 ? 1 : undefined");

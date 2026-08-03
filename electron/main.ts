@@ -32,7 +32,7 @@ import { generateConfiguredVoicePreview } from '../src/shared/media-providers';
 import { mergeMinimaxCloneVoice } from '../src/shared/minimax-clone-voices';
 import { createPersonAsset, deletePersonAsset, importPersonAssetFiles, listPersonAssets, listPersonImages, renamePersonAsset } from '../src/shared/person-assets';
 import { createConfiguredJsonLlm, createConfiguredTextLlm, listConfiguredProviderModels, testConfiguredLlm } from '../src/shared/llm-provider';
-import { markSceneImageForRegeneration, markSceneNarrationForRegeneration, markTaskStepForRerun, updateSceneImagePrompt } from '../src/shared/pipeline-cache';
+import { markSceneImageForRegeneration, markSceneImagesForRegeneration, markSceneNarrationForRegeneration, markTaskStepForRerun, replaceSceneImageAssets, updateSceneImagePrompt } from '../src/shared/pipeline-cache';
 import { resolvePythonRuntimeInfo, setDefaultPythonRuntimeAppRoot } from '../src/shared/python-runtime';
 import { composeCopyFromSources, createAiSourceResearcher, researchSearchErrorMessage, searchWebSources, searchWebSourcesDetailed } from '../src/shared/research';
 import { runTask } from '../src/shared/runner';
@@ -40,7 +40,7 @@ import { runStoryboundMediaSidecar } from '../src/shared/storybound-sidecar';
 import { FileDatabase, type HistoryDeletionCleanup, type HistoryTombstone } from '../src/shared/storage';
 import { createHtmlVideoRuntimeProviders, createTaskRuntimeProviders } from '../src/shared/task-runtime-providers';
 import { assertTaskLifecycleAction } from '../src/shared/task-progress';
-import type { AccountProfile, ActivationState, AppConfig, AppDelta, AppDeltaReconcileRequest, AppDeltaReconcileResult, AppStatePatch, BookSelectionInput, ConfigTestTarget, CreateTaskInput, CreateViralAnalysisInput, CursorRequest, CustomStyle, CustomStyleGenerateInput, DraftTemplate, HistoryFamily, HistoryListRequest, HtmlVideoAsset, HtmlVideoAssetTarget, HtmlVideoCompositionSource, HtmlVideoCompositionSourceLintInput, HtmlVideoCompositionSourceSaveInput, HtmlVideoConfigChange, HtmlVideoPipelineDataV2, HtmlVideoSceneChange, HtmlVideoVoiceClip, ImageLabGenerateInput, ImageLabRecord, ImageLabSummary, ImaKnowledgeRequest, LlmConfig, MinimaxCloneVoiceInput, OrdinaryTaskCoverRatio, OrdinaryTaskCoverSelection, PromptTemplate, ProviderModelListRequest, ResearchCopyComposeInput, SequencedTaskEvent, Task, TaskStatus, TaskStepRerunMode, UiPreferencesUpdate, ViralAnalysisRecord, ViralAnalysisResult, ViralAnalysisStatus, ViralProductionTaskOptions, VolcengineSpeakerListRequest, VoiceLabGenerateInput, VoiceLabRecord, VoiceLabSummary, WebSearchRequest } from '../src/shared/types';
+import type { AccountProfile, ActivationState, AppConfig, AppDelta, AppDeltaReconcileRequest, AppDeltaReconcileResult, AppStatePatch, BookSelectionInput, ConfigTestTarget, CreateTaskInput, CreateViralAnalysisInput, CursorRequest, CustomStyle, CustomStyleGenerateInput, DraftTemplate, HistoryFamily, HistoryListRequest, HtmlVideoAsset, HtmlVideoAssetTarget, HtmlVideoCompositionSource, HtmlVideoCompositionSourceLintInput, HtmlVideoCompositionSourceSaveInput, HtmlVideoConfigChange, HtmlVideoPipelineDataV2, HtmlVideoSceneChange, HtmlVideoVoiceClip, ImageLabGenerateInput, ImageLabRecord, ImageLabSummary, ImaKnowledgeRequest, LlmConfig, MinimaxCloneVoiceInput, OrdinaryTaskCoverRatio, OrdinaryTaskCoverSelection, PromptTemplate, ProviderModelListRequest, ResearchCopyComposeInput, SequencedTaskEvent, Task, TaskImageReplacementSource, TaskStatus, TaskStepRerunMode, UiPreferencesUpdate, ViralAnalysisRecord, ViralAnalysisResult, ViralAnalysisStatus, ViralProductionTaskOptions, VolcengineSpeakerListRequest, VoiceLabGenerateInput, VoiceLabRecord, VoiceLabSummary, WebSearchRequest } from '../src/shared/types';
 import { boundViralDiagnosticText, createViralProductionTaskInput, detectViralPlatform, runViralAnalysis, viralCheckpointResumeState } from '../src/shared/viral-analysis';
 import { createViralRuntimeProviders } from '../src/shared/viral-runtime';
 import { listVolcengineSpeakers } from '../src/shared/volcengine-speakers';
@@ -849,6 +849,80 @@ function taskWorkDir(task: Pick<Task, 'managedStorageKey'>): string {
   return resolveManagedHistoryWorkDir(appDataDir(), 'task', task.managedStorageKey);
 }
 
+const maxTaskImageSourceBytes = 64 * 1024 * 1024;
+const maxTaskImageDimension = 16_384;
+const maxTaskImagePixels = 64 * 1024 * 1024;
+
+async function writeManagedTaskImage(task: Task, sceneId: number, sourcePath: string): Promise<string> {
+  if (!Number.isInteger(sceneId) || sceneId < 0) throw new Error('TASK_IMAGE_SCENE_INVALID: 分镜编号无效。');
+  const source = await stat(sourcePath);
+  if (!source.isFile() || source.size <= 0 || source.size > maxTaskImageSourceBytes) {
+    throw new Error(`TASK_IMAGE_SOURCE_INVALID: 图片必须是 1 到 ${maxTaskImageSourceBytes} 字节的普通文件。`);
+  }
+  const sourceBytes = await readFile(sourcePath);
+  if (sourceBytes.length !== source.size) throw new Error('TASK_IMAGE_SOURCE_CHANGED: 图片在读取过程中发生了变化。');
+  const decoded = nativeImage.createFromBuffer(sourceBytes);
+  if (decoded.isEmpty()) throw new Error('TASK_IMAGE_SOURCE_INVALID: 无法解码所选图片。');
+  const dimensions = decoded.getSize();
+  if (
+    dimensions.width <= 0
+    || dimensions.height <= 0
+    || dimensions.width > maxTaskImageDimension
+    || dimensions.height > maxTaskImageDimension
+    || dimensions.width * dimensions.height > maxTaskImagePixels
+  ) {
+    throw new Error('TASK_IMAGE_DIMENSIONS_INVALID: 图片尺寸超出安全范围。');
+  }
+  const png = decoded.toPNG();
+  if (png.length <= 0 || png.length > maxTaskImageSourceBytes) {
+    throw new Error('TASK_IMAGE_OUTPUT_INVALID: 规范化后的 PNG 图片大小无效。');
+  }
+
+  const outputDir = join(taskWorkDir(task), 'edited-images');
+  await mkdir(outputDir, { recursive: true });
+  const outputPath = join(outputDir, `${String(sceneId).padStart(3, '0')}-${randomUUID()}.png`);
+  await writeFile(outputPath, png, { flag: 'wx' });
+  return outputPath;
+}
+
+function sceneIdFromTaskImageFilename(path: string): number | null {
+  const stem = basename(path, extname(path));
+  const match = stem.match(/^(?:scene[-_ ]*)?0*(\d+)(?:\D|$)/iu);
+  if (!match) return null;
+  const sceneId = Number(match[1]);
+  return Number.isSafeInteger(sceneId) ? sceneId : null;
+}
+
+async function runTaskImageArtifactMutation(
+  taskId: string,
+  operation: (database: FileDatabase, task: Task) => Promise<{ sceneIds: number[]; detail: string; tool: string } | null>,
+): Promise<AppDelta | null> {
+  const existingActiveRun = runningTasks.get(taskId);
+  return runLatestTaskControlRequest(latestTaskControlRequests, taskId, async (isCurrent) => {
+    if (!await stopTaskRunBeforeArtifactMutation(() => runningTasks.get(taskId), isCurrent)) return null;
+    const database = await getDb();
+    if (!isCurrent()) return null;
+    const task = await database.getTaskDetail(taskId);
+    if (!task) throw new Error(`Task not found: ${taskId}`);
+    if (task.archivedAt) throw new Error('HISTORY_ARCHIVED: 已归档任务只读。');
+    if (!task.artifactStatePath) throw new Error('任务产物尚未生成，暂时不能修改分镜图片。');
+    const result = await operation(database, task);
+    if (!result || !isCurrent()) return null;
+    const event = await database.addTaskEvent(task.id, {
+      type: 'image_asset_update',
+      step: 4,
+      agent: 'Producer',
+      tool: result.tool,
+      detail: result.detail,
+      dataJson: JSON.stringify({ sceneIds: result.sceneIds }),
+    });
+    await publishTaskEvent(event);
+    return publishTaskUpsert(database, task.id);
+  }, () => existingActiveRun?.activityReservation
+    ? takeHistoryActivityReservation(existingActiveRun)
+    : historyActivityRegistry.reserveActive('task', taskId));
+}
+
 async function htmlVideoTaskDirectory(taskId: string) {
   const task = await (await getDb()).getTaskDetail(taskId);
   if (!task) throw new Error(`HTML_VIDEO_TASK_NOT_FOUND: ${taskId}`);
@@ -1117,7 +1191,6 @@ async function runHtmlVideoTask(
       taskDirectory,
       taskTitle: task.title,
       bgmPath,
-      draftRootDir: runtimeConfig.jianying.draftPath,
       signal: controller.signal,
       renderer,
       probeMedia,
@@ -2396,7 +2469,6 @@ async function createHtmlVideoEditorialRuntime(task: Task) {
   const runtime = createElectronHtmlVideoRuntime({
     taskDirectory,
     taskTitle: task.title,
-    draftRootDir: runtimeConfig.jianying.draftPath,
     renderer: createElectronHtmlVideoRenderer(),
     probeMedia: probeHtmlVideoMedia,
     gsapRuntimePath: join(dirname(fileURLToPath(import.meta.url)), GSAP_RUNTIME_FILENAME),
@@ -3012,6 +3084,154 @@ trustedHandle('task:regenerate-image', async (_event, input: { id: string; scene
     ? takeHistoryActivityReservation(existingActiveRun)
     : historyActivityRegistry.reserveActive('task', input.id));
 });
+
+trustedHandle('task:regenerate-images', async (_event, input: { id: string; sceneIds: number[] }) => {
+  const existingActiveRun = runningTasks.get(input.id);
+  return runLatestTaskControlRequest(latestTaskControlRequests, input.id, async (isCurrent, transferReservation) => {
+    if (!await stopTaskRunBeforeArtifactMutation(() => runningTasks.get(input.id), isCurrent)) return null;
+    const database = await getDb();
+    if (!isCurrent()) return null;
+    const state = await database.getState();
+    if (!isCurrent()) return null;
+    const task = state.tasks.find((item) => item.id === input.id);
+    if (!task) throw new Error(`Task not found: ${input.id}`);
+    const workDir = taskWorkDir(task);
+    if (!task.artifactStatePath) throw new Error('Task artifact state is not available; run the task before regenerating images.');
+    const sceneIds = [...new Set(input.sceneIds.map(Number))].sort((left, right) => left - right);
+    await markSceneImagesForRegeneration(task.artifactStatePath, sceneIds);
+    if (!isCurrent()) return null;
+    const detail = `批量重新生成 ${sceneIds.length} 张图片`;
+    await database.updateTask(task.id, {
+      status: 'pending',
+      currentStep: 4,
+      failedStep: 4,
+      retryFromStep: 4,
+      completedAt: null,
+      outputDir: workDir,
+      errorMessage: detail,
+      lastHeartbeatAt: new Date().toISOString(),
+    });
+    if (!isCurrent()) return null;
+    await resumeLatestTaskRun(database, task.id, workDir, isCurrent, transferReservation, async (runningTask) => {
+      const event = await database.addTaskEvent(task.id, {
+        type: 'step_start',
+        step: 4,
+        agent: 'Producer',
+        detail,
+        dataJson: JSON.stringify({ sceneIds }),
+        runGeneration: runningTask.runGeneration,
+      });
+      await publishTaskEvent(event);
+    });
+    return publishTaskUpsert(database, task.id);
+  }, () => existingActiveRun?.activityReservation
+    ? takeHistoryActivityReservation(existingActiveRun)
+    : historyActivityRegistry.reserveActive('task', input.id));
+});
+
+trustedHandle('task:replace-image', async (_event, input: { id: string; sceneId: number; source: TaskImageReplacementSource }) => (
+  runTaskImageArtifactMutation(input.id, async (database, task) => {
+    const sceneId = Number(input.sceneId);
+    let sourcePath = '';
+    let detail = `已替换分镜 ${sceneId} 的图片`;
+    let borrowedFrom: number | undefined;
+    if (input.source.kind === 'local') {
+      const selected = await dialog.showOpenDialog({
+        title: `替换分镜 ${sceneId} 图片`,
+        properties: ['openFile'],
+        filters: [{ name: 'Images', extensions: ['png', 'jpg', 'jpeg', 'webp', 'gif'] }],
+      });
+      if (selected.canceled || !selected.filePaths[0]) return null;
+      sourcePath = selected.filePaths[0];
+      detail = `已用本地图片替换分镜 ${sceneId}`;
+    } else if (input.source.kind === 'image-lab') {
+      const record = await database.getImageLabRecordDetail(input.source.recordId);
+      if (!record || record.status !== 'generated' || !record.imagePath.trim()) {
+        throw new Error('素材库图片不存在、已归档或尚未生成完成。');
+      }
+      sourcePath = record.imagePath;
+      detail = `已从素材库替换分镜 ${sceneId}`;
+    } else {
+      const sourceSceneId = input.source.sourceSceneId;
+      const snapshot = await readTaskArtifactSnapshot(task);
+      const source = snapshot.assets.images.find((asset) => asset.sceneId === sourceSceneId);
+      if (!source) throw new Error(`分镜 ${sourceSceneId} 还没有可复制的图片。`);
+      sourcePath = source.path;
+      borrowedFrom = sourceSceneId;
+      detail = `已将分镜 ${sourceSceneId} 的图片粘贴到分镜 ${sceneId}`;
+    }
+
+    const managedPath = await writeManagedTaskImage(task, sceneId, sourcePath);
+    await replaceSceneImageAssets(task.artifactStatePath, [{ sceneId, path: managedPath, borrowedFrom }]);
+    return { sceneIds: [sceneId], detail, tool: input.source.kind === 'image-lab' ? 'image-library' : input.source.kind === 'scene' ? 'image-copy' : 'image-replace' };
+  })
+));
+
+trustedHandle('task:import-images', async (_event, id: string) => (
+  runTaskImageArtifactMutation(id, async (_database, task) => {
+    const selected = await dialog.showOpenDialog({
+      title: '按分镜编号批量导入图片',
+      properties: ['openFile', 'multiSelections'],
+      filters: [{ name: 'Images', extensions: ['png', 'jpg', 'jpeg', 'webp', 'gif'] }],
+    });
+    if (selected.canceled || selected.filePaths.length === 0) return null;
+    const snapshot = await readTaskArtifactSnapshot(task);
+    const knownSceneIds = new Set((snapshot.artifact.scenes ?? []).map((scene) => scene.id));
+    const sourceBySceneId = new Map<number, string>();
+    for (const sourcePath of selected.filePaths) {
+      const sceneId = sceneIdFromTaskImageFilename(sourcePath);
+      if (sceneId !== null && knownSceneIds.has(sceneId) && !sourceBySceneId.has(sceneId)) {
+        sourceBySceneId.set(sceneId, sourcePath);
+      }
+    }
+    if (sourceBySceneId.size === 0) {
+      throw new Error('没有匹配到分镜编号。请使用 1.png、01.png 或 scene-01.png 这类文件名。');
+    }
+    const replacements = [];
+    for (const [sceneId, sourcePath] of [...sourceBySceneId].sort(([left], [right]) => left - right)) {
+      replacements.push({ sceneId, path: await writeManagedTaskImage(task, sceneId, sourcePath) });
+    }
+    await replaceSceneImageAssets(task.artifactStatePath, replacements);
+    const sceneIds = replacements.map((item) => item.sceneId);
+    return { sceneIds, detail: `已按文件名导入 ${sceneIds.length} 张分镜图片`, tool: 'image-batch-import' };
+  })
+));
+
+trustedHandle('task:reference-edit-image', async (_event, input: { id: string; sceneId: number; prompt: string }) => (
+  runTaskImageArtifactMutation(input.id, async (_database, task) => {
+    const sceneId = Number(input.sceneId);
+    const snapshot = await readTaskArtifactSnapshot(task);
+    const current = snapshot.assets.images.find((asset) => asset.sceneId === sceneId);
+    if (!current) throw new Error(`分镜 ${sceneId} 还没有可供参考编辑的图片。`);
+    const runtimeConfig = await (await getConfigService()).getRuntimeConfig();
+    if (runtimeConfig.imageProvider === 'jimeng') {
+      throw new Error('当前即梦图片服务不支持参考图编辑，请切换到 GPT Image 或自定义 OpenAI 兼容图片服务。');
+    }
+    const selected = await dialog.showOpenDialog({
+      title: '补充参考图（取消则只使用当前分镜图）',
+      properties: ['openFile', 'multiSelections'],
+      filters: [{ name: 'Images', extensions: ['png', 'jpg', 'jpeg', 'webp', 'gif'] }],
+    });
+    const referenceImagePaths = [current.path, ...(selected.canceled ? [] : selected.filePaths.slice(0, 9))];
+    const referenceWorkDir = join(taskWorkDir(task), 'reference-edits', randomUUID());
+    await mkdir(referenceWorkDir, { recursive: true });
+    const record = await generateImageLabRecord(runtimeConfig, referenceWorkDir, {
+      prompt: input.prompt.trim(),
+      ratio: task.ratio,
+      style: task.style,
+      quality: task.imageQuality ?? undefined,
+      smartMode: 'reference-edit',
+      referenceImagePaths,
+      upstreamTaskId: task.id,
+    });
+    if (record.status !== 'generated' || !record.imagePath) {
+      throw new Error(record.errorMessage || '参考图编辑没有返回有效图片。');
+    }
+    const managedPath = await writeManagedTaskImage(task, sceneId, record.imagePath);
+    await replaceSceneImageAssets(task.artifactStatePath, [{ sceneId, path: managedPath }]);
+    return { sceneIds: [sceneId], detail: `已按参考图编辑分镜 ${sceneId}`, tool: 'image-reference-edit' };
+  })
+));
 
 trustedHandle('task:regenerate-narration', async (_event, input: { id: string; sceneId: number }) => {
   const existingActiveRun = runningTasks.get(input.id);

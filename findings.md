@@ -1,22 +1,30 @@
-# 剪映草稿兼容性发现
+# 分镜画廊与 HTML 直出发现
 
-## 失败现象
+## Storybound 分镜画廊
 
-- 失败草稿初始 `duration = 123000000`，包含 17 组图片、音频和文本。
-- 剪映尝试读取后把工程改写为 `duration = 0`，音频和文本素材消失。
-- 正常剪映工程约 222 KB 且为剪映内部格式；失败草稿仅约 40 KB。
+- 单图操作：重新生成、改提示词、参考图编辑、替换图片、素材库选图、复制图、粘贴图、生成视频。
+- 批量操作：按文件名序号导入、多选、批量重画、批量生成视频。
+- 支持拖入替换、格子间复制和 Shift 交换；核心数据行为是直接替换任务图片资产并让旧打包结果失效。
+- 参考图编辑走图片编辑接口；当前 StoryDream 的 GPT Image / 自定义 OpenAI 兼容接口已经支持参考图输入。
+- Storybound 的图生视频依赖 RunningHub 独立钱包和专用工作流，当前 StoryDream 没有视频提供商配置，不能复用图片接口冒充。
 
-## 根因
+## 当前 StoryDream
 
-- `src/shared/storybound-sidecar.ts` 的 `generate_story()` 只写了通用 `materials` 与 `tracks` JSON，并未使用已导入的 `pyJianYingDraft`。
-- `src/shared/runner.ts` 在生产环境拿到 `mediaSidecar` 后，会把它作为草稿写入 fallback。
-- `electron/main.ts::buildRunOptions()` 没有注入已有的 `runPyJianYingDraftBridge`。
-- `electron/html-video-runtime.ts` 的默认草稿写入同样未注入真实桥接。
-- 现有测试大量使用测试版 `fakeBridge`，因此没有覆盖生产接线缺失。
+- 已有单图重新生成和提示词保存，但提示词保存不会自动重画。
+- 已有图片实验室历史和真实图片路径，可作为任务素材库。
+- 任务图片资产存放在流水线状态文件中；修改资产后必须清除对应错误、将 Step 6 置为待处理并删除旧草稿引用。
+- 现有 IPC 已有严格 Zod 边界和主进程托管路径模式，新能力应沿用该结构。
 
-## 修复方向
+## HTML 动画
 
-- 普通任务在 Electron 主进程注入 `draftWriterOptions.runBridge`。
-- HTML 视频默认 writer 显式调用 `writeJianyingDraft(..., { runBridge })`。
-- 保留依赖注入能力供测试使用，但生产路径不再静默退回伪草稿。
-- 音乐 MV 的专用 sidecar 路径另有语义，本次先不改变其媒体合成行为。
+- Storybound 逆向链路：HTML 场景 -> 离屏窗口逐帧截图 -> ffmpeg 合成 MP4。
+- 逆向代码没有剪映草稿输出。
+- StoryDream 已直接生成 `final.mp4`，但 `draftTemplate` 同时被误用于触发剪映草稿输出。
+- 正确语义：`draftTemplate` 是 HTML 画面预设；是否选中都直接输出 MP4，不应产生剪映工程。
+
+## 实现边界
+
+- “生成视频”不能复用图片 API；在没有真实图生视频提供商契约前保留入口说明但禁用，避免伪成功。
+- 替换、导入、复制和参考编辑只变更目标图片资产，保留文案、配音及其他分镜内容，同时使旧 Step 6 与剪映草稿引用失效。
+- 外部图片先限制文件大小与像素尺寸，再通过 Electron 解码并统一写成 PNG，避免任务状态长期引用任意外部路径。
+- 历史任务类型仍保留可选的旧 `draft` 字段用于读取存量数据；新 HTML 渲染不再写入该字段。

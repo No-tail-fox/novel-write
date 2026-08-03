@@ -29,6 +29,22 @@ export interface RegenerateSceneImageResult {
   remainingImages: TaskArtifactAssetPreview[];
 }
 
+export interface RegenerateSceneImagesResult {
+  removedSceneIds: number[];
+  remainingImages: TaskArtifactAssetPreview[];
+}
+
+export interface ReplaceSceneImageAssetInput {
+  sceneId: number;
+  path: string;
+  borrowedFrom?: number;
+}
+
+export interface ReplaceSceneImageAssetsResult {
+  replacedSceneIds: number[];
+  images: TaskArtifactAssetPreview[];
+}
+
 export interface RegenerateSceneNarrationResult {
   removed: boolean;
   remainingNarration: TaskArtifactAssetPreview[];
@@ -110,27 +126,87 @@ export async function updateSceneImagePrompt(statePath: string, sceneId: number,
 }
 
 export async function markSceneImageForRegeneration(statePath: string, sceneId: number): Promise<RegenerateSceneImageResult> {
-  if (!Number.isFinite(sceneId)) {
-    throw new Error('Scene id is required for image regeneration.');
-  }
+  const result = await markSceneImagesForRegeneration(statePath, [sceneId]);
+  return { removed: result.removedSceneIds.includes(sceneId), remainingImages: result.remainingImages };
+}
+
+export async function markSceneImagesForRegeneration(statePath: string, sceneIds: number[]): Promise<RegenerateSceneImagesResult> {
+  const normalizedSceneIds = normalizeSceneIds(sceneIds, 'image regeneration');
 
   return withPipelineStateLock(statePath, async (normalizedStatePath) => {
     const state = JSON.parse(await readFile(normalizedStatePath, 'utf8')) as PipelineStateFile;
     state.steps ??= {};
     state.assets ??= {};
     const images = Array.isArray(state.assets.images) ? state.assets.images : [];
-    const remainingImages = images.filter((asset) => Number(asset.sceneId) !== sceneId);
-    const removed = remainingImages.length !== images.length;
+    const requested = new Set(normalizedSceneIds);
+    const removedSceneIds = images
+      .filter((asset) => requested.has(Number(asset.sceneId)))
+      .map((asset) => Number(asset.sceneId));
+    const remainingImages = images.filter((asset) => !requested.has(Number(asset.sceneId)));
 
     state.assets.images = remainingImages;
-    state.assets.imageErrors = removeImageErrorsByScene(state.assets.imageErrors, sceneId);
-    state.steps['4'] = pendingStep(state.steps['4'], remainingImages.map((asset) => asset.path).join('\n') || undefined);
+    state.assets.imageErrors = (state.assets.imageErrors ?? []).filter((item) => !requested.has(Number(item.sceneId)));
+    state.steps['4'] = pendingStep(state.steps['4'], imageOutputPath(remainingImages));
     state.steps['6'] = pendingStep(state.steps['6']);
     delete state.draft;
     state.updatedAt = new Date().toISOString();
 
     await writeFile(normalizedStatePath, JSON.stringify(state, null, 2), 'utf8');
-    return { removed, remainingImages };
+    return { removedSceneIds: [...new Set(removedSceneIds)], remainingImages };
+  });
+}
+
+export async function replaceSceneImageAssets(
+  statePath: string,
+  replacements: ReplaceSceneImageAssetInput[],
+): Promise<ReplaceSceneImageAssetsResult> {
+  if (replacements.length === 0) throw new Error('At least one task image replacement is required.');
+  const normalizedSceneIds = normalizeSceneIds(replacements.map((item) => item.sceneId), 'image replacement');
+  if (normalizedSceneIds.length !== replacements.length) {
+    throw new Error('Task image replacements must use unique scene ids.');
+  }
+  for (const replacement of replacements) {
+    if (!replacement.path.trim()) throw new Error(`Replacement image path is required for scene ${replacement.sceneId}.`);
+  }
+
+  return withPipelineStateLock(statePath, async (normalizedStatePath) => {
+    const state = JSON.parse(await readFile(normalizedStatePath, 'utf8')) as PipelineStateFile;
+    state.steps ??= {};
+    state.artifact ??= {};
+    state.assets ??= {};
+    const knownSceneIds = new Set((state.artifact.scenes ?? []).map((scene) => Number(scene.id)));
+    if (knownSceneIds.size > 0) {
+      const unknownSceneId = normalizedSceneIds.find((sceneId) => !knownSceneIds.has(sceneId));
+      if (unknownSceneId !== undefined) throw new Error(`Scene ${unknownSceneId} is not present in the task storyboard.`);
+    }
+
+    const replacementBySceneId = new Map(replacements.map((item) => [item.sceneId, item] as const));
+    const currentImages = Array.isArray(state.assets.images) ? state.assets.images : [];
+    const retainedImages = currentImages.filter((asset) => !replacementBySceneId.has(Number(asset.sceneId)));
+    const replacementAssets = normalizedSceneIds.map((sceneId) => {
+      const replacement = replacementBySceneId.get(sceneId)!;
+      return {
+        sceneId,
+        path: replacement.path.trim(),
+        ...(replacement.borrowedFrom === undefined ? {} : { borrowedFrom: replacement.borrowedFrom }),
+      } satisfies TaskArtifactAssetPreview;
+    });
+    const images = [...retainedImages, ...replacementAssets].sort((left, right) => left.sceneId - right.sceneId);
+    const replaced = new Set(normalizedSceneIds);
+    const updatedAt = new Date().toISOString();
+
+    state.assets.images = images;
+    state.assets.imageErrors = (state.assets.imageErrors ?? []).filter((item) => !replaced.has(Number(item.sceneId)));
+    const allStoryboardImagesReady = knownSceneIds.size > 0 && [...knownSceneIds].every((sceneId) => images.some((asset) => asset.sceneId === sceneId));
+    state.steps['4'] = allStoryboardImagesReady
+      ? completedStep(state.steps['4'], imageOutputPath(images), updatedAt)
+      : pendingStep(state.steps['4'], imageOutputPath(images));
+    state.steps['6'] = pendingStep(state.steps['6']);
+    delete state.draft;
+    state.updatedAt = updatedAt;
+
+    await writeFile(normalizedStatePath, JSON.stringify(state, null, 2), 'utf8');
+    return { replacedSceneIds: normalizedSceneIds, images };
   });
 }
 
@@ -248,6 +324,31 @@ function pendingStep(input: Partial<TaskArtifactStepPreview> | undefined, output
     delete step.outputPath;
   }
   return step;
+}
+
+function completedStep(
+  input: Partial<TaskArtifactStepPreview> | undefined,
+  outputPath: string | undefined,
+  completedAt: string,
+): TaskArtifactStepPreview {
+  const step: TaskArtifactStepPreview = { ...input, status: 'completed', completedAt };
+  delete step.error;
+  if (outputPath) step.outputPath = outputPath;
+  else delete step.outputPath;
+  return step;
+}
+
+function imageOutputPath(images: TaskArtifactAssetPreview[]): string | undefined {
+  return images.map((asset) => asset.path).join('\n') || undefined;
+}
+
+function normalizeSceneIds(sceneIds: number[], operation: string): number[] {
+  if (sceneIds.length === 0) throw new Error(`At least one scene id is required for ${operation}.`);
+  const normalized = sceneIds.map(Number);
+  if (normalized.some((sceneId) => !Number.isInteger(sceneId) || sceneId < 0)) {
+    throw new Error(`Scene ids must be non-negative integers for ${operation}.`);
+  }
+  return [...new Set(normalized)];
 }
 
 function removeImageErrorsByScene(errors: TaskArtifactImageErrorPreview[] | undefined, sceneId: number): TaskArtifactImageErrorPreview[] {

@@ -217,6 +217,29 @@ describe('IPC runtime contract', () => {
     expect(ordinaryImportCoverSchema.parse('9:16')).toBe('9:16');
     expect(() => ordinaryImportCoverSchema.parse({ ratio: '9:16', sourcePath: 'C:/outside.png' })).toThrow();
 
+    expect(contract.ipcInputSchemas['task:regenerate-images'].parse({
+      id: 'task-1',
+      sceneIds: [1, 2, 3],
+    })).toEqual({ id: 'task-1', sceneIds: [1, 2, 3] });
+    expect(contract.ipcInputSchemas['task:replace-image'].parse({
+      id: 'task-1',
+      sceneId: 2,
+      source: { kind: 'image-lab', recordId: 'image-1' },
+    })).toMatchObject({ sceneId: 2, source: { kind: 'image-lab' } });
+    expect(contract.ipcInputSchemas['task:replace-image'].parse({
+      id: 'task-1',
+      sceneId: 2,
+      source: { kind: 'scene', sourceSceneId: 1 },
+    })).toMatchObject({ source: { sourceSceneId: 1 } });
+    expect(contract.ipcInputSchemas['task:import-images'].parse('task-1')).toBe('task-1');
+    expect(contract.ipcInputSchemas['task:reference-edit-image'].parse({
+      id: 'task-1',
+      sceneId: 2,
+      prompt: 'keep the subject and change the lighting',
+    })).toMatchObject({ sceneId: 2 });
+    expect(() => contract.ipcInputSchemas['task:regenerate-images'].parse({ id: 'task-1', sceneIds: [] })).toThrow();
+    expect(() => contract.ipcInputSchemas['task:replace-image'].parse({ id: 'task-1', sceneId: 2, source: { kind: 'path', path: 'C:/outside.png' } })).toThrow();
+
     expect(contract.createTaskSchema.parse({
       inputText: 'hello',
       targetScenes: 500,

@@ -54,6 +54,7 @@ import type {
   SequencedTaskEvent,
   Task,
   TaskArtifactSnapshot,
+  TaskImageReplacementSource,
   TaskStatus,
   TaskStepRerunMode,
   TaskSummary,
@@ -168,6 +169,10 @@ export const INVOKE_CHANNELS = Object.freeze([
   'task:update-template',
   'task:retry',
   'task:regenerate-image',
+  'task:regenerate-images',
+  'task:replace-image',
+  'task:import-images',
+  'task:reference-edit-image',
   'task:regenerate-narration',
   'task:update-image-prompt',
   'task:rerun-step',
@@ -282,6 +287,10 @@ export type StoryDreamApi = {
   updateTaskTemplate: (id: string, templateId: string) => Promise<AppMutationResult | null>;
   retryTask: (id: string) => Promise<AppMutationResult | null>;
   regenerateTaskImage: (id: string, sceneId: number) => Promise<AppMutationResult | null>;
+  regenerateTaskImages: (id: string, sceneIds: number[]) => Promise<AppMutationResult | null>;
+  replaceTaskImage: (id: string, sceneId: number, source: TaskImageReplacementSource) => Promise<AppMutationResult | null>;
+  importTaskImages: (id: string) => Promise<AppMutationResult | null>;
+  referenceEditTaskImage: (id: string, sceneId: number, prompt: string) => Promise<AppMutationResult | null>;
   regenerateTaskNarration: (id: string, sceneId: number) => Promise<AppMutationResult | null>;
   updateTaskImagePrompt: (id: string, sceneId: number, prompt: string) => Promise<AppMutationResult | null>;
   rerunTaskStep: (id: string, step: number, mode: TaskStepRerunMode) => Promise<AppMutationResult | null>;
