@@ -3348,10 +3348,26 @@
   align-items: flex-start;
 }
 
+.hv-studio[data-has-task="true"] .hv-studio-panel-heading > div {
+  min-width: 0;
+  flex: 1 1 auto;
+}
+
+.hv-studio[data-has-task="true"] .hv-studio-panel-heading h2 {
+  max-width: 100%;
+}
+
+.hv-studio[data-has-task="true"] .hv-studio-panel-heading span {
+  max-width: 100%;
+}
+
 .hv-studio[data-has-task="true"] .hv-studio-panel-heading .hv-new-task-button {
   min-height: 32px;
   align-self: flex-start;
   white-space: nowrap;
+  min-width: 60px;
+  justify-content: center;
+  padding-inline: 8px;
 }
 
 .hv-studio[data-has-task="true"] .hv-run-steps {

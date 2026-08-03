@@ -87,6 +87,9 @@ describe('HTML video editorial studio', () => {
     expect(styles).toContain('background: var(--media-bg);');
     expect(styles).toContain('@media (max-width: 1080px)');
     expect(styles).toMatch(/\.hv-studio-run-rail \.hv-step \{[\s\S]*?border: 0;[\s\S]*?background: transparent;/u);
+    expect(styles).toContain('.hv-studio[data-has-task="true"] .hv-studio-panel-heading > div {');
+    expect(styles).toContain('min-width: 60px;');
+    expect(styles).toContain('max-width: 100%;');
   });
 
   it('projects all governed controls and the real six-stage lifecycle into the studio', async () => {
@@ -226,6 +229,7 @@ describe('HTML video editorial studio', () => {
     expect(electronMain).toContain('createHtmlVideoTaskInput');
     expect(electronMain).toContain('ensureHtmlVideoTaskWorkDir');
     expect(htmlVideoQa).toContain("document.querySelector('.hv-studio-panel-heading h2')");
+    expect(htmlVideoQa).toContain('newTaskButtonClipped');
     expect(htmlVideoQa).toContain("document.querySelector('.hv-studio-canvas-heading strong')");
     expect(htmlVideoQa).toContain("const failedLightScreenshot = join(qaTempDir, 'failed-light.png')");
     expect(htmlVideoQa).toContain('inspectFailedTaskLightWorkspace');

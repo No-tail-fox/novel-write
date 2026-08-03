@@ -321,6 +321,7 @@ try {
   if (!desktopState.video.visible || !compactState.video.visible) throw new Error('Completed output is not visible in both viewports.');
   if (desktopState.horizontalOverflow > 2 || compactState.horizontalOverflow > 2) throw new Error('HTML video page overflows horizontally.');
   if (desktopState.clippedControls.length || compactState.clippedControls.length) throw new Error('HTML video controls are clipped.');
+  if (desktopState.newTaskButtonClipped || compactState.newTaskButtonClipped) throw new Error(`HTML video new-task button is clipped: ${JSON.stringify({ desktopState, compactState })}`);
   if (coverDesktopState.horizontalOverflow > 2 || coverCompactState.horizontalOverflow > 2
     || coverDesktopState.surfaceHorizontalOverflow > 2 || coverCompactState.surfaceHorizontalOverflow > 2) {
     throw new Error(`HTML video cover panel overflows horizontally: ${JSON.stringify({ coverDesktopState, coverCompactState })}`);
@@ -1987,6 +1988,10 @@ async function inspectPage(cdpConnection) {
         return rect.left < -1 || rect.right > innerWidth + 1;
       })
       .map((item) => item.textContent.trim() || item.getAttribute('aria-label') || item.tagName);
+    const parameters = document.querySelector('.hv-studio-parameters');
+    const newTaskButton = document.querySelector('.hv-new-task-button');
+    const parametersRect = parameters?.getBoundingClientRect();
+    const newTaskButtonRect = newTaskButton?.getBoundingClientRect();
     const video = document.querySelector('.hv-video-output video');
     return {
       heading: document.querySelector('.hv-studio-panel-heading h2')?.textContent.trim() || '',
@@ -1998,6 +2003,11 @@ async function inspectPage(cdpConnection) {
       activeTab: document.querySelector('.hv-tab.active')?.textContent.trim() || '',
       horizontalOverflow: document.documentElement.scrollWidth - document.documentElement.clientWidth,
       clippedControls,
+      newTaskButtonClipped: Boolean(parametersRect && newTaskButtonRect && (
+        newTaskButtonRect.left < parametersRect.left - 1
+        || newTaskButtonRect.right > parametersRect.right + 1
+      )),
+      newTaskButtonWidth: newTaskButtonRect?.width ?? 0,
       video: {
         visible: Boolean(video && isVisible(video)),
         readyState: video?.readyState ?? 0,
