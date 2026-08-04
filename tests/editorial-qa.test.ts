@@ -164,6 +164,17 @@ describe('editorial Electron QA configuration', () => {
     expect(runner).toContain('Editorial media bitmap changed across themes');
   });
 
+  it('toggles draft title underline off without blanking the real Electron renderer', async () => {
+    const source = await (await import('node:fs/promises')).readFile(new URL('../electron/editorial-qa.ts', import.meta.url), 'utf8');
+
+    expect(source).toContain('draftUnderlineToggleReady');
+    expect(source).toContain('input[aria-label="下划线"]');
+    expect(source).toContain("getComputedStyle(title).textDecorationLine.includes('underline')");
+    expect(source).toContain("getComputedStyle(title).textDecorationLine === 'none'");
+    expect(source).toContain("document.querySelector('.app-shell')");
+    expect(source).toContain('underline toggle blanked or corrupted the renderer');
+  });
+
   it('waits for every HTML animation preview in dedicated studio scenarios', async () => {
     const source = await (await import('node:fs/promises')).readFile(new URL('../electron/editorial-qa.ts', import.meta.url), 'utf8');
 

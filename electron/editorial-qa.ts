@@ -191,6 +191,9 @@ export async function captureEditorialQa(
     if (captureCase.view === 'draft-templates' && !state.draftLayerPanelReady) {
       throw new Error(`Editorial QA draft-template layer panel did not follow the canvas selection in ${captureCase.id}.`);
     }
+    if (captureCase.view === 'draft-templates' && !state.draftUnderlineToggleReady) {
+      throw new Error(`Editorial QA draft-template underline toggle blanked or corrupted the renderer in ${captureCase.id}.`);
+    }
     if (captureCase.view === 'history' && state.historyHtmlTypeLabel !== 'HTML 动画') {
       throw new Error(`Editorial QA History HTML type label failed in ${captureCase.id}: ${state.historyHtmlTypeLabel}.`);
     }
@@ -276,6 +279,7 @@ export async function captureEditorialQa(
       deleteDialogEscapeRestored: state.deleteDialogEscapeRestored,
       taskTemplateControlsReady: state.taskTemplateControlsReady,
       draftLayerPanelReady: state.draftLayerPanelReady,
+      draftUnderlineToggleReady: state.draftUnderlineToggleReady,
     });
     await writeEditorialQaReport(config, captures, getMetrics);
   }
@@ -419,6 +423,7 @@ export interface EditorialQaCapture {
   deleteDialogEscapeRestored: boolean;
   taskTemplateControlsReady: boolean;
   draftLayerPanelReady: boolean;
+  draftUnderlineToggleReady: boolean;
 }
 
 interface EditorialQaCaptureCase {
@@ -476,6 +481,7 @@ interface QaScenarioState {
   deleteDialogEscapeRestored: boolean;
   taskTemplateControlsReady: boolean;
   draftLayerPanelReady: boolean;
+  draftUnderlineToggleReady: boolean;
   layout: {
     horizontalOverflow: number;
     clippedPrimaryControls: string[];
@@ -874,6 +880,7 @@ function qaScenarioScript(id: string, view: string, theme: string, stage?: strin
         ?.trim() ?? '';
     }
     let draftLayerPanelReady = targetView !== 'draft-templates';
+    let draftUnderlineToggleReady = targetView !== 'draft-templates';
     if (targetView === 'draft-templates') {
       const templateActionsReady = await waitFor(() => {
         const actionRow = document.querySelector('.draft-template-actions.has-delete');
@@ -936,6 +943,40 @@ function qaScenarioScript(id: string, view: string, theme: string, stage?: strin
               && page.scrollTop === pageScrollBefore
               && stage.scrollTop === stageScrollBefore;
           });
+
+          const titlePanel = controls.querySelector('[data-draft-layer-panel="title"]');
+          const titlePanelButton = titlePanel?.querySelector(':scope .accordion > button');
+          if (titlePanelButton instanceof HTMLButtonElement && titlePanelButton.getAttribute('aria-expanded') !== 'true') {
+            titlePanelButton.click();
+          }
+          const titlePanelOpened = await waitFor(() => titlePanelButton?.getAttribute('aria-expanded') === 'true');
+          const underlineToggle = titlePanel?.querySelector('input[aria-label="下划线"]');
+          if (titlePanelOpened && underlineToggle instanceof HTMLInputElement) {
+            if (underlineToggle.checked) underlineToggle.click();
+            const resetReady = await waitFor(() => !underlineToggle.checked);
+            underlineToggle.click();
+            const enabledReady = await waitFor(() => {
+              const title = document.querySelector('.editable-draft-canvas .draft-layer[data-layer="title"] .draft-title');
+              return underlineToggle.checked
+                && title instanceof HTMLElement
+                && getComputedStyle(title).textDecorationLine.includes('underline');
+            });
+            underlineToggle.click();
+            draftUnderlineToggleReady = resetReady && enabledReady && await waitFor(() => {
+              const shell = document.querySelector('.app-shell');
+              const canvas = document.querySelector('.editable-draft-canvas');
+              const title = canvas?.querySelector('.draft-layer[data-layer="title"] .draft-title');
+              const subtitle = canvas?.querySelector('.draft-layer[data-layer="subtitle"] .draft-subtitle');
+              const image = canvas?.querySelector('.draft-layer[data-layer="image"]');
+              return !underlineToggle.checked
+                && shell instanceof HTMLElement
+                && canvas instanceof HTMLElement
+                && title instanceof HTMLElement
+                && subtitle instanceof HTMLElement
+                && image instanceof HTMLElement
+                && getComputedStyle(title).textDecorationLine === 'none';
+            });
+          }
         }
       }
     }
@@ -1686,6 +1727,7 @@ function qaScenarioScript(id: string, view: string, theme: string, stage?: strin
       deleteDialogEscapeRestored,
       taskTemplateControlsReady,
       draftLayerPanelReady,
+      draftUnderlineToggleReady,
       manualCover: {
         state: manualCoverElement?.getAttribute('data-manual-cover-state') ?? 'inactive',
         importVisible: manualImportButton instanceof HTMLButtonElement && getComputedStyle(manualImportButton).display !== 'none',

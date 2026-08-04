@@ -169,6 +169,7 @@ describe('product shell storage', () => {
       await db.upsertDraftTemplate({
         ...draft!,
         name: '竖屏字幕加粗',
+        title: { ...draft!.title, underline: false },
         caption: { ...draft!.caption, bold: true, fontSize: 14 },
       });
 
@@ -185,6 +186,7 @@ describe('product shell storage', () => {
       const state = await reopened.getState();
 
       expect(state.promptTemplates.find((template) => template.id === 'custom-rewrite-hook')?.content).toContain('人物命运');
+      expect(state.draftTemplates.find((template) => template.id === 'default-portrait-9-16')?.title.underline).toBe(false);
       expect(state.draftTemplates.find((template) => template.id === 'default-portrait-9-16')?.caption.bold).toBe(true);
       expect(state.imageLabRecords[0]).toMatchObject({
         prompt: '唐代宫殿中的武则天，电影级写实光影',

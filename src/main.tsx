@@ -1,5 +1,6 @@
 import { createRoot, type Root } from 'react-dom/client';
 import { App } from './app/App';
+import { ApplicationErrorBoundary } from './app/ApplicationErrorBoundary';
 import './styles.css';
 
 declare global {
@@ -14,4 +15,8 @@ if (!rootElement) {
 }
 
 window.__storydreamReactRoot ??= createRoot(rootElement);
-window.__storydreamReactRoot.render(<App />);
+window.__storydreamReactRoot.render(
+  <ApplicationErrorBoundary>
+    <App />
+  </ApplicationErrorBoundary>,
+);

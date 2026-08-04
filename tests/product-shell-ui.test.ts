@@ -1853,12 +1853,13 @@ describe('product shell ui', () => {
     expect(main).toContain('template.title.bold ? 800 : 500');
     expect(main).toContain('template.subtitle.text');
     expect(main).toContain('draftTextLayerStyle(template.caption');
-    expect(main).toContain("textDecoration: text.underline ? 'underline' : 'none'");
+    expect(main).toContain("textDecorationLine: text.underline ? 'underline' : 'none'");
     expect(main).toContain('draftTextLayerStyle(template.subtitle');
     expect(main).toContain('draftTextLayerStyle(template.disclaimer');
     expect(main).toContain('template.disclaimer.fontSize');
     expect(main).toContain('opacity: text.alpha');
-    expect(main).toContain("textDecoration: text.underline ? 'underline' : 'none'");
+    expect(main).toContain("textDecorationLine: text.underline ? 'underline' : 'none'");
+    expect(main).toContain("textDecorationStyle: 'solid'");
     expect(main).toContain('textDecorationThickness');
     expect(main).toContain('textUnderlineOffset');
     expect(main).toContain("textDecorationSkipInk: 'none'");

@@ -48,6 +48,10 @@ export function App() {
   useLayoutEffect(() => {
     applyStoredTheme(state.ui.theme);
   }, [state.ui.theme]);
+  useEffect(() => {
+    const revealTimer = window.setTimeout(revealThemedApplication, 1_200);
+    return () => window.clearTimeout(revealTimer);
+  }, []);
   const isHistoryTombstoned = useCallback((family: HistoryFamily, id: string) => (
     historyTombstoneRevisionsRef.current.has(historyEntityRevisionKey(family, id))
   ), []);

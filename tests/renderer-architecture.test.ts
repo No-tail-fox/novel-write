@@ -504,15 +504,21 @@ describe('renderer application composition architecture', () => {
   ];
 
   it('keeps the renderer entry limited to style setup and App mounting', async () => {
-    const [main, ...owners] = await Promise.all([
+    const [main, applicationBoundary, ...owners] = await Promise.all([
       source('src/main.tsx'),
+      source('src/app/ApplicationErrorBoundary.tsx'),
       ...appPaths.map(source),
     ]);
+    expect(applicationBoundary.length).toBeGreaterThan(0);
     owners.forEach((owner) => expect(owner.length).toBeGreaterThan(0));
     expect(main).toContain("import { App } from './app/App'");
     expect(main).toContain("import './styles.css'");
     expect(main).toContain('createRoot(rootElement)');
+    expect(main).toContain('<ApplicationErrorBoundary>');
     expect(main).toContain('<App />');
+    expect(applicationBoundary).toContain('getDerivedStateFromError');
+    expect(applicationBoundary).toContain('revealThemedApplication()');
+    expect(applicationBoundary).toContain('重新加载应用');
     for (const implementation of ['function App(', 'function NavButton(', 'api.getBootstrap(', 'api.onAppDelta(', 'sidebarNavGroups.map(']) {
       expect(main).not.toContain(implementation);
     }

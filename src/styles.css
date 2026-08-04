@@ -33,6 +33,41 @@
     var(--bg);
 }
 
+.application-error-state {
+  width: 100%;
+  min-height: 100%;
+  display: grid;
+  place-content: center;
+  justify-items: start;
+  gap: 10px;
+  padding: 32px;
+  color: var(--text);
+  background: var(--bg);
+}
+
+.application-error-state > svg {
+  color: var(--danger);
+}
+
+.application-error-state h1,
+.application-error-state p {
+  max-width: 520px;
+  margin: 0;
+}
+
+.application-error-state h1 {
+  font-size: 22px;
+}
+
+.application-error-state p {
+  color: var(--muted);
+  line-height: 1.65;
+}
+
+.application-error-state .button-row {
+  margin-top: 8px;
+}
+
 .app-shell::before {
   content: "";
   position: absolute;
