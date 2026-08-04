@@ -1,8 +1,9 @@
 import { describe, expect, it, vi } from 'vitest';
 import {
   HTML_VIDEO_SEARCH_PROVIDERS,
-  createHtmlVideoResearchCopy,
+  composeHtmlVideoResearchCopy,
   listAllHtmlVideoTaskOptions,
+  searchHtmlVideoResearchSources,
   synchronizedHtmlVideoTaskId,
 } from '../src/features/html-video/html-video-page-workflow';
 import type { AiSourceContext, ResearchCopyComposeResult, TaskSummary } from '../src/shared/types';
@@ -12,7 +13,7 @@ function taskSummary(id: string, createdAt: string, title = id): TaskSummary {
 }
 
 describe('HTML video creation page workflow', () => {
-  it('searches every configured web source before composing the AI copy', async () => {
+  it('searches every configured web source and composes only from selected page bodies', async () => {
     const order: string[] = [];
     const searchWebSources = vi.fn(async (): Promise<AiSourceContext> => {
       order.push('search');
@@ -30,14 +31,17 @@ describe('HTML video creation page workflow', () => {
       return { title: '钱学森回国', copy: ' 生成后的完整文案 ', raw: '{}', requestId: 'req-1' };
     });
 
-    const result = await createHtmlVideoResearchCopy(
-      { searchWebSources, composeResearchCopy },
-      {
-        keyword: ' 钱学森回国 ',
-        extraRequirements: ' 500 字 ',
-        onSourcesReady: (sources) => order.push(`sources:${sources.length}`),
-      },
-    );
+    const context = await searchHtmlVideoResearchSources({ searchWebSources }, {
+      keyword: ' 钱学森回国 ',
+      providers: [...HTML_VIDEO_SEARCH_PROVIDERS],
+    });
+    order.push(`sources:${context.sections.length}`);
+    const result = await composeHtmlVideoResearchCopy({ composeResearchCopy }, {
+      keyword: ' 钱学森回国 ',
+      extraRequirements: ' 500 字 ',
+      selectedSources: context.sections,
+      warnings: context.warnings,
+    });
 
     expect(searchWebSources).toHaveBeenCalledWith({
       query: '钱学森回国',
@@ -52,37 +56,40 @@ describe('HTML video creation page workflow', () => {
     expect(result).toMatchObject({ copy: '生成后的完整文案', selectedSources: [{ title: '有效资料' }] });
   });
 
-  it('does not call the copy model when search returns no usable source', async () => {
+  it('keeps empty search results visible and does not allow composing without a selected source', async () => {
     const composeResearchCopy = vi.fn();
-    await expect(createHtmlVideoResearchCopy({
-      searchWebSources: vi.fn(async () => ({ query: '无结果', sections: [], warnings: ['搜索服务暂不可用'] })),
-      composeResearchCopy,
+    const context = await searchHtmlVideoResearchSources({
+      searchWebSources: vi.fn(async (): Promise<AiSourceContext> => ({
+        query: '无结果',
+        sections: [],
+        warnings: ['搜索服务暂不可用'],
+        providerStatuses: [{ provider: 'bing', label: '必应', state: 'failed', count: 0, message: '连接失败' }],
+      })),
     }, {
       keyword: '无结果',
+      providers: ['bing'],
+    });
+
+    expect(context).toMatchObject({
+      sections: [],
+      warnings: ['搜索服务暂不可用'],
+      providerStatuses: [{ provider: 'bing', state: 'failed' }],
+    });
+    await expect(composeHtmlVideoResearchCopy({ composeResearchCopy }, {
+      keyword: '无结果',
       extraRequirements: '',
-    })).rejects.toThrow('没有找到可用于创作的网页资料：搜索服务暂不可用');
+      selectedSources: context.sections,
+    })).rejects.toThrow('请先检索并勾选至少 1 个网页来源');
     expect(composeResearchCopy).not.toHaveBeenCalled();
   });
 
-  it('composes directly from the topic when automatic web research is disabled', async () => {
+  it('rejects an empty provider selection instead of falling back to direct model generation', async () => {
     const searchWebSources = vi.fn();
-    const composeResearchCopy = vi.fn(async (): Promise<ResearchCopyComposeResult> => ({
-      title: '无检索创作', copy: '直接生成的完整文案', raw: '{}', requestId: 'req-direct',
-    }));
-
-    const result = await createHtmlVideoResearchCopy({ searchWebSources, composeResearchCopy }, {
+    await expect(searchHtmlVideoResearchSources({ searchWebSources }, {
       keyword: ' 无检索创作 ',
-      extraRequirements: ' 语气克制 ',
-      searchEnabled: false,
-    });
-
+      providers: [],
+    })).rejects.toThrow('请至少选择一个搜索渠道');
     expect(searchWebSources).not.toHaveBeenCalled();
-    expect(composeResearchCopy).toHaveBeenCalledWith({
-      keyword: '无检索创作',
-      extraRequirements: '语气克制',
-      selectedSources: [],
-    });
-    expect(result).toMatchObject({ copy: '直接生成的完整文案', selectedSources: [], warnings: [] });
   });
 
   it('loads every active HTML task page, removes duplicates, and keeps newest first', async () => {

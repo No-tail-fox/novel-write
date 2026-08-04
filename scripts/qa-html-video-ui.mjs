@@ -161,7 +161,7 @@ try {
     5_000,
     'HTML video AI creation fields',
   );
-  const autoResearchInteraction = await exerciseAutoResearchControl(cdp);
+  const researchProviderInteraction = await exerciseResearchProviderControl(cdp);
   const creationCompact = await inspectCreationPage(cdp);
   await saveScreenshot(cdp, creationCompactScreenshot);
   await cdp.send('Emulation.setDeviceMetricsOverride', {
@@ -325,10 +325,13 @@ try {
   if (creationDesktop.clippedControls.length || creationCompact.clippedControls.length) throw new Error('HTML video creation controls are clipped.');
   if (creationDesktop.workspaceVisible || creationCompact.workspaceVisible) throw new Error('HTML video workspace rendered before a task was selected.');
   if (creationDesktop.sectionTitles.join(',') !== '文案,画面,封面海报,配音,画面预设') throw new Error(`HTML video creation sections differ from the reference flow: ${creationDesktop.sectionTitles.join(',')}`);
-  if (creationCompact.autoResearch?.pressed !== 'false'
-    || creationCompact.autoResearch?.state !== '已关闭'
-    || creationCompact.submitText !== '直接生成') {
-    throw new Error(`Auto Research did not retain the clicked-off state: ${JSON.stringify(creationCompact.autoResearch)}`);
+  if (creationCompact.researchProviders?.count !== 4
+    || creationCompact.researchProviders?.checked !== 4
+    || !creationCompact.researchProviders?.searchButtonVisible
+    || creationCompact.researchProviders?.directGenerateVisible
+    || creationCompact.submitText !== '开始生成'
+    || !creationCompact.submitDisabled) {
+    throw new Error(`HTML video research controls are incomplete: ${JSON.stringify(creationCompact.researchProviders)}`);
   }
   if (!taskSwitchObserved || !pathSwitchObserved) throw new Error('Task and path switching was not observed.');
   if (!sameUrlMissingThenRestored) throw new Error('The same media URL did not recover after a no-store 404.');
@@ -387,7 +390,7 @@ try {
     themePreference,
     creationDesktop,
     creationCompact,
-    autoResearchInteraction,
+    researchProviderInteraction,
     lightOutputFooter,
     failedLightWorkspace,
     playback,
@@ -1588,7 +1591,9 @@ async function inspectCreationPage(cdpConnection) {
       .slice(0, 20);
     const source = document.querySelector('.hv-create-page .source-textarea');
     const submit = document.querySelector('.hv-create-submit');
-    const autoResearch = document.querySelector('button[aria-label="自动检索网页资料"]');
+    const researchProviders = [...document.querySelectorAll('.hv-research-provider input[type="checkbox"]')];
+    const searchButton = [...document.querySelectorAll('.hv-ai-copy-fields button')]
+      .find((item) => item.textContent?.includes('搜索网页资料'));
     return {
       creationVisible: Boolean(page && isVisible(page)),
       workspaceVisible: Boolean(document.querySelector('.hv-studio[data-has-task="true"]')),
@@ -1599,11 +1604,13 @@ async function inspectCreationPage(cdpConnection) {
       sourcePlaceholder: source?.getAttribute('placeholder') || '',
       submitText: submit?.textContent?.trim() || '',
       submitDisabled: Boolean(submit?.disabled),
-      autoResearch: autoResearch instanceof HTMLButtonElement ? {
-        pressed: autoResearch.getAttribute('aria-pressed'),
-        state: autoResearch.querySelector('.hv-auto-research-state')?.textContent?.trim() || '',
-        isButton: autoResearch.tagName === 'BUTTON',
-      } : null,
+      researchProviders: {
+        count: researchProviders.length,
+        checked: researchProviders.filter((item) => item.checked).length,
+        searchButtonVisible: searchButton instanceof HTMLButtonElement && isVisible(searchButton),
+        directGenerateVisible: [...document.querySelectorAll('.hv-ai-copy-fields button')]
+          .some((item) => item.textContent?.trim() === '直接生成'),
+      },
       existingTaskSelector: Boolean(document.querySelector('select[aria-label="打开已有 HTML 动画视频任务"]')),
       createFieldCount: document.querySelectorAll('[data-html-video-create-field]').length,
       horizontalOverflow: page ? page.scrollWidth - page.clientWidth : document.documentElement.scrollWidth - document.documentElement.clientWidth,
@@ -1613,39 +1620,38 @@ async function inspectCreationPage(cdpConnection) {
   })()`);
 }
 
-async function exerciseAutoResearchControl(cdpConnection) {
+async function exerciseResearchProviderControl(cdpConnection) {
   const inspect = () => evaluate(cdpConnection, `(() => {
-    const control = document.querySelector('button[aria-label="自动检索网页资料"]');
-    const submit = document.querySelector('.hv-create-submit');
+    const controls = [...document.querySelectorAll('.hv-research-provider input[type="checkbox"]')];
+    const control = controls[0];
     return {
-      isButton: control instanceof HTMLButtonElement,
-      pressed: control?.getAttribute('aria-pressed') || '',
-      state: control?.querySelector('.hv-auto-research-state')?.textContent?.trim() || '',
-      submitText: submit?.textContent?.trim() || '',
+      count: controls.length,
+      checked: controls.filter((item) => item.checked).length,
+      firstChecked: Boolean(control?.checked),
       focused: control === document.activeElement,
     };
   })()`);
   const initial = await inspect();
-  if (!initial.isButton || initial.pressed !== 'true' || initial.state !== '已开启') {
-    throw new Error(`Auto Research is not a default-on button: ${JSON.stringify(initial)}`);
+  if (initial.count !== 4 || initial.checked !== 4 || !initial.firstChecked) {
+    throw new Error(`Research providers are not all enabled by default: ${JSON.stringify(initial)}`);
   }
   const mouseClicked = await evaluate(cdpConnection, `(() => {
-    const control = document.querySelector('button[aria-label="自动检索网页资料"]');
-    if (!(control instanceof HTMLButtonElement)) return false;
+    const control = document.querySelector('.hv-research-provider input[type="checkbox"]');
+    if (!(control instanceof HTMLInputElement)) return false;
     control.click();
     return true;
   })()`);
-  if (!mouseClicked) throw new Error('Auto Research mouse click target is missing.');
+  if (!mouseClicked) throw new Error('Research provider mouse click target is missing.');
   await waitFor(
-    async () => (await inspect()).pressed === 'false',
+    async () => !(await inspect()).firstChecked,
     5_000,
-    'Auto Research mouse toggle off',
+    'Research provider mouse toggle off',
   );
   const mouse = await inspect();
-  if (mouse.state !== '已关闭' || mouse.submitText !== '直接生成') {
-    throw new Error(`Auto Research mouse toggle did not update the creation path: ${JSON.stringify(mouse)}`);
+  if (mouse.checked !== 3) {
+    throw new Error(`Research provider mouse toggle did not update selection: ${JSON.stringify(mouse)}`);
   }
-  await evaluate(cdpConnection, `document.querySelector('button[aria-label="自动检索网页资料"]')?.focus()`);
+  await evaluate(cdpConnection, `document.querySelector('.hv-research-provider input[type="checkbox"]')?.focus()`);
   await cdpConnection.send('Input.dispatchKeyEvent', {
     type: 'rawKeyDown', key: ' ', code: 'Space', windowsVirtualKeyCode: 32, nativeVirtualKeyCode: 32,
   });
@@ -1653,20 +1659,14 @@ async function exerciseAutoResearchControl(cdpConnection) {
     type: 'keyUp', key: ' ', code: 'Space', windowsVirtualKeyCode: 32, nativeVirtualKeyCode: 32,
   });
   await waitFor(
-    async () => (await inspect()).pressed === 'true',
+    async () => (await inspect()).firstChecked,
     5_000,
-    'Auto Research keyboard toggle on',
+    'Research provider keyboard toggle on',
   );
   const keyboard = await inspect();
-  if (!keyboard.focused || keyboard.state !== '已开启' || keyboard.submitText !== '搜索并生成') {
-    throw new Error(`Auto Research keyboard toggle did not restore search: ${JSON.stringify(keyboard)}`);
+  if (!keyboard.focused || keyboard.checked !== 4) {
+    throw new Error(`Research provider keyboard toggle did not restore selection: ${JSON.stringify(keyboard)}`);
   }
-  await evaluate(cdpConnection, `document.querySelector('button[aria-label="自动检索网页资料"]')?.click()`);
-  await waitFor(
-    async () => (await inspect()).pressed === 'false',
-    5_000,
-    'Auto Research final clicked-off state',
-  );
   return { initial, mouse, keyboard, final: await inspect() };
 }
 

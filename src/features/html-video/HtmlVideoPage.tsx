@@ -9,7 +9,7 @@ import { ToggleField } from '../../components/ToggleField';
 import { AsyncActionFeedback as InlineActionFeedback } from '../../components/AsyncActionFeedback';
 import type { ApplyMutationResult, RendererAppState as AppState } from '../../app/route-types';
 import type { StoryDreamApi } from '../../shared/storydream-api';
-import type { AppConfig, CustomStyle, DraftTemplate, HtmlVideoConfigChange, HtmlVideoCoverMode, HtmlVideoCoverRatio, HtmlVideoJobConfig, HtmlVideoStepStatus, HtmlVideoTabKey, MinimaxCloneVoice, Task, TaskStatus, TtsProvider } from '../../shared/types';
+import type { AiSourceContext, AppConfig, CustomStyle, DraftTemplate, HtmlVideoConfigChange, HtmlVideoCoverMode, HtmlVideoCoverRatio, HtmlVideoJobConfig, HtmlVideoStepStatus, HtmlVideoTabKey, MinimaxCloneVoice, Task, TaskStatus, TtsProvider, WebSearchProvider } from '../../shared/types';
 import type { TemplateOption } from '../../shared/prompt-templates';
 import { htmlVideoStyleOptions } from '../../shared/editorial-options';
 import { HTML_VIDEO_BGM_VOLUMES, HTML_VIDEO_JOB_DEFAULTS, HTML_VIDEO_RATIOS, HTML_VIDEO_TRANSITIONS, HTML_VIDEO_TTS_PROVIDERS, HTML_VIDEO_TTS_SPEED_MAX, HTML_VIDEO_TTS_SPEED_MIN } from '../../shared/html-video-config';
@@ -19,16 +19,17 @@ import { classifyHtmlVideoTaskMessage, createHtmlVideoTaskInput, htmlVideoSteps,
 import { defaultTaskSpeakerForProvider, normalizeRuntimeTtsProvider, taskSpeakerLabel, ttsVoiceOptionsForProvider } from '../../shared/tts-voices';
 import { taskDetailRefreshKey } from '../../shared/state-reconciliation';
 import { useAsyncAction } from '../../ui/async-action';
-import { resolveDefaultBgmId, taskFromMutation, validBgmItems } from '../tasks/task-formatters';
+import { resolveDefaultBgmId, sourceKey, taskFromMutation, toggleArray, validBgmItems } from '../tasks/task-formatters';
 import { HtmlVideoAuthoringWorkspace } from './HtmlVideoAuthoringWorkspace';
 import { HtmlVideoTabPanel } from './HtmlVideoTabPanel';
-import { createHtmlVideoResearchCopy, htmlVideoTaskOptionsFromTasks, listAllHtmlVideoTaskOptions, synchronizedHtmlVideoTaskId } from './html-video-page-workflow';
+import { HTML_VIDEO_SEARCH_PROVIDER_OPTIONS, HTML_VIDEO_SEARCH_PROVIDERS, composeHtmlVideoResearchCopy, htmlVideoSearchProviderLabel, htmlVideoTaskOptionsFromTasks, listAllHtmlVideoTaskOptions, searchHtmlVideoResearchSources, synchronizedHtmlVideoTaskId } from './html-video-page-workflow';
 import '../../styles/features/html-video.css';
 
 type HtmlVideoWorkspaceMode = 'automatic' | 'authoring';
 type HtmlVideoPageMode = 'create' | 'workspace';
 type HtmlVideoCopyMode = 'paste' | 'ai';
-type HtmlVideoCreatePhase = 'idle' | 'search' | 'compose' | 'create';
+type HtmlVideoCreatePhase = 'idle' | 'create';
+type HtmlVideoResearchPhase = 'idle' | 'searching' | 'sources' | 'composing' | 'ready' | 'error';
 
 export function HtmlVideoPage({
   api,
@@ -49,8 +50,14 @@ export function HtmlVideoPage({
   const [copyMode, setCopyMode] = useState<HtmlVideoCopyMode>('paste');
   const [aiKeyword, setAiKeyword] = useState('');
   const [extraRequirements, setExtraRequirements] = useState('');
-  const [autoResearch, setAutoResearch] = useState(true);
   const [createPhase, setCreatePhase] = useState<HtmlVideoCreatePhase>('idle');
+  const [researchPhase, setResearchPhase] = useState<HtmlVideoResearchPhase>('idle');
+  const [webSearchProviders, setWebSearchProviders] = useState<WebSearchProvider[]>(() => [...HTML_VIDEO_SEARCH_PROVIDERS]);
+  const [searchContext, setSearchContext] = useState<AiSourceContext | null>(null);
+  const [selectedSearchSourceIds, setSelectedSearchSourceIds] = useState<string[]>([]);
+  const [researchCopyReady, setResearchCopyReady] = useState(false);
+  const [researchMessage, setResearchMessage] = useState('');
+  const [researchMessageTone, setResearchMessageTone] = useState<'status' | 'error'>('status');
   const [style, setStyle] = useState<string>(HTML_VIDEO_JOB_DEFAULTS.style);
   const [ratio, setRatio] = useState<string>(HTML_VIDEO_JOB_DEFAULTS.ratio);
   const [maxScenes, setMaxScenes] = useState<number>(HTML_VIDEO_JOB_DEFAULTS.maxScenes);
@@ -76,6 +83,8 @@ export function HtmlVideoPage({
   const [running, setRunning] = useState(false);
   const [message, setMessage] = useState('');
   const htmlVideoAction = useAsyncAction();
+  const researchAction = useAsyncAction();
+  const researchRequestIdRef = useRef(0);
   const bgmOptions = validBgmItems(state.config);
   const createVoiceOptions = ttsVoiceOptionsForProvider(ttsProvider, state.minimaxCloneVoices);
   const createStyleOptions = editableHtmlVideoStyleOptions(state.customStyles, style);
@@ -149,7 +158,9 @@ export function HtmlVideoPage({
   const mediaLoading = !isBrowserPreview && mediaPaths.some(
     (path) => !mediaUrls[path] && !failedMediaPaths.has(path),
   );
-  const taskBusy = running || htmlVideoAction.busy;
+  const searchSections = searchContext?.query === aiKeyword.trim() ? searchContext.sections : [];
+  const selectedSources = searchSections.filter((source, index) => selectedSearchSourceIds.includes(sourceKey(source, index)));
+  const taskBusy = running || htmlVideoAction.busy || researchAction.busy;
   const runProgress = activeTask ? taskProgressLabel(activeTask) : '0/6';
   const runProgressValue = Number(runProgress.split('/')[0] ?? 0);
   const runProgressPercent = Math.round((runProgressValue / 6) * 100);
@@ -159,17 +170,9 @@ export function HtmlVideoPage({
     : null;
   const htmlTaskStateKey = htmlTasks.map((task) => task.id).sort().join('|');
   const taskSelectValue = pageMode === 'workspace' ? activeTaskId : '';
-  const createInputReady = copyMode === 'paste' ? Boolean(copy.trim()) : Boolean(aiKeyword.trim());
-  const aiCreateActionLabel = autoResearch ? '搜索并生成' : '直接生成';
-  const createButtonLabel = createPhase === 'search'
-    ? '正在搜索资料'
-    : createPhase === 'compose'
-      ? '正在创作文案'
-      : createPhase === 'create'
-        ? '正在创建任务'
-        : copyMode === 'ai'
-          ? aiCreateActionLabel
-          : '开始生成';
+  const createInputReady = copyMode === 'paste'
+    ? Boolean(copy.trim())
+    : Boolean(aiKeyword.trim() && researchCopyReady && copy.trim() && selectedSources.length > 0);
 
   useEffect(() => {
     let disposed = false;
@@ -320,45 +323,143 @@ export function HtmlVideoPage({
     });
   }, [mediaPathKey, mediaRetryRevision, mediaTaskId]);
 
+  function invalidateHtmlVideoResearch(clearSources = true): void {
+    researchRequestIdRef.current += 1;
+    researchAction.clearFeedback();
+    setResearchCopyReady(false);
+    setCopy('');
+    setResearchMessage('');
+    setResearchMessageTone('status');
+    setResearchPhase('idle');
+    if (clearSources) {
+      setSearchContext(null);
+      setSelectedSearchSourceIds([]);
+    }
+  }
+
+  function handleAiKeywordChange(value: string): void {
+    if (value !== aiKeyword) invalidateHtmlVideoResearch();
+    setAiKeyword(value);
+  }
+
+  function handleExtraRequirementsChange(value: string): void {
+    if (value !== extraRequirements) invalidateHtmlVideoResearch(false);
+    setExtraRequirements(value);
+  }
+
+  function handleSearchProviderChange(provider: WebSearchProvider): void {
+    const nextProviders = toggleArray(webSearchProviders, provider) as WebSearchProvider[];
+    invalidateHtmlVideoResearch();
+    setWebSearchProviders(HTML_VIDEO_SEARCH_PROVIDER_OPTIONS
+      .map((option) => option.id)
+      .filter((option) => nextProviders.includes(option)));
+  }
+
+  function handleSearchSourceChange(id: string): void {
+    setSelectedSearchSourceIds((current) => toggleArray(current, id));
+    setResearchCopyReady(false);
+    setCopy('');
+    setResearchMessage('');
+    setResearchMessageTone('status');
+    setResearchPhase('sources');
+  }
+
+  async function searchHtmlVideoSources(): Promise<void> {
+    const keyword = aiKeyword.trim();
+    if (!keyword) {
+      setResearchMessageTone('error');
+      setResearchMessage('请先输入创作主题。');
+      return;
+    }
+    if (webSearchProviders.length === 0) {
+      setResearchMessageTone('error');
+      setResearchMessage('请至少选择一个搜索渠道。');
+      return;
+    }
+    const requestId = ++researchRequestIdRef.current;
+    const providerNames = HTML_VIDEO_SEARCH_PROVIDER_OPTIONS
+      .filter((option) => webSearchProviders.includes(option.id))
+      .map((option) => option.label)
+      .join('、');
+    await researchAction.run(async () => {
+      setResearchPhase('searching');
+      setResearchMessageTone('status');
+      setResearchMessage(`正在从${providerNames}搜索并读取网页正文...`);
+      setSearchContext(null);
+      setSelectedSearchSourceIds([]);
+      setResearchCopyReady(false);
+      setCopy('');
+      const context = await searchHtmlVideoResearchSources(api, {
+        keyword,
+        providers: webSearchProviders,
+      });
+      if (researchRequestIdRef.current !== requestId) return;
+      setSearchContext(context);
+      if (context.sections.length === 0) {
+        setResearchPhase('error');
+        setResearchMessageTone('error');
+        setResearchMessage(context.warnings.length
+          ? `没有找到可用于创作的网页资料：${context.warnings.join('；')}`
+          : '没有找到标题或正文与当前主题匹配的网页资料，请更换主题或渠道后重试。');
+        return;
+      }
+      setResearchPhase('sources');
+      setResearchMessageTone('status');
+      setResearchMessage(`已获取 ${context.sections.length} 条网页资料，请勾选要用于创作的来源。`);
+    }, {
+      onError: () => {
+        if (researchRequestIdRef.current !== requestId) return;
+        setResearchPhase('error');
+        setResearchMessage('');
+      },
+    });
+  }
+
+  async function composeHtmlVideoCopy(): Promise<void> {
+    if (selectedSources.length === 0) {
+      setResearchMessageTone('error');
+      setResearchMessage('请先勾选至少 1 个网页来源。');
+      return;
+    }
+    await researchAction.run(async () => {
+      setResearchPhase('composing');
+      setResearchMessageTone('status');
+      setResearchMessage(`正在结合 ${selectedSources.length} 条网页资料创作文案...`);
+      const result = await composeHtmlVideoResearchCopy(api, {
+        keyword: aiKeyword,
+        extraRequirements,
+        selectedSources,
+        warnings: searchContext?.warnings,
+      });
+      setCopy(result.copy);
+      setResearchCopyReady(true);
+      setResearchPhase('ready');
+      setResearchMessageTone('status');
+      setResearchMessage(`文案已结合 ${result.selectedSources.length} 条网页资料生成，可编辑后开始生成。`);
+    }, {
+      onError: () => {
+        setResearchPhase('error');
+        setResearchMessage('');
+      },
+    });
+  }
+
   async function createHtmlVideoTask() {
     if (!createInputReady) {
-      setMessage(copyMode === 'ai' ? '请先输入创作主题。' : '请先输入文案。');
+      setMessage(copyMode === 'ai' ? '请先搜索网页资料并生成文案。' : '请先输入文案。');
       return;
     }
     await htmlVideoAction.run(async () => {
       setRunning(true);
       setMessage('');
       try {
-        let generatedCopy = copy.trim();
-        let selectedSources = [] as Awaited<ReturnType<typeof createHtmlVideoResearchCopy>>['selectedSources'];
-        if (copyMode === 'ai') {
-          setCreatePhase(autoResearch ? 'search' : 'compose');
-          setMessage(autoResearch ? '正在搜索并读取相关网页资料...' : '正在根据主题直接创作文案...');
-          const research = await createHtmlVideoResearchCopy(api, {
-            keyword: aiKeyword,
-            extraRequirements,
-            searchEnabled: autoResearch,
-            onSourcesReady: autoResearch
-              ? (sources) => {
-                  setCreatePhase('compose');
-                  setMessage(`已获取 ${sources.length} 条网页资料，正在创作文案...`);
-                }
-              : undefined,
-          });
-          generatedCopy = research.copy;
-          selectedSources = research.selectedSources;
-          setCopy(generatedCopy);
-          setMessage(autoResearch
-            ? `已参考 ${selectedSources.length} 条网页资料，正在创建 HTML 动画任务...`
-            : '文案创作完成，正在创建 HTML 动画任务...');
-        }
         setCreatePhase('create');
         const next = await api.createHtmlVideoTask(createHtmlVideoTaskInput({
-          copy: generatedCopy,
+          copy: copy.trim(),
           mode: copyMode,
           aiKeyword: copyMode === 'ai' ? aiKeyword : '',
-          aiSources: copyMode === 'ai' && autoResearch ? ['web'] : [],
-          selectedSources,
+          aiSources: copyMode === 'ai' ? ['web'] : [],
+          selectedSources: copyMode === 'ai' ? selectedSources : [],
           extraRequirements: copyMode === 'ai' ? extraRequirements : '',
           ratio,
           style,
@@ -507,23 +608,95 @@ export function HtmlVideoPage({
                 ) : (
                   <div className="hv-ai-copy-fields">
                     <Field label="创作主题">
-                      <input value={aiKeyword} placeholder="例如：钱学森回国背后的关键转折" onChange={(event) => setAiKeyword(event.target.value)} />
+                      <input value={aiKeyword} placeholder="例如：钱学森回国背后的关键转折" onChange={(event) => handleAiKeywordChange(event.target.value)} />
                     </Field>
                     <Field label="创作要求" hint="可选">
-                      <textarea className="hv-ai-requirements" value={extraRequirements} placeholder="例如：500 字左右，突出人物抉择，语气克制" onChange={(event) => setExtraRequirements(event.target.value)} />
+                      <textarea className="hv-ai-requirements" value={extraRequirements} placeholder="例如：500 字左右，突出人物抉择，语气克制" onChange={(event) => handleExtraRequirementsChange(event.target.value)} />
                     </Field>
+                    <div className="hv-research-provider-panel">
+                      <span className="field-title">搜索渠道</span>
+                      <div className="hv-research-provider-grid">
+                        {HTML_VIDEO_SEARCH_PROVIDER_OPTIONS.map((provider) => (
+                          <label className="hv-research-provider" key={provider.id}>
+                            <input
+                              type="checkbox"
+                              checked={webSearchProviders.includes(provider.id)}
+                              disabled={taskBusy}
+                              onChange={() => handleSearchProviderChange(provider.id)}
+                            />
+                            <span><strong>{provider.label}</strong><small>{provider.domain}</small></span>
+                          </label>
+                        ))}
+                      </div>
+                    </div>
                     <button
                       type="button"
-                      className={autoResearch ? 'hv-auto-research active' : 'hv-auto-research'}
-                      aria-label="自动检索网页资料"
-                      aria-pressed={autoResearch}
-                      disabled={taskBusy}
-                      onClick={() => setAutoResearch((enabled) => !enabled)}
+                      className="ghost-action hv-research-search"
+                      disabled={researchAction.busy || !aiKeyword.trim() || webSearchProviders.length === 0}
+                      onClick={searchHtmlVideoSources}
                     >
-                      <Search size={15} />
-                      <span className="hv-auto-research-copy"><strong>自动检索</strong><small>必应 · 百度 · 搜狗 · 头条</small></span>
-                      <span className="hv-auto-research-state">{autoResearch ? '已开启' : '已关闭'}</span>
+                      {researchPhase === 'searching' ? <Loader2 className="spin" size={15} /> : <Search size={15} />}
+                      {researchPhase === 'searching' ? '正在搜索网页资料' : '搜索网页资料'}
                     </button>
+                    {researchMessage ? (
+                      <div className={`hv-research-message ${researchMessageTone}`} role={researchMessageTone === 'error' ? 'alert' : 'status'} aria-live={researchMessageTone === 'error' ? 'assertive' : 'polite'}>
+                        {researchMessage}
+                      </div>
+                    ) : null}
+                    <InlineActionFeedback feedback={researchAction.feedback} />
+                    {searchContext && searchContext.query === aiKeyword.trim() ? (
+                      <div className="hv-research-results" data-html-video-research-results="true">
+                        <div className="hv-research-results-heading">
+                          <div><h3>网页资料</h3><small>实际查询：{searchContext.query}</small></div>
+                          <small>{selectedSources.length}/{searchSections.length} 已选择</small>
+                        </div>
+                        {searchContext.providerStatuses?.length ? (
+                          <div className="hv-research-provider-statuses" aria-label="搜索渠道状态">
+                            {searchContext.providerStatuses.map((status) => (
+                              <span className="hv-research-provider-status" data-state={status.state} key={status.provider} title={status.message}>
+                                {status.label} · {status.state === 'ready' ? `${status.count} 条` : status.state === 'empty' ? '无精准结果' : '失败'}
+                              </span>
+                            ))}
+                          </div>
+                        ) : null}
+                        {searchContext.warnings.length ? (
+                          <ul className="hv-research-warnings" role="status" aria-live="polite">
+                            {searchContext.warnings.map((warning, index) => <li key={`${warning}-${index}`}>{warning}</li>)}
+                          </ul>
+                        ) : null}
+                        {searchSections.length === 0 ? <div className="hv-research-empty">暂无可用网页资料</div> : (
+                          <div className="hv-research-source-list">
+                            {searchSections.map((source, index) => {
+                              const id = sourceKey(source, index);
+                              return (
+                                <label className="hv-research-source" key={id}>
+                                  <input type="checkbox" checked={selectedSearchSourceIds.includes(id)} disabled={researchAction.busy} onChange={() => handleSearchSourceChange(id)} />
+                                  <span>
+                                    <span className="hv-research-source-heading"><small>{htmlVideoSearchProviderLabel(source.provider)}</small><strong>{source.title}</strong></span>
+                                    {source.url ? <span className="hv-research-source-url">{source.url}</span> : null}
+                                    <span className="hv-research-source-excerpt">{(source.content || source.snippet || '').slice(0, 240)}</span>
+                                  </span>
+                                </label>
+                              );
+                            })}
+                          </div>
+                        )}
+                        {searchSections.length ? (
+                          <div className="hv-research-compose-row">
+                            <span>已选 {selectedSources.length} 条网页来源</span>
+                            <button type="button" className="primary-action slim" disabled={researchAction.busy || selectedSources.length === 0} onClick={composeHtmlVideoCopy}>
+                              {researchPhase === 'composing' ? <Loader2 className="spin" size={15} /> : <Wand2 size={15} />}
+                              {researchPhase === 'composing' ? '正在创作文案' : '结合所选资料创作文案'}
+                            </button>
+                          </div>
+                        ) : null}
+                        {researchCopyReady ? (
+                          <Field label="生成文案（可编辑）">
+                            <textarea className="hv-research-copy" value={copy} onChange={(event) => setCopy(event.target.value)} />
+                          </Field>
+                        ) : null}
+                      </div>
+                    ) : null}
                   </div>
                 )}
               </div>
@@ -643,7 +816,7 @@ export function HtmlVideoPage({
               </div>
               <button className="primary-action hv-create-submit" type="button" onClick={createHtmlVideoTask} disabled={taskBusy || !createInputReady}>
                 {running ? <Loader2 className="spin" size={16} /> : <Play size={16} />}
-                {createPhase === 'idle' ? (copyMode === 'ai' ? aiCreateActionLabel : '开始生成') : createButtonLabel}
+                {createPhase === 'create' ? '正在创建任务' : '开始生成'}
               </button>
             </footer>
           </div>

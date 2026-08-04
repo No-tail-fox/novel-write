@@ -1,7 +1,13 @@
 import type { StoryDreamApi } from '../../shared/storydream-api';
-import type { AiSourceSection, Task, TaskSummary, WebSearchProvider } from '../../shared/types';
+import type { AiSourceContext, AiSourceSection, Task, TaskSummary, WebSearchProvider } from '../../shared/types';
 
 export const HTML_VIDEO_SEARCH_PROVIDERS: readonly WebSearchProvider[] = ['bing', 'baidu', 'sogou', 'toutiao'];
+export const HTML_VIDEO_SEARCH_PROVIDER_OPTIONS: ReadonlyArray<{ id: WebSearchProvider; label: string; domain: string }> = [
+  { id: 'bing', label: '必应', domain: 'bing.com' },
+  { id: 'baidu', label: '百度', domain: 'baidu.com' },
+  { id: 'sogou', label: '搜狗', domain: 'sogou.com' },
+  { id: 'toutiao', label: '头条', domain: 'toutiao.com' },
+];
 
 export interface HtmlVideoTaskOption {
   id: string;
@@ -16,35 +22,40 @@ export interface HtmlVideoResearchResult {
   warnings: string[];
 }
 
-export async function createHtmlVideoResearchCopy(
-  api: Pick<StoryDreamApi, 'searchWebSources' | 'composeResearchCopy'>,
+export async function searchHtmlVideoResearchSources(
+  api: Pick<StoryDreamApi, 'searchWebSources'>,
+  input: {
+    keyword: string;
+    providers: WebSearchProvider[];
+  },
+): Promise<AiSourceContext> {
+  const keyword = input.keyword.trim();
+  if (!keyword) throw new Error('请先输入创作主题。');
+  const providers = [...new Set(input.providers)].filter((provider) => HTML_VIDEO_SEARCH_PROVIDERS.includes(provider));
+  if (providers.length === 0) throw new Error('请至少选择一个搜索渠道。');
+
+  const context = await api.searchWebSources({ query: keyword, providers });
+  return {
+    ...context,
+    query: context.query.trim() || keyword,
+    sections: usableHtmlVideoResearchSources(context.sections),
+    warnings: context.warnings.filter(Boolean),
+  };
+}
+
+export async function composeHtmlVideoResearchCopy(
+  api: Pick<StoryDreamApi, 'composeResearchCopy'>,
   input: {
     keyword: string;
     extraRequirements: string;
-    searchEnabled?: boolean;
-    onSourcesReady?: (sources: readonly AiSourceSection[]) => void;
+    selectedSources: AiSourceSection[];
+    warnings?: string[];
   },
 ): Promise<HtmlVideoResearchResult> {
   const keyword = input.keyword.trim();
   if (!keyword) throw new Error('请先输入创作主题。');
-
-  let selectedSources: AiSourceSection[] = [];
-  let warnings: string[] = [];
-  if (input.searchEnabled !== false) {
-    const context = await api.searchWebSources({
-      query: keyword,
-      providers: [...HTML_VIDEO_SEARCH_PROVIDERS],
-    });
-    selectedSources = context.sections
-      .filter((source) => Boolean((source.content || source.snippet || '').trim()))
-      .slice(0, 10);
-    warnings = context.warnings;
-    if (selectedSources.length === 0) {
-      const warning = warnings.filter(Boolean).join('；');
-      throw new Error(warning ? `没有找到可用于创作的网页资料：${warning}` : '没有找到可用于创作的网页资料，请更换创作主题后重试。');
-    }
-    input.onSourcesReady?.(selectedSources);
-  }
+  const selectedSources = usableHtmlVideoResearchSources(input.selectedSources);
+  if (selectedSources.length === 0) throw new Error('请先检索并勾选至少 1 个网页来源。');
 
   const composed = await api.composeResearchCopy({
     keyword,
@@ -57,8 +68,18 @@ export async function createHtmlVideoResearchCopy(
     copy,
     title: composed.title.trim() || keyword,
     selectedSources,
-    warnings,
+    warnings: (input.warnings ?? []).filter(Boolean),
   };
+}
+
+export function htmlVideoSearchProviderLabel(provider: WebSearchProvider | undefined): string {
+  return HTML_VIDEO_SEARCH_PROVIDER_OPTIONS.find((option) => option.id === provider)?.label ?? '网页';
+}
+
+function usableHtmlVideoResearchSources(sources: readonly AiSourceSection[]): AiSourceSection[] {
+  return sources
+    .filter((source) => Boolean((source.content || source.snippet || '').trim()))
+    .slice(0, 10);
 }
 
 export function htmlVideoTaskOptionsFromTasks(
