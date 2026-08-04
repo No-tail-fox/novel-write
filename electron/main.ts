@@ -311,7 +311,7 @@ async function seedTaskOperationsEditorialQa(database: FileDatabase, dataDir: st
     disclaimer: { ...selectedTemplateBase.disclaimer, fontSize: 9, color: '#9ad7cc', alpha: 0.82, underline: draftTemplateGalleryScope },
   });
   if (!taskOperationsScope) return;
-  const createFixture = async (title: string) => {
+  const createFixture = async (title: string, overrides: Partial<CreateTaskInput> = {}) => {
     await new Promise((resolveDelay) => setTimeout(resolveDelay, 2));
     return database.createTask({
       title,
@@ -323,6 +323,7 @@ async function seedTaskOperationsEditorialQa(database: FileDatabase, dataDir: st
       storyboardSceneCount: 12,
       targetScenes: 12,
       coverImageMode: 'off',
+      ...overrides,
     });
   };
 
@@ -330,20 +331,29 @@ async function seedTaskOperationsEditorialQa(database: FileDatabase, dataDir: st
   await database.updateTask(archived.id, { status: 'completed', currentStep: 7, completedAt: new Date().toISOString() });
   await database.archiveTask(archived.id);
 
-  const completed = await createFixture('丝绸之路文化科普');
+  const completed = await createFixture('丝绸之路文化科普', {
+    coverImageMode: 'auto',
+    coverTemplateId: 'cinematic-poster',
+    coverPageEnabled: true,
+    coverPageText: '丝路文明，从长安启程',
+  });
   const completedOutput = join(dataDir, 'qa-task-operations', 'completed-output');
   const completedPipelineDir = join(completedOutput, 'pipeline');
   const completedDraftDir = join(completedOutput, 'draft');
+  const completedCoverDir = join(completedOutput, 'covers');
   const completedStatePath = join(completedPipelineDir, 'state.json');
   const completedDraftContentPath = join(completedDraftDir, 'draft_content.json');
   const completedDraftMetaPath = join(completedDraftDir, 'draft_meta_info.json');
+  const completedCoverPath = join(completedCoverDir, 'cover-auto-r1.png');
   await Promise.all([
     mkdir(completedPipelineDir, { recursive: true }),
     mkdir(completedDraftDir, { recursive: true }),
+    mkdir(completedCoverDir, { recursive: true }),
   ]);
   await Promise.all([
     writeFile(completedDraftContentPath, '{}\n', 'utf8'),
     writeFile(completedDraftMetaPath, '{}\n', 'utf8'),
+    writeFile(completedCoverPath, editorialQaHtmlVideoPreviewPng(3)),
     writeFile(completedStatePath, `${JSON.stringify({
       version: 1,
       taskId: completed.id,
@@ -356,7 +366,12 @@ async function seedTaskOperationsEditorialQa(database: FileDatabase, dataDir: st
         scenes: [],
         imagePrompts: [],
       },
-      assets: { images: [], imageErrors: [], narration: [] },
+      assets: {
+        cover: [{ sceneId: 0, path: completedCoverPath }],
+        images: [],
+        imageErrors: [],
+        narration: [],
+      },
       draft: {
         draftDir: completedDraftDir,
         draftContentPath: completedDraftContentPath,

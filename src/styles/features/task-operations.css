@@ -1168,6 +1168,16 @@
   background: color-mix(in srgb, var(--shell-accent) 10%, var(--shell-surface-raised));
 }
 
+.task-scene-item.cover {
+  border: 1px solid color-mix(in srgb, var(--shell-accent) 28%, var(--shell-border));
+  background: color-mix(in srgb, var(--shell-accent) 4%, var(--shell-surface-raised));
+}
+
+.task-scene-item.cover.selected {
+  border-color: color-mix(in srgb, var(--shell-accent) 54%, var(--shell-border));
+  background: color-mix(in srgb, var(--shell-accent) 12%, var(--shell-surface-raised));
+}
+
 .task-scene-item > span {
   display: grid;
   place-items: center;
@@ -1188,6 +1198,11 @@
 
 .task-scene-item:nth-child(4n + 3) > span {
   background: color-mix(in srgb, var(--ok) 24%, var(--shell-surface-raised));
+}
+
+.task-scene-item.cover > span {
+  background: var(--shell-accent);
+  color: var(--shell-focus-contrast);
 }
 
 .task-scene-item.running > span {

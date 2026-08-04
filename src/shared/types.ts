@@ -398,6 +398,8 @@ export interface Task {
   podcastSpeakerB?: string | null;
   coverImageMode?: string;
   coverTemplateId?: string;
+  coverPageEnabled?: boolean;
+  coverPageText?: string;
   ordinaryCoverAsset?: OrdinaryTaskCoverAsset | null;
   manualCoverAssetId?: string;
   autoBorrowImage?: boolean;
@@ -797,6 +799,8 @@ export type CreateTaskInput = Partial<
     | 'podcastSpeakerB'
     | 'coverImageMode'
     | 'coverTemplateId'
+    | 'coverPageEnabled'
+    | 'coverPageText'
     | 'manualCoverAssetId'
     | 'autoBorrowImage'
     | 'htmlVideoForeground'

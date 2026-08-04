@@ -17,7 +17,7 @@ import { copyPersonMaterialsForScenes } from './person-assets';
 import { withPipelineStateLock } from './pipeline-cache';
 import { isOrdinaryTask, resolveOrdinaryCoverTemplate } from '../features/tasks/task-control-manifest';
 import { taskTerminalStep } from './task-progress';
-import { validateOrdinaryTaskCoverAsset } from './ordinary-task-cover';
+import { ORDINARY_TASK_COVER_PAGE_DURATION_MS, validateOrdinaryTaskCoverAsset } from './ordinary-task-cover';
 
 export interface RunTaskOptions {
   appDataDir: string;
@@ -410,6 +410,11 @@ async function runTaskWithPipelineStateLock(db: FileDatabase, task: Task, option
               rewrittenCopy: artifact.rewrittenCopy,
               generatedImages: pipeline.assets.images,
               coverImagePath: pipeline.assets.cover[0]?.path,
+              coverPage: task.coverPageEnabled ? {
+                imagePath: requireOrdinaryCoverPageImage(task, pipeline.assets.cover[0]?.path),
+                text: task.coverPageText ?? '',
+                durationMs: ORDINARY_TASK_COVER_PAGE_DURATION_MS,
+              } : undefined,
               narrationAudio: pipeline.assets.narration,
               bgm,
             },
@@ -1747,6 +1752,24 @@ async function ensureImages(input: {
     pipeline.assets.cover = [{ sceneId: 0, path: coverPath }];
     await emit('cover_ready', 4, 'Producer', '已使用手动封面图片素材', { path: asset.path, ratio: asset.ratio });
   }
+  const ordinaryCoverTemplate = isOrdinaryTask(task)
+    ? resolveOrdinaryCoverTemplate(task.coverImageMode ?? 'off', task.coverTemplateId, options.customCoverTemplates ?? [])
+    : null;
+  if (shouldGenerateCoverImage(task) && pipeline.assets.cover.length === 0) {
+    if (!options.generateImages) {
+      throw new Error('Image provider is not configured; cannot create a cover image asset.');
+    }
+    await db.updateTask(task.id, { currentStep: 4, retryFromStep: 4 });
+    await heartbeatTask(db, task.id, options, 4, 'cover image generation');
+    await markStep(4, 'running');
+    await emit('step_start', 4, 'Producer', '生成封面图片素材', { coverTemplateId: task.coverTemplateId });
+    const coverScene = buildCoverScene(artifact);
+    const coverPrompt = buildCoverImagePrompt(task, artifact, ordinaryCoverTemplate ? [ordinaryCoverTemplate] : options.customCoverTemplates);
+    const coverAssets = await options.generateImages([coverScene], [coverPrompt], task, options.signal);
+    const coverPath = await persistCoverImage(input.workDir, coverAssets[0], coverPrompt, input);
+    pipeline.assets.cover = [{ sceneId: 0, path: coverPath }];
+    await markStep(4, 'running', { outputPath: coverPath });
+  }
   if (task.materialSource === 'local') {
     const person = task.materialPerson?.trim();
     if (!person) {
@@ -1770,25 +1793,10 @@ async function ensureImages(input: {
     await emit('step_complete', 4, 'Producer', '人物素材库图片已复制', { count: copied.assets.length, origins: copied.origins });
     return;
   }
-  const ordinaryCoverTemplate = isOrdinaryTask(task)
-    ? resolveOrdinaryCoverTemplate(task.coverImageMode ?? 'off', task.coverTemplateId, options.customCoverTemplates ?? [])
-    : null;
   if (!options.generateImages) {
     throw new Error('Image provider is not configured; cannot create real image assets.');
   }
   const generateImages = options.generateImages;
-  if (shouldGenerateCoverImage(task) && pipeline.assets.cover.length === 0) {
-    await db.updateTask(task.id, { currentStep: 4, retryFromStep: 4 });
-    await heartbeatTask(db, task.id, options, 4, 'cover image generation');
-    await markStep(4, 'running');
-    await emit('step_start', 4, 'Producer', '生成封面图片素材', { coverTemplateId: task.coverTemplateId });
-    const coverScene = buildCoverScene(artifact);
-    const coverPrompt = buildCoverImagePrompt(task, artifact, ordinaryCoverTemplate ? [ordinaryCoverTemplate] : options.customCoverTemplates);
-    const coverAssets = await generateImages([coverScene], [coverPrompt], task, options.signal);
-    const coverPath = await persistCoverImage(input.workDir, coverAssets[0], coverPrompt, input);
-    pipeline.assets.cover = [{ sceneId: 0, path: coverPath }];
-    await markStep(4, 'running', { outputPath: coverPath });
-  }
   if (usesSinglePodcastCover(task)) {
     if (pipeline.assets.cover.length === 0) {
       await db.updateTask(task.id, { currentStep: 4, retryFromStep: 4 });
@@ -1914,6 +1922,13 @@ async function ensureNarration(input: {
 
 function shouldGenerateCoverImage(task: Task): boolean {
   return task.coverImageMode === 'auto' || usesSinglePodcastCover(task);
+}
+
+function requireOrdinaryCoverPageImage(task: Task, path: string | undefined): string {
+  if (!path) {
+    throw new Error(`ORDINARY_COVER_PAGE_IMAGE_MISSING: Task ${task.id} enabled a cover page but has no cover image asset.`);
+  }
+  return path;
 }
 
 function usesSinglePodcastCover(task: Task): boolean {

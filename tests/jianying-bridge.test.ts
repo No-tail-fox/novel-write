@@ -125,6 +125,11 @@ describe('pyJianYingDraft bridge input', () => {
       expect(script).toContain('caption_border = text_border_from_config(caption)');
       expect(script).toContain('border=caption_border');
       expect(script).toContain('def add_overlay_text');
+      expect(script).toContain('config.get("startUs")');
+      expect(script).toContain('config.get("durationUs")');
+      expect(script).toContain('cover_page = payload.get("coverPage") or {}');
+      expect(script).toContain('cursor = cover_page_duration');
+      expect(script).toContain('add_overlay_text(script, "cover_title"');
       expect(script).toContain('draft.TextSegment(');
       expect(script).toContain('draft.TrackType.text');
       expect(script).toContain('add_overlay_text(script, "title"');
@@ -359,6 +364,97 @@ describe('pyJianYingDraft bridge input', () => {
       const generatedSubtitles = await readFile(join(draftDir, 'materials', 'subtitles', 'subtitles.srt'), 'utf8');
       expect(generatedSubtitles).toContain('00:00:00,000 --> 00:00:01,800');
       expect(generatedSubtitles).toContain('00:00:01,800 --> 00:00:02,800');
+    } finally {
+      await rm(dir, { recursive: true, force: true });
+    }
+  });
+
+  it('renders a two-second cover image and title before narration, captions, and body overlays', async () => {
+    const dir = await mkdtemp(join(tmpdir(), 'storydream-jy-cover-page-'));
+    const draftDir = join(dir, 'Draft Root', 'Cover Page Draft');
+    const bridgeDir = join(dir, 'pyjianying-bridge');
+
+    try {
+      await writePyJianYingBridgeScript(dir);
+      await writeFile(join(bridgeDir, 'pyJianYingDraft.py'), fakePyJianYingDraftModule, 'utf8');
+      const voice = join(dir, 'voice.wav');
+      const image = join(dir, 'image.png');
+      const cover = join(dir, 'cover.png');
+      const subtitles = join(dir, 'subtitles.srt');
+      await writeFile(voice, wavTone(1000));
+      await writeFile(image, Buffer.from('image'));
+      await writeFile(cover, Buffer.from('cover'));
+      await writeFile(subtitles, '', 'utf8');
+
+      const titleStyle = {
+        visible: true,
+        text: '正文标题',
+        x: 0,
+        y: -0.7,
+        width: 0.8,
+        fontSize: 44,
+        color: '#ffffff',
+        alpha: 1,
+        bold: true,
+        underline: false,
+        align: 1,
+        letterSpacing: 0,
+        lineSpacing: 0,
+        border: { color: '#000000', width: 3, alpha: 1 },
+      };
+      await runPyJianYingDraftBridge({
+        workDir: dir,
+        draftDir,
+        title: 'Cover Page Draft',
+        canvas: { width: 1080, height: 1920, backgroundColor: '#000000', backgroundImage: '' },
+        imageArea: defaultBridgeImageArea(),
+        frame: {
+          enabled: true,
+          headerColor: '#112233',
+          headerColorEnd: '#334455',
+          footerColor: '#556677',
+          footerColorEnd: '#778899',
+          imageBorderColor: '#ffffff',
+          imageBorderWidth: 8,
+          imageBorderSides: 'all',
+        },
+        caption: defaultBridgeCaption(),
+        coverPage: {
+          imagePath: cover,
+          durationUs: 2_000_000,
+          title: { ...titleStyle, text: '只在封面出现', startUs: 0, durationUs: 2_000_000 },
+        },
+        overlays: {
+          title: { ...titleStyle, startUs: 2_000_000, durationUs: 1_000_000 },
+        },
+        scenes: [{ sceneId: 1, startUs: 2_000_000, durationUs: 1_000_000, text: '正文', captions: ['正文字幕'], captionDurationsUs: [1_000_000] }],
+        images: [{ sceneId: 1, path: image }],
+        narration: [{ sceneId: 1, path: voice }],
+        subtitlesSrtPath: subtitles,
+        bgm: null,
+        totalDurationUs: 3_000_000,
+        volumes: { narration: 1, bgm: 0.3 },
+      });
+
+      const content = JSON.parse(await readFile(join(draftDir, 'draft_content.json'), 'utf8'));
+      const trackByName = new Map(content.tracks.map((track: { name: string }) => [track.name, track]));
+      const images = trackByName.get('images') as { segments: Array<{ target_timerange: { start: number; duration: number } }> };
+      const narration = trackByName.get('narration') as { segments: Array<{ target_timerange: { start: number; duration: number } }> };
+      const frameOverlay = trackByName.get('frame_overlay') as { segments: Array<{ target_timerange: { start: number; duration: number } }> };
+      const coverTitle = trackByName.get('cover_title') as { segments: Array<{ target_timerange: { start: number; duration: number }; text: string }> };
+      const bodyTitle = trackByName.get('title') as { segments: Array<{ target_timerange: { start: number; duration: number }; text: string }> };
+
+      expect(images.segments.map((segment) => segment.target_timerange)).toEqual([
+        { start: 0, duration: 2_000_000 },
+        { start: 2_000_000, duration: 1_000_000 },
+      ]);
+      expect(narration.segments[0].target_timerange).toEqual({ start: 2_000_000, duration: 1_000_000 });
+      expect(frameOverlay.segments[0].target_timerange).toEqual({ start: 2_000_000, duration: 1_000_000 });
+      expect(coverTitle.segments[0]).toMatchObject({ text: '只在封面出现', target_timerange: { start: 0, duration: 2_000_000 } });
+      expect(bodyTitle.segments[0]).toMatchObject({ text: '正文标题', target_timerange: { start: 2_000_000, duration: 1_000_000 } });
+      expect(content.duration).toBe(3_000_000);
+      const generatedSubtitles = await readFile(join(draftDir, 'materials', 'subtitles', 'subtitles.srt'), 'utf8');
+      expect(generatedSubtitles).toContain('00:00:02,000 --> 00:00:03,000');
     } finally {
       await rm(dir, { recursive: true, force: true });
     }

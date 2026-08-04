@@ -62,6 +62,7 @@ import {
 } from './html-video-cover';
 import {
   createOrdinaryTaskCoverAsset,
+  normalizeOrdinaryTaskCoverPageText,
   ordinaryTaskCoverDimensions,
   validateOrdinaryTaskCoverAsset,
   validateOrdinaryTaskCoverInspection,
@@ -328,7 +329,7 @@ const taskSummaryColumns = `
   material_source, draft_dir,
   lock_intro_sentences, task_type, pipeline_step, target_length, target_scenes,
   script_format, podcast_image_mode, podcast_speaker_a,
-  podcast_speaker_b, cover_image_mode, cover_template_id, auto_borrow_image, html_video_foreground,
+  podcast_speaker_b, cover_image_mode, cover_template_id, cover_page_enabled, cover_page_text, auto_borrow_image, html_video_foreground,
   substr(input_text, 1, ${TASK_INPUT_PREVIEW_LIMIT}) AS input_preview
 `;
 const viralAnalysisSummaryColumns = `
@@ -1003,6 +1004,8 @@ export class FileDatabase {
         video_intro_duration INTEGER DEFAULT 0,
         cover_image_mode TEXT DEFAULT 'off',
         cover_template_id TEXT DEFAULT 'cinematic-poster',
+        cover_page_enabled INTEGER NOT NULL DEFAULT 0,
+        cover_page_text TEXT DEFAULT '',
         ordinary_cover_asset_json TEXT DEFAULT NULL,
         auto_borrow_image INTEGER NOT NULL DEFAULT 0,
         html_video_foreground INTEGER DEFAULT NULL
@@ -1282,6 +1285,8 @@ export class FileDatabase {
       ['video_intro_duration', 'INTEGER DEFAULT 0'],
       ['cover_image_mode', "TEXT DEFAULT 'off'"],
       ['cover_template_id', "TEXT DEFAULT 'cinematic-poster'"],
+      ['cover_page_enabled', 'INTEGER NOT NULL DEFAULT 0'],
+      ['cover_page_text', "TEXT DEFAULT ''"],
       ['ordinary_cover_asset_json', 'TEXT DEFAULT NULL'],
       ['auto_borrow_image', 'INTEGER NOT NULL DEFAULT 0'],
       ['html_video_foreground', 'INTEGER DEFAULT NULL'],
@@ -2079,6 +2084,9 @@ export class FileDatabase {
       if (coverImageMode !== 'manual' && input.manualCoverAssetId) {
         throw new Error('ORDINARY_MANUAL_COVER_MODE_MISMATCH: A manual cover asset id requires manual mode.');
       }
+      if (input.coverPageEnabled === true && coverImageMode === 'off') {
+        throw new Error('ORDINARY_COVER_PAGE_IMAGE_REQUIRED: An enabled cover page requires an automatic or manual cover image.');
+      }
     }
       const task: Task = {
         id: randomUUID(),
@@ -2148,6 +2156,8 @@ export class FileDatabase {
       podcastSpeakerB: input.podcastSpeakerB ?? null,
       coverImageMode,
       coverTemplateId: input.coverTemplateId ?? 'cinematic-poster',
+      coverPageEnabled: input.coverPageEnabled === true,
+      coverPageText: input.coverPageEnabled === true ? normalizeOrdinaryTaskCoverPageText(input.coverPageText) : '',
       ordinaryCoverAsset: null,
       autoBorrowImage: input.autoBorrowImage ?? false,
       htmlVideoForeground: input.htmlVideoForeground,
@@ -2237,6 +2247,13 @@ export class FileDatabase {
     );
     if (task.autoBorrowImage) {
       this.db.run('UPDATE tasks SET auto_borrow_image = 1 WHERE id = ?', [task.id]);
+    }
+    if (task.coverPageEnabled || task.coverPageText) {
+      this.db.run('UPDATE tasks SET cover_page_enabled = ?, cover_page_text = ? WHERE id = ?', [
+        task.coverPageEnabled ? 1 : 0,
+        task.coverPageText ?? '',
+        task.id,
+      ]);
     }
     return task;
   }
@@ -3682,6 +3699,8 @@ function rowToTask(row: Record<string, unknown>): Task {
     podcastSpeakerB: row.podcast_speaker_b === null || row.podcast_speaker_b === undefined ? null : String(row.podcast_speaker_b),
     coverImageMode: String(row.cover_image_mode ?? 'off'),
     coverTemplateId: String(row.cover_template_id ?? 'cinematic-poster'),
+    coverPageEnabled: Number(row.cover_page_enabled ?? 0) === 1,
+    coverPageText: normalizeOrdinaryTaskCoverPageText(row.cover_page_text),
     ordinaryCoverAsset: parseOrdinaryCoverAsset(row.ordinary_cover_asset_json),
     autoBorrowImage: Number(row.auto_borrow_image ?? 0) === 1,
     htmlVideoForeground: row.html_video_foreground === null || row.html_video_foreground === undefined

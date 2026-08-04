@@ -56,6 +56,8 @@ export const NEW_TASK_CREATE_FIELD_STAGE = {
   podcastSpeakerB: 'system',
   coverImageMode: 'output',
   coverTemplateId: 'output',
+  coverPageEnabled: 'output',
+  coverPageText: 'output',
   manualCoverAssetId: 'output',
   autoBorrowImage: 'output',
   htmlVideoForeground: 'system',

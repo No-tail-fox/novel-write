@@ -8,6 +8,7 @@ import type { ApplyMutationResult } from '../../app/route-types';
 import { DraftTemplatePreview } from '../templates/DraftCanvas';
 import type { StoryDreamApi } from '../../shared/storydream-api';
 import { buildSubtitleTrack, splitCaptionLines } from '../../shared/story';
+import { ORDINARY_TASK_COVER_PAGE_DURATION_MS, resolveOrdinaryTaskCoverTitle } from '../../shared/ordinary-task-cover';
 import type {
   AppConfig,
   DraftTemplate,
@@ -71,6 +72,7 @@ export function ArtifactPreviewContent({
     [artifact.subtitles, draftTemplate.caption.maxCharsPerLine, scenes],
   );
   const imageAssets = snapshot?.assets.images ?? [];
+  const coverAsset = task.coverPageEnabled ? snapshot?.assets.cover[0] : undefined;
   const imageErrors = snapshot?.assets.imageErrors ?? [];
   const narrationAssets = snapshot?.assets.narration ?? [];
   const imageBySceneId = useMemo(() => indexTaskAssetsBySceneId(imageAssets), [imageAssets]);
@@ -80,22 +82,35 @@ export function ArtifactPreviewContent({
     ? scenes
     : Array.from({ length: Math.min(4, Math.max(1, imageAssets.length)) }, (_, index) => ({ id: index + 1, cap: `场景 ${index + 1}`, descPrompt: '' }));
   const [selectedSceneId, setSelectedSceneId] = useState<number | null>(null);
-  const selectedScene = sceneRailItems.find((scene) => scene.id === selectedSceneId) ?? sceneRailItems[0];
+  const coverSelected = task.coverPageEnabled === true && (selectedSceneId === null || selectedSceneId === 0);
+  const selectedScene = coverSelected ? undefined : sceneRailItems.find((scene) => scene.id === selectedSceneId) ?? sceneRailItems[0];
   const selectedSceneIndex = Math.max(0, sceneRailItems.findIndex((scene) => scene.id === selectedScene?.id));
   const selectedSceneCues = useMemo(() => taskPreviewCuesForScene(subtitles, selectedScene?.id), [selectedScene?.id, subtitles]);
   const [selectedCueIndex, setSelectedCueIndex] = useState(0);
   const activeCueIndex = Math.min(selectedCueIndex, Math.max(0, selectedSceneCues.length - 1));
   const selectedCue = selectedSceneCues[activeCueIndex];
-  const selectedImageAsset = selectedScene ? imageBySceneId.get(selectedScene.id) : undefined;
+  const selectedImageAsset = coverSelected ? coverAsset : selectedScene ? imageBySceneId.get(selectedScene.id) : undefined;
   const selectedImagePath = selectedImageAsset?.path ?? '';
   const [selectedImagePreview, setSelectedImagePreview] = useState<{ path: string; url: string; error: string }>({ path: '', url: '', error: '' });
   const previewContent = resolveTaskPreviewContent({ task, cover: artifact.cover, sourceText: artifact.rewrittenCopy, sceneCap: selectedScene?.cap, sceneCue: selectedCue?.text, template: draftTemplate });
+  const coverPreviewTemplate = useMemo(() => ({
+    ...draftTemplate,
+    image: { ...draftTemplate.image, visible: true, ratio: task.ratio, top: 0, height: 1, fit: 'cover' as const },
+    title: resolveOrdinaryTaskCoverTitle(draftTemplate, task.coverPageText ?? ''),
+    subtitle: { ...draftTemplate.subtitle, visible: false },
+    caption: { ...draftTemplate.caption, visible: false },
+    disclaimer: { ...draftTemplate.disclaimer, visible: false },
+  }), [draftTemplate, task.coverPageText, task.ratio]);
   const selectedImageUrl = selectedImagePreview.path === selectedImagePath ? selectedImagePreview.url : '';
   const selectedImageError = selectedImagePreview.path === selectedImagePath ? selectedImagePreview.error : '';
   const nextPendingSceneId = sceneRailItems.find((scene) => !imageBySceneId.has(scene.id))?.id;
   const [rerunningStepAction, setRerunningStepAction] = useState<string | null>(null);
   const artifactAction = useAsyncAction();
   const canRerunStep = !isBrowserPreview && task.status !== 'running' && task.status !== 'pending' && Boolean(task.artifactStatePath);
+
+  useEffect(() => {
+    setSelectedSceneId(null);
+  }, [task.id]);
 
   useEffect(() => {
     setSelectedCueIndex(0);
@@ -150,35 +165,41 @@ export function ArtifactPreviewContent({
     <div className="artifact-preview">
       <div className="task-media-workspace">
         <section className="task-media-canvas" data-media-canvas="task-artifact">
-          <div className="task-media-frame" data-draft-template-id={draftTemplate.id} data-preview-scene-id={selectedScene?.id ?? 0}>
+          <div className="task-media-frame" data-draft-template-id={draftTemplate.id} data-preview-scene-id={coverSelected ? 0 : selectedScene?.id ?? 0} data-preview-kind={coverSelected ? 'cover' : 'scene'}>
             <DraftTemplatePreview
-              template={draftTemplate}
+              template={coverSelected ? coverPreviewTemplate : draftTemplate}
               imageUrl={selectedImageUrl}
-              titleText={previewContent.title}
+              titleText={coverSelected ? task.coverPageText ?? '' : previewContent.title}
               subtitleText={previewContent.subtitle}
               captionText={previewContent.caption}
               disclaimerText={previewContent.disclaimer}
             />
-            {!selectedImageAsset ? <div className="task-media-asset-state"><ImageIcon size={22} /><span>等待场景图片</span></div> : null}
+            {!selectedImageAsset ? <div className="task-media-asset-state"><ImageIcon size={22} /><span>{coverSelected ? '等待封面图片' : '等待场景图片'}</span></div> : null}
             {selectedImageAsset && !selectedImageUrl && !selectedImageError ? <div className="task-media-asset-state"><Loader2 className="spin" size={22} /><span>正在读取图片</span></div> : null}
             {selectedImageError ? <div className="task-media-asset-state danger"><XCircle size={22} /><span>图片读取失败</span></div> : null}
           </div>
           <div className="task-media-progress">
             <ImageIcon size={15} />
             <span><i style={{ width: `${Math.round((generatedImageCount / Math.max(1, scenes.length || generatedImageCount)) * 100)}%` }} /></span>
-            {selectedSceneCues.length > 0 ? (
+            {coverSelected ? <small className="task-media-cue-empty">封面页 {ORDINARY_TASK_COVER_PAGE_DURATION_MS / 1000} 秒</small> : selectedSceneCues.length > 0 ? (
               <div className="task-media-cue-control" aria-label="当前场景字幕">
                 <button type="button" title="上一条字幕" aria-label="上一条字幕" disabled={activeCueIndex === 0} onClick={() => setSelectedCueIndex((current) => Math.max(0, current - 1))}><ChevronLeft size={14} /></button>
                 <small>字幕 {activeCueIndex + 1} / {selectedSceneCues.length}</small>
                 <button type="button" title="下一条字幕" aria-label="下一条字幕" disabled={activeCueIndex >= selectedSceneCues.length - 1} onClick={() => setSelectedCueIndex((current) => Math.min(selectedSceneCues.length - 1, current + 1))}><ChevronRight size={14} /></button>
               </div>
             ) : <small className="task-media-cue-empty">暂无字幕</small>}
-            <small className="task-media-scene-count">{String(selectedSceneIndex + 1).padStart(2, '0')} / {String(scenes.length || generatedImageCount || 0).padStart(2, '0')}</small>
+            <small className="task-media-scene-count">{coverSelected ? '00' : String(selectedSceneIndex + 1).padStart(2, '0')} / {String(scenes.length || generatedImageCount || 0).padStart(2, '0')}</small>
           </div>
         </section>
         <aside className="task-scene-rail">
           <div><h3>场景图片</h3><span>{generatedImageCount} / {scenes.length || generatedImageCount || 0} 已生成</span></div>
           <div className="task-scene-list">
+            {task.coverPageEnabled ? (
+              <button type="button" className={`task-scene-item cover ${coverAsset ? 'complete' : task.status === 'running' ? 'running' : 'pending'} ${coverSelected ? 'selected' : ''}`} data-scene-kind="cover" onClick={() => setSelectedSceneId(0)}>
+                <span>00</span>
+                <div><strong>封面页</strong><small>{coverAsset ? `${ORDINARY_TASK_COVER_PAGE_DURATION_MS / 1000} 秒 · 已生成` : task.status === 'running' ? '生成中' : '等待生成'}</small></div>
+              </button>
+            ) : null}
             {sceneRailItems.map((scene, index) => {
               const complete = imageBySceneId.has(scene.id);
               const running = !complete && nextPendingSceneId === scene.id && task.status === 'running';

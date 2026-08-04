@@ -77,6 +77,28 @@ describe('three-stage new task workbench', () => {
     expect(api).toContain('importOrdinaryTaskCover: (ratio: OrdinaryTaskCoverRatio)');
   });
 
+  it('configures a per-video cover page with a separate image source and cover-only text', async () => {
+    const [page, draft, types, css] = await Promise.all([
+      readFile(new URL('../src/features/tasks/NewTaskPage.tsx', import.meta.url), 'utf8'),
+      readFile(new URL('../src/features/tasks/new-task-draft.ts', import.meta.url), 'utf8'),
+      readFile(new URL('../src/shared/types.ts', import.meta.url), 'utf8'),
+      readFile(new URL('../src/styles/features/new-task.css', import.meta.url), 'utf8'),
+    ]);
+
+    expect(page).toContain('data-cover-page-enabled={coverPageEnabled');
+    expect(page).toContain('label="启用封面页"');
+    expect(page).toContain('labels={[\'AI 单独生成\', \'本地导入\']}');
+    expect(page).toContain('label="封面文字" hint="可选 · 仅显示在封面页"');
+    expect(page).toContain('coverPageEnabled,');
+    expect(page).toContain('coverPageText,');
+    expect(draft).toContain('coverPageEnabled?: boolean');
+    expect(draft).toContain('coverPageText?: string');
+    expect(types).toContain('coverPageEnabled?: boolean');
+    expect(types).toContain('coverPageText?: string');
+    expect(css).toMatch(/\.ordinary-cover-page-editor\.enabled\s*\{[\s\S]*border-color:/u);
+    expect(css).toMatch(/\.ordinary-cover-page-body\s*\{[\s\S]*border-top:/u);
+  });
+
   it('persists the default-off failed-image borrowing control through the complete task snapshot', async () => {
     const [page, draft, types, ipc, detail] = await Promise.all([
       readFile(new URL('../src/features/tasks/NewTaskPage.tsx', import.meta.url), 'utf8'),

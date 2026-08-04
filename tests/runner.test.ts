@@ -144,6 +144,67 @@ describe('task runner', () => {
     }
   });
 
+  it('generates only the independent cover when body images use local person materials', async () => {
+    const dir = await mkdtemp(join(tmpdir(), 'storybound-runner-local-materials-cover-'));
+    const db = await FileDatabase.open(join(dir, 'data.db'));
+    const draftRootDir = join(dir, 'JianyingPro Drafts');
+    const mediaDir = join(dir, 'media');
+    const assetRoot = join(dir, 'person-assets');
+    const source = join(dir, 'source.png');
+    const generatedSceneIds: number[][] = [];
+    const draftPayloads: PyJianYingBridgeInput[] = [];
+
+    try {
+      await db.upsertConfig({
+        ...(await db.getState()).config,
+        jianying: { ...(await db.getState()).config.jianying, draftPath: draftRootDir },
+      });
+      await writeFile(source, tinyPng);
+      await createPersonAsset(assetRoot, '迟子建');
+      await importPersonAssetFiles(assetRoot, '迟子建', [source]);
+      const task = await db.createTask({
+        title: 'Local body with generated cover',
+        inputText: sampleInput,
+        materialSource: 'local',
+        materialPerson: '迟子建',
+        coverImageMode: 'auto',
+        coverTemplateId: 'cinematic-poster',
+        coverPageEnabled: true,
+        coverPageText: '只在封面页显示',
+      });
+
+      await runTask(db, task, {
+        appDataDir: dir,
+        customCoverTemplates: defaultCustomCoverTemplates,
+        generatePipelineArtifact: async () => makeArtifact(),
+        generateImages: async (scenes) => {
+          generatedSceneIds.push(scenes.map((scene) => scene.id));
+          return writeSceneAssets(mediaDir, scenes, 'png', tinyPng);
+        },
+        synthesizeNarration: async (scenes) => writeSceneAssets(mediaDir, scenes, 'wav', wavTone(1200)),
+        draftWriterOptions: {
+          runBridge: async (payload) => {
+            draftPayloads.push(payload);
+            return fakeBridge(payload);
+          },
+        },
+      });
+
+      expect(generatedSceneIds).toEqual([[0]]);
+      expect(draftPayloads[0]).toMatchObject({
+        coverPage: {
+          durationUs: 2_000_000,
+          title: { text: '只在封面页显示', startUs: 0, durationUs: 2_000_000 },
+        },
+      });
+      expect(draftPayloads[0].images.every((image) => image.sceneId > 0)).toBe(true);
+      expect((await db.getState()).tasks.find((item) => item.id === task.id)?.status).toBe('completed');
+    } finally {
+      await db.close();
+      await rm(dir, { recursive: true, force: true });
+    }
+  });
+
   it('runs a task into a real Jianying draft folder when providers return real assets', async () => {
     const dir = await mkdtemp(join(tmpdir(), 'storybound-runner-'));
     const db = await FileDatabase.open(join(dir, 'data.db'));

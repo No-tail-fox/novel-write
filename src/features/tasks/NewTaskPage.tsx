@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
-import { Check, FileText, Link2, Loader2, Mic2, Play, Plus, RotateCcw, Save, Search, Trash2, Upload, Wand2 } from 'lucide-react';
+import { Check, FileText, Image as ImageIcon, Link2, Loader2, Mic2, Play, Plus, RotateCcw, Save, Search, Trash2, Upload, Wand2 } from 'lucide-react';
 import { FormField as Field } from '../../components/FormField';
 import { OptionGroup as OptionCloud } from '../../components/OptionGroup';
 import { SegmentedControl as Segmented } from '../../components/SegmentedControl';
@@ -51,7 +51,7 @@ import type {
   TaskVideoForm,
   WebSearchProvider,
 } from '../../shared/types';
-import { ordinaryTaskCoverDimensions, validateOrdinaryTaskCoverSelection } from '../../shared/ordinary-task-cover';
+import { MAX_ORDINARY_TASK_COVER_PAGE_TEXT_LENGTH, ORDINARY_TASK_COVER_PAGE_DURATION_MS, ordinaryTaskCoverDimensions, validateOrdinaryTaskCoverSelection } from '../../shared/ordinary-task-cover';
 import { imageGenerationQualityLabel, normalizeImageGenerationQuality } from '../../shared/image-quality';
 import { useAsyncAction } from '../../ui/async-action';
 import { buildTaskCreateInput } from './task-create-input';
@@ -70,8 +70,6 @@ import {
 import {
   NEW_TASK_CREATE_FIELDS_BY_STAGE,
   NEW_TASK_PAUSE_OPTIONS,
-  ORDINARY_AVAILABLE_COVER_MODES,
-  ORDINARY_COVER_MODE_MANIFEST,
   type OrdinaryCoverMode,
 } from './task-control-manifest';
 import {
@@ -208,6 +206,8 @@ export function NewTaskPage({
   const [videoForm, setVideoForm] = useState<TaskVideoForm>('narration');
   const [coverImageMode, setCoverImageMode] = useState<OrdinaryCoverMode>('off');
   const [coverTemplateId, setCoverTemplateId] = useState('cinematic-poster');
+  const [coverPageEnabled, setCoverPageEnabled] = useState(false);
+  const [coverPageText, setCoverPageText] = useState('');
   const [manualCoverAsset, setManualCoverAsset] = useState<OrdinaryTaskCoverSelection | null>(null);
   const [autoBorrowImage, setAutoBorrowImage] = useState(false);
   const [podcastImageMode, setPodcastImageMode] = useState('multi');
@@ -255,7 +255,7 @@ export function NewTaskPage({
   const createTaskDisabled = running
     || isBrowserPreview
     || isLocalMaterialInvalid
-    || (coverImageMode === 'manual' && !manualCoverAsset)
+    || (coverPageEnabled && (coverImageMode === 'off' || (coverImageMode === 'manual' && !manualCoverAsset)))
     || (mode === 'paste' ? inputText.trim().length === 0 : aiKeyword.trim().length === 0);
   const executionSceneCount = normalizeTaskStoryboardSceneCount(storyboardSceneCount)
     ?? storyboardScenePreviewRange?.target
@@ -314,6 +314,8 @@ export function NewTaskPage({
         videoForm,
         coverImageMode,
         coverTemplateId,
+        coverPageEnabled,
+        coverPageText,
         manualCoverAsset: manualCoverAsset ?? undefined,
         autoBorrowImage,
         podcastImageMode,
@@ -372,6 +374,8 @@ export function NewTaskPage({
     if (values.videoForm === 'narration' || values.videoForm === 'two-host-podcast') setVideoForm(values.videoForm);
     if (values.coverImageMode === 'off' || values.coverImageMode === 'auto' || values.coverImageMode === 'manual') setCoverImageMode(values.coverImageMode);
     if (typeof values.coverTemplateId === 'string') setCoverTemplateId(values.coverTemplateId);
+    if (typeof values.coverPageEnabled === 'boolean') setCoverPageEnabled(values.coverPageEnabled);
+    if (typeof values.coverPageText === 'string') setCoverPageText(values.coverPageText.slice(0, MAX_ORDINARY_TASK_COVER_PAGE_TEXT_LENGTH));
     if (typeof values.autoBorrowImage === 'boolean') setAutoBorrowImage(values.autoBorrowImage);
     if (values.manualCoverAsset) {
       try {
@@ -503,7 +507,7 @@ export function NewTaskPage({
     ratioManuallyOverridden, ttsProvider, speaker, bgmId, referenceImagePath, pausePoint,
     processingMode, rewriteIntensity, narrativePov, keepPromotion, productInfo, materialSource,
     materialPerson, fixedIntro, outroCta, lockIntroSentences, ttsSpeed, targetLength,
-    storyboardSceneCount, publishMode, videoForm, coverImageMode, coverTemplateId, manualCoverAsset, autoBorrowImage,
+    storyboardSceneCount, publishMode, videoForm, coverImageMode, coverTemplateId, coverPageEnabled, coverPageText, manualCoverAsset, autoBorrowImage,
     podcastImageMode, podcastSpeakers, selectedSearchSourceIds, searchContext, researchCopy,
   ]);
 
@@ -730,6 +734,7 @@ export function NewTaskPage({
       if (!selected) return;
       setManualCoverAsset(selected);
       setCoverImageMode('manual');
+      setCoverPageEnabled(true);
       setDraftNotice(`已导入手动封面：${selected.originalName}`);
     }, { onError: (error) => setDraftNotice(error.message) });
   }
@@ -751,7 +756,7 @@ export function NewTaskPage({
       setDraftNotice('所选人物素材至少导入 1 张图片后才能创建任务。');
       return;
     }
-    if (coverImageMode === 'manual' && !manualCoverAsset) {
+    if (coverPageEnabled && coverImageMode === 'manual' && !manualCoverAsset) {
       setDraftNotice('请先导入与当前画面比例一致的手动封面。');
       return;
     }
@@ -777,6 +782,8 @@ export function NewTaskPage({
         videoForm,
         coverImageMode,
         coverTemplateId,
+        coverPageEnabled,
+        coverPageText,
         manualCoverAssetId: manualCoverAsset?.id,
         autoBorrowImage,
         podcastImageMode,
@@ -1070,16 +1077,34 @@ export function NewTaskPage({
                 <div><span className="field-title">背景音乐</span><div className="chip-row"><button type="button" className={bgmId === '' ? 'chip active' : 'chip'} onClick={() => setBgmId('')}>无 BGM</button>{bgmOptions.map((bgm) => <button type="button" key={bgm.id} className={bgmId === bgm.id ? 'chip active' : 'chip'} onClick={() => setBgmId(bgm.id)}>{bgm.title}</button>)}<button type="button" className="chip" disabled={taskAction.busy} onClick={addBgmFromTask}><Plus size={14} />添加</button></div></div>
                 <Field label="文本模型"><select value={selectedTaskLlmProfileId} onChange={(event) => setSelectedTaskLlmProfileId(event.target.value)}>{state.config.llmProfiles.map((profile) => <option key={profile.id ?? profile.model} value={profile.id ?? profile.model}>{profile.provider}: {profile.model}</option>)}</select></Field>
               </div>
-              <div className="new-task-field-grid">
-                <Field label="封面模板" hint={coverTemplateHint}><select className="cover-template-select" value={coverTemplateId} onChange={(event) => setCoverTemplateId(event.target.value)}>{coverTemplateSelectOptions.map(([id, label, hint]) => <option key={id} value={id}>{hint ? `${label} · ${id}` : label}</option>)}</select></Field>
-                <div><Segmented label="封面生成" value={coverImageMode} options={[...ORDINARY_AVAILABLE_COVER_MODES]} labels={ORDINARY_AVAILABLE_COVER_MODES.map((mode) => ORDINARY_COVER_MODE_MANIFEST[mode].label)} onChange={(value) => setCoverImageMode(value as OrdinaryCoverMode)} /><small className="hint-text">自动模式使用封面模板；手动模式使用已校验的本地图片。</small></div>
-              </div>
-              {coverImageMode === 'manual' ? (
-                <div className="manual-cover-import" data-manual-cover-state={manualCoverAsset ? 'ready' : 'required'}>
-                  <div><strong>{manualCoverAsset ? manualCoverAsset.originalName : '尚未导入手动封面'}</strong><span>{manualCoverAsset ? `${manualCoverAsset.width} × ${manualCoverAsset.height} · ${(manualCoverAsset.sizeBytes / 1024 / 1024).toFixed(2)} MB` : `需要 ${ordinaryTaskCoverDimensions(ratio as OrdinaryTaskCoverRatio).width} × ${ordinaryTaskCoverDimensions(ratio as OrdinaryTaskCoverRatio).height} 的 PNG / JPG / WebP`}</span></div>
-                  <button type="button" className="ghost-action" disabled={taskAction.busy || isBrowserPreview} onClick={importOrdinaryTaskCover}><Upload size={15} />导入手动封面</button>
-                </div>
-              ) : null}
+              <section className={coverPageEnabled ? 'ordinary-cover-page-editor enabled' : 'ordinary-cover-page-editor'} data-cover-page-enabled={coverPageEnabled ? 'true' : 'false'}>
+                <header>
+                  <div><span className="field-title">片头封面页</span><small>{ORDINARY_TASK_COVER_PAGE_DURATION_MS / 1000} 秒独立首屏</small></div>
+                  <ToggleField
+                    label="启用封面页"
+                    checked={coverPageEnabled}
+                    onChange={(enabled) => {
+                      setCoverPageEnabled(enabled);
+                      setCoverImageMode(enabled ? (coverImageMode === 'off' ? 'auto' : coverImageMode) : 'off');
+                    }}
+                  />
+                </header>
+                {coverPageEnabled ? (
+                  <div className="ordinary-cover-page-body">
+                    <div className="new-task-field-grid">
+                      <Segmented label="封面图片" value={coverImageMode} options={['auto', 'manual']} labels={['AI 单独生成', '本地导入']} onChange={(value) => setCoverImageMode(value as OrdinaryCoverMode)} />
+                      {coverImageMode === 'auto' ? <Field label="封面模板" hint={coverTemplateHint}><select className="cover-template-select" value={coverTemplateId} onChange={(event) => setCoverTemplateId(event.target.value)}>{coverTemplateSelectOptions.map(([id, label, hint]) => <option key={id} value={id}>{hint ? `${label} · ${id}` : label}</option>)}</select></Field> : <div className="ordinary-cover-source-note"><ImageIcon size={16} /><span>使用当前视频比例导入封面图</span></div>}
+                    </div>
+                    {coverImageMode === 'manual' ? (
+                      <div className="manual-cover-import" data-manual-cover-state={manualCoverAsset ? 'ready' : 'required'}>
+                        <div><strong>{manualCoverAsset ? manualCoverAsset.originalName : '尚未导入手动封面'}</strong><span>{manualCoverAsset ? `${manualCoverAsset.width} × ${manualCoverAsset.height} · ${(manualCoverAsset.sizeBytes / 1024 / 1024).toFixed(2)} MB` : `需要 ${ordinaryTaskCoverDimensions(ratio as OrdinaryTaskCoverRatio).width} × ${ordinaryTaskCoverDimensions(ratio as OrdinaryTaskCoverRatio).height} 的 PNG / JPG / WebP`}</span></div>
+                        <button type="button" className="ghost-action" disabled={taskAction.busy || isBrowserPreview} onClick={importOrdinaryTaskCover}><Upload size={15} />导入手动封面</button>
+                      </div>
+                    ) : null}
+                    <Field label="封面文字" hint="可选 · 仅显示在封面页"><textarea className="small-textarea ordinary-cover-page-text" maxLength={MAX_ORDINARY_TASK_COVER_PAGE_TEXT_LENGTH} value={coverPageText} onChange={(event) => setCoverPageText(event.target.value)} placeholder="留空则只显示封面图" /></Field>
+                  </div>
+                ) : null}
+              </section>
               <Field label="主角参考图" hint="可选"><div className="upload-row"><input value={referenceImagePath} placeholder="上传后出现主角的分镜会以这张为基础保持人物一致" onChange={(event) => setReferenceImagePath(event.target.value)} /><button type="button" className="ghost-action" disabled={taskAction.busy} onClick={selectTaskReferenceImage}><Upload size={15} />上传主角参考图</button></div></Field>
               <label className="new-task-borrow-toggle toggle-row" title="开启后，生图失败的镜头会在全部尝试结束后借用最近的可用图片。">
                 <input type="checkbox" checked={autoBorrowImage} onChange={(event) => setAutoBorrowImage(event.target.checked)} />
@@ -1112,7 +1137,7 @@ export function NewTaskPage({
             <div><dt>图片质量</dt><dd>{supportsImageQuality ? (imageQualityOverrideEnabled ? `覆盖为${imageGenerationQualityLabel(imageQuality)}质量` : `默认（${imageGenerationQualityLabel(configuredImageQuality)}质量）`) : '由即梦服务控制'}</dd></div>
             <div><dt>配音角色</dt><dd>{videoForm === 'two-host-podcast' ? podcastSpeakers : taskSpeakerLabel(ttsProvider, speaker, state.minimaxCloneVoices)}</dd></div>
             <div><dt>草稿模板</dt><dd>{draftTemplateLabel(templateId, state.draftTemplates)}</dd></div>
-            <div><dt>封面方式</dt><dd>{coverImageMode === 'manual' ? (manualCoverAsset?.originalName ?? '待导入') : ORDINARY_COVER_MODE_MANIFEST[coverImageMode].label}</dd></div>
+            <div><dt>片头封面</dt><dd>{coverPageEnabled ? `${coverImageMode === 'manual' ? (manualCoverAsset?.originalName ?? '待导入') : 'AI 单独生成'} · ${coverPageText.trim() ? '含文字' : '纯图片'}` : '关闭'}</dd></div>
             <div><dt>失败补位</dt><dd>{autoBorrowImage ? '已启用' : '关闭'}</dd></div>
           </dl>
           <div className="new-task-readiness">

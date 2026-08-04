@@ -61,6 +61,8 @@ export interface NewTaskDraftValues {
   videoForm?: TaskVideoForm;
   coverImageMode?: OrdinaryCoverMode;
   coverTemplateId?: string;
+  coverPageEnabled?: boolean;
+  coverPageText?: string;
   manualCoverAsset?: OrdinaryTaskCoverSelection;
   autoBorrowImage?: boolean;
   podcastImageMode?: string;

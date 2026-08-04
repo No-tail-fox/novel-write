@@ -1,3 +1,48 @@
+# 普通视频独立封面页发现
+
+## 初步审计
+
+- 普通任务已经具备 `coverImageMode`、`coverTemplateId`、`manualCoverAssetId` 与任务托管的 `covers/cover-manual.png`，自动/手动封面资产入口可以复用。
+- 当前 `artifact.cover` 保存标题、副标题等发布文案元数据，草稿桥接层也接受 `coverImagePath`，但这不等同于一个有独立时长的首段封面页。
+- 现有剪映桥接层会将模板的 `title`、`subtitle` 叠加到 `total_duration`，这正是需要隔离的边界：新增封面文字必须只覆盖封面片段，不能进入正文总时长。
+- HTML 动画已有独立封面流程，但本次明确是普通视频，不能复用 HTML 任务路由或状态。
+
+## 时间线与预览边界
+
+- `writeJianyingDraft` 当前按正文分镜计算总时长，`coverImagePath` 只用于 `draft_meta_info.json` 的 `draft_cover`，没有成为视频轨片段。
+- pyJianYingDraft 桥接层从 0 开始重算正文场景时间线，并由这条时间线生成字幕，因此可以通过 2 秒封面偏移统一移动图片、配音和字幕，无需手工改 SRT 字符串。
+- 当前 `add_overlay_text` 固定从 0 覆盖总时长；需要支持 `startUs` / `durationUs`，封面文字单独使用 `0..coverDuration`，正文模板文字使用 `coverDuration..end`。
+- 任务产物状态已经单独保存 `assets.cover`，任务详情只缺封面资产读取、00 项选择和专属预览状态。
+- 普通任务由 `isOrdinaryTask` 限定为 story，音乐 MV 走独立页面和 sidecar，本轮不改变音乐 MV 行为。
+
+## 兼容策略
+
+- 仅凭旧 `coverImageMode=auto/manual` 不能推断用户希望插入片头，否则旧任务重新打包会改变视频；必须增加显式 `coverPageEnabled`，数据库默认 `0`。
+- 新任务开启封面页时仍沿用 `coverImageMode` 选择自动或手动图片，关闭时不生成首段封面。
+
+## 已实现契约
+
+- 创建任务新增 `coverPageEnabled` 与 `coverPageText`，IPC 将文字限制为 80 字；数据库迁移新增 `cover_page_enabled` 和 `cover_page_text`，默认关闭且为空。
+- 新建任务输出设置将封面页收拢为单一区块，开启后选择“AI 单独生成 / 本地导入”，封面文字留空即纯图片。
+- `writeJianyingDraft` 新增独立 `coverPage` 载荷；pyJianYingDraft 将封面图片写入 `images` 轨首段，并为封面文字创建 `cover_title` 轨。
+- 正文 overlay 增加 `startUs` / `durationUs`，从封面结束点开始；桥接字幕由偏移后的正文 timeline 生成。
+- 任务详情预览新增 `00 封面`，使用全画布封面图片并隐藏正文字幕、副标题和免责声明。
+
+## 聚焦验证
+
+- 9 个测试文件、124 项测试通过。
+- 真实 Python 桥接测试确认：封面图片与 `cover_title` 为 `0..2s`，正文图片、配音、字幕和正文标题从 `2s` 开始，总时长正确增加 2 秒。
+
+## 实景加固
+
+- 首次 Electron 封面截图发现 `00` 编号颜色被普通场景轮换色覆盖，对比度仅 `1.48:1`；调整 CSS 顺序后通过跨页面对比度检查。
+- 首次截图还发现封面文字沿用正文标题的底部坐标，长文案贴近画布下沿；封面标题现使用独立安全区，并按画布比例、字数和显式换行数缩放字号。
+- Electron 专用场景现在要求标题矩形完整落在封面画布内，且正文副标题、字幕和免责声明节点不得存在。
+- 剪映正文边框覆盖层原先仍从 `0s` 开始，可能污染封面；现改为从 `cover_page_duration` 开始，只覆盖正文时长。
+- 本地人物素材分支原先会在自动封面生成前提前返回；自动封面现先独立生成，本地任务测试确认供应商只收到 `sceneId: 0`，正文图片仍来自素材库。
+
+---
+
 # 任务详情草稿交付区视觉强化发现
 
 ## 用户参考

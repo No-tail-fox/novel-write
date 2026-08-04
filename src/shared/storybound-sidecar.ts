@@ -28,6 +28,11 @@ export interface StoryboundStoryInput {
   template: unknown;
   task_title?: string;
   cover_image_path?: string;
+  cover_page?: {
+    image_path: string;
+    text: string;
+    duration_us: number;
+  };
   assets?: StoryboundStoryAssets;
 }
 
@@ -584,6 +589,8 @@ def generate_story(payload):
     template = payload.get("template") or {}
     canvas = template.get("canvas") if isinstance(template, dict) else {}
     scenes = assets.get("scenes") or []
+    cover_page = payload.get("cover_page") or {}
+    cover_duration = max(0, int(cover_page.get("duration_us") or 0))
     if not scenes:
         images = assets.get("images") or []
         scenes = [
@@ -595,7 +602,25 @@ def generate_story(payload):
             }
             for index, item in enumerate(images)
         ]
-    duration = total_scene_duration_us(scenes)
+    duration = cover_duration + total_scene_duration_us(scenes)
+    cover_video = []
+    cover_text = []
+    if cover_duration > 0 and cover_page.get("image_path"):
+        cover_video.append({
+            "scene_id": 0,
+            "path": cover_page.get("image_path"),
+            "start_us": 0,
+            "duration_us": cover_duration,
+            "role": "cover_page",
+        })
+        if str(cover_page.get("text") or "").strip():
+            cover_text.append({
+                "scene_id": 0,
+                "text": str(cover_page.get("text") or "").strip(),
+                "start_us": 0,
+                "duration_us": cover_duration,
+                "role": "cover_page_title",
+            })
     title = str(payload.get("task_title") or cover_title_text(payload))
     content = {
         "duration": duration,
@@ -605,20 +630,20 @@ def generate_story(payload):
             "ratio": (canvas or {}).get("ratio") or "original",
         },
         "materials": {
-            "videos": assets.get("images") or [],
+            "videos": cover_video + (assets.get("images") or []),
             "audios": assets.get("narration") or [],
-            "texts": scenes,
+            "texts": cover_text + scenes,
             "bgm": payload.get("bgm_path") or "",
             "subtitles": assets.get("subtitles_path") or "",
         },
         "tracks": [
-            {"type": "video", "segments": assets.get("images") or []},
+            {"type": "video", "segments": cover_video + (assets.get("images") or [])},
             {"type": "audio", "segments": assets.get("narration") or []},
-            {"type": "text", "segments": scenes},
+            {"type": "text", "segments": cover_text + scenes},
         ],
         "storybound_contract": payload,
     }
-    return create_minimal_draft(payload["jianying_draft_path"], title, content, {"draft_cover": payload.get("cover_image_path") or ""})
+    return create_minimal_draft(payload["jianying_draft_path"], title, content, {"draft_cover": cover_page.get("image_path") or payload.get("cover_image_path") or ""})
 
 
 def generate_music_mv(payload):

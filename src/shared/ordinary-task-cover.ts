@@ -1,4 +1,5 @@
 import type {
+  DraftTemplate,
   OrdinaryTaskCoverAsset,
   OrdinaryTaskCoverRatio,
   OrdinaryTaskCoverSelection,
@@ -6,6 +7,8 @@ import type {
 
 export const ORDINARY_TASK_COVER_RATIOS = ['9:16', '4:3', '1:1', '16:9'] as const satisfies readonly OrdinaryTaskCoverRatio[];
 export const MAX_ORDINARY_TASK_COVER_BYTES = 32 * 1024 * 1024;
+export const ORDINARY_TASK_COVER_PAGE_DURATION_MS = 2000;
+export const MAX_ORDINARY_TASK_COVER_PAGE_TEXT_LENGTH = 80;
 
 const dimensions: Record<OrdinaryTaskCoverRatio, { width: number; height: number }> = {
   '9:16': { width: 720, height: 1280 },
@@ -52,6 +55,46 @@ export function normalizeOrdinaryTaskCoverRatio(value: unknown): OrdinaryTaskCov
 
 export function ordinaryTaskCoverDimensions(ratio: OrdinaryTaskCoverRatio): { width: number; height: number } {
   return { ...dimensions[normalizeOrdinaryTaskCoverRatio(ratio)] };
+}
+
+export function normalizeOrdinaryTaskCoverPageText(value: unknown): string {
+  if (value === null || value === undefined) return '';
+  if (typeof value !== 'string') {
+    throw new Error('ORDINARY_COVER_PAGE_TEXT_INVALID: Cover page text must be a string.');
+  }
+  const normalized = value.replace(/\r\n?/g, '\n').trim();
+  if (normalized.length > MAX_ORDINARY_TASK_COVER_PAGE_TEXT_LENGTH) {
+    throw new Error(`ORDINARY_COVER_PAGE_TEXT_TOO_LONG: Cover page text cannot exceed ${MAX_ORDINARY_TASK_COVER_PAGE_TEXT_LENGTH} characters.`);
+  }
+  return normalized;
+}
+
+export function resolveOrdinaryTaskCoverTitle(
+  template: DraftTemplate,
+  text: string,
+): DraftTemplate['title'] {
+  const normalizedText = normalizeOrdinaryTaskCoverPageText(text);
+  const characters = Array.from(normalizedText.replace(/\s/gu, '')).length;
+  const explicitLines = normalizedText ? normalizedText.split('\n').length : 1;
+  const aspectRatio = template.canvas.width / Math.max(1, template.canvas.height);
+  const landscape = aspectRatio > 1.2;
+  const square = aspectRatio >= 0.85 && aspectRatio <= 1.2;
+  const baseMaximum = landscape ? 16 : square ? 22 : 26;
+  const lengthScale = characters > 56 ? 0.5 : characters > 36 ? 0.62 : characters > 20 ? 0.78 : 1;
+  const lineScale = explicitLines > 5 ? 0.55 : explicitLines > 3 ? 0.72 : 1;
+  const minimum = landscape ? 8 : square ? 10 : 12;
+  const fontSize = Math.max(minimum, Math.min(template.title.fontSize, Math.floor(baseMaximum * Math.min(lengthScale, lineScale))));
+
+  return {
+    ...template.title,
+    visible: Boolean(normalizedText),
+    text: normalizedText,
+    x: 0,
+    y: landscape ? 0.18 : 0.2,
+    width: landscape ? 0.78 : 0.88,
+    fontSize,
+    lineSpacing: Math.max(0, Math.min(template.title.lineSpacing, 2)),
+  };
 }
 
 export function validateOrdinaryTaskCoverInspection(

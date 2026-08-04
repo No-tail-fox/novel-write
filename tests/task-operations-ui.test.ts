@@ -129,6 +129,10 @@ describe('editorial task operations surfaces', () => {
     expect(artifact).toContain('className="task-media-workspace"');
     expect(artifact).toContain('className="task-media-canvas"');
     expect(artifact).toContain('className="task-scene-rail"');
+    expect(artifact).toContain('data-preview-kind={coverSelected ? \'cover\' : \'scene\'}');
+    expect(artifact).toContain('data-scene-kind="cover"');
+    expect(artifact).toContain('<span>00</span>');
+    expect(artifact).toContain("titleText={coverSelected ? task.coverPageText ?? '' : previewContent.title}");
     expect(artifact).toContain('<DraftTemplatePreview');
     expect(artifact).toContain('api.readAssetDataUrl(selectedImagePath)');
     expect(artifact).toContain('imageBySceneId.has(scene.id)');
@@ -163,6 +167,7 @@ describe('editorial task operations surfaces', () => {
     expect(artifact).toContain("tab === 'events'");
     expect(artifact).not.toContain('.slice(0, 6)');
     expect(css).toContain('grid-template-columns: minmax(0, 1fr) 260px;');
+    expect(css).toMatch(/\.task-scene-item\.cover\s*\{[\s\S]*border:/u);
     expect(css).toContain('background: var(--media-bg);');
     expect(css).toContain('@media (max-width: 1180px)');
     expect(css).toMatch(/\.task-detail-shell\[data-task-operations="detail"\] \.task-detail-bar \{[\s\S]*?flex-wrap: nowrap;/u);

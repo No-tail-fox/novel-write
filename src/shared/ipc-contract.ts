@@ -25,7 +25,7 @@ import {
 } from './html-video-workflow';
 import { HTML_VIDEO_EDITABLE_CONTROL_FIELDS } from './html-video-control-manifest';
 import { INVOKE_CHANNELS, type InvokeChannel } from './storydream-api';
-import { ORDINARY_TASK_COVER_RATIOS } from './ordinary-task-cover';
+import { MAX_ORDINARY_TASK_COVER_PAGE_TEXT_LENGTH, ORDINARY_TASK_COVER_RATIOS } from './ordinary-task-cover';
 import { MAX_HYPERFRAMES_SOURCE_BYTES } from './hyperframes';
 
 export const MAX_TASK_TEXT = 1_000_000;
@@ -214,6 +214,8 @@ export const createTaskSchema = bounded(
       podcastSpeakerB: nullableText(1024),
       coverImageMode: optionalText(128),
       coverTemplateId: optionalText(256),
+      coverPageEnabled: z.boolean().optional(),
+      coverPageText: optionalText(MAX_ORDINARY_TASK_COVER_PAGE_TEXT_LENGTH),
       manualCoverAssetId: z.string().uuid().optional(),
       autoBorrowImage: z.boolean().optional(),
       htmlVideoForeground: z.boolean().optional(),

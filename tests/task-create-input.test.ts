@@ -30,6 +30,33 @@ describe('ordinary task create input', () => {
     }, defaultCustomCoverTemplates)).toThrow(/ORDINARY_COVER_TEMPLATE_NOT_FOUND/);
   });
 
+  it('keeps an optional cover-page title separate and rejects a page without an image source', () => {
+    expect(buildTaskCreateInput({
+      inputText: 'source',
+      coverImageMode: 'auto',
+      coverTemplateId: 'cinematic-poster',
+      coverPageEnabled: true,
+      coverPageText: '  只在封面出现  ',
+    }, defaultCustomCoverTemplates)).toMatchObject({
+      coverPageEnabled: true,
+      coverPageText: '只在封面出现',
+    });
+
+    expect(buildTaskCreateInput({
+      inputText: 'source',
+      coverImageMode: 'auto',
+      coverTemplateId: 'cinematic-poster',
+      coverPageEnabled: false,
+      coverPageText: '不应保存',
+    }, defaultCustomCoverTemplates).coverPageText).toBe('');
+
+    expect(() => buildTaskCreateInput({
+      inputText: 'source',
+      coverImageMode: 'off',
+      coverPageEnabled: true,
+    }, defaultCustomCoverTemplates)).toThrow(/ORDINARY_COVER_PAGE_IMAGE_REQUIRED/);
+  });
+
   it('accepts manual only with an opaque managed import id and never a renderer path', () => {
     expect(buildTaskCreateInput({
       inputText: 'source',

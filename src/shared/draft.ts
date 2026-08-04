@@ -5,6 +5,7 @@ import type { BgmItem, CoverMetadata, DiagnosticsReport, DraftTemplate, ImagePro
 import { buildSubtitleTrack } from './story';
 import { getTemplate, normalizeDraftTemplate } from './templates';
 import { runPyJianYingDraftBridge, type PyJianYingBridgeInput, type PyJianYingBridgeOutput } from './jianying-bridge';
+import { resolveOrdinaryTaskCoverTitle } from './ordinary-task-cover';
 import { runStoryboundMediaSidecar, type StoryboundSidecarInput, type StoryboundSidecarResult } from './storybound-sidecar';
 
 export interface SceneAsset {
@@ -31,6 +32,11 @@ export interface WriteJianyingDraftInput {
   rewrittenCopy: string;
   generatedImages: SceneAsset[];
   coverImagePath?: string;
+  coverPage?: {
+    imagePath: string;
+    text?: string;
+    durationMs: number;
+  };
   narrationAudio: SceneAsset[];
   bgm: BgmItem | null;
 }
@@ -82,6 +88,19 @@ export async function writeJianyingDraft(input: WriteJianyingDraftInput, options
   if (coverImagePath) {
     await assertReadableFile(coverImagePath, 'cover image asset');
   }
+  const coverPage = input.coverPage
+    ? {
+      imagePath: input.coverPage.imagePath.trim(),
+      text: input.coverPage.text?.trim() ?? '',
+      durationUs: msToUs(input.coverPage.durationMs),
+    }
+    : null;
+  if (coverPage) {
+    if (!coverPage.imagePath || coverPage.durationUs <= 0) {
+      throw new Error('Cover page requires a readable image and a positive duration.');
+    }
+    await assertReadableFile(coverPage.imagePath, 'cover page image asset');
+  }
 
   let sourceBgm: BgmItem | null = null;
   if (input.bgm?.path) {
@@ -121,6 +140,7 @@ export async function writeJianyingDraft(input: WriteJianyingDraftInput, options
     sourceImages,
     sourceNarration,
     coverImagePath,
+    coverPage,
     sourceBgm,
   });
   const sidecarPayload = createStoryboundSidecarPayload({
@@ -132,6 +152,7 @@ export async function writeJianyingDraft(input: WriteJianyingDraftInput, options
     subtitlesFile,
     sourceBgm,
     coverImagePath,
+    coverPage,
   });
   try {
     const runBridge = options.runBridge ?? (options.runSidecar ? undefined : runPyJianYingDraftBridge);
@@ -194,9 +215,11 @@ function createBridgePayload(input: {
   sourceImages: string[];
   sourceNarration: SceneAsset[];
   coverImagePath: string;
+  coverPage: { imagePath: string; text: string; durationUs: number } | null;
   sourceBgm: BgmItem | null;
 }): PyJianYingBridgeInput {
-  let cursor = 0;
+  const coverPageDurationUs = input.coverPage?.durationUs ?? 0;
+  let cursor = coverPageDurationUs;
   const scenes = input.input.scenes.map((scene) => {
     const startUs = cursor;
     const durationUs = msToUs(scene.durationMs);
@@ -212,6 +235,7 @@ function createBridgePayload(input: {
     };
   });
   const overlayText = resolveOverlayText(input.input, input.template);
+  const coverTitle = resolveOrdinaryTaskCoverTitle(input.template, input.coverPage?.text ?? '');
   return {
     workDir: input.input.workDir,
     draftDir: input.draftDir,
@@ -258,6 +282,8 @@ function createBridgePayload(input: {
       title: {
         visible: input.template.title.visible,
         text: overlayText.title,
+        startUs: coverPageDurationUs,
+        durationUs: input.totalDuration,
         x: input.template.title.x,
         y: input.template.title.y,
         width: input.template.title.width,
@@ -274,6 +300,8 @@ function createBridgePayload(input: {
       subtitle: {
         visible: input.template.subtitle.visible,
         text: overlayText.subtitle,
+        startUs: coverPageDurationUs,
+        durationUs: input.totalDuration,
         x: input.template.subtitle.x,
         y: input.template.subtitle.y,
         width: input.template.subtitle.width,
@@ -290,6 +318,8 @@ function createBridgePayload(input: {
       disclaimer: {
         visible: input.template.disclaimer.visible,
         text: input.template.disclaimer.text,
+        startUs: coverPageDurationUs,
+        durationUs: input.totalDuration,
         x: input.template.disclaimer.x,
         y: input.template.disclaimer.y,
         width: input.template.disclaimer.width,
@@ -304,6 +334,28 @@ function createBridgePayload(input: {
         border: input.template.disclaimer.border,
       },
     },
+    coverPage: input.coverPage ? {
+      imagePath: input.coverPage.imagePath,
+      durationUs: input.coverPage.durationUs,
+      title: {
+        visible: coverTitle.visible,
+        text: coverTitle.text,
+        startUs: 0,
+        durationUs: input.coverPage.durationUs,
+        x: coverTitle.x,
+        y: coverTitle.y,
+        width: coverTitle.width,
+        fontSize: coverTitle.fontSize,
+        color: coverTitle.color,
+        alpha: coverTitle.alpha,
+        bold: coverTitle.bold,
+        underline: coverTitle.underline,
+        align: coverTitle.align,
+        letterSpacing: coverTitle.letterSpacing,
+        lineSpacing: coverTitle.lineSpacing,
+        border: coverTitle.border,
+      },
+    } : undefined,
     scenes,
     images: input.input.scenes.map((scene, index) => ({ sceneId: scene.id, path: input.sourceImages[index] })),
     coverImagePath: input.coverImagePath || undefined,
@@ -316,7 +368,7 @@ function createBridgePayload(input: {
     })),
     subtitlesSrtPath: input.subtitlesFile,
     bgm: input.sourceBgm,
-    totalDurationUs: input.totalDuration,
+    totalDurationUs: input.totalDuration + coverPageDurationUs,
     volumes: {
       narration: input.template.audio.narrationVolume / 10,
       bgm: resolveBgmVolume(input.template.audio.bgmVolume, input.sourceBgm),
@@ -344,8 +396,9 @@ function createStoryboundSidecarPayload(input: {
   subtitlesFile: string;
   sourceBgm: BgmItem | null;
   coverImagePath: string;
+  coverPage: { imagePath: string; text: string; durationUs: number } | null;
 }): StoryboundSidecarInput {
-  let cursor = 0;
+  let cursor = input.coverPage?.durationUs ?? 0;
   const scenes = input.input.scenes.map((scene) => {
     const startUs = cursor;
     const durationUs = msToUs(scene.durationMs);
@@ -366,6 +419,11 @@ function createStoryboundSidecarPayload(input: {
     template: input.template,
     task_title: input.title,
     cover_image_path: input.coverImagePath || undefined,
+    cover_page: input.coverPage ? {
+      image_path: input.coverPage.imagePath,
+      text: input.coverPage.text,
+      duration_us: input.coverPage.durationUs,
+    } : undefined,
     assets: {
       images: input.input.scenes.map((scene, index) => ({ scene_id: scene.id, path: input.sourceImages[index] })),
       narration: input.sourceNarration.map((asset) => ({

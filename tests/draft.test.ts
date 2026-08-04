@@ -247,7 +247,7 @@ describe('draft writer', () => {
     }
   });
 
-  it('passes an explicit cover image path to the Jianying bridge without adding it to scene images', async () => {
+  it('prepends an independent cover page without leaking its text into the body timeline', async () => {
     const dir = await mkdtemp(join(tmpdir(), 'storybound-draft-cover-image-'));
     const draftRootDir = join(dir, 'JianyingPro Drafts');
     const workDir = join(dir, 'work');
@@ -288,6 +288,11 @@ describe('draft writer', () => {
           rewrittenCopy: 'rewritten',
           generatedImages: images,
           coverImagePath: coverPath,
+          coverPage: {
+            imagePath: coverPath,
+            text: '只在封面出现',
+            durationMs: 2000,
+          },
           narrationAudio: narration,
           bgm: null,
         },
@@ -312,6 +317,23 @@ describe('draft writer', () => {
       );
 
       expect(bridgePayloads[0].coverImagePath).toBe(coverPath);
+      expect(bridgePayloads[0]).toMatchObject({
+        totalDurationUs: 4_600_000,
+        coverPage: {
+          imagePath: coverPath,
+          durationUs: 2_000_000,
+          title: { text: '只在封面出现', startUs: 0, durationUs: 2_000_000, x: 0, y: 0.2, width: 0.88 },
+        },
+        overlays: {
+          title: { startUs: 2_000_000, durationUs: 2_600_000 },
+          subtitle: { startUs: 2_000_000, durationUs: 2_600_000 },
+          disclaimer: { startUs: 2_000_000, durationUs: 2_600_000 },
+        },
+        scenes: [
+          { sceneId: 1, startUs: 2_000_000, durationUs: 1_200_000 },
+          { sceneId: 2, startUs: 3_200_000, durationUs: 1_400_000 },
+        ],
+      });
       expect(bridgePayloads[0].images.map((image) => image.path)).toEqual(images.map((image) => image.path));
       expect(bridgePayloads[0].images.some((image) => image.path === coverPath)).toBe(false);
     } finally {

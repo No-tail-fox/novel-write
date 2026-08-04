@@ -180,6 +180,8 @@ describe('file database', () => {
         'script_format',
         'cover_image_mode',
         'cover_template_id',
+        'cover_page_enabled',
+        'cover_page_text',
         'ordinary_cover_asset_json',
       ]));
 
@@ -219,6 +221,10 @@ describe('file database', () => {
         lockIntroSentences: 3,
         autoBorrowImage: true,
         imageQuality: 'low',
+        coverImageMode: 'auto',
+        coverTemplateId: 'cinematic-poster',
+        coverPageEnabled: true,
+        coverPageText: '只在封面出现',
       });
 
       const state = await db.getState();
@@ -232,9 +238,13 @@ describe('file database', () => {
         lockIntroSentences: 3,
         autoBorrowImage: true,
         imageQuality: 'low',
+        coverPageEnabled: true,
+        coverPageText: '只在封面出现',
       });
       const defaultTask = await db.createTask({ inputText: '默认严格失败' });
       expect(defaultTask.autoBorrowImage).toBe(false);
+      expect(defaultTask.coverPageEnabled).toBe(false);
+      expect(defaultTask.coverPageText).toBe('');
       await db.close();
     } finally {
       await rm(dir, { recursive: true, force: true });

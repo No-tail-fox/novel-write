@@ -68,6 +68,11 @@ describe('IPC runtime contract', () => {
       inputText: 'hello',
       aiSources: ['source'],
     });
+    expect(contract.createTaskSchema.parse({ inputText: 'hello', coverPageEnabled: true, coverPageText: '封面标题' })).toMatchObject({
+      coverPageEnabled: true,
+      coverPageText: '封面标题',
+    });
+    expect(() => contract.createTaskSchema.parse({ inputText: 'hello', coverPageText: '字'.repeat(81) })).toThrow();
     expect(() => contract.createTaskSchema.parse({ inputText: '' })).toThrow();
     expect(() => contract.createTaskSchema.parse({ inputText: 'x'.repeat(contract.MAX_TASK_TEXT + 1) })).toThrow();
     expect(() =>

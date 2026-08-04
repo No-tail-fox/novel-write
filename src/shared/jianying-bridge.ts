@@ -62,6 +62,8 @@ export interface PyJianYingBridgeInput {
     title?: {
       visible: boolean;
       text: string;
+      startUs?: number;
+      durationUs?: number;
       x: number;
       y: number;
       width: number;
@@ -78,6 +80,8 @@ export interface PyJianYingBridgeInput {
     subtitle?: {
       visible: boolean;
       text: string;
+      startUs?: number;
+      durationUs?: number;
       x: number;
       y: number;
       width: number;
@@ -94,6 +98,30 @@ export interface PyJianYingBridgeInput {
     disclaimer?: {
       visible: boolean;
       text: string;
+      startUs?: number;
+      durationUs?: number;
+      x: number;
+      y: number;
+      width: number;
+      fontSize: number;
+      color: string;
+      alpha: number;
+      bold: boolean;
+      underline: boolean;
+      align: number;
+      letterSpacing: number;
+      lineSpacing: number;
+      border: DraftTextBorder;
+    };
+  };
+  coverPage?: {
+    imagePath: string;
+    durationUs: number;
+    title?: {
+      visible: boolean;
+      text: string;
+      startUs?: number;
+      durationUs?: number;
       x: number;
       y: number;
       width: number;
@@ -782,10 +810,12 @@ def add_overlay_text(script, name, config, duration):
     text = str(config.get("text") or "").strip()
     if not text:
         return
+    start = max(0, int(config.get("startUs") or 0))
+    segment_duration = max(1, int(config.get("durationUs") or duration or 0))
     script.add_track(draft.TrackType.text, name)
     segment = draft.TextSegment(
         text,
-        draft.Timerange(0, max(1, int(duration or 0))),
+        draft.Timerange(start, segment_duration),
         style=text_style_from_config(config),
         border=text_border_from_config(config),
         clip_settings=draft.ClipSettings(
@@ -824,6 +854,11 @@ def main():
         allow_replace=True,
     )
     materials_dir = os.path.join(draft_dir, "materials")
+    cover_page = payload.get("coverPage") or {}
+    cover_page_duration = max(0, int(cover_page.get("durationUs") or 0))
+    cover_page_path = None
+    if cover_page_duration > 0 and cover_page.get("imagePath"):
+        cover_page_path = copy_asset(cover_page["imagePath"], os.path.join(materials_dir, "cover"), "cover-page", ".png")
     frame_overlay_path = prepare_frame_overlay_asset(payload, materials_dir)
     background_track = "background_track"
     script.add_track(draft.TrackType.video, background_track)
@@ -862,7 +897,7 @@ def main():
     effects = payload.get("effects") or {}
     image_area = payload.get("imageArea") or {}
     timeline = []
-    cursor = 0
+    cursor = cover_page_duration
     for scene in scenes:
         scene_id = int(scene["sceneId"])
         planned_duration = int(durations.get(scene_id, 0))
@@ -903,15 +938,35 @@ def main():
         clip_settings=draft.ClipSettings(scale_x=1.0, scale_y=1.0),
     )
     script.add_segment(background_segment, background_track)
-    if frame_overlay_path:
+    body_duration = max(0, total_duration - cover_page_duration)
+    if frame_overlay_path and body_duration > 0:
         frame_material = draft.VideoMaterial(frame_overlay_path)
         frame_segment = draft.VideoSegment(
             frame_material,
-            draft.Timerange(0, total_duration),
-            source_timerange=draft.Timerange(0, total_duration),
+            draft.Timerange(cover_page_duration, body_duration),
+            source_timerange=draft.Timerange(0, body_duration),
             clip_settings=draft.ClipSettings(scale_x=1.0, scale_y=1.0),
         )
         script.add_segment(frame_segment, "frame_overlay")
+
+    if cover_page_path:
+        cover_material = draft.VideoMaterial(cover_page_path)
+        cover_layout = resolve_image_layout(
+            {"visible": True, "ratio": "original", "top": 0, "height": 1, "fit": "cover"},
+            payload.get("canvas") or {},
+            cover_material,
+        )
+        cover_segment = draft.VideoSegment(
+            cover_material,
+            draft.Timerange(0, cover_page_duration),
+            source_timerange=draft.Timerange(0, cover_page_duration),
+            clip_settings=draft.ClipSettings(
+                scale_x=cover_layout["scale"],
+                scale_y=cover_layout["scale"],
+                transform_y=cover_layout["transform_y"],
+            ),
+        )
+        script.add_segment(cover_segment, "images")
 
     for index, scene in enumerate(timeline):
         scene_id = int(scene["sceneId"])
@@ -1027,6 +1082,7 @@ def main():
             )
 
     overlays = payload.get("overlays") or {}
+    add_overlay_text(script, "cover_title", cover_page.get("title"), cover_page_duration)
     add_overlay_text(script, "title", overlays.get("title"), total_duration)
     add_overlay_text(script, "subtitle", overlays.get("subtitle"), total_duration)
     add_overlay_text(script, "disclaimer", overlays.get("disclaimer"), total_duration)
@@ -1036,7 +1092,7 @@ def main():
     meta_path = os.path.join(draft_dir, "draft_meta_info.json")
     copied_images = [image_by_scene[int(scene["sceneId"])] for scene in scenes]
     copied_narration = [item["path"] for scene in scenes for item in audio_items_by_scene[int(scene["sceneId"])]]
-    cover_image_path = norm(payload.get("coverImagePath") or "")
+    cover_image_path = cover_page_path or norm(payload.get("coverImagePath") or "")
     patch_meta(meta_path, payload, draft_dir, script.duration, background_path, frame_overlay_path, copied_images, cover_image_path, copied_narration, bgm_path)
     print(json.dumps({
         "ok": True,

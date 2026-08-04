@@ -53,6 +53,7 @@ export const editorialQaMatrix = {
     { id: 'queue-operations-desktop', view: 'queue', theme: 'light', viewport: 'desktop' },
     { id: 'history-operations-desktop', view: 'history', theme: 'light', viewport: 'desktop' },
     { id: 'task-detail-operations-desktop', view: 'task-detail', theme: 'light', viewport: 'desktop' },
+    { id: 'task-detail-cover-page-light-desktop', view: 'task-detail', theme: 'light', viewport: 'desktop' },
     { id: 'task-detail-draft-delivery-light-desktop', view: 'task-detail', theme: 'light', viewport: 'desktop' },
     { id: 'task-detail-draft-delivery-dark-desktop', view: 'task-detail', theme: 'dark', viewport: 'desktop' },
     { id: 'task-detail-error-summary-desktop', view: 'task-detail', theme: 'light', viewport: 'desktop' },
@@ -196,6 +197,9 @@ export async function captureEditorialQa(
     if ((captureCase.id === 'task-detail-operations-desktop' || captureCase.id === 'task-detail-template-menu-dark-desktop') && !state.taskTemplateControlsReady) {
       throw new Error('Editorial QA task draft-template controls are incomplete.');
     }
+    if (captureCase.id === 'task-detail-cover-page-light-desktop' && !state.coverPagePreviewReady) {
+      throw new Error('Editorial QA ordinary cover-page preview failed.');
+    }
     if (captureCase.view === 'draft-templates' && !state.draftLayerPanelReady) {
       throw new Error(`Editorial QA draft-template layer panel did not follow the canvas selection in ${captureCase.id}.`);
     }
@@ -209,6 +213,7 @@ export async function captureEditorialQa(
       captureCase.view === 'task-detail'
       && !['task-detail-error-summary-desktop', 'task-detail-error-dialog-compact'].includes(captureCase.id)
       && !captureCase.id.startsWith('task-detail-draft-delivery-')
+      && captureCase.id !== 'task-detail-cover-page-light-desktop'
       && state.borrowedImageLabel !== '借 #1'
     ) {
       throw new Error(`Editorial QA borrowed-image label failed in ${captureCase.id}: ${state.borrowedImageLabel}.`);
@@ -291,6 +296,7 @@ export async function captureEditorialQa(
       deleteDialogFocusWrapped: state.deleteDialogFocusWrapped,
       deleteDialogEscapeRestored: state.deleteDialogEscapeRestored,
       taskTemplateControlsReady: state.taskTemplateControlsReady,
+      coverPagePreviewReady: state.coverPagePreviewReady,
       draftLayerPanelReady: state.draftLayerPanelReady,
       draftUnderlineToggleReady: state.draftUnderlineToggleReady,
     });
@@ -435,6 +441,7 @@ export interface EditorialQaCapture {
   deleteDialogFocusWrapped: boolean;
   deleteDialogEscapeRestored: boolean;
   taskTemplateControlsReady: boolean;
+  coverPagePreviewReady: boolean;
   draftLayerPanelReady: boolean;
   draftUnderlineToggleReady: boolean;
 }
@@ -493,6 +500,7 @@ interface QaScenarioState {
   deleteDialogFocusWrapped: boolean;
   deleteDialogEscapeRestored: boolean;
   taskTemplateControlsReady: boolean;
+  coverPagePreviewReady: boolean;
   draftLayerPanelReady: boolean;
   draftUnderlineToggleReady: boolean;
   layout: {
@@ -587,7 +595,7 @@ export function editorialQaCaptureIdsByRequirement(requirement: EditorialQaCaptu
   for (const captureCase of editorialQaMatrix.newTaskStates) requiredIds.add(captureCase.id);
 
   const classified = allIds.filter((id) => requirement === 'required' ? requiredIds.has(id) : !requiredIds.has(id));
-  if (requiredIds.size !== 67 || allIds.length - requiredIds.size !== 27) {
+  if (requiredIds.size !== 67 || allIds.length - requiredIds.size !== 28) {
     throw new Error(`Editorial QA canonical classification drifted: ${requiredIds.size} required of ${allIds.length}.`);
   }
   return classified;
@@ -733,6 +741,7 @@ function qaScenarioScript(id: string, view: string, theme: string, stage?: strin
     const failedTaskDetailScenario = scenarioId === 'task-detail-error-summary-desktop'
       || scenarioId === 'task-detail-error-dialog-compact';
     const draftDeliveryScenario = scenarioId.startsWith('task-detail-draft-delivery-');
+    const coverPageScenario = scenarioId === 'task-detail-cover-page-light-desktop';
     const navView = targetView === 'task-detail' ? 'queue' : targetView;
     const nav = document.querySelector('[data-nav-view="' + navView + '"]');
     if (nav instanceof HTMLButtonElement) nav.click();
@@ -753,7 +762,7 @@ function qaScenarioScript(id: string, view: string, theme: string, stage?: strin
       await waitFor(() => document.querySelector('[data-task-operations="queue"]'));
       const detailTitle = failedTaskDetailScenario
         ? 'QA 浅色错误提示'
-        : draftDeliveryScenario
+        : draftDeliveryScenario || coverPageScenario
           ? '丝绸之路文化科普'
           : '武则天：从深宫才人到一代女皇';
       const detailRow = [...document.querySelectorAll('.task-queue-row')]
@@ -763,7 +772,7 @@ function qaScenarioScript(id: string, view: string, theme: string, stage?: strin
     let ready = initialShellReady && themeReady && await waitFor(() => document.querySelector('.app-shell')
       && document.documentElement.dataset.themeReady === 'true'
       && document.querySelector('[data-shell-view="' + targetView + '"]'));
-    if (targetView === 'task-detail' && !failedTaskDetailScenario && !draftDeliveryScenario) {
+    if (targetView === 'task-detail' && !failedTaskDetailScenario && !draftDeliveryScenario && !coverPageScenario) {
       ready = ready && await waitFor(() => [...document.querySelectorAll('.image-card-status')]
         .some((element) => element.textContent?.trim() === '借 #1'));
     }
@@ -1230,6 +1239,40 @@ function qaScenarioScript(id: string, view: string, theme: string, stage?: strin
         await settleCompositor();
       }
     }
+    let coverPagePreviewReady = !coverPageScenario;
+    if (coverPageScenario) {
+      ready = ready && await waitFor(() => {
+        const frame = document.querySelector('[data-preview-kind="cover"]');
+        const railItem = document.querySelector('[data-scene-kind="cover"]');
+        const image = frame?.querySelector('.draft-image-asset');
+        const canvas = frame?.querySelector('[data-media-canvas="draft-canvas"]');
+        const title = frame?.querySelector('.draft-title');
+        const canvasRect = canvas?.getBoundingClientRect();
+        const titleRect = title?.getBoundingClientRect();
+        coverPagePreviewReady = frame instanceof HTMLElement
+          && railItem instanceof HTMLButtonElement
+          && railItem.classList.contains('selected')
+          && railItem.textContent?.includes('00') === true
+          && railItem.textContent?.includes('封面页') === true
+          && frame.textContent?.includes('丝路文明，从长安启程') === true
+          && !frame.querySelector('.draft-subtitle, .draft-caption, .draft-disclaimer')
+          && image instanceof HTMLImageElement
+          && image.complete
+          && image.naturalWidth > 0
+          && canvasRect instanceof DOMRect
+          && titleRect instanceof DOMRect
+          && titleRect.left >= canvasRect.left
+          && titleRect.right <= canvasRect.right
+          && titleRect.top >= canvasRect.top
+          && titleRect.bottom <= canvasRect.bottom;
+        return coverPagePreviewReady;
+      });
+      const frame = document.querySelector('[data-preview-kind="cover"]');
+      if (frame instanceof HTMLElement) {
+        frame.scrollIntoView({ block: 'center' });
+        await settleCompositor();
+      }
+    }
     if (targetView === 'html-video' && scenarioId.startsWith('html-video-studio')) {
       ready = ready && await waitFor(() => {
         const previewFrames = [...document.querySelectorAll('.hv-reference-thumb')];
@@ -1385,9 +1428,12 @@ function qaScenarioScript(id: string, view: string, theme: string, stage?: strin
       if (stageTab instanceof HTMLButtonElement) stageTab.click();
       ready = ready && await waitFor(() => document.querySelector('[data-new-task-stage="' + stage + '"]'));
       if (stage === 'output') {
-        const coverModeGroup = document.querySelector('[role="group"][aria-label="封面生成"]');
+        const coverPageToggle = document.querySelector('input[aria-label="启用封面页"]');
+        if (coverPageToggle instanceof HTMLInputElement && !coverPageToggle.checked) coverPageToggle.click();
+        ready = ready && await waitFor(() => document.querySelector('[data-cover-page-enabled="true"] .ordinary-cover-page-body'));
+        const coverModeGroup = document.querySelector('[role="group"][aria-label="封面图片"]');
         const manualButton = [...(coverModeGroup?.querySelectorAll('button') ?? [])]
-          .find((button) => button.textContent?.trim() === '手动封面');
+          .find((button) => button.textContent?.trim() === '本地导入');
         if (manualButton instanceof HTMLButtonElement) manualButton.click();
         ready = ready && await waitFor(() => document.querySelector('[data-manual-cover-state="required"]'));
         const borrowToggle = document.querySelector('.new-task-borrow-toggle input');
@@ -1841,6 +1887,7 @@ function qaScenarioScript(id: string, view: string, theme: string, stage?: strin
       deleteDialogFocusWrapped,
       deleteDialogEscapeRestored,
       taskTemplateControlsReady,
+      coverPagePreviewReady,
       draftLayerPanelReady,
       draftUnderlineToggleReady,
       manualCover: {

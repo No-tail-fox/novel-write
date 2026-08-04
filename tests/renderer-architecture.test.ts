@@ -294,7 +294,7 @@ describe('task feature ownership architecture', () => {
     ]);
     const createInput = types.slice(types.indexOf('export type CreateTaskInput'), types.indexOf('export interface TaskEvent'));
     const fields = [...createInput.matchAll(/^\s*\| '([^']+)'/gmu)].map((match) => match[1]);
-    expect(fields).toHaveLength(54);
+    expect(fields).toHaveLength(56);
     expect(builder).toContain('...input');
     const explicitlyOwned = fields.filter((field) => page.includes(field));
     expect(explicitlyOwned.length).toBeGreaterThanOrEqual(35);

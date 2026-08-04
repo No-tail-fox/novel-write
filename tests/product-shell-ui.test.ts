@@ -3157,7 +3157,8 @@ describe('product shell ui', () => {
     const page = (await rendererSourcesPromise).requiredFile('src/features/tasks/NewTaskPage.tsx');
 
     expect(page).toContain('封面模板');
-    expect(page).toContain('封面生成');
+    expect(page).toContain('启用封面页');
+    expect(page).toContain('封面图片');
     expect(page).toContain('播客配图');
     expect(page).toContain('cinematic-poster');
     expect(page).toContain('podcast-cover');
