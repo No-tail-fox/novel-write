@@ -346,6 +346,12 @@ describe('editorial Electron QA configuration', () => {
     expect(source).toContain("document.querySelectorAll('.image-card-status')");
     expect(source).toContain("document.querySelector('.image-preview-card.borrowed')");
     expect(source).toContain("borrowedCard.scrollIntoView({ block: 'center' })");
+    expect(source).toContain("document.querySelectorAll('.image-preview-card')");
+    expect(source).toContain("button.textContent?.trim() === '图片'");
+    expect(source).toContain("imageTab.classList.contains('active')");
+    expect(source).toContain('imagePreviewMeasuredRowCount < 1');
+    expect(source).toContain('imagePreviewRowHeightSpread > 1');
+    expect(source).toContain('Editorial QA found uneven or unmeasured image preview cards');
     expect(main).toContain("borrowedFrom = scene.id === 2 ? 1 : undefined");
     expect(main).toContain("imageErrors: [{ sceneId: 2");
   });

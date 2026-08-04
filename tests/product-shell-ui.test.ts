@@ -3589,6 +3589,8 @@ describe('product shell ui', () => {
     expect(main).toContain('重新生成');
     expect(css).toContain('.image-preview-grid');
     expect(css).toContain('.image-preview-card');
+    expect(css).toMatch(/\.image-preview-grid\s*\{[^}]*align-items:\s*stretch;/u);
+    expect(css).toMatch(/\.image-preview-card\s*\{[^}]*grid-template-rows:\s*auto minmax\(82px, 1fr\);[^}]*height:\s*100%;/u);
     expect(css).toContain('.image-thumb');
     expect(css).toContain('.image-card-action-panel');
     expect(css).toContain('.image-library-dialog');

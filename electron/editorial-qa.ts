@@ -165,6 +165,12 @@ export async function captureEditorialQa(
     if (state.layout.horizontalOverflow > 1 || state.layout.clippedPrimaryControls.length > 0) {
       throw new Error(`Editorial QA found clipped controls in ${captureCase.id}: ${state.layout.clippedPrimaryControls.join(', ')}`);
     }
+    if (captureCase.id === 'task-detail-borrowed-image-desktop' && (
+      state.layout.imagePreviewMeasuredRowCount < 1
+      || state.layout.imagePreviewRowHeightSpread > 1
+    )) {
+      throw new Error(`Editorial QA found uneven or unmeasured image preview cards: ${state.layout.imagePreviewRowHeightSpread}px across ${state.layout.imagePreviewMeasuredRowCount} rows.`);
+    }
     const expectedPlacement = viewport.name === 'compact' ? 'below' : 'right';
     if (captureCase.stage && (!state.stageStatePreserved || !state.presetStatePreserved || state.layout.summaryPlacement !== expectedPlacement)) {
       throw new Error(`Editorial QA new-task interaction/layout failed in ${captureCase.id}.`);
@@ -485,6 +491,8 @@ interface QaScenarioState {
   layout: {
     horizontalOverflow: number;
     clippedPrimaryControls: string[];
+    imagePreviewMeasuredRowCount: number;
+    imagePreviewRowHeightSpread: number;
     summaryPlacement: 'right' | 'below' | 'unknown';
     htmlVideoStudioPlacement: 'three-column' | 'two-column' | 'stacked' | 'unknown';
     htmlVideoCompactParameterOrder: 'parameters-first' | 'invalid' | 'unknown';
@@ -1155,10 +1163,16 @@ function qaScenarioScript(id: string, view: string, theme: string, stage?: strin
       taskDetailReadiness = collectTaskDetailReadiness();
     }
     if (scenarioId === 'task-detail-borrowed-image-desktop') {
+      const imageTab = [...document.querySelectorAll('.artifact-tab-list button')]
+        .find((button) => button.textContent?.trim() === '图片');
+      if (imageTab instanceof HTMLButtonElement) imageTab.click();
       ready = ready && await waitFor(() => {
         const borrowedCard = document.querySelector('.image-preview-card.borrowed');
         const borrowedImage = borrowedCard?.querySelector('img');
-        return borrowedCard instanceof HTMLElement
+        return imageTab instanceof HTMLButtonElement
+          && imageTab.classList.contains('active')
+          && borrowedCard instanceof HTMLElement
+          && borrowedCard.offsetParent !== null
           && borrowedImage instanceof HTMLImageElement
           && borrowedImage.complete
           && borrowedImage.naturalWidth > 0
@@ -1754,6 +1768,20 @@ function qaScenarioScript(id: string, view: string, theme: string, stage?: strin
         return rect.width > 0 && (rect.left < -1 || rect.right > window.innerWidth + 1);
       })
       .map((element) => element.getAttribute('aria-label') || element.textContent?.trim().slice(0, 40) || element.tagName);
+    const imagePreviewRows = new Map();
+    [...document.querySelectorAll('.image-preview-card')]
+      .filter((element) => element instanceof HTMLElement && visibleElement(element))
+      .forEach((element) => {
+        const rowTop = element.offsetTop;
+        const heights = imagePreviewRows.get(rowTop) ?? [];
+        heights.push(element.offsetHeight);
+        imagePreviewRows.set(rowTop, heights);
+      });
+    const imagePreviewRowHeightSpread = Math.max(0, ...[...imagePreviewRows.values()]
+      .filter((heights) => heights.length > 1)
+      .map((heights) => Math.max(...heights) - Math.min(...heights)));
+    const imagePreviewMeasuredRowCount = [...imagePreviewRows.values()]
+      .filter((heights) => heights.length > 1).length;
     const manualCoverElement = document.querySelector('[data-manual-cover-state]');
     const manualImportButton = [...document.querySelectorAll('.manual-cover-import button')]
       .find((button) => button.textContent?.includes('导入手动封面'));
@@ -1792,6 +1820,8 @@ function qaScenarioScript(id: string, view: string, theme: string, stage?: strin
       layout: {
         horizontalOverflow: Math.max(0, document.documentElement.scrollWidth - window.innerWidth),
         clippedPrimaryControls,
+        imagePreviewMeasuredRowCount,
+        imagePreviewRowHeightSpread,
         summaryPlacement,
         htmlVideoStudioPlacement,
         htmlVideoCompactParameterOrder,
