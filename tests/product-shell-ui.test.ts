@@ -2037,6 +2037,9 @@ describe('product shell ui', () => {
     expect(css.includes('.draft-toggle-row')).toBe(true);
     expect(css.includes('.draft-toggle-control')).toBe(true);
     expect(css.includes('.draft-toggle-box')).toBe(true);
+    expect(css).toMatch(/\.draft-toggle-control \{[\s\S]*?position: relative;/u);
+    expect(css).toMatch(/\.draft-toggle-control input\[type='checkbox'\] \{[\s\S]*?position: absolute;[\s\S]*?inset: 0;[\s\S]*?width: 100%;[\s\S]*?height: 100%;[\s\S]*?opacity: 0;[\s\S]*?cursor: pointer;/u);
+    expect(css).not.toMatch(/\.draft-toggle-control input\[type='checkbox'\] \{[\s\S]*?pointer-events: none;/u);
     expect(css).toMatch(/\.draft-toggle-box \{[\s\S]*?background: var\(--shell-surface-raised\);[\s\S]*?color: var\(--shell-text\);/u);
     expect(css).toMatch(/\.draft-toggle-control input\[type='checkbox'\]:checked \+ \.draft-toggle-box \{[\s\S]*?border-color: var\(--shell-accent\);[\s\S]*?background: var\(--shell-accent\);[\s\S]*?color: var\(--shell-focus-contrast\);/u);
     expect(css.includes('.draft-border-compact-panel')).toBe(false);
