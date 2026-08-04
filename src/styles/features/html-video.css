@@ -155,16 +155,38 @@
 }
 
 .hv-auto-research {
+  width: 100%;
   min-width: 0;
+  min-height: 48px;
   display: flex;
   align-items: center;
   gap: 9px;
-  padding-top: 12px;
-  border-top: 1px solid var(--shell-border);
+  padding: 9px 11px;
+  border: 1px solid var(--shell-border);
+  border-radius: 5px;
+  background: var(--shell-surface-raised);
   color: var(--shell-accent-strong);
+  text-align: left;
+  cursor: pointer;
+  transition: border-color 140ms ease, background-color 140ms ease, box-shadow 140ms ease;
 }
 
-.hv-auto-research span {
+.hv-auto-research:hover:not(:disabled) {
+  border-color: color-mix(in srgb, var(--shell-accent) 54%, var(--shell-border));
+}
+
+.hv-auto-research.active {
+  border-color: var(--shell-accent);
+  background: color-mix(in srgb, var(--shell-accent) 8%, var(--shell-surface-raised));
+}
+
+.hv-auto-research:focus-visible {
+  outline: 2px solid var(--shell-focus);
+  outline-offset: 2px;
+}
+
+.hv-auto-research-copy {
+  flex: 1;
   min-width: 0;
   display: flex;
   align-items: baseline;
@@ -179,6 +201,16 @@
 .hv-auto-research small {
   color: var(--shell-muted);
   font-size: 11px;
+}
+
+.hv-auto-research-state {
+  flex: 0 0 auto;
+  color: var(--shell-muted);
+  font-size: 11px;
+}
+
+.hv-auto-research.active .hv-auto-research-state {
+  color: var(--shell-accent-strong);
 }
 
 .hv-create-stack {
@@ -290,7 +322,7 @@
     width: 100%;
   }
 
-  .hv-auto-research span {
+  .hv-auto-research-copy {
     align-items: flex-start;
     flex-direction: column;
     gap: 2px;

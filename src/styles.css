@@ -4649,6 +4649,17 @@ section.error-dialog .error-dialog-head > div > strong {
   z-index: 2;
 }
 
+.draft-text-content {
+  display: inline;
+}
+
+.draft-text-content.underlined {
+  border-bottom: 0.09em solid currentColor;
+  padding-bottom: 0.03em;
+  -webkit-box-decoration-break: clone;
+  box-decoration-break: clone;
+}
+
 .editable-draft-canvas .draft-title,
 .editable-draft-canvas .draft-subtitle,
 .editable-draft-canvas .draft-caption,

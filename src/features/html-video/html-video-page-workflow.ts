@@ -21,24 +21,30 @@ export async function createHtmlVideoResearchCopy(
   input: {
     keyword: string;
     extraRequirements: string;
+    searchEnabled?: boolean;
     onSourcesReady?: (sources: readonly AiSourceSection[]) => void;
   },
 ): Promise<HtmlVideoResearchResult> {
   const keyword = input.keyword.trim();
   if (!keyword) throw new Error('请先输入创作主题。');
 
-  const context = await api.searchWebSources({
-    query: keyword,
-    providers: [...HTML_VIDEO_SEARCH_PROVIDERS],
-  });
-  const selectedSources = context.sections
-    .filter((source) => Boolean((source.content || source.snippet || '').trim()))
-    .slice(0, 10);
-  if (selectedSources.length === 0) {
-    const warning = context.warnings.filter(Boolean).join('；');
-    throw new Error(warning ? `没有找到可用于创作的网页资料：${warning}` : '没有找到可用于创作的网页资料，请更换创作主题后重试。');
+  let selectedSources: AiSourceSection[] = [];
+  let warnings: string[] = [];
+  if (input.searchEnabled !== false) {
+    const context = await api.searchWebSources({
+      query: keyword,
+      providers: [...HTML_VIDEO_SEARCH_PROVIDERS],
+    });
+    selectedSources = context.sections
+      .filter((source) => Boolean((source.content || source.snippet || '').trim()))
+      .slice(0, 10);
+    warnings = context.warnings;
+    if (selectedSources.length === 0) {
+      const warning = warnings.filter(Boolean).join('；');
+      throw new Error(warning ? `没有找到可用于创作的网页资料：${warning}` : '没有找到可用于创作的网页资料，请更换创作主题后重试。');
+    }
+    input.onSourcesReady?.(selectedSources);
   }
-  input.onSourcesReady?.(selectedSources);
 
   const composed = await api.composeResearchCopy({
     keyword,
@@ -51,7 +57,7 @@ export async function createHtmlVideoResearchCopy(
     copy,
     title: composed.title.trim() || keyword,
     selectedSources,
-    warnings: context.warnings,
+    warnings,
   };
 }
 

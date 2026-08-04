@@ -64,6 +64,27 @@ describe('HTML video creation page workflow', () => {
     expect(composeResearchCopy).not.toHaveBeenCalled();
   });
 
+  it('composes directly from the topic when automatic web research is disabled', async () => {
+    const searchWebSources = vi.fn();
+    const composeResearchCopy = vi.fn(async (): Promise<ResearchCopyComposeResult> => ({
+      title: '无检索创作', copy: '直接生成的完整文案', raw: '{}', requestId: 'req-direct',
+    }));
+
+    const result = await createHtmlVideoResearchCopy({ searchWebSources, composeResearchCopy }, {
+      keyword: ' 无检索创作 ',
+      extraRequirements: ' 语气克制 ',
+      searchEnabled: false,
+    });
+
+    expect(searchWebSources).not.toHaveBeenCalled();
+    expect(composeResearchCopy).toHaveBeenCalledWith({
+      keyword: '无检索创作',
+      extraRequirements: '语气克制',
+      selectedSources: [],
+    });
+    expect(result).toMatchObject({ copy: '直接生成的完整文案', selectedSources: [], warnings: [] });
+  });
+
   it('loads every active HTML task page, removes duplicates, and keeps newest first', async () => {
     const listTasks = vi.fn()
       .mockResolvedValueOnce({

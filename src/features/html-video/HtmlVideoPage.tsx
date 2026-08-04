@@ -49,6 +49,7 @@ export function HtmlVideoPage({
   const [copyMode, setCopyMode] = useState<HtmlVideoCopyMode>('paste');
   const [aiKeyword, setAiKeyword] = useState('');
   const [extraRequirements, setExtraRequirements] = useState('');
+  const [autoResearch, setAutoResearch] = useState(true);
   const [createPhase, setCreatePhase] = useState<HtmlVideoCreatePhase>('idle');
   const [style, setStyle] = useState<string>(HTML_VIDEO_JOB_DEFAULTS.style);
   const [ratio, setRatio] = useState<string>(HTML_VIDEO_JOB_DEFAULTS.ratio);
@@ -159,6 +160,7 @@ export function HtmlVideoPage({
   const htmlTaskStateKey = htmlTasks.map((task) => task.id).sort().join('|');
   const taskSelectValue = pageMode === 'workspace' ? activeTaskId : '';
   const createInputReady = copyMode === 'paste' ? Boolean(copy.trim()) : Boolean(aiKeyword.trim());
+  const aiCreateActionLabel = autoResearch ? '搜索并生成' : '直接生成';
   const createButtonLabel = createPhase === 'search'
     ? '正在搜索资料'
     : createPhase === 'compose'
@@ -166,7 +168,7 @@ export function HtmlVideoPage({
       : createPhase === 'create'
         ? '正在创建任务'
         : copyMode === 'ai'
-          ? '搜索并生成'
+          ? aiCreateActionLabel
           : '开始生成';
 
   useEffect(() => {
@@ -330,27 +332,32 @@ export function HtmlVideoPage({
         let generatedCopy = copy.trim();
         let selectedSources = [] as Awaited<ReturnType<typeof createHtmlVideoResearchCopy>>['selectedSources'];
         if (copyMode === 'ai') {
-          setCreatePhase('search');
-          setMessage('正在搜索并读取相关网页资料...');
+          setCreatePhase(autoResearch ? 'search' : 'compose');
+          setMessage(autoResearch ? '正在搜索并读取相关网页资料...' : '正在根据主题直接创作文案...');
           const research = await createHtmlVideoResearchCopy(api, {
             keyword: aiKeyword,
             extraRequirements,
-            onSourcesReady: (sources) => {
-              setCreatePhase('compose');
-              setMessage(`已获取 ${sources.length} 条网页资料，正在创作文案...`);
-            },
+            searchEnabled: autoResearch,
+            onSourcesReady: autoResearch
+              ? (sources) => {
+                  setCreatePhase('compose');
+                  setMessage(`已获取 ${sources.length} 条网页资料，正在创作文案...`);
+                }
+              : undefined,
           });
           generatedCopy = research.copy;
           selectedSources = research.selectedSources;
           setCopy(generatedCopy);
-          setMessage(`已参考 ${selectedSources.length} 条网页资料，正在创建 HTML 动画任务...`);
+          setMessage(autoResearch
+            ? `已参考 ${selectedSources.length} 条网页资料，正在创建 HTML 动画任务...`
+            : '文案创作完成，正在创建 HTML 动画任务...');
         }
         setCreatePhase('create');
         const next = await api.createHtmlVideoTask(createHtmlVideoTaskInput({
           copy: generatedCopy,
           mode: copyMode,
           aiKeyword: copyMode === 'ai' ? aiKeyword : '',
-          aiSources: copyMode === 'ai' ? ['web'] : [],
+          aiSources: copyMode === 'ai' && autoResearch ? ['web'] : [],
           selectedSources,
           extraRequirements: copyMode === 'ai' ? extraRequirements : '',
           ratio,
@@ -505,10 +512,18 @@ export function HtmlVideoPage({
                     <Field label="创作要求" hint="可选">
                       <textarea className="hv-ai-requirements" value={extraRequirements} placeholder="例如：500 字左右，突出人物抉择，语气克制" onChange={(event) => setExtraRequirements(event.target.value)} />
                     </Field>
-                    <div className="hv-auto-research" aria-label="AI 创作会自动搜索网页资料">
+                    <button
+                      type="button"
+                      className={autoResearch ? 'hv-auto-research active' : 'hv-auto-research'}
+                      aria-label="自动检索网页资料"
+                      aria-pressed={autoResearch}
+                      disabled={taskBusy}
+                      onClick={() => setAutoResearch((enabled) => !enabled)}
+                    >
                       <Search size={15} />
-                      <span><strong>自动检索</strong><small>必应 · 百度 · 搜狗 · 头条</small></span>
-                    </div>
+                      <span className="hv-auto-research-copy"><strong>自动检索</strong><small>必应 · 百度 · 搜狗 · 头条</small></span>
+                      <span className="hv-auto-research-state">{autoResearch ? '已开启' : '已关闭'}</span>
+                    </button>
                   </div>
                 )}
               </div>
@@ -628,7 +643,7 @@ export function HtmlVideoPage({
               </div>
               <button className="primary-action hv-create-submit" type="button" onClick={createHtmlVideoTask} disabled={taskBusy || !createInputReady}>
                 {running ? <Loader2 className="spin" size={16} /> : <Play size={16} />}
-                {createPhase === 'idle' ? (copyMode === 'ai' ? '搜索并生成' : '开始生成') : createButtonLabel}
+                {createPhase === 'idle' ? (copyMode === 'ai' ? aiCreateActionLabel : '开始生成') : createButtonLabel}
               </button>
             </footer>
           </div>

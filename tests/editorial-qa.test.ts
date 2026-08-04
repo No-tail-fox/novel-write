@@ -164,13 +164,19 @@ describe('editorial Electron QA configuration', () => {
     expect(runner).toContain('Editorial media bitmap changed across themes');
   });
 
-  it('toggles draft title underline off without blanking the real Electron renderer', async () => {
+  it('toggles every draft text underline off, persists it, and reloads without blanking Electron', async () => {
     const source = await (await import('node:fs/promises')).readFile(new URL('../electron/editorial-qa.ts', import.meta.url), 'utf8');
 
     expect(source).toContain('draftUnderlineToggleReady');
     expect(source).toContain('input[aria-label="下划线"]');
-    expect(source).toContain("getComputedStyle(title).textDecorationLine.includes('underline')");
-    expect(source).toContain("getComputedStyle(title).textDecorationLine === 'none'");
+    expect(source).toContain("{ layer: 'title', textSelector: '.draft-title' }");
+    expect(source).toContain("{ layer: 'subtitle', textSelector: '.draft-subtitle' }");
+    expect(source).toContain("{ layer: 'caption', textSelector: '.draft-caption' }");
+    expect(source).toContain("{ layer: 'disclaimer', textSelector: '.draft-disclaimer' }");
+    expect(source).toContain("text.dataset.draftUnderline === 'off'");
+    expect(source).toContain("api.getDraftTemplateDetail('qa-selected-draft-template')");
+    expect(source).toContain("button.textContent?.trim() === '保存'");
+    expect(source).toContain("button.textContent?.trim() === '返回模板列表'");
     expect(source).toContain("document.querySelector('.app-shell')");
     expect(source).toContain('underline toggle blanked or corrupted the renderer');
   });

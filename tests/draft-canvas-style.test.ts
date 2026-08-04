@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { draftTextLayerStyle } from '../src/features/templates/DraftCanvas';
+import { readFile } from 'node:fs/promises';
 
 const textStyle = {
   color: '#ffde00',
@@ -10,17 +11,28 @@ const textStyle = {
 };
 
 describe('draft canvas text style', () => {
-  it('turns underline off without removing the stable decoration metrics', () => {
-    const enabled = draftTextLayerStyle({ ...textStyle, underline: true }, 24, 800);
-    const disabled = draftTextLayerStyle({ ...textStyle, underline: false }, 24, 800);
+  it('keeps native text decoration out of the stroked text compositor path', () => {
+    const style = draftTextLayerStyle(textStyle, 24, 800);
 
-    expect(enabled.textDecorationLine).toBe('underline');
-    expect(disabled.textDecorationLine).toBe('none');
-    expect(disabled.textDecorationStyle).toBe('solid');
-    expect(disabled.textDecorationThickness).toBe('0.09em');
-    expect(disabled.textUnderlineOffset).toBe('0.13em');
-    expect(disabled).not.toHaveProperty('textDecoration');
-    expect(disabled.color).toBe(enabled.color);
-    expect(disabled.fontSize).toBe(enabled.fontSize);
+    expect(style).not.toHaveProperty('textDecoration');
+    expect(style).not.toHaveProperty('textDecorationLine');
+    expect(style).not.toHaveProperty('textDecorationStyle');
+    expect(style).not.toHaveProperty('textDecorationThickness');
+    expect(style).not.toHaveProperty('textUnderlineOffset');
+    expect(style.color).toBe(textStyle.color);
+    expect(style.fontSize).toBe(24);
+  });
+
+  it('renders underline as an isolated inline fragment that can be removed without repainting the canvas layer', async () => {
+    const [source, styles] = await Promise.all([
+      readFile(new URL('../src/features/templates/DraftCanvas.tsx', import.meta.url), 'utf8'),
+      readFile(new URL('../src/styles.css', import.meta.url), 'utf8'),
+    ]);
+
+    expect(source).toContain("data-draft-underline={underline ? 'on' : 'off'}");
+    expect(source).toContain("className={underline ? 'draft-text-content underlined' : 'draft-text-content'}");
+    expect(styles).toContain('.draft-text-content.underlined {');
+    expect(styles).toContain('border-bottom: 0.09em solid currentColor;');
+    expect(styles).not.toMatch(/\.draft-text-content\.underlined\s*\{[^}]*text-decoration:/su);
   });
 });

@@ -295,7 +295,7 @@ async function seedTaskOperationsEditorialQa(database: FileDatabase, dataDir: st
       width: 0.76,
       fontSize: 31,
       color: '#38f2b0',
-      underline: false,
+      underline: draftTemplateGalleryScope,
     },
     subtitle: {
       ...selectedTemplateBase.subtitle,
@@ -305,9 +305,10 @@ async function seedTaskOperationsEditorialQa(database: FileDatabase, dataDir: st
       fontSize: 15,
       color: '#fff6c9',
       bold: true,
+      underline: draftTemplateGalleryScope,
     },
-    caption: { ...selectedTemplateBase.caption, y: -0.65, fontSize: 14, color: '#f8fafc' },
-    disclaimer: { ...selectedTemplateBase.disclaimer, fontSize: 9, color: '#9ad7cc', alpha: 0.82 },
+    caption: { ...selectedTemplateBase.caption, y: -0.65, fontSize: 14, color: '#f8fafc', underline: draftTemplateGalleryScope },
+    disclaimer: { ...selectedTemplateBase.disclaimer, fontSize: 9, color: '#9ad7cc', alpha: 0.82, underline: draftTemplateGalleryScope },
   });
   if (!taskOperationsScope) return;
   const createFixture = async (title: string) => {

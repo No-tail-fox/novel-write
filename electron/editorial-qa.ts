@@ -944,39 +944,91 @@ function qaScenarioScript(id: string, view: string, theme: string, stage?: strin
               && stage.scrollTop === stageScrollBefore;
           });
 
-          const titlePanel = controls.querySelector('[data-draft-layer-panel="title"]');
-          const titlePanelButton = titlePanel?.querySelector(':scope .accordion > button');
-          if (titlePanelButton instanceof HTMLButtonElement && titlePanelButton.getAttribute('aria-expanded') !== 'true') {
-            titlePanelButton.click();
-          }
-          const titlePanelOpened = await waitFor(() => titlePanelButton?.getAttribute('aria-expanded') === 'true');
-          const underlineToggle = titlePanel?.querySelector('input[aria-label="下划线"]');
-          if (titlePanelOpened && underlineToggle instanceof HTMLInputElement) {
-            if (underlineToggle.checked) underlineToggle.click();
-            const resetReady = await waitFor(() => !underlineToggle.checked);
-            underlineToggle.click();
+          const underlineLayers = [
+            { layer: 'title', textSelector: '.draft-title' },
+            { layer: 'subtitle', textSelector: '.draft-subtitle' },
+            { layer: 'caption', textSelector: '.draft-caption' },
+            { layer: 'disclaimer', textSelector: '.draft-disclaimer' },
+          ];
+          let layerTogglesReady = true;
+          for (const definition of underlineLayers) {
+            const panel = controls.querySelector('[data-draft-layer-panel="' + definition.layer + '"]');
+            const panelButton = panel?.querySelector(':scope .accordion > button');
+            if (panelButton instanceof HTMLButtonElement && panelButton.getAttribute('aria-expanded') !== 'true') panelButton.click();
+            const panelOpened = await waitFor(() => panelButton?.getAttribute('aria-expanded') === 'true');
+            const underlineToggle = panel?.querySelector('input[aria-label="下划线"]');
+            if (!panelOpened || !(underlineToggle instanceof HTMLInputElement)) {
+              layerTogglesReady = false;
+              continue;
+            }
+            if (!underlineToggle.checked) underlineToggle.click();
             const enabledReady = await waitFor(() => {
-              const title = document.querySelector('.editable-draft-canvas .draft-layer[data-layer="title"] .draft-title');
+              const text = document.querySelector('.editable-draft-canvas .draft-layer[data-layer="' + definition.layer + '"] ' + definition.textSelector);
+              const content = text?.querySelector('.draft-text-content');
               return underlineToggle.checked
-                && title instanceof HTMLElement
-                && getComputedStyle(title).textDecorationLine.includes('underline');
+                && text instanceof HTMLElement
+                && text.dataset.draftUnderline === 'on'
+                && content instanceof HTMLElement
+                && content.classList.contains('underlined')
+                && getComputedStyle(text).textDecorationLine === 'none';
             });
             underlineToggle.click();
-            draftUnderlineToggleReady = resetReady && enabledReady && await waitFor(() => {
-              const shell = document.querySelector('.app-shell');
-              const canvas = document.querySelector('.editable-draft-canvas');
-              const title = canvas?.querySelector('.draft-layer[data-layer="title"] .draft-title');
-              const subtitle = canvas?.querySelector('.draft-layer[data-layer="subtitle"] .draft-subtitle');
-              const image = canvas?.querySelector('.draft-layer[data-layer="image"]');
+            const disabledReady = await waitFor(() => {
+              const text = document.querySelector('.editable-draft-canvas .draft-layer[data-layer="' + definition.layer + '"] ' + definition.textSelector);
+              const content = text?.querySelector('.draft-text-content');
               return !underlineToggle.checked
-                && shell instanceof HTMLElement
-                && canvas instanceof HTMLElement
-                && title instanceof HTMLElement
-                && subtitle instanceof HTMLElement
-                && image instanceof HTMLElement
-                && getComputedStyle(title).textDecorationLine === 'none';
+                && text instanceof HTMLElement
+                && text.dataset.draftUnderline === 'off'
+                && content instanceof HTMLElement
+                && !content.classList.contains('underlined')
+                && getComputedStyle(text).textDecorationLine === 'none';
             });
+            layerTogglesReady = layerTogglesReady && enabledReady && disabledReady;
           }
+
+          const shellStayedVisible = await waitFor(() => {
+            const shell = document.querySelector('.app-shell');
+            const canvas = document.querySelector('.editable-draft-canvas');
+            const image = canvas?.querySelector('.draft-layer[data-layer="image"]');
+            return shell instanceof HTMLElement
+              && canvas instanceof HTMLElement
+              && image instanceof HTMLElement
+              && getComputedStyle(shell).visibility === 'visible'
+              && document.documentElement.dataset.themeReady === 'true';
+          });
+          const saveButton = [...document.querySelectorAll('.editor-topbar button')]
+            .find((button) => button.textContent?.trim() === '保存');
+          if (saveButton instanceof HTMLButtonElement) saveButton.click();
+          const persistenceReady = api && saveButton instanceof HTMLButtonElement
+            ? await withTimeout((async () => {
+                const until = Date.now() + 10000;
+                while (Date.now() < until) {
+                  const persisted = await api.getDraftTemplateDetail('qa-selected-draft-template');
+                  if (persisted && underlineLayers.every(({ layer }) => persisted[layer]?.underline === false)) return true;
+                  await new Promise((resolve) => setTimeout(resolve, 50));
+                }
+                return false;
+              })(), 12000, 'draft underline persistence timed out')
+            : false;
+          const returnButton = [...document.querySelectorAll('.editor-topbar button')]
+            .find((button) => button.textContent?.trim() === '返回模板列表');
+          if (returnButton instanceof HTMLButtonElement) returnButton.click();
+          const returnedToGallery = await waitFor(() => document.querySelector('.draft-template-actions.has-delete'));
+          const savedCard = [...document.querySelectorAll('.draft-template-card')]
+            .find((card) => card.textContent?.includes('QA 已选草稿模板'));
+          const reopenButton = [...(savedCard?.querySelectorAll('.draft-template-actions button') ?? [])]
+            .find((button) => button.textContent?.trim() === '编辑');
+          if (reopenButton instanceof HTMLButtonElement) reopenButton.click();
+          const reopened = returnedToGallery && await waitFor(() => {
+            const canvas = document.querySelector('.editable-draft-canvas');
+            return canvas instanceof HTMLElement && underlineLayers.every((definition) => {
+              const text = canvas.querySelector('.draft-layer[data-layer="' + definition.layer + '"] ' + definition.textSelector);
+              return text instanceof HTMLElement
+                && text.dataset.draftUnderline === 'off'
+                && !text.querySelector('.draft-text-content')?.classList.contains('underlined');
+            });
+          });
+          draftUnderlineToggleReady = layerTogglesReady && shellStayedVisible && persistenceReady && reopened;
         }
       }
     }

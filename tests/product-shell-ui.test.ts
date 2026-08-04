@@ -1853,16 +1853,14 @@ describe('product shell ui', () => {
     expect(main).toContain('template.title.bold ? 800 : 500');
     expect(main).toContain('template.subtitle.text');
     expect(main).toContain('draftTextLayerStyle(template.caption');
-    expect(main).toContain("textDecorationLine: text.underline ? 'underline' : 'none'");
+    expect(main).toContain("data-draft-underline={underline ? 'on' : 'off'}");
     expect(main).toContain('draftTextLayerStyle(template.subtitle');
     expect(main).toContain('draftTextLayerStyle(template.disclaimer');
     expect(main).toContain('template.disclaimer.fontSize');
     expect(main).toContain('opacity: text.alpha');
-    expect(main).toContain("textDecorationLine: text.underline ? 'underline' : 'none'");
-    expect(main).toContain("textDecorationStyle: 'solid'");
-    expect(main).toContain('textDecorationThickness');
-    expect(main).toContain('textUnderlineOffset');
-    expect(main).toContain("textDecorationSkipInk: 'none'");
+    expect(main).toContain("className={underline ? 'draft-text-content underlined' : 'draft-text-content'}");
+    expect(main).not.toContain('textDecorationLine');
+    expect(main).not.toContain('textDecorationThickness');
     expect(main).toContain('textAlign: draftTextAlign(text.align)');
     expect(main).toContain('letterSpacing: `${text.letterSpacing}px`');
     expect(main).toContain('lineHeight: `${1 + text.lineSpacing / 10}`');
@@ -2003,7 +2001,10 @@ describe('product shell ui', () => {
       'draftTextLayerStyle(template.title',
       'draftTextLayerStyle(template.subtitle',
       'draftTextLayerStyle(template.disclaimer',
-      'text.underline',
+      'underline={template.title.underline}',
+      'underline={template.subtitle.underline}',
+      'underline={template.caption.underline}',
+      'underline={template.disclaimer.underline}',
       'text.align',
       'text.letterSpacing',
       'text.lineSpacing',

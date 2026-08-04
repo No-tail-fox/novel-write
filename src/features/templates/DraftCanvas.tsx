@@ -57,6 +57,7 @@ export function DraftTemplatePreview({
           y={template.title.y}
           width={template.title.width}
           border={template.title.border}
+          underline={template.title.underline}
           style={draftTextLayerStyle(template.title, titleSize, template.title.bold ? 800 : 500)}
         >
           {titleText ?? template.title.text}
@@ -69,6 +70,7 @@ export function DraftTemplatePreview({
           y={template.subtitle.y}
           width={template.subtitle.width}
           border={template.subtitle.border}
+          underline={template.subtitle.underline}
           style={draftTextLayerStyle(template.subtitle, subtitleSize, template.subtitle.bold ? 800 : 500)}
         >
           {subtitleText ?? template.subtitle.text}
@@ -81,6 +83,7 @@ export function DraftTemplatePreview({
           y={template.caption.y}
           width={template.caption.width}
           border={template.caption.border}
+          underline={template.caption.underline}
           style={{
             ...draftTextLayerStyle(template.caption, captionSize, template.caption.bold ? 700 : 500),
             backgroundColor: colorWithAlpha(template.caption.background.color, template.caption.background.alpha),
@@ -98,6 +101,7 @@ export function DraftTemplatePreview({
           y={template.disclaimer.y}
           width={template.disclaimer.width}
           border={template.disclaimer.border}
+          underline={template.disclaimer.underline}
           style={draftTextLayerStyle(template.disclaimer, disclaimerSize, template.disclaimer.bold ? 700 : 500)}
         >
           {disclaimerText ?? template.disclaimer.text}
@@ -200,6 +204,7 @@ export function EditableDraftCanvas({
             y={0}
             width={1}
             border={template.title.border}
+            underline={template.title.underline}
             positioned={false}
             style={draftTextLayerStyle(template.title, draftPreviewFontSize(template.title.fontSize), template.title.bold ? 800 : 500)}
           >
@@ -215,6 +220,7 @@ export function EditableDraftCanvas({
             y={0}
             width={1}
             border={template.subtitle.border}
+            underline={template.subtitle.underline}
             positioned={false}
             style={draftTextLayerStyle(template.subtitle, draftPreviewFontSize(template.subtitle.fontSize), template.subtitle.bold ? 800 : 500)}
           >
@@ -230,6 +236,7 @@ export function EditableDraftCanvas({
             y={0}
             width={1}
             border={template.caption.border}
+            underline={template.caption.underline}
             positioned={false}
             style={{
               ...draftTextLayerStyle(template.caption, draftPreviewFontSize(template.caption.fontSize), template.caption.bold ? 700 : 500),
@@ -250,6 +257,7 @@ export function EditableDraftCanvas({
             y={0}
             width={1}
             border={template.disclaimer.border}
+            underline={template.disclaimer.underline}
             positioned={false}
             style={draftTextLayerStyle(template.disclaimer, draftPreviewFontSize(template.disclaimer.fontSize), template.disclaimer.bold ? 700 : 500)}
           >
@@ -320,6 +328,7 @@ export function DraftCanvasText({
   y,
   width,
   border,
+  underline = false,
   positioned = true,
   style,
   children,
@@ -329,14 +338,19 @@ export function DraftCanvasText({
   y: number;
   width: number;
   border?: DraftTextBorder;
+  underline?: boolean;
   positioned?: boolean;
   style?: React.CSSProperties;
   children: React.ReactNode;
 }) {
   const positionStyle = positioned ? draftLayerPositionStyle(x, y) : {};
   return (
-    <div className={className} style={{ ...positionStyle, ...draftTextWidthStyle(width), ...draftTextStrokeStyle(border), ...style }}>
-      {children}
+    <div
+      className={className}
+      data-draft-underline={underline ? 'on' : 'off'}
+      style={{ ...positionStyle, ...draftTextWidthStyle(width), ...draftTextStrokeStyle(border), ...style }}
+    >
+      <span className={underline ? 'draft-text-content underlined' : 'draft-text-content'}>{children}</span>
     </div>
   );
 }
@@ -481,7 +495,7 @@ export function draftTextStrokeStyle(border?: DraftTextBorder): React.CSSPropert
 }
 
 export function draftTextLayerStyle(
-  text: Pick<DraftTemplate['title'], 'color' | 'alpha' | 'underline' | 'align' | 'letterSpacing' | 'lineSpacing'>,
+  text: Pick<DraftTemplate['title'], 'color' | 'alpha' | 'align' | 'letterSpacing' | 'lineSpacing'>,
   fontSize: React.CSSProperties['fontSize'],
   fontWeight: React.CSSProperties['fontWeight'],
 ): React.CSSProperties {
@@ -490,12 +504,6 @@ export function draftTextLayerStyle(
     fontSize,
     opacity: text.alpha,
     fontWeight,
-    textDecorationLine: text.underline ? 'underline' : 'none',
-    textDecorationColor: text.color,
-    textDecorationStyle: 'solid',
-    textDecorationThickness: '0.09em',
-    textUnderlineOffset: '0.13em',
-    textDecorationSkipInk: 'none',
     textAlign: draftTextAlign(text.align),
     letterSpacing: `${text.letterSpacing}px`,
     lineHeight: `${1 + text.lineSpacing / 10}`,

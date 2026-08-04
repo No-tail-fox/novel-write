@@ -53,6 +53,14 @@ describe('HTML video editorial studio', () => {
     expect(page).toContain('AI 创作');
     expect(page).toContain('粘贴文案');
     expect(page).toContain('createHtmlVideoResearchCopy');
+    expect(page).toContain('const [autoResearch, setAutoResearch] = useState(true);');
+    expect(page).toContain('className={autoResearch ? \'hv-auto-research active\' : \'hv-auto-research\'}');
+    expect(page).toContain('aria-pressed={autoResearch}');
+    expect(page).toContain('onClick={() => setAutoResearch((enabled) => !enabled)}');
+    expect(page).toContain('searchEnabled: autoResearch');
+    expect(page).toContain("aiSources: copyMode === 'ai' && autoResearch ? ['web'] : []");
+    expect(page).toContain("const aiCreateActionLabel = autoResearch ? '搜索并生成' : '直接生成';");
+    expect(page).toContain("autoResearch ? '搜索并生成' : '直接生成'");
     expect(page).toContain('正在搜索资料');
     expect(page).toContain('正在创作文案');
     expect(page).toContain('listAllHtmlVideoTaskOptions');
@@ -76,6 +84,10 @@ describe('HTML video editorial studio', () => {
     expect(styles).toContain('.hv-auto-research {');
     expect(styles).not.toContain('.hv-create-details');
     expect(qa).toContain('inspectCreationPage');
+    expect(qa).toContain('exerciseAutoResearchControl');
+    expect(qa).toContain('button[aria-label="自动检索网页资料"]');
+    expect(qa).toContain("'Input.dispatchKeyEvent'");
+    expect(qa).toContain("creationCompact.autoResearch?.pressed !== 'false'");
     expect(qa).toContain("'creation-desktop.png'");
     expect(qa).toContain("'creation-compact.png'");
     expect(qa).toContain("item.textContent?.trim() === 'AI 创作'");
