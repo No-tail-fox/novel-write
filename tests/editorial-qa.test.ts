@@ -36,11 +36,11 @@ describe('editorial Electron QA configuration', () => {
 
   it('defines the exact completed capture count for every QA scope', () => {
     expect(Object.fromEntries(editorialQaScopes.map((scope) => [scope, editorialQaExpectedCaptureCount(scope)]))).toEqual({
-      all: 92,
+      all: 94,
       'theme-smoke': 4,
       shell: 4,
       'new-task': 4,
-      'task-operations': 8,
+      'task-operations': 10,
       'html-video': 2,
       'clone-voice': 4,
       'volcengine-tts': 2,
@@ -54,13 +54,13 @@ describe('editorial Electron QA configuration', () => {
     }
   });
 
-  it('classifies the canonical 67 required captures separately from 25 supplemental states', () => {
+  it('classifies the canonical 67 required captures separately from 27 supplemental states', () => {
     const required = editorialQaCaptureIdsByRequirement('required');
     const supplemental = editorialQaCaptureIdsByRequirement('supplemental');
     const all = editorialQaCaptureIds('all');
 
     expect(required).toHaveLength(67);
-    expect(supplemental).toHaveLength(25);
+    expect(supplemental).toHaveLength(27);
     expect(new Set([...required, ...supplemental])).toEqual(new Set(all));
     expect(required.filter((id) => supplemental.includes(id))).toEqual([]);
     expect(required).toEqual(expect.arrayContaining([
@@ -88,6 +88,8 @@ describe('editorial Electron QA configuration', () => {
       'shell-new-task-light-desktop',
       'task-detail-operations-desktop',
       'task-detail-borrowed-image-desktop',
+      'task-detail-draft-delivery-dark-desktop',
+      'task-detail-draft-delivery-light-desktop',
       'task-detail-error-dialog-compact',
       'task-detail-error-summary-desktop',
       'task-detail-template-menu-dark-desktop',

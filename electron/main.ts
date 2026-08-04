@@ -332,11 +332,43 @@ async function seedTaskOperationsEditorialQa(database: FileDatabase, dataDir: st
 
   const completed = await createFixture('丝绸之路文化科普');
   const completedOutput = join(dataDir, 'qa-task-operations', 'completed-output');
-  await mkdir(completedOutput, { recursive: true });
+  const completedPipelineDir = join(completedOutput, 'pipeline');
+  const completedDraftDir = join(completedOutput, 'draft');
+  const completedStatePath = join(completedPipelineDir, 'state.json');
+  const completedDraftContentPath = join(completedDraftDir, 'draft_content.json');
+  const completedDraftMetaPath = join(completedDraftDir, 'draft_meta_info.json');
+  await Promise.all([
+    mkdir(completedPipelineDir, { recursive: true }),
+    mkdir(completedDraftDir, { recursive: true }),
+  ]);
+  await Promise.all([
+    writeFile(completedDraftContentPath, '{}\n', 'utf8'),
+    writeFile(completedDraftMetaPath, '{}\n', 'utf8'),
+    writeFile(completedStatePath, `${JSON.stringify({
+      version: 1,
+      taskId: completed.id,
+      updatedAt: new Date().toISOString(),
+      steps: Object.fromEntries(Array.from({ length: 7 }, (_, step) => [step, { status: 'completed' }])),
+      artifact: {
+        reviewedText: '丝绸之路文化科普预审文案。',
+        rewrittenCopy: '从长安出发，商旅与文化沿丝绸之路跨越山河。',
+        cover: { title: '丝绸之路', subtitle: ['跨越山河的文明交流'], summary: '丝绸之路文化科普。', tags: ['#历史科普'], comments: [] },
+        scenes: [],
+        imagePrompts: [],
+      },
+      assets: { images: [], imageErrors: [], narration: [] },
+      draft: {
+        draftDir: completedDraftDir,
+        draftContentPath: completedDraftContentPath,
+        draftMetaPath: completedDraftMetaPath,
+      },
+    }, null, 2)}\n`, 'utf8'),
+  ]);
   await database.updateTask(completed.id, {
     status: 'completed',
     currentStep: 7,
     outputDir: completedOutput,
+    artifactStatePath: completedStatePath,
     completedAt: new Date().toISOString(),
   });
 

@@ -1479,10 +1479,48 @@
 .task-draft-delivery {
   position: relative;
   min-width: 0;
-  margin-top: 12px;
+  margin-top: 16px;
   border: 1px solid var(--shell-border);
-  border-radius: 6px;
+  border-radius: 8px;
   background: var(--shell-surface-raised);
+}
+
+.task-draft-delivery[data-draft-status="ready"] {
+  border-color: transparent;
+  background:
+    linear-gradient(
+      135deg,
+      color-mix(in srgb, var(--ok) 8%, var(--shell-surface-raised)) 0%,
+      var(--shell-surface-raised) 48%,
+      color-mix(in srgb, var(--ok) 5%, var(--shell-surface-raised)) 100%
+    ) padding-box,
+    linear-gradient(
+      110deg,
+      color-mix(in srgb, var(--ok) 78%, var(--shell-border)) 0%,
+      color-mix(in srgb, var(--ok) 34%, var(--shell-border)) 50%,
+      color-mix(in srgb, var(--ok) 70%, var(--shell-border)) 100%
+    ) border-box;
+  box-shadow: 0 8px 22px color-mix(in srgb, var(--ok) 8%, transparent), inset 0 1px 0 color-mix(in srgb, var(--ok) 14%, transparent);
+}
+
+.task-draft-delivery[data-draft-status="ready"] .task-draft-delivery-bar {
+  min-height: 64px;
+  padding: 10px 12px;
+}
+
+.task-draft-delivery[data-draft-status="ready"] .task-draft-status.ready strong {
+  color: var(--ok);
+  font-size: 13px;
+}
+
+.task-draft-delivery[data-draft-status="ready"] .task-draft-status.ready > span {
+  width: 34px;
+  height: 34px;
+  flex-basis: 34px;
+  border-color: var(--ok);
+  color: var(--shell-focus-contrast);
+  background: var(--ok);
+  box-shadow: 0 4px 12px color-mix(in srgb, var(--ok) 18%, transparent);
 }
 
 .task-draft-adjustments {
@@ -1709,7 +1747,7 @@
 .task-draft-commands .launch-jianying {
   border-color: var(--shell-accent);
   background: var(--shell-accent);
-  color: var(--shell-accent-contrast);
+  color: var(--shell-focus-contrast);
 }
 
 @media (max-width: 1180px) {

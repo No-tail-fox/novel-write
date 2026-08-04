@@ -170,6 +170,13 @@ describe('editorial task operations surfaces', () => {
     expect(css).toContain('.task-template-switcher');
     expect(css).toContain('.task-template-apply.active');
     expect(css).toMatch(/\.task-template-apply\.active\s*\{[^}]*color:\s*var\(--shell-accent-contrast\);/u);
+    expect(css).toContain('.task-draft-delivery[data-draft-status="ready"]');
+    expect(css).toMatch(/linear-gradient\(\s*135deg,/u);
+    expect(css).toMatch(/linear-gradient\(\s*110deg,/u);
+    expect(css).toMatch(/\.task-draft-delivery\[data-draft-status="ready"\][\s\S]*?border-color:\s*transparent;/u);
+    expect(css).toMatch(/\.task-draft-delivery\[data-draft-status="ready"\] \.task-draft-delivery-bar\s*\{[\s\S]*?min-height:\s*64px;/u);
+    expect(css).toMatch(/\.task-draft-delivery\[data-draft-status="ready"\] \.task-draft-status\.ready > span\s*\{[\s\S]*?width:\s*34px;[\s\S]*?background:\s*var\(--ok\);/u);
+    expect(css).toMatch(/\.task-draft-commands \.launch-jianying\s*\{[^}]*color:\s*var\(--shell-focus-contrast\);/u);
     expect(css).toMatch(/\.task-stage-track \.pipeline-step \.error-summary-button\.compact\s*\{[\s\S]*?width:\s*100%;[\s\S]*?overflow:\s*hidden;/u);
     expect(css).toMatch(/\.task-stage-track \.pipeline-step \.error-summary-button\.compact \.error-mark\s*\{[\s\S]*?display:\s*grid;[\s\S]*?place-items:\s*center;[\s\S]*?margin-top:\s*0;/u);
     expect(css).toMatch(/\.task-stage-track \.pipeline-step \.error-summary-button\.compact > span:last-child\s*\{[\s\S]*?display:\s*block;[\s\S]*?text-overflow:\s*ellipsis;/u);
@@ -194,6 +201,8 @@ describe('editorial task operations surfaces', () => {
     expect(qa).toContain("{ id: 'queue-operations-desktop'");
     expect(qa).toContain("{ id: 'history-operations-desktop'");
     expect(qa).toContain("{ id: 'task-detail-operations-desktop'");
+    expect(qa).toContain("{ id: 'task-detail-draft-delivery-light-desktop'");
+    expect(qa).toContain("{ id: 'task-detail-draft-delivery-dark-desktop'");
     expect(qa).toContain("{ id: 'task-detail-error-summary-desktop'");
     expect(qa).toContain("{ id: 'task-detail-template-menu-dark-desktop'");
     expect(qa).toContain("{ id: 'history-operations-compact'");
@@ -203,6 +212,11 @@ describe('editorial task operations surfaces', () => {
     expect(main).toContain('if (!taskOperationsScope && !draftTemplateGalleryScope) return;');
     expect(qa).toContain("scenarioId === 'queue-operations-desktop'");
     expect(qa).toContain("scenarioId === 'task-detail-operations-desktop'");
+    expect(qa).toContain("scenarioId.startsWith('task-detail-draft-delivery-')");
+    expect(qa).toContain(".task-draft-delivery[data-draft-status=\"ready\"]");
+    expect(qa).toContain('gradientLayers.length === 2');
+    expect(main).toContain('artifactStatePath: completedStatePath');
+    expect(main).toContain('draftContentPath: completedDraftContentPath');
     expect(qa).toContain("scenarioId === 'task-detail-error-summary-desktop'");
     expect(qa).toContain("document.querySelector('.task-stage-track .pipeline-step.failed')");
     expect(qa).toContain("markStyle.display === 'grid'");
