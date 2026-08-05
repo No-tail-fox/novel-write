@@ -138,6 +138,9 @@ describe('editorial task operations surfaces', () => {
     expect(artifact).toContain('imageBySceneId.has(scene.id)');
     expect(detail).toContain('activeDraftTemplate');
     expect(detail).toContain('aria-label="选择任务草稿模板"');
+    expect(detail).toContain('data-template-location="toolbar"');
+    expect(detail).toContain('data-template-location="delivery"');
+    expect(detail.match(/data-template-location=/gu)).toHaveLength(2);
     expect(detail).toContain('className="task-template-select-menu"');
     expect(detail).toContain('role="listbox"');
     expect(detail).toContain('role="option"');
@@ -158,6 +161,10 @@ describe('editorial task operations surfaces', () => {
     expect(detail).toContain('重新打包');
     expect(artifact).toContain('StoryboardSubtitleEditor');
     expect(artifact).toContain('api.updateTaskSubtitleLines(task.id, input)');
+    expect(artifact).toContain('subtitleLineIssues(linesBySceneId[scene.id] ?? [], maxCharsPerLine)');
+    expect(artifact).toContain('repairSubtitleProblemLines(lines, scene.cap, maxCharsPerLine)');
+    expect(artifact).toContain('修复问题行');
+    expect(artifact).toContain('行号已标红');
     expect(detail).toContain('openTemplateManager');
     expect(artifact).toContain('setSelectedSceneId');
     expect(artifact).toContain('taskPreviewCuesForScene');
@@ -176,6 +183,7 @@ describe('editorial task operations surfaces', () => {
     expect(css).toContain('.task-template-apply.active');
     expect(css).toMatch(/\.task-template-apply\.active\s*\{[^}]*color:\s*var\(--shell-accent-contrast\);/u);
     expect(css).toContain('.task-draft-delivery[data-draft-status="ready"]');
+    expect(css).toContain('.storyboard-caption-numbers span.over-limit');
     expect(css).toMatch(/linear-gradient\(\s*135deg,/u);
     expect(css).toMatch(/linear-gradient\(\s*110deg,/u);
     expect(css).toMatch(/\.task-draft-delivery\[data-draft-status="ready"\][\s\S]*?border-color:\s*transparent;/u);

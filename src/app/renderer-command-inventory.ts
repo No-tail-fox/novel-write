@@ -128,6 +128,16 @@ export const rendererCommandInventory = {
   ),
   createAndRunTask: command(
     owner('new-task', 'src/features/tasks/NewTaskPage.tsx', 'run', 'onClick={run}', '创建并开始任务', productShellTest),
+    owner(
+      'new-task',
+      'src/features/tasks/NewTaskPage.tsx',
+      'run',
+      'onKeyDown={(event) => {',
+      '创建并开始任务',
+      'tests/new-task-workbench-ui.test.ts',
+      undefined,
+      { disabled: 'createTaskDisabled', loading: 'taskAction.busy', error: 'InlineActionFeedback' },
+    ),
     owner('benchmark', 'src/features/labs/BenchmarkImportPage.tsx', 'createBenchmarkTask', 'onClick={createBenchmarkTask}', '用此文案创建任务', productShellTest),
     owner('music-mv', 'src/features/music-mv/MusicMvPage.tsx', 'runMusicMv', 'onClick={runMusicMv}', '生成音乐 MV', productShellTest),
   ),
@@ -418,7 +428,10 @@ export const rendererCommandInventory = {
   updateTaskBgm: command(owner('task-detail', 'src/features/tasks/TaskDetailPage.tsx', 'applyDraftBgm', 'onClick={onApplyBgm}', '应用音乐', 'tests/task-operations-ui.test.ts')),
   updateTaskImagePrompt: command(owner('task-detail', 'src/features/tasks/TaskArtifactPreview.tsx', 'submitEditor', 'onClick={() => void submitEditor()}', '保存并重绘', productShellTest)),
   updateTaskSubtitleLines: command(owner('task-detail', 'src/features/tasks/TaskArtifactPreview.tsx', 'saveSubtitleLines', 'onClick={saveSubtitleLines}', '保存字幕断句', 'tests/task-operations-ui.test.ts')),
-  updateTaskTemplate: command(owner('task-detail', 'src/features/tasks/TaskDetailPage.tsx', 'applyDraftTemplate', 'onClick={onApplyTemplate}', '应用模板', productShellTest)),
+  updateTaskTemplate: command(
+    owner('task-detail', 'src/features/tasks/TaskDetailPage.tsx', 'applyDraftTemplate', 'onClick={onApplyTemplate}', '应用模板', productShellTest),
+    owner('task-detail', 'src/features/tasks/TaskDetailPage.tsx', 'applyDraftTemplate', 'onClick={applyDraftTemplate}', '应用模板', 'tests/task-operations-ui.test.ts'),
+  ),
   updateTaskStatus: command(
     owner('html-video', 'src/features/html-video/HtmlVideoPage.tsx', 'setTaskStatus', "setTaskStatus('paused')", '暂停', 'tests/task-operations-contracts.test.ts', undefined, { disabled: 'disabled={taskBusy || isBrowserPreview}', loading: 'taskBusy', error: 'InlineActionFeedback' }),
     owner('html-video', 'src/features/html-video/HtmlVideoPage.tsx', 'setTaskStatus', "setTaskStatus('cancelled')", '取消', 'tests/task-operations-contracts.test.ts', undefined, { disabled: 'disabled={taskBusy || isBrowserPreview}', loading: 'taskBusy', error: 'InlineActionFeedback' }),

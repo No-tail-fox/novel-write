@@ -829,7 +829,15 @@ export function NewTaskPage({
   const activeStageMeta = NEW_TASK_STAGE_META.find((stage) => stage.id === activeStage) ?? NEW_TASK_STAGE_META[0];
 
   return (
-    <div className="new-task-scroll" data-new-task-stage={activeStage}>
+    <div
+      className="new-task-scroll"
+      data-new-task-stage={activeStage}
+      onKeyDown={(event) => {
+        if (event.nativeEvent.isComposing || !(event.ctrlKey || event.metaKey) || event.key !== 'Enter' || createTaskDisabled) return;
+        event.preventDefault();
+        void run();
+      }}
+    >
       <nav className="new-task-stage-tabs" aria-label="新建任务步骤">
         {NEW_TASK_STAGE_META.map((stage, index) => (
           <button

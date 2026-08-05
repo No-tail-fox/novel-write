@@ -58,6 +58,7 @@ export const editorialQaMatrix = {
     { id: 'task-detail-draft-delivery-dark-desktop', view: 'task-detail', theme: 'dark', viewport: 'desktop' },
     { id: 'task-detail-error-summary-desktop', view: 'task-detail', theme: 'light', viewport: 'desktop' },
     { id: 'task-detail-template-menu-dark-desktop', view: 'task-detail', theme: 'dark', viewport: 'desktop' },
+    { id: 'task-detail-subtitle-diagnostics-light-desktop', view: 'task-detail', theme: 'light', viewport: 'desktop' },
     { id: 'task-detail-borrowed-image-desktop', view: 'task-detail', theme: 'light', viewport: 'desktop' },
     { id: 'task-detail-error-dialog-compact', view: 'task-detail', theme: 'light', viewport: 'compact' },
     { id: 'history-operations-compact', view: 'history', theme: 'light', viewport: 'compact' },
@@ -213,7 +214,7 @@ export async function captureEditorialQa(
       captureCase.view === 'task-detail'
       && !['task-detail-error-summary-desktop', 'task-detail-error-dialog-compact'].includes(captureCase.id)
       && !captureCase.id.startsWith('task-detail-draft-delivery-')
-      && captureCase.id !== 'task-detail-cover-page-light-desktop'
+      && !['task-detail-cover-page-light-desktop', 'task-detail-subtitle-diagnostics-light-desktop'].includes(captureCase.id)
       && state.borrowedImageLabel !== '借 #1'
     ) {
       throw new Error(`Editorial QA borrowed-image label failed in ${captureCase.id}: ${state.borrowedImageLabel}.`);
@@ -595,7 +596,7 @@ export function editorialQaCaptureIdsByRequirement(requirement: EditorialQaCaptu
   for (const captureCase of editorialQaMatrix.newTaskStates) requiredIds.add(captureCase.id);
 
   const classified = allIds.filter((id) => requirement === 'required' ? requiredIds.has(id) : !requiredIds.has(id));
-  if (requiredIds.size !== 67 || allIds.length - requiredIds.size !== 28) {
+  if (requiredIds.size !== 67 || allIds.length - requiredIds.size !== 29) {
     throw new Error(`Editorial QA canonical classification drifted: ${requiredIds.size} required of ${allIds.length}.`);
   }
   return classified;
@@ -742,6 +743,7 @@ function qaScenarioScript(id: string, view: string, theme: string, stage?: strin
       || scenarioId === 'task-detail-error-dialog-compact';
     const draftDeliveryScenario = scenarioId.startsWith('task-detail-draft-delivery-');
     const coverPageScenario = scenarioId === 'task-detail-cover-page-light-desktop';
+    const subtitleDiagnosticsScenario = scenarioId === 'task-detail-subtitle-diagnostics-light-desktop';
     const navView = targetView === 'task-detail' ? 'queue' : targetView;
     const nav = document.querySelector('[data-nav-view="' + navView + '"]');
     if (nav instanceof HTMLButtonElement) nav.click();
@@ -1211,6 +1213,52 @@ function qaScenarioScript(id: string, view: string, theme: string, stage?: strin
             && panel.textContent?.includes('素材库选图') === true
             && panel.textContent?.includes('参考图编辑') === true;
         });
+        await settleCompositor();
+      }
+    }
+    if (subtitleDiagnosticsScenario) {
+      const pauseButton = [...document.querySelectorAll('.task-detail-run-control')]
+        .find((button) => button.textContent?.trim() === '暂停任务');
+      if (pauseButton instanceof HTMLButtonElement) pauseButton.click();
+      ready = ready && await waitFor(() => [...document.querySelectorAll('.task-detail-run-control')]
+        .some((button) => button.textContent?.trim() === '继续任务'));
+      const storyboardTab = [...document.querySelectorAll('.artifact-tab-list button')]
+        .find((button) => button.textContent?.trim() === '分镜');
+      if (storyboardTab instanceof HTMLButtonElement) storyboardTab.click();
+      let firstCaption = null;
+      ready = ready && await waitFor(() => {
+        const candidate = document.querySelector('.storyboard-caption-field textarea');
+        if (!(candidate instanceof HTMLTextAreaElement) || candidate.disabled) return false;
+        firstCaption = candidate;
+        return document.querySelector('.storyboard-subtitle-editor') instanceof HTMLElement;
+      });
+      if (firstCaption instanceof HTMLTextAreaElement) {
+        const setter = Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, 'value')?.set;
+        setter?.call(firstCaption, '这是一行用于验证字幕超长诊断与行号标红状态的测试文案');
+        firstCaption.dispatchEvent(new Event('input', { bubbles: true }));
+      }
+      ready = ready && await waitFor(() => {
+        const editor = document.querySelector('.storyboard-subtitle-editor');
+        const warning = editor?.querySelector('.storyboard-editor-warning');
+        const issueIndex = editor?.querySelector('.storyboard-caption-numbers .issue.over-limit[data-line-status="over-limit"]');
+        const repairButtons = [...(editor?.querySelectorAll('button') ?? [])]
+          .filter((button) => button.textContent?.trim() === '修复问题行');
+        if (!(editor instanceof HTMLElement) || !(warning instanceof HTMLElement) || !(issueIndex instanceof HTMLElement)) return false;
+        const editorRect = editor.getBoundingClientRect();
+        const warningRect = warning.getBoundingClientRect();
+        return storyboardTab instanceof HTMLButtonElement
+          && storyboardTab.classList.contains('active')
+          && warning.textContent?.includes('行超过模板上限') === true
+          && warning.textContent?.includes('行号已标红') === true
+          && repairButtons.length === 1
+          && repairButtons[0] instanceof HTMLButtonElement
+          && !repairButtons[0].disabled
+          && warningRect.left >= editorRect.left
+          && warningRect.right <= editorRect.right + 0.5;
+      });
+      const warning = document.querySelector('.storyboard-editor-warning');
+      if (warning instanceof HTMLElement) {
+        warning.scrollIntoView({ block: 'center' });
         await settleCompositor();
       }
     }

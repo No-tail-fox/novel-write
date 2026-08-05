@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState, type ReactNode } from 'react';
-import { Check, CheckSquare2, ChevronLeft, ChevronRight, ClipboardCopy, ClipboardPaste, Database, Eye, FolderOpen, Image as ImageIcon, Images, ImageUp, Library, Loader2, Pencil, Play, RotateCcw, Save, Scissors, Square, Upload, Wand2, X, XCircle } from 'lucide-react';
+import { Check, CheckSquare2, ChevronLeft, ChevronRight, ClipboardCopy, ClipboardPaste, Database, Eye, FolderOpen, Image as ImageIcon, Images, ImageUp, Library, Loader2, Pencil, Play, RotateCcw, Save, Scissors, Square, Upload, Wand2, Wrench, X, XCircle } from 'lucide-react';
 import { ErrorDetails as ErrorSummaryButton, summarizeErrorMessage } from '../../components/ErrorDetails';
 import { AsyncActionFeedback as InlineActionFeedback } from '../../components/AsyncActionFeedback';
 import { EventTimeline } from '../../components/EventTimeline';
@@ -31,6 +31,7 @@ import {
 } from './task-formatters';
 import { artifactPanelTitle, imageProgressLabel, snapshotStepStatus, type ArtifactPanelTab } from './task-pipeline';
 import { indexTaskAssetsBySceneId, resolveTaskPreviewContent, taskPreviewCuesForScene } from './task-preview-model';
+import { repairSubtitleProblemLines, subtitleLineIssues } from './subtitle-line-diagnostics';
 
 export type TaskArtifactTab = ArtifactPanelTab;
 
@@ -511,9 +512,17 @@ function StoryboardSubtitleEditor({
   const [linesBySceneId, setLinesBySceneId] = useState<Record<number, string[]>>(initialLines);
   const currentSignature = subtitleLineSignature(scenes, linesBySceneId);
   const dirty = currentSignature !== initialSignature;
+  const issuesBySceneId = Object.fromEntries(scenes.map((scene) => [
+    scene.id,
+    subtitleLineIssues(linesBySceneId[scene.id] ?? [], maxCharsPerLine),
+  ]));
   const invalidSceneIds = scenes
-    .filter((scene) => (linesBySceneId[scene.id] ?? []).length === 0 || (linesBySceneId[scene.id] ?? []).some((line) => !line.trim()))
+    .filter((scene) => issuesBySceneId[scene.id].some((issue) => issue.kind === 'empty'))
     .map((scene) => scene.id);
+  const overLimitLineCount = Object.values(issuesBySceneId)
+    .flat()
+    .filter((issue) => issue.kind === 'over-limit').length;
+  const problemLineCount = Object.values(issuesBySceneId).flat().length;
   const locked = disabled || editorAction.busy || isBrowserPreview;
 
   useEffect(() => {
@@ -531,6 +540,19 @@ function StoryboardSubtitleEditor({
       scene.id,
       splitCaptionLines(scene.cap, maxCharsPerLine),
     ])));
+    editorAction.clearFeedback();
+  }
+
+  function repairProblemLines() {
+    setLinesBySceneId(Object.fromEntries(scenes.map((scene) => {
+      const lines = linesBySceneId[scene.id] ?? [];
+      return [
+        scene.id,
+        issuesBySceneId[scene.id].length > 0
+          ? repairSubtitleProblemLines(lines, scene.cap, maxCharsPerLine)
+          : lines,
+      ];
+    })));
     editorAction.clearFeedback();
   }
 
@@ -580,7 +602,15 @@ function StoryboardSubtitleEditor({
           </button>
         </div>
       </header>
-      {invalidSceneIds.length > 0 ? <div className="storyboard-editor-warning">分镜 {invalidSceneIds.join('、')} 存在空字幕行，请补全或删除空行后保存。</div> : null}
+      {problemLineCount > 0 ? (
+        <div className="storyboard-editor-warning" role="status">
+          <span>
+            {invalidSceneIds.length > 0 ? `分镜 ${invalidSceneIds.join('、')} 存在空字幕行。` : ''}
+            {overLimitLineCount > 0 ? ` ${overLimitLineCount} 行超过模板上限 ${maxCharsPerLine} 字，行号已标红。` : ''}
+          </span>
+          <button className="mini-button" type="button" disabled={locked} onClick={repairProblemLines}><Wrench size={13} />修复问题行</button>
+        </div>
+      ) : null}
       <InlineActionFeedback feedback={editorAction.feedback} />
       <div className="storyboard-editor-columns" aria-hidden="true">
         <span>分镜原文</span>
@@ -589,6 +619,9 @@ function StoryboardSubtitleEditor({
       <div className="storyboard-editor-rows">
         {scenes.map((scene, sceneIndex) => {
           const lines = linesBySceneId[scene.id] ?? [];
+          const issues = issuesBySceneId[scene.id];
+          const issueByLineIndex = new Map(issues.map((issue) => [issue.index, issue]));
+          const sceneOverLimitCount = issues.filter((issue) => issue.kind === 'over-limit').length;
           return (
             <article className="storyboard-editor-row" key={scene.id}>
               <div className="storyboard-source-copy">
@@ -600,10 +633,20 @@ function StoryboardSubtitleEditor({
                 <small>字幕行</small>
                 <div className="storyboard-caption-input">
                   <div className="storyboard-caption-numbers" aria-hidden="true">
-                    {lines.map((_, index) => <span key={index}>{index + 1}</span>)}
+                    {lines.map((_, index) => {
+                      const issue = issueByLineIndex.get(index);
+                      return (
+                        <span
+                          className={issue ? `issue ${issue.kind}` : ''}
+                          data-line-status={issue?.kind ?? 'ok'}
+                          key={index}
+                          title={issue?.kind === 'over-limit' ? `${issue.characterCount} 字，超过 ${maxCharsPerLine} 字上限` : issue?.kind === 'empty' ? '空字幕行' : undefined}
+                        >{index + 1}</span>
+                      );
+                    })}
                   </div>
                   <textarea
-                    aria-label={`第 ${sceneIndex + 1} 个分镜字幕行`}
+                    aria-label={`第 ${sceneIndex + 1} 个分镜字幕行，每行最多 ${maxCharsPerLine} 字`}
                     disabled={locked}
                     rows={Math.max(2, lines.length)}
                     spellCheck={false}
@@ -612,7 +655,7 @@ function StoryboardSubtitleEditor({
                     onChange={(event) => updateSceneLines(scene.id, event.target.value)}
                   />
                 </div>
-                <span>{lines.length} 行 · {countChars(lines.join(''))} 字</span>
+                <span>{lines.length} 行 · {countChars(lines.join(''))} 字 · 每行上限 {maxCharsPerLine}{sceneOverLimitCount > 0 ? ` · ${sceneOverLimitCount} 行超限` : ''}</span>
               </div>
             </article>
           );

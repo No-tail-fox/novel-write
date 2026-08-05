@@ -36,11 +36,11 @@ describe('editorial Electron QA configuration', () => {
 
   it('defines the exact completed capture count for every QA scope', () => {
     expect(Object.fromEntries(editorialQaScopes.map((scope) => [scope, editorialQaExpectedCaptureCount(scope)]))).toEqual({
-      all: 95,
+      all: 96,
       'theme-smoke': 4,
       shell: 4,
       'new-task': 4,
-      'task-operations': 11,
+      'task-operations': 12,
       'html-video': 2,
       'clone-voice': 4,
       'volcengine-tts': 2,
@@ -60,7 +60,7 @@ describe('editorial Electron QA configuration', () => {
     const all = editorialQaCaptureIds('all');
 
     expect(required).toHaveLength(67);
-    expect(supplemental).toHaveLength(28);
+    expect(supplemental).toHaveLength(29);
     expect(new Set([...required, ...supplemental])).toEqual(new Set(all));
     expect(required.filter((id) => supplemental.includes(id))).toEqual([]);
     expect(required).toEqual(expect.arrayContaining([
@@ -93,6 +93,7 @@ describe('editorial Electron QA configuration', () => {
       'task-detail-draft-delivery-light-desktop',
       'task-detail-error-dialog-compact',
       'task-detail-error-summary-desktop',
+      'task-detail-subtitle-diagnostics-light-desktop',
       'task-detail-template-menu-dark-desktop',
       'volcengine-legacy-dark-compact',
       'volcengine-v3-light-desktop',
@@ -358,6 +359,19 @@ describe('editorial Electron QA configuration', () => {
     expect(source).toContain('Editorial QA found uneven or unmeasured image preview cards');
     expect(main).toContain("borrowedFrom = scene.id === 2 ? 1 : undefined");
     expect(main).toContain("imageErrors: [{ sceneId: 2");
+  });
+
+  it('captures the real subtitle over-limit diagnosis without duplicating its repair action', async () => {
+    const source = await (await import('node:fs/promises')).readFile(new URL('../electron/editorial-qa.ts', import.meta.url), 'utf8');
+
+    expect(editorialQaCaptureIds('task-operations')).toContain('task-detail-subtitle-diagnostics-light-desktop');
+    expect(source).toContain("scenarioId === 'task-detail-subtitle-diagnostics-light-desktop'");
+    expect(source).toContain("button.textContent?.trim() === '暂停任务'");
+    expect(source).toContain("button.textContent?.trim() === '继续任务'");
+    expect(source).toContain("button.textContent?.trim() === '分镜'");
+    expect(source).toContain(".storyboard-caption-numbers .issue.over-limit[data-line-status=\"over-limit\"]");
+    expect(source).toContain("button.textContent?.trim() === '修复问题行'");
+    expect(source).toContain('repairButtons.length === 1');
   });
 
   it('opens the accepted Prompt Template editor state for the light desktop concept capture', async () => {

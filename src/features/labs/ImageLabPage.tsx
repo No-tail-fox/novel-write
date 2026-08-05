@@ -1,5 +1,5 @@
-import { useState } from 'react';
-import { Copy, FolderOpen, Image as ImageIcon, ImagePlus, Loader2, RefreshCcw, RotateCcw, Wand2 } from 'lucide-react';
+import { useEffect, useState } from 'react';
+import { Copy, FolderOpen, Image as ImageIcon, ImagePlus, Loader2, RefreshCcw, RotateCcw, Save, Trash2, Wand2 } from 'lucide-react';
 import { EmptyState } from '../../components/EmptyState';
 import { ErrorDetails as ErrorSummaryButton } from '../../components/ErrorDetails';
 import { FormField as Field } from '../../components/FormField';
@@ -20,12 +20,22 @@ import {
   resolveImageLabSmartMode,
   smartImageModeLabel,
 } from './image-lab-helpers';
+import {
+  createImageLabPromptTemplate,
+  deleteImageLabPromptTemplate,
+  imageLabTabForPromptMode,
+  readImageLabPromptTemplates,
+  readImageLabWorkspaceDraft,
+  upsertImageLabPromptTemplate,
+  writeImageLabPromptTemplates,
+  writeImageLabWorkspaceDraft,
+  type ImageLabProviderChoice,
+  type ImageLabTab,
+} from './image-lab-workspace';
 import '../../styles/features/local-labs.css';
 import { imageGenerationQualityLabel, normalizeImageGenerationQuality } from '../../shared/image-quality';
 
 type ImageResolution = ImageLabRecord['resolution'];
-type ImageLabProviderChoice = 'gpt_image' | 'jimeng' | 'custom';
-type ImageLabTab = 'smart' | 'text' | 'reference';
 
 const imageLabRatioChoices = [
   ['21:9', '宽屏'],
@@ -45,25 +55,33 @@ const imageLabProviderChoices: Array<[ImageLabProviderChoice, string]> = [
 ];
 
 const smartPurposeOptions = smartImageModeOptions.filter(([mode]) => mode !== 'reference-edit');
+const defaultImageLabPrompt = '根据食谱内容，规划 2-3 张美食教程图，合成品图、灵魂文案、制作步骤，保持参考图主体和质感。';
 
 export function ImageLabPage({ api, state, applyState }: { api: StoryDreamApi; state: AppState; applyState: ApplyMutationResult }) {
-  const [tab, setTab] = useState<ImageLabTab>('smart');
-  const [smartMode, setSmartMode] = useState<ImageLabSmartMode>('podcast-cover');
-  const [prompt, setPrompt] = useState('根据食谱内容，规划 2-3 张美食教程图，合成品图、灵魂文案、制作步骤，保持参考图主体和质感。');
-  const [selectedRatios, setSelectedRatios] = useState<string[]>(['9:16']);
-  const [selectedStyles, setSelectedStyles] = useState<string[]>(['photo-real']);
+  const [workspaceDraft] = useState(() => readImageLabWorkspaceDraft(window.localStorage));
+  const restoredRatios = workspaceDraft?.selectedRatios.filter((ratio) => imageLabRatioChoices.some(([value]) => value === ratio)) ?? [];
+  const restoredStyles = workspaceDraft?.selectedStyles.filter((style) => styleOptions.some(([value]) => value === style)) ?? [];
+  const [tab, setTab] = useState<ImageLabTab>(workspaceDraft?.tab ?? 'smart');
+  const [smartMode, setSmartMode] = useState<ImageLabSmartMode>(workspaceDraft?.smartMode ?? 'podcast-cover');
+  const [prompt, setPrompt] = useState(workspaceDraft ? workspaceDraft.prompt : defaultImageLabPrompt);
+  const [selectedRatios, setSelectedRatios] = useState<string[]>(restoredRatios.length ? restoredRatios : ['9:16']);
+  const [selectedStyles, setSelectedStyles] = useState<string[]>(restoredStyles.length ? restoredStyles : ['photo-real']);
   const [provider, setProvider] = useState<ImageLabProviderChoice>(
-    isImageLabProviderChoice(state.config.imageProvider) ? state.config.imageProvider : 'gpt_image',
+    workspaceDraft?.provider ?? (isImageLabProviderChoice(state.config.imageProvider) ? state.config.imageProvider : 'gpt_image'),
   );
-  const [resolution, setResolution] = useState<ImageResolution>('1K');
-  const [quality, setQuality] = useState<ImageGenerationQuality>(() => normalizeImageGenerationQuality(
-    state.config.imageProvider === 'custom'
+  const [resolution, setResolution] = useState<ImageResolution>(workspaceDraft?.resolution ?? '1K');
+  const [quality, setQuality] = useState<ImageGenerationQuality>(() => workspaceDraft?.quality ?? normalizeImageGenerationQuality(
+    provider === 'custom'
       ? state.config.customImage.quality
       : state.config.gptImage.quality ?? state.config.image.quality,
   ));
-  const [referenceImagePath, setReferenceImagePath] = useState('');
+  const [referenceImagePath, setReferenceImagePath] = useState(workspaceDraft?.referenceImagePath ?? '');
   const [referencePasteDraft, setReferencePasteDraft] = useState('');
-  const [imageLabOutputCount, setImageLabOutputCount] = useState(3);
+  const [imageLabOutputCount, setImageLabOutputCount] = useState(workspaceDraft?.outputCount ?? 3);
+  const [promptTemplates, setPromptTemplates] = useState(() => readImageLabPromptTemplates(window.localStorage));
+  const [selectedPromptTemplateId, setSelectedPromptTemplateId] = useState('');
+  const [promptTemplateName, setPromptTemplateName] = useState('');
+  const [promptTemplateNotice, setPromptTemplateNotice] = useState('');
   const [generating, setGenerating] = useState(false);
   const [submitError, setSubmitError] = useState('');
   const [expandedReferenceImage, setExpandedReferenceImage] = useState('');
@@ -84,6 +102,27 @@ export function ImageLabPage({ api, state, applyState }: { api: StoryDreamApi; s
   const batchRequestCount = selectedRatios.length * selectedStyles.length * quantity;
   const supportsImageQuality = provider !== 'jimeng';
   const failedRecords = state.imageLabRecords.filter((record) => record.status === 'failed');
+
+  useEffect(() => {
+    try {
+      writeImageLabWorkspaceDraft(window.localStorage, {
+        version: 1,
+        savedAt: new Date().toISOString(),
+        tab,
+        smartMode,
+        prompt,
+        selectedRatios,
+        selectedStyles,
+        provider,
+        resolution,
+        quality,
+        referenceImagePath,
+        outputCount: imageLabOutputCount,
+      });
+    } catch {
+      // The workbench remains usable when browser storage is unavailable.
+    }
+  }, [imageLabOutputCount, prompt, provider, quality, referenceImagePath, resolution, selectedRatios, selectedStyles, smartMode, tab]);
 
   async function selectImageLabReferenceImage() {
     await imageLabAction.run(async () => {
@@ -192,7 +231,64 @@ export function ImageLabPage({ api, state, applyState }: { api: StoryDreamApi; s
     await imageLabAction.run(async () => {
       const detail = await imageLabRecordDetail(record);
       setPrompt(detail.prompt);
+      setSelectedPromptTemplateId('');
+      setPromptTemplateName('');
     }, { onError: (error) => setSubmitError(error.message) });
+  }
+
+  function selectPromptTemplate(id: string) {
+    setSelectedPromptTemplateId(id);
+    const template = promptTemplates.find((item) => item.id === id);
+    if (!template) {
+      setPromptTemplateName('');
+      setPromptTemplateNotice('');
+      return;
+    }
+    setPromptTemplateName(template.name);
+    setPrompt(template.body);
+    const nextTab = imageLabTabForPromptMode(template.mode);
+    setTab(nextTab);
+    if (nextTab === 'smart') setSmartMode(template.mode);
+    setPromptTemplateNotice(`已应用：${template.name}`);
+  }
+
+  function savePromptTemplate() {
+    try {
+      const name = promptTemplateName.trim();
+      const existingByName = promptTemplates.find((item) => item.name.toLocaleLowerCase() === name.toLocaleLowerCase());
+      const selectedTemplate = promptTemplates.find((item) => item.id === selectedPromptTemplateId);
+      const selectedKeepsIdentity = selectedTemplate?.name.toLocaleLowerCase() === name.toLocaleLowerCase();
+      const previous = existingByName ?? (selectedKeepsIdentity ? selectedTemplate : undefined);
+      const updatedAt = new Date().toISOString();
+      const mode = tab === 'smart' ? smartMode : tab === 'reference' ? 'reference-edit' : 'text-to-image';
+      const template = createImageLabPromptTemplate({
+        id: previous?.id ?? crypto.randomUUID(),
+        name,
+        mode,
+        body: prompt,
+        createdAt: previous?.createdAt,
+        updatedAt,
+      });
+      const nextTemplates = upsertImageLabPromptTemplate(promptTemplates, template);
+      writeImageLabPromptTemplates(window.localStorage, nextTemplates);
+      setPromptTemplates(nextTemplates);
+      setSelectedPromptTemplateId(template.id);
+      setPromptTemplateName(template.name);
+      setPromptTemplateNotice(previous ? `已更新：${template.name}` : `已保存：${template.name}`);
+    } catch (error) {
+      setPromptTemplateNotice(error instanceof Error && /BODY_INVALID/u.test(error.message) ? '请先填写需求描述。' : '请填写模板名称。');
+    }
+  }
+
+  function removePromptTemplate() {
+    if (!selectedPromptTemplateId) return;
+    const selected = promptTemplates.find((item) => item.id === selectedPromptTemplateId);
+    const nextTemplates = deleteImageLabPromptTemplate(promptTemplates, selectedPromptTemplateId);
+    writeImageLabPromptTemplates(window.localStorage, nextTemplates);
+    setPromptTemplates(nextTemplates);
+    setSelectedPromptTemplateId('');
+    setPromptTemplateName('');
+    setPromptTemplateNotice(selected ? `已删除：${selected.name}` : '模板已删除');
   }
 
   async function copyImageLabTaskId(record: ImageLabRecord) {
@@ -269,6 +365,27 @@ export function ImageLabPage({ api, state, applyState }: { api: StoryDreamApi; s
                 </div>
               </div>
             ) : null}
+            <section className="image-lab-prompt-templates" aria-label="提示词模板">
+              <div className="image-lab-section-head">
+                <strong>提示词模板</strong>
+                <small>{promptTemplates.length} 个已保存</small>
+              </div>
+              <div className="image-lab-prompt-template-row">
+                <select aria-label="选择提示词模板" value={selectedPromptTemplateId} onChange={(event) => selectPromptTemplate(event.target.value)}>
+                  <option value="">选择模板</option>
+                  {promptTemplates.map((template) => <option key={template.id} value={template.id}>{template.name}</option>)}
+                </select>
+                <input aria-label="提示词模板名称" maxLength={60} value={promptTemplateName} placeholder="模板名称" onChange={(event) => setPromptTemplateName(event.target.value)} />
+                <button className="ghost-action compact" type="button" title="保存当前提示词模板" onClick={savePromptTemplate}>
+                  <Save size={14} />
+                  保存
+                </button>
+                <button className="icon-button" type="button" title="删除提示词模板" aria-label="删除提示词模板" disabled={!selectedPromptTemplateId} onClick={removePromptTemplate}>
+                  <Trash2 size={14} />
+                </button>
+              </div>
+              {promptTemplateNotice ? <small className="image-lab-prompt-template-notice" aria-live="polite">{promptTemplateNotice}</small> : null}
+            </section>
             <Field label="需求描述">
               <textarea className="prompt-box image-lab-prompt" value={prompt} placeholder="描述主体、场景、构图和用途" onChange={(event) => setPrompt(event.target.value)} />
             </Field>

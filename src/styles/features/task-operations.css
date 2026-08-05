@@ -1373,11 +1373,28 @@
 }
 
 .storyboard-editor-warning {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
   border-bottom: 1px solid color-mix(in srgb, var(--warn) 32%, var(--shell-border));
   padding: 8px 10px;
   background: color-mix(in srgb, var(--warn) 8%, var(--shell-surface-raised));
   color: var(--warn);
   font-size: 11px;
+}
+
+.storyboard-editor-warning span {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.storyboard-editor-warning .mini-button {
+  flex: 0 0 auto;
+  min-height: 26px;
+  border-color: color-mix(in srgb, var(--warn) 38%, var(--shell-border));
+  color: var(--warn);
 }
 
 .storyboard-editor-columns,
@@ -1472,6 +1489,16 @@
   font-size: 10px;
   line-height: 24px;
   text-align: center;
+}
+
+.storyboard-caption-numbers span.issue {
+  font-weight: 700;
+}
+
+.storyboard-caption-numbers span.over-limit,
+.storyboard-caption-numbers span.empty {
+  background: color-mix(in srgb, var(--warn) 12%, transparent);
+  color: var(--warn);
 }
 
 .storyboard-caption-input textarea {

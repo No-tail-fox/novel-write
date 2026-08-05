@@ -138,6 +138,13 @@ describe('three-stage new task workbench', () => {
     expect(css).toMatch(/\.new-task-preset-panel \.icon-button\s*\{[\s\S]*background:\s*var\(--shell-surface-raised\);[\s\S]*color:\s*var\(--shell-muted\);/u);
   });
 
+  it('submits the existing validated creation flow with Ctrl+Enter', async () => {
+    const page = await readFile(new URL('../src/features/tasks/NewTaskPage.tsx', import.meta.url), 'utf8');
+    expect(page).toContain("if (event.nativeEvent.isComposing || !(event.ctrlKey || event.metaKey) || event.key !== 'Enter' || createTaskDisabled) return;");
+    expect(page).toContain('event.preventDefault();');
+    expect(page).toContain('void run();');
+  });
+
   it('renders every image ratio through one numerically faithful stable swatch', async () => {
     const [component, newTask, musicMv, imageLab, css] = await Promise.all([
       readFile(new URL('../src/components/AspectRatioSwatch.tsx', import.meta.url), 'utf8'),

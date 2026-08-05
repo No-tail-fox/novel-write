@@ -229,6 +229,7 @@ function TaskDraftDelivery({
         <div
           ref={templateFieldRef}
           className="task-template-switcher"
+          data-template-location="delivery"
           data-applied-template-id={templateSelection.appliedTemplateId}
           data-candidate-template-id={selectedTemplateId}
           data-template-state={templateChanged ? 'pending' : templateSelection.appliedTemplateMissing ? 'missing' : 'applied'}
@@ -432,6 +433,8 @@ export function TaskDetailPage({
     ? resolvedDraftTemplate.template
     : state.draftTemplates.find((template) => template.id === previewDraftTemplateId) ?? null;
   const draftTemplateChanged = templateSelection.canApply;
+  const draftTemplateLocked = snapshotStepStatus(artifactSnapshot, 6) === 'running'
+    || (activeTask.status === 'running' && activeTask.currentStep === 6);
   const draftBgmChanged = bgmSelectionId !== activeTask.bgmId;
   const progress = taskProgressSnapshot(activeTask);
   const progressStages = taskProgressStages(activeTask);
@@ -546,6 +549,41 @@ export function TaskDetailPage({
             <button className={tab === 'images' ? 'active' : ''} onClick={() => setTab('images')}>图片</button>
             <button className={tab === 'audio' ? 'active' : ''} onClick={() => setTab('audio')}>配音</button>
             <button className={tab === 'events' ? 'active' : ''} onClick={() => setTab('events')}>事件</button>
+          </div>
+          <div
+            className="task-template-switcher"
+            data-template-location="toolbar"
+            data-applied-template-id={templateSelection.appliedTemplateId}
+            data-candidate-template-id={selectedDraftTemplateId}
+            data-template-state={draftTemplateChanged ? 'pending' : templateSelection.appliedTemplateMissing ? 'missing' : 'applied'}
+          >
+            <div className="task-template-field">
+              <LayoutTemplate size={14} />
+              <span>草稿模板</span>
+              <TaskTemplateSelect
+                templates={state.draftTemplates}
+                value={selectedDraftTemplateId}
+                disabled={draftTemplateLocked || taskTemplateAction.busy}
+                onChange={(templateId) => {
+                  taskTemplateAction.clearFeedback();
+                  setTemplateSelectionId(templateId);
+                }}
+              />
+            </div>
+            <button
+              type="button"
+              className={draftTemplateChanged ? 'task-template-apply active' : 'task-template-apply'}
+              disabled={!draftTemplateChanged || draftTemplateLocked || taskTemplateAction.busy}
+              onClick={applyDraftTemplate}
+            >
+              {taskTemplateAction.busy ? <Loader2 className="spin" size={14} /> : <Check size={14} />}
+              {taskTemplateAction.busy
+                ? '应用中'
+                : draftTemplateChanged
+                  ? '应用模板'
+                  : templateSelection.appliedTemplateMissing ? '请选择模板' : '已应用'}
+            </button>
+            <button className="icon-button" type="button" title="管理草稿模板" aria-label="管理草稿模板" disabled={taskTemplateAction.busy} onClick={openTemplateManager}><Settings2 size={14} /></button>
           </div>
         </div>
         {activeDraftTemplate

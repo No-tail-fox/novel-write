@@ -3448,11 +3448,33 @@ describe('product shell ui', () => {
     expect(css).toContain('.image-lab-batch-summary');
   });
 
+  it('keeps image lab parameters across navigation and manages prompt templates without overriding cost controls', async () => {
+    const page = (await rendererSourcesPromise).requiredFile('src/features/labs/ImageLabPage.tsx');
+    const workspace = await readFile(new URL('../src/features/labs/image-lab-workspace.ts', import.meta.url), 'utf8');
+    const css = await readFile(new URL('../src/styles/features/local-labs.css', import.meta.url), 'utf8');
+
+    expect(workspace).toContain("IMAGE_LAB_WORKSPACE_STORAGE_KEY = 'storydream.image-lab-workspace.v1'");
+    expect(workspace).toContain("IMAGE_LAB_PROMPT_TEMPLATES_STORAGE_KEY = 'storydream.image-lab-prompt-templates.v1'");
+    expect(page).toContain('readImageLabWorkspaceDraft(window.localStorage)');
+    expect(page).toContain('workspaceDraft ? workspaceDraft.prompt : defaultImageLabPrompt');
+    expect(page).toContain('writeImageLabWorkspaceDraft(window.localStorage');
+    expect(page).toContain('readImageLabPromptTemplates(window.localStorage)');
+    expect(page).toContain('writeImageLabPromptTemplates(window.localStorage, nextTemplates)');
+    expect(page).toContain('提示词模板');
+    expect(page).toContain('选择提示词模板');
+    expect(page).toContain('保存当前提示词模板');
+    expect(page).toContain('删除提示词模板');
+    expect(page).toContain("const mode = tab === 'smart' ? smartMode : tab === 'reference' ? 'reference-edit' : 'text-to-image'");
+    expect(css).toContain('.image-lab-prompt-templates');
+    expect(css).toContain('.image-lab-prompt-template-row');
+    expect(css).toContain('@container (max-width: 520px)');
+  });
+
   it('imports a completed local image into image lab history with the current parameters', async () => {
     const page = (await rendererSourcesPromise).requiredFile('src/features/labs/ImageLabPage.tsx');
     const importSnippet = page.slice(
       page.indexOf('async function importCompletedImage()'),
-      page.indexOf('return ('),
+      page.indexOf('async function imageLabRecordDetail'),
     );
 
     expect(page).toContain('导入成品');
