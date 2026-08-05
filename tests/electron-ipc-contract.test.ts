@@ -852,17 +852,23 @@ describe('electron ipc contract', () => {
     expect(apiContract).toContain('selectLocalImage: () => Promise<string | null>');
   });
 
-  it('exposes a safe local audio picker for uploaded BGM files', async () => {
+  it('keeps raw audio selection for voice cloning and exposes managed BGM imports', async () => {
     const main = await readFile(new URL('../electron/main.ts', import.meta.url), 'utf8');
     const preload = await readFile(new URL('../electron/preload.ts', import.meta.url), 'utf8');
     const apiContract = await readFile(new URL('../src/shared/storydream-api.ts', import.meta.url), 'utf8');
 
     expect(main).toContain("trustedHandle('local-audio:select'");
     expect(main).toContain('selectLocalAudio');
+    expect(main).toContain("purpose === 'managed-bgm' ? importManagedBgm(selectedPath, appDataDir()) : selectedPath");
+    expect(main).toContain('await ensureRuntimeManagedBgmPaths(database, service, dir)');
+    expect(main).toContain('resolveRuntimeManagedBgmLibrary(dataDir, current)');
     expect(main).toContain("extensions: ['mp3', 'wav', 'm4a', 'aac', 'ogg', 'flac']");
     expect(preload).toContain('selectLocalAudio');
+    expect(preload).toContain('importBgmAudio');
     expect(preload).toContain('local-audio:select');
-    expect(apiContract).toContain('selectLocalAudio: () => Promise<string | null>');
+    expect(apiContract).toContain('(): Promise<string | null>');
+    expect(apiContract).toContain("(purpose: 'managed-bgm'): Promise<ManagedBgmImport | null>");
+    expect(apiContract).toContain('importBgmAudio: () => Promise<ManagedBgmImport | null>');
   });
 
   it('exposes Jianying draft folder detection and folder picking to the renderer', async () => {

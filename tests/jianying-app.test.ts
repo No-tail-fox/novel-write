@@ -33,4 +33,18 @@ describe('Jianying application discovery', () => {
       await rm(root, { recursive: true, force: true });
     }
   });
+
+  it('detects a machine-wide installation after moving to another computer', async () => {
+    const root = await mkdtemp(join(tmpdir(), 'storydream-jianying-program-files-'));
+    const programFiles = join(root, 'Program Files');
+    const executable = join(programFiles, 'JianyingPro', 'Apps', 'JianyingPro.exe');
+    try {
+      await mkdir(join(programFiles, 'JianyingPro', 'Apps'), { recursive: true });
+      await writeFile(executable, 'machine-wide');
+      await expect(findJianyingExecutable({ localAppData: '', programFiles, programFilesX86: '' }))
+        .resolves.toBe(executable);
+    } finally {
+      await rm(root, { recursive: true, force: true });
+    }
+  });
 });

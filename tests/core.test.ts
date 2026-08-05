@@ -72,6 +72,27 @@ describe('story pipeline', () => {
     expect(subtitles.cues).toHaveLength(2);
   });
 
+  it('keeps ordered subtitle segments inside one visual scene', () => {
+    const subtitles = buildSubtitleTrack([
+      {
+        id: 1,
+        cap: '第一句。\n第二句。',
+        durationMs: 2600,
+        segments: [
+          { id: 1, text: '第一句。', durationMs: 1200 },
+          { id: 2, text: '第二句。', durationMs: 1400 },
+        ],
+      },
+    ]);
+
+    expect(subtitles.cues.map((cue) => cue.text)).toEqual(['第一句。', '第二句。']);
+    expect(subtitles.cues.map((cue) => cue.segmentId)).toEqual([1, 2]);
+    expect(subtitles.cues.map((cue) => [cue.startMs, cue.endMs])).toEqual([
+      [0, 1200],
+      [1200, 2600],
+    ]);
+  });
+
   it('builds subtitle timing from exact manually edited scene lines', () => {
     const subtitles = buildSubtitleTrackFromSceneLines([
       { id: 1, cap: '第一段原文', durationMs: 2400 },

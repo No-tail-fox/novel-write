@@ -291,6 +291,7 @@ describe('draft writer', () => {
           coverPage: {
             imagePath: coverPath,
             text: '只在封面出现',
+            useGeneratedTitleFallback: false,
             durationMs: 2000,
           },
           narrationAudio: narration,

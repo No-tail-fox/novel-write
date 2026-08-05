@@ -170,7 +170,7 @@ describe('task runner', () => {
         coverImageMode: 'auto',
         coverTemplateId: 'cinematic-poster',
         coverPageEnabled: true,
-        coverPageText: '只在封面页显示',
+        coverPageText: '',
       });
 
       await runTask(db, task, {
@@ -194,7 +194,7 @@ describe('task runner', () => {
       expect(draftPayloads[0]).toMatchObject({
         coverPage: {
           durationUs: 2_000_000,
-          title: { text: '只在封面页显示', startUs: 0, durationUs: 2_000_000 },
+          title: { visible: false, text: '', startUs: 0, durationUs: 2_000_000 },
         },
       });
       expect(draftPayloads[0].images.every((image) => image.sceneId > 0)).toBe(true);
@@ -1961,6 +1961,8 @@ describe('task runner', () => {
         inputText: sampleInput,
         ratio: '9:16',
         coverImageMode: 'manual',
+        coverPageEnabled: true,
+        coverPageText: '',
         manualCoverAssetId: '1f3de8ea-6775-43ab-971c-1e922eb19a57',
       }, {
         sourcePath,
@@ -2012,6 +2014,7 @@ describe('task runner', () => {
       expect(imageSceneIds.flat()).not.toContain(0);
       expect(pipeline.assets.cover).toEqual([{ sceneId: 0, path: managedCoverPath }]);
       expect(draftPayloads[0].coverImagePath).toBe(managedCoverPath);
+      expect(draftPayloads[0].coverPage?.title).toMatchObject({ visible: true, text: 'Wu Zetian' });
     } finally {
       await db.close();
       await rm(dir, { recursive: true, force: true });
@@ -3028,6 +3031,77 @@ describe('task runner', () => {
       expect(requests.some((request) => request.name === 'storyboard-target-scenes-repair-1')).toBe(true);
       const storedScenes = JSON.parse(await readFile(join(managedTaskWorkDir(dir, task), '02-sentences.json'), 'utf8')) as StoryboardScene[];
       expect(storedScenes).toHaveLength(4);
+    } finally {
+      await db.close();
+      await rm(dir, { recursive: true, force: true });
+    }
+  });
+
+  it('groups excess text chunks into visual scenes without re-auditing subtitle segments', async () => {
+    const dir = await mkdtemp(join(tmpdir(), 'storybound-runner-storyboard-segment-groups-'));
+    const db = await FileDatabase.open(join(dir, 'data.db'));
+    const draftRootDir = join(dir, 'JianyingPro Drafts');
+    const mediaDir = join(dir, 'media');
+    const chunks = Array.from({ length: 43 }, (_, index) => `第${index + 1}句。`);
+    const rewrittenCopy = chunks.join('');
+    const requests: LlmJsonRequest[] = [];
+    const generatedSceneIds: number[] = [];
+
+    try {
+      await db.upsertConfig({
+        ...(await db.getState()).config,
+        jianying: { ...(await db.getState()).config.jianying, draftPath: draftRootDir },
+      });
+      const task = await db.createTask({
+        title: 'Grouped storyboard segments',
+        inputText: rewrittenCopy,
+        publishMode: 'direct-copy',
+        targetScenes: 23,
+        storyboardSceneCount: 23,
+      });
+
+      const llm: JsonLlm = async <T,>(request: LlmJsonRequest) => {
+        requests.push(request);
+        if (request.name === 'storyboard') {
+          return { json: chunks as T, raw: JSON.stringify(chunks), requestId: 'storyboard' };
+        }
+        if (request.name === 'character-card') {
+          return {
+            json: { characterCard: { summary: 'same person', characters: [], consistencyRules: [] } } as T,
+            raw: '{}',
+            requestId: 'character-card',
+          };
+        }
+        if (request.name === 'image-prompts') {
+          const scenes = extractScenesFromPrompt(request);
+          return { json: { imagePrompts: makePrompts(scenes) } as T, raw: '{}', requestId: 'prompts' };
+        }
+        throw new Error(`Unexpected request ${request.name}`);
+      };
+
+      await runTask(db, task, {
+        appDataDir: dir,
+        llm: mockConfiguredLlm(llm),
+        generateImages: async (scenes) => {
+          generatedSceneIds.push(...scenes.map((scene) => scene.id));
+          return writeSceneAssets(mediaDir, scenes, 'png', tinyPng);
+        },
+        synthesizeNarration: async (scenes) => writeSceneAssets(mediaDir, scenes, 'wav', wavTone(1200)),
+        draftWriterOptions: { runBridge: fakeBridge },
+      });
+
+      const workDir = managedTaskWorkDir(dir, task);
+      const storedScenes = JSON.parse(await readFile(join(workDir, '02-sentences.json'), 'utf8')) as StoryboardScene[];
+      const storedPrompts = JSON.parse(await readFile(join(workDir, '03-image-prompts.json'), 'utf8')) as ImagePrompt[];
+      const subtitles = await readFile(join(workDir, 'subtitles.srt'), 'utf8');
+      const storedChunks = storedScenes.flatMap((scene) => scene.segments?.map((segment) => segment.text) ?? [scene.cap]);
+
+      expect(storedScenes).toHaveLength(23);
+      expect(storedPrompts).toHaveLength(23);
+      expect(new Set(generatedSceneIds)).toEqual(new Set(Array.from({ length: 23 }, (_, index) => index + 1)));
+      expect(storedChunks).toEqual(chunks);
+      expect(subtitles.match(/-->/g)).toHaveLength(43);
+      expect(requests.some((request) => request.name.startsWith('storyboard-target-scenes-repair-'))).toBe(false);
     } finally {
       await db.close();
       await rm(dir, { recursive: true, force: true });

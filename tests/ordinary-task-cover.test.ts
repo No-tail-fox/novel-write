@@ -5,6 +5,7 @@ import {
   createOrdinaryTaskCoverAsset,
   normalizeOrdinaryTaskCoverPageText,
   ordinaryTaskCoverDimensions,
+  resolveOrdinaryTaskCoverPageText,
   resolveOrdinaryTaskCoverTitle,
   validateOrdinaryTaskCoverInspection,
 } from '../src/shared/ordinary-task-cover';
@@ -50,6 +51,13 @@ describe('ordinary task manual cover contract', () => {
     expect(() => normalizeOrdinaryTaskCoverPageText('字'.repeat(MAX_ORDINARY_TASK_COVER_PAGE_TEXT_LENGTH + 1))).toThrow(/TOO_LONG/);
   });
 
+  it('uses the generated AI title by default while preserving an explicit override', () => {
+    expect(resolveOrdinaryTaskCoverPageText('', '  AI 创作标题  ')).toBe('AI 创作标题');
+    expect(resolveOrdinaryTaskCoverPageText('  自定义标题  ', 'AI 创作标题')).toBe('自定义标题');
+    expect(resolveOrdinaryTaskCoverPageText('', '字'.repeat(MAX_ORDINARY_TASK_COVER_PAGE_TEXT_LENGTH + 1)))
+      .toHaveLength(MAX_ORDINARY_TASK_COVER_PAGE_TEXT_LENGTH);
+  });
+
   it('keeps cover-only text in a ratio-aware safe area and shrinks long copy', () => {
     const portrait = getTemplate('builtin-portrait-4-3');
     const landscape = getTemplate('builtin-landscape-16-9');
@@ -63,5 +71,6 @@ describe('ordinary task manual cover contract', () => {
     expect(landscapeTitle).toMatchObject({ x: 0, y: 0.18, width: 0.78 });
     expect(landscapeTitle.fontSize).toBeLessThan(shortTitle.fontSize);
     expect(resolveOrdinaryTaskCoverTitle(portrait, '').visible).toBe(false);
+    expect(resolveOrdinaryTaskCoverTitle(portrait, '', 'AI 创作标题')).toMatchObject({ visible: true, text: 'AI 创作标题' });
   });
 });

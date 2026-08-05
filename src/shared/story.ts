@@ -1,4 +1,4 @@
-import type { CoverMetadata, ImagePrompt, PipelineArtifact, StoryboardScene, SubtitleTrack, TaskSubtitleSceneLines } from './types';
+import type { CoverMetadata, ImagePrompt, PipelineArtifact, StoryboardScene, StoryboardSegment, SubtitleTrack, TaskSubtitleSceneLines } from './types';
 
 const negativePrompt = '卡通，动漫，插画，低质量，模糊，变形，畸形肢体，水印，文字，签名，额外手指，重复面孔';
 
@@ -147,6 +147,61 @@ export function buildStoryboardScenes(input: string, style = 'photo-real', ratio
   }));
 }
 
+export function storyboardSegmentsForScene(
+  scene: Pick<StoryboardScene, 'cap' | 'durationMs' | 'segments'>,
+): StoryboardSegment[] {
+  const segments = scene.segments
+    ?.filter((segment) => typeof segment.text === 'string' && segment.text.trim().length > 0)
+    .map((segment, index) => ({
+      id: index + 1,
+      text: segment.text.trim(),
+      durationMs: Math.max(1, Math.round(Number(segment.durationMs) || 0)),
+    }));
+  if (segments?.length) return segments;
+  return [{ id: 1, text: scene.cap, durationMs: Math.max(1, Math.round(scene.durationMs)) }];
+}
+
+export function groupStoryboardScenesToTarget(scenes: StoryboardScene[], targetCount: number): StoryboardScene[] {
+  const target = Math.min(scenes.length, Math.max(1, Math.round(targetCount)));
+  if (target >= scenes.length) return scenes;
+
+  const weights = scenes.map((scene) => Math.max(1, visibleTextLength(scene.cap)));
+  const prefix = [0];
+  for (const weight of weights) prefix.push(prefix[prefix.length - 1] + weight);
+  const totalWeight = prefix[prefix.length - 1];
+  const boundaries = [0];
+
+  for (let groupIndex = 1; groupIndex < target; groupIndex += 1) {
+    const previous = boundaries[boundaries.length - 1];
+    const minBoundary = previous + 1;
+    const maxBoundary = scenes.length - (target - groupIndex);
+    const idealWeight = (totalWeight * groupIndex) / target;
+    let boundary = minBoundary;
+    for (let candidate = minBoundary + 1; candidate <= maxBoundary; candidate += 1) {
+      if (Math.abs(prefix[candidate] - idealWeight) < Math.abs(prefix[boundary] - idealWeight)) {
+        boundary = candidate;
+      }
+    }
+    boundaries.push(boundary);
+  }
+  boundaries.push(scenes.length);
+
+  return boundaries.slice(0, -1).map((start, index) => {
+    const group = scenes.slice(start, boundaries[index + 1]);
+    if (group.length === 1) return { ...group[0], id: index + 1 };
+    const segments = group
+      .flatMap((scene) => storyboardSegmentsForScene(scene))
+      .map((segment, segmentIndex) => ({ ...segment, id: segmentIndex + 1 }));
+    return {
+      id: index + 1,
+      cap: segments.map((segment) => segment.text).join('\n'),
+      descPrompt: group.map((scene) => scene.descPrompt).filter(Boolean).join('\n'),
+      durationMs: group.reduce((sum, scene) => sum + scene.durationMs, 0),
+      segments,
+    };
+  });
+}
+
 function srtTime(ms: number): string {
   const hours = Math.floor(ms / 3_600_000);
   const minutes = Math.floor((ms % 3_600_000) / 60_000);
@@ -163,6 +218,14 @@ const storyboardSceneMaxCharacters = 55;
 interface CaptionToken {
   text: string;
   pauseAfter: number;
+}
+
+type SubtitleScene = Pick<StoryboardScene, 'id' | 'cap' | 'durationMs' | 'segments'>;
+
+interface ResolvedSubtitleLine {
+  text: string;
+  segmentId?: number;
+  durationMs?: number;
 }
 
 export interface SubtitleTrackOptions {
@@ -231,42 +294,55 @@ export function splitStoryboardCap(input: string, maxCharacters = storyboardScen
 }
 
 export function buildSubtitleTrack(
-  scenes: Pick<StoryboardScene, 'id' | 'cap' | 'durationMs'>[],
+  scenes: SubtitleScene[],
   options: SubtitleTrackOptions = {},
 ): SubtitleTrack {
   const maxCharsPerLine = clampCaptionMaxChars(options.maxCharsPerLine ?? defaultCaptionMaxCharsPerLine);
-  return buildSubtitleTrackFromLineResolver(scenes, (scene) => splitCaptionLines(scene.cap, maxCharsPerLine));
+  return buildSubtitleTrackFromLineResolver(scenes, (scene) => {
+    const hasExplicitSegments = scene.segments?.some((segment) => typeof segment.text === 'string' && segment.text.trim().length > 0);
+    if (!hasExplicitSegments) {
+      return splitCaptionLines(scene.cap, maxCharsPerLine).map((text) => ({ text }));
+    }
+    return storyboardSegmentsForScene(scene).map((segment, index) => ({
+      text: segment.text,
+      segmentId: index + 1,
+      durationMs: segment.durationMs,
+    }));
+  });
 }
 
 export function buildSubtitleTrackFromSceneLines(
-  scenes: Pick<StoryboardScene, 'id' | 'cap' | 'durationMs'>[],
+  scenes: SubtitleScene[],
   sceneLines: readonly TaskSubtitleSceneLines[],
 ): SubtitleTrack {
   const linesBySceneId = new Map(sceneLines.map((item) => [item.sceneId, item.lines.map((line) => line.trim()).filter(Boolean)] as const));
-  return buildSubtitleTrackFromLineResolver(scenes, (scene) => linesBySceneId.get(scene.id) ?? []);
+  return buildSubtitleTrackFromLineResolver(scenes, (scene) => (linesBySceneId.get(scene.id) ?? []).map((text) => ({ text })));
 }
 
 function buildSubtitleTrackFromLineResolver(
-  scenes: Pick<StoryboardScene, 'id' | 'cap' | 'durationMs'>[],
-  resolveLines: (scene: Pick<StoryboardScene, 'id' | 'cap' | 'durationMs'>) => string[],
+  scenes: SubtitleScene[],
+  resolveLines: (scene: SubtitleScene) => ResolvedSubtitleLine[],
 ): SubtitleTrack {
   let cursor = 0;
   const cues: SubtitleTrack['cues'] = [];
   for (const scene of scenes) {
-    const sceneStartMs = cursor;
-    const sceneDurationMs = Math.max(1, Math.round(Number(scene.durationMs) || 0));
-    const sceneEndMs = sceneStartMs + sceneDurationMs;
     const lines = resolveLines(scene);
-    const durations = distributeSubtitleDurations(sceneDurationMs, lines);
+    const sceneStartMs = cursor;
+    const sceneDurationMs = Math.max(lines.length, Math.round(Number(scene.durationMs) || 0), 1);
+    const sceneEndMs = sceneStartMs + sceneDurationMs;
+    const durations = lines.length > 0 && lines.every((line) => Number(line.durationMs) > 0)
+      ? distributeSegmentDurations(sceneDurationMs, lines)
+      : distributeSubtitleDurations(sceneDurationMs, lines.map((line) => line.text));
     let cueCursor = sceneStartMs;
-    lines.forEach((text, lineIndex) => {
+    lines.forEach((line, lineIndex) => {
       const endMs = lineIndex === lines.length - 1 ? sceneEndMs : cueCursor + durations[lineIndex];
       cues.push({
         index: cues.length + 1,
         sceneId: scene.id,
+        ...(line.segmentId === undefined ? {} : { segmentId: line.segmentId }),
         startMs: cueCursor,
         endMs,
-        text,
+        text: line.text,
       });
       cueCursor = endMs;
     });
@@ -384,6 +460,25 @@ function distributeSubtitleDurations(totalDurationMs: number, lines: string[]): 
   const durations = weights.map((weight) => reserve + Math.max(1, Math.floor(distributable * weight / weightTotal)));
   const delta = totalDurationMs - durations.reduce((sum, duration) => sum + duration, 0);
   durations[durations.length - 1] += delta;
+  return durations;
+}
+
+function distributeSegmentDurations(totalDurationMs: number, lines: ResolvedSubtitleLine[]): number[] {
+  const weights = lines.map((line) => Math.max(1, Math.round(Number(line.durationMs) || 0)));
+  const totalWeight = weights.reduce((sum, weight) => sum + weight, 0);
+  const durations: number[] = [];
+  let remaining = totalDurationMs;
+  for (let index = 0; index < lines.length; index += 1) {
+    const remainingLines = lines.length - index - 1;
+    const duration = index === lines.length - 1
+      ? remaining
+      : Math.min(
+          remaining - remainingLines,
+          Math.max(1, Math.round((totalDurationMs * weights[index]) / totalWeight)),
+        );
+    durations.push(duration);
+    remaining -= duration;
+  }
   return durations;
 }
 

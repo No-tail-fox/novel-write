@@ -88,7 +88,13 @@ describe('three-stage new task workbench', () => {
     expect(page).toContain('data-cover-page-enabled={coverPageEnabled');
     expect(page).toContain('label="启用封面页"');
     expect(page).toContain('labels={[\'AI 单独生成\', \'本地导入\']}');
-    expect(page).toContain('label="封面文字" hint="可选 · 仅显示在封面页"');
+    expect(page).toContain("coverImageMode === 'auto' ? '可选 · 留空保留 AI 封面原图' : '可选 · 留空使用 AI 创作标题'");
+    expect(page).toContain("coverImageMode === 'auto' ? '留空则不叠加文字' : '留空则自动使用 AI 创作标题'");
+    expect(page).toContain("coverPageText.trim() ? '自定义文字' : coverImageMode === 'auto' ? '不叠加文字' : 'AI 标题'");
+    expect(page).toContain('label="封面文字" hint={coverPageTextHint}');
+    expect(page).toContain('placeholder={coverPageTextPlaceholder}');
+    expect(page).not.toContain('留空则只显示封面图');
+    expect(page).not.toContain("coverPageText.trim() ? '含文字' : '纯图片'");
     expect(page).toContain('coverPageEnabled,');
     expect(page).toContain('coverPageText,');
     expect(draft).toContain('coverPageEnabled?: boolean');

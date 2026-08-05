@@ -8,7 +8,7 @@ import type { ApplyMutationResult } from '../../app/route-types';
 import { DraftTemplatePreview } from '../templates/DraftCanvas';
 import type { StoryDreamApi } from '../../shared/storydream-api';
 import { buildSubtitleTrack, splitCaptionLines } from '../../shared/story';
-import { ORDINARY_TASK_COVER_PAGE_DURATION_MS, resolveOrdinaryTaskCoverTitle } from '../../shared/ordinary-task-cover';
+import { ORDINARY_TASK_COVER_PAGE_DURATION_MS, resolveOrdinaryTaskCoverPageText, resolveOrdinaryTaskCoverTitle } from '../../shared/ordinary-task-cover';
 import type {
   AppConfig,
   DraftTemplate,
@@ -94,14 +94,18 @@ export function ArtifactPreviewContent({
   const selectedImagePath = selectedImageAsset?.path ?? '';
   const [selectedImagePreview, setSelectedImagePreview] = useState<{ path: string; url: string; error: string }>({ path: '', url: '', error: '' });
   const previewContent = resolveTaskPreviewContent({ task, cover: artifact.cover, sourceText: artifact.rewrittenCopy, sceneCap: selectedScene?.cap, sceneCue: selectedCue?.text, template: draftTemplate });
+  const coverPageTitle = resolveOrdinaryTaskCoverPageText(
+    task.coverPageText,
+    task.coverImageMode === 'auto' ? undefined : artifact.cover?.title,
+  );
   const coverPreviewTemplate = useMemo(() => ({
     ...draftTemplate,
     image: { ...draftTemplate.image, visible: true, ratio: task.ratio, top: 0, height: 1, fit: 'cover' as const },
-    title: resolveOrdinaryTaskCoverTitle(draftTemplate, task.coverPageText ?? ''),
+    title: resolveOrdinaryTaskCoverTitle(draftTemplate, coverPageTitle),
     subtitle: { ...draftTemplate.subtitle, visible: false },
     caption: { ...draftTemplate.caption, visible: false },
     disclaimer: { ...draftTemplate.disclaimer, visible: false },
-  }), [draftTemplate, task.coverPageText, task.ratio]);
+  }), [coverPageTitle, draftTemplate, task.ratio]);
   const selectedImageUrl = selectedImagePreview.path === selectedImagePath ? selectedImagePreview.url : '';
   const selectedImageError = selectedImagePreview.path === selectedImagePath ? selectedImagePreview.error : '';
   const nextPendingSceneId = sceneRailItems.find((scene) => !imageBySceneId.has(scene.id))?.id;
@@ -170,7 +174,7 @@ export function ArtifactPreviewContent({
             <DraftTemplatePreview
               template={coverSelected ? coverPreviewTemplate : draftTemplate}
               imageUrl={selectedImageUrl}
-              titleText={coverSelected ? task.coverPageText ?? '' : previewContent.title}
+              titleText={coverSelected ? coverPageTitle : previewContent.title}
               subtitleText={previewContent.subtitle}
               captionText={previewContent.caption}
               disclaimerText={previewContent.disclaimer}

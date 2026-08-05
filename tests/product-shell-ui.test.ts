@@ -1148,7 +1148,10 @@ describe('product shell ui', () => {
     const routes = (await rendererSourcesPromise).requiredFile('src/app/AppRoutes.tsx');
     const voiceLab = (await rendererSourcesPromise).requiredFile('src/features/labs/VoiceLabPage.tsx');
     const voiceSources = `${routes}\n${voiceLab}`;
-    const css = await readFile(new URL('../src/styles.css', import.meta.url), 'utf8');
+    const css = [
+      await readFile(new URL('../src/styles.css', import.meta.url), 'utf8'),
+      await readFile(new URL('../src/styles/features/local-labs.css', import.meta.url), 'utf8'),
+    ].join('\n');
     const preload = await readFile(new URL('../electron/preload.ts', import.meta.url), 'utf8');
 
     for (const symbol of [
@@ -1163,7 +1166,10 @@ describe('product shell ui', () => {
       'voiceProvider',
       'voiceSpeed',
       'ttsVoiceOptionsForProvider',
-      'taskSpeakerLabel',
+      'filterTtsVoiceOptions',
+      'api.listVolcengineSpeakers',
+      '搜索音色',
+      '重新加载豆包音色',
     ]) {
       expect(voiceSources).toContain(symbol);
     }
@@ -1171,6 +1177,8 @@ describe('product shell ui', () => {
     expect(preload).toContain('generateVoiceLabPreview');
     expect(css).toContain('.voice-lab-layout');
     expect(css).toContain('.voice-lab-voices');
+    expect(css).toContain('.voice-lab-voice-list');
+    expect(css).toContain('max-height: 260px;');
     expect(css).toContain('.voice-record');
     expect(css).toContain('.voice-lab-player');
   });
@@ -1721,6 +1729,18 @@ describe('product shell ui', () => {
     expect(qa).toContain('.draft-template-card .danger-action');
   });
 
+  it('hydrates draft template gallery thumbnails from complete persisted details', async () => {
+    const main = (await rendererSourcesPromise).requiredFile('src/features/templates/DraftTemplatesPage.tsx');
+
+    expect(main).toContain('const [templateDetails, setTemplateDetails]');
+    expect(main).toContain('Promise.all(summaries.map');
+    expect(main).toContain('api.getDraftTemplateDetail(template.id)');
+    expect(main).toContain('resolveDraftTemplateDetail(template, templateDetails[template.id])');
+    expect(main).toContain('detail.updatedAt === summary.updatedAt');
+    expect(main).toContain('galleryTemplates.map((template) => (');
+    expect(main).toContain('setTemplateDetails((current) => ({ ...current, [saved.id]: saved }))');
+  });
+
   it('allows an existing task to preview, persist, and manage its draft template', async () => {
     const [detail, routes, apiContract, preload, main, css] = await Promise.all([
       readFile(new URL('../src/features/tasks/TaskDetailPage.tsx', import.meta.url), 'utf8'),
@@ -1895,7 +1915,8 @@ describe('product shell ui', () => {
     const main = (await rendererSourcesPromise).requiredFile('src/features/templates/DraftTemplatesPage.tsx');
 
     expect(main).toContain('[editingId]');
-    expect(main).toContain('const currentEditingTemplate = state.draftTemplates.find');
+    expect(main).toContain('const currentEditingTemplate = galleryTemplates.find');
+    expect(main).toContain('setDraft(currentEditingTemplate ? cloneDraftTemplate(currentEditingTemplate) : null)');
     expect(main).not.toContain('[editingId, editingTemplate]');
   });
 
@@ -1944,6 +1965,9 @@ describe('product shell ui', () => {
     expect(css).toContain('.draft-color-field');
     expect(css).toContain('.draft-range-field');
     expect(css).toContain('.draft-toggle-field');
+    expect(css).toContain('--range-progress');
+    expect(css).toContain(".draft-range-field input[type='range']::-webkit-slider-runnable-track");
+    expect(css).toContain('var(--shell-accent) 0 var(--range-progress)');
   });
 
   it('exposes text border controls and preview stroke for draft text layers', async () => {
@@ -2124,20 +2148,41 @@ describe('product shell ui', () => {
 
   it('shows the full learned Jianying animation list in draft template controls', async () => {
     const main = (await rendererSourcesPromise).requiredFile('src/features/templates/DraftTemplatesPage.tsx');
+    const canvas = (await rendererSourcesPromise).requiredFile('src/features/templates/DraftCanvas.tsx');
     const templates = await readFile(new URL('../src/shared/templates.ts', import.meta.url), 'utf8');
+    const css = await readFile(new URL('../src/styles.css', import.meta.url), 'utf8');
 
     expect(main).toContain('options={imageAnimations}');
     expect(main).not.toContain('imageAnimations.slice(0, 8)');
+    expect(main).toContain('AnimationPresetPicker');
+    expect(main).toContain('onMouseEnter={() => onPreview(option)}');
+    expect(main).toContain('onFocus={() => onPreview(option)}');
+    expect(main).toContain('onMouseLeave={() => onPreview(null)}');
+    expect(canvas).toContain('data-animation-preview={draftImageAnimationPreviewKind(animationPreview)}');
+    expect(css).toContain(".image-layer[data-animation-preview='split']");
+    expect(css).toContain('@media (prefers-reduced-motion: reduce)');
     for (const animation of ['左拉镜', '右拉镜', '弹入旋转', '旋转回吸', '滑滑梯 II', '百叶窗 II', '立方体', '海盗船']) {
       expect(templates).toContain(animation);
     }
   });
 
-  it('wires uploaded BGM management into settings and new task defaults', async () => {
-    const main = (await rendererSourcesPromise).all;
+  it('wires managed BGM imports into every music entry while keeping voice cloning raw', async () => {
+    const sources = await rendererSourcesPromise;
+    const main = sources.all;
+    const bgmPages = [
+      sources.requiredFile('src/features/settings/SettingsPage.tsx'),
+      sources.requiredFile('src/features/tasks/NewTaskPage.tsx'),
+      sources.requiredFile('src/features/music-mv/MusicMvPage.tsx'),
+    ];
+    const cloneVoice = sources.requiredFile('src/features/settings/MinimaxCloneVoiceManager.tsx');
     const css = await readFile(new URL('../src/styles.css', import.meta.url), 'utf8');
 
-    expect(main).toContain('selectLocalAudio');
+    for (const page of bgmPages) {
+      expect(page).toContain('importBgmAudio');
+      expect(page).not.toContain('selectLocalAudio');
+    }
+    expect(cloneVoice).toContain('selectLocalAudio');
+    expect(cloneVoice).not.toContain('importBgmAudio');
     expect(main).toContain('addUploadedBgm');
     expect(main).toContain('resolveDefaultBgmId');
     expect(main).toContain('defaultBgmId');

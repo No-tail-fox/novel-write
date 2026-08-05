@@ -1,4 +1,4 @@
-import type { AppConfig, MinimaxCloneVoice, PodcastSpeakerPair, TtsProvider } from './types';
+import type { AppConfig, MinimaxCloneVoice, PodcastSpeakerPair, TtsProvider, VolcengineSpeaker } from './types';
 import { DEFAULT_VOLCENGINE_TTS_V3_SPEAKER, normalizeVolcengineV3Speaker } from './volcengine-tts';
 
 export type RuntimeTtsProvider = Exclude<TtsProvider, 'mock'>;
@@ -20,9 +20,51 @@ export const VOLCENGINE_TASK_VOICE_OPTIONS: TtsVoiceOption[] = [
 export const MINIMAX_TASK_VOICE_OPTIONS: TtsVoiceOption[] = [
   { id: 'male-qn-qingse', label: '青涩青年', hint: '青年男声' },
   { id: 'male-qn-jingying', label: '精英青年', hint: '稳重男声' },
+  { id: 'male-qn-badao', label: '霸道青年', hint: '强势男声' },
+  { id: 'male-qn-daxuesheng', label: '青年大学生', hint: '阳光男声' },
   { id: 'female-shaonv', label: '少女', hint: '年轻女声' },
   { id: 'female-yujie', label: '御姐', hint: '成熟女声' },
+  { id: 'female-chengshu', label: '成熟女性', hint: '沉稳女声' },
+  { id: 'female-tianmei', label: '甜美女性', hint: '甜美女声' },
+  { id: 'presenter_male', label: '男性主持人', hint: '主持播报' },
+  { id: 'presenter_female', label: '女性主持人', hint: '主持播报' },
+  { id: 'audiobook_male_1', label: '男性有声书 1', hint: '有声书男声' },
+  { id: 'audiobook_male_2', label: '男性有声书 2', hint: '有声书男声' },
+  { id: 'audiobook_female_1', label: '女性有声书 1', hint: '有声书女声' },
+  { id: 'audiobook_female_2', label: '女性有声书 2', hint: '有声书女声' },
+  { id: 'clever_boy', label: '聪明男童', hint: '儿童男声' },
+  { id: 'cute_boy', label: '可爱男童', hint: '儿童男声' },
+  { id: 'lovely_girl', label: '萌萌女童', hint: '儿童女声' },
+  { id: 'cartoon_pig', label: '卡通小猪', hint: '卡通角色' },
 ];
+
+export function mergeTtsVoiceOptions(...catalogs: readonly (readonly TtsVoiceOption[])[]): TtsVoiceOption[] {
+  const options: TtsVoiceOption[] = [];
+  const seen = new Set<string>();
+  for (const catalog of catalogs) {
+    for (const option of catalog) {
+      const id = option.id.trim();
+      if (!id || seen.has(id)) continue;
+      seen.add(id);
+      options.push({ ...option, id });
+    }
+  }
+  return options;
+}
+
+export function volcengineSpeakersToVoiceOptions(speakers: readonly VolcengineSpeaker[]): TtsVoiceOption[] {
+  return mergeTtsVoiceOptions(speakers.map((speaker) => ({
+    id: speaker.voiceType,
+    label: speaker.name || speaker.voiceType,
+    hint: [speaker.gender, speaker.age, ...(speaker.labels ?? []).slice(0, 2)].filter(Boolean).join(' · ') || '豆包音色',
+  })));
+}
+
+export function filterTtsVoiceOptions(options: readonly TtsVoiceOption[], query: string): TtsVoiceOption[] {
+  const needle = query.trim().toLocaleLowerCase();
+  if (!needle) return [...options];
+  return options.filter((option) => `${option.label}\n${option.id}\n${option.hint}`.toLocaleLowerCase().includes(needle));
+}
 
 export interface PodcastSpeakerDefaults {
   podcastSpeakerA: string;
@@ -60,14 +102,10 @@ export function ttsVoiceOptionsForProvider(
   cloneVoices: readonly MinimaxCloneVoice[] = [],
 ): TtsVoiceOption[] {
   if (normalizeRuntimeTtsProvider(provider) !== 'minimax') return VOLCENGINE_TASK_VOICE_OPTIONS;
-  const seen = new Set(MINIMAX_TASK_VOICE_OPTIONS.map((option) => option.id));
-  const clonedOptions: TtsVoiceOption[] = [];
-  for (const voice of cloneVoices) {
-    if (!voice.voiceId || seen.has(voice.voiceId)) continue;
-    seen.add(voice.voiceId);
-    clonedOptions.push({ id: voice.voiceId, label: voice.displayName || voice.voiceId, hint: '克隆音色' });
-  }
-  return [...MINIMAX_TASK_VOICE_OPTIONS, ...clonedOptions];
+  return mergeTtsVoiceOptions(
+    MINIMAX_TASK_VOICE_OPTIONS,
+    cloneVoices.map((voice) => ({ id: voice.voiceId, label: voice.displayName || voice.voiceId, hint: '克隆音色' })),
+  );
 }
 
 export function defaultTaskSpeakerForProvider(provider: TtsProvider | string | null | undefined, config: AppConfig): string {

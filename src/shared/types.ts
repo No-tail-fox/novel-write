@@ -261,8 +261,15 @@ export interface BgmItem {
   id: string;
   title: string;
   path: string;
+  managedFileName?: string;
   durationMs: number;
   volume: number;
+}
+
+export interface ManagedBgmImport {
+  title: string;
+  path: string;
+  managedFileName: string;
 }
 
 export interface JianyingConfig {
@@ -1098,16 +1105,24 @@ export interface ImagePrompt {
   referenceImagePaths?: string[];
 }
 
+export interface StoryboardSegment {
+  id: number;
+  text: string;
+  durationMs: number;
+}
+
 export interface StoryboardScene {
   id: number;
   cap: string;
   descPrompt: string;
   durationMs: number;
+  segments?: StoryboardSegment[];
 }
 
 export interface SubtitleCue {
   index: number;
   sceneId?: number;
+  segmentId?: number;
   startMs: number;
   endMs: number;
   text: string;

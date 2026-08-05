@@ -1673,8 +1673,23 @@
   padding: 0 24px 0 6px;
   background-color: transparent;
   color: var(--shell-text);
+  color-scheme: dark;
   font-size: 11px;
   outline: none;
+}
+
+.task-bgm-field select option {
+  background: var(--shell-surface-raised);
+  color: var(--shell-text);
+}
+
+.task-bgm-field select option:checked {
+  background: var(--shell-focus);
+  color: var(--shell-focus-contrast);
+}
+
+:root[data-theme='light'] .task-bgm-field select {
+  color-scheme: light;
 }
 
 .task-draft-delivery-bar {

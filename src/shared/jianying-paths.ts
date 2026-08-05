@@ -41,7 +41,8 @@ export function detectJianyingDraftPath(options: JianyingDraftPathOptions = {}):
 export function resolveRuntimeJianyingDraftPath(currentPath: string, options: JianyingDraftPathOptions = {}): string {
   const current = currentPath.trim();
   const pathExists = options.pathExists ?? existsSync;
-  if (current && current !== legacyDefaultJianyingDraftPath) return current;
   if (current && pathExists(current)) return current;
-  return detectJianyingDraftPath(options) || (current === legacyDefaultJianyingDraftPath ? '' : current);
+  const detected = detectJianyingDraftPath(options);
+  if (detected) return detected;
+  return current === legacyDefaultJianyingDraftPath ? '' : current;
 }

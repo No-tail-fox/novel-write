@@ -5,7 +5,7 @@ import type { BgmItem, CoverMetadata, DiagnosticsReport, DraftTemplate, ImagePro
 import { buildSubtitleTrack } from './story';
 import { getTemplate, normalizeDraftTemplate } from './templates';
 import { runPyJianYingDraftBridge, type PyJianYingBridgeInput, type PyJianYingBridgeOutput } from './jianying-bridge';
-import { resolveOrdinaryTaskCoverTitle } from './ordinary-task-cover';
+import { resolveOrdinaryTaskCoverPageText, resolveOrdinaryTaskCoverTitle } from './ordinary-task-cover';
 import { runStoryboundMediaSidecar, type StoryboundSidecarInput, type StoryboundSidecarResult } from './storybound-sidecar';
 
 export interface SceneAsset {
@@ -35,6 +35,7 @@ export interface WriteJianyingDraftInput {
   coverPage?: {
     imagePath: string;
     text?: string;
+    useGeneratedTitleFallback?: boolean;
     durationMs: number;
   };
   narrationAudio: SceneAsset[];
@@ -91,7 +92,10 @@ export async function writeJianyingDraft(input: WriteJianyingDraftInput, options
   const coverPage = input.coverPage
     ? {
       imagePath: input.coverPage.imagePath.trim(),
-      text: input.coverPage.text?.trim() ?? '',
+      text: resolveOrdinaryTaskCoverPageText(
+        input.coverPage.text,
+        input.coverPage.useGeneratedTitleFallback === false ? undefined : input.cover.title,
+      ),
       durationUs: msToUs(input.coverPage.durationMs),
     }
     : null;

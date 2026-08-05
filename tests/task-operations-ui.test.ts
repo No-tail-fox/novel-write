@@ -132,7 +132,8 @@ describe('editorial task operations surfaces', () => {
     expect(artifact).toContain('data-preview-kind={coverSelected ? \'cover\' : \'scene\'}');
     expect(artifact).toContain('data-scene-kind="cover"');
     expect(artifact).toContain('<span>00</span>');
-    expect(artifact).toContain("titleText={coverSelected ? task.coverPageText ?? '' : previewContent.title}");
+    expect(artifact).toContain("task.coverImageMode === 'auto' ? undefined : artifact.cover?.title");
+    expect(artifact).toContain('titleText={coverSelected ? coverPageTitle : previewContent.title}');
     expect(artifact).toContain('<DraftTemplatePreview');
     expect(artifact).toContain('api.readAssetDataUrl(selectedImagePath)');
     expect(artifact).toContain('imageBySceneId.has(scene.id)');
@@ -197,6 +198,9 @@ describe('editorial task operations surfaces', () => {
     expect(css).toMatch(/\.task-detail-shell\[data-task-operations="detail"\] \.artifact-section \.panel-title-row\s*\{[\s\S]*?min-width:\s*0;[\s\S]*?margin-bottom:\s*0;/u);
     expect(css).toContain('background: var(--shell-surface);');
     expect(css).toContain('.task-template-select-option[aria-selected="true"]');
+    expect(css).toMatch(/\.task-bgm-field select\s*\{[^}]*color-scheme:\s*dark;/u);
+    expect(css).toMatch(/\.task-bgm-field select option\s*\{[^}]*background:\s*var\(--shell-surface-raised\);[^}]*color:\s*var\(--shell-text\);/u);
+    expect(css).toMatch(/:root\[data-theme='light'\] \.task-bgm-field select\s*\{[^}]*color-scheme:\s*light;/u);
     const runner = await source('../src/shared/runner.ts');
     expect(runner).toContain("const latestTask = state.tasks.find((item) => item.id === task.id)");
     expect(runner).toContain("state.draftTemplates.find((item) => item.id === draftTask.templateId)");

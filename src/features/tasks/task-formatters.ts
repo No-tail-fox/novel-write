@@ -9,6 +9,7 @@ import type {
   BgmItem,
   BookProductInfo,
   DraftTemplate,
+  ManagedBgmImport,
   PromptTemplate,
   TaskSummary,
   CustomStyle,
@@ -127,12 +128,14 @@ export function resolveDefaultBgmId(config: AppConfig): string {
   return bgms.some((bgm) => bgm.id === config.jianying.defaultBgmId) ? config.jianying.defaultBgmId : bgms[0]?.id ?? '';
 }
 
-export function addUploadedBgm(config: AppConfig, audioPath: string): { config: AppConfig; bgmId: string } {
+export function addUploadedBgm(config: AppConfig, audio: string | ManagedBgmImport): { config: AppConfig; bgmId: string } {
   const id = `bgm-${crypto.randomUUID()}`;
+  const audioPath = typeof audio === 'string' ? audio : audio.path;
   const item: BgmItem = {
     id,
-    title: audioTitleFromPath(audioPath),
+    title: typeof audio === 'string' ? audioTitleFromPath(audioPath) : audio.title,
     path: audioPath,
+    ...(typeof audio === 'string' ? {} : { managedFileName: audio.managedFileName }),
     durationMs: 0,
     volume: 0.25,
   };

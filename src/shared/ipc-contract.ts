@@ -821,7 +821,7 @@ export const ipcInputSchemas = {
   'task:get-artifacts': idOnlySchema,
   'asset:read-data-url': pathSchema,
   'local-image:select': z.void(),
-  'local-audio:select': z.void(),
+  'local-audio:select': z.literal('managed-bgm').optional(),
   'local-folder:select': z.void(),
   'cookie-file:select': z.void(),
   'viral:open-login-window': z.void(),

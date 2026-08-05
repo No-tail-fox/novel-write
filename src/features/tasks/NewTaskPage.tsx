@@ -262,6 +262,9 @@ export function NewTaskPage({
     ?? null;
   const processingModeLabel = processingMode === 'full-auto' ? '全自动' : processingMode === 'semi-auto' ? '半自动' : '只出方案';
   const publishModeLabel = publishMode === 'review-rewrite' ? '审核 + 改写' : '直接复用';
+  const coverPageTextHint = coverImageMode === 'auto' ? '可选 · 留空保留 AI 封面原图' : '可选 · 留空使用 AI 创作标题';
+  const coverPageTextPlaceholder = coverImageMode === 'auto' ? '留空则不叠加文字' : '留空则自动使用 AI 创作标题';
+  const coverPageTextSummary = coverPageText.trim() ? '自定义文字' : coverImageMode === 'auto' ? '不叠加文字' : 'AI 标题';
   const supportsImageQuality = state.config.imageProvider !== 'jimeng';
   const configuredImageQuality = state.config.imageProvider === 'custom'
     ? normalizeImageGenerationQuality(state.config.customImage.quality)
@@ -704,9 +707,9 @@ export function NewTaskPage({
 
   async function addBgmFromTask() {
     await taskAction.run(async () => {
-      const audioPath = await api.selectLocalAudio();
-      if (!audioPath) return;
-      const nextBgm = addUploadedBgm(state.config, audioPath);
+      const imported = await api.importBgmAudio();
+      if (!imported) return;
+      const nextBgm = addUploadedBgm(state.config, imported);
       const next = await api.saveConfig({ config: nextBgm.config, secretChanges: {} });
       applyState(next);
       setBgmId(nextBgm.bgmId);
@@ -1109,7 +1112,7 @@ export function NewTaskPage({
                         <button type="button" className="ghost-action" disabled={taskAction.busy || isBrowserPreview} onClick={importOrdinaryTaskCover}><Upload size={15} />导入手动封面</button>
                       </div>
                     ) : null}
-                    <Field label="封面文字" hint="可选 · 仅显示在封面页"><textarea className="small-textarea ordinary-cover-page-text" maxLength={MAX_ORDINARY_TASK_COVER_PAGE_TEXT_LENGTH} value={coverPageText} onChange={(event) => setCoverPageText(event.target.value)} placeholder="留空则只显示封面图" /></Field>
+                    <Field label="封面文字" hint={coverPageTextHint}><textarea className="small-textarea ordinary-cover-page-text" maxLength={MAX_ORDINARY_TASK_COVER_PAGE_TEXT_LENGTH} value={coverPageText} onChange={(event) => setCoverPageText(event.target.value)} placeholder={coverPageTextPlaceholder} /></Field>
                   </div>
                 ) : null}
               </section>
@@ -1145,7 +1148,7 @@ export function NewTaskPage({
             <div><dt>图片质量</dt><dd>{supportsImageQuality ? (imageQualityOverrideEnabled ? `覆盖为${imageGenerationQualityLabel(imageQuality)}质量` : `默认（${imageGenerationQualityLabel(configuredImageQuality)}质量）`) : '由即梦服务控制'}</dd></div>
             <div><dt>配音角色</dt><dd>{videoForm === 'two-host-podcast' ? podcastSpeakers : taskSpeakerLabel(ttsProvider, speaker, state.minimaxCloneVoices)}</dd></div>
             <div><dt>草稿模板</dt><dd>{draftTemplateLabel(templateId, state.draftTemplates)}</dd></div>
-            <div><dt>片头封面</dt><dd>{coverPageEnabled ? `${coverImageMode === 'manual' ? (manualCoverAsset?.originalName ?? '待导入') : 'AI 单独生成'} · ${coverPageText.trim() ? '含文字' : '纯图片'}` : '关闭'}</dd></div>
+            <div><dt>片头封面</dt><dd>{coverPageEnabled ? `${coverImageMode === 'manual' ? (manualCoverAsset?.originalName ?? '待导入') : 'AI 单独生成'} · ${coverPageTextSummary}` : '关闭'}</dd></div>
             <div><dt>失败补位</dt><dd>{autoBorrowImage ? '已启用' : '关闭'}</dd></div>
           </dl>
           <div className="new-task-readiness">

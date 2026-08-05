@@ -50,10 +50,10 @@ export function MusicMvPage({
 
   async function selectMusicMvAudio() {
     await musicAction.run(async () => {
-      const audioPath = await api.selectLocalAudio();
-      if (!audioPath) return;
-      setMusicMvAudioPath(audioPath);
-      const nextBgm = addUploadedBgm(state.config, audioPath);
+      const imported = await api.importBgmAudio();
+      if (!imported) return;
+      setMusicMvAudioPath(imported.path);
+      const nextBgm = addUploadedBgm(state.config, imported);
       const next = await api.saveConfig({ config: nextBgm.config, secretChanges: {} });
       applyState(next);
       setBgmId(nextBgm.bgmId);

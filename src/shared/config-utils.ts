@@ -60,10 +60,12 @@ function normalizeBgmLibrary(input: unknown): BgmItem[] {
       const id = String(source.id ?? '').trim() || `bgm-${index + 1}`;
       const path = String(source.path ?? '').trim();
       const title = String(source.title ?? '').trim() || id;
+      const managedFileName = String(source.managedFileName ?? '').trim();
       return {
         id,
         title,
         path,
+        ...(managedFileName ? { managedFileName } : {}),
         durationMs: Math.max(0, Math.round(Number(source.durationMs ?? 0) || 0)),
         volume: normalizeNonNegativeNumber(source.volume, 0.25),
       };

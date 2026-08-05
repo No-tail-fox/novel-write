@@ -18,8 +18,11 @@ import { DRAFT_TEXT_WIDTH_MAX, DRAFT_TEXT_WIDTH_MIN, DraftTemplatePreview, Edita
 
 export function DraftTemplatesPage({ api, state, applyState }: { api: StoryDreamApi; state: AppState; applyState: ApplyMutationResult }) {
   const [editingId, setEditingId] = useState<string | null>(null);
-  const editingTemplate = editingId ? state.draftTemplates.find((template) => template.id === editingId) ?? null : null;
+  const [templateDetails, setTemplateDetails] = useState<Record<string, DraftTemplate>>({});
+  const galleryTemplates = state.draftTemplates.map((template) => resolveDraftTemplateDetail(template, templateDetails[template.id]));
+  const editingTemplate = editingId ? galleryTemplates.find((template) => template.id === editingId) ?? null : null;
   const [draft, setDraft] = useState<DraftTemplate | null>(null);
+  const [animationPreview, setAnimationPreview] = useState<string | null>(null);
   const [selectedLayer, setSelectedLayer] = useState<DraftCanvasLayer>('title');
   const [expandedLayerPanels, setExpandedLayerPanels] = useState<Record<DraftCanvasLayer, boolean>>({
     image: true,
@@ -44,9 +47,37 @@ export function DraftTemplatesPage({ api, state, applyState }: { api: StoryDream
 
   useEffect(() => {
     // Rehydrate only when switching templates; state refreshes must not overwrite unsaved drag edits.
-    const currentEditingTemplate = state.draftTemplates.find((template) => template.id === editingId) ?? null;
+    const currentEditingTemplate = galleryTemplates.find((template) => template.id === editingId) ?? null;
     setDraft(currentEditingTemplate ? cloneDraftTemplate(currentEditingTemplate) : null);
   }, [editingId]);
+
+  useEffect(() => {
+    let disposed = false;
+    const summaries = state.draftTemplates;
+    void Promise.all(summaries.map(async (template) => {
+      try {
+        return { id: template.id, detail: await api.getDraftTemplateDetail(template.id), error: null };
+      } catch (error) {
+        return { id: template.id, detail: null, error };
+      }
+    })).then((results) => {
+      if (disposed) return;
+      const loaded = new Map(results.map((result) => [result.id, result.detail]));
+      setTemplateDetails((current) => {
+        const next: Record<string, DraftTemplate> = {};
+        for (const summary of summaries) {
+          const detail = loaded.get(summary.id) ?? current[summary.id];
+          if (detail && resolveDraftTemplateDetail(summary, detail) === detail) next[summary.id] = detail;
+        }
+        return next;
+      });
+      const failed = results.find((result) => result.error)?.error;
+      if (failed) draftTemplateAction.reportError(failed);
+    });
+    return () => {
+      disposed = true;
+    };
+  }, [api, state.draftTemplates, draftTemplateAction.reportError]);
 
   useEffect(() => {
     let disposed = false;
@@ -110,10 +141,19 @@ export function DraftTemplatesPage({ api, state, applyState }: { api: StoryDream
     setExpandedLayerPanels((current) => ({ ...current, [layer]: expanded }));
   }
 
+  function applyDraftTemplateMutation(result: AppMutationResult | null): DraftTemplate | null {
+    applyState(result);
+    if (result?.kind !== 'state-patch' || result.patch.kind !== 'draft-template-upsert') return null;
+    const saved = result.patch.template;
+    setTemplateDetails((current) => ({ ...current, [saved.id]: saved }));
+    return saved;
+  }
+
   async function save() {
     if (!draft) return;
     await draftTemplateAction.run(async () => {
-      applyState(await api.saveDraftTemplate(draft));
+      const saved = applyDraftTemplateMutation(await api.saveDraftTemplate(draft));
+      if (saved) setDraft(cloneDraftTemplate(saved));
     });
   }
 
@@ -121,7 +161,7 @@ export function DraftTemplatesPage({ api, state, applyState }: { api: StoryDream
     await draftTemplateAction.run(async () => {
       const detail = await api.getDraftTemplateDetail(template.id) ?? template;
       const copy = { ...cloneDraftTemplate(detail), id: crypto.randomUUID(), name: `${detail.name} 副本`, isDefault: false };
-      applyState(await api.saveDraftTemplate(copy));
+      applyDraftTemplateMutation(await api.saveDraftTemplate(copy));
       setEditingId(copy.id);
     });
   }
@@ -130,7 +170,7 @@ export function DraftTemplatesPage({ api, state, applyState }: { api: StoryDream
     const base = cloneDraftTemplate(builtinDraftTemplates[0]);
     const next = { ...base, id: crypto.randomUUID(), name: '新模板', isDefault: false };
     await draftTemplateAction.run(async () => {
-      applyState(await api.saveDraftTemplate(next));
+      applyDraftTemplateMutation(await api.saveDraftTemplate(next));
       setEditingId(next.id);
     });
   }
@@ -167,7 +207,7 @@ export function DraftTemplatesPage({ api, state, applyState }: { api: StoryDream
     }
     const template = cozeImportName.trim() ? { ...result.template, name: cozeImportName.trim() } : result.template;
     await draftTemplateAction.run(async () => {
-      applyState(await api.saveDraftTemplate(template));
+      applyDraftTemplateMutation(await api.saveDraftTemplate(template));
       setCozeImportResult({ ...result, template });
       setCozeImportError('');
       setEditingId(template.id);
@@ -188,8 +228,8 @@ export function DraftTemplatesPage({ api, state, applyState }: { api: StoryDream
       for (const result of results) {
         if (!result.ok) continue;
         nextState = await api.saveDraftTemplate(result.template);
+        applyDraftTemplateMutation(nextState);
       }
-      applyState(nextState);
       const first = results.find((result): result is Extract<CozeWorkflowTemplateConversionResult, { ok: true }> => result.ok) ?? null;
       setCozeImportResult(first);
       setCozeImportError('');
@@ -203,7 +243,10 @@ export function DraftTemplatesPage({ api, state, applyState }: { api: StoryDream
     setEditingId(template.id);
     void draftTemplateAction.run(async () => {
       const detail = await api.getDraftTemplateDetail(template.id);
-      if (generation === draftDetailGeneration.current && detail) setDraft(cloneDraftTemplate(detail));
+      if (generation === draftDetailGeneration.current && detail) {
+        setTemplateDetails((current) => ({ ...current, [detail.id]: detail }));
+        setDraft(cloneDraftTemplate(detail));
+      }
     });
   }
 
@@ -285,7 +328,7 @@ export function DraftTemplatesPage({ api, state, applyState }: { api: StoryDream
               </div>
               <button className="ghost-action" disabled={draftTemplateAction.busy} onClick={() => copyTemplate(draft)}><Copy size={15} />复制</button>
             </div>
-            <EditableDraftCanvas template={draft} selectedLayer={selectedLayer} onSelectLayer={handleDraftLayerSelection} onChange={setDraft} />
+            <EditableDraftCanvas template={draft} selectedLayer={selectedLayer} animationPreview={animationPreview} onSelectLayer={handleDraftLayerSelection} onChange={setDraft} />
           </section>
 
           <section ref={draftControlsRef} className="panel draft-controls">
@@ -314,7 +357,7 @@ export function DraftTemplatesPage({ api, state, applyState }: { api: StoryDream
                 <Field label="坐标"><input value={`top ${draft.image.top.toFixed(2)}, height ${draft.image.height.toFixed(2)}`} readOnly /></Field>
                 <RangeField label="垂直位置" min={-1} max={1} step={0.01} value={draft.image.top} onChange={(value) => updateDraftImage({ top: value })} />
                 <RangeField label="高度占比" min={0.1} max={1} step={0.01} value={draft.image.height} onChange={(value) => updateDraftImage({ height: value })} />
-                <Segmented label="动画效果" value={draft.image.animation} options={imageAnimations} onChange={(value) => updateDraftImage({ animation: value })} />
+                <AnimationPresetPicker label="动画效果" value={draft.image.animation} options={imageAnimations} previewValue={animationPreview} onPreview={setAnimationPreview} onChange={(value) => updateDraftImage({ animation: value })} />
               </Accordion>
             </div>
             <Accordion title="运镜">
@@ -538,7 +581,7 @@ export function DraftTemplatesPage({ api, state, applyState }: { api: StoryDream
       ) : null}
 
       <section className="draft-template-gallery">
-        {state.draftTemplates.map((template) => (
+        {galleryTemplates.map((template) => (
           <article key={template.id} className="draft-template-card">
             <button className="draft-template-thumb" onClick={() => openEditor(template)} type="button" aria-label={`编辑 ${template.name}`}>
               <DraftTemplatePreview template={template} compact />
@@ -574,6 +617,51 @@ export function DraftTemplatesPage({ api, state, applyState }: { api: StoryDream
         onConfirm={deleteTemplate}
         onCancel={() => setPendingDeleteTemplate(null)}
       />
+    </div>
+  );
+}
+
+export function resolveDraftTemplateDetail(summary: DraftTemplate, detail: DraftTemplate | null | undefined): DraftTemplate {
+  return detail?.id === summary.id && detail.updatedAt === summary.updatedAt ? detail : summary;
+}
+
+function AnimationPresetPicker({
+  label,
+  value,
+  options,
+  previewValue,
+  onPreview,
+  onChange,
+}: {
+  label: string;
+  value: string;
+  options: readonly string[];
+  previewValue: string | null;
+  onPreview: (value: string | null) => void;
+  onChange: (value: string) => void;
+}) {
+  return (
+    <div className="field draft-animation-picker">
+      <span>{label}</span>
+      <div className="segmented" role="group" aria-label={label} onMouseLeave={() => onPreview(null)}>
+        {options.map((option) => {
+          const className = [option === value ? 'selected' : '', option === previewValue ? 'previewing' : ''].filter(Boolean).join(' ');
+          return (
+            <button
+              key={option}
+              className={className}
+              aria-pressed={option === value}
+              onMouseEnter={() => onPreview(option)}
+              onFocus={() => onPreview(option)}
+              onBlur={() => onPreview(null)}
+              onClick={() => onChange(option)}
+              type="button"
+            >
+              {option}
+            </button>
+          );
+        })}
+      </div>
     </div>
   );
 }

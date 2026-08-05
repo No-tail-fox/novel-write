@@ -293,9 +293,9 @@ export function SettingsPage({ api, state, applyState, navigate }: { api: StoryD
   }
   async function uploadBgmFromSettings() {
     await settingsAction.run(async () => {
-      const audioPath = await api.selectLocalAudio();
-      if (!audioPath) return;
-      const nextBgm = addUploadedBgm(draft, audioPath);
+      const imported = await api.importBgmAudio();
+      if (!imported) return;
+      const nextBgm = addUploadedBgm(draft, imported);
       await persistSettingsDraft(nextBgm.config, '已添加 BGM 文件');
     }, { onError: (error) => setConfigTestResult(`[fail] ${error.message}`) });
   }

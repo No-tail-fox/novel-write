@@ -69,11 +69,25 @@ export function normalizeOrdinaryTaskCoverPageText(value: unknown): string {
   return normalized;
 }
 
+export function resolveOrdinaryTaskCoverPageText(
+  text: unknown,
+  generatedTitle: unknown,
+): string {
+  const normalizedText = normalizeOrdinaryTaskCoverPageText(text);
+  if (normalizedText) return normalizedText;
+  if (typeof generatedTitle !== 'string') return '';
+  return generatedTitle
+    .replace(/\r\n?/g, '\n')
+    .trim()
+    .slice(0, MAX_ORDINARY_TASK_COVER_PAGE_TEXT_LENGTH);
+}
+
 export function resolveOrdinaryTaskCoverTitle(
   template: DraftTemplate,
   text: string,
+  generatedTitle?: string,
 ): DraftTemplate['title'] {
-  const normalizedText = normalizeOrdinaryTaskCoverPageText(text);
+  const normalizedText = resolveOrdinaryTaskCoverPageText(text, generatedTitle);
   const characters = Array.from(normalizedText.replace(/\s/gu, '')).length;
   const explicitLines = normalizedText ? normalizedText.split('\n').length : 1;
   const aspectRatio = template.canvas.width / Math.max(1, template.canvas.height);

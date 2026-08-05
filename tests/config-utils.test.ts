@@ -54,6 +54,7 @@ describe('config validation utilities', () => {
       id: 'bgm-uploaded',
       title: 'Uploaded Theme',
       path: 'I:/music/theme.mp3',
+      managedFileName: 'a4bf19b7-0e26-4f25-804a-51891af02c9a.mp3',
       durationMs: 0,
       volume: 0.25,
     };

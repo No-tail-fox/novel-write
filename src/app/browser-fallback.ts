@@ -1224,7 +1224,10 @@ export function makeFallbackApi(setState: (state: AppState) => void): StoryDream
     async selectLocalImage() {
       return null;
     },
-    async selectLocalAudio() {
+    async importBgmAudio() {
+      return null;
+    },
+    async selectLocalAudio(_purpose?: 'managed-bgm') {
       return null;
     },
     async selectLocalFolder() {

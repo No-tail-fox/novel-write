@@ -30,6 +30,7 @@ import type {
   VoiceLabSummary,
 } from '../src/shared/types';
 import type { ThemePreferencePair } from '../src/shared/theme-preference';
+import { removeUnreferencedManagedBgmFiles } from './managed-bgm';
 
 const MIGRATION_MARKER = 'config-secrets.v1.migrated';
 
@@ -226,7 +227,10 @@ export class ConfigService {
 
   async save(input: SaveConfigInput): Promise<PublicConfigState> {
     await this.migrateLegacySecrets();
-    const storedSecrets = await this.options.vault.load();
+    const [storedSecrets, previousMetadata] = await Promise.all([
+      this.options.vault.load(),
+      this.options.database.getBootstrapMetadata(),
+    ]);
     const normalizedInput = normalizeAppConfig(input.config);
     const nextSecrets = canonicalizeActiveSecrets(
       normalizedInput,
@@ -240,6 +244,11 @@ export class ConfigService {
     }
     const persisted = await this.options.database.upsertConfig(sanitized);
     await saveConfigToFile(this.options.dataDir, persisted.config);
+    await removeUnreferencedManagedBgmFiles(
+      this.options.dataDir,
+      previousMetadata.config.jianying.bgmLibrary,
+      persisted.config.jianying.bgmLibrary,
+    );
     return { config: persisted.config, secretStatus: secretStatus(await this.options.vault.load()) };
   }
 

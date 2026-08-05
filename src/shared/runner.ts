@@ -2,7 +2,7 @@ import { copyFile, mkdir, readFile, writeFile } from 'node:fs/promises';
 import { createHash } from 'node:crypto';
 import { extname, join } from 'node:path';
 import type { AiSourceContext, BgmItem, CharacterCard, CoverMetadata, CustomCoverTemplate, DraftTemplate, ImagePrompt, MusicPlan, PipelineArtifact, PromptStepTemplateType, PromptTemplate, RewriteEvaluationResult, SequencedTaskEvent, StoryboardScene, Task, TaskArtifactImageErrorPreview, TaskStepRerunMode } from './types';
-import { buildCoverMetadata, buildSubtitleTrack, normalizeStoryboardSceneLengths } from './story';
+import { buildCoverMetadata, buildSubtitleTrack, groupStoryboardScenesToTarget, normalizeStoryboardSceneLengths } from './story';
 import { characterCoverDisplayRules, isCharacterStoryTrack, resolveCoverDisplayMetadata } from './cover-copy';
 import { writeJianyingDraft, type SceneAsset, type WriteJianyingDraftOptions } from './draft';
 import { runStoryboundMediaSidecar, type StoryboundSidecarInput, type StoryboundSidecarResult } from './storybound-sidecar';
@@ -413,6 +413,7 @@ async function runTaskWithPipelineStateLock(db: FileDatabase, task: Task, option
               coverPage: task.coverPageEnabled ? {
                 imagePath: requireOrdinaryCoverPageImage(task, pipeline.assets.cover[0]?.path),
                 text: task.coverPageText ?? '',
+                useGeneratedTitleFallback: task.coverImageMode !== 'auto',
                 durationMs: ORDINARY_TASK_COVER_PAGE_DURATION_MS,
               } : undefined,
               narrationAudio: pipeline.assets.narration,
@@ -734,7 +735,11 @@ async function ensureContentArtifact(input: {
             },
           ],
         });
-        storyboardScenes = normalizeStoryboardResponse(storyboard.json, storyboard.raw, rewrittenCopy);
+        storyboardScenes = groupExcessStoryboardChunks(
+          normalizeStoryboardResponse(storyboard.json, storyboard.raw, rewrittenCopy),
+          storyboardSceneCount,
+          rewrittenCopy,
+        );
         storyboardRequestId = storyboard.requestId;
         break;
       } catch (error) {
@@ -956,6 +961,15 @@ function targetWordCountFailureReason(length: number, range: TargetWordCountRang
 function isStoryboardSceneCountAcceptable(scenes: StoryboardScene[], targetSceneCount: number | null | undefined, rewrittenCopy = ''): boolean {
   const range = storyboardSceneCountRange(rewrittenCopy, targetSceneCount);
   return scenes.length >= range.min && scenes.length <= range.max;
+}
+
+function groupExcessStoryboardChunks(
+  scenes: StoryboardScene[],
+  targetSceneCount: number | null | undefined,
+  rewrittenCopy: string,
+): StoryboardScene[] {
+  const range = storyboardSceneCountRange(rewrittenCopy, targetSceneCount);
+  return scenes.length > range.max ? groupStoryboardScenesToTarget(scenes, range.target) : scenes;
 }
 
 function pauseAtCheckpoint(task: Task, initialStep: number, step: number, detail: string): void {
@@ -1399,7 +1413,7 @@ async function repairStoryboardToTargetSceneCount(
     rerunContext?: string;
   },
 ): Promise<StoryboardScene[]> {
-  let current = input.current;
+  let current = groupExcessStoryboardChunks(input.current, input.targetSceneCount, input.rewrittenCopy);
   let currentCount = current.length;
   for (let attempt = 1; attempt <= 2 && !isStoryboardSceneCountAcceptable(current, input.targetSceneCount, input.rewrittenCopy); attempt += 1) {
     const range = storyboardSceneCountRange(input.rewrittenCopy, input.targetSceneCount);
@@ -1431,7 +1445,11 @@ async function repairStoryboardToTargetSceneCount(
         },
       ],
     });
-    current = normalizeStoryboardResponse(repair.json, repair.raw, input.rewrittenCopy);
+    current = groupExcessStoryboardChunks(
+      normalizeStoryboardResponse(repair.json, repair.raw, input.rewrittenCopy),
+      input.targetSceneCount,
+      input.rewrittenCopy,
+    );
     currentCount = current.length;
   }
   if (!isStoryboardSceneCountAcceptable(current, input.targetSceneCount, input.rewrittenCopy)) {

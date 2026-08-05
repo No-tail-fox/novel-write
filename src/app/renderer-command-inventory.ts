@@ -177,6 +177,11 @@ export const rendererCommandInventory = {
     ['addRecord', 'runImageLabInputs'],
   )),
   generateVoiceLabPreview: command(owner('voice-lab', 'src/features/labs/VoiceLabPage.tsx', 'generatePreview', 'generatePreview', '生成试听', productShellTest)),
+  importBgmAudio: command(
+    owner('music-mv', 'src/features/music-mv/MusicMvPage.tsx', 'selectMusicMvAudio', 'onClick={selectMusicMvAudio}', '选择音频', productShellTest),
+    owner('settings', 'src/features/settings/SettingsPage.tsx', 'uploadBgmFromSettings', 'onClick={uploadBgmFromSettings}', '添加 BGM 文件', productShellTest),
+    owner('new-task', 'src/features/tasks/NewTaskPage.tsx', 'addBgmFromTask', 'onClick={addBgmFromTask}', '添加', productShellTest),
+  ),
   importHtmlVideoCover: command(owner('html-video', 'src/features/html-video/HtmlVideoTabPanel.tsx', 'importManualCover', 'onClick={importManualCover}', '换本地封面', 'tests/html-video-cover.test.ts')),
   importOrdinaryTaskCover: command(owner('new-task', 'src/features/tasks/NewTaskPage.tsx', 'importOrdinaryTaskCover', 'onClick={importOrdinaryTaskCover}', '导入手动封面', 'tests/new-task-workbench-ui.test.ts')),
   importPersonAssetImages: command(owner('person-assets', 'src/features/labs/PersonAssetsPage.tsx', 'importImages', 'onClick={importImages}', '导入图片', productShellTest)),
@@ -199,7 +204,10 @@ export const rendererCommandInventory = {
     ),
   )),
   openImageLabOutputDirectory: command(owner('image-lab', 'src/features/labs/ImageLabPage.tsx', 'openImageLabOutputDirectory', 'openImageLabOutputDirectory(record)', '打开目录', productShellTest)),
-  listVolcengineSpeakers: command(owner('settings', 'src/features/settings/SettingsPage.tsx', 'refreshVolcengineSpeakers', 'onRefreshVolcengineSpeakers', '加载音色', productShellTest, 'src/features/settings/ProviderProfileManagers.tsx', undefined, 'src/features/settings/SettingsPage.tsx', undefined, bridgeChain(['src/features/settings/SettingsPage.tsx', 'onRefreshVolcengineSpeakers={refreshVolcengineSpeakers}']))),
+  listVolcengineSpeakers: command(
+    owner('settings', 'src/features/settings/SettingsPage.tsx', 'refreshVolcengineSpeakers', 'onRefreshVolcengineSpeakers', '加载音色', productShellTest, 'src/features/settings/ProviderProfileManagers.tsx', undefined, 'src/features/settings/SettingsPage.tsx', undefined, bridgeChain(['src/features/settings/SettingsPage.tsx', 'onRefreshVolcengineSpeakers={refreshVolcengineSpeakers}'])),
+    owner('voice-lab', 'src/features/labs/VoiceLabPage.tsx', 'fetchVolcengineVoiceCatalog', 'onClick={reloadVolcengineCatalog}', '重新加载豆包音色', 'tests/local-labs-ui.test.ts'),
+  ),
   openHtmlVideoPreview: command(owner('html-video', 'src/features/html-video/HtmlVideoPage.tsx', 'openPreview', 'openPreview', '预览', 'tests/html-video-electron.test.ts')),
   openPersonAssetDirectory: command(owner('person-assets', 'src/features/labs/PersonAssetsPage.tsx', 'openSelectedAssetDir', 'onClick={openSelectedAssetDir}', '打开目录', 'tests/electron-ipc-contract.test.ts')),
   openTaskOutputDirectory: command(
@@ -392,10 +400,7 @@ export const rendererCommandInventory = {
   ),
   selectCookieFile: command(owner('viral-analyzer', 'src/features/viral/ViralAnalyzerPage.tsx', 'chooseCookieFile', 'onClick={chooseCookieFile}', '选择 Cookie 文件', productShellTest)),
   selectLocalAudio: command(
-    owner('music-mv', 'src/features/music-mv/MusicMvPage.tsx', 'selectMusicMvAudio', 'onClick={selectMusicMvAudio}', '选择音频', productShellTest),
     owner('settings', 'src/features/settings/MinimaxCloneVoiceManager.tsx', 'selectSourceAudio', 'onClick={selectSourceAudio}', '选择来源音频', 'tests/minimax-clone-voice-management.test.ts', undefined, { disabled: 'disabled={action.busy}', loading: 'action.busy ? <Loader2', error: 'InlineActionFeedback' }),
-    owner('settings', 'src/features/settings/SettingsPage.tsx', 'uploadBgmFromSettings', 'onClick={uploadBgmFromSettings}', '添加 BGM 文件', productShellTest),
-    owner('new-task', 'src/features/tasks/NewTaskPage.tsx', 'addBgmFromTask', 'onClick={addBgmFromTask}', '添加', productShellTest),
   ),
   selectLocalFolder: command(owner('settings', 'src/features/settings/SettingsPage.tsx', 'pickJianyingDraftPath', 'onClick={pickJianyingDraftPath}', '选择目录', productShellTest)),
   selectLocalImage: command(

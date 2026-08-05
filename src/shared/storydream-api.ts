@@ -41,6 +41,7 @@ import type {
   JianyingEffectCatalog,
   LlmConfig,
   LlmModelTestResult,
+  ManagedBgmImport,
   MinimaxCloneVoice,
   MinimaxCloneVoiceInput,
   OrdinaryTaskCoverRatio,
@@ -305,7 +306,11 @@ export type StoryDreamApi = {
   getTaskArtifacts: (id: string) => Promise<TaskArtifactSnapshot>;
   readAssetDataUrl: (path: string) => Promise<string>;
   selectLocalImage: () => Promise<string | null>;
-  selectLocalAudio: () => Promise<string | null>;
+  importBgmAudio: () => Promise<ManagedBgmImport | null>;
+  selectLocalAudio: {
+    (): Promise<string | null>;
+    (purpose: 'managed-bgm'): Promise<ManagedBgmImport | null>;
+  };
   selectLocalFolder: () => Promise<string | null>;
   selectCookieFile: () => Promise<string | null>;
   openViralLoginWindow: () => Promise<string | null>;

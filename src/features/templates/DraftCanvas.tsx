@@ -3,6 +3,8 @@ import type { DraftTemplate, DraftTextBorder } from '../../shared/types';
 
 export type DraftCanvasLayer = 'image' | 'title' | 'subtitle' | 'caption' | 'disclaimer';
 
+export type DraftImageAnimationPreviewKind = 'none' | 'zoom' | 'shrink' | 'slide-left' | 'slide-right' | 'rise' | 'drop' | 'spin' | 'flip' | 'split' | 'bounce' | 'stretch';
+
 export const DRAFT_TEXT_WIDTH_MIN = 0.1;
 
 export const DRAFT_TEXT_WIDTH_MAX = 2;
@@ -114,11 +116,13 @@ export function DraftTemplatePreview({
 export function EditableDraftCanvas({
   template,
   selectedLayer,
+  animationPreview = null,
   onSelectLayer,
   onChange,
 }: {
   template: DraftTemplate;
   selectedLayer: DraftCanvasLayer;
+  animationPreview?: string | null;
   onSelectLayer: (layer: DraftCanvasLayer) => void;
   onChange: (template: DraftTemplate) => void;
 }) {
@@ -186,8 +190,10 @@ export function EditableDraftCanvas({
       <DraftFrameChrome template={template} />
       {template.image.visible ? (
         <div
+          key={animationPreview ? `image-preview-${animationPreview}` : 'image-layer'}
           className={selectedLayer === 'image' ? 'draft-layer image-layer selected' : 'draft-layer image-layer'}
           data-layer="image"
+          data-animation-preview={draftImageAnimationPreviewKind(animationPreview)}
           style={{ top: `${template.image.top * 100}%`, height: `${template.image.height * 100}%`, ...draftImageFrameStyle(template) }}
           onPointerDown={(event) => handleDraftCanvasPointerDown('image', event)}
         >
@@ -443,6 +449,21 @@ export function draftImageMotionStyle(template: DraftTemplate): React.CSSPropert
     willChange: 'transform',
   } as React.CSSProperties & Record<string, string | number>;
   return style;
+}
+
+export function draftImageAnimationPreviewKind(animation: string | null | undefined): DraftImageAnimationPreviewKind {
+  if (!animation || animation === '无动画') return 'none';
+  if (animation.includes('上升')) return 'rise';
+  if (animation.includes('下降') || animation.includes('降落')) return 'drop';
+  if (animation.includes('向左') || animation.includes('左拉') || animation.includes('左滑')) return 'slide-left';
+  if (animation.includes('向右') || animation.includes('右拉') || animation.includes('右滑')) return 'slide-right';
+  if (/(翻转|立方体|方片)/u.test(animation)) return 'flip';
+  if (/(分割|百叶窗|四格|三分|碎块|水晶)/u.test(animation)) return 'split';
+  if (/(弹入|弹出|弹动|弹跳|弹回|悠悠球|荡秋千|海盗船|哈哈镜|晃)/u.test(animation)) return 'bounce';
+  if (/(扭曲|拉伸|形变)/u.test(animation)) return 'stretch';
+  if (animation.includes('缩小') || animation.includes('回吸')) return 'shrink';
+  if (/(旋转|斜转|陀螺|绕圈|转圈)/u.test(animation)) return 'spin';
+  return 'zoom';
 }
 
 export function draftImageFrameStyle(template: DraftTemplate): React.CSSProperties {

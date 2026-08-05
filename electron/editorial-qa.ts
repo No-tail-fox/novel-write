@@ -898,6 +898,26 @@ function qaScenarioScript(id: string, view: string, theme: string, stage?: strin
       ready = ready && await waitFor(() => [...document.querySelectorAll('.history-page .table-row')]
         .some((row) => row.textContent?.includes('武则天：从深宫才人到一代女皇')));
     }
+    if (targetView === 'voice-lab') {
+      const providerGroup = document.querySelector('[role="group"][aria-label="配音模型"]');
+      const minimaxButton = [...(providerGroup?.querySelectorAll('button') ?? [])]
+        .find((button) => button.textContent?.trim() === 'MiniMax');
+      ready = ready && minimaxButton instanceof HTMLButtonElement;
+      if (minimaxButton instanceof HTMLButtonElement) minimaxButton.click();
+      ready = ready && await waitFor(() => document.querySelectorAll('.voice-lab-voice-list .chip').length === 18);
+      const searchInput = document.querySelector('input[aria-label="搜索音色"]');
+      if (searchInput instanceof HTMLInputElement) {
+        const valueSetter = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')?.set;
+        valueSetter?.call(searchInput, '有声书');
+        searchInput.dispatchEvent(new Event('input', { bubbles: true }));
+        ready = ready && await waitFor(() => document.querySelectorAll('.voice-lab-voice-list .chip').length === 4);
+        valueSetter?.call(searchInput, '');
+        searchInput.dispatchEvent(new Event('input', { bubbles: true }));
+        ready = ready && await waitFor(() => document.querySelectorAll('.voice-lab-voice-list .chip').length === 18);
+      } else {
+        ready = false;
+      }
+    }
     let historyHtmlTypeLabel = '';
     if (targetView === 'history') {
       const findHtmlHistoryRow = () => [...document.querySelectorAll('.history-page .table-row')]
@@ -1479,11 +1499,23 @@ function qaScenarioScript(id: string, view: string, theme: string, stage?: strin
         const coverPageToggle = document.querySelector('input[aria-label="启用封面页"]');
         if (coverPageToggle instanceof HTMLInputElement && !coverPageToggle.checked) coverPageToggle.click();
         ready = ready && await waitFor(() => document.querySelector('[data-cover-page-enabled="true"] .ordinary-cover-page-body'));
+        const coverTextArea = document.querySelector('.ordinary-cover-page-text');
+        ready = ready
+          && coverTextArea instanceof HTMLTextAreaElement
+          && coverTextArea.placeholder === '留空则不叠加文字'
+          && [...document.querySelectorAll('.new-task-summary dd')]
+            .some((element) => element.textContent?.trim() === 'AI 单独生成 · 不叠加文字');
         const coverModeGroup = document.querySelector('[role="group"][aria-label="封面图片"]');
         const manualButton = [...(coverModeGroup?.querySelectorAll('button') ?? [])]
           .find((button) => button.textContent?.trim() === '本地导入');
         if (manualButton instanceof HTMLButtonElement) manualButton.click();
         ready = ready && await waitFor(() => document.querySelector('[data-manual-cover-state="required"]'));
+        ready = ready && await waitFor(() => (
+          coverTextArea instanceof HTMLTextAreaElement
+          && coverTextArea.placeholder === '留空则自动使用 AI 创作标题'
+          && [...document.querySelectorAll('.new-task-summary dd')]
+            .some((element) => element.textContent?.trim() === '待导入 · AI 标题')
+        ));
         const borrowToggle = document.querySelector('.new-task-borrow-toggle input');
         if (borrowToggle instanceof HTMLInputElement && !borrowToggle.checked) borrowToggle.click();
         autoBorrowImageStatePreserved = borrowToggle instanceof HTMLInputElement

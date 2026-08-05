@@ -41,7 +41,7 @@ import { runStoryboundMediaSidecar } from '../src/shared/storybound-sidecar';
 import { FileDatabase, type HistoryDeletionCleanup, type HistoryTombstone } from '../src/shared/storage';
 import { createHtmlVideoRuntimeProviders, createTaskRuntimeProviders } from '../src/shared/task-runtime-providers';
 import { assertTaskLifecycleAction } from '../src/shared/task-progress';
-import type { AccountProfile, ActivationState, AppConfig, AppDelta, AppDeltaReconcileRequest, AppDeltaReconcileResult, AppStatePatch, BookSelectionInput, ConfigTestTarget, CreateTaskInput, CreateViralAnalysisInput, CursorRequest, CustomStyle, CustomStyleGenerateInput, DraftTemplate, HistoryFamily, HistoryListRequest, HtmlVideoAsset, HtmlVideoAssetTarget, HtmlVideoCompositionSource, HtmlVideoCompositionSourceLintInput, HtmlVideoCompositionSourceSaveInput, HtmlVideoConfigChange, HtmlVideoPipelineDataV2, HtmlVideoSceneChange, HtmlVideoVoiceClip, ImageLabGenerateInput, ImageLabRecord, ImageLabSummary, ImaKnowledgeRequest, LlmConfig, MinimaxCloneVoiceInput, OrdinaryTaskCoverRatio, OrdinaryTaskCoverSelection, PromptTemplate, ProviderModelListRequest, ResearchCopyComposeInput, SequencedTaskEvent, Task, TaskImageReplacementSource, TaskStatus, TaskStepRerunMode, TaskSubtitleSceneLines, UiPreferencesUpdate, ViralAnalysisRecord, ViralAnalysisResult, ViralAnalysisStatus, ViralProductionTaskOptions, VolcengineSpeakerListRequest, VoiceLabGenerateInput, VoiceLabRecord, VoiceLabSummary, WebSearchRequest } from '../src/shared/types';
+import type { AccountProfile, ActivationState, AppConfig, AppDelta, AppDeltaReconcileRequest, AppDeltaReconcileResult, AppStatePatch, BookSelectionInput, ConfigTestTarget, CreateTaskInput, CreateViralAnalysisInput, CursorRequest, CustomStyle, CustomStyleGenerateInput, DraftTemplate, HistoryFamily, HistoryListRequest, HtmlVideoAsset, HtmlVideoAssetTarget, HtmlVideoCompositionSource, HtmlVideoCompositionSourceLintInput, HtmlVideoCompositionSourceSaveInput, HtmlVideoConfigChange, HtmlVideoPipelineDataV2, HtmlVideoSceneChange, HtmlVideoVoiceClip, ImageLabGenerateInput, ImageLabRecord, ImageLabSummary, ImaKnowledgeRequest, LlmConfig, ManagedBgmImport, MinimaxCloneVoiceInput, OrdinaryTaskCoverRatio, OrdinaryTaskCoverSelection, PromptTemplate, ProviderModelListRequest, ResearchCopyComposeInput, SequencedTaskEvent, Task, TaskImageReplacementSource, TaskStatus, TaskStepRerunMode, TaskSubtitleSceneLines, UiPreferencesUpdate, ViralAnalysisRecord, ViralAnalysisResult, ViralAnalysisStatus, ViralProductionTaskOptions, VolcengineSpeakerListRequest, VoiceLabGenerateInput, VoiceLabRecord, VoiceLabSummary, WebSearchRequest } from '../src/shared/types';
 import { boundViralDiagnosticText, createViralProductionTaskInput, detectViralPlatform, runViralAnalysis, viralCheckpointResumeState } from '../src/shared/viral-analysis';
 import { createViralRuntimeProviders } from '../src/shared/viral-runtime';
 import { listVolcengineSpeakers } from '../src/shared/volcengine-speakers';
@@ -64,6 +64,7 @@ import { createElectronHtmlVideoRenderer } from './html-video-renderer';
 import { createTrustedIpcRegistrar } from './ipc';
 import { openExistingDirectory } from './open-directory';
 import { importManagedImageLabRecord } from './image-lab-import';
+import { importManagedBgm, resolveRuntimeManagedBgmLibrary } from './managed-bgm';
 import { writeWindowsManagedFile } from './windows-managed-file';
 import { captureEditorialQa, resolveEditorialQaConfig } from './editorial-qa';
 import { ConfigService } from './config-service';
@@ -248,6 +249,7 @@ async function initializeDatabase(): Promise<FileDatabase> {
     await reapHistoryQuarantines(dir, database);
     await service.migrateLegacySecrets();
     await ensureRuntimeJianyingDraftPath(database, service);
+    await ensureRuntimeManagedBgmPaths(database, service, dir);
     await seedTaskOperationsEditorialQa(database, dir);
     await seedHtmlVideoEditorialQa(database);
     if (isShuttingDown) {
@@ -715,6 +717,21 @@ async function ensureRuntimeJianyingDraftPath(database: FileDatabase, service: C
           ...metadata.config.jianying,
           draftPath: resolved,
         },
+      },
+      secretChanges: {},
+    });
+  }
+}
+
+async function ensureRuntimeManagedBgmPaths(database: FileDatabase, service: ConfigService, dataDir: string): Promise<void> {
+  const metadata = await database.getBootstrapMetadata();
+  const current = metadata.config.jianying.bgmLibrary;
+  const resolved = resolveRuntimeManagedBgmLibrary(dataDir, current);
+  if (resolved.some((item, index) => item.path !== current[index]?.path)) {
+    await service.save({
+      config: {
+        ...metadata.config,
+        jianying: { ...metadata.config.jianying, bgmLibrary: resolved },
       },
       secretChanges: {},
     });
@@ -3510,16 +3527,17 @@ async function selectLocalFolder(): Promise<string | null> {
   return result.canceled ? null : result.filePaths[0] ?? null;
 }
 
-async function selectLocalAudio(): Promise<string | null> {
-  if (editorialQaConfig?.scope === 'clone-voice' || editorialQaConfig?.scope === 'all') {
-    return join(editorialQaConfig.root, 'qa-minimax-source.wav');
-  }
-  const result = await dialog.showOpenDialog({
+async function selectLocalAudio(purpose?: 'managed-bgm'): Promise<string | ManagedBgmImport | null> {
+  const qaPath = editorialQaConfig?.scope === 'clone-voice' || editorialQaConfig?.scope === 'all'
+    ? join(editorialQaConfig.root, 'qa-minimax-source.wav')
+    : '';
+  const selectedPath = qaPath || await dialog.showOpenDialog({
     title: '选择 BGM 音频',
     properties: ['openFile'],
     filters: [{ name: 'Audio', extensions: ['mp3', 'wav', 'm4a', 'aac', 'ogg', 'flac'] }],
-  });
-  return result.canceled ? null : result.filePaths[0] ?? null;
+  }).then((result) => result.canceled ? '' : result.filePaths[0] ?? '');
+  if (!selectedPath) return null;
+  return purpose === 'managed-bgm' ? importManagedBgm(selectedPath, appDataDir()) : selectedPath;
 }
 
 async function selectCookieFile(): Promise<string | null> {
@@ -3624,7 +3642,7 @@ async function openViralLoginWindow(): Promise<string | null> {
   });
 }
 
-trustedHandle('local-audio:select', selectLocalAudio);
+trustedHandle('local-audio:select', (_event, purpose?: 'managed-bgm') => selectLocalAudio(purpose));
 trustedHandle('local-folder:select', selectLocalFolder);
 trustedHandle('cookie-file:select', selectCookieFile);
 trustedHandle('viral:open-login-window', openViralLoginWindow);

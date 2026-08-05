@@ -95,4 +95,30 @@ describe('local and lab editorial workbenches', () => {
     for (const label of ['模式', '参考图', '需求描述', '每组合数量', '多选比例', '多选风格', '分辨率', '导入成品', '智能生成']) expect(image).toContain(label);
     for (const label of ['试听文案', '配音模型', '音色', '语速', '生成试听', '历史试听']) expect(voice).toContain(label);
   });
+
+  it('supports complete searchable voice catalogs without charging on hover', async () => {
+    const [voice, voices, css] = await Promise.all([
+      readFile(new URL('../src/features/labs/VoiceLabPage.tsx', import.meta.url), 'utf8'),
+      readFile(new URL('../src/shared/tts-voices.ts', import.meta.url), 'utf8'),
+      readFile(new URL('../src/styles/features/local-labs.css', import.meta.url), 'utf8'),
+    ]);
+
+    expect(voice).toContain('api.listVolcengineSpeakers');
+    expect(voice).toContain("['seed-tts-2.0', 'seed-tts-1.0']");
+    expect(voice).toContain('filterTtsVoiceOptions');
+    expect(voice).toContain('aria-label="搜索音色"');
+    expect(voice).toContain('aria-pressed={voiceId === voice.id}');
+    expect(voice).not.toContain('onMouseEnter={() => generatePreview');
+    expect(voices).toContain("id: 'cartoon_pig'");
+    expect(css).toMatch(/\.voice-lab-voice-list\s*\{[\s\S]*?max-height:\s*260px;[\s\S]*?overflow:\s*auto;/u);
+  });
+
+  it('exercises the MiniMax catalog and search in real Electron QA', async () => {
+    const qa = await readFile(new URL('../electron/editorial-qa.ts', import.meta.url), 'utf8');
+
+    expect(qa).toContain("targetView === 'voice-lab'");
+    expect(qa).toContain("button.textContent?.trim() === 'MiniMax'");
+    expect(qa).toContain("valueSetter?.call(searchInput, '有声书')");
+    expect(qa).toContain("document.querySelectorAll('.voice-lab-voice-list .chip').length === 18");
+  });
 });
