@@ -1,4 +1,4 @@
-import type { CoverMetadata, ImagePrompt, PipelineArtifact, StoryboardScene, SubtitleTrack } from './types';
+import type { CoverMetadata, ImagePrompt, PipelineArtifact, StoryboardScene, StoryboardSegment, SubtitleTrack } from './types';
 
 const negativePrompt = '卡通，动漫，插画，低质量，模糊，变形，畸形肢体，水印，文字，签名，额外手指，重复面孔';
 
@@ -147,6 +147,61 @@ export function buildStoryboardScenes(input: string, style = 'photo-real', ratio
   }));
 }
 
+export function storyboardSegmentsForScene(
+  scene: Pick<StoryboardScene, 'cap' | 'durationMs' | 'segments'>,
+): StoryboardSegment[] {
+  const segments = scene.segments
+    ?.filter((segment) => typeof segment.text === 'string' && segment.text.trim().length > 0)
+    .map((segment, index) => ({
+      id: index + 1,
+      text: segment.text.trim(),
+      durationMs: Math.max(1, Math.round(Number(segment.durationMs) || 0)),
+    }));
+  if (segments?.length) return segments;
+  return [{ id: 1, text: scene.cap, durationMs: Math.max(1, Math.round(scene.durationMs)) }];
+}
+
+export function groupStoryboardScenesToTarget(scenes: StoryboardScene[], targetCount: number): StoryboardScene[] {
+  const target = Math.min(scenes.length, Math.max(1, Math.round(targetCount)));
+  if (target >= scenes.length) return scenes;
+
+  const weights = scenes.map((scene) => Math.max(1, scene.cap.replace(/\s+/gu, '').length));
+  const prefix = [0];
+  for (const weight of weights) prefix.push(prefix[prefix.length - 1] + weight);
+  const totalWeight = prefix[prefix.length - 1];
+  const boundaries = [0];
+
+  for (let groupIndex = 1; groupIndex < target; groupIndex += 1) {
+    const previous = boundaries[boundaries.length - 1];
+    const minBoundary = previous + 1;
+    const maxBoundary = scenes.length - (target - groupIndex);
+    const idealWeight = (totalWeight * groupIndex) / target;
+    let boundary = minBoundary;
+    for (let candidate = minBoundary + 1; candidate <= maxBoundary; candidate += 1) {
+      if (Math.abs(prefix[candidate] - idealWeight) < Math.abs(prefix[boundary] - idealWeight)) {
+        boundary = candidate;
+      }
+    }
+    boundaries.push(boundary);
+  }
+  boundaries.push(scenes.length);
+
+  return boundaries.slice(0, -1).map((start, index) => {
+    const group = scenes.slice(start, boundaries[index + 1]);
+    if (group.length === 1) return { ...group[0], id: index + 1 };
+    const segments = group
+      .flatMap((scene) => storyboardSegmentsForScene(scene))
+      .map((segment, segmentIndex) => ({ ...segment, id: segmentIndex + 1 }));
+    return {
+      id: index + 1,
+      cap: segments.map((segment) => segment.text).join('\n'),
+      descPrompt: group.map((scene) => scene.descPrompt).filter(Boolean).join('\n'),
+      durationMs: group.reduce((sum, scene) => sum + scene.durationMs, 0),
+      segments,
+    };
+  });
+}
+
 function srtTime(ms: number): string {
   const hours = Math.floor(ms / 3_600_000);
   const minutes = Math.floor((ms % 3_600_000) / 60_000);
@@ -155,21 +210,45 @@ function srtTime(ms: number): string {
   return `${String(hours).padStart(2, '0')}:${String(minutes).padStart(2, '0')}:${String(seconds).padStart(2, '0')},${String(millis).padStart(3, '0')}`;
 }
 
-export function buildSubtitleTrack(scenes: Pick<StoryboardScene, 'id' | 'cap' | 'durationMs'>[]): SubtitleTrack {
+export function buildSubtitleTrack(scenes: Pick<StoryboardScene, 'id' | 'cap' | 'durationMs' | 'segments'>[]): SubtitleTrack {
   let cursor = 0;
-  const cues = scenes.map((scene, index) => {
-    const startMs = cursor;
-    const endMs = cursor + scene.durationMs;
-    cursor = endMs;
-    return {
-      index: index + 1,
-      startMs,
-      endMs,
-      text: scene.cap,
-    };
-  });
+  const cues: SubtitleTrack['cues'] = [];
+  for (const scene of scenes) {
+    const segments = storyboardSegmentsForScene(scene);
+    const durations = distributeSegmentDurations(scene.durationMs, segments);
+    for (const [index, segment] of segments.entries()) {
+      const startMs = cursor;
+      const endMs = cursor + durations[index];
+      cursor = endMs;
+      cues.push({
+        index: cues.length + 1,
+        sceneId: scene.id,
+        segmentId: index + 1,
+        startMs,
+        endMs,
+        text: segment.text,
+      });
+    }
+  }
   const srt = cues.map((cue) => `${cue.index}\n${srtTime(cue.startMs)} --> ${srtTime(cue.endMs)}\n${cue.text}\n`).join('\n');
   return { cues, srt };
+}
+
+function distributeSegmentDurations(sceneDurationMs: number, segments: StoryboardSegment[]): number[] {
+  const totalDuration = Math.max(segments.length, Math.round(sceneDurationMs));
+  const weights = segments.map((segment) => Math.max(1, segment.durationMs || segment.text.replace(/\s+/gu, '').length));
+  const totalWeight = weights.reduce((sum, weight) => sum + weight, 0);
+  const durations: number[] = [];
+  let remaining = totalDuration;
+  for (let index = 0; index < segments.length; index += 1) {
+    const remainingSegments = segments.length - index - 1;
+    const duration = index === segments.length - 1
+      ? remaining
+      : Math.min(remaining - remainingSegments, Math.max(1, Math.round((totalDuration * weights[index]) / totalWeight)));
+    durations.push(duration);
+    remaining -= duration;
+  }
+  return durations;
 }
 
 export async function buildStoryPackage(

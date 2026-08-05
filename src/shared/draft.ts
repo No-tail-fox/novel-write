@@ -2,7 +2,7 @@ import { constants } from 'node:fs';
 import { access, mkdir, stat, writeFile } from 'node:fs/promises';
 import { dirname, join } from 'node:path';
 import type { BgmItem, CoverMetadata, DiagnosticsReport, DraftTemplate, ImagePrompt, StoryboardScene, SubtitleTrack } from './types';
-import { buildSubtitleTrack } from './story';
+import { buildSubtitleTrack, storyboardSegmentsForScene } from './story';
 import { getTemplate, normalizeDraftTemplate } from './templates';
 import type { PyJianYingBridgeInput, PyJianYingBridgeOutput } from './jianying-bridge';
 import { runStoryboundMediaSidecar, type StoryboundSidecarInput, type StoryboundSidecarResult } from './storybound-sidecar';
@@ -96,7 +96,7 @@ export async function writeJianyingDraft(input: WriteJianyingDraftInput, options
     checks: [
       { id: 'real-images', label: '真实图片素材', status: 'pass', detail: `${sourceImages.length} image files validated and handed to pyJianYingDraft.` },
       { id: 'real-narration', label: '真实旁白音频', status: 'pass', detail: `${sourceNarration.length} narration files validated and handed to pyJianYingDraft.` },
-      { id: 'subtitle-track', label: '字幕时间轴', status: subtitles.cues.length === input.scenes.length ? 'pass' : 'fail', detail: `${subtitles.cues.length} subtitle cues.` },
+      { id: 'subtitle-track', label: '字幕时间轴', status: subtitleTrackCoversScenes(input.scenes, subtitles) ? 'pass' : 'fail', detail: `${subtitles.cues.length} subtitle cues across ${input.scenes.length} visual scenes.` },
       { id: 'jianying-draft', label: '剪映草稿结构', status: 'warn', detail: 'Waiting for pyJianYingDraft bridge output.' },
     ],
   };
@@ -121,6 +121,7 @@ export async function writeJianyingDraft(input: WriteJianyingDraftInput, options
     template,
     sourceImages,
     sourceNarration,
+    subtitles,
     subtitlesFile,
     sourceBgm,
     coverImagePath,
@@ -196,6 +197,15 @@ function createBridgePayload(input: {
       startUs,
       durationUs,
       text: scene.cap,
+      ...(scene.segments?.length
+        ? {
+            segments: scene.segments.map((segment) => ({
+              id: segment.id,
+              text: segment.text,
+              durationUs: msToUs(segment.durationMs),
+            })),
+          }
+        : {}),
     };
   });
   const overlayText = resolveOverlayText(input.input, input.template);
@@ -325,6 +335,7 @@ function createStoryboundSidecarPayload(input: {
   template: DraftTemplate;
   sourceImages: string[];
   sourceNarration: SceneAsset[];
+  subtitles: SubtitleTrack;
   subtitlesFile: string;
   sourceBgm: BgmItem | null;
   coverImagePath: string;
@@ -360,9 +371,34 @@ function createStoryboundSidecarPayload(input: {
         ...(asset.text ? { text: asset.text } : {}),
       })),
       subtitles_path: input.subtitlesFile,
+      subtitle_cues: input.subtitles.cues.map((cue) => ({
+        index: cue.index,
+        ...(cue.sceneId === undefined ? {} : { scene_id: cue.sceneId }),
+        ...(cue.segmentId === undefined ? {} : { segment_id: cue.segmentId }),
+        start_us: msToUs(cue.startMs),
+        duration_us: msToUs(cue.endMs - cue.startMs),
+        text: cue.text,
+      })),
       scenes,
     },
   };
+}
+
+function subtitleTrackCoversScenes(scenes: StoryboardScene[], subtitles: SubtitleTrack): boolean {
+  if (subtitles.cues.length === 0) return false;
+  const expectedText = scenes
+    .flatMap((scene) => storyboardSegmentsForScene(scene))
+    .map((segment) => segment.text)
+    .join('')
+    .replace(/\s+/gu, '');
+  const actualText = subtitles.cues.map((cue) => cue.text).join('').replace(/\s+/gu, '');
+  if (expectedText !== actualText) return false;
+  let cursor = 0;
+  for (const cue of subtitles.cues) {
+    if (cue.startMs !== cursor || cue.endMs <= cue.startMs) return false;
+    cursor = cue.endMs;
+  }
+  return cursor === scenes.reduce((sum, scene) => sum + scene.durationMs, 0);
 }
 
 function resolveOverlayText(input: WriteJianyingDraftInput, template: DraftTemplate): { title: string; subtitle: string } {

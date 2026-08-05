@@ -328,6 +328,60 @@ describe('pyJianYingDraft bridge input', () => {
     }
   });
 
+  it('preserves explicit subtitle segment boundaries inside one visual scene', async () => {
+    const dir = await mkdtemp(join(tmpdir(), 'storybound-jy-explicit-subtitle-segments-'));
+    const draftDir = join(dir, 'Draft Root', 'Bridge Draft');
+    const bridgeDir = join(dir, 'pyjianying-bridge');
+
+    try {
+      await writePyJianYingBridgeScript(dir);
+      await writeFile(join(bridgeDir, 'pyJianYingDraft.py'), fakePyJianYingDraftModule, 'utf8');
+      const voice = join(dir, 'voice.wav');
+      const image = join(dir, 'image.png');
+      const subtitles = join(dir, 'subtitles.srt');
+      await writeFile(voice, wavTone(2400));
+      await writeFile(image, Buffer.from('image'));
+      await writeFile(subtitles, '', 'utf8');
+
+      await runPyJianYingDraftBridge({
+        workDir: dir,
+        draftDir,
+        title: 'Bridge Draft',
+        canvas: { width: 1080, height: 1920, backgroundColor: '#000000', backgroundImage: '' },
+        imageArea: defaultBridgeImageArea(),
+        caption: { ...defaultBridgeCaption(), maxCharsPerLine: 80 },
+        scenes: [
+          {
+            sceneId: 1,
+            startUs: 0,
+            durationUs: 2400000,
+            text: '第一段。第二段。',
+            segments: [
+              { id: 1, text: '第一段。' },
+              { id: 2, text: '第二段。' },
+            ],
+          },
+        ],
+        images: [{ sceneId: 1, path: image }],
+        narration: [{ sceneId: 1, path: voice }],
+        subtitlesSrtPath: subtitles,
+        bgm: null,
+        totalDurationUs: 2400000,
+        volumes: { narration: 1, bgm: 0.3 },
+      });
+
+      const generatedSubtitles = await readFile(join(draftDir, 'materials', 'subtitles', 'subtitles.srt'), 'utf8');
+      const cueBlocks = generatedSubtitles.trim().split(/\r?\n\r?\n/);
+
+      expect(cueBlocks).toHaveLength(2);
+      expect(cueBlocks[0]).toContain('第一段。');
+      expect(cueBlocks[1]).toContain('第二段。');
+      expect(cueBlocks.at(-1)).toContain('--> 00:00:02,400');
+    } finally {
+      await rm(dir, { recursive: true, force: true });
+    }
+  });
+
   it('uses caption box width to keep each subtitle cue within two rendered lines', async () => {
     const dir = await mkdtemp(join(tmpdir(), 'storybound-jy-subtitle-width-split-'));
     const draftDir = join(dir, 'Draft Root', 'Bridge Draft');

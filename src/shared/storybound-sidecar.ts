@@ -10,6 +10,7 @@ export interface StoryboundStoryAssets {
   images?: Array<{ scene_id: number; path: string }>;
   narration?: Array<{ scene_id: number; path: string; speaker?: 'A' | 'B'; turn_index?: number; text?: string }>;
   subtitles_path?: string;
+  subtitle_cues?: Array<{ index: number; scene_id?: number; segment_id?: number; start_us: number; duration_us: number; text: string }>;
   scenes?: Array<{ scene_id: number; start_us: number; duration_us: number; text: string }>;
 }
 
@@ -362,6 +363,7 @@ def generate_story(payload):
             for index, item in enumerate(images)
         ]
     duration = total_scene_duration_us(scenes)
+    subtitle_cues = assets.get("subtitle_cues") or scenes
     title = str(payload.get("task_title") or cover_title_text(payload))
     content = {
         "duration": duration,
@@ -373,14 +375,14 @@ def generate_story(payload):
         "materials": {
             "videos": assets.get("images") or [],
             "audios": assets.get("narration") or [],
-            "texts": scenes,
+            "texts": subtitle_cues,
             "bgm": payload.get("bgm_path") or "",
             "subtitles": assets.get("subtitles_path") or "",
         },
         "tracks": [
             {"type": "video", "segments": assets.get("images") or []},
             {"type": "audio", "segments": assets.get("narration") or []},
-            {"type": "text", "segments": scenes},
+            {"type": "text", "segments": subtitle_cues},
         ],
         "storybound_contract": payload,
     }

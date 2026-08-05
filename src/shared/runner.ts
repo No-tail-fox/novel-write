@@ -1,7 +1,7 @@
 import { copyFile, mkdir, readFile, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import type { AiSourceContext, BgmItem, CharacterCard, CoverMetadata, CustomCoverTemplate, DraftTemplate, ImagePrompt, MusicPlan, PipelineArtifact, PromptStepTemplateType, PromptTemplate, RewriteEvaluationResult, StoryboardScene, Task, TaskArtifactImageErrorPreview, TaskStepRerunMode } from './types';
-import { buildCoverMetadata, buildSubtitleTrack } from './story';
+import { buildCoverMetadata, buildSubtitleTrack, groupStoryboardScenesToTarget } from './story';
 import { writeJianyingDraft, type SceneAsset, type WriteJianyingDraftOptions } from './draft';
 import { runStoryboundMediaSidecar, type StoryboundSidecarInput, type StoryboundSidecarResult } from './storybound-sidecar';
 import type { FileDatabase } from './storage';
@@ -673,6 +673,7 @@ async function ensureContentArtifact(input: {
       ],
     });
     let storyboardScenes = normalizeStoryboardResponse(storyboard.json, storyboard.raw, rewrittenCopy);
+    storyboardScenes = groupExcessStoryboardChunks(storyboardScenes, storyboardSceneCount, rewrittenCopy);
     if (!isStoryboardSceneCountAcceptable(storyboardScenes, storyboardSceneCount, rewrittenCopy)) {
       storyboardScenes = await repairStoryboardToTargetSceneCount(options.llm, {
         task,
@@ -878,6 +879,15 @@ function targetWordCountFailureReason(length: number, range: TargetWordCountRang
 function isStoryboardSceneCountAcceptable(scenes: StoryboardScene[], targetSceneCount: number | null | undefined, rewrittenCopy = ''): boolean {
   const range = storyboardSceneCountRange(rewrittenCopy, targetSceneCount);
   return scenes.length >= range.min && scenes.length <= range.max;
+}
+
+function groupExcessStoryboardChunks(
+  scenes: StoryboardScene[],
+  targetSceneCount: number | null | undefined,
+  rewrittenCopy: string,
+): StoryboardScene[] {
+  const range = storyboardSceneCountRange(rewrittenCopy, targetSceneCount);
+  return scenes.length > range.max ? groupStoryboardScenesToTarget(scenes, range.target) : scenes;
 }
 
 function pauseAtCheckpoint(task: Task, initialStep: number, step: number, detail: string): void {
@@ -1327,7 +1337,7 @@ async function repairStoryboardToTargetSceneCount(
     rerunContext?: string;
   },
 ): Promise<StoryboardScene[]> {
-  let current = input.current;
+  let current = groupExcessStoryboardChunks(input.current, input.targetSceneCount, input.rewrittenCopy);
   let currentCount = current.length;
   for (let attempt = 1; attempt <= 2 && !isStoryboardSceneCountAcceptable(current, input.targetSceneCount, input.rewrittenCopy); attempt += 1) {
     const range = storyboardSceneCountRange(input.rewrittenCopy, input.targetSceneCount);
@@ -1357,7 +1367,11 @@ async function repairStoryboardToTargetSceneCount(
         },
       ],
     });
-    current = normalizeStoryboardResponse(repair.json, repair.raw, input.rewrittenCopy);
+    current = groupExcessStoryboardChunks(
+      normalizeStoryboardResponse(repair.json, repair.raw, input.rewrittenCopy),
+      input.targetSceneCount,
+      input.rewrittenCopy,
+    );
     currentCount = current.length;
   }
   if (!isStoryboardSceneCountAcceptable(current, input.targetSceneCount, input.rewrittenCopy)) {
@@ -1918,12 +1932,38 @@ function normalizeScenes(input: unknown): StoryboardScene[] {
   return input.map((scene, index) => {
     const item = scene as Partial<StoryboardScene> & { desc_prompt?: unknown };
     const cap = requireString(item.cap, `scenes[${index}].cap`);
+    const durationMs = Math.max(800, Number(item.durationMs ?? estimateSceneDurationMs(cap)));
+    const segments = normalizeStoryboardSegments(item.segments, durationMs);
     return {
       id: Number(item.id ?? index + 1),
       cap,
       descPrompt: String(item.descPrompt ?? item.desc_prompt ?? cap),
-      durationMs: Math.max(800, Number(item.durationMs ?? estimateSceneDurationMs(cap))),
+      durationMs,
+      ...(segments ? { segments } : {}),
     };
+  });
+}
+
+function normalizeStoryboardSegments(input: unknown, sceneDurationMs: number): StoryboardScene['segments'] {
+  if (!Array.isArray(input) || input.length === 0) return undefined;
+  const texts = input.map((segment, index) => {
+    if (typeof segment === 'string') return requireString(segment, `segments[${index}]`);
+    const item = segment as { text?: unknown; cap?: unknown };
+    return requireString(item?.text ?? item?.cap, `segments[${index}].text`);
+  });
+  const totalWeight = texts.reduce((sum, text) => sum + Math.max(1, countVisibleCharacters(text)), 0);
+  let allocated = 0;
+  return texts.map((text, index) => {
+    const remainingSegments = texts.length - index - 1;
+    const remaining = Math.max(1, sceneDurationMs - allocated);
+    const durationMs = index === texts.length - 1
+      ? remaining
+      : Math.min(
+          Math.max(1, remaining - remainingSegments),
+          Math.max(1, Math.round((sceneDurationMs * Math.max(1, countVisibleCharacters(text))) / totalWeight)),
+        );
+    allocated += durationMs;
+    return { id: index + 1, text, durationMs };
   });
 }
 

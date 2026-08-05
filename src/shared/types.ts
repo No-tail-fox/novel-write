@@ -703,15 +703,24 @@ export interface ImagePrompt {
   referenceImagePaths?: string[];
 }
 
+export interface StoryboardSegment {
+  id: number;
+  text: string;
+  durationMs: number;
+}
+
 export interface StoryboardScene {
   id: number;
   cap: string;
   descPrompt: string;
   durationMs: number;
+  segments?: StoryboardSegment[];
 }
 
 export interface SubtitleCue {
   index: number;
+  sceneId?: number;
+  segmentId?: number;
   startMs: number;
   endMs: number;
   text: string;

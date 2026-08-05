@@ -294,7 +294,16 @@ describe('draft writer', () => {
     const draftRootDir = join(dir, 'JianyingPro Drafts');
     const workDir = join(dir, 'work');
     const scenes: StoryboardScene[] = [
-      { id: 1, cap: 'First line', descPrompt: 'prompt 1', durationMs: 1200 },
+      {
+        id: 1,
+        cap: 'First line\nSecond cut',
+        descPrompt: 'prompt 1',
+        durationMs: 1200,
+        segments: [
+          { id: 1, text: 'First line', durationMs: 500 },
+          { id: 2, text: 'Second cut', durationMs: 700 },
+        ],
+      },
       { id: 2, cap: 'Second line', descPrompt: 'prompt 2', durationMs: 1400 },
     ];
     const images = await writeAssets(workDir, scenes, 'png', twoByTwoPng);
@@ -367,6 +376,11 @@ describe('draft writer', () => {
           images: images.map((asset) => ({ scene_id: asset.sceneId, path: asset.path })),
           narration: narration.map((asset) => ({ scene_id: asset.sceneId, path: asset.path })),
           subtitles_path: join(workDir, 'subtitles.srt'),
+          subtitle_cues: [
+            { index: 1, scene_id: 1, segment_id: 1, start_us: 0, duration_us: 500_000, text: 'First line' },
+            { index: 2, scene_id: 1, segment_id: 2, start_us: 500_000, duration_us: 700_000, text: 'Second cut' },
+            { index: 3, scene_id: 2, segment_id: 1, start_us: 1_200_000, duration_us: 1_400_000, text: 'Second line' },
+          ],
         },
       });
       expect(output).toMatchObject({

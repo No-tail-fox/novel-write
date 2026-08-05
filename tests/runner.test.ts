@@ -2566,6 +2566,77 @@ describe('task runner', () => {
     }
   });
 
+  it('groups excess ordered text chunks under the target visual scenes without losing subtitle cuts', async () => {
+    const dir = await mkdtemp(join(tmpdir(), 'storybound-runner-storyboard-segment-groups-'));
+    const db = await FileDatabase.open(join(dir, 'data.db'));
+    const draftRootDir = join(dir, 'JianyingPro Drafts');
+    const mediaDir = join(dir, 'media');
+    const chunks = Array.from({ length: 43 }, (_, index) => `第${index + 1}句。`);
+    const rewrittenCopy = chunks.join('');
+    const requests: LlmJsonRequest[] = [];
+    const generatedSceneIds: number[] = [];
+
+    try {
+      await db.upsertConfig({
+        ...(await db.getState()).config,
+        jianying: { ...(await db.getState()).config.jianying, draftPath: draftRootDir },
+      });
+      const task = await db.createTask({
+        title: 'Grouped storyboard segments',
+        inputText: rewrittenCopy,
+        publishMode: 'direct-copy',
+        targetScenes: 23,
+        storyboardSceneCount: 23,
+      });
+
+      const llm: JsonLlm = async <T,>(request: LlmJsonRequest) => {
+        requests.push(request);
+        if (request.name === 'storyboard') {
+          return { json: chunks as T, raw: JSON.stringify(chunks), requestId: 'storyboard' };
+        }
+        if (request.name === 'character-card') {
+          return {
+            json: { characterCard: { summary: 'same person', characters: [], consistencyRules: [] } } as T,
+            raw: '{}',
+            requestId: 'character-card',
+          };
+        }
+        if (request.name === 'image-prompts') {
+          const scenes = extractScenesFromPrompt(request);
+          return { json: { imagePrompts: makePrompts(scenes) } as T, raw: '{}', requestId: 'prompts' };
+        }
+        throw new Error(`Unexpected request ${request.name}`);
+      };
+
+      await runTask(db, task, {
+        appDataDir: dir,
+        llm: mockConfiguredLlm(llm),
+        generateImages: async (scenes) => {
+          generatedSceneIds.push(...scenes.map((scene) => scene.id));
+          return writeSceneAssets(mediaDir, scenes, 'png', tinyPng);
+        },
+        synthesizeNarration: async (scenes) => writeSceneAssets(mediaDir, scenes, 'wav', wavTone(1200)),
+        draftWriterOptions: { runBridge: fakeBridge },
+      });
+
+      const workDir = join(dir, 'tasks', task.id);
+      const storedScenes = JSON.parse(await readFile(join(workDir, '02-sentences.json'), 'utf8')) as StoryboardScene[];
+      const storedPrompts = JSON.parse(await readFile(join(workDir, '03-image-prompts.json'), 'utf8')) as ImagePrompt[];
+      const subtitles = await readFile(join(workDir, 'subtitles.srt'), 'utf8');
+      const storedChunks = storedScenes.flatMap((scene) => scene.segments?.map((segment) => segment.text) ?? [scene.cap]);
+
+      expect(storedScenes).toHaveLength(23);
+      expect(storedPrompts).toHaveLength(23);
+      expect(new Set(generatedSceneIds)).toEqual(new Set(Array.from({ length: 23 }, (_, index) => index + 1)));
+      expect(storedChunks).toEqual(chunks);
+      expect(subtitles.match(/-->/g)).toHaveLength(43);
+      expect(requests.some((request) => request.name.startsWith('storyboard-target-scenes-repair-'))).toBe(false);
+    } finally {
+      await db.close();
+      await rm(dir, { recursive: true, force: true });
+    }
+  });
+
   it('accepts storyboard scenes when scenes is a stringified array with trailing text', async () => {
     const dir = await mkdtemp(join(tmpdir(), 'storybound-runner-stringified-storyboard-'));
     const db = await FileDatabase.open(join(dir, 'data.db'));

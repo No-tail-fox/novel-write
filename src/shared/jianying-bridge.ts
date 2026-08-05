@@ -96,7 +96,13 @@ export interface PyJianYingBridgeInput {
       border: DraftTextBorder;
     };
   };
-  scenes?: Array<{ sceneId: number; startUs: number; durationUs: number; text: string }>;
+  scenes?: Array<{
+    sceneId: number;
+    startUs: number;
+    durationUs: number;
+    text: string;
+    segments?: Array<{ id: number; text: string; durationUs?: number }>;
+  }>;
   images: Array<{ sceneId: number; path: string }>;
   coverImagePath?: string;
   narration: Array<{ sceneId: number; path: string; speaker?: 'A' | 'B'; turnIndex?: number; text?: string }>;
@@ -571,7 +577,14 @@ def expand_timed_subtitles(timeline, caption_config=None, canvas_config=None):
     expanded = []
     chars_per_line = resolve_caption_chars_per_line(caption_config, canvas_config)
     for item in timeline:
-        cue_texts = split_caption_text(item.get("text"), chars_per_line)
+        explicit_segments = item.get("segments") or []
+        cue_texts = []
+        if explicit_segments:
+            for segment in explicit_segments:
+                segment_text = segment.get("text") if isinstance(segment, dict) else str(segment or "")
+                cue_texts.extend(split_caption_text(segment_text, chars_per_line))
+        else:
+            cue_texts = split_caption_text(item.get("text"), chars_per_line)
         if not cue_texts:
             continue
         durations = distribute_subtitle_durations(int(item["durationUs"]), cue_texts)
@@ -739,6 +752,7 @@ def main():
             "durationUs": scene_duration,
             "audioDurationUs": audio_duration,
             "text": scene.get("text", ""),
+            "segments": scene.get("segments") or [],
         })
         cursor += scene_duration
     total_duration = max(cursor, int(payload.get("totalDurationUs") or 0))
