@@ -5,7 +5,7 @@ import { tmpdir } from 'node:os';
 import { basename, dirname, isAbsolute, join, relative, resolve } from 'node:path';
 import type { BrowserWindow, NativeImage } from 'electron';
 
-export const editorialQaScopes = ['all', 'theme-smoke', 'shell', 'new-task', 'task-operations', 'html-video', 'clone-voice', 'volcengine-tts', 'workflow', 'labs', 'system'] as const;
+export const editorialQaScopes = ['all', 'theme-smoke', 'shell', 'new-task', 'task-operations', 'html-video', 'clone-voice', 'volcengine-tts', 'jianying', 'workflow', 'labs', 'system'] as const;
 export type EditorialQaScope = (typeof editorialQaScopes)[number];
 export type EditorialQaCaptureRequirement = 'required' | 'supplemental';
 export type EditorialQaEnvironment = Partial<Record<
@@ -76,6 +76,10 @@ export const editorialQaMatrix = {
   volcengineTtsStates: [
     { id: 'volcengine-v3-light-desktop', view: 'settings', theme: 'light', viewport: 'desktop' },
     { id: 'volcengine-legacy-dark-compact', view: 'settings', theme: 'dark', viewport: 'compact' },
+  ],
+  jianyingDetectionStates: [
+    { id: 'jianying-auto-detect-light-desktop', view: 'settings', theme: 'light', viewport: 'desktop' },
+    { id: 'jianying-auto-detect-dark-compact', view: 'settings', theme: 'dark', viewport: 'compact' },
   ],
 } as const;
 
@@ -258,6 +262,16 @@ export async function captureEditorialQa(
     )) {
       throw new Error(`Editorial QA Volcengine version switch failed: ${JSON.stringify(state.volcengineVersion)}.`);
     }
+    if (captureCase.id.startsWith('jianying-auto-detect-') && (
+      state.jianyingDetection.status !== 'pass'
+      || !state.jianyingDetection.path.endsWith('configured-draft-root')
+      || !state.jianyingDetection.detail.includes('2 个本地草稿')
+      || !state.jianyingDetection.inputMatches
+      || !state.jianyingDetection.fullPathVisible
+      || state.jianyingDetection.checks.length < 3
+    )) {
+      throw new Error(`Editorial QA Jianying auto detection failed: ${JSON.stringify(state.jianyingDetection)}.`);
+    }
     if (state.templateOperationalContrast.failures.length > 0) {
       throw new Error(`Editorial QA template contrast failed in ${captureCase.id}: ${state.templateOperationalContrast.failures.join(', ')}.`);
     }
@@ -297,6 +311,7 @@ export async function captureEditorialQa(
       manualCover: state.manualCover,
       cloneVoice: state.cloneVoice,
       volcengineVersion: state.volcengineVersion,
+      jianyingDetection: state.jianyingDetection,
       historyHtmlTypeLabel: state.historyHtmlTypeLabel,
       promptTemplateEditorOpen: state.promptTemplateEditorOpen,
       presetStatePreserved: state.presetStatePreserved,
@@ -445,6 +460,7 @@ export interface EditorialQaCapture {
   manualCover: QaScenarioState['manualCover'];
   cloneVoice: QaScenarioState['cloneVoice'];
   volcengineVersion: QaScenarioState['volcengineVersion'];
+  jianyingDetection: QaScenarioState['jianyingDetection'];
   historyHtmlTypeLabel: string;
   promptTemplateEditorOpen: boolean;
   presetStatePreserved: boolean;
@@ -511,6 +527,14 @@ interface QaScenarioState {
     v3ValuePreserved: boolean;
     legacyValuePreserved: boolean;
   };
+  jianyingDetection: {
+    status: string;
+    path: string;
+    detail: string;
+    checks: string[];
+    inputMatches: boolean;
+    fullPathVisible: boolean;
+  };
   historyHtmlTypeLabel: string;
   promptTemplateEditorOpen: boolean;
   deleteDialogFocusWrapped: boolean;
@@ -560,6 +584,7 @@ function captureCasesForScope(scope: EditorialQaScope): EditorialQaCaptureCase[]
   if (scope === 'html-video') return [...editorialQaMatrix.htmlVideoStudioStates];
   if (scope === 'clone-voice') return [...editorialQaMatrix.cloneVoiceStates];
   if (scope === 'volcengine-tts') return [...editorialQaMatrix.volcengineTtsStates];
+  if (scope === 'jianying') return [...editorialQaMatrix.jianyingDetectionStates];
   if (scope === 'all') {
     const cases = Object.entries(editorialQaMatrix.views).flatMap(([group, groupViews]) => (
       editorialQaMatrix.themes.flatMap((theme) => editorialQaMatrix.viewports.flatMap((viewport) => (
@@ -1654,6 +1679,37 @@ function qaScenarioScript(id: string, view: string, theme: string, stage?: strin
       volcengineVersion.legacyFieldsVisible = findSettingsInput('旧版接口地址') instanceof HTMLInputElement;
       findSettingsInput(finalField)?.scrollIntoView({ block: 'center', inline: 'nearest' });
     }
+    const jianyingDetection = { status: '', path: '', detail: '', checks: [], inputMatches: false, fullPathVisible: false };
+    if (scenarioId.startsWith('jianying-auto-detect-')) {
+      const jianyingTab = [...document.querySelectorAll('.settings-tab')]
+        .find((button) => button.textContent?.includes('剪映'));
+      if (jianyingTab instanceof HTMLButtonElement) jianyingTab.click();
+      ready = ready && await waitFor(() => document.querySelector('.config-card')?.textContent?.includes('剪映草稿与 BGM'));
+      const detectButton = [...document.querySelectorAll('.config-card button')]
+        .find((button) => button.textContent?.trim() === '自动检测');
+      if (detectButton instanceof HTMLButtonElement) detectButton.click();
+      ready = ready && await waitFor(() => document.querySelector('.jianying-detection-result')?.getAttribute('data-status') === 'pass');
+      const result = document.querySelector('.jianying-detection-result');
+      const code = result?.querySelector('code');
+      const pathInput = [...document.querySelectorAll('label.config-input')]
+        .find((field) => field.querySelector(':scope > span')?.textContent?.trim() === '草稿目录')
+        ?.querySelector('input');
+      const resultRect = result?.getBoundingClientRect();
+      jianyingDetection.status = result?.getAttribute('data-status') ?? '';
+      jianyingDetection.path = code?.textContent?.trim() ?? '';
+      jianyingDetection.detail = result?.querySelector('p')?.textContent?.trim() ?? '';
+      jianyingDetection.checks = [...(result?.querySelectorAll('.jianying-detection-checks span') ?? [])]
+        .map((item) => item.textContent?.trim() ?? '');
+      jianyingDetection.inputMatches = pathInput instanceof HTMLInputElement && pathInput.value === jianyingDetection.path;
+      jianyingDetection.fullPathVisible = code instanceof HTMLElement
+        && code.title === jianyingDetection.path
+        && code.scrollWidth <= code.clientWidth + 1
+        && resultRect instanceof DOMRect
+        && resultRect.left >= 0
+        && resultRect.right <= window.innerWidth;
+      result?.scrollIntoView({ block: 'center', inline: 'nearest' });
+      await settleCompositor();
+    }
     const stage = ${JSON.stringify(stage ?? '')};
     let stageStatePreserved = true;
     let presetStatePreserved = true;
@@ -2169,6 +2225,7 @@ function qaScenarioScript(id: string, view: string, theme: string, stage?: strin
       },
       cloneVoice,
       volcengineVersion,
+      jianyingDetection,
       historyHtmlTypeLabel,
       promptTemplateEditorOpen,
       layout: {

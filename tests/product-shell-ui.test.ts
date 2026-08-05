@@ -2204,6 +2204,7 @@ describe('product shell ui', () => {
 
   it('offers auto-detect and folder-pick actions for the Jianying draft path setting', async () => {
     const settingsPage = (await rendererSourcesPromise).requiredFile('src/features/settings/SettingsPage.tsx');
+    const css = await readFile(new URL('../src/styles.css', import.meta.url), 'utf8');
 
     expect(settingsPage).toContain('detectJianyingDraftPath');
     expect(settingsPage).toContain('selectLocalFolder');
@@ -2211,6 +2212,13 @@ describe('product shell ui', () => {
     expect(settingsPage).toContain('pickJianyingDraftPath');
     expect(settingsPage).toContain('自动检测');
     expect(settingsPage).toContain('选择目录');
+    expect(settingsPage).toContain('jianyingDetection');
+    expect(settingsPage).toContain('检测通过');
+    expect(settingsPage).toContain('尚未保存');
+    expect(settingsPage).toContain('jianying-detection-result');
+    expect(settingsPage).toContain('title={jianyingDetection.path}');
+    expect(css).toMatch(/\.bgm-library-empty,\s*\.bgm-library-item\s*\{[^}]*background:\s*var\(--panel-2\);/u);
+    expect(css.slice(css.indexOf('.test-result {'), css.indexOf('.global-action-banner {'))).toContain('background: var(--panel-2)');
   });
 
   it('loads Jianying effect catalogs and exposes conservative draft effect controls', async () => {

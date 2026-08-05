@@ -56,6 +56,22 @@ async function main(): Promise<void> {
         STORYDREAM_QA_CAPTURES: captures,
         STORYDREAM_QA_SCOPE: scope,
       };
+      if (scope === 'jianying') {
+        const localAppData = join(tempRoot, 'local-app-data');
+        const userDataRoot = join(localAppData, 'JianyingPro', 'User Data');
+        const standardDraftRoot = join(userDataRoot, 'Projects', 'com.lveditor.draft');
+        const draftRoot = join(tempRoot, 'configured-draft-root');
+        await mkdir(join(standardDraftRoot, 'Decoy standard draft'), { recursive: true });
+        await mkdir(join(draftRoot, 'QA draft one'), { recursive: true });
+        await mkdir(join(draftRoot, 'QA draft two'), { recursive: true });
+        await mkdir(join(userDataRoot, 'Config'), { recursive: true });
+        await writeFile(
+          join(userDataRoot, 'Config', 'globalSetting'),
+          `[General]\ncurrentCustomDraftPath=${draftRoot.replace(/\\/gu, '\\\\')}\n`,
+          'utf8',
+        );
+        qaEnvironment.LOCALAPPDATA = localAppData;
+      }
       delete qaEnvironment.ELECTRON_RUN_AS_NODE;
       delete qaEnvironment.STORYDREAM_SMOKE_OUTPUT;
       delete qaEnvironment.STORYDREAM_SMOKE_USER_DATA;

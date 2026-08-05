@@ -1402,6 +1402,74 @@ em {
   margin: -4px 0 14px;
 }
 
+.jianying-detection-result {
+  display: grid;
+  gap: 8px;
+  margin: -4px 0 14px;
+  border: 1px solid var(--line);
+  border-left: 3px solid var(--warn);
+  border-radius: 7px;
+  padding: 11px 12px;
+  background: var(--panel);
+  color: var(--text);
+}
+
+.jianying-detection-result[data-status='pass'] {
+  border-left-color: var(--ok);
+}
+
+.jianying-detection-head {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  color: var(--warn);
+}
+
+.jianying-detection-result[data-status='pass'] .jianying-detection-head {
+  color: var(--ok);
+}
+
+.jianying-detection-head span {
+  margin-left: auto;
+  color: var(--muted);
+  font-size: 11px;
+}
+
+.jianying-detection-result p {
+  margin: 0;
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 1.55;
+}
+
+.jianying-detection-result code {
+  display: block;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  padding: 8px 9px;
+  background: var(--panel-2);
+  color: var(--text);
+  font-family: Consolas, 'Courier New', monospace;
+  font-size: 11px;
+  line-height: 1.45;
+  overflow-wrap: anywhere;
+}
+
+.jianying-detection-checks {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.jianying-detection-checks span {
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  padding: 3px 7px;
+  background: var(--panel-2);
+  color: var(--muted);
+  font-size: 10px;
+}
+
 .field > span,
 .field > .form-field-label,
 .config-input > span,
@@ -5243,7 +5311,7 @@ section.error-dialog .error-dialog-head > div > strong {
   border: 1px solid var(--line);
   border-radius: 7px;
   padding: 10px;
-  background: #0c1117;
+  background: var(--panel-2);
 }
 
 .bgm-library-item {
@@ -5299,8 +5367,8 @@ section.error-dialog .error-dialog-head > div > strong {
   border: 1px solid var(--line);
   border-radius: 7px;
   padding: 10px 12px;
-  background: #0b1016;
-  color: #c9d5e4;
+  background: var(--panel-2);
+  color: var(--text);
   font-size: 12px;
   line-height: 1.5;
 }

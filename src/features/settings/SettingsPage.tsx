@@ -1,8 +1,9 @@
 import { useEffect, useState } from "react";
-import { Bot, Copy, Database, FlaskConical, FolderOpen, Image as ImageIcon, Info, KeyRound, Loader2, Mic2, Palette, Save, Search, Sparkles, Upload, Wand2, XCircle } from "lucide-react";
+import { AlertTriangle, Bot, CheckCircle2, Copy, Database, FlaskConical, FolderOpen, Image as ImageIcon, Info, KeyRound, Loader2, Mic2, Palette, Save, Search, Sparkles, Upload, Wand2, XCircle } from "lucide-react";
 import { useMemo } from "react";
 import type { AppConfig, ConfigTestTarget, ImaKnowledgeResult, ProviderModel, ProviderModelListRequest, ShellView, TtsProviderProfile, VolcengineSpeaker } from "../../shared/types";
 import type { StoryDreamApi } from "../../shared/storydream-api";
+import type { JianyingDraftPathDetection } from "../../shared/jianying-paths";
 import { addUploadedBgm, resolveDefaultBgmId, validBgmItems } from "../tasks/task-formatters";
 import type { SecretChanges, SecretId } from "../../shared/config-secrets";
 import { changeRuntimeTheme } from "./theme-controller";
@@ -45,6 +46,7 @@ export function SettingsPage({ api, state, applyState, navigate }: { api: StoryD
   const [lastAppliedConfigSignature, setLastAppliedConfigSignature] = useState(() => settingsConfigSignature(state.config));
   const [diagnostics, setDiagnostics] = useState('');
   const [configTestResult, setConfigTestResult] = useState('');
+  const [jianyingDetection, setJianyingDetection] = useState<JianyingDraftPathDetection | null>(null);
   const [imaKnowledgeResult, setImaKnowledgeResult] = useState<ImaKnowledgeResult | null>(null);
   const [testingConfig, setTestingConfig] = useState(false);
   const [modelLists, setModelLists] = useState<Record<ModelListKey, ProviderModel[]>>({ llm: [], 'gpt-image': [], 'custom-image': [] });
@@ -302,20 +304,22 @@ export function SettingsPage({ api, state, applyState, navigate }: { api: StoryD
   async function autoDetectJianyingDraftPath() {
     await settingsAction.run(async () => {
       setConfigTestResult('正在自动检测剪映草稿目录...');
-      const detected = await api.detectJianyingDraftPath();
-      if (!detected) {
-        setConfigTestResult('[warn] 未自动检测到剪映草稿目录，请用“选择目录”手动指定。');
+      const detection = await api.detectJianyingDraftPath();
+      setJianyingDetection(detection);
+      if (detection.status !== 'pass' || !detection.path) {
+        setConfigTestResult(`[warn] ${detection.detail}`);
         return;
       }
-      setSettingsDraft({ ...draft, jianying: { ...draft.jianying, draftPath: detected } });
-      setConfigTestResult(`[pass] 已检测到剪映草稿目录：${detected}`);
+      setSettingsDraft((current) => ({ ...current, jianying: { ...current.jianying, draftPath: detection.path } }));
+      setConfigTestResult(`[pass] ${detection.detail} 已填入检测结果，保存配置后生效。`);
     }, { onError: (error) => setConfigTestResult(`[fail] ${error.message}`) });
   }
   async function pickJianyingDraftPath() {
     await settingsAction.run(async () => {
       const folder = await api.selectLocalFolder();
       if (!folder) return;
-      setSettingsDraft({ ...draft, jianying: { ...draft.jianying, draftPath: folder } });
+      setJianyingDetection(null);
+      setSettingsDraft((current) => ({ ...current, jianying: { ...current.jianying, draftPath: folder } }));
       setConfigTestResult(`已选择剪映草稿目录：${folder}`);
     });
   }
@@ -599,11 +603,27 @@ export function SettingsPage({ api, state, applyState, navigate }: { api: StoryD
         ) : null}
         {section === 'jianying' ? (
           <SettingsCard title="剪映草稿与 BGM" status={draft.jianying.draftPath ? '已配置' : '待配置'}>
-            <ConfigInput label="草稿目录" value={draft.jianying.draftPath} onChange={(value) => setSettingsDraft({ ...draft, jianying: { ...draft.jianying, draftPath: value } })} />
+            <ConfigInput label="草稿目录" value={draft.jianying.draftPath} onChange={(value) => { setJianyingDetection(null); setSettingsDraft({ ...draft, jianying: { ...draft.jianying, draftPath: value } }); }} />
             <div className="settings-inline-actions">
               <button className="ghost-action" type="button" disabled={settingsAction.busy} onClick={autoDetectJianyingDraftPath}><Search size={15} />自动检测</button>
               <button className="ghost-action" type="button" disabled={settingsAction.busy} onClick={pickJianyingDraftPath}><FolderOpen size={15} />选择目录</button>
             </div>
+            {jianyingDetection ? (
+              <div className="jianying-detection-result" data-status={jianyingDetection.status}>
+                <div className="jianying-detection-head">
+                  {jianyingDetection.status === 'pass' ? <CheckCircle2 size={17} /> : <AlertTriangle size={17} />}
+                  <strong>{jianyingDetection.status === 'pass' ? '检测通过' : '未找到可用目录'}</strong>
+                  {jianyingDetection.status === 'pass' ? <span>{state.config.jianying.draftPath === jianyingDetection.path ? '当前已保存' : '尚未保存'}</span> : null}
+                </div>
+                <p>{jianyingDetection.detail}</p>
+                {jianyingDetection.path ? <code title={jianyingDetection.path}>{jianyingDetection.path}</code> : null}
+                <div className="jianying-detection-checks">
+                  <span>{jianyingDetection.checks.isDirectory ? '目录有效' : '未确认目录'}</span>
+                  <span>{jianyingDetection.checks.writable ? '可写入' : '未确认写入权限'}</span>
+                  <span>{jianyingDetection.checks.hasJianyingMetadata ? '剪映结构已确认' : `${jianyingDetection.draftCount} 个草稿`}</span>
+                </div>
+              </div>
+            ) : null}
             <LocalInfo title="BGM 库" value={settingsBgms.length ? settingsBgms.map((bgm) => bgm.title).join('、') : 'BGM 库为空'} />
             <button className="ghost-action" type="button" disabled={settingsAction.busy} onClick={uploadBgmFromSettings}><Upload size={15} />+ 添加 BGM 文件</button>
             <div className="bgm-library-list">

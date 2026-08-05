@@ -885,7 +885,8 @@ describe('electron ipc contract', () => {
     expect(preload).toContain('detectJianyingDraftPath');
     expect(preload).toContain('jianying:draft-path:detect');
     expect(apiContract).toContain('selectLocalFolder: () => Promise<string | null>');
-    expect(apiContract).toContain('detectJianyingDraftPath: () => Promise<string>');
+    expect(apiContract).toContain('detectJianyingDraftPath: () => Promise<JianyingDraftPathDetection>');
+    expect(apiContract).toContain("import type { JianyingDraftPathDetection } from './jianying-paths'");
   });
 
   it('exposes viral cookie file picking and a persistent login browser', async () => {

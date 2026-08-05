@@ -30,7 +30,7 @@ describe('editorial Electron QA configuration', () => {
   });
 
   it('only accepts known capture scopes before Electron is launched', () => {
-    expect(editorialQaScopes).toEqual(['all', 'theme-smoke', 'shell', 'new-task', 'task-operations', 'html-video', 'clone-voice', 'volcengine-tts', 'workflow', 'labs', 'system']);
+    expect(editorialQaScopes).toEqual(['all', 'theme-smoke', 'shell', 'new-task', 'task-operations', 'html-video', 'clone-voice', 'volcengine-tts', 'jianying', 'workflow', 'labs', 'system']);
     expect(() => resolveEditorialQaConfig({ STORYDREAM_QA_SCOPE: 'unknown' }, tmpdir())).toThrow('Unknown editorial QA scope');
   });
 
@@ -44,6 +44,7 @@ describe('editorial Electron QA configuration', () => {
       'html-video': 2,
       'clone-voice': 4,
       'volcengine-tts': 2,
+      jianying: 2,
       workflow: 28,
       labs: 20,
       system: 20,
@@ -52,6 +53,20 @@ describe('editorial Electron QA configuration', () => {
       const ids = editorialQaCaptureIds(scope);
       expect(new Set(ids).size, `${scope} capture ids`).toBe(ids.length);
     }
+  });
+
+  it('runs Jianying auto detection through deterministic Electron IPC evidence', async () => {
+    const source = await (await import('node:fs/promises')).readFile(new URL('../electron/editorial-qa.ts', import.meta.url), 'utf8');
+    const runner = await (await import('node:fs/promises')).readFile(new URL('../scripts/editorial-qa-electron.ts', import.meta.url), 'utf8');
+
+    expect(source).toContain('jianying-auto-detect-light-desktop');
+    expect(source).toContain("state.jianyingDetection.detail.includes('2 个本地草稿')");
+    expect(source).toContain("state.jianyingDetection.path.endsWith('configured-draft-root')");
+    expect(source).toContain("button.textContent?.trim() === '自动检测'");
+    expect(runner).toContain("join(draftRoot, 'QA draft one')");
+    expect(runner).toContain('currentCustomDraftPath=');
+    expect(runner).toContain("join(standardDraftRoot, 'Decoy standard draft')");
+    expect(runner).toContain('qaEnvironment.LOCALAPPDATA = localAppData');
   });
 
   it('classifies the canonical 67 required captures separately from 28 supplemental states', () => {

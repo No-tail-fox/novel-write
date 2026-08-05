@@ -11,7 +11,7 @@ import { isCancellation, normalizeAppError } from '../src/shared/app-error';
 import { fromLlmModelTestResult, testConfigTarget } from '../src/shared/config-utils';
 import { generateImageLabRecord } from '../src/shared/image-lab';
 import { fetchImaKnowledge } from '../src/shared/ima-knowledge';
-import { detectJianyingDraftPath, resolveRuntimeJianyingDraftPath } from '../src/shared/jianying-paths';
+import { detectJianyingDraftPathResult, resolveRuntimeJianyingDraftPath } from '../src/shared/jianying-paths';
 import { findJianyingExecutable } from '../src/shared/jianying-app';
 import { loadJianyingEffectCatalog } from '../src/shared/jianying-effects';
 import { runPyJianYingDraftBridge } from '../src/shared/jianying-bridge';
@@ -708,7 +708,7 @@ async function getPublicState() {
 async function ensureRuntimeJianyingDraftPath(database: FileDatabase, service: ConfigService): Promise<void> {
   const metadata = await database.getBootstrapMetadata();
   const current = metadata.config.jianying.draftPath;
-  const resolved = resolveRuntimeJianyingDraftPath(current, { pathExists: existsSync });
+  const resolved = resolveRuntimeJianyingDraftPath(current);
   if (resolved !== current.trim()) {
     await service.save({
       config: {
@@ -3661,7 +3661,7 @@ trustedHandle('cookie-file:select', selectCookieFile);
 trustedHandle('viral:open-login-window', openViralLoginWindow);
 
 trustedHandle('jianying:effect-catalog', async () => loadJianyingEffectCatalog());
-trustedHandle('jianying:draft-path:detect', async () => detectJianyingDraftPath({ pathExists: existsSync }));
+trustedHandle('jianying:draft-path:detect', async () => detectJianyingDraftPathResult());
 
 trustedHandle('diagnostics:run', async () => {
   const database = await getDb();

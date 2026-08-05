@@ -77,6 +77,7 @@ import type {
 } from './types';
 import type { PublicAppState as AppState, SaveConfigInput, SecretChanges } from './config-secrets';
 import type { PersonAssetImage, PersonAssetSummary } from './person-assets';
+import type { JianyingDraftPathDetection } from './jianying-paths';
 
 export const INVOKE_CHANNELS = Object.freeze([
   'app:get-state',
@@ -316,7 +317,7 @@ export type StoryDreamApi = {
   selectLocalFolder: () => Promise<string | null>;
   selectCookieFile: () => Promise<string | null>;
   openViralLoginWindow: () => Promise<string | null>;
-  detectJianyingDraftPath: () => Promise<string>;
+  detectJianyingDraftPath: () => Promise<JianyingDraftPathDetection>;
   getJianyingEffectCatalog: () => Promise<JianyingEffectCatalog>;
   runDiagnostics: () => Promise<{ generatedAt: string; checks: Array<{ id: string; label: string; status: string; detail: string }> }>;
   windowControl: (action: 'minimize' | 'toggle-maximize' | 'close') => Promise<void>;

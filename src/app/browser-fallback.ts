@@ -1243,7 +1243,16 @@ export function makeFallbackApi(setState: (state: AppState) => void): StoryDream
       throw new Error('浏览器预览不能打开抖音登录窗口，请在 Electron 桌面端操作。');
     },
     async detectJianyingDraftPath() {
-      return '';
+      return {
+        status: 'warn' as const,
+        reason: 'not-found' as const,
+        path: '',
+        detail: '浏览器预览无法检测本机剪映目录，请在 Electron 桌面端使用自动检测。',
+        installationDetected: false,
+        candidatesChecked: 0,
+        draftCount: 0,
+        checks: { isDirectory: false, writable: false, hasJianyingMetadata: false },
+      };
     },
     async getJianyingEffectCatalog() {
       return fallbackEffectCatalog;
