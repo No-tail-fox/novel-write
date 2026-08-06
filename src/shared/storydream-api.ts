@@ -176,6 +176,7 @@ export const INVOKE_CHANNELS = Object.freeze([
   'task:regenerate-image',
   'task:regenerate-images',
   'task:replace-image',
+  'task:copy-image',
   'task:import-images',
   'task:reference-edit-image',
   'task:regenerate-narration',
@@ -297,8 +298,9 @@ export type StoryDreamApi = {
   regenerateTaskImage: (id: string, sceneId: number) => Promise<AppMutationResult | null>;
   regenerateTaskImages: (id: string, sceneIds: number[]) => Promise<AppMutationResult | null>;
   replaceTaskImage: (id: string, sceneId: number, source: TaskImageReplacementSource) => Promise<AppMutationResult | null>;
+  copyTaskImage: (id: string, sceneId: number) => Promise<void>;
   importTaskImages: (id: string) => Promise<AppMutationResult | null>;
-  referenceEditTaskImage: (id: string, sceneId: number, prompt: string) => Promise<AppMutationResult | null>;
+  referenceEditTaskImage: (id: string, sceneId: number, prompt: string, referenceImagePaths?: string[]) => Promise<AppMutationResult | null>;
   regenerateTaskNarration: (id: string, sceneId: number) => Promise<AppMutationResult | null>;
   updateTaskImagePrompt: (id: string, sceneId: number, prompt: string) => Promise<AppMutationResult | null>;
   rerunTaskStep: (id: string, step: number, mode: TaskStepRerunMode) => Promise<AppMutationResult | null>;

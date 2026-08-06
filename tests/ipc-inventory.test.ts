@@ -21,7 +21,7 @@ describe('renderer IPC inventory', () => {
   });
 
   it('defines exactly one input schema for every canonical invoke channel', () => {
-    expect(INVOKE_CHANNELS).toHaveLength(113);
+    expect(INVOKE_CHANNELS).toHaveLength(114);
     expect(new Set(INVOKE_CHANNELS).size).toBe(INVOKE_CHANNELS.length);
     expect(new Set(Object.keys(ipcInputSchemas))).toEqual(new Set(INVOKE_CHANNELS));
     expect(INVOKE_CHANNELS).toContain('task:open-output-directory');
@@ -76,6 +76,21 @@ describe('renderer IPC inventory', () => {
   it('routes ordinary cover import by ratio without exposing an external path parameter', async () => {
     await storyDreamApi.importOrdinaryTaskCover('9:16');
     expect(ipcRenderer.invoke).toHaveBeenCalledWith('task:import-cover', '9:16');
+  });
+
+  it('routes image clipboard copy and explicit reference selections through trusted task channels', async () => {
+    await storyDreamApi.copyTaskImage('task-image-id', 3);
+    await storyDreamApi.referenceEditTaskImage('task-image-id', 3, '保留人物，改为夜景', ['D:\\refs\\one.png']);
+
+    expect(vi.mocked(ipcRenderer.invoke).mock.calls).toEqual([
+      ['task:copy-image', { id: 'task-image-id', sceneId: 3 }],
+      ['task:reference-edit-image', {
+        id: 'task-image-id',
+        sceneId: 3,
+        prompt: '保留人物，改为夜景',
+        referenceImagePaths: ['D:\\refs\\one.png'],
+      }],
+    ]);
   });
 
   it('routes book selection saves with the previous composite identity intact', async () => {

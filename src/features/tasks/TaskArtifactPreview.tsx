@@ -35,6 +35,13 @@ import { repairSubtitleProblemLines, subtitleLineIssues } from './subtitle-line-
 
 export type TaskArtifactTab = ArtifactPanelTab;
 
+type TaskImageEditorState = {
+  sceneId: number;
+  mode: 'prompt' | 'reference';
+  text: string;
+  referenceImagePaths: string[];
+};
+
 export function ArtifactPreviewContent({
   api,
   task,
@@ -733,7 +740,7 @@ function ImageGenerationGallery({
   const [imagePreviewUrls, setImagePreviewUrls] = useState<Record<string, string>>({});
   const [imagePreviewErrors, setImagePreviewErrors] = useState<Record<string, string>>({});
   const [activeSceneId, setActiveSceneId] = useState<number | 'batch' | null>(null);
-  const [editor, setEditor] = useState<{ sceneId: number; mode: 'prompt' | 'reference'; text: string } | null>(null);
+  const [editor, setEditor] = useState<TaskImageEditorState | null>(null);
   const [copiedSceneId, setCopiedSceneId] = useState<number | null>(null);
   const [multiSelect, setMultiSelect] = useState(false);
   const [selectedSceneIds, setSelectedSceneIds] = useState<Set<number>>(new Set());
@@ -756,6 +763,8 @@ function ImageGenerationGallery({
     if (!query) return libraryRecords;
     return libraryRecords.filter((record) => `${record.promptPreview} ${record.style} ${record.provider}`.toLocaleLowerCase().includes(query));
   }, [libraryQuery, libraryRecords]);
+  const editorCurrentImage = editor ? imageBySceneId.get(editor.sceneId) : undefined;
+  const editorCurrentPreviewUrl = editorCurrentImage ? imagePreviewUrls[editorCurrentImage.path] ?? '' : '';
 
   useEffect(() => {
     if (isBrowserPreview || images.length === 0) {
@@ -873,6 +882,36 @@ function ImageGenerationGallery({
     }
   }
 
+  async function copyImage(sceneId: number) {
+    setActiveSceneId(sceneId);
+    const result = await imageGenerationAction.run(() => api.copyTaskImage(task.id, sceneId));
+    setActiveSceneId(null);
+    if (result.ok) {
+      setCopiedSceneId(sceneId);
+      setNotice(`分镜 ${sceneId} 的图片已复制到系统剪贴板，也可粘贴到其他分镜。`);
+    }
+  }
+
+  async function addEditorReferenceImage() {
+    if (editor?.mode !== 'reference' || editor.referenceImagePaths.length >= 9) return;
+    const result = await imageGenerationAction.run(() => api.selectLocalImage());
+    if (!result.ok || !result.value) return;
+    const selectedPath = result.value;
+    setEditor((current) => {
+      if (!current || current.mode !== 'reference') return current;
+      return {
+        ...current,
+        referenceImagePaths: Array.from(new Set([...current.referenceImagePaths, selectedPath])).slice(0, 9),
+      };
+    });
+  }
+
+  function removeEditorReferenceImage(path: string) {
+    setEditor((current) => current?.mode === 'reference'
+      ? { ...current, referenceImagePaths: current.referenceImagePaths.filter((item) => item !== path) }
+      : current);
+  }
+
   async function chooseLibraryImage(recordId: string) {
     if (librarySceneId === null) return;
     const sceneId = librarySceneId;
@@ -892,7 +931,12 @@ function ImageGenerationGallery({
     const currentEditor = editor;
     const result = await imageGenerationAction.run(async () => {
       if (currentEditor.mode === 'reference') {
-        return api.referenceEditTaskImage(task.id, currentEditor.sceneId, currentEditor.text.trim());
+        return api.referenceEditTaskImage(
+          task.id,
+          currentEditor.sceneId,
+          currentEditor.text.trim(),
+          currentEditor.referenceImagePaths,
+        );
       }
       applyState(await api.updateTaskImagePrompt(task.id, currentEditor.sceneId, currentEditor.text.trim()));
       return api.regenerateTaskImage(task.id, currentEditor.sceneId);
@@ -984,11 +1028,11 @@ function ImageGenerationGallery({
                 {!multiSelect ? (
                   <div className="image-card-action-panel">
                     <button type="button" disabled={taskLocked || imageGenerationAction.busy || (!image && !imageError)} onClick={() => void regenerate(scene.id)}>{busy ? <Loader2 className="spin" size={14} /> : <RotateCcw size={14} />}重新生成</button>
-                    <button type="button" disabled={taskLocked || imageGenerationAction.busy || !prompt} onClick={() => setEditor({ sceneId: scene.id, mode: 'prompt', text: promptText })}><Pencil size={14} />改提示词</button>
-                    <button type="button" disabled={taskLocked || imageGenerationAction.busy || !image} onClick={() => setEditor({ sceneId: scene.id, mode: 'reference', text: promptText })}><Wand2 size={14} />参考图编辑</button>
+                    <button type="button" disabled={taskLocked || imageGenerationAction.busy || !prompt} onClick={() => setEditor({ sceneId: scene.id, mode: 'prompt', text: promptText, referenceImagePaths: [] })}><Pencil size={14} />改提示词</button>
+                    <button type="button" disabled={taskLocked || imageGenerationAction.busy || !image} onClick={() => setEditor({ sceneId: scene.id, mode: 'reference', text: promptText, referenceImagePaths: [] })}><Wand2 size={14} />参考图编辑</button>
                     <button type="button" disabled={taskLocked || imageGenerationAction.busy} onClick={() => void replaceImage(scene.id)}><ImageUp size={14} />替换图片</button>
                     <button type="button" disabled={taskLocked || imageGenerationAction.busy} onClick={() => setLibrarySceneId(scene.id)}><Library size={14} />素材库选图</button>
-                    <button type="button" disabled={!image} onClick={() => { setCopiedSceneId(scene.id); setNotice(`已复制分镜 ${scene.id} 的图片。`); }}><ClipboardCopy size={14} />复制图</button>
+                    <button type="button" disabled={!image || imageGenerationAction.busy} onClick={() => void copyImage(scene.id)}>{busy && imageGenerationAction.busy ? <Loader2 className="spin" size={14} /> : <ClipboardCopy size={14} />}复制图</button>
                     {copiedSceneId !== null && copiedSceneId !== scene.id ? <button type="button" disabled={taskLocked || imageGenerationAction.busy} onClick={() => void pasteImage(scene.id)}><ClipboardPaste size={14} />粘贴图</button> : null}
                     <button type="button" disabled={!previewUrl} onClick={() => setPreviewSceneId(scene.id)}><Eye size={14} />预览</button>
                     <button type="button" disabled title="需要先接入独立的图生视频服务"><Play size={14} />生成视频</button>
@@ -1015,6 +1059,32 @@ function ImageGenerationGallery({
               <div><small>分镜 {String(editor.sceneId).padStart(2, '0')}</small><strong>{editor.mode === 'reference' ? '参考图编辑' : '修改提示词'}</strong></div>
               <button type="button" title="关闭" aria-label="关闭" disabled={imageGenerationAction.busy} onClick={() => setEditor(null)}><X size={17} /></button>
             </header>
+            {editor.mode === 'reference' ? (
+              <section className="image-gallery-reference-editor" aria-label="参考图选择">
+                <div className="image-gallery-reference-head">
+                  <strong>参考图</strong>
+                  <small>当前分镜图 + {editor.referenceImagePaths.length} 张补充图</small>
+                </div>
+                <div className="image-gallery-reference-grid">
+                  <div className="image-gallery-reference-item current">
+                    <span>{editorCurrentPreviewUrl ? <img src={editorCurrentPreviewUrl} alt="当前分镜参考图" /> : <ImageIcon size={22} />}</span>
+                    <small>当前分镜图</small>
+                  </div>
+                  {editor.referenceImagePaths.map((path, index) => (
+                    <div className="image-gallery-reference-item" key={path}>
+                      <span><img src={toLocalImageUrl(path)} alt={`补充参考图 ${index + 1}`} /></span>
+                      <small>补充图 {index + 1}</small>
+                      <button type="button" title={`移除补充参考图 ${index + 1}`} aria-label={`移除补充参考图 ${index + 1}`} disabled={imageGenerationAction.busy} onClick={() => removeEditorReferenceImage(path)}><X size={13} /></button>
+                    </div>
+                  ))}
+                  <button type="button" className="image-gallery-reference-add" disabled={imageGenerationAction.busy || editor.referenceImagePaths.length >= 9} onClick={() => void addEditorReferenceImage()}>
+                    <ImageUp size={19} />
+                    <span>添加参考图</span>
+                    <small>{editor.referenceImagePaths.length} / 9</small>
+                  </button>
+                </div>
+              </section>
+            ) : null}
             <textarea autoFocus value={editor.text} disabled={imageGenerationAction.busy} onChange={(event) => setEditor({ ...editor, text: event.target.value })} />
             <footer>
               <button type="button" className="ghost-action" disabled={imageGenerationAction.busy} onClick={() => setEditor(null)}>取消</button>

@@ -1,4 +1,4 @@
-import { app, BrowserWindow, dialog, ipcMain, Menu, nativeImage, net, protocol, safeStorage, shell, type Cookie } from 'electron';
+import { app, BrowserWindow, clipboard, dialog, ipcMain, Menu, nativeImage, net, protocol, safeStorage, shell, type Cookie } from 'electron';
 import { execFile } from 'node:child_process';
 import { createHash, randomUUID } from 'node:crypto';
 import { existsSync } from 'node:fs';
@@ -3268,6 +3268,20 @@ trustedHandle('task:replace-image', async (_event, input: { id: string; sceneId:
   })
 ));
 
+trustedHandle('task:copy-image', async (_event, input: { id: string; sceneId: number }) => {
+  const database = await getDb();
+  const task = await database.getTaskDetail(input.id);
+  if (!task) throw new Error(`Task not found: ${input.id}`);
+  const sceneId = Number(input.sceneId);
+  const snapshot = await readTaskArtifactSnapshot(task);
+  const source = snapshot.assets.images.find((asset) => asset.sceneId === sceneId);
+  if (!source) throw new Error(`分镜 ${sceneId} 还没有可复制的图片。`);
+  const image = nativeImage.createFromBuffer(await readFile(source.path));
+  if (image.isEmpty()) throw new Error(`分镜 ${sceneId} 的图片无法解码，未写入剪贴板。`);
+  clipboard.writeImage(image);
+  if (clipboard.readImage().isEmpty()) throw new Error('图片写入系统剪贴板失败，请重试。');
+});
+
 trustedHandle('task:import-images', async (_event, id: string) => (
   runTaskImageArtifactMutation(id, async (_database, task) => {
     const selected = await dialog.showOpenDialog({
@@ -3298,7 +3312,7 @@ trustedHandle('task:import-images', async (_event, id: string) => (
   })
 ));
 
-trustedHandle('task:reference-edit-image', async (_event, input: { id: string; sceneId: number; prompt: string }) => (
+trustedHandle('task:reference-edit-image', async (_event, input: { id: string; sceneId: number; prompt: string; referenceImagePaths?: string[] }) => (
   runTaskImageArtifactMutation(input.id, async (_database, task) => {
     const sceneId = Number(input.sceneId);
     const snapshot = await readTaskArtifactSnapshot(task);
@@ -3308,12 +3322,11 @@ trustedHandle('task:reference-edit-image', async (_event, input: { id: string; s
     if (runtimeConfig.imageProvider === 'jimeng') {
       throw new Error('当前即梦图片服务不支持参考图编辑，请切换到 GPT Image 或自定义 OpenAI 兼容图片服务。');
     }
-    const selected = await dialog.showOpenDialog({
-      title: '补充参考图（取消则只使用当前分镜图）',
-      properties: ['openFile', 'multiSelections'],
-      filters: [{ name: 'Images', extensions: ['png', 'jpg', 'jpeg', 'webp', 'gif'] }],
-    });
-    const referenceImagePaths = [current.path, ...(selected.canceled ? [] : selected.filePaths.slice(0, 9))];
+    const supplementalReferences = Array.from(new Set((input.referenceImagePaths ?? [])
+      .map((path) => path.trim())
+      .filter((path) => path && path !== current.path)))
+      .slice(0, 9);
+    const referenceImagePaths = [current.path, ...supplementalReferences];
     const referenceWorkDir = join(taskWorkDir(task), 'reference-edits', randomUUID());
     await mkdir(referenceWorkDir, { recursive: true });
     const record = await generateImageLabRecord(runtimeConfig, referenceWorkDir, {

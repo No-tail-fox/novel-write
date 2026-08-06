@@ -308,7 +308,7 @@ export function normalizeDraftTemplate(template: Partial<DraftTemplate>): DraftT
       ...fallback.image,
       ...template.image,
       motion: normalizeImageMotion(template.image?.motion),
-      motionStrength: clampNumber(template.image?.motionStrength, 1, 0.5, 2),
+      motionStrength: clampNumber(template.image?.motionStrength, 1, 0, 2),
     },
     frame: normalizeFrame(template.frame),
     title: {

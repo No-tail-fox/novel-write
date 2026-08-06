@@ -4,6 +4,7 @@ import { normalizeRangeValue, rangeProgressPercent } from '../src/components/Ran
 describe('RangeField value normalization', () => {
   it('draws no filled track when zero is the minimum value', () => {
     expect(rangeProgressPercent(0, 0, 20)).toBe(0);
+    expect(rangeProgressPercent(0.1, 0.1, 1)).toBe(0);
   });
 
   it('positions zero in the middle of a signed range', () => {

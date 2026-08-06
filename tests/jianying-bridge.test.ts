@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { runPyJianYingDraftBridge, writePyJianYingBridgeInput, writePyJianYingBridgeScript } from '@shared/jianying-bridge';
+import { runPyJianYingDraftBridge, writePyJianYingBridgeInput, writePyJianYingBridgeScript, type PyJianYingBridgeInput } from '@shared/jianying-bridge';
 
 function defaultBridgeImageArea(animation = '') {
   return { visible: true, ratio: '9:16', top: 0, height: 1, fit: 'cover' as const, animation, motion: '' as const, motionStrength: 1 };
@@ -150,6 +150,9 @@ describe('pyJianYingDraft bridge input', () => {
       expect(script).toContain('segment.add_keyframe(keyframe.uniform_scale');
       expect(script).toContain('segment.add_keyframe(keyframe.position_x');
       expect(script).toContain('segment.add_keyframe(keyframe.position_y');
+      expect(script).toContain('strength = clamp_number(image_area.get("motionStrength"), 1, 0, 2)');
+      expect(script).toContain('if strength <= 0:');
+      expect(script).toContain('and image_height > 0:');
       expect(script).toContain('def create_frame_overlay_png');
       expect(script).toContain('frame-overlay.png');
       expect(script).toContain('draft.TrackType.video, "frame_overlay"');
@@ -234,6 +237,59 @@ describe('pyJianYingDraft bridge input', () => {
       expect(frameTrack.segments).toHaveLength(1);
       const overlay = await readFile(join(draftDir, 'materials', 'frame', 'frame-overlay.png'));
       expect(overlay.subarray(0, 8)).toEqual(Buffer.from([137, 80, 78, 71, 13, 10, 26, 10]));
+    } finally {
+      await rm(dir, { recursive: true, force: true });
+    }
+  });
+
+  it('keeps zero camera strength still and omits a zero-height image region', async () => {
+    const dir = await mkdtemp(join(tmpdir(), 'storybound-jy-zero-motion-'));
+    const bridgeDir = join(dir, 'pyjianying-bridge');
+
+    try {
+      await writePyJianYingBridgeScript(dir);
+      await writeFile(join(bridgeDir, 'pyJianYingDraft.py'), fakePyJianYingDraftModule, 'utf8');
+      const voice = join(dir, 'voice.wav');
+      const image = join(dir, 'image.png');
+      const subtitles = join(dir, 'subtitles.srt');
+      await writeFile(voice, wavTone(1200));
+      await writeFile(image, Buffer.from('image'));
+      await writeFile(subtitles, '', 'utf8');
+
+      const run = async (draftDir: string, imageArea: PyJianYingBridgeInput['imageArea']) => {
+        await runPyJianYingDraftBridge({
+          workDir: dir,
+          draftDir,
+          title: 'Zero motion draft',
+          canvas: { width: 1080, height: 1920, backgroundColor: '#000000', backgroundImage: '' },
+          imageArea,
+          caption: { ...defaultBridgeCaption(), visible: false },
+          scenes: [{ sceneId: 1, startUs: 0, durationUs: 1_200_000, text: 'still' }],
+          images: [{ sceneId: 1, path: image }],
+          narration: [{ sceneId: 1, path: voice }],
+          subtitlesSrtPath: subtitles,
+          bgm: null,
+          totalDurationUs: 1_200_000,
+          volumes: { narration: 1, bgm: 0.3 },
+        });
+        return JSON.parse(await readFile(join(draftDir, 'draft_content.json'), 'utf8'));
+      };
+
+      const stillContent = await run(join(dir, 'Draft Root', 'Still Draft'), {
+        ...defaultBridgeImageArea(),
+        motion: 'zoom_in',
+        motionStrength: 0,
+      });
+      const stillTrack = stillContent.tracks.find((track: { name: string }) => track.name === 'images');
+      expect(stillTrack.segments).toHaveLength(1);
+      expect(stillTrack.segments[0].keyframes).toEqual([]);
+
+      const hiddenContent = await run(join(dir, 'Draft Root', 'Hidden Draft'), {
+        ...defaultBridgeImageArea(),
+        height: 0,
+      });
+      const hiddenTrack = hiddenContent.tracks.find((track: { name: string }) => track.name === 'images');
+      expect(hiddenTrack.segments).toEqual([]);
     } finally {
       await rm(dir, { recursive: true, force: true });
     }

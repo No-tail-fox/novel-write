@@ -175,6 +175,9 @@ export async function captureEditorialQa(
     )) {
       throw new Error(`Editorial QA found uneven or unmeasured image preview cards: ${state.layout.imagePreviewRowHeightSpread}px across ${state.layout.imagePreviewMeasuredRowCount} rows.`);
     }
+    if (captureCase.id === 'task-detail-borrowed-image-desktop' && !state.taskImageWorkflowReady) {
+      throw new Error('Editorial QA task image copy, paste, scroll preservation, or reference editor workflow failed.');
+    }
     const expectedPlacement = viewport.name === 'compact' ? 'below' : 'right';
     if (captureCase.stage && (!state.stageStatePreserved || !state.presetStatePreserved || state.layout.summaryPlacement !== expectedPlacement)) {
       throw new Error(`Editorial QA new-task interaction/layout failed in ${captureCase.id}.`);
@@ -206,6 +209,12 @@ export async function captureEditorialQa(
     }
     if (captureCase.view === 'draft-templates' && !state.draftUnderlineToggleReady) {
       throw new Error(`Editorial QA draft-template underline toggle blanked or corrupted the renderer in ${captureCase.id}.`);
+    }
+    if (captureCase.view === 'draft-templates' && !state.draftRangeZeroReady) {
+      throw new Error(`Editorial QA draft-template zero range values did not stay synchronized in ${captureCase.id}: ${JSON.stringify(state.draftRangeDiagnostics)}.`);
+    }
+    if (captureCase.view === 'draft-templates' && !state.draftAnimationPreviewReady) {
+      throw new Error(`Editorial QA draft-template compound animation preview did not match its preset in ${captureCase.id}.`);
     }
     if (captureCase.view === 'history' && state.historyHtmlTypeLabel !== 'HTML 动画') {
       throw new Error(`Editorial QA History HTML type label failed in ${captureCase.id}: ${state.historyHtmlTypeLabel}.`);
@@ -300,6 +309,9 @@ export async function captureEditorialQa(
       coverPagePreviewReady: state.coverPagePreviewReady,
       draftLayerPanelReady: state.draftLayerPanelReady,
       draftUnderlineToggleReady: state.draftUnderlineToggleReady,
+      draftRangeZeroReady: state.draftRangeZeroReady,
+      draftAnimationPreviewReady: state.draftAnimationPreviewReady,
+      taskImageWorkflowReady: state.taskImageWorkflowReady,
     });
     await writeEditorialQaReport(config, captures, getMetrics);
   }
@@ -445,6 +457,9 @@ export interface EditorialQaCapture {
   coverPagePreviewReady: boolean;
   draftLayerPanelReady: boolean;
   draftUnderlineToggleReady: boolean;
+  draftRangeZeroReady: boolean;
+  draftAnimationPreviewReady: boolean;
+  taskImageWorkflowReady: boolean;
 }
 
 interface EditorialQaCaptureCase {
@@ -504,6 +519,10 @@ interface QaScenarioState {
   coverPagePreviewReady: boolean;
   draftLayerPanelReady: boolean;
   draftUnderlineToggleReady: boolean;
+  draftRangeZeroReady: boolean;
+  draftRangeDiagnostics: Array<Record<string, unknown>>;
+  draftAnimationPreviewReady: boolean;
+  taskImageWorkflowReady: boolean;
   layout: {
     horizontalOverflow: number;
     clippedPrimaryControls: string[];
@@ -730,6 +749,10 @@ function qaScenarioScript(id: string, view: string, theme: string, stage?: strin
       setter?.call(input, value);
       input.dispatchEvent(new Event('input', { bubbles: true }));
     };
+    const setRangeInputValue = (input, value) => {
+      setInputValue(input, value);
+      input.dispatchEvent(new Event('change', { bubbles: true }));
+    };
     const initialShellReady = await waitFor(() => document.querySelector('.app-shell')
       && document.documentElement.dataset.themeReady === 'true');
     const api = window.storydream;
@@ -930,6 +953,10 @@ function qaScenarioScript(id: string, view: string, theme: string, stage?: strin
     }
     let draftLayerPanelReady = targetView !== 'draft-templates';
     let draftUnderlineToggleReady = targetView !== 'draft-templates';
+    let draftRangeZeroReady = targetView !== 'draft-templates';
+    const draftRangeDiagnostics = [];
+    let draftAnimationPreviewReady = targetView !== 'draft-templates';
+    let taskImageWorkflowReady = scenarioId !== 'task-detail-borrowed-image-desktop';
     if (targetView === 'draft-templates') {
       const templateActionsReady = await waitFor(() => {
         const actionRow = document.querySelector('.draft-template-actions.has-delete');
@@ -958,6 +985,82 @@ function qaScenarioScript(id: string, view: string, theme: string, stage?: strin
         const page = document.querySelector('.draft-template-page');
         const subtitleLayer = document.querySelector('.editable-draft-canvas .draft-layer[data-layer="subtitle"]');
         if (controls instanceof HTMLElement && stage instanceof HTMLElement && page instanceof HTMLElement && subtitleLayer instanceof HTMLElement) {
+          const zeroRangeLabels = ['高度占比', '运镜强度'];
+          const motionAccordionButton = [...controls.querySelectorAll('.accordion > button')]
+            .find((button) => button.textContent?.includes('运镜'));
+          if (motionAccordionButton instanceof HTMLButtonElement && motionAccordionButton.getAttribute('aria-expanded') !== 'true') {
+            motionAccordionButton.click();
+            await waitFor(() => controls.querySelector('input[aria-label="运镜强度滑块"]'));
+          }
+          const rangeSnapshots = zeroRangeLabels.map((label) => {
+            const range = controls.querySelector('input[aria-label="' + label + '滑块"]');
+            return range instanceof HTMLInputElement ? { label, value: range.value } : null;
+          });
+          if (rangeSnapshots.every((snapshot) => snapshot !== null)) {
+            draftRangeZeroReady = true;
+            for (const snapshot of rangeSnapshots) {
+              const range = controls.querySelector('input[aria-label="' + snapshot.label + '滑块"]');
+              if (range instanceof HTMLInputElement) setRangeInputValue(range, '0');
+              const synchronized = await waitFor(() => {
+                const currentRange = controls.querySelector('input[aria-label="' + snapshot.label + '滑块"]');
+                const number = controls.querySelector('input[aria-label="' + snapshot.label + '数值"]');
+                const progress = currentRange instanceof HTMLInputElement
+                  ? Number.parseFloat(getComputedStyle(currentRange).getPropertyValue('--range-progress'))
+                  : Number.NaN;
+                return currentRange instanceof HTMLInputElement
+                  && number instanceof HTMLInputElement
+                  && currentRange.valueAsNumber === 0
+                  && number.valueAsNumber === 0
+                  && progress === 0;
+              });
+              draftRangeZeroReady = draftRangeZeroReady && synchronized;
+              const currentRange = controls.querySelector('input[aria-label="' + snapshot.label + '滑块"]');
+              const number = controls.querySelector('input[aria-label="' + snapshot.label + '数值"]');
+              draftRangeDiagnostics.push({
+                phase: 'zero',
+                label: snapshot.label,
+                synchronized,
+                min: currentRange instanceof HTMLInputElement ? currentRange.min : '',
+                range: currentRange instanceof HTMLInputElement ? currentRange.value : '',
+                number: number instanceof HTMLInputElement ? number.value : '',
+                progress: currentRange instanceof HTMLInputElement
+                  ? getComputedStyle(currentRange).getPropertyValue('--range-progress').trim()
+                  : '',
+              });
+            }
+            for (const snapshot of rangeSnapshots) {
+              const range = controls.querySelector('input[aria-label="' + snapshot.label + '滑块"]');
+              if (range instanceof HTMLInputElement) setRangeInputValue(range, snapshot.value);
+              const restored = await waitFor(() => {
+                const currentRange = controls.querySelector('input[aria-label="' + snapshot.label + '滑块"]');
+                return currentRange instanceof HTMLInputElement && currentRange.value === snapshot.value;
+              });
+              draftRangeZeroReady = draftRangeZeroReady && restored;
+              draftRangeDiagnostics.push({ phase: 'restore', label: snapshot.label, restored, expected: snapshot.value });
+            }
+          }
+
+          const animationCases = [
+            ['向左缩小', 'slide-shrink-left'],
+            ['旋转上升', 'spin-rise'],
+            ['波动滑出', 'wave'],
+          ];
+          let animationCasesReady = true;
+          for (const [label, previewKind] of animationCases) {
+            const button = [...controls.querySelectorAll('.draft-animation-picker button')]
+              .find((candidate) => candidate.textContent?.trim() === label);
+            if (!(button instanceof HTMLButtonElement)) {
+              animationCasesReady = false;
+              continue;
+            }
+            button.focus();
+            const previewed = await waitFor(() => document.querySelector('.editable-draft-canvas .image-layer')?.getAttribute('data-animation-preview') === previewKind);
+            button.blur();
+            const restored = await waitFor(() => document.querySelector('.editable-draft-canvas .image-layer')?.getAttribute('data-animation-preview') === 'none');
+            animationCasesReady = animationCasesReady && previewed && restored;
+          }
+          draftAnimationPreviewReady = animationCasesReady;
+
           const pageScrollBefore = page.scrollTop;
           const stageScrollBefore = stage.scrollTop;
           const layerRect = subtitleLayer.getBoundingClientRect();
@@ -1204,10 +1307,15 @@ function qaScenarioScript(id: string, view: string, theme: string, stage?: strin
       taskDetailReadiness = collectTaskDetailReadiness();
     }
     if (scenarioId === 'task-detail-borrowed-image-desktop') {
+      const pauseButton = [...document.querySelectorAll('.task-detail-run-control')]
+        .find((button) => button.textContent?.trim() === '暂停任务');
+      if (pauseButton instanceof HTMLButtonElement) pauseButton.click();
+      const pausedReady = await waitFor(() => [...document.querySelectorAll('.task-detail-run-control')]
+        .some((button) => button.textContent?.trim() === '继续任务'));
       const imageTab = [...document.querySelectorAll('.artifact-tab-list button')]
         .find((button) => button.textContent?.trim() === '图片');
       if (imageTab instanceof HTMLButtonElement) imageTab.click();
-      ready = ready && await waitFor(() => {
+      const galleryReady = await waitFor(() => {
         const borrowedCard = document.querySelector('.image-preview-card.borrowed');
         const borrowedImage = borrowedCard?.querySelector('img');
         return imageTab instanceof HTMLButtonElement
@@ -1220,12 +1328,92 @@ function qaScenarioScript(id: string, view: string, theme: string, stage?: strin
           && borrowedCard.textContent?.includes('借 #1') === true
           && borrowedCard.textContent?.includes('原始生成失败：') === true;
       });
+      let clipboardCopyReady = false;
+      const sourceCard = document.querySelector('.image-preview-card[data-scene-id="1"]');
+      if (sourceCard instanceof HTMLElement) {
+        sourceCard.dataset.qaActionsOpen = 'true';
+        const copyButton = [...sourceCard.querySelectorAll('.image-card-action-panel button')]
+          .find((button) => button.textContent?.trim() === '复制图');
+        if (copyButton instanceof HTMLButtonElement && !copyButton.disabled) copyButton.click();
+        clipboardCopyReady = await waitFor(() => document.querySelector('.image-gallery-notice')
+          ?.textContent?.includes('系统剪贴板') === true);
+      }
+
+      const scrollContainer = document.querySelector('.task-detail-main');
+      let preservedScrollTop = 0;
+      let scrollPositionPrepared = false;
+      if (scrollContainer instanceof HTMLElement) {
+        const maxScrollTop = Math.max(0, scrollContainer.scrollHeight - scrollContainer.clientHeight);
+        const targetScrollTop = Math.min(maxScrollTop, Math.max(80, Math.round(maxScrollTop * 0.45)));
+        scrollContainer.scrollTop = targetScrollTop;
+        scrollPositionPrepared = maxScrollTop > 1 && await waitFor(() => Math.abs(scrollContainer.scrollTop - targetScrollTop) <= 1);
+        preservedScrollTop = scrollContainer.scrollTop;
+      }
+
+      let pastedImageReady = false;
+      const pasteButtonReady = await waitFor(() => {
+        const targetCard = document.querySelector('.image-preview-card[data-scene-id="3"]');
+        if (!(targetCard instanceof HTMLElement)) return false;
+        targetCard.dataset.qaActionsOpen = 'true';
+        const pasteButton = [...targetCard.querySelectorAll('.image-card-action-panel button')]
+          .find((button) => button.textContent?.trim() === '粘贴图');
+        return pasteButton instanceof HTMLButtonElement && !pasteButton.disabled;
+      });
+      if (pasteButtonReady) {
+        const targetCard = document.querySelector('.image-preview-card[data-scene-id="3"]');
+        const pasteButton = [...(targetCard?.querySelectorAll('.image-card-action-panel button') ?? [])]
+          .find((button) => button.textContent?.trim() === '粘贴图');
+        if (pasteButton instanceof HTMLButtonElement) pasteButton.click();
+        pastedImageReady = await waitFor(() => {
+          const refreshedCard = document.querySelector('.image-preview-card[data-scene-id="3"]');
+          const currentScrollTop = scrollContainer instanceof HTMLElement ? scrollContainer.scrollTop : Number.NaN;
+          return refreshedCard?.querySelector('.image-card-status')?.textContent?.trim() === '借 #1'
+            && Math.abs(currentScrollTop - preservedScrollTop) <= 1;
+        });
+      }
+
+      let referenceEditorReady = false;
+      const refreshedSourceCard = document.querySelector('.image-preview-card[data-scene-id="1"]');
+      if (refreshedSourceCard instanceof HTMLElement) {
+        refreshedSourceCard.dataset.qaActionsOpen = 'true';
+        const referenceEditButton = [...refreshedSourceCard.querySelectorAll('.image-card-action-panel button')]
+          .find((button) => button.textContent?.trim() === '参考图编辑');
+        if (referenceEditButton instanceof HTMLButtonElement && !referenceEditButton.disabled) referenceEditButton.click();
+        referenceEditorReady = await waitFor(() => {
+          const editor = document.querySelector('.image-gallery-reference-editor');
+          const currentImage = editor?.querySelector('img[alt="当前分镜参考图"]');
+          const addButton = [...(editor?.querySelectorAll('button') ?? [])]
+            .find((button) => button.textContent?.includes('添加参考图'));
+          return editor instanceof HTMLElement
+            && currentImage instanceof HTMLImageElement
+            && currentImage.complete
+            && currentImage.naturalWidth > 0
+            && addButton instanceof HTMLButtonElement
+            && !addButton.disabled;
+        });
+      }
+      const closeEditorButton = document.querySelector('.image-gallery-editor-dialog button[aria-label="关闭"]');
+      if (closeEditorButton instanceof HTMLButtonElement) closeEditorButton.click();
+      const referenceEditorClosed = await waitFor(() => !document.querySelector('.image-gallery-editor-dialog'));
+
+      taskImageWorkflowReady = pausedReady
+        && galleryReady
+        && clipboardCopyReady
+        && scrollPositionPrepared
+        && pasteButtonReady
+        && pastedImageReady
+        && referenceEditorReady
+        && referenceEditorClosed;
+      ready = ready && taskImageWorkflowReady;
       const borrowedCard = document.querySelector('.image-preview-card.borrowed');
       if (borrowedCard instanceof HTMLElement) {
-        borrowedCard.scrollIntoView({ block: 'center' });
+        if (scrollContainer instanceof HTMLElement) {
+          scrollContainer.scrollTop = 0;
+          await waitFor(() => scrollContainer.scrollTop <= 1);
+        }
         borrowedCard.dataset.qaActionsOpen = 'true';
         const focusableAction = borrowedCard.querySelector('.image-card-action-panel button:not(:disabled)');
-        if (focusableAction instanceof HTMLButtonElement) focusableAction.focus();
+        if (focusableAction instanceof HTMLButtonElement) focusableAction.focus({ preventScroll: true });
         ready = ready && await waitFor(() => {
           const panel = borrowedCard.querySelector('.image-card-action-panel');
           return panel instanceof HTMLElement
@@ -1931,7 +2119,7 @@ function qaScenarioScript(id: string, view: string, theme: string, stage?: strin
       .map((element) => element.getAttribute('aria-label') || element.textContent?.trim().slice(0, 40) || element.tagName);
     const imagePreviewRows = new Map();
     [...document.querySelectorAll('.image-preview-card')]
-      .filter((element) => element instanceof HTMLElement && visibleElement(element))
+      .filter((element) => element instanceof HTMLElement && element.offsetParent !== null)
       .forEach((element) => {
         const rowTop = element.offsetTop;
         const heights = imagePreviewRows.get(rowTop) ?? [];
@@ -1970,6 +2158,10 @@ function qaScenarioScript(id: string, view: string, theme: string, stage?: strin
       coverPagePreviewReady,
       draftLayerPanelReady,
       draftUnderlineToggleReady,
+      draftRangeZeroReady,
+      draftRangeDiagnostics,
+      draftAnimationPreviewReady,
+      taskImageWorkflowReady,
       manualCover: {
         state: manualCoverElement?.getAttribute('data-manual-cover-state') ?? 'inactive',
         importVisible: manualImportButton instanceof HTMLButtonElement && getComputedStyle(manualImportButton).display !== 'none',

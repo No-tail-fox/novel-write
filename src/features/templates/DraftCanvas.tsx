@@ -3,7 +3,29 @@ import type { DraftTemplate, DraftTextBorder } from '../../shared/types';
 
 export type DraftCanvasLayer = 'image' | 'title' | 'subtitle' | 'caption' | 'disclaimer';
 
-export type DraftImageAnimationPreviewKind = 'none' | 'zoom' | 'shrink' | 'slide-left' | 'slide-right' | 'rise' | 'drop' | 'spin' | 'flip' | 'split' | 'bounce' | 'stretch';
+export type DraftImageAnimationPreviewKind =
+  | 'none'
+  | 'zoom'
+  | 'shrink'
+  | 'slide-left'
+  | 'slide-right'
+  | 'slide-shrink-left'
+  | 'slide-shrink-right'
+  | 'rise'
+  | 'drop'
+  | 'drop-left'
+  | 'drop-right'
+  | 'spin'
+  | 'spin-rise'
+  | 'spin-drop'
+  | 'spin-shrink'
+  | 'spin-out'
+  | 'flip'
+  | 'split'
+  | 'bounce'
+  | 'sway'
+  | 'wave'
+  | 'stretch';
 
 export const DRAFT_TEXT_WIDTH_MIN = 0.1;
 
@@ -436,12 +458,13 @@ export function draftImageMediaStyle(template: DraftTemplate): React.CSSProperti
 
 export function draftImageMotionStyle(template: DraftTemplate): React.CSSProperties {
   const { motion, motionStrength } = template.image;
-  if (!motion) return {};
+  const normalizedStrength = clamp(motionStrength, 0, 2);
+  if (!motion || normalizedStrength <= 0) return {};
   const style = {
-    '--draft-motion-scale': 1 + 0.08 * clamp(motionStrength, 0.5, 2),
-    '--draft-motion-pan': `${4 * clamp(motionStrength, 0.5, 2)}%`,
+    '--draft-motion-scale': 1 + 0.08 * normalizedStrength,
+    '--draft-motion-pan': `${4 * normalizedStrength}%`,
     animationName: `draft-motion-${motion}`,
-    animationDuration: `${Math.max(4, 8 / clamp(motionStrength, 0.5, 2))}s`,
+    animationDuration: `${Math.min(16, Math.max(4, 8 / normalizedStrength))}s`,
     animationTimingFunction: 'ease-in-out',
     animationIterationCount: 'infinite',
     animationDirection: 'alternate',
@@ -453,16 +476,26 @@ export function draftImageMotionStyle(template: DraftTemplate): React.CSSPropert
 
 export function draftImageAnimationPreviewKind(animation: string | null | undefined): DraftImageAnimationPreviewKind {
   if (!animation || animation === '无动画') return 'none';
+  if (/(向左缩小|形变左缩)/u.test(animation)) return 'slide-shrink-left';
+  if (/(向右缩小|形变右缩)/u.test(animation)) return 'slide-shrink-right';
+  if (/(向左下降|下降向左)/u.test(animation)) return 'drop-left';
+  if (/(向右下降|下降向右)/u.test(animation)) return 'drop-right';
+  if (/(旋转上升|上升旋转)/u.test(animation)) return 'spin-rise';
+  if (/(旋转(?:下降|降落)|(?:下降|降落)旋转)/u.test(animation)) return 'spin-drop';
+  if (/(旋转(?:缩小|回吸|伸缩)|缩小(?:旋转|转出))/u.test(animation)) return 'spin-shrink';
+  if (/(旋出渐隐|晃动旋出)/u.test(animation)) return 'spin-out';
   if (animation.includes('上升')) return 'rise';
-  if (animation.includes('下降') || animation.includes('降落')) return 'drop';
-  if (animation.includes('向左') || animation.includes('左拉') || animation.includes('左滑')) return 'slide-left';
+  if (/(下降|降落|坠落|滑滑梯)/u.test(animation)) return 'drop';
+  if (animation.includes('向左') || animation.includes('左拉') || animation.includes('左滑') || /(小火车|相框滑动)/u.test(animation)) return 'slide-left';
   if (animation.includes('向右') || animation.includes('右拉') || animation.includes('右滑')) return 'slide-right';
-  if (/(翻转|立方体|方片)/u.test(animation)) return 'flip';
-  if (/(分割|百叶窗|四格|三分|碎块|水晶)/u.test(animation)) return 'split';
-  if (/(弹入|弹出|弹动|弹跳|弹回|悠悠球|荡秋千|海盗船|哈哈镜|晃)/u.test(animation)) return 'bounce';
+  if (/(翻转|立方体|方片|魔方|四格转动)/u.test(animation)) return 'flip';
+  if (/(分割|百叶窗|四格|三分|碎块|水晶|分身|叠叠乐|夹心饼干)/u.test(animation)) return 'split';
+  if (/(悠悠球|荡秋千|海盗船|哈哈镜|摇晃|晃动|过山车|红酒)/u.test(animation)) return 'sway';
+  if (/(弹入|弹出|弹动|弹跳|弹回|回弹|抖入|跳跳糖|冲屏)/u.test(animation)) return 'bounce';
+  if (animation.includes('波动')) return 'wave';
   if (/(扭曲|拉伸|形变)/u.test(animation)) return 'stretch';
-  if (animation.includes('缩小') || animation.includes('回吸')) return 'shrink';
-  if (/(旋转|斜转|陀螺|绕圈|转圈)/u.test(animation)) return 'spin';
+  if (/(缩小|回吸|吸收)/u.test(animation)) return 'shrink';
+  if (/(转入转出|旋转|斜转|陀螺|绕圈|转圈|旋入|旋出)/u.test(animation)) return 'spin';
   return 'zoom';
 }
 

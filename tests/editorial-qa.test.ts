@@ -172,6 +172,8 @@ describe('editorial Electron QA configuration', () => {
     const source = await (await import('node:fs/promises')).readFile(new URL('../electron/editorial-qa.ts', import.meta.url), 'utf8');
 
     expect(source).toContain('draftUnderlineToggleReady');
+    expect(source).toContain('draftRangeZeroReady');
+    expect(source).toContain('draftAnimationPreviewReady');
     expect(source).toContain('input[aria-label="下划线"]');
     expect(source).toContain("{ layer: 'title', textSelector: '.draft-title' }");
     expect(source).toContain("{ layer: 'subtitle', textSelector: '.draft-subtitle' }");
@@ -183,6 +185,21 @@ describe('editorial Electron QA configuration', () => {
     expect(source).toContain("button.textContent?.trim() === '返回模板列表'");
     expect(source).toContain("document.querySelector('.app-shell')");
     expect(source).toContain('underline toggle blanked or corrupted the renderer');
+  });
+
+  it('runs the native task image clipboard, paste, scroll, and reference-editor workflow', async () => {
+    const source = await (await import('node:fs/promises')).readFile(new URL('../electron/editorial-qa.ts', import.meta.url), 'utf8');
+
+    expect(source).toContain('taskImageWorkflowReady');
+    expect(source).toContain("button.textContent?.trim() === '暂停任务'");
+    expect(source).toContain("button.textContent?.trim() === '复制图'");
+    expect(source).toContain("textContent?.includes('系统剪贴板')");
+    expect(source).toContain("button.textContent?.trim() === '粘贴图'");
+    expect(source).toContain(".image-preview-card[data-scene-id=\"3\"]");
+    expect(source).toContain('Math.abs(currentScrollTop - preservedScrollTop) <= 1');
+    expect(source).toContain("document.querySelector('.image-gallery-reference-editor')");
+    expect(source).toContain("img[alt=\"当前分镜参考图\"]");
+    expect(source).toContain("button.textContent?.includes('添加参考图')");
   });
 
   it('waits for every HTML animation preview in dedicated studio scenarios', async () => {
@@ -350,8 +367,10 @@ describe('editorial Electron QA configuration', () => {
     expect(source).toContain("state.borrowedImageLabel !== '借 #1'");
     expect(source).toContain("document.querySelectorAll('.image-card-status')");
     expect(source).toContain("document.querySelector('.image-preview-card.borrowed')");
-    expect(source).toContain("borrowedCard.scrollIntoView({ block: 'center' })");
+    expect(source).toContain('scrollContainer.scrollTop = 0');
+    expect(source).toContain('focusableAction.focus({ preventScroll: true })');
     expect(source).toContain("document.querySelectorAll('.image-preview-card')");
+    expect(source).toContain('element.offsetParent !== null');
     expect(source).toContain("button.textContent?.trim() === '图片'");
     expect(source).toContain("imageTab.classList.contains('active')");
     expect(source).toContain('imagePreviewMeasuredRowCount < 1');

@@ -61,7 +61,7 @@ export const draftTemplateSchema: z.ZodType<DraftTemplate> = z.object({
     height: finite.min(0).max(2),
     animation: z.string().max(256).refine((value) => imageAnimations.includes(value), 'Unknown image animation.'),
     motion: z.enum(draftImageMotions.map((option) => option.value) as [DraftTemplate['image']['motion'], ...DraftTemplate['image']['motion'][]]),
-    motionStrength: finite.min(0.5).max(2),
+    motionStrength: finite.min(0).max(2),
   }).strict(),
   frame: z.object({
     enabled: z.boolean(),

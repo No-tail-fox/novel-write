@@ -340,6 +340,12 @@ describe('draft template normalization', () => {
 
     expect(repaired.image).toMatchObject({ motion: '', motionStrength: 1 });
     expect(repaired.frame).toEqual(fallback.frame);
+
+    const disabled = normalizeDraftTemplate({
+      ...fallback,
+      image: { ...fallback.image, height: 0, motion: 'zoom_in', motionStrength: 0 },
+    });
+    expect(disabled.image).toMatchObject({ height: 0, motion: 'zoom_in', motionStrength: 0 });
   });
 
   it('only exposes image animations that pyJianYingDraft can resolve', () => {

@@ -126,6 +126,16 @@ export const rendererCommandInventory = {
       bridgeChain(['src/features/html-video/HtmlVideoPage.tsx', 'composeHtmlVideoResearchCopy(api']),
     ),
   ),
+  copyTaskImage: command(owner(
+    'task-detail',
+    'src/features/tasks/TaskArtifactPreview.tsx',
+    'copyImage',
+    'onClick={() => void copyImage(scene.id)}',
+    '复制图',
+    productShellTest,
+    undefined,
+    { disabled: 'disabled={!image || imageGenerationAction.busy}', loading: 'imageGenerationAction.busy ? <Loader2', error: 'InlineActionFeedback' },
+  )),
   createAndRunTask: command(
     owner('new-task', 'src/features/tasks/NewTaskPage.tsx', 'run', 'onClick={run}', '创建并开始任务', productShellTest),
     owner(
@@ -407,6 +417,7 @@ export const rendererCommandInventory = {
     owner('image-lab', 'src/features/labs/ImageLabPage.tsx', 'selectImageLabReferenceImage', 'onClick={selectImageLabReferenceImage}', '添加参考图', productShellTest, undefined, { disabled: 'disabled={imageLabAction.busy}', loading: 'imageLabAction.busy', error: 'InlineActionFeedback' }),
     owner('image-lab', 'src/features/labs/ImageLabPage.tsx', 'importCompletedImage', 'importCompletedImage', '导入成品', productShellTest),
     owner('new-task', 'src/features/tasks/NewTaskPage.tsx', 'selectTaskReferenceImage', 'onClick={selectTaskReferenceImage}', '上传主角参考图', productShellTest),
+    owner('task-detail', 'src/features/tasks/TaskArtifactPreview.tsx', 'addEditorReferenceImage', 'onClick={() => void addEditorReferenceImage()}', '添加参考图', productShellTest),
     owner('draft-templates', 'src/features/templates/DraftTemplatesPage.tsx', 'selectDraftBackgroundImage', 'onClick={selectDraftBackgroundImage}', '浏览', productShellTest),
   ),
   testAppConfig: command(owner('settings', 'src/features/settings/SettingsPage.tsx', 'testCurrentConfig', 'onClick={testCurrentConfig}', '保存并测试', productShellTest)),

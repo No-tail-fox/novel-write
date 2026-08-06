@@ -1,4 +1,4 @@
-import { useEffect, useId, useRef, useState } from 'react';
+import { useEffect, useId, useLayoutEffect, useRef, useState } from 'react';
 import { Check, CheckCircle2, ChevronDown, Clapperboard, Copy, FolderOpen, LayoutTemplate, Loader2, Music2, PackageCheck, Pause, Play, RotateCcw, Settings2, SlidersHorizontal, XCircle } from 'lucide-react';
 import { EmptyState } from '../../components/EmptyState';
 import { ErrorDetails as ErrorSummaryButton } from '../../components/ErrorDetails';
@@ -325,6 +325,8 @@ export function TaskDetailPage({
   const [bgmSelectionId, setBgmSelectionId] = useState(task?.bgmId ?? '');
   const [draftSettingsOpen, setDraftSettingsOpen] = useState(true);
   const [resolvedDraftTemplate, setResolvedDraftTemplate] = useState<{ id: string; template: DraftTemplate } | null>(null);
+  const taskDetailMainRef = useRef<HTMLElement>(null);
+  const pendingSnapshotScrollTopRef = useRef<number | null>(null);
   const taskDetailAction = useAsyncAction();
   const taskTemplateAction = useAsyncAction();
   const taskBgmAction = useAsyncAction();
@@ -372,11 +374,15 @@ export function TaskDetailPage({
     const artifactTask = task;
     api.getTaskArtifacts(artifactTask.id)
       .then((snapshot) => {
-        if (!cancelled) setArtifactSnapshot(snapshot);
+        if (!cancelled) {
+          pendingSnapshotScrollTopRef.current = tab === 'images' ? taskDetailMainRef.current?.scrollTop ?? null : null;
+          setArtifactSnapshot(snapshot);
+        }
       })
       .catch((error) => {
         if (!cancelled) {
           const normalized = taskDetailAction.reportError(error);
+          pendingSnapshotScrollTopRef.current = tab === 'images' ? taskDetailMainRef.current?.scrollTop ?? null : null;
           setArtifactSnapshot({
             available: false,
             message: normalized.message,
@@ -394,7 +400,14 @@ export function TaskDetailPage({
     return () => {
       cancelled = true;
     };
-  }, [api, artifactRefreshKey, task, taskDetailAction.reportError]);
+  }, [api, artifactRefreshKey, tab, task, taskDetailAction.reportError]);
+  useLayoutEffect(() => {
+    const pendingScrollTop = pendingSnapshotScrollTopRef.current;
+    const container = taskDetailMainRef.current;
+    if (pendingScrollTop === null || !container) return;
+    container.scrollTop = Math.min(pendingScrollTop, Math.max(0, container.scrollHeight - container.clientHeight));
+    pendingSnapshotScrollTopRef.current = null;
+  }, [artifactSnapshot]);
   useEffect(() => {
     setTemplateSelectionId(task?.templateId ?? '');
   }, [task?.id, task?.templateId]);
@@ -540,7 +553,7 @@ export function TaskDetailPage({
         })}
       </div>
 
-      <section className="task-detail-main" data-media-owner="task-artifact">
+      <section ref={taskDetailMainRef} className="task-detail-main" data-media-owner="task-artifact">
         <InlineActionFeedback feedback={taskDetailAction.feedback} />
         <div className="artifact-tabs">
           <div className="artifact-tab-list">

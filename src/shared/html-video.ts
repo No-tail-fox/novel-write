@@ -737,7 +737,8 @@ function resolveDraftTemplateHtmlLayout(template: DraftTemplate | undefined, can
 
 function draftTemplateMotionTween(template: DraftTemplate | undefined, duration: number): string {
   const motion = template?.image.motion ?? '';
-  const strength = clampNumber(template?.image.motionStrength ?? 1, 0.5, 2);
+  const strength = clampNumber(template?.image.motionStrength ?? 1, 0, 2);
+  if (strength <= 0) return '';
   const scale = roundCssNumber(1 + strength * 0.08);
   const pan = roundCssNumber(strength * 4);
   const timing = `duration: ${duration}, ease: 'none'`;

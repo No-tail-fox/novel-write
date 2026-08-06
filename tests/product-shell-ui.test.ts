@@ -1860,6 +1860,11 @@ describe('product shell ui', () => {
     expect(accordion).toContain('controlledExpanded ?? uncontrolledExpanded');
     const qa = await readFile(new URL('../electron/editorial-qa.ts', import.meta.url), 'utf8');
     expect(qa).toContain('draftLayerPanelReady');
+    expect(qa).toContain('draftRangeZeroReady');
+    expect(qa).toContain('draftAnimationPreviewReady');
+    expect(qa).toContain("['向左缩小', 'slide-shrink-left']");
+    expect(qa).toContain("['旋转上升', 'spin-rise']");
+    expect(qa).toContain("['波动滑出', 'wave']");
     expect(qa).toContain(".draft-layer[data-layer=\"subtitle\"].selected");
     expect(qa).toContain('page.scrollTop === pageScrollBefore');
     expect(qa).toContain('stage.scrollTop === stageScrollBefore');
@@ -1900,7 +1905,10 @@ describe('product shell ui', () => {
       expect(page).toContain(text);
     }
     expect(page).toContain('draftImageMotions.map');
-    expect(page).toContain('min={0.5} max={2} step={0.1}');
+    expect(page).toContain('label="高度占比" min={0} max={1} step={0.01}');
+    expect(page).toContain('label="运镜强度" min={0} max={2} step={0.1}');
+    expect(page.match(/label="字号" min=\{1\}/gu)).toHaveLength(4);
+    expect(page).toContain('label="每行字数" min={1} max={80} step={1}');
     expect(page).toContain('updateDraftFrame');
     expect(canvas).toContain('DraftFrameChrome');
     expect(canvas).toContain('draftImageMotionStyle');
@@ -3632,6 +3640,7 @@ describe('product shell ui', () => {
     expect(preload).toContain('regenerateTaskImage');
     expect(preload).toContain('regenerateTaskImages');
     expect(preload).toContain('replaceTaskImage');
+    expect(preload).toContain('copyTaskImage');
     expect(preload).toContain('importTaskImages');
     expect(preload).toContain('referenceEditTaskImage');
     expect(preload).toContain('updateTaskImagePrompt');
@@ -3640,6 +3649,7 @@ describe('product shell ui', () => {
     expect(main).toContain('regenerateTaskImage');
     expect(main).toContain('regenerateTaskImages');
     expect(main).toContain('replaceTaskImage');
+    expect(main).toContain('copyTaskImage');
     expect(main).toContain('importTaskImages');
     expect(main).toContain('referenceEditTaskImage');
     expect(main).toContain('updateTaskImagePrompt');
@@ -3663,6 +3673,26 @@ describe('product shell ui', () => {
     expect(css).toContain('.image-card-action-panel');
     expect(css).toContain('.image-library-dialog');
     expect(css).toContain('.image-gallery-editor-dialog');
+    expect(main).toContain('api.copyTaskImage(task.id, sceneId)');
+    expect(main).toContain('image-gallery-reference-editor');
+    expect(main).toContain('referenceImagePaths: []');
+    expect(main).toContain('currentEditor.referenceImagePaths');
+    expect(main).toContain('添加参考图');
+    expect(css).toContain('.image-gallery-reference-grid');
+  });
+
+  it('writes copied task images to the native clipboard and preserves image-tab scroll during snapshot refresh', async () => {
+    const page = (await rendererSourcesPromise).requiredFile('src/features/tasks/TaskArtifactPreview.tsx');
+    const detail = (await rendererSourcesPromise).requiredFile('src/features/tasks/TaskDetailPage.tsx');
+    const electronMain = await readFile(new URL('../electron/main.ts', import.meta.url), 'utf8');
+
+    expect(page).toContain('api.copyTaskImage(task.id, sceneId)');
+    expect(electronMain).toContain("trustedHandle('task:copy-image'");
+    expect(electronMain).toContain('clipboard.writeImage(image)');
+    expect(electronMain).toContain('clipboard.readImage().isEmpty()');
+    expect(detail).toContain("pendingSnapshotScrollTopRef.current = tab === 'images'");
+    expect(detail).toContain('container.scrollTop = Math.min(pendingScrollTop');
+    expect(detail).toContain('ref={taskDetailMainRef}');
   });
 
   it('shows playable narration previews with per-scene regeneration controls', async () => {

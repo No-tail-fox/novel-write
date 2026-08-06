@@ -478,7 +478,9 @@ def apply_camera_motion(segment, image_area, image_layout, duration):
     if motion not in ("zoom_in", "zoom_out", "zoom_pan_up", "zoom_pan_down", "pan_left", "pan_right"):
         raise ValueError(f"Unknown camera motion: {motion}")
     duration = max(1, int(duration or 0))
-    strength = clamp_number(image_area.get("motionStrength"), 1, 0.5, 2)
+    strength = clamp_number(image_area.get("motionStrength"), 1, 0, 2)
+    if strength <= 0:
+        return False
     base_scale = float(image_layout.get("scale") or 1)
     base_y = float(image_layout.get("transform_y") or 0)
     motion_scale = base_scale * (1 + strength * 0.08)
@@ -975,8 +977,9 @@ def main():
         audio_duration = int(scene["audioDurationUs"])
         image_material = draft.VideoMaterial(image_by_scene[scene_id])
         audio_items = audio_items_by_scene[scene_id]
-        image_layout = resolve_image_layout(image_area, payload.get("canvas") or {}, image_material)
-        if image_area.get("visible", True):
+        image_height = clamp_number(image_area.get("height"), 1, 0, 1)
+        if image_area.get("visible", True) and image_height > 0:
+            image_layout = resolve_image_layout(image_area, payload.get("canvas") or {}, image_material)
             image_segment = draft.VideoSegment(
                 image_material,
                 draft.Timerange(start, duration),

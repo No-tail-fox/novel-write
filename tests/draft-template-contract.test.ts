@@ -26,7 +26,8 @@ describe('draft template contract', () => {
     ['Infinity', (value: any) => { value.audio.bgmVolume = Number.POSITIVE_INFINITY; }],
     ['invalid animation', (value: any) => { value.image.animation = 'not-a-real-animation'; }],
     ['invalid motion', (value: any) => { value.image.motion = 'spin'; }],
-    ['invalid motion strength', (value: any) => { value.image.motionStrength = 2.01; }],
+    ['invalid motion strength below zero', (value: any) => { value.image.motionStrength = -0.01; }],
+    ['invalid motion strength above maximum', (value: any) => { value.image.motionStrength = 2.01; }],
     ['invalid frame side', (value: any) => { value.frame.imageBorderSides = 'diagonal'; }],
     ['invalid frame width', (value: any) => { value.frame.imageBorderWidth = -1; }],
     ['invalid frame color', (value: any) => { value.frame.headerColorEnd = 'black'; }],
@@ -39,6 +40,13 @@ describe('draft template contract', () => {
     const value = structuredClone(draftTemplates[0]) as any;
     mutate(value);
     expect(() => parseDraftTemplate(value)).toThrow();
+  });
+
+  it('accepts zero image height and camera strength as intentional disabled states', () => {
+    const value = structuredClone(draftTemplates[0]);
+    value.image.height = 0;
+    value.image.motionStrength = 0;
+    expect(parseDraftTemplate(value).image).toMatchObject({ height: 0, motionStrength: 0 });
   });
 
   it('rejects prototype-pollution keys at nested boundaries', () => {
