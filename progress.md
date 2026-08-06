@@ -11,6 +11,7 @@
 - Electron `preview-effects` QA 在 1320x860 与 920x720 均通过：主预览首屏可见、检查器在右、胶片条在下、0 页面溢出、0 控件裁切、0 运行错误。
 - Electron `template-preview` QA 通过：24 个预设、21 种运动、5 层运行动画与桌面/紧凑悬停像素变化均有效。
 - 最终全量测试通过：117 个测试文件、1729 项全部成功。
+- 功能提交 `8532a30` 已推送到远端 `codex/storydream-local-hardening`。
 
 ---
 

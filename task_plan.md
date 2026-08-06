@@ -10,7 +10,7 @@
 - [completed] 2. 核对现有 React 结构、状态和滚动所有权
 - [completed] 3. 实现主预览、检查器与场景胶片条布局
 - [completed] 4. 补充 UI 合同与 Electron 实景 QA
-- [in_progress] 5. 运行测试、类型检查、构建并上传
+- [completed] 5. 运行测试、类型检查、构建并上传
 
 ## 交互约定
 
