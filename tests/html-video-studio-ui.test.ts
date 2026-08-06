@@ -44,8 +44,9 @@ describe('HTML video editorial studio', () => {
   });
 
   it('exposes scene motion and a real-thumbnail transition demonstration in preview', async () => {
-    const [page, panels, styles, qa] = await Promise.all([
+    const [page, tabs, panels, styles, qa] = await Promise.all([
       source('../src/features/html-video/HtmlVideoPage.tsx'),
+      source('../src/features/html-video/HtmlVideoTabPanel.tsx'),
       source('../src/features/html-video/HtmlVideoStoryboundPanels.tsx'),
       source('../src/styles/features/html-video.css'),
       source('../scripts/qa-html-video-ui.mjs'),
@@ -59,14 +60,26 @@ describe('HTML video editorial studio', () => {
     expect(panels).toContain("field: 'sceneMotion'");
     expect(panels).toContain("field: 'transitionType'");
     expect(panels).toContain('保存动效');
+    expect(panels).toContain('className="hv-preview-workbench"');
+    expect(panels).toContain('className="hv-preview-inspector"');
+    expect(panels).toContain('className="hv-reference-scene-track"');
+    expect(panels).toContain('aria-label="镜头动效示意"');
+    expect(panels).toContain('重播镜头示意');
     expect(panels).toContain('重播转场示意');
     expect(panels).toContain('data-transition={transitionType}');
     expect(panels).toContain('transitionThumbnails.map');
     expect(styles).toContain('.hv-preview-effects {');
+    expect(styles).toContain('/* Animation preview workbench */');
+    expect(styles).toContain('.hv-preview-workbench {');
+    expect(styles).toContain('.hv-preview-inspector {');
+    expect(styles).toContain('.hv-reference-scene-track {');
+    expect(styles).toContain('@keyframes hv-motion-demo-pan-left');
     expect(styles).toContain('.hv-transition-demo {');
     expect(styles).toContain('@keyframes hv-transition-demo-in');
     expect(styles).toContain('.hv-cover-workspace:has(> .hv-reference-preview),');
     expect(styles).toContain('@container hv-reference-preview (max-width: 760px)');
+    expect(tabs).toContain('className="hv-tab-content hv-preview-workspace"');
+    expect(tabs).toContain('captionEditor={(');
     expect(qa).toContain('STORYDREAM_QA_EFFECTS_ONLY');
     expect(qa).toContain('STORYDREAM_QA_TEMPLATE_PREVIEW_ONLY');
     expect(qa).toContain('exerciseTemplatePreview');
@@ -79,6 +92,10 @@ describe('HTML video editorial studio', () => {
     expect(qa).toContain("'effects-desktop.png'");
     expect(qa).toContain("'effects-compact.png'");
     expect(qa).toContain("demoAnimationName === 'hv-transition-demo-wipe-left'");
+    expect(qa).toContain('motionDemoAnimationName');
+    expect(qa).toContain('previewAboveFold');
+    expect(qa).toContain('inspectorBesidePreview');
+    expect(qa).toContain('filmstripBelowPreview');
     expect(qa).toContain('workspaceHorizontalOverflow');
     expect(qa).toContain('createQaSceneImage');
   });
@@ -216,8 +233,8 @@ describe('HTML video editorial studio', () => {
     expect(tabPanel).toContain('onCanPlay');
     expect(storyboundPanels).toContain('htmlVideoMediaStatus(asset.src, mediaUrls, failedMediaPaths, isBrowserPreview)');
     expect(storyboundPanels).toContain('htmlVideoMediaStatus(voice.src, mediaUrls, failedMediaPaths, isBrowserPreview)');
-    expect(storyboundPanels).toContain("toggle(item.index, 'foregroundHidden'");
-    expect(storyboundPanels).toContain("toggle(item.index, 'titleHidden'");
+    expect(storyboundPanels).toContain("toggle(activeScene.index, 'foregroundHidden'");
+    expect(storyboundPanels).toContain("toggle(activeScene.index, 'titleHidden'");
     expect(storyboundPanels).toContain('api.updateHtmlVideoScene');
     expect(storyboundPanels).toContain('api.regenerateHtmlVideoAsset');
     expect(storyboundPanels).toContain('api.replaceHtmlVideoAsset');

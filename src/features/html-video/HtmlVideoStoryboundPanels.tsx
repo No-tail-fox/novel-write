@@ -447,7 +447,7 @@ function VoiceRow({
   );
 }
 
-export function HtmlVideoStoryboundPreviewPanel(props: EditorialPanelProps) {
+export function HtmlVideoStoryboundPreviewPanel(props: EditorialPanelProps & { captionEditor?: React.ReactNode }) {
   const {
     api,
     task,
@@ -475,6 +475,7 @@ export function HtmlVideoStoryboundPreviewPanel(props: EditorialPanelProps) {
   const [transitionType, setTransitionType] = useState<Extract<HtmlVideoConfigChange, { field: 'transitionType' }>['value']>(
     (data.config.transitionType ?? HTML_VIDEO_JOB_DEFAULTS.transitionType) as Extract<HtmlVideoConfigChange, { field: 'transitionType' }>['value'],
   );
+  const [motionDemoRevision, setMotionDemoRevision] = useState(0);
   const [demoRevision, setDemoRevision] = useState(0);
   const [effectsMessage, setEffectsMessage] = useState('');
   const iframeRef = useRef<HTMLIFrameElement | null>(null);
@@ -488,6 +489,10 @@ export function HtmlVideoStoryboundPreviewPanel(props: EditorialPanelProps) {
     .map((item) => item.thumbnailPath ?? item.background.src)
     .filter((path): path is string => Boolean(path));
   const effectsLocked = busy || action.busy || task.status === 'running' || task.status === 'pending' || isBrowserPreview;
+  const activeScene = data.scenes.find((item) => item.index === composition?.index);
+  const motionThumbnail = composition?.thumbnailPath ?? composition?.background.src;
+  const motionThumbnailUrl = motionThumbnail ? mediaUrls[motionThumbnail] : '';
+  const sceneStripRef = useRef<HTMLDivElement | null>(null);
 
   useEffect(() => {
     setSceneMotion(data.config.sceneMotion ?? HTML_VIDEO_JOB_DEFAULTS.sceneMotion);
@@ -563,6 +568,10 @@ export function HtmlVideoStoryboundPreviewPanel(props: EditorialPanelProps) {
     setActive(index);
   }
 
+  function scrollScenes(direction: -1 | 1) {
+    sceneStripRef.current?.scrollBy({ left: direction * 260, behavior: 'smooth' });
+  }
+
   async function toggle(sceneIndex: number, field: 'foregroundHidden' | 'titleHidden', value: boolean) {
     await action.run(async () => {
       const mutation = await api.updateHtmlVideoScene(task.id, sceneIndex, [{ field, value }]);
@@ -604,126 +613,164 @@ export function HtmlVideoStoryboundPreviewPanel(props: EditorialPanelProps) {
   return (
     <section className={`hv-reference-preview${maximized ? ' maxed' : ''}`}>
       <header className="hv-reference-panel-head"><strong>动画预览</strong><span>WebView 真实渲染 · 所见即所得</span><button className="mini-button primary" onClick={playAll}><Play size={13} />连播全部</button></header>
-      <section className="hv-preview-effects" data-html-video-preview-effects="true" aria-label="镜头动效与场景转场">
-        <div className="hv-preview-effects-controls">
-          <label>
-            <span>镜头动效</span>
-            <select value={sceneMotion} disabled={effectsLocked} onChange={(event) => setSceneMotion(event.target.value as typeof sceneMotion)}>
-              {HTML_VIDEO_SCENE_MOTIONS.map((motion) => <option key={motion} value={motion}>{HTML_VIDEO_SCENE_MOTION_LABELS[motion]}</option>)}
-            </select>
-          </label>
-          <label>
-            <span>场景转场</span>
-            <select value={transitionType} disabled={effectsLocked} onChange={(event) => {
-              setTransitionType(event.target.value as typeof transitionType);
-              setDemoRevision((value) => value + 1);
-            }}>
-              {HTML_VIDEO_TRANSITIONS.map((transition) => <option key={transition} value={transition}>{HTML_VIDEO_TRANSITION_LABELS[transition]}</option>)}
-            </select>
-          </label>
-          <button className="mini-button" type="button" disabled={effectsLocked} onClick={() => void saveEffects()}>
-            {action.busy ? <Loader2 className="spin" size={14} /> : <Save size={14} />}保存动效
-          </button>
-        </div>
-        <div className="hv-transition-demo-wrap">
-          <div key={`${transitionType}-${demoRevision}`} className="hv-transition-demo" data-transition={transitionType} aria-label="场景转场示意">
-            {transitionThumbnails.map((path, index) => mediaUrls[path] ? (
-              <img
-                key={`${htmlVideoMediaElementKey(task.id, path, mediaRetryRevision)}-${index}`}
-                className={`hv-transition-demo-frame frame-${index + 1}`}
-                src={mediaUrls[path]}
-                alt=""
-                onError={() => onMediaElementError(path)}
-                onLoad={() => onMediaElementReady(path)}
-              />
-            ) : <span key={`${path}-${index}`} className={`hv-transition-demo-frame frame-${index + 1} hv-media-state`}><Loader2 className="spin" size={14} /></span>)}
-            {transitionThumbnails.length < 2 ? <span className="hv-transition-demo-empty">需要至少两个场景</span> : null}
+      <div className="hv-preview-workbench">
+        <div className="hv-preview-canvas-column">
+          <div className="hv-reference-stage">
+            <div className="hv-reference-phone" style={{ aspectRatio: `${composition.canvas.w} / ${composition.canvas.h}` }}>
+              {source ? <iframe
+                key={`${composition.index}-${composition.rev}`}
+                ref={iframeRef}
+                srcDoc={source}
+                title={`场景 ${composition.index}`}
+                onLoad={() => {
+                  if (shouldResume.current) {
+                    shouldResume.current = false;
+                    post({ type: 'hvplay' });
+                    setPlaying(true);
+                  }
+                }}
+              /> : <div className="hv-reference-preview-loading">{sourceError || <><Loader2 className="spin" size={20} />正在载入场景</>}</div>}
+            </div>
+            <div className="hv-reference-transport">
+              <input type="range" min={0} max={1000} value={Math.round(progress * 1000)} onChange={(event) => {
+                const next = Number(event.target.value) / 1000;
+                autoplayAll.current = false;
+                post({ type: 'hvseek', time: composition.durationSec * next });
+                setProgress(next);
+                setPlaying(false);
+              }} aria-label="场景播放进度" />
+              <button type="button" title={playing ? '暂停' : '播放'} onClick={playing ? pause : play}>{playing ? <Pause size={17} /> : <Play size={17} />}</button>
+              <span>{(progress * composition.durationSec).toFixed(1)}s / {composition.durationSec.toFixed(1)}s</span>
+              <button type="button" title="上一场景" disabled={active === 0} onClick={() => setActive((index) => Math.max(0, index - 1))}><ChevronLeft size={16} /></button>
+              <button type="button" title="下一场景" disabled={active >= compositions.length - 1} onClick={() => setActive((index) => Math.min(compositions.length - 1, index + 1))}><ChevronRight size={16} /></button>
+              <button type="button" title="重播" onClick={restart}><RotateCcw size={15} /></button>
+              <button type="button" title={maximized ? '退出最大化' : '最大化'} onClick={() => setMaximized((value) => !value)}>{maximized ? <Minimize2 size={15} /> : <Maximize2 size={15} />}</button>
+            </div>
           </div>
-          <button type="button" title="重播转场示意" onClick={() => setDemoRevision((value) => value + 1)}><RotateCcw size={14} /></button>
+          <aside className="hv-reference-scene-strip" aria-label="场景胶片条">
+            <header>
+              <div><strong>场景</strong><span>{activeScene ? `当前 ${activeScene.index}/${data.scenes.length}` : `共 ${data.scenes.length} 个`}</span></div>
+              <span className="hv-scene-strip-nav">
+                <button type="button" title="向前浏览场景" onClick={() => scrollScenes(-1)}><ChevronLeft size={14} /></button>
+                <button type="button" title="向后浏览场景" onClick={() => scrollScenes(1)}><ChevronRight size={14} /></button>
+              </span>
+            </header>
+            <div ref={sceneStripRef} className="hv-reference-scene-track">
+              {data.scenes.map((item) => {
+                const index = compositions.findIndex((candidate) => candidate.index === item.index);
+                const snapshot = index >= 0 ? compositions[index] : undefined;
+                const thumbnail = snapshot?.thumbnailPath ?? snapshot?.background.src;
+                const thumbnailStatus = thumbnail
+                  ? htmlVideoMediaStatus(thumbnail, mediaUrls, failedMediaPaths, isBrowserPreview)
+                  : 'desktop-only';
+                return <div key={item.index} className={`hv-reference-scene-item${index === active ? ' active' : ''}`}>
+                  <button className="hv-reference-scene-select" type="button" disabled={index < 0} aria-current={index === active ? 'true' : undefined} onClick={() => index >= 0 && setActive(index)}>
+                    <span className="hv-reference-thumb" aria-busy={thumbnailStatus === 'loading'}>
+                      <b>{item.index}</b>
+                      {thumbnail && thumbnailStatus === 'ready' && mediaUrls[thumbnail] ? (
+                        <img
+                          key={htmlVideoMediaElementKey(task.id, thumbnail, mediaRetryRevision)}
+                          src={mediaUrls[thumbnail]}
+                          alt=""
+                          onError={() => onMediaElementError(thumbnail)}
+                          onLoad={() => onMediaElementReady(thumbnail)}
+                        />
+                      ) : thumbnailStatus === 'loading' ? (
+                        <span className="hv-media-state hv-media-loading" role="status"><Loader2 className="spin" size={15} />预览加载中</span>
+                      ) : thumbnailStatus === 'unavailable' ? (
+                        <span className="hv-media-state" role="status">预览加载失败</span>
+                      ) : thumbnail ? (
+                        <span className="hv-media-state" role="status">本地预览仅桌面端可用</span>
+                      ) : (
+                        <Loader2 className="spin" size={15} />
+                      )}
+                    </span>
+                    <span><strong>{item.title}</strong><small>{snapshot ? `${snapshot.durationSec.toFixed(1)}s` : '生成中'} · {htmlVideoSceneTemplate(item.sceneTemplate).label}</small></span>
+                  </button>
+                </div>;
+              })}
+            </div>
+            {activeScene ? <span className="hv-reference-thumb-actions">
+              <button className="hv-scene-icon-action" type="button" title={`播放场景 ${activeScene.index}`} aria-label={`播放场景 ${activeScene.index}`} onClick={() => playScene(active)}><Play size={12} /></button>
+              <button className="hv-scene-template-action" type="button" title={`选择版式：${htmlVideoSceneTemplate(activeScene.sceneTemplate).label}`} disabled={busy || action.busy || isBrowserPreview} onClick={() => setPresetSceneIndex(activeScene.index)}><Pencil size={12} />版式</button>
+              <button
+                className="hv-scene-state-action"
+                type="button"
+                title={activeScene.foregroundHidden ? '显示前景' : '隐藏前景'}
+                aria-label={activeScene.foregroundHidden ? '显示前景' : '隐藏前景'}
+                disabled={busy || action.busy || isBrowserPreview}
+                onClick={() => void toggle(activeScene.index, 'foregroundHidden', !activeScene.foregroundHidden)}
+              >{activeScene.foregroundHidden ? <Eye size={12} /> : <EyeOff size={12} />}前景</button>
+              <button
+                className="hv-scene-state-action"
+                type="button"
+                title={activeScene.titleHidden ? '显示标题' : '隐藏标题'}
+                aria-label={activeScene.titleHidden ? '显示标题' : '隐藏标题'}
+                disabled={busy || action.busy || isBrowserPreview}
+                onClick={() => void toggle(activeScene.index, 'titleHidden', !activeScene.titleHidden)}
+              >{activeScene.titleHidden ? <Eye size={12} /> : <EyeOff size={12} />}标题</button>
+            </span> : null}
+          </aside>
         </div>
-        {effectsMessage ? <span className="local-note" role="status">{effectsMessage}</span> : null}
-      </section>
-      <div className="hv-reference-preview-main">
-        <div className="hv-reference-stage">
-          <div className="hv-reference-phone" style={{ aspectRatio: `${composition.canvas.w} / ${composition.canvas.h}` }}>
-            {source ? <iframe
-              key={`${composition.index}-${composition.rev}`}
-              ref={iframeRef}
-              srcDoc={source}
-              title={`场景 ${composition.index}`}
-              onLoad={() => {
-                if (shouldResume.current) {
-                  shouldResume.current = false;
-                  post({ type: 'hvplay' });
-                  setPlaying(true);
-                }
-              }}
-            /> : <div className="hv-reference-preview-loading">{sourceError || <><Loader2 className="spin" size={20} />正在载入场景</>}</div>}
-          </div>
-          <div className="hv-reference-transport">
-            <input type="range" min={0} max={1000} value={Math.round(progress * 1000)} onChange={(event) => {
-              const next = Number(event.target.value) / 1000;
-              autoplayAll.current = false;
-              post({ type: 'hvseek', time: composition.durationSec * next });
-              setProgress(next);
-              setPlaying(false);
-            }} aria-label="场景播放进度" />
-            <button type="button" title={playing ? '暂停' : '播放'} onClick={playing ? pause : play}>{playing ? <Pause size={17} /> : <Play size={17} />}</button>
-            <span>{(progress * composition.durationSec).toFixed(1)}s / {composition.durationSec.toFixed(1)}s</span>
-            <button type="button" title="上一场景" disabled={active === 0} onClick={() => setActive((index) => Math.max(0, index - 1))}><ChevronLeft size={16} /></button>
-            <button type="button" title="下一场景" disabled={active >= compositions.length - 1} onClick={() => setActive((index) => Math.min(compositions.length - 1, index + 1))}><ChevronRight size={16} /></button>
-            <button type="button" title="重播" onClick={restart}><RotateCcw size={15} /></button>
-            <button type="button" title={maximized ? '退出最大化' : '最大化'} onClick={() => setMaximized((value) => !value)}>{maximized ? <Minimize2 size={15} /> : <Maximize2 size={15} />}</button>
-          </div>
-        </div>
-        <aside className="hv-reference-scene-strip">
-          <strong>场景 · 共 {data.scenes.length}</strong>
-          {data.scenes.map((item) => {
-            const index = compositions.findIndex((candidate) => candidate.index === item.index);
-            const snapshot = index >= 0 ? compositions[index] : undefined;
-            const thumbnail = snapshot?.thumbnailPath ?? snapshot?.background.src;
-            const thumbnailStatus = thumbnail
-              ? htmlVideoMediaStatus(thumbnail, mediaUrls, failedMediaPaths, isBrowserPreview)
-              : 'desktop-only';
-            return <div key={item.index} className={`hv-reference-scene-item${index === active ? ' active' : ''}`}>
-              <button className="hv-reference-scene-select" type="button" disabled={index < 0} onClick={() => index >= 0 && setActive(index)}>
-                <span className="hv-reference-thumb" aria-busy={thumbnailStatus === 'loading'}>
-                  {thumbnail && thumbnailStatus === 'ready' && mediaUrls[thumbnail] ? (
-                    <img
-                      key={htmlVideoMediaElementKey(task.id, thumbnail, mediaRetryRevision)}
-                      src={mediaUrls[thumbnail]}
-                      alt=""
-                      onError={() => onMediaElementError(thumbnail)}
-                      onLoad={() => onMediaElementReady(thumbnail)}
-                    />
-                  ) : thumbnailStatus === 'loading' ? (
-                    <span className="hv-media-state hv-media-loading" role="status"><Loader2 className="spin" size={15} />预览加载中</span>
-                  ) : thumbnailStatus === 'unavailable' ? (
-                    <span className="hv-media-state" role="status">预览加载失败</span>
-                  ) : thumbnail ? (
-                    <span className="hv-media-state" role="status">本地预览仅桌面端可用</span>
-                  ) : (
-                    <Loader2 className="spin" size={15} />
-                  )}
-                </span>
-                <span><small>场景 {item.index} · {snapshot ? `${snapshot.durationSec.toFixed(1)}s` : '生成中'}</small><b>{item.title}</b><i>{htmlVideoSceneTemplate(item.sceneTemplate).label}</i></span>
+        <aside className="hv-preview-inspector" aria-label="动画预览属性">
+          {props.captionEditor}
+          <section className="hv-preview-effects" data-html-video-preview-effects="true" aria-label="镜头动效与场景转场">
+            <div className="panel-title-row">
+              <h4>镜头与转场</h4>
+              <button className="mini-button" type="button" disabled={effectsLocked} onClick={() => void saveEffects()}>
+                {action.busy ? <Loader2 className="spin" size={14} /> : <Save size={14} />}保存动效
               </button>
-              {snapshot ? <span className="hv-reference-thumb-actions">
-                <button type="button" title={`播放场景 ${item.index}`} onClick={() => playScene(index)}><Play size={12} />播放</button>
-                <button type="button" disabled={busy || action.busy || isBrowserPreview} onClick={() => setPresetSceneIndex(item.index)}><Pencil size={12} />{htmlVideoSceneTemplate(item.sceneTemplate).label}</button>
-                <button
-                  type="button"
-                  disabled={busy || action.busy || isBrowserPreview}
-                  onClick={() => void toggle(item.index, 'foregroundHidden', !item.foregroundHidden)}
-                >{item.foregroundHidden ? '显示前景' : '隐藏前景'}</button>
-                <button
-                  type="button"
-                  disabled={busy || action.busy || isBrowserPreview}
-                  onClick={() => void toggle(item.index, 'titleHidden', !item.titleHidden)}
-                >{item.titleHidden ? '显示标题' : '隐藏标题'}</button>
-              </span> : null}
-            </div>;
-          })}
+            </div>
+            <div className="hv-preview-effects-controls">
+              <label>
+                <span>镜头动效</span>
+                <select value={sceneMotion} disabled={effectsLocked} onChange={(event) => {
+                  setSceneMotion(event.target.value as typeof sceneMotion);
+                  setMotionDemoRevision((value) => value + 1);
+                }}>
+                  {HTML_VIDEO_SCENE_MOTIONS.map((motion) => <option key={motion} value={motion}>{HTML_VIDEO_SCENE_MOTION_LABELS[motion]}</option>)}
+                </select>
+              </label>
+              <div className="hv-effect-demo-row">
+                <span>镜头预览</span>
+                <div className="hv-motion-demo-wrap">
+                  <div key={`${sceneMotion}-${motionDemoRevision}`} className="hv-motion-demo" data-motion={sceneMotion} aria-label="镜头动效示意">
+                    {motionThumbnailUrl ? <img src={motionThumbnailUrl} alt="" onError={() => motionThumbnail && onMediaElementError(motionThumbnail)} onLoad={() => motionThumbnail && onMediaElementReady(motionThumbnail)} /> : <span>预览加载中</span>}
+                  </div>
+                  <button type="button" title="重播镜头示意" onClick={() => setMotionDemoRevision((value) => value + 1)}><RotateCcw size={14} /></button>
+                </div>
+              </div>
+              <label>
+                <span>场景转场</span>
+                <select value={transitionType} disabled={effectsLocked} onChange={(event) => {
+                  setTransitionType(event.target.value as typeof transitionType);
+                  setDemoRevision((value) => value + 1);
+                }}>
+                  {HTML_VIDEO_TRANSITIONS.map((transition) => <option key={transition} value={transition}>{HTML_VIDEO_TRANSITION_LABELS[transition]}</option>)}
+                </select>
+              </label>
+              <div className="hv-effect-demo-row">
+                <span>转场预览</span>
+                <div className="hv-transition-demo-wrap">
+                  <div key={`${transitionType}-${demoRevision}`} className="hv-transition-demo" data-transition={transitionType} aria-label="场景转场示意">
+                    {transitionThumbnails.map((path, index) => mediaUrls[path] ? (
+                      <img
+                        key={`${htmlVideoMediaElementKey(task.id, path, mediaRetryRevision)}-${index}`}
+                        className={`hv-transition-demo-frame frame-${index + 1}`}
+                        src={mediaUrls[path]}
+                        alt=""
+                        onError={() => onMediaElementError(path)}
+                        onLoad={() => onMediaElementReady(path)}
+                      />
+                    ) : <span key={`${path}-${index}`} className={`hv-transition-demo-frame frame-${index + 1} hv-media-state`}><Loader2 className="spin" size={14} /></span>)}
+                    {transitionThumbnails.length < 2 ? <span className="hv-transition-demo-empty">需要至少两个场景</span> : null}
+                  </div>
+                  <button type="button" title="重播转场示意" onClick={() => setDemoRevision((value) => value + 1)}><RotateCcw size={14} /></button>
+                </div>
+              </div>
+            </div>
+            {effectsMessage ? <span className="local-note" role="status">{effectsMessage}</span> : null}
+          </section>
         </aside>
       </div>
       <InlineActionFeedback feedback={action.feedback} />

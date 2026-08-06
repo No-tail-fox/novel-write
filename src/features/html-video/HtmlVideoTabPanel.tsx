@@ -576,9 +576,21 @@ export function HtmlVideoTabPanel({
       );
     }
     return (
-      <div className="hv-tab-content hv-cover-workspace">
-        <HtmlVideoCaptionEditor key={task.id} api={api} task={task} config={data.config} applyState={applyState} refreshTaskDetail={refreshTaskDetail} busy={busy} />
-        <HtmlVideoStoryboundPreviewPanel {...editorialProps} />
+      <div className="hv-tab-content hv-preview-workspace">
+        <HtmlVideoStoryboundPreviewPanel
+          {...editorialProps}
+          captionEditor={(
+            <HtmlVideoCaptionEditor
+              key={task.id}
+              api={api}
+              task={task}
+              config={data.config}
+              applyState={applyState}
+              refreshTaskDetail={refreshTaskDetail}
+              busy={busy}
+            />
+          )}
+        />
       </div>
     );
   }

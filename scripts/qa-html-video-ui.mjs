@@ -310,6 +310,14 @@ try {
       throw new Error(`Preview-effects QA page identity failed: ${JSON.stringify(identity)}`);
     }
     if (effectsDesktop.demoImageCount !== 2 || effectsCompact.demoImageCount !== 2
+      || effectsDesktop.motionDemoImageCount !== 1 || effectsCompact.motionDemoImageCount !== 1
+      || effectsDesktop.motionDemoAnimationName !== 'hv-motion-demo-zoom-in'
+      || effectsCompact.motionDemoAnimationName !== 'hv-motion-demo-zoom-in'
+      || !effectsDesktop.previewAboveFold || !effectsCompact.previewAboveFold
+      || !effectsDesktop.inspectorBesidePreview || !effectsCompact.inspectorBesidePreview
+      || !effectsDesktop.filmstripBelowPreview || !effectsCompact.filmstripBelowPreview
+      || effectsDesktop.sceneTrackHorizontalOverflow < 0 || effectsCompact.sceneTrackHorizontalOverflow < 0
+      || effectsDesktop.pageVerticalOverflow > 2 || effectsCompact.pageVerticalOverflow > 2
       || effectsDesktop.horizontalOverflow > 2 || effectsCompact.horizontalOverflow > 2
       || effectsDesktop.workspaceHorizontalOverflow > 2 || effectsCompact.workspaceHorizontalOverflow > 2
       || effectsDesktop.clippedControls.length || effectsCompact.clippedControls.length
@@ -2055,9 +2063,17 @@ async function inspectAndAnimateTemplatePreview(cdpConnection) {
 async function inspectPreviewEffects(cdpConnection) {
   return evaluate(cdpConnection, `(() => {
     const surface = document.querySelector('[data-html-video-preview-effects="true"]');
+    const workbench = document.querySelector('.hv-preview-workbench');
+    const stage = workbench?.querySelector('.hv-reference-stage');
+    const phone = stage?.querySelector('.hv-reference-phone');
+    const inspector = workbench?.querySelector('.hv-preview-inspector');
+    const filmstrip = workbench?.querySelector('.hv-reference-scene-strip');
+    const sceneTrack = filmstrip?.querySelector('.hv-reference-scene-track');
     const selects = surface ? [...surface.querySelectorAll('select')] : [];
     const motion = selects[0];
     const transition = selects[1];
+    const motionDemo = surface?.querySelector('.hv-motion-demo');
+    const motionDemoImage = motionDemo?.querySelector('img');
     const demo = surface?.querySelector('.hv-transition-demo');
     const demoFrames = demo ? [...demo.querySelectorAll('img')] : [];
     const visibleControls = surface ? [...surface.querySelectorAll('select, button')].filter((item) => {
@@ -2065,12 +2081,18 @@ async function inspectPreviewEffects(cdpConnection) {
       const rect = item.getBoundingClientRect();
       return style.display !== 'none' && style.visibility !== 'hidden' && rect.width > 0 && rect.height > 0;
     }) : [];
+    const stageRect = stage?.getBoundingClientRect();
+    const phoneRect = phone?.getBoundingClientRect();
+    const inspectorRect = inspector?.getBoundingClientRect();
+    const filmstripRect = filmstrip?.getBoundingClientRect();
     return {
       activeTab: document.querySelector('.hv-tab.active')?.textContent?.trim() || '',
       motionValue: motion?.value || '',
       motionOptions: motion instanceof HTMLSelectElement ? [...motion.options].map((option) => [option.value, option.textContent?.trim() || '']) : [],
       transitionValue: transition?.value || '',
       transitionOptions: transition instanceof HTMLSelectElement ? [...transition.options].map((option) => [option.value, option.textContent?.trim() || '']) : [],
+      motionDemoImageCount: motionDemoImage ? 1 : 0,
+      motionDemoAnimationName: motionDemoImage ? getComputedStyle(motionDemoImage).animationName : '',
       demoTransition: demo?.getAttribute('data-transition') || '',
       demoImageCount: demoFrames.length,
       demoUsesDistinctSources: new Set(demoFrames.map((item) => item.currentSrc || item.src)).size === 2,
@@ -2078,6 +2100,12 @@ async function inspectPreviewEffects(cdpConnection) {
       completedStepCount: document.querySelectorAll('.hv-studio-run-rail .hv-step.done').length,
       resumeAvailable: [...document.querySelectorAll('button')].some((item) => item.textContent?.trim() === '继续' && !item.disabled),
       message: surface?.querySelector('[role="status"]')?.textContent?.trim() || '',
+      previewAboveFold: Boolean(phoneRect && phoneRect.top >= 0 && phoneRect.bottom <= innerHeight + 1),
+      inspectorBesidePreview: Boolean(stageRect && inspectorRect && inspectorRect.left >= stageRect.right - 1),
+      filmstripBelowPreview: Boolean(stageRect && filmstripRect && filmstripRect.top >= stageRect.bottom - 1),
+      sceneTrackHorizontalOverflow: sceneTrack ? Math.max(0, sceneTrack.scrollWidth - sceneTrack.clientWidth) : -1,
+      inspectorVerticalOverflow: inspector ? Math.max(0, inspector.scrollHeight - inspector.clientHeight) : -1,
+      pageVerticalOverflow: Math.max(0, document.documentElement.scrollHeight - document.documentElement.clientHeight),
       horizontalOverflow: document.documentElement.scrollWidth - document.documentElement.clientWidth,
       surfaceHorizontalOverflow: surface ? surface.scrollWidth - surface.clientWidth : -1,
       workspaceHorizontalOverflow: Math.max(0, ...[...document.querySelectorAll(
