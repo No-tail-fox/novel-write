@@ -1100,6 +1100,43 @@ describe('HTML video composition contract', () => {
     });
     const stoppedRuntime = runSceneRuntime(stoppedInput.scenes[0].html);
     expect(stoppedRuntime.timeline.fromToCalls.filter((call) => call[0] === '#scene-background')).toEqual([]);
+
+    const overrideInput = buildHtmlVideoExportInput({
+      workDir: 'D:/tasks/html-video-template-override',
+      outputPath: 'D:/tasks/html-video-template-override/final.mp4',
+      title: 'Overridden template motion story',
+      artifact,
+      generatedImages: artifact.scenes.map((scene) => ({ sceneId: scene.id, path: `D:/media/scene-${scene.id}.png` })),
+      narrationAudio: artifact.scenes.map((scene) => ({ sceneId: scene.id, path: `D:/media/scene-${scene.id}.wav` })),
+      draftTemplate: template,
+      sceneMotion: 'pan_right',
+      fps: 30,
+      canvas_w: 1080,
+      canvas_h: 1920,
+    });
+    expect(overrideInput.scenes[0].html).toContain('data-draft-motion="pan_right"');
+    expect(runSceneRuntime(overrideInput.scenes[0].html).timeline.fromToCalls).toContainEqual([
+      '#scene-background',
+      { scale: 1.08, xPercent: -4 },
+      { scale: 1.08, xPercent: 4, duration: 1.2, ease: 'none' },
+      0,
+    ]);
+
+    const disabledInput = buildHtmlVideoExportInput({
+      workDir: 'D:/tasks/html-video-template-disabled',
+      outputPath: 'D:/tasks/html-video-template-disabled/final.mp4',
+      title: 'Disabled template motion story',
+      artifact,
+      generatedImages: artifact.scenes.map((scene) => ({ sceneId: scene.id, path: `D:/media/scene-${scene.id}.png` })),
+      narrationAudio: artifact.scenes.map((scene) => ({ sceneId: scene.id, path: `D:/media/scene-${scene.id}.wav` })),
+      draftTemplate: template,
+      sceneMotion: 'none',
+      fps: 30,
+      canvas_w: 1080,
+      canvas_h: 1920,
+    });
+    expect(disabledInput.scenes[0].html).toContain('data-draft-motion="none"');
+    expect(runSceneRuntime(disabledInput.scenes[0].html).timeline.fromToCalls.filter((call) => call[0] === '#scene-background')).toEqual([]);
   });
 
   it('delegates playback to the registered HyperFrames GSAP timeline', () => {

@@ -1355,10 +1355,10 @@ describe('product shell ui', () => {
     expect(page).toContain('generation: mediaRetryRevision');
     expect(page).toContain('onMediaElementError={markMediaElementFailed}');
     expect(page).toContain('onMediaElementReady={markMediaElementReady}');
-    expect(countOccurrences(page, 'onError={() => onMediaElementError(')).toBe(5);
-    expect(countOccurrences(page, 'onLoad={() => onMediaElementReady(')).toBe(3);
+    expect(countOccurrences(page, 'onError={() => onMediaElementError(')).toBe(6);
+    expect(countOccurrences(page, 'onLoad={() => onMediaElementReady(')).toBe(4);
     expect(countOccurrences(page, 'onCanPlay={() => onMediaElementReady(')).toBe(2);
-    expect(countOccurrences(page, 'htmlVideoMediaElementKey(task.id,')).toBe(5);
+    expect(countOccurrences(page, 'htmlVideoMediaElementKey(task.id,')).toBe(6);
   });
 
   it('rejects late HTML media errors unless their task, path set, and retry generation are still current', async () => {
@@ -1395,6 +1395,19 @@ describe('product shell ui', () => {
     expect(page).toMatch(/status === 'cancelled' && taskStatus === 'paused'[\s\S]*?'已暂停'/);
   });
 
+  it('renders localized HTML transition and voice-provider labels in every editor', async () => {
+    const sources = await rendererSourcesPromise;
+    const htmlPage = sources.requiredFile('src/features/html-video/HtmlVideoPage.tsx');
+    const htmlTabs = sources.requiredFile('src/features/html-video/HtmlVideoTabPanel.tsx');
+
+    expect(htmlPage.match(/HTML_VIDEO_TTS_PROVIDER_LABELS\[provider\]/gu)).toHaveLength(2);
+    expect(htmlPage.match(/HTML_VIDEO_TRANSITION_LABELS\[transition\]/gu)).toHaveLength(2);
+    expect(htmlTabs).toContain('HTML_VIDEO_TRANSITION_LABELS[value]');
+    expect(htmlPage).not.toContain('>{provider}</option>');
+    expect(htmlPage).not.toContain('>{transition}</option>');
+    expect(htmlTabs).not.toContain('>{value}</option>');
+  });
+
   it('uses the shared HTML control manifest without exposing unconsumed editors', async () => {
     const sources = await rendererSourcesPromise;
     const htmlPage = sources.requiredFile('src/features/html-video/HtmlVideoPage.tsx');
@@ -1416,6 +1429,7 @@ describe('product shell ui', () => {
       'bgmId',
       'bgmVolume',
       'transitionType',
+      'sceneMotion',
       'draftTemplate',
       'foreground',
       'maxScenes',
@@ -1439,6 +1453,7 @@ describe('product shell ui', () => {
     expect(editor).toContain('<option value={values.bgmId}>{values.bgmId}（素材库中已缺失）</option>');
     expect(page).toContain('bgmVolume,');
     expect(page).toContain('transitionType,');
+    expect(page).toContain('sceneMotion,');
     const captionEditor = htmlTabs.slice(htmlTabs.indexOf('function HtmlVideoCaptionEditor'), htmlTabs.indexOf('function HtmlVideoCoverEditor'));
     for (const field of ['captionPreset', 'captionAnim', 'captionColors']) {
       expect(captionEditor).toContain(`data-html-video-edit-field="${field}"`);

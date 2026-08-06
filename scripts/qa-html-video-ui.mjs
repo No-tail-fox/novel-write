@@ -10,6 +10,8 @@ import { fileURLToPath, pathToFileURL } from 'node:url';
 const rootDir = fileURLToPath(new URL('..', import.meta.url));
 const outputBase = resolve(process.env.STORYDREAM_QA_OUTPUT_DIR || tmpdir());
 const keepQaTempOnFailure = process.env.STORYDREAM_QA_KEEP_TEMP_ON_FAILURE === '1';
+const localizationOnly = process.env.STORYDREAM_QA_LOCALIZATION_ONLY === '1';
+const effectsOnly = process.env.STORYDREAM_QA_EFFECTS_ONLY === '1';
 const CDP_CONNECT_TIMEOUT_MS = 10_000;
 const CDP_COMMAND_TIMEOUT_MS = 15_000;
 const WAIT_FOR_CHECK_TIMEOUT_MS = 5_000;
@@ -18,7 +20,7 @@ const stdout = [];
 const runtimeErrors = [];
 const networkRequests = [];
 const networkResponses = [];
-const htmlVideoCreateFields = ['style', 'voiceId', 'ttsProvider', 'ttsSpeed', 'bgmId', 'bgmVolume', 'transitionType', 'foreground', 'maxScenes', 'ratio', 'coverImageMode', 'coverTemplate', 'coverRatio', 'draftTemplate'];
+const htmlVideoCreateFields = ['style', 'voiceId', 'ttsProvider', 'ttsSpeed', 'bgmId', 'bgmVolume', 'transitionType', 'sceneMotion', 'foreground', 'maxScenes', 'ratio', 'coverImageMode', 'coverTemplate', 'coverRatio', 'draftTemplate'];
 const htmlVideoEditableFields = [...htmlVideoCreateFields, 'coverPrompt'];
 const htmlVideoReadOnlyFields = [];
 let child;
@@ -27,12 +29,17 @@ let ffmpegPath;
 let profileDir;
 await mkdir(outputBase, { recursive: true });
 const qaTempDir = await mkdtemp(join(outputBase, 'storydream-html-video-ui-'));
+qaRun: {
 try {
   profileDir = join(qaTempDir, 'profile');
   const desktopScreenshot = join(qaTempDir, 'desktop.png');
   const compactScreenshot = join(qaTempDir, 'compact.png');
   const creationDesktopScreenshot = join(qaTempDir, 'creation-desktop.png');
   const creationCompactScreenshot = join(qaTempDir, 'creation-compact.png');
+  const optionLabelsDesktopScreenshot = join(qaTempDir, 'option-labels-desktop.png');
+  const optionLabelsCompactScreenshot = join(qaTempDir, 'option-labels-compact.png');
+  const effectsDesktopScreenshot = join(qaTempDir, 'effects-desktop.png');
+  const effectsCompactScreenshot = join(qaTempDir, 'effects-compact.png');
   const coverDesktopScreenshot = join(qaTempDir, 'cover-desktop.png');
   const coverCompactScreenshot = join(qaTempDir, 'cover-compact.png');
   const captionEditorScreenshot = join(qaTempDir, 'caption-editor.png');
@@ -142,7 +149,11 @@ try {
     'HTML video creation page',
   );
   const creationDesktop = await inspectCreationPage(cdp);
+  const localizedOptionInteraction = await exerciseLocalizedOptionControls(cdp);
   await saveScreenshot(cdp, creationDesktopScreenshot);
+  await scrollLocalizedOptionsIntoView(cdp);
+  await saveScreenshot(cdp, optionLabelsDesktopScreenshot);
+  await evaluate(cdp, 'scrollTo(0, 0)');
   await cdp.send('Emulation.setDeviceMetricsOverride', {
     width: 1080,
     height: 720,
@@ -164,6 +175,51 @@ try {
   const researchProviderInteraction = await exerciseResearchProviderControl(cdp);
   const creationCompact = await inspectCreationPage(cdp);
   await saveScreenshot(cdp, creationCompactScreenshot);
+  await scrollLocalizedOptionsIntoView(cdp);
+  await saveScreenshot(cdp, optionLabelsCompactScreenshot);
+  if (localizationOnly) {
+    const relevantRuntimeErrors = runtimeErrors.filter((error) => error.message && !error.message.includes('DevTools'));
+    if (identity.title !== 'StoryDream' || identity.bodyTextLength < 100 || identity.hasFrameworkOverlay) {
+      throw new Error(`Localized-option QA page identity failed: ${JSON.stringify(identity)}`);
+    }
+    if (creationDesktop.horizontalOverflow > 2 || creationCompact.horizontalOverflow > 2
+      || creationDesktop.clippedControls.length || creationCompact.clippedControls.length
+      || relevantRuntimeErrors.length) {
+      throw new Error(`Localized-option QA page health failed: ${JSON.stringify({ creationDesktop, creationCompact, relevantRuntimeErrors })}`);
+    }
+    const screenshotPaths = [optionLabelsDesktopScreenshot, optionLabelsCompactScreenshot];
+    const screenshots = await Promise.all(screenshotPaths.map(async (path) => {
+      const value = await stat(path);
+      if (value.size <= 0) throw new Error(`Screenshot evidence is empty: ${basename(path)}`);
+      return { name: basename(path), size: value.size };
+    }));
+    const evidenceDirectory = process.env.STORYDREAM_QA_EVIDENCE_DIR
+      ? resolve(process.env.STORYDREAM_QA_EVIDENCE_DIR)
+      : '';
+    const evidencePaths = [];
+    if (evidenceDirectory) {
+      await mkdir(evidenceDirectory, { recursive: true });
+      for (const path of screenshotPaths) {
+        const evidencePath = join(evidenceDirectory, basename(path));
+        await copyFile(path, evidencePath);
+        evidencePaths.push(evidencePath);
+      }
+    }
+    process.stdout.write(`${JSON.stringify({
+      status: 'passed',
+      scope: 'option-labels',
+      pageTitle: identity.title,
+      pageUrl: identity.url,
+      creationDesktop,
+      creationCompact,
+      localizedOptionInteraction,
+      researchProviderInteraction,
+      screenshots,
+      evidencePaths,
+      runtimeErrors: relevantRuntimeErrors,
+    }, null, 2)}\n`);
+    break qaRun;
+  }
   await cdp.send('Emulation.setDeviceMetricsOverride', {
     width: 1320,
     height: 860,
@@ -178,6 +234,66 @@ try {
     20_000,
     'primary completed task',
   );
+  if (effectsOnly) {
+    const effectsDesktop = await exercisePreviewEffects(cdp);
+    await saveScreenshot(cdp, effectsDesktopScreenshot);
+    await cdp.send('Emulation.setDeviceMetricsOverride', {
+      width: 920,
+      height: 720,
+      deviceScaleFactor: 1,
+      mobile: false,
+    });
+    await delay(350);
+    await evaluate(cdp, `document.querySelector('.hv-preview-effects')?.scrollIntoView({ block: 'start' })`);
+    await delay(200);
+    const effectsCompact = await inspectPreviewEffects(cdp);
+    await saveScreenshot(cdp, effectsCompactScreenshot);
+    const relevantRuntimeErrors = runtimeErrors.filter((error) => error.message && !error.message.includes('DevTools'));
+    if (identity.title !== 'StoryDream' || identity.bodyTextLength < 100 || identity.hasFrameworkOverlay) {
+      throw new Error(`Preview-effects QA page identity failed: ${JSON.stringify(identity)}`);
+    }
+    if (effectsDesktop.demoImageCount !== 2 || effectsCompact.demoImageCount !== 2
+      || effectsDesktop.horizontalOverflow > 2 || effectsCompact.horizontalOverflow > 2
+      || effectsDesktop.workspaceHorizontalOverflow > 2 || effectsCompact.workspaceHorizontalOverflow > 2
+      || effectsDesktop.clippedControls.length || effectsCompact.clippedControls.length
+      || effectsDesktop.transitionValue !== 'wipeleft' || effectsCompact.transitionValue !== 'wipeleft'
+      || effectsDesktop.motionValue !== 'auto' || effectsCompact.motionValue !== 'auto'
+      || effectsDesktop.completedStepCount !== 5 || effectsCompact.completedStepCount !== 5
+      || effectsDesktop.demoAnimationName !== 'hv-transition-demo-wipe-left'
+      || relevantRuntimeErrors.length) {
+      throw new Error(`Preview-effects QA failed: ${JSON.stringify({ effectsDesktop, effectsCompact, relevantRuntimeErrors })}`);
+    }
+    const screenshotPaths = [effectsDesktopScreenshot, effectsCompactScreenshot];
+    const screenshots = await Promise.all(screenshotPaths.map(async (path) => {
+      const value = await stat(path);
+      if (value.size <= 0) throw new Error(`Screenshot evidence is empty: ${basename(path)}`);
+      return { name: basename(path), size: value.size };
+    }));
+    const evidenceDirectory = process.env.STORYDREAM_QA_EVIDENCE_DIR
+      ? resolve(process.env.STORYDREAM_QA_EVIDENCE_DIR)
+      : '';
+    const evidencePaths = [];
+    if (evidenceDirectory) {
+      await mkdir(evidenceDirectory, { recursive: true });
+      for (const path of screenshotPaths) {
+        const evidencePath = join(evidenceDirectory, basename(path));
+        await copyFile(path, evidencePath);
+        evidencePaths.push(evidencePath);
+      }
+    }
+    process.stdout.write(`${JSON.stringify({
+      status: 'passed',
+      scope: 'preview-effects',
+      pageTitle: identity.title,
+      pageUrl: identity.url,
+      effectsDesktop,
+      effectsCompact,
+      screenshots,
+      evidencePaths,
+      runtimeErrors: relevantRuntimeErrors,
+    }, null, 2)}\n`);
+    break qaRun;
+  }
   const workspaceControls = await inspectConfigControls(cdp);
   const configControls = {
     createFields: creationControls.createFields,
@@ -390,6 +506,7 @@ try {
     themePreference,
     creationDesktop,
     creationCompact,
+    localizedOptionInteraction,
     researchProviderInteraction,
     lightOutputFooter,
     failedLightWorkspace,
@@ -417,6 +534,7 @@ try {
   cdp?.close();
   await stopChild(child);
   if (!keepQaTempOnFailure) await removeWithRetry(qaTempDir);
+}
 }
 
 async function exerciseThemePreference(cdpConnection, screenshotPath) {
@@ -986,6 +1104,7 @@ async function seedCompletedTasks() {
     const primary = await seedCompletedTask(database, createHtmlVideoPipelineData, runHtmlVideoPipeline, buildHtmlVideoExportInput, appDataDir, {
       title: '已完成输出播放 QA',
       tone: 660,
+      sceneCount: effectsOnly ? 2 : 1,
     });
     return { primary, secondary, failed };
   } finally {
@@ -1032,6 +1151,7 @@ async function seedFailedTask(database, createHtmlVideoPipelineData, appDataDir)
 }
 
 async function seedCompletedTask(database, createHtmlVideoPipelineData, runHtmlVideoPipeline, buildHtmlVideoExportInput, appDataDir, options) {
+  const sceneCount = options.sceneCount ?? 1;
   const pipeline = createHtmlVideoPipelineData(`${options.title}。`, {
     ratio: '9:16',
     style: 'cinematic',
@@ -1052,9 +1172,12 @@ async function seedCompletedTask(database, createHtmlVideoPipelineData, runHtmlV
   if (!task.managedStorageKey) throw new Error('Seeded task has no managed storage key.');
   const taskDir = join(appDataDir, 'tasks', task.managedStorageKey);
   const htmlDir = join(taskDir, 'html-scenes');
-  const assetPath = join(taskDir, 'scene-001.png');
-  const voicePath = join(taskDir, 'scene-001.wav');
-  const thumbnailPath = join(taskDir, 'scene-001-thumbnail.png');
+  const sceneFixtures = Array.from({ length: sceneCount }, (_, index) => ({
+    index: index + 1,
+    assetPath: join(taskDir, `scene-${String(index + 1).padStart(3, '0')}.png`),
+    voicePath: join(taskDir, `scene-${String(index + 1).padStart(3, '0')}.wav`),
+    thumbnailPath: join(taskDir, `scene-${String(index + 1).padStart(3, '0')}-thumbnail.png`),
+  }));
   const outputPath = join(taskDir, 'final.mp4');
   const coverPath = join(taskDir, 'covers', 'cover-auto-r1.png');
   const retryPath = join(taskDir, 'same-url-retry.png');
@@ -1082,63 +1205,63 @@ async function seedCompletedTask(database, createHtmlVideoPipelineData, runHtmlV
     async plan(input) {
       const narration = input.segments[0];
       return {
-        scenes: [{
-          index: 1,
-          narration,
-          title: options.title,
-          captions: ['媒体恢复验证'],
+        scenes: sceneFixtures.map((fixture) => ({
+          index: fixture.index,
+          narration: `${narration}${fixture.index === 1 ? '' : ' 第二幕。'}`,
+          title: `${options.title} ${fixture.index}`,
+          captions: [`媒体恢复验证 ${fixture.index}`],
           sceneTemplate: 'cinematic-title',
-          background: { prompt: '真实 DOM 图片错误恢复验证' },
+          background: { prompt: `真实 DOM 图片错误恢复验证 ${fixture.index}` },
           elements: [],
-        }],
+        })),
       };
     },
     async generateAssets() {
-      await writeFile(assetPath, png);
-      return [{ sceneIndex: 1, kind: 'bg', slot: 0, src: assetPath, prompt: '真实 DOM 图片错误恢复验证' }];
+      for (const fixture of sceneFixtures) createQaSceneImage(fixture.assetPath, fixture.index);
+      return sceneFixtures.map((fixture) => ({ sceneIndex: fixture.index, kind: 'bg', slot: 0, src: fixture.assetPath, prompt: `真实 DOM 图片错误恢复验证 ${fixture.index}` }));
     },
     async synthesizeVoices(input) {
-      createQaAudio(voicePath, options.tone);
-      return [{ sceneIndex: 1, src: voicePath, durationSec: 1, text: input.scenes[0].narration }];
+      for (const fixture of sceneFixtures) createQaAudio(fixture.voicePath, options.tone + fixture.index);
+      return sceneFixtures.map((fixture, index) => ({ sceneIndex: fixture.index, src: fixture.voicePath, durationSec: 1, text: input.scenes[index].narration }));
     },
     async createPreviews(input) {
-      const scene = input.scenes[0];
       const composition = buildHtmlVideoExportInput({
         workDir: taskDir,
         outputPath,
         title: options.title,
         artifact: {
-          reviewedText: scene.narration,
-          rewrittenCopy: scene.narration,
-          cover: { title: options.title, subtitle: [], summary: scene.narration, tags: [], comments: [] },
-          scenes: [{ id: 1, cap: scene.narration, descPrompt: scene.background.prompt, durationMs: 1000 }],
+          reviewedText: input.scenes.map((scene) => scene.narration).join('\n\n'),
+          rewrittenCopy: input.scenes.map((scene) => scene.narration).join('\n\n'),
+          cover: { title: options.title, subtitle: [], summary: input.scenes[0].narration, tags: [], comments: [] },
+          scenes: input.scenes.map((scene) => ({ id: scene.index, cap: scene.narration, descPrompt: scene.background.prompt, durationMs: 1000 })),
           imagePrompts: [],
           subtitles: { cues: [], srt: '' },
         },
-        generatedImages: [{ sceneId: 1, path: assetPath }],
-        narrationAudio: [{ sceneId: 1, path: voicePath }],
+        generatedImages: sceneFixtures.map((fixture) => ({ sceneId: fixture.index, path: fixture.assetPath })),
+        narrationAudio: sceneFixtures.map((fixture) => ({ sceneId: fixture.index, path: fixture.voicePath })),
         captionConfig: input.config,
+        scenePlans: input.scenes,
         fps: 24,
         canvas_w: 320,
         canvas_h: 568,
       });
-      const htmlPath = join(htmlDir, 'scene-001.html');
-      await Promise.all([
-        writeFile(htmlPath, composition.scenes[0].html, 'utf8'),
-        writeFile(thumbnailPath, png),
-      ]);
+      const htmlPaths = sceneFixtures.map((fixture) => join(htmlDir, `scene-${String(fixture.index).padStart(3, '0')}.html`));
+      await Promise.all(sceneFixtures.flatMap((fixture, index) => [
+        writeFile(htmlPaths[index], composition.scenes[index].html, 'utf8'),
+        copyFile(fixture.assetPath, fixture.thumbnailPath),
+      ]));
       return {
-        compositions: [{
-          index: 1,
+        compositions: sceneFixtures.map((fixture) => ({
+          index: fixture.index,
           durationSec: 1,
           canvas: { w: 320, h: 568 },
-          audio: { src: voicePath, durationSec: 1 },
-          background: { src: assetPath },
-          captions: [{ id: 'caption-1', text: '媒体恢复验证', startSec: 0, durationSec: 1 }],
-          htmlPath,
-          thumbnailPath,
+          audio: { src: fixture.voicePath, durationSec: 1 },
+          background: { src: fixture.assetPath },
+          captions: [{ id: `caption-${fixture.index}`, text: `媒体恢复验证 ${fixture.index}`, startSec: 0, durationSec: 1 }],
+          htmlPath: htmlPaths[fixture.index - 1],
+          thumbnailPath: fixture.thumbnailPath,
           rev: 1,
-        }],
+        })),
       };
     },
     async render() {
@@ -1199,6 +1322,18 @@ function createQaCover(outputPath) {
     '-frames:v', '1',
     outputPath,
   ], 'cover');
+}
+
+function createQaSceneImage(outputPath, index) {
+  const source = index % 2 === 0
+    ? 'smptebars=size=320x568:rate=1'
+    : 'testsrc2=size=320x568:rate=1';
+  runFfmpeg([
+    '-f', 'lavfi',
+    '-i', source,
+    '-frames:v', '1',
+    outputPath,
+  ], `scene image ${index}`);
 }
 
 function createQaVideo(outputPath, tone) {
@@ -1620,6 +1755,101 @@ async function inspectCreationPage(cdpConnection) {
   })()`);
 }
 
+async function exerciseLocalizedOptionControls(cdpConnection) {
+  const expectedTransitions = [
+    ['fade', '淡入淡出'],
+    ['dissolve', '叠化'],
+    ['wipeleft', '向左擦除'],
+    ['wiperight', '向右擦除'],
+    ['slideleft', '向左滑动'],
+    ['slideright', '向右滑动'],
+  ];
+  const expectedProviders = [
+    ['volcengine', '火山引擎'],
+    ['minimax', 'MiniMax'],
+    ['mock', '模拟配音'],
+  ];
+  const target = { targetTransition: 'wipeleft', targetProvider: 'minimax' };
+  const inspect = () => evaluate(cdpConnection, `(() => {
+    const transition = document.querySelector('[data-html-video-create-field="transitionType"] select');
+    const provider = document.querySelector('[data-html-video-create-field="ttsProvider"] select');
+    const optionPairs = (select) => select instanceof HTMLSelectElement
+      ? [...select.options].map((option) => [option.value, option.textContent?.trim() || ''])
+      : [];
+    return {
+      transitionValue: transition?.value || '',
+      transitionLabel: transition?.selectedOptions?.[0]?.textContent?.trim() || '',
+      transitionOptions: optionPairs(transition),
+      providerValue: provider?.value || '',
+      providerLabel: provider?.selectedOptions?.[0]?.textContent?.trim() || '',
+      providerOptions: optionPairs(provider),
+    };
+  })()`);
+  const initial = await inspect();
+  if (JSON.stringify(initial.transitionOptions) !== JSON.stringify(expectedTransitions)
+    || JSON.stringify(initial.providerOptions) !== JSON.stringify(expectedProviders)) {
+    throw new Error(`HTML video localized options are incomplete: ${JSON.stringify(initial)}`);
+  }
+
+  const changed = await evaluate(cdpConnection, `(() => {
+    const transition = document.querySelector('[data-html-video-create-field="transitionType"] select');
+    const provider = document.querySelector('[data-html-video-create-field="ttsProvider"] select');
+    const setter = Object.getOwnPropertyDescriptor(HTMLSelectElement.prototype, 'value')?.set;
+    if (!(transition instanceof HTMLSelectElement) || !(provider instanceof HTMLSelectElement) || !setter) return false;
+    setter.call(transition, ${JSON.stringify(target.targetTransition)});
+    transition.dispatchEvent(new Event('change', { bubbles: true }));
+    setter.call(provider, ${JSON.stringify(target.targetProvider)});
+    provider.dispatchEvent(new Event('change', { bubbles: true }));
+    return true;
+  })()`);
+  if (!changed) throw new Error('HTML video localized option controls were not available.');
+  await waitFor(
+    async () => {
+      const current = await inspect();
+      return current.transitionValue === target.targetTransition
+        && current.transitionLabel === '向左擦除'
+        && current.providerValue === target.targetProvider
+        && current.providerLabel === 'MiniMax';
+    },
+    5_000,
+    'localized HTML video option interaction',
+  );
+  const selected = await inspect();
+
+  await evaluate(cdpConnection, `(() => {
+    const transition = document.querySelector('[data-html-video-create-field="transitionType"] select');
+    const provider = document.querySelector('[data-html-video-create-field="ttsProvider"] select');
+    const setter = Object.getOwnPropertyDescriptor(HTMLSelectElement.prototype, 'value')?.set;
+    if (!(transition instanceof HTMLSelectElement) || !(provider instanceof HTMLSelectElement) || !setter) return false;
+    setter.call(transition, ${JSON.stringify('fade')});
+    transition.dispatchEvent(new Event('change', { bubbles: true }));
+    setter.call(provider, ${JSON.stringify('volcengine')});
+    provider.dispatchEvent(new Event('change', { bubbles: true }));
+    return true;
+  })()`);
+  await waitFor(
+    async () => {
+      const current = await inspect();
+      return current.transitionValue === 'fade'
+        && current.transitionLabel === '淡入淡出'
+        && current.providerValue === 'volcengine'
+        && current.providerLabel === '火山引擎';
+    },
+    5_000,
+    'localized HTML video option restoration',
+  );
+  return { initial, selected, restored: await inspect(), ...target };
+}
+
+async function scrollLocalizedOptionsIntoView(cdpConnection) {
+  await evaluate(cdpConnection, `(() => {
+    const field = document.querySelector('[data-html-video-create-field="ttsProvider"]');
+    const section = field?.closest('.hv-create-section');
+    (section || field)?.scrollIntoView({ block: 'center' });
+  })()`);
+  await delay(250);
+}
+
 async function exerciseResearchProviderControl(cdpConnection) {
   const inspect = () => evaluate(cdpConnection, `(() => {
     const controls = [...document.querySelectorAll('.hv-research-provider input[type="checkbox"]')];
@@ -1668,6 +1898,135 @@ async function exerciseResearchProviderControl(cdpConnection) {
     throw new Error(`Research provider keyboard toggle did not restore selection: ${JSON.stringify(keyboard)}`);
   }
   return { initial, mouse, keyboard, final: await inspect() };
+}
+
+async function inspectPreviewEffects(cdpConnection) {
+  return evaluate(cdpConnection, `(() => {
+    const surface = document.querySelector('[data-html-video-preview-effects="true"]');
+    const selects = surface ? [...surface.querySelectorAll('select')] : [];
+    const motion = selects[0];
+    const transition = selects[1];
+    const demo = surface?.querySelector('.hv-transition-demo');
+    const demoFrames = demo ? [...demo.querySelectorAll('img')] : [];
+    const visibleControls = surface ? [...surface.querySelectorAll('select, button')].filter((item) => {
+      const style = getComputedStyle(item);
+      const rect = item.getBoundingClientRect();
+      return style.display !== 'none' && style.visibility !== 'hidden' && rect.width > 0 && rect.height > 0;
+    }) : [];
+    return {
+      activeTab: document.querySelector('.hv-tab.active')?.textContent?.trim() || '',
+      motionValue: motion?.value || '',
+      motionOptions: motion instanceof HTMLSelectElement ? [...motion.options].map((option) => [option.value, option.textContent?.trim() || '']) : [],
+      transitionValue: transition?.value || '',
+      transitionOptions: transition instanceof HTMLSelectElement ? [...transition.options].map((option) => [option.value, option.textContent?.trim() || '']) : [],
+      demoTransition: demo?.getAttribute('data-transition') || '',
+      demoImageCount: demoFrames.length,
+      demoUsesDistinctSources: new Set(demoFrames.map((item) => item.currentSrc || item.src)).size === 2,
+      demoAnimationName: demo?.querySelector('.frame-2') ? getComputedStyle(demo.querySelector('.frame-2')).animationName : '',
+      completedStepCount: document.querySelectorAll('.hv-studio-run-rail .hv-step.done').length,
+      resumeAvailable: [...document.querySelectorAll('button')].some((item) => item.textContent?.trim() === '继续' && !item.disabled),
+      message: surface?.querySelector('[role="status"]')?.textContent?.trim() || '',
+      horizontalOverflow: document.documentElement.scrollWidth - document.documentElement.clientWidth,
+      surfaceHorizontalOverflow: surface ? surface.scrollWidth - surface.clientWidth : -1,
+      workspaceHorizontalOverflow: Math.max(0, ...[...document.querySelectorAll(
+        '.hv-tab-content, .hv-cover-workspace, .hv-reference-preview, .hv-reference-preview-main',
+      )].map((item) => item.scrollWidth - item.clientWidth)),
+      clippedControls: visibleControls.filter((item) => {
+        const rect = item.getBoundingClientRect();
+        return rect.left < -1 || rect.right > innerWidth + 1;
+      }).map((item) => item.title || item.textContent?.trim() || item.tagName),
+      viewport: { width: innerWidth, height: innerHeight },
+    };
+  })()`);
+}
+
+async function exercisePreviewEffects(cdpConnection) {
+  const clicked = await clickTab(cdpConnection, '动画预览');
+  if (!clicked) throw new Error('Animation preview tab was not found.');
+  await waitFor(
+    async () => evaluate(cdpConnection, `Boolean(document.querySelector('[data-html-video-preview-effects="true"] .hv-transition-demo'))`),
+    10_000,
+    'HTML video preview effects editor',
+  );
+  const expectedMotions = [
+    ['auto', '跟随画面预设'],
+    ['none', '无镜头运动'],
+    ['zoom_in', '缓慢推进'],
+    ['zoom_out', '缓慢拉远'],
+    ['zoom_pan_up', '推进上移'],
+    ['zoom_pan_down', '推进下移'],
+    ['pan_left', '向左横移'],
+    ['pan_right', '向右横移'],
+  ];
+  const expectedTransitions = [
+    ['fade', '淡入淡出'],
+    ['dissolve', '叠化'],
+    ['wipeleft', '向左擦除'],
+    ['wiperight', '向右擦除'],
+    ['slideleft', '向左滑动'],
+    ['slideright', '向右滑动'],
+  ];
+  const initial = await inspectPreviewEffects(cdpConnection);
+  if (JSON.stringify(initial.motionOptions) !== JSON.stringify(expectedMotions)
+    || JSON.stringify(initial.transitionOptions) !== JSON.stringify(expectedTransitions)
+    || initial.demoImageCount !== 2 || !initial.demoUsesDistinctSources) {
+    throw new Error(`Preview effects options or thumbnails are incomplete: ${JSON.stringify(initial)}`);
+  }
+  const changed = await evaluate(cdpConnection, `(() => {
+    const surface = document.querySelector('[data-html-video-preview-effects="true"]');
+    const [motion, transition] = surface ? [...surface.querySelectorAll('select')] : [];
+    const setter = Object.getOwnPropertyDescriptor(HTMLSelectElement.prototype, 'value')?.set;
+    if (!(motion instanceof HTMLSelectElement) || !(transition instanceof HTMLSelectElement) || !setter) return false;
+    setter.call(motion, 'pan_left');
+    motion.dispatchEvent(new Event('change', { bubbles: true }));
+    setter.call(transition, 'wipeleft');
+    transition.dispatchEvent(new Event('change', { bubbles: true }));
+    return true;
+  })()`);
+  if (!changed) throw new Error('Preview effects controls were unavailable.');
+  await waitFor(
+    async () => {
+      const state = await inspectPreviewEffects(cdpConnection);
+      return state.motionValue === 'pan_left'
+        && state.transitionValue === 'wipeleft'
+        && state.demoTransition === 'wipeleft'
+        && state.demoAnimationName === 'hv-transition-demo-wipe-left';
+    },
+    5_000,
+    'preview effects selection',
+  );
+  const replayed = await evaluate(cdpConnection, `(() => {
+    const button = document.querySelector('[data-html-video-preview-effects="true"] button[title="重播转场示意"]');
+    if (!(button instanceof HTMLButtonElement)) return false;
+    button.click();
+    return true;
+  })()`);
+  if (!replayed) throw new Error('Preview transition replay control was unavailable.');
+  await delay(120);
+  await evaluate(cdpConnection, `(() => {
+    const motion = document.querySelector('[data-html-video-preview-effects="true"] select');
+    const setter = Object.getOwnPropertyDescriptor(HTMLSelectElement.prototype, 'value')?.set;
+    if (!(motion instanceof HTMLSelectElement) || !setter) return false;
+    setter.call(motion, 'auto');
+    motion.dispatchEvent(new Event('change', { bubbles: true }));
+    const save = [...document.querySelectorAll('[data-html-video-preview-effects="true"] button')]
+      .find((item) => item.textContent?.includes('保存动效'));
+    if (!(save instanceof HTMLButtonElement)) return false;
+    save.click();
+    return true;
+  })()`);
+  await waitFor(
+    async () => {
+      const state = await inspectPreviewEffects(cdpConnection);
+      return state.motionValue === 'auto'
+        && state.transitionValue === 'wipeleft'
+        && state.completedStepCount === 5
+        && state.resumeAvailable;
+    },
+    10_000,
+    'preview effects save',
+  );
+  return { initial, ...(await inspectPreviewEffects(cdpConnection)), replayed };
 }
 
 async function inspectConfigControls(cdpConnection) {

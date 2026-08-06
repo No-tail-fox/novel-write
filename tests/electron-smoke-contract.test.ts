@@ -196,7 +196,7 @@ describe('real Electron smoke contract', () => {
     const cleanupFinally = qa.indexOf('} finally {', cleanupTry);
 
     expect(tempRoot).toBeGreaterThan(-1);
-    expect(qa.slice(afterTempRoot, cleanupTry).trim()).toBe('');
+    expect(qa.slice(afterTempRoot, cleanupTry).trim()).toBe('qaRun: {');
     expect(cleanupFinally).toBeGreaterThan(cleanupTry);
     expect(qa.slice(cleanupFinally, qa.indexOf('\n}', cleanupFinally) + 2)).toContain('await removeWithRetry(qaTempDir)');
   });

@@ -864,6 +864,7 @@ describe('Electron HTML video runtime contract', () => {
             ratio: '4:3',
             foreground: true,
             transitionType: 'dissolve',
+            sceneMotion: 'pan_right',
             ...(volume === undefined ? {} : { bgmVolume: volume }),
           };
         },
@@ -875,6 +876,7 @@ describe('Electron HTML video runtime contract', () => {
         canvas_h: 426,
         transition: { type: 'dissolve', duration: 0.3 },
       });
+      expect(captured?.scenes[0].html).toContain('data-draft-motion="pan_right"');
     });
   });
 

@@ -38,6 +38,40 @@ describe('HTML video editorial studio', () => {
     expect(addAssetHandler).toContain('persistHtmlVideoEditorialMutation');
   });
 
+  it('exposes scene motion and a real-thumbnail transition demonstration in preview', async () => {
+    const [page, panels, styles, qa] = await Promise.all([
+      source('../src/features/html-video/HtmlVideoPage.tsx'),
+      source('../src/features/html-video/HtmlVideoStoryboundPanels.tsx'),
+      source('../src/styles/features/html-video.css'),
+      source('../scripts/qa-html-video-ui.mjs'),
+    ]);
+
+    expect(page).toContain('data-html-video-create-field="sceneMotion"');
+    expect(page).toContain('data-html-video-edit-field="sceneMotion"');
+    expect(panels).toContain('data-html-video-preview-effects="true"');
+    expect(panels).toContain('<span>镜头动效</span>');
+    expect(panels).toContain('<span>场景转场</span>');
+    expect(panels).toContain("field: 'sceneMotion'");
+    expect(panels).toContain("field: 'transitionType'");
+    expect(panels).toContain('保存动效');
+    expect(panels).toContain('重播转场示意');
+    expect(panels).toContain('data-transition={transitionType}');
+    expect(panels).toContain('transitionThumbnails.map');
+    expect(styles).toContain('.hv-preview-effects {');
+    expect(styles).toContain('.hv-transition-demo {');
+    expect(styles).toContain('@keyframes hv-transition-demo-in');
+    expect(styles).toContain('.hv-cover-workspace:has(> .hv-reference-preview),');
+    expect(styles).toContain('@container hv-reference-preview (max-width: 760px)');
+    expect(qa).toContain('STORYDREAM_QA_EFFECTS_ONLY');
+    expect(qa).toContain('exercisePreviewEffects');
+    expect(qa).toContain("scope: 'preview-effects'");
+    expect(qa).toContain("'effects-desktop.png'");
+    expect(qa).toContain("'effects-compact.png'");
+    expect(qa).toContain("demoAnimationName === 'hv-transition-demo-wipe-left'");
+    expect(qa).toContain('workspaceHorizontalOverflow');
+    expect(qa).toContain('createQaSceneImage');
+  });
+
   it('opens on the dedicated creation page before entering a task workspace', async () => {
     const [page, styles, qa] = await Promise.all([
       source('../src/features/html-video/HtmlVideoPage.tsx'),
@@ -89,6 +123,16 @@ describe('HTML video editorial studio', () => {
     expect(styles).toContain('.hv-research-source-list {');
     expect(styles).not.toContain('.hv-create-details');
     expect(qa).toContain('inspectCreationPage');
+    expect(qa).toContain('exerciseLocalizedOptionControls');
+    expect(qa).toContain('STORYDREAM_QA_LOCALIZATION_ONLY');
+    expect(qa).toContain('scrollLocalizedOptionsIntoView');
+    expect(qa).toContain("'option-labels-desktop.png'");
+    expect(qa).toContain("'option-labels-compact.png'");
+    expect(qa).toContain("['fade', '淡入淡出']");
+    expect(qa).toContain("['volcengine', '火山引擎']");
+    expect(qa).toContain("targetTransition: 'wipeleft'");
+    expect(qa).toContain("targetProvider: 'minimax'");
+    expect(qa).toContain('break qaRun');
     expect(qa).toContain('exerciseResearchProviderControl');
     expect(qa).toContain('.hv-research-provider input');
     expect(qa).toContain("'Input.dispatchKeyEvent'");
@@ -144,7 +188,7 @@ describe('HTML video editorial studio', () => {
       source('../src/shared/html-video-control-manifest.ts'),
     ]);
     expect(manifest).toContain('HTML_VIDEO_CONTROL_MANIFEST_V1');
-    expect((manifest.match(/availability: 'editable'/g) ?? []).length).toBe(18);
+    expect((manifest.match(/availability: 'editable'/g) ?? []).length).toBe(19);
     expect(page).toContain('htmlVideoSteps.map');
     expect(page).toContain('taskProgressLabel');
     expect(page).toContain("setTaskStatus('paused')");

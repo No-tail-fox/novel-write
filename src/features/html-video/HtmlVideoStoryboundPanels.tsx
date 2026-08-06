@@ -27,6 +27,7 @@ import type {
   HtmlVideoAsset,
   HtmlVideoAssetTarget,
   HtmlVideoCompositionSnapshot,
+  HtmlVideoConfigChange,
   HtmlVideoPipelineData,
   HtmlVideoSceneChange,
   HtmlVideoScenePlan,
@@ -34,7 +35,7 @@ import type {
   Task,
   TtsProvider,
 } from '../../shared/types';
-import { HTML_VIDEO_TTS_SPEED_MAX, HTML_VIDEO_TTS_SPEED_MIN } from '../../shared/html-video-config';
+import { HTML_VIDEO_JOB_DEFAULTS, HTML_VIDEO_SCENE_MOTION_LABELS, HTML_VIDEO_SCENE_MOTIONS, HTML_VIDEO_TRANSITION_LABELS, HTML_VIDEO_TRANSITIONS, HTML_VIDEO_TTS_SPEED_MAX, HTML_VIDEO_TTS_SPEED_MIN } from '../../shared/html-video-config';
 import { htmlVideoMediaElementKey, htmlVideoMediaStatus } from '../../shared/html-video-media';
 import { HTML_VIDEO_SCENE_TEMPLATES, htmlVideoSceneTemplate, normalizeHtmlVideoSceneTemplate } from '../../shared/html-video-scene-templates';
 import { normalizeRuntimeTtsProvider, taskSpeakerLabel, ttsVoiceOptionsForProvider } from '../../shared/tts-voices';
@@ -463,12 +464,33 @@ export function HtmlVideoStoryboundPreviewPanel(props: EditorialPanelProps) {
   const [progress, setProgress] = useState(0);
   const [maximized, setMaximized] = useState(false);
   const [presetSceneIndex, setPresetSceneIndex] = useState<number | null>(null);
+  const [sceneMotion, setSceneMotion] = useState<Extract<HtmlVideoConfigChange, { field: 'sceneMotion' }>['value']>(
+    data.config.sceneMotion ?? HTML_VIDEO_JOB_DEFAULTS.sceneMotion,
+  );
+  const [transitionType, setTransitionType] = useState<Extract<HtmlVideoConfigChange, { field: 'transitionType' }>['value']>(
+    (data.config.transitionType ?? HTML_VIDEO_JOB_DEFAULTS.transitionType) as Extract<HtmlVideoConfigChange, { field: 'transitionType' }>['value'],
+  );
+  const [demoRevision, setDemoRevision] = useState(0);
+  const [effectsMessage, setEffectsMessage] = useState('');
   const iframeRef = useRef<HTMLIFrameElement | null>(null);
   const autoplayAll = useRef(false);
   const shouldResume = useRef(false);
   const action = useAsyncAction();
   const compositions = data.compositions;
   const composition = compositions[active];
+  const transitionThumbnails = compositions
+    .slice(0, 2)
+    .map((item) => item.thumbnailPath ?? item.background.src)
+    .filter((path): path is string => Boolean(path));
+  const effectsLocked = busy || action.busy || task.status === 'running' || task.status === 'pending' || isBrowserPreview;
+
+  useEffect(() => {
+    setSceneMotion(data.config.sceneMotion ?? HTML_VIDEO_JOB_DEFAULTS.sceneMotion);
+    setTransitionType(
+      (data.config.transitionType ?? HTML_VIDEO_JOB_DEFAULTS.transitionType) as Extract<HtmlVideoConfigChange, { field: 'transitionType' }>['value'],
+    );
+    setEffectsMessage('');
+  }, [data.config.sceneMotion, data.config.transitionType, task.id]);
 
   useEffect(() => {
     if (active >= compositions.length) setActive(Math.max(0, compositions.length - 1));
@@ -553,10 +575,69 @@ export function HtmlVideoStoryboundPreviewPanel(props: EditorialPanelProps) {
     });
   }
 
+  async function saveEffects() {
+    const changes: HtmlVideoConfigChange[] = [];
+    if (sceneMotion !== (data.config.sceneMotion ?? HTML_VIDEO_JOB_DEFAULTS.sceneMotion)) {
+      changes.push({ field: 'sceneMotion', value: sceneMotion });
+    }
+    if (transitionType !== (data.config.transitionType ?? HTML_VIDEO_JOB_DEFAULTS.transitionType)) {
+      changes.push({ field: 'transitionType', value: transitionType });
+    }
+    if (!changes.length) {
+      setEffectsMessage('动效设置没有变化。');
+      return;
+    }
+    await action.run(async () => {
+      const mutation = await api.updateHtmlVideoConfig(task.id, changes);
+      applyState(mutation);
+      await refreshTaskDetail(task.id);
+      setEffectsMessage('动效已保存，可从动画预览继续生成。');
+    }, { onError: (error) => setEffectsMessage(error.message) });
+  }
+
   if (!composition) return <div className="hv-empty">场景生成中，完成后可在此预览动画。</div>;
   return (
     <section className={`hv-reference-preview${maximized ? ' maxed' : ''}`}>
       <header className="hv-reference-panel-head"><strong>动画预览</strong><span>WebView 真实渲染 · 所见即所得</span><button className="mini-button primary" onClick={playAll}><Play size={13} />连播全部</button></header>
+      <section className="hv-preview-effects" data-html-video-preview-effects="true" aria-label="镜头动效与场景转场">
+        <div className="hv-preview-effects-controls">
+          <label>
+            <span>镜头动效</span>
+            <select value={sceneMotion} disabled={effectsLocked} onChange={(event) => setSceneMotion(event.target.value as typeof sceneMotion)}>
+              {HTML_VIDEO_SCENE_MOTIONS.map((motion) => <option key={motion} value={motion}>{HTML_VIDEO_SCENE_MOTION_LABELS[motion]}</option>)}
+            </select>
+          </label>
+          <label>
+            <span>场景转场</span>
+            <select value={transitionType} disabled={effectsLocked} onChange={(event) => {
+              setTransitionType(event.target.value as typeof transitionType);
+              setDemoRevision((value) => value + 1);
+            }}>
+              {HTML_VIDEO_TRANSITIONS.map((transition) => <option key={transition} value={transition}>{HTML_VIDEO_TRANSITION_LABELS[transition]}</option>)}
+            </select>
+          </label>
+          <button className="mini-button" type="button" disabled={effectsLocked} onClick={() => void saveEffects()}>
+            {action.busy ? <Loader2 className="spin" size={14} /> : <Save size={14} />}保存动效
+          </button>
+        </div>
+        <div className="hv-transition-demo-wrap">
+          <div key={`${transitionType}-${demoRevision}`} className="hv-transition-demo" data-transition={transitionType} aria-label="场景转场示意">
+            {transitionThumbnails.map((path, index) => mediaUrls[path] ? (
+              <img
+                key={`${htmlVideoMediaElementKey(task.id, path, mediaRetryRevision)}-${index}`}
+                className={`hv-transition-demo-frame frame-${index + 1}`}
+                src={mediaUrls[path]}
+                alt=""
+                onError={() => onMediaElementError(path)}
+                onLoad={() => onMediaElementReady(path)}
+              />
+            ) : <span key={`${path}-${index}`} className={`hv-transition-demo-frame frame-${index + 1} hv-media-state`}><Loader2 className="spin" size={14} /></span>)}
+            {transitionThumbnails.length < 2 ? <span className="hv-transition-demo-empty">需要至少两个场景</span> : null}
+          </div>
+          <button type="button" title="重播转场示意" onClick={() => setDemoRevision((value) => value + 1)}><RotateCcw size={14} /></button>
+        </div>
+        {effectsMessage ? <span className="local-note" role="status">{effectsMessage}</span> : null}
+      </section>
       <div className="hv-reference-preview-main">
         <div className="hv-reference-stage">
           <div className="hv-reference-phone" style={{ aspectRatio: `${composition.canvas.w} / ${composition.canvas.h}` }}>

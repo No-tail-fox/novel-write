@@ -2478,6 +2478,7 @@ function buildRuntimeComposition(
     bgmTargetDb: htmlVideoBgmTargetDb(input.config.bgmVolume),
     captionConfig: input.config,
     draftTemplate: input.draftTemplate,
+    sceneMotion: input.config.sceneMotion ?? HTML_VIDEO_JOB_DEFAULTS.sceneMotion,
     scenePlans: input.scenes,
     fps,
     canvas_w: canvas.width,

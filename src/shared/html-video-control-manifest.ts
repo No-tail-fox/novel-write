@@ -13,6 +13,7 @@ export const HTML_VIDEO_CONTROL_FIELDS = [
   'captionColors',
   'bgmVolume',
   'transitionType',
+  'sceneMotion',
   'coverImageMode',
   'coverTemplate',
   'coverRatio',
@@ -35,6 +36,7 @@ export const HTML_VIDEO_EDITABLE_CONTROL_FIELDS = [
   'captionColors',
   'bgmVolume',
   'transitionType',
+  'sceneMotion',
   'coverImageMode',
   'coverTemplate',
   'coverRatio',
@@ -45,7 +47,7 @@ export const HTML_VIDEO_EDITABLE_CONTROL_FIELDS = [
   'ratio',
 ] as const satisfies readonly HtmlVideoEditableConfigField[];
 export type HtmlVideoControlAvailability = 'editable' | 'read-only-compatible';
-export type HtmlVideoControlUiLocation = 'parameters' | 'voice' | 'caption' | 'render' | 'cover' | 'draft';
+export type HtmlVideoControlUiLocation = 'parameters' | 'voice' | 'caption' | 'preview' | 'render' | 'cover' | 'draft';
 
 export interface HtmlVideoControlManifestEntry {
   defaultResolver: HtmlVideoControlField;
@@ -118,6 +120,10 @@ export const HTML_VIDEO_CONTROL_MANIFEST_V1 = {
   transitionType: entry('transitionType', {
     schema: 'transition', uiLocation: 'render', legacyMirror: null,
     consumerStages: ['render'], invalidateFrom: 'render', availability: 'editable',
+  }),
+  sceneMotion: entry('sceneMotion', {
+    schema: 'scene-motion', uiLocation: 'preview', legacyMirror: null,
+    consumerStages: ['preview', 'render'], invalidateFrom: 'preview', availability: 'editable',
   }),
   coverImageMode: entry('coverImageMode', {
     schema: 'cover-mode', uiLocation: 'cover', legacyMirror: 'coverImageMode',

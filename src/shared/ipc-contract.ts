@@ -5,6 +5,7 @@ import { isSecretId, type SaveConfigInput } from './config-secrets';
 import {
   HTML_VIDEO_BGM_VOLUMES,
   HTML_VIDEO_RATIOS,
+  HTML_VIDEO_SCENE_MOTIONS,
   HTML_VIDEO_TTS_PROVIDERS,
   HTML_VIDEO_TTS_SPEED_MAX,
   HTML_VIDEO_TTS_SPEED_MIN,
@@ -298,6 +299,7 @@ const htmlVideoConfigChangeSchema = z.discriminatedUnion('field', [
   }).strict(),
   z.object({ field: z.literal('bgmVolume'), value: z.enum(HTML_VIDEO_BGM_VOLUMES) }).strict(),
   z.object({ field: z.literal('transitionType'), value: z.enum(HTML_VIDEO_TRANSITIONS) }).strict(),
+  z.object({ field: z.literal('sceneMotion'), value: z.enum(HTML_VIDEO_SCENE_MOTIONS) }).strict(),
   z.object({ field: z.literal('coverImageMode'), value: z.enum(HTML_VIDEO_COVER_MODES) }).strict(),
   z.object({ field: z.literal('coverTemplate'), value: nonEmptyText(256) }).strict(),
   z.object({ field: z.literal('coverRatio'), value: z.enum(HTML_VIDEO_COVER_RATIOS) }).strict(),

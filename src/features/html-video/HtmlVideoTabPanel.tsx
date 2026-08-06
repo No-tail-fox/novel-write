@@ -10,7 +10,7 @@ import type { BgmItem, CustomCoverTemplate, HtmlVideoConfigChange, HtmlVideoCove
 import { HTML_VIDEO_CAPTION_ANIMATIONS, HTML_VIDEO_CAPTION_COLOR_KEYS, HTML_VIDEO_CAPTION_PRESETS, htmlVideoCaptionColorsEqual, htmlVideoCaptionPickerColor, resolveHtmlVideoCaptionStyle, validateHtmlVideoCaptionColors, type HtmlVideoCaptionAnimation, type HtmlVideoCaptionColorKey, type HtmlVideoCaptionColorOverrides, type HtmlVideoCaptionPreset } from '../../shared/html-video-captions';
 import { HTML_VIDEO_CONTROL_MANIFEST_V1 } from '../../shared/html-video-control-manifest';
 import { HTML_VIDEO_COVER_MODES, HTML_VIDEO_COVER_RATIOS, buildHtmlVideoCoverPrompt, htmlVideoCoverDimensions } from '../../shared/html-video-cover';
-import { HTML_VIDEO_BGM_VOLUMES, HTML_VIDEO_JOB_DEFAULTS, HTML_VIDEO_TRANSITIONS } from '../../shared/html-video-config';
+import { HTML_VIDEO_BGM_VOLUMES, HTML_VIDEO_JOB_DEFAULTS, HTML_VIDEO_TRANSITION_LABELS, HTML_VIDEO_TRANSITIONS } from '../../shared/html-video-config';
 import { htmlVideoMediaElementKey, htmlVideoMediaStatus } from '../../shared/html-video-media';
 import { fitHtmlVideoOutputSize, htmlVideoUserFacingError, safeParseHtmlVideoPipelineData } from '../../shared/html-video-workflow';
 import { useAsyncAction } from '../../ui/async-action';
@@ -488,7 +488,7 @@ function HtmlVideoOutputActions({
       <div className="hv-output-control">
         <label><span>背景音乐</span><select value={bgmId} disabled={locked} onChange={(event) => setBgmId(event.target.value)}><option value="">无配乐</option>{bgmId && !bgmOptions.some((item) => item.id === bgmId) ? <option value={bgmId}>{bgmId}（已缺失）</option> : null}{bgmOptions.map((item) => <option key={item.id} value={item.id}>{item.title}</option>)}</select></label>
         <label><span>配乐音量</span><select value={bgmVolume} disabled={locked} onChange={(event) => setBgmVolume(event.target.value as typeof bgmVolume)}>{HTML_VIDEO_BGM_VOLUMES.map((value, index) => <option key={value} value={value}>{['轻', '中', '响'][index]}</option>)}</select></label>
-        <label><span>场景转场</span><select value={transitionType} disabled={locked} onChange={(event) => setTransitionType(event.target.value as typeof transitionType)}>{HTML_VIDEO_TRANSITIONS.map((value) => <option key={value} value={value}>{value}</option>)}</select></label>
+        <label><span>场景转场</span><select value={transitionType} disabled={locked} onChange={(event) => setTransitionType(event.target.value as typeof transitionType)}>{HTML_VIDEO_TRANSITIONS.map((value) => <option key={value} value={value}>{HTML_VIDEO_TRANSITION_LABELS[value]}</option>)}</select></label>
       </div>
       <div className="hv-output-buttons">
         <button className="mini-button primary" type="button" disabled={!task.outputDir || isBrowserPreview} onClick={openOutputDirectory}><FolderOpen size={14} />打开目录</button>

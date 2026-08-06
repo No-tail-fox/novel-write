@@ -113,6 +113,30 @@ describe('HTML video runner module', () => {
     });
   });
 
+  it('continues with local scenes when configured-LLM scene validation is rejected', async () => {
+    await withTempRunner(async (workDir) => {
+      const runtime = createFakeRuntime(workDir);
+      runtime.options.plan = async () => {
+        throw new AppError(
+          'HTML_VIDEO_LLM_INVALID_JSON',
+          '场景规划返回的场景结构不符合要求：scenes[0].narration must be a string。',
+          true,
+        );
+      };
+
+      const result = await runHtmlVideoPipeline(
+        createRunnerInput('planner-scene-validation-fallback', '第一句。\n\n第二句。'),
+        runtime.options,
+      );
+
+      expect(result.current).toBe('done');
+      expect(result.steps.planning.status).toBe('completed');
+      expect(result.scenes.map((scene) => scene.narration)).toEqual(['第一句。', '第二句。']);
+      expect(result.warnings.join('\n')).toMatch(/场景结构.*已改用本地分镜规划/);
+      expect(runtime.calls).toEqual(['rewrite', 'assets', 'voice', 'preview', 'render']);
+    });
+  });
+
   it('keeps deterministic fallback warnings within the persisted schema limit', async () => {
     await withTempRunner(async (workDir) => {
       const input = createRunnerInput('bounded-fallback-warnings', '第一句。\n\n第二句。');
@@ -997,6 +1021,7 @@ describe('HTML video runner module', () => {
         captionColors: { text: '#ffffff', accent: '#11aabb' },
         bgmVolume: 'medium',
         transitionType: 'dissolve',
+        sceneMotion: 'pan_left',
         maxScenes: 12,
         ratio: '4:3',
         foreground: false,
@@ -1015,6 +1040,7 @@ describe('HTML video runner module', () => {
           captionAnim: 'pop',
           captionColors: { text: '#ffffff', accent: '#11aabb' },
           ratio: '4:3',
+          sceneMotion: 'pan_left',
         },
         render: {
           bgmId: 'bgm-custom',
@@ -1022,6 +1048,7 @@ describe('HTML video runner module', () => {
           captionAnim: 'pop',
           captionColors: { text: '#ffffff', accent: '#11aabb' },
           bgmVolume: 'medium',
+          sceneMotion: 'pan_left',
           transitionType: 'dissolve',
           coverImageMode: 'off',
           coverTemplate: 'cinematic-poster',

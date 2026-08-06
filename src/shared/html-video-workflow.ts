@@ -168,7 +168,17 @@ const legacyHtmlVideoStepFailureLabels: Record<string, string> = {
 };
 
 export function htmlVideoUserFacingError(message: string): string {
-  const match = /^HTML video (rewrite|plan|planning|assets|voice|preview|render) step failed\.?$/iu.exec(message.trim());
+  const trimmed = message.trim();
+  const imageTimeout = /^Image provider (?:request|edit request|async submit|async poll) timed out after (\d+)ms\.?$/iu.exec(trimmed);
+  if (imageTimeout) {
+    const timeoutSeconds = Math.max(1, Math.round(Number(imageTimeout[1]) / 1000));
+    return `图片服务请求超过 ${timeoutSeconds} 秒未完成。请检查图片服务状态后，从素材生成重试。`;
+  }
+  const negativeSlot = /^scenes\[(\d+)\]\.elements\[(\d+)\]\.slot must be a non-negative number\.?$/iu.exec(trimmed);
+  if (negativeSlot) {
+    return `第 ${Number(negativeSlot[1]) + 1} 个场景的第 ${Number(negativeSlot[2]) + 1} 个前景素材位置编号不能为负数`;
+  }
+  const match = /^HTML video (rewrite|plan|planning|assets|voice|preview|render) step failed\.?$/iu.exec(trimmed);
   if (!match) return message;
   const label = legacyHtmlVideoStepFailureLabels[match[1].toLowerCase()];
   return `${label}失败。请从${label}重试。`;

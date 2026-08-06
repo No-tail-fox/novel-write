@@ -119,6 +119,7 @@ describe('IPC runtime contract', () => {
       { ttsSpeed: 10.01 },
       { bgmVolume: 'silent' },
       { transitionType: 'unknown-transition' },
+      { sceneMotion: 'unknown-motion' },
       { ratio: '3:2' },
       { unknownField: true },
     ]) {
@@ -150,6 +151,7 @@ describe('IPC runtime contract', () => {
         { field: 'ttsSpeed', value: 1.25 },
         { field: 'bgmVolume', value: 'medium' },
         { field: 'transitionType', value: 'dissolve' },
+        { field: 'sceneMotion', value: 'zoom_pan_up' },
         { field: 'ratio', value: '4:3' },
         { field: 'captionPreset', value: 'editorial' },
         { field: 'captionAnim', value: 'pop' },
@@ -168,6 +170,7 @@ describe('IPC runtime contract', () => {
       { field: 'ttsSpeed', value: 10.01 },
       { field: 'bgmVolume', value: 'silent' },
       { field: 'transitionType', value: 'unknown-transition' },
+      { field: 'sceneMotion', value: 'unknown-motion' },
       { field: 'ratio', value: '3:2' },
       { field: 'captionPreset', value: 'vendor-preset' },
       { field: 'captionAnim', value: 'spin' },
@@ -195,6 +198,7 @@ describe('IPC runtime contract', () => {
         { field: 'captionColors', value: { shadow: '#000000aa' } },
         { field: 'bgmVolume', value: 'soft' },
         { field: 'transitionType', value: 'fade' },
+        { field: 'sceneMotion', value: 'auto' },
         { field: 'coverImageMode', value: 'off' },
         { field: 'coverTemplate', value: 'cinematic-poster' },
         { field: 'coverRatio', value: '3:4' },
@@ -204,7 +208,7 @@ describe('IPC runtime contract', () => {
         { field: 'maxScenes', value: 8 },
         { field: 'ratio', value: '9:16' },
       ],
-    }).changes).toHaveLength(18);
+    }).changes).toHaveLength(19);
 
     expect(contract.ipcInputSchemas['html-video:add-asset'].parse({
       id: 'html-task-1',

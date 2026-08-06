@@ -1,6 +1,6 @@
 import { pathToFileURL } from 'node:url';
 import { runtimeProtocolMetadata } from '@hyperframes/core/runtime/protocol';
-import type { DraftTemplate, HtmlVideoJobConfig, HtmlVideoScenePlan, PipelineArtifact } from './types';
+import type { DraftTemplate, HtmlVideoJobConfig, HtmlVideoSceneMotion, HtmlVideoScenePlan, PipelineArtifact } from './types';
 import { resolveHtmlVideoCaptionStyle, type ResolvedHtmlVideoCaptionStyle } from './html-video-captions';
 import { GSAP_RUNTIME_FILENAME, HYPERFRAMES_RUNTIME_FILENAME } from './hyperframes';
 import { htmlVideoSceneTemplate } from './html-video-scene-templates';
@@ -59,6 +59,7 @@ export interface HtmlVideoBuildInput {
   canvas_w: number;
   canvas_h: number;
   transition?: { type: string; duration: number };
+  sceneMotion?: HtmlVideoSceneMotion;
   captionConfig?: Pick<HtmlVideoJobConfig, 'captionPreset' | 'captionAnim' | 'captionColors'>;
   captionReducedMotion?: boolean;
   draftTemplate?: DraftTemplate;
@@ -161,6 +162,7 @@ export function buildHtmlVideoExportInput(input: HtmlVideoBuildInput): HtmlVideo
         canvas_h: Math.max(1, Math.round(input.canvas_h)),
         captionStyle,
         draftTemplate: input.draftTemplate,
+        sceneMotion: input.sceneMotion,
         plan: scene.plan,
       }),
       duration: roundSeconds(scene.durationMs / 1000),
@@ -213,6 +215,7 @@ function buildSceneHtml(scene: {
   canvas_h: number;
   captionStyle: ResolvedHtmlVideoCaptionStyle;
   draftTemplate?: DraftTemplate;
+  sceneMotion?: HtmlVideoSceneMotion;
   plan?: HtmlVideoScenePlan;
 }): string {
   const compositionId = `storydream-scene-${scene.sceneId}`;
@@ -239,7 +242,8 @@ function buildSceneHtml(scene: {
   }).join('\n    ');
   const captionColors = scene.captionStyle.colors;
   const layout = resolveDraftTemplateHtmlLayout(scene.draftTemplate, scene.canvas_w, scene.canvas_h);
-  const motionTween = draftTemplateMotionTween(scene.draftTemplate, scene.duration);
+  const effectiveMotion = resolveSceneMotion(scene.draftTemplate, scene.sceneMotion);
+  const motionTween = draftTemplateMotionTween(scene.draftTemplate, scene.duration, scene.sceneMotion);
   const titleScale = clampNumber(scene.plan?.titleScale ?? 1, 0.25, 3);
   const captionScale = clampNumber(scene.plan?.captionScale ?? 1, 0.25, 3);
   const template = htmlVideoSceneTemplate(scene.plan?.sceneTemplate);
@@ -552,7 +556,7 @@ function buildSceneHtml(scene: {
   <script nonce="storydream-html-video" src="./${HYPERFRAMES_RUNTIME_FILENAME}"></script>
 </head>
 <body>
-  <div id="${compositionId}" class="frame" data-composition-id="${compositionId}" data-start="0" data-duration="${scene.duration}" data-width="${scene.canvas_w}" data-height="${scene.canvas_h}" data-caption-preset="${scene.captionStyle.preset}" data-caption-animation="${scene.captionStyle.animation}" data-scene-template="${sceneTemplate}" data-draft-motion="${layout.motion || 'legacy'}" data-draft-frame="${layout.frameEnabled}">
+  <div id="${compositionId}" class="frame" data-composition-id="${compositionId}" data-start="0" data-duration="${scene.duration}" data-width="${scene.canvas_w}" data-height="${scene.canvas_h}" data-caption-preset="${scene.captionStyle.preset}" data-caption-animation="${scene.captionStyle.animation}" data-scene-template="${sceneTemplate}" data-draft-motion="${effectiveMotion}" data-draft-frame="${layout.frameEnabled}">
     ${layout.frameEnabled ? '<div class="draft-frame-band draft-frame-header"></div><div class="draft-frame-band draft-frame-footer"></div>' : ''}
     <div class="scene-image-region"><img id="scene-background" class="clip scene-image" data-start="0" data-duration="${scene.duration}" data-track-index="0" src="${imageDataUrl}" alt="" /></div>
     <audio id="scene-narration" class="clip scene-audio" data-start="0" data-duration="${scene.duration}" data-track-index="1" data-volume="1" src="${audioDataUrl}" preload="auto"></audio>
@@ -735,9 +739,22 @@ function resolveDraftTemplateHtmlLayout(template: DraftTemplate | undefined, can
   };
 }
 
-function draftTemplateMotionTween(template: DraftTemplate | undefined, duration: number): string {
-  const motion = template?.image.motion ?? '';
-  const strength = clampNumber(template?.image.motionStrength ?? 1, 0, 2);
+function resolveSceneMotion(template: DraftTemplate | undefined, sceneMotion: HtmlVideoSceneMotion | undefined): string {
+  if (sceneMotion === 'none') return 'none';
+  if (sceneMotion && sceneMotion !== 'auto') return sceneMotion;
+  return template?.image.motion || 'legacy';
+}
+
+function draftTemplateMotionTween(
+  template: DraftTemplate | undefined,
+  duration: number,
+  sceneMotion: HtmlVideoSceneMotion | undefined,
+): string {
+  const motion = sceneMotion && sceneMotion !== 'auto' ? sceneMotion : template?.image.motion ?? '';
+  if (motion === 'none') return '';
+  const strength = sceneMotion && sceneMotion !== 'auto'
+    ? 1
+    : clampNumber(template?.image.motionStrength ?? 1, 0, 2);
   if (strength <= 0) return '';
   const scale = roundCssNumber(1 + strength * 0.08);
   const pan = roundCssNumber(strength * 4);

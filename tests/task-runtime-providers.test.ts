@@ -156,6 +156,20 @@ describe('task runtime providers', () => {
     });
   });
 
+  it('preserves a native image timeout as a retryable provider diagnostic', async () => {
+    await withRuntimeTask(async (task) => {
+      const generateAssets = adaptHtmlVideoAssetGenerator(async () => {
+        throw new Error('Image provider request timed out after 180000ms.');
+      }, task);
+
+      await expect(generateAssets({ scenes: htmlScenes(), config: { foreground: true } })).rejects.toMatchObject({
+        code: 'IMAGE_PROVIDER_TIMEOUT',
+        message: 'Image provider request timed out after 180000ms.',
+        retryable: true,
+      });
+    });
+  });
+
   it('rejects oversized direct image scene arrays before reading items or calling the provider', async () => {
     await withRuntimeTask(async (task) => {
       let sceneAccessed = false;
@@ -473,6 +487,42 @@ describe('task runtime providers', () => {
       expect(JSON.stringify(requests)).not.toContain('configSnapshot');
       expect(JSON.stringify(requests)).not.toContain('transitionType');
       expect(JSON.stringify(requests)).not.toContain('metadata-only-caption');
+    });
+  });
+
+  it('classifies structurally invalid configured-LLM scenes for local planning fallback', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async () => new Response(JSON.stringify({
+        id: 'html-invalid-plan',
+        choices: [{ message: { content: JSON.stringify({ scenes: [{ index: 1, narration: 42 }] }) } }],
+      }), {
+        status: 200,
+        headers: { 'content-type': 'application/json' },
+      })),
+    );
+
+    await withRuntimeTask(async (task, workDir) => {
+      const config = {
+        ...defaultConfig,
+        llm: { ...defaultConfig.llm, apiKey: 'html-key', model: 'html-model', enabled: true },
+      };
+      const providers = createHtmlVideoRuntimeProviders(config, workDir, task, {
+        measureAudioDuration: async () => 1,
+        jobConfig: { maxScenes: 8 },
+      });
+      const error = await providers.plan?.({
+        rewrittenText: '改写后的第一幕。',
+        segments: ['改写后的第一幕。'],
+        config: { maxScenes: 8 },
+        configSnapshot: { maxScenes: 8 },
+      }).then(() => null, (reason: unknown) => reason);
+
+      expect(error).toMatchObject({
+        code: 'HTML_VIDEO_LLM_INVALID_JSON',
+        retryable: true,
+      });
+      expect(String((error as Error).message)).toMatch(/场景规划.*结构.*scenes\[0\]\.narration/i);
     });
   });
 

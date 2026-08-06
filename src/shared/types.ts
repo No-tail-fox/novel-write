@@ -620,6 +620,16 @@ export interface HtmlVideoCoverAsset {
   templateId?: string;
 }
 
+export type HtmlVideoSceneMotion =
+  | 'auto'
+  | 'none'
+  | 'zoom_in'
+  | 'zoom_out'
+  | 'zoom_pan_up'
+  | 'zoom_pan_down'
+  | 'pan_left'
+  | 'pan_right';
+
 export interface HtmlVideoJobConfig {
   style?: string;
   voiceId?: string;
@@ -631,6 +641,7 @@ export interface HtmlVideoJobConfig {
   captionColors?: Record<string, string>;
   bgmVolume?: 'soft' | 'medium' | 'loud';
   transitionType?: string;
+  sceneMotion?: HtmlVideoSceneMotion;
   coverImageMode?: HtmlVideoCoverMode;
   coverTemplate?: string;
   coverRatio?: HtmlVideoCoverRatio;
@@ -652,6 +663,7 @@ export type HtmlVideoEditableConfigField =
   | 'captionColors'
   | 'bgmVolume'
   | 'transitionType'
+  | 'sceneMotion'
   | 'coverImageMode'
   | 'coverTemplate'
   | 'coverRatio'
@@ -672,6 +684,7 @@ export type HtmlVideoConfigChange =
   | { field: 'captionColors'; value: Record<string, string> }
   | { field: 'bgmVolume'; value: 'soft' | 'medium' | 'loud' }
   | { field: 'transitionType'; value: 'fade' | 'dissolve' | 'wipeleft' | 'wiperight' | 'slideleft' | 'slideright' }
+  | { field: 'sceneMotion'; value: HtmlVideoSceneMotion }
   | { field: 'coverImageMode'; value: HtmlVideoCoverMode }
   | { field: 'coverTemplate'; value: string }
   | { field: 'coverRatio'; value: HtmlVideoCoverRatio }

@@ -31,7 +31,7 @@ export const approvedEditorialInventories = {
   ], 'src/shared/types.ts', 'src/features/tasks/task-create-input.ts', 'tests/renderer-architecture.test.ts'),
   htmlVideoFields: inventory([
     'style', 'voiceId', 'ttsProvider', 'ttsSpeed', 'bgmId', 'captionPreset', 'captionAnim', 'captionColors',
-    'bgmVolume', 'transitionType', 'coverImageMode', 'coverTemplate', 'coverRatio', 'coverPrompt', 'draftTemplate',
+    'bgmVolume', 'transitionType', 'sceneMotion', 'coverImageMode', 'coverTemplate', 'coverRatio', 'coverPrompt', 'draftTemplate',
     'foreground', 'maxScenes', 'ratio',
   ], 'src/shared/html-video-control-manifest.ts', 'src/features/html-video/HtmlVideoPage.tsx', 'tests/html-video-control-manifest.test.ts'),
   imageSmartModes: inventory([

@@ -3,7 +3,7 @@ import {
   HTML_VIDEO_CONTROL_MANIFEST_V1,
   type HtmlVideoControlField,
 } from './html-video-control-manifest';
-import type { HtmlVideoJobConfig, HtmlVideoVisibleStep } from './types';
+import type { HtmlVideoJobConfig, HtmlVideoSceneMotion, HtmlVideoVisibleStep } from './types';
 import {
   validateHtmlVideoCaptionAnimation,
   validateHtmlVideoCaptionColors,
@@ -24,6 +24,39 @@ export const HTML_VIDEO_TRANSITIONS = [
   'slideleft',
   'slideright',
 ] as const;
+export const HTML_VIDEO_SCENE_MOTIONS = [
+  'auto',
+  'none',
+  'zoom_in',
+  'zoom_out',
+  'zoom_pan_up',
+  'zoom_pan_down',
+  'pan_left',
+  'pan_right',
+] as const satisfies readonly HtmlVideoSceneMotion[];
+export const HTML_VIDEO_TTS_PROVIDER_LABELS = {
+  volcengine: '火山引擎',
+  minimax: 'MiniMax',
+  mock: '模拟配音',
+} as const satisfies Record<(typeof HTML_VIDEO_TTS_PROVIDERS)[number], string>;
+export const HTML_VIDEO_TRANSITION_LABELS = {
+  fade: '淡入淡出',
+  dissolve: '叠化',
+  wipeleft: '向左擦除',
+  wiperight: '向右擦除',
+  slideleft: '向左滑动',
+  slideright: '向右滑动',
+} as const satisfies Record<(typeof HTML_VIDEO_TRANSITIONS)[number], string>;
+export const HTML_VIDEO_SCENE_MOTION_LABELS = {
+  auto: '跟随画面预设',
+  none: '无镜头运动',
+  zoom_in: '缓慢推进',
+  zoom_out: '缓慢拉远',
+  zoom_pan_up: '推进上移',
+  zoom_pan_down: '推进下移',
+  pan_left: '向左横移',
+  pan_right: '向右横移',
+} as const satisfies Record<HtmlVideoSceneMotion, string>;
 export const HTML_VIDEO_RATIOS = ['9:16', '16:9', '1:1', '4:3'] as const;
 
 type HtmlVideoDefaultedField =
@@ -33,6 +66,7 @@ type HtmlVideoDefaultedField =
   | 'ttsSpeed'
   | 'bgmId'
   | 'transitionType'
+  | 'sceneMotion'
   | 'coverImageMode'
   | 'coverTemplate'
   | 'coverRatio'
@@ -52,6 +86,7 @@ const HTML_VIDEO_DEFAULTED_FIELDS: readonly HtmlVideoDefaultedField[] = [
   'ttsSpeed',
   'bgmId',
   'transitionType',
+  'sceneMotion',
   'coverImageMode',
   'coverTemplate',
   'coverRatio',
@@ -79,6 +114,7 @@ export const HTML_VIDEO_JOB_DEFAULTS = {
   captionColors: undefined,
   bgmVolume: undefined,
   transitionType: 'fade',
+  sceneMotion: 'auto',
   coverImageMode: 'off',
   coverTemplate: 'cinematic-poster',
   coverRatio: '3:4',
@@ -120,6 +156,8 @@ export function preserveHtmlVideoJobConfig(value: unknown): HtmlVideoJobConfig {
       result.bgmVolume = requireEnum(current, field, HTML_VIDEO_BGM_VOLUMES);
     } else if (field === 'transitionType') {
       result.transitionType = requireEnum(current, field, HTML_VIDEO_TRANSITIONS);
+    } else if (field === 'sceneMotion') {
+      result.sceneMotion = requireEnum(current, field, HTML_VIDEO_SCENE_MOTIONS);
     } else if (field === 'foreground') {
       if (typeof current !== 'boolean') throw invalidConfig(`${field} is invalid`);
       result.foreground = current;

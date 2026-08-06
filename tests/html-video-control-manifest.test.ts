@@ -34,6 +34,7 @@ const APPROVED_HTML_VIDEO_FIELDS = [
   'captionColors',
   'bgmVolume',
   'transitionType',
+  'sceneMotion',
   'coverImageMode',
   'coverTemplate',
   'coverRatio',
@@ -55,6 +56,7 @@ const fullCustomConfig: Required<HtmlVideoJobConfig> = {
   captionColors: { text: '#ffffff', accent: '#11aabb' },
   bgmVolume: 'medium',
   transitionType: 'dissolve',
+  sceneMotion: 'pan_left',
   coverImageMode: 'auto',
   coverTemplate: 'custom-cover-template',
   coverRatio: '3:4',
@@ -66,7 +68,7 @@ const fullCustomConfig: Required<HtmlVideoJobConfig> = {
 };
 
 describe('HTML video control manifest', () => {
-  it('governs exactly all 18 approved fields with complete metadata', () => {
+  it('governs exactly all 19 approved fields with complete metadata', () => {
     expect(HTML_VIDEO_CONTROL_MANIFEST_VERSION).toBe(1);
     expect([...HTML_VIDEO_CONTROL_FIELDS].sort()).toEqual([...APPROVED_HTML_VIDEO_FIELDS].sort());
     expect(Object.keys(HTML_VIDEO_CONTROL_MANIFEST_V1).sort()).toEqual([...APPROVED_HTML_VIDEO_FIELDS].sort());
@@ -92,6 +94,13 @@ describe('HTML video control manifest', () => {
       promptDependencyStages: [],
       consumerStages: ['render'],
       invalidateFrom: 'render',
+      availability: 'editable',
+    }));
+    expect(HTML_VIDEO_CONTROL_MANIFEST_V1.sceneMotion).toEqual(expect.objectContaining({
+      promptStages: ['rewrite', 'planning'],
+      promptDependencyStages: [],
+      consumerStages: ['preview', 'render'],
+      invalidateFrom: 'preview',
       availability: 'editable',
     }));
     for (const field of ['captionPreset', 'captionAnim', 'captionColors'] as const) {
@@ -132,6 +141,7 @@ describe('HTML video control manifest', () => {
       captionColors: null,
       bgmVolume: null,
       transitionType: null,
+      sceneMotion: null,
       coverImageMode: 'coverImageMode',
       coverTemplate: 'coverTemplateId',
       coverRatio: null,
@@ -154,6 +164,7 @@ describe('HTML video control manifest', () => {
       'foreground',
       'maxScenes',
       'ratio',
+      'sceneMotion',
       'style',
       'transitionType',
       'ttsProvider',
@@ -167,6 +178,7 @@ describe('HTML video control manifest', () => {
       ttsSpeed: 1,
       bgmId: '',
       transitionType: 'fade',
+      sceneMotion: 'auto',
       coverImageMode: 'off',
       coverTemplate: 'cinematic-poster',
       coverRatio: '3:4',
@@ -244,6 +256,7 @@ describe('HTML video control manifest', () => {
       'voiceId',
       'ttsProvider',
       'transitionType',
+      'sceneMotion',
       'ratio',
     ]));
     expect(recovered.defaultedFields).not.toEqual(expect.arrayContaining([
@@ -272,6 +285,7 @@ describe('HTML video control manifest', () => {
     [{ ttsSpeed: 10.01 }, /ttsSpeed/i],
     [{ bgmVolume: 'silent' }, /bgmVolume/i],
     [{ transitionType: 'shell;rm' }, /transitionType/i],
+    [{ sceneMotion: 'spin-around' }, /sceneMotion/i],
     [{ ratio: '3:2' }, /ratio/i],
     [{ maxScenes: 0 }, /maxScenes/i],
     [{ maxScenes: 31 }, /maxScenes/i],
@@ -315,6 +329,7 @@ describe('HTML video control manifest', () => {
         captionColors: { text: '#ffffff', accent: '#11aabb' },
         draftTemplate: 'custom-draft-template',
         ratio: '4:3',
+        sceneMotion: 'pan_left',
       },
       render: {
         bgmId: 'bgm-custom',
@@ -328,6 +343,7 @@ describe('HTML video control manifest', () => {
         coverPrompt: 'custom cover prompt',
         draftTemplate: 'custom-draft-template',
         ratio: '4:3',
+        sceneMotion: 'pan_left',
         transitionType: 'dissolve',
       },
     };
@@ -415,6 +431,27 @@ describe('HTML video control manifest', () => {
       { field: 'captionColors', value: { accent: '#36d7c5', text: '#ffffff' } },
     ])).toThrow(/没有发生变化|UNCHANGED/i);
     expect(JSON.stringify(pipeline)).toBe(before);
+  });
+
+  it('applies scene motion from preview without invalidating paid assets or voices', () => {
+    const pipeline = createHtmlVideoPipelineData('Task 17 scene motion mutation');
+    pipeline.current = 'done';
+    for (const step of Object.keys(pipeline.steps) as HtmlVideoVisibleStep[]) {
+      pipeline.steps[step] = { status: 'completed', inputHash: `${step}-input`, artifactPath: `steps/${step}.json`, artifactSize: 10 };
+    }
+    pipeline.compositions = [{ index: 1, durationSec: 1, canvas: { w: 720, h: 1280 }, audio: { src: 'voice.wav', durationSec: 1 }, background: { src: 'bg.png' }, captions: [] }];
+    pipeline.output = { path: 'final.mp4', sizeBytes: 100 };
+
+    const result = applyHtmlVideoConfigChanges(pipeline, [{ field: 'sceneMotion', value: 'zoom_in' }]);
+
+    expect(result.changedFields).toEqual(['sceneMotion']);
+    expect(result.invalidateFrom).toBe('preview');
+    expect(result.pipeline.steps.assets).toEqual(pipeline.steps.assets);
+    expect(result.pipeline.steps.voice).toEqual(pipeline.steps.voice);
+    expect(result.pipeline.steps.preview).toEqual({ status: 'pending' });
+    expect(result.pipeline.steps.render).toEqual({ status: 'pending' });
+    expect(result.pipeline.compositions).toEqual([]);
+    expect(result.pipeline).not.toHaveProperty('output');
   });
 
   it('applies cover changes from render while preserving all five earlier stages', () => {

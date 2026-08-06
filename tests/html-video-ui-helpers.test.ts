@@ -174,6 +174,16 @@ describe('HTML video task message semantics', () => {
     const message = 'LLM storyboard response did not include scenes.';
     expect(htmlVideoUserFacingError(message)).toBe(message);
   });
+
+  it('localizes image provider timeouts while retaining the timeout duration', () => {
+    expect(htmlVideoUserFacingError('Image provider request timed out after 180000ms.'))
+      .toBe('图片服务请求超过 180 秒未完成。请检查图片服务状态后，从素材生成重试。');
+  });
+
+  it('localizes recoverable negative foreground slot validation warnings', () => {
+    expect(htmlVideoUserFacingError('scenes[0].elements[0].slot must be a non-negative number'))
+      .toBe('第 1 个场景的第 1 个前景素材位置编号不能为负数');
+  });
 });
 
 describe('HTML video pipeline fallback', () => {

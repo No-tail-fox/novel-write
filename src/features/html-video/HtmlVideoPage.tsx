@@ -12,7 +12,7 @@ import type { StoryDreamApi } from '../../shared/storydream-api';
 import type { AiSourceContext, AppConfig, CustomStyle, DraftTemplate, HtmlVideoConfigChange, HtmlVideoCoverMode, HtmlVideoCoverRatio, HtmlVideoJobConfig, HtmlVideoStepStatus, HtmlVideoTabKey, MinimaxCloneVoice, Task, TaskStatus, TtsProvider, WebSearchProvider } from '../../shared/types';
 import type { TemplateOption } from '../../shared/prompt-templates';
 import { htmlVideoStyleOptions } from '../../shared/editorial-options';
-import { HTML_VIDEO_BGM_VOLUMES, HTML_VIDEO_JOB_DEFAULTS, HTML_VIDEO_RATIOS, HTML_VIDEO_TRANSITIONS, HTML_VIDEO_TTS_PROVIDERS, HTML_VIDEO_TTS_SPEED_MAX, HTML_VIDEO_TTS_SPEED_MIN } from '../../shared/html-video-config';
+import { HTML_VIDEO_BGM_VOLUMES, HTML_VIDEO_JOB_DEFAULTS, HTML_VIDEO_RATIOS, HTML_VIDEO_SCENE_MOTION_LABELS, HTML_VIDEO_SCENE_MOTIONS, HTML_VIDEO_TRANSITION_LABELS, HTML_VIDEO_TRANSITIONS, HTML_VIDEO_TTS_PROVIDER_LABELS, HTML_VIDEO_TTS_PROVIDERS, HTML_VIDEO_TTS_SPEED_MAX, HTML_VIDEO_TTS_SPEED_MIN } from '../../shared/html-video-config';
 import { HTML_VIDEO_COVER_MODES, HTML_VIDEO_COVER_RATIOS } from '../../shared/html-video-cover';
 import { createHtmlVideoMediaCache, htmlVideoMediaElementScopeMatches, loadHtmlVideoMedia, recordHtmlVideoMediaElementFailure, syncHtmlVideoMediaCache, type HtmlVideoMediaElementFailureState, type HtmlVideoMediaElementScope } from '../../shared/html-video-media';
 import { classifyHtmlVideoTaskMessage, createHtmlVideoTaskInput, htmlVideoSteps, htmlVideoTabs, htmlVideoUserFacingError, isHtmlVideoTask, nextHtmlVideoTabKey, safeParseHtmlVideoPipelineData, tabForHtmlVideoStep, taskProgressLabel } from '../../shared/html-video-workflow';
@@ -68,6 +68,7 @@ export function HtmlVideoPage({
   const [ttsSpeed, setTtsSpeed] = useState<number>(HTML_VIDEO_JOB_DEFAULTS.ttsSpeed);
   const [bgmVolume, setBgmVolume] = useState<HtmlVideoJobConfig['bgmVolume']>(HTML_VIDEO_JOB_DEFAULTS.bgmVolume);
   const [transitionType, setTransitionType] = useState<HtmlVideoTransition>(HTML_VIDEO_JOB_DEFAULTS.transitionType);
+  const [sceneMotion, setSceneMotion] = useState<HtmlVideoMotion>(HTML_VIDEO_JOB_DEFAULTS.sceneMotion);
   const [coverImageMode, setCoverImageMode] = useState<HtmlVideoCoverMode>(HTML_VIDEO_JOB_DEFAULTS.coverImageMode);
   const [coverTemplate, setCoverTemplate] = useState<string>(HTML_VIDEO_JOB_DEFAULTS.coverTemplate);
   const [coverRatio, setCoverRatio] = useState<HtmlVideoCoverRatio>(HTML_VIDEO_JOB_DEFAULTS.coverRatio);
@@ -471,6 +472,7 @@ export function HtmlVideoPage({
           ttsSpeed,
           bgmVolume,
           transitionType,
+          sceneMotion,
           coverImageMode,
           coverTemplate,
           coverRatio,
@@ -721,7 +723,14 @@ export function HtmlVideoPage({
                   <div data-html-video-create-field="transitionType">
                     <Field label="转场">
                       <select value={transitionType} onChange={(event) => setTransitionType(event.target.value as HtmlVideoTransition)}>
-                        {HTML_VIDEO_TRANSITIONS.map((transition) => <option key={transition} value={transition}>{transition}</option>)}
+                        {HTML_VIDEO_TRANSITIONS.map((transition) => <option key={transition} value={transition}>{HTML_VIDEO_TRANSITION_LABELS[transition]}</option>)}
+                      </select>
+                    </Field>
+                  </div>
+                  <div data-html-video-create-field="sceneMotion">
+                    <Field label="镜头动效">
+                      <select value={sceneMotion} onChange={(event) => setSceneMotion(event.target.value as HtmlVideoMotion)}>
+                        {HTML_VIDEO_SCENE_MOTIONS.map((motion) => <option key={motion} value={motion}>{HTML_VIDEO_SCENE_MOTION_LABELS[motion]}</option>)}
                       </select>
                     </Field>
                   </div>
@@ -758,7 +767,7 @@ export function HtmlVideoPage({
                   <div data-html-video-create-field="ttsProvider">
                     <Field label="配音模型">
                       <select value={ttsProvider} onChange={(event) => changeCreateTtsProvider(event.target.value)}>
-                        {HTML_VIDEO_TTS_PROVIDERS.map((provider) => <option key={provider} value={provider}>{provider}</option>)}
+                        {HTML_VIDEO_TTS_PROVIDERS.map((provider) => <option key={provider} value={provider}>{HTML_VIDEO_TTS_PROVIDER_LABELS[provider]}</option>)}
                       </select>
                     </Field>
                   </div>
@@ -1034,6 +1043,7 @@ export function HtmlVideoPage({
 }
 
 type HtmlVideoTransition = Extract<HtmlVideoConfigChange, { field: 'transitionType' }>['value'];
+type HtmlVideoMotion = Extract<HtmlVideoConfigChange, { field: 'sceneMotion' }>['value'];
 
 interface HtmlVideoEditableValues {
   style: string;
@@ -1043,13 +1053,14 @@ interface HtmlVideoEditableValues {
   bgmId: string;
   bgmVolume: 'soft' | 'medium' | 'loud';
   transitionType: HtmlVideoTransition;
+  sceneMotion: HtmlVideoMotion;
   foreground: boolean;
   maxScenes: number;
   ratio: '9:16' | '16:9' | '1:1' | '4:3';
   draftTemplate: string;
 }
 
-function editableHtmlVideoValues(config: HtmlVideoJobConfig): Omit<HtmlVideoEditableValues, 'transitionType'> & { transitionType: HtmlVideoTransition } {
+function editableHtmlVideoValues(config: HtmlVideoJobConfig): HtmlVideoEditableValues {
   return {
     style: config.style ?? HTML_VIDEO_JOB_DEFAULTS.style,
     voiceId: config.voiceId ?? HTML_VIDEO_JOB_DEFAULTS.voiceId,
@@ -1058,6 +1069,7 @@ function editableHtmlVideoValues(config: HtmlVideoJobConfig): Omit<HtmlVideoEdit
     bgmId: config.bgmId ?? HTML_VIDEO_JOB_DEFAULTS.bgmId,
     bgmVolume: config.bgmVolume ?? 'soft',
     transitionType: (config.transitionType ?? HTML_VIDEO_JOB_DEFAULTS.transitionType) as HtmlVideoTransition,
+    sceneMotion: config.sceneMotion ?? HTML_VIDEO_JOB_DEFAULTS.sceneMotion,
     foreground: config.foreground ?? HTML_VIDEO_JOB_DEFAULTS.foreground,
     maxScenes: config.maxScenes ?? HTML_VIDEO_JOB_DEFAULTS.maxScenes,
     ratio: (config.ratio ?? HTML_VIDEO_JOB_DEFAULTS.ratio) as HtmlVideoEditableValues['ratio'],
@@ -1116,7 +1128,7 @@ function HtmlVideoConfigEditor({
     const changes: HtmlVideoConfigChange[] = [];
     for (const field of [
       'style', 'voiceId', 'ttsProvider', 'ttsSpeed', 'bgmId', 'bgmVolume',
-      'transitionType', 'foreground', 'maxScenes', 'ratio', 'draftTemplate',
+      'transitionType', 'sceneMotion', 'foreground', 'maxScenes', 'ratio', 'draftTemplate',
     ] as const) {
       if (values[field] !== initial[field]) {
         changes.push({ field, value: values[field] } as HtmlVideoConfigChange);
@@ -1153,7 +1165,7 @@ function HtmlVideoConfigEditor({
         <div data-html-video-edit-field="ttsProvider">
           <Field label="配音模型">
             <select value={values.ttsProvider} onChange={(event) => changeProvider(event.target.value)} disabled={disabled}>
-              {HTML_VIDEO_TTS_PROVIDERS.map((provider) => <option key={provider} value={provider}>{provider}</option>)}
+              {HTML_VIDEO_TTS_PROVIDERS.map((provider) => <option key={provider} value={provider}>{HTML_VIDEO_TTS_PROVIDER_LABELS[provider]}</option>)}
             </select>
           </Field>
         </div>
@@ -1187,7 +1199,14 @@ function HtmlVideoConfigEditor({
         <div data-html-video-edit-field="transitionType">
           <Field label="转场">
             <select value={values.transitionType} onChange={(event) => setValue('transitionType', event.target.value as HtmlVideoTransition)} disabled={disabled}>
-              {HTML_VIDEO_TRANSITIONS.map((transition) => <option key={transition} value={transition}>{transition}</option>)}
+              {HTML_VIDEO_TRANSITIONS.map((transition) => <option key={transition} value={transition}>{HTML_VIDEO_TRANSITION_LABELS[transition]}</option>)}
+            </select>
+          </Field>
+        </div>
+        <div data-html-video-edit-field="sceneMotion">
+          <Field label="镜头动效">
+            <select value={values.sceneMotion} onChange={(event) => setValue('sceneMotion', event.target.value as HtmlVideoMotion)} disabled={disabled}>
+              {HTML_VIDEO_SCENE_MOTIONS.map((motion) => <option key={motion} value={motion}>{HTML_VIDEO_SCENE_MOTION_LABELS[motion]}</option>)}
             </select>
           </Field>
         </div>

@@ -239,7 +239,12 @@ export function adaptHtmlVideoAssetGenerator(
       ratio: runtimeTask.ratio,
       characterProfile: '',
     }));
-    const generated = await generator(scenes, prompts, runtimeTask, input.signal);
+    let generated: SceneAsset[];
+    try {
+      generated = await generator(scenes, prompts, runtimeTask, input.signal);
+    } catch (error) {
+      throw asHtmlVideoImageProviderError(error);
+    }
     const assetsById = indexProviderAssets(generated, requests.map((request) => request.syntheticId), 'IMAGE_PROVIDER_INVALID_OUTPUT');
 
     return requests.map((request) => ({
@@ -305,19 +310,46 @@ function createHtmlVideoLlmProviders(
       input.signal,
       ['rewrittenText', 'segments'],
     ),
-    plan: async (input: HtmlVideoPlanningInput) => runHtmlVideoJsonLlm<{ scenes: HtmlVideoScenePlan[] }>(
-      llm,
-      1,
-      'html-video-planning',
-      [
-        { role: 'system', content: '把旁白规划为 HTML 动画视频场景。只返回 JSON，scenes 必须包含连续 index、narration、title、captions、sceneTemplate、background.prompt 和 elements。前景 elements 的 prompt 应明确透明背景 PNG。不要返回 JSON Schema、错误对象或解释文字。' },
-        { role: 'user', content: JSON.stringify({ rewrittenText: input.rewrittenText, segments: input.segments, config: input.config }) },
-      ],
-      htmlPlanningSchema,
-      input.signal,
-      ['scenes'],
-    ),
+    plan: async (input: HtmlVideoPlanningInput) => {
+      const result = await runHtmlVideoJsonLlm<{ scenes: HtmlVideoScenePlan[] }>(
+        llm,
+        1,
+        'html-video-planning',
+        [
+          { role: 'system', content: '把旁白规划为 HTML 动画视频场景。只返回 JSON，scenes 必须包含连续 index、narration、title、captions、sceneTemplate、background.prompt 和 elements。前景 elements 的 prompt 应明确透明背景 PNG。不要返回 JSON Schema、错误对象或解释文字。' },
+          { role: 'user', content: JSON.stringify({ rewrittenText: input.rewrittenText, segments: input.segments, config: input.config }) },
+        ],
+        htmlPlanningSchema,
+        input.signal,
+        ['scenes'],
+      );
+      try {
+        return {
+          scenes: validateHtmlVideoScenePlans(
+            result.scenes,
+            input.config.maxScenes ?? MAX_HTML_VIDEO_SCENES,
+          ),
+        };
+      } catch (error) {
+        throw htmlVideoPlanningValidationError(error);
+      }
+    },
   };
+}
+
+function htmlVideoPlanningValidationError(error: unknown): AppError {
+  const rawDetail = redactErrorText(error instanceof Error ? error.message : String(error))
+    .replace(/^HTML video pipeline\s*/iu, '')
+    .replace(/[。.]+$/u, '')
+    .replace(/\s+/gu, ' ')
+    .trim()
+    .slice(0, 360);
+  const detail = rawDetail ? `：${rawDetail}` : '';
+  return new AppError(
+    'HTML_VIDEO_LLM_INVALID_JSON',
+    `场景规划返回的场景结构不符合要求${detail}。`,
+    true,
+  );
 }
 
 async function runHtmlVideoJsonLlm<T>(
@@ -381,6 +413,20 @@ function asHtmlVideoLlmError(name: string, error: unknown): AppError {
     'HTML_VIDEO_LLM_OUTPUT_INVALID',
     `${htmlVideoLlmStageLabel(name)}失败：${detail || '服务没有返回可用的 JSON。'}`,
     true,
+  );
+}
+
+function asHtmlVideoImageProviderError(error: unknown): AppError {
+  if (error instanceof AppError) return error;
+  const detail = redactErrorText(error instanceof Error ? error.message : String(error))
+    .replace(/\s+/gu, ' ')
+    .trim()
+    .slice(0, 600);
+  const timedOut = /^Image provider (?:request|edit request|async submit|async poll) timed out after \d+ms\.?$/iu.test(detail);
+  return new AppError(
+    timedOut ? 'IMAGE_PROVIDER_TIMEOUT' : 'IMAGE_PROVIDER_FAILED',
+    detail || '图片服务没有返回可用素材。',
+    timedOut || !/\b40[123]\b|余额不足|套餐额度/iu.test(detail),
   );
 }
 
