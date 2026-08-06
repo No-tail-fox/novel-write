@@ -248,7 +248,7 @@ async function openHiddenHtmlWindow(input: {
   });
   windowSignals.set(window, input.signal);
   try {
-    const htmlUrl = checkedLocalHtmlUrl(input.htmlPath, input.workDir);
+    const htmlUrl = `${checkedLocalHtmlUrl(input.htmlPath, input.workDir)}?storydream-render=1`;
     attachLocalHtmlSecurity(window, input.workDir);
     await withRendererTimeout(window.loadURL(htmlUrl), hiddenWindowReadyTimeoutMs, 'HTML scene load', input.signal);
     await waitForHiddenHtmlSceneReady(window);

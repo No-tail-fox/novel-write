@@ -535,9 +535,20 @@ describe('HTML video pipeline V2 contract', () => {
       .toThrow(/最多包含 4 个前景/u);
   });
 
-  it('publishes all 17 Storybound scene presets and normalizes legacy ids', () => {
-    expect(HTML_VIDEO_SCENE_TEMPLATES).toHaveLength(17);
-    expect(new Set(HTML_VIDEO_SCENE_TEMPLATES.map((template) => template.id)).size).toBe(17);
+  it('publishes 24 animated scene presets and normalizes legacy ids', () => {
+    expect(HTML_VIDEO_SCENE_TEMPLATES).toHaveLength(24);
+    expect(new Set(HTML_VIDEO_SCENE_TEMPLATES.map((template) => template.id)).size).toBe(24);
+    expect(HTML_VIDEO_SCENE_TEMPLATES.every((template) => (
+      template.choreography.background.preset
+      && template.choreography.caption.preset
+      && template.choreography.elements.length > 0
+    ))).toBe(true);
+    expect(HTML_VIDEO_SCENE_TEMPLATES.find((template) => template.id === 'three-float')?.choreography.elements)
+      .toMatchObject([
+        { preset: 'float', startSec: 0.3 },
+        { preset: 'float', startSec: 0.7 },
+        { preset: 'float', startSec: 1.1 },
+      ]);
     expect(normalizeHtmlVideoSceneTemplate('split-left')).toBe('right-text-left-object');
     expect(normalizeHtmlVideoSceneTemplate('unknown-template')).toBe('center-focus');
   });
@@ -871,6 +882,43 @@ function validComposition(index: number): HtmlVideoCompositionSnapshot {
 }
 
 describe('HTML video composition contract', () => {
+  it('compiles scene-template choreography into the shared GSAP timeline', () => {
+    const scenePlans: HtmlVideoScenePlan[] = artifact.scenes.map((scene) => ({
+      index: scene.id,
+      narration: scene.cap,
+      title: '动态标题',
+      captions: [scene.cap],
+      sceneTemplate: scene.id === 1 ? 'three-float' : 'center-focus',
+      background: { prompt: scene.descPrompt },
+      elements: scene.id === 1
+        ? [0, 1, 2].map((slot) => ({ slot, prompt: `前景 ${slot + 1}` }))
+        : [],
+    }));
+    const input = buildHtmlVideoExportInput({
+      workDir: 'D:/tasks/html-video-choreography',
+      outputPath: 'D:/tasks/html-video-choreography/final.mp4',
+      title: '动态版式',
+      artifact,
+      scenePlans,
+      generatedImages: artifact.scenes.map((scene) => ({ sceneId: scene.id, path: `D:/media/${scene.id}.png` })),
+      foregroundImages: [0, 1, 2].map((slot) => ({ sceneId: 1, path: `D:/media/1-fg-${slot}.png`, slot })),
+      narrationAudio: artifact.scenes.map((scene) => ({ sceneId: scene.id, path: `D:/media/${scene.id}.wav` })),
+      fps: 30,
+      canvas_w: 1080,
+      canvas_h: 1920,
+    });
+
+    const html = input.scenes[0].html;
+    expect(html).toContain('id="scene-title"');
+    expect(html).toContain('data-template-background-motion="kenburns"');
+    expect(html).toContain('storydream-render=1');
+    expect(html).toContain("applySceneAnimation('#foreground-1', 'float', 0.3");
+    expect(html).toContain("applySceneAnimation('#foreground-2', 'float', 0.7");
+    expect(html).toContain("applySceneAnimation('#foreground-3', 'float', 1.1");
+    expect(html).toContain('id="scene-captions"');
+    expect(html).toContain("applySceneAnimation('#scene-captions', 'rise-caption'");
+  });
+
   it('encodes fragment characters in local scene asset file URLs', () => {
     const imagePath = join(tmpdir(), 'storydream # team', 'scene image.png');
     const audioPath = join(tmpdir(), 'storydream # team', 'scene voice.wav');
@@ -896,6 +944,7 @@ describe('HTML video composition contract', () => {
     expect(renderer).toContain('hiddenWindowReadyTimeoutMs');
     expect(renderer).toContain('hiddenFrameTimeoutMs');
     expect(renderer).toContain('withRendererTimeout');
+    expect(renderer).toContain('?storydream-render=1');
     expect(renderer).toMatch(/try\s*\{[\s\S]*?finally\s*\{[\s\S]*?window\.destroy\(\)/);
   });
 
@@ -955,8 +1004,9 @@ describe('HTML video composition contract', () => {
     expect(runtime.timeline.fromToCalls.map(([selector]) => selector)).toEqual(expect.arrayContaining([
       '#scene-background',
       '#scene-veil',
+      '#scene-title',
       '#foreground-1',
-      '#scene-copy',
+      '#scene-captions',
     ]));
     expect(runtime.window.__timelines['storydream-scene-1']).toBe(runtime.timeline);
     runtime.fireDomContentLoaded();

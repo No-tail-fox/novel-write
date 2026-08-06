@@ -37,7 +37,12 @@ import type {
 } from '../../shared/types';
 import { HTML_VIDEO_JOB_DEFAULTS, HTML_VIDEO_SCENE_MOTION_LABELS, HTML_VIDEO_SCENE_MOTIONS, HTML_VIDEO_TRANSITION_LABELS, HTML_VIDEO_TRANSITIONS, HTML_VIDEO_TTS_SPEED_MAX, HTML_VIDEO_TTS_SPEED_MIN } from '../../shared/html-video-config';
 import { htmlVideoMediaElementKey, htmlVideoMediaStatus } from '../../shared/html-video-media';
-import { HTML_VIDEO_SCENE_TEMPLATES, htmlVideoSceneTemplate, normalizeHtmlVideoSceneTemplate } from '../../shared/html-video-scene-templates';
+import {
+  HTML_VIDEO_SCENE_TEMPLATES,
+  htmlVideoSceneTemplate,
+  normalizeHtmlVideoSceneTemplate,
+  type HtmlVideoAnimationCue,
+} from '../../shared/html-video-scene-templates';
 import { normalizeRuntimeTtsProvider, taskSpeakerLabel, ttsVoiceOptionsForProvider } from '../../shared/tts-voices';
 import { useAsyncAction } from '../../ui/async-action';
 
@@ -725,13 +730,13 @@ export function HtmlVideoStoryboundPreviewPanel(props: EditorialPanelProps) {
       {presetSceneIndex !== null ? (
         <div className="hv-modal-backdrop" role="presentation" onMouseDown={(event) => event.target === event.currentTarget && setPresetSceneIndex(null)}>
           <section className="hv-template-modal" role="dialog" aria-modal="true" aria-label="选择画面版式">
-            <header><div><strong>选择画面版式</strong><span>17 种 · 场景 {presetSceneIndex}</span></div><button type="button" title="关闭" onClick={() => setPresetSceneIndex(null)}><X size={16} /></button></header>
+            <header><div><strong>选择画面版式</strong><span>{HTML_VIDEO_SCENE_TEMPLATES.length} 种 · 场景 {presetSceneIndex}</span></div><button type="button" title="关闭" onClick={() => setPresetSceneIndex(null)}><X size={16} /></button></header>
             <div className="hv-template-grid">
               {HTML_VIDEO_SCENE_TEMPLATES.map((template) => {
                 const selected = normalizeHtmlVideoSceneTemplate(data.scenes.find((scene) => scene.index === presetSceneIndex)?.sceneTemplate) === template.id;
                 return (
                   <button key={template.id} type="button" className={selected ? 'selected' : ''} disabled={action.busy || busy || isBrowserPreview} onClick={() => selectTemplate(presetSceneIndex, template.id)}>
-                    <PresetSwatch variant={template.swatch} />
+                    <PresetSwatch template={template} />
                     <span><strong>{template.label}</strong><small>{template.description}</small></span>
                   </button>
                 );
@@ -744,8 +749,47 @@ export function HtmlVideoStoryboundPreviewPanel(props: EditorialPanelProps) {
   );
 }
 
-function PresetSwatch({ variant }: { variant: string }) {
-  return <span className="hv-template-swatch" data-variant={variant} aria-hidden="true"><i /><i /><i /><i /></span>;
+function PresetSwatch({ template }: { template: typeof HTML_VIDEO_SCENE_TEMPLATES[number] }) {
+  const cueStyle = (cue: HtmlVideoAnimationCue, fallbackDurationSec = 0.8) => ({
+    '--hv-preview-delay': `${cue.startSec ?? 0}s`,
+    '--hv-preview-duration': `${cue.durationSec ?? fallbackDurationSec}s`,
+  }) as React.CSSProperties;
+  const choreography = template.choreography;
+  return (
+    <span
+      className="hv-template-swatch"
+      data-variant={template.swatch}
+      data-background-motion={choreography.background.preset}
+      aria-hidden="true"
+    >
+      <i
+        data-layer="background"
+        data-motion={choreography.background.preset}
+        style={cueStyle(choreography.background, 2.4)}
+      />
+      {choreography.title ? (
+        <i
+          data-layer="title"
+          data-motion={choreography.title.preset}
+          style={cueStyle(choreography.title)}
+        />
+      ) : null}
+      {choreography.elements.map((cue, index) => (
+        <i
+          key={`${cue.preset}-${index}`}
+          data-layer="element"
+          data-element-index={index}
+          data-motion={cue.preset}
+          style={cueStyle(cue)}
+        />
+      ))}
+      <i
+        data-layer="caption"
+        data-motion={choreography.caption.preset}
+        style={cueStyle(choreography.caption)}
+      />
+    </span>
+  );
 }
 
 function prepareCompositionSrcDoc(source: string, mediaUrl: string, data: HtmlVideoPipelineData, mediaUrls: Record<string, string>): string {

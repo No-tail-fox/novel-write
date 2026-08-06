@@ -25,7 +25,7 @@ describe('HTML video caption consumers', () => {
     expect(html).toContain('data-caption-preset="classic"');
     expect(html).toContain('data-caption-animation="fade-up"');
     expect(html).toContain('color: rgba(240, 247, 248, 0.94);');
-    expect(html).toContain("tl.fromTo('#scene-copy', { opacity: 0.72, y: 18 }, { opacity: 1, y: 0");
+    expect(html).toContain("tl.fromTo('#scene-copy .caption', { opacity: 0.72, y: 18 }, { opacity: 1, y: 0");
     expect(html).toContain("const captionAnimation = reduceCaptionMotion ? 'none' : \"fade-up\"");
     expect(html).not.toContain('requestAnimationFrame');
   });

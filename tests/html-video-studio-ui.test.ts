@@ -24,7 +24,12 @@ describe('HTML video editorial studio', () => {
     expect(tabs).toContain('api.rerenderHtmlVideo(task.id)');
     expect(tabs).toContain('onClick={rerender}');
     expect(tabs).toContain('重新出片');
-    expect(templates.match(/id: '/gu)).toHaveLength(17);
+    expect(templates.match(/id: '/gu)).toHaveLength(24);
+    expect(panels).toContain('template.choreography');
+    expect(panels).toContain('data-motion={cue.preset}');
+    expect(styles).toContain('.hv-template-grid > button:hover:not(:disabled) .hv-template-swatch [data-motion]');
+    expect(styles).toContain('.hv-template-grid > button:focus-visible .hv-template-swatch [data-motion]');
+    expect(styles).toMatch(/@media \(prefers-reduced-motion: reduce\)[\s\S]*?\.hv-template-swatch \[data-motion\]/u);
     expect(styles).toContain('.hv-cover-workspace {\n  container-type: inline-size;');
     expect(styles).toContain('@container (max-width: 650px)');
     expect(styles).toContain('.hv-cover-editor-grid {\n  display: grid;\n  grid-template-columns: 1fr;');
@@ -63,6 +68,12 @@ describe('HTML video editorial studio', () => {
     expect(styles).toContain('.hv-cover-workspace:has(> .hv-reference-preview),');
     expect(styles).toContain('@container hv-reference-preview (max-width: 760px)');
     expect(qa).toContain('STORYDREAM_QA_EFFECTS_ONLY');
+    expect(qa).toContain('STORYDREAM_QA_TEMPLATE_PREVIEW_ONLY');
+    expect(qa).toContain('exerciseTemplatePreview');
+    expect(qa).toContain("scope: 'template-preview'");
+    expect(qa).toContain("'template-preview-desktop.png'");
+    expect(qa).toContain("'template-preview-compact.png'");
+    expect(qa).toContain('pixelChanged');
     expect(qa).toContain('exercisePreviewEffects');
     expect(qa).toContain("scope: 'preview-effects'");
     expect(qa).toContain("'effects-desktop.png'");

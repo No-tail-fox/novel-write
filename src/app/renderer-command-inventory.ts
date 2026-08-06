@@ -429,6 +429,7 @@ export const rendererCommandInventory = {
     owner('html-video', 'src/features/html-video/HtmlVideoTabPanel.tsx', 'regenerateCover', 'onClick={regenerateCover}', '重画封面', htmlVideoStudioTest),
     owner('html-video', 'src/features/html-video/HtmlVideoTabPanel.tsx', 'importManualCover', 'onClick={importManualCover}', '换本地封面', productShellTest),
     owner('html-video', 'src/features/html-video/HtmlVideoStoryboundPanels.tsx', 'applyVoiceSettings', 'onClick={applyVoiceSettings}', '应用并重配全部', htmlVideoStudioTest),
+    owner('html-video', 'src/features/html-video/HtmlVideoStoryboundPanels.tsx', 'saveEffects', 'onClick={() => void saveEffects()}', '保存动效', htmlVideoStudioTest),
     owner('html-video', 'src/features/html-video/HtmlVideoTabPanel.tsx', 'rerender', 'onClick={rerender}', '重新出片', htmlVideoStudioTest),
   ),
   updateHtmlVideoScene: command(

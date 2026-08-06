@@ -3,7 +3,10 @@ import { runtimeProtocolMetadata } from '@hyperframes/core/runtime/protocol';
 import type { DraftTemplate, HtmlVideoJobConfig, HtmlVideoSceneMotion, HtmlVideoScenePlan, PipelineArtifact } from './types';
 import { resolveHtmlVideoCaptionStyle, type ResolvedHtmlVideoCaptionStyle } from './html-video-captions';
 import { GSAP_RUNTIME_FILENAME, HYPERFRAMES_RUNTIME_FILENAME } from './hyperframes';
-import { htmlVideoSceneTemplate } from './html-video-scene-templates';
+import {
+  htmlVideoSceneTemplate,
+  type HtmlVideoAnimationCue,
+} from './html-video-scene-templates';
 
 export interface HtmlVideoSceneSource {
   sceneId: number;
@@ -242,11 +245,25 @@ function buildSceneHtml(scene: {
   }).join('\n    ');
   const captionColors = scene.captionStyle.colors;
   const layout = resolveDraftTemplateHtmlLayout(scene.draftTemplate, scene.canvas_w, scene.canvas_h);
-  const effectiveMotion = resolveSceneMotion(scene.draftTemplate, scene.sceneMotion);
-  const motionTween = draftTemplateMotionTween(scene.draftTemplate, scene.duration, scene.sceneMotion);
+  const template = htmlVideoSceneTemplate(scene.plan?.sceneTemplate);
+  const useTemplateBackgroundMotion = shouldUseTemplateBackgroundMotion(scene.draftTemplate, scene.sceneMotion);
+  const effectiveMotion = useTemplateBackgroundMotion
+    ? template.choreography.background.preset
+    : resolveSceneMotion(scene.draftTemplate, scene.sceneMotion);
+  const motionTween = useTemplateBackgroundMotion
+    ? sceneAnimationCall('#scene-background', template.choreography.background, scene.duration)
+    : draftTemplateMotionTween(scene.draftTemplate, scene.duration, scene.sceneMotion);
+  const titleAnimationTween = scene.plan?.titleHidden || !template.choreography.title
+    ? ''
+    : sceneAnimationCall('#scene-title', template.choreography.title, 0.7);
+  const foregroundAnimationTweens = (scene.foregroundPaths ?? []).map((_, index) => {
+    const cues = template.choreography.elements;
+    const cue = cues[Math.min(index, cues.length - 1)];
+    return sceneAnimationCall(`#foreground-${index + 1}`, cue, 0.85);
+  }).join('\n    ');
+  const captionAnimationTween = sceneAnimationCall('#scene-captions', template.choreography.caption, 0.65);
   const titleScale = clampNumber(scene.plan?.titleScale ?? 1, 0.25, 3);
   const captionScale = clampNumber(scene.plan?.captionScale ?? 1, 0.25, 3);
-  const template = htmlVideoSceneTemplate(scene.plan?.sceneTemplate);
   const titleTop = clampNumber(scene.plan?.titleTopOverride ?? template.titleTop, 0, 100);
   const captionY = clampNumber(scene.plan?.captionYOverride ?? template.captionY, 0, 100);
   const titleSize = roundCssNumber(Math.max(26, scene.canvas_w * 0.052) * titleScale);
@@ -542,6 +559,96 @@ function buildSceneHtml(scene: {
       width: 114%;
       height: 100%;
     }
+    .frame[data-scene-template="dialogue-duo"] .scene-foreground {
+      inset: auto;
+      bottom: 5%;
+      width: 60%;
+      height: 78%;
+      object-position: center bottom;
+    }
+    .frame[data-scene-template="dialogue-duo"] #foreground-1 { left: -10%; }
+    .frame[data-scene-template="dialogue-duo"] #foreground-2 { right: -10%; }
+    .frame[data-scene-template="vertical-timeline"]::after {
+      content: '';
+      position: absolute;
+      top: 18%;
+      bottom: 16%;
+      left: 50%;
+      z-index: 2;
+      width: 3px;
+      background: linear-gradient(180deg, transparent, var(--caption-accent) 12%, var(--caption-accent) 88%, transparent);
+      opacity: 0.72;
+    }
+    .frame[data-scene-template="vertical-timeline"] .scene-foreground {
+      inset: auto;
+      width: 44%;
+      height: 23%;
+      object-position: center;
+    }
+    .frame[data-scene-template="vertical-timeline"] #foreground-1 { top: 17%; left: 3%; }
+    .frame[data-scene-template="vertical-timeline"] #foreground-2 { top: 40%; right: 3%; }
+    .frame[data-scene-template="vertical-timeline"] #foreground-3 { top: 63%; left: 3%; }
+    .frame[data-scene-template="stacked-cards"] .scene-foreground {
+      inset: auto;
+      left: 12%;
+      width: 76%;
+      height: 62%;
+      object-position: center;
+      border: 1px solid rgba(255, 255, 255, 0.18);
+      background: rgba(8, 11, 13, 0.34);
+      box-shadow: 0 24px 64px rgba(0, 0, 0, 0.34);
+    }
+    .frame[data-scene-template="stacked-cards"] #foreground-1 { top: 16%; left: 7%; z-index: 2; }
+    .frame[data-scene-template="stacked-cards"] #foreground-2 { top: 20%; left: 12%; z-index: 3; }
+    .frame[data-scene-template="stacked-cards"] #foreground-3 { top: 24%; left: 17%; z-index: 4; }
+    .frame[data-scene-template="kinetic-copy"] .scene-image,
+    .frame[data-scene-template="cinematic-end"] .scene-image {
+      opacity: 0.38;
+      filter: saturate(0.6) brightness(0.62) contrast(1.12);
+    }
+    .frame[data-scene-template="kinetic-copy"] .scene-foreground,
+    .frame[data-scene-template="cinematic-end"] .scene-foreground { opacity: 0.12; }
+    .frame[data-scene-template="kinetic-copy"] .title {
+      width: 86%;
+      font-size: ${roundCssNumber(titleSize * 1.7)}px;
+      line-height: 1.02;
+      white-space: normal;
+    }
+    .frame[data-scene-template="kinetic-copy"] .captions { width: 84%; }
+    .frame[data-scene-template="product-stage"] .scene-image { filter: saturate(0.72) brightness(0.7); }
+    .frame[data-scene-template="product-stage"] .veil {
+      background: radial-gradient(ellipse at 50% 62%, rgba(255, 212, 92, 0.24), transparent 36%), linear-gradient(180deg, rgba(4, 7, 9, 0.2), rgba(4, 7, 9, 0.78));
+    }
+    .frame[data-scene-template="product-stage"] .scene-foreground {
+      inset: 18% 10% 10%;
+      width: 80%;
+      height: 72%;
+      object-position: center bottom;
+    }
+    .frame[data-scene-template="product-stage"] #foreground-2 {
+      inset: 26% 4% 20% auto;
+      width: 34%;
+      height: 54%;
+      z-index: 3;
+    }
+    .frame[data-scene-template="split-push"] .scene-foreground {
+      inset: auto 4%;
+      width: 92%;
+      height: 36%;
+      object-position: center;
+      border: 1px solid rgba(255, 255, 255, 0.16);
+      background: rgba(8, 11, 13, 0.26);
+    }
+    .frame[data-scene-template="split-push"] #foreground-1 { top: 15%; }
+    .frame[data-scene-template="split-push"] #foreground-2 { top: 51%; }
+    .frame[data-scene-template="cinematic-end"] .veil { background: rgba(4, 6, 8, 0.68); }
+    .frame[data-scene-template="cinematic-end"] .title {
+      width: 78%;
+      font-size: ${roundCssNumber(titleSize * 1.25)}px;
+      letter-spacing: 0;
+      white-space: normal;
+    }
+    .frame[data-scene-template="cinematic-end"] .captions { width: 72%; }
     .meta {
       display: none;
     }
@@ -556,15 +663,15 @@ function buildSceneHtml(scene: {
   <script nonce="storydream-html-video" src="./${HYPERFRAMES_RUNTIME_FILENAME}"></script>
 </head>
 <body>
-  <div id="${compositionId}" class="frame" data-composition-id="${compositionId}" data-start="0" data-duration="${scene.duration}" data-width="${scene.canvas_w}" data-height="${scene.canvas_h}" data-caption-preset="${scene.captionStyle.preset}" data-caption-animation="${scene.captionStyle.animation}" data-scene-template="${sceneTemplate}" data-draft-motion="${effectiveMotion}" data-draft-frame="${layout.frameEnabled}">
+  <div id="${compositionId}" class="frame" data-composition-id="${compositionId}" data-start="0" data-duration="${scene.duration}" data-width="${scene.canvas_w}" data-height="${scene.canvas_h}" data-caption-preset="${scene.captionStyle.preset}" data-caption-animation="${scene.captionStyle.animation}" data-scene-template="${sceneTemplate}" data-template-background-motion="${template.choreography.background.preset}" data-draft-motion="${effectiveMotion}" data-draft-frame="${layout.frameEnabled}">
     ${layout.frameEnabled ? '<div class="draft-frame-band draft-frame-header"></div><div class="draft-frame-band draft-frame-footer"></div>' : ''}
     <div class="scene-image-region"><img id="scene-background" class="clip scene-image" data-start="0" data-duration="${scene.duration}" data-track-index="0" src="${imageDataUrl}" alt="" /></div>
     <audio id="scene-narration" class="clip scene-audio" data-start="0" data-duration="${scene.duration}" data-track-index="1" data-volume="1" src="${audioDataUrl}" preload="auto"></audio>
     <div id="scene-veil" class="clip veil" data-start="0" data-duration="${scene.duration}" data-track-index="20"></div>
     ${foregroundMarkup}
     <div id="scene-copy" class="clip copy" data-start="0" data-duration="${scene.duration}" data-track-index="21">
-      ${scene.plan?.titleHidden ? '' : `<div class="title">${escapeHtml(scene.title)}</div>`}
-      <div class="captions">${captionMarkup}</div>
+      ${scene.plan?.titleHidden ? '' : `<div id="scene-title" class="title">${escapeHtml(scene.title)}</div>`}
+      <div id="scene-captions" class="captions">${captionMarkup}</div>
       <div class="meta">${escapeHtml(scene.description)}</div>
     </div>
     <div class="ready-indicator">ready</div>
@@ -612,16 +719,52 @@ function buildSceneHtml(scene: {
       window.setTimeout(finish, 5000);
     }
     const tl = gsap.timeline({ paused: true });
+    const isFrameExport = typeof location !== 'undefined' && /(?:\\?|&)storydream-render=1(?:&|$)/.test(location.search);
+    const reduceSceneMotion = !isFrameExport && typeof matchMedia === 'function' && matchMedia('(prefers-reduced-motion: reduce)').matches;
+    function applySceneAnimation(selector, preset, start = 0, duration = 0.8) {
+      if (preset === 'static') return;
+      if (reduceSceneMotion) {
+        gsap.set(selector, { clearProps: 'transform,opacity,filter,clipPath' });
+        return;
+      }
+      const safeStart = Math.max(0, Number(start) || 0);
+      const safeDuration = Math.max(0.01, Math.min(Number(duration) || 0.8, window.__duration - safeStart));
+      const to = (fromVars, toVars) => tl.fromTo(
+        selector,
+        fromVars,
+        { ...toVars, duration: safeDuration },
+        safeStart,
+      );
+      if (preset === 'kenburns') return to({ scale: 1 }, { scale: 1.1, ease: 'none' });
+      if (preset === 'kenburns-up') return to({ scale: 1.02, yPercent: 3 }, { scale: 1.12, yPercent: -3, ease: 'none' });
+      if (preset === 'kenburns-down') return to({ scale: 1.02, yPercent: -3 }, { scale: 1.12, yPercent: 3, ease: 'none' });
+      if (preset === 'pan-left') return to({ scale: 1.1, xPercent: 4 }, { scale: 1.1, xPercent: -4, ease: 'none' });
+      if (preset === 'pan-right') return to({ scale: 1.1, xPercent: -4 }, { scale: 1.1, xPercent: 4, ease: 'none' });
+      if (preset === 'pop-in') return to({ opacity: 0, scale: 0.76 }, { opacity: 1, scale: 1, ease: 'back.out(1.55)' });
+      if (preset === 'pop-rotate') return to({ opacity: 0, scale: 0.74, rotation: -9 }, { opacity: 1, scale: 1, rotation: 0, ease: 'back.out(1.5)' });
+      if (preset === 'float') return to({ opacity: 0, y: 28, rotation: 3 }, { opacity: 1, y: 0, rotation: 0, ease: 'power2.out' });
+      if (preset === 'fade-up') return to({ opacity: 0, y: 24 }, { opacity: 1, y: 0, ease: 'power2.out' });
+      if (preset === 'typewriter') return to({ opacity: 0.2, clipPath: 'inset(0 100% 0 0)' }, { opacity: 1, clipPath: 'inset(0 0% 0 0)', ease: 'steps(12)' });
+      if (preset === 'slide-in-left') return to({ opacity: 0, xPercent: -36 }, { opacity: 1, xPercent: 0, ease: 'power3.out' });
+      if (preset === 'slide-in-right') return to({ opacity: 0, xPercent: 36 }, { opacity: 1, xPercent: 0, ease: 'power3.out' });
+      if (preset === 'slide-in-top') return to({ opacity: 0, yPercent: -45 }, { opacity: 1, yPercent: 0, ease: 'power3.out' });
+      if (preset === 'zoom-in') return to({ opacity: 0, scale: 0.68 }, { opacity: 1, scale: 1, ease: 'power3.out' });
+      if (preset === 'zoom-out') return to({ opacity: 0, scale: 1.2 }, { opacity: 1, scale: 1, ease: 'power3.out' });
+      if (preset === 'drop-settle') return to({ opacity: 0, y: -72, rotation: -4 }, { opacity: 1, y: 0, rotation: 0, ease: 'bounce.out' });
+      if (preset === 'slam-impact') return to({ opacity: 0, scale: 1.55, filter: 'blur(8px)' }, { opacity: 1, scale: 1, filter: 'blur(0px)', ease: 'expo.out' });
+      if (preset === 'bounce-caption') return to({ opacity: 0, y: 28, scale: 0.86 }, { opacity: 1, y: 0, scale: 1, ease: 'bounce.out' });
+      if (preset === 'pop-caption') return to({ opacity: 0, scale: 0.84 }, { opacity: 1, scale: 1, ease: 'back.out(1.45)' });
+      return to({ opacity: 0, y: 30 }, { opacity: 1, y: 0, ease: 'power2.out' });
+    }
     ${motionTween}
     tl.fromTo('#scene-veil', { opacity: 0.86 }, { opacity: 0.96, duration: ${scene.duration}, ease: 'none' }, 0);
-    ${foregroundMarkup ? (scene.foregroundPaths ?? []).map((_, index) => {
-      const direction = index % 2 === 0 ? 1 : -1;
-      return `tl.fromTo('#foreground-${index + 1}', { x: ${direction * 8}, y: 14, scale: 0.98 }, { x: 0, y: 0, scale: 1, duration: ${scene.duration}, ease: 'power2.out' }, 0);`;
-    }).join('\n    ') : ''}
+    ${titleAnimationTween}
+    ${foregroundAnimationTweens}
+    ${captionAnimationTween}
     const reduceCaptionMotion = typeof matchMedia === 'function' && matchMedia('(prefers-reduced-motion: reduce)').matches;
     const captionAnimation = reduceCaptionMotion ? 'none' : ${JSON.stringify(scene.captionStyle.animation)};
     if (captionAnimation === 'fade-up') {
-      tl.fromTo('#scene-copy', { opacity: 0.72, y: 18 }, { opacity: 1, y: 0, duration: ${Math.min(scene.duration, 0.72)}, ease: 'power2.out' }, 0);
+      tl.fromTo('#scene-copy .caption', { opacity: 0.72, y: 18 }, { opacity: 1, y: 0, duration: ${Math.min(scene.duration, 0.72)}, ease: 'power2.out' }, 0);
     } else if (captionAnimation === 'pop') {
       tl.fromTo('#scene-copy .caption', { opacity: 0.7, scale: 0.92 }, { opacity: 1, scale: 1, duration: ${Math.min(scene.duration, 0.6)}, ease: 'back.out(1.4)' }, 0);
     }
@@ -737,6 +880,21 @@ function resolveDraftTemplateHtmlLayout(template: DraftTemplate | undefined, can
     footerBackground: frameEnabled ? `linear-gradient(90deg, ${frame.footerColor}, ${frame.footerColorEnd})` : 'transparent',
     motion: template?.image.motion ?? '',
   };
+}
+
+function sceneAnimationCall(selector: string, cue: HtmlVideoAnimationCue, defaultDuration: number): string {
+  const start = roundSeconds(cue.startSec ?? 0);
+  const duration = roundSeconds(cue.durationSec ?? defaultDuration);
+  return `applySceneAnimation(${JSON.stringify(selector).replaceAll('"', "'")}, '${cue.preset}', ${start}, ${duration});`;
+}
+
+function shouldUseTemplateBackgroundMotion(
+  template: DraftTemplate | undefined,
+  sceneMotion: HtmlVideoSceneMotion | undefined,
+): boolean {
+  if (sceneMotion === 'none') return false;
+  if (sceneMotion && sceneMotion !== 'auto') return false;
+  return !template?.image.motion;
 }
 
 function resolveSceneMotion(template: DraftTemplate | undefined, sceneMotion: HtmlVideoSceneMotion | undefined): string {

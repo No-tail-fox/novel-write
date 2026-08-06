@@ -12,6 +12,7 @@ const outputBase = resolve(process.env.STORYDREAM_QA_OUTPUT_DIR || tmpdir());
 const keepQaTempOnFailure = process.env.STORYDREAM_QA_KEEP_TEMP_ON_FAILURE === '1';
 const localizationOnly = process.env.STORYDREAM_QA_LOCALIZATION_ONLY === '1';
 const effectsOnly = process.env.STORYDREAM_QA_EFFECTS_ONLY === '1';
+const templatePreviewOnly = process.env.STORYDREAM_QA_TEMPLATE_PREVIEW_ONLY === '1';
 const CDP_CONNECT_TIMEOUT_MS = 10_000;
 const CDP_COMMAND_TIMEOUT_MS = 15_000;
 const WAIT_FOR_CHECK_TIMEOUT_MS = 5_000;
@@ -40,6 +41,8 @@ try {
   const optionLabelsCompactScreenshot = join(qaTempDir, 'option-labels-compact.png');
   const effectsDesktopScreenshot = join(qaTempDir, 'effects-desktop.png');
   const effectsCompactScreenshot = join(qaTempDir, 'effects-compact.png');
+  const templatePreviewDesktopScreenshot = join(qaTempDir, 'template-preview-desktop.png');
+  const templatePreviewCompactScreenshot = join(qaTempDir, 'template-preview-compact.png');
   const coverDesktopScreenshot = join(qaTempDir, 'cover-desktop.png');
   const coverCompactScreenshot = join(qaTempDir, 'cover-compact.png');
   const captionEditorScreenshot = join(qaTempDir, 'caption-editor.png');
@@ -234,6 +237,60 @@ try {
     20_000,
     'primary completed task',
   );
+  if (templatePreviewOnly) {
+    const templateDesktop = await exerciseTemplatePreview(cdp);
+    await saveScreenshot(cdp, templatePreviewDesktopScreenshot);
+    await cdp.send('Emulation.setDeviceMetricsOverride', {
+      width: 920,
+      height: 720,
+      deviceScaleFactor: 1,
+      mobile: false,
+    });
+    await delay(350);
+    const templateCompact = await inspectAndAnimateTemplatePreview(cdp);
+    await saveScreenshot(cdp, templatePreviewCompactScreenshot);
+    const relevantRuntimeErrors = runtimeErrors.filter((error) => error.message && !error.message.includes('DevTools'));
+    if (templateDesktop.templateCount !== 24 || templateCompact.templateCount !== 24
+      || templateDesktop.selectedCount !== 1 || templateCompact.selectedCount !== 1
+      || templateDesktop.uniqueMotionCount < 10 || templateCompact.uniqueMotionCount < 10
+      || !templateDesktop.pixelChanged || !templateCompact.pixelChanged
+      || templateDesktop.runningAnimationCount < 3 || templateCompact.runningAnimationCount < 3
+      || templateDesktop.horizontalOverflow > 2 || templateCompact.horizontalOverflow > 2
+      || templateDesktop.clippedControls.length || templateCompact.clippedControls.length
+      || relevantRuntimeErrors.length) {
+      throw new Error(`Template-preview QA failed: ${JSON.stringify({ templateDesktop, templateCompact, relevantRuntimeErrors })}`);
+    }
+    const screenshotPaths = [templatePreviewDesktopScreenshot, templatePreviewCompactScreenshot];
+    const screenshots = await Promise.all(screenshotPaths.map(async (path) => {
+      const value = await stat(path);
+      if (value.size <= 0) throw new Error(`Screenshot evidence is empty: ${basename(path)}`);
+      return { name: basename(path), size: value.size };
+    }));
+    const evidenceDirectory = process.env.STORYDREAM_QA_EVIDENCE_DIR
+      ? resolve(process.env.STORYDREAM_QA_EVIDENCE_DIR)
+      : '';
+    const evidencePaths = [];
+    if (evidenceDirectory) {
+      await mkdir(evidenceDirectory, { recursive: true });
+      for (const path of screenshotPaths) {
+        const evidencePath = join(evidenceDirectory, basename(path));
+        await copyFile(path, evidencePath);
+        evidencePaths.push(evidencePath);
+      }
+    }
+    process.stdout.write(`${JSON.stringify({
+      status: 'passed',
+      scope: 'template-preview',
+      pageTitle: identity.title,
+      pageUrl: identity.url,
+      templateDesktop,
+      templateCompact,
+      screenshots,
+      evidencePaths,
+      runtimeErrors: relevantRuntimeErrors,
+    }, null, 2)}\n`);
+    break qaRun;
+  }
   if (effectsOnly) {
     const effectsDesktop = await exercisePreviewEffects(cdp);
     await saveScreenshot(cdp, effectsDesktopScreenshot);
@@ -1900,6 +1957,101 @@ async function exerciseResearchProviderControl(cdpConnection) {
   return { initial, mouse, keyboard, final: await inspect() };
 }
 
+async function exerciseTemplatePreview(cdpConnection) {
+  const clicked = await clickTab(cdpConnection, '动画预览');
+  if (!clicked) throw new Error('Animation preview tab was not found for template QA.');
+  await waitFor(
+    async () => evaluate(cdpConnection, `Boolean(document.querySelector('.hv-reference-thumb-actions'))`),
+    10_000,
+    'HTML video scene actions',
+  );
+  const opened = await evaluate(cdpConnection, `(() => {
+    const button = document.querySelector('.hv-reference-thumb-actions button:has(.lucide-pencil)');
+    if (!(button instanceof HTMLButtonElement) || button.disabled) return false;
+    button.click();
+    return true;
+  })()`);
+  if (!opened) throw new Error('Scene-template picker button was unavailable.');
+  await waitFor(
+    async () => evaluate(cdpConnection, `document.querySelectorAll('.hv-template-grid > button').length === 24`),
+    5_000,
+    '24 scene-template previews',
+  );
+  return inspectAndAnimateTemplatePreview(cdpConnection);
+}
+
+async function inspectAndAnimateTemplatePreview(cdpConnection) {
+  await evaluate(cdpConnection, `(() => {
+    const target = [...document.querySelectorAll('.hv-template-grid > button')]
+      .find((card) => card.querySelector('strong')?.textContent?.trim() === '双人对话');
+    target?.scrollIntoView({ block: 'center' });
+  })()`);
+  await delay(180);
+  const initial = await evaluate(cdpConnection, `(() => {
+    const modal = document.querySelector('.hv-template-modal');
+    const cards = [...document.querySelectorAll('.hv-template-grid > button')];
+    const target = cards.find((card) => card.querySelector('strong')?.textContent?.trim() === '双人对话');
+    const swatch = target?.querySelector('.hv-template-swatch');
+    const rect = swatch?.getBoundingClientRect();
+    const modalRect = modal?.getBoundingClientRect();
+    const close = modal?.querySelector('header button');
+    const visibleControls = [target, close].filter(Boolean);
+    return {
+      templateCount: cards.length,
+      selectedCount: cards.filter((card) => card.classList.contains('selected')).length,
+      uniqueMotionCount: new Set(cards.flatMap((card) => [...card.querySelectorAll('[data-motion]')].map((item) => item.getAttribute('data-motion')))).size,
+      targetLabel: target?.querySelector('strong')?.textContent?.trim() || '',
+      targetMotionNames: swatch ? [...swatch.querySelectorAll('[data-motion]')].map((item) => item.getAttribute('data-motion')) : [],
+      swatchRect: rect ? { x: rect.x, y: rect.y, width: rect.width, height: rect.height } : null,
+      modalRect: modalRect ? { x: modalRect.x, y: modalRect.y, width: modalRect.width, height: modalRect.height } : null,
+      horizontalOverflow: Math.max(
+        document.documentElement.scrollWidth - document.documentElement.clientWidth,
+        modal ? modal.scrollWidth - modal.clientWidth : 0,
+      ),
+      clippedControls: visibleControls.filter((item) => {
+        const itemRect = item.getBoundingClientRect();
+        return itemRect.left < -1 || itemRect.right > innerWidth + 1 || itemRect.top < -1 || itemRect.bottom > innerHeight + 1;
+      }).map((item) => item.textContent?.trim() || item.tagName),
+      viewport: { width: innerWidth, height: innerHeight },
+    };
+  })()`);
+  if (!initial.swatchRect || initial.targetLabel !== '双人对话') {
+    throw new Error(`Animated template target was unavailable: ${JSON.stringify(initial)}`);
+  }
+  const { x, y, width, height } = initial.swatchRect;
+  await cdpConnection.send('Input.dispatchMouseEvent', {
+    type: 'mouseMoved',
+    x: x + (width / 2),
+    y: y + (height / 2),
+  });
+  await delay(180);
+  const firstHash = await captureRegionHash(cdpConnection, initial.swatchRect);
+  await delay(260);
+  const secondHash = await captureRegionHash(cdpConnection, initial.swatchRect);
+  const animation = await evaluate(cdpConnection, `(() => {
+    const target = [...document.querySelectorAll('.hv-template-grid > button')]
+      .find((card) => card.querySelector('strong')?.textContent?.trim() === '双人对话');
+    const layers = target ? [...target.querySelectorAll('.hv-template-swatch [data-motion]')] : [];
+    return {
+      hovered: target?.matches(':hover') === true,
+      runningAnimationCount: layers.flatMap((layer) => layer.getAnimations()).filter((item) => item.playState === 'running').length,
+      layerStates: layers.map((layer) => ({
+        layer: layer.getAttribute('data-layer') || '',
+        motion: layer.getAttribute('data-motion') || '',
+        transform: getComputedStyle(layer).transform,
+        opacity: getComputedStyle(layer).opacity,
+      })),
+    };
+  })()`);
+  return {
+    ...initial,
+    ...animation,
+    firstFrameHash: firstHash,
+    secondFrameHash: secondHash,
+    pixelChanged: firstHash !== secondHash,
+  };
+}
+
 async function inspectPreviewEffects(cdpConnection) {
   return evaluate(cdpConnection, `(() => {
     const surface = document.querySelector('[data-html-video-preview-effects="true"]');
@@ -2659,6 +2811,22 @@ async function saveScreenshot(cdpConnection, path) {
     captureBeyondViewport: false,
   });
   await writeFile(path, Buffer.from(result.data, 'base64'));
+}
+
+async function captureRegionHash(cdpConnection, rect) {
+  const result = await cdpConnection.send('Page.captureScreenshot', {
+    format: 'png',
+    fromSurface: true,
+    captureBeyondViewport: false,
+    clip: {
+      x: Math.max(0, rect.x),
+      y: Math.max(0, rect.y),
+      width: Math.max(1, rect.width),
+      height: Math.max(1, rect.height),
+      scale: 1,
+    },
+  });
+  return createHash('sha256').update(Buffer.from(result.data, 'base64')).digest('hex');
 }
 
 function appendBounded(chunks, chunk) {
