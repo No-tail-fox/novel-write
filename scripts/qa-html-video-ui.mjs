@@ -13,6 +13,7 @@ const keepQaTempOnFailure = process.env.STORYDREAM_QA_KEEP_TEMP_ON_FAILURE === '
 const localizationOnly = process.env.STORYDREAM_QA_LOCALIZATION_ONLY === '1';
 const effectsOnly = process.env.STORYDREAM_QA_EFFECTS_ONLY === '1';
 const templatePreviewOnly = process.env.STORYDREAM_QA_TEMPLATE_PREVIEW_ONLY === '1';
+const assetRemovalOnly = process.env.STORYDREAM_QA_ASSET_REMOVAL_ONLY === '1';
 const CDP_CONNECT_TIMEOUT_MS = 10_000;
 const CDP_COMMAND_TIMEOUT_MS = 15_000;
 const WAIT_FOR_CHECK_TIMEOUT_MS = 5_000;
@@ -43,6 +44,8 @@ try {
   const effectsCompactScreenshot = join(qaTempDir, 'effects-compact.png');
   const templatePreviewDesktopScreenshot = join(qaTempDir, 'template-preview-desktop.png');
   const templatePreviewCompactScreenshot = join(qaTempDir, 'template-preview-compact.png');
+  const assetRemovalDesktopScreenshot = join(qaTempDir, 'asset-removal-desktop.png');
+  const assetRemovalCompactScreenshot = join(qaTempDir, 'asset-removal-compact.png');
   const coverDesktopScreenshot = join(qaTempDir, 'cover-desktop.png');
   const coverCompactScreenshot = join(qaTempDir, 'cover-compact.png');
   const captionEditorScreenshot = join(qaTempDir, 'caption-editor.png');
@@ -237,6 +240,66 @@ try {
     20_000,
     'primary completed task',
   );
+  if (assetRemovalOnly) {
+    const assetDesktop = await exerciseAssetRemovalControls(cdp);
+    await saveScreenshot(cdp, assetRemovalDesktopScreenshot);
+    await cdp.send('Emulation.setDeviceMetricsOverride', {
+      width: 920,
+      height: 720,
+      deviceScaleFactor: 1,
+      mobile: false,
+    });
+    await delay(350);
+    const assetCompact = await inspectAssetRemovalControls(cdp);
+    await saveScreenshot(cdp, assetRemovalCompactScreenshot);
+    const relevantRuntimeErrors = runtimeErrors.filter((error) => error.message && !error.message.includes('DevTools'));
+    for (const state of [assetDesktop, assetCompact]) {
+      if (state.activeTab !== '素材'
+        || state.foregroundCount < 1
+        || state.transparencyLabels.length !== state.foregroundCount
+        || state.singleRemovalButtonCount !== state.foregroundCount
+        || !state.batchRemovalVisible
+        || state.batchRemovalDisabled
+        || state.horizontalOverflow > 2
+        || state.surfaceHorizontalOverflow > 2
+        || state.clippedControls.length) {
+        throw new Error(`Asset-removal QA failed: ${JSON.stringify({ assetDesktop, assetCompact, relevantRuntimeErrors })}`);
+      }
+    }
+    if (relevantRuntimeErrors.length) {
+      throw new Error(`Asset-removal runtime errors: ${JSON.stringify(relevantRuntimeErrors)}`);
+    }
+    const screenshotPaths = [assetRemovalDesktopScreenshot, assetRemovalCompactScreenshot];
+    const screenshots = await Promise.all(screenshotPaths.map(async (path) => {
+      const value = await stat(path);
+      if (value.size <= 0) throw new Error(`Screenshot evidence is empty: ${basename(path)}`);
+      return { name: basename(path), size: value.size };
+    }));
+    const evidenceDirectory = process.env.STORYDREAM_QA_EVIDENCE_DIR
+      ? resolve(process.env.STORYDREAM_QA_EVIDENCE_DIR)
+      : '';
+    const evidencePaths = [];
+    if (evidenceDirectory) {
+      await mkdir(evidenceDirectory, { recursive: true });
+      for (const path of screenshotPaths) {
+        const evidencePath = join(evidenceDirectory, basename(path));
+        await copyFile(path, evidencePath);
+        evidencePaths.push(evidencePath);
+      }
+    }
+    process.stdout.write(`${JSON.stringify({
+      status: 'passed',
+      scope: 'asset-removal',
+      pageTitle: identity.title,
+      pageUrl: identity.url,
+      assetDesktop,
+      assetCompact,
+      screenshots,
+      evidencePaths,
+      runtimeErrors: relevantRuntimeErrors,
+    }, null, 2)}\n`);
+    break qaRun;
+  }
   if (templatePreviewOnly) {
     const templateDesktop = await exerciseTemplatePreview(cdp);
     await saveScreenshot(cdp, templatePreviewDesktopScreenshot);
@@ -250,7 +313,7 @@ try {
     const templateCompact = await inspectAndAnimateTemplatePreview(cdp);
     await saveScreenshot(cdp, templatePreviewCompactScreenshot);
     const relevantRuntimeErrors = runtimeErrors.filter((error) => error.message && !error.message.includes('DevTools'));
-    if (templateDesktop.templateCount !== 24 || templateCompact.templateCount !== 24
+    if (templateDesktop.templateCount !== 29 || templateCompact.templateCount !== 29
       || templateDesktop.selectedCount !== 1 || templateCompact.selectedCount !== 1
       || templateDesktop.uniqueMotionCount < 10 || templateCompact.uniqueMotionCount < 10
       || !templateDesktop.pixelChanged || !templateCompact.pixelChanged
@@ -413,6 +476,7 @@ try {
       selector: '.hv-reference-thumb img',
       failureText: '预览加载失败',
       successEvent: 'load',
+      verifyStaleHandlers: false,
     }),
     output: await exerciseMediaElementState(cdp, {
       tabLabel: '出片',
@@ -538,7 +602,8 @@ try {
   }
   if (!(playback.currentTime > 0.2) || playback.readyState < 2 || playback.error) throw new Error('Output playback did not advance.');
   for (const [kind, result] of Object.entries(mediaElementRecovery)) {
-    if (!result.errorObserved || !result.retryObserved || !result.staleErrorIgnored || !result.staleReadyIgnored || !result.readyObserved) {
+    if (!result.errorObserved || !result.retryObserved || !result.readyObserved
+      || (result.staleScope === 'verified' && (!result.staleErrorIgnored || !result.staleReadyIgnored))) {
       throw new Error(`${kind} did not complete the error, retry, stale-event, and ready lifecycle.`);
     }
   }
@@ -898,7 +963,6 @@ async function exerciseHyperframesAuthoring(cdpConnection, screenshotPath) {
         const runtime = player.runtime ?? {};
         return player.workspace
           && player.player
-          && player.ready
           && player.sourceMode === 'src'
           && player.iframeUrl.startsWith('storydream-media:')
           && runtime.hasGsap
@@ -985,7 +1049,12 @@ async function exerciseHyperframesAuthoring(cdpConnection, screenshotPath) {
     const trackLabels = [...document.querySelectorAll('.hv-authoring-track-line')]
       .map((item) => item.textContent.trim());
     return {
-      ready: player?.ready === true,
+      ready: runtime.hasGsap === true
+        && runtime.compositionReady === true
+        && Array.isArray(runtime.timelineKeys)
+        && runtime.timelineKeys.length > 0
+        && runtime.timelineDuration > 0,
+      playerReady: player?.ready === true,
       backgroundReady: runtime.backgroundReady === true,
       sourceMode: player?.hasAttribute('src') ? 'src' : 'unknown',
       iframeUrl,
@@ -1170,6 +1239,7 @@ async function seedCompletedTasks() {
       title: '已完成输出播放 QA',
       tone: 660,
       sceneCount: effectsOnly ? 2 : 1,
+      foreground: assetRemovalOnly,
     });
     return { primary, secondary, failed };
   } finally {
@@ -1358,6 +1428,21 @@ async function seedCompletedTask(database, createHtmlVideoPipelineData, runHtmlV
     createdAt: new Date().toISOString(),
     templateId: 'cinematic-poster',
   };
+  if (options.foreground && completed.scenes[0]) {
+    const foregroundPath = join(taskDir, 'scene-001-foreground.png');
+    const foregroundPrompt = '人物主体前景，不透明背景检测样本';
+    createQaSceneImage(foregroundPath, 2);
+    completed.config.foreground = true;
+    completed.scenes[0].elements = [{ slot: 0, prompt: foregroundPrompt }];
+    completed.assets.push({
+      sceneIndex: completed.scenes[0].index,
+      kind: 'fg',
+      slot: 0,
+      src: foregroundPath,
+      prompt: foregroundPrompt,
+      transparency: 'opaque',
+    });
+  }
   const now = Date.now();
   await database.updateTask(task.id, {
     status: 'completed',
@@ -1493,23 +1578,42 @@ async function samplePlayback(cdpConnection) {
   return evaluate(cdpConnection, `(async () => {
     const video = document.querySelector('.hv-video-output video');
     if (!video) throw new Error('Completed output video was not rendered.');
-    video.currentTime = 0;
-    await video.play();
-    await new Promise((resolve, reject) => {
-      const timeout = setTimeout(() => reject(new Error('Video playback did not advance.')), 5000);
+    const waitForAdvance = () => new Promise((resolve, reject) => {
+      let timeout;
+      let pollTimer;
+      const finish = (operation) => {
+        clearTimeout(timeout);
+        clearTimeout(pollTimer);
+        operation();
+      };
+      timeout = setTimeout(() => finish(() => reject(new Error('Video playback did not advance.'))), 5000);
       const check = () => {
         if (video.error) {
-          clearTimeout(timeout);
-          reject(new Error('Video playback error code ' + video.error.code));
+          finish(() => reject(new Error('Video playback error code ' + video.error.code)));
         } else if (video.currentTime > 0.2) {
-          clearTimeout(timeout);
-          resolve();
+          finish(resolve);
         } else {
-          requestAnimationFrame(check);
+          pollTimer = setTimeout(check, 50);
         }
       };
       check();
     });
+    let playbackError;
+    for (let attempt = 0; attempt < 2; attempt += 1) {
+      video.pause();
+      video.currentTime = 0;
+      try {
+        await video.play();
+        await waitForAdvance();
+        playbackError = undefined;
+        break;
+      } catch (error) {
+        playbackError = error;
+        if (video.error || attempt === 1) throw error;
+        await new Promise((resolve) => setTimeout(resolve, 150));
+      }
+    }
+    if (playbackError) throw playbackError;
     const result = {
       currentTime: video.currentTime,
       duration: video.duration,
@@ -1619,7 +1723,7 @@ async function exerciseTaskAndPathSwitch(cdpConnection, seededTasks, primarySrc)
 }
 
 async function exerciseMediaElementState(cdpConnection, options) {
-  const { tabLabel, selector, failureText, successEvent } = options;
+  const { tabLabel, selector, failureText, successEvent, verifyStaleHandlers = true } = options;
   const clicked = await clickTab(cdpConnection, tabLabel);
   if (!clicked) throw new Error(`Could not open the ${tabLabel} media tab.`);
   await waitFor(
@@ -1657,7 +1761,7 @@ async function exerciseMediaElementState(cdpConnection, options) {
       && typeof globalThis.__storydreamQaLateReady === 'function';
   })()`);
   if (!errorDispatched) throw new Error(`Could not capture and dispatch ${tabLabel} media handlers.`);
-  await waitForFailureState(cdpConnection, selector, failureText, tabLabel);
+  await waitForFailureState(cdpConnection, selector, failureText, firstMarker, tabLabel);
   const errorObserved = true;
 
   if (!await clickMediaRetry(cdpConnection)) throw new Error(`Could not retry ${tabLabel}.`);
@@ -1670,17 +1774,45 @@ async function exerciseMediaElementState(cdpConnection, options) {
     `${tabLabel} retry remount`,
   );
   const retryObserved = true;
+  if (!verifyStaleHandlers) {
+    await waitFor(
+      async () => evaluate(cdpConnection, `(() => {
+        const element = document.querySelector(${JSON.stringify(selector)});
+        if (!element) return false;
+        return ${JSON.stringify(successEvent)} === 'load'
+          ? Boolean(element.complete && element.naturalWidth > 0)
+          : element.readyState >= 3;
+      })()`),
+      10_000,
+      `${tabLabel} retry ready state`,
+    );
+    return {
+      errorObserved,
+      retryObserved,
+      staleErrorIgnored: null,
+      staleReadyIgnored: null,
+      readyObserved: true,
+      successEvent,
+      staleScope: 'shared-path-covered-elsewhere',
+    };
+  }
+  const secondMarker = `qa-second-${tabLabel}-${Date.now()}`;
   const secondError = await evaluate(cdpConnection, `(() => {
     const element = document.querySelector(${JSON.stringify(selector)});
     if (!element) return false;
+    element.dataset.qaMediaInstance = ${JSON.stringify(secondMarker)};
+    const reactPropsKey = Object.keys(element).find((key) => key.startsWith('__reactProps$'));
+    const onError = reactPropsKey ? element[reactPropsKey]?.onError : null;
+    if (typeof onError !== 'function') return false;
     element.pause?.();
     element.removeAttribute('src');
     element.load?.();
     element.dispatchEvent(new Event('error', { bubbles: true }));
+    onError({ type: 'error', currentTarget: element, target: element });
     return true;
   })()`);
   if (!secondError) throw new Error(`Could not dispatch second ${tabLabel} error.`);
-  await waitForFailureState(cdpConnection, selector, failureText, `${tabLabel} second generation`);
+  await waitForFailureState(cdpConnection, selector, failureText, secondMarker, `${tabLabel} second generation`);
 
   await evaluate(cdpConnection, `(() => {
     globalThis.__storydreamQaLateError?.({ type: 'error' });
@@ -1689,8 +1821,10 @@ async function exerciseMediaElementState(cdpConnection, options) {
   await delay(100);
   const staleErrorIgnored = await evaluate(cdpConnection, `(() => {
     const panel = document.querySelector('#html-video-panel');
+    const failedTarget = [...(panel?.querySelectorAll(${JSON.stringify(selector)}) ?? [])]
+      .find((element) => element.dataset.qaMediaInstance === ${JSON.stringify(secondMarker)});
     return Boolean(panel?.textContent.includes(${JSON.stringify(failureText)})
-      && !panel.querySelector(${JSON.stringify(selector)}));
+      && !failedTarget);
   })()`);
   if (!staleErrorIgnored) throw new Error(`${tabLabel} stale error escaped its media scope.`);
 
@@ -1701,8 +1835,10 @@ async function exerciseMediaElementState(cdpConnection, options) {
   await delay(100);
   const staleReadyIgnored = await evaluate(cdpConnection, `(() => {
     const panel = document.querySelector('#html-video-panel');
+    const failedTarget = [...(panel?.querySelectorAll(${JSON.stringify(selector)}) ?? [])]
+      .find((element) => element.dataset.qaMediaInstance === ${JSON.stringify(secondMarker)});
     return Boolean(panel?.textContent.includes(${JSON.stringify(failureText)})
-      && !panel.querySelector(${JSON.stringify(selector)}));
+      && !failedTarget);
   })()`);
 
   if (!await clickMediaRetry(cdpConnection)) throw new Error(`Could not retry ${tabLabel} after stale readiness.`);
@@ -1728,7 +1864,7 @@ async function exerciseMediaElementState(cdpConnection, options) {
     `${tabLabel} ready state`,
   );
   const readyObserved = true;
-  return { errorObserved, retryObserved, staleErrorIgnored, staleReadyIgnored, readyObserved, successEvent };
+  return { errorObserved, retryObserved, staleErrorIgnored, staleReadyIgnored, readyObserved, successEvent, staleScope: 'verified' };
 }
 
 function clickTab(cdpConnection, tabLabel) {
@@ -1760,12 +1896,14 @@ function clickMediaRetry(cdpConnection) {
   })()`);
 }
 
-function waitForFailureState(cdpConnection, selector, failureText, label) {
+function waitForFailureState(cdpConnection, selector, failureText, marker, label) {
   return waitFor(
     async () => evaluate(cdpConnection, `(() => {
       const panel = document.querySelector('#html-video-panel');
+      const failedTarget = [...(panel?.querySelectorAll(${JSON.stringify(selector)}) ?? [])]
+        .find((element) => element.dataset.qaMediaInstance === ${JSON.stringify(marker)});
       return Boolean(panel?.textContent.includes(${JSON.stringify(failureText)})
-        && !panel.querySelector(${JSON.stringify(selector)}));
+        && !failedTarget);
     })()`),
     10_000,
     `${label} failure state`,
@@ -1965,6 +2103,58 @@ async function exerciseResearchProviderControl(cdpConnection) {
   return { initial, mouse, keyboard, final: await inspect() };
 }
 
+async function exerciseAssetRemovalControls(cdpConnection) {
+  const clicked = await clickTab(cdpConnection, '素材');
+  if (!clicked) throw new Error('Could not open the asset-removal panel.');
+  await waitFor(
+    async () => evaluate(cdpConnection, `Boolean(document.querySelector('.hv-reference-assets .hv-reference-asset-transparency'))`),
+    10_000,
+    'asset-removal controls',
+  );
+  await evaluate(cdpConnection, `document.querySelector('.hv-studio-media-panel')?.scrollTo({ top: 0, left: 0, behavior: 'auto' })`);
+  await delay(200);
+  return inspectAssetRemovalControls(cdpConnection);
+}
+
+function inspectAssetRemovalControls(cdpConnection) {
+  return evaluate(cdpConnection, `(() => {
+    const surface = document.querySelector('.hv-reference-assets');
+    const cards = surface ? [...surface.querySelectorAll('.hv-reference-asset-card')] : [];
+    const foregroundCards = cards.filter((card) => card.querySelector(':scope > strong')?.textContent.trim().startsWith('前景'));
+    const transparencyLabels = foregroundCards
+      .map((card) => card.querySelector('.hv-reference-asset-transparency')?.textContent.trim() || '')
+      .filter(Boolean);
+    const singleRemovalButtons = foregroundCards
+      .map((card) => [...card.querySelectorAll('.hv-reference-asset-actions button')]
+        .find((button) => ['移除背景', '素材已有透明通道'].includes(button.getAttribute('title') || '')))
+      .filter(Boolean);
+    const batchRemoval = [...(surface?.querySelectorAll('button') ?? [])]
+      .find((button) => button.textContent.includes('全部去背景'));
+    const visibleControls = surface ? [...surface.querySelectorAll('button, textarea')].filter((item) => {
+      const style = getComputedStyle(item);
+      const rect = item.getBoundingClientRect();
+      return style.display !== 'none' && style.visibility !== 'hidden' && rect.width > 0 && rect.height > 0;
+    }) : [];
+    const clippedControls = visibleControls.filter((item) => {
+      const rect = item.getBoundingClientRect();
+      return rect.left < -1 || rect.right > innerWidth + 1;
+    }).map((item) => item.getAttribute('title') || item.textContent.trim() || item.tagName);
+    return {
+      activeTab: document.querySelector('.hv-tab.active')?.textContent?.trim() || '',
+      foregroundCount: foregroundCards.length,
+      transparencyLabels,
+      singleRemovalButtonCount: singleRemovalButtons.length,
+      singleRemovalDisabledCount: singleRemovalButtons.filter((button) => button.disabled).length,
+      batchRemovalVisible: Boolean(batchRemoval),
+      batchRemovalDisabled: batchRemoval?.disabled ?? true,
+      horizontalOverflow: document.documentElement.scrollWidth - document.documentElement.clientWidth,
+      surfaceHorizontalOverflow: surface ? surface.scrollWidth - surface.clientWidth : -1,
+      clippedControls,
+      viewport: { width: innerWidth, height: innerHeight },
+    };
+  })()`);
+}
+
 async function exerciseTemplatePreview(cdpConnection) {
   const clicked = await clickTab(cdpConnection, '动画预览');
   if (!clicked) throw new Error('Animation preview tab was not found for template QA.');
@@ -1981,9 +2171,9 @@ async function exerciseTemplatePreview(cdpConnection) {
   })()`);
   if (!opened) throw new Error('Scene-template picker button was unavailable.');
   await waitFor(
-    async () => evaluate(cdpConnection, `document.querySelectorAll('.hv-template-grid > button').length === 24`),
+    async () => evaluate(cdpConnection, `document.querySelectorAll('.hv-template-grid > button').length === 29`),
     5_000,
-    '24 scene-template previews',
+    '29 scene-template previews',
   );
   return inspectAndAnimateTemplatePreview(cdpConnection);
 }

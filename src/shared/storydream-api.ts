@@ -153,6 +153,8 @@ export const INVOKE_CHANNELS = Object.freeze([
   'html-video:add-asset',
   'html-video:replace-asset',
   'html-video:regenerate-asset',
+  'html-video:remove-asset-background',
+  'html-video:remove-all-backgrounds',
   'html-video:regenerate-voice',
   'html-video:regenerate-cover',
   'html-video:rerender',
@@ -275,6 +277,8 @@ export type StoryDreamApi = {
   addHtmlVideoAsset: (id: string, sceneIndex: number, prompt: string) => Promise<AppMutationResult | null>;
   replaceHtmlVideoAsset: (id: string, target: HtmlVideoAssetTarget) => Promise<AppMutationResult | null>;
   regenerateHtmlVideoAsset: (id: string, target: HtmlVideoAssetTarget) => Promise<AppMutationResult | null>;
+  removeHtmlVideoAssetBackground: (id: string, target: HtmlVideoAssetTarget) => Promise<AppMutationResult | null>;
+  removeAllHtmlVideoAssetBackgrounds: (id: string) => Promise<AppMutationResult | null>;
   regenerateHtmlVideoVoice: (id: string, sceneIndex: number) => Promise<AppMutationResult | null>;
   regenerateHtmlVideoCover: (id: string) => Promise<AppMutationResult | null>;
   rerenderHtmlVideo: (id: string) => Promise<AppMutationResult | null>;

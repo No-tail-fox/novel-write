@@ -19,9 +19,10 @@ import {
 import { createHtmlVideoJobConfig } from './html-video-config';
 import { createHtmlVideoCoverAsset, type HtmlVideoCoverImageProcessor } from './html-video-cover';
 import { resolveVolcengineTtsApiVersion } from './volcengine-tts';
+import { HTML_VIDEO_SCENE_TEMPLATES } from './html-video-scene-templates';
 import { mkdir } from 'node:fs/promises';
 import { join } from 'node:path';
-import type { AppConfig, HtmlVideoAsset, HtmlVideoJobConfig, HtmlVideoScenePlan, HtmlVideoVoiceClip, ImagePrompt, StoryboardScene, Task } from './types';
+import type { AppConfig, CustomStyle, HtmlVideoAsset, HtmlVideoJobConfig, HtmlVideoScenePlan, HtmlVideoVoiceClip, ImagePrompt, StoryboardScene, Task } from './types';
 import { createConfiguredJsonLlm, type ConfiguredJsonLlm, type LlmMessage } from './llm-provider';
 import { createConfiguredImageGenerator, createConfiguredNarrationSynthesizer, getConfiguredImageConcurrency } from './media-providers';
 
@@ -32,6 +33,8 @@ type AudioDurationProbe = (path: string, signal?: AbortSignal) => Promise<number
 export interface HtmlVideoRuntimeProviderOptions {
   measureAudioDuration: AudioDurationProbe;
   jobConfig: HtmlVideoJobConfig;
+  imageStyle?: CustomStyle | null;
+  inspectAssetTransparency?: (path: string) => Promise<boolean>;
   prepareCoverImage?: HtmlVideoCoverImageProcessor;
 }
 
@@ -41,6 +44,11 @@ interface HtmlAssetRequest {
   kind: HtmlVideoAsset['kind'];
   slot: number;
   prompt: string;
+}
+
+interface HtmlVideoAssetGeneratorOptions {
+  imageStyle?: CustomStyle | null;
+  inspectAssetTransparency?: (path: string) => Promise<boolean>;
 }
 
 interface HtmlVoiceRequest {
@@ -86,7 +94,12 @@ const htmlPlanningSchema: Record<string, unknown> = {
             maxItems: MAX_HTML_VIDEO_CAPTIONS_PER_SCENE,
             items: { type: 'string', minLength: 1, maxLength: MAX_HTML_VIDEO_SOURCE_CHARS },
           },
-          sceneTemplate: { type: 'string', minLength: 1, maxLength: MAX_HTML_VIDEO_SOURCE_CHARS },
+          sceneTemplate: {
+            type: 'string',
+            minLength: 1,
+            maxLength: MAX_HTML_VIDEO_SOURCE_CHARS,
+            enum: HTML_VIDEO_SCENE_TEMPLATES.map((template) => template.id),
+          },
           background: {
             type: 'object',
             additionalProperties: false,
@@ -141,7 +154,10 @@ export function createHtmlVideoRuntimeProviders(
     rewrite: llmProviders.rewrite,
     plan: llmProviders.plan,
     generateAssets: providers.generateImages
-      ? adaptHtmlVideoAssetGenerator(providers.generateImages, runtimeTask)
+      ? adaptHtmlVideoAssetGenerator(providers.generateImages, runtimeTask, {
+          imageStyle: options.imageStyle,
+          inspectAssetTransparency: options.inspectAssetTransparency,
+        })
       : async () => {
           throw new AppError('IMAGE_PROVIDER_NOT_CONFIGURED', '请先配置图片服务。');
         },
@@ -213,6 +229,7 @@ export function adaptHtmlVideoCoverGenerator(
 export function adaptHtmlVideoAssetGenerator(
   generator: ImageGenerator,
   task: Task,
+  options: HtmlVideoAssetGeneratorOptions = {},
 ): HtmlVideoRunnerOptions['generateAssets'] {
   return async (input: HtmlVideoAssetInput): Promise<HtmlVideoAsset[]> => {
     const validatedInput = {
@@ -224,37 +241,88 @@ export function adaptHtmlVideoAssetGenerator(
     };
     const requests = buildHtmlAssetRequests(validatedInput);
     const runtimeTask = applyHtmlTaskConfig(task, input.config);
-    const scenes: StoryboardScene[] = requests.map((request) => ({
-      id: request.syntheticId,
-      cap: request.scene.narration,
-      descPrompt: request.prompt,
-      durationMs: 1000,
-    }));
-    const prompts: ImagePrompt[] = requests.map((request) => ({
-      sceneId: request.syntheticId,
-      cap: request.scene.title,
-      prompt: request.prompt,
-      negativePrompt: request.kind === 'fg' ? '复杂背景，文字，水印' : '',
-      style: runtimeTask.style,
-      ratio: runtimeTask.ratio,
-      characterProfile: '',
-    }));
-    let generated: SceneAsset[];
+    const backgroundRequests = requests.filter((request) => request.kind === 'bg');
+    const foregroundRequests = requests.filter((request) => request.kind === 'fg');
+    let generated: SceneAsset[] = [];
     try {
-      generated = await generator(scenes, prompts, runtimeTask, input.signal);
+      generated = [
+        ...await generateHtmlAssetBatch(generator, backgroundRequests, runtimeTask, runtimeTask.ratio, options.imageStyle, input.signal),
+        ...await generateHtmlAssetBatch(generator, foregroundRequests, { ...runtimeTask, ratio: '1:1' }, '1:1', options.imageStyle, input.signal),
+      ];
     } catch (error) {
       throw asHtmlVideoImageProviderError(error);
     }
     const assetsById = indexProviderAssets(generated, requests.map((request) => request.syntheticId), 'IMAGE_PROVIDER_INVALID_OUTPUT');
 
-    return requests.map((request) => ({
-      sceneIndex: request.scene.index,
-      kind: request.kind,
-      slot: request.slot,
-      src: assetsById.get(request.syntheticId)!.path,
-      prompt: request.prompt,
+    return Promise.all(requests.map(async (request) => {
+      const src = assetsById.get(request.syntheticId)!.path;
+      let transparency: HtmlVideoAsset['transparency'];
+      if (request.kind === 'fg' && options.inspectAssetTransparency) {
+        transparency = await options.inspectAssetTransparency(src) ? 'transparent' : 'opaque';
+      }
+      return {
+        sceneIndex: request.scene.index,
+        kind: request.kind,
+        slot: request.slot,
+        src,
+        prompt: request.prompt,
+        ...(transparency ? { transparency } : {}),
+      };
     }));
   };
+}
+
+async function generateHtmlAssetBatch(
+  generator: ImageGenerator,
+  requests: HtmlAssetRequest[],
+  runtimeTask: Task,
+  ratio: string,
+  imageStyle: CustomStyle | null | undefined,
+  signal?: AbortSignal,
+): Promise<SceneAsset[]> {
+  if (requests.length === 0) return [];
+  const scenes: StoryboardScene[] = requests.map((request) => ({
+    id: request.syntheticId,
+    cap: request.scene.narration,
+    descPrompt: buildHtmlAssetProviderPrompt(request, imageStyle),
+    durationMs: 1000,
+  }));
+  const prompts: ImagePrompt[] = requests.map((request) => ({
+    sceneId: request.syntheticId,
+    cap: request.scene.title,
+    prompt: buildHtmlAssetProviderPrompt(request, imageStyle),
+    negativePrompt: mergeHtmlNegativePrompts(
+      imageStyle?.negativePrompt,
+      request.kind === 'fg' ? '复杂背景，纯色背景，不透明背景，文字，水印' : '',
+    ),
+    style: runtimeTask.style,
+    ratio,
+    characterProfile: '',
+  }));
+  const generated = await generator(scenes, prompts, runtimeTask, signal);
+  indexProviderAssets(
+    generated,
+    requests.map((request) => request.syntheticId),
+    'IMAGE_PROVIDER_INVALID_OUTPUT',
+  );
+  return generated;
+}
+
+function buildHtmlAssetProviderPrompt(request: HtmlAssetRequest, imageStyle: CustomStyle | null | undefined): string {
+  return request.kind === 'bg'
+    ? joinBoundedHtmlPrompt(imageStyle?.prefix, request.prompt, imageStyle?.suffix)
+    : joinBoundedHtmlPrompt(imageStyle?.prefix, request.prompt, '纯透明背景 PNG，主体居中，无背景');
+}
+
+function joinBoundedHtmlPrompt(prefix: string | undefined, content: string, suffix: string | undefined): string {
+  const head = [prefix?.trim(), content.trim()].filter(Boolean).join('，');
+  const tail = suffix?.trim() ? `，${suffix.trim()}` : '';
+  return `${head.slice(0, Math.max(0, MAX_HTML_VIDEO_SOURCE_CHARS - tail.length))}${tail}`
+    .slice(0, MAX_HTML_VIDEO_SOURCE_CHARS);
+}
+
+function mergeHtmlNegativePrompts(...parts: Array<string | undefined>): string {
+  return parts.map((part) => part?.trim()).filter(Boolean).join('，');
 }
 
 export function adaptHtmlVideoNarrationSynthesizer(
@@ -316,7 +384,7 @@ function createHtmlVideoLlmProviders(
         1,
         'html-video-planning',
         [
-          { role: 'system', content: '把旁白规划为 HTML 动画视频场景。只返回 JSON，scenes 必须包含连续 index、narration、title、captions、sceneTemplate、background.prompt 和 elements。前景 elements 的 prompt 应明确透明背景 PNG。不要返回 JSON Schema、错误对象或解释文字。' },
+          { role: 'system', content: buildHtmlVideoPlanningSystemPrompt(input.config) },
           { role: 'user', content: JSON.stringify({ rewrittenText: input.rewrittenText, segments: input.segments, config: input.config }) },
         ],
         htmlPlanningSchema,
@@ -325,16 +393,78 @@ function createHtmlVideoLlmProviders(
       );
       try {
         return {
-          scenes: validateHtmlVideoScenePlans(
+          scenes: validateHtmlVideoPlanningContract(validateHtmlVideoScenePlans(
             result.scenes,
             input.config.maxScenes ?? MAX_HTML_VIDEO_SCENES,
-          ),
+          ), input.config.foreground !== false),
         };
       } catch (error) {
         throw htmlVideoPlanningValidationError(error);
       }
     },
   };
+}
+
+export function buildHtmlVideoPlanningSystemPrompt(config: HtmlVideoPlanningInput['config']): string {
+  const orientation = config.ratio === '16:9' ? '横屏' : '竖屏';
+  const foreground = config.foreground !== false;
+  const templates = HTML_VIDEO_SCENE_TEMPLATES
+    .filter((template) => foreground || template.materialSlots === 0)
+    .map((template) => {
+      const slots = template.materialSlots === 0
+        ? '无素材槽'
+        : `${template.materialSlots} 个素材槽（slot ${Array.from({ length: template.materialSlots }, (_, slot) => slot).join('/')}）`;
+      return `- "${template.id}"（${template.label}）：${template.description}【${slots}】`;
+    })
+    .join('\n');
+  const elementRule = foreground
+    ? '- elements：严格按所选版式的素材槽输出。N 个槽就完整输出 slot 0 到 N-1，每项只写一个独立人物、物件或动作主体；无素材槽版式必须输出 []。'
+    : '- elements：本次不使用前景素材，只能选择无素材槽版式，所有场景必须输出 []。';
+
+  return [
+    '你是短视频分镜策划。请把已经改写和切分的旁白规划为 HTML 动画视频场景，并且只输出 JSON。',
+    '',
+    `【画面方向】${orientation}`,
+    '【可用版式】每个场景必须按内容选择一个，避免全部使用同一种版式：',
+    templates,
+    '',
+    '【每个场景字段】',
+    '- index：从 1 连续递增。',
+    '- narration：严格使用输入 segments 中对应的旁白，不改写、不增删。',
+    '- sceneTemplate：只能填写上面列出的版式 id。',
+    '- title：4-10 字的画面大标题，不要引号或书名号。',
+    '- captions：把 narration 按原文顺序切成短句，不概括、不改写，拼接后必须保持原意和文字内容。',
+    `- background：{ "prompt": "背景图的中文绘图提示词" }，只描述${orientation}环境、氛围、空间层次和旁白情绪；不要写屏幕文字，不要把前景主体重复画成背景主角。`,
+    elementRule,
+    '',
+    '【提示词硬约束】',
+    '1. background.prompt 和 elements[].prompt 只写画面内容，不写写实、卡通、3D、油画、水墨、胶片等风格词，风格由生成阶段统一注入。',
+    '2. elements[].prompt 不写“透明背景”“无背景”“PNG”等生成说明，生成阶段会自动追加。',
+    '3. 所有画面提示词都不要包含字幕、标题、标语、水印、Logo 或界面文字。',
+    '4. elements 中每项是互不重复的单一主体，优先 10-20 个中文字，避免完整场景描述和复杂背景。',
+    '5. 回复第一个字符必须是 {，最后一个字符必须是 }；只输出 JSON，不要前言、解释、Markdown 代码块、JSON Schema 或错误对象。',
+    '',
+    '格式：{"scenes":[{"index":1,"narration":"...","title":"...","captions":["..."],"sceneTemplate":"center-focus","background":{"prompt":"..."},"elements":[{"slot":0,"prompt":"..."}]}]}',
+  ].join('\n');
+}
+
+function validateHtmlVideoPlanningContract(
+  scenes: HtmlVideoScenePlan[],
+  foreground: boolean,
+): HtmlVideoScenePlan[] {
+  for (const scene of scenes) {
+    const template = HTML_VIDEO_SCENE_TEMPLATES.find((candidate) => candidate.id === scene.sceneTemplate);
+    if (!template) {
+      throw new Error(`scene ${scene.index} uses unsupported sceneTemplate ${scene.sceneTemplate}`);
+    }
+    const expectedCount = foreground ? template.materialSlots : 0;
+    const expectedSlots = Array.from({ length: expectedCount }, (_, slot) => slot);
+    const actualSlots = scene.elements.map((element) => element.slot).sort((left, right) => left - right);
+    if (actualSlots.length !== expectedSlots.length || actualSlots.some((slot, index) => slot !== expectedSlots[index])) {
+      throw new Error(`scene ${scene.index} elements must match ${template.id} slots [${expectedSlots.join(', ')}]`);
+    }
+  }
+  return scenes;
 }
 
 function htmlVideoPlanningValidationError(error: unknown): AppError {
@@ -451,18 +581,12 @@ function buildHtmlAssetRequests(input: HtmlVideoAssetInput): HtmlAssetRequest[] 
           scene,
           kind: 'fg',
           slot: element.slot,
-          prompt: ensureTransparentForegroundPrompt(element.prompt),
+          prompt: element.prompt,
         });
       }
     }
   }
   return requests;
-}
-
-function ensureTransparentForegroundPrompt(prompt: string): string {
-  if (/透明|transparent/iu.test(prompt)) return prompt;
-  const suffix = '，透明背景 PNG 前景素材';
-  return `${prompt.slice(0, MAX_HTML_VIDEO_SOURCE_CHARS - suffix.length)}${suffix}`;
 }
 
 function indexProviderAssets(

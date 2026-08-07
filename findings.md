@@ -652,3 +652,27 @@
 - 24 个版式弹窗回归继续通过，双人对话示例的 5 层动画在桌面和紧凑窗口均运行且像素帧发生变化。
 
 ---
+
+# HTML 动画前后景提示词复刻发现
+
+- Storybound 逆向规划函数会把横/竖屏方向、全部版式说明和各版式 `elementSlots` 数量注入 system prompt；当前 StoryDream 只有一句泛化要求，没有合法版式清单或槽位约束。
+- 逆向合同要求 `background.prompt` 描述氛围背景、空间感和旁白情绪且不写文字；`background/elements` 都不能写画面风格，`elements` 也不能写透明背景说明。
+- Storybound 前景生成阶段才追加“纯透明背景 PNG，主体居中，无背景”，并固定用 `1:1`；背景使用任务横竖画幅。
+- Storybound 背景提示词为 `style.prefix + 内容 + style.suffix`，前景为 `style.prefix + 主体 + 透明 PNG 运行时后缀`；干净内容提示词留在场景数据中供编辑和重生。
+- Storybound 提供单张和批量 `remove_background`；支持 BiRefNet、ISNet、U2Net，本地会检查透明通道并跳过已经透明的前景。
+- 当前 StoryDream 让 LLM 主动把“透明背景 PNG”写入 `elements[].prompt`，同时在适配器再次补后缀，职责重复且污染用户可编辑提示词。
+- 当前 StoryDream 背景和前景放在同一批通用出图请求里，共用任务画幅；前景不是 `1:1`。
+- 当前图片 Provider 只发送 `ImagePrompt.prompt`，虽然 HTML 适配器构造了 `negativePrompt` 和 style ID，但没有把选中风格的 prefix/suffix 注入实际请求。
+- 当前仓库没有前景 Alpha 通道检查或去背景实现，因此提示词声称“透明 PNG”不等于素材真的透明。
+- 当前 24 个 HTML 场景模板的 `choreography.elements.length` 已是可复用的素材槽合同；规划 prompt 可直接列出模板 id、中文说明和 slot 0..N-1，无需维护第二份手写数量表。
+- 当前 `createConfiguredImageGenerator` 每次调用只接收一个任务画幅，OpenAI 兼容和即梦路径都从该画幅计算尺寸；要复刻前景 `1:1`，资产适配器必须按背景/前景分成两次 Provider 调用，再按 synthetic id 合并结果。
+- 当前 Electron 安装包没有 Sharp、PNGJS、ONNX Runtime 或背景移除依赖；抠图不能通过已有包实现，需要引入受控依赖/模型或做参照软件同样的“模型可用性检测 + 明确配置入口”。
+- 素材页已有每张资产的操作栏和 checkerboard 前景容器，适合加入真实透明状态及单张去背景按钮；现有主进程已有替换、重生和预览重建边界，可在同一治理事务中原子替换抠图结果。
+- 逆向版式把素材槽定义为独立 `elementSlots`；“满屏金句”和“全屏大图”明确为 `[]`。当前本地模板的 `choreography.elements` 是动画 cue，不能直接等同于素材槽，需新增独立 `materialSlots` 元数据。
+- 默认 `modern-film` 等风格已完整保存 prefix/suffix/negativePrompt；自定义风格也在 `custom_styles` 表中，但 FileDatabase 尚无按 ID 读取方法。增加只读详情方法并传入 HTML runtime 可覆盖默认与用户自定义风格。
+- 当前素材编辑的重生路径会重新走 `createHtmlVideoRuntimeProviders`，因此一旦风格和前景画幅在该边界统一修正，首次批量生成与单张重生可以保持同一合同。
+- 逆向素材页会在用户数据 `models` 目录依次识别 `birefnet-lite.onnx`、`BiRefNet-general-bb_swin_v1_tiny-epoch_232.onnx`、`isnet-general-use.onnx`、`isnet-anime.onnx`、`u2net.onnx`、`silueta.onnx`、`u2netp.onnx`，并映射到 BiRefNet、ISNet、U2Net 三种推理预处理。
+- 进一步检查发现项目 `vendor/python` 已包含 Python、Pillow、NumPy 与 ONNX Runtime；此前“安装包没有 ONNX Runtime”的判断只检查了 Node 依赖，结论不完整，现可直接复用现有 Python 运行时实现本地抠图。
+- 现有前景生成会把透明后缀写入 `HtmlVideoAsset.prompt`，导致编辑/重生使用被污染的运行时提示词；资产应只保存规划阶段的干净主体描述。
+
+---

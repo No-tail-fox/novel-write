@@ -535,9 +535,9 @@ describe('HTML video pipeline V2 contract', () => {
       .toThrow(/最多包含 4 个前景/u);
   });
 
-  it('publishes 24 animated scene presets and normalizes legacy ids', () => {
-    expect(HTML_VIDEO_SCENE_TEMPLATES).toHaveLength(24);
-    expect(new Set(HTML_VIDEO_SCENE_TEMPLATES.map((template) => template.id)).size).toBe(24);
+  it('publishes 29 animated scene presets and normalizes legacy ids', () => {
+    expect(HTML_VIDEO_SCENE_TEMPLATES).toHaveLength(29);
+    expect(new Set(HTML_VIDEO_SCENE_TEMPLATES.map((template) => template.id)).size).toBe(29);
     expect(HTML_VIDEO_SCENE_TEMPLATES.every((template) => (
       template.choreography.background.preset
       && template.choreography.caption.preset
@@ -551,6 +551,26 @@ describe('HTML video pipeline V2 contract', () => {
       ]);
     expect(normalizeHtmlVideoSceneTemplate('split-left')).toBe('right-text-left-object');
     expect(normalizeHtmlVideoSceneTemplate('unknown-template')).toBe('center-focus');
+  });
+
+  it('preserves verified foreground transparency through pipeline persistence', () => {
+    const pipeline = createHtmlVideoPipelineData('场景。', { foreground: true });
+    pipeline.scenes = [{
+      index: 1,
+      narration: '场景。',
+      title: '场景',
+      captions: ['场景。'],
+      sceneTemplate: 'center-focus',
+      background: { prompt: '背景' },
+      elements: [{ slot: 0, prompt: '人物' }],
+    }];
+    pipeline.assets = [
+      { sceneIndex: 1, kind: 'bg', slot: 0, src: 'D:/bg.png' },
+      { sceneIndex: 1, kind: 'fg', slot: 0, src: 'D:/fg.png', transparency: 'transparent' },
+    ];
+    expect(parseHtmlVideoPipelineData(JSON.stringify(pipeline)).assets[1]?.transparency).toBe('transparent');
+    pipeline.assets[1].transparency = 'unknown' as never;
+    expect(() => parseHtmlVideoPipelineData(JSON.stringify(pipeline))).toThrow(/transparency is invalid/i);
   });
 
   it('returns a completed composition to the render checkpoint without discarding previews', () => {

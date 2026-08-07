@@ -882,12 +882,16 @@ function parseScenePlan(
 function parseAsset(value: unknown, field: string): HtmlVideoAsset {
   const asset = requireRecord(value, field);
   if (asset.kind !== 'bg' && asset.kind !== 'fg') throw invalidPipeline(`${field}.kind is invalid`);
+  if (asset.transparency !== undefined && asset.transparency !== 'transparent' && asset.transparency !== 'opaque') {
+    throw invalidPipeline(`${field}.transparency is invalid`);
+  }
   return {
     sceneIndex: requirePositiveInteger(asset.sceneIndex, `${field}.sceneIndex`),
     kind: asset.kind,
     slot: requireNonNegativeInteger(asset.slot, `${field}.slot`),
     src: requireBoundedString(asset.src, `${field}.src`, MAX_HTML_VIDEO_PATH_CHARS),
     ...(optionalBoundedString(asset.prompt, `${field}.prompt`, MAX_HTML_VIDEO_SOURCE_CHARS) === undefined ? {} : { prompt: String(asset.prompt) }),
+    ...(asset.transparency === undefined ? {} : { transparency: asset.transparency }),
     ...(optionalNonNegativeInteger(asset.sizeBytes, `${field}.sizeBytes`) === undefined ? {} : { sizeBytes: Number(asset.sizeBytes) }),
   };
 }

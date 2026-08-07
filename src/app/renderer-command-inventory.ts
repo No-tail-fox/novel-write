@@ -268,6 +268,22 @@ export const rendererCommandInventory = {
   ),
   regenerateTaskImages: command(owner('task-detail', 'src/features/tasks/TaskArtifactPreview.tsx', 'regenerateSelected', 'onClick={() => void regenerateSelected()}', '批量重绘', productShellTest)),
   regenerateTaskNarration: command(owner('task-detail', 'src/features/tasks/TaskArtifactPreview.tsx', 'regenerate[2]', 'regenerate(item.sceneId)', '重新生成配音', productShellTest)),
+  removeAllHtmlVideoAssetBackgrounds: command(owner(
+    'html-video',
+    'src/features/html-video/HtmlVideoStoryboundPanels.tsx',
+    'removeAllBackgrounds',
+    'onClick={removeAllBackgrounds}',
+    '全部去背景',
+    htmlVideoStudioTest,
+  )),
+  removeHtmlVideoAssetBackground: command(owner(
+    'html-video',
+    'src/features/html-video/HtmlVideoStoryboundPanels.tsx',
+    'AssetCard',
+    'api.removeHtmlVideoAssetBackground(task.id, target)',
+    '移除背景',
+    htmlVideoStudioTest,
+  )),
   renamePersonAsset: command(owner('person-assets', 'src/features/labs/PersonAssetsPage.tsx', 'renamePerson', 'onClick={renamePerson}', '重命名', productShellTest)),
   replaceHtmlVideoAsset: command(owner(
     'html-video',

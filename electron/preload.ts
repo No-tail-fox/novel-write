@@ -237,6 +237,10 @@ export const storyDreamApi: StoryDreamApi = {
     invokeTrusted('html-video:replace-asset', { id, target }),
   regenerateHtmlVideoAsset: (id: string, target: HtmlVideoAssetTarget) =>
     invokeTrusted('html-video:regenerate-asset', { id, target }),
+  removeHtmlVideoAssetBackground: (id: string, target: HtmlVideoAssetTarget) =>
+    invokeTrusted('html-video:remove-asset-background', { id, target }),
+  removeAllHtmlVideoAssetBackgrounds: (id: string) =>
+    invokeTrusted('html-video:remove-all-backgrounds', id),
   regenerateHtmlVideoVoice: (id: string, sceneIndex: number) =>
     invokeTrusted('html-video:regenerate-voice', { id, sceneIndex }),
   regenerateHtmlVideoCover: (id: string): Promise<AppMutationResult | null> =>

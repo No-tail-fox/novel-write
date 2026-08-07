@@ -649,6 +649,94 @@ function buildSceneHtml(scene: {
       white-space: normal;
     }
     .frame[data-scene-template="cinematic-end"] .captions { width: 72%; }
+    .frame[data-scene-template="hero-callouts"] .scene-foreground {
+      inset: auto;
+      object-position: center bottom;
+    }
+    .frame[data-scene-template="hero-callouts"] #foreground-1 {
+      top: 14%;
+      left: 19%;
+      width: 62%;
+      height: 72%;
+      z-index: 3;
+    }
+    .frame[data-scene-template="hero-callouts"] #foreground-2,
+    .frame[data-scene-template="hero-callouts"] #foreground-3 {
+      top: 34%;
+      width: 28%;
+      height: 28%;
+      z-index: 4;
+      object-position: center;
+    }
+    .frame[data-scene-template="hero-callouts"] #foreground-2 { left: 1%; }
+    .frame[data-scene-template="hero-callouts"] #foreground-3 { right: 1%; }
+    .frame[data-scene-template="before-after-wipe"]::after {
+      content: '';
+      position: absolute;
+      top: 10%;
+      bottom: 12%;
+      left: 50%;
+      z-index: 4;
+      width: 3px;
+      transform: rotate(5deg);
+      background: var(--caption-accent);
+      box-shadow: 0 0 18px rgba(255, 255, 255, 0.24);
+    }
+    .frame[data-scene-template="before-after-wipe"] .scene-image { opacity: 0.36; filter: saturate(0.55) brightness(0.68); }
+    .frame[data-scene-template="before-after-wipe"] .scene-foreground {
+      inset: 13% auto 10%;
+      width: 52%;
+      height: 77%;
+      object-position: center bottom;
+    }
+    .frame[data-scene-template="before-after-wipe"] #foreground-1 { left: -2%; }
+    .frame[data-scene-template="before-after-wipe"] #foreground-2 { right: -2%; }
+    .frame[data-scene-template="radial-system"] .scene-image { opacity: 0.42; filter: brightness(0.64) saturate(0.72); }
+    .frame[data-scene-template="radial-system"] .scene-foreground {
+      inset: auto;
+      width: 34%;
+      height: 25%;
+      object-position: center;
+    }
+    .frame[data-scene-template="radial-system"] #foreground-1 { top: 12%; left: 33%; }
+    .frame[data-scene-template="radial-system"] #foreground-2 { top: 35%; right: 2%; }
+    .frame[data-scene-template="radial-system"] #foreground-3 { bottom: 12%; left: 33%; }
+    .frame[data-scene-template="radial-system"] #foreground-4 { top: 35%; left: 2%; }
+    .frame[data-scene-template="radial-system"] .title { width: 48%; font-size: ${roundCssNumber(titleSize * 0.92)}px; }
+    .frame[data-scene-template="news-focus"] .scene-image { filter: saturate(0.62) brightness(0.68) contrast(1.08); }
+    .frame[data-scene-template="news-focus"] .scene-foreground {
+      inset: 13% -4% 8% 39%;
+      width: 65%;
+      height: 79%;
+      object-position: right bottom;
+    }
+    .frame[data-scene-template="news-focus"] .title {
+      left: 6%;
+      width: 48%;
+      transform: none;
+      text-align: left;
+      white-space: normal;
+    }
+    .frame[data-scene-template="news-focus"] .captions {
+      left: 5%;
+      width: 90%;
+      padding: 0.52em 0.7em;
+      transform: none;
+      border-left: 5px solid var(--caption-accent);
+      background: rgba(5, 8, 10, 0.8);
+      text-align: left;
+    }
+    .frame[data-scene-template="spotlight-solo"] .scene-image { opacity: 0.28; filter: grayscale(0.2) brightness(0.46); }
+    .frame[data-scene-template="spotlight-solo"] .veil {
+      background: radial-gradient(ellipse at 50% 48%, transparent 14%, rgba(3, 5, 7, 0.34) 46%, rgba(3, 5, 7, 0.86) 92%);
+    }
+    .frame[data-scene-template="spotlight-solo"] .scene-foreground {
+      inset: 10% 4% -3%;
+      width: 92%;
+      height: 93%;
+      object-position: center bottom;
+      filter: drop-shadow(0 12px 30px rgba(0, 0, 0, 0.5));
+    }
     .meta {
       display: none;
     }

@@ -5,20 +5,42 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import {
   adaptHtmlVideoAssetGenerator,
   adaptHtmlVideoNarrationSynthesizer,
+  buildHtmlVideoPlanningSystemPrompt,
   createHtmlVideoRuntimeProviders,
   createTaskRuntimeProviders,
 } from '@shared/task-runtime-providers';
-import { defaultConfig } from '@shared/config';
+import { defaultConfig, defaultCustomStyles } from '@shared/config';
 import { FileDatabase } from '@shared/storage';
 import { runTask, type RunTaskOptions } from '@shared/runner';
 import type { SceneAsset } from '@shared/draft';
 import { MAX_HTML_VIDEO_SOURCE_CHARS } from '@shared/html-video-workflow';
 import { HTML_VIDEO_JOB_DEFAULTS } from '@shared/html-video-config';
+import { HTML_VIDEO_SCENE_TEMPLATES } from '@shared/html-video-scene-templates';
+import { findHtmlVideoBackgroundRemovalModel, htmlVideoBitmapHasTransparency } from '@shared/html-video-background-removal';
 import type { AppConfig, HtmlVideoScenePlan, ImagePrompt, StoryboardScene, Task } from '@shared/types';
 
 afterEach(() => vi.unstubAllGlobals());
 
 describe('task runtime providers', () => {
+  it('builds the Storybound planning contract with orientation, legal templates, and exact material slots', () => {
+    const prompt = buildHtmlVideoPlanningSystemPrompt({ ratio: '16:9', foreground: true });
+    expect(prompt).toContain('【画面方向】横屏');
+    for (const template of HTML_VIDEO_SCENE_TEMPLATES) {
+      expect(prompt).toContain(`"${template.id}"`);
+      expect(prompt).toContain(`${template.materialSlots === 0 ? '无素材槽' : `${template.materialSlots} 个素材槽`}`);
+    }
+    expect(prompt).toContain('elements[].prompt 不写“透明背景”“无背景”“PNG”');
+    expect(prompt).not.toContain('主体居中，无背景');
+  });
+
+  it('detects real alpha bytes and chooses the first available reverse-engineered model', () => {
+    expect(htmlVideoBitmapHasTransparency(new Uint8Array([0, 0, 0, 255, 0, 0, 0, 0]))).toBe(true);
+    expect(htmlVideoBitmapHasTransparency(new Uint8Array([0, 0, 0, 255]))).toBe(false);
+    const model = findHtmlVideoBackgroundRemovalModel('D:/models', (path) => path.endsWith('isnet-anime.onnx'));
+    expect(model?.kind).toBe('isnet');
+    expect(model?.path.replaceAll('\\', '/')).toBe('D:/models/isnet-anime.onnx');
+  });
+
   it('returns actionable HTML video provider failures instead of mock assets', async () => {
     expect(createHtmlVideoRuntimeProviders).toBeTypeOf('function');
     await withRuntimeTask(async (task, workDir) => {
@@ -38,11 +60,12 @@ describe('task runtime providers', () => {
   it('adapts HTML backgrounds and optional foregrounds to unique image scene ids', async () => {
     expect(adaptHtmlVideoAssetGenerator).toBeTypeOf('function');
     await withRuntimeTask(async (task, workDir) => {
-      const captured: { sceneIds: number[]; prompts: string[]; ratio: string }[] = [];
+      const captured: { sceneIds: number[]; prompts: string[]; negativePrompts: string[]; ratio: string }[] = [];
       const generator: NonNullable<RunTaskOptions['generateImages']> = async (scenes, prompts, runtimeTask) => {
         captured.push({
           sceneIds: scenes.map((scene) => scene.id),
           prompts: prompts.map((prompt) => prompt.prompt),
+          negativePrompts: prompts.map((prompt) => prompt.negativePrompt),
           ratio: runtimeTask.ratio,
         });
         const assets: SceneAsset[] = [];
@@ -53,17 +76,27 @@ describe('task runtime providers', () => {
         }
         return assets;
       };
-      const generateAssets = adaptHtmlVideoAssetGenerator(generator, task);
+      const imageStyle = defaultCustomStyles.find((style) => style.id === 'modern-film')!;
+      const generateAssets = adaptHtmlVideoAssetGenerator(generator, task, {
+        imageStyle,
+        inspectAssetTransparency: async () => false,
+      });
 
-      const assets = await generateAssets({ scenes: htmlScenes(), config: { ratio: '16:9', style: 'paper', foreground: true } });
+      const assets = await generateAssets({ scenes: htmlScenes(), config: { ratio: '16:9', style: imageStyle.id, foreground: true } });
 
-      expect(captured).toHaveLength(1);
-      expect(new Set(captured[0].sceneIds).size).toBe(2);
-      expect(captured[0].prompts.some((prompt) => prompt.includes('透明'))).toBe(true);
+      expect(captured).toHaveLength(2);
+      expect(captured[0].sceneIds).toEqual([1]);
       expect(captured[0].ratio).toBe('16:9');
+      expect(captured[0].prompts[0]).toBe(`${imageStyle.prefix}，电影感背景，${imageStyle.suffix}`);
+      expect(captured[0].negativePrompts[0]).toBe(imageStyle.negativePrompt);
+      expect(captured[1].sceneIds).toEqual([2]);
+      expect(captured[1].ratio).toBe('1:1');
+      expect(captured[1].prompts[0]).toBe(`${imageStyle.prefix}，人物主体，纯透明背景 PNG，主体居中，无背景`);
+      expect(captured[1].prompts[0]).not.toContain(imageStyle.suffix);
+      expect(captured[1].negativePrompts[0]).toContain(imageStyle.negativePrompt);
       expect(assets).toMatchObject([
         { sceneIndex: 1, kind: 'bg', slot: 0 },
-        { sceneIndex: 1, kind: 'fg', slot: 0 },
+        { sceneIndex: 1, kind: 'fg', slot: 0, prompt: '人物主体', transparency: 'opaque' },
       ]);
     });
   });
@@ -98,12 +131,16 @@ describe('task runtime providers', () => {
       await generateAssets({ scenes: htmlScenes(), config: {} });
       await synthesizeVoices({ scenes: htmlScenes(), config: {} });
 
-      expect(runtimeTasks).toHaveLength(2);
+      expect(runtimeTasks).toHaveLength(3);
       expect(runtimeTasks[0]).toMatchObject({
         style: HTML_VIDEO_JOB_DEFAULTS.style,
         ratio: HTML_VIDEO_JOB_DEFAULTS.ratio,
       });
       expect(runtimeTasks[1]).toMatchObject({
+        style: HTML_VIDEO_JOB_DEFAULTS.style,
+        ratio: '1:1',
+      });
+      expect(runtimeTasks[2]).toMatchObject({
         style: HTML_VIDEO_JOB_DEFAULTS.style,
         ratio: HTML_VIDEO_JOB_DEFAULTS.ratio,
         speaker: HTML_VIDEO_JOB_DEFAULTS.voiceId,
@@ -133,8 +170,8 @@ describe('task runtime providers', () => {
       });
 
       expect(providerPrompt.length).toBeLessThanOrEqual(MAX_HTML_VIDEO_SOURCE_CHARS);
-      expect(providerPrompt).toMatch(/透明背景 PNG 前景素材$/u);
-      expect(assets.find((asset) => asset.kind === 'fg')?.prompt).toBe(providerPrompt);
+      expect(providerPrompt).toMatch(/纯透明背景 PNG，主体居中，无背景$/u);
+      expect(assets.find((asset) => asset.kind === 'fg')?.prompt).toBe('x'.repeat(MAX_HTML_VIDEO_SOURCE_CHARS));
     });
   });
 
@@ -800,9 +837,9 @@ function htmlScenes(): HtmlVideoScenePlan[] {
     narration: '第一幕。',
     title: '第一幕',
     captions: ['第一幕。'],
-    sceneTemplate: 'cinematic-title',
+    sceneTemplate: 'center-focus',
     background: { prompt: '电影感背景' },
-    elements: [{ slot: 0, prompt: '人物透明 PNG 前景' }],
+    elements: [{ slot: 0, prompt: '人物主体' }],
   }];
 }
 

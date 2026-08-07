@@ -3329,6 +3329,12 @@ export class FileDatabase {
     return row ? rowToPromptTemplate(row) : null;
   }
 
+  async getCustomStyleDetail(id: string): Promise<CustomStyle | null> {
+    await this.waitForWrites();
+    const row = getFirstRow<Record<string, unknown>>(this.db, 'SELECT * FROM custom_styles WHERE id = ?', [id]);
+    return row ? rowToCustomStyle(row) : null;
+  }
+
   async listBuiltinPromptTemplateSummaries(): Promise<PromptTemplateSummary[]> {
     await this.waitForWrites();
     return getRows<Record<string, unknown>>(

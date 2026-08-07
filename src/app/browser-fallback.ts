@@ -990,6 +990,12 @@ export function makeFallbackApi(setState: (state: AppState) => void): StoryDream
     async regenerateHtmlVideoAsset() {
       throw new Error('浏览器预览不能调用图片服务，请在 Electron 桌面端操作。');
     },
+    async removeHtmlVideoAssetBackground() {
+      throw new Error('浏览器预览不能执行本地抠图，请在 Electron 桌面端操作。');
+    },
+    async removeAllHtmlVideoAssetBackgrounds() {
+      throw new Error('浏览器预览不能执行本地抠图，请在 Electron 桌面端操作。');
+    },
     async regenerateHtmlVideoVoice() {
       throw new Error('浏览器预览不能调用配音服务，请在 Electron 桌面端操作。');
     },

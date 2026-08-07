@@ -24,7 +24,7 @@ describe('HTML video editorial studio', () => {
     expect(tabs).toContain('api.rerenderHtmlVideo(task.id)');
     expect(tabs).toContain('onClick={rerender}');
     expect(tabs).toContain('重新出片');
-    expect(templates.match(/id: '/gu)).toHaveLength(24);
+    expect(templates.match(/id: '/gu)).toHaveLength(29);
     expect(panels).toContain('template.choreography');
     expect(panels).toContain('data-motion={cue.preset}');
     expect(styles).toContain('.hv-template-grid > button:hover:not(:disabled) .hv-template-swatch [data-motion]');
@@ -238,10 +238,13 @@ describe('HTML video editorial studio', () => {
     expect(storyboundPanels).toContain('api.updateHtmlVideoScene');
     expect(storyboundPanels).toContain('api.regenerateHtmlVideoAsset');
     expect(storyboundPanels).toContain('api.replaceHtmlVideoAsset');
+    expect(storyboundPanels).toContain('api.removeHtmlVideoAssetBackground');
+    expect(storyboundPanels).toContain('api.removeAllHtmlVideoAssetBackgrounds');
     expect(storyboundPanels).toContain('api.regenerateHtmlVideoVoice');
     expect(storyboundPanels).toContain('InlineActionFeedback');
     expect(storyboundPanels).toContain('重画素材');
     expect(storyboundPanels).toContain('本地替换');
+    expect(storyboundPanels).toContain('全部去背景');
     expect(storyboundPanels).toContain('重配');
     expect(storyboundPanels).toContain("document.querySelectorAll<HTMLElement>('[src]')");
     expect(storyboundPanels).toContain('resolveCompositionReference(mediaUrl, current)');

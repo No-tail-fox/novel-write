@@ -16,6 +16,7 @@ import {
   RefreshCw,
   RotateCcw,
   Save,
+  Scissors,
   Settings2,
   Upload,
   Volume2,
@@ -135,8 +136,30 @@ function SceneTextEditor({ api, task, scene, applyState, refreshTaskDetail, busy
 }
 
 export function HtmlVideoStoryboundAssetsPanel(props: EditorialPanelProps) {
+  const { api, task, applyState, refreshTaskDetail } = props;
+  const action = useAsyncAction();
+  const foregrounds = props.data.assets.filter((asset) => asset.kind === 'fg');
+  const pendingCount = foregrounds.filter((asset) => asset.transparency !== 'transparent').length;
+  const locked = props.busy || action.busy || props.task.status === 'running' || props.task.status === 'pending' || props.isBrowserPreview;
+
+  async function removeAllBackgrounds() {
+    await action.run(async () => {
+      const mutation = await api.removeAllHtmlVideoAssetBackgrounds(task.id);
+      applyState(mutation);
+      await refreshTaskDetail(task.id);
+    });
+  }
+
   return (
     <section className="hv-reference-panel hv-reference-assets" aria-label="HTML 动画场景素材">
+      <header className="hv-reference-panel-head">
+        <strong>前后景素材</strong>
+        <span>{foregrounds.length} 张前景 · {pendingCount} 张待确认透明</span>
+        <button className="mini-button" type="button" title="批量移除所有不透明前景的背景" disabled={locked || foregrounds.length === 0 || pendingCount === 0} onClick={removeAllBackgrounds}>
+          {action.busy ? <Loader2 className="spin" size={14} /> : <Scissors size={14} />}全部去背景
+        </button>
+      </header>
+      <InlineActionFeedback feedback={action.feedback} />
       {props.data.scenes.map((scene) => (
         <SceneAssets key={`${scene.index}-${props.data.revision}`} {...props} scene={scene} />
       ))}
@@ -197,7 +220,7 @@ function AddForegroundCard({ api, task, scene, applyState, refreshTaskDetail, bu
         <div className="hv-modal-backdrop" role="presentation" onMouseDown={(event) => event.target === event.currentTarget && setOpen(false)}>
           <section className="hv-editor-modal" role="dialog" aria-modal="true" aria-label={`为场景 ${scene.index} 添加前景`}>
             <header><div><strong>添加前景素材</strong><span>场景 {scene.index}</span></div><button type="button" title="关闭" onClick={() => setOpen(false)}><X size={16} /></button></header>
-            <label><span>前景提示词</span><textarea autoFocus rows={4} value={prompt} onChange={(event) => setPrompt(event.target.value)} placeholder="例如：透明背景的人物半身像，侧面光…" /></label>
+            <label><span>前景提示词</span><textarea autoFocus rows={4} value={prompt} onChange={(event) => setPrompt(event.target.value)} placeholder="例如：人物半身像，侧面光，平静注视镜头…" /></label>
             <footer><button className="mini-button" type="button" onClick={() => setOpen(false)}>取消</button><button className="mini-button primary" type="button" disabled={!prompt.trim() || action.busy} onClick={addForeground}>{action.busy ? <Loader2 className="spin" size={14} /> : <Upload size={14} />}选图并添加</button></footer>
             <InlineActionFeedback feedback={action.feedback} />
           </section>
@@ -256,6 +279,11 @@ function AssetCard({
   const assetStatus = asset
     ? htmlVideoMediaStatus(asset.src, mediaUrls, failedMediaPaths, isBrowserPreview)
     : 'desktop-only';
+  const transparencyLabel = asset?.transparency === 'transparent'
+    ? '已检测：透明通道'
+    : asset?.transparency === 'opaque'
+      ? '已检测：背景未透明'
+      : '透明状态待检测';
   return (
     <div className={`hv-reference-asset-card${hidden ? ' hidden' : ''}`}>
       <div className="hv-reference-asset-frame" aria-busy={assetStatus === 'loading'}>
@@ -278,13 +306,15 @@ function AssetCard({
         )}
         {hidden ? <i>已隐藏</i> : null}
       </div>
-      <strong>{target.kind === 'bg' ? 'BG 背景' : `PNG 前景 ${target.slot + 1}`}</strong>
+      <strong>{target.kind === 'bg' ? 'BG 背景' : `前景 ${target.slot + 1}`}</strong>
+      {target.kind === 'fg' ? <span className={`hv-reference-asset-transparency ${asset?.transparency ?? 'unknown'}`}>{transparencyLabel}</span> : null}
       <textarea value={draftPrompt} onChange={(event) => setDraftPrompt(event.target.value)} rows={3} disabled={locked} />
       <div className="hv-reference-asset-actions">
         <button type="button" title="预览素材" disabled={assetStatus !== 'ready' || !url} onClick={() => setPreviewOpen(true)}><Eye size={14} /></button>
         <button type="button" title="保存提示词" disabled={locked || draftPrompt.trim() === prompt} onClick={savePrompt}><Save size={14} /></button>
         <button type="button" title="重画素材" disabled={locked} onClick={() => run(() => api.regenerateHtmlVideoAsset(task.id, target))}>{action.busy ? <Loader2 className="spin" size={14} /> : <RefreshCw size={14} />}</button>
         <button type="button" title="本地替换" disabled={locked} onClick={() => run(() => api.replaceHtmlVideoAsset(task.id, target))}><Upload size={14} /></button>
+        {target.kind === 'fg' ? <button type="button" title={asset?.transparency === 'transparent' ? '素材已有透明通道' : '移除背景'} disabled={locked || !asset || asset.transparency === 'transparent'} onClick={() => run(() => api.removeHtmlVideoAssetBackground(task.id, target))}><Scissors size={14} /></button> : null}
         {target.kind === 'fg' ? <button type="button" title={hidden ? '显示前景' : '隐藏前景'} disabled={locked} onClick={() => run(() => api.updateHtmlVideoScene(task.id, scene.index, [{ field: 'elementHidden', slot: target.slot, value: !hidden }]))}>{hidden ? <Eye size={14} /> : <EyeOff size={14} />}</button> : null}
       </div>
       <InlineActionFeedback feedback={action.feedback} />

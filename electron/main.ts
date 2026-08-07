@@ -16,6 +16,7 @@ import { findJianyingExecutable } from '../src/shared/jianying-app';
 import { loadJianyingEffectCatalog } from '../src/shared/jianying-effects';
 import { runPyJianYingDraftBridge } from '../src/shared/jianying-bridge';
 import { resolveHtmlVideoCoverForRender, runHtmlVideoPipeline, synchronizeHtmlVideoPipelineCheckpoint } from '../src/shared/html-video-runner';
+import { findHtmlVideoBackgroundRemovalModel, htmlVideoBitmapHasTransparency, HTML_VIDEO_BACKGROUND_REMOVAL_MODELS, type HtmlVideoBackgroundRemovalModel } from '../src/shared/html-video-background-removal';
 import { MAX_HTML_VIDEO_COVER_BYTES, type HtmlVideoCoverImageProcessor, type HtmlVideoCoverInspection } from '../src/shared/html-video-cover';
 import {
   MAX_ORDINARY_TASK_COVER_BYTES,
@@ -1266,6 +1267,8 @@ async function runHtmlVideoTask(
     const providers = createHtmlVideoRuntimeProviders(runtimeConfig, workDir, task, {
       measureAudioDuration: runtime.measureAudioDuration,
       jobConfig: initialState.config,
+      imageStyle: await database.getCustomStyleDetail(initialState.config.style ?? ''),
+      inspectAssetTransparency: inspectHtmlVideoAssetTransparency,
       prepareCoverImage: prepareHtmlVideoCoverImage,
     });
     const finalState = await runHtmlVideoPipeline({
@@ -1416,6 +1419,53 @@ const prepareHtmlVideoCoverImage: HtmlVideoCoverImageProcessor = async (input) =
     sha256: createHash('sha256').update(bytes).digest('hex'),
   };
 };
+
+async function inspectHtmlVideoAssetTransparency(sourcePath: string): Promise<boolean> {
+  const value = await stat(sourcePath);
+  if (!value.isFile() || value.size <= 0) {
+    throw new Error('HTML_VIDEO_ASSET_INVALID: 图片文件为空或不存在。');
+  }
+  const image = nativeImage.createFromPath(sourcePath);
+  if (image.isEmpty()) throw new Error('HTML_VIDEO_ASSET_INVALID: 无法解码图片并检查透明通道。');
+  return htmlVideoBitmapHasTransparency(image.toBitmap());
+}
+
+async function resolveHtmlVideoBackgroundRemovalModel(): Promise<HtmlVideoBackgroundRemovalModel> {
+  const modelDirectory = join(appDataDir(), 'models');
+  await mkdir(modelDirectory, { recursive: true });
+  const model = findHtmlVideoBackgroundRemovalModel(modelDirectory, existsSync);
+  if (model) return model;
+  await shell.openPath(modelDirectory);
+  throw new Error(
+    `HTML_VIDEO_BACKGROUND_MODEL_MISSING: 未找到本地抠图模型。已打开模型目录，请放入 ${HTML_VIDEO_BACKGROUND_REMOVAL_MODELS.map((candidate) => candidate.file).join('、')} 中的任意一个文件。`,
+  );
+}
+
+async function removeHtmlVideoImageBackground(
+  inputPath: string,
+  outputPath: string,
+  model: Awaited<ReturnType<typeof resolveHtmlVideoBackgroundRemovalModel>>,
+): Promise<void> {
+  const runtime = resolvePythonRuntimeInfo();
+  const workerPath = join(__dirname, 'remove-background-worker.py');
+  if (!existsSync(workerPath)) {
+    throw new Error('HTML_VIDEO_BACKGROUND_WORKER_MISSING: 本地抠图工具缺失，请重新安装应用。');
+  }
+  await execFileAsync(runtime.command, [
+    workerPath,
+    '--input', inputPath,
+    '--output', outputPath,
+    '--model', model.path,
+    '--model-kind', model.kind,
+  ], {
+    timeout: 10 * 60 * 1000,
+    windowsHide: true,
+    maxBuffer: 2 * 1024 * 1024,
+  });
+  if (!await inspectHtmlVideoAssetTransparency(outputPath)) {
+    throw new Error('HTML_VIDEO_BACKGROUND_OUTPUT_INVALID: 抠图结果没有真实透明通道。');
+  }
+}
 
 function ordinaryTaskCoverPendingPaths(id: string): { image: string; metadata: string } {
   if (!/^[a-f0-9]{8}-[a-f0-9]{4}-[1-5][a-f0-9]{3}-[89ab][a-f0-9]{3}-[a-f0-9]{12}$/iu.test(id)) {
@@ -2341,6 +2391,41 @@ trustedHandle('html-video:regenerate-asset', (_event, input: { id: string; targe
     });
   }));
 
+trustedHandle('html-video:remove-asset-background', (_event, input: { id: string; target: HtmlVideoAssetTarget }) =>
+  runHistoryGovernanceMutation('task', input.id, async (database) => {
+    const task = await getEditableHtmlVideoTask(database, input.id);
+    const result = await removeHtmlVideoEditorialAssetBackground(
+      database,
+      task,
+      parseHtmlVideoPipelineData(task.pipelineData),
+      input.target,
+    );
+    return persistHtmlVideoEditorialMutation(database, task, result.pipeline, {
+      type: 'html_video_asset_remove_background',
+      tool: 'onnx-background-removal',
+      detail: result.skipped
+        ? `场景 ${input.target.sceneIndex} 的前景 ${input.target.slot + 1} 已有透明通道，未重复处理。`
+        : `已移除场景 ${input.target.sceneIndex} 前景 ${input.target.slot + 1} 的背景。`,
+      data: { ...input.target, skipped: result.skipped },
+    });
+  }));
+
+trustedHandle('html-video:remove-all-backgrounds', (_event, id: string) =>
+  runHistoryGovernanceMutation('task', id, async (database) => {
+    const task = await getEditableHtmlVideoTask(database, id);
+    const result = await removeAllHtmlVideoEditorialAssetBackgrounds(
+      database,
+      task,
+      parseHtmlVideoPipelineData(task.pipelineData),
+    );
+    return persistHtmlVideoEditorialMutation(database, task, result.pipeline, {
+      type: 'html_video_assets_remove_background',
+      tool: 'onnx-background-removal',
+      detail: `全部去背景完成：成功 ${result.completed} 张，跳过 ${result.skipped} 张${result.failed ? `，失败 ${result.failed} 张` : ''}。`,
+      data: { completed: result.completed, skipped: result.skipped, failed: result.failed },
+    });
+  }));
+
 trustedHandle('html-video:regenerate-voice', (_event, input: { id: string; sceneIndex: number }) =>
   runHistoryGovernanceMutation('task', input.id, async (database) => {
     const task = await getEditableHtmlVideoTask(database, input.id);
@@ -2364,6 +2449,8 @@ trustedHandle('html-video:regenerate-cover', (_event, id: string) =>
     const providers = createHtmlVideoRuntimeProviders(runtimeConfig, taskDirectory.workDir.canonicalPath, task, {
       measureAudioDuration: runtime.measureAudioDuration,
       jobConfig: pipeline.config,
+      imageStyle: await database.getCustomStyleDetail(pipeline.config.style ?? ''),
+      inspectAssetTransparency: inspectHtmlVideoAssetTransparency,
       prepareCoverImage: prepareHtmlVideoCoverImage,
     });
     const coverAsset = await resolveHtmlVideoCoverForRender({
@@ -2637,6 +2724,7 @@ async function replaceHtmlVideoEditorialAsset(
   pipeline: HtmlVideoPipelineDataV2,
   target: HtmlVideoAssetTarget,
   sourcePath: string,
+  options: { rebuildPreview?: boolean } = {},
 ): Promise<HtmlVideoPipelineDataV2> {
   const scene = pipeline.scenes.find((item) => item.index === target.sceneIndex);
   if (!scene) throw new Error(`HTML_VIDEO_SCENE_NOT_FOUND: ${target.sceneIndex}`);
@@ -2672,6 +2760,9 @@ async function replaceHtmlVideoEditorialAsset(
     slot: target.slot,
     src: destination,
     ...(prompt ? { prompt } : {}),
+    ...(target.kind === 'fg'
+      ? { transparency: await inspectHtmlVideoAssetTransparency(destination) ? 'transparent' as const : 'opaque' as const }
+      : {}),
     sizeBytes: copied.size,
   };
   pipeline.assets = existing
@@ -2679,7 +2770,88 @@ async function replaceHtmlVideoEditorialAsset(
     : [...pipeline.assets, replacement];
   pipeline.revision += 1;
   delete pipeline.configSnapshotHash;
-  return rebuildHtmlVideoEditorialPreviews(database, task, pipeline);
+  return options.rebuildPreview === false ? pipeline : rebuildHtmlVideoEditorialPreviews(database, task, pipeline);
+}
+
+async function removeHtmlVideoEditorialAssetBackground(
+  database: FileDatabase,
+  task: Task,
+  pipeline: HtmlVideoPipelineDataV2,
+  target: HtmlVideoAssetTarget,
+): Promise<{ pipeline: HtmlVideoPipelineDataV2; skipped: boolean }> {
+  if (target.kind !== 'fg') throw new Error('HTML_VIDEO_BACKGROUND_TARGET_INVALID: 只能处理前景素材。');
+  const asset = pipeline.assets.find((candidate) => (
+    candidate.sceneIndex === target.sceneIndex && candidate.kind === 'fg' && candidate.slot === target.slot
+  ));
+  if (!asset) throw new Error(`HTML_VIDEO_ASSET_NOT_FOUND: ${target.sceneIndex}/fg/${target.slot}`);
+  if (await inspectHtmlVideoAssetTransparency(asset.src)) {
+    pipeline.assets = pipeline.assets.map((candidate) => candidate === asset
+      ? { ...candidate, transparency: 'transparent' }
+      : candidate);
+    pipeline.revision += 1;
+    return { pipeline, skipped: true };
+  }
+
+  const model = await resolveHtmlVideoBackgroundRemovalModel();
+  const temporaryPath = join(dirname(asset.src), `.${randomUUID()}-remove-background.png`);
+  try {
+    await removeHtmlVideoImageBackground(asset.src, temporaryPath, model);
+    const replaced = await replaceHtmlVideoEditorialAsset(database, task, pipeline, target, temporaryPath);
+    return { pipeline: replaced, skipped: false };
+  } finally {
+    await rm(temporaryPath, { force: true });
+  }
+}
+
+async function removeAllHtmlVideoEditorialAssetBackgrounds(
+  database: FileDatabase,
+  task: Task,
+  pipeline: HtmlVideoPipelineDataV2,
+): Promise<{ pipeline: HtmlVideoPipelineDataV2; completed: number; skipped: number; failed: number }> {
+  const targets = pipeline.assets
+    .filter((asset) => asset.kind === 'fg')
+    .map((asset) => ({ asset, target: { sceneIndex: asset.sceneIndex, kind: 'fg' as const, slot: asset.slot } }));
+  if (targets.length === 0) throw new Error('HTML_VIDEO_FOREGROUND_EMPTY: 没有前景素材可去背景。');
+
+  let completed = 0;
+  let skipped = 0;
+  let failed = 0;
+  let metadataChanged = false;
+  let model: Awaited<ReturnType<typeof resolveHtmlVideoBackgroundRemovalModel>> | null = null;
+  let lastError: unknown;
+  for (const item of targets) {
+    const currentAsset = pipeline.assets.find((candidate) => (
+      candidate.sceneIndex === item.target.sceneIndex && candidate.kind === 'fg' && candidate.slot === item.target.slot
+    ));
+    if (!currentAsset) continue;
+    if (await inspectHtmlVideoAssetTransparency(currentAsset.src)) {
+      if (currentAsset.transparency !== 'transparent') {
+        pipeline.assets = pipeline.assets.map((candidate) => candidate === currentAsset
+          ? { ...candidate, transparency: 'transparent' }
+          : candidate);
+        metadataChanged = true;
+      }
+      skipped += 1;
+      continue;
+    }
+
+    model ??= await resolveHtmlVideoBackgroundRemovalModel();
+    const temporaryPath = join(dirname(currentAsset.src), `.${randomUUID()}-remove-background.png`);
+    try {
+      await removeHtmlVideoImageBackground(currentAsset.src, temporaryPath, model);
+      pipeline = await replaceHtmlVideoEditorialAsset(database, task, pipeline, item.target, temporaryPath, { rebuildPreview: false });
+      completed += 1;
+    } catch (error) {
+      lastError = error;
+      failed += 1;
+    } finally {
+      await rm(temporaryPath, { force: true });
+    }
+  }
+  if (completed === 0 && failed > 0) throw lastError;
+  if (metadataChanged) pipeline.revision += 1;
+  if (completed > 0) pipeline = await rebuildHtmlVideoEditorialPreviews(database, task, pipeline);
+  return { pipeline, completed, skipped, failed };
 }
 
 async function regenerateHtmlVideoEditorialAsset(
@@ -2697,6 +2869,8 @@ async function regenerateHtmlVideoEditorialAsset(
     const providers = createHtmlVideoRuntimeProviders(runtimeConfig, stageDirectory, task, {
       measureAudioDuration: runtime.measureAudioDuration,
       jobConfig: pipeline.config,
+      imageStyle: await database.getCustomStyleDetail(pipeline.config.style ?? ''),
+      inspectAssetTransparency: inspectHtmlVideoAssetTransparency,
       prepareCoverImage: prepareHtmlVideoCoverImage,
     });
     const requestedScene = target.kind === 'bg'
@@ -2732,6 +2906,8 @@ async function regenerateHtmlVideoEditorialVoice(
     const providers = createHtmlVideoRuntimeProviders(runtimeConfig, stageDirectory, task, {
       measureAudioDuration: runtime.measureAudioDuration,
       jobConfig: pipeline.config,
+      imageStyle: await database.getCustomStyleDetail(pipeline.config.style ?? ''),
+      inspectAssetTransparency: inspectHtmlVideoAssetTransparency,
       prepareCoverImage: prepareHtmlVideoCoverImage,
     });
     const generated = await providers.synthesizeVoices({ scenes: [scene], config: pipeline.config });

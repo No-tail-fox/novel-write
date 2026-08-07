@@ -770,6 +770,8 @@ export const ipcInputSchemas = {
   'html-video:add-asset': htmlVideoAssetAddSchema,
   'html-video:replace-asset': htmlVideoAssetActionSchema,
   'html-video:regenerate-asset': htmlVideoAssetActionSchema,
+  'html-video:remove-asset-background': htmlVideoAssetActionSchema,
+  'html-video:remove-all-backgrounds': idOnlySchema,
   'html-video:regenerate-voice': htmlVideoVoiceActionSchema,
   'html-video:regenerate-cover': idOnlySchema,
   'html-video:rerender': idOnlySchema,

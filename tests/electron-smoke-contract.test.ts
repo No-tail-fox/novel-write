@@ -143,6 +143,11 @@ describe('real Electron smoke contract', () => {
     expect(qa).toContain("tabLabel: '配音'");
     expect(qa).toContain("tabLabel: '动画预览'");
     expect(qa).toContain("tabLabel: '出片'");
+    expect(qa).toContain('STORYDREAM_QA_ASSET_REMOVAL_ONLY');
+    expect(qa).toContain("scope: 'asset-removal'");
+    expect(qa).toContain('transparencyLabels');
+    expect(qa).toContain('singleRemovalButtonCount');
+    expect(qa).toContain('batchRemovalVisible');
     expect(qa).toContain('staleReadyIgnored');
     expect(qa).toContain('staleErrorIgnored');
     expect(qa).toContain('!result.staleErrorIgnored');

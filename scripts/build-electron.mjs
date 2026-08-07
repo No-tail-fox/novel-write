@@ -29,6 +29,7 @@ await build({
 });
 
 await copyFile('src/shared/viral-media-worker.py', 'dist-electron/electron/viral-media-worker.py');
+await copyFile('src/shared/remove-background-worker.py', 'dist-electron/electron/remove-background-worker.py');
 await copyFile(
   'node_modules/gsap/dist/gsap.min.js',
   'dist-electron/electron/gsap.min.js',

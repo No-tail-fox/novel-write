@@ -577,6 +577,7 @@ export interface HtmlVideoAsset {
   slot: number;
   src: string;
   prompt?: string;
+  transparency?: 'transparent' | 'opaque';
   sizeBytes?: number;
 }
 
