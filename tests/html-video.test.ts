@@ -24,7 +24,7 @@ import {
   tabForHtmlVideoStep,
   validateHtmlVideoScenePlans,
 } from '@shared/html-video-workflow';
-import { HTML_VIDEO_SCENE_TEMPLATES, normalizeHtmlVideoSceneTemplate } from '@shared/html-video-scene-templates';
+import { HTML_VIDEO_SCENE_TEMPLATES, htmlVideoSceneTemplate, normalizeHtmlVideoSceneTemplate } from '@shared/html-video-scene-templates';
 import { draftTemplates } from '@shared/templates';
 import type {
   HtmlVideoAsset,
@@ -754,6 +754,20 @@ describe('HTML video pipeline V2 contract', () => {
     expect(unboundedSplitCalled).toBe(false);
   });
 
+  it('builds deterministic fallback scenes with exact template slots and content-only prompts', () => {
+    const withForeground = planHtmlVideoScenes('人物走进车站。\n\n列车缓缓启动。', 2, true);
+    for (const scene of withForeground) {
+      expect(htmlVideoSceneTemplate(scene.sceneTemplate).materialSlots).toBe(1);
+      expect(scene.elements.map((element) => element.slot)).toEqual([0]);
+      expect(scene.background.prompt).not.toMatch(/电影感|卡通|3D|油画|水墨/u);
+      expect(scene.elements[0].prompt).not.toMatch(/透明|PNG|无背景/iu);
+    }
+
+    const withoutForeground = planHtmlVideoScenes('只有环境。', 1, false);
+    expect(htmlVideoSceneTemplate(withoutForeground[0].sceneTemplate).materialSlots).toBe(0);
+    expect(withoutForeground[0].elements).toEqual([]);
+  });
+
   it('rejects oversized runtime scene arrays before parsing their items', () => {
     let sceneItemAccessed = false;
     const untouchedScene = new Proxy({}, {
@@ -1036,6 +1050,12 @@ describe('HTML video composition contract', () => {
     expect(runtime.timeline.pauseCalls).toBe(1);
     expect(runtime.postedMessages).toEqual([
       expect.objectContaining({
+        type: 'hvruntime',
+        state: 'ready',
+        duration: 1.2,
+        playing: false,
+      }),
+      expect.objectContaining({
         type: 'storydream:hyperframes-runtime-ready',
         compositionId: 'storydream-scene-1',
         hasGsap: true,
@@ -1218,7 +1238,12 @@ describe('HTML video composition contract', () => {
     expect(html).toContain('src="./hyperframe.runtime.gsap.iife.js"');
     expect(html).not.toContain('requestAnimationFrame');
     expect(html).toContain("tl.eventCallback('onUpdate', postTick)");
-    expect(html).toContain("tl.eventCallback('onComplete', postTick)");
+    expect(html).toContain("tl.eventCallback('onComplete', () => {");
+    expect(html).toContain("type: 'hvruntime'");
+    expect(html).toContain("message.type === 'hvprobe'");
+    expect(html).toContain("message.type === 'hvpreviewmotion'");
+    expect(html).toContain('window.setInterval(tickPlaybackClock, 33)');
+    expect(html).not.toContain('Date.now()');
     expect(html).toContain("message.type === 'hvplay'");
     runtime.window.__tl.play();
     runtime.window.__tl.seek(0.3, false);

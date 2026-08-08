@@ -8,6 +8,7 @@ import {
   buildHtmlVideoPlanningSystemPrompt,
   createHtmlVideoRuntimeProviders,
   createTaskRuntimeProviders,
+  repairHtmlVideoPlanningSlots,
 } from '@shared/task-runtime-providers';
 import { defaultConfig, defaultCustomStyles } from '@shared/config';
 import { FileDatabase } from '@shared/storage';
@@ -31,6 +32,32 @@ describe('task runtime providers', () => {
     }
     expect(prompt).toContain('elements[].prompt 不写“透明背景”“无背景”“PNG”');
     expect(prompt).not.toContain('主体居中，无背景');
+  });
+
+  it('repairs invalid AI element slots and selects a template matching the returned material count', () => {
+    const base = {
+      index: 1,
+      narration: '旁白',
+      title: '标题',
+      captions: ['旁白'],
+      background: { prompt: '安静室内环境，前后景层次清晰' },
+    };
+    const repaired = repairHtmlVideoPlanningSlots([
+      { ...base, sceneTemplate: 'center-focus', elements: [{ slot: -1, prompt: '一位人物' }] },
+      { ...base, index: 2, sceneTemplate: 'split-compare', elements: [{ slot: 4, prompt: '旧物' }, { slot: 9, prompt: '新物' }] },
+      { ...base, index: 3, sceneTemplate: 'center-focus', elements: [] },
+    ], true);
+
+    expect(repaired[0]).toMatchObject({ sceneTemplate: 'center-focus', elements: [{ slot: 0 }] });
+    expect(repaired[1]).toMatchObject({ sceneTemplate: 'split-compare', elements: [{ slot: 0 }, { slot: 1 }] });
+    expect(HTML_VIDEO_SCENE_TEMPLATES.find((template) => template.id === repaired[2].sceneTemplate)?.materialSlots).toBe(0);
+    expect(repaired[2].elements).toEqual([]);
+
+    const withoutForeground = repairHtmlVideoPlanningSlots([
+      { ...base, sceneTemplate: 'center-focus', elements: [{ slot: 0, prompt: '人物' }] },
+    ], false)[0];
+    expect(withoutForeground.elements).toEqual([]);
+    expect(HTML_VIDEO_SCENE_TEMPLATES.find((template) => template.id === withoutForeground.sceneTemplate)?.materialSlots).toBe(0);
   });
 
   it('detects real alpha bytes and chooses the first available reverse-engineered model', () => {

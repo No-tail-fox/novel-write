@@ -10,6 +10,47 @@
 
 ---
 
+# HTML 动画 Storybound 对齐发现
+
+## 2026-08-09
+
+- 上一轮 Electron QA 只证明静态预览层可见，没有执行主画面播放、跨场景转场或版式切换后的几何差异验证，不能覆盖用户这次指出的功能问题。
+- 设计技能将本轮归类为保留式桌面生产工具重构；工作流正确性优先于装饰，小缩略图不能代替主预览真实效果。
+- 用户第二张实图中播放按钮已切到暂停态，但进度仍为 `0.0s / 5.4s`，React 海报字幕已经隐藏，说明父层播放状态与 iframe 实际时间线不同步；这直接造成“播放无效果”和字幕消失。
+- 第一张实图中右侧检查器把镜头、转场各用一张大预览图纵向堆叠，内部滚动条很长；场景条与底部动作贴近窗口底边，信息密度高但层级低效。
+- 左侧真实错误明确包含 `scenes[0].elements[0].slot must be a non-negative number`，当前场景规划结果没有满足版式元素合同，随后使用本地分镜规划；版式失效必须同时排查规划归一化与渲染器，而不能只改选择器。
+- 本机已有 Storybound 1.17 的 `HtmlVideoPage` pretty bundle、最新版多份 `HtmlVideoPage` bundle、真实播放截图和已有逆向审计文档，可直接对照运行时协议、UI 结构与提示词，不需要凭视觉猜测。
+- Storybound 1.17 的动画预览把“字幕、标题、草稿模板设置”放在顶部单一折叠条；主工作区是居中的输出画布和右侧纵向场景列表，没有把镜头/转场各自的大预览图常驻堆叠在检查器里。
+- Storybound 播放实图在 `2.3s / 12.9s` 同时显示标题、透明前景主体和底部字幕，证明版式/元素时间线直接作用于主画布；静止 0 秒只显示背景是时间线真实状态。
+- Storybound 场景列表卡直接展示版式标签（如“中心爆发”“左右对比”“上物下字”）和背景/标题显隐动作，场景选择、版式语义与主画布处于同一工作流。
+- Storybound 素材实图的背景提示词是“深夜办公室里灯光昏暗，桌面堆着文件和电脑，地面出现醒目的边界线，空间纵深明显”，不描述主体人物；前景提示词是“疲惫的上班族站在办公桌前，身边出现清晰的红色边界线”，只描述可分离主体及必要视觉标记。
+- Storybound 1.17 iframe 同样使用 `hvplay/hvpause/hvseek/hvrestart` 和 33ms `hvtick`，因此协议名称不是差异点；需要继续对照它的 iframe `onLoad`、状态确认和我们 srcDoc 加载时序。
+- Storybound 逆向提示词把版式目录及素材槽数直接写给模型：有 N 个槽时 `elements` 只能使用 `slot: 0..N-1`，无素材槽时必须为 `[]`，并要求不同场景尽量选不同版式。
+- Storybound 要求 `background.prompt` 只描述有空间感、契合旁白情绪且无文字的背景；背景与前景 prompt 都不写画风词，前景也不写“透明背景/无背景”，这些由系统在图像请求层统一注入。
+- Storybound 的前景 `elements.prompt` 是“主体内容描述”，不是完整场景复述；这一分层是后续修正 StoryDream 前后景提示词的直接依据。
+- StoryDream 当前 AI 分镜提示词其实已经基本复制上述 Storybound 规则，并在 Provider 返回后严格校验版式的完整槽位数组；真实问题是单个 `slot=-1` 会让整次 AI 规划失败并退回本地规划，没有做安全修复或二次纠错。
+- StoryDream 本地规划仍把“透明 PNG 前景素材”直接拼进 `elements.prompt`，与 Storybound 的“透明由生成阶段统一注入”相冲突，也会让素材页提示词显得不自然。
+- `updateHtmlVideoScene` 对版式等预览字段会调用 `rebuildHtmlVideoEditorialPreviews`，因此版式选择理论上可立即生效；需验证重建后的 source、资产槽数和 CSS 几何，而不能假设选择器本身已足够。
+- `updateHtmlVideoConfig` 走通用失效策略，镜头/转场保存会从 preview 步骤清空 compositions；当前界面仍展示选择控件和小预览，却不能在主画布即时验证，工作流合同不完整。
+- Storybound 父层也会在发送 `hvplay` 后乐观切换播放按钮，`onLoad` 只处理跨场景自动续播；协议外形相同，播放卡 0 秒需要从 StoryDream iframe runtime/加载内容本身复现，而不是仅复制父层代码。
+- StoryDream 最终合成 payload 已包含 `sceneMotion` 和 `{ transition: { type, duration: 0.3 } }`，最终出片路径并非完全缺失；当前缺口集中在编辑器主预览、配置重建反馈和真实播放验收。
+- `planHtmlVideoScenes` 本地回退仍交替使用旧 ID `cinematic-title` 和当前别名表不存在的 `foreground-card`；同时每个场景都塞 `slot:0`，导致映射成零槽“全屏大图”的场景仍携带前景，版式与素材合同自相矛盾。
+- StoryDream 当前有 29 个版式，素材槽从 0 到 4；本地回退应从当前目录选择与 `foreground` 开关匹配的模板并精确生成槽位，而不是遗留两种旧模板。
+- 场景修改后的 `rebuildHtmlVideoEditorialPreviews` 会在背景和配音齐全时直接重建全部 composition、递增 rev 并回到 render 待完成状态；因此版式即时更新可以沿用现有后端，不需要新增渲染协议。
+- 当前 `updateHtmlVideoConfig` 仍由数据库通用更新直接失效 preview，未调用上述重建；镜头/转场需要专门的“已有素材时立即重建预览”路径。
+- 当前 `updateHtmlVideoTaskConfig` 在存储层统一把任务设为 paused 并按 manifest 失效；可以在 IPC 层对 `invalidateFrom === 'preview'` 的纯预览配置复用 `applyHtmlVideoConfigChanges + rebuildHtmlVideoEditorialPreviews + persistHtmlVideoEditorialMutation`，保留其他配置原行为。
+- 29 个版式都进入共享 HTML 生成器，但若干多槽版式（尤其 `split-compare`、`diagonal-flow`、`parallax-focus`）缺少完整的逐槽几何/错峰定义，多个前景会叠在同一区域，视觉差异被抵消。
+- 用户手动切版式目前不校验现有 `scene.elements` 数量是否匹配目标 `materialSlots`；编辑器会显示选择成功，但没有对应数量的素材可填充版式。应把兼容性作为选择器的禁用和说明状态，而不是静默接受。
+- Electron 实机复现确认 iframe 内 GSAP 时间线即使收到 `hvplay` 仍可能停在 0 秒；最终运行时增加独立 33ms 定时驱动，以 30fps 固定步进主动 `seek`，因此不依赖 iframe 的 GSAP ticker 是否被 Electron 调度，也不引入逐帧渲染禁止的非确定性时钟。
+- 父层现在通过 `hvruntime` 的 ready/playing/paused/ended 状态与 `hvtick` 的实际时间增量确认播放；按钮只有在时间真正前进后才显示暂停态，启动失败会给出明确错误。
+- 镜头预览不再是右侧孤立小样，`hvpreviewmotion` 直接驱动主画布的 `.scene-image-region`；转场使用上一场景真实画面覆盖层，在切换边界执行与最终输出一致的 0.3 秒效果。
+- 版式选择器按当前场景前景素材数禁用不兼容项；`split-compare`、`diagonal-flow`、`parallax-focus` 已补齐逐槽几何与错峰动画，避免多个素材叠在同一区域。
+- AI 场景规划中的负数或乱序槽位会归一化为 `0..N-1`，并切换到相同素材槽数的有效版式；关闭前景时强制零素材版式。确定性回退也使用当前版式 ID、精确槽位数和职责分离的前后景提示词。
+- Electron `preview-effects` 最终实景验收通过：播放时间由 `0.099s` 前进到 `0.465s`，镜头变换矩阵发生变化，连续播放捕获到转场覆盖层，切换“满屏金句”后标题几何发生变化。
+- 1320×860 与 920×720 两种窗口均无页面横向溢出、控件裁切或运行时错误；竖屏画布、字幕和底部控制完整可见，紧凑模式自动把场景列表变为横向轨道。
+
+---
+
 # 草稿模板双层自由裁切编辑发现
 
 ## 2026-08-08
@@ -981,5 +1022,38 @@
 - 剪映片段 transform 表达实际图片位置和缩放，矩形 mask 表达展示框；蒙版中心按焦点位移反向补偿，避免素材移动时可见窗口一起漂移。
 - 真实内置 `pyJianYingDraft` 产物确认 `extra_material_refs` 同时关联 speed 与矩形 mask，`materials.masks` 中写入宽高和中心偏移，不是仅在 fake 测试中成立。
 - Electron 四个草稿场景和桌面/紧凑原始截图确认双层边框、控制点、检查器及保存重开无交互遮挡或布局回归。
+
+---
+
+# HTML 动画预览竖屏裁切发现
+
+## 2026-08-09
+
+- 用户截图中的当前素材为 9:16，但中央预览只露出上半到中部，底部字幕安全区完全不可见。
+- 画面列同时承载预览、时间轴、播放工具栏和场景胶片条；当前固定预览几何没有按剩余高度完整适配。
+- 需要区分“舞台可用区域”和“输出画布”：输出画布保持原始宽高比，整体 `contain`，字幕必须作为输出画布内部叠层同步缩放。
+- 本轮属于现有桌面生产工具的窄 UI 修复，保留深色工作区、右侧检查器和下方场景条结构。
+- React 预览使用 `.hv-reference-phone` 内嵌完整场景 `iframe`；字幕由 `src/shared/html-video.ts` 生成在 iframe 内部，并按 `captionY` 百分比定位。
+- 因此不应修改字幕样式或输出 HTML，只需修正 `.hv-preview-workbench`、舞台与 phone 的可用高度约束，让 iframe 画布整体缩放。
+- 现有 Electron QA 已检查 `previewAboveFold`、检查器在右和胶片条在下，但还没有断言竖屏画布的完整比例、底边可见以及字幕元素位于 iframe 视口内。
+- iframe 的 `fitScene()` 已使用宽高比例中的较小值，外层 phone 在截图中也完整呈现 9:16 边框；没有真实几何裁切。
+- 场景在 `DOMContentLoaded` 时执行 `window.__tl.seek(0)` 并暂停，而每条字幕在 0 秒显式设为 `opacity: 0`，所以初始静止预览必然没有字幕。
+- 修复应是预览播放器的代表帧状态，不应改变 `src/shared/html-video.ts` 的 0 秒画面，否则会直接改变最终导出视频的字幕入场效果。
+- 第一次真实 Electron QA 证明父层 iframe `onLoad` 发送 `hvseek` 存在竞争：内部时间线仍为 0；子场景随后会明确发送带协议标记的 `hf-preview ready`，这是可靠同步点。
+- 动效保存会按产品逻辑使动画预览失效并回到“继续生成”状态，所以 QA 的画布/字幕几何必须检查保存前的 `initial` 快照，而不能检查保存后的空预览。
+- 字幕可见性还需同时检查 `.captions` 容器和具体 `.caption` 的 opacity，不能只看子元素自身样式。
+- 第三轮诊断值为 `previewRuntimeReady=true / previewTime=0 / captionLayerOpacity=0 / captionOpacity=0.72`：运行时已经完成初始化，但父层的 seek 分支从未执行；问题不是代表帧时间选错。
+- QA 能从父页面直接读取 iframe 的 `contentWindow.__ready` 与 `__tl.time()`，证明 srcDoc 同源；父层 effect 可安全轮询该就绪标志并在确认消息监听器安装后发送 seek。
+- 父层轮询方案在 1320×860 实机中成立：`previewTime=0.75`、字幕层 opacity `0.9709`、文字 opacity `1`，画布和字幕均完整可见。
+- 切换到 920×720 后 iframe 时间线回到 0，`fitScene` 结果也不再匹配新视口；预览需要同时响应 iframe 重载与容器尺寸变化，不能只在 `source` 变化时初始化。
+- 给父层增加 iframe load 修订和 `ResizeObserver` 后，下一轮桌面初始化也出现回到 0 秒，说明父层驱动仍会与 srcDoc 自身加载/React 重渲染竞争。
+- `prepareCompositionSrcDoc` 本来就是只供编辑器 iframe 使用的 HTML 副本；在副本末尾注入带现有 CSP nonce 的 bootstrap，可在场景自身 DOMContentLoaded 初始化完成后 seek，且不会修改保存到磁盘或送去导出的原始 HTML。
+- 独立 bootstrap 节点方案实机仍为 `__ready=true / previewTime=0`，说明新节点没有执行；原运行时脚本执行正常，因此最稳妥的 CSP 兼容方式是直接向该已授权脚本文本追加预览初始化代码。
+- 向原脚本文本追加 bootstrap 后实机仍未改变时间线，说明经 `DOMParser -> outerHTML -> srcDoc` 的预览副本不适合承担新的运行时代码。
+- 最稳定的产品方案是静止海报字幕层：iframe 继续展示完整 0 秒输出画布，React 根据同一 `activeScene`、模板 `captionY` 和已解析字幕颜色绘制第一条字幕；播放、重播、拖动时隐藏，成片时间线零改动。
+- Electron QA 应从父页面检查 `.hv-preview-poster-caption`，并以 `.hv-reference-phone` 为可见边界；iframe 内的 `previewTime` 与字幕 opacity 仅保留为诊断字段，不能再作为静止预览通过条件。
+- 双窗口 Electron 结果证明该分层合同成立：父层字幕完整可见且在画布内，而 iframe 内字幕容器仍为 `opacity: 0`、时间线仍为 `0`，因此编辑器静止态可读性与最终动画语义已经解耦。
+- 原图人工检查确认桌面和紧凑窗口均完整显示竖屏画布的顶边、底边和底部字幕，时间轴、场景条、检查器没有遮挡字幕或裁掉画布。
+- 最终源码复核确认海报字幕和输出 HTML 都以同一 `captionYOverride ?? template.captionY` 语义定位，并共享 `resolveHtmlVideoCaptionStyle` 颜色；`src/shared/html-video.ts` 没有修改，成片动画继续使用原时间线。
 
 ---

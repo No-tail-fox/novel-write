@@ -264,7 +264,10 @@ export const HTML_VIDEO_SCENE_TEMPLATES = [
     choreography: {
       background: { preset: 'pan-right' },
       title: { preset: 'slide-in-left', startSec: 0.05, durationSec: 0.72 },
-      elements: [{ preset: 'slide-in-right', startSec: 0.32, durationSec: 0.85 }],
+      elements: [
+        { preset: 'slide-in-left', startSec: 0.24, durationSec: 0.85 },
+        { preset: 'slide-in-right', startSec: 0.48, durationSec: 0.85 },
+      ],
       caption: { preset: 'rise-caption', startSec: 0.3, durationSec: 0.65 },
     },
   },
@@ -314,7 +317,12 @@ export const HTML_VIDEO_SCENE_TEMPLATES = [
     choreography: {
       background: { preset: 'kenburns' },
       title: { preset: 'fade-up', startSec: 0.06, durationSec: 0.7 },
-      elements: [{ preset: 'zoom-out', startSec: 0.35, durationSec: 1 }],
+      elements: [
+        { preset: 'zoom-out', startSec: 0.2, durationSec: 1 },
+        { preset: 'float', startSec: 0.4, durationSec: 0.9 },
+        { preset: 'float', startSec: 0.6, durationSec: 0.9 },
+        { preset: 'pop-in', startSec: 0.8, durationSec: 0.8 },
+      ],
       caption: { preset: 'rise-caption', startSec: 0.3, durationSec: 0.65 },
     },
   },

@@ -37,6 +37,7 @@ import type {
   TtsProvider,
 } from '../../shared/types';
 import { HTML_VIDEO_JOB_DEFAULTS, HTML_VIDEO_SCENE_MOTION_LABELS, HTML_VIDEO_SCENE_MOTIONS, HTML_VIDEO_TRANSITION_LABELS, HTML_VIDEO_TRANSITIONS, HTML_VIDEO_TTS_SPEED_MAX, HTML_VIDEO_TTS_SPEED_MIN } from '../../shared/html-video-config';
+import { resolveHtmlVideoCaptionStyle } from '../../shared/html-video-captions';
 import { htmlVideoMediaElementKey, htmlVideoMediaStatus } from '../../shared/html-video-media';
 import {
   HTML_VIDEO_SCENE_TEMPLATES,
@@ -505,23 +506,35 @@ export function HtmlVideoStoryboundPreviewPanel(props: EditorialPanelProps & { c
   const [transitionType, setTransitionType] = useState<Extract<HtmlVideoConfigChange, { field: 'transitionType' }>['value']>(
     (data.config.transitionType ?? HTML_VIDEO_JOB_DEFAULTS.transitionType) as Extract<HtmlVideoConfigChange, { field: 'transitionType' }>['value'],
   );
-  const [motionDemoRevision, setMotionDemoRevision] = useState(0);
-  const [demoRevision, setDemoRevision] = useState(0);
   const [effectsMessage, setEffectsMessage] = useState('');
+  const [posterCaptionVisible, setPosterCaptionVisible] = useState(false);
+  const [runtimeState, setRuntimeState] = useState<'loading' | 'ready' | 'starting' | 'playing' | 'paused' | 'error'>('loading');
+  const [transitionFrame, setTransitionFrame] = useState<{
+    key: number;
+    url: string;
+    type: typeof transitionType;
+    running: boolean;
+  } | null>(null);
   const iframeRef = useRef<HTMLIFrameElement | null>(null);
   const autoplayAll = useRef(false);
-  const shouldResume = useRef(false);
+  const runtimeReady = useRef(false);
+  const pendingCommand = useRef<'play' | 'restart' | null>(null);
+  const progressRef = useRef(0);
+  const transitioning = useRef(false);
+  const playbackWatchdog = useRef<number | null>(null);
+  const transitionTimer = useRef<number | null>(null);
   const action = useAsyncAction();
   const compositions = data.compositions;
   const composition = compositions[active];
-  const transitionThumbnails = compositions
-    .slice(0, 2)
-    .map((item) => item.thumbnailPath ?? item.background.src)
-    .filter((path): path is string => Boolean(path));
   const effectsLocked = busy || action.busy || task.status === 'running' || task.status === 'pending' || isBrowserPreview;
   const activeScene = data.scenes.find((item) => item.index === composition?.index);
-  const motionThumbnail = composition?.thumbnailPath ?? composition?.background.src;
-  const motionThumbnailUrl = motionThumbnail ? mediaUrls[motionThumbnail] : '';
+  const presetScene = data.scenes.find((item) => item.index === presetSceneIndex);
+  const presetElementCount = presetScene?.elements.length ?? 0;
+  const previewCaption = activeScene?.captions.find((caption) => caption.trim())?.trim() ?? '';
+  const previewCaptionStyle = resolveHtmlVideoCaptionStyle(data.config);
+  const previewCaptionY = activeScene
+    ? activeScene.captionYOverride ?? htmlVideoSceneTemplate(activeScene.sceneTemplate).captionY
+    : 84;
   const sceneStripRef = useRef<HTMLDivElement | null>(null);
 
   useEffect(() => {
@@ -541,7 +554,11 @@ export function HtmlVideoStoryboundPreviewPanel(props: EditorialPanelProps & { c
     setSource('');
     setSourceError('');
     setProgress(0);
+    progressRef.current = 0;
     setPlaying(false);
+    setPosterCaptionVisible(false);
+    setRuntimeState('loading');
+    runtimeReady.current = false;
     if (!composition || isBrowserPreview) return;
     void api.getHtmlVideoCompositionSource(task.id, composition.index).then((loaded) => {
       if (disposed) return;
@@ -555,14 +572,51 @@ export function HtmlVideoStoryboundPreviewPanel(props: EditorialPanelProps & { c
   useEffect(() => {
     const onMessage = (event: MessageEvent) => {
       if (event.source !== iframeRef.current?.contentWindow) return;
-      const message = event.data as { type?: string; time?: number; duration?: number };
+      const message = event.data as { type?: string; state?: string; time?: number; duration?: number; playing?: boolean };
+      if (message?.type === 'hvruntime') {
+        if (message.state === 'ready') {
+          runtimeReady.current = true;
+          setRuntimeState('ready');
+          setPosterCaptionVisible(Boolean(previewCaption));
+          post({ type: 'hvpreviewmotion', preset: sceneMotion });
+          if (transitionFrame) {
+            setTransitionFrame((current) => current ? { ...current, running: true } : current);
+            if (transitionTimer.current !== null) window.clearTimeout(transitionTimer.current);
+            transitionTimer.current = window.setTimeout(() => setTransitionFrame(null), 340);
+          }
+          const command = pendingCommand.current;
+          if (command) {
+            pendingCommand.current = null;
+            post({ type: command === 'restart' ? 'hvrestart' : 'hvplay' });
+          }
+        } else if (message.state === 'playing') {
+          setRuntimeState('starting');
+        } else if (message.state === 'paused') {
+          setPlaying(false);
+          setRuntimeState('paused');
+        } else if (message.state === 'ended') {
+          setPlaying(false);
+          setRuntimeState('paused');
+        }
+        return;
+      }
       if (message?.type !== 'hvtick' || !message.duration) return;
       const next = Math.min(1, Math.max(0, Number(message.time ?? 0) / message.duration));
+      const advanced = next > progressRef.current + 0.0005;
+      progressRef.current = next;
       setProgress(next);
+      if (advanced && message.playing !== false) {
+        if (playbackWatchdog.current !== null) window.clearTimeout(playbackWatchdog.current);
+        playbackWatchdog.current = null;
+        setPlaying(true);
+        setRuntimeState('playing');
+        setPosterCaptionVisible(false);
+      } else if (message.playing === false && next < 0.995) {
+        setPlaying(false);
+      }
       if (next >= 0.995) {
-        if (autoplayAll.current && active < compositions.length - 1) {
-          shouldResume.current = true;
-          setActive((index) => index + 1);
+        if (autoplayAll.current && active < compositions.length - 1 && !transitioning.current) {
+          changeScene(active + 1, true, true);
         } else {
           autoplayAll.current = false;
           setPlaying(false);
@@ -571,35 +625,91 @@ export function HtmlVideoStoryboundPreviewPanel(props: EditorialPanelProps & { c
     };
     window.addEventListener('message', onMessage);
     return () => window.removeEventListener('message', onMessage);
-  }, [active, compositions.length]);
+  }, [active, compositions.length, previewCaption, sceneMotion, transitionFrame]);
+
+  useEffect(() => () => {
+    if (playbackWatchdog.current !== null) window.clearTimeout(playbackWatchdog.current);
+    if (transitionTimer.current !== null) window.clearTimeout(transitionTimer.current);
+  }, []);
 
   function post(message: object) {
     iframeRef.current?.contentWindow?.postMessage(message, '*');
   }
 
-  function play() { autoplayAll.current = false; post({ type: 'hvplay' }); setPlaying(true); }
-  function pause() { autoplayAll.current = false; post({ type: 'hvpause' }); setPlaying(false); }
-  function restart() { autoplayAll.current = false; post({ type: 'hvrestart' }); setProgress(0); setPlaying(true); }
+  function armPlaybackWatchdog() {
+    if (playbackWatchdog.current !== null) window.clearTimeout(playbackWatchdog.current);
+    playbackWatchdog.current = window.setTimeout(() => {
+      if (progressRef.current <= 0.0005) {
+        pendingCommand.current = null;
+        setPlaying(false);
+        setRuntimeState('error');
+        setPosterCaptionVisible(Boolean(previewCaption));
+        setEffectsMessage('预览运行时未能启动，请重试或重新生成该场景预览。');
+      }
+    }, 1800);
+  }
+
+  function requestPlayback(command: 'play' | 'restart') {
+    pendingCommand.current = command;
+    setRuntimeState('starting');
+    armPlaybackWatchdog();
+    if (!runtimeReady.current) return;
+    pendingCommand.current = null;
+    post({ type: command === 'restart' ? 'hvrestart' : 'hvplay' });
+  }
+
+  function changeScene(next: number, resume: boolean, animate: boolean) {
+    if (next < 0 || next >= compositions.length || next === active) return;
+    transitioning.current = true;
+    const outgoingPath = composition?.thumbnailPath ?? composition?.background.src;
+    const outgoingUrl = outgoingPath ? mediaUrls[outgoingPath] : '';
+    if (animate && outgoingUrl) {
+      setTransitionFrame({ key: Date.now(), url: outgoingUrl, type: transitionType, running: false });
+    } else {
+      setTransitionFrame(null);
+    }
+    pendingCommand.current = resume ? 'restart' : null;
+    setActive(next);
+    window.setTimeout(() => { transitioning.current = false; }, 380);
+  }
+
+  function play() {
+    autoplayAll.current = false;
+    requestPlayback('play');
+  }
+  function pause() { autoplayAll.current = false; post({ type: 'hvpause' }); }
+  function restart() {
+    autoplayAll.current = false;
+    progressRef.current = 0;
+    setProgress(0);
+    requestPlayback('restart');
+  }
   function playAll() {
     autoplayAll.current = true;
-    if (active === 0) { post({ type: 'hvrestart' }); setPlaying(true); }
-    else { shouldResume.current = true; setActive(0); }
+    if (active === 0) requestPlayback('restart');
+    else changeScene(0, true, true);
   }
 
   function playScene(index: number) {
     autoplayAll.current = false;
     if (index === active) {
-      post({ type: 'hvrestart' });
+      progressRef.current = 0;
       setProgress(0);
-      setPlaying(true);
+      requestPlayback('restart');
       return;
     }
-    shouldResume.current = true;
-    setActive(index);
+    changeScene(index, true, true);
   }
 
   function scrollScenes(direction: -1 | 1) {
-    sceneStripRef.current?.scrollBy({ left: direction * 260, behavior: 'smooth' });
+    const track = sceneStripRef.current;
+    if (!track) return;
+    const horizontal = track.scrollWidth > track.clientWidth + 2;
+    track.scrollBy({
+      left: horizontal ? direction * 220 : 0,
+      top: horizontal ? 0 : direction * 180,
+      behavior: 'smooth',
+    });
   }
 
   async function toggle(sceneIndex: number, field: 'foregroundHidden' | 'titleHidden', value: boolean) {
@@ -642,42 +752,98 @@ export function HtmlVideoStoryboundPreviewPanel(props: EditorialPanelProps & { c
   if (!composition) return <div className="hv-empty">场景生成中，完成后可在此预览动画。</div>;
   return (
     <section className={`hv-reference-preview${maximized ? ' maxed' : ''}`}>
-      <header className="hv-reference-panel-head"><strong>动画预览</strong><span>WebView 真实渲染 · 所见即所得</span><button className="mini-button primary" onClick={playAll}><Play size={13} />连播全部</button></header>
+      <header className="hv-reference-panel-head">
+        <strong>动画预览</strong>
+        <span data-runtime-state={runtimeState}>{runtimeState === 'error' ? '运行时异常' : runtimeState === 'playing' ? '正在播放' : runtimeState === 'starting' ? '正在启动' : '真实画布预览'}</span>
+        <button className="mini-button primary" onClick={playAll}><Play size={13} />连播全部</button>
+      </header>
+      <details className="hv-preview-settings">
+        <summary><span><Settings2 size={14} />字幕、镜头与转场设置</span><small>效果直接作用于主画布</small></summary>
+        <div className="hv-preview-settings-content">
+          {props.captionEditor}
+          <section className="hv-preview-effects" data-html-video-preview-effects="true" aria-label="镜头动效与场景转场">
+            <div className="panel-title-row">
+              <h4>镜头与转场</h4>
+              <button className="mini-button" type="button" disabled={effectsLocked} onClick={() => void saveEffects()}>
+                {action.busy ? <Loader2 className="spin" size={14} /> : <Save size={14} />}保存动效
+              </button>
+            </div>
+            <div className="hv-preview-effects-controls">
+              <label>
+                <span>镜头动效</span>
+                <select value={sceneMotion} disabled={effectsLocked} onChange={(event) => {
+                  const value = event.target.value as typeof sceneMotion;
+                  setSceneMotion(value);
+                  if (runtimeReady.current) post({ type: 'hvpreviewmotion', preset: value });
+                }}>
+                  {HTML_VIDEO_SCENE_MOTIONS.map((motion) => <option key={motion} value={motion}>{HTML_VIDEO_SCENE_MOTION_LABELS[motion]}</option>)}
+                </select>
+              </label>
+              <label>
+                <span>场景转场</span>
+                <select value={transitionType} disabled={effectsLocked} onChange={(event) => setTransitionType(event.target.value as typeof transitionType)}>
+                  {HTML_VIDEO_TRANSITIONS.map((transition) => <option key={transition} value={transition}>{HTML_VIDEO_TRANSITION_LABELS[transition]}</option>)}
+                </select>
+              </label>
+              <span className="hv-effect-output-note">转场时长 0.3 秒，连播与最终输出一致</span>
+            </div>
+            {effectsMessage ? <span className="local-note" role="status">{effectsMessage}</span> : null}
+          </section>
+        </div>
+      </details>
       <div className="hv-preview-workbench">
         <div className="hv-preview-canvas-column">
           <div className="hv-reference-stage">
-            <div className="hv-reference-phone" style={{ aspectRatio: `${composition.canvas.w} / ${composition.canvas.h}` }}>
+            <div className="hv-reference-phone" data-runtime-state={runtimeState} style={{ aspectRatio: `${composition.canvas.w} / ${composition.canvas.h}` }}>
               {source ? <iframe
                 key={`${composition.index}-${composition.rev}`}
                 ref={iframeRef}
                 srcDoc={source}
                 title={`场景 ${composition.index}`}
-                onLoad={() => {
-                  if (shouldResume.current) {
-                    shouldResume.current = false;
-                    post({ type: 'hvplay' });
-                    setPlaying(true);
-                  }
-                }}
+                onLoad={() => post({ type: 'hvprobe' })}
               /> : <div className="hv-reference-preview-loading">{sourceError || <><Loader2 className="spin" size={20} />正在载入场景</>}</div>}
+              {transitionFrame ? <img
+                key={transitionFrame.key}
+                className={`hv-scene-transition-overlay${transitionFrame.running ? ' running' : ''}`}
+                data-transition={transitionFrame.type}
+                src={transitionFrame.url}
+                alt=""
+                aria-hidden="true"
+              /> : null}
+              {posterCaptionVisible && previewCaption ? (
+                <div
+                  className="hv-preview-poster-caption"
+                  data-preset={previewCaptionStyle.preset}
+                  style={{
+                    top: `${previewCaptionY}%`,
+                    '--hv-preview-caption-text': previewCaptionStyle.colors.text,
+                    '--hv-preview-caption-accent': previewCaptionStyle.colors.accent,
+                    '--hv-preview-caption-background': previewCaptionStyle.colors.background,
+                    '--hv-preview-caption-shadow': previewCaptionStyle.colors.shadow,
+                  } as React.CSSProperties}
+                  aria-hidden="true"
+                ><span>{previewCaption}</span></div>
+              ) : null}
             </div>
             <div className="hv-reference-transport">
               <input type="range" min={0} max={1000} value={Math.round(progress * 1000)} onChange={(event) => {
                 const next = Number(event.target.value) / 1000;
                 autoplayAll.current = false;
+                setPosterCaptionVisible(false);
                 post({ type: 'hvseek', time: composition.durationSec * next });
+                progressRef.current = next;
                 setProgress(next);
-                setPlaying(false);
               }} aria-label="场景播放进度" />
               <button type="button" title={playing ? '暂停' : '播放'} onClick={playing ? pause : play}>{playing ? <Pause size={17} /> : <Play size={17} />}</button>
               <span>{(progress * composition.durationSec).toFixed(1)}s / {composition.durationSec.toFixed(1)}s</span>
-              <button type="button" title="上一场景" disabled={active === 0} onClick={() => setActive((index) => Math.max(0, index - 1))}><ChevronLeft size={16} /></button>
-              <button type="button" title="下一场景" disabled={active >= compositions.length - 1} onClick={() => setActive((index) => Math.min(compositions.length - 1, index + 1))}><ChevronRight size={16} /></button>
+              <button type="button" title="上一场景" disabled={active === 0} onClick={() => changeScene(active - 1, false, true)}><ChevronLeft size={16} /></button>
+              <button type="button" title="下一场景" disabled={active >= compositions.length - 1} onClick={() => changeScene(active + 1, false, true)}><ChevronRight size={16} /></button>
               <button type="button" title="重播" onClick={restart}><RotateCcw size={15} /></button>
               <button type="button" title={maximized ? '退出最大化' : '最大化'} onClick={() => setMaximized((value) => !value)}>{maximized ? <Minimize2 size={15} /> : <Maximize2 size={15} />}</button>
             </div>
           </div>
-          <aside className="hv-reference-scene-strip" aria-label="场景胶片条">
+        </div>
+        <aside className="hv-reference-scene-strip" aria-label="场景列表">
             <header>
               <div><strong>场景</strong><span>{activeScene ? `当前 ${activeScene.index}/${data.scenes.length}` : `共 ${data.scenes.length} 个`}</span></div>
               <span className="hv-scene-strip-nav">
@@ -694,7 +860,7 @@ export function HtmlVideoStoryboundPreviewPanel(props: EditorialPanelProps & { c
                   ? htmlVideoMediaStatus(thumbnail, mediaUrls, failedMediaPaths, isBrowserPreview)
                   : 'desktop-only';
                 return <div key={item.index} className={`hv-reference-scene-item${index === active ? ' active' : ''}`}>
-                  <button className="hv-reference-scene-select" type="button" disabled={index < 0} aria-current={index === active ? 'true' : undefined} onClick={() => index >= 0 && setActive(index)}>
+                  <button className="hv-reference-scene-select" type="button" disabled={index < 0} aria-current={index === active ? 'true' : undefined} onClick={() => index >= 0 && changeScene(index, false, true)}>
                     <span className="hv-reference-thumb" aria-busy={thumbnailStatus === 'loading'}>
                       <b>{item.index}</b>
                       {thumbnail && thumbnailStatus === 'ready' && mediaUrls[thumbnail] ? (
@@ -740,81 +906,28 @@ export function HtmlVideoStoryboundPreviewPanel(props: EditorialPanelProps & { c
                 onClick={() => void toggle(activeScene.index, 'titleHidden', !activeScene.titleHidden)}
               >{activeScene.titleHidden ? <Eye size={12} /> : <EyeOff size={12} />}标题</button>
             </span> : null}
-          </aside>
-        </div>
-        <aside className="hv-preview-inspector" aria-label="动画预览属性">
-          {props.captionEditor}
-          <section className="hv-preview-effects" data-html-video-preview-effects="true" aria-label="镜头动效与场景转场">
-            <div className="panel-title-row">
-              <h4>镜头与转场</h4>
-              <button className="mini-button" type="button" disabled={effectsLocked} onClick={() => void saveEffects()}>
-                {action.busy ? <Loader2 className="spin" size={14} /> : <Save size={14} />}保存动效
-              </button>
-            </div>
-            <div className="hv-preview-effects-controls">
-              <label>
-                <span>镜头动效</span>
-                <select value={sceneMotion} disabled={effectsLocked} onChange={(event) => {
-                  setSceneMotion(event.target.value as typeof sceneMotion);
-                  setMotionDemoRevision((value) => value + 1);
-                }}>
-                  {HTML_VIDEO_SCENE_MOTIONS.map((motion) => <option key={motion} value={motion}>{HTML_VIDEO_SCENE_MOTION_LABELS[motion]}</option>)}
-                </select>
-              </label>
-              <div className="hv-effect-demo-row">
-                <span>镜头预览</span>
-                <div className="hv-motion-demo-wrap">
-                  <div key={`${sceneMotion}-${motionDemoRevision}`} className="hv-motion-demo" data-motion={sceneMotion} aria-label="镜头动效示意">
-                    {motionThumbnailUrl ? <img src={motionThumbnailUrl} alt="" onError={() => motionThumbnail && onMediaElementError(motionThumbnail)} onLoad={() => motionThumbnail && onMediaElementReady(motionThumbnail)} /> : <span>预览加载中</span>}
-                  </div>
-                  <button type="button" title="重播镜头示意" onClick={() => setMotionDemoRevision((value) => value + 1)}><RotateCcw size={14} /></button>
-                </div>
-              </div>
-              <label>
-                <span>场景转场</span>
-                <select value={transitionType} disabled={effectsLocked} onChange={(event) => {
-                  setTransitionType(event.target.value as typeof transitionType);
-                  setDemoRevision((value) => value + 1);
-                }}>
-                  {HTML_VIDEO_TRANSITIONS.map((transition) => <option key={transition} value={transition}>{HTML_VIDEO_TRANSITION_LABELS[transition]}</option>)}
-                </select>
-              </label>
-              <div className="hv-effect-demo-row">
-                <span>转场预览</span>
-                <div className="hv-transition-demo-wrap">
-                  <div key={`${transitionType}-${demoRevision}`} className="hv-transition-demo" data-transition={transitionType} aria-label="场景转场示意">
-                    {transitionThumbnails.map((path, index) => mediaUrls[path] ? (
-                      <img
-                        key={`${htmlVideoMediaElementKey(task.id, path, mediaRetryRevision)}-${index}`}
-                        className={`hv-transition-demo-frame frame-${index + 1}`}
-                        src={mediaUrls[path]}
-                        alt=""
-                        onError={() => onMediaElementError(path)}
-                        onLoad={() => onMediaElementReady(path)}
-                      />
-                    ) : <span key={`${path}-${index}`} className={`hv-transition-demo-frame frame-${index + 1} hv-media-state`}><Loader2 className="spin" size={14} /></span>)}
-                    {transitionThumbnails.length < 2 ? <span className="hv-transition-demo-empty">需要至少两个场景</span> : null}
-                  </div>
-                  <button type="button" title="重播转场示意" onClick={() => setDemoRevision((value) => value + 1)}><RotateCcw size={14} /></button>
-                </div>
-              </div>
-            </div>
-            {effectsMessage ? <span className="local-note" role="status">{effectsMessage}</span> : null}
-          </section>
         </aside>
       </div>
       <InlineActionFeedback feedback={action.feedback} />
       {presetSceneIndex !== null ? (
         <div className="hv-modal-backdrop" role="presentation" onMouseDown={(event) => event.target === event.currentTarget && setPresetSceneIndex(null)}>
           <section className="hv-template-modal" role="dialog" aria-modal="true" aria-label="选择画面版式">
-            <header><div><strong>选择画面版式</strong><span>{HTML_VIDEO_SCENE_TEMPLATES.length} 种 · 场景 {presetSceneIndex}</span></div><button type="button" title="关闭" onClick={() => setPresetSceneIndex(null)}><X size={16} /></button></header>
+            <header><div><strong>选择画面版式</strong><span>场景 {presetSceneIndex} · 当前 {presetElementCount} 个前景素材</span></div><button type="button" title="关闭" onClick={() => setPresetSceneIndex(null)}><X size={16} /></button></header>
             <div className="hv-template-grid">
               {HTML_VIDEO_SCENE_TEMPLATES.map((template) => {
                 const selected = normalizeHtmlVideoSceneTemplate(data.scenes.find((scene) => scene.index === presetSceneIndex)?.sceneTemplate) === template.id;
+                const compatible = template.materialSlots === presetElementCount;
                 return (
-                  <button key={template.id} type="button" className={selected ? 'selected' : ''} disabled={action.busy || busy || isBrowserPreview} onClick={() => selectTemplate(presetSceneIndex, template.id)}>
+                  <button
+                    key={template.id}
+                    type="button"
+                    className={selected ? 'selected' : ''}
+                    disabled={!compatible || action.busy || busy || isBrowserPreview}
+                    title={compatible ? template.description : `需要 ${template.materialSlots} 个前景素材`}
+                    onClick={() => selectTemplate(presetSceneIndex, template.id)}
+                  >
                     <PresetSwatch template={template} />
-                    <span><strong>{template.label}</strong><small>{template.description}</small></span>
+                    <span><strong>{template.label}</strong><small>{compatible ? template.description : `需要 ${template.materialSlots} 个前景素材`}</small></span>
                   </button>
                 );
               })}
@@ -869,7 +982,12 @@ function PresetSwatch({ template }: { template: typeof HTML_VIDEO_SCENE_TEMPLATE
   );
 }
 
-function prepareCompositionSrcDoc(source: string, mediaUrl: string, data: HtmlVideoPipelineData, mediaUrls: Record<string, string>): string {
+function prepareCompositionSrcDoc(
+  source: string,
+  mediaUrl: string,
+  data: HtmlVideoPipelineData,
+  mediaUrls: Record<string, string>,
+): string {
   const document = new DOMParser().parseFromString(source, 'text/html');
   const replacements = new Map<string, string>();
   const paths = [

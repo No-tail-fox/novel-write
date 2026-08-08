@@ -436,6 +436,7 @@ async function executeStep(
         rawScenes = planHtmlVideoScenes(
           context.rewrite.segments.join('\n\n'),
           state.config.maxScenes ?? HTML_VIDEO_JOB_DEFAULTS.maxScenes,
+          state.config.foreground !== false,
         );
         addWarning(state, `${normalized.message} 已改用本地分镜规划，可在文案页继续编辑。`);
       }
@@ -443,6 +444,7 @@ async function executeStep(
       rawScenes = planHtmlVideoScenes(
         context.rewrite.segments.join('\n\n'),
         state.config.maxScenes ?? HTML_VIDEO_JOB_DEFAULTS.maxScenes,
+        state.config.foreground !== false,
       );
       addWarning(state, '未配置场景规划 LLM，已使用确定性场景规划。');
     }

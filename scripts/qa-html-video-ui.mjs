@@ -364,7 +364,12 @@ try {
       mobile: false,
     });
     await delay(350);
-    await evaluate(cdp, `document.querySelector('.hv-preview-effects')?.scrollIntoView({ block: 'start' })`);
+    await evaluate(cdp, `(() => {
+      const settings = document.querySelector('.hv-preview-settings');
+      if (settings instanceof HTMLDetailsElement) settings.open = false;
+      const workspace = document.querySelector('.hv-preview-workspace');
+      if (workspace) workspace.scrollTop = 0;
+    })()`);
     await delay(200);
     const effectsCompact = await inspectPreviewEffects(cdp);
     await saveScreenshot(cdp, effectsCompactScreenshot);
@@ -372,22 +377,22 @@ try {
     if (identity.title !== 'StoryDream' || identity.bodyTextLength < 100 || identity.hasFrameworkOverlay) {
       throw new Error(`Preview-effects QA page identity failed: ${JSON.stringify(identity)}`);
     }
-    if (effectsDesktop.demoImageCount !== 2 || effectsCompact.demoImageCount !== 2
-      || effectsDesktop.motionDemoImageCount !== 1 || effectsCompact.motionDemoImageCount !== 1
-      || effectsDesktop.motionDemoAnimationName !== 'hv-motion-demo-zoom-in'
-      || effectsCompact.motionDemoAnimationName !== 'hv-motion-demo-zoom-in'
+    if (!effectsDesktop.playbackAdvanced || !effectsDesktop.cameraTransformChanged
+      || !effectsDesktop.transitionOverlayObserved || !effectsDesktop.layoutGeometryChanged
       || !effectsDesktop.previewAboveFold || !effectsCompact.previewAboveFold
-      || !effectsDesktop.inspectorBesidePreview || !effectsCompact.inspectorBesidePreview
-      || !effectsDesktop.filmstripBelowPreview || !effectsCompact.filmstripBelowPreview
-      || effectsDesktop.sceneTrackHorizontalOverflow < 0 || effectsCompact.sceneTrackHorizontalOverflow < 0
+      || !effectsDesktop.previewCanvasFullyVisible || !effectsCompact.previewCanvasFullyVisible
+      || !effectsDesktop.previewCaptionVisible || !effectsCompact.previewCaptionVisible
+      || !effectsDesktop.previewCaptionInsideCanvas || !effectsCompact.previewCaptionInsideCanvas
+      || !(effectsDesktop.sceneRailBesidePreview || effectsDesktop.sceneRailBelowPreview)
+      || !(effectsCompact.sceneRailBesidePreview || effectsCompact.sceneRailBelowPreview)
+      || !effectsDesktop.bottomControlsReachable || !effectsCompact.bottomControlsReachable
       || effectsDesktop.pageVerticalOverflow > 2 || effectsCompact.pageVerticalOverflow > 2
       || effectsDesktop.horizontalOverflow > 2 || effectsCompact.horizontalOverflow > 2
       || effectsDesktop.workspaceHorizontalOverflow > 2 || effectsCompact.workspaceHorizontalOverflow > 2
       || effectsDesktop.clippedControls.length || effectsCompact.clippedControls.length
       || effectsDesktop.transitionValue !== 'wipeleft' || effectsCompact.transitionValue !== 'wipeleft'
-      || effectsDesktop.motionValue !== 'auto' || effectsCompact.motionValue !== 'auto'
+      || effectsDesktop.motionValue !== 'pan_left' || effectsCompact.motionValue !== 'pan_left'
       || effectsDesktop.completedStepCount !== 5 || effectsCompact.completedStepCount !== 5
-      || effectsDesktop.demoAnimationName !== 'hv-transition-demo-wipe-left'
       || relevantRuntimeErrors.length) {
       throw new Error(`Preview-effects QA failed: ${JSON.stringify({ effectsDesktop, effectsCompact, relevantRuntimeErrors })}`);
     }
@@ -2181,14 +2186,14 @@ async function exerciseTemplatePreview(cdpConnection) {
 async function inspectAndAnimateTemplatePreview(cdpConnection) {
   await evaluate(cdpConnection, `(() => {
     const target = [...document.querySelectorAll('.hv-template-grid > button')]
-      .find((card) => card.querySelector('strong')?.textContent?.trim() === '双人对话');
+      .find((card) => card.querySelector('strong')?.textContent?.trim() === '动态大字');
     target?.scrollIntoView({ block: 'center' });
   })()`);
   await delay(180);
   const initial = await evaluate(cdpConnection, `(() => {
     const modal = document.querySelector('.hv-template-modal');
     const cards = [...document.querySelectorAll('.hv-template-grid > button')];
-    const target = cards.find((card) => card.querySelector('strong')?.textContent?.trim() === '双人对话');
+    const target = cards.find((card) => card.querySelector('strong')?.textContent?.trim() === '动态大字');
     const swatch = target?.querySelector('.hv-template-swatch');
     const rect = swatch?.getBoundingClientRect();
     const modalRect = modal?.getBoundingClientRect();
@@ -2213,7 +2218,7 @@ async function inspectAndAnimateTemplatePreview(cdpConnection) {
       viewport: { width: innerWidth, height: innerHeight },
     };
   })()`);
-  if (!initial.swatchRect || initial.targetLabel !== '双人对话') {
+  if (!initial.swatchRect || initial.targetLabel !== '动态大字') {
     throw new Error(`Animated template target was unavailable: ${JSON.stringify(initial)}`);
   }
   const { x, y, width, height } = initial.swatchRect;
@@ -2228,7 +2233,7 @@ async function inspectAndAnimateTemplatePreview(cdpConnection) {
   const secondHash = await captureRegionHash(cdpConnection, initial.swatchRect);
   const animation = await evaluate(cdpConnection, `(() => {
     const target = [...document.querySelectorAll('.hv-template-grid > button')]
-      .find((card) => card.querySelector('strong')?.textContent?.trim() === '双人对话');
+      .find((card) => card.querySelector('strong')?.textContent?.trim() === '动态大字');
     const layers = target ? [...target.querySelectorAll('.hv-template-swatch [data-motion]')] : [];
     return {
       hovered: target?.matches(':hover') === true,
@@ -2256,16 +2261,25 @@ async function inspectPreviewEffects(cdpConnection) {
     const workbench = document.querySelector('.hv-preview-workbench');
     const stage = workbench?.querySelector('.hv-reference-stage');
     const phone = stage?.querySelector('.hv-reference-phone');
-    const inspector = workbench?.querySelector('.hv-preview-inspector');
-    const filmstrip = workbench?.querySelector('.hv-reference-scene-strip');
-    const sceneTrack = filmstrip?.querySelector('.hv-reference-scene-track');
+    const iframe = phone?.querySelector('iframe');
+    const sceneView = iframe?.contentWindow;
+    const sceneDocument = iframe?.contentDocument;
+    const sceneFrame = sceneDocument?.querySelector('.frame');
+    const captionLayer = sceneDocument?.querySelector('.captions');
+    const captions = sceneDocument ? [...sceneDocument.querySelectorAll('.caption')] : [];
+    const title = sceneDocument?.querySelector('.title');
+    const imageRegion = sceneDocument?.querySelector('.scene-image-region');
+    const posterCaption = phone?.querySelector('.hv-preview-poster-caption');
+    const posterCaptionStyle = posterCaption ? getComputedStyle(posterCaption) : null;
+    const sceneRail = workbench?.querySelector('.hv-reference-scene-strip');
+    const sceneTrack = sceneRail?.querySelector('.hv-reference-scene-track');
+    const transport = workbench?.querySelector('.hv-reference-transport');
+    const railActions = sceneRail?.querySelector('.hv-reference-thumb-actions');
+    const workspace = document.querySelector('.hv-preview-workspace');
     const selects = surface ? [...surface.querySelectorAll('select')] : [];
     const motion = selects[0];
     const transition = selects[1];
-    const motionDemo = surface?.querySelector('.hv-motion-demo');
-    const motionDemoImage = motionDemo?.querySelector('img');
-    const demo = surface?.querySelector('.hv-transition-demo');
-    const demoFrames = demo ? [...demo.querySelectorAll('img')] : [];
+    const transitionOverlay = phone?.querySelector('.hv-scene-transition-overlay');
     const visibleControls = surface ? [...surface.querySelectorAll('select, button')].filter((item) => {
       const style = getComputedStyle(item);
       const rect = item.getBoundingClientRect();
@@ -2273,28 +2287,77 @@ async function inspectPreviewEffects(cdpConnection) {
     }) : [];
     const stageRect = stage?.getBoundingClientRect();
     const phoneRect = phone?.getBoundingClientRect();
-    const inspectorRect = inspector?.getBoundingClientRect();
-    const filmstripRect = filmstrip?.getBoundingClientRect();
+    const sceneRailRect = sceneRail?.getBoundingClientRect();
+    const transportRect = transport?.getBoundingClientRect();
+    const railActionsRect = railActions?.getBoundingClientRect();
+    const workspaceRect = workspace?.getBoundingClientRect();
+    const sceneFrameRect = sceneFrame?.getBoundingClientRect();
+    const posterCaptionRect = posterCaption?.getBoundingClientRect();
+    const visibleCaption = captions.find((item) => {
+      const style = sceneView?.getComputedStyle(item);
+      const rect = item.getBoundingClientRect();
+      return style && style.display !== 'none' && style.visibility !== 'hidden'
+        && Number(style.opacity) > 0.05 && rect.width > 0 && rect.height > 0;
+    });
+    const visibleCaptionRect = visibleCaption?.getBoundingClientRect();
+    const titleRect = title?.getBoundingClientRect();
+    const posterVisible = Boolean(posterCaptionRect && posterCaptionStyle
+      && posterCaptionStyle.display !== 'none'
+      && posterCaptionStyle.visibility !== 'hidden'
+      && Number(posterCaptionStyle.opacity) > 0
+      && posterCaptionRect.width > 0 && posterCaptionRect.height > 0);
     return {
       activeTab: document.querySelector('.hv-tab.active')?.textContent?.trim() || '',
       motionValue: motion?.value || '',
       motionOptions: motion instanceof HTMLSelectElement ? [...motion.options].map((option) => [option.value, option.textContent?.trim() || '']) : [],
       transitionValue: transition?.value || '',
       transitionOptions: transition instanceof HTMLSelectElement ? [...transition.options].map((option) => [option.value, option.textContent?.trim() || '']) : [],
-      motionDemoImageCount: motionDemoImage ? 1 : 0,
-      motionDemoAnimationName: motionDemoImage ? getComputedStyle(motionDemoImage).animationName : '',
-      demoTransition: demo?.getAttribute('data-transition') || '',
-      demoImageCount: demoFrames.length,
-      demoUsesDistinctSources: new Set(demoFrames.map((item) => item.currentSrc || item.src)).size === 2,
-      demoAnimationName: demo?.querySelector('.frame-2') ? getComputedStyle(demo.querySelector('.frame-2')).animationName : '',
       completedStepCount: document.querySelectorAll('.hv-studio-run-rail .hv-step.done').length,
       resumeAvailable: [...document.querySelectorAll('button')].some((item) => item.textContent?.trim() === '继续' && !item.disabled),
       message: surface?.querySelector('[role="status"]')?.textContent?.trim() || '',
       previewAboveFold: Boolean(phoneRect && phoneRect.top >= 0 && phoneRect.bottom <= innerHeight + 1),
-      inspectorBesidePreview: Boolean(stageRect && inspectorRect && inspectorRect.left >= stageRect.right - 1),
-      filmstripBelowPreview: Boolean(stageRect && filmstripRect && filmstripRect.top >= stageRect.bottom - 1),
+      previewCanvasFullyVisible: Boolean(sceneView && sceneFrameRect
+        && sceneFrameRect.left >= -1 && sceneFrameRect.top >= -1
+        && sceneFrameRect.right <= sceneView.innerWidth + 1
+        && sceneFrameRect.bottom <= sceneView.innerHeight + 1),
+      previewCaptionVisible: posterVisible || Boolean(visibleCaptionRect),
+      previewCaptionInsideCanvas: Boolean(phoneRect && (
+        (posterVisible && posterCaptionRect
+          && posterCaptionRect.left >= phoneRect.left - 1
+          && posterCaptionRect.right <= phoneRect.right + 1
+          && posterCaptionRect.top >= phoneRect.top - 1
+          && posterCaptionRect.bottom <= phoneRect.bottom + 1)
+        || (visibleCaptionRect && sceneFrameRect
+          && visibleCaptionRect.left >= sceneFrameRect.left - 1
+          && visibleCaptionRect.right <= sceneFrameRect.right + 1
+          && visibleCaptionRect.top >= sceneFrameRect.top - 1
+          && visibleCaptionRect.bottom <= sceneFrameRect.bottom + 1)
+      )),
+      previewTime: typeof sceneView?.__tl?.time === 'function' ? sceneView.__tl.time() : -1,
+      previewTotalTime: typeof sceneView?.__tl?.totalTime === 'function' ? sceneView.__tl.totalTime() : -1,
+      previewDuration: typeof sceneView?.__tl?.duration === 'function' ? sceneView.__tl.duration() : -1,
+      previewProgress: typeof sceneView?.__tl?.progress === 'function' ? sceneView.__tl.progress() : -1,
+      previewPaused: typeof sceneView?.__tl?.paused === 'function' ? sceneView.__tl.paused() : null,
+      previewActive: typeof sceneView?.__tl?.isActive === 'function' ? sceneView.__tl.isActive() : null,
+      transportButtonTitle: transport?.querySelector('button')?.getAttribute('title') || '',
+      previewRuntimeReady: sceneView?.__ready ?? null,
+      runtimeState: phone?.getAttribute('data-runtime-state') || '',
+      activeSceneTemplate: sceneFrame?.getAttribute('data-scene-template') || '',
+      cameraTransform: imageRegion && sceneView ? sceneView.getComputedStyle(imageRegion).transform : '',
+      titleGeometry: titleRect ? { x: titleRect.x, y: titleRect.y, width: titleRect.width, height: titleRect.height } : null,
+      transitionOverlayVisible: Boolean(transitionOverlay),
+      transitionOverlayRunning: transitionOverlay?.classList.contains('running') ?? false,
+      previewCaptionLayerOpacity: captionLayer && sceneView ? sceneView.getComputedStyle(captionLayer).opacity : '',
+      previewCaptionOpacities: sceneDocument && sceneView
+        ? [...sceneDocument.querySelectorAll('.caption')].map((item) => sceneView.getComputedStyle(item).opacity)
+        : [],
+      sceneRailBesidePreview: Boolean(stageRect && sceneRailRect && sceneRailRect.left >= stageRect.right - 1),
+      sceneRailBelowPreview: Boolean(stageRect && sceneRailRect && sceneRailRect.top >= stageRect.bottom - 1),
+      bottomControlsReachable: Boolean(workspaceRect && transportRect && railActionsRect
+        && transportRect.bottom <= workspaceRect.bottom + 1
+        && railActionsRect.bottom <= workspaceRect.bottom + 1),
       sceneTrackHorizontalOverflow: sceneTrack ? Math.max(0, sceneTrack.scrollWidth - sceneTrack.clientWidth) : -1,
-      inspectorVerticalOverflow: inspector ? Math.max(0, inspector.scrollHeight - inspector.clientHeight) : -1,
+      sceneTrackVerticalOverflow: sceneTrack ? Math.max(0, sceneTrack.scrollHeight - sceneTrack.clientHeight) : -1,
       pageVerticalOverflow: Math.max(0, document.documentElement.scrollHeight - document.documentElement.clientHeight),
       horizontalOverflow: document.documentElement.scrollWidth - document.documentElement.clientWidth,
       surfaceHorizontalOverflow: surface ? surface.scrollWidth - surface.clientWidth : -1,
@@ -2313,11 +2376,30 @@ async function inspectPreviewEffects(cdpConnection) {
 async function exercisePreviewEffects(cdpConnection) {
   const clicked = await clickTab(cdpConnection, '动画预览');
   if (!clicked) throw new Error('Animation preview tab was not found.');
+  await evaluate(cdpConnection, `(() => {
+    const settings = document.querySelector('.hv-preview-settings');
+    if (!(settings instanceof HTMLDetailsElement)) return false;
+    settings.open = true;
+    return true;
+  })()`);
   await waitFor(
-    async () => evaluate(cdpConnection, `Boolean(document.querySelector('[data-html-video-preview-effects="true"] .hv-transition-demo'))`),
+    async () => evaluate(cdpConnection, `Boolean(document.querySelector('[data-html-video-preview-effects="true"] select')
+      && document.querySelector('.hv-reference-phone iframe'))`),
     10_000,
     'HTML video preview effects editor',
   );
+  try {
+    await waitFor(
+      async () => {
+        const state = await inspectPreviewEffects(cdpConnection);
+        return state.previewRuntimeReady && state.previewCaptionVisible;
+      },
+      10_000,
+      'visible animation preview poster caption',
+    );
+  } catch (error) {
+    throw new Error(`Animation preview poster caption did not settle: ${JSON.stringify(await inspectPreviewEffects(cdpConnection))}`, { cause: error });
+  }
   const expectedMotions = [
     ['auto', '跟随画面预设'],
     ['none', '无镜头运动'],
@@ -2338,9 +2420,8 @@ async function exercisePreviewEffects(cdpConnection) {
   ];
   const initial = await inspectPreviewEffects(cdpConnection);
   if (JSON.stringify(initial.motionOptions) !== JSON.stringify(expectedMotions)
-    || JSON.stringify(initial.transitionOptions) !== JSON.stringify(expectedTransitions)
-    || initial.demoImageCount !== 2 || !initial.demoUsesDistinctSources) {
-    throw new Error(`Preview effects options or thumbnails are incomplete: ${JSON.stringify(initial)}`);
+    || JSON.stringify(initial.transitionOptions) !== JSON.stringify(expectedTransitions)) {
+    throw new Error(`Preview effects options are incomplete: ${JSON.stringify(initial)}`);
   }
   const changed = await evaluate(cdpConnection, `(() => {
     const surface = document.querySelector('[data-html-video-preview-effects="true"]');
@@ -2358,45 +2439,119 @@ async function exercisePreviewEffects(cdpConnection) {
     async () => {
       const state = await inspectPreviewEffects(cdpConnection);
       return state.motionValue === 'pan_left'
-        && state.transitionValue === 'wipeleft'
-        && state.demoTransition === 'wipeleft'
-        && state.demoAnimationName === 'hv-transition-demo-wipe-left';
+        && state.transitionValue === 'wipeleft';
     },
     5_000,
     'preview effects selection',
   );
-  const replayed = await evaluate(cdpConnection, `(() => {
-    const button = document.querySelector('[data-html-video-preview-effects="true"] button[title="重播转场示意"]');
-    if (!(button instanceof HTMLButtonElement)) return false;
+  const saved = await evaluate(cdpConnection, `(() => {
+    const button = [...document.querySelectorAll('[data-html-video-preview-effects="true"] button')]
+      .find((item) => item.textContent?.includes('保存动效'));
+    if (!(button instanceof HTMLButtonElement) || button.disabled) return false;
     button.click();
     return true;
   })()`);
-  if (!replayed) throw new Error('Preview transition replay control was unavailable.');
-  await delay(120);
-  await evaluate(cdpConnection, `(() => {
-    const motion = document.querySelector('[data-html-video-preview-effects="true"] select');
-    const setter = Object.getOwnPropertyDescriptor(HTMLSelectElement.prototype, 'value')?.set;
-    if (!(motion instanceof HTMLSelectElement) || !setter) return false;
-    setter.call(motion, 'auto');
-    motion.dispatchEvent(new Event('change', { bubbles: true }));
-    const save = [...document.querySelectorAll('[data-html-video-preview-effects="true"] button')]
-      .find((item) => item.textContent?.includes('保存动效'));
-    if (!(save instanceof HTMLButtonElement)) return false;
-    save.click();
-    return true;
-  })()`);
+  if (!saved) throw new Error('Preview effects save control was unavailable.');
   await waitFor(
     async () => {
       const state = await inspectPreviewEffects(cdpConnection);
-      return state.motionValue === 'auto'
+      return state.motionValue === 'pan_left'
         && state.transitionValue === 'wipeleft'
         && state.completedStepCount === 5
-        && state.resumeAvailable;
+        && state.previewRuntimeReady;
     },
     10_000,
     'preview effects save',
   );
-  return { initial, ...(await inspectPreviewEffects(cdpConnection)), replayed };
+  const beforePlayback = await inspectPreviewEffects(cdpConnection);
+  const played = await evaluate(cdpConnection, `(() => {
+    const button = document.querySelector('.hv-reference-transport button[title="播放"]');
+    if (!(button instanceof HTMLButtonElement)) return false;
+    button.click();
+    return true;
+  })()`);
+  if (!played) throw new Error('Real preview play control was unavailable.');
+  try {
+    await waitFor(
+      async () => {
+        const state = await inspectPreviewEffects(cdpConnection);
+        return state.previewTime > 0.08 && state.runtimeState === 'playing' && state.previewCaptionVisible;
+      },
+      5_000,
+      'real animation playback progress',
+    );
+  } catch (error) {
+    throw new Error(`Real animation playback did not advance: ${JSON.stringify(await inspectPreviewEffects(cdpConnection))}`, { cause: error });
+  }
+  const firstMotionFrame = await inspectPreviewEffects(cdpConnection);
+  await delay(350);
+  const secondMotionFrame = await inspectPreviewEffects(cdpConnection);
+  const cameraTransformChanged = firstMotionFrame.cameraTransform !== secondMotionFrame.cameraTransform;
+
+  const playedAll = await evaluate(cdpConnection, `(() => {
+    const button = [...document.querySelectorAll('.hv-reference-panel-head button')]
+      .find((item) => item.textContent?.includes('连播全部'));
+    if (!(button instanceof HTMLButtonElement)) return false;
+    button.click();
+    return true;
+  })()`);
+  if (!playedAll) throw new Error('Continuous preview control was unavailable.');
+  let transitionOverlayObserved = false;
+  await waitFor(
+    async () => {
+      const state = await inspectPreviewEffects(cdpConnection);
+      transitionOverlayObserved ||= state.transitionOverlayVisible;
+      return transitionOverlayObserved && state.activeSceneTemplate && state.previewRuntimeReady;
+    },
+    5_000,
+    'real scene transition overlay',
+  );
+
+  const beforeLayout = await inspectPreviewEffects(cdpConnection);
+  const layoutOpened = await evaluate(cdpConnection, `(() => {
+    const button = document.querySelector('.hv-reference-thumb-actions .hv-scene-template-action');
+    if (!(button instanceof HTMLButtonElement) || button.disabled) return false;
+    button.click();
+    return true;
+  })()`);
+  if (!layoutOpened) throw new Error('Scene layout control was unavailable.');
+  await waitFor(
+    async () => evaluate(cdpConnection, `document.querySelectorAll('.hv-template-grid > button').length === 29`),
+    5_000,
+    'compatible scene layouts',
+  );
+  const layoutSelected = await evaluate(cdpConnection, `(() => {
+    const button = [...document.querySelectorAll('.hv-template-grid > button')]
+      .find((item) => item.querySelector('strong')?.textContent?.trim() === '满屏金句');
+    if (!(button instanceof HTMLButtonElement) || button.disabled) return false;
+    button.click();
+    return true;
+  })()`);
+  if (!layoutSelected) throw new Error('Compatible zero-material layout was unavailable.');
+  await waitFor(
+    async () => {
+      const state = await inspectPreviewEffects(cdpConnection);
+      return state.activeSceneTemplate === 'full-quote' && state.previewRuntimeReady && state.titleGeometry;
+    },
+    10_000,
+    'rendered scene layout change',
+  );
+  const afterLayout = await inspectPreviewEffects(cdpConnection);
+  const layoutGeometryChanged = Boolean(beforeLayout.titleGeometry && afterLayout.titleGeometry
+    && (Math.abs(beforeLayout.titleGeometry.y - afterLayout.titleGeometry.y) > 2
+      || Math.abs(beforeLayout.titleGeometry.width - afterLayout.titleGeometry.width) > 2));
+  return {
+    initial,
+    ...afterLayout,
+    saved,
+    playbackAdvanced: firstMotionFrame.previewTime > 0.08,
+    cameraTransformChanged,
+    transitionOverlayObserved,
+    layoutGeometryChanged,
+    playbackFrames: [firstMotionFrame.previewTime, secondMotionFrame.previewTime],
+    cameraTransforms: [firstMotionFrame.cameraTransform, secondMotionFrame.cameraTransform],
+    beforePlayback,
+  };
 }
 
 async function inspectConfigControls(cdpConnection) {

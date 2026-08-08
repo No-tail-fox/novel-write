@@ -295,7 +295,7 @@ export function createHtmlVideoPipelineData(
     throw invalidPipeline(`source text exceeds ${MAX_HTML_VIDEO_SOURCE_CHARS} characters`);
   }
   const resolvedConfig = createHtmlVideoJobConfig(config);
-  const scenes = planHtmlVideoScenes(copy, resolvedConfig.maxScenes);
+  const scenes = planHtmlVideoScenes(copy, resolvedConfig.maxScenes, resolvedConfig.foreground);
   const data: HtmlVideoPipelineDataV2 = {
     version: 2,
     revision: 0,
@@ -1215,27 +1215,34 @@ function invalidPipeline(reason: string): Error {
   return new Error(`HTML video pipeline ${reason}.`);
 }
 
-export function planHtmlVideoScenes(copy: string, maxScenes: number): HtmlVideoScenePlan[] {
+export function planHtmlVideoScenes(
+  copy: string,
+  maxScenes: number,
+  foreground: boolean = HTML_VIDEO_JOB_DEFAULTS.foreground,
+): HtmlVideoScenePlan[] {
   const sceneLimit = requireHtmlVideoMaxScenes(maxScenes, 'maxScenes');
   if (copy.length > MAX_HTML_VIDEO_SOURCE_CHARS) {
     throw invalidPipeline(`source text exceeds ${MAX_HTML_VIDEO_SOURCE_CHARS} characters`);
   }
   const chunks = splitCopyIntoSceneTexts(copy, sceneLimit);
+  const templates = foreground
+    ? ['center-focus', 'left-text-right-object', 'right-text-left-object', 'person-focus'] as const
+    : ['full-image', 'full-quote', 'kinetic-copy', 'cinematic-end'] as const;
   return chunks.map((text, index) => ({
     index: index + 1,
     narration: text,
     title: shortSceneTitle(text, index + 1),
     captions: splitCaptionLines(text),
-    sceneTemplate: index % 2 === 0 ? 'cinematic-title' : 'foreground-card',
+    sceneTemplate: templates[index % templates.length],
     background: {
-      prompt: appendBoundedSuffix(text, '，电影感背景，适合 HTML 动画视频'),
+      prompt: appendBoundedSuffix(text, '，对应情节发生的环境，空间层次清晰，氛围贴合旁白情绪，画面无文字'),
     },
-    elements: [
-      {
-        slot: 0,
-        prompt: appendBoundedSuffix(text, ' 的关键人物或物件，透明 PNG 前景素材'),
-      },
-    ],
+    elements: foreground
+      ? [{
+          slot: 0,
+          prompt: appendBoundedSuffix(text, '中的关键人物或代表性物件，单一主体，完整轮廓'),
+        }]
+      : [],
   }));
 }
 

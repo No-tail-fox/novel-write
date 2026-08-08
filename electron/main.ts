@@ -28,7 +28,7 @@ import {
   type OrdinaryTaskCoverImageProcessor,
   type OrdinaryTaskCoverInspection,
 } from '../src/shared/ordinary-task-cover';
-import { applyHtmlVideoSceneChanges, createHtmlVideoTaskInput, htmlVideoVisibleSteps, isHtmlVideoTask, MAX_HTML_VIDEO_ELEMENTS_PER_SCENE, parseHtmlVideoPipelineData, prepareHtmlVideoPipelineForRerender, recoverHtmlVideoPipelineDataForRetry, type HtmlVideoPipelineRetryPatch } from '../src/shared/html-video-workflow';
+import { applyHtmlVideoConfigChanges, applyHtmlVideoSceneChanges, createHtmlVideoTaskInput, htmlVideoVisibleSteps, isHtmlVideoTask, MAX_HTML_VIDEO_ELEMENTS_PER_SCENE, parseHtmlVideoPipelineData, prepareHtmlVideoPipelineForRerender, recoverHtmlVideoPipelineDataForRetry, type HtmlVideoPipelineRetryPatch } from '../src/shared/html-video-workflow';
 import { assertHyperframesSource, GSAP_RUNTIME_FILENAME, HYPERFRAMES_RUNTIME_FILENAME, MAX_HYPERFRAMES_SOURCE_BYTES } from '../src/shared/hyperframes';
 import { generateConfiguredVoicePreview } from '../src/shared/media-providers';
 import { mergeMinimaxCloneVoice } from '../src/shared/minimax-clone-voices';
@@ -2403,6 +2403,17 @@ trustedHandle('html-video:create-task', async (_event, input: CreateTaskInput) =
 
 trustedHandle('html-video:update-config', (_event, input: { id: string; changes: HtmlVideoConfigChange[] }) =>
   runHistoryGovernanceMutation('task', input.id, async (database) => {
+    const task = await getEditableHtmlVideoTask(database, input.id);
+    const applied = applyHtmlVideoConfigChanges(parseHtmlVideoPipelineData(task.pipelineData), input.changes);
+    if (applied.invalidateFrom === 'preview') {
+      const pipeline = await rebuildHtmlVideoEditorialPreviews(database, task, applied.pipeline);
+      return persistHtmlVideoEditorialMutation(database, task, pipeline, {
+        type: 'html_video_config_update',
+        tool: 'preview-editor',
+        detail: '已更新预览参数并重新生成动画预览。',
+        data: { changedFields: applied.changedFields, invalidateFrom: applied.invalidateFrom },
+      });
+    }
     const result = await database.updateHtmlVideoTaskConfig(input.id, input.changes);
     return await enqueueAppDelta(() => ({ kind: 'task-upsert', task: result.task }));
   }));

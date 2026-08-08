@@ -936,6 +936,8 @@ describe('electron ipc contract', () => {
     expect(main).toContain("trustedHandle('html-video:create-task'");
     const configUpdate = handlerSource(main, 'html-video:update-config');
     expect(configUpdate).toContain("runHistoryGovernanceMutation('task', input.id");
+    expect(configUpdate).toContain("applied.invalidateFrom === 'preview'");
+    expect(configUpdate).toContain('rebuildHtmlVideoEditorialPreviews');
     expect(configUpdate).toContain('database.updateHtmlVideoTaskConfig(input.id, input.changes)');
     expect(configUpdate).toContain("kind: 'task-upsert'");
     expect(configUpdate).not.toContain('publishTaskEvent');

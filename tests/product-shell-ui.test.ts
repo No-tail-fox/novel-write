@@ -1355,10 +1355,10 @@ describe('product shell ui', () => {
     expect(page).toContain('generation: mediaRetryRevision');
     expect(page).toContain('onMediaElementError={markMediaElementFailed}');
     expect(page).toContain('onMediaElementReady={markMediaElementReady}');
-    expect(countOccurrences(page, 'onError={() => onMediaElementError(')).toBe(6);
-    expect(countOccurrences(page, 'onLoad={() => onMediaElementReady(')).toBe(4);
+    expect(countOccurrences(page, 'onError={() => onMediaElementError(')).toBe(5);
+    expect(countOccurrences(page, 'onLoad={() => onMediaElementReady(')).toBe(3);
     expect(countOccurrences(page, 'onCanPlay={() => onMediaElementReady(')).toBe(2);
-    expect(countOccurrences(page, 'htmlVideoMediaElementKey(task.id,')).toBe(6);
+    expect(countOccurrences(page, 'htmlVideoMediaElementKey(task.id,')).toBe(5);
   });
 
   it('rejects late HTML media errors unless their task, path set, and retry generation are still current', async () => {

@@ -394,7 +394,7 @@ function createHtmlVideoLlmProviders(
       try {
         return {
           scenes: validateHtmlVideoPlanningContract(validateHtmlVideoScenePlans(
-            result.scenes,
+            repairHtmlVideoPlanningSlots(result.scenes, input.config.foreground !== false),
             input.config.maxScenes ?? MAX_HTML_VIDEO_SCENES,
           ), input.config.foreground !== false),
         };
@@ -403,6 +403,25 @@ function createHtmlVideoLlmProviders(
       }
     },
   };
+}
+
+export function repairHtmlVideoPlanningSlots(
+  scenes: HtmlVideoScenePlan[],
+  foreground: boolean,
+): HtmlVideoScenePlan[] {
+  return scenes.map((scene) => {
+    if (!Array.isArray(scene?.elements)) return scene;
+    const elements = foreground ? scene.elements : [];
+    const currentTemplate = HTML_VIDEO_SCENE_TEMPLATES.find((template) => template.id === scene.sceneTemplate);
+    const template = currentTemplate?.materialSlots === elements.length
+      ? currentTemplate
+      : HTML_VIDEO_SCENE_TEMPLATES.find((candidate) => candidate.materialSlots === elements.length);
+    return {
+      ...scene,
+      sceneTemplate: template?.id ?? scene.sceneTemplate,
+      elements: elements.map((element, slot) => ({ ...element, slot })),
+    };
+  });
 }
 
 export function buildHtmlVideoPlanningSystemPrompt(config: HtmlVideoPlanningInput['config']): string {

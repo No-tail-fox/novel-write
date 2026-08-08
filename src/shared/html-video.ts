@@ -494,10 +494,12 @@ function buildSceneHtml(scene: {
     }
     .frame[data-scene-template="split-compare"] .scene-image-region { right: 50%; width: 50%; }
     .frame[data-scene-template="split-compare"] .scene-foreground {
-      inset: 10% 0 8% 50%;
-      width: 50%;
+      inset: 12% auto 10%;
+      width: 52%;
       height: 82%;
     }
+    .frame[data-scene-template="split-compare"] #foreground-1 { left: -2%; object-position: left bottom; }
+    .frame[data-scene-template="split-compare"] #foreground-2 { right: -2%; object-position: right bottom; }
     .frame[data-scene-template="center-burst"] .scene-foreground {
       inset: 10% -8% -4%;
       width: 116%;
@@ -533,11 +535,13 @@ function buildSceneHtml(scene: {
       background: linear-gradient(180deg, transparent, rgba(5, 7, 8, 0.9) 28%);
     }
     .frame[data-scene-template="diagonal-flow"] .scene-foreground {
-      inset: 16% -8% 1% 30%;
-      width: 82%;
-      height: 83%;
+      inset: auto;
+      width: 58%;
+      height: 58%;
       transform: rotate(-4deg);
     }
+    .frame[data-scene-template="diagonal-flow"] #foreground-1 { top: 31%; left: -4%; }
+    .frame[data-scene-template="diagonal-flow"] #foreground-2 { right: -3%; bottom: 2%; }
     .frame[data-scene-template="diagonal-flow"] .title {
       left: 5%;
       width: 62%;
@@ -555,10 +559,13 @@ function buildSceneHtml(scene: {
     .frame[data-scene-template="orbit-focus"] #foreground-4 { top: 32%; left: 0; }
     .frame[data-scene-template="parallax-focus"] .scene-image { filter: saturate(0.86) contrast(1.08); }
     .frame[data-scene-template="parallax-focus"] .scene-foreground {
-      inset: 7% -7% -7%;
-      width: 114%;
-      height: 100%;
+      inset: auto;
+      object-position: center bottom;
     }
+    .frame[data-scene-template="parallax-focus"] #foreground-1 { right: -9%; bottom: -4%; width: 78%; height: 88%; z-index: 3; }
+    .frame[data-scene-template="parallax-focus"] #foreground-2 { left: -5%; bottom: 12%; width: 48%; height: 52%; }
+    .frame[data-scene-template="parallax-focus"] #foreground-3 { top: 18%; right: 2%; width: 40%; height: 42%; }
+    .frame[data-scene-template="parallax-focus"] #foreground-4 { top: 35%; left: 29%; width: 34%; height: 36%; z-index: 4; }
     .frame[data-scene-template="dialogue-duo"] .scene-foreground {
       inset: auto;
       bottom: 5%;
@@ -888,35 +895,128 @@ function buildSceneHtml(scene: {
     function narrationAudio() {
       return typeof document === 'undefined' ? null : document.querySelector('#scene-narration');
     }
+    let playbackTicker = 0;
+    let playbackOffset = 0;
+    let previewMotion = null;
+    function timelineTime() {
+      return typeof tl.time === 'function' ? Math.min(tl.time(), window.__duration) : 0;
+    }
+    function timelinePlaying() {
+      return typeof tl.paused === 'function' ? !tl.paused() : false;
+    }
+    function postPlaybackState(state) {
+      window.parent.postMessage({
+        type: 'hvruntime',
+        state,
+        time: timelineTime(),
+        duration: window.__duration,
+        playing: timelinePlaying(),
+      }, '*');
+    }
+    function stopPlaybackTicker() {
+      if (!playbackTicker) return;
+      window.clearInterval(playbackTicker);
+      playbackTicker = 0;
+    }
+    function tickPlaybackClock() {
+      const next = Math.min(window.__duration, playbackOffset + (1 / 30));
+      playbackOffset = next;
+      tl.seek(next, false);
+      postTick();
+      if (next >= window.__duration - 0.001) {
+        playbackOffset = window.__duration;
+        stopPlaybackTicker();
+        postPlaybackState('ended');
+      }
+    }
+    function startPlaybackTicker() {
+      stopPlaybackTicker();
+      playbackTicker = window.setInterval(tickPlaybackClock, 33);
+      tickPlaybackClock();
+    }
+    function previewMotionFrames(preset) {
+      if (preset === 'zoom_in') return [{ transform: 'scale(1.01)' }, { transform: 'scale(1.13)' }];
+      if (preset === 'zoom_out') return [{ transform: 'scale(1.13)' }, { transform: 'scale(1.01)' }];
+      if (preset === 'zoom_pan_up') return [{ transform: 'scale(1.07) translateY(3%)' }, { transform: 'scale(1.15) translateY(-3%)' }];
+      if (preset === 'zoom_pan_down') return [{ transform: 'scale(1.07) translateY(-3%)' }, { transform: 'scale(1.15) translateY(3%)' }];
+      if (preset === 'pan_left') return [{ transform: 'scale(1.12) translateX(3%)' }, { transform: 'scale(1.12) translateX(-3%)' }];
+      if (preset === 'pan_right') return [{ transform: 'scale(1.12) translateX(-3%)' }, { transform: 'scale(1.12) translateX(3%)' }];
+      return null;
+    }
+    function syncPreviewMotion(time) {
+      if (!previewMotion) return;
+      previewMotion.currentTime = Math.max(0, Math.min(window.__duration, Number(time) || 0)) * 1000;
+    }
+    function setPreviewMotion(preset) {
+      previewMotion?.cancel();
+      previewMotion = null;
+      const region = document.querySelector('.scene-image-region');
+      if (!region) return;
+      region.style.removeProperty('transform');
+      const frames = previewMotionFrames(preset);
+      if (!frames || typeof region.animate !== 'function') {
+        postPlaybackState('motion-ready');
+        return;
+      }
+      previewMotion = region.animate(frames, {
+        duration: Math.max(1, window.__duration * 1000),
+        easing: 'linear',
+        fill: 'both',
+      });
+      previewMotion.pause();
+      syncPreviewMotion(timelineTime());
+      postPlaybackState('motion-ready');
+    }
     function postTick() {
-      const time = typeof tl.time === 'function' ? Math.min(tl.time(), window.__duration) : 0;
-      window.parent.postMessage({ type: 'hvtick', time, duration: window.__duration }, '*');
+      const time = timelineTime();
+      syncPreviewMotion(time);
+      window.parent.postMessage({ type: 'hvtick', time, duration: window.__duration, playing: timelinePlaying() }, '*');
     }
     if (typeof tl.eventCallback === 'function') {
       tl.eventCallback('onUpdate', postTick);
-      tl.eventCallback('onComplete', postTick);
+      tl.eventCallback('onComplete', () => {
+        postTick();
+        stopPlaybackTicker();
+        postPlaybackState('ended');
+      });
     }
     window.addEventListener('message', (event) => {
       const message = event && event.data;
       if (!message || typeof message.type !== 'string') return;
       const audio = narrationAudio();
-      if (message.type === 'hvplay') {
+      if (message.type === 'hvprobe') {
+        postPlaybackState(window.__ready ? 'ready' : 'loading');
+      } else if (message.type === 'hvpreviewmotion') {
+        setPreviewMotion(String(message.preset || 'auto'));
+      } else if (message.type === 'hvplay') {
+        playbackOffset = timelineTime();
         tl.play();
         if (audio) { audio.currentTime = typeof tl.time === 'function' ? tl.time() : 0; void audio.play().catch(() => undefined); }
         postTick();
+        startPlaybackTicker();
+        postPlaybackState('playing');
       } else if (message.type === 'hvpause') {
+        playbackOffset = timelineTime();
         tl.pause();
         audio?.pause();
+        stopPlaybackTicker();
         postTick();
+        postPlaybackState('paused');
       } else if (message.type === 'hvseek') {
         const time = Math.max(0, Math.min(window.__duration, Number(message.time) || 0));
+        playbackOffset = time;
         tl.seek(time, false);
         if (audio) audio.currentTime = time;
-        window.parent.postMessage({ type: 'hvtick', time, duration: window.__duration }, '*');
+        stopPlaybackTicker();
+        postTick();
+        postPlaybackState('paused');
       } else if (message.type === 'hvrestart') {
+        playbackOffset = 0;
         tl.seek(0, false).play();
         if (audio) { audio.currentTime = 0; void audio.play().catch(() => undefined); }
         postTick();
+        startPlaybackTicker();
+        postPlaybackState('playing');
       }
     });
     window.addEventListener('DOMContentLoaded', () => {
@@ -926,6 +1026,7 @@ function buildSceneHtml(scene: {
       fitScene();
       fitCaps();
       window.addEventListener('resize', fitScene);
+      postPlaybackState('ready');
       postStorydreamRuntimeReady();
       postHyperframesMessage('ready');
       postHyperframesMessage('timeline', {
