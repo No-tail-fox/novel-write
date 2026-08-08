@@ -1,5 +1,5 @@
 import { readFile } from 'node:fs/promises';
-import type { PipelineArtifact, Task, TaskArtifactAssetPreview, TaskArtifactImageErrorPreview, TaskArtifactSnapshot, TaskArtifactStepPreview } from './types';
+import type { PipelineArtifact, Task, TaskArtifactAssetPreview, TaskArtifactImageErrorPreview, TaskArtifactSnapshot, TaskArtifactStepPreview, TaskArtifactVideoPreview } from './types';
 
 interface PipelineStateFile {
   taskId?: string;
@@ -9,6 +9,7 @@ interface PipelineStateFile {
   assets?: {
     cover?: TaskArtifactAssetPreview[];
     images?: TaskArtifactAssetPreview[];
+    videos?: TaskArtifactVideoPreview[];
     imageErrors?: TaskArtifactImageErrorPreview[];
     narration?: TaskArtifactAssetPreview[];
   };
@@ -34,6 +35,7 @@ export async function readTaskArtifactSnapshot(task: Pick<Task, 'id' | 'artifact
       assets: {
         cover: Array.isArray(state.assets?.cover) ? state.assets.cover : [],
         images: Array.isArray(state.assets?.images) ? state.assets.images : [],
+        videos: Array.isArray(state.assets?.videos) ? state.assets.videos : [],
         imageErrors: Array.isArray(state.assets?.imageErrors) ? state.assets.imageErrors : [],
         narration: Array.isArray(state.assets?.narration) ? state.assets.narration : [],
       },
@@ -57,6 +59,7 @@ function emptySnapshot(task: Pick<Task, 'id' | 'artifactStatePath' | 'outputDir'
     assets: {
       cover: [],
       images: [],
+      videos: [],
       imageErrors: [],
       narration: [],
     },

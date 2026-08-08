@@ -10,6 +10,7 @@ import { makeFallbackApi } from "./browser-fallback";
 import type { RendererAppState as AppState } from "./route-types";
 import { AppRoutes } from './AppRoutes';
 import { AppShell } from './AppShell';
+import { taskWorkspaceView } from './navigation';
 import { RouteErrorBoundary } from './RouteErrorBoundary';
 
 applyStoredTheme(defaultUiPreferences.theme);
@@ -26,6 +27,7 @@ export function App() {
   }, []);
   const [activeView, setActiveView] = useState<ShellView>('new-task');
   const [selectedTaskId, setSelectedTaskId] = useState<string | null>(null);
+  const [requestedHtmlTaskId, setRequestedHtmlTaskId] = useState('');
   const [historyFamilyEpochs, setHistoryFamilyEpochs] = useState<HistoryFamilyEpochs>({});
   const [saveTone, setSaveTone] = useState<'saved' | 'saving' | 'dirty'>('saved');
   const isBrowserPreview = !window.storydream && !window.storybound;
@@ -188,6 +190,10 @@ export function App() {
 
   const onActiveHtmlTaskChange = useCallback((taskId: string) => {
     activeHtmlTaskIdRef.current = taskId || null;
+  }, []);
+
+  const onRequestedHtmlTaskHandled = useCallback((taskId: string) => {
+    setRequestedHtmlTaskId((current) => current === taskId ? '' : current);
   }, []);
 
   const onActiveViralAnalysisChange = useCallback((analysisId: string) => {
@@ -523,6 +529,7 @@ export function App() {
 
   async function navigate(view: ShellView) {
     startTransition(() => {
+      setRequestedHtmlTaskId('');
       if (view !== 'task-detail') {
         setSelectedTaskId(null);
       }
@@ -550,13 +557,28 @@ export function App() {
   }
 
   async function openTaskDetail(taskId: string) {
+    let task = state.tasks.find((candidate) => candidate.id === taskId) ?? null;
+    if (!task) {
+      const lookup = await shellAction.run(async () => {
+        const detail = await api.getTaskDetail(taskId);
+        if (!detail) throw new Error('任务不存在或已被移除。');
+        return detail;
+      });
+      if (!lookup.ok) return;
+      task = lookup.value;
+    }
+    const targetView = taskWorkspaceView(task.taskType);
+    selectedTaskIdRef.current = targetView === 'task-detail' ? taskId : null;
+    activeHtmlTaskIdRef.current = targetView === 'html-video' ? taskId : null;
+    activeViewRef.current = targetView;
     startTransition(() => {
-      setSelectedTaskId(taskId);
-      setActiveView('task-detail');
+      setSelectedTaskId(targetView === 'task-detail' ? taskId : null);
+      setRequestedHtmlTaskId(targetView === 'html-video' ? taskId : '');
+      setActiveView(targetView);
     });
     setSaveTone('saving');
     const result = await shellAction.run(async () => {
-      const next = await api.saveUiPreferences({ activeView: 'task-detail' });
+      const next = await api.saveUiPreferences({ activeView: targetView });
       applyState(next);
       setSaveTone('saved');
     });
@@ -617,6 +639,8 @@ export function App() {
           isHistoryTombstoned={isHistoryTombstoned}
           historyFamilyEpochs={historyFamilyEpochs}
           refreshTaskDetail={refreshTaskDetail}
+          requestedHtmlTaskId={requestedHtmlTaskId}
+          onRequestedHtmlTaskHandled={onRequestedHtmlTaskHandled}
           onActiveHtmlTaskChange={onActiveHtmlTaskChange}
           refreshViralEvents={refreshViralEvents}
           onActiveViralAnalysisChange={onActiveViralAnalysisChange}

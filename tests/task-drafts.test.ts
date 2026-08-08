@@ -44,6 +44,7 @@ describe('new task local draft', () => {
         styleManuallyOverridden: true,
         draftTemplateManuallyOverridden: true,
         ratioManuallyOverridden: true,
+        aiSources: ['web', 'builtin-knowledge'],
         webSearchProviders: ['bing', 'baidu', 'sogou', 'toutiao'],
         selectedSearchSourceIds: ['source-1'],
         selectedSources: [{ source: 'web', provider: 'baidu', title: '来源', url: 'https://example.com', content: '证据正文' }],

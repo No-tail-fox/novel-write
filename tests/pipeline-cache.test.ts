@@ -4,7 +4,7 @@ import { tmpdir } from 'node:os';
 import { join, relative } from 'node:path';
 import { FileDatabase } from '@shared/storage';
 import { runTask } from '@shared/runner';
-import { markSceneImageForRegeneration, markSceneImagesForRegeneration, markSceneNarrationForRegeneration, markTaskDraftForRepack, markTaskStepForRerun, replaceSceneImageAssets, updateSceneImagePrompt, updateTaskSubtitleLines } from '@shared/pipeline-cache';
+import { markSceneImageForRegeneration, markSceneImagesForRegeneration, markSceneNarrationForRegeneration, markTaskDraftForRepack, markTaskStepForRerun, removeSceneVideoAsset, replaceSceneImageAssets, replaceSceneVideoAsset, updateSceneImagePrompt, updateSceneVideoTrim, updateTaskSubtitleLines } from '@shared/pipeline-cache';
 import type { ImagePrompt, PipelineArtifact, StoryboardScene, Task, TaskStepRerunMode } from '@shared/types';
 import type { PyJianYingBridgeInput } from '@shared/jianying-bridge';
 
@@ -661,6 +661,65 @@ describe('pipeline cache and retry', () => {
       expect(next.steps['6'].completedAt).toBeUndefined();
       expect(next.draft.draftDir).toBe('draft-dir');
       expect(next.artifact.subtitles.srt).toContain('one');
+    } finally {
+      await rm(dir, { recursive: true, force: true });
+    }
+  });
+
+  it('stores a scene video as a reversible overlay and clamps its trim to the scene duration', async () => {
+    const dir = await mkdtemp(join(tmpdir(), 'storybound-scene-video-cache-'));
+    const statePath = join(dir, 'state.json');
+    try {
+      await writeFile(statePath, JSON.stringify(createCompletedPipelineState('task-scene-video'), null, 2), 'utf8');
+      const video = {
+        sceneId: 1,
+        path: join(dir, '001.mp4'),
+        source: 'local-upload' as const,
+        libraryId: 'library-1',
+        originalName: 'clip.mov',
+        durationMs: 4_000,
+        width: 1080,
+        height: 1920,
+        trimStartMs: 9_000,
+        fit: 'cover' as const,
+        muted: true as const,
+      };
+
+      const replaced = await replaceSceneVideoAsset(statePath, video);
+      expect(replaced.video.trimStartMs).toBe(3_000);
+      let state = JSON.parse(await readFile(statePath, 'utf8'));
+      expect(state.assets.images).toHaveLength(2);
+      expect(state.assets.videos).toEqual([replaced.video]);
+      expect(state.steps['6'].status).toBe('pending');
+      expect(state.draft).toBeUndefined();
+
+      const trimmed = await updateSceneVideoTrim(statePath, 1, 1_500);
+      expect(trimmed.video.trimStartMs).toBe(1_500);
+      const removed = await removeSceneVideoAsset(statePath, 1);
+      expect(removed.removed).toBe(true);
+      state = JSON.parse(await readFile(statePath, 'utf8'));
+      expect(state.assets.videos).toEqual([]);
+      expect(state.assets.images.map((item: { path: string }) => item.path)).toEqual(['1.png', '2.png']);
+    } finally {
+      await rm(dir, { recursive: true, force: true });
+    }
+  });
+
+  it('keeps video overlays during image regeneration but clears them when storyboard scenes are regenerated', async () => {
+    const dir = await mkdtemp(join(tmpdir(), 'storybound-scene-video-rerun-'));
+    const statePath = join(dir, 'state.json');
+    const completed = createCompletedPipelineState('task-scene-video-rerun');
+    const video = { sceneId: 1, path: '1.mp4', source: 'local-library', originalName: '1.mp4', durationMs: 4_000, width: 1080, height: 1920, trimStartMs: 0, fit: 'cover', muted: true };
+    try {
+      await writeFile(statePath, JSON.stringify({ ...completed, assets: { ...completed.assets, videos: [video] } }, null, 2), 'utf8');
+      await markTaskStepForRerun(statePath, 4, 'regenerate');
+      let state = JSON.parse(await readFile(statePath, 'utf8'));
+      expect(state.assets.videos).toEqual([video]);
+
+      await writeFile(statePath, JSON.stringify({ ...completed, assets: { ...completed.assets, videos: [video] } }, null, 2), 'utf8');
+      await markTaskStepForRerun(statePath, 2, 'regenerate');
+      state = JSON.parse(await readFile(statePath, 'utf8'));
+      expect(state.assets.videos).toEqual([]);
     } finally {
       await rm(dir, { recursive: true, force: true });
     }

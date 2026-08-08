@@ -10,9 +10,9 @@ const queryOnlyMethods = new Set([
   'listViralAnalyses', 'getViralAnalysisDetail', 'listViralEvents', 'listImageLabRecords',
   'getImageLabRecordDetail', 'listVoiceLabRecords', 'getVoiceLabRecordDetail', 'listPromptTemplates',
   'getPromptTemplateDetail', 'listDraftTemplates', 'getDraftTemplateDetail', 'listMinimaxCloneVoices',
-  'listBookSelections', 'listPersonAssets', 'listPersonAssetImages', 'getHtmlVideoMediaUrl',
+  'listBookSelections', 'listPersonAssets', 'listPersonAssetImages', 'getHtmlVideoMediaUrl', 'getTaskMediaUrl',
   'getHtmlVideoCompositionSource', 'lintHtmlVideoCompositionSource',
-  'getViralAnalysisResult', 'getTaskArtifacts', 'readAssetDataUrl', 'getJianyingEffectCatalog', 'onAppDelta',
+  'getViralAnalysisResult', 'getTaskArtifacts', 'readAssetDataUrl', 'getJianyingEffectCatalog', 'listSceneVideoLibrary', 'onAppDelta',
 ]);
 
 const routeEntryPaths = {

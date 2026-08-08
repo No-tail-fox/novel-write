@@ -1,8 +1,8 @@
 import { useEffect, useRef, useState } from 'react';
 import { Copy, FolderOpen, LayoutTemplate, Plus, Save, Trash2, Upload } from 'lucide-react';
-import type { AppMutationResult, DraftTemplate, DraftTextBorder, JianyingEffectCatalog } from '../../shared/types';
+import type { AppMutationResult, DraftFontFamily, DraftTemplate, DraftTextBorder, JianyingEffectCatalog } from '../../shared/types';
 import type { StoryDreamApi } from '../../shared/storydream-api';
-import { draftImageMotions, draftTemplates as builtinDraftTemplates, imageAnimations } from '../../shared/templates';
+import { draftFontCssFamily, draftFontGroups, draftFontOptions, draftImageFitLabel, draftImageFitOptions, draftImageMotions, draftTemplates as builtinDraftTemplates, imageAnimations } from '../../shared/templates';
 import { convertCozeWorkflowToDraftTemplate, convertManyCozeWorkflowsToDraftTemplates, type CozeWorkflowTemplateConversionResult } from '../../shared/coze-workflow-converter';
 import { useAsyncAction } from '../../ui/async-action';
 import { FormField as Field } from '../../components/FormField';
@@ -14,7 +14,7 @@ import { AsyncActionFeedback as InlineActionFeedback } from '../../components/As
 import { ConfirmDialog } from '../../components/ConfirmDialog';
 import type { ApplyMutationResult, RendererAppState as AppState } from '../../app/route-types';
 import { fallbackEffectCatalog } from '../../shared/editorial-options';
-import { DRAFT_TEXT_WIDTH_MAX, DRAFT_TEXT_WIDTH_MIN, DraftTemplatePreview, EditableDraftCanvas, applyDraftCanvasRatio, applyDraftImageRatio, clamp, cloneDraftTemplate, firstVisibleDraftLayer, isDraftLayerVisible, normalizeColorInput, type DraftCanvasLayer } from './DraftCanvas';
+import { DRAFT_TEXT_WIDTH_MAX, DRAFT_TEXT_WIDTH_MIN, DraftTemplatePreview, EditableDraftCanvas, applyDraftCanvasRatio, applyDraftImageRatio, clamp, cloneDraftTemplate, draftCanvasSelectionLayer, draftImageFrameRect, draftImageMediaRect, firstVisibleDraftCanvasSelection, isDraftCanvasSelectionVisible, normalizeColorInput, updateDraftImageFrameRect, updateDraftImageMediaScale, type DraftCanvasLayer, type DraftCanvasSelection } from './DraftCanvas';
 
 export function DraftTemplatesPage({ api, state, applyState }: { api: StoryDreamApi; state: AppState; applyState: ApplyMutationResult }) {
   const [editingId, setEditingId] = useState<string | null>(null);
@@ -23,7 +23,7 @@ export function DraftTemplatesPage({ api, state, applyState }: { api: StoryDream
   const editingTemplate = editingId ? galleryTemplates.find((template) => template.id === editingId) ?? null : null;
   const [draft, setDraft] = useState<DraftTemplate | null>(null);
   const [animationPreview, setAnimationPreview] = useState<string | null>(null);
-  const [selectedLayer, setSelectedLayer] = useState<DraftCanvasLayer>('title');
+  const [selectedLayer, setSelectedLayer] = useState<DraftCanvasSelection>('title');
   const [expandedLayerPanels, setExpandedLayerPanels] = useState<Record<DraftCanvasLayer, boolean>>({
     image: true,
     title: false,
@@ -98,19 +98,21 @@ export function DraftTemplatesPage({ api, state, applyState }: { api: StoryDream
   }, [api, draftTemplateAction.reportError]);
 
   useEffect(() => {
-    if (!draft || isDraftLayerVisible(draft, selectedLayer)) return;
-    const nextLayer = firstVisibleDraftLayer(draft);
+    if (!draft || isDraftCanvasSelectionVisible(draft, selectedLayer)) return;
+    const nextLayer = firstVisibleDraftCanvasSelection(draft);
+    const nextPanel = draftCanvasSelectionLayer(nextLayer);
     setSelectedLayer(nextLayer);
-    setExpandedLayerPanels((current) => (current[nextLayer] ? current : { ...current, [nextLayer]: true }));
-    setLayerPanelScrollRequest((current) => ({ layer: nextLayer, id: (current?.id ?? 0) + 1 }));
+    setExpandedLayerPanels((current) => (current[nextPanel] ? current : { ...current, [nextPanel]: true }));
+    setLayerPanelScrollRequest((current) => ({ layer: nextPanel, id: (current?.id ?? 0) + 1 }));
   }, [draft, selectedLayer]);
 
   useEffect(() => {
     if (!editorReady || !draft) return;
-    const nextLayer = isDraftLayerVisible(draft, selectedLayer) ? selectedLayer : firstVisibleDraftLayer(draft);
+    const nextLayer = isDraftCanvasSelectionVisible(draft, selectedLayer) ? selectedLayer : firstVisibleDraftCanvasSelection(draft);
+    const nextPanel = draftCanvasSelectionLayer(nextLayer);
     setSelectedLayer(nextLayer);
-    setExpandedLayerPanels((current) => (current[nextLayer] ? current : { ...current, [nextLayer]: true }));
-    setLayerPanelScrollRequest((current) => ({ layer: nextLayer, id: (current?.id ?? 0) + 1 }));
+    setExpandedLayerPanels((current) => (current[nextPanel] ? current : { ...current, [nextPanel]: true }));
+    setLayerPanelScrollRequest((current) => ({ layer: nextPanel, id: (current?.id ?? 0) + 1 }));
   }, [editingId, editorReady]);
 
   useEffect(() => {
@@ -131,10 +133,11 @@ export function DraftTemplatesPage({ api, state, applyState }: { api: StoryDream
     return () => window.cancelAnimationFrame(frame);
   }, [editorReady, layerPanelScrollRequest]);
 
-  function handleDraftLayerSelection(layer: DraftCanvasLayer) {
+  function handleDraftLayerSelection(layer: DraftCanvasSelection) {
+    const panel = draftCanvasSelectionLayer(layer);
     setSelectedLayer(layer);
-    setExpandedLayerPanels((current) => (current[layer] ? current : { ...current, [layer]: true }));
-    setLayerPanelScrollRequest((current) => ({ layer, id: (current?.id ?? 0) + 1 }));
+    setExpandedLayerPanels((current) => (current[panel] ? current : { ...current, [panel]: true }));
+    setLayerPanelScrollRequest((current) => ({ layer: panel, id: (current?.id ?? 0) + 1 }));
   }
 
   function handleLayerPanelExpanded(layer: DraftCanvasLayer, expanded: boolean) {
@@ -353,10 +356,36 @@ export function DraftTemplatesPage({ api, state, applyState }: { api: StoryDream
               <Accordion title="图片区域" expanded={expandedLayerPanels.image} onExpandedChange={(expanded) => handleLayerPanelExpanded('image', expanded)}>
                 <ToggleField label="显示" checked={draft.image.visible} onChange={(checked) => updateDraftImage({ visible: checked })} />
                 <Segmented label="图片比例" value={draft.image.ratio} options={['9:16', '4:3', '16:9']} onChange={(value) => setDraft(applyDraftImageRatio(draft, value))} />
-                <Segmented label="适配" value={draft.image.fit} options={['cover', 'contain']} onChange={(value) => updateDraftImage({ fit: value as 'cover' | 'contain' })} />
-                <Field label="坐标"><input value={`top ${draft.image.top.toFixed(2)}, height ${draft.image.height.toFixed(2)}`} readOnly /></Field>
-                <RangeField label="垂直位置" min={-1} max={1} step={0.01} value={draft.image.top} onChange={(value) => updateDraftImage({ top: value })} />
-                <RangeField label="高度占比" min={0} max={1} step={0.01} value={draft.image.height} onChange={(value) => updateDraftImage({ height: value })} />
+                <Segmented
+                  label="图片显示"
+                  value={draft.image.fit}
+                  options={draftImageFitOptions.map((option) => option.value)}
+                  labels={draftImageFitOptions.map((option) => option.label)}
+                  onChange={(fit) => updateDraftImage({ fit })}
+                />
+                <Segmented
+                  label="编辑对象"
+                  value={selectedLayer === 'image-media' ? 'image-media' : 'image-frame'}
+                  options={draft.image.fit === 'cover' ? ['image-frame', 'image-media'] : ['image-frame']}
+                  labels={draft.image.fit === 'cover' ? ['展示框', '实际图片'] : ['展示框']}
+                  onChange={handleDraftLayerSelection}
+                />
+                {selectedLayer === 'image-media' && draft.image.fit === 'cover' ? (
+                  <>
+                    <Field label="图片坐标"><input value={`x ${draftImageMediaRect(draft).left.toFixed(2)}, y ${draftImageMediaRect(draft).top.toFixed(2)}`} readOnly /></Field>
+                    <RangeField label="图片缩放" min={1} max={8} step={0.01} value={draft.image.mediaScale} onChange={(value) => setDraft(updateDraftImageMediaScale(draft, value))} />
+                    <RangeField label="水平取景" min={0} max={1} step={0.01} value={draft.image.focusX} onChange={(focusX) => updateDraftImage({ focusX })} />
+                    <RangeField label="垂直取景" min={0} max={1} step={0.01} value={draft.image.focusY} onChange={(focusY) => updateDraftImage({ focusY })} />
+                  </>
+                ) : (
+                  <>
+                    <Field label="展示框坐标"><input value={`x ${draftImageFrameRect(draft).left.toFixed(2)}, y ${draftImageFrameRect(draft).top.toFixed(2)}`} readOnly /></Field>
+                    <RangeField label="水平位置" min={0} max={Math.max(0, 1 - draftImageFrameRect(draft).width)} step={0.01} value={draftImageFrameRect(draft).left} onChange={(left) => setDraft(updateDraftImageFrameRect(draft, { left }))} />
+                    <RangeField label="垂直位置" min={0} max={Math.max(0, 1 - draftImageFrameRect(draft).height)} step={0.01} value={draftImageFrameRect(draft).top} onChange={(top) => setDraft(updateDraftImageFrameRect(draft, { top }))} />
+                    <RangeField label="展示框宽度" min={0.08} max={1} step={0.01} value={draftImageFrameRect(draft).width} onChange={(width) => setDraft(updateDraftImageFrameRect(draft, { width }))} />
+                    <RangeField label="展示框高度" min={0.08} max={1} step={0.01} value={draftImageFrameRect(draft).height} onChange={(height) => setDraft(updateDraftImageFrameRect(draft, { height }))} />
+                  </>
+                )}
                 <AnimationPresetPicker label="动画效果" value={draft.image.animation} options={imageAnimations} previewValue={animationPreview} onPreview={setAnimationPreview} onChange={(value) => updateDraftImage({ animation: value })} />
               </Accordion>
             </div>
@@ -392,6 +421,7 @@ export function DraftTemplatesPage({ api, state, applyState }: { api: StoryDream
               <Field label="文字"><input value={draft.title.text} onChange={(event) => updateDraftTitle({ text: event.target.value })} /></Field>
               <Field label="坐标"><input value={`${draft.title.x.toFixed(2)}, ${draft.title.y.toFixed(2)}`} readOnly /></Field>
               <RangeField label="文本框宽度" min={DRAFT_TEXT_WIDTH_MIN} max={DRAFT_TEXT_WIDTH_MAX} step={0.01} value={draft.title.width} onChange={(value) => updateDraftTitle({ width: clamp(value, DRAFT_TEXT_WIDTH_MIN, DRAFT_TEXT_WIDTH_MAX) })} />
+              <DraftFontFamilyField layerLabel="主标题" value={draft.title.fontFamily} onChange={(fontFamily) => updateDraftTitle({ fontFamily })} />
               <RangeField label="字号" min={1} max={120} step={1} value={draft.title.fontSize} onChange={(value) => updateDraftTitle({ fontSize: value })} />
               <ColorField label="颜色" value={draft.title.color} onChange={(value) => updateDraftTitle({ color: value })} />
               <RangeField label="透明度" min={0} max={1} step={0.05} value={draft.title.alpha} onChange={(value) => updateDraftTitle({ alpha: value })} />
@@ -415,6 +445,7 @@ export function DraftTemplatesPage({ api, state, applyState }: { api: StoryDream
               <Field label="文字"><input value={draft.subtitle.text} onChange={(event) => updateDraftSubtitle({ text: event.target.value })} /></Field>
               <Field label="坐标"><input value={`${draft.subtitle.x.toFixed(2)}, ${draft.subtitle.y.toFixed(2)}`} readOnly /></Field>
               <RangeField label="文本框宽度" min={DRAFT_TEXT_WIDTH_MIN} max={DRAFT_TEXT_WIDTH_MAX} step={0.01} value={draft.subtitle.width} onChange={(value) => updateDraftSubtitle({ width: clamp(value, DRAFT_TEXT_WIDTH_MIN, DRAFT_TEXT_WIDTH_MAX) })} />
+              <DraftFontFamilyField layerLabel="副标题" value={draft.subtitle.fontFamily} onChange={(fontFamily) => updateDraftSubtitle({ fontFamily })} />
               <RangeField label="字号" min={1} max={72} step={1} value={draft.subtitle.fontSize} onChange={(value) => updateDraftSubtitle({ fontSize: value })} />
               <ColorField label="颜色" value={draft.subtitle.color} onChange={(value) => updateDraftSubtitle({ color: value })} />
               <RangeField label="透明度" min={0} max={1} step={0.05} value={draft.subtitle.alpha} onChange={(value) => updateDraftSubtitle({ alpha: value })} />
@@ -437,6 +468,7 @@ export function DraftTemplatesPage({ api, state, applyState }: { api: StoryDream
               <ToggleField label="显示" checked={draft.caption.visible} onChange={(checked) => updateDraftCaption({ visible: checked })} />
               <Field label="坐标"><input value={`${draft.caption.x.toFixed(2)}, ${draft.caption.y.toFixed(2)}`} readOnly /></Field>
               <RangeField label="文本框宽度" min={DRAFT_TEXT_WIDTH_MIN} max={DRAFT_TEXT_WIDTH_MAX} step={0.01} value={draft.caption.width} onChange={updateDraftCaptionWidth} />
+              <DraftFontFamilyField layerLabel="字幕" value={draft.caption.fontFamily} onChange={(fontFamily) => updateDraftCaption({ fontFamily })} />
               <RangeField label="字号" min={1} max={48} step={1} value={draft.caption.fontSize} onChange={(value) => updateDraftCaption({ fontSize: value })} />
               <ColorField label="颜色" value={draft.caption.color} onChange={(value) => updateDraftCaption({ color: value })} />
               <RangeField label="透明度" min={0} max={1} step={0.05} value={draft.caption.alpha} onChange={(value) => updateDraftCaption({ alpha: value })} />
@@ -464,6 +496,7 @@ export function DraftTemplatesPage({ api, state, applyState }: { api: StoryDream
               <Field label="坐标"><input value={`${draft.disclaimer.x.toFixed(2)}, ${draft.disclaimer.y.toFixed(2)}`} readOnly /></Field>
               <Field label="文字"><input value={draft.disclaimer.text} onChange={(event) => updateDraftDisclaimer({ text: event.target.value })} /></Field>
               <RangeField label="文本框宽度" min={DRAFT_TEXT_WIDTH_MIN} max={DRAFT_TEXT_WIDTH_MAX} step={0.01} value={draft.disclaimer.width} onChange={(value) => updateDraftDisclaimer({ width: clamp(value, DRAFT_TEXT_WIDTH_MIN, DRAFT_TEXT_WIDTH_MAX) })} />
+              <DraftFontFamilyField layerLabel="免责声明" value={draft.disclaimer.fontFamily} onChange={(fontFamily) => updateDraftDisclaimer({ fontFamily })} />
               <RangeField label="字号" min={1} max={40} step={1} value={draft.disclaimer.fontSize} onChange={(value) => updateDraftDisclaimer({ fontSize: value })} />
               <ColorField label="颜色" value={draft.disclaimer.color} onChange={(value) => updateDraftDisclaimer({ color: value })} />
               <RangeField label="透明度" min={0} max={1} step={0.05} value={draft.disclaimer.alpha} onChange={(value) => updateDraftDisclaimer({ alpha: value })} />
@@ -592,7 +625,7 @@ export function DraftTemplatesPage({ api, state, applyState }: { api: StoryDream
                 {template.isDefault ? <small>系统默认</small> : <small>本地自定义</small>}
               </div>
               <span>{template.canvas.ratio} · {template.canvas.width}x{template.canvas.height}</span>
-              <span>图片 {template.image.ratio} · {template.image.fit} · {draftImageMotions.find((option) => option.value === template.image.motion)?.label ?? template.image.animation}</span>
+              <span>图片 {template.image.ratio} · {draftImageFitLabel(template.image.fit)} · {draftImageMotions.find((option) => option.value === template.image.motion)?.label ?? template.image.animation}</span>
             </div>
             <div className={`draft-template-actions${template.isDefault ? '' : ' has-delete'}`}>
               <button className="ghost-action" type="button" onClick={() => openEditor(template)}><LayoutTemplate size={15} />编辑</button>
@@ -663,6 +696,27 @@ function AnimationPresetPicker({
         })}
       </div>
     </div>
+  );
+}
+
+function DraftFontFamilyField({ layerLabel, value, onChange }: { layerLabel: string; value: DraftFontFamily; onChange: (value: DraftFontFamily) => void }) {
+  return (
+    <Field label="字体">
+      <select
+        aria-label={`${layerLabel}字体`}
+        value={value}
+        style={{ fontFamily: draftFontCssFamily(value) }}
+        onChange={(event) => onChange(event.target.value as DraftFontFamily)}
+      >
+        {draftFontGroups.map((group) => (
+          <optgroup key={group} label={group}>
+            {draftFontOptions.filter((option) => option.group === group).map((option) => (
+              <option key={option.value} value={option.value} style={{ fontFamily: option.cssFamily }}>{option.label}</option>
+            ))}
+          </optgroup>
+        ))}
+      </select>
+    </Field>
   );
 }
 

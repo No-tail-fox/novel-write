@@ -677,7 +677,7 @@ export function SettingsPage({ api, state, applyState, navigate }: { api: StoryD
         ) : null}
         {section === 'about' ? (
           <div className="diagnostics-card">
-            <LocalInfo title="视频故事创作助手" value="v0.10.4 · beta · Windows · 本地数据目录" />
+            <LocalInfo title="视频故事创作助手" value="V1.0.0 · Windows · 本地数据目录" />
             <div className="button-row">
               <button className="ghost-action" disabled={settingsAction.busy} onClick={runDiagnostics}>检查诊断</button>
               <button className="ghost-action" onClick={() => navigator.clipboard?.writeText(diagnostics)}>

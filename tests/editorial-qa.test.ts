@@ -36,11 +36,11 @@ describe('editorial Electron QA configuration', () => {
 
   it('defines the exact completed capture count for every QA scope', () => {
     expect(Object.fromEntries(editorialQaScopes.map((scope) => [scope, editorialQaExpectedCaptureCount(scope)]))).toEqual({
-      all: 96,
+      all: 98,
       'theme-smoke': 4,
       shell: 4,
       'new-task': 4,
-      'task-operations': 12,
+      'task-operations': 14,
       'html-video': 2,
       'clone-voice': 4,
       'volcengine-tts': 2,
@@ -69,13 +69,13 @@ describe('editorial Electron QA configuration', () => {
     expect(runner).toContain('qaEnvironment.LOCALAPPDATA = localAppData');
   });
 
-  it('classifies the canonical 67 required captures separately from 28 supplemental states', () => {
+  it('classifies the canonical 67 required captures separately from 31 supplemental states', () => {
     const required = editorialQaCaptureIdsByRequirement('required');
     const supplemental = editorialQaCaptureIdsByRequirement('supplemental');
     const all = editorialQaCaptureIds('all');
 
     expect(required).toHaveLength(67);
-    expect(supplemental).toHaveLength(29);
+    expect(supplemental).toHaveLength(31);
     expect(new Set([...required, ...supplemental])).toEqual(new Set(all));
     expect(required.filter((id) => supplemental.includes(id))).toEqual([]);
     expect(required).toEqual(expect.arrayContaining([
@@ -108,6 +108,8 @@ describe('editorial Electron QA configuration', () => {
       'task-detail-draft-delivery-light-desktop',
       'task-detail-error-dialog-compact',
       'task-detail-error-summary-desktop',
+      'task-detail-scene-video-light-compact',
+      'task-detail-scene-video-light-desktop',
       'task-detail-subtitle-diagnostics-light-desktop',
       'task-detail-template-menu-dark-desktop',
       'volcengine-legacy-dark-compact',
@@ -189,6 +191,13 @@ describe('editorial Electron QA configuration', () => {
     expect(source).toContain('draftUnderlineToggleReady');
     expect(source).toContain('draftRangeZeroReady');
     expect(source).toContain('draftAnimationPreviewReady');
+    expect(source).toContain('draftImageTransformReady');
+    expect(source).toContain('[data-layer="image-frame"]');
+    expect(source).toContain('[data-layer="image-media"]');
+    expect(source).toContain("querySelectorAll('.draft-transform-handle').length === 8");
+    expect(source).toContain('persisted.image?.mediaScale === 1.4');
+    expect(source).toContain('persisted.image?.focusX === 0.25');
+    expect(source).toContain('persisted.image?.focusY === 0.75');
     expect(source).toContain('input[aria-label="下划线"]');
     expect(source).toContain("{ layer: 'title', textSelector: '.draft-title' }");
     expect(source).toContain("{ layer: 'subtitle', textSelector: '.draft-subtitle' }");
@@ -269,6 +278,15 @@ describe('editorial Electron QA configuration', () => {
     expect(newTaskStyles).toMatch(/\.new-task-stage-panel \.segmented button\.selected \{[\s\S]*?color: var\(--shell-accent-strong\);/u);
     expect(newTaskStyles).toMatch(/\.new-task-stage-panel \.chip\.active \{[\s\S]*?color: var\(--shell-accent-strong\);/u);
     expect(newTaskStyles).toMatch(/\.new-task-summary-title small \{[\s\S]*?color: var\(--shell-accent-strong\);/u);
+  });
+
+  it('verifies AI built-in knowledge can compose without the web-search controls', async () => {
+    const source = await (await import('node:fs/promises')).readFile(new URL('../electron/editorial-qa.ts', import.meta.url), 'utf8');
+
+    expect(source).toContain('aiBuiltinComposeReady');
+    expect(source).toContain("button[aria-label=\"生成文案\"]");
+    expect(source).toContain("!document.querySelector('.web-search-provider-panel')");
+    expect(source).toContain("composeButton.textContent?.includes('使用 AI 内置知识生成文案')");
   });
 
   it('keeps activation status and all three plan choices readable in the light shell', async () => {
@@ -368,6 +386,18 @@ describe('editorial Electron QA configuration', () => {
     expect(source).toContain("querySelector('[role=\"cell\"]:nth-child(2)')");
     expect(source).toContain("historyHtmlTypeLabel !== 'HTML 动画'");
     expect(source).toContain('historyHtmlTypeLabel: state.historyHtmlTypeLabel');
+    expect(source).toContain("htmlHistoryRow?.querySelector('.table-row-primary-action')");
+    expect(source).toContain("document.querySelector('[data-shell-view=\"html-video\"]')");
+    expect(source).toContain("document.querySelector('[data-html-video-studio=\"html-video\"]')");
+    expect(source).toContain("taskTitle === '武则天：权力之路 HTML 动画'");
+    expect(source).toContain("document.querySelector('[data-nav-view=\"history\"]')");
+    expect(source).toContain('!state.historyHtmlRouteReady');
+    expect(source).toContain('historyHtmlRouteReady: state.historyHtmlRouteReady');
+    expect(source).toContain("scenarioId.startsWith('task-detail-scene-video-')");
+    expect(source).toContain("button.textContent?.includes('qa-scene-source.mp4')");
+    expect(source).toContain("video.source === 'local-random'");
+    expect(source).toContain('!state.sceneVideoWorkflowReady');
+    expect(source).toContain('sceneVideoWorkflowReady: state.sceneVideoWorkflowReady');
     expect(htmlFixture).toContain("editorialQaConfig?.scope !== 'task-operations'");
   });
 

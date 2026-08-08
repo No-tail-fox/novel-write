@@ -396,6 +396,7 @@ describe('task runner', () => {
         track: 'character-story',
         style: 'photo-real',
         speaker: 'voice',
+        ratio: '4:3',
         templateId: customTemplate.id,
       });
 

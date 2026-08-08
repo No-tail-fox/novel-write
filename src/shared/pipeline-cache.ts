@@ -1,7 +1,7 @@
 import { readFile, writeFile } from 'node:fs/promises';
 import { resolve } from 'node:path';
 import { buildSubtitleTrackFromSceneLines } from './story';
-import type { ImagePrompt, PipelineArtifact, SubtitleTrack, TaskArtifactAssetPreview, TaskArtifactImageErrorPreview, TaskArtifactSnapshot, TaskArtifactStepPreview, TaskStepRerunMode, TaskSubtitleSceneLines } from './types';
+import type { ImagePrompt, PipelineArtifact, SubtitleTrack, TaskArtifactAssetPreview, TaskArtifactImageErrorPreview, TaskArtifactSnapshot, TaskArtifactStepPreview, TaskArtifactVideoPreview, TaskStepRerunMode, TaskSubtitleSceneLines } from './types';
 
 interface PipelineStateFile {
   version?: number;
@@ -11,6 +11,7 @@ interface PipelineStateFile {
   artifact?: Partial<PipelineArtifact>;
   assets?: {
     images?: TaskArtifactAssetPreview[];
+    videos?: TaskArtifactVideoPreview[];
     imageErrors?: TaskArtifactImageErrorPreview[];
     narration?: TaskArtifactAssetPreview[];
   };
@@ -44,6 +45,16 @@ export interface ReplaceSceneImageAssetInput {
 export interface ReplaceSceneImageAssetsResult {
   replacedSceneIds: number[];
   images: TaskArtifactAssetPreview[];
+}
+
+export interface ReplaceSceneVideoAssetResult {
+  video: TaskArtifactVideoPreview;
+  videos: TaskArtifactVideoPreview[];
+}
+
+export interface RemoveSceneVideoAssetResult {
+  removed: boolean;
+  videos: TaskArtifactVideoPreview[];
 }
 
 export interface RegenerateSceneNarrationResult {
@@ -262,6 +273,92 @@ export async function replaceSceneImageAssets(
   });
 }
 
+export async function replaceSceneVideoAsset(
+  statePath: string,
+  video: TaskArtifactVideoPreview,
+): Promise<ReplaceSceneVideoAssetResult> {
+  if (!Number.isSafeInteger(video.sceneId) || video.sceneId < 0) throw new Error('Scene id is required for video replacement.');
+  if (!video.path.trim()) throw new Error('Video asset path is required.');
+
+  return withPipelineStateLock(statePath, async (normalizedStatePath) => {
+    const state = JSON.parse(await readFile(normalizedStatePath, 'utf8')) as PipelineStateFile;
+    state.steps ??= {};
+    state.assets ??= {};
+    const scene = state.artifact?.scenes?.find((item) => Number(item.id) === video.sceneId);
+    if (!scene) throw new Error(`Scene ${video.sceneId} is not present in the task storyboard.`);
+    const maxTrimStartMs = Math.max(0, Math.floor(video.durationMs - scene.durationMs));
+    const normalizedVideo: TaskArtifactVideoPreview = {
+      ...video,
+      trimStartMs: Math.min(maxTrimStartMs, Math.max(0, Math.floor(video.trimStartMs))),
+      fit: video.fit === 'contain' ? 'contain' : 'cover',
+      muted: true,
+    };
+    const current = Array.isArray(state.assets.videos) ? state.assets.videos : [];
+    const videos = [...current.filter((item) => Number(item.sceneId) !== video.sceneId), normalizedVideo]
+      .sort((left, right) => left.sceneId - right.sceneId);
+    state.assets.videos = videos;
+    state.steps['6'] = pendingStep(state.steps['6']);
+    delete state.draft;
+    state.updatedAt = new Date().toISOString();
+    await writeFile(normalizedStatePath, JSON.stringify(state, null, 2), 'utf8');
+    return { video: normalizedVideo, videos };
+  });
+}
+
+export async function removeSceneVideoAsset(statePath: string, sceneId: number): Promise<RemoveSceneVideoAssetResult> {
+  if (!Number.isSafeInteger(sceneId) || sceneId < 0) throw new Error('Scene id is required for restoring the image.');
+  return withPipelineStateLock(statePath, async (normalizedStatePath) => {
+    const state = JSON.parse(await readFile(normalizedStatePath, 'utf8')) as PipelineStateFile;
+    state.steps ??= {};
+    state.assets ??= {};
+    if (!(state.assets.images ?? []).some((item) => Number(item.sceneId) === sceneId)) {
+      throw new Error(`Scene ${sceneId} does not have an original image to restore.`);
+    }
+    const current = Array.isArray(state.assets.videos) ? state.assets.videos : [];
+    const videos = current.filter((item) => Number(item.sceneId) !== sceneId);
+    const removed = videos.length !== current.length;
+    state.assets.videos = videos;
+    if (removed) {
+      state.steps['6'] = pendingStep(state.steps['6']);
+      delete state.draft;
+      state.updatedAt = new Date().toISOString();
+      await writeFile(normalizedStatePath, JSON.stringify(state, null, 2), 'utf8');
+    }
+    return { removed, videos };
+  });
+}
+
+export async function updateSceneVideoTrim(
+  statePath: string,
+  sceneId: number,
+  trimStartMs: number,
+): Promise<ReplaceSceneVideoAssetResult> {
+  if (!Number.isFinite(trimStartMs)) throw new Error('Video trim start must be a finite number.');
+  return withPipelineStateLock(statePath, async (normalizedStatePath) => {
+    const state = JSON.parse(await readFile(normalizedStatePath, 'utf8')) as PipelineStateFile;
+    state.steps ??= {};
+    state.assets ??= {};
+    const current = Array.isArray(state.assets.videos) ? state.assets.videos : [];
+    const video = current.find((item) => Number(item.sceneId) === sceneId);
+    if (!video) throw new Error(`Scene ${sceneId} does not have a video replacement.`);
+    const scene = state.artifact?.scenes?.find((item) => Number(item.id) === sceneId);
+    if (!scene) throw new Error(`Scene ${sceneId} is not present in the task storyboard.`);
+    const maxTrimStartMs = Math.max(0, Math.floor(video.durationMs - scene.durationMs));
+    const updatedVideo: TaskArtifactVideoPreview = {
+      ...video,
+      trimStartMs: Math.min(maxTrimStartMs, Math.max(0, Math.floor(trimStartMs))),
+      muted: true,
+    };
+    const videos = current.map((item) => Number(item.sceneId) === sceneId ? updatedVideo : item);
+    state.assets.videos = videos;
+    state.steps['6'] = pendingStep(state.steps['6']);
+    delete state.draft;
+    state.updatedAt = new Date().toISOString();
+    await writeFile(normalizedStatePath, JSON.stringify(state, null, 2), 'utf8');
+    return { video: updatedVideo, videos };
+  });
+}
+
 export async function markSceneNarrationForRegeneration(statePath: string, sceneId: number): Promise<RegenerateSceneNarrationResult> {
   if (!Number.isFinite(sceneId)) {
     throw new Error('Scene id is required for narration regeneration.');
@@ -344,6 +441,9 @@ function clearArtifactFromStep(artifact: Partial<PipelineArtifact>, step: number
 
 function clearAssetsFromStep(state: PipelineStateFile, step: number): void {
   state.assets ??= {};
+  if (step <= 2) {
+    state.assets.videos = [];
+  }
   if (step <= 4) {
     state.assets.images = [];
     state.assets.imageErrors = [];

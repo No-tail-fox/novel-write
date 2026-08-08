@@ -1,6 +1,6 @@
 import { app, BrowserWindow, clipboard, dialog, ipcMain, Menu, nativeImage, net, protocol, safeStorage, shell, type Cookie } from 'electron';
 import { execFile } from 'node:child_process';
-import { createHash, randomUUID } from 'node:crypto';
+import { createHash, randomInt, randomUUID } from 'node:crypto';
 import { existsSync } from 'node:fs';
 import { copyFile, mkdir, readFile, rename, rm, stat, writeFile } from 'node:fs/promises';
 import { basename, dirname, extname, isAbsolute, join, relative, resolve } from 'node:path';
@@ -34,7 +34,7 @@ import { generateConfiguredVoicePreview } from '../src/shared/media-providers';
 import { mergeMinimaxCloneVoice } from '../src/shared/minimax-clone-voices';
 import { createPersonAsset, deletePersonAsset, importPersonAssetFiles, listPersonAssets, listPersonImages, renamePersonAsset } from '../src/shared/person-assets';
 import { createConfiguredJsonLlm, createConfiguredTextLlm, listConfiguredProviderModels, testConfiguredLlm } from '../src/shared/llm-provider';
-import { markSceneImageForRegeneration, markSceneImagesForRegeneration, markSceneNarrationForRegeneration, markTaskDraftForRepack, markTaskStepForRerun, replaceSceneImageAssets, updateSceneImagePrompt, updateTaskSubtitleLines } from '../src/shared/pipeline-cache';
+import { markSceneImageForRegeneration, markSceneImagesForRegeneration, markSceneNarrationForRegeneration, markTaskDraftForRepack, markTaskStepForRerun, removeSceneVideoAsset, replaceSceneImageAssets, replaceSceneVideoAsset, updateSceneImagePrompt, updateSceneVideoTrim, updateTaskSubtitleLines } from '../src/shared/pipeline-cache';
 import { resolvePythonRuntimeInfo, setDefaultPythonRuntimeAppRoot } from '../src/shared/python-runtime';
 import { composeCopyFromSources, createAiSourceResearcher, researchSearchErrorMessage, searchWebSources, searchWebSourcesDetailed } from '../src/shared/research';
 import { runTask } from '../src/shared/runner';
@@ -42,7 +42,7 @@ import { runStoryboundMediaSidecar } from '../src/shared/storybound-sidecar';
 import { FileDatabase, type HistoryDeletionCleanup, type HistoryTombstone } from '../src/shared/storage';
 import { createHtmlVideoRuntimeProviders, createTaskRuntimeProviders } from '../src/shared/task-runtime-providers';
 import { assertTaskLifecycleAction } from '../src/shared/task-progress';
-import type { AccountProfile, ActivationState, AppConfig, AppDelta, AppDeltaReconcileRequest, AppDeltaReconcileResult, AppStatePatch, BookSelectionInput, ConfigTestTarget, CreateTaskInput, CreateViralAnalysisInput, CursorRequest, CustomStyle, CustomStyleGenerateInput, DraftTemplate, HistoryFamily, HistoryListRequest, HtmlVideoAsset, HtmlVideoAssetTarget, HtmlVideoCompositionSource, HtmlVideoCompositionSourceLintInput, HtmlVideoCompositionSourceSaveInput, HtmlVideoConfigChange, HtmlVideoPipelineDataV2, HtmlVideoSceneChange, HtmlVideoVoiceClip, ImageLabGenerateInput, ImageLabRecord, ImageLabSummary, ImaKnowledgeRequest, LlmConfig, ManagedBgmImport, MinimaxCloneVoiceInput, OrdinaryTaskCoverRatio, OrdinaryTaskCoverSelection, PromptTemplate, ProviderModelListRequest, ResearchCopyComposeInput, SequencedTaskEvent, Task, TaskImageReplacementSource, TaskStatus, TaskStepRerunMode, TaskSubtitleSceneLines, UiPreferencesUpdate, ViralAnalysisRecord, ViralAnalysisResult, ViralAnalysisStatus, ViralProductionTaskOptions, VolcengineSpeakerListRequest, VoiceLabGenerateInput, VoiceLabRecord, VoiceLabSummary, WebSearchRequest } from '../src/shared/types';
+import type { AccountProfile, ActivationState, AppConfig, AppDelta, AppDeltaReconcileRequest, AppDeltaReconcileResult, AppStatePatch, BookSelectionInput, ConfigTestTarget, CreateTaskInput, CreateViralAnalysisInput, CursorRequest, CustomStyle, CustomStyleGenerateInput, DraftTemplate, HistoryFamily, HistoryListRequest, HtmlVideoAsset, HtmlVideoAssetTarget, HtmlVideoCompositionSource, HtmlVideoCompositionSourceLintInput, HtmlVideoCompositionSourceSaveInput, HtmlVideoConfigChange, HtmlVideoPipelineDataV2, HtmlVideoSceneChange, HtmlVideoVoiceClip, ImageLabGenerateInput, ImageLabRecord, ImageLabSummary, ImaKnowledgeRequest, LlmConfig, ManagedBgmImport, MinimaxCloneVoiceInput, OrdinaryTaskCoverRatio, OrdinaryTaskCoverSelection, PromptTemplate, ProviderModelListRequest, ResearchCopyComposeInput, SceneVideoLibraryItem, SequencedTaskEvent, StoryboardScene, Task, TaskArtifactVideoPreview, TaskImageReplacementSource, TaskStatus, TaskStepRerunMode, TaskSubtitleSceneLines, TaskVideoReplacementSource, UiPreferencesUpdate, ViralAnalysisRecord, ViralAnalysisResult, ViralAnalysisStatus, ViralProductionTaskOptions, VolcengineSpeakerListRequest, VoiceLabGenerateInput, VoiceLabRecord, VoiceLabSummary, WebSearchRequest } from '../src/shared/types';
 import { boundViralDiagnosticText, createViralProductionTaskInput, detectViralPlatform, runViralAnalysis, viralCheckpointResumeState } from '../src/shared/viral-analysis';
 import { createViralRuntimeProviders } from '../src/shared/viral-runtime';
 import { listVolcengineSpeakers } from '../src/shared/volcengine-speakers';
@@ -68,6 +68,7 @@ import { importManagedImageLabRecord } from './image-lab-import';
 import { importManagedBgm, resolveRuntimeManagedBgmLibrary } from './managed-bgm';
 import { writeWindowsManagedFile } from './windows-managed-file';
 import { captureEditorialQa, resolveEditorialQaConfig } from './editorial-qa';
+import { copySceneVideoToTask, importSceneVideoToLibrary, listSceneVideoLibrary, SCENE_VIDEO_EXTENSIONS } from './scene-video-library';
 import { ConfigService } from './config-service';
 import { CredentialVault } from './credential-vault';
 import { HistoryActivityRegistry, type HistoryActivityReservation } from './history-activity-registry';
@@ -314,6 +315,7 @@ async function seedTaskOperationsEditorialQa(database: FileDatabase, dataDir: st
     disclaimer: { ...selectedTemplateBase.disclaimer, fontSize: 9, color: '#9ad7cc', alpha: 0.82, underline: draftTemplateGalleryScope },
   });
   if (!taskOperationsScope) return;
+  await seedTaskOperationsSceneVideo(dataDir);
   const createFixture = async (title: string, overrides: Partial<CreateTaskInput> = {}) => {
     await new Promise((resolveDelay) => setTimeout(resolveDelay, 2));
     return database.createTask({
@@ -489,6 +491,30 @@ async function seedTaskOperationsEditorialQa(database: FileDatabase, dataDir: st
       ts: Date.now() + index,
     });
   }
+}
+
+async function seedTaskOperationsSceneVideo(dataDir: string): Promise<void> {
+  const sourceDir = join(dataDir, 'qa-task-operations', 'scene-video-source');
+  const sourcePath = join(sourceDir, 'qa-scene-source.mp4');
+  await mkdir(sourceDir, { recursive: true });
+  const runtime = resolvePythonRuntimeInfo();
+  const script = [
+    'import imageio_ffmpeg',
+    'import subprocess',
+    'import sys',
+    'command = [imageio_ffmpeg.get_ffmpeg_exe(), "-y", "-f", "lavfi", "-i", "testsrc2=size=360x640:rate=24:duration=6", "-an", "-c:v", "libx264", "-preset", "ultrafast", "-crf", "23", "-pix_fmt", "yuv420p", "-movflags", "+faststart", sys.argv[1]]',
+    'subprocess.run(command, check=True, stdout=subprocess.DEVNULL, stderr=subprocess.PIPE)',
+  ].join('\n');
+  await execFileAsync(runtime.command, ['-c', script, sourcePath], {
+    timeout: 60_000,
+    windowsHide: true,
+    maxBuffer: 1024 * 1024,
+  });
+  await importSceneVideoToLibrary({
+    libraryRoot: sceneVideoLibraryRoot(),
+    sourcePath,
+    normalize: normalizeSceneVideo,
+  });
 }
 
 async function seedHtmlVideoEditorialQa(database: FileDatabase): Promise<void> {
@@ -1030,6 +1056,81 @@ function voiceLabWorkDir(record: Pick<VoiceLabRecord, 'managedStorageKey'>): str
 
 function appDataDir(): string {
   return join(app.getPath('userData'), appDataName);
+}
+
+function sceneVideoLibraryRoot(): string {
+  return join(appDataDir(), 'scene-video-library');
+}
+
+async function normalizeSceneVideo(sourcePath: string, outputPath: string) {
+  const result = await runStoryboundMediaSidecar({
+    mode: 'normalize_scene_video',
+    work_dir: sceneVideoLibraryRoot(),
+    video_path: sourcePath,
+    output_path: outputPath,
+  });
+  if (result.has_video !== true) throw new Error('SCENE_VIDEO_SOURCE_INVALID: 所选文件不包含视频画面。');
+  return {
+    durationMs: Math.round(Number(result.duration) * 1000),
+    width: Number(result.width),
+    height: Number(result.height),
+  };
+}
+
+function selectRandomSceneVideo(
+  items: readonly SceneVideoLibraryItem[],
+  scene: Pick<StoryboardScene, 'durationMs'>,
+  ratio: string,
+): SceneVideoLibraryItem {
+  const [ratioWidth, ratioHeight] = ratio.split(':').map(Number);
+  const targetRatio = ratioWidth > 0 && ratioHeight > 0 ? ratioWidth / ratioHeight : 9 / 16;
+  const targetOrientation = targetRatio > 1.05 ? 'landscape' : targetRatio < 0.95 ? 'portrait' : 'square';
+  const compatible = items.filter((item) => {
+    const itemRatio = item.width / item.height;
+    const orientation = itemRatio > 1.05 ? 'landscape' : itemRatio < 0.95 ? 'portrait' : 'square';
+    return orientation === targetOrientation && item.durationMs >= scene.durationMs;
+  });
+  if (compatible.length === 0) {
+    throw new Error('SCENE_VIDEO_RANDOM_EMPTY: 素材库里没有画幅匹配且时长足够的视频。');
+  }
+  const ranked = [...compatible]
+    .sort((left, right) => {
+      const leftScore = Math.abs(left.width / left.height - targetRatio) + Math.abs(left.durationMs - scene.durationMs) / Math.max(1, scene.durationMs * 4);
+      const rightScore = Math.abs(right.width / right.height - targetRatio) + Math.abs(right.durationMs - scene.durationMs) / Math.max(1, scene.durationMs * 4);
+      return leftScore - rightScore;
+    })
+    .slice(0, 8);
+  return ranked[randomInt(ranked.length)];
+}
+
+async function runTaskVideoArtifactMutation(
+  taskId: string,
+  operation: (database: FileDatabase, task: Task) => Promise<{ sceneIds: number[]; detail: string; tool: string } | null>,
+): Promise<AppDelta | null> {
+  const existingActiveRun = runningTasks.get(taskId);
+  return runLatestTaskControlRequest(latestTaskControlRequests, taskId, async (isCurrent) => {
+    if (!await stopTaskRunBeforeArtifactMutation(() => runningTasks.get(taskId), isCurrent)) return null;
+    const database = await getDb();
+    if (!isCurrent()) return null;
+    const task = await database.getTaskDetail(taskId);
+    if (!task) throw new Error(`Task not found: ${taskId}`);
+    if (task.archivedAt) throw new Error('HISTORY_ARCHIVED: 已归档任务只读。');
+    if (!task.artifactStatePath) throw new Error('任务产物尚未生成，暂时不能替换分镜画面。');
+    const result = await operation(database, task);
+    if (!result || !isCurrent()) return null;
+    const event = await database.addTaskEvent(task.id, {
+      type: 'video_asset_update',
+      step: 6,
+      agent: 'Draft',
+      tool: result.tool,
+      detail: result.detail,
+      dataJson: JSON.stringify({ sceneIds: result.sceneIds, mediaType: 'video' }),
+    });
+    await publishTaskEvent(event);
+    return publishTaskUpsert(database, task.id);
+  }, () => existingActiveRun?.activityReservation
+    ? takeHistoryActivityReservation(existingActiveRun)
+    : historyActivityRegistry.reserveActive('task', taskId));
 }
 
 function personAssetsRoot(): string {
@@ -3444,6 +3545,87 @@ trustedHandle('task:replace-image', async (_event, input: { id: string; sceneId:
   })
 ));
 
+trustedHandle('scene-video-library:list', async () => listSceneVideoLibrary(sceneVideoLibraryRoot()));
+
+trustedHandle('task:replace-video', async (_event, input: { id: string; sceneId: number; source: TaskVideoReplacementSource }) => (
+  runTaskVideoArtifactMutation(input.id, async (_database, task) => {
+    const sceneId = Number(input.sceneId);
+    const snapshot = await readTaskArtifactSnapshot(task);
+    const scene = snapshot.artifact.scenes?.find((item) => item.id === sceneId);
+    if (!scene) throw new Error(`分镜 ${sceneId} 不存在。`);
+    const library = await listSceneVideoLibrary(sceneVideoLibraryRoot());
+    let item: SceneVideoLibraryItem;
+    let source: TaskArtifactVideoPreview['source'];
+    if (input.source.kind === 'local') {
+      const selected = await dialog.showOpenDialog({
+        title: `替换分镜 ${sceneId} 画面`,
+        properties: ['openFile'],
+        filters: [{ name: 'Videos', extensions: [...SCENE_VIDEO_EXTENSIONS] }],
+      });
+      if (selected.canceled || !selected.filePaths[0]) return null;
+      item = await importSceneVideoToLibrary({
+        libraryRoot: sceneVideoLibraryRoot(),
+        sourcePath: selected.filePaths[0],
+        normalize: normalizeSceneVideo,
+      });
+      source = 'local-upload';
+    } else if (input.source.kind === 'library') {
+      const libraryId = input.source.libraryId;
+      const selectedItem = library.find((candidate) => candidate.id === libraryId);
+      if (!selectedItem) throw new Error('SCENE_VIDEO_LIBRARY_MISSING: 所选视频素材不存在。');
+      item = selectedItem;
+      source = 'local-library';
+    } else {
+      item = selectRandomSceneVideo(library, scene, task.ratio);
+      source = 'local-random';
+    }
+    if (item.durationMs < scene.durationMs) {
+      throw new Error(`SCENE_VIDEO_TOO_SHORT: 当前分镜需要 ${(scene.durationMs / 1000).toFixed(1)} 秒，所选视频只有 ${(item.durationMs / 1000).toFixed(1)} 秒。`);
+    }
+    const path = await copySceneVideoToTask(item, join(taskWorkDir(task), 'scene-videos'), sceneId);
+    const video: TaskArtifactVideoPreview = {
+      sceneId,
+      path,
+      source,
+      libraryId: item.id,
+      originalName: item.originalName,
+      durationMs: item.durationMs,
+      width: item.width,
+      height: item.height,
+      trimStartMs: 0,
+      fit: 'cover',
+      muted: true,
+    };
+    await replaceSceneVideoAsset(task.artifactStatePath!, video);
+    const sourceLabel = source === 'local-upload' ? '本地视频' : source === 'local-library' ? '视频素材库' : '随机匹配视频';
+    return { sceneIds: [sceneId], detail: `已用${sourceLabel}替换分镜 ${sceneId} 画面`, tool: source };
+  })
+));
+
+trustedHandle('task:restore-image', async (_event, input: { id: string; sceneId: number }) => (
+  runTaskVideoArtifactMutation(input.id, async (_database, task) => {
+    const sceneId = Number(input.sceneId);
+    const result = await removeSceneVideoAsset(task.artifactStatePath!, sceneId);
+    return {
+      sceneIds: [sceneId],
+      detail: result.removed ? `已将分镜 ${sceneId} 恢复为原图片` : `分镜 ${sceneId} 当前已使用原图片`,
+      tool: 'restore-scene-image',
+    };
+  })
+));
+
+trustedHandle('task:update-video-trim', async (_event, input: { id: string; sceneId: number; trimStartMs: number }) => (
+  runTaskVideoArtifactMutation(input.id, async (_database, task) => {
+    const sceneId = Number(input.sceneId);
+    const result = await updateSceneVideoTrim(task.artifactStatePath!, sceneId, Number(input.trimStartMs));
+    return {
+      sceneIds: [sceneId],
+      detail: `已将分镜 ${sceneId} 的视频入点设为 ${(result.video.trimStartMs / 1000).toFixed(1)} 秒`,
+      tool: 'scene-video-trim',
+    };
+  })
+));
+
 trustedHandle('task:copy-image', async (_event, input: { id: string; sceneId: number }) => {
   const database = await getDb();
   const task = await database.getTaskDetail(input.id);
@@ -3695,6 +3877,14 @@ trustedHandle('task:get-artifacts', async (_event, id: string) => {
     throw new Error(`Task not found: ${id}`);
   }
   return readTaskArtifactSnapshot(task);
+});
+
+trustedHandle('task:media-url', async (_event, input: { id: string; path: string }) => {
+  const database = await getDb();
+  const task = await database.getTaskDetail(input.id);
+  if (!task) throw new Error(`Task not found: ${input.id}`);
+  const taskDirectory = await htmlVideoTaskDirectory(task.id);
+  return createHtmlVideoMediaUrl(task.id, taskDirectory, input.path);
 });
 
 trustedHandle('asset:read-data-url', async (_event, path: string) => readLocalImageDataUrl(path));

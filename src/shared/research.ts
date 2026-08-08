@@ -498,13 +498,18 @@ async function searchToutiaoHtml(query: string, fetchImpl: FetchLike): Promise<A
 }
 
 export async function composeCopyFromSources(llm: ConfiguredTextLlm, input: ResearchCopyComposeInput): Promise<ResearchCopyComposeResult> {
-  const selectedSources = input.selectedSources.slice(0, 10);
+  const selectedSources = input.selectedSources
+    .filter((source) => compactText(source.content || source.snippet || '').trim())
+    .slice(0, 10);
   const hasReferenceMaterials = selectedSources.length > 0;
+  if (!hasReferenceMaterials && !input.useBuiltinKnowledge) {
+    throw new Error('请至少提供一个网页来源，或启用 AI 内置知识补全。');
+  }
   const track = resolveStoryboundTrackInfo('general');
   const system = buildStoryboundAiCreationSystemPrompt({
     trackName: track.trackName,
     trackTag: track.trackTag,
-    useAiKnowledge: false,
+    useAiKnowledge: input.useBuiltinKnowledge,
     hasReferenceMaterials,
   });
   const user = buildStoryboundAiCreationUserPrompt(
@@ -528,7 +533,7 @@ export async function composeCopyFromSources(llm: ConfiguredTextLlm, input: Rese
   });
   const copy = cleanStoryboundAiCreationOutput(result.text);
   if (!copy) {
-    throw new Error('LLM did not return copy text for selected sources.');
+    throw new Error('AI 未返回可用文案，请重试。');
   }
   return { title: input.keyword.trim(), copy, raw: result.raw, requestId: result.requestId };
 }

@@ -375,6 +375,11 @@ const taskImageReplacementSourceSchema = z.discriminatedUnion('kind', [
   z.object({ kind: z.literal('image-lab'), recordId: idSchema }).strict(),
   z.object({ kind: z.literal('scene'), sourceSceneId: nonNegativeInteger }).strict(),
 ]);
+const taskVideoReplacementSourceSchema = z.discriminatedUnion('kind', [
+  z.object({ kind: z.literal('local') }).strict(),
+  z.object({ kind: z.literal('library'), libraryId: idSchema }).strict(),
+  z.object({ kind: z.literal('random') }).strict(),
+]);
 export const taskStatusSchema = z.object({ id: idSchema, status: z.enum(['running', 'paused', 'cancelled']) }).strict();
 const viralStatusSchema = z.object({ id: idSchema, status: viralStatusValueSchema }).strict();
 const idOnlySchema = idSchema;
@@ -494,6 +499,7 @@ export const researchCopyComposeSchema = bounded(
       keyword: nonEmptyText(MAX_IPC_TEXT),
       extraRequirements: z.string().max(MAX_TASK_TEXT),
       selectedSources: z.array(sourceSectionSchema).max(MAX_IPC_ARRAY_ITEMS),
+      useBuiltinKnowledge: z.boolean(),
       targetLength: nonNegativeInteger.max(MAX_TASK_TEXT).optional(),
     })
     .strict(),
@@ -817,6 +823,10 @@ export const ipcInputSchemas = {
   'task:regenerate-image': sceneActionSchema,
   'task:regenerate-images': z.object({ id: idSchema, sceneIds: z.array(nonNegativeInteger).min(1).max(MAX_IPC_ARRAY_ITEMS) }).strict(),
   'task:replace-image': z.object({ id: idSchema, sceneId: nonNegativeInteger, source: taskImageReplacementSourceSchema }).strict(),
+  'scene-video-library:list': z.void(),
+  'task:replace-video': z.object({ id: idSchema, sceneId: nonNegativeInteger, source: taskVideoReplacementSourceSchema }).strict(),
+  'task:restore-image': sceneActionSchema,
+  'task:update-video-trim': z.object({ id: idSchema, sceneId: nonNegativeInteger, trimStartMs: finiteNumber.nonnegative() }).strict(),
   'task:copy-image': sceneActionSchema,
   'task:import-images': idOnlySchema,
   'task:reference-edit-image': z.object({
@@ -829,6 +839,7 @@ export const ipcInputSchemas = {
   'task:update-image-prompt': z.object({ id: idSchema, sceneId: nonNegativeInteger, prompt: nonEmptyText(MAX_TASK_TEXT) }).strict(),
   'task:rerun-step': z.object({ id: idSchema, step: nonNegativeInteger.max(6), mode: taskStepRerunModeSchema }).strict(),
   'task:get-artifacts': idOnlySchema,
+  'task:media-url': z.object({ id: idSchema, path: pathSchema }).strict(),
   'asset:read-data-url': pathSchema,
   'local-image:select': z.void(),
   'local-audio:select': z.literal('managed-bgm').optional(),

@@ -12,6 +12,7 @@ function defaultBridgeCaption() {
   return {
     visible: true,
     fontSize: 44,
+    fontFamily: '宋体' as const,
     color: '#ffffff',
     alpha: 1,
     border: { color: '#000000', width: 0, alpha: 0 },
@@ -51,6 +52,7 @@ describe('pyJianYingDraft bridge input', () => {
         caption: {
           visible: true,
           fontSize: 44,
+          fontFamily: '圆体',
           color: '#ffffff',
           alpha: 0.85,
           border: { color: '#ff0000', width: 4, alpha: 0.7 },
@@ -66,9 +68,9 @@ describe('pyJianYingDraft bridge input', () => {
           y: 1480,
         },
         overlays: {
-          title: { visible: true, text: 'Bridge Draft', x: -0.1, y: -0.5, width: 0.88, fontSize: 44, color: '#ffde00', alpha: 0.95, bold: true, underline: true, align: 1, letterSpacing: 2, lineSpacing: 3, border: { color: '#000000', width: 3, alpha: 0.8 } },
-          subtitle: { visible: true, text: 'Bridge Subtitle', x: 0, y: -0.35, width: 0.76, fontSize: 22, color: '#ffffff', alpha: 0.75, bold: false, underline: false, align: 2, letterSpacing: 4, lineSpacing: 5, border: { color: '#333333', width: 1, alpha: 0.5 } },
-          disclaimer: { visible: true, text: 'Disclaimer', x: 0, y: 0.9, width: 0.62, fontSize: 14, color: '#cccccc', alpha: 0.6, bold: false, underline: true, align: 0, letterSpacing: 1, lineSpacing: 6, border: { color: '#111111', width: 2, alpha: 0.6 } },
+          title: { visible: true, text: 'Bridge Draft', x: -0.1, y: -0.5, width: 0.88, fontSize: 44, fontFamily: '得意黑', color: '#ffde00', alpha: 0.95, bold: true, underline: true, align: 1, letterSpacing: 2, lineSpacing: 3, border: { color: '#000000', width: 3, alpha: 0.8 } },
+          subtitle: { visible: true, text: 'Bridge Subtitle', x: 0, y: -0.35, width: 0.76, fontSize: 22, fontFamily: 'LXGWWenKai_Regular', color: '#ffffff', alpha: 0.75, bold: false, underline: false, align: 2, letterSpacing: 4, lineSpacing: 5, border: { color: '#333333', width: 1, alpha: 0.5 } },
+          disclaimer: { visible: true, text: 'Disclaimer', x: 0, y: 0.9, width: 0.62, fontSize: 14, fontFamily: 'HarmonyOS_Sans_SC_Regular', color: '#cccccc', alpha: 0.6, bold: false, underline: true, align: 0, letterSpacing: 1, lineSpacing: 6, border: { color: '#111111', width: 2, alpha: 0.6 } },
         },
         images: [{ sceneId: 1, path: join(dir, 'image.png') }],
         narration: [{ sceneId: 1, path: join(dir, 'voice.mp3') }],
@@ -86,6 +88,7 @@ describe('pyJianYingDraft bridge input', () => {
       expect(payload.frame).toMatchObject({ enabled: true, imageBorderWidth: 12, imageBorderSides: 'horizontal' });
       expect(payload.caption).toMatchObject({
         visible: true,
+        fontFamily: '圆体',
         x: 0.2,
         y: 1480,
         alpha: 0.85,
@@ -99,9 +102,9 @@ describe('pyJianYingDraft bridge input', () => {
         width: 0.72,
         background: { color: '#111111', alpha: 0.4, roundRadius: 0.5 },
       });
-      expect(payload.overlays.title).toMatchObject({ x: -0.1, y: -0.5, width: 0.88, alpha: 0.95, bold: true, underline: true, align: 1, letterSpacing: 2, lineSpacing: 3, border: { color: '#000000', width: 3, alpha: 0.8 } });
-      expect(payload.overlays.subtitle).toMatchObject({ text: 'Bridge Subtitle', width: 0.76, alpha: 0.75, bold: false, underline: false, align: 2, letterSpacing: 4, lineSpacing: 5, border: { color: '#333333', width: 1, alpha: 0.5 } });
-      expect(payload.overlays.disclaimer).toMatchObject({ fontSize: 14, color: '#cccccc', width: 0.62, alpha: 0.6, bold: false, underline: true, align: 0, letterSpacing: 1, lineSpacing: 6, border: { color: '#111111', width: 2, alpha: 0.6 } });
+      expect(payload.overlays.title).toMatchObject({ x: -0.1, y: -0.5, width: 0.88, fontFamily: '得意黑', alpha: 0.95, bold: true, underline: true, align: 1, letterSpacing: 2, lineSpacing: 3, border: { color: '#000000', width: 3, alpha: 0.8 } });
+      expect(payload.overlays.subtitle).toMatchObject({ text: 'Bridge Subtitle', width: 0.76, fontFamily: 'LXGWWenKai_Regular', alpha: 0.75, bold: false, underline: false, align: 2, letterSpacing: 4, lineSpacing: 5, border: { color: '#333333', width: 1, alpha: 0.5 } });
+      expect(payload.overlays.disclaimer).toMatchObject({ fontSize: 14, fontFamily: 'HarmonyOS_Sans_SC_Regular', color: '#cccccc', width: 0.62, alpha: 0.6, bold: false, underline: true, align: 0, letterSpacing: 1, lineSpacing: 6, border: { color: '#111111', width: 2, alpha: 0.6 } });
     } finally {
       await rm(dir, { recursive: true, force: true });
     }
@@ -118,6 +121,10 @@ describe('pyJianYingDraft bridge input', () => {
       expect(script).toContain('sys.stdout.reconfigure(encoding="utf-8"');
       expect(script).toContain('sys.stderr.reconfigure(encoding="utf-8"');
       expect(script).toContain('VideoSegment');
+      expect(script).toContain('video_by_scene = {}');
+      expect(script).toContain('source_start = int(video_item["trimStartUs"]) if video_item else 0');
+      expect(script).toContain('volume=0.0 if video_item else 1.0');
+      expect(script).toContain('if not video_item:');
       expect(script).toContain('AudioSegment');
       expect(script).toContain('shutil.copy2');
       expect(script).toContain('create_solid_png');
@@ -126,6 +133,12 @@ describe('pyJianYingDraft bridge input', () => {
       expect(script).toContain('border = config.get("border") or {}');
       expect(script).toContain('caption_border = text_border_from_config(caption)');
       expect(script).toContain('border=caption_border');
+      expect(script).toContain('def font_from_config(config)');
+      expect(script).toContain('font_catalog = getattr(draft, "FontType", None)');
+      expect(script).toContain('def text_segment_from_config(text, timerange, config, **kwargs)');
+      expect(script).toContain('kwargs["font"] = font');
+      expect(script).toContain('segment = text_segment_from_config(');
+      expect(script).toContain('caption_template = text_segment_from_config(');
       expect(script).toContain('def add_overlay_text');
       expect(script).toContain('config.get("startUs")');
       expect(script).toContain('config.get("durationUs")');
@@ -142,6 +155,7 @@ describe('pyJianYingDraft bridge input', () => {
       expect(script).toContain('caption.get("visible", True)');
       expect(script).toContain('draft.TextBackground(');
       expect(script).toContain('style_reference=caption_template');
+      expect(script).not.toContain('text_style=caption_style');
       expect(script).toContain('wrap_caption_text');
       expect(script).toContain('normalize_subtitle_text');
       expect(script).toContain('resolve_image_layout');
@@ -240,6 +254,71 @@ describe('pyJianYingDraft bridge input', () => {
       expect(frameTrack.segments).toHaveLength(1);
       const overlay = await readFile(join(draftDir, 'materials', 'frame', 'frame-overlay.png'));
       expect(overlay.subarray(0, 8)).toEqual(Buffer.from([137, 80, 78, 71, 13, 10, 26, 10]));
+    } finally {
+      await rm(dir, { recursive: true, force: true });
+    }
+  });
+
+  it('uses max scale for crop-fill and min scale for full-image Jianying layout', async () => {
+    const dir = await mkdtemp(join(tmpdir(), 'storybound-jy-image-fit-'));
+    const bridgeDir = join(dir, 'pyjianying-bridge');
+
+    try {
+      await writePyJianYingBridgeScript(dir);
+      await writeFile(join(bridgeDir, 'pyJianYingDraft.py'), fakePyJianYingDraftModule, 'utf8');
+      const voice = join(dir, 'voice.wav');
+      const image = join(dir, 'image.png');
+      const subtitles = join(dir, 'subtitles.srt');
+      await writeFile(voice, wavTone(1200));
+      await writeFile(image, Buffer.from('image'));
+      await writeFile(subtitles, '', 'utf8');
+
+      const render = async (fit: 'cover' | 'contain', focusY = 0.5, patch: Partial<PyJianYingBridgeInput['imageArea']> = {}) => {
+        const draftDir = join(dir, 'Draft Root', `Image Fit ${fit} ${focusY} ${patch.mediaScale ?? 1}`);
+        await runPyJianYingDraftBridge({
+          workDir: dir,
+          draftDir,
+          title: `Image Fit ${fit}`,
+          canvas: { width: 1080, height: 1920, backgroundColor: '#000000', backgroundImage: '' },
+          imageArea: {
+            visible: true,
+            ratio: '4:3',
+            top: 0.25,
+            height: 0.5,
+            fit,
+            focusX: 0.5,
+            focusY,
+            animation: '',
+            motion: '',
+            motionStrength: 1,
+            ...patch,
+          },
+          caption: { ...defaultBridgeCaption(), visible: false },
+          scenes: [{ sceneId: 1, startUs: 0, durationUs: 1_200_000, text: fit }],
+          images: [{ sceneId: 1, path: image }],
+          narration: [{ sceneId: 1, path: voice }],
+          subtitlesSrtPath: subtitles,
+          bgm: null,
+          totalDurationUs: 1_200_000,
+          volumes: { narration: 1, bgm: 0.3 },
+        });
+        const content = JSON.parse(await readFile(join(draftDir, 'draft_content.json'), 'utf8'));
+        const segment = content.tracks.find((track: { name: string }) => track.name === 'images').segments[0];
+        return { ...segment.clip_settings, masks: segment.masks };
+      };
+
+      expect(await render('cover')).toMatchObject({ scale_x: 1, scale_y: 1, transform_y: 0 });
+      expect(await render('contain')).toMatchObject({ scale_x: 0.5, scale_y: 0.5, transform_y: 0 });
+      expect(await render('cover', 0)).toMatchObject({ transform_x: 0, transform_y: 0.5 });
+      expect(await render('cover', 1)).toMatchObject({ transform_x: 0, transform_y: -0.5 });
+      expect(await render('contain', 0)).toMatchObject({ transform_x: 0, transform_y: 0 });
+      expect(await render('cover', 0.5, { left: 0.25, width: 0.5, mediaScale: 2, focusX: 1, focusY: 0 })).toMatchObject({
+        scale_x: 1,
+        scale_y: 1,
+        transform_x: -0.5,
+        transform_y: 0.5,
+        masks: [{ mask_type: 'rectangle', center_x: 270, center_y: -480, size: 0.5, rect_width: 0.5 }],
+      });
     } finally {
       await rm(dir, { recursive: true, force: true });
     }
@@ -1148,6 +1227,10 @@ class KeyframeProperty:
     uniform_scale = "UNIFORM_SCALE"
 
 
+class MaskType:
+    矩形 = "rectangle"
+
+
 class TextSegment:
     def __init__(self, text, target_timerange, *, style=None, clip_settings=None, border=None, background=None, shadow=None):
         self.text = text
@@ -1184,6 +1267,7 @@ class VideoSegment:
         self.volume = volume
         self.clip_settings = clip_settings
         self.keyframes = []
+        self.masks = []
 
     def add_transition(self, *args, **kwargs):
         return self
@@ -1199,6 +1283,10 @@ class VideoSegment:
 
     def add_keyframe(self, property_type, time_offset, value):
         self.keyframes.append({"property": property_type, "time_offset": int(time_offset), "value": float(value)})
+        return self
+
+    def add_mask(self, mask_type, **kwargs):
+        self.masks.append({"mask_type": mask_type, **kwargs})
         return self
 
 
@@ -1274,6 +1362,7 @@ class Script:
                             "text": getattr(segment, "text", None),
                             "clip_settings": getattr(getattr(segment, "clip_settings", None), "kwargs", None),
                             "keyframes": getattr(segment, "keyframes", []),
+                            "masks": getattr(segment, "masks", []),
                         }
                         for segment in track["segments"]
                     ],

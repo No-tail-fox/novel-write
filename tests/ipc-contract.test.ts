@@ -288,17 +288,31 @@ describe('IPC runtime contract', () => {
           snippet: 'Search result summary',
           content: 'Body',
         }],
+        useBuiltinKnowledge: false,
         targetLength: 1200,
       }),
     ).toMatchObject({
       keyword: 'topic',
       targetLength: 1200,
       selectedSources: [{ provider: 'baidu' }],
+      useBuiltinKnowledge: false,
     });
+    expect(contract.researchCopyComposeSchema.parse({
+      keyword: 'topic',
+      extraRequirements: '',
+      selectedSources: [],
+      useBuiltinKnowledge: true,
+    })).toMatchObject({ selectedSources: [], useBuiltinKnowledge: true });
+    expect(() => contract.researchCopyComposeSchema.parse({
+      keyword: 'topic',
+      extraRequirements: '',
+      selectedSources: [],
+    })).toThrow();
     expect(() => contract.researchCopyComposeSchema.parse({
       keyword: 'topic',
       extraRequirements: '',
       selectedSources: [{ source: 'web', provider: 'unknown', title: 'Title', content: 'Body' }],
+      useBuiltinKnowledge: false,
     })).toThrow();
     expect(
       contract.createViralAnalysisSchema.parse({

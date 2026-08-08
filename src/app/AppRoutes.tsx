@@ -36,6 +36,8 @@ export function AppRoutes({
   isHistoryTombstoned,
   historyFamilyEpochs,
   refreshTaskDetail,
+  requestedHtmlTaskId,
+  onRequestedHtmlTaskHandled,
   onActiveHtmlTaskChange,
   refreshViralEvents,
   onActiveViralAnalysisChange,
@@ -51,6 +53,8 @@ export function AppRoutes({
   isHistoryTombstoned: (family: HistoryFamily, id: string) => boolean;
   historyFamilyEpochs: Partial<Record<HistoryFamily, number>>;
   refreshTaskDetail: (taskId: string) => Promise<void>;
+  requestedHtmlTaskId: string;
+  onRequestedHtmlTaskHandled: (taskId: string) => void;
   onActiveHtmlTaskChange: (taskId: string) => void;
   refreshViralEvents: (analysisId: string) => Promise<void>;
   onActiveViralAnalysisChange: (analysisId: string) => void;
@@ -76,7 +80,7 @@ export function AppRoutes({
       {activeView === 'image-lab' ? <ImageLabPage api={api} state={state} applyState={applyState} /> : null}
       {activeView === 'voice-lab' ? <VoiceLabPage api={api} state={state} applyState={applyState} /> : null}
       {activeView === 'music-mv' ? <MusicMvPage api={api} state={state} applyState={applyState} openTaskDetail={openTaskDetail} isBrowserPreview={isBrowserPreview} /> : null}
-      {activeView === 'html-video' ? <HtmlVideoPage api={api} state={state} applyState={applyState} refreshTaskDetail={refreshTaskDetail} onActiveTaskChange={onActiveHtmlTaskChange} isBrowserPreview={isBrowserPreview} /> : null}
+      {activeView === 'html-video' ? <HtmlVideoPage api={api} state={state} applyState={applyState} refreshTaskDetail={refreshTaskDetail} requestedTaskId={requestedHtmlTaskId} onRequestedTaskHandled={onRequestedHtmlTaskHandled} onActiveTaskChange={onActiveHtmlTaskChange} isBrowserPreview={isBrowserPreview} /> : null}
       {activeView === 'viral-analyzer' ? <ViralAnalyzerPage api={api} state={state} applyState={applyState} refreshViralEvents={refreshViralEvents} onActiveAnalysisChange={onActiveViralAnalysisChange} openTaskDetail={openTaskDetail} isBrowserPreview={isBrowserPreview} /> : null}
       {activeView === 'prompt-templates' ? <PromptTemplatesPage api={api} state={state} applyState={applyState} /> : null}
       {activeView === 'draft-templates' ? <DraftTemplatesPage api={api} state={state} applyState={applyState} /> : null}

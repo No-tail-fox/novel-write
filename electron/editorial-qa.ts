@@ -60,6 +60,8 @@ export const editorialQaMatrix = {
     { id: 'task-detail-template-menu-dark-desktop', view: 'task-detail', theme: 'dark', viewport: 'desktop' },
     { id: 'task-detail-subtitle-diagnostics-light-desktop', view: 'task-detail', theme: 'light', viewport: 'desktop' },
     { id: 'task-detail-borrowed-image-desktop', view: 'task-detail', theme: 'light', viewport: 'desktop' },
+    { id: 'task-detail-scene-video-light-desktop', view: 'task-detail', theme: 'light', viewport: 'desktop' },
+    { id: 'task-detail-scene-video-light-compact', view: 'task-detail', theme: 'light', viewport: 'compact' },
     { id: 'task-detail-error-dialog-compact', view: 'task-detail', theme: 'light', viewport: 'compact' },
     { id: 'history-operations-compact', view: 'history', theme: 'light', viewport: 'compact' },
   ],
@@ -182,12 +184,18 @@ export async function captureEditorialQa(
     if (captureCase.id === 'task-detail-borrowed-image-desktop' && !state.taskImageWorkflowReady) {
       throw new Error('Editorial QA task image copy, paste, scroll preservation, or reference editor workflow failed.');
     }
+    if (captureCase.id.startsWith('task-detail-scene-video-') && !state.sceneVideoWorkflowReady) {
+      throw new Error(`Editorial QA scene video replace, trim, restore, random, or compact library workflow failed in ${captureCase.id}.`);
+    }
     const expectedPlacement = viewport.name === 'compact' ? 'below' : 'right';
     if (captureCase.stage && (!state.stageStatePreserved || !state.presetStatePreserved || state.layout.summaryPlacement !== expectedPlacement)) {
       throw new Error(`Editorial QA new-task interaction/layout failed in ${captureCase.id}.`);
     }
     if (captureCase.stage === 'output' && !state.autoBorrowImageStatePreserved) {
       throw new Error(`Editorial QA image-borrow toggle failed in ${captureCase.id}.`);
+    }
+    if (captureCase.stage === 'material' && !state.aiBuiltinComposeReady) {
+      throw new Error(`Editorial QA AI built-in knowledge compose state failed in ${captureCase.id}.`);
     }
     if (captureCase.stage === 'output' && (
       state.manualCover.state !== 'required'
@@ -198,6 +206,9 @@ export async function captureEditorialQa(
     }
     if (captureCase.id === 'history-operations-desktop' && (!state.deleteDialogFocusWrapped || !state.deleteDialogEscapeRestored)) {
       throw new Error('Editorial QA history delete-dialog keyboard lifecycle failed.');
+    }
+    if (captureCase.id === 'history-operations-desktop' && !state.historyHtmlRouteReady) {
+      throw new Error('Editorial QA history HTML task did not open its HTML animation workspace.');
     }
     if (captureCase.id === 'task-detail-error-dialog-compact' && !state.errorDialogOpen) {
       throw new Error('Editorial QA failed-task error dialog did not remain open and fully visible.');
@@ -219,6 +230,15 @@ export async function captureEditorialQa(
     }
     if (captureCase.view === 'draft-templates' && !state.draftAnimationPreviewReady) {
       throw new Error(`Editorial QA draft-template compound animation preview did not match its preset in ${captureCase.id}.`);
+    }
+    if (captureCase.view === 'draft-templates' && !state.draftFontSelectionReady) {
+      throw new Error(`Editorial QA draft-template font selection did not update or persist in ${captureCase.id}.`);
+    }
+    if (captureCase.view === 'draft-templates' && !state.draftImageFitReady) {
+      throw new Error(`Editorial QA draft-template image display mode did not update or persist in ${captureCase.id}.`);
+    }
+    if (captureCase.view === 'draft-templates' && !state.draftImageTransformReady) {
+      throw new Error(`Editorial QA draft-template image frame/media transforms did not update or persist in ${captureCase.id}.`);
     }
     if (captureCase.view === 'history' && state.historyHtmlTypeLabel !== 'HTML 动画') {
       throw new Error(`Editorial QA History HTML type label failed in ${captureCase.id}: ${state.historyHtmlTypeLabel}.`);
@@ -313,9 +333,11 @@ export async function captureEditorialQa(
       volcengineVersion: state.volcengineVersion,
       jianyingDetection: state.jianyingDetection,
       historyHtmlTypeLabel: state.historyHtmlTypeLabel,
+      historyHtmlRouteReady: state.historyHtmlRouteReady,
       promptTemplateEditorOpen: state.promptTemplateEditorOpen,
       presetStatePreserved: state.presetStatePreserved,
       autoBorrowImageStatePreserved: state.autoBorrowImageStatePreserved,
+      aiBuiltinComposeReady: state.aiBuiltinComposeReady,
       borrowedImageLabel: state.borrowedImageLabel,
       errorDialogOpen: state.errorDialogOpen,
       deleteDialogFocusWrapped: state.deleteDialogFocusWrapped,
@@ -326,7 +348,11 @@ export async function captureEditorialQa(
       draftUnderlineToggleReady: state.draftUnderlineToggleReady,
       draftRangeZeroReady: state.draftRangeZeroReady,
       draftAnimationPreviewReady: state.draftAnimationPreviewReady,
+      draftFontSelectionReady: state.draftFontSelectionReady,
+      draftImageFitReady: state.draftImageFitReady,
+      draftImageTransformReady: state.draftImageTransformReady,
       taskImageWorkflowReady: state.taskImageWorkflowReady,
+      sceneVideoWorkflowReady: state.sceneVideoWorkflowReady,
     });
     await writeEditorialQaReport(config, captures, getMetrics);
   }
@@ -361,7 +387,8 @@ async function withEditorialQaTimeout<T>(operation: Promise<T>, timeoutMs: numbe
     ]);
   } catch (error) {
     if (error instanceof Error && error.message.startsWith('Editorial QA ')) throw error;
-    throw new Error(`Editorial QA ${label} failed: ${error instanceof Error ? error.message : String(error)}`);
+    const detail = error instanceof Error ? error.stack ?? error.message : String(error);
+    throw new Error(`Editorial QA ${label} failed: ${detail}`);
   } finally {
     if (timeout) clearTimeout(timeout);
   }
@@ -462,9 +489,11 @@ export interface EditorialQaCapture {
   volcengineVersion: QaScenarioState['volcengineVersion'];
   jianyingDetection: QaScenarioState['jianyingDetection'];
   historyHtmlTypeLabel: string;
+  historyHtmlRouteReady: boolean;
   promptTemplateEditorOpen: boolean;
   presetStatePreserved: boolean;
   autoBorrowImageStatePreserved: boolean;
+  aiBuiltinComposeReady: boolean;
   borrowedImageLabel: string;
   errorDialogOpen: boolean;
   deleteDialogFocusWrapped: boolean;
@@ -475,7 +504,11 @@ export interface EditorialQaCapture {
   draftUnderlineToggleReady: boolean;
   draftRangeZeroReady: boolean;
   draftAnimationPreviewReady: boolean;
+  draftFontSelectionReady: boolean;
+  draftImageFitReady: boolean;
+  draftImageTransformReady: boolean;
   taskImageWorkflowReady: boolean;
+  sceneVideoWorkflowReady: boolean;
 }
 
 interface EditorialQaCaptureCase {
@@ -506,6 +539,7 @@ interface QaScenarioState {
   stageStatePreserved: boolean;
   presetStatePreserved: boolean;
   autoBorrowImageStatePreserved: boolean;
+  aiBuiltinComposeReady: boolean;
   borrowedImageLabel: string;
   errorDialogOpen: boolean;
   manualCover: {
@@ -536,6 +570,7 @@ interface QaScenarioState {
     fullPathVisible: boolean;
   };
   historyHtmlTypeLabel: string;
+  historyHtmlRouteReady: boolean;
   promptTemplateEditorOpen: boolean;
   deleteDialogFocusWrapped: boolean;
   deleteDialogEscapeRestored: boolean;
@@ -546,7 +581,11 @@ interface QaScenarioState {
   draftRangeZeroReady: boolean;
   draftRangeDiagnostics: Array<Record<string, unknown>>;
   draftAnimationPreviewReady: boolean;
+  draftFontSelectionReady: boolean;
+  draftImageFitReady: boolean;
+  draftImageTransformReady: boolean;
   taskImageWorkflowReady: boolean;
+  sceneVideoWorkflowReady: boolean;
   layout: {
     horizontalOverflow: number;
     clippedPrimaryControls: string[];
@@ -559,7 +598,8 @@ interface QaScenarioState {
   readiness: {
     taskDetail: {
       currentScene: string;
-      generatedScenes: string;
+      imageProgress: string;
+      videoReplacements: string;
       templateFrameFound: boolean;
       templateId: string;
       previewSceneId: string;
@@ -640,7 +680,7 @@ export function editorialQaCaptureIdsByRequirement(requirement: EditorialQaCaptu
   for (const captureCase of editorialQaMatrix.newTaskStates) requiredIds.add(captureCase.id);
 
   const classified = allIds.filter((id) => requirement === 'required' ? requiredIds.has(id) : !requiredIds.has(id));
-  if (requiredIds.size !== 67 || allIds.length - requiredIds.size !== 29) {
+  if (requiredIds.size !== 67 || allIds.length - requiredIds.size !== 31) {
     throw new Error(`Editorial QA canonical classification drifted: ${requiredIds.size} required of ${allIds.length}.`);
   }
   return classified;
@@ -746,6 +786,11 @@ function qaScenarioScript(id: string, view: string, theme: string, stage?: strin
       while (!check()) { if (Date.now() >= until) return false; await new Promise((resolve) => setTimeout(resolve, 25)); }
       return true;
     };
+    const waitForAsync = async (check, timeout = 10000) => {
+      const until = Date.now() + timeout;
+      while (!await check()) { if (Date.now() >= until) return false; await new Promise((resolve) => setTimeout(resolve, 25)); }
+      return true;
+    };
     const withTimeout = async (operation, timeout, message) => {
       let timer;
       try {
@@ -792,6 +837,7 @@ function qaScenarioScript(id: string, view: string, theme: string, stage?: strin
     const draftDeliveryScenario = scenarioId.startsWith('task-detail-draft-delivery-');
     const coverPageScenario = scenarioId === 'task-detail-cover-page-light-desktop';
     const subtitleDiagnosticsScenario = scenarioId === 'task-detail-subtitle-diagnostics-light-desktop';
+    const sceneVideoScenario = scenarioId.startsWith('task-detail-scene-video-');
     const navView = targetView === 'task-detail' ? 'queue' : targetView;
     const nav = document.querySelector('[data-nav-view="' + navView + '"]');
     if (nav instanceof HTMLButtonElement) nav.click();
@@ -828,6 +874,7 @@ function qaScenarioScript(id: string, view: string, theme: string, stage?: strin
     }
     let deleteDialogFocusWrapped = scenarioId !== 'history-operations-desktop';
     let deleteDialogEscapeRestored = scenarioId !== 'history-operations-desktop';
+    let historyHtmlRouteReady = scenarioId !== 'history-operations-desktop';
     let errorDialogOpen = false;
     if (scenarioId === 'queue-operations-desktop') {
       const latestQueueTitle = document.querySelector('.task-queue-row strong')?.textContent?.trim() ?? '';
@@ -945,6 +992,24 @@ function qaScenarioScript(id: string, view: string, theme: string, stage?: strin
       if (activeButton instanceof HTMLButtonElement && !activeButton.disabled) activeButton.click();
       ready = ready && await waitFor(() => [...document.querySelectorAll('.history-page .table-row')]
         .some((row) => row.textContent?.includes('武则天：从深宫才人到一代女皇')));
+      const htmlHistoryRow = [...document.querySelectorAll('.history-page .table-row')]
+        .find((row) => row.textContent?.includes('武则天：权力之路 HTML 动画'));
+      const htmlHistoryButton = htmlHistoryRow?.querySelector('.table-row-primary-action');
+      if (htmlHistoryButton instanceof HTMLButtonElement) htmlHistoryButton.click();
+      historyHtmlRouteReady = htmlHistoryButton instanceof HTMLButtonElement && await waitFor(() => {
+        const shell = document.querySelector('[data-shell-view="html-video"]');
+        const studio = document.querySelector('[data-html-video-studio="html-video"]');
+        const taskTitle = studio?.querySelector('.hv-studio-parameters h2')?.textContent?.trim() ?? '';
+        return shell instanceof HTMLElement
+          && studio instanceof HTMLElement
+          && taskTitle === '武则天：权力之路 HTML 动画';
+      });
+      ready = ready && historyHtmlRouteReady;
+      const historyNav = document.querySelector('[data-nav-view="history"]');
+      if (historyNav instanceof HTMLButtonElement) historyNav.click();
+      ready = ready && await waitFor(() => document.querySelector('[data-shell-view="history"]')
+        && [...document.querySelectorAll('.history-page .table-row')]
+          .some((row) => row.textContent?.includes('武则天：权力之路 HTML 动画')));
     }
     if (targetView === 'voice-lab') {
       const providerGroup = document.querySelector('[role="group"][aria-label="配音模型"]');
@@ -981,7 +1046,11 @@ function qaScenarioScript(id: string, view: string, theme: string, stage?: strin
     let draftRangeZeroReady = targetView !== 'draft-templates';
     const draftRangeDiagnostics = [];
     let draftAnimationPreviewReady = targetView !== 'draft-templates';
+    let draftFontSelectionReady = targetView !== 'draft-templates';
+    let draftImageFitReady = targetView !== 'draft-templates';
+    let draftImageTransformReady = targetView !== 'draft-templates';
     let taskImageWorkflowReady = scenarioId !== 'task-detail-borrowed-image-desktop';
+    let sceneVideoWorkflowReady = !sceneVideoScenario;
     if (targetView === 'draft-templates') {
       const templateActionsReady = await waitFor(() => {
         const actionRow = document.querySelector('.draft-template-actions.has-delete');
@@ -1010,12 +1079,18 @@ function qaScenarioScript(id: string, view: string, theme: string, stage?: strin
         const page = document.querySelector('.draft-template-page');
         const subtitleLayer = document.querySelector('.editable-draft-canvas .draft-layer[data-layer="subtitle"]');
         if (controls instanceof HTMLElement && stage instanceof HTMLElement && page instanceof HTMLElement && subtitleLayer instanceof HTMLElement) {
-          const zeroRangeLabels = ['高度占比', '运镜强度'];
+          const zeroRangeLabels = ['图片边框宽度', '运镜强度'];
           const motionAccordionButton = [...controls.querySelectorAll('.accordion > button')]
             .find((button) => button.textContent?.includes('运镜'));
           if (motionAccordionButton instanceof HTMLButtonElement && motionAccordionButton.getAttribute('aria-expanded') !== 'true') {
             motionAccordionButton.click();
             await waitFor(() => controls.querySelector('input[aria-label="运镜强度滑块"]'));
+          }
+          const frameAccordionButton = [...controls.querySelectorAll('.accordion > button')]
+            .find((button) => button.textContent?.includes('分栏画框'));
+          if (frameAccordionButton instanceof HTMLButtonElement && frameAccordionButton.getAttribute('aria-expanded') !== 'true') {
+            frameAccordionButton.click();
+            await waitFor(() => controls.querySelector('input[aria-label="图片边框宽度滑块"]'));
           }
           const rangeSnapshots = zeroRangeLabels.map((label) => {
             const range = controls.querySelector('input[aria-label="' + label + '滑块"]');
@@ -1163,10 +1238,109 @@ function qaScenarioScript(id: string, view: string, theme: string, stage?: strin
             layerTogglesReady = layerTogglesReady && enabledReady && disabledReady;
           }
 
+          const fontSelections = [
+            { label: '主标题字体', value: '得意黑', textSelector: '.draft-title', cssFamily: 'SimHei' },
+            { label: '字幕字体', value: '宋体', textSelector: '.draft-caption', cssFamily: 'SimSun' },
+          ];
+          const fontCatalogReady = [...controls.querySelectorAll('select[aria-label$="字体"]')]
+            .every((select) => select instanceof HTMLSelectElement
+              && select.options.length === 28
+              && select.querySelectorAll('optgroup').length === 6
+              && [...select.options].some((option) => option.value === 'SourceHanSansCN_Regular')
+              && [...select.options].some((option) => option.value === 'ResourceHanRoundedCN_Bold')
+              && [...select.options].some((option) => option.value === '江湖体'));
+          let fontSelectionsLiveReady = fontCatalogReady;
+          for (const definition of fontSelections) {
+            const select = controls.querySelector('select[aria-label="' + definition.label + '"]');
+            if (!(select instanceof HTMLSelectElement)) {
+              fontSelectionsLiveReady = false;
+              continue;
+            }
+            const valueSetter = Object.getOwnPropertyDescriptor(HTMLSelectElement.prototype, 'value')?.set;
+            valueSetter?.call(select, definition.value);
+            select.dispatchEvent(new Event('change', { bubbles: true }));
+            const applied = await waitFor(() => {
+              const text = document.querySelector('.editable-draft-canvas ' + definition.textSelector);
+              return select.value === definition.value
+                && text instanceof HTMLElement
+                && getComputedStyle(text).fontFamily.includes(definition.cssFamily);
+            });
+            fontSelectionsLiveReady = fontSelectionsLiveReady && applied;
+          }
+
+          const imageFitGroup = controls.querySelector('[role="group"][aria-label="图片显示"]');
+          const imageFitButtons = [...(imageFitGroup?.querySelectorAll('button') ?? [])];
+          const cropFillButton = imageFitButtons.find((button) => button.textContent?.trim() === '裁切填满');
+          const fullImageButton = imageFitButtons.find((button) => button.textContent?.trim() === '完整缩放');
+          let imageFitLiveReady = imageFitButtons.map((button) => button.textContent?.trim()).join('|') === '裁切填满|完整缩放';
+          if (cropFillButton instanceof HTMLButtonElement) cropFillButton.click();
+          const objectButtonsReady = await waitFor(() => {
+            const group = controls.querySelector('[role="group"][aria-label="编辑对象"]');
+            return [...(group?.querySelectorAll('button') ?? [])].map((button) => button.textContent?.trim()).join('|') === '展示框|实际图片';
+          });
+          const findObjectButton = (label) => [...controls.querySelectorAll('[role="group"][aria-label="编辑对象"] button')]
+            .find((button) => button.textContent?.trim() === label);
+          const findRange = (label) => controls.querySelector('input[aria-label="' + label + '滑块"]');
+          const frameObjectButton = findObjectButton('展示框');
+          if (frameObjectButton instanceof HTMLButtonElement) frameObjectButton.click();
+          let imageTransformLiveReady = objectButtonsReady && await waitFor(() => {
+            const frameBox = document.querySelector('.editable-draft-canvas [data-layer="image-frame"]');
+            return frameBox instanceof HTMLElement
+              && frameBox.dataset.selected === 'true'
+              && frameBox.querySelectorAll('.draft-transform-handle').length === 8;
+          });
+          for (const [label, value] of [['展示框宽度', 0.72], ['展示框高度', 0.62], ['水平位置', 0.12], ['垂直位置', 0.18]]) {
+            const range = findRange(label);
+            if (range instanceof HTMLInputElement) setRangeInputValue(range, value);
+            else imageTransformLiveReady = false;
+          }
+          const mediaObjectButton = findObjectButton('实际图片');
+          if (mediaObjectButton instanceof HTMLButtonElement) mediaObjectButton.click();
+          imageTransformLiveReady = imageTransformLiveReady && await waitFor(() => {
+            const mediaBox = document.querySelector('.editable-draft-canvas [data-layer="image-media"]');
+            return mediaBox instanceof HTMLElement
+              && mediaBox.dataset.selected === 'true'
+              && mediaBox.querySelectorAll('.draft-transform-handle').length === 8;
+          });
+          for (const [label, value] of [['图片缩放', 1.4], ['水平取景', 0.25], ['垂直取景', 0.75]]) {
+            const range = findRange(label);
+            if (range instanceof HTMLInputElement) setRangeInputValue(range, value);
+            else imageTransformLiveReady = false;
+          }
+          const mediaBox = document.querySelector('.editable-draft-canvas [data-layer="image-media"]');
+          let pointerMoved = false;
+          if (mediaBox instanceof HTMLElement) {
+            const canvas = document.querySelector('.editable-draft-canvas');
+            const mediaRect = mediaBox.getBoundingClientRect();
+            const beforeLeft = mediaBox.style.left;
+            Object.defineProperty(mediaBox, 'setPointerCapture', { configurable: true, value: () => undefined });
+            mediaBox.dispatchEvent(new PointerEvent('pointerdown', { bubbles: true, cancelable: true, pointerId: 83, pointerType: 'mouse', clientX: mediaRect.left + mediaRect.width / 2, clientY: mediaRect.top + mediaRect.height / 2, button: 0, buttons: 1 }));
+            canvas?.dispatchEvent(new PointerEvent('pointermove', { bubbles: true, cancelable: true, pointerId: 83, pointerType: 'mouse', clientX: mediaRect.left + mediaRect.width / 2 + 14, clientY: mediaRect.top + mediaRect.height / 2 - 10, button: 0, buttons: 1 }));
+            canvas?.dispatchEvent(new PointerEvent('pointerup', { bubbles: true, pointerId: 83, pointerType: 'mouse', button: 0 }));
+            delete mediaBox.setPointerCapture;
+            pointerMoved = await waitFor(() => document.querySelector('.editable-draft-canvas [data-layer="image-media"]')?.style.left !== beforeLeft);
+          }
+          imageTransformLiveReady = imageTransformLiveReady && pointerMoved;
+          for (const [label, value] of [['水平取景', 0.25], ['垂直取景', 0.75]]) {
+            const range = findRange(label);
+            if (range instanceof HTMLInputElement) setRangeInputValue(range, value);
+          }
+          if (fullImageButton instanceof HTMLButtonElement) fullImageButton.click();
+          imageFitLiveReady = imageFitLiveReady && await waitFor(() => {
+            const media = document.querySelector('.editable-draft-canvas .draft-image-media');
+            return fullImageButton instanceof HTMLButtonElement
+              && fullImageButton.getAttribute('aria-pressed') === 'true'
+              && !document.querySelector('.editable-draft-canvas [data-layer="image-media"]')
+              && media instanceof HTMLElement
+              && media.style.objectFit === 'contain';
+          });
+          if (cropFillButton instanceof HTMLButtonElement) cropFillButton.click();
+          imageFitLiveReady = imageFitLiveReady && await waitFor(() => Boolean(document.querySelector('.editable-draft-canvas [data-layer="image-media"]')));
+
           const shellStayedVisible = await waitFor(() => {
             const shell = document.querySelector('.app-shell');
             const canvas = document.querySelector('.editable-draft-canvas');
-            const image = canvas?.querySelector('.draft-layer[data-layer="image"]');
+            const image = canvas?.querySelector('.draft-image-transform-box[data-layer="image-frame"]');
             return shell instanceof HTMLElement
               && canvas instanceof HTMLElement
               && image instanceof HTMLElement
@@ -1181,7 +1355,20 @@ function qaScenarioScript(id: string, view: string, theme: string, stage?: strin
                 const until = Date.now() + 10000;
                 while (Date.now() < until) {
                   const persisted = await api.getDraftTemplateDetail('qa-selected-draft-template');
-                  if (persisted && underlineLayers.every(({ layer }) => persisted[layer]?.underline === false)) return true;
+                  if (
+                    persisted
+                    && underlineLayers.every(({ layer }) => persisted[layer]?.underline === false)
+                    && persisted.title?.fontFamily === '得意黑'
+                    && persisted.caption?.fontFamily === '宋体'
+                    && persisted.image?.fit === 'cover'
+                    && persisted.image?.left === 0.12
+                    && persisted.image?.top === 0.18
+                    && persisted.image?.width === 0.72
+                    && persisted.image?.height === 0.62
+                    && persisted.image?.mediaScale === 1.4
+                    && persisted.image?.focusX === 0.25
+                    && persisted.image?.focusY === 0.75
+                  ) return true;
                   await new Promise((resolve) => setTimeout(resolve, 50));
                 }
                 return false;
@@ -1193,12 +1380,32 @@ function qaScenarioScript(id: string, view: string, theme: string, stage?: strin
           const returnedToGallery = await waitFor(() => document.querySelector('.draft-template-actions.has-delete'));
           const savedCard = [...document.querySelectorAll('.draft-template-card')]
             .find((card) => card.textContent?.includes('QA 已选草稿模板'));
+          const galleryImageFitReady = savedCard?.textContent?.includes('裁切填满') === true;
           const reopenButton = [...(savedCard?.querySelectorAll('.draft-template-actions button') ?? [])]
             .find((button) => button.textContent?.trim() === '编辑');
           if (reopenButton instanceof HTMLButtonElement) reopenButton.click();
           const reopened = returnedToGallery && await waitFor(() => {
             const canvas = document.querySelector('.editable-draft-canvas');
-            return canvas instanceof HTMLElement && underlineLayers.every((definition) => {
+            const title = canvas?.querySelector('.draft-title');
+            const caption = canvas?.querySelector('.draft-caption');
+            const imageFitButton = [...document.querySelectorAll('[role="group"][aria-label="图片显示"] button')]
+              .find((button) => button.textContent?.trim() === '裁切填满');
+            const frameBox = canvas?.querySelector('[data-layer="image-frame"]');
+            const mediaBox = canvas?.querySelector('[data-layer="image-media"]');
+            return canvas instanceof HTMLElement
+              && title instanceof HTMLElement
+              && caption instanceof HTMLElement
+              && getComputedStyle(title).fontFamily.includes('SimHei')
+              && getComputedStyle(caption).fontFamily.includes('SimSun')
+              && imageFitButton instanceof HTMLButtonElement
+              && imageFitButton.getAttribute('aria-pressed') === 'true'
+              && frameBox instanceof HTMLElement
+              && mediaBox instanceof HTMLElement
+              && frameBox.style.left === '12%'
+              && frameBox.style.top === '18%'
+              && frameBox.style.width === '72%'
+              && frameBox.style.height === '62%'
+              && underlineLayers.every((definition) => {
               const text = canvas.querySelector('.draft-layer[data-layer="' + definition.layer + '"] ' + definition.textSelector);
               return text instanceof HTMLElement
                 && text.dataset.draftUnderline === 'off'
@@ -1206,6 +1413,9 @@ function qaScenarioScript(id: string, view: string, theme: string, stage?: strin
             });
           });
           draftUnderlineToggleReady = layerTogglesReady && shellStayedVisible && persistenceReady && reopened;
+          draftFontSelectionReady = fontSelectionsLiveReady && shellStayedVisible && persistenceReady && reopened;
+          draftImageFitReady = imageFitLiveReady && shellStayedVisible && persistenceReady && galleryImageFitReady && reopened;
+          draftImageTransformReady = imageTransformLiveReady && shellStayedVisible && persistenceReady && reopened;
         }
       }
     }
@@ -1218,9 +1428,12 @@ function qaScenarioScript(id: string, view: string, theme: string, stage?: strin
       const title = templateFrame?.querySelector('.draft-title');
       const subtitle = templateFrame?.querySelector('.draft-subtitle');
       const titleStyle = title instanceof HTMLElement ? getComputedStyle(title) : null;
+      const imageProgressRow = [...document.querySelectorAll('.preview-meta-grid > div')]
+        .find((row) => row.querySelector('small')?.textContent?.trim() === '图片进度');
       return {
-          currentScene: document.querySelector('.task-media-scene-count')?.textContent?.trim() ?? '',
-        generatedScenes: document.querySelector('.task-scene-rail > div:first-child > span')?.textContent?.trim() ?? '',
+        currentScene: document.querySelector('.task-media-scene-count')?.textContent?.trim() ?? '',
+        imageProgress: imageProgressRow?.querySelector('strong')?.textContent?.trim() ?? '',
+        videoReplacements: document.querySelector('.task-scene-rail > div:first-child > span')?.textContent?.trim() ?? '',
         templateFrameFound: templateFrame instanceof HTMLElement,
         templateId: templateFrame?.getAttribute('data-draft-template-id') ?? '',
         previewSceneId: templateFrame?.getAttribute('data-preview-scene-id') ?? '',
@@ -1244,7 +1457,8 @@ function qaScenarioScript(id: string, view: string, theme: string, stage?: strin
         const templateFrame = document.querySelector('.task-media-frame[data-draft-template-id][data-preview-scene-id="1"]');
         const previewImage = templateFrame?.querySelector('.draft-image-asset');
         return state.currentScene === '01 / 12'
-          && state.generatedScenes === '8 / 12 已生成'
+          && state.imageProgress === '8/12 张 · 生成中'
+          && state.videoReplacements === '0 个视频替换'
           && state.templateId === 'qa-selected-draft-template'
           && state.imageTop === '22%'
           && state.imageHeight === '44%'
@@ -1443,11 +1657,187 @@ function qaScenarioScript(id: string, view: string, theme: string, stage?: strin
           const panel = borrowedCard.querySelector('.image-card-action-panel');
           return panel instanceof HTMLElement
             && getComputedStyle(panel).opacity === '1'
-            && panel.textContent?.includes('素材库选图') === true
+            && panel.textContent?.includes('替换画面') === true
             && panel.textContent?.includes('参考图编辑') === true;
         });
         await settleCompositor();
       }
+    }
+    if (sceneVideoScenario) {
+      const pauseButton = [...document.querySelectorAll('.task-detail-run-control')]
+        .find((button) => button.textContent?.trim() === '暂停任务');
+      if (pauseButton instanceof HTMLButtonElement) pauseButton.click();
+      const pausedReady = await waitFor(() => [...document.querySelectorAll('.task-detail-run-control')]
+        .some((button) => button.textContent?.trim() === '继续任务'));
+      const imageTab = [...document.querySelectorAll('.artifact-tab-list button')]
+        .find((button) => button.textContent?.trim() === '图片');
+      if (imageTab instanceof HTMLButtonElement) imageTab.click();
+      const galleryReady = await waitFor(() => imageTab instanceof HTMLButtonElement
+        && imageTab.classList.contains('active')
+        && document.querySelector('.image-preview-card[data-scene-id="1"]'));
+      const taskShell = document.querySelector('.task-detail-shell[data-task-id]');
+      const taskId = taskShell instanceof HTMLElement ? taskShell.dataset.taskId ?? '' : '';
+
+      if (scenarioId === 'task-detail-scene-video-light-desktop') {
+        const existingCard = document.querySelector('.image-preview-card.video[data-scene-id="1"]');
+        if (existingCard instanceof HTMLElement) {
+          existingCard.dataset.qaActionsOpen = 'true';
+          const restore = [...existingCard.querySelectorAll('.image-card-action-panel button')]
+            .find((button) => button.textContent?.trim() === '恢复图片');
+          if (restore instanceof HTMLButtonElement) restore.click();
+          await waitFor(() => !document.querySelector('.image-preview-card.video[data-scene-id="1"]'));
+        }
+
+        const openSceneMenu = async () => {
+          const card = document.querySelector('.image-preview-card[data-scene-id="1"]');
+          if (!(card instanceof HTMLElement)) return null;
+          card.scrollIntoView({ block: 'center' });
+          card.dataset.qaActionsOpen = 'true';
+          const replace = [...card.querySelectorAll('.image-card-action-panel button')]
+            .find((button) => ['替换画面', '更换画面'].includes(button.textContent?.trim() ?? ''));
+          if (replace instanceof HTMLButtonElement) replace.click();
+          const opened = await waitFor(() => card.querySelector('.scene-media-menu[role="menu"]'));
+          return opened ? card.querySelector('.scene-media-menu[role="menu"]') : null;
+        };
+
+        const firstMenu = await openSceneMenu();
+        const requiredMenuActions = ['本地图片', '图片素材库', '本地视频', '视频素材库', '随机匹配视频', 'AI 生成视频'];
+        const menuReady = firstMenu instanceof HTMLElement
+          && requiredMenuActions.every((label) => [...firstMenu.querySelectorAll('[role="menuitem"]')]
+            .some((button) => button.textContent?.includes(label)));
+        const aiVideoButton = [...(firstMenu?.querySelectorAll('[role="menuitem"]') ?? [])]
+          .find((button) => button.textContent?.includes('AI 生成视频'));
+        if (aiVideoButton instanceof HTMLButtonElement) aiVideoButton.click();
+        const aiNoticeReady = await waitFor(() => document.querySelector('.image-gallery-notice')
+          ?.textContent?.includes('尚未配置视频生成服务') === true);
+
+        const libraryMenu = await openSceneMenu();
+        const libraryButton = [...(libraryMenu?.querySelectorAll('[role="menuitem"]') ?? [])]
+          .find((button) => button.textContent?.includes('视频素材库'));
+        if (libraryButton instanceof HTMLButtonElement) libraryButton.click();
+        const libraryReady = await waitFor(() => {
+          const dialog = document.querySelector('.video-library-dialog[aria-modal="true"]');
+          const item = [...(dialog?.querySelectorAll('.video-library-item') ?? [])]
+            .find((button) => button.textContent?.includes('qa-scene-source.mp4'));
+          return dialog instanceof HTMLElement && item instanceof HTMLButtonElement && !item.disabled;
+        });
+        const libraryItem = [...document.querySelectorAll('.video-library-dialog .video-library-item')]
+          .find((button) => button.textContent?.includes('qa-scene-source.mp4'));
+        if (libraryItem instanceof HTMLButtonElement) libraryItem.click();
+        const adoptedReady = await waitFor(() => {
+          const card = document.querySelector('.image-preview-card.video[data-scene-id="1"]');
+          const video = card?.querySelector('video[aria-label="分镜 1 视频画面"]');
+          const range = card?.querySelector('.scene-video-details input[type="range"]');
+          return card instanceof HTMLElement
+            && video instanceof HTMLVideoElement
+            && video.readyState >= 1
+            && video.videoWidth === 360
+            && video.videoHeight === 640
+            && range instanceof HTMLInputElement
+            && Number(range.max) >= 1700
+            && card.textContent?.includes('原图已保留') === true;
+        }, 15000);
+
+        const adoptedCard = document.querySelector('.image-preview-card.video[data-scene-id="1"]');
+        const trimRange = adoptedCard?.querySelector('.scene-video-details input[type="range"]');
+        if (trimRange instanceof HTMLInputElement) setRangeInputValue(trimRange, '900');
+        const applyTrim = [...(adoptedCard?.querySelectorAll('.scene-video-details button') ?? [])]
+          .find((button) => button.textContent?.trim() === '应用');
+        const trimControlReady = await waitFor(() => applyTrim instanceof HTMLButtonElement && !applyTrim.disabled);
+        if (applyTrim instanceof HTMLButtonElement) applyTrim.click();
+        const trimPersisted = trimControlReady && taskId && api
+          ? await waitForAsync(async () => {
+              const snapshot = await api.getTaskArtifacts(taskId);
+              return snapshot.assets.videos.find((video) => video.sceneId === 1)?.trimStartMs === 900;
+            })
+          : false;
+
+        const restoredCard = document.querySelector('.image-preview-card.video[data-scene-id="1"]');
+        if (restoredCard instanceof HTMLElement) {
+          restoredCard.dataset.qaActionsOpen = 'true';
+          const restore = [...restoredCard.querySelectorAll('.image-card-action-panel button')]
+            .find((button) => button.textContent?.trim() === '恢复图片');
+          if (restore instanceof HTMLButtonElement) restore.click();
+        }
+        const restoredReady = await waitFor(() => {
+          const card = document.querySelector('.image-preview-card[data-scene-id="1"]');
+          const image = card?.querySelector('img');
+          return card instanceof HTMLElement
+            && !card.classList.contains('video')
+            && image instanceof HTMLImageElement
+            && image.complete
+            && image.naturalWidth > 0
+            && document.querySelector('.image-gallery-notice')?.textContent?.includes('已恢复为原图片') === true;
+        });
+
+        const randomMenu = await openSceneMenu();
+        const randomButton = [...(randomMenu?.querySelectorAll('[role="menuitem"]') ?? [])]
+          .find((button) => button.textContent?.includes('随机匹配视频'));
+        if (randomButton instanceof HTMLButtonElement) randomButton.click();
+        const randomReady = await waitFor(() => document.querySelector('.image-preview-card.video[data-scene-id="1"] video')
+          && document.querySelector('.image-gallery-notice')?.textContent?.includes('随机匹配视频') === true, 15000);
+        const randomPersisted = randomReady && taskId && api
+          ? (await api.getTaskArtifacts(taskId)).assets.videos
+              .some((video) => video.sceneId === 1 && video.source === 'local-random' && video.trimStartMs === 0)
+          : false;
+        const finalMenu = await openSceneMenu();
+        const taskMain = document.querySelector('.task-detail-main');
+        const finalCard = document.querySelector('.image-preview-card.video[data-scene-id="1"]');
+        const stickyTabs = document.querySelector('.artifact-tabs');
+        if (taskMain instanceof HTMLElement && finalCard instanceof HTMLElement && stickyTabs instanceof HTMLElement) {
+          const desiredCardTop = stickyTabs.getBoundingClientRect().bottom + 10;
+          taskMain.scrollTop = Math.max(0, taskMain.scrollTop + finalCard.getBoundingClientRect().top - desiredCardTop);
+          await waitFor(() => {
+            const cardRect = finalCard.getBoundingClientRect();
+            const tabsRect = stickyTabs.getBoundingClientRect();
+            const menuRect = finalMenu?.getBoundingClientRect();
+            return cardRect.top >= tabsRect.bottom - 1
+              && Boolean(menuRect && menuRect.top >= tabsRect.bottom && menuRect.bottom <= window.innerHeight);
+          });
+        }
+        const finalMenuVisible = finalMenu instanceof HTMLElement
+          && getComputedStyle(finalMenu).visibility !== 'hidden'
+          && requiredMenuActions.every((label) => finalMenu.textContent?.includes(label));
+        sceneVideoWorkflowReady = pausedReady
+          && galleryReady
+          && menuReady
+          && aiNoticeReady
+          && libraryReady
+          && adoptedReady
+          && trimPersisted
+          && restoredReady
+          && randomPersisted
+          && finalMenuVisible;
+      } else {
+        const card = document.querySelector('.image-preview-card.video[data-scene-id="1"]');
+        if (card instanceof HTMLElement) {
+          card.scrollIntoView({ block: 'center' });
+          card.dataset.qaActionsOpen = 'true';
+          const replace = [...card.querySelectorAll('.image-card-action-panel button')]
+            .find((button) => button.textContent?.trim() === '更换画面');
+          if (replace instanceof HTMLButtonElement) replace.click();
+        }
+        const menuReady = await waitFor(() => document.querySelector('.scene-media-menu[role="menu"]'));
+        const libraryButton = [...document.querySelectorAll('.scene-media-menu [role="menuitem"]')]
+          .find((button) => button.textContent?.includes('视频素材库'));
+        if (libraryButton instanceof HTMLButtonElement) libraryButton.click();
+        const compactLibraryReady = await waitFor(() => {
+          const dialog = document.querySelector('.video-library-dialog[aria-modal="true"]');
+          const item = [...(dialog?.querySelectorAll('.video-library-item') ?? [])]
+            .find((button) => button.textContent?.includes('qa-scene-source.mp4'));
+          if (!(dialog instanceof HTMLElement) || !(item instanceof HTMLButtonElement) || item.disabled) return false;
+          const rect = dialog.getBoundingClientRect();
+          return rect.left >= 0
+            && rect.top >= 0
+            && rect.right <= window.innerWidth
+            && rect.bottom <= window.innerHeight
+            && dialog.textContent?.includes('需要 00:04') === true
+            && dialog.textContent?.includes('自动静音') === true;
+        });
+        sceneVideoWorkflowReady = pausedReady && galleryReady && menuReady && compactLibraryReady;
+      }
+      ready = ready && sceneVideoWorkflowReady;
+      await settleCompositor();
     }
     if (subtitleDiagnosticsScenario) {
       const pauseButton = [...document.querySelectorAll('.task-detail-run-control')]
@@ -1714,6 +2104,7 @@ function qaScenarioScript(id: string, view: string, theme: string, stage?: strin
     let stageStatePreserved = true;
     let presetStatePreserved = true;
     let autoBorrowImageStatePreserved = true;
+    let aiBuiltinComposeReady = true;
     if (stage) {
       const materialTab = document.querySelector('[data-new-task-stage-tab="material"]');
       if (materialTab instanceof HTMLButtonElement) materialTab.click();
@@ -1800,6 +2191,27 @@ function qaScenarioScript(id: string, view: string, theme: string, stage?: strin
             presetTitleInput.dispatchEvent(new Event('input', { bubbles: true }));
           }
         }
+        const aiCreateButton = [...document.querySelectorAll('.new-task-source-actions button')]
+          .find((button) => button.textContent?.trim() === 'AI 创作');
+        if (aiCreateButton instanceof HTMLButtonElement) aiCreateButton.click();
+        ready = ready && await waitFor(() => document.querySelector('.ai-create-panel'));
+        const sourceRows = [...document.querySelectorAll('.ai-create-panel .check-row')];
+        const webToggle = sourceRows.find((row) => row.textContent?.includes('全网搜索'))?.querySelector('input');
+        const builtinToggle = sourceRows.find((row) => row.textContent?.includes('AI 内置知识补全'))?.querySelector('input');
+        if (webToggle instanceof HTMLInputElement && webToggle.checked) webToggle.click();
+        if (builtinToggle instanceof HTMLInputElement && !builtinToggle.checked) builtinToggle.click();
+        const sourceStateSettled = await waitFor(() => !document.querySelector('.web-search-provider-panel'));
+        const composeButton = document.querySelector('button[aria-label="生成文案"]');
+        aiBuiltinComposeReady = sourceStateSettled
+          && webToggle instanceof HTMLInputElement
+          && !webToggle.checked
+          && builtinToggle instanceof HTMLInputElement
+          && builtinToggle.checked
+          && composeButton instanceof HTMLButtonElement
+          && !composeButton.disabled
+          && composeButton.textContent?.includes('使用 AI 内置知识生成文案') === true;
+        ready = ready && aiBuiltinComposeReady;
+        composeButton?.scrollIntoView({ block: 'center', inline: 'nearest' });
       }
     }
     await withTimeout(document.fonts.ready, 10000, 'font readiness timed out');
@@ -1949,7 +2361,19 @@ function qaScenarioScript(id: string, view: string, theme: string, stage?: strin
       .filter((element) => {
         if (!visibleElement(element) || element.matches(':disabled, [aria-disabled="true"]')) return false;
         const directText = [...element.childNodes].some((node) => node.nodeType === Node.TEXT_NODE && node.textContent?.trim());
-        return directText || element.matches('input, select, textarea');
+        const textualFormControl = element.matches([
+          'input:not([type])',
+          'input[type="text"]',
+          'input[type="search"]',
+          'input[type="email"]',
+          'input[type="url"]',
+          'input[type="tel"]',
+          'input[type="password"]',
+          'input[type="number"]',
+          'select',
+          'textarea',
+        ].join(', '));
+        return directText || textualFormControl;
       })
       .map((element, index) => {
         const style = getComputedStyle(element);
@@ -2206,6 +2630,7 @@ function qaScenarioScript(id: string, view: string, theme: string, stage?: strin
       stageStatePreserved,
       presetStatePreserved,
       autoBorrowImageStatePreserved,
+      aiBuiltinComposeReady,
       borrowedImageLabel,
       errorDialogOpen,
       deleteDialogFocusWrapped,
@@ -2217,7 +2642,11 @@ function qaScenarioScript(id: string, view: string, theme: string, stage?: strin
       draftRangeZeroReady,
       draftRangeDiagnostics,
       draftAnimationPreviewReady,
+      draftFontSelectionReady,
+      draftImageFitReady,
+      draftImageTransformReady,
       taskImageWorkflowReady,
+      sceneVideoWorkflowReady,
       manualCover: {
         state: manualCoverElement?.getAttribute('data-manual-cover-state') ?? 'inactive',
         importVisible: manualImportButton instanceof HTMLButtonElement && getComputedStyle(manualImportButton).display !== 'none',
@@ -2227,6 +2656,7 @@ function qaScenarioScript(id: string, view: string, theme: string, stage?: strin
       volcengineVersion,
       jianyingDetection,
       historyHtmlTypeLabel,
+      historyHtmlRouteReady,
       promptTemplateEditorOpen,
       layout: {
         horizontalOverflow: Math.max(0, document.documentElement.scrollWidth - window.innerWidth),
@@ -2241,7 +2671,13 @@ function qaScenarioScript(id: string, view: string, theme: string, stage?: strin
         taskDetail: taskDetailReadiness,
       },
     };
-  })()`;
+  })().catch((error) => ({
+    ready: false,
+    width: window.innerWidth,
+    height: window.innerHeight,
+    scale: window.devicePixelRatio,
+    qaError: error && error.stack ? error.stack : String(error),
+  }))`;
 }
 
 function collectMediaBitmapEvidence(

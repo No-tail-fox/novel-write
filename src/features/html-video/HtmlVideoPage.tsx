@@ -36,6 +36,8 @@ export function HtmlVideoPage({
   state,
   applyState,
   refreshTaskDetail,
+  requestedTaskId,
+  onRequestedTaskHandled,
   onActiveTaskChange,
   isBrowserPreview,
 }: {
@@ -43,6 +45,8 @@ export function HtmlVideoPage({
   state: AppState;
   applyState: ApplyMutationResult;
   refreshTaskDetail: (taskId: string) => Promise<void>;
+  requestedTaskId: string;
+  onRequestedTaskHandled: (taskId: string) => void;
   onActiveTaskChange: (taskId: string) => void;
   isBrowserPreview: boolean;
 }) {
@@ -174,6 +178,32 @@ export function HtmlVideoPage({
   const createInputReady = copyMode === 'paste'
     ? Boolean(copy.trim())
     : Boolean(aiKeyword.trim() && researchCopyReady && copy.trim() && selectedSources.length > 0);
+
+  const openHtmlVideoTask = useCallback(async (taskId: string) => {
+    if (!taskId) return;
+    try {
+      const detail = await api.getTaskDetail(taskId);
+      if (!detail || !isHtmlVideoTask(detail)) throw new Error('该 HTML 动画任务不存在或已被移除。');
+      await refreshTaskDetail(taskId);
+      setActiveTaskId(taskId);
+      setPageMode('workspace');
+      setWorkspaceMode('automatic');
+      setMessage('');
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : String(error));
+    }
+  }, [api, refreshTaskDetail]);
+
+  useEffect(() => {
+    if (!requestedTaskId) return;
+    let disposed = false;
+    void openHtmlVideoTask(requestedTaskId).finally(() => {
+      if (!disposed) onRequestedTaskHandled(requestedTaskId);
+    });
+    return () => {
+      disposed = true;
+    };
+  }, [onRequestedTaskHandled, openHtmlVideoTask, requestedTaskId]);
 
   useEffect(() => {
     let disposed = false;
@@ -500,21 +530,6 @@ export function HtmlVideoPage({
     const provider = value as TtsProvider;
     setTtsProvider(provider);
     setVoiceId(ttsVoiceOptionsForProvider(provider, state.minimaxCloneVoices)[0]?.id ?? '');
-  }
-
-  async function openHtmlVideoTask(taskId: string) {
-    if (!taskId) return;
-    try {
-      const detail = await api.getTaskDetail(taskId);
-      if (!detail || !isHtmlVideoTask(detail)) throw new Error('该 HTML 动画任务不存在或已被移除。');
-      await refreshTaskDetail(taskId);
-      setActiveTaskId(taskId);
-      setPageMode('workspace');
-      setWorkspaceMode('automatic');
-      setMessage('');
-    } catch (error) {
-      setMessage(error instanceof Error ? error.message : String(error));
-    }
   }
 
   function openHtmlVideoCreation() {

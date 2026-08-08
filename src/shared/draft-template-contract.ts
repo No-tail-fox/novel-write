@@ -1,5 +1,5 @@
 import { z } from 'zod';
-import { draftImageMotions, imageAnimations } from './templates';
+import { draftFontFamilies, draftImageMotions, imageAnimations } from './templates';
 import type { DraftTemplate } from './types';
 
 const MAX_TEXT = 65_536;
@@ -26,6 +26,7 @@ const textStyleShape = {
   y: coordinate,
   width,
   fontSize: finite.min(1).max(500),
+  fontFamily: z.enum(draftFontFamilies),
   color,
   alpha,
   bold: z.boolean(),
@@ -57,8 +58,13 @@ export const draftTemplateSchema: z.ZodType<DraftTemplate> = z.object({
     visible: z.boolean(),
     ratio,
     fit: z.enum(['cover', 'contain']),
+    focusX: finite.min(0).max(1).default(0.5),
+    focusY: finite.min(0).max(1).default(0.5),
+    left: finite.min(0).max(1).default(0),
     top: coordinate,
+    width: finite.min(0).max(1).default(1),
     height: finite.min(0).max(2),
+    mediaScale: finite.min(1).max(8).default(1),
     animation: z.string().max(256).refine((value) => imageAnimations.includes(value), 'Unknown image animation.'),
     motion: z.enum(draftImageMotions.map((option) => option.value) as [DraftTemplate['image']['motion'], ...DraftTemplate['image']['motion'][]]),
     motionStrength: finite.min(0).max(2),

@@ -248,7 +248,8 @@ describe('editorial task operations surfaces', () => {
     expect(qa).toContain("persistedTask?.templateId === 'qa-selected-draft-template'");
     expect(qa).toContain("templateSwitcher.dataset.templateState === 'pending'");
     expect(qa).toContain("state.currentScene === '01 / 12'");
-    expect(qa).toContain("state.generatedScenes === '8 / 12 已生成'");
+    expect(qa).toContain("state.imageProgress === '8/12 张 · 生成中'");
+    expect(qa).toContain("state.videoReplacements === '0 个视频替换'");
     expect(qa).toContain("previewImage instanceof HTMLImageElement");
     expect(qa).toContain('previewImage.naturalWidth > 0');
     expect(qa).toContain("state.templateId === 'qa-selected-draft-template'");
@@ -258,6 +259,14 @@ describe('editorial task operations surfaces', () => {
     expect(qa).toContain("state.titleFontFamily.includes('Microsoft YaHei')");
     expect(main).toContain("templateId: selectedTemplateId");
     expect(css).toContain('font-family: "Microsoft YaHei UI", "Microsoft YaHei", "PingFang SC", sans-serif;');
+    expect(qa).toContain("const textualFormControl = element.matches([");
+    expect(qa).toContain("'input[type=\"text\"]'");
+    expect(qa).toContain("const taskMain = document.querySelector('.task-detail-main')");
+    expect(qa).toContain('const desiredCardTop = stickyTabs.getBoundingClientRect().bottom + 10');
+    expect(qa).toContain('finalCard.getBoundingClientRect().top - desiredCardTop');
+    expect(css).toMatch(/\.video-library-dialog > header strong \{[\s\S]*?color: #edf3f2;/u);
+    expect(css).toMatch(/\.image-library-item strong \{[\s\S]*?color: #e8efee;/u);
+    expect(css).toMatch(/\.video-library-item strong \{[\s\S]*?color: #e8efee;/u);
     expect(qa).toContain("button.getAttribute('aria-label') === '永久删除记录'");
   });
 });

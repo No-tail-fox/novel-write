@@ -74,6 +74,10 @@ export function navigationItemForView(view: ShellView): Pick<NavigationItem, 'la
     : navigationItems.find((item) => item.view === view) ?? newTaskPrimaryAction;
 }
 
+export function taskWorkspaceView(taskType: string | null | undefined): Extract<ShellView, 'task-detail' | 'html-video'> {
+  return taskType === 'html-video' ? 'html-video' : 'task-detail';
+}
+
 export function pageSubtitle(view: ShellView): string {
   const map: Partial<Record<ShellView, string>> = {
     'new-task': '粘贴一段人物故事，几分钟后在剪映里打开',

@@ -61,6 +61,7 @@ export async function composeHtmlVideoResearchCopy(
     keyword,
     extraRequirements: input.extraRequirements.trim(),
     selectedSources,
+    useBuiltinKnowledge: false,
   });
   const copy = composed.copy.trim();
   if (!copy) throw new Error('AI 未返回可用文案，请重试。');

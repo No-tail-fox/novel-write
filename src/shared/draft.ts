@@ -1,7 +1,7 @@
 import { constants } from 'node:fs';
 import { access, mkdir, stat, writeFile } from 'node:fs/promises';
 import { dirname, join } from 'node:path';
-import type { BgmItem, CoverMetadata, DiagnosticsReport, DraftTemplate, ImagePrompt, StoryboardScene, SubtitleTrack } from './types';
+import type { BgmItem, CoverMetadata, DiagnosticsReport, DraftTemplate, ImagePrompt, StoryboardScene, SubtitleTrack, TaskArtifactVideoPreview } from './types';
 import { buildSubtitleTrack } from './story';
 import { getTemplate, resolveDraftTemplateForRatio } from './templates';
 import { runPyJianYingDraftBridge, type PyJianYingBridgeInput, type PyJianYingBridgeOutput } from './jianying-bridge';
@@ -31,6 +31,7 @@ export interface WriteJianyingDraftInput {
   reviewedText: string;
   rewrittenCopy: string;
   generatedImages: SceneAsset[];
+  generatedVideos?: TaskArtifactVideoPreview[];
   coverImagePath?: string;
   coverPage?: {
     imagePath: string;
@@ -51,6 +52,7 @@ export interface JianyingDraftWriteResult {
   workDir: string;
   assets: {
     images: string[];
+    videos: string[];
     narration: string[];
     bgm: string | null;
     subtitles: string;
@@ -79,12 +81,14 @@ export async function writeJianyingDraft(input: WriteJianyingDraftInput, options
   const title = safeDraftName(input.title || input.cover.title || 'storydream-draft');
   const draftDir = join(input.draftRootDir, uniqueDraftFolderName(title));
   const imagesByScene = await collectSceneAssets(input.scenes, input.generatedImages, 'image asset');
+  const videosByScene = await collectSceneVideoAssets(input.scenes, input.generatedVideos ?? []);
   const audioByScene = await collectNarrationAssets(input.scenes, input.narrationAudio);
   const totalDuration = input.scenes.reduce((sum, scene) => sum + msToUs(scene.durationMs), 0);
 
   await mkdir(input.workDir, { recursive: true });
 
   const sourceImages = input.scenes.map((scene) => imagesByScene.get(scene.id)!);
+  const sourceVideos = input.scenes.flatMap((scene) => videosByScene.get(scene.id) ? [videosByScene.get(scene.id)!] : []);
   const sourceNarration = input.scenes.flatMap((scene) => audioByScene.get(scene.id)!);
   const coverImagePath = input.coverImagePath?.trim() || '';
   if (coverImagePath) {
@@ -121,6 +125,7 @@ export async function writeJianyingDraft(input: WriteJianyingDraftInput, options
     generatedAt: new Date().toISOString(),
     checks: [
       { id: 'real-images', label: '真实图片素材', status: 'pass', detail: `${sourceImages.length} image files validated and handed to pyJianYingDraft.` },
+      { id: 'scene-videos', label: '分镜视频替换', status: 'pass', detail: `${sourceVideos.length} video overrides validated; remaining scenes keep their original images.` },
       { id: 'real-narration', label: '真实旁白音频', status: 'pass', detail: `${sourceNarration.length} narration files validated and handed to pyJianYingDraft.` },
       {
         id: 'subtitle-track',
@@ -143,6 +148,7 @@ export async function writeJianyingDraft(input: WriteJianyingDraftInput, options
     totalDuration,
     subtitlesFile,
     sourceImages,
+    sourceVideos,
     sourceNarration,
     coverImagePath,
     coverPage,
@@ -153,6 +159,7 @@ export async function writeJianyingDraft(input: WriteJianyingDraftInput, options
     title,
     template,
     sourceImages,
+    sourceVideos,
     sourceNarration,
     subtitlesFile,
     sourceBgm,
@@ -171,7 +178,8 @@ export async function writeJianyingDraft(input: WriteJianyingDraftInput, options
         draftMetaPath: bridge.draftMetaPath,
         workDir: input.workDir,
         assets: {
-          images: bridge.assets?.images ?? sourceImages,
+          images: bridge.assets?.images ?? sourceImages.map((asset) => asset.path),
+          videos: bridge.assets?.videos ?? sourceVideos.map((asset) => asset.path),
           narration: bridge.assets?.narration ?? sourceNarration.map((asset) => asset.path),
           bgm: bridge.assets?.bgm ?? sourceBgm?.path ?? null,
           subtitles: bridge.assets?.subtitles ?? subtitlesFile,
@@ -194,7 +202,8 @@ export async function writeJianyingDraft(input: WriteJianyingDraftInput, options
       sourceVideoPath: sidecar.source_path,
       workDir: input.workDir,
       assets: {
-        images: sourceImages,
+        images: sourceImages.map((asset) => asset.path),
+        videos: sourceVideos.map((asset) => asset.path),
         narration: sourceNarration.map((asset) => asset.path),
         bgm: sourceBgm?.path ?? null,
         subtitles: subtitlesFile,
@@ -217,7 +226,8 @@ function createBridgePayload(input: {
   draftDir: string;
   totalDuration: number;
   subtitlesFile: string;
-  sourceImages: string[];
+  sourceImages: SceneAsset[];
+  sourceVideos: TaskArtifactVideoPreview[];
   sourceNarration: SceneAsset[];
   coverImagePath: string;
   coverPage: { imagePath: string; text: string; durationUs: number } | null;
@@ -254,9 +264,14 @@ function createBridgePayload(input: {
     imageArea: {
       visible: input.template.image.visible,
       ratio: input.template.image.ratio,
+      left: input.template.image.left,
       top: input.template.image.top,
+      width: input.template.image.width,
       height: input.template.image.height,
       fit: input.template.image.fit,
+      focusX: input.template.image.focusX,
+      focusY: input.template.image.focusY,
+      mediaScale: input.template.image.mediaScale,
       animation: input.template.image.animation,
       motion: input.template.image.motion,
       motionStrength: input.template.image.motionStrength,
@@ -265,6 +280,7 @@ function createBridgePayload(input: {
     caption: {
       visible: input.template.caption.visible,
       fontSize: input.template.caption.fontSize,
+      fontFamily: input.template.caption.fontFamily,
       width: input.template.caption.width,
       color: input.template.caption.color,
       alpha: input.template.caption.alpha,
@@ -293,6 +309,7 @@ function createBridgePayload(input: {
         y: input.template.title.y,
         width: input.template.title.width,
         fontSize: input.template.title.fontSize,
+        fontFamily: input.template.title.fontFamily,
         color: input.template.title.color,
         alpha: input.template.title.alpha,
         bold: input.template.title.bold,
@@ -311,6 +328,7 @@ function createBridgePayload(input: {
         y: input.template.subtitle.y,
         width: input.template.subtitle.width,
         fontSize: input.template.subtitle.fontSize,
+        fontFamily: input.template.subtitle.fontFamily,
         color: input.template.subtitle.color,
         alpha: input.template.subtitle.alpha,
         bold: input.template.subtitle.bold,
@@ -329,6 +347,7 @@ function createBridgePayload(input: {
         y: input.template.disclaimer.y,
         width: input.template.disclaimer.width,
         fontSize: input.template.disclaimer.fontSize,
+        fontFamily: input.template.disclaimer.fontFamily,
         color: input.template.disclaimer.color,
         alpha: input.template.disclaimer.alpha,
         bold: input.template.disclaimer.bold,
@@ -351,6 +370,7 @@ function createBridgePayload(input: {
         y: coverTitle.y,
         width: coverTitle.width,
         fontSize: coverTitle.fontSize,
+        fontFamily: coverTitle.fontFamily,
         color: coverTitle.color,
         alpha: coverTitle.alpha,
         bold: coverTitle.bold,
@@ -362,7 +382,15 @@ function createBridgePayload(input: {
       },
     } : undefined,
     scenes,
-    images: input.input.scenes.map((scene, index) => ({ sceneId: scene.id, path: input.sourceImages[index] })),
+    images: input.input.scenes.map((scene, index) => ({ sceneId: scene.id, path: input.sourceImages[index].path })),
+    videos: input.sourceVideos.map((video) => ({
+      sceneId: video.sceneId,
+      path: video.path,
+      durationMs: video.durationMs,
+      trimStartMs: video.trimStartMs,
+      fit: video.fit,
+      muted: true as const,
+    })),
     coverImagePath: input.coverImagePath || undefined,
     narration: input.sourceNarration.map((asset) => ({
       sceneId: asset.sceneId,
@@ -396,7 +424,8 @@ function createStoryboundSidecarPayload(input: {
   input: WriteJianyingDraftInput;
   title: string;
   template: DraftTemplate;
-  sourceImages: string[];
+  sourceImages: SceneAsset[];
+  sourceVideos: TaskArtifactVideoPreview[];
   sourceNarration: SceneAsset[];
   subtitlesFile: string;
   sourceBgm: BgmItem | null;
@@ -430,7 +459,15 @@ function createStoryboundSidecarPayload(input: {
       duration_us: input.coverPage.durationUs,
     } : undefined,
     assets: {
-      images: input.input.scenes.map((scene, index) => ({ scene_id: scene.id, path: input.sourceImages[index] })),
+      images: input.input.scenes.map((scene, index) => ({ scene_id: scene.id, path: input.sourceImages[index].path })),
+      videos: input.sourceVideos.map((video) => ({
+        scene_id: video.sceneId,
+        path: video.path,
+        duration_ms: video.durationMs,
+        trim_start_ms: video.trimStartMs,
+        fit: video.fit,
+        muted: true,
+      })),
       narration: input.sourceNarration.map((asset) => ({
         scene_id: asset.sceneId,
         path: asset.path,
@@ -485,15 +522,30 @@ async function writeDebugArtifacts(input: WriteJianyingDraftInput, subtitles: Su
   await writeFile(join(input.workDir, 'diagnostics.json'), JSON.stringify(diagnostics, null, 2), 'utf8');
 }
 
-async function collectSceneAssets(scenes: StoryboardScene[], assets: SceneAsset[], label: string): Promise<Map<number, string>> {
-  const result = new Map<number, string>();
+async function collectSceneAssets(scenes: StoryboardScene[], assets: SceneAsset[], label: string): Promise<Map<number, SceneAsset>> {
+  const result = new Map<number, SceneAsset>();
   for (const scene of scenes) {
     const asset = assets.find((item) => item.sceneId === scene.id);
     if (!asset?.path) {
       throw new Error(`Missing ${label} for scene ${scene.id}.`);
     }
     await assertReadableFile(asset.path, `${label} for scene ${scene.id}`);
-    result.set(scene.id, asset.path);
+    result.set(scene.id, { ...asset, path: asset.path.trim() });
+  }
+  return result;
+}
+
+async function collectSceneVideoAssets(
+  scenes: StoryboardScene[],
+  assets: TaskArtifactVideoPreview[],
+): Promise<Map<number, TaskArtifactVideoPreview>> {
+  const sceneIds = new Set(scenes.map((scene) => scene.id));
+  const result = new Map<number, TaskArtifactVideoPreview>();
+  for (const asset of assets) {
+    if (!sceneIds.has(asset.sceneId) || result.has(asset.sceneId)) continue;
+    if (!asset.path.trim() || !Number.isFinite(asset.durationMs) || asset.durationMs <= 0) continue;
+    await assertReadableFile(asset.path, `video asset for scene ${asset.sceneId}`);
+    result.set(asset.sceneId, asset);
   }
   return result;
 }

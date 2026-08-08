@@ -212,6 +212,10 @@ describe('Storybound-compatible media sidecar', () => {
       expect(script).toContain('def generate_compose_render');
       expect(script).toContain('def generate_remix_bgm');
       expect(script).toContain('def convert_audio_16k');
+      expect(script).toContain('def normalize_scene_video');
+      expect(script).toContain('"-c:v", "libx264"');
+      expect(script).toContain('video_by_scene = {int(item.get("scene_id") or 0): item');
+      expect(script).toContain('"media_type": "video" if video else "image"');
       expect(script).toContain('imageio_ffmpeg.get_ffmpeg_exe');
       expect(script).toContain('frame_%04d.jpg');
       expect(script).toContain('seg_cover.mp4');

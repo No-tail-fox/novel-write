@@ -1,7 +1,7 @@
 import { copyFile, mkdir, readFile, writeFile } from 'node:fs/promises';
 import { createHash } from 'node:crypto';
 import { extname, join } from 'node:path';
-import type { AiSourceContext, BgmItem, CharacterCard, CoverMetadata, CustomCoverTemplate, DraftTemplate, ImagePrompt, MusicPlan, PipelineArtifact, PromptStepTemplateType, PromptTemplate, RewriteEvaluationResult, SequencedTaskEvent, StoryboardScene, Task, TaskArtifactImageErrorPreview, TaskStepRerunMode } from './types';
+import type { AiSourceContext, BgmItem, CharacterCard, CoverMetadata, CustomCoverTemplate, DraftTemplate, ImagePrompt, MusicPlan, PipelineArtifact, PromptStepTemplateType, PromptTemplate, RewriteEvaluationResult, SequencedTaskEvent, StoryboardScene, Task, TaskArtifactImageErrorPreview, TaskArtifactVideoPreview, TaskStepRerunMode } from './types';
 import { buildCoverMetadata, buildSubtitleTrack, groupStoryboardScenesToTarget, normalizeStoryboardSceneLengths } from './story';
 import { characterCoverDisplayRules, isCharacterStoryTrack, resolveCoverDisplayMetadata } from './cover-copy';
 import { writeJianyingDraft, type SceneAsset, type WriteJianyingDraftOptions } from './draft';
@@ -47,6 +47,7 @@ interface PipelineState {
   assets: {
     cover: SceneAsset[];
     images: SceneAsset[];
+    videos: TaskArtifactVideoPreview[];
     imageErrors: TaskArtifactImageErrorPreview[];
     narration: SceneAsset[];
   };
@@ -409,6 +410,7 @@ async function runTaskWithPipelineStateLock(db: FileDatabase, task: Task, option
               reviewedText: artifact.reviewedText,
               rewrittenCopy: artifact.rewrittenCopy,
               generatedImages: pipeline.assets.images,
+              generatedVideos: pipeline.assets.videos,
               coverImagePath: pipeline.assets.cover[0]?.path,
               coverPage: task.coverPageEnabled ? {
                 imagePath: requireOrdinaryCoverPageImage(task, pipeline.assets.cover[0]?.path),
@@ -2016,10 +2018,11 @@ async function persistCoverImage(
 async function loadPipelineState(path: string, taskId: string): Promise<PipelineState> {
   try {
     const state = JSON.parse(await readFile(path, 'utf8')) as PipelineState;
-    const assets = state.assets ?? { cover: [], images: [], imageErrors: [], narration: [] };
+    const assets = state.assets ?? { cover: [], images: [], videos: [], imageErrors: [], narration: [] };
     state.assets = {
       cover: assets.cover ?? [],
       images: assets.images ?? [],
+      videos: assets.videos ?? [],
       imageErrors: assets.imageErrors ?? [],
       narration: assets.narration ?? [],
     };
@@ -2031,7 +2034,7 @@ async function loadPipelineState(path: string, taskId: string): Promise<Pipeline
       updatedAt: new Date().toISOString(),
       steps: {},
       artifact: {},
-      assets: { cover: [], images: [], imageErrors: [], narration: [] },
+      assets: { cover: [], images: [], videos: [], imageErrors: [], narration: [] },
     };
   }
 }

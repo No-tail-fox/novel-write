@@ -3,7 +3,7 @@ import { mkdir, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { promisify } from 'node:util';
 import { resolvePythonRuntimeInfo, type PythonRuntimeInfo } from './python-runtime';
-import type { BgmItem, DraftImageBorderSides, DraftImageMotion, DraftTextBorder } from './types';
+import type { BgmItem, DraftFontFamily, DraftImageBorderSides, DraftImageMotion, DraftTextBorder } from './types';
 
 const execFileAsync = promisify(execFile);
 
@@ -20,9 +20,14 @@ export interface PyJianYingBridgeInput {
   imageArea: {
     visible: boolean;
     ratio: string;
+    left?: number;
     top: number;
+    width?: number;
     height: number;
     fit: 'cover' | 'contain';
+    focusX?: number;
+    focusY?: number;
+    mediaScale?: number;
     animation: string;
     motion?: DraftImageMotion;
     motionStrength?: number;
@@ -40,6 +45,7 @@ export interface PyJianYingBridgeInput {
   caption: {
     visible: boolean;
     fontSize: number;
+    fontFamily?: DraftFontFamily;
     width: number;
     color: string;
     alpha: number;
@@ -68,6 +74,7 @@ export interface PyJianYingBridgeInput {
       y: number;
       width: number;
       fontSize: number;
+      fontFamily?: DraftFontFamily;
       color: string;
       alpha: number;
       bold: boolean;
@@ -86,6 +93,7 @@ export interface PyJianYingBridgeInput {
       y: number;
       width: number;
       fontSize: number;
+      fontFamily?: DraftFontFamily;
       color: string;
       alpha: number;
       bold: boolean;
@@ -104,6 +112,7 @@ export interface PyJianYingBridgeInput {
       y: number;
       width: number;
       fontSize: number;
+      fontFamily?: DraftFontFamily;
       color: string;
       alpha: number;
       bold: boolean;
@@ -126,6 +135,7 @@ export interface PyJianYingBridgeInput {
       y: number;
       width: number;
       fontSize: number;
+      fontFamily?: DraftFontFamily;
       color: string;
       alpha: number;
       bold: boolean;
@@ -138,6 +148,14 @@ export interface PyJianYingBridgeInput {
   };
   scenes?: Array<{ sceneId: number; startUs: number; durationUs: number; text: string; captions?: string[]; captionDurationsUs?: number[] }>;
   images: Array<{ sceneId: number; path: string }>;
+  videos?: Array<{
+    sceneId: number;
+    path: string;
+    durationMs: number;
+    trimStartMs: number;
+    fit: 'cover' | 'contain';
+    muted: true;
+  }>;
   coverImagePath?: string;
   narration: Array<{ sceneId: number; path: string; speaker?: 'A' | 'B'; turnIndex?: number; text?: string }>;
   subtitlesSrtPath: string;
@@ -167,6 +185,7 @@ export interface PyJianYingBridgeOutput {
   durationUs: number;
   assets?: {
     images: string[];
+    videos?: string[];
     narration: string[];
     bgm: string | null;
     subtitles: string;
@@ -386,6 +405,9 @@ def create_frame_overlay_png(path, canvas, image_area, frame):
     frame_enabled = bool(frame.get("enabled", False))
     width = max(1, int(canvas.get("width", 1080) or 1080))
     height = max(1, int(canvas.get("height", 1920) or 1920))
+    image_left = int(round(clamp_number(image_area.get("left"), 0, 0, 1) * width))
+    image_width = int(round(clamp_number(image_area.get("width"), 1, 0, 1 - (image_left / width)) * width))
+    image_right = max(image_left, min(width, image_left + image_width))
     image_top = int(round(clamp_number(image_area.get("top"), 0, 0, 1) * height))
     image_height = int(round(clamp_number(image_area.get("height"), 1, 0, 1 - (image_top / height)) * height))
     image_bottom = max(image_top, min(height, image_top + image_height))
@@ -394,9 +416,15 @@ def create_frame_overlay_png(path, canvas, image_area, frame):
     transparent_pixel = b"\x00\x00\x00\x00"
     transparent_row = transparent_pixel * width
     border_pixel = color_to_bytes(frame.get("imageBorderColor", "#000000")) + b"\xff"
-    horizontal_border_row = border_pixel * width
-    side_width = min(border_width, width // 2)
-    vertical_border_row = border_pixel * side_width + transparent_pixel * (width - side_width * 2) + border_pixel * side_width
+    horizontal_border_row = transparent_pixel * image_left + border_pixel * (image_right - image_left) + transparent_pixel * (width - image_right)
+    side_width = min(border_width, max(0, (image_right - image_left) // 2))
+    vertical_border_row = (
+        transparent_pixel * image_left
+        + border_pixel * side_width
+        + transparent_pixel * max(0, image_right - image_left - side_width * 2)
+        + border_pixel * side_width
+        + transparent_pixel * (width - image_right)
+    )
     canvas_color = canvas.get("backgroundColor", "#000000")
     header_color = frame.get("headerColor", canvas_color) if frame_enabled else canvas_color
     header_color_end = frame.get("headerColorEnd", header_color) if frame_enabled else canvas_color
@@ -494,6 +522,7 @@ def apply_camera_motion(segment, image_area, image_layout, duration):
     if strength <= 0:
         return False
     base_scale = float(image_layout.get("scale") or 1)
+    base_x = float(image_layout.get("transform_x") or 0)
     base_y = float(image_layout.get("transform_y") or 0)
     motion_scale = base_scale * (1 + strength * 0.08)
     pan = strength * 0.04
@@ -514,8 +543,8 @@ def apply_camera_motion(segment, image_area, image_layout, duration):
         segment.add_keyframe(keyframe.position_y, duration, base_y + direction * pan)
     elif motion in ("pan_left", "pan_right"):
         direction = -1 if motion == "pan_left" else 1
-        segment.add_keyframe(keyframe.position_x, 0, -direction * pan)
-        segment.add_keyframe(keyframe.position_x, duration, direction * pan)
+        segment.add_keyframe(keyframe.position_x, 0, base_x - direction * pan)
+        segment.add_keyframe(keyframe.position_x, duration, base_x + direction * pan)
     return True
 
 
@@ -523,25 +552,36 @@ def resolve_image_layout(image_area, canvas, material):
     canvas_width = max(1.0, float(canvas.get("width", 1080) or 1080))
     canvas_height = max(1.0, float(canvas.get("height", 1920) or 1920))
     desired_ratio = ratio_to_number(image_area.get("ratio"), canvas_width / canvas_height)
+    default_width = 1.0
     default_height = clamp_number(canvas_width / desired_ratio / canvas_height, 1.0, 0.05, 1.0)
+    area_width = clamp_number(image_area.get("width"), default_width, 0.05, 1.0)
     area_height = clamp_number(image_area.get("height"), default_height, 0.05, 1.0)
+    area_left = clamp_number(image_area.get("left"), 0, 0, max(0.0, 1.0 - area_width))
     area_top = clamp_number(image_area.get("top"), (1 - area_height) / 2, -1.0, 1.0)
-    area_width_px = canvas_width
+    area_width_px = canvas_width * area_width
     area_height_px = canvas_height * area_height
     material_width = max(1.0, float(getattr(material, "width", canvas_width) or canvas_width))
     material_height = max(1.0, float(getattr(material, "height", canvas_height) or canvas_height))
     scale_x = area_width_px / material_width
     scale_y = area_height_px / material_height
-    scale = min(scale_x, scale_y) if image_area.get("fit") == "contain" else max(scale_x, scale_y)
+    is_contain = image_area.get("fit") == "contain"
+    scale = min(scale_x, scale_y) if is_contain else max(scale_x, scale_y) * clamp_number(image_area.get("mediaScale"), 1, 1, 8)
     if scale <= 0:
         scale = 1.0
     visible_width = material_width * scale
     visible_height = material_height * scale
+    focus_x = 0.5 if is_contain else clamp_number(image_area.get("focusX"), 0.5, 0, 1)
+    focus_y = 0.5 if is_contain else clamp_number(image_area.get("focusY"), 0.5, 0, 1)
+    focus_shift_x = max(0.0, visible_width - area_width_px) * (0.5 - focus_x)
+    focus_shift_y = max(0.0, visible_height - area_height_px) * (0.5 - focus_y)
     mask_width = clamp_number(area_width_px / visible_width, 1.0, 0.01, 1.0)
     mask_height = clamp_number(area_height_px / visible_height, 1.0, 0.01, 1.0)
     return {
         "scale": scale,
-        "transform_y": area_top * 2 + area_height - 1,
+        "transform_x": area_left * 2 + area_width - 1 + focus_shift_x * 2 / canvas_width,
+        "transform_y": area_top * 2 + area_height - 1 + focus_shift_y * 2 / canvas_height,
+        "mask_center_x": -focus_shift_x / scale,
+        "mask_center_y": -focus_shift_y / scale,
         "mask_width": mask_width,
         "mask_height": mask_height,
         "use_mask": mask_width < 0.999 or mask_height < 0.999,
@@ -809,6 +849,21 @@ def text_style_from_config(config, default_size=8):
     )
 
 
+def font_from_config(config):
+    font_name = str(config.get("fontFamily") or "system")
+    if font_name == "system":
+        return None
+    font_catalog = getattr(draft, "FontType", None)
+    return getattr(font_catalog, font_name, None) if font_catalog else None
+
+
+def text_segment_from_config(text, timerange, config, **kwargs):
+    font = font_from_config(config)
+    if font is not None:
+        kwargs["font"] = font
+    return draft.TextSegment(text, timerange, **kwargs)
+
+
 def text_background_from_config(config):
     background = config.get("background") or {}
     alpha = clamp_number(background.get("alpha", 0), 0, 0, 1)
@@ -833,9 +888,10 @@ def add_overlay_text(script, name, config, duration):
     start = max(0, int(config.get("startUs") or 0))
     segment_duration = max(1, int(config.get("durationUs") or duration or 0))
     script.add_track(draft.TrackType.text, name)
-    segment = draft.TextSegment(
+    segment = text_segment_from_config(
         text,
         draft.Timerange(start, segment_duration),
+        config,
         style=text_style_from_config(config),
         border=text_border_from_config(config),
         clip_settings=draft.ClipSettings(
@@ -889,10 +945,20 @@ def main():
 
     scenes = payload.get("scenes") or []
     durations = {int(scene["sceneId"]): int(scene["durationUs"]) for scene in scenes}
-    image_by_scene = {
-        int(item["sceneId"]): copy_asset(item["path"], os.path.join(materials_dir, "images"), str(int(item["sceneId"])).zfill(3), ".png")
-        for item in payload["images"]
-    }
+    image_by_scene = {}
+    for item in payload["images"]:
+        scene_id = int(item["sceneId"])
+        image_by_scene[scene_id] = copy_asset(item["path"], os.path.join(materials_dir, "images"), str(scene_id).zfill(3), ".png")
+    video_by_scene = {}
+    for item in payload.get("videos") or []:
+        scene_id = int(item["sceneId"])
+        copied_path = copy_asset(item["path"], os.path.join(materials_dir, "videos"), str(scene_id).zfill(3), ".mp4")
+        video_by_scene[scene_id] = {
+            "path": copied_path,
+            "durationUs": ms_to_us(item.get("durationMs") or 0),
+            "trimStartUs": ms_to_us(item.get("trimStartMs") or 0),
+            "fit": item.get("fit") or "cover",
+        }
     audio_items_by_scene = {}
     for index, item in enumerate(payload["narration"]):
         scene_id = int(item["sceneId"])
@@ -993,29 +1059,51 @@ def main():
         start = int(scene["startUs"])
         duration = int(scene["durationUs"])
         audio_duration = int(scene["audioDurationUs"])
-        image_material = draft.VideoMaterial(image_by_scene[scene_id])
+        video_item = video_by_scene.get(scene_id)
+        image_item = image_by_scene[scene_id]
+        visual_material = draft.VideoMaterial(video_item["path"] if video_item else image_item)
         audio_items = audio_items_by_scene[scene_id]
         image_height = clamp_number(image_area.get("height"), 1, 0, 1)
-        if image_area.get("visible", True) and image_height > 0:
-            image_layout = resolve_image_layout(image_area, payload.get("canvas") or {}, image_material)
+        image_width = clamp_number(image_area.get("width"), 1, 0, 1)
+        if image_area.get("visible", True) and image_width > 0 and image_height > 0:
+            visual_area = dict(image_area)
+            if video_item:
+                visual_area["fit"] = video_item["fit"]
+                visual_area["focusX"] = 0.5
+                visual_area["focusY"] = 0.5
+                visual_area["mediaScale"] = 1
+            image_layout = resolve_image_layout(visual_area, payload.get("canvas") or {}, visual_material)
+            source_start = int(video_item["trimStartUs"]) if video_item else 0
+            source_duration = duration
+            video_speed = None
+            if video_item:
+                available_duration = max(1, int(video_item["durationUs"]) - source_start)
+                source_duration = min(duration, available_duration)
+                video_speed = source_duration / max(1, duration)
             image_segment = draft.VideoSegment(
-                image_material,
+                visual_material,
                 draft.Timerange(start, duration),
-                source_timerange=draft.Timerange(0, duration),
+                source_timerange=draft.Timerange(source_start, source_duration),
+                speed=video_speed,
+                volume=0.0 if video_item else 1.0,
                 clip_settings=draft.ClipSettings(
                     scale_x=image_layout["scale"],
                     scale_y=image_layout["scale"],
+                    transform_x=image_layout["transform_x"],
                     transform_y=image_layout["transform_y"],
                 ),
             )
             if image_layout["use_mask"] and hasattr(image_segment, "add_mask") and getattr(draft, "MaskType", None):
                 image_segment.add_mask(
                     draft.MaskType.矩形,
+                    center_x=image_layout["mask_center_x"],
+                    center_y=image_layout["mask_center_y"],
                     size=image_layout["mask_height"],
                     rect_width=image_layout["mask_width"],
                 )
-            if not apply_camera_motion(image_segment, image_area, image_layout, duration):
-                apply_image_animation(image_segment, image_area.get("animation"))
+            if not video_item:
+                if not apply_camera_motion(image_segment, image_area, image_layout, duration):
+                    apply_image_animation(image_segment, image_area.get("animation"))
             if filter_type:
                 image_segment.add_filter(filter_type)
             if video_effect_type:
@@ -1079,28 +1167,21 @@ def main():
         caption_clip_settings = draft.ClipSettings(transform_x=float(caption.get("x", 0)), transform_y=editor_text_y_to_jianying(caption.get("y"), -0.8))
         caption_background = text_background_from_config(caption)
         caption_border = text_border_from_config(caption)
-        if caption_background or caption_border:
-            caption_template = draft.TextSegment(
-                "字幕预览",
-                draft.Timerange(0, 1),
-                style=caption_style,
-                clip_settings=caption_clip_settings,
-                border=caption_border,
-                background=caption_background,
-            )
-            script.import_srt(
-                subtitle_path,
-                track_name="subtitles",
-                style_reference=caption_template,
-                clip_settings=caption_clip_settings,
-            )
-        else:
-            script.import_srt(
-                subtitle_path,
-                track_name="subtitles",
-                text_style=caption_style,
-                clip_settings=caption_clip_settings,
-            )
+        caption_template = text_segment_from_config(
+            "字幕预览",
+            draft.Timerange(0, 1),
+            caption,
+            style=caption_style,
+            clip_settings=caption_clip_settings,
+            border=caption_border,
+            background=caption_background,
+        )
+        script.import_srt(
+            subtitle_path,
+            track_name="subtitles",
+            style_reference=caption_template,
+            clip_settings=caption_clip_settings,
+        )
 
     overlays = payload.get("overlays") or {}
     add_overlay_text(script, "cover_title", cover_page.get("title"), cover_page_duration)
@@ -1112,9 +1193,11 @@ def main():
     content_path = os.path.join(draft_dir, "draft_content.json")
     meta_path = os.path.join(draft_dir, "draft_meta_info.json")
     copied_images = [image_by_scene[int(scene["sceneId"])] for scene in scenes]
+    copied_videos = [video_by_scene[int(scene["sceneId"])]["path"] for scene in scenes if int(scene["sceneId"]) in video_by_scene]
+    copied_visuals = [video_by_scene[int(scene["sceneId"])]["path"] if int(scene["sceneId"]) in video_by_scene else image_by_scene[int(scene["sceneId"])] for scene in scenes]
     copied_narration = [item["path"] for scene in scenes for item in audio_items_by_scene[int(scene["sceneId"])]]
     cover_image_path = cover_page_path or norm(payload.get("coverImagePath") or "")
-    patch_meta(meta_path, payload, draft_dir, script.duration, background_path, frame_overlay_path, copied_images, cover_image_path, copied_narration, bgm_path)
+    patch_meta(meta_path, payload, draft_dir, script.duration, background_path, frame_overlay_path, copied_visuals, cover_image_path, copied_narration, bgm_path)
     print(json.dumps({
         "ok": True,
         "draftDir": draft_dir,
@@ -1123,6 +1206,7 @@ def main():
         "durationUs": int(script.duration),
         "assets": {
             "images": copied_images,
+            "videos": copied_videos,
             "narration": copied_narration,
             "bgm": bgm_path,
             "subtitles": subtitle_path,

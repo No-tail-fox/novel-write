@@ -1,4 +1,93 @@
-import type { DraftImageMotion, DraftTemplate } from './types';
+import type { DraftFontFamily, DraftImageMotion, DraftTemplate } from './types';
+
+export const draftImageFitOptions = [
+  { value: 'cover', label: '裁切填满' },
+  { value: 'contain', label: '完整缩放' },
+] as const satisfies ReadonlyArray<{ value: DraftTemplate['image']['fit']; label: string }>;
+
+export function draftImageFitLabel(value: DraftTemplate['image']['fit']): string {
+  return draftImageFitOptions.find((option) => option.value === value)?.label ?? draftImageFitOptions[0].label;
+}
+
+export const draftFontFamilies = [
+  'system',
+  'HarmonyOS_Sans_SC_Regular',
+  'HarmonyOS_Sans_SC_Medium',
+  'HarmonyOS_Sans_SC_Bold',
+  'SourceHanSansCN_Regular',
+  'SourceHanSansCN_Medium',
+  'SourceHanSansCN_Bold',
+  '经典雅黑',
+  '宋体',
+  'SourceHanSerifCN_Regular',
+  'SourceHanSerifCN_Bold',
+  '思源中宋',
+  '烟波宋',
+  '圆体',
+  'ResourceHanRoundedCN_Nl',
+  'ResourceHanRoundedCN_Md',
+  'ResourceHanRoundedCN_Bold',
+  '简中圆',
+  'LXGWWenKai_Regular',
+  'LXGWWenKai_Bold',
+  '毛笔行楷',
+  '柳公权',
+  '得意黑',
+  '站酷酷黑体',
+  '站酷文艺体',
+  '汉仪英雄体',
+  '综艺体',
+  '江湖体',
+] as const satisfies readonly DraftFontFamily[];
+
+export const draftFontGroups = ['默认', '黑体', '宋体', '圆体', '楷体与手写', '标题设计'] as const;
+export type DraftFontGroup = typeof draftFontGroups[number];
+
+export const draftFontOptions: ReadonlyArray<{
+  value: DraftFontFamily;
+  label: string;
+  cssFamily: string;
+  group: DraftFontGroup;
+}> = [
+  { value: 'system', label: '系统默认', group: '默认', cssFamily: '"Microsoft YaHei UI", "Microsoft YaHei", "PingFang SC", sans-serif' },
+  { value: 'HarmonyOS_Sans_SC_Regular', label: '鸿蒙黑体 · 常规', group: '黑体', cssFamily: '"HarmonyOS Sans SC", "Microsoft YaHei UI", "Microsoft YaHei", sans-serif' },
+  { value: 'HarmonyOS_Sans_SC_Medium', label: '鸿蒙黑体 · 中黑', group: '黑体', cssFamily: '"HarmonyOS Sans SC Medium", "Microsoft YaHei UI", "Microsoft YaHei", sans-serif' },
+  { value: 'HarmonyOS_Sans_SC_Bold', label: '鸿蒙黑体 · 粗体', group: '黑体', cssFamily: '"HarmonyOS Sans SC Bold", SimHei, "Microsoft YaHei", sans-serif' },
+  { value: 'SourceHanSansCN_Regular', label: '思源黑体 · 常规', group: '黑体', cssFamily: '"Source Han Sans CN", "Noto Sans CJK SC", "Microsoft YaHei", sans-serif' },
+  { value: 'SourceHanSansCN_Medium', label: '思源黑体 · 中黑', group: '黑体', cssFamily: '"Source Han Sans CN Medium", "Noto Sans CJK SC", "Microsoft YaHei", sans-serif' },
+  { value: 'SourceHanSansCN_Bold', label: '思源黑体 · 粗体', group: '黑体', cssFamily: '"Source Han Sans CN Bold", "Noto Sans CJK SC", SimHei, sans-serif' },
+  { value: '经典雅黑', label: '经典雅黑', group: '黑体', cssFamily: '"Microsoft YaHei", "PingFang SC", sans-serif' },
+  { value: '宋体', label: '经典宋体', group: '宋体', cssFamily: 'SimSun, "Songti SC", serif' },
+  { value: 'SourceHanSerifCN_Regular', label: '思源宋体 · 常规', group: '宋体', cssFamily: '"Source Han Serif CN", "Noto Serif CJK SC", SimSun, serif' },
+  { value: 'SourceHanSerifCN_Bold', label: '思源宋体 · 粗体', group: '宋体', cssFamily: '"Source Han Serif CN Bold", "Noto Serif CJK SC", SimSun, serif' },
+  { value: '思源中宋', label: '思源中宋', group: '宋体', cssFamily: '"Source Han Serif CN", "Noto Serif CJK SC", SimSun, serif' },
+  { value: '烟波宋', label: '烟波宋', group: '宋体', cssFamily: '"Songti SC", STSong, SimSun, serif' },
+  { value: '圆体', label: '经典圆体', group: '圆体', cssFamily: 'YouYuan, "Yuanti SC", "Microsoft YaHei", sans-serif' },
+  { value: 'ResourceHanRoundedCN_Nl', label: '资源圆体 · 常规', group: '圆体', cssFamily: '"Resource Han Rounded CN", YouYuan, "Microsoft YaHei", sans-serif' },
+  { value: 'ResourceHanRoundedCN_Md', label: '资源圆体 · 中粗', group: '圆体', cssFamily: '"Resource Han Rounded CN Medium", YouYuan, "Microsoft YaHei", sans-serif' },
+  { value: 'ResourceHanRoundedCN_Bold', label: '资源圆体 · 粗体', group: '圆体', cssFamily: '"Resource Han Rounded CN Bold", YouYuan, SimHei, sans-serif' },
+  { value: '简中圆', label: '简中圆', group: '圆体', cssFamily: 'YouYuan, "Yuanti SC", "Microsoft YaHei", sans-serif' },
+  { value: 'LXGWWenKai_Regular', label: '霞鹜文楷 · 常规', group: '楷体与手写', cssFamily: '"LXGW WenKai", KaiTi, "Kaiti SC", STKaiti, serif' },
+  { value: 'LXGWWenKai_Bold', label: '霞鹜文楷 · 粗体', group: '楷体与手写', cssFamily: '"LXGW WenKai Bold", KaiTi, "Kaiti SC", STKaiti, serif' },
+  { value: '毛笔行楷', label: '毛笔行楷', group: '楷体与手写', cssFamily: 'STXingkai, KaiTi, "Kaiti SC", cursive' },
+  { value: '柳公权', label: '柳公权楷书', group: '楷体与手写', cssFamily: 'KaiTi, "Kaiti SC", STKaiti, serif' },
+  { value: '得意黑', label: '得意黑', group: '标题设计', cssFamily: 'SimHei, "Heiti SC", "Microsoft YaHei", sans-serif' },
+  { value: '站酷酷黑体', label: '站酷酷黑', group: '标题设计', cssFamily: 'SimHei, "Heiti SC", "Microsoft YaHei", sans-serif' },
+  { value: '站酷文艺体', label: '站酷文艺体', group: '标题设计', cssFamily: 'KaiTi, "Kaiti SC", "Microsoft YaHei", serif' },
+  { value: '汉仪英雄体', label: '汉仪英雄体', group: '标题设计', cssFamily: 'SimHei, "Heiti SC", "Microsoft YaHei", sans-serif' },
+  { value: '综艺体', label: '综艺体', group: '标题设计', cssFamily: 'SimHei, "Heiti SC", "Microsoft YaHei", sans-serif' },
+  { value: '江湖体', label: '江湖体', group: '标题设计', cssFamily: 'STXingkai, KaiTi, "Kaiti SC", cursive' },
+];
+
+export const defaultDraftFontFamily: DraftFontFamily = 'system';
+
+export function normalizeDraftFontFamily(value: unknown, fallback: DraftFontFamily = defaultDraftFontFamily): DraftFontFamily {
+  return draftFontFamilies.includes(value as DraftFontFamily) ? value as DraftFontFamily : fallback;
+}
+
+export function draftFontCssFamily(value: DraftFontFamily): string {
+  return draftFontOptions.find((option) => option.value === value)?.cssFamily ?? draftFontOptions[0].cssFamily;
+}
 
 const noBorder = {
   color: '#000000',
@@ -17,6 +106,7 @@ const captionBase = {
   x: 0,
   width: 0.8,
   fontSize: 12,
+  fontFamily: defaultDraftFontFamily,
   color: '#FFDE00',
   alpha: 1,
   border: noBorder,
@@ -40,6 +130,7 @@ const titleBase = {
   y: 0.04739583333333333,
   width: 0.8,
   fontSize: 25,
+  fontFamily: defaultDraftFontFamily,
   color: '#FFDE00',
   alpha: 1,
   bold: true,
@@ -57,6 +148,7 @@ const subtitleBase = {
   y: -0.21666666666666667,
   width: 0.8,
   fontSize: 12,
+  fontFamily: defaultDraftFontFamily,
   color: '#FFFFFF',
   alpha: 1,
   bold: false,
@@ -74,6 +166,7 @@ const disclaimerBase = {
   y: -0.903125,
   width: 0.8,
   fontSize: 8,
+  fontFamily: defaultDraftFontFamily,
   color: '#FFFFFF',
   alpha: 0.26,
   bold: false,
@@ -252,7 +345,7 @@ export const draftTemplates: DraftTemplate[] = [
     name: '默认竖屏',
     isDefault: true,
     canvas: { width: 1080, height: 1920, ratio: '9:16', backgroundColor: '#000000', backgroundImage: '' },
-    image: { visible: true, ratio: '9:16', fit: 'cover', top: 0, height: 1, animation: '缩放', motion: '', motionStrength: 1 },
+    image: { visible: true, ratio: '9:16', fit: 'cover', focusX: 0.5, focusY: 0.5, left: 0, top: 0, width: 1, height: 1, mediaScale: 1, animation: '缩放', motion: '', motionStrength: 1 },
     frame: neutralFrame,
     title: titleBase,
     subtitle: subtitleBase,
@@ -265,7 +358,7 @@ export const draftTemplates: DraftTemplate[] = [
     name: '竖屏4:3',
     isDefault: true,
     canvas: { width: 1080, height: 1920, ratio: '9:16', backgroundColor: '#000000', backgroundImage: '' },
-    image: { visible: true, ratio: '4:3', fit: 'cover', top: 0.2890625, height: 0.421875, animation: '缩放', motion: '', motionStrength: 1 },
+    image: { visible: true, ratio: '4:3', fit: 'cover', focusX: 0.5, focusY: 0.5, left: 0, top: 0.2890625, width: 1, height: 0.421875, mediaScale: 1, animation: '缩放', motion: '', motionStrength: 1 },
     frame: neutralFrame,
     title: { ...titleBase, y: 0.8357783211083945, fontSize: 20, underline: false },
     subtitle: { ...subtitleBase, y: 0.5953125 },
@@ -278,7 +371,7 @@ export const draftTemplates: DraftTemplate[] = [
     name: '横屏16:9',
     isDefault: true,
     canvas: { width: 1920, height: 1080, ratio: '16:9', backgroundColor: '#000000', backgroundImage: '' },
-    image: { visible: true, ratio: '16:9', fit: 'cover', top: 0, height: 1, animation: '缩放', motion: '', motionStrength: 1 },
+    image: { visible: true, ratio: '16:9', fit: 'cover', focusX: 0.5, focusY: 0.5, left: 0, top: 0, width: 1, height: 1, mediaScale: 1, animation: '缩放', motion: '', motionStrength: 1 },
     frame: neutralFrame,
     title: { ...titleBase, y: 0.12777777777777777, fontSize: 20, underline: false },
     subtitle: { ...subtitleBase, y: -0.43333333333333335, fontSize: 8 },
@@ -327,6 +420,7 @@ export function resolveDraftTemplateForRatio(template: Partial<DraftTemplate> | 
 
 export function normalizeDraftTemplate(template: Partial<DraftTemplate>): DraftTemplate {
   const fallback = draftTemplates.find((item) => item.id === template.id) ?? draftTemplates[0];
+  const imageWidth = clampNumber(template.image?.width, fallback.image.width, 0, 1);
   return {
     ...fallback,
     ...template,
@@ -334,6 +428,11 @@ export function normalizeDraftTemplate(template: Partial<DraftTemplate>): DraftT
     image: {
       ...fallback.image,
       ...template.image,
+      focusX: clampNumber(template.image?.focusX, fallback.image.focusX, 0, 1),
+      focusY: clampNumber(template.image?.focusY, fallback.image.focusY, 0, 1),
+      left: clampNumber(template.image?.left, fallback.image.left, 0, Math.max(0, 1 - imageWidth)),
+      width: imageWidth,
+      mediaScale: clampNumber(template.image?.mediaScale, fallback.image.mediaScale, 1, 8),
       motion: normalizeImageMotion(template.image?.motion),
       motionStrength: clampNumber(template.image?.motionStrength, 1, 0, 2),
     },
@@ -344,6 +443,7 @@ export function normalizeDraftTemplate(template: Partial<DraftTemplate>): DraftT
       x: finiteNumber(template.title?.x, fallback.title.x),
       y: finiteNumber(template.title?.y, fallback.title.y),
       width: clampNumber(template.title?.width, fallback.title.width, 0.1, 2),
+      fontFamily: normalizeDraftFontFamily(template.title?.fontFamily, fallback.title.fontFamily),
       alpha: finiteNumber(template.title?.alpha, fallback.title.alpha),
       bold: typeof template.title?.bold === 'boolean' ? template.title.bold : fallback.title.bold,
       underline: typeof template.title?.underline === 'boolean' ? template.title.underline : fallback.title.underline,
@@ -358,6 +458,7 @@ export function normalizeDraftTemplate(template: Partial<DraftTemplate>): DraftT
       x: finiteNumber(template.subtitle?.x, fallback.subtitle.x),
       y: finiteNumber(template.subtitle?.y, fallback.subtitle.y),
       width: clampNumber(template.subtitle?.width, fallback.subtitle.width, 0.1, 2),
+      fontFamily: normalizeDraftFontFamily(template.subtitle?.fontFamily, fallback.subtitle.fontFamily),
       text: finiteString(template.subtitle?.text, fallback.subtitle.text),
       alpha: finiteNumber(template.subtitle?.alpha, fallback.subtitle.alpha),
       bold: typeof template.subtitle?.bold === 'boolean' ? template.subtitle.bold : fallback.subtitle.bold,
@@ -374,6 +475,7 @@ export function normalizeDraftTemplate(template: Partial<DraftTemplate>): DraftT
       y: finiteNumber(template.caption?.y, fallback.caption.y),
       width: clampNumber(template.caption?.width, fallback.caption.width, 0.1, 2),
       fontSize: finiteNumber(template.caption?.fontSize, fallback.caption.fontSize),
+      fontFamily: normalizeDraftFontFamily(template.caption?.fontFamily, fallback.caption.fontFamily),
       color: finiteString(template.caption?.color, fallback.caption.color),
       alpha: finiteNumber(template.caption?.alpha, fallback.caption.alpha),
       bold: typeof template.caption?.bold === 'boolean' ? template.caption.bold : fallback.caption.bold,
@@ -392,6 +494,7 @@ export function normalizeDraftTemplate(template: Partial<DraftTemplate>): DraftT
       y: finiteNumber(template.disclaimer?.y, fallback.disclaimer.y),
       width: clampNumber(template.disclaimer?.width, fallback.disclaimer.width, 0.1, 2),
       fontSize: finiteNumber(template.disclaimer?.fontSize, fallback.disclaimer.fontSize),
+      fontFamily: normalizeDraftFontFamily(template.disclaimer?.fontFamily, fallback.disclaimer.fontFamily),
       color: finiteString(template.disclaimer?.color, fallback.disclaimer.color),
       alpha: finiteNumber(template.disclaimer?.alpha, fallback.disclaimer.alpha),
       bold: typeof template.disclaimer?.bold === 'boolean' ? template.disclaimer.bold : fallback.disclaimer.bold,

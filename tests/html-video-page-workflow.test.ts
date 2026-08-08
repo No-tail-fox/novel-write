@@ -51,6 +51,7 @@ describe('HTML video creation page workflow', () => {
       keyword: '钱学森回国',
       extraRequirements: '500 字',
       selectedSources: [expect.objectContaining({ title: '有效资料' })],
+      useBuiltinKnowledge: false,
     });
     expect(order).toEqual(['search', 'sources:1', 'compose']);
     expect(result).toMatchObject({ copy: '生成后的完整文案', selectedSources: [{ title: '有效资料' }] });

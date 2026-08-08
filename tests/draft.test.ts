@@ -49,6 +49,8 @@ describe('draft writer', () => {
       { id: 2, cap: 'Second line', descPrompt: 'prompt 2', durationMs: 1400 },
     ];
     const images = await writeAssets(workDir, scenes, 'png', twoByTwoPng);
+    const sceneVideoPath = join(workDir, 'scene-1.mp4');
+    await writeFile(sceneVideoPath, Buffer.from('managed-video'));
     await mkdir(join(workDir, 'audio'), { recursive: true });
     const narration = await Promise.all(
       scenes.map(async (scene) => {
@@ -89,7 +91,23 @@ describe('draft writer', () => {
           imagePrompts: buildImagePrompts(scenes, { inputText: 'Wu Zetian', style: 'photo-real', ratio: '9:16' }),
           reviewedText: 'reviewed',
           rewrittenCopy: 'rewritten',
+          template: {
+            ...structuredClone(draftTemplates[0]),
+            image: { ...draftTemplates[0].image, focusX: 1, focusY: 0 },
+          },
           generatedImages: images,
+          generatedVideos: [{
+            sceneId: 1,
+            path: sceneVideoPath,
+            source: 'local-upload',
+            originalName: 'scene-1.mov',
+            durationMs: 4_000,
+            width: 1080,
+            height: 1920,
+            trimStartMs: 500,
+            fit: 'cover',
+            muted: true,
+          }],
           narrationAudio: narration,
           bgm: null,
         },
@@ -143,6 +161,7 @@ describe('draft writer', () => {
       expect(draftMeta.draft_name).toBe('Real Draft');
       expect(draftMeta.tm_duration).toBe(2_600_000);
       expect(output.assets.images).toHaveLength(2);
+      expect(output.assets.videos).toEqual([sceneVideoPath]);
       expect(output.assets.narration).toHaveLength(2);
       expect(output.diagnostics.checks.find((check) => check.id === 'jianying-draft')?.status).toBe('pass');
       expect(output.diagnostics.checks.find((check) => check.id === 'subtitle-track')?.status).toBe('pass');
@@ -160,10 +179,23 @@ describe('draft writer', () => {
         imageArea: {
           visible: true,
           ratio: '9:16',
+          left: 0,
+          width: 1,
+          focusX: 1,
+          focusY: 0,
+          mediaScale: 1,
           animation: expect.any(String),
           motion: '',
           motionStrength: 1,
         },
+        videos: [{
+          sceneId: 1,
+          path: sceneVideoPath,
+          durationMs: 4_000,
+          trimStartMs: 500,
+          fit: 'cover',
+          muted: true,
+        }],
         frame: {
           enabled: false,
           imageBorderWidth: 0,
@@ -171,6 +203,7 @@ describe('draft writer', () => {
         },
         caption: {
           visible: true,
+          fontFamily: 'system',
           x: 0,
           y: expect.any(Number),
           width: 0.8,
@@ -193,6 +226,7 @@ describe('draft writer', () => {
             x: 0,
             y: 0.04739583333333333,
             width: 0.8,
+            fontFamily: 'system',
             alpha: expect.any(Number),
             bold: expect.any(Boolean),
             underline: true,
@@ -205,6 +239,7 @@ describe('draft writer', () => {
             x: 0,
             y: -0.21666666666666667,
             width: 0.8,
+            fontFamily: 'system',
             text: expect.any(String),
             alpha: expect.any(Number),
             bold: expect.any(Boolean),
@@ -219,6 +254,7 @@ describe('draft writer', () => {
             y: -0.903125,
             width: 0.8,
             fontSize: expect.any(Number),
+            fontFamily: 'system',
             color: expect.any(String),
             alpha: expect.any(Number),
             bold: false,
@@ -292,11 +328,11 @@ describe('draft writer', () => {
         canvas: { width: 1920, height: 1080 },
         imageArea: { ratio: '16:9', top: 0, height: 1 },
         overlays: {
-          title: { y: draftTemplates[2].title.y, fontSize: draftTemplates[2].title.fontSize },
-          subtitle: { y: draftTemplates[2].subtitle.y, fontSize: draftTemplates[2].subtitle.fontSize },
-          disclaimer: { y: draftTemplates[2].disclaimer.y, fontSize: draftTemplates[2].disclaimer.fontSize },
+          title: { y: draftTemplates[2].title.y, fontSize: draftTemplates[2].title.fontSize, fontFamily: draftTemplates[2].title.fontFamily },
+          subtitle: { y: draftTemplates[2].subtitle.y, fontSize: draftTemplates[2].subtitle.fontSize, fontFamily: draftTemplates[2].subtitle.fontFamily },
+          disclaimer: { y: draftTemplates[2].disclaimer.y, fontSize: draftTemplates[2].disclaimer.fontSize, fontFamily: draftTemplates[2].disclaimer.fontFamily },
         },
-        caption: { y: draftTemplates[2].caption.y, fontSize: draftTemplates[2].caption.fontSize },
+        caption: { y: draftTemplates[2].caption.y, fontSize: draftTemplates[2].caption.fontSize, fontFamily: draftTemplates[2].caption.fontFamily },
       });
     } finally {
       await rm(dir, { recursive: true, force: true });

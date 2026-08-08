@@ -1844,11 +1844,12 @@ describe('product shell ui', () => {
     expect(main).toContain('updateDraftLayerPosition');
     expect(main).toContain('坐标');
     expect(main).toContain("data-layer={layer}");
-    expect(main).toContain('data-layer="image"');
+    expect(main).toContain('target="image-frame"');
+    expect(main).toContain('target="image-media"');
     expect(css).toContain('.editable-draft-canvas');
     expect(css).toContain('.draft-layer');
     expect(css).toContain('.draft-layer.selected');
-    expect(css).toContain('.draft-layer-handle');
+    expect(css).toContain('.draft-transform-handle');
   });
 
   it('reveals and scrolls to the matching draft controls when a canvas layer is selected', async () => {
@@ -1877,6 +1878,11 @@ describe('product shell ui', () => {
     expect(qa).toContain('draftLayerPanelReady');
     expect(qa).toContain('draftRangeZeroReady');
     expect(qa).toContain('draftAnimationPreviewReady');
+    expect(qa).toContain('draftFontSelectionReady');
+    expect(qa).toContain("{ label: '主标题字体', value: '得意黑', textSelector: '.draft-title', cssFamily: 'SimHei' }");
+    expect(qa).toContain("{ label: '字幕字体', value: '宋体', textSelector: '.draft-caption', cssFamily: 'SimSun' }");
+    expect(qa).toContain("persisted.title?.fontFamily === '得意黑'");
+    expect(qa).toContain("persisted.caption?.fontFamily === '宋体'");
     expect(qa).toContain("['向左缩小', 'slide-shrink-left']");
     expect(qa).toContain("['旋转上升', 'spin-rise']");
     expect(qa).toContain("['波动滑出', 'wave']");
@@ -1920,7 +1926,7 @@ describe('product shell ui', () => {
       expect(page).toContain(text);
     }
     expect(page).toContain('draftImageMotions.map');
-    expect(page).toContain('label="高度占比" min={0} max={1} step={0.01}');
+    expect(page).toContain('label="展示框高度" min={0.08} max={1} step={0.01}');
     expect(page).toContain('label="运镜强度" min={0} max={2} step={0.1}');
     expect(page.match(/label="字号" min=\{1\}/gu)).toHaveLength(4);
     expect(page).toContain('label="每行字数" min={1} max={80} step={1}');
@@ -2739,6 +2745,23 @@ describe('product shell ui', () => {
     expect(storyboardBranch).not.toContain('ArtifactSection title="绘图提示词"');
   });
 
+  it('replaces a generated scene image with managed video while keeping image restore available', async () => {
+    const main = (await rendererSourcesPromise).requiredFile('src/features/tasks/TaskArtifactPreview.tsx');
+    const preload = await readFile(new URL('../electron/preload.ts', import.meta.url), 'utf8');
+    const electronMain = await readFile(new URL('../electron/main.ts', import.meta.url), 'utf8');
+
+    for (const method of ['listSceneVideoLibrary', 'replaceTaskSceneVideo', 'restoreTaskSceneImage', 'updateTaskSceneVideoTrim', 'getTaskMediaUrl']) {
+      expect(`${main}\n${preload}`).toContain(method);
+    }
+    for (const control of ['替换画面', '本地视频', '视频素材库', '随机匹配视频', 'AI 生成视频', '恢复图片']) {
+      expect(main).toContain(control);
+    }
+    expect(main).toContain('原图已保留');
+    expect(electronMain).toContain("trustedHandle('task:replace-video'");
+    expect(electronMain).toContain("trustedHandle('task:restore-image'");
+    expect(electronMain).toContain('testsrc2=size=360x640:rate=24:duration=6');
+  });
+
   it('does not keep the duplicate legacy artifact preview card in task detail', async () => {
     const main = (await rendererSourcesPromise).requiredFile('src/features/tasks/TaskDetailPage.tsx');
 
@@ -3443,7 +3466,7 @@ describe('product shell ui', () => {
     expect(css).toContain('.account-panel > .local-info {');
   });
 
-  it('lets AI creation search real web sources and select them for generation', async () => {
+  it('lets AI creation use web sources, built-in knowledge, or both for generation', async () => {
     const main = (await rendererSourcesPromise).requiredFile('src/features/tasks/NewTaskPage.tsx');
     const css = await readFile(new URL('../src/styles.css', import.meta.url), 'utf8');
     const composeSection = main.slice(main.indexOf('async function composeResearchCopy()'), main.indexOf('async function addBgmFromTask'));
@@ -3464,6 +3487,15 @@ describe('product shell ui', () => {
     expect(main).toContain('webSearchProviderLabel(source.provider)');
     expect(main).toContain('selectedSearchSourceIds');
     expect(main).toContain('selectedSources');
+    expect(main).toContain("const webSearchEnabled = aiSources.includes('web')");
+    expect(main).toContain("const builtinKnowledgeEnabled = aiSources.includes('builtin-knowledge')");
+    expect(main).toContain('const hasResearchComposeSource = webSearchEnabled || builtinKnowledgeEnabled');
+    expect(main).toContain('&& (!webSearchEnabled || selectedSources.length > 0)');
+    expect(main).toContain('handleAiSourceChange');
+    expect(main).toContain('handleExtraRequirementsChange');
+    expect(main).toContain('handleSelectedSearchSourceChange');
+    expect(main).toContain('handleTargetLengthChange');
+    expect(main).toContain('{webSearchEnabled ? (');
     expect(main).toContain('ai-search-results');
     expect(main).toContain('ai-search-results-scroll');
     expect(main).toContain('ai-search-actions');
@@ -3471,7 +3503,15 @@ describe('product shell ui', () => {
     expect(main).toContain('setInputText(result.copy)');
     expect(main).toContain('setTitle(result.title');
     expect(composeSection).toContain('targetLength: normalizeTaskTargetLength(targetLength) ?? undefined');
-    expect(main).toContain('结合所选页面信息生成文案');
+    expect(composeSection).toContain('selectedSources: webSearchEnabled ? selectedSources : []');
+    expect(composeSection).toContain('useBuiltinKnowledge: builtinKnowledgeEnabled');
+    expect(composeSection).toContain('if (webSearchEnabled && selectedSources.length === 0)');
+    expect(main).toContain('结合网页与 AI 补全生成文案');
+    expect(main).toContain('根据所选网页生成文案');
+    expect(main).toContain('使用 AI 内置知识生成文案');
+    expect(main).toContain('可独立创作，也可补全可靠细节');
+    expect(main).toContain('disabled={composingCopy || !canComposeResearchCopy}');
+    expect(main).toContain('aria-label="生成文案"');
     expect(main).toContain('网页候选（前 10 条）');
     expect(css).toContain('.ai-search-results');
     expect(css).toContain('.ai-search-results-scroll');

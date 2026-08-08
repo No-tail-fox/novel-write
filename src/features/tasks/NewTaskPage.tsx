@@ -232,6 +232,19 @@ export function NewTaskPage({
 
   const searchSections = searchContext?.query === aiKeyword.trim() ? searchContext.sections.slice(0, 10) : [];
   const selectedSources = searchSections.filter((source, index) => selectedSearchSourceIds.includes(sourceKey(source, index)));
+  const webSearchEnabled = aiSources.includes('web');
+  const builtinKnowledgeEnabled = aiSources.includes('builtin-knowledge');
+  const hasResearchComposeSource = webSearchEnabled || builtinKnowledgeEnabled;
+  const canComposeResearchCopy = Boolean(aiKeyword.trim())
+    && hasResearchComposeSource
+    && (!webSearchEnabled || selectedSources.length > 0);
+  const composeResearchCopyLabel = webSearchEnabled
+    ? builtinKnowledgeEnabled
+      ? '结合网页与 AI 补全生成文案'
+      : '根据所选网页生成文案'
+    : builtinKnowledgeEnabled
+      ? '使用 AI 内置知识生成文案'
+      : '请选择文案来源';
   const taskPromptTemplates = state.promptTemplates.filter((template) => template.type === 'task');
   const storyTemplateOptions = buildStoryTemplateOptions(taskPromptTemplates);
   const taskPromptTemplateOptions = buildTaskPromptTemplateOptions(state.promptTemplates, track);
@@ -640,6 +653,10 @@ export function NewTaskPage({
     setSearchContext(null);
     setSelectedSearchSourceIds([]);
     setSearchMessage('');
+    invalidateResearchCopy();
+  }
+
+  function invalidateResearchCopy(): void {
     setResearchCopy('');
     setResearchCopyMessage('');
   }
@@ -657,16 +674,43 @@ export function NewTaskPage({
     setWebSearchProviders(nextProviders);
   }
 
+  function handleAiSourceChange(source: string): void {
+    const disablingWebSearch = source === 'web' && webSearchEnabled;
+    if (disablingWebSearch) invalidateSearchResults();
+    else invalidateResearchCopy();
+    setAiSources(toggleArray(aiSources, source));
+  }
+
+  function handleExtraRequirementsChange(nextRequirements: string): void {
+    if (nextRequirements !== extraRequirements) invalidateResearchCopy();
+    setExtraRequirements(nextRequirements);
+  }
+
+  function handleSelectedSearchSourceChange(sourceId: string): void {
+    invalidateResearchCopy();
+    setSelectedSearchSourceIds(toggleArray(selectedSearchSourceIds, sourceId));
+  }
+
+  function handleTargetLengthChange(nextTargetLength: string): void {
+    if (nextTargetLength !== targetLength) invalidateResearchCopy();
+    setTargetLength(nextTargetLength);
+  }
+
   async function searchWebSources() {
     const keyword = aiKeyword.trim();
     if (!keyword) {
       setSearchMessage('请先输入关键词。');
       return;
     }
+    if (!webSearchEnabled) {
+      setSearchMessage('请先启用全网搜索。');
+      return;
+    }
     if (webSearchProviders.length === 0) {
       setSearchMessage('请至少选择一个搜索渠道。');
       return;
     }
+    invalidateResearchCopy();
     const requestId = ++searchRequestIdRef.current;
     const providerNames = WEB_SEARCH_PROVIDER_OPTIONS
       .filter((option) => webSearchProviders.includes(option.id))
@@ -691,23 +735,37 @@ export function NewTaskPage({
   }
 
   async function composeResearchCopy() {
-    if (selectedSources.length === 0) {
-      setResearchCopyMessage('请先勾选至少 1 个网页来源。');
+    const keyword = aiKeyword.trim();
+    if (!keyword) {
+      setResearchCopyMessage('请先输入关键词。');
+      return;
+    }
+    if (!hasResearchComposeSource) {
+      setResearchCopyMessage('请至少选择全网搜索或 AI 内置知识补全。');
+      return;
+    }
+    if (webSearchEnabled && selectedSources.length === 0) {
+      setResearchCopyMessage('请先搜索并勾选至少 1 个网页来源，或关闭全网搜索后使用 AI 内置知识生成。');
       return;
     }
     await taskAction.run(async () => {
       setComposingCopy(true);
-      setResearchCopyMessage('正在结合所选页面信息生成文案...');
+      setResearchCopyMessage(webSearchEnabled
+        ? builtinKnowledgeEnabled
+          ? '正在结合网页资料与 AI 内置知识生成文案...'
+          : '正在根据所选网页资料生成文案...'
+        : '正在使用 AI 内置知识生成文案...');
       try {
         const result = await api.composeResearchCopy({
-          keyword: aiKeyword.trim(),
+          keyword,
           extraRequirements,
-          selectedSources,
+          selectedSources: webSearchEnabled ? selectedSources : [],
+          useBuiltinKnowledge: builtinKnowledgeEnabled,
           targetLength: normalizeTaskTargetLength(targetLength) ?? undefined,
         });
         setResearchCopy(result.copy);
         setInputText(result.copy);
-        setTitle(result.title || aiKeyword.trim());
+        setTitle(result.title || keyword);
         setMode('paste');
         setResearchCopyMessage(`已生成文案并填入粘贴文案${result.requestId ? `（request ${result.requestId}）` : ''}。`);
       } finally {
@@ -906,79 +964,83 @@ export function NewTaskPage({
                       <input value={aiKeyword} onChange={(event) => handleAiKeywordChange(event.target.value)} placeholder="例如：钱学森回国 / 张桂梅 / 苹果秋季发布会" />
                     </Field>
                     <Field label="额外要求" hint="可选">
-                      <input className="extra-requirements-input" value={extraRequirements} onChange={(event) => setExtraRequirements(event.target.value)} />
+                      <input className="extra-requirements-input" value={extraRequirements} onChange={(event) => handleExtraRequirementsChange(event.target.value)} />
                     </Field>
                   </div>
                   <span className="field-title">数据源</span>
                   <div className="new-task-check-grid">
-                    <label className="check-row"><input type="checkbox" checked={aiSources.includes('web')} onChange={() => setAiSources(toggleArray(aiSources, 'web'))} />全网搜索 <small>必应、百度、搜狗、头条与正文来源</small></label>
-                    <label className="check-row"><input type="checkbox" checked={aiSources.includes('builtin-knowledge')} onChange={() => setAiSources(toggleArray(aiSources, 'builtin-knowledge'))} />AI 内置知识补全 <small>允许模型补全细节</small></label>
-                    <label className="check-row muted"><input type="checkbox" checked={aiSources.includes('ima')} onChange={() => setAiSources(toggleArray(aiSources, 'ima'))} />IMA 知识库 <small>使用系统设置中的知识库</small></label>
+                    <label className="check-row"><input type="checkbox" checked={webSearchEnabled} onChange={() => handleAiSourceChange('web')} />全网搜索 <small>必应、百度、搜狗、头条与正文来源</small></label>
+                    <label className="check-row"><input type="checkbox" checked={builtinKnowledgeEnabled} onChange={() => handleAiSourceChange('builtin-knowledge')} />AI 内置知识补全 <small>可独立创作，也可补全可靠细节</small></label>
+                    <label className="check-row muted"><input type="checkbox" checked={aiSources.includes('ima')} onChange={() => handleAiSourceChange('ima')} />IMA 知识库 <small>使用系统设置中的知识库</small></label>
                   </div>
-                  <div className="web-search-provider-panel">
-                    <span className="field-title">搜索渠道</span>
-                    <div className="web-search-provider-grid">
-                      {WEB_SEARCH_PROVIDER_OPTIONS.map((provider) => (
-                        <label className="web-search-provider" key={provider.id}>
-                          <input
-                            type="checkbox"
-                            checked={webSearchProviders.includes(provider.id)}
-                            onChange={() => handleWebSearchProviderChange(provider.id)}
-                          />
-                          <span><strong>{provider.label}</strong><small>{provider.domain}</small></span>
-                        </label>
-                      ))}
-                    </div>
-                  </div>
-                  <button type="button" className="ghost-action" disabled={searchAction.busy || !aiKeyword.trim() || webSearchProviders.length === 0} onClick={searchWebSources}>
-                    {searchAction.busy ? <Loader2 className="spin" size={15} /> : <Search size={15} />}搜索
-                  </button>
-                  {searchMessage ? <div className="test-result">{searchMessage}</div> : null}
-                  <InlineActionFeedback feedback={searchAction.feedback} />
-                  {searchContext && searchContext.query === aiKeyword.trim() ? (
-                    <div className="ai-search-block">
-                      <div className="ai-search-results ai-search-results-scroll">
-                        <div className="panel-title-row ai-search-title-row">
-                          <div><h3>网页候选（前 10 条）</h3><small>实际查询：{searchContext.query}</small></div>
-                          <small>{selectedSources.length}/{searchSections.length} 已选择</small>
-                        </div>
-                        {searchContext.providerStatuses?.length ? (
-                          <div className="web-search-provider-statuses">
-                            {searchContext.providerStatuses.map((status) => (
-                              <span className="web-search-provider-status" data-state={status.state} key={status.provider}>
-                                {status.label} · {status.state === 'ready' ? `${status.count} 条` : status.state === 'empty' ? '无精准结果' : '失败'}
-                              </span>
-                            ))}
-                          </div>
-                        ) : null}
-                        {searchSections.length === 0 ? <EmptyState title="暂无可用网页资料" /> : null}
-                        {searchSections.map((source, index) => {
-                          const id = sourceKey(source, index);
-                          return (
-                            <label className="search-source-card" key={id}>
-                              <input type="checkbox" checked={selectedSearchSourceIds.includes(id)} onChange={() => setSelectedSearchSourceIds(toggleArray(selectedSearchSourceIds, id))} />
-                              <div>
-                                <div className="search-source-heading"><span className="search-source-provider">{webSearchProviderLabel(source.provider)}</span><strong>{source.title}</strong></div>
-                                {source.url ? <span className="search-source-url">{source.url}</span> : null}
-                                <p>{(source.content || source.snippet || '').slice(0, 220)}</p>
-                              </div>
+                  {webSearchEnabled ? (
+                    <>
+                      <div className="web-search-provider-panel">
+                        <span className="field-title">搜索渠道</span>
+                        <div className="web-search-provider-grid">
+                          {WEB_SEARCH_PROVIDER_OPTIONS.map((provider) => (
+                            <label className="web-search-provider" key={provider.id}>
+                              <input
+                                type="checkbox"
+                                checked={webSearchProviders.includes(provider.id)}
+                                onChange={() => handleWebSearchProviderChange(provider.id)}
+                              />
+                              <span><strong>{provider.label}</strong><small>{provider.domain}</small></span>
                             </label>
-                          );
-                        })}
+                          ))}
+                        </div>
                       </div>
-                      <div className="ai-search-actions">
-                        <button type="button" className="primary-action slim" disabled={composingCopy || selectedSources.length === 0} onClick={composeResearchCopy}>
-                          {composingCopy ? <Loader2 className="spin" size={15} /> : <Wand2 size={15} />}结合所选页面信息生成文案
-                        </button>
-                      </div>
-                      {researchCopyMessage ? <div className="test-result">{researchCopyMessage}</div> : null}
-                      {researchCopy ? (
-                        <Field label="生成文案（可编辑）">
-                          <textarea className="small-textarea research-copy-textarea" value={researchCopy} onChange={(event) => { setResearchCopy(event.target.value); setInputText(event.target.value); }} />
-                          <ContentMetricsSummary text={researchCopy} targetLength={targetLength} storyboardSceneCount={storyboardSceneCount} />
-                        </Field>
+                      <button type="button" className="ghost-action" disabled={searchAction.busy || !aiKeyword.trim() || webSearchProviders.length === 0} onClick={searchWebSources}>
+                        {searchAction.busy ? <Loader2 className="spin" size={15} /> : <Search size={15} />}搜索
+                      </button>
+                      {searchMessage ? <div className="test-result">{searchMessage}</div> : null}
+                      <InlineActionFeedback feedback={searchAction.feedback} />
+                      {searchContext && searchContext.query === aiKeyword.trim() ? (
+                        <div className="ai-search-block">
+                          <div className="ai-search-results ai-search-results-scroll">
+                            <div className="panel-title-row ai-search-title-row">
+                              <div><h3>网页候选（前 10 条）</h3><small>实际查询：{searchContext.query}</small></div>
+                              <small>{selectedSources.length}/{searchSections.length} 已选择</small>
+                            </div>
+                            {searchContext.providerStatuses?.length ? (
+                              <div className="web-search-provider-statuses">
+                                {searchContext.providerStatuses.map((status) => (
+                                  <span className="web-search-provider-status" data-state={status.state} key={status.provider}>
+                                    {status.label} · {status.state === 'ready' ? `${status.count} 条` : status.state === 'empty' ? '无精准结果' : '失败'}
+                                  </span>
+                                ))}
+                              </div>
+                            ) : null}
+                            {searchSections.length === 0 ? <EmptyState title="暂无可用网页资料" /> : null}
+                            {searchSections.map((source, index) => {
+                              const id = sourceKey(source, index);
+                              return (
+                                <label className="search-source-card" key={id}>
+                                  <input type="checkbox" checked={selectedSearchSourceIds.includes(id)} onChange={() => handleSelectedSearchSourceChange(id)} />
+                                  <div>
+                                    <div className="search-source-heading"><span className="search-source-provider">{webSearchProviderLabel(source.provider)}</span><strong>{source.title}</strong></div>
+                                    {source.url ? <span className="search-source-url">{source.url}</span> : null}
+                                    <p>{(source.content || source.snippet || '').slice(0, 220)}</p>
+                                  </div>
+                                </label>
+                              );
+                            })}
+                          </div>
+                        </div>
                       ) : null}
-                    </div>
+                    </>
+                  ) : null}
+                  <div className="ai-search-actions">
+                    <button type="button" className="primary-action slim" aria-label="生成文案" disabled={composingCopy || !canComposeResearchCopy} onClick={composeResearchCopy}>
+                      {composingCopy ? <Loader2 className="spin" size={15} /> : <Wand2 size={15} />}{composeResearchCopyLabel}
+                    </button>
+                  </div>
+                  {researchCopyMessage ? <div className="test-result">{researchCopyMessage}</div> : null}
+                  {researchCopy ? (
+                    <Field label="生成文案（可编辑）">
+                      <textarea className="small-textarea research-copy-textarea" value={researchCopy} onChange={(event) => { setResearchCopy(event.target.value); setInputText(event.target.value); }} />
+                      <ContentMetricsSummary text={researchCopy} targetLength={targetLength} storyboardSceneCount={storyboardSceneCount} />
+                    </Field>
                   ) : null}
                 </div>
               )}
@@ -1070,7 +1132,7 @@ export function NewTaskPage({
           {activeStage === 'output' ? (
             <section className="new-task-stage-panel" data-create-fields={NEW_TASK_CREATE_FIELDS_BY_STAGE.output.join(' ')}>
               <div className="new-task-field-grid">
-                <label className="target-number-field"><span>目标字数</span><input type="number" min="100" max="5000" step="50" value={targetLength} placeholder="自动" onChange={(event) => setTargetLength(event.target.value)} /><small>字（±20%，留空跟随原文）</small></label>
+                <label className="target-number-field"><span>目标字数</span><input type="number" min="100" max="5000" step="50" value={targetLength} placeholder="自动" onChange={(event) => handleTargetLengthChange(event.target.value)} /><small>字（±20%，留空跟随原文）</small></label>
                 <label className="target-number-field"><span>目标分镜数</span><input type="number" min="1" max="60" step="1" value={storyboardSceneCount} placeholder={storyboardScenePreviewRange ? `自动（${storyboardScenePreviewRange.target}）` : '自动'} onChange={(event) => setStoryboardSceneCount(event.target.value)} /><small>个（±10%，建议每镜 25-45 字）</small></label>
               </div>
               <div className="new-task-field-grid">

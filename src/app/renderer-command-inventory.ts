@@ -111,7 +111,16 @@ export const rendererCommandInventory = {
   archiveViralAnalysis: command(owner('history', 'src/features/tasks/HistoryPage.tsx', 'archiveRecord', 'archiveRecord(record)', '归档记录', historyTest)),
   archiveVoiceLabRecord: command(owner('history', 'src/features/tasks/HistoryPage.tsx', 'archiveRecord', 'archiveRecord(record)', '归档记录', historyTest)),
   composeResearchCopy: command(
-    owner('new-task', 'src/features/tasks/NewTaskPage.tsx', 'composeResearchCopy', 'onClick={composeResearchCopy}', '结合所选页面信息生成文案', productShellTest),
+    owner(
+      'new-task',
+      'src/features/tasks/NewTaskPage.tsx',
+      'composeResearchCopy',
+      'onClick={composeResearchCopy}',
+      '生成文案',
+      productShellTest,
+      undefined,
+      { disabled: 'disabled={composingCopy || !canComposeResearchCopy}', loading: 'composingCopy ?', error: 'researchCopyMessage' },
+    ),
     owner(
       'html-video',
       'src/features/html-video/html-video-page-workflow.ts',
@@ -294,9 +303,15 @@ export const rendererCommandInventory = {
     htmlVideoStudioTest,
   )),
   replaceTaskImage: command(
-    owner('task-detail', 'src/features/tasks/TaskArtifactPreview.tsx', 'replaceImage', 'onClick={() => void replaceImage(scene.id)}', '替换图片', productShellTest),
+    owner('task-detail', 'src/features/tasks/TaskArtifactPreview.tsx', 'replaceImage', 'onClick={() => void replaceImage(scene.id)}', '本地图片', productShellTest),
+    owner('task-detail', 'src/features/tasks/TaskArtifactPreview.tsx', 'replaceImage', 'onClick={() => void replaceImage(librarySceneId)}', '本地图片', productShellTest),
     owner('task-detail', 'src/features/tasks/TaskArtifactPreview.tsx', 'pasteImage', 'onClick={() => void pasteImage(scene.id)}', '粘贴图', productShellTest),
     owner('task-detail', 'src/features/tasks/TaskArtifactPreview.tsx', 'chooseLibraryImage', 'onClick={() => void chooseLibraryImage(record.id)}', '选用', productShellTest),
+  ),
+  replaceTaskSceneVideo: command(
+    owner('task-detail', 'src/features/tasks/TaskArtifactPreview.tsx', 'replaceVideo', "onClick={() => void replaceVideo(scene.id, { kind: 'local' })}", '本地视频', productShellTest),
+    owner('task-detail', 'src/features/tasks/TaskArtifactPreview.tsx', 'replaceVideo', "onClick={() => void replaceVideo(scene.id, { kind: 'random' })}", '随机匹配视频', productShellTest),
+    owner('task-detail', 'src/features/tasks/TaskArtifactPreview.tsx', 'replaceVideo', "onClick={() => void replaceVideo(videoLibrarySceneId, { kind: 'library', libraryId: item.id })}", '选用', productShellTest),
   ),
   rerenderHtmlVideo: command(owner(
     'html-video',
@@ -314,6 +329,7 @@ export const rendererCommandInventory = {
   resetPromptTemplates: command(owner('prompt-templates', 'src/features/templates/PromptTemplatesPage.tsx', 'resetPromptTemplateLibrary', 'onClick={resetPromptTemplateLibrary}', '重置', productShellTest)),
   restoreImageLabRecord: command(owner('history', 'src/features/tasks/HistoryPage.tsx', 'restoreRecord', 'restoreRecord(record)', '恢复记录', historyTest)),
   restoreTask: command(owner('history', 'src/features/tasks/HistoryPage.tsx', 'restoreRecord', 'restoreRecord(record)', '恢复任务', historyTest)),
+  restoreTaskSceneImage: command(owner('task-detail', 'src/features/tasks/TaskArtifactPreview.tsx', 'restoreImage', 'onClick={() => void restoreImage(scene.id)}', '恢复图片', productShellTest)),
   restoreViralAnalysis: command(owner('history', 'src/features/tasks/HistoryPage.tsx', 'restoreRecord', 'restoreRecord(record)', '恢复记录', historyTest)),
   restoreVoiceLabRecord: command(owner('history', 'src/features/tasks/HistoryPage.tsx', 'restoreRecord', 'restoreRecord(record)', '恢复记录', historyTest)),
   retryTask: command(
@@ -460,6 +476,7 @@ export const rendererCommandInventory = {
   ),
   updateTaskBgm: command(owner('task-detail', 'src/features/tasks/TaskDetailPage.tsx', 'applyDraftBgm', 'onClick={onApplyBgm}', '应用音乐', 'tests/task-operations-ui.test.ts')),
   updateTaskImagePrompt: command(owner('task-detail', 'src/features/tasks/TaskArtifactPreview.tsx', 'submitEditor', 'onClick={() => void submitEditor()}', '保存并重绘', productShellTest)),
+  updateTaskSceneVideoTrim: command(owner('task-detail', 'src/features/tasks/TaskArtifactPreview.tsx', 'saveVideoTrim', 'onClick={() => void saveVideoTrim(scene.id, trimValue)}', '应用', productShellTest)),
   updateTaskSubtitleLines: command(owner('task-detail', 'src/features/tasks/TaskArtifactPreview.tsx', 'saveSubtitleLines', 'onClick={saveSubtitleLines}', '保存字幕断句', 'tests/task-operations-ui.test.ts')),
   updateTaskTemplate: command(
     owner('task-detail', 'src/features/tasks/TaskDetailPage.tsx', 'applyDraftTemplate', 'onClick={onApplyTemplate}', '应用模板', productShellTest),

@@ -571,6 +571,7 @@ describe('AI source research', () => {
           { source: 'web', title: 'Article A', url: 'https://example.test/a', snippet: 'Snippet A', content: 'Article A facts.' },
           { source: 'web', title: 'Article B', url: 'https://example.test/b', content: 'Article B details.' },
         ],
+        useBuiltinKnowledge: false,
         targetLength: 500,
       },
     );
@@ -604,6 +605,7 @@ describe('AI source research', () => {
         keyword: 'Wu Zetian',
         extraRequirements: '',
         selectedSources: [],
+        useBuiltinKnowledge: true,
       },
     );
 
@@ -611,6 +613,41 @@ describe('AI source research', () => {
     expect(result.copy).toBe('Generated body.');
     expect(requests[0].messages[0].content).toContain('本次无外部参考素材');
     expect(requests[0].messages[1].content).toContain('请基于你对「Wu Zetian」的了解');
+  });
+
+  it('allows reliable built-in knowledge to supplement selected web sources', async () => {
+    const requests: LlmTextRequest[] = [];
+    await composeCopyFromSources(
+      mockConfiguredTextLlm(async (request) => {
+        requests.push(request);
+        return { text: 'Combined copy.', raw: 'Combined copy.', requestId: 'copy-combined-1' };
+      }),
+      {
+        keyword: 'Wu Zetian',
+        extraRequirements: 'Focus on the turning point.',
+        selectedSources: [{ source: 'web', title: 'Article A', content: 'Verified facts.' }],
+        useBuiltinKnowledge: true,
+      },
+    );
+
+    expect(requests[0].messages[0].content).toContain('可适当结合你已知的可靠信息补全细节');
+    expect(requests[0].messages[1].content).toContain('Verified facts.');
+  });
+
+  it('rejects empty sources unless built-in knowledge is explicitly enabled', async () => {
+    const llm = mockConfiguredTextLlm(async () => ({ text: 'unused', raw: 'unused', requestId: null }));
+    await expect(composeCopyFromSources(llm, {
+      keyword: 'Wu Zetian',
+      extraRequirements: '',
+      selectedSources: [],
+      useBuiltinKnowledge: false,
+    })).rejects.toThrow('请至少提供一个网页来源，或启用 AI 内置知识补全');
+    await expect(composeCopyFromSources(llm, {
+      keyword: 'Wu Zetian',
+      extraRequirements: '',
+      selectedSources: [{ source: 'web', title: 'Empty result', content: '' }],
+      useBuiltinKnowledge: false,
+    })).rejects.toThrow('请至少提供一个网页来源，或启用 AI 内置知识补全');
   });
 
   it('collects web RSS snippets and built-in knowledge for AI creation', async () => {

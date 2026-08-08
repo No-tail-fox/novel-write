@@ -1,7 +1,18 @@
 import React, { useRef } from 'react';
 import type { DraftTemplate, DraftTextBorder } from '../../shared/types';
+import { draftFontCssFamily } from '../../shared/templates';
 
 export type DraftCanvasLayer = 'image' | 'title' | 'subtitle' | 'caption' | 'disclaimer';
+export type DraftImageEditTarget = 'image-frame' | 'image-media';
+export type DraftCanvasSelection = DraftImageEditTarget | Exclude<DraftCanvasLayer, 'image'>;
+export type DraftResizeHandle = 'n' | 'ne' | 'e' | 'se' | 's' | 'sw' | 'w' | 'nw';
+
+export interface DraftCanvasRect {
+  left: number;
+  top: number;
+  width: number;
+  height: number;
+}
 
 export type DraftImageAnimationPreviewKind =
   | 'none'
@@ -30,15 +41,195 @@ export type DraftImageAnimationPreviewKind =
 export const DRAFT_TEXT_WIDTH_MIN = 0.1;
 
 export const DRAFT_TEXT_WIDTH_MAX = 2;
+export const DRAFT_IMAGE_FRAME_MIN = 0.08;
+export const DRAFT_IMAGE_SCALE_MAX = 8;
+
+const draftResizeHandles: DraftResizeHandle[] = ['nw', 'n', 'ne', 'e', 'se', 's', 'sw', 'w'];
+
+const draftResizeHandleLabels: Record<DraftResizeHandle, string> = {
+  n: '上边',
+  ne: '右上角',
+  e: '右边',
+  se: '右下角',
+  s: '下边',
+  sw: '左下角',
+  w: '左边',
+  nw: '左上角',
+};
 
 export type DraftDragSnapshot =
-  | { mode: 'move'; layer: DraftCanvasLayer; pointerId: number; startX: number; startY: number; template: DraftTemplate }
-  | { mode: 'resize'; layer: Exclude<DraftCanvasLayer, 'image'>; pointerId: number; startX: number; startY: number; template: DraftTemplate };
+  | { mode: 'move'; selection: DraftCanvasSelection; pointerId: number; startX: number; startY: number; template: DraftTemplate }
+  | { mode: 'resize-text'; layer: Exclude<DraftCanvasLayer, 'image'>; pointerId: number; startX: number; startY: number; template: DraftTemplate }
+  | { mode: 'resize-image'; target: DraftImageEditTarget; handle: DraftResizeHandle; pointerId: number; startX: number; startY: number; template: DraftTemplate };
+
+export function draftCanvasSelectionLayer(selection: DraftCanvasSelection): DraftCanvasLayer {
+  return selection === 'image-frame' || selection === 'image-media' ? 'image' : selection;
+}
+
+export function isDraftCanvasSelectionVisible(template: DraftTemplate, selection: DraftCanvasSelection): boolean {
+  if (selection === 'image-media') return template.image.visible && template.image.fit === 'cover';
+  return isDraftLayerVisible(template, draftCanvasSelectionLayer(selection));
+}
+
+export function firstVisibleDraftCanvasSelection(template: DraftTemplate): DraftCanvasSelection {
+  const layer = firstVisibleDraftLayer(template);
+  return layer === 'image' ? 'image-frame' : layer;
+}
+
+export function draftImageFrameRect(template: DraftTemplate): DraftCanvasRect {
+  const width = clamp(template.image.width, 0, 1);
+  const height = clamp(template.image.height, 0, 1);
+  return {
+    left: clamp(template.image.left, 0, Math.max(0, 1 - width)),
+    top: clamp(template.image.top, 0, Math.max(0, 1 - height)),
+    width,
+    height,
+  };
+}
+
+export function draftImageMediaRect(template: DraftTemplate): DraftCanvasRect {
+  const frame = draftImageFrameRect(template);
+  if (template.image.fit === 'contain' || frame.width <= 0 || frame.height <= 0) return frame;
+  const base = draftImageBaseMediaSize(template, frame);
+  const scale = clamp(template.image.mediaScale, 1, DRAFT_IMAGE_SCALE_MAX);
+  const width = base.width * scale;
+  const height = base.height * scale;
+  const overflowX = Math.max(0, width - frame.width);
+  const overflowY = Math.max(0, height - frame.height);
+  const centerX = frame.left + frame.width / 2 + overflowX * (0.5 - clamp(template.image.focusX, 0, 1));
+  const centerY = frame.top + frame.height / 2 + overflowY * (0.5 - clamp(template.image.focusY, 0, 1));
+  return { left: centerX - width / 2, top: centerY - height / 2, width, height };
+}
+
+export function moveDraftImageFrame(template: DraftTemplate, deltaX: number, deltaY: number): DraftTemplate {
+  const frame = draftImageFrameRect(template);
+  return applyDraftImageFrameRect(template, {
+    ...frame,
+    left: clamp(frame.left + deltaX, 0, 1 - frame.width),
+    top: clamp(frame.top + deltaY, 0, 1 - frame.height),
+  });
+}
+
+export function resizeDraftImageFrame(template: DraftTemplate, handle: DraftResizeHandle, deltaX: number, deltaY: number): DraftTemplate {
+  const frame = draftImageFrameRect(template);
+  let left = frame.left;
+  let top = frame.top;
+  let right = frame.left + frame.width;
+  let bottom = frame.top + frame.height;
+  if (handle.includes('w')) left = clamp(left + deltaX, 0, right - DRAFT_IMAGE_FRAME_MIN);
+  if (handle.includes('e')) right = clamp(right + deltaX, left + DRAFT_IMAGE_FRAME_MIN, 1);
+  if (handle.includes('n')) top = clamp(top + deltaY, 0, bottom - DRAFT_IMAGE_FRAME_MIN);
+  if (handle.includes('s')) bottom = clamp(bottom + deltaY, top + DRAFT_IMAGE_FRAME_MIN, 1);
+  return applyDraftImageFrameRect(template, { left, top, width: right - left, height: bottom - top });
+}
+
+export function updateDraftImageFrameRect(template: DraftTemplate, patch: Partial<DraftCanvasRect>): DraftTemplate {
+  return applyDraftImageFrameRect(template, { ...draftImageFrameRect(template), ...patch });
+}
+
+export function moveDraftImageMedia(template: DraftTemplate, deltaX: number, deltaY: number): DraftTemplate {
+  if (template.image.fit !== 'cover') return template;
+  const media = draftImageMediaRect(template);
+  return applyDraftImageMediaRect(template, { ...media, left: media.left + deltaX, top: media.top + deltaY });
+}
+
+export function resizeDraftImageMedia(template: DraftTemplate, handle: DraftResizeHandle, deltaX: number, deltaY: number): DraftTemplate {
+  if (template.image.fit !== 'cover') return template;
+  const media = draftImageMediaRect(template);
+  if (media.width <= 0 || media.height <= 0) return template;
+  const horizontalFactor = handle.includes('e')
+    ? (media.width + deltaX) / media.width
+    : handle.includes('w')
+      ? (media.width - deltaX) / media.width
+      : 1;
+  const verticalFactor = handle.includes('s')
+    ? (media.height + deltaY) / media.height
+    : handle.includes('n')
+      ? (media.height - deltaY) / media.height
+      : 1;
+  const factor = handle.length === 2
+    ? (Math.abs(horizontalFactor - 1) >= Math.abs(verticalFactor - 1) ? horizontalFactor : verticalFactor)
+    : (handle === 'e' || handle === 'w' ? horizontalFactor : verticalFactor);
+  const scale = clamp(template.image.mediaScale * Math.max(0.01, factor), 1, DRAFT_IMAGE_SCALE_MAX);
+  const scaleRatio = scale / clamp(template.image.mediaScale, 1, DRAFT_IMAGE_SCALE_MAX);
+  const width = media.width * scaleRatio;
+  const height = media.height * scaleRatio;
+  const centerX = handle.includes('w')
+    ? media.left + media.width - width / 2
+    : handle.includes('e')
+      ? media.left + width / 2
+      : media.left + media.width / 2;
+  const centerY = handle.includes('n')
+    ? media.top + media.height - height / 2
+    : handle.includes('s')
+      ? media.top + height / 2
+      : media.top + media.height / 2;
+  return applyDraftImageMediaRect(template, { left: centerX - width / 2, top: centerY - height / 2, width, height });
+}
+
+export function updateDraftImageMediaScale(template: DraftTemplate, mediaScale: number): DraftTemplate {
+  if (template.image.fit !== 'cover') return template;
+  const media = draftImageMediaRect(template);
+  const currentScale = clamp(template.image.mediaScale, 1, DRAFT_IMAGE_SCALE_MAX);
+  const nextScale = clamp(mediaScale, 1, DRAFT_IMAGE_SCALE_MAX);
+  const factor = nextScale / currentScale;
+  const width = media.width * factor;
+  const height = media.height * factor;
+  const centerX = media.left + media.width / 2;
+  const centerY = media.top + media.height / 2;
+  return applyDraftImageMediaRect(template, { left: centerX - width / 2, top: centerY - height / 2, width, height });
+}
+
+function applyDraftImageFrameRect(template: DraftTemplate, nextFrame: DraftCanvasRect): DraftTemplate {
+  const previousMedia = draftImageMediaRect(template);
+  const width = clamp(nextFrame.width, DRAFT_IMAGE_FRAME_MIN, 1);
+  const height = clamp(nextFrame.height, DRAFT_IMAGE_FRAME_MIN, 1);
+  const frame = {
+    left: clamp(nextFrame.left, 0, 1 - width),
+    top: clamp(nextFrame.top, 0, 1 - height),
+    width,
+    height,
+  };
+  const next = { ...template, image: { ...template.image, ...frame } };
+  return template.image.fit === 'cover' ? applyDraftImageMediaRect(next, previousMedia) : next;
+}
+
+function applyDraftImageMediaRect(template: DraftTemplate, desired: DraftCanvasRect): DraftTemplate {
+  const frame = draftImageFrameRect(template);
+  const base = draftImageBaseMediaSize(template, frame);
+  if (base.width <= 0 || base.height <= 0) return template;
+  const requestedScale = Math.max(desired.width / base.width, desired.height / base.height, 1);
+  const mediaScale = clamp(requestedScale, 1, DRAFT_IMAGE_SCALE_MAX);
+  const width = base.width * mediaScale;
+  const height = base.height * mediaScale;
+  const desiredCenterX = desired.left + desired.width / 2;
+  const desiredCenterY = desired.top + desired.height / 2;
+  const centerX = clamp(desiredCenterX, frame.left + frame.width - width / 2, frame.left + width / 2);
+  const centerY = clamp(desiredCenterY, frame.top + frame.height - height / 2, frame.top + height / 2);
+  const overflowX = Math.max(0, width - frame.width);
+  const overflowY = Math.max(0, height - frame.height);
+  const focusX = overflowX > 1e-8 ? clamp(0.5 - (centerX - frame.left - frame.width / 2) / overflowX, 0, 1) : 0.5;
+  const focusY = overflowY > 1e-8 ? clamp(0.5 - (centerY - frame.top - frame.height / 2) / overflowY, 0, 1) : 0.5;
+  return { ...template, image: { ...template.image, mediaScale, focusX, focusY } };
+}
+
+function draftImageBaseMediaSize(template: DraftTemplate, frame: DraftCanvasRect): Pick<DraftCanvasRect, 'width' | 'height'> {
+  if (frame.width <= 0 || frame.height <= 0) return { width: 0, height: 0 };
+  const canvasWidth = Math.max(1, template.canvas.width);
+  const canvasHeight = Math.max(1, template.canvas.height);
+  const imageRatio = ratioToNumber(template.image.ratio) || canvasWidth / canvasHeight;
+  const frameRatio = (frame.width * canvasWidth) / (frame.height * canvasHeight);
+  if (imageRatio >= frameRatio) {
+    return { width: (frame.height * canvasHeight * imageRatio) / canvasWidth, height: frame.height };
+  }
+  return { width: frame.width, height: (frame.width * canvasWidth) / (imageRatio * canvasHeight) };
+}
 
 export function DraftTemplatePreview({
   template,
   compact = false,
   imageUrl,
+  videoUrl,
   titleText,
   subtitleText,
   captionText,
@@ -47,6 +238,7 @@ export function DraftTemplatePreview({
   template: DraftTemplate;
   compact?: boolean;
   imageUrl?: string;
+  videoUrl?: string;
   titleText?: string;
   subtitleText?: string;
   captionText?: string;
@@ -60,14 +252,25 @@ export function DraftTemplatePreview({
     <div className={compact ? 'draft-preview-mini' : 'draft-preview-large'} data-media-canvas="draft-canvas" style={draftTemplateCanvasStyle(template)}>
       <DraftFrameChrome template={template} />
       {template.image.visible ? (
-        <div className="draft-image" style={{ top: `${template.image.top * 100}%`, height: `${template.image.height * 100}%`, ...draftImageFrameStyle(template) }}>
-          {imageUrl ? (
+        <div className="draft-image" style={{ ...draftImageFramePositionStyle(template), ...draftImageFrameStyle(template) }}>
+          {videoUrl ? (
+            <video
+              className="draft-image-media draft-image-asset"
+              src={videoUrl}
+              muted
+              playsInline
+              autoPlay
+              loop
+              aria-label="分镜视频预览"
+              style={draftCenteredMediaStyle(template.image.fit)}
+            />
+          ) : imageUrl ? (
             <img
               className="draft-image-media draft-image-asset"
               data-motion={template.image.motion || 'none'}
               src={imageUrl}
               alt=""
-              style={{ ...draftImageMediaStyle(template), ...draftImageMotionStyle(template), objectFit: template.image.fit }}
+              style={{ ...draftImageMediaStyle(template), ...draftImageMotionStyle(template) }}
             />
           ) : (
             <div className="draft-image-media" data-motion={template.image.motion || 'none'} style={{ ...draftImageMediaStyle(template), ...draftImageMotionStyle(template) }} />
@@ -143,28 +346,30 @@ export function EditableDraftCanvas({
   onChange,
 }: {
   template: DraftTemplate;
-  selectedLayer: DraftCanvasLayer;
+  selectedLayer: DraftCanvasSelection;
   animationPreview?: string | null;
-  onSelectLayer: (layer: DraftCanvasLayer) => void;
+  onSelectLayer: (layer: DraftCanvasSelection) => void;
   onChange: (template: DraftTemplate) => void;
 }) {
   const canvasRef = useRef<HTMLDivElement | null>(null);
   const dragRef = useRef<DraftDragSnapshot | null>(null);
+  const frameRect = draftImageFrameRect(template);
+  const mediaRect = draftImageMediaRect(template);
 
-  function handleDraftCanvasPointerDown(layer: DraftCanvasLayer, event: React.PointerEvent<HTMLDivElement>) {
+  function handleDraftCanvasPointerDown(selection: DraftCanvasSelection, event: React.PointerEvent<HTMLDivElement>) {
     const rect = canvasRef.current?.getBoundingClientRect();
     if (!rect) return;
     event.preventDefault();
     event.currentTarget.setPointerCapture(event.pointerId);
-    onSelectLayer(layer);
+    onSelectLayer(selection);
     dragRef.current = {
       mode: 'move',
-      layer,
+      selection,
       pointerId: event.pointerId,
       startX: event.clientX,
       startY: event.clientY,
       template: cloneDraftTemplate(template),
-    } as DraftDragSnapshot;
+    };
   }
 
   function handleDraftCanvasResizePointerDown(layer: Exclude<DraftCanvasLayer, 'image'>, event: React.PointerEvent<HTMLElement>) {
@@ -175,8 +380,26 @@ export function EditableDraftCanvas({
     event.currentTarget.setPointerCapture(event.pointerId);
     onSelectLayer(layer);
     dragRef.current = {
-      mode: 'resize',
+      mode: 'resize-text',
       layer,
+      pointerId: event.pointerId,
+      startX: event.clientX,
+      startY: event.clientY,
+      template: cloneDraftTemplate(template),
+    };
+  }
+
+  function handleDraftImageResizePointerDown(target: DraftImageEditTarget, handle: DraftResizeHandle, event: React.PointerEvent<HTMLButtonElement>) {
+    const rect = canvasRef.current?.getBoundingClientRect();
+    if (!rect) return;
+    event.preventDefault();
+    event.stopPropagation();
+    event.currentTarget.setPointerCapture(event.pointerId);
+    onSelectLayer(target);
+    dragRef.current = {
+      mode: 'resize-image',
+      target,
+      handle,
       pointerId: event.pointerId,
       startX: event.clientX,
       startY: event.clientY,
@@ -188,9 +411,55 @@ export function EditableDraftCanvas({
     const drag = dragRef.current;
     const rect = canvasRef.current?.getBoundingClientRect();
     if (!drag || !rect || drag.pointerId !== event.pointerId) return;
-    const deltaX = ((event.clientX - drag.startX) / rect.width) * 2;
-    const deltaY = ((event.clientY - drag.startY) / rect.height) * 2;
-    onChange(drag.mode === 'resize' ? resizeDraftLayerWidth(drag.template, drag.layer, deltaX) : updateDraftLayerPosition(drag.template, drag.layer, deltaX, deltaY));
+    const deltaX = (event.clientX - drag.startX) / rect.width;
+    const deltaY = (event.clientY - drag.startY) / rect.height;
+    if (drag.mode === 'resize-image') {
+      onChange(drag.target === 'image-frame'
+        ? resizeDraftImageFrame(drag.template, drag.handle, deltaX, deltaY)
+        : resizeDraftImageMedia(drag.template, drag.handle, deltaX, deltaY));
+      return;
+    }
+    if (drag.mode === 'resize-text') {
+      onChange(resizeDraftLayerWidth(drag.template, drag.layer, deltaX * 2));
+      return;
+    }
+    if (drag.selection === 'image-frame') {
+      onChange(moveDraftImageFrame(drag.template, deltaX, deltaY));
+      return;
+    }
+    if (drag.selection === 'image-media') {
+      onChange(moveDraftImageMedia(drag.template, deltaX, deltaY));
+      return;
+    }
+    onChange(updateDraftLayerPosition(drag.template, drag.selection, deltaX * 2, deltaY * 2));
+  }
+
+  function handleImageSelectionKeyDown(target: DraftImageEditTarget, event: React.KeyboardEvent<HTMLDivElement>) {
+    if (event.key === 'Enter' || event.key === ' ') {
+      event.preventDefault();
+      onSelectLayer(target);
+      return;
+    }
+    const delta = event.shiftKey ? 0.02 : 0.005;
+    const deltaX = event.key === 'ArrowLeft' ? -delta : event.key === 'ArrowRight' ? delta : 0;
+    const deltaY = event.key === 'ArrowUp' ? -delta : event.key === 'ArrowDown' ? delta : 0;
+    if (!deltaX && !deltaY) return;
+    event.preventDefault();
+    onSelectLayer(target);
+    onChange(target === 'image-frame' ? moveDraftImageFrame(template, deltaX, deltaY) : moveDraftImageMedia(template, deltaX, deltaY));
+  }
+
+  function handleImageResizeKeyDown(target: DraftImageEditTarget, handle: DraftResizeHandle, event: React.KeyboardEvent<HTMLButtonElement>) {
+    const delta = event.shiftKey ? 0.02 : 0.005;
+    const deltaX = event.key === 'ArrowLeft' ? -delta : event.key === 'ArrowRight' ? delta : 0;
+    const deltaY = event.key === 'ArrowUp' ? -delta : event.key === 'ArrowDown' ? delta : 0;
+    if (!deltaX && !deltaY) return;
+    event.preventDefault();
+    event.stopPropagation();
+    onSelectLayer(target);
+    onChange(target === 'image-frame'
+      ? resizeDraftImageFrame(template, handle, deltaX, deltaY)
+      : resizeDraftImageMedia(template, handle, deltaX, deltaY));
   }
 
   function stopDrag(event: React.PointerEvent<HTMLDivElement>) {
@@ -211,18 +480,38 @@ export function EditableDraftCanvas({
     >
       <DraftFrameChrome template={template} />
       {template.image.visible ? (
-        <div
-          key={animationPreview ? `image-preview-${animationPreview}` : 'image-layer'}
-          className={selectedLayer === 'image' ? 'draft-layer image-layer selected' : 'draft-layer image-layer'}
-          data-layer="image"
-          data-animation-preview={draftImageAnimationPreviewKind(animationPreview)}
-          style={{ top: `${template.image.top * 100}%`, height: `${template.image.height * 100}%`, ...draftImageFrameStyle(template) }}
-          onPointerDown={(event) => handleDraftCanvasPointerDown('image', event)}
-        >
-          <div className="draft-image-media" data-motion={template.image.motion || 'none'} style={{ ...draftImageMediaStyle(template), ...draftImageMotionStyle(template) }} />
-          <span>图片区域</span>
-          <i className="draft-layer-handle" />
-        </div>
+        <>
+          <div
+            key={animationPreview ? `image-preview-${animationPreview}` : 'image-layer'}
+            className="draft-image draft-image-edit-clip image-layer"
+            data-animation-preview={draftImageAnimationPreviewKind(animationPreview)}
+            style={{ ...draftRectStyle(frameRect), ...draftImageFrameStyle(template) }}
+          >
+            <div className="draft-image-media" data-motion={template.image.motion || 'none'} style={{ ...draftImageMediaStyle(template), ...draftImageMotionStyle(template) }} />
+          </div>
+          <DraftImageTransformBox
+            target="image-frame"
+            label="图片展示框"
+            rect={frameRect}
+            selected={selectedLayer === 'image-frame'}
+            onPointerDown={handleDraftCanvasPointerDown}
+            onKeyDown={handleImageSelectionKeyDown}
+            onResizePointerDown={handleDraftImageResizePointerDown}
+            onResizeKeyDown={handleImageResizeKeyDown}
+          />
+          {template.image.fit === 'cover' ? (
+            <DraftImageTransformBox
+              target="image-media"
+              label="实际图片"
+              rect={mediaRect}
+              selected={selectedLayer === 'image-media'}
+              onPointerDown={handleDraftCanvasPointerDown}
+              onKeyDown={handleImageSelectionKeyDown}
+              onResizePointerDown={handleDraftImageResizePointerDown}
+              onResizeKeyDown={handleImageResizeKeyDown}
+            />
+          ) : null}
+        </>
       ) : null}
       {template.title.visible ? (
         <DraftCanvasLayerBox layer="title" label="主标题" selected={selectedLayer === 'title'} x={template.title.x} y={template.title.y} width={template.title.width} onPointerDown={handleDraftCanvasPointerDown} onResizePointerDown={handleDraftCanvasResizePointerDown}>
@@ -315,6 +604,53 @@ function DraftFrameChrome({ template }: { template: DraftTemplate }) {
   );
 }
 
+function DraftImageTransformBox({
+  target,
+  label,
+  rect,
+  selected,
+  onPointerDown,
+  onKeyDown,
+  onResizePointerDown,
+  onResizeKeyDown,
+}: {
+  target: DraftImageEditTarget;
+  label: string;
+  rect: DraftCanvasRect;
+  selected: boolean;
+  onPointerDown: (target: DraftImageEditTarget, event: React.PointerEvent<HTMLDivElement>) => void;
+  onKeyDown: (target: DraftImageEditTarget, event: React.KeyboardEvent<HTMLDivElement>) => void;
+  onResizePointerDown: (target: DraftImageEditTarget, handle: DraftResizeHandle, event: React.PointerEvent<HTMLButtonElement>) => void;
+  onResizeKeyDown: (target: DraftImageEditTarget, handle: DraftResizeHandle, event: React.KeyboardEvent<HTMLButtonElement>) => void;
+}) {
+  return (
+    <div
+      className={`draft-image-transform-box ${target} ${selected ? 'selected' : ''}`}
+      data-layer={target}
+      data-selected={selected ? 'true' : 'false'}
+      style={draftRectStyle(rect)}
+      role={selected ? 'button' : undefined}
+      tabIndex={selected ? 0 : -1}
+      aria-label={selected ? `${label}，方向键移动` : undefined}
+      onPointerDown={(event) => onPointerDown(target, event)}
+      onKeyDown={(event) => onKeyDown(target, event)}
+    >
+      <span>{label}</span>
+      {selected ? draftResizeHandles.map((handle) => (
+        <button
+          key={handle}
+          type="button"
+          className="draft-transform-handle"
+          data-resize-handle={handle}
+          aria-label={`${label}${draftResizeHandleLabels[handle]}缩放`}
+          onPointerDown={(event) => onResizePointerDown(target, handle, event)}
+          onKeyDown={(event) => onResizeKeyDown(target, handle, event)}
+        />
+      )) : null}
+    </div>
+  );
+}
+
 export function DraftCanvasLayerBox({
   layer,
   label,
@@ -332,7 +668,7 @@ export function DraftCanvasLayerBox({
   x: number;
   y: number;
   width: number;
-  onPointerDown: (layer: DraftCanvasLayer, event: React.PointerEvent<HTMLDivElement>) => void;
+  onPointerDown: (layer: Exclude<DraftCanvasLayer, 'image'>, event: React.PointerEvent<HTMLDivElement>) => void;
   onResizePointerDown: (layer: Exclude<DraftCanvasLayer, 'image'>, event: React.PointerEvent<HTMLElement>) => void;
   children: React.ReactNode;
 }) {
@@ -385,7 +721,7 @@ export function DraftCanvasText({
 
 export function applyDraftCanvasRatio(template: DraftTemplate, ratio: string): DraftTemplate {
   const canvas = draftCanvasSizeForRatio(ratio);
-  return applyDraftImageRatio({ ...template, canvas: { ...template.canvas, ...canvas, ratio } }, template.image.ratio);
+  return { ...template, canvas: { ...template.canvas, ...canvas, ratio } };
 }
 
 export function draftCanvasSizeForRatio(ratio: string): Pick<DraftTemplate['canvas'], 'width' | 'height'> {
@@ -396,14 +732,14 @@ export function draftCanvasSizeForRatio(ratio: string): Pick<DraftTemplate['canv
 }
 
 export function applyDraftImageRatio(template: DraftTemplate, ratio: string): DraftTemplate {
-  const height = clamp(draftImageHeightForCanvas(template.canvas, ratio), 0.1, 1);
   return {
     ...template,
     image: {
       ...template.image,
       ratio,
-      height,
-      top: clamp((1 - height) / 2, -0.2, 1 - Math.min(0.1, height)),
+      focusX: 0.5,
+      focusY: 0.5,
+      mediaScale: 1,
     },
   };
 }
@@ -439,20 +775,35 @@ export function draftPreviewWidth(template: DraftTemplate): number {
 }
 
 export function draftImageMediaStyle(template: DraftTemplate): React.CSSProperties {
-  const aspectRatio = draftImageAspectRatio(template.image.ratio);
   if (template.image.fit === 'contain') {
-    return {
-      aspectRatio,
-      height: 'auto',
-      maxHeight: '100%',
-      maxWidth: '100%',
-      width: '100%',
-    };
+    return draftCenteredMediaStyle('contain');
   }
+  const frame = draftImageFrameRect(template);
+  const media = draftImageMediaRect(template);
+  if (frame.width <= 0 || frame.height <= 0) return { display: 'none' };
   return {
-    aspectRatio,
-    height: '100%',
-    width: '100%',
+    left: `${((media.left - frame.left) / frame.width) * 100}%`,
+    top: `${((media.top - frame.top) / frame.height) * 100}%`,
+    width: `${(media.width / frame.width) * 100}%`,
+    height: `${(media.height / frame.height) * 100}%`,
+    objectFit: 'cover',
+  };
+}
+
+function draftCenteredMediaStyle(fit: DraftTemplate['image']['fit']): React.CSSProperties {
+  return { inset: 0, width: '100%', height: '100%', objectFit: fit, objectPosition: '50% 50%' };
+}
+
+export function draftImageFramePositionStyle(template: DraftTemplate): React.CSSProperties {
+  return draftRectStyle(draftImageFrameRect(template));
+}
+
+export function draftRectStyle(rect: DraftCanvasRect): React.CSSProperties {
+  return {
+    left: `${rect.left * 100}%`,
+    top: `${rect.top * 100}%`,
+    width: `${rect.width * 100}%`,
+    height: `${rect.height * 100}%`,
   };
 }
 
@@ -549,7 +900,7 @@ export function draftTextStrokeStyle(border?: DraftTextBorder): React.CSSPropert
 }
 
 export function draftTextLayerStyle(
-  text: Pick<DraftTemplate['title'], 'color' | 'alpha' | 'align' | 'letterSpacing' | 'lineSpacing'>,
+  text: Pick<DraftTemplate['title'], 'fontFamily' | 'color' | 'alpha' | 'align' | 'letterSpacing' | 'lineSpacing'>,
   fontSize: React.CSSProperties['fontSize'],
   fontWeight: React.CSSProperties['fontWeight'],
 ): React.CSSProperties {
@@ -558,6 +909,7 @@ export function draftTextLayerStyle(
     fontSize,
     opacity: text.alpha,
     fontWeight,
+    fontFamily: draftFontCssFamily(text.fontFamily),
     textAlign: draftTextAlign(text.align),
     letterSpacing: `${text.letterSpacing}px`,
     lineHeight: `${1 + text.lineSpacing / 10}`,

@@ -392,7 +392,7 @@ export function TaskDetailPage({
             updatedAt: null,
             steps: {},
             artifact: {},
-            assets: { cover: [], images: [], imageErrors: [], narration: [] },
+            assets: { cover: [], images: [], videos: [], imageErrors: [], narration: [] },
             draft: null,
           });
         }

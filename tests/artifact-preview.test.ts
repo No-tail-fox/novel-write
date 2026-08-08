@@ -43,6 +43,7 @@ describe('task artifact preview reader', () => {
           },
           assets: {
             images: [{ sceneId: 1, path: join(dir, 'images', 'scene-1.png'), borrowedFrom: 3 }],
+            videos: [{ sceneId: 1, path: join(dir, 'videos', 'scene-1.mp4'), source: 'local-upload', originalName: 'clip.mov', durationMs: 4200, width: 1080, height: 1920, trimStartMs: 300, fit: 'cover', muted: true }],
             narration: [{ sceneId: 1, path: join(dir, 'audio', 'scene-1.wav') }],
           },
           draft: { draftDir: join(dir, 'draft'), draftContentPath: join(dir, 'draft', 'draft_content.json'), draftMetaPath: join(dir, 'draft', 'draft_meta_info.json') },
@@ -63,6 +64,7 @@ describe('task artifact preview reader', () => {
     expect(snapshot.artifact.imagePrompts?.[0]?.prompt).toBe('Image prompt');
     expect(snapshot.assets.images[0].path).toContain('scene-1.png');
     expect(snapshot.assets.images[0].borrowedFrom).toBe(3);
+    expect(snapshot.assets.videos[0]).toMatchObject({ sceneId: 1, source: 'local-upload', trimStartMs: 300, muted: true });
     expect(snapshot.assets.narration[0].path).toContain('scene-1.wav');
     expect(snapshot.draft?.draftDir).toContain('draft');
   });
@@ -147,6 +149,7 @@ describe('task artifact preview reader', () => {
     expect(snapshot.available).toBe(false);
     expect(snapshot.message).toContain('等待');
     expect(snapshot.assets.images).toEqual([]);
+    expect(snapshot.assets.videos).toEqual([]);
     expect(snapshot.assets.narration).toEqual([]);
   });
 });

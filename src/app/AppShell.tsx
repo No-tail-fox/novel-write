@@ -81,7 +81,7 @@ export function AppShell({
             <div className="brand-logo">S</div>
             <div>
               <strong>StoryDream</strong>
-              <span>v0.10.4 · beta</span>
+              <span>V1.0.0</span>
             </div>
             <Bell size={16} className="brand-bell" />
           </div>

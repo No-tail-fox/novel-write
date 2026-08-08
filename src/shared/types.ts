@@ -1224,6 +1224,7 @@ export interface ResearchCopyComposeInput {
   keyword: string;
   extraRequirements: string;
   selectedSources: AiSourceSection[];
+  useBuiltinKnowledge: boolean;
   targetLength?: number;
 }
 
@@ -1475,6 +1476,37 @@ export interface TaskArtifactAssetPreview {
   text?: string;
 }
 
+export type TaskArtifactVideoSource = 'local-upload' | 'local-library' | 'local-random' | 'ai-video';
+
+export interface TaskArtifactVideoPreview {
+  sceneId: number;
+  path: string;
+  source: TaskArtifactVideoSource;
+  libraryId?: string;
+  originalName: string;
+  durationMs: number;
+  width: number;
+  height: number;
+  trimStartMs: number;
+  fit: 'cover' | 'contain';
+  muted: true;
+}
+
+export interface SceneVideoLibraryItem {
+  id: string;
+  path: string;
+  originalName: string;
+  durationMs: number;
+  width: number;
+  height: number;
+  createdAt: string;
+}
+
+export type TaskVideoReplacementSource =
+  | { kind: 'local' }
+  | { kind: 'library'; libraryId: string }
+  | { kind: 'random' };
+
 export type TaskImageReplacementSource =
   | { kind: 'local' }
   | { kind: 'image-lab'; recordId: string }
@@ -1503,11 +1535,42 @@ export interface TaskArtifactSnapshot {
   assets: {
     cover: TaskArtifactAssetPreview[];
     images: TaskArtifactAssetPreview[];
+    videos: TaskArtifactVideoPreview[];
     imageErrors: TaskArtifactImageErrorPreview[];
     narration: TaskArtifactAssetPreview[];
   };
   draft: TaskDraftArtifactPreview | null;
 }
+
+export type DraftFontFamily =
+  | 'system'
+  | 'HarmonyOS_Sans_SC_Regular'
+  | 'HarmonyOS_Sans_SC_Medium'
+  | 'HarmonyOS_Sans_SC_Bold'
+  | 'SourceHanSansCN_Regular'
+  | 'SourceHanSansCN_Medium'
+  | 'SourceHanSansCN_Bold'
+  | '经典雅黑'
+  | '宋体'
+  | 'SourceHanSerifCN_Regular'
+  | 'SourceHanSerifCN_Bold'
+  | '思源中宋'
+  | '烟波宋'
+  | '圆体'
+  | 'ResourceHanRoundedCN_Nl'
+  | 'ResourceHanRoundedCN_Md'
+  | 'ResourceHanRoundedCN_Bold'
+  | '简中圆'
+  | 'LXGWWenKai_Regular'
+  | 'LXGWWenKai_Bold'
+  | '毛笔行楷'
+  | '柳公权'
+  | '得意黑'
+  | '站酷酷黑体'
+  | '站酷文艺体'
+  | '汉仪英雄体'
+  | '综艺体'
+  | '江湖体';
 
 export interface DraftTemplate {
   id: string;
@@ -1525,8 +1588,13 @@ export interface DraftTemplate {
     visible: boolean;
     ratio: string;
     fit: 'cover' | 'contain';
+    focusX: number;
+    focusY: number;
+    left: number;
     top: number;
+    width: number;
     height: number;
+    mediaScale: number;
     animation: string;
     motion: DraftImageMotion;
     motionStrength: number;
@@ -1548,6 +1616,7 @@ export interface DraftTemplate {
     y: number;
     width: number;
     fontSize: number;
+    fontFamily: DraftFontFamily;
     color: string;
     alpha: number;
     bold: boolean;
@@ -1564,6 +1633,7 @@ export interface DraftTemplate {
     y: number;
     width: number;
     fontSize: number;
+    fontFamily: DraftFontFamily;
     color: string;
     alpha: number;
     bold: boolean;
@@ -1579,6 +1649,7 @@ export interface DraftTemplate {
     y: number;
     width: number;
     fontSize: number;
+    fontFamily: DraftFontFamily;
     color: string;
     alpha: number;
     border: DraftTextBorder;
@@ -1601,6 +1672,7 @@ export interface DraftTemplate {
     y: number;
     width: number;
     fontSize: number;
+    fontFamily: DraftFontFamily;
     color: string;
     alpha: number;
     bold: boolean;

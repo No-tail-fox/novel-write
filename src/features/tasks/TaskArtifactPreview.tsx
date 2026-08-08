@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState, type ReactNode } from 'react';
-import { Check, CheckSquare2, ChevronLeft, ChevronRight, ClipboardCopy, ClipboardPaste, Database, Eye, FolderOpen, Image as ImageIcon, Images, ImageUp, Library, Loader2, Pencil, Play, RotateCcw, Save, Scissors, Square, Upload, Wand2, Wrench, X, XCircle } from 'lucide-react';
+import { Check, CheckSquare2, ChevronDown, ChevronLeft, ChevronRight, ClipboardCopy, ClipboardPaste, Database, Eye, Film, FolderOpen, Image as ImageIcon, Images, ImageUp, Library, Loader2, Pencil, RotateCcw, Save, Scissors, Shuffle, Sparkles, Square, Undo2, Upload, Video, Wand2, Wrench, X, XCircle } from 'lucide-react';
 import { ErrorDetails as ErrorSummaryButton, summarizeErrorMessage } from '../../components/ErrorDetails';
 import { AsyncActionFeedback as InlineActionFeedback } from '../../components/AsyncActionFeedback';
 import { EventTimeline } from '../../components/EventTimeline';
@@ -13,11 +13,13 @@ import type {
   AppConfig,
   DraftTemplate,
   ImageLabSummary,
+  SceneVideoLibraryItem,
   Task,
   TaskArtifactSnapshot,
   TaskEvent,
   TaskStepRerunMode,
   TaskSubtitleSceneLines,
+  TaskVideoReplacementSource,
 } from '../../shared/types';
 import { useAsyncAction } from '../../ui/async-action';
 import {
@@ -80,10 +82,12 @@ export function ArtifactPreviewContent({
     [artifact.subtitles, draftTemplate.caption.maxCharsPerLine, scenes],
   );
   const imageAssets = snapshot?.assets.images ?? [];
+  const videoAssets = snapshot?.assets.videos ?? [];
   const coverAsset = task.coverPageEnabled ? snapshot?.assets.cover[0] : undefined;
   const imageErrors = snapshot?.assets.imageErrors ?? [];
   const narrationAssets = snapshot?.assets.narration ?? [];
   const imageBySceneId = useMemo(() => indexTaskAssetsBySceneId(imageAssets), [imageAssets]);
+  const videoBySceneId = useMemo(() => new Map(videoAssets.map((asset) => [asset.sceneId, asset] as const)), [videoAssets]);
   const generatedImageCount = imageBySceneId.size;
   const imageProgress = imageProgressLabel(scenes.length, generatedImageCount, snapshotStepStatus(snapshot, 4));
   const sceneRailItems = scenes.length
@@ -98,8 +102,10 @@ export function ArtifactPreviewContent({
   const activeCueIndex = Math.min(selectedCueIndex, Math.max(0, selectedSceneCues.length - 1));
   const selectedCue = selectedSceneCues[activeCueIndex];
   const selectedImageAsset = coverSelected ? coverAsset : selectedScene ? imageBySceneId.get(selectedScene.id) : undefined;
+  const selectedVideoAsset = coverSelected || !selectedScene ? undefined : videoBySceneId.get(selectedScene.id);
   const selectedImagePath = selectedImageAsset?.path ?? '';
   const [selectedImagePreview, setSelectedImagePreview] = useState<{ path: string; url: string; error: string }>({ path: '', url: '', error: '' });
+  const [selectedVideoPreview, setSelectedVideoPreview] = useState<{ path: string; url: string; error: string }>({ path: '', url: '', error: '' });
   const previewContent = resolveTaskPreviewContent({ task, cover: artifact.cover, sourceText: artifact.rewrittenCopy, sceneCap: selectedScene?.cap, sceneCue: selectedCue?.text, template: draftTemplate });
   const coverPageTitle = resolveOrdinaryTaskCoverPageText(
     task.coverPageText,
@@ -107,7 +113,7 @@ export function ArtifactPreviewContent({
   );
   const coverPreviewTemplate = useMemo(() => ({
     ...draftTemplate,
-    image: { ...draftTemplate.image, visible: true, ratio: task.ratio, top: 0, height: 1, fit: 'cover' as const },
+    image: { ...draftTemplate.image, visible: true, ratio: task.ratio, left: 0, top: 0, width: 1, height: 1, fit: 'cover' as const, focusX: 0.5, focusY: 0.5, mediaScale: 1 },
     title: resolveOrdinaryTaskCoverTitle(draftTemplate, coverPageTitle),
     subtitle: { ...draftTemplate.subtitle, visible: false },
     caption: { ...draftTemplate.caption, visible: false },
@@ -115,6 +121,9 @@ export function ArtifactPreviewContent({
   }), [coverPageTitle, draftTemplate, task.ratio]);
   const selectedImageUrl = selectedImagePreview.path === selectedImagePath ? selectedImagePreview.url : '';
   const selectedImageError = selectedImagePreview.path === selectedImagePath ? selectedImagePreview.error : '';
+  const selectedVideoPath = selectedVideoAsset?.path ?? '';
+  const selectedVideoUrl = selectedVideoPreview.path === selectedVideoPath ? selectedVideoPreview.url : '';
+  const selectedVideoError = selectedVideoPreview.path === selectedVideoPath ? selectedVideoPreview.error : '';
   const nextPendingSceneId = sceneRailItems.find((scene) => !imageBySceneId.has(scene.id))?.id;
   const [rerunningStepAction, setRerunningStepAction] = useState<string | null>(null);
   const artifactAction = useAsyncAction();
@@ -146,6 +155,25 @@ export function ArtifactPreviewContent({
       cancelled = true;
     };
   }, [api, isBrowserPreview, selectedImagePath]);
+
+  useEffect(() => {
+    if (!selectedVideoPath || isBrowserPreview) {
+      setSelectedVideoPreview({ path: selectedVideoPath, url: '', error: '' });
+      return undefined;
+    }
+    let cancelled = false;
+    setSelectedVideoPreview({ path: selectedVideoPath, url: '', error: '' });
+    api.getTaskMediaUrl(task.id, selectedVideoPath)
+      .then((url) => {
+        if (!cancelled) setSelectedVideoPreview({ path: selectedVideoPath, url, error: '' });
+      })
+      .catch((error) => {
+        if (!cancelled) setSelectedVideoPreview({ path: selectedVideoPath, url: '', error: summarizeErrorMessage(error instanceof Error ? error.message : String(error)) });
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [api, isBrowserPreview, selectedVideoPath, task.id]);
 
   async function rerunArtifactStep(step: number, mode: TaskStepRerunMode) {
     const key = `${step}:${mode}`;
@@ -180,19 +208,21 @@ export function ArtifactPreviewContent({
           <div className="task-media-frame" data-draft-template-id={draftTemplate.id} data-preview-scene-id={coverSelected ? 0 : selectedScene?.id ?? 0} data-preview-kind={coverSelected ? 'cover' : 'scene'}>
             <DraftTemplatePreview
               template={coverSelected ? coverPreviewTemplate : draftTemplate}
-              imageUrl={selectedImageUrl}
+              imageUrl={selectedVideoAsset ? undefined : selectedImageUrl}
+              videoUrl={selectedVideoUrl}
               titleText={coverSelected ? coverPageTitle : previewContent.title}
               subtitleText={previewContent.subtitle}
               captionText={previewContent.caption}
               disclaimerText={previewContent.disclaimer}
             />
-            {!selectedImageAsset ? <div className="task-media-asset-state"><ImageIcon size={22} /><span>{coverSelected ? '等待封面图片' : '等待场景图片'}</span></div> : null}
-            {selectedImageAsset && !selectedImageUrl && !selectedImageError ? <div className="task-media-asset-state"><Loader2 className="spin" size={22} /><span>正在读取图片</span></div> : null}
-            {selectedImageError ? <div className="task-media-asset-state danger"><XCircle size={22} /><span>图片读取失败</span></div> : null}
+            {!selectedVideoAsset && !selectedImageAsset ? <div className="task-media-asset-state"><ImageIcon size={22} /><span>{coverSelected ? '等待封面图片' : '等待场景图片'}</span></div> : null}
+            {selectedVideoAsset && !selectedVideoUrl && !selectedVideoError ? <div className="task-media-asset-state"><Loader2 className="spin" size={22} /><span>正在读取视频</span></div> : null}
+            {!selectedVideoAsset && selectedImageAsset && !selectedImageUrl && !selectedImageError ? <div className="task-media-asset-state"><Loader2 className="spin" size={22} /><span>正在读取图片</span></div> : null}
+            {selectedVideoError || (!selectedVideoAsset && selectedImageError) ? <div className="task-media-asset-state danger"><XCircle size={22} /><span>画面读取失败</span></div> : null}
           </div>
           <div className="task-media-progress">
             <ImageIcon size={15} />
-            <span><i style={{ width: `${Math.round((generatedImageCount / Math.max(1, scenes.length || generatedImageCount)) * 100)}%` }} /></span>
+            <span className="task-media-progress-track"><i style={{ width: `${Math.round((generatedImageCount / Math.max(1, scenes.length || generatedImageCount)) * 100)}%` }} /></span>
             {coverSelected ? <small className="task-media-cue-empty">封面页 {ORDINARY_TASK_COVER_PAGE_DURATION_MS / 1000} 秒</small> : selectedSceneCues.length > 0 ? (
               <div className="task-media-cue-control" aria-label="当前场景字幕">
                 <button type="button" title="上一条字幕" aria-label="上一条字幕" disabled={activeCueIndex === 0} onClick={() => setSelectedCueIndex((current) => Math.max(0, current - 1))}><ChevronLeft size={14} /></button>
@@ -204,7 +234,7 @@ export function ArtifactPreviewContent({
           </div>
         </section>
         <aside className="task-scene-rail">
-          <div><h3>场景图片</h3><span>{generatedImageCount} / {scenes.length || generatedImageCount || 0} 已生成</span></div>
+          <div><h3>场景画面</h3><span>{videoAssets.length} 个视频替换</span></div>
           <div className="task-scene-list">
             {task.coverPageEnabled ? (
               <button type="button" className={`task-scene-item cover ${coverAsset ? 'complete' : task.status === 'running' ? 'running' : 'pending'} ${coverSelected ? 'selected' : ''}`} data-scene-kind="cover" onClick={() => setSelectedSceneId(0)}>
@@ -214,18 +244,18 @@ export function ArtifactPreviewContent({
             ) : null}
             {sceneRailItems.map((scene, index) => {
               const complete = imageBySceneId.has(scene.id);
+              const usesVideo = videoBySceneId.has(scene.id);
               const running = !complete && nextPendingSceneId === scene.id && task.status === 'running';
               return (
                 <button type="button" className={`task-scene-item ${complete ? 'complete' : running ? 'running' : 'pending'} ${selectedScene?.id === scene.id ? 'selected' : ''}`} key={scene.id} onClick={() => setSelectedSceneId(scene.id)}>
                   <span>{String(index + 1).padStart(2, '0')}</span>
-                  <div><strong>{trimForPreview(scene.cap, 18) || `场景 ${index + 1}`}</strong><small>{complete ? '已生成' : running ? '生成中' : '等待生成'}</small></div>
+                  <div><strong>{trimForPreview(scene.cap, 18) || `场景 ${index + 1}`}</strong><small>{usesVideo ? '视频画面' : complete ? '图片画面' : running ? '生成中' : '等待生成'}</small></div>
                 </button>
               );
             })}
           </div>
         </aside>
       </div>
-
       <div className="preview-meta-grid">
         <div><small>任务</small><strong>{task.title || '未命名任务'}</strong></div>
         <div><small>状态</small><strong>{statusLabel(task.status)}</strong></div>
@@ -298,13 +328,14 @@ export function ArtifactPreviewContent({
             <ArtifactPromptList prompts={imagePrompts} />
           </ArtifactSection>
 
-          <ArtifactSection title="批量生图" badge={`${imageAssets.length} 张`} actions={artifactStepActions(4)}>
+          <ArtifactSection title="批量生图" badge={`${imageAssets.length} 张图片 · ${videoAssets.length} 段视频`} actions={artifactStepActions(4)}>
             <ImageGenerationGallery
               api={api}
               task={task}
               scenes={scenes}
               imagePrompts={imagePrompts}
               images={imageAssets}
+              videos={videoAssets}
               imageErrors={imageErrors}
               concurrency={activeImageConcurrency(config)}
               isBrowserPreview={isBrowserPreview}
@@ -356,13 +387,14 @@ export function ArtifactPreviewContent({
 
       {tab === 'images' ? (
         <div className="artifact-section-stack">
-          <ArtifactSection title="批量生图" badge={`${imageAssets.length} 张`}>
+          <ArtifactSection title="批量生图" badge={`${imageAssets.length} 张图片 · ${videoAssets.length} 段视频`}>
             <ImageGenerationGallery
               api={api}
               task={task}
               scenes={scenes}
               imagePrompts={imagePrompts}
               images={imageAssets}
+              videos={videoAssets}
               imageErrors={imageErrors}
               concurrency={activeImageConcurrency(config)}
               isBrowserPreview={isBrowserPreview}
@@ -722,6 +754,7 @@ function ImageGenerationGallery({
   scenes,
   imagePrompts,
   images,
+  videos,
   imageErrors,
   concurrency,
   isBrowserPreview,
@@ -732,6 +765,7 @@ function ImageGenerationGallery({
   scenes: NonNullable<TaskArtifactSnapshot['artifact']['scenes']>;
   imagePrompts: NonNullable<TaskArtifactSnapshot['artifact']['imagePrompts']>;
   images: TaskArtifactSnapshot['assets']['images'];
+  videos: TaskArtifactSnapshot['assets']['videos'];
   imageErrors: TaskArtifactSnapshot['assets']['imageErrors'];
   concurrency: number;
   isBrowserPreview: boolean;
@@ -750,11 +784,21 @@ function ImageGenerationGallery({
   const [libraryLoading, setLibraryLoading] = useState(false);
   const [libraryError, setLibraryError] = useState('');
   const [libraryQuery, setLibraryQuery] = useState('');
+  const [mediaMenuSceneId, setMediaMenuSceneId] = useState<number | null>(null);
+  const [videoLibrarySceneId, setVideoLibrarySceneId] = useState<number | null>(null);
+  const [videoLibraryItems, setVideoLibraryItems] = useState<SceneVideoLibraryItem[]>([]);
+  const [videoLibraryLoading, setVideoLibraryLoading] = useState(false);
+  const [videoLibraryError, setVideoLibraryError] = useState('');
+  const [videoLibraryQuery, setVideoLibraryQuery] = useState('');
+  const [videoPreviewUrls, setVideoPreviewUrls] = useState<Record<string, string>>({});
+  const [videoPreviewErrors, setVideoPreviewErrors] = useState<Record<string, string>>({});
+  const [trimDrafts, setTrimDrafts] = useState<Record<number, number>>({});
   const [previewSceneId, setPreviewSceneId] = useState<number | null>(null);
   const [notice, setNotice] = useState('');
   const imageGenerationAction = useAsyncAction();
   const imagePaths = images.map((asset) => asset.path).join('|');
   const imageBySceneId = useMemo(() => new Map(images.map((asset) => [asset.sceneId, asset] as const)), [images]);
+  const videoBySceneId = useMemo(() => new Map(videos.map((asset) => [asset.sceneId, asset] as const)), [videos]);
   const promptBySceneId = useMemo(() => new Map(imagePrompts.map((prompt) => [prompt.sceneId, prompt] as const)), [imagePrompts]);
   const imageErrorBySceneId = useMemo(() => new Map(imageErrors.map((item) => [item.sceneId, item] as const)), [imageErrors]);
   const taskLocked = isBrowserPreview || task.status === 'running' || task.status === 'pending';
@@ -765,6 +809,13 @@ function ImageGenerationGallery({
   }, [libraryQuery, libraryRecords]);
   const editorCurrentImage = editor ? imageBySceneId.get(editor.sceneId) : undefined;
   const editorCurrentPreviewUrl = editorCurrentImage ? imagePreviewUrls[editorCurrentImage.path] ?? '' : '';
+  const videoPaths = videos.map((asset) => asset.path).join('|');
+  const filteredVideoLibraryItems = useMemo(() => {
+    const query = videoLibraryQuery.trim().toLocaleLowerCase();
+    if (!query) return videoLibraryItems;
+    return videoLibraryItems.filter((item) => `${item.originalName} ${item.width}x${item.height}`.toLocaleLowerCase().includes(query));
+  }, [videoLibraryItems, videoLibraryQuery]);
+  const videoLibraryScene = videoLibrarySceneId === null ? undefined : scenes.find((scene) => scene.id === videoLibrarySceneId);
 
   useEffect(() => {
     if (isBrowserPreview || images.length === 0) {
@@ -797,6 +848,33 @@ function ImageGenerationGallery({
   }, [api, imageGenerationAction.reportError, imagePaths, isBrowserPreview]);
 
   useEffect(() => {
+    if (isBrowserPreview || videos.length === 0) {
+      setVideoPreviewUrls({});
+      setVideoPreviewErrors({});
+      return undefined;
+    }
+    let cancelled = false;
+    const validPaths = new Set(videos.map((asset) => asset.path));
+    setVideoPreviewUrls((current) => Object.fromEntries(Object.entries(current).filter(([path]) => validPaths.has(path))));
+    setVideoPreviewErrors((current) => Object.fromEntries(Object.entries(current).filter(([path]) => validPaths.has(path))));
+    for (const asset of videos) {
+      api.getTaskMediaUrl(task.id, asset.path)
+        .then((url) => {
+          if (!cancelled) setVideoPreviewUrls((current) => ({ ...current, [asset.path]: url }));
+        })
+        .catch((error) => {
+          if (!cancelled) {
+            const normalized = imageGenerationAction.reportError(error);
+            setVideoPreviewErrors((current) => ({ ...current, [asset.path]: normalized.message }));
+          }
+        });
+    }
+    return () => {
+      cancelled = true;
+    };
+  }, [api, imageGenerationAction.reportError, isBrowserPreview, task.id, videoPaths]);
+
+  useEffect(() => {
     if (librarySceneId === null || isBrowserPreview) return undefined;
     let cancelled = false;
     setLibraryLoading(true);
@@ -826,6 +904,26 @@ function ImageGenerationGallery({
       cancelled = true;
     };
   }, [api, isBrowserPreview, librarySceneId]);
+
+  useEffect(() => {
+    if (videoLibrarySceneId === null || isBrowserPreview) return undefined;
+    let cancelled = false;
+    setVideoLibraryLoading(true);
+    setVideoLibraryError('');
+    api.listSceneVideoLibrary()
+      .then((items) => {
+        if (!cancelled) setVideoLibraryItems(items);
+      })
+      .catch((error) => {
+        if (!cancelled) setVideoLibraryError(summarizeErrorMessage(error instanceof Error ? error.message : String(error)));
+      })
+      .finally(() => {
+        if (!cancelled) setVideoLibraryLoading(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [api, isBrowserPreview, videoLibrarySceneId]);
 
   async function regenerate(sceneId: number) {
     setActiveSceneId(sceneId);
@@ -867,7 +965,45 @@ function ImageGenerationGallery({
     setActiveSceneId(null);
     if (result.ok && result.value) {
       applyState(result.value);
+      setMediaMenuSceneId(null);
       setNotice(`分镜 ${sceneId} 已替换。`);
+    }
+  }
+
+  async function replaceVideo(sceneId: number, source: TaskVideoReplacementSource) {
+    setActiveSceneId(sceneId);
+    const result = await imageGenerationAction.run(() => api.replaceTaskSceneVideo(task.id, sceneId, source));
+    setActiveSceneId(null);
+    if (result.ok && result.value) {
+      applyState(result.value);
+      setMediaMenuSceneId(null);
+      setVideoLibrarySceneId(null);
+      setNotice(source.kind === 'random'
+        ? `已为分镜 ${sceneId} 随机匹配视频，原图仍保留。`
+        : `分镜 ${sceneId} 已改用视频，原图仍保留。`);
+    }
+  }
+
+  async function restoreImage(sceneId: number) {
+    setActiveSceneId(sceneId);
+    const result = await imageGenerationAction.run(() => api.restoreTaskSceneImage(task.id, sceneId));
+    setActiveSceneId(null);
+    if (result.ok && result.value) {
+      applyState(result.value);
+      setMediaMenuSceneId(null);
+      setNotice(`分镜 ${sceneId} 已恢复为原图片。`);
+    }
+  }
+
+  async function saveVideoTrim(sceneId: number, trimStartMs: number) {
+    const video = videoBySceneId.get(sceneId);
+    if (!video || trimStartMs === video.trimStartMs) return;
+    setActiveSceneId(sceneId);
+    const result = await imageGenerationAction.run(() => api.updateTaskSceneVideoTrim(task.id, sceneId, trimStartMs));
+    setActiveSceneId(null);
+    if (result.ok && result.value) {
+      applyState(result.value);
+      setNotice(`分镜 ${sceneId} 的视频入点已更新。`);
     }
   }
 
@@ -921,8 +1057,14 @@ function ImageGenerationGallery({
     if (result.ok && result.value) {
       applyState(result.value);
       setLibrarySceneId(null);
+      setMediaMenuSceneId(null);
       setNotice(`已从素材库替换分镜 ${sceneId}。`);
     }
+  }
+
+  function showAiVideoUnavailable(sceneId: number) {
+    setMediaMenuSceneId(null);
+    setNotice(`分镜 ${sceneId}：尚未配置视频生成服务，当前可先上传、从素材库选择或随机匹配。`);
   }
 
   async function submitEditor() {
@@ -1000,25 +1142,34 @@ function ImageGenerationGallery({
       <div className="image-preview-grid">
         {scenes.map((scene) => {
           const image = imageBySceneId.get(scene.id);
+          const videoAsset = videoBySceneId.get(scene.id);
           const prompt = promptBySceneId.get(scene.id);
           const imageError = imageErrorBySceneId.get(scene.id);
           const previewUrl = image ? imagePreviewUrls[image.path] : '';
-          const previewError = image ? imagePreviewErrors[image.path] : '';
-          const cardState = image?.borrowedFrom !== undefined ? 'borrowed' : image ? 'ready' : imageError ? 'failed' : 'pending';
-          const statusText = image
+          const videoPreviewUrl = videoAsset ? videoPreviewUrls[videoAsset.path] : '';
+          const previewError = videoAsset ? videoPreviewErrors[videoAsset.path] : image ? imagePreviewErrors[image.path] : '';
+          const cardState = videoAsset ? 'video' : image?.borrowedFrom !== undefined ? 'borrowed' : image ? 'ready' : imageError ? 'failed' : 'pending';
+          const statusText = videoAsset
+            ? `视频 ${formatMs(scene.durationMs)}`
+            : image
             ? image.borrowedFrom ? `借 #${image.borrowedFrom}` : '已生成'
             : imageError ? '生成失败' : task.status === 'running' ? '等待/生成中' : '未生成';
           const promptText = prompt?.prompt ?? scene.descPrompt;
           const selected = selectedSceneIds.has(scene.id);
           const busy = activeSceneId === scene.id;
+          const trimValue = trimDrafts[scene.id] ?? videoAsset?.trimStartMs ?? 0;
+          const maxTrimStartMs = videoAsset ? Math.max(0, videoAsset.durationMs - scene.durationMs) : 0;
+          const mediaMenuOpen = mediaMenuSceneId === scene.id;
           return (
-            <article className={`image-preview-card ${cardState} ${selected ? 'selected' : ''}`} key={scene.id} data-scene-id={scene.id}>
-              <div className="image-thumb" onDoubleClick={() => previewUrl && setPreviewSceneId(scene.id)}>
-                {previewUrl ? <img src={previewUrl} alt={`Scene ${scene.id}`} /> : null}
-                {!previewUrl && image && !previewError ? <span className="thumb-state">读取中</span> : null}
-                {!previewUrl && previewError ? <span className="thumb-state danger">读取失败</span> : null}
-                {!image && imageError ? <XCircle size={24} /> : null}
-                {!image && !imageError ? <ImageIcon size={24} /> : null}
+            <article className={`image-preview-card ${cardState} ${selected ? 'selected' : ''}`} key={scene.id} data-scene-id={scene.id} data-qa-actions-open={mediaMenuOpen ? 'true' : undefined}>
+              <div className="image-thumb" onDoubleClick={() => (videoPreviewUrl || previewUrl) && setPreviewSceneId(scene.id)}>
+                {videoPreviewUrl ? <video src={videoPreviewUrl} muted playsInline preload="metadata" aria-label={`分镜 ${scene.id} 视频画面`} /> : null}
+                {!videoAsset && previewUrl ? <img src={previewUrl} alt={`Scene ${scene.id}`} /> : null}
+                {videoAsset && !videoPreviewUrl && !previewError ? <span className="thumb-state">读取中</span> : null}
+                {!videoAsset && !previewUrl && image && !previewError ? <span className="thumb-state">读取中</span> : null}
+                {previewError ? <span className="thumb-state danger">读取失败</span> : null}
+                {!videoAsset && !image && imageError ? <XCircle size={24} /> : null}
+                {!videoAsset && !image && !imageError ? <ImageIcon size={24} /> : null}
                 {multiSelect ? (
                   <button type="button" className={`image-select-toggle ${selected ? 'selected' : ''}`} aria-label={`${selected ? '取消选择' : '选择'}分镜 ${scene.id}`} onClick={() => toggleSceneSelection(scene.id)}>
                     {selected ? <Check size={15} /> : null}
@@ -1027,15 +1178,25 @@ function ImageGenerationGallery({
                 <span className={`image-card-status ${cardState}`}>{statusText}</span>
                 {!multiSelect ? (
                   <div className="image-card-action-panel">
-                    <button type="button" disabled={taskLocked || imageGenerationAction.busy || (!image && !imageError)} onClick={() => void regenerate(scene.id)}>{busy ? <Loader2 className="spin" size={14} /> : <RotateCcw size={14} />}重新生成</button>
-                    <button type="button" disabled={taskLocked || imageGenerationAction.busy || !prompt} onClick={() => setEditor({ sceneId: scene.id, mode: 'prompt', text: promptText, referenceImagePaths: [] })}><Pencil size={14} />改提示词</button>
-                    <button type="button" disabled={taskLocked || imageGenerationAction.busy || !image} onClick={() => setEditor({ sceneId: scene.id, mode: 'reference', text: promptText, referenceImagePaths: [] })}><Wand2 size={14} />参考图编辑</button>
-                    <button type="button" disabled={taskLocked || imageGenerationAction.busy} onClick={() => void replaceImage(scene.id)}><ImageUp size={14} />替换图片</button>
-                    <button type="button" disabled={taskLocked || imageGenerationAction.busy} onClick={() => setLibrarySceneId(scene.id)}><Library size={14} />素材库选图</button>
-                    <button type="button" disabled={!image || imageGenerationAction.busy} onClick={() => void copyImage(scene.id)}>{busy && imageGenerationAction.busy ? <Loader2 className="spin" size={14} /> : <ClipboardCopy size={14} />}复制图</button>
-                    {copiedSceneId !== null && copiedSceneId !== scene.id ? <button type="button" disabled={taskLocked || imageGenerationAction.busy} onClick={() => void pasteImage(scene.id)}><ClipboardPaste size={14} />粘贴图</button> : null}
-                    <button type="button" disabled={!previewUrl} onClick={() => setPreviewSceneId(scene.id)}><Eye size={14} />预览</button>
-                    <button type="button" disabled title="需要先接入独立的图生视频服务"><Play size={14} />生成视频</button>
+                    {!videoAsset ? <button type="button" disabled={taskLocked || imageGenerationAction.busy || (!image && !imageError)} onClick={() => void regenerate(scene.id)}>{busy ? <Loader2 className="spin" size={14} /> : <RotateCcw size={14} />}重新生成</button> : null}
+                    {!videoAsset ? <button type="button" disabled={taskLocked || imageGenerationAction.busy || !prompt} onClick={() => setEditor({ sceneId: scene.id, mode: 'prompt', text: promptText, referenceImagePaths: [] })}><Pencil size={14} />改提示词</button> : null}
+                    {!videoAsset ? <button type="button" disabled={taskLocked || imageGenerationAction.busy || !image} onClick={() => setEditor({ sceneId: scene.id, mode: 'reference', text: promptText, referenceImagePaths: [] })}><Wand2 size={14} />参考图编辑</button> : null}
+                    <button type="button" disabled={taskLocked || imageGenerationAction.busy} onClick={() => setMediaMenuSceneId((current) => current === scene.id ? null : scene.id)}><Video size={14} />{videoAsset ? '更换画面' : '替换画面'}<ChevronDown size={12} /></button>
+                    {videoAsset ? <button type="button" disabled={taskLocked || imageGenerationAction.busy || !image} onClick={() => void restoreImage(scene.id)}><Undo2 size={14} />恢复图片</button> : null}
+                    {!videoAsset ? <button type="button" disabled={!image || imageGenerationAction.busy} onClick={() => void copyImage(scene.id)}>{busy && imageGenerationAction.busy ? <Loader2 className="spin" size={14} /> : <ClipboardCopy size={14} />}复制图</button> : null}
+                    {!videoAsset && copiedSceneId !== null && copiedSceneId !== scene.id ? <button type="button" disabled={taskLocked || imageGenerationAction.busy} onClick={() => void pasteImage(scene.id)}><ClipboardPaste size={14} />粘贴图</button> : null}
+                    <button type="button" disabled={!(videoPreviewUrl || previewUrl)} onClick={() => setPreviewSceneId(scene.id)}><Eye size={14} />预览</button>
+                  </div>
+                ) : null}
+                {mediaMenuOpen ? (
+                  <div className="scene-media-menu" role="menu" aria-label={`替换分镜 ${scene.id} 画面`} onClick={(event) => event.stopPropagation()}>
+                    <div><strong>替换画面</strong><button type="button" title="关闭" aria-label="关闭替换画面菜单" onClick={() => setMediaMenuSceneId(null)}><X size={13} /></button></div>
+                    <button type="button" role="menuitem" disabled={taskLocked || imageGenerationAction.busy} onClick={() => void replaceImage(scene.id)}><ImageUp size={14} /><span>本地图片<small>选择一张图片</small></span></button>
+                    <button type="button" role="menuitem" disabled={taskLocked || imageGenerationAction.busy} onClick={() => { setLibrarySceneId(scene.id); setMediaMenuSceneId(null); }}><Library size={14} /><span>图片素材库<small>使用已生成图片</small></span></button>
+                    <button type="button" role="menuitem" disabled={taskLocked || imageGenerationAction.busy} onClick={() => void replaceVideo(scene.id, { kind: 'local' })}><Upload size={14} /><span>本地视频<small>MP4、MOV、WebM</small></span></button>
+                    <button type="button" role="menuitem" disabled={taskLocked || imageGenerationAction.busy} onClick={() => { setVideoLibrarySceneId(scene.id); setMediaMenuSceneId(null); }}><Film size={14} /><span>视频素材库<small>选择已导入片段</small></span></button>
+                    <button type="button" role="menuitem" disabled={taskLocked || imageGenerationAction.busy} onClick={() => void replaceVideo(scene.id, { kind: 'random' })}><Shuffle size={14} /><span>随机匹配视频<small>按画幅与时长筛选</small></span></button>
+                    <button type="button" role="menuitem" disabled={taskLocked || imageGenerationAction.busy} onClick={() => showAiVideoUnavailable(scene.id)}><Sparkles size={14} /><span>AI 生成视频<small>服务尚未配置</small></span></button>
                   </div>
                 ) : null}
               </div>
@@ -1043,7 +1204,16 @@ function ImageGenerationGallery({
                 <div className="image-preview-title">
                   <strong>{scene.id}. {scene.cap}</strong>
                 </div>
-                <p>{trimForPreview(promptText, 120)}</p>
+                {videoAsset ? (
+                  <div className="scene-video-details">
+                    <span><Film size={12} />{videoAsset.width}×{videoAsset.height} · 素材 {formatMs(videoAsset.durationMs)} · 原图已保留</span>
+                    <label>
+                      <span>入点 {formatMs(trimValue)}</span>
+                      <input type="range" min={0} max={maxTrimStartMs} step={100} disabled={taskLocked || imageGenerationAction.busy || maxTrimStartMs === 0} value={Math.min(trimValue, maxTrimStartMs)} onChange={(event) => setTrimDrafts((current) => ({ ...current, [scene.id]: Number(event.target.value) }))} />
+                      <button type="button" disabled={taskLocked || imageGenerationAction.busy || trimValue === videoAsset.trimStartMs} onClick={() => void saveVideoTrim(scene.id, trimValue)}>应用</button>
+                    </label>
+                  </div>
+                ) : <p>{trimForPreview(promptText, 120)}</p>}
                 {imageError ? <div className="artifact-image-error" title={imageError.message}>{image?.borrowedFrom ? '原始生成失败：' : ''}{summarizeErrorMessage(imageError.message)}</div> : null}
                 {previewError ? <small className="danger-text">{previewError}</small> : null}
               </div>
@@ -1124,10 +1294,44 @@ function ImageGenerationGallery({
         </div>
       ) : null}
 
+      {videoLibrarySceneId !== null ? (
+        <div className="image-gallery-modal-backdrop" role="presentation" onMouseDown={(event) => event.target === event.currentTarget && !imageGenerationAction.busy && setVideoLibrarySceneId(null)}>
+          <section className="video-library-dialog" role="dialog" aria-modal="true" aria-label={`为分镜 ${videoLibrarySceneId} 选择视频`}>
+            <header>
+              <div><small>替换分镜 {String(videoLibrarySceneId).padStart(2, '0')}</small><strong>视频素材库</strong><span>需要 {formatMs(videoLibraryScene?.durationMs ?? 0)} · 自动静音</span></div>
+              <button type="button" title="关闭" aria-label="关闭" disabled={imageGenerationAction.busy} onClick={() => setVideoLibrarySceneId(null)}><X size={17} /></button>
+            </header>
+            <div className="image-library-toolbar">
+              <input aria-label="搜索视频素材" value={videoLibraryQuery} placeholder="搜索文件名或分辨率" onChange={(event) => setVideoLibraryQuery(event.target.value)} />
+              <button type="button" className="gallery-tool-button" disabled={taskLocked || imageGenerationAction.busy} onClick={() => void replaceVideo(videoLibrarySceneId, { kind: 'local' })}><Upload size={15} />导入视频</button>
+            </div>
+            <div className="video-library-list">
+              {videoLibraryLoading ? <div className="image-library-state"><Loader2 className="spin" size={20} />正在读取视频素材</div> : null}
+              {videoLibraryError ? <div className="image-library-state danger"><XCircle size={20} />{videoLibraryError}</div> : null}
+              {!videoLibraryLoading && !videoLibraryError && filteredVideoLibraryItems.length === 0 ? <div className="image-library-state"><Film size={20} />暂无视频素材，可先导入本地视频</div> : null}
+              {filteredVideoLibraryItems.map((item) => {
+                const tooShort = item.durationMs < (videoLibraryScene?.durationMs ?? 0);
+                return (
+                  <button type="button" className="video-library-item" key={item.id} disabled={imageGenerationAction.busy || tooShort} onClick={() => void replaceVideo(videoLibrarySceneId, { kind: 'library', libraryId: item.id })}>
+                    <span><Film size={21} /></span>
+                    <div><strong>{item.originalName}</strong><small>{item.width}×{item.height} · {formatMs(item.durationMs)}</small></div>
+                    <i>{tooShort ? '时长不足' : '选用'}</i>
+                  </button>
+                );
+              })}
+            </div>
+          </section>
+        </div>
+      ) : null}
+
       {previewSceneId !== null ? (
         <div className="image-gallery-modal-backdrop preview" role="presentation" onMouseDown={(event) => event.target === event.currentTarget && setPreviewSceneId(null)}>
           <section className="image-gallery-preview-dialog" role="dialog" aria-modal="true" aria-label={`预览分镜 ${previewSceneId}`}>
-            {imagePreviewUrls[imageBySceneId.get(previewSceneId)?.path ?? ''] ? <img src={imagePreviewUrls[imageBySceneId.get(previewSceneId)?.path ?? '']} alt={`分镜 ${previewSceneId}`} /> : null}
+            {videoPreviewUrls[videoBySceneId.get(previewSceneId)?.path ?? '']
+              ? <video src={videoPreviewUrls[videoBySceneId.get(previewSceneId)?.path ?? '']} controls autoPlay muted playsInline aria-label={`分镜 ${previewSceneId} 视频预览`} />
+              : imagePreviewUrls[imageBySceneId.get(previewSceneId)?.path ?? '']
+                ? <img src={imagePreviewUrls[imageBySceneId.get(previewSceneId)?.path ?? '']} alt={`分镜 ${previewSceneId}`} />
+                : null}
             <button type="button" title="关闭预览" aria-label="关闭预览" onClick={() => setPreviewSceneId(null)}><X size={18} /></button>
           </section>
         </div>

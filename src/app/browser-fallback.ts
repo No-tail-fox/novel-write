@@ -1191,6 +1191,18 @@ export function makeFallbackApi(setState: (state: AppState) => void): StoryDream
     async replaceTaskImage() {
       throw new Error('浏览器预览不能替换真实任务图片，请在 Electron 应用中操作。');
     },
+    async listSceneVideoLibrary() {
+      return [];
+    },
+    async replaceTaskSceneVideo() {
+      throw new Error('浏览器预览不能替换真实任务视频，请在 Electron 应用中操作。');
+    },
+    async restoreTaskSceneImage() {
+      throw new Error('浏览器预览不能恢复真实任务图片，请在 Electron 应用中操作。');
+    },
+    async updateTaskSceneVideoTrim() {
+      throw new Error('浏览器预览不能修改真实任务视频，请在 Electron 应用中操作。');
+    },
     async copyTaskImage() {
       throw new Error('浏览器预览不能复制真实任务图片，请在 Electron 应用中操作。');
     },
@@ -1223,12 +1235,15 @@ export function makeFallbackApi(setState: (state: AppState) => void): StoryDream
         updatedAt: null,
         steps: {},
         artifact: {},
-        assets: { cover: [], images: [], imageErrors: [], narration: [] },
+        assets: { cover: [], images: [], videos: [], imageErrors: [], narration: [] },
         draft: null,
       };
     },
     async readAssetDataUrl() {
       throw new Error('浏览器预览不能读取本地媒体预览，请在 Electron 应用中查看。');
+    },
+    async getTaskMediaUrl() {
+      throw new Error('浏览器预览不能读取本地视频，请在 Electron 应用中查看。');
     },
     async selectLocalImage() {
       return null;

@@ -1,6 +1,6 @@
 import { readFile } from 'node:fs/promises';
 import { describe, expect, it } from 'vitest';
-import { navigationItems, newTaskPrimaryAction, sidebarNavGroups, sidebarNavItems } from '../src/app/navigation';
+import { navigationItems, newTaskPrimaryAction, sidebarNavGroups, sidebarNavItems, taskWorkspaceView } from '../src/app/navigation';
 
 const expectedViews = [
   'new-task',
@@ -84,5 +84,22 @@ describe('renderer route registry', () => {
     expect(app).toContain('startTransition(() => {');
     expect(routes).toContain("from './route-registry'");
     expect(routes).not.toMatch(/^const [A-Za-z0-9]+Page = lazy\(/gmu);
+  });
+
+  it('routes HTML tasks to their workspace and hands the selected task through once', async () => {
+    expect(taskWorkspaceView('html-video')).toBe('html-video');
+    expect(taskWorkspaceView('story')).toBe('task-detail');
+    expect(taskWorkspaceView(undefined)).toBe('task-detail');
+
+    const [app, routes, htmlVideo] = await Promise.all([
+      source('src/app/App.tsx'),
+      source('src/app/AppRoutes.tsx'),
+      source('src/features/html-video/HtmlVideoPage.tsx'),
+    ]);
+    expect(app).toContain('const targetView = taskWorkspaceView(task.taskType);');
+    expect(app).toContain("setRequestedHtmlTaskId(targetView === 'html-video' ? taskId : '')");
+    expect(routes).toContain('requestedTaskId={requestedHtmlTaskId}');
+    expect(htmlVideo).toContain('void openHtmlVideoTask(requestedTaskId).finally');
+    expect(htmlVideo).toContain('onRequestedTaskHandled(requestedTaskId)');
   });
 });

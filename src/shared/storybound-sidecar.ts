@@ -14,6 +14,14 @@ const defaultSidecarStderrBytes = 16 * 1024 * 1024;
 
 export interface StoryboundStoryAssets {
   images?: Array<{ scene_id: number; path: string }>;
+  videos?: Array<{
+    scene_id: number;
+    path: string;
+    duration_ms: number;
+    trim_start_ms: number;
+    fit: 'cover' | 'contain';
+    muted: true;
+  }>;
   narration?: Array<{ scene_id: number; path: string; speaker?: 'A' | 'B'; turn_index?: number; text?: string }>;
   subtitles_path?: string;
   scenes?: Array<{ scene_id: number; start_us: number; duration_us: number; text: string }>;
@@ -91,13 +99,21 @@ export interface StoryboundProbeMediaInput {
   media_path: string;
 }
 
+export interface StoryboundNormalizeSceneVideoInput {
+  mode: 'normalize_scene_video';
+  work_dir: string;
+  video_path: string;
+  output_path: string;
+}
+
 export type StoryboundSidecarInput =
   | StoryboundStoryInput
   | StoryboundMusicMvInput
   | StoryboundComposeRenderInput
   | StoryboundRemixBgmInput
   | StoryboundConvertAudioInput
-  | StoryboundProbeMediaInput;
+  | StoryboundProbeMediaInput
+  | StoryboundNormalizeSceneVideoInput;
 
 export interface StoryboundSidecarResult {
   success: boolean;
@@ -110,6 +126,7 @@ export interface StoryboundSidecarResult {
   has_video?: boolean;
   width?: number;
   height?: number;
+  video_codec?: string;
   error?: string;
   traceback?: string;
 }
@@ -464,7 +481,7 @@ def media_stream_info(path):
     probe = ffprobe_exe()
     if probe:
         completed = run_bounded_subprocess(
-            [probe, "-v", "error", "-show_entries", "stream=codec_type,width,height", "-of", "json", path],
+            [probe, "-v", "error", "-show_entries", "stream=codec_type,codec_name,width,height", "-of", "json", path],
             timeout_seconds=60,
             max_stdout_bytes=2 * 1024 * 1024,
             max_stderr_bytes=2 * 1024 * 1024,
@@ -478,6 +495,7 @@ def media_stream_info(path):
                     "has_audio": any(item.get("codec_type") == "audio" for item in streams),
                     "width": int((video_stream or {}).get("width") or 0),
                     "height": int((video_stream or {}).get("height") or 0),
+                    "video_codec": str((video_stream or {}).get("codec_name") or ""),
                 }
             except (TypeError, ValueError, json.JSONDecodeError):
                 pass
@@ -502,6 +520,7 @@ def media_stream_info(path):
         "has_audio": bool(re.search(r"Stream #.*Audio:", detail, re.IGNORECASE)),
         "width": dimensions[0],
         "height": dimensions[1],
+        "video_codec": "",
     }
 
 
@@ -602,6 +621,26 @@ def generate_story(payload):
             }
             for index, item in enumerate(images)
         ]
+    image_by_scene = {int(item.get("scene_id") or 0): item for item in (assets.get("images") or [])}
+    video_by_scene = {int(item.get("scene_id") or 0): item for item in (assets.get("videos") or [])}
+    scene_visuals = []
+    for scene in scenes:
+        scene_id = int(scene.get("scene_id") or 0)
+        video = video_by_scene.get(scene_id)
+        image = image_by_scene.get(scene_id)
+        visual = video or image
+        if not visual:
+            continue
+        scene_visuals.append({
+            "scene_id": scene_id,
+            "path": visual.get("path"),
+            "start_us": int(scene.get("start_us") or 0),
+            "duration_us": int(scene.get("duration_us") or 0),
+            "source_start_us": int(video.get("trim_start_ms") or 0) * 1000 if video else 0,
+            "media_type": "video" if video else "image",
+            "muted": bool(video) if video else True,
+            "fit": (video or {}).get("fit") or "cover",
+        })
     duration = cover_duration + total_scene_duration_us(scenes)
     cover_video = []
     cover_text = []
@@ -630,14 +669,14 @@ def generate_story(payload):
             "ratio": (canvas or {}).get("ratio") or "original",
         },
         "materials": {
-            "videos": cover_video + (assets.get("images") or []),
+            "videos": cover_video + scene_visuals,
             "audios": assets.get("narration") or [],
             "texts": cover_text + scenes,
             "bgm": payload.get("bgm_path") or "",
             "subtitles": assets.get("subtitles_path") or "",
         },
         "tracks": [
-            {"type": "video", "segments": cover_video + (assets.get("images") or [])},
+            {"type": "video", "segments": cover_video + scene_visuals},
             {"type": "audio", "segments": assets.get("narration") or []},
             {"type": "text", "segments": cover_text + scenes},
         ],
@@ -705,6 +744,28 @@ def probe_media(payload):
         raise ValueError("Media duration is unavailable")
     result = {"success": True, "duration": duration}
     result.update(media_stream_info(media_path))
+    return result
+
+
+def normalize_scene_video(payload):
+    source_path = norm(payload["video_path"])
+    output_path = norm(payload["output_path"])
+    if not os.path.isfile(source_path):
+        raise ValueError("Video file does not exist")
+    ensure_parent(output_path)
+    run_ffmpeg([
+        "-i", source_path,
+        "-map", "0:v:0",
+        "-an",
+        "-c:v", "libx264",
+        "-preset", "medium",
+        "-crf", "18",
+        "-pix_fmt", "yuv420p",
+        "-movflags", "+faststart",
+        output_path,
+    ])
+    result = probe_media({"media_path": output_path})
+    result["output_path"] = output_path
     return result
 
 
@@ -906,6 +967,8 @@ def dispatch(payload):
         return convert_audio_16k(payload)
     if mode == "probe_media":
         return probe_media(payload)
+    if mode == "normalize_scene_video":
+        return normalize_scene_video(payload)
     raise ValueError(f"Unsupported Storybound sidecar mode: {mode}")
 
 
