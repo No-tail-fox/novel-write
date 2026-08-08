@@ -178,7 +178,7 @@ export interface PyJianYingBridgeRunnerOptions {
   execute?: (
     command: string,
     args: string[],
-    options: { cwd: string },
+    options: { cwd: string; env: NodeJS.ProcessEnv },
   ) => Promise<{
     stdout: string;
     stderr: string;
@@ -212,7 +212,14 @@ export async function runPyJianYingDraftBridge(
   const pythonCommand = runtime.command;
 
   try {
-    const { stdout } = await execute(pythonCommand, [scriptPath, payloadPath], { cwd: input.workDir });
+    const { stdout } = await execute(pythonCommand, [scriptPath, payloadPath], {
+      cwd: input.workDir,
+      env: {
+        ...process.env,
+        PYTHONIOENCODING: 'utf-8',
+        PYTHONUTF8: '1',
+      },
+    });
     const result = parseBridgeJsonOutput(stdout);
     if (!result) {
       throw new Error('pyJianYingDraft bridge did not return JSON output.');
@@ -283,6 +290,11 @@ import struct
 import sys
 import traceback
 import zlib
+
+if hasattr(sys.stdout, "reconfigure"):
+    sys.stdout.reconfigure(encoding="utf-8", errors="backslashreplace")
+if hasattr(sys.stderr, "reconfigure"):
+    sys.stderr.reconfigure(encoding="utf-8", errors="backslashreplace")
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
@@ -607,7 +619,7 @@ def format_srt_time(us):
 
 
 def wrap_caption_text(text, max_chars_per_line):
-    text = str(text or "").strip()
+    text = normalize_subtitle_text(text)
     max_chars = int(clamp_number(max_chars_per_line, 0, 0, 200))
     if not text or max_chars <= 0:
         return text
@@ -618,6 +630,11 @@ def wrap_caption_text(text, max_chars_per_line):
             continue
         wrapped.extend(line[index:index + max_chars] for index in range(0, len(line), max_chars))
     return "\n".join(wrapped)
+
+
+def normalize_subtitle_text(text):
+    text = str(text or "").replace("\ufeff", "").replace("\r\n", "\n").replace("\r", "\n")
+    return "\n".join(line.strip() for line in text.split("\n") if line.strip())
 
 
 def resolve_caption_chars_per_line(caption, canvas):
@@ -634,7 +651,7 @@ def resolve_caption_chars_per_line(caption, canvas):
 
 
 def split_caption_text(text, chars_per_line):
-    text = str(text or "").strip()
+    text = normalize_subtitle_text(text)
     if not text:
         return []
     line_chars = int(clamp_number(chars_per_line, 12, 6, 24))
@@ -730,7 +747,8 @@ def expand_timed_subtitles(timeline, caption_config=None, canvas_config=None):
     expanded = []
     chars_per_line = resolve_caption_chars_per_line(caption_config, canvas_config)
     for item in timeline:
-        supplied_captions = [str(text or "").strip() for text in (item.get("captions") or []) if str(text or "").strip()]
+        supplied_captions = [normalize_subtitle_text(text) for text in (item.get("captions") or [])]
+        supplied_captions = [text for text in supplied_captions if text]
         cue_texts = supplied_captions or split_caption_text(item.get("text"), chars_per_line)
         if not cue_texts:
             continue
@@ -757,7 +775,7 @@ def write_timed_subtitles(path, timeline, caption_config=None, canvas_config=Non
     for index, item in enumerate(expand_timed_subtitles(timeline, caption_config, canvas_config), start=1):
         start = int(item["startUs"])
         end = start + int(item["durationUs"])
-        text = str(item.get("text") or "").strip()
+        text = normalize_subtitle_text(item.get("text"))
         blocks.append(f"{index}\n{format_srt_time(start)} --> {format_srt_time(end)}\n{text}\n")
     with open(path, "w", encoding="utf-8") as handle:
         handle.write("\n".join(blocks))

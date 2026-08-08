@@ -115,6 +115,8 @@ describe('pyJianYingDraft bridge input', () => {
       const script = await readFile(scriptPath, 'utf8');
 
       expect(script).toContain('DraftFolder');
+      expect(script).toContain('sys.stdout.reconfigure(encoding="utf-8"');
+      expect(script).toContain('sys.stderr.reconfigure(encoding="utf-8"');
       expect(script).toContain('VideoSegment');
       expect(script).toContain('AudioSegment');
       expect(script).toContain('shutil.copy2');
@@ -141,6 +143,7 @@ describe('pyJianYingDraft bridge input', () => {
       expect(script).toContain('draft.TextBackground(');
       expect(script).toContain('style_reference=caption_template');
       expect(script).toContain('wrap_caption_text');
+      expect(script).toContain('normalize_subtitle_text');
       expect(script).toContain('resolve_image_layout');
       expect(script).toContain('image_segment.add_mask(');
       expect(script).toContain('align=int(caption.get("align", 1))');
@@ -711,6 +714,51 @@ describe('pyJianYingDraft bridge input', () => {
     }
   });
 
+  it('removes BOM, CRLF, and blank lines from caption text before writing SRT cues', async () => {
+    const dir = await mkdtemp(join(tmpdir(), 'storybound-jy-clean-srt-'));
+    const draftDir = join(dir, 'Draft Root', 'Bridge Draft');
+    const bridgeDir = join(dir, 'pyjianying-bridge');
+
+    try {
+      await writePyJianYingBridgeScript(dir);
+      await writeFile(join(bridgeDir, 'pyJianYingDraft.py'), fakePyJianYingDraftModule, 'utf8');
+      const voice = join(dir, 'voice.wav');
+      const image = join(dir, 'image.png');
+      await writeFile(voice, wavTone(1200));
+      await writeFile(image, Buffer.from('image'));
+
+      await runPyJianYingDraftBridge({
+        workDir: dir,
+        draftDir,
+        title: 'Clean SRT draft',
+        canvas: { width: 1080, height: 1920, backgroundColor: '#000000', backgroundImage: '' },
+        imageArea: defaultBridgeImageArea(),
+        caption: defaultBridgeCaption(),
+        scenes: [{
+          sceneId: 1,
+          startUs: 0,
+          durationUs: 1_200_000,
+          text: 'fallback',
+          captions: ['\ufeff第一行\r\n\r\n第二行'],
+          captionDurationsUs: [1_200_000],
+        }],
+        images: [{ sceneId: 1, path: image }],
+        narration: [{ sceneId: 1, path: voice }],
+        subtitlesSrtPath: join(dir, 'subtitles.srt'),
+        bgm: null,
+        totalDurationUs: 1_200_000,
+        volumes: { narration: 1, bgm: 0.3 },
+      });
+
+      const generated = await readFile(join(draftDir, 'materials', 'subtitles', 'subtitles.srt'), 'utf8');
+      expect(generated.replace(/\r\n/g, '\n')).toBe('1\n00:00:00,000 --> 00:00:01,200\n第一行\n第二行\n');
+      expect(generated).not.toContain('\ufeff');
+      expect(generated).not.toMatch(/第一行\r?\n\r?\n第二行/u);
+    } finally {
+      await rm(dir, { recursive: true, force: true });
+    }
+  });
+
   it('does not import subtitle text tracks when captions are hidden', async () => {
     const dir = await mkdtemp(join(tmpdir(), 'storybound-jy-hidden-captions-'));
     const draftDir = join(dir, 'Draft Root', 'Bridge Draft');
@@ -745,6 +793,46 @@ describe('pyJianYingDraft bridge input', () => {
       const content = JSON.parse(await readFile(join(draftDir, 'draft_content.json'), 'utf8'));
 
       expect(content.tracks.some((track: { name: string }) => track.name === 'subtitles')).toBe(false);
+    } finally {
+      await rm(dir, { recursive: true, force: true });
+    }
+  });
+
+  it('creates a draft through the Python bridge under Chinese user and draft directories', async () => {
+    const dir = await mkdtemp(join(tmpdir(), 'storybound-jy-chinese-path-'));
+    const workDir = join(dir, '用户目录', '任务数据');
+    const draftDir = join(dir, '剪映草稿', '李明博项目');
+    const bridgeDir = join(workDir, 'pyjianying-bridge');
+
+    try {
+      await writePyJianYingBridgeScript(workDir);
+      await writeFile(join(bridgeDir, 'pyJianYingDraft.py'), fakePyJianYingDraftModule, 'utf8');
+      const voice = join(workDir, '中文旁白.wav');
+      const image = join(workDir, '中文图片.png');
+      await writeFile(voice, wavTone(1000));
+      await writeFile(image, Buffer.from('image'));
+
+      const output = await runPyJianYingDraftBridge({
+        workDir,
+        draftDir,
+        title: '李明博项目',
+        canvas: { width: 1920, height: 1080, backgroundColor: '#000000', backgroundImage: '' },
+        imageArea: { ...defaultBridgeImageArea(), ratio: '16:9' },
+        caption: { ...defaultBridgeCaption(), visible: false },
+        scenes: [{ sceneId: 1, startUs: 0, durationUs: 1_000_000, text: '中文目录测试' }],
+        images: [{ sceneId: 1, path: image }],
+        narration: [{ sceneId: 1, path: voice }],
+        subtitlesSrtPath: join(workDir, '中文字幕.srt'),
+        bgm: null,
+        totalDurationUs: 1_000_000,
+        volumes: { narration: 1, bgm: 0.3 },
+      });
+
+      const meta = JSON.parse(await readFile(output.draftMetaPath, 'utf8'));
+      expect(output.draftDir).toBe(draftDir);
+      expect(meta).toMatchObject({ draft_name: '李明博项目', draft_fold_path: draftDir });
+      expect(meta.draft_materials[0].value.every((path: string) => path.startsWith(draftDir))).toBe(true);
+      expect(meta.draft_materials[1].value.every((path: string) => path.startsWith(draftDir))).toBe(true);
     } finally {
       await rm(dir, { recursive: true, force: true });
     }
@@ -804,10 +892,10 @@ describe('pyJianYingDraft bridge input', () => {
 
   it('executes Python with the bridge script and parses the generated draft paths', async () => {
     const dir = await mkdtemp(join(tmpdir(), 'storybound-jy-run-'));
-    const calls: Array<{ command: string; args: string[]; cwd?: string }> = [];
+    const calls: Array<{ command: string; args: string[]; cwd?: string; pythonIoEncoding?: string; pythonUtf8?: string }> = [];
 
     try {
-      const draftDir = join(dir, 'Draft Root', 'Bridge Draft');
+      const draftDir = join(dir, '中文用户', '剪映草稿', '李明博');
       const output = await runPyJianYingDraftBridge(
         {
           workDir: dir,
@@ -827,7 +915,13 @@ describe('pyJianYingDraft bridge input', () => {
         {
           pythonCommand: 'python-test',
           execute: async (command, args, options) => {
-            calls.push({ command, args, cwd: options.cwd });
+            calls.push({
+              command,
+              args,
+              cwd: options.cwd,
+              pythonIoEncoding: options.env.PYTHONIOENCODING,
+              pythonUtf8: options.env.PYTHONUTF8,
+            });
             return {
               stdout: JSON.stringify({
                 ok: true,
@@ -847,6 +941,8 @@ describe('pyJianYingDraft bridge input', () => {
       expect(calls[0].args[0]).toMatch(/pyjianying-bridge[\\/]bridge\.py$/);
       expect(calls[0].args[1]).toMatch(/pyjianying-bridge[\\/]input\.json$/);
       expect(calls[0].cwd).toBe(dir);
+      expect(calls[0].pythonIoEncoding).toBe('utf-8');
+      expect(calls[0].pythonUtf8).toBe('1');
       expect(output).toMatchObject({
         draftDir,
         draftContentPath: join(draftDir, 'draft_content.json'),

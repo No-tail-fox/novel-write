@@ -3,7 +3,7 @@ import { access, mkdir, stat, writeFile } from 'node:fs/promises';
 import { dirname, join } from 'node:path';
 import type { BgmItem, CoverMetadata, DiagnosticsReport, DraftTemplate, ImagePrompt, StoryboardScene, SubtitleTrack } from './types';
 import { buildSubtitleTrack } from './story';
-import { getTemplate, normalizeDraftTemplate } from './templates';
+import { getTemplate, resolveDraftTemplateForRatio } from './templates';
 import { runPyJianYingDraftBridge, type PyJianYingBridgeInput, type PyJianYingBridgeOutput } from './jianying-bridge';
 import { resolveOrdinaryTaskCoverPageText, resolveOrdinaryTaskCoverTitle } from './ordinary-task-cover';
 import { runStoryboundMediaSidecar, type StoryboundSidecarInput, type StoryboundSidecarResult } from './storybound-sidecar';
@@ -73,7 +73,8 @@ export async function writeJianyingDraft(input: WriteJianyingDraftInput, options
     throw new Error('Cannot create Jianying draft without storyboard scenes.');
   }
 
-  const template = normalizeDraftTemplate(input.template ?? getTemplate(input.templateId ?? (input.ratio === '16:9' ? 'builtin-landscape-16-9' : 'default-portrait-9-16')));
+  const requestedTemplate = input.template ?? getTemplate(input.templateId);
+  const template = resolveDraftTemplateForRatio(requestedTemplate, input.ratio);
   const subtitles = input.subtitles ?? buildSubtitleTrack(input.scenes, { maxCharsPerLine: template.caption.maxCharsPerLine });
   const title = safeDraftName(input.title || input.cover.title || 'storydream-draft');
   const draftDir = join(input.draftRootDir, uniqueDraftFolderName(title));

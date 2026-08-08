@@ -76,6 +76,7 @@ import {
   addUploadedBgm,
   characterPolicyLabel,
   defaultTaskDraftTemplateId,
+  draftTemplateIdForRatio,
   draftTemplateImageRatio,
   draftTemplateLabel,
   normalizeLockIntroSentencesInput,
@@ -555,6 +556,11 @@ export function NewTaskPage({
   }, [ratio, manualCoverAsset]);
 
   useEffect(() => {
+    const nextTemplateId = draftTemplateIdForRatio(state.draftTemplates, ratio, templateId);
+    if (nextTemplateId && nextTemplateId !== templateId) setTemplateId(nextTemplateId);
+  }, [ratio, state.draftTemplates, templateId]);
+
+  useEffect(() => {
     if (!styleManuallyOverridden && resolvedPromptTemplate) {
       setStyle(resolvePromptTemplateDefaultStyleId(resolvedPromptTemplate, availableStyleIds));
     }
@@ -595,6 +601,11 @@ export function NewTaskPage({
   function handleRatioChange(nextRatio: string) {
     setRatioManuallyOverridden(true);
     setRatio(nextRatio);
+    const nextTemplateId = draftTemplateIdForRatio(state.draftTemplates, nextRatio, templateId);
+    if (nextTemplateId !== templateId) {
+      setDraftTemplateManuallyOverridden(false);
+      setTemplateId(nextTemplateId);
+    }
   }
 
   function handlePromptTemplateOverrideChange(nextId: string) {

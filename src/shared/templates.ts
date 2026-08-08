@@ -298,6 +298,33 @@ export function getTemplate(id = 'default-portrait-9-16'): DraftTemplate {
   return draftTemplates.find((template) => template.id === id) ?? draftTemplates[0];
 }
 
+export function draftTemplateMatchesRatio(template: DraftTemplate, ratio: string): boolean {
+  if (template.image.ratio !== ratio) return false;
+  const fallbackId = defaultDraftTemplateIdForRatio(ratio);
+  if (!fallbackId) return true;
+  const fallback = getTemplate(fallbackId);
+  return canvasAspectRatioMatches(template.canvas.width, template.canvas.height, fallback.canvas.width, fallback.canvas.height);
+}
+
+export function matchingDraftTemplateId(
+  templates: DraftTemplate[],
+  ratio: string,
+  currentTemplateId = '',
+): string {
+  const current = templates.find((template) => template.id === currentTemplateId);
+  if (current && draftTemplateMatchesRatio(current, ratio)) return current.id;
+  const matching = templates.find((template) => template.isDefault && draftTemplateMatchesRatio(template, ratio))
+    ?? templates.find((template) => draftTemplateMatchesRatio(template, ratio));
+  return matching?.id ?? currentTemplateId;
+}
+
+export function resolveDraftTemplateForRatio(template: Partial<DraftTemplate> | undefined, ratio: string): DraftTemplate {
+  const fallbackId = defaultDraftTemplateIdForRatio(ratio);
+  const normalized = template ? normalizeDraftTemplate(template) : undefined;
+  if (normalized && (!fallbackId || draftTemplateMatchesRatio(normalized, ratio))) return normalized;
+  return normalizeDraftTemplate(getTemplate(fallbackId));
+}
+
 export function normalizeDraftTemplate(template: Partial<DraftTemplate>): DraftTemplate {
   const fallback = draftTemplates.find((item) => item.id === template.id) ?? draftTemplates[0];
   return {
@@ -427,4 +454,16 @@ function normalizeFrame(value: unknown): DraftTemplate['frame'] {
     imageBorderWidth: clampNumber(input.imageBorderWidth, neutralFrame.imageBorderWidth, 0, 500),
     imageBorderSides,
   };
+}
+
+function defaultDraftTemplateIdForRatio(ratio: string): string {
+  if (ratio === '16:9') return 'builtin-landscape-16-9';
+  if (ratio === '4:3') return 'builtin-portrait-4-3';
+  if (ratio === '9:16') return 'default-portrait-9-16';
+  return '';
+}
+
+function canvasAspectRatioMatches(width: number, height: number, targetWidth: number, targetHeight: number): boolean {
+  if (![width, height, targetWidth, targetHeight].every((value) => Number.isFinite(value) && value > 0)) return false;
+  return Math.abs(width / height - targetWidth / targetHeight) < 0.01;
 }

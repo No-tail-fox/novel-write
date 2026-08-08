@@ -27,6 +27,8 @@ describe('three-stage new task workbench', () => {
     expect(page).not.toContain('生图分辨率');
     expect(page).toContain('配音角色');
     expect(page).toContain('草稿模板');
+    expect(page).toContain('draftTemplateIdForRatio(state.draftTemplates, nextRatio, templateId)');
+    expect(page).toContain('setTemplateId(nextTemplateId)');
   });
 
   it('turns the third-stage next action into the existing creation command', async () => {

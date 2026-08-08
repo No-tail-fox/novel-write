@@ -2,7 +2,14 @@ import { describe, expect, it } from 'vitest';
 import { execFileSync } from 'node:child_process';
 import { existsSync } from 'node:fs';
 import { join } from 'node:path';
-import { draftTemplates, imageAnimations, normalizeDraftTemplate } from '@shared/templates';
+import {
+  draftTemplateMatchesRatio,
+  draftTemplates,
+  imageAnimations,
+  matchingDraftTemplateId,
+  normalizeDraftTemplate,
+  resolveDraftTemplateForRatio,
+} from '@shared/templates';
 import type { DraftTemplate } from '@shared/types';
 
 describe('draft template normalization', () => {
@@ -198,6 +205,45 @@ describe('draft template normalization', () => {
     expect(normalized.subtitle.border).toEqual({ color: '#000000', width: 40, alpha: 1 });
     expect(normalized.caption.border).toEqual({ color: '#000000', width: 0, alpha: 0 });
     expect(normalized.disclaimer.border).toEqual({ color: '#000000', width: 40, alpha: 1 });
+  });
+
+  it('maps a horizontal task to the 16:9 draft canvas instead of retaining portrait layout', () => {
+    const portrait = draftTemplates[0];
+    const landscape = draftTemplates[2];
+
+    expect(draftTemplateMatchesRatio(portrait, '16:9')).toBe(false);
+    expect(draftTemplateMatchesRatio(landscape, '16:9')).toBe(true);
+    expect(matchingDraftTemplateId(draftTemplates, '16:9', portrait.id)).toBe(landscape.id);
+
+    const resolved = resolveDraftTemplateForRatio(portrait, '16:9');
+    expect(resolved).toMatchObject({
+      id: 'builtin-landscape-16-9',
+      canvas: { width: 1920, height: 1080, ratio: '16:9' },
+      image: { ratio: '16:9', top: 0, height: 1 },
+      title: { y: landscape.title.y, fontSize: landscape.title.fontSize },
+      subtitle: { y: landscape.subtitle.y, fontSize: landscape.subtitle.fontSize },
+      caption: { y: landscape.caption.y, fontSize: landscape.caption.fontSize },
+      disclaimer: { y: landscape.disclaimer.y, fontSize: landscape.disclaimer.fontSize },
+    });
+  });
+
+  it('preserves a compatible custom horizontal template', () => {
+    const landscape = draftTemplates[2];
+    const custom = normalizeDraftTemplate({
+      ...landscape,
+      id: 'custom-landscape',
+      name: '自定义横屏',
+      isDefault: false,
+      canvas: { ...landscape.canvas, width: 1280, height: 720 },
+      caption: { ...landscape.caption, y: -0.52, color: '#00ff00' },
+    });
+
+    expect(resolveDraftTemplateForRatio(custom, '16:9')).toMatchObject({
+      id: 'custom-landscape',
+      canvas: { width: 1280, height: 720, ratio: '16:9' },
+      caption: { y: -0.52, color: '#00ff00' },
+    });
+    expect(matchingDraftTemplateId([draftTemplates[0], custom, landscape], '16:9', custom.id)).toBe(custom.id);
   });
 
   it('allows oversized text box widths for large fonts while clamping invalid values', () => {

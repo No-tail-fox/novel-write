@@ -247,6 +247,62 @@ describe('draft writer', () => {
     }
   });
 
+  it('repairs a stale portrait template before exporting a 16:9 Jianying draft', async () => {
+    const dir = await mkdtemp(join(tmpdir(), 'storybound-draft-landscape-map-'));
+    const draftRootDir = join(dir, 'JianyingPro Drafts');
+    const workDir = join(dir, 'work');
+    const scenes: StoryboardScene[] = [{ id: 1, cap: '横屏字幕', descPrompt: 'landscape prompt', durationMs: 1200 }];
+    const images = await writeAssets(workDir, scenes, 'png', twoByTwoPng);
+    const audioPath = join(workDir, 'voice.wav');
+    await writeFile(audioPath, wavTone(1200));
+    let capturedPayload: PyJianYingBridgeInput | null = null;
+
+    try {
+      await writeJianyingDraft(
+        {
+          workDir,
+          draftRootDir,
+          title: '横屏映射',
+          cover: { title: '横屏映射', subtitle: ['副标题'], summary: '', tags: [], comments: [] },
+          ratio: '16:9',
+          templateId: 'default-portrait-9-16',
+          template: draftTemplates[0],
+          scenes,
+          imagePrompts: buildImagePrompts(scenes, { inputText: 'landscape', style: 'photo-real', ratio: '16:9' }),
+          reviewedText: 'reviewed',
+          rewrittenCopy: 'rewritten',
+          generatedImages: images,
+          narrationAudio: [{ sceneId: 1, path: audioPath }],
+          bgm: null,
+        },
+        {
+          runBridge: async (payload) => {
+            capturedPayload = payload;
+            await mkdir(payload.draftDir, { recursive: true });
+            const draftContentPath = join(payload.draftDir, 'draft_content.json');
+            const draftMetaPath = join(payload.draftDir, 'draft_meta_info.json');
+            await writeFile(draftContentPath, '{}', 'utf8');
+            await writeFile(draftMetaPath, '{}', 'utf8');
+            return { draftDir: payload.draftDir, draftContentPath, draftMetaPath, durationUs: payload.totalDurationUs ?? 0 };
+          },
+        },
+      );
+
+      expect(capturedPayload).toMatchObject({
+        canvas: { width: 1920, height: 1080 },
+        imageArea: { ratio: '16:9', top: 0, height: 1 },
+        overlays: {
+          title: { y: draftTemplates[2].title.y, fontSize: draftTemplates[2].title.fontSize },
+          subtitle: { y: draftTemplates[2].subtitle.y, fontSize: draftTemplates[2].subtitle.fontSize },
+          disclaimer: { y: draftTemplates[2].disclaimer.y, fontSize: draftTemplates[2].disclaimer.fontSize },
+        },
+        caption: { y: draftTemplates[2].caption.y, fontSize: draftTemplates[2].caption.fontSize },
+      });
+    } finally {
+      await rm(dir, { recursive: true, force: true });
+    }
+  });
+
   it('prepends an independent cover page without leaking its text into the body timeline', async () => {
     const dir = await mkdtemp(join(tmpdir(), 'storybound-draft-cover-image-'));
     const draftRootDir = join(dir, 'JianyingPro Drafts');

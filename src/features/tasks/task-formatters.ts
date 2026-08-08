@@ -2,6 +2,7 @@ import { normalizeStoryboardSceneCount, normalizeTargetLength } from '../../shar
 import { defaultCustomStyles } from '../../shared/config';
 import { contentTracks } from '../../shared/editorial-options';
 import { selectTaskPromptTemplate } from '../../shared/prompt-templates';
+import { matchingDraftTemplateId } from '../../shared/templates';
 import type {
   AiSourceSection,
   AppConfig,
@@ -97,6 +98,10 @@ export function resolvePromptTemplateForTrack(
 
 export function draftTemplateImageRatio(templates: DraftTemplate[], templateId: string): string {
   return templates.find((template) => template.id === templateId)?.image.ratio ?? templates[0]?.image.ratio ?? '9:16';
+}
+
+export function draftTemplateIdForRatio(templates: DraftTemplate[], ratio: string, currentTemplateId: string): string {
+  return matchingDraftTemplateId(templates, ratio, currentTemplateId);
 }
 
 export function defaultTaskDraftTemplateId(templates: DraftTemplate[]): string {
