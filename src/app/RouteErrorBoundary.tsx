@@ -31,6 +31,10 @@ export class RouteErrorBoundary extends Component<RouteErrorBoundaryProps, Route
     console.error('Route render failed.', error, info.componentStack);
   }
 
+  private reloadPage = () => {
+    window.location.reload();
+  };
+
   private returnToNewTask = () => {
     this.setState({ error: null }, () => this.props.onNavigate('new-task'));
   };
@@ -42,7 +46,7 @@ export class RouteErrorBoundary extends Component<RouteErrorBoundaryProps, Route
         <h2>页面加载失败</h2>
         <p>{this.state.error.message || '当前页面无法显示。'}</p>
         <div className="button-row">
-          <button className="primary-action slim" type="button" onClick={() => this.setState({ error: null })}>重新加载页面</button>
+          <button className="primary-action slim" type="button" onClick={this.reloadPage}>重新加载页面</button>
           <button className="secondary-action slim" type="button" onClick={this.returnToNewTask}>返回新建任务</button>
         </div>
       </section>

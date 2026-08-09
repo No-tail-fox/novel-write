@@ -141,6 +141,7 @@ try {
   const expectedUrl = pathToFileURL(join(rootDir, 'dist-renderer', 'index.html')).href;
   if (identity.url !== expectedUrl) throw new Error(`Unexpected renderer URL: ${identity.url}`);
   const themePreference = await exerciseThemePreference(cdp, themeLightScreenshot);
+  const queueRoute = effectsOnly ? await exerciseQueueRoute(cdp) : null;
   const navClicked = await evaluate(cdp, `(() => {
     const button = [...document.querySelectorAll('button')].find((item) => item.textContent.includes('HTML 动画视频'));
     if (!button) return false;
@@ -379,6 +380,11 @@ try {
     }
     if (!effectsDesktop.playbackAdvanced || !effectsDesktop.cameraTransformChanged
       || !effectsDesktop.transitionOverlayObserved || !effectsDesktop.layoutGeometryChanged
+      || effectsDesktop.legacyInspectorPresent || effectsCompact.legacyInspectorPresent
+      || !effectsDesktop.settingsSummary.includes('字幕、镜头与转场设置')
+      || !effectsCompact.settingsSummary.includes('字幕、镜头与转场设置')
+      || effectsDesktop.canvasStatus !== '真实画布预览'
+      || effectsCompact.canvasStatus !== '真实画布预览'
       || !effectsDesktop.previewAboveFold || !effectsCompact.previewAboveFold
       || !effectsDesktop.previewCanvasFullyVisible || !effectsCompact.previewCanvasFullyVisible
       || !effectsDesktop.previewCaptionVisible || !effectsCompact.previewCaptionVisible
@@ -393,8 +399,10 @@ try {
       || effectsDesktop.transitionValue !== 'wipeleft' || effectsCompact.transitionValue !== 'wipeleft'
       || effectsDesktop.motionValue !== 'pan_left' || effectsCompact.motionValue !== 'pan_left'
       || effectsDesktop.completedStepCount !== 5 || effectsCompact.completedStepCount !== 5
+      || !queueRoute?.pageReady || !queueRoute.queueTableVisible
+      || !queueRoute.routeErrorAbsent || queueRoute.activeView !== 'queue'
       || relevantRuntimeErrors.length) {
-      throw new Error(`Preview-effects QA failed: ${JSON.stringify({ effectsDesktop, effectsCompact, relevantRuntimeErrors })}`);
+      throw new Error(`Preview-effects QA failed: ${JSON.stringify({ queueRoute, effectsDesktop, effectsCompact, relevantRuntimeErrors })}`);
     }
     const screenshotPaths = [effectsDesktopScreenshot, effectsCompactScreenshot];
     const screenshots = await Promise.all(screenshotPaths.map(async (path) => {
@@ -419,6 +427,7 @@ try {
       scope: 'preview-effects',
       pageTitle: identity.title,
       pageUrl: identity.url,
+      queueRoute,
       effectsDesktop,
       effectsCompact,
       screenshots,
@@ -2255,6 +2264,37 @@ async function inspectAndAnimateTemplatePreview(cdpConnection) {
   };
 }
 
+async function exerciseQueueRoute(cdpConnection) {
+  const clicked = await evaluate(cdpConnection, `(() => {
+    const button = [...document.querySelectorAll('button')]
+      .find((item) => item.textContent?.includes('任务队列'));
+    if (!(button instanceof HTMLButtonElement)) return false;
+    button.click();
+    return true;
+  })()`);
+  if (!clicked) throw new Error('Task queue navigation button was not found.');
+  await waitFor(
+    async () => evaluate(cdpConnection, `Boolean(
+      document.querySelector('[data-shell-view="queue"] [data-task-operations="queue"]')
+      && !document.querySelector('.route-error-state')
+    )`),
+    10_000,
+    'task queue lazy route',
+  );
+  return evaluate(cdpConnection, `(() => {
+    const page = document.querySelector('[data-task-operations="queue"]');
+    return {
+      activeView: document.querySelector('[data-shell-view]')?.getAttribute('data-shell-view') || '',
+      pageReady: Boolean(page),
+      routeErrorAbsent: !document.querySelector('.route-error-state'),
+      queueTableVisible: Boolean(page?.querySelector('.task-queue-table')),
+      queueChunkNames: performance.getEntriesByType('resource')
+        .map((entry) => entry.name.split('/').pop() || '')
+        .filter((name) => name.startsWith('QueuePage-') && name.includes('.js')),
+    };
+  })()`);
+}
+
 async function inspectPreviewEffects(cdpConnection) {
   return evaluate(cdpConnection, `(() => {
     const surface = document.querySelector('[data-html-video-preview-effects="true"]');
@@ -2308,6 +2348,9 @@ async function inspectPreviewEffects(cdpConnection) {
       && posterCaptionRect.width > 0 && posterCaptionRect.height > 0);
     return {
       activeTab: document.querySelector('.hv-tab.active')?.textContent?.trim() || '',
+      settingsSummary: document.querySelector('.hv-preview-settings > summary')?.textContent?.trim() || '',
+      canvasStatus: document.querySelector('.hv-reference-panel-head [data-runtime-state]')?.textContent?.trim() || '',
+      legacyInspectorPresent: Boolean(document.querySelector('.hv-preview-inspector')),
       motionValue: motion?.value || '',
       motionOptions: motion instanceof HTMLSelectElement ? [...motion.options].map((option) => [option.value, option.textContent?.trim() || '']) : [],
       transitionValue: transition?.value || '',
@@ -2471,11 +2514,14 @@ async function exercisePreviewEffects(cdpConnection) {
     return true;
   })()`);
   if (!played) throw new Error('Real preview play control was unavailable.');
+  let firstMotionFrame;
   try {
     await waitFor(
       async () => {
         const state = await inspectPreviewEffects(cdpConnection);
-        return state.previewTime > 0.08 && state.runtimeState === 'playing' && state.previewCaptionVisible;
+        if (state.previewTime <= 0.08 || state.runtimeState !== 'playing' || !state.previewCaptionVisible) return false;
+        firstMotionFrame = state;
+        return true;
       },
       5_000,
       'real animation playback progress',
@@ -2483,8 +2529,7 @@ async function exercisePreviewEffects(cdpConnection) {
   } catch (error) {
     throw new Error(`Real animation playback did not advance: ${JSON.stringify(await inspectPreviewEffects(cdpConnection))}`, { cause: error });
   }
-  const firstMotionFrame = await inspectPreviewEffects(cdpConnection);
-  await delay(350);
+  await delay(180);
   const secondMotionFrame = await inspectPreviewEffects(cdpConnection);
   const cameraTransformChanged = firstMotionFrame.cameraTransform !== secondMotionFrame.cameraTransform;
 

@@ -546,9 +546,25 @@ describe('renderer application composition architecture', () => {
     expect(boundary).toContain('componentDidCatch');
     expect(boundary).toContain('重新加载页面');
     expect(boundary).toContain('返回新建任务');
+    expect(boundary).toContain('window.location.reload()');
+    expect(boundary).toContain('onClick={this.reloadPage}');
     expect(loading).toContain('role="status"');
     expect(loading).toContain('route-loading-state');
     expect(loading).toContain('正在加载');
+  });
+
+  it('reloads the current renderer once when a stale Vite chunk cannot be imported', async () => {
+    const [main, recovery] = await Promise.all([
+      source('src/main.tsx'),
+      source('src/app/preload-recovery.ts'),
+    ]);
+
+    expect(main).toContain("import { installPreloadRecovery } from './app/preload-recovery'");
+    expect(main).toContain('installPreloadRecovery();');
+    expect(recovery).toContain("'vite:preloadError'");
+    expect(recovery).toContain('target.sessionStorage.getItem(PRELOAD_ERROR_SIGNATURE_KEY) === signature');
+    expect(recovery).toContain('event.preventDefault();');
+    expect(recovery).toContain('target.location.reload();');
   });
 
   it('lazy-loads all seventeen route pages behind one stable content fallback', async () => {

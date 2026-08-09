@@ -494,7 +494,7 @@ export function HtmlVideoStoryboundPreviewPanel(props: EditorialPanelProps & { c
     isBrowserPreview,
   } = props;
   const [active, setActive] = useState(0);
-  const [source, setSource] = useState('');
+  const [loadedSource, setLoadedSource] = useState({ key: '', html: '' });
   const [sourceError, setSourceError] = useState('');
   const [playing, setPlaying] = useState(false);
   const [progress, setProgress] = useState(0);
@@ -526,6 +526,14 @@ export function HtmlVideoStoryboundPreviewPanel(props: EditorialPanelProps & { c
   const action = useAsyncAction();
   const compositions = data.compositions;
   const composition = compositions[active];
+  const mediaUrlSignature = [...new Set([
+    ...data.assets.map((asset) => asset.src),
+    ...data.voices.map((voice) => voice.src),
+  ])].map((path) => [path, mediaUrls[path] ?? '']);
+  const compositionSourceKey = composition
+    ? JSON.stringify([task.id, composition.index, composition.rev ?? 0, data.revision, mediaUrlSignature])
+    : '';
+  const source = loadedSource.key === compositionSourceKey ? loadedSource.html : '';
   const effectsLocked = busy || action.busy || task.status === 'running' || task.status === 'pending' || isBrowserPreview;
   const activeScene = data.scenes.find((item) => item.index === composition?.index);
   const presetScene = data.scenes.find((item) => item.index === presetSceneIndex);
@@ -551,7 +559,6 @@ export function HtmlVideoStoryboundPreviewPanel(props: EditorialPanelProps & { c
 
   useEffect(() => {
     let disposed = false;
-    setSource('');
     setSourceError('');
     setProgress(0);
     progressRef.current = 0;
@@ -559,15 +566,22 @@ export function HtmlVideoStoryboundPreviewPanel(props: EditorialPanelProps & { c
     setPosterCaptionVisible(false);
     setRuntimeState('loading');
     runtimeReady.current = false;
-    if (!composition || isBrowserPreview) return;
+    if (!composition || isBrowserPreview) {
+      setLoadedSource({ key: '', html: '' });
+      return;
+    }
+    const requestedSourceKey = compositionSourceKey;
     void api.getHtmlVideoCompositionSource(task.id, composition.index).then((loaded) => {
       if (disposed) return;
-      setSource(prepareCompositionSrcDoc(loaded.source, loaded.mediaUrl, data, mediaUrls));
+      setLoadedSource({
+        key: requestedSourceKey,
+        html: prepareCompositionSrcDoc(loaded.source, loaded.mediaUrl, data, mediaUrls),
+      });
     }).catch((error) => {
       if (!disposed) setSourceError(error instanceof Error ? error.message : String(error));
     });
     return () => { disposed = true; };
-  }, [api, composition?.index, composition?.rev, data, isBrowserPreview, mediaUrls, task.id]);
+  }, [api, compositionSourceKey, isBrowserPreview]);
 
   useEffect(() => {
     const onMessage = (event: MessageEvent) => {
@@ -653,7 +667,7 @@ export function HtmlVideoStoryboundPreviewPanel(props: EditorialPanelProps & { c
     pendingCommand.current = command;
     setRuntimeState('starting');
     armPlaybackWatchdog();
-    if (!runtimeReady.current) return;
+    if (!runtimeReady.current || !source) return;
     pendingCommand.current = null;
     post({ type: command === 'restart' ? 'hvrestart' : 'hvplay' });
   }
@@ -796,7 +810,7 @@ export function HtmlVideoStoryboundPreviewPanel(props: EditorialPanelProps & { c
           <div className="hv-reference-stage">
             <div className="hv-reference-phone" data-runtime-state={runtimeState} style={{ aspectRatio: `${composition.canvas.w} / ${composition.canvas.h}` }}>
               {source ? <iframe
-                key={`${composition.index}-${composition.rev}`}
+                key={compositionSourceKey}
                 ref={iframeRef}
                 srcDoc={source}
                 title={`场景 ${composition.index}`}

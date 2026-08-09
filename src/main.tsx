@@ -1,6 +1,7 @@
 import { createRoot, type Root } from 'react-dom/client';
 import { App } from './app/App';
 import { ApplicationErrorBoundary } from './app/ApplicationErrorBoundary';
+import { installPreloadRecovery } from './app/preload-recovery';
 import './styles.css';
 
 declare global {
@@ -8,6 +9,8 @@ declare global {
     __storydreamReactRoot?: Root;
   }
 }
+
+installPreloadRecovery();
 
 const rootElement = document.getElementById('root');
 if (!rootElement) {

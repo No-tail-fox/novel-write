@@ -70,6 +70,11 @@ describe('HTML video editorial studio', () => {
     expect(panels).toContain("'--hv-preview-caption-text': previewCaptionStyle.colors.text");
     expect(panels).toContain("type: 'hvpreviewmotion'");
     expect(panels).toContain("message?.type === 'hvruntime'");
+    expect(panels).toContain('const compositionSourceKey = composition');
+    expect(panels).toContain('loadedSource.key === compositionSourceKey');
+    expect(panels).toContain('if (!runtimeReady.current || !source) return;');
+    expect(panels).toContain('key={compositionSourceKey}');
+    expect(panels).not.toContain('composition?.rev, data, isBrowserPreview, mediaUrls');
     expect(panels).toContain('className={`hv-scene-transition-overlay');
     expect(panels).toContain('template.materialSlots === presetElementCount');
     expect(panels).not.toContain('className="hv-preview-inspector"');
@@ -93,6 +98,11 @@ describe('HTML video editorial studio', () => {
     expect(qa).toContain("'template-preview-compact.png'");
     expect(qa).toContain('pixelChanged');
     expect(qa).toContain('exercisePreviewEffects');
+    expect(qa).toContain('exerciseQueueRoute');
+    expect(qa).toContain("document.querySelector('[data-shell-view=\"queue\"] [data-task-operations=\"queue\"]')");
+    expect(qa).toContain("!document.querySelector('.route-error-state')");
+    expect(qa).toContain('legacyInspectorPresent');
+    expect(qa).toContain("settingsSummary.includes('字幕、镜头与转场设置')");
     expect(qa).toContain("scope: 'preview-effects'");
     expect(qa).toContain("'effects-desktop.png'");
     expect(qa).toContain("'effects-compact.png'");
