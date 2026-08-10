@@ -1,6 +1,8 @@
 import type {
   AccountProfile,
   ActivationState,
+  AiHotQueryRequest,
+  AiHotQueryResult,
   AiSourceContext,
   AppConfig,
   AppDelta,
@@ -26,6 +28,7 @@ import type {
   HtmlVideoAssetTarget,
   HtmlVideoCompositionSource,
   HtmlVideoCompositionSourceLintInput,
+  HotBoardSnapshot,
   HtmlVideoCompositionSourceSaveInput,
   HtmlVideoCompositionSourceSaveResult,
   HtmlVideoLintFinding,
@@ -131,6 +134,9 @@ export const INVOKE_CHANNELS = Object.freeze([
   'prompt-template:reset',
   'custom-style:save',
   'viral:save-templates',
+  'hotboard:fetch',
+  'aihot:query',
+  'hotboard:open-url',
   'custom-style:generate-draft',
   'draft-template:save',
   'image-lab:generate',
@@ -281,6 +287,9 @@ export type StoryDreamApi = {
   createHtmlVideoTask: (input: CreateTaskInput) => Promise<AppMutationResult | null>;
   updateHtmlVideoConfig: (id: string, changes: HtmlVideoConfigChange[]) => Promise<AppMutationResult | null>;
   updateHtmlVideoScene: (id: string, sceneIndex: number, changes: HtmlVideoSceneChange[]) => Promise<AppMutationResult | null>;
+  fetchHotBoard: () => Promise<HotBoardSnapshot>;
+  queryAiHot: (input: AiHotQueryRequest) => Promise<AiHotQueryResult>;
+  openHotBoardUrl: (url: string) => Promise<void>;
   addHtmlVideoAsset: (id: string, sceneIndex: number, prompt: string) => Promise<AppMutationResult | null>;
   replaceHtmlVideoAsset: (id: string, target: HtmlVideoAssetTarget) => Promise<AppMutationResult | null>;
   regenerateHtmlVideoAsset: (id: string, target: HtmlVideoAssetTarget) => Promise<AppMutationResult | null>;

@@ -6,7 +6,7 @@ describe('editorial workbench shell', () => {
     const navigation = await source('../src/app/navigation.ts');
     const views = [...navigation.matchAll(/\{ view: '([^']+)', label:/gu)].map((match) => match[1]);
     expect(views).toEqual([
-      'new-task', 'queue', 'history', 'book-selection', 'benchmark', 'person-assets',
+      'new-task', 'hot-board', 'queue', 'history', 'book-selection', 'benchmark', 'person-assets',
       'image-lab', 'voice-lab', 'music-mv', 'viral-analyzer', 'html-video',
       'prompt-templates', 'draft-templates', 'settings', 'account', 'activation',
     ]);

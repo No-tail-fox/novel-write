@@ -111,6 +111,25 @@ describe('purpose-bound network policy', () => {
     })).rejects.toMatchObject({ code: 'NETWORK_ADDRESS_BLOCKED', message: cause.message });
   });
 
+  it('allows conditional public-research requests but keeps sensitive headers filtered', async () => {
+    const seen: Headers[] = [];
+    await fetchWithNetworkPolicy('https://public.example/etag', {
+      purpose: 'public-research',
+      headers: {
+        'If-None-Match': 'W/"v1"',
+        Authorization: 'Bearer secret',
+        Cookie: 'session=secret',
+      },
+      fetchImpl: async (_url, init) => {
+        seen.push(new Headers(init?.headers));
+        return new Response('ok', { status: 200 });
+      },
+    });
+    expect(seen[0]?.get('if-none-match')).toBe('W/"v1"');
+    expect(seen[0]?.get('authorization')).toBeNull();
+    expect(seen[0]?.get('cookie')).toBeNull();
+  });
+
   it('pins the first validated DNS answer for every lookup in one request', async () => {
     let resolutions = 0;
     const lookup: NetworkLookup = async (): Promise<NetworkAddress[]> => {

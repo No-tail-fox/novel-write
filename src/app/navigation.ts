@@ -15,6 +15,7 @@ import {
   Radar,
   Settings,
   Sparkles,
+  TrendingUp,
 } from 'lucide-react';
 import type { ComponentType } from 'react';
 import type { ShellView } from '../shared/types';
@@ -35,6 +36,7 @@ export interface NavigationGroup {
 export const newTaskPrimaryAction: NavigationItem = { view: 'new-task', label: '新建任务', hint: '素材成片', icon: Plus };
 
 export const productionNavItems: NavigationItem[] = [
+  { view: 'hot-board', label: '实时热榜', hint: '热点选题', icon: TrendingUp },
   { view: 'queue', label: '任务队列', hint: '运行进度', icon: ListChecks },
   { view: 'history', label: '历史任务', hint: '本地记录', icon: History },
   { view: 'book-selection', label: '选品助手', hint: '商品卖点', icon: BookOpen },
@@ -81,6 +83,7 @@ export function taskWorkspaceView(taskType: string | null | undefined): Extract<
 export function pageSubtitle(view: ShellView): string {
   const map: Partial<Record<ShellView, string>> = {
     'new-task': '粘贴一段人物故事，几分钟后在剪映里打开',
+    'hot-board': '追踪多平台实时热点，筛选后直接带入创作',
     'book-selection': '维护本地商品书单，把卖点带入新任务或对标导入',
     benchmark: '导入对标文案，本地二改后直接创建带货任务',
     'person-assets': '管理本地人物真图素材，供分镜阶段保持角色一致',

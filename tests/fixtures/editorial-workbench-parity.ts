@@ -11,12 +11,12 @@ function inventory(values: readonly string[], owner: string, consumer: string, t
 
 export const approvedEditorialInventories = {
   shellViews: inventory([
-    'new-task', 'queue', 'history', 'task-detail', 'html-video', 'image-lab', 'voice-lab', 'music-mv',
+    'new-task', 'hot-board', 'queue', 'history', 'task-detail', 'html-video', 'image-lab', 'voice-lab', 'music-mv',
     'book-selection', 'benchmark', 'person-assets', 'viral-analyzer', 'prompt-templates', 'draft-templates',
     'settings', 'account', 'activation',
   ], 'src/shared/types.ts', 'src/app/route-registry.ts', 'tests/route-registry.test.ts'),
   sidebarViews: inventory([
-    'queue', 'history', 'book-selection', 'benchmark', 'person-assets', 'image-lab', 'voice-lab', 'music-mv',
+    'hot-board', 'queue', 'history', 'book-selection', 'benchmark', 'person-assets', 'image-lab', 'voice-lab', 'music-mv',
     'viral-analyzer', 'html-video', 'prompt-templates', 'draft-templates', 'settings', 'account', 'activation',
   ], 'src/app/navigation.ts', 'src/app/AppShell.tsx', 'tests/route-registry.test.ts'),
   createTaskInputFields: inventory([

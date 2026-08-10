@@ -514,6 +514,42 @@ export function NewTaskPage({
   }, []);
 
   useEffect(() => {
+    const incomingTopic = sessionStorage.getItem('hotboard_topic');
+    if (!incomingTopic) return;
+    sessionStorage.removeItem('hotboard_topic');
+    try {
+      const parsed = JSON.parse(incomingTopic) as Record<string, unknown>;
+      const topicTitle = typeof parsed.title === 'string' ? parsed.title.trim() : '';
+      if (!topicTitle) throw new Error('热榜选题缺少标题。');
+      const platformLabel = typeof parsed.platformLabel === 'string' ? parsed.platformLabel.trim() : '';
+      const sourceUrl = typeof parsed.url === 'string' ? parsed.url.trim() : '';
+      const hotValue = typeof parsed.hotValue === 'string' ? parsed.hotValue.trim() : '';
+      const summary = typeof parsed.summary === 'string' ? parsed.summary.trim() : '';
+      const sourceName = typeof parsed.sourceName === 'string' ? parsed.sourceName.trim() : '';
+      const publishedAt = typeof parsed.publishedAt === 'string' ? parsed.publishedAt.trim() : '';
+      const queryContext = typeof parsed.queryContext === 'string' ? parsed.queryContext.trim() : '';
+      setActiveStage('material');
+      setMode('ai');
+      setTitle(topicTitle.slice(0, 42));
+      setAiKeyword(topicTitle);
+      setInputText('');
+      setExtraRequirements([
+        platformLabel ? `热点平台：${platformLabel}` : '',
+        hotValue ? `当前热度：${hotValue}` : '',
+        sourceName ? `信息来源：${sourceName}` : '',
+        publishedAt ? `信息时间：${publishedAt}` : '',
+        queryContext ? `查询范围：${queryContext}` : '',
+        sourceUrl ? `来源链接：${sourceUrl}` : '',
+        summary ? `参考摘要：${summary}` : '',
+        '围绕该热点核验最新事实，提炼适合短视频传播的冲突、转折与价值点。',
+      ].filter(Boolean).join('\n'));
+      setDraftNotice('已带入热榜选题，可继续搜索资料并生成文案。');
+    } catch (error) {
+      setDraftNotice(error instanceof Error ? error.message : '热榜选题无法读取。');
+    }
+  }, []);
+
+  useEffect(() => {
     if (!draftReady) return;
     writeNewTaskDraft(window.localStorage, createDraftSnapshot());
     setHasSavedDraft(true);

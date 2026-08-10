@@ -4,6 +4,7 @@ import { navigationItems, newTaskPrimaryAction, sidebarNavGroups, sidebarNavItem
 
 const expectedViews = [
   'new-task',
+  'hot-board',
   'queue',
   'history',
   'task-detail',
@@ -53,21 +54,21 @@ describe('renderer route registry', () => {
     const componentSection = registry.slice(registry.indexOf('export const routeComponents'), registry.indexOf('export function preloadRoute'));
     expect(registryKeys(loaderSection)).toEqual(expectedViews);
     expect(registryKeys(componentSection)).toEqual(expectedViews);
-    expect(registry.match(/lazy\(routeLoaders\['[^']+'\]\)/gu)).toHaveLength(17);
-    expect(registry.match(/import\('\.\.\/features\//gu)).toHaveLength(17);
+    expect(registry.match(/lazy\(routeLoaders\['[^']+'\]\)/gu)).toHaveLength(18);
+    expect(registry.match(/import\('\.\.\/features\//gu)).toHaveLength(18);
     expect(registry).toContain('export async function preloadRoute(view: ShellView)');
     expect(registry).not.toMatch(/^import \{ [A-Za-z0-9]+Page \} from '\.\.\/features\//gmu);
   });
 
-  it('keeps new task separate, fifteen sidebar entries, and task detail route-only', () => {
+  it('keeps new task separate, sixteen sidebar entries, and task detail route-only', () => {
     expect(newTaskPrimaryAction.view).toBe('new-task');
     expect(sidebarNavGroups.map((group) => group.label)).toEqual(['创作生产', '素材与实验', '模板与系统']);
-    expect(sidebarNavGroups.map((group) => group.items.length)).toEqual([5, 5, 5]);
-    expect(sidebarNavItems).toHaveLength(15);
-    expect(new Set(sidebarNavItems.map((item) => item.view)).size).toBe(15);
+    expect(sidebarNavGroups.map((group) => group.items.length)).toEqual([6, 5, 5]);
+    expect(sidebarNavItems).toHaveLength(16);
+    expect(new Set(sidebarNavItems.map((item) => item.view)).size).toBe(16);
     expect(sidebarNavItems.map((item) => item.view)).not.toContain('new-task');
     expect(sidebarNavItems.map((item) => item.view)).not.toContain('task-detail');
-    expect(navigationItems).toHaveLength(16);
+    expect(navigationItems).toHaveLength(17);
     expect(new Set([...navigationItems.map((item) => item.view), 'task-detail'])).toEqual(new Set(expectedViews));
   });
 

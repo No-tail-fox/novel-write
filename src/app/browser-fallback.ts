@@ -1,5 +1,6 @@
 import { cloneState, hydrateState, initialState } from './app-state';
 import { stripConfigSecrets, type PublicAppState } from '../shared/config-secrets';
+import { HOT_BOARD_SOURCE_ASSESSMENTS } from '../shared/hotboard-catalog';
 import { fallbackEffectCatalog, volcengineVoicePresets } from '../shared/editorial-options';
 import { resolveVolcengineTtsApiVersion } from '../shared/volcengine-tts';
 import { validateConfigTarget } from '../shared/config-utils';
@@ -723,6 +724,21 @@ export function makeFallbackApi(setState: (state: AppState) => void): StoryDream
     },
     async composeResearchCopy() {
       throw new Error('浏览器预览无法调用真实 LLM 生成文案，请在 Electron 桌面端配置模型后使用。');
+    },
+    async fetchHotBoard() {
+      return {
+        fetchedAt: new Date().toISOString(),
+        items: [],
+        platformStatuses: [],
+        sourceAssessments: HOT_BOARD_SOURCE_ASSESSMENTS.map((source) => ({ ...source })),
+        warnings: ['浏览器预览不执行跨站实时抓取，请在 Electron 桌面端刷新热榜。'],
+      };
+    },
+    async queryAiHot() {
+      throw new Error('浏览器预览无法读取 AIHOT 实时信息，请在 Electron 桌面端使用。');
+    },
+    async openHotBoardUrl(url) {
+      window.open(url, '_blank', 'noopener,noreferrer');
     },
     async savePromptTemplate(template: PromptTemplate) {
       const state = read();

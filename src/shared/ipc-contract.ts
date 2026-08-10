@@ -107,6 +107,24 @@ function bounded<T extends z.ZodType>(schema: T): T {
 
 const boundedObjectSchema = bounded(z.object({}).passthrough());
 
+const aiHotWindowSchema = z.enum(['24h', '7d']);
+const aiHotDateSchema = z.string().regex(/^\d{4}-\d{2}-\d{2}$/u).refine((value) => {
+  const date = new Date(`${value}T00:00:00.000Z`);
+  return !Number.isNaN(date.getTime()) && date.toISOString().slice(0, 10) === value;
+}, 'A valid calendar date is required.');
+const aiHotQueryRequestSchema = z.discriminatedUnion('mode', [
+  z.object({ mode: z.literal('daily'), date: aiHotDateSchema.optional() }).strict(),
+  z.object({ mode: z.literal('selected'), window: aiHotWindowSchema }).strict(),
+  z.object({ mode: z.literal('all'), window: aiHotWindowSchema }).strict(),
+  z.object({
+    mode: z.literal('category'),
+    category: z.enum(['ai-models', 'ai-products', 'industry', 'paper', 'tip']),
+    window: aiHotWindowSchema,
+  }).strict(),
+  z.object({ mode: z.literal('recent'), days: z.number().int().min(1).max(7) }).strict(),
+  z.object({ mode: z.literal('search'), query: z.string().trim().min(2).max(200), window: aiHotWindowSchema }).strict(),
+]);
+
 export const pathSchema = z
   .string()
   .min(1)
@@ -680,6 +698,16 @@ export const ipcInputSchemas = {
   'volcengine:speakers:list': volcengineSpeakerListSchema,
   'research:web-search': z.union([nonEmptyText(MAX_IPC_TEXT), webSearchRequestSchema]),
   'research:compose-copy': researchCopyComposeSchema,
+  'hotboard:fetch': z.void(),
+  'aihot:query': aiHotQueryRequestSchema,
+  'hotboard:open-url': nonEmptyText(MAX_IPC_PATH).refine((value) => {
+    try {
+      const url = new URL(value);
+      return url.protocol === 'https:' || url.protocol === 'http:';
+    } catch {
+      return false;
+    }
+  }, 'A public HTTP URL is required.'),
   'prompt-template:save': promptTemplateSchema,
   'prompt-template:list': cursorPageSchema,
   'prompt-template:get-detail': idOnlySchema,
@@ -736,6 +764,7 @@ export const ipcInputSchemas = {
     z.object({
       activeView: z.enum([
         'new-task',
+        'hot-board',
         'queue',
         'history',
         'task-detail',

@@ -1119,11 +1119,12 @@ describe('product shell ui', () => {
     expect(css).toContain('--accent');
   });
 
-  it('keeps the exact seventeen route branches in the application route owner', async () => {
+  it('keeps the exact eighteen route branches in the application route owner', async () => {
     const routes = (await rendererSourcesPromise).requiredFile('src/app/AppRoutes.tsx');
     const routedViews = [...routes.matchAll(/activeView === '([^']+)'/gu)].map((match) => match[1]);
     expect(routedViews).toEqual([
       'new-task',
+      'hot-board',
       'book-selection',
       'benchmark',
       'person-assets',
@@ -1141,7 +1142,7 @@ describe('product shell ui', () => {
       'account',
       'activation',
     ]);
-    expect(new Set(routedViews).size).toBe(17);
+    expect(new Set(routedViews).size).toBe(18);
   });
 
   it('adds a standalone voice lab for provider voice previews and history playback', async () => {

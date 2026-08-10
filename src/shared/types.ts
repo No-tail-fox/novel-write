@@ -2,6 +2,7 @@ export type TaskStatus = 'draft' | 'pending' | 'running' | 'paused' | 'completed
 export type ThemeName = 'dark' | 'light';
 export const SHELL_VIEWS = [
   'new-task',
+  'hot-board',
   'queue',
   'history',
   'task-detail',
@@ -1219,6 +1220,140 @@ export interface AiSourceContext {
   warnings: string[];
   providerStatuses?: WebSearchProviderStatus[];
 }
+
+export type HotBoardPlatform =
+  | 'weibo'
+  | 'douyin'
+  | 'xiaohongshu'
+  | 'zhihu'
+  | 'toutiao'
+  | 'bilibili'
+  | 'baidu'
+  | 'thepaper'
+  | 'techmeme';
+
+export type HotBoardCategory = 'social' | 'video' | 'knowledge' | 'news' | 'tech';
+export type HotBoardSourceSuitability = 'connected' | 'reference' | 'excluded';
+
+export interface HotBoardItem {
+  id: string;
+  platform: HotBoardPlatform;
+  platformLabel: string;
+  category: HotBoardCategory;
+  rank: number;
+  title: string;
+  url: string;
+  hotValue: string;
+  summary?: string;
+  publishedAt?: string;
+  updatedAt: string;
+  sourceId: 'uapi' | 'techmeme';
+  sourceLabel: string;
+}
+
+export interface HotBoardPlatformStatus {
+  platform: HotBoardPlatform;
+  label: string;
+  state: 'ready' | 'empty' | 'failed';
+  count: number;
+  updatedAt?: string;
+  message?: string;
+}
+
+export interface HotBoardSourceAssessment {
+  id: string;
+  label: string;
+  url: string;
+  coverage: string;
+  suitability: HotBoardSourceSuitability;
+  reason: string;
+}
+
+export interface HotBoardSnapshot {
+  fetchedAt: string;
+  items: HotBoardItem[];
+  platformStatuses: HotBoardPlatformStatus[];
+  sourceAssessments: HotBoardSourceAssessment[];
+  warnings: string[];
+}
+
+export type AiHotWindow = '24h' | '7d';
+export type AiHotCategory = 'ai-models' | 'ai-products' | 'industry' | 'paper' | 'tip';
+export type AiHotItemsQueryMode = 'selected' | 'all' | 'category' | 'recent' | 'search';
+
+export type AiHotQueryRequest =
+  | { mode: 'daily'; date?: string }
+  | { mode: 'selected'; window: AiHotWindow }
+  | { mode: 'all'; window: AiHotWindow }
+  | { mode: 'category'; category: AiHotCategory; window: AiHotWindow }
+  | { mode: 'recent'; days: number }
+  | { mode: 'search'; query: string; window: AiHotWindow };
+
+export interface AiHotItem {
+  id: string;
+  title: string;
+  originalTitle?: string;
+  summary?: string;
+  sourceName: string;
+  aihotUrl: string;
+  originalUrl: string;
+  publishedAt?: string;
+  discoveredAt: string;
+  displayedAt: string;
+  displayedAtKind: 'published' | 'discovered';
+  category: string | null;
+  score: number | null;
+  selected: boolean;
+}
+
+export interface AiHotDailyItem {
+  id: string;
+  title: string;
+  summary?: string;
+  sourceName: string;
+  aihotUrl?: string;
+  originalUrl: string;
+  publishedAt?: string;
+}
+
+export interface AiHotDailyReport {
+  date: string;
+  generatedAt: string;
+  windowStart: string;
+  windowEnd: string;
+  aihotUrl: string;
+  lead: { title: string; paragraph: string } | null;
+  sections: Array<{ label: string; items: AiHotDailyItem[] }>;
+  flashes: AiHotDailyItem[];
+}
+
+interface AiHotQueryResultBase {
+  requestedAt: string;
+  receivedAt: string;
+  queryLabel: string;
+  unchanged: boolean;
+  warnings: string[];
+}
+
+export interface AiHotItemsResult extends AiHotQueryResultBase {
+  kind: 'items';
+  mode: AiHotItemsQueryMode;
+  items: AiHotItem[];
+  count: number;
+  hasMore: boolean;
+  nextCursor?: string;
+  fallbackToAll: boolean;
+}
+
+export interface AiHotDailyResult extends AiHotQueryResultBase {
+  kind: 'daily';
+  mode: 'daily';
+  requestedDate?: string;
+  report: AiHotDailyReport | null;
+  fallbackDate?: string;
+}
+
+export type AiHotQueryResult = AiHotItemsResult | AiHotDailyResult;
 
 export interface ResearchCopyComposeInput {
   keyword: string;

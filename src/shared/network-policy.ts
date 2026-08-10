@@ -78,7 +78,7 @@ const policyProfiles: Record<NetworkPurpose, NetworkPolicy> = {
     maxRedirects: 4,
     maxBytes: 2 * MiB,
     timeoutMs: 15_000,
-    allowedRequestHeaders: ['accept', 'accept-language', 'user-agent'],
+    allowedRequestHeaders: ['accept', 'accept-language', 'if-none-match', 'user-agent'],
   },
   'ima-api': {
     allowPrivate: false,

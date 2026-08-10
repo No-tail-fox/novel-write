@@ -13,12 +13,14 @@ const queryOnlyMethods = new Set([
   'listBookSelections', 'listPersonAssets', 'listPersonAssetImages', 'getHtmlVideoMediaUrl', 'getTaskMediaUrl',
   'getHtmlVideoCompositionSource', 'lintHtmlVideoCompositionSource',
   'getViralAnalysisResult', 'getTaskArtifacts', 'readAssetDataUrl', 'getJianyingEffectCatalog', 'listSceneVideoLibrary', 'onAppDelta',
+  'fetchHotBoard', 'queryAiHot',
 ]);
 
 const routeEntryPaths = {
   shell: ['src/app/App.tsx', 'src/app/AppShell.tsx', 'src/app/navigation.ts'],
   'new-task': ['src/features/tasks/NewTaskPage.tsx'],
   queue: ['src/features/tasks/QueuePage.tsx'],
+  'hot-board': ['src/features/hotboard/HotBoardPage.tsx'],
   history: ['src/features/tasks/HistoryPage.tsx'],
   'task-detail': ['src/features/tasks/TaskDetailPage.tsx'],
   'html-video': ['src/features/html-video/HtmlVideoPage.tsx'],

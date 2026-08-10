@@ -210,12 +210,12 @@ describe('renderer application ownership architecture', () => {
     expect(composition).not.toContain('function makeFallbackApi(');
   });
 
-  it('owns one new-task action and exactly fifteen sidebar entries', async () => {
+  it('owns one new-task action and exactly sixteen sidebar entries', async () => {
     const navigation = await import('../src/app/navigation');
     expect(navigation.newTaskPrimaryAction.view).toBe('new-task');
-    expect(navigation.sidebarNavItems).toHaveLength(15);
-    expect(new Set(navigation.sidebarNavItems.map((item) => item.view)).size).toBe(15);
-    expect(navigation.navigationItems).toHaveLength(16);
+    expect(navigation.sidebarNavItems).toHaveLength(16);
+    expect(new Set(navigation.sidebarNavItems.map((item) => item.view)).size).toBe(16);
+    expect(navigation.navigationItems).toHaveLength(17);
     expect(navigation.navigationItemForView('task-detail')).toMatchObject({ label: '任务详情', hint: '单任务流水线' });
   });
 
@@ -567,7 +567,7 @@ describe('renderer application composition architecture', () => {
     expect(recovery).toContain('target.location.reload();');
   });
 
-  it('lazy-loads all seventeen route pages behind one stable content fallback', async () => {
+  it('lazy-loads all eighteen route pages behind one stable content fallback', async () => {
     const [routes, registry] = await Promise.all([
       source('src/app/AppRoutes.tsx'),
       source('src/app/route-registry.ts'),
@@ -580,9 +580,9 @@ describe('renderer application composition architecture', () => {
     expect(registry).toContain("import { lazy } from 'react'");
     expect(routes).toContain('<Suspense fallback={<RouteLoadingState />}>');
     expect(routes).toContain('</Suspense>');
-    expect(dynamicRoutes).toHaveLength(17);
-    expect(new Set(dynamicRoutes.map((match) => match[1])).size).toBe(17);
-    expect(new Set(dynamicRoutes.map((match) => match[2])).size).toBe(17);
+    expect(dynamicRoutes).toHaveLength(18);
+    expect(new Set(dynamicRoutes.map((match) => match[1])).size).toBe(18);
+    expect(new Set(dynamicRoutes.map((match) => match[2])).size).toBe(18);
     expect(`${routes}\n${registry}`).not.toMatch(/^import \{ [A-Za-z0-9]+Page \} from '\.\.\/features\//gmu);
   });
 

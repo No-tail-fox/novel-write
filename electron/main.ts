@@ -10,6 +10,8 @@ import { readTaskArtifactSnapshot } from '../src/shared/artifact-preview';
 import { isCancellation, normalizeAppError } from '../src/shared/app-error';
 import { fromLlmModelTestResult, testConfigTarget } from '../src/shared/config-utils';
 import { generateImageLabRecord } from '../src/shared/image-lab';
+import { queryAiHot } from '../src/shared/aihot';
+import { fetchHotBoardSnapshot } from '../src/shared/hotboard';
 import { fetchImaKnowledge } from '../src/shared/ima-knowledge';
 import { detectJianyingDraftPathResult, resolveRuntimeJianyingDraftPath } from '../src/shared/jianying-paths';
 import { findJianyingExecutable } from '../src/shared/jianying-app';
@@ -32,6 +34,7 @@ import { applyHtmlVideoConfigChanges, applyHtmlVideoSceneChanges, createHtmlVide
 import { assertHyperframesSource, GSAP_RUNTIME_FILENAME, HYPERFRAMES_RUNTIME_FILENAME, MAX_HYPERFRAMES_SOURCE_BYTES } from '../src/shared/hyperframes';
 import { generateConfiguredVoicePreview } from '../src/shared/media-providers';
 import { mergeMinimaxCloneVoice } from '../src/shared/minimax-clone-voices';
+import { assertNetworkUrl } from '../src/shared/network-policy';
 import { createPersonAsset, deletePersonAsset, importPersonAssetFiles, listPersonAssets, listPersonImages, renamePersonAsset } from '../src/shared/person-assets';
 import { createConfiguredJsonLlm, createConfiguredTextLlm, listConfiguredProviderModels, testConfiguredLlm } from '../src/shared/llm-provider';
 import { markSceneImageForRegeneration, markSceneImagesForRegeneration, markSceneNarrationForRegeneration, markTaskDraftForRepack, markTaskStepForRerun, removeSceneVideoAsset, replaceSceneImageAssets, replaceSceneVideoAsset, updateSceneImagePrompt, updateSceneVideoTrim, updateTaskSubtitleLines } from '../src/shared/pipeline-cache';
@@ -2176,6 +2179,15 @@ trustedHandle('research:web-search', async (_event, input: string | WebSearchReq
 trustedHandle('research:compose-copy', async (_event, input: ResearchCopyComposeInput) => {
   const runtimeConfig = await (await getConfigService()).getRuntimeConfig();
   return composeCopyFromSources(createConfiguredTextLlm(runtimeConfig.llm), input);
+});
+
+trustedHandle('hotboard:fetch', async () => fetchHotBoardSnapshot());
+
+trustedHandle('aihot:query', async (_event, input) => queryAiHot(input));
+
+trustedHandle('hotboard:open-url', async (_event, url: string) => {
+  const target = assertNetworkUrl(url, 'public-research');
+  await shell.openExternal(target.href);
 });
 
 trustedHandle('prompt-template:save', async (_event, template: PromptTemplate) => {

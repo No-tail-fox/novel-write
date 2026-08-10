@@ -6,6 +6,25 @@ import { openExistingDirectory } from '../electron/open-directory';
 import { INVOKE_CHANNELS } from '../src/shared/storydream-api';
 
 describe('electron ipc contract', () => {
+  it('keeps hot board fetching and external navigation in the trusted main process', async () => {
+    const [main, preload, apiContract] = await Promise.all([
+      readFile(new URL('../electron/main.ts', import.meta.url), 'utf8'),
+      readFile(new URL('../electron/preload.ts', import.meta.url), 'utf8'),
+      readFile(new URL('../src/shared/storydream-api.ts', import.meta.url), 'utf8'),
+    ]);
+    expect(main).toContain("trustedHandle('hotboard:fetch', async () => fetchHotBoardSnapshot())");
+    expect(main).toContain("trustedHandle('aihot:query', async (_event, input) => queryAiHot(input))");
+    expect(main).toContain("trustedHandle('hotboard:open-url'");
+    expect(main).toContain("assertNetworkUrl(url, 'public-research')");
+    expect(main).toContain('shell.openExternal(target.href)');
+    expect(preload).toContain("fetchHotBoard: (): Promise<HotBoardSnapshot> => invokeTrusted('hotboard:fetch')");
+    expect(preload).toContain("queryAiHot: (input: AiHotQueryRequest): Promise<AiHotQueryResult> => invokeTrusted('aihot:query', input)");
+    expect(preload).toContain("openHotBoardUrl: (url: string): Promise<void> => invokeTrusted('hotboard:open-url', url)");
+    expect(apiContract).toContain('fetchHotBoard: () => Promise<HotBoardSnapshot>');
+    expect(apiContract).toContain('queryAiHot: (input: AiHotQueryRequest) => Promise<AiHotQueryResult>');
+    expect(apiContract).toContain('openHotBoardUrl: (url: string) => Promise<void>');
+  });
+
   it('passes the strict book selection save request through preload and the trusted handler', async () => {
     const [main, preload, apiContract] = await Promise.all([
       readFile(new URL('../electron/main.ts', import.meta.url), 'utf8'),

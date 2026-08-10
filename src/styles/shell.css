@@ -269,3 +269,26 @@
     display: none;
   }
 }
+
+/* Browser-preview notices must own real grid height instead of being clipped by the page header. */
+.app-shell[data-editorial-shell] .content:has(.page-head .local-note) {
+  grid-template-rows: 106px minmax(0, 1fr);
+}
+
+.app-shell[data-editorial-shell] .page-head:has(.local-note) {
+  min-height: 106px;
+}
+
+@media (max-width: 1120px) {
+  .app-shell[data-editorial-shell] .content:has(.page-head .local-note) {
+    grid-template-rows: 86px minmax(0, 1fr);
+  }
+
+  .app-shell[data-editorial-shell] .page-head:has(.local-note) {
+    min-height: 86px;
+  }
+
+  .app-shell[data-editorial-shell] .page-head .local-note {
+    display: none;
+  }
+}

@@ -2,6 +2,7 @@ import { lazy } from 'react';
 import type { ShellView } from '../shared/types';
 
 const loadNewTaskPage = () => import('../features/tasks/NewTaskPage').then((module) => ({ default: module.NewTaskPage }));
+const loadHotBoardPage = () => import('../features/hotboard/HotBoardPage').then((module) => ({ default: module.HotBoardPage }));
 const loadQueuePage = () => import('../features/tasks/QueuePage').then((module) => ({ default: module.QueuePage }));
 const loadHistoryPage = () => import('../features/tasks/HistoryPage').then((module) => ({ default: module.HistoryPage }));
 const loadTaskDetailPage = () => import('../features/tasks/TaskDetailPage').then((module) => ({ default: module.TaskDetailPage }));
@@ -21,6 +22,7 @@ const loadActivationPage = () => import('../features/account/ActivationPage').th
 
 export const routeLoaders = {
   'new-task': loadNewTaskPage,
+  'hot-board': loadHotBoardPage,
   'queue': loadQueuePage,
   'history': loadHistoryPage,
   'task-detail': loadTaskDetailPage,
@@ -41,6 +43,7 @@ export const routeLoaders = {
 
 export const routeComponents = {
   'new-task': lazy(routeLoaders['new-task']),
+  'hot-board': lazy(routeLoaders['hot-board']),
   'queue': lazy(routeLoaders['queue']),
   'history': lazy(routeLoaders['history']),
   'task-detail': lazy(routeLoaders['task-detail']),

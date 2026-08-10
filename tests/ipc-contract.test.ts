@@ -13,6 +13,33 @@ async function loadStoryDreamApiContract() {
 }
 
 describe('IPC runtime contract', () => {
+  it('validates hot board refresh and public-link requests', async () => {
+    const contract = await loadContract();
+    expect(contract).not.toBeNull();
+    if (!contract) return;
+
+    expect(contract.ipcInputSchemas['hotboard:fetch'].parse(undefined)).toBeUndefined();
+    expect(contract.ipcInputSchemas['hotboard:open-url'].parse('https://example.com/story')).toBe('https://example.com/story');
+    expect(() => contract.ipcInputSchemas['hotboard:open-url'].parse('file:///C:/secret.txt')).toThrow();
+    expect(() => contract.ipcInputSchemas['hotboard:open-url'].parse('javascript:alert(1)')).toThrow();
+  });
+
+  it('strictly validates AIHOT query modes and bounded user parameters', async () => {
+    const contract = await loadContract();
+    expect(contract).not.toBeNull();
+    if (!contract) return;
+    const schema = contract.ipcInputSchemas['aihot:query'];
+    expect(schema.parse({ mode: 'daily' })).toEqual({ mode: 'daily' });
+    expect(schema.parse({ mode: 'daily', date: '2026-05-06' })).toEqual({ mode: 'daily', date: '2026-05-06' });
+    expect(schema.parse({ mode: 'category', category: 'paper', window: '7d' })).toEqual({ mode: 'category', category: 'paper', window: '7d' });
+    expect(schema.parse({ mode: 'recent', days: 3 })).toEqual({ mode: 'recent', days: 3 });
+    expect(schema.parse({ mode: 'search', query: 'OpenAI', window: '24h' })).toEqual({ mode: 'search', query: 'OpenAI', window: '24h' });
+    expect(() => schema.parse({ mode: 'recent', days: 8 })).toThrow();
+    expect(() => schema.parse({ mode: 'search', query: 'A', window: '24h' })).toThrow();
+    expect(() => schema.parse({ mode: 'daily', date: '2026-02-31' })).toThrow();
+    expect(() => schema.parse({ mode: 'search', query: 'OpenAI', window: '24h', extra: true })).toThrow();
+  });
+
   it('accepts legacy web searches and strictly validates explicit provider requests', async () => {
     const contract = await loadContract();
     expect(contract).not.toBeNull();
