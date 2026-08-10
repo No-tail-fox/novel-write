@@ -12,16 +12,17 @@ describe('electron ipc contract', () => {
       readFile(new URL('../electron/preload.ts', import.meta.url), 'utf8'),
       readFile(new URL('../src/shared/storydream-api.ts', import.meta.url), 'utf8'),
     ]);
-    expect(main).toContain("trustedHandle('hotboard:fetch', async () => fetchHotBoardSnapshot())");
-    expect(main).toContain("trustedHandle('aihot:query', async (_event, input) => queryAiHot(input))");
+    expect(main).toContain("trustedHandle('hotboard:fetch', async (_event, input) => loadHotBoardArchive(");
+    expect(main).toContain("trustedHandle('aihot:query', async (_event, input) => loadAiHotArchive(");
+    expect(main).toContain('await getDb()');
     expect(main).toContain("trustedHandle('hotboard:open-url'");
     expect(main).toContain("assertNetworkUrl(url, 'public-research')");
     expect(main).toContain('shell.openExternal(target.href)');
-    expect(preload).toContain("fetchHotBoard: (): Promise<HotBoardSnapshot> => invokeTrusted('hotboard:fetch')");
-    expect(preload).toContain("queryAiHot: (input: AiHotQueryRequest): Promise<AiHotQueryResult> => invokeTrusted('aihot:query', input)");
+    expect(preload).toContain("fetchHotBoard: (input: HotBoardArchiveRequest = {}): Promise<HotBoardArchiveResult> => invokeTrusted('hotboard:fetch', input)");
+    expect(preload).toContain("queryAiHot: (input: AiHotArchiveRequest): Promise<AiHotArchiveResult> => invokeTrusted('aihot:query', input)");
     expect(preload).toContain("openHotBoardUrl: (url: string): Promise<void> => invokeTrusted('hotboard:open-url', url)");
-    expect(apiContract).toContain('fetchHotBoard: () => Promise<HotBoardSnapshot>');
-    expect(apiContract).toContain('queryAiHot: (input: AiHotQueryRequest) => Promise<AiHotQueryResult>');
+    expect(apiContract).toContain('fetchHotBoard: (input?: HotBoardArchiveRequest) => Promise<HotBoardArchiveResult>');
+    expect(apiContract).toContain('queryAiHot: (input: AiHotArchiveRequest) => Promise<AiHotArchiveResult>');
     expect(apiContract).toContain('openHotBoardUrl: (url: string) => Promise<void>');
   });
 

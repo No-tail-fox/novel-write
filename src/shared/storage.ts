@@ -5,6 +5,8 @@ import initSqlJs, { type Database, type SqlJsStatic, type SqlValue } from 'sql.j
 import type {
   AccountProfile,
   ActivationState,
+  AiHotQueryRequest,
+  AiHotQueryResult,
   AppConfig,
   AppState,
   BookSelectionInput,
@@ -25,6 +27,7 @@ import type {
   HtmlVideoCompositionSnapshot,
   HtmlVideoCompositionSourceSaveInput,
   HtmlVideoCoverAsset,
+  HotBoardSnapshot,
   ImageLabRecord,
   ImageLabSummary,
   MinimaxCloneVoice,
@@ -1017,6 +1020,20 @@ export class FileDatabase {
         updated_at INTEGER NOT NULL,
         PRIMARY KEY(theme, book_id)
       );
+      CREATE TABLE IF NOT EXISTS hotboard_snapshots (
+        archive_date TEXT PRIMARY KEY,
+        fetched_at TEXT NOT NULL,
+        data_json TEXT NOT NULL
+      );
+      CREATE TABLE IF NOT EXISTS aihot_snapshots (
+        archive_date TEXT NOT NULL,
+        query_key TEXT NOT NULL,
+        request_json TEXT NOT NULL,
+        received_at TEXT NOT NULL,
+        data_json TEXT NOT NULL,
+        PRIMARY KEY(archive_date, query_key)
+      );
+      CREATE INDEX IF NOT EXISTS idx_aihot_snapshots_archive_date ON aihot_snapshots(archive_date DESC, received_at DESC);
       CREATE TABLE IF NOT EXISTS task_events (
         seq INTEGER PRIMARY KEY AUTOINCREMENT,
         task_id TEXT NOT NULL,
@@ -2009,6 +2026,60 @@ export class FileDatabase {
     await this.enqueueCommit(() => {
       this.db.run('DELETE FROM book_selection WHERE theme = ? AND book_id = ?', [theme, bookId]);
     });
+  }
+
+  async getHotBoardSnapshot(date: string): Promise<HotBoardSnapshot | null> {
+    await this.waitForWrites();
+    const row = getFirstRow<{ data_json: string }>(this.db, 'SELECT data_json FROM hotboard_snapshots WHERE archive_date = ?', [date]);
+    return row ? parseJson<HotBoardSnapshot | null>(row.data_json, null) : null;
+  }
+
+  async saveHotBoardSnapshot(date: string, snapshot: HotBoardSnapshot): Promise<void> {
+    await this.enqueueCommit(() => {
+      this.db.run(
+        'INSERT OR REPLACE INTO hotboard_snapshots (archive_date, fetched_at, data_json) VALUES (?, ?, ?)',
+        [date, snapshot.fetchedAt, json(snapshot)],
+      );
+    });
+  }
+
+  async listHotBoardSnapshotDates(): Promise<string[]> {
+    await this.waitForWrites();
+    return getRows<{ archive_date: string }>(this.db, 'SELECT archive_date FROM hotboard_snapshots ORDER BY archive_date DESC')
+      .map((row) => String(row.archive_date));
+  }
+
+  async getAiHotSnapshot(date: string, queryKey: string): Promise<AiHotQueryResult | null> {
+    await this.waitForWrites();
+    const row = getFirstRow<{ data_json: string }>(
+      this.db,
+      'SELECT data_json FROM aihot_snapshots WHERE archive_date = ? AND query_key = ?',
+      [date, queryKey],
+    );
+    return row ? parseJson<AiHotQueryResult | null>(row.data_json, null) : null;
+  }
+
+  async saveAiHotSnapshot(
+    date: string,
+    queryKey: string,
+    request: AiHotQueryRequest,
+    result: AiHotQueryResult,
+  ): Promise<void> {
+    await this.enqueueCommit(() => {
+      this.db.run(
+        `INSERT OR REPLACE INTO aihot_snapshots
+         (archive_date, query_key, request_json, received_at, data_json) VALUES (?, ?, ?, ?, ?)`,
+        [date, queryKey, json(request), result.receivedAt, json(result)],
+      );
+    });
+  }
+
+  async listAiHotSnapshotDates(): Promise<string[]> {
+    await this.waitForWrites();
+    return getRows<{ archive_date: string }>(
+      this.db,
+      'SELECT DISTINCT archive_date FROM aihot_snapshots ORDER BY archive_date DESC',
+    ).map((row) => String(row.archive_date));
   }
 
   async createTask(input: CreateTaskInput): Promise<Task> {

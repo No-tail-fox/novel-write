@@ -5,6 +5,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { createHash } from 'node:crypto';
 import { FileDatabase } from '@shared/storage';
+import type { AiHotQueryRequest, AiHotQueryResult, HotBoardSnapshot } from '@shared/types';
 import { defaultConfig } from '@shared/config';
 import { convertCozeWorkflowToDraftTemplate } from '@shared/coze-workflow-converter';
 import {
@@ -1620,6 +1621,47 @@ describe('file database', () => {
       expect(new Set([...latestViralPage.items, ...olderViralPage.items].map((event) => event.seq)).size).toBe(101);
     } finally {
       await db.close();
+      await rm(dir, { recursive: true, force: true });
+    }
+  });
+
+  it('persists dated hot-board and AIHOT snapshots across database restarts', async () => {
+    const dir = await mkdtemp(join(tmpdir(), 'storydream-information-archive-'));
+    const file = join(dir, 'app.db');
+    const hotBoard: HotBoardSnapshot = {
+      fetchedAt: '2026-08-10T04:00:00.000Z',
+      items: [],
+      platformStatuses: [],
+      sourceAssessments: [],
+      warnings: ['saved'],
+    };
+    const request: AiHotQueryRequest = { mode: 'selected', window: '24h' };
+    const aiHot: AiHotQueryResult = {
+      kind: 'items',
+      mode: 'selected',
+      requestedAt: '2026-08-10T04:00:00.000Z',
+      receivedAt: '2026-08-10T04:00:01.000Z',
+      queryLabel: '精选',
+      unchanged: false,
+      warnings: [],
+      items: [],
+      count: 0,
+      hasMore: false,
+      fallbackToAll: false,
+    };
+    try {
+      const db = await FileDatabase.open(file);
+      await db.saveHotBoardSnapshot('2026-08-10', hotBoard);
+      await db.saveAiHotSnapshot('2026-08-10', 'selected:24h', request, aiHot);
+      await db.close();
+
+      const reopened = await FileDatabase.open(file);
+      expect(await reopened.getHotBoardSnapshot('2026-08-10')).toEqual(hotBoard);
+      expect(await reopened.getAiHotSnapshot('2026-08-10', 'selected:24h')).toEqual(aiHot);
+      expect(await reopened.listHotBoardSnapshotDates()).toEqual(['2026-08-10']);
+      expect(await reopened.listAiHotSnapshotDates()).toEqual(['2026-08-10']);
+      await reopened.close();
+    } finally {
       await rm(dir, { recursive: true, force: true });
     }
   });

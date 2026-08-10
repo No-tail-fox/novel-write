@@ -23,16 +23,17 @@ import type {
   AiHotQueryRequest,
   AiHotQueryResult,
   AiHotWindow,
+  InformationArchiveOrigin,
   ShellView,
 } from '../../shared/types';
 import type { StoryDreamApi } from '../../shared/storydream-api';
 import { formatAppErrorMessage, normalizeAppError } from '../../shared/app-error';
 import { EmptyState } from '../../components/EmptyState';
+import { ArchiveDateControl, todayArchiveDate } from './ArchiveDateControl';
 import '../../styles/features/aihot-source.css';
 
 type AiHotMode = AiHotQueryRequest['mode'];
 
-const AUTO_REFRESH_MS = 5 * 60 * 1000;
 const AIHOT_TERMS_URL = 'https://aihot.virxact.com/terms';
 const AIHOT_HOME_URL = 'https://aihot.virxact.com';
 const MODE_OPTIONS: ReadonlyArray<{ id: AiHotMode; label: string; icon: typeof FileText }> = [
@@ -59,65 +60,60 @@ export function AiHotSourceView({
   navigate,
   isBrowserPreview,
   active,
+  archiveDate,
+  onArchiveDateChange,
 }: {
   api: StoryDreamApi;
   navigate: (view: ShellView) => void;
   isBrowserPreview: boolean;
   active: boolean;
+  archiveDate: string;
+  onArchiveDateChange: (date: string) => void;
 }) {
   const [mode, setMode] = useState<AiHotMode>('selected');
   const [windowValue, setWindowValue] = useState<AiHotWindow>('24h');
   const [category, setCategory] = useState<AiHotCategory>('ai-models');
   const [days, setDays] = useState(3);
   const [searchQuery, setSearchQuery] = useState('');
-  const [dailyDate, setDailyDate] = useState('');
   const [result, setResult] = useState<AiHotQueryResult | null>(null);
+  const [availableDates, setAvailableDates] = useState<string[]>([]);
+  const [archiveOrigin, setArchiveOrigin] = useState<InformationArchiveOrigin | null>(null);
   const [refreshing, setRefreshing] = useState(false);
-  const [autoRefresh, setAutoRefresh] = useState(true);
   const [errorMessage, setErrorMessage] = useState('');
   const [openError, setOpenError] = useState('');
   const [openingUrl, setOpeningUrl] = useState('');
   const requestIdRef = useRef(0);
-  const resultRef = useRef<AiHotQueryResult | null>(null);
   const lastRequestRef = useRef<AiHotQueryRequest | null>(null);
-  const startedRef = useRef(false);
 
-  const runQuery = useCallback(async (request: AiHotQueryRequest, background = false) => {
+  const runQuery = useCallback(async (request: AiHotQueryRequest, forceRefresh = false) => {
     const requestId = ++requestIdRef.current;
     lastRequestRef.current = request;
-    if (!background || !resultRef.current) setRefreshing(true);
+    setRefreshing(true);
     setErrorMessage('');
     try {
-      const next = await api.queryAiHot(request);
+      const next = await api.queryAiHot({ query: request, date: archiveDate, forceRefresh });
       if (requestId !== requestIdRef.current) return;
-      resultRef.current = next;
-      setResult(next);
+      setArchiveOrigin(next.origin);
+      setAvailableDates(next.availableDates);
+      setResult(next.result);
     } catch (error) {
       if (requestId !== requestIdRef.current) return;
       setErrorMessage(formatAppErrorMessage(normalizeAppError(error)));
     } finally {
       if (requestId === requestIdRef.current) setRefreshing(false);
     }
-  }, [api]);
+  }, [api, archiveDate]);
 
   useEffect(() => {
-    if (!active || startedRef.current) return;
-    startedRef.current = true;
-    void runQuery({ mode: 'selected', window: '24h' });
+    if (!active) return;
+    setResult(null);
+    setArchiveOrigin(null);
+    void runQuery(lastRequestRef.current ?? { mode: 'selected', window: '24h' });
   }, [active, runQuery]);
 
-  useEffect(() => {
-    if (!active || !autoRefresh || isBrowserPreview) return undefined;
-    const timer = window.setInterval(() => {
-      if (document.visibilityState === 'visible' && lastRequestRef.current) {
-        void runQuery(lastRequestRef.current, true);
-      }
-    }, AUTO_REFRESH_MS);
-    return () => window.clearInterval(timer);
-  }, [active, autoRefresh, isBrowserPreview, runQuery]);
-
   const itemCount = useMemo(() => resultItemCount(result), [result]);
-  const fetchedAtLabel = result ? formatDateTime(result.receivedAt) : '等待查询';
+  const fetchedAtLabel = result ? formatDateTime(result.receivedAt) : '尚未归档';
+  const isToday = archiveDate === todayArchiveDate();
   const runtimeState = refreshing
     ? 'refreshing'
     : isBrowserPreview
@@ -138,10 +134,14 @@ export function AiHotSourceView({
         : runtimeState === 'unavailable'
           ? '查询异常'
           : runtimeState === 'idle'
-            ? '等待查询'
+            ? archiveOrigin === 'missing' ? '该日无归档' : '等待查询'
             : result?.unchanged
               ? '内容未变化'
-              : 'AIHOT 数据';
+              : !isToday
+                ? '历史归档'
+                : archiveOrigin === 'cache'
+                  ? '今日已保存'
+                  : 'AIHOT 数据';
   const sourceHeaderLabel = runtimeState === 'preview'
     ? '接口已配置'
     : runtimeState === 'refreshing'
@@ -151,13 +151,13 @@ export function AiHotSourceView({
         : runtimeState === 'partial'
           ? '服务波动'
           : runtimeState === 'idle'
-            ? '待查询'
+            ? archiveOrigin === 'missing' ? '无归档' : '待查询'
             : '已接入';
   const sourceConnectionLabel = runtimeState === 'ready' ? '可用' : runtimeLabel;
 
   function requestForMode(nextMode: AiHotMode): AiHotQueryRequest | null {
     switch (nextMode) {
-      case 'daily': return { mode: 'daily', ...(dailyDate ? { date: dailyDate } : {}) };
+      case 'daily': return { mode: 'daily' };
       case 'selected': return { mode: 'selected', window: windowValue };
       case 'all': return { mode: 'all', window: windowValue };
       case 'category': return { mode: 'category', category, window: windowValue };
@@ -173,8 +173,8 @@ export function AiHotSourceView({
     if (nextMode !== mode) {
       ++requestIdRef.current;
       setRefreshing(false);
-      resultRef.current = null;
       setResult(null);
+      setArchiveOrigin(null);
       lastRequestRef.current = null;
     }
     setMode(nextMode);
@@ -182,7 +182,6 @@ export function AiHotSourceView({
     const request = requestForMode(nextMode);
     if (request) void runQuery(request);
     else {
-      resultRef.current = null;
       setResult(null);
       lastRequestRef.current = null;
     }
@@ -193,7 +192,6 @@ export function AiHotSourceView({
     if (nextValue.trim().length >= 2) return;
     ++requestIdRef.current;
     lastRequestRef.current = null;
-    resultRef.current = null;
     setResult(null);
     setRefreshing(false);
     setErrorMessage('');
@@ -205,7 +203,6 @@ export function AiHotSourceView({
     if (!request) {
       ++requestIdRef.current;
       lastRequestRef.current = null;
-      resultRef.current = null;
       setResult(null);
       setRefreshing(false);
       setErrorMessage('请输入至少 2 个字的搜索关键词。');
@@ -216,7 +213,7 @@ export function AiHotSourceView({
 
   function refresh(): void {
     const request = requestForMode(mode);
-    if (request) void runQuery(request);
+    if (request) void runQuery(request, true);
   }
 
   async function openUrl(url: string): Promise<void> {
@@ -279,11 +276,14 @@ export function AiHotSourceView({
         <div><span>查询范围</span><strong className="scope-value">{result?.queryLabel ?? modeLabel(mode)}</strong></div>
         <div><span>本次同步</span><strong className="time-value">{fetchedAtLabel}</strong></div>
         <div className="hot-board-refresh-controls">
-          <label className="hot-board-auto-refresh">
-            <input type="checkbox" checked={autoRefresh} disabled={isBrowserPreview} onChange={(event) => setAutoRefresh(event.target.checked)} />
-            <span>{isBrowserPreview ? '桌面端自动刷新' : '每 5 分钟'}</span>
-          </label>
-          <button className="ghost-action compact-action" type="button" disabled={refreshing || isBrowserPreview || !requestForMode(mode)} onClick={refresh}>
+          <ArchiveDateControl date={archiveDate} availableDates={availableDates} origin={archiveOrigin} onChange={onArchiveDateChange} />
+          <button
+            className="ghost-action compact-action"
+            type="button"
+            title={isToday ? '重新查询并覆盖今天的已保存结果' : '历史归档只读，不能用实时结果覆盖'}
+            disabled={refreshing || isBrowserPreview || !isToday || !requestForMode(mode)}
+            onClick={refresh}
+          >
             <RefreshCw className={refreshing ? 'spin' : ''} size={15} />
             {refreshing ? '查询中' : '立即刷新'}
           </button>
@@ -309,9 +309,6 @@ export function AiHotSourceView({
           })}
         </div>
         <form className="aihot-query-controls" aria-label="AI 信息源查询条件" onSubmit={submitQuery}>
-          {mode === 'daily' ? (
-            <label className="aihot-control-field"><span>日报日期</span><input aria-label="日报日期" type="date" max={todayDate()} value={dailyDate} onChange={(event) => setDailyDate(event.target.value)} /></label>
-          ) : null}
           {mode === 'category' ? (
             <label className="aihot-control-field"><span>分类</span><select aria-label="AI 分类" value={category} onChange={(event) => setCategory(event.target.value as AiHotCategory)}>{CATEGORY_OPTIONS.map((option) => <option value={option.id} key={option.id}>{option.label}</option>)}</select></label>
           ) : null}
@@ -325,7 +322,7 @@ export function AiHotSourceView({
             <label className="aihot-control-field"><span>时间窗</span><select aria-label="AI 信息源时间窗" value={windowValue} onChange={(event) => setWindowValue(event.target.value as AiHotWindow)}><option value="24h">过去 24 小时</option><option value="7d">最近 7 天</option></select></label>
           ) : null}
           <button className="primary-action slim" type="submit" disabled={refreshing || (mode === 'search' && searchQuery.trim().length < 2)}>
-            {refreshing ? <Loader2 className="spin" size={14} /> : <Search size={14} />}查询
+            {refreshing ? <Loader2 className="spin" size={14} /> : <Search size={14} />}{isToday ? '查询' : '查看归档'}
           </button>
         </form>
       </div>
@@ -347,11 +344,14 @@ export function AiHotSourceView({
           </header>
 
           {!result && refreshing ? <AiHotLoadingRows /> : null}
-          {!result && !refreshing && mode === 'search' && !errorMessage ? (
+          {!result && !refreshing && mode === 'search' && !errorMessage && archiveOrigin !== 'missing' ? (
             <EmptyState title="等待搜索" description="输入至少 2 个字的公司、产品或主题。" />
           ) : null}
           {!result && !refreshing && errorMessage ? (
             <EmptyState title="AI 信息源暂时不可用" description={errorMessage} tone="error" action={<button className="ghost-action slim" type="button" onClick={refresh}>重新查询</button>} />
+          ) : null}
+          {!result && !refreshing && archiveOrigin === 'missing' && !errorMessage ? (
+            <EmptyState title="该日期没有已保存的 AI 信息" description="历史日期只显示此前实际查询并保存的结果，不会使用今天的数据补齐。" />
           ) : null}
           {result?.kind === 'items' && result.items.length === 0 ? (
             <EmptyState title="没有找到相关 AI 动态" description="当前范围内没有可展示的公开条目。" />
@@ -380,7 +380,7 @@ export function AiHotSourceView({
           <header><div><h2>AIHOT</h2><span>中文 AI 资讯 · v1 匿名接口</span></div><strong data-state={runtimeState}>{sourceHeaderLabel}</strong></header>
           <div className="aihot-source-status">
             <div data-state={runtimeState}><CheckCircle2 size={14} /><span>连接状态</span><strong>{sourceConnectionLabel}</strong></div>
-            <div><Clock3 size={14} /><span>刷新策略</span><strong>5 分钟</strong></div>
+            <div><Clock3 size={14} /><span>刷新策略</span><strong>每日首次</strong></div>
             <div><ShieldCheck size={14} /><span>访问方式</span><strong>无需 Key</strong></div>
           </div>
           <section className="aihot-license-note">
@@ -533,10 +533,4 @@ function clampDays(value: string): number {
   const parsed = Number(value);
   if (!Number.isFinite(parsed)) return 1;
   return Math.max(1, Math.min(7, Math.round(parsed)));
-}
-
-function todayDate(): string {
-  const now = new Date();
-  const local = new Date(now.getTime() - now.getTimezoneOffset() * 60_000);
-  return local.toISOString().slice(0, 10);
 }

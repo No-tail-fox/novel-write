@@ -10,8 +10,7 @@ import { readTaskArtifactSnapshot } from '../src/shared/artifact-preview';
 import { isCancellation, normalizeAppError } from '../src/shared/app-error';
 import { fromLlmModelTestResult, testConfigTarget } from '../src/shared/config-utils';
 import { generateImageLabRecord } from '../src/shared/image-lab';
-import { queryAiHot } from '../src/shared/aihot';
-import { fetchHotBoardSnapshot } from '../src/shared/hotboard';
+import { loadAiHotArchive, loadHotBoardArchive } from '../src/shared/hotboard-archive';
 import { fetchImaKnowledge } from '../src/shared/ima-knowledge';
 import { detectJianyingDraftPathResult, resolveRuntimeJianyingDraftPath } from '../src/shared/jianying-paths';
 import { findJianyingExecutable } from '../src/shared/jianying-app';
@@ -2181,9 +2180,9 @@ trustedHandle('research:compose-copy', async (_event, input: ResearchCopyCompose
   return composeCopyFromSources(createConfiguredTextLlm(runtimeConfig.llm), input);
 });
 
-trustedHandle('hotboard:fetch', async () => fetchHotBoardSnapshot());
+trustedHandle('hotboard:fetch', async (_event, input) => loadHotBoardArchive(await getDb(), input));
 
-trustedHandle('aihot:query', async (_event, input) => queryAiHot(input));
+trustedHandle('aihot:query', async (_event, input) => loadAiHotArchive(await getDb(), input));
 
 trustedHandle('hotboard:open-url', async (_event, url: string) => {
   const target = assertNetworkUrl(url, 'public-research');

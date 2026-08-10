@@ -14,18 +14,17 @@ import {
   TriangleAlert,
   Zap,
 } from 'lucide-react';
-import type { ShellView, HotBoardCategory, HotBoardItem, HotBoardPlatform, HotBoardSnapshot } from '../../shared/types';
+import type { InformationArchiveOrigin, ShellView, HotBoardCategory, HotBoardItem, HotBoardPlatform, HotBoardSnapshot } from '../../shared/types';
 import type { StoryDreamApi } from '../../shared/storydream-api';
 import { formatAppErrorMessage, normalizeAppError } from '../../shared/app-error';
 import { EmptyState } from '../../components/EmptyState';
 import { AiHotSourceView } from './AiHotSourceView';
+import { ArchiveDateControl, todayArchiveDate } from './ArchiveDateControl';
 import '../../styles/features/hot-board.css';
 
 type PlatformFilter = 'all' | HotBoardPlatform;
 type CategoryFilter = 'all' | HotBoardCategory;
 type HotBoardWorkspace = 'hotboard' | 'aihot';
-
-const AUTO_REFRESH_MS = 5 * 60 * 1000;
 
 const PLATFORM_OPTIONS: ReadonlyArray<{ id: PlatformFilter; label: string }> = [
   { id: 'all', label: '综合' },
@@ -60,45 +59,42 @@ export function HotBoardPage({
 }) {
   const [workspaceView, setWorkspaceView] = useState<HotBoardWorkspace>('hotboard');
   const [snapshot, setSnapshot] = useState<HotBoardSnapshot | null>(null);
+  const [archiveDate, setArchiveDate] = useState(todayArchiveDate);
+  const [availableDates, setAvailableDates] = useState<string[]>([]);
+  const [archiveOrigin, setArchiveOrigin] = useState<InformationArchiveOrigin | null>(null);
   const [platform, setPlatform] = useState<PlatformFilter>('all');
   const [category, setCategory] = useState<CategoryFilter>('all');
   const [query, setQuery] = useState('');
-  const [autoRefresh, setAutoRefresh] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [errorMessage, setErrorMessage] = useState('');
   const [openError, setOpenError] = useState('');
   const [openingUrl, setOpeningUrl] = useState('');
   const requestIdRef = useRef(0);
-  const snapshotRef = useRef<HotBoardSnapshot | null>(null);
 
-  const refresh = useCallback(async (background = false) => {
+  const loadArchive = useCallback(async (forceRefresh = false) => {
     const requestId = ++requestIdRef.current;
-    if (!background || !snapshotRef.current) setRefreshing(true);
+    setRefreshing(true);
     setErrorMessage('');
     try {
-      const next = await api.fetchHotBoard();
+      const next = await api.fetchHotBoard({ date: archiveDate, forceRefresh });
       if (requestId !== requestIdRef.current) return;
-      snapshotRef.current = next;
-      setSnapshot(next);
+      setArchiveOrigin(next.origin);
+      setAvailableDates(next.availableDates);
+      setSnapshot(next.snapshot);
     } catch (error) {
       if (requestId !== requestIdRef.current) return;
       setErrorMessage(formatAppErrorMessage(normalizeAppError(error)));
     } finally {
       if (requestId === requestIdRef.current) setRefreshing(false);
     }
-  }, [api]);
+  }, [api, archiveDate]);
 
   useEffect(() => {
-    void refresh();
-  }, [refresh]);
-
-  useEffect(() => {
-    if (workspaceView !== 'hotboard' || !autoRefresh || isBrowserPreview) return undefined;
-    const timer = window.setInterval(() => {
-      if (document.visibilityState === 'visible') void refresh(true);
-    }, AUTO_REFRESH_MS);
-    return () => window.clearInterval(timer);
-  }, [autoRefresh, isBrowserPreview, refresh, workspaceView]);
+    if (workspaceView !== 'hotboard') return;
+    setSnapshot(null);
+    setArchiveOrigin(null);
+    void loadArchive();
+  }, [loadArchive, workspaceView]);
 
   const titleCounts = useMemo(() => {
     const counts = new Map<string, Set<HotBoardPlatform>>();
@@ -124,7 +120,8 @@ export function HotBoardPage({
 
   const readyPlatformCount = snapshot?.platformStatuses.filter((status) => status.state === 'ready').length ?? 0;
   const failedPlatformCount = snapshot?.platformStatuses.filter((status) => status.state === 'failed').length ?? 0;
-  const fetchedAtLabel = snapshot ? formatTime(snapshot.fetchedAt) : '等待刷新';
+  const fetchedAtLabel = snapshot ? formatDateTime(snapshot.fetchedAt) : '尚未归档';
+  const isToday = archiveDate === todayArchiveDate();
   const hasActiveFilters = platform !== 'all' || category !== 'all' || Boolean(query.trim());
   const warningMessage = errorMessage || openError || (snapshot?.warnings.length
     ? `${snapshot.warnings.slice(0, 2).join('；')}${snapshot.warnings.length > 2 ? `；另有 ${snapshot.warnings.length - 2} 个来源异常` : ''}`
@@ -133,7 +130,9 @@ export function HotBoardPage({
     ? 'refreshing'
     : isBrowserPreview
       ? 'preview'
-      : readyPlatformCount === 0
+      : archiveOrigin === 'missing'
+        ? 'idle'
+        : readyPlatformCount === 0
         ? 'unavailable'
         : failedPlatformCount > 0
           ? 'partial'
@@ -142,11 +141,17 @@ export function HotBoardPage({
     ? '正在检测'
     : feedState === 'preview'
       ? '预览受限'
+      : feedState === 'idle'
+        ? '该日无归档'
       : feedState === 'unavailable'
         ? '来源不可用'
         : feedState === 'partial'
           ? '部分来源可用'
-          : '实时数据';
+          : archiveDate !== todayArchiveDate()
+            ? '历史归档'
+            : archiveOrigin === 'cache'
+              ? '今日已保存'
+              : '刚刚更新';
 
   async function openUrl(url: string): Promise<void> {
     setOpenError('');
@@ -193,11 +198,14 @@ export function HotBoardPage({
           <div><span>来源异常</span><strong data-tone={failedPlatformCount ? 'warning' : 'normal'}>{failedPlatformCount}</strong></div>
           <div><span>更新于</span><strong className="time-value">{fetchedAtLabel}</strong></div>
           <div className="hot-board-refresh-controls">
-            <label className="hot-board-auto-refresh">
-              <input type="checkbox" checked={autoRefresh} disabled={isBrowserPreview} onChange={(event) => setAutoRefresh(event.target.checked)} />
-              <span>{isBrowserPreview ? '桌面端自动刷新' : '每 5 分钟'}</span>
-            </label>
-            <button className="ghost-action compact-action" type="button" disabled={refreshing || isBrowserPreview} onClick={() => void refresh()}>
+            <ArchiveDateControl date={archiveDate} availableDates={availableDates} origin={archiveOrigin} onChange={setArchiveDate} />
+            <button
+              className="ghost-action compact-action"
+              type="button"
+              title={isToday ? '重新抓取并覆盖今天的已保存快照' : '历史归档只读，不能用实时数据覆盖'}
+              disabled={refreshing || isBrowserPreview || !isToday}
+              onClick={() => void loadArchive(true)}
+            >
               <RefreshCw className={refreshing ? 'spin' : ''} size={15} />
               {refreshing ? '刷新中' : '立即刷新'}
             </button>
@@ -251,7 +259,7 @@ export function HotBoardPage({
               title="当前未取得实时热点"
               description={isBrowserPreview ? '浏览器预览不执行跨站抓取，Electron 桌面端会显示实时结果。' : '当前来源没有返回可用条目，请稍后重新刷新。'}
               tone={isBrowserPreview ? 'empty' : 'error'}
-              action={isBrowserPreview ? undefined : <button className="ghost-action slim" type="button" onClick={() => void refresh()}>重新刷新</button>}
+              action={isBrowserPreview || !isToday ? undefined : <button className="ghost-action slim" type="button" onClick={() => void loadArchive(true)}>重新刷新</button>}
             />
           ) : null}
           {snapshot && snapshot.items.length > 0 && filteredItems.length === 0 ? (
@@ -262,7 +270,10 @@ export function HotBoardPage({
             />
           ) : null}
           {!snapshot && !refreshing && errorMessage ? (
-            <EmptyState title="热榜暂时无法刷新" description={errorMessage} tone="error" action={<button className="ghost-action slim" type="button" onClick={() => void refresh()}>重新刷新</button>} />
+            <EmptyState title="热榜暂时无法刷新" description={errorMessage} tone="error" action={isToday ? <button className="ghost-action slim" type="button" onClick={() => void loadArchive(true)}>重新刷新</button> : undefined} />
+          ) : null}
+          {!snapshot && !refreshing && archiveOrigin === 'missing' && !errorMessage ? (
+            <EmptyState title="该日期没有已保存热榜" description="历史日期只显示当时已经归档的数据，不会使用今天的实时结果补齐。" />
           ) : null}
 
           <div className="hot-board-list">
@@ -334,7 +345,14 @@ export function HotBoardPage({
       </div>
       </section>
 
-      <AiHotSourceView api={api} navigate={navigate} isBrowserPreview={isBrowserPreview} active={workspaceView === 'aihot'} />
+      <AiHotSourceView
+        api={api}
+        navigate={navigate}
+        isBrowserPreview={isBrowserPreview}
+        active={workspaceView === 'aihot'}
+        archiveDate={archiveDate}
+        onArchiveDateChange={setArchiveDate}
+      />
     </div>
   );
 }
@@ -357,6 +375,20 @@ function formatTime(value: string): string {
   const date = new Date(value);
   if (Number.isNaN(date.getTime())) return '时间未知';
   return date.toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit', hour12: false });
+}
+
+function formatDateTime(value: string): string {
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return '时间未知';
+  return date.toLocaleString('zh-CN', {
+    timeZone: 'Asia/Shanghai',
+    month: '2-digit',
+    day: '2-digit',
+    hour: '2-digit',
+    minute: '2-digit',
+    second: '2-digit',
+    hour12: false,
+  });
 }
 
 function formatHotValue(value: string): string {

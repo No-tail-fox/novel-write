@@ -1355,6 +1355,43 @@ export interface AiHotDailyResult extends AiHotQueryResultBase {
 
 export type AiHotQueryResult = AiHotItemsResult | AiHotDailyResult;
 
+export type InformationArchiveOrigin = 'cache' | 'network' | 'missing';
+
+export interface HotBoardArchiveRequest {
+  date?: string;
+  forceRefresh?: boolean;
+}
+
+export interface HotBoardArchiveResult {
+  archiveDate: string;
+  availableDates: string[];
+  origin: InformationArchiveOrigin;
+  snapshot: HotBoardSnapshot | null;
+}
+
+export interface AiHotArchiveRequest {
+  query: AiHotQueryRequest;
+  date?: string;
+  forceRefresh?: boolean;
+}
+
+export interface AiHotArchiveResult {
+  archiveDate: string;
+  availableDates: string[];
+  origin: InformationArchiveOrigin;
+  queryKey: string;
+  result: AiHotQueryResult | null;
+}
+
+export interface HotBoardArchiveStore {
+  getHotBoardSnapshot: (date: string) => Promise<HotBoardSnapshot | null>;
+  saveHotBoardSnapshot: (date: string, snapshot: HotBoardSnapshot) => Promise<void>;
+  listHotBoardSnapshotDates: () => Promise<string[]>;
+  getAiHotSnapshot: (date: string, queryKey: string) => Promise<AiHotQueryResult | null>;
+  saveAiHotSnapshot: (date: string, queryKey: string, request: AiHotQueryRequest, result: AiHotQueryResult) => Promise<void>;
+  listAiHotSnapshotDates: () => Promise<string[]>;
+}
+
 export interface ResearchCopyComposeInput {
   keyword: string;
   extraRequirements: string;

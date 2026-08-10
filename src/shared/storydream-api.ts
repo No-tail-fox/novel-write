@@ -1,8 +1,8 @@
 import type {
   AccountProfile,
   ActivationState,
-  AiHotQueryRequest,
-  AiHotQueryResult,
+  AiHotArchiveRequest,
+  AiHotArchiveResult,
   AiSourceContext,
   AppConfig,
   AppDelta,
@@ -24,11 +24,12 @@ import type {
   DraftTemplate,
   DraftTemplateSummary,
   HistoryPage,
+  HotBoardArchiveRequest,
+  HotBoardArchiveResult,
   HtmlVideoConfigChange,
   HtmlVideoAssetTarget,
   HtmlVideoCompositionSource,
   HtmlVideoCompositionSourceLintInput,
-  HotBoardSnapshot,
   HtmlVideoCompositionSourceSaveInput,
   HtmlVideoCompositionSourceSaveResult,
   HtmlVideoLintFinding,
@@ -287,8 +288,8 @@ export type StoryDreamApi = {
   createHtmlVideoTask: (input: CreateTaskInput) => Promise<AppMutationResult | null>;
   updateHtmlVideoConfig: (id: string, changes: HtmlVideoConfigChange[]) => Promise<AppMutationResult | null>;
   updateHtmlVideoScene: (id: string, sceneIndex: number, changes: HtmlVideoSceneChange[]) => Promise<AppMutationResult | null>;
-  fetchHotBoard: () => Promise<HotBoardSnapshot>;
-  queryAiHot: (input: AiHotQueryRequest) => Promise<AiHotQueryResult>;
+  fetchHotBoard: (input?: HotBoardArchiveRequest) => Promise<HotBoardArchiveResult>;
+  queryAiHot: (input: AiHotArchiveRequest) => Promise<AiHotArchiveResult>;
   openHotBoardUrl: (url: string) => Promise<void>;
   addHtmlVideoAsset: (id: string, sceneIndex: number, prompt: string) => Promise<AppMutationResult | null>;
   replaceHtmlVideoAsset: (id: string, target: HtmlVideoAssetTarget) => Promise<AppMutationResult | null>;

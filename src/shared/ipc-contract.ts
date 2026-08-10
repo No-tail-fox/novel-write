@@ -125,6 +125,15 @@ const aiHotQueryRequestSchema = z.discriminatedUnion('mode', [
   z.object({ mode: z.literal('search'), query: z.string().trim().min(2).max(200), window: aiHotWindowSchema }).strict(),
 ]);
 
+const hotBoardArchiveRequestSchema = z.object({
+  date: aiHotDateSchema.optional(),
+  forceRefresh: z.boolean().optional(),
+}).strict();
+const aiHotArchiveRequestSchema = z.object({
+  query: aiHotQueryRequestSchema,
+  date: aiHotDateSchema.optional(),
+  forceRefresh: z.boolean().optional(),
+}).strict();
 export const pathSchema = z
   .string()
   .min(1)
@@ -698,8 +707,8 @@ export const ipcInputSchemas = {
   'volcengine:speakers:list': volcengineSpeakerListSchema,
   'research:web-search': z.union([nonEmptyText(MAX_IPC_TEXT), webSearchRequestSchema]),
   'research:compose-copy': researchCopyComposeSchema,
-  'hotboard:fetch': z.void(),
-  'aihot:query': aiHotQueryRequestSchema,
+  'hotboard:fetch': hotBoardArchiveRequestSchema,
+  'aihot:query': aiHotArchiveRequestSchema,
   'hotboard:open-url': nonEmptyText(MAX_IPC_PATH).refine((value) => {
     try {
       const url = new URL(value);

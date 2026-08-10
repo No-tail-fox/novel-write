@@ -7,11 +7,12 @@
 }
 
 .aihot-summary .scope-value {
-  overflow: hidden;
-  text-overflow: ellipsis;
+  overflow: visible;
+  overflow-wrap: anywhere;
   color: var(--shell-text);
   font-size: 12px;
-  white-space: nowrap;
+  line-height: 1.35;
+  white-space: normal;
 }
 
 .aihot-query-bar {
@@ -111,6 +112,21 @@
 
 .aihot-control-field select {
   width: 116px;
+  color-scheme: dark;
+}
+
+.aihot-control-field select option {
+  color: #eef1f4;
+  background: #15191d;
+}
+
+[data-theme="light"] .aihot-control-field select {
+  color-scheme: light;
+}
+
+[data-theme="light"] .aihot-control-field select option {
+  color: #171a1f;
+  background: #ffffff;
 }
 
 .aihot-search-field {
@@ -176,9 +192,9 @@
 
 .aihot-source-status span,
 .aihot-source-status strong {
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+  min-width: 0;
+  overflow-wrap: anywhere;
+  white-space: normal;
 }
 
 .aihot-source-status span {
@@ -252,9 +268,8 @@
 
 .aihot-source-links strong,
 .aihot-source-links small {
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+  overflow-wrap: anywhere;
+  white-space: normal;
 }
 
 .aihot-source-links strong {
@@ -302,6 +317,13 @@
   line-height: 1.55;
 }
 
+.aihot-item-row .hot-board-item-main p,
+.aihot-daily-row p {
+  display: block;
+  overflow: visible;
+  -webkit-line-clamp: unset;
+}
+
 .aihot-daily-section > header {
   min-height: 35px;
   display: flex;
@@ -346,11 +368,10 @@
 }
 
 .aihot-daily-row p {
-  display: -webkit-box;
-  overflow: hidden;
+  display: block;
+  overflow: visible;
+  overflow-wrap: anywhere;
   margin-top: 4px;
-  -webkit-box-orient: vertical;
-  -webkit-line-clamp: 2;
 }
 
 .aihot-daily-row small {

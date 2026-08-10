@@ -725,13 +725,19 @@ export function makeFallbackApi(setState: (state: AppState) => void): StoryDream
     async composeResearchCopy() {
       throw new Error('浏览器预览无法调用真实 LLM 生成文案，请在 Electron 桌面端配置模型后使用。');
     },
-    async fetchHotBoard() {
+    async fetchHotBoard(input = {}) {
+      const archiveDate = input.date ?? new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Shanghai' }).format(new Date());
       return {
-        fetchedAt: new Date().toISOString(),
-        items: [],
-        platformStatuses: [],
-        sourceAssessments: HOT_BOARD_SOURCE_ASSESSMENTS.map((source) => ({ ...source })),
-        warnings: ['浏览器预览不执行跨站实时抓取，请在 Electron 桌面端刷新热榜。'],
+        archiveDate,
+        availableDates: [],
+        origin: 'missing' as const,
+        snapshot: {
+          fetchedAt: new Date().toISOString(),
+          items: [],
+          platformStatuses: [],
+          sourceAssessments: HOT_BOARD_SOURCE_ASSESSMENTS.map((source) => ({ ...source })),
+          warnings: ['浏览器预览不执行跨站实时抓取，请在 Electron 桌面端刷新热榜。'],
+        },
       };
     },
     async queryAiHot() {
