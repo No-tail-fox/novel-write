@@ -912,7 +912,7 @@ describe('product shell ui', () => {
     }
 
     expect(apiContract).not.toContain('Partial<LocalBookPersonAssetApi>');
-    expect(apiContract).toContain('& LocalBookPersonAssetApi');
+    expect(apiContract).toContain('& LocalBenchmarkBookPersonAssetApi');
     expect(viteEnv).toContain("import type { StoryDreamApi } from './shared/storydream-api';");
     expect(viteEnv).not.toContain('LocalBookPersonAssetApi');
 

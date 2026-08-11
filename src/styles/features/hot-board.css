@@ -482,6 +482,29 @@
   line-height: 1.5;
 }
 
+.hot-board-source-content {
+  min-width: 0;
+  display: grid;
+  gap: 3px;
+  border-left: 2px solid color-mix(in srgb, var(--timeline-blue) 55%, var(--shell-border));
+  padding-left: 8px;
+}
+
+.hot-board-source-content small,
+.hot-board-content-placeholder {
+  color: color-mix(in srgb, var(--shell-muted) 78%, transparent);
+  font-size: 10px;
+}
+
+.hot-board-read-action {
+  width: max-content;
+  min-width: 0;
+  min-height: 24px;
+  padding: 0 5px;
+  color: var(--shell-accent-strong);
+  font-size: 10px;
+}
+
 .hot-board-item-meta span {
   display: inline-flex;
   align-items: center;
@@ -512,6 +535,13 @@
   font-size: 11px;
   white-space: nowrap;
   transition: border-color 140ms ease, background-color 140ms ease, color 140ms ease;
+}
+
+.hot-board-row-actions .hot-board-create-action,
+.hot-board-read-action {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
 }
 
 .hot-board-row-actions .hot-board-create-action:hover:not(:disabled) {

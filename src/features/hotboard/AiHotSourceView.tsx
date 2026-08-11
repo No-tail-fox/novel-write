@@ -82,6 +82,7 @@ export function AiHotSourceView({
   const [errorMessage, setErrorMessage] = useState('');
   const [openError, setOpenError] = useState('');
   const [openingUrl, setOpeningUrl] = useState('');
+  const [preparingTopic, setPreparingTopic] = useState('');
   const requestIdRef = useRef(0);
   const lastRequestRef = useRef<AiHotQueryRequest | null>(null);
 
@@ -229,9 +230,9 @@ export function AiHotSourceView({
   }
 
   function createFromItem(item: AiHotItem): void {
-    storeTopic({
+    void storeTopic({
       title: item.title,
-      url: item.aihotUrl,
+      url: item.originalUrl || item.aihotUrl,
       summary: item.summary ?? '',
       sourceName: item.sourceName,
       publishedAt: item.displayedAt,
@@ -241,7 +242,7 @@ export function AiHotSourceView({
   }
 
   function createFromDailyItem(item: AiHotDailyItem, sectionLabel: string): void {
-    storeTopic({
+    void storeTopic({
       title: item.title,
       url: item.aihotUrl || item.originalUrl,
       summary: item.summary ?? '',
@@ -252,7 +253,7 @@ export function AiHotSourceView({
     });
   }
 
-  function storeTopic(input: {
+  async function storeTopic(input: {
     title: string;
     url: string;
     summary: string;
@@ -260,11 +261,31 @@ export function AiHotSourceView({
     publishedAt: string;
     queryContext: string;
     hotValue: string;
-  }): void {
+  }): Promise<void> {
+    setOpenError('');
+    setPreparingTopic(input.url);
+    let source;
+    try {
+      source = await api.readHotBoardSource({ title: input.title, url: input.url, summary: input.summary });
+    } catch (error) {
+      setOpenError(formatAppErrorMessage(normalizeAppError(error)));
+      setPreparingTopic('');
+      return;
+    }
+    if (source.kind === 'unavailable' || !source.content.trim()) {
+      setOpenError(source.warning || '该来源没有可用于创作的页面正文或摘要。');
+      setPreparingTopic('');
+      return;
+    }
     sessionStorage.setItem('hotboard_topic', JSON.stringify({
       ...input,
+      url: source.url || input.url,
       platformLabel: 'AIHOT',
+      sourceContent: source.content,
+      sourceContentKind: source.kind,
+      sourceWarning: source.warning ?? '',
     }));
+    setPreparingTopic('');
     navigate('new-task');
   }
 
@@ -364,6 +385,7 @@ export function AiHotSourceView({
                   index={index}
                   key={item.id}
                   openingUrl={openingUrl}
+                  preparingTopic={preparingTopic}
                   openUrl={openUrl}
                   createFromItem={createFromItem}
                 />
@@ -372,7 +394,7 @@ export function AiHotSourceView({
           ) : null}
           {result?.kind === 'daily' && !result.report ? <EmptyState title="暂无可用日报" description={result.warnings[0] ?? 'AIHOT 当前没有可用日报。'} /> : null}
           {result?.kind === 'daily' && result.report ? (
-            <AiHotDailyFeed report={result.report} openingUrl={openingUrl} openUrl={openUrl} createFromItem={createFromDailyItem} />
+            <AiHotDailyFeed report={result.report} openingUrl={openingUrl} preparingTopic={preparingTopic} openUrl={openUrl} createFromItem={createFromDailyItem} />
           ) : null}
         </section>
 
@@ -402,12 +424,14 @@ function AiHotItemRow({
   item,
   index,
   openingUrl,
+  preparingTopic,
   openUrl,
   createFromItem,
 }: {
   item: AiHotItem;
   index: number;
   openingUrl: string;
+  preparingTopic: string;
   openUrl: (url: string) => Promise<void>;
   createFromItem: (item: AiHotItem) => void;
 }) {
@@ -429,7 +453,7 @@ function AiHotItemRow({
       </div>
       <div className="hot-board-row-actions">
         <button className="icon-button" type="button" title="打开 AIHOT" aria-label={`打开 AIHOT：${item.title}`} disabled={openingUrl === item.aihotUrl} onClick={() => void openUrl(item.aihotUrl)}><ExternalLink size={15} /></button>
-        <button className="hot-board-create-action" type="button" onClick={() => createFromItem(item)}><Sparkles size={14} />去创作</button>
+        <button className="hot-board-create-action" type="button" disabled={Boolean(preparingTopic)} onClick={() => createFromItem(item)}><Sparkles size={14} />{preparingTopic === (item.originalUrl || item.aihotUrl) ? '读取中' : '去创作'}</button>
       </div>
     </article>
   );
@@ -438,11 +462,13 @@ function AiHotItemRow({
 function AiHotDailyFeed({
   report,
   openingUrl,
+  preparingTopic,
   openUrl,
   createFromItem,
 }: {
   report: AiHotDailyReport;
   openingUrl: string;
+  preparingTopic: string;
   openUrl: (url: string) => Promise<void>;
   createFromItem: (item: AiHotDailyItem, sectionLabel: string) => void;
 }) {
@@ -453,7 +479,7 @@ function AiHotDailyFeed({
         <section className="aihot-daily-section" key={section.label}>
           <header><h3>{section.label}</h3><span>{section.items.length} 条</span></header>
           {section.items.map((item) => (
-            <AiHotDailyRow item={item} sectionLabel={section.label} openingUrl={openingUrl} openUrl={openUrl} createFromItem={createFromItem} key={item.id} />
+            <AiHotDailyRow item={item} sectionLabel={section.label} openingUrl={openingUrl} preparingTopic={preparingTopic} openUrl={openUrl} createFromItem={createFromItem} key={item.id} />
           ))}
         </section>
       ))}
@@ -461,7 +487,7 @@ function AiHotDailyFeed({
         <section className="aihot-daily-section">
           <header><h3>快讯</h3><span>{report.flashes.length} 条</span></header>
           {report.flashes.map((item) => (
-            <AiHotDailyRow item={item} sectionLabel="快讯" openingUrl={openingUrl} openUrl={openUrl} createFromItem={createFromItem} key={item.id} />
+            <AiHotDailyRow item={item} sectionLabel="快讯" openingUrl={openingUrl} preparingTopic={preparingTopic} openUrl={openUrl} createFromItem={createFromItem} key={item.id} />
           ))}
         </section>
       ) : null}
@@ -474,12 +500,14 @@ function AiHotDailyRow({
   item,
   sectionLabel,
   openingUrl,
+  preparingTopic,
   openUrl,
   createFromItem,
 }: {
   item: AiHotDailyItem;
   sectionLabel: string;
   openingUrl: string;
+  preparingTopic: string;
   openUrl: (url: string) => Promise<void>;
   createFromItem: (item: AiHotDailyItem, sectionLabel: string) => void;
 }) {
@@ -489,7 +517,7 @@ function AiHotDailyRow({
       <div><h4>{item.title}</h4>{item.summary ? <p>{item.summary}</p> : null}<small>{item.sourceName}{item.publishedAt ? ` · ${formatDateTime(item.publishedAt)}` : ''}</small></div>
       <div className="hot-board-row-actions">
         <button className="icon-button" type="button" title="打开来源" aria-label={`打开来源：${item.title}`} disabled={openingUrl === target} onClick={() => void openUrl(target)}><ExternalLink size={15} /></button>
-        <button className="hot-board-create-action" type="button" onClick={() => createFromItem(item, sectionLabel)}><Sparkles size={14} />去创作</button>
+        <button className="hot-board-create-action" type="button" disabled={Boolean(preparingTopic)} onClick={() => createFromItem(item, sectionLabel)}><Sparkles size={14} />去创作</button>
       </div>
     </article>
   );

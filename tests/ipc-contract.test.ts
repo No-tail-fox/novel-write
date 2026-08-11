@@ -69,6 +69,34 @@ describe('IPC runtime contract', () => {
     expect(() => schema.parse({ ...input, previousIdentity: { theme: '', bookId: 'old-id' } })).toThrow();
   });
 
+  it('strictly validates benchmark group links and nullable platform metrics', async () => {
+    const contract = await loadContract();
+    expect(contract).not.toBeNull();
+    if (!contract) return;
+    const groupSchema = contract.ipcInputSchemas['benchmark:save-group'];
+    const postSchema = contract.ipcInputSchemas['benchmark:save-post'];
+    const group = {
+      name: '传统文化矩阵',
+      accounts: [
+        { platform: 'douyin', url: 'https://www.douyin.com/user/one' },
+        { platform: 'wechat-channels', url: 'https://channels.weixin.qq.com/web/pages/profile/two' },
+        { platform: 'bilibili', url: 'https://space.bilibili.com/3' },
+      ],
+    };
+    expect(groupSchema.parse(group)).toEqual(group);
+    expect(() => groupSchema.parse({ ...group, accounts: [...group.accounts, group.accounts[0]] })).toThrow();
+    const post = {
+      groupId: 'group-1',
+      platform: 'bilibili',
+      sourceUrl: 'https://www.bilibili.com/video/BV1xx411c7mD',
+      title: '历史故事',
+      metrics: { plays: { value: 1200 }, comments: { value: null, reason: '未提供' } },
+    };
+    expect(postSchema.parse(post)).toEqual(post);
+    expect(() => postSchema.parse({ ...post, metrics: { plays: { value: -1 } } })).toThrow();
+    expect(() => postSchema.parse({ ...post, extra: true })).toThrow();
+  });
+
   it('validates complete draft templates at every nested IPC boundary', async () => {
     const contract = await loadContract();
     expect(contract).not.toBeNull();

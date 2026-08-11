@@ -39,6 +39,7 @@ import {
 } from '../../shared/tts-voices';
 import type {
   AiSourceContext,
+  AiSourceSection,
   ImageGenerationQuality,
   OrdinaryTaskCoverRatio,
   OrdinaryTaskCoverSelection,
@@ -528,11 +529,30 @@ export function NewTaskPage({
       const sourceName = typeof parsed.sourceName === 'string' ? parsed.sourceName.trim() : '';
       const publishedAt = typeof parsed.publishedAt === 'string' ? parsed.publishedAt.trim() : '';
       const queryContext = typeof parsed.queryContext === 'string' ? parsed.queryContext.trim() : '';
+      const sourceContent = typeof parsed.sourceContent === 'string' ? parsed.sourceContent.trim() : '';
+      const sourceContentKind = parsed.sourceContentKind === 'page' || parsed.sourceContentKind === 'summary' ? parsed.sourceContentKind : '';
+      const sourceWarning = typeof parsed.sourceWarning === 'string' ? parsed.sourceWarning.trim() : '';
       setActiveStage('material');
       setMode('ai');
       setTitle(topicTitle.slice(0, 42));
       setAiKeyword(topicTitle);
+      setAiSources((current) => current.includes('web') ? current : [...current, 'web']);
       setInputText('');
+      if (sourceContent) {
+        const sourceSection: AiSourceSection = {
+          source: 'web',
+          title: topicTitle,
+          ...(sourceUrl ? { url: sourceUrl } : {}),
+          ...(summary ? { snippet: summary } : {}),
+          content: sourceContent,
+        };
+        setSearchContext({ query: topicTitle, sections: [sourceSection], warnings: sourceWarning ? [sourceWarning] : [] });
+        setSelectedSearchSourceIds([sourceKey(sourceSection, 0)]);
+        setSearchMessage(sourceContentKind === 'page' ? '已读取并默认勾选来源页面正文。' : '页面正文不可用，已默认勾选来源摘要。');
+      } else {
+        setSearchContext(null);
+        setSelectedSearchSourceIds([]);
+      }
       setExtraRequirements([
         platformLabel ? `热点平台：${platformLabel}` : '',
         hotValue ? `当前热度：${hotValue}` : '',
@@ -543,7 +563,9 @@ export function NewTaskPage({
         summary ? `参考摘要：${summary}` : '',
         '围绕该热点核验最新事实，提炼适合短视频传播的冲突、转折与价值点。',
       ].filter(Boolean).join('\n'));
-      setDraftNotice('已带入热榜选题，可继续搜索资料并生成文案。');
+      setDraftNotice(sourceContent
+        ? '已带入热榜选题，并将页面文字设为默认资料。'
+        : '已带入热榜选题，但来源没有可用页面文字；请先搜索并选择网页资料。');
     } catch (error) {
       setDraftNotice(error instanceof Error ? error.message : '热榜选题无法读取。');
     }

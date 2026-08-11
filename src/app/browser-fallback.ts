@@ -16,12 +16,15 @@ import { mergeMinimaxCloneVoice } from '../shared/minimax-clone-voices';
 import { taskToSummary } from '../shared/state-reconciliation';
 import type { StoryDreamApi } from '../shared/storydream-api';
 import { taskSpeakerLabel } from '../shared/tts-voices';
+import { normalizeBenchmarkGroupInput, normalizeBenchmarkPostInput } from '../shared/benchmark-monitoring';
 import type {
   AccountProfile,
   ActivationState,
   AppDelta,
   AppMutationResult,
   BootstrapState,
+  BenchmarkGroup,
+  BenchmarkPost,
   BookSelectionRecord,
   CreateTaskInput,
   CreateViralAnalysisInput,
@@ -33,6 +36,7 @@ import type {
   HtmlVideoConfigChange,
   HtmlVideoSceneChange,
   HtmlVideoCompositionSourceSaveInput,
+  HotBoardArchiveResult,
   ImageLabGenerateInput,
   ImageLabImportInput,
   ImageLabRecord,
@@ -49,6 +53,72 @@ import type {
 } from '../shared/types';
 
 type AppState = PublicAppState;
+
+const BROWSER_HOT_BOARD_PREVIEW_WARNING = '浏览器预览展示本地归档样例，不代表实时数据；标题和摘要仅用于验收正文与创作交接，真实热榜请在 Electron 桌面端刷新。';
+
+export function createBrowserHotBoardPreviewArchive(archiveDate: string): HotBoardArchiveResult {
+  const fetchedAt = new Date(`${archiveDate}T09:00:00+08:00`).toISOString();
+  const previewMessage = '本地预览归档，不代表实时平台状态。';
+  return {
+    archiveDate,
+    availableDates: [archiveDate],
+    origin: 'cache',
+    snapshot: {
+      fetchedAt,
+      items: [
+        {
+          id: `browser-preview:zhihu:${archiveDate}`,
+          platform: 'zhihu',
+          platformLabel: '知乎',
+          category: 'knowledge',
+          rank: 1,
+          title: '为什么越来越多创作者开始用 AI 做视频分镜？',
+          url: 'https://example.com/storydream-preview/ai-storyboard',
+          hotValue: '',
+          summary: '讨论集中在三个变化：先用文字拆出冲突、转折和证据，再生成镜头清单，最后把旁白、字幕和画面放到同一条时间线上校验。实际效率取决于资料质量和人工复核，而不是单次生成速度。',
+          updatedAt: fetchedAt,
+          sourceId: 'uapi',
+          sourceLabel: '本地预览归档',
+        },
+        {
+          id: `browser-preview:bilibili:${archiveDate}`,
+          platform: 'bilibili',
+          platformLabel: 'B 站',
+          category: 'video',
+          rank: 2,
+          title: '一条知识短视频，从选题到成片要经过哪些步骤',
+          url: 'https://example.com/storydream-preview/video-workflow',
+          hotValue: '',
+          summary: '内容把流程拆为选题验证、资料收集、脚本结构、分镜设计、配音字幕和成片复核六步，并强调每个事实都要保留来源链接。评论关注最多的是如何避免只根据标题扩写，以及怎样让字幕时间与镜头节奏一致。',
+          updatedAt: fetchedAt,
+          sourceId: 'uapi',
+          sourceLabel: '本地预览归档',
+        },
+        {
+          id: `browser-preview:techmeme:${archiveDate}`,
+          platform: 'techmeme',
+          platformLabel: '科技 / AI',
+          category: 'tech',
+          rank: 3,
+          title: '多模态模型更新后，内容团队更关注工作流落地',
+          url: 'https://example.com/storydream-preview/multimodal-workflow',
+          hotValue: '',
+          summary: '行业讨论从单项模型能力转向完整工作流：来源正文能否追溯、提示词是否可复用、图像与视频风格能否保持一致，以及失败环节能否单独重跑。对内容团队而言，稳定交付比一次演示效果更重要。',
+          updatedAt: fetchedAt,
+          sourceId: 'techmeme',
+          sourceLabel: '本地预览归档',
+        },
+      ],
+      platformStatuses: [
+        { platform: 'zhihu', label: '知乎', state: 'ready', count: 1, updatedAt: fetchedAt, message: previewMessage },
+        { platform: 'bilibili', label: 'B 站', state: 'ready', count: 1, updatedAt: fetchedAt, message: previewMessage },
+        { platform: 'techmeme', label: '科技 / AI', state: 'ready', count: 1, updatedAt: fetchedAt, message: previewMessage },
+      ],
+      sourceAssessments: HOT_BOARD_SOURCE_ASSESSMENTS.map((source) => ({ ...source })),
+      warnings: [BROWSER_HOT_BOARD_PREVIEW_WARNING],
+    },
+  };
+}
 
 function detectBrowserViralPlatform(url: string): ViralPlatform {
   const normalized = url.toLowerCase();
@@ -224,6 +294,28 @@ export function makeFallbackApi(setState: (state: AppState) => void): StoryDream
   };
   const writeBookSelections = (records: BookSelectionRecord[]) => {
     localStorage.setItem('storybound-book-selections', JSON.stringify(records));
+    return records;
+  };
+  const readBenchmarkGroups = (): BenchmarkGroup[] => {
+    try {
+      return JSON.parse(localStorage.getItem('storydream-benchmark-groups') || '[]') as BenchmarkGroup[];
+    } catch {
+      return [];
+    }
+  };
+  const writeBenchmarkGroups = (records: BenchmarkGroup[]): BenchmarkGroup[] => {
+    localStorage.setItem('storydream-benchmark-groups', JSON.stringify(records));
+    return records;
+  };
+  const readBenchmarkPosts = (): BenchmarkPost[] => {
+    try {
+      return JSON.parse(localStorage.getItem('storydream-benchmark-posts') || '[]') as BenchmarkPost[];
+    } catch {
+      return [];
+    }
+  };
+  const writeBenchmarkPosts = (records: BenchmarkPost[]): BenchmarkPost[] => {
+    localStorage.setItem('storydream-benchmark-posts', JSON.stringify(records));
     return records;
   };
   const changed = (left: unknown, right: unknown) => JSON.stringify(left) !== JSON.stringify(right);
@@ -726,18 +818,23 @@ export function makeFallbackApi(setState: (state: AppState) => void): StoryDream
       throw new Error('浏览器预览无法调用真实 LLM 生成文案，请在 Electron 桌面端配置模型后使用。');
     },
     async fetchHotBoard(input = {}) {
-      const archiveDate = input.date ?? new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Shanghai' }).format(new Date());
+      const previewDate = new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Shanghai' }).format(new Date());
+      const archiveDate = input.date ?? previewDate;
+      if (archiveDate !== previewDate) {
+        return { archiveDate, availableDates: [previewDate], origin: 'missing' as const, snapshot: null };
+      }
+      return createBrowserHotBoardPreviewArchive(archiveDate);
+    },
+    async readHotBoardSource(input) {
+      const content = input.summary?.trim() ?? '';
       return {
-        archiveDate,
-        availableDates: [],
-        origin: 'missing' as const,
-        snapshot: {
-          fetchedAt: new Date().toISOString(),
-          items: [],
-          platformStatuses: [],
-          sourceAssessments: HOT_BOARD_SOURCE_ASSESSMENTS.map((source) => ({ ...source })),
-          warnings: ['浏览器预览不执行跨站实时抓取，请在 Electron 桌面端刷新热榜。'],
-        },
+        title: input.title.trim(),
+        url: input.url.trim(),
+        content,
+        excerpt: content.slice(0, 600),
+        kind: content ? 'summary' as const : 'unavailable' as const,
+        fetchedAt: new Date().toISOString(),
+        warning: '浏览器预览不执行跨站正文读取；当前只使用本地预览归档摘要，不代表实时数据。',
       };
     },
     async queryAiHot() {
@@ -874,6 +971,42 @@ export function makeFallbackApi(setState: (state: AppState) => void): StoryDream
     async deleteBookSelection(theme, bookId) {
       writeBookSelections(readBookSelections().filter((record) => !(record.theme === theme && record.bookId === bookId)));
       return undefined;
+    },
+    async listBenchmarkGroups() {
+      return readBenchmarkGroups();
+    },
+    async saveBenchmarkGroup(input) {
+      const records = readBenchmarkGroups();
+      const existing = input.id ? records.find((record) => record.id === input.id) : null;
+      const record = normalizeBenchmarkGroupInput(input, existing);
+      writeBenchmarkGroups([record, ...records.filter((item) => item.id !== record.id)]);
+      return record;
+    },
+    async deleteBenchmarkGroup(id) {
+      writeBenchmarkGroups(readBenchmarkGroups().filter((record) => record.id !== id));
+      writeBenchmarkPosts(readBenchmarkPosts().filter((record) => record.groupId !== id));
+    },
+    async listBenchmarkPosts(groupId) {
+      const records = readBenchmarkPosts();
+      return groupId ? records.filter((record) => record.groupId === groupId) : records;
+    },
+    async saveBenchmarkPost(input) {
+      const groups = readBenchmarkGroups();
+      if (!groups.some((group) => group.id === input.groupId)) throw new Error('BENCHMARK_GROUP_NOT_FOUND: 对标组不存在或已删除。');
+      const records = readBenchmarkPosts();
+      const existing = input.id ? records.find((record) => record.id === input.id) : null;
+      const record = normalizeBenchmarkPostInput(input, existing);
+      writeBenchmarkPosts([record, ...records.filter((item) => item.id !== record.id)]);
+      return record;
+    },
+    async deleteBenchmarkPost(id) {
+      writeBenchmarkPosts(readBenchmarkPosts().filter((record) => record.id !== id));
+    },
+    async syncBenchmarkGroup() {
+      throw new Error('BENCHMARK_SYNC_REQUIRES_ELECTRON: 浏览器预览只保留本地作品和指标快照，请在 Electron 桌面端同步账号。');
+    },
+    async openBenchmarkLogin() {
+      throw new Error('BENCHMARK_LOGIN_REQUIRES_ELECTRON: 浏览器预览不能保存平台登录会话。');
     },
     async listPersonAssets() {
       return [];

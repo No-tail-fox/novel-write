@@ -9,6 +9,12 @@ import type {
   AppDeltaReconcileRequest,
   AppDeltaReconcileResult,
   AppMutationResult,
+  BenchmarkGroup,
+  BenchmarkGroupInput,
+  BenchmarkGroupSyncResult,
+  BenchmarkLoginInput,
+  BenchmarkPost,
+  BenchmarkPostInput,
   BookSelectionInput,
   BookSelectionRecord,
   BootstrapState,
@@ -26,6 +32,8 @@ import type {
   HistoryPage,
   HotBoardArchiveRequest,
   HotBoardArchiveResult,
+  HotBoardSourceContent,
+  HotBoardSourceContentInput,
   HtmlVideoConfigChange,
   HtmlVideoAssetTarget,
   HtmlVideoCompositionSource,
@@ -131,13 +139,14 @@ export const INVOKE_CHANNELS = Object.freeze([
   'volcengine:speakers:list',
   'research:web-search',
   'research:compose-copy',
+  'hotboard:fetch',
+  'hotboard:read-source',
+  'aihot:query',
+  'hotboard:open-url',
   'prompt-template:save',
   'prompt-template:reset',
   'custom-style:save',
   'viral:save-templates',
-  'hotboard:fetch',
-  'aihot:query',
-  'hotboard:open-url',
   'custom-style:generate-draft',
   'draft-template:save',
   'image-lab:generate',
@@ -149,6 +158,14 @@ export const INVOKE_CHANNELS = Object.freeze([
   'book-selection:list',
   'book-selection:save',
   'book-selection:delete',
+  'benchmark:list-groups',
+  'benchmark:save-group',
+  'benchmark:delete-group',
+  'benchmark:list-posts',
+  'benchmark:save-post',
+  'benchmark:delete-post',
+  'benchmark:sync-group',
+  'benchmark:open-login',
   'person-assets:list',
   'person-assets:create',
   'person-assets:rename',
@@ -214,7 +231,15 @@ export const INVOKE_CHANNELS = Object.freeze([
 
 export type InvokeChannel = (typeof INVOKE_CHANNELS)[number];
 
-type LocalBookPersonAssetApi = {
+type LocalBenchmarkBookPersonAssetApi = {
+  listBenchmarkGroups: () => Promise<BenchmarkGroup[]>;
+  saveBenchmarkGroup: (input: BenchmarkGroupInput) => Promise<BenchmarkGroup>;
+  deleteBenchmarkGroup: (id: string) => Promise<void>;
+  listBenchmarkPosts: (groupId?: string) => Promise<BenchmarkPost[]>;
+  saveBenchmarkPost: (input: BenchmarkPostInput) => Promise<BenchmarkPost>;
+  deleteBenchmarkPost: (id: string) => Promise<void>;
+  syncBenchmarkGroup: (groupId: string) => Promise<BenchmarkGroupSyncResult>;
+  openBenchmarkLogin: (input: BenchmarkLoginInput) => Promise<void>;
   listBookSelections: (theme?: string) => Promise<BookSelectionRecord[]>;
   saveBookSelection: (input: BookSelectionInput) => Promise<BookSelectionRecord>;
   deleteBookSelection: (theme: string, bookId: string) => Promise<void>;
@@ -272,6 +297,10 @@ export type StoryDreamApi = {
   listVolcengineSpeakers: (request: VolcengineSpeakerListRequest) => Promise<VolcengineSpeakerListResult>;
   searchWebSources: (input: string | WebSearchRequest) => Promise<AiSourceContext>;
   composeResearchCopy: (input: ResearchCopyComposeInput) => Promise<ResearchCopyComposeResult>;
+  fetchHotBoard: (input?: HotBoardArchiveRequest) => Promise<HotBoardArchiveResult>;
+  readHotBoardSource: (input: HotBoardSourceContentInput) => Promise<HotBoardSourceContent>;
+  queryAiHot: (input: AiHotArchiveRequest) => Promise<AiHotArchiveResult>;
+  openHotBoardUrl: (url: string) => Promise<void>;
   savePromptTemplate: (template: PromptTemplate) => Promise<AppMutationResult | null>;
   resetPromptTemplates: () => Promise<AppMutationResult | null>;
   saveCustomStyle: (style: CustomStyle) => Promise<AppMutationResult | null>;
@@ -288,9 +317,6 @@ export type StoryDreamApi = {
   createHtmlVideoTask: (input: CreateTaskInput) => Promise<AppMutationResult | null>;
   updateHtmlVideoConfig: (id: string, changes: HtmlVideoConfigChange[]) => Promise<AppMutationResult | null>;
   updateHtmlVideoScene: (id: string, sceneIndex: number, changes: HtmlVideoSceneChange[]) => Promise<AppMutationResult | null>;
-  fetchHotBoard: (input?: HotBoardArchiveRequest) => Promise<HotBoardArchiveResult>;
-  queryAiHot: (input: AiHotArchiveRequest) => Promise<AiHotArchiveResult>;
-  openHotBoardUrl: (url: string) => Promise<void>;
   addHtmlVideoAsset: (id: string, sceneIndex: number, prompt: string) => Promise<AppMutationResult | null>;
   replaceHtmlVideoAsset: (id: string, target: HtmlVideoAssetTarget) => Promise<AppMutationResult | null>;
   regenerateHtmlVideoAsset: (id: string, target: HtmlVideoAssetTarget) => Promise<AppMutationResult | null>;
@@ -348,4 +374,4 @@ export type StoryDreamApi = {
   runDiagnostics: () => Promise<{ generatedAt: string; checks: Array<{ id: string; label: string; status: string; detail: string }> }>;
   windowControl: (action: 'minimize' | 'toggle-maximize' | 'close') => Promise<void>;
   onAppDelta: (callback: (delta: AppDelta) => void) => () => void;
-} & LocalBookPersonAssetApi;
+} & LocalBenchmarkBookPersonAssetApi;

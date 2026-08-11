@@ -14,7 +14,7 @@ import {
   TriangleAlert,
   Zap,
 } from 'lucide-react';
-import type { InformationArchiveOrigin, ShellView, HotBoardCategory, HotBoardItem, HotBoardPlatform, HotBoardSnapshot } from '../../shared/types';
+import type { InformationArchiveOrigin, ShellView, HotBoardCategory, HotBoardItem, HotBoardPlatform, HotBoardSnapshot, HotBoardSourceContent } from '../../shared/types';
 import type { StoryDreamApi } from '../../shared/storydream-api';
 import { formatAppErrorMessage, normalizeAppError } from '../../shared/app-error';
 import { EmptyState } from '../../components/EmptyState';
@@ -69,6 +69,8 @@ export function HotBoardPage({
   const [errorMessage, setErrorMessage] = useState('');
   const [openError, setOpenError] = useState('');
   const [openingUrl, setOpeningUrl] = useState('');
+  const [readingItemId, setReadingItemId] = useState('');
+  const [sourceContents, setSourceContents] = useState<Record<string, HotBoardSourceContent>>({});
   const requestIdRef = useRef(0);
 
   const loadArchive = useCallback(async (forceRefresh = false) => {
@@ -140,7 +142,7 @@ export function HotBoardPage({
   const feedStateLabel = feedState === 'refreshing'
     ? '正在检测'
     : feedState === 'preview'
-      ? '预览受限'
+      ? '本地归档预览'
       : feedState === 'idle'
         ? '该日无归档'
       : feedState === 'unavailable'
@@ -173,13 +175,39 @@ export function HotBoardPage({
     void openUrl(url);
   }
 
-  function createFromTopic(item: HotBoardItem): void {
+  async function readItemContent(item: HotBoardItem): Promise<HotBoardSourceContent | null> {
+    const cached = sourceContents[item.id];
+    if (cached) return cached;
+    setOpenError('');
+    setReadingItemId(item.id);
+    try {
+      const source = await api.readHotBoardSource({ title: item.title, url: item.url, summary: item.summary });
+      setSourceContents((current) => ({ ...current, [item.id]: source }));
+      if (source.warning) setOpenError(source.warning);
+      return source;
+    } catch (error) {
+      setOpenError(formatAppErrorMessage(normalizeAppError(error)));
+      return null;
+    } finally {
+      setReadingItemId('');
+    }
+  }
+
+  async function createFromTopic(item: HotBoardItem): Promise<void> {
+    const source = await readItemContent(item);
+    if (!source || source.kind === 'unavailable' || !source.content.trim()) {
+      setOpenError(source?.warning || '该来源没有可用于创作的页面正文或摘要。');
+      return;
+    }
     sessionStorage.setItem('hotboard_topic', JSON.stringify({
       title: item.title,
-      url: item.url,
+      url: source.url || item.url,
       platformLabel: item.platformLabel,
       hotValue: item.hotValue,
       summary: item.summary ?? '',
+      sourceContent: source.content,
+      sourceContentKind: source.kind,
+      sourceWarning: source.warning ?? '',
     }));
     navigate('new-task');
   }
@@ -191,9 +219,9 @@ export function HotBoardPage({
         <button type="button" role="tab" aria-selected={workspaceView === 'aihot'} className={workspaceView === 'aihot' ? 'active' : ''} onClick={() => setWorkspaceView('aihot')}><Zap size={15} />AI 信息源</button>
       </nav>
 
-      <section className="hot-board-overview" aria-label="全网实时热榜" hidden={workspaceView !== 'hotboard'}>
+      <section className="hot-board-overview" aria-label={isBrowserPreview ? '全网热榜本地预览' : '全网实时热榜'} hidden={workspaceView !== 'hotboard'}>
         <section className="hot-board-summary hot-board-signal-strip" aria-label="热榜刷新概况">
-          <div><span>实时热点</span><strong>{snapshot?.items.length ?? 0}</strong></div>
+          <div><span>{isBrowserPreview ? '预览条目' : '实时热点'}</span><strong>{snapshot?.items.length ?? 0}</strong></div>
           <div><span>来源在线</span><strong>{readyPlatformCount}<small>/9</small></strong></div>
           <div><span>来源异常</span><strong data-tone={failedPlatformCount ? 'warning' : 'normal'}>{failedPlatformCount}</strong></div>
           <div><span>更新于</span><strong className="time-value">{fetchedAtLabel}</strong></div>
@@ -238,11 +266,11 @@ export function HotBoardPage({
       ) : null}
 
       <div className="hot-board-body">
-        <section className="hot-board-feed" aria-label="实时热点列表">
+        <section className="hot-board-feed" aria-label={isBrowserPreview ? '热榜本地预览列表' : '实时热点列表'}>
           <header className="hot-board-feed-head">
             <div>
-              <h2>{platform === 'all' ? '全网热点' : PLATFORM_OPTIONS.find((option) => option.id === platform)?.label}</h2>
-              <span>{filteredItems.length} 条结果 · 按各平台原始排名交叉排列</span>
+              <h2>{platform === 'all' ? (isBrowserPreview ? '归档预览' : '全网热点') : PLATFORM_OPTIONS.find((option) => option.id === platform)?.label}</h2>
+              <span>{isBrowserPreview ? `${filteredItems.length} 条摘要样例 · 真实热榜请使用 Electron 桌面端` : `${filteredItems.length} 条结果 · 按各平台原始排名交叉排列`}</span>
             </div>
             <div className="hot-board-live-state" data-state={feedState}>
               <span />{feedStateLabel}
@@ -279,6 +307,8 @@ export function HotBoardPage({
           <div className="hot-board-list">
             {filteredItems.map((item) => {
               const crossPlatformCount = titleCounts.get(normalizeTitle(item.title))?.size ?? 1;
+              const sourceContent = sourceContents[item.id];
+              const readingContent = readingItemId === item.id;
               return (
                 <article className="hot-board-row hot-board-network-row" data-platform={item.platform} key={item.id}>
                   <div className="hot-board-rank" data-top={item.rank <= 3 ? 'true' : 'false'}>{item.rank}</div>
@@ -288,7 +318,20 @@ export function HotBoardPage({
                       <span>来源 {item.sourceLabel}</span>
                     </div>
                     <h3 className="hot-board-item-title">{item.title}</h3>
-                    {item.summary ? <p>{item.summary}</p> : null}
+                    {sourceContent ? (
+                      <div className="hot-board-source-content" data-content-kind={sourceContent.kind}>
+                        <p>{sourceContent.excerpt}</p>
+                        <small>{sourceContent.kind === 'page' ? '页面正文' : '来源摘要'}</small>
+                      </div>
+                    ) : item.summary ? <p>{item.summary}</p> : <p className="hot-board-content-placeholder">尚未读取页面内容</p>}
+                    <button
+                      className="hot-board-read-action"
+                      type="button"
+                      disabled={readingContent}
+                      onClick={() => void readItemContent(item)}
+                    >
+                      {readingContent ? <><Loader2 className="spin" size={12} />读取中</> : '查看正文'}
+                    </button>
                   </div>
                   <div className="hot-board-signal-cell">
                     {item.hotValue ? <span className="hot-board-heat"><Flame size={12} />{formatHotValue(item.hotValue)}</span> : <span className="hot-board-no-signal">--</span>}
@@ -297,7 +340,7 @@ export function HotBoardPage({
                   <div className="hot-board-time-cell"><Clock3 size={12} />{formatTime(item.updatedAt)}</div>
                   <div className="hot-board-row-actions">
                     <button className="icon-button" type="button" title="打开原文" aria-label={`打开原文：${item.title}`} disabled={openingUrl === item.url} onClick={() => openItemSource(item)}><ExternalLink size={15} /></button>
-                    <button className="hot-board-create-action" type="button" onClick={() => createFromTopic(item)}><Sparkles size={14} />去创作</button>
+                    <button className="hot-board-create-action" type="button" disabled={readingContent} onClick={() => void createFromTopic(item)}><Sparkles size={14} />去创作</button>
                   </div>
                 </article>
               );

@@ -27,6 +27,9 @@ describe('hot board workbench ui', () => {
     expect(page).toContain('<AiHotSourceView');
     expect(page).toContain('api.fetchHotBoard({ date: archiveDate, forceRefresh })');
     expect(page).toContain('api.openHotBoardUrl(url)');
+    expect(page).toContain('api.readHotBoardSource');
+    expect(page).toContain('查看正文');
+    expect(page).toContain('sourceContent: source.content');
     expect(archiveControl).toContain('归档日期');
     expect(archiveControl).toContain('已保存');
     expect(archiveControl).toContain("origin === 'cache' || origin === 'network'");
@@ -42,7 +45,9 @@ describe('hot board workbench ui', () => {
     expect(page).toContain('snapshot.items.length > 0 && filteredItems.length === 0');
     expect(page).toContain("? 'preview'");
     expect(page).toContain("feedState === 'preview'");
-    expect(page).toContain("? '预览受限'");
+    expect(page).toContain("? '本地归档预览'");
+    expect(page).toContain("isBrowserPreview ? '预览条目' : '实时热点'");
+    expect(page).toContain('真实热榜请使用 Electron 桌面端');
     expect(page).toContain('snapshot.warnings.length > 2');
     expect(page).toContain('disabled={openingUrl === item.url}');
     expect(page).toContain('disabled={openingUrl === source.url}');
@@ -75,6 +80,9 @@ describe('hot board workbench ui', () => {
     expect(page).toContain("sessionStorage.setItem('hotboard_topic'");
     expect(page).toContain("navigate('new-task')");
     expect(newTask).toContain("sessionStorage.getItem('hotboard_topic')");
+    expect(newTask).toContain('const sourceContent');
+    expect(newTask).toContain("source: 'web'");
+    expect(newTask).toContain('setSelectedSearchSourceIds([sourceKey(sourceSection, 0)])');
     expect(newTask).toContain("setMode('ai')");
     expect(newTask).toContain('已带入热榜选题');
     expect(css).toContain('grid-template-columns: minmax(0, 1fr) minmax(260px, 310px)');

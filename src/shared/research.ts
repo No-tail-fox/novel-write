@@ -5,6 +5,8 @@ import type {
   AiSourceContext,
   AiSourceSection,
   AppConfig,
+  HotBoardSourceContent,
+  HotBoardSourceContentInput,
   ImaConfig,
   ResearchCopyComposeInput,
   ResearchCopyComposeResult,
@@ -261,6 +263,40 @@ export async function searchWebSources(query: string, fetchImpl: FetchLike = fet
     throw new Error(context.warnings.join('; ') || 'All web search providers failed.');
   }
   return context.sections;
+}
+
+export async function readPublicSourceContent(
+  input: HotBoardSourceContentInput,
+  fetchImpl: FetchLike = fetch,
+): Promise<HotBoardSourceContent> {
+  const title = input.title.trim();
+  const url = input.url.trim();
+  const summary = compactText(input.summary ?? '');
+  let snapshot: { url: string; content: string } = { url, content: '' };
+  let fetchWarning = '';
+  try {
+    snapshot = await fetchPageSnapshot(url, fetchImpl);
+  } catch (error) {
+    fetchWarning = error instanceof Error ? error.message : String(error);
+  }
+  const pageContent = compactText(snapshot.content);
+  const hasReadablePage = pageContent.length >= 60 && pageContent !== title;
+  const content = hasReadablePage ? pageContent : summary;
+  const kind: HotBoardSourceContent['kind'] = hasReadablePage ? 'page' : summary ? 'summary' : 'unavailable';
+  const warning = kind === 'page'
+    ? ''
+    : kind === 'summary'
+      ? `未能读取页面正文，当前使用热榜来源摘要。${fetchWarning ? ` ${fetchWarning}` : ''}`.trim()
+      : `未能读取页面正文，且来源没有提供摘要。${fetchWarning ? ` ${fetchWarning}` : ''}`.trim();
+  return {
+    title,
+    url: snapshot.url || url,
+    content,
+    excerpt: content.slice(0, 600),
+    kind,
+    fetchedAt: new Date().toISOString(),
+    ...(warning ? { warning } : {}),
+  };
 }
 
 export async function searchWebSourcesDetailed(input: WebSearchRequest, fetchImpl: FetchLike = fetch): Promise<AiSourceContext> {

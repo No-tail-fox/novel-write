@@ -638,8 +638,85 @@ const bookProductSchema = z
     note: optionalText(MAX_TASK_TEXT),
     coverPath: optionalText(MAX_IPC_PATH),
     materialFolder: optionalText(MAX_IPC_PATH),
+    selectionStatus: z.enum(['candidate', 'watching', 'planned', 'created', 'rejected']).optional(),
+    opportunityScore: z.object({
+      demand: finiteNumber.min(0).max(100),
+      gap: finiteNumber.min(0).max(100),
+      fit: finiteNumber.min(0).max(100),
+      conversion: finiteNumber.min(0).max(100),
+      executionEase: finiteNumber.min(0).max(100),
+      total: finiteNumber.min(0).max(100),
+      confidence: z.enum(['low', 'medium', 'high']),
+      confirmed: z.boolean(),
+    }).strict().optional(),
+    evidence: z.array(z.object({
+      postId: idSchema,
+      platform: z.enum(['douyin', 'wechat-channels', 'bilibili']),
+      title: nonEmptyText(MAX_IPC_TEXT),
+      sourceUrl: nonEmptyText(MAX_IPC_PATH),
+      burstScore: finiteNumber.min(0).max(100).nullable(),
+      note: z.string().max(MAX_TASK_TEXT),
+    }).strict()).max(MAX_IPC_ARRAY_ITEMS).optional(),
+    decisionNote: optionalText(MAX_TASK_TEXT),
+    riskNote: optionalText(MAX_TASK_TEXT),
+    creativeBrief: optionalText(MAX_TASK_TEXT),
   })
   .strict();
+
+const benchmarkPlatformSchema = z.enum(['douyin', 'wechat-channels', 'bilibili']);
+const benchmarkMetricValueSchema = z.object({ value: finiteNumber.nonnegative().nullable(), reason: optionalText(2048) }).strict();
+const benchmarkMetricsSchema = z.object({
+  plays: benchmarkMetricValueSchema.optional(),
+  likes: benchmarkMetricValueSchema.optional(),
+  comments: benchmarkMetricValueSchema.optional(),
+  favorites: benchmarkMetricValueSchema.optional(),
+  shares: benchmarkMetricValueSchema.optional(),
+  coins: benchmarkMetricValueSchema.optional(),
+  danmaku: benchmarkMetricValueSchema.optional(),
+  followers: benchmarkMetricValueSchema.optional(),
+}).strict();
+const benchmarkAccountInputSchema = z.object({
+  platform: benchmarkPlatformSchema,
+  url: nonEmptyText(MAX_IPC_PATH),
+  displayName: optionalText(2048),
+}).strict();
+const benchmarkGroupInputSchema = z.object({
+  id: optionalText(256),
+  name: nonEmptyText(2048),
+  track: optionalText(2048),
+  tags: stringArray(100, 2048).optional(),
+  notes: optionalText(MAX_TASK_TEXT),
+  refreshPolicy: z.enum(['manual', 'six-hours', 'daily']).optional(),
+  accounts: z.array(benchmarkAccountInputSchema).min(1).max(3),
+}).strict();
+const benchmarkPostInputSchema = z.object({
+  id: optionalText(256),
+  groupId: idSchema,
+  platform: benchmarkPlatformSchema,
+  sourceUrl: nonEmptyText(MAX_IPC_PATH),
+  title: nonEmptyText(MAX_IPC_TEXT),
+  author: optionalText(MAX_IPC_TEXT),
+  accountUrl: optionalText(MAX_IPC_PATH),
+  coverUrl: optionalText(MAX_IPC_PATH),
+  publishedAt: finiteNumber.nonnegative().nullable().optional(),
+  durationSeconds: finiteNumber.nonnegative().nullable().optional(),
+  transcript: optionalText(MAX_TASK_TEXT),
+  tags: stringArray(100, 2048).optional(),
+  metrics: benchmarkMetricsSchema.optional(),
+  metricCapturedAt: finiteNumber.nonnegative().optional(),
+  isFavorite: z.boolean().optional(),
+  workflowStatus: z.enum(['new', 'reviewed', 'shortlisted', 'analyzed', 'excluded']).optional(),
+  note: optionalText(MAX_TASK_TEXT),
+}).strict();
+const benchmarkLoginInputSchema = z.object({
+  platform: benchmarkPlatformSchema,
+  url: nonEmptyText(MAX_IPC_PATH),
+}).strict();
+const hotBoardSourceContentInputSchema = z.object({
+  title: nonEmptyText(MAX_IPC_TEXT),
+  url: nonEmptyText(MAX_IPC_PATH),
+  summary: optionalText(MAX_TASK_TEXT),
+}).strict();
 
 export const createViralAnalysisSchema = z
   .object({
@@ -708,6 +785,7 @@ export const ipcInputSchemas = {
   'research:web-search': z.union([nonEmptyText(MAX_IPC_TEXT), webSearchRequestSchema]),
   'research:compose-copy': researchCopyComposeSchema,
   'hotboard:fetch': hotBoardArchiveRequestSchema,
+  'hotboard:read-source': hotBoardSourceContentInputSchema,
   'aihot:query': aiHotArchiveRequestSchema,
   'hotboard:open-url': nonEmptyText(MAX_IPC_PATH).refine((value) => {
     try {
@@ -801,6 +879,14 @@ export const ipcInputSchemas = {
     data: bookProductSchema,
   }).strict(),
   'book-selection:delete': z.object({ theme: nonEmptyText(1024), bookId: idSchema }).strict(),
+  'benchmark:list-groups': z.void(),
+  'benchmark:save-group': benchmarkGroupInputSchema,
+  'benchmark:delete-group': idSchema,
+  'benchmark:list-posts': z.string().max(256).optional(),
+  'benchmark:save-post': benchmarkPostInputSchema,
+  'benchmark:delete-post': idSchema,
+  'benchmark:sync-group': idSchema,
+  'benchmark:open-login': benchmarkLoginInputSchema,
   'person-assets:list': z.void(),
   'person-assets:create': nameSchema,
   'person-assets:rename': z.object({ oldName: nameSchema, newName: nameSchema }).strict(),

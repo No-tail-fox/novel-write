@@ -732,6 +732,182 @@ export interface MusicMvSettings {
   audioPath: string;
 }
 
+export const BENCHMARK_PLATFORMS = ['douyin', 'wechat-channels', 'bilibili'] as const;
+export type BenchmarkPlatform = (typeof BENCHMARK_PLATFORMS)[number];
+export type BenchmarkLinkKind = 'account' | 'post' | 'unknown';
+export type BenchmarkRefreshPolicy = 'manual' | 'six-hours' | 'daily';
+export type BenchmarkSyncState = 'manual-only' | 'ready' | 'requires-login' | 'limited' | 'error';
+export type BenchmarkWorkflowStatus = 'new' | 'reviewed' | 'shortlisted' | 'analyzed' | 'excluded';
+export type BenchmarkScoreConfidence = 'low' | 'medium' | 'high';
+export type BenchmarkMetricKey = 'plays' | 'likes' | 'comments' | 'favorites' | 'shares' | 'coins' | 'danmaku' | 'followers';
+
+export interface BenchmarkMetricValue {
+  value: number | null;
+  reason?: string;
+}
+
+export type BenchmarkMetrics = Partial<Record<BenchmarkMetricKey, BenchmarkMetricValue>>;
+
+export interface BenchmarkMetricSnapshot {
+  capturedAt: number;
+  metrics: BenchmarkMetrics;
+}
+
+export interface BenchmarkAccountInput {
+  platform: BenchmarkPlatform;
+  url: string;
+  displayName?: string;
+}
+
+export interface BenchmarkAccount extends BenchmarkAccountInput {
+  id: string;
+  syncState: BenchmarkSyncState;
+  lastSyncedAt: number | null;
+  errorMessage: string;
+}
+
+export interface BenchmarkGroupInput {
+  id?: string;
+  name: string;
+  track?: string;
+  tags?: string[];
+  notes?: string;
+  refreshPolicy?: BenchmarkRefreshPolicy;
+  accounts: BenchmarkAccountInput[];
+}
+
+export interface BenchmarkGroup {
+  id: string;
+  name: string;
+  track: string;
+  tags: string[];
+  notes: string;
+  refreshPolicy: BenchmarkRefreshPolicy;
+  accounts: BenchmarkAccount[];
+  createdAt: number;
+  updatedAt: number;
+}
+
+export interface BenchmarkPostInput {
+  id?: string;
+  groupId: string;
+  platform: BenchmarkPlatform;
+  sourceUrl: string;
+  title: string;
+  author?: string;
+  accountUrl?: string;
+  coverUrl?: string;
+  publishedAt?: number | null;
+  durationSeconds?: number | null;
+  transcript?: string;
+  tags?: string[];
+  metrics?: BenchmarkMetrics;
+  metricCapturedAt?: number;
+  isFavorite?: boolean;
+  workflowStatus?: BenchmarkWorkflowStatus;
+  note?: string;
+}
+
+export interface BenchmarkPost {
+  id: string;
+  groupId: string;
+  platform: BenchmarkPlatform;
+  sourceUrl: string;
+  title: string;
+  author: string;
+  accountUrl: string;
+  coverUrl: string;
+  publishedAt: number | null;
+  durationSeconds: number | null;
+  transcript: string;
+  tags: string[];
+  metrics: BenchmarkMetrics;
+  snapshots: BenchmarkMetricSnapshot[];
+  isFavorite: boolean;
+  workflowStatus: BenchmarkWorkflowStatus;
+  note: string;
+  createdAt: number;
+  updatedAt: number;
+}
+
+export interface BenchmarkAccountSyncMutation {
+  groupId: string;
+  accountId: string;
+  syncState: Exclude<BenchmarkSyncState, 'manual-only'>;
+  displayName?: string;
+  errorMessage: string;
+  syncedAt: number | null;
+  posts: BenchmarkPostInput[];
+}
+
+export interface BenchmarkAccountSyncStorageResult {
+  group: BenchmarkGroup;
+  posts: BenchmarkPost[];
+  importedCount: number;
+  updatedCount: number;
+}
+
+export interface BenchmarkAccountSyncReport {
+  accountId: string;
+  platform: BenchmarkPlatform;
+  syncState: Exclude<BenchmarkSyncState, 'manual-only'>;
+  displayName: string;
+  importedCount: number;
+  updatedCount: number;
+  lastSyncedAt: number | null;
+  message: string;
+}
+
+export interface BenchmarkGroupSyncResult {
+  groupId: string;
+  startedAt: number;
+  finishedAt: number;
+  accounts: BenchmarkAccountSyncReport[];
+  importedCount: number;
+  updatedCount: number;
+}
+
+export interface BenchmarkLoginInput {
+  platform: BenchmarkPlatform;
+  url: string;
+}
+
+export interface BenchmarkBurstScore {
+  score: number | null;
+  confidence: BenchmarkScoreConfidence;
+  components: {
+    accountPercentile: number;
+    velocity: number;
+    deepEngagement: number;
+    topicHeat: number;
+    crossPlatform: number;
+  };
+  explanation: string;
+}
+
+export interface BenchmarkOpportunityInputs {
+  demand: number;
+  gap: number;
+  fit: number;
+  conversion: number;
+  executionEase: number;
+}
+
+export interface BenchmarkSelectionScore extends BenchmarkOpportunityInputs {
+  total: number;
+  confidence: BenchmarkScoreConfidence;
+  confirmed: boolean;
+}
+
+export interface BenchmarkSelectionEvidence {
+  postId: string;
+  platform: BenchmarkPlatform;
+  title: string;
+  sourceUrl: string;
+  burstScore: number | null;
+  note: string;
+}
+
 export interface BookProductInfo {
   name: string;
   author?: string;
@@ -746,6 +922,12 @@ export interface BookProductInfo {
   note?: string;
   coverPath?: string;
   materialFolder?: string;
+  selectionStatus?: 'candidate' | 'watching' | 'planned' | 'created' | 'rejected';
+  opportunityScore?: BenchmarkSelectionScore;
+  evidence?: BenchmarkSelectionEvidence[];
+  decisionNote?: string;
+  riskNote?: string;
+  creativeBrief?: string;
 }
 
 export interface BookSelectionRecord {
@@ -1249,6 +1431,22 @@ export interface HotBoardItem {
   updatedAt: string;
   sourceId: 'uapi' | 'techmeme';
   sourceLabel: string;
+}
+
+export interface HotBoardSourceContentInput {
+  title: string;
+  url: string;
+  summary?: string;
+}
+
+export interface HotBoardSourceContent {
+  title: string;
+  url: string;
+  content: string;
+  excerpt: string;
+  kind: 'page' | 'summary' | 'unavailable';
+  fetchedAt: string;
+  warning?: string;
 }
 
 export interface HotBoardPlatformStatus {

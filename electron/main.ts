@@ -1,4 +1,4 @@
-import { app, BrowserWindow, clipboard, dialog, ipcMain, Menu, nativeImage, net, protocol, safeStorage, shell, type Cookie } from 'electron';
+import { app, BrowserWindow, clipboard, dialog, ipcMain, Menu, nativeImage, net, protocol, safeStorage, session, shell, type Cookie } from 'electron';
 import { execFile } from 'node:child_process';
 import { createHash, randomInt, randomUUID } from 'node:crypto';
 import { existsSync } from 'node:fs';
@@ -7,6 +7,7 @@ import { basename, dirname, extname, isAbsolute, join, relative, resolve } from 
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { promisify } from 'node:util';
 import { readTaskArtifactSnapshot } from '../src/shared/artifact-preview';
+import { classifyBenchmarkUrl, normalizeBenchmarkSourceUrl } from '../src/shared/benchmark-monitoring';
 import { isCancellation, normalizeAppError } from '../src/shared/app-error';
 import { fromLlmModelTestResult, testConfigTarget } from '../src/shared/config-utils';
 import { generateImageLabRecord } from '../src/shared/image-lab';
@@ -38,13 +39,13 @@ import { createPersonAsset, deletePersonAsset, importPersonAssetFiles, listPerso
 import { createConfiguredJsonLlm, createConfiguredTextLlm, listConfiguredProviderModels, testConfiguredLlm } from '../src/shared/llm-provider';
 import { markSceneImageForRegeneration, markSceneImagesForRegeneration, markSceneNarrationForRegeneration, markTaskDraftForRepack, markTaskStepForRerun, removeSceneVideoAsset, replaceSceneImageAssets, replaceSceneVideoAsset, updateSceneImagePrompt, updateSceneVideoTrim, updateTaskSubtitleLines } from '../src/shared/pipeline-cache';
 import { resolvePythonRuntimeInfo, setDefaultPythonRuntimeAppRoot } from '../src/shared/python-runtime';
-import { composeCopyFromSources, createAiSourceResearcher, researchSearchErrorMessage, searchWebSources, searchWebSourcesDetailed } from '../src/shared/research';
+import { composeCopyFromSources, createAiSourceResearcher, readPublicSourceContent, researchSearchErrorMessage, searchWebSources, searchWebSourcesDetailed } from '../src/shared/research';
 import { runTask } from '../src/shared/runner';
 import { runStoryboundMediaSidecar } from '../src/shared/storybound-sidecar';
 import { FileDatabase, type HistoryDeletionCleanup, type HistoryTombstone } from '../src/shared/storage';
 import { createHtmlVideoRuntimeProviders, createTaskRuntimeProviders } from '../src/shared/task-runtime-providers';
 import { assertTaskLifecycleAction } from '../src/shared/task-progress';
-import type { AccountProfile, ActivationState, AppConfig, AppDelta, AppDeltaReconcileRequest, AppDeltaReconcileResult, AppStatePatch, BookSelectionInput, ConfigTestTarget, CreateTaskInput, CreateViralAnalysisInput, CursorRequest, CustomStyle, CustomStyleGenerateInput, DraftTemplate, HistoryFamily, HistoryListRequest, HtmlVideoAsset, HtmlVideoAssetTarget, HtmlVideoCompositionSource, HtmlVideoCompositionSourceLintInput, HtmlVideoCompositionSourceSaveInput, HtmlVideoConfigChange, HtmlVideoPipelineDataV2, HtmlVideoSceneChange, HtmlVideoVoiceClip, ImageLabGenerateInput, ImageLabRecord, ImageLabSummary, ImaKnowledgeRequest, LlmConfig, ManagedBgmImport, MinimaxCloneVoiceInput, OrdinaryTaskCoverRatio, OrdinaryTaskCoverSelection, PromptTemplate, ProviderModelListRequest, ResearchCopyComposeInput, SceneVideoLibraryItem, SequencedTaskEvent, StoryboardScene, Task, TaskArtifactVideoPreview, TaskImageReplacementSource, TaskStatus, TaskStepRerunMode, TaskSubtitleSceneLines, TaskVideoReplacementSource, UiPreferencesUpdate, ViralAnalysisRecord, ViralAnalysisResult, ViralAnalysisStatus, ViralProductionTaskOptions, VolcengineSpeakerListRequest, VoiceLabGenerateInput, VoiceLabRecord, VoiceLabSummary, WebSearchRequest } from '../src/shared/types';
+import type { AccountProfile, ActivationState, AppConfig, AppDelta, AppDeltaReconcileRequest, AppDeltaReconcileResult, AppStatePatch, BenchmarkGroupInput, BenchmarkGroupSyncResult, BenchmarkLoginInput, BenchmarkPlatform, BenchmarkPostInput, BookSelectionInput, ConfigTestTarget, CreateTaskInput, CreateViralAnalysisInput, CursorRequest, CustomStyle, CustomStyleGenerateInput, DraftTemplate, HistoryFamily, HistoryListRequest, HotBoardSourceContent, HtmlVideoAsset, HtmlVideoAssetTarget, HtmlVideoCompositionSource, HtmlVideoCompositionSourceLintInput, HtmlVideoCompositionSourceSaveInput, HtmlVideoConfigChange, HtmlVideoPipelineDataV2, HtmlVideoSceneChange, HtmlVideoVoiceClip, ImageLabGenerateInput, ImageLabRecord, ImageLabSummary, ImaKnowledgeRequest, LlmConfig, ManagedBgmImport, MinimaxCloneVoiceInput, OrdinaryTaskCoverRatio, OrdinaryTaskCoverSelection, PromptTemplate, ProviderModelListRequest, ResearchCopyComposeInput, SceneVideoLibraryItem, SequencedTaskEvent, StoryboardScene, Task, TaskArtifactVideoPreview, TaskImageReplacementSource, TaskStatus, TaskStepRerunMode, TaskSubtitleSceneLines, TaskVideoReplacementSource, UiPreferencesUpdate, ViralAnalysisRecord, ViralAnalysisResult, ViralAnalysisStatus, ViralProductionTaskOptions, VolcengineSpeakerListRequest, VoiceLabGenerateInput, VoiceLabRecord, VoiceLabSummary, WebSearchRequest } from '../src/shared/types';
 import { boundViralDiagnosticText, createViralProductionTaskInput, detectViralPlatform, runViralAnalysis, viralCheckpointResumeState } from '../src/shared/viral-analysis';
 import { createViralRuntimeProviders } from '../src/shared/viral-runtime';
 import { listVolcengineSpeakers } from '../src/shared/volcengine-speakers';
@@ -70,6 +71,7 @@ import { importManagedImageLabRecord } from './image-lab-import';
 import { importManagedBgm, resolveRuntimeManagedBgmLibrary } from './managed-bgm';
 import { writeWindowsManagedFile } from './windows-managed-file';
 import { captureEditorialQa, resolveEditorialQaConfig } from './editorial-qa';
+import { collectBenchmarkAccount } from './benchmark-sync';
 import { copySceneVideoToTask, importSceneVideoToLibrary, listSceneVideoLibrary, SCENE_VIDEO_EXTENSIONS } from './scene-video-library';
 import { ConfigService } from './config-service';
 import { CredentialVault } from './credential-vault';
@@ -92,6 +94,7 @@ import {
 } from './task-run-lifecycle';
 import {
   attachDouyinLoginSecurity,
+  attachBenchmarkLoginSecurity,
   attachMainWindowSecurity,
   isAllowedDouyinCookieDomain,
   type RendererPolicy,
@@ -112,11 +115,13 @@ protocol.registerSchemesAsPrivileged([{
 const execFileAsync = promisify(execFile);
 let mainWindow: BrowserWindow | null = null;
 let viralLoginWindow: BrowserWindow | null = null;
+let benchmarkLoginWindow: BrowserWindow | null = null;
 let mainRendererPolicy: RendererPolicy | null = null;
 let mainWindowPolicyInstalled = false;
 let db: FileDatabase | null = null;
 let dbInitializationPromise: Promise<FileDatabase> | null = null;
 let configService: ConfigService | null = null;
+const hotBoardSourceCache = new Map<string, { expiresAt: number; value: HotBoardSourceContent }>();
 interface RunningTaskRun extends TaskRunIntentState {
   activityReservation: HistoryActivityReservation | null;
   completion: Promise<void>;
@@ -2182,6 +2187,19 @@ trustedHandle('research:compose-copy', async (_event, input: ResearchCopyCompose
 
 trustedHandle('hotboard:fetch', async (_event, input) => loadHotBoardArchive(await getDb(), input));
 
+trustedHandle('hotboard:read-source', async (_event, input) => {
+  const key = input.url.trim();
+  const cached = hotBoardSourceCache.get(key);
+  if (cached && cached.expiresAt > Date.now()) return cached.value;
+  const value = await readPublicSourceContent(input);
+  hotBoardSourceCache.set(key, { expiresAt: Date.now() + 30 * 60_000, value });
+  if (hotBoardSourceCache.size > 200) {
+    const oldestKey = hotBoardSourceCache.keys().next().value;
+    if (typeof oldestKey === 'string') hotBoardSourceCache.delete(oldestKey);
+  }
+  return value;
+});
+
 trustedHandle('aihot:query', async (_event, input) => loadAiHotArchive(await getDb(), input));
 
 trustedHandle('hotboard:open-url', async (_event, url: string) => {
@@ -2362,6 +2380,75 @@ trustedHandle('book-selection:save', async (_event, input: BookSelectionInput) =
 trustedHandle('book-selection:delete', async (_event, input: { theme: string; bookId: string }) => {
   await (await getDb()).deleteBookSelection(input.theme, input.bookId);
 });
+
+trustedHandle('benchmark:list-groups', async () => (await getDb()).listBenchmarkGroups());
+
+trustedHandle('benchmark:save-group', async (_event, input: BenchmarkGroupInput) => (await getDb()).upsertBenchmarkGroup(input));
+
+trustedHandle('benchmark:delete-group', async (_event, id: string) => {
+  await (await getDb()).deleteBenchmarkGroup(id);
+});
+
+trustedHandle('benchmark:list-posts', async (_event, groupId?: string) => (await getDb()).listBenchmarkPosts(groupId));
+
+trustedHandle('benchmark:save-post', async (_event, input: BenchmarkPostInput) => (await getDb()).upsertBenchmarkPost(input));
+
+trustedHandle('benchmark:delete-post', async (_event, id: string) => {
+  await (await getDb()).deleteBenchmarkPost(id);
+});
+
+trustedHandle('benchmark:sync-group', async (_event, groupId: string): Promise<BenchmarkGroupSyncResult> => {
+  const startedAt = Date.now();
+  const database = await getDb();
+  const group = (await database.listBenchmarkGroups()).find((item) => item.id === groupId);
+  if (!group) throw new Error('BENCHMARK_GROUP_NOT_FOUND: 对标组不存在或已删除。');
+  const accounts: BenchmarkGroupSyncResult['accounts'] = [];
+  for (const account of group.accounts) {
+    let connector;
+    try {
+      const platformSession = session.fromPartition(benchmarkSessionPartition(account.platform));
+      connector = await collectBenchmarkAccount(account, (url, init) => platformSession.fetch(url, init));
+    } catch (error) {
+      connector = {
+        syncState: 'error' as const,
+        displayName: account.displayName,
+        message: error instanceof Error ? error.message : String(error),
+        syncedAt: null,
+        posts: [],
+      };
+    }
+    const stored = await database.applyBenchmarkAccountSync({
+      groupId,
+      accountId: account.id,
+      syncState: connector.syncState,
+      displayName: connector.displayName,
+      errorMessage: connector.syncState === 'ready' ? '' : connector.message,
+      syncedAt: connector.syncedAt,
+      posts: connector.posts,
+    });
+    const nextAccount = stored.group.accounts.find((item) => item.id === account.id) ?? account;
+    accounts.push({
+      accountId: account.id,
+      platform: account.platform,
+      syncState: connector.syncState,
+      displayName: nextAccount.displayName ?? '',
+      importedCount: stored.importedCount,
+      updatedCount: stored.updatedCount,
+      lastSyncedAt: nextAccount.lastSyncedAt,
+      message: connector.message,
+    });
+  }
+  return {
+    groupId,
+    startedAt,
+    finishedAt: Date.now(),
+    accounts,
+    importedCount: accounts.reduce((sum, account) => sum + account.importedCount, 0),
+    updatedCount: accounts.reduce((sum, account) => sum + account.updatedCount, 0),
+  };
+});
+
+trustedHandle('benchmark:open-login', async (_event, input: BenchmarkLoginInput) => openBenchmarkLoginWindow(input));
 
 trustedHandle('person-assets:list', async () => listPersonAssets(personAssetsRoot()));
 
@@ -4038,6 +4125,55 @@ async function openViralLoginWindow(): Promise<string | null> {
     void loginWindow.loadURL('https://www.douyin.com/').catch((error) => {
       console.error('Failed to open Douyin login window', error);
       settle(null);
+      if (!loginWindow.isDestroyed()) loginWindow.destroy();
+    });
+  });
+}
+
+function benchmarkSessionPartition(platform: BenchmarkPlatform): string {
+  if (platform === 'douyin') return 'persist:storydream-viral-douyin';
+  return `persist:storydream-benchmark-${platform}`;
+}
+
+async function openBenchmarkLoginWindow(input: BenchmarkLoginInput): Promise<void> {
+  const target = normalizeBenchmarkSourceUrl(input.url);
+  const classification = classifyBenchmarkUrl(target);
+  if (classification.platform !== input.platform) {
+    throw new Error('BENCHMARK_PLATFORM_MISMATCH: 登录链接与账号平台不一致。');
+  }
+  if (benchmarkLoginWindow && !benchmarkLoginWindow.isDestroyed()) {
+    benchmarkLoginWindow.focus();
+    return;
+  }
+  await new Promise<void>((resolve, reject) => {
+    let settled = false;
+    const settle = (error?: unknown) => {
+      if (settled) return;
+      settled = true;
+      if (error) reject(error);
+      else resolve();
+    };
+    const loginWindow = new BrowserWindow({
+      width: 1100,
+      height: 760,
+      title: `${input.platform === 'douyin' ? '抖音' : input.platform === 'wechat-channels' ? '视频号' : 'B站'}账号登录`,
+      autoHideMenuBar: true,
+      webPreferences: {
+        partition: benchmarkSessionPartition(input.platform),
+        contextIsolation: true,
+        nodeIntegration: false,
+        sandbox: true,
+      },
+    });
+    benchmarkLoginWindow = loginWindow;
+    attachBenchmarkLoginSecurity(loginWindow, input.platform);
+    loginWindow.on('closed', () => {
+      if (benchmarkLoginWindow === loginWindow) benchmarkLoginWindow = null;
+      settle();
+    });
+    void loginWindow.loadURL(target).catch((error) => {
+      if (benchmarkLoginWindow === loginWindow) benchmarkLoginWindow = null;
+      settle(error);
       if (!loginWindow.isDestroyed()) loginWindow.destroy();
     });
   });

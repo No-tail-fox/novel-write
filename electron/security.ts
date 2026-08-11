@@ -1,8 +1,14 @@
 import type { BrowserWindow, IpcMainInvokeEvent } from 'electron';
 import { isAbsolute, relative, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import type { BenchmarkPlatform } from '../src/shared/types';
 
 const DOUYIN_LOGIN_DOMAINS = ['douyin.com', 'iesdouyin.com', 'amemv.com'] as const;
+const BENCHMARK_LOGIN_DOMAINS: Record<BenchmarkPlatform, readonly string[]> = {
+  douyin: DOUYIN_LOGIN_DOMAINS,
+  'wechat-channels': ['channels.weixin.qq.com', 'weixin.qq.com', 'open.weixin.qq.com', 'login.weixin.qq.com', 'finder.video.qq.com', 'wxv.qq.com'],
+  bilibili: ['bilibili.com', 'b23.tv'],
+};
 
 export interface RendererPolicy {
   mode: 'development' | 'production';
@@ -102,6 +108,14 @@ export function attachMainWindowSecurity(win: BrowserWindow, policy: RendererPol
 
 export function attachDouyinLoginSecurity(win: BrowserWindow): void {
   attachNavigationPolicy(win, isAllowedDouyinLoginNavigation);
+}
+
+export function attachBenchmarkLoginSecurity(win: BrowserWindow, platform: BenchmarkPlatform): void {
+  attachNavigationPolicy(win, (value) => {
+    const url = parseUrl(value);
+    if (!url || url.protocol !== 'https:' || hasUrlCredentials(url)) return false;
+    return BENCHMARK_LOGIN_DOMAINS[platform].some((domain) => hostnameMatches(url.hostname, domain));
+  });
 }
 
 export function attachLocalHtmlSecurity(win: BrowserWindow, taskRoot: string): void {

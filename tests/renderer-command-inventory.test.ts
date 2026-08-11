@@ -13,14 +13,14 @@ const queryOnlyMethods = new Set([
   'listBookSelections', 'listPersonAssets', 'listPersonAssetImages', 'getHtmlVideoMediaUrl', 'getTaskMediaUrl',
   'getHtmlVideoCompositionSource', 'lintHtmlVideoCompositionSource',
   'getViralAnalysisResult', 'getTaskArtifacts', 'readAssetDataUrl', 'getJianyingEffectCatalog', 'listSceneVideoLibrary', 'onAppDelta',
-  'fetchHotBoard', 'queryAiHot',
+  'fetchHotBoard', 'queryAiHot', 'listBenchmarkGroups', 'listBenchmarkPosts',
 ]);
 
 const routeEntryPaths = {
   shell: ['src/app/App.tsx', 'src/app/AppShell.tsx', 'src/app/navigation.ts'],
   'new-task': ['src/features/tasks/NewTaskPage.tsx'],
-  queue: ['src/features/tasks/QueuePage.tsx'],
   'hot-board': ['src/features/hotboard/HotBoardPage.tsx'],
+  queue: ['src/features/tasks/QueuePage.tsx'],
   history: ['src/features/tasks/HistoryPage.tsx'],
   'task-detail': ['src/features/tasks/TaskDetailPage.tsx'],
   'html-video': ['src/features/html-video/HtmlVideoPage.tsx'],
@@ -223,7 +223,7 @@ function preloadApiMethods(source: string): string[] {
 function storyDreamApiMethods(source: string): string[] {
   const sourceFile = ts.createSourceFile('storydream-api.ts', source, ts.ScriptTarget.Latest, true);
   const names: string[] = [];
-  const owners = new Set(['StoryDreamApi', 'LocalBookPersonAssetApi']);
+  const owners = new Set(['StoryDreamApi', 'LocalBenchmarkBookPersonAssetApi']);
   function visit(node: ts.Node): void {
     if (ts.isTypeAliasDeclaration(node) && owners.has(node.name.text)) {
       const collect = (current: ts.Node): void => {
@@ -283,7 +283,7 @@ function visibleJsxText(source: string, path: string): string[] {
     if (ts.isJsxText(node)) {
       const value = node.text.replace(/\s+/gu, ' ').trim();
       if (value) values.push(value);
-    } else if (ts.isJsxAttribute(node) && ['aria-label', 'title'].includes(node.name.getText(sourceFile))) {
+    } else if (ts.isJsxAttribute(node) && ['aria-label', 'label', 'title'].includes(node.name.getText(sourceFile))) {
       if (node.initializer && ts.isStringLiteral(node.initializer)) values.push(node.initializer.text);
       else if (node.initializer && ts.isJsxExpression(node.initializer) && node.initializer.expression) {
         values.push(node.initializer.expression.getText(sourceFile));

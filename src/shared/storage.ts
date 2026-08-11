@@ -9,6 +9,12 @@ import type {
   AiHotQueryResult,
   AppConfig,
   AppState,
+  BenchmarkAccountSyncMutation,
+  BenchmarkAccountSyncStorageResult,
+  BenchmarkGroup,
+  BenchmarkGroupInput,
+  BenchmarkPost,
+  BenchmarkPostInput,
   BookSelectionInput,
   BookSelectionRecord,
   CreateTaskInput,
@@ -52,6 +58,7 @@ import type {
   VoiceLabRecord,
   VoiceLabSummary,
 } from './types';
+import { normalizeBenchmarkGroupInput, normalizeBenchmarkPostInput, normalizeBenchmarkSourceUrl } from './benchmark-monitoring';
 import { applyHtmlVideoConfigChanges, htmlVideoVisibleSteps, invalidateHtmlVideoPipeline, parseHtmlVideoPipelineData } from './html-video-workflow';
 import { assertHyperframesSource } from './hyperframes';
 import {
@@ -1020,6 +1027,18 @@ export class FileDatabase {
         updated_at INTEGER NOT NULL,
         PRIMARY KEY(theme, book_id)
       );
+      CREATE TABLE IF NOT EXISTS benchmark_groups (
+        id TEXT PRIMARY KEY,
+        data TEXT NOT NULL,
+        updated_at INTEGER NOT NULL
+      );
+      CREATE TABLE IF NOT EXISTS benchmark_posts (
+        id TEXT PRIMARY KEY,
+        group_id TEXT NOT NULL,
+        data TEXT NOT NULL,
+        updated_at INTEGER NOT NULL
+      );
+      CREATE INDEX IF NOT EXISTS idx_benchmark_posts_group_id ON benchmark_posts(group_id, updated_at DESC);
       CREATE TABLE IF NOT EXISTS hotboard_snapshots (
         archive_date TEXT PRIMARY KEY,
         fetched_at TEXT NOT NULL,
@@ -2025,6 +2044,109 @@ export class FileDatabase {
   async deleteBookSelection(theme: string, bookId: string): Promise<void> {
     await this.enqueueCommit(() => {
       this.db.run('DELETE FROM book_selection WHERE theme = ? AND book_id = ?', [theme, bookId]);
+    });
+  }
+
+  async listBenchmarkGroups(): Promise<BenchmarkGroup[]> {
+    await this.waitForWrites();
+    return getRows<Record<string, unknown>>(this.db, 'SELECT id, data, updated_at FROM benchmark_groups ORDER BY updated_at DESC, id ASC')
+      .map(rowToBenchmarkGroup);
+  }
+
+  async upsertBenchmarkGroup(input: BenchmarkGroupInput): Promise<BenchmarkGroup> {
+    return this.enqueueCommit(() => {
+      const existingRow = input.id
+        ? getFirstRow<Record<string, unknown>>(this.db, 'SELECT id, data, updated_at FROM benchmark_groups WHERE id = ?', [input.id])
+        : null;
+      const existing = existingRow ? rowToBenchmarkGroup(existingRow) : null;
+      const group = normalizeBenchmarkGroupInput(input, existing);
+      this.db.run('INSERT OR REPLACE INTO benchmark_groups (id, data, updated_at) VALUES (?, ?, ?)', [group.id, json(group), group.updatedAt]);
+      return group;
+    });
+  }
+
+  async deleteBenchmarkGroup(id: string): Promise<void> {
+    await this.enqueueCommit(() => {
+      this.db.run('DELETE FROM benchmark_posts WHERE group_id = ?', [id]);
+      this.db.run('DELETE FROM benchmark_groups WHERE id = ?', [id]);
+    });
+  }
+
+  async listBenchmarkPosts(groupId?: string): Promise<BenchmarkPost[]> {
+    await this.waitForWrites();
+    const rows = groupId === undefined
+      ? getRows<Record<string, unknown>>(this.db, 'SELECT id, group_id, data, updated_at FROM benchmark_posts ORDER BY updated_at DESC, id ASC')
+      : getRows<Record<string, unknown>>(this.db, 'SELECT id, group_id, data, updated_at FROM benchmark_posts WHERE group_id = ? ORDER BY updated_at DESC, id ASC', [groupId]);
+    return rows.map(rowToBenchmarkPost);
+  }
+
+  async upsertBenchmarkPost(input: BenchmarkPostInput): Promise<BenchmarkPost> {
+    return this.enqueueCommit(() => {
+      const group = getFirstRow<Record<string, unknown>>(this.db, 'SELECT id FROM benchmark_groups WHERE id = ?', [input.groupId]);
+      if (!group) throw new Error('BENCHMARK_GROUP_NOT_FOUND: 对标组不存在或已删除。');
+      const existingRow = input.id
+        ? getFirstRow<Record<string, unknown>>(this.db, 'SELECT id, group_id, data, updated_at FROM benchmark_posts WHERE id = ?', [input.id])
+        : null;
+      const existing = existingRow ? rowToBenchmarkPost(existingRow) : null;
+      if (existing && existing.groupId !== input.groupId) throw new Error('BENCHMARK_POST_GROUP_MISMATCH: 不能把现有作品静默移动到其他对标组。');
+      const post = normalizeBenchmarkPostInput(input, existing);
+      this.db.run('INSERT OR REPLACE INTO benchmark_posts (id, group_id, data, updated_at) VALUES (?, ?, ?, ?)', [post.id, post.groupId, json(post), post.updatedAt]);
+      return post;
+    });
+  }
+
+  async applyBenchmarkAccountSync(input: BenchmarkAccountSyncMutation): Promise<BenchmarkAccountSyncStorageResult> {
+    return this.enqueueCommit(() => {
+      const groupRow = getFirstRow<Record<string, unknown>>(this.db, 'SELECT id, data, updated_at FROM benchmark_groups WHERE id = ?', [input.groupId]);
+      if (!groupRow) throw new Error('BENCHMARK_GROUP_NOT_FOUND: 对标组不存在或已删除。');
+      const group = rowToBenchmarkGroup(groupRow);
+      const account = group.accounts.find((item) => item.id === input.accountId);
+      if (!account) throw new Error('BENCHMARK_ACCOUNT_NOT_FOUND: 对标账号不存在或已被修改。');
+
+      const existingPosts = getRows<Record<string, unknown>>(
+        this.db,
+        'SELECT id, group_id, data, updated_at FROM benchmark_posts WHERE group_id = ?',
+        [input.groupId],
+      ).map(rowToBenchmarkPost);
+      const posts: BenchmarkPost[] = [];
+      let importedCount = 0;
+      let updatedCount = 0;
+      for (const candidate of input.posts) {
+        if (candidate.groupId !== input.groupId || candidate.platform !== account.platform) {
+          throw new Error('BENCHMARK_SYNC_POST_SCOPE_MISMATCH: 同步作品不属于当前账号和对标组。');
+        }
+        const sourceUrl = normalizeBenchmarkSourceUrl(candidate.sourceUrl);
+        const existing = existingPosts.find((item) => item.platform === candidate.platform && item.sourceUrl === sourceUrl) ?? null;
+        const post = normalizeBenchmarkPostInput({ ...candidate, id: existing?.id, sourceUrl }, existing, input.syncedAt ?? Date.now());
+        this.db.run(
+          'INSERT OR REPLACE INTO benchmark_posts (id, group_id, data, updated_at) VALUES (?, ?, ?, ?)',
+          [post.id, post.groupId, json(post), post.updatedAt],
+        );
+        posts.push(post);
+        if (existing) updatedCount += 1;
+        else importedCount += 1;
+      }
+
+      const updatedAt = input.syncedAt ?? Date.now();
+      const nextGroup: BenchmarkGroup = {
+        ...group,
+        accounts: group.accounts.map((item) => item.id === account.id ? {
+          ...item,
+          displayName: input.displayName?.trim() || item.displayName,
+          syncState: input.syncState,
+          lastSyncedAt: input.syncedAt ?? item.lastSyncedAt,
+          errorMessage: input.errorMessage.trim(),
+        } : item),
+        updatedAt,
+      };
+      this.db.run('INSERT OR REPLACE INTO benchmark_groups (id, data, updated_at) VALUES (?, ?, ?)', [nextGroup.id, json(nextGroup), nextGroup.updatedAt]);
+      return { group: nextGroup, posts, importedCount, updatedCount };
+    });
+  }
+
+  async deleteBenchmarkPost(id: string): Promise<void> {
+    await this.enqueueCommit(() => {
+      this.db.run('DELETE FROM benchmark_posts WHERE id = ?', [id]);
     });
   }
 
@@ -3705,6 +3827,44 @@ function rowToBookSelectionRecord(row: Record<string, unknown>): BookSelectionRe
     data: parseJson<BookSelectionRecord['data']>(row.data, { name: '' }),
     updatedAt: Number(row.updated_at ?? 0),
   };
+}
+
+function rowToBenchmarkGroup(row: Record<string, unknown>): BenchmarkGroup {
+  return parseJson<BenchmarkGroup>(row.data, {
+    id: String(row.id ?? ''),
+    name: '',
+    track: '',
+    tags: [],
+    notes: '',
+    refreshPolicy: 'manual',
+    accounts: [],
+    createdAt: Number(row.updated_at ?? 0),
+    updatedAt: Number(row.updated_at ?? 0),
+  });
+}
+
+function rowToBenchmarkPost(row: Record<string, unknown>): BenchmarkPost {
+  return parseJson<BenchmarkPost>(row.data, {
+    id: String(row.id ?? ''),
+    groupId: String(row.group_id ?? ''),
+    platform: 'douyin',
+    sourceUrl: '',
+    title: '',
+    author: '',
+    accountUrl: '',
+    coverUrl: '',
+    publishedAt: null,
+    durationSeconds: null,
+    transcript: '',
+    tags: [],
+    metrics: {},
+    snapshots: [],
+    isFavorite: false,
+    workflowStatus: 'new',
+    note: '',
+    createdAt: Number(row.updated_at ?? 0),
+    updatedAt: Number(row.updated_at ?? 0),
+  });
 }
 
 function rowToTask(row: Record<string, unknown>): Task {

@@ -59,6 +59,17 @@ export function ViralAnalyzerPage({
   const selectedStageIndex = selected ? viralStages.indexOf(selected.currentStage) : -1;
 
   useEffect(() => {
+    const benchmarkUrl = sessionStorage.getItem('benchmark_viral_url');
+    const benchmarkPlatform = sessionStorage.getItem('benchmark_viral_platform');
+    sessionStorage.removeItem('benchmark_viral_url');
+    sessionStorage.removeItem('benchmark_viral_platform');
+    if (!benchmarkUrl) return;
+    setUrl(benchmarkUrl);
+    if (benchmarkPlatform === 'douyin' || benchmarkPlatform === 'bilibili') setSourceMode(benchmarkPlatform);
+    setMessage('已从对标监控带入作品链接。');
+  }, []);
+
+  useEffect(() => {
     if (!selectedId && state.viralAnalyses[0]) setSelectedId(state.viralAnalyses[0].id);
   }, [selectedId, state.viralAnalyses]);
 
