@@ -20,6 +20,7 @@ describe('IPC runtime contract', () => {
 
     expect(contract.ipcInputSchemas['hotboard:fetch'].parse({})).toEqual({});
     expect(contract.ipcInputSchemas['hotboard:fetch'].parse({ date: '2026-08-10', forceRefresh: true })).toEqual({ date: '2026-08-10', forceRefresh: true });
+    expect(contract.ipcInputSchemas['hotboard:read-source'].parse({ title: '标题', url: 'https://example.com/a', forceRefresh: true })).toEqual({ title: '标题', url: 'https://example.com/a', forceRefresh: true });
     expect(() => contract.ipcInputSchemas['hotboard:fetch'].parse({ date: '2026-02-31' })).toThrow();
     expect(contract.ipcInputSchemas['hotboard:open-url'].parse('https://example.com/story')).toBe('https://example.com/story');
     expect(() => contract.ipcInputSchemas['hotboard:open-url'].parse('file:///C:/secret.txt')).toThrow();

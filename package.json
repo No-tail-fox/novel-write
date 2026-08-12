@@ -23,6 +23,7 @@
   "license": "ISC",
   "description": "",
   "dependencies": {
+    "@fluentui/react-components": "^9.74.5",
     "sql.js": "^1.14.1",
     "undici": "^6.27.0",
     "zod": "^4.4.3"

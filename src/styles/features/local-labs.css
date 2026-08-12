@@ -677,6 +677,16 @@
   color: var(--danger);
 }
 
+.benchmark-account-error {
+  display: -webkit-box;
+  overflow: hidden;
+  color: var(--shell-muted);
+  font-size: 10px;
+  line-height: 1.35;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+}
+
 .benchmark-account-status-item .mini-button {
   width: max-content;
   min-width: 0;

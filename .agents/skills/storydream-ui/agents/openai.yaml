@@ -1,0 +1,4 @@
+interface:
+  display_name: "StoryDream UI"
+  short_description: "Build consistent Fluent UI desktop workspaces"
+  default_prompt: "Use $storydream-ui to implement a consistent StoryDream interface."

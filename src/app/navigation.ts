@@ -40,7 +40,7 @@ export const productionNavItems: NavigationItem[] = [
   { view: 'queue', label: '任务队列', hint: '运行进度', icon: ListChecks },
   { view: 'history', label: '历史任务', hint: '本地记录', icon: History },
   { view: 'book-selection', label: '选品助手', hint: '商品卖点', icon: BookOpen },
-  { view: 'benchmark', label: '对标导入', hint: '文案二改', icon: Radar },
+  { view: 'benchmark', label: '对标监控', hint: '三平台洞察', icon: Radar },
   { view: 'person-assets', label: '人物素材库', hint: '真图分镜', icon: Images },
 ];
 
@@ -84,8 +84,8 @@ export function pageSubtitle(view: ShellView): string {
   const map: Partial<Record<ShellView, string>> = {
     'new-task': '粘贴一段人物故事，几分钟后在剪映里打开',
     'hot-board': '追踪多平台实时热点，筛选后直接带入创作',
-    'book-selection': '维护本地商品书单，把卖点带入新任务或对标导入',
-    benchmark: '导入对标文案，本地二改后直接创建带货任务',
+    'book-selection': '汇总对标证据与机会评分，把选品简报带入新任务',
+    benchmark: '监控抖音、视频号和 B 站对标作品，筛选后进入拆解或选品',
     'person-assets': '管理本地人物真图素材，供分镜阶段保持角色一致',
     queue: '查看当前任务、步骤事件、失败重试和输出状态',
     history: '按时间浏览已完成、失败、取消和草稿任务',

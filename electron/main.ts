@@ -17,7 +17,7 @@ import { detectJianyingDraftPathResult, resolveRuntimeJianyingDraftPath } from '
 import { findJianyingExecutable } from '../src/shared/jianying-app';
 import { loadJianyingEffectCatalog } from '../src/shared/jianying-effects';
 import { runPyJianYingDraftBridge } from '../src/shared/jianying-bridge';
-import { resolveHtmlVideoCoverForRender, runHtmlVideoPipeline, synchronizeHtmlVideoPipelineCheckpoint } from '../src/shared/html-video-runner';
+import { resolveHtmlVideoCoverForRender, runHtmlVideoPipeline, synchronizeHtmlVideoPipelineCheckpoint, synchronizeHtmlVideoPreviewArtifact } from '../src/shared/html-video-runner';
 import { findHtmlVideoBackgroundRemovalModel, htmlVideoBitmapHasTransparency, HTML_VIDEO_BACKGROUND_REMOVAL_MODELS, type HtmlVideoBackgroundRemovalModel } from '../src/shared/html-video-background-removal';
 import { MAX_HTML_VIDEO_COVER_BYTES, type HtmlVideoCoverImageProcessor, type HtmlVideoCoverInspection } from '../src/shared/html-video-cover';
 import {
@@ -39,13 +39,13 @@ import { createPersonAsset, deletePersonAsset, importPersonAssetFiles, listPerso
 import { createConfiguredJsonLlm, createConfiguredTextLlm, listConfiguredProviderModels, testConfiguredLlm } from '../src/shared/llm-provider';
 import { markSceneImageForRegeneration, markSceneImagesForRegeneration, markSceneNarrationForRegeneration, markTaskDraftForRepack, markTaskStepForRerun, removeSceneVideoAsset, replaceSceneImageAssets, replaceSceneVideoAsset, updateSceneImagePrompt, updateSceneVideoTrim, updateTaskSubtitleLines } from '../src/shared/pipeline-cache';
 import { resolvePythonRuntimeInfo, setDefaultPythonRuntimeAppRoot } from '../src/shared/python-runtime';
-import { composeCopyFromSources, createAiSourceResearcher, readPublicSourceContent, researchSearchErrorMessage, searchWebSources, searchWebSourcesDetailed } from '../src/shared/research';
+import { composeCopyFromSources, createAiSourceResearcher, DEFAULT_WEB_SEARCH_PROVIDERS, readPublicSourceContent, researchSearchErrorMessage, searchWebSources, searchWebSourcesDetailed } from '../src/shared/research';
 import { runTask } from '../src/shared/runner';
 import { runStoryboundMediaSidecar } from '../src/shared/storybound-sidecar';
 import { FileDatabase, type HistoryDeletionCleanup, type HistoryTombstone } from '../src/shared/storage';
 import { createHtmlVideoRuntimeProviders, createTaskRuntimeProviders } from '../src/shared/task-runtime-providers';
 import { assertTaskLifecycleAction } from '../src/shared/task-progress';
-import type { AccountProfile, ActivationState, AppConfig, AppDelta, AppDeltaReconcileRequest, AppDeltaReconcileResult, AppStatePatch, BenchmarkGroupInput, BenchmarkGroupSyncResult, BenchmarkLoginInput, BenchmarkPlatform, BenchmarkPostInput, BookSelectionInput, ConfigTestTarget, CreateTaskInput, CreateViralAnalysisInput, CursorRequest, CustomStyle, CustomStyleGenerateInput, DraftTemplate, HistoryFamily, HistoryListRequest, HotBoardSourceContent, HtmlVideoAsset, HtmlVideoAssetTarget, HtmlVideoCompositionSource, HtmlVideoCompositionSourceLintInput, HtmlVideoCompositionSourceSaveInput, HtmlVideoConfigChange, HtmlVideoPipelineDataV2, HtmlVideoSceneChange, HtmlVideoVoiceClip, ImageLabGenerateInput, ImageLabRecord, ImageLabSummary, ImaKnowledgeRequest, LlmConfig, ManagedBgmImport, MinimaxCloneVoiceInput, OrdinaryTaskCoverRatio, OrdinaryTaskCoverSelection, PromptTemplate, ProviderModelListRequest, ResearchCopyComposeInput, SceneVideoLibraryItem, SequencedTaskEvent, StoryboardScene, Task, TaskArtifactVideoPreview, TaskImageReplacementSource, TaskStatus, TaskStepRerunMode, TaskSubtitleSceneLines, TaskVideoReplacementSource, UiPreferencesUpdate, ViralAnalysisRecord, ViralAnalysisResult, ViralAnalysisStatus, ViralProductionTaskOptions, VolcengineSpeakerListRequest, VoiceLabGenerateInput, VoiceLabRecord, VoiceLabSummary, WebSearchRequest } from '../src/shared/types';
+import type { AccountProfile, ActivationState, AppConfig, AppDelta, AppDeltaReconcileRequest, AppDeltaReconcileResult, AppStatePatch, BenchmarkGroupInput, BenchmarkGroupSyncResult, BenchmarkLoginInput, BenchmarkLoginResult, BenchmarkPlatform, BenchmarkPostInput, BookSelectionInput, ConfigTestTarget, CreateTaskInput, CreateViralAnalysisInput, CursorRequest, CustomStyle, CustomStyleGenerateInput, DraftTemplate, HistoryFamily, HistoryListRequest, HotBoardSourceContent, HtmlVideoAsset, HtmlVideoAssetTarget, HtmlVideoCompositionSource, HtmlVideoCompositionSourceLintInput, HtmlVideoCompositionSourceSaveInput, HtmlVideoConfigChange, HtmlVideoPipelineDataV2, HtmlVideoSceneChange, HtmlVideoVoiceClip, ImageLabGenerateInput, ImageLabRecord, ImageLabSummary, ImaKnowledgeRequest, LlmConfig, ManagedBgmImport, MinimaxCloneVoiceInput, OrdinaryTaskCoverRatio, OrdinaryTaskCoverSelection, PromptTemplate, ProviderModelListRequest, ResearchCopyComposeInput, SceneVideoLibraryItem, SequencedTaskEvent, StoryboardScene, Task, TaskArtifactVideoPreview, TaskImageReplacementSource, TaskStatus, TaskStepRerunMode, TaskSubtitleSceneLines, TaskVideoReplacementSource, UiPreferencesUpdate, ViralAnalysisRecord, ViralAnalysisResult, ViralAnalysisStatus, ViralProductionTaskOptions, VolcengineSpeakerListRequest, VoiceLabGenerateInput, VoiceLabRecord, VoiceLabSummary, WebSearchRequest } from '../src/shared/types';
 import { boundViralDiagnosticText, createViralProductionTaskInput, detectViralPlatform, runViralAnalysis, viralCheckpointResumeState } from '../src/shared/viral-analysis';
 import { createViralRuntimeProviders } from '../src/shared/viral-runtime';
 import { listVolcengineSpeakers } from '../src/shared/volcengine-speakers';
@@ -96,6 +96,7 @@ import {
   attachDouyinLoginSecurity,
   attachBenchmarkLoginSecurity,
   attachMainWindowSecurity,
+  isAllowedBenchmarkCookieDomain,
   isAllowedDouyinCookieDomain,
   type RendererPolicy,
   validateDevServerUrl,
@@ -1168,7 +1169,7 @@ async function buildRunOptions(database: FileDatabase, task: Task, workDir: stri
     appDataDir: appDataDir(),
     workDir,
     signal: controller.signal,
-    resolveAiSourceContext: createAiSourceResearcher(runtimeConfig),
+    resolveAiSourceContext: createAiSourceResearcher(runtimeConfig, fetch, true),
     ...createTaskRuntimeProviders(runtimeConfig, workDir, task),
     draftWriterOptions: { runBridge: runPyJianYingDraftBridge },
     customCoverTemplates: state.customCoverTemplates,
@@ -2171,10 +2172,11 @@ trustedHandle('research:web-search', async (_event, input: string | WebSearchReq
     return { query: trimmed, sections: [], warnings: ['请输入关键词后再搜索。'] };
   }
   try {
+    const runtimeConfig = await (await getConfigService()).getRuntimeConfig();
     if (typeof input !== 'string') {
-      return await searchWebSourcesDetailed({ query: trimmed, providers: input.providers });
+      return await searchWebSourcesDetailed({ query: trimmed, providers: input.providers }, fetch, runtimeConfig.webSearch);
     }
-    return { query: trimmed, sections: await searchWebSources(trimmed), warnings: [] };
+    return await searchWebSourcesDetailed({ query: trimmed, providers: [...DEFAULT_WEB_SEARCH_PROVIDERS] }, fetch, runtimeConfig.webSearch);
   } catch (error) {
     return { query: trimmed, sections: [], warnings: [researchSearchErrorMessage(error)] };
   }
@@ -2190,7 +2192,7 @@ trustedHandle('hotboard:fetch', async (_event, input) => loadHotBoardArchive(awa
 trustedHandle('hotboard:read-source', async (_event, input) => {
   const key = input.url.trim();
   const cached = hotBoardSourceCache.get(key);
-  if (cached && cached.expiresAt > Date.now()) return cached.value;
+  if (!input.forceRefresh && cached && cached.expiresAt > Date.now()) return cached.value;
   const value = await readPublicSourceContent(input);
   hotBoardSourceCache.set(key, { expiresAt: Date.now() + 30 * 60_000, value });
   if (hotBoardSourceCache.size > 200) {
@@ -2748,6 +2750,14 @@ trustedHandle('html-video:composition-source:save', (_event, input: HtmlVideoCom
       removeFile: async (path) => { await rm(path, { force: true }); },
       now: () => new Date().toISOString(),
     });
+    const savedTask = await getHtmlVideoTask(database, input.taskId);
+    const taskDirectory = await htmlVideoTaskDirectory(input.taskId);
+    const synchronizedPipeline = await synchronizeHtmlVideoPreviewArtifact(
+      taskDirectory.workDir.canonicalPath,
+      parseHtmlVideoPipelineData(savedTask.pipelineData),
+    );
+    await synchronizeHtmlVideoPipelineCheckpoint(taskDirectory.workDir.canonicalPath, synchronizedPipeline);
+    await database.updateTask(input.taskId, { pipelineData: JSON.stringify(synchronizedPipeline) });
     const [composition, mutation] = await Promise.all([
       loadHtmlVideoCompositionSource(database, input.taskId, input.sceneIndex),
       enqueueAppDelta(() => ({ kind: 'task-upsert', task: result.task })),
@@ -2838,7 +2848,10 @@ function htmlVideoSceneChangeAffectsPreview(field: HtmlVideoSceneChange['field']
   return !['narration', 'backgroundPrompt', 'addElement', 'elementPrompt'].includes(field);
 }
 
-async function createHtmlVideoEditorialRuntime(task: Task) {
+async function createHtmlVideoEditorialRuntime(
+  task: Task,
+  options: { maxLongEdge?: number } = {},
+) {
   const taskDirectory = await htmlVideoTaskDirectory(task.id);
   const runtimeConfig = await (await getConfigService()).getRuntimeConfig();
   const runtime = createElectronHtmlVideoRuntime({
@@ -2848,6 +2861,7 @@ async function createHtmlVideoEditorialRuntime(task: Task) {
     probeMedia: probeHtmlVideoMedia,
     gsapRuntimePath: join(dirname(fileURLToPath(import.meta.url)), GSAP_RUNTIME_FILENAME),
     hyperframesRuntimePath: join(dirname(fileURLToPath(import.meta.url)), HYPERFRAMES_RUNTIME_FILENAME),
+    ...(options.maxLongEdge === undefined ? {} : { maxLongEdge: options.maxLongEdge }),
   });
   return { taskDirectory, runtimeConfig, runtime };
 }
@@ -2862,7 +2876,12 @@ async function rebuildHtmlVideoEditorialPreviews(
     && pipeline.voices.some((voice) => voice.sceneIndex === scene.index && voice.durationSec > 0)
   ));
   if (!complete) return pipeline;
-  const { runtime } = await createHtmlVideoEditorialRuntime(task);
+  const existingCanvas = pipeline.compositions[0]?.canvas
+    ?? parseHtmlVideoPipelineData(task.pipelineData).compositions[0]?.canvas;
+  const maxLongEdge = existingCanvas
+    ? Math.max(existingCanvas.w, existingCanvas.h)
+    : undefined;
+  const { runtime } = await createHtmlVideoEditorialRuntime(task, { maxLongEdge });
   const draftTemplate = pipeline.config.draftTemplate
     ? await database.getDraftTemplateDetail(pipeline.config.draftTemplate)
     : undefined;
@@ -2900,15 +2919,18 @@ async function persistHtmlVideoEditorialMutation(
   event: HtmlVideoEditorialEvent,
 ) {
   const taskDirectory = await htmlVideoTaskDirectory(task.id);
-  await synchronizeHtmlVideoPipelineCheckpoint(taskDirectory.workDir.canonicalPath, pipeline);
-  const currentStep = pipeline.current === 'done'
+  const persistedPipeline = pipeline.steps.preview.status === 'completed' && pipeline.compositions.length > 0
+    ? await synchronizeHtmlVideoPreviewArtifact(taskDirectory.workDir.canonicalPath, pipeline)
+    : pipeline;
+  await synchronizeHtmlVideoPipelineCheckpoint(taskDirectory.workDir.canonicalPath, persistedPipeline);
+  const currentStep = persistedPipeline.current === 'done'
     ? htmlVideoVisibleSteps.length
-    : Math.max(0, htmlVideoVisibleSteps.indexOf(pipeline.current));
-  const needsRender = pipeline.current === 'render';
+    : Math.max(0, htmlVideoVisibleSteps.indexOf(persistedPipeline.current));
+  const needsRender = persistedPipeline.current === 'render';
   const now = new Date().toISOString();
   await database.updateTask(task.id, {
-    pipelineData: JSON.stringify(pipeline),
-    pipelineStep: pipeline.current,
+    pipelineData: JSON.stringify(persistedPipeline),
+    pipelineStep: persistedPipeline.current,
     currentStep,
     ...(needsRender ? { status: 'paused', completedAt: null } : {}),
     errorMessage: '',
@@ -4135,7 +4157,25 @@ function benchmarkSessionPartition(platform: BenchmarkPlatform): string {
   return `persist:storydream-benchmark-${platform}`;
 }
 
-async function openBenchmarkLoginWindow(input: BenchmarkLoginInput): Promise<void> {
+function benchmarkCookieDir(): string {
+  return join(appDataDir(), 'benchmark-cookies');
+}
+
+function benchmarkCookieFilePath(platform: BenchmarkPlatform): string {
+  return join(benchmarkCookieDir(), `${platform}-cookies.txt`);
+}
+
+async function exportBenchmarkLoginCookies(win: BrowserWindow, platform: BenchmarkPlatform): Promise<BenchmarkLoginResult> {
+  await mkdir(benchmarkCookieDir(), { recursive: true });
+  const allCookies = await win.webContents.session.cookies.get({});
+  const cookies = allCookies.filter((cookie) => isAllowedBenchmarkCookieDomain(cookie.domain || '', platform));
+  const lines = ['# Netscape HTTP Cookie File', ...cookies.map(netscapeCookieLine)];
+  const outputPath = benchmarkCookieFilePath(platform);
+  await writeFile(outputPath, `${lines.join('\n')}\n`, 'utf8');
+  return { cookieFilePath: outputPath, cookieCount: cookies.length };
+}
+
+async function openBenchmarkLoginWindow(input: BenchmarkLoginInput): Promise<BenchmarkLoginResult> {
   const target = normalizeBenchmarkSourceUrl(input.url);
   const classification = classifyBenchmarkUrl(target);
   if (classification.platform !== input.platform) {
@@ -4143,15 +4183,17 @@ async function openBenchmarkLoginWindow(input: BenchmarkLoginInput): Promise<voi
   }
   if (benchmarkLoginWindow && !benchmarkLoginWindow.isDestroyed()) {
     benchmarkLoginWindow.focus();
-    return;
+    return { cookieFilePath: '', cookieCount: 0 };
   }
-  await new Promise<void>((resolve, reject) => {
+  return new Promise<BenchmarkLoginResult>((resolve, reject) => {
     let settled = false;
+    let exportingCookies = false;
+    let loginResult: BenchmarkLoginResult | null = null;
     const settle = (error?: unknown) => {
       if (settled) return;
       settled = true;
       if (error) reject(error);
-      else resolve();
+      else resolve(loginResult ?? { cookieFilePath: '', cookieCount: 0 });
     };
     const loginWindow = new BrowserWindow({
       width: 1100,
@@ -4170,6 +4212,24 @@ async function openBenchmarkLoginWindow(input: BenchmarkLoginInput): Promise<voi
     loginWindow.on('closed', () => {
       if (benchmarkLoginWindow === loginWindow) benchmarkLoginWindow = null;
       settle();
+    });
+    loginWindow.on('close', (event) => {
+      if (loginWindow.isDestroyed()) return;
+      event.preventDefault();
+      if (exportingCookies) return;
+      exportingCookies = true;
+      void exportBenchmarkLoginCookies(loginWindow, input.platform)
+        .then((result) => {
+          loginResult = result;
+          settle();
+        })
+        .catch((error) => {
+          console.error('Failed to export benchmark cookies', error);
+          settle(error);
+        })
+        .finally(() => {
+          if (!loginWindow.isDestroyed()) loginWindow.destroy();
+        });
     });
     void loginWindow.loadURL(target).catch((error) => {
       if (benchmarkLoginWindow === loginWindow) benchmarkLoginWindow = null;

@@ -32,6 +32,7 @@ const APPROVED_HTML_VIDEO_FIELDS = [
   'captionPreset',
   'captionAnim',
   'captionColors',
+  'captionLayout',
   'bgmVolume',
   'transitionType',
   'sceneMotion',
@@ -54,6 +55,15 @@ const fullCustomConfig: Required<HtmlVideoJobConfig> = {
   captionPreset: 'editorial',
   captionAnim: 'pop',
   captionColors: { text: '#ffffff', accent: '#11aabb' },
+  captionLayout: {
+    region: 'bottom',
+    fontFamily: 'SourceHanSansCN_Medium',
+    fontSize: 54,
+    lineHeight: 1.4,
+    widthPercent: 84,
+    align: 'center',
+    fontWeight: 700,
+  },
   bgmVolume: 'medium',
   transitionType: 'dissolve',
   sceneMotion: 'pan_left',
@@ -68,7 +78,7 @@ const fullCustomConfig: Required<HtmlVideoJobConfig> = {
 };
 
 describe('HTML video control manifest', () => {
-  it('governs exactly all 19 approved fields with complete metadata', () => {
+  it('governs exactly all approved fields with complete metadata', () => {
     expect(HTML_VIDEO_CONTROL_MANIFEST_VERSION).toBe(1);
     expect([...HTML_VIDEO_CONTROL_FIELDS].sort()).toEqual([...APPROVED_HTML_VIDEO_FIELDS].sort());
     expect(Object.keys(HTML_VIDEO_CONTROL_MANIFEST_V1).sort()).toEqual([...APPROVED_HTML_VIDEO_FIELDS].sort());
@@ -103,7 +113,7 @@ describe('HTML video control manifest', () => {
       invalidateFrom: 'preview',
       availability: 'editable',
     }));
-    for (const field of ['captionPreset', 'captionAnim', 'captionColors'] as const) {
+    for (const field of ['captionPreset', 'captionAnim', 'captionColors', 'captionLayout'] as const) {
       expect(HTML_VIDEO_CONTROL_MANIFEST_V1[field]).toEqual(expect.objectContaining({
         consumerStages: ['preview', 'render'],
         invalidateFrom: 'preview',
@@ -139,6 +149,7 @@ describe('HTML video control manifest', () => {
       captionPreset: null,
       captionAnim: null,
       captionColors: null,
+      captionLayout: null,
       bgmVolume: null,
       transitionType: null,
       sceneMotion: null,
@@ -190,6 +201,7 @@ describe('HTML video control manifest', () => {
     expect(first).not.toHaveProperty('captionPreset');
     expect(first).not.toHaveProperty('captionAnim');
     expect(first).not.toHaveProperty('captionColors');
+    expect(first).not.toHaveProperty('captionLayout');
     expect(first).not.toHaveProperty('bgmVolume');
     expect(first).not.toHaveProperty('draftTemplate');
 
@@ -198,6 +210,7 @@ describe('HTML video control manifest', () => {
     overrideColors.text = '#000000';
     expect(overridden).toEqual({ ...fullCustomConfig, captionColors: { text: '#123456' } });
     expect(overridden.captionColors).not.toBe(overrideColors);
+    expect(overridden.captionLayout).not.toBe(fullCustomConfig.captionLayout);
   });
 
   it('preserves omissions in existing snapshots while V2 and legacy _cfg round-trip every present field', () => {
@@ -213,6 +226,7 @@ describe('HTML video control manifest', () => {
     const parsedV2 = parseHtmlVideoPipelineData(JSON.stringify(v2));
     expect(parsedV2.config).toEqual(fullCustomConfig);
     expect(parsedV2.config.captionColors).not.toBe(fullCustomConfig.captionColors);
+    expect(parsedV2.config.captionLayout).not.toBe(fullCustomConfig.captionLayout);
 
     const parsedLegacy = parseHtmlVideoPipelineData(JSON.stringify({
       version: 1,
@@ -221,6 +235,7 @@ describe('HTML video control manifest', () => {
     }));
     expect(parsedLegacy.config).toEqual(fullCustomConfig);
     expect(parsedLegacy.config.captionColors).not.toBe(fullCustomConfig.captionColors);
+    expect(parsedLegacy.config.captionLayout).not.toBe(fullCustomConfig.captionLayout);
   });
 
   it('stores all 17 new-task values under pipelineData.config and only mirrors documented legacy columns', () => {
@@ -262,6 +277,7 @@ describe('HTML video control manifest', () => {
     expect(recovered.defaultedFields).not.toEqual(expect.arrayContaining([
       'captionAnim',
       'captionColors',
+      'captionLayout',
       'bgmVolume',
       'coverPrompt',
       'draftTemplate',
@@ -269,6 +285,7 @@ describe('HTML video control manifest', () => {
     expect(recovered.missingCompatibleFields).toEqual([
       'captionAnim',
       'captionColors',
+      'captionLayout',
       'bgmVolume',
       'coverPrompt',
       'draftTemplate',
@@ -327,6 +344,7 @@ describe('HTML video control manifest', () => {
         captionPreset: 'editorial',
         captionAnim: 'pop',
         captionColors: { text: '#ffffff', accent: '#11aabb' },
+        captionLayout: fullCustomConfig.captionLayout,
         draftTemplate: 'custom-draft-template',
         ratio: '4:3',
         sceneMotion: 'pan_left',
@@ -336,6 +354,7 @@ describe('HTML video control manifest', () => {
         captionPreset: 'editorial',
         captionAnim: 'pop',
         captionColors: { text: '#ffffff', accent: '#11aabb' },
+        captionLayout: fullCustomConfig.captionLayout,
         bgmVolume: 'medium',
         coverImageMode: 'auto',
         coverTemplate: 'custom-cover-template',

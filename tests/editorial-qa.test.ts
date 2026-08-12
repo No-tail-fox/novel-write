@@ -153,6 +153,7 @@ describe('editorial Electron QA configuration', () => {
     expect(source).toContain('nav instanceof HTMLElement && interactiveElements.includes(nav)');
     expect(source).toContain('activeModal.contains(document.activeElement)');
     expect(source).toContain('let interactionVerified = interactionPerformed');
+    expect(source).toContain('[data-tabster-dummy]');
     expect(source).toContain("document.querySelectorAll('[role=\"listbox\"], [role=\"menu\"]')");
     expect(source).toContain('!activePopup.contains(element) && activePopup.contains(hit)');
     expect(source).toContain('Editorial QA cross-cutting evidence failed');
@@ -263,12 +264,15 @@ describe('editorial Electron QA configuration', () => {
 
   it('keeps icon-only window controls discoverable and accent fills readable in both themes', async () => {
     const shell = await (await import('node:fs/promises')).readFile(new URL('../src/app/AppShell.tsx', import.meta.url), 'utf8');
+    const iconButton = await (await import('node:fs/promises')).readFile(new URL('../src/ui/IconButton.tsx', import.meta.url), 'utf8');
     const shellStyles = await (await import('node:fs/promises')).readFile(new URL('../src/styles/shell.css', import.meta.url), 'utf8');
     const newTaskStyles = await (await import('node:fs/promises')).readFile(new URL('../src/styles/features/new-task.css', import.meta.url), 'utf8');
 
     for (const label of ['最小化', '最大化', '关闭']) {
-      expect(shell).toContain(`aria-label="${label}" title="${label}"`);
+      expect(shell).toContain(`label="${label}"`);
     }
+    expect(iconButton).toContain('title = label');
+    expect(iconButton).toContain('aria-label={label} title={title}');
     expect(shellStyles).toMatch(/\.app-shell\[data-editorial-shell\] \.new-task-button,[\s\S]*?\.primary-action \{[\s\S]*?color: var\(--shell-focus-contrast\);/u);
     expect(shellStyles).toMatch(/\.app-shell\[data-editorial-shell\] \.trial-activation-bar strong \{[\s\S]*?color: var\(--shell-text\);/u);
     expect(newTaskStyles).toMatch(/\.new-task-stage-tabs button\.active \{[\s\S]*?color: var\(--shell-focus-contrast\);/u);
@@ -326,6 +330,9 @@ describe('editorial Electron QA configuration', () => {
     expect(source).toContain('activeCapture: captureCase.id');
     expect(source).toContain('const initialShellReady = await waitFor');
     expect(source).toContain('theme preference timed out');
+    expect(source).toContain("document.querySelector('.storydream-provider')?.getAttribute('data-storydream-theme')");
+    expect(source).toContain('themeTransition.mismatchCount === 0');
+    expect(source).toContain('themeTransition.reversalCount === 0');
     expect(source).toContain('font readiness timed out');
     expect(source).toContain('qaCompositorSettlingScript()');
     expect(source).toContain('fallback = setTimeout(finish, 160)');

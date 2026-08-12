@@ -1,0 +1,104 @@
+.storydream-provider {
+  width: 100%;
+  height: 100%;
+  min-width: 0;
+  min-height: 0;
+  background: var(--shell-bg);
+  color: var(--shell-text);
+  font-family: Inter, "Segoe UI", "Microsoft YaHei UI", sans-serif;
+}
+
+.sd-button,
+.sd-button * {
+  letter-spacing: 0;
+}
+
+.sd-button--danger {
+  background: var(--danger);
+  color: #ffffff;
+}
+
+.sd-icon-button {
+  width: 32px;
+  min-width: 32px;
+  height: 32px;
+  padding: 0;
+}
+
+.sd-field {
+  min-width: 0;
+}
+
+.sd-input,
+.sd-textarea,
+.sd-select {
+  width: 100%;
+  min-width: 0;
+}
+
+.sd-textarea {
+  min-height: 84px;
+  resize: vertical;
+}
+
+.sd-field-label-row {
+  width: 100%;
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.sd-field-label-row output {
+  color: var(--shell-muted);
+  font-variant-numeric: tabular-nums;
+}
+
+.sd-tabs,
+.sd-segmented-control,
+.sd-toolbar {
+  min-width: 0;
+}
+
+.sd-segmented-control {
+  width: fit-content;
+  max-width: 100%;
+  padding: 2px;
+  border: 1px solid var(--shell-border);
+  border-radius: 6px;
+  background: var(--shell-surface);
+}
+
+.sd-menu-popover,
+.sd-dialog-surface {
+  color: var(--shell-text);
+}
+
+.sd-pane {
+  min-width: 0;
+  min-height: 0;
+  color: var(--shell-text);
+}
+
+.sd-pane--base {
+  background: var(--shell-bg);
+}
+
+.sd-pane--subtle {
+  background: var(--shell-surface);
+}
+
+.sd-pane--raised {
+  background: var(--shell-surface-raised);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .storydream-provider *,
+  .storydream-provider *::before,
+  .storydream-provider *::after {
+    scroll-behavior: auto !important;
+    transition-duration: 0.01ms !important;
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+  }
+}

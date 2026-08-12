@@ -75,9 +75,25 @@ try {
       await waitForExpression(cdp, "document.readyState === 'complete' && Boolean(document.querySelector('[data-editorial-shell]'))");
       await navigate(cdp, '实时热榜', '[data-hot-board-workbench]');
       await waitForExpression(cdp, "document.querySelectorAll('.hot-board-network-row').length === 3");
-      await clickByText(cdp, '.hot-board-network-row:first-child button', '查看正文');
-      await waitForExpression(cdp, "Boolean(document.querySelector('.hot-board-network-row:first-child .hot-board-source-content'))");
-      results.push(await captureHotBoard(cdp, viewport));
+      await clickByText(cdp, '.hot-board-network-row:first-child button', '正文');
+      await waitForExpression(cdp, "Boolean(document.querySelector('.hot-board-source-reader [data-content-kind]'))");
+      const hoverMetrics = await evaluate(cdp, `(() => {
+        const button = document.querySelector('.hot-board-network-row:first-child .sd-icon-button');
+        if (!button) return { found: false };
+        const before = button.getBoundingClientRect().toJSON();
+        for (let index = 0; index < 5; index += 1) {
+          button.dispatchEvent(new MouseEvent('mouseenter', { bubbles: true }));
+          button.dispatchEvent(new MouseEvent('mousemove', { bubbles: true }));
+          button.dispatchEvent(new MouseEvent('mouseleave', { bubbles: true }));
+        }
+        const after = button.getBoundingClientRect().toJSON();
+        return {
+          found: true,
+          layoutShift: Math.max(Math.abs(before.left - after.left), Math.abs(before.top - after.top), Math.abs(before.width - after.width), Math.abs(before.height - after.height)),
+          tooltipCount: document.querySelectorAll('[role="tooltip"]').length,
+        };
+      })()`);
+      results.push({ ...(await captureHotBoard(cdp, viewport)), hoverMetrics });
     }
 
     await setViewport(cdp, { width: 1440, height: 900, name: 'handoff' });
@@ -97,10 +113,14 @@ try {
       result.horizontalOverflow > 1
       || result.clippedControls.length > 0
       || result.rowCount !== 3
-      || result.summaryCount !== 3
+      || result.inlineContentCount !== 0
+      || !result.singleLineRows
       || result.expandedKind !== 'summary'
       || result.expandedLength < 60
       || !result.previewWarningVisible
+      || !result.hoverMetrics.found
+      || result.hoverMetrics.layoutShift > 0.5
+      || result.hoverMetrics.tooltipCount > 0
     ))) process.exitCode = 1;
     if (!handoff.aiModeActive || handoff.selectedSourceCount !== 1 || !handoff.sourceTextVisible || handoff.horizontalOverflow > 1 || handoff.clippedControls.length > 0) process.exitCode = 1;
   } finally {
@@ -123,12 +143,14 @@ async function captureHotBoard(cdp, viewport) {
   const metrics = await evaluate(cdp, `(() => {
     const root = document.querySelector('[data-hot-board-workbench]');
     const rows = [...root.querySelectorAll('.hot-board-network-row')];
-    const expanded = rows[0]?.querySelector('.hot-board-source-content');
+    const reader = document.querySelector('.hot-board-source-reader');
+    const expanded = reader?.querySelector('[data-content-kind]');
     return {
       rowCount: rows.length,
-      summaryCount: rows.filter((row) => Boolean(row.querySelector('.hot-board-item-main > p, .hot-board-source-content'))).length,
+      inlineContentCount: rows.filter((row) => Boolean(row.querySelector('.hot-board-item-main > p, .hot-board-source-content'))).length,
+      singleLineRows: rows.every((row) => row.getBoundingClientRect().height <= 58),
       expandedKind: expanded?.getAttribute('data-content-kind') || '',
-      expandedLength: expanded?.querySelector('p')?.textContent?.trim().length || 0,
+      expandedLength: expanded?.querySelector('.hot-board-reader-copy')?.textContent?.trim().length || 0,
       previewLabel: root.querySelector('.hot-board-live-state')?.textContent?.trim() || '',
       previewWarningVisible: root.textContent?.includes('不代表实时数据') || false,
       horizontalOverflow: Math.max(document.documentElement.scrollWidth - document.documentElement.clientWidth, root.scrollWidth - root.clientWidth),

@@ -565,15 +565,15 @@ def resolve_image_layout(image_area, canvas, material):
     scale_x = area_width_px / material_width
     scale_y = area_height_px / material_height
     is_contain = image_area.get("fit") == "contain"
-    scale = min(scale_x, scale_y) if is_contain else max(scale_x, scale_y) * clamp_number(image_area.get("mediaScale"), 1, 1, 8)
+    scale = min(scale_x, scale_y) if is_contain else max(scale_x, scale_y) * clamp_number(image_area.get("mediaScale"), 1, 0.1, 8)
     if scale <= 0:
         scale = 1.0
     visible_width = material_width * scale
     visible_height = material_height * scale
     focus_x = 0.5 if is_contain else clamp_number(image_area.get("focusX"), 0.5, 0, 1)
     focus_y = 0.5 if is_contain else clamp_number(image_area.get("focusY"), 0.5, 0, 1)
-    focus_shift_x = max(0.0, visible_width - area_width_px) * (0.5 - focus_x)
-    focus_shift_y = max(0.0, visible_height - area_height_px) * (0.5 - focus_y)
+    focus_shift_x = (visible_width - area_width_px) * (0.5 - focus_x)
+    focus_shift_y = (visible_height - area_height_px) * (0.5 - focus_y)
     mask_width = clamp_number(area_width_px / visible_width, 1.0, 0.01, 1.0)
     mask_height = clamp_number(area_height_px / visible_height, 1.0, 0.01, 1.0)
     return {

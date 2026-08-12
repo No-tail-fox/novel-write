@@ -459,6 +459,18 @@ describe('HTML video pipeline V2 contract', () => {
     });
   });
 
+  it('accepts partial assets only while the asset step is unfinished', () => {
+    const pipeline = createHtmlVideoPipelineData('场景。');
+    pipeline.current = 'assets';
+    pipeline.steps.assets = { status: 'running', startedAt: Date.now() };
+    pipeline.assets = [{ sceneIndex: 1, kind: 'bg', slot: 0, src: 'D:/bg.png' }];
+
+    expect(parseHtmlVideoPipelineData(JSON.stringify(pipeline)).assets).toEqual(pipeline.assets);
+
+    pipeline.steps.assets = { status: 'completed', completedAt: Date.now() };
+    expect(() => parseHtmlVideoPipelineData(JSON.stringify(pipeline))).toThrow(/complete expected asset set/i);
+  });
+
   it('preserves Storybound scene visibility and layout overrides', () => {
     const pipeline = createHtmlVideoPipelineData('场景。');
     pipeline.scenes[0] = {
@@ -950,7 +962,8 @@ describe('HTML video composition contract', () => {
     expect(html).toContain("applySceneAnimation('#foreground-2', 'float', 0.7");
     expect(html).toContain("applySceneAnimation('#foreground-3', 'float', 1.1");
     expect(html).toContain('id="scene-captions"');
-    expect(html).toContain("applySceneAnimation('#scene-captions', 'rise-caption'");
+    expect(html).toContain("document.querySelectorAll('#scene-captions .caption')");
+    expect(html).not.toContain("applySceneAnimation('#scene-captions', 'rise-caption'");
   });
 
   it('encodes fragment characters in local scene asset file URLs', () => {
@@ -1040,7 +1053,6 @@ describe('HTML video composition contract', () => {
       '#scene-veil',
       '#scene-title',
       '#foreground-1',
-      '#scene-captions',
     ]));
     expect(runtime.window.__timelines['storydream-scene-1']).toBe(runtime.timeline);
     runtime.fireDomContentLoaded();
@@ -1127,7 +1139,7 @@ describe('HTML video composition contract', () => {
     expect(html).toContain("message.type === 'hvseek'");
     expect(html).toContain("message.type === 'hvrestart'");
     expect(html).toContain('fitScene');
-    expect(html).toContain('measureText');
+    expect(html).toContain('caption.scrollHeight > maximumHeight');
   });
 
   it('applies draft frame layout and camera motion to generated HyperFrames scenes', () => {

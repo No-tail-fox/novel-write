@@ -4,6 +4,7 @@ import { AsyncActionFeedback as InlineActionFeedback } from '../components/Async
 import { taskStatusLabel as statusLabel } from '../components/StatusBadge';
 import { taskProgressLabel } from '../shared/html-video-workflow';
 import type { AsyncActionFeedback } from '../ui/async-action';
+import { Button, IconButton, Toolbar, Tooltip } from '../ui';
 import type { RendererAppState as AppState } from './route-types';
 import {
   navigationItemForView,
@@ -62,17 +63,17 @@ export function AppShell({
           <div className="app-mark">S</div>
           <strong>StoryDream</strong>
         </div>
-        <div className="window-controls" aria-label="窗体控制">
-          <button className="window-control-button" type="button" aria-label="最小化" title="最小化" disabled={busy} onClick={minimizeWindow}>
-            <Minus size={14} />
-          </button>
-          <button className="window-control-button" type="button" aria-label="最大化" title="最大化" disabled={busy} onClick={toggleMaximizeWindow}>
-            <Maximize2 size={14} />
-          </button>
-          <button className="window-control-button close" type="button" aria-label="关闭" title="关闭" disabled={busy} onClick={closeWindow}>
-            <X size={14} />
-          </button>
-        </div>
+        <Toolbar className="window-controls" aria-label="窗体控制" size="small">
+          <Tooltip content="最小化">
+            <IconButton className="window-control-button" variant="subtle" density="compact" label="最小化" icon={<Minus size={14} />} disabled={busy} onClick={minimizeWindow} />
+          </Tooltip>
+          <Tooltip content="最大化">
+            <IconButton className="window-control-button" variant="subtle" density="compact" label="最大化" icon={<Maximize2 size={14} />} disabled={busy} onClick={toggleMaximizeWindow} />
+          </Tooltip>
+          <Tooltip content="关闭">
+            <IconButton className="window-control-button close" variant="subtle" density="compact" label="关闭" icon={<X size={14} />} disabled={busy} onClick={closeWindow} />
+          </Tooltip>
+        </Toolbar>
       </div>
 
       <div className="shell-grid">
@@ -86,8 +87,12 @@ export function AppShell({
             <Bell size={16} className="brand-bell" />
           </div>
 
-          <button
+          <Button
             className="new-task-button"
+            variant="primary"
+            density="compact"
+            icon={<NewTaskIcon size={16} />}
+            type="button"
             data-nav-view={newTaskPrimaryAction.view}
             aria-label={newTaskPrimaryAction.label}
             title={`${newTaskPrimaryAction.label} · ${newTaskPrimaryAction.hint}`}
@@ -96,10 +101,9 @@ export function AppShell({
             onMouseEnter={() => preloadRouteIntent(newTaskPrimaryAction.view)}
             onFocus={() => preloadRouteIntent(newTaskPrimaryAction.view)}
           >
-            <NewTaskIcon size={16} />
             <span>{newTaskPrimaryAction.label}</span>
             <kbd>Ctrl+N</kbd>
-          </button>
+          </Button>
 
           <nav className="nav-list">
             {sidebarNavGroups.map((group) => (
@@ -113,23 +117,25 @@ export function AppShell({
           </nav>
 
           <div className="sidebar-bottom">
-            <button
+            <IconButton
               className="recent-task-compact"
-              type="button"
-              aria-label="最近任务"
-              title="最近任务"
+              variant="subtle"
+              density="compact"
+              label="最近任务"
+              icon={<History size={16} />}
               disabled={busy}
               onClick={() => recentTasks[0] ? openTaskDetail(recentTasks[0].id) : navigate('history')}
-            >
-              <History size={16} />
-            </button>
+            />
             <section className="recent-task-strip">
               <span className="nav-section-label">最近任务</span>
               {recentTasks.length === 0 ? <small>暂无任务</small> : null}
               {recentTasks.map((task) => (
-                <button
+                <Button
                   key={task.id}
                   className="recent-task-item"
+                  variant="subtle"
+                  density="compact"
+                  type="button"
                   disabled={busy}
                   onClick={() => openTaskDetail(task.id)}
                   onMouseEnter={() => preloadRouteIntent('task-detail')}
@@ -137,42 +143,51 @@ export function AppShell({
                 >
                   <strong>{task.title || '未命名任务'}</strong>
                   <span>{statusLabel(task.status)} · {taskProgressLabel(task)}</span>
-                </button>
+                </Button>
               ))}
             </section>
-            <button
+            <Button
               className="trial-activation-bar"
+              variant="secondary"
+              density="compact"
+              type="button"
+              icon={<KeyRound size={15} />}
               disabled={busy}
               onClick={() => navigate('activation')}
               onMouseEnter={() => preloadRouteIntent('activation')}
               onFocus={() => preloadRouteIntent('activation')}
             >
-              <KeyRound size={15} />
               <span>试用剩余</span>
               <strong>{trialDaysLabel}</strong>
-            </button>
+            </Button>
             <div className="account-entry-grid">
-              <button
+              <Button
                 className="credit-chip"
+                variant="secondary"
+                density="compact"
+                type="button"
+                icon={<Coins size={15} />}
                 disabled={busy}
                 onClick={() => navigate('account')}
                 onMouseEnter={() => preloadRouteIntent('account')}
                 onFocus={() => preloadRouteIntent('account')}
               >
-                <Coins size={15} />
                 <span className="credit-label">积分明细</span>
                 <span className="credit-balance">{state.account.balance.toFixed(2)}</span>
-              </button>
-              <button
+              </Button>
+              <Button
                 className="feedback-link"
+                variant="subtle"
+                density="compact"
+                type="button"
+                icon={<Info size={14} />}
                 disabled={busy}
                 onClick={() => navigate('account')}
                 onMouseEnter={() => preloadRouteIntent('account')}
                 onFocus={() => preloadRouteIntent('account')}
               >
-                <Info size={14} />
                 账户中心
-              </button>
+              </Button>
             </div>
           </div>
         </aside>
@@ -193,9 +208,17 @@ export function AppShell({
               <span />
               {saveTone === 'saving' ? '保存中' : saveTone === 'dirty' ? '有未保存改动' : '所有改动已保存'}
             </div>
-            <button className="theme-toggle" type="button" aria-label={themeLabel} title={themeLabel} disabled={busy} onClick={toggleTheme}>
-              {state.ui.theme === 'light' ? <Moon size={15} /> : <Sun size={15} />}
-            </button>
+            <Tooltip content={themeLabel}>
+              <IconButton
+                className="theme-toggle"
+                variant="subtle"
+                density="compact"
+                label={themeLabel}
+                icon={state.ui.theme === 'light' ? <Moon size={15} /> : <Sun size={15} />}
+                disabled={busy}
+                onClick={toggleTheme}
+              />
+            </Tooltip>
           </header>
           {feedback ? (
             <div className="global-action-banner">
@@ -212,8 +235,12 @@ export function AppShell({
 function NavButton({ item, active, busy, navigate }: { item: NavItem; active: boolean; busy: boolean; navigate: (view: ShellView) => void }) {
   const Icon = item.icon;
   return (
-    <button
+    <Button
       className={active ? 'nav-item active' : 'nav-item'}
+      variant="subtle"
+      density="compact"
+      type="button"
+      icon={<Icon size={16} />}
       data-nav-view={item.view}
       aria-label={item.label}
       title={`${item.label} · ${item.hint}`}
@@ -222,10 +249,9 @@ function NavButton({ item, active, busy, navigate }: { item: NavItem; active: bo
       onMouseEnter={() => preloadRouteIntent(item.view)}
       onFocus={() => preloadRouteIntent(item.view)}
     >
-      <Icon size={16} />
       <span>{item.label}</span>
       <small>{item.hint}</small>
-    </button>
+    </Button>
   );
 }
 

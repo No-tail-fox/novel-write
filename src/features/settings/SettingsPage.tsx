@@ -1,18 +1,19 @@
 import { useEffect, useState } from "react";
-import { AlertTriangle, Bot, CheckCircle2, Copy, Database, FlaskConical, FolderOpen, Image as ImageIcon, Info, KeyRound, Loader2, Mic2, Palette, Save, Search, Sparkles, Upload, Wand2, XCircle } from "lucide-react";
+import { AlertTriangle, Bot, CheckCircle2, Copy, Database, FlaskConical, FolderOpen, Globe2, Image as ImageIcon, Info, KeyRound, Loader2, Mic2, Palette, Save, Search, Sparkles, Upload, Wand2, XCircle } from "lucide-react";
 import { useMemo } from "react";
-import type { AppConfig, ConfigTestTarget, ImaKnowledgeResult, ProviderModel, ProviderModelListRequest, ShellView, TtsProviderProfile, VolcengineSpeaker } from "../../shared/types";
+import type { AppConfig, ConfigTestTarget, ImaKnowledgeResult, ProviderModel, ProviderModelListRequest, ShellView, ThemeName, TtsProviderProfile, VolcengineSpeaker } from "../../shared/types";
 import type { StoryDreamApi } from "../../shared/storydream-api";
 import type { JianyingDraftPathDetection } from "../../shared/jianying-paths";
 import { addUploadedBgm, resolveDefaultBgmId, validBgmItems } from "../tasks/task-formatters";
 import type { SecretChanges, SecretId } from "../../shared/config-secrets";
-import { changeRuntimeTheme } from "./theme-controller";
+import { changeRuntimeTheme, type RuntimeThemeStateSynchronizer } from "./theme-controller";
 import { configTargetStatus } from "../../shared/config-utils";
 import { activeImageProfileId, activeLlmProfileId, activeTtsProfileId, activateSelectedProviderProfileForTarget, buildConfigForSelectedProfileTest, enableImageProfile, enableLlmProfile, enableTtsProfile, normalizeEditableConfigProviders, ttsProfileVolcengine } from "../../shared/provider-profile-utils";
 import { useAsyncAction } from "../../ui/async-action";
 import { FormField as Field } from "../../components/FormField";
 import { SegmentedControl as Segmented } from "../../components/SegmentedControl";
 import { ToggleField } from "../../components/ToggleField";
+import { SwitchField } from '../../ui';
 import { RangeField } from "../../components/RangeField";
 import { AsyncActionFeedback as InlineActionFeedback } from "../../components/AsyncActionFeedback";
 import type { ApplyMutationResult, RendererAppState as AppState } from "../../app/route-types";
@@ -38,7 +39,7 @@ import {
   type SecretEditor,
 } from './settings-controls';
 
-export function SettingsPage({ api, state, applyState, navigate }: { api: StoryDreamApi; state: AppState; applyState: ApplyMutationResult; navigate: (view: ShellView) => void }) {
+export function SettingsPage({ api, state, applyState, synchronizeThemeState, navigate }: { api: StoryDreamApi; state: AppState; applyState: ApplyMutationResult; synchronizeThemeState: RuntimeThemeStateSynchronizer; navigate: (view: ShellView) => void }) {
   const [section, setSection] = useState('llm');
   const [draft, setDraft] = useState<AppConfig>(() => normalizeEditableConfigProviders(state.config));
   const [settingsDirty, setSettingsDirty] = useState(false);
@@ -163,7 +164,7 @@ export function SettingsPage({ api, state, applyState, navigate }: { api: StoryD
   }
   async function testCurrentConfig() {
     const target: ConfigTestTarget =
-      section === 'llm' || section === 'image' || section === 'tts' || section === 'speechToText' || section === 'jianying' || section === 'creative'
+      section === 'llm' || section === 'image' || section === 'tts' || section === 'speechToText' || section === 'jianying' || section === 'creative' || section === 'webSearch'
         ? section
         : 'llm';
     await settingsAction.run(async () => {
@@ -370,6 +371,7 @@ export function SettingsPage({ api, state, applyState, navigate }: { api: StoryD
       const changed = await changeRuntimeTheme({
         currentTheme: state.ui.theme,
         nextTheme,
+        synchronizeState: synchronizeThemeState,
         persist: () => api.saveUiPreferences({ theme: nextTheme }),
       });
       applyState(changed.mutation);
@@ -402,6 +404,7 @@ export function SettingsPage({ api, state, applyState, navigate }: { api: StoryD
     ['jianying', FolderOpen, '剪映', '草稿目录 · BGM', settingsStatusLabel(configTargetStatus('jianying', draftWithCredentialStatus))],
     ['activation', KeyRound, '激活与订阅', '试用 · 激活码', state.activation.status],
     ['creative', Wand2, 'AI 创作', 'IMA 知识库', settingsStatusLabel(configTargetStatus('creative', draftWithCredentialStatus))],
+    ['webSearch', Globe2, '联网搜索', 'SearXNG · Tavily · 兼容源', settingsStatusLabel(configTargetStatus('webSearch', draftWithCredentialStatus))],
     ['about', Info, '关于 · 诊断', '日志 · 重置', '已配置'],
   ] as const;
   return (
@@ -673,6 +676,27 @@ export function SettingsPage({ api, state, applyState, navigate }: { api: StoryD
                 ))}
               </div>
             ) : null}
+          </SettingsCard>
+        ) : null}
+        {section === 'webSearch' ? (
+          <SettingsCard title="联网搜索" status={settingsStatusLabel(configTargetStatus('webSearch', draftWithCredentialStatus))}>
+            <ConfigInput
+              label="SearXNG 服务地址（可选）"
+              value={draft.webSearch.searxngBaseUrl}
+              onChange={(value) => setSettingsDraft({ ...draft, webSearch: { ...draft.webSearch, searxngBaseUrl: value } })}
+            />
+            <div className="settings-help-text">推荐填写自己部署的 SearXNG，例如 http://127.0.0.1:8080。留空时直接使用 Tavily Keyless 备用搜索。</div>
+            <SwitchField
+              checked={draft.webSearch.tavilyKeylessEnabled}
+              onChange={(_, data) => setSettingsDraft({ ...draft, webSearch: { ...draft.webSearch, tavilyKeylessEnabled: data.checked } })}
+              label="启用 Tavily Keyless 备用"
+            />
+            <SwitchField
+              checked={draft.webSearch.legacyFallbackEnabled}
+              onChange={(_, data) => setSettingsDraft({ ...draft, webSearch: { ...draft.webSearch, legacyFallbackEnabled: data.checked } })}
+              label="启用 Bing / 百度 / 搜狗 / 头条兼容降级"
+            />
+            <div className="settings-help-text">搜索顺序：SearXNG → Tavily Keyless → 兼容搜索源。搜索结果发现与正文读取分离，正文打不开不会丢失搜索结果。</div>
           </SettingsCard>
         ) : null}
         {section === 'about' ? (

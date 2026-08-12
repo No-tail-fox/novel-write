@@ -1,6 +1,6 @@
 import { Suspense } from 'react';
 import type { StoryDreamApi } from '../shared/storydream-api';
-import type { HistoryFamily, ShellView, Task } from '../shared/types';
+import type { HistoryFamily, ShellView, Task, ThemeName } from '../shared/types';
 import { RouteLoadingState } from './RouteLoadingState';
 import { routeComponents } from './route-registry';
 import type { ApplyMutationResult, RendererAppState as AppState } from './route-types';
@@ -32,6 +32,7 @@ export function AppRoutes({
   state,
   selectedTask,
   applyState,
+  synchronizeThemeState,
   navigate,
   openTaskDetail,
   isHistoryTombstoned,
@@ -49,6 +50,7 @@ export function AppRoutes({
   state: AppState;
   selectedTask: Task | null;
   applyState: ApplyMutationResult;
+  synchronizeThemeState: (expectedTheme: ThemeName, nextTheme: ThemeName) => boolean;
   navigate: (view: ShellView) => void;
   openTaskDetail: (taskId: string) => void;
   isHistoryTombstoned: (family: HistoryFamily, id: string) => boolean;
@@ -86,7 +88,7 @@ export function AppRoutes({
       {activeView === 'viral-analyzer' ? <ViralAnalyzerPage api={api} state={state} applyState={applyState} refreshViralEvents={refreshViralEvents} onActiveAnalysisChange={onActiveViralAnalysisChange} openTaskDetail={openTaskDetail} isBrowserPreview={isBrowserPreview} /> : null}
       {activeView === 'prompt-templates' ? <PromptTemplatesPage api={api} state={state} applyState={applyState} /> : null}
       {activeView === 'draft-templates' ? <DraftTemplatesPage api={api} state={state} applyState={applyState} /> : null}
-      {activeView === 'settings' ? <SettingsPage api={api} state={state} applyState={applyState} navigate={navigate} /> : null}
+      {activeView === 'settings' ? <SettingsPage api={api} state={state} applyState={applyState} synchronizeThemeState={synchronizeThemeState} navigate={navigate} /> : null}
       {activeView === 'account' ? <AccountPage api={api} state={state} applyState={applyState} /> : null}
       {activeView === 'activation' ? <ActivationPage api={api} state={state} applyState={applyState} /> : null}
     </Suspense>

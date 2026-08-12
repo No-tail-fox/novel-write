@@ -2,7 +2,7 @@ import { readFile } from 'node:fs/promises';
 import { describe, expect, it } from 'vitest';
 
 describe('editorial workbench shell', () => {
-  it('preserves the independent action and exact fifteen-entry navigation order', async () => {
+  it('preserves the independent action and exact seventeen-entry navigation order', async () => {
     const navigation = await source('../src/app/navigation.ts');
     const views = [...navigation.matchAll(/\{ view: '([^']+)', label:/gu)].map((match) => match[1]);
     expect(views).toEqual([
@@ -21,8 +21,8 @@ describe('editorial workbench shell', () => {
       expect(shell).toContain(value);
     }
     expect(shell).toContain('toggleTheme');
-    expect(shell).toContain('aria-label={themeLabel}');
-    expect(shell).toContain('title={themeLabel}');
+    expect(shell).toContain('<Tooltip content={themeLabel}>');
+    expect(shell).toContain('label={themeLabel}');
     expect(shell).toContain('title={`${item.label} · ${item.hint}`}');
     expect(shell).not.toContain('更多');
   });

@@ -16,11 +16,12 @@ describe('electron build', () => {
     expect(script).toContain("'node_modules/gsap/dist/gsap.min.js'");
     expect(script).toContain("'dist-electron/electron/gsap.min.js'");
     expect(packageJson.dependencies).toMatchObject({
+      '@fluentui/react-components': '^9.74.5',
       'sql.js': expect.any(String),
       undici: '^6.27.0',
       zod: '^4.4.3',
     });
-    expect(Object.keys(packageJson.dependencies ?? {}).sort()).toEqual(['sql.js', 'undici', 'zod']);
+    expect(Object.keys(packageJson.dependencies ?? {}).sort()).toEqual(['@fluentui/react-components', 'sql.js', 'undici', 'zod']);
     expect(packageJson.devDependencies).toMatchObject({
       concurrently: '^9.2.1',
       esbuild: '^0.28.1',

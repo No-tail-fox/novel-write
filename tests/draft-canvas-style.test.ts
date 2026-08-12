@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { draftImageFrameRect, draftImageMediaRect, draftImageMediaStyle, draftTextLayerStyle, moveDraftImageFrame, moveDraftImageMedia, resizeDraftImageFrame, resizeDraftImageMedia } from '../src/features/templates/DraftCanvas';
+import { draftImageFrameRect, draftImageMediaRect, draftImageMediaStyle, draftTextLayerStyle, draftTransformHandleStyle, moveDraftImageFrame, moveDraftImageMedia, resizeDraftImageFrame, resizeDraftImageMedia, updateDraftImageMediaScale, type DraftResizeHandle } from '../src/features/templates/DraftCanvas';
 import { readFile } from 'node:fs/promises';
 import { draftTemplates } from '@shared/templates';
 
@@ -48,12 +48,60 @@ describe('draft canvas text style', () => {
     expect(media.top + media.height).toBeGreaterThanOrEqual(frame.top + frame.height);
   });
 
+  it('shrinks the actual image below the default scale and preserves direct dragging', () => {
+    const template = structuredClone(draftTemplates[1]);
+    const shrunk = updateDraftImageMediaScale(template, 0.5);
+    const frame = draftImageFrameRect(shrunk);
+    const centeredMedia = draftImageMediaRect(shrunk);
+
+    expect(shrunk.image.mediaScale).toBe(0.5);
+    expect(centeredMedia.width).toBeLessThan(frame.width);
+    expect(centeredMedia.height).toBeLessThan(frame.height);
+
+    const moved = moveDraftImageMedia(shrunk, 0.15, -0.08);
+    const movedMedia = draftImageMediaRect(moved);
+    expect(movedMedia.left).toBeGreaterThan(centeredMedia.left);
+    expect(movedMedia.top).toBeLessThan(centeredMedia.top);
+    expect(movedMedia.left).toBeGreaterThanOrEqual(frame.left);
+    expect(movedMedia.top).toBeGreaterThanOrEqual(frame.top);
+    expect(movedMedia.left + movedMedia.width).toBeLessThanOrEqual(frame.left + frame.width);
+    expect(movedMedia.top + movedMedia.height).toBeLessThanOrEqual(frame.top + frame.height);
+  });
+
+  it('scales the actual image proportionally from both edge and corner handles', () => {
+    const template = structuredClone(draftTemplates[1]);
+    const edgeResized = resizeDraftImageMedia(template, 'e', -0.25, 0);
+    const cornerResized = resizeDraftImageMedia(template, 'se', -0.2, -0.1);
+    const originalRect = draftImageMediaRect(template);
+
+    expect(edgeResized.image.mediaScale).toBeLessThan(1);
+    expect(cornerResized.image.mediaScale).toBeLessThan(1);
+    for (const resized of [edgeResized, cornerResized]) {
+      const rect = draftImageMediaRect(resized);
+      expect(rect.width / rect.height).toBeCloseTo(originalRect.width / originalRect.height, 8);
+    }
+  });
+
+  it('keeps all eight image resize handles inside the visible canvas', () => {
+    const oversized = { left: -2, top: -1, width: 5, height: 3 };
+    const handles: DraftResizeHandle[] = ['nw', 'n', 'ne', 'e', 'se', 's', 'sw', 'w'];
+
+    for (const handle of handles) {
+      const style = draftTransformHandleStyle(oversized, handle);
+      const globalX = oversized.left + (Number.parseFloat(String(style.left)) / 100) * oversized.width;
+      const globalY = oversized.top + (Number.parseFloat(String(style.top)) / 100) * oversized.height;
+      expect(globalX).toBeCloseTo(Math.min(0.975, Math.max(0.025, globalX)), 8);
+      expect(globalY).toBeCloseTo(Math.min(0.975, Math.max(0.025, globalY)), 8);
+    }
+  });
+
   it('renders two selectable image objects with eight keyboard-accessible handles', async () => {
     const source = await readFile(new URL('../src/features/templates/DraftCanvas.tsx', import.meta.url), 'utf8');
     expect(source).toContain('target="image-frame"');
     expect(source).toContain('target="image-media"');
     expect(source).toContain("const draftResizeHandles: DraftResizeHandle[] = ['nw', 'n', 'ne', 'e', 'se', 's', 'sw', 'w'];");
     expect(source).toContain('aria-label={`${label}${draftResizeHandleLabels[handle]}缩放`}');
+    expect(source).toContain('data-drag-surface={selected ? \'active\' : \'inactive\'}');
     expect(source).toContain("event.key === 'ArrowLeft'");
   });
 

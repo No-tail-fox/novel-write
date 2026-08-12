@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { parseEmbeddedBenchmarkPosts, parseBilibiliArchivePayload } from '../electron/benchmark-sync';
+import { collectBenchmarkAccount, parseEmbeddedBenchmarkPosts, parseBilibiliArchivePayload } from '../electron/benchmark-sync';
 import type { BenchmarkAccount } from '@shared/types';
 
 const account: BenchmarkAccount = {
@@ -13,6 +13,27 @@ const account: BenchmarkAccount = {
 };
 
 describe('benchmark account connectors', () => {
+  it('carries the persistent Electron session into Bilibili account requests', async () => {
+    const credentials: RequestCredentials[] = [];
+    const fetchImpl = async (url: string, init?: RequestInit): Promise<Response> => {
+      credentials.push(init?.credentials ?? 'same-origin');
+      if (url.includes('/x/web-interface/nav')) {
+        return new Response(JSON.stringify({ code: 0, data: { wbi_img: { img_url: 'https://i.example/img.png', sub_url: 'https://i.example/sub.png' } } }), { status: 200 });
+      }
+      if (url.includes('/x/space/wbi/arc/search')) {
+        return new Response(JSON.stringify({ code: 0, data: { list: { vlist: [{ bvid: 'BV1xx411c7mD', title: '测试作品', author: '测试账号', pic: 'https://i.example/cover.jpg', created: 1_700_000_000, length: '01:00', play: 10 }] } } }), { status: 200 });
+      }
+      return new Response(JSON.stringify({ code: 0, data: { stat: { view: 10 } } }), { status: 200 });
+    };
+
+    const result = await collectBenchmarkAccount(account, fetchImpl);
+
+    expect(result.syncState).toBe('ready');
+    expect(result.posts).toHaveLength(1);
+    expect(credentials.length).toBeGreaterThanOrEqual(2);
+    expect(credentials.every((value) => value === 'include')).toBe(true);
+  });
+
   it('normalizes Bilibili archive and detail metrics into traceable posts with covers', () => {
     const posts = parseBilibiliArchivePayload(account, {
       code: 0,

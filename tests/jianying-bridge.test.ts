@@ -312,6 +312,13 @@ describe('pyJianYingDraft bridge input', () => {
       expect(await render('cover', 0)).toMatchObject({ transform_x: 0, transform_y: 0.5 });
       expect(await render('cover', 1)).toMatchObject({ transform_x: 0, transform_y: -0.5 });
       expect(await render('contain', 0)).toMatchObject({ transform_x: 0, transform_y: 0 });
+      expect(await render('cover', 0.5, { mediaScale: 0.5, focusX: 0 })).toMatchObject({
+        scale_x: 0.5,
+        scale_y: 0.5,
+        transform_x: -0.5,
+        transform_y: 0,
+        masks: [],
+      });
       expect(await render('cover', 0.5, { left: 0.25, width: 0.5, mediaScale: 2, focusX: 1, focusY: 0 })).toMatchObject({
         scale_x: 1,
         scale_y: 1,

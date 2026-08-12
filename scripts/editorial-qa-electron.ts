@@ -226,6 +226,16 @@ function validateThemeSmoke(report: QaReport): void {
   const light = report.captures.find((capture) => capture.theme === 'light');
   const dark = report.captures.find((capture) => capture.theme === 'dark');
   if (!light || !dark) throw new Error('Editorial theme smoke requires light and dark captures.');
+  const unstable = report.captures.filter((capture) => (
+    !capture.themeTransition.performed
+    || !capture.themeTransition.forwardStable
+    || !capture.themeTransition.backwardStable
+    || capture.themeTransition.mismatchCount > 0
+    || capture.themeTransition.reversalCount > 0
+  ));
+  if (unstable.length > 0) {
+    throw new Error(`Editorial theme transition was unstable: ${unstable.map((capture) => capture.id).join(', ')}.`);
+  }
   for (const name of ['--shell-bg', '--shell-surface', '--shell-border', '--shell-text', '--shell-muted']) {
     if (!light.tokens[name] || !dark.tokens[name] || light.tokens[name] === dark.tokens[name]) {
       throw new Error(`Editorial shell token did not change across themes: ${name}`);

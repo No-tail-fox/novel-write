@@ -14,10 +14,11 @@ import {
   TriangleAlert,
   Zap,
 } from 'lucide-react';
-import type { InformationArchiveOrigin, ShellView, HotBoardCategory, HotBoardItem, HotBoardPlatform, HotBoardSnapshot, HotBoardSourceContent } from '../../shared/types';
+import type { AiSourceSection, InformationArchiveOrigin, ShellView, HotBoardCategory, HotBoardItem, HotBoardPlatform, HotBoardSnapshot, HotBoardSourceContent, WebSearchBackendStatus } from '../../shared/types';
 import type { StoryDreamApi } from '../../shared/storydream-api';
 import { formatAppErrorMessage, normalizeAppError } from '../../shared/app-error';
 import { EmptyState } from '../../components/EmptyState';
+import { Button, Dialog, IconButton } from '../../ui';
 import { AiHotSourceView } from './AiHotSourceView';
 import { ArchiveDateControl, todayArchiveDate } from './ArchiveDateControl';
 import '../../styles/features/hot-board.css';
@@ -71,6 +72,16 @@ export function HotBoardPage({
   const [openingUrl, setOpeningUrl] = useState('');
   const [readingItemId, setReadingItemId] = useState('');
   const [sourceContents, setSourceContents] = useState<Record<string, HotBoardSourceContent>>({});
+  const [sourceReadErrors, setSourceReadErrors] = useState<Record<string, string>>({});
+  const [searchResults, setSearchResults] = useState<Record<string, AiSourceSection[]>>({});
+  const [searchBackendStatuses, setSearchBackendStatuses] = useState<Record<string, WebSearchBackendStatus[]>>({});
+  const [searchErrors, setSearchErrors] = useState<Record<string, string>>({});
+  const [searchEmpty, setSearchEmpty] = useState<Record<string, boolean>>({});
+  const [searchingItemId, setSearchingItemId] = useState('');
+  const [readerItem, setReaderItem] = useState<HotBoardItem | null>(null);
+  const sourceRequestRef = useRef(0);
+  const searchRequestRef = useRef(0);
+  const searchedItemsRef = useRef(new Set<string>());
   const requestIdRef = useRef(0);
 
   const loadArchive = useCallback(async (forceRefresh = false) => {
@@ -175,28 +186,96 @@ export function HotBoardPage({
     void openUrl(url);
   }
 
-  async function readItemContent(item: HotBoardItem): Promise<HotBoardSourceContent | null> {
+  async function searchItemContent(item: HotBoardItem, forceRefresh = false): Promise<void> {
+    if (!forceRefresh && searchedItemsRef.current.has(item.id)) return;
+    searchedItemsRef.current.add(item.id);
+    const requestId = ++searchRequestRef.current;
+    setSearchErrors((current) => ({ ...current, [item.id]: '' }));
+    setSearchEmpty((current) => ({ ...current, [item.id]: false }));
+    setSearchingItemId(item.id);
+    try {
+      const context = await api.searchWebSources({
+        query: item.title,
+        providers: ['bing', 'sogou', 'baidu'],
+      });
+      if (requestId !== searchRequestRef.current) return;
+      setSearchResults((current) => ({ ...current, [item.id]: context.sections }));
+      setSearchBackendStatuses((current) => ({ ...current, [item.id]: context.backendStatuses ?? [] }));
+      if (context.sections.length === 0) {
+        if (context.warnings.length > 0) setSearchErrors((current) => ({ ...current, [item.id]: context.warnings.join('；') }));
+        else setSearchEmpty((current) => ({ ...current, [item.id]: true }));
+      }
+    } catch (error) {
+      if (requestId === searchRequestRef.current) {
+        setSearchErrors((current) => ({ ...current, [item.id]: formatAppErrorMessage(normalizeAppError(error)) }));
+      }
+    } finally {
+      if (requestId === searchRequestRef.current) setSearchingItemId('');
+    }
+  }
+
+  async function readItemContent(item: HotBoardItem, forceRefresh = false): Promise<HotBoardSourceContent | null> {
     const cached = sourceContents[item.id];
-    if (cached) return cached;
-    setOpenError('');
+    if (!forceRefresh && cached) return cached;
+    const requestId = ++sourceRequestRef.current;
+    setSourceReadErrors((current) => ({ ...current, [item.id]: '' }));
     setReadingItemId(item.id);
     try {
-      const source = await api.readHotBoardSource({ title: item.title, url: item.url, summary: item.summary });
+      const source = await api.readHotBoardSource({ title: item.title, url: item.url, summary: item.summary, forceRefresh });
+      if (requestId !== sourceRequestRef.current) return source;
       setSourceContents((current) => ({ ...current, [item.id]: source }));
-      if (source.warning) setOpenError(source.warning);
+      if (source.kind !== 'page') void searchItemContent(item);
       return source;
     } catch (error) {
-      setOpenError(formatAppErrorMessage(normalizeAppError(error)));
+      if (requestId === sourceRequestRef.current) {
+        setSourceReadErrors((current) => ({ ...current, [item.id]: formatAppErrorMessage(normalizeAppError(error)) }));
+        void searchItemContent(item);
+      }
       return null;
     } finally {
-      setReadingItemId('');
+      if (requestId === sourceRequestRef.current) setReadingItemId('');
     }
+  }
+
+  function openSourceDialog(item: HotBoardItem): void {
+    setReaderItem(item);
+    const cached = sourceContents[item.id];
+    if (!cached) void readItemContent(item);
+    else if (cached.kind !== 'page') void searchItemContent(item);
+  }
+
+  function retrySourceContent(): void {
+    if (!readerItem) return;
+    setSourceContents((current) => {
+      const next = { ...current };
+      delete next[readerItem.id];
+      return next;
+    });
+    searchedItemsRef.current.delete(readerItem.id);
+    setSearchResults((current) => {
+      const next = { ...current };
+      delete next[readerItem.id];
+      return next;
+    });
+    setSearchBackendStatuses((current) => {
+      const next = { ...current };
+      delete next[readerItem.id];
+      return next;
+    });
+    setSearchErrors((current) => ({ ...current, [readerItem.id]: '' }));
+    setSearchEmpty((current) => ({ ...current, [readerItem.id]: false }));
+    void readItemContent(readerItem, true);
+  }
+
+  function retrySearchContent(): void {
+    if (!readerItem) return;
+    void searchItemContent(readerItem, true);
   }
 
   async function createFromTopic(item: HotBoardItem): Promise<void> {
     const source = await readItemContent(item);
     if (!source || source.kind === 'unavailable' || !source.content.trim()) {
-      setOpenError(source?.warning || '该来源没有可用于创作的页面正文或摘要。');
+      setOpenError(sourceReadErrors[item.id] || source?.warning || '该来源没有可用于创作的页面正文或摘要。');
       return;
     }
     sessionStorage.setItem('hotboard_topic', JSON.stringify({
@@ -307,31 +386,18 @@ export function HotBoardPage({
           <div className="hot-board-list">
             {filteredItems.map((item) => {
               const crossPlatformCount = titleCounts.get(normalizeTitle(item.title))?.size ?? 1;
-              const sourceContent = sourceContents[item.id];
               const readingContent = readingItemId === item.id;
               return (
                 <article className="hot-board-row hot-board-network-row" data-platform={item.platform} key={item.id}>
                   <div className="hot-board-rank" data-top={item.rank <= 3 ? 'true' : 'false'}>{item.rank}</div>
                   <div className="hot-board-item-main">
-                    <div className="hot-board-item-kicker">
-                      <span className="hot-board-platform-badge">{item.platformLabel}</span>
-                      <span>来源 {item.sourceLabel}</span>
-                    </div>
-                    <h3 className="hot-board-item-title">{item.title}</h3>
-                    {sourceContent ? (
-                      <div className="hot-board-source-content" data-content-kind={sourceContent.kind}>
-                        <p>{sourceContent.excerpt}</p>
-                        <small>{sourceContent.kind === 'page' ? '页面正文' : '来源摘要'}</small>
+                    <div className="hot-board-item-line">
+                      <div className="hot-board-item-kicker">
+                        <span className="hot-board-platform-badge">{item.platformLabel}</span>
+                        <span>来源 {item.sourceLabel}</span>
                       </div>
-                    ) : item.summary ? <p>{item.summary}</p> : <p className="hot-board-content-placeholder">尚未读取页面内容</p>}
-                    <button
-                      className="hot-board-read-action"
-                      type="button"
-                      disabled={readingContent}
-                      onClick={() => void readItemContent(item)}
-                    >
-                      {readingContent ? <><Loader2 className="spin" size={12} />读取中</> : '查看正文'}
-                    </button>
+                      <h3 className="hot-board-item-title" title={item.title}>{item.title}</h3>
+                    </div>
                   </div>
                   <div className="hot-board-signal-cell">
                     {item.hotValue ? <span className="hot-board-heat"><Flame size={12} />{formatHotValue(item.hotValue)}</span> : <span className="hot-board-no-signal">--</span>}
@@ -339,7 +405,10 @@ export function HotBoardPage({
                   </div>
                   <div className="hot-board-time-cell"><Clock3 size={12} />{formatTime(item.updatedAt)}</div>
                   <div className="hot-board-row-actions">
-                    <button className="icon-button" type="button" title="打开原文" aria-label={`打开原文：${item.title}`} disabled={openingUrl === item.url} onClick={() => openItemSource(item)}><ExternalLink size={15} /></button>
+                    <IconButton label={`打开原文：${item.title}`} icon={<ExternalLink size={15} />} disabled={openingUrl === item.url} onClick={() => openItemSource(item)} />
+                    <Button className="hot-board-read-action" density="compact" variant="secondary" type="button" disabled={readingContent} onClick={() => openSourceDialog(item)}>
+                      {readingContent ? <><Loader2 className="spin" size={12} />读取中</> : '正文'}
+                    </Button>
                     <button className="hot-board-create-action" type="button" disabled={readingContent} onClick={() => void createFromTopic(item)}><Sparkles size={14} />去创作</button>
                   </div>
                 </article>
@@ -396,6 +465,97 @@ export function HotBoardPage({
         archiveDate={archiveDate}
         onArchiveDateChange={setArchiveDate}
       />
+
+      <Dialog
+        open={Boolean(readerItem)}
+        onOpenChange={(open) => { if (!open) setReaderItem(null); }}
+        title={readerItem ? <span className="hot-board-reader-title">热点正文</span> : '热点正文'}
+        actions={readerItem ? (
+          <div className="hot-board-reader-actions">
+            <Button density="compact" variant="subtle" type="button" onClick={() => setReaderItem(null)}>关闭</Button>
+            <Button density="compact" variant="secondary" type="button" disabled={openingUrl === readerItem.url} onClick={() => openItemSource(readerItem)}>打开原文</Button>
+            {sourceReadErrors[readerItem.id] ? <Button density="compact" variant="primary" type="button" onClick={retrySourceContent}>重试读取</Button> : null}
+          </div>
+        ) : undefined}
+      >
+        {readerItem ? <HotBoardSourceReader
+          item={readerItem}
+          source={sourceContents[readerItem.id]}
+          reading={readingItemId === readerItem.id}
+          error={sourceReadErrors[readerItem.id]}
+          searchResults={searchResults[readerItem.id] ?? []}
+          searchBackendStatuses={searchBackendStatuses[readerItem.id] ?? []}
+          searching={searchingItemId === readerItem.id}
+          searchError={searchErrors[readerItem.id]}
+          searchEmpty={searchEmpty[readerItem.id] === true}
+          onRetrySearch={retrySearchContent}
+          onOpenUrl={openUrl}
+        /> : null}
+      </Dialog>
+    </div>
+  );
+}
+
+function HotBoardSourceReader({
+  item,
+  source,
+  reading,
+  error,
+  searchResults,
+  searchBackendStatuses,
+  searching,
+  searchError,
+  searchEmpty,
+  onRetrySearch,
+  onOpenUrl,
+}: {
+  item: HotBoardItem;
+  source?: HotBoardSourceContent;
+  reading: boolean;
+  error?: string;
+  searchResults: AiSourceSection[];
+  searchBackendStatuses: WebSearchBackendStatus[];
+  searching: boolean;
+  searchError?: string;
+  searchEmpty: boolean;
+  onRetrySearch: () => void;
+  onOpenUrl: (url: string) => void;
+}) {
+  return (
+    <div className="hot-board-source-reader" data-hot-board-source-reader>
+      <div className="hot-board-reader-meta">
+        <span className="hot-board-platform-badge">{item.platformLabel}</span>
+        <span>{item.sourceLabel}</span>
+        <span>{formatDateTime(item.updatedAt)} 更新</span>
+      </div>
+      <h3>{item.title}</h3>
+      {reading ? <div className="hot-board-reader-state" role="status" aria-live="polite"><Loader2 className="spin" size={17} />正在读取页面正文…</div> : null}
+      {!reading && error && !source ? <div className="hot-board-reader-state hot-board-reader-state--error" role="alert"><TriangleAlert size={17} /><div><strong>正文暂时无法读取</strong><p>{error}</p></div></div> : null}
+      {!reading && source?.kind === 'unavailable' ? <div className="hot-board-reader-state"><TriangleAlert size={17} /><div><strong>暂无可读正文</strong><p>{source.warning || '来源没有提供页面正文或摘要，正在尝试联网搜索。'}</p></div></div> : null}
+      {!reading && source && source.kind !== 'unavailable' && source.content.trim() ? (
+        <div className="hot-board-reader-content" data-content-kind={source.kind}>
+          <div className="hot-board-reader-content-head"><span>{source.kind === 'page' ? '页面正文' : '来源摘要'}</span><small>{formatDateTime(source.fetchedAt)} 读取</small></div>
+          {source.warning ? <p className="hot-board-reader-warning">{source.warning}</p> : null}
+          <div className="hot-board-reader-copy">{source.content}</div>
+        </div>
+      ) : null}
+      {searching ? <div className="hot-board-reader-search-state" role="status" aria-live="polite"><Loader2 className="spin" size={15} />正在联网搜索相关内容…</div> : null}
+      {searchError ? <div className="hot-board-reader-state hot-board-reader-state--error" role="alert"><TriangleAlert size={17} /><div><strong>联网搜索失败</strong><p>{searchError}</p><Button density="compact" variant="secondary" type="button" disabled={searching} onClick={onRetrySearch}>重试联网搜索</Button></div></div> : null}
+      {searchEmpty && !searchError ? <div className="hot-board-reader-state" role="status"><Search size={17} /><div><strong>没有找到可用的联网结果</strong><p>可以稍后重试，或直接打开原文查看。</p><Button density="compact" variant="secondary" type="button" disabled={searching} onClick={onRetrySearch}>再次联网搜索</Button></div></div> : null}
+      {searchResults.length > 0 ? (
+        <section className="hot-board-search-results" aria-label="联网搜索结果">
+          <div className="hot-board-reader-content-head"><span><Search size={13} />联网搜索结果</span><small>{searchBackendStatuses.filter((status) => status.state === 'ready').map((status) => status.label).join(' · ') || '已搜索'} · {searchResults.length} 条</small></div>
+          <div className="hot-board-search-result-list">
+            {searchResults.map((result, index) => (
+              <article className="hot-board-search-result" key={`${result.url || result.title}-${index}`}>
+                <div className="hot-board-search-result-heading"><strong>{result.title}</strong><span>{result.source}</span></div>
+                <p>{result.content || result.snippet || '该来源没有返回可读摘要。'}</p>
+                {result.url ? <Button density="compact" variant="subtle" type="button" onClick={() => onOpenUrl(result.url!)}>打开来源 <ExternalLink size={12} /></Button> : null}
+              </article>
+            ))}
+          </div>
+        </section>
+      ) : null}
     </div>
   );
 }

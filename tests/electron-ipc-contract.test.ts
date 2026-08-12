@@ -920,6 +920,9 @@ describe('electron ipc contract', () => {
     expect(main).toContain('persist:storydream-viral-douyin');
     expect(main).toContain('async function openViralLoginWindow(): Promise<string | null>');
     expect(main).toContain('resolve(cookiePath)');
+    expect(main).toContain('exportBenchmarkLoginCookies');
+    expect(main).toContain('benchmark-cookies');
+    expect(main).toContain('cookieCount');
     expect(preload).toContain('selectCookieFile');
     expect(preload).toContain('openViralLoginWindow');
     expect(preload).toContain('openViralLoginWindow: (): Promise<string | null>');
@@ -985,6 +988,25 @@ describe('electron ipc contract', () => {
     expect(main).not.toContain("trustedHandle('eval_in_window'");
     expect(main).not.toContain("trustedHandle('capture_webview_by_label'");
     expect(main).not.toContain("trustedHandle('executeJavaScript'");
+  });
+
+  it('preserves the current HTML video canvas resolution when rebuilding editorial previews', async () => {
+    const main = await readFile(new URL('../electron/main.ts', import.meta.url), 'utf8');
+    const runtimeFactoryStart = main.indexOf('async function createHtmlVideoEditorialRuntime(');
+    const rebuildStart = main.indexOf('async function rebuildHtmlVideoEditorialPreviews(');
+    const rebuildEnd = main.indexOf('\ninterface HtmlVideoEditorialEvent', rebuildStart);
+    const runtimeFactory = main.slice(runtimeFactoryStart, rebuildStart);
+    const rebuild = main.slice(rebuildStart, rebuildEnd);
+
+    expect(runtimeFactoryStart).toBeGreaterThan(-1);
+    expect(rebuildStart).toBeGreaterThan(runtimeFactoryStart);
+    expect(rebuildEnd).toBeGreaterThan(rebuildStart);
+    expect(runtimeFactory).toContain('options: { maxLongEdge?: number } = {}');
+    expect(runtimeFactory).toContain('{ maxLongEdge: options.maxLongEdge }');
+    expect(rebuild).toContain('const existingCanvas = pipeline.compositions[0]?.canvas');
+    expect(rebuild).toContain('parseHtmlVideoPipelineData(task.pipelineData).compositions[0]?.canvas');
+    expect(rebuild).toContain('Math.max(existingCanvas.w, existingCanvas.h)');
+    expect(rebuild).toContain('createHtmlVideoEditorialRuntime(task, { maxLongEdge })');
   });
 
   it('imports manual HTML covers under governance without accepting renderer paths', async () => {

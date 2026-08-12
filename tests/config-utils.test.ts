@@ -13,6 +13,13 @@ describe('config validation utilities', () => {
     expect(config.ima).toEqual({ clientId: 'client', apiKey: 'secret', kbId: 'kb-id', kbName: '知识库' });
   });
 
+  it('migrates web search defaults and validates a configured SearXNG endpoint', () => {
+    const normalized = normalizeAppConfig({ ...defaultConfig, webSearch: { searxngBaseUrl: ' http://127.0.0.1:8080/ ', tavilyKeylessEnabled: false } });
+    expect(normalized.webSearch).toEqual({ searxngBaseUrl: 'http://127.0.0.1:8080', tavilyKeylessEnabled: false, legacyFallbackEnabled: true });
+    expect(validateConfigTarget('webSearch', normalized).status).toBe('pass');
+    expect(validateConfigTarget('webSearch', normalizeAppConfig({ ...defaultConfig, webSearch: { searxngBaseUrl: 'javascript:alert(1)' } })).status).toBe('fail');
+  });
+
   it('rejects an oversized image-provider probe response', async () => {
     const result = await testOpenAiCompatibleImageModel({
       baseUrl: 'https://images.example',

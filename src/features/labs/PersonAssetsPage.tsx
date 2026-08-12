@@ -8,6 +8,20 @@ import type { PersonAssetImage, PersonAssetSummary } from '../../shared/person-a
 import { useAsyncAction } from '../../ui/async-action';
 import '../../styles/features/local-labs.css';
 
+async function loadPersonImagePreviews(api: StoryDreamApi, person: string): Promise<{ items: PersonAssetImage[]; urls: Record<string, string> }> {
+  const items = await api.listPersonAssetImages(person);
+  const entries = await Promise.all(
+    items.map(async (image) => {
+      try {
+        return [image.path, await api.readAssetDataUrl(image.path)] as const;
+      } catch {
+        return [image.path, ''] as const;
+      }
+    }),
+  );
+  return { items, urls: Object.fromEntries(entries) };
+}
+
 export function PersonAssetsPage({ api, isBrowserPreview }: { api: StoryDreamApi; isBrowserPreview: boolean }) {
   const [people, setPeople] = useState<PersonAssetSummary[]>([]);
   const [selectedName, setSelectedName] = useState('');
@@ -51,21 +65,11 @@ export function PersonAssetsPage({ api, isBrowserPreview }: { api: StoryDreamApi
       setImageUrls({});
       return undefined;
     }
-    api
-      .listPersonAssetImages(selectedName)
-      .then(async (items) => {
+    loadPersonImagePreviews(api, selectedName)
+      .then((previews) => {
         if (!active) return;
-        setImages(items);
-        const entries = await Promise.all(
-          items.map(async (image) => {
-            try {
-              return [image.path, await api.readAssetDataUrl(image.path)] as const;
-            } catch {
-              return [image.path, ''] as const;
-            }
-          }),
-        );
-        if (active) setImageUrls(Object.fromEntries(entries));
+        setImages(previews.items);
+        setImageUrls(previews.urls);
       })
       .catch((error) => {
         if (active) personAction.reportError(error);
@@ -144,7 +148,9 @@ export function PersonAssetsPage({ api, isBrowserPreview }: { api: StoryDreamApi
       try {
         const count = await api.importPersonAssetImages(selectedName);
         await loadPeople(selectedName);
-        setImages(await api.listPersonAssetImages(selectedName));
+        const previews = await loadPersonImagePreviews(api, selectedName);
+        setImages(previews.items);
+        setImageUrls(previews.urls);
         setMessage(count > 0 ? `已导入 ${count} 张图片。` : '没有导入新图片。');
       } finally {
         setPendingAction(null);

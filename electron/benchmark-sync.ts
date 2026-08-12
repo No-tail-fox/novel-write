@@ -20,7 +20,7 @@ export interface BenchmarkConnectorResult {
 }
 
 const BENCHMARK_PAGE_MAX_BYTES = 2 * 1024 * 1024;
-const BENCHMARK_USER_AGENT = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 StoryDream/1.0';
+const BENCHMARK_USER_AGENT = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/138.0.0.0 Safari/537.36';
 const BILIBILI_MIXIN_KEY_TABLE = [
   46, 47, 18, 2, 53, 8, 23, 32, 15, 50, 10, 31, 58, 3, 45, 35,
   27, 43, 5, 49, 33, 9, 42, 19, 29, 28, 14, 39, 12, 38, 41, 13,
@@ -81,6 +81,7 @@ async function collectEmbeddedAccount(account: BenchmarkAccount, fetchImpl: Fetc
     response = await fetchWithNetworkPolicy(account.url, {
       purpose: 'public-research',
       fetchImpl,
+      credentials: 'include',
       timeoutMs: 20_000,
       maxBytes: BENCHMARK_PAGE_MAX_BYTES,
       headers: {
@@ -333,6 +334,7 @@ async function fetchJson(url: string, fetchImpl: FetchLike): Promise<unknown> {
   const response = await fetchWithNetworkPolicy(url, {
     purpose: 'public-research',
     fetchImpl,
+    credentials: 'include',
     timeoutMs: 15_000,
     maxBytes: BENCHMARK_PAGE_MAX_BYTES,
     headers: {

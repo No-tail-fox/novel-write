@@ -1,6 +1,7 @@
 @import './styles/tokens.css';
 @import './styles/base.css';
 @import './styles/components.css';
+@import './styles/storydream-ui.css';
 @import './styles/media-canvas.css';
 @import './styles/shell.css';
 
@@ -5180,6 +5181,11 @@ section.error-dialog .error-dialog-head > div > strong {
   z-index: 4;
   border-width: 2px;
   box-shadow: 0 0 0 1px rgba(8, 16, 14, 0.72);
+  cursor: grab;
+}
+
+.draft-image-transform-box.selected:active {
+  cursor: grabbing;
 }
 
 .draft-image-transform-box:focus-visible {
@@ -5225,14 +5231,14 @@ section.error-dialog .error-dialog-head > div > strong {
   outline-offset: 2px;
 }
 
-.draft-transform-handle[data-resize-handle='nw'] { left: 0; top: 0; cursor: nwse-resize; transform: translate(-50%, -50%); }
-.draft-transform-handle[data-resize-handle='n'] { left: 50%; top: 0; cursor: ns-resize; transform: translate(-50%, -50%); }
-.draft-transform-handle[data-resize-handle='ne'] { right: 0; top: 0; cursor: nesw-resize; transform: translate(50%, -50%); }
-.draft-transform-handle[data-resize-handle='e'] { right: 0; top: 50%; cursor: ew-resize; transform: translate(50%, -50%); }
-.draft-transform-handle[data-resize-handle='se'] { right: 0; bottom: 0; cursor: nwse-resize; transform: translate(50%, 50%); }
-.draft-transform-handle[data-resize-handle='s'] { left: 50%; bottom: 0; cursor: ns-resize; transform: translate(-50%, 50%); }
-.draft-transform-handle[data-resize-handle='sw'] { left: 0; bottom: 0; cursor: nesw-resize; transform: translate(-50%, 50%); }
-.draft-transform-handle[data-resize-handle='w'] { left: 0; top: 50%; cursor: ew-resize; transform: translate(-50%, -50%); }
+.draft-transform-handle[data-resize-handle='nw'],
+.draft-transform-handle[data-resize-handle='se'] { cursor: nwse-resize; }
+.draft-transform-handle[data-resize-handle='n'],
+.draft-transform-handle[data-resize-handle='s'] { cursor: ns-resize; }
+.draft-transform-handle[data-resize-handle='ne'],
+.draft-transform-handle[data-resize-handle='sw'] { cursor: nesw-resize; }
+.draft-transform-handle[data-resize-handle='e'],
+.draft-transform-handle[data-resize-handle='w'] { cursor: ew-resize; }
 
 .text-layer {
   min-height: 26px;
@@ -5650,6 +5656,14 @@ section.error-dialog .error-dialog-head > div > strong {
   display: flex;
   justify-content: space-between;
   margin-bottom: 12px;
+}
+
+.settings-help-text {
+  grid-column: 1 / -1;
+  color: var(--shell-muted);
+  font-size: 12px;
+  line-height: 1.6;
+  padding: 2px 0;
 }
 
 .diagnostics-card pre {

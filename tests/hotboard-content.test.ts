@@ -19,7 +19,47 @@ describe('hot board source content', () => {
     expect(result.kind).toBe('page');
     expect(result.content).toContain('事件的起因');
     expect(result.content).toContain('公开回应');
+    expect(result.content).toContain('\n\n');
     expect(result.excerpt.length).toBeGreaterThan(40);
+  });
+
+  it('reads structured article bodies without truncating them to the search snippet limit', async () => {
+    const longBody = `第一段说明事件背景与公开事实。\n\n${'后续段落补充可核验信息。'.repeat(360)}`;
+    const result = await readPublicSourceContent({
+      title: '结构化新闻正文',
+      url: 'https://example.test/article/structured',
+    }, async () => new Response(`
+      <html><head><script type="application/ld+json">${JSON.stringify({
+        '@type': 'NewsArticle',
+        headline: '结构化新闻正文',
+        articleBody: longBody,
+      })}</script></head><body><div id="app"></div></body></html>
+    `, { status: 200, headers: { 'content-type': 'text/html; charset=utf-8' } }));
+
+    expect(result.kind).toBe('page');
+    expect(result.content.length).toBeGreaterThan(3_000);
+    expect(result.content).toContain('第一段说明事件背景');
+    expect(result.content).toContain('\n\n');
+  });
+
+  it('uses full-page paragraphs when a generic content shell is not the article body', async () => {
+    const result = await readPublicSourceContent({
+      title: '复杂页面正文',
+      url: 'https://example.test/article/complex',
+    }, async () => new Response(`
+      <html><body>
+        <div class="content"><p>这里是页面工具栏，不是正文。</p></div>
+        <section class="story-detail">
+          <p>真正正文第一段包含事件起因、关键人物、发生时间以及已经公开确认的事实。</p>
+          <p>真正正文第二段继续说明事件进展、各方回应、影响范围以及后续值得关注的节点。</p>
+        </section>
+      </body></html>
+    `, { status: 200, headers: { 'content-type': 'text/html' } }));
+
+    expect(result.kind).toBe('page');
+    expect(result.content).toContain('真正正文第一段');
+    expect(result.content).toContain('真正正文第二段');
+    expect(result.content).not.toContain('页面工具栏');
   });
 
   it('keeps summary fallback explicit when the public page cannot be read', async () => {

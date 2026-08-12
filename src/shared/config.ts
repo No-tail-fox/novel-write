@@ -211,6 +211,11 @@ export const defaultConfig: AppConfig = {
       timeoutMs: 120000,
     },
   },
+  webSearch: {
+    searxngBaseUrl: '',
+    tavilyKeylessEnabled: true,
+    legacyFallbackEnabled: true,
+  },
   ui: {
     theme: 'dark',
   },

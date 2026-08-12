@@ -49,6 +49,7 @@ interface HtmlAssetRequest {
 interface HtmlVideoAssetGeneratorOptions {
   imageStyle?: CustomStyle | null;
   inspectAssetTransparency?: (path: string) => Promise<boolean>;
+  imageConcurrency?: number;
 }
 
 interface HtmlVoiceRequest {
@@ -154,9 +155,10 @@ export function createHtmlVideoRuntimeProviders(
     rewrite: llmProviders.rewrite,
     plan: llmProviders.plan,
     generateAssets: providers.generateImages
-      ? adaptHtmlVideoAssetGenerator(providers.generateImages, runtimeTask, {
+        ? adaptHtmlVideoAssetGenerator(providers.generateImages, runtimeTask, {
           imageStyle: options.imageStyle,
           inspectAssetTransparency: options.inspectAssetTransparency,
+          imageConcurrency: providers.imageConcurrency,
         })
       : async () => {
           throw new AppError('IMAGE_PROVIDER_NOT_CONFIGURED', '请先配置图片服务。');
@@ -241,26 +243,32 @@ export function adaptHtmlVideoAssetGenerator(
     };
     const requests = buildHtmlAssetRequests(validatedInput);
     const runtimeTask = applyHtmlTaskConfig(task, input.config);
-    const backgroundRequests = requests.filter((request) => request.kind === 'bg');
-    const foregroundRequests = requests.filter((request) => request.kind === 'fg');
-    let generated: SceneAsset[] = [];
-    try {
-      generated = [
-        ...await generateHtmlAssetBatch(generator, backgroundRequests, runtimeTask, runtimeTask.ratio, options.imageStyle, input.signal),
-        ...await generateHtmlAssetBatch(generator, foregroundRequests, { ...runtimeTask, ratio: '1:1' }, '1:1', options.imageStyle, input.signal),
-      ];
-    } catch (error) {
-      throw asHtmlVideoImageProviderError(error);
-    }
-    const assetsById = indexProviderAssets(generated, requests.map((request) => request.syntheticId), 'IMAGE_PROVIDER_INVALID_OUTPUT');
-
-    return Promise.all(requests.map(async (request) => {
-      const src = assetsById.get(request.syntheticId)!.path;
+    const assets = new Array<HtmlVideoAsset>(requests.length);
+    await runHtmlAssetRequestsWithConcurrency(requests, options.imageConcurrency ?? 1, async (request, index) => {
+      const ratio = request.kind === 'bg' ? runtimeTask.ratio : '1:1';
+      let generated: SceneAsset[];
+      try {
+        generated = await generateHtmlAssetBatch(
+          generator,
+          [request],
+          request.kind === 'bg' ? runtimeTask : { ...runtimeTask, ratio },
+          ratio,
+          options.imageStyle,
+          input.signal,
+        );
+      } catch (error) {
+        throw asHtmlVideoImageProviderError(error);
+      }
+      const src = indexProviderAssets(
+        generated,
+        [request.syntheticId],
+        'IMAGE_PROVIDER_INVALID_OUTPUT',
+      ).get(request.syntheticId)!.path;
       let transparency: HtmlVideoAsset['transparency'];
       if (request.kind === 'fg' && options.inspectAssetTransparency) {
         transparency = await options.inspectAssetTransparency(src) ? 'transparent' : 'opaque';
       }
-      return {
+      const asset: HtmlVideoAsset = {
         sceneIndex: request.scene.index,
         kind: request.kind,
         slot: request.slot,
@@ -268,8 +276,38 @@ export function adaptHtmlVideoAssetGenerator(
         prompt: request.prompt,
         ...(transparency ? { transparency } : {}),
       };
-    }));
+      assets[index] = asset;
+      await input.onAssetGenerated?.(asset);
+    });
+    return assets;
   };
+}
+
+async function runHtmlAssetRequestsWithConcurrency(
+  requests: HtmlAssetRequest[],
+  concurrency: number,
+  worker: (request: HtmlAssetRequest, index: number) => Promise<void>,
+): Promise<void> {
+  const limit = Math.max(1, Math.min(requests.length || 1, Math.floor(Number.isFinite(concurrency) ? concurrency : 1)));
+  let cursor = 0;
+  let firstError: unknown = null;
+
+  async function runWorker(): Promise<void> {
+    while (!firstError) {
+      const index = cursor;
+      cursor += 1;
+      if (index >= requests.length) return;
+      try {
+        await worker(requests[index], index);
+      } catch (error) {
+        firstError ??= error;
+        return;
+      }
+    }
+  }
+
+  await Promise.all(Array.from({ length: limit }, runWorker));
+  if (firstError) throw firstError;
 }
 
 async function generateHtmlAssetBatch(
@@ -441,18 +479,20 @@ export function buildHtmlVideoPlanningSystemPrompt(config: HtmlVideoPlanningInpu
     : '- elements：本次不使用前景素材，只能选择无素材槽版式，所有场景必须输出 []。';
 
   return [
-    '你是短视频分镜策划。请把已经改写和切分的旁白规划为 HTML 动画视频场景，并且只输出 JSON。',
+    '你是短视频分镜策划。你的唯一任务是把输入旁白拆成可直接生成的 HTML 动画短视频场景，并且只输出 JSON。',
+    '一个场景只对应一个清晰的画面单元，用来承载一句关键话、一次转折、一个事实或一句金句；不要把多个互不相关的画面意图塞进同一场景。',
     '',
     `【画面方向】${orientation}`,
-    '【可用版式】每个场景必须按内容选择一个，避免全部使用同一种版式：',
+    '【可用版式】每个场景必须按内容气质和信息关系选择一个，避免全片使用同一种版式：',
     templates,
+    '选择原则：金句、结论和强观点优先文字主导版式；人物或单一物件优先单主体版式；对照、对话和前后变化优先双素材版式；步骤、群像、系统关系再使用三到四素材版式。版式必须服务当前旁白语义，不能只按素材槽数量随意选择。',
     '',
     '【每个场景字段】',
     '- index：从 1 连续递增。',
     '- narration：严格使用输入 segments 中对应的旁白，不改写、不增删。',
     '- sceneTemplate：只能填写上面列出的版式 id。',
     '- title：4-10 字的画面大标题，不要引号或书名号。',
-    '- captions：把 narration 按原文顺序切成短句，不概括、不改写，拼接后必须保持原意和文字内容。',
+    '- captions：只能沿用 narration 的原文和原标点切成短句，不改写、不概括、不调序、不增删任何字或标点；所有 captions 按顺序直接拼接后必须与 narration 逐字完全一致。',
     `- background：{ "prompt": "背景图的中文绘图提示词" }，只描述${orientation}环境、氛围、空间层次和旁白情绪；不要写屏幕文字，不要把前景主体重复画成背景主角。`,
     elementRule,
     '',
@@ -460,8 +500,10 @@ export function buildHtmlVideoPlanningSystemPrompt(config: HtmlVideoPlanningInpu
     '1. background.prompt 和 elements[].prompt 只写画面内容，不写写实、卡通、3D、油画、水墨、胶片等风格词，风格由生成阶段统一注入。',
     '2. elements[].prompt 不写“透明背景”“无背景”“PNG”等生成说明，生成阶段会自动追加。',
     '3. 所有画面提示词都不要包含字幕、标题、标语、水印、Logo 或界面文字。',
-    '4. elements 中每项是互不重复的单一主体，优先 10-20 个中文字，避免完整场景描述和复杂背景。',
-    '5. 回复第一个字符必须是 {，最后一个字符必须是 }；只输出 JSON，不要前言、解释、Markdown 代码块、JSON Schema 或错误对象。',
+    '4. elements 中每项是互不重复的单一主体，优先 10-20 个中文字，只描述人物、物件或动作及必要视觉特征；不要复述完整背景。',
+    '5. 同一人物或关键物件跨场景出现时，身份、外形和核心特征保持一致；主体的动作、朝向和构图位置应适配所选版式。',
+    '6. 输出前在内部逐场景核对：旁白与字幕逐字一致；版式符合语义；elements 数量与 slot 连续性完全匹配版式；背景与前景没有重复抢主体；相邻场景版式不过度重复。不要输出核对过程。',
+    '7. 回复第一个字符必须是 {，最后一个字符必须是 }；只输出 JSON，不要前言、解释、Markdown 代码块、JSON Schema 或错误对象。',
     '',
     '格式：{"scenes":[{"index":1,"narration":"...","title":"...","captions":["..."],"sceneTemplate":"center-focus","background":{"prompt":"..."},"elements":[{"slot":0,"prompt":"..."}]}]}',
   ].join('\n');

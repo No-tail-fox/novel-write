@@ -80,6 +80,11 @@ export function isAllowedDouyinCookieDomain(domain: string): boolean {
   return DOUYIN_LOGIN_DOMAINS.some((allowed) => hostnameMatches(hostname, allowed));
 }
 
+export function isAllowedBenchmarkCookieDomain(domain: string, platform: BenchmarkPlatform): boolean {
+  const hostname = domain.trim().replace(/^\./u, '');
+  return BENCHMARK_LOGIN_DOMAINS[platform].some((allowed) => hostnameMatches(hostname, allowed));
+}
+
 export function isAllowedLocalHtmlNavigation(value: string, taskRoot: string): boolean {
   const url = parseUrl(value);
   if (!url || url.protocol !== 'file:' || hasUrlCredentials(url)) return false;

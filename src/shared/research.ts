@@ -15,6 +15,7 @@ import type {
   WebSearchProviderStatus,
   WebSearchRequest,
 } from './types';
+import { searchConfiguredBackends } from './web-search-backends';
 
 type FetchLike = (url: string, init?: RequestInit) => Promise<Response>;
 type SearchResultItem = Omit<AiSourceSection, 'source' | 'provider'>;
@@ -188,7 +189,7 @@ function storyboundAiCreationTimeoutMs(promptLength: number): number {
   return Math.min(300_000, Math.max(90_000, dynamic));
 }
 
-export function createAiSourceResearcher(config: AppConfig, fetchImpl: FetchLike = fetch): AiSourceResearcher {
+export function createAiSourceResearcher(config: AppConfig, fetchImpl: FetchLike = fetch, useConfiguredBackends = false): AiSourceResearcher {
   return async (task) => {
     const query = (task.aiKeyword || task.inputText || '').trim();
     const context: AiSourceContext = { query, sections: [], warnings: [] };
@@ -202,12 +203,11 @@ export function createAiSourceResearcher(config: AppConfig, fetchImpl: FetchLike
         context.sections.push(...task.selectedSources.filter((section) => section.source === 'web'));
       } else {
         try {
-          const webSections = await searchWebSources(query, fetchImpl);
-          if (webSections.length === 0) {
-            context.warnings.push('web search returned no usable results.');
-          } else {
-            context.sections.push(...webSections);
-          }
+          const webContext = useConfiguredBackends
+            ? await searchWebSourcesDetailed({ query, providers: [...DEFAULT_WEB_SEARCH_PROVIDERS] }, fetchImpl, config.webSearch)
+            : { query, sections: await searchWebSources(query, fetchImpl), warnings: [] };
+          if (webContext.sections.length === 0) context.warnings.push(...webContext.warnings, 'web search returned no usable results.');
+          else context.sections.push(...webContext.sections);
         } catch (error) {
           context.warnings.push(`web search failed: ${error instanceof Error ? error.message : String(error)}`);
         }
@@ -254,10 +254,11 @@ export function formatAiSourceContext(task: Pick<Task, 'aiKeyword' | 'aiSources'
   return lines.join('\n\n');
 }
 
-export async function searchWebSources(query: string, fetchImpl: FetchLike = fetch): Promise<AiSourceSection[]> {
+export async function searchWebSources(query: string, fetchImpl: FetchLike = fetch, config?: AppConfig['webSearch']): Promise<AiSourceSection[]> {
   const context = await searchWebSourcesDetailed(
     { query, providers: [...DEFAULT_WEB_SEARCH_PROVIDERS] },
     fetchImpl,
+    config,
   );
   if (context.sections.length === 0 && context.providerStatuses?.every((status) => status.state === 'failed')) {
     throw new Error(context.warnings.join('; ') || 'All web search providers failed.');
@@ -275,11 +276,11 @@ export async function readPublicSourceContent(
   let snapshot: { url: string; content: string } = { url, content: '' };
   let fetchWarning = '';
   try {
-    snapshot = await fetchPageSnapshot(url, fetchImpl);
+    snapshot = await fetchArticleSnapshot(url, fetchImpl);
   } catch (error) {
     fetchWarning = error instanceof Error ? error.message : String(error);
   }
-  const pageContent = compactText(snapshot.content);
+  const pageContent = normalizeArticleText(snapshot.content);
   const hasReadablePage = pageContent.length >= 60 && pageContent !== title;
   const content = hasReadablePage ? pageContent : summary;
   const kind: HotBoardSourceContent['kind'] = hasReadablePage ? 'page' : summary ? 'summary' : 'unavailable';
@@ -299,10 +300,42 @@ export async function readPublicSourceContent(
   };
 }
 
-export async function searchWebSourcesDetailed(input: WebSearchRequest, fetchImpl: FetchLike = fetch): Promise<AiSourceContext> {
+export async function searchWebSourcesDetailed(
+  input: WebSearchRequest,
+  fetchImpl: FetchLike = fetch,
+  config?: AppConfig['webSearch'],
+): Promise<AiSourceContext> {
   const query = input.query.trim();
   const providers = normalizeWebSearchProviders(input.providers);
   if (!query) return { query, sections: [], warnings: [], providerStatuses: [] };
+
+  if (config) {
+    const backendResult = await searchConfiguredBackends(
+      config,
+      query,
+      providers,
+      fetchImpl,
+      () => searchLegacySourcesDetailed(query, providers, fetchImpl).then((result) => result.sections),
+    );
+    const providerStatuses = backendResult.items.some((item) => item.provider)
+      ? providers.map((provider) => {
+        const count = backendResult.items.filter((item) => item.provider === provider).length;
+        return { provider, label: WEB_SEARCH_PROVIDER_LABELS[provider], state: count > 0 ? 'ready' as const : 'empty' as const, count };
+      })
+      : undefined;
+    return {
+      query,
+      sections: diversifySearchProviders(query, providers, backendResult.items).slice(0, SEARCH_RESULTS_LIMIT),
+      warnings: backendResult.warnings,
+      ...(providerStatuses ? { providerStatuses } : {}),
+      backendStatuses: backendResult.statuses,
+    };
+  }
+
+  return searchLegacySourcesDetailed(query, providers, fetchImpl);
+}
+
+async function searchLegacySourcesDetailed(query: string, providers: readonly WebSearchProvider[], fetchImpl: FetchLike): Promise<AiSourceContext> {
 
   const outcomes = await Promise.all(providers.map(async (provider): Promise<SearchProviderOutcome> => {
     try {
@@ -320,7 +353,7 @@ export async function searchWebSourcesDetailed(input: WebSearchRequest, fetchImp
   const warnings = providerStatuses
     .filter((status) => status.state === 'failed')
     .map((status) => `${status.label}搜索失败：${status.message || '连接失败'}`);
-  return { query, sections, warnings, providerStatuses };
+  return { query, sections, warnings, providerStatuses, backendStatuses: [{ backend: 'legacy', label: '兼容搜索源', state: sections.length ? 'ready' : 'empty', count: sections.length }] };
 }
 
 function normalizeWebSearchProviders(providers: readonly WebSearchProvider[]): WebSearchProvider[] {
@@ -709,6 +742,20 @@ function stripHtmlToText(input: string): string {
 
 async function fetchPageText(url: string, fetchImpl: FetchLike): Promise<string> {
   return (await fetchPageSnapshot(url, fetchImpl)).content;
+}
+
+async function fetchArticleSnapshot(url: string, fetchImpl: FetchLike): Promise<{ url: string; content: string }> {
+  const response = await fetchBounded(fetchImpl, url, {
+    timeoutMs: 12_000,
+    maxBytes: ARTICLE_PAGE_MAX_BYTES,
+    accept: 'text/html,application/xhtml+xml,text/plain,*/*',
+  });
+  if (!response.ok) return { url, content: '' };
+  const contentType = response.headers.get('content-type') ?? '';
+  if (!/text\/html|application\/xhtml\+xml|text\/plain/i.test(contentType)) return { url: response.url || url, content: '' };
+  const body = await readTextBounded(response, ARTICLE_PAGE_MAX_BYTES);
+  const text = contentType.includes('text/plain') ? body : extractReadableText(body);
+  return { url: response.url || url, content: normalizeArticleText(text).slice(0, 50_000) };
 }
 
 async function fetchPageSnapshot(url: string, fetchImpl: FetchLike): Promise<{ url: string; content: string }> {
@@ -1117,16 +1164,46 @@ function cleanXml(input: string): string {
 }
 
 function extractReadableText(html: string): string {
+  const structuredBody = extractStructuredArticleBody(html);
+  if (structuredBody.length >= 60) return structuredBody;
   const stripped = stripNonContentHtml(html)
     .replace(/<svg\b[\s\S]*?<\/svg>/gi, ' ')
     .replace(/<(nav|header|footer|aside)\b[\s\S]*?<\/\1>/gi, ' ');
-  const container = extractPreferredContentContainer(stripped);
-  const paragraphs = extractParagraphTexts(container).filter((paragraph) => paragraph.length >= 20 && !isBoilerplateParagraph(paragraph));
-  if (paragraphs.length > 0) return paragraphs.join(' ');
+  const containers = extractPreferredContentContainers(stripped);
+  const scored = containers
+    .map((container) => ({ container, paragraphs: extractParagraphTexts(container).filter((paragraph) => paragraph.length >= 20 && !isBoilerplateParagraph(paragraph)) }))
+    .sort((a, b) => paragraphScore(b.paragraphs) - paragraphScore(a.paragraphs));
+  const best = scored[0];
+  const container = best?.container ?? stripped;
+  const paragraphs = best?.paragraphs ?? [];
+  if (paragraphs.length > 0) return paragraphs.join('\n\n');
   return cleanXml(container);
 }
 
-function extractPreferredContentContainer(html: string): string {
+function extractStructuredArticleBody(html: string): string {
+  const scripts = [...html.matchAll(/<script\b[^>]*type=["']application\/ld\+json["'][^>]*>([\s\S]*?)<\/script>/gi)];
+  for (const [, raw] of scripts) {
+    try {
+      const parsed = JSON.parse(raw.trim()) as unknown;
+      const candidates = Array.isArray(parsed)
+        ? parsed
+        : isRecord(parsed) && Array.isArray(parsed['@graph'])
+          ? parsed['@graph']
+          : [parsed];
+      for (const candidate of candidates) {
+        if (!isRecord(candidate)) continue;
+        const articleBody = typeof candidate.articleBody === 'string' ? candidate.articleBody : '';
+        const text = normalizeArticleText(articleBody);
+        if (text.length >= 60) return text;
+      }
+    } catch {
+      // Some sites emit invalid JSON-LD; the semantic HTML extractor remains the fallback.
+    }
+  }
+  return '';
+}
+
+function extractPreferredContentContainers(html: string): string[] {
   const selectors = [
     /<article\b[\s\S]*?<\/article>/i,
     /<div\b(?=[^>]*\bclass=(?:"[^"]*\barticle-content\b[^"]*"|'[^']*\barticle-content\b[^']*'))[^>]*>[\s\S]*?<\/div>/i,
@@ -1140,11 +1217,11 @@ function extractPreferredContentContainer(html: string): string {
     /<main\b[\s\S]*?<\/main>/i,
     /<body\b[\s\S]*?<\/body>/i,
   ];
-  for (const selector of selectors) {
-    const match = html.match(selector)?.[0];
-    if (match) return match;
-  }
-  return html;
+  return [html, ...selectors.map((selector) => html.match(selector)?.[0] ?? '').filter(Boolean)];
+}
+
+function paragraphScore(paragraphs: readonly string[]): number {
+  return paragraphs.reduce((score, paragraph) => score + paragraph.length, 0) + paragraphs.length * 80;
 }
 
 function extractParagraphTexts(html: string): string[] {
@@ -1161,6 +1238,16 @@ function compactText(input: string): string {
   return decodeEntities(input)
     .replace(/\s+/g, ' ')
     .replace(/\u00a0/g, ' ')
+    .trim();
+}
+
+function normalizeArticleText(input: string): string {
+  return decodeEntities(input)
+    .replace(/\r\n?/g, '\n')
+    .split(/\n{2,}/u)
+    .map((paragraph) => paragraph.replace(/\s+/g, ' ').trim())
+    .filter(Boolean)
+    .join('\n\n')
     .trim();
 }
 

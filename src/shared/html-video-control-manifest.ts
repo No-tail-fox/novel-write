@@ -11,6 +11,7 @@ export const HTML_VIDEO_CONTROL_FIELDS = [
   'captionPreset',
   'captionAnim',
   'captionColors',
+  'captionLayout',
   'bgmVolume',
   'transitionType',
   'sceneMotion',
@@ -34,6 +35,7 @@ export const HTML_VIDEO_EDITABLE_CONTROL_FIELDS = [
   'captionPreset',
   'captionAnim',
   'captionColors',
+  'captionLayout',
   'bgmVolume',
   'transitionType',
   'sceneMotion',
@@ -111,6 +113,10 @@ export const HTML_VIDEO_CONTROL_MANIFEST_V1 = {
   }),
   captionColors: entry('captionColors', {
     schema: 'caption-colors', uiLocation: 'caption', legacyMirror: null,
+    consumerStages: ['preview', 'render'], invalidateFrom: 'preview', availability: 'editable',
+  }),
+  captionLayout: entry('captionLayout', {
+    schema: 'caption-layout', uiLocation: 'caption', legacyMirror: null,
     consumerStages: ['preview', 'render'], invalidateFrom: 'preview', availability: 'editable',
   }),
   bgmVolume: entry('bgmVolume', {

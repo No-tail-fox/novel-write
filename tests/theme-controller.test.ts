@@ -3,6 +3,7 @@ import {
   applyStoredTheme,
   changeRuntimeTheme,
   revealThemedApplication,
+  transitionRendererTheme,
 } from '../src/features/settings/theme-controller';
 import { defaultConfig } from '@shared/config';
 import type { AppMutationResult } from '@shared/types';
@@ -50,6 +51,70 @@ describe('runtime theme controller', () => {
     resolve(themeMutation('light'));
     await expect(changing).resolves.toEqual({ theme: 'light', mutation: themeMutation('light') });
     expect(element.dataset.theme).toBe('light');
+  });
+
+  it('keeps renderer state and the DOM on one theme while persistence is pending', async () => {
+    const element = root();
+    let state = {
+      config: structuredClone(defaultConfig),
+      ui: { theme: 'dark' as const, activeView: 'settings' as const, themePreferenceVersion: 1 as const },
+    };
+    let resolve!: (value: AppMutationResult) => void;
+    const persisted = new Promise<AppMutationResult>((done) => { resolve = done; });
+    const synchronizeState = (expectedTheme: 'dark' | 'light', nextTheme: 'dark' | 'light') => {
+      const next = transitionRendererTheme(state, expectedTheme, nextTheme);
+      const changed = next !== state;
+      state = next;
+      return changed;
+    };
+
+    const changing = changeRuntimeTheme({
+      currentTheme: 'dark',
+      nextTheme: 'light',
+      root: element,
+      synchronizeState,
+      persist: () => persisted,
+    });
+
+    expect(state.ui.theme).toBe('light');
+    expect(state.config.ui.theme).toBe('light');
+    expect(element.dataset.theme).toBe('light');
+
+    resolve(themeMutation('light'));
+    await changing;
+    expect(state.ui.theme).toBe('light');
+    expect(element.dataset.theme).toBe('light');
+  });
+
+  it('does not let a stale theme completion overwrite a newer renderer choice', async () => {
+    const element = root();
+    let state = {
+      config: structuredClone(defaultConfig),
+      ui: { theme: 'dark' as const, activeView: 'settings' as const, themePreferenceVersion: 1 as const },
+    };
+    let resolve!: (value: AppMutationResult) => void;
+    const persisted = new Promise<AppMutationResult>((done) => { resolve = done; });
+    const synchronizeState = (expectedTheme: 'dark' | 'light', nextTheme: 'dark' | 'light') => {
+      const next = transitionRendererTheme(state, expectedTheme, nextTheme);
+      const changed = next !== state;
+      state = next;
+      return changed;
+    };
+
+    const changing = changeRuntimeTheme({
+      currentTheme: 'dark',
+      nextTheme: 'light',
+      root: element,
+      synchronizeState,
+      persist: () => persisted,
+    });
+    state = transitionRendererTheme(state, 'light', 'dark');
+    element.dataset.theme = 'dark';
+
+    resolve(themeMutation('light'));
+    await changing;
+    expect(state.ui.theme).toBe('dark');
+    expect(element.dataset.theme).toBe('dark');
   });
 
   it('rolls the DOM and control owner back when persistence fails', async () => {

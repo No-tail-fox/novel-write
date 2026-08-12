@@ -12,8 +12,12 @@ const outputBase = resolve(process.env.STORYDREAM_QA_OUTPUT_DIR || tmpdir());
 const keepQaTempOnFailure = process.env.STORYDREAM_QA_KEEP_TEMP_ON_FAILURE === '1';
 const localizationOnly = process.env.STORYDREAM_QA_LOCALIZATION_ONLY === '1';
 const effectsOnly = process.env.STORYDREAM_QA_EFFECTS_ONLY === '1';
+const previewLayoutOnly = process.env.STORYDREAM_QA_PREVIEW_LAYOUT_ONLY === '1';
+const captionWorkspaceOnly = process.env.STORYDREAM_QA_CAPTION_WORKSPACE_ONLY === '1';
+const maximizeRestoreOnly = process.env.STORYDREAM_QA_MAXIMIZE_RESTORE_ONLY === '1';
 const templatePreviewOnly = process.env.STORYDREAM_QA_TEMPLATE_PREVIEW_ONLY === '1';
 const assetRemovalOnly = process.env.STORYDREAM_QA_ASSET_REMOVAL_ONLY === '1';
+const assetProgressOnly = process.env.STORYDREAM_QA_ASSET_PROGRESS_ONLY === '1';
 const CDP_CONNECT_TIMEOUT_MS = 10_000;
 const CDP_COMMAND_TIMEOUT_MS = 15_000;
 const WAIT_FOR_CHECK_TIMEOUT_MS = 5_000;
@@ -42,10 +46,28 @@ try {
   const optionLabelsCompactScreenshot = join(qaTempDir, 'option-labels-compact.png');
   const effectsDesktopScreenshot = join(qaTempDir, 'effects-desktop.png');
   const effectsCompactScreenshot = join(qaTempDir, 'effects-compact.png');
+  const previewLayoutDesktopScreenshot = join(qaTempDir, 'preview-layout-desktop.png');
+  const previewLayoutCompactScreenshot = join(qaTempDir, 'preview-layout-compact.png');
+  const effectsSettingsScreenshot = join(qaTempDir, 'effects-settings.png');
+  const effectsForegroundScreenshot = join(qaTempDir, 'effects-foreground.png');
+  const effectsTitleScreenshot = join(qaTempDir, 'effects-title.png');
+  const effectsCaptionScreenshot = join(qaTempDir, 'effects-caption.png');
+  const effectsCaptionLayoutScreenshot = join(qaTempDir, 'effects-caption-layout.png');
+  const effectsCaptionDetailsScreenshot = join(qaTempDir, 'effects-caption-details.png');
+  const effectsCaptionCompactScreenshot = join(qaTempDir, 'effects-caption-compact.png');
+  const effectsCaptionCompactLayoutScreenshot = join(qaTempDir, 'effects-caption-compact-layout.png');
+  const effectsCaptionCompactDetailsScreenshot = join(qaTempDir, 'effects-caption-compact-details.png');
+  const effectsPromptScreenshot = join(qaTempDir, 'effects-prompt.png');
+  const maximizePreviewScreenshot = join(qaTempDir, 'maximize-preview.png');
+  const restoredPreviewScreenshot = join(qaTempDir, 'restored-preview.png');
+  const maximizePreviewCompactScreenshot = join(qaTempDir, 'maximize-preview-compact.png');
+  const restoredPreviewCompactScreenshot = join(qaTempDir, 'restored-preview-compact.png');
   const templatePreviewDesktopScreenshot = join(qaTempDir, 'template-preview-desktop.png');
   const templatePreviewCompactScreenshot = join(qaTempDir, 'template-preview-compact.png');
   const assetRemovalDesktopScreenshot = join(qaTempDir, 'asset-removal-desktop.png');
   const assetRemovalCompactScreenshot = join(qaTempDir, 'asset-removal-compact.png');
+  const assetProgressDesktopScreenshot = join(qaTempDir, 'asset-progress-desktop.png');
+  const assetProgressCompactScreenshot = join(qaTempDir, 'asset-progress-compact.png');
   const coverDesktopScreenshot = join(qaTempDir, 'cover-desktop.png');
   const coverCompactScreenshot = join(qaTempDir, 'cover-compact.png');
   const captionEditorScreenshot = join(qaTempDir, 'caption-editor.png');
@@ -241,6 +263,65 @@ try {
     20_000,
     'primary completed task',
   );
+  if (assetProgressOnly) {
+    const assetDesktop = await exerciseAssetProgress(cdp);
+    await saveScreenshot(cdp, assetProgressDesktopScreenshot);
+    await cdp.send('Emulation.setDeviceMetricsOverride', {
+      width: 920,
+      height: 720,
+      deviceScaleFactor: 1,
+      mobile: false,
+    });
+    await delay(350);
+    const assetCompact = await inspectAssetProgress(cdp);
+    await saveScreenshot(cdp, assetProgressCompactScreenshot);
+    const relevantRuntimeErrors = runtimeErrors.filter((error) => error.message && !error.message.includes('DevTools'));
+    for (const state of [assetDesktop, assetCompact]) {
+      if (state.activeTab !== '素材'
+        || state.cardCount !== 4
+        || state.readyImageCount !== 1
+        || state.generatingCount !== 3
+        || !state.progressText.includes('已生成 1/4 张')
+        || state.horizontalOverflow > 2
+        || state.surfaceHorizontalOverflow > 2
+        || state.clippedControls.length) {
+        throw new Error(`Asset-progress QA failed: ${JSON.stringify({ assetDesktop, assetCompact, relevantRuntimeErrors })}`);
+      }
+    }
+    if (relevantRuntimeErrors.length) {
+      throw new Error(`Asset-progress runtime errors: ${JSON.stringify(relevantRuntimeErrors)}`);
+    }
+    const screenshotPaths = [assetProgressDesktopScreenshot, assetProgressCompactScreenshot];
+    const screenshots = await Promise.all(screenshotPaths.map(async (path) => {
+      const value = await stat(path);
+      if (value.size <= 0) throw new Error(`Screenshot evidence is empty: ${basename(path)}`);
+      return { name: basename(path), size: value.size };
+    }));
+    const evidenceDirectory = process.env.STORYDREAM_QA_EVIDENCE_DIR
+      ? resolve(process.env.STORYDREAM_QA_EVIDENCE_DIR)
+      : '';
+    const evidencePaths = [];
+    if (evidenceDirectory) {
+      await mkdir(evidenceDirectory, { recursive: true });
+      for (const path of screenshotPaths) {
+        const evidencePath = join(evidenceDirectory, basename(path));
+        await copyFile(path, evidencePath);
+        evidencePaths.push(evidencePath);
+      }
+    }
+    process.stdout.write(`${JSON.stringify({
+      status: 'passed',
+      scope: 'asset-progress',
+      pageTitle: identity.title,
+      pageUrl: identity.url,
+      assetDesktop,
+      assetCompact,
+      screenshots,
+      evidencePaths,
+      runtimeErrors: relevantRuntimeErrors,
+    }, null, 2)}\n`);
+    break qaRun;
+  }
   if (assetRemovalOnly) {
     const assetDesktop = await exerciseAssetRemovalControls(cdp);
     await saveScreenshot(cdp, assetRemovalDesktopScreenshot);
@@ -314,9 +395,10 @@ try {
     const templateCompact = await inspectAndAnimateTemplatePreview(cdp);
     await saveScreenshot(cdp, templatePreviewCompactScreenshot);
     const relevantRuntimeErrors = runtimeErrors.filter((error) => error.message && !error.message.includes('DevTools'));
-    if (templateDesktop.templateCount !== 29 || templateCompact.templateCount !== 29
+    if (templateDesktop.templateCount !== 4 || templateCompact.templateCount !== 4
       || templateDesktop.selectedCount !== 1 || templateCompact.selectedCount !== 1
-      || templateDesktop.uniqueMotionCount < 10 || templateCompact.uniqueMotionCount < 10
+      || templateDesktop.uniqueMotionCount < 8 || templateCompact.uniqueMotionCount < 8
+      || templateDesktop.realBackgroundCount !== 4 || templateCompact.realBackgroundCount !== 4
       || !templateDesktop.pixelChanged || !templateCompact.pixelChanged
       || templateDesktop.runningAnimationCount < 3 || templateCompact.runningAnimationCount < 3
       || templateDesktop.horizontalOverflow > 2 || templateCompact.horizontalOverflow > 2
@@ -355,9 +437,236 @@ try {
     }, null, 2)}\n`);
     break qaRun;
   }
+  if (previewLayoutOnly) {
+    const clicked = await clickTab(cdp, '动画预览');
+    if (!clicked) throw new Error('Animation preview tab was not found for preview-layout QA.');
+    await waitFor(
+      async () => evaluate(cdp, `Boolean(
+        document.querySelector('.hv-preview-workbench')
+        && document.querySelector('.hv-reference-phone iframe')?.contentWindow?.__ready
+      )`),
+      10_000,
+      'animation preview layout',
+    );
+    const previewLayoutDesktop = await inspectPreviewLayout(cdp);
+    await saveScreenshot(cdp, previewLayoutDesktopScreenshot);
+    await cdp.send('Emulation.setDeviceMetricsOverride', {
+      width: 920,
+      height: 720,
+      deviceScaleFactor: 1,
+      mobile: false,
+    });
+    await delay(350);
+    await evaluate(cdp, `document.querySelectorAll('.hv-reference-phone iframe').forEach((iframe) => {
+      iframe.contentWindow?.dispatchEvent(new Event('resize'));
+    })`);
+    await delay(150);
+    const previewLayoutCompact = await inspectPreviewLayout(cdp);
+    await saveScreenshot(cdp, previewLayoutCompactScreenshot);
+    const relevantRuntimeErrors = runtimeErrors.filter((error) => error.message && !error.message.includes('DevTools'));
+    const layoutInvalid = (state) => !state.ready
+      || state.activeTab !== '动画预览'
+      || !state.sceneStripBelowPreview || !state.inspectorBesidePreview || !state.previewDominatesWorkspace
+      || state.sceneEditorTabs.join('|') !== '版式|前景|标题|字幕|提示词'
+      || !state.sceneEditorTabTextFits || !state.playAllTextFits
+      || state.horizontalOverflow > 2 || state.workspaceHorizontalOverflow > 2
+      || state.clippedControls.length;
+    if (identity.title !== 'StoryDream' || identity.bodyTextLength < 100 || identity.hasFrameworkOverlay
+      || layoutInvalid(previewLayoutDesktop) || layoutInvalid(previewLayoutCompact)
+      || relevantRuntimeErrors.length) {
+      throw new Error(`Preview-layout QA failed: ${JSON.stringify({ identity, previewLayoutDesktop, previewLayoutCompact, relevantRuntimeErrors })}`);
+    }
+    const screenshotPaths = [previewLayoutDesktopScreenshot, previewLayoutCompactScreenshot];
+    const screenshots = await Promise.all(screenshotPaths.map(async (path) => {
+      const value = await stat(path);
+      if (value.size <= 0) throw new Error(`Screenshot evidence is empty: ${basename(path)}`);
+      return { name: basename(path), size: value.size };
+    }));
+    const evidenceDirectory = process.env.STORYDREAM_QA_EVIDENCE_DIR
+      ? resolve(process.env.STORYDREAM_QA_EVIDENCE_DIR)
+      : '';
+    const evidencePaths = [];
+    if (evidenceDirectory) {
+      await mkdir(evidenceDirectory, { recursive: true });
+      for (const path of screenshotPaths) {
+        const evidencePath = join(evidenceDirectory, basename(path));
+        await copyFile(path, evidencePath);
+        evidencePaths.push(evidencePath);
+      }
+    }
+    process.stdout.write(`${JSON.stringify({
+      status: 'passed',
+      scope: 'preview-layout',
+      pageTitle: identity.title,
+      pageUrl: identity.url,
+      previewLayoutDesktop,
+      previewLayoutCompact,
+      screenshots,
+      evidencePaths,
+      runtimeErrors: relevantRuntimeErrors,
+    }, null, 2)}\n`);
+    break qaRun;
+  }
+  if (captionWorkspaceOnly) {
+    const clicked = await clickTab(cdp, '动画预览');
+    if (!clicked) throw new Error('Animation preview tab was not found for caption-workspace QA.');
+    await waitFor(
+      async () => evaluate(cdp, `Boolean(
+        document.querySelector('.hv-scene-preview-editor')
+        && document.querySelector('.hv-reference-phone iframe')?.contentWindow?.__ready
+      )`),
+      10_000,
+      'animation preview caption workspace',
+    );
+    const captionDesktop = await inspectSceneCaptionWorkspace(
+      cdp,
+      effectsCaptionDetailsScreenshot,
+      effectsCaptionScreenshot,
+      effectsCaptionLayoutScreenshot,
+    );
+    await cdp.send('Emulation.setDeviceMetricsOverride', {
+      width: 920,
+      height: 720,
+      deviceScaleFactor: 1,
+      mobile: false,
+    });
+    await delay(350);
+    const captionCompact = await inspectSceneCaptionWorkspace(
+      cdp,
+      effectsCaptionCompactDetailsScreenshot,
+      effectsCaptionCompactScreenshot,
+      effectsCaptionCompactLayoutScreenshot,
+    );
+    const relevantRuntimeErrors = runtimeErrors.filter((error) => error.message && !error.message.includes('DevTools'));
+    const captionStateInvalid = (state) => !state.ready
+      || !state.fontAvailable || !state.textColorAvailable || !state.fontSizeAvailable
+      || !state.positionAvailable || !state.editorOwnsScroll || !state.bottomReachable
+      || state.cueCount < 2 || state.previewCaptionCount < 2
+      || state.previewSampleTime !== 0 || state.previewVisibleCaptionCount !== 1
+      || state.workspaceHorizontalOverflow > 2 || state.bodyHorizontalOverflow > 2;
+    if (identity.title !== 'StoryDream' || identity.bodyTextLength < 100 || identity.hasFrameworkOverlay
+      || captionStateInvalid(captionDesktop) || captionStateInvalid(captionCompact)
+      || relevantRuntimeErrors.length) {
+      throw new Error(`Caption-workspace QA failed: ${JSON.stringify({ identity, captionDesktop, captionCompact, relevantRuntimeErrors })}`);
+    }
+    const screenshotPaths = [
+      effectsCaptionScreenshot,
+      effectsCaptionLayoutScreenshot,
+      effectsCaptionDetailsScreenshot,
+      effectsCaptionCompactScreenshot,
+      effectsCaptionCompactLayoutScreenshot,
+      effectsCaptionCompactDetailsScreenshot,
+    ];
+    const screenshots = await Promise.all(screenshotPaths.map(async (path) => {
+      const value = await stat(path);
+      if (value.size <= 0) throw new Error(`Screenshot evidence is empty: ${basename(path)}`);
+      return { name: basename(path), size: value.size };
+    }));
+    const evidenceDirectory = process.env.STORYDREAM_QA_EVIDENCE_DIR
+      ? resolve(process.env.STORYDREAM_QA_EVIDENCE_DIR)
+      : '';
+    const evidencePaths = [];
+    if (evidenceDirectory) {
+      await mkdir(evidenceDirectory, { recursive: true });
+      for (const path of screenshotPaths) {
+        const evidencePath = join(evidenceDirectory, basename(path));
+        await copyFile(path, evidencePath);
+        evidencePaths.push(evidencePath);
+      }
+    }
+    process.stdout.write(`${JSON.stringify({
+      status: 'passed',
+      scope: 'caption-workspace',
+      pageTitle: identity.title,
+      pageUrl: identity.url,
+      captionDesktop,
+      captionCompact,
+      screenshots,
+      evidencePaths,
+      runtimeErrors: relevantRuntimeErrors,
+    }, null, 2)}\n`);
+    break qaRun;
+  }
+  if (maximizeRestoreOnly) {
+    const clicked = await clickTab(cdp, '动画预览');
+    if (!clicked) throw new Error('Animation preview tab was not found for maximize/restore QA.');
+    await waitFor(
+      async () => evaluate(cdp, `Boolean(document.querySelector('.hv-reference-preview .hv-reference-transport button[title="最大化"]'))`),
+      10_000,
+      'animation preview maximize control',
+    );
+    const maximizeRestoreDesktop = await exercisePreviewMaximizeRestore(cdp, {
+      maximized: maximizePreviewScreenshot,
+      restored: restoredPreviewScreenshot,
+    });
+    await cdp.send('Emulation.setDeviceMetricsOverride', {
+      width: 920,
+      height: 720,
+      deviceScaleFactor: 1,
+      mobile: false,
+    });
+    await delay(350);
+    const maximizeRestoreCompact = await exercisePreviewMaximizeRestore(cdp, {
+      maximized: maximizePreviewCompactScreenshot,
+      restored: restoredPreviewCompactScreenshot,
+    });
+    const relevantRuntimeErrors = runtimeErrors.filter((error) => error.message && !error.message.includes('DevTools'));
+    if (identity.title !== 'StoryDream' || identity.bodyTextLength < 100 || identity.hasFrameworkOverlay
+      || !maximizeRestoreDesktop.maximized.fixed || !maximizeRestoreDesktop.maximized.coversViewport
+      || !maximizeRestoreDesktop.restored || !maximizeRestoreDesktop.focusRestored
+      || !maximizeRestoreDesktop.shellVisible.parameters || !maximizeRestoreDesktop.shellVisible.canvas || !maximizeRestoreDesktop.shellVisible.runRail
+      || !maximizeRestoreCompact.maximized.fixed || !maximizeRestoreCompact.maximized.coversViewport
+      || !maximizeRestoreCompact.restored || !maximizeRestoreCompact.focusRestored
+      || !maximizeRestoreCompact.shellPresent.parameters || !maximizeRestoreCompact.shellPresent.canvas || !maximizeRestoreCompact.shellPresent.runRail
+      || relevantRuntimeErrors.length) {
+      throw new Error(`Maximize/restore QA failed: ${JSON.stringify({ identity, maximizeRestoreDesktop, maximizeRestoreCompact, relevantRuntimeErrors })}`);
+    }
+    const screenshotPaths = [
+      maximizePreviewScreenshot,
+      restoredPreviewScreenshot,
+      maximizePreviewCompactScreenshot,
+      restoredPreviewCompactScreenshot,
+    ];
+    const screenshots = await Promise.all(screenshotPaths.map(async (path) => {
+      const value = await stat(path);
+      if (value.size <= 0) throw new Error(`Screenshot evidence is empty: ${basename(path)}`);
+      return { name: basename(path), size: value.size };
+    }));
+    const evidenceDirectory = process.env.STORYDREAM_QA_EVIDENCE_DIR
+      ? resolve(process.env.STORYDREAM_QA_EVIDENCE_DIR)
+      : '';
+    const evidencePaths = [];
+    if (evidenceDirectory) {
+      await mkdir(evidenceDirectory, { recursive: true });
+      for (const path of screenshotPaths) {
+        const evidencePath = join(evidenceDirectory, basename(path));
+        await copyFile(path, evidencePath);
+        evidencePaths.push(evidencePath);
+      }
+    }
+    process.stdout.write(`${JSON.stringify({
+      status: 'passed',
+      scope: 'maximize-restore',
+      pageTitle: identity.title,
+      pageUrl: identity.url,
+      maximizeRestoreDesktop,
+      maximizeRestoreCompact,
+      screenshots,
+      evidencePaths,
+      runtimeErrors: relevantRuntimeErrors,
+    }, null, 2)}\n`);
+    break qaRun;
+  }
   if (effectsOnly) {
-    const effectsDesktop = await exercisePreviewEffects(cdp);
+    const effectsDesktop = await exercisePreviewEffects(cdp, effectsSettingsScreenshot);
+    const maximizeRestore = await exercisePreviewMaximizeRestore(cdp);
     await saveScreenshot(cdp, effectsDesktopScreenshot);
+    const sceneEditorTabs = await exerciseSceneEditorTabs(cdp, {
+      foreground: effectsForegroundScreenshot,
+      title: effectsTitleScreenshot,
+      caption: effectsCaptionScreenshot,
+      prompt: effectsPromptScreenshot,
+    });
     await cdp.send('Emulation.setDeviceMetricsOverride', {
       width: 920,
       height: 720,
@@ -370,28 +679,72 @@ try {
       if (settings instanceof HTMLDetailsElement) settings.open = false;
       const workspace = document.querySelector('.hv-preview-workspace');
       if (workspace) workspace.scrollTop = 0;
+      document.querySelectorAll('.hv-reference-phone iframe').forEach((iframe) => {
+        iframe.contentWindow?.dispatchEvent(new Event('resize'));
+      });
     })()`);
     await delay(200);
-    const effectsCompact = await inspectPreviewEffects(cdp);
+    const compactSampleTime = Math.max(0.05, (effectsDesktop.previewDuration || 1) * 0.6);
+    await evaluate(cdp, `document.querySelector('.hv-reference-phone iframe')?.contentWindow?.postMessage({ type: 'hvseek', time: ${compactSampleTime} }, '*')`);
+    let effectsCompact;
+    await waitFor(
+      async () => {
+        const state = await inspectPreviewEffects(cdp);
+        if (state.previewTime < compactSampleTime - 0.04
+          || !state.previewForegroundVisible || !state.previewForegroundInsideCanvas) return false;
+        effectsCompact = state;
+        return true;
+      },
+      5_000,
+      'compact stable foreground frame',
+    );
     await saveScreenshot(cdp, effectsCompactScreenshot);
+    const captionCompact = await inspectSceneCaptionWorkspace(cdp, effectsCaptionCompactScreenshot);
+    const previewScrollContract = await exercisePreviewScrollContract(cdp);
     const relevantRuntimeErrors = runtimeErrors.filter((error) => error.message && !error.message.includes('DevTools'));
     if (identity.title !== 'StoryDream' || identity.bodyTextLength < 100 || identity.hasFrameworkOverlay) {
       throw new Error(`Preview-effects QA page identity failed: ${JSON.stringify(identity)}`);
     }
     if (!effectsDesktop.playbackAdvanced || !effectsDesktop.cameraTransformChanged
       || !effectsDesktop.transitionOverlayObserved || !effectsDesktop.layoutGeometryChanged
+      || !effectsDesktop.endReplayAdvanced
       || effectsDesktop.legacyInspectorPresent || effectsCompact.legacyInspectorPresent
-      || !effectsDesktop.settingsSummary.includes('字幕、镜头与转场设置')
-      || !effectsCompact.settingsSummary.includes('字幕、镜头与转场设置')
-      || effectsDesktop.canvasStatus !== '真实画布预览'
-      || effectsCompact.canvasStatus !== '真实画布预览'
-      || !effectsDesktop.previewAboveFold || !effectsCompact.previewAboveFold
+      || effectsDesktop.settingsOpen || effectsCompact.settingsOpen
+      || !effectsDesktop.openSettingsState?.settingsOpen || !effectsDesktop.openSettingsState?.sceneEditorBodyVisible
+      || !effectsDesktop.settingsSummary.includes('镜头与转场设置')
+      || !effectsCompact.settingsSummary.includes('镜头与转场设置')
+      || effectsDesktop.canvasStatus !== '预览就绪'
+      || effectsCompact.canvasStatus !== '预览就绪'
+      || !effectsDesktop.previewPhoneSize || effectsDesktop.previewPhoneSize.height < 400
+      || !effectsCompact.previewPhoneSize || effectsCompact.previewPhoneSize.height < 260
+      || !effectsDesktop.previewStageSize || effectsDesktop.previewStageSize.height < effectsDesktop.previewPhoneSize.height
+      || !effectsCompact.previewStageSize || effectsCompact.previewStageSize.height < effectsCompact.previewPhoneSize.height
       || !effectsDesktop.previewCanvasFullyVisible || !effectsCompact.previewCanvasFullyVisible
       || !effectsDesktop.previewCaptionVisible || !effectsCompact.previewCaptionVisible
       || !effectsDesktop.previewCaptionInsideCanvas || !effectsCompact.previewCaptionInsideCanvas
-      || !(effectsDesktop.sceneRailBesidePreview || effectsDesktop.sceneRailBelowPreview)
-      || !(effectsCompact.sceneRailBesidePreview || effectsCompact.sceneRailBelowPreview)
+      || !effectsDesktop.previewForegroundVisible || !effectsCompact.previewForegroundVisible
+      || !effectsDesktop.previewForegroundInsideCanvas || !effectsCompact.previewForegroundInsideCanvas
+      || JSON.stringify(effectsDesktop.sceneEditorTabs) !== JSON.stringify(['版式', '前景', '标题', '字幕', '提示词'])
+      || JSON.stringify(effectsCompact.sceneEditorTabs) !== JSON.stringify(['版式', '前景', '标题', '字幕', '提示词'])
+      || !effectsDesktop.sceneStripBelowPreview || !effectsCompact.sceneStripBelowPreview
+      || !effectsDesktop.inspectorBesidePreview || !effectsCompact.inspectorBesidePreview
+      || !effectsDesktop.previewDominatesWorkspace || !effectsCompact.previewDominatesWorkspace
       || !effectsDesktop.bottomControlsReachable || !effectsCompact.bottomControlsReachable
+      || !previewScrollContract.available || !previewScrollContract.editorHeaderVisible
+      || previewScrollContract.scrollTop <= 0 || previewScrollContract.scrollHeight <= previewScrollContract.clientHeight
+      || !sceneEditorTabs.foreground.ready || !sceneEditorTabs.foreground.hideShowSynchronized
+      || !sceneEditorTabs.title.ready || !sceneEditorTabs.title.dirtyStateSynchronized
+      || !sceneEditorTabs.caption.ready || !sceneEditorTabs.caption.fontAvailable
+      || !sceneEditorTabs.caption.textColorAvailable || !sceneEditorTabs.caption.fontSizeAvailable
+      || !sceneEditorTabs.caption.positionAvailable || !sceneEditorTabs.caption.editorOwnsScroll
+      || !sceneEditorTabs.caption.bottomReachable
+      || !sceneEditorTabs.prompt.ready || !sceneEditorTabs.prompt.dirtyStateSynchronized
+      || !captionCompact.ready || !captionCompact.fontAvailable || !captionCompact.textColorAvailable
+      || !captionCompact.fontSizeAvailable || !captionCompact.positionAvailable
+      || !captionCompact.editorOwnsScroll || !captionCompact.bottomReachable
+      || !maximizeRestore.maximized.fixed || !maximizeRestore.maximized.coversViewport
+      || !maximizeRestore.restored || !maximizeRestore.focusRestored
+      || !maximizeRestore.shellVisible.parameters || !maximizeRestore.shellVisible.canvas || !maximizeRestore.shellVisible.runRail
       || effectsDesktop.pageVerticalOverflow > 2 || effectsCompact.pageVerticalOverflow > 2
       || effectsDesktop.horizontalOverflow > 2 || effectsCompact.horizontalOverflow > 2
       || effectsDesktop.workspaceHorizontalOverflow > 2 || effectsCompact.workspaceHorizontalOverflow > 2
@@ -402,9 +755,18 @@ try {
       || !queueRoute?.pageReady || !queueRoute.queueTableVisible
       || !queueRoute.routeErrorAbsent || queueRoute.activeView !== 'queue'
       || relevantRuntimeErrors.length) {
-      throw new Error(`Preview-effects QA failed: ${JSON.stringify({ queueRoute, effectsDesktop, effectsCompact, relevantRuntimeErrors })}`);
+      throw new Error(`Preview-effects QA failed: ${JSON.stringify({ queueRoute, effectsDesktop, effectsCompact, sceneEditorTabs, captionCompact, previewScrollContract, maximizeRestore, relevantRuntimeErrors })}`);
     }
-    const screenshotPaths = [effectsDesktopScreenshot, effectsCompactScreenshot];
+    const screenshotPaths = [
+      effectsDesktopScreenshot,
+      effectsCompactScreenshot,
+      effectsSettingsScreenshot,
+      effectsForegroundScreenshot,
+      effectsTitleScreenshot,
+      effectsCaptionScreenshot,
+      effectsCaptionCompactScreenshot,
+      effectsPromptScreenshot,
+    ];
     const screenshots = await Promise.all(screenshotPaths.map(async (path) => {
       const value = await stat(path);
       if (value.size <= 0) throw new Error(`Screenshot evidence is empty: ${basename(path)}`);
@@ -430,6 +792,10 @@ try {
       queueRoute,
       effectsDesktop,
       effectsCompact,
+      captionCompact,
+      previewScrollContract,
+      maximizeRestore,
+      sceneEditorTabs,
       screenshots,
       evidencePaths,
       runtimeErrors: relevantRuntimeErrors,
@@ -545,11 +911,11 @@ try {
     throw new Error(`HTML video config update did not reach the expected resumable render state: ${JSON.stringify(configUpdate)}`);
   }
   const captionUpdate = await exerciseHtmlVideoCaptionUpdate(cdp, seededTasks.primary.id);
-  if (captionUpdate.completedStepCount !== 4) {
-    throw new Error(`Caption config update preserved ${captionUpdate.completedStepCount} completed steps instead of 4.`);
+  if (captionUpdate.completedStepCount !== 5) {
+    throw new Error(`Caption config update preserved ${captionUpdate.completedStepCount} completed steps instead of 5.`);
   }
-  if (captionUpdate.previewCompleted || captionUpdate.renderCompleted || !captionUpdate.resumeAvailable) {
-    throw new Error(`HTML video caption update did not reach the expected resumable preview state: ${JSON.stringify(captionUpdate)}`);
+  if (!captionUpdate.previewCompleted || captionUpdate.renderCompleted || !captionUpdate.resumeAvailable) {
+    throw new Error(`HTML video caption update did not reach the expected resumable render state: ${JSON.stringify(captionUpdate)}`);
   }
   await evaluate(cdp, `document.querySelector('.hv-caption-editor')?.scrollIntoView({ block: 'center' })`);
   await delay(200);
@@ -1105,7 +1471,7 @@ async function exerciseHyperframesAuthoring(cdpConnection, screenshotPath) {
   if (state.panels.length !== 4 || !state.lintPassed || !state.timelineVisible || state.clipCount < 4) {
     throw new Error(`HyperFrames authoring tools are incomplete: ${JSON.stringify(state)}`);
   }
-  if (state.trackLabels.join(',') !== 'T0,T1,T20,T21' || state.stepCount !== 6 || !state.parameterRailVisible) {
+  if (state.trackLabels.join(',') !== 'T0,T1,T20,T21,T22' || state.stepCount !== 6 || !state.parameterRailVisible) {
     throw new Error(`HyperFrames authoring lost semantic tracks, parameters, or lifecycle state: ${JSON.stringify(state)}`);
   }
   await saveScreenshot(cdpConnection, screenshotPath);
@@ -1250,15 +1616,43 @@ async function seedCompletedTasks() {
     });
     await delay(10);
     const primary = await seedCompletedTask(database, createHtmlVideoPipelineData, runHtmlVideoPipeline, buildHtmlVideoExportInput, appDataDir, {
-      title: '已完成输出播放 QA',
+      title: assetProgressOnly ? '素材逐张回填 QA' : '已完成输出播放 QA',
       tone: 660,
-      sceneCount: effectsOnly ? 2 : 1,
-      foreground: assetRemovalOnly,
+      sceneCount: effectsOnly || assetProgressOnly ? 2 : 1,
+      foreground: assetRemovalOnly || effectsOnly || assetProgressOnly,
     });
+    if (assetProgressOnly) await seedAssetProgressSnapshot(database, primary);
     return { primary, secondary, failed };
   } finally {
     await database.close();
   }
+}
+
+async function seedAssetProgressSnapshot(database, seededTask) {
+  const task = (await database.getState()).tasks.find((item) => item.id === seededTask.id);
+  if (!task?.pipelineData) throw new Error('Asset-progress task pipeline is missing.');
+  const pipeline = JSON.parse(task.pipelineData);
+  pipeline.revision = Number(pipeline.revision ?? 0) + 1;
+  pipeline.current = 'assets';
+  pipeline.assets = pipeline.assets.slice(0, 1);
+  pipeline.voices = [];
+  pipeline.compositions = [];
+  delete pipeline.coverAsset;
+  delete pipeline.output;
+  pipeline.steps.assets = { status: 'running', startedAt: Date.now() };
+  pipeline.steps.voice = { status: 'pending' };
+  pipeline.steps.preview = { status: 'pending' };
+  pipeline.steps.render = { status: 'pending' };
+  await database.updateTask(task.id, {
+    status: 'paused',
+    currentStep: 2,
+    pipelineStep: 'assets',
+    pipelineData: JSON.stringify(pipeline),
+    completedAt: null,
+    errorMessage: '运行已暂停，可继续。',
+    failedStep: 2,
+    retryFromStep: 2,
+  });
 }
 
 async function seedFailedTask(database, createHtmlVideoPipelineData, appDataDir) {
@@ -1306,7 +1700,7 @@ async function seedCompletedTask(database, createHtmlVideoPipelineData, runHtmlV
     style: 'cinematic',
     transitionType: 'fade',
     bgmId: '',
-    foreground: false,
+    foreground: Boolean(options.foreground),
   });
   const task = await database.createTask({
     title: options.title,
@@ -1326,6 +1720,7 @@ async function seedCompletedTask(database, createHtmlVideoPipelineData, runHtmlV
     assetPath: join(taskDir, `scene-${String(index + 1).padStart(3, '0')}.png`),
     voicePath: join(taskDir, `scene-${String(index + 1).padStart(3, '0')}.wav`),
     thumbnailPath: join(taskDir, `scene-${String(index + 1).padStart(3, '0')}-thumbnail.png`),
+    foregroundPath: join(taskDir, `scene-${String(index + 1).padStart(3, '0')}-foreground.png`),
   }));
   const outputPath = join(taskDir, 'final.mp4');
   const coverPath = join(taskDir, 'covers', 'cover-auto-r1.png');
@@ -1358,16 +1753,29 @@ async function seedCompletedTask(database, createHtmlVideoPipelineData, runHtmlV
           index: fixture.index,
           narration: `${narration}${fixture.index === 1 ? '' : ' 第二幕。'}`,
           title: `${options.title} ${fixture.index}`,
-          captions: [`媒体恢复验证 ${fixture.index}`],
-          sceneTemplate: 'cinematic-title',
+          captions: [`媒体恢复验证 ${fixture.index} 第一条`, `媒体恢复验证 ${fixture.index} 第二条`],
+          sceneTemplate: options.foreground ? 'center-focus' : 'cinematic-title',
           background: { prompt: `真实 DOM 图片错误恢复验证 ${fixture.index}` },
-          elements: [],
+          elements: options.foreground ? [{ slot: 0, prompt: `人物主体前景 ${fixture.index}` }] : [],
         })),
       };
     },
     async generateAssets() {
-      for (const fixture of sceneFixtures) createQaSceneImage(fixture.assetPath, fixture.index);
-      return sceneFixtures.map((fixture) => ({ sceneIndex: fixture.index, kind: 'bg', slot: 0, src: fixture.assetPath, prompt: `真实 DOM 图片错误恢复验证 ${fixture.index}` }));
+      for (const fixture of sceneFixtures) {
+        createQaSceneImage(fixture.assetPath, fixture.index);
+        if (options.foreground) createQaSceneImage(fixture.foregroundPath, fixture.index + 1);
+      }
+      return sceneFixtures.flatMap((fixture) => [
+        { sceneIndex: fixture.index, kind: 'bg', slot: 0, src: fixture.assetPath, prompt: `真实 DOM 图片错误恢复验证 ${fixture.index}` },
+        ...(options.foreground ? [{
+          sceneIndex: fixture.index,
+          kind: 'fg',
+          slot: 0,
+          src: fixture.foregroundPath,
+          prompt: `人物主体前景 ${fixture.index}`,
+          transparency: 'opaque',
+        }] : []),
+      ]);
     },
     async synthesizeVoices(input) {
       for (const fixture of sceneFixtures) createQaAudio(fixture.voicePath, options.tone + fixture.index);
@@ -1387,6 +1795,9 @@ async function seedCompletedTask(database, createHtmlVideoPipelineData, runHtmlV
           subtitles: { cues: [], srt: '' },
         },
         generatedImages: sceneFixtures.map((fixture) => ({ sceneId: fixture.index, path: fixture.assetPath })),
+        foregroundImages: options.foreground
+          ? sceneFixtures.map((fixture) => ({ sceneId: fixture.index, path: fixture.foregroundPath, slot: 0 }))
+          : [],
         narrationAudio: sceneFixtures.map((fixture) => ({ sceneId: fixture.index, path: fixture.voicePath })),
         captionConfig: input.config,
         scenePlans: input.scenes,
@@ -1406,7 +1817,10 @@ async function seedCompletedTask(database, createHtmlVideoPipelineData, runHtmlV
           canvas: { w: 320, h: 568 },
           audio: { src: fixture.voicePath, durationSec: 1 },
           background: { src: fixture.assetPath },
-          captions: [{ id: `caption-${fixture.index}`, text: `媒体恢复验证 ${fixture.index}`, startSec: 0, durationSec: 1 }],
+          captions: [
+            { id: `caption-${fixture.index}-0`, text: `媒体恢复验证 ${fixture.index} 第一条`, startSec: 0, durationSec: 0.5 },
+            { id: `caption-${fixture.index}-1`, text: `媒体恢复验证 ${fixture.index} 第二条`, startSec: 0.5, durationSec: 0.5 },
+          ],
           htmlPath: htmlPaths[fixture.index - 1],
           thumbnailPath: fixture.thumbnailPath,
           rev: 1,
@@ -1442,21 +1856,6 @@ async function seedCompletedTask(database, createHtmlVideoPipelineData, runHtmlV
     createdAt: new Date().toISOString(),
     templateId: 'cinematic-poster',
   };
-  if (options.foreground && completed.scenes[0]) {
-    const foregroundPath = join(taskDir, 'scene-001-foreground.png');
-    const foregroundPrompt = '人物主体前景，不透明背景检测样本';
-    createQaSceneImage(foregroundPath, 2);
-    completed.config.foreground = true;
-    completed.scenes[0].elements = [{ slot: 0, prompt: foregroundPrompt }];
-    completed.assets.push({
-      sceneIndex: completed.scenes[0].index,
-      kind: 'fg',
-      slot: 0,
-      src: foregroundPath,
-      prompt: foregroundPrompt,
-      transparency: 'opaque',
-    });
-  }
   const now = Date.now();
   await database.updateTask(task.id, {
     status: 'completed',
@@ -2130,6 +2529,54 @@ async function exerciseAssetRemovalControls(cdpConnection) {
   return inspectAssetRemovalControls(cdpConnection);
 }
 
+async function exerciseAssetProgress(cdpConnection) {
+  const clicked = await clickTab(cdpConnection, '素材');
+  if (!clicked) throw new Error('Could not open the asset-progress panel.');
+  await waitFor(
+    async () => {
+      const state = await inspectAssetProgress(cdpConnection);
+      return state.readyImageCount === 1 && state.generatingCount === 3;
+    },
+    10_000,
+    'incremental asset cards',
+  );
+  await evaluate(cdpConnection, `document.querySelector('.hv-studio-media-panel')?.scrollTo({ top: 0, left: 0, behavior: 'auto' })`);
+  await delay(200);
+  return inspectAssetProgress(cdpConnection);
+}
+
+function inspectAssetProgress(cdpConnection) {
+  return evaluate(cdpConnection, `(() => {
+    const surface = document.querySelector('.hv-reference-assets');
+    const cards = surface ? [...surface.querySelectorAll('.hv-reference-asset-card')] : [];
+    const readyImages = cards.filter((card) => {
+      const image = card.querySelector('.hv-reference-asset-frame img');
+      return image instanceof HTMLImageElement && image.complete && image.naturalWidth > 0;
+    });
+    const generating = cards.filter((card) => card.querySelector('.hv-reference-asset-frame')?.textContent.includes('正在生成'));
+    const visibleControls = surface ? [...surface.querySelectorAll('button, textarea')].filter((item) => {
+      const style = getComputedStyle(item);
+      const rect = item.getBoundingClientRect();
+      return style.display !== 'none' && style.visibility !== 'hidden' && rect.width > 0 && rect.height > 0;
+    }) : [];
+    const clippedControls = visibleControls.filter((item) => {
+      const rect = item.getBoundingClientRect();
+      return rect.left < -1 || rect.right > innerWidth + 1;
+    }).map((item) => item.getAttribute('title') || item.textContent.trim() || item.tagName);
+    return {
+      activeTab: document.querySelector('.hv-tab.active')?.textContent?.trim() || '',
+      progressText: surface?.querySelector('.hv-reference-panel-head span')?.textContent?.trim() || '',
+      cardCount: cards.length,
+      readyImageCount: readyImages.length,
+      generatingCount: generating.length,
+      horizontalOverflow: document.documentElement.scrollWidth - document.documentElement.clientWidth,
+      surfaceHorizontalOverflow: surface ? surface.scrollWidth - surface.clientWidth : -1,
+      clippedControls,
+      viewport: { width: innerWidth, height: innerHeight },
+    };
+  })()`);
+}
+
 function inspectAssetRemovalControls(cdpConnection) {
   return evaluate(cdpConnection, `(() => {
     const surface = document.querySelector('.hv-reference-assets');
@@ -2173,41 +2620,33 @@ async function exerciseTemplatePreview(cdpConnection) {
   const clicked = await clickTab(cdpConnection, '动画预览');
   if (!clicked) throw new Error('Animation preview tab was not found for template QA.');
   await waitFor(
-    async () => evaluate(cdpConnection, `Boolean(document.querySelector('.hv-reference-thumb-actions'))`),
+    async () => evaluate(cdpConnection, `Boolean(document.querySelector('.hv-scene-preview-editor .hv-scene-template-grid'))`),
     10_000,
-    'HTML video scene actions',
+    'HTML video current-scene editor',
   );
-  const opened = await evaluate(cdpConnection, `(() => {
-    const button = document.querySelector('.hv-reference-thumb-actions button:has(.lucide-pencil)');
-    if (!(button instanceof HTMLButtonElement) || button.disabled) return false;
-    button.click();
-    return true;
-  })()`);
-  if (!opened) throw new Error('Scene-template picker button was unavailable.');
   await waitFor(
-    async () => evaluate(cdpConnection, `document.querySelectorAll('.hv-template-grid > button').length === 29`),
+    async () => evaluate(cdpConnection, `document.querySelectorAll('.hv-scene-template-grid > button').length === 4`),
     5_000,
-    '29 scene-template previews',
+    'compatible scene-template previews',
   );
   return inspectAndAnimateTemplatePreview(cdpConnection);
 }
 
 async function inspectAndAnimateTemplatePreview(cdpConnection) {
   await evaluate(cdpConnection, `(() => {
-    const target = [...document.querySelectorAll('.hv-template-grid > button')]
+    const target = [...document.querySelectorAll('.hv-scene-template-grid > button')]
       .find((card) => card.querySelector('strong')?.textContent?.trim() === '动态大字');
     target?.scrollIntoView({ block: 'center' });
   })()`);
   await delay(180);
   const initial = await evaluate(cdpConnection, `(() => {
-    const modal = document.querySelector('.hv-template-modal');
-    const cards = [...document.querySelectorAll('.hv-template-grid > button')];
+    const editor = document.querySelector('.hv-scene-preview-editor');
+    const cards = [...document.querySelectorAll('.hv-scene-template-grid > button')];
     const target = cards.find((card) => card.querySelector('strong')?.textContent?.trim() === '动态大字');
     const swatch = target?.querySelector('.hv-template-swatch');
     const rect = swatch?.getBoundingClientRect();
-    const modalRect = modal?.getBoundingClientRect();
-    const close = modal?.querySelector('header button');
-    const visibleControls = [target, close].filter(Boolean);
+    const editorRect = editor?.getBoundingClientRect();
+    const visibleControls = [target, ...(editor?.querySelectorAll('.hv-scene-editor-tabs [role="tab"]') ?? [])].filter(Boolean);
     return {
       templateCount: cards.length,
       selectedCount: cards.filter((card) => card.classList.contains('selected')).length,
@@ -2215,10 +2654,11 @@ async function inspectAndAnimateTemplatePreview(cdpConnection) {
       targetLabel: target?.querySelector('strong')?.textContent?.trim() || '',
       targetMotionNames: swatch ? [...swatch.querySelectorAll('[data-motion]')].map((item) => item.getAttribute('data-motion')) : [],
       swatchRect: rect ? { x: rect.x, y: rect.y, width: rect.width, height: rect.height } : null,
-      modalRect: modalRect ? { x: modalRect.x, y: modalRect.y, width: modalRect.width, height: modalRect.height } : null,
+      editorRect: editorRect ? { x: editorRect.x, y: editorRect.y, width: editorRect.width, height: editorRect.height } : null,
+      realBackgroundCount: cards.filter((card) => card.querySelector('[data-layer="background"]')?.style.backgroundImage).length,
       horizontalOverflow: Math.max(
         document.documentElement.scrollWidth - document.documentElement.clientWidth,
-        modal ? modal.scrollWidth - modal.clientWidth : 0,
+        editor ? editor.scrollWidth - editor.clientWidth : 0,
       ),
       clippedControls: visibleControls.filter((item) => {
         const itemRect = item.getBoundingClientRect();
@@ -2241,7 +2681,7 @@ async function inspectAndAnimateTemplatePreview(cdpConnection) {
   await delay(260);
   const secondHash = await captureRegionHash(cdpConnection, initial.swatchRect);
   const animation = await evaluate(cdpConnection, `(() => {
-    const target = [...document.querySelectorAll('.hv-template-grid > button')]
+    const target = [...document.querySelectorAll('.hv-scene-template-grid > button')]
       .find((card) => card.querySelector('strong')?.textContent?.trim() === '动态大字');
     const layers = target ? [...target.querySelectorAll('.hv-template-swatch [data-motion]')] : [];
     return {
@@ -2295,6 +2735,72 @@ async function exerciseQueueRoute(cdpConnection) {
   })()`);
 }
 
+async function inspectPreviewLayout(cdpConnection) {
+  return evaluate(cdpConnection, `(() => {
+    const workspace = document.querySelector('.hv-preview-workspace');
+    const workbench = workspace?.querySelector('.hv-preview-workbench');
+    const stage = workbench?.querySelector('.hv-reference-stage');
+    const sceneStrip = workbench?.querySelector('.hv-reference-scene-strip');
+    const inspector = workbench?.querySelector('.hv-preview-inspector-pane');
+    const phone = stage?.querySelector('.hv-reference-phone');
+    const playAll = workspace?.querySelector('.hv-preview-play-all');
+    const tabs = inspector ? [...inspector.querySelectorAll('.hv-scene-editor-tabs [role="tab"]')] : [];
+    const stageRect = stage?.getBoundingClientRect();
+    const sceneStripRect = sceneStrip?.getBoundingClientRect();
+    const inspectorRect = inspector?.getBoundingClientRect();
+    const phoneRect = phone?.getBoundingClientRect();
+    const visibleControls = workspace ? [...workspace.querySelectorAll(
+      '.hv-preview-commandbar button, .hv-reference-transport button, .hv-preview-inspector-pane button, .hv-preview-inspector-pane select, .hv-preview-inspector-pane input, .hv-preview-inspector-pane textarea',
+    )].filter((item) => {
+      const style = getComputedStyle(item);
+      const rect = item.getBoundingClientRect();
+      return style.display !== 'none' && style.visibility !== 'hidden'
+        && rect.width > 0 && rect.height > 0
+        && rect.bottom > 0 && rect.top < innerHeight;
+    }) : [];
+    return {
+      ready: Boolean(workbench && stageRect && sceneStripRect && inspectorRect && phoneRect),
+      activeTab: document.querySelector('.hv-tab.active')?.innerText?.trim() || '',
+      viewport: { width: innerWidth, height: innerHeight },
+      stageSize: stageRect ? { width: stageRect.width, height: stageRect.height } : null,
+      sceneStripSize: sceneStripRect ? { width: sceneStripRect.width, height: sceneStripRect.height } : null,
+      inspectorSize: inspectorRect ? { width: inspectorRect.width, height: inspectorRect.height } : null,
+      previewPhoneSize: phoneRect ? { width: phoneRect.width, height: phoneRect.height } : null,
+      playAllTextFits: Boolean(playAll && [...playAll.children].every((child) => child.scrollWidth <= child.clientWidth + 1)),
+      sceneStripBelowPreview: Boolean(stageRect && sceneStripRect
+        && sceneStripRect.top >= stageRect.bottom - 1
+        && Math.abs(sceneStripRect.left - stageRect.left) <= 1),
+      inspectorBesidePreview: Boolean(stageRect && inspectorRect
+        && inspectorRect.left >= stageRect.right - 1
+        && Math.abs(inspectorRect.top - stageRect.top) <= 1),
+      previewDominatesWorkspace: Boolean(stageRect && sceneStripRect && inspectorRect
+        && stageRect.width > inspectorRect.width
+        && stageRect.height > sceneStripRect.height * 2),
+      sceneEditorTabs: tabs.map((item) => item.innerText.trim()),
+      sceneEditorTabMetrics: tabs.map((item) => ({
+        label: item.innerText.trim(),
+        clientWidth: item.clientWidth,
+        scrollWidth: item.scrollWidth,
+        children: [...item.children].map((child) => ({
+          className: child.className,
+          clientWidth: child.clientWidth,
+          scrollWidth: child.scrollWidth,
+        })),
+      })),
+      sceneEditorTabTextFits: tabs.every((item) => item.scrollWidth <= item.clientWidth + 1
+        && [...item.children].every((child) => child.scrollWidth <= child.clientWidth + 1)),
+      horizontalOverflow: Math.max(0, document.documentElement.scrollWidth - document.documentElement.clientWidth),
+      workspaceHorizontalOverflow: workspace
+        ? Math.max(0, workspace.scrollWidth - workspace.clientWidth)
+        : -1,
+      clippedControls: visibleControls.filter((item) => {
+        const rect = item.getBoundingClientRect();
+        return rect.left < -1 || rect.right > innerWidth + 1;
+      }).map((item) => item.getAttribute('aria-label') || item.getAttribute('title') || item.innerText.trim() || item.tagName),
+    };
+  })()`);
+}
+
 async function inspectPreviewEffects(cdpConnection) {
   return evaluate(cdpConnection, `(() => {
     const surface = document.querySelector('[data-html-video-preview-effects="true"]');
@@ -2305,20 +2811,22 @@ async function inspectPreviewEffects(cdpConnection) {
     const sceneView = iframe?.contentWindow;
     const sceneDocument = iframe?.contentDocument;
     const sceneFrame = sceneDocument?.querySelector('.frame');
-    const captionLayer = sceneDocument?.querySelector('.captions');
     const captions = sceneDocument ? [...sceneDocument.querySelectorAll('.caption')] : [];
+    const foregrounds = sceneDocument ? [...sceneDocument.querySelectorAll('.scene-foreground')] : [];
     const title = sceneDocument?.querySelector('.title');
     const imageRegion = sceneDocument?.querySelector('.scene-image-region');
-    const posterCaption = phone?.querySelector('.hv-preview-poster-caption');
-    const posterCaptionStyle = posterCaption ? getComputedStyle(posterCaption) : null;
     const sceneRail = workbench?.querySelector('.hv-reference-scene-strip');
     const sceneTrack = sceneRail?.querySelector('.hv-reference-scene-track');
     const transport = workbench?.querySelector('.hv-reference-transport');
-    const railActions = sceneRail?.querySelector('.hv-reference-thumb-actions');
+    const sceneEditor = workbench?.querySelector('.hv-scene-preview-editor');
+    const inspector = workbench?.querySelector('.hv-preview-inspector-pane');
     const workspace = document.querySelector('.hv-preview-workspace');
     const selects = surface ? [...surface.querySelectorAll('select')] : [];
     const motion = selects[0];
     const transition = selects[1];
+    const saveEffectsButton = surface
+      ? [...surface.querySelectorAll('button')].find((item) => item.textContent?.includes('保存动效'))
+      : null;
     const transitionOverlay = phone?.querySelector('.hv-scene-transition-overlay');
     const visibleControls = surface ? [...surface.querySelectorAll('select, button')].filter((item) => {
       const style = getComputedStyle(item);
@@ -2329,26 +2837,32 @@ async function inspectPreviewEffects(cdpConnection) {
     const phoneRect = phone?.getBoundingClientRect();
     const sceneRailRect = sceneRail?.getBoundingClientRect();
     const transportRect = transport?.getBoundingClientRect();
-    const railActionsRect = railActions?.getBoundingClientRect();
+    const sceneEditorRect = sceneEditor?.getBoundingClientRect();
+    const inspectorRect = inspector?.getBoundingClientRect();
     const workspaceRect = workspace?.getBoundingClientRect();
     const sceneFrameRect = sceneFrame?.getBoundingClientRect();
-    const posterCaptionRect = posterCaption?.getBoundingClientRect();
-    const visibleCaption = captions.find((item) => {
+    const visibleCaptions = captions.filter((item) => {
       const style = sceneView?.getComputedStyle(item);
       const rect = item.getBoundingClientRect();
       return style && style.display !== 'none' && style.visibility !== 'hidden'
         && Number(style.opacity) > 0.05 && rect.width > 0 && rect.height > 0;
     });
+    const visibleCaption = visibleCaptions[0];
     const visibleCaptionRect = visibleCaption?.getBoundingClientRect();
+    const visibleForeground = foregrounds.find((item) => {
+      const style = sceneView?.getComputedStyle(item);
+      const rect = item.getBoundingClientRect();
+      return style && style.display !== 'none' && style.visibility !== 'hidden'
+        && Number(style.opacity) > 0.05 && rect.width > 0 && rect.height > 0;
+    });
+    const visibleForegroundRect = visibleForeground?.getBoundingClientRect();
     const titleRect = title?.getBoundingClientRect();
-    const posterVisible = Boolean(posterCaptionRect && posterCaptionStyle
-      && posterCaptionStyle.display !== 'none'
-      && posterCaptionStyle.visibility !== 'hidden'
-      && Number(posterCaptionStyle.opacity) > 0
-      && posterCaptionRect.width > 0 && posterCaptionRect.height > 0);
     return {
       activeTab: document.querySelector('.hv-tab.active')?.textContent?.trim() || '',
       settingsSummary: document.querySelector('.hv-preview-settings > summary')?.textContent?.trim() || '',
+      settingsOpen: Boolean(document.querySelector('.hv-preview-settings')?.open),
+      sceneEditorBodyVisible: Boolean(sceneEditor?.querySelector('.hv-scene-editor-body')
+        && getComputedStyle(sceneEditor.querySelector('.hv-scene-editor-body')).display !== 'none'),
       canvasStatus: document.querySelector('.hv-reference-panel-head [data-runtime-state]')?.textContent?.trim() || '',
       legacyInspectorPresent: Boolean(document.querySelector('.hv-preview-inspector')),
       motionValue: motion?.value || '',
@@ -2358,24 +2872,43 @@ async function inspectPreviewEffects(cdpConnection) {
       completedStepCount: document.querySelectorAll('.hv-studio-run-rail .hv-step.done').length,
       resumeAvailable: [...document.querySelectorAll('button')].some((item) => item.textContent?.trim() === '继续' && !item.disabled),
       message: surface?.querySelector('[role="status"]')?.textContent?.trim() || '',
+      actionFeedback: document.querySelector('.hv-reference-preview > [role="status"]')?.textContent?.trim() || '',
+      saveEffectsDisabled: saveEffectsButton instanceof HTMLButtonElement ? saveEffectsButton.disabled : null,
       previewAboveFold: Boolean(phoneRect && phoneRect.top >= 0 && phoneRect.bottom <= innerHeight + 1),
+      previewPhoneSize: phoneRect ? { width: phoneRect.width, height: phoneRect.height } : null,
+      previewStageSize: stageRect ? { width: stageRect.width, height: stageRect.height } : null,
       previewCanvasFullyVisible: Boolean(sceneView && sceneFrameRect
         && sceneFrameRect.left >= -1 && sceneFrameRect.top >= -1
         && sceneFrameRect.right <= sceneView.innerWidth + 1
         && sceneFrameRect.bottom <= sceneView.innerHeight + 1),
-      previewCaptionVisible: posterVisible || Boolean(visibleCaptionRect),
-      previewCaptionInsideCanvas: Boolean(phoneRect && (
-        (posterVisible && posterCaptionRect
-          && posterCaptionRect.left >= phoneRect.left - 1
-          && posterCaptionRect.right <= phoneRect.right + 1
-          && posterCaptionRect.top >= phoneRect.top - 1
-          && posterCaptionRect.bottom <= phoneRect.bottom + 1)
-        || (visibleCaptionRect && sceneFrameRect
-          && visibleCaptionRect.left >= sceneFrameRect.left - 1
-          && visibleCaptionRect.right <= sceneFrameRect.right + 1
-          && visibleCaptionRect.top >= sceneFrameRect.top - 1
-          && visibleCaptionRect.bottom <= sceneFrameRect.bottom + 1)
-      )),
+      previewSceneFrameSize: sceneFrameRect ? {
+        x: sceneFrameRect.x,
+        y: sceneFrameRect.y,
+        width: sceneFrameRect.width,
+        height: sceneFrameRect.height,
+        viewportWidth: sceneView?.innerWidth ?? -1,
+        viewportHeight: sceneView?.innerHeight ?? -1,
+      } : null,
+      previewCaptionVisible: Boolean(visibleCaptionRect),
+      previewCaptionCount: captions.length,
+      previewVisibleCaptionCount: visibleCaptions.length,
+      previewCaptionText: visibleCaption?.textContent?.trim() || '',
+      previewCaptionInsideCanvas: Boolean(visibleCaptionRect && sceneFrameRect
+        && visibleCaptionRect.left >= sceneFrameRect.left - 1
+        && visibleCaptionRect.right <= sceneFrameRect.right + 1
+        && visibleCaptionRect.top >= sceneFrameRect.top - 1
+        && visibleCaptionRect.bottom <= sceneFrameRect.bottom + 1),
+      previewForegroundCount: foregrounds.length,
+      previewForegroundVisible: Boolean(visibleForegroundRect),
+      previewForegroundInsideCanvas: Boolean(visibleForegroundRect && sceneFrameRect
+        && visibleForegroundRect.left >= sceneFrameRect.left - 1
+        && visibleForegroundRect.right <= sceneFrameRect.right + 1
+        && visibleForegroundRect.top >= sceneFrameRect.top - 1
+        && visibleForegroundRect.bottom <= sceneFrameRect.bottom + 1),
+      previewForegroundOpacities: foregrounds.map((item) => sceneView?.getComputedStyle(item).opacity || ''),
+      sceneEditorTabs: sceneEditor
+        ? [...sceneEditor.querySelectorAll('.hv-scene-editor-tabs [role="tab"]')].map((item) => item.innerText.trim())
+        : [],
       previewTime: typeof sceneView?.__tl?.time === 'function' ? sceneView.__tl.time() : -1,
       previewTotalTime: typeof sceneView?.__tl?.totalTime === 'function' ? sceneView.__tl.totalTime() : -1,
       previewDuration: typeof sceneView?.__tl?.duration === 'function' ? sceneView.__tl.duration() : -1,
@@ -2390,15 +2923,27 @@ async function inspectPreviewEffects(cdpConnection) {
       titleGeometry: titleRect ? { x: titleRect.x, y: titleRect.y, width: titleRect.width, height: titleRect.height } : null,
       transitionOverlayVisible: Boolean(transitionOverlay),
       transitionOverlayRunning: transitionOverlay?.classList.contains('running') ?? false,
-      previewCaptionLayerOpacity: captionLayer && sceneView ? sceneView.getComputedStyle(captionLayer).opacity : '',
       previewCaptionOpacities: sceneDocument && sceneView
         ? [...sceneDocument.querySelectorAll('.caption')].map((item) => sceneView.getComputedStyle(item).opacity)
         : [],
-      sceneRailBesidePreview: Boolean(stageRect && sceneRailRect && sceneRailRect.left >= stageRect.right - 1),
-      sceneRailBelowPreview: Boolean(stageRect && sceneRailRect && sceneRailRect.top >= stageRect.bottom - 1),
-      bottomControlsReachable: Boolean(workspaceRect && transportRect && railActionsRect
-        && transportRect.bottom <= workspaceRect.bottom + 1
-        && railActionsRect.bottom <= workspaceRect.bottom + 1),
+      sceneStripBelowPreview: Boolean(stageRect && sceneRailRect
+        && sceneRailRect.top >= stageRect.bottom - 1
+        && Math.abs(sceneRailRect.left - stageRect.left) <= 1),
+      inspectorBesidePreview: Boolean(stageRect && inspectorRect
+        && inspectorRect.left >= stageRect.right - 1
+        && Math.abs(inspectorRect.top - stageRect.top) <= 1),
+      previewDominatesWorkspace: Boolean(stageRect && sceneRailRect && inspectorRect
+        && stageRect.width > inspectorRect.width
+        && stageRect.height > sceneRailRect.height * 2),
+      bottomControlsReachable: Boolean(transportRect && sceneEditorRect
+        && transportRect.bottom <= innerHeight + 1
+        && sceneEditorRect.top >= -1 && sceneEditorRect.bottom <= innerHeight + 1),
+      workspaceScroll: workspace ? {
+        top: workspace.scrollTop,
+        clientHeight: workspace.clientHeight,
+        scrollHeight: workspace.scrollHeight,
+        verticalOverflow: Math.max(0, workspace.scrollHeight - workspace.clientHeight),
+      } : null,
       sceneTrackHorizontalOverflow: sceneTrack ? Math.max(0, sceneTrack.scrollWidth - sceneTrack.clientWidth) : -1,
       sceneTrackVerticalOverflow: sceneTrack ? Math.max(0, sceneTrack.scrollHeight - sceneTrack.clientHeight) : -1,
       pageVerticalOverflow: Math.max(0, document.documentElement.scrollHeight - document.documentElement.clientHeight),
@@ -2416,7 +2961,119 @@ async function inspectPreviewEffects(cdpConnection) {
   })()`);
 }
 
-async function exercisePreviewEffects(cdpConnection) {
+async function exercisePreviewMaximizeRestore(cdpConnection, screenshotPaths = {}) {
+  const before = await evaluate(cdpConnection, `(() => {
+    const workspace = document.querySelector('.hv-preview-workspace');
+    const button = document.querySelector('.hv-reference-transport button[title="最大化"]');
+    if (!(workspace instanceof HTMLElement) || !(button instanceof HTMLButtonElement)) return null;
+    workspace.scrollTop = Math.min(180, Math.max(0, workspace.scrollHeight - workspace.clientHeight));
+    const scrollTop = workspace.scrollTop;
+    button.click();
+    return { scrollTop };
+  })()`);
+  if (!before) throw new Error('Animation preview maximize control was unavailable.');
+  await waitFor(
+    async () => evaluate(cdpConnection, `document.querySelector('.hv-reference-preview')?.getAttribute('data-maximized') === 'true'`),
+    5_000,
+    'maximized animation preview',
+  );
+  const maximized = await evaluate(cdpConnection, `(() => {
+    const preview = document.querySelector('.hv-reference-preview');
+    const rect = preview?.getBoundingClientRect();
+    return {
+      fixed: preview ? getComputedStyle(preview).position === 'fixed' : false,
+      coversViewport: Boolean(rect && rect.left <= 12 && rect.top <= 12 && rect.right >= innerWidth - 12 && rect.bottom >= innerHeight - 12),
+    };
+  })()`);
+  if (screenshotPaths.maximized) await saveScreenshot(cdpConnection, screenshotPaths.maximized);
+  const exited = await evaluate(cdpConnection, `(() => {
+    const button = document.querySelector('.hv-reference-transport button[title="退出最大化"]');
+    if (!(button instanceof HTMLButtonElement)) return false;
+    button.click();
+    return true;
+  })()`);
+  if (!exited) throw new Error('Animation preview restore control was unavailable.');
+  await waitFor(
+    async () => evaluate(cdpConnection, `document.querySelector('.hv-reference-preview')?.getAttribute('data-maximized') === 'false'`),
+    5_000,
+    'restored animation preview',
+  );
+  await delay(100);
+  if (screenshotPaths.restored) await saveScreenshot(cdpConnection, screenshotPaths.restored);
+  const restoredState = await evaluate(cdpConnection, `(() => {
+    const inspectShell = (selector) => {
+      const item = document.querySelector(selector);
+      if (!(item instanceof HTMLElement)) return { present: false, visible: false };
+      const style = getComputedStyle(item);
+      const rect = item.getBoundingClientRect();
+      const present = style.display !== 'none' && style.visibility !== 'hidden' && rect.width > 0 && rect.height > 0;
+      return {
+        present,
+        visible: present && rect.right > 0 && rect.bottom > 0 && rect.left < innerWidth && rect.top < innerHeight,
+      };
+    };
+    const workspace = document.querySelector('.hv-preview-workspace');
+    const button = document.querySelector('.hv-reference-transport button[title="最大化"]');
+    const parameters = inspectShell('.hv-studio-parameters');
+    const canvas = inspectShell('.hv-studio-canvas');
+    const runRail = inspectShell('.hv-studio-run-rail');
+    return {
+      scrollTop: workspace instanceof HTMLElement ? workspace.scrollTop : -1,
+      focusRestored: button === document.activeElement,
+      shellVisible: {
+        parameters: parameters.visible,
+        canvas: canvas.visible,
+        runRail: runRail.visible,
+      },
+      shellPresent: {
+        parameters: parameters.present,
+        canvas: canvas.present,
+        runRail: runRail.present,
+      },
+    };
+  })()`);
+  return {
+    before,
+    maximized,
+    after: { scrollTop: restoredState.scrollTop },
+    restored: Math.abs(restoredState.scrollTop - before.scrollTop) <= 1,
+    focusRestored: restoredState.focusRestored,
+    shellVisible: restoredState.shellVisible,
+    shellPresent: restoredState.shellPresent,
+  };
+}
+
+async function exercisePreviewScrollContract(cdpConnection) {
+  return evaluate(cdpConnection, `(() => {
+    const editor = document.querySelector('.hv-scene-preview-editor');
+    const header = editor?.querySelector('.hv-scene-editor-head');
+    const body = editor?.querySelector('.hv-scene-editor-body');
+    if (!(editor instanceof HTMLElement) || !(header instanceof HTMLElement) || !(body instanceof HTMLElement)) {
+      return { available: false };
+    }
+    body.scrollTop = body.scrollHeight;
+    const editorRect = editor.getBoundingClientRect();
+    const headerRect = header.getBoundingClientRect();
+    const bodyRect = body.getBoundingClientRect();
+    const reachable = headerRect.bottom > editorRect.top - 1
+      && headerRect.top < editorRect.bottom + 1
+      && bodyRect.bottom <= editorRect.bottom + 1;
+    const result = {
+      available: true,
+      scrollTop: body.scrollTop,
+      scrollHeight: body.scrollHeight,
+      clientHeight: body.clientHeight,
+      editorHeaderVisible: reachable,
+      workspaceRect: { top: bodyRect.top, bottom: bodyRect.bottom },
+      headerRect: { top: headerRect.top, bottom: headerRect.bottom },
+      editorRect: { top: editorRect.top, bottom: editorRect.bottom },
+    };
+    body.scrollTop = 0;
+    return result;
+  })()`);
+}
+
+async function exercisePreviewEffects(cdpConnection, settingsScreenshot) {
   const clicked = await clickTab(cdpConnection, '动画预览');
   if (!clicked) throw new Error('Animation preview tab was not found.');
   await evaluate(cdpConnection, `(() => {
@@ -2435,13 +3092,22 @@ async function exercisePreviewEffects(cdpConnection) {
     await waitFor(
       async () => {
         const state = await inspectPreviewEffects(cdpConnection);
-        return state.previewRuntimeReady && state.previewCaptionVisible;
+        if (state.previewRuntimeReady && (!state.previewCaptionVisible || !state.previewForegroundVisible)) {
+          const sampleTime = Number.isFinite(state.previewDuration) && state.previewDuration > 0
+            ? Math.max(0, Math.min(state.previewDuration * 0.6, state.previewDuration - 0.01))
+            : 0.6;
+          await evaluate(cdpConnection, `document.querySelector('.hv-reference-phone iframe')?.contentWindow?.postMessage({ type: 'hvseek', time: ${sampleTime} }, '*')`);
+        }
+        return state.previewRuntimeReady
+          && state.previewCaptionVisible
+          && state.previewVisibleCaptionCount === 1
+          && state.previewForegroundVisible;
       },
       10_000,
-      'visible animation preview poster caption',
+      'visible animation preview content',
     );
   } catch (error) {
-    throw new Error(`Animation preview poster caption did not settle: ${JSON.stringify(await inspectPreviewEffects(cdpConnection))}`, { cause: error });
+    throw new Error(`Animation preview content did not settle: ${JSON.stringify(await inspectPreviewEffects(cdpConnection))}`, { cause: error });
   }
   const expectedMotions = [
     ['auto', '跟随画面预设'],
@@ -2471,13 +3137,36 @@ async function exercisePreviewEffects(cdpConnection) {
     const [motion, transition] = surface ? [...surface.querySelectorAll('select')] : [];
     const setter = Object.getOwnPropertyDescriptor(HTMLSelectElement.prototype, 'value')?.set;
     if (!(motion instanceof HTMLSelectElement) || !(transition instanceof HTMLSelectElement) || !setter) return false;
+    const change = (element) => {
+      const reactPropsKey = Object.keys(element).find((key) => key.startsWith('__reactProps$'));
+      const reactChange = reactPropsKey ? element[reactPropsKey]?.onChange : null;
+      if (typeof reactChange === 'function') {
+        reactChange({ currentTarget: element, target: element });
+        return;
+      }
+      element.dispatchEvent(new Event('change', { bubbles: true }));
+    };
     setter.call(motion, 'pan_left');
-    motion.dispatchEvent(new Event('change', { bubbles: true }));
+    change(motion);
     setter.call(transition, 'wipeleft');
-    transition.dispatchEvent(new Event('change', { bubbles: true }));
-    return true;
+    change(transition);
+    return new Promise((resolve) => {
+      requestAnimationFrame(() => requestAnimationFrame(() => {
+        const motionPropsKey = Object.keys(motion).find((key) => key.startsWith('__reactProps$'));
+        const transitionPropsKey = Object.keys(transition).find((key) => key.startsWith('__reactProps$'));
+        resolve({
+          ready: motionPropsKey && transitionPropsKey
+            ? motion[motionPropsKey]?.value === 'pan_left' && transition[transitionPropsKey]?.value === 'wipeleft'
+            : motion.value === 'pan_left' && transition.value === 'wipeleft',
+          motionValue: motion.value,
+          transitionValue: transition.value,
+          motionProp: motionPropsKey ? motion[motionPropsKey]?.value : '',
+          transitionProp: transitionPropsKey ? transition[transitionPropsKey]?.value : '',
+        });
+      }));
+    });
   })()`);
-  if (!changed) throw new Error('Preview effects controls were unavailable.');
+  if (!changed?.ready) throw new Error(`Preview effects controls did not update React state: ${JSON.stringify(changed)}`);
   await waitFor(
     async () => {
       const state = await inspectPreviewEffects(cdpConnection);
@@ -2487,6 +3176,8 @@ async function exercisePreviewEffects(cdpConnection) {
     5_000,
     'preview effects selection',
   );
+  const openSettingsState = await inspectPreviewEffects(cdpConnection);
+  await saveScreenshot(cdpConnection, settingsScreenshot);
   const saved = await evaluate(cdpConnection, `(() => {
     const button = [...document.querySelectorAll('[data-html-video-preview-effects="true"] button')]
       .find((item) => item.textContent?.includes('保存动效'));
@@ -2495,17 +3186,27 @@ async function exercisePreviewEffects(cdpConnection) {
     return true;
   })()`);
   if (!saved) throw new Error('Preview effects save control was unavailable.');
-  await waitFor(
-    async () => {
-      const state = await inspectPreviewEffects(cdpConnection);
-      return state.motionValue === 'pan_left'
-        && state.transitionValue === 'wipeleft'
-        && state.completedStepCount === 5
-        && state.previewRuntimeReady;
-    },
-    10_000,
-    'preview effects save',
-  );
+  try {
+    await waitFor(
+      async () => {
+        const state = await inspectPreviewEffects(cdpConnection);
+        return state.motionValue === 'pan_left'
+          && state.transitionValue === 'wipeleft'
+          && state.completedStepCount === 5
+          && state.previewRuntimeReady;
+      },
+      30_000,
+      'preview effects save',
+      CDP_COMMAND_TIMEOUT_MS,
+    );
+  } catch (error) {
+    throw new Error(`Preview effects save did not settle: ${JSON.stringify({
+      changed,
+      state: await inspectPreviewEffects(cdpConnection),
+      electronStderr: Buffer.concat(stderr).toString('utf8').slice(-8_000),
+      electronStdout: Buffer.concat(stdout).toString('utf8').slice(-2_000),
+    })}`, { cause: error });
+  }
   const beforePlayback = await inspectPreviewEffects(cdpConnection);
   const played = await evaluate(cdpConnection, `(() => {
     const button = document.querySelector('.hv-reference-transport button[title="播放"]');
@@ -2533,6 +3234,55 @@ async function exercisePreviewEffects(cdpConnection) {
   const secondMotionFrame = await inspectPreviewEffects(cdpConnection);
   const cameraTransformChanged = firstMotionFrame.cameraTransform !== secondMotionFrame.cameraTransform;
 
+  await evaluate(cdpConnection, `(() => {
+    const trace = [];
+    window.__hvQaPlaybackTrace = trace;
+    const push = (entry) => {
+      trace.push({ at: Math.round(performance.now()), ...entry });
+      if (trace.length > 160) trace.shift();
+    };
+    const attach = (iframe) => {
+      const view = iframe?.contentWindow;
+      if (!view || view.__hvQaPlaybackTraceAttached) return;
+      view.__hvQaPlaybackTraceAttached = true;
+      view.addEventListener('message', (event) => {
+        const message = event?.data;
+        if (message && typeof message.type === 'string' && message.type.startsWith('hv')) {
+          push({ direction: 'to-child', type: message.type, time: message.time ?? null });
+        }
+      });
+    };
+    const observeIframe = (iframe) => {
+      if (!(iframe instanceof HTMLIFrameElement)) return;
+      attach(iframe);
+      iframe.addEventListener('load', () => attach(iframe), { once: true });
+    };
+    document.querySelectorAll('.hv-reference-phone iframe').forEach(observeIframe);
+    new MutationObserver((records) => {
+      for (const record of records) {
+        for (const node of record.addedNodes) {
+          if (!(node instanceof Element)) continue;
+          if (node.matches('.hv-reference-phone iframe')) observeIframe(node);
+          node.querySelectorAll?.('.hv-reference-phone iframe').forEach(observeIframe);
+        }
+      }
+    }).observe(document.body, { childList: true, subtree: true });
+    window.addEventListener('message', (event) => {
+      const iframe = document.querySelector('.hv-reference-phone iframe');
+      const message = event?.data;
+      if (event.source !== iframe?.contentWindow || !message || typeof message.type !== 'string' || !message.type.startsWith('hv')) return;
+      push({
+        direction: 'from-child',
+        type: message.type,
+        state: message.state ?? null,
+        time: message.time ?? null,
+        duration: message.duration ?? null,
+        playing: message.playing ?? null,
+      });
+    });
+    return true;
+  })()`);
+
   const playedAll = await evaluate(cdpConnection, `(() => {
     const button = [...document.querySelectorAll('.hv-reference-panel-head button')]
       .find((item) => item.textContent?.includes('连播全部'));
@@ -2552,31 +3302,79 @@ async function exercisePreviewEffects(cdpConnection) {
     'real scene transition overlay',
   );
 
+  try {
+    await waitFor(
+      async () => {
+        const state = await inspectPreviewEffects(cdpConnection);
+        return state.previewProgress >= 0.995 && state.runtimeState !== 'playing';
+      },
+      5_000,
+      'continuous preview completion',
+    );
+  } catch (error) {
+    const stalled = await inspectPreviewEffects(cdpConnection);
+    await evaluate(cdpConnection, `document.querySelector('.hv-reference-phone iframe')?.contentWindow?.postMessage({ type: 'hvseek', time: 0.25 }, '*')`);
+    await delay(120);
+    const afterDirectSeek = await inspectPreviewEffects(cdpConnection);
+    await evaluate(cdpConnection, `document.querySelector('.hv-reference-phone iframe')?.contentWindow?.postMessage({ type: 'hvrestart' }, '*')`);
+    await delay(120);
+    const afterDirectRestart = await inspectPreviewEffects(cdpConnection);
+    await delay(500);
+    const afterDirectRestartSettled = await inspectPreviewEffects(cdpConnection);
+    const playbackTrace = await evaluate(cdpConnection, `window.__hvQaPlaybackTrace || []`);
+    throw new Error(`Continuous preview did not reach its endpoint: ${JSON.stringify({
+      stalled,
+      afterDirectSeek,
+      afterDirectRestart,
+      afterDirectRestartSettled,
+      playbackTrace,
+    })}`, { cause: error });
+  }
+  const replayedAtEnd = await evaluate(cdpConnection, `(() => {
+    const button = document.querySelector('.hv-reference-transport button[title="播放"]');
+    if (!(button instanceof HTMLButtonElement)) return false;
+    button.click();
+    return true;
+  })()`);
+  if (!replayedAtEnd) throw new Error('Endpoint replay control was unavailable.');
+  let endReplayFrame;
+  await waitFor(
+    async () => {
+      const state = await inspectPreviewEffects(cdpConnection);
+      if (state.runtimeState !== 'playing' || state.previewTime <= 0.05 || state.previewTime >= 0.9) return false;
+      endReplayFrame = state;
+      return true;
+    },
+    5_000,
+    'endpoint replay progress',
+  );
+  await evaluate(cdpConnection, `document.querySelector('.hv-reference-transport button[title="暂停"]')?.click()`);
   const beforeLayout = await inspectPreviewEffects(cdpConnection);
   const layoutOpened = await evaluate(cdpConnection, `(() => {
-    const button = document.querySelector('.hv-reference-thumb-actions .hv-scene-template-action');
+    const button = [...document.querySelectorAll('.hv-scene-editor-tabs [role="tab"]')]
+      .find((item) => item.innerText.trim() === '版式');
     if (!(button instanceof HTMLButtonElement) || button.disabled) return false;
     button.click();
     return true;
   })()`);
   if (!layoutOpened) throw new Error('Scene layout control was unavailable.');
   await waitFor(
-    async () => evaluate(cdpConnection, `document.querySelectorAll('.hv-template-grid > button').length === 29`),
+    async () => evaluate(cdpConnection, `document.querySelectorAll('.hv-scene-template-grid > button').length > 1`),
     5_000,
     'compatible scene layouts',
   );
   const layoutSelected = await evaluate(cdpConnection, `(() => {
-    const button = [...document.querySelectorAll('.hv-template-grid > button')]
-      .find((item) => item.querySelector('strong')?.textContent?.trim() === '满屏金句');
+    const button = [...document.querySelectorAll('.hv-scene-template-grid > button')]
+      .find((item) => item.querySelector('strong')?.textContent?.trim() === '左字右物');
     if (!(button instanceof HTMLButtonElement) || button.disabled) return false;
     button.click();
     return true;
   })()`);
-  if (!layoutSelected) throw new Error('Compatible zero-material layout was unavailable.');
+  if (!layoutSelected) throw new Error('Compatible one-material layout was unavailable.');
   await waitFor(
     async () => {
       const state = await inspectPreviewEffects(cdpConnection);
-      return state.activeSceneTemplate === 'full-quote' && state.previewRuntimeReady && state.titleGeometry;
+      return state.activeSceneTemplate === 'left-text-right-object' && state.previewRuntimeReady && state.titleGeometry;
     },
     10_000,
     'rendered scene layout change',
@@ -2585,18 +3383,284 @@ async function exercisePreviewEffects(cdpConnection) {
   const layoutGeometryChanged = Boolean(beforeLayout.titleGeometry && afterLayout.titleGeometry
     && (Math.abs(beforeLayout.titleGeometry.y - afterLayout.titleGeometry.y) > 2
       || Math.abs(beforeLayout.titleGeometry.width - afterLayout.titleGeometry.width) > 2));
+  const stableLayoutSampleTime = Math.max(0.05, (afterLayout.previewDuration || 1) * 0.6);
+  await evaluate(cdpConnection, `document.querySelector('.hv-reference-phone iframe')?.contentWindow?.postMessage({ type: 'hvseek', time: ${stableLayoutSampleTime} }, '*')`);
+  let stableAfterLayout;
+  await waitFor(
+    async () => {
+      const state = await inspectPreviewEffects(cdpConnection);
+      if (state.previewTime < stableLayoutSampleTime - 0.04
+        || !state.previewForegroundVisible || !state.previewForegroundInsideCanvas) return false;
+      stableAfterLayout = state;
+      return true;
+    },
+    5_000,
+    'post-layout stable foreground frame',
+  );
   return {
     initial,
-    ...afterLayout,
+    ...stableAfterLayout,
     saved,
     playbackAdvanced: firstMotionFrame.previewTime > 0.08,
     cameraTransformChanged,
     transitionOverlayObserved,
+    endReplayAdvanced: Boolean(endReplayFrame && endReplayFrame.previewTime > 0.05 && endReplayFrame.previewTime < 0.9),
     layoutGeometryChanged,
     playbackFrames: [firstMotionFrame.previewTime, secondMotionFrame.previewTime],
     cameraTransforms: [firstMotionFrame.cameraTransform, secondMotionFrame.cameraTransform],
     beforePlayback,
+    openSettingsState,
   };
+}
+
+async function exerciseSceneEditorTabs(cdpConnection, screenshots) {
+  const openTab = async (label, selector) => {
+    const opened = await evaluate(cdpConnection, `(() => {
+      const editor = document.querySelector('.hv-scene-preview-editor');
+      const button = [...(editor?.querySelectorAll('.hv-scene-editor-tabs [role="tab"]') || [])]
+        .find((item) => item.innerText.trim() === ${JSON.stringify(label)});
+      if (!(button instanceof HTMLButtonElement) || button.disabled) return false;
+      button.click();
+      return true;
+    })()`);
+    if (!opened) throw new Error(`Scene editor tab was unavailable: ${label}`);
+    await waitFor(
+      async () => evaluate(cdpConnection, `Boolean(document.querySelector(${JSON.stringify(selector)}))`),
+      5_000,
+      `scene editor ${label} tab`,
+    );
+    await evaluate(cdpConnection, `document.querySelector('.hv-scene-preview-editor')?.scrollIntoView({ block: 'center' })`);
+    await delay(120);
+  };
+
+  await openTab('前景', '.hv-scene-foreground-editor');
+  const foregroundInitial = await evaluate(cdpConnection, `(() => {
+    const editor = document.querySelector('.hv-scene-foreground-editor');
+    const items = [...(editor?.querySelectorAll('.hv-scene-foreground-list article') || [])];
+    const sceneDocument = document.querySelector('.hv-reference-phone iframe')?.contentDocument;
+    return {
+      ready: Boolean(editor && items.length > 0),
+      itemCount: items.length,
+      states: items.map((item) => item.querySelector('small')?.textContent?.trim() || ''),
+      thumbnailCount: editor?.querySelectorAll('.hv-scene-foreground-thumb img').length || 0,
+      canvasForegroundVisible: Boolean(sceneDocument?.querySelector('.scene-foreground')),
+    };
+  })()`);
+  await saveScreenshot(cdpConnection, screenshots.foreground);
+  const hidden = await evaluate(cdpConnection, `(() => {
+    const button = document.querySelector('.hv-scene-foreground-list button[aria-label^="隐藏前景"]');
+    if (!(button instanceof HTMLButtonElement) || button.disabled) return false;
+    button.click();
+    return true;
+  })()`);
+  if (!hidden) throw new Error('Foreground slot could not be hidden from the current-scene editor.');
+  await waitFor(
+    async () => evaluate(cdpConnection, `Boolean(document.querySelector('.hv-scene-foreground-list article.hidden small')?.textContent?.includes('已隐藏'))
+      && !document.querySelector('.hv-reference-phone iframe')?.contentDocument?.querySelector('.scene-foreground')`),
+    10_000,
+    'foreground visibility hide synchronization',
+  );
+  const shown = await evaluate(cdpConnection, `(() => {
+    const button = document.querySelector('.hv-scene-foreground-list button[aria-label^="显示前景"]');
+    if (!(button instanceof HTMLButtonElement) || button.disabled) return false;
+    button.click();
+    return true;
+  })()`);
+  if (!shown) throw new Error('Foreground slot could not be restored from the current-scene editor.');
+  await waitFor(
+    async () => evaluate(cdpConnection, `Boolean(document.querySelector('.hv-scene-foreground-list article:not(.hidden) small')?.textContent?.includes('已显示'))
+      && Boolean(document.querySelector('.hv-reference-phone iframe')?.contentDocument?.querySelector('.scene-foreground'))`),
+    10_000,
+    'foreground visibility restore synchronization',
+  );
+
+  await openTab('标题', '.hv-scene-title-editor');
+  const title = await evaluate(cdpConnection, `(() => {
+    const input = document.querySelector('.hv-scene-title-editor input');
+    const save = [...document.querySelectorAll('.hv-scene-title-editor button')]
+      .find((item) => item.textContent?.includes('保存标题'));
+    if (!(input instanceof HTMLInputElement) || !(save instanceof HTMLButtonElement) || !input.value.trim()) return { ready: false };
+    const original = input.value;
+    const setter = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')?.set;
+    if (!setter) return { ready: false };
+    setter.call(input, original + ' QA');
+    input.dispatchEvent(new Event('input', { bubbles: true }));
+    return { ready: true, valueLength: original.length, original };
+  })()`);
+  await waitFor(
+    async () => evaluate(cdpConnection, `Boolean([...document.querySelectorAll('.hv-scene-title-editor button')]
+      .find((item) => item.textContent?.includes('保存标题')) && ![...document.querySelectorAll('.hv-scene-title-editor button')]
+      .find((item) => item.textContent?.includes('保存标题'))?.disabled)`),
+    5_000,
+    'title dirty state',
+  );
+  await evaluate(cdpConnection, `(() => {
+    const input = document.querySelector('.hv-scene-title-editor input');
+    const setter = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')?.set;
+    if (!(input instanceof HTMLInputElement) || !setter) return false;
+    setter.call(input, ${JSON.stringify(title.original)});
+    input.dispatchEvent(new Event('input', { bubbles: true }));
+    return true;
+  })()`);
+  await waitFor(
+    async () => evaluate(cdpConnection, `Boolean([...document.querySelectorAll('.hv-scene-title-editor button')]
+      .find((item) => item.textContent?.includes('保存标题'))?.disabled)`),
+    5_000,
+    'title restored state',
+  );
+  await saveScreenshot(cdpConnection, screenshots.title);
+
+  const caption = await inspectSceneCaptionWorkspace(cdpConnection, screenshots.caption);
+
+  await openTab('提示词', '.hv-scene-prompt-editor');
+  const prompt = await evaluate(cdpConnection, `(() => {
+    const textareas = [...document.querySelectorAll('.hv-scene-prompt-editor textarea')];
+    const save = [...document.querySelectorAll('.hv-scene-prompt-editor button')]
+      .find((item) => item.textContent?.includes('保存提示词'));
+    if (!textareas.length || !(save instanceof HTMLButtonElement) || textareas.some((item) => !item.value.trim())) return { ready: false };
+    const input = textareas[0];
+    const original = input.value;
+    const setter = Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, 'value')?.set;
+    if (!setter) return { ready: false };
+    setter.call(input, original + ' QA');
+    input.dispatchEvent(new Event('input', { bubbles: true }));
+    return {
+      ready: true,
+      textareaCount: textareas.length,
+      labels: [...document.querySelectorAll('.hv-scene-prompt-editor label > span')].map((item) => item.textContent?.trim() || ''),
+      original,
+    };
+  })()`);
+  await waitFor(
+    async () => evaluate(cdpConnection, `Boolean([...document.querySelectorAll('.hv-scene-prompt-editor button')]
+      .find((item) => item.textContent?.includes('保存提示词')) && ![...document.querySelectorAll('.hv-scene-prompt-editor button')]
+      .find((item) => item.textContent?.includes('保存提示词'))?.disabled)`),
+    5_000,
+    'prompt dirty state',
+  );
+  await evaluate(cdpConnection, `(() => {
+    const input = document.querySelector('.hv-scene-prompt-editor textarea');
+    const setter = Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, 'value')?.set;
+    if (!(input instanceof HTMLTextAreaElement) || !setter) return false;
+    setter.call(input, ${JSON.stringify(prompt.original)});
+    input.dispatchEvent(new Event('input', { bubbles: true }));
+    return true;
+  })()`);
+  await waitFor(
+    async () => evaluate(cdpConnection, `Boolean([...document.querySelectorAll('.hv-scene-prompt-editor button')]
+      .find((item) => item.textContent?.includes('保存提示词'))?.disabled)`),
+    5_000,
+    'prompt restored state',
+  );
+  await saveScreenshot(cdpConnection, screenshots.prompt);
+  await openTab('版式', '.hv-scene-template-grid');
+
+  return {
+    foreground: {
+      ...foregroundInitial,
+      hideShowSynchronized: hidden && shown,
+    },
+    title: {
+      ...title,
+      dirtyStateSynchronized: title.ready,
+    },
+    caption,
+    prompt: {
+      ...prompt,
+      dirtyStateSynchronized: prompt.ready,
+    },
+  };
+}
+
+async function inspectSceneCaptionWorkspace(cdpConnection, screenshotPath, startScreenshotPath = '', layoutScreenshotPath = '') {
+  const opened = await evaluate(cdpConnection, `(() => {
+    const editor = document.querySelector('.hv-scene-preview-editor');
+    const button = [...(editor?.querySelectorAll('.hv-scene-editor-tabs [role="tab"]') || [])]
+      .find((item) => item.innerText.trim() === '字幕');
+    if (!(button instanceof HTMLButtonElement) || button.disabled) return false;
+    button.click();
+    return true;
+  })()`);
+  if (!opened) throw new Error('Scene caption workspace was unavailable.');
+  await waitFor(
+    async () => evaluate(cdpConnection, `Boolean(document.querySelector('[data-html-video-caption-workspace="true"]'))`),
+    5_000,
+    'scene caption workspace',
+  );
+  await evaluate(cdpConnection, `document.querySelector('.hv-scene-preview-editor')?.scrollIntoView({ block: 'center' })`);
+  await delay(150);
+  const result = await evaluate(cdpConnection, `(() => {
+    const workspace = document.querySelector('[data-html-video-caption-workspace="true"]');
+    const editor = workspace?.closest('.hv-scene-preview-editor');
+    const body = workspace?.closest('.hv-scene-editor-body');
+    const layout = workspace?.querySelector('[data-html-video-edit-field="captionLayout"]');
+    const colors = workspace?.querySelector('[data-html-video-edit-field="captionColors"]');
+    if (!workspace || !editor || !body || !layout || !colors) return { ready: false };
+    const iframe = document.querySelector('.hv-reference-phone iframe');
+    const sceneView = iframe?.contentWindow;
+    const sceneDocument = iframe?.contentDocument;
+    const timeline = sceneView?.__tl;
+    if (typeof timeline?.pause === 'function' && typeof timeline?.time === 'function') {
+      timeline.pause();
+      timeline.time(0, false);
+    }
+    const previewCaptions = sceneDocument ? [...sceneDocument.querySelectorAll('.caption')] : [];
+    const visiblePreviewCaptions = previewCaptions.filter((item) => {
+      const style = sceneView?.getComputedStyle(item);
+      const rect = item.getBoundingClientRect();
+      return style && style.display !== 'none' && style.visibility !== 'hidden'
+        && Number(style.opacity) > 0.05 && rect.width > 0 && rect.height > 0;
+    });
+    const bodyRect = body.getBoundingClientRect();
+    body.scrollTop = body.scrollHeight;
+    const bottomTarget = colors.getBoundingClientRect();
+    const bodyStyle = getComputedStyle(body);
+    return {
+      ready: true,
+      fontAvailable: Boolean(layout.querySelector('select')) && layout.textContent.includes('字体'),
+      textColorAvailable: Boolean(colors.querySelector('input[type="color"]')) && colors.textContent.includes('文字'),
+      fontSizeAvailable: layout.textContent.includes('字号') && layout.querySelectorAll('input[type="range"]').length >= 1,
+      positionAvailable: workspace.textContent.includes('场景垂直位置'),
+      editorOwnsScroll: bodyStyle.overflowY === 'auto' && body.scrollHeight > body.clientHeight,
+      bottomReachable: bottomTarget.bottom <= bodyRect.bottom + 2 && bottomTarget.top < bodyRect.bottom,
+      editorHeight: editor.getBoundingClientRect().height,
+      bodyClientHeight: body.clientHeight,
+      bodyScrollHeight: body.scrollHeight,
+      workspaceHorizontalOverflow: Math.max(0, workspace.scrollWidth - workspace.clientWidth),
+      bodyHorizontalOverflow: Math.max(0, body.scrollWidth - body.clientWidth),
+      colorPickerCount: colors.querySelectorAll('input[type="color"]').length,
+      cueCount: workspace.querySelectorAll('.hv-scene-caption-cues article').length,
+      previewSampleTime: typeof timeline?.time === 'function' ? timeline.time() : -1,
+      previewCaptionCount: previewCaptions.length,
+      previewVisibleCaptionCount: visiblePreviewCaptions.length,
+      previewCaptionTexts: visiblePreviewCaptions.map((item) => item.textContent?.trim() || ''),
+      previewCaptionOpacities: previewCaptions.map((item) => sceneView?.getComputedStyle(item).opacity || ''),
+    };
+  })()`);
+  await saveScreenshot(cdpConnection, screenshotPath);
+  if (layoutScreenshotPath) {
+    await evaluate(cdpConnection, `(() => {
+      const workspace = document.querySelector('[data-html-video-caption-workspace="true"]');
+      const body = workspace?.closest('.hv-scene-editor-body');
+      const layout = workspace?.querySelector('[data-html-video-edit-field="captionLayout"]');
+      if (!body || !layout) return;
+      const bodyRect = body.getBoundingClientRect();
+      const layoutRect = layout.getBoundingClientRect();
+      body.scrollTop += layoutRect.top - bodyRect.top - 8;
+    })()`);
+    await delay(100);
+    await saveScreenshot(cdpConnection, layoutScreenshotPath);
+  }
+  if (startScreenshotPath) {
+    await evaluate(cdpConnection, `(() => {
+      const workspace = document.querySelector('[data-html-video-caption-workspace="true"]');
+      const body = workspace?.closest('.hv-scene-editor-body');
+      if (body) body.scrollTop = 0;
+    })()`);
+    await delay(100);
+    await saveScreenshot(cdpConnection, startScreenshotPath);
+  }
+  return result;
 }
 
 async function inspectConfigControls(cdpConnection) {
@@ -2720,6 +3784,9 @@ async function exerciseHtmlVideoCaptionUpdate(cdpConnection, taskId) {
     async () => evaluate(cdpConnection, `Boolean(
       document.querySelector('[data-html-video-edit-field="captionPreset"] select')
       && document.querySelector('[data-html-video-edit-field="captionAnim"] select')
+      && document.querySelector('[data-html-video-edit-field="captionLayout"] [role="group"][aria-label="字幕区域"]')
+      && document.querySelector('[data-html-video-edit-field="captionLayout"] select')
+      && document.querySelectorAll('[data-html-video-edit-field="captionLayout"] input[type="range"]').length === 3
       && document.querySelector('[data-html-video-edit-field="captionColors"] input[type="color"]')
     )`),
     10_000,
@@ -2743,7 +3810,17 @@ async function exerciseHtmlVideoCaptionUpdate(cdpConnection, taskId) {
   const detailSelection = await evaluate(cdpConnection, `(() => {
     const animation = document.querySelector('[data-html-video-edit-field="captionAnim"] select');
     const accent = document.querySelector('input[aria-label="强调十六进制颜色"]');
-    if (!animation || !accent || animation.disabled || accent.disabled) return null;
+    const layout = document.querySelector('[data-html-video-edit-field="captionLayout"]');
+    const fontFamily = layout?.querySelector('select');
+    const ranges = [...(layout?.querySelectorAll('input[type="range"]') || [])];
+    const selects = [...(layout?.querySelectorAll('select') || [])];
+    const fontWeight = selects[1];
+    const bottom = [...(layout?.querySelectorAll('[role="group"][aria-label="字幕区域"] button') || [])]
+      .find((item) => item.textContent?.trim() === '底部');
+    const alignRight = [...(layout?.querySelectorAll('[role="group"][aria-label="对齐"] button') || [])]
+      .find((item) => item.textContent?.trim() === '右对齐');
+    if (!animation || !accent || !fontFamily || !fontWeight || ranges.length !== 3
+      || !bottom || !alignRight || animation.disabled || accent.disabled) return null;
     const targetAnimation = [...animation.options].map((option) => option.value).find((value) => value === 'pop')
       || [...animation.options].map((option) => option.value).find((value) => value !== animation.value);
     if (!targetAnimation) return null;
@@ -2754,9 +3831,33 @@ async function exerciseHtmlVideoCaptionUpdate(cdpConnection, taskId) {
     nativeColorValueSetter.call(accent, '#11aabbcc');
     accent.dispatchEvent(new Event('input', { bubbles: true }));
     accent.dispatchEvent(new Event('change', { bubbles: true }));
-    return { targetAnimation, targetAccent: '#11aabbcc' };
+    const setRange = (input, value) => {
+      nativeColorValueSetter.call(input, String(value));
+      input.dispatchEvent(new Event('input', { bubbles: true }));
+      input.dispatchEvent(new Event('change', { bubbles: true }));
+    };
+    setRange(ranges[0], 64);
+    setRange(ranges[1], 1.5);
+    setRange(ranges[2], 76);
+    fontWeight.value = '800';
+    fontWeight.dispatchEvent(new Event('change', { bubbles: true }));
+    bottom.click();
+    alignRight.click();
+    return {
+      targetAnimation,
+      targetAccent: '#11aabbcc',
+      targetLayout: {
+        region: 'bottom',
+        fontFamily: fontFamily.value,
+        fontSize: 64,
+        lineHeight: 1.5,
+        widthPercent: 76,
+        align: 'right',
+        fontWeight: 800,
+      },
+    };
   })()`);
-  if (!detailSelection) throw new Error('Could not change the HTML video caption animation and colors.');
+  if (!detailSelection) throw new Error('Could not change the HTML video caption animation, layout, and colors.');
   const selection = { ...presetSelection, ...detailSelection };
   await delay(150);
   const saved = await evaluate(cdpConnection, `(() => {
@@ -2776,20 +3877,23 @@ async function exerciseHtmlVideoCaptionUpdate(cdpConnection, taskId) {
         .some((item) => item.textContent.includes('继续'));
       const task = await window.storydream.getTaskDetail(${JSON.stringify(taskId)});
       const storedCaptionColors = task?.pipelineData ? JSON.parse(task.pipelineData).config?.captionColors : null;
+      const storedCaptionLayout = task?.pipelineData ? JSON.parse(task.pipelineData).config?.captionLayout : null;
       return {
         matched: preset?.value === ${JSON.stringify(selection.targetPreset)}
           && animation?.value === ${JSON.stringify(selection.targetAnimation)}
           && accent?.value.toLowerCase() === ${JSON.stringify(selection.targetAccent)}
           && JSON.stringify(storedCaptionColors) === ${JSON.stringify(JSON.stringify({ accent: '#11aabbcc' }))}
+          && JSON.stringify(storedCaptionLayout) === ${JSON.stringify(JSON.stringify(selection.targetLayout))}
           && steps.length === 6
-          && document.querySelectorAll('.hv-step.done').length === 4
-          && !steps[4]?.classList.contains('done')
+          && document.querySelectorAll('.hv-step.done').length === 5
+          && steps[4]?.classList.contains('done')
           && !steps[5]?.classList.contains('done')
           && resumeAvailable,
         preset: preset?.value || '',
         animation: animation?.value || '',
         accent: accent?.value || '',
         storedCaptionColors,
+        storedCaptionLayout,
         stepClasses: steps.map((step) => step.className),
         completedStepCount: document.querySelectorAll('.hv-step.done').length,
         resumeAvailable,
@@ -2815,6 +3919,7 @@ async function exerciseHtmlVideoCaptionUpdate(cdpConnection, taskId) {
       targetAnimation: ${JSON.stringify(selection.targetAnimation)},
       captionAnimation: animation?.value || '',
       targetAccent: ${JSON.stringify(selection.targetAccent)},
+      targetLayout: ${JSON.stringify(selection.targetLayout)},
       completedStepCount: document.querySelectorAll('.hv-step.done').length,
       previewCompleted: Boolean(steps[4]?.classList.contains('done')),
       renderCompleted: Boolean(steps[5]?.classList.contains('done')),
@@ -2934,13 +4039,36 @@ async function resumeAndCaptureCaptionPreview(
     const view = iframe?.contentWindow;
     const sceneDocument = iframe?.contentDocument;
     const frame = sceneDocument?.querySelector('.frame');
-    const caption = sceneDocument?.querySelector('.caption');
-    if (!iframe || !view || !sceneDocument || !frame || !caption) {
+    const captionContainer = sceneDocument?.querySelector('#scene-captions');
+    const captions = sceneDocument ? [...sceneDocument.querySelectorAll('.caption')] : [];
+    if (!iframe || !view || !sceneDocument || !frame || !captionContainer || captions.length === 0 || !view.__tl) {
       return { captionVisible: false, captionClipped: true, horizontalOverflow: 1 };
     }
+    const sampleAt = (time) => {
+      view.__tl.pause();
+      view.__tl.time(time, false);
+      const visible = captions.filter((item) => {
+        const itemStyle = view.getComputedStyle(item);
+        const itemRect = item.getBoundingClientRect();
+        return itemStyle.display !== 'none'
+          && itemStyle.visibility !== 'hidden'
+          && Number(itemStyle.opacity) > 0.05
+          && itemRect.width > 0
+          && itemRect.height > 0;
+      });
+      return { time, visibleCount: visible.length, texts: visible.map((item) => item.textContent.trim()) };
+    };
+    const cueSamples = [sampleAt(0), sampleAt(0.25), sampleAt(0.75)];
+    view.__tl.time(0.25, false);
+    const caption = captions[0];
     const frameRect = frame.getBoundingClientRect();
     const captionRect = caption.getBoundingClientRect();
     const style = view.getComputedStyle(caption);
+    const containerStyle = view.getComputedStyle(captionContainer);
+    const frameStyle = view.getComputedStyle(frame);
+    const frameCssWidth = parseFloat(frameStyle.width) || 1;
+    const frameCssHeight = parseFloat(frameStyle.height) || 1;
+    const fontSize = parseFloat(style.fontSize) || 1;
     return {
       title: sceneDocument.title,
       url: iframe.src || 'about:srcdoc',
@@ -2948,6 +4076,17 @@ async function resumeAndCaptureCaptionPreview(
       animation: frame.getAttribute('data-caption-animation'),
       accent: view.getComputedStyle(sceneDocument.documentElement).getPropertyValue('--caption-accent').trim().toLowerCase(),
       captionText: caption.textContent.trim(),
+      captionCount: captions.length,
+      cueSamples,
+      captionLayout: {
+        regionRatio: Number((parseFloat(containerStyle.top) / frameCssHeight).toFixed(3)),
+        widthRatio: Number((parseFloat(containerStyle.width) / frameCssWidth).toFixed(3)),
+        textAlign: containerStyle.textAlign,
+        fontWeight: style.fontWeight,
+        lineHeightRatio: Number(((parseFloat(style.lineHeight) || 0) / fontSize).toFixed(2)),
+        fontSize: Number(fontSize.toFixed(2)),
+        fontFamily: style.fontFamily,
+      },
       captionVisible: style.display !== 'none'
         && style.visibility !== 'hidden'
         && Number(style.opacity) > 0
@@ -2967,6 +4106,15 @@ async function resumeAndCaptureCaptionPreview(
     state.preset !== expected.targetPreset
     || state.animation !== expected.targetAnimation
     || state.accent !== expected.targetAccent
+    || state.captionCount !== 2
+    || state.cueSamples?.length !== 3
+    || state.cueSamples.some((sample) => sample.visibleCount !== 1)
+    || state.cueSamples[1]?.texts[0] === state.cueSamples[2]?.texts[0]
+    || state.captionLayout?.regionRatio !== 0.84
+    || state.captionLayout?.widthRatio !== 0.76
+    || state.captionLayout?.textAlign !== expected.targetLayout.align
+    || state.captionLayout?.fontWeight !== String(expected.targetLayout.fontWeight)
+    || state.captionLayout?.lineHeightRatio !== expected.targetLayout.lineHeight
     || state.hasFrameworkOverlay
   ) {
     throw new Error(`Rendered caption config does not match the saved config: ${JSON.stringify(state)}`);
@@ -3193,13 +4341,13 @@ async function evaluate(cdpConnection, expression, options = {}) {
   return response.result?.value;
 }
 
-async function waitFor(check, timeoutMs, label) {
+async function waitFor(check, timeoutMs, label, checkTimeoutMs = WAIT_FOR_CHECK_TIMEOUT_MS) {
   const deadline = Date.now() + timeoutMs;
   while (Date.now() < deadline) {
     const remaining = deadline - Date.now();
     const matched = await withTimeout(
       Promise.resolve().then(() => check()),
-      Math.min(WAIT_FOR_CHECK_TIMEOUT_MS, remaining),
+      Math.min(checkTimeoutMs, remaining),
       `${label} check`,
     );
     if (matched) return;

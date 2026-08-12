@@ -1,5 +1,5 @@
 import { z } from 'zod';
-import type { AppConfig, ImageLabImportInput } from './types';
+import type { AppConfig, HtmlVideoCaptionLayout, ImageLabImportInput } from './types';
 import { draftTemplateSchema } from './draft-template-contract';
 import { isSecretId, type SaveConfigInput } from './config-secrets';
 import {
@@ -16,6 +16,7 @@ import {
   HTML_VIDEO_CAPTION_ANIMATIONS,
   HTML_VIDEO_CAPTION_PRESETS,
   validateHtmlVideoCaptionColors,
+  validateHtmlVideoCaptionLayout,
 } from './html-video-captions';
 import {
   MAX_HTML_VIDEO_CAPTIONS_PER_SCENE,
@@ -124,7 +125,6 @@ const aiHotQueryRequestSchema = z.discriminatedUnion('mode', [
   z.object({ mode: z.literal('recent'), days: z.number().int().min(1).max(7) }).strict(),
   z.object({ mode: z.literal('search'), query: z.string().trim().min(2).max(200), window: aiHotWindowSchema }).strict(),
 ]);
-
 const hotBoardArchiveRequestSchema = z.object({
   date: aiHotDateSchema.optional(),
   forceRefresh: z.boolean().optional(),
@@ -134,6 +134,7 @@ const aiHotArchiveRequestSchema = z.object({
   date: aiHotDateSchema.optional(),
   forceRefresh: z.boolean().optional(),
 }).strict();
+
 export const pathSchema = z
   .string()
   .min(1)
@@ -159,7 +160,7 @@ const llmConfigSchema = bounded(
     .strict(),
 );
 
-const configTestTargetSchema = z.enum(['llm', 'image', 'tts', 'speechToText', 'jianying', 'creative']);
+const configTestTargetSchema = z.enum(['llm', 'image', 'tts', 'speechToText', 'jianying', 'creative', 'webSearch']);
 const taskStatusValueSchema = z.enum(['draft', 'pending', 'running', 'paused', 'completed', 'failed', 'cancelled']);
 const viralStatusValueSchema = z.enum(['pending', 'running', 'paused', 'completed', 'failed', 'cancelled']);
 const taskStepRerunModeSchema = z.enum(['regenerate', 'rewrite']);
@@ -171,6 +172,7 @@ const sourceSectionSchema = bounded(
     .object({
       source: z.string().max(1024),
       provider: webSearchProviderSchema.optional(),
+      backend: z.enum(['searxng', 'tavily', 'legacy']).optional(),
       title: z.string().max(MAX_IPC_TEXT),
       url: optionalText(MAX_IPC_TEXT),
       snippet: optionalText(MAX_IPC_TEXT),
@@ -323,6 +325,17 @@ const htmlVideoConfigChangeSchema = z.discriminatedUnion('field', [
         return false;
       }
     }, 'Invalid HTML video caption colors.'),
+  }).strict(),
+  z.object({
+    field: z.literal('captionLayout'),
+    value: z.custom<HtmlVideoCaptionLayout>((value) => {
+      try {
+        validateHtmlVideoCaptionLayout(value);
+        return true;
+      } catch {
+        return false;
+      }
+    }, 'Invalid HTML video caption layout.'),
   }).strict(),
   z.object({ field: z.literal('bgmVolume'), value: z.enum(HTML_VIDEO_BGM_VOLUMES) }).strict(),
   z.object({ field: z.literal('transitionType'), value: z.enum(HTML_VIDEO_TRANSITIONS) }).strict(),
@@ -716,6 +729,7 @@ const hotBoardSourceContentInputSchema = z.object({
   title: nonEmptyText(MAX_IPC_TEXT),
   url: nonEmptyText(MAX_IPC_PATH),
   summary: optionalText(MAX_TASK_TEXT),
+  forceRefresh: z.boolean().optional(),
 }).strict();
 
 export const createViralAnalysisSchema = z

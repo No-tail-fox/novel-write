@@ -227,7 +227,10 @@ export function BenchmarkImportPage({
     setLoginAccountId(account.id);
     setMessage(`请在打开的${benchmarkPlatformLabel(account.platform)}窗口完成登录，关闭窗口后会重新同步。`);
     try {
-      await api.openBenchmarkLogin({ platform: account.platform, url: account.url });
+      const loginResult = await api.openBenchmarkLogin({ platform: account.platform, url: account.url });
+      setMessage(loginResult.cookieCount > 0
+        ? `已记录 ${loginResult.cookieCount} 个${benchmarkPlatformLabel(account.platform)} Cookie，正在重新同步...`
+        : '登录窗口已关闭，未发现可导出的平台 Cookie，正在重新同步...');
       await syncGroup(group);
     } catch (error) {
       setMessage(error instanceof Error ? error.message : String(error));
@@ -443,13 +446,14 @@ export function BenchmarkImportPage({
                   return (
                     <div className="benchmark-account-status-item" key={platform} data-state={account?.syncState ?? 'missing'}>
                       <span title={account?.errorMessage || undefined}>{benchmarkPlatformLabel(platform)} · {account ? benchmarkAccountStateLabel(account) : '未添加'}</span>
-                      {account?.syncState === 'requires-login' ? (
+                      {account?.errorMessage && account.syncState !== 'ready' ? <small className="benchmark-account-error">{account.errorMessage}</small> : null}
+                      {account && ['requires-login', 'limited', 'error'].includes(account.syncState) ? (
                         <button
                           type="button"
                           className="mini-button"
                           disabled={loginAccountId === account.id || syncingGroupId === group.id}
                           onClick={() => void openAccountLogin(group, account)}
-                        ><LogIn size={12} />登录</button>
+                        ><LogIn size={12} />登录/验证</button>
                       ) : null}
                     </div>
                   );

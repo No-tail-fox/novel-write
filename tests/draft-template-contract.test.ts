@@ -36,7 +36,7 @@ describe('draft template contract', () => {
     ['invalid vertical crop position', (value: any) => { value.image.focusY = 1.01; }],
     ['invalid image frame left', (value: any) => { value.image.left = -0.01; }],
     ['invalid image frame width', (value: any) => { value.image.width = 1.01; }],
-    ['invalid image media scale', (value: any) => { value.image.mediaScale = 0.99; }],
+    ['invalid image media scale', (value: any) => { value.image.mediaScale = 0.09; }],
     ['invalid color', (value: any) => { value.caption.color = 'yellow'; }],
     ['invalid font family', (value: any) => { value.caption.fontFamily = 'unknown-font'; }],
     ['invalid alpha', (value: any) => { value.caption.background.alpha = 2; }],

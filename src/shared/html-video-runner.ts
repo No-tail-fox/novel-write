@@ -100,6 +100,7 @@ export interface HtmlVideoAssetInput {
   config: HtmlVideoJobConfig;
   configSnapshot?: HtmlVideoJobConfig;
   signal?: AbortSignal;
+  onAssetGenerated?: (asset: HtmlVideoAsset) => Promise<void>;
 }
 
 export interface HtmlVideoVoiceInput extends HtmlVideoAssetInput {}
@@ -298,6 +299,37 @@ export async function synchronizeHtmlVideoPipelineCheckpoint(
   await atomicWriteJson(join(workDir, checkpointFileName), snapshot);
 }
 
+export async function synchronizeHtmlVideoPreviewArtifact(
+  workDir: string,
+  state: HtmlVideoPipelineDataV2,
+  signal?: AbortSignal,
+): Promise<HtmlVideoPipelineDataV2> {
+  const snapshot = cloneValidatedState(state);
+  if (snapshot.steps.preview.status !== 'completed' || snapshot.compositions.length === 0) {
+    throw new AppError('HTML_VIDEO_PREVIEW_MISSING', '当前动画预览尚未完成，不能同步出片快照。');
+  }
+  snapshot.compositions = await validateCompositions(workDir, snapshot, snapshot.compositions);
+  const inputHash = hashStepInput('preview', '', snapshot, {});
+  const artifact = await writeStepArtifact(
+    workDir,
+    'preview',
+    { compositions: snapshot.compositions },
+    snapshot,
+    {},
+    signal,
+  );
+  snapshot.steps.preview = {
+    ...snapshot.steps.preview,
+    status: 'completed',
+    inputHash,
+    artifactPath: artifact.relativePath,
+    artifactSize: artifact.size,
+    artifactHash: artifact.hash,
+    completedAt: snapshot.steps.preview.completedAt ?? Date.now(),
+  };
+  return cloneValidatedState(snapshot);
+}
+
 async function runOwnedPipeline(
   input: HtmlVideoRunnerInput,
   options: HtmlVideoRunnerOptions,
@@ -456,11 +488,24 @@ async function executeStep(
   }
 
   if (step === 'assets') {
+    let checkpointQueue = Promise.resolve();
     const generated = await options.generateAssets({
       scenes: structuredClone(state.scenes),
       ...htmlVideoConfigEnvelopeForStage(state.config, 'assets'),
       signal: options.signal,
+      onAssetGenerated: async (asset) => {
+        const checkpoint = checkpointQueue.then(async () => {
+          throwIfAborted(options.signal);
+          const completedAsset = await validateIncrementalAsset(options.workDir, state, asset);
+          const nextAssets = upsertHtmlVideoAsset(state.assets, completedAsset);
+          state.assets = validatePatchedState(state, { assets: nextAssets }).assets;
+          await persistCheckpoint(state, options);
+        });
+        checkpointQueue = checkpoint.catch(() => undefined);
+        await checkpoint;
+      },
     });
+    await checkpointQueue;
     state.assets = await validateAssets(options.workDir, state, generated);
     return { assets: state.assets };
   }
@@ -644,6 +689,42 @@ async function validateAssets(
     src: await localFilePath(workDir, asset.src, asset.sizeBytes),
     sizeBytes: (await stat(await localFilePath(workDir, asset.src))).size,
   })));
+}
+
+async function validateIncrementalAsset(
+  workDir: string,
+  state: HtmlVideoPipelineDataV2,
+  value: unknown,
+): Promise<HtmlVideoAsset> {
+  const [asset] = validateHtmlVideoAssets(
+    [value],
+    state.scenes,
+    state.config,
+    'assets',
+    { requireComplete: false },
+  );
+  if (!asset) throw new Error('HTML video incremental asset is invalid.');
+  const src = await localFilePath(workDir, asset.src, asset.sizeBytes);
+  return {
+    ...asset,
+    src,
+    sizeBytes: (await stat(src)).size,
+  };
+}
+
+function upsertHtmlVideoAsset(assets: HtmlVideoAsset[], asset: HtmlVideoAsset): HtmlVideoAsset[] {
+  return [
+    ...assets.filter((candidate) => (
+      candidate.sceneIndex !== asset.sceneIndex
+      || candidate.kind !== asset.kind
+      || candidate.slot !== asset.slot
+    )),
+    asset,
+  ].sort((left, right) => (
+    left.sceneIndex - right.sceneIndex
+    || (left.kind === right.kind ? 0 : left.kind === 'bg' ? -1 : 1)
+    || left.slot - right.slot
+  ));
 }
 
 async function validateVoices(

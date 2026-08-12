@@ -42,7 +42,10 @@ export const DRAFT_TEXT_WIDTH_MIN = 0.1;
 
 export const DRAFT_TEXT_WIDTH_MAX = 2;
 export const DRAFT_IMAGE_FRAME_MIN = 0.08;
+export const DRAFT_IMAGE_SCALE_MIN = 0.1;
 export const DRAFT_IMAGE_SCALE_MAX = 8;
+
+const DRAFT_TRANSFORM_HANDLE_VIEWPORT_INSET = 0.025;
 
 const draftResizeHandles: DraftResizeHandle[] = ['nw', 'n', 'ne', 'e', 'se', 's', 'sw', 'w'];
 
@@ -91,13 +94,13 @@ export function draftImageMediaRect(template: DraftTemplate): DraftCanvasRect {
   const frame = draftImageFrameRect(template);
   if (template.image.fit === 'contain' || frame.width <= 0 || frame.height <= 0) return frame;
   const base = draftImageBaseMediaSize(template, frame);
-  const scale = clamp(template.image.mediaScale, 1, DRAFT_IMAGE_SCALE_MAX);
+  const scale = clamp(template.image.mediaScale, DRAFT_IMAGE_SCALE_MIN, DRAFT_IMAGE_SCALE_MAX);
   const width = base.width * scale;
   const height = base.height * scale;
-  const overflowX = Math.max(0, width - frame.width);
-  const overflowY = Math.max(0, height - frame.height);
-  const centerX = frame.left + frame.width / 2 + overflowX * (0.5 - clamp(template.image.focusX, 0, 1));
-  const centerY = frame.top + frame.height / 2 + overflowY * (0.5 - clamp(template.image.focusY, 0, 1));
+  const widthDelta = width - frame.width;
+  const heightDelta = height - frame.height;
+  const centerX = frame.left + frame.width / 2 + widthDelta * (0.5 - clamp(template.image.focusX, 0, 1));
+  const centerY = frame.top + frame.height / 2 + heightDelta * (0.5 - clamp(template.image.focusY, 0, 1));
   return { left: centerX - width / 2, top: centerY - height / 2, width, height };
 }
 
@@ -150,8 +153,8 @@ export function resizeDraftImageMedia(template: DraftTemplate, handle: DraftResi
   const factor = handle.length === 2
     ? (Math.abs(horizontalFactor - 1) >= Math.abs(verticalFactor - 1) ? horizontalFactor : verticalFactor)
     : (handle === 'e' || handle === 'w' ? horizontalFactor : verticalFactor);
-  const scale = clamp(template.image.mediaScale * Math.max(0.01, factor), 1, DRAFT_IMAGE_SCALE_MAX);
-  const scaleRatio = scale / clamp(template.image.mediaScale, 1, DRAFT_IMAGE_SCALE_MAX);
+  const scale = clamp(template.image.mediaScale * Math.max(0.01, factor), DRAFT_IMAGE_SCALE_MIN, DRAFT_IMAGE_SCALE_MAX);
+  const scaleRatio = scale / clamp(template.image.mediaScale, DRAFT_IMAGE_SCALE_MIN, DRAFT_IMAGE_SCALE_MAX);
   const width = media.width * scaleRatio;
   const height = media.height * scaleRatio;
   const centerX = handle.includes('w')
@@ -170,8 +173,8 @@ export function resizeDraftImageMedia(template: DraftTemplate, handle: DraftResi
 export function updateDraftImageMediaScale(template: DraftTemplate, mediaScale: number): DraftTemplate {
   if (template.image.fit !== 'cover') return template;
   const media = draftImageMediaRect(template);
-  const currentScale = clamp(template.image.mediaScale, 1, DRAFT_IMAGE_SCALE_MAX);
-  const nextScale = clamp(mediaScale, 1, DRAFT_IMAGE_SCALE_MAX);
+  const currentScale = clamp(template.image.mediaScale, DRAFT_IMAGE_SCALE_MIN, DRAFT_IMAGE_SCALE_MAX);
+  const nextScale = clamp(mediaScale, DRAFT_IMAGE_SCALE_MIN, DRAFT_IMAGE_SCALE_MAX);
   const factor = nextScale / currentScale;
   const width = media.width * factor;
   const height = media.height * factor;
@@ -198,18 +201,20 @@ function applyDraftImageMediaRect(template: DraftTemplate, desired: DraftCanvasR
   const frame = draftImageFrameRect(template);
   const base = draftImageBaseMediaSize(template, frame);
   if (base.width <= 0 || base.height <= 0) return template;
-  const requestedScale = Math.max(desired.width / base.width, desired.height / base.height, 1);
-  const mediaScale = clamp(requestedScale, 1, DRAFT_IMAGE_SCALE_MAX);
+  const requestedScale = Math.max(desired.width / base.width, desired.height / base.height, DRAFT_IMAGE_SCALE_MIN);
+  const mediaScale = clamp(requestedScale, DRAFT_IMAGE_SCALE_MIN, DRAFT_IMAGE_SCALE_MAX);
   const width = base.width * mediaScale;
   const height = base.height * mediaScale;
   const desiredCenterX = desired.left + desired.width / 2;
   const desiredCenterY = desired.top + desired.height / 2;
-  const centerX = clamp(desiredCenterX, frame.left + frame.width - width / 2, frame.left + width / 2);
-  const centerY = clamp(desiredCenterY, frame.top + frame.height - height / 2, frame.top + height / 2);
-  const overflowX = Math.max(0, width - frame.width);
-  const overflowY = Math.max(0, height - frame.height);
-  const focusX = overflowX > 1e-8 ? clamp(0.5 - (centerX - frame.left - frame.width / 2) / overflowX, 0, 1) : 0.5;
-  const focusY = overflowY > 1e-8 ? clamp(0.5 - (centerY - frame.top - frame.height / 2) / overflowY, 0, 1) : 0.5;
+  const horizontalCenters = [frame.left + width / 2, frame.left + frame.width - width / 2];
+  const verticalCenters = [frame.top + height / 2, frame.top + frame.height - height / 2];
+  const centerX = clamp(desiredCenterX, Math.min(...horizontalCenters), Math.max(...horizontalCenters));
+  const centerY = clamp(desiredCenterY, Math.min(...verticalCenters), Math.max(...verticalCenters));
+  const widthDelta = width - frame.width;
+  const heightDelta = height - frame.height;
+  const focusX = Math.abs(widthDelta) > 1e-8 ? clamp(0.5 - (centerX - frame.left - frame.width / 2) / widthDelta, 0, 1) : 0.5;
+  const focusY = Math.abs(heightDelta) > 1e-8 ? clamp(0.5 - (centerY - frame.top - frame.height / 2) / heightDelta, 0, 1) : 0.5;
   return { ...template, image: { ...template.image, mediaScale, focusX, focusY } };
 }
 
@@ -628,10 +633,11 @@ function DraftImageTransformBox({
       className={`draft-image-transform-box ${target} ${selected ? 'selected' : ''}`}
       data-layer={target}
       data-selected={selected ? 'true' : 'false'}
+      data-drag-surface={selected ? 'active' : 'inactive'}
       style={draftRectStyle(rect)}
       role={selected ? 'button' : undefined}
       tabIndex={selected ? 0 : -1}
-      aria-label={selected ? `${label}，方向键移动` : undefined}
+      aria-label={selected ? `${label}，拖动移动，方向键微调` : undefined}
       onPointerDown={(event) => onPointerDown(target, event)}
       onKeyDown={(event) => onKeyDown(target, event)}
     >
@@ -642,6 +648,7 @@ function DraftImageTransformBox({
           type="button"
           className="draft-transform-handle"
           data-resize-handle={handle}
+          style={draftTransformHandleStyle(rect, handle)}
           aria-label={`${label}${draftResizeHandleLabels[handle]}缩放`}
           onPointerDown={(event) => onResizePointerDown(target, handle, event)}
           onKeyDown={(event) => onResizeKeyDown(target, handle, event)}
@@ -649,6 +656,20 @@ function DraftImageTransformBox({
       )) : null}
     </div>
   );
+}
+
+export function draftTransformHandleStyle(rect: DraftCanvasRect, handle: DraftResizeHandle): React.CSSProperties {
+  const intendedX = handle.includes('w') ? rect.left : handle.includes('e') ? rect.left + rect.width : rect.left + rect.width / 2;
+  const intendedY = handle.includes('n') ? rect.top : handle.includes('s') ? rect.top + rect.height : rect.top + rect.height / 2;
+  const visibleX = clamp(intendedX, DRAFT_TRANSFORM_HANDLE_VIEWPORT_INSET, 1 - DRAFT_TRANSFORM_HANDLE_VIEWPORT_INSET);
+  const visibleY = clamp(intendedY, DRAFT_TRANSFORM_HANDLE_VIEWPORT_INSET, 1 - DRAFT_TRANSFORM_HANDLE_VIEWPORT_INSET);
+  return {
+    left: `${rect.width > 1e-8 ? ((visibleX - rect.left) / rect.width) * 100 : 50}%`,
+    top: `${rect.height > 1e-8 ? ((visibleY - rect.top) / rect.height) * 100 : 50}%`,
+    right: 'auto',
+    bottom: 'auto',
+    transform: 'translate(-50%, -50%)',
+  };
 }
 
 export function DraftCanvasLayerBox({

@@ -13,6 +13,7 @@ import type {
   BenchmarkGroupInput,
   BenchmarkGroupSyncResult,
   BenchmarkLoginInput,
+  BenchmarkLoginResult,
   BenchmarkPost,
   BenchmarkPostInput,
   BookSelectionInput,
@@ -239,7 +240,7 @@ type LocalBenchmarkBookPersonAssetApi = {
   saveBenchmarkPost: (input: BenchmarkPostInput) => Promise<BenchmarkPost>;
   deleteBenchmarkPost: (id: string) => Promise<void>;
   syncBenchmarkGroup: (groupId: string) => Promise<BenchmarkGroupSyncResult>;
-  openBenchmarkLogin: (input: BenchmarkLoginInput) => Promise<void>;
+  openBenchmarkLogin: (input: BenchmarkLoginInput) => Promise<BenchmarkLoginResult>;
   listBookSelections: (theme?: string) => Promise<BookSelectionRecord[]>;
   saveBookSelection: (input: BookSelectionInput) => Promise<BookSelectionRecord>;
   deleteBookSelection: (theme: string, bookId: string) => Promise<void>;

@@ -1,3 +1,93 @@
+# 热榜正文弹窗设计发现（2026-08-12）
+
+- 用户截图中每条热点被“来源摘要 / 尚未读取页面内容 / 查看正文”额外撑高，破坏了热榜按标题快速扫读的核心任务。
+- 现有 `readItemContent` 把正文读取 warning 写入页面级 `openError`，即使已有摘要降级也会在列表上方显示全局警告；正文状态应归所选条目的弹窗所有。
+- 当前列表已拥有稳定操作列，最合适的结构是保留原文图标、“正文”和“去创作”，标题区域使用单行省略并通过正文弹窗提供完整阅读路径。
+- 项目已有受控 `Dialog` 和 `Button`，Fluent Dialog 可处理焦点锁定、Escape 关闭与焦点恢复；无需新增原生对话框或弹窗基础设施。
+- 正文读取目前只有进程内 30 分钟缓存，浏览器预览直接退回条目摘要；本轮先保证页面正文、摘要降级、不可用和异常都在弹窗中被准确区分。
+- 本轮实现后，列表行只保留排名、来源/标题、热度、时间和操作；“正文”打开受控 Dialog，正文区内部滚动，单条读取异常不再占用热榜全局告警区域。
+- 读取 API 新增可选 `forceRefresh`，仅“重试读取”绕过 30 分钟进程缓存；普通打开仍复用缓存，符合按需读取和稳定展示预期。
+- 提取器先读取 JSON-LD `articleBody`，再对整页及语义内容容器的有效段落量评分，保留段落分隔，避免泛 `.content` 壳覆盖真实正文。
+
+---
+
+# 对标账号同步故障发现（2026-08-12）
+
+- 截图底部明确显示 `0/1 个账号同步成功` 与 `1 个受限或失败`，不是单纯的列表刷新遗漏；当前唯一账号同步报告进入了非 `ready` 状态。
+- 既有实现记录确认 B 站空间归档接口曾返回业务码 `-352`，补匿名 `buvid` 后仍可能收到 HTTP 412；当前连接器在 API 失败后回退抓主页，主页没有可解析作品时会合并为 `limited`。
+- Electron 登录窗口与同步请求使用相同持久化 session 分区，Cookie 理论上会共享；但界面只把 `errorMessage` 放进账号状态文字的 hover `title`，底部仅显示失败数量，恢复原因不可见。
+- 本机 `data.db` 中唯一对标组账号为 B 站空间 `441897078`，持久化状态是 `limited`、`lastSyncedAt: null`，真实错误为 `B站账号作品接口返回 -352。 B站主页已打开，但页面没有公开可解析的作品列表。`
+- B 站独立持久化 session 目录已存在；Cookie 数据库正被运行中的 Electron 锁定，本轮遵守只读诊断边界，没有停止应用或读取 Cookie 值。
+- 连接器使用带 `StoryDream/1.0` 标识的简化 User-Agent，且请求没有显式 `credentials: 'include'`；这会降低已登录会话在 B 站风控接口上的可靠性。
+- `-352` 被归类为 `limited`，而页面只为 `requires-login` 显示登录按钮，因此当前失败状态没有可见恢复入口；这是连接器状态分类与 UI 行为不一致的确定缺陷。
+- 已按“爆款拆解”对齐登录闭环：对标登录窗口关闭时从同一持久化 Electron session 导出白名单域名 Cookie 到 `benchmark-cookies/{platform}-cookies.txt`，IPC 只返回文件路径和数量，不返回 Cookie 值。
+- 对标连接器请求现在显式使用 `credentials: 'include'`，并使用标准 Chromium User-Agent；登录/验证按钮覆盖 `requires-login`、`limited`、`error` 三种可恢复状态，关闭窗口后自动重试同步。
+- 账号卡片直接显示失败摘要，不再只依赖 hover；聚焦回归新增会话凭据断言。
+
+---
+
+# HTML 动画预览清爽化发现
+
+## 2026-08-11 完整预览回归续接
+
+- 保留失败现场重跑 `STORYDREAM_QA_EFFECTS_ONLY` 后，主任务 `html-scenes/scene-001.html` 明确包含 `<img class="clip scene-foreground">`，对应前景 PNG 与 pipeline 资产也存在。
+- IPC handler 只按 `pipeline.compositions[].htmlPath` 读取该文件，`prepareCompositionSrcDoc()` 只移除 HyperFrames 外链运行时并改写媒体 URL，不会主动删除前景节点。
+- iframe 已就绪、字幕和场景模板均正确；旧诊断只暴露 `previewForegroundVisible: false`，保留现场进一步证明 `.scene-foreground` 节点实际存在但尚未进入可见时段。
+- 保留现场进一步确认节点没有被删除：`center-focus` 的前景入场由动效合同规定从 `0.4s` 开始，而 QA 在不可见时反复固定 seek 到 `0.25s`，一直采在前景入场前；应改为场景 60% 的稳定帧并继续严格验证可见性与画布边界。
+- 动效选择自动化用原生 setter 同步改两个受控 `<select>` 后，DOM 值会变化，但合成 `change` 没有进入 React 19 的受控状态处理器；即使等待两个绘制帧，保留现场数据库仍为 `auto / fade`。QA 应复用既有 `__reactProps$` 处理器路径并显式断言 React props。
+- 精确诊断确认保存按钮已触发、React props 为 `pan_left / wipeleft`、真实前景在 `0.6s` 可见；失败来自 `html-video:update-config` IPC，renderer 目前只显示通用“请求处理失败，请重试”。
+- Electron stderr 中的 `ERR_FILE_NOT_FOUND` 来自诊断专用长目录：staging scene 路径为 267 字符；runtime 已按正确顺序先写 HTML 再捕获。默认 `%TEMP%` QA 路径更短，需回到真实路径条件复验，不能把人工长路径误判为产品竞态。
+- 默认短路径复验暴露了独立产品问题：编辑动效会通过 `rebuildHtmlVideoEditorialPreviews()` 新建 runtime，而该 runtime 未继承现有 composition 的 `320x568` 画布，回退到默认长边 1280 并生成 `720x1280`；当前屏幕把隐藏 BrowserWindow 限制为 `720x1040` 后捕获必然失败。编辑重建应继承现有 canvas 长边，首次生成和其他 runtime 调用仍保留默认值。
+- `applyHtmlVideoConfigChanges()` 在返回前会调用 `invalidateHtmlVideoPipeline(..., 'preview')`，该函数明确清空 `state.compositions`；因此编辑重建不能只看变更后的 pipeline，必须在其 composition 缺失时回退到 `task.pipelineData` 中保存前的权威 canvas。
+- 尺寸修复后完整 QA 已证明保存、播放、镜头、转场、终点重播和版式切换全部成立；最终门禁剩余失败来自旧绝对高度 440/300 与版式切换后的 0 秒采样。当前已验收布局实际为 427/287，且 0 秒前景按动效合同本就尚未入场；门禁应使用 400/260 并在切版后 seek 到 60% 稳定帧，不能删除前景可见/边界断言。
+- Electron viewport 从 1320×860 改到 920×720 时 iframe 会重新加载并回到 0 秒，因此桌面切版后的稳定采样不会自动延续到紧凑态；两种 viewport 都必须各自在布局稳定后 seek 到 60% 再检查前景。
+- 最终完整 `preview-effects` 在当前生产构建通过：编辑保存后仍使用原 `320x568` 长边规格，步骤为 5/6 且可继续重新出片；桌面与紧凑态的前景、单条字幕、画布边界、镜头、转场、版式、滚动、最大化恢复和任务队列均通过，运行时错误为 0。
+- 最终原图人工复核确认桌面与 920×720 均保持主画布、下方场景条和单一右侧检查器；没有容器重叠或横向溢出，字幕 cue 与颜色/对齐/样式设置清晰可达。
+
+## 2026-08-11 真实截图复核
+
+- 继续执行后的当前构建完整 `STORYDREAM_QA_EFFECTS_ONLY` 可稳定复现失败：iframe 已 ready、时间为 0.25s、首条字幕可见，但 DOM 中不存在 `.scene-foreground`，因此不是透明度阈值误判。
+- QA 夹具已生成前景 PNG、`kind: 'fg'` 资产和 `buildHtmlVideoExportInput.foregroundImages`；前景在 composition 生成后到 renderer 预览源加载之间丢失，需继续追踪 HTML 文件与媒体 URL 替换链路。
+- 1320×860 下主画布为 560×526、检查器为 288×652；920×720 下主画布为 328×386、检查器为 288×512，场景条均位于画布下方且主画布宽于检查器。
+- 两个尺寸页面与预览工作区横向溢出均为 0，可见控件裁切为 0，Fluent 页签 `innerText` 均为 `版式 / 前景 / 标题 / 字幕 / 提示词`。
+- 原始 PNG 显示结构已从多卡片堆叠收敛为单画布、单检查器；但检查器宽度只有 288px，页签同时显示图标和文字时视觉上只剩单字，下一步改为纯文本页签并压缩头部高度。
+- 去除图标后的第二轮截图中，前四个双字页签完整显示，但三字“提示词”仍被 Fluent 内部标签省略为“提示…”；继续压缩该局部 TabList 间距并取消标签省略，不增加检查器宽度。
+- 最终 Electron 实拍中五个页签和“连播全部”均完整显示；页签内部最大文字宽度 40px、可用宽度 40px，普通与紧凑尺寸均通过内部文字溢出断言。
+- 最终结构保持 288px 单一检查器，1320×860 主画布 560×526，920×720 主画布 328×386；两尺寸页面/工作区横向溢出均为 0、可见控件裁切为 0、运行时错误为 0。
+
+## 2026-08-11
+
+- 当前 1320×860 实拍在中央区域连续叠加页面页签、预览边框、播放工具条、场景检查器页签和字幕表单，产生多层框套框；预览内容反而只占工作区很小一块。
+- 紧凑窗口中画面本体几乎退出首屏，只剩页签、播放条和检查器；视觉主次与“动画预览”任务相反。
+- 左侧任务摘要、统计、任务选择、参数折叠和 6 步流程持续占用 300px 左右宽度，完成态信息重复；应收成窄任务轨，并把低频参数放进折叠区。
+- 现有生成稿虽有大画布，但左右两栏和各控件组仍全部使用重边框容器，信息密度偏高；本轮参照要进一步减少容器层级，形成“窄任务轨 + 大预览台 + 单一检查器”。
+- 保留式重设计不改变路由、任务状态、场景选择、播放、字幕保存和重新出片合同；仅调整布局语义、命令位置和视觉层级。
+- 组件 DOM 当前顺序为：预览标题、镜头/转场 `details`、画布、场景检查器、场景条；CSS 再对这些区块多次覆写，导致普通和紧凑断点下的主次关系不稳定。
+- `ScenePreviewEditor` 已拥有版式/前景/标题/字幕/提示词的单一场景检查器状态，适合直接成为右侧稳定 pane；无需再创建新编辑状态。
+- 镜头动效与场景转场是当前场景上下文设置，可移动到同一右侧检查器顶部；播放工具条、场景胶片条则应始终留在中央预览台。
+- 本轮 `api-image` 的 edit 与 generation 两条路径分别遭遇 SSL EOF 和远端断连，均未产生新文件；现有 `outputs/html-video-animation-preview-redesign.png` 可作为辅助结构参照，但其重边框表单不能直接照搬。
+- CSS 中并存三代预览布局：早期 `画布 + 右侧场景栏`、中期 `顶部设置抽屉 + 画布`、当前 `画布 + 下方检查器`；同名选择器在 4266、4813、5241 和 5908 一带重复覆写，是紧凑窗口主画布退场和容器层级失控的主要原因。
+- 外层工作室本身是“左侧参数/流程 + 右侧画布”两列；本次不需要改全页数据所有权，只需在预览激活时降低左栏噪音，并让预览内部成为中央画布加右侧检查器。
+
+---
+
+# HTML 动画字幕与重新出片发现
+
+## 2026-08-11
+
+- 用户第一张原始截图显示：场景检查器位于主预览下方，但内容区被窗口底边直接裁切；字幕页只露出“垂直位置”和“场景字号”两个滑块，保存动作也不完整可达，说明该稳定面板没有正确拥有纵向滚动。
+- 用户第二张原始截图显示：播放头位于 `0.0s` 时，预览底部同时叠出多条白色字幕，并非单条字幕的行高问题；首帧 cue 激活边界或默认时间归一化需要修正。
+- 当前用户要求字幕至少可编辑字体、颜色、位置和字号；已有共享 `captionLayout` 能力需要成为场景检查器的实际控件与权威预览状态，不能继续只暴露两个局部倍率。
+- “重新出片”必须消费用户在动画预览中已经保存的 composition/HTML 快照，并只重跑渲染与输出；不得回到文案、素材或 HTML 生成步骤覆盖当前编辑结果。
+- 首帧重叠根因位于生成 HTML 的 GSAP 字幕循环：未来 cue 使用 `fromTo` 时未关闭 `immediateRender`，时间线创建阶段就把所有未来字幕从内联 `opacity:0` 改成了半透明可见。
+- 场景字幕页当前只有 `captionYOverride` 和 `captionScale`；完整 `HtmlVideoCaptionEditor` 实际藏在上方折叠设置中，已经支持字体、字号、行高、宽度、对齐、字重和四类颜色，应该移动到用户正在编辑的“字幕”页而不是重复实现。
+- `prepareHtmlVideoPipelineForRerender` 会保留 compositions 并只置 `render` 为 pending；真正的数据丢失发生在 runner 恢复时：场景/源码编辑更新了 composition HTML，却没有重写 `steps/preview.json` 的文件摘要，`validateCompletedStep('preview')` 因摘要过期而从 preview 重新生成。
+- 出片页在配乐或转场有变化时只调用 `updateHtmlVideoConfig`，没有随后调用 `rerenderHtmlVideo` 冻结当前预览快照；应统一为“保存出片参数 → 准备当前预览重新出片 → 启动任务”。
+- `immediateRender: false` 能阻止未来 cue 在时间线创建时提前显现，但暂停时间线尚未前进的严格 `0.0s` 不会执行零点 tween；首 cue 还必须在生成 DOM 中拥有可见初始样式，才能同时满足“首帧立即有字”和“只显示一条”。
+- 场景字幕页在普通桌面工作台中实际只有约 444px 宽；原 `.hv-scene-caption-editor` 强制 `260px + 300px` 双栏，正好造成约 128px 横向滚动。基于自身宽度的 `auto-fit/minmax` 比 viewport 断点更符合嵌套桌面面板。
+- 完整字幕编辑器的内容高度明显超过稳定检查器视口；视觉回归需要分别采集顶部位置/倍率、中段字体/字号/行高/字重、底部颜色/字幕段，单张滚动位置截图不足以证明全部控件可达。
+- 最终 Electron 实测在 1320×860 和 920×720 下均为：独立纵向滚动成立、底部可达、body 横向溢出 0、首帧字幕 opacity 为 `["1", "0"]`、运行时错误 0。
+
 # Electron 旧构建页面发现
 
 ## 2026-08-09
@@ -13,6 +103,73 @@
 - 保存镜头/转场后立即点击播放仍存在换代竞态：旧 iframe 曾满足播放前进条件，随后新 composition 加载并把最终采样重置到 0 秒；这会造成用户可见的“播放没效果”，需要在产品层同步新预览 ready 后再允许播放。
 - 稳定源键修复后同一 Electron QA 通过：队列页 `activeView=queue`、队列表可见、路由错误不存在；动画播放采样到 `0.3666667s`，镜头矩阵变化，连续播放捕获转场，版式切换改变标题几何，运行时错误为 0。
 - 人工检查 1320×860 与 920×720 原图：旧右侧大预览卡已消失；桌面设置区、主画布、场景列与底部动作完整，紧凑窗口设置自动收起且字幕、画布、场景轨道完整，无重叠或横向溢出。
+
+# HTML 动画场景编辑与播放发现
+
+## 2026-08-09
+
+- 用户截图显示当前为桌面创作工具：中央 9:16 预览、右侧 5 个场景、底部播放工具栏，上方另有折叠的“字幕、镜头与转场设置”。
+- 当前交互割裂：场景画面和场景卡片可见，但版式、前景、标题、提示词没有紧邻当前画面，用户无法确认编辑项究竟属于哪个场景。
+- 版式选择字号过小，需要在不改变现有深色设计语言的前提下提高可读性、选中态和点击目标稳定性。
+- 用户报告播放异常，并指出背景已出现而前景未出现；必须分别追踪播放器状态协议、HTML 合成输入、素材 URL/层级/透明度和预览副本。
+- 仓库已有 StoryBound 提示词审计和 JSON 转储，可作为生成提示词修订证据，无需猜测外部实现。
+- `ui-ux-pro-max` 将本轮归类为现有桌面生产工具的工作流修复；交互合同要求当前场景选择同步中央预览与对应检查器内容。
+- 项目是 React 19 + Electron 41 + TypeScript，已有 `lucide-react` 和独立 HTML 动画样式文件，不应引入新组件库或视觉语言。
+- 核心 UI 位于 `src/features/html-video/HtmlVideoStoryboundPanels.tsx`，页面/状态分别涉及 `HtmlVideoPage.tsx`、`HtmlVideoAuthoringWorkspace.tsx`；生成与合成涉及 `src/shared/html-video*.ts` 和 `electron/html-video-*.ts`。
+- UI 数据库明确把“只高亮场景但不揭示对应编辑控件”列为 Critical；建议以稳定场景 ID 同步选中态与检查器，并且鼠标选择不抢夺文本输入焦点。
+- 产品匹配桌面创作工具的三分区工作台模式，应使用中性表面、语义状态色和克制强调色；不适合做独立营销式或卡片堆叠式重设计。
+- `HtmlVideoStoryboundPreviewPanel` 目前把当前场景存为组件内 `active` 数组索引，中央预览和右侧场景条由它驱动；版式弹窗、前景/标题显隐按钮位于场景条底部的迷你操作区。
+- 场景标题正文在“文案”标签页的 `SceneTextEditor`，背景/前景及各自提示词在“素材”标签页的 `SceneAssets`/`AssetCard`；动画预览页没有当前场景的完整编辑上下文。
+- 播放器已有 iframe 消息协议、运行时就绪标志、待发命令、进度引用、转场锁、watchdog 和连播引用，播放异常需按这套状态机逐段验证，不能另造第二套播放器。
+- 前景开关支持场景级 `foregroundHidden` 和元素级隐藏；预览 srcDoc 会重写背景、缩略图和 composition element 的资源路径，下一步需验证 HTML 输出中的前景节点和替换输入是否一致。
+- 现有界面结构确认：预览工作台后才渲染 `InlineActionFeedback` 和全屏版式弹窗；当前画面下没有逐场景设置容器，右侧只用 12px 图标和短标签操作。
+- `requestPlayback` 把命令写入 `pendingCommand` 并启动 1.8 秒 watchdog；watchdog 仅以 `progressRef <= 0.0005` 判定失败，未记录命令发出时的基准进度，可能误判非零进度或结尾状态。
+- 场景切换先设置待发 `restart` 再更换 iframe；运行时 `ready` 时才消费命令。快速操作、拖动后播放和结尾再播放需要针对协议测试。
+- HTML 合成确实会把未隐藏前景生成 `<img class="scene-foreground">`，默认 `z-index: 2`，高于背景与遮罩；前景动画也会进入 GSAP 时间线，因此缺失更可能在资产映射、HTML 预览资源替换、透明度/版式或运行时加载，而非完全没写前景节点。
+- 资产校验只要求“场景至少有一张前景”，而场景规划可包含多个元素；需要检查资产按 slot 的完备性和 composition 的 `elements` 是否与实际资产对应。
+- iframe runtime 用 33ms 定时器推进 GSAP `seek`，`hvruntime: playing` 只是启动确认，父页面直到收到“进度向前”的 `hvtick` 才将 UI 标为播放。
+- 多数版式的前景入场从 0.18-0.8 秒开始，GSAP `fromTo` 会让前景在 0 秒代表帧处为透明；现有静止海报只补了字幕，没有补前景，因此默认/暂停首帧可能表现为“背景有了、前景没出现”，即便前景节点和素材都存在。
+- `prepareCompositionSrcDoc` 会遍历 source 中所有 `[src]`，以 `data.assets`/`data.voices` 的路径别名替换为 renderer 可用 URL；未匹配项相对 composition 源地址解析。
+- 确定的播放 bug：时间线结束后父层按钮恢复为“播放”，`play()` 仍发送 `hvplay`；runtime 对已在终点的 `tl.play()` 不会回到 0，进度也不会前进。watchdog 又只在进度接近 0 时才报错，因此这个无响应会被静默吞掉。
+- runtime 的 `hvrestart` 会明确 `seek(0).play()`，因此父层在 `progress >= 0.995` 时应发送 restart；watchdog 应记录命令基准进度或以收到 playing/tick 的确认序号判断启动。
+- 旧的 2026-06-24 StoryBound 审计没有覆盖到 HTML 动画生成 prompt，但用户明确确认当前 `E:\Storybound` 存在该能力；撤销“没有独立 HTML 动画步骤”的结论，必须重新对当前安装版本做只读逆向。
+- StoryBound 的相关通用约束包括：从当前字幕提取具体动作/主体、明确环境与构图、避免元描述空话、保持跨分镜一致、禁止画面可读文字污染，并要求严格结构化输出。
+- 当前 `buildHtmlVideoPlanningSystemPrompt` 已要求 LLM 输出标题、字幕、版式、背景 prompt 和前景 elements，并用 JSON Schema + 二次合同校验保证素材槽数量；但它对“叙事意图 → 版式选择 → 背景/前景分工”的决策规则仍较粗。
+- 现有修复器会在 LLM 选择的版式槽位数不匹配时，直接改成第一个槽数相同的版式；这保证合同却可能牺牲语义版式，提示词需先降低不匹配概率并要求逐场景自检。
+- 旧 prompt dump 只检出绘图语境中的“前景/动画”，这只能说明旧转储不完整或范围不符，不能用于否定当前版本的 HTML 动画 prompt。
+- 仓库 `.reverse/storybound-1.17-assets/HtmlVideoPage-1jcx2WCs.pretty.js` 已明确存在新版 HTML 视频页面拆包结果，用户纠正成立；逆向目标切换到 1.17 chunk 及其依赖。
+- StoryBound 1.17 HTML chunk 内嵌 GSAP 3.15.0，并由 `zn(...)`/`Ws(...)` 生成完整场景 HTML；场景包含背景、0-4 个前景槽、标题、逐句字幕和时间线动画。
+- 已定位 `Hs(copy, ratio, maxScenes, foreground)` 为 HTML 动画“场景规划” system prompt 构造器；它输出 `videoTitle/frameMainTitle/frameSubTitle/scenes[]`，场景字段含 `sceneTemplate/title/captions/background/elements`。
+- StoryBound prompt 明确规定：旁白原文逐句切分、背景只写环境与情绪、前景严格匹配版式槽位、提示词不含风格词/透明背景说明、场景版式多样，并给出 JSON-only 输出合同。
+- 1.17 还存在独立“AI 补充一个不重复前景主体”的 prompt，要求 10-20 字、只写人物/物件/动作、无风格词和透明背景说明。
+- `Ys()` 的真实调用参数为 `system=Hs(...)`、`user=规范化直引号后的完整文案`、`temperature=0.6`、`maxTokens=min(24000, 2500 + maxScenes*700)`、`maxRetries=4`，再以 Zod schema 解析并重新连续编号。
+- StoryBound schema 比本项目多 `videoTitle/frameMainTitle/frameSubTitle` 与逐场景 `emphasis: none|circle|sparkle`；prompt 要求强调场景不超过全片 1/3。
+- StoryBound 1.17 预览 `To` 组件的版式选择、前景/标题显隐仍放在右侧场景缩略卡中，相关 `.hv-thumb-tmpl/.hv-fg-toggle` 字号只有 9.5px；用户指出的可读性与交互问题源于参考实现本身，不能继续照搬。
+- `To` 的播放逻辑同样在终点再次点击普通播放时只发 `hvplay`，没有自动 restart；本项目已定位的终点播放 bug与参考实现一致，需要主动修正。
+- 用户明确要求的目标交互高于参考实现：当前画面下方集中提供版式、前景、标题、提示词，右侧场景条只负责选场景与概览。
+- 版式库共有 25 种、素材槽数为 0-4；当前弹窗把所有版式平铺且不兼容项禁用。更合适的场景内选择器应优先只展示与当前前景数量兼容的版式，并用较大标签、说明和当前场景画面/素材预览表达效果。
+- 当前 HTML 规划 prompt 已写“不要把前景主体重复画进背景”，但缺少按版式明确构图留白、主体动作/朝向/完整轮廓、跨场景主体一致性以及输出前逐场景核对槽数与语义的步骤。
+- CSS 末尾有效覆盖把预览工作台定为中央画布 + 190-224px 场景条，中央列只有一行；新增画面下编辑器需要重新分配中央列的稳定高度并兼顾 920x720 紧凑窗口。
+- 旧检查器样式使用 8-10px 标签和 9-10px 控件，确实低于桌面创作工具的可读水平；本轮目标至少提升主要选择/标签至 12-14px，并保留紧凑密度。
+- 续接后的真实 Electron 失败只发生在“连播全部”切到下一场景之后；首个场景的单独播放已能前进并显示字幕，故不能把问题归因于所有 iframe 播放命令失效。
+- `changeScene()` 切场时没有重置父层 `progress/progressRef`，新场景最早的 tick 会先与旧场景 100% 基准比较；虽然后续 tick 理应恢复，但该状态会制造错误的启动判定和 UI 瞬时不一致。
+- 新场景 `ready` 分支会把转场从 `running=false` 改为 `true`，而消息监听 effect 依赖整个 `transitionFrame`，因此 ready 期间会重建 window message 监听；第一批同步 tick/playing 存在落入监听空窗的可能。
+- iframe 的 `startPlaybackTicker()` 在创建 33ms interval 后会同步调用一次 `tickPlaybackClock()`；若 iframe 自身逻辑正常，`window.__tl.time()` 应立即至少为 `1/30` 秒。实机仍为 0，必须用直接命令和内部时钟诊断区分父层漏消息与 iframe seek 未生效。
+- 失败分支直接向同一 iframe 发送 seek/restart 后，120ms 采样仍为 0，但约 620ms 后时间线推进到 `0.667s`、字幕与镜头动画同步变化；iframe 不是永久损坏，重发 restart 可以恢复。
+- 现有父层看门狗在任意一次大于 `0.0005` 的 tick 后就调用 `acknowledgePlayback()` 并永久撤销。连播场景可能曾短暂推进一个 tick 后再次归零，因此 5 秒后仍保持 `playing` 且看门狗不再介入；启动确认需要相对本次请求基准达到稳定阈值，切场必须把基准和显示进度归零。
+- effects-only 在开始播放前明确等待并通过 `previewForegroundVisible=true`；失败终态的前景海报因播放态被隐藏，不能据此判定前景修复失败。后续仍需截图检查初始帧和前景页签。
+- 用户原图显示旧界面只有画布、播放控制和右侧场景卡底部的小号版式/前景/标题动作，确实缺少画面下方的一一对应设置区。
+- 新版模板证据图中，1320x860 的四页签编辑区紧邻画布下方，13px 页签与版式卡标题清楚；920x720 中画布、编辑区和场景横轨均可见，没有互相覆盖。
+- 但上述模板证据图的顶部设置为折叠态；effects-only 会展开“字幕、镜头与转场设置”。桌面 `.hv-preview-workspace` 当前强制 `overflow: hidden`，展开后 workbench 的画布+编辑器最小高度可能超过剩余网格高度，底部不可达是实际滚动所有权问题而非只需放宽 QA 数值。
+- 第三轮消息追踪显示同一 iframe 持续回传交替序列：正常 GSAP/native 或 `hv*` 时钟推进到 `0.016/0.033/0.066...`，另一驱动紧接着回传 `0`；直接 restart 后仍出现相同交替，证明不是父层命令丢失。
+- composition HTML 同时加载 `gsap.min.js`、`hyperframe.runtime.gsap.iife.js` 和自有 `hv*` 播放时钟；HyperFrames runtime 会发现 `window.__timelines` 并通过 GSAP adapter seek/pause，同一 plain iframe 中两套控制器争用 timeline。
+- 可视编排与最终逐帧渲染必须保留 HyperFrames runtime；动画预览使用 plain iframe 和自有协议。因此正确边界是在 `prepareCompositionSrcDoc()` 创建的编辑器副本中移除 HyperFrames runtime script，原始/导出 composition 不变。
+- 最终 effects 桌面图在顶部设置展开时显示右侧单一纵向滚动条，画布完整、前景人物可见，画布下编辑器页签仍紧邻播放区；紧凑图同样没有场景轨道覆盖编辑器，向下滚动即可访问内容。
+- 两种窗口的页签标签均未截断，版式为 13px 明确选中态；下一步需让 QA 逐一切换前景、标题、提示词并核对真实输入/状态，而不是只依赖页签文本存在。
+- 用户否决最终 effects 截图的页面层级，判断成立：顶部全局设置、画布、当前场景编辑器正文和右侧场景列表同时展开，滚动可达不等于布局合理；顶部设置被滚动裁成半截尤其不可接受。
+- 新交互合同：顶部字幕/镜头/转场设置与当前场景编辑器正文互斥；全局设置展开时保留画布和四页签栏用于切换，隐藏场景编辑正文；点击任一场景页签、播放、切场或保存动效后收起全局设置并恢复正文。
+- 互斥修正版 Electron 原图确认：全局设置展开态不再出现被滚动切半的编辑器正文，设置表单、画布和右侧场景列表形成三段清晰层级；保存动效后的默认桌面恢复画布上、当前场景编辑器下、场景列表右的稳定布局。
+- 920x720 默认态中画布与四页签栏完整可见，下方内容由单一工作区滚动继续访问，无相互覆盖；这是桌面工具的紧凑布局，不再同时展开全局设置和场景正文。
 
 ---
 
@@ -1073,5 +1230,395 @@
 - 双窗口 Electron 结果证明该分层合同成立：父层字幕完整可见且在画布内，而 iframe 内字幕容器仍为 `opacity: 0`、时间线仍为 `0`，因此编辑器静止态可读性与最终动画语义已经解耦。
 - 原图人工检查确认桌面和紧凑窗口均完整显示竖屏画布的顶边、底边和底部字幕，时间轴、场景条、检查器没有遮挡字幕或裁掉画布。
 - 最终源码复核确认海报字幕和输出 HTML 都以同一 `captionYOverride ?? template.captionY` 语义定位，并共享 `resolveHtmlVideoCaptionStyle` 颜色；`src/shared/html-video.ts` 没有修改，成片动画继续使用原时间线。
+
+---
+
+# 草稿模板实际图片拖动与双向缩放发现
+
+## 2026-08-09
+
+- 用户原始截图中已选择“实际图片”，但画布只看到展示框的虚线边界与控制点，没有可辨识的图片变换边界，且直接拖动画面无效。
+- 右侧“图片缩放”滑杆停在最左端，数值为 `1`；上一轮实现文档也明确把 `mediaScale` 限制为 `1..8`，与用户要求的可缩小行为冲突。
+- 本轮属于高密度桌面内容生产工具的窄 UI 修复，应保留现有画布、检查器和双对象模型，仅调整实际图片的命中/拖动合同及缩放范围。
+- 缩小仍须遵守“不露出展示框”的视觉约束；最终下限需从现有几何计算确认，不能简单把滑杆最小值改成更小而忽略画布覆盖关系。
+- 用户进一步明确实际图片不只需要整体拖动，还必须支持四角与四边共 8 个控制点缩放；边缘控制点也应执行等比缩放，而不是单轴拉伸图片。
+- 源码已渲染 `nw/n/ne/e/se/s/sw/w` 8 个控制点，且角点与边点均调用等比 `resizeDraftImageMedia`；失败来自几何和命中合同，而非缺少按钮。
+- `draftImageMediaRect`、`resizeDraftImageMedia`、`updateDraftImageMediaScale` 与 `applyDraftImageMediaRect` 均把比例下限钳制为 `1`；模板 Zod 合同、模板归一化及剪映 Python 桥接同样写死 `1..8`。
+- 当前图片位置由 `max(0, mediaSize - frameSize)` 的溢出量映射 `focusX/focusY`；图片缩到展示框以内时溢出量归零，拖动坐标必然丢失。需要让位置映射使用有符号的尺寸差，使放大裁切与缩小留白都能用同一 `focusX/focusY` 表达。
+- 展示框和实际图片各有覆盖整个矩形的透明命中层；重叠区域中非当前对象仍可截获指针。当前编辑对象应拥有内部拖动命中，非当前对象只保留可辨识边界/显式切换路径。
+- 用户明确要求缩小，优先级高于上一轮“不露出展示框”的实现假设；缩小后展示框允许显示模板底色或背景。
+- 最终范围选择 `0.1..8`：`1` 保持历史模板的默认裁切填满比例，`0.1` 为可恢复的编辑下限；旧模板缺失字段仍回退到 `1`。
+- 放大和缩小统一使用 `mediaSize - frameSize` 的有符号差值映射焦点：正值表示裁切溢出，负值表示展示框内留白，因此同一 `focusX/focusY` 可以保存两种状态的位置。
+- 控制点仍属于实际变换框，但其命中中心会投影到画布 `2.5%..97.5%` 的可见范围；实际图片超出画布时仍可从四角/四边缩放，不需要放开输出画布的裁切边界。
+
+---
+
+# 对标监控与选品助手设计发现
+
+## 2026-08-09
+
+- 用户提供的 Storybound 截图采用稳定三栏工作区：全局侧栏、监控账号栏、内容结果主栏；顶部固定平台切换、单视频解析和添加账号。
+- 截图中的核心任务是从账号池扫描视频，按互动指标筛选排序，批量选择后提取文案或进入创作；列表项同时显示封面、标题、日期、赞/转发/喜欢/评论和快捷动作。
+- StoryDream 已是高密度中文桌面生产工具，本轮属于现有产品中的新功能设计，应复用现有导航、深色主题、紧凑控件和任务状态模型，不另起营销式视觉语言。
+- `ui-ux-pro-max` 的工作流合同要求将“选择对标账号/作品”视为权威状态变化，并同步列表、详情和进入选品/创作的上下文；后台刷新不得抢焦点或强制滚动。
+- 仓库已有未提交用户改动和其他在途任务；本轮必须使用独立文档与资源文件，避免改写现有功能代码或完成状态。
+- 原始参考图分辨率为 1254×813，主内容密度较高；平台切换只展示“视频号 / 抖音（即将）”，说明本轮的抖音、视频号、B 站三平台能力必须在信息架构上正式建模，而不是只换标签。
+- 项目技术栈是 React 19 + Electron 41 + TypeScript + sql.js，已使用 `lucide-react`，设计应直接复用现有图标、桌面窗体和本地持久化能力。
+- 现有路由已经包含 `book-selection`（选品助手）与 `benchmark`（对标导入）；旧设计明确把对标页限制为本地粘贴链接/文案，不连接 Storybound 的私有 feed API。
+- 因此本轮建议按“升级既有页面”设计：`benchmark` 升级为对标监控工作台，`book-selection` 升级为选题/选品决策台，两者共享候选内容与商品/选题资料，不新增重复侧栏入口。
+- 现有 Storybound 移植文档已经支持把 `productInfo` 从选品助手带到对标导入或新建任务，这可以作为新闭环的最低兼容合同。
+- 当前侧栏 `production` 分组顺序为任务队列、历史任务、选品助手、对标导入、人物素材库；对标页的副标题仍是“导入对标文案，本地二改后直接创建带货任务”，命名和功能都需要升级。
+- 应保留现有 `ShellView` 的 `benchmark` 与 `book-selection` 稳定 ID，仅修改呈现和内部子视图，避免破坏路由、主题偏好和懒加载合同。
+- `BookSelectionPage` 当前已经支持选择记录、编辑、删除、带入新建任务、去对标导入；数据字段包括主题、名称、作者、分类、关键词、价格、目标人群、人物、年代/场景、链接、核心卖点和备注。
+- 选品页现有权威选择由 `selectedIdentity={theme, bookId}` 表达，升级后应继续用稳定记录 ID 驱动详情、证据和动作，不能按名称匹配。
+- 产品使用 236px 宽侧栏，1120px 以下收为 68px 图标轨；主题令牌为中性深色表面、珊瑚红主操作、蓝/琥珀数据辅助色和绿色成功色，概念设计应复用而非照搬 Storybound 的绿色主色。
+- 当前页面头部默认高 86px并承载标题、副标题、全局通知、保存状态和主题切换；新增工作台局部工具栏应位于页面正文，不与全局页头抢占层级。
+- 本地 UI 数据库对桌面生产工具的匹配是“三栏工作区 + 上下文检查器 + 中性表面/语义状态/克制品牌色”，与现有外壳一致。
+- 列表选择必须保留 pointer/keyboard/programmatic 来源；鼠标选择更新详情但不抢输入焦点，键盘选择才按可访问性需要移动焦点，后台刷新不能触发自动滚动。
+- 异常表现适合用带异常点的短趋势线；所有图形必须同时显示数值、相对基线和原因标签。对单项作品使用小型趋势线/倍率比大仪表盘更高效。
+- 选品多维评价需要精确比较，数据库也提示雷达图不适合精读；方案应使用可排序评分列、加权总分和证据详情，必要时再提供分组条形对比。
+- `BenchmarkImportPage` 当前只有来源链接、标题、关键词、产品信息和文案 textarea，真正创建任务时来源链接并未持久化；升级需要正式的账号、作品、快照和来源证据模型。
+- 现有“爆款拆解”已经支持抖音、快手、B 站链接，并具备下载、抽帧、转写、结构拆解、复刻和生成任务能力；对标监控应复用它作为单作品深度处理，而不是复制同一套解析 UI。
+- 当前爆款平台枚举不包含视频号；视频号适配必须作为新增能力设计，并有“需登录 / 解析受限 / 手工补录”状态，不应隐藏失败或沿用快手标识。
+- 最新 Electron 实机截图显示外壳和内容区已稳定使用无装饰深色工作台、细分隔线、4–6px 圆角、紧凑标题和珊瑚红选中/主操作；概念图应把 Storybound 只当作结构参考，不复制其绿色品牌色。
+- 用户提出的“三个链接”适合建模为一个“跨平台对标组”：抖音主页链接、视频号主页/可识别作品入口、B 站空间链接分别保存、分别验证、分别显示同步状态；同一组内允许某平台暂缺，但 UI 永远明确三种平台位置。
+- 单作品链接与账号主页链接应分开：前者进入现有“爆款拆解”，后者建立长期监控；自动识别失败时必须让用户手动选择链接类型和平台。
+- 对标监控概念图采用全局侧栏、对标组栏、作品列表和作品详情检查器四个稳定区域；三平台状态、爆发趋势、批量动作和候选交接均可在 1536×1024 内完整呈现。
+- 选品助手概念图采用候选表格 + 固定详情检查器，评分使用精确水平条和文字证据，不使用雷达图；证据列表明确标注抖音、视频号、B 站来源。
+- 两张概念图均成功延续 StoryDream 的珊瑚红、深色中性表面、紧凑字号和细分隔线；图像模型少数字形不准确，正式实现必须使用真实 React 文本与组件。
+
+---
+
+# HTML 动画预览缩放状态恢复发现
+
+## 2026-08-11
+
+- 应用内的预览“最大化”使用 `.hv-reference-preview.maxed { position: fixed; }`，但组件只切换布尔状态，没有保存或恢复 `.hv-preview-workspace` 的滚动位置。
+- 当前场景编辑改造使预览子树高度明显增长；最大化切换前后父滚动区的 scroll extent 变化，退出时焦点仍留在重排后的底部按钮，可将工作区停在看似只剩预览/空白的位置。
+- 现有 Electron QA 会点击“最大化”再点击“退出最大化”，但退出后立即返回，没有断言 `maxed` 状态已清理、三栏外壳仍可见或滚动位置已恢复。
+- 新增的 maximize-restore Electron 验收在 1320×860 与 920×720 两种桌面尺寸都证实：进入时为固定视口覆盖，退出后 scrollTop 从 180 精确恢复为 180，焦点回到缩放按钮，参数/画布/流程三区均保持可见，运行时错误为 0。
+- 完整 preview-effects 范围仍会在执行缩放断言前因既有前景素材不可见而失败；本轮保留了该严格断言，通过隔离入口验证缩放修复，没有将无关失败误标为通过。
+
+---
+
+# 对标监控与选品助手实现发现
+
+## 2026-08-09
+
+- 当前工作树已有实时热榜功能在途实现，已修改 `electron/main.ts`、`electron/preload.ts`、`src/app/AppRoutes.tsx`、`src/app/navigation.ts`、`src/app/route-registry.ts`、`src/shared/ipc-contract.ts`、`src/shared/storydream-api.ts`、`src/shared/types.ts` 与相关测试；本轮必须在这些新增内容上集成。
+- 现有 `BookSelectionRecord` 与 `BenchmarkImportPage` 可以作为兼容入口，但前者只有商品资料 JSON，后者没有持久化来源链接、账号、作品或指标快照。
+- 产品模式继续是高密度桌面生产工具；实施必须复用现有 shell、主题令牌、Lucide 图标和本地 sql.js，不引入新组件库或第二套视觉系统。
+- `storage.ts` 通过启动时 `CREATE TABLE IF NOT EXISTS` 进行兼容迁移，现有 `book_selection` 也是独立表；对标组、作品和证据适合用新增表实现，无需破坏旧选品表。
+- 现有爆款平台枚举为抖音、快手、B 站、未知；浏览器和共享检测均不包含视频号，Python 媒体工作器也只实现抖音/快手/B 站。
+- 抖音/B 站媒体工作器已经能从作品页或公开接口获得标题、作者、封面和部分原始元数据，可在后续把完成的拆解结果回填对标作品；它没有账号 feed 扫描能力。
+- 首期真实可用边界应是：三平台账号链接正式保存、作品/指标手工或单链接解析导入、爆发分/证据/选品工作流完整；账号自动同步由显式连接器状态表示，不得显示伪造完成时间或演示作品。
+- 新增数据合同采用 `benchmark_groups(id,data,updated_at)` 和 `benchmark_posts(id,group_id,data,updated_at)`；账号随组 JSON 保存、指标快照随作品 JSON 保存，便于后续连接器写入且保持删除级联简单可靠。
+- 旧选品表继续保存 `BookProductInfo` JSON，新增状态、机会评分、证据、决策/风险备注和创作简报字段不会要求 SQL 迁移，也不会破坏旧记录。
+- 爆发分在无指标时返回 `null` 而不是 0；有数据时提供账号百分位、增长速度、深互动、主题热度和跨平台信号分项，并按样本/快照数量降低置信度。
+- 当前实现进度已超过单纯设计：`BenchmarkImportPage`、`benchmark-monitoring.ts`、两张数据表、浏览器回退、preload/main IPC 和聚焦测试均存在；后续不能重新起一套页面或接口，应以现有实现为基线做缺口审阅。
+- `book-selection` 页面文件本身尚未出现在本轮修改列表中，虽然 `BookProductInfo` 类型已扩展机会评分与证据字段；选品 UI 很可能仍是旧资料表，这是当前最主要的功能缺口。
+- 进一步源码核对确认 `BookSelectionPage` 完全仍是旧版两栏资料表，只读写基础商品字段；新增的 `selectionStatus`、`opportunityScore`、`evidence`、风险和创作简报均未进入 UI。
+- `BenchmarkImportPage` 已具备三链接对标组、作品手工导入、指标快照、筛选、多选、加入候选、详情备注、爆款拆解与创建任务逻辑，但新 JSX 使用的 `benchmark-group-rail`、`benchmark-results-panel`、`benchmark-inspector`、列表行和弹窗类没有对应样式。
+- 旧 `.benchmark-import-layout` 仍是 320px + 主区两栏网格；当前 JSX 实际有三块顶级区域，若不补 CSS，详情检查器会换行或挤压，无法达到稳定三栏状态合同。
+- 对标页“深度拆解”写入 `benchmark_viral_url` / `benchmark_viral_platform` 后跳转 `viral-analyzer`，但 `ViralAnalyzerPage` 当前没有读取这两个 session key，交接实际未完成。
+- `BookProductInfo` 已兼容持久化 `selectionStatus`、五维 `opportunityScore`、`evidence`、`decisionNote`、`riskNote` 和 `creativeBrief`；选品升级可以继续复用现有 `book_selection` JSON 表和 IPC，无需新增表。
+- 选品证据带稳定 `postId`，可以通过写入 `benchmark_focus_post` 后导航回 `benchmark`，让证据列表与对标详情形成可逆上下文。
+
+
+
+---
+
+# HTML 动画场景编辑器最终视觉复核
+
+## 2026-08-09
+
+- 用户否决的旧截图中，顶部设置、画布、场景列表和播放工具栏同时占据首屏，设置区域只露出标题行，确实属于信息层级冲突，不是单纯的滚动问题。
+- 最新 1320x860 默认态已稳定为三个工作区：中央画布、画布下方当前场景编辑器、右侧场景列表；没有嵌套卡片堆叠、控件遮挡或横向溢出。
+- 全局“字幕、镜头与转场设置”与下方场景编辑正文采用互斥展开；设置展开时完整占据画布上方工作区，收起后恢复场景编辑，避免两个属性面板同时争抢高度。
+- 920x720 紧凑窗口保留同一信息架构，右侧主工作区承担纵向滚动；画布、播放栏和场景编辑页签均可见，场景编辑正文位于其后续滚动位置，没有改造成不适合桌面工具的移动端堆叠。
+- 产品模式为高密度桌面内容生产工具；当前选择的场景 ID 仍是画布、场景列表、版式、前景、标题和提示词的共同权威状态。
+- `effects-foreground.png` 中前景缩略图、显示状态、单项/全部显隐动作均完整，并且前景首帧真实出现在中央画布内；`effects-title.png` 和 `effects-prompt.png` 的输入、保存动作及双提示词列也都在固定编辑区内完整呈现。
+- 六张最新原始截图未发现控件重叠、文字裁切、嵌套卡片、异常空白或场景选择不同步；无需再引入新的设计系统或数据库样式建议。
+
+---
+
+# 实时热榜来源评估
+
+## 2026-08-09
+
+- `UAPI / 全网热榜` 提供无需登录的 JSON 接口 `https://uapis.cn/api/v1/misc/hotboard?type=...`，实测微博、抖音、知乎、B 站、头条、小红书、澎湃和百度均能返回排名、标题、链接、热度与更新时间，适合作为主数据源。
+- `Techmeme` 当前可访问且有稳定公开 RSS，适合作为科技与 AI 的补充源；英文标题应保留原文，不在抓取层自动改写。
+- `AnyKnew` 当前可访问，覆盖面适合作为人工交叉核验，但首页是前端应用且未确认稳定公开接口，不纳入自动抓取。
+- `今日热榜 tophub.today` 本机核验返回 503；内容覆盖合适但直连稳定性不足，归为备用核验。
+- `NewsNow` 本机核验返回 403；聚合逻辑合适但不应绕过访问控制，归为备用核验。
+- `SoPilot` 页面可访问，但聚焦 X 单平台、核心数据依赖登录/动态请求，和中文综合选题覆盖不匹配，暂不直连。
+- `全站热榜 rebang.today` 与 `即时热点 nowhots.com` 当前可访问，但未确认公开稳定 JSON/RSS，保留为人工核验入口。
+- `TL1 tl1.com` 与 `糖果梦 tameng.com` 本机当前无法获得有效响应，不作为生产数据源。
+- 产品是高密度 Electron 内容生产工具；新页面应复用现有侧栏、页面头、设计令牌和 lucide 图标，采用稳定的列表 + 来源侧栏工作区，不新增营销式大卡片或独立视觉语言。
+- 热榜需要有完整的加载、部分成功、失败、空结果、手动刷新和定时刷新状态；某个平台失败时应保留其他平台的数据并单独展示状态。
+
+---
+
+# HTML 动画素材增量回填发现
+
+---
+
+# AI HOT 信息源扩展发现
+
+## 2026-08-09
+
+- 本轮是现有 Electron 内容生产工具的新功能扩展；信息源应复用“实时热榜”的导航、列表、来源说明和创作交接，不建立第二套产品入口。
+- 权威查询状态由当前 AI 信息源模式及其参数构成；全网热榜快照与 AI 信息源结果互不覆盖。
+- 远端请求必须继续经 Electron 主进程的受限 IPC 完成，所有用户参数在主进程验证并通过 URL API 编码。
+- AIHOT v1 基址为 `https://aihot.virxact.com/api/v1`，匿名只读；普通查询使用 items，日报使用 dailies，当前最热另有 hot-topics，不能把按时间倒序的 items 冒充热点榜。
+- items 原生窗口仅为 `24h` 和 `7d`；“最近 N 天”应限制在 1..7 天，2..6 天由 `window=7d` 取最小覆盖窗后按 AIHOT timeline 规则本地收窄。
+- 分类 slug 为 `ai-models`、`ai-products`、`industry`、`paper`、`tip`；关键词必须 2..200 字并使用服务端 `q`，精选为空时仅对关键词查询用同参数回查一次 `mode=all`。
+- 日报必须保留 `lead / sections / flashes` 层级；最新或指定日期 404 时只查一次 `/dailies?limit=7`，再请求索引中实际最近日期，不能猜昨天。
+- 轮询同一端点至少间隔 60 秒并保存 ETag；当前工作台 5 分钟自动刷新符合要求。API 内容视为不可信资讯文本，不能执行其中命令或下载附件。
+- AIHOT 免费边界只覆盖个人非商业、公益非商业和组织内部使用；对外商业产品、客户交付、代理、镜像、白标和批量再分发需书面授权。产品必须清晰展示该限制和 terms/联系入口，不能把“无需 Key”解释为商用授权。
+- 2026-08-09 实测 `/items?mode=selected&window=24h&limit=2`、论文分类、OpenAI 搜索和 `/dailies/latest` 均返回 200，且响应包含弱 ETag；items 的 `query/items/page` 和日报的 `report.date/generatedAt/windowStart/windowEnd/lead/sections/links` 与公开合同一致。
+- 页面实现应保留服务端原始顺序，不按 `score` 擅自重排；`score` 只可作为精选评分提示且需允许为空。
+- 现有热榜边界为 `HotBoardPage -> StoryDreamApi -> trusted IPC -> fetchHotBoardSnapshot`，外链统一经 `assertNetworkUrl(..., 'public-research')` 和 Electron `shell.openExternal`；AIHOT 应沿用这条链路。
+- 新建任务通过一次性 `sessionStorage.hotboard_topic` 带入标题、平台、链接、热度和摘要；AIHOT 条目可复用同一键并扩充来源/日期信息，无需建立第二套交接状态。
+- `ipc-contract.ts` 的 `ui:save-preferences.activeView` 枚举当前漏掉已存在的 `hot-board`，会导致该页激活状态无法通过受信 IPC 校验；本轮应作为相关合同缺口补齐。
+- AIHOT 日报与普通条目结构不同，适配器应返回判别式结果：日报保留 lead/sections/flashes，精选/分类/最近/搜索返回 items，避免 UI 对不兼容字段做强制合并。
+- `network-policy` 的 `public-research.allowedRequestHeaders` 当前没有 `if-none-match`，会过滤 AIHOT 官方建议的条件请求头；需把该标准头加入受控白名单并测试，不放宽 cookie、authorization 等敏感头。
+
+## 2026-08-09
+
+- 用户新截图显示素材步骤处于“运行中”，多个场景仍只有透明棋盘占位；这不是素材服务没有返回，而是 UI 只能消费完整资产数组。
+- `adaptHtmlVideoAssetGenerator` 当前先收集全部背景和前景请求，再一次性返回 `HtmlVideoAsset[]`；`validateHtmlVideoAssets` 也要求资产数量等于完整期望集合，因此生成期间没有可持久化的部分结果。
+- 正确合同应保留资产稳定键 `sceneIndex + kind + slot`，允许运行态保存已完成的部分资产；只有步骤完成时才执行完整集合校验，失败或取消时保留已生成素材并展示状态。
+- 画面层已经按场景和素材类型渲染卡片，增量改动应优先接入现有管线状态与 IPC，不新增独立缓存或第二套素材模型。
+- `runHtmlVideoPipeline` 目前只在素材步骤开始与结束持久化 checkpoint，`executeStep('assets')` 直到完整生成结果返回才赋值 `state.assets`；因此单改 React 卡片不能实现逐张显示。
+- 增量事件必须从实际图片生成完成点上报到 runner，由 runner 按稳定键合并到 `state.assets` 并调用现有 `persistCheckpoint`，这样数据库任务状态与页面现有刷新机制能自然接收同一份权威状态。
+- 配置的 OpenAI-compatible 与即梦图片生成器面对数组输入时内部也是逐场景循环；HTML 适配器可以改为单素材调用并使用已有 `imageConcurrency` 建立受控 worker 队列，每个文件写盘后即可回调，不会丢失并发配置。
+- 多张图片可能同时完成，增量 checkpoint 必须通过单一 Promise 链串行化；否则旧快照的数据库更新可能晚于新快照完成，造成 UI 短暂回退或覆盖。
+- V2 管线解析应仅在 `steps.assets.status === 'completed'` 时要求完整资产集合；`running/failed/cancelled` 可接受无重复、键合法的部分集合。最终 `validateAssets` 继续使用严格完整校验，防止下游配音、预览或出片消费残缺素材。
+- `buildHtmlAssetRequests` 已为所有背景和前景分配跨场景唯一的 `syntheticId`，同时保留真实 `sceneIndex/kind/slot`；可直接用于单请求 Provider 文件命名和回填定位。
+- Electron 的 `onCheckpoint` 会更新数据库并立即 `publishTaskUpsert`，页面已订阅 `onAppDelta`；增量 checkpoint 不需要新增 IPC 或轮询接口。
+- 现有 `qa-html-video-ui.mjs` 已能以隔离用户目录启动真实生产 Electron、写入真实任务数据库、提供本地媒体并保存桌面/紧凑截图；新增独立 `asset-progress` 分支即可验证部分素材快照的真实渲染，无需引入新的 QA 框架。
+- QA 将先生成包含两场景、背景和前景的完整本地媒体，再把数据库主任务转换为 `assets: running` 且只保留第一张的部分快照；任务状态设为暂停，避免启动时自动调用 Provider，同时保留与真实增量 checkpoint 相同的管线数据形状。
+- Electron `asset-progress` 实机结果在 1320x860 和 920x720 均为：4 个预期素材槽、1 张真实图片已加载、3 个槽显示“正在生成”、标题显示“已生成 1/4 张”，横向溢出和控件裁切为 0，运行时错误为空。
+- 两张原始截图人工复核确认首张背景已真实落卡，未完成前景使用加载图标与状态文字，紧凑窗口仍保持可读层级和单一纵向滚动。
+
+---
+
+# AI 信息源最终验收续接
+
+## 2026-08-09
+
+- 重新查看用户原始截图，确认其中 10 个候选站点依次为 AnyKnew、TL1、今日热榜、NewsNow、SoPilot、全网热榜、全站热榜、糖果梦热榜、即时热点和 Techmeme。
+- 当前实现把这 10 个候选逐项保留在“来源接入评估”，只把已验证的结构化全网热榜接口与 Techmeme 标为首期稳定接入；AIHOT 作为同一路由中的独立 AI 垂类信息源，不会把无法稳定直连的站点冒充为实时数据源。
+- 最终视觉验收按桌面生产工具标准执行：1440x900 与 920x720，检查页签、模式筛选、查询控件、来源栏、空态/错误态、横向溢出和遮挡。
+- 隔离 Edge 实拍已验证 6 个模式均能切换到正确权威状态；日报、精选、全部、分类、最近和搜索所需控件均完整呈现，控件内部溢出为 0。
+- 1440x900 与 920x720 的文档、body 和 AI 信息源根节点横向溢出均为 0；可见控件裁切与视口外元素均为 0。
+- 1440x900 采用结果列表 + 330px 来源栏；920x720 自动转为单栏，812px 来源栏接续在结果区下方。两张原图人工检查未见页签、日期查询、错误态或授权说明重叠。
+- 浏览器预览按安全边界展示“请在 Electron 桌面端使用”的受控错误态；真实匿名 AIHOT 请求已由主进程适配器测试与在线请求验证，不为预览放宽网络权限。
+- 920x720 的实际滚动容器是 `.hot-board-workbench`，可从 `scrollTop=0` 滚到 277；到底后来源栏位于视口 `top=400`、高 301px，全部授权与来源内容完整可见。
+- 最终 AIHOT 六文件回归为 120/120 通过；23 个范围文件严格 UTF-8 解码且不含 U+FFFD，范围内 `git diff --check` 无错误。
+- 扩大到共享库存的 10 文件回归中 8 个文件通过，6 项失败只来自同期对标监控/选品助手对图书与人物资产合同的未同步修改；AIHOT 查询、热榜 UI、IPC、网络策略和路由测试全部通过。
+- 当前全局类型检查错误仅位于 `AppRoutes.tsx`、`BenchmarkImportPage.tsx`、`BookSelectionPage.tsx`；生产构建在 `BenchmarkImportPage.tsx:321` 的 `??`/`||` 混用处停止。上述均不属于本轮 AIHOT 范围。
+
+---
+
+# 热榜工作台问题审计
+
+## 2026-08-09
+
+- 用户反馈“没设计、bug 多”后重新按 `ui-ux-pro-max` 审计：当前页面属于高密度运营/编辑工具，应优先保证扫描、比较、筛选、确认来源和继续创作的连续路径。
+- UX 数据库检索支持“扁平极简 + 高对比状态色 + 数据密度”方向；现有页面的结构基础可复用，但异常态大面积占位、指标栏与来源栏层级重复，不能作为最终视觉方案。
+- 下一步实拍全网热榜实际状态并逐项检查：默认视图、平台滚动、筛选、空态、行操作、来源评估和紧凑窗口的滚动/遮挡。
+
+---
+
+# 对标监控与选品助手实现发现
+
+## 2026-08-09
+
+- 最终产品模式保持为 StoryDream 现有高密度桌面运营工具：对标监控是三栏主从工作台，选品助手是候选表格加右侧检查器，没有引入独立设计系统或营销式页面结构。
+- 抖音、视频号和 B 站账号链接以同一对标组中的三个独立位置保存；真实账号 feed 连接器尚未实现，界面明确显示“手工导入/待接入”，不会伪装实时同步。
+- 作品指标空值以 `{ value: null, reason }` 保存；爆发分只消费有效指标，并同时给出账号内百分位、增长速度、深互动质量和置信度说明。
+- 选品证据使用稳定 `postId`，从选品点击来源会同时恢复正确对标组和作品高亮；平台筛选后检查器只引用当前可见作品，避免主列表与详情不一致。
+- 对标作品进入选品时同时写入证据、机会分草稿和 `shortlisted` 状态；批量操作只有整批成功后才显示成功并清空选择。
+- `book_product_info` 只在进入新建任务时写入，去对标监控只传搜索词，避免未来新任务误消费过期商品资料。
+- 现有爆款拆解只支持抖音、快手和 B 站；对标页复用抖音/B 站入口，视频号明确禁用并解释连接器边界。
+- 视觉 QA 使用真实浏览器预览、本地样本和稳定 viewport：1440×900 与 1080×720 共 4 个场景无横向溢出、分栏重叠或非预期控件裁切；选品证据回跳命中“ 三分钟讲透苏东坡为何一生豁达 ”对应作品。
+
+---
+
+# 热榜视觉重构续接发现
+
+## 2026-08-10
+
+- 产品模式是现有桌面内容生产工具中的高频资讯扫描终端；变更范围是热榜与 AI 信息源的宽范围页面重构，不另建组件库或视觉语言。
+- `ui-ux-pro-max` 本地产品库把最接近的模式归为“实时监测 + 时间线 + 数据密度 + 权威状态”，推荐语义状态绿、故障红、维护/警告琥珀和中性深色表面；这与现有珊瑚红品牌强调色兼容。
+- UX 证据要求空态提供明确解释与可执行下一步，错误使用 `role=alert` 或等价语义，并保证所有按钮和筛选可键盘到达。
+- 当前实现已把热榜状态收敛为 `refreshing / preview / unavailable / partial / ready`，避免浏览器预览、全源失败和筛选无结果互相冒充。
+- AI 信息源切换模式时会清理不兼容结果和旧请求；无效搜索会清空刷新目标，避免刷新旧关键词；浏览器预览来源状态改为“预览受限”。
+- `api-image` 生成的 `.artifacts/hotboard-redesign-concept.png` 只作为布局参考；生产界面继续使用真实代码、现有图标和数据，不引入概念图中的生成文字或装饰图片。
+- 1440×900 全网热榜实拍确认：浏览器说明完整位于页头，信号条、筛选条、榜单表头和右侧来源栏形成稳定层级，按钮无浏览器默认白底。
+- 920×720 实拍确认：页面转为单列滚动，平台筛选、搜索、领域选择、预览空态和来源监测依次排列，无横向溢出或控件重叠。
+- 1440×900 AI 信息源实拍确认：模式栏、日期/查询控件、结果区和 330px 来源栏层级稳定，浏览器受限态没有默认白底按钮或页头遮挡。
+- 920×720 来源栏到底态完整显示“接口已配置 / 预览受限 / 5 分钟 / 无需 Key”及用途授权，状态一致且内容没有裁切。
+- 生产 Electron 实时聚合返回 95 条热榜、5/9 来源可用；警告正确摘要为前两项并显示“另有 2 个来源异常”，五列行、来源健康栏和长英文标题均正常渲染。
+- 实时热榜有数据态自动指标为 0 文档/根横向溢出、0 控件裁切、0 默认白底按钮，样例同时覆盖中文短标题、中文长标题和 Techmeme 英文长标题。
+- Electron AIHOT 真实失败态暴露新缺陷：界面直接显示内部 `STORYDREAM_*_APP_ERROR_V1` 编码串，且结果区出现横向滚动条；必须修复后再验收。
+- renderer 现统一使用 normalizeAppError 与 formatAppErrorMessage 解码 IPC 错误，警告文本允许收缩换行；AIHOT 内部桥接编码和横向溢出均已消失。
+- 最终生产 Electron 实测返回 120 条全网热点、9/9 来源在线和 10 条 AIHOT 数据；两页文档与根节点横向溢出均为 0，控件裁切为 0。
+- 全网热榜和 AIHOT 的行内“去创作”已脱离全局主按钮，统一使用 118px 操作列中的低权重描边动作；人工截图确认单行且无实心珊瑚色重复块。
+
+---
+
+# HTML 动画字幕与渲染一致性初步发现
+
+## 2026-08-10
+
+- 用户截图为 9:16 动画预览、场景 2/8；字幕位于画布底部但字号极小，多条文本在同一基线压叠，肉眼近乎不可读。
+- 同一截图中的标题可见，说明 iframe/画布整体并非空白；问题集中在字幕层的几何、字号、透明度或时间轴状态。
+- 当前 `HtmlVideoCaptionEditor` 只提供字幕预设、动画和颜色，没有区域、字体、字号、行高等控制，无法达到草稿模板字幕编辑能力。
+- 现有场景文本编辑器以 `scene.captions.join('\n')` 编辑字幕数组，但仍需核实 HTML 生成器是否把数组一次性渲染，而非转换成场景内分时 cue。
+- 本轮必须追踪编辑器 iframe `srcDoc`、独立 Electron 预览、逐帧导出/成片三条路径，禁止只修 React 海报层后宣称成片一致。
+- 根因之一是旧 HTML 为所有 `.caption` 添加同一 0 秒动画，导致场景内多条字幕同时叠放；现在逐节点读取 `data-start/data-duration`，结束点立即归零透明度。
+- 根因之二是主预览在真实 iframe 上叠加 React 海报字幕和前景，视觉结果与逐帧导出的 HTML 天然分叉；删除覆盖层后静止态、播放态和成片只剩一个权威渲染器。
+- `buildHtmlVideoCaptionCues()` 使用整数毫秒切分，最后一个 cue 精确落在场景末尾，避免浮点累计造成空帧或重叠。
+- 字幕字号按画布短边归一化，文本框按百分比宽度与区域 Y 定位；横竖屏不再共享固定 9:16 像素值。
+- HyperFrames 源码编辑会直接改变 clip 时间；若不把 DOM cue 写回 pipeline 快照，主预览检查器会显示旧时段。存储层现在保存前解析、排序并验证 cue，重叠则保持文件和修订号不变。
+- 支持的草稿字体链都在场景 HTML 中有显式本地 `@font-face` 声明，官方 HyperFrames lint 不再把系统中文字体判为不可复现字体。
+- 实机证明最终 iframe 在 0.25s 显示“第一条”、0.75s 显示“第二条”，两个时间点可见数都为 1；配置保存、重建预览和最终 render 使用同一 HTML 合同。
+- 并行 Fluent UI 迁移新增生产依赖并改写共享 UI 包装，造成旧 `electron-build` 精确依赖清单和 renderer 类型检查失败；这些错误与字幕文件无调用关系，未在本轮越界修复。
+
+---
+
+# 热榜按日归档与显示问题初步发现
+
+## 2026-08-10
+
+- 用户明确要求当天首次进入刷新并后端保存；同一天后续进入不得再次请求，除非点击“立即刷新”。
+- 用户要求保存日期并查看过往日期，因此历史不能只保存在 React 状态或浏览器 localStorage；Electron 后端需要可迁移的持久化表/记录。
+- 截图中原生分类下拉使用系统白色选项面板，但非选中项文字接近白色，形成严重对比度缺陷。
+- 当前宽度下左侧结果表与右侧来源详情采用固定分栏，右栏内容和操作图标被挤压，长标题/摘要也有截断迹象。
+- 顶部显示“每 5 分钟”与用户的新刷新合同冲突，需改成明确的“今日已更新/尚未归档”和具体时间，不再暗示后台轮询。
+- 产品模式仍是高密度桌面生产工具；本轮保留现有深色设计系统和双视图结构，只调整状态权威、日期工作流和响应式分栏。
+- `HotBoardPage` 首次激活直接执行 `api.fetchHotBoard()`，并在 renderer 内用 5 分钟 `setInterval` 重复抓取。
+- `AiHotSourceView` 同样首次激活直接查精选流，并对最后一次请求做 5 分钟轮询；切换模式还会立即发起网络查询。
+- Electron 的 `hotboard:fetch` 和 `aihot:query` 当前直接调用共享网络函数，没有经过 `FileDatabase`，因此重启应用后所有结果和更新时间都会丢失。
+- 现有 `FileDatabase` 已使用 sql.js 并通过 `CREATE TABLE IF NOT EXISTS` 做无损迁移，适合新增独立快照表，不需要另建 JSON 文件或 renderer 旁路缓存。
+- 存储层已经提供 `enqueueCommit`、`waitForWrites` 和原子文件落盘；新增 `hotboard_snapshots`、`aihot_snapshots` 两表即可复用现有可靠性合同。
+- 热榜适合以 `archive_date` 为唯一键；AIHOT 必须以 `archive_date + 稳定查询键` 为联合键，避免“模型分类”和“OpenAI 搜索”等不同结果互相覆盖。
+- 页面日期将提升为全网热榜与 AI 信息源共享状态；AIHOT 日报直接使用该归档日期，不再保留第二个独立“日报日期”。
+- renderer 只提交 `{ date, forceRefresh }` 或 `{ date, query, forceRefresh }`；后端负责判断缓存命中、当天缺失自动抓取、历史缺失只读空态。
+- 现有 `FileDatabase` 已有针对重启持久化的测试范式，可直接增加“保存后关闭并重新打开仍可读取”的快照回归。
+- 两份功能 CSS 都存在后追加的“Dense editorial trend terminal”覆盖层；主体分栏在宽布局下固定保留约 330px 来源栏。
+- 当前响应式只使用 viewport `@media`，但应用还有全局侧栏，真实内容区可能已很窄而窗口宽度仍大于 980px，导致截图中的双栏继续挤压。
+- 修复应使用工作区 `container-type: inline-size` 与 `@container`，按内容区宽度切换为单列；不能继续追加更大的全局窗口断点。
+- AIHOT 来源链接标题/说明使用 `white-space: nowrap + ellipsis`，会把邮箱、说明和长来源名截掉；应允许安全换行并保持图标列稳定。
+- 所有功能内 `select` 需要显式 `color-scheme: dark`，并为 `option` 设置深色背景和浅色文字，修复 Windows 原生白底弹层不可读。
+- AIHOT 的可用日期是所有查询键的日期并集，不能仅凭“该日期存在任意快照”把当前分类/搜索误标为已保存；当前查询的保存状态必须以 `origin=cache|network` 为准。
+- AI 日报摘要前部虽曾取消截断，但文件后段旧规则重新设置了 `-webkit-line-clamp: 2`；最终规则已移除该覆盖，并同时取消热榜摘要、平台名和候选来源名的省略号截断。
+- 隔离 Electron 数据证实后端缓存合同有效：首次网络抓取后重新进入返回相同 `fetchedAt`，切换到未归档历史日期不会调用实时接口，手动刷新按钮保持只读禁用。
+- 工作区容器宽 822px 时，AIHOT 15 条真实长文本的 `scrollWidth` 与 `clientWidth` 一致，所有非滚动容器的横向溢出检查为 0。
+
+---
+
+# Fluent UI 组件层初步发现
+
+## 2026-08-10
+
+- 当前技术栈为 Electron 41 + React 19 + Vite 8，适合直接采用 Fluent UI React v9，无需迁移 Tauri、Qt 或其他桌面框架。
+- 51 个 TSX 文件中约有 410 个原生按钮、132 个输入框和 67 个下拉框；现有 14 个共享组件没有覆盖最常用的 Button、Input、Select、Tabs、Toolbar、Pane 和 Inspector 契约。
+- `src/styles.css` 与拆分样式合计约 16,593 行；浅色任务工作区与深色 HTML 视频工作台存在控件高度、表面层级、边框和选择态不一致。
+- `src/styles/tokens.css` 已有深浅主题与珊瑚红品牌令牌，应映射为 Fluent UI theme，而不是用默认 Fluent 蓝色覆盖产品身份。
+- `AppShell` 已集中处理窗口控制、导航、最近任务、授权入口、保存状态和主题切换，是首轮迁移的正确边界。
+- `ui-ux-pro-max` 的产品匹配为桌面生产/创作工具：稳定三栏工作区、上下文检查器、中性表面、语义状态色和克制品牌强调色；不采用后台卡片瀑布或装饰性玻璃风格。
+- Fluent UI 组件实现只对 React 可复用；真正跨页面、跨未来框架的资产应是语义令牌、组件契约、页面模板和 `storydream-ui` Skill，而不是直接复制 JSX。
+- npm 当前解析到 `@fluentui/react-components@9.74.5`，peer 范围为 React/ReactDOM `>=16.14 <20`，与项目 React 19.2.6 兼容。
+- FluentProvider 需要读取运行时 `state.ui.theme`，应在 `App` 返回区域包住 `AppShell`，继续由现有 `applyStoredTheme` 负责 document 级主题属性与首屏 reveal；不把 Provider 固定在 `main.tsx`。
+- 现有 shell 静态测试约束窗口按钮、导航顺序、侧栏压缩、最近任务、主题切换和品牌强调色；迁移只能替换组件实现，不能删除这些 DOM 文案、className 与行为入口。
+- Fluent UI 聚合包声明 `main` 为 CommonJS、`module` 为 ESM，并提供条件导出；Node `--input-type=module` 在当前环境命中 `node` 条件后只暴露 default，但 Vite/TypeScript 可按 `module`/`types` 正常使用命名导出。
+- 当前网络访问 OpenAI 官方 `https://developers.openai.com/codex/skills/` 连续返回 403，无法从在线页确认项目目录；结合用户明确要求“项目专用”和 Agent Skills 仓库约定，采用仓库内 `.agents/skills/storydream-ui`，并使用 `skill-creator` 的初始化器与校验器验证。
+
+# 热榜归档上传记录
+
+- 本地提交 `66b9e55` 已创建独立分支 `codex/hotboard-daily-archive`；HTTPS GitHub 推送两次分别返回 connection reset 与 port 443 unreachable，等待外部网络恢复后再上传。
+
+---
+
+# Fluent UI 组件层最终发现
+
+## 2026-08-11
+
+- `StoryDreamProvider` 由运行时 `state.ui.theme` 驱动 FluentProvider，同时保留 document 级主题防闪烁；深浅主题继续映射项目珊瑚红品牌、语义状态和中性表面令牌。
+- `src/ui` 已形成 15 个项目所有的核心组件，功能页后续只依赖 StoryDream 契约；Fluent slots、样式细节与第三方类型留在组件层内部。
+- AppShell 已迁移为 `Button`、`IconButton`、`Toolbar` 和 `Tooltip`，原有窗口控制、拖拽区、导航、预加载、最近任务、忙碌态和主题切换行为保持不变。
+- Fluent Button 的内部 DOM 不能作为项目 CSS 的稳定锚点；新增 `.sd-button__content` slot 后，紧凑侧栏可稳定隐藏文字并保留图标，避免空按钮、竖排文字和升级后 selector 漂移。
+- `SliderField` 的 `valueLabel` 必须显式判断 `undefined`，不能依赖 truthy，否则合法值 `0` 会消失。
+- Fluent UI 进入 renderer 入口后最初触发 500 KB budget；独立 `fluent-ui` vendor chunk 后，入口稳定为 375,270 bytes，Fluent chunk 为 215.61 kB。
+- Fluent/Tabster 会生成 `[data-tabster-dummy]` 焦点哨兵；视觉 QA 必须排除这类框架节点，但仍检查所有真实业务控件的名称、tooltip、对比度、重叠与裁切。
+- 项目 Skill 位于 `.agents/skills/storydream-ui`，用临时隔离 venv 的 PyYAML 运行官方 `quick_validate.py` 后得到 `Skill is valid!`。
+- 最终全库 128 个测试文件、1819 项用例全部通过；类型检查、生产构建和 `git diff --check` 通过，相关中文文件严格 UTF-8 解码无替换字符。
+- 四场景 Electron 主题 smoke 无 console/page/render 错误、无未解析 token、无可访问名称或 tooltip 缺口、无对比度失败和真实交互控件重叠；证据已归档到 `.artifacts/storydream-fluent-ui-system/`。
+
+---
+
+# 浅色主题持续闪屏初步发现
+
+## 2026-08-11
+
+- `App.toggleTheme()` 直接调用 `applyStoredTheme(nextTheme)`，但 `StoryDreamProvider`、主题图标和按钮标签继续读取尚未更新的 `state.ui.theme`；Electron mutation delta 到达前，页面同时存在浅色 document 令牌与深色 Fluent 主题。
+- 设置页另行调用 `changeRuntimeTheme()`，共享壳则绕过该控制器，形成两个主题入口；两者都没有在即时 DOM 预览时同步更新 Provider 的 React 权威状态。
+- `applyState()` 在 Electron 下依赖异步 `app:delta`，不会立即消费 IPC 返回的 theme patch；正常数据一致性成立，但无法保证主题这种全屏视觉状态的同帧一致性。
+- 修复需要 App 级唯一主题动作：乐观更新 React `ui/config` 与 document，持久化成功接收 canonical patch，失败时条件回滚；共享壳和设置页都调用该入口。
+
+---
+
+# 对标同步与热榜正文交接续接发现
+
+## 2026-08-11
+
+- 已恢复上轮实现和测试状态，工作区存在大量用户在途修改，本轮只继续验收对标同步及热榜正文交接相关文件。
+- `HotBoardPage` 与 `AiHotSourceView` 的“去创作”都会先读取来源页内容，再把 `sourceContent`、内容类型和降级警告写入 `hotboard_topic`；标题仅用于任务命名。
+- 新建任务侧已存在 `selectedSources` 交接入口，后续运行态验收必须确认该网页资料默认选中，且浏览器预览明确使用归档摘要、不会伪装成实时正文抓取。
+- 当前 `http://127.0.0.1:5173/` 服务已停止；浏览器 fallback 即使重新启动也固定返回 0 条热榜，因此只能看到空态，无法验收正文展开和创作交接。
+- 浏览器预览应提供明确标注为“本地预览归档”的摘要条目，并保持实时抓取按钮禁用；Electron 仍是唯一真实联网抓取入口。
+- 真实 B 站空间 `https://space.bilibili.com/546195` 初次在 WBI 归档接口触发 `-352/412`；补齐网页端 `platform`、`web_location`、`tid`、`keyword` 和 `order_avoided` 签名字段后成功读取 20 条作品。
+- 首条真实作品包含 BVID、封面以及播放、点赞、评论、收藏、分享、投币、弹幕指标；真实封面 URL 为 `http://i2.hdslb.com/...`，需升级到 HTTPS 才能稳定通过 Electron 图片 CSP。
+
+
+---
+# 热榜正文联网兜底与悬停闪屏发现（2026-08-13）
+
+- 热榜行内“打开原文”当前同时包裹项目 `Tooltip`，且 `IconButton` 默认根据 `label` 设置 `title`；Fluent Tooltip 与原生 title 存在重复 hover 触发，优先移除外层 Tooltip。
+- `StoryDreamApi.searchWebSources` 接受字符串或 `WebSearchRequest`，Electron 端调用 `searchWebSourcesDetailed`，走 Bing、中文 Bing、搜狗、百度、头条等公开页面并尝试抓取目标页；不依赖 API Key。
+- `AiSourceSection` 已包含 `source/provider/title/url/snippet/content`，可直接作为正文搜索结果展示。
+- `HotBoardSourceContent` 只描述原页面读取结果；搜索结果应单独保存在 reader 状态，避免将搜索摘要伪装成来源正文。
+- 搜索兜底在页面读取完成后按条目去重，关闭弹窗不会重复请求；手动“重试读取”会清理该条目的搜索缓存并重新读取/搜索。
+- 匿名 GitHub API code search 需要认证，网页搜索受速率限制；没有把第三方仓库代码直接复制进项目，继续复用本地已有的公开搜索适配器和抓取器。
+# 联网搜索源 GitHub 方案发现（2026-08-13）
+
+- 当前 `searchWebSources` 直接抓取 Bing、搜狗、百度、头条 HTML，再用正则/结构解析器抽结果；没有稳定的官方搜索协议，易受页面结构、验证码和反爬策略影响。
+- 搜索命中后立即并发抓取最多 20 个候选页面，并把抓取正文作为精排输入；搜索可用性与目标站正文可读性耦合，任何一层失败都会让可见结果减少。
+- 当前只支持四个固定 provider union，没有可配置的远端搜索服务、健康度熔断、按源缓存或 managed API fallback。
+- [SearXNG](https://github.com/searxng/searxng) 提供 `/search?q=...&format=json` 的稳定 HTTP 合同，可聚合多个搜索引擎且不需要上游 API Key；但 JSON 输出需在自建实例 `settings.yml` 中启用，许多公共实例会禁用格式或限流，因此生产环境应自建。
+- [Tavily JS](https://github.com/tavily-ai/tavily-js) 同时提供 search 与 extract。官方 README 当前说明省略 API Key 可进入共享限流的 keyless mode，适合开箱试用/末级兜底；独占配额及 crawl/research 仍需要 Key。
+- [Exa JS](https://github.com/exa-labs/exa-js) 提供自然语言搜索、域名/发布日期过滤和 `getContents` 干净正文，适合 AI 研究型查询，但官方 SDK需要 `EXA_API_KEY`。
+- [Firecrawl](https://github.com/firecrawl/firecrawl) 同时支持 search、scrape、crawl，正文抓取能力强且可自建；服务端为 AGPL，完整自建比 SearXNG 重，托管版需要 Key，宜作为正文增强层而非唯一搜索源。
+- [DDGS](https://github.com/deedy5/ddgs) 可免 Key 本地运行 FastAPI，聚合 Bing/Brave/DuckDuckGo/Google 等并提供 extract；但 README 明示 educational purpose，底层仍依赖搜索服务非官方入口，稳定性风险与当前 HTML 适配器同类。
+- [Mozilla Readability](https://github.com/mozilla/readability) 只负责从已取得的 HTML 提取正文，不是联网搜索源；适合加强当前 `readPublicSourceContent`，不能替换搜索 provider。
+- [Open WebUI](https://github.com/open-webui/open-webui) 将 SearXNG、Brave、Tavily 实现为独立 provider，统一归一化为 `link/title/snippet`；Brave 适配器明确处理免费层每秒 1 次和 429 重试。这比在业务函数内硬编码多个 HTML parser 更适合 StoryDream。
+- [Vane（原 Perplexica）](https://github.com/ItzCrazyKns/Vane) 仓库直接附带 SearXNG 配置，TypeScript 端调用 `search?format=json`，并把查询规划、搜索、抓取 URL、重排和写作拆成不同阶段，是与当前 Electron/TypeScript 架构最接近的参考。
+- [YaCy](https://github.com/yacy/yacy_search_server) 是真正自建索引/爬虫而非元搜索，支持 HTTP JSON/XML API；但需要 Java、持续爬取和索引维护，适合内网/垂直资料库，不适合作为桌面应用默认全网搜索源。
+- Jina Reader `r.jina.ai/<url>` 本机匿名实测 HTTP 200，可返回 Markdown；Jina Search `s.jina.ai/<query>` 匿名实测 401，因此只能把 Reader 视为可选正文兜底，不能承诺 Jina Search 零 Key。
+- Tavily 直接 REST 匿名实测 401；官方 JS SDK README 所述 keyless mode 是 SDK 提供的共享限流模式，不等同于任意 REST 请求免鉴权，也不宜作为唯一生产通道。
+- 国内候选中，智谱 Search Pro 有域名/时间过滤、1-50 条结果和可控摘要长度，要求 API Key；LangSearch 提供 Web Search 与 Rerank、免费额度但同样要求 Key，GitHub 项目体量和维护活跃度明显弱于前述核心候选。
+# 联网搜索 Provider 实施判断（2026-08-13）
+
+- 正式首选采用用户自有/本地 SearXNG JSON API；桌面应用只保存服务地址，不负责捆绑容器。
+- 零配置备用采用 Tavily Keyless 协议：`POST https://api.tavily.com/search`，请求头携带 `X-Tavily-Access-Mode: keyless` 和 `X-Client-Source: tavily-js-keyless`。
+- 现有 HTML 搜索适配器继续保留为末级兼容，避免托管服务临时不可用时完全失去联网能力。
+- 当前 `searchWebSourcesDetailed` 在搜索后立即抓最多 20 个目标网页，正文失败会吞掉搜索结果；实施中应把“发现结果”和“读取正文”解耦。
+- SearXNG 的 `engines` 参数可承接现有用户选择的 Bing/百度/搜狗/头条渠道；Tavily 不支持该筛选，降级时应保留结果但标记真实后端。
+- SearXNG 地址采用相对 `search` 拼接，保留用户配置的子路径；所有托管请求继续走 `provider-api` 网络策略，Tavily Keyless 所需自定义 header 已加入允许列表。
+- 真实设置页专用脚本两次因壳层导航选择器与当前页面入口不同步超时；现有热榜 Electron/浏览器 QA 与设置合同测试通过，问题属于 QA 导航脚本而非功能运行时。
 
 ---

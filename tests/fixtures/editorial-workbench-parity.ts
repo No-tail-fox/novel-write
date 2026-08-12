@@ -30,7 +30,7 @@ export const approvedEditorialInventories = {
     'podcastSpeakerA', 'podcastSpeakerB', 'coverImageMode', 'coverTemplateId', 'coverPageEnabled', 'coverPageText', 'manualCoverAssetId', 'autoBorrowImage', 'htmlVideoForeground',
   ], 'src/shared/types.ts', 'src/features/tasks/task-create-input.ts', 'tests/renderer-architecture.test.ts'),
   htmlVideoFields: inventory([
-    'style', 'voiceId', 'ttsProvider', 'ttsSpeed', 'bgmId', 'captionPreset', 'captionAnim', 'captionColors',
+    'style', 'voiceId', 'ttsProvider', 'ttsSpeed', 'bgmId', 'captionPreset', 'captionAnim', 'captionColors', 'captionLayout',
     'bgmVolume', 'transitionType', 'sceneMotion', 'coverImageMode', 'coverTemplate', 'coverRatio', 'coverPrompt', 'draftTemplate',
     'foreground', 'maxScenes', 'ratio',
   ], 'src/shared/html-video-control-manifest.ts', 'src/features/html-video/HtmlVideoPage.tsx', 'tests/html-video-control-manifest.test.ts'),

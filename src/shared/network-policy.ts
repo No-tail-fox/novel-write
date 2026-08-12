@@ -136,6 +136,7 @@ const policyProfiles: Record<NetworkPurpose, NetworkPolicy> = {
       'x-api-key',
       'x-api-request-id',
       'x-api-resource-id',
+      'x-client-source',
       'x-app-id',
       'x-content-sha256',
       'x-date',
@@ -143,6 +144,7 @@ const policyProfiles: Record<NetworkPurpose, NetworkPolicy> = {
       'x-security-token',
       'x-signature',
       'x-timestamp',
+      'x-tavily-access-mode',
     ],
   },
 };

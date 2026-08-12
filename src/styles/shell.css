@@ -14,6 +14,22 @@
   color: var(--shell-text);
 }
 
+.app-shell[data-editorial-shell] .window-controls.sd-toolbar {
+  min-height: 34px;
+  padding: 0;
+  gap: 0;
+  border: 0;
+  background: transparent;
+}
+
+.app-shell[data-editorial-shell] .window-control-button.sd-icon-button {
+  width: 42px;
+  min-width: 42px;
+  height: 34px;
+  border: 0;
+  border-radius: 0;
+}
+
 .app-shell[data-editorial-shell] .app-mark,
 .app-shell[data-editorial-shell] .brand-logo {
   border-color: var(--shell-border);
@@ -38,6 +54,23 @@
   color: var(--shell-focus-contrast);
   box-shadow: none;
   font-weight: 500;
+}
+
+.app-shell[data-editorial-shell] .new-task-button .sd-button__content,
+.app-shell[data-editorial-shell] .nav-item .sd-button__content,
+.app-shell[data-editorial-shell] .recent-task-item .sd-button__content,
+.app-shell[data-editorial-shell] .trial-activation-bar .sd-button__content,
+.app-shell[data-editorial-shell] .credit-chip .sd-button__content,
+.app-shell[data-editorial-shell] .feedback-link .sd-button__content {
+  display: contents;
+}
+
+.app-shell[data-editorial-shell] .new-task-button,
+.app-shell[data-editorial-shell] .recent-task-item,
+.app-shell[data-editorial-shell] .trial-activation-bar,
+.app-shell[data-editorial-shell] .credit-chip,
+.app-shell[data-editorial-shell] .feedback-link {
+  max-width: 100%;
 }
 
 .app-shell[data-editorial-shell] .new-task-button:hover,
@@ -65,9 +98,28 @@
 }
 
 .app-shell[data-editorial-shell] .nav-item {
+  width: 100%;
   min-height: 32px;
+  display: grid;
+  grid-template-columns: 18px minmax(0, 1fr);
+  grid-template-rows: 1fr;
+  gap: 10px;
+  align-items: center;
+  padding: 0 10px;
   border-radius: 5px;
   color: var(--shell-muted);
+  text-align: left;
+}
+
+.app-shell[data-editorial-shell] .nav-item .fui-Button__icon {
+  grid-column: 1;
+  grid-row: 1;
+  margin: 0;
+}
+
+.app-shell[data-editorial-shell] .nav-item .sd-button__content {
+  grid-column: 2;
+  grid-row: 1;
 }
 
 .app-shell[data-editorial-shell] .nav-item.active,
@@ -203,15 +255,11 @@
 
   .app-shell[data-editorial-shell] .brand-block > div:not(.brand-logo),
   .app-shell[data-editorial-shell] .brand-bell,
-  .app-shell[data-editorial-shell] .new-task-button span,
-  .app-shell[data-editorial-shell] .new-task-button kbd,
   .app-shell[data-editorial-shell] .nav-section-label,
-  .app-shell[data-editorial-shell] .nav-item span,
-  .app-shell[data-editorial-shell] .nav-item small,
-  .app-shell[data-editorial-shell] .trial-activation-bar span,
-  .app-shell[data-editorial-shell] .trial-activation-bar strong,
-  .app-shell[data-editorial-shell] .credit-label,
-  .app-shell[data-editorial-shell] .credit-balance,
+  .app-shell[data-editorial-shell] .new-task-button .sd-button__content,
+  .app-shell[data-editorial-shell] .nav-item .sd-button__content,
+  .app-shell[data-editorial-shell] .trial-activation-bar .sd-button__content,
+  .app-shell[data-editorial-shell] .credit-chip .sd-button__content,
   .app-shell[data-editorial-shell] .feedback-link {
     display: none;
   }

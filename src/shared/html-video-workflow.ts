@@ -33,7 +33,7 @@ import {
   preserveHtmlVideoJobConfig,
   recoverHtmlVideoJobConfig,
 } from './html-video-config';
-import { htmlVideoCaptionColorsEqual } from './html-video-captions';
+import { htmlVideoCaptionColorsEqual, htmlVideoCaptionLayoutEqual } from './html-video-captions';
 import { normalizeHtmlVideoCoverMode, validateHtmlVideoCoverAsset } from './html-video-cover';
 
 export const MAX_HTML_VIDEO_PIPELINE_JSON_CHARS = 1_000_000;
@@ -410,6 +410,11 @@ export function applyHtmlVideoConfigChanges(
           currentValue as HtmlVideoJobConfig['captionColors'],
           nextValue as HtmlVideoJobConfig['captionColors'],
         )
+      : change.field === 'captionLayout'
+        ? htmlVideoCaptionLayoutEqual(
+            currentValue as HtmlVideoJobConfig['captionLayout'],
+            nextValue as HtmlVideoJobConfig['captionLayout'],
+          )
       : currentValue === nextValue;
     if (!unchanged) {
       changedFields.push(change.field as HtmlVideoEditableConfigField);
@@ -558,6 +563,7 @@ export function validateHtmlVideoAssets(
   scenes: HtmlVideoScenePlan[],
   config: Pick<HtmlVideoJobConfig, 'foreground'> = {},
   field = 'assets',
+  options: { requireComplete?: boolean } = {},
 ): HtmlVideoAsset[] {
   const maximum = scenes.length * (1 + MAX_HTML_VIDEO_ELEMENTS_PER_SCENE);
   const rawAssets = requireBoundedArray(value, field, maximum);
@@ -570,7 +576,7 @@ export function validateHtmlVideoAssets(
       for (const element of scene.elements) expected.add(assetKey(scene.index, 'fg', element.slot));
     }
   }
-  if (rawAssets.length !== expected.size) {
+  if (options.requireComplete !== false && rawAssets.length !== expected.size) {
     throw invalidPipeline(`${field} does not contain the complete expected asset set`);
   }
 
@@ -650,7 +656,13 @@ function parsePipelineV2(value: UnknownRecord): HtmlVideoPipelineDataV2 {
   }
 
   const scenes = parseHtmlVideoScenePlanArray(value.scenes, 'scenes', false, sceneLimit);
-  const assets = validateHtmlVideoAssets(value.assets, scenes, config);
+  const assets = validateHtmlVideoAssets(
+    value.assets,
+    scenes,
+    config,
+    'assets',
+    { requireComplete: steps.assets.status === 'completed' },
+  );
   const voices = validateHtmlVideoVoices(value.voices, scenes);
   const compositions = validateHtmlVideoCompositions(value.compositions, scenes);
 

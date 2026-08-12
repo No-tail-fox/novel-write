@@ -111,7 +111,7 @@ export interface VolcengineSpeakerListResult {
   requestId: string | null;
 }
 
-export type ConfigTestTarget = 'llm' | 'image' | 'tts' | 'speechToText' | 'jianying' | 'creative';
+export type ConfigTestTarget = 'llm' | 'image' | 'tts' | 'speechToText' | 'jianying' | 'creative' | 'webSearch';
 
 export interface ConfigTestResult {
   status: 'pass' | 'warn' | 'fail';
@@ -333,6 +333,7 @@ export interface AppConfig {
   jianying: JianyingConfig;
   ima: ImaConfig;
   viral: ViralAnalyzerConfig;
+  webSearch: WebSearchConfig;
   ui: {
     theme: ThemeName;
   };
@@ -632,6 +633,19 @@ export type HtmlVideoSceneMotion =
   | 'pan_left'
   | 'pan_right';
 
+export type HtmlVideoCaptionRegion = 'auto' | 'top' | 'middle' | 'bottom';
+export type HtmlVideoCaptionAlign = 'left' | 'center' | 'right';
+
+export interface HtmlVideoCaptionLayout {
+  region: HtmlVideoCaptionRegion;
+  fontFamily: DraftFontFamily;
+  fontSize: number;
+  lineHeight: number;
+  widthPercent: number;
+  align: HtmlVideoCaptionAlign;
+  fontWeight: 400 | 500 | 600 | 700 | 800 | 900;
+}
+
 export interface HtmlVideoJobConfig {
   style?: string;
   voiceId?: string;
@@ -641,6 +655,7 @@ export interface HtmlVideoJobConfig {
   captionPreset?: string;
   captionAnim?: string;
   captionColors?: Record<string, string>;
+  captionLayout?: HtmlVideoCaptionLayout;
   bgmVolume?: 'soft' | 'medium' | 'loud';
   transitionType?: string;
   sceneMotion?: HtmlVideoSceneMotion;
@@ -663,6 +678,7 @@ export type HtmlVideoEditableConfigField =
   | 'captionPreset'
   | 'captionAnim'
   | 'captionColors'
+  | 'captionLayout'
   | 'bgmVolume'
   | 'transitionType'
   | 'sceneMotion'
@@ -684,6 +700,7 @@ export type HtmlVideoConfigChange =
   | { field: 'captionPreset'; value: 'classic' | 'editorial' | 'karaoke' }
   | { field: 'captionAnim'; value: 'none' | 'fade-up' | 'pop' }
   | { field: 'captionColors'; value: Record<string, string> }
+  | { field: 'captionLayout'; value: HtmlVideoCaptionLayout }
   | { field: 'bgmVolume'; value: 'soft' | 'medium' | 'loud' }
   | { field: 'transitionType'; value: 'fade' | 'dissolve' | 'wipeleft' | 'wiperight' | 'slideleft' | 'slideright' }
   | { field: 'sceneMotion'; value: HtmlVideoSceneMotion }
@@ -870,6 +887,11 @@ export interface BenchmarkGroupSyncResult {
 export interface BenchmarkLoginInput {
   platform: BenchmarkPlatform;
   url: string;
+}
+
+export interface BenchmarkLoginResult {
+  cookieFilePath: string;
+  cookieCount: number;
 }
 
 export interface BenchmarkBurstScore {
@@ -1375,6 +1397,7 @@ export interface RewriteEvaluationResult {
 export interface AiSourceSection {
   source: string;
   provider?: WebSearchProvider;
+  backend?: WebSearchBackend;
   title: string;
   url?: string;
   snippet?: string;
@@ -1382,6 +1405,14 @@ export interface AiSourceSection {
 }
 
 export type WebSearchProvider = 'bing' | 'baidu' | 'sogou' | 'toutiao';
+
+export type WebSearchBackend = 'searxng' | 'tavily' | 'legacy';
+
+export interface WebSearchConfig {
+  searxngBaseUrl: string;
+  tavilyKeylessEnabled: boolean;
+  legacyFallbackEnabled: boolean;
+}
 
 export interface WebSearchRequest {
   query: string;
@@ -1396,11 +1427,20 @@ export interface WebSearchProviderStatus {
   message?: string;
 }
 
+export interface WebSearchBackendStatus {
+  backend: WebSearchBackend;
+  label: string;
+  state: 'ready' | 'empty' | 'failed' | 'disabled';
+  count: number;
+  message?: string;
+}
+
 export interface AiSourceContext {
   query: string;
   sections: AiSourceSection[];
   warnings: string[];
   providerStatuses?: WebSearchProviderStatus[];
+  backendStatuses?: WebSearchBackendStatus[];
 }
 
 export type HotBoardPlatform =
@@ -1437,6 +1477,7 @@ export interface HotBoardSourceContentInput {
   title: string;
   url: string;
   summary?: string;
+  forceRefresh?: boolean;
 }
 
 export interface HotBoardSourceContent {

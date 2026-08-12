@@ -2,6 +2,7 @@ import { mkdir, open as openFile, readFile, readdir, rename, rm } from 'node:fs/
 import { basename, dirname, join, relative, resolve } from 'node:path';
 import { createHash, randomBytes, randomUUID } from 'node:crypto';
 import initSqlJs, { type Database, type SqlJsStatic, type SqlValue } from 'sql.js';
+import { parseHTMLContent } from '@hyperframes/core/compiler/html-document';
 import type {
   AccountProfile,
   ActivationState,
@@ -696,6 +697,58 @@ async function quarantineMalformedDatabase(file: string, dependencies: FileDatab
 
 function mergeConfig(input: unknown): AppConfig {
   return normalizeAppConfig(input);
+}
+
+function htmlVideoCaptionCuesFromCompositionSource(
+  source: string,
+  composition: HtmlVideoCompositionSnapshot,
+): HtmlVideoCompositionSnapshot['captions'] {
+  const document = parseHTMLContent(source);
+  const elements = [...document.querySelectorAll<HTMLElement>(
+    '.caption[data-start][data-duration]',
+  )];
+
+  const cues = elements.map((element, index) => {
+    const startSec = Number(element.getAttribute('data-start'));
+    const durationSec = Number(element.getAttribute('data-duration'));
+    const text = element.textContent?.trim() ?? '';
+
+    if (
+      !Number.isFinite(startSec)
+      || startSec < 0
+      || !Number.isFinite(durationSec)
+      || durationSec <= 0
+      || !text
+    ) {
+      throw new Error(
+        `HTML_VIDEO_CAPTION_TIMING_INVALID: Scene ${composition.index} caption ${index + 1} is invalid.`,
+      );
+    }
+
+    if (startSec + durationSec > composition.durationSec + 0.001) {
+      throw new Error(
+        `HTML_VIDEO_CAPTION_TIMING_INVALID: Scene ${composition.index} caption ${index + 1} exceeds the scene duration.`,
+      );
+    }
+
+    return {
+      id: `${composition.index}-${index}`,
+      text,
+      startSec,
+      durationSec,
+    };
+  }).sort((a, b) => a.startSec - b.startSec);
+
+  for (let index = 1; index < cues.length; index += 1) {
+    const previous = cues[index - 1];
+    if (cues[index].startSec < previous.startSec + previous.durationSec - 0.001) {
+      throw new Error(
+        `HTML_VIDEO_CAPTION_TIMING_OVERLAP: Scene ${composition.index} captions ${index} and ${index + 1} overlap.`,
+      );
+    }
+  }
+
+  return cues;
 }
 
 const legacyBundledCozeDraftTemplates = new Map(
@@ -3107,6 +3160,7 @@ export class FileDatabase {
         if (currentRevision !== expectedRevision) {
           throw new Error(`HTML_VIDEO_SOURCE_CONFLICT: Expected revision ${expectedRevision}, current revision is ${currentRevision}.`);
         }
+        const captionCues = htmlVideoCaptionCuesFromCompositionSource(source, composition);
 
         const taskRoot = join(dirname(this.file), 'tasks', task.managedStorageKey);
         const htmlDirectory = join(taskRoot, 'html-scenes');
@@ -3129,6 +3183,7 @@ export class FileDatabase {
 
         const nextComposition: HtmlVideoCompositionSnapshot = {
           ...composition,
+          captions: captionCues,
           rev: currentRevision + 1,
         };
         const invalidated = invalidateHtmlVideoPipeline(pipeline, 'render');

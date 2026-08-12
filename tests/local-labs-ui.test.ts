@@ -102,6 +102,9 @@ describe('local and lab editorial workbenches', () => {
       'B 站 UP 主空间链接',
       'api.syncBenchmarkGroup(group.id)',
       'api.openBenchmarkLogin',
+      'loginResult.cookieCount',
+      '登录/验证',
+      'benchmark-account-error',
       '同步账号',
       '加入选品候选',
     ]) expect(benchmark).toContain(contract);
@@ -154,10 +157,18 @@ describe('local and lab editorial workbenches', () => {
     for (const label of ['主题', '商品 / 书名', '作者', '分类', '关键词', '价格', '目标人群', '人物', '年代 / 场景', '链接', '核心卖点', '备注']) {
       expect(book).toContain(`label="${label}"`);
     }
-    for (const label of ['来源链接', '账号 / 标题', '关键词', '素材来源', '对标文案']) expect(benchmark).toContain(label);
+    for (const label of ['来源链接', '封面图链接', '账号 / 标题', '关键词', '素材来源', '对标文案', '删除作品', '保存对标组', '保存作品', '加入选品候选']) expect(benchmark).toContain(label);
     for (const label of ['人物名称', '创建', '重命名', '删除', '打开目录', '导入图片']) expect(person).toContain(label);
     for (const label of ['模式', '参考图', '需求描述', '每组合数量', '多选比例', '多选风格', '分辨率', '导入成品', '智能生成']) expect(image).toContain(label);
     for (const label of ['试听文案', '配音模型', '音色', '语速', '生成试听', '历史试听']) expect(voice).toContain(label);
+  });
+
+  it('refreshes person image previews after importing files', async () => {
+    const personAssets = await readFile(new URL('../src/features/labs/PersonAssetsPage.tsx', import.meta.url), 'utf8');
+
+    expect(personAssets).toContain('loadPersonImagePreviews(api, selectedName)');
+    expect(personAssets).toContain('setImages(previews.items);');
+    expect(personAssets).toContain('setImageUrls(previews.urls);');
   });
 
   it('supports complete searchable voice catalogs without charging on hover', async () => {

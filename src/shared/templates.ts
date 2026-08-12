@@ -432,7 +432,7 @@ export function normalizeDraftTemplate(template: Partial<DraftTemplate>): DraftT
       focusY: clampNumber(template.image?.focusY, fallback.image.focusY, 0, 1),
       left: clampNumber(template.image?.left, fallback.image.left, 0, Math.max(0, 1 - imageWidth)),
       width: imageWidth,
-      mediaScale: clampNumber(template.image?.mediaScale, fallback.image.mediaScale, 1, 8),
+      mediaScale: clampNumber(template.image?.mediaScale, fallback.image.mediaScale, 0.1, 8),
       motion: normalizeImageMotion(template.image?.motion),
       motionStrength: clampNumber(template.image?.motionStrength, 1, 0, 2),
     },

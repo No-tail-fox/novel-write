@@ -1,10 +1,11 @@
 import React, { startTransition, useCallback, useEffect, useLayoutEffect, useMemo, useReducer, useRef, useState } from "react";
-import type { AppDelta, AppMutationResult, HistoryFamily, ShellView } from "../shared/types";
+import type { AppDelta, AppMutationResult, HistoryFamily, ShellView, ThemeName } from "../shared/types";
 import { createAppDeltaCoordinator, MAX_RENDERER_DELTA_BUFFER, type DeltaViewState, type RevisionGap } from "../shared/state-delta";
 import { applyAppMutationResult, applyBufferedMutationResults, applyHistorySelectionBarrier, applyLocalMutationResponse, authoritativeMissingRequestedTaskId, claimMutationResult, collectTaskEventPages, collectViralEventPages, createRequestGenerationCompletionQueue, createRequestGenerationGuard, historyEntityRevisionKey, historyResponseDisposition, mergeAuthoritativeSnapshotDetails, mergeReconciliationSlices, raiseMutationRevisionFloor, reduceCompletionTrackedState, shouldApplyDeltaViewTransition } from "../shared/state-reconciliation";
-import { applyStoredTheme, revealThemedApplication } from "../features/settings/theme-controller";
+import { applyStoredTheme, changeRuntimeTheme, revealThemedApplication, transitionRendererTheme } from "../features/settings/theme-controller";
 import { defaultUiPreferences } from "../shared/config";
 import { useAsyncAction } from "../ui/async-action";
+import { StoryDreamProvider } from "../ui";
 import { advanceHistoryFamilyEpochs, allHistoryFamilies, bootstrapToState, captureHistoryResponseRevision, cloneState, initialState, isHistoryResponseCurrent, loadCompleteBootstrap, MAX_TASK_DETAIL_REVISION_ATTEMPTS, mergeDeltaView, registerHistoryDeltaBarrier, replaceHistoryRevisionMap, type HistoryFamilyEpochs } from "./app-state";
 import { makeFallbackApi } from "./browser-fallback";
 import type { RendererAppState as AppState } from "./route-types";
@@ -33,6 +34,7 @@ export function App() {
   const isBrowserPreview = !window.storydream && !window.storybound;
   const api = useMemo(() => window.storydream ?? window.storybound ?? makeFallbackApi(setState), []);
   const shellAction = useAsyncAction();
+  const runtimeThemeRef = useRef<ThemeName>(state.ui.theme);
   const revisionRef = useRef(0);
   const mutationRevisionsRef = useRef(new Map<string, number>());
   const historyEntityRevisionsRef = useRef(new Map<string, number>());
@@ -48,8 +50,15 @@ export function App() {
   );
   const viralDetailGuard = useMemo(() => createRequestGenerationGuard(), []);
   useLayoutEffect(() => {
+    runtimeThemeRef.current = state.ui.theme;
     applyStoredTheme(state.ui.theme);
   }, [state.ui.theme]);
+  const synchronizeThemeState = useCallback((expectedTheme: ThemeName, nextTheme: ThemeName) => {
+    if (runtimeThemeRef.current !== expectedTheme) return false;
+    runtimeThemeRef.current = nextTheme;
+    setState((current) => transitionRendererTheme(current, expectedTheme, nextTheme));
+    return expectedTheme !== nextTheme;
+  }, [setState]);
   useEffect(() => {
     const revealTimer = window.setTimeout(revealThemedApplication, 1_200);
     return () => window.clearTimeout(revealTimer);
@@ -600,10 +609,16 @@ export function App() {
   }
 
   function toggleTheme() {
-    const theme = state.ui.theme === 'light' ? 'dark' : 'light';
-    applyStoredTheme(theme);
+    const currentTheme = runtimeThemeRef.current;
+    const theme = currentTheme === 'light' ? 'dark' : 'light';
     void shellAction.run(async () => {
-      applyState(await api.saveUiPreferences({ theme }));
+      const changed = await changeRuntimeTheme({
+        currentTheme,
+        nextTheme: theme,
+        synchronizeState: synchronizeThemeState,
+        persist: () => api.saveUiPreferences({ theme }),
+      });
+      applyState(changed.mutation);
     });
   }
 
@@ -613,40 +628,43 @@ export function App() {
       ? null
       : state.tasks[0] ?? null;
   return (
-    <AppShell
-      activeView={activeView}
-      state={state}
-      saveTone={saveTone}
-      isBrowserPreview={isBrowserPreview}
-      busy={shellAction.busy}
-      feedback={shellAction.feedback}
-      navigate={navigate}
-      openTaskDetail={openTaskDetail}
-      minimizeWindow={minimizeWindow}
-      toggleMaximizeWindow={toggleMaximizeWindow}
-      closeWindow={closeWindow}
-      toggleTheme={toggleTheme}
-    >
-      <RouteErrorBoundary resetKey={activeView} onNavigate={navigate}>
-        <AppRoutes
-          activeView={activeView}
-          api={api}
-          state={state}
-          selectedTask={selectedTask}
-          applyState={applyState}
-          navigate={navigate}
-          openTaskDetail={openTaskDetail}
-          isHistoryTombstoned={isHistoryTombstoned}
-          historyFamilyEpochs={historyFamilyEpochs}
-          refreshTaskDetail={refreshTaskDetail}
-          requestedHtmlTaskId={requestedHtmlTaskId}
-          onRequestedHtmlTaskHandled={onRequestedHtmlTaskHandled}
-          onActiveHtmlTaskChange={onActiveHtmlTaskChange}
-          refreshViralEvents={refreshViralEvents}
-          onActiveViralAnalysisChange={onActiveViralAnalysisChange}
-          isBrowserPreview={isBrowserPreview}
-        />
-      </RouteErrorBoundary>
-    </AppShell>
+    <StoryDreamProvider theme={state.ui.theme}>
+      <AppShell
+        activeView={activeView}
+        state={state}
+        saveTone={saveTone}
+        isBrowserPreview={isBrowserPreview}
+        busy={shellAction.busy}
+        feedback={shellAction.feedback}
+        navigate={navigate}
+        openTaskDetail={openTaskDetail}
+        minimizeWindow={minimizeWindow}
+        toggleMaximizeWindow={toggleMaximizeWindow}
+        closeWindow={closeWindow}
+        toggleTheme={toggleTheme}
+      >
+        <RouteErrorBoundary resetKey={activeView} onNavigate={navigate}>
+          <AppRoutes
+            activeView={activeView}
+            api={api}
+            state={state}
+            selectedTask={selectedTask}
+            applyState={applyState}
+            synchronizeThemeState={synchronizeThemeState}
+            navigate={navigate}
+            openTaskDetail={openTaskDetail}
+            isHistoryTombstoned={isHistoryTombstoned}
+            historyFamilyEpochs={historyFamilyEpochs}
+            refreshTaskDetail={refreshTaskDetail}
+            requestedHtmlTaskId={requestedHtmlTaskId}
+            onRequestedHtmlTaskHandled={onRequestedHtmlTaskHandled}
+            onActiveHtmlTaskChange={onActiveHtmlTaskChange}
+            refreshViralEvents={refreshViralEvents}
+            onActiveViralAnalysisChange={onActiveViralAnalysisChange}
+            isBrowserPreview={isBrowserPreview}
+          />
+        </RouteErrorBoundary>
+      </AppShell>
+    </StoryDreamProvider>
   );
 }

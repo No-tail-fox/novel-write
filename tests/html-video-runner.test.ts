@@ -6,6 +6,8 @@ import { join } from 'node:path';
 import { describe, expect, it, vi } from 'vitest';
 import {
   runHtmlVideoPipeline,
+  synchronizeHtmlVideoPipelineCheckpoint,
+  synchronizeHtmlVideoPreviewArtifact,
   type HtmlVideoRewriteOutput,
   type HtmlVideoRunnerInput,
   type HtmlVideoRunnerOptions,
@@ -134,6 +136,59 @@ describe('HTML video runner module', () => {
       expect(result.scenes.map((scene) => scene.narration)).toEqual(['第一句。', '第二句。']);
       expect(result.warnings.join('\n')).toMatch(/场景结构.*已改用本地分镜规划/);
       expect(runtime.calls).toEqual(['rewrite', 'assets', 'voice', 'preview', 'render']);
+    });
+  });
+
+  it('persists every generated image before the asset batch completes', async () => {
+    await withTempRunner(async (workDir) => {
+      const runtime = createFakeRuntime(workDir);
+      runtime.options.generateAssets = async (input) => {
+        const assets: HtmlVideoAsset[] = [];
+        for (const scene of input.scenes) {
+          const items: HtmlVideoAsset[] = [
+            { sceneIndex: scene.index, kind: 'bg', slot: 0, src: join(workDir, `progress-${scene.index}-bg.png`) },
+            { sceneIndex: scene.index, kind: 'fg', slot: 0, src: join(workDir, `progress-${scene.index}-fg.png`) },
+          ];
+          for (const asset of items) {
+            await writeFile(asset.src, Buffer.from(`${asset.sceneIndex}-${asset.kind}`));
+            assets.push(asset);
+            await input.onAssetGenerated?.(asset);
+          }
+        }
+        return assets;
+      };
+
+      const result = await runHtmlVideoPipeline(createRunnerInput('incremental-assets'), runtime.options);
+      const runningCounts = runtime.checkpoints
+        .filter((checkpoint) => checkpoint.current === 'assets' && checkpoint.steps.assets.status === 'running')
+        .map((checkpoint) => checkpoint.assets.length);
+
+      expect(runningCounts).toEqual([0, 1, 2, 3, 4]);
+      expect(result.assets).toHaveLength(4);
+    });
+  });
+
+  it('keeps completed images in the failed asset checkpoint', async () => {
+    await withTempRunner(async (workDir) => {
+      const runtime = createFakeRuntime(workDir);
+      runtime.options.generateAssets = async (input) => {
+        const asset: HtmlVideoAsset = {
+          sceneIndex: input.scenes[0].index,
+          kind: 'bg',
+          slot: 0,
+          src: join(workDir, 'partial-before-failure.png'),
+        };
+        await writeFile(asset.src, Buffer.from('partial-image'));
+        await input.onAssetGenerated?.(asset);
+        throw new Error('later image failed');
+      };
+
+      await expect(runHtmlVideoPipeline(createRunnerInput('partial-assets-failure'), runtime.options))
+        .rejects.toMatchObject({ code: 'HTML_VIDEO_ASSETS_FAILED' });
+
+      const checkpoint = await readCheckpoint(workDir);
+      expect(checkpoint.steps.assets.status).toBe('failed');
+      expect(checkpoint.assets).toMatchObject([{ sceneIndex: 1, kind: 'bg', slot: 0 }]);
     });
   });
 
@@ -1383,6 +1438,39 @@ describe('HTML video runner module', () => {
       expect(result.current).toBe('done');
       expect(result.revision).toBeGreaterThan(previousRevision);
       expect(result.steps.assets.status).toBe('completed');
+    });
+  });
+
+  it('renders directly from a synchronized edited preview artifact without regenerating the preview', async () => {
+    await withTempRunner(async (workDir) => {
+      const initial = createFakeRuntime(workDir);
+      const completed = await runHtmlVideoPipeline(createRunnerInput('edited-preview-render'), initial.options);
+      const htmlPath = completed.compositions[0].htmlPath!;
+      await writeFile(htmlPath, '<html data-editor-revision="2">edited preview</html>', 'utf8');
+
+      const edited = structuredClone(completed);
+      edited.current = 'render';
+      edited.steps.render = { status: 'pending' };
+      delete edited.output;
+      edited.revision += 1;
+      const synchronized = await synchronizeHtmlVideoPreviewArtifact(workDir, edited);
+      await synchronizeHtmlVideoPipelineCheckpoint(workDir, synchronized);
+
+      const resumed = createFakeRuntime(workDir);
+      const render = resumed.options.render;
+      let renderedSource = '';
+      resumed.options.render = async (input) => {
+        renderedSource = await readFile(input.compositions[0].htmlPath!, 'utf8');
+        return render(input);
+      };
+      const result = await runHtmlVideoPipeline({
+        ...createRunnerInput('edited-preview-render'),
+        state: synchronized,
+      }, resumed.options);
+
+      expect(resumed.calls).toEqual(['render']);
+      expect(renderedSource).toContain('data-editor-revision="2"');
+      expect(result.current).toBe('done');
     });
   });
 

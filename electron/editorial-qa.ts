@@ -326,6 +326,7 @@ export async function captureEditorialQa(
       path: basename(capturePath),
       visibleText: state.visibleText,
       tokens: state.tokens,
+      themeTransition: state.themeTransition,
       evidence: state.evidence,
       templateOperationalContrast: state.templateOperationalContrast,
       manualCover: state.manualCover,
@@ -482,6 +483,7 @@ export interface EditorialQaCapture {
   path: string;
   visibleText: string;
   tokens: Record<string, string>;
+  themeTransition: QaScenarioState['themeTransition'];
   evidence: EditorialQaCaptureEvidence;
   templateOperationalContrast: QaScenarioState['templateOperationalContrast'];
   manualCover: QaScenarioState['manualCover'];
@@ -526,6 +528,13 @@ interface QaScenarioState {
   scale: number;
   visibleText: string;
   tokens: Record<string, string>;
+  themeTransition: {
+    performed: boolean;
+    forwardStable: boolean;
+    backwardStable: boolean;
+    mismatchCount: number;
+    reversalCount: number;
+  };
   evidence: EditorialQaCaptureEvidence;
   templateOperationalContrast: {
     samples: Array<{
@@ -832,6 +841,48 @@ function qaScenarioScript(id: string, view: string, theme: string, stage?: strin
     const themeReady = await waitFor(() => document.documentElement.dataset.theme === ${JSON.stringify(theme)});
     const scenarioId = ${JSON.stringify(id)};
     const targetView = ${JSON.stringify(view)};
+    const themeTransition = {
+      performed: false,
+      forwardStable: true,
+      backwardStable: true,
+      mismatchCount: 0,
+      reversalCount: 0,
+    };
+    const sampleThemeChange = async (expectedTheme) => {
+      const button = document.querySelector('.theme-toggle');
+      if (!(button instanceof HTMLButtonElement)) return { stable: false, mismatches: 0, reversals: 0 };
+      button.click();
+      let targetSeen = false;
+      let mismatches = 0;
+      let reversals = 0;
+      const until = performance.now() + 900;
+      while (performance.now() < until) {
+        await new Promise((resolve) => requestAnimationFrame(resolve));
+        const rootTheme = document.documentElement.dataset.theme ?? '';
+        const providerTheme = document.querySelector('.storydream-provider')?.getAttribute('data-storydream-theme') ?? '';
+        if (rootTheme && providerTheme && rootTheme !== providerTheme) mismatches += 1;
+        if (rootTheme === expectedTheme && providerTheme === expectedTheme) targetSeen = true;
+        else if (targetSeen) reversals += 1;
+      }
+      const settled = await waitFor(() => {
+        const currentButton = document.querySelector('.theme-toggle');
+        return document.documentElement.dataset.theme === expectedTheme
+          && document.querySelector('.storydream-provider')?.getAttribute('data-storydream-theme') === expectedTheme
+          && currentButton instanceof HTMLButtonElement
+          && !currentButton.disabled;
+      });
+      return { stable: targetSeen && settled && mismatches === 0 && reversals === 0, mismatches, reversals };
+    };
+    if (/^new-task-(?:dark|light)-(?:desktop|compact)$/u.test(scenarioId)) {
+      themeTransition.performed = true;
+      const oppositeTheme = ${JSON.stringify(theme)} === 'light' ? 'dark' : 'light';
+      const forward = await sampleThemeChange(oppositeTheme);
+      const backward = await sampleThemeChange(${JSON.stringify(theme)});
+      themeTransition.forwardStable = forward.stable;
+      themeTransition.backwardStable = backward.stable;
+      themeTransition.mismatchCount = forward.mismatches + backward.mismatches;
+      themeTransition.reversalCount = forward.reversals + backward.reversals;
+    }
     const failedTaskDetailScenario = scenarioId === 'task-detail-error-summary-desktop'
       || scenarioId === 'task-detail-error-dialog-compact';
     const draftDeliveryScenario = scenarioId.startsWith('task-detail-draft-delivery-');
@@ -868,6 +919,11 @@ function qaScenarioScript(id: string, view: string, theme: string, stage?: strin
     let ready = initialShellReady && themeReady && await waitFor(() => document.querySelector('.app-shell')
       && document.documentElement.dataset.themeReady === 'true'
       && document.querySelector('[data-shell-view="' + targetView + '"]'));
+    ready = ready
+      && themeTransition.forwardStable
+      && themeTransition.backwardStable
+      && themeTransition.mismatchCount === 0
+      && themeTransition.reversalCount === 0;
     if (targetView === 'task-detail' && !failedTaskDetailScenario && !draftDeliveryScenario && !coverPageScenario) {
       ready = ready && await waitFor(() => [...document.querySelectorAll('.image-card-status')]
         .some((element) => element.textContent?.trim() === '借 #1'));
@@ -2404,7 +2460,8 @@ function qaScenarioScript(id: string, view: string, theme: string, stage?: strin
       .filter(({ contrastRatio }) => contrastRatio < 3)
       .map(({ label, contrastRatio }) => label + ' (' + contrastRatio + ':1)');
     const interactiveElements = [...evidenceRoot.querySelectorAll('button, a[href], input, select, textarea, summary, [role="button"], [tabindex]:not([tabindex="-1"])')]
-      .filter((element) => visibleElement(element) && !element.matches(':disabled, [aria-disabled="true"]'));
+      .filter((element) => visibleElement(element)
+        && !element.matches(':disabled, [aria-disabled="true"], [data-tabster-dummy]'));
     const iconOnlyElements = interactiveElements.filter((element) => {
       const text = element.textContent?.replace(/\\s+/g, ' ').trim() ?? '';
       return text.length === 0 && Boolean(element.querySelector('svg, img, i') || element.matches('input[type="button"], input[type="image"]'));
@@ -2625,6 +2682,7 @@ function qaScenarioScript(id: string, view: string, theme: string, stage?: strin
       scale: window.devicePixelRatio,
       visibleText: meaningfulText.slice(0, 1000),
       tokens,
+      themeTransition,
       evidence,
       templateOperationalContrast,
       stageStatePreserved,

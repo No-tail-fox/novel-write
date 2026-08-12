@@ -488,6 +488,13 @@ export function normalizeAppConfig(input: unknown): AppConfig {
       downloadTimeoutMs: normalizePositiveNumber(partial.viral?.downloadTimeoutMs, defaultConfig.viral.downloadTimeoutMs),
       vision: normalizeLlmProfile({ ...defaultConfig.viral.vision, ...(partial.viral?.vision ?? {}) }, 0),
     },
+    webSearch: {
+      ...defaultConfig.webSearch,
+      ...(partial.webSearch ?? {}),
+      searxngBaseUrl: String(partial.webSearch?.searxngBaseUrl ?? defaultConfig.webSearch.searxngBaseUrl).trim().replace(/\/+$/u, ''),
+      tavilyKeylessEnabled: partial.webSearch?.tavilyKeylessEnabled !== false,
+      legacyFallbackEnabled: partial.webSearch?.legacyFallbackEnabled !== false,
+    },
     ui: { ...defaultConfig.ui, ...(partial.ui ?? {}) },
   };
 }
@@ -536,6 +543,27 @@ export function validateConfigTarget(target: ConfigTestTarget, input: AppConfig,
       status: draftPath && pathAccessible ? 'pass' : 'fail',
       endpoint: draftPath,
       detail: draftPath ? (pathAccessible ? `剪映草稿目录可访问：${draftPath}` : `剪映草稿目录不存在或不可访问：${draftPath}`) : '剪映草稿目录不能为空。',
+    });
+  }
+
+  if (target === 'webSearch') {
+    const endpoint = config.webSearch.searxngBaseUrl;
+    let validEndpoint = true;
+    if (endpoint) {
+      try {
+        const parsed = new URL(endpoint);
+        validEndpoint = (parsed.protocol === 'http:' || parsed.protocol === 'https:') && !parsed.username && !parsed.password;
+      } catch {
+        validEndpoint = false;
+      }
+    }
+    const hasFallback = config.webSearch.tavilyKeylessEnabled || config.webSearch.legacyFallbackEnabled;
+    return buildResult({
+      target,
+      startedAt,
+      status: validEndpoint && hasFallback ? 'pass' : 'fail',
+      endpoint,
+      detail: !validEndpoint ? 'SearXNG 地址必须是没有账号密码的 HTTP/HTTPS 地址。' : hasFallback ? '联网搜索会按 SearXNG、Tavily、兼容搜索源顺序自动降级。' : '至少保留一个备用搜索源。',
     });
   }
 

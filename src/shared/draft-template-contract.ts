@@ -64,7 +64,7 @@ export const draftTemplateSchema: z.ZodType<DraftTemplate> = z.object({
     top: coordinate,
     width: finite.min(0).max(1).default(1),
     height: finite.min(0).max(2),
-    mediaScale: finite.min(1).max(8).default(1),
+    mediaScale: finite.min(0.1).max(8).default(1),
     animation: z.string().max(256).refine((value) => imageAnimations.includes(value), 'Unknown image animation.'),
     motion: z.enum(draftImageMotions.map((option) => option.value) as [DraftTemplate['image']['motion'], ...DraftTemplate['image']['motion'][]]),
     motionStrength: finite.min(0).max(2),

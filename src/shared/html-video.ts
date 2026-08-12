@@ -1,7 +1,12 @@
 import { pathToFileURL } from 'node:url';
 import { runtimeProtocolMetadata } from '@hyperframes/core/runtime/protocol';
 import type { DraftTemplate, HtmlVideoJobConfig, HtmlVideoSceneMotion, HtmlVideoScenePlan, PipelineArtifact } from './types';
-import { resolveHtmlVideoCaptionStyle, type ResolvedHtmlVideoCaptionStyle } from './html-video-captions';
+import {
+  buildHtmlVideoCaptionCues,
+  htmlVideoCaptionRegionY,
+  resolveHtmlVideoCaptionStyle,
+  type ResolvedHtmlVideoCaptionStyle,
+} from './html-video-captions';
 import { GSAP_RUNTIME_FILENAME, HYPERFRAMES_RUNTIME_FILENAME } from './hyperframes';
 import {
   htmlVideoSceneTemplate,
@@ -63,7 +68,7 @@ export interface HtmlVideoBuildInput {
   canvas_h: number;
   transition?: { type: string; duration: number };
   sceneMotion?: HtmlVideoSceneMotion;
-  captionConfig?: Pick<HtmlVideoJobConfig, 'captionPreset' | 'captionAnim' | 'captionColors'>;
+  captionConfig?: Pick<HtmlVideoJobConfig, 'captionPreset' | 'captionAnim' | 'captionColors' | 'captionLayout'>;
   captionReducedMotion?: boolean;
   draftTemplate?: DraftTemplate;
   scenePlans?: HtmlVideoScenePlan[];
@@ -229,21 +234,12 @@ function buildSceneHtml(scene: {
     .map((path, index) => `<img id="foreground-${index + 1}" class="clip scene-foreground" data-slot="${index}" data-start="0" data-duration="${scene.duration}" data-track-index="${index + 2}" src="${safeAssetUrl(path)}" alt="" />`)
     .join('\n    ');
   const captions = scene.captions.length ? scene.captions : [scene.caption];
-  const captionDuration = scene.duration / captions.length;
-  const captionMarkup = captions.map((caption, index) => (
-    `<div id="caption-${index + 1}" class="caption" data-caption-index="${index}" style="opacity:0">${escapeHtml(caption)}</div>`
+  const captionCues = buildHtmlVideoCaptionCues(captions, scene.duration, scene.sceneId);
+  const captionMarkup = captionCues.map((cue, index) => (
+    `<div id="caption-${index + 1}" class="clip caption" data-caption-index="${index}" data-start="${cue.startSec}" data-duration="${cue.durationSec}" data-track-index="22" aria-label="字幕 ${index + 1}" style="opacity:${index === 0 ? 1 : 0}">${escapeHtml(cue.text)}</div>`
   )).join('\n      ');
-  const captionTimeline = captions.map((_, index) => {
-    const start = roundSeconds(index * captionDuration);
-    const end = roundSeconds(Math.min(scene.duration, (index + 1) * captionDuration));
-    const selector = `'#caption-${index + 1}'`;
-    return [
-      `tl.set(${selector}, { opacity: 0 }, 0);`,
-      `tl.fromTo(${selector}, { opacity: 0, y: 12 }, { opacity: 1, y: 0, duration: ${Math.min(0.35, captionDuration / 2)}, ease: 'power2.out' }, ${start});`,
-      `tl.set(${selector}, { opacity: 0 }, ${end});`,
-    ].join('\n    ');
-  }).join('\n    ');
   const captionColors = scene.captionStyle.colors;
+  const captionLayout = scene.captionStyle.layout;
   const layout = resolveDraftTemplateHtmlLayout(scene.draftTemplate, scene.canvas_w, scene.canvas_h);
   const template = htmlVideoSceneTemplate(scene.plan?.sceneTemplate);
   const useTemplateBackgroundMotion = shouldUseTemplateBackgroundMotion(scene.draftTemplate, scene.sceneMotion);
@@ -261,13 +257,18 @@ function buildSceneHtml(scene: {
     const cue = cues[Math.min(index, cues.length - 1)];
     return sceneAnimationCall(`#foreground-${index + 1}`, cue, 0.85);
   }).join('\n    ');
-  const captionAnimationTween = sceneAnimationCall('#scene-captions', template.choreography.caption, 0.65);
   const titleScale = clampNumber(scene.plan?.titleScale ?? 1, 0.25, 3);
   const captionScale = clampNumber(scene.plan?.captionScale ?? 1, 0.25, 3);
   const titleTop = clampNumber(scene.plan?.titleTopOverride ?? template.titleTop, 0, 100);
-  const captionY = clampNumber(scene.plan?.captionYOverride ?? template.captionY, 0, 100);
+  const captionY = clampNumber(
+    scene.plan?.captionYOverride ?? htmlVideoCaptionRegionY(captionLayout.region, template.captionY),
+    0,
+    100,
+  );
   const titleSize = roundCssNumber(Math.max(26, scene.canvas_w * 0.052) * titleScale);
-  const captionSize = roundCssNumber(Math.max(18, scene.canvas_w * 0.034) * captionScale);
+  const captionSize = roundCssNumber(
+    Math.max(18, Math.min(scene.canvas_w, scene.canvas_h) * captionLayout.fontSize / 1080) * captionScale,
+  );
   const sceneTemplate = escapeHtml(template.id);
   return `<!doctype html>
 <html lang="zh-CN">
@@ -282,6 +283,34 @@ function buildSceneHtml(scene: {
       src: local("Microsoft YaHei UI"), local("Microsoft YaHei");
       font-display: block;
     }
+    @font-face { font-family: "Microsoft YaHei"; src: local("Microsoft YaHei"); }
+    @font-face { font-family: "PingFang SC"; src: local("PingFang SC"); }
+    @font-face { font-family: "HarmonyOS Sans SC"; src: local("HarmonyOS Sans SC"); }
+    @font-face { font-family: "HarmonyOS Sans SC Medium"; src: local("HarmonyOS Sans SC Medium"); }
+    @font-face { font-family: "HarmonyOS Sans SC Bold"; src: local("HarmonyOS Sans SC Bold"); }
+    @font-face { font-family: "Source Han Sans CN"; src: local("Source Han Sans CN"); }
+    @font-face { font-family: "Source Han Sans CN Medium"; src: local("Source Han Sans CN Medium"); }
+    @font-face { font-family: "Source Han Sans CN Bold"; src: local("Source Han Sans CN Bold"); }
+    @font-face { font-family: "Noto Sans CJK SC"; src: local("Noto Sans CJK SC"); }
+    @font-face { font-family: "SimHei"; src: local("SimHei"); }
+    @font-face { font-family: "Source Han Serif CN"; src: local("Source Han Serif CN"); }
+    @font-face { font-family: "Source Han Serif CN Bold"; src: local("Source Han Serif CN Bold"); }
+    @font-face { font-family: "Noto Serif CJK SC"; src: local("Noto Serif CJK SC"); }
+    @font-face { font-family: "Songti SC"; src: local("Songti SC"); }
+    @font-face { font-family: "SimSun"; src: local("SimSun"); }
+    @font-face { font-family: "STSong"; src: local("STSong"); }
+    @font-face { font-family: "Yuanti SC"; src: local("Yuanti SC"); }
+    @font-face { font-family: "YouYuan"; src: local("YouYuan"); }
+    @font-face { font-family: "Resource Han Rounded CN"; src: local("Resource Han Rounded CN"); }
+    @font-face { font-family: "Resource Han Rounded CN Medium"; src: local("Resource Han Rounded CN Medium"); }
+    @font-face { font-family: "Resource Han Rounded CN Bold"; src: local("Resource Han Rounded CN Bold"); }
+    @font-face { font-family: "LXGW WenKai"; src: local("LXGW WenKai"); }
+    @font-face { font-family: "LXGW WenKai Bold"; src: local("LXGW WenKai Bold"); }
+    @font-face { font-family: "Kaiti SC"; src: local("Kaiti SC"); }
+    @font-face { font-family: "KaiTi"; src: local("KaiTi"); }
+    @font-face { font-family: "STKaiti"; src: local("STKaiti"); }
+    @font-face { font-family: "STXingkai"; src: local("STXingkai"); }
+    @font-face { font-family: "Heiti SC"; src: local("Heiti SC"); }
     :root {
       color-scheme: dark;
       --caption-text: ${captionColors.text};
@@ -389,34 +418,36 @@ function buildSceneHtml(scene: {
       white-space: nowrap;
       text-shadow: 0 8px 24px rgba(0, 0, 0, 0.5);
     }
-    .captions {
+    #scene-captions {
       position: absolute;
       top: ${captionY}%;
       left: 50%;
-      width: 92%;
+      width: ${captionLayout.widthPercent}%;
+      display: grid;
       transform: translate(-50%, -50%);
-      text-align: center;
+      text-align: ${captionLayout.align};
     }
     .caption {
-      position: absolute;
-      top: 0;
-      left: 50%;
+      grid-area: 1 / 1;
+      justify-self: ${captionLayout.align === 'left' ? 'start' : captionLayout.align === 'right' ? 'end' : 'center'};
       display: inline-block;
       max-width: 100%;
-      transform: translateX(-50%);
+      box-sizing: border-box;
       font-size: ${captionSize}px;
-      line-height: 1.3;
+      line-height: ${captionLayout.lineHeight};
+      font-family: ${captionLayout.cssFontFamily};
+      font-weight: ${captionLayout.fontWeight};
       color: rgba(240, 247, 248, 0.94);
       color: var(--caption-text);
       text-shadow: 0 6px 18px rgba(0, 0, 0, 0.42);
       text-shadow: 0 6px 18px var(--caption-shadow);
-      white-space: nowrap;
+      white-space: normal;
+      overflow-wrap: anywhere;
     }
     .frame[data-caption-preset="editorial"] .caption {
       padding: 0.42em 0.62em;
       border-left: 4px solid var(--caption-accent);
       background: var(--caption-background);
-      font-family: "EB Garamond", "Microsoft YaHei UI", serif;
     }
     .frame[data-caption-preset="karaoke"] .caption {
       width: fit-content;
@@ -424,7 +455,6 @@ function buildSceneHtml(scene: {
       padding: 0.38em 0.7em;
       border-bottom: 3px solid var(--caption-accent);
       background: var(--caption-background);
-      font-weight: 800;
     }
     .frame[data-scene-template="left-text-right-object"] .scene-foreground,
     .frame[data-scene-template="rule-of-thirds"] .scene-foreground {
@@ -855,15 +885,35 @@ function buildSceneHtml(scene: {
     tl.fromTo('#scene-veil', { opacity: 0.86 }, { opacity: 0.96, duration: ${scene.duration}, ease: 'none' }, 0);
     ${titleAnimationTween}
     ${foregroundAnimationTweens}
-    ${captionAnimationTween}
-    const reduceCaptionMotion = typeof matchMedia === 'function' && matchMedia('(prefers-reduced-motion: reduce)').matches;
-    const captionAnimation = reduceCaptionMotion ? 'none' : ${JSON.stringify(scene.captionStyle.animation)};
-    if (captionAnimation === 'fade-up') {
-      tl.fromTo('#scene-copy .caption', { opacity: 0.72, y: 18 }, { opacity: 1, y: 0, duration: ${Math.min(scene.duration, 0.72)}, ease: 'power2.out' }, 0);
-    } else if (captionAnimation === 'pop') {
-      tl.fromTo('#scene-copy .caption', { opacity: 0.7, scale: 0.92 }, { opacity: 1, scale: 1, duration: ${Math.min(scene.duration, 0.6)}, ease: 'back.out(1.4)' }, 0);
+    const captionAnimation = ${JSON.stringify(scene.captionStyle.animation)};
+    const captionElements = typeof document === 'undefined'
+      ? []
+      : document.querySelectorAll('#scene-captions .caption');
+    for (const caption of captionElements) {
+      const start = Math.max(0, Number(caption.dataset.start) || 0);
+      const duration = Math.max(0.001, Number(caption.dataset.duration) || 0.001);
+      const end = Math.min(window.__duration, start + duration);
+      const enterDuration = Math.min(0.28, duration / 3);
+      tl.set(caption, { opacity: 0, y: 0, scale: 1 }, 0);
+      if (captionAnimation === 'fade-up') {
+        if (start === 0) {
+          tl.set(caption, { opacity: 0.84, y: 16, scale: 1 }, 0);
+          tl.to(caption, { opacity: 1, y: 0, scale: 1, duration: enterDuration, ease: 'power2.out' }, start);
+        } else {
+          tl.fromTo(caption, { opacity: 0.84, y: 16, scale: 1 }, { opacity: 1, y: 0, scale: 1, duration: enterDuration, ease: 'power2.out', immediateRender: false }, start);
+        }
+      } else if (captionAnimation === 'pop') {
+        if (start === 0) {
+          tl.set(caption, { opacity: 0.88, y: 0, scale: 0.92 }, 0);
+          tl.to(caption, { opacity: 1, y: 0, scale: 1, duration: enterDuration, ease: 'back.out(1.35)' }, start);
+        } else {
+          tl.fromTo(caption, { opacity: 0.88, y: 0, scale: 0.92 }, { opacity: 1, y: 0, scale: 1, duration: enterDuration, ease: 'back.out(1.35)', immediateRender: false }, start);
+        }
+      } else {
+        tl.set(caption, { opacity: 1, y: 0, scale: 1 }, start);
+      }
+      tl.set(caption, { opacity: 0 }, end);
     }
-    ${captionTimeline}
     tl.set({}, {}, ${scene.duration});
     window.__tl = tl;
     window.__timelines['${compositionId}'] = tl;
@@ -877,17 +927,13 @@ function buildSceneHtml(scene: {
     }
     function fitCaps() {
       if (typeof document === 'undefined') return;
-      const canvas = document.createElement('canvas');
-      const context = canvas.getContext('2d');
-      if (!context) return;
       for (const caption of document.querySelectorAll('.caption')) {
-        const computed = getComputedStyle(caption);
-        let size = parseFloat(computed.fontSize) || ${captionSize};
-        context.font = computed.fontWeight + ' ' + size + 'px ' + computed.fontFamily;
-        const maximum = ${scene.canvas_w} * 0.84;
-        const measured = context.measureText(caption.textContent || '').width;
-        if (measured > maximum) {
-          size = Math.max(14, size * maximum / measured);
+        caption.style.removeProperty('font-size');
+        let size = parseFloat(getComputedStyle(caption).fontSize) || ${captionSize};
+        const minimum = Math.max(18, ${captionSize} * 0.72);
+        const maximumHeight = ${scene.canvas_h} * 0.2;
+        while (caption.scrollHeight > maximumHeight && size > minimum) {
+          size = Math.max(minimum, size - 2);
           caption.style.fontSize = size + 'px';
         }
       }
@@ -1026,6 +1072,11 @@ function buildSceneHtml(scene: {
       fitScene();
       fitCaps();
       window.addEventListener('resize', fitScene);
+      if (typeof ResizeObserver === 'function') {
+        const resizeObserver = new ResizeObserver(() => fitScene());
+        resizeObserver.observe(document.documentElement);
+        resizeObserver.observe(document.body);
+      }
       postPlaybackState('ready');
       postStorydreamRuntimeReady();
       postHyperframesMessage('ready');

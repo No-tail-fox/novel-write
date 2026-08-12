@@ -850,7 +850,7 @@ export function HtmlVideoPage({
   }
 
   return (
-    <div className="hv-studio" data-html-video-studio="html-video" data-has-task="true">
+    <div className="hv-studio" data-html-video-studio="html-video" data-has-task="true" data-active-tab={activeTab}>
       <section className="hv-studio-parameters" aria-label="HTML 动画视频制作参数">
         <div className="hv-studio-panel-heading">
           <div>

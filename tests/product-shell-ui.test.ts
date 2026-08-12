@@ -1339,6 +1339,8 @@ describe('product shell ui', () => {
     expect(page).toMatch(/voiceStatus === 'loading'[\s\S]*?音频加载中[\s\S]*?voiceStatus === 'unavailable'[\s\S]*?音频文件暂不可用/u);
     expect(page).toMatch(/outputStatus === 'loading'[\s\S]*?视频加载中[\s\S]*?outputStatus === 'unavailable'[\s\S]*?视频文件暂不可用/u);
     expect(page).toMatch(/assetStatus === 'loading'[\s\S]*?图片加载中[\s\S]*?assetStatus === 'unavailable'[\s\S]*?图片加载失败[\s\S]*?本地图片仅桌面端可用/u);
+    expect(page).toContain('已生成 {props.data.assets.length}/{expectedCount} 张');
+    expect(page).toContain("{generating ? '正在生成' : '添加素材'}");
     expect(page).toMatch(/thumbnailStatus === 'loading'[\s\S]*?预览加载中[\s\S]*?thumbnailStatus === 'unavailable'[\s\S]*?预览加载失败[\s\S]*?本地预览仅桌面端可用/u);
     expect(page).toContain('className="hv-media-state hv-media-loading"');
     expect(page).toContain('className="hv-media-state" role="status"');
@@ -1356,10 +1358,10 @@ describe('product shell ui', () => {
     expect(page).toContain('generation: mediaRetryRevision');
     expect(page).toContain('onMediaElementError={markMediaElementFailed}');
     expect(page).toContain('onMediaElementReady={markMediaElementReady}');
-    expect(countOccurrences(page, 'onError={() => onMediaElementError(')).toBe(5);
-    expect(countOccurrences(page, 'onLoad={() => onMediaElementReady(')).toBe(3);
+    expect(countOccurrences(page, 'onError={() => onMediaElementError(')).toBe(6);
+    expect(countOccurrences(page, 'onLoad={() => onMediaElementReady(')).toBe(4);
     expect(countOccurrences(page, 'onCanPlay={() => onMediaElementReady(')).toBe(2);
-    expect(countOccurrences(page, 'htmlVideoMediaElementKey(task.id,')).toBe(5);
+    expect(countOccurrences(page, 'htmlVideoMediaElementKey(task.id,')).toBe(6);
   });
 
   it('rejects late HTML media errors unless their task, path set, and retry generation are still current', async () => {
@@ -1456,7 +1458,7 @@ describe('product shell ui', () => {
     expect(page).toContain('transitionType,');
     expect(page).toContain('sceneMotion,');
     const captionEditor = htmlTabs.slice(htmlTabs.indexOf('function HtmlVideoCaptionEditor'), htmlTabs.indexOf('function HtmlVideoCoverEditor'));
-    for (const field of ['captionPreset', 'captionAnim', 'captionColors']) {
+    for (const field of ['captionPreset', 'captionAnim', 'captionColors', 'captionLayout']) {
       expect(captionEditor).toContain(`data-html-video-edit-field="${field}"`);
     }
     expect(captionEditor).toContain('api.updateHtmlVideoConfig(task.id, changes)');
@@ -1847,6 +1849,8 @@ describe('product shell ui', () => {
     expect(main).toContain("data-layer={layer}");
     expect(main).toContain('target="image-frame"');
     expect(main).toContain('target="image-media"');
+    expect(main).toContain('min={DRAFT_IMAGE_SCALE_MIN}');
+    expect(main).toContain("data-drag-surface={selected ? 'active' : 'inactive'}");
     expect(css).toContain('.editable-draft-canvas');
     expect(css).toContain('.draft-layer');
     expect(css).toContain('.draft-layer.selected');
@@ -3784,11 +3788,14 @@ describe('product shell ui', () => {
     const bootstrap = main.slice(main.indexOf('api.getBootstrap()'), main.indexOf('const reconciliationTimer'));
     expect(main).toContain('applyStoredTheme(defaultUiPreferences.theme)');
     expect(main).toContain('applyStoredTheme(state.ui.theme)');
+    expect(main).toContain('transitionRendererTheme(current, expectedTheme, nextTheme)');
+    expect(main).toContain('synchronizeState: synchronizeThemeState');
     expect(bootstrap).toContain('applyStoredTheme(bootstrap.ui.theme)');
     expect(bootstrap.indexOf('applyStoredTheme(bootstrap.ui.theme)')).toBeLessThan(bootstrap.indexOf('revealThemedApplication()'));
     expect(settings).toContain("['appearance', Palette, '外观'");
     expect(settings).toContain("api.saveUiPreferences({ theme: nextTheme })");
     expect(settings).toContain('changeRuntimeTheme');
+    expect(settings).toContain('synchronizeState: synchronizeThemeState');
     expect(settings).toContain("section === 'appearance'");
     expect(tokens).toContain(":root[data-theme='light']");
     expect(base).toContain(":root:not([data-theme-ready='true']) #root");

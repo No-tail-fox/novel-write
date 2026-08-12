@@ -48,7 +48,8 @@ describe('draft image display mode', () => {
 
   it('passes the selected mode to Jianying max-scale or min-scale layout', async () => {
     const source = await readFile(new URL('../src/shared/jianying-bridge.ts', import.meta.url), 'utf8');
-    expect(source).toContain('max(scale_x, scale_y) * clamp_number(image_area.get("mediaScale"), 1, 1, 8)');
+    expect(source).toContain('max(scale_x, scale_y) * clamp_number(image_area.get("mediaScale"), 1, 0.1, 8)');
+    expect(source).toContain('(visible_width - area_width_px) * (0.5 - focus_x)');
     expect(source).toContain('area_left * 2 + area_width - 1 + focus_shift_x * 2 / canvas_width');
     expect(source).toContain('if image_layout["use_mask"]');
   });

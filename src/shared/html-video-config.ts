@@ -7,6 +7,7 @@ import type { HtmlVideoJobConfig, HtmlVideoSceneMotion, HtmlVideoVisibleStep } f
 import {
   validateHtmlVideoCaptionAnimation,
   validateHtmlVideoCaptionColors,
+  validateHtmlVideoCaptionLayout,
   validateHtmlVideoCaptionPreset,
 } from './html-video-captions';
 import { normalizeHtmlVideoCoverMode, normalizeHtmlVideoCoverRatio } from './html-video-cover';
@@ -98,6 +99,7 @@ const HTML_VIDEO_MISSING_COMPATIBLE_FIELDS: readonly HtmlVideoMissingCompatibleF
   'captionPreset',
   'captionAnim',
   'captionColors',
+  'captionLayout',
   'bgmVolume',
   'coverPrompt',
   'draftTemplate',
@@ -112,6 +114,7 @@ export const HTML_VIDEO_JOB_DEFAULTS = {
   captionPreset: undefined,
   captionAnim: undefined,
   captionColors: undefined,
+  captionLayout: undefined,
   bgmVolume: undefined,
   transitionType: 'fade',
   sceneMotion: 'auto',
@@ -174,6 +177,8 @@ export function preserveHtmlVideoJobConfig(value: unknown): HtmlVideoJobConfig {
       result.captionAnim = validateHtmlVideoCaptionAnimation(current);
     } else if (field === 'captionColors') {
       result.captionColors = validateHtmlVideoCaptionColors(current) as Record<string, string>;
+    } else if (field === 'captionLayout') {
+      result.captionLayout = validateHtmlVideoCaptionLayout(current);
     } else if (field === 'coverImageMode') {
       try {
         result.coverImageMode = normalizeHtmlVideoCoverMode(current);
@@ -272,6 +277,7 @@ function cloneHtmlVideoJobConfig(config: HtmlVideoJobConfig): HtmlVideoJobConfig
   return {
     ...config,
     ...(config.captionColors ? { captionColors: { ...config.captionColors } } : {}),
+    ...(config.captionLayout ? { captionLayout: { ...config.captionLayout } } : {}),
   };
 }
 

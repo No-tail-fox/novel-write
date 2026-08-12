@@ -31,6 +31,11 @@ describe('task runtime providers', () => {
       expect(prompt).toContain(`${template.materialSlots === 0 ? '无素材槽' : `${template.materialSlots} 个素材槽`}`);
     }
     expect(prompt).toContain('elements[].prompt 不写“透明背景”“无背景”“PNG”');
+    expect(prompt).toContain('你的唯一任务是把输入旁白拆成可直接生成的 HTML 动画短视频场景');
+    expect(prompt).toContain('一个场景只对应一个清晰的画面单元');
+    expect(prompt).toContain('所有 captions 按顺序直接拼接后必须与 narration 逐字完全一致');
+    expect(prompt).toContain('版式必须服务当前旁白语义');
+    expect(prompt).toContain('输出前在内部逐场景核对');
     expect(prompt).not.toContain('主体居中，无背景');
   });
 
@@ -109,7 +114,15 @@ describe('task runtime providers', () => {
         inspectAssetTransparency: async () => false,
       });
 
-      const assets = await generateAssets({ scenes: htmlScenes(), config: { ratio: '16:9', style: imageStyle.id, foreground: true } });
+      const completed: string[] = [];
+
+      const assets = await generateAssets({
+        scenes: htmlScenes(),
+        config: { ratio: '16:9', style: imageStyle.id, foreground: true },
+        onAssetGenerated: async (asset) => {
+          completed.push(`${asset.sceneIndex}:${asset.kind}:${asset.slot}`);
+        },
+      });
 
       expect(captured).toHaveLength(2);
       expect(captured[0].sceneIds).toEqual([1]);
@@ -125,6 +138,7 @@ describe('task runtime providers', () => {
         { sceneIndex: 1, kind: 'bg', slot: 0 },
         { sceneIndex: 1, kind: 'fg', slot: 0, prompt: '人物主体', transparency: 'opaque' },
       ]);
+      expect(completed).toEqual(['1:bg:0', '1:fg:0']);
     });
   });
 

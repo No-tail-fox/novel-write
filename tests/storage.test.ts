@@ -484,8 +484,18 @@ describe('file database', () => {
       },
     });
     const sourceV1 = '<!doctype html><html><body><main data-composition-id="scene-1" data-duration="2"></main></body></html>';
-    const sourceV2 = sourceV1.replace('</main>', '<p>saved revision two</p></main>');
+    const sourceV2 = sourceV1.replace(
+      '</main>',
+      '<div class="clip caption" data-start="0" data-duration="0.8">第一条字幕</div>'
+        + '<div class="clip caption" data-start="0.8" data-duration="1.2">第二条字幕</div>'
+        + '<p>saved revision two</p></main>',
+    );
     const sourceV3 = sourceV1.replace('</main>', '<p>must roll back</p></main>');
+    const overlappingSource = sourceV1.replace(
+      '</main>',
+      '<div class="clip caption" data-start="0" data-duration="1.2">重叠字幕一</div>'
+        + '<div class="clip caption" data-start="1" data-duration="1">重叠字幕二</div></main>',
+    );
     const fileOperations = {
       ensureDirectory: async (path: string) => { await mkdir(path, { recursive: true }); },
       writeSource: async (path: string, source: string) => { await writeFile(path, source, 'utf8'); },
@@ -537,7 +547,14 @@ describe('file database', () => {
       const savedPipeline = parseHtmlVideoPipelineData(afterSave?.pipelineData);
       expect(afterSave).toMatchObject({ status: 'paused', currentStep: 5, pipelineStep: 'render' });
       expect(savedPipeline.revision).toBe(8);
-      expect(savedPipeline.compositions).toEqual([{ ...pipeline.compositions[0], rev: 2 }]);
+      expect(savedPipeline.compositions).toEqual([{
+        ...pipeline.compositions[0],
+        captions: [
+          { id: '1-0', text: '第一条字幕', startSec: 0, durationSec: 0.8 },
+          { id: '1-1', text: '第二条字幕', startSec: 0.8, durationSec: 1.2 },
+        ],
+        rev: 2,
+      }]);
       expect(savedPipeline.steps.preview.status).toBe('completed');
       expect(savedPipeline.steps.render.status).toBe('pending');
       expect(savedPipeline.output).toBeUndefined();
@@ -560,6 +577,14 @@ describe('file database', () => {
       expect(await readFile(htmlPath, 'utf8')).toBe(sourceV2);
 
       await db.updateTask(task.id, { status: 'paused' });
+      await expect(db.updateHtmlVideoCompositionSource({
+        taskId: task.id,
+        sceneIndex: 1,
+        expectedRevision: 2,
+        source: overlappingSource,
+      }, fileOperations)).rejects.toThrow('HTML_VIDEO_CAPTION_TIMING_OVERLAP');
+      expect(await readFile(htmlPath, 'utf8')).toBe(sourceV2);
+
       rejectDatabaseReplace = true;
       await expect(db.updateHtmlVideoCompositionSource({
         taskId: task.id,
@@ -571,7 +596,13 @@ describe('file database', () => {
 
       expect(await readFile(htmlPath, 'utf8')).toBe(sourceV2);
       const afterFailure = (await db.getState()).tasks.find((item) => item.id === task.id);
-      expect(parseHtmlVideoPipelineData(afterFailure?.pipelineData).compositions[0].rev).toBe(2);
+      expect(parseHtmlVideoPipelineData(afterFailure?.pipelineData).compositions[0]).toMatchObject({
+        rev: 2,
+        captions: [
+          { id: '1-0', text: '第一条字幕', startSec: 0, durationSec: 0.8 },
+          { id: '1-1', text: '第二条字幕', startSec: 0.8, durationSec: 1.2 },
+        ],
+      });
     } finally {
       rejectDatabaseReplace = false;
       await db.close();

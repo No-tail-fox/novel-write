@@ -16,6 +16,7 @@ import {
   type HtmlVideoExportInput,
   type HtmlVideoExportResult,
 } from '../src/shared/html-video';
+import { buildHtmlVideoCaptionCues } from '../src/shared/html-video-captions';
 import type {
   HtmlVideoPreviewInput,
   HtmlVideoPreviewOutput,
@@ -2149,6 +2150,7 @@ export function createElectronHtmlVideoRuntime(options: ElectronHtmlVideoRuntime
           sourceScene: HtmlVideoPreviewInput['scenes'][number];
           background: HtmlVideoPreviewInput['assets'][number];
           voice: HtmlVideoPreviewInput['voices'][number];
+          durationSec: number;
           stagedHtmlPath: string;
           stagedThumbnailPath: string;
           htmlPath: string;
@@ -2185,6 +2187,7 @@ export function createElectronHtmlVideoRuntime(options: ElectronHtmlVideoRuntime
             sourceScene,
             background,
             voice,
+            durationSec: scene.duration,
             stagedHtmlPath,
             stagedThumbnailPath: checkedThumbnailPath,
             htmlPath: join(htmlDir, `${filename}.html`),
@@ -2214,11 +2217,11 @@ export function createElectronHtmlVideoRuntime(options: ElectronHtmlVideoRuntime
         );
         const compositions = pending.map<HtmlVideoCompositionSnapshot>((item, index) => ({
           index: item.sceneId,
-          durationSec: item.voice.durationSec,
+          durationSec: item.durationSec,
           canvas: { w: composition.canvas_w, h: composition.canvas_h },
           audio: { src: item.voice.src, durationSec: item.voice.durationSec },
           background: { src: item.background.src },
-          captions: captionTimeline(item.sourceScene.captions, item.voice.durationSec, item.sceneId),
+          captions: captionTimeline(item.sourceScene.captions, item.durationSec, item.sceneId),
           htmlPath: publishedFiles[index * 2 + 2].path,
           thumbnailPath: publishedFiles[index * 2 + 3].path,
           rev: 1,
@@ -2508,13 +2511,11 @@ async function resolveTaskLocalRuntimeMedia(
 }
 
 function captionTimeline(captions: string[], durationSec: number, sceneIndex: number) {
-  const lines = captions.length ? captions : [''];
-  const slotDuration = durationSec / lines.length;
-  return lines.map((text, index) => ({
-    id: `${sceneIndex}-${index}`,
-    text,
-    startSec: index * slotDuration,
-    durationSec: slotDuration,
+  return buildHtmlVideoCaptionCues(captions, durationSec, sceneIndex).map((cue) => ({
+    id: cue.id,
+    text: cue.text,
+    startSec: cue.startSec,
+    durationSec: cue.durationSec,
   }));
 }
 

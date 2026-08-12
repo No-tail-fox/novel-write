@@ -14,7 +14,7 @@ import { AsyncActionFeedback as InlineActionFeedback } from '../../components/As
 import { ConfirmDialog } from '../../components/ConfirmDialog';
 import type { ApplyMutationResult, RendererAppState as AppState } from '../../app/route-types';
 import { fallbackEffectCatalog } from '../../shared/editorial-options';
-import { DRAFT_TEXT_WIDTH_MAX, DRAFT_TEXT_WIDTH_MIN, DraftTemplatePreview, EditableDraftCanvas, applyDraftCanvasRatio, applyDraftImageRatio, clamp, cloneDraftTemplate, draftCanvasSelectionLayer, draftImageFrameRect, draftImageMediaRect, firstVisibleDraftCanvasSelection, isDraftCanvasSelectionVisible, normalizeColorInput, updateDraftImageFrameRect, updateDraftImageMediaScale, type DraftCanvasLayer, type DraftCanvasSelection } from './DraftCanvas';
+import { DRAFT_IMAGE_SCALE_MIN, DRAFT_TEXT_WIDTH_MAX, DRAFT_TEXT_WIDTH_MIN, DraftTemplatePreview, EditableDraftCanvas, applyDraftCanvasRatio, applyDraftImageRatio, clamp, cloneDraftTemplate, draftCanvasSelectionLayer, draftImageFrameRect, draftImageMediaRect, firstVisibleDraftCanvasSelection, isDraftCanvasSelectionVisible, normalizeColorInput, updateDraftImageFrameRect, updateDraftImageMediaScale, type DraftCanvasLayer, type DraftCanvasSelection } from './DraftCanvas';
 
 export function DraftTemplatesPage({ api, state, applyState }: { api: StoryDreamApi; state: AppState; applyState: ApplyMutationResult }) {
   const [editingId, setEditingId] = useState<string | null>(null);
@@ -373,7 +373,7 @@ export function DraftTemplatesPage({ api, state, applyState }: { api: StoryDream
                 {selectedLayer === 'image-media' && draft.image.fit === 'cover' ? (
                   <>
                     <Field label="图片坐标"><input value={`x ${draftImageMediaRect(draft).left.toFixed(2)}, y ${draftImageMediaRect(draft).top.toFixed(2)}`} readOnly /></Field>
-                    <RangeField label="图片缩放" min={1} max={8} step={0.01} value={draft.image.mediaScale} onChange={(value) => setDraft(updateDraftImageMediaScale(draft, value))} />
+                    <RangeField label="图片缩放" min={DRAFT_IMAGE_SCALE_MIN} max={8} step={0.01} value={draft.image.mediaScale} onChange={(value) => setDraft(updateDraftImageMediaScale(draft, value))} />
                     <RangeField label="水平取景" min={0} max={1} step={0.01} value={draft.image.focusX} onChange={(focusX) => updateDraftImage({ focusX })} />
                     <RangeField label="垂直取景" min={0} max={1} step={0.01} value={draft.image.focusY} onChange={(focusY) => updateDraftImage({ focusY })} />
                   </>

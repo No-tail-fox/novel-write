@@ -72,6 +72,8 @@ describe('electron window chrome', () => {
     expect(security.isAllowedDouyinCookieDomain('.douyin.com')).toBe(true);
     expect(security.isAllowedDouyinCookieDomain('passport.iesdouyin.com')).toBe(true);
     expect(security.isAllowedDouyinCookieDomain('douyin.com.evil.example')).toBe(false);
+    expect(security.isAllowedBenchmarkCookieDomain('.bilibili.com', 'bilibili')).toBe(true);
+    expect(security.isAllowedBenchmarkCookieDomain('bilibili.com.evil.example', 'bilibili')).toBe(false);
   });
 
   it('allows hidden HTML navigation only to files under the task root', async () => {

@@ -6,13 +6,31 @@ import { SegmentedControl as Segmented } from '../../components/SegmentedControl
 import { AsyncActionFeedback as InlineActionFeedback } from '../../components/AsyncActionFeedback';
 import type { ApplyMutationResult } from '../../app/route-types';
 import type { StoryDreamApi } from '../../shared/storydream-api';
-import type { BgmItem, CustomCoverTemplate, HtmlVideoConfigChange, HtmlVideoCoverAsset, HtmlVideoCoverMode, HtmlVideoCoverRatio, HtmlVideoJobConfig, HtmlVideoTabKey, MinimaxCloneVoice, Task } from '../../shared/types';
-import { HTML_VIDEO_CAPTION_ANIMATIONS, HTML_VIDEO_CAPTION_COLOR_KEYS, HTML_VIDEO_CAPTION_PRESETS, htmlVideoCaptionColorsEqual, htmlVideoCaptionPickerColor, resolveHtmlVideoCaptionStyle, validateHtmlVideoCaptionColors, type HtmlVideoCaptionAnimation, type HtmlVideoCaptionColorKey, type HtmlVideoCaptionColorOverrides, type HtmlVideoCaptionPreset } from '../../shared/html-video-captions';
+import type { BgmItem, CustomCoverTemplate, HtmlVideoCaptionLayout, HtmlVideoConfigChange, HtmlVideoCoverAsset, HtmlVideoCoverMode, HtmlVideoCoverRatio, HtmlVideoJobConfig, HtmlVideoTabKey, MinimaxCloneVoice, Task } from '../../shared/types';
+import {
+  HTML_VIDEO_CAPTION_ALIGNS,
+  HTML_VIDEO_CAPTION_ANIMATIONS,
+  HTML_VIDEO_CAPTION_COLOR_KEYS,
+  HTML_VIDEO_CAPTION_FONT_WEIGHTS,
+  HTML_VIDEO_CAPTION_PRESETS,
+  HTML_VIDEO_CAPTION_REGIONS,
+  htmlVideoCaptionColorsEqual,
+  htmlVideoCaptionLayoutEqual,
+  htmlVideoCaptionPickerColor,
+  resolveHtmlVideoCaptionStyle,
+  validateHtmlVideoCaptionColors,
+  validateHtmlVideoCaptionLayout,
+  type HtmlVideoCaptionAnimation,
+  type HtmlVideoCaptionColorKey,
+  type HtmlVideoCaptionColorOverrides,
+  type HtmlVideoCaptionPreset,
+} from '../../shared/html-video-captions';
 import { HTML_VIDEO_CONTROL_MANIFEST_V1 } from '../../shared/html-video-control-manifest';
 import { HTML_VIDEO_COVER_MODES, HTML_VIDEO_COVER_RATIOS, buildHtmlVideoCoverPrompt, htmlVideoCoverDimensions } from '../../shared/html-video-cover';
 import { HTML_VIDEO_BGM_VOLUMES, HTML_VIDEO_JOB_DEFAULTS, HTML_VIDEO_TRANSITION_LABELS, HTML_VIDEO_TRANSITIONS } from '../../shared/html-video-config';
 import { htmlVideoMediaElementKey, htmlVideoMediaStatus } from '../../shared/html-video-media';
 import { fitHtmlVideoOutputSize, htmlVideoUserFacingError, safeParseHtmlVideoPipelineData } from '../../shared/html-video-workflow';
+import { draftFontGroups, draftFontOptions } from '../../shared/templates';
 import { useAsyncAction } from '../../ui/async-action';
 import {
   HtmlVideoStoryboundAssetsPanel,
@@ -40,6 +58,9 @@ const htmlVideoCaptionColorLabels: Record<HtmlVideoCaptionColorKey, string> = {
   shadow: '阴影',
 };
 
+const htmlVideoCaptionRegionLabels = ['跟随场景', '顶部', '中部', '底部'] as const;
+const htmlVideoCaptionAlignLabels = ['左对齐', '居中', '右对齐'] as const;
+
 function HtmlVideoCaptionEditor({
   api,
   task,
@@ -57,10 +78,12 @@ function HtmlVideoCaptionEditor({
 }) {
   const initial = resolveHtmlVideoCaptionStyle(config);
   const configColorsKey = JSON.stringify(config.captionColors ?? {});
+  const configLayoutKey = JSON.stringify(config.captionLayout ?? {});
   const [preset, setPreset] = useState<HtmlVideoCaptionPreset>(initial.preset);
   const [animation, setAnimation] = useState<HtmlVideoCaptionAnimation>(initial.requestedAnimation);
   const [colors, setColors] = useState(initial.colors);
   const [colorOverrides, setColorOverrides] = useState<HtmlVideoCaptionColorOverrides>({ ...(config.captionColors ?? {}) });
+  const [layout, setLayout] = useState<HtmlVideoCaptionLayout>(validateHtmlVideoCaptionLayout(config.captionLayout));
   const [message, setMessage] = useState('');
   const captionAction = useAsyncAction();
   const disabled = busy || task.status === 'pending' || task.status === 'running' || captionAction.busy;
@@ -71,8 +94,9 @@ function HtmlVideoCaptionEditor({
     setAnimation(next.requestedAnimation);
     setColors(next.colors);
     setColorOverrides({ ...(config.captionColors ?? {}) });
+    setLayout(validateHtmlVideoCaptionLayout(config.captionLayout));
     setMessage('');
-  }, [task.id, config.captionPreset, config.captionAnim, configColorsKey]);
+  }, [task.id, config.captionPreset, config.captionAnim, configColorsKey, configLayoutKey]);
 
   function changePreset(value: HtmlVideoCaptionPreset) {
     setPreset(value);
@@ -101,6 +125,7 @@ function HtmlVideoCaptionEditor({
   async function saveCaptionConfig() {
     try {
       validateHtmlVideoCaptionColors(colors);
+      validateHtmlVideoCaptionLayout(layout);
     } catch {
       setMessage('请先修正无效的字幕颜色代码。');
       return;
@@ -110,6 +135,9 @@ function HtmlVideoCaptionEditor({
     if (animation !== initial.requestedAnimation) changes.push({ field: 'captionAnim', value: animation });
     if (!htmlVideoCaptionColorsEqual(config.captionColors, colorOverrides)) {
       changes.push({ field: 'captionColors', value: colorOverrides });
+    }
+    if (!htmlVideoCaptionLayoutEqual(config.captionLayout, layout)) {
+      changes.push({ field: 'captionLayout', value: layout });
     }
     if (!changes.length) {
       setMessage('字幕参数没有变化。');
@@ -145,6 +173,53 @@ function HtmlVideoCaptionEditor({
               {HTML_VIDEO_CAPTION_ANIMATIONS.map((value) => <option key={value} value={value}>{htmlVideoCaptionAnimationLabels[value]}</option>)}
             </select>
           </Field>
+        </div>
+        <div className="hv-caption-layout" data-html-video-edit-field="captionLayout">
+          <Segmented
+            label="字幕区域"
+            value={layout.region}
+            options={[...HTML_VIDEO_CAPTION_REGIONS]}
+            labels={[...htmlVideoCaptionRegionLabels]}
+            onChange={(region) => setLayout((current) => ({ ...current, region }))}
+            disabled={disabled}
+          />
+          <Field label="字体">
+            <select
+              value={layout.fontFamily}
+              onChange={(event) => setLayout((current) => ({ ...current, fontFamily: event.target.value as HtmlVideoCaptionLayout['fontFamily'] }))}
+              disabled={disabled}
+            >
+              {draftFontGroups.map((group) => (
+                <optgroup key={group} label={group}>
+                  {draftFontOptions.filter((option) => option.group === group).map((option) => (
+                    <option key={option.value} value={option.value}>{option.label}</option>
+                  ))}
+                </optgroup>
+              ))}
+            </select>
+          </Field>
+          <Field label={`字号 ${layout.fontSize}`}>
+            <input type="range" min={24} max={96} step={1} value={layout.fontSize} onChange={(event) => setLayout((current) => ({ ...current, fontSize: Number(event.target.value) }))} />
+          </Field>
+          <Field label={`行高 ${layout.lineHeight.toFixed(2)}`}>
+            <input type="range" min={1} max={2} step={0.05} value={layout.lineHeight} onChange={(event) => setLayout((current) => ({ ...current, lineHeight: Number(event.target.value) }))} />
+          </Field>
+          <Field label={`文本框宽度 ${layout.widthPercent}%`}>
+            <input type="range" min={40} max={96} step={1} value={layout.widthPercent} onChange={(event) => setLayout((current) => ({ ...current, widthPercent: Number(event.target.value) }))} />
+          </Field>
+          <Field label="字重">
+            <select value={layout.fontWeight} onChange={(event) => setLayout((current) => ({ ...current, fontWeight: Number(event.target.value) as HtmlVideoCaptionLayout['fontWeight'] }))}>
+              {HTML_VIDEO_CAPTION_FONT_WEIGHTS.map((weight) => <option key={weight} value={weight}>{weight}</option>)}
+            </select>
+          </Field>
+          <Segmented
+            label="对齐"
+            value={layout.align}
+            options={[...HTML_VIDEO_CAPTION_ALIGNS]}
+            labels={[...htmlVideoCaptionAlignLabels]}
+            onChange={(align) => setLayout((current) => ({ ...current, align }))}
+            disabled={disabled}
+          />
         </div>
         <div className="hv-caption-colors" data-html-video-edit-field="captionColors">
           {HTML_VIDEO_CAPTION_COLOR_KEYS.map((key) => (
@@ -474,9 +549,11 @@ function HtmlVideoOutputActions({
       if (bgmId !== (config.bgmId ?? '')) changes.push({ field: 'bgmId', value: bgmId });
       if (bgmVolume !== (config.bgmVolume ?? 'soft')) changes.push({ field: 'bgmVolume', value: bgmVolume });
       if (transitionType !== (config.transitionType ?? HTML_VIDEO_JOB_DEFAULTS.transitionType)) changes.push({ field: 'transitionType', value: transitionType });
-      applyState(changes.length
-        ? await api.updateHtmlVideoConfig(task.id, changes)
-        : await api.rerenderHtmlVideo(task.id));
+      if (changes.length) {
+        applyState(await api.updateHtmlVideoConfig(task.id, changes));
+        await refreshTaskDetail(task.id);
+      }
+      applyState(await api.rerenderHtmlVideo(task.id));
       await refreshTaskDetail(task.id);
       applyState(await api.updateTaskStatus(task.id, 'running'));
       await refreshTaskDetail(task.id);
