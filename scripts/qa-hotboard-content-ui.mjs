@@ -78,6 +78,7 @@ try {
       await clickByText(cdp, '.hot-board-network-row:first-child button', '正文');
       await waitForExpression(cdp, "Boolean(document.querySelector('.hot-board-source-reader [data-content-kind]'))");
       await waitForExpression(cdp, "document.querySelectorAll('.hot-board-reader-media').length === 2");
+      await stabilizeQaImages(cdp);
       await waitForExpression(cdp, "[...document.querySelectorAll('.hot-board-reader-media img')].every((image) => image.complete)");
       const hoverMetrics = await evaluate(cdp, `(() => {
         const button = document.querySelector('.hot-board-network-row:first-child .sd-icon-button');
@@ -127,6 +128,7 @@ try {
       || result.expandedLength < 60
       || result.mediaCount !== 2
       || result.galleryClipped
+      || !result.reReadVisible
       || !result.viewer.visible
       || !result.viewer.hasImageOrFallback
       || !result.viewer.withinViewport
@@ -171,6 +173,7 @@ async function captureHotBoard(cdp, viewport) {
       expandedLength: expanded?.querySelector('.hot-board-reader-copy')?.textContent?.trim().length || 0,
       mediaCount: mediaCards.length,
       failedMediaCount: mediaCards.filter((card) => card.getAttribute('data-load-state') === 'failed').length,
+      reReadVisible: [...document.querySelectorAll('.hot-board-reader-actions button')].some((button) => button.textContent?.includes('重新读取')),
       galleryClipped: Boolean(galleryRect && mediaCards.some((card) => {
         const rect = card.getBoundingClientRect();
         return rect.left < galleryRect.left - 1 || rect.right > galleryRect.right + 1;
@@ -286,6 +289,20 @@ async function clickByText(cdp, selector, label) {
     const button = [...document.querySelectorAll(${JSON.stringify(selector)})].find((item) => item.textContent?.includes(${JSON.stringify(label)}));
     if (!button) throw new Error('Button not found: ${label}');
     button.click();
+    return true;
+  })()`);
+}
+
+async function stabilizeQaImages(cdp) {
+  await evaluate(cdp, `(() => {
+    const sources = [
+      'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAusB9Y9Z/1sAAAAASUVORK5CYII=',
+      'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=',
+    ];
+    [...document.querySelectorAll('.hot-board-reader-media img')].forEach((image, index) => {
+      image.loading = 'eager';
+      image.src = sources[index % sources.length];
+    });
     return true;
   })()`);
 }

@@ -43,16 +43,18 @@ describe('hot board source content', () => {
   });
 
   it('extracts Xiaohongshu note text and ordered imageList media from public hydration state', async () => {
+    const noteId = '64f1e2d3c4b5a69788776655';
     const initialState = {
       note: {
         noteDetailMap: {
-          abc123: {
+          [noteId]: {
             note: {
+              noteId,
               title: '周末做了一个小书房',
               desc: '把原来的储物间改成了小书房，记录了收纳、灯光和&quot;原木色&quot;桌面布置的完整过程。',
               imageList: [
                 { urlDefault: 'https://sns-webpic-qc.xhscdn.com/note/01.webp', width: 1080, height: 1440 },
-                { urlDefault: 'https://sns-webpic-qc.xhscdn.com/note/02.webp', width: 1080, height: 1440 },
+                { urlPre: 'https://sns-webpic-qc.xhscdn.com/note/02.webp', width: 1080, height: 1440 },
                 { urlDefault: 'https://sns-webpic-qc.xhscdn.com/note/01.webp', width: 1080, height: 1440 },
                 { urlDefault: 'https://sns-avatar-qc.xhscdn.com/avatar/owner.webp', width: 96, height: 96 },
               ],
@@ -63,7 +65,7 @@ describe('hot board source content', () => {
     };
     const result = await readPublicSourceContent({
       title: '周末做了一个小书房',
-      url: 'https://www.xiaohongshu.com/explore/abc123',
+      url: `https://www.xiaohongshu.com/explore/${noteId}?xsec_token=public-token&xsec_source=pc_feed`,
     }, async () => new Response(`<html><body><div id="app"></div><script>window.__INITIAL_STATE__=${JSON.stringify(initialState)}</script></body></html>`, {
       status: 200,
       headers: { 'content-type': 'text/html; charset=utf-8' },
@@ -76,6 +78,90 @@ describe('hot board source content', () => {
       { type: 'image', url: 'https://sns-webpic-qc.xhscdn.com/note/01.webp', width: 1080, height: 1440 },
       { type: 'image', url: 'https://sns-webpic-qc.xhscdn.com/note/02.webp', width: 1080, height: 1440 },
     ]);
+  });
+
+  it('selects only the Xiaohongshu note matching the URL instead of a longer recommended note', async () => {
+    const targetId = '64f1e2d3c4b5a69788776655';
+    const recommendedId = '65aabbccddeeff0011223344';
+    const initialState = {
+      note: {
+        noteDetailMap: {
+          [targetId]: {
+            note: {
+              noteId: targetId,
+              title: '目标笔记',
+              desc: '这是当前链接对应的目标笔记正文，包含目标内容与公开说明。',
+              imageList: [{ urlDefault: 'https://sns-webpic-qc.xhscdn.com/target/01.webp', width: 1080, height: 1440 }],
+            },
+          },
+          [recommendedId]: {
+            note: {
+              noteId: recommendedId,
+              title: '页面下方推荐笔记',
+              desc: `这是不应读取的推荐流正文。${'推荐内容很长。'.repeat(80)}`,
+              imageList: [{ urlDefault: 'https://sns-webpic-qc.xhscdn.com/recommend/01.webp', width: 1080, height: 1440 }],
+            },
+          },
+        },
+      },
+    };
+    const result = await readPublicSourceContent({
+      title: '目标笔记',
+      url: `https://www.xiaohongshu.com/explore/${targetId}`,
+    }, async () => new Response(`<html><body><script>window.__INITIAL_STATE__=${JSON.stringify(initialState)}</script></body></html>`, {
+      status: 200,
+      headers: { 'content-type': 'text/html; charset=utf-8' },
+    }));
+
+    expect(result.kind).toBe('page');
+    expect(result.content).toContain('当前链接对应的目标笔记');
+    expect(result.content).not.toContain('不应读取的推荐流正文');
+    expect(result.media?.map((item) => item.url)).toEqual(['https://sns-webpic-qc.xhscdn.com/target/01.webp']);
+  });
+
+  it('ignores Xiaohongshu recommendation media when the target note is absent', async () => {
+    const targetId = '64f1e2d3c4b5a69788776655';
+    const recommendedId = '65aabbccddeeff0011223344';
+    const initialState = {
+      note: {
+        noteDetailMap: {
+          [recommendedId]: {
+            note: {
+              noteId: recommendedId,
+              desc: '这是页面推荐流里的另一篇笔记，不是当前链接对应的目标内容。',
+              imageList: [{ urlDefault: 'https://sns-webpic-qc.xhscdn.com/recommend/only.webp', width: 1080, height: 1440 }],
+            },
+          },
+        },
+      },
+    };
+    const result = await readPublicSourceContent({
+      title: '未公开的目标笔记',
+      url: `https://www.xiaohongshu.com/discovery/item/${targetId}`,
+      summary: '这是热榜归档保存的目标条目摘要。',
+    }, async () => new Response(`<html><head><meta property="og:image" content="https://sns-webpic-qc.xhscdn.com/recommend/og.webp"></head><body>
+      <script>window.__INITIAL_STATE__=${JSON.stringify(initialState)}</script>
+      <footer><img src="https://sns-webpic-qc.xhscdn.com/recommend/footer.webp"></footer>
+    </body></html>`, { status: 200, headers: { 'content-type': 'text/html; charset=utf-8' } }));
+
+    expect(result).toMatchObject({ kind: 'summary', content: '这是热榜归档保存的目标条目摘要。' });
+    expect(result.media).toBeUndefined();
+    expect(result.warning).toContain('未在公开页面中找到目标笔记，已忽略推荐流内容');
+  });
+
+  it('does not treat Xiaohongshu search or topic feeds as note content', async () => {
+    const result = await readPublicSourceContent({
+      title: '小红书热榜话题',
+      url: 'https://www.xiaohongshu.com/search_result?keyword=%E7%83%AD%E7%82%B9',
+      summary: '这是热榜归档中的话题摘要。',
+    }, async () => new Response(`<html><head><meta property="og:image" content="https://sns-webpic-qc.xhscdn.com/feed/og.webp"></head><body>
+      <script>window.__INITIAL_STATE__=${JSON.stringify({ feed: { items: [{ desc: '搜索页推荐笔记正文，不属于目标条目。', imageList: [{ urlDefault: 'https://sns-webpic-qc.xhscdn.com/feed/01.webp' }] }] } })}</script>
+      <main><p>小红书发现页推荐内容与通用页面说明。</p><img src="https://sns-webpic-qc.xhscdn.com/feed/footer.webp"></main>
+    </body></html>`, { status: 200, headers: { 'content-type': 'text/html; charset=utf-8' } }));
+
+    expect(result).toMatchObject({ kind: 'summary', content: '这是热榜归档中的话题摘要。' });
+    expect(result.media).toBeUndefined();
+    expect(result.warning).toContain('不是笔记详情页');
   });
 
   it('collects JSON-LD, Open Graph, and semantic article images without tracking assets', async () => {

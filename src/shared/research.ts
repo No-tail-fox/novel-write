@@ -275,7 +275,7 @@ export async function readPublicSourceContent(
   const title = input.title.trim();
   const url = input.url.trim();
   const summary = compactText(input.summary ?? '');
-  let snapshot: { url: string; content: string; media: HotBoardSourceMedia[] } = { url, content: '', media: [] };
+  let snapshot: ArticleSnapshot = { url, content: '', media: [] };
   let fetchWarning = '';
   try {
     snapshot = await fetchArticleSnapshot(url, fetchImpl);
@@ -284,7 +284,9 @@ export async function readPublicSourceContent(
   }
   const pageContent = normalizeArticleText(snapshot.content);
   const hasExtractedText = pageContent.length >= 16 && pageContent !== title;
-  const hasReadablePage = (pageContent.length >= 60 && pageContent !== title) || snapshot.media.length > 0;
+  const hasReadablePage = snapshot.exactMatch
+    ? hasExtractedText || snapshot.media.length > 0
+    : (pageContent.length >= 60 && pageContent !== title) || snapshot.media.length > 0;
   const content = hasExtractedText ? pageContent : summary;
   const kind: HotBoardSourceContent['kind'] = hasReadablePage ? 'page' : summary ? 'summary' : 'unavailable';
   const warning = kind === 'page'
@@ -293,6 +295,8 @@ export async function readPublicSourceContent(
         ? '已读取页面图片；页面正文不可用，文字使用热榜来源摘要。'
         : '已读取页面图片，但页面没有提供可读文字。'
       : ''
+    : snapshot.warning
+      ? `${snapshot.warning}${fetchWarning ? ` ${fetchWarning}` : ''}`.trim()
     : kind === 'summary'
       ? `未能读取页面正文，当前使用热榜来源摘要。${fetchWarning ? ` ${fetchWarning}` : ''}`.trim()
       : `未能读取页面正文，且来源没有提供摘要。${fetchWarning ? ` ${fetchWarning}` : ''}`.trim();
@@ -752,7 +756,15 @@ async function fetchPageText(url: string, fetchImpl: FetchLike): Promise<string>
   return (await fetchPageSnapshot(url, fetchImpl)).content;
 }
 
-async function fetchArticleSnapshot(url: string, fetchImpl: FetchLike): Promise<{ url: string; content: string; media: HotBoardSourceMedia[] }> {
+interface ArticleSnapshot {
+  url: string;
+  content: string;
+  media: HotBoardSourceMedia[];
+  exactMatch?: boolean;
+  warning?: string;
+}
+
+async function fetchArticleSnapshot(url: string, fetchImpl: FetchLike): Promise<ArticleSnapshot> {
   const response = await fetchBounded(fetchImpl, url, {
     timeoutMs: 12_000,
     maxBytes: ARTICLE_PAGE_MAX_BYTES,
@@ -765,6 +777,35 @@ async function fetchArticleSnapshot(url: string, fetchImpl: FetchLike): Promise<
   const resolvedUrl = response.url || url;
   if (contentType.includes('text/plain')) {
     return { url: resolvedUrl, content: normalizeArticleText(body).slice(0, 50_000), media: [] };
+  }
+  if (isXiaohongshuUrl(url) || isXiaohongshuUrl(resolvedUrl)) {
+    const noteId = extractXiaohongshuNoteId(resolvedUrl) || extractXiaohongshuNoteId(url);
+    if (!noteId) {
+      return {
+        url: resolvedUrl,
+        content: '',
+        media: [],
+        warning: '当前小红书链接不是笔记详情页，已忽略页面推荐流内容。',
+      };
+    }
+    const target = extractXiaohongshuTargetNote(body, noteId, resolvedUrl);
+    if (!target.found) {
+      return {
+        url: resolvedUrl,
+        content: '',
+        media: [],
+        warning: '未在公开页面中找到目标笔记，已忽略推荐流内容。',
+      };
+    }
+    return {
+      url: resolvedUrl,
+      content: normalizeArticleText(target.content).slice(0, 50_000),
+      media: target.media,
+      exactMatch: true,
+      ...(!target.content && target.media.length === 0
+        ? { warning: '目标笔记未在公开页面中提供可读正文或图片，已忽略推荐流内容。' }
+        : {}),
+    };
   }
   const structured = extractStructuredPageContent(body, resolvedUrl);
   const text = structured.content || extractReadableText(body) || extractOpenGraphDescription(body);
@@ -1194,6 +1235,10 @@ interface StructuredPageContent {
   media: HotBoardSourceMedia[];
 }
 
+interface XiaohongshuTargetNote extends StructuredPageContent {
+  found: boolean;
+}
+
 interface StructuredWalkBudget {
   remaining: number;
 }
@@ -1224,6 +1269,102 @@ const STRUCTURED_JSON_ASSIGNMENTS = [
   'window.$render_data',
   'var $render_data',
 ] as const;
+
+function isXiaohongshuUrl(value: string): boolean {
+  try {
+    const hostname = new URL(value).hostname.toLowerCase();
+    return hostname === 'xiaohongshu.com' || hostname.endsWith('.xiaohongshu.com');
+  } catch {
+    return false;
+  }
+}
+
+function extractXiaohongshuNoteId(value: string): string {
+  try {
+    const pathname = new URL(value).pathname;
+    const match = pathname.match(/^\/(?:explore|discovery\/item)\/([a-z0-9_-]+)(?:\/|$)/iu);
+    return match?.[1] ?? '';
+  } catch {
+    return '';
+  }
+}
+
+function extractXiaohongshuTargetNote(html: string, noteId: string, baseUrl: string): XiaohongshuTargetNote {
+  const rawState = extractAssignedJson(html, 'window.__INITIAL_STATE__');
+  const state = rawState ? parseStructuredJson(rawState, false) : undefined;
+  if (!isRecord(state)) return { found: false, content: '', media: [] };
+
+  const noteState = isRecord(state.note) ? state.note : null;
+  const detailMap = noteState && isRecord(noteState.noteDetailMap) ? noteState.noteDetailMap : null;
+  let target = detailMap ? unwrapXiaohongshuNote(detailMap[noteId]) : null;
+  if (!target && detailMap) {
+    for (const entry of Object.values(detailMap)) {
+      const note = unwrapXiaohongshuNote(entry);
+      if (note && matchesXiaohongshuNoteId(note, noteId)) {
+        target = note;
+        break;
+      }
+    }
+  }
+  target ??= findXiaohongshuNoteById(state, noteId, { remaining: 12_000 });
+  if (!target) return { found: false, content: '', media: [] };
+
+  const title = normalizeStructuredContentText(firstString(target, ['title']));
+  const description = normalizeStructuredContentText(firstString(target, ['desc']));
+  const imageList = Array.isArray(target.imageList) ? target.imageList : [];
+  const media = imageList.flatMap((entry): HotBoardSourceMedia[] => {
+    if (!isRecord(entry)) return [];
+    const imageUrl = firstString(entry, ['urlDefault', 'urlPre']);
+    if (!imageUrl) return [];
+    const width = readMediaDimension(entry, ['width']);
+    const height = readMediaDimension(entry, ['height']);
+    return [{
+      type: 'image',
+      url: imageUrl,
+      ...(width ? { width } : {}),
+      ...(height ? { height } : {}),
+    }];
+  });
+  return {
+    found: true,
+    content: description || title,
+    media: normalizeArticleMedia(media, baseUrl),
+  };
+}
+
+function unwrapXiaohongshuNote(value: unknown): Record<string, unknown> | null {
+  if (!isRecord(value)) return null;
+  return isRecord(value.note) ? value.note : value;
+}
+
+function matchesXiaohongshuNoteId(note: Record<string, unknown>, noteId: string): boolean {
+  return firstString(note, ['noteId', 'id']).toLowerCase() === noteId.toLowerCase();
+}
+
+function findXiaohongshuNoteById(
+  value: unknown,
+  noteId: string,
+  budget: StructuredWalkBudget,
+  depth = 0,
+): Record<string, unknown> | null {
+  if (budget.remaining <= 0 || depth > 14) return null;
+  budget.remaining -= 1;
+  if (Array.isArray(value)) {
+    for (const entry of value.slice(0, 400)) {
+      const match = findXiaohongshuNoteById(entry, noteId, budget, depth + 1);
+      if (match) return match;
+    }
+    return null;
+  }
+  if (!isRecord(value)) return null;
+  if (matchesXiaohongshuNoteId(value, noteId)
+    && ('desc' in value || 'title' in value || Array.isArray(value.imageList))) return value;
+  for (const child of Object.values(value)) {
+    const match = findXiaohongshuNoteById(child, noteId, budget, depth + 1);
+    if (match) return match;
+  }
+  return null;
+}
 
 function extractStructuredPageContent(html: string, baseUrl: string): StructuredPageContent {
   const textCandidates: StructuredTextCandidate[] = [];

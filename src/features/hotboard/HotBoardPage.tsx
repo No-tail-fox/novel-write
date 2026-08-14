@@ -479,7 +479,9 @@ export function HotBoardPage({
           <div className="hot-board-reader-actions">
             <Button density="compact" variant="subtle" type="button" onClick={() => setReaderItem(null)}>关闭</Button>
             <Button density="compact" variant="secondary" type="button" disabled={openingUrl === readerItem.url} onClick={() => openItemSource(readerItem)}>打开原文</Button>
-            {sourceReadErrors[readerItem.id] ? <Button density="compact" variant="primary" type="button" onClick={retrySourceContent}>重试读取</Button> : null}
+            <Button density="compact" variant="primary" type="button" disabled={readingItemId === readerItem.id} onClick={retrySourceContent}>
+              <RefreshCw className={readingItemId === readerItem.id ? 'spin' : undefined} size={13} />重新读取
+            </Button>
           </div>
         ) : undefined}
       >
