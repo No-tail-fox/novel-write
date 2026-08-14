@@ -77,6 +77,8 @@ try {
       await waitForExpression(cdp, "document.querySelectorAll('.hot-board-network-row').length === 3");
       await clickByText(cdp, '.hot-board-network-row:first-child button', '正文');
       await waitForExpression(cdp, "Boolean(document.querySelector('.hot-board-source-reader [data-content-kind]'))");
+      await waitForExpression(cdp, "document.querySelectorAll('.hot-board-reader-media').length === 2");
+      await waitForExpression(cdp, "[...document.querySelectorAll('.hot-board-reader-media img')].every((image) => image.complete)");
       const hoverMetrics = await evaluate(cdp, `(() => {
         const button = document.querySelector('.hot-board-network-row:first-child .sd-icon-button');
         if (!button) return { found: false };
@@ -93,12 +95,18 @@ try {
           tooltipCount: document.querySelectorAll('[role="tooltip"]').length,
         };
       })()`);
-      results.push({ ...(await captureHotBoard(cdp, viewport)), hoverMetrics });
+      const gallery = await captureHotBoard(cdp, viewport);
+      await evaluate(cdp, `document.querySelector('.hot-board-reader-media')?.click()`);
+      await waitForExpression(cdp, "Boolean(document.querySelector('.hot-board-image-viewer'))");
+      const viewer = await captureImageViewer(cdp, viewport);
+      await evaluate(cdp, `document.querySelector('[aria-label="返回图文"]')?.click()`);
+      results.push({ ...gallery, viewer, hoverMetrics });
     }
 
     await setViewport(cdp, { width: 1440, height: 900, name: 'handoff' });
     await cdp.send('Page.reload', { ignoreCache: true });
     await waitForExpression(cdp, "document.readyState === 'complete' && Boolean(document.querySelector('[data-editorial-shell]'))");
+    await waitForExpression(cdp, "[...document.querySelectorAll('button')].some((button) => button.textContent?.includes('实时热榜'))");
     await navigate(cdp, '实时热榜', '[data-hot-board-workbench]');
     await waitForExpression(cdp, "document.querySelectorAll('.hot-board-network-row').length === 3");
     await clickByText(cdp, '.hot-board-network-row:first-child button', '去创作');
@@ -117,6 +125,13 @@ try {
       || !result.singleLineRows
       || result.expandedKind !== 'summary'
       || result.expandedLength < 60
+      || result.mediaCount !== 2
+      || result.galleryClipped
+      || !result.viewer.visible
+      || !result.viewer.hasImageOrFallback
+      || !result.viewer.withinViewport
+      || result.viewer.horizontalOverflow > 1
+      || result.viewer.clippedControls.length > 0
       || !result.previewWarningVisible
       || !result.hoverMetrics.found
       || result.hoverMetrics.layoutShift > 0.5
@@ -145,12 +160,21 @@ async function captureHotBoard(cdp, viewport) {
     const rows = [...root.querySelectorAll('.hot-board-network-row')];
     const reader = document.querySelector('.hot-board-source-reader');
     const expanded = reader?.querySelector('[data-content-kind]');
+    const gallery = reader?.querySelector('.hot-board-reader-gallery');
+    const mediaCards = [...(gallery?.querySelectorAll('.hot-board-reader-media') || [])];
+    const galleryRect = gallery?.getBoundingClientRect();
     return {
       rowCount: rows.length,
       inlineContentCount: rows.filter((row) => Boolean(row.querySelector('.hot-board-item-main > p, .hot-board-source-content'))).length,
       singleLineRows: rows.every((row) => row.getBoundingClientRect().height <= 58),
       expandedKind: expanded?.getAttribute('data-content-kind') || '',
       expandedLength: expanded?.querySelector('.hot-board-reader-copy')?.textContent?.trim().length || 0,
+      mediaCount: mediaCards.length,
+      failedMediaCount: mediaCards.filter((card) => card.getAttribute('data-load-state') === 'failed').length,
+      galleryClipped: Boolean(galleryRect && mediaCards.some((card) => {
+        const rect = card.getBoundingClientRect();
+        return rect.left < galleryRect.left - 1 || rect.right > galleryRect.right + 1;
+      })),
       previewLabel: root.querySelector('.hot-board-live-state')?.textContent?.trim() || '',
       previewWarningVisible: root.textContent?.includes('不代表实时数据') || false,
       horizontalOverflow: Math.max(document.documentElement.scrollWidth - document.documentElement.clientWidth, root.scrollWidth - root.clientWidth),
@@ -177,6 +201,40 @@ async function captureHotBoard(cdp, viewport) {
   const file = resolve(artifactRoot, `hotboard-content-${viewport.name}.png`);
   await writeFile(file, Buffer.from(screenshot.data, 'base64'));
   return { viewport: `${viewport.width}x${viewport.height}`, screenshot: file, ...metrics };
+}
+
+async function captureImageViewer(cdp, viewport) {
+  const metrics = await evaluate(cdp, `(() => {
+    const viewer = document.querySelector('.hot-board-image-viewer');
+    const dialog = viewer?.closest('[role="dialog"]');
+    const rect = viewer?.getBoundingClientRect();
+    return {
+      visible: Boolean(viewer && rect && rect.width > 0 && rect.height > 0),
+      hasImageOrFallback: Boolean(viewer?.querySelector('img, .hot-board-image-viewer-fallback')),
+      withinViewport: Boolean(rect && rect.left >= -1 && rect.right <= innerWidth + 1 && rect.top >= -1 && rect.bottom <= innerHeight + 1),
+      horizontalOverflow: dialog ? Math.max(dialog.scrollWidth - dialog.clientWidth, document.documentElement.scrollWidth - document.documentElement.clientWidth) : 0,
+      clippedControls: dialog ? clippedControls(dialog) : [],
+    };
+
+    function clippedControls(container) {
+      return [...container.querySelectorAll('button')].filter((element) => {
+        const rect = element.getBoundingClientRect();
+        const style = getComputedStyle(element);
+        if (style.display === 'none' || style.visibility === 'hidden' || rect.width <= 0 || rect.height <= 0) return false;
+        const viewportClipped = rect.left < -1 || rect.right > innerWidth + 1 || rect.top < -1 || rect.bottom > innerHeight + 1;
+        if (!viewportClipped) return false;
+        for (let ancestor = element.parentElement; ancestor && ancestor !== container; ancestor = ancestor.parentElement) {
+          const ancestorStyle = getComputedStyle(ancestor);
+          if (['auto', 'scroll'].includes(ancestorStyle.overflowY) || ['auto', 'scroll'].includes(ancestorStyle.overflowX)) return false;
+        }
+        return true;
+      }).map((element) => element.getAttribute('aria-label') || element.textContent?.trim().slice(0, 40) || element.tagName);
+    }
+  })()`);
+  const screenshot = await cdp.send('Page.captureScreenshot', { format: 'png', captureBeyondViewport: false });
+  const file = resolve(artifactRoot, `hotboard-image-viewer-${viewport.name}.png`);
+  await writeFile(file, Buffer.from(screenshot.data, 'base64'));
+  return { screenshot: file, ...metrics };
 }
 
 async function captureHandoff(cdp) {
@@ -213,6 +271,7 @@ async function captureHandoff(cdp) {
 }
 
 async function navigate(cdp, label, selector) {
+  await waitForExpression(cdp, `[...document.querySelectorAll('button')].some((item) => item.textContent?.includes(${JSON.stringify(label)}))`);
   await evaluate(cdp, `(() => {
     const button = [...document.querySelectorAll('button')].find((item) => item.textContent?.includes(${JSON.stringify(label)}));
     if (!button) throw new Error('Navigation button not found: ${label}');

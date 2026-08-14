@@ -1480,6 +1480,14 @@ export interface HotBoardSourceContentInput {
   forceRefresh?: boolean;
 }
 
+export interface HotBoardSourceMedia {
+  type: 'image';
+  url: string;
+  width?: number;
+  height?: number;
+  alt?: string;
+}
+
 export interface HotBoardSourceContent {
   title: string;
   url: string;
@@ -1487,6 +1495,7 @@ export interface HotBoardSourceContent {
   excerpt: string;
   kind: 'page' | 'summary' | 'unavailable';
   fetchedAt: string;
+  media?: HotBoardSourceMedia[];
   warning?: string;
 }
 

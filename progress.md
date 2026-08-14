@@ -1223,3 +1223,21 @@
 - 本轮未提交/推送：当前分支已有大量用户在途修改，联网搜索改动与既有差异混在 `electron/main.ts`、`research.ts`、热榜和设置页中，需在干净分支或用户明确授权后做范围提交。
 
 ---
+# 热榜跨平台图文正文阅读进度（2026-08-14）
+
+- 已读取 `planning-with-files`、项目 `storydream-ui` 及组件合同，恢复当前分支和规划上下文。
+- 已检查用户截图与 Git 状态：所有跟踪文件已提交；未跟踪项均为本地产物，本轮不提交或清理。
+- 已定位正文类型、`readPublicSourceContent()`、Electron 30 分钟缓存、IPC 与 `HotBoardSourceReader`，进入失败测试与结构化图文提取设计。
+- 已确认 renderer CSP 支持 HTTPS 图片，并复核仓库现有 B 站 `__INITIAL_STATE__` 解析；确定一次抓取同时提取正文与媒体、图片本地失败隔离的实现方式。
+- 已完成结构化图文数据层与画廊/大图查看器；小红书、JSON-LD、Open Graph、语义 HTML、URI 编码 `RENDER_DATA` 回归全部通过。
+- GitHub 核验 `yt-dlp` 小红书字段与本轮实现一致；RSSHub 小红书仍依赖 Cookie 检查，决定不引入新的登录或逆向签名依赖。
+- 聚焦 4 文件 74 项、`npm run typecheck` 与 `git diff --check` 已通过。
+- 全库 131 个测试文件、1840 项全部通过；生产 renderer/Electron 构建通过。
+- 首轮视觉 QA 揭示嵌套 Dialog 遮罩问题；改为单 Dialog 内大图模式后重新验收，普通/紧凑窗口均 2 张图片、0 网格越界、0 横向溢出、0 控件裁切，大图完整位于视口内。
+- 微博 `$render_data/text_raw/pic_infos`、B 站 `__INITIAL_STATE__.videoData`、头条 SSR marker 与知乎 SSR HTML 图片补强完成，正文解析聚焦 12/12 通过。
+- 最终全库 131 个测试文件、1843 项全部通过；`npm run typecheck`、`npm run build`、`git diff --check` 通过。
+- 最终 CDP QA：1440×900 与 920×720 均显示 2 张图，画廊/大图查看器 0 横向溢出、0 网格越界、0 控件裁切，创作资料交接保持通过。
+- 已创建功能提交；首次推送因 GitHub HTTPS 连接重置失败，正在切换 HTTP/1.1 重试。
+- 推送阻断审计：`github.com:443` TCP 失败；HTTP/1.1、SSH-over-443（无 publickey）、本机代理 `127.0.0.1:7897`（未监听）均不可用；Git Credential Manager、`gh`、`GH_TOKEN/GITHUB_TOKEN` 均无可用凭据。远端分支仍为父提交 `5af7745`，本地功能提交完整保留。
+
+---

@@ -1622,3 +1622,21 @@
 - 真实设置页专用脚本两次因壳层导航选择器与当前页面入口不同步超时；现有热榜 Electron/浏览器 QA 与设置合同测试通过，问题属于 QA 导航脚本而非功能运行时。
 
 ---
+# 热榜跨平台图文正文阅读发现（2026-08-14）
+
+- 用户截图确认热榜主列表已可用，当前问题不是入口布局，而是“正文”弹窗只有文本，尤其小红书图文笔记缺少图片。
+- 现有 `HotBoardSourceContent` 只含 `content/excerpt/kind`；Electron 的 `hotBoardSourceCache` 会缓存整个返回值 30 分钟，扩展可选媒体即可复用既有后台缓存。
+- 现有 `readPublicSourceContent()` 仅从 `fetchArticleSnapshot()` 取得文本，媒体应由同一次有界 HTML 抓取解析，避免弹窗再发第二次请求。
+- 安全策略：优先公开页面的 JSON-LD、内嵌 hydration state、Open Graph 和语义 HTML；不引入登录 Cookie 窃取、逆向签名或验证码绕过。
+- Electron renderer CSP 已允许 `https:` 图片；UI 仍需为远端图片设置 `referrerPolicy="no-referrer"`、懒加载和局部失败占位，以兼容常见 CDN 防盗链。
+- 仓库现有爆款拆解解析器已验证 B 站页面的 `window.__INITIAL_STATE__`（`videoData.desc/pic`）与公开 view API；热榜正文只需复用公开页面状态，不需要音视频下载链路。
+- 平台结构化状态兼容目标：小红书 `noteDetailMap -> note -> desc/imageList`，抖音 URI 编码的 `script#RENDER_DATA`，知乎/头条常见 `__NEXT_DATA__`，微博/B 站常见初始状态；统一递归提取受控文本键与图片键。
+- 图片过滤应拒绝非 HTTP(S)、data/blob、1x1/小尺寸跟踪图，以及 URL 中的 avatar/logo/icon/favicon/emoji/qrcode/sprite/badge/profile/广告标记；最后按规范化 URL 去重并限制数量。
+- GitHub 对比：[`yt-dlp/yt_dlp/extractor/xiaohongshu.py`](https://github.com/yt-dlp/yt-dlp/blob/master/yt_dlp/extractor/xiaohongshu.py) 同样从 `noteInfo.desc` 与 `imageList.urlDefault/urlPre/width/height` 读取小红书图文，验证本轮字段合同与主流维护实现一致。
+- [`DIYgod/RSSHub/lib/routes/xiaohongshu`](https://github.com/DIYgod/RSSHub/tree/master/lib/routes/xiaohongshu) 仍包含 `check-cookie.ts` 和专用请求工具；自建 RSSHub 并不能消除小红书登录/风控边界，因此不作为热榜正文的硬依赖。
+- RSSHub 的 B 站 `article.ts/dynamic.ts` 与知乎 `question.ts/zhuanlan.ts` 表明两平台可通过特定公开接口进一步补强，但接口频繁变化且部分路径需要 Cookie；当前先采用页面结构化状态 + 语义 HTML，避免把单平台接口故障扩散到所有来源。
+- 首轮人工截图发现嵌套 Fluent Dialog 会叠加遮罩并压暗大图；已改为同一“热点正文”Dialog 内的图文/大图阅读模式切换，避免双焦点层和布局跳变。
+- 修正后 1440×900、920×720 实拍中，大图、标题、前后翻页、返回图文和底部正文操作均清晰可达；画廊与查看器均无横向溢出或真实裁切。
+- 后续平台兼容补强点：微博公开页常见 `$render_data -> text_raw/pic_infos`，头条常见 `_SSR_HYDRATED_DATA`，知乎 SSR 的 `content` 字段可能把 `<img>` 包在 HTML 字符串中。
+
+---

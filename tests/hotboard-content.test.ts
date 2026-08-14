@@ -42,6 +42,178 @@ describe('hot board source content', () => {
     expect(result.content).toContain('\n\n');
   });
 
+  it('extracts Xiaohongshu note text and ordered imageList media from public hydration state', async () => {
+    const initialState = {
+      note: {
+        noteDetailMap: {
+          abc123: {
+            note: {
+              title: '周末做了一个小书房',
+              desc: '把原来的储物间改成了小书房，记录了收纳、灯光和&quot;原木色&quot;桌面布置的完整过程。',
+              imageList: [
+                { urlDefault: 'https://sns-webpic-qc.xhscdn.com/note/01.webp', width: 1080, height: 1440 },
+                { urlDefault: 'https://sns-webpic-qc.xhscdn.com/note/02.webp', width: 1080, height: 1440 },
+                { urlDefault: 'https://sns-webpic-qc.xhscdn.com/note/01.webp', width: 1080, height: 1440 },
+                { urlDefault: 'https://sns-avatar-qc.xhscdn.com/avatar/owner.webp', width: 96, height: 96 },
+              ],
+            },
+          },
+        },
+      },
+    };
+    const result = await readPublicSourceContent({
+      title: '周末做了一个小书房',
+      url: 'https://www.xiaohongshu.com/explore/abc123',
+    }, async () => new Response(`<html><body><div id="app"></div><script>window.__INITIAL_STATE__=${JSON.stringify(initialState)}</script></body></html>`, {
+      status: 200,
+      headers: { 'content-type': 'text/html; charset=utf-8' },
+    }));
+
+    expect(result.kind).toBe('page');
+    expect(result.content).toContain('改成了小书房');
+    expect(result.content).toContain('"原木色"');
+    expect(result.media).toEqual([
+      { type: 'image', url: 'https://sns-webpic-qc.xhscdn.com/note/01.webp', width: 1080, height: 1440 },
+      { type: 'image', url: 'https://sns-webpic-qc.xhscdn.com/note/02.webp', width: 1080, height: 1440 },
+    ]);
+  });
+
+  it('collects JSON-LD, Open Graph, and semantic article images without tracking assets', async () => {
+    const result = await readPublicSourceContent({
+      title: '图文新闻',
+      url: 'https://news.example.test/posts/1',
+    }, async () => new Response(`
+      <html><head>
+        <meta property="og:image" content="/images/lead.jpg">
+        <script type="application/ld+json">${JSON.stringify({
+          '@type': 'NewsArticle',
+          articleBody: '这是一篇带现场图片的完整新闻正文，包含事件背景、过程、公开回应和后续影响，足够用于阅读。',
+          image: [{ contentUrl: 'https://cdn.example.test/images/lead.jpg', width: 1200, height: 800 }, { url: 'javascript:alert(1)' }],
+        })}</script>
+      </head><body><article>
+        <p>这是一篇带现场图片的完整新闻正文，包含事件背景、过程、公开回应和后续影响，足够用于阅读。</p>
+        <img data-src="/images/detail.jpg" width="960" height="640" alt="现场图片">
+        <img src="/pixel.gif" width="1" height="1">
+      </article></body></html>
+    `, { status: 200, headers: { 'content-type': 'text/html' } }));
+
+    expect(result.kind).toBe('page');
+    expect(result.media?.map((item) => item.url)).toEqual([
+      'https://cdn.example.test/images/lead.jpg',
+      'https://news.example.test/images/lead.jpg',
+      'https://news.example.test/images/detail.jpg',
+    ]);
+    expect(result.media?.some((item) => item.url.includes('pixel'))).toBe(false);
+  });
+
+  it('decodes RENDER_DATA application state for picture posts', async () => {
+    const renderData = encodeURIComponent(JSON.stringify({
+      aweme: {
+        detail: {
+          desc: '图集记录了展览现场、展品细节和策展人的公开说明。',
+          images: [
+            { urlList: ['https://p3-sign.douyinpic.com/tos-cn-i/image-a.webp'], width: 1440, height: 1920 },
+            { downloadUrlList: ['https://p3-sign.douyinpic.com/tos-cn-i/image-b.webp'], width: 1440, height: 1920 },
+          ],
+        },
+      },
+    }));
+    const result = await readPublicSourceContent({
+      title: '展览现场图集',
+      url: 'https://www.douyin.com/note/123',
+    }, async () => new Response(`<html><body><script id="RENDER_DATA" type="application/json">${renderData}</script></body></html>`, {
+      status: 200,
+      headers: { 'content-type': 'text/html' },
+    }));
+
+    expect(result.kind).toBe('page');
+    expect(result.content).toContain('策展人的公开说明');
+    expect(result.media).toHaveLength(2);
+  });
+
+  it('reads Weibo render data text and nested pic_infos images', async () => {
+    const renderData = [{
+      status: {
+        text_raw: '现场发布的信息说明了事件背景、时间线、参与方回应和已经确认的后续安排。',
+        pic_infos: {
+          first: { large: { url: 'https://wx1.sinaimg.cn/large/first.jpg', width: 1280, height: 720 } },
+          second: { original: { url: 'https://wx2.sinaimg.cn/large/second.jpg', width: 1280, height: 720 } },
+        },
+      },
+    }];
+    const result = await readPublicSourceContent({
+      title: '微博现场发布',
+      url: 'https://m.weibo.cn/status/123',
+    }, async () => new Response(`<html><body><script>var $render_data = ${JSON.stringify(renderData)};</script></body></html>`, {
+      status: 200,
+      headers: { 'content-type': 'text/html' },
+    }));
+
+    expect(result.kind).toBe('page');
+    expect(result.content).toContain('参与方回应');
+    expect(result.media?.map((item) => item.url)).toEqual([
+      'https://wx1.sinaimg.cn/large/first.jpg',
+      'https://wx2.sinaimg.cn/large/second.jpg',
+    ]);
+  });
+
+  it('reads Bilibili description and cover from initial state', async () => {
+    const state = {
+      videoData: {
+        desc: '视频简介完整说明了选题背景、采访对象、主要结论以及资料来源。',
+        pic: '//i0.hdslb.com/bfs/archive/cover.jpg',
+      },
+    };
+    const result = await readPublicSourceContent({
+      title: '结构化平台正文',
+      url: 'https://www.bilibili.com/video/BV123',
+    }, async () => new Response(`<html><body><script>window.__INITIAL_STATE__=${JSON.stringify(state)}</script></body></html>`, {
+      status: 200,
+      headers: { 'content-type': 'text/html' },
+    }));
+
+    expect(result.kind).toBe('page');
+    expect(result.content).toContain('视频简介完整说明');
+    expect(result.media?.map((item) => item.url)).toEqual(['https://i0.hdslb.com/bfs/archive/cover.jpg']);
+  });
+
+  it('collects images embedded inside Zhihu-style SSR HTML content', async () => {
+    const nextData = {
+      props: {
+        pageProps: {
+          answer: {
+            content: '<p>回答正文补充了推理过程、事实依据和适用边界。</p><figure><img src="https://picx.zhimg.com/article/detail.jpg" width="1200" height="800"></figure>',
+          },
+        },
+      },
+    };
+    const result = await readPublicSourceContent({
+      title: '知乎结构化回答',
+      url: 'https://www.zhihu.com/question/1/answer/2',
+    }, async () => new Response(`<html><body><script id="__NEXT_DATA__" type="application/json">${JSON.stringify(nextData)}</script></body></html>`, {
+      status: 200,
+      headers: { 'content-type': 'text/html' },
+    }));
+
+    expect(result.kind).toBe('page');
+    expect(result.content).toContain('回答正文补充了推理过程');
+    expect(result.media?.map((item) => item.url)).toEqual(['https://picx.zhimg.com/article/detail.jpg']);
+  });
+
+  it('keeps a media-only public page readable while using the archived summary as its text', async () => {
+    const result = await readPublicSourceContent({
+      title: '只有图片的公开帖子',
+      url: 'https://example.test/picture-note',
+      summary: '来源摘要说明了这组图片的背景。',
+    }, async () => new Response(`
+      <html><head><meta property="og:image" content="https://cdn.example.test/picture-note.webp"></head><body></body></html>
+    `, { status: 200, headers: { 'content-type': 'text/html' } }));
+
+    expect(result).toMatchObject({ kind: 'page', content: '来源摘要说明了这组图片的背景。' });
+    expect(result.media).toHaveLength(1);
+    expect(result.warning).toContain('页面图片');
+  });
+
   it('uses full-page paragraphs when a generic content shell is not the article body', async () => {
     const result = await readPublicSourceContent({
       title: '复杂页面正文',

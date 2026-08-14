@@ -827,6 +827,22 @@ export function makeFallbackApi(setState: (state: AppState) => void): StoryDream
     },
     async readHotBoardSource(input) {
       const content = input.summary?.trim() ?? '';
+      const media = input.url.includes('/storydream-preview/ai-storyboard') ? [
+        {
+          type: 'image' as const,
+          url: 'https://images.unsplash.com/photo-1497366754035-f200968a6e72?auto=format&fit=crop&w=1200&q=80',
+          width: 1200,
+          height: 800,
+          alt: '内容团队协作空间',
+        },
+        {
+          type: 'image' as const,
+          url: 'https://images.unsplash.com/photo-1497215842964-222b430dc094?auto=format&fit=crop&w=1200&q=80',
+          width: 1200,
+          height: 800,
+          alt: '创作工作台与分镜讨论',
+        },
+      ] : undefined;
       return {
         title: input.title.trim(),
         url: input.url.trim(),
@@ -834,6 +850,7 @@ export function makeFallbackApi(setState: (state: AppState) => void): StoryDream
         excerpt: content.slice(0, 600),
         kind: content ? 'summary' as const : 'unavailable' as const,
         fetchedAt: new Date().toISOString(),
+        ...(media ? { media } : {}),
         warning: '浏览器预览不执行跨站正文读取；当前只使用本地预览归档摘要，不代表实时数据。',
       };
     },

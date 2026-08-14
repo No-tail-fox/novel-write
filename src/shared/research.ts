@@ -7,6 +7,7 @@ import type {
   AppConfig,
   HotBoardSourceContent,
   HotBoardSourceContentInput,
+  HotBoardSourceMedia,
   ImaConfig,
   ResearchCopyComposeInput,
   ResearchCopyComposeResult,
@@ -57,6 +58,7 @@ const IMA_API_MAX_BYTES = 2 * 1024 * 1024;
 const IMA_DOCUMENT_MAX_BYTES = 8 * 1024 * 1024;
 const SEARCH_RESULTS_LIMIT = 10;
 const SEARCH_HYDRATION_CANDIDATE_LIMIT = 20;
+const ARTICLE_MEDIA_LIMIT = 18;
 
 export const DEFAULT_WEB_SEARCH_PROVIDERS: readonly WebSearchProvider[] = ['bing', 'sogou'];
 export const ALL_WEB_SEARCH_PROVIDERS: readonly WebSearchProvider[] = ['bing', 'baidu', 'sogou', 'toutiao'];
@@ -273,7 +275,7 @@ export async function readPublicSourceContent(
   const title = input.title.trim();
   const url = input.url.trim();
   const summary = compactText(input.summary ?? '');
-  let snapshot: { url: string; content: string } = { url, content: '' };
+  let snapshot: { url: string; content: string; media: HotBoardSourceMedia[] } = { url, content: '', media: [] };
   let fetchWarning = '';
   try {
     snapshot = await fetchArticleSnapshot(url, fetchImpl);
@@ -281,11 +283,16 @@ export async function readPublicSourceContent(
     fetchWarning = error instanceof Error ? error.message : String(error);
   }
   const pageContent = normalizeArticleText(snapshot.content);
-  const hasReadablePage = pageContent.length >= 60 && pageContent !== title;
-  const content = hasReadablePage ? pageContent : summary;
+  const hasExtractedText = pageContent.length >= 16 && pageContent !== title;
+  const hasReadablePage = (pageContent.length >= 60 && pageContent !== title) || snapshot.media.length > 0;
+  const content = hasExtractedText ? pageContent : summary;
   const kind: HotBoardSourceContent['kind'] = hasReadablePage ? 'page' : summary ? 'summary' : 'unavailable';
   const warning = kind === 'page'
-    ? ''
+    ? snapshot.media.length > 0 && !hasExtractedText
+      ? content
+        ? '已读取页面图片；页面正文不可用，文字使用热榜来源摘要。'
+        : '已读取页面图片，但页面没有提供可读文字。'
+      : ''
     : kind === 'summary'
       ? `未能读取页面正文，当前使用热榜来源摘要。${fetchWarning ? ` ${fetchWarning}` : ''}`.trim()
       : `未能读取页面正文，且来源没有提供摘要。${fetchWarning ? ` ${fetchWarning}` : ''}`.trim();
@@ -296,6 +303,7 @@ export async function readPublicSourceContent(
     excerpt: content.slice(0, 600),
     kind,
     fetchedAt: new Date().toISOString(),
+    ...(snapshot.media.length > 0 ? { media: snapshot.media } : {}),
     ...(warning ? { warning } : {}),
   };
 }
@@ -744,18 +752,31 @@ async function fetchPageText(url: string, fetchImpl: FetchLike): Promise<string>
   return (await fetchPageSnapshot(url, fetchImpl)).content;
 }
 
-async function fetchArticleSnapshot(url: string, fetchImpl: FetchLike): Promise<{ url: string; content: string }> {
+async function fetchArticleSnapshot(url: string, fetchImpl: FetchLike): Promise<{ url: string; content: string; media: HotBoardSourceMedia[] }> {
   const response = await fetchBounded(fetchImpl, url, {
     timeoutMs: 12_000,
     maxBytes: ARTICLE_PAGE_MAX_BYTES,
     accept: 'text/html,application/xhtml+xml,text/plain,*/*',
   });
-  if (!response.ok) return { url, content: '' };
+  if (!response.ok) return { url, content: '', media: [] };
   const contentType = response.headers.get('content-type') ?? '';
-  if (!/text\/html|application\/xhtml\+xml|text\/plain/i.test(contentType)) return { url: response.url || url, content: '' };
+  if (!/text\/html|application\/xhtml\+xml|text\/plain/i.test(contentType)) return { url: response.url || url, content: '', media: [] };
   const body = await readTextBounded(response, ARTICLE_PAGE_MAX_BYTES);
-  const text = contentType.includes('text/plain') ? body : extractReadableText(body);
-  return { url: response.url || url, content: normalizeArticleText(text).slice(0, 50_000) };
+  const resolvedUrl = response.url || url;
+  if (contentType.includes('text/plain')) {
+    return { url: resolvedUrl, content: normalizeArticleText(body).slice(0, 50_000), media: [] };
+  }
+  const structured = extractStructuredPageContent(body, resolvedUrl);
+  const text = structured.content || extractReadableText(body) || extractOpenGraphDescription(body);
+  return {
+    url: resolvedUrl,
+    content: normalizeArticleText(text).slice(0, 50_000),
+    media: mergeArticleMedia(
+      structured.media,
+      extractOpenGraphMedia(body, resolvedUrl),
+      extractSemanticArticleMedia(body, resolvedUrl),
+    ),
+  };
 }
 
 async function fetchPageSnapshot(url: string, fetchImpl: FetchLike): Promise<{ url: string; content: string }> {
@@ -1161,6 +1182,356 @@ function extractTag(input: string, tag: string): string {
 
 function cleanXml(input: string): string {
   return decodeEntities(input.replace(/<!\[CDATA\[([\s\S]*?)\]\]>/g, '$1').replace(/<[^>]+>/g, '')).trim();
+}
+
+interface StructuredTextCandidate {
+  text: string;
+  score: number;
+}
+
+interface StructuredPageContent {
+  content: string;
+  media: HotBoardSourceMedia[];
+}
+
+interface StructuredWalkBudget {
+  remaining: number;
+}
+
+const STRUCTURED_TEXT_KEY_SCORES: Readonly<Record<string, number>> = {
+  articlebody: 1400,
+  notecontent: 1200,
+  bodytext: 1100,
+  content: 900,
+  longtextcontent: 900,
+  textraw: 875,
+  desc: 850,
+  description: 800,
+  text: 650,
+  abstract: 600,
+  summary: 500,
+  intro: 400,
+};
+
+const STRUCTURED_JSON_ASSIGNMENTS = [
+  'window.__INITIAL_STATE__',
+  'window.__APOLLO_STATE__',
+  'window._SSR_DATA',
+  'window._SSR_HYDRATED_DATA',
+  'window.__SSR_DATA__',
+  'window.__NUXT__',
+  'window.__playinfo__',
+  'window.$render_data',
+  'var $render_data',
+] as const;
+
+function extractStructuredPageContent(html: string, baseUrl: string): StructuredPageContent {
+  const textCandidates: StructuredTextCandidate[] = [];
+  const mediaCandidates: HotBoardSourceMedia[] = [];
+  const documents = extractStructuredJsonDocuments(html);
+  const budget: StructuredWalkBudget = { remaining: 24_000 };
+  for (const document of documents) {
+    collectStructuredPageCandidates(document, [], textCandidates, mediaCandidates, budget);
+    if (budget.remaining <= 0) break;
+  }
+  textCandidates.sort((a, b) => b.score - a.score);
+  return {
+    content: textCandidates[0]?.text ?? '',
+    media: normalizeArticleMedia(mediaCandidates, baseUrl),
+  };
+}
+
+function extractStructuredJsonDocuments(html: string): unknown[] {
+  const documents: unknown[] = [];
+  const scripts = [...html.matchAll(/<script\b([^>]*)>([\s\S]*?)<\/script>/gi)];
+  for (const [, attributes, body] of scripts) {
+    const type = extractAttribute(attributes, 'type').toLowerCase();
+    const id = extractAttribute(attributes, 'id').toLowerCase();
+    const shouldParse = type.includes('application/ld+json')
+      || type.includes('application/json')
+      || ['__next_data__', 'render_data', '__nuxt_data__'].includes(id);
+    if (!shouldParse) continue;
+    const parsed = parseStructuredJson(body, id === 'render_data');
+    if (parsed !== undefined) documents.push(parsed);
+  }
+  for (const marker of STRUCTURED_JSON_ASSIGNMENTS) {
+    const raw = extractAssignedJson(html, marker);
+    if (!raw) continue;
+    const parsed = parseStructuredJson(raw, false);
+    if (parsed !== undefined) documents.push(parsed);
+  }
+  return documents;
+}
+
+function parseStructuredJson(raw: string, decodeUri: boolean): unknown | undefined {
+  let candidate = raw.replace(/^\s*<!\[CDATA\[/u, '').replace(/\]\]>\s*$/u, '').trim();
+  if (!candidate) return undefined;
+  if (decodeUri || /^(?:%7B|%5B)/iu.test(candidate)) {
+    try {
+      candidate = decodeURIComponent(candidate);
+    } catch {
+      return undefined;
+    }
+  }
+  const decodedCandidate = decodeEntities(candidate);
+  const attempts = [
+    candidate,
+    candidate.replace(/:\s*undefined(?=\s*[,}])/gu, ':null'),
+    decodedCandidate,
+    decodedCandidate.replace(/:\s*undefined(?=\s*[,}])/gu, ':null'),
+  ];
+  for (const attempt of attempts) {
+    try {
+      return JSON.parse(attempt) as unknown;
+    } catch {
+      // Try the minimally repaired hydration payload next.
+    }
+  }
+  return undefined;
+}
+
+function extractAssignedJson(html: string, marker: string): string {
+  const markerIndex = html.indexOf(marker);
+  if (markerIndex < 0) return '';
+  const assignmentIndex = html.indexOf('=', markerIndex + marker.length);
+  if (assignmentIndex < 0 || assignmentIndex - markerIndex > marker.length + 16) return '';
+  let start = assignmentIndex + 1;
+  while (/\s/u.test(html[start] ?? '')) start += 1;
+  const opener = html[start];
+  if (opener !== '{' && opener !== '[') return '';
+  const closer = opener === '{' ? '}' : ']';
+  let depth = 0;
+  let quote = '';
+  let escaped = false;
+  for (let index = start; index < html.length; index += 1) {
+    const char = html[index];
+    if (quote) {
+      if (escaped) escaped = false;
+      else if (char === '\\') escaped = true;
+      else if (char === quote) quote = '';
+      continue;
+    }
+    if (char === '"' || char === "'") {
+      quote = char;
+      continue;
+    }
+    if (char === opener) depth += 1;
+    if (char === closer) {
+      depth -= 1;
+      if (depth === 0) return html.slice(start, index + 1);
+    }
+  }
+  return '';
+}
+
+function collectStructuredPageCandidates(
+  value: unknown,
+  path: string[],
+  textCandidates: StructuredTextCandidate[],
+  mediaCandidates: HotBoardSourceMedia[],
+  budget: StructuredWalkBudget,
+): void {
+  if (budget.remaining <= 0 || path.length > 14) return;
+  budget.remaining -= 1;
+  if (Array.isArray(value)) {
+    for (const item of value.slice(0, 400)) {
+      collectStructuredPageCandidates(item, path, textCandidates, mediaCandidates, budget);
+      if (budget.remaining <= 0) break;
+    }
+    return;
+  }
+  if (!isRecord(value)) return;
+  for (const [key, child] of Object.entries(value)) {
+    const normalizedKey = key.toLowerCase().replace(/[^a-z]/gu, '');
+    const nextPath = [...path, normalizedKey];
+    const textKeyScore = STRUCTURED_TEXT_KEY_SCORES[normalizedKey];
+    if (textKeyScore && typeof child === 'string') {
+      const text = normalizeStructuredContentText(child);
+      if (text.length >= 16 && !looksLikeStructuredNoise(text)) {
+        const contextualScore = nextPath.some((segment) => /(note|detail|article|aweme|post|answer|videodata|status)/u.test(segment)) ? 500 : 0;
+        textCandidates.push({ text, score: textKeyScore + contextualScore + Math.min(text.length, 3000) });
+      }
+      if (/<img\b/iu.test(child)) mediaCandidates.push(...extractImageTagMedia(child));
+    }
+    if (isStructuredMediaKey(normalizedKey)) {
+      mediaCandidates.push(...mediaFromStructuredValue(child));
+    }
+    collectStructuredPageCandidates(child, nextPath, textCandidates, mediaCandidates, budget);
+    if (budget.remaining <= 0) break;
+  }
+}
+
+function normalizeStructuredContentText(value: string): string {
+  const text = /<[^>]+>/u.test(value) ? stripHtmlToText(value) : value;
+  return normalizeArticleText(text);
+}
+
+function looksLikeStructuredNoise(value: string): boolean {
+  return /^(?:https?:\/\/|[\[{])/iu.test(value) || /^[\d\s.,:;_-]+$/u.test(value);
+}
+
+function isStructuredMediaKey(key: string): boolean {
+  return /^(?:image|images|imagelist|imageurls|imageinfos|pics|piclist|picinfos|pictures|photo|photos|pic|cover|coverimage|coverurl|thumbnail|thumbnailurl|poster|pagepic|bmiddlepic|originalpic)$/u.test(key);
+}
+
+function mediaFromStructuredValue(value: unknown, depth = 0): HotBoardSourceMedia[] {
+  if (depth > 8) return [];
+  if (typeof value === 'string') return looksLikeMediaUrl(value) ? [{ type: 'image', url: value }] : [];
+  if (Array.isArray(value)) return value.slice(0, 120).flatMap((item) => mediaFromStructuredValue(item, depth + 1));
+  if (!isRecord(value)) return [];
+  const directUrl = firstString(value, [
+    'urlDefault', 'contentUrl', 'secureUrl', 'imageUrl', 'image_url', 'originUrl', 'originalUrl',
+    'url', 'src', 'large', 'pic', 'cover', 'poster', 'thumbnailUrl',
+  ]);
+  const listUrl = ['urlList', 'downloadUrlList', 'url_list', 'download_url_list']
+    .map((key) => value[key])
+    .find((candidate) => Array.isArray(candidate) && candidate.some((item) => typeof item === 'string')) as unknown[] | undefined;
+  const url = directUrl || listUrl?.find((item): item is string => typeof item === 'string' && Boolean(item.trim())) || '';
+  if (!url) return Object.values(value).slice(0, 80).flatMap((item) => mediaFromStructuredValue(item, depth + 1));
+  const width = readMediaDimension(value, ['width', 'w', 'imageWidth']);
+  const height = readMediaDimension(value, ['height', 'h', 'imageHeight']);
+  const alt = firstString(value, ['alt', 'caption', 'title']);
+  return [{
+    type: 'image',
+    url,
+    ...(width ? { width } : {}),
+    ...(height ? { height } : {}),
+    ...(alt ? { alt: alt.slice(0, 200) } : {}),
+  }];
+}
+
+function looksLikeMediaUrl(value: string): boolean {
+  const normalized = value.trim();
+  return /^(?:https?:)?\/\//iu.test(normalized)
+    || /^(?:\/|\.\.\/|\.\/)/u.test(normalized)
+    || /\.(?:avif|gif|jpe?g|png|webp)(?:[?#]|$)/iu.test(normalized);
+}
+
+function readMediaDimension(value: Record<string, unknown>, keys: string[]): number | undefined {
+  for (const key of keys) {
+    const candidate = value[key];
+    const number = typeof candidate === 'number' ? candidate : typeof candidate === 'string' ? Number(candidate) : Number.NaN;
+    if (Number.isFinite(number) && number > 0 && number <= 20_000) return Math.round(number);
+  }
+  return undefined;
+}
+
+function extractOpenGraphDescription(html: string): string {
+  return normalizeArticleText(extractMetaContent(html, ['og:description', 'description']));
+}
+
+function extractOpenGraphMedia(html: string, baseUrl: string): HotBoardSourceMedia[] {
+  const media: HotBoardSourceMedia[] = [];
+  for (const tag of html.match(/<meta\b[^>]*>/gi) ?? []) {
+    const property = (extractAttribute(tag, 'property') || extractAttribute(tag, 'name')).toLowerCase();
+    if (!['og:image', 'og:image:url', 'og:image:secure_url', 'twitter:image'].includes(property)) continue;
+    const url = extractAttribute(tag, 'content');
+    if (url) media.push({ type: 'image', url });
+  }
+  return normalizeArticleMedia(media, baseUrl);
+}
+
+function extractMetaContent(html: string, names: string[]): string {
+  const accepted = new Set(names.map((name) => name.toLowerCase()));
+  for (const tag of html.match(/<meta\b[^>]*>/gi) ?? []) {
+    const property = (extractAttribute(tag, 'property') || extractAttribute(tag, 'name')).toLowerCase();
+    if (!accepted.has(property)) continue;
+    const content = extractAttribute(tag, 'content');
+    if (content) return content;
+  }
+  return '';
+}
+
+function extractSemanticArticleMedia(html: string, baseUrl: string): HotBoardSourceMedia[] {
+  const stripped = stripNonContentHtml(html)
+    .replace(/<svg\b[\s\S]*?<\/svg>/gi, ' ')
+    .replace(/<(nav|header|footer|aside)\b[\s\S]*?<\/\1>/gi, ' ');
+  const containers = extractPreferredContentContainers(stripped)
+    .slice(1)
+    .filter((container) => !/^<body\b/iu.test(container));
+  const media: HotBoardSourceMedia[] = [];
+  for (const container of containers) {
+    media.push(...extractImageTagMedia(container));
+  }
+  return normalizeArticleMedia(media, baseUrl);
+}
+
+function extractImageTagMedia(html: string): HotBoardSourceMedia[] {
+  const media: HotBoardSourceMedia[] = [];
+  for (const tag of html.match(/<img\b[^>]*>/gi) ?? []) {
+    const url = ['data-original', 'data-src', 'data-actualsrc', 'data-lazy-src', 'src']
+      .map((name) => extractAttribute(tag, name))
+      .find(Boolean) || selectSrcSetUrl(extractAttribute(tag, 'srcset'));
+    if (!url) continue;
+    const width = parseHtmlDimension(extractAttribute(tag, 'width'));
+    const height = parseHtmlDimension(extractAttribute(tag, 'height'));
+    const alt = extractAttribute(tag, 'alt');
+    media.push({
+      type: 'image',
+      url,
+      ...(width ? { width } : {}),
+      ...(height ? { height } : {}),
+      ...(alt ? { alt: alt.slice(0, 200) } : {}),
+    });
+  }
+  return media;
+}
+
+function selectSrcSetUrl(srcset: string): string {
+  if (!srcset) return '';
+  const candidates = srcset.split(',').map((item) => item.trim().split(/\s+/u)[0]).filter(Boolean);
+  return candidates.at(-1) ?? '';
+}
+
+function parseHtmlDimension(value: string): number | undefined {
+  const number = Number.parseInt(value, 10);
+  return Number.isFinite(number) && number > 0 && number <= 20_000 ? number : undefined;
+}
+
+function normalizeArticleMedia(media: HotBoardSourceMedia[], baseUrl: string): HotBoardSourceMedia[] {
+  const normalized: HotBoardSourceMedia[] = [];
+  const seen = new Set<string>();
+  for (const item of media) {
+    const candidate = normalizeArticleMediaItem(item, baseUrl);
+    if (!candidate || seen.has(candidate.url)) continue;
+    seen.add(candidate.url);
+    normalized.push(candidate);
+    if (normalized.length >= ARTICLE_MEDIA_LIMIT) break;
+  }
+  return normalized;
+}
+
+function normalizeArticleMediaItem(item: HotBoardSourceMedia, baseUrl: string): HotBoardSourceMedia | null {
+  let parsed: URL;
+  try {
+    parsed = new URL(decodeEntities(item.url).replace(/\\u002f/giu, '/').trim(), baseUrl);
+  } catch {
+    return null;
+  }
+  if (parsed.protocol !== 'https:' && parsed.protocol !== 'http:') return null;
+  const lowerUrl = `${parsed.hostname}${parsed.pathname}`.toLowerCase();
+  if (/(?:^|[\/_.-])(?:avatar|logo|icon|favicon|emoji|qrcode|qr-code|sprite|badge|profile|tracking|tracker|pixel)(?:[\/_.-]|$)/u.test(lowerUrl)) return null;
+  if (item.width && item.height && item.width <= 120 && item.height <= 120) return null;
+  parsed.hash = '';
+  return {
+    type: 'image',
+    url: parsed.toString(),
+    ...(item.width ? { width: item.width } : {}),
+    ...(item.height ? { height: item.height } : {}),
+    ...(item.alt ? { alt: item.alt } : {}),
+  };
+}
+
+function mergeArticleMedia(...groups: HotBoardSourceMedia[][]): HotBoardSourceMedia[] {
+  const merged: HotBoardSourceMedia[] = [];
+  const seen = new Set<string>();
+  for (const item of groups.flat()) {
+    if (seen.has(item.url)) continue;
+    seen.add(item.url);
+    merged.push(item);
+    if (merged.length >= ARTICLE_MEDIA_LIMIT) break;
+  }
+  return merged;
 }
 
 function extractReadableText(html: string): string {

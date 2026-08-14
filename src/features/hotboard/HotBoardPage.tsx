@@ -1,12 +1,17 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
+  ArrowLeft,
   ArrowUpRight,
+  ChevronLeft,
+  ChevronRight,
   CheckCircle2,
   CircleOff,
   Clock3,
   ExternalLink,
   Flame,
+  ImageOff,
   Loader2,
+  Maximize2,
   RefreshCw,
   Search,
   Sparkles,
@@ -521,6 +526,9 @@ function HotBoardSourceReader({
   onRetrySearch: () => void;
   onOpenUrl: (url: string) => void;
 }) {
+  const contentLabel = source?.kind === 'page' ? '页面正文' : '来源摘要';
+  const visualContentLabel = source?.kind === 'page' ? '图文正文' : '图文摘要';
+  const mediaCount = source?.media?.length ?? 0;
   return (
     <div className="hot-board-source-reader" data-hot-board-source-reader>
       <div className="hot-board-reader-meta">
@@ -532,11 +540,15 @@ function HotBoardSourceReader({
       {reading ? <div className="hot-board-reader-state" role="status" aria-live="polite"><Loader2 className="spin" size={17} />正在读取页面正文…</div> : null}
       {!reading && error && !source ? <div className="hot-board-reader-state hot-board-reader-state--error" role="alert"><TriangleAlert size={17} /><div><strong>正文暂时无法读取</strong><p>{error}</p></div></div> : null}
       {!reading && source?.kind === 'unavailable' ? <div className="hot-board-reader-state"><TriangleAlert size={17} /><div><strong>暂无可读正文</strong><p>{source.warning || '来源没有提供页面正文或摘要，正在尝试联网搜索。'}</p></div></div> : null}
-      {!reading && source && source.kind !== 'unavailable' && source.content.trim() ? (
+      {!reading && source && source.kind !== 'unavailable' && (source.content.trim() || mediaCount > 0) ? (
         <div className="hot-board-reader-content" data-content-kind={source.kind}>
-          <div className="hot-board-reader-content-head"><span>{source.kind === 'page' ? '页面正文' : '来源摘要'}</span><small>{formatDateTime(source.fetchedAt)} 读取</small></div>
+          <div className="hot-board-reader-content-head">
+            <span>{mediaCount > 0 ? visualContentLabel : contentLabel}</span>
+            <small>{mediaCount > 0 ? `${mediaCount} 张 · ` : ''}{formatDateTime(source.fetchedAt)} 读取</small>
+          </div>
           {source.warning ? <p className="hot-board-reader-warning">{source.warning}</p> : null}
-          <div className="hot-board-reader-copy">{source.content}</div>
+          {mediaCount > 0 ? <HotBoardMediaGallery media={source.media!} title={item.title} /> : null}
+          {source.content.trim() ? <div className="hot-board-reader-copy">{source.content}</div> : null}
         </div>
       ) : null}
       {searching ? <div className="hot-board-reader-search-state" role="status" aria-live="polite"><Loader2 className="spin" size={15} />正在联网搜索相关内容…</div> : null}
@@ -557,6 +569,94 @@ function HotBoardSourceReader({
         </section>
       ) : null}
     </div>
+  );
+}
+
+function HotBoardMediaGallery({ media, title }: { media: NonNullable<HotBoardSourceContent['media']>; title: string }) {
+  const mediaKey = media.map((item) => item.url).join('\n');
+  const [failedUrls, setFailedUrls] = useState<Set<string>>(() => new Set());
+  const [selectedIndex, setSelectedIndex] = useState<number | null>(null);
+  const selected = selectedIndex === null ? undefined : media[selectedIndex];
+
+  useEffect(() => {
+    setFailedUrls(new Set());
+    setSelectedIndex(null);
+  }, [mediaKey]);
+
+  function markFailed(url: string): void {
+    setFailedUrls((current) => {
+      if (current.has(url)) return current;
+      const next = new Set(current);
+      next.add(url);
+      return next;
+    });
+  }
+
+  function moveSelection(offset: number): void {
+    setSelectedIndex((current) => {
+      if (current === null || media.length === 0) return current;
+      return (current + offset + media.length) % media.length;
+    });
+  }
+
+  if (selected) {
+    return (
+      <section className="hot-board-reader-gallery hot-board-reader-gallery--viewer" aria-label={`查看图片 ${(selectedIndex ?? 0) + 1}，共 ${media.length} 张`} data-hot-board-media-count={media.length}>
+        <div className="hot-board-image-viewer-toolbar">
+          <strong>查看图片 {(selectedIndex ?? 0) + 1} / {media.length}</strong>
+          <div className="hot-board-image-viewer-actions">
+            <IconButton label="上一张图片" icon={<ChevronLeft size={16} />} disabled={media.length <= 1} onClick={() => moveSelection(-1)} />
+            <IconButton label="下一张图片" icon={<ChevronRight size={16} />} disabled={media.length <= 1} onClick={() => moveSelection(1)} />
+            <IconButton label="返回图文" icon={<ArrowLeft size={16} />} onClick={() => setSelectedIndex(null)} />
+          </div>
+        </div>
+        <div className="hot-board-image-viewer">
+          {failedUrls.has(selected.url) ? (
+            <div className="hot-board-image-viewer-fallback" role="status"><ImageOff size={24} /><strong>图片加载失败</strong><span>可打开原文查看该图片。</span></div>
+          ) : (
+            <img
+              src={selected.url}
+              alt={selected.alt || `${title} 图片 ${(selectedIndex ?? 0) + 1}`}
+              loading="eager"
+              referrerPolicy="no-referrer"
+              onError={() => markFailed(selected.url)}
+            />
+          )}
+        </div>
+      </section>
+    );
+  }
+
+  return (
+    <section className="hot-board-reader-gallery" aria-label={`页面图片，共 ${media.length} 张`} data-hot-board-media-count={media.length}>
+      <div className="hot-board-reader-gallery-head"><strong>页面图片</strong><span>点击图片查看大图</span></div>
+      <div className="hot-board-reader-gallery-grid" data-layout={media.length === 1 ? 'single' : 'grid'}>
+        {media.map((item, index) => {
+          const failed = failedUrls.has(item.url);
+          const alt = item.alt || `${title} 图片 ${index + 1}`;
+          return (
+            <Button
+              className="hot-board-reader-media"
+              data-load-state={failed ? 'failed' : 'ready'}
+              density="compact"
+              variant="subtle"
+              type="button"
+              aria-label={`查看图片 ${index + 1}`}
+              title={`查看图片 ${index + 1}`}
+              key={item.url}
+              onClick={() => setSelectedIndex(index)}
+            >
+              {failed ? (
+                <span className="hot-board-reader-media-fallback"><ImageOff size={18} /><span>图片加载失败</span></span>
+              ) : (
+                <img src={item.url} alt={alt} loading="lazy" referrerPolicy="no-referrer" onError={() => markFailed(item.url)} />
+              )}
+              <span className="hot-board-reader-media-index"><Maximize2 size={12} />{index + 1}</span>
+            </Button>
+          );
+        })}
+      </div>
+    </section>
   );
 }
 

@@ -1006,6 +1006,16 @@
   display: grid;
   gap: 12px;
   min-width: 0;
+  max-height: min(72vh, 720px);
+  overflow: auto;
+  overscroll-behavior: contain;
+  padding-right: 4px;
+}
+
+.sd-dialog-surface:has(.hot-board-source-reader) {
+  width: min(900px, calc(100vw - 32px));
+  max-width: 900px;
+  max-height: calc(100vh - 32px);
 }
 
 .hot-board-reader-meta {
@@ -1050,15 +1060,149 @@
 }
 
 .hot-board-reader-copy {
-  max-height: min(58vh, 560px);
-  overflow: auto;
-  overscroll-behavior: contain;
   padding: 2px 4px 2px 0;
   color: var(--shell-text);
   font-size: 13px;
   line-height: 1.85;
   white-space: pre-wrap;
   overflow-wrap: anywhere;
+}
+
+.hot-board-reader-gallery {
+  display: grid;
+  gap: 8px;
+  min-width: 0;
+}
+
+.hot-board-reader-gallery-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 12px;
+  color: var(--shell-muted);
+  font-size: 10px;
+}
+
+.hot-board-reader-gallery-head strong {
+  color: var(--shell-text);
+  font-size: 12px;
+}
+
+.hot-board-reader-gallery-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+  gap: 8px;
+  min-width: 0;
+}
+
+.hot-board-reader-gallery-grid[data-layout="single"] {
+  grid-template-columns: minmax(0, 720px);
+}
+
+.hot-board-reader-media.sd-button {
+  position: relative;
+  display: block;
+  width: 100%;
+  height: auto;
+  min-width: 0;
+  aspect-ratio: 4 / 3;
+  overflow: hidden;
+  padding: 0;
+  border: 1px solid var(--shell-border);
+  background: color-mix(in srgb, var(--shell-bg) 82%, black);
+}
+
+.hot-board-reader-media.sd-button:hover {
+  border-color: var(--shell-accent);
+}
+
+.hot-board-reader-media .sd-button__content {
+  position: absolute;
+  inset: 0;
+  display: block;
+  width: 100%;
+  height: 100%;
+}
+
+.hot-board-reader-media img {
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+}
+
+.hot-board-reader-media-fallback,
+.hot-board-image-viewer-fallback {
+  display: grid;
+  place-content: center;
+  justify-items: center;
+  gap: 7px;
+  width: 100%;
+  height: 100%;
+  color: var(--shell-muted);
+  font-size: 11px;
+}
+
+.hot-board-reader-media-index {
+  position: absolute;
+  right: 7px;
+  bottom: 7px;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  min-height: 22px;
+  padding: 0 7px;
+  border: 1px solid color-mix(in srgb, white 22%, transparent);
+  border-radius: 4px;
+  color: white;
+  background: color-mix(in srgb, black 72%, transparent);
+  font-size: 10px;
+  line-height: 1;
+}
+
+.hot-board-image-viewer {
+  display: grid;
+  place-items: center;
+  min-width: 0;
+  height: min(58vh, 580px);
+  overflow: hidden;
+  border: 1px solid var(--shell-border);
+  background: color-mix(in srgb, var(--shell-bg) 84%, black);
+}
+
+.hot-board-image-viewer-toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.hot-board-image-viewer-toolbar > strong {
+  color: var(--shell-text);
+  font-size: 12px;
+}
+
+.hot-board-image-viewer img {
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+}
+
+.hot-board-image-viewer-fallback {
+  min-height: 260px;
+}
+
+.hot-board-image-viewer-fallback strong {
+  color: var(--shell-text);
+  font-size: 13px;
+}
+
+.hot-board-image-viewer-actions {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 7px;
 }
 
 .hot-board-reader-warning {
