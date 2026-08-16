@@ -8,6 +8,7 @@ export type SecretId =
   | `image/${string}/jimeng/accessKeyId`
   | `image/${string}/jimeng/secretAccessKey`
   | `image/${string}/customImage/apiKey`
+  | `video/${string}/apiKey`
   | `tts/${string}/accessKey`
   | `tts/${string}/volcengine/apiKey`
   | `tts/${string}/volcengine/accessKeyId`
@@ -38,7 +39,7 @@ interface SecretSlot {
   write: (value: string) => void;
 }
 
-const SECRET_ID_PATTERN = /^(?:llm\/[^/]+\/apiKey|image\/[^/]+\/(?:apiKey|gptImage\/apiKey|jimeng\/(?:sessionId|accessKeyId|secretAccessKey)|customImage\/apiKey)|tts\/[^/]+\/(?:accessKey|volcengine\/(?:apiKey|accessKeyId|secretAccessKey|accessKey)|minimax\/apiKey)|speechToText\/apiKey|ima\/apiKey|viralVision\/apiKey)$/u;
+const SECRET_ID_PATTERN = /^(?:llm\/[^/]+\/apiKey|image\/[^/]+\/(?:apiKey|gptImage\/apiKey|jimeng\/(?:sessionId|accessKeyId|secretAccessKey)|customImage\/apiKey)|video\/[^/]+\/apiKey|tts\/[^/]+\/(?:accessKey|volcengine\/(?:apiKey|accessKeyId|secretAccessKey|accessKey)|minimax\/apiKey)|speechToText\/apiKey|ima\/apiKey|viralVision\/apiKey)$/u;
 
 export function isSecretId(value: string): value is SecretId {
   return value.length <= 1024 && SECRET_ID_PATTERN.test(value);
@@ -59,6 +60,11 @@ function cloneConfig(config: AppConfig): AppConfig {
       jimeng: profile.jimeng ? { ...profile.jimeng } : undefined,
       customImage: profile.customImage ? { ...profile.customImage } : undefined,
     })),
+    video: {
+      ...config.video,
+      providers: config.video.providers.map((provider) => ({ ...provider, capabilities: [...provider.capabilities] })),
+      automation: { ...config.video.automation, providerWhitelist: [...config.video.automation.providerWhitelist] },
+    },
     tts: {
       ...config.tts,
       volcengine: { ...config.tts.volcengine },
@@ -136,6 +142,12 @@ function secretSlots(config: AppConfig): SecretSlot[] {
       const target = profile.customImage;
       add(`image/${segment}/customImage/apiKey`, () => target.apiKey, (value) => { target.apiKey = value; });
     }
+  }
+
+  const videoIds = new Set<string>();
+  for (const provider of config.video.providers) {
+    const segment = stableProfileSegment('video', provider.id, videoIds);
+    add(`video/${segment}/apiKey`, () => provider.apiKey, (value) => { provider.apiKey = value; });
   }
 
   const ttsIds = new Set<string>();

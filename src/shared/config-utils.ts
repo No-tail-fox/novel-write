@@ -21,6 +21,8 @@ import type {
   SpeechToTextResponseFormat,
   SpeechToTextTimestampGranularity,
   TtsProviderProfile,
+  VideoCapability,
+  VideoProviderConfig,
 } from './types';
 
 type TestStatus = ConfigTestResult['status'];
@@ -424,6 +426,85 @@ function normalizeJsonText(value: unknown, fallback: string): string {
   }
 }
 
+const VIDEO_CAPABILITIES: readonly VideoCapability[] = [
+  't2v',
+  'i2v',
+  'first-last-frame',
+  'reference-image',
+  'partial-redo',
+  'synchronized-audio',
+];
+
+function normalizeVideoProvider(input: Partial<VideoProviderConfig> | undefined, index: number): VideoProviderConfig {
+  const fallback = defaultConfig.video.providers[0];
+  const source = { ...fallback, ...(input ?? {}) };
+  const capabilities = Array.isArray(source.capabilities)
+    ? Array.from(new Set(source.capabilities.filter((item): item is VideoCapability => VIDEO_CAPABILITIES.includes(item as VideoCapability))))
+    : [...fallback.capabilities];
+  return {
+    ...source,
+    id: String(source.id || `cloud-video-${index + 1}`).trim() || `cloud-video-${index + 1}`,
+    name: String(source.name || `云端视频 ${index + 1}`).trim() || `云端视频 ${index + 1}`,
+    enabled: source.enabled === true,
+    baseUrl: String(source.baseUrl ?? '').trim().replace(/\/+$/u, ''),
+    apiKey: String(source.apiKey ?? '').trim(),
+    model: String(source.model ?? '').trim(),
+    submitPath: normalizeEndpointPath(source.submitPath, fallback.submitPath),
+    statusPathTemplate: normalizeEndpointPath(source.statusPathTemplate, fallback.statusPathTemplate),
+    pollIntervalMs: Math.max(250, Math.round(normalizePositiveNumber(source.pollIntervalMs, fallback.pollIntervalMs))),
+    timeoutMs: Math.max(10000, Math.round(normalizePositiveNumber(source.timeoutMs, fallback.timeoutMs))),
+    concurrency: Math.max(1, Math.min(16, Math.round(normalizePositiveNumber(source.concurrency, fallback.concurrency)))),
+    pricePerSecond: normalizeNonNegativeNumber(source.pricePerSecond, fallback.pricePerSecond),
+    maxDurationSec: Math.max(1, normalizePositiveNumber(source.maxDurationSec, fallback.maxDurationSec)),
+    maxResolution: String(source.maxResolution || fallback.maxResolution).trim() || fallback.maxResolution,
+    capabilities: capabilities.length ? capabilities : ['t2v'],
+    license: String(source.license || fallback.license).trim() || fallback.license,
+    requestParamsJson: normalizeJsonText(source.requestParamsJson, fallback.requestParamsJson),
+  };
+}
+
+function normalizeEndpointPath(value: unknown, fallback: string): string {
+  const path = String(value ?? fallback).trim();
+  if (!path || /^https?:\/\//iu.test(path)) return fallback;
+  return path.startsWith('/') ? path : `/${path}`;
+}
+
+function normalizeVideoConfig(input: Partial<AppConfig['video']> | undefined): AppConfig['video'] {
+  const rawProviders = Array.isArray(input?.providers) && input.providers.length ? input.providers : defaultConfig.video.providers;
+  const providersById = new Map<string, VideoProviderConfig>();
+  rawProviders.forEach((provider, index) => {
+    const normalized = normalizeVideoProvider(provider, index);
+    providersById.set(normalized.id, normalized);
+  });
+  const providers = Array.from(providersById.values());
+  const requestedActiveId = String(input?.activeProviderId ?? '').trim();
+  const activeProviderId = providers.some((provider) => provider.id === requestedActiveId)
+    ? requestedActiveId
+    : providers.find((provider) => provider.enabled)?.id ?? providers[0].id;
+  const automation = input?.automation;
+  const mode = automation?.mode;
+  const providerWhitelist = Array.isArray(automation?.providerWhitelist)
+    ? Array.from(new Set(automation.providerWhitelist.map(String).filter((id) => providers.some((provider) => provider.id === id))))
+    : [...defaultConfig.video.automation.providerWhitelist];
+  return {
+    providers,
+    activeProviderId,
+    automation: {
+      mode: mode === 'full-auto' || mode === 'milestone-review' || mode === 'scene-review' || mode === 'manual'
+        ? mode
+        : defaultConfig.video.automation.mode,
+      budgetLimit: normalizeNonNegativeNumber(automation?.budgetLimit, defaultConfig.video.automation.budgetLimit),
+      concurrency: Math.max(1, Math.min(16, Math.round(normalizePositiveNumber(automation?.concurrency, defaultConfig.video.automation.concurrency)))),
+      retryCount: Math.max(0, Math.min(10, Math.round(normalizeNonNegativeNumber(automation?.retryCount, defaultConfig.video.automation.retryCount)))),
+      qualityThreshold: normalizeNumberInRange(automation?.qualityThreshold, defaultConfig.video.automation.qualityThreshold, 0, 1),
+      providerWhitelist: providerWhitelist.length ? providerWhitelist : [activeProviderId],
+      fallback: automation?.fallback === 'html-video' || automation?.fallback === 'disabled'
+        ? automation.fallback
+        : 'dynamic-image',
+    },
+  };
+}
+
 export function normalizeAppConfig(input: unknown): AppConfig {
   const partial = (input && typeof input === 'object' ? input : {}) as Partial<AppConfig>;
   const llm = normalizeLlmProfile({ ...defaultConfig.llm, ...(partial.llm ?? {}) }, 0);
@@ -455,6 +536,7 @@ export function normalizeAppConfig(input: unknown): AppConfig {
     llmProfiles,
     activeLlmProfileId,
     ...imageConfig,
+    video: normalizeVideoConfig(partial.video),
     ...ttsConfig,
     speechToText: normalizeSpeechToTextConfig(partial.speechToText),
     jianying: {
@@ -524,6 +606,37 @@ export function validateConfigTarget(target: ConfigTestTarget, input: AppConfig,
 
   if (target === 'image') {
     return validateImageConfig(config, startedAt);
+  }
+
+  if (target === 'video') {
+    const provider = config.video.providers.find((item) => item.id === config.video.activeProviderId) ?? config.video.providers[0];
+    const missing = missingFields([
+      ['Base URL', provider?.baseUrl],
+      ['API Key', provider?.apiKey],
+      ['模型', provider?.model],
+    ]);
+    let endpoint = '';
+    let endpointValid = false;
+    try {
+      endpoint = provider ? new URL(provider.submitPath, `${provider.baseUrl.replace(/\/+$/u, '')}/`).toString() : '';
+      const parsed = new URL(endpoint);
+      endpointValid = (parsed.protocol === 'http:' || parsed.protocol === 'https:') && !parsed.username && !parsed.password;
+    } catch {
+      endpointValid = false;
+    }
+    return buildResult({
+      target,
+      startedAt,
+      status: provider?.enabled && !missing.length && endpointValid ? 'pass' : 'fail',
+      endpoint,
+      detail: !provider?.enabled
+        ? '请先启用一个云端视频 Provider。'
+        : missing.length
+          ? `云端视频 API 缺少：${missing.join('、')}。`
+          : endpointValid
+            ? `云端视频 API 字段完整：${provider.model}`
+            : '云端视频 API 地址必须是 HTTP/HTTPS 地址。',
+    });
   }
 
   if (target === 'tts') {

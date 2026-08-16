@@ -1,13 +1,14 @@
 import { readFile, writeFile } from 'node:fs/promises';
 import { resolve } from 'node:path';
 import { buildSubtitleTrackFromSceneLines } from './story';
-import type { ImagePrompt, PipelineArtifact, SubtitleTrack, TaskArtifactAssetPreview, TaskArtifactImageErrorPreview, TaskArtifactSnapshot, TaskArtifactStepPreview, TaskArtifactVideoPreview, TaskStepRerunMode, TaskSubtitleSceneLines } from './types';
+import type { ImagePrompt, PipelineArtifact, SubtitleTrack, TaskArtifactAssetPreview, TaskArtifactImageErrorPreview, TaskArtifactSnapshot, TaskArtifactStepPreview, TaskArtifactVideoPreview, TaskDagNode, TaskStepRerunMode, TaskSubtitleSceneLines } from './types';
 
 interface PipelineStateFile {
   version?: number;
   taskId?: string;
   updatedAt?: string;
   steps?: Record<string, Partial<TaskArtifactStepPreview>>;
+  dag?: Record<string, TaskDagNode>;
   artifact?: Partial<PipelineArtifact>;
   assets?: {
     images?: TaskArtifactAssetPreview[];
@@ -116,6 +117,7 @@ export async function markTaskDraftForRepack(statePath: string): Promise<void> {
     const state = JSON.parse(await readFile(normalizedStatePath, 'utf8')) as PipelineStateFile;
     state.steps ??= {};
     state.steps['6'] = pendingStep(state.steps['6']);
+    markDagPending(state, 6);
     state.updatedAt = new Date().toISOString();
     await writeFile(normalizedStatePath, JSON.stringify(state, null, 2), 'utf8');
   });
@@ -151,6 +153,7 @@ export async function updateTaskSubtitleLines(
     const subtitles = buildSubtitleTrackFromSceneLines(scenes, normalized);
     state.artifact.subtitles = subtitles;
     state.steps['6'] = pendingStep(state.steps['6']);
+    markDagPending(state, 6);
     state.updatedAt = new Date().toISOString();
     await writeFile(normalizedStatePath, JSON.stringify(state, null, 2), 'utf8');
     return { subtitles, sceneCount: scenes.length };
@@ -211,6 +214,8 @@ export async function markSceneImagesForRegeneration(statePath: string, sceneIds
     state.assets.imageErrors = (state.assets.imageErrors ?? []).filter((item) => !requested.has(Number(item.sceneId)));
     state.steps['4'] = pendingStep(state.steps['4'], imageOutputPath(remainingImages));
     state.steps['6'] = pendingStep(state.steps['6']);
+    markDagPending(state, 4);
+    markDagPending(state, 6);
     delete state.draft;
     state.updatedAt = new Date().toISOString();
 
@@ -265,6 +270,7 @@ export async function replaceSceneImageAssets(
       ? completedStep(state.steps['4'], imageOutputPath(images), updatedAt)
       : pendingStep(state.steps['4'], imageOutputPath(images));
     state.steps['6'] = pendingStep(state.steps['6']);
+    markDagPending(state, 6);
     delete state.draft;
     state.updatedAt = updatedAt;
 
@@ -298,6 +304,7 @@ export async function replaceSceneVideoAsset(
       .sort((left, right) => left.sceneId - right.sceneId);
     state.assets.videos = videos;
     state.steps['6'] = pendingStep(state.steps['6']);
+    markDagPending(state, 6);
     delete state.draft;
     state.updatedAt = new Date().toISOString();
     await writeFile(normalizedStatePath, JSON.stringify(state, null, 2), 'utf8');
@@ -320,6 +327,7 @@ export async function removeSceneVideoAsset(statePath: string, sceneId: number):
     state.assets.videos = videos;
     if (removed) {
       state.steps['6'] = pendingStep(state.steps['6']);
+      markDagPending(state, 6);
       delete state.draft;
       state.updatedAt = new Date().toISOString();
       await writeFile(normalizedStatePath, JSON.stringify(state, null, 2), 'utf8');
@@ -352,6 +360,7 @@ export async function updateSceneVideoTrim(
     const videos = current.map((item) => Number(item.sceneId) === sceneId ? updatedVideo : item);
     state.assets.videos = videos;
     state.steps['6'] = pendingStep(state.steps['6']);
+    markDagPending(state, 6);
     delete state.draft;
     state.updatedAt = new Date().toISOString();
     await writeFile(normalizedStatePath, JSON.stringify(state, null, 2), 'utf8');
@@ -375,6 +384,8 @@ export async function markSceneNarrationForRegeneration(statePath: string, scene
     state.assets.narration = remainingNarration;
     state.steps['5'] = pendingStep(state.steps['5'], remainingNarration.map((asset) => asset.path).join('\n') || undefined);
     state.steps['6'] = pendingStep(state.steps['6']);
+    markDagPending(state, 5);
+    markDagPending(state, 6);
     delete state.draft;
     state.updatedAt = new Date().toISOString();
 
@@ -429,6 +440,8 @@ function clearArtifactFromStep(artifact: Partial<PipelineArtifact>, step: number
   if (step <= 1) {
     delete artifact.rewrittenCopy;
     delete artifact.cover;
+    delete artifact.narrativePlan;
+    delete artifact.contentVariants;
   }
   if (step <= 2) {
     delete artifact.scenes;
@@ -461,9 +474,20 @@ function markStepsPendingFrom(state: PipelineStateFile, step: number): number[] 
   const clearedSteps: number[] = [];
   for (let currentStep = step; currentStep <= pipelineStepMax; currentStep += 1) {
     state.steps[String(currentStep)] = pendingStep(state.steps[String(currentStep)]);
+    markDagPending(state, currentStep);
     clearedSteps.push(currentStep);
   }
   return clearedSteps;
+}
+
+function markDagPending(state: PipelineStateFile, step: number): void {
+  const node = state.dag?.[`step-${step}`];
+  if (!node) return;
+  node.status = 'pending';
+  delete node.completedAt;
+  delete node.durationMs;
+  delete node.artifactHash;
+  delete node.error;
 }
 
 function pendingStep(input: Partial<TaskArtifactStepPreview> | undefined, outputPath?: string): TaskArtifactStepPreview {

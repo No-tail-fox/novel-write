@@ -35,6 +35,7 @@ export interface HtmlVideoComposition {
   outputPath: string;
   title: string;
   coverPath?: string;
+  coverDurationS?: number;
   bgmPath?: string;
   bgmTargetDb?: number;
   fps: number;
@@ -61,6 +62,12 @@ export interface HtmlVideoBuildInput {
   foregroundImages?: Array<{ sceneId: number; path: string; slot?: number }>;
   narrationAudio: Array<{ sceneId: number; path: string }>;
   coverPath?: string;
+  openingSequence?: {
+    enabled: boolean;
+    preset: 'editorial-montage' | 'cinematic-cuts' | 'timeline-reveal';
+    durationSec: number;
+    sourceSceneCount: number;
+  };
   bgmPath?: string;
   bgmTargetDb?: number;
   fps: number;
@@ -112,7 +119,13 @@ export function buildHtmlVideoExportInput(input: HtmlVideoBuildInput): HtmlVideo
     foregroundImages.set(asset.sceneId, items);
   }
   const narrationAudio = new Map(input.narrationAudio.map((asset) => [asset.sceneId, asset.path]));
-  const scenes = input.artifact.scenes.map((scene) => {
+  const openingImages = input.openingSequence?.enabled
+    ? input.artifact.scenes
+        .slice(0, Math.max(2, Math.min(5, input.openingSequence.sourceSceneCount)))
+        .map((scene) => generatedImages.get(scene.id))
+        .filter((path): path is string => Boolean(path))
+    : [];
+  const scenes = input.artifact.scenes.map((scene, sceneIndex) => {
     const imagePath = generatedImages.get(scene.id);
     const audioPath = narrationAudio.get(scene.id);
     if (!imagePath) {
@@ -136,8 +149,15 @@ export function buildHtmlVideoExportInput(input: HtmlVideoBuildInput): HtmlVideo
             .filter((asset) => !hiddenSlots.has(asset.slot))
             .map((asset) => asset.path),
       audioPath,
-      durationMs: Math.max(800, Math.round(scene.durationMs)),
+      durationMs: Math.max(
+        800,
+        Math.round(scene.durationMs),
+        sceneIndex === 0 && openingImages.length > 1 ? Math.round((input.openingSequence?.durationSec ?? 6) * 1000) : 0,
+      ),
       plan,
+      openingSequence: sceneIndex === 0 && openingImages.length > 1 && input.openingSequence
+        ? { ...input.openingSequence, imagePaths: openingImages }
+        : undefined,
     };
   });
 
@@ -146,13 +166,14 @@ export function buildHtmlVideoExportInput(input: HtmlVideoBuildInput): HtmlVideo
     outputPath: input.outputPath,
     title: input.title,
     coverPath: input.coverPath,
+    coverDurationS: openingImages.length > 1 && input.coverPath ? 1.4 : undefined,
     bgmPath: input.bgmPath,
     bgmTargetDb: input.bgmTargetDb,
     fps: Math.max(1, Math.round(input.fps || 30)),
     canvas_w: Math.max(1, Math.round(input.canvas_w)),
     canvas_h: Math.max(1, Math.round(input.canvas_h)),
     transition: input.transition,
-    totalDurationS: roundSeconds(input.artifact.scenes.reduce((sum, scene) => sum + Math.max(800, scene.durationMs), 0) / 1000),
+    totalDurationS: roundSeconds(scenes.reduce((sum, scene) => sum + scene.durationMs, 0) / 1000),
     scenes: scenes.map((scene) => ({
       ...scene,
       html: buildSceneHtml({
@@ -172,6 +193,7 @@ export function buildHtmlVideoExportInput(input: HtmlVideoBuildInput): HtmlVideo
         draftTemplate: input.draftTemplate,
         sceneMotion: input.sceneMotion,
         plan: scene.plan,
+        openingSequence: scene.openingSequence,
       }),
       duration: roundSeconds(scene.durationMs / 1000),
     })),
@@ -202,7 +224,7 @@ export function createHtmlVideoComposePayload(
     ...(input.bgmPath ? { bgm_path: input.bgmPath } : {}),
     ...(typeof input.bgmTargetDb === 'number' ? { bgm_target_db: input.bgmTargetDb } : {}),
     ...(input.transition ? { transition: input.transition } : {}),
-    ...(input.coverPath ? { cover_path: input.coverPath, cover_duration_s: input.scenes[0]?.duration ?? 0 } : {}),
+    ...(input.coverPath ? { cover_path: input.coverPath, cover_duration_s: input.coverDurationS ?? input.scenes[0]?.duration ?? 0 } : {}),
     canvas_w: input.canvas_w,
     canvas_h: input.canvas_h,
   };
@@ -225,10 +247,24 @@ function buildSceneHtml(scene: {
   draftTemplate?: DraftTemplate;
   sceneMotion?: HtmlVideoSceneMotion;
   plan?: HtmlVideoScenePlan;
+  openingSequence?: {
+    preset: 'editorial-montage' | 'cinematic-cuts' | 'timeline-reveal';
+    durationSec: number;
+    imagePaths: string[];
+  };
 }): string {
   const compositionId = `storydream-scene-${scene.sceneId}`;
   const hyperframesProtocol = runtimeProtocolMetadata(scene.fps);
   const imageDataUrl = safeAssetUrl(scene.imagePath);
+  const openingDuration = Math.min(scene.duration, Math.max(4, Math.min(8, scene.openingSequence?.durationSec ?? 0)));
+  const openingImagePaths = scene.openingSequence?.imagePaths ?? [];
+  const openingSegmentDuration = openingImagePaths.length ? openingDuration / openingImagePaths.length : 0;
+  const openingMarkup = openingImagePaths.length > 1
+    ? `<div id="opening-montage" class="opening-montage" data-opening-preset="${scene.openingSequence?.preset ?? 'editorial-montage'}">
+      ${openingImagePaths.map((path, index) => `<img id="opening-shot-${index + 1}" class="clip opening-shot" data-start="${roundSeconds(index * openingSegmentDuration)}" data-duration="${roundSeconds(openingSegmentDuration)}" data-track-index="${30 + index}" src="${safeAssetUrl(path)}" alt="" />`).join('\n      ')}
+      <div id="opening-progress" class="opening-progress"></div>
+    </div>`
+    : '';
   const audioDataUrl = safeLocalAssetUrl(scene.audioPath);
   const foregroundMarkup = (scene.foregroundPaths ?? [])
     .map((path, index) => `<img id="foreground-${index + 1}" class="clip scene-foreground" data-slot="${index}" data-start="0" data-duration="${scene.duration}" data-track-index="${index + 2}" src="${safeAssetUrl(path)}" alt="" />`)
@@ -270,6 +306,26 @@ function buildSceneHtml(scene: {
     Math.max(18, Math.min(scene.canvas_w, scene.canvas_h) * captionLayout.fontSize / 1080) * captionScale,
   );
   const sceneTemplate = escapeHtml(template.id);
+  const openingAnimationTweens = openingImagePaths.length > 1
+    ? openingImagePaths.map((_, index) => {
+        const start = roundSeconds(index * openingSegmentDuration);
+        const segment = roundSeconds(openingSegmentDuration);
+        const exitAt = roundSeconds(Math.max(start + 0.2, start + openingSegmentDuration - 0.2));
+        const selector = `#opening-shot-${index + 1}`;
+        const preset = scene.openingSequence?.preset ?? 'editorial-montage';
+        const from = preset === 'cinematic-cuts'
+          ? `{ opacity: 0, scale: 1.16, clipPath: 'inset(0 0 100% 0)' }`
+          : preset === 'timeline-reveal'
+            ? `{ opacity: 0, scale: 1.08, xPercent: ${index % 2 === 0 ? 6 : -6} }`
+            : `{ opacity: 0, scale: 1.12, filter: 'contrast(1.18) saturate(0.78)' }`;
+        return [
+          `tl.set('${selector}', { opacity: 0 }, 0);`,
+          `tl.fromTo('${selector}', ${from}, { opacity: 1, scale: 1, xPercent: 0, clipPath: 'inset(0 0 0% 0)', filter: 'contrast(1) saturate(1)', duration: ${Math.min(0.42, segment / 3)}, ease: 'power3.out', immediateRender: false }, ${start});`,
+          `tl.to('${selector}', { scale: 1.07, duration: ${segment}, ease: 'none' }, ${start});`,
+          `tl.to('${selector}', { opacity: 0, duration: 0.2, ease: 'power2.in' }, ${exitAt});`,
+        ].join('\n    ');
+      }).join('\n    ')
+    : '';
   return `<!doctype html>
 <html lang="zh-CN">
 <head>
@@ -375,6 +431,34 @@ function buildSceneHtml(scene: {
       object-fit: ${layout.imageFit};
       opacity: 0.92;
       transform-origin: center;
+    }
+    .opening-montage {
+      position: absolute;
+      inset: 0;
+      z-index: 3;
+      overflow: hidden;
+      background: #050708;
+    }
+    .opening-shot {
+      position: absolute;
+      inset: 0;
+      width: 100%;
+      height: 100%;
+      object-fit: cover;
+      transform-origin: center;
+      will-change: transform, opacity, clip-path, filter;
+    }
+    .opening-progress {
+      position: absolute;
+      right: 6%;
+      bottom: 4%;
+      left: 6%;
+      z-index: 4;
+      height: 4px;
+      transform: scaleX(0);
+      transform-origin: left center;
+      background: var(--caption-accent);
+      box-shadow: 0 0 14px color-mix(in srgb, var(--caption-accent) 65%, transparent);
     }
     .scene-foreground {
       position: absolute;
@@ -790,7 +874,7 @@ function buildSceneHtml(scene: {
 <body>
   <div id="${compositionId}" class="frame" data-composition-id="${compositionId}" data-start="0" data-duration="${scene.duration}" data-width="${scene.canvas_w}" data-height="${scene.canvas_h}" data-caption-preset="${scene.captionStyle.preset}" data-caption-animation="${scene.captionStyle.animation}" data-scene-template="${sceneTemplate}" data-template-background-motion="${template.choreography.background.preset}" data-draft-motion="${effectiveMotion}" data-draft-frame="${layout.frameEnabled}">
     ${layout.frameEnabled ? '<div class="draft-frame-band draft-frame-header"></div><div class="draft-frame-band draft-frame-footer"></div>' : ''}
-    <div class="scene-image-region"><img id="scene-background" class="clip scene-image" data-start="0" data-duration="${scene.duration}" data-track-index="0" src="${imageDataUrl}" alt="" /></div>
+    <div class="scene-image-region"><img id="scene-background" class="clip scene-image" data-start="0" data-duration="${scene.duration}" data-track-index="0" src="${imageDataUrl}" alt="" />${openingMarkup}</div>
     <audio id="scene-narration" class="clip scene-audio" data-start="0" data-duration="${scene.duration}" data-track-index="1" data-volume="1" src="${audioDataUrl}" preload="auto"></audio>
     <div id="scene-veil" class="clip veil" data-start="0" data-duration="${scene.duration}" data-track-index="20"></div>
     ${foregroundMarkup}
@@ -882,6 +966,9 @@ function buildSceneHtml(scene: {
       return to({ opacity: 0, y: 30 }, { opacity: 1, y: 0, ease: 'power2.out' });
     }
     ${motionTween}
+    ${openingAnimationTweens}
+    ${openingImagePaths.length > 1 ? `tl.fromTo('#opening-progress', { scaleX: 0 }, { scaleX: 1, duration: ${openingDuration}, ease: 'none' }, 0);
+    tl.set('#opening-montage', { autoAlpha: 0 }, ${openingDuration});` : ''}
     tl.fromTo('#scene-veil', { opacity: 0.86 }, { opacity: 0.96, duration: ${scene.duration}, ease: 'none' }, 0);
     ${titleAnimationTween}
     ${foregroundAnimationTweens}

@@ -398,6 +398,7 @@ describe('editorial Electron QA configuration', () => {
     expect(source).toContain("document.querySelector('[data-html-video-studio=\"html-video\"]')");
     expect(source).toContain("taskTitle === '武则天：权力之路 HTML 动画'");
     expect(source).toContain("document.querySelector('[data-nav-view=\"history\"]')");
+    expect(source).toContain("document.querySelector('[data-contextual-tools-trigger]')");
     expect(source).toContain('!state.historyHtmlRouteReady');
     expect(source).toContain('historyHtmlRouteReady: state.historyHtmlRouteReady');
     expect(source).toContain("scenarioId.startsWith('task-detail-scene-video-')");

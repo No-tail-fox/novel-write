@@ -74,6 +74,46 @@ function mockConfiguredLlm(run: JsonLlm): ConfiguredJsonLlm {
 }
 
 describe('task runner', () => {
+  it('persists a dependency DAG and the narrative plan before copy output', async () => {
+    const dir = await mkdtemp(join(tmpdir(), 'storybound-runner-dag-'));
+    const db = await FileDatabase.open(join(dir, 'data.db'));
+    try {
+      const task = await db.createTask({
+        title: 'Persistent DAG',
+        inputText: sampleInput,
+        processingMode: 'clip-only',
+      });
+      const narrativePlan = {
+        hook: '她等待了十二年，真正的转折只用了一次选择。',
+        arguments: ['等待不是停滞', '选择改变位置'],
+        evidence: [{ claim: '长期等待', support: '输入材料记载了时间跨度', source: '输入材料' }],
+        contrast: '表面沉寂，实际在积累重新进入权力中心的条件。',
+        conclusion: '决定命运的不是起点，而是关键时刻的选择。',
+        sourceCoverage: ['输入材料'],
+      };
+      await runTask(db, task, {
+        appDataDir: dir,
+        generatePipelineArtifact: async () => ({ ...makeArtifact(), narrativePlan }),
+      });
+
+      const workDir = managedTaskWorkDir(dir, task);
+      const pipeline = JSON.parse(await readFile(join(workDir, 'pipeline', 'state.json'), 'utf8')) as {
+        version: number;
+        dag: Record<string, { dependencies: string[]; status: string; inputHash: string; artifactHash: string }>;
+      };
+      expect(pipeline.version).toBe(2);
+      expect(pipeline.dag['step-0']).toMatchObject({ dependencies: [], status: 'completed' });
+      expect(pipeline.dag['step-3']).toMatchObject({ dependencies: ['step-2'], status: 'completed' });
+      expect(pipeline.dag['step-6'].dependencies).toEqual(['step-4', 'step-5']);
+      expect(pipeline.dag['step-3'].inputHash).toMatch(/^[a-f0-9]{64}$/u);
+      expect(pipeline.dag['step-3'].artifactHash).toMatch(/^[a-f0-9]{64}$/u);
+      expect(JSON.parse(await readFile(join(workDir, '01-narrative-plan.json'), 'utf8'))).toEqual(narrativePlan);
+    } finally {
+      await db.close();
+      await rm(dir, { recursive: true, force: true });
+    }
+  });
+
   it('rejects a missing managed work directory before filesystem or provider activity', async () => {
     const dir = await mkdtemp(join(tmpdir(), 'storybound-runner-managed-workdir-'));
     const db = await FileDatabase.open(join(dir, 'data.db'));
@@ -3736,7 +3776,7 @@ describe('task runner', () => {
         draftWriterOptions: { runBridge: fakeBridge },
       });
 
-      expect(calls).toMatchObject({ 0: 1, 1: 5, 2: 4, 3: 2 });
+      expect(calls).toMatchObject({ 0: 1, 1: 6, 2: 4, 3: 2 });
       expect((await db.getState()).tasks[0].status).toBe('completed');
     } finally {
       await db.close();
@@ -3837,7 +3877,7 @@ describe('task runner', () => {
         },
       );
 
-      const rewriteRequest = requests.find((request) => request.step === 1);
+      const rewriteRequest = requests.find((request) => request.name === 'rewrite-round-1');
       const rewriteContent = rewriteRequest?.messages.map((message) => message.content).join('\n') ?? '';
       expect(rewriteContent).toContain('Existing artifact context');
       expect(rewriteContent).toContain('Old rewrite context line');

@@ -1,5 +1,6 @@
 import type {
   AiSourceContext,
+  ContentPlatform,
   ImageGenerationQuality,
   NarrativePov,
   OrdinaryTaskCoverSelection,
@@ -45,6 +46,8 @@ export interface NewTaskDraftValues {
   referenceImagePath?: string;
   pausePoint?: PausePoint;
   processingMode?: ProcessingMode;
+  platformVariants?: ContentPlatform[];
+  versionsPerPlatform?: number;
   rewriteIntensity?: RewriteIntensity;
   narrativePov?: NarrativePov;
   keepPromotion?: boolean;

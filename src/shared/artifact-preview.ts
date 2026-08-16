@@ -1,10 +1,11 @@
 import { readFile } from 'node:fs/promises';
-import type { PipelineArtifact, Task, TaskArtifactAssetPreview, TaskArtifactImageErrorPreview, TaskArtifactSnapshot, TaskArtifactStepPreview, TaskArtifactVideoPreview } from './types';
+import type { PipelineArtifact, Task, TaskArtifactAssetPreview, TaskArtifactImageErrorPreview, TaskArtifactSnapshot, TaskArtifactStepPreview, TaskArtifactVideoPreview, TaskDagNode } from './types';
 
 interface PipelineStateFile {
   taskId?: string;
   updatedAt?: string;
   steps?: Record<string, Partial<TaskArtifactStepPreview>>;
+  dag?: Record<string, TaskDagNode>;
   artifact?: Partial<PipelineArtifact>;
   assets?: {
     cover?: TaskArtifactAssetPreview[];
@@ -31,6 +32,7 @@ export async function readTaskArtifactSnapshot(task: Pick<Task, 'id' | 'artifact
       outputDir: task.outputDir,
       updatedAt: state.updatedAt ?? null,
       steps: normalizeSteps(state.steps),
+      dag: Object.values(state.dag ?? {}).sort((left, right) => left.id.localeCompare(right.id, undefined, { numeric: true })),
       artifact: state.artifact ?? {},
       assets: {
         cover: Array.isArray(state.assets?.cover) ? state.assets.cover : [],

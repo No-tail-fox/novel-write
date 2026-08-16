@@ -304,8 +304,34 @@ export function ArtifactPreviewContent({
             <ArtifactText value={artifact.reviewedText} empty="等待文案预审产物" />
           </ArtifactSection>
 
+          <ArtifactSection title="叙事规划" badge={artifact.narrativePlan ? `${artifact.narrativePlan.arguments.length} 个论点` : '等待生成'} actions={artifactStepActions(1)}>
+            {artifact.narrativePlan ? (
+              <div className="artifact-cover-grid">
+                <div><small>钩子</small><strong>{artifact.narrativePlan.hook}</strong></div>
+                <div><small>论点</small><p>{artifact.narrativePlan.arguments.join(' / ')}</p></div>
+                <div><small>证据</small><p>{artifact.narrativePlan.evidence.map((item) => `${item.claim}：${item.support}`).join(' / ') || '-'}</p></div>
+                <div><small>反差</small><p>{artifact.narrativePlan.contrast}</p></div>
+                <div><small>结论</small><p>{artifact.narrativePlan.conclusion}</p></div>
+              </div>
+            ) : <ArtifactEmpty text="等待钩子、论点、证据、反差与结论规划" />}
+          </ArtifactSection>
+
           <ArtifactSection title="改写产物" badge={`${countChars(artifact.rewrittenCopy)} 字`} actions={artifactStepActions(1)}>
             <ArtifactText value={artifact.rewrittenCopy} empty="等待改写产物" />
+          </ArtifactSection>
+
+          <ArtifactSection title="版本与平台变体" badge={`${artifact.contentVariants?.length ?? 0} 个`} actions={artifactStepActions(1)}>
+            {artifact.contentVariants?.length ? (
+              <div className="artifact-source-list">
+                {artifact.contentVariants.map((variant) => (
+                  <div key={variant.id}>
+                    <strong>{variant.platform} · V{variant.version} · {variant.title}</strong>
+                    <span>{variant.hashtags.join(' ')}</span>
+                    <p>{trimForPreview(variant.copy, 260)}</p>
+                  </div>
+                ))}
+              </div>
+            ) : <ArtifactEmpty text="等待平台标题、发布文案与标签变体" />}
           </ArtifactSection>
 
           <ArtifactSection title="封面信息" badge={artifact.cover?.title || '等待生成'} actions={artifactStepActions(1)}>
@@ -332,6 +358,7 @@ export function ArtifactPreviewContent({
             <ImageGenerationGallery
               api={api}
               task={task}
+              config={config}
               scenes={scenes}
               imagePrompts={imagePrompts}
               images={imageAssets}
@@ -391,6 +418,7 @@ export function ArtifactPreviewContent({
             <ImageGenerationGallery
               api={api}
               task={task}
+              config={config}
               scenes={scenes}
               imagePrompts={imagePrompts}
               images={imageAssets}
@@ -751,6 +779,7 @@ function ArtifactPromptList({ prompts }: { prompts: NonNullable<TaskArtifactSnap
 function ImageGenerationGallery({
   api,
   task,
+  config,
   scenes,
   imagePrompts,
   images,
@@ -762,6 +791,7 @@ function ImageGenerationGallery({
 }: {
   api: StoryDreamApi;
   task: Task;
+  config: AppConfig;
   scenes: NonNullable<TaskArtifactSnapshot['artifact']['scenes']>;
   imagePrompts: NonNullable<TaskArtifactSnapshot['artifact']['imagePrompts']>;
   images: TaskArtifactSnapshot['assets']['images'];
@@ -796,6 +826,9 @@ function ImageGenerationGallery({
   const [previewSceneId, setPreviewSceneId] = useState<number | null>(null);
   const [notice, setNotice] = useState('');
   const imageGenerationAction = useAsyncAction();
+  const activeVideoProvider = config.video.providers.find((provider) => provider.id === config.video.activeProviderId)
+    ?? config.video.providers[0];
+  const videoProviderReady = Boolean(activeVideoProvider?.enabled && activeVideoProvider.baseUrl && activeVideoProvider.model);
   const imagePaths = images.map((asset) => asset.path).join('|');
   const imageBySceneId = useMemo(() => new Map(images.map((asset) => [asset.sceneId, asset] as const)), [images]);
   const videoBySceneId = useMemo(() => new Map(videos.map((asset) => [asset.sceneId, asset] as const)), [videos]);
@@ -980,7 +1013,9 @@ function ImageGenerationGallery({
       setVideoLibrarySceneId(null);
       setNotice(source.kind === 'random'
         ? `已为分镜 ${sceneId} 随机匹配视频，原图仍保留。`
-        : `分镜 ${sceneId} 已改用视频，原图仍保留。`);
+        : source.kind === 'ai'
+          ? `分镜 ${sceneId} 的 AI 视频已生成，原图仍保留。`
+          : `分镜 ${sceneId} 已改用视频，原图仍保留。`);
     }
   }
 
@@ -1060,11 +1095,6 @@ function ImageGenerationGallery({
       setMediaMenuSceneId(null);
       setNotice(`已从素材库替换分镜 ${sceneId}。`);
     }
-  }
-
-  function showAiVideoUnavailable(sceneId: number) {
-    setMediaMenuSceneId(null);
-    setNotice(`分镜 ${sceneId}：尚未配置视频生成服务，当前可先上传、从素材库选择或随机匹配。`);
   }
 
   async function submitEditor() {
@@ -1196,7 +1226,7 @@ function ImageGenerationGallery({
                     <button type="button" role="menuitem" disabled={taskLocked || imageGenerationAction.busy} onClick={() => void replaceVideo(scene.id, { kind: 'local' })}><Upload size={14} /><span>本地视频<small>MP4、MOV、WebM</small></span></button>
                     <button type="button" role="menuitem" disabled={taskLocked || imageGenerationAction.busy} onClick={() => { setVideoLibrarySceneId(scene.id); setMediaMenuSceneId(null); }}><Film size={14} /><span>视频素材库<small>选择已导入片段</small></span></button>
                     <button type="button" role="menuitem" disabled={taskLocked || imageGenerationAction.busy} onClick={() => void replaceVideo(scene.id, { kind: 'random' })}><Shuffle size={14} /><span>随机匹配视频<small>按画幅与时长筛选</small></span></button>
-                    <button type="button" role="menuitem" disabled={taskLocked || imageGenerationAction.busy} onClick={() => showAiVideoUnavailable(scene.id)}><Sparkles size={14} /><span>AI 生成视频<small>服务尚未配置</small></span></button>
+                    <button type="button" role="menuitem" title={videoProviderReady ? undefined : '请先在系统设置中配置并启用云端视频 API'} disabled={taskLocked || imageGenerationAction.busy || !videoProviderReady} onClick={() => void replaceVideo(scene.id, { kind: 'ai', useSceneImage: Boolean(image) })}><Sparkles size={14} /><span>AI 生成视频<small>{videoProviderReady ? `${activeVideoProvider.name} · ${activeVideoProvider.model}` : '请先配置云端视频 API'}</small></span></button>
                   </div>
                 ) : null}
               </div>
@@ -1207,6 +1237,7 @@ function ImageGenerationGallery({
                 {videoAsset ? (
                   <div className="scene-video-details">
                     <span><Film size={12} />{videoAsset.width}×{videoAsset.height} · 素材 {formatMs(videoAsset.durationMs)} · 原图已保留</span>
+                    {videoAsset.source === 'ai-video' ? <span><Sparkles size={12} />{videoAsset.providerId} · {videoAsset.model}{videoAsset.estimatedCost !== undefined ? ` · 预计 ${videoAsset.estimatedCost.toFixed(2)}` : ''}</span> : null}
                     <label>
                       <span>入点 {formatMs(trimValue)}</span>
                       <input type="range" min={0} max={maxTrimStartMs} step={100} disabled={taskLocked || imageGenerationAction.busy || maxTrimStartMs === 0} value={Math.min(trimValue, maxTrimStartMs)} onChange={(event) => setTrimDrafts((current) => ({ ...current, [scene.id]: Number(event.target.value) }))} />

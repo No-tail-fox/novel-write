@@ -25,6 +25,7 @@ import { join } from 'node:path';
 import type { AppConfig, CustomStyle, HtmlVideoAsset, HtmlVideoJobConfig, HtmlVideoScenePlan, HtmlVideoVoiceClip, ImagePrompt, StoryboardScene, Task } from './types';
 import { createConfiguredJsonLlm, type ConfiguredJsonLlm, type LlmMessage } from './llm-provider';
 import { createConfiguredImageGenerator, createConfiguredNarrationSynthesizer, getConfiguredImageConcurrency } from './media-providers';
+import { createConfiguredVideoProvider, selectVideoGenerationRoute, type VideoProvider } from './video-provider';
 
 type ImageGenerator = NonNullable<RunTaskOptions['generateImages']>;
 type NarrationSynthesizer = NonNullable<RunTaskOptions['synthesizeNarration']>;
@@ -126,17 +127,23 @@ const htmlPlanningSchema: Record<string, unknown> = {
   },
 };
 
+export interface TaskRuntimeProviders extends Pick<RunTaskOptions, 'llm' | 'generateImages' | 'imageConcurrency' | 'synthesizeNarration'> {
+  videoProvider?: VideoProvider;
+}
+
 export function createTaskRuntimeProviders(
   config: AppConfig,
   workDir: string,
   task?: Partial<Pick<Task, 'llmProfileId' | 'ttsProvider' | 'imageQuality'>>,
-): Pick<RunTaskOptions, 'llm' | 'generateImages' | 'imageConcurrency' | 'synthesizeNarration'> {
+): TaskRuntimeProviders {
   const llm = task?.llmProfileId ? config.llmProfiles.find((profile) => profile.id === task.llmProfileId) ?? config.llm : config.llm;
+  const videoRoute = selectVideoGenerationRoute(config, { durationSec: 1, requiredCapabilities: ['t2v'], remainingBudget: Number.POSITIVE_INFINITY });
   return {
     llm: hasUsableLlm(llm) ? createConfiguredJsonLlm(llm) : undefined,
     generateImages: hasUsableImageProvider(config) ? createConfiguredImageGenerator(config, workDir) : undefined,
     imageConcurrency: getConfiguredImageConcurrency(config),
     synthesizeNarration: hasUsableTtsProvider(config, task?.ttsProvider) ? createConfiguredNarrationSynthesizer(config, workDir) : undefined,
+    videoProvider: videoRoute.kind === 'provider' ? createConfiguredVideoProvider(config, workDir) : undefined,
   };
 }
 

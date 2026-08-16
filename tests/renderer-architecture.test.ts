@@ -210,12 +210,15 @@ describe('renderer application ownership architecture', () => {
     expect(composition).not.toContain('function makeFallbackApi(');
   });
 
-  it('owns one new-task action and exactly sixteen sidebar entries', async () => {
+  it('owns one new-task action, six primary sidebar entries, and ten contextual tools', async () => {
     const navigation = await import('../src/app/navigation');
     expect(navigation.newTaskPrimaryAction.view).toBe('new-task');
-    expect(navigation.sidebarNavItems).toHaveLength(16);
-    expect(new Set(navigation.sidebarNavItems.map((item) => item.view)).size).toBe(16);
+    expect(navigation.sidebarNavItems).toHaveLength(6);
+    expect(new Set(navigation.sidebarNavItems.map((item) => item.view)).size).toBe(6);
+    expect(navigation.contextualToolNavItems).toHaveLength(10);
+    expect(new Set(navigation.contextualToolNavItems.map((item) => item.view)).size).toBe(10);
     expect(navigation.navigationItems).toHaveLength(17);
+    expect(new Set(navigation.navigationItems.map((item) => item.view)).size).toBe(17);
     expect(navigation.navigationItemForView('task-detail')).toMatchObject({ label: '任务详情', hint: '单任务流水线' });
   });
 

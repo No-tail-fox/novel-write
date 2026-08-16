@@ -1,7 +1,7 @@
 import { copyFile, mkdir, readFile, writeFile } from 'node:fs/promises';
 import { createHash } from 'node:crypto';
 import { extname, join } from 'node:path';
-import type { AiSourceContext, BgmItem, CharacterCard, CoverMetadata, CustomCoverTemplate, DraftTemplate, ImagePrompt, MusicPlan, PipelineArtifact, PromptStepTemplateType, PromptTemplate, RewriteEvaluationResult, SequencedTaskEvent, StoryboardScene, Task, TaskArtifactImageErrorPreview, TaskArtifactVideoPreview, TaskStepRerunMode } from './types';
+import type { AiSourceContext, BgmItem, CharacterCard, ContentPlatformVariant, CoverMetadata, CustomCoverTemplate, DraftTemplate, ImagePrompt, MusicPlan, NarrativePlan, PipelineArtifact, PromptStepTemplateType, PromptTemplate, RewriteEvaluationResult, SequencedTaskEvent, StoryboardScene, Task, TaskArtifactImageErrorPreview, TaskArtifactVideoPreview, TaskDagNode, TaskStepRerunMode } from './types';
 import { buildCoverMetadata, buildSubtitleTrack, groupStoryboardScenesToTarget, normalizeStoryboardSceneLengths } from './story';
 import { characterCoverDisplayRules, isCharacterStoryTrack, resolveCoverDisplayMetadata } from './cover-copy';
 import { writeJianyingDraft, type SceneAsset, type WriteJianyingDraftOptions } from './draft';
@@ -18,6 +18,7 @@ import { withPipelineStateLock } from './pipeline-cache';
 import { isOrdinaryTask, resolveOrdinaryCoverTemplate } from '../features/tasks/task-control-manifest';
 import { taskTerminalStep } from './task-progress';
 import { ORDINARY_TASK_COVER_PAGE_DURATION_MS, validateOrdinaryTaskCoverAsset } from './ordinary-task-cover';
+import { ordinaryTaskPipelineOptions } from './ordinary-task-options';
 
 export interface RunTaskOptions {
   appDataDir: string;
@@ -39,10 +40,11 @@ export interface RunTaskOptions {
 type StepStatus = 'pending' | 'running' | 'completed' | 'failed';
 
 interface PipelineState {
-  version: 1;
+  version: 1 | 2;
   taskId: string;
   updatedAt: string;
   steps: Record<string, { status: StepStatus; outputPath?: string; error?: string; completedAt?: string }>;
+  dag: Record<string, TaskDagNode>;
   artifact: Partial<PipelineArtifact>;
   assets: {
     cover: SceneAsset[];
@@ -166,6 +168,57 @@ const rewriteEvaluationOutputJsonSchema: Record<string, unknown> = {
       },
     },
     wordCountWarning: stringJsonSchema,
+  },
+};
+const narrativePlanOutputJsonSchema: Record<string, unknown> = {
+  type: 'object',
+  required: ['narrativePlan'],
+  additionalProperties: false,
+  properties: {
+    narrativePlan: {
+      type: 'object',
+      required: ['hook', 'arguments', 'evidence', 'contrast', 'conclusion', 'sourceCoverage'],
+      additionalProperties: false,
+      properties: {
+        hook: stringJsonSchema,
+        arguments: stringArrayJsonSchema,
+        evidence: {
+          type: 'array',
+          items: {
+            type: 'object',
+            required: ['claim', 'support'],
+            additionalProperties: false,
+            properties: { claim: stringJsonSchema, support: stringJsonSchema, source: stringJsonSchema },
+          },
+        },
+        contrast: stringJsonSchema,
+        conclusion: stringJsonSchema,
+        sourceCoverage: stringArrayJsonSchema,
+      },
+    },
+  },
+};
+const contentVariantsOutputJsonSchema: Record<string, unknown> = {
+  type: 'object',
+  required: ['contentVariants'],
+  additionalProperties: false,
+  properties: {
+    contentVariants: {
+      type: 'array',
+      items: {
+        type: 'object',
+        required: ['platform', 'version', 'title', 'copy', 'caption', 'hashtags'],
+        additionalProperties: false,
+        properties: {
+          platform: { type: 'string', enum: ['douyin', 'xiaohongshu', 'shipinhao', 'bilibili', 'kuaishou'] },
+          version: { type: 'number' },
+          title: stringJsonSchema,
+          copy: stringJsonSchema,
+          caption: stringJsonSchema,
+          hashtags: stringArrayJsonSchema,
+        },
+      },
+    },
   },
 };
 const characterCardOutputJsonSchema: Record<string, unknown> = {
@@ -303,6 +356,7 @@ async function runTaskWithPipelineStateLock(db: FileDatabase, task: Task, option
   };
 
   const save = async () => {
+    pipeline.version = 2;
     pipeline.updatedAt = new Date().toISOString();
     await writeFile(statePath, JSON.stringify(pipeline, null, 2), 'utf8');
   };
@@ -314,6 +368,23 @@ async function runTaskWithPipelineStateLock(db: FileDatabase, task: Task, option
   };
 
   const markStep = async (step: number, status: StepStatus, patch: Partial<PipelineState['steps'][string]> = {}) => {
+    const nodeId = `step-${step}`;
+    const previousNode = pipeline.dag[nodeId] ?? createTaskDagNode(step);
+    const now = new Date().toISOString();
+    const startedAt = status === 'running' || (status === 'completed' && !previousNode.startedAt) ? now : previousNode.startedAt;
+    pipeline.dag[nodeId] = {
+      ...previousNode,
+      status,
+      inputHash: status === 'running' || !previousNode.inputHash ? taskDagInputHash(task, pipeline, step) : previousNode.inputHash,
+      artifactHash: status === 'completed' ? taskDagArtifactHash(pipeline, step) : previousNode.artifactHash,
+      provider: step <= 3 ? options.llm?.protocol : previousNode.provider,
+      model: step <= 3 ? task.llmProfileId ?? undefined : previousNode.model,
+      attempt: status === 'running' ? previousNode.attempt + 1 : Math.max(previousNode.attempt, status === 'completed' ? 1 : 0),
+      startedAt,
+      completedAt: status === 'completed' ? now : undefined,
+      durationMs: status === 'completed' && startedAt ? Math.max(0, Date.parse(now) - Date.parse(startedAt)) : undefined,
+      error: status === 'failed' ? patch.error : undefined,
+    };
     pipeline.steps[String(step)] = {
       ...(pipeline.steps[String(step)] ?? { status: 'pending' }),
       ...patch,
@@ -583,6 +654,7 @@ async function ensureContentArtifact(input: {
       bestRound: 1,
       evaluations: [{ round: 1, score: 100, reason: 'Direct-copy publish mode skips rewrite rounds and keeps the original copy.' }],
     };
+    pipeline.artifact.narrativePlan = pipeline.artifact.narrativePlan ?? buildFallbackNarrativePlan(task.inputText);
   }
 
   if (!directCopyPublish && (!isStepCompleted(pipeline, 0) || !pipeline.artifact.reviewedText)) {
@@ -642,6 +714,21 @@ async function ensureContentArtifact(input: {
       artifact: { ...pipeline.artifact, reviewedText: controlPlan.reviewedTextForRewrite },
     });
     const rewritePrompt = renderStepPrompt(promptTemplates, 'rewrite', rewritePromptContext, controlPlan.reviewedTextForRewrite);
+    if (!pipeline.artifact.narrativePlan) {
+      await emit('step_detail', 1, 'Writer', '规划钩子、论点、证据、反差与结论...');
+      try {
+        pipeline.artifact.narrativePlan = await generateNarrativePlan(options.llm, {
+          task: rewriteTask,
+          reviewedText: controlPlan.reviewedTextForRewrite,
+          sourceContext,
+          signal: options.signal,
+        });
+      } catch (error) {
+        pipeline.artifact.narrativePlan = buildFallbackNarrativePlan(controlPlan.reviewedTextForRewrite);
+        await emit('step_detail', 1, 'Writer', `叙事规划返回格式不可用，已使用可恢复规划：${error instanceof Error ? error.message : String(error)}`);
+      }
+      await writeFile(join(workDir, '01-narrative-plan.json'), JSON.stringify(pipeline.artifact.narrativePlan, null, 2), 'utf8');
+    }
     const rewrite = await runRewriteRounds(options.llm, {
       task: rewriteTask,
       rewritePrompt,
@@ -649,6 +736,7 @@ async function ensureContentArtifact(input: {
       signal: options.signal,
       rerunContext: rewriteContextForStep(pipeline, 1),
       emit,
+      narrativePlan: pipeline.artifact.narrativePlan,
     });
     pipeline.artifact.rewrittenCopy = applyFinalRewriteControls(rewrite.rewrittenCopy, task, controlPlan);
     pipeline.artifact.rewriteEvaluation = rewrite.evaluation;
@@ -670,6 +758,12 @@ async function ensureContentArtifact(input: {
       signal: options.signal,
       emit,
     });
+    pipeline.artifact.contentVariants = await generateContentVariants(options.llm, task, {
+      rewrittenCopy: pipeline.artifact.rewrittenCopy,
+      cover: pipeline.artifact.cover,
+      signal: options.signal,
+      emit,
+    });
     await writeFile(join(workDir, '01-rewritten-copy.md'), pipeline.artifact.rewrittenCopy, 'utf8');
     await writeFile(join(workDir, '00-cover-title.json'), JSON.stringify(pipeline.artifact.cover, null, 2), 'utf8');
     await writeFile(join(workDir, '01-rewrite-evaluations.json'), JSON.stringify(pipeline.artifact.rewriteEvaluation, null, 2), 'utf8');
@@ -688,6 +782,12 @@ async function ensureContentArtifact(input: {
   }
 
   if (directCopyPublish && !isStepCompleted(pipeline, 1)) {
+    pipeline.artifact.contentVariants = await generateContentVariants(options.llm, task, {
+      rewrittenCopy: requireString(pipeline.artifact.rewrittenCopy, 'rewrittenCopy'),
+      cover: normalizeCover(pipeline.artifact.cover),
+      signal: options.signal,
+      emit,
+    });
     await writeFile(join(workDir, '01-rewritten-copy.md'), requireString(pipeline.artifact.rewrittenCopy, 'rewrittenCopy'), 'utf8');
     await writeFile(join(workDir, '00-cover-title.json'), JSON.stringify(normalizeCover(pipeline.artifact.cover), null, 2), 'utf8');
     await writeFile(
@@ -976,7 +1076,9 @@ function groupExcessStoryboardChunks(
 
 function pauseAtCheckpoint(task: Task, initialStep: number, step: number, detail: string): void {
   if (step <= initialStep) return;
-  if (task.processingMode === 'semi-auto' && step === 4) {
+  if ((task.processingMode === 'semi-auto' && step === 4)
+    || (task.processingMode === 'milestone-review' && (step === 4 || step === 6))
+    || (task.processingMode === 'scene-review' && step === 5)) {
     throw new CheckpointPause(step, detail);
   }
   if ((task.pausePoints.includes('critical') || task.pausePoints.includes('custom')) && (step === 4 || step === 5 || step === 6)) {
@@ -985,7 +1087,7 @@ function pauseAtCheckpoint(task: Task, initialStep: number, step: number, detail
 }
 
 function shouldPauseEveryStep(task: Task, initialStep: number, nextStep: number): boolean {
-  if (!task.pausePoints.includes('every-step')) return false;
+  if (task.processingMode !== 'manual' && !task.pausePoints.includes('every-step')) return false;
   return nextStep > initialStep && nextStep <= 6;
 }
 
@@ -1136,7 +1238,7 @@ function isDialogueScript(task: Task): boolean {
   return task.scriptFormat === 'dialogue' || task.videoForm === 'two-host-podcast';
 }
 
-function buildRewriteRoundPrompt(input: { task: Task; rewritePrompt: string; reviewedText: string; rerunContext?: string }, round: number, previousDraft?: string): string {
+function buildRewriteRoundPrompt(input: { task: Task; rewritePrompt: string; reviewedText: string; narrativePlan: NarrativePlan; rerunContext?: string }, round: number, previousDraft?: string): string {
   return joinPromptBlocks([
     `Rewrite round: ${round}/3`,
     round === 1 ? 'Reviewed text:' : `Current draft to improve (round ${round - 1} result):`,
@@ -1144,13 +1246,15 @@ function buildRewriteRoundPrompt(input: { task: Task; rewritePrompt: string; rev
     productInfoRewriteBlock(input.task),
     'Rewrite instructions:',
     input.rewritePrompt,
+    'Narrative plan that must guide the copy:',
+    JSON.stringify(input.narrativePlan),
     extraRequirementsInstruction(input.task, input.rewritePrompt),
     taskModeInstructions(input.task),
     input.rerunContext ?? '',
   ]);
 }
 
-function buildRewriteEvaluationPrompt(input: { task: Task; rewritePrompt: string; reviewedText: string; rerunContext?: string }, candidates: Array<{ round: number; rewrittenCopy: string }>): string {
+function buildRewriteEvaluationPrompt(input: { task: Task; rewritePrompt: string; reviewedText: string; narrativePlan: NarrativePlan; rerunContext?: string }, candidates: Array<{ round: number; rewrittenCopy: string }>): string {
   return joinPromptBlocks([
     'Rewrite evaluation.',
     'Select the best rewrite round and return the round number, per-round scores, and short reasons.',
@@ -1161,6 +1265,8 @@ function buildRewriteEvaluationPrompt(input: { task: Task; rewritePrompt: string
     taskModeInstructions(input.task),
     'Reviewed text:',
     input.reviewedText,
+    'Narrative plan to score against:',
+    JSON.stringify(input.narrativePlan),
     ...candidates.flatMap((candidate) => [
       `Round ${candidate.round} rewritten copy:`,
       candidate.rewrittenCopy,
@@ -1211,9 +1317,168 @@ function selectBestRewriteCandidate(
   return { candidate: selectedCandidate, evaluation: normalizedEvaluation };
 }
 
+async function generateNarrativePlan(
+  llm: ConfiguredJsonLlm,
+  input: { task: Task; reviewedText: string; sourceContext: AiSourceContext | null; signal?: AbortSignal },
+): Promise<NarrativePlan> {
+  const result = await runLlmJson<{ narrativePlan: NarrativePlan }>(llm, {
+    step: 1,
+    name: 'narrative-plan',
+    signal: input.signal,
+    anthropicToolInputSchema: narrativePlanOutputJsonSchema,
+    messages: [
+      {
+        role: 'system',
+        content: '先做短视频叙事规划，不写成稿。只返回严格 JSON。证据必须来自输入材料；无法确认时明确标记“待核实”，不得编造事实。',
+      },
+      {
+        role: 'user',
+        content: joinPromptBlocks([
+          '请规划钩子、核心论点、证据、反差和结论。论点按成稿展开顺序排列，sourceCoverage 写实际覆盖的来源标题或材料段落。',
+          `任务方向：${input.task.track}`,
+          input.task.extraRequirements ? `额外要求：${input.task.extraRequirements}` : '',
+          '预审材料：',
+          input.reviewedText,
+          input.sourceContext ? '来源资料：' : '',
+          input.sourceContext ? formatAiSourceContext(input.task, input.sourceContext) : '',
+          '返回格式：{"narrativePlan":{"hook":"...","arguments":["..."],"evidence":[{"claim":"...","support":"...","source":"..."}],"contrast":"...","conclusion":"...","sourceCoverage":["..."]}}',
+        ]),
+      },
+    ],
+  });
+  return normalizeNarrativePlan(result.json.narrativePlan);
+}
+
+async function generateContentVariants(
+  llm: ConfiguredJsonLlm,
+  task: Task,
+  input: { rewrittenCopy: string; cover: CoverMetadata; signal?: AbortSignal; emit?: TaskEventEmitter },
+): Promise<ContentPlatformVariant[]> {
+  const options = ordinaryTaskPipelineOptions(task);
+  const expected = options.platformVariants.flatMap((platform) => Array.from(
+    { length: options.versionsPerPlatform },
+    (_, index) => ({ platform, version: index + 1 }),
+  ));
+  if (expected.length === 1 && expected[0].platform === 'douyin' && expected[0].version === 1) {
+    return fallbackContentVariants(task, input.rewrittenCopy, input.cover, expected);
+  }
+  await input.emit?.('step_detail', 1, 'Writer', `生成 ${expected.length} 个平台与版本变体...`, { variants: expected });
+  try {
+    const response = await runLlmJson<{ contentVariants: Array<Omit<ContentPlatformVariant, 'id'>> }>(llm, {
+      step: 1,
+      name: 'content-variants',
+      signal: input.signal,
+      anthropicToolInputSchema: contentVariantsOutputJsonSchema,
+      messages: [
+        {
+          role: 'system',
+          content: '将同一事实和观点适配到不同中文视频平台。不得改变事实、凭空新增证据或删掉核心结论。只返回严格 JSON。',
+        },
+        {
+          role: 'user',
+          content: joinPromptBlocks([
+            `需要的变体：${JSON.stringify(expected)}`,
+            '平台差异：抖音强调前三秒钩子；小红书强调可收藏的信息密度；视频号强调可信与完整；B 站允许更强解释性；快手强调直接、真实和口语感。',
+            `基础标题：${input.cover.title || task.title}`,
+            '基础成稿：',
+            input.rewrittenCopy,
+            '每个变体返回 platform、version、title、copy、caption、hashtags；顺序与需要的变体一致。',
+          ]),
+        },
+      ],
+    });
+    return normalizeContentVariants(response.json.contentVariants, expected);
+  } catch (error) {
+    await input.emit?.('step_warning', 1, 'Writer', `平台变体生成失败，已保留基础成稿作为可编辑变体：${error instanceof Error ? error.message : String(error)}`);
+    return fallbackContentVariants(task, input.rewrittenCopy, input.cover, expected);
+  }
+}
+
+function normalizeContentVariants(
+  input: unknown,
+  expected: Array<Pick<ContentPlatformVariant, 'platform' | 'version'>>,
+): ContentPlatformVariant[] {
+  if (!Array.isArray(input)) throw new Error('contentVariants 必须是数组。');
+  const byKey = new Map<string, Omit<ContentPlatformVariant, 'id'>>();
+  for (const item of input) {
+    if (!item || typeof item !== 'object') continue;
+    const record = item as Partial<ContentPlatformVariant>;
+    const target = expected.find((candidate) => candidate.platform === record.platform && candidate.version === Number(record.version));
+    if (!target) continue;
+    byKey.set(`${target.platform}:${target.version}`, {
+      platform: target.platform,
+      version: target.version,
+      title: requireString(record.title, 'contentVariant.title'),
+      copy: requireString(record.copy, 'contentVariant.copy'),
+      caption: requireString(record.caption, 'contentVariant.caption'),
+      hashtags: Array.isArray(record.hashtags) ? record.hashtags.map(String).map((tag) => tag.trim()).filter(Boolean) : [],
+    });
+  }
+  if (byKey.size !== expected.length) throw new Error(`contentVariants 数量不匹配，期望 ${expected.length} 个。`);
+  return expected.map((target) => ({
+    id: `${target.platform}-v${target.version}`,
+    ...byKey.get(`${target.platform}:${target.version}`)!,
+  }));
+}
+
+function fallbackContentVariants(
+  task: Task,
+  rewrittenCopy: string,
+  cover: CoverMetadata,
+  expected: Array<Pick<ContentPlatformVariant, 'platform' | 'version'>>,
+): ContentPlatformVariant[] {
+  return expected.map((target) => ({
+    id: `${target.platform}-v${target.version}`,
+    platform: target.platform,
+    version: target.version,
+    title: cover.title || task.title,
+    copy: rewrittenCopy,
+    caption: cover.summary || rewrittenCopy.slice(0, 120),
+    hashtags: cover.tags,
+  }));
+}
+
+function normalizeNarrativePlan(input: unknown): NarrativePlan {
+  if (!input || typeof input !== 'object' || Array.isArray(input)) throw new Error('narrativePlan 必须是对象。');
+  const source = input as Partial<NarrativePlan>;
+  const argumentsList = Array.isArray(source.arguments) ? source.arguments.map(String).map((item) => item.trim()).filter(Boolean) : [];
+  const evidence = Array.isArray(source.evidence) ? source.evidence.map((item) => {
+    const record = item && typeof item === 'object' ? item as Partial<NarrativePlan['evidence'][number]> : {};
+    return {
+      claim: String(record.claim ?? '').trim(),
+      support: String(record.support ?? '').trim(),
+      ...(record.source ? { source: String(record.source).trim() } : {}),
+    };
+  }).filter((item) => item.claim && item.support) : [];
+  if (!argumentsList.length) throw new Error('narrativePlan.arguments 不能为空。');
+  return {
+    hook: requireString(source.hook, 'narrativePlan.hook'),
+    arguments: argumentsList,
+    evidence,
+    contrast: requireString(source.contrast, 'narrativePlan.contrast'),
+    conclusion: requireString(source.conclusion, 'narrativePlan.conclusion'),
+    sourceCoverage: Array.isArray(source.sourceCoverage) ? source.sourceCoverage.map(String).map((item) => item.trim()).filter(Boolean) : [],
+  };
+}
+
+function buildFallbackNarrativePlan(text: string): NarrativePlan {
+  const sentences = text.split(/(?<=[。！？!?])|\n+/u).map((item) => item.trim()).filter(Boolean);
+  const hook = sentences[0] ?? (text.trim().slice(0, 80) || '从最值得关注的问题切入');
+  const conclusion = sentences.at(-1) ?? hook;
+  const middle = sentences.slice(1, -1);
+  return {
+    hook,
+    arguments: (middle.length ? middle : [hook]).slice(0, 5),
+    evidence: middle.slice(0, 5).map((support) => ({ claim: support, support, source: '输入材料' })),
+    contrast: middle.length > 1 ? `${middle[0]}；但另一面是：${middle.at(-1)}` : '从表面现象转向背后的原因与代价。',
+    conclusion,
+    sourceCoverage: ['输入材料'],
+  };
+}
+
 async function runRewriteRounds(
   llm: ConfiguredJsonLlm,
-  input: { task: Task; rewritePrompt: string; reviewedText: string; signal?: AbortSignal; rerunContext?: string; emit?: TaskEventEmitter },
+  input: { task: Task; rewritePrompt: string; reviewedText: string; narrativePlan: NarrativePlan; signal?: AbortSignal; rerunContext?: string; emit?: TaskEventEmitter },
 ): Promise<{ rewrittenCopy: string; evaluation: RewriteEvaluationResult }> {
   const candidates: Array<{ round: number; rewrittenCopy: string; cover?: CoverMetadata; requestId: string | null }> = [];
   for (let round = 1; round <= 3; round += 1) {
@@ -2026,17 +2291,82 @@ async function loadPipelineState(path: string, taskId: string): Promise<Pipeline
       imageErrors: assets.imageErrors ?? [],
       narration: assets.narration ?? [],
     };
+    state.dag = normalizeTaskDag(state.dag, state.steps ?? {});
     return state;
   } catch {
     return {
-      version: 1,
+      version: 2,
       taskId,
       updatedAt: new Date().toISOString(),
       steps: {},
+      dag: normalizeTaskDag({}, {}),
       artifact: {},
       assets: { cover: [], images: [], videos: [], imageErrors: [], narration: [] },
     };
   }
+}
+
+const taskDagKinds = ['review', 'rewrite', 'storyboard', 'image-prompts', 'images', 'narration', 'draft'] as const;
+
+function createTaskDagNode(step: number): TaskDagNode {
+  const dependencies = step === 0 ? [] : step === 5 ? ['step-2'] : step === 6 ? ['step-4', 'step-5'] : [`step-${step - 1}`];
+  return {
+    id: `step-${step}`,
+    kind: taskDagKinds[step] ?? `step-${step}`,
+    dependencies,
+    status: 'pending',
+    attempt: 0,
+  };
+}
+
+function normalizeTaskDag(
+  input: Record<string, TaskDagNode> | undefined,
+  steps: PipelineState['steps'],
+): Record<string, TaskDagNode> {
+  return Object.fromEntries(Array.from({ length: 7 }, (_, step) => {
+    const nodeId = `step-${step}`;
+    const fallback = createTaskDagNode(step);
+    const existing = input?.[nodeId];
+    const stepState = steps[String(step)];
+    return [nodeId, {
+      ...fallback,
+      ...(existing ?? {}),
+      id: nodeId,
+      dependencies: fallback.dependencies,
+      status: existing?.status ?? stepState?.status ?? 'pending',
+      attempt: Math.max(0, Number(existing?.attempt ?? (stepState?.status === 'completed' ? 1 : 0)) || 0),
+    } satisfies TaskDagNode];
+  }));
+}
+
+function taskDagInputHash(task: Task, pipeline: PipelineState, step: number): string {
+  const inputs = [
+    { inputText: task.inputText, mode: task.mode, sources: task.selectedSources },
+    { reviewedText: pipeline.artifact.reviewedText, narrativePlan: pipeline.artifact.narrativePlan, controls: { targetLength: task.targetLength, extraRequirements: task.extraRequirements } },
+    { rewrittenCopy: pipeline.artifact.rewrittenCopy, targetScenes: task.targetScenes },
+    { scenes: pipeline.artifact.scenes, style: task.style, ratio: task.ratio },
+    { prompts: pipeline.artifact.imagePrompts, imageQuality: task.imageQuality },
+    { scenes: pipeline.artifact.scenes, speaker: task.speaker, speed: task.ttsSpeed },
+    { images: pipeline.assets.images, videos: pipeline.assets.videos, narration: pipeline.assets.narration, templateId: task.templateId, bgmId: task.bgmId },
+  ][step];
+  return hashDagValue(inputs ?? { step });
+}
+
+function taskDagArtifactHash(pipeline: PipelineState, step: number): string {
+  const artifacts = [
+    pipeline.artifact.reviewedText,
+    { narrativePlan: pipeline.artifact.narrativePlan, rewrittenCopy: pipeline.artifact.rewrittenCopy, cover: pipeline.artifact.cover },
+    pipeline.artifact.scenes,
+    pipeline.artifact.imagePrompts,
+    { cover: pipeline.assets.cover, images: pipeline.assets.images },
+    pipeline.assets.narration,
+    pipeline.draft,
+  ][step];
+  return hashDagValue(artifacts ?? { step });
+}
+
+function hashDagValue(value: unknown): string {
+  return createHash('sha256').update(JSON.stringify(value)).digest('hex');
 }
 
 async function writeContentArtifacts(workDir: string, artifact: PipelineArtifact, task: Pick<Task, 'aiKeyword' | 'aiSources' | 'extraRequirements'>): Promise<void> {
@@ -2057,6 +2387,12 @@ async function writeContentArtifacts(workDir: string, artifact: PipelineArtifact
   }
   if (artifact.rewriteEvaluation) {
     await writeFile(join(workDir, '01-rewrite-evaluations.json'), JSON.stringify(artifact.rewriteEvaluation, null, 2), 'utf8');
+  }
+  if (artifact.narrativePlan) {
+    await writeFile(join(workDir, '01-narrative-plan.json'), JSON.stringify(artifact.narrativePlan, null, 2), 'utf8');
+  }
+  if (artifact.contentVariants) {
+    await writeFile(join(workDir, '01-platform-variants.json'), JSON.stringify(artifact.contentVariants, null, 2), 'utf8');
   }
   await writeFile(join(workDir, '03-image-prompts.json'), JSON.stringify(artifact.imagePrompts, null, 2), 'utf8');
   await writeFile(join(workDir, 'subtitles.srt'), artifact.subtitles.srt, 'utf8');
@@ -2079,6 +2415,8 @@ function hydrateArtifact(input: Partial<PipelineArtifact>, task?: Pick<Task, 'tr
     musicPlan: input.musicPlan,
     characterCard: input.characterCard,
     rewriteEvaluation: input.rewriteEvaluation,
+    narrativePlan: input.narrativePlan,
+    contentVariants: input.contentVariants,
   };
 }
 

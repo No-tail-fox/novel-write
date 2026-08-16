@@ -27,7 +27,11 @@ export type TaskKind = 'story' | 'music-mv';
 export type TaskVideoForm = 'narration' | 'two-host-podcast';
 export type PodcastSpeakerPair = 'kazai-dayi' | 'liufei-xiaolei';
 export type PublishMode = 'review-rewrite' | 'direct-copy';
-export type ProcessingMode = 'full-auto' | 'semi-auto' | 'clip-only';
+export type AutomationMode = 'full-auto' | 'milestone-review' | 'scene-review' | 'manual';
+export type ProcessingMode = AutomationMode | 'semi-auto' | 'clip-only';
+export type VideoGenerationFallback = 'dynamic-image' | 'html-video' | 'disabled';
+export type ContentPlatform = 'douyin' | 'xiaohongshu' | 'shipinhao' | 'bilibili' | 'kuaishou';
+export type VideoCapability = 't2v' | 'i2v' | 'first-last-frame' | 'reference-image' | 'partial-redo' | 'synchronized-audio';
 export type PromptTemplateType = 'review' | 'rewrite' | 'cover' | 'storyboard' | 'image-prompt' | 'task';
 export type PromptStepTemplateType = Exclude<PromptTemplateType, 'task'>;
 export type ImageProvider = 'gpt_image' | 'jimeng' | 'custom' | 'mock';
@@ -111,7 +115,7 @@ export interface VolcengineSpeakerListResult {
   requestId: string | null;
 }
 
-export type ConfigTestTarget = 'llm' | 'image' | 'tts' | 'speechToText' | 'jianying' | 'creative' | 'webSearch';
+export type ConfigTestTarget = 'llm' | 'image' | 'video' | 'tts' | 'speechToText' | 'jianying' | 'creative' | 'webSearch';
 
 export interface ConfigTestResult {
   status: 'pass' | 'warn' | 'fail';
@@ -188,6 +192,42 @@ export interface CustomImageConfig extends ImageConfig {
   asyncMode: boolean;
   ratioMappingJson: string;
   pollIntervalMs?: number;
+}
+
+export interface VideoProviderConfig {
+  id: string;
+  name: string;
+  enabled: boolean;
+  baseUrl: string;
+  apiKey: string;
+  model: string;
+  submitPath: string;
+  statusPathTemplate: string;
+  pollIntervalMs: number;
+  timeoutMs: number;
+  concurrency: number;
+  pricePerSecond: number;
+  maxDurationSec: number;
+  maxResolution: string;
+  capabilities: VideoCapability[];
+  license: string;
+  requestParamsJson: string;
+}
+
+export interface VideoAutomationConfig {
+  mode: AutomationMode;
+  budgetLimit: number;
+  concurrency: number;
+  retryCount: number;
+  qualityThreshold: number;
+  providerWhitelist: string[];
+  fallback: VideoGenerationFallback;
+}
+
+export interface VideoConfig {
+  providers: VideoProviderConfig[];
+  activeProviderId: string;
+  automation: VideoAutomationConfig;
 }
 
 export interface ImageProviderProfile {
@@ -326,6 +366,7 @@ export interface AppConfig {
   customImage: CustomImageConfig;
   imageProfiles: ImageProviderProfile[];
   activeImageProfileId: string;
+  video: VideoConfig;
   tts: TtsConfig;
   ttsProfiles: TtsProviderProfile[];
   activeTtsProfileId: string;
@@ -1394,6 +1435,29 @@ export interface RewriteEvaluationResult {
   wordCountWarning?: string;
 }
 
+export interface NarrativePlan {
+  hook: string;
+  arguments: string[];
+  evidence: Array<{
+    claim: string;
+    support: string;
+    source?: string;
+  }>;
+  contrast: string;
+  conclusion: string;
+  sourceCoverage: string[];
+}
+
+export interface ContentPlatformVariant {
+  id: string;
+  platform: ContentPlatform;
+  version: number;
+  title: string;
+  copy: string;
+  caption: string;
+  hashtags: string[];
+}
+
 export interface AiSourceSection {
   source: string;
   provider?: WebSearchProvider;
@@ -1875,9 +1939,30 @@ export interface PipelineArtifact {
   musicPlan?: MusicPlan;
   characterCard?: CharacterCard;
   rewriteEvaluation?: RewriteEvaluationResult;
+  narrativePlan?: NarrativePlan;
+  contentVariants?: ContentPlatformVariant[];
 }
 
 export type TaskArtifactStepStatus = 'pending' | 'running' | 'completed' | 'failed';
+export interface TaskDagNode {
+  id: string;
+  kind: string;
+  dependencies: string[];
+  sceneId?: number;
+  status: TaskArtifactStepStatus;
+  inputHash?: string;
+  artifactHash?: string;
+  provider?: string;
+  model?: string;
+  prompt?: string;
+  seed?: number;
+  attempt: number;
+  startedAt?: string;
+  completedAt?: string;
+  durationMs?: number;
+  cost?: number;
+  error?: string;
+}
 export type TaskStepRerunMode = 'regenerate' | 'rewrite';
 
 export interface TaskArtifactStepPreview {
@@ -1910,6 +1995,11 @@ export interface TaskArtifactVideoPreview {
   trimStartMs: number;
   fit: 'cover' | 'contain';
   muted: true;
+  providerId?: string;
+  model?: string;
+  remoteTaskId?: string;
+  estimatedCost?: number;
+  license?: string;
 }
 
 export interface SceneVideoLibraryItem {
@@ -1925,7 +2015,8 @@ export interface SceneVideoLibraryItem {
 export type TaskVideoReplacementSource =
   | { kind: 'local' }
   | { kind: 'library'; libraryId: string }
-  | { kind: 'random' };
+  | { kind: 'random' }
+  | { kind: 'ai'; prompt?: string; useSceneImage?: boolean };
 
 export type TaskImageReplacementSource =
   | { kind: 'local' }
@@ -1951,6 +2042,7 @@ export interface TaskArtifactSnapshot {
   outputDir: string;
   updatedAt: string | null;
   steps: Record<string, TaskArtifactStepPreview>;
+  dag?: TaskDagNode[];
   artifact: Partial<PipelineArtifact>;
   assets: {
     cover: TaskArtifactAssetPreview[];

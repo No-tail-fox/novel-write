@@ -928,6 +928,63 @@ function validComposition(index: number): HtmlVideoCompositionSnapshot {
 }
 
 describe('HTML video composition contract', () => {
+  it('builds a six-second HyperFrames opening montage after a short cover hold', () => {
+    const montageArtifact: PipelineArtifact = {
+      ...artifact,
+      scenes: Array.from({ length: 4 }, (_, index) => ({
+        id: index + 1,
+        cap: `Opening line ${index + 1}`,
+        descPrompt: `Opening shot ${index + 1}`,
+        durationMs: index === 0 ? 1200 : 1600,
+      })),
+    };
+    const input = buildHtmlVideoExportInput({
+      workDir: 'D:/tasks/html-video-opening',
+      outputPath: 'D:/tasks/html-video-opening/final.mp4',
+      title: 'Opening montage',
+      artifact: montageArtifact,
+      generatedImages: montageArtifact.scenes.map((scene) => ({
+        sceneId: scene.id,
+        path: `D:/media/opening-${scene.id}.png`,
+      })),
+      narrationAudio: montageArtifact.scenes.map((scene) => ({
+        sceneId: scene.id,
+        path: `D:/media/opening-${scene.id}.wav`,
+      })),
+      coverPath: 'D:/media/opening-cover.png',
+      openingSequence: {
+        enabled: true,
+        preset: 'editorial-montage',
+        durationSec: 6,
+        sourceSceneCount: 4,
+      },
+      fps: 30,
+      canvas_w: 1080,
+      canvas_h: 1920,
+    });
+
+    expect(input.coverDurationS).toBe(1.4);
+    expect(input.scenes[0]).toMatchObject({ durationMs: 6000, duration: 6 });
+    expect(input.totalDurationS).toBe(10.8);
+    expect(input.scenes[0].html).toContain('id="opening-montage"');
+    expect(input.scenes[0].html).toContain('data-opening-preset="editorial-montage"');
+    expect(input.scenes[0].html.match(/id="opening-shot-\d+"/g)).toHaveLength(4);
+    expect(input.scenes[0].html).toContain("tl.set('#opening-montage', { autoAlpha: 0 }, 6)");
+    expect(input.scenes[1].html).not.toContain('id="opening-montage"');
+
+    const captured = input.scenes.map((scene) => ({
+      sceneId: scene.sceneId,
+      framesDir: `D:/tasks/html-video-opening/frames-${scene.sceneId}`,
+      audioPath: scene.audioPath,
+      fps: input.fps,
+    }));
+    expect(createHtmlVideoComposePayload(input, captured)).toMatchObject({
+      cover_path: 'D:/media/opening-cover.png',
+      cover_duration_s: 1.4,
+      total_duration_s: 10.8,
+    });
+  });
+
   it('compiles scene-template choreography into the shared GSAP timeline', () => {
     const scenePlans: HtmlVideoScenePlan[] = artifact.scenes.map((scene) => ({
       index: scene.id,

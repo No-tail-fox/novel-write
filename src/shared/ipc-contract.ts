@@ -196,7 +196,7 @@ export const createTaskSchema = bounded(
       title: optionalText(MAX_IPC_TEXT),
       inputText: nonEmptyText(MAX_TASK_TEXT),
       taskKind: z.enum(['story', 'music-mv']).optional(),
-      processingMode: z.enum(['full-auto', 'semi-auto', 'clip-only']).optional(),
+      processingMode: z.enum(['full-auto', 'milestone-review', 'scene-review', 'manual', 'semi-auto', 'clip-only']).optional(),
       publishMode: z.enum(['review-rewrite', 'direct-copy']).optional(),
       mode: z.enum(['paste', 'ai']).optional(),
       aiKeyword: optionalText(MAX_IPC_TEXT),
@@ -419,6 +419,7 @@ const taskVideoReplacementSourceSchema = z.discriminatedUnion('kind', [
   z.object({ kind: z.literal('local') }).strict(),
   z.object({ kind: z.literal('library'), libraryId: idSchema }).strict(),
   z.object({ kind: z.literal('random') }).strict(),
+  z.object({ kind: z.literal('ai'), prompt: optionalText(MAX_TASK_TEXT), useSceneImage: z.boolean().optional() }).strict(),
 ]);
 export const taskStatusSchema = z.object({ id: idSchema, status: z.enum(['running', 'paused', 'cancelled']) }).strict();
 const viralStatusSchema = z.object({ id: idSchema, status: viralStatusValueSchema }).strict();

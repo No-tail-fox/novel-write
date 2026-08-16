@@ -60,12 +60,12 @@ describe('renderer route registry', () => {
     expect(registry).not.toMatch(/^import \{ [A-Za-z0-9]+Page \} from '\.\.\/features\//gmu);
   });
 
-  it('keeps new task separate, sixteen sidebar entries, and task detail route-only', () => {
+  it('keeps a focused sidebar while preserving every route in the registry', () => {
     expect(newTaskPrimaryAction.view).toBe('new-task');
     expect(sidebarNavGroups.map((group) => group.label)).toEqual(['创作生产', '素材与实验', '模板与系统']);
-    expect(sidebarNavGroups.map((group) => group.items.length)).toEqual([6, 5, 5]);
-    expect(sidebarNavItems).toHaveLength(16);
-    expect(new Set(sidebarNavItems.map((item) => item.view)).size).toBe(16);
+    expect(sidebarNavGroups.map((group) => group.items.length)).toEqual([3, 2, 1]);
+    expect(sidebarNavItems).toHaveLength(6);
+    expect(new Set(sidebarNavItems.map((item) => item.view)).size).toBe(6);
     expect(sidebarNavItems.map((item) => item.view)).not.toContain('new-task');
     expect(sidebarNavItems.map((item) => item.view)).not.toContain('task-detail');
     expect(navigationItems).toHaveLength(17);

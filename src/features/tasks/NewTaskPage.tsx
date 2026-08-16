@@ -40,6 +40,7 @@ import {
 import type {
   AiSourceContext,
   AiSourceSection,
+  ContentPlatform,
   ImageGenerationQuality,
   OrdinaryTaskCoverRatio,
   OrdinaryTaskCoverSelection,
@@ -54,6 +55,7 @@ import type {
 } from '../../shared/types';
 import { MAX_ORDINARY_TASK_COVER_PAGE_TEXT_LENGTH, ORDINARY_TASK_COVER_PAGE_DURATION_MS, ordinaryTaskCoverDimensions, validateOrdinaryTaskCoverSelection } from '../../shared/ordinary-task-cover';
 import { imageGenerationQualityLabel, normalizeImageGenerationQuality } from '../../shared/image-quality';
+import { createOrdinaryTaskPipelineData } from '../../shared/ordinary-task-options';
 import { useAsyncAction } from '../../ui/async-action';
 import { buildTaskCreateInput } from './task-create-input';
 import {
@@ -191,6 +193,8 @@ export function NewTaskPage({
   const [showAdvanced, setShowAdvanced] = useState(false);
   const [pausePoint, setPausePoint] = useState<PausePoint>('none');
   const [processingMode, setProcessingMode] = useState<ProcessingMode>('full-auto');
+  const [platformVariants, setPlatformVariants] = useState<ContentPlatform[]>(['douyin']);
+  const [versionsPerPlatform, setVersionsPerPlatform] = useState(1);
   const [rewriteIntensity, setRewriteIntensity] = useState<RewriteIntensity>('standard');
   const [narrativePov, setNarrativePov] = useState<Task['narrativePov']>('keep-original');
   const [keepPromotion, setKeepPromotion] = useState(false);
@@ -275,7 +279,17 @@ export function NewTaskPage({
   const executionSceneCount = normalizeTaskStoryboardSceneCount(storyboardSceneCount)
     ?? storyboardScenePreviewRange?.target
     ?? null;
-  const processingModeLabel = processingMode === 'full-auto' ? '全自动' : processingMode === 'semi-auto' ? '半自动' : '只出方案';
+  const processingModeLabel = processingMode === 'full-auto'
+    ? '全自动'
+    : processingMode === 'milestone-review'
+      ? '里程碑审批'
+      : processingMode === 'scene-review'
+        ? '逐场景审批'
+        : processingMode === 'manual'
+          ? '手动'
+          : processingMode === 'semi-auto'
+            ? '半自动（兼容）'
+            : '只出方案（兼容）';
   const publishModeLabel = publishMode === 'review-rewrite' ? '审核 + 改写' : '直接复用';
   const coverPageTextHint = coverImageMode === 'auto' ? '可选 · 留空保留 AI 封面原图' : '可选 · 留空使用 AI 创作标题';
   const coverPageTextPlaceholder = coverImageMode === 'auto' ? '留空则不叠加文字' : '留空则自动使用 AI 创作标题';
@@ -316,6 +330,8 @@ export function NewTaskPage({
         referenceImagePath,
         pausePoint,
         processingMode,
+        platformVariants,
+        versionsPerPlatform,
         rewriteIntensity,
         narrativePov,
         keepPromotion,
@@ -375,7 +391,14 @@ export function NewTaskPage({
     if (typeof values.bgmId === 'string') setBgmId(values.bgmId);
     if (typeof values.referenceImagePath === 'string') setReferenceImagePath(values.referenceImagePath);
     if (values.pausePoint === 'none' || values.pausePoint === 'critical' || values.pausePoint === 'every-step') setPausePoint(values.pausePoint);
-    if (values.processingMode === 'full-auto' || values.processingMode === 'semi-auto' || values.processingMode === 'clip-only') setProcessingMode(values.processingMode);
+    if (values.processingMode === 'full-auto' || values.processingMode === 'milestone-review' || values.processingMode === 'scene-review' || values.processingMode === 'manual' || values.processingMode === 'semi-auto' || values.processingMode === 'clip-only') {
+      setProcessingMode(values.processingMode === 'semi-auto' ? 'milestone-review' : values.processingMode === 'clip-only' ? 'manual' : values.processingMode);
+    }
+    if (Array.isArray(values.platformVariants)) {
+      const restored = values.platformVariants.filter((value): value is ContentPlatform => ['douyin', 'xiaohongshu', 'shipinhao', 'bilibili', 'kuaishou'].includes(value));
+      if (restored.length) setPlatformVariants(Array.from(new Set(restored)));
+    }
+    if (typeof values.versionsPerPlatform === 'number' && Number.isFinite(values.versionsPerPlatform)) setVersionsPerPlatform(Math.max(1, Math.min(3, Math.round(values.versionsPerPlatform))));
     if (values.rewriteIntensity === 'standard' || values.rewriteIntensity === 'deep' || values.rewriteIntensity === 'original') setRewriteIntensity(values.rewriteIntensity);
     if (values.narrativePov === 'keep-original' || values.narrativePov === 'first-person' || values.narrativePov === 'third-person') setNarrativePov(values.narrativePov);
     if (typeof values.keepPromotion === 'boolean') setKeepPromotion(values.keepPromotion);
@@ -580,7 +603,7 @@ export function NewTaskPage({
     track, style, templateId, ratio, imageQuality, selectedTaskLlmProfileId, promptTemplateOverrideId,
     promptTemplateManuallyOverridden, styleManuallyOverridden, draftTemplateManuallyOverridden,
     ratioManuallyOverridden, ttsProvider, speaker, bgmId, referenceImagePath, pausePoint,
-    processingMode, rewriteIntensity, narrativePov, keepPromotion, productInfo, materialSource,
+    processingMode, platformVariants, versionsPerPlatform, rewriteIntensity, narrativePov, keepPromotion, productInfo, materialSource,
     materialPerson, fixedIntro, outroCta, lockIntroSentences, ttsSpeed, targetLength,
     storyboardSceneCount, publishMode, videoForm, coverImageMode, coverTemplateId, coverPageEnabled, coverPageText, manualCoverAsset, autoBorrowImage,
     podcastImageMode, podcastSpeakers, selectedSearchSourceIds, searchContext, researchCopy,
@@ -924,6 +947,7 @@ export function NewTaskPage({
         bgmId,
         pausePoints: [pausePoint],
         processingMode,
+        pipelineData: createOrdinaryTaskPipelineData({ platformVariants, versionsPerPlatform }),
         referenceImagePath,
         rewriteIntensity,
         narrativePov,
@@ -1158,8 +1182,34 @@ export function NewTaskPage({
                 </div>
               </div>
               <div className="new-task-field-grid compact-controls">
-                <Segmented label="处理模式" value={processingMode} options={['full-auto', 'semi-auto', 'clip-only']} labels={['全自动', '半自动', '只出方案']} onChange={(value) => setProcessingMode(value as ProcessingMode)} />
+                <Segmented label="自动化模式" value={processingMode} options={['full-auto', 'milestone-review', 'scene-review', 'manual']} labels={['全自动', '里程碑审批', '逐场景审批', '手动']} onChange={(value) => setProcessingMode(value as ProcessingMode)} />
                 <Segmented label="发布方式" value={publishMode} options={['review-rewrite', 'direct-copy']} labels={['预审改写', '直接复用']} onChange={(value) => setPublishMode(value as 'review-rewrite' | 'direct-copy')} />
+              </div>
+              <div className="new-task-field-grid compact-controls">
+                <Field label="平台变体" hint="每个平台独立生成标题、发布文案和标签">
+                  <div className="settings-inline-actions">
+                    {([
+                      ['douyin', '抖音'],
+                      ['xiaohongshu', '小红书'],
+                      ['shipinhao', '视频号'],
+                      ['bilibili', 'B 站'],
+                      ['kuaishou', '快手'],
+                    ] as const).map(([platform, label]) => (
+                      <ToggleField
+                        key={platform}
+                        label={label}
+                        checked={platformVariants.includes(platform)}
+                        onChange={(checked) => {
+                          const next = checked
+                            ? Array.from(new Set<ContentPlatform>([...platformVariants, platform]))
+                            : platformVariants.filter((item) => item !== platform);
+                          if (next.length) setPlatformVariants(next);
+                        }}
+                      />
+                    ))}
+                  </div>
+                </Field>
+                <Segmented label="每平台版本" value={String(versionsPerPlatform)} options={['1', '2', '3']} labels={['1 版', '2 版', '3 版']} onChange={(value) => setVersionsPerPlatform(Number(value))} />
               </div>
               {resolvedPromptTemplate ? (
                 <div className="template-default-summary">

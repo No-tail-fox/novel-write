@@ -876,16 +876,16 @@ describe('product shell ui', () => {
     expect(css).toContain('.account-entry-grid');
   });
 
-  it('keeps all five material and experiment routes together in concept order', async () => {
+  it('keeps specialist tools routable without returning them to the primary sidebar', async () => {
     const navigation = await navigationSourcePromise;
-    const assetStart = navigation.indexOf('export const assetLabNavItems');
-    const assetEnd = navigation.indexOf('export const templateSystemNavItems');
+    const assetStart = navigation.indexOf('export const contextualToolNavItems');
+    const assetEnd = navigation.indexOf('export const sidebarNavGroups');
     const assetNav = navigation.slice(assetStart, assetEnd);
 
     for (const view of ['image-lab', 'voice-lab', 'music-mv', 'viral-analyzer', 'html-video']) {
       expect(assetNav).toContain(`view: '${view}'`);
     }
-    expect(assetNav).not.toContain("view: 'prompt-templates'");
+    expect(assetNav).toContain("view: 'prompt-templates'");
     expect(assetNav.indexOf("view: 'music-mv'")).toBeLessThan(assetNav.indexOf("view: 'viral-analyzer'"));
     expect(assetNav.indexOf("view: 'viral-analyzer'")).toBeLessThan(assetNav.indexOf("view: 'html-video'"));
   });
@@ -1046,7 +1046,7 @@ describe('product shell ui', () => {
     expect(sidebarBottomBlock).toContain('flex: 1 1 130px;');
     expect(sidebarBottomBlock).toContain('min-height: 130px;');
     expect(sidebarBottomBlock).toContain('overflow: hidden;');
-    expect(sidebarBottomBlock).toContain('grid-template-rows: minmax(0, 1fr) auto auto;');
+    expect(sidebarBottomBlock).toContain('grid-template-rows: auto minmax(0, 1fr) auto auto;');
     expect(recentTaskBlock).toContain('min-height: 0;');
     expect(recentTaskBlock).toContain('overflow: auto;');
     expect(css).toContain('@media (max-height: 760px)');
@@ -1207,7 +1207,8 @@ describe('product shell ui', () => {
       expect(musicPage).toContain(symbol);
     }
 
-    expect(types).toContain("export type ProcessingMode = 'full-auto' | 'semi-auto' | 'clip-only'");
+    expect(types).toContain("export type AutomationMode = 'full-auto' | 'milestone-review' | 'scene-review' | 'manual'");
+    expect(types).toContain("export type ProcessingMode = AutomationMode | 'semi-auto' | 'clip-only'");
     expect(types).toContain("export type TaskKind = 'story' | 'music-mv'");
     expect(css).toContain('.music-mv-layout');
     expect(css).toContain('.music-mv-preview');
@@ -2762,6 +2763,8 @@ describe('product shell ui', () => {
       expect(main).toContain(control);
     }
     expect(main).toContain('原图已保留');
+    expect(main).toContain('imageGenerationAction.busy || !videoProviderReady');
+    expect(main).toContain('请先在系统设置中配置并启用云端视频 API');
     expect(electronMain).toContain("trustedHandle('task:replace-video'");
     expect(electronMain).toContain("trustedHandle('task:restore-image'");
     expect(electronMain).toContain('testsrc2=size=360x640:rate=24:duration=6');

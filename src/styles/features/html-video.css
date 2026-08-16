@@ -6007,7 +6007,22 @@
 .hv-preview-play-all.sd-button {
   min-width: 100px;
   min-height: 30px;
+  border-color: var(--shell-accent) !important;
+  background: var(--shell-accent) !important;
+  color: var(--shell-accent-contrast) !important;
   white-space: nowrap;
+}
+
+.hv-preview-play-all.sd-button .sd-button__content {
+  color: var(--shell-accent-contrast) !important;
+}
+
+.hv-preview-play-all.sd-button:hover,
+.hv-preview-play-all.sd-button:active {
+  border-color: var(--shell-accent) !important;
+  background: var(--shell-accent) !important;
+  color: var(--shell-accent-contrast) !important;
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--shell-accent-contrast) 16%, transparent);
 }
 
 .hv-preview-workbench {
@@ -6208,8 +6223,23 @@
   min-width: 46px;
   flex: 1 1 0;
   padding-inline: 2px;
+  color: var(--shell-muted) !important;
   font-size: 11px;
   white-space: nowrap;
+}
+
+.hv-preview-inspector-pane .hv-scene-editor-tabs [role="tab"] > span {
+  color: var(--shell-muted) !important;
+}
+
+.hv-preview-inspector-pane .hv-scene-editor-tabs [role="tab"]:hover,
+.hv-preview-inspector-pane .hv-scene-editor-tabs [role="tab"][aria-selected="true"] {
+  color: var(--shell-text) !important;
+}
+
+.hv-preview-inspector-pane .hv-scene-editor-tabs [role="tab"]:hover > span,
+.hv-preview-inspector-pane .hv-scene-editor-tabs [role="tab"][aria-selected="true"] > span {
+  color: var(--shell-text) !important;
 }
 
 .hv-preview-inspector-pane .hv-scene-editor-body {

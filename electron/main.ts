@@ -3685,6 +3685,61 @@ trustedHandle('task:replace-video', async (_event, input: { id: string; sceneId:
     const scene = snapshot.artifact.scenes?.find((item) => item.id === sceneId);
     if (!scene) throw new Error(`分镜 ${sceneId} 不存在。`);
     const library = await listSceneVideoLibrary(sceneVideoLibraryRoot());
+    if (input.source.kind === 'ai') {
+      const runtimeConfig = await (await getConfigService()).getRuntimeConfig();
+      const runtimeProviders = createTaskRuntimeProviders(runtimeConfig, taskWorkDir(task), task);
+      if (!runtimeProviders.videoProvider) {
+        throw new Error('VIDEO_PROVIDER_NOT_CONFIGURED: 请先在设置中启用并填写云端视频 API。');
+      }
+      const sceneImage = input.source.useSceneImage === false
+        ? undefined
+        : snapshot.assets.images.find((asset) => asset.sceneId === sceneId)?.path;
+      const generated = await runtimeProviders.videoProvider.generate({
+        prompt: input.source.prompt?.trim() || scene.descPrompt || scene.cap,
+        durationSec: Math.max(1, scene.durationMs / 1000),
+        ratio: task.ratio,
+        ...(sceneImage ? { firstFramePath: sceneImage } : {}),
+      });
+      const outputDir = join(taskWorkDir(task), 'scene-videos');
+      await mkdir(outputDir, { recursive: true });
+      const path = join(outputDir, `${String(sceneId).padStart(3, '0')}-${randomUUID()}.mp4`);
+      const temporaryPath = `${path}.tmp.mp4`;
+      let probe: Awaited<ReturnType<typeof normalizeSceneVideo>>;
+      try {
+        probe = await normalizeSceneVideo(generated.path, temporaryPath);
+        await rename(temporaryPath, path);
+      } catch (error) {
+        await rm(temporaryPath, { force: true }).catch(() => undefined);
+        throw error;
+      }
+      if (probe.durationMs < scene.durationMs) {
+        await rm(path, { force: true }).catch(() => undefined);
+        throw new Error(`VIDEO_PROVIDER_OUTPUT_TOO_SHORT: 当前分镜需要 ${(scene.durationMs / 1000).toFixed(1)} 秒，生成视频只有 ${(probe.durationMs / 1000).toFixed(1)} 秒。`);
+      }
+      const video: TaskArtifactVideoPreview = {
+        sceneId,
+        path,
+        source: 'ai-video',
+        originalName: `${generated.providerName}-${generated.model}.mp4`,
+        durationMs: probe.durationMs,
+        width: probe.width,
+        height: probe.height,
+        trimStartMs: 0,
+        fit: 'cover',
+        muted: true,
+        providerId: generated.providerId,
+        model: generated.model,
+        remoteTaskId: generated.remoteTaskId,
+        estimatedCost: generated.estimatedCost,
+        license: generated.license,
+      };
+      await replaceSceneVideoAsset(task.artifactStatePath!, video);
+      return {
+        sceneIds: [sceneId],
+        detail: `已用 ${generated.providerName} / ${generated.model} 生成分镜 ${sceneId} 视频，预计费用 ${generated.estimatedCost.toFixed(2)}`,
+        tool: 'ai-video',
+      };
+    }
     let item: SceneVideoLibraryItem;
     let source: TaskArtifactVideoPreview['source'];
     if (input.source.kind === 'local') {

@@ -131,6 +131,10 @@ describe('HTML video editorial studio', () => {
     expect(styles).toContain('.hv-scene-caption-primary > .hv-caption-editor .hv-caption-layout .field:first-child .segmented');
     expect(styles).toContain('grid-template-columns: repeat(auto-fit, minmax(min(300px, 100%), 1fr));');
     expect(styles).toMatch(/\.hv-preview-inspector-pane \.hv-scene-editor-tabs \[role="tab"\] \{[\s\S]*?white-space: nowrap;/u);
+    expect(styles).toMatch(/\.hv-preview-play-all\.sd-button \{[\s\S]*?background: var\(--shell-accent\) !important;[\s\S]*?color: var\(--shell-accent-contrast\) !important;/u);
+    expect(styles).toMatch(/\.hv-preview-play-all\.sd-button \.sd-button__content \{[\s\S]*?color: var\(--shell-accent-contrast\) !important;/u);
+    expect(styles).toMatch(/\.hv-preview-inspector-pane \.hv-scene-editor-tabs \[role="tab"\] > span \{[\s\S]*?color: var\(--shell-muted\) !important;/u);
+    expect(styles).toMatch(/\.hv-preview-inspector-pane \.hv-scene-editor-tabs \[role="tab"\]\[aria-selected="true"\] > span \{[\s\S]*?color: var\(--shell-text\) !important;/u);
     expect(styles).toContain('@keyframes hv-scene-transition-wipe-left-out');
     expect(styles).toContain('.hv-scene-transition-overlay.running');
     expect(styles).toContain('.hv-cover-workspace:has(> .hv-reference-preview),');

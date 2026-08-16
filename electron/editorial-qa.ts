@@ -890,8 +890,14 @@ function qaScenarioScript(id: string, view: string, theme: string, stage?: strin
     const subtitleDiagnosticsScenario = scenarioId === 'task-detail-subtitle-diagnostics-light-desktop';
     const sceneVideoScenario = scenarioId.startsWith('task-detail-scene-video-');
     const navView = targetView === 'task-detail' ? 'queue' : targetView;
-    const nav = document.querySelector('[data-nav-view="' + navView + '"]');
-    if (nav instanceof HTMLButtonElement) nav.click();
+    let nav = document.querySelector('[data-nav-view="' + navView + '"]');
+    if (!(nav instanceof HTMLElement)) {
+      const contextualToolsTrigger = document.querySelector('[data-contextual-tools-trigger]');
+      if (contextualToolsTrigger instanceof HTMLButtonElement) contextualToolsTrigger.click();
+      await waitFor(() => document.querySelector('[data-nav-view="' + navView + '"]'));
+      nav = document.querySelector('[data-nav-view="' + navView + '"]');
+    }
+    if (nav instanceof HTMLElement) nav.click();
     if (targetView === 'html-video' && scenarioId.startsWith('html-video-studio')) {
       await waitFor(() => document.querySelector('.hv-create-history select') || document.querySelector('[data-html-video-studio="html-video"]'));
       const taskSelect = document.querySelector('.hv-create-history select');
@@ -1763,9 +1769,12 @@ function qaScenarioScript(id: string, view: string, theme: string, stage?: strin
             .some((button) => button.textContent?.includes(label)));
         const aiVideoButton = [...(firstMenu?.querySelectorAll('[role="menuitem"]') ?? [])]
           .find((button) => button.textContent?.includes('AI 生成视频'));
-        if (aiVideoButton instanceof HTMLButtonElement) aiVideoButton.click();
-        const aiNoticeReady = await waitFor(() => document.querySelector('.image-gallery-notice')
-          ?.textContent?.includes('尚未配置视频生成服务') === true);
+        const aiVideoConfigGuardReady = aiVideoButton instanceof HTMLButtonElement
+          && aiVideoButton.disabled
+          && aiVideoButton.textContent?.includes('请先配置云端视频 API') === true;
+        const closeAiMenu = firstMenu?.querySelector('[aria-label="关闭替换画面菜单"]');
+        if (closeAiMenu instanceof HTMLButtonElement) closeAiMenu.click();
+        await waitFor(() => !document.querySelector('.scene-media-menu[role="menu"]'));
 
         const libraryMenu = await openSceneMenu();
         const libraryButton = [...(libraryMenu?.querySelectorAll('[role="menuitem"]') ?? [])]
@@ -1857,7 +1866,7 @@ function qaScenarioScript(id: string, view: string, theme: string, stage?: strin
         sceneVideoWorkflowReady = pausedReady
           && galleryReady
           && menuReady
-          && aiNoticeReady
+          && aiVideoConfigGuardReady
           && libraryReady
           && adoptedReady
           && trimPersisted

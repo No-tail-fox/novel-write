@@ -2477,6 +2477,12 @@ function buildRuntimeComposition(
       .map((asset) => ({ sceneId: asset.sceneIndex, path: asset.src, slot: asset.slot })),
     narrationAudio: input.voices.map((voice) => ({ sceneId: voice.sceneIndex, path: voice.src })),
     coverPath,
+    openingSequence: coverPath ? {
+      enabled: true,
+      preset: 'editorial-montage',
+      durationSec: 6,
+      sourceSceneCount: 4,
+    } : undefined,
     bgmPath,
     bgmTargetDb: htmlVideoBgmTargetDb(input.config.bgmVolume),
     captionConfig: input.config,

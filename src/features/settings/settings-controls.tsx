@@ -15,7 +15,7 @@ export type SecretEditor = {
   change: (id: SecretId, value: string | null) => void;
 };
 
-export function profileSecretId(domain: 'llm' | 'image' | 'tts', profileId: string | undefined, suffix: string): SecretId {
+export function profileSecretId(domain: 'llm' | 'image' | 'video' | 'tts', profileId: string | undefined, suffix: string): SecretId {
   const stableId = profileId?.trim();
   if (!stableId) throw new Error('Provider profile requires a stable id.');
   return `${domain}/${encodeURIComponent(stableId)}/${suffix}` as SecretId;

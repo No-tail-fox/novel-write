@@ -1,12 +1,13 @@
 import type { ReactNode } from 'react';
-import { Bell, Coins, History, Info, KeyRound, Maximize2, Minus, Moon, Sun, X } from 'lucide-react';
+import { Bell, Coins, History, Info, KeyRound, Maximize2, Minus, Moon, Sun, Wrench, X } from 'lucide-react';
 import { AsyncActionFeedback as InlineActionFeedback } from '../components/AsyncActionFeedback';
 import { taskStatusLabel as statusLabel } from '../components/StatusBadge';
 import { taskProgressLabel } from '../shared/html-video-workflow';
 import type { AsyncActionFeedback } from '../ui/async-action';
-import { Button, IconButton, Toolbar, Tooltip } from '../ui';
+import { Button, IconButton, Menu, Toolbar, Tooltip } from '../ui';
 import type { RendererAppState as AppState } from './route-types';
 import {
+  contextualToolNavItems,
   navigationItemForView,
   newTaskPrimaryAction,
   pageSubtitle,
@@ -55,6 +56,8 @@ export function AppShell({
   const NewTaskIcon = newTaskPrimaryAction.icon;
   const themeLabel = state.ui.theme === 'light' ? '切换深色主题' : '切换浅色主题';
   const taskOperationsView = activeView === 'queue' || activeView === 'history' || activeView === 'task-detail';
+  const menuToolItems = contextualToolNavItems.filter((item) => item.view !== 'account' && item.view !== 'activation');
+  const menuToolActive = menuToolItems.some((item) => item.view === activeView);
 
   return (
     <main className="app-shell" aria-busy={busy} data-editorial-shell data-shell-view={activeView}>
@@ -117,6 +120,33 @@ export function AppShell({
           </nav>
 
           <div className="sidebar-bottom">
+            <Menu
+              trigger={(
+                <Button
+                  className={menuToolActive ? 'contextual-tools-trigger active' : 'contextual-tools-trigger'}
+                  variant="secondary"
+                  density="compact"
+                  icon={<Wrench size={15} />}
+                  type="button"
+                  data-contextual-tools-trigger
+                  aria-label="更多创作工具"
+                  disabled={busy}
+                >
+                  <span>更多工具</span>
+                  <small>{menuToolItems.length} 项</small>
+                </Button>
+              )}
+              options={menuToolItems.map((item) => {
+                const ToolIcon = item.icon;
+                return {
+                  id: item.view,
+                  label: <span className="contextual-tool-menu-label" data-nav-view={item.view}><strong>{item.label}</strong><small>{item.hint}</small></span>,
+                  icon: <ToolIcon size={15} />,
+                  disabled: busy,
+                  onSelect: () => navigate(item.view),
+                };
+              })}
+            />
             <IconButton
               className="recent-task-compact"
               variant="subtle"
@@ -152,6 +182,7 @@ export function AppShell({
               density="compact"
               type="button"
               icon={<KeyRound size={15} />}
+              data-nav-view="activation"
               disabled={busy}
               onClick={() => navigate('activation')}
               onMouseEnter={() => preloadRouteIntent('activation')}
@@ -167,6 +198,7 @@ export function AppShell({
                 density="compact"
                 type="button"
                 icon={<Coins size={15} />}
+                data-nav-view="account"
                 disabled={busy}
                 onClick={() => navigate('account')}
                 onMouseEnter={() => preloadRouteIntent('account')}
@@ -181,6 +213,7 @@ export function AppShell({
                 density="compact"
                 type="button"
                 icon={<Info size={14} />}
+                data-nav-view="account"
                 disabled={busy}
                 onClick={() => navigate('account')}
                 onMouseEnter={() => preloadRouteIntent('account')}

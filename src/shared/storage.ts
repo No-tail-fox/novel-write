@@ -4031,7 +4031,9 @@ function normalizeVideoForm(value: unknown): Task['videoForm'] {
 }
 
 function normalizeProcessingMode(value: unknown): Task['processingMode'] {
-  return value === 'semi-auto' || value === 'clip-only' ? value : 'full-auto';
+  return value === 'milestone-review' || value === 'scene-review' || value === 'manual' || value === 'semi-auto' || value === 'clip-only'
+    ? value
+    : 'full-auto';
 }
 
 function normalizeLockIntroSentences(value: unknown): number {

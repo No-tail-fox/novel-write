@@ -2,16 +2,17 @@ import { readFile } from 'node:fs/promises';
 import { describe, expect, it } from 'vitest';
 
 describe('editorial workbench shell', () => {
-  it('preserves the independent action and exact seventeen-entry navigation order', async () => {
+  it('keeps six primary entries while preserving every contextual route', async () => {
     const navigation = await source('../src/app/navigation.ts');
     const views = [...navigation.matchAll(/\{ view: '([^']+)', label:/gu)].map((match) => match[1]);
     expect(views).toEqual([
-      'new-task', 'hot-board', 'queue', 'history', 'book-selection', 'benchmark', 'person-assets',
-      'image-lab', 'voice-lab', 'music-mv', 'viral-analyzer', 'html-video',
-      'prompt-templates', 'draft-templates', 'settings', 'account', 'activation',
+      'new-task', 'hot-board', 'history', 'queue', 'person-assets', 'draft-templates', 'settings',
+      'book-selection', 'benchmark', 'image-lab', 'voice-lab', 'music-mv', 'viral-analyzer',
+      'html-video', 'prompt-templates', 'account', 'activation',
     ]);
-    expect(navigation).toContain('navigationItems: NavigationItem[] = [newTaskPrimaryAction, ...sidebarNavItems]');
+    expect(navigation).toContain('navigationItems: NavigationItem[] = [newTaskPrimaryAction, ...sidebarNavItems, ...contextualToolNavItems]');
     expect(navigation).toContain('export const sidebarNavGroups');
+    expect(navigation).toContain('export const contextualToolNavItems');
     for (const label of ['创作生产', '素材与实验', '模板与系统']) expect(navigation).toContain(`label: '${label}'`);
   });
 
@@ -24,7 +25,11 @@ describe('editorial workbench shell', () => {
     expect(shell).toContain('<Tooltip content={themeLabel}>');
     expect(shell).toContain('label={themeLabel}');
     expect(shell).toContain('title={`${item.label} · ${item.hint}`}');
-    expect(shell).not.toContain('更多');
+    expect(shell).toContain('data-contextual-tools-trigger');
+    expect(shell).toContain('更多工具');
+    expect(shell).toContain('data-nav-view={item.view}');
+    expect(shell).toContain('data-nav-view="activation"');
+    expect(shell.match(/data-nav-view="account"/gu)).toHaveLength(2);
   });
 
   it('defines a stable editorial desktop shell and 1080 icon rail', async () => {

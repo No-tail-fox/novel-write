@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { AlertTriangle, Bot, CheckCircle2, Copy, Database, FlaskConical, FolderOpen, Globe2, Image as ImageIcon, Info, KeyRound, Loader2, Mic2, Palette, Save, Search, Sparkles, Upload, Wand2, XCircle } from "lucide-react";
+import { AlertTriangle, Bot, CheckCircle2, Copy, Database, Film, FlaskConical, FolderOpen, Globe2, Image as ImageIcon, Info, KeyRound, Loader2, Mic2, Palette, Save, Search, Sparkles, Upload, Wand2, XCircle } from "lucide-react";
 import { useMemo } from "react";
 import type { AppConfig, ConfigTestTarget, ImaKnowledgeResult, ProviderModel, ProviderModelListRequest, ShellView, ThemeName, TtsProviderProfile, VolcengineSpeaker } from "../../shared/types";
 import type { StoryDreamApi } from "../../shared/storydream-api";
@@ -164,7 +164,7 @@ export function SettingsPage({ api, state, applyState, synchronizeThemeState, na
   }
   async function testCurrentConfig() {
     const target: ConfigTestTarget =
-      section === 'llm' || section === 'image' || section === 'tts' || section === 'speechToText' || section === 'jianying' || section === 'creative' || section === 'webSearch'
+      section === 'llm' || section === 'image' || section === 'video' || section === 'tts' || section === 'speechToText' || section === 'jianying' || section === 'creative' || section === 'webSearch'
         ? section
         : 'llm';
     await settingsAction.run(async () => {
@@ -344,6 +344,18 @@ export function SettingsPage({ api, state, applyState, synchronizeThemeState, na
   function updateSpeechToTextConfig(patch: Partial<AppConfig['speechToText']>) {
     setSettingsDraft({ ...draft, speechToText: { ...draft.speechToText, ...patch } });
   }
+  function updateActiveVideoProvider(patch: Partial<AppConfig['video']['providers'][number]>) {
+    setSettingsDraft((current) => ({
+      ...current,
+      video: {
+        ...current.video,
+        providers: current.video.providers.map((provider) => provider.id === current.video.activeProviderId ? { ...provider, ...patch } : provider),
+      },
+    }));
+  }
+  function updateVideoAutomation(patch: Partial<AppConfig['video']['automation']>) {
+    setSettingsDraft((current) => ({ ...current, video: { ...current.video, automation: { ...current.video.automation, ...patch } } }));
+  }
   function switchSpeechToTextProvider(provider: AppConfig['speechToText']['provider']) {
     if (provider === 'siliconflow') {
       updateSpeechToTextConfig({
@@ -393,12 +405,15 @@ export function SettingsPage({ api, state, applyState, synchronizeThemeState, na
   const selectedLlmTestBlocked = selectedLlmSecretPending || !selectedLlmProfilePersisted;
   const selectedImageTestConfig = buildConfigForSelectedProfileTest(draftWithCredentialStatus, 'image', selectedProviderProfileIds);
   const selectedTtsTestConfig = buildConfigForSelectedProfileTest(draftWithCredentialStatus, 'tts', selectedProviderProfileIds);
+  const activeVideoProvider = draft.video.providers.find((provider) => provider.id === draft.video.activeProviderId) ?? draft.video.providers[0];
+  const activeVideoSecretId = profileSecretId('video', activeVideoProvider.id, 'apiKey');
   const settingsBgms = validBgmItems(draft);
   const isSiliconFlowSpeechToText = draft.speechToText.provider === 'siliconflow';
   const sections = [
     ['appearance', Palette, '外观', '明暗主题', state.ui.theme === 'dark' ? '深色' : '浅色'],
     ['llm', Sparkles, 'LLM', '文案与分镜', settingsStatusLabel(configTargetStatus('llm', draftWithCredentialStatus))],
     ['image', ImageIcon, 'AI 绘图', '分镜图片', settingsStatusLabel(configTargetStatus('image', draftWithCredentialStatus))],
+    ['video', Film, 'AI 视频', '云端生成 · 调度', settingsStatusLabel(configTargetStatus('video', draftWithCredentialStatus))],
     ['tts', Bot, 'TTS 配音', '每镜语音', settingsStatusLabel(configTargetStatus('tts', draftWithCredentialStatus))],
     ['speechToText', Mic2, '语音转文字', '爆款拆解转写 API', settingsStatusLabel(configTargetStatus('speechToText', draftWithCredentialStatus))],
     ['jianying', FolderOpen, '剪映', '草稿目录 · BGM', settingsStatusLabel(configTargetStatus('jianying', draftWithCredentialStatus))],
@@ -500,6 +515,92 @@ export function SettingsPage({ api, state, applyState, synchronizeThemeState, na
               onRefreshModels={refreshProviderModels}
             />
           </SettingsCard>
+        ) : null}
+        {section === 'video' ? (
+          <>
+            <SettingsCard title="云端 VideoProvider" status={secrets.configured(activeVideoSecretId) ? '已配置' : '待配置'}>
+              <ProviderConfigNote
+                title="统一视频生成合同"
+                value="支持同步 URL/base64 返回，也支持 task_id 异步轮询。业务任务只依赖能力声明，不绑定具体供应商名称。"
+              />
+              <SwitchField
+                checked={activeVideoProvider.enabled}
+                onChange={(_, data) => updateActiveVideoProvider({ enabled: data.checked })}
+                label="启用当前云端视频 Provider"
+              />
+              <ConfigInput label="Provider 名称" value={activeVideoProvider.name} onChange={(value) => updateActiveVideoProvider({ name: value })} />
+              <ConfigInput label="接口地址" value={activeVideoProvider.baseUrl} onChange={(value) => updateActiveVideoProvider({ baseUrl: value })} />
+              <SecretInput
+                label="接口密钥"
+                value={secrets.value(activeVideoSecretId)}
+                configured={secrets.configured(activeVideoSecretId)}
+                onChange={(value) => secrets.change(activeVideoSecretId, value)}
+                onClear={() => secrets.change(activeVideoSecretId, null)}
+              />
+              <ConfigInput label="视频模型" value={activeVideoProvider.model} onChange={(value) => updateActiveVideoProvider({ model: value })} />
+              <ConfigInput label="提交路径" value={activeVideoProvider.submitPath} onChange={(value) => updateActiveVideoProvider({ submitPath: value })} />
+              <ConfigInput label="状态路径模板" value={activeVideoProvider.statusPathTemplate} onChange={(value) => updateActiveVideoProvider({ statusPathTemplate: value })} />
+              <ConfigNumberInput label="轮询间隔（秒）" value={activeVideoProvider.pollIntervalMs / 1000} min={0.25} step={0.25} onChange={(value) => updateActiveVideoProvider({ pollIntervalMs: value * 1000 })} />
+              <ConfigNumberInput label="任务超时（秒）" value={activeVideoProvider.timeoutMs / 1000} min={10} step={10} onChange={(value) => updateActiveVideoProvider({ timeoutMs: value * 1000 })} />
+              <ConfigNumberInput label="每秒费用" value={activeVideoProvider.pricePerSecond} min={0} step={0.01} onChange={(value) => updateActiveVideoProvider({ pricePerSecond: value })} />
+              <ConfigNumberInput label="最长时长（秒）" value={activeVideoProvider.maxDurationSec} min={1} step={1} onChange={(value) => updateActiveVideoProvider({ maxDurationSec: value })} />
+              <ConfigInput label="最高分辨率" value={activeVideoProvider.maxResolution} onChange={(value) => updateActiveVideoProvider({ maxResolution: value })} />
+              <ConfigInput label="许可证说明" value={activeVideoProvider.license} onChange={(value) => updateActiveVideoProvider({ license: value })} />
+              <ConfigInput label="附加请求参数（JSON）" value={activeVideoProvider.requestParamsJson} onChange={(value) => updateActiveVideoProvider({ requestParamsJson: value })} />
+              <Field label="能力声明">
+                <div className="settings-inline-actions">
+                  {([
+                    ['t2v', '文生视频'],
+                    ['i2v', '图生视频'],
+                    ['first-last-frame', '首尾帧'],
+                    ['reference-image', '参考图'],
+                    ['partial-redo', '局部重做'],
+                    ['synchronized-audio', '同步音视频'],
+                  ] as const).map(([capability, label]) => (
+                    <ToggleField
+                      key={capability}
+                      label={label}
+                      checked={activeVideoProvider.capabilities.includes(capability)}
+                      onChange={(checked) => updateActiveVideoProvider({
+                        capabilities: checked
+                          ? Array.from(new Set([...activeVideoProvider.capabilities, capability]))
+                          : activeVideoProvider.capabilities.filter((item) => item !== capability),
+                      })}
+                    />
+                  ))}
+                </div>
+              </Field>
+            </SettingsCard>
+            <SettingsCard title="自动化与预算" status={draft.video.automation.mode === 'full-auto' ? '全自动' : '受控'}>
+              <Segmented
+                label="执行模式"
+                value={draft.video.automation.mode}
+                options={['full-auto', 'milestone-review', 'scene-review', 'manual']}
+                labels={['全自动', '里程碑审批', '逐场景审批', '手动']}
+                onChange={(value) => updateVideoAutomation({ mode: value as AppConfig['video']['automation']['mode'] })}
+              />
+              <ConfigNumberInput label="预算上限" value={draft.video.automation.budgetLimit} min={0} step={1} onChange={(value) => updateVideoAutomation({ budgetLimit: value })} />
+              <ConfigNumberInput label="并发数" value={draft.video.automation.concurrency} min={1} step={1} onChange={(value) => updateVideoAutomation({ concurrency: value })} />
+              <ConfigNumberInput label="失败重试次数" value={draft.video.automation.retryCount} min={0} step={1} onChange={(value) => updateVideoAutomation({ retryCount: value })} />
+              <RangeField label="质量阈值" min={0} max={1} step={0.05} value={draft.video.automation.qualityThreshold} onChange={(value) => updateVideoAutomation({ qualityThreshold: value })} />
+              <SwitchField
+                checked={draft.video.automation.providerWhitelist.includes(activeVideoProvider.id)}
+                onChange={(_, data) => updateVideoAutomation({
+                  providerWhitelist: data.checked
+                    ? Array.from(new Set([...draft.video.automation.providerWhitelist, activeVideoProvider.id]))
+                    : draft.video.automation.providerWhitelist.filter((id) => id !== activeVideoProvider.id),
+                })}
+                label="允许调度当前 Provider"
+              />
+              <Segmented
+                label="失败降级"
+                value={draft.video.automation.fallback}
+                options={['dynamic-image', 'html-video', 'disabled']}
+                labels={['动态图片', 'HTML 动画', '不降级']}
+                onChange={(value) => updateVideoAutomation({ fallback: value as AppConfig['video']['automation']['fallback'] })}
+              />
+            </SettingsCard>
+          </>
         ) : null}
         {section === 'tts' ? (
           <SettingsCard title="TTS 配音" status={secrets.configured(profileSecretId('tts', selectedTtsProfileId, selectedTtsTestConfig.tts.provider === 'minimax' ? 'minimax/apiKey' : 'volcengine/apiKey')) ? '已配置' : '待配置'}>
