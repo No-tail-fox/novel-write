@@ -19,7 +19,7 @@
 - [completed] 6. 接入 VOX 持久化/IPC/工作台和确定性渲染
 - [completed] 7. 将标准视频与 HTML 视频映射到共享时间线
 - [completed] 8. 建立 AI 漫剧 series/episode/consistency 工作流
-- [in_progress] 9. 整理已完成改动并推送当前远端分支
+- [completed] 9. 整理已完成改动并推送当前远端分支
 
 ## 研究边界
 
@@ -34,6 +34,12 @@
 - 聚焦 11 个测试文件、291/291 项通过；TypeScript 类型检查和生产构建通过。
 - 真实 Electron 创建、选镜头、修改景别和保存交互通过；1440x900 与 1040x720 均无运行时错误、横向溢出、控件裁切或标签换行。
 - QA 报告和截图归档到 `.artifacts/motion-comic-workbench/`；`providerJobs=0`，未调用付费生成。
+
+## Phase 9 最终验收
+
+- 62 个源码、测试和文档文件以提交 `fa25607` 推送到 `origin/codex/storydream-fluent-ui-system`。
+- `.artifacts/`、`.codex-audit-temp/`、Python 缓存和二进制运行产物均未上传。
+- TypeScript 与生产构建通过；全量并发剩余 5 项 Windows 临时目录/5 秒边界失败均已串行聚焦通过。
 
 ## 本轮错误记录
 

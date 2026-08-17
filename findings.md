@@ -1875,5 +1875,6 @@
 - 不使用 `git add .`；按明确路径暂存后检查 staged 清单，避免把本地 QA 数据或未知文件带入提交。
 - Git smart HTTP 两种传输均被连接重置，但使用本机已存凭据的 GitHub REST API成功确认远端分支头为 `410301bce82eb5b4c7e2cc9adfb7dda277881e03`，与本地 tracking ref 一致。
 - 上传前全量回归两次分别为 1872/1878、1873/1878；库存缺口已修正，剩余失败均在 Windows 临时目录或默认 5 秒边界，逐项串行聚焦全部通过。类型检查与生产构建通过。
+- 功能提交 `fa25607` 已通过标准 Git push 发布到 `origin/codex/storydream-fluent-ui-system`；此前 fetch 连接重置未影响最终 push。
 
 ---
