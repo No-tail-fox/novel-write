@@ -333,7 +333,7 @@ kbd {
   flex: 1 1 130px;
   min-height: 130px;
   display: grid;
-  grid-template-rows: auto minmax(0, 1fr) auto auto;
+  grid-template-rows: minmax(0, 1fr) auto auto;
   gap: 8px;
   margin-top: 8px;
   overflow: hidden;

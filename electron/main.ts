@@ -8,6 +8,9 @@ import { fileURLToPath, pathToFileURL } from 'node:url';
 import { promisify } from 'node:util';
 import { readTaskArtifactSnapshot } from '../src/shared/artifact-preview';
 import { classifyBenchmarkUrl, normalizeBenchmarkSourceUrl } from '../src/shared/benchmark-monitoring';
+import { discoverDangdangBooks } from '../src/shared/book-discovery';
+import type { EditorialCollageCreateInput, EditorialCollageSaveInput } from '../src/shared/editorial-collage';
+import type { MotionComicCreateInput, MotionComicSaveInput } from '../src/shared/motion-comic';
 import { isCancellation, normalizeAppError } from '../src/shared/app-error';
 import { fromLlmModelTestResult, testConfigTarget } from '../src/shared/config-utils';
 import { generateImageLabRecord } from '../src/shared/image-lab';
@@ -45,7 +48,7 @@ import { runStoryboundMediaSidecar } from '../src/shared/storybound-sidecar';
 import { FileDatabase, type HistoryDeletionCleanup, type HistoryTombstone } from '../src/shared/storage';
 import { createHtmlVideoRuntimeProviders, createTaskRuntimeProviders } from '../src/shared/task-runtime-providers';
 import { assertTaskLifecycleAction } from '../src/shared/task-progress';
-import type { AccountProfile, ActivationState, AppConfig, AppDelta, AppDeltaReconcileRequest, AppDeltaReconcileResult, AppStatePatch, BenchmarkGroupInput, BenchmarkGroupSyncResult, BenchmarkLoginInput, BenchmarkLoginResult, BenchmarkPlatform, BenchmarkPostInput, BookSelectionInput, ConfigTestTarget, CreateTaskInput, CreateViralAnalysisInput, CursorRequest, CustomStyle, CustomStyleGenerateInput, DraftTemplate, HistoryFamily, HistoryListRequest, HotBoardSourceContent, HtmlVideoAsset, HtmlVideoAssetTarget, HtmlVideoCompositionSource, HtmlVideoCompositionSourceLintInput, HtmlVideoCompositionSourceSaveInput, HtmlVideoConfigChange, HtmlVideoPipelineDataV2, HtmlVideoSceneChange, HtmlVideoVoiceClip, ImageLabGenerateInput, ImageLabRecord, ImageLabSummary, ImaKnowledgeRequest, LlmConfig, ManagedBgmImport, MinimaxCloneVoiceInput, OrdinaryTaskCoverRatio, OrdinaryTaskCoverSelection, PromptTemplate, ProviderModelListRequest, ResearchCopyComposeInput, SceneVideoLibraryItem, SequencedTaskEvent, StoryboardScene, Task, TaskArtifactVideoPreview, TaskImageReplacementSource, TaskStatus, TaskStepRerunMode, TaskSubtitleSceneLines, TaskVideoReplacementSource, UiPreferencesUpdate, ViralAnalysisRecord, ViralAnalysisResult, ViralAnalysisStatus, ViralProductionTaskOptions, VolcengineSpeakerListRequest, VoiceLabGenerateInput, VoiceLabRecord, VoiceLabSummary, WebSearchRequest } from '../src/shared/types';
+import type { AccountProfile, ActivationState, AppConfig, AppDelta, AppDeltaReconcileRequest, AppDeltaReconcileResult, AppStatePatch, BenchmarkGroupInput, BenchmarkGroupSyncResult, BenchmarkLoginInput, BenchmarkLoginResult, BenchmarkPlatform, BenchmarkPostInput, BookDiscoveryRequest, BookSelectionInput, ConfigTestTarget, CreateTaskInput, CreateViralAnalysisInput, CursorRequest, CustomStyle, CustomStyleGenerateInput, DraftTemplate, HistoryFamily, HistoryListRequest, HotBoardSourceContent, HtmlVideoAsset, HtmlVideoAssetTarget, HtmlVideoCompositionSource, HtmlVideoCompositionSourceLintInput, HtmlVideoCompositionSourceSaveInput, HtmlVideoConfigChange, HtmlVideoPipelineDataV2, HtmlVideoSceneChange, HtmlVideoVoiceClip, ImageLabGenerateInput, ImageLabRecord, ImageLabSummary, ImaKnowledgeRequest, LlmConfig, ManagedBgmImport, MinimaxCloneVoiceInput, OrdinaryTaskCoverRatio, OrdinaryTaskCoverSelection, PromptTemplate, ProviderModelListRequest, ResearchCopyComposeInput, SceneVideoLibraryItem, SequencedTaskEvent, StoryboardScene, Task, TaskArtifactVideoPreview, TaskImageReplacementSource, TaskStatus, TaskStepRerunMode, TaskSubtitleSceneLines, TaskVideoReplacementSource, UiPreferencesUpdate, ViralAnalysisRecord, ViralAnalysisResult, ViralAnalysisStatus, ViralProductionTaskOptions, VolcengineSpeakerListRequest, VoiceLabGenerateInput, VoiceLabRecord, VoiceLabSummary, WebSearchRequest } from '../src/shared/types';
 import { boundViralDiagnosticText, createViralProductionTaskInput, detectViralPlatform, runViralAnalysis, viralCheckpointResumeState } from '../src/shared/viral-analysis';
 import { createViralRuntimeProviders } from '../src/shared/viral-runtime';
 import { listVolcengineSpeakers } from '../src/shared/volcengine-speakers';
@@ -76,6 +79,7 @@ import { copySceneVideoToTask, importSceneVideoToLibrary, listSceneVideoLibrary,
 import { ConfigService } from './config-service';
 import { CredentialVault } from './credential-vault';
 import { HistoryActivityRegistry, type HistoryActivityReservation } from './history-activity-registry';
+import { guardProcessOutput } from './process-output';
 import {
   backfillLegacyManagedHistoryStorage,
   deleteManagedHistoryWithQuarantine,
@@ -101,6 +105,9 @@ import {
   type RendererPolicy,
   validateDevServerUrl,
 } from './security';
+
+guardProcessOutput(process.stdout);
+guardProcessOutput(process.stderr);
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 protocol.registerSchemesAsPrivileged([{
@@ -2377,6 +2384,8 @@ trustedHandle('ui:save-preferences', async (_event, update: UiPreferencesUpdate)
 
 trustedHandle('book-selection:list', async (_event, theme?: string) => (await getDb()).listBookSelections(theme));
 
+trustedHandle('book-selection:discover', async (_event, input: BookDiscoveryRequest) => discoverDangdangBooks(input));
+
 trustedHandle('book-selection:save', async (_event, input: BookSelectionInput) => (await getDb()).upsertBookSelection(input));
 
 trustedHandle('book-selection:delete', async (_event, input: { theme: string; bookId: string }) => {
@@ -2477,6 +2486,30 @@ trustedHandle('person-assets:import-images', async (_event, name: string) => {
   });
   if (result.canceled) return 0;
   return importPersonAssetFiles(personAssetsRoot(), name, result.filePaths);
+});
+
+trustedHandle('editorial-collage:create', async (_event, input: EditorialCollageCreateInput) => {
+  const database = await getDb();
+  const task = await database.createEditorialCollageTask(input);
+  return publishTaskUpsert(database, task.id);
+});
+
+trustedHandle('editorial-collage:save', async (_event, input: EditorialCollageSaveInput) => {
+  const database = await getDb();
+  const task = await database.saveEditorialCollageTask(input);
+  return publishTaskUpsert(database, task.id);
+});
+
+trustedHandle('motion-comic:create', async (_event, input: MotionComicCreateInput) => {
+  const database = await getDb();
+  const task = await database.createMotionComicTask(input);
+  return publishTaskUpsert(database, task.id);
+});
+
+trustedHandle('motion-comic:save', async (_event, input: MotionComicSaveInput) => {
+  const database = await getDb();
+  const task = await database.saveMotionComicTask(input);
+  return publishTaskUpsert(database, task.id);
 });
 
 trustedHandle('html-video:create-task', async (_event, input: CreateTaskInput) => {

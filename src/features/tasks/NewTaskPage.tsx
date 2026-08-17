@@ -77,15 +77,18 @@ import {
 } from './task-control-manifest';
 import {
   addUploadedBgm,
+  bookProductTrack,
   characterPolicyLabel,
   defaultTaskDraftTemplateId,
   draftTemplateIdForRatio,
   draftTemplateImageRatio,
   draftTemplateLabel,
+  formatBookProductInfoForTask,
   normalizeLockIntroSentencesInput,
   normalizeTaskStoryboardSceneCount,
   normalizeTaskTargetLength,
   productInfoSummary,
+  parseBookProductInfo,
   referenceKindLabel,
   resolveDefaultBgmId,
   resolvePromptTemplateForTrack,
@@ -232,6 +235,7 @@ export function NewTaskPage({
   const [selectedPresetId, setSelectedPresetId] = useState('');
   const [presetName, setPresetName] = useState('');
   const searchRequestIdRef = useRef(0);
+  const importedBookProductRef = useRef(false);
   const searchAction = useAsyncAction();
   const taskAction = useAsyncAction();
 
@@ -239,11 +243,11 @@ export function NewTaskPage({
   const selectedSources = searchSections.filter((source, index) => selectedSearchSourceIds.includes(sourceKey(source, index)));
   const webSearchEnabled = aiSources.includes('web');
   const builtinKnowledgeEnabled = aiSources.includes('builtin-knowledge');
-  const hasResearchComposeSource = webSearchEnabled || builtinKnowledgeEnabled;
+  const hasSelectedWebSources = webSearchEnabled && selectedSources.length > 0;
+  const hasResearchComposeSource = builtinKnowledgeEnabled || hasSelectedWebSources;
   const canComposeResearchCopy = Boolean(aiKeyword.trim())
-    && hasResearchComposeSource
-    && (!webSearchEnabled || selectedSources.length > 0);
-  const composeResearchCopyLabel = webSearchEnabled
+    && hasResearchComposeSource;
+  const composeResearchCopyLabel = hasSelectedWebSources
     ? builtinKnowledgeEnabled
       ? '结合网页与 AI 补全生成文案'
       : '根据所选网页生成文案'
@@ -515,9 +519,30 @@ export function NewTaskPage({
   useEffect(() => {
     const incomingProductInfo = sessionStorage.getItem('book_product_info');
     if (incomingProductInfo) {
-      setProductInfo(incomingProductInfo);
+      const incomingProduct = parseBookProductInfo(incomingProductInfo);
+      importedBookProductRef.current = true;
+      if (incomingProduct?.name?.trim()) {
+        const nextTrack = bookProductTrack(sessionStorage.getItem('book_product_track') || '', incomingProduct);
+        setMode('ai');
+        setTrack(nextTrack);
+        setPromptTemplateOverrideId('');
+        setPromptTemplateManuallyOverridden(false);
+        setAiKeyword(incomingProduct.name.trim());
+        setTitle(incomingProduct.name.trim().slice(0, 42));
+        setExtraRequirements([
+          `围绕《${incomingProduct.name.trim()}》整理适合短视频口播的真实观点与阅读价值。`,
+          incomingProduct.author ? `作者：${incomingProduct.author}` : '',
+          incomingProduct.audience ? `目标人群：${incomingProduct.audience}` : '',
+          incomingProduct.creativeBrief || '',
+          '不得编造销量、评论量、功效、案例或权威背书；涉及健康内容时只做知识整理，不做医疗承诺。',
+        ].filter(Boolean).join('\n'));
+        setProductInfo(formatBookProductInfoForTask(incomingProduct));
+      } else {
+        setProductInfo(incomingProductInfo);
+      }
       setKeepPromotion(true);
       sessionStorage.removeItem('book_product_info');
+      sessionStorage.removeItem('book_product_track');
     }
     const incomingBenchmarkScript = sessionStorage.getItem('benchmark_script');
     if (incomingBenchmarkScript) {
@@ -528,6 +553,11 @@ export function NewTaskPage({
   }, []);
 
   useEffect(() => {
+    if (importedBookProductRef.current) {
+      setTaskPresets(readNewTaskPresets(window.localStorage));
+      setDraftReady(true);
+      return;
+    }
     const draft = readNewTaskDraft(window.localStorage);
     if (draft) {
       applyDraftSnapshot(draft);
@@ -821,17 +851,15 @@ export function NewTaskPage({
       setResearchCopyMessage('请先输入关键词。');
       return;
     }
-    if (!hasResearchComposeSource) {
-      setResearchCopyMessage('请至少选择全网搜索或 AI 内置知识补全。');
-      return;
-    }
-    if (webSearchEnabled && selectedSources.length === 0) {
-      setResearchCopyMessage('请先搜索并勾选至少 1 个网页来源，或关闭全网搜索后使用 AI 内置知识生成。');
+    if (!builtinKnowledgeEnabled && !hasSelectedWebSources) {
+      setResearchCopyMessage(webSearchEnabled
+        ? '请先搜索并勾选至少 1 个网页来源，或开启 AI 内置知识生成。'
+        : '请至少选择全网搜索或 AI 内置知识补全。');
       return;
     }
     await taskAction.run(async () => {
       setComposingCopy(true);
-      setResearchCopyMessage(webSearchEnabled
+      setResearchCopyMessage(hasSelectedWebSources
         ? builtinKnowledgeEnabled
           ? '正在结合网页资料与 AI 内置知识生成文案...'
           : '正在根据所选网页资料生成文案...'

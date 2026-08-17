@@ -42,6 +42,38 @@ export function parseBookProductInfo(value: string | null): BookProductInfo | nu
   }
 }
 
+/** Resolve the StoryDream task prompt family for a selected book. */
+export function bookProductTrack(input: BookProductInfo | string, product?: BookProductInfo): 'health-book' | 'ecommerce' {
+  const theme = typeof input === 'string' ? input : '';
+  const data = typeof input === 'string' ? product : input;
+  const context = `${theme} ${data?.category ?? ''} ${data?.keyword ?? ''} ${data?.sellPoint ?? ''}`;
+  return /健康|养生|中医|抗衰|饮食|医学|食疗/u.test(context) ? 'health-book' : 'ecommerce';
+}
+
+/** Store only the structured book fields the task runner can safely consume. */
+export function formatBookProductInfoForTask(product: BookProductInfo): string {
+  const normalized: BookProductInfo = {
+    ...product,
+    name: product.name.trim(),
+    author: product.author?.trim() || undefined,
+    publisher: product.publisher?.trim() || undefined,
+    category: product.category?.trim() || undefined,
+    keyword: product.keyword?.trim() || undefined,
+    sellPoint: product.sellPoint?.trim() || undefined,
+    audience: product.audience?.trim() || undefined,
+    persons: product.persons?.trim() || undefined,
+    era: product.era?.trim() || undefined,
+    price: product.price?.trim() || undefined,
+    originalPrice: product.originalPrice?.trim() || undefined,
+    url: product.url?.trim() || undefined,
+    note: product.note?.trim() || undefined,
+    creativeBrief: product.creativeBrief?.trim() || undefined,
+    decisionNote: product.decisionNote?.trim() || undefined,
+    riskNote: product.riskNote?.trim() || undefined,
+  };
+  return JSON.stringify(normalized);
+}
+
 export function productInfoSummary(value: string | null): string {
   const product = parseBookProductInfo(value);
   if (!product) return trimForPreview(value ?? '', 42);
@@ -84,6 +116,8 @@ export function formatTaskOperationTime(value: string, now = Date.now()): string
 
 export function taskHistoryTypeLabel(task: Pick<TaskSummary, 'taskType' | 'track'>): string {
   if (task.taskType === 'html-video') return 'HTML 动画';
+  if (task.taskType === 'editorial-collage') return 'VOX 视觉';
+  if (task.taskType === 'motion-comic') return 'AI 漫剧';
   if (task.taskType === 'music-mv') return '音乐 MV';
   return taskTrackLabelById.get(task.track) ?? task.track;
 }

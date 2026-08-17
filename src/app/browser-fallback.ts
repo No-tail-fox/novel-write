@@ -17,6 +17,23 @@ import { taskToSummary } from '../shared/state-reconciliation';
 import type { StoryDreamApi } from '../shared/storydream-api';
 import { taskSpeakerLabel } from '../shared/tts-voices';
 import { normalizeBenchmarkGroupInput, normalizeBenchmarkPostInput } from '../shared/benchmark-monitoring';
+import { buildBookDiscoveryFallback } from '../shared/book-discovery-fallback';
+import {
+  EDITORIAL_COLLAGE_TASK_TYPE,
+  createEditorialCollageDraft,
+  createEditorialCollageStarterPlan,
+  editorialCollageCreateInputSchema,
+  editorialCollageSaveInputSchema,
+  parseEditorialCollagePipelineData,
+} from '../shared/editorial-collage';
+import {
+  MOTION_COMIC_TASK_TYPE,
+  createMotionComicDraft,
+  createMotionComicStarterProject,
+  motionComicCreateInputSchema,
+  motionComicSaveInputSchema,
+  parseMotionComicPipelineData,
+} from '../shared/motion-comic';
 import type {
   AccountProfile,
   ActivationState,
@@ -970,6 +987,9 @@ export function makeFallbackApi(setState: (state: AppState) => void): StoryDream
       const records = readBookSelections();
       return theme ? records.filter((record) => record.theme === theme) : records;
     },
+    async discoverBooks(input) {
+      return buildBookDiscoveryFallback(input, '浏览器预览不直接访问当当，Electron 桌面端会读取真实公开结果。');
+    },
     async saveBookSelection(input) {
       const records = readBookSelections();
       const record = { theme: input.theme.trim(), bookId: input.bookId?.trim() || `b-${Date.now()}`, data: input.data, updatedAt: Date.now() };
@@ -1045,6 +1065,176 @@ export function makeFallbackApi(setState: (state: AppState) => void): StoryDream
     },
     async openPersonAssetDirectory() {
       throw new Error('浏览器预览不能打开本地人物素材目录，请在 Electron 桌面端操作。');
+    },
+    async createEditorialCollage(input) {
+      const validated = editorialCollageCreateInputSchema.parse(input);
+      const state = read();
+      const now = new Date().toISOString();
+      const id = crypto.randomUUID();
+      const draft = createEditorialCollageDraft({ id, title: validated.title, ratio: validated.ratio, now });
+      const document = createEditorialCollageStarterPlan(draft, validated.sourceText, now);
+      const task: Task = {
+        id,
+        title: document.title,
+        inputText: validated.sourceText,
+        taskKind: 'story',
+        processingMode: 'manual',
+        publishMode: 'review-rewrite',
+        status: 'draft',
+        currentStep: 0,
+        runGeneration: 0,
+        track: 'editorial-explainer',
+        style: 'archival-red',
+        speaker: '灿博小叔',
+        ratio: document.ratio,
+        templateId: 'default-portrait-9-16',
+        bgmId: '',
+        pausePoints: [],
+        outputDir: '',
+        errorMessage: '',
+        createdAt: now,
+        completedAt: null,
+        startedAt: null,
+        lastHeartbeatAt: null,
+        mode: 'paste',
+        aiKeyword: '',
+        aiSources: [],
+        selectedSources: [],
+        extraRequirements: '',
+        imagePromptReference: '',
+        promptTemplateId: null,
+        promptTemplateType: null,
+        referenceImagePath: '',
+        rewriteIntensity: 'standard',
+        narrativePov: 'keep-original',
+        keepPromotion: false,
+        ttsProvider: 'volcengine',
+        ttsSpeed: 1,
+        step3PromptSnapshot: '',
+        musicMv: { rhythmMode: 'lyric-sync', captionStyle: 'none', visualMotif: '', audioPath: '' },
+        failedStep: null,
+        retryFromStep: null,
+        artifactStatePath: '',
+        videoForm: 'narration',
+        materialSource: 'paste',
+        taskType: EDITORIAL_COLLAGE_TASK_TYPE,
+        pipelineStep: document.stage,
+        pipelineData: JSON.stringify(document),
+      };
+      return commitFallbackHistoryUpsert('task', { ...state, tasks: [task, ...state.tasks] }, task.id);
+    },
+    async saveEditorialCollage(input) {
+      const validated = editorialCollageSaveInputSchema.parse(input);
+      const state = read();
+      const task = state.tasks.find((item) => item.id === validated.id);
+      if (!task) throw new Error(`EDITORIAL_COLLAGE_NOT_FOUND: ${validated.id}`);
+      if (task.taskType !== EDITORIAL_COLLAGE_TASK_TYPE) throw new Error('EDITORIAL_COLLAGE_TASK_INVALID: The selected task is not a VOX project.');
+      if (task.archivedAt) throw new Error('HISTORY_ARCHIVED: 已归档任务只读。');
+      if (task.status === 'pending' || task.status === 'running') throw new Error('EDITORIAL_COLLAGE_ACTIVE: 运行中的项目不能编辑。');
+      const current = parseEditorialCollagePipelineData(task.pipelineData);
+      if (current.updatedAt !== validated.expectedUpdatedAt) throw new Error('EDITORIAL_COLLAGE_STALE_WRITE: The project changed after it was loaded.');
+      if (validated.document.id !== validated.id || validated.document.createdAt !== current.createdAt) throw new Error('EDITORIAL_COLLAGE_IDENTITY_MISMATCH: Project identity fields cannot be changed.');
+      if (validated.document.updatedAt !== validated.expectedUpdatedAt) throw new Error('EDITORIAL_COLLAGE_REVISION_MISMATCH: The document revision must match expectedUpdatedAt.');
+      const updatedAt = new Date(Math.max(Date.now(), Date.parse(current.updatedAt) + 1)).toISOString();
+      const document = parseEditorialCollagePipelineData({ ...validated.document, title: validated.document.title.trim(), updatedAt });
+      const updated: Task = {
+        ...task,
+        title: document.title,
+        ratio: document.ratio,
+        status: document.stage === 'completed' ? 'completed' : 'draft',
+        pipelineStep: document.stage,
+        pipelineData: JSON.stringify(document),
+        completedAt: document.stage === 'completed' ? updatedAt : null,
+      };
+      return commitFallbackHistoryUpsert('task', {
+        ...state,
+        tasks: state.tasks.map((item) => item.id === task.id ? updated : item),
+      }, task.id);
+    },
+    async createMotionComic(input) {
+      const validated = motionComicCreateInputSchema.parse(input);
+      const state = read();
+      const now = new Date().toISOString();
+      const id = crypto.randomUUID();
+      const draft = createMotionComicDraft({ id, title: validated.title, premise: validated.premise, ratio: validated.ratio, now });
+      const document = createMotionComicStarterProject(draft, validated.episodeTitle, now);
+      const task: Task = {
+        id,
+        title: document.title,
+        inputText: validated.premise,
+        taskKind: 'story',
+        processingMode: 'manual',
+        publishMode: 'review-rewrite',
+        status: 'draft',
+        currentStep: 0,
+        runGeneration: 0,
+        track: 'motion-comic',
+        style: 'cinematic-comic',
+        speaker: '灿博小叔',
+        ratio: document.ratio,
+        templateId: 'default-portrait-9-16',
+        bgmId: '',
+        pausePoints: [],
+        outputDir: '',
+        errorMessage: '',
+        createdAt: now,
+        completedAt: null,
+        startedAt: null,
+        lastHeartbeatAt: null,
+        mode: 'paste',
+        aiKeyword: '',
+        aiSources: [],
+        selectedSources: [],
+        extraRequirements: '',
+        imagePromptReference: '',
+        promptTemplateId: null,
+        promptTemplateType: null,
+        referenceImagePath: '',
+        rewriteIntensity: 'standard',
+        narrativePov: 'keep-original',
+        keepPromotion: false,
+        ttsProvider: 'volcengine',
+        ttsSpeed: 1,
+        step3PromptSnapshot: '',
+        musicMv: { rhythmMode: 'lyric-sync', captionStyle: 'none', visualMotif: '', audioPath: '' },
+        failedStep: null,
+        retryFromStep: null,
+        artifactStatePath: '',
+        videoForm: 'narration',
+        materialSource: 'paste',
+        taskType: MOTION_COMIC_TASK_TYPE,
+        pipelineStep: document.stage,
+        pipelineData: JSON.stringify(document),
+      };
+      return commitFallbackHistoryUpsert('task', { ...state, tasks: [task, ...state.tasks] }, task.id);
+    },
+    async saveMotionComic(input) {
+      const validated = motionComicSaveInputSchema.parse(input);
+      const state = read();
+      const task = state.tasks.find((item) => item.id === validated.id);
+      if (!task) throw new Error(`MOTION_COMIC_NOT_FOUND: ${validated.id}`);
+      if (task.taskType !== MOTION_COMIC_TASK_TYPE) throw new Error('MOTION_COMIC_TASK_INVALID: The selected task is not an AI motion-comic project.');
+      if (task.archivedAt) throw new Error('HISTORY_ARCHIVED: 已归档任务只读。');
+      if (task.status === 'pending' || task.status === 'running') throw new Error('MOTION_COMIC_ACTIVE: 运行中的项目不能编辑。');
+      const current = parseMotionComicPipelineData(task.pipelineData);
+      if (current.updatedAt !== validated.expectedUpdatedAt) throw new Error('MOTION_COMIC_STALE_WRITE: The project changed after it was loaded.');
+      if (validated.document.id !== validated.id || validated.document.createdAt !== current.createdAt) throw new Error('MOTION_COMIC_IDENTITY_MISMATCH: Project identity fields cannot be changed.');
+      if (validated.document.updatedAt !== validated.expectedUpdatedAt) throw new Error('MOTION_COMIC_REVISION_MISMATCH: The document revision must match expectedUpdatedAt.');
+      const updatedAt = new Date(Math.max(Date.now(), Date.parse(current.updatedAt) + 1)).toISOString();
+      const document = parseMotionComicPipelineData({ ...validated.document, title: validated.document.title.trim(), updatedAt });
+      const updated: Task = {
+        ...task,
+        title: document.title,
+        ratio: document.ratio,
+        status: document.stage === 'completed' ? 'completed' : 'draft',
+        pipelineStep: document.stage,
+        pipelineData: JSON.stringify(document),
+        completedAt: document.stage === 'completed' ? updatedAt : null,
+      };
+      return commitFallbackHistoryUpsert('task', {
+        ...state,
+        tasks: state.tasks.map((item) => item.id === task.id ? updated : item),
+      }, task.id);
     },
     async createHtmlVideoTask(input: CreateTaskInput) {
       const state = read();

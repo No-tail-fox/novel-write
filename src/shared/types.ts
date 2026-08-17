@@ -6,6 +6,8 @@ export const SHELL_VIEWS = [
   'queue',
   'history',
   'task-detail',
+  'editorial-collage',
+  'motion-comic',
   'html-video',
   'image-lab',
   'voice-lab',
@@ -973,7 +975,14 @@ export interface BenchmarkSelectionEvidence {
 
 export interface BookProductInfo {
   name: string;
+  source?: 'dangdang' | 'manual';
+  sourceState?: 'live' | 'preview' | 'saved';
+  sourceId?: string;
+  sourceRank?: number;
+  rankingLabel?: string;
   author?: string;
+  publisher?: string;
+  publishDate?: string;
   category?: string;
   keyword?: string;
   sellPoint?: string;
@@ -981,8 +990,11 @@ export interface BookProductInfo {
   persons?: string;
   era?: string;
   price?: string;
+  originalPrice?: string;
+  reviewCount?: number;
   url?: string;
   note?: string;
+  coverUrl?: string;
   coverPath?: string;
   materialFolder?: string;
   selectionStatus?: 'candidate' | 'watching' | 'planned' | 'created' | 'rejected';
@@ -1010,6 +1022,32 @@ export interface BookSelectionInput {
   bookId?: string;
   previousIdentity?: BookSelectionIdentity;
   data: BookProductInfo;
+}
+
+export interface BookDiscoveryRequest {
+  query: string;
+  track?: string;
+  limit?: number;
+}
+
+export interface BookDiscoveryItem extends BookProductInfo {
+  source: 'dangdang';
+  sourceState: 'live' | 'preview';
+  sourceId: string;
+  sourceRank: number;
+  rankingLabel: string;
+  url: string;
+}
+
+export interface BookDiscoveryResult {
+  query: string;
+  track: string;
+  source: 'dangdang';
+  sourceState: 'live' | 'preview';
+  sourceLabel: string;
+  fetchedAt: number;
+  items: BookDiscoveryItem[];
+  message: string;
 }
 
 export type CreateTaskInput = Partial<
@@ -1106,7 +1144,7 @@ export type HistoryListRequest =
   | ({
       family: 'task';
       filter: HistoryArchiveFilter;
-      taskType?: 'story' | 'music-mv' | 'html-video';
+      taskType?: 'story' | 'music-mv' | 'html-video' | 'editorial-collage' | 'motion-comic';
       favorite?: boolean;
       query?: string;
       cursor?: string | null;

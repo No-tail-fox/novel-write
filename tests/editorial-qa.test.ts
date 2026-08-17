@@ -284,13 +284,32 @@ describe('editorial Electron QA configuration', () => {
     expect(newTaskStyles).toMatch(/\.new-task-summary-title small \{[\s\S]*?color: var\(--shell-accent-strong\);/u);
   });
 
-  it('verifies AI built-in knowledge can compose without the web-search controls', async () => {
+  it('verifies AI built-in knowledge can compose while web search remains selected without results', async () => {
     const source = await (await import('node:fs/promises')).readFile(new URL('../electron/editorial-qa.ts', import.meta.url), 'utf8');
 
     expect(source).toContain('aiBuiltinComposeReady');
     expect(source).toContain("button[aria-label=\"生成文案\"]");
-    expect(source).toContain("!document.querySelector('.web-search-provider-panel')");
+    expect(source).toContain("document.querySelector('.web-search-provider-panel')");
+    expect(source).toContain('&& webToggle.checked');
+    expect(source).toContain("document.querySelectorAll('.search-source-card input:checked').length === 0");
+    expect(source).toContain('&& !composeButton.disabled');
     expect(source).toContain("composeButton.textContent?.includes('使用 AI 内置知识生成文案')");
+  });
+
+  it('proves the book-selection ranking, search, favorite, and creation handoff before capture', async () => {
+    const source = await (await import('node:fs/promises')).readFile(new URL('../electron/editorial-qa.ts', import.meta.url), 'utf8');
+
+    expect(source).toContain("if (targetView === 'book-selection') {");
+    expect(source).toContain("document.querySelectorAll('.selection-ranking-row')");
+    expect(source).toContain('bookSelection.searchVerified');
+    expect(source).toContain('bookSelection.favoriteVerified');
+    expect(source).toContain('bookSelection.createHandoffVerified');
+    expect(source).toContain("document.querySelector('.selection-list-search input')");
+    expect(source).toContain("button.getAttribute('aria-label')?.startsWith('取消收藏 ')");
+    expect(source).toContain("button.textContent?.trim() === '去创作'");
+    expect(source).toContain("document.querySelector('[data-shell-view=\"new-task\"]')");
+    expect(source).toContain("document.querySelector('[data-nav-view=\"book-selection\"]')");
+    expect(source).toContain('candidate instanceof HTMLButtonElement) || candidate.disabled');
   });
 
   it('keeps activation status and all three plan choices readable in the light shell', async () => {
@@ -398,7 +417,7 @@ describe('editorial Electron QA configuration', () => {
     expect(source).toContain("document.querySelector('[data-html-video-studio=\"html-video\"]')");
     expect(source).toContain("taskTitle === '武则天：权力之路 HTML 动画'");
     expect(source).toContain("document.querySelector('[data-nav-view=\"history\"]')");
-    expect(source).toContain("document.querySelector('[data-contextual-tools-trigger]')");
+    expect(source).not.toContain("document.querySelector('[data-contextual-tools-trigger]')");
     expect(source).toContain('!state.historyHtmlRouteReady');
     expect(source).toContain('historyHtmlRouteReady: state.historyHtmlRouteReady');
     expect(source).toContain("scenarioId.startsWith('task-detail-scene-video-')");
@@ -505,6 +524,7 @@ describe('editorial Electron QA configuration', () => {
   });
 
   it('keeps the real Electron capture contract on native capturePage and deterministic matrices', async () => {
+    const source = await (await import('node:fs/promises')).readFile(new URL('../electron/editorial-qa.ts', import.meta.url), 'utf8');
     const harness = await (await import('node:fs/promises')).readFile(new URL('../scripts/editorial-qa-electron.ts', import.meta.url), 'utf8');
     const main = await (await import('node:fs/promises')).readFile(new URL('../electron/main.ts', import.meta.url), 'utf8');
     const shell = await (await import('node:fs/promises')).readFile(new URL('../src/app/AppShell.tsx', import.meta.url), 'utf8');
@@ -519,13 +539,18 @@ describe('editorial Electron QA configuration', () => {
     expect(harness).toContain('qaReport.activeCapture !== null');
     expect(harness).toContain('incomplete capture report');
     expect(harness).not.toMatch(/taskkill\s+\/IM|playwright|puppeteer/u);
+    expect(source).toContain('exerciseThemeButtonHover');
+    expect(source).toContain("window.webContents.sendInputEvent({ type: 'mouseMove'");
+    expect(source).toContain("document.querySelectorAll('[role=\"tooltip\"]')");
+    expect(harness).toContain('hover.tooltipMechanismCount !== 1');
+    expect(harness).toContain('hover.blankFrameCount > 0');
     expect(main).toContain('force-device-scale-factor');
     expect(main).toContain('useContentSize: true');
     expect(main).toContain('backgroundThrottling: !editorialQaConfig');
     expect(main).toContain('captureEditorialQa');
     expect(main).toContain("editorialQaConfig?.scope !== 'workflow'");
     expect(shell).toContain('data-nav-view={newTaskPrimaryAction.view}');
-    expect(await (await import('node:fs/promises')).readFile(new URL('../electron/editorial-qa.ts', import.meta.url), 'utf8')).toContain('await writeEditorialQaReport');
+    expect(source).toContain('await writeEditorialQaReport');
   });
 
   it('keeps editable form text readable in both shell themes', async () => {

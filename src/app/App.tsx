@@ -28,6 +28,8 @@ export function App() {
   }, []);
   const [activeView, setActiveView] = useState<ShellView>('new-task');
   const [selectedTaskId, setSelectedTaskId] = useState<string | null>(null);
+  const [requestedEditorialCollageTaskId, setRequestedEditorialCollageTaskId] = useState('');
+  const [requestedMotionComicTaskId, setRequestedMotionComicTaskId] = useState('');
   const [requestedHtmlTaskId, setRequestedHtmlTaskId] = useState('');
   const [historyFamilyEpochs, setHistoryFamilyEpochs] = useState<HistoryFamilyEpochs>({});
   const [saveTone, setSaveTone] = useState<'saved' | 'saving' | 'dirty'>('saved');
@@ -203,6 +205,14 @@ export function App() {
 
   const onRequestedHtmlTaskHandled = useCallback((taskId: string) => {
     setRequestedHtmlTaskId((current) => current === taskId ? '' : current);
+  }, []);
+
+  const onRequestedEditorialCollageTaskHandled = useCallback((taskId: string) => {
+    setRequestedEditorialCollageTaskId((current) => current === taskId ? '' : current);
+  }, []);
+
+  const onRequestedMotionComicTaskHandled = useCallback((taskId: string) => {
+    setRequestedMotionComicTaskId((current) => current === taskId ? '' : current);
   }, []);
 
   const onActiveViralAnalysisChange = useCallback((analysisId: string) => {
@@ -538,6 +548,8 @@ export function App() {
 
   async function navigate(view: ShellView) {
     startTransition(() => {
+      setRequestedEditorialCollageTaskId('');
+      setRequestedMotionComicTaskId('');
       setRequestedHtmlTaskId('');
       if (view !== 'task-detail') {
         setSelectedTaskId(null);
@@ -582,6 +594,8 @@ export function App() {
     activeViewRef.current = targetView;
     startTransition(() => {
       setSelectedTaskId(targetView === 'task-detail' ? taskId : null);
+      setRequestedEditorialCollageTaskId(targetView === 'editorial-collage' ? taskId : '');
+      setRequestedMotionComicTaskId(targetView === 'motion-comic' ? taskId : '');
       setRequestedHtmlTaskId(targetView === 'html-video' ? taskId : '');
       setActiveView(targetView);
     });
@@ -656,7 +670,11 @@ export function App() {
             isHistoryTombstoned={isHistoryTombstoned}
             historyFamilyEpochs={historyFamilyEpochs}
             refreshTaskDetail={refreshTaskDetail}
+            requestedEditorialCollageTaskId={requestedEditorialCollageTaskId}
+            requestedMotionComicTaskId={requestedMotionComicTaskId}
             requestedHtmlTaskId={requestedHtmlTaskId}
+            onRequestedEditorialCollageTaskHandled={onRequestedEditorialCollageTaskHandled}
+            onRequestedMotionComicTaskHandled={onRequestedMotionComicTaskHandled}
             onRequestedHtmlTaskHandled={onRequestedHtmlTaskHandled}
             onActiveHtmlTaskChange={onActiveHtmlTaskChange}
             refreshViralEvents={refreshViralEvents}

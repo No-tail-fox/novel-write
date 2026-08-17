@@ -16,6 +16,8 @@ import type {
   BenchmarkLoginResult,
   BenchmarkPost,
   BenchmarkPostInput,
+  BookDiscoveryRequest,
+  BookDiscoveryResult,
   BookSelectionInput,
   BookSelectionRecord,
   BootstrapState,
@@ -93,6 +95,8 @@ import type {
 import type { PublicAppState as AppState, SaveConfigInput, SecretChanges } from './config-secrets';
 import type { PersonAssetImage, PersonAssetSummary } from './person-assets';
 import type { JianyingDraftPathDetection } from './jianying-paths';
+import type { EditorialCollageCreateInput, EditorialCollageSaveInput } from './editorial-collage';
+import type { MotionComicCreateInput, MotionComicSaveInput } from './motion-comic';
 
 export const INVOKE_CHANNELS = Object.freeze([
   'app:get-state',
@@ -157,6 +161,7 @@ export const INVOKE_CHANNELS = Object.freeze([
   'activation:save',
   'ui:save-preferences',
   'book-selection:list',
+  'book-selection:discover',
   'book-selection:save',
   'book-selection:delete',
   'benchmark:list-groups',
@@ -174,6 +179,10 @@ export const INVOKE_CHANNELS = Object.freeze([
   'person-assets:import-images',
   'person-assets:list-images',
   'person-assets:open-directory',
+  'editorial-collage:create',
+  'editorial-collage:save',
+  'motion-comic:create',
+  'motion-comic:save',
   'html-video:create-task',
   'html-video:update-config',
   'html-video:update-scene',
@@ -242,6 +251,7 @@ type LocalBenchmarkBookPersonAssetApi = {
   syncBenchmarkGroup: (groupId: string) => Promise<BenchmarkGroupSyncResult>;
   openBenchmarkLogin: (input: BenchmarkLoginInput) => Promise<BenchmarkLoginResult>;
   listBookSelections: (theme?: string) => Promise<BookSelectionRecord[]>;
+  discoverBooks: (input: BookDiscoveryRequest) => Promise<BookDiscoveryResult>;
   saveBookSelection: (input: BookSelectionInput) => Promise<BookSelectionRecord>;
   deleteBookSelection: (theme: string, bookId: string) => Promise<void>;
   listPersonAssets: () => Promise<PersonAssetSummary[]>;
@@ -315,6 +325,10 @@ export type StoryDreamApi = {
   saveAccount: (account: AccountProfile) => Promise<AppMutationResult | null>;
   saveActivation: (activation: ActivationState) => Promise<AppMutationResult | null>;
   saveUiPreferences: (update: UiPreferencesUpdate) => Promise<AppMutationResult | null>;
+  createEditorialCollage: (input: EditorialCollageCreateInput) => Promise<AppMutationResult | null>;
+  saveEditorialCollage: (input: EditorialCollageSaveInput) => Promise<AppMutationResult | null>;
+  createMotionComic: (input: MotionComicCreateInput) => Promise<AppMutationResult | null>;
+  saveMotionComic: (input: MotionComicSaveInput) => Promise<AppMutationResult | null>;
   createHtmlVideoTask: (input: CreateTaskInput) => Promise<AppMutationResult | null>;
   updateHtmlVideoConfig: (id: string, changes: HtmlVideoConfigChange[]) => Promise<AppMutationResult | null>;
   updateHtmlVideoScene: (id: string, sceneIndex: number, changes: HtmlVideoSceneChange[]) => Promise<AppMutationResult | null>;

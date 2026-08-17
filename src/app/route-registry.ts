@@ -6,6 +6,8 @@ const loadHotBoardPage = () => import('../features/hotboard/HotBoardPage').then(
 const loadQueuePage = () => import('../features/tasks/QueuePage').then((module) => ({ default: module.QueuePage }));
 const loadHistoryPage = () => import('../features/tasks/HistoryPage').then((module) => ({ default: module.HistoryPage }));
 const loadTaskDetailPage = () => import('../features/tasks/TaskDetailPage').then((module) => ({ default: module.TaskDetailPage }));
+const loadEditorialCollagePage = () => import('../features/editorial-collage/EditorialCollagePage').then((module) => ({ default: module.EditorialCollagePage }));
+const loadMotionComicPage = () => import('../features/motion-comic/MotionComicPage').then((module) => ({ default: module.MotionComicPage }));
 const loadHtmlVideoPage = () => import('../features/html-video/HtmlVideoPage').then((module) => ({ default: module.HtmlVideoPage }));
 const loadImageLabPage = () => import('../features/labs/ImageLabPage').then((module) => ({ default: module.ImageLabPage }));
 const loadVoiceLabPage = () => import('../features/labs/VoiceLabPage').then((module) => ({ default: module.VoiceLabPage }));
@@ -26,6 +28,8 @@ export const routeLoaders = {
   'queue': loadQueuePage,
   'history': loadHistoryPage,
   'task-detail': loadTaskDetailPage,
+  'editorial-collage': loadEditorialCollagePage,
+  'motion-comic': loadMotionComicPage,
   'html-video': loadHtmlVideoPage,
   'image-lab': loadImageLabPage,
   'voice-lab': loadVoiceLabPage,
@@ -47,6 +51,8 @@ export const routeComponents = {
   'queue': lazy(routeLoaders['queue']),
   'history': lazy(routeLoaders['history']),
   'task-detail': lazy(routeLoaders['task-detail']),
+  'editorial-collage': lazy(routeLoaders['editorial-collage']),
+  'motion-comic': lazy(routeLoaders['motion-comic']),
   'html-video': lazy(routeLoaders['html-video']),
   'image-lab': lazy(routeLoaders['image-lab']),
   'voice-lab': lazy(routeLoaders['voice-lab']),

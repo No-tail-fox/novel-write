@@ -14,6 +14,7 @@
     "smoke:html-video": "scripts\\run-npm-node.cmd node_modules/tsx/dist/cli.mjs scripts/smoke-html-video.ts",
     "qa:html-video-ui": "scripts\\run-npm-powershell.cmd scripts/build.ps1 && scripts\\run-npm-node.cmd node_modules/tsx/dist/cli.mjs scripts/qa-html-video-ui.mjs",
     "qa:editorial": "scripts\\run-npm-powershell.cmd scripts/build.ps1 && scripts\\run-npm-node.cmd node_modules/tsx/dist/cli.mjs scripts/editorial-qa-electron.ts",
+    "qa:motion-comic": "scripts\\run-npm-powershell.cmd scripts/build.ps1 && vendor\\python\\python.exe scripts\\qa-motion-comic.py",
     "test": "scripts\\run-npm-powershell.cmd scripts/test.ps1",
     "test:watch": "scripts\\run-npm-powershell.cmd scripts/test-watch.ps1",
     "typecheck": "scripts\\run-npm-powershell.cmd scripts/typecheck.ps1"

@@ -1,5 +1,6 @@
 import {
   BookOpen,
+  Clapperboard,
   Circle,
   Flame,
   FlaskConical,
@@ -37,28 +38,27 @@ export const newTaskPrimaryAction: NavigationItem = { view: 'new-task', label: '
 
 export const productionNavItems: NavigationItem[] = [
   { view: 'hot-board', label: '实时热榜', hint: '热点选题', icon: TrendingUp },
-  { view: 'history', label: '历史任务', hint: '本地记录', icon: History },
   { view: 'queue', label: '自动化队列', hint: '任务队列 · 运行与审批', icon: ListChecks },
+  { view: 'history', label: '历史任务', hint: '本地记录', icon: History },
+  { view: 'book-selection', label: '选品助手', hint: '商品卖点', icon: BookOpen },
+  { view: 'benchmark', label: '对标监控', hint: '三平台洞察', icon: Radar },
+  { view: 'person-assets', label: '素材库', hint: '人物与媒体', icon: Images },
 ];
 
 export const assetLabNavItems: NavigationItem[] = [
-  { view: 'person-assets', label: '素材库', hint: '人物与媒体', icon: Images },
-  { view: 'draft-templates', label: '模板', hint: '草稿模板 · 画布', icon: LayoutTemplate },
-];
-
-export const templateSystemNavItems: NavigationItem[] = [
-  { view: 'settings', label: '系统设置', hint: 'API 与路径', icon: Settings },
-];
-
-export const contextualToolNavItems: NavigationItem[] = [
-  { view: 'book-selection', label: '选品助手', hint: '商品卖点', icon: BookOpen },
-  { view: 'benchmark', label: '对标监控', hint: '三平台洞察', icon: Radar },
   { view: 'image-lab', label: '画图实验室', hint: '分镜图片', icon: FlaskConical },
   { view: 'voice-lab', label: '配音实验室', hint: '音色试听', icon: Mic2 },
   { view: 'music-mv', label: '音乐 MV', hint: '歌词成片', icon: Music },
   { view: 'viral-analyzer', label: '爆款拆解', hint: '拉片复刻', icon: Flame },
+  { view: 'editorial-collage', label: 'VOX 视觉导演', hint: '解释型拼贴', icon: Clapperboard },
+  { view: 'motion-comic', label: 'AI 漫剧', hint: '系列与分镜', icon: Images },
   { view: 'html-video', label: 'HTML 动画视频', hint: 'HTML 渲染', icon: Play },
+];
+
+export const templateSystemNavItems: NavigationItem[] = [
   { view: 'prompt-templates', label: '提示词模板', hint: '代理提示词', icon: Sparkles },
+  { view: 'draft-templates', label: '模板', hint: '草稿模板 · 画布', icon: LayoutTemplate },
+  { view: 'settings', label: '系统设置', hint: 'API 与路径', icon: Settings },
   { view: 'account', label: '账户中心', hint: '资料与积分', icon: Circle },
   { view: 'activation', label: '激活管理', hint: '试用与授权', icon: KeyRound },
 ];
@@ -70,7 +70,7 @@ export const sidebarNavGroups: NavigationGroup[] = [
 ];
 
 export const sidebarNavItems: NavigationItem[] = sidebarNavGroups.flatMap((group) => group.items);
-export const navigationItems: NavigationItem[] = [newTaskPrimaryAction, ...sidebarNavItems, ...contextualToolNavItems];
+export const navigationItems: NavigationItem[] = [newTaskPrimaryAction, ...sidebarNavItems];
 export const taskDetailNavigationItem = { label: '任务详情', hint: '单任务流水线' } as const;
 
 export function navigationItemForView(view: ShellView): Pick<NavigationItem, 'label' | 'hint'> {
@@ -79,8 +79,11 @@ export function navigationItemForView(view: ShellView): Pick<NavigationItem, 'la
     : navigationItems.find((item) => item.view === view) ?? newTaskPrimaryAction;
 }
 
-export function taskWorkspaceView(taskType: string | null | undefined): Extract<ShellView, 'task-detail' | 'html-video'> {
-  return taskType === 'html-video' ? 'html-video' : 'task-detail';
+export function taskWorkspaceView(taskType: string | null | undefined): Extract<ShellView, 'task-detail' | 'editorial-collage' | 'motion-comic' | 'html-video'> {
+  if (taskType === 'html-video') return 'html-video';
+  if (taskType === 'editorial-collage') return 'editorial-collage';
+  if (taskType === 'motion-comic') return 'motion-comic';
+  return 'task-detail';
 }
 
 export function pageSubtitle(view: ShellView): string {
@@ -102,6 +105,8 @@ export function pageSubtitle(view: ShellView): string {
     settings: '配置 API 凭证、本地路径、TTS、IMA 与诊断',
     account: '管理本机账号资料、设备和模拟余额',
     activation: '管理本地激活状态与试用说明',
+    'editorial-collage': '把文案拆成节拍、图层、运镜和字幕，先确定风格再进入生成',
+    'motion-comic': '管理系列 Bible、角色造型、分集剧本、镜头引用与一致性门禁',
     'html-video': '文案、素材、配音、动画预览、封面和出片的独立 HTML 视频工作台',
   };
   return map[view] ?? '';

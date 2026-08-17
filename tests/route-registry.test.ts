@@ -8,6 +8,8 @@ const expectedViews = [
   'queue',
   'history',
   'task-detail',
+  'editorial-collage',
+  'motion-comic',
   'html-video',
   'image-lab',
   'voice-lab',
@@ -54,21 +56,21 @@ describe('renderer route registry', () => {
     const componentSection = registry.slice(registry.indexOf('export const routeComponents'), registry.indexOf('export function preloadRoute'));
     expect(registryKeys(loaderSection)).toEqual(expectedViews);
     expect(registryKeys(componentSection)).toEqual(expectedViews);
-    expect(registry.match(/lazy\(routeLoaders\['[^']+'\]\)/gu)).toHaveLength(18);
-    expect(registry.match(/import\('\.\.\/features\//gu)).toHaveLength(18);
+    expect(registry.match(/lazy\(routeLoaders\['[^']+'\]\)/gu)).toHaveLength(20);
+    expect(registry.match(/import\('\.\.\/features\//gu)).toHaveLength(20);
     expect(registry).toContain('export async function preloadRoute(view: ShellView)');
     expect(registry).not.toMatch(/^import \{ [A-Za-z0-9]+Page \} from '\.\.\/features\//gmu);
   });
 
-  it('keeps a focused sidebar while preserving every route in the registry', () => {
+  it('keeps new task separate, eighteen sidebar entries, and task detail route-only', () => {
     expect(newTaskPrimaryAction.view).toBe('new-task');
     expect(sidebarNavGroups.map((group) => group.label)).toEqual(['创作生产', '素材与实验', '模板与系统']);
-    expect(sidebarNavGroups.map((group) => group.items.length)).toEqual([3, 2, 1]);
-    expect(sidebarNavItems).toHaveLength(6);
-    expect(new Set(sidebarNavItems.map((item) => item.view)).size).toBe(6);
+    expect(sidebarNavGroups.map((group) => group.items.length)).toEqual([6, 7, 5]);
+    expect(sidebarNavItems).toHaveLength(18);
+    expect(new Set(sidebarNavItems.map((item) => item.view)).size).toBe(18);
     expect(sidebarNavItems.map((item) => item.view)).not.toContain('new-task');
     expect(sidebarNavItems.map((item) => item.view)).not.toContain('task-detail');
-    expect(navigationItems).toHaveLength(17);
+    expect(navigationItems).toHaveLength(19);
     expect(new Set([...navigationItems.map((item) => item.view), 'task-detail'])).toEqual(new Set(expectedViews));
   });
 
@@ -89,6 +91,8 @@ describe('renderer route registry', () => {
 
   it('routes HTML tasks to their workspace and hands the selected task through once', async () => {
     expect(taskWorkspaceView('html-video')).toBe('html-video');
+    expect(taskWorkspaceView('editorial-collage')).toBe('editorial-collage');
+    expect(taskWorkspaceView('motion-comic')).toBe('motion-comic');
     expect(taskWorkspaceView('story')).toBe('task-detail');
     expect(taskWorkspaceView(undefined)).toBe('task-detail');
 

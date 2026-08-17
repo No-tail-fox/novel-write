@@ -58,7 +58,6 @@
 
 .app-shell[data-editorial-shell] .new-task-button .sd-button__content,
 .app-shell[data-editorial-shell] .nav-item .sd-button__content,
-.app-shell[data-editorial-shell] .contextual-tools-trigger .sd-button__content,
 .app-shell[data-editorial-shell] .recent-task-item .sd-button__content,
 .app-shell[data-editorial-shell] .trial-activation-bar .sd-button__content,
 .app-shell[data-editorial-shell] .credit-chip .sd-button__content,
@@ -135,7 +134,6 @@
 
 .app-shell[data-editorial-shell] .recent-task-item,
 .app-shell[data-editorial-shell] .recent-task-compact,
-.app-shell[data-editorial-shell] .contextual-tools-trigger,
 .app-shell[data-editorial-shell] .trial-activation-bar,
 .app-shell[data-editorial-shell] .credit-chip,
 .app-shell[data-editorial-shell] .feedback-link {
@@ -147,42 +145,6 @@
 
 .app-shell[data-editorial-shell] .recent-task-compact {
   display: none;
-}
-
-.app-shell[data-editorial-shell] .contextual-tools-trigger {
-  width: 100%;
-  min-height: 34px;
-  display: grid;
-  grid-template-columns: 18px minmax(0, 1fr) auto;
-  gap: 8px;
-  justify-content: stretch;
-  border-color: var(--shell-border);
-  background: var(--shell-surface-raised);
-  color: var(--shell-text);
-  text-align: left;
-}
-
-.app-shell[data-editorial-shell] .contextual-tools-trigger.active,
-.app-shell[data-editorial-shell] .contextual-tools-trigger:hover {
-  border-color: var(--shell-accent);
-  background: color-mix(in srgb, var(--shell-accent) 10%, var(--shell-surface-raised));
-  color: var(--shell-accent-strong);
-}
-
-.app-shell[data-editorial-shell] .contextual-tools-trigger small,
-.contextual-tool-menu-label small {
-  color: var(--shell-muted);
-  font-size: 11px;
-}
-
-.contextual-tool-menu-label {
-  min-width: 180px;
-  display: grid;
-  gap: 2px;
-}
-
-.contextual-tool-menu-label strong {
-  font-weight: 600;
 }
 
 .app-shell[data-editorial-shell] .trial-activation-bar strong {
@@ -296,7 +258,6 @@
   .app-shell[data-editorial-shell] .nav-section-label,
   .app-shell[data-editorial-shell] .new-task-button .sd-button__content,
   .app-shell[data-editorial-shell] .nav-item .sd-button__content,
-  .app-shell[data-editorial-shell] .contextual-tools-trigger .sd-button__content,
   .app-shell[data-editorial-shell] .trial-activation-bar .sd-button__content,
   .app-shell[data-editorial-shell] .credit-chip .sd-button__content,
   .app-shell[data-editorial-shell] .feedback-link {
@@ -306,7 +267,6 @@
   .app-shell[data-editorial-shell] .brand-block,
   .app-shell[data-editorial-shell] .new-task-button,
   .app-shell[data-editorial-shell] .nav-item,
-  .app-shell[data-editorial-shell] .contextual-tools-trigger,
   .app-shell[data-editorial-shell] .trial-activation-bar,
   .app-shell[data-editorial-shell] .credit-chip {
     width: 48px;
@@ -320,13 +280,6 @@
     display: grid;
     place-items: center;
     border-radius: 5px;
-  }
-
-  .app-shell[data-editorial-shell] .contextual-tools-trigger {
-    min-height: 30px;
-    padding: 0;
-    grid-template-columns: 1fr;
-    place-items: center;
   }
 
   .app-shell[data-editorial-shell] .recent-task-strip {
@@ -347,8 +300,7 @@
   }
 
   .app-shell[data-editorial-shell] .sidebar-bottom {
-    min-height: 76px;
-    grid-template-rows: auto auto auto;
+    display: none;
   }
 
   .app-shell[data-editorial-shell] .account-entry-grid {

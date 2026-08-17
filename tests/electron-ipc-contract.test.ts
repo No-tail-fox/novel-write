@@ -35,6 +35,9 @@ describe('electron ipc contract', () => {
     expect(main).toContain("trustedHandle('book-selection:save', async (_event, input: BookSelectionInput) => (await getDb()).upsertBookSelection(input))");
     expect(preload).toContain("saveBookSelection: (input: BookSelectionInput): Promise<BookSelectionRecord> => invokeTrusted('book-selection:save', input)");
     expect(apiContract).toContain('saveBookSelection: (input: BookSelectionInput) => Promise<BookSelectionRecord>');
+    expect(main).toContain("trustedHandle('book-selection:discover', async (_event, input: BookDiscoveryRequest) => discoverDangdangBooks(input))");
+    expect(preload).toContain("discoverBooks: (input: BookDiscoveryRequest): Promise<BookDiscoveryResult> => invokeTrusted('book-selection:discover', input)");
+    expect(apiContract).toContain('discoverBooks: (input: BookDiscoveryRequest) => Promise<BookDiscoveryResult>');
   });
 
   it('keeps ordinary manual-cover selection and paths in the main process', async () => {

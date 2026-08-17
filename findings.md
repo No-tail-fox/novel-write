@@ -1,3 +1,94 @@
+# VOX 与 AI 漫剧研究发现（2026-08-17）
+
+- 2026-08-17 最终 Electron QA 首轮复核：1440x900 与 1040x720 的三栏边界、预览画布和时间线均无文档/网格横向溢出，运行时错误为 0，画面方差非零；但 1040x720 的右侧渲染策略分段控件出现内部横向滚动，第三项文本被局部裁切。等分宽度修复已使所有内部溢出归零，但先后出现 `Omni 动态海报` 孤字换行、内容比例分配后“混合模式”选中态换行；新增标签换行门禁准确拦截了后者，最终需要内容比例分配、零项间距和 10px 单行标签共同保证紧凑适配。
+- 最终 1440x900 / 1040x720 Electron 报告为 `passed`：运行时错误为 0，文档、工作区网格、渲染策略容器及三个策略 Tab 的溢出均为 0，三个标签均不换行，三栏互不重叠；预览画面方差分别为 14987.61 / 16057.64，隔离 QA 进程和临时配置目录均已清理。
+- 第 7 阶段数据边界：standard 的权威场景/字幕/图片/视频/配音来自 `TaskArtifactSnapshot`，HTML 的权威场景/素材/配音/composition/成片来自 `parseHtmlVideoPipelineData()` 返回的 V2 文档；适配器应是纯只读投影，不能回写 `Task.pipelineData`。
+- standard 时间线可直接使用 `StoryboardScene.durationMs` 累加，字幕 cue 继续独立保存并按 `sceneId` 或开始时间映射到镜头；同一场景的多个 cue 不得增加图片或镜头数量。
+- HTML 场景只有 composition 或 voice 完成后才有可信时长；优先 composition、其次 voice，均不存在时保留 0ms/pending，不能用固定 3 秒之类估算值冒充权威时间。
+- 当前共享合同还缺 standard/html 的工作流文档、全局字幕 cue 与只读来源引用；应在 `production-workflow.ts` 补合同，在独立 adapter 文件实现投影，避免让已有 runner 依赖新层。
+- standard/html 两个只读适配器已完成：稳定 ID 由任务 scope 与源内容签名生成；standard 的 AI 视频覆盖优先进入 clip，同时保留图片版本与 Provider job；HTML composition 字幕换算到全局毫秒，未渲染场景保留 captionTexts 且时长为 pending/0ms。
+- StoryDream 已有可复用底座：`VideoProviderConfig`/能力声明、预算与并发策略、`TaskDagNode`、叙事计划、平台变体、HTML 场景计划、素材/配音/合成快照和输出模型。
+- 当前普通 runner 明确拒绝 `taskType === 'html-video'`，说明“共享领域核心 + 独立执行器”符合现有架构，不应把 VOX/漫剧硬塞进普通 runner 的条件分支。
+- 现有 `StoryboardScene` 包含内部 `StoryboardSegment[]`，字幕 `SubtitleCue` 用 `sceneId`/`segmentId` 映射；新流程必须保持视觉场景和字幕切分分离。
+- `BigBanana-AI-Director` 当前仓库的根 `LICENSE` 是非 OSI、禁止商业使用的 BigBanana Community License 1.0，README 仍写 CC BY-NC-SA 4.0，许可元数据自相矛盾；只能借鉴产品思路，不能作为 StoryDream 商业代码来源。
+- 本机没有 `gh` CLI；GitHub 项目核验改走仓库页面、raw 文件、Git 远端和已下载源码，不重复依赖缺失命令。
+- 目标仓库已确认：`hassancs91/claude-faceless-shorts-creator`（MIT，133 stars，Remotion/ElevenLabs/逐词字幕/12 个示例）与 `Alisa0808/vox-director`（MIT，1329 stars，Atlas Cloud + FFmpeg 的 agent skill）；数据为 2026-08-17 GitHub API 快照。
+- `vox-director` 搜索结果中存在大量同名派生项目，后续分析固定以 `Alisa0808/vox-director` 为主仓；faceless 固定以有 133 stars 的 `hassancs91` 原仓为主，不采用 0-star fork。
+- `claude-faceless-shorts-creator` 实际包含三条轨：TSX/Remotion、生成式角色视频、VOX 拼贴；共享骨架是 beats 合同、ElevenLabs 逐词时间戳字幕、SFX/音乐库、手机尺寸逐帧 QA 与无缝循环。其 VOX 轨强调分层素材、抠图/HTML/SVG、`CollageBoard` 确定性运镜。
+- `vox-director` 实际支持 B-roll 纯生成、A-roll 真人口播编辑、C-roll 静态人物/产品锚定；核心流程是 beats → 3–4 风格试片 → 拼贴关键帧 → Omni/Kling 动效 → TTS/音乐 → FFmpeg，并有分镜确认、选风格两个检查点。
+- 两仓虽然 star 增长快，但都创建于 2026-07，属于新项目而非多年成熟框架：faceless 302 个树节点、12 个完整示例，主分支最后代码推送 2026-07-15；vox-director 52 个树节点、脚本化 skill，最后推送 2026-08-11。推荐其“方法与合同”，不能把 star 数等同于工程成熟度。
+- Faceless 仓的 README 说明生成式视频像素不可复现且需提交素材；这支持 StoryDream 把 `AssetVersion + ProviderJob + provenance/cost` 设为一等对象，而不是只保存最终 MP4。
+- Faceless 的 VOX 方法要求每个场景先“解剖”为 2–6 个可命名图层，再用全局相机关键帧、局部图层入场、视差深度和持续微动组装；文字/图表用 HTML、箭头/路线用代码矢量，AI 图禁止直接生成文字。这一层非常适合移植到 StoryDream 现有 HTML/Canvas 渲染器。
+- Faceless 的质量门禁可直接产品化：关键入场帧、相机到达帧、转场帧、末帧按手机尺度导出 PNG，检查裁切、对比度、抠图边缘、时间同步和首尾循环；语音先取得真实逐词时间戳，再重排字幕与画面。
+- Faceless 的生成式轨有三条可靠规则：角色参考只建立一次并锁定、生成前展示本次成本、结尾用首帧作为 end-frame 约束；这些规则同样适用于 AI 漫剧的角色一致性和付费重跑。
+- `vox-director` 的示例 `beats.json` 目前把绝对本机路径、供应商 URL、叙事 beat、shot 和成品素材混在一个文件中；StoryDream 不应照搬该 JSON，应拆成稳定领域对象、素材版本和 Provider Job。
+- `vox-director` 的可用导演知识包括 14 类叙事弧、≤3 秒钩子、30 秒 6–8 beats、每 3–5 秒视觉变化、受限运镜词表、相邻镜头防重复与 `camera_move`/`element_motion` 两轴分离；这些应做成规则引擎/预设，不应继续藏在 agent 长提示词里。
+- `vox-director` 虽有 Provider 抽象，但当前 registry 只有 Atlas Cloud；它的自动重提会把 failed/stalled job 无条件重新提交至上限。StoryDream 应复用现有 Provider/DAG，同时加入幂等键、预算检查、用户许可和单镜头重跑，避免静默重复付费。
+- 元素级本地引擎已验证的难点不是渲染，而是拆件和归位；其有效技巧是元素回到原海报 bbox、背景保留原海报、落点区域用局部模糊避免“幽灵副本”。首版应支持 4–6 个预定义图层槽位，不做任意自动分层。
+- Remotion 当前不是 MIT：npm `remotion@4.0.512` 标为 `SEE LICENSE IN LICENSE.md`，官方仓库只对个人、非营利或 ≤3 人营利组织免费，更大营利组织需 Company License，且 5.0 许可将变化。StoryDream 应移植其时间轴/图层模式到现有 HTML 渲染器；只有完成主体资格/采购确认后才直接依赖 Remotion。
+- AI 漫剧平台层候选的 2026-08-17 快照：`alibaba/lumenx` 1085 stars/MIT，`xuanyustudio/LocalMiniDrama` 1314 stars/MIT，二者都自 2026-02 起持续更新；它们比单一模型仓更适合作为 StoryDream 的产品/数据架构参考。
+- `eternityspring/shuohao-skills` 1597 stars/Apache-2.0，但创建于 2026-08-06，成熟度来自严格的角色/大纲/美术/剧本/分镜门禁，而非长期运行历史；适合借鉴生产规范，不适合作为运行时底座。
+- `StoryDiffusion` 6446 stars/Apache-2.0，代码最后推送停在 2024-09；可作为角色一致性研究组件，但不能承担完整生产编排。`LatentSync` 5999 stars/Apache-2.0 可作可选口型组件，仍需独立核验模型权重/人物授权和云端 Provider 可用性。
+- `LivePortrait` 当前 GitHub 规范仓为 `KlingAIResearch/LivePortrait`（旧 `KwaiVGI` 链接重定向），18.9k stars、仍更新，但 GitHub API 许可证为 NOASSERTION；在读取其具体许可证与模型条款前不进入商业默认清单。
+- LumenX 的源码而非 README 证明其可借鉴性：有角色工作台、Consistency Vault、共享资产池、上一集帧引用、I2V/R2V 分镜、候选版本对比、任务队列、视频恢复测试、模型 Catalog、时间线与导出模块。其核心价值是“系列资产和任务可恢复”，不是某个模型名称。
+- LumenX 仍是 Python/FastAPI + React/Tauri 的完整独立应用，不能直接嵌入 StoryDream；应抽取对象关系和交互合同，避免把第二套后端/前端框架带进 Electron。
+- Shuohao 把角色、大纲、美术设定、剧本、分镜拆成边界清楚的五段技能，每段都有 JSON schema、`validate/checkup`、示例夹具和断点续跑；坏角色卡只重跑该角色，爽点/重大节点不通过就阻断下一阶段。这一“确定性门禁 + 局部返工”比其提示词内容更值得复用。
+- 漫剧前期不应让一个大模型一次吐出整季：应先 `Series Bible/Character Bible → Season Outline → Episode Script → Shot Board`，每步持久化、校验并等待所需审批，再进入付费图像/视频生成。
+- LumenX 的资产模型值得直接借鉴语义：图片/动态参考各自有候选版本和 `selected_id`，收藏版本不被自动清理；视频任务持久化 provider/task/request ID、I2V/R2V 模式、参考 URL、用户星标和短标签，最终 take 到合成阶段再决定。
+- LumenX 用 `persona` 把同一人物的不同年龄/造型视觉单元分组，这比单一 `CharacterCard` 更适合连载漫剧；StoryDream 应采用 `Character → Look/Costume Variant → Reference Asset`，而非每角色只有一张图。
+- `LocalMiniDrama` 与 StoryDream 技术栈最接近：Electron + Vue/Node + SQLite，本地项目文件，列表/画布同源数据，项目 ZIP 导入导出、全局素材库、历史版本、尾帧衔接、视频任务恢复、分组重跑和 Windows Release 均已存在；优先借鉴其操作闭环。
+- LocalMiniDrama 代码同时暴露维护风险：`FilmCreate.vue` 超过 400 KB、`videoClient.js` 超过 160 KB，属于功能成熟但边界偏重的单体实现。StoryDream 应复用其交互思想，不复制其巨型页面/多供应商条件分支。
+- LivePortrait 代码是 MIT，但根许可证明确说明所带 InsightFace 检测模型仅限非商业研究；商业产品必须替换该检测模型。因此只能作为“可选头像运动 Provider”的技术参考，不能原样打包。
+- HunyuanVideo-Avatar 使用腾讯社区许可证，不适用于欧盟、英国和韩国，并有 1 亿 MAU 商业条款及用途限制；不适合作为 StoryDream 的默认跨区域底座。
+- Wan2.2 的代码/模型为 Apache-2.0，且包含 I2V、S2V、人物动画/替换；但 14B 路线通常要求约 80 GB VRAM，5B TI2V 仍需约 24 GB。应通过云端 Provider 暴露能力，不在 StoryDream 桌面包中捆绑。
+- LTX-Video、FramePack、Wan2.2 都是 10k+ stars/Apache-2.0 的通用视频引擎；它们适合作为后端候选，不应改变上层 `i2v/r2v/first-last-frame/speech-to-video/portrait-motion/lip-sync` 能力合同。
+- StoryDiffusion 低显存版仍建议 >20 GB GPU，LatentSync 推理/训练也有显著 GPU 需求；StoryDream 当前云 API 路线下，最稳妥的是 Provider 可插拔并保存模型/版本/许可，而不是本地安装模型。
+- 最终架构决定：新增共享 `ProductionProject` 层，保留四个独立 `WorkflowSpec`/执行器（standard、html-video、editorial-collage、motion-comic）；不继续给现有巨大 `Task` 接口堆大量可选字段，也不把四条流水线合成条件分支 runner。
+- 共享核心对象固定为 `Project/Series/Episode`、`Source/Script/Bible`、`Beat/Segment/Shot/SubtitleCue`、`Asset/AssetVersion`、`ProviderJob`、`TimelineClip`、`QualityReport/Export`。工作流差异放在 discriminated `workflowSpec`，共享对象使用稳定 ID 关联。
+- 时间层级建议：漫剧为 `Episode → DramaticScene → Segment(≤15s) → Shot(通常 2–5s) → SubtitleCue`；VOX 为 `Episode/Short → NarrativeBeat → Shot → Layer`。现有 `StoryboardScene` 继续表示产图视觉场景，内部 segment/cue 不改变图片数量。
+- VOX 首版只做 B-roll 30 秒 9:16 垂直切片：选题/资料 → 叙事弧与 6–8 beats → 风格试片 → 每镜 2–6 图层 → 逐层生图/抠图 → 确定性相机/入场 → 可选 Omni 活海报 → TTS/字幕/音效 → 帧 QA/导出。A-roll/C-roll 在数据合同稳定后再加。
+- VOX 每镜用 `renderStrategy: deterministic-layers | living-poster | hybrid`：文字、数字、图表、地图标注、路线和品牌元素默认确定性渲染；Omni 只动背景/人物/纹理等有机元素，生成后再叠加真实文字。不能把整张含关键文字的海报完全交给视频模型。
+- VOX 三个强制门：分镜确认、风格试片确认、付费批量生成前的成本确认；其余可按现有四档自动化策略运行。失败重试必须经过预算和幂等检查，支持按 shot/layer 局部重跑。
+- AI 漫剧独立主线从 `Series Bible → Character/Look/Costume/Scene/Prop Bible → Season Outline → Episode Script → Shot Board → Keyframes → I2V/R2V/S2V → Dialogue/TTS → optional lip-sync → Timeline` 展开；每一阶段有 JSON schema、质量门和版本快照。
+- 漫剧首版应做 1 集 45–60 秒垂直切片：2–3 个角色、2 个主场景、8–12 镜头；角色参考、造型、场景和道具是 series 级共享资产，镜头只引用被选中的版本。避免第一期就做整季、自动口型和复杂多人同镜。
+- 与现有两流程结合的方式是适配器而非迁移：standard 的 `StoryboardScene/Image/Video/Subtitle` 投影到共享 shot/timeline；HTML 的 `HtmlVideoScenePlan/Asset/CompositionSnapshot` 投影到 layer/timeline。之后可从任一任务“创建 VOX/漫剧变体”，原任务保持可读可回退。
+- 交付顺序：0 共享 ID/合同和旧数据适配器；1 VOX 独立垂直切片；2 抽出资产版本/Provider Job/时间线公共服务；3 AI 漫剧单集垂直切片；4 标准/HTML 变体互转与同源列表/画布；5 A-roll/C-roll、口型、批量整季。
+- 验收重点：稳定 ID 和旧任务兼容；断点恢复；单镜/单层重跑不污染已选资产；费用预估/实际费用可追溯；人物/造型/场景连续；字幕与语音真实时间对齐；关键帧截图无裁切/遮挡/乱码；成片时长、画幅、音轨和首尾连续性合格。
+- 实施已新增共享 `ProductionWorkflowKind`、资产版本、Provider Job、时间线、质量报告和 motion-comic 角色造型/镜头引用合同；VOX 文档独立使用 `editorial-collage` discriminant，不扩张旧 `Task` 接口。
+- VOX 合同已经编码分镜/风格/成本三类门禁：首 beat ≤3 秒、单 shot ≤15 秒、单 shot ≤6 图层、shot 时长合计等于 beat、关键帧有序且不越界、多字幕 cue 可属于同一视觉 beat、付费生成必须有成本批准时间。
+
+---
+
+# 选品助手最终验收发现（2026-08-17）
+
+- 首轮 Labs Electron QA 的 4 张选品截图都在当当请求尚未返回时拍摄，画面显示“正在连接当当”和“暂无匹配图书”；报告中的交互仅为聚焦“选品助手”导航，因此不能证明核心选品流程。
+- 当前页面初次加载直接调用 `discoverBooks()`，但没有把这段请求纳入 `discoveryAction.busy`，导致请求期间错误展示空态；这是需要修复的产品状态问题，不只是 QA 等待问题。
+- 最终验收必须在榜单至少出现 1 行后执行：用首行书名验证列表搜索、收藏首行并确认状态持久化、点击“去创作”并确认新建任务处于 AI 模式且带入书名/关键词/商品资料，再返回选品页拍摄普通与紧凑窗口。
+- 20/20 Labs QA 通过后的同屏检查确认 24 条均来自当当实时公开搜索；同时发现当当 `<b>` 搜索高亮被标签清洗成标题断词，以及 1440px 含侧栏时操作列进入横向滚动区，均按 P2 在最终截图前修复。
+- 最终同屏复核通过：标题高亮合并正确，1500px 以下保留书名、分类、卖点、潜力与操作列；普通/紧凑窗口的收藏、对比和“去创作”都无需横向滚动。
+- `design-qa.md` 已记录全屏与表格聚焦对照、三轮修复历史、五项必查视觉面和 20/20 Electron 交互证据，最终结果为 `passed`。
+
+---
+
+# 左侧固定目录恢复发现（2026-08-17）
+
+- 用户截图显示“更多工具”打开后出现覆盖主内容区的深色遮罩，菜单内容贴在左侧但超出原导航区域，造成接近全屏黑屏的观感。
+- 现有计划明确记录了上一轮将 16/17 个常驻入口收敛为 6 个主入口，并新增 8 项“更多工具”菜单；用户本轮要求撤销该收敛交互，恢复之前的固定排列。
+- 修复应落在共享 `AppShell` 导航层，保留 route ID 和业务页面，不在各功能页另建入口。
+- `AppShell.tsx` 当前在 `.sidebar-bottom` 中通过 `Menu` 和 `data-contextual-tools-trigger` 渲染 8 个工具；菜单项仍使用原有 `view`、图标、标签和提示，可直接复用为固定 `NavButton`。
+- `product-shell-ui.test.ts`、`renderer-architecture.test.ts` 与 `route-registry.test.ts` 把“6 个主入口 + 上下文工具菜单”锁成合同，需要一起恢复为完整固定目录合同。
+- 截图中的弹层从左侧导航内部起始，却用深色层覆盖整个主内容区；即使修复尺寸，仍不符合用户要求的高频固定入口，因此应删除菜单交互而非只改遮罩 CSS。
+- Git 历史确认 `410301b` 才引入 `Menu` 与 `contextualToolNavItems` 分流；其父版本的稳定顺序是三组 `6/5/5`，共 16 个固定侧栏入口。
+- 恢复时沿用当前“自动化队列 / 素材库 / 模板”等最新命名，但把路由放回旧分组位置；这样保留最新产品语义并满足用户要求的原排列。
+- 账户与激活保留旧版固定目录入口，也继续保留侧栏底部的积分、试用和账户快捷操作；两者用途不同，且符合用户要求的历史布局。
+- 固定目录实现后的 6 个聚焦测试文件共 232 项全部通过；TypeScript 检查和生产构建通过，renderer 入口为 385322 bytes。
+- 首轮紧凑截图中 16 个固定导航图标全部可见，但底部重复快捷区贴近视口下缘；紧凑模式隐藏该重复区，历史、账户和激活仍由固定目录直接访问，桌面模式保持原快捷区。
+- 最终 Electron shell 深浅主题 × 普通/紧凑窗口 4 场景，以及 HTML 视频普通/紧凑 2 场景全部通过；实拍无黑屏、菜单遮罩、横向越界或侧栏截断，HTML 视频入口可直接点击并正确高亮。
+- 开发服务已在 `http://127.0.0.1:5173/` 返回 HTTP 200，Electron 进程使用当前源码运行。
+- 收尾时发现工作区并行出现选品发现/IPC 相关修改；这些文件未被本轮回退，定向测试确认剩余 3 项失败来自该未完成功能线，不属于导航恢复。
+
+---
+
 # 云端 AI 视频、持久化 DAG 与项目变体落地发现（2026-08-17）
 
 - 用户明确不做本地 AI 模型部署，因此上一轮 ComfyUI/Wan 本地 sidecar 只保留架构参考，当前实现必须以可配置云端 API 为唯一 AI 视频执行路径。
@@ -1722,5 +1813,67 @@
 - 首轮人工截图发现嵌套 Fluent Dialog 会叠加遮罩并压暗大图；已改为同一“热点正文”Dialog 内的图文/大图阅读模式切换，避免双焦点层和布局跳变。
 - 修正后 1440×900、920×720 实拍中，大图、标题、前后翻页、返回图文和底部正文操作均清晰可达；画廊与查看器均无横向溢出或真实裁切。
 - 后续平台兼容补强点：微博公开页常见 `$render_data -> text_raw/pic_infos`，头条常见 `_SSR_HYDRATED_DATA`，知乎 SSR 的 `content` 字段可能把 `<img>` 包在 HTML 字符串中。
+
+---
+# 右上角主题按钮悬停闪屏修复发现（2026-08-17）
+
+- 壳层测试确认右上角主题按钮使用 `Tooltip` 包裹 `IconButton`，主题切换回调应由点击触发。
+- `IconButton` 已默认写入 `aria-label` 和原生 `title`；外层 Fluent `Tooltip` 使同一个主题按钮同时拥有原生提示与 Portal 提示，这是 hover 时唯一新增的整窗层级和重复提示机制。
+- 修复只移除主题按钮的 Fluent `Tooltip` 包装，保留原生 `title`、可访问名称、图标、禁用态和 `onClick={toggleTheme}`；最小化、最大化、关闭按钮的既有 Tooltip 不受影响。
+- Electron QA 使用 `webContents.sendInputEvent` 真实移动鼠标，覆盖深色/浅色主题与 1440x900、1080x720 两种内容区尺寸；每场景连续采样 6 帧，并执行移入、移出、再次移入。
+- 4 个场景的 document 与 StoryDream Provider 主题始终一致，壳层持续可见，按钮边界稳定；`blankFrameCount=0`、`roleTooltipCount=0`、`tooltipMechanismCount=1`。
+- 4 张悬停状态截图人工复核无黑屏、跳位、遮挡或对比度问题，报告与截图位于 `.artifacts/theme-hover-stability-2026-08-17/`。
+- Windows `rg` 不展开 `src/styles*.css` 路径通配符；后续改为显式文件或目录配合 `-g`，不重复该命令。
+- PowerShell `Copy-Item -LiteralPath` 不展开 `*`；截图归档改为从已确认的 captures 目录枚举文件并逐个复制。
+- PowerShell 双引号会改变内嵌 `rg` 正则；收尾行号定位改用 `Select-String -SimpleMatch`，生产文件未受影响。
+
+---
+
+# AI 与全网搜索组合模式按钮解锁发现（2026-08-17）
+
+- 用户截图中“全网搜索”和“AI 内置知识补全”同时开启，但尚未执行搜索、没有网页来源，生成按钮被禁用。
+- 根因是 `canComposeResearchCopy` 仍以 `webSearchEnabled` 强制要求 `selectedSources.length > 0`，没有让 AI 内置知识成为组合模式下的独立兜底来源。
+- 正确合同是按实际可用来源判断：AI 开启即可生成；仅网页模式才要求选中网页；组合模式无网页时按 AI-only 生成，有网页时再结合网页。
+
+---
+
+# 选品助手榜单、搜索与带货创作闭环发现（2026-08-17）
+
+- 用户给出的 StoryBound 参考图是桌面高密度表格工作台：顶部主题搜索与“生成书单”，中部赛道快捷入口和高级筛选，主体按当当榜排名展示书籍、AI 细分类/卖点、销量级、带货潜力、视频号关键词、创作状态及行内操作。
+- 当前工作树已有未提交的壳层/导航改动，且现有计划正在恢复固定“选品助手”入口；本轮必须在这些差异上增量实现并保留其他改动。
+- 本轮会把截图作为信息架构与交互参考，同时遵守 StoryDream 既有 Fluent UI、珊瑚色品牌强调和桌面工作区密度，不机械复制截图的绿色/暗黑品牌外观。
+- 原始参考图为 1693×943。首屏约 190px 用于搜索、快捷赛道和筛选，余下区域由带 sticky 表头的单一纵向表格占据；榜单排名、40px 左右书封、书名/作者/价格、AI 标签、卖点、销量级、星级潜力、视频号潜力、关键词、创作状态与操作均保持稳定列宽。
+- Product Design saved context preflight 返回 `user-context.md` 不存在；本轮设计依据使用用户当前截图、StoryDream 源码、语义 token 与项目组件合同，不依赖未验证的历史设计来源。
+- 视觉转译决策：复刻信息架构、密度、sticky 表头和工作流，不复刻 StoryBound 的绿色主品牌；StoryDream 的珊瑚主操作与语义状态色继续作为权威主题。
+- `BookSelectionPage.tsx` 已有本地 `BookSelectionRecord[]`、稳定 `{theme, bookId}` 选择、最多 4 项对比、五维机会评分、对标证据、创作简报和删除/保存能力；不能用纯新表格覆盖这些状态与数据。
+- 现有创作交接通过 `sessionStorage.book_product_info` 进入 `new-task`，对标交接通过 `benchmark_search`；这是本轮“去创作”应复用的既有合同。
+- 旧候选页仍使用大量原生 button/input/select/textarea，属于被改工作流中的遗留实现；本轮应逐步换成 `src/ui` 组件，至少保证新增搜索、筛选、快捷赛道、收藏和行内命令不引入新的原生控件。
+- `NewTaskPage` 当前读取 `sessionStorage.book_product_info` 后直接把 JSON 字符串写入 `productInfo` 并启用 `keepPromotion`；新交接应改为人可读且可直接进入 prompt 的图书资料，同时兼容旧 JSON 值。
+- 项目 UI 层已提供 `Button`、`IconButton`、`TextField`、`TextAreaField`、`SelectField`、`CheckboxField`、`Tabs`、`SegmentedControl`、`Dialog`、`Tooltip` 等足够组件，无需新增第三方 UI 依赖。
+- 2026-08-17 对 `https://search.dangdang.com/?key=抗衰养生&act=input` 实测返回 HTTP 200、约 315 KB、GB2312 HTML；公开结果项含顺序位置、产品 ID/链接、封面、标题、现价、作者、出版日期和出版社，足以形成“当当搜索榜”。
+- 当当搜索结果顺序是相关度/站内排序证据，不等于可验证的销量榜；UI 应写“当当搜索榜/相关度排序”，评论量或销售级仅在公开结果确有字段时显示，不能从排名推导销量。
+- `public-research` 网络策略允许公开 HTTP(S)、限制重定向/体积/超时与危险头，可直接复用；当当 GB2312 响应需要按 charset 解码，不能直接使用默认 UTF-8 `readTextBounded()`。
+- 项目没有声明生产 HTML DOM 解析依赖；`linkedom/htmlparser2` 只出现在开发依赖的传递锁项且不会被现有 electron-builder 文件白名单打包。实现应使用严格限定在当当结果项结构的解析器并用完整夹具回归，避免引入与本功能不成比例的新运行时依赖。
+
+---
+# AI 漫剧 Phase 8 实施发现（2026-08-17）
+
+- 采用“一个 StoryDream 任务保存一个系列项目”的所有权：Series Bible、角色身份与造型、场景和道具在系列级共享；`episodes[]` 各自拥有戏剧场景、镜头、对白和时间线。
+- 角色身份与造型必须是两个稳定实体；镜头引用 `characterLookIds`、`sceneAssetId`、`propAssetIds`，不复制提示词快照来冒充一致性。
+- 首版仅创建和编辑结构草案，API 只包含 `motion-comic:create` 与 `motion-comic:save`，不暴露生成、运行或 Provider 命令。
+- `pipeline_data` 继续承载严格版本化文档；保存沿用 VOX 的 `expectedUpdatedAt` 乐观并发、身份字段不可变、归档/运行中只读约束。
+- 独立工作台沿用三栏作者工具模式：系列树与稳定 ID 选择、当前镜头画布/时间线、按实体类型切换的检查器；普通和紧凑桌面都必须验收。
+- 最终实现把共享制片合同中的 motion-comic 占位类型替换为真实领域类型别名，同时保持普通视频、HTML 视频、VOX 与 AI 漫剧四个 runner 独立。
+- Electron 实测创建“雨夜来信”、选择第二镜、把景别改为“特写反应”并保存成功；保存后按钮回到禁用态，证明乐观并发和脏状态回收正常。
+- 1440x900 与 1040x720 报告均为 `timelineShots=6`、`treeShots=6`、横向溢出 0、运行时错误 0，且 `providerJobs=0`；首版结构编辑边界没有被生成命令突破。
+- 原始截图人工复核确认：桌面三栏宽度稳定；紧凑窗口收起全局导航文字后，项目树、画布和检查器仍保持独立滚动，没有面板重叠、空白画布或关键控件裁切。
+
+## 上传范围判断
+
+- 当前分支为 `codex/storydream-fluent-ui-system`，跟踪 GitHub `origin/codex/storydream-fluent-ui-system`；上传前必须重新 fetch 并验证远端重叠。
+- 提交范围包含已完成的源码、测试、QA 脚本和项目记录；`.artifacts/` 含浏览器 profile，`.codex-audit-temp/` 为运行缓存，两者只留本机并加入忽略规则。
+- 不使用 `git add .`；按明确路径暂存后检查 staged 清单，避免把本地 QA 数据或未知文件带入提交。
+- Git smart HTTP 两种传输均被连接重置，但使用本机已存凭据的 GitHub REST API成功确认远端分支头为 `410301bce82eb5b4c7e2cc9adfb7dda277881e03`，与本地 tracking ref 一致。
+- 上传前全量回归两次分别为 1872/1878、1873/1878；库存缺口已修正，剩余失败均在 Windows 临时目录或默认 5 秒边界，逐项串行聚焦全部通过。类型检查与生产构建通过。
 
 ---

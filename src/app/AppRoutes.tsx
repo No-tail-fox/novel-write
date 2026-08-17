@@ -11,6 +11,8 @@ const {
   'queue': QueuePage,
   'history': HistoryPage,
   'task-detail': TaskDetailPage,
+  'editorial-collage': EditorialCollagePage,
+  'motion-comic': MotionComicPage,
   'html-video': HtmlVideoPage,
   'image-lab': ImageLabPage,
   'voice-lab': VoiceLabPage,
@@ -38,7 +40,11 @@ export function AppRoutes({
   isHistoryTombstoned,
   historyFamilyEpochs,
   refreshTaskDetail,
+  requestedEditorialCollageTaskId,
+  requestedMotionComicTaskId,
   requestedHtmlTaskId,
+  onRequestedEditorialCollageTaskHandled,
+  onRequestedMotionComicTaskHandled,
   onRequestedHtmlTaskHandled,
   onActiveHtmlTaskChange,
   refreshViralEvents,
@@ -56,7 +62,11 @@ export function AppRoutes({
   isHistoryTombstoned: (family: HistoryFamily, id: string) => boolean;
   historyFamilyEpochs: Partial<Record<HistoryFamily, number>>;
   refreshTaskDetail: (taskId: string) => Promise<void>;
+  requestedEditorialCollageTaskId: string;
+  requestedMotionComicTaskId: string;
   requestedHtmlTaskId: string;
+  onRequestedEditorialCollageTaskHandled: (taskId: string) => void;
+  onRequestedMotionComicTaskHandled: (taskId: string) => void;
   onRequestedHtmlTaskHandled: (taskId: string) => void;
   onActiveHtmlTaskChange: (taskId: string) => void;
   refreshViralEvents: (analysisId: string) => Promise<void>;
@@ -84,6 +94,8 @@ export function AppRoutes({
       {activeView === 'image-lab' ? <ImageLabPage api={api} state={state} applyState={applyState} /> : null}
       {activeView === 'voice-lab' ? <VoiceLabPage api={api} state={state} applyState={applyState} /> : null}
       {activeView === 'music-mv' ? <MusicMvPage api={api} state={state} applyState={applyState} openTaskDetail={openTaskDetail} isBrowserPreview={isBrowserPreview} /> : null}
+      {activeView === 'editorial-collage' ? <EditorialCollagePage api={api} state={state} applyState={applyState} requestedTaskId={requestedEditorialCollageTaskId} onRequestedTaskHandled={onRequestedEditorialCollageTaskHandled} /> : null}
+      {activeView === 'motion-comic' ? <MotionComicPage api={api} state={state} applyState={applyState} requestedTaskId={requestedMotionComicTaskId} onRequestedTaskHandled={onRequestedMotionComicTaskHandled} /> : null}
       {activeView === 'html-video' ? <HtmlVideoPage api={api} state={state} applyState={applyState} refreshTaskDetail={refreshTaskDetail} requestedTaskId={requestedHtmlTaskId} onRequestedTaskHandled={onRequestedHtmlTaskHandled} onActiveTaskChange={onActiveHtmlTaskChange} isBrowserPreview={isBrowserPreview} /> : null}
       {activeView === 'viral-analyzer' ? <ViralAnalyzerPage api={api} state={state} applyState={applyState} refreshViralEvents={refreshViralEvents} onActiveAnalysisChange={onActiveViralAnalysisChange} openTaskDetail={openTaskDetail} isBrowserPreview={isBrowserPreview} /> : null}
       {activeView === 'prompt-templates' ? <PromptTemplatesPage api={api} state={state} applyState={applyState} /> : null}

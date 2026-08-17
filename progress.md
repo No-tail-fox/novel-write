@@ -1,3 +1,73 @@
+# VOX 与 AI 漫剧架构研究进度（2026-08-17）
+
+- VOX 独立工作流第 6 阶段已完成：任务持久化、严格 IPC、独立路由、三栏工作台与确定性图层预览已接通。
+- 收尾修复了 Electron QA 对原生滚动条的误判，并新增工作区网格、策略控件、各 Tab 溢出和标签换行门禁。
+- 1440x900 与 1040x720 隔离 Electron QA 最终通过：创建 30 秒结构、切换节拍、选择混合模式、保存均成功，运行时错误与所有横向溢出为 0，截图已归档到 `.artifacts/editorial-collage-workbench/`。
+- Vite renderer 已在 `http://127.0.0.1:5173/` 保持运行，依赖优化完成后 HTTP 复测返回 200、页面标题为 `StoryDream`。
+- 当前进入第 7 阶段：以只读适配器把 standard / html-video 的现有权威数据投影到共享时间线，不迁移或覆盖旧任务。
+- 第 7 阶段已完成：新增 standard / html-video 只读制片文档、稳定资产版本、镜头/场景、全局字幕 cue 与共享 timeline 适配器；普通视频保留字幕和视觉场景分离，HTML 未完成场景保持 pending/0ms。
+- 适配器聚焦回归 3 文件、9/9 通过，两轮 TypeScript 类型检查通过；现有 runner、任务数据与 renderer 未被改成以投影为权威。
+- 当前进入第 8 阶段：建立 AI 漫剧 series / episode / consistency 的领域合同、原子持久化、独立工作台与质量门禁。
+- 已确认本轮只做研究与设计，不修改生产代码；现有脏工作区完整保留。
+- 已开始核验目标项目、候选开源方案与 StoryDream 现有数据模型。
+- 已完成第一轮本地模型映射：普通视频与 HTML 视频已有独立 runner，共享层具备 Provider、DAG、场景/字幕、资产和输出的部分基础。
+- GitHub CLI 不存在，已记录并切换到 raw/远端/源码证据路线。
+- 搜索引擎可返回页面，但链接为重定向编码；正在改用结果 DOM 和仓库原始文件核验目标项目。
+- GitHub API 已恢复可用并定位两个原仓；下一步读取源码树、README、许可证和实际渲染链路，避免只按项目简介判断。
+- 两个浅克隆都在 GitHub 443 超时，未取得工作树；已停止 Git smart HTTP 重试，切换到 codeload/raw。
+- codeload 也不可用；已结束 3 个本轮卡住的辅助进程，确认没有遗留下载进程，研究转入 GitHub API 单文件/树读取。
+- 已读取两仓完整目录树和 README；已确认组合方向应是 `vox-director` 的导演/路由层 + faceless 的确定性合成/字幕/QA 层。
+- 已核验 beats、分层拼贴、语音、成本和 QA 规则；正在补充漫剧候选项目与模型组件的许可证/成熟度证据。
+- 已核验 Remotion 当前双层许可和 vox Provider 真实边界；“先复用设计模式、不直接加依赖”已成为架构约束。
+- 已完成第一轮漫剧平台与一致性/口型组件快照；平台参考优先级暂定 LumenX、LocalMiniDrama、shuohao，模型仓只做可替换 Provider 能力。
+- 已核验 LumenX 与 shuohao 的真实源码结构；共享资产库、候选版本、恢复任务和阶段门禁确定为漫剧主线的必备能力。
+- 已核验 LocalMiniDrama 的真实目录、MIT 许可和桌面工作流；其列表/画布同源与分组重跑适合 StoryDream，巨型单体页面不适合照搬。
+- 已核验主要一致性、头像运动、口型和通用视频引擎的许可/显存边界；本地模型不进入首版，全部收敛为 Provider 能力。
+- 已完成共享领域核心、四执行器边界、VOX 首版、漫剧首版、集成适配器、分期顺序和验收标准设计。
+- 已清理 `C:\Users\foxnotail\AppData\Local\Temp\codex-storydream-workflow-research-01a00dea`，确认目录不存在；生产代码未因本次研究修改。
+- 用户要求继续后已进入实施：新增共享制片合同、VOX pipeline 合同和 3 项聚焦测试；测试 3/3 通过，TypeScript 检查完成且未报告错误。
+- 共享合同阶段已完成，当前进入 VOX 独立持久化、严格 IPC、工作台路由与确定性图层预览；工作区并发中的主题、选品与壳层改动将逐处保留。
+
+---
+
+# 右上角主题按钮悬停闪屏修复进度（2026-08-17）
+
+- 已读取 `storydream-ui`、组件合同与 `planning-with-files`，开始核对壳层主题按钮、Provider、Tooltip 和 Electron QA。
+- 已确认主题按钮同时使用 Fluent Tooltip Portal 与 `IconButton` 原生 `title`；聚焦失败合同准确命中重复提示机制。
+- 已移除主题按钮的 Fluent Tooltip 包装，保留原生提示、`aria-label` 和点击切换逻辑；其他窗体按钮的 Tooltip 未改动。
+- 已扩展 Electron theme smoke：真实鼠标移入/移出、连续画面采样、根主题/Provider 同步、壳层可见性、按钮边界和提示机制均纳入报告。
+- 深色/浅色 x 普通/紧凑窗口 4/4 通过，每场景 6 帧均非空，主题不一致、按钮跳位与 Fluent Tooltip Portal 均为 0；人工复核四张悬停截图无黑屏或重叠。
+- 相关 9 文件 268/268、TypeScript 与生产构建通过；证据已归档到 `.artifacts/theme-hover-stability-2026-08-17/`。
+
+---
+
+# AI 与全网搜索组合模式按钮解锁进度（2026-08-17）
+
+- 已核对用户截图：全网搜索与 AI 内置知识同时勾选、尚无网页来源时，生成按钮不可点击。
+- 已确定修复边界：AI 开启即允许生成；仅网页模式继续要求来源；按钮和加载文案按实际是否存在网页来源切换。
+- 新组合模式合同首次运行 184 项中仅 1 项预期失败，精确命中旧门禁；生产状态、按钮文案和 Electron 场景修正后，研究/界面/QA/IPC 聚焦 227/227 通过。
+- TypeScript、生产构建和 New Task Electron QA 4/4 通过；全网搜索与 AI 同时开启、网页来源为 0 时，按钮显示“使用 AI 内置知识生成文案”且可点击，运行时错误为 0。
+- 普通/紧凑截图与报告已归档到 `.artifacts/ai-builtin-web-toggle-compatible-2026-08-17/`；首次重启受旧子进程单实例锁竞态影响自动退出，锁释放后重新启动成功，当前主进程为 `29420`。
+
+---
+
+# 左侧固定目录恢复进度（2026-08-17）
+
+- 已读取 `storydream-ui`、组件合同、`planning-with-files` 和根 `AGENTS.md`，确认 UTF-8、项目组件与桌面视觉验收要求。
+- 已恢复现有计划上下文，并确认“更多工具”来自上一轮导航收敛；当前进入 AppShell、导航数据、样式和测试定位。
+- 已复核用户原始截图并定位 `AppShell` 中的 `Menu`、`contextualToolNavItems`、专用 CSS 与四组导航合同测试；确定采用固定侧栏恢复方案，不保留弹层。
+- 已通过 Git 历史确认收敛前的精确 `6/5/5` 分组和顺序，完成实现方案定稿，开始修改导航数据、AppShell 和菜单专用样式。
+- 已先更新 6 个聚焦测试文件；首次运行 232 项中 224 通过、8 项预期失败，失败均锁定旧导航数组、菜单触发器、菜单 CSS 和 QA fallback。
+- 已恢复三组固定侧栏目录，删除 AppShell 菜单、Wrench 图标、菜单专用 CSS 与 QA fallback；聚焦 6 文件、232 项全部通过。
+- `npm run typecheck` 与 `npm run build` 已通过，当前进入普通/紧凑桌面 Electron 截图和交互验收。
+- 首轮 Electron shell 4 场景与 HTML 视频 2 场景通过；根据 1080×720 实拍继续隐藏紧凑图标栏的重复底部快捷区，准备重跑聚焦回归与视觉 QA。
+- 最终 Electron shell 4 场景与 HTML 视频 2 场景再次通过；普通和紧凑截图均无黑屏、弹层或侧栏截断。
+- 全量测试在 125/132 文件通过后因 `C:` 临时盘 `ENOSPC` 和 300 秒上限失败；导航相关 6 文件仍为 232/232，通过，下一步定向复核失败文件以区分环境问题与分支既有问题。
+- 将失败文件的 `TEMP/TMP` 定向到 `I:` 后，7 文件中 4 文件、139 项通过；剩余 3 项为并行选品发现/IPC 修改的合同不一致，本轮不扩大范围修复。
+- 最终 6 个 Electron 场景、HTTP 200、UTF-8 复读、`git diff --check` 和远端提交差异 `0 0` 已确认；截图/报告已归档，开发环境保持运行。
+
+---
+
 # 云端 AI 视频、持久化 DAG 与项目变体落地进度（2026-08-17）
 
 - 已读取 `planning-with-files`、`storydream-ui`、组件合同、`ui-ux-pro-max` 与桌面工作流规则。
@@ -1293,5 +1363,53 @@
 - 最终 CDP QA：1440×900 与 920×720 均显示 2 张图，画廊/大图查看器 0 横向溢出、0 网格越界、0 控件裁切，创作资料交接保持通过。
 - 已创建功能提交；首次推送因 GitHub HTTPS 连接重置失败，正在切换 HTTP/1.1 重试。
 - 推送阻断审计：`github.com:443` TCP 失败；HTTP/1.1、SSH-over-443（无 publickey）、本机代理 `127.0.0.1:7897`（未监听）均不可用；Git Credential Manager、`gh`、`GH_TOKEN/GITHUB_TOKEN` 均无可用凭据。远端分支仍为父提交 `5af7745`，本地功能提交完整保留。
+
+---
+# 选品助手榜单、搜索与带货创作闭环进度（2026-08-17）
+
+- 已读取用户截图、项目记忆、`storydream-ui`、`product-design:image-to-code` 与 `planning-with-files` 规则。
+- 已确认工作树存在未提交的壳层与测试改动；本轮将增量保留并围绕现有 `product-selection` 路由实施。
+- 正在审计产品设计依赖规则、页面状态、当当数据入口、创作资料交接和 StoryBound 提示词审计文件。
+- 已按原始分辨率打开 1693×943 参考图，并完成 Product Design 用户上下文预检；未发现已保存上下文，因此以当前截图和项目设计系统为准。
+- 已播放实现 brief：在既有 `book-selection` 路由复刻高密度运营工作流，StoryDream 品牌视觉优先，完成后做相同状态的截图对照 QA。
+- 已确认选品页现有本地候选/对比/评分/证据/简报功能及 `book_product_info` 创作交接；接下来继续追踪类型、存储、NewTask 消费和可复用 UI 组件。
+- 已确认 NewTask 当前仅以原始 JSON 接收选品资料；本轮将保持 sessionStorage 键兼容并提升为结构化可读交接，同时启用现有带货保留流程。
+- 已完成当当公开搜索连通性与字段审计，并确定复用 `public-research` 网络策略、增加严格 `book-selection:discover` IPC、按响应 charset 解码和本地降级的实现路径。
+- 已新增当当解析/评分/降级、严格 IPC、StoryBound 式工作台和创作赛道交接聚焦合同；首次运行 5 个测试文件中 231 项既有断言通过，5 处预期红灯全部指向待实现范围。
+- 已完成数据层、工作台与创作交接实现，聚焦测试 197/197、类型检查、生产构建和通用 Labs Electron QA 通过。
+- 复核首轮 4 张选品截图发现均停留在初始请求期的空表；正在补榜单就绪门禁、初次加载状态和搜索/收藏/去创作的完整 Electron 交互证据。
+- 新增门禁后的首轮 Electron 实测已读取 24 条当当实时书目，收藏与去创作资料交接通过；搜索因同名/套装结果不止 1 条触发过严断言，已按实际搜索语义修正后重跑。
+- 完整 Labs Electron QA 最终 20/20 通过，四个选品场景均为 24 条 `live` 当当数据，搜索、收藏、去创作交接全部验证成功；正在按同屏设计对照修正标题断词和桌面操作列可见性。
+- 标题高亮清洗和桌面操作列可见性修复后，聚焦 6 文件 126/126、TypeScript、生产构建和最终 Labs Electron QA 20/20 通过。
+- 原图、深浅主题普通/紧凑截图、全屏/表格同屏对照与报告已归档到 `.artifacts/book-selection-assistant/`；`design-qa.md` 最终结果为 `passed`。
+- 用户截图反馈 Electron 内部 `replyWithError` 在关闭的输出管道上触发 `EPIPE`；已增加主进程 stdout/stderr 断管保护，只忽略 `EPIPE` 并保留其他输出错误的原失败语义。
+- 新增输出保护 3 项回归；选品相关聚焦 56/56、TypeScript、生产构建和 Labs Electron QA 全部通过，四个选品场景均为 24 条实时当当书目且运行时错误为 0；修复证据归档到 `.artifacts/book-selection-epipe-fix-2026-08-17/`。
+- 已按用户修正恢复 AI 内置知识独立创作：关闭全网搜索且不选网页来源时，前端生成按钮可用，后端允许 `useBuiltinKnowledge=true` 的空来源请求；全网搜索仍可单独或组合使用。
+- 聚焦 4 文件 227/227、TypeScript、生产构建和 New Task Electron QA 4/4 通过；桌面与紧凑素材页均确认 AI-only 按钮可用、网页控件隐藏、运行时错误为 0，证据归档到 `.artifacts/ai-builtin-optional-2026-08-17/`。
+
+---
+# AI 漫剧 Phase 8 实施进度（2026-08-17）
+
+- 已恢复 Phase 6/7 完成状态和运行中的 Vite renderer；保留现有脏工作树与用户 Electron 进程。
+- 已读取 `planning-with-files`、`storydream-ui` 及组件合同，完成 VOX 持久化、IPC、路由、工作台和库存测试接入面审计。
+- 已确定系列项目所有权、稳定引用和无付费生成边界，开始补领域/持久化/工作台聚焦合同。
+- 已完成严格领域模型、任务持久化与乐观并发、`motion-comic:create/save` IPC、独立路由、历史任务回程和三栏 AI 漫剧工作台。
+- 聚焦 11 个测试文件 291/291 通过；TypeScript 类型检查和生产构建通过。
+- Electron 真实交互已完成创建“雨夜来信”、选择第二镜、修改景别为“特写反应”并保存；桌面 1440x900 与紧凑 1040x720 均无运行时错误、横向溢出、控件裁切或标签换行。
+- 报告与截图已归档到 `.artifacts/motion-comic-workbench/`；`providerJobs=0`，未发起付费生成，Phase 8 完成。
+
+## 上传进度
+
+- 用户要求上传；已确认当前 GitHub upstream 和工作树范围。
+- 已将本地 `.artifacts/` 与 `.codex-audit-temp/` 加入忽略规则；下一步 fetch 远端、执行发布前质量门禁、按明确路径暂存并推送。
+- 首次 fetch 被 GitHub `OpenSSL SSL_read` 连接重置；未提交、未推送，改用 HTTP/1.1 继续核对远端。
+- HTTP/1.1 fetch 仍被相同连接重置；停止重复 smart HTTP，改走 GitHub REST API。
+- 上传前全量 Vitest 136 个文件通过、5 个失败，1872/1878；两项精确库存需要纳入 VOX/AI 漫剧，另外四项按超时与临时目录时序做聚焦复测。
+- 已更新两份批准路由库存并为持续超时的 renderer AST 全量扫描设置 15 秒局部预算，相关 3 文件 11/11 通过。
+- 第二轮全量为 1873/1878；剩余 5 项均为全量并发下的 5 秒边界或 I 盘临时目录异常，正在以系统临时目录串行聚焦复测。
+- 第二轮剩余 5 项串行聚焦全部通过；TypeScript 类型检查和生产构建通过。
+- GitHub REST API 已确认远端分支头 `410301b` 与本地 tracking ref 一致，无远端重叠；进入明确路径暂存和 staged 审计。
+- staged 审计发现并拦截测试生成的 `src/shared/__pycache__/*.pyc`；补通用忽略规则后移除缓存，不上传二进制运行产物。
+- 最终 staged 清单为 62 个源码、测试和文档文件；二进制、Python 缓存、本地 QA 目录均为 0，UTF-8 与 `git diff --cached --check` 通过。
 
 ---

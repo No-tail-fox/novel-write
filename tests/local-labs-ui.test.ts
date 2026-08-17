@@ -133,6 +133,37 @@ describe('local and lab editorial workbenches', () => {
     expect(css).toContain('.selection-evidence-list');
   });
 
+  it('implements a StoryBound-inspired Dangdang ranking, search, filter, favorite, and creation workflow', async () => {
+    const [selection, css] = await Promise.all([
+      readFile(new URL('../src/features/labs/BookSelectionPage.tsx', import.meta.url), 'utf8'),
+      readFile(new URL('../src/styles/features/local-labs.css', import.meta.url), 'utf8'),
+    ]);
+
+    for (const contract of [
+      'discoverBooks',
+      '生成榜单',
+      '快捷赛道',
+      '当当搜索榜',
+      '全部分类',
+      '全部潜力',
+      '只看收藏',
+      '去创作',
+      '智能建议',
+      '真实公开数据',
+      '预览数据',
+      'initialDiscoveryPending',
+      'data-source-state',
+      "sessionStorage.setItem('book_product_track'",
+    ]) expect(selection).toContain(contract);
+    expect(selection).toContain('const discoveryBusy = initialDiscoveryPending || discoveryAction.busy');
+    expect(selection).toMatch(/async function toggleFavorite[\s\S]*?await persistRecord\(record,[\s\S]*?setRecords\(await api\.listBookSelections\(\)\);[\s\S]*?setMessage\(favorite/u);
+    expect(selection).toContain("from '../../ui'");
+    expect(css).toContain('.selection-discovery-header');
+    expect(css).toContain('.selection-ranking-table');
+    expect(css).toContain('.selection-book-cover');
+    expect(css).toContain('.selection-track-rail');
+  });
+
   it('shows benchmark covers in the list and synchronized inspector with a stable fallback', async () => {
     const [benchmark, css] = await Promise.all([
       readFile(new URL('../src/features/labs/BenchmarkImportPage.tsx', import.meta.url), 'utf8'),

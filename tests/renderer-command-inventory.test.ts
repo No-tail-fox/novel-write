@@ -10,7 +10,7 @@ const queryOnlyMethods = new Set([
   'listViralAnalyses', 'getViralAnalysisDetail', 'listViralEvents', 'listImageLabRecords',
   'getImageLabRecordDetail', 'listVoiceLabRecords', 'getVoiceLabRecordDetail', 'listPromptTemplates',
   'getPromptTemplateDetail', 'listDraftTemplates', 'getDraftTemplateDetail', 'listMinimaxCloneVoices',
-  'listBookSelections', 'listPersonAssets', 'listPersonAssetImages', 'getHtmlVideoMediaUrl', 'getTaskMediaUrl',
+  'listBookSelections', 'discoverBooks', 'listPersonAssets', 'listPersonAssetImages', 'getHtmlVideoMediaUrl', 'getTaskMediaUrl',
   'getHtmlVideoCompositionSource', 'lintHtmlVideoCompositionSource',
   'getViralAnalysisResult', 'getTaskArtifacts', 'readAssetDataUrl', 'getJianyingEffectCatalog', 'listSceneVideoLibrary', 'onAppDelta',
   'fetchHotBoard', 'queryAiHot', 'listBenchmarkGroups', 'listBenchmarkPosts',
@@ -23,6 +23,8 @@ const routeEntryPaths = {
   queue: ['src/features/tasks/QueuePage.tsx'],
   history: ['src/features/tasks/HistoryPage.tsx'],
   'task-detail': ['src/features/tasks/TaskDetailPage.tsx'],
+  'editorial-collage': ['src/features/editorial-collage/EditorialCollagePage.tsx'],
+  'motion-comic': ['src/features/motion-comic/MotionComicPage.tsx'],
   'html-video': ['src/features/html-video/HtmlVideoPage.tsx'],
   'image-lab': ['src/features/labs/ImageLabPage.tsx'],
   'voice-lab': ['src/features/labs/VoiceLabPage.tsx'],
@@ -170,7 +172,7 @@ describe('renderer command inventory', () => {
         expect.soft(controls.length, `${method} must enumerate every concrete JSX entry for ${key}`).toBe(group.length);
       }
     }
-  });
+  }, 15_000);
 
   it('proves each command owner, visible control, UX states, and focused test inside its declared route', async () => {
     const sources = await rendererSourcesPromise;

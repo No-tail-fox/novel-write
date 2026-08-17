@@ -92,6 +92,7 @@ const qaComputedTokenNames = [
   '--media-timeline-blue', '--media-reel-amber', '--media-ok',
 ] as const;
 const editorialQaOperationTimeoutMs = 30_000;
+const editorialQaBookSelectionTimeoutMs = 60_000;
 
 export function resolveEditorialQaConfig(
   environment: EditorialQaEnvironment = process.env,
@@ -166,9 +167,16 @@ export async function captureEditorialQa(
     window.setContentSize(viewport.width, viewport.height);
     const state = await withEditorialQaTimeout(
       window.webContents.executeJavaScript(qaScenarioScript(captureCase.id, captureCase.view, captureCase.theme, captureCase.stage), true) as Promise<QaScenarioState>,
-      editorialQaOperationTimeoutMs,
+      captureCase.view === 'book-selection' ? editorialQaBookSelectionTimeoutMs : editorialQaOperationTimeoutMs,
       `${captureCase.id} scenario`,
     );
+    if (config.scope === 'theme-smoke') {
+      state.themeHover = await withEditorialQaTimeout(
+        exerciseThemeButtonHover(window, captureCase.theme),
+        editorialQaOperationTimeoutMs,
+        `${captureCase.id} theme hover`,
+      );
+    }
     if (!state.ready || state.width !== viewport.width || state.height !== viewport.height || state.scale !== 1) {
       throw new Error(`Editorial QA scenario did not reach a stable ${captureCase.id} state: ${JSON.stringify(state)}`);
     }
@@ -292,6 +300,15 @@ export async function captureEditorialQa(
     )) {
       throw new Error(`Editorial QA Jianying auto detection failed: ${JSON.stringify(state.jianyingDetection)}.`);
     }
+    if (captureCase.view === 'book-selection' && (
+      state.bookSelection.rowCount < 1
+      || !['live', 'preview'].includes(state.bookSelection.sourceState)
+      || !state.bookSelection.searchVerified
+      || !state.bookSelection.favoriteVerified
+      || !state.bookSelection.createHandoffVerified
+    )) {
+      throw new Error(`Editorial QA book-selection workflow failed in ${captureCase.id}: ${JSON.stringify(state.bookSelection)}.`);
+    }
     if (state.templateOperationalContrast.failures.length > 0) {
       throw new Error(`Editorial QA template contrast failed in ${captureCase.id}: ${state.templateOperationalContrast.failures.join(', ')}.`);
     }
@@ -327,6 +344,7 @@ export async function captureEditorialQa(
       visibleText: state.visibleText,
       tokens: state.tokens,
       themeTransition: state.themeTransition,
+      themeHover: state.themeHover,
       evidence: state.evidence,
       templateOperationalContrast: state.templateOperationalContrast,
       manualCover: state.manualCover,
@@ -354,7 +372,11 @@ export async function captureEditorialQa(
       draftImageTransformReady: state.draftImageTransformReady,
       taskImageWorkflowReady: state.taskImageWorkflowReady,
       sceneVideoWorkflowReady: state.sceneVideoWorkflowReady,
+      bookSelection: state.bookSelection,
     });
+    if (config.scope === 'theme-smoke') {
+      window.webContents.sendInputEvent({ type: 'mouseMove', x: 2, y: 2, movementX: 0, movementY: 0 });
+    }
     await writeEditorialQaReport(config, captures, getMetrics);
   }
   await writeEditorialQaReport(config, captures, getMetrics);
@@ -409,6 +431,109 @@ async function captureEditorialQaPage(window: BrowserWindow, captureId: string) 
     }
   }
   throw new Error(`Editorial QA ${captureId} capturePage failed after 3 attempts: ${lastError instanceof Error ? lastError.message : String(lastError)}`);
+}
+
+interface ThemeHoverSnapshot {
+  buttonFound: boolean;
+  buttonTitle: string;
+  buttonRect: { x: number; y: number; width: number; height: number };
+  rootTheme: string;
+  providerTheme: string;
+  shellVisible: boolean;
+  roleTooltipCount: number;
+}
+
+interface ThemeHoverEvidence {
+  performed: boolean;
+  rootThemes: string[];
+  providerThemes: string[];
+  shellVisibleThroughout: boolean;
+  buttonBoundsStable: boolean;
+  nativeTitlePresent: boolean;
+  roleTooltipCount: number;
+  tooltipMechanismCount: number;
+  frameVariances: number[];
+  blankFrameCount: number;
+}
+
+async function exerciseThemeButtonHover(window: BrowserWindow, expectedTheme: string): Promise<ThemeHoverEvidence> {
+  const before = await readThemeHoverSnapshot(window);
+  if (!before.buttonFound || before.buttonRect.width < 1 || before.buttonRect.height < 1) {
+    return {
+      performed: false,
+      rootThemes: [before.rootTheme],
+      providerThemes: [before.providerTheme],
+      shellVisibleThroughout: before.shellVisible,
+      buttonBoundsStable: false,
+      nativeTitlePresent: Boolean(before.buttonTitle),
+      roleTooltipCount: before.roleTooltipCount,
+      tooltipMechanismCount: Number(Boolean(before.buttonTitle)) + Number(before.roleTooltipCount > 0),
+      frameVariances: [],
+      blankFrameCount: 0,
+    };
+  }
+  const target = {
+    x: Math.round(before.buttonRect.x + (before.buttonRect.width / 2)),
+    y: Math.round(before.buttonRect.y + (before.buttonRect.height / 2)),
+  };
+  window.webContents.sendInputEvent({ type: 'mouseMove', x: 2, y: 2, movementX: 0, movementY: 0 });
+  await new Promise((resolveDelay) => setTimeout(resolveDelay, 80));
+  window.webContents.sendInputEvent({ type: 'mouseMove', ...target, movementX: target.x - 2, movementY: target.y - 2 });
+  const frameVariances: number[] = [];
+  let blankFrameCount = 0;
+  for (let frame = 0; frame < 6; frame += 1) {
+    await new Promise((resolveDelay) => setTimeout(resolveDelay, 90));
+    const image = await captureEditorialQaPage(window, `theme-hover-${expectedTheme}-${frame}`);
+    const variance = bitmapPixelVariance(image.toBitmap());
+    frameVariances.push(variance);
+    if (image.isEmpty() || variance < 1) blankFrameCount += 1;
+  }
+  const hovered = await readThemeHoverSnapshot(window);
+  window.webContents.sendInputEvent({ type: 'mouseMove', x: 2, y: 2, movementX: 2 - target.x, movementY: 2 - target.y });
+  await new Promise((resolveDelay) => setTimeout(resolveDelay, 180));
+  const left = await readThemeHoverSnapshot(window);
+  window.webContents.sendInputEvent({ type: 'mouseMove', ...target, movementX: target.x - 2, movementY: target.y - 2 });
+  await new Promise((resolveDelay) => setTimeout(resolveDelay, 360));
+  const hoveredAgain = await readThemeHoverSnapshot(window);
+  const bounds = [hovered.buttonRect, left.buttonRect, hoveredAgain.buttonRect];
+  const buttonBoundsStable = bounds.every((rect) => (
+    Math.abs(rect.x - before.buttonRect.x) <= 1
+    && Math.abs(rect.y - before.buttonRect.y) <= 1
+    && Math.abs(rect.width - before.buttonRect.width) <= 1
+    && Math.abs(rect.height - before.buttonRect.height) <= 1
+  ));
+  const roleTooltipCount = Math.max(hovered.roleTooltipCount, hoveredAgain.roleTooltipCount);
+  return {
+    performed: true,
+    rootThemes: [before.rootTheme, hovered.rootTheme, left.rootTheme, hoveredAgain.rootTheme],
+    providerThemes: [before.providerTheme, hovered.providerTheme, left.providerTheme, hoveredAgain.providerTheme],
+    shellVisibleThroughout: [before, hovered, left, hoveredAgain].every((snapshot) => snapshot.shellVisible),
+    buttonBoundsStable,
+    nativeTitlePresent: Boolean(before.buttonTitle),
+    roleTooltipCount,
+    tooltipMechanismCount: Number(Boolean(before.buttonTitle)) + Number(roleTooltipCount > 0),
+    frameVariances,
+    blankFrameCount,
+  };
+}
+
+async function readThemeHoverSnapshot(window: BrowserWindow): Promise<ThemeHoverSnapshot> {
+  return window.webContents.executeJavaScript(`(() => {
+    const button = document.querySelector('.theme-toggle');
+    const shell = document.querySelector('.app-shell');
+    const provider = document.querySelector('.storydream-provider');
+    const rect = button instanceof HTMLElement ? button.getBoundingClientRect() : null;
+    const shellRect = shell instanceof HTMLElement ? shell.getBoundingClientRect() : null;
+    return {
+      buttonFound: button instanceof HTMLButtonElement,
+      buttonTitle: button instanceof HTMLElement ? button.getAttribute('title') ?? '' : '',
+      buttonRect: rect ? { x: rect.x, y: rect.y, width: rect.width, height: rect.height } : { x: 0, y: 0, width: 0, height: 0 },
+      rootTheme: document.documentElement.dataset.theme ?? '',
+      providerTheme: provider?.getAttribute('data-storydream-theme') ?? '',
+      shellVisible: Boolean(shellRect && shellRect.width > 0 && shellRect.height > 0 && getComputedStyle(shell).visibility !== 'hidden'),
+      roleTooltipCount: document.querySelectorAll('[role="tooltip"]').length,
+    };
+  })()`, true) as Promise<ThemeHoverSnapshot>;
 }
 
 export interface EditorialQaCaptureEvidence {
@@ -484,6 +609,7 @@ export interface EditorialQaCapture {
   visibleText: string;
   tokens: Record<string, string>;
   themeTransition: QaScenarioState['themeTransition'];
+  themeHover?: ThemeHoverEvidence;
   evidence: EditorialQaCaptureEvidence;
   templateOperationalContrast: QaScenarioState['templateOperationalContrast'];
   manualCover: QaScenarioState['manualCover'];
@@ -511,6 +637,7 @@ export interface EditorialQaCapture {
   draftImageTransformReady: boolean;
   taskImageWorkflowReady: boolean;
   sceneVideoWorkflowReady: boolean;
+  bookSelection: QaScenarioState['bookSelection'];
 }
 
 interface EditorialQaCaptureCase {
@@ -535,6 +662,7 @@ interface QaScenarioState {
     mismatchCount: number;
     reversalCount: number;
   };
+  themeHover?: ThemeHoverEvidence;
   evidence: EditorialQaCaptureEvidence;
   templateOperationalContrast: {
     samples: Array<{
@@ -595,6 +723,14 @@ interface QaScenarioState {
   draftImageTransformReady: boolean;
   taskImageWorkflowReady: boolean;
   sceneVideoWorkflowReady: boolean;
+  bookSelection: {
+    rowCount: number;
+    sourceState: string;
+    selectedBook: string;
+    searchVerified: boolean;
+    favoriteVerified: boolean;
+    createHandoffVerified: boolean;
+  };
   layout: {
     horizontalOverflow: number;
     clippedPrimaryControls: string[];
@@ -890,13 +1026,7 @@ function qaScenarioScript(id: string, view: string, theme: string, stage?: strin
     const subtitleDiagnosticsScenario = scenarioId === 'task-detail-subtitle-diagnostics-light-desktop';
     const sceneVideoScenario = scenarioId.startsWith('task-detail-scene-video-');
     const navView = targetView === 'task-detail' ? 'queue' : targetView;
-    let nav = document.querySelector('[data-nav-view="' + navView + '"]');
-    if (!(nav instanceof HTMLElement)) {
-      const contextualToolsTrigger = document.querySelector('[data-contextual-tools-trigger]');
-      if (contextualToolsTrigger instanceof HTMLButtonElement) contextualToolsTrigger.click();
-      await waitFor(() => document.querySelector('[data-nav-view="' + navView + '"]'));
-      nav = document.querySelector('[data-nav-view="' + navView + '"]');
-    }
+    const nav = document.querySelector('[data-nav-view="' + navView + '"]');
     if (nav instanceof HTMLElement) nav.click();
     if (targetView === 'html-video' && scenarioId.startsWith('html-video-studio')) {
       await waitFor(() => document.querySelector('.hv-create-history select') || document.querySelector('[data-html-video-studio="html-video"]'));
@@ -2263,21 +2393,124 @@ function qaScenarioScript(id: string, view: string, theme: string, stage?: strin
         const sourceRows = [...document.querySelectorAll('.ai-create-panel .check-row')];
         const webToggle = sourceRows.find((row) => row.textContent?.includes('全网搜索'))?.querySelector('input');
         const builtinToggle = sourceRows.find((row) => row.textContent?.includes('AI 内置知识补全'))?.querySelector('input');
-        if (webToggle instanceof HTMLInputElement && webToggle.checked) webToggle.click();
+        if (webToggle instanceof HTMLInputElement && !webToggle.checked) webToggle.click();
         if (builtinToggle instanceof HTMLInputElement && !builtinToggle.checked) builtinToggle.click();
-        const sourceStateSettled = await waitFor(() => !document.querySelector('.web-search-provider-panel'));
+        const sourceStateSettled = await waitFor(() => document.querySelector('.web-search-provider-panel'));
         const composeButton = document.querySelector('button[aria-label="生成文案"]');
         aiBuiltinComposeReady = sourceStateSettled
           && webToggle instanceof HTMLInputElement
-          && !webToggle.checked
+          && webToggle.checked
           && builtinToggle instanceof HTMLInputElement
           && builtinToggle.checked
+          && document.querySelectorAll('.search-source-card input:checked').length === 0
           && composeButton instanceof HTMLButtonElement
           && !composeButton.disabled
           && composeButton.textContent?.includes('使用 AI 内置知识生成文案') === true;
         ready = ready && aiBuiltinComposeReady;
         composeButton?.scrollIntoView({ block: 'center', inline: 'nearest' });
       }
+    }
+    const bookSelection = {
+      rowCount: 0,
+      sourceState: '',
+      selectedBook: '',
+      searchVerified: targetView !== 'book-selection',
+      favoriteVerified: targetView !== 'book-selection',
+      createHandoffVerified: targetView !== 'book-selection',
+    };
+    if (targetView === 'book-selection') {
+      const rankingReady = await waitFor(() => {
+        const sourceState = document.querySelector('.selection-source-badge')?.getAttribute('data-source-state') ?? '';
+        return ['live', 'preview'].includes(sourceState)
+          && document.querySelectorAll('.selection-ranking-row').length > 0;
+      }, 25000);
+      ready = ready && rankingReady;
+      const initialRows = [...document.querySelectorAll('.selection-ranking-row')];
+      const firstTitle = initialRows[0]?.querySelector('.selection-book-title strong')?.textContent?.trim() ?? '';
+      bookSelection.rowCount = initialRows.length;
+      bookSelection.sourceState = document.querySelector('.selection-source-badge')?.getAttribute('data-source-state') ?? '';
+      bookSelection.selectedBook = firstTitle;
+
+      const searchInput = document.querySelector('.selection-list-search input');
+      if (searchInput instanceof HTMLInputElement && firstTitle) {
+        setInputValue(searchInput, firstTitle);
+        bookSelection.searchVerified = await waitFor(() => {
+          const rows = [...document.querySelectorAll('.selection-ranking-row')];
+          return rows.length > 0
+            && rows.length < initialRows.length
+            && rows.some((row) => row.querySelector('.selection-book-title strong')?.textContent?.trim() === firstTitle);
+        });
+        setInputValue(searchInput, '');
+        ready = ready && await waitFor(() => document.querySelectorAll('.selection-ranking-row').length === initialRows.length);
+      }
+
+      const findSelectedRow = () => [...document.querySelectorAll('.selection-ranking-row')]
+        .find((row) => row.querySelector('.selection-book-title strong')?.textContent?.trim() === firstTitle);
+      let selectedRow = findSelectedRow();
+      let favoriteButton = [...(selectedRow?.querySelectorAll('button') ?? [])]
+        .find((button) => button.getAttribute('aria-label')?.startsWith('收藏 '));
+      if (favoriteButton instanceof HTMLButtonElement) favoriteButton.click();
+      bookSelection.favoriteVerified = await waitFor(() => {
+        selectedRow = findSelectedRow();
+        return [...(selectedRow?.querySelectorAll('button') ?? [])]
+          .some((button) => button.getAttribute('aria-label')?.startsWith('取消收藏 '))
+          && !document.querySelector('[aria-modal="true"]');
+      });
+
+      selectedRow = findSelectedRow();
+      const createFromBookButton = [...(selectedRow?.querySelectorAll('button') ?? [])]
+        .find((button) => button.textContent?.trim() === '去创作');
+      if (createFromBookButton instanceof HTMLButtonElement) createFromBookButton.click();
+      const handoffMaterialReady = await waitFor(() => {
+        const shell = document.querySelector('[data-shell-view="new-task"]');
+        const aiButton = [...document.querySelectorAll('.new-task-source-actions button')]
+          .find((button) => button.textContent?.trim() === 'AI 创作');
+        const keywordInput = document.querySelector('.ai-create-panel .new-task-inline-fields input');
+        const titleInput = document.querySelector('[data-new-task-stage="material"] input');
+        return shell
+          && aiButton?.classList.contains('active')
+          && keywordInput instanceof HTMLInputElement
+          && keywordInput.value === firstTitle
+          && titleInput instanceof HTMLInputElement
+          && titleInput.value === firstTitle.slice(0, 42);
+      }, 15000);
+      const creativeTab = document.querySelector('[data-new-task-stage-tab="creative"]');
+      if (creativeTab instanceof HTMLButtonElement) creativeTab.click();
+      const creativeReady = await waitFor(() => document.querySelector('[data-new-task-stage="creative"]'));
+      const advancedToggle = document.querySelector('.advanced-toggle');
+      if (!document.querySelector('.advanced-grid') && advancedToggle instanceof HTMLButtonElement) advancedToggle.click();
+      const handoffProductReady = await waitFor(() => {
+        const summary = document.querySelector('.copy-control-section .section-title-row small');
+        const promotionToggle = [...document.querySelectorAll('.advanced-grid .toggle-row')]
+          .find((row) => row.textContent?.includes('带货保留'))?.querySelector('input');
+        return summary?.textContent?.includes(firstTitle)
+          && promotionToggle instanceof HTMLInputElement
+          && promotionToggle.checked;
+      });
+      bookSelection.createHandoffVerified = handoffMaterialReady && creativeReady && handoffProductReady;
+
+      let bookSelectionNav = null;
+      const bookSelectionNavReady = await waitFor(() => {
+        const candidate = document.querySelector('[data-nav-view="book-selection"]');
+        if (!(candidate instanceof HTMLButtonElement) || candidate.disabled) return false;
+        bookSelectionNav = candidate;
+        return true;
+      });
+      if (bookSelectionNav instanceof HTMLButtonElement) bookSelectionNav.click();
+      const returnedToRanking = await waitFor(() => (
+        document.querySelector('[data-shell-view="book-selection"]')
+        && document.querySelectorAll('.selection-ranking-row').length > 0
+        && ['live', 'preview'].includes(document.querySelector('.selection-source-badge')?.getAttribute('data-source-state') ?? '')
+      ), 25000);
+      ready = ready
+        && bookSelection.searchVerified
+        && bookSelection.favoriteVerified
+        && bookSelection.createHandoffVerified
+        && bookSelectionNavReady
+        && returnedToRanking;
+      bookSelection.rowCount = document.querySelectorAll('.selection-ranking-row').length;
+      bookSelection.sourceState = document.querySelector('.selection-source-badge')?.getAttribute('data-source-state') ?? '';
+      document.querySelector('.selection-ranking-scroll')?.scrollTo({ top: 0, left: 0 });
     }
     await withTimeout(document.fonts.ready, 10000, 'font readiness timed out');
     await withTimeout(
@@ -2511,9 +2744,13 @@ function qaScenarioScript(id: string, view: string, theme: string, stage?: strin
       ?? (nav instanceof HTMLElement && interactiveElements.includes(nav)
         ? nav
         : interactiveElements.find((element) => element instanceof HTMLElement));
-    let interactionPerformed = activeModalFocus instanceof HTMLElement;
+    const bookSelectionInteractionVerified = targetView === 'book-selection'
+      && bookSelection.searchVerified
+      && bookSelection.favoriteVerified
+      && bookSelection.createHandoffVerified;
+    let interactionPerformed = targetView === 'book-selection' ? bookSelectionInteractionVerified : activeModalFocus instanceof HTMLElement;
     let interactionVerified = interactionPerformed;
-    if (interactionTarget instanceof HTMLElement && !interactionVerified) {
+    if (targetView !== 'book-selection' && interactionTarget instanceof HTMLElement && !interactionVerified) {
       interactionPerformed = true;
       interactionTarget.focus({ preventScroll: true });
       interactionVerified = document.activeElement === interactionTarget;
@@ -2617,8 +2854,10 @@ function qaScenarioScript(id: string, view: string, theme: string, stage?: strin
         interactiveOverlaps,
       },
       interaction: {
-        kind: 'focus-control',
-        target: interactionTarget instanceof Element ? evidenceLabel(interactionTarget, interactionTarget.tagName) : '',
+        kind: targetView === 'book-selection' ? 'book-selection-workflow' : 'focus-control',
+        target: targetView === 'book-selection'
+          ? bookSelection.selectedBook
+          : interactionTarget instanceof Element ? evidenceLabel(interactionTarget, interactionTarget.tagName) : '',
         performed: interactionPerformed,
         verified: interactionVerified,
       },
@@ -2714,6 +2953,7 @@ function qaScenarioScript(id: string, view: string, theme: string, stage?: strin
       draftImageTransformReady,
       taskImageWorkflowReady,
       sceneVideoWorkflowReady,
+      bookSelection,
       manualCover: {
         state: manualCoverElement?.getAttribute('data-manual-cover-state') ?? 'inactive',
         importVisible: manualImportButton instanceof HTMLButtonElement && getComputedStyle(manualImportButton).display !== 'none',

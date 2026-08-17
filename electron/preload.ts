@@ -18,6 +18,8 @@ import type {
   BenchmarkLoginResult,
   BenchmarkPost,
   BenchmarkPostInput,
+  BookDiscoveryRequest,
+  BookDiscoveryResult,
   BookSelectionInput,
   BookSelectionRecord,
   ConfigTestTarget,
@@ -93,6 +95,8 @@ import type {
 import type { PublicAppState, SaveConfigInput, SecretChanges } from '../src/shared/config-secrets';
 import type { PersonAssetImage, PersonAssetSummary } from '../src/shared/person-assets';
 import type { StoryDreamApi } from '../src/shared/storydream-api';
+import type { EditorialCollageCreateInput, EditorialCollageSaveInput } from '../src/shared/editorial-collage';
+import type { MotionComicCreateInput, MotionComicSaveInput } from '../src/shared/motion-comic';
 import { MAX_IPC_TEXT, unwrapIpcResult, type IpcChannel } from '../src/shared/ipc-contract';
 import { appErrorFromPayload, serializeAppErrorForBridge } from '../src/shared/app-error';
 
@@ -235,6 +239,7 @@ export const storyDreamApi: StoryDreamApi = {
   saveActivation: (activation: ActivationState): Promise<AppMutationResult | null> => invokeTrusted('activation:save', activation),
   saveUiPreferences: (update: UiPreferencesUpdate): Promise<AppMutationResult | null> => invokeTrusted('ui:save-preferences', update),
   listBookSelections: (theme?: string): Promise<BookSelectionRecord[]> => invokeTrusted('book-selection:list', theme),
+  discoverBooks: (input: BookDiscoveryRequest): Promise<BookDiscoveryResult> => invokeTrusted('book-selection:discover', input),
   saveBookSelection: (input: BookSelectionInput): Promise<BookSelectionRecord> => invokeTrusted('book-selection:save', input),
   deleteBookSelection: (theme: string, bookId: string): Promise<void> => invokeTrusted('book-selection:delete', { theme, bookId }),
   listBenchmarkGroups: (): Promise<BenchmarkGroup[]> => invokeTrusted('benchmark:list-groups'),
@@ -252,6 +257,14 @@ export const storyDreamApi: StoryDreamApi = {
   importPersonAssetImages: (name: string): Promise<number> => invokeTrusted('person-assets:import-images', name),
   listPersonAssetImages: (name: string): Promise<PersonAssetImage[]> => invokeTrusted('person-assets:list-images', name),
   openPersonAssetDirectory: (name: string): Promise<void> => invokeTrusted('person-assets:open-directory', name),
+  createEditorialCollage: (input: EditorialCollageCreateInput): Promise<AppMutationResult | null> =>
+    invokeTrusted('editorial-collage:create', input),
+  saveEditorialCollage: (input: EditorialCollageSaveInput): Promise<AppMutationResult | null> =>
+    invokeTrusted('editorial-collage:save', input),
+  createMotionComic: (input: MotionComicCreateInput): Promise<AppMutationResult | null> =>
+    invokeTrusted('motion-comic:create', input),
+  saveMotionComic: (input: MotionComicSaveInput): Promise<AppMutationResult | null> =>
+    invokeTrusted('motion-comic:save', input),
   createHtmlVideoTask: (input: CreateTaskInput) => invokeTrusted('html-video:create-task', input),
   updateHtmlVideoConfig: (id: string, changes: HtmlVideoConfigChange[]) =>
     invokeTrusted('html-video:update-config', { id, changes }),

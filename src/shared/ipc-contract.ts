@@ -29,6 +29,8 @@ import { HTML_VIDEO_EDITABLE_CONTROL_FIELDS } from './html-video-control-manifes
 import { INVOKE_CHANNELS, type InvokeChannel } from './storydream-api';
 import { MAX_ORDINARY_TASK_COVER_PAGE_TEXT_LENGTH, ORDINARY_TASK_COVER_RATIOS } from './ordinary-task-cover';
 import { MAX_HYPERFRAMES_SOURCE_BYTES } from './hyperframes';
+import { editorialCollageCreateInputSchema, editorialCollageSaveInputSchema } from './editorial-collage';
+import { motionComicCreateInputSchema, motionComicSaveInputSchema } from './motion-comic';
 
 export const MAX_TASK_TEXT = 1_000_000;
 export const MAX_IPC_TEXT = 65_536;
@@ -473,7 +475,7 @@ const taskHistoryListSchema = z.union([
     .object({
       ...historyBaseShape,
       family: z.literal('task'),
-      taskType: z.enum(['story', 'music-mv', 'html-video']).optional(),
+      taskType: z.enum(['story', 'music-mv', 'html-video', 'editorial-collage', 'motion-comic']).optional(),
       favorite: z.boolean().optional(),
       status: taskStatusValueSchema.optional(),
     })
@@ -482,7 +484,7 @@ const taskHistoryListSchema = z.union([
     .object({
       ...historyBaseShape,
       family: z.literal('task'),
-      taskType: z.enum(['story', 'music-mv', 'html-video']).optional(),
+      taskType: z.enum(['story', 'music-mv', 'html-video', 'editorial-collage', 'motion-comic']).optional(),
       favorite: z.boolean().optional(),
       statuses: taskHistoryStatusesSchema,
     })
@@ -640,7 +642,14 @@ const voiceLabSchema = z
 const bookProductSchema = z
   .object({
     name: nonEmptyText(2048),
+    source: z.enum(['dangdang', 'manual']).optional(),
+    sourceState: z.enum(['live', 'preview', 'saved']).optional(),
+    sourceId: optionalText(256),
+    sourceRank: finiteNumber.int().positive().optional(),
+    rankingLabel: optionalText(2048),
     author: optionalText(2048),
+    publisher: optionalText(2048),
+    publishDate: optionalText(128),
     category: optionalText(2048),
     keyword: optionalText(2048),
     sellPoint: optionalText(MAX_IPC_TEXT),
@@ -648,8 +657,11 @@ const bookProductSchema = z
     persons: optionalText(MAX_IPC_TEXT),
     era: optionalText(2048),
     price: optionalText(2048),
+    originalPrice: optionalText(2048),
+    reviewCount: finiteNumber.int().nonnegative().optional(),
     url: optionalText(MAX_IPC_TEXT),
     note: optionalText(MAX_TASK_TEXT),
+    coverUrl: optionalText(MAX_IPC_PATH),
     coverPath: optionalText(MAX_IPC_PATH),
     materialFolder: optionalText(MAX_IPC_PATH),
     selectionStatus: z.enum(['candidate', 'watching', 'planned', 'created', 'rejected']).optional(),
@@ -870,6 +882,8 @@ export const ipcInputSchemas = {
         'queue',
         'history',
         'task-detail',
+        'editorial-collage',
+        'motion-comic',
         'html-video',
         'image-lab',
         'voice-lab',
@@ -887,6 +901,11 @@ export const ipcInputSchemas = {
     }).strict(),
   ]),
   'book-selection:list': optionalThemeSchema,
+  'book-selection:discover': z.object({
+    query: nonEmptyText(512),
+    track: optionalText(256),
+    limit: finiteNumber.int().min(1).max(36).optional(),
+  }).strict(),
   'book-selection:save': z.object({
     theme: nonEmptyText(1024),
     bookId: optionalText(256),
@@ -909,6 +928,10 @@ export const ipcInputSchemas = {
   'person-assets:list-images': nameSchema,
   'person-assets:import-images': nameSchema,
   'person-assets:open-directory': nameSchema,
+  'editorial-collage:create': editorialCollageCreateInputSchema,
+  'editorial-collage:save': editorialCollageSaveInputSchema,
+  'motion-comic:create': motionComicCreateInputSchema,
+  'motion-comic:save': motionComicSaveInputSchema,
   'html-video:create-task': htmlVideoCreateTaskSchema,
   'html-video:update-config': htmlVideoConfigUpdateSchema,
   'html-video:update-scene': htmlVideoSceneUpdateSchema,

@@ -876,16 +876,16 @@ describe('product shell ui', () => {
     expect(css).toContain('.account-entry-grid');
   });
 
-  it('keeps specialist tools routable without returning them to the primary sidebar', async () => {
+  it('keeps all five material and experiment routes together in concept order', async () => {
     const navigation = await navigationSourcePromise;
-    const assetStart = navigation.indexOf('export const contextualToolNavItems');
-    const assetEnd = navigation.indexOf('export const sidebarNavGroups');
+    const assetStart = navigation.indexOf('export const assetLabNavItems');
+    const assetEnd = navigation.indexOf('export const templateSystemNavItems');
     const assetNav = navigation.slice(assetStart, assetEnd);
 
     for (const view of ['image-lab', 'voice-lab', 'music-mv', 'viral-analyzer', 'html-video']) {
       expect(assetNav).toContain(`view: '${view}'`);
     }
-    expect(assetNav).toContain("view: 'prompt-templates'");
+    expect(assetNav).not.toContain("view: 'prompt-templates'");
     expect(assetNav.indexOf("view: 'music-mv'")).toBeLessThan(assetNav.indexOf("view: 'viral-analyzer'"));
     expect(assetNav.indexOf("view: 'viral-analyzer'")).toBeLessThan(assetNav.indexOf("view: 'html-video'"));
   });
@@ -939,6 +939,7 @@ describe('product shell ui', () => {
     expect(page).toContain("setSelectedIdentity({ theme: saved.theme, bookId: saved.bookId })");
     expect(page).not.toContain('bookId: selectedBookId || undefined');
     expect(page).toContain("sessionStorage.setItem('book_product_info', JSON.stringify(record.data))");
+    expect(page).toContain("sessionStorage.setItem('book_product_track', bookTrackFor(record.theme, record.data))");
   });
 
   it('adds practical latest Storybound pages and controls to the Chinese shell', async () => {
@@ -1046,7 +1047,7 @@ describe('product shell ui', () => {
     expect(sidebarBottomBlock).toContain('flex: 1 1 130px;');
     expect(sidebarBottomBlock).toContain('min-height: 130px;');
     expect(sidebarBottomBlock).toContain('overflow: hidden;');
-    expect(sidebarBottomBlock).toContain('grid-template-rows: auto minmax(0, 1fr) auto auto;');
+    expect(sidebarBottomBlock).toContain('grid-template-rows: minmax(0, 1fr) auto auto;');
     expect(recentTaskBlock).toContain('min-height: 0;');
     expect(recentTaskBlock).toContain('overflow: auto;');
     expect(css).toContain('@media (max-height: 760px)');
@@ -1119,7 +1120,7 @@ describe('product shell ui', () => {
     expect(css).toContain('--accent');
   });
 
-  it('keeps the exact eighteen route branches in the application route owner', async () => {
+  it('keeps the exact twenty route branches in the application route owner', async () => {
     const routes = (await rendererSourcesPromise).requiredFile('src/app/AppRoutes.tsx');
     const routedViews = [...routes.matchAll(/activeView === '([^']+)'/gu)].map((match) => match[1]);
     expect(routedViews).toEqual([
@@ -1134,6 +1135,8 @@ describe('product shell ui', () => {
       'image-lab',
       'voice-lab',
       'music-mv',
+      'editorial-collage',
+      'motion-comic',
       'html-video',
       'viral-analyzer',
       'prompt-templates',
@@ -1142,7 +1145,7 @@ describe('product shell ui', () => {
       'account',
       'activation',
     ]);
-    expect(new Set(routedViews).size).toBe(18);
+    expect(new Set(routedViews).size).toBe(20);
   });
 
   it('adds a standalone voice lab for provider voice previews and history playback', async () => {
@@ -3497,8 +3500,8 @@ describe('product shell ui', () => {
     expect(main).toContain('selectedSources');
     expect(main).toContain("const webSearchEnabled = aiSources.includes('web')");
     expect(main).toContain("const builtinKnowledgeEnabled = aiSources.includes('builtin-knowledge')");
-    expect(main).toContain('const hasResearchComposeSource = webSearchEnabled || builtinKnowledgeEnabled');
-    expect(main).toContain('&& (!webSearchEnabled || selectedSources.length > 0)');
+    expect(main).toContain('const hasSelectedWebSources = webSearchEnabled && selectedSources.length > 0');
+    expect(main).toContain('const hasResearchComposeSource = builtinKnowledgeEnabled || hasSelectedWebSources');
     expect(main).toContain('handleAiSourceChange');
     expect(main).toContain('handleExtraRequirementsChange');
     expect(main).toContain('handleSelectedSearchSourceChange');
@@ -3513,7 +3516,8 @@ describe('product shell ui', () => {
     expect(composeSection).toContain('targetLength: normalizeTaskTargetLength(targetLength) ?? undefined');
     expect(composeSection).toContain('selectedSources: webSearchEnabled ? selectedSources : []');
     expect(composeSection).toContain('useBuiltinKnowledge: builtinKnowledgeEnabled');
-    expect(composeSection).toContain('if (webSearchEnabled && selectedSources.length === 0)');
+    expect(composeSection).toContain('if (!builtinKnowledgeEnabled && !hasSelectedWebSources)');
+    expect(composeSection).toContain('setResearchCopyMessage(hasSelectedWebSources');
     expect(main).toContain('结合网页与 AI 补全生成文案');
     expect(main).toContain('根据所选网页生成文案');
     expect(main).toContain('使用 AI 内置知识生成文案');

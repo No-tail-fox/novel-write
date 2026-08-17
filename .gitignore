@@ -9,6 +9,8 @@ release/
 out/
 .cache/
 vendor/python/
+__pycache__/
+*.py[cod]
 
 # Local runtime data
 *.db
@@ -31,3 +33,7 @@ Thumbs.db
 
 # Local observation artifacts
 .storybound-observe-*.png
+
+# Local QA and audit artifacts
+.artifacts/
+.codex-audit-temp/

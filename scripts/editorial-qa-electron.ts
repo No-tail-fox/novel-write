@@ -236,6 +236,23 @@ function validateThemeSmoke(report: QaReport): void {
   if (unstable.length > 0) {
     throw new Error(`Editorial theme transition was unstable: ${unstable.map((capture) => capture.id).join(', ')}.`);
   }
+  const unstableHovers = report.captures.filter((capture) => {
+    const hover = capture.themeHover;
+    return !hover
+      || !hover.performed
+      || !hover.shellVisibleThroughout
+      || !hover.buttonBoundsStable
+      || !hover.nativeTitlePresent
+      || hover.tooltipMechanismCount !== 1
+      || hover.roleTooltipCount !== 0
+      || hover.blankFrameCount > 0
+      || hover.frameVariances.length !== 6
+      || hover.rootThemes.some((theme) => theme !== capture.theme)
+      || hover.providerThemes.some((theme) => theme !== capture.theme);
+  });
+  if (unstableHovers.length > 0) {
+    throw new Error(`Editorial theme hover was unstable: ${unstableHovers.map((capture) => `${capture.id} ${JSON.stringify(capture.themeHover)}`).join(', ')}.`);
+  }
   for (const name of ['--shell-bg', '--shell-surface', '--shell-border', '--shell-text', '--shell-muted']) {
     if (!light.tokens[name] || !dark.tokens[name] || light.tokens[name] === dark.tokens[name]) {
       throw new Error(`Editorial shell token did not change across themes: ${name}`);

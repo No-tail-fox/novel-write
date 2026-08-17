@@ -101,6 +101,8 @@ describe('task operation contracts', () => {
 
   it('formats history task types without hiding specialized workflows behind story tracks', () => {
     expect(taskHistoryTypeLabel(task({ taskType: 'html-video', track: 'character-story' }))).toBe('HTML 动画');
+    expect(taskHistoryTypeLabel(task({ taskType: 'editorial-collage', track: 'editorial-explainer' }))).toBe('VOX 视觉');
+    expect(taskHistoryTypeLabel(task({ taskType: 'motion-comic', track: 'motion-comic' }))).toBe('AI 漫剧');
     expect(taskHistoryTypeLabel(task({ taskType: 'music-mv', track: 'music-mv' }))).toBe('音乐 MV');
     expect(taskHistoryTypeLabel(task({ taskType: 'story', track: 'character-story' }))).toBe('人物故事');
   });

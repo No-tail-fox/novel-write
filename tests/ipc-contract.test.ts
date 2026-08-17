@@ -70,6 +70,17 @@ describe('IPC runtime contract', () => {
     expect(() => schema.parse({ ...input, previousIdentity: { theme: '', bookId: 'old-id' } })).toThrow();
   });
 
+  it('bounds Dangdang discovery queries and rejects unknown request fields', async () => {
+    const contract = await loadContract();
+    expect(contract).not.toBeNull();
+    if (!contract) return;
+    const schema = contract.ipcInputSchemas['book-selection:discover'];
+    expect(schema.parse({ query: '抗衰养生', track: '健康·中医食疗', limit: 24 })).toEqual({ query: '抗衰养生', track: '健康·中医食疗', limit: 24 });
+    expect(() => schema.parse({ query: '', track: '健康·中医食疗' })).toThrow();
+    expect(() => schema.parse({ query: '抗衰养生', limit: 100 })).toThrow();
+    expect(() => schema.parse({ query: '抗衰养生', extra: true })).toThrow();
+  });
+
   it('strictly validates benchmark group links and nullable platform metrics', async () => {
     const contract = await loadContract();
     expect(contract).not.toBeNull();

@@ -8,6 +8,7 @@ export const storyDreamDarkTheme: Theme = {
   colorBrandBackgroundHover: '#ff755f',
   colorBrandBackgroundPressed: '#d94f3b',
   colorBrandBackgroundSelected: '#f2614b',
+  colorNeutralForegroundOnBrand: '#101214',
   colorNeutralBackground1: '#101214',
   colorNeutralBackground2: '#15181b',
   colorNeutralBackground3: '#1b1f23',

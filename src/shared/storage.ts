@@ -61,6 +61,26 @@ import type {
 } from './types';
 import { normalizeBenchmarkGroupInput, normalizeBenchmarkPostInput, normalizeBenchmarkSourceUrl } from './benchmark-monitoring';
 import { applyHtmlVideoConfigChanges, htmlVideoVisibleSteps, invalidateHtmlVideoPipeline, parseHtmlVideoPipelineData } from './html-video-workflow';
+import {
+  EDITORIAL_COLLAGE_TASK_TYPE,
+  createEditorialCollageDraft,
+  createEditorialCollageStarterPlan,
+  editorialCollageCreateInputSchema,
+  editorialCollageSaveInputSchema,
+  parseEditorialCollagePipelineData,
+  type EditorialCollageCreateInput,
+  type EditorialCollageSaveInput,
+} from './editorial-collage';
+import {
+  MOTION_COMIC_TASK_TYPE,
+  createMotionComicDraft,
+  createMotionComicStarterProject,
+  motionComicCreateInputSchema,
+  motionComicSaveInputSchema,
+  parseMotionComicPipelineData,
+  type MotionComicCreateInput,
+  type MotionComicSaveInput,
+} from './motion-comic';
 import { assertHyperframesSource } from './hyperframes';
 import {
   createHtmlVideoCoverAsset,
@@ -2259,6 +2279,155 @@ export class FileDatabase {
 
   async createTask(input: CreateTaskInput): Promise<Task> {
     return this.enqueueCommit(() => this.insertTask(input));
+  }
+
+  async createEditorialCollageTask(input: EditorialCollageCreateInput): Promise<Task> {
+    const validated = editorialCollageCreateInputSchema.parse(input);
+    return this.enqueueCommit(() => {
+      const task = this.insertTask({
+        title: validated.title,
+        inputText: validated.sourceText,
+        taskKind: 'story',
+        taskType: EDITORIAL_COLLAGE_TASK_TYPE,
+        ratio: validated.ratio ?? '9:16',
+        processingMode: 'manual',
+        materialSource: 'paste',
+        pipelineStep: 'draft',
+        pipelineData: '{}',
+      });
+      const draft = createEditorialCollageDraft({
+        id: task.id,
+        title: validated.title,
+        ratio: validated.ratio,
+        now: task.createdAt,
+      });
+      const document = createEditorialCollageStarterPlan(draft, validated.sourceText, task.createdAt);
+      this.db.run(
+        `UPDATE tasks SET status = 'draft', pipeline_step = ?, pipeline_data = ? WHERE id = ?`,
+        [document.stage, JSON.stringify(document), task.id],
+      );
+      this.db.run(
+        `INSERT INTO task_events (task_id, run_generation, type, step, agent, tool, detail, data_json, ts)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        [task.id, 0, 'editorial_collage_created', 0, 'VOX Director', 'starter-plan', '已创建 30 秒 VOX 基础结构。', JSON.stringify({ stage: document.stage, beats: document.beats.length }), Date.now()],
+      );
+      const row = getFirstRow<Record<string, unknown>>(this.db, 'SELECT * FROM tasks WHERE id = ?', [task.id]);
+      if (!row) throw new Error(`EDITORIAL_COLLAGE_NOT_FOUND: ${task.id}`);
+      return rowToTask(row);
+    });
+  }
+
+  async saveEditorialCollageTask(input: EditorialCollageSaveInput): Promise<Task> {
+    const validated = editorialCollageSaveInputSchema.parse(input) as EditorialCollageSaveInput;
+    return this.enqueueCommit(() => {
+      this.assertHistoryWritable('task', validated.id);
+      const row = getFirstRow<Record<string, unknown>>(this.db, 'SELECT * FROM tasks WHERE id = ?', [validated.id]);
+      if (!row) throw new Error(`EDITORIAL_COLLAGE_NOT_FOUND: ${validated.id}`);
+      const task = rowToTask(row);
+      if (task.taskType !== EDITORIAL_COLLAGE_TASK_TYPE) {
+        throw new Error(`EDITORIAL_COLLAGE_TASK_INVALID: ${validated.id} is not a VOX project.`);
+      }
+      if (task.status === 'pending' || task.status === 'running') {
+        throw new Error(`EDITORIAL_COLLAGE_ACTIVE: ${validated.id} is ${task.status} and cannot be edited.`);
+      }
+      const current = parseEditorialCollagePipelineData(task.pipelineData);
+      if (current.updatedAt !== validated.expectedUpdatedAt) {
+        throw new Error('EDITORIAL_COLLAGE_STALE_WRITE: The project changed after it was loaded.');
+      }
+      if (validated.document.id !== validated.id || validated.document.createdAt !== current.createdAt) {
+        throw new Error('EDITORIAL_COLLAGE_IDENTITY_MISMATCH: Project identity fields cannot be changed.');
+      }
+      if (validated.document.updatedAt !== validated.expectedUpdatedAt) {
+        throw new Error('EDITORIAL_COLLAGE_REVISION_MISMATCH: The document revision must match expectedUpdatedAt.');
+      }
+      const nextUpdatedAt = new Date(Math.max(Date.now(), Date.parse(current.updatedAt) + 1)).toISOString();
+      const document = parseEditorialCollagePipelineData({
+        ...validated.document,
+        title: validated.document.title.trim(),
+        updatedAt: nextUpdatedAt,
+      });
+      const status: TaskStatus = document.stage === 'completed' ? 'completed' : 'draft';
+      this.db.run(
+        `UPDATE tasks SET title = ?, ratio = ?, status = ?, pipeline_step = ?, pipeline_data = ?, completed_at = ? WHERE id = ?`,
+        [document.title, document.ratio, status, document.stage, JSON.stringify(document), status === 'completed' ? nextUpdatedAt : null, validated.id],
+      );
+      this.db.run(
+        `INSERT INTO task_events (task_id, run_generation, type, step, agent, tool, detail, data_json, ts)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        [validated.id, task.runGeneration ?? 0, 'editorial_collage_saved', null, 'VOX Director', 'workbench', '已保存 VOX 项目。', JSON.stringify({ stage: document.stage, beats: document.beats.length }), Date.now()],
+      );
+      const updated = getFirstRow<Record<string, unknown>>(this.db, 'SELECT * FROM tasks WHERE id = ?', [validated.id]);
+      if (!updated) throw new Error(`EDITORIAL_COLLAGE_NOT_FOUND: ${validated.id}`);
+      return rowToTask(updated);
+    });
+  }
+
+  async createMotionComicTask(input: MotionComicCreateInput): Promise<Task> {
+    const validated = motionComicCreateInputSchema.parse(input);
+    return this.enqueueCommit(() => {
+      const task = this.insertTask({
+        title: validated.title,
+        inputText: validated.premise,
+        taskKind: 'story',
+        taskType: MOTION_COMIC_TASK_TYPE,
+        ratio: validated.ratio ?? '9:16',
+        processingMode: 'manual',
+        materialSource: 'paste',
+        pipelineStep: 'draft',
+        pipelineData: '{}',
+      });
+      const draft = createMotionComicDraft({
+        id: task.id,
+        title: validated.title,
+        premise: validated.premise,
+        ratio: validated.ratio,
+        now: task.createdAt,
+      });
+      const document = createMotionComicStarterProject(draft, validated.episodeTitle, task.createdAt);
+      this.db.run(
+        `UPDATE tasks SET status = 'draft', pipeline_step = ?, pipeline_data = ? WHERE id = ?`,
+        [document.stage, JSON.stringify(document), task.id],
+      );
+      this.db.run(
+        `INSERT INTO task_events (task_id, run_generation, type, step, agent, tool, detail, data_json, ts)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        [task.id, 0, 'motion_comic_created', 0, 'AI 漫剧导演', 'starter-project', '已创建系列 Bible、第一集分镜和一致性检查骨架。', JSON.stringify({ stage: document.stage, episodes: document.episodes.length, shots: document.episodes[0]?.timeline.clips.length ?? 0 }), Date.now()],
+      );
+      const row = getFirstRow<Record<string, unknown>>(this.db, 'SELECT * FROM tasks WHERE id = ?', [task.id]);
+      if (!row) throw new Error(`MOTION_COMIC_NOT_FOUND: ${task.id}`);
+      return rowToTask(row);
+    });
+  }
+
+  async saveMotionComicTask(input: MotionComicSaveInput): Promise<Task> {
+    const validated = motionComicSaveInputSchema.parse(input) as MotionComicSaveInput;
+    return this.enqueueCommit(() => {
+      this.assertHistoryWritable('task', validated.id);
+      const row = getFirstRow<Record<string, unknown>>(this.db, 'SELECT * FROM tasks WHERE id = ?', [validated.id]);
+      if (!row) throw new Error(`MOTION_COMIC_NOT_FOUND: ${validated.id}`);
+      const task = rowToTask(row);
+      if (task.taskType !== MOTION_COMIC_TASK_TYPE) throw new Error(`MOTION_COMIC_TASK_INVALID: ${validated.id} is not an AI motion-comic project.`);
+      if (task.status === 'pending' || task.status === 'running') throw new Error(`MOTION_COMIC_ACTIVE: ${validated.id} is ${task.status} and cannot be edited.`);
+      const current = parseMotionComicPipelineData(task.pipelineData);
+      if (current.updatedAt !== validated.expectedUpdatedAt) throw new Error('MOTION_COMIC_STALE_WRITE: The project changed after it was loaded.');
+      if (validated.document.id !== validated.id || validated.document.createdAt !== current.createdAt) throw new Error('MOTION_COMIC_IDENTITY_MISMATCH: Project identity fields cannot be changed.');
+      if (validated.document.updatedAt !== validated.expectedUpdatedAt) throw new Error('MOTION_COMIC_REVISION_MISMATCH: The document revision must match expectedUpdatedAt.');
+      const nextUpdatedAt = new Date(Math.max(Date.now(), Date.parse(current.updatedAt) + 1)).toISOString();
+      const document = parseMotionComicPipelineData({ ...validated.document, title: validated.document.title.trim(), updatedAt: nextUpdatedAt });
+      const status: TaskStatus = document.stage === 'completed' ? 'completed' : 'draft';
+      this.db.run(
+        `UPDATE tasks SET title = ?, ratio = ?, status = ?, pipeline_step = ?, pipeline_data = ?, completed_at = ? WHERE id = ?`,
+        [document.title, document.ratio, status, document.stage, JSON.stringify(document), status === 'completed' ? nextUpdatedAt : null, validated.id],
+      );
+      this.db.run(
+        `INSERT INTO task_events (task_id, run_generation, type, step, agent, tool, detail, data_json, ts)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        [validated.id, task.runGeneration ?? 0, 'motion_comic_saved', null, 'AI 漫剧导演', 'workbench', '已保存 AI 漫剧系列项目。', JSON.stringify({ stage: document.stage, episodes: document.episodes.length }), Date.now()],
+      );
+      const updated = getFirstRow<Record<string, unknown>>(this.db, 'SELECT * FROM tasks WHERE id = ?', [validated.id]);
+      if (!updated) throw new Error(`MOTION_COMIC_NOT_FOUND: ${validated.id}`);
+      return rowToTask(updated);
+    });
   }
 
   async createTaskWithOrdinaryCover(
