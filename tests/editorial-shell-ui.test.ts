@@ -2,21 +2,22 @@ import { readFile } from 'node:fs/promises';
 import { describe, expect, it } from 'vitest';
 
 describe('editorial workbench shell', () => {
-  it('keeps VOX and AI motion-comic launchers visibly named in the main shell', async () => {
-    const shell = await source('../src/app/AppShell.tsx');
-    expect(shell).toContain('className="director-quick-launch"');
-    expect(shell).toContain('VOX 视频');
-    expect(shell).toContain('AI 漫剧');
-    expect(shell).toContain("navigate('editorial-collage')");
-    expect(shell).toContain("navigate('motion-comic')");
+  it('keeps VOX and AI motion-comic in the main production navigation without a duplicate launcher row', async () => {
+    const [shell, navigation] = await Promise.all([
+      source('../src/app/AppShell.tsx'),
+      source('../src/app/navigation.ts'),
+    ]);
+    expect(shell).not.toContain('director-quick-launch');
+    expect(navigation).toContain("view: 'editorial-collage', label: 'VOX 视频'");
+    expect(navigation).toContain("view: 'motion-comic', label: 'AI 漫剧'");
   });
 
   it('preserves the independent action and exact nineteen-entry navigation order', async () => {
     const navigation = await source('../src/app/navigation.ts');
     const views = [...navigation.matchAll(/\{ view: '([^']+)', label:/gu)].map((match) => match[1]);
     expect(views).toEqual([
-      'new-task', 'hot-board', 'queue', 'history', 'book-selection', 'benchmark', 'person-assets',
-      'image-lab', 'voice-lab', 'music-mv', 'viral-analyzer', 'editorial-collage', 'motion-comic', 'html-video',
+      'new-task', 'hot-board', 'queue', 'history', 'editorial-collage', 'motion-comic', 'book-selection', 'benchmark', 'person-assets',
+      'image-lab', 'voice-lab', 'music-mv', 'viral-analyzer', 'html-video',
       'prompt-templates', 'draft-templates', 'settings', 'account', 'activation',
     ]);
     expect(navigation).toContain('navigationItems: NavigationItem[] = [newTaskPrimaryAction, ...sidebarNavItems]');

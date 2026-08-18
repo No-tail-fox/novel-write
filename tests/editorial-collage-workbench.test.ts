@@ -17,7 +17,7 @@ describe('editorial collage workbench', () => {
     expect(types).toContain("'editorial-collage'");
     expect(registry).toContain("'editorial-collage': loadEditorialCollagePage");
     expect(routes).toContain("activeView === 'editorial-collage'");
-    expect(navigation).toContain("view: 'editorial-collage', label: 'VOX 视觉导演'");
+    expect(navigation).toContain("view: 'editorial-collage', label: 'VOX 视频'");
     expect(navigation).toContain("taskType === 'editorial-collage'");
     expect(app).toContain("setRequestedEditorialCollageTaskId(targetView === 'editorial-collage' ? taskId : '')");
   });
@@ -29,7 +29,7 @@ describe('editorial collage workbench', () => {
       source('src/styles/features/director-desk.css'),
       source('src/styles/shell.css'),
     ]);
-    for (const component of ['Button', 'CheckboxField', 'IconButton', 'Pane', 'SegmentedControl', 'SelectField', 'SliderField', 'Tabs', 'TextAreaField', 'TextField', 'Toolbar']) {
+    for (const component of ['Button', 'CheckboxField', 'IconButton', 'Pane', 'SelectField', 'SliderField', 'Tabs', 'TextAreaField', 'TextField', 'Toolbar']) {
       expect(workspace).toContain(component);
     }
     for (const rawControl of ['<button', '<input', '<select', '<textarea']) {
@@ -89,6 +89,6 @@ describe('editorial collage workbench', () => {
     expect(css).toContain('.director-scrub-field');
     expect(css).toContain('.director-inspector-pane');
     expect(css).toContain('.director-queue-panel');
-    expect(shellCss).toContain(":not([data-shell-view='editorial-collage']):not([data-shell-view='motion-comic']) .content:has(.page-head .local-note)");
+    expect(shellCss).toContain(":not(:has(.director-desk)) .content:has(.page-head .local-note)");
   });
 });

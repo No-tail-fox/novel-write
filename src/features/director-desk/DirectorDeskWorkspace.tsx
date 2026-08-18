@@ -32,7 +32,7 @@ import {
   Volume2,
   WandSparkles,
 } from 'lucide-react';
-import { Button, CheckboxField, Dialog, IconButton, Menu, Pane, SelectField, SegmentedControl, SliderField, Tabs, TextAreaField, TextField, Toolbar } from '../../ui';
+import { Button, CheckboxField, Dialog, IconButton, Menu, Pane, SelectField, SliderField, Tabs, TextAreaField, TextField, Toolbar } from '../../ui';
 import previewCity from '../../assets/director-desk/preview-city.png';
 import shotAlley from '../../assets/director-desk/shot-alley.png';
 import shotArchive from '../../assets/director-desk/shot-archive.png';
@@ -167,7 +167,7 @@ export interface DirectorDeskWorkspaceProps {
   onRatioChange?: (ratio: NonNullable<DirectorDeskWorkspaceProps['ratio']>) => void;
   onToggleAsset?: (asset: DirectorAsset) => void;
   onRestoreVersion?: (versionId: string) => void;
-  onBackToLibrary?: () => void;
+  onBackToTasks?: () => void;
   onStageChange?: (stage: string) => void;
   onGenerateShot?: (id: string) => Promise<DirectorGenerationResult>;
   onProviderProfileChange?: (profileId: string) => void | Promise<void>;
@@ -176,7 +176,6 @@ export interface DirectorDeskWorkspaceProps {
   onOpenOutput?: () => Promise<void>;
   onOpenSettings?: () => void;
   onConfigureProvider?: () => void;
-  onModeChange?: (mode: DirectorDeskMode) => void;
 }
 
 export interface DirectorGenerationResult {
@@ -212,11 +211,6 @@ const defaultAssets: DirectorAsset[] = [
 ];
 
 const filmstripImages = [previewCity, shotAlley, shotArchive, shotTeahouse, shotRooftop];
-
-const modeOptions = [
-  { value: 'motion-comic' as const, label: 'AI 漫剧' },
-  { value: 'vox' as const, label: 'VOX 视频' },
-];
 
 const tabItems = [
   { value: 'mode', label: '模式', icon: <Sparkles size={13} /> },
@@ -282,7 +276,7 @@ export function DirectorDeskWorkspace({
   onRatioChange,
   onToggleAsset,
   onRestoreVersion,
-  onBackToLibrary,
+  onBackToTasks,
   onStageChange,
   onGenerateShot,
   onProviderProfileChange,
@@ -291,7 +285,6 @@ export function DirectorDeskWorkspace({
   onOpenOutput,
   onOpenSettings,
   onConfigureProvider,
-  onModeChange,
 }: DirectorDeskWorkspaceProps) {
   const [inspectorTab, setInspectorTab] = useState<DirectorInspectorTab>('generate');
   const [assetTab, setAssetTab] = useState<DirectorAssetTab>('narrator');
@@ -510,7 +503,7 @@ export function DirectorDeskWorkspace({
     <div className="director-desk" data-director-desk-mode={mode} data-left-pane-open={leftPaneOpen} data-inspector-open={inspectorOpen}>
       <header className="director-desk-header">
         <div className="director-brandline">
-          {onBackToLibrary ? <IconButton label="返回工作流列表" icon={<ArrowLeft size={15} />} variant="subtle" density="compact" onClick={onBackToLibrary} /> : null}
+          {onBackToTasks ? <IconButton label="返回全部任务" icon={<ArrowLeft size={15} />} variant="subtle" density="compact" onClick={onBackToTasks} /> : null}
           <div className="director-brand-mark"><Film size={16} aria-hidden="true" /></div>
           <strong className="director-wordmark">StoryDream</strong>
           {projects.length > 0 && onSelectProject ? <Menu
@@ -527,7 +520,6 @@ export function DirectorDeskWorkspace({
             </Button>
           ))}
         </nav>
-        <SegmentedControl label="工作模式" value={mode} options={modeOptions} onChange={onModeChange ?? (() => undefined)} className="director-mode-switch" />
         <div className="director-header-status">
           <span className={errorMessage ? 'director-status-dot is-error' : providerConnected ? 'director-status-dot is-ok' : 'director-status-dot is-warn'} />
           <span role={errorMessage ? 'alert' : undefined}>{errorMessage ?? feedback ?? (providerConnected ? `${providerLabel} 已连接` : '等待图片服务')}</span>

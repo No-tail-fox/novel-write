@@ -1991,3 +1991,44 @@
 - 现有工作台测试以源码合同为主，适合先新增失败断言锁定项目首页、三步向导、`initialSection="image"`、非 Dialog 系列圣经、动态阶段和媒体状态，再配合 Electron 脚本做真实交互证明。
 - 现有版本化文档已经能承载向导选择：VOX 有 `selectedStyleId`、shot layout/motion/voice/subtitle/seed；AI 漫剧有完整 series/characters/sceneAssets/props 和 shot 同类字段。因此创建基础文档后立即应用向导 preset 并走现有 save，可避免新增 IPC 或无效展示字段。
 - VOX starter 固定四段 30 秒，AI starter 固定三场六镜 40 秒；首轮向导应如实展示并允许选择现有可表达的模板/画幅/声音/字幕，而不是承诺当前领域模型尚不能安全表达的任意镜头数。
+# VOX / AI 漫剧统一任务体系重构发现（2026-08-18）
+
+- 用户截图为 1320×860：页面脱离主应用壳层，重复提供“返回首页”、VOX/AI 漫剧切换、继续项目、新建项目和项目库，形成第二套信息架构。
+- 截图中的项目卡信息被挤在大面积空白中，字段断裂为多行；页面强调产品介绍而非继续创作，不符合桌面生产工具的高频任务路径。
+- 用户明确要求：任务继续属于当前软件；点击任务进入新工作区；新建任务可以选择目前已有的几个主题；整体页面、功能和逻辑要整理成一套软件。
+- `frontend-design` 约束要求先确定具体受众、单一页面任务与视觉系统；本轮选择“统一任务入口”而非再设计一个 VOX 营销首页。
+- `storydream-ui` 与 `ui-ux-pro-max` 共同要求保留主壳层、复用 `src/ui` 和语义 tokens、保持稳定工作区，并覆盖真实状态与普通/紧凑桌面截图。
+- 项目是 Electron 41 + React 19 + TypeScript + Fluent UI 封装，现有主任务体系为 `new-task / queue / history / task-detail`。
+- `src/app/navigation.ts` 已有 `taskWorkspaceView(taskType)`，可把普通任务、VOX (`editorial-collage`) 和 AI 漫剧 (`motion-comic`) 映射到各自工作区；无需发明第二套路由模型。
+- `AppShell.tsx` 在壳层中直接放置 VOX/AI 漫剧按钮，但两条功能页又复用 `DirectorProjectLibrary`，造成壳层入口之后再次进入项目库。
+- `DirectorProjectStart.tsx` 同时拥有项目库、创建向导、模式切换与恢复状态；应保留创建预检/恢复组件，停止让 VOX/AI 路由渲染独立项目库。
+- 新建任务页面已有完整三阶段内容创作流程，不能粗暴替换；需要在它之前增加轻量且可恢复的任务主题选择，或用带上下文的入口直接选中主题。
+- `AppShell.tsx` 目前在所有内容页的 `page-head` 内再渲染一组 VOX/AI 快捷按钮，同时侧栏已有同名入口；这是第二处重复导航，应由统一任务/创建上下文替代。
+- 现有侧栏把 VOX/AI 漫剧归在“素材与实验”，但二者实际创建、持久化、生成、渲染、导出完整项目，产品归属应是“创作生产”或统一新建任务类型，而不是实验室。
+- `DirectorProjectLibrary` 本身包含返回首页、跨模式切换、产品介绍、继续项目、新建项目和项目列表，几乎完整复制应用壳层；该组件应退出正常路由，只保留创建向导和加载状态。
+- `DirectorCreateWizard` 的三步预检、服务状态和不付费创建说明是有效功能，应保留，但返回文案/目标要从“项目库”改为统一任务视图。
+- `App.openTaskDetail(taskId)` 已实现统一直达：普通任务进入 `task-detail`，VOX 进入 `editorial-collage`，AI 漫剧进入 `motion-comic`，HTML 视频进入 `html-video`，并传递 requested task ID。
+- 两个导演页在没有活动文档时硬编码渲染 `DirectorProjectLibrary`；把该分支替换为创建预检，已有任务仍可由历史/最近任务经 `openTaskDetail()` 直接恢复。
+- 两个导演工作区的“返回项目库”目前调用 `showLibrary()` 清空活动文档；应改为返回统一历史任务视图，同时保留未保存状态处理的现有语义。
+- `HistoryPage` 已用 `api.listTasks()` 读取统一 Task 表，并显示标题、类型、状态、进度、更新时间；整行和“打开”操作都调用 `openTaskDetail(record.id)`，可直接承接全部项目库职责。
+- VOX/AI 漫剧的浏览器 fallback 与 Electron handler 都创建标准 `Task`，分别写入 `taskType: editorial-collage` 和 `taskType: motion-comic`；持久化已经统一，当前割裂纯属 UI/路由问题。
+- 当前可稳定映射到独立任务工作区的创建类型为：普通智能成片、VOX 视频、AI 漫剧、HTML 动画；音乐 MV、画图、配音等仍是专项工具/记录，不应混入项目类型选择。
+- `HistoryPage` 现有加载、空、归档、收藏、搜索、状态过滤和分页已覆盖统一项目管理需要，本轮无需建立新 dashboard 或复制任务卡列表。
+- `director-desk.css` 当前按 `data-shell-view` 无条件隐藏 `.window-line`、`.sidebar` 和 `.page-head`，因此项目库和创建向导也脱离主软件；这与用户截图完全一致，是主要视觉根因。
+- 正确的沉浸条件应是页面内真实存在 `.director-desk` 工作区，而不是仅凭 VOX/AI 漫剧路由；创建向导应保留主壳层，具体任务工作区才可全屏沉浸。
+- 浏览器预览提示的 CSS 也按路由排除了 VOX/AI 漫剧，需要同步改为仅在真实导演工作区排除，否则创建页提示会占用错误网格高度。
+- 新建任务现有工作区宽度与语义 tokens 可复用；任务类型选择应是紧凑横向工具带，放在三阶段步骤前，不增加营销 hero 或嵌套卡片。
+- 导演工作区头部目前仍有 VOX/AI 漫剧 `SegmentedControl`；项目类型是持久化文档属性，不应在已打开项目里作为临时视图模式切换，统一导航应由主壳层承担。
+- 导演工作区已有项目下拉菜单，可以在同类型项目间直接切换；返回按钮因此只需回到“全部任务”，不需要再打开类型专属项目库。
+- Requested task 打开失败时不能静默落入空页或独立库；需要显示同壳层恢复状态，提供“返回全部任务”和“新建当前类型”两个明确动作。
+- 项目现有 `scripts/qa-director-desk.py` 可在隔离 Electron profile 中做普通/紧凑窗口、布局、媒体像素和交互验证，但入口脚本仍依赖已删除的 `.director-quick-launch`、旧“VOX 视觉导演”名称和旧创建按钮，需要随产品合同更新。
+- 当前 5173 没有监听；最终需在实现和 QA 完成后启动最新 Vite renderer，供用户直接复测。
+- Codex 随附 Python 环境没有 `playwright`；旧 `qa-director-desk.py` 后半段也依赖已淘汰的弹窗式系列设定，不能作为本轮直接门禁。
+- 本轮将复用项目 Electron + CDP 的证据方式，以随附 Node Playwright 创建范围明确的统一任务 QA，不安装或修改项目依赖。
+- Electron 专项 QA 证明统一链路成立：新建任务显示智能成片、VOX 视频、AI 漫剧、HTML 动画四类；VOX/AI 创建页仍显示主壳层；具体 VOX 项目才进入沉浸 Director Desk。
+- 隔离 profile 创建“统一任务系统 QA VOX”后，历史任务表将其显示为 `VOX 视频`，从导演台返回历史再点击该行可直接恢复工作区，不经过类型专属项目库。
+- 首轮截图门禁发现所有主壳层页面的关闭按钮命中框右侧越界 6px；根因是 `src/styles.css` 的旧 `margin-right: -20px` 与 `shell.css` 新 14px 标题栏 padding 不一致，覆盖为 `-14px` 后消除。
+- 最终 7 张 Electron 截图逐张复核：创建类型带、VOX 创建页、AI 漫剧创建页、导演台和统一历史表信息层级一致，没有重复模式页签、独立项目库、文字重叠或不可达主操作。
+- 最终专项报告为 `status=passed`，全部状态 `horizontalOverflow=0`、`clippedControls=[]`、`runtimeErrors=[]`；全库回归 146 文件、1905/1905 通过。
+
+---

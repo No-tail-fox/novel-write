@@ -1,5 +1,5 @@
 import type { ReactNode } from 'react';
-import { Bell, Clapperboard, Coins, History, Images, Info, KeyRound, Maximize2, Minus, Moon, Sun, X } from 'lucide-react';
+import { Bell, Coins, History, Info, KeyRound, Maximize2, Minus, Moon, Sun, X } from 'lucide-react';
 import { AsyncActionFeedback as InlineActionFeedback } from '../components/AsyncActionFeedback';
 import { taskStatusLabel as statusLabel } from '../components/StatusBadge';
 import { taskProgressLabel } from '../shared/html-video-workflow';
@@ -11,6 +11,7 @@ import {
   newTaskPrimaryAction,
   pageSubtitle,
   sidebarNavGroups,
+  taskWorkspaceView,
   type NavigationItem as NavItem,
 } from './navigation';
 import type { ShellView } from '../shared/types';
@@ -138,8 +139,8 @@ export function AppShell({
                   type="button"
                   disabled={busy}
                   onClick={() => openTaskDetail(task.id)}
-                  onMouseEnter={() => preloadRouteIntent('task-detail')}
-                  onFocus={() => preloadRouteIntent('task-detail')}
+                  onMouseEnter={() => preloadRouteIntent(taskWorkspaceView(task.taskType))}
+                  onFocus={() => preloadRouteIntent(taskWorkspaceView(task.taskType))}
                 >
                   <strong>{task.title || '未命名任务'}</strong>
                   <span>{statusLabel(task.status)} · {taskProgressLabel(task)}</span>
@@ -201,10 +202,6 @@ export function AppShell({
               {taskOperationsView ? <span className="page-breadcrumb">StoryDream / 创作生产</span> : null}
               <h1>{activeNav.label}</h1>
               {taskOperationsView ? null : <p>{pageSubtitle(activeView)}</p>}
-              <div className="director-quick-launch" aria-label="视频工作流">
-                <Button density="compact" variant={activeView === 'editorial-collage' ? 'primary' : 'subtle'} icon={<Clapperboard size={14} />} onClick={() => navigate('editorial-collage')}>VOX 视频</Button>
-                <Button density="compact" variant={activeView === 'motion-comic' ? 'primary' : 'subtle'} icon={<Images size={14} />} onClick={() => navigate('motion-comic')}>AI 漫剧</Button>
-              </div>
               {isBrowserPreview ? <span className="local-note">浏览器预览不能执行真实流水线，请在 Electron 应用中运行任务。</span> : null}
             </div>
             <div className="top-notice">

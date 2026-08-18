@@ -85,6 +85,6 @@ describe('motion comic workbench', () => {
     expect(workspace).not.toContain('item.progress + 9');
     expect(css).toContain('grid-template-rows: 56px minmax(0, 1fr) 38px');
     expect(css).not.toContain('min-width: 1000px');
-    expect(shellCss).toContain(":not([data-shell-view='editorial-collage']):not([data-shell-view='motion-comic']) .content:has(.page-head .local-note)");
+    expect(shellCss).toContain(":not(:has(.director-desk)) .content:has(.page-head .local-note)");
   });
 });

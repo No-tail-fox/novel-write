@@ -18,7 +18,7 @@ import type { StoryDreamApi } from '../../shared/storydream-api';
 import { Button, CheckboxField, Pane, SegmentedControl, SelectField, TextAreaField, TextField, Toolbar } from '../../ui';
 import { useAsyncAction } from '../../ui/async-action';
 import { DirectorDeskWorkspace, type DirectorAsset, type DirectorQueueItem, type DirectorShot, type DirectorVersion } from '../director-desk/DirectorDeskWorkspace';
-import { DirectorCreateWizard, DirectorProjectLibrary, DirectorProjectLoading } from '../director-desk/DirectorProjectStart';
+import { DirectorCreateWizard, DirectorProjectLoading, DirectorProjectRecovery } from '../director-desk/DirectorProjectStart';
 import { applyMotionComicImageRecord, applyMotionComicVoiceRecord, resolveDirectorImageProviderOptions, resolveDirectorImageProviderStatus, resolveDirectorVoiceProviderStatus } from '../director-desk/director-generation';
 import { toLocalAssetUrl, toLocalImageUrl } from '../tasks/task-formatters';
 import shotAlley from '../../assets/director-desk/shot-alley.png';
@@ -51,9 +51,9 @@ export function MotionComicPage({
   const documentRef = useRef<MotionComicPipelineData | null>(null);
   const [activeProjectId, setActiveProjectId] = useState('');
   const [selectedShotId, setSelectedShotId] = useState('');
-  const [loadingProjectId, setLoadingProjectId] = useState('');
+  const [loadingProjectId, setLoadingProjectId] = useState(() => requestedTaskId);
   const projectOpenRequestRef = useRef(0);
-  const [createOpen, setCreateOpen] = useState(false);
+  const [createOpen, setCreateOpen] = useState(() => !requestedTaskId);
   const [createStep, setCreateStep] = useState(0);
   const [createTitle, setCreateTitle] = useState('');
   const [createPremise, setCreatePremise] = useState('');
@@ -287,18 +287,6 @@ export function MotionComicPage({
     setCreateOpen(true);
   }
 
-  function showLibrary() {
-    projectOpenRequestRef.current += 1;
-    setLoadingProjectId('');
-    setDocument(null);
-    documentRef.current = null;
-    setActiveProjectId('');
-    setSelectedShotId('');
-    setSeriesSettingsOpen(false);
-    setCreateOpen(false);
-    setDirty(false);
-  }
-
   async function createProject() {
     const result = await projectAction.run(async () => {
       const mutation = await api.createMotionComic({ title: createTitle, premise: createPremise, episodeTitle: createEpisodeTitle || undefined, ratio: createRatio });
@@ -458,7 +446,7 @@ export function MotionComicPage({
     setDirty(false);
   }
 
-  if (loadingProjectId) return <div data-motion-comic-workbench="true"><DirectorProjectLoading mode="motion-comic" onCancel={showLibrary} /></div>;
+  if (loadingProjectId) return <div data-motion-comic-workbench="true"><DirectorProjectLoading mode="motion-comic" onCancel={() => navigate?.('history')} /></div>;
 
   if (createOpen) {
     return <div data-motion-comic-workbench="true"><DirectorCreateWizard
@@ -480,8 +468,7 @@ export function MotionComicPage({
       ]}
       feedback={projectAction.feedback?.tone === 'success' ? projectAction.feedback.message : undefined}
       errorMessage={actionError}
-      onBackLibrary={showLibrary}
-      onSwitchMode={(mode) => navigate?.(mode === 'vox' ? 'editorial-collage' : 'motion-comic')}
+      onBack={() => navigate?.('new-task')}
       onStepChange={setCreateStep}
       onConfigureImage={() => openSettings?.('image', 'motion-comic')}
       onConfigureVoice={() => openSettings?.('tts', 'motion-comic')}
@@ -511,7 +498,7 @@ export function MotionComicPage({
     </DirectorCreateWizard></div>;
   }
 
-  if (!document || !activeEpisode) return <div data-motion-comic-workbench="true"><DirectorProjectLibrary mode="motion-comic" projects={projectOptions} busy={projectAction.busy} feedback={projectAction.feedback?.tone === 'success' ? projectAction.feedback.message : undefined} errorMessage={actionError} onOpenProject={(id) => void openProject(id)} onNewProject={startCreate} onBackHome={() => navigate?.('new-task')} onSwitchMode={(mode) => navigate?.(mode === 'vox' ? 'editorial-collage' : 'motion-comic')} /></div>;
+  if (!document || !activeEpisode) return <div data-motion-comic-workbench="true"><DirectorProjectRecovery mode="motion-comic" errorMessage={actionError} onReturnTasks={() => navigate?.('history')} onNewProject={startCreate} /></div>;
 
   if (seriesSettingsOpen) return <div data-motion-comic-workbench="true" data-motion-comic-series-bible="true" className="director-series-page">
     <header className="director-series-header">
@@ -587,9 +574,8 @@ export function MotionComicPage({
         onOpenOutput={() => api.openTaskOutputDirectory(document.id)}
         onOpenSettings={() => setSeriesSettingsOpen(true)}
         onConfigureProvider={() => openSettings?.('image', 'motion-comic', document.id)}
-        onBackToLibrary={showLibrary}
+        onBackToTasks={() => navigate?.('history')}
         onStageChange={(stage) => { if (stage === '剧本') setSeriesSettingsOpen(true); }}
-        onModeChange={(mode) => navigate?.(mode === 'vox' ? 'editorial-collage' : 'motion-comic')}
       />
     </div>
   </>;

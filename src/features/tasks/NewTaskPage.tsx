@@ -48,6 +48,7 @@ import type {
   PodcastSpeakerPair,
   ProcessingMode,
   RewriteIntensity,
+  ShellView,
   Task,
   TaskMode,
   TaskVideoForm,
@@ -58,6 +59,7 @@ import { imageGenerationQualityLabel, normalizeImageGenerationQuality } from '..
 import { createOrdinaryTaskPipelineData } from '../../shared/ordinary-task-options';
 import { useAsyncAction } from '../../ui/async-action';
 import { buildTaskCreateInput } from './task-create-input';
+import { TaskCreationTypePicker } from './TaskCreationTypePicker';
 import {
   clearNewTaskDraft,
   createNewTaskPreset,
@@ -162,12 +164,14 @@ export function NewTaskPage({
   applyState,
   openTaskDetail,
   isBrowserPreview,
+  navigate,
 }: {
   api: StoryDreamApi;
   state: AppState;
   applyState: ApplyMutationResult;
   openTaskDetail: (taskId: string) => void;
   isBrowserPreview: boolean;
+  navigate: (view: ShellView) => void;
 }) {
   const initialDraftTemplateId = defaultTaskDraftTemplateId(state.draftTemplates);
   const [activeStage, setActiveStage] = useState<NewTaskStage>('material');
@@ -1020,6 +1024,7 @@ export function NewTaskPage({
         void run();
       }}
     >
+      <TaskCreationTypePicker activeType="smart-video" navigate={navigate} />
       <nav className="new-task-stage-tabs" aria-label="新建任务步骤">
         {NEW_TASK_STAGE_META.map((stage, index) => (
           <button

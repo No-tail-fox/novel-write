@@ -14,7 +14,7 @@ import type { StoryDreamApi } from '../../shared/storydream-api';
 import { CheckboxField, SegmentedControl, SelectField, TextAreaField, TextField } from '../../ui';
 import { useAsyncAction } from '../../ui/async-action';
 import { DirectorDeskWorkspace, type DirectorAsset, type DirectorLayoutTemplate, type DirectorMotionPreset, type DirectorQueueItem, type DirectorShot, type DirectorVersion } from '../director-desk/DirectorDeskWorkspace';
-import { DirectorCreateWizard, DirectorProjectLibrary, DirectorProjectLoading } from '../director-desk/DirectorProjectStart';
+import { DirectorCreateWizard, DirectorProjectLoading, DirectorProjectRecovery } from '../director-desk/DirectorProjectStart';
 import { applyEditorialImageRecord, applyEditorialVoiceRecord, resolveDirectorImageProviderOptions, resolveDirectorImageProviderStatus, resolveDirectorVoiceProviderStatus } from '../director-desk/director-generation';
 import { toLocalAssetUrl, toLocalImageUrl } from '../tasks/task-formatters';
 import shotAlley from '../../assets/director-desk/shot-alley.png';
@@ -47,9 +47,9 @@ export function EditorialCollagePage({
   const documentRef = useRef<EditorialCollagePipelineData | null>(null);
   const [activeProjectId, setActiveProjectId] = useState('');
   const [selectedShotId, setSelectedShotId] = useState('');
-  const [loadingProjectId, setLoadingProjectId] = useState('');
+  const [loadingProjectId, setLoadingProjectId] = useState(() => requestedTaskId);
   const projectOpenRequestRef = useRef(0);
-  const [createOpen, setCreateOpen] = useState(false);
+  const [createOpen, setCreateOpen] = useState(() => !requestedTaskId);
   const [createStep, setCreateStep] = useState(0);
   const [createTitle, setCreateTitle] = useState('');
   const [createSource, setCreateSource] = useState('');
@@ -211,17 +211,6 @@ export function EditorialCollagePage({
     setCreateOpen(true);
   }
 
-  function showLibrary() {
-    projectOpenRequestRef.current += 1;
-    setLoadingProjectId('');
-    setDocument(null);
-    documentRef.current = null;
-    setActiveProjectId('');
-    setSelectedShotId('');
-    setCreateOpen(false);
-    setDirty(false);
-  }
-
   async function createProject() {
     const result = await projectAction.run(async () => {
       const mutation = await api.createEditorialCollage({ title: createTitle, sourceText: createSource, ratio: createRatio });
@@ -367,7 +356,7 @@ export function EditorialCollagePage({
     setDirty(false);
   }
 
-  if (loadingProjectId) return <div data-editorial-collage-workbench="true"><DirectorProjectLoading mode="vox" onCancel={showLibrary} /></div>;
+  if (loadingProjectId) return <div data-editorial-collage-workbench="true"><DirectorProjectLoading mode="vox" onCancel={() => navigate?.('history')} /></div>;
 
   if (createOpen) {
     return <div data-editorial-collage-workbench="true"><DirectorCreateWizard
@@ -389,8 +378,7 @@ export function EditorialCollagePage({
       ]}
       feedback={projectAction.feedback?.tone === 'success' ? projectAction.feedback.message : undefined}
       errorMessage={actionError}
-      onBackLibrary={showLibrary}
-      onSwitchMode={(mode) => navigate?.(mode === 'motion-comic' ? 'motion-comic' : 'editorial-collage')}
+      onBack={() => navigate?.('new-task')}
       onStepChange={setCreateStep}
       onConfigureImage={() => openSettings?.('image', 'editorial-collage')}
       onConfigureVoice={() => openSettings?.('tts', 'editorial-collage')}
@@ -417,7 +405,7 @@ export function EditorialCollagePage({
     </DirectorCreateWizard></div>;
   }
 
-  if (!document) return <div data-editorial-collage-workbench="true"><DirectorProjectLibrary mode="vox" projects={projectOptions} busy={projectAction.busy} feedback={projectAction.feedback?.tone === 'success' ? projectAction.feedback.message : undefined} errorMessage={actionError} onOpenProject={(id) => void openProject(id)} onNewProject={startCreate} onBackHome={() => navigate?.('new-task')} onSwitchMode={(mode) => navigate?.(mode === 'motion-comic' ? 'motion-comic' : 'editorial-collage')} /></div>;
+  if (!document) return <div data-editorial-collage-workbench="true"><DirectorProjectRecovery mode="vox" errorMessage={actionError} onReturnTasks={() => navigate?.('history')} onNewProject={startCreate} /></div>;
 
   return <div data-editorial-collage-workbench="true">
     <DirectorDeskWorkspace
@@ -469,8 +457,7 @@ export function EditorialCollagePage({
       onRender={renderProject}
       onOpenOutput={() => api.openTaskOutputDirectory(document.id)}
       onOpenSettings={() => openSettings?.('image', 'editorial-collage', document.id)}
-      onBackToLibrary={showLibrary}
-      onModeChange={(mode) => navigate?.(mode === 'motion-comic' ? 'motion-comic' : 'editorial-collage')}
+      onBackToTasks={() => navigate?.('history')}
     />
   </div>;
 }

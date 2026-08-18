@@ -40,6 +40,8 @@ export const productionNavItems: NavigationItem[] = [
   { view: 'hot-board', label: '实时热榜', hint: '热点选题', icon: TrendingUp },
   { view: 'queue', label: '自动化队列', hint: '任务队列 · 运行与审批', icon: ListChecks },
   { view: 'history', label: '历史任务', hint: '本地记录', icon: History },
+  { view: 'editorial-collage', label: 'VOX 视频', hint: '解释型视觉叙事', icon: Clapperboard },
+  { view: 'motion-comic', label: 'AI 漫剧', hint: '系列与分镜', icon: Images },
   { view: 'book-selection', label: '选品助手', hint: '商品卖点', icon: BookOpen },
   { view: 'benchmark', label: '对标监控', hint: '三平台洞察', icon: Radar },
   { view: 'person-assets', label: '素材库', hint: '人物与媒体', icon: Images },
@@ -50,8 +52,6 @@ export const assetLabNavItems: NavigationItem[] = [
   { view: 'voice-lab', label: '配音实验室', hint: '音色试听', icon: Mic2 },
   { view: 'music-mv', label: '音乐 MV', hint: '歌词成片', icon: Music },
   { view: 'viral-analyzer', label: '爆款拆解', hint: '拉片复刻', icon: Flame },
-  { view: 'editorial-collage', label: 'VOX 视觉导演', hint: '解释型拼贴', icon: Clapperboard },
-  { view: 'motion-comic', label: 'AI 漫剧', hint: '系列与分镜', icon: Images },
   { view: 'html-video', label: 'HTML 动画视频', hint: 'HTML 渲染', icon: Play },
 ];
 

@@ -6,7 +6,7 @@ async function source(path: string): Promise<string> {
 }
 
 describe('director product flow', () => {
-  it('opens on a stable project library instead of auto-opening the first project', async () => {
+  it('uses the unified task system instead of a route-local project library', async () => {
     const [vox, comic, start] = await Promise.all([
       source('src/features/editorial-collage/EditorialCollagePage.tsx'),
       source('src/features/motion-comic/MotionComicPage.tsx'),
@@ -14,11 +14,12 @@ describe('director product flow', () => {
     ]);
     expect(vox).not.toContain('void openProject(projects[0].id)');
     expect(comic).not.toContain('void openProject(projects[0].id)');
-    expect(vox).toContain('<DirectorProjectLibrary');
-    expect(comic).toContain('<DirectorProjectLibrary');
-    expect(start).toContain('继续上次项目');
-    expect(start).toContain('新建项目');
-    expect(start).toContain('data-director-project-library');
+    expect(vox).not.toContain('<DirectorProjectLibrary');
+    expect(comic).not.toContain('<DirectorProjectLibrary');
+    expect(start).not.toContain('data-director-project-library');
+    expect(vox).toContain("onReturnTasks={() => navigate?.('history')}");
+    expect(comic).toContain("onReturnTasks={() => navigate?.('history')}");
+    expect(start).toContain('data-director-project-recovery');
   });
 
   it('uses a three-step preflight whose choices are persisted into both documents', async () => {
