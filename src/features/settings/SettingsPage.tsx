@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { AlertTriangle, Bot, CheckCircle2, Copy, Database, Film, FlaskConical, FolderOpen, Globe2, Image as ImageIcon, Info, KeyRound, Loader2, Mic2, Palette, Save, Search, Sparkles, Upload, Wand2, XCircle } from "lucide-react";
+import { AlertTriangle, ArrowLeft, Bot, CheckCircle2, Copy, Database, Film, FlaskConical, FolderOpen, Globe2, Image as ImageIcon, Info, KeyRound, Loader2, Mic2, Palette, Save, Search, Sparkles, Upload, Wand2, XCircle } from "lucide-react";
 import { useMemo } from "react";
 import type { AppConfig, ConfigTestTarget, ImaKnowledgeResult, ProviderModel, ProviderModelListRequest, ShellView, ThemeName, TtsProviderProfile, VolcengineSpeaker } from "../../shared/types";
 import type { StoryDreamApi } from "../../shared/storydream-api";
@@ -13,7 +13,7 @@ import { useAsyncAction } from "../../ui/async-action";
 import { FormField as Field } from "../../components/FormField";
 import { SegmentedControl as Segmented } from "../../components/SegmentedControl";
 import { ToggleField } from "../../components/ToggleField";
-import { SwitchField } from '../../ui';
+import { Button, SwitchField } from '../../ui';
 import { RangeField } from "../../components/RangeField";
 import { AsyncActionFeedback as InlineActionFeedback } from "../../components/AsyncActionFeedback";
 import type { ApplyMutationResult, RendererAppState as AppState } from "../../app/route-types";
@@ -39,8 +39,10 @@ import {
   type SecretEditor,
 } from './settings-controls';
 
-export function SettingsPage({ api, state, applyState, synchronizeThemeState, navigate }: { api: StoryDreamApi; state: AppState; applyState: ApplyMutationResult; synchronizeThemeState: RuntimeThemeStateSynchronizer; navigate: (view: ShellView) => void }) {
-  const [section, setSection] = useState('llm');
+export type SettingsSection = 'appearance' | 'llm' | 'image' | 'video' | 'tts' | 'speechToText' | 'jianying' | 'activation' | 'creative' | 'webSearch' | 'about';
+
+export function SettingsPage({ api, state, applyState, synchronizeThemeState, navigate, initialSection, returnView, onReturn }: { api: StoryDreamApi; state: AppState; applyState: ApplyMutationResult; synchronizeThemeState: RuntimeThemeStateSynchronizer; navigate: (view: ShellView) => void; initialSection?: SettingsSection; returnView?: ShellView; onReturn?: () => void }) {
+  const [section, setSection] = useState<SettingsSection>(initialSection ?? 'llm');
   const [draft, setDraft] = useState<AppConfig>(() => normalizeEditableConfigProviders(state.config));
   const [settingsDirty, setSettingsDirty] = useState(false);
   const [secretChanges, setSecretChanges] = useState<SecretChanges>({});
@@ -64,6 +66,9 @@ export function SettingsPage({ api, state, applyState, synchronizeThemeState, na
   const saveAction = useAsyncAction();
   const settingsAction = useAsyncAction();
   const themeAction = useAsyncAction();
+  useEffect(() => {
+    if (initialSection) setSection(initialSection);
+  }, [initialSection]);
   useEffect(() => {
     if (settingsDirty) return;
     const nextSignature = settingsConfigSignature(state.config);
@@ -422,9 +427,11 @@ export function SettingsPage({ api, state, applyState, synchronizeThemeState, na
     ['webSearch', Globe2, '联网搜索', 'SearXNG · Tavily · 兼容源', settingsStatusLabel(configTargetStatus('webSearch', draftWithCredentialStatus))],
     ['about', Info, '关于 · 诊断', '日志 · 重置', '已配置'],
   ] as const;
+  const returnLabel = returnView === 'editorial-collage' ? '返回 VOX 视频' : returnView === 'motion-comic' ? '返回 AI 漫剧' : '返回创作首页';
   return (
     <div className="settings-layout">
       <section className="settings-menu">
+        {onReturn ? <Button className="settings-return-action" variant="subtle" icon={<ArrowLeft size={14} />} onClick={onReturn}>{returnLabel}</Button> : null}
         {sections.map(([id, Icon, label, hint, status]) => (
           <button key={id} className={section === id ? 'settings-tab active' : 'settings-tab'} onClick={() => setSection(id)}>
             <Icon size={16} />

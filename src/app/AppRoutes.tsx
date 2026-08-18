@@ -4,6 +4,7 @@ import type { HistoryFamily, ShellView, Task, ThemeName } from '../shared/types'
 import { RouteLoadingState } from './RouteLoadingState';
 import { routeComponents } from './route-registry';
 import type { ApplyMutationResult, RendererAppState as AppState } from './route-types';
+import type { SettingsSection } from '../features/settings/SettingsPage';
 
 const {
   'new-task': NewTaskPage,
@@ -36,6 +37,10 @@ export function AppRoutes({
   applyState,
   synchronizeThemeState,
   navigate,
+  openSettings,
+  initialSettingsSection,
+  settingsReturnView,
+  returnFromSettings,
   openTaskDetail,
   isHistoryTombstoned,
   historyFamilyEpochs,
@@ -58,6 +63,10 @@ export function AppRoutes({
   applyState: ApplyMutationResult;
   synchronizeThemeState: (expectedTheme: ThemeName, nextTheme: ThemeName) => boolean;
   navigate: (view: ShellView) => void;
+  openSettings: (section: SettingsSection, returnView: ShellView, taskId?: string) => void;
+  initialSettingsSection?: SettingsSection;
+  settingsReturnView?: ShellView;
+  returnFromSettings: () => void;
   openTaskDetail: (taskId: string) => void;
   isHistoryTombstoned: (family: HistoryFamily, id: string) => boolean;
   historyFamilyEpochs: Partial<Record<HistoryFamily, number>>;
@@ -94,13 +103,13 @@ export function AppRoutes({
       {activeView === 'image-lab' ? <ImageLabPage api={api} state={state} applyState={applyState} /> : null}
       {activeView === 'voice-lab' ? <VoiceLabPage api={api} state={state} applyState={applyState} /> : null}
       {activeView === 'music-mv' ? <MusicMvPage api={api} state={state} applyState={applyState} openTaskDetail={openTaskDetail} isBrowserPreview={isBrowserPreview} /> : null}
-      {activeView === 'editorial-collage' ? <EditorialCollagePage api={api} state={state} applyState={applyState} requestedTaskId={requestedEditorialCollageTaskId} onRequestedTaskHandled={onRequestedEditorialCollageTaskHandled} /> : null}
-      {activeView === 'motion-comic' ? <MotionComicPage api={api} state={state} applyState={applyState} requestedTaskId={requestedMotionComicTaskId} onRequestedTaskHandled={onRequestedMotionComicTaskHandled} /> : null}
+      {activeView === 'editorial-collage' ? <EditorialCollagePage api={api} state={state} applyState={applyState} requestedTaskId={requestedEditorialCollageTaskId} onRequestedTaskHandled={onRequestedEditorialCollageTaskHandled} navigate={navigate} openSettings={openSettings} /> : null}
+      {activeView === 'motion-comic' ? <MotionComicPage api={api} state={state} applyState={applyState} requestedTaskId={requestedMotionComicTaskId} onRequestedTaskHandled={onRequestedMotionComicTaskHandled} navigate={navigate} openSettings={openSettings} /> : null}
       {activeView === 'html-video' ? <HtmlVideoPage api={api} state={state} applyState={applyState} refreshTaskDetail={refreshTaskDetail} requestedTaskId={requestedHtmlTaskId} onRequestedTaskHandled={onRequestedHtmlTaskHandled} onActiveTaskChange={onActiveHtmlTaskChange} isBrowserPreview={isBrowserPreview} /> : null}
       {activeView === 'viral-analyzer' ? <ViralAnalyzerPage api={api} state={state} applyState={applyState} refreshViralEvents={refreshViralEvents} onActiveAnalysisChange={onActiveViralAnalysisChange} openTaskDetail={openTaskDetail} isBrowserPreview={isBrowserPreview} /> : null}
       {activeView === 'prompt-templates' ? <PromptTemplatesPage api={api} state={state} applyState={applyState} /> : null}
       {activeView === 'draft-templates' ? <DraftTemplatesPage api={api} state={state} applyState={applyState} /> : null}
-      {activeView === 'settings' ? <SettingsPage api={api} state={state} applyState={applyState} synchronizeThemeState={synchronizeThemeState} navigate={navigate} /> : null}
+      {activeView === 'settings' ? <SettingsPage api={api} state={state} applyState={applyState} synchronizeThemeState={synchronizeThemeState} navigate={navigate} initialSection={initialSettingsSection} returnView={settingsReturnView} onReturn={returnFromSettings} /> : null}
       {activeView === 'account' ? <AccountPage api={api} state={state} applyState={applyState} /> : null}
       {activeView === 'activation' ? <ActivationPage api={api} state={state} applyState={applyState} /> : null}
     </Suspense>

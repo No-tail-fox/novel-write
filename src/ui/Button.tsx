@@ -25,12 +25,14 @@ const sizes = {
   spacious: 'large',
 } as const;
 
-export function Button({ variant = 'secondary', density = 'comfortable', className, children, ...props }: ButtonProps) {
+export function Button({ variant = 'secondary', density = 'comfortable', className, children, icon, iconPosition = 'before', ...props }: ButtonProps) {
   return (
     <FluentButton
       {...props}
       appearance={appearances[variant]}
       size={sizes[density]}
+      icon={icon}
+      iconPosition={iconPosition}
       className={mergeStoryDreamClasses('sd-button', `sd-button--${variant}`, `sd-button--${density}`, className)}
     >
       {children !== undefined && children !== null ? <span className="sd-button__content">{children}</span> : null}

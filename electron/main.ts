@@ -9,8 +9,9 @@ import { promisify } from 'node:util';
 import { readTaskArtifactSnapshot } from '../src/shared/artifact-preview';
 import { classifyBenchmarkUrl, normalizeBenchmarkSourceUrl } from '../src/shared/benchmark-monitoring';
 import { discoverDangdangBooks } from '../src/shared/book-discovery';
-import type { EditorialCollageCreateInput, EditorialCollageSaveInput } from '../src/shared/editorial-collage';
-import type { MotionComicCreateInput, MotionComicSaveInput } from '../src/shared/motion-comic';
+import { parseEditorialCollagePipelineData, type EditorialCollageCreateInput, type EditorialCollagePipelineData, type EditorialCollageSaveInput } from '../src/shared/editorial-collage';
+import { parseMotionComicPipelineData, type MotionComicCreateInput, type MotionComicPipelineData, type MotionComicSaveInput } from '../src/shared/motion-comic';
+import type { DirectorRenderRequest, DirectorRenderScene } from '../src/shared/director-render';
 import { isCancellation, normalizeAppError } from '../src/shared/app-error';
 import { fromLlmModelTestResult, testConfigTarget } from '../src/shared/config-utils';
 import { generateImageLabRecord } from '../src/shared/image-lab';
@@ -68,6 +69,7 @@ import {
   type HtmlVideoMediaProbeResult,
 } from './html-video-runtime';
 import { createElectronHtmlVideoRenderer } from './html-video-renderer';
+import { renderDirectorVideo } from './director-renderer';
 import { createTrustedIpcRegistrar } from './ipc';
 import { openExistingDirectory } from './open-directory';
 import { importManagedImageLabRecord } from './image-lab-import';
@@ -2511,6 +2513,194 @@ trustedHandle('motion-comic:save', async (_event, input: MotionComicSaveInput) =
   const task = await database.saveMotionComicTask(input);
   return publishTaskUpsert(database, task.id);
 });
+
+trustedHandle('director:render', async (_event, input: DirectorRenderRequest) => {
+  const database = await getDb();
+  const task = await database.getTaskDetail(input.id);
+  if (!task) throw new Error(`DIRECTOR_PROJECT_NOT_FOUND: ${input.id}`);
+  if (task.archivedAt) throw new Error('HISTORY_ARCHIVED: 已归档项目只读。');
+  if (task.taskType !== 'editorial-collage' && task.taskType !== 'motion-comic') {
+    throw new Error('DIRECTOR_PROJECT_INVALID: 当前任务不是 VOX 或 AI 漫剧项目。');
+  }
+  const document = task.taskType === 'editorial-collage'
+    ? parseEditorialCollagePipelineData(task.pipelineData)
+    : parseMotionComicPipelineData(task.pipelineData);
+  const renderId = randomUUID();
+  const startedAt = new Date().toISOString();
+  try {
+    const scenes = directorRenderScenes(document);
+    const result = await renderDirectorVideo({
+      workDir: taskWorkDir(task),
+      projectTitle: document.title,
+      modeLabel: task.taskType === 'editorial-collage' ? 'VOX' : 'AI 漫剧',
+      ratio: document.ratio,
+      scenes,
+    });
+    const finishedAt = new Date().toISOString();
+    const bytes = await readFile(result.outputPath);
+    const outputAsset = {
+      id: `director-export-${renderId}`,
+      assetId: 'director-final-video',
+      kind: 'video' as const,
+      localPath: result.outputPath,
+      sha256: createHash('sha256').update(bytes).digest('hex'),
+      providerJobId: `director-render-job-${renderId}`,
+      provider: 'local',
+      model: 'StoryDream HTML capture + FFmpeg',
+      createdAt: finishedAt,
+      selected: true,
+      pinned: true,
+    };
+    const renderJob = {
+      id: `director-render-job-${renderId}`,
+      workflowKind: document.workflowKind,
+      nodeId: document.id,
+      providerId: 'local-ffmpeg',
+      model: 'StoryDream HTML capture + FFmpeg',
+      capability: 'deterministic-render',
+      status: 'completed' as const,
+      inputHash: createHash('sha256').update(JSON.stringify(scenes.map((scene) => [scene.id, scene.imagePath, scene.audioPath, scene.caption]))).digest('hex'),
+      idempotencyKey: `${document.id}:render:${renderId}`,
+      estimatedCost: 0,
+      actualCost: 0,
+      attempt: document.providerJobs.filter((job) => job.capability === 'deterministic-render').length + 1,
+      createdAt: startedAt,
+      updatedAt: finishedAt,
+    };
+    const qualityReport = {
+      id: `director-quality-${renderId}`,
+      workflowKind: document.workflowKind,
+      stage: 'export',
+      status: 'passed' as const,
+      checks: [
+        { id: 'visual-assets', label: '全部镜头包含已选画面', status: 'passed' as const },
+        { id: 'voice-assets', label: '全部镜头包含已选旁白', status: 'passed' as const },
+        { id: 'video-output', label: 'MP4 成片可读取且非空', status: 'passed' as const },
+      ],
+      createdAt: finishedAt,
+    };
+    const assets = [
+      ...document.assets.map((asset) => asset.assetId === outputAsset.assetId ? { ...asset, selected: false, pinned: false } : asset),
+      outputAsset,
+    ];
+    const providerJobs = [...document.providerJobs, renderJob];
+    const qualityReports = [...document.qualityReports, qualityReport];
+    if (document.workflowKind === 'editorial-collage') {
+      await database.saveEditorialCollageTask({
+        id: document.id,
+        expectedUpdatedAt: document.updatedAt,
+        document: { ...document, stage: 'completed', assets, providerJobs, qualityReports },
+      });
+    } else {
+      await database.saveMotionComicTask({
+        id: document.id,
+        expectedUpdatedAt: document.updatedAt,
+        document: {
+          ...document,
+          stage: 'completed',
+          assets,
+          providerJobs,
+          qualityReports,
+          episodes: document.episodes.map((episode) => episode.id === document.activeEpisodeId ? { ...episode, status: 'completed' } : episode),
+        },
+      });
+    }
+    await database.updateTask(task.id, { outputDir: dirname(result.outputPath) });
+    return { result, mutation: await publishTaskUpsert(database, task.id) };
+  } catch (error) {
+    await persistDirectorRenderFailure(database, document, renderId, startedAt, error).catch(() => undefined);
+    throw error;
+  }
+});
+
+function directorRenderScenes(document: EditorialCollagePipelineData | MotionComicPipelineData): DirectorRenderScene[] {
+  const assets = new Map(document.assets.map((asset) => [asset.id, asset]));
+  const missing: string[] = [];
+  const scenes: DirectorRenderScene[] = [];
+  const addScene = (input: Omit<DirectorRenderScene, 'index' | 'imagePath' | 'audioPath'> & { imageAssetId?: string; audioAssetId?: string }) => {
+    const imagePath = input.imageAssetId ? assets.get(input.imageAssetId)?.localPath : undefined;
+    const audioPath = input.audioAssetId ? assets.get(input.audioAssetId)?.localPath : undefined;
+    const index = scenes.length + 1;
+    if (!imagePath) missing.push(`镜头 ${index} 缺少已生成画面`);
+    if (!audioPath) missing.push(`镜头 ${index} 缺少已生成旁白`);
+    scenes.push({ ...input, index, imagePath: imagePath ?? '', audioPath: audioPath ?? '' });
+  };
+
+  if (document.workflowKind === 'editorial-collage') {
+    document.beats.forEach((beat) => beat.shots.forEach((shot) => {
+      const imageAssetId = shot.layers.find((layer) => layer.assetVersionId)?.assetVersionId;
+      const caption = shot.subtitleCueIds
+        .map((cueId) => beat.subtitleCues.find((cue) => cue.id === cueId)?.text)
+        .filter((text): text is string => Boolean(text))
+        .join(' ') || beat.narration;
+      addScene({ id: shot.id, title: beat.title, caption, durationMs: shot.durationMs, layoutTemplate: shot.layoutTemplate, motionPreset: shot.motionPreset, subtitleStyle: shot.subtitleStyle, imageAssetId, audioAssetId: shot.voiceAssetVersionId });
+    }));
+  } else {
+    const episode = document.episodes.find((candidate) => candidate.id === document.activeEpisodeId) ?? document.episodes[0];
+    if (!episode) throw new Error('DIRECTOR_RENDER_EPISODE_MISSING: AI 漫剧没有可渲染的集。');
+    episode.scenes.forEach((scene) => scene.shots.forEach((shot) => {
+      const caption = shot.dialogueCueIds
+        .map((cueId) => episode.dialogueCues.find((cue) => cue.id === cueId)?.text)
+        .filter((text): text is string => Boolean(text))
+        .join(' ');
+      addScene({ id: shot.id, title: shot.title || scene.title, caption, durationMs: shot.durationMs, layoutTemplate: shot.layoutTemplate, motionPreset: shot.motionPreset, subtitleStyle: shot.subtitleStyle, imageAssetId: shot.firstFrameAssetVersionId, audioAssetId: shot.voiceAssetVersionId });
+    }));
+  }
+  if (missing.length > 0) throw new Error(`DIRECTOR_RENDER_PREFLIGHT_FAILED: ${missing.join('；')}。请先完成镜头画面和旁白。`);
+  return scenes;
+}
+
+async function persistDirectorRenderFailure(
+  database: FileDatabase,
+  document: EditorialCollagePipelineData | MotionComicPipelineData,
+  renderId: string,
+  startedAt: string,
+  error: unknown,
+): Promise<void> {
+  const finishedAt = new Date().toISOString();
+  const detail = error instanceof Error ? error.message : String(error);
+  const failedJob = {
+    id: `director-render-job-${renderId}`,
+    workflowKind: document.workflowKind,
+    nodeId: document.id,
+    providerId: 'local-ffmpeg',
+    model: 'StoryDream HTML capture + FFmpeg',
+    capability: 'deterministic-render',
+    status: 'failed' as const,
+    inputHash: createHash('sha256').update(document.updatedAt).digest('hex'),
+    idempotencyKey: `${document.id}:render:${renderId}`,
+    estimatedCost: 0,
+    attempt: document.providerJobs.filter((job) => job.capability === 'deterministic-render').length + 1,
+    createdAt: startedAt,
+    updatedAt: finishedAt,
+    error: detail.slice(0, 65_536),
+  };
+  const qualityReport = {
+    id: `director-quality-${renderId}`,
+    workflowKind: document.workflowKind,
+    stage: 'export',
+    status: 'failed' as const,
+    checks: [{ id: 'video-output', label: 'MP4 成片生成', status: 'failed' as const, detail: detail.slice(0, 65_536) }],
+    createdAt: finishedAt,
+  };
+  if (document.workflowKind === 'editorial-collage') {
+    const next: EditorialCollagePipelineData = {
+      ...document,
+      stage: 'failed',
+      providerJobs: [...document.providerJobs, failedJob],
+      qualityReports: [...document.qualityReports, qualityReport],
+    };
+    await database.saveEditorialCollageTask({ id: document.id, expectedUpdatedAt: document.updatedAt, document: next });
+  } else {
+    const next: MotionComicPipelineData = {
+      ...document,
+      stage: 'failed',
+      providerJobs: [...document.providerJobs, failedJob],
+      qualityReports: [...document.qualityReports, qualityReport],
+    };
+    await database.saveMotionComicTask({ id: document.id, expectedUpdatedAt: document.updatedAt, document: next });
+  }
+}
 
 trustedHandle('html-video:create-task', async (_event, input: CreateTaskInput) => {
   const database = await getDb();

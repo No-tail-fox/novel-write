@@ -932,6 +932,7 @@ export const ipcInputSchemas = {
   'editorial-collage:save': editorialCollageSaveInputSchema,
   'motion-comic:create': motionComicCreateInputSchema,
   'motion-comic:save': motionComicSaveInputSchema,
+  'director:render': z.object({ id: idSchema }).strict(),
   'html-video:create-task': htmlVideoCreateTaskSchema,
   'html-video:update-config': htmlVideoConfigUpdateSchema,
   'html-video:update-scene': htmlVideoSceneUpdateSchema,

@@ -13,6 +13,7 @@ import { AppRoutes } from './AppRoutes';
 import { AppShell } from './AppShell';
 import { taskWorkspaceView } from './navigation';
 import { RouteErrorBoundary } from './RouteErrorBoundary';
+import type { SettingsSection } from '../features/settings/SettingsPage';
 
 applyStoredTheme(defaultUiPreferences.theme);
 
@@ -27,6 +28,7 @@ export function App() {
     dispatchState({ update });
   }, []);
   const [activeView, setActiveView] = useState<ShellView>('new-task');
+  const [settingsEntry, setSettingsEntry] = useState<{ section: SettingsSection; returnView: ShellView; taskId?: string } | null>(null);
   const [selectedTaskId, setSelectedTaskId] = useState<string | null>(null);
   const [requestedEditorialCollageTaskId, setRequestedEditorialCollageTaskId] = useState('');
   const [requestedMotionComicTaskId, setRequestedMotionComicTaskId] = useState('');
@@ -42,6 +44,7 @@ export function App() {
   const historyEntityRevisionsRef = useRef(new Map<string, number>());
   const historyTombstoneRevisionsRef = useRef(new Map<string, number>());
   const activeViewRef = useRef<ShellView>('new-task');
+  const viewPreferencePersistenceRef = useRef<Promise<void>>(Promise.resolve());
   const selectedTaskIdRef = useRef<string | null>(null);
   const activeHtmlTaskIdRef = useRef<string | null>(null);
   const activeViralAnalysisIdRef = useRef<string | null>(null);
@@ -546,7 +549,20 @@ export function App() {
     void refreshTaskDetail(selectedTaskId);
   }, [refreshTaskDetail, selectedTaskId]);
 
-  async function navigate(view: ShellView) {
+  function persistActiveViewPreference(view: ShellView) {
+    viewPreferencePersistenceRef.current = viewPreferencePersistenceRef.current
+      .catch(() => undefined)
+      .then(async () => {
+        const next = await api.saveUiPreferences({ activeView: view });
+        applyState(next);
+      })
+      .catch((error) => {
+        shellAction.reportError(error);
+      });
+  }
+
+  function navigate(view: ShellView) {
+    activeViewRef.current = view;
     startTransition(() => {
       setRequestedEditorialCollageTaskId('');
       setRequestedMotionComicTaskId('');
@@ -556,15 +572,22 @@ export function App() {
       }
       setActiveView(view);
     });
-    setSaveTone('saving');
-    const result = await shellAction.run(async () => {
-      const next = await api.saveUiPreferences({ activeView: view });
-      applyState(next);
-      setSaveTone('saved');
-    });
-    if (!result.ok) {
-      setSaveTone('dirty');
+    persistActiveViewPreference(view);
+  }
+
+  function openSettings(section: SettingsSection, returnView: ShellView, taskId?: string) {
+    setSettingsEntry({ section, returnView, taskId });
+    navigate('settings');
+  }
+
+  function returnFromSettings() {
+    const entry = settingsEntry;
+    setSettingsEntry(null);
+    if (entry?.taskId) {
+      void openTaskDetail(entry.taskId);
+      return;
     }
+    navigate(entry?.returnView ?? 'new-task');
   }
 
   function applyState(next: AppMutationResult | null) {
@@ -666,6 +689,10 @@ export function App() {
             applyState={applyState}
             synchronizeThemeState={synchronizeThemeState}
             navigate={navigate}
+            openSettings={openSettings}
+            initialSettingsSection={settingsEntry?.section}
+            settingsReturnView={settingsEntry?.returnView}
+            returnFromSettings={returnFromSettings}
             openTaskDetail={openTaskDetail}
             isHistoryTombstoned={isHistoryTombstoned}
             historyFamilyEpochs={historyFamilyEpochs}

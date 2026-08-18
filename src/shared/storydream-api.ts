@@ -97,6 +97,7 @@ import type { PersonAssetImage, PersonAssetSummary } from './person-assets';
 import type { JianyingDraftPathDetection } from './jianying-paths';
 import type { EditorialCollageCreateInput, EditorialCollageSaveInput } from './editorial-collage';
 import type { MotionComicCreateInput, MotionComicSaveInput } from './motion-comic';
+import type { DirectorRenderRequest, DirectorRenderResult } from './director-render';
 
 export const INVOKE_CHANNELS = Object.freeze([
   'app:get-state',
@@ -183,6 +184,7 @@ export const INVOKE_CHANNELS = Object.freeze([
   'editorial-collage:save',
   'motion-comic:create',
   'motion-comic:save',
+  'director:render',
   'html-video:create-task',
   'html-video:update-config',
   'html-video:update-scene',
@@ -329,6 +331,7 @@ export type StoryDreamApi = {
   saveEditorialCollage: (input: EditorialCollageSaveInput) => Promise<AppMutationResult | null>;
   createMotionComic: (input: MotionComicCreateInput) => Promise<AppMutationResult | null>;
   saveMotionComic: (input: MotionComicSaveInput) => Promise<AppMutationResult | null>;
+  renderDirectorProject: (input: DirectorRenderRequest) => Promise<{ result: DirectorRenderResult; mutation: AppMutationResult | null }>;
   createHtmlVideoTask: (input: CreateTaskInput) => Promise<AppMutationResult | null>;
   updateHtmlVideoConfig: (id: string, changes: HtmlVideoConfigChange[]) => Promise<AppMutationResult | null>;
   updateHtmlVideoScene: (id: string, sceneIndex: number, changes: HtmlVideoSceneChange[]) => Promise<AppMutationResult | null>;

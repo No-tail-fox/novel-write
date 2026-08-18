@@ -2,7 +2,7 @@ import { createElement, type HTMLAttributes, type ReactNode } from 'react';
 import { mergeStoryDreamClasses } from './utils';
 
 export interface PaneProps extends HTMLAttributes<HTMLElement> {
-  as?: 'div' | 'aside' | 'section';
+  as?: 'div' | 'aside' | 'section' | 'main';
   tone?: 'base' | 'subtle' | 'raised';
   children: ReactNode;
 }

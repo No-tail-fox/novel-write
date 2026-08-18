@@ -22,27 +22,73 @@ describe('editorial collage workbench', () => {
     expect(app).toContain("setRequestedEditorialCollageTaskId(targetView === 'editorial-collage' ? taskId : '')");
   });
 
-  it('uses project UI controls and keeps the deterministic preview separate from paid generation', async () => {
-    const [page, css] = await Promise.all([
+  it('uses the shared Director Desk with real media, shot controls, generation queue, and persisted VOX edits', async () => {
+    const [page, workspace, css, shellCss] = await Promise.all([
       source('src/features/editorial-collage/EditorialCollagePage.tsx'),
-      source('src/styles/features/editorial-collage.css'),
+      source('src/features/director-desk/DirectorDeskWorkspace.tsx'),
+      source('src/styles/features/director-desk.css'),
+      source('src/styles/shell.css'),
     ]);
-    for (const component of ['Button', 'Pane', 'SegmentedControl', 'SelectField', 'TextAreaField', 'TextField', 'Toolbar']) {
-      expect(page).toContain(component);
+    for (const component of ['Button', 'CheckboxField', 'IconButton', 'Pane', 'SegmentedControl', 'SelectField', 'SliderField', 'Tabs', 'TextAreaField', 'TextField', 'Toolbar']) {
+      expect(workspace).toContain(component);
     }
     for (const rawControl of ['<button', '<input', '<select', '<textarea']) {
       expect(page).not.toContain(rawControl);
+      expect(workspace).not.toContain(rawControl);
     }
     expect(page).toContain('data-editorial-collage-workbench="true"');
-    expect(page).toContain('data-layer-kind={layer.kind}');
+    expect(page).toContain('<DirectorDeskWorkspace');
+    expect(page).toContain('mode="vox"');
     expect(page).toContain('api.createEditorialCollage');
     expect(page).toContain('api.saveEditorialCollage');
-    expect(page).not.toMatch(/generate(?:Image|Video)|runTask|createAndRunTask/u);
-    expect(css).toContain('grid-template-columns: minmax(190px, 230px) minmax(380px, 1fr) minmax(260px, 310px)');
-    expect(css).toContain('.vox-timeline-track');
-    expect(css).toContain(".vox-inspector-form .sd-segmented-control [role='tab']");
-    expect(css).toContain('flex: 1 1 auto');
-    expect(css).toContain('gap: 0');
-    expect(css).toContain('white-space: nowrap');
+    expect(page).toContain('api.generateImageLab');
+    expect(page).toContain('api.saveConfig');
+    expect(page).toContain('enableImageProfile');
+    expect(page).toContain('resolveDirectorImageProviderOptions');
+    expect(page).toContain('applyEditorialImageRecord');
+    expect(page).toContain('applyEditorialVoiceRecord');
+    expect(page).toContain('api.generateVoiceLabPreview');
+    expect(page).toContain('api.renderDirectorProject');
+    expect(page).toContain('api.openTaskOutputDirectory');
+    expect(page).toContain('onGenerateShot={generateShot}');
+    expect(page).toContain('onNewProject={startCreate}');
+    expect(page).toContain('onSelectProject={openProject}');
+    expect(page).toContain('onRatioChange={updateRatio}');
+    expect(page).toContain("projectAction.feedback?.tone === 'error'");
+    expect(page).toContain("providerAction.feedback?.tone === 'error'");
+    expect(page).toContain('onRestoreVersion={restoreVersion}');
+    expect(page).not.toContain('onGenerateShot={() => undefined}');
+    expect(page).toContain('onSave={() => void saveProject()}');
+    expect(workspace).toContain('label="保存版本"');
+    expect(workspace).toContain('生成当前镜头');
+    expect(workspace).toContain('retryGeneration');
+    expect(workspace).toContain('generateVoice');
+    expect(workspace).toContain('renderProject');
+    expect(workspace).toContain('openOutput');
+    expect(workspace).toContain('disabled={!outputUrl || outputBusy}');
+    expect(workspace).toContain('director-media-preview');
+    expect(workspace).toContain('director-preview-title');
+    expect(workspace).toContain('director-preview-copy');
+    expect(workspace).toContain('label="播放进度"');
+    expect(workspace).toContain('onProviderProfileChange');
+    expect(workspace).toContain('director-filmstrip');
+    expect(workspace).toContain('director-asset-grid');
+    expect(workspace).toContain('director-queue-panel');
+    expect(workspace).toContain('director-project-menu');
+    expect(workspace).toContain('director-shot-search');
+    expect(workspace).toContain('director-asset-search');
+    expect(workspace).toContain('director-version-list');
+    expect(workspace).not.toContain('onChange={() => undefined}');
+    expect(workspace).not.toContain('item.progress + 9');
+    expect(css).toContain('grid-template-columns: 274px minmax(0, 1fr) 492px');
+    expect(workspace).toContain('director-status-footer');
+    expect(css).toContain('grid-template-rows: 56px minmax(0, 1fr) 38px');
+    expect(css).not.toContain('min-width: 1000px');
+    expect(css).toContain('.director-media-preview');
+    expect(css).toContain('.director-preview-copy');
+    expect(css).toContain('.director-scrub-field');
+    expect(css).toContain('.director-inspector-pane');
+    expect(css).toContain('.director-queue-panel');
+    expect(shellCss).toContain(":not([data-shell-view='editorial-collage']):not([data-shell-view='motion-comic']) .content:has(.page-head .local-note)");
   });
 });

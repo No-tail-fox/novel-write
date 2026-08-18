@@ -2,6 +2,15 @@ import { readFile } from 'node:fs/promises';
 import { describe, expect, it } from 'vitest';
 
 describe('editorial workbench shell', () => {
+  it('keeps VOX and AI motion-comic launchers visibly named in the main shell', async () => {
+    const shell = await source('../src/app/AppShell.tsx');
+    expect(shell).toContain('className="director-quick-launch"');
+    expect(shell).toContain('VOX 视频');
+    expect(shell).toContain('AI 漫剧');
+    expect(shell).toContain("navigate('editorial-collage')");
+    expect(shell).toContain("navigate('motion-comic')");
+  });
+
   it('preserves the independent action and exact nineteen-entry navigation order', async () => {
     const navigation = await source('../src/app/navigation.ts');
     const views = [...navigation.matchAll(/\{ view: '([^']+)', label:/gu)].map((match) => match[1]);

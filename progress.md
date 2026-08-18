@@ -1,4 +1,91 @@
+# Director Desk 可用性与播放修复进度（2026-08-18）
+
+- 已读取 Product Design Audit、用户上下文、审计框架、StoryDream UI 与组件合同，并完成预检。
+- 已保全并原尺寸复看用户截图；四项问题作为新的顶层修复阶段处理，不沿用旧 QA 结论。
+- 当前进入 Electron 真实路径复现；不会停止 5173/5174/5175，也不会触发付费生成。
+- 源码层已确认生成服务和拖动时间轴确属未实现；播放同步与返回闪页进入 Electron 定时取证。
+- 既有 Python 审计脚本因当前 bundled Python 缺少 Playwright 未启动 Electron；已切换到随附 Node Playwright，不重复该失败路径。
+- Electron 历史副本基线已捕获：四项缺陷都有当前轮 DOM/时间序列和截图证据，0 运行时错误；进入失败合同与范围实现。
+- 新增合同首轮按预期 4 文件全红；实现后播放合同 3/3 和类型检查已通过，正在修正 3 个过期/不完整测试断言。
+- 聚焦 4 文件 15/15 通过；扩大到 12 文件时 53/54，通过项覆盖领域、持久化、渲染和 IPC，唯一失败是新增服务切换尚未登记命令库存，已补登记。
+
+---
+
+# VOX / AI 漫剧黑屏复审进度（2026-08-18）
+
+- 已重新打开完成状态：用户真实屏幕黑屏优先于旧隔离 QA、HTTP 200、测试和构建结果。
+- 已完成 Product Design Audit、用户上下文预检和 StoryDream 组件合同前置；本轮不使用旧截图作为审计证据。
+- 已确认当前仅 5173/5174/5175 renderer 在监听，没有 Electron 窗口；正在从 5173 主界面捕获真实入口路径。
+- 5173 本轮点击证据已捕获：VOX 与 AI 漫剧 route 正常但 `.director-desk` 高度都塌缩为 106px，截图呈顶部窄条加大面积黑色；根因已从“可能运行时崩溃”收敛到创建页布局高度链路。
+- 已将浏览器预览提示的 106px 网格规则排除出两个沉浸式路由；两个新增布局合同先红后绿，聚焦 4/4 通过。
+- 修复后 5173 同路径复测通过：VOX / AI 漫剧创建页都占满 1024px 视口，页面错误、route error、横向溢出为 0；下一步创建真实本地项目并覆盖完整工作台、紧凑窗口和 Electron。
+- 浏览器 fallback 的本地项目创建已走通到 VOX 与 AI 漫剧完整工作台；当前在收紧图片就绪门禁，前两次脚本失败分别来自文本框滚动误判和 2MB 预览图尚未解码，均不是新的黑屏。
+- 浏览器 fallback 最终审计为 `captured`：8 个步骤、4 张完整工作台截图，1536x1024 与 1040x720 均无黑屏、运行时错误、网络错误、横向溢出或固定控件裁切。
+- 生产构建通过；Electron 历史数据隔离审计为 `passed`：旧 VOX 直接打开、新 AI 漫剧创建与两个紧凑工作台均健康，6 步 0 运行时错误。
+- Director Desk 完整功能回归再次 `passed`：14 项保存/播放/安全区/生命周期/搜索/一致性/重载交互全部通过，4 张完整工作台截图门禁通过。
+- 相关矩阵 10 文件 60/60、TypeScript、生产构建、`git diff --check` 和 39 个变更文本文件 UTF-8 校验均通过；正在做最终全库测试和截图复审。
+- 全库测试剩余业务失败已由 `renderer-command-inventory.test.ts` 聚焦复现：2/5 失败，分别是缺少 `renderDirectorProject` 与 `generateImageLab` 未枚举两个导演页调用者；已补图片、旁白和整片渲染的共享控件所有权，等待聚焦复测。
+- 首轮库存修复已使图片、旁白和渲染通过；继续暴露的导出目录漏项已补真实忙碌/错误状态及两个工作流所有权，等待第二次聚焦复测。
+- 第二轮 9 项中工作台 4/4 通过，库存仅剩保存处理函数归属不准确；已改为真实 `persistProject` API 所有者并保留外层保存调用链。
+- 导演相关 11 文件 50/50、TypeScript 和生产构建通过；最终浏览器 8 步新截图审计通过，正在逐张复看并继续 Electron 历史数据路径。
+- 最终浏览器 8 张与 Electron 历史副本 6 张已全部人工打开复审；Electron 6 步为 `passed`、0 运行时错误、0 溢出、0 固定控件裁切，真实数据源未写入。
+- Director Desk 最终交互 QA 14/14 通过，4 张终态截图已人工复看；进入差异、UTF-8、服务和全库回归收尾。
+- 全库最终并发结果为 140/143 文件、1887/1891 项；4 项已逐一聚焦通过。当前黑屏复审 Phase 5 完成，5173 继续提供当前页面，5174/5175 未改动，无 Electron 审计进程残留。
+- after Electron 审计脚本已完成并通过：VOX/AI 漫剧在 1320x860、1536x1024、1040x720 共 6 张截图，0 runtime errors、0 横向溢出、0 固定控件裁切、0 文字重叠。
+- 隔离 profile 添加 `QA 第二图片服务` 后，生成服务下拉显示 2 项且第二项可用；刷新后仍选中第二项，未调用任何云端生成服务。
+- 播放审计通过：播放进度 `0 -> 700 -> 900`、暂停保持稳定、拖动到 `18900`、切换第二镜头跳到 `3000`，时间码为 `00:03 / 00:30`。
+- 返回逐帧审计 `savingFrames=0`；本地确定性 MP4 原生 `<video>` `readyState=4`、`duration=4.023991s`，播放推进、暂停和 seek 均通过。
+- after 截图、报告、确定性 MP4 和 fixture 保存在 `.artifacts/director-defect-audit-2026-08-18/after/`，本轮隔离 profile 已清理，真实库未写入。
+
+---
+
+# VOX 与 AI 漫剧功能完成度进度（2026-08-18）
+
+- 已恢复现有 Director Desk 改动、测试与 QA 上下文，保留全部用户在途文件和运行中的 Vite 服务。
+- 已重新读取 `storydream-ui`、组件合同与 `planning-with-files`，把本轮从视觉复刻切换为完整功能验收。
+- 正在按真实主导航路径复现 AI 漫剧不可见问题，并建立 Director Desk 所有可见控件的处理/持久化清单。
+- 已确认既有 QA 绕过主导航，不能反驳用户报告；AI 漫剧当前也缺少系列/剧集/场景/一致性资产的完整编辑面。
+- 已完成第一轮逐控件源码审计，确认多个展示态/空回调控件、模拟队列和非版本化保存；下一步先截图复现入口，再补失败合同。
+- 独立 Chromium 截图因本机缺少 Playwright headless shell 未启动；不额外安装浏览器，后续沿用项目已验证的 Electron-over-CDP 隔离验收。
+- 已补 VOX 项目切换、画幅、搜索、素材绑定、历史画面恢复、权威任务队列与生成参数持久化；渲染器已消费版式、运动和字幕样式。
+- 已补 AI 漫剧剧集/场景/镜头追加、系列设定、角色一致性、场景/道具绑定、关键帧版本恢复和项目重载路径。
+- 主壳和两个空项目创建页都新增明确的 `VOX 视频` / `AI 漫剧` 入口与返回路径；沉浸式工作台不再成为无法退出的页面。
+- 修正 AI 漫剧严格保存合同：版式、运动、字幕样式、Seed 和锁定状态归属 `shotSchema`，新增真实 `motionComicSaveInputSchema` 回归用例。
+- VOX 与 AI 漫剧工作台现在显示项目保存错误；AI 漫剧集数按钮按 StoryDream `Button` 内容层布局，并在紧凑左栏保持固有高度、由左栏滚动。
+- 扩展 Electron QA 最终通过：13 项入口/播放/设置/生命周期/搜索/一致性/持久化交互为真，4 张工作台截图通过布局门禁，运行时错误、横向溢出和控件裁切均为 0。
+- 人工复核 `workflow-entry-1040x720.png` 及 VOX/AI 漫剧桌面与紧凑截图通过；功能完成度阶段进入最终回归。
+- 最终受影响矩阵 10 个测试文件、45/45 项通过；TypeScript、生产构建、`git diff --check`、空回调审计和 37 个变更文本文件的严格 UTF-8 校验通过。
+- `.artifacts/director-desk-qa/report.json` 最终为 `passed`：14 项交互检查、4 张工作台布局截图、0 个运行时错误；未调用付费图片或配音生成。
+- 现有 renderer `http://127.0.0.1:5173/` 返回 HTTP 200 且包含 StoryDream 页面；5174/5175 用户服务保持不动。本轮未提交或推送。
+
+---
+
 # VOX 与 AI 漫剧架构研究进度（2026-08-17）
+
+## Option 2 Director Desk 1:1 implementation (2026-08-18)
+
+- Re-ran Product Design context preflight; there is no saved product-design context, so the selected second mock and StoryDream's existing design system remain the only visual sources of truth.
+- Re-opened the source mock and current VOX desktop capture. The three-pane structure is close, while real voice, playback, render, export, provider switching, and stage navigation remain completion blockers.
+- Confirmed the managed image path uses `generateImageLab()` and persists generated files as production assets plus provider jobs, including failed attempts.
+- Expanded the acceptance gate to include one authorized live `ai.input.im` generation and a same-size `1536 x 1024` source/implementation comparison.
+- Selected the second generated reference and loaded Product Design image-to-code plus StoryDream UI contracts.
+- Confirmed reference assets and dimensions; no production source changes made yet.
+- Generated and visually inspected five 1280x720 documentary/editorial assets for the preview, filmstrip, and asset shelf.
+- Added a shared Director Desk workspace and connected both VOX and AI 漫剧 routes to their existing create/save documents.
+- Implemented mode switching, stage rail, shot selection, prompt/motion/voice/subtitle tabs, generation progress, failure retry, and save-version actions.
+- Updated command ownership so route-level save handlers bridge to the shared Director Desk control without hiding duplicate controls.
+- Focused route/workbench/command tests pass 14/14; TypeScript typecheck passes.
+- Next: run production build, then capture and compare both routes at desktop and compact sizes.
+- TypeScript, 27 focused Director tests, and the production build pass after completing the render contracts.
+- Added an isolated Electron render smoke that creates a VOX project, persists local image/audio fixtures through trusted APIs, renders a real MP4, verifies asset/job/report persistence, and reloads the project.
+- Authorized `ai.input.im` live smoke passed with a 2.16 MB generated image, one persisted image asset, one completed `text-to-image` provider job, and reload verification; the encrypted credential lived only in an isolated profile that was deleted afterward.
+- First 1536x1024 comparison aligned the 274/770/492 column geometry, 51px preview toolbar, 646px queue start, and 38px status footer; compact scrolling and fixed-density filmstrip received one final correction pass.
+- Created full, center-preview and right-inspector same-canvas comparisons against the selected second design, plus a supplemental real connected-provider comparison.
+- Rebuilt the lower center to match the reference with five material tabs, a narrator card, functional TTS playback/generation entry, waveform, six real raster assets, and the rights warning.
+- Corrected selected rows and filmstrip cards to thin coral outlines, reduced the filmstrip to a reference-matched 127px band, and aligned the material shelf to y=653.64.
+- Reorganized the inspector to `模式 / 生成 / 字幕 / 版本`; retained motion editing, real voice generation/playback, subtitle editing and version saving, then restored the full source-order generation form and sticky core actions.
+- Final Electron QA passed for VOX and AI 漫剧 at 1536x1024 and 1040x720 with zero runtime errors, overflow or clipped controls. `design-qa.md` now ends with `final result: passed`.
+- Final delivery gates passed: 27/27 focused tests, TypeScript, production build, `git diff --check`, and strict UTF-8 validation across 32 changed text files. The existing renderer at `http://127.0.0.1:5173/` returns HTTP 200 with the StoryDream entry page.
 
 - VOX 独立工作流第 6 阶段已完成：任务持久化、严格 IPC、独立路由、三栏工作台与确定性图层预览已接通。
 - 收尾修复了 Electron QA 对原生滚动条的误判，并新增工作区网格、策略控件、各 Tab 溢出和标签换行门禁。
@@ -1414,3 +1501,19 @@
 - 已创建并推送功能提交 `fa25607 feat: 扩展 VOX、AI 漫剧与选品工作流` 到 `origin/codex/storydream-fluent-ui-system`；Phase 9 完成。
 
 ---
+
+# VOX / AI 漫剧端到端修复进度（2026-08-18）
+
+- 已完成代码与本轮 Electron 截图审计，确认全部 P0/P1/P2 问题及现有真实功能边界。
+- 已读取 `storydream-ui`、组件合同和 `planning-with-files`，完成会话恢复和脏工作树复核。
+- 已确认本轮不调用付费图片/视频/配音服务，不覆盖真实项目数据，不回退其他在途修改。
+- 当前进入失败合同阶段：项目首页/向导、设置深链、加载 gate、真实状态、系列圣经与紧凑布局。
+- 新增 `tests/director-product-flow.test.ts` 六组合同；首轮 6/6 按预期失败，分别覆盖项目首页、三步预检、设置深链、系列圣经全页、真实阶段/健康和媒体/紧凑布局，红灯范围与审计一致。
+- 新增合同实现后聚焦 6 文件 23/23、`npm run typecheck` 和生产构建通过；构建仍只有仓库既有 `node:* externalized` 提示。
+- Electron 验收脚本首轮被隔离环境 GPU/`loadFile` `ERR_FAILED` 阻断，第二轮 Python Playwright CDP 握手超时；两次均未进入 React 页面，正在改用 Node `undici.WebSocket` 直接 CDP，避免把工具时序误判成产品缺陷。
+- 已实现共享项目库、三步创建预检、设置深链返回、系列圣经全页、媒体加载/失败状态、真实阶段/系统健康、图片服务直达按钮和紧凑面板折叠；创建选择均写入版本化项目文档。
+- 已修正示意缩略图误算“镜头已生成”、审片阶段自动播放和 900px Inspector 默认遮挡三个残余行为。
+- 全库结果 143/145 文件、1898/1901 项通过；3 项失败来自 Coze 5 秒超时和 renderer 库存旧合同。更新库存后串行复测 8 文件 33/33，通过全部失败范围。
+- 最终 `npm run typecheck`、生产构建、`git diff --check`、中文 UTF-8 复读和导演/库存最终 4 文件 15/15 通过。
+- 内置 Electron smoke 在当前受管环境返回 `mainLoaded=false`、`shellRendered=false`；此前日志为 GPU 子进程 `-1073741515`、`loadFile ERR_FAILED`，新 Chromium 访问本机 Vite 也超时。该限制发生在 renderer 启动前，无法据此制作新截图。
+- 已在 `http://127.0.0.1:5173/` 启动最新源码 Vite 预览并保持运行，供用户直接复测。

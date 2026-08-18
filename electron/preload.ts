@@ -95,6 +95,7 @@ import type {
 import type { PublicAppState, SaveConfigInput, SecretChanges } from '../src/shared/config-secrets';
 import type { PersonAssetImage, PersonAssetSummary } from '../src/shared/person-assets';
 import type { StoryDreamApi } from '../src/shared/storydream-api';
+import type { DirectorRenderRequest, DirectorRenderResult } from '../src/shared/director-render';
 import type { EditorialCollageCreateInput, EditorialCollageSaveInput } from '../src/shared/editorial-collage';
 import type { MotionComicCreateInput, MotionComicSaveInput } from '../src/shared/motion-comic';
 import { MAX_IPC_TEXT, unwrapIpcResult, type IpcChannel } from '../src/shared/ipc-contract';
@@ -265,6 +266,8 @@ export const storyDreamApi: StoryDreamApi = {
     invokeTrusted('motion-comic:create', input),
   saveMotionComic: (input: MotionComicSaveInput): Promise<AppMutationResult | null> =>
     invokeTrusted('motion-comic:save', input),
+  renderDirectorProject: (input: DirectorRenderRequest): Promise<{ result: DirectorRenderResult; mutation: AppMutationResult | null }> =>
+    invokeTrusted('director:render', input),
   createHtmlVideoTask: (input: CreateTaskInput) => invokeTrusted('html-video:create-task', input),
   updateHtmlVideoConfig: (id: string, changes: HtmlVideoConfigChange[]) =>
     invokeTrusted('html-video:update-config', { id, changes }),

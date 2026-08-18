@@ -48,7 +48,17 @@ describe('editorial collage workflow contract', () => {
 
   it('keeps multiple subtitle cues under one visual beat', () => {
     const draft = createEditorialCollageDraft({ id: 'vox-1', title: 'Coffee' });
-    const plan = { ...draft, beats: [beat()], selectedStyleId: 'style-1', costApprovedAt: '2026-08-17T00:00:00.000Z', styleCandidates: [{ id: 'style-1', label: 'Swiss', prompt: 'Swiss collage', selected: true }] };
+    const plan = {
+      ...draft,
+      beats: [beat()],
+      selectedStyleId: 'style-1',
+      costApprovedAt: '2026-08-17T00:00:00.000Z',
+      styleCandidates: [{ id: 'style-1', label: 'Swiss', prompt: 'Swiss collage', selected: true }],
+      assets: [
+        { id: 'asset-bg', assetId: 'background', kind: 'image' as const, createdAt: draft.createdAt },
+        { id: 'asset-subject', assetId: 'subject', kind: 'image' as const, createdAt: draft.createdAt },
+      ],
+    };
     expect(validateEditorialCollagePipeline(plan, { ready: true })).toEqual([]);
     expect(plan.beats[0].subtitleCues).toHaveLength(2);
     expect(editorialCollageReady(plan)).toBe(true);

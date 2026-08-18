@@ -1,4 +1,102 @@
+# Director Desk 可用性与播放修复发现（2026-08-18）
+
+- 已将用户临时截图保全到 `.artifacts/director-defect-audit-2026-08-18/00-user-report.png`。
+- 截图中的中文字符本身可读，主要可见缺陷是项目标题被省略、预览字幕分词/断行并遮挡画面、素材搜索浮层压在页签附近；需要以运行态 DOM 和 CSS 继续确认是否还存在真实编码问题。
+- `生成服务` 显示为禁用的 `GPT Image · gpt-image-2 · 2K`，与上方“已连接”状态矛盾，属于可用能力被锁死而非服务离线。
+- 播放时间显示为 `00:05:00 / 00:30:00`，当前格式包含帧位但界面没有解释，且需继续验证计时、暂停、拖动、镜头边界和渲染视频路径。
+- Product Design 用户上下文预检没有已保存条目，本轮不依赖外部设计上下文。
+- `DirectorDeskWorkspace` 将“生成服务”写死为唯一选项并显式 `disabled`；页面只拿到当前活动 profile 的扁平状态，既没有候选 profile，也没有选择回调。
+- 时间轴 `.director-scrub` 只是 `div`，没有键盘、点击或拖动能力；其可视进度不能被用户控制。
+- 播放逻辑使用 100ms interval 推进 React state，并在镜头变化时重建 `<audio key=...>`；音频 effect 每次镜头切换都按旧 state 重新定位，容易在镜头边界暂停、跳动或失步。
+- 返回按钮直接 `navigate('new-task')` 并卸载 Director Desk；需要在 Electron 基线中测量点击到目标页稳定之间的空白/中间帧，再决定由壳层过渡还是页面预热修复。
+- 当前 Electron 历史副本在 1320x860 成功复现：标题元素可见宽 305px、内容宽 339px，实际被省略；素材搜索区域仅 63px 宽且与 372px 页签竞争 343px 空间。
+- 当前“生成服务”只有 `GPT Image · gpt-image-2 · 2K` 一个 option，原生 `disabled=true`；不是接口离线，而是 UI 没有选择能力。
+- 当前播放在 1.25 秒内从 `00:00:00` 到 `00:01:07`，暂停保持稳定，但页面没有 seek 控件；`MM:SS:FF` 又未标注帧，使 `00:30:00` 容易被理解成 30 分钟。
+- 返回帧序列无黑屏：0-51ms 保留工作台，51ms 出现共享壳“保存中”，65ms 切到新建任务，95ms 恢复“所有改动已保存”；短暂保存状态和错误目的页共同造成回程顿挫感。
+- 基线 4 张截图与报告保存在 `.artifacts/director-defect-audit-2026-08-18/before/`，运行时错误和横向溢出均为 0。
+
+---
+
+# VOX / AI 漫剧黑屏复审发现（2026-08-18）
+
+- 用户报告真实点击 VOX / AI 漫剧后出现黑屏，因此此前隔离新建项目的成功截图不再能证明当前用户路径健康。
+- 本轮 Product Design 审计只接受当前运行中新捕获、保存并复看的截图；同时记录每步 DOM、路由、根节点尺寸、console error 和 page error。
+- 当前没有 Electron/StoryDream 进程，只有 5173、5174、5175 三个 Vite renderer；优先检查 5173 浏览器 fallback，再启动隔离 Electron 覆盖桌面路径。
+- Product Design 用户上下文预检未发现已保存上下文；本轮以用户当前反馈、现有 Director Desk 参考和 StoryDream 组件合同为准。
+- 5173 的本轮实际点击稳定复现黑屏：VOX 和 AI 漫剧都只有居中的顶部导航与标题，其余约 90% 视口为纯黑。
+- DOM 证明不是 renderer 崩溃：VOX / AI 漫剧 route 均正确、根节点 1536x1024、无页面级错误；但 `.director-desk` 只有 1536x106，页面正文虽在 DOM 中却没有可见高度。
+- 两条路径截图整体颜色方差仅 257 / 234，远低于首页 2710；问题应归因于创建页高度链路或子元素溢出裁切，而不是接口、懒加载或历史文档解析。
+- 精确根因是 `shell.css` 的浏览器提示规则 `.content:has(.page-head .local-note)` 特异性高于 Director Desk 的单行内容规则：隐藏页头仍被 `:has()` 命中，内容网格被切成 `106px + 1fr`，唯一可见 route 因自动放置落入 106px 首行。
+- 本轮证据保存在 `.artifacts/black-screen-audit-2026-08-18/`：`01-before.png`、`02-after-vox.png`、`03-before-comic.png`、`04-after-comic.png` 与 `browser-report.json`。
+- 修复后同一路径、同一 1536x1024 视口中，两页 `.director-desk` 均恢复为 1024px，`.content` 均为单一 `1024px` 网格行；创建表单完整可见，横向溢出和页面错误均为 0。
+- 修复后的 VOX / AI 漫剧截图方差提升为 458 / 485，且实际截图已复看确认表单、标签、输入、画幅选择和主操作都在画面内。
+- 浏览器 fallback 已能创建本地 VOX 项目并进入完整三栏工作台；首张工作台截图显示导航、镜头列表、预览、素材和生成检查器都存在，没有再发生整页黑屏。
+- 工作台参考 PNG 每张约 1.9-2.3MB，直接 HTTP 请求为 200；首次完整门禁在图片解码完成前读取 `naturalWidth=0`，需等待真实图片就绪而不是取消预览非空检查。
+- 最终浏览器 fallback 审计完成 8 个步骤：两个入口创建页、两个本地项目创建、VOX/AI 漫剧桌面工作台与 1040x720 紧凑工作台全部通过。
+- 四张完整工作台截图的全屏颜色方差为 4032-6830，预览 PNG 均完成解码；每页 `.director-desk` 等于视口高度，网络错误、运行时错误、route error、横向溢出和固定控件裁切均为 0。
+- 实际截图复核确认：VOX 显示 4 镜头、素材缩略图和生成检查器；AI 漫剧显示 6 镜头、角色/场景一致性素材和生成检查器；紧凑布局保留三栏与滚动所有权。
+- 本机真实 StoryDream 数据位于 `C:\Users\foxnotail\AppData\Roaming\storydream\storydream\data.db`，同时有真实任务目录；后续只复制到隔离用户目录做兼容复测，不直接打开或修改原库。
+- 真实库有 1 个旧版 VOX 项目、0 个 AI 漫剧项目；旧 VOX `pipelineData` 为合法 JSON，但没有新字段 `schemaVersion`，适合作为历史兼容样本。
+- 生产构建后的 Electron 已用这个数据库副本完成历史复测：旧 VOX 在桌面/紧凑窗口都直接进入完整工作台，已有生成图与 provider job 状态正常显示，没有 schema 解析异常。
+- 同一隔离副本中，AI 漫剧空创建页完整可见，并可新建系列进入桌面/紧凑完整工作台；6 个 Electron 步骤的运行时错误、route error、横向溢出和固定控件裁切均为 0。
+- Electron 当前审计证据保存在 `.artifacts/black-screen-audit-2026-08-18/electron/`，隔离数据库副本和进程均已清理，真实数据库未写入。
+- 原有 Director Desk 全交互脚本在当前生产构建上重新通过：14 个交互合同全部为真，VOX/AI 漫剧桌面与紧凑工作台均占满视口，预览方差 5960-7476，0 运行时错误、0 横向溢出、0 固定控件裁切。
+- 全库回归进一步发现命令所有权库存不完整：`generateImageLab` 未列 VOX/AI 漫剧的 `generateShot`，`generateVoiceLabPreview` 未列两条导演页的生成旁白入口，`renderDirectorProject` 整项缺失；这不是黑屏根因，但会让功能完整性合同漏检真实调用者。
+- Product Design 用户上下文用 Codex 随附 Python 重跑后确认 `user-context.md` 不存在；本轮继续以当前 Director Desk 参考、真实屏幕和 StoryDream 组件合同为唯一设计依据。
+- 修复后的 Electron after 截图显示 VOX 与 AI 漫剧均为完整三栏工作台；`director-preview-title`、字幕、素材搜索和固定操作均在视口内，三种尺寸的 `horizontalOverflow=0`、固定控件裁切为 0、预览标题与字幕无重叠。
+- 生成服务验证使用隔离 profile 的第二项 `QA 第二图片服务 · qa-image-model · 2K`：下拉共有 2 项，第二项 `disabled=false`，刷新后保持选中；假凭证只写入隔离 profile，未触发生图请求。
+- 播放验证不再使用帧号时间：进度滑块可播放、暂停、点击拖动和跨第二镜头跳转，时间码为 `00:03 / 00:30`；返回帧 0 次出现“保存中”。
+- 确定性本地渲染生成并持久化 1 个 `director-final-video` MP4；原生视频报告为 `readyState=4`、`duration=4.023991s`，连续取样推进到 `0.054772s`，暂停和 seek 到 `2.816793s` 成功。
+- 本轮 after 证据目录为 `.artifacts/director-defect-audit-2026-08-18/after/`，包括 9 张逐步截图、`report.json` 和 `director-rendered-video.mp4`；审计临时 profile 已清理。
+- 最终代码修改后的浏览器审计于 11:37 重新捕获 8 个步骤：主界面、VOX 创建页/桌面/紧凑工作台、返回主界面、AI 漫剧创建页/桌面/紧凑工作台；两条工作台均显示新的禁用态“打开导出目录”，0 运行时错误、0 网络错误、0 横向溢出、0 固定控件裁切。
+- 本轮完整工作台截图方差为 4031-6805，预览均为已解码的 1280x720 真图片；`.director-desk` 在 1536x1024 和 1040x720 都与视口同高，黑屏根因未复发。
+- 人工打开浏览器步骤 1-4 后确认：主界面两条入口在左栏和页头都可见；VOX 创建表单完整居中且不再只剩 106px 顶部条；桌面工作台的三栏、预览、胶片、素材、检查器和队列同时可见；紧凑工作台没有重叠，纵向内容由各栏独立滚动。
+- 人工打开浏览器步骤 5-8 后确认：返回首页状态稳定；AI 漫剧创建表单完整显示系列、设定、首集与画幅；桌面工作台能同时看到集数/镜头生命周期、角色与场景一致性资产、预览、生成参数和队列；1040x720 仍保持三栏边界、可读字幕和无重叠状态。
+- Electron 历史副本 6 张截图已逐张打开：历史首页正常；旧 VOX 的已生成关键帧、完成任务状态和四镜头工作台完整恢复；AI 漫剧空创建页、桌面与紧凑工作台均正常。紧凑胶片条通过明确的横向滚动承载多镜头，三栏、状态栏和主操作没有互相覆盖。
+- 最终 4 张交互终态截图也已逐张打开：VOX 播放推进后桌面/紧凑画面一致，AI 漫剧新增到 2 集 8 镜并保存 9:16 画幅后桌面/紧凑画面一致；没有黑屏、错误页、组件重叠或主操作裁切。
+- 全库并发 4 个剩余失败均已隔离：HTML 两项在同文件串行 141/141 中通过；runner 恢复测试默认 5 秒约 5.04 秒超时，但 15 秒局部预算下 1.29 秒通过；历史根替换测试在 I 盘会因身份保护提前拒绝，在系统默认临时盘 43ms 通过。没有剩余导演页业务失败。
+
+---
+
+# VOX 与 AI 漫剧功能完成度发现（2026-08-18）
+
+- 用户确认 VOX 视觉可以接受，但实际功能完成度不足；AI 漫剧在真实用户路径中不可见。
+- 既有 Electron QA 能通过角色为 `tab`、名称为 `AI 漫剧` 的程序化点击进入工作台，这只能证明 DOM 路径存在，不能证明主导航可发现性和真实用户入口成立。
+- 本轮完成标准改为逐控件真实行为、权威状态和重载恢复；空 `onChange`、无动作图标、模拟队列和仅保存当前快照的“版本”都必须修正或诚实改为只读。
+- `scripts/qa-director-desk.py` 的 AI 漫剧路径先点击主导航 `editorial-collage`，再点击工作台内部 `AI 漫剧` tab；它没有验证用户从主导航直接发现和进入 `motion-comic`。
+- `src/app/navigation.ts` 已声明 `AI 漫剧` 独立导航项，需用实际渲染截图检查该项是否被侧栏可视高度、分组或滚动行为遮蔽。
+- 当前 `MotionComicPage` 只暴露系列骨架创建、已有镜头字段编辑、图片/配音生成和整片渲染；领域数据中的多剧集、场景、角色造型与一致性引用没有对应的可操作生命周期 UI。
+- `DirectorDeskWorkspace` 的未实现可见控件包括：更多操作、增加集数、画幅按钮、预览设置、镜头搜索、素材搜索、素材选择、版权详情、版式模板、运动控制、画面比例和字幕安全区。
+- 当前队列由 `createQueue(shots)` 临时派生，并对 running 项每 850ms 增加 9% 到 88%，这不是 `providerJobs` 权威状态；版本页只显示当前镜头并调用普通保存，没有版本清单或恢复能力。
+- 功能补齐已改为由工作流文档提供项目、剧集、素材版本和 `providerJobs`；生成中的本地状态只显示不确定进度，不再伪造百分比。
+- VOX 与 AI 漫剧镜头现在持久化版式、运动预设、字幕样式和 Seed 锁定；确定性 MP4 渲染会实际读取版式、运动和字幕样式，而非只改变表单显示。
+- AI 漫剧领域新增追加剧集、场景和镜头的引用安全函数，新增后仍通过现有角色/场景/道具/对白/时间线严格校验。
+- AI 漫剧导演台设置首次无法保存的根因不是 IPC 或数据库缺失，而是五个镜头字段误挂在严格的 `dialogueCueSchema`；将其移到 `shotSchema` 后，导演台设置能通过同一 `motionComicSaveInputSchema` 并在重载后恢复。
+- 项目保存失败原先在沉浸式工作台内不可见；VOX 与 AI 漫剧现在都会把 `projectAction` 错误显示为顶部语义 `alert`，不会留下一个持续可点却没有解释的保存按钮。
+- 最终 Electron 功能 QA 从主界面直接看到两条入口，完成 AI 漫剧系列设定、剧集/场景/镜头追加、搜索、一致性绑定、版式和 9:16 画幅保存，再切到 VOX、切回并重载；全部状态保留，运行时错误为 0。
+- 最终人工截图复核覆盖入口 1040×720、VOX 1536×1024/1040×720、AI 漫剧 1536×1024/1040×720；集数行、镜头列表、中央预览和右侧生成区均无重叠或裁切，滚动所有权清晰。
+
+---
+
 # VOX 与 AI 漫剧研究发现（2026-08-17）
+
+## Option 2 Director Desk reference findings (2026-08-18)
+
+- The selected visual truth is `I:\opc\.artifacts\product-design-rework\director-desk.png`. It is a dense, full-window director workstation, not a conventional StoryDream shell page.
+- Final VOX and AI 漫剧 captures match the selected Director Desk's major proportions and hierarchy, and the visible core controls are backed by real save, image generation, TTS, playback, render and export behavior.
+- `ai.input.im` image generation is now routed through the existing managed image-lab API; generated files are attached as production asset versions and every attempt becomes a persisted provider job. The remaining product gap is downstream production, not image request wiring.
+- Final design QA must compare the reference and implementation at the same `1536 x 1024` viewport, then separately protect the compact `1040 x 720` workspace.
+- Reference viewport is 1536x1024. Final implementation structure is a 56px top bar, 274px left rail, 770px center workspace, 492px right inspector, and 38px status footer.
+- Reference hierarchy is media-first: 16:9 preview with safe-area overlay and transport controls; a compact horizontal filmstrip; narrator/material shelf below; right inspector with `模式 / 生成 / 字幕 / 版本` tabs; queue is visible beside the material shelf.
+- Functional states to preserve in code: selected shot, selected inspector tab, prompt edits, provider/model selection, aspect ratio, duration, voice, subtitle style, seed lock, estimated cost, provider connection, queue progress, failed-job retry, and save-version feedback.
+- Existing `EditorialCollagePage` and `MotionComicPage` currently expose structural create/save flows; route-level IPC and storage already exist and should be extended rather than duplicated.
+- Existing product captures confirm the app already has a usable dark shell and real 16:9 media-preview pattern, but the current VOX capture is a portrait placeholder canvas with no shot-level media or queue. The new page must keep the shell while replacing the center work area.
+- The selected reference's large preview and filmstrip need real raster assets. Use generated cinematic stills from one consistent documentary/editorial art direction, stored outside source code and referenced by stable asset paths; UI icons stay Lucide.
+- Generated asset inspection passed: `preview-city.png`, `shot-alley.png`, `shot-archive.png`, and `shot-rooftop.png` are 1280x720 raster images with consistent documentary lighting and no UI text. The preview asset intentionally reads as an editorial collage, matching VOX's source-driven visual language; the other three cover character, evidence, and establishing shots.
+- Final same-canvas evidence is stored in `.artifacts/director-desk-comparison/`: full view, center/preview, final inspector, and an earlier real connected-provider inspector state.
+- The final layout measures 274/770/492px columns, preview y=120, filmstrip y=526.64 with 127px height, assets y=653.64, queue y=646, and footer y=986. VOX and AI 漫剧 use the same geometry.
+- Product Design QA has no actionable P0-P2 finding. Dynamic differences such as eight reference shots versus four current VOX shots and running versus waiting queue jobs remain truthful project state rather than fake rows.
+- The isolated Electron QA reports zero runtime errors, horizontal overflow, grid overflow, and clipped controls at 1536x1024 and 1040x720. Compact queue reachability, stage mapping, playback/pause, safe-area toggling, and settings navigation pass.
 
 - 2026-08-17 最终 Electron QA 首轮复核：1440x900 与 1040x720 的三栏边界、预览画布和时间线均无文档/网格横向溢出，运行时错误为 0，画面方差非零；但 1040x720 的右侧渲染策略分段控件出现内部横向滚动，第三项文本被局部裁切。等分宽度修复已使所有内部溢出归零，但先后出现 `Omni 动态海报` 孤字换行、内容比例分配后“混合模式”选中态换行；新增标签换行门禁准确拦截了后者，最终需要内容比例分配、零项间距和 10px 单行标签共同保证紧凑适配。
 - 最终 1440x900 / 1040x720 Electron 报告为 `passed`：运行时错误为 0，文档、工作区网格、渲染策略容器及三个策略 Tab 的溢出均为 0，三个标签均不换行，三栏互不重叠；预览画面方差分别为 14987.61 / 16057.64，隔离 QA 进程和临时配置目录均已清理。
@@ -1878,3 +1976,18 @@
 - 功能提交 `fa25607` 已通过标准 Git push 发布到 `origin/codex/storydream-fluent-ui-system`；此前 fetch 连接重置未影响最终 push。
 
 ---
+
+# VOX / AI 漫剧端到端修复发现（2026-08-18）
+
+- 本轮隔离 Electron 已证明底层不是空壳：图片档案切换可持久化，本地成片生成、原生视频播放/暂停/拖动和返回均通过。
+- 两条页面在没有请求项目时通过 effect 自动打开 `projects[0]`；首次 render 会先进入 `!document` 创建页，随后再切工作台，媒体图片又直接渲染，无统一 ready gate，形成创建页/黑框闪现。
+- VOX 创建页只收集标题、原文和画幅；AI 漫剧只收集系列名、核心设定、首集标题和画幅，创建前缺少服务、结构、视觉、一致性、声音、字幕、输出和费用预检。
+- 工作台“项目设置”与 AI 系列设定内“模型设置”都只导航到 `settings`；设置页 `section` 固定初始化为 `llm`，没有分区深链或返回上下文。
+- AI 系列、世界、视觉、负面提示词和角色编辑全部塞入 Dialog，1536x1024 已出现横向滚动和角色区不可见，应改为常驻全页工作区。
+- 制作轨道前三步按 `index < 3` 固定显示完成，底部“系统状态：正常”也是硬编码，与图片/旁白未连接状态冲突。
+- 1040x720 下仍保持三列，阶段降到 8px、多个辅助文字为 9-10px；项目名和服务名明显截断，需要显式折叠面板而不是继续压缩文字。
+- 镜头列表、队列和素材小圆点部分依赖颜色；需要可见或可访问的状态文字，并验证键盘焦点与 200% 放大风险。
+- `App.navigate` 当前只接受 `ShellView`，最小兼容改法是在 App 层新增一次性 `settingsEntry`（section、returnView），继续保留所有既有 `navigate(view)` 调用；`SettingsPage` 接收 `initialSection/onReturn`，避免扩散路由类型或破坏持久化 activeView。
+- 现有工作台测试以源码合同为主，适合先新增失败断言锁定项目首页、三步向导、`initialSection="image"`、非 Dialog 系列圣经、动态阶段和媒体状态，再配合 Electron 脚本做真实交互证明。
+- 现有版本化文档已经能承载向导选择：VOX 有 `selectedStyleId`、shot layout/motion/voice/subtitle/seed；AI 漫剧有完整 series/characters/sceneAssets/props 和 shot 同类字段。因此创建基础文档后立即应用向导 preset 并走现有 save，可避免新增 IPC 或无效展示字段。
+- VOX starter 固定四段 30 秒，AI starter 固定三场六镜 40 秒；首轮向导应如实展示并允许选择现有可表达的模板/画幅/声音/字幕，而不是承诺当前领域模型尚不能安全表达的任意镜头数。

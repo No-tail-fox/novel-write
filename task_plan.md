@@ -1,4 +1,195 @@
+# Director Desk 可用性与播放修复（2026-08-18）
+
+## Goal
+
+从用户当前 VOX 工作台截图和真实 Electron 路径复现并修复：文本裁切/错位、生成服务不可选、返回短暂停顿或闪页、视频播放/时间显示异常；保留现有工作流和脏工作树，不触发付费生成。
+
+## Phases
+
+- [completed] 1. 保全用户截图并捕获 Electron 当前工作台、返回过程与播放行为证据
+- [completed] 2. 定位四项根因，补失败合同并确定共享状态和组件边界
+- [completed] 3. 实现文本布局、服务选择持久化、无闪烁返回与媒体播放修复
+- [completed] 4. 运行聚焦测试、类型检查、构建、UTF-8 与差异卫生门禁
+- [completed] 5. 在 1320x860、1536x1024、1040x720 Electron 窗口复审并保存逐步截图
+
+## Acceptance criteria
+
+- 项目标题、预览字幕、素材搜索和主操作文案无乱码、遮挡、异常省略或不合理断行。
+- 已配置的图片生成服务/模型可选择、可恢复，并实际进入生成请求；本轮只验证请求组装，不付费调用。
+- 返回资料库时没有黑屏、临时创建页或空白闪烁，目标页保持可交互就绪状态。
+- 预览可播放、暂停、拖动和跨镜头切换；音频与时间同步，导出 MP4 使用原生视频播放，时间显示清晰。
+- 三种桌面尺寸均无运行时错误、横向溢出、固定控件裁切或文字重叠。
+
+## Errors encountered
+
+| Error | Attempt | Resolution |
+|---|---:|---|
+| Product Design 用户上下文不存在 | 1 | 以用户当前截图、现有 Director Desk 参考和 StoryDream 组件合同作为本轮依据 |
+| 既有 Python Electron 审计脚本无法导入 `playwright` | 1 | 不安装项目依赖；改用 Codex 随附 Node Playwright 通过 CDP 连接 Electron |
+| Node Electron 审计完成后立即清理 profile 遇到 `DIPS-wal` 锁 | 1 | Electron 已退出且证据已写入；等待子进程退出后再清理，并仅删除已验证的审计临时目录 |
+| 首轮实现后 3 个聚焦断言失败 | 1 | 播放测试已通过；为 GPT 多档案夹具补有效地址，并将两页旧单错误源断言更新为项目/服务双错误源 |
+| 扩大矩阵发现 `saveConfig` 命令库存漏列两个新调用者 | 1 | 将 VOX 与 AI 漫剧的 `selectImageProvider` 登记为真实命令所有者后重跑 |
+| after 审计刷新后直接等待工作台超时 | 1 | 刷新后先检查当前路由，必要时通过真实 VOX 入口重新打开，再继续屏幕验收 |
+| after 审计以普通按钮定位 AI 漫剧工作模式失败 | 1 | 按当前 DOM 合同改用 `role=tab` 的工作模式控件，保留侧栏按钮作为创建页兜底 |
+| 原生视频首个 400ms 取样仍为 0 秒 | 1 | 改为记录 `play()`、`paused` 与连续时间采样；最终推进到 `0.054772s`，暂停和 seek 均通过 |
+
+## Final verification
+
+- 相关矩阵 12 个文件、54/54 用例通过；`npm run typecheck` 与 `npm run build` 通过。
+- after Electron 屏幕审计 `status=passed`：VOX 与 AI 漫剧 6 张工作台截图、0 runtime errors、0 横向溢出、0 固定控件裁切、0 文字重叠。
+- 隔离 profile 中新增第二图片服务后，服务下拉为 2 项、第二项可用，刷新后仍保持选中；未发起生图、配音或云视频请求。
+- 播放审计验证播放、暂停、拖动、第二镜头边界，时间格式为 `MM:SS`；返回帧 `savingFrames=0`。
+- 本地确定性渲染生成 MP4，原生 `<video>` `readyState=4`、`duration=4.023991s`，播放推进、暂停和 seek 通过；证据保存在 `.artifacts/director-defect-audit-2026-08-18/after/`。
+
+---
+
+# VOX / AI 漫剧黑屏复审与修复（2026-08-18）
+
+## Goal
+
+从用户真实入口复现并修复 VOX 视频与 AI 漫剧点击后黑屏；以本轮新捕获的页面、DOM、路由和运行时错误为准，完成浏览器 fallback 与 Electron 普通/紧凑窗口的可见性和交互验收。
+
+## Phases
+
+- [completed] 1. 捕获 5173 主界面、VOX 和 AI 漫剧点击前后画面、DOM、路由及运行时错误
+- [completed] 2. 复现 Electron 路径并核对真实历史数据、懒加载和错误边界
+- [completed] 3. 为精确根因增加失败测试并完成范围修复
+- [completed] 4. 覆盖空数据、历史数据、浏览器 fallback、Electron 与紧凑窗口回归
+- [completed] 5. 复审本轮实际截图并给出逐步健康状态
+
+## Acceptance criteria
+
+- 两个主导航入口都可见、可点击，点击后不能出现全黑、空白、无限加载或无说明错误页。
+- 每次点击均有本轮截图、当前 route/view、根节点尺寸、DOM 摘要、console error 和 page error 证据。
+- 历史文档不兼容时显示可恢复的页面级错误或迁移结果，不能让整个 renderer 崩溃。
+- 浏览器 fallback 与 Electron 都覆盖 VOX、AI 漫剧；1536x1024 和 1040x720 无黑屏、横向溢出或核心控件裁切。
+- 不使用旧 `.artifacts/director-desk-qa/` 报告代替本轮验收，不调用付费生成。
+
+## Final verification
+
+- 浏览器 8 步新审计通过：VOX/AI 漫剧创建页、1536x1024 与 1040x720 工作台均占满视口，0 运行时错误、0 网络错误、0 横向溢出、0 固定控件裁切。
+- Electron 历史数据库副本 6 步通过：旧 VOX 直接打开，AI 漫剧可新建；真实数据库未写入，隔离进程与配置已清理。
+- Director Desk 14/14 交互通过；11 个相关测试文件 50/50、类型检查、生产构建、UTF-8 和 `git diff --check` 通过。
+- 全库 143 文件、1891 项中并发运行报告 4 项失败；对应 HTML 141/141 串行通过、runner 目标项在 15 秒局部预算通过、历史根替换项在系统默认临时盘通过，均与导演页改动无业务交集。
+
+## Errors encountered
+
+| Error | Attempt | Resolution |
+|---|---:|---|
+| 旧隔离 Electron happy path 通过，但用户真实入口点击后仍黑屏 | 1 | 旧验收作废；重开屏幕级审计，优先覆盖 5173 fallback、历史数据和真实入口 |
+| 当前没有正在运行的 Electron 窗口，仅 5173/5174/5175 renderer 在监听 | 1 | 不终止现有服务；先复现 5173，再启动独立 CDP Electron 验证桌面路径 |
+| 第一次源码搜索误写不存在的 `src/features/new-task` 路径 | 1 | 保留错误记录；入口已从实际 `AppShell.tsx` 定位，不重复错误路径 |
+| 浏览器审计脚本出现 Python 非原始字符串的 `\\s` 语法警告 | 1 | 捕获仍成功；修复脚本字符串标记后再纳入最终门禁 |
+| 新增的两个入口布局合同按预期失败，证明旧 CSS 未排除沉浸式路由 | 1 | 保留红灯证据；范围修复 `shell.css` 的浏览器提示选择器后重跑 |
+| 完整工作台首轮审计把提示词文本框的内部滚动误判为控件裁切 | 1 | 保留页面截图与失败记录；裁切门禁收窄为固定按钮/页签，文本输入继续由可见性和横向溢出验证 |
+| 第二轮完整工作台在 VOX 预览图尚未完成解码时过早断言 | 1 | 2MB 预览资源可直接 HTTP 200；改为显式等待图片 `complete/naturalWidth`，不移除非空预览门禁 |
+| 首次只读 SQLite 查询被 PowerShell/Python 嵌套引号截断 | 1 | 未写入数据库；改用 PowerShell here-string 传递 Python 代码并以 `mode=ro` 打开 |
+| Product Design 与会话恢复预检首次引用已失效的 `I:\python311\python.exe` | 1 | 改用 Codex 随附 Python；用户上下文预检确认没有已保存设计上下文，会话恢复脚本无未同步输出 |
+| 补命令库存和规划记录的首个联合补丁使用了不相邻的源码锚点 | 1 | 补丁未落盘；按真实命令位置拆成独立小补丁，未覆盖现有改动 |
+| 全库回归暴露导演功能命令库存漏项 | 1 | 聚焦红灯确认缺少整片渲染方法，并漏列 VOX/AI 漫剧图片与配音调用者；补齐共享 Director Desk 控件桥接后重跑 |
+| 首轮命令库存修复后继续暴露 `openTaskOutputDirectory` 的两个导演页调用者 | 1 | 不伪造库存证据；为共享导出入口补忙碌、禁用和可见错误状态，并登记 VOX/AI 漫剧桥接 |
+| 第二轮聚焦继续暴露保存命令登记在外层处理函数而非真实 API 所有者 | 1 | 将两条保存库存改为 `saveProject -> persistProject` 调用链，保持共享保存按钮桥接不变 |
+| 全库并发最终为 140/143 文件、1887/1891 项，4 项失败 | 1 | 2 项 HTML 文件系统测试已在整文件串行 141/141 通过；runner 目标项以 15 秒局部预算通过；历史根替换项改用系统默认临时盘通过，不修改无关生产代码 |
+
+---
+
+# VOX 与 AI 漫剧功能完成度修复（2026-08-18）
+
+## Goal
+
+让用户从 StoryDream 主界面能直接发现并进入 VOX 视频与 AI 漫剧；补齐导演工作台所有核心可见操作的真实状态、持久化、生成、渲染和导出能力，不再以程序化可达或展示态控件作为完成标准。
+
+## Phases
+
+- [completed] 1. 复现 AI 漫剧用户入口问题并审计所有可见控件、状态所有权和持久化边界
+- [completed] 2. 增加入口、系列/剧集/场景/镜头生命周期及 VOX 缺失控件的失败合同
+- [completed] 3. 补齐 VOX 搜索、选择、版式、运动、画幅、版本和权威任务状态
+- [completed] 4. 补齐 AI 漫剧直接入口、一致性资产、剧集编辑、生成、渲染、导出和重载
+- [completed] 5. 完成测试、类型检查、构建与 Electron 普通/紧凑窗口功能和视觉验收
+
+## Completion criteria
+
+- 主导航中的 `VOX 视频` 与 `AI 漫剧` 都清晰可见、可直接打开，并在刷新/重启后恢复当前项目。
+- 每个核心可见控件要么有真实处理和持久化，要么明确呈现为只读状态；禁止空回调和装饰性操作。
+- VOX 可完成项目创建/打开、镜头编辑、素材选择、图片生成、配音、渲染、导出、版本恢复和任务重试。
+- AI 漫剧可完成系列、剧集、场景、镜头、一致性角色/场景资产、生成、配音、渲染、导出和重载。
+- Electron 1440x900 与紧凑窗口实际点击验收通过，运行时错误、横向溢出和核心控件裁切均为 0。
+
+## Final verification
+
+- Electron isolated QA: passed, 14 interaction checks, 4 desktop/compact workbench captures, 0 runtime errors.
+- Affected regression: 10 test files, 45/45 tests passed; TypeScript and production build passed.
+- Hygiene: `git diff --check`, no-op handler audit, and strict UTF-8 validation across 37 changed text files passed.
+- Runtime: `http://127.0.0.1:5173/` returns HTTP 200 with the StoryDream renderer.
+
+## Errors encountered
+
+| Error | Attempt | Resolution |
+|---|---:|---|
+| Previous completion gates covered scripted happy paths but not every visible control or the user's actual navigation path | 1 | Reopen the work as a functional-completion phase and require direct navigation plus handler/persistence inventory evidence |
+| PowerShell `rg` call used Unix-style glob arguments and returned Windows path syntax error | 1 | Keep the failure recorded; use `rg -g '*.css'` or explicit paths for later stylesheet searches |
+| Standalone Playwright Chromium capture could not launch because the bundled runtime has no downloaded Chromium headless shell | 1 | Do not download another browser; use the repository's proven Electron-over-CDP QA path for rendered evidence |
+| First functional-completion typecheck found a nullable queue map predicate and referenced nonexistent `Task.updatedAt` | 1 | Build transient queue items with typed `flatMap` and use the authoritative `Task.createdAt` field |
+| One no-op audit `rg` pattern was malformed by PowerShell quoting | 1 | Keep the failed command recorded and split later audits into fixed-string searches |
+| First expanded Electron QA matched the `新增镜头` command plus newly created shot rows by substring | 1 | Keep the accessible labels and make the command locator exact before rerunning the isolated Electron path |
+| Second expanded Electron QA could not save lifecycle edits because append helpers changed the optimistic concurrency timestamp before persistence | 1 | Preserve the stored `updatedAt` token during local edits; only the storage save operation may advance it, and lock this with a domain test |
+| Third expanded Electron QA kept the top `保存版本` action enabled after the AI 漫剧 save click | 1 | Hidden status inspection exposed `IPC_INVALID_INPUT`; the five Director Desk fields were attached to `dialogueCueSchema` instead of strict `shotSchema`, now covered by a save-contract regression test |
+| Combined save-error visibility patch could not match the pages' single-line Director Desk prop lists | 1 | The patch made no changes; split shared changes from route wiring and reformat only the two affected calls |
+| Focused workbench tests still coupled the Director Desk mode assertion to single-line JSX formatting | 1 | Preserve the exact component and mode checks as separate assertions so formatting changes cannot weaken or break the contract |
+| Electron page appeared closed while the AI 漫剧 save assertion was waiting, and the diagnostic screenshot masked the original failure | 1 | Best-effort capture plus process logs proved the page remained healthy until QA cleanup; continue with direct hidden header-status and save-button state inspection |
+| First post-schema Electron completion run reached persistence reload but flagged both episode buttons as clipped | 1 | The visual was readable, but the grid targeted the outer Fluent button instead of StoryDream's `.sd-button__content`; move the three-column layout to the real content wrapper and retain the fallback row |
+| Desktop episode layout passed, but compact left-rail flex sizing collapsed both episode rows to about 20px | 1 | Keep episode rows at intrinsic height with `flex: 0 0 auto`; the left pane already owns vertical scrolling |
+| First compact episode sizing patch placed a test assertion in the CSS hunk and failed verification | 1 | No changes landed; split CSS, test, and planning updates into explicit file hunks |
+| Final affected matrix found the multi-subtitle VOX fixture referenced two absent asset versions | 1 | Keep the new dangling-reference validation and add the two declared image versions to the fixture so the test remains focused on subtitle/visual separation |
+| First strict UTF-8 verification reported `files=0` because the changed-path aggregation did not flatten command output | 1 | Rebuild the path list with explicit `+=` assignment and require a positive checked-file count |
+
+---
+
 # VOX 独立工作流与 AI 漫剧架构研究（2026-08-17）
+
+# Option 2 Director Desk 1:1 implementation (2026-08-18)
+
+## Goal
+
+Rebuild the selected Director Desk visual as a functional StoryDream VOX/AI漫剧 authoring workspace, preserving existing domain contracts and making the primary shot-generation path interactive.
+
+## Phases
+
+- [completed] 1. Audit selected reference, current route, UI contracts, and media assets
+- [completed] 2. Implement Director Desk layout, state, controls, preview, filmstrip, assets, inspector, and queue
+- [completed] 3. Connect managed image generation, asset versions, and provider-job persistence
+- [completed] 4. Complete the reference workflow: voice preview, playback, render/export, stage navigation, and provider/model controls
+- [completed] 5. Run focused and broad regression gates plus one authorized live `ai.input.im` generation
+- [completed] 6. Run same-viewport desktop/compact Electron comparison; fix all P0-P2 drift
+- [completed] 7. Record final evidence, leave a local preview running, and hand off
+
+## Hard constraints
+
+- Reference is the second displayed ideation image: `.artifacts/product-design-rework/director-desk.png`.
+- Use existing `src/ui`, Lucide, tokens, IPC ownership, stable IDs, and StoryDream shell contracts.
+- Core path must work: select shot, edit prompt/settings, switch inspector tabs, start generation, observe progress, retry failure, save version.
+- Reference controls in the core path must be functional: stage navigation, voice audition, preview playback, provider/model selection, render, and export.
+- A successful live generation must persist the generated file, `ProductionAssetVersion`, `ProductionProviderJob`, and survive project reload.
+- Live provider credentials must remain inside an isolated temporary Electron profile and must not be printed, committed, or retained after the smoke run.
+- Keep assets real; reuse or generate media thumbnails, never use placeholder boxes or CSS drawings.
+
+## Errors encountered
+
+| Error | Attempt | Resolution |
+|---|---:|---|
+| Focused source-contract tests still required the retired placeholder canvas and route-local save buttons | 1 | Preserve create ownership in route files, move save-control inventory to the shared Director Desk through an explicit bridge, and update focused UI contracts to the selected design |
+| Typecheck could not resolve new PNG imports and rejected `Pane as="main"`; one mixed nullish/or expression also failed parsing | 1 | Add the project PNG module declaration, use the supported Pane tag, and parenthesize cost fallback |
+| First live-smoke launch path did not start Electron/Python reliably | 1 | Cancelled the incomplete attempt; inspect actual secret status and relaunch through the bundled Python runtime without writing or printing the key |
+| First typecheck after adding real Director render IPC rejected the new channel | 1 | Add a strict `{ id }` Zod input schema to the central trusted IPC contract before rerunning typecheck |
+| Typecheck found incomplete HTML capture scene fields and a union-typed render failure update | 1 | Populate the existing `HtmlVideoScene` contract and narrow failure persistence inside each workflow branch |
+| First authorized live image smoke generated successfully but the checker expected capability `image-generation` | 1 | Keep the production `text-to-image` contract, correct the smoke assertion, and rerun one minimal shot for persistence/reload evidence |
+| TTY launch for hidden credential entry failed with Windows access denied; non-TTY stdin was closed | 2 | End only the spawned wait process and inject the credential into the isolated child-process environment for the smoke lifetime |
+| Two workbench source contracts still expected the pre-comparison 408px inspector | 1 | Update the exact contracts to the reference-derived 492px inspector and new 38px status footer |
+| Safe-area visual button lost the dynamic accessible name expected by the interaction gate | 1 | Keep the visible `安全区` label and restore `显示安全区/隐藏安全区` through `aria-label` |
+| First post-redesign capture lost 10px of center width to a scrollbar and filtered the narrator asset below the six-item gate | 1 | Hide the center scrollbar without disabling scroll and retain all six real assets in narrator view |
+| Same-canvas comparison exposed a 40px-tall filmstrip/title mismatch | 1 | Remove the redundant title row, use 88px filmstrip cards, and restore the reference's 127px section height |
+| Inspector labels and grouping still followed the first workbench instead of the selected source | 1 | Re-map to `模式 / 生成 / 字幕 / 版本` while preserving motion, TTS, subtitle, save, generation and render behavior |
+| Complete generation fields pushed the primary action below the visible inspector area | 1 | Add a sticky Seed/generate/preview/save/render footer, remove the redundant inspector heading, and order fields like the source |
 
 ## 当前目标
 
@@ -2406,3 +2597,37 @@
 - 中文生产质量首选：智谱 Search Pro 作为主源，SearXNG 作为备用；海外/英文资料可选 Brave、Tavily 或 Exa。
 - 正文层：本地 Mozilla Readability 优先；可选 Jina Reader（实测无 Key可读 URL）或 Firecrawl 作为困难页面兜底。
 - 不推荐：随机公共 SearXNG 实例、DDGS 作为唯一生产源、在 Electron 内继续维护多家搜索页面 HTML 解析器、YaCy 作为通用互联网搜索默认源。
+
+---
+
+# VOX / AI 漫剧端到端修复（2026-08-18）
+
+## 目标
+
+- 修复产品审计中全部 P0/P1/P2 问题，使 VOX 与 AI 漫剧可从项目入口完成创建预检、服务修复、工作台编辑、审片和导出。
+- 保留现有项目、IPC、持久化和本地渲染实现，不回退当前脏工作树中的既有功能。
+- 以真实状态驱动阶段、健康度、加载和错误反馈，并完成普通/紧凑 Electron 视觉验收。
+
+## 当前阶段
+
+- [completed] 1. 补充项目入口、创建向导、设置深链、加载/状态和系列设定失败合同
+- [completed] 2. 实现项目库与三步创建预检，接通图片服务配置返回路径
+- [completed] 3. 实现恢复 gate、真实阶段/健康状态和 AI 系列圣经全页
+- [completed] 4. 修复紧凑布局、字体、状态名称、焦点和媒体加载/错误状态
+- [blocked] 5. 聚焦/全量测试、类型检查、生产构建、UTF-8 已完成；Electron 普通/紧凑视觉验收被本机新 Chromium renderer 启动故障阻断
+
+## 交互合同
+
+- 进入 VOX/AI 漫剧先展示稳定项目首页；用户显式选择“继续上次”“打开项目”或“新建”，不自动闪现创建页或黑色媒体框。
+- 创建向导统一为“内容结构 → 生成与一致性 → 声音与输出”三步，创建前显示服务可用性和明确修复入口。
+- 从工作台进入设置时直接打开 `AI 绘图`，保存/返回后回到原模式和项目，不丢选择。
+- AI 漫剧系列设定是可滚动的全页工作区，不再放入长模态框；保存后返回原镜头选择。
+- 阶段完成度和系统健康度只来自项目数据与 Provider 状态；任何等待/失败均提供文字，不只依赖颜色。
+- 1180px 以下允许折叠项目栏和 Inspector，业务文字不低于 11px，关键阶段/控件不低于 12px。
+
+## 本轮错误记录
+
+| 错误 | 次数 | 处理 |
+|---|---:|---|
+| 受管环境将 `pwsh` 解析到不可访问的 WindowsApps 别名，CreateProcess 报 1920 | 2 | 改用显式 Windows PowerShell 路径并继续显式 UTF-8 读取 |
+| 首次追加规划文件的补丁锚点来自另一份文件，校验失败 | 1 | 重新读取三份文件尾部并按各自唯一锚点追加，不重复原补丁 |

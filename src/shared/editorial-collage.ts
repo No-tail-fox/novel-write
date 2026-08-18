@@ -77,6 +77,15 @@ export interface EditorialCollageShot {
   camera: EditorialCameraKeyframe[];
   subtitleCueIds: string[];
   providerJobId?: string;
+  voiceId?: string;
+  voiceLabel?: string;
+  voiceSpeed?: number;
+  voiceAssetVersionId?: string;
+  layoutTemplate?: '对比拼贴 · 纸张撕裂' | '纪录片 · 纯画面' | '漫画分格 · 角色优先';
+  motionPreset?: '平移 + 缓慢推进' | '轻微视差' | '固定机位';
+  subtitleStyle?: string;
+  seed?: string;
+  seedLocked?: boolean;
 }
 
 export interface EditorialCollageBeat {
@@ -232,6 +241,15 @@ const shotSchema = z.object({
   camera: z.array(cameraKeyframeSchema).max(100),
   subtitleCueIds: z.array(idSchema).max(100),
   providerJobId: idSchema.optional(),
+  voiceId: z.string().max(512).optional(),
+  voiceLabel: z.string().max(512).optional(),
+  voiceSpeed: finiteNumber.min(0.5).max(2).optional(),
+  voiceAssetVersionId: idSchema.optional(),
+  layoutTemplate: z.enum(['对比拼贴 · 纸张撕裂', '纪录片 · 纯画面', '漫画分格 · 角色优先']).optional(),
+  motionPreset: z.enum(['平移 + 缓慢推进', '轻微视差', '固定机位']).optional(),
+  subtitleStyle: z.string().max(256).optional(),
+  seed: z.string().max(128).optional(),
+  seedLocked: z.boolean().optional(),
 }).strict();
 
 const beatSchema = z.object({
@@ -475,6 +493,8 @@ export function validateEditorialCollagePipeline(
 ): EditorialCollageValidationIssue[] {
   const issues: EditorialCollageValidationIssue[] = [];
   const ready = options.ready ?? false;
+  const assetIds = new Set(data.assets.map((asset) => asset.id));
+  const jobIds = new Set(data.providerJobs.map((job) => job.id));
 
   if (data.version !== EDITORIAL_COLLAGE_PIPELINE_VERSION) issues.push({ path: 'version', message: 'Unsupported editorial collage pipeline version.' });
   if (!data.title.trim()) issues.push({ path: 'title', message: 'A title is required.' });
@@ -501,6 +521,8 @@ export function validateEditorialCollagePipeline(
       shotIds.add(shot.id);
       if (shot.durationMs <= 0 || shot.durationMs > MAX_SHOT_DURATION_MS) issues.push({ path: `${shotPath}.durationMs`, message: 'Shot duration must be between 1ms and 15s.' });
       if (shot.beatId !== beat.id) issues.push({ path: `${shotPath}.beatId`, message: 'Shot must reference its owning beat.' });
+      if (shot.providerJobId && !jobIds.has(shot.providerJobId)) issues.push({ path: `${shotPath}.providerJobId`, message: 'Shot provider job does not exist.' });
+      if (shot.voiceAssetVersionId && !assetIds.has(shot.voiceAssetVersionId)) issues.push({ path: `${shotPath}.voiceAssetVersionId`, message: 'Shot voice asset does not exist.' });
       if (shot.layers.length > MAX_LAYERS_PER_SHOT) issues.push({ path: `${shotPath}.layers`, message: `A shot can contain at most ${MAX_LAYERS_PER_SHOT} layers.` });
       if (ready && shot.layers.length < 2) issues.push({ path: `${shotPath}.layers`, message: 'A ready collage shot needs at least a background and one foreground layer.' });
       if (ready && shot.camera.length === 0) issues.push({ path: `${shotPath}.camera`, message: 'A ready collage shot needs camera keyframes.' });
@@ -510,6 +532,7 @@ export function validateEditorialCollagePipeline(
         if (layerIds.has(layer.id)) issues.push({ path: `${shotPath}.layers[${layerIndex}].id`, message: 'Layer ids must be unique inside a shot.' });
         layerIds.add(layer.id);
         validateKeyframes(layer.motion, shot.durationMs, `${shotPath}.layers[${layerIndex}].motion`, issues);
+        if (layer.assetVersionId && !assetIds.has(layer.assetVersionId)) issues.push({ path: `${shotPath}.layers[${layerIndex}].assetVersionId`, message: 'Layer asset version does not exist.' });
         if (ready && !layer.assetVersionId && layer.source !== 'svg') issues.push({ path: `${shotPath}.layers[${layerIndex}].assetVersionId`, message: 'Every generated or local layer must point to an asset version before rendering.' });
       }
       const beatCueIds = new Set(beat.subtitleCues.map((cue) => cue.id));

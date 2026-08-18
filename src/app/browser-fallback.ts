@@ -1236,6 +1236,9 @@ export function makeFallbackApi(setState: (state: AppState) => void): StoryDream
         tasks: state.tasks.map((item) => item.id === task.id ? updated : item),
       }, task.id);
     },
+    async renderDirectorProject() {
+      throw new Error('DIRECTOR_RENDER_DESKTOP_ONLY: 导演台成片需要 Electron 桌面端的本地渲染器。');
+    },
     async createHtmlVideoTask(input: CreateTaskInput) {
       const state = read();
       const now = new Date().toISOString();

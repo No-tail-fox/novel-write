@@ -6963,3 +6963,6 @@ section.error-dialog .error-dialog-head > div > strong {
 .app-shell[data-editorial-shell] button:not(:disabled):active {
   transform: translateY(1px);
 }
+
+.settings-return-action { width: 100%; justify-content: flex-start; margin-bottom: 8px; border-bottom: 1px solid var(--shell-border); border-radius: 0; }
+.settings-return-action .sd-button__content { justify-content: flex-start; }

@@ -179,6 +179,19 @@
   display: none;
 }
 
+.app-shell[data-editorial-shell] .director-quick-launch {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  margin-top: 7px;
+}
+
+.app-shell[data-editorial-shell] .director-quick-launch .sd-button {
+  min-width: 96px;
+  min-height: 28px;
+  white-space: nowrap;
+}
+
 .app-shell[data-editorial-shell] .page-head h1 {
   font-weight: 500;
   letter-spacing: 0;
@@ -318,20 +331,20 @@
 }
 
 /* Browser-preview notices must own real grid height instead of being clipped by the page header. */
-.app-shell[data-editorial-shell] .content:has(.page-head .local-note) {
+.app-shell[data-editorial-shell]:not([data-shell-view='editorial-collage']):not([data-shell-view='motion-comic']) .content:has(.page-head .local-note) {
   grid-template-rows: 106px minmax(0, 1fr);
 }
 
-.app-shell[data-editorial-shell] .page-head:has(.local-note) {
+.app-shell[data-editorial-shell]:not([data-shell-view='editorial-collage']):not([data-shell-view='motion-comic']) .page-head:has(.local-note) {
   min-height: 106px;
 }
 
 @media (max-width: 1120px) {
-  .app-shell[data-editorial-shell] .content:has(.page-head .local-note) {
+  .app-shell[data-editorial-shell]:not([data-shell-view='editorial-collage']):not([data-shell-view='motion-comic']) .content:has(.page-head .local-note) {
     grid-template-rows: 86px minmax(0, 1fr);
   }
 
-  .app-shell[data-editorial-shell] .page-head:has(.local-note) {
+  .app-shell[data-editorial-shell]:not([data-shell-view='editorial-collage']):not([data-shell-view='motion-comic']) .page-head:has(.local-note) {
     min-height: 86px;
   }
 
