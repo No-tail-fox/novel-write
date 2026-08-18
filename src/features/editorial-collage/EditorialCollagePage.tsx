@@ -14,7 +14,8 @@ import type { StoryDreamApi } from '../../shared/storydream-api';
 import { CheckboxField, SegmentedControl, SelectField, TextAreaField, TextField } from '../../ui';
 import { useAsyncAction } from '../../ui/async-action';
 import { DirectorDeskWorkspace, type DirectorAsset, type DirectorLayoutTemplate, type DirectorMotionPreset, type DirectorQueueItem, type DirectorShot, type DirectorVersion } from '../director-desk/DirectorDeskWorkspace';
-import { DirectorCreateWizard, DirectorProjectLoading, DirectorProjectRecovery } from '../director-desk/DirectorProjectStart';
+import { DirectorCopyAssist, DirectorCreateWizard, DirectorProjectLoading, DirectorProjectRecovery } from '../director-desk/DirectorProjectStart';
+import { buildDirectorCopyAssistRequest, normalizeDirectorCopyAssistError, type DirectorCopyAssistIntent } from '../director-desk/director-copy-assist';
 import { applyEditorialImageRecord, applyEditorialVoiceRecord, resolveDirectorImageProviderOptions, resolveDirectorImageProviderStatus, resolveDirectorVoiceProviderStatus } from '../director-desk/director-generation';
 import { toLocalAssetUrl, toLocalImageUrl } from '../tasks/task-formatters';
 import shotAlley from '../../assets/director-desk/shot-alley.png';
@@ -43,6 +44,7 @@ export function EditorialCollagePage({
 }) {
   const projectAction = useAsyncAction();
   const providerAction = useAsyncAction();
+  const copyAction = useAsyncAction();
   const [document, setDocument] = useState<EditorialCollagePipelineData | null>(null);
   const documentRef = useRef<EditorialCollagePipelineData | null>(null);
   const [activeProjectId, setActiveProjectId] = useState('');
@@ -53,6 +55,7 @@ export function EditorialCollagePage({
   const [createStep, setCreateStep] = useState(0);
   const [createTitle, setCreateTitle] = useState('');
   const [createSource, setCreateSource] = useState('');
+  const [copyAssistIntent, setCopyAssistIntent] = useState<DirectorCopyAssistIntent | null>(null);
   const [createRatio, setCreateRatio] = useState<EditorialCollagePipelineData['ratio']>('16:9');
   const [createStyleId, setCreateStyleId] = useState<string>(EDITORIAL_STYLE_PRESETS[0].id);
   const [createLayoutTemplate, setCreateLayoutTemplate] = useState<DirectorLayoutTemplate>('对比拼贴 · 纸张撕裂');
@@ -200,6 +203,20 @@ export function EditorialCollagePage({
     if (asset.sourceVersionId) restoreVersion(asset.sourceVersionId);
   }
 
+  async function runCopyAssist(intent: DirectorCopyAssistIntent) {
+    await copyAction.run(async () => {
+      setCopyAssistIntent(intent);
+      try {
+        const result = await api.composeResearchCopy(buildDirectorCopyAssistRequest({ mode: 'vox', intent, title: createTitle, copy: createSource }))
+          .catch((error) => { throw normalizeDirectorCopyAssistError(error); });
+        setCreateSource(result.copy);
+        return result;
+      } finally {
+        setCopyAssistIntent(null);
+      }
+    }, { successMessage: intent === 'create' ? 'AI 文案已创作并填入。' : 'AI 文案已修改并填入。' });
+  }
+
   function startCreate() {
     projectOpenRequestRef.current += 1;
     setLoadingProjectId('');
@@ -208,6 +225,7 @@ export function EditorialCollagePage({
     setActiveProjectId('');
     setSelectedShotId('');
     setCreateStep(0);
+    copyAction.clearFeedback();
     setCreateOpen(true);
   }
 
@@ -252,6 +270,7 @@ export function EditorialCollagePage({
     setSelectedShotId(result.value.document.beats[0]?.shots[0]?.id ?? '');
     setCreateTitle('');
     setCreateSource('');
+    copyAction.clearFeedback();
     setCreateStep(0);
     setCreateOpen(false);
     setDirty(false);
@@ -362,7 +381,7 @@ export function EditorialCollagePage({
     return <div data-editorial-collage-workbench="true"><DirectorCreateWizard
       mode="vox"
       step={createStep}
-      busy={projectAction.busy || providerAction.busy}
+      busy={projectAction.busy || providerAction.busy || copyAction.busy}
       canContinue={createStep > 0 || Boolean(createTitle.trim() && createSource.trim())}
       canCreate={Boolean(createTitle.trim() && createSource.trim())}
       providerConnected={providerStatus.connected}
@@ -385,8 +404,18 @@ export function EditorialCollagePage({
       onCreate={() => void createProject()}
     >
       {createStep === 0 ? <>
-        <TextField label="项目标题" value={createTitle} onChange={(_, data) => setCreateTitle(data.value)} placeholder="例如：拉萨旧城的回声" />
-        <TextAreaField label="原始文案" value={createSource} onChange={(_, data) => setCreateSource(data.value)} placeholder="粘贴需要拆成解释型视频的文案" resize="vertical" hint={`${createSource.trim().length} 字 · 将拆成钩子、背景、证据、结论`} />
+        <TextField label="项目标题" value={createTitle} onChange={(_, data) => { setCreateTitle(data.value); copyAction.clearFeedback(); }} placeholder="例如：拉萨旧城的回声" />
+        <div className="director-copy-field">
+          <TextAreaField label="原始文案" value={createSource} onChange={(_, data) => { setCreateSource(data.value); copyAction.clearFeedback(); }} placeholder="粘贴需要拆成解释型视频的文案" resize="vertical" hint={`${createSource.trim().length} 字 · 将拆成钩子、背景、证据、结论`} />
+          <DirectorCopyAssist
+            activeIntent={copyAssistIntent}
+            canCreate={Boolean(createTitle.trim())}
+            canRevise={Boolean(createSource.trim())}
+            feedback={copyAction.feedback}
+            onCreate={() => void runCopyAssist('create')}
+            onRevise={() => void runCopyAssist('revise')}
+          />
+        </div>
         <SegmentedControl label="画幅" value={createRatio} options={EDITORIAL_COLLAGE_RATIOS.map((ratio) => ({ value: ratio, label: ratio }))} onChange={setCreateRatio} />
         <div className="director-structure-preview"><strong>30 秒解释结构</strong><span>01 钩子 · 3s</span><span>02 背景 · 9s</span><span>03 证据 · 9s</span><span>04 结论 · 9s</span></div>
       </> : null}

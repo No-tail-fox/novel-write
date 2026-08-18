@@ -23,9 +23,10 @@ describe('editorial collage workbench', () => {
   });
 
   it('uses the shared Director Desk with real media, shot controls, generation queue, and persisted VOX edits', async () => {
-    const [page, workspace, css, shellCss] = await Promise.all([
+    const [page, workspace, start, css, shellCss] = await Promise.all([
       source('src/features/editorial-collage/EditorialCollagePage.tsx'),
       source('src/features/director-desk/DirectorDeskWorkspace.tsx'),
+      source('src/features/director-desk/DirectorProjectStart.tsx'),
       source('src/styles/features/director-desk.css'),
       source('src/styles/shell.css'),
     ]);
@@ -49,6 +50,11 @@ describe('editorial collage workbench', () => {
     expect(page).toContain('applyEditorialVoiceRecord');
     expect(page).toContain('api.generateVoiceLabPreview');
     expect(page).toContain('api.renderDirectorProject');
+    expect(page).toContain('api.composeResearchCopy');
+    expect(page).toContain('buildDirectorCopyAssistRequest');
+    expect(page).toContain('<DirectorCopyAssist');
+    expect(start).toContain('AI 创作');
+    expect(start).toContain('AI 修改');
     expect(page).toContain('api.openTaskOutputDirectory');
     expect(page).toContain('onGenerateShot={generateShot}');
     expect(page).toContain('onNewProject={startCreate}');
@@ -89,6 +95,7 @@ describe('editorial collage workbench', () => {
     expect(css).toContain('.director-scrub-field');
     expect(css).toContain('.director-inspector-pane');
     expect(css).toContain('.director-queue-panel');
+    expect(css).toContain('.director-copy-assist');
     expect(shellCss).toContain(":not(:has(.director-desk)) .content:has(.page-head .local-note)");
   });
 });

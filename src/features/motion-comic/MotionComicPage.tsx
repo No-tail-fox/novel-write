@@ -18,7 +18,8 @@ import type { StoryDreamApi } from '../../shared/storydream-api';
 import { Button, CheckboxField, Pane, SegmentedControl, SelectField, TextAreaField, TextField, Toolbar } from '../../ui';
 import { useAsyncAction } from '../../ui/async-action';
 import { DirectorDeskWorkspace, type DirectorAsset, type DirectorQueueItem, type DirectorShot, type DirectorVersion } from '../director-desk/DirectorDeskWorkspace';
-import { DirectorCreateWizard, DirectorProjectLoading, DirectorProjectRecovery } from '../director-desk/DirectorProjectStart';
+import { DirectorCopyAssist, DirectorCreateWizard, DirectorProjectLoading, DirectorProjectRecovery } from '../director-desk/DirectorProjectStart';
+import { buildDirectorCopyAssistRequest, normalizeDirectorCopyAssistError, type DirectorCopyAssistIntent } from '../director-desk/director-copy-assist';
 import { applyMotionComicImageRecord, applyMotionComicVoiceRecord, resolveDirectorImageProviderOptions, resolveDirectorImageProviderStatus, resolveDirectorVoiceProviderStatus } from '../director-desk/director-generation';
 import { toLocalAssetUrl, toLocalImageUrl } from '../tasks/task-formatters';
 import shotAlley from '../../assets/director-desk/shot-alley.png';
@@ -47,6 +48,7 @@ export function MotionComicPage({
 }) {
   const projectAction = useAsyncAction();
   const providerAction = useAsyncAction();
+  const copyAction = useAsyncAction();
   const [document, setDocument] = useState<MotionComicPipelineData | null>(null);
   const documentRef = useRef<MotionComicPipelineData | null>(null);
   const [activeProjectId, setActiveProjectId] = useState('');
@@ -57,6 +59,7 @@ export function MotionComicPage({
   const [createStep, setCreateStep] = useState(0);
   const [createTitle, setCreateTitle] = useState('');
   const [createPremise, setCreatePremise] = useState('');
+  const [copyAssistIntent, setCopyAssistIntent] = useState<DirectorCopyAssistIntent | null>(null);
   const [createEpisodeTitle, setCreateEpisodeTitle] = useState('第一集');
   const [createRatio, setCreateRatio] = useState<MotionComicPipelineData['ratio']>('16:9');
   const [createGenre, setCreateGenre] = useState('都市奇幻');
@@ -275,6 +278,20 @@ export function MotionComicPage({
     }));
   }
 
+  async function runCopyAssist(intent: DirectorCopyAssistIntent) {
+    await copyAction.run(async () => {
+      setCopyAssistIntent(intent);
+      try {
+        const result = await api.composeResearchCopy(buildDirectorCopyAssistRequest({ mode: 'motion-comic', intent, title: createTitle, copy: createPremise }))
+          .catch((error) => { throw normalizeDirectorCopyAssistError(error); });
+        setCreatePremise(result.copy);
+        return result;
+      } finally {
+        setCopyAssistIntent(null);
+      }
+    }, { successMessage: intent === 'create' ? 'AI 核心设定已创作并填入。' : 'AI 核心设定已修改并填入。' });
+  }
+
   function startCreate() {
     projectOpenRequestRef.current += 1;
     setLoadingProjectId('');
@@ -284,6 +301,7 @@ export function MotionComicPage({
     setSelectedShotId('');
     setSeriesSettingsOpen(false);
     setCreateStep(0);
+    copyAction.clearFeedback();
     setCreateOpen(true);
   }
 
@@ -341,6 +359,7 @@ export function MotionComicPage({
     setSelectedShotId(result.value.document.episodes[0]?.scenes[0]?.shots[0]?.id ?? '');
     setCreateTitle('');
     setCreatePremise('');
+    copyAction.clearFeedback();
     setCreateEpisodeTitle('第一集');
     setCreateStep(0);
     setCreateOpen(false);
@@ -452,7 +471,7 @@ export function MotionComicPage({
     return <div data-motion-comic-workbench="true"><DirectorCreateWizard
       mode="motion-comic"
       step={createStep}
-      busy={projectAction.busy || providerAction.busy}
+      busy={projectAction.busy || providerAction.busy || copyAction.busy}
       canContinue={createStep > 0 || Boolean(createTitle.trim() && createPremise.trim())}
       canCreate={Boolean(createTitle.trim() && createPremise.trim() && createProtagonist.trim() && createLocation.trim())}
       providerConnected={providerStatus.connected}
@@ -475,8 +494,18 @@ export function MotionComicPage({
       onCreate={() => void createProject()}
     >
       {createStep === 0 ? <>
-        <TextField label="系列名称" value={createTitle} onChange={(_, data) => setCreateTitle(data.value)} placeholder="例如：雨夜来信" />
-        <TextAreaField label="核心设定" value={createPremise} onChange={(_, data) => setCreatePremise(data.value)} placeholder="一句话写清主角、异常事件与核心冲突" resize="vertical" hint={`${createPremise.trim().length} 字 · 将生成三场六镜首集骨架`} />
+        <TextField label="系列名称" value={createTitle} onChange={(_, data) => { setCreateTitle(data.value); copyAction.clearFeedback(); }} placeholder="例如：雨夜来信" />
+        <div className="director-copy-field">
+          <TextAreaField label="核心设定" value={createPremise} onChange={(_, data) => { setCreatePremise(data.value); copyAction.clearFeedback(); }} placeholder="一句话写清主角、异常事件与核心冲突" resize="vertical" hint={`${createPremise.trim().length} 字 · 将生成三场六镜首集骨架`} />
+          <DirectorCopyAssist
+            activeIntent={copyAssistIntent}
+            canCreate={Boolean(createTitle.trim())}
+            canRevise={Boolean(createPremise.trim())}
+            feedback={copyAction.feedback}
+            onCreate={() => void runCopyAssist('create')}
+            onRevise={() => void runCopyAssist('revise')}
+          />
+        </div>
         <div className="director-create-two-col"><TextField label="首集标题" value={createEpisodeTitle} onChange={(_, data) => setCreateEpisodeTitle(data.value)} /><SegmentedControl label="画幅" value={createRatio} options={MOTION_COMIC_RATIOS.map((ratio) => ({ value: ratio, label: ratio }))} onChange={setCreateRatio} /></div>
         <div className="director-structure-preview"><strong>首集结构</strong><span>01 异常出现</span><span>02 线索升级</span><span>03 选择与钩子</span><span>每场 2 镜头</span></div>
       </> : null}

@@ -2693,3 +2693,49 @@ Rebuild the selected Director Desk visual as a functional StoryDream VOX/AI漫�
 | PowerShell 将未加引号的 `@{upstream}` 解析为表达式，首次远端差异检查失败 | 1 | 将 `HEAD...@{upstream}` 作为单引号参数重跑，确认本地基线与远端为 0/0 |
 
 ---
+
+# VOX / AI 漫剧创建页 AI 文案辅助（2026-08-19）
+
+## Goal
+
+在 VOX 和 AI 漫剧创建页的核心文案输入旁提供真实可用的“AI 创作 / AI 修改”，复用 StoryDream 当前启用的 LLM 配置，保留用户草稿并提供明确的忙碌、成功和失败状态。
+
+## Phases
+
+- [completed] 1. 审计两个创建页、现有 LLM API、组件合同和测试
+- [completed] 2. 定义领域请求、共享控件与回归合同
+- [completed] 3. 实现两个页面的 AI 创作/修改与状态回填
+- [completed] 4. 聚焦测试、类型检查、生产构建和双窗口 Electron QA
+- [completed] 5. UTF-8、差异与运行服务最终检查
+
+## Decisions
+
+| Decision | Rationale |
+|---|---|
+| 复用 `api.composeResearchCopy` | 已通过主进程读取启用的 LLM 配置，避免平行 IPC 和假按钮 |
+| AI 创作以项目/系列标题为主题种子 | 空白文案仍需明确创作主题，标题是创建页已有的稳定上下文 |
+| AI 修改只把当前文案作为参考资料 | 尽量保留事实与核心设定，避免修改时无意引入外部内容 |
+| 两页共用 `DirectorCopyAssist` | 保持控件、忙碌态、反馈和无障碍名称一致 |
+
+## Errors Encountered
+
+| Error | Attempt | Resolution |
+|---|---:|---|
+| 错误读取不存在的 `src/shared/use-async-action.ts` | 1 | 用 `rg --files` 定位实际文件 `src/ui/async-action.ts`，不重复错误路径 |
+| 首次联合测试补丁找不到漫剧 CSS 断言锚点 | 1 | 补丁未落盘；按实际测试结构拆分并使用存在的源码/工作区断言定位 |
+| 首轮浏览器 QA 预期原始 fallback 文本，实际被错误归一化为泛化提示 | 1 | 保留原稿/布局/按钮均通过；改为给 AI 文案辅助提供可行动的领域错误，再按用户可见合同重跑 |
+
+---
+
+## Final status (2026-08-19)
+
+- [completed] 3. 实现两个页面的 AI 创作/修改与状态回填
+- [completed] 4. 聚焦测试、类型检查、生产构建和双窗口 Electron QA
+- [completed] 5. UTF-8、差异与运行服务最终检查
+
+## Final verification
+
+- 相关回归 4 个测试文件、14/14 用例通过；`npm run typecheck`、`npm run build` 与 `git diff --check` 通过。
+- 浏览器 QA 4/4 场景通过：VOX/AI 漫剧在 1440x900 与 1040x720 下均有 AI 创作/AI 修改，失败不覆盖原稿，可滚到底部且横向溢出为 0。
+- Electron 生产渲染 QA 4/4 场景通过：两页初始按钮均禁用，填写标题与文案后均启用，控件在工作区内可见，运行时错误为 0；QA 未点击真实 LLM，不产生付费调用。
+- 12 个本轮修改文件 UTF-8 复读通过，未跟踪的 `.baoyu-skills/`、`.reverse/`、`image-cards/` 与 `outputs/*` 保持不变。

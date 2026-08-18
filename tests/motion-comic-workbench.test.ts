@@ -20,9 +20,10 @@ describe('motion comic workbench', () => {
   });
 
   it('uses the shared Director Desk for shot production while preserving AI 漫剧 create/save ownership', async () => {
-    const [page, workspace, css, shellCss] = await Promise.all([
+    const [page, workspace, start, css, shellCss] = await Promise.all([
       source('src/features/motion-comic/MotionComicPage.tsx'),
       source('src/features/director-desk/DirectorDeskWorkspace.tsx'),
+      source('src/features/director-desk/DirectorProjectStart.tsx'),
       source('src/styles/features/director-desk.css'),
       source('src/styles/shell.css'),
     ]);
@@ -44,6 +45,11 @@ describe('motion comic workbench', () => {
     expect(page).toContain('applyMotionComicVoiceRecord');
     expect(page).toContain('api.generateVoiceLabPreview');
     expect(page).toContain('api.renderDirectorProject');
+    expect(page).toContain('api.composeResearchCopy');
+    expect(page).toContain('buildDirectorCopyAssistRequest');
+    expect(page).toContain('<DirectorCopyAssist');
+    expect(start).toContain('AI 创作');
+    expect(start).toContain('AI 修改');
     expect(page).toContain('api.openTaskOutputDirectory');
     expect(page).toContain('onGenerateShot={generateShot}');
     expect(page).toContain('onNewProject={startCreate}');
@@ -68,6 +74,7 @@ describe('motion comic workbench', () => {
     expect(workspace).toContain('onProviderProfileChange');
     expect(workspace).toContain('director-asset-grid');
     expect(workspace).toContain('director-queue-panel');
+    expect(css).toContain('.director-copy-assist');
     expect(workspace).toContain('generateVoice');
     expect(workspace).toContain('renderProject');
     expect(workspace).toContain('openOutput');

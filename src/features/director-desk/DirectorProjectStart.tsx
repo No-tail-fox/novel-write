@@ -9,6 +9,7 @@ import {
   Film,
   Images,
   Loader2,
+  PencilLine,
   Plus,
   Settings2,
   Sparkles,
@@ -18,6 +19,31 @@ import { Button, Pane, Toolbar } from '../../ui';
 import type { DirectorDeskMode } from './DirectorDeskWorkspace';
 
 export const DIRECTOR_CREATE_STEPS = ['内容结构', '生成与一致性', '声音与输出'] as const;
+
+export interface DirectorCopyAssistProps {
+  activeIntent: 'create' | 'revise' | null;
+  canCreate: boolean;
+  canRevise: boolean;
+  feedback?: { tone: 'error' | 'success'; message: string } | null;
+  onCreate: () => void;
+  onRevise: () => void;
+}
+
+export function DirectorCopyAssist({ activeIntent, canCreate, canRevise, feedback, onCreate, onRevise }: DirectorCopyAssistProps) {
+  return (
+    <div className="director-copy-assist" data-director-copy-assist>
+      <Toolbar aria-label="AI 文案辅助">
+        <Button variant="secondary" icon={activeIntent === 'create' ? <Loader2 className="director-spin" size={14} /> : <Sparkles size={14} />} disabled={!canCreate || activeIntent !== null} onClick={onCreate}>
+          {activeIntent === 'create' ? '创作中' : 'AI 创作'}
+        </Button>
+        <Button variant="subtle" icon={activeIntent === 'revise' ? <Loader2 className="director-spin" size={14} /> : <PencilLine size={14} />} disabled={!canRevise || activeIntent !== null} onClick={onRevise}>
+          {activeIntent === 'revise' ? '修改中' : 'AI 修改'}
+        </Button>
+      </Toolbar>
+      {feedback ? <span className={`director-copy-assist-feedback is-${feedback.tone}`} role={feedback.tone === 'error' ? 'alert' : 'status'}>{feedback.message}</span> : null}
+    </div>
+  );
+}
 
 export interface DirectorCreateWizardProps {
   mode: DirectorDeskMode;

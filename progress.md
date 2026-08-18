@@ -1542,3 +1542,22 @@
 - `npm run typecheck`、生产构建和 `git diff --check` 通过；最终截图与报告归档到 `.artifacts/unified-task-system-2026-08-18/`，本阶段完成。
 
 ---
+
+# VOX / AI 漫剧创建页 AI 文案辅助进度（2026-08-19）
+
+- 已读取 `storydream-ui`、组件合同和 `planning-with-files`，并恢复当前工作树与规划上下文。
+- 已定位两个创建页的文案状态、真实 `composeResearchCopy` 调用链、浏览器 fallback 和 AsyncAction 状态组件。
+- 已确定以共享 `DirectorCopyAssist` 呈现“AI 创作 / AI 修改”，使用纯函数生成 VOX/漫剧各自的 LLM 请求。
+- 已新增请求构造与两页接入合同；首次聚焦运行 3 个测试文件按预期失败，红灯分别指向缺少纯函数、真实 API 调用和共享控件。
+- 当前进入实现阶段；既有滚动修复保留，不覆盖未跟踪本地产物。
+- 首轮浏览器 QA 四个场景的禁用/启用、失败不覆盖草稿、滚动到底和横向溢出均通过；唯一失败是错误提示被归一化为泛化文案，正在补领域错误信息。
+
+---
+
+# VOX / AI 漫剧创建页 AI 文案辅助完成（2026-08-19）
+
+- 新增 `src/features/director-desk/director-copy-assist.ts`，集中构造 VOX/漫剧创作与修改请求，并归一化未知 LLM 失败。
+- `DirectorProjectStart.tsx` 新增共享 `DirectorCopyAssist`；两个创建页复用同一套按钮状态、成功/失败反馈与草稿保护逻辑。
+- 修复创建页滚动归属，保留此前统一任务体系的主壳层和 Director Desk 路由逻辑。
+- 聚焦回归 14/14、类型检查、生产构建、差异检查和 UTF-8 检查通过。
+- 浏览器 QA 4/4、Electron 生产渲染 QA 4/4 通过；证据位于 `.artifacts/director-copy-assist-*`，未调用真实 LLM 或付费生成。

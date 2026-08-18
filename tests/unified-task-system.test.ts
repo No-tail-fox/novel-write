@@ -74,4 +74,16 @@ describe('unified StoryDream task system', () => {
     expect(css).not.toContain(".app-shell[data-shell-view='editorial-collage'] > .window-line");
     expect(css).not.toContain(".app-shell[data-shell-view='motion-comic'] > .window-line");
   });
+
+  it('keeps both project creation routes vertically scrollable', async () => {
+    const css = await source('src/styles/features/director-desk.css');
+
+    expect(css).toContain("[data-editorial-collage-workbench='true']:has(> .director-create-panel)");
+    expect(css).toContain("[data-motion-comic-workbench='true']:has(> .director-create-panel)");
+    expect(css).toContain('overflow-y: auto;');
+    expect(css).toContain("[data-editorial-collage-workbench='true'] > .director-create-panel");
+    expect(css).toContain("[data-motion-comic-workbench='true'] > .director-create-panel");
+    expect(css).toContain('height: auto;');
+    expect(css).toContain('overflow: visible;');
+  });
 });

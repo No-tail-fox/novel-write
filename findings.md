@@ -2032,3 +2032,22 @@
 - 最终专项报告为 `status=passed`，全部状态 `horizontalOverflow=0`、`clippedControls=[]`、`runtimeErrors=[]`；全库回归 146 文件、1905/1905 通过。
 
 ---
+
+# VOX / AI 漫剧创建页 AI 文案辅助发现（2026-08-19）
+
+- 两页第 1 步分别由 `createSource`（VOX 原始文案）与 `createPremise`（AI 漫剧核心设定）持有草稿，适合原位回填，不需要改变项目持久化模型。
+- 现有 `api.composeResearchCopy` 经 preload 的 `research:compose-copy` 进入 Electron 主进程，并使用当前 runtime config 的 `createConfiguredTextLlm()`，是真实 LLM 能力。
+- 浏览器 fallback 会明确报错“浏览器预览无法调用真实 LLM”，因此 Electron 才是功能验证权威；浏览器只做布局与状态检查。
+- `ResearchCopyComposeInput` 支持内置知识空来源创作，也支持把当前草稿作为 `selectedSources` 进行有来源修改。
+- VOX 输出应约束为 30 秒解释型中文旁白、钩子/背景/证据/结论；AI 漫剧输出应约束为 60-120 字核心设定、主角/异常/冲突/悬念，不能扩写成完整剧本。
+- `src/ui` 已有 Button、Toolbar、TextAreaField 和 AsyncAction，无需新增 UI 或状态依赖。
+
+---
+
+# VOX / AI 漫剧创建页 AI 文案辅助最终发现（2026-08-19）
+
+- `DirectorCopyAssist` 已作为共享控件接入两个创建页；按钮使用 Lucide 图标、明确的禁用/忙碌文案和 `role=alert/status` 反馈。
+- AI 创作要求先有项目标题/系列名称，使用标题作为关键词并允许内置知识；AI 修改要求已有文案，只将当前草稿作为 `user-draft` 参考来源。
+- VOX 请求约束 30 秒解释型旁白的钩子、背景、证据、结论；AI 漫剧请求约束 60-120 字主角、异常事件、核心冲突和持续悬念，避免扩写成完整剧本。
+- 未知 IPC/LLM 错误统一转换为可行动的“请检查系统设置中的 LLM 配置与网络”提示；明确结构化错误保留原始原因，且任何失败都不覆盖用户草稿。
+- 创建页滚动拥有者已收敛到工作区容器，普通/紧凑 Electron 均能滚到底并显示底部操作区；新增 AI 控件没有造成横向溢出。
