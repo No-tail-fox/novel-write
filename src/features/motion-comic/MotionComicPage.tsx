@@ -7,8 +7,10 @@ import {
   appendMotionComicEpisode,
   appendMotionComicScene,
   appendMotionComicShot,
+  moveMotionComicShot,
   MOTION_COMIC_RATIOS,
   parseMotionComicPipelineData,
+  removeMotionComicShot,
   type MotionComicEpisode,
   type MotionComicPipelineData,
   type MotionComicShot,
@@ -74,6 +76,7 @@ export function MotionComicPage({
   const [createSubtitleStyle, setCreateSubtitleStyle] = useState('简体中文 · 白色描边');
   const [createSeedLocked, setCreateSeedLocked] = useState(true);
   const [dirty, setDirty] = useState(false);
+  const [structureError, setStructureError] = useState('');
   const [seriesSettingsOpen, setSeriesSettingsOpen] = useState(false);
   const [selectedProviderProfileId, setSelectedProviderProfileId] = useState(() => activeImageProfileId(state.config));
 
@@ -119,7 +122,7 @@ export function MotionComicPage({
     if (outputAsset) completed.push('审片', '导出');
     return completed;
   }, [activeEpisode?.scenes.length, document, outputAsset, shots]);
-  const actionError = providerAction.feedback?.tone === 'error' ? providerAction.feedback.message : projectAction.feedback?.tone === 'error' ? projectAction.feedback.message : undefined;
+  const actionError = structureError || (providerAction.feedback?.tone === 'error' ? providerAction.feedback.message : projectAction.feedback?.tone === 'error' ? projectAction.feedback.message : undefined);
   const systemStatusTone = actionError ? 'error' : !providerStatus.connected || !voiceStatus.connected ? 'warning' : 'ok';
   const systemStatus = actionError ? '项目需要处理' : !providerStatus.connected ? '图片服务待配置' : !voiceStatus.connected ? '旁白服务待配置' : '生成服务正常';
 
@@ -250,6 +253,34 @@ export function MotionComicPage({
     const next = appendMotionComicShot(current, episode.id, selectedScene.id, { id: `${selectedScene.id}-shot-${crypto.randomUUID()}` });
     replaceDocument(next);
     setSelectedShotId(next.episodes.find((candidate) => candidate.id === episode.id)?.scenes.find((scene) => scene.id === selectedScene.id)?.shots.at(-1)?.id ?? '');
+  }
+
+  function moveShot(shotId: string, direction: -1 | 1) {
+    const current = documentRef.current;
+    const episode = current?.episodes.find((candidate) => candidate.id === current.activeEpisodeId);
+    const scene = episode?.scenes.find((candidate) => candidate.shots.some((shot) => shot.id === shotId));
+    if (!current || !episode || !scene) return;
+    replaceDocument(moveMotionComicShot(current, episode.id, scene.id, shotId, direction));
+    setStructureError('');
+  }
+
+  function removeShot(shotId: string) {
+    const current = documentRef.current;
+    const episode = current?.episodes.find((candidate) => candidate.id === current.activeEpisodeId);
+    const scene = episode?.scenes.find((candidate) => candidate.shots.some((shot) => shot.id === shotId));
+    if (!current || !episode || !scene) return;
+    try {
+      const flatShots = episode.scenes.flatMap((candidate) => candidate.shots);
+      const removedIndex = flatShots.findIndex((shot) => shot.id === shotId);
+      const next = removeMotionComicShot(current, episode.id, scene.id, shotId);
+      replaceDocument(next);
+      const nextEpisode = next.episodes.find((candidate) => candidate.id === episode.id);
+      const nextShots = nextEpisode?.scenes.flatMap((candidate) => candidate.shots) ?? [];
+      setSelectedShotId(nextShots[Math.max(0, removedIndex - 1)]?.id ?? nextShots[0]?.id ?? '');
+      setStructureError('');
+    } catch (error) {
+      setStructureError(error instanceof Error ? error.message : String(error));
+    }
   }
 
   function restoreVersion(versionId: string) {
@@ -590,6 +621,8 @@ export function MotionComicPage({
         onAddEpisode={addEpisode}
         onAddScene={addScene}
         onAddShot={addShot}
+        onMoveShot={moveShot}
+        onRemoveShot={removeShot}
         onToggleAsset={toggleConsistencyAsset}
         onRestoreVersion={restoreVersion}
         onSelectShot={setSelectedShotId}

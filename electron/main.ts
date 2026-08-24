@@ -34,7 +34,7 @@ import {
   type OrdinaryTaskCoverImageProcessor,
   type OrdinaryTaskCoverInspection,
 } from '../src/shared/ordinary-task-cover';
-import { applyHtmlVideoConfigChanges, applyHtmlVideoSceneChanges, createHtmlVideoTaskInput, htmlVideoVisibleSteps, isHtmlVideoTask, MAX_HTML_VIDEO_ELEMENTS_PER_SCENE, parseHtmlVideoPipelineData, prepareHtmlVideoPipelineForRerender, recoverHtmlVideoPipelineDataForRetry, type HtmlVideoPipelineRetryPatch } from '../src/shared/html-video-workflow';
+import { applyHtmlVideoConfigChanges, applyHtmlVideoSceneChanges, applyHtmlVideoSceneStructureChange, createHtmlVideoTaskInput, htmlVideoVisibleSteps, isHtmlVideoTask, MAX_HTML_VIDEO_ELEMENTS_PER_SCENE, parseHtmlVideoPipelineData, prepareHtmlVideoPipelineForRerender, recoverHtmlVideoPipelineDataForRetry, type HtmlVideoPipelineRetryPatch } from '../src/shared/html-video-workflow';
 import { assertHyperframesSource, GSAP_RUNTIME_FILENAME, HYPERFRAMES_RUNTIME_FILENAME, MAX_HYPERFRAMES_SOURCE_BYTES } from '../src/shared/hyperframes';
 import { generateConfiguredVoicePreview } from '../src/shared/media-providers';
 import { mergeMinimaxCloneVoice } from '../src/shared/minimax-clone-voices';
@@ -49,7 +49,7 @@ import { runStoryboundMediaSidecar } from '../src/shared/storybound-sidecar';
 import { FileDatabase, type HistoryDeletionCleanup, type HistoryTombstone } from '../src/shared/storage';
 import { createHtmlVideoRuntimeProviders, createTaskRuntimeProviders } from '../src/shared/task-runtime-providers';
 import { assertTaskLifecycleAction } from '../src/shared/task-progress';
-import type { AccountProfile, ActivationState, AppConfig, AppDelta, AppDeltaReconcileRequest, AppDeltaReconcileResult, AppStatePatch, BenchmarkGroupInput, BenchmarkGroupSyncResult, BenchmarkLoginInput, BenchmarkLoginResult, BenchmarkPlatform, BenchmarkPostInput, BookDiscoveryRequest, BookSelectionInput, ConfigTestTarget, CreateTaskInput, CreateViralAnalysisInput, CursorRequest, CustomStyle, CustomStyleGenerateInput, DraftTemplate, HistoryFamily, HistoryListRequest, HotBoardSourceContent, HtmlVideoAsset, HtmlVideoAssetTarget, HtmlVideoCompositionSource, HtmlVideoCompositionSourceLintInput, HtmlVideoCompositionSourceSaveInput, HtmlVideoConfigChange, HtmlVideoPipelineDataV2, HtmlVideoSceneChange, HtmlVideoVoiceClip, ImageLabGenerateInput, ImageLabRecord, ImageLabSummary, ImaKnowledgeRequest, LlmConfig, ManagedBgmImport, MinimaxCloneVoiceInput, OrdinaryTaskCoverRatio, OrdinaryTaskCoverSelection, PromptTemplate, ProviderModelListRequest, ResearchCopyComposeInput, SceneVideoLibraryItem, SequencedTaskEvent, StoryboardScene, Task, TaskArtifactVideoPreview, TaskImageReplacementSource, TaskStatus, TaskStepRerunMode, TaskSubtitleSceneLines, TaskVideoReplacementSource, UiPreferencesUpdate, ViralAnalysisRecord, ViralAnalysisResult, ViralAnalysisStatus, ViralProductionTaskOptions, VolcengineSpeakerListRequest, VoiceLabGenerateInput, VoiceLabRecord, VoiceLabSummary, WebSearchRequest } from '../src/shared/types';
+import type { AccountProfile, ActivationState, AppConfig, AppDelta, AppDeltaReconcileRequest, AppDeltaReconcileResult, AppStatePatch, BenchmarkGroupInput, BenchmarkGroupSyncResult, BenchmarkLoginInput, BenchmarkLoginResult, BenchmarkPlatform, BenchmarkPostInput, BookDiscoveryRequest, BookSelectionInput, ConfigTestTarget, CreateTaskInput, CreateViralAnalysisInput, CursorRequest, CustomStyle, CustomStyleGenerateInput, DraftTemplate, HistoryFamily, HistoryListRequest, HotBoardSourceContent, HtmlVideoAsset, HtmlVideoAssetTarget, HtmlVideoCompositionSource, HtmlVideoCompositionSourceLintInput, HtmlVideoCompositionSourceSaveInput, HtmlVideoConfigChange, HtmlVideoPipelineDataV2, HtmlVideoSceneChange, HtmlVideoSceneStructureChange, HtmlVideoVoiceClip, ImageLabGenerateInput, ImageLabRecord, ImageLabSummary, ImaKnowledgeRequest, LlmConfig, ManagedBgmImport, MinimaxCloneVoiceInput, MusicMvTaskUpdateInput, OrdinaryTaskCoverRatio, OrdinaryTaskCoverSelection, PromptTemplate, ProviderModelListRequest, ResearchCopyComposeInput, SceneVideoLibraryItem, SequencedTaskEvent, StoryboardScene, Task, TaskArtifactVideoPreview, TaskImageReplacementSource, TaskStatus, TaskStepRerunMode, TaskSubtitleSceneLines, TaskVideoReplacementSource, UiPreferencesUpdate, ViralAnalysisRecord, ViralAnalysisResult, ViralAnalysisStatus, ViralProductionTaskOptions, VolcengineSpeakerListRequest, VoiceLabGenerateInput, VoiceLabRecord, VoiceLabSummary, WebSearchRequest } from '../src/shared/types';
 import { boundViralDiagnosticText, createViralProductionTaskInput, detectViralPlatform, runViralAnalysis, viralCheckpointResumeState } from '../src/shared/viral-analysis';
 import { createViralRuntimeProviders } from '../src/shared/viral-runtime';
 import { listVolcengineSpeakers } from '../src/shared/volcengine-speakers';
@@ -2760,6 +2760,18 @@ trustedHandle('html-video:update-scene', (_event, input: { id: string; sceneInde
     });
   }));
 
+trustedHandle('html-video:update-scene-structure', (_event, input: { id: string; change: HtmlVideoSceneStructureChange }) =>
+  runHistoryGovernanceMutation('task', input.id, async (database) => {
+    const task = await getEditableHtmlVideoTask(database, input.id);
+    const pipeline = applyHtmlVideoSceneStructureChange(parseHtmlVideoPipelineData(task.pipelineData), input.change);
+    return persistHtmlVideoEditorialMutation(database, task, pipeline, {
+      type: 'html_video_scene_structure_update',
+      tool: 'scene-organizer',
+      detail: `已执行场景结构操作：${input.change.operation}（场景 ${input.change.sceneIndex}）。`,
+      data: input.change,
+    });
+  }));
+
 trustedHandle('html-video:add-asset', (_event, input: { id: string; sceneIndex: number; prompt: string }) =>
   runHistoryGovernanceMutation('task', input.id, async (database) => {
     const task = await getEditableHtmlVideoTask(database, input.id);
@@ -3149,13 +3161,13 @@ async function persistHtmlVideoEditorialMutation(
   const currentStep = persistedPipeline.current === 'done'
     ? htmlVideoVisibleSteps.length
     : Math.max(0, htmlVideoVisibleSteps.indexOf(persistedPipeline.current));
-  const needsRender = persistedPipeline.current === 'render';
+  const needsWork = persistedPipeline.current !== 'done';
   const now = new Date().toISOString();
   await database.updateTask(task.id, {
     pipelineData: JSON.stringify(persistedPipeline),
     pipelineStep: persistedPipeline.current,
     currentStep,
-    ...(needsRender ? { status: 'paused', completedAt: null } : {}),
+    ...(needsWork ? { status: 'paused', completedAt: null } : {}),
     errorMessage: '',
     failedStep: null,
     retryFromStep: null,
@@ -4226,6 +4238,23 @@ trustedHandle('task:update-subtitle-lines', async (_event, input: { id: string; 
     ? takeHistoryActivityReservation(existingActiveRun)
     : historyActivityRegistry.reserveActive('task', input.id));
 });
+
+trustedHandle('music-mv:update', (_event, input: MusicMvTaskUpdateInput) =>
+  runHistoryGovernanceMutation('task', input.id, async (database) => {
+    const task = await database.getTaskDetail(input.id);
+    if (!task || (task.taskType !== 'music-mv' && task.taskKind !== 'music-mv')) throw new Error('MUSIC_MV_TASK_NOT_FOUND: 音乐 MV 任务不存在。');
+    if (task.status === 'pending' || task.status === 'running') throw new Error('MUSIC_MV_TASK_ACTIVE: 音乐 MV 正在运行，暂时不能修改。');
+    if (task.artifactStatePath) await markTaskStepForRerun(task.artifactStatePath, 0, 'regenerate');
+    await database.updateMusicMvTask(input);
+    await database.addTaskEvent(task.id, {
+      type: 'music_mv_update',
+      step: 0,
+      agent: 'Music MV',
+      detail: '已更新歌词、节奏和画面参数，任务待重新生成。',
+      dataJson: JSON.stringify({ rhythmMode: input.musicMv.rhythmMode, captionStyle: input.musicMv.captionStyle, storyboardSceneCount: input.storyboardSceneCount }),
+    });
+    return publishTaskUpsert(database, input.id);
+  }));
 
 trustedHandle('task:rerun-step', async (_event, input: { id: string; step: number; mode: TaskStepRerunMode }) => {
   const existingActiveRun = runningTasks.get(input.id);

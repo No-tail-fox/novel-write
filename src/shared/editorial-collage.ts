@@ -133,6 +133,8 @@ export interface EditorialCollageCreateInput {
   title: string;
   sourceText: string;
   ratio?: EditorialCollagePipelineData['ratio'];
+  beatCount?: number;
+  totalDurationMs?: number;
 }
 
 export interface EditorialCollageSaveInput {
@@ -144,6 +146,14 @@ export interface EditorialCollageSaveInput {
 export interface EditorialCollageValidationIssue {
   path: string;
   message: string;
+}
+
+export interface EditorialBeatMutationInput {
+  id?: string;
+  title?: string;
+  narration?: string;
+  durationMs?: number;
+  now?: string;
 }
 
 const MAX_BEATS = 12;
@@ -325,7 +335,15 @@ export const editorialCollageCreateInputSchema = z.object({
   title: z.string().trim().min(1).max(512),
   sourceText: z.string().trim().min(1).max(MAX_TEXT),
   ratio: z.enum(EDITORIAL_COLLAGE_RATIOS).optional(),
-}).strict();
+  beatCount: z.number().int().min(2).max(MAX_BEATS).optional(),
+  totalDurationMs: z.number().int().min(10_000).max(MAX_TOTAL_DURATION_MS).optional(),
+}).strict().superRefine((input, ctx) => {
+  const beatCount = input.beatCount ?? 4;
+  const duration = input.totalDurationMs ?? 30_000;
+  if (duration > 3_000 + (beatCount - 1) * MAX_SHOT_DURATION_MS) {
+    ctx.addIssue({ code: 'custom', path: ['totalDurationMs'], message: 'Total duration exceeds the per-shot duration limit for this beat count.' });
+  }
+});
 
 export const editorialCollageSaveInputSchema = z.object({
   id: idSchema,
@@ -379,11 +397,17 @@ export function createEditorialCollageStarterPlan(
   draft: EditorialCollagePipelineData,
   sourceText: string,
   now = new Date().toISOString(),
+  options: { beatCount?: number; totalDurationMs?: number } = {},
 ): EditorialCollagePipelineData {
-  const sourceSegments = partitionEditorialSource(sourceText, 4);
-  const beatDurations = [3_000, 9_000, 9_000, 9_000] as const;
-  const beatTitles = ['钩子', '背景', '证据', '结论'] as const;
-  const fallbackNarration = ['提出核心问题。', '交代背景和冲突。', '补充事实、证据与对照。', '回到结论与行动。'] as const;
+  const beatCount = Math.max(2, Math.min(MAX_BEATS, Math.round(options.beatCount ?? 4)));
+  const totalDurationMs = Math.max(10_000, Math.min(MAX_TOTAL_DURATION_MS, Math.round(options.totalDurationMs ?? 30_000)));
+  const remainingDuration = totalDurationMs - 3_000;
+  if (remainingDuration > (beatCount - 1) * MAX_SHOT_DURATION_MS) throw new Error('EDITORIAL_DURATION_LIMIT: 当前节拍数量无法承载目标时长。');
+  const sourceSegments = partitionEditorialSource(sourceText, beatCount);
+  const beatDurations = Array.from({ length: beatCount }, (_, index) => index === 0 ? 3_000 : Math.round(remainingDuration / (beatCount - 1)));
+  beatDurations[beatDurations.length - 1] += totalDurationMs - beatDurations.reduce((sum, duration) => sum + duration, 0);
+  const beatTitles = Array.from({ length: beatCount }, (_, index) => index === 0 ? '钩子' : index === beatCount - 1 ? '结论' : index === 1 ? '背景' : `证据 ${index - 1}`);
+  const fallbackNarration = Array.from({ length: beatCount }, (_, index) => index === 0 ? '提出核心问题。' : index === beatCount - 1 ? '回到结论与行动。' : index === 1 ? '交代背景和冲突。' : '补充事实、证据与对照。');
   let startMs = 0;
   const beats = beatDurations.map((durationMs, index): EditorialCollageBeat => {
     const beatId = `beat-${index + 1}`;
@@ -485,6 +509,98 @@ export function createEditorialCollageStarterPlan(
       audioAssetVersionIds: [],
     },
   };
+}
+
+/** Add a new editable beat using the same deterministic defaults as the starter plan. */
+export function appendEditorialBeat(
+  document: EditorialCollagePipelineData,
+  input: EditorialBeatMutationInput = {},
+): EditorialCollagePipelineData {
+  if (document.beats.length >= MAX_BEATS) throw new Error(`EDITORIAL_BEAT_LIMIT: 最多支持 ${MAX_BEATS} 个节拍。`);
+  const index = document.beats.length + 1;
+  const beatId = input.id?.trim() || `beat-${index}-${crypto.randomUUID()}`;
+  const shotId = `${beatId}-shot-1`;
+  const durationMs = Math.min(MAX_SHOT_DURATION_MS, Math.max(1_000, Math.round(input.durationMs ?? 6_000)));
+  const narration = input.narration?.trim() || '新的节拍，等待补充旁白与证据。';
+  const subtitleCues: EditorialSubtitleCue[] = [{ id: `${beatId}-cue-1`, startMs: 0, endMs: durationMs, text: narration }];
+  const shot: EditorialCollageShot = {
+    id: shotId,
+    beatId,
+    durationMs,
+    renderStrategy: 'deterministic-layers',
+    scenePrompt: 'editorial documentary collage, clear subject and restrained composition',
+    motionPrompt: 'subtle camera push with readable text-safe composition',
+    layers: [],
+    camera: [{ atMs: 0, x: 0, y: 0, zoom: 1 }, { atMs: durationMs, x: 0, y: 0, zoom: 1.04 }],
+    subtitleCueIds: subtitleCues.map((cue) => cue.id),
+    layoutTemplate: '纪录片 · 纯画面',
+    motionPreset: '轻微视差',
+    subtitleStyle: '简体中文 · 白色描边',
+    seedLocked: true,
+  };
+  return normalizeEditorialTimeline({
+    ...document,
+    stage: 'draft',
+    updatedAt: input.now ?? new Date().toISOString(),
+    beats: [...document.beats, { id: beatId, index, title: input.title?.trim() || `节拍 ${index}`, narration, startMs: 0, durationMs, shots: [shot], subtitleCues }],
+    timeline: undefined,
+  });
+}
+
+export function removeEditorialBeat(document: EditorialCollagePipelineData, beatId: string): EditorialCollagePipelineData {
+  if (document.beats.length <= 1) throw new Error('EDITORIAL_BEAT_REQUIRED: 至少保留一个节拍。');
+  if (!document.beats.some((beat) => beat.id === beatId)) throw new Error(`EDITORIAL_BEAT_NOT_FOUND: ${beatId}`);
+  const removedShotIds = new Set(document.beats.find((beat) => beat.id === beatId)?.shots.map((shot) => shot.id) ?? []);
+  const removedJobIds = new Set(document.providerJobs.filter((job) => removedShotIds.has(job.nodeId)).map((job) => job.id));
+  const removedAssetIds = new Set(document.assets.filter((asset) => asset.providerJobId && removedJobIds.has(asset.providerJobId)).map((asset) => asset.id));
+  return normalizeEditorialTimeline({
+    ...document,
+    stage: 'draft',
+    updatedAt: new Date().toISOString(),
+    beats: document.beats.filter((beat) => beat.id !== beatId),
+    providerJobs: document.providerJobs.filter((job) => !removedJobIds.has(job.id)),
+    assets: document.assets.filter((asset) => !removedAssetIds.has(asset.id)),
+    qualityReports: [],
+    timeline: undefined,
+  });
+}
+
+export function moveEditorialBeat(document: EditorialCollagePipelineData, beatId: string, direction: -1 | 1): EditorialCollagePipelineData {
+  const index = document.beats.findIndex((beat) => beat.id === beatId);
+  const target = index + direction;
+  if (index < 0) throw new Error(`EDITORIAL_BEAT_NOT_FOUND: ${beatId}`);
+  if (target < 0 || target >= document.beats.length) return document;
+  if (target === 0 && document.beats[index].durationMs > 3_000) throw new Error('EDITORIAL_HOOK_DURATION: 首个节拍必须在 3 秒内完成钩子。');
+  const beats = [...document.beats];
+  [beats[index], beats[target]] = [beats[target], beats[index]];
+  return normalizeEditorialTimeline({ ...document, stage: 'draft', updatedAt: new Date().toISOString(), beats, qualityReports: [], timeline: undefined });
+}
+
+function normalizeEditorialTimeline(document: EditorialCollagePipelineData): EditorialCollagePipelineData {
+  let cursor = 0;
+  const beats = document.beats.map((beat, beatIndex) => {
+    const startMs = cursor;
+    const durationMs = Math.max(1, beat.shots.reduce((total, shot) => total + shot.durationMs, 0) || beat.durationMs);
+    const shots = beat.shots.map((shot) => ({ ...shot, beatId: beat.id }));
+    const cueById = new Map(beat.subtitleCues.map((cue) => [cue.id, cue] as const));
+    const subtitleCues = beat.subtitleCues.map((cue) => {
+      const relativeStart = Math.max(0, cue.startMs - beat.startMs);
+      const relativeEnd = Math.max(relativeStart + 1, cue.endMs - beat.startMs);
+      return { ...cue, startMs: startMs + relativeStart, endMs: Math.min(startMs + durationMs, startMs + relativeEnd) };
+    });
+    const normalizedShots = shots.map((shot) => ({ ...shot, subtitleCueIds: shot.subtitleCueIds.filter((id) => cueById.has(id)) }));
+    cursor += durationMs;
+    return { ...beat, index: beatIndex + 1, startMs, durationMs, shots: normalizedShots, subtitleCues };
+  });
+  const clips = beats.flatMap((beat) => {
+    let shotOffset = beat.startMs;
+    return beat.shots.map((shot) => {
+      const clip = { id: `clip-${shot.id}`, shotId: shot.id, startMs: shotOffset, durationMs: shot.durationMs, assetVersionIds: shot.layers.flatMap((layer) => layer.assetVersionId ? [layer.assetVersionId] : []), subtitleCueIds: shot.subtitleCueIds, source: 'deterministic' as const };
+      shotOffset += shot.durationMs;
+      return clip;
+    });
+  });
+  return { ...document, beats, timeline: { durationMs: cursor, clips, audioAssetVersionIds: beats.flatMap((beat) => beat.shots.flatMap((shot) => shot.voiceAssetVersionId ? [shot.voiceAssetVersionId] : [])) } };
 }
 
 export function validateEditorialCollagePipeline(

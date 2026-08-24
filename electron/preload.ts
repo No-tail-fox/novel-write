@@ -49,6 +49,7 @@ import type {
   HtmlVideoCompositionSourceSaveResult,
   HtmlVideoLintFinding,
   HtmlVideoSceneChange,
+  HtmlVideoSceneStructureChange,
   ImageLabGenerateInput,
   ImageLabImportInput,
   ImageLabRecord,
@@ -58,6 +59,7 @@ import type {
   JianyingEffectCatalog,
   LlmConfig,
   ManagedBgmImport,
+  MusicMvTaskUpdateInput,
   MinimaxCloneVoice,
   MinimaxCloneVoiceInput,
   OrdinaryTaskCoverRatio,
@@ -273,6 +275,8 @@ export const storyDreamApi: StoryDreamApi = {
     invokeTrusted('html-video:update-config', { id, changes }),
   updateHtmlVideoScene: (id: string, sceneIndex: number, changes: HtmlVideoSceneChange[]) =>
     invokeTrusted('html-video:update-scene', { id, sceneIndex, changes }),
+  updateHtmlVideoSceneStructure: (id: string, change: HtmlVideoSceneStructureChange) =>
+    invokeTrusted('html-video:update-scene-structure', { id, change }),
   addHtmlVideoAsset: (id: string, sceneIndex: number, prompt: string) =>
     invokeTrusted('html-video:add-asset', { id, sceneIndex, prompt }),
   replaceHtmlVideoAsset: (id: string, target: HtmlVideoAssetTarget) =>
@@ -304,6 +308,7 @@ export const storyDreamApi: StoryDreamApi = {
   getHtmlVideoMediaUrl: (id: string, path: string): Promise<string> =>
     invokeTrusted('html-video:media-url', { id, path }),
   createAndRunTask: (input: CreateTaskInput) => invokeTrusted('task:create-and-run', input),
+  updateMusicMvTask: (input: MusicMvTaskUpdateInput) => invokeTrusted('music-mv:update', input),
   createAndRunViralAnalysis: (input: CreateViralAnalysisInput) => invokeTrusted('viral:create-and-run', input),
   updateViralAnalysisStatus: (id: string, status: ViralAnalysisStatus) => invokeTrusted('viral:update-status', { id, status }),
   retryViralAnalysis: (id: string) => invokeTrusted('viral:retry', id),

@@ -11,6 +11,7 @@ import {
 } from '@shared/html-video';
 import {
   applyHtmlVideoSceneChanges,
+  applyHtmlVideoSceneStructureChange,
   createHtmlVideoPipelineData,
   createHtmlVideoTaskInput,
   htmlVideoSteps,
@@ -545,6 +546,36 @@ describe('HTML video pipeline V2 contract', () => {
     next.scenes[0].elements = Array.from({ length: 4 }, (_, slot) => ({ slot, prompt: `前景 ${slot + 1}` }));
     expect(() => applyHtmlVideoSceneChanges(next, 1, [{ field: 'addElement', value: '超出限制' }]))
       .toThrow(/最多包含 4 个前景/u);
+  });
+
+  it('duplicates, moves, adds and removes scenes while invalidating mismatched media', () => {
+    const pipeline = createHtmlVideoPipelineData('第一场。\n\n第二场。', { maxScenes: 6 });
+    pipeline.assets = [
+      { sceneIndex: 1, kind: 'bg', slot: 0, src: 'D:/one.png' },
+      { sceneIndex: 2, kind: 'bg', slot: 0, src: 'D:/two.png' },
+    ];
+    pipeline.voices = [validVoice(1), validVoice(2)];
+    pipeline.compositions = [validComposition(1), validComposition(2)];
+    pipeline.output = { path: 'D:/video.mp4', sizeBytes: 10 };
+
+    const duplicated = applyHtmlVideoSceneStructureChange(pipeline, { operation: 'duplicate', sceneIndex: 1 });
+    expect(duplicated.scenes).toHaveLength(3);
+    expect(duplicated.scenes.map((scene) => scene.index)).toEqual([1, 2, 3]);
+    expect(duplicated.scenes[1].title).toContain('副本');
+    expect(duplicated.assets).toEqual([]);
+    expect(duplicated.voices).toEqual([]);
+    expect(duplicated.compositions).toEqual([]);
+    expect(duplicated.output).toBeUndefined();
+    expect(duplicated.current).toBe('assets');
+
+    const moved = applyHtmlVideoSceneStructureChange(duplicated, { operation: 'move-down', sceneIndex: 1 });
+    expect(moved.scenes[0].title).toContain('副本');
+    const added = applyHtmlVideoSceneStructureChange(moved, { operation: 'add-after', sceneIndex: 3 });
+    expect(added.scenes.at(-1)).toMatchObject({ title: '新增场景', elements: [] });
+    const removed = applyHtmlVideoSceneStructureChange(added, { operation: 'remove', sceneIndex: 2 });
+    expect(removed.scenes.map((scene) => scene.index)).toEqual([1, 2, 3]);
+    expect(() => applyHtmlVideoSceneStructureChange(createHtmlVideoPipelineData('唯一场景。'), { operation: 'remove', sceneIndex: 1 }))
+      .toThrow(/至少保留一个场景/u);
   });
 
   it('publishes 29 animated scene presets and normalizes legacy ids', () => {

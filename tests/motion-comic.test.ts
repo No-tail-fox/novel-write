@@ -5,8 +5,10 @@ import {
   appendMotionComicShot,
   createMotionComicDraft,
   createMotionComicStarterProject,
+  moveMotionComicShot,
   motionComicSaveInputSchema,
   parseMotionComicPipelineData,
+  removeMotionComicShot,
   validateMotionComicPipeline,
 } from '../src/shared/motion-comic';
 
@@ -94,5 +96,29 @@ describe('motion comic domain', () => {
       expectedUpdatedAt: project.updatedAt,
       document: project,
     }).success).toBe(true);
+  });
+
+  it('moves and removes shots while rebuilding indexes, cues, and timeline clips', () => {
+    const project = createMotionComicStarterProject(createMotionComicDraft({
+      id: 'comic-edit-structure', title: '回声', premise: '录音改变了明天。', now: '2026-08-24T00:00:00.000Z',
+    }), '第一集');
+    const episode = project.episodes[0];
+    const scene = episode.scenes[0];
+    const first = scene.shots[0];
+    const second = scene.shots[1];
+    const extraCue = { ...episode.dialogueCues.find((cue) => cue.id === first.dialogueCueIds[0])!, id: `${first.id}-cue-extra`, text: '第二句对白。' };
+    first.dialogueCueIds.push(extraCue.id);
+    episode.dialogueCues.push(extraCue);
+    const moved = moveMotionComicShot(project, episode.id, scene.id, second.id, -1);
+    expect(moved.episodes[0].scenes[0].shots.map((shot) => shot.id).slice(0, 2)).toEqual([second.id, first.id]);
+    expect(moved.episodes[0].timeline.clips[0]).toMatchObject({ shotId: second.id, startMs: 0 });
+    const movedFirstCues = moved.episodes[0].dialogueCues.filter((cue) => moved.episodes[0].scenes[0].shots[1].dialogueCueIds.includes(cue.id));
+    expect(movedFirstCues[0].endMs).toBe(movedFirstCues[1].startMs);
+    expect(movedFirstCues[0].startMs).toBe(second.durationMs);
+    const removed = removeMotionComicShot(moved, episode.id, scene.id, first.id);
+    expect(removed.episodes[0].scenes[0].shots.map((shot) => shot.index)).toEqual([1]);
+    expect(removed.episodes[0].dialogueCues.some((cue) => first.dialogueCueIds.includes(cue.id))).toBe(false);
+    expect(removed.episodes[0].timeline.clips).toHaveLength(episode.timeline.clips.length - 1);
+    expect(validateMotionComicPipeline(removed)).toEqual([]);
   });
 });

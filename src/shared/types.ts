@@ -533,6 +533,13 @@ export type HtmlVideoSceneChange =
   | { field: 'captionScale'; value: number }
   | { field: 'captionYOverride'; value: number };
 
+export type HtmlVideoSceneStructureOperation = 'add-after' | 'duplicate' | 'remove' | 'move-up' | 'move-down';
+
+export interface HtmlVideoSceneStructureChange {
+  operation: HtmlVideoSceneStructureOperation;
+  sceneIndex: number;
+}
+
 export interface HtmlVideoAssetTarget {
   sceneIndex: number;
   kind: HtmlVideoAsset['kind'];
@@ -790,6 +797,20 @@ export interface MusicMvSettings {
   captionStyle: 'karaoke' | 'minimal' | 'none';
   visualMotif: string;
   audioPath: string;
+}
+
+export interface MusicMvTaskUpdateInput {
+  id: string;
+  title: string;
+  lyrics: string;
+  style: string;
+  ratio: string;
+  templateId: string;
+  bgmId: string;
+  storyboardSceneCount: number;
+  processingMode: ProcessingMode;
+  pausePoints: PausePoint[];
+  musicMv: MusicMvSettings;
 }
 
 export const BENCHMARK_PLATFORMS = ['douyin', 'wechat-channels', 'bilibili'] as const;

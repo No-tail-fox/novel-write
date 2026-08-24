@@ -21,7 +21,7 @@ describe('renderer IPC inventory', () => {
   });
 
   it('defines exactly one input schema for every canonical invoke channel', () => {
-    expect(INVOKE_CHANNELS).toHaveLength(139);
+    expect(INVOKE_CHANNELS).toHaveLength(141);
     expect(new Set(INVOKE_CHANNELS).size).toBe(INVOKE_CHANNELS.length);
     expect(new Set(Object.keys(ipcInputSchemas))).toEqual(new Set(INVOKE_CHANNELS));
     expect(INVOKE_CHANNELS).toContain('task:open-output-directory');
@@ -61,6 +61,26 @@ describe('renderer IPC inventory', () => {
       id: 'html-task-1',
       changes,
     });
+  });
+
+  it('routes HTML scene structure changes through the dedicated preload channel', async () => {
+    const change = { operation: 'duplicate', sceneIndex: 2 } as const;
+    await storyDreamApi.updateHtmlVideoSceneStructure('html-task-1', change);
+    expect(ipcRenderer.invoke).toHaveBeenCalledWith('html-video:update-scene-structure', {
+      id: 'html-task-1',
+      change,
+    });
+  });
+
+  it('routes bounded music MV updates through the dedicated preload channel', async () => {
+    const input = {
+      id: 'music-task-1', title: 'Rain', lyrics: 'line one', style: 'modern-film', ratio: '16:9',
+      templateId: 'draft-1', bgmId: '', storyboardSceneCount: 8, processingMode: 'manual' as const,
+      pausePoints: ['critical'] as const,
+      musicMv: { rhythmMode: 'lyric-sync' as const, captionStyle: 'karaoke' as const, visualMotif: 'rain', audioPath: 'D:/rain.wav' },
+    };
+    await storyDreamApi.updateMusicMvTask({ ...input, pausePoints: [...input.pausePoints] });
+    expect(ipcRenderer.invoke).toHaveBeenCalledWith('music-mv:update', { ...input, pausePoints: [...input.pausePoints] });
   });
 
   it('routes manual cover import by task id without exposing an external path parameter', async () => {

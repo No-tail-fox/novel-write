@@ -5,7 +5,10 @@ import type { SettingsSection } from '../settings/SettingsPage';
 import {
   EDITORIAL_COLLAGE_RATIOS,
   EDITORIAL_STYLE_PRESETS,
+  appendEditorialBeat,
+  moveEditorialBeat,
   parseEditorialCollagePipelineData,
+  removeEditorialBeat,
   type EditorialCollageBeat,
   type EditorialCollagePipelineData,
 } from '../../shared/editorial-collage';
@@ -24,6 +27,11 @@ import shotRooftop from '../../assets/director-desk/shot-rooftop.png';
 import shotTeahouse from '../../assets/director-desk/shot-teahouse.png';
 
 const editorialImages = [shotAlley, shotArchive, shotRooftop, shotTeahouse];
+const editorialStructurePresets = {
+  concise: { beatCount: 4, totalDurationMs: 30_000, label: '30 秒 · 4 节拍' },
+  standard: { beatCount: 6, totalDurationMs: 45_000, label: '45 秒 · 6 节拍' },
+  extended: { beatCount: 8, totalDurationMs: 60_000, label: '60 秒 · 8 节拍' },
+} as const;
 
 export function EditorialCollagePage({
   api,
@@ -57,6 +65,7 @@ export function EditorialCollagePage({
   const [createSource, setCreateSource] = useState('');
   const [copyAssistIntent, setCopyAssistIntent] = useState<DirectorCopyAssistIntent | null>(null);
   const [createRatio, setCreateRatio] = useState<EditorialCollagePipelineData['ratio']>('16:9');
+  const [createStructure, setCreateStructure] = useState<keyof typeof editorialStructurePresets>('concise');
   const [createStyleId, setCreateStyleId] = useState<string>(EDITORIAL_STYLE_PRESETS[0].id);
   const [createLayoutTemplate, setCreateLayoutTemplate] = useState<DirectorLayoutTemplate>('对比拼贴 · 纸张撕裂');
   const [createMotionPreset, setCreateMotionPreset] = useState<DirectorMotionPreset>('平移 + 缓慢推进');
@@ -64,6 +73,7 @@ export function EditorialCollagePage({
   const [createSubtitleStyle, setCreateSubtitleStyle] = useState('简体中文 · 白色描边');
   const [createSeedLocked, setCreateSeedLocked] = useState(true);
   const [dirty, setDirty] = useState(false);
+  const [structureError, setStructureError] = useState('');
   const [selectedProviderProfileId, setSelectedProviderProfileId] = useState(() => activeImageProfileId(state.config));
 
   const projects = useMemo(() => state.tasks.filter((task) => task.taskType === 'editorial-collage' && !task.archivedAt).slice().sort((left, right) => Date.parse(right.createdAt) - Date.parse(left.createdAt)), [state.tasks]);
@@ -86,6 +96,12 @@ export function EditorialCollagePage({
     return { id: job.id, shotId: job.nodeId, title: shot?.title ?? '镜头生成', status: job.status === 'queued' ? 'waiting' : job.status === 'cancelled' ? 'failed' : job.status, progress: job.status === 'completed' ? 100 : 0, cost: job.actualCost ?? job.estimatedCost, provider: `${job.providerId} / ${job.model}`, thumbnail: shot?.thumbnail, error: job.error };
   }), [document?.providerJobs, shots]);
   const createVoiceLabel = voiceStatus.voices.find((voice) => voice.value === createVoiceId)?.label ?? voiceStatus.voiceLabel;
+  const createStructurePreset = editorialStructurePresets[createStructure];
+  const createBeatSeconds = (createStructurePreset.totalDurationMs / 1000 - 3) / (createStructurePreset.beatCount - 1);
+  const createStructureItems = Array.from({ length: createStructurePreset.beatCount }, (_, index) => ({
+    label: index === 0 ? '钩子' : index === createStructurePreset.beatCount - 1 ? '结论' : index === 1 ? '背景' : `证据 ${index - 1}`,
+    seconds: index === 0 ? 3 : createBeatSeconds,
+  }));
   const completedStages = useMemo(() => {
     if (!document) return [];
     const completed: string[] = [];
@@ -97,7 +113,7 @@ export function EditorialCollagePage({
     if (outputAsset) completed.push('审片', '导出');
     return completed;
   }, [document, outputAsset, shots]);
-  const actionError = providerAction.feedback?.tone === 'error' ? providerAction.feedback.message : projectAction.feedback?.tone === 'error' ? projectAction.feedback.message : undefined;
+  const actionError = structureError || (providerAction.feedback?.tone === 'error' ? providerAction.feedback.message : projectAction.feedback?.tone === 'error' ? projectAction.feedback.message : undefined);
   const systemStatusTone = actionError ? 'error' : !providerStatus.connected || !voiceStatus.connected ? 'warning' : 'ok';
   const systemStatus = actionError ? '项目需要处理' : !providerStatus.connected ? '图片服务待配置' : !voiceStatus.connected ? '旁白服务待配置' : '生成服务正常';
 
@@ -142,6 +158,12 @@ export function EditorialCollagePage({
     setDirty(true);
   }
 
+  function replaceDocument(next: EditorialCollagePipelineData) {
+    setDocument(next);
+    documentRef.current = next;
+    setDirty(true);
+  }
+
   function updateShot(id: string, update: Partial<DirectorShot>) {
     mutateDocument((current) => ({
       ...current,
@@ -172,6 +194,45 @@ export function EditorialCollagePage({
 
   function updateRatio(ratio: EditorialCollagePipelineData['ratio']) {
     mutateDocument((current) => ({ ...current, ratio }));
+  }
+
+  function addBeat() {
+    const current = documentRef.current;
+    if (!current) return;
+    try {
+      const next = appendEditorialBeat(current, { id: `beat-${crypto.randomUUID()}`, title: `节拍 ${current.beats.length + 1}` });
+      replaceDocument(next);
+      setSelectedShotId(next.beats.at(-1)?.shots[0]?.id ?? '');
+      setStructureError('');
+    } catch (error) {
+      setStructureError(error instanceof Error ? error.message : String(error));
+    }
+  }
+
+  function moveBeatForShot(shotId: string, direction: -1 | 1) {
+    const current = documentRef.current;
+    const beat = current?.beats.find((candidate) => candidate.shots.some((shot) => shot.id === shotId));
+    if (!current || !beat) return;
+    try {
+      replaceDocument(moveEditorialBeat(current, beat.id, direction));
+      setStructureError('');
+    } catch (error) {
+      setStructureError(error instanceof Error ? error.message : String(error));
+    }
+  }
+
+  function removeBeatForShot(shotId: string) {
+    const current = documentRef.current;
+    const beat = current?.beats.find((candidate) => candidate.shots.some((shot) => shot.id === shotId));
+    if (!current || !beat) return;
+    try {
+      const next = removeEditorialBeat(current, beat.id);
+      replaceDocument(next);
+      setSelectedShotId(next.beats[Math.max(0, beat.index - 2)]?.shots[0]?.id ?? next.beats[0]?.shots[0]?.id ?? '');
+      setStructureError('');
+    } catch (error) {
+      setStructureError(error instanceof Error ? error.message : String(error));
+    }
   }
 
   async function selectImageProvider(profileId: string) {
@@ -231,7 +292,8 @@ export function EditorialCollagePage({
 
   async function createProject() {
     const result = await projectAction.run(async () => {
-      const mutation = await api.createEditorialCollage({ title: createTitle, sourceText: createSource, ratio: createRatio });
+      const structure = editorialStructurePresets[createStructure];
+      const mutation = await api.createEditorialCollage({ title: createTitle, sourceText: createSource, ratio: createRatio, beatCount: structure.beatCount, totalDurationMs: structure.totalDurationMs });
       applyState(mutation);
       if (!mutation || mutation.kind !== 'task-upsert') throw new Error('VOX 项目已保存，但未返回可打开的任务记录。');
       const task = await api.getTaskDetail(mutation.task.id);
@@ -390,7 +452,7 @@ export function EditorialCollagePage({
       voiceLabel={`${voiceStatus.label} · ${voiceStatus.model}`}
       summary={[
         { label: '项目', value: createTitle },
-        { label: '结构', value: '30 秒 · 4 镜头' },
+        { label: '结构', value: editorialStructurePresets[createStructure].label },
         { label: '画幅', value: createRatio },
         { label: '风格', value: EDITORIAL_STYLE_PRESETS.find((style) => style.id === createStyleId)?.label ?? '' },
         { label: '输出', value: '本地 MP4' },
@@ -406,7 +468,7 @@ export function EditorialCollagePage({
       {createStep === 0 ? <>
         <TextField label="项目标题" value={createTitle} onChange={(_, data) => { setCreateTitle(data.value); copyAction.clearFeedback(); }} placeholder="例如：拉萨旧城的回声" />
         <div className="director-copy-field">
-          <TextAreaField label="原始文案" value={createSource} onChange={(_, data) => { setCreateSource(data.value); copyAction.clearFeedback(); }} placeholder="粘贴需要拆成解释型视频的文案" resize="vertical" hint={`${createSource.trim().length} 字 · 将拆成钩子、背景、证据、结论`} />
+          <TextAreaField label="原始文案" value={createSource} onChange={(_, data) => { setCreateSource(data.value); copyAction.clearFeedback(); }} placeholder="粘贴需要拆成解释型视频的文案" resize="vertical" hint={`${createSource.trim().length} 字 · 将拆成 ${editorialStructurePresets[createStructure].beatCount} 个叙事节拍`} />
           <DirectorCopyAssist
             activeIntent={copyAssistIntent}
             canCreate={Boolean(createTitle.trim())}
@@ -416,8 +478,8 @@ export function EditorialCollagePage({
             onRevise={() => void runCopyAssist('revise')}
           />
         </div>
-        <SegmentedControl label="画幅" value={createRatio} options={EDITORIAL_COLLAGE_RATIOS.map((ratio) => ({ value: ratio, label: ratio }))} onChange={setCreateRatio} />
-        <div className="director-structure-preview"><strong>30 秒解释结构</strong><span>01 钩子 · 3s</span><span>02 背景 · 9s</span><span>03 证据 · 9s</span><span>04 结论 · 9s</span></div>
+        <div className="director-create-two-col"><SegmentedControl label="画幅" value={createRatio} options={EDITORIAL_COLLAGE_RATIOS.map((ratio) => ({ value: ratio, label: ratio }))} onChange={setCreateRatio} /><SegmentedControl label="结构" value={createStructure} options={Object.entries(editorialStructurePresets).map(([value, preset]) => ({ value, label: preset.label }))} onChange={(value) => setCreateStructure(value as keyof typeof editorialStructurePresets)} /></div>
+        <div className="director-structure-preview"><strong>{createStructurePreset.label}解释结构</strong>{createStructureItems.map((item, index) => <span key={`${createStructure}-${index}`}>{String(index + 1).padStart(2, '0')} {item.label} · {Number.isInteger(item.seconds) ? item.seconds : item.seconds.toFixed(1)}s</span>)}</div>
       </> : null}
       {createStep === 1 ? <>
         <SelectField label="视觉风格" value={createStyleId} options={EDITORIAL_STYLE_PRESETS.map((style) => ({ value: style.id, label: style.label }))} onChange={(event) => setCreateStyleId(event.target.value)} />
@@ -478,6 +540,9 @@ export function EditorialCollagePage({
       onRestoreVersion={restoreVersion}
       onSelectShot={setSelectedShotId}
       onUpdateShot={updateShot}
+      onAddShot={addBeat}
+      onMoveShot={moveBeatForShot}
+      onRemoveShot={removeBeatForShot}
       onSave={() => void saveProject()}
       onNewProject={startCreate}
       onGenerateShot={generateShot}

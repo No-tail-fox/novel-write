@@ -1561,3 +1561,27 @@
 - 修复创建页滚动归属，保留此前统一任务体系的主壳层和 Director Desk 路由逻辑。
 - 聚焦回归 14/14、类型检查、生产构建、差异检查和 UTF-8 检查通过。
 - 浏览器 QA 4/4、Electron 生产渲染 QA 4/4 通过；证据位于 `.artifacts/director-copy-assist-*`，未调用真实 LLM 或付费生成。
+# 四工作台生产闭环完善进度（2026-08-24）
+
+- 已读取 `planning-with-files`、`storydream-ui` 与组件合同，完成会话恢复和工作树复核。
+- 已建立七阶段计划与统一成熟度标准；当前进入四工作台数据模型、页面状态、主进程能力和测试覆盖审计。
+- 本轮不会调用付费 LLM、生图、配音或云视频服务；真实 QA 使用现有本地/模拟能力和隔离数据。
+- 已完成第一轮能力盘点：音乐 MV 的运行器完整但缺领域工作区；HTML 视频缺结构编辑；AI 漫剧已有追加结构函数；VOX 固定节拍仍需追踪结构变更边界。
+- 已确认 AI 漫剧追加结构已接 UI，VOX 无结构操作，HTML 需要成套重映射产物，音乐 MV 可复用通用任务产物编辑器建立双态工作区。
+- 已实现 VOX 节拍新增/移动/删除和 AI 漫剧镜头移动/删除，Director Desk 增加共享镜头操作菜单；领域模型自动重建连续编号、cue 与 timeline。
+- 第一批聚焦验证：5 个测试文件、21/21 用例通过；renderer 与 Electron TypeScript 检查通过。
+- 当前实现 HTML 场景复制/新增/删除/移动命令及下游产物失效合同。
+- HTML 场景结构命令已贯通纯函数、IPC schema、preload、browser fallback、Electron main 和场景规划工具栏；结构变化从素材阶段失效旧图片、配音、预览与成片。
+- HTML 聚焦回归 5 个测试文件、152/152 用例通过；renderer 与 Electron TypeScript 检查通过。
+- 音乐 MV 已贯通类型、严格 IPC schema、preload、browser fallback、Electron main、SQLite 原子更新和创建/工作区双态 UI。
+- VOX 创建页已接 30/45/60 秒结构预设，底层 starter 支持 2-12 节拍与最长 120 秒的受约束结构。
+- Director Desk 镜头删除已增加确认对话框，VOX/漫剧 UI 合同覆盖新增、移动与删除入口。
+- 当前聚焦矩阵 10 个测试文件、145/145 用例通过；两套 TypeScript 检查通过，进入全量回归、构建和截图验收。
+- 全库回归 148 个测试文件、1921/1921 用例通过；renderer command inventory 已补新增命令及 VOX/漫剧 AI 文案真实所有者。
+- browser fallback 惰性拆分后生产构建通过，主入口 255.7 KB；prompt corpus 隔离与 bundle budget 9/9 通过。
+- 本地浏览器视觉 QA 已完成普通/紧凑桌面：四工作台入口、VOX 结构切换、HTML 结构工具、音乐 MV 工具栏、AI 漫剧创建页和删除确认均通过；控制台无 error/warning。
+- 视觉 QA 发现的 VOX 固定四项预览已修复并在 45 秒六节拍状态重新截图确认。
+- 自审补齐漫剧多 cue 重排分段和 browser fallback 运行中只读合同；最终 25/25 聚焦用例、两套类型检查与差异检查通过。
+- 本轮七个阶段全部完成，Vite 预览保留在 `http://127.0.0.1:5173/`。
+
+---

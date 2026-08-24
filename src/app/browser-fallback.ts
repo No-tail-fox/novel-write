@@ -7,6 +7,7 @@ import { validateConfigTarget } from '../shared/config-utils';
 import {
   applyHtmlVideoConfigChanges,
   applyHtmlVideoSceneChanges,
+  applyHtmlVideoSceneStructureChange,
   prepareHtmlVideoPipelineForRerender,
   htmlVideoVisibleSteps,
   parseHtmlVideoPipelineData,
@@ -52,11 +53,13 @@ import type {
   HistoryPage,
   HtmlVideoConfigChange,
   HtmlVideoSceneChange,
+  HtmlVideoSceneStructureChange,
   HtmlVideoCompositionSourceSaveInput,
   HotBoardArchiveResult,
   ImageLabGenerateInput,
   ImageLabImportInput,
   ImageLabRecord,
+  MusicMvTaskUpdateInput,
   PromptTemplate,
   Task,
   TaskEvent,
@@ -1072,7 +1075,10 @@ export function makeFallbackApi(setState: (state: AppState) => void): StoryDream
       const now = new Date().toISOString();
       const id = crypto.randomUUID();
       const draft = createEditorialCollageDraft({ id, title: validated.title, ratio: validated.ratio, now });
-      const document = createEditorialCollageStarterPlan(draft, validated.sourceText, now);
+      const document = createEditorialCollageStarterPlan(draft, validated.sourceText, now, {
+        beatCount: validated.beatCount,
+        totalDurationMs: validated.totalDurationMs,
+      });
       const task: Task = {
         id,
         title: document.title,
@@ -1345,6 +1351,32 @@ export function makeFallbackApi(setState: (state: AppState) => void): StoryDream
       const pipeline = applyHtmlVideoSceneChanges(parseHtmlVideoPipelineData(task.pipelineData), sceneIndex, changes);
       const updated: Task = { ...task, pipelineData: JSON.stringify(pipeline), lastHeartbeatAt: new Date().toISOString() };
       return persist({ ...state, tasks: state.tasks.map((item) => item.id === id ? updated : item) });
+    },
+    async updateHtmlVideoSceneStructure(id: string, change: HtmlVideoSceneStructureChange) {
+      const state = read();
+      const task = state.tasks.find((item) => item.id === id);
+      if (!task || task.taskType !== 'html-video') throw new Error(`HTML 视频任务不存在：${id}`);
+      if (task.archivedAt) throw new Error('HISTORY_ARCHIVED: 已归档任务只读。');
+      if (task.status === 'pending' || task.status === 'running') throw new Error('HTML 视频正在运行，暂时不能修改场景结构。');
+      const pipeline = applyHtmlVideoSceneStructureChange(parseHtmlVideoPipelineData(task.pipelineData), change);
+      const updated: Task = { ...task, status: 'paused', currentStep: htmlVideoVisibleSteps.indexOf('assets'), pipelineStep: 'assets', pipelineData: JSON.stringify(pipeline), completedAt: null, lastHeartbeatAt: new Date().toISOString() };
+      return persist({ ...state, tasks: state.tasks.map((item) => item.id === id ? updated : item) });
+    },
+    async updateMusicMvTask(input: MusicMvTaskUpdateInput) {
+      const state = read();
+      const task = state.tasks.find((item) => item.id === input.id);
+      if (!task || (task.taskType !== 'music-mv' && task.taskKind !== 'music-mv')) throw new Error(`音乐 MV 任务不存在：${input.id}`);
+      if (task.archivedAt) throw new Error('HISTORY_ARCHIVED: 已归档任务只读。');
+      if (task.status === 'pending' || task.status === 'running') throw new Error('音乐 MV 正在运行，暂时不能修改。');
+      const updated: Task = {
+        ...task,
+        title: input.title.trim(), inputText: input.lyrics.trim(), style: input.style, ratio: input.ratio,
+        templateId: input.templateId, bgmId: input.bgmId, storyboardSceneCount: input.storyboardSceneCount,
+        targetScenes: input.storyboardSceneCount, processingMode: input.processingMode, pausePoints: [...input.pausePoints],
+        musicMv: { ...input.musicMv }, status: 'paused', currentStep: 0, completedAt: null, failedStep: null,
+        retryFromStep: 0, outputDir: '', errorMessage: '音乐 MV 参数已更新，待重新生成。', lastHeartbeatAt: new Date().toISOString(),
+      };
+      return persist({ ...state, tasks: state.tasks.map((item) => item.id === input.id ? updated : item) });
     },
     async addHtmlVideoAsset() {
       throw new Error('浏览器预览不能添加本地素材，请在 Electron 桌面端操作。');

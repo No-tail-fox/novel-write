@@ -38,6 +38,7 @@ import type {
   ImageLabRecord,
   ImageLabSummary,
   MinimaxCloneVoice,
+  MusicMvTaskUpdateInput,
   OrdinaryTaskCoverAsset,
   OrdinaryTaskCoverRatio,
   PromptTemplate,
@@ -2301,7 +2302,10 @@ export class FileDatabase {
         ratio: validated.ratio,
         now: task.createdAt,
       });
-      const document = createEditorialCollageStarterPlan(draft, validated.sourceText, task.createdAt);
+      const document = createEditorialCollageStarterPlan(draft, validated.sourceText, task.createdAt, {
+        beatCount: validated.beatCount,
+        totalDurationMs: validated.totalDurationMs,
+      });
       this.db.run(
         `UPDATE tasks SET status = 'draft', pipeline_step = ?, pipeline_data = ? WHERE id = ?`,
         [document.stage, JSON.stringify(document), task.id],
@@ -2309,7 +2313,7 @@ export class FileDatabase {
       this.db.run(
         `INSERT INTO task_events (task_id, run_generation, type, step, agent, tool, detail, data_json, ts)
          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-        [task.id, 0, 'editorial_collage_created', 0, 'VOX Director', 'starter-plan', '已创建 30 秒 VOX 基础结构。', JSON.stringify({ stage: document.stage, beats: document.beats.length }), Date.now()],
+        [task.id, 0, 'editorial_collage_created', 0, 'VOX Director', 'starter-plan', `已创建 ${Math.round((document.timeline?.durationMs ?? 0) / 1000)} 秒 VOX 基础结构。`, JSON.stringify({ stage: document.stage, beats: document.beats.length }), Date.now()],
       );
       const row = getFirstRow<Record<string, unknown>>(this.db, 'SELECT * FROM tasks WHERE id = ?', [task.id]);
       if (!row) throw new Error(`EDITORIAL_COLLAGE_NOT_FOUND: ${task.id}`);
@@ -3165,6 +3169,32 @@ export class FileDatabase {
     await this.enqueueCommit(() => {
       this.assertHistoryWritable('task', id);
       if (sets.length > 0) this.db.run(`UPDATE tasks SET ${sets.join(', ')} WHERE id = ?`, values);
+    });
+  }
+
+  async updateMusicMvTask(input: MusicMvTaskUpdateInput): Promise<Task> {
+    return this.enqueueCommit(() => {
+      this.assertHistoryWritable('task', input.id);
+      const row = getFirstRow<Record<string, unknown>>(this.db, 'SELECT * FROM tasks WHERE id = ?', [input.id]);
+      if (!row) throw new Error(`MUSIC_MV_TASK_NOT_FOUND: ${input.id}`);
+      const task = rowToTask(row);
+      if (task.taskType !== 'music-mv' && task.taskKind !== 'music-mv') throw new Error(`MUSIC_MV_TASK_INVALID: ${input.id}`);
+      if (task.status === 'pending' || task.status === 'running') throw new Error(`MUSIC_MV_TASK_ACTIVE: ${input.id} is ${task.status}.`);
+      const now = new Date().toISOString();
+      this.db.run(
+        `UPDATE tasks SET title = ?, input_text = ?, style = ?, ratio = ?, template_id = ?, bgm_id = ?,
+          storyboard_scene_count = ?, target_scenes = ?, processing_mode = ?, pause_points = ?, music_mv_json = ?,
+          status = 'paused', current_step = 0, completed_at = NULL, failed_step = NULL, retry_from_step = 0,
+          output_dir = '', error_message = ?, last_heartbeat_at = ? WHERE id = ?`,
+        [
+          input.title.trim(), input.lyrics.trim(), input.style, input.ratio, input.templateId, input.bgmId,
+          input.storyboardSceneCount, input.storyboardSceneCount, input.processingMode, json(input.pausePoints),
+          json(normalizeMusicMvSettings(input.musicMv)), '音乐 MV 参数已更新，待重新生成。', now, input.id,
+        ],
+      );
+      const updated = getFirstRow<Record<string, unknown>>(this.db, 'SELECT * FROM tasks WHERE id = ?', [input.id]);
+      if (!updated) throw new Error(`MUSIC_MV_TASK_NOT_FOUND: ${input.id}`);
+      return rowToTask(updated);
     });
   }
 

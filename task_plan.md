@@ -2739,3 +2739,61 @@ Rebuild the selected Director Desk visual as a functional StoryDream VOX/AI漫�
 - 浏览器 QA 4/4 场景通过：VOX/AI 漫剧在 1440x900 与 1040x720 下均有 AI 创作/AI 修改，失败不覆盖原稿，可滚到底部且横向溢出为 0。
 - Electron 生产渲染 QA 4/4 场景通过：两页初始按钮均禁用，填写标题与文案后均启用，控件在工作区内可见，运行时错误为 0；QA 未点击真实 LLM，不产生付费调用。
 - 12 个本轮修改文件 UTF-8 复读通过，未跟踪的 `.baoyu-skills/`、`.reverse/`、`image-cards/` 与 `outputs/*` 保持不变。
+# 四工作台生产闭环完善（2026-08-24）
+
+## Goal
+
+把 HTML 视频、AI 漫剧、VOX 视频和音乐 MV 都提升为可持续使用的独立生产工作台；每条链路至少具备创建、持久化恢复、内容/场景编辑、单项返工、预览、导出和失败恢复，并继续复用 StoryDream 统一任务、素材、服务配置与本地历史体系。
+
+## Phases
+
+- [completed] 1. 审计四条工作流的数据模型、页面状态、主进程能力、返工入口和测试覆盖，形成可落地差距矩阵
+- [completed] 2. 补齐可复用的项目操作、状态与返工合同，锁定聚焦失败测试
+- [completed] 3. 完善 HTML 视频场景级编辑、重排、重跑与出片恢复
+- [completed] 4. 完善 AI 漫剧系列/分集/镜头编辑、一致性检查与局部返工
+- [completed] 5. 将 VOX 从固定四镜扩展为可配置节拍结构，并补局部返工和质量检查
+- [completed] 6. 为音乐 MV 建立独立任务工作区，补歌词/镜头/素材/草稿返工闭环
+- [completed] 7. 运行聚焦回归、类型检查、生产构建和普通/紧凑 Electron 视觉验收
+
+## Acceptance criteria
+
+- 四个工作台都能从统一任务系统创建、恢复并回到历史任务，不建立平行项目库。
+- 用户可以在任务创建后修改领域核心内容，而不是只能重新创建整个任务。
+- 图片、配音、场景/镜头和最终输出具有与领域匹配的局部返工入口，并明确显示待重新生成状态。
+- 失败、过期产物、未配置服务、空项目和部分完成任务都有可操作的恢复路径。
+- 新增 UI 使用 `src/ui`、Lucide 与语义 tokens；普通和紧凑桌面窗口无重叠、裁切或横向溢出。
+- 聚焦测试、`npm run typecheck`、生产构建和差异检查通过；不调用付费生成服务完成 QA。
+
+## Decisions
+
+| Decision | Rationale |
+|---|---|
+| 先复用现有统一任务与专业数据模型 | 四条链路已经有真实持久化和运行能力，扩展现有合同比建立第二套系统更可靠 |
+| 优先补“创建后可修改和局部返工” | 这是当前四条链路成熟度差异最大的共同指标，也是长期生产最直接的效率瓶颈 |
+| 外部研究只针对本地代码无法回答的具体问题 | 先以现有产品状态、依赖和测试为准，避免引入不匹配的通用方案 |
+
+## Errors encountered
+
+| Error | Attempt | Resolution |
+|---|---:|---|
+| `planning-with-files` 会话恢复无输出 | 1 | 视为无未同步摘要；依据 Git 状态和现有规划文件继续，追加本轮计划而不覆盖历史记录 |
+| Windows `rg` 直接传入 `tests/html-video*.test.ts` 失败 | 1 | 后续从 `tests` 目录搜索并使用 `-g 'html-video*.test.ts'`，不再把通配符作为 Windows 路径参数 |
+| VOX 页面联合补丁找不到 `onAddShot` 锚点 | 1 | 原页面确实未接任何新增镜头操作；按实际源码拆分导入、状态、helper 和属性接入 |
+| 多文件测试补丁 hunk 边界格式不合法 | 1 | 整体未落盘；拆成逐文件补丁后成功应用，不重复联合格式 |
+| HTML 场景新增首测被旧 voice 数量验证拦截 | 1 | 保留严格验证器；结构操作先原子清空 assets/voices/compositions/output，再调用统一步骤失效函数 |
+| 音乐 MV 更新持久化测试使用 pending 新任务被拒绝 | 1 | 保留运行中只读合同；测试先把夹具置为 completed，再验证更新后进入 paused 待重生成 |
+| 再次向 Windows `rg` 传入 `tests/editorial-collage*.test.ts` 失败 | 1 | 不再使用路径通配符；后续统一搜索 `tests` 并通过 `-g` 过滤 |
+| 首次生产构建主入口 506.7 KB 超过 500 KB 预算 | 1 | 将 browser fallback 改为首次调用时动态加载；主入口降至 255.7 KB，fallback 成为独立 53.2 KB chunk |
+| 全量回归的 prompt chunk 测试与并行 build 同时构建失败 | 1 | 根因同入口预算；惰性拆分后串行复测 9/9，全量随后 1921/1921 通过 |
+| VOX 45 秒选择后结构预览仍固定显示 30 秒四项 | 1 | 浏览器截图发现；改为根据当前预设动态生成 4/6/8 个节拍和时长后复审通过 |
+| fallback 活跃态检查首补误插到配置分支形成重复判断 | 1 | TypeScript 报告不可达比较；移除重复行并将检查放到场景结构分支，复测通过 |
+
+## Final verification
+
+- 全库 148 个测试文件、1921/1921 用例通过；最终变更聚焦矩阵 16 个文件、271/271，末次自审修正 3 个文件、25/25。
+- `tsc -p tsconfig.json --noEmit`、`tsc -p tsconfig.electron.json --noEmit`、`npm run build` 与 `git diff --check` 通过。
+- renderer 主入口 255.7 KB，低于 500 KB 预算；browser fallback 为独立 53.2 KB 动态 chunk。
+- 1440x900 与 1040x720 本地浏览器 QA 覆盖四工作台和删除确认：0 横向溢出、0 固定控件裁切、0 route error、0 console error/warning。
+- UTF-8 复读与替换字符扫描通过；用户原有未跟踪目录和输出图片保持不变。
+
+---

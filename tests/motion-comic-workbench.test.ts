@@ -56,6 +56,10 @@ describe('motion comic workbench', () => {
     expect(page).toContain('onAddEpisode={addEpisode}');
     expect(page).toContain('onAddScene={addScene}');
     expect(page).toContain('onAddShot={addShot}');
+    expect(page).toContain('onMoveShot={moveShot}');
+    expect(page).toContain('onRemoveShot={removeShot}');
+    expect(page).toContain('moveMotionComicShot');
+    expect(page).toContain('removeMotionComicShot');
     expect(page).toContain('onSelectEpisode={selectEpisode}');
     expect(page).toContain('onToggleAsset={toggleConsistencyAsset}');
     expect(page).toContain('onRatioChange={updateRatio}');
@@ -87,6 +91,9 @@ describe('motion comic workbench', () => {
     expect(workspace).toContain('director-shot-search');
     expect(workspace).toContain('director-asset-search');
     expect(workspace).toContain('director-version-list');
+    expect(workspace).toContain('label="镜头操作"');
+    expect(workspace).toContain('title="删除当前镜头"');
+    expect(workspace).toContain('>确认删除</Button>');
     expect(workspace).toContain("role={errorMessage ? 'alert' : undefined}");
     expect(workspace).not.toContain('onChange={() => undefined}');
     expect(workspace).not.toContain('item.progress + 9');

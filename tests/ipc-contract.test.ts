@@ -248,6 +248,25 @@ describe('IPC runtime contract', () => {
     ]) {
       expect(() => htmlVideoUpdateSchema.parse({ id: 'html-task-1', changes: [invalidChange] })).toThrow();
     }
+
+    const htmlVideoStructureSchema = contract.ipcInputSchemas['html-video:update-scene-structure'];
+    expect(htmlVideoStructureSchema.parse({ id: 'html-task-1', change: { operation: 'duplicate', sceneIndex: 2 } }))
+      .toEqual({ id: 'html-task-1', change: { operation: 'duplicate', sceneIndex: 2 } });
+    expect(() => htmlVideoStructureSchema.parse({ id: 'html-task-1', change: { operation: 'replace-all', sceneIndex: 2 } })).toThrow();
+    expect(() => htmlVideoStructureSchema.parse({ id: 'html-task-1', change: { operation: 'remove', sceneIndex: 0 } })).toThrow();
+    const musicMvUpdateSchema = contract.ipcInputSchemas['music-mv:update'];
+    expect(musicMvUpdateSchema.parse({
+      id: 'music-1', title: 'Rain', lyrics: 'line one', style: 'modern-film', ratio: '16:9', templateId: 'draft-1', bgmId: '',
+      storyboardSceneCount: 8, processingMode: 'manual', pausePoints: ['critical'],
+      musicMv: { rhythmMode: 'lyric-sync', captionStyle: 'karaoke', visualMotif: 'rain', audioPath: 'D:/rain.wav' },
+    })).toMatchObject({ id: 'music-1', storyboardSceneCount: 8 });
+    expect(() => musicMvUpdateSchema.parse({ id: 'music-1', title: '', lyrics: '' })).toThrow();
+    expect(contract.ipcInputSchemas['editorial-collage:create'].parse({
+      title: 'Flexible VOX', sourceText: 'source', ratio: '16:9', beatCount: 8, totalDurationMs: 60_000,
+    })).toMatchObject({ beatCount: 8, totalDurationMs: 60_000 });
+    expect(() => contract.ipcInputSchemas['editorial-collage:create'].parse({
+      title: 'Too long', sourceText: 'source', beatCount: 2, totalDurationMs: 60_000,
+    })).toThrow();
     expect(() => htmlVideoUpdateSchema.parse({ id: 'html-task-1', changes: [] })).toThrow();
     expect(() => htmlVideoUpdateSchema.parse({
       id: 'html-task-1',

@@ -1,6 +1,8 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import {
   ArrowLeft,
+  ArrowDown,
+  ArrowUp,
   BookOpenText,
   Check,
   ChevronDown,
@@ -29,6 +31,7 @@ import {
   Settings2,
   ShieldCheck,
   Sparkles,
+  Trash2,
   Volume2,
   WandSparkles,
 } from 'lucide-react';
@@ -164,6 +167,8 @@ export interface DirectorDeskWorkspaceProps {
   onAddEpisode?: () => void;
   onAddScene?: () => void;
   onAddShot?: () => void;
+  onMoveShot?: (id: string, direction: -1 | 1) => void;
+  onRemoveShot?: (id: string) => void;
   onRatioChange?: (ratio: NonNullable<DirectorDeskWorkspaceProps['ratio']>) => void;
   onToggleAsset?: (asset: DirectorAsset) => void;
   onRestoreVersion?: (versionId: string) => void;
@@ -273,6 +278,8 @@ export function DirectorDeskWorkspace({
   onAddEpisode,
   onAddScene,
   onAddShot,
+  onMoveShot,
+  onRemoveShot,
   onRatioChange,
   onToggleAsset,
   onRestoreVersion,
@@ -303,6 +310,7 @@ export function DirectorDeskWorkspace({
   const [shotSearch, setShotSearch] = useState('');
   const [assetSearch, setAssetSearch] = useState('');
   const [previewSettingsOpen, setPreviewSettingsOpen] = useState(false);
+  const [pendingRemoveShotId, setPendingRemoveShotId] = useState('');
   const [localGeneration, setLocalGeneration] = useState<Record<string, 'running' | 'failed'>>({});
   const [previewImageStatus, setPreviewImageStatus] = useState<'loading' | 'ready' | 'error'>('loading');
   const previewAudioRef = useRef<HTMLAudioElement | null>(null);
@@ -575,6 +583,16 @@ export function DirectorDeskWorkspace({
                   />
                   <Button aria-label={safeAreaVisible ? '隐藏安全区' : '显示安全区'} density="compact" variant={safeAreaVisible ? 'secondary' : 'subtle'} className="director-preview-safe" onClick={() => setSafeAreaVisible((value) => !value)}><ShieldCheck size={13} />安全区</Button>
                   <IconButton label="预览设置" icon={<Settings2 size={14} />} density="compact" variant="subtle" onClick={() => setPreviewSettingsOpen(true)} />
+                  {(onMoveShot || onRemoveShot) && selectedShot ? <Menu
+                    trigger={<IconButton label="镜头操作" icon={<MoreHorizontal size={14} />} density="compact" variant="subtle" />}
+                    options={[
+                      ...(onMoveShot ? [
+                        { id: 'move-up', label: '镜头上移', icon: <ArrowUp size={13} />, onSelect: () => onMoveShot(selectedShot.id, -1) },
+                        { id: 'move-down', label: '镜头下移', icon: <ArrowDown size={13} />, onSelect: () => onMoveShot(selectedShot.id, 1) },
+                      ] : []),
+                      ...(onRemoveShot ? [{ id: 'remove', label: '删除当前镜头', icon: <Trash2 size={13} />, onSelect: () => setPendingRemoveShotId(selectedShot.id) }] : []),
+                    ]}
+                  /> : null}
                 </Toolbar>
               </div>
               <section ref={previewRef} className="director-media-preview" aria-label="镜头预览">
@@ -684,6 +702,14 @@ export function DirectorDeskWorkspace({
           <SelectField label="预览画幅" value={ratio} options={(['9:16', '16:9', '1:1', '4:3'] as const).map((option) => ({ value: option, label: option }))} onChange={(event) => onRatioChange?.(event.target.value as NonNullable<DirectorDeskWorkspaceProps['ratio']>)} />
           <div className="director-inspector-note"><BookOpenText size={14} /><span>预览比例会同步到项目并影响下一次成片画布。</span></div>
         </div>
+      </Dialog>
+      <Dialog
+        open={Boolean(pendingRemoveShotId)}
+        title="删除当前镜头"
+        onOpenChange={(open) => { if (!open) setPendingRemoveShotId(''); }}
+        actions={<><Button variant="subtle" onClick={() => setPendingRemoveShotId('')}>取消</Button><Button variant="danger" icon={<Trash2 size={14} />} onClick={() => { const id = pendingRemoveShotId; setPendingRemoveShotId(''); if (id) onRemoveShot?.(id); }}>确认删除</Button></>}
+      >
+        <p>将删除“{shots.find((shot) => shot.id === pendingRemoveShotId)?.title ?? '当前镜头'}”及其关联字幕和生成记录。项目仍需手动保存后才会写入本地版本。</p>
       </Dialog>
     </div>
   );
