@@ -7,7 +7,7 @@ import { defaultUiPreferences } from "../shared/config";
 import { useAsyncAction } from "../ui/async-action";
 import { StoryDreamProvider } from "../ui";
 import { advanceHistoryFamilyEpochs, allHistoryFamilies, bootstrapToState, captureHistoryResponseRevision, cloneState, initialState, isHistoryResponseCurrent, loadCompleteBootstrap, MAX_TASK_DETAIL_REVISION_ATTEMPTS, mergeDeltaView, registerHistoryDeltaBarrier, replaceHistoryRevisionMap, type HistoryFamilyEpochs } from "./app-state";
-import { makeFallbackApi } from "./browser-fallback";
+import { makeLazyFallbackApi } from './lazy-browser-fallback';
 import type { RendererAppState as AppState } from "./route-types";
 import { AppRoutes } from './AppRoutes';
 import { AppShell } from './AppShell';
@@ -43,7 +43,7 @@ function AppWorkspace() {
   const [historyFamilyEpochs, setHistoryFamilyEpochs] = useState<HistoryFamilyEpochs>({});
   const [saveTone, setSaveTone] = useState<'saved' | 'saving' | 'dirty'>('saved');
   const isBrowserPreview = !window.storydream && !window.storybound;
-  const api = useMemo(() => window.storydream ?? window.storybound ?? makeFallbackApi(setState), []);
+  const api = useMemo(() => window.storydream ?? window.storybound ?? makeLazyFallbackApi(setState), []);
   const shellAction = useAsyncAction();
   const runtimeThemeRef = useRef<ThemeName>(state.ui.theme);
   const revisionRef = useRef(0);

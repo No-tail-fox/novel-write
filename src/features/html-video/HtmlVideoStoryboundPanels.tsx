@@ -1,8 +1,11 @@
 import React, { useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { AsyncActionFeedback as InlineActionFeedback } from '../../components/AsyncActionFeedback';
 import {
+  ArrowDown,
+  ArrowUp,
   ChevronLeft,
   ChevronRight,
+  Copy,
   Eye,
   EyeOff,
   Image as ImageIcon,
@@ -17,6 +20,7 @@ import {
   Save,
   Scissors,
   Settings2,
+  Trash2,
   Upload,
   Volume2,
   X,
@@ -30,6 +34,7 @@ import type {
   HtmlVideoConfigChange,
   HtmlVideoPipelineData,
   HtmlVideoSceneChange,
+  HtmlVideoSceneStructureChange,
   HtmlVideoScenePlan,
   MinimaxCloneVoice,
   Task,
@@ -45,7 +50,7 @@ import {
   type HtmlVideoAnimationCue,
 } from '../../shared/html-video-scene-templates';
 import { normalizeRuntimeTtsProvider, taskSpeakerLabel, ttsVoiceOptionsForProvider } from '../../shared/tts-voices';
-import { Button, IconButton, Pane, Tabs } from '../../ui';
+import { Button, IconButton, Pane, Tabs, Toolbar } from '../../ui';
 import { useAsyncAction } from '../../ui/async-action';
 
 interface EditorialPanelProps {
@@ -79,7 +84,7 @@ export function HtmlVideoStoryboundTextPanel(props: EditorialPanelProps) {
   );
 }
 
-function SceneTextEditor({ api, task, scene, applyState, refreshTaskDetail, busy, isBrowserPreview }: EditorialPanelProps & { scene: HtmlVideoScenePlan }) {
+function SceneTextEditor({ api, task, data, scene, applyState, refreshTaskDetail, busy, isBrowserPreview }: EditorialPanelProps & { scene: HtmlVideoScenePlan }) {
   const action = useAsyncAction();
   const [narration, setNarration] = useState(scene.narration);
   const [title, setTitle] = useState(scene.title);
@@ -90,6 +95,14 @@ function SceneTextEditor({ api, task, scene, applyState, refreshTaskDetail, busy
   async function mutate(changes: HtmlVideoSceneChange[]) {
     await action.run(async () => {
       const mutation = await api.updateHtmlVideoScene(task.id, scene.index, changes);
+      applyState(mutation);
+      await refreshTaskDetail(task.id);
+    });
+  }
+
+  async function mutateStructure(operation: HtmlVideoSceneStructureChange['operation']) {
+    await action.run(async () => {
+      const mutation = await api.updateHtmlVideoSceneStructure(task.id, { operation, sceneIndex: scene.index });
       applyState(mutation);
       await refreshTaskDetail(task.id);
     });
@@ -117,6 +130,13 @@ function SceneTextEditor({ api, task, scene, applyState, refreshTaskDetail, busy
   return (
     <article className="hv-reference-scene-card">
       <div className="hv-reference-scene-number">{scene.index}</div>
+      <Toolbar className="hv-scene-structure-toolbar" aria-label={`场景 ${scene.index} 结构操作`}>
+        <IconButton label="上移场景" icon={<ArrowUp size={13} />} density="compact" variant="subtle" disabled={locked || scene.index === 1} onClick={() => void mutateStructure('move-up')} />
+        <IconButton label="下移场景" icon={<ArrowDown size={13} />} density="compact" variant="subtle" disabled={locked || scene.index === data.scenes.length} onClick={() => void mutateStructure('move-down')} />
+        <IconButton label="复制场景" icon={<Copy size={13} />} density="compact" variant="subtle" disabled={locked || data.scenes.length >= (data.config.maxScenes ?? 30)} onClick={() => void mutateStructure('duplicate')} />
+        <IconButton label="在后面新增场景" icon={<Plus size={13} />} density="compact" variant="subtle" disabled={locked || data.scenes.length >= (data.config.maxScenes ?? 30)} onClick={() => void mutateStructure('add-after')} />
+        <IconButton label="删除场景" icon={<Trash2 size={13} />} density="compact" variant="danger" disabled={locked || data.scenes.length <= 1} onClick={() => void mutateStructure('remove')} />
+      </Toolbar>
       <label className="hv-reference-scene-copy"><span>口播</span><textarea value={narration} onChange={(event) => setNarration(event.target.value)} disabled={locked} rows={2} /></label>
       <label><span>标题</span><input value={title} onChange={(event) => setTitle(event.target.value)} disabled={locked} /></label>
       <label><span>字幕</span><textarea value={captions} onChange={(event) => setCaptions(event.target.value)} disabled={locked} rows={Math.min(4, Math.max(2, scene.captions.length))} /></label>

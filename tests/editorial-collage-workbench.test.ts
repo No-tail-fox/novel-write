@@ -41,6 +41,15 @@ describe('editorial collage workbench', () => {
     expect(page).toContain('<DirectorDeskWorkspace');
     expect(page).toContain('mode="vox"');
     expect(page).toContain('api.createEditorialCollage');
+    expect(page).toContain('editorialStructurePresets');
+    expect(page).toContain("concise: { beatCount: 4, totalDurationMs: 30_000");
+    expect(page).toContain("standard: { beatCount: 6, totalDurationMs: 45_000");
+    expect(page).toContain("extended: { beatCount: 8, totalDurationMs: 60_000");
+    expect(page).toContain('beatCount: structure.beatCount');
+    expect(page).toContain('totalDurationMs: structure.totalDurationMs');
+    expect(page).toContain('createStructureItems.map');
+    expect(page).toContain('createStructurePreset.label');
+    expect(page).not.toContain('<strong>30 秒解释结构</strong>');
     expect(page).toContain('api.saveEditorialCollage');
     expect(page).toContain('api.generateImageLab');
     expect(page).toContain('api.saveConfig');
@@ -60,6 +69,12 @@ describe('editorial collage workbench', () => {
     expect(page).toContain('onNewProject={startCreate}');
     expect(page).toContain('projectLeave.requestLeave(() => openProject(id))');
     expect(page).toContain('onRatioChange={updateRatio}');
+    expect(page).toContain('onAddShot={addBeat}');
+    expect(page).toContain('onMoveShot={moveBeatForShot}');
+    expect(page).toContain('onRemoveShot={removeBeatForShot}');
+    expect(page).toContain('appendEditorialBeat');
+    expect(page).toContain('moveEditorialBeat');
+    expect(page).toContain('removeEditorialBeat');
     expect(page).toContain("projectAction.feedback?.tone === 'error'");
     expect(page).toContain("providerAction.feedback?.tone === 'error'");
     expect(page).toContain('onRestoreVersion={restoreVersion}');
@@ -91,6 +106,9 @@ describe('editorial collage workbench', () => {
     expect(workspace).toContain('director-shot-search');
     expect(workspace).toContain('director-asset-search');
     expect(workspace).toContain('director-version-list');
+    expect(workspace).toContain('label="镜头操作"');
+    expect(workspace).toContain('title="删除当前镜头"');
+    expect(workspace).toContain('>确认删除</Button>');
     expect(workspace).not.toContain('onChange={() => undefined}');
     expect(workspace).not.toContain('item.progress + 9');
     expect(css).toContain('grid-template-columns: 274px minmax(0, 1fr) clamp(396px, calc(100vw - 1044px), 492px)');

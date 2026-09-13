@@ -998,6 +998,91 @@ export function appendMotionComicShot(
   };
 }
 
+export function removeMotionComicShot(
+  document: MotionComicPipelineData,
+  episodeId: string,
+  sceneId: string,
+  shotId: string,
+): MotionComicPipelineData {
+  const episode = document.episodes.find((candidate) => candidate.id === episodeId);
+  const scene = episode?.scenes.find((candidate) => candidate.id === sceneId);
+  const shot = scene?.shots.find((candidate) => candidate.id === shotId);
+  if (!episode || !scene || !shot) throw new Error(`MOTION_COMIC_SHOT_MISSING: ${shotId}`);
+  const remainingShotCount = episode.scenes.reduce((total, candidate) => total + candidate.shots.length, 0) - 1;
+  if (remainingShotCount < 1) throw new Error('MOTION_COMIC_SHOT_REQUIRED: 至少保留一个镜头。');
+  const cueIds = new Set(shot.dialogueCueIds);
+  const jobIds = new Set(document.providerJobs.filter((job) => job.nodeId === shot.id).map((job) => job.id));
+  const assetIds = new Set(document.assets.filter((asset) => asset.providerJobId && jobIds.has(asset.providerJobId)).map((asset) => asset.id));
+  return normalizeMotionComicTimeline({
+    ...document,
+    stage: 'shot-board',
+    episodes: document.episodes.map((candidate) => candidate.id !== episodeId ? candidate : {
+      ...candidate,
+      scenes: candidate.scenes.map((currentScene) => currentScene.id !== sceneId ? currentScene : { ...currentScene, shots: currentScene.shots.filter((currentShot) => currentShot.id !== shotId) }),
+      dialogueCues: candidate.dialogueCues.filter((cue) => !cueIds.has(cue.id)),
+    }),
+    providerJobs: document.providerJobs.filter((job) => !jobIds.has(job.id)),
+    assets: document.assets.filter((asset) => !assetIds.has(asset.id)),
+    qualityReports: [],
+  });
+}
+
+export function moveMotionComicShot(
+  document: MotionComicPipelineData,
+  episodeId: string,
+  sceneId: string,
+  shotId: string,
+  direction: -1 | 1,
+): MotionComicPipelineData {
+  const episode = document.episodes.find((candidate) => candidate.id === episodeId);
+  const scene = episode?.scenes.find((candidate) => candidate.id === sceneId);
+  const index = scene?.shots.findIndex((shot) => shot.id === shotId) ?? -1;
+  const target = index + direction;
+  if (!episode || !scene || index < 0) throw new Error(`MOTION_COMIC_SHOT_MISSING: ${shotId}`);
+  if (target < 0 || target >= scene.shots.length) return document;
+  const shots = [...scene.shots];
+  [shots[index], shots[target]] = [shots[target], shots[index]];
+  return normalizeMotionComicTimeline({
+    ...document,
+    stage: 'shot-board',
+    episodes: document.episodes.map((candidate) => candidate.id !== episodeId ? candidate : { ...candidate, scenes: candidate.scenes.map((currentScene) => currentScene.id === sceneId ? { ...currentScene, shots } : currentScene) }),
+    qualityReports: [],
+  });
+}
+
+function normalizeMotionComicTimeline(document: MotionComicPipelineData): MotionComicPipelineData {
+  const episodes = document.episodes.map((episode, episodeIndex) => {
+    let cursor = 0;
+    const dialogueCues = episode.dialogueCues.map((cue) => ({ ...cue }));
+    const priorClips = new Map(episode.timeline.clips.map((clip) => [clip.shotId, clip] as const));
+    const scenes = episode.scenes.map((scene, sceneIndex) => {
+      const shots = scene.shots.map((shot, shotIndex) => {
+        const startMs = cursor;
+        const durationMs = Math.max(1, shot.durationMs);
+        const cues = shot.dialogueCueIds.flatMap((cueId) => {
+          const cue = dialogueCues.find((candidate) => candidate.id === cueId);
+          return cue ? [cue] : [];
+        });
+        cues.forEach((cue, cueIndex) => {
+          cue.startMs = startMs + Math.round(durationMs * cueIndex / Math.max(1, cues.length));
+          cue.endMs = startMs + Math.round(durationMs * (cueIndex + 1) / Math.max(1, cues.length));
+        });
+        cursor += durationMs;
+        return { ...shot, index: shotIndex + 1, durationMs };
+      });
+      return { ...scene, index: sceneIndex + 1, shots };
+    });
+    const clips = scenes.flatMap((scene) => scene.shots.map((shot) => {
+      const startMs = scenes.slice(0, scenes.findIndex((candidate) => candidate.id === scene.id)).flatMap((candidate) => candidate.shots).reduce((sum, candidate) => sum + candidate.durationMs, 0)
+        + scene.shots.slice(0, scene.shots.findIndex((candidate) => candidate.id === shot.id)).reduce((sum, candidate) => sum + candidate.durationMs, 0);
+      const prior = priorClips.get(shot.id);
+      return { id: `clip-${shot.id}`, shotId: shot.id, startMs, durationMs: shot.durationMs, assetVersionIds: prior?.assetVersionIds ?? [], subtitleCueIds: shot.dialogueCueIds, source: prior?.source ?? 'deterministic' as const };
+    }));
+    return { ...episode, number: episodeIndex + 1, scenes, dialogueCues, timeline: { ...episode.timeline, durationMs: cursor, clips } };
+  });
+  return { ...document, episodes, activeEpisodeId: episodes.some((episode) => episode.id === document.activeEpisodeId) ? document.activeEpisodeId : episodes[0]?.id ?? '' };
+}
+
 export function parseMotionComicPipelineData(input: unknown): MotionComicPipelineData {
   let value = input;
   if (typeof input === 'string') {

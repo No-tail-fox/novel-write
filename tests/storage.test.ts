@@ -1198,6 +1198,30 @@ describe('file database', () => {
     }
   });
 
+  it('updates a persisted music MV as one paused regeneration snapshot', async () => {
+    const dir = await mkdtemp(join(tmpdir(), 'storydream-db-music-mv-update-'));
+    const file = join(dir, 'app.db');
+    try {
+      const db = await FileDatabase.open(file);
+      const created = await db.createTask({ title: 'Old MV', inputText: 'old lyric', taskKind: 'music-mv', track: 'music-mv' });
+      await db.updateTask(created.id, { status: 'completed', completedAt: '2026-08-24T00:00:00.000Z' });
+      const updated = await db.updateMusicMvTask({
+        id: created.id, title: 'New MV', lyrics: 'new line one\nnew line two', style: 'documentary', ratio: '9:16',
+        templateId: 'default-portrait-9-16', bgmId: '', storyboardSceneCount: 6, processingMode: 'scene-review',
+        pausePoints: ['every-step'],
+        musicMv: { rhythmMode: 'fast-cut', captionStyle: 'minimal', visualMotif: 'red stage', audioPath: 'D:/music/new.wav' },
+      });
+      expect(updated).toMatchObject({
+        title: 'New MV', inputText: 'new line one\nnew line two', status: 'paused', currentStep: 0,
+        retryFromStep: 0, storyboardSceneCount: 6, targetScenes: 6, processingMode: 'scene-review',
+        musicMv: { rhythmMode: 'fast-cut', captionStyle: 'minimal', visualMotif: 'red stage', audioPath: 'D:/music/new.wav' },
+      });
+      await db.close();
+    } finally {
+      await rm(dir, { recursive: true, force: true });
+    }
+  });
+
   it('persists prompt template image seed pools across reloads', async () => {
     const dir = await mkdtemp(join(tmpdir(), 'storybound-db-prompt-seeds-'));
     const file = join(dir, 'app.db');

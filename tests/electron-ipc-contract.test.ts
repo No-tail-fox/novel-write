@@ -1029,6 +1029,16 @@ describe('electron ipc contract', () => {
     expect(main).not.toContain("trustedHandle('executeJavaScript'");
   });
 
+  it('updates music MV parameters under task governance before rerunning content', async () => {
+    const main = await readFile(new URL('../electron/main.ts', import.meta.url), 'utf8');
+    const preload = await readFile(new URL('../electron/preload.ts', import.meta.url), 'utf8');
+    const handler = handlerSource(main, 'music-mv:update');
+    expect(handler).toContain("runHistoryGovernanceMutation('task', input.id");
+    expect(handler).toContain("markTaskStepForRerun(task.artifactStatePath, 0, 'regenerate')");
+    expect(handler).toContain('database.updateMusicMvTask(input)');
+    expect(preload).toContain("invokeTrusted('music-mv:update', input)");
+  });
+
   it('preserves the current HTML video canvas resolution when rebuilding editorial previews', async () => {
     const main = await readFile(new URL('../electron/main.ts', import.meta.url), 'utf8');
     const runtimeFactoryStart = main.indexOf('async function createHtmlVideoEditorialRuntime(');

@@ -210,6 +210,20 @@ const musicMvSchema = z
   })
   .strict();
 
+export const musicMvTaskUpdateSchema = bounded(z.object({
+  id: governanceIdSchema,
+  title: nonEmptyText(MAX_IPC_TEXT),
+  lyrics: nonEmptyText(MAX_TASK_TEXT),
+  style: nonEmptyText(1024),
+  ratio: nonEmptyText(128),
+  templateId: nonEmptyText(256),
+  bgmId: z.string().max(256),
+  storyboardSceneCount: nonNegativeInteger.min(1).max(500),
+  processingMode: z.enum(['full-auto', 'milestone-review', 'scene-review', 'manual', 'semi-auto', 'clip-only']),
+  pausePoints: z.array(z.enum(['none', 'critical', 'every-step', 'custom'])).max(16),
+  musicMv: musicMvSchema,
+}).strict());
+
 export const createTaskSchema = bounded(
   z
     .object({
@@ -405,6 +419,14 @@ const htmlVideoSceneUpdateSchema = bounded(z.object({
   id: governanceIdSchema,
   sceneIndex: nonNegativeInteger.min(1).max(MAX_HTML_VIDEO_SCENES),
   changes: z.array(htmlVideoSceneChangeSchema).min(1).max(32),
+}).strict());
+
+export const htmlVideoSceneStructureUpdateSchema = bounded(z.object({
+  id: governanceIdSchema,
+  change: z.object({
+    operation: z.enum(['add-after', 'duplicate', 'remove', 'move-up', 'move-down']),
+    sceneIndex: nonNegativeInteger.min(1).max(MAX_HTML_VIDEO_SCENES),
+  }).strict(),
 }).strict());
 
 const htmlVideoAssetTargetSchema = z.object({
@@ -990,6 +1012,7 @@ export const ipcInputSchemas = {
   'html-video:create-task': htmlVideoCreateTaskSchema,
   'html-video:update-config': htmlVideoConfigUpdateSchema,
   'html-video:update-scene': htmlVideoSceneUpdateSchema,
+  'html-video:update-scene-structure': htmlVideoSceneStructureUpdateSchema,
   'html-video:add-asset': htmlVideoAssetAddSchema,
   'html-video:replace-asset': htmlVideoAssetActionSchema,
   'html-video:regenerate-asset': htmlVideoAssetActionSchema,
@@ -1006,6 +1029,7 @@ export const ipcInputSchemas = {
   'html-video:open-preview': htmlVideoPreviewSchema,
   'html-video:media-url': htmlVideoMediaSchema,
   'task:create-and-run': createTaskSchema,
+  'music-mv:update': musicMvTaskUpdateSchema,
   'task:list': taskHistoryListSchema,
   'task:set-favorite': z.object({ id: idSchema, isFavorite: z.boolean() }).strict(),
   'task:archive': governanceIdSchema,

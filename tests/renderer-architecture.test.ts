@@ -402,6 +402,19 @@ describe('media workflow feature ownership architecture', () => {
   });
 });
 
+describe('browser fallback loading boundary', () => {
+  it('keeps the full browser fallback out of the renderer entry until preview API use', async () => {
+    const [app, lazyFallback] = await Promise.all([
+      source('src/app/App.tsx'),
+      source('src/app/lazy-browser-fallback.ts'),
+    ]);
+    expect(app).toContain("from './lazy-browser-fallback'");
+    expect(app).not.toContain("from './browser-fallback'");
+    expect(lazyFallback).toContain("import('./browser-fallback')");
+    expect(lazyFallback).toContain("property === 'onAppDelta'");
+  });
+});
+
 describe('template feature ownership architecture', () => {
   const pagePaths = [
     'src/features/templates/PromptTemplatesPage.tsx',

@@ -93,6 +93,12 @@ describe('HTML video editorial studio', () => {
     expect(panels).toContain('className={`hv-scene-transition-overlay');
     expect(panels).toContain('template.materialSlots === scene.elements.length');
     expect(panels).toContain('className="hv-scene-preview-editor"');
+    expect(panels).toContain('updateHtmlVideoSceneStructure');
+    expect(panels).toContain("mutateStructure('duplicate')");
+    expect(panels).toContain("mutateStructure('add-after')");
+    expect(panels).toContain("mutateStructure('remove')");
+    expect(panels).toContain('label="上移场景"');
+    expect(panels).toContain('label="下移场景"');
     expect(panels).toContain("label: '版式'");
     expect(panels).toContain("label: '前景'");
     expect(panels).toContain("label: '标题'");

@@ -13,6 +13,7 @@ import type {
   HtmlVideoPipelineStep,
   HtmlVideoScenePlan,
   HtmlVideoSceneChange,
+  HtmlVideoSceneStructureChange,
   HtmlVideoStepState,
   HtmlVideoStepStatus,
   HtmlVideoTabKey,
@@ -526,6 +527,49 @@ export function applyHtmlVideoSceneChanges(
   next.revision = pipeline.revision + 1;
   delete next.configSnapshotHash;
   return next;
+}
+
+export function applyHtmlVideoSceneStructureChange(
+  pipeline: HtmlVideoPipelineDataV2,
+  change: HtmlVideoSceneStructureChange,
+): HtmlVideoPipelineDataV2 {
+  const next = structuredClone(pipeline);
+  const sourceIndex = next.scenes.findIndex((scene) => scene.index === change.sceneIndex);
+  if (sourceIndex < 0) throw new AppError('HTML_VIDEO_SCENE_NOT_FOUND', `HTML 视频场景 ${change.sceneIndex} 不存在。`);
+
+  if (change.operation === 'remove') {
+    if (next.scenes.length <= 1) throw new AppError('HTML_VIDEO_SCENE_REQUIRED', 'HTML 视频至少保留一个场景。');
+    next.scenes.splice(sourceIndex, 1);
+  } else if (change.operation === 'move-up' || change.operation === 'move-down') {
+    const targetIndex = sourceIndex + (change.operation === 'move-up' ? -1 : 1);
+    if (targetIndex < 0 || targetIndex >= next.scenes.length) return next;
+    [next.scenes[sourceIndex], next.scenes[targetIndex]] = [next.scenes[targetIndex], next.scenes[sourceIndex]];
+  } else {
+    const maximum = next.config.maxScenes ?? MAX_HTML_VIDEO_SCENES;
+    if (next.scenes.length >= maximum) throw new AppError('HTML_VIDEO_SCENE_LIMIT', `HTML 视频最多支持 ${maximum} 个场景。`);
+    const source = structuredClone(next.scenes[sourceIndex]);
+    const inserted: HtmlVideoScenePlan = change.operation === 'duplicate'
+      ? { ...source, title: `${source.title}（副本）` }
+      : {
+          ...source,
+          narration: '新增场景，等待补充口播内容。',
+          title: '新增场景',
+          captions: ['新增场景'],
+          background: { prompt: 'clean editorial background for a new animated scene' },
+          elements: [],
+          hiddenElementSlots: [],
+        };
+    next.scenes.splice(sourceIndex + 1, 0, inserted);
+  }
+
+  next.scenes = next.scenes.map((scene, index) => ({ ...scene, index: index + 1 }));
+  next.assets = [];
+  next.voices = [];
+  next.compositions = [];
+  delete next.output;
+  next.revision = pipeline.revision + 1;
+  delete next.configSnapshotHash;
+  return invalidateHtmlVideoPipeline(next, 'assets');
 }
 
 export function prepareHtmlVideoPipelineForRerender(

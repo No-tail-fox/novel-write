@@ -45,6 +45,7 @@ import type {
   HtmlVideoCompositionSourceSaveResult,
   HtmlVideoLintFinding,
   HtmlVideoSceneChange,
+  HtmlVideoSceneStructureChange,
   HistoryListInput,
   ImageLabGenerateInput,
   ImageLabImportInput,
@@ -57,6 +58,7 @@ import type {
   LlmConfig,
   LlmModelTestResult,
   ManagedBgmImport,
+  MusicMvTaskUpdateInput,
   MinimaxCloneVoice,
   MinimaxCloneVoiceInput,
   OrdinaryTaskCoverRatio,
@@ -204,6 +206,7 @@ export const INVOKE_CHANNELS = Object.freeze([
   'html-video:create-task',
   'html-video:update-config',
   'html-video:update-scene',
+  'html-video:update-scene-structure',
   'html-video:add-asset',
   'html-video:replace-asset',
   'html-video:regenerate-asset',
@@ -220,6 +223,7 @@ export const INVOKE_CHANNELS = Object.freeze([
   'html-video:open-preview',
   'html-video:media-url',
   'task:create-and-run',
+  'music-mv:update',
   'viral:create-and-run',
   'viral:update-status',
   'viral:retry',
@@ -368,6 +372,7 @@ export type StoryDreamApi = {
   createHtmlVideoTask: (input: CreateTaskInput) => Promise<AppMutationResult | null>;
   updateHtmlVideoConfig: (id: string, changes: HtmlVideoConfigChange[]) => Promise<AppMutationResult | null>;
   updateHtmlVideoScene: (id: string, sceneIndex: number, changes: HtmlVideoSceneChange[]) => Promise<AppMutationResult | null>;
+  updateHtmlVideoSceneStructure: (id: string, change: HtmlVideoSceneStructureChange) => Promise<AppMutationResult | null>;
   addHtmlVideoAsset: (id: string, sceneIndex: number, prompt: string) => Promise<AppMutationResult | null>;
   replaceHtmlVideoAsset: (id: string, target: HtmlVideoAssetTarget) => Promise<AppMutationResult | null>;
   regenerateHtmlVideoAsset: (id: string, target: HtmlVideoAssetTarget) => Promise<AppMutationResult | null>;
@@ -384,6 +389,7 @@ export type StoryDreamApi = {
   openHtmlVideoPreview: (id: string, sceneIndex?: number) => Promise<void>;
   getHtmlVideoMediaUrl: (id: string, path: string) => Promise<string>;
   createAndRunTask: (input: CreateTaskInput) => Promise<AppMutationResult | null>;
+  updateMusicMvTask: (input: MusicMvTaskUpdateInput) => Promise<AppMutationResult | null>;
   createAndRunViralAnalysis: (input: CreateViralAnalysisInput) => Promise<AppMutationResult | null>;
   updateViralAnalysisStatus: (id: string, status: ViralAnalysisStatus) => Promise<AppMutationResult | null>;
   retryViralAnalysis: (id: string) => Promise<AppMutationResult | null>;

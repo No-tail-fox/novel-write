@@ -1959,6 +1959,12 @@
   font-weight: 750;
 }
 
+.hv-scene-structure-toolbar {
+  grid-column: 2;
+  min-width: 0;
+  justify-content: flex-end;
+}
+
 .hv-reference-scene-copy {
   min-width: 0;
   line-height: 1.55;
