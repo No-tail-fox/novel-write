@@ -14,7 +14,7 @@ describe('Director create copy assistance', () => {
       keyword: '城市旧书店为何消失',
       selectedSources: [],
       useBuiltinKnowledge: true,
-      targetLength: 220,
+      targetLength: 90,
     });
     expect(request.extraRequirements).toContain('30 秒解释型视频');
     expect(request.extraRequirements).toContain('钩子、背景、证据和结论');
@@ -35,6 +35,24 @@ describe('Director create copy assistance', () => {
       content: '旧书店正在消失。',
     })]);
     expect(request.extraRequirements).toContain('不添加未经原文支持的事实');
+  });
+
+  it('scales VOX copy guidance with the selected starter duration', () => {
+    const short = buildDirectorCopyAssistRequest({ mode: 'vox', intent: 'create', title: '短片', copy: '', durationMs: 15_000 });
+    const long = buildDirectorCopyAssistRequest({ mode: 'vox', intent: 'create', title: '长片', copy: '', durationMs: 60_000 });
+    expect(short.targetLength).toBe(45);
+    expect(short.extraRequirements).toContain('15 秒解释型视频');
+    expect(long.targetLength).toBe(180);
+    expect(long.extraRequirements).toContain('60 秒解释型视频');
+  });
+
+  it('keeps full-length revisions tied to the complete source instead of a short preset', () => {
+    const copy = '完整事实与上下文。'.repeat(800);
+    const request = buildDirectorCopyAssistRequest({ mode: 'vox', intent: 'revise', title: '全文', copy, durationMs: 'auto' });
+    expect(request.targetLength).toBe(copy.length);
+    expect(request.selectedSources[0].content).toBe(copy);
+    expect(request.extraRequirements).toContain('不为固定视频时长删减内容');
+    expect(request.extraRequirements).not.toContain('30 秒');
   });
 
   it('keeps motion-comic creation concise and conflict-driven', () => {

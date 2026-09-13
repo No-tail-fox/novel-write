@@ -31,6 +31,10 @@ import { MAX_ORDINARY_TASK_COVER_PAGE_TEXT_LENGTH, ORDINARY_TASK_COVER_RATIOS } 
 import { MAX_HYPERFRAMES_SOURCE_BYTES } from './hyperframes';
 import { editorialCollageCreateInputSchema, editorialCollageSaveInputSchema } from './editorial-collage';
 import { motionComicCreateInputSchema, motionComicSaveInputSchema } from './motion-comic';
+import { directorGenerateShotVideoRequestSchema } from './director-render';
+import { MAX_DIRECTOR_BATCH_SHOTS, MAX_DIRECTOR_BATCH_NODES, MAX_DIRECTOR_BATCH_DEPENDENCIES } from './director-batch-persistence';
+
+export { directorGenerateShotVideoRequestSchema };
 
 export const MAX_TASK_TEXT = 1_000_000;
 export const MAX_IPC_TEXT = 65_536;
@@ -57,6 +61,8 @@ const governanceIdSchema = z
   );
 const secretIdSchema = z.string().max(1024).refine(isSecretId, 'Invalid secret id.');
 const finiteNumber = z.number().finite();
+const nonNegativeNumber = finiteNumber.min(0);
+const timestampSchema = z.string().max(64).refine((value) => !Number.isNaN(Date.parse(value)), 'Invalid timestamp.');
 const nonNegativeInteger = z.number().finite().int().nonnegative();
 const stringArray = (maxLength = MAX_IPC_ARRAY_ITEMS, itemLength = MAX_IPC_TEXT) => z.array(z.string().max(itemLength)).max(maxLength);
 
@@ -109,6 +115,18 @@ function bounded<T extends z.ZodType>(schema: T): T {
 }
 
 const boundedObjectSchema = bounded(z.object({}).passthrough());
+
+const directorBatchPlanSchema = z.object({
+  scope: z.enum(['missing', 'failed', 'all']),
+  capabilities: z.object({ image: z.boolean(), video: z.boolean(), voice: z.boolean(), render: z.boolean() }).strict(),
+  outputReady: z.boolean(), renderFailed: z.boolean(),
+  shots: z.array(z.record(z.string(), z.unknown())).max(MAX_DIRECTOR_BATCH_SHOTS),
+}).strict();
+const directorBatchNodesSchema = z.array(z.object({
+  id: idSchema, capability: z.enum(['image', 'video', 'voice', 'render']), shotId: idSchema.optional(),
+  title: z.string().max(512), status: z.enum(['pending', 'running', 'completed', 'failed', 'cancelled', 'skipped']),
+  estimatedCost: nonNegativeNumber, dependencies: z.array(idSchema).max(MAX_DIRECTOR_BATCH_DEPENDENCIES), error: z.string().max(4096).optional(),
+}).strict()).max(MAX_DIRECTOR_BATCH_NODES);
 
 const aiHotWindowSchema = z.enum(['24h', '7d']);
 const aiHotDateSchema = z.string().regex(/^\d{4}-\d{2}-\d{2}$/u).refine((value) => {
@@ -792,6 +810,7 @@ const webSearchRequestSchema = z
       .refine((providers) => new Set(providers).size === providers.length, 'Search providers must be unique.'),
   })
   .strict();
+
 export const ipcInputSchemas = {
   'app:get-state': z.void(),
   'app:get-bootstrap': z.void(),
@@ -877,6 +896,7 @@ export const ipcInputSchemas = {
     z.object({ theme: z.enum(['dark', 'light']) }).strict(),
     z.object({
       activeView: z.enum([
+        'projects',
         'new-task',
         'hot-board',
         'queue',
@@ -924,15 +944,49 @@ export const ipcInputSchemas = {
   'person-assets:list': z.void(),
   'person-assets:create': nameSchema,
   'person-assets:rename': z.object({ oldName: nameSchema, newName: nameSchema }).strict(),
+  'person-assets:usage': nameSchema,
   'person-assets:delete': nameSchema,
+  'person-assets:restore': z.string().regex(/^[0-9]+-[0-9a-f-]+$/i).max(128),
   'person-assets:list-images': nameSchema,
   'person-assets:import-images': nameSchema,
   'person-assets:open-directory': nameSchema,
   'editorial-collage:create': editorialCollageCreateInputSchema,
   'editorial-collage:save': editorialCollageSaveInputSchema,
+  'director:generate-shot-video': directorGenerateShotVideoRequestSchema,
+  'director:batch-create': z.object({
+    id: idSchema.optional(), workflowKind: z.enum(['director', 'image-lab']), projectId: idSchema,
+    episodeId: idSchema.nullable().optional(), status: z.enum(['draft', 'queued', 'running', 'paused', 'cancelling', 'completed', 'failed', 'cancelled']).optional(),
+    concurrency: finiteNumber, pauseRequested: z.boolean().optional(), cancelRequested: z.boolean().optional(),
+    recoveryRequired: z.boolean().optional(), recoveryReason: z.string().max(4096).optional(),
+    plan: directorBatchPlanSchema,
+    nodes: directorBatchNodesSchema,
+  }).strict(),
+  'director:batch-get': idOnlySchema,
+  'director:batch-list': z.object({ projectId: idSchema.optional(), episodeId: idSchema.nullable().optional(), statuses: z.array(z.enum(['draft', 'queued', 'running', 'paused', 'cancelling', 'completed', 'failed', 'cancelled'])).max(8).optional() }).strict(),
+  'director:batch-update': z.object({ id: idSchema, patch: z.object({ expectedUpdatedAt: timestampSchema.optional(), status: z.enum(['draft', 'queued', 'running', 'paused', 'cancelling', 'completed', 'failed', 'cancelled']).optional(), concurrency: finiteNumber.optional(), pauseRequested: z.boolean().optional(), cancelRequested: z.boolean().optional(), recoveryRequired: z.boolean().optional(), recoveryReason: z.string().max(4096).optional(), plan: directorBatchPlanSchema.optional(), nodes: directorBatchNodesSchema.optional() }).strict() }).strict(),
+  'director:batch-delete': idOnlySchema,
   'motion-comic:create': motionComicCreateInputSchema,
   'motion-comic:save': motionComicSaveInputSchema,
-  'director:render': z.object({ id: idSchema }).strict(),
+  'director:render': z.object({ id: idSchema, episodeId: idSchema.optional() }).strict(),
+  'director:recheck-subtitles': z.object({
+    id: idSchema,
+    reportId: idSchema,
+    renderFingerprint: z.string().min(1).max(256),
+    episodeId: idSchema.optional(),
+    shotIds: z.array(idSchema).min(1).max(500),
+    cueIds: z.array(idSchema).max(10_000),
+    expectedUpdatedAt: timestampSchema,
+  }).strict(),
+  'director:recheck-media': z.object({
+    id: idSchema,
+    reportId: idSchema,
+    renderFingerprint: z.string().min(1).max(256),
+    episodeId: idSchema.optional(),
+    shotIds: z.array(idSchema).min(1).max(500),
+    startMs: finiteNumber.nonnegative().optional(),
+    endMs: finiteNumber.nonnegative().optional(),
+    expectedUpdatedAt: timestampSchema,
+  }).strict(),
   'html-video:create-task': htmlVideoCreateTaskSchema,
   'html-video:update-config': htmlVideoConfigUpdateSchema,
   'html-video:update-scene': htmlVideoSceneUpdateSchema,
@@ -1006,6 +1060,7 @@ export const ipcInputSchemas = {
   'asset:read-data-url': pathSchema,
   'local-image:select': z.void(),
   'local-audio:select': z.literal('managed-bgm').optional(),
+  'local-subtitle-timestamps:select': z.void(),
   'local-folder:select': z.void(),
   'cookie-file:select': z.void(),
   'viral:open-login-window': z.void(),

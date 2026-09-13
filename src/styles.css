@@ -4,6 +4,7 @@
 @import './styles/storydream-ui.css';
 @import './styles/media-canvas.css';
 @import './styles/shell.css';
+@import './styles/redesign.css';
 
 :root[data-theme='light'] .app-shell {
   background: var(--bg);
@@ -560,6 +561,25 @@ h2 {
   padding: 16px;
   background: var(--media-bg);
   color: var(--media-text);
+}
+
+.music-mv-layout > .task-card > .panel-title-row {
+  position: sticky;
+  top: -16px;
+  z-index: 3;
+  margin: -16px -16px 14px;
+  padding: 16px 16px 12px;
+  border-bottom: 1px solid var(--line);
+  background: var(--panel);
+}
+
+.music-mv-layout > .task-card > .panel-title-row > div {
+  min-width: 0;
+}
+
+.music-mv-layout > .task-card > .panel-title-row h2,
+.music-mv-layout > .task-card > .panel-title-row span {
+  overflow-wrap: anywhere;
 }
 
 .music-mv-preview h3,
@@ -1201,6 +1221,19 @@ h2 {
   .hv-cover-editor-grid,
   .hv-cover-create-grid {
     grid-template-columns: 1fr;
+  }
+}
+
+@media (max-width: 560px) {
+  .music-mv-layout > .task-card > .panel-title-row {
+    align-items: stretch;
+    flex-direction: column;
+    gap: 9px;
+  }
+
+  .music-mv-layout > .task-card > .panel-title-row .primary-action {
+    width: 100%;
+    justify-content: center;
   }
 }
 
@@ -4009,7 +4042,8 @@ section.error-dialog .error-dialog-head > div > strong {
 }
 
 .status-pill.paused,
-.status-pill.draft {
+.status-pill.draft,
+.status-pill.pending {
   background: color-mix(in srgb, var(--warn) 10%, var(--shell-surface-raised));
   color: var(--warn);
 }
@@ -6961,7 +6995,7 @@ section.error-dialog .error-dialog-head > div > strong {
 }
 
 .app-shell[data-editorial-shell] button:not(:disabled):active {
-  transform: translateY(1px);
+  transform: none;
 }
 
 .settings-return-action { width: 100%; justify-content: flex-start; margin-bottom: 8px; border-bottom: 1px solid var(--shell-border); border-radius: 0; }

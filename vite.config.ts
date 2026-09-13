@@ -13,6 +13,7 @@ const FLUENT_VENDOR_SEGMENTS = [
 
 export function rendererManualChunk(moduleId: string): string | undefined {
   const normalizedId = moduleId.replaceAll('\\', '/');
+  if (normalizedId.includes('/node_modules/zod/')) return 'zod';
   return FLUENT_VENDOR_SEGMENTS.some((segment) => normalizedId.includes(segment))
     ? 'fluent-ui'
     : undefined;

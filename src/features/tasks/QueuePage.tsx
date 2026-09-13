@@ -6,7 +6,7 @@ import { sortTimelineEvents } from '../../components/EventTimeline';
 import { AsyncActionFeedback as InlineActionFeedback } from '../../components/AsyncActionFeedback';
 import { StatusBadge as StatusPill } from '../../components/StatusBadge';
 import type { ApplyMutationResult, RendererAppState as AppState } from '../../app/route-types';
-import { collectTaskEventPages } from '../../shared/state-reconciliation';
+import { collectTaskEventPages, isolateTaskEvents } from '../../shared/state-reconciliation';
 import type { StoryDreamApi } from '../../shared/storydream-api';
 import type { SequencedTaskEvent, Task, TaskStatus } from '../../shared/types';
 import { taskProgressSnapshot } from '../../shared/task-progress';
@@ -36,8 +36,10 @@ export function QueuePage({
   const latestTask = state.tasks[0];
   const visibleTasks = state.tasks.filter((task) => queueFilter === 'all'
     || (queueFilter === 'running' ? task.status === 'running' : ['draft', 'pending', 'paused'].includes(task.status)));
-  const fallbackEvents = latestTask ? state.events.filter((event) => event.taskId === latestTask.id || event.taskId === 'live') : state.events;
-  const events = loadedEvents.length ? loadedEvents : fallbackEvents;
+  const fallbackEvents = latestTask ? isolateTaskEvents(state.events, latestTask) : [];
+  const events = latestTask
+    ? isolateTaskEvents(loadedEvents.length ? loadedEvents : fallbackEvents, latestTask)
+    : [];
   const queueAction = useAsyncAction();
 
   useEffect(() => {
@@ -47,6 +49,7 @@ export function QueuePage({
       return () => { current = false; };
     }
     const taskId = latestTask.id;
+    setLoadedEvents([]);
     void (async () => {
       try {
         const first = await api.listTaskEvents(taskId, { limit: 100 });
@@ -57,7 +60,7 @@ export function QueuePage({
       }
     })();
     return () => { current = false; };
-  }, [api, eventRefreshTick, latestTask?.id]);
+  }, [api, eventRefreshTick, latestTask?.id, latestTask?.runGeneration]);
 
   async function setStatus(task: Task, status: Extract<TaskStatus, 'paused' | 'cancelled'>) {
     await queueAction.run(async () => {

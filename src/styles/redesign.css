@@ -1,0 +1,529 @@
+/* Shared Web/Electron shell direction: quiet workspace surfaces and one clear action. */
+.app-shell[data-editorial-shell] {
+  grid-template-rows: var(--sd-window-height) minmax(0, 1fr);
+  background: var(--shell-bg);
+}
+
+.app-shell[data-editorial-shell]::before {
+  display: none;
+}
+
+.app-shell[data-editorial-shell] .window-line {
+  min-height: var(--sd-window-height);
+  padding: 0 12px;
+  border-bottom: 1px solid var(--shell-border);
+  background: var(--shell-surface-raised);
+}
+
+.app-shell[data-editorial-shell] .window-title {
+  gap: 7px;
+  color: var(--shell-text);
+  font-size: 12px;
+}
+
+.app-shell[data-editorial-shell] .app-mark,
+.app-shell[data-editorial-shell] .brand-logo {
+  width: 28px;
+  height: 28px;
+  border: 0;
+  border-radius: 6px;
+  background: var(--shell-text);
+  color: var(--shell-bg);
+  font-size: 16px;
+}
+
+.app-shell[data-editorial-shell] .window-controls.sd-toolbar {
+  min-height: 32px;
+  margin-right: -12px;
+}
+
+.app-shell[data-editorial-shell] .window-control-button.sd-icon-button {
+  width: 40px;
+  min-width: 40px;
+  height: 32px;
+}
+
+.app-shell[data-editorial-shell] .shell-grid {
+  grid-template-columns: var(--sd-sidebar-width) minmax(0, 1fr);
+}
+
+.app-shell[data-editorial-shell] .sidebar {
+  padding: 18px 12px 12px;
+  border-right: 1px solid var(--shell-border);
+  background: var(--shell-surface);
+}
+
+.app-shell[data-editorial-shell] .brand-block {
+  margin-bottom: 24px;
+  padding: 0 6px;
+}
+
+.app-shell[data-editorial-shell] .brand-block > div:not(.brand-logo) {
+  gap: 0;
+}
+
+.app-shell[data-editorial-shell] .brand-block span {
+  font-size: var(--sd-text-caption);
+  color: var(--shell-muted);
+}
+
+.app-shell[data-editorial-shell] .brand-bell {
+  display: none;
+}
+
+.app-shell[data-editorial-shell] .new-task-button,
+.app-shell[data-editorial-shell] .primary-action {
+  min-height: 38px;
+  border-radius: 6px;
+  background: var(--shell-accent);
+  color: var(--shell-focus-contrast);
+  box-shadow: none;
+  font-weight: 600;
+}
+
+.app-shell[data-editorial-shell] .new-task-button:hover,
+.app-shell[data-editorial-shell] .primary-action:hover {
+  background: var(--shell-accent-strong);
+  filter: none;
+  transform: none;
+}
+
+.app-shell[data-editorial-shell] .new-task-button {
+  margin-bottom: 16px;
+}
+
+.app-shell[data-editorial-shell] kbd {
+  border-color: color-mix(in srgb, var(--shell-focus-contrast) 34%, transparent);
+  background: transparent;
+  color: inherit;
+}
+
+.app-shell[data-editorial-shell] .nav-list {
+  flex: 1 1 auto;
+  min-height: 0;
+  align-content: start;
+  overflow-y: auto;
+  overflow-x: hidden;
+  overscroll-behavior: contain;
+  gap: 2px;
+}
+
+.app-shell[data-editorial-shell] .nav-group {
+  gap: 2px;
+  margin-bottom: 10px;
+}
+
+.app-shell[data-editorial-shell] .nav-group-secondary {
+  margin-top: 12px;
+  padding-top: 18px;
+  border-top: 1px solid var(--shell-border);
+}
+
+.app-shell[data-editorial-shell] .nav-section-label {
+  margin: 0 8px 5px;
+  color: var(--shell-muted);
+  font-size: var(--sd-text-caption);
+  font-weight: 600;
+  letter-spacing: 0;
+}
+
+.app-shell[data-editorial-shell] .nav-item {
+  min-height: 40px;
+  gap: 10px;
+  padding: 0 10px;
+  border: 1px solid transparent;
+  border-radius: 6px;
+  color: var(--shell-muted);
+  font-size: 13px;
+}
+
+.app-shell[data-editorial-shell] .nav-item:hover {
+  background: var(--shell-hover);
+  color: var(--shell-text);
+}
+
+.app-shell[data-editorial-shell] .nav-item.active {
+  border-color: transparent;
+  background: var(--shell-selected);
+  color: var(--shell-accent-strong);
+  font-weight: 600;
+}
+
+.app-shell[data-editorial-shell] .nav-item.active::before {
+  top: 8px;
+  bottom: 8px;
+  width: 2px;
+  background: var(--shell-accent);
+}
+
+.app-shell[data-editorial-shell] .nav-item small {
+  display: none;
+}
+
+.app-shell[data-editorial-shell] .nav-item .fui-Button__icon {
+  color: inherit;
+}
+
+.app-shell[data-editorial-shell] .recent-task-strip,
+.app-shell[data-editorial-shell] .recent-task-compact {
+  display: none;
+}
+
+.app-shell[data-editorial-shell] .sidebar-bottom {
+  flex: 0 0 auto;
+  min-height: 0;
+  display: grid;
+  grid-template-rows: auto auto;
+  gap: 6px;
+  margin-top: 12px;
+  padding-top: 12px;
+  border-top: 1px solid var(--shell-border);
+}
+
+.app-shell[data-editorial-shell] .trial-activation-bar,
+.app-shell[data-editorial-shell] .credit-chip,
+.app-shell[data-editorial-shell] .feedback-link {
+  width: 100%;
+  justify-content: flex-start;
+  min-height: 36px;
+  height: 36px;
+  border-color: transparent;
+  background: transparent;
+  font-size: 12px;
+}
+
+.app-shell[data-editorial-shell] .trial-activation-bar {
+  background: var(--shell-surface-raised);
+  border-color: var(--shell-border);
+}
+
+.app-shell[data-editorial-shell] .account-entry-grid {
+  gap: 2px;
+}
+
+.app-shell[data-editorial-shell] .content {
+  grid-template-rows: auto minmax(0, 1fr);
+  background: var(--shell-bg);
+}
+
+.app-shell[data-editorial-shell] .page-head,
+.app-shell[data-editorial-shell] .page-head.task-operations-page-head {
+  min-height: 88px;
+  grid-template-columns: minmax(0, 1fr) auto auto auto;
+  gap: 20px;
+  padding: 16px var(--sd-page-inset);
+  border-bottom: 1px solid var(--shell-border);
+  background: var(--shell-surface-raised);
+}
+
+.app-shell[data-editorial-shell] .page-head::before {
+  display: none;
+}
+
+.app-shell[data-editorial-shell] .page-head h1 {
+  font-size: 22px;
+  font-weight: 600;
+  line-height: 1.35;
+}
+
+.app-shell[data-editorial-shell] .page-head p {
+  margin-top: 5px;
+  color: var(--shell-muted);
+  font-size: 13px;
+}
+
+.app-shell[data-editorial-shell] .page-head .page-breadcrumb {
+  display: block;
+  margin-bottom: 5px;
+  color: var(--shell-muted);
+  font-size: var(--sd-text-caption);
+}
+
+.app-shell[data-editorial-shell]:has(.task-operations-page-head) .content {
+  grid-template-rows: auto minmax(0, 1fr);
+}
+
+.shell-environment {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+}
+
+.shell-preview-label {
+  flex-shrink: 0;
+  border: 1px solid var(--shell-border);
+  border-radius: 4px;
+  padding: 3px 7px;
+  color: var(--shell-muted);
+  font-size: 12px;
+}
+
+.app-shell[data-editorial-shell] .top-notice,
+.app-shell[data-editorial-shell] .save-state {
+  min-height: 28px;
+  border: 0;
+  background: transparent;
+  box-shadow: none;
+  color: var(--shell-muted);
+  font-size: 12px;
+}
+
+.app-shell[data-editorial-shell] .top-notice {
+  min-width: 0;
+  max-width: 320px;
+}
+
+.app-shell[data-editorial-shell] .top-notice span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.app-shell[data-editorial-shell] .theme-toggle {
+  width: 32px;
+  height: 32px;
+  border: 1px solid var(--shell-border);
+  border-radius: 6px;
+  background: transparent;
+  color: var(--shell-muted);
+}
+
+.app-shell[data-editorial-shell] .theme-toggle:hover {
+  background: var(--shell-surface);
+  color: var(--shell-text);
+}
+
+.app-shell[data-editorial-shell] .content > .global-action-banner {
+  padding: 8px 24px;
+}
+
+.app-shell[data-editorial-shell] .panel,
+.app-shell[data-editorial-shell] .task-card,
+.app-shell[data-editorial-shell] .settings-content,
+.app-shell[data-editorial-shell] .image-grid-panel,
+.app-shell[data-editorial-shell] .draft-controls,
+.app-shell[data-editorial-shell] .draft-stage {
+  border-radius: 6px;
+  box-shadow: none;
+}
+
+:root[data-theme='light'] .app-shell[data-editorial-shell] .sidebar {
+  background: var(--shell-surface);
+}
+
+.app-shell[data-editorial-shell] .settings-content.panel {
+  padding: 4px 0 16px 24px;
+  border: 0;
+  border-left: 1px solid var(--shell-border);
+  border-radius: 0;
+  background: transparent;
+}
+
+.app-shell[data-editorial-shell] .settings-content > .config-card {
+  padding: 20px 0;
+  border: 0;
+  border-top: 1px solid var(--shell-border);
+  border-radius: 0;
+  background: transparent;
+}
+
+.app-shell[data-editorial-shell] .settings-tab {
+  min-height: 58px;
+  border-color: transparent;
+  background: transparent;
+  border-radius: var(--sd-radius);
+}
+
+.app-shell[data-editorial-shell] .settings-tab.active {
+  background: var(--shell-selected);
+  color: var(--shell-accent-strong);
+}
+
+.app-shell[data-editorial-shell] .settings-tab:hover:not(.active) {
+  background: var(--shell-hover);
+}
+
+.app-shell[data-editorial-shell] .settings-tab strong {
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.app-shell[data-editorial-shell] .settings-menu {
+  gap: 3px;
+}
+
+.settings-section-select {
+  display: none;
+}
+
+.app-shell[data-editorial-shell] .settings-heading .square-icon {
+  background: transparent;
+  color: var(--shell-accent-strong);
+}
+
+.app-shell[data-editorial-shell] .settings-content .provider-profile-card.active,
+.app-shell[data-editorial-shell] .settings-content .provider-profile-card.selected {
+  border-color: var(--shell-accent);
+  background: var(--shell-selected);
+}
+
+@media (max-width: 1120px) {
+  .app-shell[data-editorial-shell] .shell-grid {
+    grid-template-columns: 64px minmax(0, 1fr);
+  }
+
+  .app-shell[data-editorial-shell] .sidebar {
+    align-items: center;
+    padding: 12px 8px;
+  }
+
+  .app-shell[data-editorial-shell] .brand-block,
+  .app-shell[data-editorial-shell] .new-task-button,
+  .app-shell[data-editorial-shell] .nav-item {
+    width: 46px;
+    min-width: 46px;
+    justify-content: center;
+  }
+
+  .app-shell[data-editorial-shell] .brand-block {
+    padding: 0;
+  }
+
+  .app-shell[data-editorial-shell] .brand-block > div:not(.brand-logo),
+  .app-shell[data-editorial-shell] .nav-section-label,
+  .app-shell[data-editorial-shell] .new-task-button .sd-button__content,
+  .app-shell[data-editorial-shell] .nav-item .sd-button__content,
+  .app-shell[data-editorial-shell] .top-notice,
+  .app-shell[data-editorial-shell] .save-state {
+    display: none;
+  }
+
+  .app-shell[data-editorial-shell] .new-task-button,
+  .app-shell[data-editorial-shell] .nav-item {
+    min-height: 38px;
+    padding: 0;
+    grid-template-columns: 1fr;
+    place-items: center;
+  }
+
+  .app-shell[data-editorial-shell] .nav-list {
+    width: 46px;
+    padding-right: 0;
+  }
+
+  .app-shell[data-editorial-shell] .page-head,
+  .app-shell[data-editorial-shell] .page-head.task-operations-page-head {
+    grid-template-columns: minmax(0, 1fr) auto;
+  }
+
+  .app-shell[data-editorial-shell] .shell-environment {
+    display: none;
+  }
+
+  .app-shell[data-editorial-shell] .trial-activation-bar,
+  .app-shell[data-editorial-shell] .credit-chip {
+    width: 46px;
+    min-width: 46px;
+    height: 40px;
+    min-height: 40px;
+    padding: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+  }
+}
+
+@media (max-width: 680px) {
+  :root {
+    --sd-page-inset: 16px;
+  }
+
+  .app-shell[data-editorial-shell] .page-head,
+  .app-shell[data-editorial-shell] .page-head.task-operations-page-head {
+    min-height: 80px;
+    padding: 12px var(--sd-page-inset);
+  }
+
+  .app-shell[data-editorial-shell] .settings-content.panel {
+    padding: 16px 0;
+    border-left: 0;
+    border-top: 1px solid var(--shell-border);
+  }
+}
+
+@media (max-width: 760px) {
+  .app-shell[data-editorial-shell] .settings-menu {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .app-shell[data-editorial-shell] .settings-tab {
+    display: none;
+  }
+
+  .settings-section-select {
+    display: grid;
+  }
+
+  .app-shell[data-editorial-shell] .settings-content > .panel-title-row {
+    flex-direction: column;
+    align-items: stretch;
+    gap: 16px;
+  }
+
+  .app-shell[data-editorial-shell] .settings-heading > div > span {
+    display: none;
+  }
+
+  .app-shell[data-editorial-shell] .settings-content > .panel-title-row > .button-row {
+    width: 100%;
+    flex-wrap: wrap;
+    justify-content: flex-start;
+  }
+
+  .app-shell[data-editorial-shell] .settings-content > .panel-title-row > .button-row > button {
+    flex: 0 0 auto;
+    white-space: nowrap;
+  }
+
+  .app-shell[data-editorial-shell] .settings-content .profile-switcher-head {
+    flex-wrap: wrap;
+    align-items: flex-start;
+  }
+
+  .app-shell[data-editorial-shell] .settings-content .profile-switcher-head > button {
+    flex: 0 0 auto;
+    white-space: nowrap;
+  }
+
+  .app-shell[data-editorial-shell] .settings-content .provider-profile-card {
+    grid-template-columns: 34px minmax(0, 1fr);
+  }
+
+  .app-shell[data-editorial-shell] .settings-content .profile-drag-dot {
+    display: none;
+  }
+
+  .app-shell[data-editorial-shell] .settings-content .profile-actions {
+    grid-column: 1 / -1;
+    justify-content: flex-end;
+    padding-top: 8px;
+    border-top: 1px solid var(--shell-border);
+  }
+
+  .app-shell[data-editorial-shell] .settings-content .profile-active-badge {
+    white-space: nowrap;
+  }
+
+  .app-shell[data-editorial-shell] .settings-content .profile-editor-grid,
+  .app-shell[data-editorial-shell] .settings-content .form-grid {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+
+.app-shell[data-editorial-shell][data-runtime='browser-fallback']:not(:has(.director-desk)) {
+  grid-template-rows: minmax(0, 1fr);
+}
+
+.app-shell[data-runtime='browser-fallback'] > .window-line {
+  display: none;
+}

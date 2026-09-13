@@ -2,6 +2,7 @@ import {
   BookOpen,
   Clapperboard,
   Circle,
+  Code2,
   Flame,
   FlaskConical,
   History,
@@ -10,8 +11,8 @@ import {
   LayoutTemplate,
   ListChecks,
   Mic2,
+  MonitorPlay,
   Music,
-  Play,
   Plus,
   Radar,
   Settings,
@@ -28,55 +29,127 @@ export interface NavigationItem {
   icon: ComponentType<{ size?: number }>;
 }
 
+export type NavigationGroupId = 'projects' | 'assets' | 'inspiration' | 'templates' | 'tasks' | 'settings';
+
 export interface NavigationGroup {
-  id: 'production' | 'asset-lab' | 'template-system';
+  id: NavigationGroupId;
   label: string;
+  defaultView: ShellView;
   items: NavigationItem[];
 }
 
 export const newTaskPrimaryAction: NavigationItem = { view: 'new-task', label: '新建任务', hint: '素材成片', icon: Plus };
+export const projectHomeNavigationItem: NavigationItem = { view: 'projects', label: '项目', hint: '继续与新建', icon: LayoutTemplate };
 
 export const productionNavItems: NavigationItem[] = [
-  { view: 'hot-board', label: '实时热榜', hint: '热点选题', icon: TrendingUp },
-  { view: 'queue', label: '自动化队列', hint: '任务队列 · 运行与审批', icon: ListChecks },
-  { view: 'history', label: '历史任务', hint: '本地记录', icon: History },
   { view: 'editorial-collage', label: 'VOX 视频', hint: '解释型视觉叙事', icon: Clapperboard },
   { view: 'motion-comic', label: 'AI 漫剧', hint: '系列与分镜', icon: Images },
-  { view: 'book-selection', label: '选品助手', hint: '商品卖点', icon: BookOpen },
-  { view: 'benchmark', label: '对标监控', hint: '三平台洞察', icon: Radar },
-  { view: 'person-assets', label: '素材库', hint: '人物与媒体', icon: Images },
+  { view: 'html-video', label: 'HTML 动画', hint: '代码驱动视频', icon: Code2 },
+  { view: 'music-mv', label: '音乐 MV', hint: '歌词与节奏', icon: Music },
+];
+
+export const projectSectionItems: NavigationItem[] = [
+  projectHomeNavigationItem,
+  ...productionNavItems,
 ];
 
 export const assetLabNavItems: NavigationItem[] = [
   { view: 'image-lab', label: '画图实验室', hint: '分镜图片', icon: FlaskConical },
   { view: 'voice-lab', label: '配音实验室', hint: '音色试听', icon: Mic2 },
-  { view: 'music-mv', label: '音乐 MV', hint: '歌词成片', icon: Music },
+  { view: 'person-assets', label: '素材库', hint: '人物与媒体', icon: Images },
+];
+
+const inspirationNavItems: NavigationItem[] = [
+  { view: 'hot-board', label: '实时热榜', hint: '热点选题', icon: TrendingUp },
+  { view: 'benchmark', label: '对标监控', hint: '三平台洞察', icon: Radar },
+  { view: 'book-selection', label: '选品助手', hint: '商品卖点', icon: BookOpen },
   { view: 'viral-analyzer', label: '爆款拆解', hint: '拉片复刻', icon: Flame },
-  { view: 'html-video', label: 'HTML 动画视频', hint: 'HTML 渲染', icon: Play },
 ];
 
 export const templateSystemNavItems: NavigationItem[] = [
   { view: 'prompt-templates', label: '提示词模板', hint: '代理提示词', icon: Sparkles },
   { view: 'draft-templates', label: '模板', hint: '草稿模板 · 画布', icon: LayoutTemplate },
+];
+
+export const taskSectionItems: NavigationItem[] = [
+  { view: 'queue', label: '自动化队列', hint: '任务队列 · 运行与审批', icon: ListChecks },
+  { view: 'history', label: '历史任务', hint: '本地记录', icon: History },
+];
+
+export const settingsSectionItems: NavigationItem[] = [
   { view: 'settings', label: '系统设置', hint: 'API 与路径', icon: Settings },
+];
+
+export const utilityNavItems: NavigationItem[] = [
   { view: 'account', label: '账户中心', hint: '资料与积分', icon: Circle },
   { view: 'activation', label: '激活管理', hint: '试用与授权', icon: KeyRound },
 ];
 
-export const sidebarNavGroups: NavigationGroup[] = [
-  { id: 'production', label: '创作生产', items: productionNavItems },
-  { id: 'asset-lab', label: '素材与实验', items: assetLabNavItems },
-  { id: 'template-system', label: '模板与系统', items: templateSystemNavItems },
+export const primaryNavGroups: NavigationGroup[] = [
+  { id: 'projects', label: '项目', defaultView: 'projects', items: projectSectionItems },
+  { id: 'assets', label: '素材库', defaultView: 'image-lab', items: assetLabNavItems },
+  { id: 'inspiration', label: '灵感', defaultView: 'hot-board', items: inspirationNavItems },
+  { id: 'templates', label: '模板', defaultView: 'prompt-templates', items: templateSystemNavItems },
+  { id: 'tasks', label: '任务', defaultView: 'queue', items: taskSectionItems },
+  { id: 'settings', label: '设置', defaultView: 'settings', items: settingsSectionItems },
 ];
 
-export const sidebarNavItems: NavigationItem[] = sidebarNavGroups.flatMap((group) => group.items);
-export const navigationItems: NavigationItem[] = [newTaskPrimaryAction, ...sidebarNavItems];
+export const primaryNavItems: NavigationItem[] = primaryNavGroups.flatMap((group) => group.items);
+
+// Compatibility alias retained for older screens and contract tests.
+export const sidebarNavGroups: NavigationGroup[] = primaryNavGroups;
+
+export const sidebarNavItems: NavigationItem[] = [...primaryNavItems, ...utilityNavItems];
+export const navigationItems: NavigationItem[] = [newTaskPrimaryAction, ...primaryNavItems, ...utilityNavItems];
 export const taskDetailNavigationItem = { label: '任务详情', hint: '单任务流水线' } as const;
 
-export function navigationItemForView(view: ShellView): Pick<NavigationItem, 'label' | 'hint'> {
-  return view === 'task-detail'
-    ? taskDetailNavigationItem
-    : navigationItems.find((item) => item.view === view) ?? newTaskPrimaryAction;
+const viewToPrimaryView: Partial<Record<ShellView, ShellView>> = {
+  'new-task': 'projects',
+  'task-detail': 'projects',
+  'editorial-collage': 'projects',
+  'motion-comic': 'projects',
+  'html-video': 'projects',
+  'music-mv': 'projects',
+  'image-lab': 'image-lab',
+  'voice-lab': 'image-lab',
+  'person-assets': 'image-lab',
+  'hot-board': 'hot-board',
+  benchmark: 'hot-board',
+  'book-selection': 'hot-board',
+  'viral-analyzer': 'hot-board',
+  'prompt-templates': 'prompt-templates',
+  'draft-templates': 'prompt-templates',
+  queue: 'queue',
+  history: 'queue',
+  settings: 'settings',
+  account: 'settings',
+  activation: 'settings',
+  projects: 'projects',
+};
+
+export function navigationItemForView(view: ShellView): NavigationItem {
+  if (view === 'task-detail') {
+    const detail = navigationItems.find((item) => item.view === 'history') ?? projectHomeNavigationItem;
+    return { ...detail, label: taskDetailNavigationItem.label, hint: taskDetailNavigationItem.hint };
+  }
+  return navigationItems.find((item) => item.view === view)
+    ?? navigationItems.find((item) => item.view === viewToPrimaryView[view])
+    ?? projectHomeNavigationItem;
+}
+
+export function primaryNavigationGroupForView(view: ShellView): NavigationGroup {
+  const primaryView = viewToPrimaryView[view] ?? view;
+  return primaryNavGroups.find((group) => group.items.some((item) => item.view === primaryView))
+    ?? primaryNavGroups[0];
+}
+
+export function navigationPrimaryView(view: ShellView): ShellView {
+  return primaryNavigationGroupForView(view).defaultView;
+}
+
+export function secondaryNavigationItems(group: NavigationGroup): NavigationItem[] {
+  if (group.items.length <= 1) return [];
+  return group.items.filter((item) => item.view !== group.defaultView || item.label !== group.label);
 }
 
 export function taskWorkspaceView(taskType: string | null | undefined): Extract<ShellView, 'task-detail' | 'editorial-collage' | 'motion-comic' | 'html-video'> {
@@ -88,7 +161,8 @@ export function taskWorkspaceView(taskType: string | null | undefined): Extract<
 
 export function pageSubtitle(view: ShellView): string {
   const map: Partial<Record<ShellView, string>> = {
-    'new-task': '粘贴一段人物故事，几分钟后在剪映里打开',
+    projects: '继续最近项目，或按制作类型创建新的视频项目',
+    'new-task': '选择制作方式，按步骤建立新的视频项目',
     'hot-board': '追踪多平台实时热点，筛选后直接带入创作',
     'book-selection': '汇总对标证据与机会评分，把选品简报带入新任务',
     benchmark: '监控抖音、视频号和 B 站对标作品，筛选后进入拆解或选品',

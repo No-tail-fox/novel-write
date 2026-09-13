@@ -1,4 +1,7 @@
 import React, { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
+import { useWorkspaceNavigation } from '../../app/workspace-navigation';
+import { useWorkspaceDraft } from '../../app/workspace-draft';
+import { Button } from '../../ui';
 import { Clapperboard, Eye, FileText, FolderOpen, Image as ImageIcon, Loader2, Mic2, Pause, Play, Plus, RotateCcw, Save, Search, Settings2, Wand2, XCircle } from 'lucide-react';
 import { ErrorDetails as ErrorSummaryButton } from '../../components/ErrorDetails';
 import { FormField as Field } from '../../components/FormField';
@@ -70,7 +73,7 @@ export function HtmlVideoPage({
   const [ttsProvider, setTtsProvider] = useState<TtsProvider>(() => normalizeRuntimeTtsProvider(state.config.tts.provider));
   const [voiceId, setVoiceId] = useState(() => defaultTaskSpeakerForProvider(state.config.tts.provider, state.config));
   const [ttsSpeed, setTtsSpeed] = useState<number>(HTML_VIDEO_JOB_DEFAULTS.ttsSpeed);
-  const [bgmVolume, setBgmVolume] = useState<HtmlVideoJobConfig['bgmVolume']>(HTML_VIDEO_JOB_DEFAULTS.bgmVolume);
+  const [bgmVolume, setBgmVolume] = useState<NonNullable<HtmlVideoJobConfig['bgmVolume']>>(HTML_VIDEO_JOB_DEFAULTS.bgmVolume ?? 'medium');
   const [transitionType, setTransitionType] = useState<HtmlVideoTransition>(HTML_VIDEO_JOB_DEFAULTS.transitionType);
   const [sceneMotion, setSceneMotion] = useState<HtmlVideoMotion>(HTML_VIDEO_JOB_DEFAULTS.sceneMotion);
   const [coverImageMode, setCoverImageMode] = useState<HtmlVideoCoverMode>(HTML_VIDEO_JOB_DEFAULTS.coverImageMode);
@@ -90,6 +93,19 @@ export function HtmlVideoPage({
   const htmlVideoAction = useAsyncAction();
   const researchAction = useAsyncAction();
   const researchRequestIdRef = useRef(0);
+  const { requestLeave } = useWorkspaceNavigation();
+  const creationDraft = useWorkspaceDraft({
+    id: 'html-video-create', label: 'HTML 动画新建草稿', enabled: pageMode === 'create', busy: running,
+    value: { copy, aiKeyword, extraRequirements, style, ratio, maxScenes, foreground, bgmId, ttsProvider, voiceId, ttsSpeed, bgmVolume, transitionType, sceneMotion, coverImageMode, coverTemplate, coverRatio, draftTemplate },
+    restore: (draft) => {
+      setCopy(draft.copy); setAiKeyword(draft.aiKeyword); setExtraRequirements(draft.extraRequirements);
+      setStyle(draft.style); setRatio(draft.ratio); setMaxScenes(draft.maxScenes); setForeground(draft.foreground);
+      setBgmId(draft.bgmId); setTtsProvider(draft.ttsProvider); setVoiceId(draft.voiceId); setTtsSpeed(draft.ttsSpeed);
+      setBgmVolume(draft.bgmVolume); setTransitionType(draft.transitionType); setSceneMotion(draft.sceneMotion);
+      setCoverImageMode(draft.coverImageMode); setCoverTemplate(draft.coverTemplate); setCoverRatio(draft.coverRatio); setDraftTemplate(draft.draftTemplate);
+      if (draft.copy) setCopyMode('paste');
+    },
+  });
   const bgmOptions = validBgmItems(state.config);
   const createVoiceOptions = ttsVoiceOptionsForProvider(ttsProvider, state.minimaxCloneVoices);
   const createStyleOptions = editableHtmlVideoStyleOptions(state.customStyles, style);
@@ -181,6 +197,7 @@ export function HtmlVideoPage({
 
   const openHtmlVideoTask = useCallback(async (taskId: string) => {
     if (!taskId) return;
+    await requestLeave(async () => {
     try {
       const detail = await api.getTaskDetail(taskId);
       if (!detail || !isHtmlVideoTask(detail)) throw new Error('该 HTML 动画任务不存在或已被移除。');
@@ -192,7 +209,8 @@ export function HtmlVideoPage({
     } catch (error) {
       setMessage(error instanceof Error ? error.message : String(error));
     }
-  }, [api, refreshTaskDetail]);
+    });
+  }, [api, refreshTaskDetail, requestLeave]);
 
   useEffect(() => {
     if (!requestedTaskId) return;
@@ -482,6 +500,7 @@ export function HtmlVideoPage({
     }
     await htmlVideoAction.run(async () => {
       setRunning(true);
+      const submittedDraft = creationDraft.snapshot();
       setMessage('');
       try {
         setCreatePhase('create');
@@ -515,8 +534,10 @@ export function HtmlVideoPage({
             ...current.map((task) => ({ ...task, taskType: 'html-video' as const })),
             createdTask,
           ]));
-          setActiveTaskId(createdTask.id);
-          setPageMode('workspace');
+          if (creationDraft.complete(submittedDraft)) {
+            setActiveTaskId(createdTask.id);
+            setPageMode('workspace');
+          }
         }
         setMessage(isBrowserPreview ? '已创建浏览器预览快照，未执行特权渲染。' : 'HTML 动画视频任务已创建并开始生成。');
       } finally {
@@ -533,10 +554,12 @@ export function HtmlVideoPage({
   }
 
   function openHtmlVideoCreation() {
+    void requestLeave(() => {
     setPageMode('create');
     setActiveTaskId('');
     setWorkspaceMode('automatic');
     setMessage('');
+    });
   }
 
   async function setTaskStatus(status: Extract<TaskStatus, 'paused' | 'cancelled' | 'running'>) {
@@ -904,16 +927,16 @@ export function HtmlVideoPage({
           </div>
           <div className="hv-studio-canvas-actions">
             <div className="hv-workspace-mode" role="group" aria-label="HTML 动画工作区模式">
-              <button type="button" className={workspaceMode === 'automatic' ? 'active' : ''} aria-pressed={workspaceMode === 'automatic'} onClick={() => setWorkspaceMode('automatic')}>自动制作</button>
-              <button
+              <Button className={workspaceMode === 'automatic' ? 'active' : ''} aria-pressed={workspaceMode === 'automatic'} onClick={() => { if (workspaceMode !== 'automatic') void requestLeave(() => setWorkspaceMode('automatic')); }}>自动制作</Button>
+              <Button
                 type="button"
                 className={workspaceMode === 'authoring' ? 'active' : ''}
                 aria-pressed={workspaceMode === 'authoring'}
                 disabled={!activeTask || pipelineData.compositions.length === 0 || Boolean(pipelineParse.error)}
-                onClick={() => setWorkspaceMode('authoring')}
+                onClick={() => { if (workspaceMode !== 'authoring') void requestLeave(() => setWorkspaceMode('authoring')); }}
               >
                 可视编排
-              </button>
+              </Button>
             </div>
             <span className="hv-studio-canvas-ratio">{pipelineData.config.ratio ?? ratio}</span>
           </div>

@@ -1,5 +1,6 @@
 import { AppError, normalizeAppError } from '../../shared/app-error';
 import type { ResearchCopyComposeInput } from '../../shared/types';
+import type { EditorialScriptDuration } from '../../shared/editorial-script';
 
 export type DirectorCopyAssistIntent = 'create' | 'revise';
 export type DirectorCopyAssistMode = 'vox' | 'motion-comic';
@@ -9,6 +10,7 @@ export interface DirectorCopyAssistRequestInput {
   intent: DirectorCopyAssistIntent;
   title: string;
   copy: string;
+  durationMs?: EditorialScriptDuration;
 }
 
 export function buildDirectorCopyAssistRequest(input: DirectorCopyAssistRequestInput): ResearchCopyComposeInput {
@@ -23,8 +25,14 @@ export function buildDirectorCopyAssistRequest(input: DirectorCopyAssistRequestI
 
   const isVox = input.mode === 'vox';
   const isRevision = input.intent === 'revise';
+  const fullText = input.durationMs === 'auto';
+  const voxSeconds = (typeof input.durationMs === 'number' ? input.durationMs : 30_000) / 1000;
+  const voxTargetLength = fullText && isRevision ? copy.length : voxSeconds * 3;
+  const voxFormat = fullText
+    ? `输出解释型视频的中文旁白文案。${isRevision ? '保留原文全部事实与上下文，篇幅与原稿相当，不为固定视频时长删减内容。' : `约 ${voxTargetLength} 字，时长随正文分配。`}`
+    : `输出一段适合 ${voxSeconds} 秒解释型视频的中文旁白文案，约 ${voxTargetLength} 字，最多 ${Math.floor(voxSeconds * 3.5)} 字。`;
   const formatRequirements = isVox
-    ? '输出一段适合 30 秒解释型视频的中文旁白文案，约 180-260 字。结构必须包含钩子、背景、证据和结论。只输出可直接配音的正文，不写标题、分段标签或说明。'
+    ? `${voxFormat}结构必须包含钩子、背景、证据和结论。只输出可直接配音的正文，不写标题、分段标签或说明。`
     : '输出一条 60-120 字的 AI 漫剧核心设定，必须明确主角、异常事件、核心冲突和可连续推进的悬念。只输出一段设定正文，不要扩写成完整剧本、分镜或人物小传。';
   const revisionRequirements = isRevision
     ? isVox
@@ -41,7 +49,7 @@ export function buildDirectorCopyAssistRequest(input: DirectorCopyAssistRequestI
       content: copy,
     }] : [],
     useBuiltinKnowledge: !isRevision,
-    targetLength: isVox ? 220 : 90,
+    targetLength: isVox ? voxTargetLength : 90,
   };
 }
 

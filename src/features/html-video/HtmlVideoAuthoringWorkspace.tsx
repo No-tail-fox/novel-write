@@ -17,6 +17,8 @@ import type {
   TaskStatus,
 } from '../../shared/types';
 import { useAsyncAction } from '../../ui/async-action';
+import { useUnsavedChanges } from '../../app/workspace-navigation';
+import { SelectField } from '../../ui';
 
 type AuthoringPanel = 'source' | 'properties' | 'lint' | 'queue';
 type DragKind = 'move' | 'trim-start' | 'trim-end';
@@ -84,6 +86,13 @@ export function HtmlVideoAuthoringWorkspace({
   const parsed = useMemo(() => parseCompositionSource(deferredSource, composition?.durationSec ?? 0), [composition?.durationSec, deferredSource]);
   const selectedClip = parsed.clips.find((clip) => clip.id === selectedClipId) ?? parsed.clips[0] ?? null;
   const dirty = Boolean(composition && source !== composition.source);
+  const sourceRef = useRef(source);
+  sourceRef.current = source;
+  const sourceLeave = useUnsavedChanges({
+    id: 'html-composition', label: `HTML 场景 ${sceneIndex}`, dirty, busy: sourceAction.busy,
+    onSave: saveHtmlVideoCompositionSource,
+    onDiscard: () => setSource(composition?.source ?? ''),
+  });
   const locked = isBrowserPreview || taskStatus === 'pending' || taskStatus === 'running';
   const lintErrorCount = lintFindings.filter((finding) => finding.severity === 'error').length;
   const visibleTrackIndices = useMemo(() => getVisibleHtmlVideoTrackIndices(parsed.clips), [parsed.clips]);
@@ -122,6 +131,7 @@ export function HtmlVideoAuthoringWorkspace({
 
   useEffect(() => {
     void loadCompositionSource();
+    return () => { sourceRequest.current++; };
   }, [loadCompositionSource]);
 
   useEffect(() => {
@@ -249,8 +259,11 @@ export function HtmlVideoAuthoringWorkspace({
   }
 
   async function saveHtmlVideoCompositionSource() {
-    if (!composition || locked || !dirty || lintPending || lintErrorCount) return;
-    await sourceAction.run(async () => {
+    if (!composition || locked || lintPending || lintErrorCount) return false;
+    if (!dirty) return true;
+    const request = sourceRequest.current;
+    const submittedSource = source;
+    const outcome = await sourceAction.run(async () => {
       setStatusMessage('');
       try {
         const result = await api.saveHtmlVideoCompositionSource({
@@ -260,10 +273,15 @@ export function HtmlVideoAuthoringWorkspace({
           source,
         });
         applyState(result.mutation);
+        if (request !== sourceRequest.current) return false;
         setComposition(result.composition);
-        setSource(result.composition.source);
+        if (sourceRef.current === submittedSource) {
+          sourceRef.current = result.composition.source;
+          setSource(result.composition.source);
+        }
         await refreshTaskDetail(taskId);
-        setStatusMessage(`场景 ${sceneIndex} 已保存，修订版 ${result.composition.revision}。`);
+        if (request === sourceRequest.current) setStatusMessage(`场景 ${sceneIndex} 已保存，修订版 ${result.composition.revision}。`);
+        return request === sourceRequest.current && sourceRef.current === result.composition.source;
       } catch (error) {
         const message = error instanceof Error ? error.message : String(error);
         if (message.includes('HTML_VIDEO_SOURCE_CONFLICT')) {
@@ -272,6 +290,7 @@ export function HtmlVideoAuthoringWorkspace({
         throw error;
       }
     }, { onError: (error) => setStatusMessage(error.message) });
+    return outcome.ok && outcome.value;
   }
 
   const duration = Math.max(0.1, parsed.durationSec, playerDuration);
@@ -280,12 +299,9 @@ export function HtmlVideoAuthoringWorkspace({
   return (
     <section className="hv-authoring-workspace" aria-label="HyperFrames 可视编排工作台">
       <header className="hv-authoring-toolbar">
-        <label className="hv-authoring-scene-select">
-          <span>场景</span>
-          <select value={sceneIndex} onChange={(event) => setSceneIndex(Number(event.target.value))} disabled={!scenes.length}>
-            {scenes.map((scene) => <option key={scene.index} value={scene.index}>场景 {String(scene.index).padStart(2, '0')}</option>)}
-          </select>
-        </label>
+        <SelectField fieldClassName="hv-authoring-scene-select" label="场景" value={String(sceneIndex)}
+          onChange={(event) => { const next = Number(event.target.value); if (next !== sceneIndex) void sourceLeave.requestLeave(() => setSceneIndex(next)); }}
+          disabled={!scenes.length} options={scenes.map((scene) => ({ value: String(scene.index), label: `场景 ${String(scene.index).padStart(2, '0')}` }))} />
         <nav className="hv-authoring-panels" aria-label="编排工具">
           {panelItems.map((item) => (
             <button key={item.key} type="button" className={activePanel === item.key ? 'active' : ''} aria-pressed={activePanel === item.key} onClick={() => setActivePanel(item.key)}>

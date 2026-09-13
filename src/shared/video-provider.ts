@@ -3,7 +3,11 @@ import { mkdir, readFile, rename, rm, stat, writeFile } from 'node:fs/promises';
 import { extname, join } from 'node:path';
 import { fetchWithTimeout } from './http';
 import { normalizeAppConfig } from './config-utils';
-import type { AppConfig, VideoCapability, VideoGenerationFallback, VideoProviderConfig } from './types';
+import type { AppConfig, VideoCapability, VideoProviderConfig } from './types';
+import { selectVideoGenerationRoute, type VideoGenerationRouteRequest } from './video-routing';
+
+export { selectVideoGenerationRoute } from './video-routing';
+export type { VideoGenerationRoute, VideoGenerationRouteRequest } from './video-routing';
 
 const MAX_VIDEO_BYTES = 512 * 1024 * 1024;
 const MAX_REFERENCE_IMAGE_BYTES = 24 * 1024 * 1024;
@@ -39,41 +43,19 @@ export interface VideoProvider {
   generate(input: VideoGenerationRequest): Promise<VideoGenerationResult>;
 }
 
-export type VideoGenerationRoute =
-  | { kind: 'provider'; provider: VideoProviderConfig; estimatedCost: number }
-  | { kind: 'fallback'; fallback: Exclude<VideoGenerationFallback, 'disabled'>; reason: string }
-  | { kind: 'unavailable'; reason: string };
-
-export function selectVideoGenerationRoute(
-  input: AppConfig,
-  request: { durationSec: number; requiredCapabilities: VideoCapability[]; remainingBudget?: number },
-): VideoGenerationRoute {
-  const config = normalizeAppConfig(input);
-  const whitelist = new Set(config.video.automation.providerWhitelist);
-  const candidates = config.video.providers
-    .filter((provider) => provider.enabled && whitelist.has(provider.id))
-    .filter((provider) => request.requiredCapabilities.every((capability) => provider.capabilities.includes(capability)))
-    .filter((provider) => request.durationSec <= provider.maxDurationSec)
-    .sort((left, right) => {
-      if (left.id === config.video.activeProviderId) return -1;
-      if (right.id === config.video.activeProviderId) return 1;
-      return left.pricePerSecond - right.pricePerSecond;
-    });
-  const budget = request.remainingBudget ?? config.video.automation.budgetLimit;
-  const selected = candidates.find((provider) => provider.pricePerSecond * request.durationSec <= budget);
-  if (selected) {
-    return { kind: 'provider', provider: selected, estimatedCost: selected.pricePerSecond * request.durationSec };
-  }
-  const reason = candidates.length ? '本次生成会超过剩余预算。' : '没有满足能力、时长和白名单要求的云端视频 Provider。';
-  if (config.video.automation.fallback !== 'disabled') {
-    return { kind: 'fallback', fallback: config.video.automation.fallback, reason };
-  }
-  return { kind: 'unavailable', reason };
+export interface VideoProviderRuntimeOptions {
+  /** POST retries can create duplicate billable jobs; explicit paid actions set this to zero. */
+  submitRetryCount?: number;
 }
 
-export function createConfiguredVideoProvider(input: AppConfig, workDir: string): VideoProvider {
+export function createConfiguredVideoProvider(
+  input: AppConfig,
+  workDir: string,
+  routeRequest: VideoGenerationRouteRequest,
+  runtimeOptions: VideoProviderRuntimeOptions = {},
+): VideoProvider {
   const config = normalizeAppConfig(input);
-  const route = selectVideoGenerationRoute(config, { durationSec: 1, requiredCapabilities: ['t2v'], remainingBudget: Number.POSITIVE_INFINITY });
+  const route = selectVideoGenerationRoute(config, routeRequest);
   if (route.kind !== 'provider') {
     throw new Error(`VIDEO_PROVIDER_NOT_CONFIGURED: ${route.reason}`);
   }
@@ -88,8 +70,28 @@ export function createConfiguredVideoProvider(input: AppConfig, workDir: string)
     capabilities: provider.capabilities,
     license: provider.license,
     estimateCost: (durationSec) => roundCurrency(provider.pricePerSecond * Math.max(0, durationSec)),
-    generate: (request) => generateVideo(provider, config, workDir, request),
+    generate: async (request) => {
+      assertVideoRequestMatchesRoute(routeRequest, request);
+      return await generateVideo(provider, config, workDir, request, runtimeOptions.submitRetryCount);
+    },
   };
+}
+
+export function requiredVideoCapabilities(
+  request: Partial<VideoGenerationRequest>,
+): VideoCapability[] {
+  const firstFramePath = request.firstFramePath?.trim();
+  const lastFramePath = request.lastFramePath?.trim();
+  const referenceImagePaths = request.referenceImagePaths?.filter((path) => path.trim()) ?? [];
+  if (lastFramePath && !firstFramePath) {
+    throw new Error('VIDEO_PROVIDER_FIRST_FRAME_REQUIRED: 使用尾帧生成视频时必须同时提供首帧。');
+  }
+  const capabilities: VideoCapability[] = [];
+  if (firstFramePath) capabilities.push('i2v');
+  if (lastFramePath) capabilities.push('first-last-frame');
+  if (referenceImagePaths.length > 0) capabilities.push('reference-image');
+  if (capabilities.length === 0) capabilities.push('t2v');
+  return capabilities;
 }
 
 async function generateVideo(
@@ -97,6 +99,7 @@ async function generateVideo(
   config: AppConfig,
   workDir: string,
   request: VideoGenerationRequest,
+  submitRetryCount?: number,
 ): Promise<VideoGenerationResult> {
   const prompt = request.prompt.trim();
   if (!prompt) throw new Error('VIDEO_PROVIDER_PROMPT_REQUIRED: 视频生成提示词不能为空。');
@@ -104,9 +107,10 @@ async function generateVideo(
   if (durationSec > provider.maxDurationSec) {
     throw new Error(`VIDEO_PROVIDER_DURATION_UNSUPPORTED: ${provider.name} 最长支持 ${provider.maxDurationSec} 秒。`);
   }
-  const usesImage = Boolean(request.firstFramePath || request.lastFramePath || request.referenceImagePaths?.length);
-  if (usesImage && !provider.capabilities.includes('i2v') && !provider.capabilities.includes('reference-image')) {
-    throw new Error(`VIDEO_PROVIDER_CAPABILITY_MISSING: ${provider.name} 未声明图生视频或参考图能力。`);
+  const requiredCapabilities = requiredVideoCapabilities(request);
+  const missingCapabilities = requiredCapabilities.filter((capability) => !provider.capabilities.includes(capability));
+  if (missingCapabilities.length > 0) {
+    throw new Error(`VIDEO_PROVIDER_CAPABILITY_MISSING: ${provider.name} 缺少视频生成能力：${missingCapabilities.join('、')}。`);
   }
   const estimatedCost = roundCurrency(provider.pricePerSecond * durationSec);
   if (estimatedCost > config.video.automation.budgetLimit) {
@@ -122,23 +126,29 @@ async function generateVideo(
     aspect_ratio: request.ratio,
     resolution: request.resolution || provider.maxResolution,
   };
-  if (request.firstFramePath) {
-    const image = await imageDataUrl(request.firstFramePath);
+  const firstFramePath = request.firstFramePath?.trim();
+  const lastFramePath = request.lastFramePath?.trim();
+  const referenceImagePaths = request.referenceImagePaths?.map((path) => path.trim()).filter(Boolean) ?? [];
+  if (firstFramePath) {
+    const image = await imageDataUrl(firstFramePath);
     body.image = image;
     body.first_frame_image = image;
   }
-  if (request.lastFramePath) body.last_frame_image = await imageDataUrl(request.lastFramePath);
-  if (request.referenceImagePaths?.length) {
-    body.reference_images = await Promise.all(request.referenceImagePaths.slice(0, 8).map(imageDataUrl));
+  if (lastFramePath) body.last_frame_image = await imageDataUrl(lastFramePath);
+  if (referenceImagePaths.length > 0) {
+    body.reference_images = await Promise.all(referenceImagePaths.slice(0, 8).map(imageDataUrl));
   }
 
   const submitUrl = providerUrl(provider, provider.submitPath);
+  const retryCount = submitRetryCount === undefined
+    ? config.video.automation.retryCount
+    : normalizedSubmitRetryCount(submitRetryCount);
   const submit = await requestJsonWithRetries(submitUrl, {
     method: 'POST',
     headers: providerHeaders(provider),
     body: JSON.stringify(body),
     signal: request.signal,
-  }, provider, config.video.automation.retryCount, '云端视频提交');
+  }, provider, retryCount, '云端视频提交');
   const remoteTaskId = responseTaskId(submit);
   let finalResponse = submit;
   if (!responseVideoPayload(finalResponse) && remoteTaskId) {
@@ -176,6 +186,35 @@ async function generateVideo(
     estimatedCost,
     license: provider.license,
   };
+}
+
+function assertVideoRequestMatchesRoute(
+  routeRequest: VideoGenerationRouteRequest,
+  request: VideoGenerationRequest,
+): void {
+  const routedDurationSec = normalizedDurationSec(routeRequest.durationSec);
+  const requestDurationSec = normalizedDurationSec(request.durationSec);
+  const routedCapabilities = new Set(routeRequest.requiredCapabilities);
+  const requestCapabilities = requiredVideoCapabilities(request);
+  if (routedDurationSec !== requestDurationSec
+    || routedCapabilities.size !== requestCapabilities.length
+    || requestCapabilities.some((capability) => !routedCapabilities.has(capability))) {
+    throw new Error('VIDEO_PROVIDER_ROUTE_MISMATCH: 视频生成请求的时长或能力与 Provider 选路条件不一致。');
+  }
+}
+
+function normalizedDurationSec(value: number): number {
+  if (!Number.isFinite(value) || value <= 0) {
+    throw new Error('VIDEO_PROVIDER_DURATION_INVALID: 视频时长必须是大于 0 的有限数字。');
+  }
+  return Math.max(1, value);
+}
+
+function normalizedSubmitRetryCount(value: number): number {
+  if (!Number.isFinite(value) || !Number.isInteger(value) || value < 0 || value > 10) {
+    throw new Error('VIDEO_PROVIDER_RETRY_INVALID: 视频提交重试次数必须是 0 到 10 之间的整数。');
+  }
+  return value;
 }
 
 async function pollVideoJob(provider: VideoProviderConfig, taskId: string, signal?: AbortSignal): Promise<unknown> {

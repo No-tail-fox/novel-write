@@ -12,23 +12,24 @@ describe('editorial workbench shell', () => {
     expect(navigation).toContain("view: 'motion-comic', label: 'AI 漫剧'");
   });
 
-  it('preserves the independent action and exact nineteen-entry navigation order', async () => {
+  it('preserves the independent action and exact twenty-entry navigation order', async () => {
     const navigation = await source('../src/app/navigation.ts');
     const views = [...navigation.matchAll(/\{ view: '([^']+)', label:/gu)].map((match) => match[1]);
     expect(views).toEqual([
-      'new-task', 'hot-board', 'queue', 'history', 'editorial-collage', 'motion-comic', 'book-selection', 'benchmark', 'person-assets',
-      'image-lab', 'voice-lab', 'music-mv', 'viral-analyzer', 'html-video',
-      'prompt-templates', 'draft-templates', 'settings', 'account', 'activation',
+      'new-task', 'projects', 'editorial-collage', 'motion-comic', 'html-video', 'music-mv',
+      'image-lab', 'voice-lab', 'person-assets',
+      'hot-board', 'benchmark', 'book-selection', 'viral-analyzer',
+      'prompt-templates', 'draft-templates', 'queue', 'history', 'settings', 'account', 'activation',
     ]);
-    expect(navigation).toContain('navigationItems: NavigationItem[] = [newTaskPrimaryAction, ...sidebarNavItems]');
+    expect(navigation).toContain('navigationItems: NavigationItem[] = [newTaskPrimaryAction, ...primaryNavItems, ...utilityNavItems]');
     expect(navigation).toContain('export const sidebarNavGroups');
     expect(navigation).not.toContain('export const contextualToolNavItems');
-    for (const label of ['创作生产', '素材与实验', '模板与系统']) expect(navigation).toContain(`label: '${label}'`);
+    for (const label of ['项目', '素材库', '灵感', '模板', '任务', '设置']) expect(navigation).toContain(`label: '${label}'`);
   });
 
   it('keeps status, recent task, account, trial, and a real theme control in the shell', async () => {
     const shell = await source('../src/app/AppShell.tsx');
-    for (const value of ['最近任务', '所有改动已保存', '剪映草稿目录', '试用剩余', '积分明细', '账户中心']) {
+    for (const value of ['最近任务', '工作区状态已同步', '剪映草稿目录', '试用剩余', '积分明细', '账户中心']) {
       expect(shell).toContain(value);
     }
     expect(shell).toContain('toggleTheme');
@@ -46,13 +47,12 @@ describe('editorial workbench shell', () => {
   it('defines a stable editorial desktop shell and 1080 icon rail', async () => {
     const css = await source('../src/styles/shell.css');
     expect(css).toContain('.app-shell[data-editorial-shell]');
-    expect(css).toContain('grid-template-columns: 236px minmax(0, 1fr)');
+    expect(css).toContain('grid-template-columns: var(--sd-sidebar-width) minmax(0, 1fr)');
     expect(css).toContain('text-overflow: ellipsis');
     expect(css).toContain('@media (max-width: 1120px)');
-    expect(css).toContain('grid-template-columns: 68px minmax(0, 1fr)');
-    expect(css).toContain('width: 48px');
-    expect(css).toContain('min-height: 30px');
-    expect(css).toMatch(/@media \(max-width: 1120px\)[\s\S]*?\.app-shell\[data-editorial-shell\] \.sidebar-bottom \{[\s\S]*?display: none;/u);
+    expect(css).toContain('grid-template-columns: 64px minmax(0, 1fr)');
+    expect(css).toContain('width: 46px');
+    expect(css).toContain('min-height: 38px');
     expect(css).not.toMatch(/gradient|bokeh|orb/iu);
   });
 });

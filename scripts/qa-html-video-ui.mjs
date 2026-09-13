@@ -162,7 +162,9 @@ try {
   })`);
   const expectedUrl = pathToFileURL(join(rootDir, 'dist-renderer', 'index.html')).href;
   if (identity.url !== expectedUrl) throw new Error(`Unexpected renderer URL: ${identity.url}`);
-  const themePreference = await exerciseThemePreference(cdp, themeLightScreenshot);
+  const themePreference = localizationOnly
+    ? { skipped: true, reason: 'localization-only scope' }
+    : await exerciseThemePreference(cdp, themeLightScreenshot);
   const queueRoute = effectsOnly ? await exerciseQueueRoute(cdp) : null;
   const navClicked = await evaluate(cdp, `(() => {
     const button = [...document.querySelectorAll('button')].find((item) => item.textContent.includes('HTML 动画视频'));
@@ -1514,7 +1516,9 @@ async function setShellTheme(cdpConnection, theme) {
 
 async function navigateToSettingsAppearance(cdpConnection) {
   const settingsClicked = await evaluate(cdpConnection, `(() => {
-    const button = [...document.querySelectorAll('button')].find((item) => item.textContent.includes('系统设置'));
+    if (document.querySelector('.settings-layout') || document.querySelector('.app-shell[data-shell-view="settings"]')) return true;
+    const button = document.querySelector('[data-nav-view="settings"]')
+      || [...document.querySelectorAll('button')].find((item) => item.textContent.includes('系统设置'));
     if (!button) return false;
     button.click();
     return true;
@@ -2342,6 +2346,14 @@ async function inspectCreationPage(cdpConnection) {
       .slice(0, 20);
     const source = document.querySelector('.hv-create-page .source-textarea');
     const submit = document.querySelector('.hv-create-submit');
+    const footer = document.querySelector('.hv-create-footer');
+    const scrollContainer = document.querySelector('.hv-create-page');
+    const footerPosition = footer ? getComputedStyle(footer).position : '';
+    const previousScrollTop = scrollContainer?.scrollTop ?? 0;
+    if (scrollContainer) scrollContainer.scrollTop = scrollContainer.scrollHeight;
+    const scrolledFooterRect = footer?.getBoundingClientRect();
+    const footerVisibleAfterScroll = Boolean(scrolledFooterRect && scrolledFooterRect.bottom > 0 && scrolledFooterRect.top < innerHeight);
+    if (scrollContainer) scrollContainer.scrollTop = previousScrollTop;
     const researchProviders = [...document.querySelectorAll('.hv-research-provider input[type="checkbox"]')];
     const searchButton = [...document.querySelectorAll('.hv-ai-copy-fields button')]
       .find((item) => item.textContent?.includes('搜索网页资料'));
@@ -2355,6 +2367,8 @@ async function inspectCreationPage(cdpConnection) {
       sourcePlaceholder: source?.getAttribute('placeholder') || '',
       submitText: submit?.textContent?.trim() || '',
       submitDisabled: Boolean(submit?.disabled),
+      footerPosition,
+      footerVisibleAfterScroll,
       researchProviders: {
         count: researchProviders.length,
         checked: researchProviders.filter((item) => item.checked).length,

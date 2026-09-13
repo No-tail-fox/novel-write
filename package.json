@@ -6,6 +6,7 @@
   "main": "dist-electron/electron/main.js",
   "scripts": {
     "dev": "concurrently -k \"scripts\\run-npm-node.cmd node_modules/vite/bin/vite.js\" \"wait-on http://127.0.0.1:5173 && scripts\\run-npm-node.cmd node_modules/electron/cli.js .\"",
+    "dev:web": "scripts\\run-npm-node.cmd node_modules/vite/bin/vite.js",
     "build": "scripts\\run-npm-powershell.cmd scripts/build.ps1",
     "package:win": "scripts\\run-npm-powershell.cmd scripts/package-win.ps1",
     "convert:coze": "scripts\\run-npm-node.cmd scripts/convert-coze-workflows.mjs",

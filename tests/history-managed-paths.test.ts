@@ -22,7 +22,9 @@ import {
 const createdDirectories: string[] = [];
 
 afterEach(async () => {
-  await Promise.all(createdDirectories.splice(0).map((directory) => rm(directory, { recursive: true, force: true })));
+  for (const directory of createdDirectories.splice(0)) {
+    await rm(directory, { recursive: true, force: true, maxRetries: 10, retryDelay: 50 });
+  }
 });
 
 async function temporaryDirectory(prefix: string): Promise<string> {

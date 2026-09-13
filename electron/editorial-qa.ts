@@ -38,7 +38,7 @@ export const editorialQaMatrix = {
     { name: 'compact', width: 1080, height: 720 },
   ],
   views: {
-    shell: ['new-task'],
+    shell: ['projects', 'new-task'],
     workflow: ['new-task', 'queue', 'history', 'task-detail', 'html-video', 'music-mv', 'viral-analyzer'],
     labs: ['image-lab', 'voice-lab', 'book-selection', 'benchmark', 'person-assets'],
     system: ['prompt-templates', 'draft-templates', 'settings', 'account', 'activation'],
@@ -309,6 +309,9 @@ export async function captureEditorialQa(
     )) {
       throw new Error(`Editorial QA book-selection workflow failed in ${captureCase.id}: ${JSON.stringify(state.bookSelection)}.`);
     }
+    if (captureCase.view === 'projects' && !state.projectStatus.ready) {
+      throw new Error(`Editorial QA project status failed in ${captureCase.id}: ${JSON.stringify(state.projectStatus)}.`);
+    }
     if (state.templateOperationalContrast.failures.length > 0) {
       throw new Error(`Editorial QA template contrast failed in ${captureCase.id}: ${state.templateOperationalContrast.failures.join(', ')}.`);
     }
@@ -373,6 +376,7 @@ export async function captureEditorialQa(
       taskImageWorkflowReady: state.taskImageWorkflowReady,
       sceneVideoWorkflowReady: state.sceneVideoWorkflowReady,
       bookSelection: state.bookSelection,
+      projectStatus: state.projectStatus,
     });
     if (config.scope === 'theme-smoke') {
       window.webContents.sendInputEvent({ type: 'mouseMove', x: 2, y: 2, movementX: 0, movementY: 0 });
@@ -638,6 +642,7 @@ export interface EditorialQaCapture {
   taskImageWorkflowReady: boolean;
   sceneVideoWorkflowReady: boolean;
   bookSelection: QaScenarioState['bookSelection'];
+  projectStatus: QaScenarioState['projectStatus'];
 }
 
 interface EditorialQaCaptureCase {
@@ -730,6 +735,17 @@ interface QaScenarioState {
     searchVerified: boolean;
     favoriteVerified: boolean;
     createHandoffVerified: boolean;
+  };
+  projectStatus: {
+    cardCount: number;
+    draft: string;
+    pending: string;
+    running: string;
+    paused: string;
+    completed: string;
+    failed: string;
+    cancelled: string;
+    ready: boolean;
   };
   layout: {
     horizontalOverflow: number;
@@ -825,7 +841,7 @@ export function editorialQaCaptureIdsByRequirement(requirement: EditorialQaCaptu
   for (const captureCase of editorialQaMatrix.newTaskStates) requiredIds.add(captureCase.id);
 
   const classified = allIds.filter((id) => requirement === 'required' ? requiredIds.has(id) : !requiredIds.has(id));
-  if (requiredIds.size !== 67 || allIds.length - requiredIds.size !== 31) {
+  if (requiredIds.size !== 67 || allIds.length - requiredIds.size !== 35) {
     throw new Error(`Editorial QA canonical classification drifted: ${requiredIds.size} required of ${allIds.length}.`);
   }
   return classified;
@@ -1063,6 +1079,47 @@ function qaScenarioScript(id: string, view: string, theme: string, stage?: strin
     if (targetView === 'task-detail' && !failedTaskDetailScenario && !draftDeliveryScenario && !coverPageScenario) {
       ready = ready && await waitFor(() => [...document.querySelectorAll('.image-card-status')]
         .some((element) => element.textContent?.trim() === '借 #1'));
+    }
+    const projectStatus = {
+      cardCount: 0,
+      draft: '',
+      pending: '',
+      running: '',
+      paused: '',
+      completed: '',
+      failed: '',
+      cancelled: '',
+      ready: targetView !== 'projects',
+    };
+    if (targetView === 'projects') {
+      const projectReady = await waitFor(() => document.querySelector('[data-project-home]')
+        && document.querySelectorAll('.project-card[data-project-id]').length > 0);
+      const cards = [...document.querySelectorAll('.project-card[data-project-id]')];
+      const statusFor = (title) => cards
+        .find((card) => card.querySelector('strong')?.textContent?.trim() === title)
+        ?.querySelector('.project-card-status small')
+        ?.textContent
+        ?.trim() ?? '';
+      projectStatus.cardCount = cards.length;
+      projectStatus.draft = statusFor('QA 草稿项目');
+      projectStatus.pending = statusFor('QA 待开始项目');
+      projectStatus.running = statusFor('武则天：从深宫才人到一代女皇');
+      projectStatus.paused = statusFor('夏日轻食产品短片');
+      projectStatus.completed = statusFor('丝绸之路文化科普');
+      projectStatus.failed = statusFor('QA 浅色错误提示');
+      projectStatus.cancelled = statusFor('QA 已取消项目');
+      const pendingCard = cards.find((card) => card.querySelector('strong')?.textContent?.trim() === 'QA 待开始项目');
+      projectStatus.ready = projectReady
+        && projectStatus.cardCount >= 7
+        && projectStatus.draft === '尚未开始生成'
+        && projectStatus.pending === '等待开始'
+        && !pendingCard?.textContent?.includes('当前步骤')
+        && projectStatus.running === '当前步骤 4'
+        && projectStatus.paused === '已暂停，可继续'
+        && projectStatus.completed === '已完成'
+        && projectStatus.failed === '需要处理'
+        && projectStatus.cancelled === '已取消';
+      ready = ready && projectStatus.ready;
     }
     let deleteDialogFocusWrapped = scenarioId !== 'history-operations-desktop';
     let deleteDialogEscapeRestored = scenarioId !== 'history-operations-desktop';
@@ -2920,7 +2977,7 @@ function qaScenarioScript(id: string, view: string, theme: string, stage?: strin
     const manualImportButton = [...document.querySelectorAll('.manual-cover-import button')]
       .find((button) => button.textContent?.includes('导入手动封面'));
     const createButton = [...document.querySelectorAll('.new-task-summary-actions button')]
-      .find((button) => button.textContent?.includes('创建并开始任务'));
+      .find((button) => button.textContent?.includes('创建并开始生成'));
     const borrowedImageLabel = [...document.querySelectorAll('.image-card-status')]
       .find((element) => element.textContent?.trim().startsWith('借 #'))?.textContent?.trim() ?? '';
     return {
@@ -2954,6 +3011,7 @@ function qaScenarioScript(id: string, view: string, theme: string, stage?: strin
       taskImageWorkflowReady,
       sceneVideoWorkflowReady,
       bookSelection,
+      projectStatus,
       manualCover: {
         state: manualCoverElement?.getAttribute('data-manual-cover-state') ?? 'inactive',
         importVisible: manualImportButton instanceof HTMLButtonElement && getComputedStyle(manualImportButton).display !== 'none',

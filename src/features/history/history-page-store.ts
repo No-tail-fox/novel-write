@@ -92,6 +92,7 @@ export function canonicalHistoryPageRequest<F extends HistoryFamily>(
       canonical.status = taskRequest.status;
     }
     if (taskRequest.taskType !== undefined) canonical.taskType = taskRequest.taskType;
+    if (taskRequest.favorite !== undefined) canonical.favorite = taskRequest.favorite;
   } else if (source.status !== undefined) {
     canonical.status = source.status;
   }

@@ -124,6 +124,14 @@ import { loadDefaultPromptTemplates } from './prompt-template-loader';
 import { parseDraftTemplate } from './draft-template-contract';
 import { draftTemplates, normalizeDraftTemplate } from './templates';
 import { isOrdinaryTask, parseOrdinaryCoverMode, resolveOrdinaryCoverTemplate } from '../features/tasks/task-control-manifest';
+import {
+  normalizeDirectorBatchConcurrency,
+  normalizeDirectorBatchRecord,
+  type CreateDirectorBatchInput,
+  type DirectorBatchRecord,
+  type DirectorBatchStatus,
+  type UpdateDirectorBatchInput,
+} from './director-batch-persistence';
 export { defaultConfig } from './config';
 
 interface AddEventInput {
@@ -344,6 +352,40 @@ function parseJson<T>(value: unknown, fallback: T): T {
   } catch {
     return fallback;
   }
+}
+
+function rowToDirectorBatchRecord(row: Record<string, unknown>): DirectorBatchRecord {
+  const statusValues: DirectorBatchStatus[] = ['draft', 'queued', 'running', 'paused', 'cancelling', 'completed', 'failed', 'cancelled'];
+  const workflowKind = row.workflow_kind === 'image-lab' ? 'image-lab' : 'director';
+  const status = statusValues.includes(String(row.status) as DirectorBatchStatus)
+    ? String(row.status) as DirectorBatchStatus
+    : 'paused';
+  const plan = parseJson<DirectorBatchRecord['plan']>(row.plan_json, {
+    scope: 'missing', capabilities: { image: true, video: true, voice: true, render: true }, outputReady: false, renderFailed: false, shots: [],
+  });
+  const nodes = parseJson<DirectorBatchRecord['nodes']>(row.nodes_json, []);
+  return normalizeDirectorBatchRecord({
+    id: String(row.id),
+    workflowKind,
+    projectId: String(row.project_id),
+    episodeId: row.episode_id === null || row.episode_id === undefined ? null : String(row.episode_id),
+    status,
+    concurrency: Number(row.concurrency),
+    pauseRequested: Number(row.pause_requested) === 1,
+    cancelRequested: Number(row.cancel_requested) === 1,
+    recoveryRequired: Number(row.recovery_required) === 1,
+    recoveryReason: String(row.recovery_reason ?? ''),
+    plan,
+    nodes,
+    createdAt: String(row.created_at),
+    updatedAt: String(row.updated_at),
+  });
+}
+
+function nextDirectorBatchTimestamp(previous?: string): string {
+  const now = Date.now();
+  const previousMs = previous ? Date.parse(previous) : Number.NaN;
+  return new Date(Number.isFinite(previousMs) && previousMs >= now ? previousMs + 1 : now).toISOString();
 }
 
 export const MAX_STORAGE_PAGE_LIMIT = 100;
@@ -1344,6 +1386,26 @@ export class FileDatabase {
         created_at INTEGER NOT NULL,
         last_used_at INTEGER NOT NULL
       );
+      CREATE TABLE IF NOT EXISTS director_batches (
+        id TEXT PRIMARY KEY,
+        workflow_kind TEXT NOT NULL,
+        project_id TEXT NOT NULL,
+        episode_id TEXT,
+        status TEXT NOT NULL,
+        concurrency INTEGER NOT NULL DEFAULT 1,
+        pause_requested INTEGER NOT NULL DEFAULT 0,
+        cancel_requested INTEGER NOT NULL DEFAULT 0,
+        recovery_required INTEGER NOT NULL DEFAULT 0,
+        recovery_reason TEXT NOT NULL DEFAULT '',
+        plan_json TEXT NOT NULL,
+        nodes_json TEXT NOT NULL,
+        created_at TEXT NOT NULL,
+        updated_at TEXT NOT NULL
+      );
+      CREATE INDEX IF NOT EXISTS idx_director_batches_project
+        ON director_batches(project_id, updated_at DESC);
+      CREATE INDEX IF NOT EXISTS idx_director_batches_status
+        ON director_batches(status, updated_at DESC);
     `);
 
     for (const [column, definition] of [
@@ -1446,6 +1508,7 @@ export class FileDatabase {
        SET status = 'paused', error_message = '检测到上次异常退出，可从已保存阶段继续。'
        WHERE status = 'running'`,
     );
+    this.recoverInterruptedDirectorBatches();
     for (const [column, definition] of [
       ['cleanup_state', "TEXT NOT NULL DEFAULT 'pending'"],
       ['quarantine_name', 'TEXT DEFAULT NULL'],
@@ -1538,6 +1601,26 @@ export class FileDatabase {
         END
       WHERE status = 'running' AND archived_at IS NULL
     `);
+  }
+
+  private recoverInterruptedDirectorBatches(): void {
+    const rows = getRows<{ id: string; nodes_json: string }>(
+      this.db,
+      "SELECT id, nodes_json FROM director_batches WHERE status IN ('running', 'cancelling')",
+    );
+    for (const row of rows) {
+      const nodes = parseJson<Array<Record<string, unknown>>>(row.nodes_json, []);
+      const recoveredNodes = nodes.map((node) => node.status === 'running'
+        ? { ...node, status: 'pending', error: '应用重启后等待远端任务状态确认。' }
+        : node);
+      this.db.run(
+        `UPDATE director_batches
+         SET status = 'paused', pause_requested = 1, recovery_required = 1,
+             recovery_reason = '应用重启后等待远端任务状态确认。', nodes_json = ?, updated_at = ?
+         WHERE id = ?`,
+        [json(recoveredNodes), new Date().toISOString(), row.id],
+      );
+    }
   }
 
   private seedShellDefaults(): void {
@@ -1689,6 +1772,113 @@ export class FileDatabase {
 
   async persist(): Promise<void> {
     await this.enqueueCommit(() => undefined);
+  }
+
+  async createDirectorBatch(input: CreateDirectorBatchInput): Promise<DirectorBatchRecord> {
+    return this.enqueueCommit(() => {
+      const id = input.id?.trim() || randomUUID();
+      const existing = getFirstRow<{ id: string }>(this.db, 'SELECT id FROM director_batches WHERE id = ?', [id]);
+      if (existing) throw new Error(`DIRECTOR_BATCH_EXISTS: ${id} already exists.`);
+      const now = nextDirectorBatchTimestamp();
+      const record = normalizeDirectorBatchRecord({
+        id,
+        workflowKind: input.workflowKind,
+        projectId: input.projectId,
+        episodeId: input.episodeId ?? null,
+        status: input.status ?? 'queued',
+        concurrency: normalizeDirectorBatchConcurrency(input.concurrency),
+        pauseRequested: input.pauseRequested ?? false,
+        cancelRequested: input.cancelRequested ?? false,
+        recoveryRequired: input.recoveryRequired ?? false,
+        recoveryReason: input.recoveryReason ?? '',
+        plan: input.plan,
+        nodes: input.nodes.map((node) => ({ ...node, dependencies: [...node.dependencies] })),
+        createdAt: now,
+        updatedAt: now,
+      });
+      this.db.run(
+        `INSERT INTO director_batches
+         (id, workflow_kind, project_id, episode_id, status, concurrency, pause_requested, cancel_requested,
+          recovery_required, recovery_reason, plan_json, nodes_json, created_at, updated_at)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        [
+          record.id, record.workflowKind, record.projectId, record.episodeId, record.status, record.concurrency,
+          record.pauseRequested ? 1 : 0, record.cancelRequested ? 1 : 0, record.recoveryRequired ? 1 : 0,
+          record.recoveryReason, json(record.plan), json(record.nodes), record.createdAt, record.updatedAt,
+        ],
+      );
+      return record;
+    });
+  }
+
+  async getDirectorBatch(id: string): Promise<DirectorBatchRecord | null> {
+    await this.waitForWrites();
+    const row = getFirstRow<Record<string, unknown>>(this.db, 'SELECT * FROM director_batches WHERE id = ?', [id]);
+    return row ? rowToDirectorBatchRecord(row) : null;
+  }
+
+  async listDirectorBatches(options: { projectId?: string; episodeId?: string | null; statuses?: readonly DirectorBatchStatus[] } = {}): Promise<DirectorBatchRecord[]> {
+    await this.waitForWrites();
+    const where: string[] = [];
+    const params: SqlValue[] = [];
+    if (options.projectId !== undefined) {
+      where.push('project_id = ?');
+      params.push(options.projectId);
+    }
+    if (options.episodeId !== undefined) {
+      where.push(options.episodeId === null ? 'episode_id IS NULL' : 'episode_id = ?');
+      if (options.episodeId !== null) params.push(options.episodeId);
+    }
+    if (options.statuses && options.statuses.length > 0) {
+      where.push(`status IN (${options.statuses.map(() => '?').join(', ')})`);
+      params.push(...options.statuses);
+    }
+    const rows = getRows<Record<string, unknown>>(
+      this.db,
+      `SELECT * FROM director_batches${where.length > 0 ? ` WHERE ${where.join(' AND ')}` : ''} ORDER BY updated_at DESC, id DESC`,
+      params,
+    );
+    return rows.map(rowToDirectorBatchRecord);
+  }
+
+  async updateDirectorBatch(id: string, patch: UpdateDirectorBatchInput): Promise<DirectorBatchRecord> {
+    return this.enqueueCommit(() => {
+      const row = getFirstRow<Record<string, unknown>>(this.db, 'SELECT * FROM director_batches WHERE id = ?', [id]);
+      if (!row) throw new Error(`DIRECTOR_BATCH_NOT_FOUND: ${id} does not exist.`);
+      const current = rowToDirectorBatchRecord(row);
+      if (patch.expectedUpdatedAt !== undefined && patch.expectedUpdatedAt !== current.updatedAt) {
+        throw new Error(`DIRECTOR_BATCH_CONFLICT: ${id} has changed since ${patch.expectedUpdatedAt}.`);
+      }
+      const now = nextDirectorBatchTimestamp(current.updatedAt);
+      const next = normalizeDirectorBatchRecord({
+        ...current,
+        ...(patch.status !== undefined ? { status: patch.status } : {}),
+        ...(patch.concurrency !== undefined ? { concurrency: patch.concurrency } : {}),
+        ...(patch.pauseRequested !== undefined ? { pauseRequested: patch.pauseRequested } : {}),
+        ...(patch.cancelRequested !== undefined ? { cancelRequested: patch.cancelRequested } : {}),
+        ...(patch.recoveryRequired !== undefined ? { recoveryRequired: patch.recoveryRequired } : {}),
+        ...(patch.recoveryReason !== undefined ? { recoveryReason: patch.recoveryReason } : {}),
+        ...(patch.plan !== undefined ? { plan: patch.plan } : {}),
+        ...(patch.nodes !== undefined ? { nodes: patch.nodes.map((node) => ({ ...node, dependencies: [...node.dependencies] })) } : {}),
+        updatedAt: now,
+      });
+      this.db.run(
+        `UPDATE director_batches SET status = ?, concurrency = ?, pause_requested = ?, cancel_requested = ?,
+         recovery_required = ?, recovery_reason = ?, plan_json = ?, nodes_json = ?, updated_at = ? WHERE id = ?`,
+        [
+          next.status, next.concurrency, next.pauseRequested ? 1 : 0, next.cancelRequested ? 1 : 0,
+          next.recoveryRequired ? 1 : 0, next.recoveryReason, json(next.plan), json(next.nodes), next.updatedAt, id,
+        ],
+      );
+      return next;
+    });
+  }
+
+  async deleteDirectorBatch(id: string): Promise<boolean> {
+    return this.enqueueCommit(() => {
+      this.db.run('DELETE FROM director_batches WHERE id = ?', [id]);
+      return this.db.getRowsModified() === 1;
+    });
   }
 
   close(): Promise<void> {
@@ -2301,7 +2491,7 @@ export class FileDatabase {
         ratio: validated.ratio,
         now: task.createdAt,
       });
-      const document = createEditorialCollageStarterPlan(draft, validated.sourceText, task.createdAt);
+      const document = createEditorialCollageStarterPlan(draft, validated.sourceText, task.createdAt, validated.durationMs);
       this.db.run(
         `UPDATE tasks SET status = 'draft', pipeline_step = ?, pipeline_data = ? WHERE id = ?`,
         [document.stage, JSON.stringify(document), task.id],
@@ -2309,7 +2499,7 @@ export class FileDatabase {
       this.db.run(
         `INSERT INTO task_events (task_id, run_generation, type, step, agent, tool, detail, data_json, ts)
          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-        [task.id, 0, 'editorial_collage_created', 0, 'VOX Director', 'starter-plan', '已创建 30 秒 VOX 基础结构。', JSON.stringify({ stage: document.stage, beats: document.beats.length }), Date.now()],
+        [task.id, 0, 'editorial_collage_created', 0, 'VOX Director', 'starter-plan', `已创建 ${Math.ceil((document.timeline?.durationMs ?? 0) / 1000)} 秒 VOX 基础结构。`, JSON.stringify({ stage: document.stage, beats: document.beats.length, durationMs: document.timeline?.durationMs }), Date.now()],
       );
       const row = getFirstRow<Record<string, unknown>>(this.db, 'SELECT * FROM tasks WHERE id = ?', [task.id]);
       if (!row) throw new Error(`EDITORIAL_COLLAGE_NOT_FOUND: ${task.id}`);

@@ -11,6 +11,7 @@ import {
   htmlVideoRatioOrDefault,
 } from '../src/shared/html-video-config';
 import { resolveManagedHistoryWorkDir } from './managed-history-paths';
+import { preflightVideoRenderDisk } from './video-render-preflight';
 import {
   buildHtmlVideoExportInput,
   type HtmlVideoExportInput,
@@ -34,9 +35,7 @@ import type {
 const defaultFps = 24;
 const defaultMaxLongEdge = 1280;
 const maxRenderFrames = 120_000;
-const renderDiskReserveBytes = 64 * 1024 * 1024;
 const htmlVideoDigestReadChunkBytes = 64 * 1024;
-const estimatedJpegBytesPerPixel = 0.45;
 const htmlVideoBgmExtensions = new Set(['.mp3', '.wav', '.m4a', '.aac', '.ogg', '.flac']);
 const htmlVideoRuntimeStagingDirectoryName = '.html-video-staging';
 const htmlVideoRuntimeStageNamePattern = /^(?:preview|render)-[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/u;
@@ -128,6 +127,8 @@ export interface HtmlVideoRenderPreflightInput {
   canvas: HtmlVideoCanvas;
   fps: number;
   durations: number[];
+  outputDurationS?: number;
+  coverDurationS?: number;
 }
 
 export interface HtmlVideoRenderPreflightDependencies {
@@ -1119,18 +1120,10 @@ export async function preflightHtmlVideoRender(
   if (totalFrames > maxRenderFrames) {
     throw new AppError('HTML_VIDEO_FRAME_BUDGET_EXCEEDED', 'HTML 视频总帧数过多，请减少场景、时长或帧率。');
   }
-  const requiredBytes = Math.ceil(
-    totalFrames * input.canvas.width * input.canvas.height * estimatedJpegBytesPerPixel,
-  ) + renderDiskReserveBytes;
-  const getAvailableDiskBytes = dependencies.getAvailableDiskBytes ?? availableDiskBytes;
-  const availableBytes = await getAvailableDiskBytes(input.workDir);
-  if (!Number.isFinite(availableBytes) || availableBytes < requiredBytes) {
-    throw new AppError(
-      'HTML_VIDEO_DISK_SPACE_LOW',
-      `磁盘空间不足，HTML 视频渲染至少需要 ${formatMegabytes(requiredBytes)} MB 可用空间。`,
-      true,
-    );
-  }
+  await preflightVideoRenderDisk(input.workDir, {
+    width: input.canvas.width, height: input.canvas.height, fps, durations: input.durations,
+    outputDurationS: input.outputDurationS, coverDurationS: input.coverDurationS,
+  }, { code: 'HTML_VIDEO_DISK_SPACE_LOW', label: 'HTML 视频', getAvailableDiskBytes: dependencies.getAvailableDiskBytes });
 }
 
 async function withHtmlVideoRuntimeStage<T>(
@@ -1383,18 +1376,26 @@ async function removeHtmlVideoRuntimeStage(
   stage: HtmlVideoRuntimeStage,
   fileOperations: Partial<HtmlVideoStagingFileOperations>,
 ): Promise<void> {
-  let stageDir: string;
-  try {
-    stageDir = await validateHtmlVideoRuntimeStage(stage);
-  } catch (error) {
-    if (error instanceof AppError && error.code === 'HTML_VIDEO_MEDIA_PATH_INVALID') return;
-    throw error;
+  for (let attempt = 0; ; attempt += 1) {
+    let stageDir: string;
+    try {
+      // A retry must not follow a staging directory replaced while Windows
+      // releases a media handle. Recheck the pinned identity on every attempt.
+      stageDir = await validateHtmlVideoRuntimeStage(stage);
+    } catch (error) {
+      if (error instanceof AppError && error.code === 'HTML_VIDEO_MEDIA_PATH_INVALID') return;
+      throw error;
+    }
+    try {
+      if (fileOperations.remove) await fileOperations.remove(stageDir);
+      else await rm(stageDir, { recursive: true, force: true });
+      return;
+    } catch (error) {
+      const code = (error as NodeJS.ErrnoException | undefined)?.code;
+      if (attempt >= 5 || !['EBUSY', 'EPERM', 'ENOTEMPTY'].includes(code ?? '')) throw error;
+      await new Promise((resolveDelay) => setTimeout(resolveDelay, 25 * (attempt + 1)));
+    }
   }
-  if (fileOperations.remove) {
-    await fileOperations.remove(stageDir);
-    return;
-  }
-  await rm(stageDir, { recursive: true, force: true });
 }
 
 function attachHtmlVideoStageCleanupError(primaryError: unknown, cleanupError: unknown): Error {
@@ -2246,6 +2247,7 @@ export function createElectronHtmlVideoRuntime(options: ElectronHtmlVideoRuntime
       throwIfAborted(signal);
       return withHtmlVideoRuntimeStage(options.taskDirectory, 'render', async (stage, stageDir) => {
         const composition = buildRuntimeComposition(options, localInput, fps, maxLongEdge, stageDir, bgmPath, coverPath);
+        composition.totalDurationS = expectedHtmlVideoOutputDuration(composition);
         composition.scenes.forEach((scene) => {
           scene.html = savedSources.get(scene.sceneId) ?? scene.html;
         });
@@ -2256,6 +2258,8 @@ export function createElectronHtmlVideoRuntime(options: ElectronHtmlVideoRuntime
           canvas: { width: composition.canvas_w, height: composition.canvas_h },
           fps,
           durations: composition.scenes.map((scene) => scene.duration),
+          outputDurationS: composition.totalDurationS,
+          coverDurationS: composition.coverPath ? composition.coverDurationS ?? 2 : 0,
         }, {
           getAvailableDiskBytes: options.getAvailableDiskBytes,
         });
@@ -2538,9 +2542,9 @@ function assertHtmlVideoOutputDuration(composition: HtmlVideoExportInput, actual
 
 function expectedHtmlVideoOutputDuration(composition: HtmlVideoExportInput): number {
   const segmentDurations = composition.scenes.map((scene) => scene.duration);
-  if (composition.coverPath) segmentDurations.unshift(composition.scenes[0]?.duration || 2);
+  if (composition.coverPath) segmentDurations.unshift(composition.coverDurationS ?? composition.scenes[0]?.duration ?? 2);
   const totalDuration = segmentDurations.reduce((sum, duration) => sum + duration, 0);
-  if (segmentDurations.length < 2) return totalDuration;
+  if (segmentDurations.length < 2 || ['cut', 'none'].includes(composition.transition?.type ?? 'fade')) return totalDuration;
   const requestedTransition = composition.transition?.duration || 0.3;
   const shortestHalfDuration = Math.min(...segmentDurations.map((duration) => duration / 2));
   const transitionDuration = Math.min(

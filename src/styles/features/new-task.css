@@ -1,20 +1,15 @@
 .new-task-scroll {
   min-height: 0;
   overflow: auto;
-  padding: 18px 20px 28px;
+  padding: 20px var(--sd-page-inset) 28px;
   background: var(--shell-bg);
   color: var(--shell-text);
 }
 
 .new-task-type-picker {
-  width: min(1180px, 100%);
+  min-width: 0;
   display: grid;
-  grid-template-columns: 88px minmax(0, 1fr);
-  align-items: center;
-  gap: 12px;
-  margin: 0 auto 14px;
-  padding-bottom: 14px;
-  border-bottom: 1px solid var(--shell-border);
+  gap: 10px;
 }
 
 .new-task-type-label {
@@ -26,15 +21,43 @@
 .new-task-type-options {
   min-width: 0;
   display: grid;
-  grid-template-columns: repeat(4, minmax(0, 1fr));
+  grid-template-columns: repeat(5, minmax(0, 1fr));
   gap: 8px;
 }
 
 .new-task-type-options .sd-button {
   min-width: 0;
-  min-height: 50px;
+  min-height: 140px;
+  flex-direction: column;
+  align-items: flex-start;
   justify-content: flex-start;
+  padding: 16px 12px;
+  gap: 14px;
+  border: 1px solid var(--shell-border);
+  border-radius: var(--sd-radius);
+  background: var(--shell-surface-raised);
+  color: var(--shell-text);
   text-align: left;
+}
+
+.new-task-type-options .sd-button[aria-pressed='true'] {
+  border-color: var(--shell-accent);
+  background: var(--shell-selected);
+  color: var(--shell-accent-strong);
+}
+
+.new-task-type-options .sd-button:hover:not(:disabled) {
+  border-color: var(--shell-accent);
+  background: var(--shell-selected);
+}
+
+.new-task-type-options .fui-Button__icon {
+  margin: 0;
+  width: 32px;
+  height: 32px;
+  border-radius: 6px;
+  background: var(--shell-surface);
+  color: var(--shell-accent-strong);
 }
 
 .new-task-type-options .sd-button__content {
@@ -44,24 +67,23 @@
 .new-task-type-options .sd-button__content > span:last-child {
   min-width: 0;
   display: grid;
-  gap: 2px;
+  gap: 3px;
 }
 
 .new-task-type-options strong,
 .new-task-type-options small {
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+  white-space: normal;
+  overflow-wrap: anywhere;
 }
 
 .new-task-type-options strong {
-  font-size: 12px;
+  font-size: 14px;
+  font-weight: 600;
 }
 
 .new-task-type-options small {
-  color: inherit;
-  opacity: .72;
-  font-size: 10px;
+  color: var(--shell-muted);
+  font-size: 12px;
   font-weight: 400;
 }
 
@@ -70,7 +92,9 @@
   align-items: center;
   gap: 8px;
   min-height: 32px;
-  margin-bottom: 16px;
+  margin-bottom: 24px;
+  padding-bottom: 16px;
+  border-bottom: 1px solid var(--shell-border);
 }
 
 .new-task-stage-tabs button {
@@ -80,8 +104,8 @@
   gap: 8px;
   padding: 4px 12px 4px 6px;
   border: 1px solid var(--shell-border);
-  border-radius: 16px;
-  background: var(--shell-surface-raised);
+  border-radius: var(--sd-radius);
+  background: transparent;
   color: var(--shell-text);
   font-size: 13px;
   font-weight: 500;
@@ -99,14 +123,14 @@
 }
 
 .new-task-stage-tabs button.active {
-  border-color: var(--shell-accent);
-  background: var(--shell-accent);
-  color: var(--shell-focus-contrast);
+  border-color: transparent;
+  background: var(--shell-selected);
+  color: var(--shell-accent-strong);
 }
 
 .new-task-stage-tabs button.active span {
-  background: var(--shell-focus-contrast);
-  color: var(--shell-accent);
+  background: var(--shell-accent);
+  color: var(--shell-accent-contrast);
 }
 
 .new-task-workbench {
@@ -129,8 +153,8 @@
 .new-task-stage-heading h2 {
   margin: 0 0 2px;
   color: var(--shell-text);
-  font-size: 20px;
-  font-weight: 500;
+  font-size: 18px;
+  font-weight: 600;
   line-height: 1.35;
   letter-spacing: 0;
 }
@@ -146,6 +170,14 @@
   min-width: 0;
   display: grid;
   gap: 14px;
+}
+
+.new-task-stage-panel + .new-task-stage-panel {
+  margin-top: 18px;
+}
+
+.new-task-type-step {
+  min-width: 0;
 }
 
 .new-task-stage-panel .field,
@@ -483,14 +515,18 @@
 }
 
 .new-task-stage-footer {
+  position: sticky;
+  bottom: 0;
+  z-index: 4;
   min-height: 44px;
   display: flex;
   justify-content: space-between;
   align-items: end;
   gap: 10px;
   margin-top: 18px;
-  padding-top: 12px;
+  padding: 12px 0 4px;
   border-top: 1px solid var(--shell-border);
+  background: linear-gradient(to bottom, color-mix(in srgb, var(--shell-bg) 0%, transparent), var(--shell-bg) 14px);
 }
 
 .new-task-stage-footer > .primary-action {
@@ -521,9 +557,10 @@
   min-width: 0;
   display: grid;
   gap: 14px;
-  padding: 16px 14px;
-  border-radius: 8px;
-  background: var(--shell-surface);
+  padding: 0 0 16px 20px;
+  border-left: 1px solid var(--shell-border);
+  border-radius: 0;
+  background: transparent;
   color: var(--shell-text);
 }
 
@@ -828,6 +865,12 @@
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 
+  .new-task-type-options .sd-button {
+    min-height: 96px;
+    flex-direction: row;
+    align-items: center;
+  }
+
   .new-task-workbench {
     grid-template-columns: minmax(0, 1fr);
   }
@@ -835,6 +878,9 @@
   .new-task-summary {
     order: 2;
     position: static;
+    padding: 20px 0 0;
+    border-left: 0;
+    border-top: 1px solid var(--shell-border);
   }
 
   .new-task-summary dl {
@@ -859,6 +905,18 @@
     grid-template-columns: minmax(0, 1fr);
   }
 
+  .new-task-type-options .sd-button {
+    min-height: 76px;
+    flex-direction: row;
+    align-items: center;
+    padding: 12px;
+  }
+
+  .new-task-type-options .fui-Button__icon {
+    flex: 0 0 36px;
+    height: 36px;
+  }
+
   .new-task-inline-fields,
   .new-task-field-grid,
   .new-task-check-grid,
@@ -873,6 +931,17 @@
   .manual-cover-import {
     align-items: stretch;
     flex-direction: column;
+  }
+
+  .new-task-stage-footer {
+    align-items: stretch;
+    padding-bottom: 8px;
+  }
+
+  .new-task-stage-footer > .ghost-action,
+  .new-task-stage-footer > .primary-action {
+    flex: 1 1 0;
+    justify-content: center;
   }
 
   .ordinary-cover-page-editor > header {

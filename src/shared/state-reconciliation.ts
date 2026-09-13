@@ -19,7 +19,7 @@ import type {
   VoiceLabRecord,
   VoiceLabSummary,
 } from './types';
-import { MAX_RENDERER_EVENT_HISTORY, type DeltaViewState } from './state-delta';
+import { MAX_RENDERER_EVENT_HISTORY, taskEventKey, type DeltaViewState } from './state-delta';
 
 export interface ReconciliationSlices {
   tasks: Task[];
@@ -438,8 +438,8 @@ export async function collectTaskEventPages(
   first: CursorPage<SequencedTaskEvent>,
   load: (cursor: string) => Promise<CursorPage<SequencedTaskEvent>>,
 ): Promise<SequencedTaskEvent[]> {
-  const bySequence = new Map<number, SequencedTaskEvent>();
-  const merge = (items: SequencedTaskEvent[]) => items.forEach((event) => bySequence.set(event.seq, event));
+  const bySequence = new Map<string, SequencedTaskEvent>();
+  const merge = (items: SequencedTaskEvent[]) => items.forEach((event) => bySequence.set(taskEventKey(event), event));
   merge(first.items);
   const seenCursors = new Set<string>();
   let cursor = first.nextCursor;
@@ -451,6 +451,20 @@ export async function collectTaskEventPages(
     cursor = page.nextCursor;
   }
   return [...bySequence.values()].sort((left, right) => left.seq - right.seq);
+}
+
+/** Keep the event rail scoped to the selected task and its current run. */
+export function isolateTaskEvents(
+  events: readonly TaskEvent[],
+  task: Pick<Task, 'id' | 'runGeneration'>,
+): TaskEvent[] {
+  const byKey = new Map<string, TaskEvent>();
+  for (const event of events) {
+    if (event.taskId !== task.id) continue;
+    if (task.runGeneration !== undefined && event.runGeneration !== undefined && event.runGeneration !== task.runGeneration) continue;
+    byKey.set(taskEventKey(event), event);
+  }
+  return [...byKey.values()].sort((left, right) => (left.seq ?? 0) - (right.seq ?? 0));
 }
 
 export function viralSummaryToRecord(summary: ViralAnalysisSummary, detail?: ViralAnalysisRecord | null): ViralAnalysisRecord {
@@ -517,9 +531,9 @@ export function taskSummaryToTask(summary: TaskSummary, detail?: Task | null): T
 }
 
 function mergeTaskEvents(current: TaskEvent[], incoming: SequencedTaskEvent[]): TaskEvent[] {
-  const byKey = new Map<string | number, TaskEvent>();
-  current.forEach((event) => byKey.set(event.seq ?? event.id ?? `${event.taskId}:${event.ts}:${event.type}`, event));
-  incoming.forEach((event) => byKey.set(event.seq, event));
+  const byKey = new Map<string, TaskEvent>();
+  current.forEach((event) => byKey.set(taskEventKey(event), event));
+  incoming.forEach((event) => byKey.set(taskEventKey(event), event));
   return [...byKey.values()]
     .sort((left, right) => (left.seq ?? 0) - (right.seq ?? 0))
     .slice(-MAX_RENDERER_EVENT_HISTORY);

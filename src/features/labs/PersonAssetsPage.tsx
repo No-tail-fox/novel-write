@@ -1,10 +1,10 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { FolderOpen, Pencil, Plus, Upload } from 'lucide-react';
 import { EmptyState } from '../../components/EmptyState';
 import { FormField as Field } from '../../components/FormField';
 import { AsyncActionFeedback as InlineActionFeedback } from '../../components/AsyncActionFeedback';
 import type { StoryDreamApi } from '../../shared/storydream-api';
-import type { PersonAssetImage, PersonAssetSummary } from '../../shared/person-assets';
+import type { PersonAssetImage, PersonAssetSummary, RecycledPersonAsset } from '../../shared/person-assets';
 import { useAsyncAction } from '../../ui/async-action';
 import '../../styles/features/local-labs.css';
 
@@ -31,6 +31,9 @@ export function PersonAssetsPage({ api, isBrowserPreview }: { api: StoryDreamApi
   const [imageUrls, setImageUrls] = useState<Record<string, string>>({});
   const [message, setMessage] = useState(isBrowserPreview ? '浏览器预览不能导入或读取本地图片，请在 Electron 应用中管理素材。' : '');
   const [pendingAction, setPendingAction] = useState<'create' | 'rename' | 'delete' | 'import' | 'open' | null>(null);
+  const [deleteConfirmation, setDeleteConfirmation] = useState<{ name: string; references: { taskId: string; title: string; status: string }[] } | null>(null);
+  const [recycled, setRecycled] = useState<RecycledPersonAsset | null>(null);
+  const previewRequest = useRef(0);
   const personAction = useAsyncAction();
   const selectedAsset = people.find((person) => person.name === selectedName) ?? null;
 
@@ -60,6 +63,7 @@ export function PersonAssetsPage({ api, isBrowserPreview }: { api: StoryDreamApi
 
   useEffect(() => {
     let active = true;
+    const request = ++previewRequest.current;
     if (!selectedName) {
       setImages([]);
       setImageUrls({});
@@ -67,7 +71,7 @@ export function PersonAssetsPage({ api, isBrowserPreview }: { api: StoryDreamApi
     }
     loadPersonImagePreviews(api, selectedName)
       .then((previews) => {
-        if (!active) return;
+        if (!active || request !== previewRequest.current) return;
         setImages(previews.items);
         setImageUrls(previews.urls);
       })
@@ -126,12 +130,41 @@ export function PersonAssetsPage({ api, isBrowserPreview }: { api: StoryDreamApi
 
   async function deletePerson() {
     if (!selectedName) return;
+    const name = selectedName;
+    const references = await api.getPersonAssetUsage(name);
+    if (references.length > 0) {
+      setDeleteConfirmation({ name, references });
+      setMessage(`「${name}」仍被 ${references.length} 个任务引用，已阻止删除。`);
+      return;
+    }
+    if (!deleteConfirmation || deleteConfirmation.name !== name) {
+      setDeleteConfirmation({ name, references: [] });
+      setMessage(`确认删除「${name}」？素材会移入回收区，可在本次操作后撤销。`);
+      return;
+    }
     await personAction.run(async () => {
       setPendingAction('delete');
       try {
-        await api.deletePersonAsset(selectedName);
+        const result = await api.deletePersonAsset(name);
+        setRecycled(result);
+        setDeleteConfirmation(null);
         await loadPeople('');
         setMessage('已删除人物素材库。');
+      } finally {
+        setPendingAction(null);
+      }
+    }, { onError: (error) => setMessage(error.message) });
+  }
+
+  async function undoDelete() {
+    if (!recycled?.token) return;
+    await personAction.run(async () => {
+      setPendingAction('delete');
+      try {
+        await api.restorePersonAsset(recycled.token);
+        setRecycled(null);
+        await loadPeople(recycled.name);
+        setMessage('已撤销删除，人物素材库已恢复。');
       } finally {
         setPendingAction(null);
       }
@@ -148,7 +181,9 @@ export function PersonAssetsPage({ api, isBrowserPreview }: { api: StoryDreamApi
       try {
         const count = await api.importPersonAssetImages(selectedName);
         await loadPeople(selectedName);
+        const request = ++previewRequest.current;
         const previews = await loadPersonImagePreviews(api, selectedName);
+        if (request !== previewRequest.current) return;
         setImages(previews.items);
         setImageUrls(previews.urls);
         setMessage(count > 0 ? `已导入 ${count} 张图片。` : '没有导入新图片。');
@@ -227,8 +262,9 @@ export function PersonAssetsPage({ api, isBrowserPreview }: { api: StoryDreamApi
                 <Pencil size={15} />
                 重命名
               </button>
-              <button className="mini-button" type="button" disabled={pendingAction !== null} onClick={deletePerson}>删除</button>
+              <button className="mini-button" type="button" disabled={pendingAction !== null} onClick={deletePerson}>{deleteConfirmation?.name === selectedName ? '确认删除' : '删除'}</button>
             </div>
+            {deleteConfirmation?.name === selectedName ? <span className="local-note">{deleteConfirmation.references.length > 0 ? '该人物仍被任务引用，不能删除。' : '再次点击确认，素材将移入回收区。'}</span> : null}
           </div>
         ) : null}
 
@@ -244,6 +280,7 @@ export function PersonAssetsPage({ api, isBrowserPreview }: { api: StoryDreamApi
           ))}
         </div>
         {message ? <span className="local-note">{message}</span> : null}
+        {recycled ? <button className="ghost-action compact-action" type="button" disabled={pendingAction !== null} onClick={undoDelete}>撤销删除</button> : null}
         <InlineActionFeedback feedback={personAction.feedback} />
       </section>
     </div>

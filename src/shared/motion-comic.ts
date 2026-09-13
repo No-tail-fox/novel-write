@@ -1,5 +1,12 @@
 import { z } from 'zod';
-import type { ProductionDocumentBase, ProductionTimeline } from './production-workflow';
+import { productionNarrationAlignmentEvidenceSchema } from './production-audio-alignment';
+import { productionSubtitleLayoutEvidenceSchema } from './production-subtitle-layout';
+import { productionVisualContinuityEvidenceSchema } from './production-visual-continuity';
+import type { ProductionAssetVersion, ProductionDocumentBase, ProductionProviderJob, ProductionSubtitleCue, ProductionTimeline } from './production-workflow';
+import { productionSubtitleCueSchema, validatePersistedSubtitleCue } from './production-subtitle-schema';
+import { productionAudioFadeEnvelopeSchema, validateProductionAudioTimeline } from './production-audio';
+import { hashSubtitleAlignment, invalidateSubtitleAlignment, isSubtitleAlignmentValid } from './audio-alignment';
+import { MAX_PRODUCTION_HISTORY_ITEMS } from './production-history';
 
 export const MOTION_COMIC_TASK_TYPE = 'motion-comic' as const;
 export const MOTION_COMIC_PIPELINE_VERSION = 1 as const;
@@ -53,6 +60,9 @@ export interface MotionComicCharacter {
   identityPrompt: string;
   personality: string;
   voiceNotes: string;
+  voiceProvider?: 'volcengine' | 'minimax';
+  voiceId?: string;
+  voiceSpeed?: number;
   looks: MotionComicCharacterLook[];
 }
 
@@ -73,14 +83,11 @@ export interface MotionComicPropAsset {
   referenceAssetVersionIds: string[];
 }
 
-export interface MotionComicDialogueCue {
-  id: string;
+export interface MotionComicDialogueCue extends ProductionSubtitleCue {
   shotId: string;
   characterId?: string;
-  startMs: number;
-  endMs: number;
-  text: string;
   emotion: string;
+  /** Legacy dialogue audio reference; new word alignment uses audioAssetVersionId. */
   voiceAssetVersionId?: string;
 }
 
@@ -205,6 +212,9 @@ const assetVersionSchema = z.object({
   createdAt: timestampSchema,
   selected: z.boolean().optional(),
   pinned: z.boolean().optional(),
+  episodeId: idSchema.optional(),
+  renderFingerprint: z.string().max(256).optional(),
+  durationMs: nonNegativeNumber.positive().optional(),
 }).strict();
 
 const providerJobSchema = z.object({
@@ -219,11 +229,13 @@ const providerJobSchema = z.object({
   idempotencyKey: z.string().max(512),
   estimatedCost: nonNegativeNumber,
   actualCost: nonNegativeNumber.optional(),
-  attempt: z.number().int().min(1).max(100),
+  attempt: z.number().int().min(1).max(MAX_PRODUCTION_HISTORY_ITEMS),
   remoteTaskId: z.string().max(512).optional(),
   createdAt: timestampSchema,
   updatedAt: timestampSchema,
   error: boundedText(65_536).optional(),
+  episodeId: idSchema.optional(),
+  renderFingerprint: z.string().max(256).optional(),
 }).strict();
 
 const timelineSchema = z.object({
@@ -237,20 +249,76 @@ const timelineSchema = z.object({
     subtitleCueIds: z.array(idSchema).max(MAX_REFERENCES),
     source: z.enum(['deterministic', 'ai-video', 'local', 'mixed']),
   }).strict()).max(MAX_ITEMS),
-  audioAssetVersionIds: z.array(idSchema).max(MAX_REFERENCES),
+  audioAssetVersionIds: z.array(idSchema).max(MAX_PRODUCTION_HISTORY_ITEMS),
+  audioClips: z.array(z.object({
+    id: idSchema,
+    assetVersionId: idSchema,
+    shotId: idSchema.optional(),
+    trackType: z.enum(['dialogue', 'narration', 'sfx', 'ambience', 'music', 'foley']),
+    startMs: nonNegativeNumber,
+    sourceStartMs: nonNegativeNumber.optional(),
+    sourceDurationMs: nonNegativeNumber.optional(),
+    sourceMediaDurationMs: nonNegativeNumber.optional(),
+    durationMs: nonNegativeNumber.optional(),
+    gainDb: z.number().min(-60).max(24).optional(),
+    fadeInMs: nonNegativeNumber.optional(),
+    fadeOutMs: nonNegativeNumber.optional(),
+    fadeEnvelope: productionAudioFadeEnvelopeSchema.optional(),
+    muted: z.boolean().optional(),
+  }).strict()).max(MAX_PRODUCTION_HISTORY_ITEMS).optional(),
 }).strict();
 
 const qualityReportSchema = z.object({
   id: idSchema,
   workflowKind: z.literal(MOTION_COMIC_TASK_TYPE),
   stage: z.string().max(256),
+  providerJobId: idSchema.optional(),
+  episodeId: idSchema.optional(),
+  renderFingerprint: z.string().max(256).optional(),
+  manualReview: z.object({
+    reportId: idSchema,
+    renderFingerprint: z.string().max(256),
+    scope: z.object({
+      kind: z.enum(['project', 'shot', 'asset', 'subtitle', 'audio', 'media']),
+      shotIds: z.array(idSchema).max(MAX_ITEMS).optional(),
+      assetVersionIds: z.array(idSchema).max(MAX_ITEMS).optional(),
+      cueIds: z.array(idSchema).max(MAX_ITEMS).optional(),
+      startMs: nonNegativeNumber.optional(),
+      endMs: nonNegativeNumber.optional(),
+    }).strict(),
+    confirmedAt: timestampSchema,
+  }).strict().optional(),
   status: z.enum(['pending', 'passed', 'failed', 'waived']),
   checks: z.array(z.object({
     id: idSchema,
     label: z.string().max(512),
     status: z.enum(['pending', 'passed', 'failed', 'waived']),
+    severity: z.enum(['blocking', 'warning', 'manual']).optional(),
     detail: boundedText(65_536).optional(),
+    recheckScope: z.object({
+      kind: z.enum(['project', 'shot', 'asset', 'subtitle', 'audio', 'media']),
+      shotIds: z.array(idSchema).max(MAX_ITEMS).optional(),
+      assetVersionIds: z.array(idSchema).max(MAX_REFERENCES).optional(),
+      cueIds: z.array(idSchema).max(MAX_REFERENCES).optional(),
+      startMs: nonNegativeNumber.optional(),
+      endMs: nonNegativeNumber.optional(),
+    }).strict().optional(),
   }).strict()).max(MAX_ITEMS),
+  evidence: z.object({
+    subtitleLayout: productionSubtitleLayoutEvidenceSchema.optional(),
+    audioMeanVolumeDb: z.number().finite().optional(),
+    audioPeakDb: z.number().finite().optional(),
+    audioLufs: z.number().finite().optional(),
+    audioTruePeakDb: z.number().finite().optional(),
+    audioIsSilent: z.boolean().optional(),
+    blackIntervalsMs: z.array(z.object({ startMs: nonNegativeNumber, endMs: nonNegativeNumber }).strict()).max(64).optional(),
+    visualContinuity: productionVisualContinuityEvidenceSchema.optional(),
+    audioQualityStatus: z.enum(['ok', 'failed', 'unavailable']).optional(),
+    audioQualityError: boundedText(2_000).optional(),
+    blackDetectionStatus: z.enum(['ok', 'failed', 'unavailable']).optional(),
+    blackDetectionError: boundedText(2_000).optional(),
+    narrationAlignment: productionNarrationAlignmentEvidenceSchema.optional(),
+  }).strict().optional(),
   createdAt: timestampSchema,
 }).strict();
 
@@ -276,7 +344,7 @@ const lookSchema = z.object({
   appearancePrompt: boundedText(65_536),
   wardrobe: boundedText(65_536),
   continuityNotes: boundedText(65_536),
-  referenceAssetVersionIds: z.array(idSchema).max(MAX_REFERENCES),
+  referenceAssetVersionIds: z.array(idSchema).max(MAX_PRODUCTION_HISTORY_ITEMS),
   pinned: z.boolean(),
 }).strict();
 
@@ -287,6 +355,9 @@ const characterSchema = z.object({
   identityPrompt: boundedText(65_536),
   personality: boundedText(65_536),
   voiceNotes: boundedText(65_536),
+  voiceProvider: z.enum(['volcengine', 'minimax']).optional(),
+  voiceId: z.string().min(1).max(512).optional(),
+  voiceSpeed: z.number().finite().min(0.5).max(2).optional(),
   looks: z.array(lookSchema).max(50),
 }).strict();
 
@@ -296,7 +367,7 @@ const sceneAssetSchema = z.object({
   description: boundedText(65_536),
   prompt: boundedText(65_536),
   continuityNotes: boundedText(65_536),
-  referenceAssetVersionIds: z.array(idSchema).max(MAX_REFERENCES),
+  referenceAssetVersionIds: z.array(idSchema).max(MAX_PRODUCTION_HISTORY_ITEMS),
 }).strict();
 
 const propSchema = z.object({
@@ -304,16 +375,12 @@ const propSchema = z.object({
   label: z.string().max(512),
   description: boundedText(65_536),
   prompt: boundedText(65_536),
-  referenceAssetVersionIds: z.array(idSchema).max(MAX_REFERENCES),
+  referenceAssetVersionIds: z.array(idSchema).max(MAX_PRODUCTION_HISTORY_ITEMS),
 }).strict();
 
-const dialogueCueSchema = z.object({
-  id: idSchema,
+const dialogueCueSchema = productionSubtitleCueSchema.safeExtend({
   shotId: idSchema,
   characterId: idSchema.optional(),
-  startMs: nonNegativeNumber,
-  endMs: nonNegativeNumber,
-  text: boundedText(10_000),
   emotion: z.string().max(256),
   voiceAssetVersionId: idSchema.optional(),
 }).strict();
@@ -384,9 +451,9 @@ export const motionComicPipelineSchema = z.object({
   props: z.array(propSchema).max(MAX_ITEMS),
   episodes: z.array(episodeSchema).max(MAX_EPISODES),
   activeEpisodeId: idSchema,
-  assets: z.array(assetVersionSchema).max(MAX_ITEMS),
-  providerJobs: z.array(providerJobSchema).max(MAX_ITEMS),
-  qualityReports: z.array(qualityReportSchema).max(MAX_ITEMS),
+  assets: z.array(assetVersionSchema).max(MAX_PRODUCTION_HISTORY_ITEMS),
+  providerJobs: z.array(providerJobSchema).max(MAX_PRODUCTION_HISTORY_ITEMS),
+  qualityReports: z.array(qualityReportSchema).max(MAX_PRODUCTION_HISTORY_ITEMS),
   estimatedCost: nonNegativeNumber,
   actualCost: nonNegativeNumber.optional(),
   costApprovedAt: timestampSchema.optional(),
@@ -656,7 +723,9 @@ export function appendMotionComicEpisode(
     const cueIndex = source.dialogueCues.filter((item) => item.shotId === cue.shotId).findIndex((item) => item.id === cue.id);
     const startMs = shotStartMs + cueIndex * durationMs;
     offsetMs = Math.max(offsetMs, startMs + durationMs);
-    return { ...cue, id: nextCueId, shotId: nextShotId, startMs, endMs: startMs + durationMs, voiceAssetVersionId: undefined };
+    const next = invalidateSubtitleAlignment({ ...cue, id: nextCueId, shotId: nextShotId, startMs, endMs: startMs + durationMs }, { audioAssetVersionId: null }) as MotionComicDialogueCue;
+    delete next.voiceAssetVersionId;
+    return next;
   });
   const clips: ProductionTimeline['clips'] = [];
   let timelineOffset = 0;
@@ -678,6 +747,175 @@ export function appendMotionComicEpisode(
     timeline: { durationMs: timelineOffset, clips, audioAssetVersionIds: [] },
   };
   return { ...document, stage: 'shot-board', episodes: [...document.episodes, episode], activeEpisodeId: episodeId };
+}
+
+/** Rebuilds the canonical episode projection after any shot structure edit. */
+export function rebuildMotionComicEpisode(episode: MotionComicEpisode): MotionComicEpisode {
+  const shots = episode.scenes.flatMap((scene) => scene.shots);
+  const oldClips = new Map(episode.timeline.clips.map((clip) => [clip.shotId, clip]));
+  const oldCues = new Map(episode.dialogueCues.map((cue) => [cue.id, cue]));
+  let offsetMs = 0;
+  const clips: ProductionTimeline['clips'] = [];
+  const dialogueCues: MotionComicDialogueCue[] = [];
+  for (const shot of shots) {
+    const previous = oldClips.get(shot.id);
+    const oldStart = previous?.startMs ?? 0;
+    const timeScale = previous ? shot.durationMs / previous.durationMs : 1;
+    for (const cueId of shot.dialogueCueIds) {
+      const cue = oldCues.get(cueId);
+      if (!cue) continue;
+      // New shots use local cue times. Existing shots retain their relative
+      // timing on moves; resizing scales cue boundaries as one sequence.
+      const startMs = offsetMs + Math.max(0, Math.min(shot.durationMs - 1, Math.round((cue.startMs - oldStart) * timeScale)));
+      const endMs = Math.max(startMs + 1, offsetMs + Math.min(shot.durationMs, Math.round((cue.endMs - oldStart) * timeScale)));
+      const next = { ...cue, startMs, endMs };
+      if (cue.startMs === startMs && cue.endMs === endMs) dialogueCues.push(next);
+      else if (timeScale === 1 && endMs - startMs === cue.endMs - cue.startMs && isSubtitleAlignmentValid(cue)) {
+        const delta = startMs - cue.startMs;
+        dialogueCues.push({ ...next, tokens: cue.tokens?.map((token) => ({ ...token, startMs: token.startMs + delta, endMs: token.endMs + delta })), alignmentFingerprint: hashSubtitleAlignment(next) });
+      } else dialogueCues.push(invalidateSubtitleAlignment(next) as MotionComicDialogueCue);
+    }
+    clips.push({
+      id: previous?.id ?? `clip-${shot.id}`,
+      shotId: shot.id,
+      startMs: offsetMs,
+      durationMs: shot.durationMs,
+      assetVersionIds: previous?.assetVersionIds.slice() ?? [],
+      subtitleCueIds: shot.dialogueCueIds.slice(),
+      source: previous?.source ?? 'deterministic',
+    });
+    offsetMs += shot.durationMs;
+  }
+  const validShotIds = new Set(shots.map((shot) => shot.id));
+  const oldAudio = episode.timeline.audioClips ?? [];
+  const audioClips = oldAudio
+    .filter((clip) => !clip.shotId || validShotIds.has(clip.shotId))
+    .flatMap((clip) => {
+      if (!clip.shotId) return [{ ...clip }];
+      const oldStart = oldClips.get(clip.shotId)?.startMs;
+      const nextClip = clips.find((candidate) => candidate.shotId === clip.shotId);
+      if (oldStart === undefined || !nextClip) return [];
+      const relativeStart = Math.max(0, clip.startMs - oldStart);
+      if (relativeStart >= nextClip.durationMs) return [];
+      const available = nextClip.durationMs - relativeStart;
+      const requested = clip.durationMs ?? clip.sourceDurationMs;
+      const durationMs = Math.max(1, Math.min(requested ?? available, available));
+      return [{
+        ...clip,
+        startMs: nextClip.startMs + relativeStart,
+        ...(requested === undefined ? {} : { durationMs }),
+        ...(clip.fadeInMs === undefined ? {} : { fadeInMs: Math.min(clip.fadeInMs, durationMs) }),
+        ...(clip.fadeOutMs === undefined ? {} : { fadeOutMs: Math.min(clip.fadeOutMs, durationMs) }),
+      }];
+    });
+  return {
+    ...episode,
+    scenes: episode.scenes.map((scene, sceneIndex) => ({
+      ...scene,
+      index: sceneIndex + 1,
+      shots: scene.shots.map((shot, shotIndex) => ({ ...shot, index: shotIndex + 1 })),
+    })),
+    dialogueCues,
+    timeline: {
+      ...episode.timeline, durationMs: offsetMs, clips,
+      audioAssetVersionIds: [...new Set([
+        ...shots.flatMap((shot) => shot.voiceAssetVersionId ?? []),
+        ...dialogueCues.flatMap((cue) => [cue.voiceAssetVersionId, cue.audioAssetVersionId].filter((id): id is string => Boolean(id))),
+        ...audioClips.map((clip) => clip.assetVersionId),
+      ])],
+      ...(episode.timeline.audioClips ? { audioClips } : {}),
+    },
+  };
+}
+
+function invalidateMotionComicEpisodeOutput(document: MotionComicPipelineData, episodeId: string): ProductionAssetVersion[] {
+  return document.assets.map((asset) => asset.assetId === 'director-final-video' && asset.episodeId === episodeId
+    ? { ...asset, selected: false, pinned: false }
+    : asset);
+}
+
+export function updateMotionComicShotDuration(
+  document: MotionComicPipelineData,
+  episodeId: string,
+  shotId: string,
+  durationMs: number,
+): MotionComicPipelineData {
+  if (!Number.isInteger(durationMs) || durationMs < 1 || durationMs > 60_000) throw new Error('MOTION_COMIC_INVALID_DURATION: Shot duration must be an integer between 1 and 60000 ms.');
+  const owner = document.episodes.find((episode) => episode.id === episodeId);
+  const shot = owner?.scenes.flatMap((scene) => scene.shots).find((candidate) => candidate.id === shotId);
+  if (!owner || !shot) throw new Error(`MOTION_COMIC_SHOT_MISSING: ${shotId}`);
+  if (durationMs === shot.durationMs) return document;
+  if (durationMs < shot.dialogueCueIds.length) throw new Error('MOTION_COMIC_INVALID_DURATION: Duration must allow at least one millisecond per dialogue cue.');
+  const staleAudioIds = new Set([shot.voiceAssetVersionId, ...owner.dialogueCues.filter((cue) => cue.shotId === shotId).flatMap((cue) => [cue.voiceAssetVersionId, cue.audioAssetVersionId])].filter(Boolean));
+  const episodes = document.episodes.map((episode) => {
+    if (episode.id !== episodeId) return episode;
+    const next: MotionComicEpisode = {
+      ...episode, status: 'boarded',
+      scenes: episode.scenes.map((scene) => ({ ...scene, shots: scene.shots.map((candidate) => candidate.id === shotId
+        ? { ...candidate, durationMs, videoJobId: undefined, voiceAssetVersionId: undefined }
+        : candidate) })),
+      dialogueCues: episode.dialogueCues.map((cue) => {
+        if (cue.shotId !== shotId) return cue;
+        const nextCue = invalidateSubtitleAlignment(cue, { audioAssetVersionId: null }) as MotionComicDialogueCue;
+        delete nextCue.voiceAssetVersionId;
+        return nextCue;
+      }),
+      timeline: {
+        ...episode.timeline,
+        clips: episode.timeline.clips.map((clip) => clip.shotId === shotId ? { ...clip, assetVersionIds: clip.assetVersionIds.filter((id) => !staleAudioIds.has(id)) } : clip),
+        ...(episode.timeline.audioClips ? { audioClips: episode.timeline.audioClips.filter((clip) => clip.shotId !== shotId || !['dialogue', 'narration'].includes(clip.trackType)) } : {}),
+      },
+    };
+    return rebuildMotionComicEpisode(next);
+  });
+  return {
+    ...document,
+    stage: 'shot-board',
+    activeEpisodeId: episodeId,
+    assets: invalidateMotionComicEpisodeOutput(document, episodeId),
+    episodes,
+  };
+}
+
+export function removeMotionComicShot(
+  document: MotionComicPipelineData,
+  episodeId: string,
+  shotId: string,
+): MotionComicPipelineData {
+  let found = false;
+  const episodes = document.episodes.map((episode) => {
+    if (episode.id !== episodeId) return episode;
+    const target = episode.scenes.some((scene) => scene.shots.some((shot) => shot.id === shotId));
+    if (!target) return episode;
+    found = true;
+    if (episode.scenes.flatMap((scene) => scene.shots).length <= 1) throw new Error('MOTION_COMIC_LAST_SHOT: Keep at least one shot in the episode.');
+    const next: MotionComicEpisode = { ...episode, status: 'boarded', scenes: episode.scenes.map((scene) => ({ ...scene, shots: scene.shots.filter((shot) => shot.id !== shotId) })), dialogueCues: episode.dialogueCues.filter((cue) => cue.shotId !== shotId) };
+    return rebuildMotionComicEpisode(next);
+  });
+  if (!found) throw new Error(`MOTION_COMIC_SHOT_MISSING: ${shotId}`);
+  return { ...document, stage: 'shot-board', activeEpisodeId: episodeId, assets: invalidateMotionComicEpisodeOutput(document, episodeId), episodes };
+}
+
+export function reorderMotionComicShot(
+  document: MotionComicPipelineData,
+  episodeId: string,
+  shotId: string,
+  targetSceneId: string,
+  targetIndex: number,
+): MotionComicPipelineData {
+  if (!Number.isFinite(targetIndex) || !Number.isInteger(targetIndex)) throw new Error('MOTION_COMIC_INVALID_INDEX: Shot order must be an integer.');
+  const episode = document.episodes.find((candidate) => candidate.id === episodeId);
+  if (!episode) throw new Error(`MOTION_COMIC_EPISODE_MISSING: ${episodeId}`);
+  const sourceScene = episode.scenes.find((scene) => scene.shots.some((shot) => shot.id === shotId));
+  const targetScene = episode.scenes.find((scene) => scene.id === targetSceneId);
+  if (!sourceScene || !targetScene) throw new Error(`MOTION_COMIC_SHOT_MISSING: ${shotId}`);
+  const shot = sourceScene.shots.find((candidate) => candidate.id === shotId)!;
+  const scenes = episode.scenes.map((scene) => ({ ...scene, shots: scene.shots.filter((candidate) => candidate.id !== shotId) }));
+  const destination = scenes.find((scene) => scene.id === targetSceneId)!;
+  const index = Math.max(0, Math.min(targetIndex, destination.shots.length));
+  destination.shots.splice(index, 0, { ...shot, sceneId: targetSceneId });
+  const next = rebuildMotionComicEpisode({ ...episode, status: 'boarded', scenes });
+  return { ...document, stage: 'shot-board', activeEpisodeId: episodeId, assets: invalidateMotionComicEpisodeOutput(document, episodeId), episodes: document.episodes.map((candidate) => candidate.id === episodeId ? next : candidate) };
 }
 
 export function appendMotionComicScene(
@@ -718,19 +956,15 @@ export function appendMotionComicScene(
       dialogueCueIds: [cueId],
     }],
   };
-  const cue: MotionComicDialogueCue = { id: cueId, shotId, characterId: document.characters[0]?.id, startMs: episode.timeline.durationMs, endMs: episode.timeline.durationMs + durationMs, text: '新的线索出现了。', emotion: '警觉' };
-  const clip: ProductionTimeline['clips'][number] = { id: `clip-${shotId}`, shotId, startMs: episode.timeline.durationMs, durationMs, assetVersionIds: [], subtitleCueIds: [cueId], source: 'deterministic' };
+  const cue: MotionComicDialogueCue = { id: cueId, shotId, characterId: document.characters[0]?.id, startMs: 0, endMs: durationMs, text: '新的线索出现了。', emotion: '警觉' };
   return {
     ...document,
     stage: 'shot-board',
     activeEpisodeId: episodeId,
-    episodes: document.episodes.map((candidate) => candidate.id !== episodeId ? candidate : {
-      ...candidate,
-      status: 'boarded',
-      scenes: [...candidate.scenes, scene],
-      dialogueCues: [...candidate.dialogueCues, cue],
-      timeline: { ...candidate.timeline, durationMs: candidate.timeline.durationMs + durationMs, clips: [...candidate.timeline.clips, clip] },
-    }),
+    assets: invalidateMotionComicEpisodeOutput(document, episodeId),
+    episodes: document.episodes.map((candidate) => candidate.id !== episodeId ? candidate : rebuildMotionComicEpisode({
+      ...candidate, status: 'boarded', scenes: [...candidate.scenes, scene], dialogueCues: [...candidate.dialogueCues, cue],
+    })),
   };
 }
 
@@ -750,18 +984,17 @@ export function appendMotionComicShot(
   const template = scene.shots[0];
   if (!template) throw new Error('MOTION_COMIC_SCENE_EMPTY: Add a scene before adding a shot.');
   const shot: MotionComicShot = { ...template, id: shotId, index: shotIndex, title: input.title?.trim() || `镜头 ${shotIndex}`, durationMs, dialogueCueIds: [cueId], firstFrameAssetVersionId: undefined, lastFrameAssetVersionId: undefined, videoJobId: undefined, voiceAssetVersionId: undefined };
-  const cue: MotionComicDialogueCue = { id: cueId, shotId, characterId: document.characters[0]?.id, startMs: episode.timeline.durationMs, endMs: episode.timeline.durationMs + durationMs, text: '镜头里的细节改变了判断。', emotion: '试探' };
-  const clip: ProductionTimeline['clips'][number] = { id: `clip-${shotId}`, shotId, startMs: episode.timeline.durationMs, durationMs, assetVersionIds: [], subtitleCueIds: [cueId], source: 'deterministic' };
+  const cue: MotionComicDialogueCue = { id: cueId, shotId, characterId: document.characters[0]?.id, startMs: 0, endMs: durationMs, text: '镜头里的细节改变了判断。', emotion: '试探' };
   return {
     ...document,
     stage: 'shot-board',
     activeEpisodeId: episodeId,
-    episodes: document.episodes.map((candidate) => candidate.id !== episodeId ? candidate : {
-      ...candidate,
+    assets: invalidateMotionComicEpisodeOutput(document, episodeId),
+    episodes: document.episodes.map((candidate) => candidate.id !== episodeId ? candidate : rebuildMotionComicEpisode({
+      ...candidate, status: 'boarded',
       scenes: candidate.scenes.map((currentScene) => currentScene.id !== sceneId ? currentScene : { ...currentScene, shots: [...currentScene.shots, shot] }),
       dialogueCues: [...candidate.dialogueCues, cue],
-      timeline: { ...candidate.timeline, durationMs: candidate.timeline.durationMs + durationMs, clips: [...candidate.timeline.clips, clip] },
-    }),
+    })),
   };
 }
 
@@ -780,9 +1013,30 @@ export function parseMotionComicPipelineData(input: unknown): MotionComicPipelin
     throw new Error(`MOTION_COMIC_INVALID_DATA: ${issue.path.join('.') || 'document'} ${issue.message}`);
   }
   const document = parsed.data as MotionComicPipelineData;
+  // Repair the old append-to-episode bug only when all original clips are
+  // present, contiguous and correctly sized. Unknown corruption still fails.
+  document.episodes = document.episodes.map((episode) => {
+    const ordered = episode.scenes.flatMap((scene) => scene.shots);
+    if (episode.timeline.clips.every((clip, index) => clip.shotId === ordered[index]?.id)) return episode;
+    let endMs = 0;
+    const seen = new Set<string>();
+    const canRepair = episode.timeline.clips.length === ordered.length && episode.timeline.clips.every((clip) => {
+      const shot = ordered.find((candidate) => candidate.id === clip.shotId);
+      const valid = shot && !seen.has(clip.shotId) && clip.startMs === endMs && clip.durationMs === shot.durationMs;
+      seen.add(clip.shotId);
+      endMs += clip.durationMs;
+      return valid;
+    }) && endMs === episode.timeline.durationMs;
+    return canRepair ? rebuildMotionComicEpisode(episode) : episode;
+  });
   const issues = validateMotionComicPipeline(document);
   if (issues.length > 0) throw new Error(`MOTION_COMIC_INVALID_DATA: ${issues[0].path} ${issues[0].message}`);
   return document;
+}
+
+export function motionComicReferencesImageLabRecord(data: MotionComicPipelineData, recordId: string): boolean {
+  const uri = `storydream:image-lab/${recordId}`;
+  return data.assets.some((asset) => asset.uri === uri);
 }
 
 export function validateMotionComicPipeline(
@@ -797,6 +1051,10 @@ export function validateMotionComicPipeline(
   const sceneAssets = uniqueIdMap(data.sceneAssets, 'sceneAssets', issues);
   const props = uniqueIdMap(data.props, 'props', issues);
   const episodes = uniqueIdMap(data.episodes, 'episodes', issues);
+  const shotFrameAssetVersionIds = new Set(data.episodes.flatMap((episode) => episode.scenes.flatMap((scene) => scene.shots.flatMap((shot) => [
+    shot.firstFrameAssetVersionId,
+    shot.lastFrameAssetVersionId,
+  ].filter((id): id is string => Boolean(id))))));
 
   if (!data.title.trim()) issues.push({ path: 'title', message: 'A project title is required.' });
   if (!episodes.has(data.activeEpisodeId)) issues.push({ path: 'activeEpisodeId', message: 'The active episode must exist.' });
@@ -816,14 +1074,38 @@ export function validateMotionComicPipeline(
       lookIds.add(look.id);
       looks.set(look.id, look);
       if (look.characterId !== character.id) issues.push({ path: `${path}.characterId`, message: 'A look must reference its owning character.' });
-      validateReferenceList(look.referenceAssetVersionIds, assets, `${path}.referenceAssetVersionIds`, issues);
+      validateMotionComicReferenceList(
+        look.referenceAssetVersionIds,
+        assets,
+        jobs,
+        shotFrameAssetVersionIds,
+        { kind: 'look', id: look.id },
+        `${path}.referenceAssetVersionIds`,
+        issues,
+      );
     });
     if (ready && !character.looks.some((look) => look.pinned && look.referenceAssetVersionIds.length > 0)) {
       issues.push({ path: `characters[${characterIndex}].looks`, message: 'Each ready character needs a pinned look with reference assets.' });
     }
   });
-  data.sceneAssets.forEach((scene, index) => validateReferenceList(scene.referenceAssetVersionIds, assets, `sceneAssets[${index}].referenceAssetVersionIds`, issues));
-  data.props.forEach((prop, index) => validateReferenceList(prop.referenceAssetVersionIds, assets, `props[${index}].referenceAssetVersionIds`, issues));
+  data.sceneAssets.forEach((scene, index) => validateMotionComicReferenceList(
+    scene.referenceAssetVersionIds,
+    assets,
+    jobs,
+    shotFrameAssetVersionIds,
+    { kind: 'scene', id: scene.id },
+    `sceneAssets[${index}].referenceAssetVersionIds`,
+    issues,
+  ));
+  data.props.forEach((prop, index) => validateMotionComicReferenceList(
+    prop.referenceAssetVersionIds,
+    assets,
+    jobs,
+    shotFrameAssetVersionIds,
+    { kind: 'prop', id: prop.id },
+    `props[${index}].referenceAssetVersionIds`,
+    issues,
+  ));
 
   const allShots = new Map<string, MotionComicShot>();
   data.episodes.forEach((episode, episodeIndex) => {
@@ -854,8 +1136,8 @@ export function validateMotionComicPipeline(
         for (const cueId of shot.dialogueCueIds) {
           if (dialogue.get(cueId)?.shotId !== shot.id) issues.push({ path: `${shotPath}.dialogueCueIds`, message: 'Dialogue cues must belong to the referencing shot.' });
         }
-        if (shot.firstFrameAssetVersionId && !assets.has(shot.firstFrameAssetVersionId)) issues.push({ path: `${shotPath}.firstFrameAssetVersionId`, message: 'First frame asset does not exist.' });
-        if (shot.lastFrameAssetVersionId && !assets.has(shot.lastFrameAssetVersionId)) issues.push({ path: `${shotPath}.lastFrameAssetVersionId`, message: 'Last frame asset does not exist.' });
+        validateMotionComicFrameAsset(shot.firstFrameAssetVersionId, assets, `${shotPath}.firstFrameAssetVersionId`, 'First', issues);
+        validateMotionComicFrameAsset(shot.lastFrameAssetVersionId, assets, `${shotPath}.lastFrameAssetVersionId`, 'Last', issues);
         if (shot.videoJobId && !jobs.has(shot.videoJobId)) issues.push({ path: `${shotPath}.videoJobId`, message: 'Video job does not exist.' });
         if (shot.voiceAssetVersionId && !assets.has(shot.voiceAssetVersionId)) issues.push({ path: `${shotPath}.voiceAssetVersionId`, message: 'Shot voice asset does not exist.' });
         if (ready) {
@@ -871,6 +1153,10 @@ export function validateMotionComicPipeline(
       if (cue.characterId && !characters.has(cue.characterId)) issues.push({ path: `${path}.characterId`, message: 'Dialogue character does not exist.' });
       if (cue.endMs <= cue.startMs || cue.endMs > episode.timeline.durationMs) issues.push({ path, message: 'Dialogue timing must be positive and remain inside the episode timeline.' });
       if (cue.voiceAssetVersionId && !assets.has(cue.voiceAssetVersionId)) issues.push({ path: `${path}.voiceAssetVersionId`, message: 'Dialogue voice asset does not exist.' });
+      for (const issue of validatePersistedSubtitleCue(cue)) issues.push({ path: `${path}.${issue.path}`, message: issue.message });
+      if (cue.audioAssetVersionId && assets.get(cue.audioAssetVersionId)?.kind !== 'audio') issues.push({ path: `${path}.audioAssetVersionId`, message: 'Dialogue audio reference must point to an existing audio asset.' });
+      const clip = episode.timeline.clips.find((item) => item.shotId === cue.shotId);
+      if (clip && (cue.startMs < clip.startMs || cue.endMs > clip.startMs + clip.durationMs)) issues.push({ path, message: 'Dialogue cues must stay inside their owning shot timeline clip.' });
     });
     validateEpisodeTimeline(episode, episodeShots, dialogue, assets, issues, episodePath);
   });
@@ -881,27 +1167,31 @@ function validateEpisodeTimeline(
   episode: MotionComicEpisode,
   shots: Map<string, MotionComicShot>,
   dialogue: Map<string, MotionComicDialogueCue>,
-  assets: Map<string, { id: string }>,
+  assets: Map<string, ProductionAssetVersion>,
   issues: MotionComicValidationIssue[],
   episodePath: string,
 ) {
   let expectedStartMs = 0;
   const timelineShots = new Set<string>();
+  const orderedShots = episode.scenes.flatMap((scene) => scene.shots);
   episode.timeline.clips.forEach((clip, index) => {
     const path = `${episodePath}.timeline.clips[${index}]`;
     const shot = shots.get(clip.shotId);
     if (!shot) issues.push({ path: `${path}.shotId`, message: 'Timeline clip must reference an episode shot.' });
     if (timelineShots.has(clip.shotId)) issues.push({ path: `${path}.shotId`, message: 'Each shot may appear once on the episode timeline.' });
+    if (clip.shotId !== orderedShots[index]?.id) issues.push({ path: `${path}.shotId`, message: 'Timeline order must match the scene shot order.' });
     timelineShots.add(clip.shotId);
     if (clip.startMs !== expectedStartMs) issues.push({ path: `${path}.startMs`, message: 'Timeline clips must be continuous.' });
     if (shot && clip.durationMs !== shot.durationMs) issues.push({ path: `${path}.durationMs`, message: 'Timeline clip duration must match its shot.' });
     validateReferenceList(clip.assetVersionIds, assets, `${path}.assetVersionIds`, issues);
     validateReferenceList(clip.subtitleCueIds, dialogue, `${path}.subtitleCueIds`, issues);
+    if (clip.subtitleCueIds.some((id) => dialogue.get(id)?.shotId !== clip.shotId)) issues.push({ path: `${path}.subtitleCueIds`, message: 'Timeline subtitles must belong to their clip shot.' });
     expectedStartMs += clip.durationMs;
   });
   if (expectedStartMs !== episode.timeline.durationMs) issues.push({ path: `${episodePath}.timeline.durationMs`, message: 'Timeline duration must equal the sum of clips.' });
   if (timelineShots.size !== shots.size) issues.push({ path: `${episodePath}.timeline.clips`, message: 'Every episode shot must appear on the timeline.' });
   validateReferenceList(episode.timeline.audioAssetVersionIds, assets, `${episodePath}.timeline.audioAssetVersionIds`, issues);
+  issues.push(...validateProductionAudioTimeline(episode.timeline, assets, `${episodePath}.timeline`));
 }
 
 function uniqueIdMap<T extends { id: string }>(items: readonly T[], path: string, issues: MotionComicValidationIssue[]): Map<string, T> {
@@ -919,5 +1209,62 @@ function validateReferenceList<T>(ids: readonly string[], targets: ReadonlyMap<s
     if (seen.has(id)) issues.push({ path, message: `Reference ${id} is duplicated.` });
     seen.add(id);
     if (!targets.has(id)) issues.push({ path, message: `Reference ${id} does not exist.` });
+  }
+}
+
+type MotionComicReferenceTarget = { kind: 'look' | 'scene' | 'prop'; id: string };
+
+const MOTION_COMIC_REFERENCE_ASSET_PREFIX = 'motion-comic-reference-';
+const MOTION_COMIC_SHOT_KEYFRAME_ASSET_PREFIX = 'shot-keyframe-';
+
+function validateMotionComicReferenceList(
+  ids: readonly string[],
+  assets: ReadonlyMap<string, ProductionAssetVersion>,
+  jobs: ReadonlyMap<string, ProductionProviderJob>,
+  shotFrameAssetVersionIds: ReadonlySet<string>,
+  target: MotionComicReferenceTarget,
+  path: string,
+  issues: MotionComicValidationIssue[],
+) {
+  validateReferenceList(ids, assets, path, issues);
+  const expectedAssetId = `${MOTION_COMIC_REFERENCE_ASSET_PREFIX}${target.kind}-${target.id}`;
+  ids.forEach((id, index) => {
+    const asset = assets.get(id);
+    if (!asset) return;
+    const itemPath = `${path}[${index}]`;
+    if (asset.kind !== 'image') {
+      issues.push({ path: itemPath, message: 'Series consistency references must point to image assets.' });
+    }
+    if (asset.providerJobId && !jobs.has(asset.providerJobId)) {
+      issues.push({ path: itemPath, message: `Reference asset provider job ${asset.providerJobId} does not exist.` });
+    }
+    if (shotFrameAssetVersionIds.has(id) || asset.assetId.startsWith(MOTION_COMIC_SHOT_KEYFRAME_ASSET_PREFIX)) {
+      issues.push({ path: itemPath, message: 'Series consistency references cannot reuse shot keyframe assets.' });
+    }
+    // Older projects may use arbitrary logical asset ids; enforce ownership for the current namespaced format.
+    if (asset.assetId.startsWith(MOTION_COMIC_REFERENCE_ASSET_PREFIX) && asset.assetId !== expectedAssetId) {
+      issues.push({ path: itemPath, message: `Reference asset belongs to a different ${target.kind} target.` });
+    }
+  });
+}
+
+function validateMotionComicFrameAsset(
+  id: string | undefined,
+  assets: ReadonlyMap<string, ProductionAssetVersion>,
+  path: string,
+  label: 'First' | 'Last',
+  issues: MotionComicValidationIssue[],
+) {
+  if (!id) return;
+  const asset = assets.get(id);
+  if (!asset) {
+    issues.push({ path, message: `${label} frame asset does not exist.` });
+    return;
+  }
+  if (asset.kind !== 'image') {
+    issues.push({ path, message: `${label} frame must reference an image asset.` });
+  }
+  if (asset.assetId.startsWith(MOTION_COMIC_REFERENCE_ASSET_PREFIX)) {
+    issues.push({ path, message: `${label} frame cannot use a series consistency reference asset.` });
   }
 }

@@ -1,5 +1,5 @@
 import type { ReactNode } from 'react';
-import { Bell, Coins, History, Info, KeyRound, Maximize2, Minus, Moon, Sun, X } from 'lucide-react';
+import { Bell, Coins, FolderOpen, History, Info, KeyRound, Maximize2, Minus, Moon, Sun, X } from 'lucide-react';
 import { AsyncActionFeedback as InlineActionFeedback } from '../components/AsyncActionFeedback';
 import { taskStatusLabel as statusLabel } from '../components/StatusBadge';
 import { taskProgressLabel } from '../shared/html-video-workflow';
@@ -9,8 +9,9 @@ import type { RendererAppState as AppState } from './route-types';
 import {
   navigationItemForView,
   newTaskPrimaryAction,
-  pageSubtitle,
-  sidebarNavGroups,
+  primaryNavGroups,
+  primaryNavigationGroupForView,
+  secondaryNavigationItems,
   taskWorkspaceView,
   type NavigationItem as NavItem,
 } from './navigation';
@@ -56,9 +57,18 @@ export function AppShell({
   const NewTaskIcon = newTaskPrimaryAction.icon;
   const themeLabel = state.ui.theme === 'light' ? '切换深色主题' : '切换浅色主题';
   const taskOperationsView = activeView === 'queue' || activeView === 'history' || activeView === 'task-detail';
+  const activePrimaryGroup = primaryNavigationGroupForView(activeView);
+  const secondaryItems = secondaryNavigationItems(activePrimaryGroup);
+  const draftDirectoryLabel = state.config.jianying.draftPath ? `剪映草稿目录：${state.config.jianying.draftPath}` : '尚未配齐：剪映草稿目录';
 
   return (
-    <main className="app-shell" aria-busy={busy} data-editorial-shell data-shell-view={activeView}>
+    <main
+      className="app-shell"
+      aria-busy={busy}
+      data-editorial-shell
+      data-shell-view={activeView}
+      data-runtime={isBrowserPreview ? 'browser-fallback' : 'electron'}
+    >
       <div className="window-line">
         <div className="window-title">
           <div className="app-mark">S</div>
@@ -103,18 +113,33 @@ export function AppShell({
             onFocus={() => preloadRouteIntent(newTaskPrimaryAction.view)}
           >
             <span>{newTaskPrimaryAction.label}</span>
-            <kbd>Ctrl+N</kbd>
           </Button>
 
-          <nav className="nav-list">
-            {sidebarNavGroups.map((group) => (
-              <div key={group.id} className="nav-group" role="group" aria-label={group.label}>
-                <span className="nav-section-label">{group.label}</span>
-                {group.items.map((item) => (
-                  <NavButton key={item.view} item={item} active={activeView === item.view} busy={busy} navigate={navigate} />
-                ))}
-              </div>
-            ))}
+          <nav className="nav-list" aria-label="主导航">
+            <div className="nav-group" role="group" aria-label="一级入口">
+              {primaryNavGroups.map((group) => (
+                <NavButton
+                  key={group.id}
+                  item={{
+                    view: group.defaultView,
+                    label: group.label,
+                    hint: group.items.map((item) => item.label).join(' · '),
+                    icon: group.items[0].icon,
+                  }}
+                  active={activePrimaryGroup.id === group.id}
+                  level="primary"
+                  current={activeView === group.defaultView && !secondaryItems.some((item) => item.view === activeView)}
+                  busy={busy}
+                  navigate={navigate}
+                />
+              ))}
+            </div>
+            {secondaryItems.length > 0 ? <div className="nav-group nav-group-secondary" role="group" aria-label={activePrimaryGroup.label}>
+              <span className="nav-section-label">{activePrimaryGroup.id === 'projects' ? '制作工作区' : activePrimaryGroup.label}</span>
+              {secondaryItems.map((item) => (
+                <NavButton key={item.view} item={item} level="secondary" active={activeView === item.view} busy={busy} navigate={navigate} />
+              ))}
+            </div> : null}
           </nav>
 
           <div className="sidebar-bottom">
@@ -154,7 +179,10 @@ export function AppShell({
               type="button"
               icon={<KeyRound size={15} />}
               data-nav-view="activation"
+              aria-label={`试用剩余 ${trialDaysLabel}`}
+              title={`激活管理 · ${trialDaysLabel}`}
               disabled={busy}
+              aria-current={activeView === 'activation' ? 'page' : undefined}
               onClick={() => navigate('activation')}
               onMouseEnter={() => preloadRouteIntent('activation')}
               onFocus={() => preloadRouteIntent('activation')}
@@ -170,7 +198,10 @@ export function AppShell({
                 type="button"
                 icon={<Coins size={15} />}
                 data-nav-view="account"
+                aria-label={`积分明细 ${state.account.balance.toFixed(2)}`}
+                title="账户与积分"
                 disabled={busy}
+                aria-current={activeView === 'account' ? 'page' : undefined}
                 onClick={() => navigate('account')}
                 onMouseEnter={() => preloadRouteIntent('account')}
                 onFocus={() => preloadRouteIntent('account')}
@@ -186,6 +217,7 @@ export function AppShell({
                 icon={<Info size={14} />}
                 data-nav-view="account"
                 disabled={busy}
+                aria-current={activeView === 'account' ? 'page' : undefined}
                 onClick={() => navigate('account')}
                 onMouseEnter={() => preloadRouteIntent('account')}
                 onFocus={() => preloadRouteIntent('account')}
@@ -199,18 +231,16 @@ export function AppShell({
         <section className="content">
           <header className={taskOperationsView ? 'page-head task-operations-page-head' : 'page-head'}>
             <div>
-              {taskOperationsView ? <span className="page-breadcrumb">StoryDream / 创作生产</span> : null}
+              <span className="page-breadcrumb">StoryDream / {activePrimaryGroup.label}</span>
               <h1>{activeNav.label}</h1>
-              {taskOperationsView ? null : <p>{pageSubtitle(activeView)}</p>}
-              {isBrowserPreview ? <span className="local-note">浏览器预览不能执行真实流水线，请在 Electron 应用中运行任务。</span> : null}
             </div>
-            <div className="top-notice">
-              <Info size={16} />
-              <span>{state.config.jianying.draftPath ? `剪映草稿目录：${state.config.jianying.draftPath}` : '尚未配齐：剪映草稿目录'}</span>
+            <div className="shell-environment">
+              {isBrowserPreview ? <Tooltip content="浏览器预览不能执行真实流水线，请在 Electron 应用中运行任务。"><span className="shell-preview-label" tabIndex={0}>浏览器预览</span></Tooltip> : null}
+              <Tooltip content={draftDirectoryLabel}><span className="top-notice" tabIndex={0} aria-label={draftDirectoryLabel}><FolderOpen size={15} /><span>剪映草稿{state.config.jianying.draftPath ? '' : '未配置'}</span></span></Tooltip>
             </div>
             <div className={`save-state ${saveTone}`}>
               <span />
-              {saveTone === 'saving' ? '保存中' : saveTone === 'dirty' ? '有未保存改动' : '所有改动已保存'}
+              {saveTone === 'saving' ? '保存中' : saveTone === 'dirty' ? '有未保存改动' : '工作区状态已同步'}
             </div>
             <IconButton
               className="theme-toggle"
@@ -234,7 +264,7 @@ export function AppShell({
   );
 }
 
-function NavButton({ item, active, busy, navigate }: { item: NavItem; active: boolean; busy: boolean; navigate: (view: ShellView) => void }) {
+function NavButton({ item, active, current = active, level, busy, navigate }: { item: NavItem; active: boolean; current?: boolean; level: 'primary' | 'secondary'; busy: boolean; navigate: (view: ShellView) => void }) {
   const Icon = item.icon;
   return (
     <Button
@@ -244,7 +274,9 @@ function NavButton({ item, active, busy, navigate }: { item: NavItem; active: bo
       type="button"
       icon={<Icon size={16} />}
       data-nav-view={item.view}
+      data-nav-level={level}
       aria-label={item.label}
+      aria-current={current ? 'page' : undefined}
       title={`${item.label} · ${item.hint}`}
       disabled={busy}
       onClick={() => navigate(item.view)}

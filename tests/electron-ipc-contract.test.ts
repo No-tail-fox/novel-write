@@ -1,11 +1,47 @@
-import { mkdir, mkdtemp, readFile, realpath, rename, rm, stat, symlink, writeFile } from 'node:fs/promises';
+import { mkdir, readFile, readdir, realpath, rename, stat, writeFile } from 'node:fs/promises';
+import { createTestTempDirectory as mkdtemp, createTestDirectoryLink as symlink, removeTestTempDirectories } from './helpers/test-temp-directories';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
 import { openExistingDirectory } from '../electron/open-directory';
 import { INVOKE_CHANNELS } from '../src/shared/storydream-api';
+import { ipcInputSchemas } from '../src/shared/ipc-contract';
+
+describe('owned test directory cleanup', () => {
+  it('refuses unregistered directories before scheduling recursive cleanup', () => {
+    expect(() => removeTestTempDirectories(tmpdir())).toThrow('unregistered test directory');
+  });
+
+  it.each(['holder', 'target'] as const)('detaches junctions before disposing their %s', async (first) => {
+    const root = await mkdtemp(join(tmpdir(), 'storydream-cleanup-holder-'));
+    const outside = await mkdtemp(join(tmpdir(), 'storydream-cleanup-target-'));
+    const remaining = new Set([root, outside]);
+    try {
+      await writeFile(join(root, 'holder.txt'), 'holder sentinel', 'utf8');
+      await writeFile(join(outside, 'target.txt'), 'target sentinel', 'utf8');
+      await symlink(outside, join(root, 'alias'), process.platform === 'win32' ? 'junction' : 'dir');
+      const removed = first === 'holder' ? root : outside;
+      await removeTestTempDirectories(removed);
+      remaining.delete(removed);
+      if (first === 'holder') {
+        expect(await readFile(join(outside, 'target.txt'), 'utf8')).toBe('target sentinel');
+      } else {
+        expect(await readdir(root)).toEqual(['holder.txt']);
+        expect(await readFile(join(root, 'holder.txt'), 'utf8')).toBe('holder sentinel');
+      }
+    } finally {
+      await removeTestTempDirectories(...remaining);
+    }
+  });
+});
 
 describe('electron ipc contract', () => {
+  it('accepts the selected episode on director render while rejecting malformed or extra fields', () => {
+    expect(ipcInputSchemas['director:render'].parse({ id: 'project', episodeId: 'episode-two' })).toEqual({ id: 'project', episodeId: 'episode-two' });
+    expect(ipcInputSchemas['director:render'].parse({ id: 'project' })).toEqual({ id: 'project' });
+    expect(() => ipcInputSchemas['director:render'].parse({ id: 'project', episodeId: '' })).toThrow();
+    expect(() => ipcInputSchemas['director:render'].parse({ id: 'project', episodeId: 'episode-two', bypassQuality: true })).toThrow();
+  });
   it('keeps hot board fetching and external navigation in the trusted main process', async () => {
     const [main, preload, apiContract] = await Promise.all([
       readFile(new URL('../electron/main.ts', import.meta.url), 'utf8'),
@@ -96,7 +132,7 @@ describe('electron ipc contract', () => {
       expect(longError).not.toBeNull();
       expect(longError!.message.length).toBeLessThanOrEqual(1_100);
     } finally {
-      await rm(root, { recursive: true, force: true });
+      await removeTestTempDirectories(root);
     }
   });
 
@@ -118,8 +154,8 @@ describe('electron ipc contract', () => {
       expect(opened).toBe(false);
     } finally {
       await Promise.all([
-        rm(root, { recursive: true, force: true }),
-        rm(outside, { recursive: true, force: true }),
+        removeTestTempDirectories(root),
+        removeTestTempDirectories(outside),
       ]);
     }
   });
@@ -159,8 +195,8 @@ describe('electron ipc contract', () => {
       expect(opened).toBe(false);
     } finally {
       await Promise.all([
-        rm(root, { recursive: true, force: true }),
-        rm(outside, { recursive: true, force: true }),
+        removeTestTempDirectories(root),
+        removeTestTempDirectories(outside),
       ]);
     }
   });
@@ -215,8 +251,8 @@ describe('electron ipc contract', () => {
       expect(opened).toBe(false);
     } finally {
       await Promise.all([
-        rm(root, { recursive: true, force: true }),
-        rm(outside, { recursive: true, force: true }),
+        removeTestTempDirectories(root),
+        removeTestTempDirectories(outside),
       ]);
     }
   });
@@ -233,7 +269,7 @@ describe('electron ipc contract', () => {
       }, { allowedRoot: root })).resolves.toBeUndefined();
       expect(opened).toEqual([await realpath(hiddenPerson)]);
     } finally {
-      await rm(root, { recursive: true, force: true });
+      await removeTestTempDirectories(root);
     }
   });
 
@@ -271,8 +307,8 @@ describe('electron ipc contract', () => {
       expect(opened).toBe(false);
     } finally {
       await Promise.all([
-        rm(root, { recursive: true, force: true }),
-        rm(outside, { recursive: true, force: true }),
+        removeTestTempDirectories(root),
+        removeTestTempDirectories(outside),
       ]);
     }
   });
@@ -1045,6 +1081,17 @@ describe('electron ipc contract', () => {
     expect(renderer).toContain("typeof window.__tl.seek === 'function'");
     expect(renderer).toContain('document.fonts.ready');
     expect(renderer).toContain('document.images');
+    expect(renderer).toContain("document.querySelectorAll('video')");
+  });
+
+  it('uses a real font cmap probe instead of treating Chromium glyph counts as proof', async () => {
+    const renderer = await readFile(new URL('../electron/director-renderer.ts', import.meta.url), 'utf8');
+    const sidecar = await readFile(new URL('../src/shared/storybound-sidecar.ts', import.meta.url), 'utf8');
+    expect(renderer).toContain("mode: 'probe_glyphs'");
+    expect(renderer).toContain('missing_code_points.map((codePoint) => String.fromCodePoint(codePoint))');
+    expect(sidecar).toContain('Read the selected Windows font cmap');
+    expect(sidecar).toContain('probe_glyphs(payload)');
+    expect(sidecar).not.toContain('GetGlyphIndicesW');
   });
 
   it('seeks each hidden scene frame onto an animation frame before writing recovered JPEG names', async () => {
@@ -1056,9 +1103,9 @@ describe('electron ipc contract', () => {
     expect(captureLoop).toContain("sidecarFramePattern.replace('%04d', String(frameNumber).padStart(4, '0'))");
     expect(captureLoop).toContain('await seekHiddenHtmlSceneFrame(window, time)');
     expect(renderer).toContain('requestAnimationFrame');
-    expect(renderer).toContain('window.__tl.seek(${JSON.stringify(time)}, false);');
+    expect(renderer).toContain('const result = timeline.seek(${JSON.stringify(time)}, false);');
+    expect(renderer).toContain('return Promise.resolve(result === timeline ? undefined : result).then');
     expect(renderer).toContain('window.__tl.play(); return true;');
-    expect(renderer).not.toContain('Promise.resolve(window.__tl.seek');
     expect(renderer).not.toContain('Promise.resolve(window.__tl.play())');
     expect(captureLoop).toContain('capturePage');
   });

@@ -1,4 +1,5 @@
-import { access, mkdtemp, mkdir, readFile, readdir, rename, rm, stat, symlink, truncate, writeFile } from 'node:fs/promises';
+import { access, mkdir, readFile, readdir, rename, stat, truncate, writeFile } from 'node:fs/promises';
+import { createTestTempDirectory as mkdtemp, createTestDirectoryLink as symlink, removeTestTempDirectories } from './helpers/test-temp-directories';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, describe, expect, it, vi } from 'vitest';
@@ -13,7 +14,7 @@ const cleanupRoots: string[] = [];
 const validPng = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAusB9Y9ZlNsAAAAASUVORK5CYII=', 'base64');
 
 afterEach(async () => {
-  await Promise.all(cleanupRoots.splice(0).map((root) => rm(root, { recursive: true, force: true })));
+  await Promise.all(cleanupRoots.splice(0).map((root) => removeTestTempDirectories(root)));
 });
 
 describe('managed image lab import', () => {
@@ -231,6 +232,23 @@ describe('managed image lab import', () => {
     const handler = fallback.slice(fallback.indexOf('async addImageLabRecord'), fallback.indexOf('async saveAccount'));
     expect(handler).toContain("throw new Error('IMAGE_LAB_IMPORT_REQUIRES_ELECTRON");
     expect(handler).not.toContain('imagePath: input.imagePath');
+  });
+
+  it('blocks permanent deletion while a managed image is referenced by a motion comic project', async () => {
+    const main = await readFile(new URL('../electron/main.ts', import.meta.url), 'utf8');
+    const guard = main.slice(
+      main.indexOf('async function assertImageLabRecordIsNotProjectReference'),
+      main.indexOf('async function getConfigService'),
+    );
+    const handler = main.slice(
+      main.indexOf("trustedHandle('image-lab:delete'"),
+      main.indexOf("trustedHandle('voice-lab:archive'"),
+    );
+    expect(guard).toContain('database.getImageLabRecordDetail(id)');
+    expect(guard).toContain('database.getTaskDetail(record.upstreamTaskId)');
+    expect(guard).toContain('motionComicReferencesImageLabRecord(document, id)');
+    expect(guard).toContain('HISTORY_REFERENCED');
+    expect(handler.indexOf('assertImageLabRecordIsNotProjectReference')).toBeLessThan(handler.indexOf('deleteHistoryPermanently'));
   });
 });
 

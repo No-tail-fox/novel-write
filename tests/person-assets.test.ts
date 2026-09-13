@@ -9,6 +9,7 @@ import {
   listPersonAssets,
   listPersonImages,
 } from '@shared/person-assets';
+import { recyclePersonAsset, restoreRecycledPersonAsset } from '@shared/person-assets';
 import type { StoryboardScene } from '@shared/types';
 
 const tinyPng = Buffer.from(
@@ -55,6 +56,21 @@ describe('person assets', () => {
       expect(meta).toEqual({ version: 1, person: '迟子建', ratio: '9:16', origins: copied.origins });
     } finally {
       await rm(dir, { recursive: true, force: true });
+    }
+  });
+});
+
+describe('person asset recycle lifecycle', () => {
+  it('restores a deleted library without losing images', async () => {
+    const root = await mkdtemp(join(tmpdir(), 'storybound-person-assets-recycle-'));
+    try {
+      await createPersonAsset(root, '阿宁');
+      await writeFile(join(root, '阿宁', 'portrait.png'), tinyPng);
+      const recycled = await recyclePersonAsset(root, '阿宁');
+      expect(await listPersonAssets(root)).toEqual([]);
+      await expect(restoreRecycledPersonAsset(root, recycled.token)).resolves.toMatchObject({ name: '阿宁', count: 1 });
+    } finally {
+      await rm(root, { recursive: true, force: true });
     }
   });
 });

@@ -38,6 +38,9 @@ describe('motion comic workbench', () => {
     expect(page).toContain('api.createMotionComic');
     expect(page).toContain('api.saveMotionComic');
     expect(page).toContain('api.generateImageLab');
+    expect(page).toContain('async function importReference');
+    expect(page).toContain('api.selectLocalImage()');
+    expect(page).toContain('api.addImageLabRecord({');
     expect(page).toContain('api.saveConfig');
     expect(page).toContain('enableImageProfile');
     expect(page).toContain('resolveDirectorImageProviderOptions');
@@ -51,7 +54,7 @@ describe('motion comic workbench', () => {
     expect(start).toContain('AI 创作');
     expect(start).toContain('AI 修改');
     expect(page).toContain('api.openTaskOutputDirectory');
-    expect(page).toContain('onGenerateShot={generateShot}');
+    expect(page).toContain('onGenerateShot={(shotId) => withHistoryCapacity(PRODUCTION_MEDIA_HISTORY_DEMAND, () => generateShot(shotId))}');
     expect(page).toContain('onNewProject={startCreate}');
     expect(page).toContain('onAddEpisode={addEpisode}');
     expect(page).toContain('onAddScene={addScene}');
@@ -79,7 +82,7 @@ describe('motion comic workbench', () => {
     expect(workspace).toContain('renderProject');
     expect(workspace).toContain('openOutput');
     expect(workspace).toContain('disabled={!outputUrl || outputBusy}');
-    expect(css).toContain('grid-template-columns: 274px minmax(0, 1fr) 492px');
+    expect(css).toContain('grid-template-columns: 274px minmax(0, 1fr) clamp(396px, calc(100vw - 1044px), 492px)');
     expect(css).toContain('.director-episode-row .sd-button__content');
     expect(css).toContain('flex: 0 0 auto');
     expect(workspace).toContain('director-status-footer');
@@ -87,11 +90,34 @@ describe('motion comic workbench', () => {
     expect(workspace).toContain('director-shot-search');
     expect(workspace).toContain('director-asset-search');
     expect(workspace).toContain('director-version-list');
-    expect(workspace).toContain("role={errorMessage ? 'alert' : undefined}");
+    expect(workspace).toContain("role={statusError ? 'alert' : undefined}");
     expect(workspace).not.toContain('onChange={() => undefined}');
     expect(workspace).not.toContain('item.progress + 9');
     expect(css).toContain('grid-template-rows: 56px minmax(0, 1fr) 38px');
     expect(css).not.toContain('min-width: 1000px');
     expect(shellCss).toContain(":not(:has(.director-desk)) .content:has(.page-head .local-note)");
+  });
+
+  it('provides a complete reference-version workflow and blocks unsafe consistency generation', async () => {
+    const [page, consistency, css] = await Promise.all([
+      source('src/features/motion-comic/MotionComicPage.tsx'),
+      source('src/features/motion-comic/motion-comic-consistency.ts'),
+      source('src/styles/features/director-desk.css'),
+    ]);
+    expect(page).toContain('MotionComicReferenceEditor');
+    for (const label of ['导入参考图', '导入新版本', '固定此版本', '取消固定', '缺少参考图', '文件不可用']) expect(page).toContain(label);
+    expect(page).toContain('imageLabRecordIdFromMutation(imported)');
+    expect(page).toContain('setDirty(true)');
+    expect(page).toContain('motionComicReferenceVersionIds(document)');
+    expect(page).toContain("asset.assetId.startsWith('shot-keyframe-')");
+    expect(page).toContain('if (!providerStatus.supportsReferenceImages)');
+    expect(page).toContain('inspectMotionComicShotConsistency(current, sourceShot)');
+    expect(page).toContain("smartMode: 'reference-edit'");
+    expect(page).toContain('await api.readAssetDataUrl(path)');
+    expect(page).not.toContain("smartMode: referenceImagePaths.length ? 'reference-edit' : 'video-narration'");
+    expect(consistency).toContain('REFERENCE IMAGE ORDER:');
+    expect(consistency).toContain('selected === true && asset.pinned === true');
+    expect(css).toContain('.motion-comic-reference-versions');
+    expect(css).toContain('.motion-comic-readiness');
   });
 });

@@ -1,17 +1,19 @@
-import { app, BrowserWindow, clipboard, dialog, ipcMain, Menu, nativeImage, net, protocol, safeStorage, session, shell, type Cookie } from 'electron';
+import { app, BrowserWindow, clipboard, dialog, ipcMain, Menu, nativeImage, net, protocol, safeStorage, session, shell, type Cookie, type IpcMainInvokeEvent } from 'electron';
 import { execFile } from 'node:child_process';
 import { createHash, randomInt, randomUUID } from 'node:crypto';
 import { existsSync } from 'node:fs';
-import { copyFile, mkdir, readFile, rename, rm, stat, writeFile } from 'node:fs/promises';
+import { copyFile, mkdir, mkdtemp, readFile, rename, rm, stat, writeFile } from 'node:fs/promises';
 import { basename, dirname, extname, isAbsolute, join, relative, resolve } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { promisify } from 'node:util';
 import { readTaskArtifactSnapshot } from '../src/shared/artifact-preview';
 import { classifyBenchmarkUrl, normalizeBenchmarkSourceUrl } from '../src/shared/benchmark-monitoring';
 import { discoverDangdangBooks } from '../src/shared/book-discovery';
-import { parseEditorialCollagePipelineData, type EditorialCollageCreateInput, type EditorialCollagePipelineData, type EditorialCollageSaveInput } from '../src/shared/editorial-collage';
-import { parseMotionComicPipelineData, type MotionComicCreateInput, type MotionComicPipelineData, type MotionComicSaveInput } from '../src/shared/motion-comic';
-import type { DirectorRenderRequest, DirectorRenderScene } from '../src/shared/director-render';
+import { parseEditorialCollagePipelineData, rebuildEditorialTimeline, type EditorialCollageCreateInput, type EditorialCollagePipelineData, type EditorialCollageSaveInput } from '../src/shared/editorial-collage';
+import { motionComicReferencesImageLabRecord, parseMotionComicPipelineData, type MotionComicCreateInput, type MotionComicPipelineData, type MotionComicSaveInput } from '../src/shared/motion-comic';
+import { buildDirectorRenderScenes, directorCanvasForRatio, directorDocumentRenderFingerprint, directorNarrationAlignment, directorQualityReview, evaluateDirectorQuality, persistDirectorRenderCompletion, type DirectorRenderDocument, type DirectorGenerateShotVideoRequest, type DirectorGenerateShotVideoResult, type DirectorRenderRequest, type DirectorSubtitleRecheckRequest, type DirectorSubtitleRecheckResult, type DirectorMediaRecheckRequest, type DirectorMediaRecheckResult } from '../src/shared/director-render';
+import { evaluateDirectorVisualContinuity, productionVisualContinuityEvidenceSchema, type ProductionVisualContinuityEvidence } from '../src/shared/production-visual-continuity';
+import { evaluateDirectorSubtitleLayout } from '../src/shared/production-subtitle-layout';
 import { isCancellation, normalizeAppError } from '../src/shared/app-error';
 import { fromLlmModelTestResult, testConfigTarget } from '../src/shared/config-utils';
 import { generateImageLabRecord } from '../src/shared/image-lab';
@@ -39,7 +41,7 @@ import { assertHyperframesSource, GSAP_RUNTIME_FILENAME, HYPERFRAMES_RUNTIME_FIL
 import { generateConfiguredVoicePreview } from '../src/shared/media-providers';
 import { mergeMinimaxCloneVoice } from '../src/shared/minimax-clone-voices';
 import { assertNetworkUrl } from '../src/shared/network-policy';
-import { createPersonAsset, deletePersonAsset, importPersonAssetFiles, listPersonAssets, listPersonImages, renamePersonAsset } from '../src/shared/person-assets';
+import { createPersonAsset, importPersonAssetFiles, listPersonAssets, listPersonImages, renamePersonAsset, recyclePersonAsset, restoreRecycledPersonAsset } from '../src/shared/person-assets';
 import { createConfiguredJsonLlm, createConfiguredTextLlm, listConfiguredProviderModels, testConfiguredLlm } from '../src/shared/llm-provider';
 import { markSceneImageForRegeneration, markSceneImagesForRegeneration, markSceneNarrationForRegeneration, markTaskDraftForRepack, markTaskStepForRerun, removeSceneVideoAsset, replaceSceneImageAssets, replaceSceneVideoAsset, updateSceneImagePrompt, updateSceneVideoTrim, updateTaskSubtitleLines } from '../src/shared/pipeline-cache';
 import { resolvePythonRuntimeInfo, setDefaultPythonRuntimeAppRoot } from '../src/shared/python-runtime';
@@ -49,6 +51,7 @@ import { runStoryboundMediaSidecar } from '../src/shared/storybound-sidecar';
 import { FileDatabase, type HistoryDeletionCleanup, type HistoryTombstone } from '../src/shared/storage';
 import { createHtmlVideoRuntimeProviders, createTaskRuntimeProviders } from '../src/shared/task-runtime-providers';
 import { assertTaskLifecycleAction } from '../src/shared/task-progress';
+import { createConfiguredVideoProvider, requiredVideoCapabilities, selectVideoGenerationRoute, type VideoGenerationRequest } from '../src/shared/video-provider';
 import type { AccountProfile, ActivationState, AppConfig, AppDelta, AppDeltaReconcileRequest, AppDeltaReconcileResult, AppStatePatch, BenchmarkGroupInput, BenchmarkGroupSyncResult, BenchmarkLoginInput, BenchmarkLoginResult, BenchmarkPlatform, BenchmarkPostInput, BookDiscoveryRequest, BookSelectionInput, ConfigTestTarget, CreateTaskInput, CreateViralAnalysisInput, CursorRequest, CustomStyle, CustomStyleGenerateInput, DraftTemplate, HistoryFamily, HistoryListRequest, HotBoardSourceContent, HtmlVideoAsset, HtmlVideoAssetTarget, HtmlVideoCompositionSource, HtmlVideoCompositionSourceLintInput, HtmlVideoCompositionSourceSaveInput, HtmlVideoConfigChange, HtmlVideoPipelineDataV2, HtmlVideoSceneChange, HtmlVideoVoiceClip, ImageLabGenerateInput, ImageLabRecord, ImageLabSummary, ImaKnowledgeRequest, LlmConfig, ManagedBgmImport, MinimaxCloneVoiceInput, OrdinaryTaskCoverRatio, OrdinaryTaskCoverSelection, PromptTemplate, ProviderModelListRequest, ResearchCopyComposeInput, SceneVideoLibraryItem, SequencedTaskEvent, StoryboardScene, Task, TaskArtifactVideoPreview, TaskImageReplacementSource, TaskStatus, TaskStepRerunMode, TaskSubtitleSceneLines, TaskVideoReplacementSource, UiPreferencesUpdate, ViralAnalysisRecord, ViralAnalysisResult, ViralAnalysisStatus, ViralProductionTaskOptions, VolcengineSpeakerListRequest, VoiceLabGenerateInput, VoiceLabRecord, VoiceLabSummary, WebSearchRequest } from '../src/shared/types';
 import { boundViralDiagnosticText, createViralProductionTaskInput, detectViralPlatform, runViralAnalysis, viralCheckpointResumeState } from '../src/shared/viral-analysis';
 import { createViralRuntimeProviders } from '../src/shared/viral-runtime';
@@ -69,12 +72,16 @@ import {
   type HtmlVideoMediaProbeResult,
 } from './html-video-runtime';
 import { createElectronHtmlVideoRenderer } from './html-video-renderer';
+import type { CreateDirectorBatchInput, DirectorBatchStatus, UpdateDirectorBatchInput } from '../src/shared/director-batch-persistence';
+import { createProductionHistoryReservations, PRODUCTION_MEDIA_HISTORY_DEMAND, PRODUCTION_RENDER_HISTORY_DEMAND, type ProductionHistoryDemand, type ProductionHistoryReservation } from '../src/shared/production-history';
 import { renderDirectorVideo } from './director-renderer';
+import { hashDirectorRenderOutput } from './director-render-output';
 import { createTrustedIpcRegistrar } from './ipc';
 import { openExistingDirectory } from './open-directory';
 import { importManagedImageLabRecord } from './image-lab-import';
 import { importManagedBgm, resolveRuntimeManagedBgmLibrary } from './managed-bgm';
 import { writeWindowsManagedFile } from './windows-managed-file';
+import type { LocalSubtitleTimestampFile } from '../src/shared/storydream-api';
 import { captureEditorialQa, resolveEditorialQaConfig } from './editorial-qa';
 import { collectBenchmarkAccount } from './benchmark-sync';
 import { copySceneVideoToTask, importSceneVideoToLibrary, listSceneVideoLibrary, SCENE_VIDEO_EXTENSIONS } from './scene-video-library';
@@ -287,8 +294,12 @@ async function seedTaskOperationsEditorialQa(database: FileDatabase, dataDir: st
   const taskOperationsScope = editorialQaConfig?.scope === 'task-operations'
     || editorialQaConfig?.scope === 'workflow'
     || editorialQaConfig?.scope === 'all';
+  const projectFixtureScope = taskOperationsScope || editorialQaConfig?.scope === 'shell';
+  const sceneVideoScope = editorialQaConfig?.scope === 'task-operations'
+    || editorialQaConfig?.scope === 'workflow'
+    || editorialQaConfig?.scope === 'all';
   const draftTemplateGalleryScope = editorialQaConfig?.scope === 'system';
-  if (!taskOperationsScope && !draftTemplateGalleryScope) return;
+  if (!projectFixtureScope && !draftTemplateGalleryScope) return;
   const selectedTemplateId = 'qa-selected-draft-template';
   const selectedTemplateBase = await database.getDraftTemplateDetail('builtin-portrait-4-3');
   if (!selectedTemplateBase) throw new Error('Editorial QA draft template fixture base is missing.');
@@ -331,8 +342,8 @@ async function seedTaskOperationsEditorialQa(database: FileDatabase, dataDir: st
     caption: { ...selectedTemplateBase.caption, y: -0.65, fontSize: 14, color: '#f8fafc', underline: draftTemplateGalleryScope },
     disclaimer: { ...selectedTemplateBase.disclaimer, fontSize: 9, color: '#9ad7cc', alpha: 0.82, underline: draftTemplateGalleryScope },
   });
-  if (!taskOperationsScope) return;
-  await seedTaskOperationsSceneVideo(dataDir);
+  if (!projectFixtureScope) return;
+  if (sceneVideoScope) await seedTaskOperationsSceneVideo(dataDir);
   const createFixture = async (title: string, overrides: Partial<CreateTaskInput> = {}) => {
     await new Promise((resolveDelay) => setTimeout(resolveDelay, 2));
     return database.createTask({
@@ -411,6 +422,15 @@ async function seedTaskOperationsEditorialQa(database: FileDatabase, dataDir: st
 
   const paused = await createFixture('夏日轻食产品短片');
   await database.updateTask(paused.id, { status: 'paused', currentStep: 4, errorMessage: '等待用户继续任务' });
+
+  const draft = await createFixture('QA 草稿项目');
+  await database.updateTask(draft.id, { status: 'draft', currentStep: 0 });
+
+  const pending = await createFixture('QA 待开始项目');
+  await database.updateTask(pending.id, { status: 'pending', currentStep: 4 });
+
+  const cancelled = await createFixture('QA 已取消项目');
+  await database.updateTask(cancelled.id, { status: 'cancelled', currentStep: 4 });
 
   const failed = await createFixture('QA 浅色错误提示');
   await database.updateTask(failed.id, {
@@ -730,6 +750,22 @@ async function deleteHistoryPermanently(
         database.updateHistoryTombstoneCleanup(family, id, cleanupState, diagnostic),
     },
   );
+}
+
+async function assertImageLabRecordIsNotProjectReference(database: FileDatabase, id: string): Promise<void> {
+  const record = await database.getImageLabRecordDetail(id);
+  if (!record?.upstreamTaskId) return;
+  const task = await database.getTaskDetail(record.upstreamTaskId);
+  if (!task || task.taskType !== 'motion-comic' || !task.pipelineData) return;
+  let document: MotionComicPipelineData;
+  try {
+    document = parseMotionComicPipelineData(task.pipelineData);
+  } catch {
+    throw new Error(`HISTORY_REFERENCED: 无法确认图片是否仍被 AI 漫剧“${task.title}”引用，请先修复或删除该项目。`);
+  }
+  if (motionComicReferencesImageLabRecord(document, id)) {
+    throw new Error(`HISTORY_REFERENCED: 图片仍被 AI 漫剧“${task.title}”的系列圣经引用，请先替换参考图或删除项目。`);
+  }
 }
 
 async function getConfigService(): Promise<ConfigService> {
@@ -1085,8 +1121,12 @@ async function normalizeSceneVideo(sourcePath: string, outputPath: string) {
     work_dir: sceneVideoLibraryRoot(),
     video_path: sourcePath,
     output_path: outputPath,
+    require_nonblack: true,
   });
   if (result.has_video !== true) throw new Error('SCENE_VIDEO_SOURCE_INVALID: 所选文件不包含视频画面。');
+  if (result.has_nonblack_video !== true) {
+    throw new Error('SCENE_VIDEO_SOURCE_BLACK: 视频未检测到有效非黑画面。');
+  }
   return {
     durationMs: Math.round(Number(result.duration) * 1000),
     width: Number(result.width),
@@ -2095,6 +2135,7 @@ trustedHandle('image-lab:restore', (_event, id: string) =>
   }));
 trustedHandle('image-lab:delete', (_event, id: string) =>
   runHistoryGovernanceMutation('image-lab', id, async (database) => {
+    await assertImageLabRecordIsNotProjectReference(database, id);
     await deleteHistoryPermanently(database, 'image-lab', id);
     return await enqueueAppDelta(() => ({ kind: 'image-lab-tombstone', id }));
   }));
@@ -2469,7 +2510,23 @@ trustedHandle('person-assets:create', async (_event, name: string) => createPers
 
 trustedHandle('person-assets:rename', async (_event, input: { oldName: string; newName: string }) => renamePersonAsset(personAssetsRoot(), input.oldName, input.newName));
 
-trustedHandle('person-assets:delete', async (_event, name: string) => deletePersonAsset(personAssetsRoot(), name));
+trustedHandle('person-assets:usage', async (_event, name: string) => {
+  const state = await (await getDb()).getState();
+  return state.tasks
+    .filter((task) => task.materialSource === 'local' && task.materialPerson?.trim() === name.trim())
+    .map((task) => ({ taskId: task.id, title: task.title, status: task.status }));
+});
+
+trustedHandle('person-assets:delete', async (_event, name: string) => {
+  const database = await getDb();
+  const references = (await database.getState()).tasks.filter((task) => task.materialSource === 'local' && task.materialPerson?.trim() === name.trim());
+  if (references.length > 0) {
+    throw new Error(`人物素材库「${name}」仍被 ${references.length} 个任务引用，请先改用其他素材或归档任务。`);
+  }
+  return recyclePersonAsset(personAssetsRoot(), name);
+});
+
+trustedHandle('person-assets:restore', async (_event, token: string) => restoreRecycledPersonAsset(personAssetsRoot(), token));
 
 trustedHandle('person-assets:list-images', async (_event, name: string) => listPersonImages(personAssetsRoot(), name));
 
@@ -2502,6 +2559,238 @@ trustedHandle('editorial-collage:save', async (_event, input: EditorialCollageSa
   return publishTaskUpsert(database, task.id);
 });
 
+trustedHandle('director:batch-create', async (_event, input: CreateDirectorBatchInput) => (await getDb()).createDirectorBatch(input));
+trustedHandle('director:batch-get', async (_event, id: string) => (await getDb()).getDirectorBatch(id));
+trustedHandle('director:batch-list', async (_event, options: { projectId?: string; episodeId?: string | null; statuses?: readonly DirectorBatchStatus[] }) => (await getDb()).listDirectorBatches(options));
+trustedHandle('director:batch-update', async (_event, input: { id: string; patch: UpdateDirectorBatchInput }) => (await getDb()).updateDirectorBatch(input.id, input.patch));
+trustedHandle('director:batch-delete', async (_event, id: string) => (await getDb()).deleteDirectorBatch(id));
+
+const directorHistoryReservations = createProductionHistoryReservations();
+
+function withDirectorHistoryCapacity<I extends { id: string }, O>(demand: ProductionHistoryDemand, handler: (event: IpcMainInvokeEvent, input: I, reservation: ProductionHistoryReservation) => Promise<O>) {
+  return async (event: IpcMainInvokeEvent, input: I): Promise<O> => {
+    const task = await (await getDb()).getTaskDetail(input.id);
+    if (!task) throw new Error(`DIRECTOR_PROJECT_NOT_FOUND: ${input.id}`);
+    if (task.taskType !== 'editorial-collage' && task.taskType !== 'motion-comic') throw new Error('DIRECTOR_PROJECT_INVALID: 当前任务不是 VOX 或 AI 漫剧项目。');
+    const document = task.taskType === 'editorial-collage' ? parseEditorialCollagePipelineData(task.pipelineData) : parseMotionComicPipelineData(task.pipelineData);
+    const reservation = directorHistoryReservations.reserve(document, demand);
+    try { return await handler(event, input, reservation); }
+    finally { reservation.release(); }
+  };
+}
+
+trustedHandle('director:generate-shot-video', withDirectorHistoryCapacity(PRODUCTION_MEDIA_HISTORY_DEMAND, async (_event, input: DirectorGenerateShotVideoRequest, reservation) => {
+  const database = await getDb();
+  const task = await database.getTaskDetail(input.id);
+  if (!task) throw new Error(`DIRECTOR_PROJECT_NOT_FOUND: ${input.id}`);
+  if (task.archivedAt) throw new Error('HISTORY_ARCHIVED: 已归档项目只读。');
+  if (task.taskType !== 'editorial-collage') {
+    throw new Error('DIRECTOR_VIDEO_PROJECT_INVALID: AI 动态海报目前仅适用于 VOX 项目。');
+  }
+  const document = parseEditorialCollagePipelineData(task.pipelineData);
+  if (document.updatedAt !== input.expectedUpdatedAt) {
+    throw new Error('EDITORIAL_COLLAGE_STALE_WRITE: 项目已发生变化，请刷新后重新生成。');
+  }
+  const shot = document.beats.flatMap((beat) => beat.shots).find((candidate) => candidate.id === input.shotId);
+  if (!shot) throw new Error(`DIRECTOR_VIDEO_SHOT_NOT_FOUND: ${input.shotId}`);
+  if (shot.renderStrategy === 'deterministic-layers') {
+    throw new Error('DIRECTOR_VIDEO_STRATEGY_INVALID: 请先将镜头运动引擎切换为 AI 动态海报。');
+  }
+  const firstFrameAssetId = shot.layers.find((layer) => layer.assetVersionId)?.assetVersionId;
+  const firstFrameAsset = firstFrameAssetId ? document.assets.find((asset) => asset.id === firstFrameAssetId) : undefined;
+  if (!firstFrameAsset || firstFrameAsset.kind !== 'image' || !firstFrameAsset.localPath?.trim()) {
+    throw new Error('DIRECTOR_VIDEO_FIRST_FRAME_REQUIRED: 请先为当前镜头生成一张可用首帧。');
+  }
+  const firstFrameStat = await stat(firstFrameAsset.localPath).catch(() => null);
+  if (!firstFrameStat?.isFile() || firstFrameStat.size <= 0) {
+    throw new Error('DIRECTOR_VIDEO_FIRST_FRAME_MISSING: 当前镜头首帧文件不存在或为空，请重新生成图片。');
+  }
+
+  const runtimeConfig = await (await getConfigService()).getRuntimeConfig();
+  const durationSec = Math.max(1, shot.durationMs / 1000);
+  const request: VideoGenerationRequest = {
+    prompt: [shot.scenePrompt.trim(), shot.motionPrompt.trim()].filter(Boolean).join('\n'),
+    durationSec,
+    ratio: document.ratio,
+    firstFramePath: firstFrameAsset.localPath,
+  };
+  const requiredCapabilities = requiredVideoCapabilities(request);
+  const committedVideoCost = document.providerJobs
+    .filter((job) => job.capability === 'image-to-video')
+    .reduce((total, job) => {
+      if (job.actualCost !== undefined) return total + job.actualCost;
+      return ['failed', 'cancelled'].includes(job.status) ? total : total + job.estimatedCost;
+    }, 0);
+  const remainingBudget = Math.max(0, runtimeConfig.video.automation.budgetLimit - committedVideoCost);
+  const routeRequest = { durationSec, requiredCapabilities, remainingBudget };
+  const route = selectVideoGenerationRoute(runtimeConfig, routeRequest);
+  if (route.kind !== 'provider') {
+    throw new Error(`DIRECTOR_VIDEO_PROVIDER_UNAVAILABLE: ${route.reason} AI 动态海报不会自动降级或重复付费。`);
+  }
+  const provider = createConfiguredVideoProvider(runtimeConfig, taskWorkDir(task), routeRequest, { submitRetryCount: 0 });
+  const jobId = `director-video-job-${randomUUID()}`;
+  const startedAt = new Date().toISOString();
+  const attempt = document.providerJobs.filter((job) => job.nodeId === shot.id && job.capability === 'image-to-video').length + 1;
+  const inputHash = createHash('sha256').update(JSON.stringify({
+    shotId: shot.id,
+    firstFrameAssetVersionId: firstFrameAsset.id,
+    firstFrameSha256: firstFrameAsset.sha256,
+    prompt: request.prompt,
+    durationSec,
+    ratio: request.ratio,
+    providerId: route.provider.id,
+    model: route.provider.model,
+  })).digest('hex');
+  const runningJob: EditorialCollagePipelineData['providerJobs'][number] = {
+    id: jobId,
+    workflowKind: 'editorial-collage',
+    nodeId: shot.id,
+    providerId: route.provider.id,
+    model: route.provider.model,
+    capability: 'image-to-video',
+    status: 'running',
+    inputHash,
+    idempotencyKey: `${document.id}:${shot.id}:video:${inputHash}:${attempt}`,
+    estimatedCost: route.estimatedCost,
+    attempt,
+    createdAt: startedAt,
+    updatedAt: startedAt,
+  };
+  const runningDocument = rebuildEditorialTimeline({
+    ...document,
+    stage: 'assets',
+    estimatedCost: document.estimatedCost + route.estimatedCost,
+    costApprovedAt: document.costApprovedAt ?? startedAt,
+    costSummary: `AI 动态海报：${route.provider.name} / ${route.provider.model}，本镜头预计 ${route.estimatedCost.toFixed(2)}。`,
+    providerJobs: [...document.providerJobs, runningJob],
+    beats: document.beats.map((beat) => ({
+      ...beat,
+      shots: beat.shots.map((candidate) => candidate.id === shot.id
+        ? { ...candidate, videoJobId: jobId, videoAssetVersionId: undefined }
+        : candidate),
+    })),
+  });
+  const runningTask = await database.saveEditorialCollageTask({
+    id: document.id,
+    expectedUpdatedAt: document.updatedAt,
+    document: runningDocument,
+  });
+  reservation.consume({ providerJobs: 1 });
+  await publishTaskUpsert(database, runningTask.id);
+
+  const outputDir = join(taskWorkDir(task), 'director-videos');
+  const outputPath = join(outputDir, `${randomUUID()}.mp4`);
+  const temporaryPath = `${outputPath}.tmp.mp4`;
+  let chargedCost: number | undefined;
+  try {
+    const generated = await provider.generate(request);
+    chargedCost = generated.estimatedCost;
+    await mkdir(outputDir, { recursive: true });
+    const probe = await normalizeSceneVideo(generated.path, temporaryPath);
+    if (probe.durationMs + 100 < shot.durationMs) {
+      throw new Error(`DIRECTOR_VIDEO_OUTPUT_TOO_SHORT: 当前镜头需要 ${(shot.durationMs / 1000).toFixed(1)} 秒，生成视频只有 ${(probe.durationMs / 1000).toFixed(1)} 秒。`);
+    }
+    if (probe.width <= 0 || probe.height <= 0) {
+      throw new Error('DIRECTOR_VIDEO_OUTPUT_INVALID: 视频尺寸不可读取。');
+    }
+    await rename(temporaryPath, outputPath);
+
+    const latestTask = await database.getTaskDetail(document.id);
+    if (!latestTask) throw new Error(`DIRECTOR_PROJECT_NOT_FOUND: ${document.id}`);
+    const latest = parseEditorialCollagePipelineData(latestTask.pipelineData);
+    const latestShot = latest.beats.flatMap((beat) => beat.shots).find((candidate) => candidate.id === shot.id);
+    if (latestShot?.videoJobId !== jobId) {
+      throw new Error('DIRECTOR_VIDEO_INPUT_CHANGED: 生成期间镜头已发生变化，本次结果未覆盖当前版本。');
+    }
+    const finishedAt = new Date().toISOString();
+    const assetId = `director-video-asset-${randomUUID()}`;
+    const logicalAssetId = `shot-video-${shot.id}`;
+    const videoAsset: EditorialCollagePipelineData['assets'][number] = {
+      id: assetId,
+      assetId: logicalAssetId,
+      kind: 'video',
+      localPath: outputPath,
+      prompt: request.prompt,
+      providerJobId: jobId,
+      provider: generated.providerName,
+      model: generated.model,
+      license: generated.license,
+      createdAt: finishedAt,
+      selected: true,
+      pinned: false,
+    };
+    const completedDocument = rebuildEditorialTimeline({
+      ...latest,
+      actualCost: (latest.actualCost ?? 0) + generated.estimatedCost,
+      assets: [
+        ...latest.assets.map((asset) => asset.assetId === logicalAssetId ? { ...asset, selected: false } : asset),
+        videoAsset,
+      ],
+      providerJobs: latest.providerJobs.map((job) => job.id === jobId ? {
+        ...job,
+        status: 'completed' as const,
+        actualCost: generated.estimatedCost,
+        remoteTaskId: generated.remoteTaskId,
+        updatedAt: finishedAt,
+      } : job),
+      beats: latest.beats.map((beat) => ({
+        ...beat,
+        shots: beat.shots.map((candidate) => candidate.id === shot.id
+          ? { ...candidate, videoJobId: jobId, videoAssetVersionId: assetId }
+          : candidate),
+      })),
+    });
+    const savedTask = await database.saveEditorialCollageTask({
+      id: latest.id,
+      expectedUpdatedAt: latest.updatedAt,
+      document: completedDocument,
+    });
+    const result: DirectorGenerateShotVideoResult = {
+      videoAssetVersionId: assetId,
+      videoJobId: jobId,
+      providerId: generated.providerId,
+      providerName: generated.providerName,
+      model: generated.model,
+      estimatedCost: generated.estimatedCost,
+      durationMs: probe.durationMs,
+    };
+    return { result, mutation: await publishTaskUpsert(database, savedTask.id) };
+  } catch (error) {
+    await rm(temporaryPath, { force: true }).catch(() => undefined);
+    await rm(outputPath, { force: true }).catch(() => undefined);
+    const normalized = normalizeAppError(error, {
+      code: 'DIRECTOR_VIDEO_GENERATION_FAILED',
+      message: 'AI 动态海报生成失败。',
+      retryable: true,
+    });
+    const failedTask = await database.getTaskDetail(document.id).catch(() => null);
+    if (failedTask?.pipelineData) {
+      const latest = parseEditorialCollagePipelineData(failedTask.pipelineData);
+      if (latest.providerJobs.some((job) => job.id === jobId)) {
+        const finishedAt = new Date().toISOString();
+        const failedDocument = rebuildEditorialTimeline({
+          ...latest,
+          ...(chargedCost === undefined ? {} : { actualCost: (latest.actualCost ?? 0) + chargedCost }),
+          providerJobs: latest.providerJobs.map((job) => job.id === jobId ? {
+            ...job,
+            status: 'failed' as const,
+            ...(chargedCost === undefined ? {} : { actualCost: chargedCost }),
+            updatedAt: finishedAt,
+            error: normalized.message.slice(0, 65_536),
+          } : job),
+        });
+        const saved = await database.saveEditorialCollageTask({
+          id: latest.id,
+          expectedUpdatedAt: latest.updatedAt,
+          document: failedDocument,
+        }).catch(() => null);
+        if (saved) await publishTaskUpsert(database, saved.id);
+      }
+    }
+    throw normalized;
+  }
+}));
+
 trustedHandle('motion-comic:create', async (_event, input: MotionComicCreateInput) => {
   const database = await getDb();
   const task = await database.createMotionComicTask(input);
@@ -2514,7 +2803,7 @@ trustedHandle('motion-comic:save', async (_event, input: MotionComicSaveInput) =
   return publishTaskUpsert(database, task.id);
 });
 
-trustedHandle('director:render', async (_event, input: DirectorRenderRequest) => {
+trustedHandle('director:render', withDirectorHistoryCapacity(PRODUCTION_RENDER_HISTORY_DEMAND, async (_event, input: DirectorRenderRequest) => {
   const database = await getDb();
   const task = await database.getTaskDetail(input.id);
   if (!task) throw new Error(`DIRECTOR_PROJECT_NOT_FOUND: ${input.id}`);
@@ -2527,8 +2816,11 @@ trustedHandle('director:render', async (_event, input: DirectorRenderRequest) =>
     : parseMotionComicPipelineData(task.pipelineData);
   const renderId = randomUUID();
   const startedAt = new Date().toISOString();
+  const renderEpisodeId = document.workflowKind === 'motion-comic' ? (input.episodeId ?? document.activeEpisodeId) : undefined;
+  const renderFingerprint = directorDocumentRenderFingerprint(document, renderEpisodeId);
+  let generatedOutputPath: string | undefined;
   try {
-    const scenes = directorRenderScenes(document);
+    const scenes = buildDirectorRenderScenes(document, renderEpisodeId);
     const result = await renderDirectorVideo({
       workDir: taskWorkDir(task),
       projectTitle: document.title,
@@ -2537,117 +2829,276 @@ trustedHandle('director:render', async (_event, input: DirectorRenderRequest) =>
       scenes,
     });
     const finishedAt = new Date().toISOString();
-    const bytes = await readFile(result.outputPath);
+    const sha256 = await hashDirectorRenderOutput(result.outputPath, result.sizeBytes);
     const outputAsset = {
       id: `director-export-${renderId}`,
       assetId: 'director-final-video',
       kind: 'video' as const,
       localPath: result.outputPath,
-      sha256: createHash('sha256').update(bytes).digest('hex'),
+      sha256,
       providerJobId: `director-render-job-${renderId}`,
       provider: 'local',
       model: 'StoryDream HTML capture + FFmpeg',
       createdAt: finishedAt,
       selected: true,
       pinned: true,
+      ...(renderEpisodeId ? { episodeId: renderEpisodeId } : {}),
+      renderFingerprint,
     };
     const renderJob = {
       id: `director-render-job-${renderId}`,
       workflowKind: document.workflowKind,
-      nodeId: document.id,
+      nodeId: renderEpisodeId ?? document.id,
       providerId: 'local-ffmpeg',
       model: 'StoryDream HTML capture + FFmpeg',
       capability: 'deterministic-render',
       status: 'completed' as const,
-      inputHash: createHash('sha256').update(JSON.stringify(scenes.map((scene) => [scene.id, scene.imagePath, scene.audioPath, scene.caption]))).digest('hex'),
+      inputHash: renderFingerprint,
       idempotencyKey: `${document.id}:render:${renderId}`,
       estimatedCost: 0,
       actualCost: 0,
       attempt: document.providerJobs.filter((job) => job.capability === 'deterministic-render').length + 1,
       createdAt: startedAt,
       updatedAt: finishedAt,
+      ...(renderEpisodeId ? { episodeId: renderEpisodeId } : {}),
+      renderFingerprint,
     };
+    const qualityChecks = evaluateDirectorQuality(document, scenes, result, renderFingerprint, renderEpisodeId);
+    const narrationAlignment = directorNarrationAlignment(document, scenes, renderEpisodeId, finishedAt);
     const qualityReport = {
       id: `director-quality-${renderId}`,
       workflowKind: document.workflowKind,
       stage: 'export',
-      status: 'passed' as const,
-      checks: [
-        { id: 'visual-assets', label: '全部镜头包含已选画面', status: 'passed' as const },
-        { id: 'voice-assets', label: '全部镜头包含已选旁白', status: 'passed' as const },
-        { id: 'video-output', label: 'MP4 成片可读取且非空', status: 'passed' as const },
-      ],
+      providerJobId: renderJob.id,
+      renderFingerprint,
+      ...(renderEpisodeId ? { episodeId: renderEpisodeId } : {}),
+      status: qualityChecks.some((check) => check.status === 'failed' && check.severity === 'blocking') ? 'failed' as const : 'passed' as const,
+      checks: qualityChecks,
+      evidence: {
+        ...(result.subtitleLayout ? { subtitleLayout: result.subtitleLayout } : {}),
+        ...(result.audioMeanVolumeDb !== undefined ? { audioMeanVolumeDb: result.audioMeanVolumeDb } : {}),
+        ...(result.audioPeakDb !== undefined ? { audioPeakDb: result.audioPeakDb } : {}),
+        ...(result.audioLufs !== undefined ? { audioLufs: result.audioLufs } : {}),
+        ...(result.audioTruePeakDb !== undefined ? { audioTruePeakDb: result.audioTruePeakDb } : {}),
+        ...(result.audioIsSilent !== undefined ? { audioIsSilent: result.audioIsSilent } : {}),
+        ...(result.blackIntervalsMs ? { blackIntervalsMs: result.blackIntervalsMs } : {}),
+        ...(result.visualContinuity ? { visualContinuity: result.visualContinuity } : {}),
+        ...(result.audioQualityStatus ? { audioQualityStatus: result.audioQualityStatus } : {}),
+        ...(result.audioQualityError ? { audioQualityError: result.audioQualityError } : {}),
+        ...(result.blackDetectionStatus ? { blackDetectionStatus: result.blackDetectionStatus } : {}),
+        ...(result.blackDetectionError ? { blackDetectionError: result.blackDetectionError } : {}),
+        narrationAlignment,
+      },
       createdAt: finishedAt,
     };
-    const assets = [
-      ...document.assets.map((asset) => asset.assetId === outputAsset.assetId ? { ...asset, selected: false, pinned: false } : asset),
-      outputAsset,
-    ];
-    const providerJobs = [...document.providerJobs, renderJob];
-    const qualityReports = [...document.qualityReports, qualityReport];
-    if (document.workflowKind === 'editorial-collage') {
-      await database.saveEditorialCollageTask({
-        id: document.id,
-        expectedUpdatedAt: document.updatedAt,
-        document: { ...document, stage: 'completed', assets, providerJobs, qualityReports },
-      });
-    } else {
-      await database.saveMotionComicTask({
-        id: document.id,
-        expectedUpdatedAt: document.updatedAt,
-        document: {
-          ...document,
-          stage: 'completed',
-          assets,
-          providerJobs,
-          qualityReports,
-          episodes: document.episodes.map((episode) => episode.id === document.activeEpisodeId ? { ...episode, status: 'completed' } : episode),
-        },
-      });
+    if (qualityReport.status === 'failed') {
+      const qualityFailure = qualityChecks.filter((check) => check.status === 'failed' && check.severity === 'blocking').map((check) => check.detail || check.label).join('；');
+      await persistDirectorRenderCompletion({
+        job: { ...renderJob, status: 'failed' as const, error: qualityFailure.slice(0, 65_536) },
+        report: qualityReport,
+      }, directorRenderStore(database, document.id));
+      throw new Error(`DIRECTOR_RENDER_QUALITY_GATE_FAILED: ${qualityFailure}`);
     }
+    generatedOutputPath = result.outputPath;
+    await writeFile(`${result.outputPath}.render.json`, JSON.stringify({ projectId: document.id, asset: outputAsset, job: renderJob, report: qualityReport }), 'utf8');
+    await persistDirectorRenderCompletion({ asset: outputAsset, job: renderJob, report: qualityReport }, directorRenderStore(database, document.id));
     await database.updateTask(task.id, { outputDir: dirname(result.outputPath) });
     return { result, mutation: await publishTaskUpsert(database, task.id) };
   } catch (error) {
-    await persistDirectorRenderFailure(database, document, renderId, startedAt, error).catch(() => undefined);
+    if (error instanceof Error && error.message.startsWith('DIRECTOR_RENDER_QUALITY_GATE_FAILED:')) throw error;
+    if (generatedOutputPath) throw new Error(`DIRECTOR_RENDER_REGISTRATION_FAILED: 成片已生成于 ${generatedOutputPath}，项目登记失败：${error instanceof Error ? error.message : String(error)}`);
+    await persistDirectorRenderFailure(database, document, renderId, startedAt, error, renderEpisodeId, renderFingerprint).catch(() => undefined);
     throw error;
+  }
+}));
+
+trustedHandle('director:recheck-subtitles', async (_event, input: DirectorSubtitleRecheckRequest): Promise<DirectorSubtitleRecheckResult> => {
+  const database = await getDb();
+  const task = await database.getTaskDetail(input.id);
+  if (!task) throw new Error(`DIRECTOR_PROJECT_NOT_FOUND: ${input.id}`);
+  if (task.archivedAt) throw new Error('HISTORY_ARCHIVED: 已归档项目只读。');
+  if (task.taskType !== 'editorial-collage' && task.taskType !== 'motion-comic') throw new Error('DIRECTOR_PROJECT_INVALID: 当前任务不是 VOX 或 AI 漫剧项目。');
+  const document = task.taskType === 'editorial-collage'
+    ? parseEditorialCollagePipelineData(task.pipelineData)
+    : parseMotionComicPipelineData(task.pipelineData);
+  const renderEpisodeId = document.workflowKind === 'motion-comic' ? (input.episodeId ?? document.activeEpisodeId) : undefined;
+  const fingerprint = directorDocumentRenderFingerprint(document, renderEpisodeId);
+  const review = directorQualityReview(document, renderEpisodeId);
+  if (review.freshness !== 'current' || review.report?.id !== input.reportId || review.report.renderFingerprint !== input.renderFingerprint || input.renderFingerprint !== fingerprint) {
+    throw new Error('DIRECTOR_RECHECK_STALE: 当前审片报告已过期或无法核对当前分集。');
+  }
+  const report = review.report;
+  const selectedShotIds = [...new Set(input.shotIds)];
+  const selectedCueIds = [...new Set(input.cueIds)];
+  if (document.updatedAt !== input.expectedUpdatedAt) throw new Error('DIRECTOR_RECHECK_STALE: 项目在复检开始前已发生变化，请重新打开当前报告。');
+  const scenes = buildDirectorRenderScenes(document, renderEpisodeId, { shotIds: selectedShotIds });
+  if (scenes.length !== selectedShotIds.length) throw new Error('DIRECTOR_RECHECK_SCOPE_MISSING: 复检镜头已不存在，请重新生成整片。');
+  // Other cues in each selected shot affect the shared grid and overlap evidence.
+  const scopedScenes = scenes;
+  const availableCueIds = new Set(scenes.flatMap((scene) => scene.subtitleCues?.map((cue) => cue.id) ?? []));
+  if (selectedCueIds.some((id) => !availableCueIds.has(id))) throw new Error('DIRECTOR_RECHECK_SCOPE_MISSING: 复检字幕已不存在，请重新生成整片。');
+  // Keep the private staging prefix short for nested capture paths on Windows.
+  const recheckWorkDir = await mkdtemp(join(taskWorkDir(task), '.rq-'));
+  try {
+    const renderResult = await renderDirectorVideo({
+      workDir: recheckWorkDir, projectTitle: document.title,
+      modeLabel: task.taskType === 'editorial-collage' ? 'VOX' : 'AI 漫剧', ratio: document.ratio, scenes: scopedScenes,
+      sceneStarts: new Map(scopedScenes.map((scene) => [scene.id, renderSceneStartMs(document, renderEpisodeId, scene.id)])),
+    });
+    if (!renderResult.subtitleLayout) throw new Error('DIRECTOR_RECHECK_MEASUREMENT_MISSING: 未取得字幕排版测量。');
+    const previousLayout = report.evidence?.subtitleLayout;
+    const measuredByShot = new Map(renderResult.subtitleLayout.scenes.map((scene) => [scene.shotId, scene]));
+    const previousScenes = previousLayout?.scenes ?? [];
+    const mergedScenes = [
+      ...previousScenes.map((scene) => measuredByShot.get(scene.shotId) ?? scene),
+      ...renderResult.subtitleLayout.scenes.filter((scene) => !previousScenes.some((previous) => previous.shotId === scene.shotId)),
+    ];
+    const mergedLayout = { ...(previousLayout ?? renderResult.subtitleLayout), measuredAt: renderResult.subtitleLayout.measuredAt, scenes: mergedScenes };
+    // Re-evaluate against every current scene so a passing local scope cannot
+    // hide an unresolved subtitle issue in an unselected scene.
+    const allScenes = buildDirectorRenderScenes(document, renderEpisodeId);
+    const allSceneStarts = new Map(allScenes.map((scene) => [scene.id, renderSceneStartMs(document, renderEpisodeId, scene.id)]));
+    const layoutChecks = evaluateDirectorSubtitleLayout(allScenes, mergedLayout, directorCanvasForRatio(document.ratio), allSceneStarts);
+    const updatedById = new Map(layoutChecks.map((check) => [check.id, check]));
+    const checks = report.checks.map((check) => updatedById.get(check.id) ?? check);
+    layoutChecks.forEach((check) => { if (!checks.some((candidate) => candidate.id === check.id)) checks.push(check); });
+    const updatedReport = {
+      ...report,
+      checks,
+      evidence: { ...(report.evidence ?? {}), subtitleLayout: mergedLayout },
+      manualReview: undefined,
+      status: checks.some((check) => check.status === 'failed' && check.severity === 'blocking') ? 'failed' as const : report.status,
+    };
+    const latestTask = await database.getTaskDetail(input.id);
+    if (!latestTask || latestTask.archivedAt || latestTask.taskType !== task.taskType) throw new Error('DIRECTOR_RECHECK_STALE: 项目在复检期间已发生变化，结果未保存。');
+    const latestDocument = latestTask.taskType === 'editorial-collage' ? parseEditorialCollagePipelineData(latestTask.pipelineData) : parseMotionComicPipelineData(latestTask.pipelineData);
+    if (latestDocument.updatedAt !== document.updatedAt) throw new Error('DIRECTOR_RECHECK_STALE: 项目在复检期间已发生变化，结果未保存。');
+    if (directorDocumentRenderFingerprint(latestDocument, renderEpisodeId) !== input.renderFingerprint) throw new Error('DIRECTOR_RECHECK_STALE: 项目指纹在复检期间已变化，结果未保存。');
+    const savedDocument = { ...latestDocument, qualityReports: latestDocument.qualityReports.map((candidate) => candidate.id === report.id ? updatedReport : candidate) } as typeof latestDocument;
+    if (savedDocument.workflowKind === 'motion-comic') await database.saveMotionComicTask({ id: input.id, expectedUpdatedAt: latestDocument.updatedAt, document: savedDocument });
+    else await database.saveEditorialCollageTask({ id: input.id, expectedUpdatedAt: latestDocument.updatedAt, document: savedDocument });
+    await publishTaskUpsert(database, input.id);
+    return {
+      reportId: report.id, renderFingerprint: input.renderFingerprint,
+      checkedShotIds: scopedScenes.map((scene) => scene.id), checkedCueIds: selectedCueIds,
+      report: updatedReport, result: { ...renderResult, outputPath: '' },
+    };
+  } finally {
+    await rm(recheckWorkDir, { recursive: true, force: true, maxRetries: 5, retryDelay: 100 }).catch(() => undefined);
   }
 });
 
-function directorRenderScenes(document: EditorialCollagePipelineData | MotionComicPipelineData): DirectorRenderScene[] {
-  const assets = new Map(document.assets.map((asset) => [asset.id, asset]));
-  const missing: string[] = [];
-  const scenes: DirectorRenderScene[] = [];
-  const addScene = (input: Omit<DirectorRenderScene, 'index' | 'imagePath' | 'audioPath'> & { imageAssetId?: string; audioAssetId?: string }) => {
-    const imagePath = input.imageAssetId ? assets.get(input.imageAssetId)?.localPath : undefined;
-    const audioPath = input.audioAssetId ? assets.get(input.audioAssetId)?.localPath : undefined;
-    const index = scenes.length + 1;
-    if (!imagePath) missing.push(`镜头 ${index} 缺少已生成画面`);
-    if (!audioPath) missing.push(`镜头 ${index} 缺少已生成旁白`);
-    scenes.push({ ...input, index, imagePath: imagePath ?? '', audioPath: audioPath ?? '' });
-  };
-
-  if (document.workflowKind === 'editorial-collage') {
-    document.beats.forEach((beat) => beat.shots.forEach((shot) => {
-      const imageAssetId = shot.layers.find((layer) => layer.assetVersionId)?.assetVersionId;
-      const caption = shot.subtitleCueIds
-        .map((cueId) => beat.subtitleCues.find((cue) => cue.id === cueId)?.text)
-        .filter((text): text is string => Boolean(text))
-        .join(' ') || beat.narration;
-      addScene({ id: shot.id, title: beat.title, caption, durationMs: shot.durationMs, layoutTemplate: shot.layoutTemplate, motionPreset: shot.motionPreset, subtitleStyle: shot.subtitleStyle, imageAssetId, audioAssetId: shot.voiceAssetVersionId });
-    }));
-  } else {
-    const episode = document.episodes.find((candidate) => candidate.id === document.activeEpisodeId) ?? document.episodes[0];
-    if (!episode) throw new Error('DIRECTOR_RENDER_EPISODE_MISSING: AI 漫剧没有可渲染的集。');
-    episode.scenes.forEach((scene) => scene.shots.forEach((shot) => {
-      const caption = shot.dialogueCueIds
-        .map((cueId) => episode.dialogueCues.find((cue) => cue.id === cueId)?.text)
-        .filter((text): text is string => Boolean(text))
-        .join(' ');
-      addScene({ id: shot.id, title: shot.title || scene.title, caption, durationMs: shot.durationMs, layoutTemplate: shot.layoutTemplate, motionPreset: shot.motionPreset, subtitleStyle: shot.subtitleStyle, imageAssetId: shot.firstFrameAssetVersionId, audioAssetId: shot.voiceAssetVersionId });
-    }));
+trustedHandle('director:recheck-media', async (_event, input: DirectorMediaRecheckRequest): Promise<DirectorMediaRecheckResult> => {
+  const database = await getDb();
+  const task = await database.getTaskDetail(input.id);
+  if (!task) throw new Error(`DIRECTOR_PROJECT_NOT_FOUND: ${input.id}`);
+  if (task.archivedAt) throw new Error('HISTORY_ARCHIVED: 已归档项目只读。');
+  if (task.taskType !== 'editorial-collage' && task.taskType !== 'motion-comic') throw new Error('DIRECTOR_PROJECT_INVALID: 当前任务不是 VOX 或 AI 漫剧项目。');
+  const document = task.taskType === 'editorial-collage' ? parseEditorialCollagePipelineData(task.pipelineData) : parseMotionComicPipelineData(task.pipelineData);
+  const renderEpisodeId = document.workflowKind === 'motion-comic' ? (input.episodeId ?? document.activeEpisodeId) : undefined;
+  const fingerprint = directorDocumentRenderFingerprint(document, renderEpisodeId);
+  const review = directorQualityReview(document, renderEpisodeId);
+  if (review.freshness !== 'current' || review.report?.id !== input.reportId || review.report.renderFingerprint !== input.renderFingerprint || input.renderFingerprint !== fingerprint) {
+    throw new Error('DIRECTOR_RECHECK_STALE: 当前审片报告已过期或无法核对当前分集。');
   }
-  if (missing.length > 0) throw new Error(`DIRECTOR_RENDER_PREFLIGHT_FAILED: ${missing.join('；')}。请先完成镜头画面和旁白。`);
-  return scenes;
+  if (document.updatedAt !== input.expectedUpdatedAt) throw new Error('DIRECTOR_RECHECK_STALE: 项目在复检开始前已发生变化，请重新打开当前报告。');
+  const report = review.report;
+  const allScenes = buildDirectorRenderScenes(document, renderEpisodeId);
+  const selectedIds = [...new Set(input.shotIds)];
+  const selectedScenes = allScenes.filter((scene) => selectedIds.includes(scene.id));
+  if (selectedScenes.length !== selectedIds.length) throw new Error('DIRECTOR_RECHECK_SCOPE_MISSING: 复检镜头已不存在，请重新生成整片。');
+  const globalStarts = new Map(allScenes.map((scene) => [scene.id, renderSceneStartMs(document, renderEpisodeId, scene.id)]));
+  const localStarts = new Map<string, number>();
+  let localElapsed = 0;
+  selectedScenes.forEach((scene) => { localStarts.set(scene.id, localElapsed); localElapsed += Math.max(800, scene.durationMs); });
+  const scopeStart = Number.isFinite(input.startMs) ? Math.max(0, input.startMs!) : Math.min(...selectedScenes.map((scene) => globalStarts.get(scene.id) ?? 0));
+  const scopeEnd = Number.isFinite(input.endMs) ? Math.max(scopeStart, input.endMs!) : Math.max(...selectedScenes.map((scene) => (globalStarts.get(scene.id) ?? 0) + Math.max(800, scene.durationMs)));
+  const recheckWorkDir = await mkdtemp(join(taskWorkDir(task), '.rq-'));
+  try {
+    const renderResult = await renderDirectorVideo({ workDir: recheckWorkDir, projectTitle: document.title, modeLabel: task.taskType === 'editorial-collage' ? 'VOX' : 'AI 漫剧', ratio: document.ratio, scenes: selectedScenes, sceneStarts: globalStarts });
+    const mappedBlack = (renderResult.blackIntervalsMs ?? []).map((interval) => mapLocalInterval(interval, selectedScenes, localStarts, globalStarts));
+    const previousBlack = report.evidence?.blackIntervalsMs ?? [];
+    const mergedBlack = [...previousBlack.filter((interval) => interval.endMs <= scopeStart || interval.startMs >= scopeEnd), ...mappedBlack].sort((a, b) => a.startMs - b.startMs);
+    const mappedVisual = renderResult.visualContinuity ? mapLocalVisualEvidence(renderResult.visualContinuity, selectedScenes, allScenes, localStarts, globalStarts) : undefined;
+    const previousVisual = report.evidence?.visualContinuity;
+    const mergedVisual = mappedVisual ? mergeVisualEvidence(previousVisual, mappedVisual, scopeStart, scopeEnd) : previousVisual;
+    const visualCheck = evaluateDirectorVisualContinuity(allScenes, mergedVisual);
+    const blackValid = renderResult.blackDetectionStatus === 'ok' && Array.isArray(mergedBlack) && mergedBlack.every((interval) => Number.isFinite(interval.startMs) && Number.isFinite(interval.endMs) && interval.startMs >= 0 && interval.endMs > interval.startMs);
+    const longBlack = mergedBlack.filter((interval) => interval.endMs - interval.startMs >= 500);
+    const blackStatus = blackValid ? (longBlack.length ? 'failed' : 'passed') : renderResult.blackDetectionStatus === 'failed' || renderResult.blackDetectionStatus === 'ok' ? 'failed' : 'pending';
+    const blackCheck = { id: 'black-intervals', label: '成片没有未解释的长黑帧区间', severity: 'warning' as const, status: blackStatus as 'pending' | 'passed' | 'failed', ...(blackStatus !== 'passed' ? { detail: renderResult.blackDetectionError || (longBlack.length ? `${longBlack.length} 个长黑帧区间仍需复核` : '黑帧探测未取得完整证据') } : {}) };
+    const checks = report.checks.map((check) => check.id === 'black-intervals' ? blackCheck : check.id === 'visual-continuity' ? visualCheck : check);
+    const updatedReport = { ...report, checks, evidence: { ...(report.evidence ?? {}), blackIntervalsMs: mergedBlack, ...(mergedVisual ? { visualContinuity: productionVisualContinuityEvidenceSchema.parse(mergedVisual) } : {}), blackDetectionStatus: renderResult.blackDetectionStatus, ...(renderResult.blackDetectionError ? { blackDetectionError: renderResult.blackDetectionError } : {}) }, manualReview: undefined };
+    const latestTask = await database.getTaskDetail(input.id);
+    if (!latestTask || latestTask.archivedAt || latestTask.taskType !== task.taskType) throw new Error('DIRECTOR_RECHECK_STALE: 项目在复检期间已发生变化，结果未保存。');
+    const latestDocument = latestTask.taskType === 'editorial-collage' ? parseEditorialCollagePipelineData(latestTask.pipelineData) : parseMotionComicPipelineData(latestTask.pipelineData);
+    if (latestDocument.updatedAt !== document.updatedAt || directorDocumentRenderFingerprint(latestDocument, renderEpisodeId) !== input.renderFingerprint) throw new Error('DIRECTOR_RECHECK_STALE: 项目指纹在复检期间已变化，结果未保存。');
+    const savedDocument = { ...latestDocument, qualityReports: latestDocument.qualityReports.map((candidate) => candidate.id === report.id ? updatedReport : candidate) } as typeof latestDocument;
+    if (savedDocument.workflowKind === 'motion-comic') await database.saveMotionComicTask({ id: input.id, expectedUpdatedAt: latestDocument.updatedAt, document: savedDocument });
+    else await database.saveEditorialCollageTask({ id: input.id, expectedUpdatedAt: latestDocument.updatedAt, document: savedDocument });
+    await publishTaskUpsert(database, input.id);
+    return { reportId: report.id, renderFingerprint: input.renderFingerprint, checkedShotIds: selectedScenes.map((scene) => scene.id), ...(input.startMs !== undefined ? { startMs: scopeStart } : {}), ...(input.endMs !== undefined ? { endMs: scopeEnd } : {}), report: updatedReport, result: { ...renderResult, outputPath: '' } };
+  } finally {
+    await rm(recheckWorkDir, { recursive: true, force: true, maxRetries: 5, retryDelay: 100 }).catch(() => undefined);
+  }
+});
+
+function mapLocalInterval(interval: { startMs: number; endMs: number }, scenes: readonly { id: string; durationMs: number }[], localStarts: ReadonlyMap<string, number>, globalStarts: ReadonlyMap<string, number>) {
+  const scene = [...scenes].reverse().find((candidate) => (localStarts.get(candidate.id) ?? 0) <= interval.startMs) ?? scenes[0];
+  const delta = (globalStarts.get(scene.id) ?? 0) - (localStarts.get(scene.id) ?? 0);
+  return { startMs: Math.max(0, interval.startMs + delta), endMs: Math.max(0, interval.endMs + delta) };
+}
+
+function mapLocalVisualEvidence(evidence: ProductionVisualContinuityEvidence, scenes: readonly { id: string; durationMs: number }[], allScenes: readonly { id: string; durationMs: number }[], localStarts: ReadonlyMap<string, number>, globalStarts: ReadonlyMap<string, number>): ProductionVisualContinuityEvidence {
+  const allIds = allScenes.map((scene) => scene.id);
+  const mappedCuts = evidence.cuts.flatMap((cut, index) => {
+    const left = scenes[index];
+    const right = scenes[index + 1];
+    if (!left || !right || allIds.indexOf(right.id) !== allIds.indexOf(left.id) + 1) return [];
+    const deltaMs = (globalStarts.get(left.id) ?? 0) - (localStarts.get(left.id) ?? 0);
+    const deltaFrames = deltaMs * (evidence.fps / 1000);
+    const roundedDelta = Math.round(deltaFrames);
+    // A local render can only be mapped to the encoded clock when its start is
+    // frame aligned. Keeping the evidence failed is safer than relabeling a
+    // sample that was taken at another encoded frame.
+    if (Math.abs(deltaFrames - roundedDelta) > 0.01) return [];
+    return [{ ...cut, atMs: cut.atMs + deltaMs, frames: cut.frames.map((frame) => ({ ...frame, index: frame.index + roundedDelta, timeMs: frame.timeMs + deltaMs })) as typeof cut.frames }];
+  });
+  const omitted = mappedCuts.length !== evidence.cuts.length;
+  return { ...evidence, status: omitted ? 'failed' : evidence.status, ...(omitted ? { error: '局部复检包含不相邻镜头或未对齐的编码帧，未写入原片切点证据。' } : {}), cuts: mappedCuts };
+}
+
+function mergeVisualEvidence(previous: ProductionVisualContinuityEvidence | undefined, next: ProductionVisualContinuityEvidence, scopeStart: number, scopeEnd: number): ProductionVisualContinuityEvidence {
+  if (next.status !== 'ok') return { ...(previous ?? next), status: 'failed', error: next.error || '局部视觉证据未能映射到原片编码时钟。' };
+  const retained = (previous?.cuts ?? []).filter((cut) => cut.atMs < scopeStart || cut.atMs > scopeEnd);
+  return { ...next, cuts: [...retained, ...next.cuts].sort((a, b) => a.atMs - b.atMs).slice(0, 499) };
+}
+
+function renderSceneStartMs(document: DirectorRenderDocument, episodeId: string | undefined, shotId: string): number {
+  if (document.workflowKind === 'editorial-collage') {
+    const explicit = document.timeline?.clips.find((clip) => clip.shotId === shotId)?.startMs;
+    if (explicit !== undefined) return explicit;
+    const shots = document.beats.flatMap((beat) => beat.shots);
+    const index = shots.findIndex((shot) => shot.id === shotId);
+    return index >= 0 ? shots.slice(0, index).reduce((sum, shot) => sum + shot.durationMs, 0) : 0;
+  }
+  const episode = document.episodes.find((candidate) => candidate.id === (episodeId ?? document.activeEpisodeId));
+  return episode?.timeline.clips.find((clip) => clip.shotId === shotId)?.startMs ?? 0;
+}
+
+function directorRenderStore(database: FileDatabase, taskId: string) {
+  return {
+    load: async (): Promise<DirectorRenderDocument> => {
+      const task = await database.getTaskDetail(taskId);
+      if (!task) throw new Error(`DIRECTOR_PROJECT_NOT_FOUND: ${taskId}`);
+      if (task.taskType === 'editorial-collage') return parseEditorialCollagePipelineData(task.pipelineData);
+      if (task.taskType === 'motion-comic') return parseMotionComicPipelineData(task.pipelineData);
+      throw new Error(`DIRECTOR_PROJECT_INVALID: ${taskId}`);
+    },
+    save: (document: DirectorRenderDocument) => document.workflowKind === 'motion-comic'
+      ? database.saveMotionComicTask({ id: taskId, expectedUpdatedAt: document.updatedAt, document })
+      : database.saveEditorialCollageTask({ id: taskId, expectedUpdatedAt: document.updatedAt, document }),
+  };
 }
 
 async function persistDirectorRenderFailure(
@@ -2656,50 +3107,41 @@ async function persistDirectorRenderFailure(
   renderId: string,
   startedAt: string,
   error: unknown,
+  episodeId?: string,
+  renderFingerprint?: string,
 ): Promise<void> {
   const finishedAt = new Date().toISOString();
   const detail = error instanceof Error ? error.message : String(error);
   const failedJob = {
     id: `director-render-job-${renderId}`,
     workflowKind: document.workflowKind,
-    nodeId: document.id,
+    nodeId: episodeId ?? document.id,
     providerId: 'local-ffmpeg',
     model: 'StoryDream HTML capture + FFmpeg',
     capability: 'deterministic-render',
     status: 'failed' as const,
-    inputHash: createHash('sha256').update(document.updatedAt).digest('hex'),
+    inputHash: renderFingerprint ?? directorDocumentRenderFingerprint(document, episodeId),
     idempotencyKey: `${document.id}:render:${renderId}`,
     estimatedCost: 0,
     attempt: document.providerJobs.filter((job) => job.capability === 'deterministic-render').length + 1,
     createdAt: startedAt,
     updatedAt: finishedAt,
     error: detail.slice(0, 65_536),
+    ...(episodeId ? { episodeId } : {}),
+    renderFingerprint: renderFingerprint ?? directorDocumentRenderFingerprint(document, episodeId),
   };
   const qualityReport = {
     id: `director-quality-${renderId}`,
     workflowKind: document.workflowKind,
     stage: 'export',
+    providerJobId: failedJob.id,
+    renderFingerprint: failedJob.renderFingerprint,
+    ...(episodeId ? { episodeId } : {}),
     status: 'failed' as const,
-    checks: [{ id: 'video-output', label: 'MP4 成片生成', status: 'failed' as const, detail: detail.slice(0, 65_536) }],
+    checks: [{ id: 'video-output', label: 'MP4 成片生成', status: 'failed' as const, severity: 'blocking' as const, detail: detail.slice(0, 65_536), recheckScope: { kind: 'project' as const } }],
     createdAt: finishedAt,
   };
-  if (document.workflowKind === 'editorial-collage') {
-    const next: EditorialCollagePipelineData = {
-      ...document,
-      stage: 'failed',
-      providerJobs: [...document.providerJobs, failedJob],
-      qualityReports: [...document.qualityReports, qualityReport],
-    };
-    await database.saveEditorialCollageTask({ id: document.id, expectedUpdatedAt: document.updatedAt, document: next });
-  } else {
-    const next: MotionComicPipelineData = {
-      ...document,
-      stage: 'failed',
-      providerJobs: [...document.providerJobs, failedJob],
-      qualityReports: [...document.qualityReports, qualityReport],
-    };
-    await database.saveMotionComicTask({ id: document.id, expectedUpdatedAt: document.updatedAt, document: next });
-  }
+  await persistDirectorRenderCompletion({ job: failedJob, report: qualityReport }, directorRenderStore(database, document.id));
 }
 
 trustedHandle('html-video:create-task', async (_event, input: CreateTaskInput) => {
@@ -3910,19 +4352,22 @@ trustedHandle('task:replace-video', async (_event, input: { id: string; sceneId:
     const library = await listSceneVideoLibrary(sceneVideoLibraryRoot());
     if (input.source.kind === 'ai') {
       const runtimeConfig = await (await getConfigService()).getRuntimeConfig();
-      const runtimeProviders = createTaskRuntimeProviders(runtimeConfig, taskWorkDir(task), task);
-      if (!runtimeProviders.videoProvider) {
-        throw new Error('VIDEO_PROVIDER_NOT_CONFIGURED: 请先在设置中启用并填写云端视频 API。');
-      }
       const sceneImage = input.source.useSceneImage === false
         ? undefined
         : snapshot.assets.images.find((asset) => asset.sceneId === sceneId)?.path;
-      const generated = await runtimeProviders.videoProvider.generate({
+      const durationSec = Math.max(1, scene.durationMs / 1000);
+      const request: VideoGenerationRequest = {
         prompt: input.source.prompt?.trim() || scene.descPrompt || scene.cap,
-        durationSec: Math.max(1, scene.durationMs / 1000),
+        durationSec,
         ratio: task.ratio,
         ...(sceneImage ? { firstFramePath: sceneImage } : {}),
+      };
+      const videoProvider = createConfiguredVideoProvider(runtimeConfig, taskWorkDir(task), {
+        durationSec,
+        requiredCapabilities: requiredVideoCapabilities(request),
+        remainingBudget: runtimeConfig.video.automation.budgetLimit,
       });
+      const generated = await videoProvider.generate(request);
       const outputDir = join(taskWorkDir(task), 'scene-videos');
       await mkdir(outputDir, { recursive: true });
       const path = join(outputDir, `${String(sceneId).padStart(3, '0')}-${randomUUID()}.mp4`);
@@ -4328,6 +4773,19 @@ async function selectLocalAudio(purpose?: 'managed-bgm'): Promise<string | Manag
   return purpose === 'managed-bgm' ? importManagedBgm(selectedPath, appDataDir()) : selectedPath;
 }
 
+async function selectLocalSubtitleTimestampFile(): Promise<LocalSubtitleTimestampFile | null> {
+  const result = await dialog.showOpenDialog({
+    title: '导入识别时间戳',
+    properties: ['openFile'],
+    filters: [{ name: '字幕/转写时间戳', extensions: ['json', 'srt', 'vtt'] }],
+  });
+  const path = result.canceled ? '' : result.filePaths[0] ?? '';
+  if (!path) return null;
+  const contents = await readFile(path, 'utf8');
+  if (contents.length > 2_000_000) throw new Error('时间戳文件过大，请导入不超过 2 MB 的 JSON、SRT 或 VTT 文件。');
+  return { path, contents };
+}
+
 async function selectCookieFile(): Promise<string | null> {
   const result = await dialog.showOpenDialog({
     title: '选择 Cookie 文件',
@@ -4518,6 +4976,7 @@ async function openBenchmarkLoginWindow(input: BenchmarkLoginInput): Promise<Ben
 }
 
 trustedHandle('local-audio:select', (_event, purpose?: 'managed-bgm') => selectLocalAudio(purpose));
+trustedHandle('local-subtitle-timestamps:select', selectLocalSubtitleTimestampFile);
 trustedHandle('local-folder:select', selectLocalFolder);
 trustedHandle('cookie-file:select', selectCookieFile);
 trustedHandle('viral:open-login-window', openViralLoginWindow);

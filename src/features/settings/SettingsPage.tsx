@@ -1,4 +1,5 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
+import { useUnsavedChanges } from '../../app/workspace-navigation';
 import { AlertTriangle, ArrowLeft, Bot, CheckCircle2, Copy, Database, Film, FlaskConical, FolderOpen, Globe2, Image as ImageIcon, Info, KeyRound, Loader2, Mic2, Palette, Save, Search, Sparkles, Upload, Wand2, XCircle } from "lucide-react";
 import { useMemo } from "react";
 import type { AppConfig, ConfigTestTarget, ImaKnowledgeResult, ProviderModel, ProviderModelListRequest, ShellView, ThemeName, TtsProviderProfile, VolcengineSpeaker } from "../../shared/types";
@@ -13,7 +14,7 @@ import { useAsyncAction } from "../../ui/async-action";
 import { FormField as Field } from "../../components/FormField";
 import { SegmentedControl as Segmented } from "../../components/SegmentedControl";
 import { ToggleField } from "../../components/ToggleField";
-import { Button, SwitchField } from '../../ui';
+import { Button, SelectField, SwitchField } from '../../ui';
 import { RangeField } from "../../components/RangeField";
 import { AsyncActionFeedback as InlineActionFeedback } from "../../components/AsyncActionFeedback";
 import type { ApplyMutationResult, RendererAppState as AppState } from "../../app/route-types";
@@ -66,6 +67,12 @@ export function SettingsPage({ api, state, applyState, synchronizeThemeState, na
   const saveAction = useAsyncAction();
   const settingsAction = useAsyncAction();
   const themeAction = useAsyncAction();
+  const draftRevision = useRef(0);
+  useUnsavedChanges({
+    id: 'settings', label: '系统设置', dirty: settingsDirty, busy: savingConfig,
+    onSave: async () => Boolean(await save()),
+    onDiscard: () => commitSettingsDraft(state.config),
+  });
   useEffect(() => {
     if (initialSection) setSection(initialSection);
   }, [initialSection]);
@@ -81,6 +88,7 @@ export function SettingsPage({ api, state, applyState, synchronizeThemeState, na
     setMinimaxCloneVoiceCatalog(state.minimaxCloneVoices);
   }, [state.minimaxCloneVoices]);
   function setSettingsDraft(next: AppConfig | ((current: AppConfig) => AppConfig)) {
+    draftRevision.current++;
     setSettingsDirty(true);
     setDraft(next);
   }
@@ -92,14 +100,16 @@ export function SettingsPage({ api, state, applyState, synchronizeThemeState, na
     setLastAppliedConfigSignature(settingsConfigSignature(normalized));
   }
   const persistSettingsDraft = async (nextDraft: AppConfig, successMessage: string) => {
+    const submittedRevision = draftRevision.current;
     setSavingConfig(true);
     try {
       const next = await api.saveConfig({ config: normalizeEditableConfigProviders(nextDraft), secretChanges });
       const savedConfig = configFromMutation(next);
-      commitSettingsDraft(savedConfig);
+      const unchanged = submittedRevision === draftRevision.current;
+      if (unchanged) commitSettingsDraft(savedConfig);
       applyState(next);
-      setConfigTestResult(`[pass] ${successMessage}`);
-      return savedConfig;
+      setConfigTestResult(unchanged ? `[pass] ${successMessage}` : '[warn] 已保存提交时的配置，后续修改仍未保存。');
+      return unchanged ? savedConfig : undefined;
     } finally {
       setSavingConfig(false);
     }
@@ -123,6 +133,7 @@ export function SettingsPage({ api, state, applyState, synchronizeThemeState, na
     });
   }
   function changeSecret(id: SecretId, value: string | null) {
+    draftRevision.current++;
     setSettingsDirty(true);
     setSecretChanges((current) => {
       const next = { ...current };
@@ -152,7 +163,7 @@ export function SettingsPage({ api, state, applyState, synchronizeThemeState, na
     change: changeSecret,
   };
   async function save() {
-    await commitAndApplySettingsDraft(activateSelectedProviderProfileForTarget(draft, section as ConfigTestTarget, {
+    return commitAndApplySettingsDraft(activateSelectedProviderProfileForTarget(draft, section as ConfigTestTarget, {
       llm: selectedLlmProfileId,
       image: selectedImageProfileId,
       tts: selectedTtsProfileId,
@@ -165,9 +176,10 @@ export function SettingsPage({ api, state, applyState, synchronizeThemeState, na
     await commitAndApplySettingsDraft(enableImageProfile(draft, id), '已启用绘图配置档案');
   }
   async function activateTtsProfile(id: string) {
-    await commitAndApplySettingsDraft(enableTtsProfile(draft, id), '已启用 TTS 配置档案');
+    await commitAndApplySettingsDraft(enableTtsProfile(draft, id), '已启用旁白服务配置档案');
   }
   async function testCurrentConfig() {
+    const submittedRevision = draftRevision.current;
     const target: ConfigTestTarget =
       section === 'llm' || section === 'image' || section === 'video' || section === 'tts' || section === 'speechToText' || section === 'jianying' || section === 'creative' || section === 'webSearch'
         ? section
@@ -184,7 +196,7 @@ export function SettingsPage({ api, state, applyState, synchronizeThemeState, na
         });
         const next = await api.saveConfig({ config: normalizeEditableConfigProviders(nextDraft), secretChanges });
         const savedConfig = configFromMutation(next);
-        commitSettingsDraft(savedConfig);
+        if (submittedRevision === draftRevision.current) commitSettingsDraft(savedConfig);
         applyState(next);
         const testConfig = buildConfigForSelectedProfileTest(savedConfig, target, selectedProviderProfileIds);
         const result = await api.testAppConfig(target, testConfig);
@@ -294,6 +306,7 @@ export function SettingsPage({ api, state, applyState, synchronizeThemeState, na
   async function fetchImaKnowledgeFromSettings() {
     await settingsAction.run(async () => {
       const savedConfig = await persistSettingsDraft(draft, 'IMA 配置已保存');
+      if (!savedConfig) return;
       const result = await api.fetchImaKnowledge({ query: savedConfig.ima.kbName || savedConfig.ima.kbId });
       setImaKnowledgeResult(result);
       setConfigTestResult(`[${result.status}] ${result.detail}`);
@@ -419,7 +432,7 @@ export function SettingsPage({ api, state, applyState, synchronizeThemeState, na
     ['llm', Sparkles, 'LLM', '文案与分镜', settingsStatusLabel(configTargetStatus('llm', draftWithCredentialStatus))],
     ['image', ImageIcon, 'AI 绘图', '分镜图片', settingsStatusLabel(configTargetStatus('image', draftWithCredentialStatus))],
     ['video', Film, 'AI 视频', '云端生成 · 调度', settingsStatusLabel(configTargetStatus('video', draftWithCredentialStatus))],
-    ['tts', Bot, 'TTS 配音', '每镜语音', settingsStatusLabel(configTargetStatus('tts', draftWithCredentialStatus))],
+    ['tts', Bot, '旁白服务', '每镜配音（TTS）', settingsStatusLabel(configTargetStatus('tts', draftWithCredentialStatus))],
     ['speechToText', Mic2, '语音转文字', '爆款拆解转写 API', settingsStatusLabel(configTargetStatus('speechToText', draftWithCredentialStatus))],
     ['jianying', FolderOpen, '剪映', '草稿目录 · BGM', settingsStatusLabel(configTargetStatus('jianying', draftWithCredentialStatus))],
     ['activation', KeyRound, '激活与订阅', '试用 · 激活码', state.activation.status],
@@ -432,6 +445,13 @@ export function SettingsPage({ api, state, applyState, synchronizeThemeState, na
     <div className="settings-layout">
       <section className="settings-menu">
         {onReturn ? <Button className="settings-return-action" variant="subtle" icon={<ArrowLeft size={14} />} onClick={onReturn}>{returnLabel}</Button> : null}
+        <SelectField
+          fieldClassName="settings-section-select"
+          label="设置分类"
+          value={section}
+          options={sections.map(([value, , label]) => ({ value, label }))}
+          onChange={(event) => setSection(event.target.value as SettingsSection)}
+        />
         {sections.map(([id, Icon, label, hint, status]) => (
           <button key={id} className={section === id ? 'settings-tab active' : 'settings-tab'} onClick={() => setSection(id)}>
             <Icon size={16} />
@@ -525,7 +545,7 @@ export function SettingsPage({ api, state, applyState, synchronizeThemeState, na
         ) : null}
         {section === 'video' ? (
           <>
-            <SettingsCard title="云端 VideoProvider" status={secrets.configured(activeVideoSecretId) ? '已配置' : '待配置'}>
+            <SettingsCard title="视频生成服务" status={secrets.configured(activeVideoSecretId) ? '已配置' : '待配置'}>
               <ProviderConfigNote
                 title="统一视频生成合同"
                 value="支持同步 URL/base64 返回，也支持 task_id 异步轮询。业务任务只依赖能力声明，不绑定具体供应商名称。"
@@ -610,7 +630,7 @@ export function SettingsPage({ api, state, applyState, synchronizeThemeState, na
           </>
         ) : null}
         {section === 'tts' ? (
-          <SettingsCard title="TTS 配音" status={secrets.configured(profileSecretId('tts', selectedTtsProfileId, selectedTtsTestConfig.tts.provider === 'minimax' ? 'minimax/apiKey' : 'volcengine/apiKey')) ? '已配置' : '待配置'}>
+          <SettingsCard title="旁白服务（TTS）" status={secrets.configured(profileSecretId('tts', selectedTtsProfileId, selectedTtsTestConfig.tts.provider === 'minimax' ? 'minimax/apiKey' : 'volcengine/apiKey')) ? '已配置' : '待配置'}>
             <TtsProfileManager
               config={draft}
               selectedProfileId={selectedTtsProfileId}

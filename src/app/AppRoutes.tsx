@@ -1,12 +1,14 @@
-import { Suspense } from 'react';
+import { Suspense, useState } from 'react';
 import type { StoryDreamApi } from '../shared/storydream-api';
 import type { HistoryFamily, ShellView, Task, ThemeName } from '../shared/types';
 import { RouteLoadingState } from './RouteLoadingState';
 import { routeComponents } from './route-registry';
 import type { ApplyMutationResult, RendererAppState as AppState } from './route-types';
 import type { SettingsSection } from '../features/settings/SettingsPage';
+import { createProjectHomeSession } from '../features/projects/project-home-session';
 
 const {
+  'projects': ProjectHomePage,
   'new-task': NewTaskPage,
   'hot-board': HotBoardPage,
   'queue': QueuePage,
@@ -42,6 +44,7 @@ export function AppRoutes({
   settingsReturnView,
   returnFromSettings,
   openTaskDetail,
+  taskDetailReturnView,
   isHistoryTombstoned,
   historyFamilyEpochs,
   refreshTaskDetail,
@@ -67,7 +70,8 @@ export function AppRoutes({
   initialSettingsSection?: SettingsSection;
   settingsReturnView?: ShellView;
   returnFromSettings: () => void;
-  openTaskDetail: (taskId: string) => void;
+  openTaskDetail: (taskId: string, returnView?: ShellView) => void;
+  taskDetailReturnView: ShellView;
   isHistoryTombstoned: (family: HistoryFamily, id: string) => boolean;
   historyFamilyEpochs: Partial<Record<HistoryFamily, number>>;
   refreshTaskDetail: (taskId: string) => Promise<void>;
@@ -82,8 +86,20 @@ export function AppRoutes({
   onActiveViralAnalysisChange: (analysisId: string) => void;
   isBrowserPreview: boolean;
 }) {
+  const [projectHomeSession] = useState(createProjectHomeSession);
   return (
     <Suspense fallback={<RouteLoadingState />}>
+      {activeView === 'projects' ? (
+        <ProjectHomePage
+          session={projectHomeSession}
+          api={api}
+          applyState={applyState}
+          openTaskDetail={(taskId) => openTaskDetail(taskId, 'projects')}
+          navigate={navigate}
+          isTombstoned={isHistoryTombstoned}
+          familyEpochs={historyFamilyEpochs}
+        />
+      ) : null}
       {activeView === 'new-task' ? <NewTaskPage api={api} state={state} applyState={applyState} openTaskDetail={openTaskDetail} isBrowserPreview={isBrowserPreview} navigate={navigate} /> : null}
       {activeView === 'hot-board' ? <HotBoardPage api={api} navigate={navigate} isBrowserPreview={isBrowserPreview} /> : null}
       {activeView === 'book-selection' ? <BookSelectionPage api={api} navigate={navigate} /> : null}
@@ -99,12 +115,12 @@ export function AppRoutes({
           familyEpochs={historyFamilyEpochs}
         />
       ) : null}
-      {activeView === 'task-detail' ? <TaskDetailPage api={api} state={state} task={selectedTask} applyState={applyState} close={() => navigate('history')} openTemplateManager={() => navigate('draft-templates')} isBrowserPreview={isBrowserPreview} /> : null}
+      {activeView === 'task-detail' ? <TaskDetailPage api={api} state={state} task={selectedTask} applyState={applyState} returnView={taskDetailReturnView} close={() => navigate(taskDetailReturnView)} openTemplateManager={() => navigate('draft-templates')} isBrowserPreview={isBrowserPreview} /> : null}
       {activeView === 'image-lab' ? <ImageLabPage api={api} state={state} applyState={applyState} /> : null}
       {activeView === 'voice-lab' ? <VoiceLabPage api={api} state={state} applyState={applyState} /> : null}
       {activeView === 'music-mv' ? <MusicMvPage api={api} state={state} applyState={applyState} openTaskDetail={openTaskDetail} isBrowserPreview={isBrowserPreview} /> : null}
-      {activeView === 'editorial-collage' ? <EditorialCollagePage api={api} state={state} applyState={applyState} requestedTaskId={requestedEditorialCollageTaskId} onRequestedTaskHandled={onRequestedEditorialCollageTaskHandled} navigate={navigate} openSettings={openSettings} /> : null}
-      {activeView === 'motion-comic' ? <MotionComicPage api={api} state={state} applyState={applyState} requestedTaskId={requestedMotionComicTaskId} onRequestedTaskHandled={onRequestedMotionComicTaskHandled} navigate={navigate} openSettings={openSettings} /> : null}
+      {activeView === 'editorial-collage' ? <EditorialCollagePage api={api} state={state} applyState={applyState} requestedTaskId={requestedEditorialCollageTaskId} onRequestedTaskHandled={onRequestedEditorialCollageTaskHandled} navigate={navigate} openSettings={openSettings} returnView={taskDetailReturnView} /> : null}
+      {activeView === 'motion-comic' ? <MotionComicPage api={api} state={state} applyState={applyState} requestedTaskId={requestedMotionComicTaskId} onRequestedTaskHandled={onRequestedMotionComicTaskHandled} navigate={navigate} openSettings={openSettings} returnView={taskDetailReturnView} /> : null}
       {activeView === 'html-video' ? <HtmlVideoPage api={api} state={state} applyState={applyState} refreshTaskDetail={refreshTaskDetail} requestedTaskId={requestedHtmlTaskId} onRequestedTaskHandled={onRequestedHtmlTaskHandled} onActiveTaskChange={onActiveHtmlTaskChange} isBrowserPreview={isBrowserPreview} /> : null}
       {activeView === 'viral-analyzer' ? <ViralAnalyzerPage api={api} state={state} applyState={applyState} refreshViralEvents={refreshViralEvents} onActiveAnalysisChange={onActiveViralAnalysisChange} openTaskDetail={openTaskDetail} isBrowserPreview={isBrowserPreview} /> : null}
       {activeView === 'prompt-templates' ? <PromptTemplatesPage api={api} state={state} applyState={applyState} /> : null}

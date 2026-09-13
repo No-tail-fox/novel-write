@@ -93,11 +93,13 @@ import type {
   WebSearchRequest,
 } from '../src/shared/types';
 import type { PublicAppState, SaveConfigInput, SecretChanges } from '../src/shared/config-secrets';
-import type { PersonAssetImage, PersonAssetSummary } from '../src/shared/person-assets';
+import type { PersonAssetImage, PersonAssetSummary, RecycledPersonAsset } from '../src/shared/person-assets';
+import type { PersonAssetReference } from '../src/shared/storydream-api';
 import type { StoryDreamApi } from '../src/shared/storydream-api';
-import type { DirectorRenderRequest, DirectorRenderResult } from '../src/shared/director-render';
+import type { DirectorGenerateShotVideoRequest, DirectorGenerateShotVideoResult, DirectorRenderRequest, DirectorRenderResult, DirectorSubtitleRecheckRequest, DirectorSubtitleRecheckResult, DirectorMediaRecheckRequest, DirectorMediaRecheckResult } from '../src/shared/director-render';
 import type { EditorialCollageCreateInput, EditorialCollageSaveInput } from '../src/shared/editorial-collage';
 import type { MotionComicCreateInput, MotionComicSaveInput } from '../src/shared/motion-comic';
+import type { CreateDirectorBatchInput, DirectorBatchRecord, UpdateDirectorBatchInput } from '../src/shared/director-batch-persistence';
 import { MAX_IPC_TEXT, unwrapIpcResult, type IpcChannel } from '../src/shared/ipc-contract';
 import { appErrorFromPayload, serializeAppErrorForBridge } from '../src/shared/app-error';
 
@@ -254,7 +256,9 @@ export const storyDreamApi: StoryDreamApi = {
   listPersonAssets: (): Promise<PersonAssetSummary[]> => invokeTrusted('person-assets:list'),
   createPersonAsset: (name: string): Promise<PersonAssetSummary> => invokeTrusted('person-assets:create', name),
   renamePersonAsset: (oldName: string, newName: string): Promise<string> => invokeTrusted('person-assets:rename', { oldName, newName }),
-  deletePersonAsset: (name: string): Promise<void> => invokeTrusted('person-assets:delete', name),
+  getPersonAssetUsage: (name: string): Promise<PersonAssetReference[]> => invokeTrusted('person-assets:usage', name),
+  deletePersonAsset: (name: string): Promise<RecycledPersonAsset> => invokeTrusted('person-assets:delete', name),
+  restorePersonAsset: (token: string): Promise<PersonAssetSummary> => invokeTrusted('person-assets:restore', token),
   importPersonAssetImages: (name: string): Promise<number> => invokeTrusted('person-assets:import-images', name),
   listPersonAssetImages: (name: string): Promise<PersonAssetImage[]> => invokeTrusted('person-assets:list-images', name),
   openPersonAssetDirectory: (name: string): Promise<void> => invokeTrusted('person-assets:open-directory', name),
@@ -262,12 +266,23 @@ export const storyDreamApi: StoryDreamApi = {
     invokeTrusted('editorial-collage:create', input),
   saveEditorialCollage: (input: EditorialCollageSaveInput): Promise<AppMutationResult | null> =>
     invokeTrusted('editorial-collage:save', input),
+  generateDirectorShotVideo: (input: DirectorGenerateShotVideoRequest): Promise<{ result: DirectorGenerateShotVideoResult; mutation: AppMutationResult | null }> =>
+    invokeTrusted('director:generate-shot-video', input),
   createMotionComic: (input: MotionComicCreateInput): Promise<AppMutationResult | null> =>
     invokeTrusted('motion-comic:create', input),
   saveMotionComic: (input: MotionComicSaveInput): Promise<AppMutationResult | null> =>
     invokeTrusted('motion-comic:save', input),
   renderDirectorProject: (input: DirectorRenderRequest): Promise<{ result: DirectorRenderResult; mutation: AppMutationResult | null }> =>
     invokeTrusted('director:render', input),
+  recheckDirectorSubtitles: (input: DirectorSubtitleRecheckRequest): Promise<DirectorSubtitleRecheckResult> =>
+    invokeTrusted('director:recheck-subtitles', input),
+  recheckDirectorMedia: (input: DirectorMediaRecheckRequest): Promise<DirectorMediaRecheckResult> =>
+    invokeTrusted('director:recheck-media', input),
+  createDirectorBatch: (input: CreateDirectorBatchInput): Promise<DirectorBatchRecord> => invokeTrusted('director:batch-create', input),
+  getDirectorBatch: (id: string): Promise<DirectorBatchRecord | null> => invokeTrusted('director:batch-get', id),
+  listDirectorBatches: (options = {}): Promise<DirectorBatchRecord[]> => invokeTrusted('director:batch-list', options),
+  updateDirectorBatch: (id: string, patch: UpdateDirectorBatchInput): Promise<DirectorBatchRecord> => invokeTrusted('director:batch-update', { id, patch }),
+  deleteDirectorBatch: (id: string): Promise<boolean> => invokeTrusted('director:batch-delete', id),
   createHtmlVideoTask: (input: CreateTaskInput) => invokeTrusted('html-video:create-task', input),
   updateHtmlVideoConfig: (id: string, changes: HtmlVideoConfigChange[]) =>
     invokeTrusted('html-video:update-config', { id, changes }),
@@ -334,6 +349,7 @@ export const storyDreamApi: StoryDreamApi = {
   selectLocalImage: (): Promise<string | null> => invokeTrusted('local-image:select'),
   importBgmAudio: () => storyDreamApi.selectLocalAudio('managed-bgm'),
   selectLocalAudio: ((purpose?: 'managed-bgm') => invokeTrusted('local-audio:select', purpose)) as StoryDreamApi['selectLocalAudio'],
+  selectLocalSubtitleTimestampFile: (): ReturnType<StoryDreamApi['selectLocalSubtitleTimestampFile']> => invokeTrusted('local-subtitle-timestamps:select'),
   selectLocalFolder: (): Promise<string | null> => invokeTrusted('local-folder:select'),
   selectCookieFile: (): Promise<string | null> => invokeTrusted('cookie-file:select'),
   openViralLoginWindow: (): Promise<string | null> => invokeTrusted('viral:open-login-window'),

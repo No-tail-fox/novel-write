@@ -5,6 +5,7 @@ import type { StoryDreamApi } from '../../shared/storydream-api';
 import { defaultCustomStyles } from '../../shared/config';
 import { buildStoryTemplateTrackOptions } from '../../shared/prompt-templates';
 import { useAsyncAction } from '../../ui/async-action';
+import { useUnsavedChanges } from '../../app/workspace-navigation';
 import { FormField as Field } from '../../components/FormField';
 import { AsyncActionFeedback as InlineActionFeedback } from '../../components/AsyncActionFeedback';
 import { EmptyState } from '../../components/EmptyState';
@@ -23,8 +24,9 @@ export function PromptTemplatesPage({ api, state, applyState }: { api: StoryDrea
   const [promptTemplateLibraryTab, setPromptTemplateLibraryTab] = useState<'story' | 'image'>('story');
   const [templateTypeFilter, setTemplateTypeFilter] = useState<PromptTemplateType | 'all'>('all');
   const [templateTrackFilter, setTemplateTrackFilter] = useState('all');
-  const [selectedImageStyleId, setSelectedImageStyleId] = useState(state.customStyles[0]?.id ?? defaultCustomStyles[0]?.id ?? '');
-  const [imageDraft, setImageDraft] = useState<CustomStyle | null>(state.customStyles[0] ? { ...state.customStyles[0] } : null);
+  const [imageDraft, setImageDraftState] = useState<CustomStyle | null>(state.customStyles[0] ? { ...state.customStyles[0] } : null);
+  const imageDraftRef = useRef(imageDraft);
+  const [savedImageDraft, setSavedImageDraft] = useState(imageDraft);
   const [imageTemplateAiPrompt, setImageTemplateAiPrompt] = useState('');
   const [imageTemplateAiStatus, setImageTemplateAiStatus] = useState('');
   const [imageTemplateAiGenerating, setImageTemplateAiGenerating] = useState(false);
@@ -35,39 +37,82 @@ export function PromptTemplatesPage({ api, state, applyState }: { api: StoryDrea
     return typeMatches && trackMatches;
   });
   const selected = state.promptTemplates.find((template) => template.id === selectedId) ?? filteredTemplates[0] ?? state.promptTemplates[0];
-  const selectedImageStyle = state.customStyles.find((style) => style.id === selectedImageStyleId) ?? state.customStyles[0] ?? defaultCustomStyles[0];
-  const [draft, setDraft] = useState<PromptTemplate | null>(selected ? { ...selected } : null);
+  const [draft, setDraftState] = useState<PromptTemplate | null>(selected ? { ...selected } : null);
+  const draftRef = useRef(draft);
+  const [savedDraft, setSavedDraft] = useState(draft);
   const [templateJsonDraft, setTemplateJsonDraft] = useState('');
   const [imageTemplateJsonDraft, setImageTemplateJsonDraft] = useState('');
   const promptTemplateAction = useAsyncAction();
   const promptDetailGeneration = useRef(0);
+  const { requestLeave } = useUnsavedChanges({
+    id: 'prompt-template-editor',
+    label: templateMode === 'image-detail' ? '图像模板' : '提示词模板',
+    dirty: templateMode === 'detail'
+      ? JSON.stringify(draft) !== JSON.stringify(savedDraft)
+      : templateMode === 'image-detail' && JSON.stringify(imageDraft) !== JSON.stringify(savedImageDraft),
+    busy: promptTemplateAction.busy,
+    onSave: templateMode === 'image-detail' ? saveCustomStyleDraft : savePromptTemplateDraft,
+    onDiscard: () => {
+      if (templateMode === 'image-detail') setImageDraft(savedImageDraft ? structuredClone(savedImageDraft) : null);
+      else setDraft(savedDraft ? structuredClone(savedDraft) : null);
+    },
+  });
   const promptTemplateTrackOptions = buildStoryTemplateTrackOptions(state.promptTemplates);
   const promptTemplateBindingTrackOptions =
     draft?.baseTrack && !promptTemplateTrackOptions.some(([id]) => id === draft.baseTrack)
       ? [...promptTemplateTrackOptions, [draft.baseTrack, draft.baseTrack, '当前模板赛道'] as [string, string, string]]
       : promptTemplateTrackOptions;
 
-  useEffect(() => setDraft(selected ? { ...selected } : null), [selected?.id]);
-  useEffect(() => setImageDraft(selectedImageStyle ? { ...selectedImageStyle } : null), [selectedImageStyle?.id]);
+  useEffect(() => () => { promptDetailGeneration.current += 1; }, []);
+
+  function setDraft(update: React.SetStateAction<PromptTemplate | null>) {
+    const next = typeof update === 'function' ? update(draftRef.current) : update;
+    draftRef.current = next;
+    setDraftState(next);
+  }
+
+  function setImageDraft(update: React.SetStateAction<CustomStyle | null>) {
+    const next = typeof update === 'function' ? update(imageDraftRef.current) : update;
+    imageDraftRef.current = next;
+    setImageDraftState(next);
+  }
+
+  function acceptPromptTemplate(template: PromptTemplate) {
+    promptDetailGeneration.current += 1;
+    setSelectedId(template.id);
+    setSavedDraft(structuredClone(template));
+    setDraft(structuredClone(template));
+    setTemplateMode('detail');
+  }
+
+  function acceptImageTemplate(style: CustomStyle) {
+    promptDetailGeneration.current += 1;
+    setSavedImageDraft(structuredClone(style));
+    setImageDraft(structuredClone(style));
+    setTemplateMode('image-detail');
+  }
 
   function openPromptTemplateDetail(template: PromptTemplate) {
-    const generation = ++promptDetailGeneration.current;
-    setSelectedId(template.id);
-    setDraft({ ...template });
-    setTemplateJsonDraft('');
-    setTemplateMode('detail');
-    void promptTemplateAction.run(async () => {
-      const detail = await api.getPromptTemplateDetail(template.id);
-      if (generation === promptDetailGeneration.current && detail) setDraft({ ...detail });
+    if (promptTemplateAction.busy) return;
+    void requestLeave(async () => {
+      const generation = ++promptDetailGeneration.current;
+      await promptTemplateAction.run(async () => {
+        const detail = await api.getPromptTemplateDetail(template.id);
+        if (generation !== promptDetailGeneration.current) return;
+        if (!detail) throw new Error('模板已不存在，请刷新模板库。');
+        acceptPromptTemplate(detail);
+        setTemplateJsonDraft('');
+      });
     });
   }
 
   function openImageTemplateDetail(style: CustomStyle) {
-    setSelectedImageStyleId(style.id);
-    setImageDraft({ ...style });
-    setBaseImageTemplateId(style.id);
-    setImageTemplateAiStatus('');
-    setTemplateMode('image-detail');
+    if (promptTemplateAction.busy) return;
+    void requestLeave(() => {
+      acceptImageTemplate(style);
+      setBaseImageTemplateId(style.id);
+      setImageTemplateAiStatus('');
+    });
   }
 
   function handlePromptTemplateRowKeyDown(event: React.KeyboardEvent<HTMLElement>, template: PromptTemplate) {
@@ -76,30 +121,45 @@ export function PromptTemplatesPage({ api, state, applyState }: { api: StoryDrea
     openPromptTemplateDetail(template);
   }
 
-  async function savePromptTemplateDraft() {
-    if (!draft) return;
-    const shouldForkTemplate = Boolean(draft.isBuiltin);
+  async function savePromptTemplateDraft(): Promise<boolean> {
+    const submitted = draftRef.current;
+    if (!submitted) return false;
+    const generation = promptDetailGeneration.current;
+    const shouldForkTemplate = Boolean(submitted.isBuiltin);
     const templateToSave: PromptTemplate = {
-      ...independentPromptTemplateFields(draft),
-      id: shouldForkTemplate ? crypto.randomUUID() : draft.id,
+      ...independentPromptTemplateFields(submitted),
+      id: shouldForkTemplate ? crypto.randomUUID() : submitted.id,
       isBuiltin: false,
       origin: 'custom',
       updatedAt: new Date().toISOString(),
     };
-    await promptTemplateAction.run(async () => {
-      applyState(await api.savePromptTemplate(templateToSave));
-      setSelectedId(templateToSave.id);
-      setDraft(templateToSave);
-      setTemplateMode('detail');
+    const result = await promptTemplateAction.run(async () => {
+      const mutation = await api.savePromptTemplate(templateToSave);
+      applyState(mutation);
+      if (mutation?.kind !== 'state-patch' || mutation.patch.kind !== 'prompt-template-upsert') return false;
+      const saved = mutation.patch.template;
+      const current = draftRef.current;
+      if (generation !== promptDetailGeneration.current || current?.id !== submitted.id) return false;
+      setSavedDraft(structuredClone(saved));
+      setSelectedId(saved.id);
+      if (JSON.stringify(current) !== JSON.stringify(submitted)) {
+        setDraft({ ...independentPromptTemplateFields(current), id: saved.id, isBuiltin: saved.isBuiltin, origin: saved.origin, updatedAt: saved.updatedAt });
+        return false;
+      }
+      setDraft(structuredClone(saved));
+      return true;
     });
+    return result.ok && result.value;
   }
 
   async function duplicateTemplate(template: PromptTemplate) {
+    const generation = promptDetailGeneration.current;
+    const currentDraft = draftRef.current;
     const copy = { ...independentPromptTemplateFields(template), id: crypto.randomUUID(), name: `${template.name} 副本`, isBuiltin: false, origin: 'custom' as const };
     await promptTemplateAction.run(async () => {
       applyState(await api.savePromptTemplate(copy));
-      setSelectedId(copy.id);
-      setDraft(copy);
+      if (generation !== promptDetailGeneration.current || draftRef.current !== currentDraft) return;
+      acceptPromptTemplate(copy);
       setTemplateJsonDraft('');
       setTemplateMode('detail');
     });
@@ -131,33 +191,46 @@ export function PromptTemplatesPage({ api, state, applyState }: { api: StoryDrea
     };
     await promptTemplateAction.run(async () => {
       applyState(await api.savePromptTemplate(template));
-      setSelectedId(template.id);
-      setDraft(template);
+      acceptPromptTemplate(template);
       setTemplateJsonDraft('');
       setTemplateMode('detail');
     });
   }
 
-  async function saveCustomStyleDraft() {
-    if (!imageDraft) return;
+  async function saveCustomStyleDraft(): Promise<boolean> {
+    const submitted = imageDraftRef.current;
+    if (!submitted) return false;
+    const generation = promptDetailGeneration.current;
     const now = new Date().toISOString();
-    const styleToSave = { ...imageDraft, updatedAt: now, createdAt: imageDraft.createdAt || now };
-    await promptTemplateAction.run(async () => {
-      applyState(await api.saveCustomStyle(styleToSave));
-      setSelectedImageStyleId(styleToSave.id);
-      setImageDraft(styleToSave);
+    const styleToSave = { ...submitted, updatedAt: now, createdAt: submitted.createdAt || now };
+    const result = await promptTemplateAction.run(async () => {
+      const mutation = await api.saveCustomStyle(styleToSave);
+      applyState(mutation);
+      if (mutation?.kind !== 'state-patch' || mutation.patch.kind !== 'custom-style-upsert') return false;
+      const saved = mutation.patch.style;
+      const current = imageDraftRef.current;
+      if (generation !== promptDetailGeneration.current || current?.id !== submitted.id) return false;
+      setSavedImageDraft(structuredClone(saved));
+      if (JSON.stringify(current) !== JSON.stringify(submitted)) {
+        setImageDraft({ ...current, updatedAt: saved.updatedAt, createdAt: saved.createdAt });
+        return false;
+      }
+      setImageDraft(structuredClone(saved));
       setImageTemplateAiStatus('已保存图像模板。');
-      setTemplateMode('image-detail');
+      return true;
     });
+    return result.ok && result.value;
   }
 
   async function duplicateImageTemplate(style: CustomStyle) {
+    const generation = promptDetailGeneration.current;
+    const currentDraft = imageDraftRef.current;
     const now = new Date().toISOString();
     const copy = { ...style, id: crypto.randomUUID(), name: `${style.name} 副本`, createdAt: now, updatedAt: now };
     await promptTemplateAction.run(async () => {
       applyState(await api.saveCustomStyle(copy));
-      setSelectedImageStyleId(copy.id);
-      setImageDraft(copy);
+      if (generation !== promptDetailGeneration.current || imageDraftRef.current !== currentDraft) return;
+      acceptImageTemplate(copy);
       setImageTemplateAiStatus('已克隆图像模板。');
       setTemplateMode('image-detail');
     });
@@ -177,8 +250,7 @@ export function PromptTemplatesPage({ api, state, applyState }: { api: StoryDrea
     };
     await promptTemplateAction.run(async () => {
       applyState(await api.saveCustomStyle(template));
-      setSelectedImageStyleId(template.id);
-      setImageDraft(template);
+      acceptImageTemplate(template);
       setImageTemplateAiStatus('');
       setTemplateMode('image-detail');
     });
@@ -209,11 +281,17 @@ export function PromptTemplatesPage({ api, state, applyState }: { api: StoryDrea
       return;
     }
     const base = state.customStyles.find((style) => style.id === baseImageTemplateId) ?? defaultCustomStyles.find((style) => style.id === baseImageTemplateId);
+    const generation = promptDetailGeneration.current;
+    const submitted = imageDraftRef.current;
     await promptTemplateAction.run(async () => {
       setImageTemplateAiGenerating(true);
       setImageTemplateAiStatus('正在生成字段...');
       try {
         const generated = await api.generateCustomStyleDraft({ prompt, baseStyle: base ?? imageDraft });
+        if (generation !== promptDetailGeneration.current || imageDraftRef.current !== submitted) {
+          setImageTemplateAiStatus('模板已继续编辑，本次生成未覆盖当前内容。');
+          return;
+        }
         setImageDraft({ ...imageDraft, ...generated, id: imageDraft.id, createdAt: imageDraft.createdAt });
         setImageTemplateAiStatus(`已生成字段：${generated.name || prompt}`);
       } finally {
@@ -241,20 +319,18 @@ export function PromptTemplatesPage({ api, state, applyState }: { api: StoryDrea
   }
 
   async function importPromptTemplateJson() {
-    await promptTemplateAction.run(async () => {
+    await requestLeave(async () => { await promptTemplateAction.run(async () => {
       const imported = JSON.parse(templateJsonDraft) as PromptTemplate;
       const id = resolveImportedTemplateId(imported, state.promptTemplates.some((template) => template.id === imported.id));
       const next = { ...imported, id, isBuiltin: false, origin: 'custom' as const, updatedAt: new Date().toISOString() };
       applyState(await api.savePromptTemplate(next));
-      setSelectedId(next.id);
-      setDraft(next);
-      setTemplateMode('detail');
+      acceptPromptTemplate(next);
       setTemplateJsonDraft('');
-    }, { onError: () => setTemplateJsonDraft('{"name":"自定义模板","type":"task","description":"请补充","content":"请补充提示词"}') });
+    }); });
   }
 
   async function importImageTemplateJson() {
-    await promptTemplateAction.run(async () => {
+    await requestLeave(async () => { await promptTemplateAction.run(async () => {
       const imported = JSON.parse(imageTemplateJsonDraft) as CustomStyle;
       const now = new Date().toISOString();
       const id = resolveImportedTemplateId(imported, state.customStyles.some((style) => style.id === imported.id));
@@ -265,11 +341,9 @@ export function PromptTemplatesPage({ api, state, applyState }: { api: StoryDrea
         updatedAt: now,
       };
       applyState(await api.saveCustomStyle(next));
-      setSelectedImageStyleId(next.id);
-      setImageDraft(next);
-      setTemplateMode('image-detail');
+      acceptImageTemplate(next);
       setImageTemplateJsonDraft('');
-    }, { onError: () => setImageTemplateJsonDraft('{"name":"自定义图像模板","tag":"自定义","shortName":"自定义","prefix":"请补充","suffix":"请补充","negativePrompt":"请补充","allowColor":true,"description":"请补充"}') });
+    }); });
   }
 
   async function resetPromptTemplateLibrary() {
@@ -432,20 +506,20 @@ export function PromptTemplatesPage({ api, state, applyState }: { api: StoryDrea
       templateJsonDraft={templateJsonDraft}
       promptTemplateBindingTrackOptions={promptTemplateBindingTrackOptions}
       promptTemplateAction={promptTemplateAction}
-      setTemplateMode={setTemplateMode}
+      setTemplateMode={(mode) => void requestLeave(() => { promptDetailGeneration.current += 1; setTemplateMode(mode); })}
       setDraft={setDraft}
       setImageDraft={setImageDraft}
       setBaseImageTemplateId={setBaseImageTemplateId}
       setImageTemplateAiPrompt={setImageTemplateAiPrompt}
       setImageTemplateJsonDraft={setImageTemplateJsonDraft}
       setTemplateJsonDraft={setTemplateJsonDraft}
-      savePromptTemplateDraft={savePromptTemplateDraft}
+      savePromptTemplateDraft={async () => { await savePromptTemplateDraft(); }}
       duplicate={duplicate}
       exportPromptTemplateJson={exportPromptTemplateJson}
       importPromptTemplateJson={importPromptTemplateJson}
       updatePromptTemplateStepPrompt={updatePromptTemplateStepPrompt}
       resetPromptTemplateStepPrompt={resetPromptTemplateStepPrompt}
-      saveCustomStyleDraft={saveCustomStyleDraft}
+      saveCustomStyleDraft={async () => { await saveCustomStyleDraft(); }}
       duplicateImageTemplate={duplicateImageTemplate}
       applyBaseImageTemplate={applyBaseImageTemplate}
       fillImageTemplateFromAiPrompt={fillImageTemplateFromAiPrompt}

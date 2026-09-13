@@ -48,6 +48,7 @@ export interface UseHistoryPageOptions<F extends HistoryFamily, T extends { id: 
   loadPage: HistoryPageLoader<F, T>;
   isTombstoned: HistoryTombstoneBarrier<F>;
   familyEpoch?: number;
+  controller?: HistoryPageRequestController<F, T>;
 }
 
 export interface UseHistoryPageResult<F extends HistoryFamily, T extends { id: string }> {
@@ -206,8 +207,8 @@ export function useHistoryPage<F extends HistoryFamily, T extends { id: string }
   options: UseHistoryPageOptions<F, T>,
 ): UseHistoryPageResult<F, T> {
   const controller = useMemo(
-    () => createHistoryPageRequestController<F, T>(options.family),
-    [options.family],
+    () => options.controller ?? createHistoryPageRequestController<F, T>(options.family),
+    [options.controller, options.family],
   );
   const key = historyPageRequestKey(options.family, options.request);
   const transportSignature = historyPageTransportSignature(options.family, options.request);

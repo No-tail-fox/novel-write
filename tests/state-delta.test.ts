@@ -6,7 +6,7 @@ import { ConfigService } from '../electron/config-service';
 import { createHistoryPageStore } from '../src/features/history/history-page-store';
 import { defaultConfig } from '@shared/config';
 import { defaultPromptTemplates } from '@shared/prompt-template-defaults';
-import { createAppDeltaCoordinator, reduceAppDelta, type DeltaViewState } from '@shared/state-delta';
+import { createAppDeltaCoordinator, reduceAppDelta, taskEventKey, type DeltaViewState } from '@shared/state-delta';
 import * as reconciliationModule from '@shared/state-reconciliation';
 import {
   mergeBootstrapTemplateDetails,
@@ -15,6 +15,7 @@ import {
   taskSummaryToTask,
   viralSummaryToRecord,
   viralEventRefreshKey,
+  isolateTaskEvents,
 } from '@shared/state-reconciliation';
 import { FileDatabase } from '@shared/storage';
 import { draftTemplates as builtinDraftTemplates } from '@shared/templates';
@@ -150,6 +151,27 @@ function mutationState(overrides: Record<string, unknown> = {}): Record<string, 
 }
 
 describe('app state delta coordination', () => {
+  it('keeps task event sequences isolated by task and run generation', () => {
+    const event = (taskId: string, seq: number, detail: string, runGeneration?: number) => ({
+      taskId, seq, runGeneration, type: 'checkpoint', step: 1, agent: null, tool: null, detail, dataJson: null, ts: seq,
+    });
+    const first = viewState(0, [taskSummary('task-a'), taskSummary('task-b')]);
+    const afterA = reduceAppDelta(first, { kind: 'task-event', event: event('task-a', 1, 'A'), revision: 1 });
+    const afterB = reduceAppDelta(afterA, { kind: 'task-event', event: event('task-b', 1, 'B'), revision: 2 });
+    expect(afterB.events.map((item) => item.detail)).toEqual(['A', 'B']);
+    expect(taskEventKey(afterB.events[0])).not.toBe(taskEventKey(afterB.events[1]));
+    expect(isolateTaskEvents(afterB.events, { id: 'task-a', runGeneration: undefined }).map((item) => item.detail)).toEqual(['A']);
+  });
+
+  it('drops stale run events while retaining only the current task run', () => {
+    const events = [
+      { taskId: 'task-a', seq: 1, runGeneration: 1, type: 'checkpoint', step: 1, agent: null, tool: null, detail: 'old', dataJson: null, ts: 1 },
+      { taskId: 'task-a', seq: 2, runGeneration: 2, type: 'checkpoint', step: 1, agent: null, tool: null, detail: 'new', dataJson: null, ts: 2 },
+      { taskId: 'task-b', seq: 1, runGeneration: 1, type: 'checkpoint', step: 1, agent: null, tool: null, detail: 'other', dataJson: null, ts: 3 },
+    ];
+    expect(isolateTaskEvents(events, { id: 'task-a', runGeneration: 2 }).map((item) => item.detail)).toEqual(['new']);
+  });
+
   it('removes a deleted draft template through the canonical state patch', () => {
     const applyMutation = reconciliationModule.applyAppMutationResult as unknown as (
       state: Record<string, unknown>,

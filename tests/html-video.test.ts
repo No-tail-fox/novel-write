@@ -1,9 +1,11 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import vm from 'node:vm';
-import { access, mkdir, mkdtemp, readFile, rm } from 'node:fs/promises';
+import { gsap } from 'gsap';
+import { access, mkdir, mkdtemp, readdir, readFile, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { pathToFileURL } from 'node:url';
+import type { StoryboundSidecarInput } from '../src/shared/storybound-sidecar';
 import {
   buildHtmlVideoExportInput,
   createHtmlVideoComposePayload,
@@ -35,11 +37,25 @@ import type {
 } from '@shared/types';
 
 const electronHarness = vi.hoisted(() => {
-  type CaptureImage = { getSize(): { width: number; height: number }; toJPEG(quality: number): Buffer };
+  type CaptureImage = {
+    getSize(): { width: number; height: number };
+    resize(options: { width: number; height: number; quality?: string }): CaptureImage;
+    toJPEG(quality: number): Buffer;
+  };
   type ScriptExecutor = (script: string) => Promise<unknown>;
+
+  const fixedCaptureImage = (width: number, height: number): CaptureImage => ({
+    getSize: () => ({ width, height }),
+    resize: (options) => fixedCaptureImage(options.width, options.height),
+    toJPEG: () => Buffer.from('jpeg'),
+  });
 
   const captureImage: CaptureImage = {
     getSize: () => ({ ...state.captureSize }),
+    resize: (options) => {
+      state.resizeCalls.push({ ...options });
+      return fixedCaptureImage(options.width, options.height);
+    },
     toJPEG: () => Buffer.from('jpeg'),
   };
   const state = {
@@ -47,6 +63,7 @@ const electronHarness = vi.hoisted(() => {
     maxActiveWindows: 0,
     captureCalls: 0,
     captureSize: { width: 320, height: 568 },
+    resizeCalls: [] as Array<{ width: number; height: number; quality?: string }>,
     capturePlans: [] as Array<() => Promise<CaptureImage>>,
     executeScripts: [] as string[],
     scriptExecutor: null as ScriptExecutor | null,
@@ -112,6 +129,7 @@ const electronHarness = vi.hoisted(() => {
       state.maxActiveWindows = 0;
       state.captureCalls = 0;
       state.captureSize = { width: 320, height: 568 };
+      state.resizeCalls.length = 0;
       state.capturePlans.length = 0;
       state.executeScripts.length = 0;
       state.scriptExecutor = null;
@@ -146,10 +164,7 @@ const artifact: PipelineArtifact = {
 
 beforeEach(() => {
   electronHarness.reset();
-  sidecarHarness.run.mockReset().mockResolvedValue({
-    output_path: 'final.mp4',
-    source_path: '_source.mp4',
-  });
+  sidecarHarness.run.mockReset().mockImplementation(renderSidecarFixture);
 });
 afterEach(() => electronHarness.reset());
 
@@ -1351,8 +1366,8 @@ describe('HTML video composition contract', () => {
       mode: 'compose_render',
       work_dir: 'D:/tasks/html-video-2',
       scenes: [
-        { frames_dir: 'D:/tasks/html-video-2/frames-001', audio_path: 'D:/media/scene-1.wav', fps: 30 },
-        { frames_dir: 'D:/tasks/html-video-2/frames-002', audio_path: 'D:/media/scene-2.wav', fps: 30 },
+        { frames_dir: 'D:/tasks/html-video-2/frames-001', audio_path: 'D:/media/scene-1.wav', fps: 30, duration_s: 1.2 },
+        { frames_dir: 'D:/tasks/html-video-2/frames-002', audio_path: 'D:/media/scene-2.wav', fps: 30, duration_s: 1.6 },
       ],
       output_path: 'D:/tasks/html-video-2/final.mp4',
       total_duration_s: 2.8,
@@ -1376,6 +1391,147 @@ describe('HTML video composition contract', () => {
 });
 
 describe('Electron HTML video capture contract', () => {
+  it.each(['fonts', 'image'])('waits for both resources with %s ready first, then inspects before capturing', async (first) => {
+    await withRendererTestDir(async (workDir) => {
+      const fonts = deferred<void>();
+      const inspection = deferred<void>();
+      const inspectionStarted = deferred<void>();
+      let imageLoaded: (() => void) | undefined;
+      const image = {
+        complete: false, naturalWidth: 0,
+        addEventListener(event: string, listener: () => void) {
+          if (event === 'load') imageLoaded = listener;
+        },
+      };
+      electronHarness.state.scriptExecutor = createReadyScriptExecutor([image], fonts.promise);
+      const input = rendererInput(workDir);
+      const inspected: number[] = [];
+      const pending = createElectronHtmlVideoRenderer({ inspectScene: async (window, scene) => {
+        expect(window.isDestroyed()).toBe(false);
+        expect(scene).toBe(input.scenes[inspected.length]);
+        expect(electronHarness.state.captureCalls).toBe(inspected.length * 2);
+        inspected.push(scene.sceneId);
+        if (inspected.length === 1) {
+          inspectionStarted.resolve();
+          await inspection.promise;
+        }
+      } }).render(input);
+      await waitFor(() => Boolean(imageLoaded));
+      const completeImage = () => { image.complete = true; image.naturalWidth = 320; imageLoaded!(); };
+      if (first === 'fonts') fonts.resolve();
+      else completeImage();
+      await nextTurn();
+      expect(inspected).toEqual([]);
+      expect(electronHarness.state.captureCalls).toBe(0);
+      if (first === 'fonts') completeImage();
+      else fonts.resolve();
+      await inspectionStarted.promise;
+      expect(electronHarness.state.captureCalls).toBe(0);
+      expect(sidecarHarness.run).not.toHaveBeenCalled();
+      inspection.resolve();
+      await expect(pending).resolves.toMatchObject({ outputPath: 'final.mp4' });
+      expect(inspected).toEqual(input.scenes.map(scene => scene.sceneId));
+      expect(electronHarness.state.activeWindows).toBe(0);
+    });
+  });
+
+  it('cleans the hidden window and scratch media when scene inspection fails', async () => {
+    await withRendererTestDir(async (workDir) => {
+      electronHarness.state.scriptExecutor = createReadyScriptExecutor([]);
+      const failure = new Error('scene inspection failed');
+      await expect(createElectronHtmlVideoRenderer({ inspectScene: async () => { throw failure; } })
+        .render(rendererInput(workDir))).rejects.toBe(failure);
+      expect(electronHarness.state.captureCalls).toBe(0);
+      expect(electronHarness.state.activeWindows).toBe(0);
+      expect(sidecarHarness.run).not.toHaveBeenCalled();
+      await expectFrameDirectoriesMissing(workDir, [1]);
+    });
+  });
+
+  it('cancels an unfinished inspection and releases capture ownership for the next request', async () => {
+    await withRendererTestDir(async (workDir) => {
+      electronHarness.state.scriptExecutor = createReadyScriptExecutor([]);
+      const started = deferred<void>();
+      const inspection = deferred<void>();
+      const controller = new AbortController();
+      const reason = new DOMException('cancel inspection', 'AbortError');
+      const pending = createElectronHtmlVideoRenderer({ inspectScene: async () => {
+        started.resolve();
+        await inspection.promise;
+      } }).render(rendererInput(workDir), { signal: controller.signal });
+      const rejected = expect(pending).rejects.toBe(reason);
+      await started.promise;
+      controller.abort(reason);
+      await rejected;
+      expect(electronHarness.state.captureCalls).toBe(0);
+      expect(electronHarness.state.activeWindows).toBe(0);
+      expect(sidecarHarness.run).not.toHaveBeenCalled();
+      await expectFrameDirectoriesMissing(workDir, [1]);
+      inspection.reject(new Error('late inspection rejection'));
+      await expect(createElectronHtmlVideoRenderer().capturePreview(previewInput(workDir, 'after-cancel')))
+        .resolves.toContain('after-cancel.jpg');
+    });
+  });
+
+  it('times out an unfinished scene inspection and cleans its resources', async () => {
+    await withRendererTestDir(async (workDir) => {
+      electronHarness.state.scriptExecutor = createReadyScriptExecutor([]);
+      const started = deferred<void>();
+      const inspection = deferred<void>();
+      const pending = createElectronHtmlVideoRenderer({ inspectScene: async () => {
+        vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] });
+        started.resolve();
+        await inspection.promise;
+      } }).render(rendererInput(workDir));
+      const rejected = expect(pending).rejects.toThrow('HTML scene inspection timed out.');
+      try {
+        await started.promise;
+        await vi.advanceTimersByTimeAsync(15_000);
+      } finally { vi.useRealTimers(); }
+      await rejected;
+      inspection.resolve();
+      expect(electronHarness.state.captureCalls).toBe(0);
+      expect(electronHarness.state.activeWindows).toBe(0);
+      expect(sidecarHarness.run).not.toHaveBeenCalled();
+      await expectFrameDirectoriesMissing(workDir, [1]);
+    });
+  });
+
+  it('does not await completion of a paused GSAP timeline returned by seek', async () => {
+    await withRendererTestDir(async (workDir) => {
+      const timeline = gsap.timeline({ paused: true }).to({}, { duration: 2 });
+      const then = vi.spyOn(timeline, 'then').mockImplementation(() => { throw new Error('Must not await timeline playback'); });
+      const ready = createReadyScriptExecutor([]);
+      electronHarness.state.scriptExecutor = (script) => script.includes('timeline.seek(') || script.includes('window.__tl.seek(')
+        ? vm.runInNewContext(script, { window: { __tl: timeline }, requestAnimationFrame: (callback: () => void) => queueMicrotask(callback) })
+        : ready(script);
+      try {
+        await expect(createElectronHtmlVideoRenderer().capturePreview(previewInput(workDir, 'gsap'))).resolves.toContain('gsap.jpg');
+        expect(then).not.toHaveBeenCalled();
+        expect(timeline.paused()).toBe(true);
+      } finally { timeline.kill(); then.mockRestore(); }
+    });
+  });
+
+  it('still awaits asynchronous media seek before capturing its frame', async () => {
+    await withRendererTestDir(async (workDir) => {
+      const seek = deferred<void>();
+      const started = deferred<void>();
+      const ready = createReadyScriptExecutor([]);
+      electronHarness.state.scriptExecutor = (script) => {
+        if (!script.includes('timeline.seek(') && !script.includes('window.__tl.seek(')) return ready(script);
+        started.resolve();
+        return vm.runInNewContext(script, { window: { __tl: { seek: () => seek.promise } }, requestAnimationFrame: (callback: () => void) => queueMicrotask(callback) });
+      };
+      const pending = createElectronHtmlVideoRenderer().capturePreview(previewInput(workDir, 'async-seek'));
+      await started.promise;
+      expect(electronHarness.state.captureCalls).toBe(0);
+      seek.resolve();
+      await expect(pending).resolves.toContain('async-seek.jpg');
+      expect(electronHarness.state.captureCalls).toBe(1);
+    });
+  });
+
   it('uses an offscreen surface for hidden full-canvas capture', async () => {
     await withRendererTestDir(async (workDir) => {
       electronHarness.state.scriptExecutor = createReadyScriptExecutor([]);
@@ -1404,15 +1560,99 @@ describe('Electron HTML video capture contract', () => {
     });
   });
 
+  it('normalizes proportional high-DPI captures to the declared canvas', async () => {
+    await withRendererTestDir(async (workDir) => {
+      electronHarness.state.scriptExecutor = createReadyScriptExecutor([]);
+      electronHarness.state.captureSize = { width: 400, height: 710 };
+
+      await expect(createElectronHtmlVideoRenderer().capturePreview(previewInput(workDir, 'high-dpi'))).resolves.toContain('high-dpi.jpg');
+      expect(electronHarness.state.resizeCalls).toEqual([{ width: 320, height: 568, quality: 'best' }]);
+    });
+  });
+
   it('removes all captured frame directories after a successful render', async () => {
     await withRendererTestDir(async (workDir) => {
       electronHarness.state.scriptExecutor = createReadyScriptExecutor([]);
 
       await expect(createElectronHtmlVideoRenderer().render(rendererInput(workDir))).resolves.toMatchObject({
         outputPath: 'final.mp4',
-        sourceVideoPath: '_source.mp4',
+        sourceVideoPath: join(workDir, '_source.mp4'),
       });
       await expectFrameDirectoriesMissing(workDir, [1, 2]);
+      await expect(readFile(join(workDir, '_source.mp4'), 'utf8')).resolves.toBe('source video');
+    });
+  });
+
+  it('encodes and releases each scene before capturing the next, then composes only segments', async () => {
+    await withRendererTestDir(async (workDir) => {
+      electronHarness.state.scriptExecutor = createReadyScriptExecutor([]);
+      let previousSceneDir: string | undefined;
+      let encodeCalls = 0;
+      sidecarHarness.run.mockImplementation(async (input: StoryboundSidecarInput) => {
+        if (input.mode === 'encode_render_scene') {
+          encodeCalls += 1;
+          expect(electronHarness.state.activeWindows).toBe(0);
+          expect(electronHarness.state.captureCalls).toBe(encodeCalls * 2);
+          await expect(access(join(input.scene.frames_dir, 'frame_0002.jpg'))).resolves.toBeUndefined();
+          if (previousSceneDir) await expect(access(previousSceneDir)).rejects.toMatchObject({ code: 'ENOENT' });
+          previousSceneDir = input.work_dir;
+          await writeFile(join(input.work_dir, 'scene-00-mix.wav'), 'temporary mix');
+        } else if (input.mode === 'compose_render') {
+          expect(encodeCalls).toBe(2);
+          await expect(access(previousSceneDir!)).rejects.toMatchObject({ code: 'ENOENT' });
+          for (const scene of input.scenes) {
+            expect(scene.frames_dir).toBeUndefined();
+            expect(scene.audio_path).toBeUndefined();
+            expect(scene.audio_clips).toBeUndefined();
+            expect('segment_path' in scene).toBe(true);
+            if ('segment_path' in scene) await expect(access(scene.segment_path)).resolves.toBeUndefined();
+          }
+        }
+        return renderSidecarFixture(input);
+      });
+      electronHarness.state.capturePlans.push(
+        async () => electronHarness.captureImage,
+        async () => electronHarness.captureImage,
+        async () => {
+          expect(encodeCalls).toBe(1);
+          await expect(access(previousSceneDir!)).rejects.toMatchObject({ code: 'ENOENT' });
+          return electronHarness.captureImage;
+        },
+      );
+      const result = await createElectronHtmlVideoRenderer().render(rendererInput(workDir));
+      for (const path of result.framesDirs) await expect(access(path)).rejects.toMatchObject({ code: 'ENOENT' });
+      await expectFrameDirectoriesMissing(workDir, [1, 2]);
+    });
+  });
+
+  it('cleans frames and partial segments after an encoding failure without capturing the next scene', async () => {
+    await withRendererTestDir(async (workDir) => {
+      electronHarness.state.scriptExecutor = createReadyScriptExecutor([]);
+      const failure = new Error('encode failed');
+      sidecarHarness.run.mockImplementationOnce(async (input: StoryboundSidecarInput) => {
+        if (input.mode !== 'encode_render_scene') throw new Error('Expected scene encoding');
+        await writeFile(input.output_path, 'partial segment');
+        throw failure;
+      });
+      await expect(createElectronHtmlVideoRenderer().render(rendererInput(workDir))).rejects.toBe(failure);
+      expect(electronHarness.state.captureCalls).toBe(2);
+      expect(electronHarness.state.activeWindows).toBe(0);
+      expect(sidecarHarness.run).toHaveBeenCalledTimes(1);
+      await expectFrameDirectoriesMissing(workDir, [1, 2]);
+    });
+  });
+
+  it('rejects an empty encoded segment before releasing frames to capture another scene', async () => {
+    await withRendererTestDir(async (workDir) => {
+      electronHarness.state.scriptExecutor = createReadyScriptExecutor([]);
+      sidecarHarness.run.mockImplementationOnce(async (input: StoryboundSidecarInput) => {
+        if (input.mode !== 'encode_render_scene') throw new Error('Expected scene encoding');
+        await writeFile(input.output_path, '');
+        return { success: true };
+      });
+      await expect(createElectronHtmlVideoRenderer().render(rendererInput(workDir))).rejects.toThrow('encoding produced no video');
+      expect(electronHarness.state.captureCalls).toBe(2);
+      await expectFrameDirectoriesMissing(workDir, [1]);
     });
   });
 
@@ -1420,11 +1660,36 @@ describe('Electron HTML video capture contract', () => {
     await withRendererTestDir(async (workDir) => {
       electronHarness.state.scriptExecutor = createReadyScriptExecutor([]);
       const failure = new Error('compose failed');
-      sidecarHarness.run.mockRejectedValueOnce(failure);
+      sidecarHarness.run.mockImplementation(async (input: StoryboundSidecarInput) => {
+        if (input.mode === 'compose_render') throw failure;
+        return renderSidecarFixture(input);
+      });
 
       const pending = createElectronHtmlVideoRenderer().render(rendererInput(workDir));
 
       await expect(pending).rejects.toBe(failure);
+      expect(sidecarHarness.run).toHaveBeenCalledTimes(3);
+      await expectFrameDirectoriesMissing(workDir, [1, 2]);
+    });
+  });
+
+  it.each(['encode_render_scene', 'compose_render'])('cleans temporary media on cancellation during %s', async (mode) => {
+    await withRendererTestDir(async (workDir) => {
+      electronHarness.state.scriptExecutor = createReadyScriptExecutor([]);
+      const controller = new AbortController();
+      const reason = new DOMException('cancel encoding', 'AbortError');
+      sidecarHarness.run.mockImplementation(async (input: StoryboundSidecarInput, options: { signal?: AbortSignal }) => {
+        await renderSidecarFixture(input);
+        if (input.mode === mode) {
+          expect(options.signal).toBe(controller.signal);
+          controller.abort(reason);
+          throw reason;
+        }
+        return { output_path: 'final.mp4' };
+      });
+      await expect(createElectronHtmlVideoRenderer().render(rendererInput(workDir), { signal: controller.signal })).rejects.toBe(reason);
+      expect(electronHarness.state.activeWindows).toBe(0);
+      expect(electronHarness.state.captureCalls).toBe(mode === 'compose_render' ? 4 : 2);
       await expectFrameDirectoriesMissing(workDir, [1, 2]);
     });
   });
@@ -1719,10 +1984,23 @@ function rendererInput(workDir: string) {
 }
 
 async function expectFrameDirectoriesMissing(workDir: string, sceneIds: number[]): Promise<void> {
+  expect((await readdir(workDir)).filter((name) => name.startsWith('render-segments-'))).toEqual([]);
   for (const sceneId of sceneIds) {
     const path = join(workDir, `frames-${String(sceneId).padStart(3, '0')}`);
     await expect(access(path)).rejects.toMatchObject({ code: 'ENOENT' });
   }
+}
+
+async function renderSidecarFixture(input: StoryboundSidecarInput) {
+  if (input.mode === 'encode_render_scene') {
+    await writeFile(input.output_path, 'encoded segment');
+    return { success: true, output_path: input.output_path };
+  }
+  if (input.mode === 'compose_render') {
+    await mkdir(input.work_dir, { recursive: true });
+    await writeFile(join(input.work_dir, '_source.mp4'), 'source video');
+  }
+  return { success: true, output_path: 'final.mp4', source_path: '_source.mp4' };
 }
 
 function previewInput(workDir: string, name: string, signal?: AbortSignal) {
@@ -1735,14 +2013,15 @@ function previewInput(workDir: string, name: string, signal?: AbortSignal) {
   };
 }
 
-function createReadyScriptExecutor(images: unknown[]) {
+function createReadyScriptExecutor(images: unknown[], fontsReady: Promise<void> = Promise.resolve()) {
   return async (script: string): Promise<unknown> => {
     if (!script.includes('document.readyState')) return true;
     return vm.runInNewContext(script, {
       clearInterval,
       document: {
-        fonts: { ready: Promise.resolve() },
+        fonts: { ready: fontsReady },
         images,
+        querySelectorAll: () => [],
         readyState: 'complete',
       },
       requestAnimationFrame(callback: () => void) {

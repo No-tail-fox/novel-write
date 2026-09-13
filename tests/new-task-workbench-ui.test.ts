@@ -10,9 +10,10 @@ describe('three-stage new task workbench', () => {
     expect(page).toContain("const [activeStage, setActiveStage] = useState<NewTaskStage>('material');");
     expect(page).toContain('data-new-task-workbench');
     expect(page).toContain('data-new-task-stage={activeStage}');
-    expect(page).toContain("{ id: 'material', label: '素材输入'");
-    expect(page).toContain("{ id: 'creative', label: '创作参数'");
-    expect(page).toContain("{ id: 'output', label: '输出设置'");
+    expect(page).toContain("{ id: 'material', label: '制作类型'");
+    expect(page).toContain("{ id: 'creative', label: '内容'");
+    expect(page).toContain("{ id: 'output', label: '制作设置'");
+    expect(page).toContain('className="new-task-type-step"');
     expect(page).toContain('data-new-task-stage-tab={stage.id}');
     expect(page).toContain('data-new-task-summary');
     expect(page).toContain('处理模式');
@@ -39,7 +40,7 @@ describe('three-stage new task workbench', () => {
     expect(footer).toContain("className={activeStage === 'output' ? 'primary-action' : 'ghost-action'}");
     expect(footer).toContain("onClick={activeStage === 'output' ? run : advanceStage}");
     expect(footer).toContain("disabled={activeStage === 'output' ? createTaskDisabled : false}");
-    expect(footer).toContain("{activeStage === 'output' ? '开始创作' : '下一步'}");
+    expect(footer).toContain("{activeStage === 'output' ? '创建并开始生成' : '下一步'}");
     expect(page.match(/onClick=\{run\}/gu)).toHaveLength(1);
     expect(page.match(/disabled=\{createTaskDisabled\}/gu)).toHaveLength(1);
     expect(page).toContain('api.createAndRunTask(buildTaskCreateInput({');

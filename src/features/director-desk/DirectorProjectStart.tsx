@@ -152,11 +152,13 @@ export function DirectorProjectLoading({ mode, onCancel }: { mode: DirectorDeskM
 export function DirectorProjectRecovery({
   mode,
   errorMessage,
+  returnLabel = '返回全部任务',
   onReturnTasks,
   onNewProject,
 }: {
   mode: DirectorDeskMode;
   errorMessage?: string;
+  returnLabel?: string;
   onReturnTasks: () => void;
   onNewProject: () => void;
 }) {
@@ -166,7 +168,7 @@ export function DirectorProjectRecovery({
       <strong>{mode === 'vox' ? '无法打开 VOX 项目' : '无法打开 AI 漫剧项目'}</strong>
       <span role={errorMessage ? 'alert' : undefined}>{errorMessage || '项目不存在、已归档或本地数据暂时不可用。'}</span>
       <Toolbar aria-label="项目恢复操作">
-        <Button variant="secondary" icon={<ArrowLeft size={14} />} onClick={onReturnTasks}>返回全部任务</Button>
+        <Button variant="secondary" icon={<ArrowLeft size={14} />} onClick={onReturnTasks}>{returnLabel}</Button>
         <Button variant="primary" icon={<Plus size={14} />} onClick={onNewProject}>{mode === 'vox' ? '新建 VOX 项目' : '新建 AI 漫剧系列'}</Button>
       </Toolbar>
     </div>

@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
+import { useWorkspaceDraft } from '../../app/workspace-draft';
 import { Loader2, Mic2, RefreshCw, Search } from 'lucide-react';
 import { EmptyState } from '../../components/EmptyState';
 import { ErrorDetails as ErrorSummaryButton } from '../../components/ErrorDetails';
@@ -69,6 +70,10 @@ export function VoiceLabPage({ api, state, applyState }: { api: StoryDreamApi; s
   const [generating, setGenerating] = useState(false);
   const [submitError, setSubmitError] = useState('');
   const voiceLabAction = useAsyncAction();
+  useWorkspaceDraft({
+    id: 'voice-lab-input', label: '配音试听草稿', value: { text, voiceProvider, voiceId, voiceSpeed, voiceQuery },
+    restore: (draft) => { setText(draft.text); setVoiceProvider(draft.voiceProvider); setVoiceId(draft.voiceId); setVoiceSpeed(draft.voiceSpeed); setVoiceQuery(draft.voiceQuery); },
+  });
   const currentTtsProfileId = activeTtsProfileId(state.config);
   const currentTtsProfile = state.config.ttsProfiles.find((profile) => profile.id === currentTtsProfileId);
   const currentVolcengineConfig = currentTtsProfile ? ttsProfileVolcengine(currentTtsProfile) : state.config.tts.volcengine;

@@ -1,5 +1,5 @@
 import { BrowserWindow, type NativeImage } from 'electron';
-import { mkdir, rm, writeFile } from 'node:fs/promises';
+import { mkdir, mkdtemp, rename, rm, stat, writeFile } from 'node:fs/promises';
 import { dirname, join } from 'node:path';
 import { pathToFileURL } from 'node:url';
 import type {
@@ -44,9 +44,11 @@ export interface ElectronHtmlVideoRenderer extends HtmlVideoRuntimeRenderer {
   }): Promise<void>;
 }
 
-export function createElectronHtmlVideoRenderer(): ElectronHtmlVideoRenderer {
+export function createElectronHtmlVideoRenderer(options: {
+  inspectScene?: (window: BrowserWindow, scene: HtmlVideoExportInput['scenes'][number]) => Promise<void>;
+} = {}): ElectronHtmlVideoRenderer {
   return {
-    render: renderHtmlVideo,
+    render: (input, renderOptions) => renderHtmlVideo(input, renderOptions, options.inspectScene),
     capturePreview,
     openPreview,
   };
@@ -81,6 +83,7 @@ export async function cleanupHtmlVideoFrameDirectories(
 async function renderHtmlVideo(
   input: HtmlVideoExportInput,
   options: { signal?: AbortSignal } = {},
+  inspectScene?: (window: BrowserWindow, scene: HtmlVideoExportInput['scenes'][number]) => Promise<void>,
 ): Promise<HtmlVideoExportResult> {
   const signal = options.signal;
   const framesDirs: string[] = [];
@@ -88,12 +91,13 @@ async function renderHtmlVideo(
   const htmlSceneDir = join(input.workDir, 'html-scenes');
   let primaryError: { error: unknown } | undefined;
   await mkdir(htmlSceneDir, { recursive: true });
+  const scratchDir = await mkdtemp(join(input.workDir, 'render-segments-'));
   try {
     await withHiddenCaptureLock(signal, async () => {
       for (const scene of input.scenes) {
         throwIfAborted(signal);
-        const sceneDir = join(input.workDir, `frames-${String(scene.sceneId).padStart(3, '0')}`);
-        await rm(sceneDir, { recursive: true, force: true });
+        const sceneWorkDir = join(scratchDir, `scene-${capturedScenes.length}`);
+        const sceneDir = join(sceneWorkDir, 'frames');
         await mkdir(sceneDir, { recursive: true });
         framesDirs.push(sceneDir);
         const htmlPath = join(htmlSceneDir, `scene-${String(scene.sceneId).padStart(3, '0')}.html`);
@@ -106,6 +110,7 @@ async function renderHtmlVideo(
             canvas: { width: input.canvas_w, height: input.canvas_h },
             signal,
           });
+          if (inspectScene) await withRendererTimeout(inspectScene(window, scene), hiddenFrameTimeoutMs, 'HTML scene inspection', signal);
           const totalFrames = Math.max(1, Math.ceil(scene.duration * input.fps));
           const sceneDeadline = Date.now() + hiddenSceneTimeoutMs;
           for (let frameIndex = 0; frameIndex < totalFrames; frameIndex += 1) {
@@ -115,34 +120,57 @@ async function renderHtmlVideo(
             if (Date.now() >= sceneDeadline) throw new Error(`HTML scene ${scene.sceneId} capture timed out.`);
             await seekHiddenHtmlSceneFrame(window, time);
             const remainingSceneMs = Math.max(1, sceneDeadline - Date.now());
-            const image = await withRendererTimeout(
+            const capturedImage = await withRendererTimeout(
               window.webContents.capturePage(),
               Math.min(hiddenFrameTimeoutMs, remainingSceneMs),
               `HTML scene ${scene.sceneId} frame ${frameNumber} capture`,
               signal,
             );
-            assertCapturedHtmlSceneSize(image, { width: input.canvas_w, height: input.canvas_h });
+            const image = normalizeCapturedHtmlSceneImage(capturedImage, { width: input.canvas_w, height: input.canvas_h });
             const framePath = join(sceneDir, sidecarFramePattern.replace('%04d', String(frameNumber).padStart(4, '0')));
             await writeFile(framePath, image.toJPEG(92));
           }
-          capturedScenes.push({
-            sceneId: scene.sceneId,
-            framesDir: sceneDir,
-            audioPath: scene.audioPath,
-            fps: input.fps,
-          });
         } finally {
           if (window && !window.isDestroyed()) window.destroy();
         }
+        throwIfAborted(signal);
+        const segmentPath = join(scratchDir, `segment-${capturedScenes.length}.mp4`);
+        await runStoryboundMediaSidecar({
+          mode: 'encode_render_scene',
+          work_dir: sceneWorkDir,
+          scene: {
+            frames_dir: sceneDir,
+            audio_path: scene.audioPath,
+            ...(scene.audioClips !== undefined ? { audio_clips: scene.audioClips } : {}),
+            fps: input.fps,
+            duration_s: scene.duration,
+          },
+          output_path: segmentPath,
+        }, { signal });
+        throwIfAborted(signal);
+        const segment = await stat(segmentPath);
+        if (!segment.isFile() || segment.size === 0) throw new Error(`HTML scene ${scene.sceneId} encoding produced no video.`);
+        // Release frames and mixed WAVs before capturing another scene.
+        await cleanupHtmlVideoFrameDirectories([sceneWorkDir]);
+        capturedScenes.push({
+          sceneId: scene.sceneId,
+          framesDir: sceneDir,
+          segmentPath,
+          audioPath: scene.audioPath,
+          fps: input.fps,
+        });
       }
     });
     throwIfAborted(signal);
     const payload: HtmlVideoComposePayload = createHtmlVideoComposePayload(input, capturedScenes);
+    payload.work_dir = join(scratchDir, 'compose');
     const result = await runStoryboundMediaSidecar(payload, { signal });
     throwIfAborted(signal);
+    const sourceVideoPath = join(input.workDir, '_source.mp4');
+    await rename(join(payload.work_dir, '_source.mp4'), sourceVideoPath);
     return {
       outputPath: result.output_path ?? input.outputPath,
-      sourceVideoPath: result.source_path ?? join(input.workDir, '_source.mp4'),
+      sourceVideoPath,
       duration: input.totalDurationS,
       taskDir: input.workDir,
       framesDirs,
@@ -151,7 +179,7 @@ async function renderHtmlVideo(
     primaryError = { error };
     throw error;
   } finally {
-    await cleanupHtmlVideoFrameDirectories(framesDirs, primaryError);
+    await cleanupHtmlVideoFrameDirectories([scratchDir], primaryError);
   }
 }
 
@@ -163,13 +191,13 @@ async function capturePreview(input: HtmlVideoPreviewCaptureInput): Promise<stri
     try {
       window = await openHiddenHtmlWindow(input);
       await seekHiddenHtmlSceneFrame(window, 0);
-      const image = await withRendererTimeout(
+      const capturedImage = await withRendererTimeout(
         window.webContents.capturePage(),
         hiddenFrameTimeoutMs,
         'HTML preview capture',
         input.signal,
       );
-      assertCapturedHtmlSceneSize(image, input.canvas);
+      const image = normalizeCapturedHtmlSceneImage(capturedImage, input.canvas);
       await writeFile(input.outputPath, image.toJPEG(88));
       return input.outputPath;
     } finally {
@@ -259,9 +287,21 @@ async function openHiddenHtmlWindow(input: {
   }
 }
 
-function assertCapturedHtmlSceneSize(image: NativeImage, canvas: HtmlVideoCanvas): void {
+function normalizeCapturedHtmlSceneImage(image: NativeImage, canvas: HtmlVideoCanvas): NativeImage {
   const size = image.getSize();
-  if (size.width === canvas.width && size.height === canvas.height) return;
+  if (size.width === canvas.width && size.height === canvas.height) return image;
+  const widthScale = size.width / canvas.width;
+  const heightScale = size.height / canvas.height;
+  const proportionalDpiScale = widthScale >= 1.05
+    && widthScale <= 4
+    && heightScale >= 1.05
+    && heightScale <= 4
+    && Math.abs(widthScale - heightScale) <= 0.015;
+  if (proportionalDpiScale) {
+    const normalized = image.resize({ width: canvas.width, height: canvas.height, quality: 'best' });
+    const normalizedSize = normalized.getSize();
+    if (normalizedSize.width === canvas.width && normalizedSize.height === canvas.height) return normalized;
+  }
   throw new AppError(
     'HTML_VIDEO_CAPTURE_SIZE_MISMATCH',
     `HTML 视频捕获画布尺寸异常：期望 ${canvas.width}x${canvas.height}，实际 ${size.width}x${size.height}。`,
@@ -279,6 +319,7 @@ function checkedLocalHtmlUrl(htmlPath: string, workDir: string): string {
 
 async function waitForHiddenHtmlSceneReady(window: BrowserWindow): Promise<void> {
   await withRendererTimeout(window.webContents.executeJavaScript(`new Promise((resolve, reject) => {
+    const mediaFailure = () => typeof window.__mediaError === 'string' && window.__mediaError ? new Error(window.__mediaError) : null;
     const isReady = () => document.readyState !== 'loading'
       && window.__ready === true
       && window.__tl
@@ -298,16 +339,36 @@ async function waitForHiddenHtmlSceneReady(window: BrowserWindow): Promise<void>
           image.addEventListener('error', () => imageReject(imageError()), { once: true });
         });
       }));
-      Promise.all([fontsReady, imagesReady]).then(
+      const videosReady = Promise.all(Array.from(document.querySelectorAll('video')).map((video) => {
+        const videoError = () => new Error('HTML scene video failed to load. Verify the task video asset and retry.');
+        if (video.readyState >= HTMLMediaElement.HAVE_CURRENT_DATA) return Promise.resolve();
+        if (video.error) return Promise.reject(videoError());
+        return new Promise((videoResolve, videoReject) => {
+          video.addEventListener('loadeddata', () => videoResolve(), { once: true });
+          video.addEventListener('error', () => videoReject(videoError()), { once: true });
+        });
+      }));
+      Promise.all([fontsReady, imagesReady, videosReady]).then(
         () => requestAnimationFrame(() => resolve(true)),
         reject,
       );
     };
+    const initialFailure = mediaFailure();
+    if (initialFailure) {
+      reject(initialFailure);
+      return;
+    }
     if (isReady()) {
       finish();
       return;
     }
     const timer = setInterval(() => {
+      const failure = mediaFailure();
+      if (failure) {
+        clearInterval(timer);
+        reject(failure);
+        return;
+      }
       if (isReady()) {
         clearInterval(timer);
         finish();
@@ -318,10 +379,12 @@ async function waitForHiddenHtmlSceneReady(window: BrowserWindow): Promise<void>
 
 async function seekHiddenHtmlSceneFrame(window: BrowserWindow, time: number): Promise<void> {
   await withRendererTimeout(window.webContents.executeJavaScript(`(() => {
-    window.__tl.seek(${JSON.stringify(time)}, false);
-    return new Promise((resolve) => {
+    const timeline = window.__tl;
+    const result = timeline.seek(${JSON.stringify(time)}, false);
+    // GSAP returns its thenable timeline; only media seeks need asynchronous completion.
+    return Promise.resolve(result === timeline ? undefined : result).then(() => new Promise((resolve) => {
       requestAnimationFrame(() => requestAnimationFrame(() => resolve(true)));
-    });
+    }));
   })()`), hiddenFrameTimeoutMs, 'HTML scene frame seek', windowSignals.get(window));
 }
 

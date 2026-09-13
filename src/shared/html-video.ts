@@ -1,4 +1,6 @@
 import { pathToFileURL } from 'node:url';
+import type { ProductionAudioFadeEnvelope } from './production-audio';
+import type { StoryboundComposeRenderInput } from './storybound-sidecar';
 import { runtimeProtocolMetadata } from '@hyperframes/core/runtime/protocol';
 import type { DraftTemplate, HtmlVideoJobConfig, HtmlVideoSceneMotion, HtmlVideoScenePlan, PipelineArtifact } from './types';
 import {
@@ -22,7 +24,23 @@ export interface HtmlVideoSceneSource {
   foregroundPaths?: string[];
   captions?: string[];
   audioPath: string;
+  /** Optional authoritative multi-track mix inputs (times relative to this scene). */
+  audioClips?: HtmlVideoAudioClip[];
   durationMs: number;
+}
+
+export interface HtmlVideoAudioClip {
+  id: string;
+  path: string;
+  trackType: string;
+  startMs: number;
+  sourceStartMs?: number;
+  sourceDurationMs?: number;
+  durationMs: number;
+  gainDb?: number;
+  fadeInMs?: number;
+  fadeOutMs?: number;
+  fadeEnvelope?: ProductionAudioFadeEnvelope;
 }
 
 export interface HtmlVideoScene extends HtmlVideoSceneSource {
@@ -49,7 +67,9 @@ export interface HtmlVideoComposition {
 export interface HtmlVideoCapturedScene {
   sceneId: number;
   framesDir: string;
+  segmentPath?: string;
   audioPath: string;
+  audioClips?: HtmlVideoAudioClip[];
   fps: number;
 }
 
@@ -94,7 +114,7 @@ export interface HtmlVideoExportResult {
 export interface HtmlVideoComposePayload {
   mode: 'compose_render';
   work_dir: string;
-  scenes: Array<{ frames_dir: string; audio_path: string; fps: number }>;
+  scenes: StoryboundComposeRenderInput['scenes'];
   output_path: string;
   total_duration_s: number;
   bgm_path?: string;
@@ -213,10 +233,15 @@ export function createHtmlVideoComposePayload(
       if (!captured) {
         throw new Error(`Missing captured frames for HTML video scene ${scene.sceneId}.`);
       }
+      if (captured.segmentPath) {
+        return { segment_path: captured.segmentPath, fps: captured.fps || input.fps, duration_s: scene.duration };
+      }
       return {
         frames_dir: captured.framesDir,
         audio_path: scene.audioPath,
+        ...(scene.audioClips !== undefined ? { audio_clips: scene.audioClips } : {}),
         fps: captured.fps || input.fps,
+        duration_s: scene.duration,
       };
     }),
     output_path: input.outputPath,

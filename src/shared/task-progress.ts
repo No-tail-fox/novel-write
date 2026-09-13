@@ -18,6 +18,10 @@ export const ORDINARY_TASK_STAGES = [
   { index: 6, title: 'Step 6 草稿导出', hint: '写入剪映草稿输出目录', agent: 'Draft' },
 ] as const;
 
+export function isDirectorWorkflowTask(task: Pick<Task, 'taskType'>): boolean {
+  return task.taskType === 'editorial-collage' || task.taskType === 'motion-comic';
+}
+
 const HTML_VIDEO_TASK_STAGES: readonly TaskProgressStage[] = htmlVideoSteps.map((step, index) => ({
   index,
   title: step.name,
@@ -58,6 +62,7 @@ export function taskStepPosition(step: number): number {
 }
 
 export function taskTerminalStep(task: Pick<Task, 'taskType' | 'processingMode'>): number {
+  if (isDirectorWorkflowTask(task)) return 1;
   if (task.taskType === 'html-video') return HTML_VIDEO_TASK_STAGES.length;
   if (task.processingMode === 'clip-only') return CLIP_ONLY_TASK_STAGES.length;
   return ORDINARY_TASK_STAGES.length;
@@ -66,6 +71,7 @@ export function taskTerminalStep(task: Pick<Task, 'taskType' | 'processingMode'>
 export function taskProgressStages(
   task: Pick<Task, 'taskType' | 'processingMode'>,
 ): readonly TaskProgressStage[] {
+  if (isDirectorWorkflowTask(task)) return [{ index: 0, title: '导演台工作流', hint: '按项目、分集和批次执行', agent: 'Director Desk' }];
   if (task.taskType === 'html-video') return HTML_VIDEO_TASK_STAGES;
   if (task.processingMode === 'clip-only') return CLIP_ONLY_TASK_STAGES;
   return ORDINARY_TASK_STAGES;
@@ -74,6 +80,13 @@ export function taskProgressStages(
 export function taskProgressSnapshot(
   task: Pick<Task, 'taskType' | 'processingMode' | 'status' | 'currentStep'>,
 ): TaskProgressSnapshot {
+  if (isDirectorWorkflowTask(task)) {
+    return {
+      completed: task.status === 'completed' ? 1 : 0,
+      total: 1,
+      position: task.status === 'running' ? 1 : 0,
+    };
+  }
   const total = taskTerminalStep(task);
   const currentStep = Math.max(0, Math.trunc(task.currentStep));
   return {

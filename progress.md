@@ -1,1563 +1,711 @@
-# Director Desk 可用性与播放修复进度（2026-08-18）
-
-- 已读取 Product Design Audit、用户上下文、审计框架、StoryDream UI 与组件合同，并完成预检。
-- 已保全并原尺寸复看用户截图；四项问题作为新的顶层修复阶段处理，不沿用旧 QA 结论。
-- 当前进入 Electron 真实路径复现；不会停止 5173/5174/5175，也不会触发付费生成。
-- 源码层已确认生成服务和拖动时间轴确属未实现；播放同步与返回闪页进入 Electron 定时取证。
-- 既有 Python 审计脚本因当前 bundled Python 缺少 Playwright 未启动 Electron；已切换到随附 Node Playwright，不重复该失败路径。
-- Electron 历史副本基线已捕获：四项缺陷都有当前轮 DOM/时间序列和截图证据，0 运行时错误；进入失败合同与范围实现。
-- 新增合同首轮按预期 4 文件全红；实现后播放合同 3/3 和类型检查已通过，正在修正 3 个过期/不完整测试断言。
-- 聚焦 4 文件 15/15 通过；扩大到 12 文件时 53/54，通过项覆盖领域、持久化、渲染和 IPC，唯一失败是新增服务切换尚未登记命令库存，已补登记。
-
----
-
-# VOX / AI 漫剧黑屏复审进度（2026-08-18）
-
-- 已重新打开完成状态：用户真实屏幕黑屏优先于旧隔离 QA、HTTP 200、测试和构建结果。
-- 已完成 Product Design Audit、用户上下文预检和 StoryDream 组件合同前置；本轮不使用旧截图作为审计证据。
-- 已确认当前仅 5173/5174/5175 renderer 在监听，没有 Electron 窗口；正在从 5173 主界面捕获真实入口路径。
-- 5173 本轮点击证据已捕获：VOX 与 AI 漫剧 route 正常但 `.director-desk` 高度都塌缩为 106px，截图呈顶部窄条加大面积黑色；根因已从“可能运行时崩溃”收敛到创建页布局高度链路。
-- 已将浏览器预览提示的 106px 网格规则排除出两个沉浸式路由；两个新增布局合同先红后绿，聚焦 4/4 通过。
-- 修复后 5173 同路径复测通过：VOX / AI 漫剧创建页都占满 1024px 视口，页面错误、route error、横向溢出为 0；下一步创建真实本地项目并覆盖完整工作台、紧凑窗口和 Electron。
-- 浏览器 fallback 的本地项目创建已走通到 VOX 与 AI 漫剧完整工作台；当前在收紧图片就绪门禁，前两次脚本失败分别来自文本框滚动误判和 2MB 预览图尚未解码，均不是新的黑屏。
-- 浏览器 fallback 最终审计为 `captured`：8 个步骤、4 张完整工作台截图，1536x1024 与 1040x720 均无黑屏、运行时错误、网络错误、横向溢出或固定控件裁切。
-- 生产构建通过；Electron 历史数据隔离审计为 `passed`：旧 VOX 直接打开、新 AI 漫剧创建与两个紧凑工作台均健康，6 步 0 运行时错误。
-- Director Desk 完整功能回归再次 `passed`：14 项保存/播放/安全区/生命周期/搜索/一致性/重载交互全部通过，4 张完整工作台截图门禁通过。
-- 相关矩阵 10 文件 60/60、TypeScript、生产构建、`git diff --check` 和 39 个变更文本文件 UTF-8 校验均通过；正在做最终全库测试和截图复审。
-- 全库测试剩余业务失败已由 `renderer-command-inventory.test.ts` 聚焦复现：2/5 失败，分别是缺少 `renderDirectorProject` 与 `generateImageLab` 未枚举两个导演页调用者；已补图片、旁白和整片渲染的共享控件所有权，等待聚焦复测。
-- 首轮库存修复已使图片、旁白和渲染通过；继续暴露的导出目录漏项已补真实忙碌/错误状态及两个工作流所有权，等待第二次聚焦复测。
-- 第二轮 9 项中工作台 4/4 通过，库存仅剩保存处理函数归属不准确；已改为真实 `persistProject` API 所有者并保留外层保存调用链。
-- 导演相关 11 文件 50/50、TypeScript 和生产构建通过；最终浏览器 8 步新截图审计通过，正在逐张复看并继续 Electron 历史数据路径。
-- 最终浏览器 8 张与 Electron 历史副本 6 张已全部人工打开复审；Electron 6 步为 `passed`、0 运行时错误、0 溢出、0 固定控件裁切，真实数据源未写入。
-- Director Desk 最终交互 QA 14/14 通过，4 张终态截图已人工复看；进入差异、UTF-8、服务和全库回归收尾。
-- 全库最终并发结果为 140/143 文件、1887/1891 项；4 项已逐一聚焦通过。当前黑屏复审 Phase 5 完成，5173 继续提供当前页面，5174/5175 未改动，无 Electron 审计进程残留。
-- after Electron 审计脚本已完成并通过：VOX/AI 漫剧在 1320x860、1536x1024、1040x720 共 6 张截图，0 runtime errors、0 横向溢出、0 固定控件裁切、0 文字重叠。
-- 隔离 profile 添加 `QA 第二图片服务` 后，生成服务下拉显示 2 项且第二项可用；刷新后仍选中第二项，未调用任何云端生成服务。
-- 播放审计通过：播放进度 `0 -> 700 -> 900`、暂停保持稳定、拖动到 `18900`、切换第二镜头跳到 `3000`，时间码为 `00:03 / 00:30`。
-- 返回逐帧审计 `savingFrames=0`；本地确定性 MP4 原生 `<video>` `readyState=4`、`duration=4.023991s`，播放推进、暂停和 seek 均通过。
-- after 截图、报告、确定性 MP4 和 fixture 保存在 `.artifacts/director-defect-audit-2026-08-18/after/`，本轮隔离 profile 已清理，真实库未写入。
-
----
-
-# VOX 与 AI 漫剧功能完成度进度（2026-08-18）
-
-- 已恢复现有 Director Desk 改动、测试与 QA 上下文，保留全部用户在途文件和运行中的 Vite 服务。
-- 已重新读取 `storydream-ui`、组件合同与 `planning-with-files`，把本轮从视觉复刻切换为完整功能验收。
-- 正在按真实主导航路径复现 AI 漫剧不可见问题，并建立 Director Desk 所有可见控件的处理/持久化清单。
-- 已确认既有 QA 绕过主导航，不能反驳用户报告；AI 漫剧当前也缺少系列/剧集/场景/一致性资产的完整编辑面。
-- 已完成第一轮逐控件源码审计，确认多个展示态/空回调控件、模拟队列和非版本化保存；下一步先截图复现入口，再补失败合同。
-- 独立 Chromium 截图因本机缺少 Playwright headless shell 未启动；不额外安装浏览器，后续沿用项目已验证的 Electron-over-CDP 隔离验收。
-- 已补 VOX 项目切换、画幅、搜索、素材绑定、历史画面恢复、权威任务队列与生成参数持久化；渲染器已消费版式、运动和字幕样式。
-- 已补 AI 漫剧剧集/场景/镜头追加、系列设定、角色一致性、场景/道具绑定、关键帧版本恢复和项目重载路径。
-- 主壳和两个空项目创建页都新增明确的 `VOX 视频` / `AI 漫剧` 入口与返回路径；沉浸式工作台不再成为无法退出的页面。
-- 修正 AI 漫剧严格保存合同：版式、运动、字幕样式、Seed 和锁定状态归属 `shotSchema`，新增真实 `motionComicSaveInputSchema` 回归用例。
-- VOX 与 AI 漫剧工作台现在显示项目保存错误；AI 漫剧集数按钮按 StoryDream `Button` 内容层布局，并在紧凑左栏保持固有高度、由左栏滚动。
-- 扩展 Electron QA 最终通过：13 项入口/播放/设置/生命周期/搜索/一致性/持久化交互为真，4 张工作台截图通过布局门禁，运行时错误、横向溢出和控件裁切均为 0。
-- 人工复核 `workflow-entry-1040x720.png` 及 VOX/AI 漫剧桌面与紧凑截图通过；功能完成度阶段进入最终回归。
-- 最终受影响矩阵 10 个测试文件、45/45 项通过；TypeScript、生产构建、`git diff --check`、空回调审计和 37 个变更文本文件的严格 UTF-8 校验通过。
-- `.artifacts/director-desk-qa/report.json` 最终为 `passed`：14 项交互检查、4 张工作台布局截图、0 个运行时错误；未调用付费图片或配音生成。
-- 现有 renderer `http://127.0.0.1:5173/` 返回 HTTP 200 且包含 StoryDream 页面；5174/5175 用户服务保持不动。本轮未提交或推送。
-
----
-
-# VOX 与 AI 漫剧架构研究进度（2026-08-17）
-
-## Option 2 Director Desk 1:1 implementation (2026-08-18)
-
-- Re-ran Product Design context preflight; there is no saved product-design context, so the selected second mock and StoryDream's existing design system remain the only visual sources of truth.
-- Re-opened the source mock and current VOX desktop capture. The three-pane structure is close, while real voice, playback, render, export, provider switching, and stage navigation remain completion blockers.
-- Confirmed the managed image path uses `generateImageLab()` and persists generated files as production assets plus provider jobs, including failed attempts.
-- Expanded the acceptance gate to include one authorized live `ai.input.im` generation and a same-size `1536 x 1024` source/implementation comparison.
-- Selected the second generated reference and loaded Product Design image-to-code plus StoryDream UI contracts.
-- Confirmed reference assets and dimensions; no production source changes made yet.
-- Generated and visually inspected five 1280x720 documentary/editorial assets for the preview, filmstrip, and asset shelf.
-- Added a shared Director Desk workspace and connected both VOX and AI 漫剧 routes to their existing create/save documents.
-- Implemented mode switching, stage rail, shot selection, prompt/motion/voice/subtitle tabs, generation progress, failure retry, and save-version actions.
-- Updated command ownership so route-level save handlers bridge to the shared Director Desk control without hiding duplicate controls.
-- Focused route/workbench/command tests pass 14/14; TypeScript typecheck passes.
-- Next: run production build, then capture and compare both routes at desktop and compact sizes.
-- TypeScript, 27 focused Director tests, and the production build pass after completing the render contracts.
-- Added an isolated Electron render smoke that creates a VOX project, persists local image/audio fixtures through trusted APIs, renders a real MP4, verifies asset/job/report persistence, and reloads the project.
-- Authorized `ai.input.im` live smoke passed with a 2.16 MB generated image, one persisted image asset, one completed `text-to-image` provider job, and reload verification; the encrypted credential lived only in an isolated profile that was deleted afterward.
-- First 1536x1024 comparison aligned the 274/770/492 column geometry, 51px preview toolbar, 646px queue start, and 38px status footer; compact scrolling and fixed-density filmstrip received one final correction pass.
-- Created full, center-preview and right-inspector same-canvas comparisons against the selected second design, plus a supplemental real connected-provider comparison.
-- Rebuilt the lower center to match the reference with five material tabs, a narrator card, functional TTS playback/generation entry, waveform, six real raster assets, and the rights warning.
-- Corrected selected rows and filmstrip cards to thin coral outlines, reduced the filmstrip to a reference-matched 127px band, and aligned the material shelf to y=653.64.
-- Reorganized the inspector to `模式 / 生成 / 字幕 / 版本`; retained motion editing, real voice generation/playback, subtitle editing and version saving, then restored the full source-order generation form and sticky core actions.
-- Final Electron QA passed for VOX and AI 漫剧 at 1536x1024 and 1040x720 with zero runtime errors, overflow or clipped controls. `design-qa.md` now ends with `final result: passed`.
-- Final delivery gates passed: 27/27 focused tests, TypeScript, production build, `git diff --check`, and strict UTF-8 validation across 32 changed text files. The existing renderer at `http://127.0.0.1:5173/` returns HTTP 200 with the StoryDream entry page.
-
-- VOX 独立工作流第 6 阶段已完成：任务持久化、严格 IPC、独立路由、三栏工作台与确定性图层预览已接通。
-- 收尾修复了 Electron QA 对原生滚动条的误判，并新增工作区网格、策略控件、各 Tab 溢出和标签换行门禁。
-- 1440x900 与 1040x720 隔离 Electron QA 最终通过：创建 30 秒结构、切换节拍、选择混合模式、保存均成功，运行时错误与所有横向溢出为 0，截图已归档到 `.artifacts/editorial-collage-workbench/`。
-- Vite renderer 已在 `http://127.0.0.1:5173/` 保持运行，依赖优化完成后 HTTP 复测返回 200、页面标题为 `StoryDream`。
-- 当前进入第 7 阶段：以只读适配器把 standard / html-video 的现有权威数据投影到共享时间线，不迁移或覆盖旧任务。
-- 第 7 阶段已完成：新增 standard / html-video 只读制片文档、稳定资产版本、镜头/场景、全局字幕 cue 与共享 timeline 适配器；普通视频保留字幕和视觉场景分离，HTML 未完成场景保持 pending/0ms。
-- 适配器聚焦回归 3 文件、9/9 通过，两轮 TypeScript 类型检查通过；现有 runner、任务数据与 renderer 未被改成以投影为权威。
-- 当前进入第 8 阶段：建立 AI 漫剧 series / episode / consistency 的领域合同、原子持久化、独立工作台与质量门禁。
-- 已确认本轮只做研究与设计，不修改生产代码；现有脏工作区完整保留。
-- 已开始核验目标项目、候选开源方案与 StoryDream 现有数据模型。
-- 已完成第一轮本地模型映射：普通视频与 HTML 视频已有独立 runner，共享层具备 Provider、DAG、场景/字幕、资产和输出的部分基础。
-- GitHub CLI 不存在，已记录并切换到 raw/远端/源码证据路线。
-- 搜索引擎可返回页面，但链接为重定向编码；正在改用结果 DOM 和仓库原始文件核验目标项目。
-- GitHub API 已恢复可用并定位两个原仓；下一步读取源码树、README、许可证和实际渲染链路，避免只按项目简介判断。
-- 两个浅克隆都在 GitHub 443 超时，未取得工作树；已停止 Git smart HTTP 重试，切换到 codeload/raw。
-- codeload 也不可用；已结束 3 个本轮卡住的辅助进程，确认没有遗留下载进程，研究转入 GitHub API 单文件/树读取。
-- 已读取两仓完整目录树和 README；已确认组合方向应是 `vox-director` 的导演/路由层 + faceless 的确定性合成/字幕/QA 层。
-- 已核验 beats、分层拼贴、语音、成本和 QA 规则；正在补充漫剧候选项目与模型组件的许可证/成熟度证据。
-- 已核验 Remotion 当前双层许可和 vox Provider 真实边界；“先复用设计模式、不直接加依赖”已成为架构约束。
-- 已完成第一轮漫剧平台与一致性/口型组件快照；平台参考优先级暂定 LumenX、LocalMiniDrama、shuohao，模型仓只做可替换 Provider 能力。
-- 已核验 LumenX 与 shuohao 的真实源码结构；共享资产库、候选版本、恢复任务和阶段门禁确定为漫剧主线的必备能力。
-- 已核验 LocalMiniDrama 的真实目录、MIT 许可和桌面工作流；其列表/画布同源与分组重跑适合 StoryDream，巨型单体页面不适合照搬。
-- 已核验主要一致性、头像运动、口型和通用视频引擎的许可/显存边界；本地模型不进入首版，全部收敛为 Provider 能力。
-- 已完成共享领域核心、四执行器边界、VOX 首版、漫剧首版、集成适配器、分期顺序和验收标准设计。
-- 已清理 `C:\Users\foxnotail\AppData\Local\Temp\codex-storydream-workflow-research-01a00dea`，确认目录不存在；生产代码未因本次研究修改。
-- 用户要求继续后已进入实施：新增共享制片合同、VOX pipeline 合同和 3 项聚焦测试；测试 3/3 通过，TypeScript 检查完成且未报告错误。
-- 共享合同阶段已完成，当前进入 VOX 独立持久化、严格 IPC、工作台路由与确定性图层预览；工作区并发中的主题、选品与壳层改动将逐处保留。
-
----
-
-# 右上角主题按钮悬停闪屏修复进度（2026-08-17）
-
-- 已读取 `storydream-ui`、组件合同与 `planning-with-files`，开始核对壳层主题按钮、Provider、Tooltip 和 Electron QA。
-- 已确认主题按钮同时使用 Fluent Tooltip Portal 与 `IconButton` 原生 `title`；聚焦失败合同准确命中重复提示机制。
-- 已移除主题按钮的 Fluent Tooltip 包装，保留原生提示、`aria-label` 和点击切换逻辑；其他窗体按钮的 Tooltip 未改动。
-- 已扩展 Electron theme smoke：真实鼠标移入/移出、连续画面采样、根主题/Provider 同步、壳层可见性、按钮边界和提示机制均纳入报告。
-- 深色/浅色 x 普通/紧凑窗口 4/4 通过，每场景 6 帧均非空，主题不一致、按钮跳位与 Fluent Tooltip Portal 均为 0；人工复核四张悬停截图无黑屏或重叠。
-- 相关 9 文件 268/268、TypeScript 与生产构建通过；证据已归档到 `.artifacts/theme-hover-stability-2026-08-17/`。
-
----
-
-# AI 与全网搜索组合模式按钮解锁进度（2026-08-17）
-
-- 已核对用户截图：全网搜索与 AI 内置知识同时勾选、尚无网页来源时，生成按钮不可点击。
-- 已确定修复边界：AI 开启即允许生成；仅网页模式继续要求来源；按钮和加载文案按实际是否存在网页来源切换。
-- 新组合模式合同首次运行 184 项中仅 1 项预期失败，精确命中旧门禁；生产状态、按钮文案和 Electron 场景修正后，研究/界面/QA/IPC 聚焦 227/227 通过。
-- TypeScript、生产构建和 New Task Electron QA 4/4 通过；全网搜索与 AI 同时开启、网页来源为 0 时，按钮显示“使用 AI 内置知识生成文案”且可点击，运行时错误为 0。
-- 普通/紧凑截图与报告已归档到 `.artifacts/ai-builtin-web-toggle-compatible-2026-08-17/`；首次重启受旧子进程单实例锁竞态影响自动退出，锁释放后重新启动成功，当前主进程为 `29420`。
-
----
-
-# 左侧固定目录恢复进度（2026-08-17）
-
-- 已读取 `storydream-ui`、组件合同、`planning-with-files` 和根 `AGENTS.md`，确认 UTF-8、项目组件与桌面视觉验收要求。
-- 已恢复现有计划上下文，并确认“更多工具”来自上一轮导航收敛；当前进入 AppShell、导航数据、样式和测试定位。
-- 已复核用户原始截图并定位 `AppShell` 中的 `Menu`、`contextualToolNavItems`、专用 CSS 与四组导航合同测试；确定采用固定侧栏恢复方案，不保留弹层。
-- 已通过 Git 历史确认收敛前的精确 `6/5/5` 分组和顺序，完成实现方案定稿，开始修改导航数据、AppShell 和菜单专用样式。
-- 已先更新 6 个聚焦测试文件；首次运行 232 项中 224 通过、8 项预期失败，失败均锁定旧导航数组、菜单触发器、菜单 CSS 和 QA fallback。
-- 已恢复三组固定侧栏目录，删除 AppShell 菜单、Wrench 图标、菜单专用 CSS 与 QA fallback；聚焦 6 文件、232 项全部通过。
-- `npm run typecheck` 与 `npm run build` 已通过，当前进入普通/紧凑桌面 Electron 截图和交互验收。
-- 首轮 Electron shell 4 场景与 HTML 视频 2 场景通过；根据 1080×720 实拍继续隐藏紧凑图标栏的重复底部快捷区，准备重跑聚焦回归与视觉 QA。
-- 最终 Electron shell 4 场景与 HTML 视频 2 场景再次通过；普通和紧凑截图均无黑屏、弹层或侧栏截断。
-- 全量测试在 125/132 文件通过后因 `C:` 临时盘 `ENOSPC` 和 300 秒上限失败；导航相关 6 文件仍为 232/232，通过，下一步定向复核失败文件以区分环境问题与分支既有问题。
-- 将失败文件的 `TEMP/TMP` 定向到 `I:` 后，7 文件中 4 文件、139 项通过；剩余 3 项为并行选品发现/IPC 修改的合同不一致，本轮不扩大范围修复。
-- 最终 6 个 Electron 场景、HTTP 200、UTF-8 复读、`git diff --check` 和远端提交差异 `0 0` 已确认；截图/报告已归档，开发环境保持运行。
-
----
-
-# 云端 AI 视频、持久化 DAG 与项目变体落地进度（2026-08-17）
-
-- 已读取 `planning-with-files`、`storydream-ui`、组件合同、`ui-ux-pro-max` 与桌面工作流规则。
-- 已确认本轮从分析转为实现：云端 AI 视频 API、叙事计划、持久化 DAG、四档自动化、平台变体、导航收敛和 HyperFrames 开场长动画进入同一兼容改造。
-- Remotion 当前先按可选渲染边界处理，不直接新增依赖；后续用现有 HyperFrames/HTML 能力验证长动画效果与编辑合同。
-- 已完成云端 VideoProvider、真实 AI 视频 API、叙事计划、持久化 DAG、四档自动化、平台变体、导航收敛与 HyperFrames 开场蒙太奇的实现。
-- 已补开场蒙太奇显式合同：封面停留 1.4 秒、第一幕扩展为 6 秒、4 个 opening shot、仅第一幕启用并向合成 payload 传递独立封面时长。
-- 收尾阶段正在执行聚焦/全量测试、生产构建与普通/紧凑桌面视觉 QA；本地产物目录继续排除在提交范围外。
-- Provider、配置加密、IPC、DAG、runner、HTML 视频和导航聚焦回归 11 文件 554 项通过，`npm run typecheck` 通过。
-- 首轮全量测试 1848/1851 通过；3 项失败均为旧常驻侧栏数量/顺序合同，已改为验证 6 个主入口、10 个上下文工具和 17 个完整兼容路由。
-- 导航修复后相关 5 文件 204 项通过，第二轮全量 132 文件、1851 项全部通过。
-- 生产 renderer/Electron 构建与 `git diff --check` 通过；视觉验收进入隔离 Electron 普通/紧凑桌面阶段。
-- `new-task` Electron QA 分区通过；定向生产 Electron QA 在 1440×900、1080×720 下完成 AI 视频设置和平台变体实拍，所有布局指标为 0，交互与数量合同全部通过。
-- 任务详情 QA 在旧“未配置 AI 视频占位提示”等待条件处超时；已改为 Provider 未就绪时明确禁用、配置就绪后真实调用，并同步更新 Electron QA 与聚焦合同。
-- Provider 门禁修复后任务详情 Electron QA 14/14 场景完整通过；HTML 视频分区随后暴露上下文工具无可见入口，已用紧凑“更多工具”菜单补齐可达性。
-- 已修复浅色主题紧凑窗口中 HTML 视频深色媒体工作台的 Fluent 内部文字对比度；HTML 视频 Electron QA 2/2 场景通过，普通与紧凑截图均为 0 对比度失败、0 遮挡、0 媒体失败。
-- 已给账户与激活底部快捷入口补稳定路由标识；`system` Electron QA 20/20 场景、`task-operations` 分区全部通过，更多工具菜单不再被误开后遮挡页面。
-- 最终 `npm run typecheck`、生产构建、UTF-8 替换字符扫描和 `git diff --check` 通过；全库 132 个测试文件、1851 项全部通过。
-
----
-
-# 自动化视频产品与开源能力路线审计进度（2026-08-17）
-
-- 已读取文件化规划、StoryDream UI 组件合同和桌面生产工具工作流规则。
-- 已确认本轮只做证据化产品/技术分析，不修改业务代码；正在盘点现有页面和视频生成流水线。
-- 已完成 17 个路由、普通 7 阶段流水线、HTML 6 阶段流水线、任务详情产物编辑和三张真实桌面截图审计。
-- 当前进入工作流瓶颈分析：重点是统一项目模型、时间线、动态视频素材、质量验收和批量变体，而非新增平行实验页。
-- 已核对暂停点、剪映草稿、字幕/音频/转场合同、质量诊断、AI 视频占位与发布相关代码，形成当前能力缺口清单。
-- 已完成核心工作流瓶颈审计，确认统一项目、场景与时间线合同是前置条件；GitHub 项目核验进入许可证、维护边界和接入方式收口。
-- 已核验 FFmpeg、OpenTimelineIO、OpenCut、Remotion、ComfyUI、Wan2.1、LTX-Video、faster-whisper、WhisperX、PySceneDetect、VMAF、Demucs、Silero VAD 与 MLT 的许可证和职责边界。
-- 关键淘汰项已明确：Remotion 有组织规模商业许可约束；OTIO 不负责渲染；VMAF 不负责审美评分；LTX-Video 主线已转向 LTX-2；MLT 和整仓 OpenCut 都会制造重复编辑/渲染体系。
-- 已补充核验 Wan2.2、LTX-2.5、OpenCLIP 与 CosyVoice：分别覆盖本地可控视频、局部重做/同步音视频、语义素材检索和中文本地配音。
-- 已确认 LTX-2 最新自定义许可证与 1000 万美元年营收商业阈值，最终方案会把许可证、模型卡、显存、时长和能力做成 Provider 元数据，不默认捆绑权重。
-- GitHub 项目核验阶段完成，正在形成统一项目工作台、时间线合同、DAG 调度、质量门禁和 90 天路线图。
-- 已完成目标领域模型、统一工作台、Provider 能力合同、DAG 失效传播、质量门禁和平台变体设计。
-- 已形成三阶段 90 天路线、P0/P1/P2 验收指标及明确不采用项；本轮只修改审计规划文件，没有修改业务代码。
-
----
-
-# 小红书目标笔记精确读取修复进度（2026-08-14）
-
-- 已按原始截图复核小红书热榜来源、正文读取、Electron 缓存和阅读弹窗。
-- 已确认根因是通用 hydration 递归评分与媒体合并跨越了目标笔记边界，正在补目标 ID 和推荐流隔离回归。
-- 将保留现有按日热榜归档、30 分钟正文缓存和跨平台通用解析，只为小红书详情页增加专用排他解析。
-- 已新增 4 组小红书回归并实现专用解析：真实格式 ID 与 `xsec_token`、目标/推荐竞争、目标缺失、搜索页推荐流均已覆盖。
-- 正文弹窗已改为始终显示“重新读取”，读取中禁用并显示旋转状态；聚焦内容/UI 回归 17/17 通过。
-- 相关链路回归 7 文件 116/116、类型检查、生产构建与 `git diff --check` 通过；首轮视觉 QA 因外部懒加载图片未进入 `complete` 状态超时，正在修正 QA 门禁后复验。
-- 已核对实时 UAPI 与小红书搜索页：热榜链接全部是话题搜索页，公开 hydration 没有目标笔记；当前实现会明确忽略推荐流并自动进入既有联网搜索，不再展示错误图文。
-- QA 改用进程内位图消除外网图片时序：1440×900、920×720 均显示 2 张图，重新读取可见，画廊/查看器横向溢出 0、控件裁切 0、hover 位移 0。
-- 全库 131 个测试文件、1846 项全部通过；生产构建与类型检查通过。
-- 已创建本地修复提交并两次尝试上传；默认 HTTPS 被连接重置，HTTP/1.1 无法连接 GitHub 443，上传仍被当前网络阻断。
-
----
-
-# 热榜正文单行列表与阅读弹窗进度（2026-08-12）
-
-- 已检查原始截图、`HotBoardPage`、热榜样式、正文 IPC 与既有聚焦测试。
-- 已确定交互合同：列表不再承载摘要或读取失败，正文按需在独立弹窗加载并支持重试、打开原文和去创作。
-- 已完成正文弹窗 UI 合同、页面提取回归、单行列表和紧凑窗口样式改动。
-- 正文读取 warning 已从页面级告警移入弹窗；支持页面正文、来源摘要、无内容、错误重试、打开原文与去创作。
-- 真实 Electron 与 Edge CDP QA 已通过：普通 1440x900、紧凑 920x720 均无横向溢出或控件裁切。
-- 聚焦测试 25 项通过，类型检查与 renderer/Electron 构建通过。
-
----
-
-# 对标账号同步故障进度（2026-08-12）
-
-- 已核对截图与前端汇总逻辑，确认任务真实返回 1 个受限或失败账号。
-- 已定位 Electron 连接器及既有 B 站 `-352 / HTTP 412` 风控记录；登录窗口和同步请求共用 session 分区，正在检查本机持久化错误。
-- 已只读查询本机账号快照，确认 B 站空间 `441897078` 从未成功同步，真实失败为业务码 `-352` 后主页回退无作品。
-- 已确认恢复闭环缺口：`limited` 状态不给登录按钮，错误详情只在 hover 中；连接器请求特征也不足以可靠复用登录会话。
-- 本轮按诊断请求收口，未修改业务源码或用户账号数据。
-- 用户确认需要参考“爆款拆解”记录 Cookie；已实现对标平台登录窗口关闭导出 Cookie、持久化 session 请求携带凭据、登录后自动重试和可见错误摘要。
-- 聚焦测试 `tests/benchmark-sync.test.ts`、`tests/local-labs-ui.test.ts`、`tests/electron-window.test.ts`、`tests/electron-ipc-contract.test.ts` 全部通过（77/77）；生产构建通过。
-- 全量 `npm run typecheck` 仍被工作区既有 `src/app/renderer-command-inventory.ts:290` 参数类型错误阻断，本轮未越界修改该在途文件。
-
----
-
-# HTML 动画预览工作区清爽化进度
-
-## 2026-08-11 续接
-
-- 保留失败现场重跑 `STORYDREAM_QA_EFFECTS_ONLY`，失败仍稳定为 `previewForegroundVisible: false`；主任务磁盘 HTML、pipeline 快照和前景 PNG 均完整，正在追踪 iframe 挂载后的 DOM 变更。
-- 已定位为 QA 采样时间错误：`center-focus` 前景从 `0.4s` 入场，旧检查却反复 seek 到 `0.25s`；已改为场景 60% 稳定帧，并增加节点数与透明度诊断，严格可见性断言不变。
-- 前景阶段通过后，完整 QA 在保存镜头/转场时触发两场景预览重建，通用 5 秒单次 CDP 检查先于业务等待超时；已为 `waitFor` 增加可选检查预算，仅该保存路径使用 15 秒单次、30 秒总预算。
-- 第二、三次保留现场均确认数据库未变化；等待两个绘制帧仍不足，根因是合成 `change` 未进入 React 19 受控处理器。现改为复用 QA 既有的 `__reactProps$` handler，并在保存前断言 React props。
-- React props 断言已通过但第四次数据库仍未变化；已增加局部提示、异步 action 反馈和保存按钮状态，下一次失败将输出精确分支。
-- 精确失败态显示保存按钮可用、React props 正确、前景可见，但 IPC 返回通用错误；已把 Electron 主进程 stderr/stdout 加入保存失败报告，准备定位底层异常。
-- 已从中断点恢复并确认完整 `preview-effects` 最新失败为编辑重建分辨率漂移：现有 `320x568` composition 被默认 `maxLongEdge=1280` 重建为 `720x1280`，超过隐藏窗口实际高度 1040。
-- 已让编辑预览 runtime 接受可选 `maxLongEdge`，并由 `rebuildHtmlVideoEditorialPreviews()` 从当前 composition canvas 继承长边；新增 Electron IPC 静态契约锁定这条行为，等待聚焦测试、类型检查、构建和完整 QA 验证。
-- 聚焦 `electron-ipc-contract` 与 `electron-smoke-contract` 共 64 项通过；`qa-html-video-ui.mjs` 语法检查及定向 `git diff --check` 通过。
-- 全量 `npm run typecheck` 通过，编辑 runtime 的可选长边参数与现有 Electron/HTML 视频类型合同兼容。
-- `npm run build` 通过；renderer 与 Electron 主进程均已更新到当前修复，准备在不设置长 debug 输出目录的条件下运行完整 `preview-effects`。
-- 首轮完整 QA 仍报期望 `720x1280`、实际 `720x1040`；已确认配置失效逻辑在重建前清空 compositions，长边继承改为优先当前 pipeline、缺失时回退任务保存前快照。
-- 回退任务快照后的聚焦测试 64/64、`npm run typecheck` 与定向 `git diff --check` 再次通过。
-- 第二次 `npm run build` 通过，Electron 主进程已包含任务快照 canvas 回退逻辑。
-- 第二轮完整 QA 已越过保存和捕获：5 个步骤完成、可继续出片，播放、镜头、转场、终点重播、版式变化和运行时错误检查均正常；最终汇总只剩旧 440/300 高度门槛与切版后 0 秒前景采样。
-- QA 最低画布高度已对齐新版布局为 400/260；切换版式后主动采样场景 60% 并保留前景可见、画布边界严格断言，聚焦契约同步更新。
-- 更新后的 QA 脚本语法、64 项聚焦契约与定向 `git diff --check` 通过。
-- 第三轮完整 QA 中桌面稳定帧已通过；紧凑 viewport 切换重新加载 iframe 后停在 0 秒，已为紧凑截图增加独立 60% 稳定帧采样并继续严格检查前景边界。
-- 紧凑稳定采样后的脚本语法、64 项聚焦契约与定向 `git diff --check` 通过。
-- 第四轮完整 Electron `preview-effects` QA 通过：保存后 5/6 步骤完成并可继续出片，桌面/紧凑画布与前景严格边界、字幕、播放、镜头、转场、版式、滚动、最大化恢复、任务队列和运行时错误检查全部达标。
-- 8 张最终证据已归档到 `.artifacts/html-video-preview-clean-redesign-full/`；人工查看 `effects-desktop.png`、`effects-compact.png` 与 `effects-caption.png`，未发现重叠、横向溢出或检查器不可达。
-- 最终全工作区 `git diff --check` 通过；本轮涉及的源码、QA、测试和计划文件均以严格 UTF-8 解码通过，8 张证据文件全部非空。
-- stderr 定位到 267 字符 debug staging 路径的 Chromium `ERR_FILE_NOT_FOUND`；已确认 runtime 先写文件再加载，下一轮恢复默认短 `%TEMP%` 路径验证真实流程。
-- 用户要求继续后重新审计完成状态：最新布局隔离 QA 已通过，但当前版本完整 `preview-effects` 仍有前景可见性失败记录；重新打开最终行为验收，不以历史通过记录替代当前构建结果。
-- 从中断点复核分支与脏工作树：预览工作区三栏重构、Fluent 组件迁移和几何合同均已存在，未回退任何用户并行修改。
-- 重新确认设计读法为保留式桌面创作工作区，`DESIGN_VARIANCE 4 / MOTION_INTENSITY 2 / VISUAL_DENSITY 6`；`design-taste-frontend` 只提供反模板化审计，组件与交互仍以 `storydream-ui` 为权威。
-- Electron `preview-effects` 已进入新版结构，但被既有 `previewForegroundVisible` 断言提前阻断；下一步新增独立布局 QA，保留旧断言原样。
-- 一次计划记录补丁使用了不完整标题锚点，补丁未应用；已按真实标题修正，不重复该锚点。
-- 已新增 `STORYDREAM_QA_PREVIEW_LAYOUT_ONLY`、普通/紧凑截图路径和独立布局检查，并把 Fluent 场景页签的自动化读取改为 `innerText`；旧前景断言保持不变。
-- `node --check`、HTML 视频与 StoryDream UI 聚焦测试 `15/15`、`git diff --check` 均通过，开始 Electron 实拍验收。
-- 已根据真实截图移除窄检查器页签图标、压缩页签与头部间距，并给“连播全部”稳定宽度；最终普通/紧凑 PNG 中全部中文标签完整显示。
-- 最终 `npm run typecheck`、聚焦测试 `15/15`、生产构建、脚本语法、`git diff --check` 和隔离 Electron `preview-layout` QA 均通过；renderer 入口为 379,167 bytes。
-- 最终截图已写入 `.artifacts/html-video-preview-clean-redesign/preview-layout-desktop.png` 与 `preview-layout-compact.png`；本轮未提交、未推送，也未清理工作树其他修改。
-
-## 2026-08-11
-
-- 已读取用户点名的 `api-image`、`design-taste-frontend`，并按适用范围读取 `storydream-ui` 和文件式计划规则。
-- 已完成普通与紧凑 Electron 实拍、现有生成稿的第一轮视觉审计；确定优先解决主画布比例、多层页签、框套框和重复状态信息。
-- 当前阶段正在读取预览 DOM、状态所有权、样式和 QA 合同，所有修改将限制在 HTML 动画工作区相关文件。
-- 已确认核心状态均集中在 `HtmlVideoStoryboundPanels.tsx` 的 `HtmlVideoPreviewPanel`，可以只重排现有节点而不复制或迁移业务状态。
-- `api-image` 首次参考图编辑请求因 Provider SSL EOF 失败，已按技能规则显式记录；下一次改走文本生成端点。
-- 纯文本生成端点等待 128 秒后同样被远端关闭；已停止把外部图像生成作为实现前置条件，继续基于真实截图和既有参考稿推进。
-- 已建立预期失败的聚焦 UI 合同；全仓 1826/1827 通过，唯一红灯是尚未实现的新检查器结构，符合测试先行预期。
-- 已完成第一轮 DOM/CSS 重排：预览激活态收窄任务轨，中央画布与横向场景条共享主区，镜头/转场和场景编辑进入唯一右侧检查器。
-- 聚焦 UI/StoryDream 组件合同 15/15、类型检查和生产构建通过；首次 Electron QA 在启动前发现本地 Electron 二进制未正确安装，正在恢复测试环境。
-
----
-
-# HTML 动画字幕与重新出片进度
-
-## 2026-08-11
-
-- 已按原始分辨率复核用户两张截图，确认底部检查器裁切与 `0.0s` 多 cue 重叠。
-- 已完成 UI、生成 HTML、配置清单、Electron IPC、存储、checkpoint 和 runner 恢复链路审计。
-- 已确认可复用现有完整字幕编辑器；无需创建第二套字体/颜色状态。
-- 已定位重新出片覆盖编辑内容的根因：权威 composition 已更新，但 preview step artifact 摘要未同步。
-- 已新增并通过 3 个文件、98 项聚焦回归；修改后的 HTML composition 恢复时只调用 `render`，未调用 `preview`。
-- 已将完整字幕编辑器移入当前场景“字幕”页，并为场景检查器建立固定响应高度与独立滚动。
-- 已为 GSAP cue tween 关闭 `immediateRender`，未来字幕保持内联 `opacity:0` 直到自己的起始时间。
-- 已统一重新出片顺序为“保存配乐/转场参数 → 冻结当前预览快照 → 启动任务”。
-- HTML 动画工作流、存储和 IPC 相关 4 个文件、167 项扩展回归通过。
-- 续接后新增独立 `caption-workspace` Electron QA，保留原 `preview-effects` 前景断言，并在真实完成任务中分别检查 1320×860 与 920×720。
-- 严格 `0.0s` 初次实测发现首 cue 与未来 cue 都为 0；已让首 cue 的生成 DOM 初始可见，未来 cue 继续保持 `opacity:0`，最终两种窗口均采样到 `["1", "0"]` 且仅一条字幕可见。
-- 已把场景字幕外层固定双栏改为按自身宽度自动折行，并补齐字幕布局、颜色控件和检查器页签的窄栏样式；普通/紧凑 body 横向溢出均为 0，底部控件可达。
-- Electron QA 最终通过且运行时错误为 0；顶部、布局中段、颜色/字幕段共 6 张证据图已保存到 `.artifacts/html-video-caption-rerender/`。
-- 本轮最终聚焦回归为字幕 3 文件 98/98、主进程/存储 4 文件 167/167；全仓类型检查、生产构建和 `git diff --check` 通过。
-- 续接初期还运行过全仓 Vitest，130 个文件、1827 项全部通过；后续产品增量由上述聚焦回归再次覆盖。
-
-# Electron 运行中构建更新恢复进度
-
-## 2026-08-09
-
-- 已在续接后再次按原始分辨率检查两张用户截图，确认旧动画检查器与过期队列分包错误仍是同一运行中构建换代问题。
-- 已原始分辨率检查用户两张截图，确认旧 HTML 动画布局和任务队列动态导入失败同时存在。
-- 已核对进程、manifest 与构建资源：旧 Electron 进程启动于 01:15，新资源构建于 09:38；任务队列旧哈希已被新构建替换。
-- 已确定修复范围为 renderer 入口的预加载失败恢复、路由错误页真实重载、对应测试，以及重启旧应用后的真实路由和新版预览验收。
-- 已新增 `vite:preloadError` 全局恢复器：按失败模块错误签名在当前会话中只自动刷新一次，永久缺块时不会进入刷新循环。
-- 已把路由错误页“重新加载页面”改为真实 `window.location.reload()`，并补 renderer 架构合同测试。
-- `npm run typecheck` 通过；renderer 架构测试 1 个文件、38 项通过；`npm run build` 通过，仅有仓库既有的 Vite `node:* externalized` 提示。
-- 准备接管旧窗口时确认原 PID 已不存在；一次临时启动成功暴露调试端口后随即退出，未修改用户数据，后续改用隔离 Electron QA 验证当前构建。
-- 已为预加载恢复器增加运行级单测和内存去重：同一旧块只刷新一次，不同构建错误可再次恢复，`sessionStorage` 被禁用时仍避免刷新循环。
-- 首轮类型检查只发现单测监听器变量被控制流收窄为 `never`；已改为显式分发函数，保留相同运行行为断言。
-- 已把任务队列真实路由加入 `preview-effects` Electron QA，并增加新版顶部设置、真实画布和旧检查器缺失断言；聚焦 3 个测试文件、49 项通过。
-- 首轮 Electron QA 中任务队列与新版布局全部通过，但保存动效后播放被后续 iframe 换代归零，暴露真实时序竞态；正在修复后重跑，不接受仅静态通过。
-- 已把 iframe 源加载改为稳定 composition/source 键，消除等价详情刷新导致的二次重载；新源未就绪时播放请求会保留并在新运行时 ready 后执行。
-- 重新构建后 `preview-effects` Electron QA 通过，任务队列、当前动画布局、真实播放、镜头、转场、版式、竖屏字幕和两种窗口尺寸全部达标；证据保存在 `.artifacts/html-video-stale-build-fix/`。
-- 最终全量回归通过 122 个测试文件、1771 项；类型检查、生产构建、`git diff --check` 与 11 个本轮文件的 UTF-8 替换字符扫描均通过。
-
----
-
-# 实时热榜 AI 信息源扩展最终验收
-
-## 2026-08-09
-
-- 已重新查看用户原始 10 来源截图，确认当前来源评估与 AIHOT 独立信息源视图的职责划分符合首期接入边界。
-- 已用隔离 Edge 实际进入“实时热榜 -> AI 信息源”，逐项切换日报、精选、全部、分类、最近和搜索；全部模式的查询控件无内部溢出。
-- 1440x900 与 920x720 自动几何验收均为 0 横向溢出、0 控件裁切、0 视口外元素；两张原图人工复核未见遮挡或不可读文本。
-- 紧凑窗口来源栏按预期排列在结果区之后；下一步滚动到底部复核完整来源说明，再执行 UTF-8、定向测试和差异检查。
-- 已补紧凑窗口底部实拍：来源状态、刷新策略、无需 Key、使用范围、站点和条款入口全部完整可见，仍无横向溢出或控件裁切。
-- 视觉证据保存在 `.artifacts/aihot-source-final/`，开始执行代码级终验。
-- AIHOT 定向回归 6 个文件、120 项全部通过；23 个范围文件严格 UTF-8 扫描与范围内 `git diff --check` 通过。
-- 扩大库存回归的 6 项失败及全局类型/构建失败均来自同期“对标监控 / 选品助手”在途文件；AIHOT 范围没有失败或类型错误。
-- AI 信息源扩展与最终验收完成；本地预览继续在 `http://127.0.0.1:5173/` 运行。
-
----
-
-# 热榜工作台设计与缺陷修复续接
-
-## 2026-08-09
-
-- 用户明确否定当前热榜的设计和稳定性，本轮范围扩大到全网热榜与 AI 信息源共同使用的工作台体验。
-- 已读取 `api-image` 与 `ui-ux-pro-max`；当前产品无需主视觉 raster 素材，`api-image` 只作为按需生成入口，不为运营工作台添加装饰图。
-- 已完成现有 CSS、状态模型和 UX 检索审计；正在采集全网热榜实机截图和可复现交互指标。
-
----
-
-# HTML 动画场景编辑与播放修复进度
-
-## 2026-08-09
-
-- 已读取用户截图并记录四项核心诉求：播放修复、版式可读性、画面下方逐场景设置、前景渲染与提示词质量修复。
-- 已按 `planning-with-files` 恢复既有项目记录，未覆盖历史任务；已按 `ui-ux-pro-max` 读取桌面多面板联动规范。
-- 正在审计相关页面、状态模型、播放器消息、HTML 生成器和仓库内 StoryBound 提示词证据。
-- 已确认技术栈、相关文件范围与既有图标库；本地 UX 检索支持“场景选择同步画面下方编辑区”的方案。
-- 已定位预览面板现有场景状态与播放器状态机；确认当前场景的版式、标题、前景和提示词被拆散在三个交互位置。
-- 已逐行读取预览面板渲染和消息处理；下一步对照 iframe runtime 协议、前景 HTML 生成和现有回归测试。
-- 只读检索一次因 Windows 路径通配符无效而退出，已记录并切换为 `--glob`；未产生代码改动。
-- 已确认 iframe 采用自定义 GSAP 播放时钟；静止 0 秒时前景动画可为透明，而现有 React 海报层只补字幕，这与用户截图症状吻合。
-- 已定位“播完后再次点击播放无反应”的确定根因：终点仍发送 `hvplay` 且 watchdog 被 100% 进度绕过。
-- 已读取旧 StoryBound 审计；用户指出其未覆盖当前 HTML 动画能力，相关否定结论已撤销。
-- 已成功结构化读取旧 StoryBound prompt dump；现在改为直接只读逆向 `E:\Storybound` 当前版本，恢复 HTML 动画提示词后再对照本项目。
-- 已发现现成的 StoryBound 1.17 HTML 视频 chunk；一次仓库 `rg` 因 Windows 根路径通配参数无效而退出，已记录并改用 `--glob`。
-- 首次 AST 字符串提取因 PowerShell 5.1 stdin 中文编码损坏而失败；未产生文件改动，后续改用 ASCII + Unicode 转义命令。
-- 已用 TypeScript AST 成功定位 StoryBound 1.17 HTML 场景规划 prompt、前景补充 prompt 和 HTML/GSAP 生成器，正在恢复完整调用合同。
-- 已恢复完整 `Hs/Ys` prompt 调用参数、schema 与预览 `To` 交互；确认参考 UI 本身使用 9.5px 场景卡控件，本项目将按用户要求重构而非照抄。
-- 已检查 25 种版式和有效 CSS 覆盖，确定在中央画面下增加当前场景四段式编辑器，并只展示兼容版式。
-- 续接后确认实现、聚焦测试与生产构建已完成，播放看门狗现以实际 `hvtick` 前进为成功条件，并在无 tick 时自动重发一次原播放/重播命令。
-- 本机未安装 PowerShell 7，恢复命令已改用 PowerShell 5.1；所有中文文件继续显式按 UTF-8 读取。
-- 当前进入真实 Electron effects-only 验收，重点检查终点重播、跨场景播放、前景海报、四页签和紧凑窗口编辑区可达性。
-- 首轮续接实机验收未通过：桌面场景 runtime 为 `playing`、父层按钮为“暂停”，但时间和进度均为 0，连续播放无法到达终点；同一诊断还显示前景不可见、`bottomControlsReachable=false`。
-- 已停止重复运行相同 QA，开始沿 iframe 固定时钟、父层看门狗重发、静止前景海报和新编辑区几何判据逐项诊断。
-- 已确认故障发生在连播切换新 iframe 后；首场景单独播放正常。切场未清空旧进度，且转场状态会让消息监听在新场景 ready 时重建，下一步加入定点运行时诊断确认实际失效边界。
-- 定点诊断确认失败 iframe 接受后续直接重播后可恢复并在约 620ms 推进到 0.667 秒；根因收敛到父层过早把一次微小 tick 视为永久启动成功，准备加入请求基准阈值、切场归零和监听稳定性修复。
-- 已原始分辨率复核用户截图和新版桌面/紧凑模板截图：四页签位置与可读性符合目标；发现顶部设置展开时桌面工作区 `overflow: hidden` 会让新增编辑区失去滚动可达性，纳入本轮修复。
-- 已把播放看门狗改为贯穿整次播放的进度心跳：健康前进时滚动基准，停滞时重发一次命令；切场和手动拖动会清理旧请求、归零并同步暂停状态。
-- 已移除转场运行态对 window message effect 的依赖，避免新场景 ready 时重建监听；展开顶部设置时工作台获得明确最小高度，预览工作区承担纵向滚动。
-- `npm run typecheck` 通过；HTML 动画 UI、产品壳和运行时提示词 3 个聚焦测试文件共 190 项通过。
-- 生产构建通过；第二轮 effects-only 显示展开设置后的 `bottomControlsReachable=true`，滚动可达修复有效。
-- 连播新场景仍停在 0，持续心跳没有触发可观察的自动恢复；按三次错误协议不再改阈值猜测，转为记录父子窗口命令与 tick 时序。
-- 第三轮追踪捕获到同一 iframe 的时间线不断在正常递增值与 0 之间交替，确认 HyperFrames runtime 与动画预览自有时钟同时驱动 `window.__tl`。
-- 修复边界收敛为只从动画预览 `srcDoc` 副本移除 HyperFrames runtime；原 composition、可视编排 Player 和最终逐帧导出继续保留完整 HyperFrames 合同。
-- 已在结构化 DOM 副本中按发布文件名移除 HyperFrames runtime script，保留 GSAP、自有预览协议和所有素材 URL 重写。
-- `npm run typecheck` 通过；HTML 动画预览、HTML 生成、HyperFrames、产品壳与提示词 5 个聚焦测试文件共 259 项通过，原始导出 HTML 的 HyperFrames lint 合同仍成立。
-- 隔离 runtime 后 effects-only Electron QA 通过：首场景时间从 0.150s 推进到 0.333s，跨场景连播到终点、终点点击播放重新前进、转场覆盖和版式几何变化均成立。
-- 1320x860 与 920x720 都确认前景首帧可见且在画布内，四页签存在，展开顶部设置后底部可达，无横向溢出、控件裁切或运行时错误；证据保存到 `.artifacts/html-video-scene-editor-effects/`。
-- 已原始分辨率查看两张 effects 证据图：前景海报真实出现在背景上层；顶部设置展开时桌面与紧凑布局均通过单一工作区滚动访问画布下编辑器，没有覆盖或水平裁切。
-- 已扩展 effects QA 逐一切换四页签：单个前景完成隐藏/恢复并与画布同步；标题与提示词输入产生正确未保存状态并恢复原值；背景和前景提示词均来自当前场景。
-- 页签 QA 再次通过，新增 `effects-foreground.png`、`effects-title.png`、`effects-prompt.png`；前景 1 项为“已显示”，提示词包含 1 个背景与 1 个前景输入，运行时错误仍为 0。
-- 已原始分辨率人工检查三张页签图：状态、缩略图、输入、按钮和页签选中态均清楚完整；窄宽度下“提示词”自然换行但无重叠或裁切。
-- 用户明确否决当前截图的页面层级；已停止全量收尾，重新进入布局修正，目标是消除顶部设置、画布和场景编辑正文同时争抢空间的混乱状态。
-- 已实现受控全局设置状态：展开时隐藏场景编辑正文；点击场景页签、播放、切场或保存动效自动收起；顶部设置与主要控件字号同步提高。
-- 修正版 effects QA 通过 `settingsOpen=true/bodyVisible=false` 与默认 `settingsOpen=false/bodyVisible=true` 两组互斥合同，播放、重播、前景和四页签回归仍全部成功。
-- 已人工检查新版 `effects-settings/desktop/compact` 原图，上一版“半截设置 + 半截编辑器”的混乱组合已消失，默认桌面三块结构和紧凑滚动层级清楚。
-
----
-
-# HTML 动画预览工作区整理进度
-
-## 2026-08-06
-
-- 已读取用户原始截图，确认问题是预览工作区信息架构和滚动归属混乱，而不是单个控件样式。
-- 已按用户指定启用 `$api-image`，使用现状截图生成并人工审查 `outputs/html-video-animation-preview-redesign.png`。
-- 已实现中央主预览、右侧紧凑检查器、底部场景胶片条；字幕、镜头和转场不再把 WebView 推到首屏下方。
-- 已为 8 种镜头模式补充真实缩略图小样和重播入口，转场小样继续使用两个真实场景缩略图。
-- 当前场景的播放、版式、前景和标题动作集中在胶片条下方，紧凑窗口内无需横向滚动操作按钮。
-- 聚焦 9 项 UI 合同测试、类型检查和生产构建已通过。
-- Electron `preview-effects` QA 在 1320x860 与 920x720 均通过：主预览首屏可见、检查器在右、胶片条在下、0 页面溢出、0 控件裁切、0 运行错误。
-- Electron `template-preview` QA 通过：24 个预设、21 种运动、5 层运行动画与桌面/紧凑悬停像素变化均有效。
-- 最终全量测试通过：117 个测试文件、1729 项全部成功。
-- 功能提交 `8532a30` 已推送到远端 `codex/storydream-local-hardening`。
-
----
-
-# HTML 动画 Storybound 对齐与真实播放修复进度
-
-## 2026-08-09
-
-- 已完整读取 `ui-ux-pro-max`、桌面工具工作流参考、`design-taste-frontend` 与 `planning-with-files`。
-- 已建立五阶段计划，开始对照用户真实截图、Storybound 逆向代码和 StoryDream 当前运行时。
-- 已查看两张 1560×968 真实截图原图，确认播放状态与 iframe 时间线脱节、右侧重复大预览造成纵向浪费，以及场景 `slot` 合同失败三类独立问题。
-- 已检查 Storybound 1.17 静止、播放和素材页原图，并从 pretty bundle 确认其 iframe 播放协议；正在提取 `onLoad`、场景切换、提示词和版式数据实现细节。
-- 已恢复 Storybound 分镜提示词原文，确认版式槽位、背景/主体职责和画风注入边界。
-- 已对照 StoryDream 配置失效、场景预览重建和最终合成入口，确认提示词错误回退、主预览不即时反映全局动效，以及真实播放未验收是三个主要实现缺口。
-- 已定位本地回退使用废弃版式 ID 且槽位不匹配，开始收敛数据修复与预览重建方案。
-- 已完成版式目录、HTML CSS 覆盖和配置存储路径审计；下一步先修改规划修复、本地回退与纯预览配置即时重建。
-- 已完成 AI 规划槽位修复、确定性回退提示词分层、零前景版式处理和纯预览配置即时重建；版式选择器只开放素材槽数兼容项。
-- 已把字幕、镜头与转场收进默认折叠的顶部设置条，主区域改为真实画布加场景轨道；桌面使用右侧纵向场景列表，紧凑窗口自动切为底部横向轨道。
-- 已移除与主画布脱节的镜头/转场大预览卡；镜头通过 `hvpreviewmotion` 直接改变主画面，场景切换显示 0.3 秒真实转场覆盖层。
-- 已增加 `hvruntime` 握手、`hvprobe`、播放看门狗和 33ms 独立定时驱动，修复 Electron 中 GSAP `play()` 后时间线停在 0 秒的问题。
-- 已补 `split-compare`、`diagonal-flow`、`parallax-focus` 的逐槽布局与动画，选择“满屏金句”后主画布标题几何可见变化。
-- 聚焦 4 个测试文件、144 项全部通过；`npm run typecheck` 与 `npm run build` 通过。
-- Electron `preview-effects` 最终实景 QA 通过，运行错误为 0：时间从 `0.099s` 前进到 `0.465s`，镜头矩阵变化，连续播放捕获到转场，版式切换改变主画布几何。
-- 已人工检查 `.artifacts/html-video-storybound-fix/effects-desktop.png` 与 `effects-compact.png`：桌面和 920×720 紧凑窗口均无横向溢出、控件裁切或字幕遮挡，底部控制完整可达。
-- 用户最新明确取消关机要求；本轮完成后只提交并推送，保持机器运行。
-- 首轮全量测试为 121 个文件中 3 项失败：两项是删除镜头/转场小样后的静态合同计数未同步，一项是 HyperFrames 确定性校验拒绝运行时 `Date.now()`；已分别修正，等待重跑。
-- 独立播放时钟改为 33ms 定时器内固定推进 `1/30` 秒，不再读取墙钟；该方案仍能绕过 Electron iframe 的 GSAP ticker 停滞，同时满足逐帧合成确定性检查。
-- 修正后聚焦 3 个测试文件、224 项通过；全量回归 121 个测试文件、1768 项全部通过，`npm run typecheck` 和 `npm run build` 通过。
-- `template-preview` Electron QA 通过：29 个版式、21 种动画，桌面与 920×720 紧凑窗口悬停像素均变化，无横向溢出、控件裁切或运行时错误。
-- 已重新查看最终桌面与紧凑截图：顶部设置层级清晰，竖屏画布、字幕、播放控制和场景动作全部可见，紧凑窗口下场景轨道自然落到底部。
-
----
-
-# 草稿模板双层自由裁切编辑进度
-
-## 2026-08-08
-
-- 已重新读取 `ui-ux-pro-max`、桌面画布/检查器联动参考和 `planning-with-files`，确认本轮属于现有桌面生产工具中的新画布交互。
-- 已恢复计划文件与脏工作区上下文，确定只修改草稿模板画布、连续几何合同、普通视频预览、剪映映射和对应测试。
-- 已用新需求覆盖九宫格方案：外层展示框与内层实际图片均可选中、移动和用 8 个控制点缩放；编辑仅发生在草稿模板画布。
-- 已扩展 `DraftTemplate.image`：新增展示框 `left/width` 与实际图片 `mediaScale`，严格合同提供旧模板默认值，现有 `focusX/focusY` 继续承担连续平移。
-- 已加入纯几何函数，覆盖展示框移动/八向缩放、实际图片移动/等比八向缩放、cover 最小覆盖和焦点反算；展示框变化时优先保持实际图片位置。
-- 已把共享模板预览改为展示框裁切实际图片矩形，视频替换和封面仍使用居中显示，不继承正文图片内部缩放。
-- 首轮类型检查只发现文本层回调包含旧 `image` 联合值；收窄签名后 `npm run typecheck` 已通过。
-- 已把剪映布局扩展为二维展示框与图片额外缩放：`left/width` 进入片段中心，`mediaScale` 进入统一缩放，焦点位移继续反向补偿矩形蒙版。
-- 已把 frame overlay 的水平/垂直边框改为沿展示框矩形绘制；视频替换强制重置图片内部缩放和焦点。
-- Electron QA 已替换旧九宫格流程，现会选中两个对象、检查各自 8 个控制点、执行实际指针拖动并验证连续几何保存重开。
-- 全量 `npm test` 通过：121 个测试文件、1766 项全部成功；`npm run typecheck` 通过。
-
----
-
-# HTML 动画任务入口路由修复进度
-
-## 2026-08-08
-
-- 已定位根因：最近任务、任务队列和历史任务复用的 `openTaskDetail` 无条件进入普通 `task-detail`。
-- 已按稳定 `taskType` 分流；HTML 动画任务进入 `html-video`，普通任务继续进入 `task-detail`，分页缓存未命中时先读取任务详情。
-- 已增加一次性 HTML 目标任务交接，工作台消费任务 ID 后继续沿用现有内部选择与新建流程。
-- 聚焦 5 个测试文件、187 项全部通过，`npm run typecheck` 与 `git diff --check` 通过。
-- 正在补真实 Electron 入口点击验收。
-
----
-
-# HTML 动态版式编排与可见预览进度
-
-## 2026-08-06
-
-- 已按用户追加要求将动态画面版式从 17 个扩展到 24 个，新增双人对话、纵向时间轴、层叠卡片、动态大字、产品展台、分屏推进和电影片尾。
-- 7 个新预设均已补齐真实成片 CSS 布局、动画 cue、错峰时间和选择器 swatch；弹窗数量改为从目录动态显示。
-- Electron 实景重新验收通过：24 项全部加载，新增“双人对话”5 个动画图层运行，两帧像素哈希不同，桌面与紧凑窗口无溢出/裁切。
-- 已让隐藏逐帧渲染器显式携带 `storydream-render=1`，保证系统减少动态效果偏好不会让最终成片丢失动画。
-- 已完成 17 个 HTML 画面版式的动态编排目录，加入背景、标题、素材、字幕和错峰时间。
-- 已让场景 WebView 与最终逐帧导出复用同一个 GSAP cue 编译器，保留显式镜头运动和旧草稿模板兼容。
-- 已完成版式选择器悬停/键盘聚焦预演，并在减少动态效果偏好下停用循环动画。
-- 已新增 Electron `template-preview` 实景门槛，桌面 1320x860 与紧凑 920x720 均通过：17 项、21 种 cue、6 个运行图层、像素变化成立、无溢出/裁切。
-- 已保存截图到 `.artifacts/html-video-template-preview-20260806`。
-- 已通过聚焦测试 68 项、TypeScript 类型检查、生产构建和 `git diff --check`。
-- 已确认用户要求包含两层：选择器内可见预演，以及保存后主 WebView/最终成片使用同一套动画。
-- 已核对 Storybound 当前静态资源：17 个版式包含背景、标题、素材、字幕动画和素材 `startSec` 错峰，约复用 21 个动画原子。
-- 已核对 StoryDream 生成器：17 个版式目前主要控制静态 CSS 布局，前景动画为统一时间线，标题无独立编排，字幕仅三种全局动画。
-- 已建立兼容方案：不扩旧任务持久化结构，所有动态编排从版式 ID 目录派生。
-- 已确定实现承载点：扩展 `html-video-scene-templates.ts` 作为唯一编排目录，`html-video.ts` 生成真实 GSAP 时间线，`PresetSwatch` 使用相同 cue 名和延时做轻量预演。
-- 已确认现有版式 UI 合同仅统计 17 项，现有渲染测试只检查通用前景 tween；下一阶段将先补失败测试再实现。
-
----
-
-# 普通视频独立封面页进度
-
-## 2026-08-05
-
-- 已开始审计普通视频的新建任务、任务产物预览、封面资产与剪映桥接链路。
-- 已确认现有普通任务封面图片资产可复用，新增工作的核心是首段时长与封面专属文字，而不是再造一套上传功能。
-- 已完成普通任务创建契约、任务产物预览和剪映桥接审计。
-- 已确定兼容方案：旧任务默认无封面页，新任务显式开启；封面页固定 2 秒，封面文字使用独立文本轨。
-- 已完成任务持久化、IPC、新建任务封面页区块、任务详情 `00 封面`预览和剪映首段导出。
-- 已通过 9 个聚焦测试文件、124 项测试和 TypeScript 类型检查。
-- 已增加封面标题安全区与横竖屏/长文案字号缩放，预览和剪映草稿共用同一计算。
-- 已将正文模板边框限制到 `2s` 后的正文区间，封面页不再叠加正文边框。
-- 已修复本地人物素材任务提前返回导致 AI 封面未生成的问题；供应商只生成封面，正文仍来自本地素材。
-- 已通过 task-operations 的 11 个 Electron 实景状态；封面图、`00 封面`、标题边界、文字隔离、对比度和控件裁切均通过。
-- 已人工复核 `task-detail-cover-page-light-desktop.png`，封面标题完整位于画布安全区。
-- 已通过完整 `npm test`：111 个测试文件、1672 项测试全部通过；runner 加固聚焦测试 103 项通过。
-- 已通过生产构建、TypeScript 类型检查和 `git diff --check`。
-
----
-
-# Storybound 与 StoryDream HTML 动画差异审查进度
-
-## 2026-08-06
-
-- 已确认 Storybound 1.17.0 与 StoryDream `7dc287e` 的版本基线，本轮未修改产品源码。
-- 已通过本机 WebView2 调试页面采集 Storybound 新建任务、文案、素材、配音、动画预览、封面和出片真实截图，并保存到 `.artifacts/storybound-html-compare-20260806`。
-- 已逐张复核 StoryDream 创建、可视编排、字幕、封面、完成与失败状态截图，并结合当前源码核对 17 种版式、8 种镜头运动、6 种转场、字幕颜色、素材编辑、配音和输出动作。
-- 已完成逐页矩阵：核心六阶段与编辑能力基本等价，StoryDream 在可视编排、字幕样式和转场预演上更强；主要差距集中在最近任务可达性、逐阶段恢复入口、模式切换后的上下文连续性、批量去背景、音色预听、封面直达动作和交付主按钮层级。
-- 已明确不建议照搬 Storybound 的积分、账号、激活和云端市场能力。
-
----
-
-# 任务详情草稿交付区视觉强化进度
-
-## 2026-08-04
-
-- 已确认用户指向任务详情底部的 `TaskDraftDelivery`，现有组件已经承载模板、音乐、重新打包、草稿目录和打开剪映操作。
-- 已设计为仅 `ready` 状态启用绿色渐变描边、轻微内底和状态强调，保留原品牌按钮配色和其他状态表现。
-- 已新增浅色、深色两张完成态交付栏实拍场景，确认渐变容器、34px 完成图标、文案和操作按钮均完整位于视口内。
-- 首次浅色实拍发现“打开剪映”按钮对比度为 `3.94:1`，已切换到主题自适应前景色并通过 Electron 实景 QA。
-- 完整验证通过：`111` 个测试文件、`1666` 项测试、TypeScript 类型检查和 `git diff --check` 均无错误。
-
----
-
-# 普通任务图片卡片等高修复进度
-
-## 2026-08-04
-
-- 已复核截图，确认问题是普通任务图片素材卡片的内容自适应高度导致同一行底边不齐。
-- 已定位实际组件为 `TaskArtifactPreview.tsx` 中的 `image-preview-card`，根样式位于 `src/styles.css`。
-- 已将网格改为同行拉伸，并让正文轨道承接剩余高度，图片轨道继续保持原有比例。
-- 已通过 `product-shell-ui` 150 项聚焦测试和 TypeScript 类型检查。
-- 已补充 Electron 真实布局门槛：必须测到至少一行多卡片，且同行高度差不得超过 1px。
-- 已修正 QA 场景，使其明确切换到“图片”标签后再测量和截图，避免在“结果”页空测。
-- `task-operations` Electron QA 已通过；截图确认包含额外错误说明的卡片与普通卡片底边仍然对齐，图片比例未变化。
-- 全量测试通过：111 个测试文件、1666 项测试全部成功。
-- 最终差异审查通过；提交范围仅包含卡片等高修复、真实布局 QA、对应测试与本轮记录。
-
----
-
-# HTML 动画 AI 创作真实检索修复进度
-
-## 2026-08-04
-
-- 已接收用户反馈：HTML 动画 AI 创作的检索并未真实实现。
-- 已读取当前分支、规划文件和 UI/UX 工作流要求；本轮按真实页面行为而不是 mock 测试验收。
-- 正在追踪创建按钮到 Electron 搜索 IPC、搜索提供方、正文抓取和研究文案合成的完整调用链。
-- 已确认 Electron 主进程存在真实四渠道搜索和网页正文抓取；问题集中在 HTML 创建页没有暴露这条流程，并允许关闭检索后直接生成。
-- 已对照普通任务检索 UI 和状态模型，准备把 HTML AI 创作改为可见的搜索、来源选择、文案生成三段流程。
-- 已删除 HTML AI 创作的 `searchEnabled: false` 旁路，并把工作流拆成严格的搜索来源与使用所选来源创作文案两个动作。
-- 已实现四渠道选择、实际查询与渠道状态、搜索警告、来源标题/网址/正文摘要、来源勾选和可编辑生成文案。
-- 已让关键词、渠道、来源或创作要求变化使旧文案失效；最终创建只接受当前有效来源和文案。
-- 已更新 renderer 命令清单和 HTML Electron QA，新的搜索与文案生成按钮各自具备禁用、加载和错误状态证据。
-- 已通过类型检查、3 个聚焦测试文件共 17 项测试和 `git diff --check`。
-- 已通过真实 Electron HTML 页面 QA：1080×720 下四渠道完整可见、鼠标和空格键切换有效、无横向溢出或控件裁切，未生成研究文案前最终创建按钮保持禁用。
-- 已调用生产搜索实现完成真实网络取证：“钱学森回国”取得 10 条可用网页来源，并抓取到最长 2257 字的页面正文。
-- 已通过完整 `npm test`：111 个测试文件、1666 项测试全部通过。
-- 已通过完整 `npm run qa:editorial`：92 个 Electron 状态全部通过，67 个必需证据、25 个补充证据、0 个失败、0 个残留进程。
-- 已再次通过 `npm run typecheck`、UTF-8 回读和 `git diff --check`，准备提交并推送当前分支。
-
----
-
-# 草稿模板关闭下划线黑屏修复进度
-
-## 2026-08-04
-
-- 已复核用户截图，确认是整个 Electron 内容区黑屏，不是预览画布局部变黑。
-- 已定位四个文字层的下划线入口、画布文本装饰样式、模板归一化与契约定义。
-- 已确认数据契约支持 `underline: false`，正在检查开关组件和真实 renderer 异常。
-- 已排除 checkbox 意外提交和下划线回调触发模板保存/导航；正在验证画布动态文本装饰样式及 Electron GPU 行为。
-- 已新增真实 Electron 下划线开关回归动作，聚焦测试 24 项通过，`qa:editorial -- --scope=system` 四种草稿模板场景全部通过。
-- 当前测试模板无法复现，转入实际用户模板数据与 Electron 崩溃记录排查。
-- 已只读检查实际用户数据库：文件有效，当前为深色草稿模板页，“标准模板”主标题下划线开启且其余字段合法。
-- 已确认截图纯色为 CSS 主题底色 `#101214`，不是 BrowserWindow 原生背景；准备实现稳定装饰样式、根错误边界和 bootstrap 显示看门狗。
-- 已把下划线预览改为稳定 CSS 长属性，关闭时不再删除粗细和偏移属性。
-- 已增加应用根错误边界和 1.2 秒启动显示看门狗；渲染异常或 bootstrap 长时间 pending 均不会再留下纯色黑屏。
-- 已补主标题下划线关闭的纯样式测试、数据库关闭重开持久化测试和真实 Electron 开启→关闭交互证据。
-- 聚焦测试 212 项及持久化聚焦测试 70 项通过，类型检查和 `git diff --check` 通过。
-- `qa:editorial -- --scope=system` 通过；四个草稿模板场景的 `draftUnderlineToggleReady` 均为 true、媒体失败为 0、画布像素方差约 1900。
-- 已人工复核深色桌面和浅色紧凑截图，关闭下划线后壳层、画布、标题、副标题和图片层完整显示。
-- 已通过完整 `npm test`：111 个测试文件、1664 项测试全部通过。
-- 已通过完整 `npm run qa:editorial`：92 个 Electron 状态全部通过，67 个必需证据、25 个补充证据、0 个运行时失败。
-- 已通过 `npm run typecheck`、UTF-8 回读和 `git diff --check`，准备提交并推送当前分支。
-
----
-
-# 已完成：HTML 动画 AI 创作与任务同步进度
-
-## 2026-08-03
-
-- 已确认用户指出的是 HTML 动画创建页，不是普通任务。
-- 已确认目标包含 AI 创作文案自动搜索，以及已有 HTML 任务实时同步。
-- 已读取 UI/UX 与文件规划技能，采用现有桌面生产工具设计语言做窄修复。
-- 正在追踪普通任务 AI 创建输入、HTML 独立流水线和页面任务选择状态。
-- 已定位创建页任务下拉的受控值错误，以及缺少任务集合变化后的选择同步逻辑。
-- 已纠正启动快照判断：任务不会在 `loadCompleteBootstrap` 中补全；将复用现有 `task:list` 的类型过滤与游标分页加载完整 HTML 任务列表。
-- 已确认可复用普通任务的网页搜索与研究文案 API，但 HTML 动画仍保持独立生成流水线。
-- 已实现 HTML 文案“AI 创作 / 粘贴文案”模式；AI 创建会自动搜索四个网页渠道、筛选正文来源、调用研究文案生成，再进入 HTML 独立流水线。
-- 已实现活动 HTML 任务的类型过滤分页同步、稳定排序、旧任务详情拉取和当前任务失效后的选择校正。
-- 已新增 AI 搜索、无资料阻断、分页去重排序、任务选择校正和 AI 元数据持久化测试。
-- 已通过 HTML 动画真实 Electron 视觉 QA；桌面粘贴模式与紧凑 AI 模式均为 0 横向溢出、0 裁切控件，任务切换与完整媒体工作区回归也通过。
-- 已通过完整 `npm test`：110 个测试文件、1662 项测试全部通过。
-- 已通过 `npm run typecheck`、`npm run qa:editorial`、UTF-8 回读和 `git diff --check`。
-- 已完成人工截图复核；AI 主题、创作要求、自动检索来源、任务数量和任务选择器在紧凑窗口均完整可见。
-
----
-
-# 已完成：普通任务分镜编辑与剪映交付工作台进度
-
-## 2026-08-03
-
-- 已确认本轮仍属于普通生成，不涉及 HTML 动画。
-- 已查看参考截图，记录字幕断句双栏编辑和草稿交付栏结构。
-- 已确认当前任务详情已有分镜标签、模板切换和草稿重跑入口，但分镜仍为只读。
-- 正在追踪任务产物持久化、背景音乐和 Electron 打开剪映能力。
-- 已确认任务本身已有 `bgmId`，普通任务运行器会据此装配背景音乐。
-- 已确认现有分镜页只读，需要新增字幕断句编辑及产物状态写回。
-- 已确认当前“打开剪映草稿”实际只打开输出目录，不会启动剪映应用。
-- 已确定字幕保存策略：更新 `artifact.subtitles`、标记草稿步骤待打包、保留旧草稿供打开，不触发图片和配音重做。
-- 已完成渲染状态与 IPC 扩展点梳理，准备实现纯字幕轨道函数和受控状态写回。
-- 已按原始尺寸复核参考图，确认连续双栏分镜行与底部草稿交付条的布局和命令层级。
-- 已实现分镜原文/字幕行双栏编辑、复制、模板字数重切分、AI 重新分镜和保存脏状态。
-- 已实现任务级模板与音乐调整、待重新打包状态、草稿目录、重新打包和启动剪映命令。
-- 已修复重打包覆盖手动字幕、草稿写入器忽略字幕轨道、桥接层二次切分及字幕时长不一致。
-- 已新增剪映专业版稳定入口、版本目录和 Program Files 可执行文件探测。
-- 已修复底部交付栏遮挡末尾分镜、模板按钮文字对比度不足和菜单滚动定位问题。
-- 已允许普通任务生成期间预设模板与音乐，同时保留“重新打包”的运行状态互斥。
-- 已通过完整 `npm test`：109 个测试文件、1658 项测试全部通过。
-- 已通过 `npm run typecheck` 和 `npm run qa:editorial`；全量 92 个 Electron 页面状态无控件裁切、交互重叠或文字对比度失败。
-- 已通过 `git diff --check`，准备提交并推送 `codex/storydream-local-hardening`。
-
----
-
-# Storybound 最近版本差异审查进度
-
-## 2026-08-05
-
-- 已确认当前分支与远端同步，工作区仅有既存的本地审查产物和逆向资料未跟踪。
-- 已恢复并更新文件化计划，保留上一轮封面功能的完整验证记录。
-- 已确认本地 Storybound 历史快照主要采集于 2026-07-09，下一步将获取当前线上指纹并做版本间差异提取。
-- 首轮 Windows 路径通配符检索失败后，已改用 `rg --glob` 成功定位 2026-07-09 与 2026-07-30 两次版本审查记录。
-- 已确认当前 `E:\Storybound` 主程序和草稿侧车均在 2026-07-31 更新，且哈希与 2026-06-24 基线不同；开始检查当前用户数据库与实际渲染页面。
-- 已确认数据库在 2026-08-03 仍有写入，并发现 Storybound 最近版本存在任务列数迁移后 `sqlx` 越界崩溃记录；将只借鉴已证实、可稳定实现的能力，不复制该脆弱读取方式。
-- 已用 `sql.js` 只读确认当前数据库为版本 31；版本 30 之后最明确的任务字段候选是 `cover_custom_text`，正在核对当前二进制、旧快照和 StoryDream 是否已有等价实现。
-- 已完成当前程序、旧快照与 StoryDream 的字段初筛：图像质量、分辨率、角色卡和骨架能力均已覆盖；剩余重点是确认版本 31 的封面自定义文字交互是否带来新的有效需求。
-- 已定位无需安装依赖的 WebView2/Playwright 取证方式，准备启动当前 Storybound 只读采集页面。
-- 已成功连接当前 Storybound WebView2，采集到设置页 DOM 与截图；下一步遍历当前导航和新建任务封面控件。
-- 已从实际页面确认当前版本为 1.17.0 beta，准备读取 8 条应用内公告并据此建立“最近几次更新”清单。
-- 已读取公告列表并记录 1.14.0 至 1.17.0 的版本、日期和摘要；正在展开最近公告详情，确认是否存在 StoryDream 尚未覆盖的具体交互。
-- 已读取 1.17.0 完整公告，识别出封面主/副标题、字幕所见即所得、配音字幕补对时、本地音频重跑和 Image Lab 提示词模板五个候选差异。
-- 已读取 1.16.0/1.16.1 完整公告，新增候选为字幕问题行诊断/修复、全文复制、创建快捷提交、Image Lab 表单记忆和重生参考图覆盖。
-- 已读取 1.14.0/1.15.0 完整公告并完成第一轮边界筛选；进入 StoryDream 源码核对，确认哪些候选是真缺口。
-- 已完成源码逐项比对并确定三项实现：Image Lab 模板/工作区恢复、字幕超长诊断/定向修复、创建页 Ctrl+Enter；开始编码和测试。
-- 已完成三项更新实现，并在复查中修正空提示词恢复、模板时间字段校验和中文输入法快捷键误触。
-- 已把字幕修复收敛为问题提示条内的单一上下文动作，并用容器查询处理 Image Lab 模板栏在中等宽度下的挤压。
-- 聚焦 5 个测试文件共 171 项全部通过，`npm run typecheck` 通过；进入完整测试、构建和 Electron 实景 QA。
-- 已复跑任务操作字幕诊断场景；警告条、问题行号和唯一“修复问题行”按钮在桌面截图中完整可见，无错位或重复入口。
-- 已通过完整 `npm test`：113 个测试文件、1681 项测试全部通过。
-- 已通过 `npm run typecheck`、`npm run build` 和 `git diff --check`；构建只有既有 Electron `node:*` externalize 提示。
-- 已通过全量 `npm run qa:editorial`：96 个场景、67 个必需证据、29 个补充证据、0 个失败、0 个残留进程。
-
----
-
-# 视觉分镜收敛与剪映路径迁移进度
-
-## 2026-08-05
-
-- 已撤销未完成的 `storydream-branding` 挑拣，当前分支回到干净的 `42b7aab`，既有未跟踪资料未改动。
-- 已复现源码根因：视觉分镜和镜内文本拆分共用 `StoryboardScene[]`，导致 43 个文本块被拿去审核 20–26 个视觉分镜目标。
-- 已确认剪映草稿路径在迁移后存在一个缺口：非历史显式路径即使本机不存在也不会自动重新检测。
-- 已实现 `StoryboardScene.segments`，把归并前的有序文本块保留为镜内字幕片段。
-- 已在初次分镜解析和目标数修复后统一执行超量本地归并，过多文本块不再反复请求 LLM 改分镜数。
-- 已让自动字幕优先使用镜内 `segments` 的文本与时长，手动字幕编辑仍保持更高优先级。
-- 已修正剪映草稿路径迁移：旧路径失效且新机存在可检测目录时自动切换，现有有效自定义路径不受影响。
-- 已补充 43 文本块收敛为 23 视觉分镜且保留 43 字幕 cue、跨电脑草稿目录替换、自定义路径保留和 Program Files 程序检测测试。
-- 首轮聚焦测试 98 项中 89 项通过；新增 43→23 收敛回归已通过，9 项旧文案修复测试因归并调用被误插入相邻函数而失败，类型检查同步准确报出该定位错误。
-- 已将归并调用移到正确的 `repairStoryboardToTargetSceneCount`，二次聚焦验证 4 个测试文件、98 项全部通过。
-- `npm run typecheck` 通过，分镜、字幕、运行器和剪映路径新合同无 TypeScript 错误。
-- 全量 `npm test` 通过：113 个测试文件、1686 项测试全部成功。
-- `npm run build` 通过；仅保留仓库既有的 Vite `node:* externalized` 警告，无构建错误。
-- `git diff --check` 通过，进入最终 UTF-8 回读与工作区核对。
-- 已以 UTF-8 回读新增中文测试和计划记录，文本正常；冲突标记检查为空。
-- 最终工作区仅包含本轮 11 个跟踪文件的修改与用户原有未跟踪资料，未完成挑拣已完全撤销。
-
----
-
-# AI 封面标题默认值进度
-
-## 2026-08-05
-
-- 已按原始分辨率复核用户截图，确认修改目标是片头封面页内的可选封面文字框。
-- 已确定交互原则：留空不再产生纯图封面，而是在 AI 标题生成后自动带入；手动文字仍显式覆盖。
-- 已实现共享封面文字解析：自定义文字优先，空值回退到 AI 生成的 `cover.title`，并限制在既有 80 字上限内。
-- 已让任务产物预览和剪映草稿导出使用同一解析结果；旧任务空值无需迁移即可生效。
-- 已更新创建页提示、占位文字和执行摘要，不再把留空描述为纯图封面。
-- 聚焦 4 个测试文件、95 项测试全部通过；空值导出 AI 标题、自定义覆盖、预览回退和界面文案均有回归保护。
-- `npm run typecheck` 通过。
-- 全量 `npm test` 通过：113 个测试文件、1687 项测试全部成功。
-- `npm run build` 通过；仅有仓库既有 Vite `node:* externalized` 警告。
-
----
-
-# 模板编辑与配音实验室交互修复进度
-
-## 2026-08-06
-
-- 已汇总用户的五类问题：模板缩略图、滑块、动画悬停预览、配音音色浏览/试听、BGM 下拉颜色。
-- 已读取 UI/UX 与文件化计划规则，将按窄范围桌面生产工具修复处理，不改动既有视觉语言。
-- 已定位模板缩略图根因：列表用启动摘要的默认补齐值渲染，编辑器则按需读取完整详情。
-- 已完成缩略图同步修复：模板管理页并发懒加载完整详情，只采用与当前摘要 `updatedAt` 匹配的结果，保存、打开、复制和导入同步刷新详情缓存。
-- 缩略图详情加载的聚焦 UI 合同测试通过：1 项通过，151 项跳过。
-- 已开始审计共享 `RangeField` 和草稿模板的全部数值范围，确认需同时修正原生轨道零值着色和非法/越界受控值。
-- 已完成滑块修复：共享控件将非有限值和越界值归一化，数字框临时无效值不再写入状态，Chromium/Firefox 轨道都使用明确进度绘制，最小值时填充为 0%。
-- 滑块聚焦验证通过：2 个测试文件、4 项通过，151 项跳过。
-- 已进入动画悬停预览阶段：确认现有画布只实时渲染运镜，剪映动画效果尚无预览模型。
-- 已完成动画悬停预览：约百个剪映动画名称按语义归类为方向、缩放、旋转、翻转、分割、弹动和形变等短预览；悬停或聚焦时在图片层播放一次，移出后恢复，减少动效模式下禁用。
-- 已修正动画名称分类的字符类误命中，改为完整词组匹配并增加防误判反例。
-- 已扩展 MiniMax 经典 T2A 系统音色到 18 项，继续合并本地克隆音色并按 ID 去重。
-- 已让配音实验室使用当前 TTS 档案的安全密钥引用，自动分页加载豆包 `seed-tts-2.0` 与 `seed-tts-1.0` 音色；失败时保留内置兜底并可重试。
-- 已增加音色搜索、目录计数、有界滚动网格、键盘可选状态和空结果反馈；试听仍只由“生成试听”显式触发。
-- 已给任务交付区 BGM 原生下拉补齐深浅主题 `color-scheme`，并显式设置普通与已选 `option` 的前景/背景 token。
-- 聚焦验证通过：6 个测试文件、177 项测试全部成功；`npm run typecheck` 通过。
-- 生产构建通过；仅有仓库既有的 Vite `node:* externalized` 警告。
-- `labs` Electron QA 首轮通过，配音页深浅主题与桌面/紧凑窗口均无对比度、重叠或裁切问题；将补拍 MiniMax 完整目录状态。
-- 已把 MiniMax 切换、18 项目录、搜索过滤与恢复加入真实 Electron QA；`labs` 二次运行通过，完整目录在深浅/桌面/紧凑状态下均无布局问题。
-- `system` 与 `task-operations` Electron QA 通过；草稿模板和 BGM 交付栏的深浅主题、桌面/紧凑状态均无运行错误、对比度失败、交互重叠或裁切。
-- 架构合同补齐后，全量 `npm test` 通过：116 个测试文件、1702 项全部成功。
-- 最终 `npm run typecheck`、`git diff --check` 和 UTF-8 替换字符扫描全部通过；仅有仓库既有 CRLF/LF 转换提示。
-- 已启动本项目 Vite 预览并确认 HTTP 200：`http://127.0.0.1:5173/`（node 进程 27024）。
-
----
-
-# 草稿模板数值范围与动画预览审计进度
-
-## 2026-08-06
-
-- 用户已取消底部交付栏浅色修改；产品源码尚未为该请求改动。
-- 已转入草稿模板右侧属性栏审计，先枚举全部数值范围、默认值和持久化边界，再修正语义上应允许归零的参数。
-- 动画部分将核对完整预设目录到预览语义的映射，重点检查方向词、入场/出场词和相似名称误归类。
-- 已枚举右侧属性栏 29 个滑块，初步判定不能把所有正数下限统一改成零；正在优先贯通“运镜强度 = 0”的完整数据链。
-- 已定位动画分类函数、预设源和画布 CSS，下一步逐项生成“预设名称 -> 预览族”审计表并修正误配。
-- 已核对模板校验合同：图片高度可归零；运镜强度需从 UI 到两类导出链统一归零；字号和每行字数合法最小值为 `1`；文本框宽度保持 `0.1`。
-- 已发现内置横屏模板的 5/8 号字低于当前 UI 下限，确认这是打开模板后数值跳变的直接原因之一。
-- 已完成 125 个动画名称清单与 11 组现有关键帧的第一轮对照，确认组合方向/旋转效果及多个特殊名称需要补分类和关键帧。
-- 已统计当前分类结果：39 个预设落入通用缩放、组合词约 20 个被单一关键词提前截断；已形成高置信度修正清单，下一步修改分类函数和关键帧。
-- 已完成范围和动画源码第一轮实现：高度/运镜可归零，字号/每行字数最小值统一为 `1`，新增 11 个组合或特殊预览族。
-- 更新后 125 个动画仅剩 7 个中性缩放回退；正在调整“弹入旋转”等复合词优先级并补回归测试。
-- 已让剪映高度零跳过图片段，让 HTML 的关闭/零强度运镜真正不生成 tween；待聚焦测试验证。
-- 已补动画组合映射、全部预设非空分类、零强度画布、UI 最小值、模板合同/归一化、HTML 零 tween、剪映零关键帧与零高度图片段测试。
-- 首轮 7 文件聚焦测试共 273 项，271 项通过；两项失败均为既有合同/测试编码边界，已按最小范围修正后准备复跑。
-- 聚焦测试复跑通过：7 个文件、273 项全部成功；类型检查和生产构建通过，旧 `0.5` 运镜下限扫描无残留。
-- 已确认现有 Electron system QA 缺少滑块端点和动画悬停动作，正在补真实 DOM 交互验证。
-
----
-
-# BGM 独立受管存储进度
-
-## 2026-08-05
-
-- 已将用户要求收敛为：导入 BGM 时复制到应用数据目录的独立文件夹，后续选择和剪映导出使用受管副本。
-- 已恢复上一轮 BGM 诊断记录和当前脏工作区状态；不会覆盖视觉分镜、剪映迁移和封面修正等既有改动。
-- 正在审计导入、配置保存、删除和草稿使用链路。
-- 已确认通用音频选择器还服务于声音克隆；方案改为新增 BGM 专用导入 IPC，三个 BGM 页面统一调用，声音克隆保持原行为。
-- 已确认需同时解决“复制文件”和“配置中的路径可迁移”两层问题，正在追踪配置服务的运行时解析边界。
-- 已选定配置策略：持久化 `managed-bgm:` 标识，`ConfigService.getRuntimeConfig()` 才解析当前机器绝对路径；旧绝对路径继续原样兼容。
-- 复核运行器后发现普通草稿会绕过运行时配置读取数据库原值，已修正方案：新增便携 `managedFileName`，启动时把所有受管条目的 `path` 迁移为本机绝对路径。
-- 已完成导入、保存、任务运行和 HTML/音乐 MV 消费链审计；开始实现受管 BGM 模块、启动迁移和 renderer API。
-- 已实现共享 BGM 条目字段、受管复制模块、启动路径重写、IPC/API 包装，并将系统设置、新建任务和音乐 MV 三个入口全部切换到受管导入。
-- 首轮 `npm run typecheck` 通过，IPC 返回类型、主进程和三个 renderer 调用无 TypeScript 错误。
-- 新增受管 BGM 文件系统、配置归一化和 UI/IPC 聚焦测试；首轮 228 项中 227 项通过，唯一 IPC 重复字面量合同已修正。
-- 修正 IPC 静态清单和旧签名合同后，4 个聚焦测试文件共 228 项全部通过。
-- 已确认系统设置、新建任务、音乐 MV 均只调用 `importBgmAudio()`；声音克隆是唯一保留 `selectLocalAudio()` 原路径行为的页面。
-- 已补三个入口、声音克隆隔离、启动跨机路径重写、IPC 返回合同和配置字段保留断言；4 个聚焦测试文件共 228 项再次全部通过。
-- 首轮全量测试 114 个文件中 113 个通过；仅命令清单 3 项失败，已同步三个 BGM 入口到新命令并保留声音克隆旧命令。
-- 命令清单聚焦测试 2 个文件、156 项通过。
-- 二次全量 `npm test` 通过：114 个测试文件、1692 项全部成功。
-- `npm run build` 通过；renderer 与 Electron 主进程均成功产出，仅有仓库既有的 `node:* externalized` 警告。
-- 最终 `npm run typecheck`、`git diff --check` 和 UTF-8 回读全部通过；构建后的 Electron 主文件已包含受管复制、清理和启动路径迁移逻辑。
-- 工作区中视觉分镜、剪映路径和封面修正等既有修改均保持不变；本轮只新增/修改 BGM 受管存储及对应合同、测试和计划记录。
-- Electron `new-task` 实景 QA 通过：4 个页面状态、0 个运行错误、0 个对比度失败、0 个交互重叠或裁切。
-- 已把自动/手动封面动态提示加入 Electron 真实交互断言；重新构建并二次运行 `new-task` QA 通过。
-- 最终全量 `npm test` 再次通过：113 个测试文件、1687 项测试全部成功。
-
----
-
-# 背景音乐选择诊断进度
-
-## 2026-08-05
-
-- 已开始只读追踪背景音乐入口、存储、配置与创建页选择状态，不修改现有产品代码。
-- 已确认两个导入入口、支持格式、立即保存和新建任务自动选中行为。
-- 已确认 BGM 只保存原文件绝对路径，没有复制进应用受管目录。
-- 已只读检查本机配置：当前 BGM 库为 0 项，默认 BGM 为空，因此页面无音乐可选。
-- 已完成诊断；建议后续把 BGM 导入升级为应用受管复制并显示路径失效状态，避免原文件移动或迁移电脑后不可用。
-- `git diff --check` 通过；仅提示前一轮两个文件的既有 CRLF/LF 转换，不是格式错误。
-
----
-
-# AI 封面重复叠字修正进度
-
-## 2026-08-05
-
-- 已按原始分辨率复核新截图，确认黄色文字是覆盖在已有完整排版封面上的重复标题层，并遮挡人物面部。
-- 已确定按封面来源分流：AI 自动封面留空不叠字，本地导入留空使用 AI 标题，显式输入始终优先。
-- 已让运行器把封面来源语义传到剪映草稿写入边界，AI 自动封面空值生成不可见的空标题层。
-- 已同步任务产物预览，自动封面空值不显示额外标题，自定义输入仍正常显示。
-- 已把创建页提示、占位符和执行摘要改为随 AI 自动/本地导入模式动态变化，未新增控件或布局。
-- 已补充三个分支的回归证据：自动封面空值不叠字、本地导入空值使用 AI 标题、禁用回退时显式文字仍优先。
-- 聚焦 5 个测试文件、105 项测试全部通过。
-- `npm run typecheck` 通过。
-- 全量 `npm test` 通过：113 个测试文件、1687 项测试全部成功。
-- `npm run build` 通过；仅有仓库既有 Vite `node:* externalized` 警告。
-# Storybound 与 StoryDream HTML 动画逐页差异审查进度
-
-## 2026-08-06
-
-- 已读取 UI/UX 桌面工作流与文件化计划规则，本轮只做证据驱动的页面/功能诊断，不修改产品源码。
-- 已确认 StoryDream 当前分支和最新 HTML 动画截图集，开始定位 Storybound 1.17.0 的对应页面与截图证据。
-- 已读取 Storybound 1.17.0 实际设置页 DOM 与原始截图，确认固定三栏壳层、最近 HTML 任务和配置状态是可验证的工作流差异。
-- 已排除 `.artifacts/html-video-storybound` 作为竞品证据，该目录属于 StoryDream 历史 QA；下一步只使用 Storybound 当前页面或明确来源的静态资源。
-- 已确认 Storybound 安装存在但未运行，旧采集脚本未保留；准备重新启动本地 WebView2 调试会话，只读采集 HTML 新建页和已有任务页。
-
----
-
-# 草稿模板与图片实验室交互修复进度
-
-## 2026-08-06
-
-- 已恢复上一轮草稿模板范围和动画预览修改；聚焦测试、类型检查与构建均已通过，当前仅剩 Electron system 零值同步场景失败。
-- 已将用户补充的图片复制失败、下拉自动恢复、参考图编辑缺少选择入口纳入同一轮窄范围交互修复。
-- 已读取桌面生产工具的工作流规则，确定用户显式选择和弹窗内参考图状态必须成为权威状态，后台恢复不能覆盖。
-- 已定位草稿 system QA 的不稳定点：两个受控滑块被连续更新且 CSS 进度使用严格字符串比较；准备改为逐项等待和数值比较。
-- 已将 QA 改为逐项设置、逐项等待，且 CSS 进度改为数值判断；全量测试 116 个文件、1707 项全部通过。
-- Electron `system` QA 二次仍在 `system-draft-templates-dark-desktop` 的零值同步失败，证明还需捕获实际 DOM 值或修正 React 事件模拟方式。
-- Electron `system` QA 三次失败时诊断为 `[]`，说明至少一个目标控件在查询时未挂载；事件与零值同步逻辑尚未执行，现转向折叠区可达性检查。
-- 已确认“运镜”Accordion 默认关闭且关闭时不挂载滑块；QA 已改为先展开该区，再执行零值同步和恢复检查。
-- 聚焦 2 个测试文件、177 项通过；Electron `system` QA 已通过，滑块零值、数值框、0% 轨道、恢复值及三组组合动画预览均完成真实界面验收。
-- 已排除 Image Lab 的“复制任务 ID”按钮；根据精确界面文案将三个新增缺陷定位到普通任务详情的图片标签工作流。
-- 已确认“复制图”未写系统剪贴板、参考图编辑弹窗未建模参考图选择；开始设计兼容现有页内粘贴和主进程生成链的修复。
-- 已定位图片标签滚动所有者与 1.5 秒任务快照轮询；准备在后台快照提交边界保存/恢复 scrollTop。
-- 已完成图片剪贴板 IPC、参考图弹窗状态与滚动恢复的第一轮实现；首轮类型检查准确发现两个类型合同缺口，已按严格类型修正。
-- 二次类型检查通过；IPC、产品 UI、渲染命令清单和 Electron 合同 4 个聚焦测试文件共 220 项通过。
-- 已设计隔离 Electron 联合场景，准备验证真实剪贴板、页内粘贴后的快照刷新、滚动保持和参考图弹窗入口。
-- 已恢复并核对当前脏工作区，确认图片复制 IPC、滚动保持和参考图选择第一轮实现仍在，用户原有未跟踪资料未改动。
-- 已校正计划中的“下拉自动恢复”含义：实际缺陷是图片页向下滚动后被 1.5 秒产物快照刷新拉回，不是选择框值回滚。
-- 已进入 `task-detail-borrowed-image-desktop` 联合实景 QA 实现，场景将暂停任务后完成第 1 张复制、第 3 张粘贴、滚动误差检查和参考图弹窗入口检查。
-- 已实现 `taskImageWorkflowReady`：场景兼容任务已暂停状态，真实点击第 1 张“复制图”、验证系统剪贴板成功通知、在非零滚动位置粘贴到第 3 张、核对 `借 #1` 与 1px 内滚动误差，再打开并关闭参考图编辑弹窗。
-- 联合 QA 类型检查通过；`editorial-qa`、`product-shell-ui`、`task-operations-ui` 3 个聚焦测试文件共 184 项全部通过。
-- 首次启动 `task-operations` QA 因命令进程超时误设为 1 秒被工具提前终止，尚未产生场景结论；已记录并改为长进程超时方式重跑。
-- Electron 首轮联合场景已通过新增图片工作流断言，但通用截图证据发现最终滚动状态下“批量导入/多选”被粘性工具栏遮挡；已改为验证完成后归位滚动并禁止聚焦动作再次滚动。
-- 归位后的第二轮场景仅失败于旧等高检查的“当前视口可见”过滤，功能联合断言仍已通过；已把等高统计改为全部已挂载布局卡片，避免滚动位置导致 0 行假失败。
-- 等高修正后的聚焦测试发现一条旧合同仍锁定 `scrollIntoView`；已更新为断言滚动归位、`preventScroll` 和 `offsetParent` 布局统计。
-- 更新后的 2 个 QA 聚焦测试文件共 31 项通过，构建产物已包含联合图片工作流与新的等高统计逻辑。
-- Electron `task-operations` 定向 QA 最终通过：12/12 场景完成，联合图片场景 `taskImageWorkflowReady=true`、`借 #1` 状态正确，0 个运行错误、0 个媒体失败、0 个交互遮挡。
-- 已查看 1440×900 联合场景截图，任务工具栏、图片标签内容和右侧场景轨道无裁切或重叠；参考图选择入口、当前分镜图和添加按钮由场景打开弹窗后的真实 DOM/图片完成状态验证。
-- 最终全量 `npm test` 通过：116 个测试文件、1710 项全部成功；`npm run typecheck` 通过。
-- 生产构建通过，仅有仓库既有的 Vite `node:* externalized` 提示；`git diff --check` 与 UTF-8 替换字符扫描通过。
-- 最终工作区只保留本轮 28 个跟踪文件修改及用户原有未跟踪资料，没有清理、覆盖或回退无关内容。
-- 已启动本项目开发环境并确认 `http://127.0.0.1:5173/` 返回 HTTP 200；浏览器预览可查看界面，系统剪贴板与本地参考图选择需在同步启动的 Electron 窗口中使用。
-
----
-
-# HTML 动画前后景提示词复刻进度
-
-## 2026-08-07
-
-- 已按用户要求转入 Storybound 逆向实现复刻，不再把当前“字段已拆分”等同于前后景提示词已经正确。
-- 已恢复文件化计划记录并确认当前跟踪文件干净，未跟踪逆向资料和产物目录保持不动。
-- 已提取逆向规划 system prompt、背景/前景最终提示词组装函数、前景 `1:1` 画幅以及单张/批量去背景调用。
-- 已完成当前实现差异审计，开始设计与现有 Electron Provider、场景模板和素材页兼容的复刻实现。
-- 已确认 24 个场景模板可以直接提供规划 LLM 所需的版式 id、说明和精确素材槽数。
-- 已确认背景/前景必须拆成两次图片 Provider 调用，才能让背景保持任务画幅、前景固定 `1:1`。
-- 已确认当前安装包无抠图依赖；将先建立透明状态和模型能力边界，再决定最小可交付的本地模型接入，不以提示词结果冒充透明通道。
-- 已决定为场景模板增加独立素材槽元数据，避免把纯文字版式的动画 cue 错当成前景槽。
-- 已定位默认/自定义风格持久化与 HTML runtime 创建边界，准备把实际 style 对象传入资产生成适配器。
-- 已完成 24 个版式的独立素材槽定义、规划 system prompt 和 LLM 返回槽位严格校验；类型检查通过。
-- 已确认项目自带的 Python 运行时包含 Pillow、NumPy、ONNX Runtime，可直接接入 Storybound 同款模型目录与三类模型推理，不再只做“能力缺失”占位。
-- 已完成背景/前景拆批：背景使用任务画幅与 `prefix + 内容 + suffix`，前景固定 `1:1` 并使用 `prefix + 主体 + 纯透明背景 PNG，主体居中，无背景`；资产仅保存干净内容提示词。
-- 已接入真实 Alpha 像素检测、Storybound 同款 7 个模型文件名与 BiRefNet/ISNet/U2Net 本地 ONNX worker；素材页提供透明状态、单张去背景和批量去背景。
-- 已新增主体注解、前后揭幕、四向关系、新闻焦点、聚光独白 5 个独立动态版式，总数 29；规划 Schema、system prompt、选择器预演和成片布局共用同一目录。
-- 类型检查、Python worker 编译和 5 个聚焦测试文件 112 项通过；透明状态持久化遗漏已补严格解析和往返测试。
-- 续接收尾时已确认 `dist-electron/electron/remove-background-worker.py` 随生产构建正确复制；用户已明确取消关机，后续只进行 Electron 实景验收、提交与推送。
-- 首轮收尾 Electron QA 构建成功，但在既有“动画预览二次生成失败态”模拟等待处超时；已暂停整套重跑，转为定位固件响应与页面状态条件。
-- 已确认产品媒体失败状态按任务 ID、路径集合和重试代次隔离，且本轮未修改该状态机；超时来自 QA 第二代节点仅派发原生 `error` 的时序竞争，准备改为调用当前节点真实 React `onError` 后再验收。
-- 首次修正后的全量测试为 117 个文件、1732 项中 1731 项通过；唯一失败是 QA 合同要求两代都保留完整 DOM 媒体生命周期，已恢复第二代真实事件并叠加当前处理器兜底。
-- 第二轮定向 QA 证明问题是缩略图失败断言过宽：重试后面板可同时保留其他场景缩略图；已为两代目标节点加入唯一标记，只验证目标节点消失、失败文案出现及旧事件不覆盖新代次。
-- 第三轮定向 QA 已越过媒体恢复，转而在可视编排就绪判断超时；诊断显示内部 runtime 的 GSAP、composition、timeline、背景和媒体引用均已就绪，仅自定义元素 `player.ready` 仍为 `false`。
-- 已确认产品不以 `player.ready` 阻塞保存、面板或时间线，且 composition 加载时已有时长后备值；QA 将以内嵌 runtime 主动回传的完整就绪合同为权威，保留 `player.ready` 作为诊断信息。
-- HyperFrames 判据修正后的 QA 已越过可视编排，随后在成片视频首次自然播放采样处超时；已增加一次暂停归零后的用户手势重试，但继续要求时间前进、可解码状态和无媒体错误。
-- 成片播放重试仍超时后定位到 QA 使用 `requestAnimationFrame` 轮询未聚焦 Electron 窗口，回调会被 Chromium 节流；已改为 50ms 定时轮询真实 `currentTime`，不降低播放成功标准。
-- 定时轮询后成片播放通过，QA 进入动画缩略图旧事件隔离；确认同一路径被场景缩略图、镜头示意和转场示意共享，其他成功实例会合法清除失败，故缩略图只保留错误/重试验收，旧代次隔离继续由三个唯一媒体实例覆盖。
-- Electron HTML 主 QA 最终通过：成片自然播放到 0.235 秒、`readyState=4`、自定义协议 Range 返回 206 和正确 32 字节；桌面/紧凑窗口无横向溢出或控件裁切，素材/配音/出片旧代次隔离通过，运行时错误为 0。
-- 29 版式与动效独立 QA 通过并完成截图实看：桌面双列/紧凑单列无文字重叠，21 种运动、5 层同时动画、前后帧像素变化成立；主预览、右侧检查器与下方胶片条在两种窗口均无互相遮挡。
-- 已新增素材去背景窄范围 Electron QA，覆盖前景透明状态、单张剪刀按钮、批量全部去背景、桌面/紧凑窗口裁切与横向溢出，并补静态防退化合同。
-- 素材 QA 首轮在透明标签等待处超时，定位为既有完成态种子只有背景、没有前景；将补一个真实前景规划与素材记录后复跑，产品页面没有运行时异常。
-- 素材 QA 补前景种子后通过：桌面/紧凑窗口均显示“已检测：背景未透明”，单张与批量去背景可用，页面/面板横向溢出和裁切均为 0，截图实看卡片、标签与工具栏排布正常。
-- 最终全量测试通过：117 个文件、1732 项全部成功；最终 `npm run typecheck` 通过。HTML 主流程、29 版式、动效工作台和素材去背景四组 Electron QA 均已完成。
-- 首轮最终 UTF-8 扫描因 PowerShell 文件数组构造错误产生伪匹配；不是源码乱码，已改为正确数组后重跑，其余最终检查不采用该次聚合结果。
-- 最终 `git diff --check`、26 文件 UTF-8 替换字符扫描和 Python worker 编译通过；远端基线与本地一致，提交范围仅包含本轮实现、测试与计划文件。
-
----
-# 草稿字体样式选择进度
-
-## 2026-08-08
-
-- 已读取文件化计划和桌面编辑器工作流规则。
-- 已确认这是现有生产工具的窄功能增强，将复用当前控件、状态和主题，不建立新的设计体系。
-- 已建立交互合同：字体选择写入草稿权威状态，预览和剪映导出同步读取，旧任务缺失字段时保持当前默认字体。
-- 正在定位普通任务草稿设置、共享类型、模板归一化和剪映文本写入链路。
-- 已确认 React/Electron 技术栈、`DraftTemplate` 模型以及运行器按 `templateId` 解析模板的主链路；后续检索收窄到源码和聚焦测试。
-- 已定位普通任务的模板选择、模板编辑器与任务预览复用关系；准备读取共享文本样式模型和剪映写入实现。
-- 已记录一次不存在测试文件的检索错误；现有测试显示草稿文字样式尚无字体族断言。
-- 已确认根因是共享模型、画布和剪映桥接均缺少字体字段；字体将按四个现有文字层独立配置。
-- 已确认严格 Zod 合同和四层归一化修改点；正在核对模板编辑器布局与 pyJianYingDraft 字体 API。
-- 已确认四个文字面板的字体控件插入位置和既有状态更新路径；下一步直接反射内置剪映库。
-- 已确认剪映字体通过 `TextSegment.font` 写入；正在筛选稳定的中文字体目录并核对所有文本片段创建点。
-- 已选定 1 个兼容默认值和 5 个免费中文字体资源；继续核对 SRT 字幕模板复制是否保留字体。
-- 完成发现阶段并形成实现契约；进入向后兼容设计的最后核对。
-- 纠正封面标题实现路径假设，改为读取已确认的 `ordinary-task-cover.ts`。
-- 已确认字幕模板复制和封面字体继承，设计阶段完成，开始修改生产代码与测试。
-- 已确认所有生产代码导入点，字体通过现有模板 JSON 持久化，不新增存储迁移或 IPC。
-- 首轮类型检查仅发现测试/历史桥接载荷兼容问题，正在按边界语义修正。
-- 桥接兼容边界修正后 `npm run typecheck` 与 `git diff --check` 通过；开始补字体选择行为回归测试。
-- 已确定回归矩阵覆盖目录、归一化、严格合同、UI、画布和剪映字体资源写入。
-- 首轮全量测试 1742 项中 1733 项通过；正在修复旧 Python 模块回退和运行器旧模板夹具兼容。
-- 已定位全部 9 项失败根因，开始实现动态字体关键字和修正上游遗留的比例测试数据。
-- 聚焦 7 个测试文件、154 项全部通过；一次独立 Python 反射验证因错误假设返回类型失败，转为读取真实结构。
-- 全量 `npm test` 通过：118 个测试文件、1742 项全部成功。
-- `npm run build` 通过；仅有仓库既有的 Vite `node:* externalized` 警告。
-- 内置 Python 实际导出确认 `宋体` 写入剪映字体资源 ID `6740513279296147982`。
-- 进入真实界面验收时，开发服务器尚未运行。
-- 首次定位 QA 入口因 Windows 路径通配符和候选文件路径错误退出，已改用仓库实际文件清单。
-- 已确认复用 `system` Electron QA，在现有草稿模板保存/重开流程中加入字体选择与画布样式断言。
-- Electron `system` QA 通过并生成 20 张系统范围截图；其中 4 张草稿模板截图完成原始分辨率检查，字体选择保存重开、深浅主题和紧凑布局均通过。
-- 本地 Vite 预览服务已启动，`http://127.0.0.1:5173/` 返回 HTTP 200，可直接查看字体选择界面。
-- 草稿字体样式选择任务完成：全量 118 个测试文件、1742 项测试，类型检查、生产构建、剪映字体资源验证和真实界面验收均通过。
-- 按用户澄清重新只核验剪映成片链路，确认 HTML 动画为独立流程且未被修改。
-- 内置 `pyJianYingDraft` 真实临时草稿确认 5 个非默认字体和 SRT 字幕均写入 `draft_content.json` 字体资源 ID；剪映预览和最终导出视频使用同一文字素材。
-- 成片链路聚焦测试 3 个文件、36 项全部通过，`npm run typecheck` 与 `git diff --check` 通过。
-
----
-
-# HTML 动画任务入口路由修复进度
-
-## 2026-08-08
-
-- 已完成公共任务入口按稳定 `taskType` 分流：`html-video` 进入 HTML 动画工作台，其他任务继续进入普通任务详情。
-- 已补历史分页缓存未命中时的任务详情查询，以及 HTML 工作台对外部任务 ID 的一次性消费，避免旧请求残留。
-- 聚焦 5 个测试文件共 187 项通过，`npm run typecheck` 与 `git diff --check` 通过。
-- 续接检查确认现有 Electron QA 改动仍只覆盖剪映草稿字体；HTML 历史任务的真实点击与工作台路由断言尚未加入，当前进入该实景验收阶段。
-- 已在 `history-operations-desktop` 场景补齐真实入口闭环：点击 HTML 历史任务，确认进入 HTML 工作台并恢复“武则天：权力之路 HTML 动画”，然后返回历史页保持截图语义。
-- 已同步 QA 状态、报告字段、失败门槛和静态合同；全量 `npm test` 通过（118 个文件、1743 项），`npm run typecheck` 与 `git diff --check` 通过。
-- `npm run build` 通过，仅有仓库既有的 Vite `node:* externalized` 提示。
-- Electron `task-operations` 定向 QA 通过（12/12 场景）；`history-operations-desktop` 报告确认 `historyHtmlRouteReady=true`、`historyHtmlTypeLabel=HTML 动画`，删除弹窗键盘生命周期也继续通过。
-- 已查看 1440×900 历史场景截图：场景验收后正确回到历史页，HTML 动画与普通人物故事类型清晰，无弹窗残留、交互遮挡或横向溢出；报告中的控制台、页面、渲染和媒体失败数组均为空。
-- 最终 `git diff --check` 与所有跟踪改动文件的 UTF-8 替换字符扫描通过；本地 Vite 预览 `http://127.0.0.1:5173/` 继续返回 HTTP 200，本轮路由修复完成。
-# 普通视频多源素材工作流设计进度
-
-## 2026-08-08
-
-- 已完整读取用户指定的 `ui-ux-pro-max` 与 `design-taste-frontend`，并读取桌面生产工具工作流参考。
-- 已确定技能分工、产品模式与视觉密度，开始审计现有普通视频任务创建、生图、素材和剪映成片链路。
-- 已完成第一轮源码取证：确认新建任务、Runner Step 4、产物快照和任务详情均以图片为唯一场景媒体；现有“生成视频”仅为禁用占位按钮。
-- 已核对剪映草稿输入和时间线时长规则，并用 `ui-ux-pro-max` 数据库验证三栏场景媒体工作区方向；不采用与现有产品冲突的暗色炫技短视频编辑器方案。
-- 已检查现有任务详情实景截图，确认视频能力需要从卡片动作堆叠改为“场景总览 + 媒体预览 + 来源检查器”的稳定工作区。
-- 已完成 `ordinary-video-multi-source-media-design.md`，覆盖新建任务配置、画面工作区、本地导入与随机分配、AI 视频、剪映时长规则、状态错误、紧凑窗口和分阶段实现。
-- 设计文档 UTF-8 复读、替换字符扫描与 `git diff --check` 通过；本轮未修改生产代码或测试。
-
----
-# 普通视频场景媒体设计图生成进度
-
-## 2026-08-08
-
-- 已读取 `api-image` 完整说明，确定使用现有任务详情截图作为产品参考，通过 `/images/edits` 生成新设计稿。
-- 已确定主画面为任务详情“画面”工作区，准备生成 2048×1152 高质量 PNG。
-- 已原始分辨率核对参考截图并确认图片 Provider 环境就绪；提示词已固化精确中文文案、布局和避免项。
-- 首次调用在本地参数解析阶段失败，原因是多行提示词未显式作为单一 PowerShell 参数传入；未触发远端生成，已改正调用方式。
-- 第二次显式引用后仍被 Windows 原生参数桥接拆分；转为 Python 参数数组启动器，避免继续重复相同失败。
-- Python 参数数组启动器成功调用 Provider，设计图保存为 `outputs/ordinary-video-scene-media-workspace.png`。
-- 已完成原始分辨率视觉检查和像素元数据检查：2048×1152、2,410,414 字节、画面非空，核心布局和状态符合提示词。
-
----
-
-# 普通视频分镜画面就地替换设计进度
-
-## 2026-08-08
-
-- 用户明确否定任务级“图片链路 / 视频链路”选择：正常流程仍先生成分镜图片，视频应是图片卡片上的自然替换能力。
-- 已重写 `ordinary-video-multi-source-media-design.md`，删除新建任务媒体模式和三栏媒体工作区，把“替换画面”设为唯一入口。
-- 新合同保留原分镜图片作为稳定回退，支持上传本地视频、素材库选择、受约束随机匹配和图生视频；视频确认采用后才成为当前画面。
-- `api-image` 首次双参考编辑被 Provider 断开；缩减为单张真实任务详情参考后成功生成。
-- 新版设计图保存为 `outputs/ordinary-video-inline-replace-media.png`，原始分辨率检查为 2048×1152、2,367,423 字节。
-- 设计图保持“生成图片”步骤和 4 列分镜卡片：一张卡片已原位替换为视频，另一张卡片展开四项替换菜单，未引入新任务类型或独立工作区。
-
-## 实现与验收完成
-
-- 已实现图片卡片上的“替换画面”，覆盖本地图片、图片素材库、本地视频、视频素材库、随机匹配视频和 AI 视频未配置提示；视频采用后可恢复原图片。
-- 视频素材统一规范化为 H.264 MP4，支持 MP4、MOV、WebM，并持久化时长、分辨率、静音、适配方式和裁切入点。
-- 任务顶部预览与剪映草稿均按逐分镜当前画面读取视频优先、图片兜底；HTML 动画链路保持独立。
-- 真实 Electron 场景使用 6 秒、360×640 H.264 视频，完成素材库采用、900ms 入点保存、恢复图片和随机再次采用。
-- 修正 QA 对无文字滑杆的文本对比度误报、粘性工具条下的截图滚动状态，以及浅色任务页覆盖深色素材弹窗文字颜色的问题。
-- Electron `task-operations` 14/14 场景通过；桌面菜单态与紧凑素材库弹窗截图实看无重叠、裁切或不可读文字，视频场景运行时和媒体失败均为 0。
-- 最终 `npm test` 通过 119 个文件、1748 项；`npm run typecheck`、`npm run build` 与 `git diff --check` 通过。
-- 本轮 7 个已验证的隔离 QA 临时目录因桌面策略拒绝递归删除而保留；未尝试绕过限制，仓库文件未受影响。
-
----
-
-# 普通任务 AI 创作自主补全进度
-
-## 2026-08-08
-
-- 已确认普通任务创建页已有“全网搜索”和“AI 内置知识补全”两个来源选项，但后者目前不能脱离网页搜索独立生成。
-- 已建立来源合同：全网、AI 补全可独立或组合；只选 AI 时按关键词和创作要求直接生成可编辑文案。
-- 正在核对 `composeResearchCopy` 对空网页来源的合同、创建草稿恢复和既有 UI 回归测试。
-- 已完成接口核对：底层允许空来源但缺少显式授权字段，组合模式也固定禁用 AI 知识；决定新增严格的 `useBuiltinKnowledge` 合同并保持 HTML 动画调用为网页专用。
-- 已完成交互核对：网页开关控制整个检索区域，生成按钮独立于搜索结果渲染；来源、关键词、额外要求和网页选择变化均使旧文案失效。
-- 已实现 `useBuiltinKnowledge` 类型、IPC 和提示词合同；AI-only、网页专用和网页 + AI 组合模式均传递明确意图，空网页内容不会冒充有效来源。
-- 已改造普通创建页：关闭全网搜索后隐藏搜索渠道与结果，AI 内置知识可直接生成；组合模式仍要求选择网页，按钮文案和生成状态随来源同步。
-- 聚焦 7 个测试文件共 235 项通过，`npm run typecheck` 与 `git diff --check` 通过；进入生产构建和 Electron 新建任务页验收。
-- `npm run build` 通过，仅有仓库既有的 Vite `node:* externalized` 提示。
-- Electron `new-task` 4/4 场景通过；桌面和紧凑素材输入场景均为 `aiBuiltinComposeReady=true`，截图实看无重叠、裁切或异常留白。
-- 全量 `npm test` 通过：119 个测试文件、1751 项全部成功。
-
----
-
-# 草稿常用字体扩充进度
-
-## 2026-08-08
-
-- 已把草稿字体由 6 项扩充为 28 项，并按默认、黑体、宋体、圆体、楷体与手写、标题设计分为 6 组。
-- 已同步更新 `DraftFontFamily`、Zod 合同来源、四个文字层选择器、画布 CSS 回退和 Electron 字体目录检查。
-- 新增测试逐项读取内置 `font_meta.py`，确保所有非默认选项存在、免费且具有数字资源 ID。
-- 内置 Python 已对 27 个非默认字体逐项执行 `TextSegment.export_material()`；全部写出与 `FontType` 一致的 `font.id`。
-- 聚焦回归 4 个文件、58 项通过；类型检查通过。
-- 全量回归 119 个文件、1752 项通过；生产构建通过，仅有仓库既有的 Vite `node:* externalized` 提示。
-- Electron `system` QA 通过，产物位于 `C:\Windows\TEMP\storydream-editorial-artifacts-TwITFt`；4 个草稿模板场景字体目录、保存重开、对比度、遮挡和运行时检查全部通过。
-
----
-
-# 草稿图片显示方式进度
-
-## 2026-08-08
-
-- 已完成现有链路审计：`cover` 与 `contain` 均已贯通模板、画布和剪映，但 UI 仍暴露英文内部值。
-- 已确定产品语义为“裁切填满 / 完整缩放”，保留 `cover` 历史默认，不引入变形拉伸。
-- 已更新模板编辑器与模板卡片：界面显示“裁切填满 / 完整缩放”，不再暴露英文内部值。
-- 已补画布样式、模板持久化、UI 合同和剪映真实桥接缩放测试；聚焦 7 个测试文件、252 项与类型检查通过。
-- 全量回归 121 个测试文件、1758 项全部通过；生产构建通过，仅有仓库既有的 Vite `node:* externalized` 提示。
-- Electron `system` QA 通过，产物位于 `C:\Windows\TEMP\storydream-editorial-artifacts-cq9sh8`；4 个草稿模板场景均为 `draftImageFitReady=true`，保存、数据库值、模板卡片和重开状态全部一致。
-- 已查看深色桌面与浅色紧凑原始截图，“裁切填满 / 完整缩放”无裁切或重叠；4 个场景的对比度、遮挡、控制台、页面、渲染与媒体失败均为 0。
-- 最终 `git diff --check`、UTF-8 替换字符扫描和旧英文 UI 文案扫描通过；本地预览继续在 `http://127.0.0.1:5173/` 提供服务。
-
----
-
-# 草稿模板统一裁切位置进度
-
-## 2026-08-08
-
-- 用户取消任务预览逐分镜拖拽，方案收口为草稿模板统一裁切位置；已删除逐分镜焦点资产字段、保存 IPC、preload/API、状态更新函数和预览交互半成品。
-- 草稿模板图片区域已增加九宫格位置选择；旧模板缺失字段自动居中，严格合同拒绝超出 `0..1` 的值。
-- “完整缩放”保留位置但禁用选择器，并在预览和剪映中强制完整居中；视频替换和封面页不套用图片裁切焦点。
-- 普通任务图片预览使用模板 `object-position`；`writeJianyingDraft` 把模板焦点写入共享 `imageArea`，剪映桥接换算 `transform_x/transform_y` 并反向补偿矩形蒙版中心。
-- 聚焦测试 6 个文件、101 项通过；全量测试 121 个文件、1762 项通过，类型检查与生产构建通过。
-- Electron `system` 20/20 场景通过，4 个草稿模板场景均为 `draftImageCropReady=true`；桌面和紧凑截图实看无重叠、裁切或不可读文字，运行时错误均为 0。
-- 真实内置 `pyJianYingDraft` 临时草稿验证“上方”裁切写入图片片段 `transform.y=0.0625`，并关联矩形蒙版 `centerY=-0.111111...`，证明设置进入最终剪映草稿。
-
----
-
-# 草稿模板图片双层自由变换进度
-
-## 2026-08-08
-
-- 已用 `left/top/width/height/focusX/focusY/mediaScale` 取代九宫格方案，旧模板默认全屏、居中、1 倍缩放。
-- 已实现展示框与实际图片的整体拖动、8 个控制点、键盘移动、画布边界和最小尺寸约束；实际图片保持等比并始终覆盖展示框。
-- 已在检查器增加“展示框 / 实际图片”切换和对应连续滑杆；`contain` 模式只保留展示框编辑。
-- 已同步草稿预览、普通任务预览、视频替换兼容、模板保存合同和剪映桥接；HTML 动画代码未修改。
-- QA 注入脚本中的 TypeScript 泛型误入浏览器字符串、旧“高度占比”控件引用和重叠按钮语义均已定位并修正。
-- Electron `system` 20/20 通过，产物位于 `C:\Windows\TEMP\storydream-editorial-artifacts-hHPcbr`；1440x900 与 1080x720 草稿截图实看无裁切或重叠。
-- 真实内置 `pyJianYingDraft` 临时草稿写出图片 transform 和矩形 mask；自动化 fake 已补 `MaskType/add_mask`，新增蒙版参数断言。
-- 全量 `npm test` 通过 121 个文件、1766 项；`npm run typecheck` 与生产构建通过。
-
----
-
-# HTML 动画预览竖屏完整显示修复进度
-
-## 2026-08-09
-
-- 已读取用户原始截图，确认 9:16 输出画布底部和字幕安全区被中央预览区域裁掉。
-- 已按 `ui-ux-pro-max` 将本轮定义为窄范围桌面编辑器修复：画布完整缩放、字幕同坐标系、场景条与检查器保持现有工作流。
-- 正在追踪预览组件、字幕叠层和 CSS 高度约束。
-- 一次只读检索因 Windows 路径通配方式不兼容而退出，已改为显式目录检索；未产生代码改动。
-- 已确认字幕属于 iframe 输出画布内部，数据和生成链路正确；修复范围收敛到预览工作台布局及其 Electron QA 断言。
-- 第二次测试检索误把文件名通配符放入 Windows 路径参数；已统一改用 `--glob`，同样未产生代码改动。
-- 已定位直接原因：预览加载后停在字幕透明的 0 秒首帧；输出 HTML 的 `fitScene()` 与外框 9:16 比例本身完整。
-- 已确定使用只影响编辑器预览的代表帧，保留最终视频从 0 秒执行字幕入场动画。
-- 已实现代表帧状态：加载后定位到可见字幕帧，首次播放、连播、重播仍从真实 0 秒开始；手动拖动进度后按当前位置继续。
-- 已扩展 Electron QA，检查内部输出画布四边完整、字幕可见且位于画布范围内。
-- 聚焦 2 个测试文件共 14 项通过，类型检查与 `git diff --check` 通过。
-- 首次 Electron QA 因命令硬超时误设为 1 秒而在启动前终止，尚未形成产品验证结果；将用正常超时重跑。
-- 第二次 Electron QA 成功构建并启动，但新断言发现代表帧定位仍停在 0 秒：父层 `onLoad` 早于可靠运行时就绪点；同时保存动效后预览按设计失效，终态不再适合做画布断言。
-- 正在改用 `hf-preview ready` 同步，并把几何验收绑定到保存动效前的有效预览快照。
-- 改用 `hf-preview ready` 后第二轮真实 QA 仍在等待“字幕容器可见”时超时；现有错误缺少时间线和父层 opacity，下一轮先增强诊断而不是继续猜测。
-- 第三轮 QA 诊断确认 iframe `__ready=true`，但时间线仍为 0、字幕容器 opacity 为 0；跨窗口 ready 分支没有执行，现改用父层直接轮询同源运行时标志。
-- 父层轮询已让桌面 Electron 预览正确显示 0.75 秒代表帧与字幕，画布/字幕几何全部通过；紧凑窗口切换仍会把 iframe 重置到 0 秒并留下旧缩放。
-- 正在补 iframe load 修订和预览容器 `ResizeObserver`，让窗口尺寸改变后重做内部 fit 与代表帧初始化。
-- load/ResizeObserver 方案出现桌面初始化竞态，已决定撤掉父层时序控制，改为仅在预览 srcDoc 副本内追加代表帧 bootstrap。
-- 独立 bootstrap 脚本节点在实机未执行；正在改为复用副本中已通过 CSP 的原运行时脚本，不新增脚本标签。
-- 复用原脚本仍无法可靠执行追加代码；方案收口为 React 静止海报字幕层，确保默认预览看得到字幕，交互后回到真实 iframe 时间线。
-- 首次 QA 同步补丁因多段上下文不匹配被整体拒绝，未修改文件；改为分块应用。
-- QA 已切换为检查 React 静止字幕层及其相对 9:16 画布外框的边界，移除 iframe 必须 seek 到非零时间的旧验收门槛；UI 合同同步移除废弃函数断言。
-- 聚焦 HTML 动画测试 2 个文件、13 项通过，`npm run typecheck` 与 `git diff --check` 通过。
-- Electron `preview-effects` QA 通过：1320×860 与 920×720 均为 `previewCanvasFullyVisible=true`、`previewCaptionVisible=true`、`previewCaptionInsideCanvas=true`，所有横向溢出为 0，iframe 保持真实 `previewTime=0`。
-- 首轮成功 QA 按脚本设计自动清理临时截图；下一轮指定证据目录保存原图，用于桌面与紧凑窗口人工复核。
-- 第二轮 Electron QA 同样通过，并把两张证据图保存到 `.artifacts/final-html-video-preview-crop-fix/`；原图人工确认竖屏画布底边和字幕在两种窗口尺寸下均完整可见，无遮挡或布局溢出。
-- 全量回归通过 121 个测试文件、1766 项；类型检查、生产构建、`git diff --check` 和跟踪改动文件 UTF-8 检查均通过。
-- 最终差异审阅确认改动只涉及动画预览 React/CSS、对应 Electron QA 和静态合同；最终 HTML 生成与导出链路未修改，本轮完成。
-
----
-
-# HTML 动画场景编辑与播放修复续接进度
-
-## 2026-08-09
-
-- 已重新对比用户原始截图与最新 `effects-desktop.png`、`effects-compact.png`、`effects-settings.png` 原图。
-- 确认旧版页面确实存在顶部设置只露半截和多块区域争抢首屏的问题；最新默认桌面态已经收敛为画布、下方当前场景编辑器、右侧场景列表三块稳定区域。
-- 确认全局设置展开态与场景编辑正文互斥，设置内容完整可见；紧凑窗口由主工作区单一纵向滚动承载，没有横向溢出。
-- 下一步继续检查前景、标题、提示词页原图，然后执行全量测试、类型检查、生产构建、UTF-8 扫描和最终差异审阅。
-- 已完成 `effects-foreground.png`、`effects-title.png`、`effects-prompt.png` 原图检查；前景首帧和显隐控制、标题编辑、背景/前景提示词均完整可见且与当前场景一致。
-- 全量 `npm test` 通过：122 个测试文件、1771 项测试全部成功；`npm run typecheck` 与 `npm run build` 同样通过，构建仅输出仓库既有的 `node:* externalized` 提示。
-- 进入最终阶段：UTF-8 替换字符扫描、`git diff --check`、改动文件审阅与计划状态更新。
-
----
-
-# HTML 动画素材逐张回填进度
-
-## 2026-08-09
-
-- 用户指出素材生成期间不应一直显示空占位，而应每生成一张立即填入对应场景卡片。
-- 已确认当前运行时收集全部图片后一次性提交，且完整资产校验阻止部分结果进入管线；开始改造为稳定键驱动的增量快照，完成时再做完整校验。
-- 已实现 `onAssetGenerated` 单张回调、按配置并发的单素材 Provider 队列、runner 串行增量 checkpoint、V2 运行态部分资产解析，以及素材卡片“已生成/总数”和“正在生成”反馈。
-- 第一轮 `npm run typecheck` 通过；现有全量 122 个测试文件、1771 项测试全部通过。
-- 新增回归通过：4 个聚焦文件、307 项测试全部成功；覆盖运行态部分资产解析、单张 checkpoint 序列、失败快照保留、Provider 回调和素材卡片生成中状态。
-- 全量回归通过：122 个测试文件、1774 项测试全部成功；生产构建通过，仅有仓库既有的 Vite `node:* externalized` 提示。
-- 新增 Electron `asset-progress` 场景并通过：1320x860 与 920x720 均为 `1/4`、1 张已回填、3 张生成中、0 横向溢出、0 控件裁切、0 运行时错误。
-- 证据图保存到 `.artifacts/html-video-asset-progress/asset-progress-desktop.png` 和 `asset-progress-compact.png`，两张原图已人工复核。
-- 最终相关回归 6 个文件、457 项通过；`git diff --check` 通过，15 个跟踪改动文件严格 UTF-8 扫描通过。
-- HTML 动画素材逐张回填完成；未提交、未推送，未重启用户当前可能仍在运行的生成任务。
-
----
-
-# 草稿模板实际图片拖动与双向缩放进度
-
-## 2026-08-09
-
-- 已检查用户原始截图，确认实际图片画布拖动与缩小能力均不符合预期。
-- 已按 `ui-ux-pro-max` 把本轮限定为现有桌面编辑器的窄交互修复，并定义实际图片、展示框和检查器必须保持同一模板状态。
-- 开始追踪 `mediaScale` 的模型范围、滑杆配置、画布命中和拖动事件。
-- 首轮并行只读检索因一个预期无匹配的 `rg` 退出码 1 提前结束；未改源码，后续改为定点文件读取。
-- 用户补充验收：实际图片必须同时支持内部拖动和四角/四边共 8 个控制点缩放；已更新交互合同。
-- 已定位核心原因：画布几何、持久化合同、归一化和剪映桥接都把 `mediaScale` 下限写死为 `1`；缩小时现有无符号溢出坐标也无法保存位置。
-- 已确认 8 个控制点已存在，下一步修复其缩小逻辑、图片直接拖动命中及缩小后的坐标表达。
-- 已实现 `mediaScale 0.1..8`、缩小后的有符号焦点定位、实际图片拖动、8 个控制点等比缩放，以及控制点画布内可见投影。
-- 已同步右侧滑杆、模板 Zod 合同、旧数据归一化和剪映桥接，并补充几何、合同、静态 UI 与导出测试。
-- 首轮聚焦 224 项仅控制点边界的严格浮点比较失败；实现输出等价于 `0.025`，已把断言改为精度比较后重跑。
-
----
-
-# 实时热榜聚合工作台进度
-
-## 2026-08-09
-
-- 已按 `ui-ux-pro-max` 将本轮定义为现有桌面生产工具中的新功能，交互合同为同一快照驱动列表、筛选、来源状态和新建任务交接。
-- 已按 `planning-with-files` 完成续接检查，并向现有三份规划文件追加独立章节，保留工作树中的其他在途修改。
-- 已逐项核验用户截图中的 10 个站点，并确认 UAPI 结构化接口与 Techmeme RSS 为首期稳定直连来源。
-- 正在实现共享类型、聚合器、IPC、路由和页面。
-- 已完成结构化聚合器、可信 IPC、懒加载路由、热榜工作台、5 分钟自动刷新、筛选和新建任务交接；7 个聚焦测试文件 112 项通过。
-
----
-
-# 实时热榜 AI 信息源扩展进度
-
-## 2026-08-09
-
-- 已按 `planning-with-files` 恢复前序上下文，并按 `ui-ux-pro-max` 将本轮限定为现有桌面工作台的新视图扩展。
-- 已确认复用实时热榜路由和新建任务交接；正在核实 AI HOT 公开 Skill 与真实接口合同。
-- 已完整读取 AIHOT v1.4.1 的 `SKILL.md`、API、同步和错误规范；确认不需要安装 Skill，也不需要 API Key。
-- 已确定不接入全量 snapshot 同步；首期只实现用户要求的日报、精选、分类、1..7 天窗口和搜索，并展示用途许可边界。
-- 已实测 items、论文分类、关键词搜索和最新日报端点均可用且带 ETag；开始审阅现有热榜类型、IPC 和页面实现。
-- 已完成现有热榜到新建任务的状态链路审阅；确定新增独立 AIHOT 适配器、判别式请求/响应和 `aihot:query` 受信 IPC，并复用现有外链及创作交接。
-- 已实现固定 AIHOT v1 域名的共享查询适配器、类型、IPC schema、main/preload/browser 合同和 ETag 请求头白名单；正在接入工作台界面。
-
----
-
-# 对标监控与选品助手产品设计进度
-
-## 2026-08-09
-
-- 已读取用户指定的 `api-image` 与 `ui-ux-pro-max` 技能，并按复杂设计任务启用文件式规划。
-- 已确认产品模式为现有高密度桌面内容生产工具，先做功能与工作流设计，不直接改动运行时代码。
-- 已完成规划续接检查；现有工作树包含用户的在途修改，本轮将只新增独立设计文档和概念图，并向规划文件追加本轮记录。
-- 正在审计现有产品路由、侧栏、组件、存储和 Storybound 对标资料。
-- 已查看 Storybound 原始参考图并核对项目技术栈；确认现有 `book-selection` 与 `benchmark` 路由可以原位升级，不需要增加重复导航。
-- 已核对导航、懒加载路由、应用外壳、主题令牌和选品页面；稳定路由 ID 与珊瑚红设计系统将保持不变。
-- 已核对现有对标导入和爆款拆解能力，并完成桌面生产工具、选择同步、异常趋势和选品评分的定向 UX 数据库检索。
-- 已检查最新 StoryDream Electron 实机界面，确认概念图需延续现有深色、珊瑚红和高密度桌面语言。
-- 已完成正式功能与交互设计文档；首次概念图调用在命令编排解析阶段失败，未发出 API 请求，现已改为 UTF-8 提示词文件传参。
-- 2048×1152 高质量任务被 Provider 断开后，使用相同参考图和约束降为 1536×1024 中质量；对标监控和选品助手两张概念图均生成成功并完成原图检查。
-- 已按实际输出更新文档路径和提示词尺寸，正在执行 UTF-8、文件尺寸与差异检查。
-- 验证完成：两张 PNG 均为 1536×1024；设计文档、两个提示词和三份规划记录严格 UTF-8 解码，替换字符均为 0；范围内 `git diff --check` 通过。
-- 本轮只新增设计文档、概念图和提示词，并向既有规划记录追加独立章节；未修改运行时代码、未提交、未推送。
-
----
-
-# HTML 动画预览缩放状态恢复进度
-
-## 2026-08-11
-
-- 已读取 `storydream-ui` 与 `planning-with-files` 规范，恢复现有复杂工作区上下文，不覆盖其他在途修改。
-- 已定位组件状态、`position: fixed` 样式及现有 Electron QA 的缩放操作；正在增加滚动/焦点恢复和退出后外壳可见性断言。
-- 预览组件现会保存 `.hv-preview-workspace` 的水平/垂直滚动位置，退出最大化时在布局提交阶段恢复，并使用 `preventScroll` 恢复按钮焦点；同时支持 Escape 退出。
-- Electron QA 已加入最大化固定定位、视口覆盖、退出后滚动/焦点恢复及参数区/画布区/流程区可见性断言。
-- 聚焦合同测试 23/23 通过，`npm run typecheck` 通过，范围内 `git diff --check` 通过；正在执行生产构建与真实 Electron 验收。
-- 生产 renderer/Electron 构建通过；隔离 Electron maximize-restore QA 在 1320×860 和 920×720 都通过，两种尺寸的滚动位置均为 180 → 180，焦点恢复、三区可见且运行时错误为 0。
-- 四张实拍人工复核通过，证据保存在 `.artifacts/html-video-maximize-restore/`；最大化态无错位，恢复态导航、任务参数、中央预览和流程信息均保持可用。
-- 开发服务 `http://127.0.0.1:5173/` 已存在且返回 200/StoryDream；本地策略拒绝新建后台 Electron 进程，未尝试绕过。
-
----
-
-# 对标监控与选品助手实现进度
-
-## 2026-08-09
-
-- 用户确认开始实现；已重新读取 `ui-ux-pro-max` 与 `planning-with-files`，并完成 session catchup、计划续接和工作树差异检查。
-- 已确认共享路由、IPC、类型等文件存在实时热榜在途改动；本轮将以增量方式集成并保留全部现有更改。
-- 正在审计本地数据库、IPC 合同、爆款拆解平台能力和旧选品迁移路径。
-- 已确认 sql.js 可通过新增表无损迁移；爆款拆解只有抖音/快手/B 站单作品能力，视频号与三平台账号 feed 均需新连接器，首期将明确降级为链接保存和作品导入。
-- 已实现三平台链接识别、URL 规范化、对标组/作品归一化、缺失指标合同、爆发分和选品机会总分；新增两张 sql.js 表及 CRUD。
-- 新增 `tests/benchmark-monitoring.test.ts` 5 项全部通过，覆盖领域纯函数、作品快照更新和对标组删除级联。
-- 已接通 canonical IPC 清单、严格 Zod 边界、StoryDream API、preload、Electron 主进程和浏览器 localStorage 回退；类型检查通过。
-- IPC/领域聚焦回归 4 个文件、80 项全部通过，进入监控与选品页面实现。
-- 用户要求继续后已重新续接当前工作树：确认领域合同、存储与 6 个对标 IPC 已在工作区，且 `BenchmarkImportPage` 已有大幅工作台实现；接下来先审阅页面状态合同与选品升级缺口，再增量补齐。
-- 页面审阅完成第一轮：对标监控逻辑已基本成形但缺少完整 CSS；选品助手仍为旧版资料编辑器，确定为本阶段主要实现范围。
-- 跨路由审阅确认“对标 -> 爆款拆解”session handoff 尚未被目标页消费；选品扩展字段已经存在，可直接实现候选、评分、证据、对比和简报。
-- 已先补新 UI 合同并得到预期红灯：`local-labs-ui` 14 项中仅新三栏几何和选品决策闭环 2 项失败，其余 12 项通过。
-- 已完成对标监控三栏工作台、选品候选池/对比台/评分/证据/简报检查器，以及对标到爆款拆解、选品到新建任务的 session 交接。
-- 已修复实现收尾阶段的 13 项类型错误，并补齐共享 renderer command inventory 对 6 个对标 IPC 和选品写入所有者的静态合同。
-- 聚焦 9 个测试文件、298 项通过；全量 126 个测试文件、1799 项全部通过；`npm run typecheck` 与 `npm run build` 通过。
-- 新增 `scripts/qa-benchmark-selection-ui.mjs`，以真实浏览器预览注入本地样本并验证 1440×900、1080×720 两种桌面尺寸。
-- 4 个实拍场景均为 0 横向溢出、0 非预期控件裁切、0 分栏重叠；证据回跳成功恢复正确对标组并选中对应作品。
-- 视觉证据与结构化报告保存在 `.artifacts/benchmark-selection-ui/`；本地开发服务继续运行于 `http://127.0.0.1:5173/`。
-
----
-
-# 热榜工作台视觉重构与状态修复进度
-
-## 2026-08-10
-
-- 已重新读取用户点名的 `api-image`、`ui-ux-pro-max` 以及适用的桌面工作流规则，并恢复三份文件化计划上下文。
-- 已确认页面重构代码已落在 `HotBoardPage.tsx`、`AiHotSourceView.tsx`、两份功能 CSS 和壳层页头修复中。
-- 已完成本地产品/UX 数据库定向检索，结果支持高密度实时监测、语义状态色、明确空态和可访问错误反馈。
-- 聚焦回归此前为 9/10 通过；唯一失败是测试仍匹配旧三元表达式，现已更新为显式 `preview` 状态合同。
-- Windows 沙箱仍在 setup refresh 阶段故障，连只读图片查看都会失败；工作区修改保持使用结构化 UTF-8 补丁，测试与 QA 使用已批准的受限命令继续。
-- 热榜六文件扩大回归 117/117 通过；覆盖 UI、聚合器、AIHOT、IPC 和网络策略。
-- 已重新生成全网热榜 1440×900 与 920×720 实拍；自动化指标均无横向溢出和控件裁切，原图人工复核通过。
-- 已完成 AI 信息源 1440×900、920×720 与紧凑来源栏到底态实拍；六种模式控件均无内部溢出，来源状态与预览边界一致。
-- 原始 PNG 因工具 Base64 输出上限无法直接解码，已保留原图并生成低体积 inspection JPEG 供人工复核；两类文件均位于同一 QA 目录。
-- `npm run typecheck` 与 `npm run build` 均通过；生产构建只输出仓库既有的 Vite `node:* externalized` 提示。
-- 新增隔离生产 Electron QA，真实全网热榜得到 95 条数据并完成 1440×900 截图，隔离进程已自动退出。
-- 首轮 QA 的关闭请求在已断开的 CDP 连接上悬空，隐藏了 AIHOT 等待超时；确认无残留 Electron 后已改为本地关闭 socket 与子进程。
-- 第二轮 QA 完整产出指标和两张实拍；全网热榜通过，AIHOT 的内部错误串与横向滚动进入修复阶段。
-- 已统一解码 Electron IPC 错误并允许警告文本换行收缩，AIHOT 失败态不再暴露内部 marker，根节点横向溢出归零。
-- 已修复全网热榜与 AIHOT 重复“去创作”按钮被全局主按钮覆盖的问题；118px 操作列、描边次级样式和单行文本均经最新截图人工确认。
-- 最终隔离生产 Electron 验收返回 120 条全网热点、9/9 来源在线和 10 条 AIHOT 数据；两页均为 0 横向溢出、0 控件裁切。
-- 最终六文件回归 117/117 通过，npm run typecheck、npm run build 与 git diff --check 通过。
-
----
-
-# HTML 动画字幕时间轴与渲染一致性进度
-
-## 2026-08-10
-
-- 已读取 `planning-with-files`、`ui-ux-pro-max` 与桌面工作流规则，完成 session catchup、工作树差异检查和三份计划恢复。
-- 已按原始分辨率检查用户截图，确认字幕并非完全没有 DOM 迹象，而是位于底部安全区附近、字号过小且多条压叠，视觉上等同不可用。
-- 已定位现有字幕样式编辑器和场景字幕数组入口；正在追踪 HTML 运行时、预览 srcDoc 与最终导出是否共享同一时间轴和样式配置。
-- 已新增统一 `captionLayout` 合同，覆盖字幕区域、草稿字体、字号、行高、文本框宽度、对齐和 400-900 字重；旧任务自动补默认值。
-- 已新增毫秒边界 cue 构建器，按场景时长连续均分多条字幕；HTML、Electron 快照和 HyperFrames 保存后的 composition 快照共用同一时间合同。
-- HTML 每条字幕现在是独立 `T22` clip，GSAP 从 `data-start/data-duration` 建立显隐；删除全局同时点亮字幕及 React 假字幕/假前景覆盖层。
-- 长字幕改为正常换行，只在实际垂直溢出时缩小；字幕区域、字体、字号、行高、宽度、对齐、字重和颜色直接进入最终 HTML。
-- 动画预览全局字幕面板已加入完整布局控件；当前场景检查器新增“字幕”页，可编辑垂直位置和场景字号倍率，并查看随播放高亮的 cue 时段。
-- HyperFrames 保存源码时会解析真实 caption clips、同步 cue 快照，并在触碰文件前拒绝非法、越界或重叠时段；存储回归 43/43 通过。
-- UI 164/164、IPC/Electron 203/203、字幕/存储/HyperFrames/Smoke 聚焦 89/89 通过；Electron 与 scripts TypeScript 编译通过，生产 renderer/Electron 构建通过。
-- 完整生产 Electron QA 通过：0.25s 与 0.75s 分别只有一条不同字幕可见；底部 84%、宽度 76%、右对齐、800 字重、1.5 行高均与保存配置一致，字幕无裁切、无横向溢出、无运行时错误。
-- HyperFrames 可视编排在 1320x860 与 1080x720 都显示独立 T22 轨、6 个真实 clip、官方 lint 0 错误；成片重跑完成且预览缩略图为 720x1280。
-- 全库稳定依赖阶段曾达到 1811/1812，剩余旧 Smoke 断言随后已聚焦修复；最终全量复跑被并行 Fluent UI 安装/组件迁移阻断，相关生产依赖精确清单与 renderer 类型错误不属于字幕范围。
-
----
-
-# 热榜与 AI 信息源按日归档及显示修复进度
-
-## 2026-08-10
-
-- 已读取 `ui-ux-pro-max`、桌面工作流规则与 `planning-with-files`，恢复现有复杂工作区上下文。
-- 已按原始分辨率检查用户截图，确认原生 select 对比度错误、固定双栏在紧凑宽度下裁切，以及“每 5 分钟”与新按日刷新合同冲突。
-- 已定义后端按日快照为权威状态：当天缺失时首次访问自动抓取，已有快照直接读取，手动刷新覆盖当天，历史日期只读。
-- 正在审计现有热榜/AIHOT 页面、IPC、SQLite 存储和测试入口，后续只增量修改相关模块并保留其他在途改动。
-- 已确认当前两页都有首次进入网络请求与 renderer 5 分钟轮询，Electron IPC 没有持久化层；后续会删除页面定时器，由后端按归档日期判断是否抓取。
-- 已确定双表持久化与后端缓存服务合同；热榜按日期唯一归档，AIHOT 按日期和稳定查询键归档，历史缺失不联网。
-- 已定位显示不全来自固定来源栏和 viewport 断点失配；计划改用工作区容器查询，并修复原生 option 对比度及来源链接省略。
-- 已新增归档服务、数据库重启、IPC 和 UI 预期失败测试；首轮 5 个目标失败、102 项既有回归通过，红灯范围与设计一致。
-- 已实现共享归档类型、日期/查询键决策服务、SQLite 双表迁移和 FileDatabase 读写；归档与重启持久化测试 2 个文件、48 项通过。
-- 已完成 IPC/preload/browser fallback 接口包装与两个页面状态改造，renderer 的 5 分钟轮询全部移除；当天缓存、强制覆盖和历史只读由后端统一决策。
-- 已新增共享归档日期控件；热榜和 AI 信息源共享所选日期，显示实际抓取时间、保存状态和历史天数，历史缺失时给出明确空态并禁用刷新。
-- 已修复 Windows 原生下拉深浅主题对比度、固定双栏挤压、来源栏裁切和摘要两行截断；工作区改用 900px/640px 容器查询响应。
-- 归档/存储/IPC/UI 聚焦回归 7 文件 120/120 通过，生产构建通过；全库 1810/1812 通过，两个失败均来自既有 HTML 动画清单/字体测试。
-- `npm run typecheck` 仅被既有 `tests/html-video-captions.test.ts:134` 不完整字幕布局夹具阻塞，本轮生产构建与相关类型边界均通过。
-- 隔离 Electron 实测：首次进入保存 175 条热榜和 15 条 AI 精选，再进入命中“今日已保存”且时间不变；历史日期两页均不联网、显示无归档并禁用刷新。
-- 1440px 与 900px 桌面实拍均为 0 横向溢出；900px 下真实长摘要完整换行，来源栏正确折叠为单栏。
-- 已从独立分支提交 `66b9e55`（`feat: 热榜与 AI 信息源按日归档`），仅包含本功能 18 个文件；两次推送因 GitHub 443 网络阻断未成功。
-
----
-
-# Fluent UI 共享壳与 StoryDream 组件层进度
-
-## 2026-08-10
-
-- 已读取 `create-branch`、`planning-with-files`、`ui-ux-pro-max`、桌面工作流参考和 `skill-creator`，并完成会话恢复。
-- 已确认现有工作树包含多个在途功能修改；本轮将增量工作，不回退或覆盖它们。
-- 已从当前 `codex/storydream-local-hardening` HEAD 创建并切换到 `codex/storydream-fluent-ui-system`，全部未提交修改保持不变。
-- 远端同名分支检查因 GitHub 连接重置失败；本地无同名分支，已按降级规则完成本地分支创建。
-- 已完成第一轮栈、令牌、组件覆盖率和截图审计；正在核实 Fluent UI React v9 版本、主题入口和现有测试合同。
-- 已确认 Fluent UI React v9.74.5 与 React 19 兼容；决定在 `App` 内由权威主题状态驱动 StoryDream Provider，并保留现有 document 主题防闪烁逻辑。
-- 已确认共享壳测试依赖稳定 className、文案与窗口控制入口；首轮迁移采用兼容包装，不改路由和业务状态合同。
-- Fluent UI 聚合包已下载到本地且版本为 9.74.5，但两次完整 npm 安装在 Windows 现有 `node_modules` 上长时间阻塞且没有提交 package/lock；正在切换为依赖声明与 lock-only 两步流程。
-- 已通过补丁声明 `@fluentui/react-components` 并用 npm lock-only 在 6 秒内完成一致锁文件；本地模块为 9.74.5。
-- 已核对 Fluent 条件导出与核心组件可用性；项目 Skill 将放在 `.agents/skills/storydream-ui` 并走官方生成/校验流程。
-- 已实现 StoryDream 深浅 Fluent 主题、Provider、15 个核心组件、统一出口和组件 CSS；共享 AppShell 已不再直接声明原生按钮。
-- 首轮组件类型检查的 slot/多态错误已通过收紧项目 API 修复，`npm run typecheck` 通过；UI 系统合同 5/5 通过。
-- `storydream-ui` 已由官方初始化器创建并写入组件复用、页面模式、选择同步、渐进迁移和视觉验证规则；正在用 bundled Python 重跑结构校验。
-
-## 2026-08-11
-
-- 当前分支已安全快进并保持为 `codex/storydream-fluent-ui-system`，包含热榜按日归档提交 `66b9e55`，全部用户在途修改继续保留。
-- 已完成 StoryDream Provider、深浅 Fluent 主题、15 个核心组件、统一出口、组件样式和共享 AppShell 迁移；壳层不再声明原生 `<button>`。
-- 已修复 Slider 数值 0 标签、Fluent Button 项目 slot 与紧凑侧栏三轮回归；共享壳聚焦测试最终 192/192 通过。
-- 项目专用 `.agents/skills/storydream-ui` 已完成组件合同、工作区模板、选择同步、渐进迁移和视觉验收约束；隔离 venv 下官方校验器通过。
-- 首轮入口超过 500 KB 后新增 Fluent vendor 分包；最终 renderer 入口 375,270 bytes，Fluent chunk 215.61 kB，生产预算通过。
-- Electron QA 已排除 Tabster 框架焦点哨兵误判；深/浅主题与 1440×900、1080×720 共 4 个场景均无运行时错误、可访问名称缺口、对比度失败或真实控件重叠。
-- 全量测试初轮仅旧依赖清单和 `IconButton label` 解析合同 2 项失败；修复后聚焦 7/7、全量 128 文件 1819/1819 通过。
-- `npm run typecheck`、`npm run build`、`git diff --check` 全部通过；Skill 三文件及三份相关中文测试均经严格 UTF-8 解码与 UTF-8 复读通过。
-- 最终 QA 报告和 4 张截图已复制到 `.artifacts/storydream-fluent-ui-system/` 并完成 SHA-256 清点；没有覆盖旧 artifact。
-- 本轮没有提交或推送，现有 Vite/Electron 服务保持运行。
-
----
-
-# 浅色主题持续闪屏修复进度
-
-## 2026-08-11
-
-- 已按 `storydream-ui` 审计共享壳、Provider、主题令牌、主题控制器和设置页，并用 `planning-with-files` 续接记录。
-- 已确认问题来自 document 主题即时切换而 FluentProvider/React 状态等待 Electron delta 的双写竞态；下一步先补同帧同步和失败回滚合同，再统一两个主题入口。
-
----
-
-# 对标同步与热榜正文交接续接进度
-
-## 2026-08-11
-
-- 已重新读取 `storydream-ui`、`ui-ux-pro-max`、`planning-with-files` 及两份桌面组件/工作流参考，完成会话恢复和脏工作树复核。
-- 已确认热榜、AIHOT、正文读取 IPC、浏览器降级和新建任务资料交接代码均已接通；正在进入聚焦回归、真实连接器和普通/紧凑桌面 QA。
-- 已定位浏览器预览热榜不可见的直接原因：fallback 始终返回空快照，且本地 Vite 服务当前未运行；下一步补显式预览归档并重启服务验收。
-- 聚焦回归结果：1825/1827 通过；剩余 2 项均为 renderer command inventory 元数据，未涉及热榜正文提取、预览快照或对标连接器行为。
-- 已补齐三个新增 renderer command owner、AIHOT 正文读取 owner 和主题嵌套 `persist` owner；精确 7 文件回归 46/46 通过。
-- 已完成真实 B 站连接器复测：公开空间成功返回 20 条作品及完整公开指标；正在补封面 HTTPS 归一化并进入视觉 QA。
-- 热榜浏览器 QA 最终通过：1440×900、920×720 均展示 3 条带摘要的本地预览归档；查看正文为 83 字摘要，0 横向溢出、0 可见控件裁切。
-- “去创作”运行态交接通过：新建任务自动切到 AI 创作，来源 URL 和摘要可见，网页资料为 1/1 默认选中，页面无横向溢出或可见控件裁切。
-- 对标/选品 QA 通过：1440×900 与 1080×720 均无面板重叠、横向溢出或控件裁切；对标页 4 张封面可见、0 坏图、1 张坏图回退，证据回跳命中正确作品。
-- 最终全量 Vitest 130 文件、1827/1827 用例通过；`npm run typecheck` 与 `npm run build` 通过，生产构建仅有仓库既有的 Vite `node:* externalized` 提示。
-- `git diff --check` 通过；本轮涉及的 11 个中文源文件、测试和计划文件均用 UTF-8 复读且无替换字符。
-- 最终后台 Vite renderer 已恢复在 `http://127.0.0.1:5173/`，HTTP 健康检查返回 200。
-
----
-# 热榜正文联网兜底与悬停闪屏进度（2026-08-13）
-
-- 已确认现有公开网页搜索链路和正文弹窗状态所有权。
-- 正在修改 `HotBoardPage.tsx`：去掉行内“打开原文”外层 Tooltip，增加搜索结果状态与正文失败后的联网搜索入口。
-- 已完成 Tooltip 移除和正文联网搜索兜底；搜索结果复用 `AiSourceSection`，并在弹窗中区分页面正文、来源摘要与联网搜索结果。
-- 已补 renderer command inventory 的 `HotBoardPage#searchItemContent` owner、无结果/重试状态及 hover 稳定性 QA。
-- 聚焦回归 104/104、`npx tsc --noEmit --pretty false`、生产构建、`git diff --check` 和 1440×900/920×720 浏览器 QA 均通过。
-- GitHub 只读检索受匿名 code search 401 和 web search 429 限制；基于本地现有实现确认无需 API Key 的公开搜索适配器已覆盖本需求，`aihot` 更适合作为日报/AI 动态源，不替代通用正文搜索。
-# 联网搜索源 GitHub 方案调研进度（2026-08-13）
-
-- 已审计现有 Electron IPC 和 `src/shared/research.ts`：确认搜索源是公开搜索页面 HTML 适配器，不是搜索 API。
-- 已开始核验 SearXNG、开源 AI 搜索应用、托管搜索 API 客户端与正文抓取器；将分别评估而不是混为一个 provider。
-- 已完成第一轮 GitHub 元数据与 README 核验：SearXNG、Tavily、Exa、Firecrawl、DDGS、Mozilla Readability 均在维护，已记录真实接口、Key 和自建边界。
-- 已核验 Open WebUI 和 Vane 的实际 provider 源码：两者都以 SearXNG JSON API 为核心参考，并将 managed provider 与抓取/重排分层。
-- 已完成 Jina Reader/Search、Tavily 匿名连通性实测，并补充智谱、LangSearch、YaCy 的中文可用性与部署成本判断。
-- 本轮调研完成，未替换生产搜索代码。
-# 联网搜索 Provider 分层实现进度（2026-08-13）
-
-- 用户确认选择最佳方法并直接处理；确定为“可配置 SearXNG 首选 + Tavily Keyless 自动备用 + 现有搜索页适配器末级降级”。
-- 已重新读取 `planning-with-files`、项目 `storydream-ui` 及其组件合同，并复核脏工作树；本轮只增量修改联网搜索范围。
-- 已确认配置、IPC、Electron handler、设置页和研究模块的接入点，正在先补聚焦失败测试。
-
-- 新增 `WebSearchConfig`：SearXNG 地址、Tavily Keyless 开关、legacy 降级开关；旧配置通过 `normalizeAppConfig()` 自动补默认值。
-- 新增 `src/shared/web-search-backends.ts`，实现 SearXNG JSON、Tavily Keyless headers/响应归一化，以及 SearXNG → Tavily → legacy 的顺序降级。
-- `research:web-search` 现在读取 runtime config；Electron 正式 AI 研究任务启用新 Provider，旧单元测试和无配置调用继续走 legacy 兼容链路。
-- 热榜正文弹窗展示实际后端状态，不再把 SearXNG/Tavily 结果伪装成 Bing/搜狗；正文读取与搜索发现保持解耦。
-- 设置页新增“联网搜索”区，复用现有 `ConfigInput`、`SwitchField` 与 `SettingsCard`，支持保存并测试搜索配置。
-- Provider、配置、研究、IPC、设置聚焦回归均通过；热榜正文浏览器 QA 在普通/紧凑桌面通过。
-- 本轮未提交/推送：当前分支已有大量用户在途修改，联网搜索改动与既有差异混在 `electron/main.ts`、`research.ts`、热榜和设置页中，需在干净分支或用户明确授权后做范围提交。
-
----
-# 热榜跨平台图文正文阅读进度（2026-08-14）
-
-- 已读取 `planning-with-files`、项目 `storydream-ui` 及组件合同，恢复当前分支和规划上下文。
-- 已检查用户截图与 Git 状态：所有跟踪文件已提交；未跟踪项均为本地产物，本轮不提交或清理。
-- 已定位正文类型、`readPublicSourceContent()`、Electron 30 分钟缓存、IPC 与 `HotBoardSourceReader`，进入失败测试与结构化图文提取设计。
-- 已确认 renderer CSP 支持 HTTPS 图片，并复核仓库现有 B 站 `__INITIAL_STATE__` 解析；确定一次抓取同时提取正文与媒体、图片本地失败隔离的实现方式。
-- 已完成结构化图文数据层与画廊/大图查看器；小红书、JSON-LD、Open Graph、语义 HTML、URI 编码 `RENDER_DATA` 回归全部通过。
-- GitHub 核验 `yt-dlp` 小红书字段与本轮实现一致；RSSHub 小红书仍依赖 Cookie 检查，决定不引入新的登录或逆向签名依赖。
-- 聚焦 4 文件 74 项、`npm run typecheck` 与 `git diff --check` 已通过。
-- 全库 131 个测试文件、1840 项全部通过；生产 renderer/Electron 构建通过。
-- 首轮视觉 QA 揭示嵌套 Dialog 遮罩问题；改为单 Dialog 内大图模式后重新验收，普通/紧凑窗口均 2 张图片、0 网格越界、0 横向溢出、0 控件裁切，大图完整位于视口内。
-- 微博 `$render_data/text_raw/pic_infos`、B 站 `__INITIAL_STATE__.videoData`、头条 SSR marker 与知乎 SSR HTML 图片补强完成，正文解析聚焦 12/12 通过。
-- 最终全库 131 个测试文件、1843 项全部通过；`npm run typecheck`、`npm run build`、`git diff --check` 通过。
-- 最终 CDP QA：1440×900 与 920×720 均显示 2 张图，画廊/大图查看器 0 横向溢出、0 网格越界、0 控件裁切，创作资料交接保持通过。
-- 已创建功能提交；首次推送因 GitHub HTTPS 连接重置失败，正在切换 HTTP/1.1 重试。
-- 推送阻断审计：`github.com:443` TCP 失败；HTTP/1.1、SSH-over-443（无 publickey）、本机代理 `127.0.0.1:7897`（未监听）均不可用；Git Credential Manager、`gh`、`GH_TOKEN/GITHUB_TOKEN` 均无可用凭据。远端分支仍为父提交 `5af7745`，本地功能提交完整保留。
-
----
-# 选品助手榜单、搜索与带货创作闭环进度（2026-08-17）
-
-- 已读取用户截图、项目记忆、`storydream-ui`、`product-design:image-to-code` 与 `planning-with-files` 规则。
-- 已确认工作树存在未提交的壳层与测试改动；本轮将增量保留并围绕现有 `product-selection` 路由实施。
-- 正在审计产品设计依赖规则、页面状态、当当数据入口、创作资料交接和 StoryBound 提示词审计文件。
-- 已按原始分辨率打开 1693×943 参考图，并完成 Product Design 用户上下文预检；未发现已保存上下文，因此以当前截图和项目设计系统为准。
-- 已播放实现 brief：在既有 `book-selection` 路由复刻高密度运营工作流，StoryDream 品牌视觉优先，完成后做相同状态的截图对照 QA。
-- 已确认选品页现有本地候选/对比/评分/证据/简报功能及 `book_product_info` 创作交接；接下来继续追踪类型、存储、NewTask 消费和可复用 UI 组件。
-- 已确认 NewTask 当前仅以原始 JSON 接收选品资料；本轮将保持 sessionStorage 键兼容并提升为结构化可读交接，同时启用现有带货保留流程。
-- 已完成当当公开搜索连通性与字段审计，并确定复用 `public-research` 网络策略、增加严格 `book-selection:discover` IPC、按响应 charset 解码和本地降级的实现路径。
-- 已新增当当解析/评分/降级、严格 IPC、StoryBound 式工作台和创作赛道交接聚焦合同；首次运行 5 个测试文件中 231 项既有断言通过，5 处预期红灯全部指向待实现范围。
-- 已完成数据层、工作台与创作交接实现，聚焦测试 197/197、类型检查、生产构建和通用 Labs Electron QA 通过。
-- 复核首轮 4 张选品截图发现均停留在初始请求期的空表；正在补榜单就绪门禁、初次加载状态和搜索/收藏/去创作的完整 Electron 交互证据。
-- 新增门禁后的首轮 Electron 实测已读取 24 条当当实时书目，收藏与去创作资料交接通过；搜索因同名/套装结果不止 1 条触发过严断言，已按实际搜索语义修正后重跑。
-- 完整 Labs Electron QA 最终 20/20 通过，四个选品场景均为 24 条 `live` 当当数据，搜索、收藏、去创作交接全部验证成功；正在按同屏设计对照修正标题断词和桌面操作列可见性。
-- 标题高亮清洗和桌面操作列可见性修复后，聚焦 6 文件 126/126、TypeScript、生产构建和最终 Labs Electron QA 20/20 通过。
-- 原图、深浅主题普通/紧凑截图、全屏/表格同屏对照与报告已归档到 `.artifacts/book-selection-assistant/`；`design-qa.md` 最终结果为 `passed`。
-- 用户截图反馈 Electron 内部 `replyWithError` 在关闭的输出管道上触发 `EPIPE`；已增加主进程 stdout/stderr 断管保护，只忽略 `EPIPE` 并保留其他输出错误的原失败语义。
-- 新增输出保护 3 项回归；选品相关聚焦 56/56、TypeScript、生产构建和 Labs Electron QA 全部通过，四个选品场景均为 24 条实时当当书目且运行时错误为 0；修复证据归档到 `.artifacts/book-selection-epipe-fix-2026-08-17/`。
-- 已按用户修正恢复 AI 内置知识独立创作：关闭全网搜索且不选网页来源时，前端生成按钮可用，后端允许 `useBuiltinKnowledge=true` 的空来源请求；全网搜索仍可单独或组合使用。
-- 聚焦 4 文件 227/227、TypeScript、生产构建和 New Task Electron QA 4/4 通过；桌面与紧凑素材页均确认 AI-only 按钮可用、网页控件隐藏、运行时错误为 0，证据归档到 `.artifacts/ai-builtin-optional-2026-08-17/`。
-
----
-# AI 漫剧 Phase 8 实施进度（2026-08-17）
-
-- 已恢复 Phase 6/7 完成状态和运行中的 Vite renderer；保留现有脏工作树与用户 Electron 进程。
-- 已读取 `planning-with-files`、`storydream-ui` 及组件合同，完成 VOX 持久化、IPC、路由、工作台和库存测试接入面审计。
-- 已确定系列项目所有权、稳定引用和无付费生成边界，开始补领域/持久化/工作台聚焦合同。
-- 已完成严格领域模型、任务持久化与乐观并发、`motion-comic:create/save` IPC、独立路由、历史任务回程和三栏 AI 漫剧工作台。
-- 聚焦 11 个测试文件 291/291 通过；TypeScript 类型检查和生产构建通过。
-- Electron 真实交互已完成创建“雨夜来信”、选择第二镜、修改景别为“特写反应”并保存；桌面 1440x900 与紧凑 1040x720 均无运行时错误、横向溢出、控件裁切或标签换行。
-- 报告与截图已归档到 `.artifacts/motion-comic-workbench/`；`providerJobs=0`，未发起付费生成，Phase 8 完成。
-
-## 上传进度
-
-- 用户要求上传；已确认当前 GitHub upstream 和工作树范围。
-- 已将本地 `.artifacts/` 与 `.codex-audit-temp/` 加入忽略规则；下一步 fetch 远端、执行发布前质量门禁、按明确路径暂存并推送。
-- 首次 fetch 被 GitHub `OpenSSL SSL_read` 连接重置；未提交、未推送，改用 HTTP/1.1 继续核对远端。
-- HTTP/1.1 fetch 仍被相同连接重置；停止重复 smart HTTP，改走 GitHub REST API。
-- 上传前全量 Vitest 136 个文件通过、5 个失败，1872/1878；两项精确库存需要纳入 VOX/AI 漫剧，另外四项按超时与临时目录时序做聚焦复测。
-- 已更新两份批准路由库存并为持续超时的 renderer AST 全量扫描设置 15 秒局部预算，相关 3 文件 11/11 通过。
-- 第二轮全量为 1873/1878；剩余 5 项均为全量并发下的 5 秒边界或 I 盘临时目录异常，正在以系统临时目录串行聚焦复测。
-- 第二轮剩余 5 项串行聚焦全部通过；TypeScript 类型检查和生产构建通过。
-- GitHub REST API 已确认远端分支头 `410301b` 与本地 tracking ref 一致，无远端重叠；进入明确路径暂存和 staged 审计。
-- staged 审计发现并拦截测试生成的 `src/shared/__pycache__/*.pyc`；补通用忽略规则后移除缓存，不上传二进制运行产物。
-- 最终 staged 清单为 62 个源码、测试和文档文件；二进制、Python 缓存、本地 QA 目录均为 0，UTF-8 与 `git diff --cached --check` 通过。
-- 已创建并推送功能提交 `fa25607 feat: 扩展 VOX、AI 漫剧与选品工作流` 到 `origin/codex/storydream-fluent-ui-system`；Phase 9 完成。
-
----
-
-# VOX / AI 漫剧端到端修复进度（2026-08-18）
-
-- 已完成代码与本轮 Electron 截图审计，确认全部 P0/P1/P2 问题及现有真实功能边界。
-- 已读取 `storydream-ui`、组件合同和 `planning-with-files`，完成会话恢复和脏工作树复核。
-- 已确认本轮不调用付费图片/视频/配音服务，不覆盖真实项目数据，不回退其他在途修改。
-- 当前进入失败合同阶段：项目首页/向导、设置深链、加载 gate、真实状态、系列圣经与紧凑布局。
-- 新增 `tests/director-product-flow.test.ts` 六组合同；首轮 6/6 按预期失败，分别覆盖项目首页、三步预检、设置深链、系列圣经全页、真实阶段/健康和媒体/紧凑布局，红灯范围与审计一致。
-- 新增合同实现后聚焦 6 文件 23/23、`npm run typecheck` 和生产构建通过；构建仍只有仓库既有 `node:* externalized` 提示。
-- Electron 验收脚本首轮被隔离环境 GPU/`loadFile` `ERR_FAILED` 阻断，第二轮 Python Playwright CDP 握手超时；两次均未进入 React 页面，正在改用 Node `undici.WebSocket` 直接 CDP，避免把工具时序误判成产品缺陷。
-- 已实现共享项目库、三步创建预检、设置深链返回、系列圣经全页、媒体加载/失败状态、真实阶段/系统健康、图片服务直达按钮和紧凑面板折叠；创建选择均写入版本化项目文档。
-- 已修正示意缩略图误算“镜头已生成”、审片阶段自动播放和 900px Inspector 默认遮挡三个残余行为。
-- 全库结果 143/145 文件、1898/1901 项通过；3 项失败来自 Coze 5 秒超时和 renderer 库存旧合同。更新库存后串行复测 8 文件 33/33，通过全部失败范围。
-- 最终 `npm run typecheck`、生产构建、`git diff --check`、中文 UTF-8 复读和导演/库存最终 4 文件 15/15 通过。
-- 内置 Electron smoke 在当前受管环境返回 `mainLoaded=false`、`shellRendered=false`；此前日志为 GPU 子进程 `-1073741515`、`loadFile ERR_FAILED`，新 Chromium 访问本机 Vite 也超时。该限制发生在 renderer 启动前，无法据此制作新截图。
-- 已在 `http://127.0.0.1:5173/` 启动最新源码 Vite 预览并保持运行，供用户直接复测。
-# VOX / AI 漫剧统一任务体系重构进度（2026-08-18）
-
-- 已读取用户截图、`frontend-design`、`storydream-ui`、组件合同、`ui-ux-pro-max`、桌面工作流规则与 `planning-with-files`。
-- 已确认当前分支与远端同步；只有用户既有未跟踪目录/图片，本轮不覆盖或清理。
-- 已建立统一任务系统的产品、交互和视觉合同，进入主任务页、路由、状态所有者与测试审计。
-- 已定位主任务体系、VOX/AI 漫剧独立项目库和现有 `taskWorkspaceView()` 直达能力；当前继续追踪 App 状态、两条导演路由和任务列表的数据边界。
-- 已确认重复导航共三层：侧栏入口、全局页头快捷按钮、导演项目库内部页签；将只保留侧栏/统一创建入口和工作区内必要的项目级操作。
-- 已验证任务 ID 到工作区的统一跳转链已经存在；本轮优先复用该链，不新增平行任务模型。
-- 已验证 VOX/AI 漫剧持久化本就写入统一 Task 表，历史任务页可以完整承担项目库；任务创建类型确定为四个现有真实工作流。
-- 已定位“像另一个软件”的 CSS 根因：VOX/AI 路由无条件隐藏整个主壳层；实现时将沉浸条件收窄到真实 `.director-desk`。
-- 审计阶段完成；正在先补统一创建、无项目库、条件沉浸、返回全部任务和错误恢复的聚焦合同。
-- 新增 `tests/unified-task-system.test.ts`；首轮 4/4 按预期失败且错误均属于待实现合同，开始生产代码修改。
-- 已完成统一入口生产代码：VOX/AI 漫剧归入创作生产、移除全局重复快捷栏、最近任务按真实工作区预加载、新建页加入四类创作类型。
-- 已移除 `DirectorProjectLibrary` 和导演台模式切换；VOX/漫剧创建、加载、恢复、工作区返回均接入统一新建/历史任务页面；沉浸 CSS 已收窄到真实 `.director-desk`。
-- 统一任务/导演/壳层/路由/新建任务聚焦矩阵 8 文件 38/38 通过；TypeScript 类型检查通过。
-- 已补 requested task 首帧加载态，避免历史任务直达时闪出恢复错误；创建向导使用主页面内二级标题。
-- 扩大到壳层、架构、命令库存、任务操作、导演领域与持久化后，18 个测试文件 281/281 通过。
-- 已审计现有 Electron 导演 QA；将更新其入口交互为新的统一新建任务类型流程，再生成本轮桌面/紧凑截图。
-- 已新增忽略目录内的本轮 Node Playwright/CDP 专项 QA，并在隔离 Electron profile 完成 7 步真实流程：四类新建入口、VOX/AI 创建页、VOX 本地创建、返回历史和历史直达重开。
-- 首轮流程全部成功，但发现标题栏关闭按钮命中区域向右越界 6px；将壳层标题栏的旧负边距从 `-20px` 校准为 `-14px` 后，第二轮 7 个状态全部为 0 裁切、0 横向溢出、0 runtime error。
-- 实际截图确认创建页仍在 StoryDream 窗口栏/侧栏/页头内，只有打开具体项目后的 `.director-desk` 进入沉浸模式；统一历史表显示 VOX 类型并可直接重开。
-- 首轮全库 1904/1905，仅旧批准库存中的侧栏顺序未同步；更新 VOX/AI 漫剧所属分组顺序后，聚焦 7 文件 26/26、最终全库 146 文件 1905/1905 通过。
-- `npm run typecheck`、生产构建和 `git diff --check` 通过；最终截图与报告归档到 `.artifacts/unified-task-system-2026-08-18/`，本阶段完成。
-
----
-
-# VOX / AI 漫剧创建页 AI 文案辅助进度（2026-08-19）
-
-- 已读取 `storydream-ui`、组件合同和 `planning-with-files`，并恢复当前工作树与规划上下文。
-- 已定位两个创建页的文案状态、真实 `composeResearchCopy` 调用链、浏览器 fallback 和 AsyncAction 状态组件。
-- 已确定以共享 `DirectorCopyAssist` 呈现“AI 创作 / AI 修改”，使用纯函数生成 VOX/漫剧各自的 LLM 请求。
-- 已新增请求构造与两页接入合同；首次聚焦运行 3 个测试文件按预期失败，红灯分别指向缺少纯函数、真实 API 调用和共享控件。
-- 当前进入实现阶段；既有滚动修复保留，不覆盖未跟踪本地产物。
-- 首轮浏览器 QA 四个场景的禁用/启用、失败不覆盖草稿、滚动到底和横向溢出均通过；唯一失败是错误提示被归一化为泛化文案，正在补领域错误信息。
-
----
-
-# VOX / AI 漫剧创建页 AI 文案辅助完成（2026-08-19）
-
-- 新增 `src/features/director-desk/director-copy-assist.ts`，集中构造 VOX/漫剧创作与修改请求，并归一化未知 LLM 失败。
-- `DirectorProjectStart.tsx` 新增共享 `DirectorCopyAssist`；两个创建页复用同一套按钮状态、成功/失败反馈与草稿保护逻辑。
-- 修复创建页滚动归属，保留此前统一任务体系的主壳层和 Director Desk 路由逻辑。
-- 聚焦回归 14/14、类型检查、生产构建、差异检查和 UTF-8 检查通过。
-- 浏览器 QA 4/4、Electron 生产渲染 QA 4/4 通过；证据位于 `.artifacts/director-copy-assist-*`，未调用真实 LLM 或付费生成。
+# 进度日志
+
+## 2026-09-12 导演台概念设计
+
+- Image 2.5 结果：预览优先方案和分镜总览方案均成功，路径分别为 `output/imagegen/storydream-ui-20260912/image25-focused-desk-concise/image.png` 与 `output/imagegen/storydream-ui-20260912/image25-storyboard-desk-concise/image.png`；两者实际均为 3840x2160，`locallyUpscaled=false`。
+- 时间轴优先方案请求超时，工具写入 `image25-timeline-desk-concise/error.json`，billing status 为 unknown；按工具规则不自动重试，因此本轮交付两张可选方案，不宣称三张齐全。
+- 最新重试：用户提供另一个地址 `https://ai.input.im`，使用同一当前密钥、`gpt-image-2`、1440x1024/high 请求第一张概念图，仍返回 `503: No available compatible accounts`。没有生成任何图片，没有启动后两张请求。
+- 后续：用户再次指定图片服务并要求生图；已将三套提示词改为文字生成，删除附件已上传的表述。使用当前用户密钥在进程内调用 `gpt-image-2` 的 `/v1/images/generations`，明确返回 `503: No available compatible accounts`。未生成图片，等待服务恢复；不继续重复付费请求，不修改产品代码。
+- 用户要求先用生图模型做概念图，整体 UI 清洁、高效、一致；暂停尚未落地的导演台代码改动。
+- 已完成 Product Design context preflight（无已保存上下文）、ui-ux-pro-max 一致性检索、项目首页和导演台截图检查；三套英文/中文混合提示词按 UTF-8 保存到 `docs/design/storydream-web-redesign/concepts-20260912/`。
+- 目标三张独立 1440x1024 概念图，共用既有中性灰、珊瑚红、Fluent 控件、字体和导航规则；分别探索预览、分镜、时间轴优先。
+- 内置生图工具不可用；使用用户指定 API 的 `gpt-image-2`。模型列表认证成功，但带图编辑请求先返回 403，直接 PowerShell multipart 请求返回 502；没有概念图产物，不宣称设计已生成。
+- 当时等待确认是否改用文字规范生图；后续已执行，结果见本节顶部。未改产品源代码，未运行构建或测试，未保存密钥。
+
+## 2026-09-12 共享页面视觉统一
+
+- [completed] 读取 ui-ux-pro-max、StoryDream UI 组件合同、既有 CSS 与壳层路由；保护当前未提交工作。
+- [completed] 共享导航去除重复项目/设置入口，页头统一，字体/珊瑚选中态使用共享 tokens；项目布局切换提供图标、提示与键盘支持。
+- [completed] 新建类型卡片提高可读性，紧凑/窄屏使用横向短卡片；设置分区改为无框表单，窄屏分类下拉与桌面分类共享状态，配置操作和字段不再挤压。
+- [completed] 浏览器 36 张跨页面双主题截图、Electron 壳层 8 个捕获、500 项项目管理 15 组操作全部通过；233 项定向测试、typecheck、build、diff check 通过。
+- [completed] 更新 `docs/design-system/storydream/MASTER.md` 的有效实现规则，并将旧自动推荐明确标为历史参考；未使用或保存用户提供的服务密钥。
+- [pending] R3 导演台完整迁移、其余制作页内部布局与真实 Web 服务仍按总计划推进，本轮不宣称全部页面已重构。
+
+## 2026-09-12 R1.1 六入口与 P01 项目状态闭环
+
+- [completed] 产品壳层收敛为“项目、素材库、灵感、模板、任务、设置”六个一级入口；账户/激活保留底部入口，旧视图路由与跳转继续可达。
+- [completed] P01 项目卡状态详情从页面内联分支抽为 `taskStatusDetail`，覆盖草稿、等待、运行、暂停、完成、失败、取消七种状态；等待态显示“等待开始”，不再误报“当前步骤 4”。
+- [completed] shell QA 扩展到项目页，覆盖桌面/紧凑与深色/浅色四组合共 8 张捕获；项目夹具覆盖七状态并验证每张卡的真实状态文案。
+- [completed] 首轮真实 QA 发现 `pending` 等待徽标仅 4.43:1，低于 4.5:1；已把 `.status-pill.pending` 并入警示色组并补样式回归断言。
+- [completed] 最终证据：`.artifacts/storydream-web-redesign/editorial-shell-p01-20260912/report.json`；8/8 捕获、8 张 PNG，4 个项目捕获均 `projectStatus.ready=true`，文本/焦点对比度失败为 0，控制台、页面与渲染错误为 0。
+- [completed] 定向回归 `tests/editorial-qa.test.ts tests/product-shell-ui.test.ts` 186/186、`npm run typecheck` 通过。
+- [pending] R2-R9 的项目流程后续页、导演台、创作类型、管理页及本机 Web/剪映连接器仍未完成；本轮只关闭 R1.1 shell 与 P01 状态验收。
+
+
+## 2026-09-10 Web / Electron 重构启动
+
+- 按最新要求暂停旧质量专项，读取 ui-ux-pro-max、storydream-ui、input-im-4k-image 与 planning-with-files。
+- 已审计入口、fallback、壳层、样式与剪映 IPC；新增双端架构和 R0-R9 迁移/验收清单。
+- 已生成项目首页与编辑器概念图并检查中文；原图在 `.artifacts/storydream-web-redesign/`，说明见 `docs/design/storydream-web-redesign/review.md`。
+- web-access 检查缺少浏览器远程调试，已通过其允许的静态读取核查公开入口。
+- 初次计划补丁因标题层级不匹配未应用，随后改为准确标题锚点。
+- 共享壳层第一版样式已落到 `src/styles/redesign.css` 并由 `src/styles.css` 引入：统一 32px 窗口线、220px 侧栏、76px 页面头部、单珊瑚主操作、减少底部重复任务/积分面板；保留紧凑窗口和主题切换。
+- 新增 `src/shared/runtime-capabilities.ts` 与聚焦测试，明确 Electron、浏览器 fallback、本机 companion 三种能力边界。
+- 生图两次失败已记录：gpt-image-2 无可用兼容账户，gpt-image-1 不受支持。
+- 最新生成已成功：ai.input.im / gpt-image-2 返回 1536x1024 项目首页及 1254x1254 编辑器。前期编码问号图弃用；请求明确使用 string 和 UTF-8 字节，凭证只在进程环境存在。
+- 修正首版壳层的窄屏导航隐藏、字号/字距、令牌位置和新建按钮拥挤；浏览器不再展示窗体控制；加入 `dev:web`，预览地址 `http://127.0.0.1:5186/`。
+- 能力准备模块不把已配置地址视为已连接；URL 解析使用 URL API，拒绝非法端口、路径及凭证。
+- 聚焦回归 7 文件 183/183、typecheck、build、diff check 通过；Electron 双主题/双尺寸 QA 与 Web 四尺寸共享壳层检查通过。完整页面重构和本机连接器尚未完成。
+
+## 2026-09-10 页面重构详细方案
+
+- [completed] 新增 `docs/plans/2026-09-10-page-reconstruction-spec.md`：逐页定义项目首页、新建、普通成片、导演台、VOX、漫剧、HTML、MV、素材、灵感、模板、任务、设置、账户与授权。
+- [completed] 完成六入口信息架构与 20 个旧视图迁移表；明确 MV 新建入口、账户/激活底部入口、任务四种 history family 和旧路由兼容要求。
+- [completed] 明确项目外壳/项目编辑器两种布局、响应式断点、滚动归属、状态/无障碍规范，以及长文全文时长、MV 主歌曲、导演台选择与播放时钟等已有行为的保留验收。
+- [completed] 明确 Electron、本机浏览器 companion、纯浏览器/公网的能力矩阵，配对握手、事件恢复、媒体 URL、剪映交付状态机和无连接器草稿包路径。
+- [completed] 补充 R1-R9 子批次、代码边界、回退方式和验收矩阵，并在 `task_plan.md`、`findings.md`、`docs/plans/2026-09-10-web-ui-rebuild.md` 建立链接。
+- [pending] 下一步执行 R1.1：实现六入口导航和项目首页，同时保留旧路由与数据合同；本轮未声称完整页面或正式 Web 已交付。
+
+## 2026-08-19
+- 读取并通过 PPT Master attribution guard。
+- 读取 documents 与 planning-with-files 技能要求。
+- 确认两个附件存在且保持原位。
+- 初始化 `task_plan.md`、`findings.md`、`progress.md`。
+- 模板转换为 `I:\opc\_ppt_outline_extract`，确认 14 页和各页说明。
+- 用 `python-docx` 按 UTF-8 读取 Word 段落与指标表，恢复全部中文内容。
+- 建立七项任务与四个先行先试任务轴的映射关系。
+- Word 视觉渲染因缺少 `soffice` 暂停，已记录为 QA 限制。
+- 完成 25 页页纲：封面 1、目录 1、基础条件 4、思路与目标 5、重点任务 9、保障 2、亮点 3。
+- 将共性标注平台调整到“高质量数据集供给轴”，使四轴语义与模板一致；先进技术轴两页聚焦技术攻关、协同标注、评测和适配。
+- 终检通过：页数 25；分区页数 4/5/9/2/3；四轴、七任务、九基础维度、四优势、14 项年度指标均可检索；`git diff --check` 无报错。
+- 接到补充要求：分析指定目录下全部材料，将有效内容加入现有 25 页大纲。
+- 完成 15 份材料的格式盘点和全文/逐页索引；Word/WPS 11/11 成功、PDF 25 页成功、PPTX 118 页成功。
+- 完成 PDF 25 页视觉检查，确认其为市级、平煤神马、新华区三份专题合订材料。
+- 完成 3 套 PPTX 共 118 页逐页索引，并导出 27 张相关页缩略图检查视觉素材。
+- 更新 `平顶山数据标注申报答辩PPT大纲.md`，不增加页数，加入无冲突补充事实、机制和素材页码。
+- 新增 `补充材料筛选与增补说明.md`，逐份列明 15 个文件的价值等级、可用内容、映射页码和排除项。
+- 终检通过：大纲 25 页；补充材料处置表 15 行；UTF-8 无乱码；`git diff --check` 无报错。
+- 用户明确指定 `ppt-master`，确认官方模板继续作为总样式，26 页中小企业数字化转型课件作为内部单页丰富度和信息密度参考。
+- 使用 PowerPoint 渲染官方模板 14 页和参考课件 26 页并检查完整联系图；使用 PPT Master `pptx_intake.py` 提取两套课件的色板、字体、字号和页面结构。
+- 确定“官方模板定身份、参考课件定密度”：保留 `#C5000C` 红白体系，借结论条、多栏卡、证据墙、架构、任务矩阵和全宽表格，不借深蓝/紫/黄视觉身份和 10-12 pt 正文。
+- 更新 `平顶山数据标注申报答辩PPT大纲.md`：增加视觉系统章节，并为 25 页逐页指定 L1-L6 版式原型和参考页。
+- 新增 `PPT内页视觉融合规范.md`；终检 25/25 页均有版式映射，UTF-8 无乱码，`git diff --check` 无报错。
+- 用户授权直接生成，按 PPT Master Quick Generate 路由执行，无确认 UI、无根级设计规格/锁文件。
+- 初始化项目并导入官方模板、参考课件、大纲、视觉规范和补充材料说明；提取 51 个参考图片资产。
+- 串行手工编写 25 页 SVG，修复 checker 要求的根模块 `data-pptx-bounds` 后，final gate 0 阻塞通过。
+- 导出 `I:\opc\平顶山市数据标注先行先试申报答辩.pptx`，25 页原生可编辑 DrawingML，大小约 8.9 MB。
+- 用 PowerPoint 实际渲染全部 25 页并检查联系图和重点页；反向文本核验全部核心字段通过。
+- 按用户 v4 大纲重新编排 25 页：20 页主讲 + 5 页备选亮点追问，恢复五个章节目录页。
+- 备份原成品与原 SVG 项目；原文件被 PowerPoint 占用时未强制关闭进程，改为独立 v4 输出。
+- 重写 P06/P10/P15/P18 目录页及 P07-P25 内容页，保留上一版红白样式、图片资产和高密度布局。
+- 首轮渲染发现 P08 年度值列拥挤，改用已验收的四分区 14 项指标表并补 2029 总体目标带。
+- 最终输出 `I:\opc\平顶山市数据标注先行先试申报答辩_v4最终修订版.pptx`，25 页、约 3.32 MB、原生可编辑 DrawingML。
+- 最终 PowerPoint 渲染 25/25 页通过；反向核验：5 个章节、7 项任务、4 大优势、5 个扩展亮点、14 项指标全部存在。
+- 收到 DB 新汇报稿，确认其为 7 页口头答辩叙事稿；通过 Word COM 逐段恢复 38 段完整中文。
+- 确认新稿替代 v4 内容权威：4 项基础、3 个定位、3 步路径、6 项任务、3 类保障、4 项特色亮点。
+- 新建 PPT Master Quick 项目 `pingdingshan-data-annotation-db_ppt169_20260819`，导入 DB 结构稿、官方模板、视觉规范和参考课件，提取 51 张图片。
+- 手工完成 20 页 SVG：封面目录 2、基础 5、思路目标 4、任务 5、保障 1、亮点章节/内容/结语 3；未沿用 v4 的七任务和 14 项指标。
+- DB 新纲版 final SVG checker 20/20 页、0 阻塞通过；导出 20 页原生可编辑 PPTX。
+- 使用 PowerPoint 实际渲染全部 20 页并检查联系图和 10 张关键页；反向文本核验五章、六任务、三保障、四亮点和目标全部通过。
+- 用户要求每页约 300 字解说；选择 Enhance Native PPTX 路线，只写入演讲者备注，不改可见页、音频、自动播放或转场。
+- 初始化 `pingdingshan-db-speaker-notes_native_enhance_20260819` 原生增强项目，20 页源包完整性检查通过。
+- 为 20 页编写 264-289 字符的逐页解说，平均 276.4；备注材料校验 20/20 通过。
+- 原生 OOXML 应用 20 个演讲者备注，未启用音频、计时或额外转场；输出含解说备注版 PPTX。
+- 源版与备注版 PowerPoint 渲染图 20/20 哈希完全一致；增强后包完整性、关系、页数、隐藏页和转场指纹检查通过。
+- 完成 DB-v1 与 DB 旧稿段落级对比：两者均为四条正式亮点；缺失的是此前 v4 中 P21-P25 的五个扩展亮点页。
+- 明确根因：用户要求 DB 为严格结构权威后，将 25 页 v4 改成 20 页 DB 版，扩展亮点被整体撤销；P19 四亮点也因单页压缩损失部分论据。
+- 用户确认只做四个正式亮点，每个亮点独立一页；计划将 20 页扩为 23 页，保持原样式并同步备注。
+- 将 P19-P22 改为四个正式亮点独立页，结语顺延 P23，统一更新页码为 23 页。
+- 四亮点独立页分别配置煤化工产业、产业工人、工业互联网/矿井、城市与工人转型图片。
+- 导出 23 页基础版并通过 PowerPoint 视觉检查；为 23 页写入每页 261-285 字符解说备注。
+- 原生增强 postflight 通过；基础版与含备注版 23/23 渲染哈希一致，未改可见内容。
+- 用户指出后续亮点不全；发现 `DB-v1.doc` 修改时间 16:17，晚于制作依据 `DB.doc` 的 13:54，开始进行段落级差异诊断。
+- 收到用户提供的 `8分钟25页亮点扩展版大纲_v4.md`；确认新版为 P01-P20 主讲线 + P21-P25 亮点追问页，并恢复 P02/P06/P10/P15/P18 五个章节目录页。
+
+---
+
+# StoryDream VOX P0-3 进度（2026-09-05）
+
+- 完整读取 `storydream-ui`、组件契约与 `planning-with-files` 说明。
+- 采用独立追加区块，未覆盖旧 PPT 任务记录。
+- 开始审计 editorial-collage 领域、EditorialCollagePage、DirectorDeskWorkspace、样式和测试。
+- 完成首轮符号与脏工作树映射；确认目标文件存在并行修改，后续只做兼容性增量编辑。
+- 读取根 `AGENTS.md` 并确认所有中文/source/config 必须按 UTF-8 处理。
+- 完成 editorial-collage 顶层领域初读：确认三策略声明、缺少视频 Job 字段、starter timeline 固定 deterministic。
+- 完成 validation 与现有 editorial 测试审计；确定需要新增 timeline 权威同步纯函数和行为测试。
+- 读取共享生产合同及现有 adapter 先例；确认基础 clip source 无需修改。
+- 完成 EditorialCollagePage 后半段初读；确认图片、旁白、本地成片链路已接通，AI 动态镜头尚无前端合同。
+- 完成页面状态和 Director Desk 时钟初读；确认可以把视频 currentTime 绑定到既有 `playbackMs`，无需第二套定时器。
+
+# StoryDream R06/R06-U01 续推进（2026-09-07）
+
+- 完成导演台请求 gate 初步接入后，补齐 Provider Job 权威状态选择：按目标节点、能力、分集和 attempt/更新时间选择最新任务，避免新的 running 重试被历史 completed/failed 覆盖。
+- 切项目/分集时清理本地生成、旁白/视频忙碌态和批次节点，防止旧页面状态泄漏。
+- 导演队列保留持久化历史，但只将最新镜头状态作为当前状态；不再由镜头结构伪造等待队列。
+- 完成 U01 首轮修复：导演台空项目不再注入 defaultAssets、createQueue 或示例缩略图，空素材/空队列明确显示未生成状态；真实资产和 Provider Job 仍正常展示。
+- 验证：R06 聚焦 5 个测试文件 41/41 通过；npm run typecheck 通过；npm run build 通过；git diff --check 通过。
+- 下一步：补真实浏览器重复点击/失败重试及切页验收，再推进 R07 批次持久化与重启恢复。
+
+## 2026-09-07 R07 持久化批次执行（首轮）
+
+- 新增 `director_batches` SQLite 持久化表、项目/分集/状态索引、CAS 更新和删除/查询接口。
+- 批次保存计划快照、DAG 节点依赖、并发数、暂停/取消意图和恢复标记；应用重启不会自动重提未知远端任务，而是转为暂停并等待核对。
+- 新增 Electron IPC：`director:batch-create/get/list/update/delete`，并同步浏览器 fallback 的 localStorage 实现。
+- 导演台接入批次持久化：创建批次、恢复活动批次、暂停/恢复/取消和完成状态都会写回存储；VOX 与 AI 漫剧页面传入统一 API。
+- 验证：批次/存储/IP​​C 聚焦测试 81/81，通过 `npm run typecheck`。
+- 剩余：R07 仍需把真实远端任务核对、批次执行重连和生产 Electron 重启验收补齐，不能视为完成。
+- 修复 DirectorDeskWorkspace 批次持久化竞态：新增 `batchNodesRef`，节点回调先同步最新快照，再通过串行 CAS 写队列按最新 `updatedAt` 写回；暂停、恢复、取消和最终状态统一走队列。
+- 恢复批次若带 `recoveryRequired` 会保持暂停并提示核对远端任务；没有活动控制器时不会直接恢复，避免未知远端任务自动重提。
+- 验证：导演/渲染/批次回归 79/79，漫剧回归 35/35，拼贴回归 11/11，存储与 IPC 回归 67/67；`npm run typecheck`、`npm run build`、`git diff --check` 通过。
+- 使用 vendor/python 运行生产 Electron 导演台 QA：`status=passed`，覆盖 1440×1024、1536×1024、1040×720；`runtimeErrors=[]`、`paidGenerationCalls=0`，批次/字幕/紧凑窗口检查通过。进程返回码 1 仍只发生在 harness 关闭清理阶段，和此前已知限制一致。
+- 将导演批次存储方法归类为工作区能力层内部 API，补充 renderer command inventory 的 query-only 排除，避免把 `create/get/list/update/deleteDirectorBatch` 误报为直接用户命令；相关 inventory 聚焦测试剩余 1 个既有 BenchmarkImport `saveNotes` 元数据失败。
+- R08 首轮实现：新增任务事件复合键（taskId + runGeneration + seq），修复不同任务相同 seq 互相覆盖；重置、乱序、重复事件合并均使用复合键。
+- QueuePage 事件栏按当前任务与当前 runGeneration 隔离，切任务/重跑时清空旧加载结果，不再把无归属 `live` 或旧任务事件带入当前任务。
+- 导演台/AI 漫剧任务进度改为单一“导演台工作流”，不再套普通任务七阶段。
+- R07 恢复入口补齐：重启后批次显示“需核对远端状态”，用户显式点击后仅继续未完成节点，已完成/失败/取消节点保持终态；新增相应执行测试。
+- 验证：R07/R08 聚焦 75/75、typecheck 通过；全量回归仍有既有模板壳层与 Benchmark inventory 失败，未归因于本轮。
+- R07/R08 生产 Electron QA 在最新 build 上再次通过：`status=passed`、`runtimeErrors=[]`、`paidGenerationCalls=0`，正常与紧凑视口检查通过；进程码 1 仍仅为 harness 关闭清理阶段的已知限制。
+- R11 音乐 MV 主歌曲门禁：创建前必须有独立 `musicMvAudioPath`，按钮禁用并显示提示；BGM 明确只能作为辅助配乐，不能替代主歌曲；与 runner 的音频校验保持一致。
+- 验证：音乐 MV 页面专项测试通过，typecheck 通过。
+- R09 人物素材生命周期已有完整保护并补齐验证：删除前查询任务引用，存在引用时阻断；无引用时移入 `.trash` 回收区；页面支持一次确认和撤销恢复；新增人物素材回收/恢复测试，配合本地实验室 UI 回归 18/18 通过。
+- U03 素材可达性：导演台素材架新增“显示全部素材（N）/收起素材”控制，默认保留紧凑九张预览但所有搜索/分类结果可展开访问；补充 focused contract test 与素材网格底部布局样式。
+- 验证：`npx vitest run tests/director-product-flow.test.ts`（8/8）、`npm run typecheck`、`git diff --check` 通过。
+- U02/U04 继续收敛：导演台图片/视频/旁白服务状态行统一为可截断的 provider 名称节点，长名称保留 title 提示并让成本信息固定在右侧；检查器音色字段统一使用“音色”，未配置旁白服务时下拉项明确提示配置动作；旁白/素材说明文字由 9px 提升至 10px，保持紧凑视口可读性。
+- 补充 Benchmark 备注保存按钮的 busy/空内容禁用条件，并同步 renderer inventory 的真实调用链；Person Assets 的 usage/restore 属于查询/工作区能力层，加入 inventory query-only 排除以避免误报。全量回归仍有历史路径清理、模板旧字符串契约等既有失败，未将其归因于本轮。
+
+## 2026-09-07 R07 生产验收与全量回归续跑
+
+- 完成生产 Electron 批次验收：批次状态 `running → paused → running → cancelling`、暂停/取消意图持久化、项目/分集筛选隔离均通过。
+- 完成应用重启恢复验收：活动批次自动转为暂停并标记 `recoveryRequired`，提示等待远端状态确认；已完成节点保持终态，核对后仅继续未完成节点，不重复执行已完成节点。
+- 证据：`.artifacts/director-r07-batch-qa/report.json`，使用本地 fixture 与复制数据库，`paidGenerationCalls=0`。
+- html-video 全量并发下的 Windows 临时目录清理偶发 EPERM 已扩大 teardown 重试窗口；专项回归 `tests/html-video-electron.test.ts` 146/146 通过，随后全量回归 176/176 文件、2185/2185 用例通过。
+- 生产构建与静态检查：`npx tsc --noEmit`、`npm run build`、`git diff --check` 均通过。
+
+## 2026-09-07 U04/U08 状态语义收敛
+
+- 新增 `src/shared/director-system-status.ts`，统一 VOX 与 AI 漫剧的生成状态优先级：项目错误、图片服务未配置、视频服务未配置、旁白服务未配置分别给出可行动文案；AI 漫剧额外区分“参考图能力不支持”和“一致性基准待建立”，避免把能力缺失误报成服务未配置。
+- 两个工作台改为使用共享状态解析，不改变持久化 ID 或业务流程。
+- 新增 `tests/director-system-status.test.ts`，覆盖错误、连接、能力和一致性就绪状态；5/5 通过。
+- 使用生产 Electron 运行 `vendor/python/python.exe scripts/qa-motion-comic.py`：`.artifacts/motion-comic-workbench/report.json` 为 `passed`，runtimeErrors=0、paidGenerationCalls=0，桌面与紧凑视口及参考图保存/重开流程通过。
+- 设置页用户术语同步：将“云端 VideoProvider”统一为“视频生成服务”，将 TTS 配置档案的主要入口统一为“旁白服务（TTS）”，保留技术协议名只用于配置细节。
+- U04 细节修复：导演台生成区移除硬编码名人音色单选，改为只读“跟随旁白设置”并引导到“旁白与字幕”；AI 漫剧阻断未连接或不支持参考图的图片服务切换；旁白服务未连接时新建项目不写入默认音色；MV 预览将内部节奏/字幕/段落枚举显示为中文。
+- 新增 `tests/u04-service-semantics.test.ts`；与导演生成、漫剧工作台回归共 4 个测试文件、20/20 通过。renderer command inventory 在同步术语后重新通过 5/5。
+- 全量回归首次重跑受 C: 临时目录 0 字节影响，html-video 28 个用例在磁盘预检处级联失败；将测试临时目录重定向到 I 盘后，`tests/html-video-electron.test.ts` 146/146 恢复通过，正在进行同环境全量复跑。
+- I 盘临时目录复跑完成：全量 178 个测试文件、2191/2191 用例通过；`npm run build`、`npx tsc --noEmit`、`git diff --check` 通过。
+- 最新生产构建导演台 QA：`.artifacts/director-desk-qa/report.json` 为 `passed`，覆盖 1440×1024、1536×1024、1040×720，runtimeErrors=0、paidGenerationCalls=0；QA 控件契约已同步“图片生成服务”和只读“音色”字段。
+- U04 追加术语与能力修复：导演台生成参数不再使用伪造的单选名人音色，改为只读“跟随旁白设置”并引导到“旁白与字幕”真实音色入口；AI 漫剧切换图片服务前阻断未连接或不支持参考图的档案，VOX 保留对仅需图片生成服务的兼容性；未连接旁白时新建 VOX/AI 漫剧不再持久化默认音色；音乐 MV 预览将 `lyric-sync`、`karaoke`、`intro/verse/chorus/outro` 显示为中文语义。
+- 新增 `tests/u04-service-semantics.test.ts`，与漫剧工作台、导演生成状态及音乐 MV 运行专项合计 24/24 通过；`npm run typecheck` 与 `git diff --check` 通过。
+
+## 2026-09-07 F03/F02 续推进
+
+- F03 生产 Electron 导演台 QA 已复跑通过：`.artifacts/director-desk-qa/report.json` `status=passed`，新增检查起步时长下拉包含 15 秒、30 秒、60 秒·长版；覆盖 1440×1024、1536×1024、1040×720，`runtimeErrors=[]`、`paidGenerationCalls=0`。fixture 仍使用 30 秒结构并验证视频/字幕/声音预览。
+- F03 聚焦回归：editorial-collage、persistence、workbench、copy-assist 共 20/20；`npx tsc --noEmit` 与 `git diff --check` 通过。
+- F02 首版质量门已接入 `evaluateDirectorQuality`：资产完整性、字幕越界/空文本/词级时间、对白/旁白覆盖、成片媒体有效性、render fingerprint 新鲜度五项硬检查；失败时阻断成片登记并记录 `DIRECTOR_RENDER_QUALITY_GATE_FAILED` 定位信息。
+- F02 聚焦回归：`tests/director-render.test.ts` 与 `tests/director-render-fingerprint.test.ts` 共 25/25；`npx tsc --noEmit`、`git diff --check` 通过。
+- 当前整体计划仍未完成；F02 需要继续补坏媒体定位、真实审片报告 UI/重检范围及生产 Electron 失败门禁证据，F03 仍需结构编辑（增删/排序/拆分合并）而非只读时长选择。
+- F02/F03 后全量回归：`npm test -- --runInBand` 在 I 盘临时目录完成，178 个测试文件、2196/2196 用例通过；`npm run build` 通过。
+
+## 2026-09-07 F03 结构编辑推进
+
+- VOX 领域新增结构编辑契约：`insertEditorialShot`、`removeEditorialShot`、`reorderEditorialShot`、`splitEditorialShot`、`mergeEditorialShots`。
+- 结构变更统一重排 beat start、shot duration、subtitle cue、timeline clip；派生镜头会清除不再属于新节点的 provider job，避免旧任务串接。
+- EditorialCollagePage 已接入新增、删除、上移/下移镜头操作，复用 Director Desk 结构工具栏；保留最后一个镜头保护。
+- 聚焦回归：editorial-collage、workbench、persistence 15/15；`npx tsc --noEmit` 通过。
+- F03 仍未整体完成：拆分/合并尚未在生产页面提供独立入口，需继续补 UI 操作与 Electron 保存/重开验收。
+- 生产 Electron 结构操作验收已通过：`.artifacts/director-desk-qa/report.json` `status=passed`，`voxStructureEdits` 记录镜头数 `4 → 5 → 5 → 4`，覆盖新增、上移、删除恢复；`runtimeErrors=[]`、`paidGenerationCalls=0`。
+- 修正拆镜字幕边界：拆分点生成的 cue 从同一绝对时间点开始，拆分前后均保持在镜头范围内。
+- F03 已补齐 Director Desk 拆分/合并入口：本地关键帧镜头可按中点拆分，拆分后可合并；AI 动态海报镜头明确禁用拆分，避免把视频资产伪装成可无损切割的结构节点。
+- 生产 QA 首次暴露字幕保存后重载的 Electron 对话框竞态，QA 脚本已在该明确重载点接受未保存提示后复跑通过；最新报告 `status=passed`，结构操作记录 `4 → 5 → 4 → 5 → 5 → 4`，`runtimeErrors=[]`、`paidGenerationCalls=0`。
+
+- 生产 Electron QA 最终复跑通过：`.artifacts/director-desk-qa/report.json` 为 `status=passed`，`runtimeErrors=[]`、`paidGenerationCalls=0`；结构编辑保存后重载保持 5 个镜头，完整记录为 `4 → 5 → 5 → 4 → 5 → 5 → 4`，删除后恢复原数量；覆盖 1440×1024、1536×1024、1040×720。
+
+## 2026-09-07 F02/F04 继续推进
+
+- F02 审片面板已与 `qualityReports` 持久化数据贯通：审片页签显示最新报告、通过/待处理/阻断统计、逐项定位详情，并可从面板重新生成并审片；质量检查统一标记 `blocking` 严重级别。
+- F04 首轮前端切片：VOX 模式检查器显示已持久化的风格候选，支持选择唯一风格基准并写回 `selectedStyleId/styleCandidates.selected`，为后续样片资产与成本追踪保留实体入口。
+- 验证：`director-render`、指纹、产品流专项 38/38；`npx tsc --noEmit`；`npm run build`；`git diff --check` 均通过。F04 尚未宣称完成，仍需接入真实样片生成、版本/成本追踪和重开验收。
+- F04 继续推进：`directorImageInput` 现在把当前选中的风格候选 prompt 和 `styleCandidateId` 纳入每次图片生成输入；输入指纹变化会阻止旧风格请求覆盖当前镜头。专项生成/产品流回归 22/22，`npx tsc --noEmit` 与 `npm run build` 通过。
+- F04 生产 Electron 回归通过：`.artifacts/director-desk-qa/report.json` `status=passed`，`runtimeErrors=[]`、`paidGenerationCalls=0`；正常与紧凑视口及 F03 结构编辑持久化链路保持通过。
+- F04 样片生成闭环已接入：VOX 候选按钮调用现有图片生成服务，生成结果写入独立 `style-sample` provider job 与图片资产，并回写候选 `assetVersionId`；失败尝试保留任务历史，生成期间候选被编辑时保留旧版本且不覆盖当前引用。
+- F04 前端追踪已补齐：样片进入生成队列和风格参考资产面板，候选缩略图随项目保存/重开恢复；样片成本通过 provider job 与项目 `estimatedCost/actualCost` 字段传递，未提供费用的本地/接口记录显示为待接口结算。
+- F04 聚焦回归 37/37，`npx tsc --noEmit`、`npm run build`、QA 脚本语法检查通过；生产 Electron QA 最新 `.artifacts/director-desk-qa/report.json` `status=passed`，覆盖 3 个候选显示、样片缩略图、切换保存重开、审片入口、F03 结构编辑，`runtimeErrors=[]`、`paidGenerationCalls=0`。
+- 修复前端审片阶段路由覆盖问题：点击“审片”阶段现在稳定打开质量报告页签，不会被后续通用阶段逻辑切回“生成”。
+- F02 报告范围续补：质量门失败项现在记录 `recheckScope`（镜头、资产、字幕 cue/时间段、媒体或整项目），审片面板显示修复后的局部重检范围；生产渲染失败报告也标记为阻断并定位整项目。
+- 最新聚焦质量/生成/产品流回归 44/44；TypeScript、生产构建和 `git diff --check` 通过。
+- F05 首个前端切片：导演台运动检查器不再显示固定的 100%/103%/106% 假值，改为读取当前相机关键帧的真实缩放、位置、关键帧数量，并显示当前图层及其关键帧数量；预览/导出继续使用同一份相机与图层数据。
+
+## 2026-09-07 F01 真实字幕时间戳闭环
+
+- `audio-alignment` 现支持 Whisper/OpenAI JSON（segments/words/tokens）、SRT、VTT，统一输出绝对毫秒时间；文本/时间不匹配时保留 `estimated` 并返回可定位 issues。
+- 导演台、VOX、AI 漫剧字幕面板新增“导入识别时间戳”，支持本地 JSON/SRT/VTT 选择、2MB 上限、当前 cue 时间过滤与错误反馈；成功后来源标记为 `whisper`，保留兄弟字幕。
+- 新增 `selectLocalSubtitleTimestampFile` IPC，并同步 preload、browser fallback、IPC schema、API 类型及 renderer command inventory。
+- 验证：6 个聚焦测试文件、321/321 通过；`npx tsc --noEmit` 与 `npm run build` 通过。
+- 生产导演台 QA 脚本继续收敛结构编辑后的模态层清理：增加重载容错、路由恢复、Escape/backdrop 处理。最近失败仍是 Fluent 过渡层残留导致的 harness 点击遮挡，`runtimeErrors=[]`、`paidGenerationCalls=0`；产品聚焦回归未受影响，最终生产报告待下一轮复跑确认。
+
+## 2026-09-07 F02 审片 UI 续核
+
+- 复核当前工作区发现 F02 审片面板已接入导演台：使用持久化 `qualityReports`，显示通过/阻断/警告/人工检查明细，支持重新生成并审片；VOX 与 AI 漫剧均传入当前文档报告。
+- 修正面板显示条件：仅在 `inspectorTab=quality` 时显示，点击审片标签会同步切换审片阶段；报告统计区分已通过与待处理/阻断，避免把 pending 检查计为通过。
+- 新增导演产品流契约测试，验证两工作台报告传递和审片面板入口。
+- 验证：`tests/director-product-flow.test.ts` 9/9；`npx tsc --noEmit`；`git diff --check`（仅既有 CRLF 警告）。
+# 2026-09-08 F05 图层与关键帧编辑续推
+
+- 新增独立 DirectorMotionInspector，支持全部已建图层的排序/显隐、图层轨道选择、位置/缩放/旋转/透明度、相机关键帧选择与编辑。
+- 新增播放位置插值添加关键帧、关键帧时间编辑/删除及首尾保护；操作通过 editEditorialShotMotion 写回权威文档，拒绝非法数值、越界时间和 AI 视频模式下的本地运动编辑。
+- 本地镜内时钟支持首尾定位、整镜播放、播放到下一关键帧，播放结束保留当前镜头选择。全部图层隐藏时显示空状态，不回退示例图；隐藏层从导出加载和时间线视觉资产引用中排除。
+- 修复运动预设仅修改名称而不更新相机的问题；选择预设会生成对应的持久化首尾相机关键帧。
+- 新增预览样式与实际导出 seek 脚本的 7 个时间点对照，覆盖中间插值与反向 seek。9 个聚焦文件 79/79 通过，npm run typecheck 和生产 build 通过。
+- 生产 UI QA 已取得排序/显隐/相机/图层缩放/关键帧插入保存重开证据；局部预览停止于 900ms，整镜停止于 1800ms，保持原镜头。1536x1024、1040x720 控件可达并有截图。
+- 本地 MP4 烟测通过：修改相机三关键帧、图层缩放、层级并隐藏其余图层后，成功导出 1920x1080 含音视频文件，预期 3200ms，实测 3210ms。AI 动态海报导出同样通过。报告：.artifacts/director-render-smoke/report.json。
+- 本轮 QA 的失败已定位：首次运行旧 dist；随后视频检查没有重新选择对应镜头；新增选镜后紧凑窗口侧栏隐藏，脚本需通过胶片条选择。生产 QA 最终重跑进行中，不把前述局部证据表述为全套通过。
+- 首次 apply_patch 写入 QA 脚本失败时检查磁盘与文件内容，磁盘空间充足、文件完整，重试成功。
+
+## 2026-09-08 F05 验收与结构保存修复
+
+- 真实数据库测试先复现结构编辑改写 `updatedAt` 的问题；移除本地时间戳更新，由存储成功提交时递增版本号，旧版本写入仍被拒绝。
+- 补充已有生成任务和图片资产的拆分回归，复现新 shot ID 保留旧 providerJobId 导致的归属校验失败；解除派生镜头的任务引用，保留生成历史、图片资产及图层引用。
+- 修正 QA 的异步等待：原 `wait_for_function` 对 Promise 提前返回，误把未保存的四镜项目判成五镜；现在等待实际查询结果，再断言保存按钮禁用及重载重开。新增合并、增删排序后的最终保存重开断言。
+- 聚焦回归 10 个文件、84/84 通过，typecheck、生产构建与 diff whitespace 检查通过。
+- 生产 Electron 最终验收通过：2026-09-08 13:25:22 至 13:27:52，`.artifacts/director-desk-qa/report.json` 为 passed，运行错误 0、付费调用 0。删除了 QA 强制隐藏 Fluent 遮罩的 DOM 干预，正常输入即可关闭弹窗。
+- 保存重开结果：图层/相机/关键帧保留；局部播放止于 900ms、整镜止于 1800ms；拆分后重开 5 镜，后续合并/增删/排序保存重开 4 镜。正常和紧凑窗口已检查截图；F05 标记完成。
+- 继续项：首段加镜头超过 3 秒后无法保存；拆分后两个镜头显示相同编号；长保存错误挤压顶部阶段导航。需分别补结构边界反馈、全局镜头序号和错误文本布局。
+
+## 2026-09-08 F03/U02 首段、时序和错误详情
+
+- 首段三秒从硬数据校验中移除，起步模板仍生成短开场；真实数据库回归改为在首段增删并保存，验证后续字幕、词级时间和指纹随 beat 平移。
+- 拆分按原运镜区间采样并补端点；合并保留字幕偏移，用相同时间点的关键帧使两段图层顺序呈现。预览/导出采样均在切点选择后段状态。
+- 结构结果在更新页面前解析校验，拒绝图层、关键帧、时长及引用非法状态；结构错误使用专用捕获入口，保留其他检查器的局部错误反馈。
+- 页面镜头号按当前全局顺序生成；顶部状态文本限宽省略，新增正常/紧凑窗口均可打开的错误详情弹窗。
+- 首轮生产 QA 发现无错误码的本地校验消息会被通用错误处理隐藏；给图层/关键帧超限加正式错误码和中文说明，时长错误也补中文范围，已重建复跑。
+- 实际导出 seek 对照覆盖切点前 1ms、切点、后 1ms 与反向 seek。曾遇到秒/毫秒浮点转换的末位差异，测试统一相同时间转换后通过。
+- MP4 烟测通过：包含 400ms 同时刻相机跳切，1920x1080，预期 3200ms/实际 3210ms，有音频、视频和非黑画面。AI 动态海报烟测同时通过；付费 API 未调用。
+- F03 仍需多轨音频的结构编辑归属/裁剪、节拍增删与长文完整性验收。
+- 聚焦回归 8 个文件、55/55 通过，typecheck、build 和 diff whitespace 检查通过。生产 UI 13:46 全流程 passed：首段 3600ms 保存重开，镜头编号 01-05 连续，超限合并拒绝并显示详情，最终结构保存重开通过；runtimeErrors=0、paidGenerationCalls=0。
+- 正常窗口错误态截图确认状态信息省略但顶部七个阶段与详情入口仍完整；紧凑弹窗截图最初抓到淡入中间帧，关闭截图动画后稳定截图清晰、完整、无重叠。
+- 最终复跑于 2026-09-08 13:49:45 passed，runtimeErrors=0、paidGenerationCalls=0；更新后的首段、编号、错误详情和结构保存断言全部通过。U02 本轮错误布局项完成，F03 总体继续推进。
+
+## 2026-09-08 F03 多轨音频结构编辑
+
+- 先复现移动后音频越界、拆分/合并后镜头归属失效。现按镜头起点差值平移音频；拆分保留原源文件位置、剪裁及静音尾段；合并保留各段录音和时刻。
+- 旧版 voiceAssetVersionId 旁白在派生镜头前显式保留；无时长音效固定原镜头内的使用区间，防止合并后被拉长。资产与任务历史保留，旧成片退出当前版本。
+- 新增可选淡化包络数据，连续拆分后仍按原进度预览/导出；用户修改淡化或裁剪时使用新设置。声音面板允许源使用时长为 0，静音尾段正常保存。
+- 真实 PCM 对照逐采样差值不超过两个 16-bit 量化单位；收紧实际 MP4 切点检查后复现 AAC 尾部补样造成约 4% RMS 下降，硬切现按作者镜头时长独立连接音频。
+- 短单帧夹具揭示独立拼接时帧率不可用的问题；仅在拼接阶段延展不足，改为逐镜头编码前补足持续画面，短场景黑场接彩色画面的真实测试恢复通过。
+- 生产 QA 发现漫剧导出携带 episodeId 被严格 IPC 拒绝；补齐可选分集 ID、非法值与额外字段拒绝测试。渲染失败使用项目统一错误解码，避免展示编码串。
+- 最终专项 16 个文件 152/152 通过，typecheck 和 build 通过；生产声音 QA 14:21 passed，覆盖 VOX/漫剧导出、VOX 结构操作、预览源 seek、保存重开、双视口，无运行错误与付费调用。
+
+## 2026-09-08 F03 节拍与长文验收
+
+- 跨节拍移动先保存源镜头内 cue 偏移，再映射到目标节拍插入位置；保留等长 cue 的 token 时间、alignment fingerprint 和音频片段起点。
+- 新增节拍增删/重排与跨节拍边界回归，夹具含有效音频素材、aligned cue/token 和 ownership 校验；24/24 通过。
+- 文档级 `sourceText` 持久化，起步字幕按最多 18 字分 cue；240 段中文原文、cue 串和重开解析无丢失。
+- 导演台把镜头与节拍操作分组，显示“当前节拍 / 总数”，删除节拍需确认；场景使用实际节拍标题。
+- `.artifacts/director-desk-qa/report.json` 15:12 `status=passed`，节拍新增/重排/删除确认/保存重开通过，运行错误 0、付费调用 0。
+
+## 2026-09-08 F02/F03 续推
+
+- 接回实际工作区后，先取得 51/51 领域/sidecar 回归、21/21 UI 合同及 typecheck 通过结果。首个聚焦命令误用临时目录为 cwd，没有找到测试；修正 cwd 为 I:/opc 后通过。
+- 双向移动测试先因夹具重复 cue ID 失败，修正夹具后复现目标已有字幕被压为 1ms、反向移动后源剩余字幕延迟 1000ms。修复为复用操作前 shot order 重排；新增所有镜头局部时间、token、音频与不可变性断言。
+- 媒体探测新增 ok/failed/unavailable，正常无黑帧明确返回 []；缺失与非法指标不可判通过。完整分析仅由成片审片请求启用。
+- 证据贯通 VOX/漫剧严格 schema、渲染结果、审片报告及 manifest；UI 分开统计警告/阻断/待处理，报告纳入检查器滚动，增大报告字号并展示数值。
+- 最新聚焦 5 文件 55/55、typecheck、build 通过。生产 QA 首次调用系统 Python 缺 playwright，改用项目 vendor/python/python.exe；当前隔离 Electron QA 运行中。
+
+### 最终验证
+
+- 生产质量 QA 首轮复现：当前失败渲染仍保留旧指纹成片的 selected/pinned 标记；新增单测也失败。修复后只清理同一分集的过期选中产物，保留同输入有效旧片及其他分集，18/18 指纹与并发回归通过。
+- 新增节拍移除默认占位旁白，空白输入不创建 cue；明确输入的真实旁白保持。黑帧探针补科学计数法、残缺/非法区间拒绝与最多 64 段时的完整性反馈。
+- 最终聚焦 11 文件 112/112、typecheck、build、git diff --check 通过；UTF-8 回读中文正常。
+- 新生产 `.artifacts/director-quality-qa/report.json` 于 19:56:50 passed：真实 VOX 低电平警告导出、漫剧正常导出、空对白质量阻断、失败不重复记录、不误报登记错误、过期产物不选中、报告/manifest 证据一致及保存重开。失败/缺失分析的 UI 使用明确标记的持久化夹具，探针异常在实际 Python 函数中注入验证。
+- 1536x1024、1040x720 共 8 个状态/尺寸组合，顶部与底部截图复审、复检按钮命中和横向溢出断言通过；错误/缺失指标不显示假数值或“未检出”。runtimeErrors=[]、paidGenerationCalls=0。
+- 导演台完整 `.artifacts/director-desk-qa/report.json` 于 19:58:24 passed，覆盖图层、字幕、双引擎、结构增删/排序/拆合、节拍增删/重排、保存重开。runtimeErrors=[]、paidGenerationCalls=0。
+- 下一项 F03 的只读复现：4000 字可创建但 60 秒有 224 cue（平均 66.7 字/秒）；8000/12000 字均在 beats.0.shots.0.subtitleCueIds 触发 <=100 限制。tsx.cmd 的内嵌引号被 Windows cmd 剥除，诊断改用 node --import tsx 成功。尚未宣称长文工作流完成。
+
+## 2026-09-08 F03 全文时长推进
+
+- 用户已确认采用“按全文分配时长”，保留全部正文并生成更长时间线。
+- 初次类型检查发现数据库事件仍用起步选项做除法；已改为保存实际时间线时长，避免 auto 产生 NaN。
+- 首轮 7 文件 51/53 通过。两处新测试夹具问题：数据库读取方法应为 getTaskDetail；40,000 个标点仍在实际容量内，容量拒绝用 50,000 个标点验证。已修正，并增加失败创建不留下孤立任务的断言。
+- 聚焦 6 文件 49/49、类型检查和构建通过。首轮生产 QA 在未保存草稿的离开确认处停下；脚本改走正常“保存并离开”，并发现草稿恢复按默认字段类型过滤会丢弃 auto 字符串。全文模式改为独立布尔字段，原数值时长保持兼容。
+- 20:24 生产长文 QA passed：11,990 字符、2,779,965ms、4 节拍、224 镜头、668 cue，草稿恢复、全文原稿、最后一镜保存重开一致；无运行错误、无付费调用。
+- 复审长文截图后追加胶片自动定位与真实空态；按钮组件不公开 ref，类型检查指出错误，改为列表容器 ref 查询选中项。新建各镜头完整缩放默认运镜，结构拆分仍保留原片段运动。
+- 20:32 原导演台完整 QA passed。末镜头紧凑截图复审又发现缩窗后卡片被胶片容器部分裁切；已增加 ResizeObserver 重新定位，并把 QA 从整页可见升级为胶片容器内完整可见的几何断言。
+- 最终长文 QA 20:34:04 passed，紧凑末镜头 right=696.8、胶片容器 right=697，完整可见。同步跑的完整导演台在视频页面截图超时，之前交互断言通过、runtimeErrors=[]；截图统一禁用 CSS 动画后单独复跑，未跳过断言。
+
+### 本轮最终验证
+
+- 18,000 字超过四节拍时，以分段类型维持证据图层归属，避免固定第三节拍误标；当前 17 文件 153/153、typecheck、production build 均通过。
+- 原导演台完整 QA 20:39:43 passed，覆盖本地画面/视频桩、检查器、字幕、结构操作和保存重开；截图/媒体像素检查未跳过。
+- 最终构建长文 QA 20:40:52 passed：11,990 字符原稿精确保留，时间线 2,779,965ms，224 镜头、668 cue；草稿恢复、原稿弹窗、末镜头编辑保存重开、两尺寸 12 个截图组合及胶片容器内可见性均通过。
+- 两份报告 runtimeErrors=[]、paidGenerationCalls=0。中文 UTF-8 回读正确，git diff --check 通过；没有提交或回退工作区改动。
+- 后续继续：长项目完整生成/导出的资源与 500 条资产/任务历史容量；F02 的 LUFS/true-peak、字形安全区、连续性与可执行局部重检。本轮未将阅读估计宣称为真实语音对齐，也未宣称总计划完成。
+## 2026-09-08 长项目批次保存可靠性
+
+- 接续全文时长任务，沿用 StoryDream UI 与文件计划；总目标保持 active。
+- 新增批次容量、写入先于派发、失败阻断依赖、等待已派发请求收尾、保存中暂停/取消、1501 节点有限积压测试。
+- 5 个聚焦文件 41/41 通过；阶段 typecheck 与生产 build 通过。
+- 生产 QA 使用独立 Electron profile 和阻断生成的主进程注入器，测试写入失败时零生成调用、父页面刷新保留暂停状态、无运行器取消与高容量重启恢复。脚本已修正 Electron 初始化时机和队列定位问题，验收尚未结束。
+
+- 注入器的 setImmediate 又暴露时机过晚问题：原 IPC 已完成注册，生成请求只被网络层阻断。改为专门 Electron 测试入口，先包装 IPC 再根据 package.json.main 加载生产主程序；不再通过 NODE_OPTIONS 注入。
+- 21:06:41 首次生产故障 QA passed；复审截图发现未落盘节点还在转圈，已按数据库快照恢复队列，并将未知远端状态单独显示。队列小字提升到 11-12px。
+- 最终 8 文件 124/124、typecheck、build 通过；21:10:07 故障 QA passed，额外覆盖同一主进程重新进入页面后的人工核对与只取消 pending 项。
+- 最终 ledger：installed=true、injectedFailures=1、generationCalls=[]、remoteCalls=0；601/1501 节点生产重启后各保留 completed=300、全部依赖，两个视口 overflow=0。
+- 原导演台生产全流程 QA 21:11:59 passed，runtimeErrors=[]、paidGenerationCalls=0。资产/providerJobs 历史容量和长片资源验证留作下一阶段，未调用付费服务。
+
+## 2026-09-08 历史容量与列表规模
+
+- 继续用户确认的全文时长长项目路径。素材、生成任务和审片历史分别扩至 20,000；音轨、漫剧参考版本取消旧 100 条截断；增加单次/批次容量预算和并发预留。
+- 真实 SQLite 测试保留 4500 素材、4500 任务和 500 音频片段；修正测试夹具缺少 shotId 后通过。阶段 10 文件 72/72、typecheck 和生产 build 通过。
+- 素材展开每页 36 项；生成记录、批次节点和镜头版本每页 20 项；增加生成状态筛选。镜头版本查找改为一次索引，避免逐条全表扫描。
+- 新建隔离生产 Electron 历史 QA：通过真实 IPC 和本地图片/语音响应跨过旧 500 限制，检查 4500 条分页、两句漫剧配音容量预算、新上限预检和重启。尚未宣布生产验收通过。
+- QA 首次夹具用了无效 timeline 字段和超过 100 的 attempt，修正夹具后复现真实缺陷：499 个历史版本后的第 500 次图片调用成功，但 attempt 的旧 100 上限导致保存被拒绝。新增两工作流第 101 次生成回归先失败，现将累计生成次数上限与历史容量统一。
+- 历史专项 21:52:58 passed：两工作流各 20000 素材和任务重启保留；4 次本地图片响应、3 次本地配音响应；两句配音剩余一格提前拒绝，满额图片/旁白/音频导入/批量、主进程视频/渲染入口不调用服务，外部请求 0。
+- 发现并修复配音页签不显示 actionError、容量拒绝把旧 completed 图片任务标成失败的问题；错误统一可读格式并提供详情。额外修正素材展开拉伸旁白面板，项目切换清除旧操作错误，待最终构建复验。
+- 原导演台完整 QA 曾在构建切换期间出现页面关闭，另一次在 reload 后出现 Fluent 遮罩拦截；历史专项增加正常点击失败的现场截图诊断，独立完整重跑通过。原导演台需在最终构建上再次独立复跑，不绕过遮罩点击断言。
+- 最终构建 16 文件 92/92、typecheck 通过。原导演台独立复跑 21:56:22 passed，历史专项 21:58:05 passed；无 DOM 强制隐藏、无强制点击绕过。历史搜索、最后页、双尺寸 8 状态和旁白面板 162px 几何断言通过，两个工作流各 20000 条素材/任务重启保留，无运行错误或付费调用。
+- 补跑最终批次故障 QA 21:59:45 passed：注入 1 次实际保存失败，生成 IPC/远端调用均为 0；重新进入后核对、仅取消未开始项、601/1501 节点重启保留全部依赖通过。所有命令会话已结束，未提交、回退或调用付费服务。
+
+## 2026-09-08 逐镜头编码和真实输出续验
+
+- 新增 sidecar 单镜头编码并复用原多轨混音、片段编码函数；最终合成支持旧图片帧或已编码片段。Electron 使用独占临时目录，每镜头完成即删除帧和混音，最终保留成片及无 BGM 源片。
+- 初轮 2 文件 70/70、5 文件 191/191，通过；真实硬切/转场、封面/BGM、多轨裁剪淡化的最终 MP4 与旧帧路径逐字节一致。类型检查和生产构建通过。
+- 首次 apply_patch 因同一补丁两次指定同一文件被拒绝，合并后成功；一次 rg Windows 通配路径改为具体文件；生产 Electron 构建仅输出 bundle，不按源模块生成独立文件，因此资源 QA 使用正式源码打包入口。
+- HTML 实机 smoke 失败于 frame seek timeout，发现 GSAP thenable 被错误等待；实际 GSAP 回归 1 failed/1 passed 先复现，随后修复。同期开启 12 镜头、3 分钟、960x540/24fps 的资源 QA，尚待最终报告，不宣称通过。
+- 资源首轮 22:21:46 passed，3 分钟完整视频实际 180 秒，生成耗时 201097ms、无外部请求；帧峰值与逐镜释放实际通过，抽帧已复审。随后增加全镜头音频间隔/音量检测，在最终源码上复跑中。
+- 新 QA 入口被 scripts 独立类型项目检查后暴露缺少 DOM 类型和 env 推导问题；仅 QA 入口声明 DOM lib、env 明确 NodeJS.ProcessEnv，未修改产品全局 tsconfig。闭包中的窗口计数补明确 number 类型，最终 typecheck 通过。
+- 真实 Electron 故障 QA 22:23:16 passed：损坏音频只捕获第一镜后失败；编码/合成 sidecar 进程启动后取消，PID 均确认退出，临时目录为 0，旧源片和成片仍完整，捕获窗口销毁，无外部请求。
+- HTML 转场时长先用 2 项失败测试复现参数不一致，修正调用方后 7 文件 240/240；最终 HTML smoke 预期/实际 1.5 秒、两张预览、音视频流、320x568 与清理通过。
+- 最终生产构建通过；生产导演台 smoke 两条路径 passed，runtimeErrors=[]，1920x1080、实际 MP4/选中成片/任务/审片落盘通过。总计划 active，尚未完成全容量真实生成与长片验收。
+- 最终资源 QA 22:31:27 passed：3 分钟、4320 帧、201608ms；帧峰值仍 3,628,259 字节，临时目录峰值 9,879,832 字节，退出后零临时目录。12 个镜头起始静音及 0/-6dB 交替增益检查通过，抽帧图已复审。
+- 核对确认全文选项此前已实现但新建页面仍默认 30 秒，现按用户选择将新建默认设为 auto；已有草稿的数值时长照常恢复。5 文件 25/25、typecheck、最终构建通过。
+- 最终生产长文 QA 22:31:59 passed：defaultFullText=true，11,990 字完整保存、224 镜头/668 cue/2779965ms、草稿恢复、原稿只读查看、末镜编辑和保存重开一致；1536x1024/1040x720 截图复审通过，无运行错误或付费调用。
+- 本轮完成逐镜头临时帧释放和有限规模的实际输出验收；500 镜头完整本地生成、更长高分辨率输出、多输入拼接/磁盘预检，以及 F02/U02 未完项继续保留。所有必需命令会话已结束，没有提交或回退。
+
+## 2026-09-08 大批次实际生成
+
+- 新增 `scripts/qa-director-large-batch.py`，使用真实生产 main/IPC 和现有本地图片、TTS 响应入口；从 500 空镜头执行 1000 节点，逐项检查文件、当前素材/任务归属、时间线、末镜重新生成和重启保留。
+- 22:39:21 启动隔离 Electron 批次，22:46:37 已结束；实际 1000 节点全部完成，耗时 423.11 秒，1000 个唯一非空文件共 120,961,500 字节，500 图片/500 配音/全部时间线引用有效。末镜重复图片和配音保留 1002 素材/任务，随后恢复旧画面暴露 selected 未更新。
+- 将恢复操作提取到现有 director-generation 模块，两个页面使用统一领域函数同步引用与选中；VOX 采用与生成相同的图层选择顺序，改变图片才清除派生视频引用。漫剧限定当前分集并同步时间线第一帧，保留末帧引用；其他镜头/分集仍用的图片、固定一致性参考及 pinned 不受误清理。
+- 新增 `tests/director-image-restore.test.ts` 和 `scripts/qa-director-image-restore.py`，专项复用原 500 镜头 profile，不重放 1000 个生成节点。首轮漫剧夹具归属字段漏改，保存校验如实拒绝；已修正 episodeId/sceneId。原失败报告保留为 attempt-1.json。
+- 22:57:14 生产恢复专项 passed：1002 个文件/素材/任务全部保留，选中 1000；漫剧两集各两个图片版本和两句配音，总计 4 图片/4 配音请求；项目/分集切换和应用重启后文档一致，无运行错误/外部生成请求。6 张 1536x1024/1040x720 截图复审，旧版选中、按钮可见、末镜胶片定位及横向溢出检查通过。
+- 8 文件 67/67 聚焦通过，生产构建通过；最初测试枚举写成 local-image，改为合法 local-file 后类型检查通过，最后补充测试后的类型检查亦通过。
+- 原完整导演台生产 QA 23:00:05 passed，24 张状态截图，无运行错误/付费调用；字幕、结构、双渲染模式和保存重开无回归。git diff --check 通过，中文 UTF-8 回读正常。全部所需命令已结束，没有提交、回退或发布；总计划仍 active，下一轮继续实际长片输出、最终拼接资源与磁盘预算。
+
+## 2026-09-08 长片空间与内存续推
+
+- 前一轮属于 progress。新增共享磁盘估算：单镜 JPEG/混音、全片编码片段、源片及同时存在的时长修正/BGM/成片副本加余量；导演台复制前使用实际所有暂存素材大小预检，HTML 保留原帧数门禁并按新预算检查。
+- 3 文件 157/157、另外哈希/预算/导演台预检 13/13 通过，typecheck/build 通过。哈希测试最初 afterAll 直接传可变参数清理函数不符合 Vitest 约定，改为闭包传明确目录后通过。
+- 新增成片 64KiB 分块哈希和文件身份/大小检查，避免主进程整片 readFile。23:15:42 生产磁盘专项 passed：两工作流实际成片哈希与 manifest 匹配，低空间在复制和捕帧前阻断，旧片/资产不变，失败任务持久化。
+- 四张磁盘错误弹窗截图复审：无裁切，但发现两个诊断号；因 renderProject 提前格式化后状态区再次格式化。改为保留 AppError 到唯一显示边界，补生产单诊断号断言后复验。
+- 23:08:51 启动的 60 镜头、10 分钟、1920x1080/24fps QA 仍在运行，session 4151 / Electron PID 30408。使用照片和运动，累计 14400 帧，测量子进程组和磁盘；当前约 23 镜头、帧峰值约 66MB、管线工作集约 1.26GB，最终合成尚未验收。
+- 最终磁盘专项 23:26:27 passed、原导演台完整 QA 23:28:48 passed，runtimeErrors=[]，无外部生成请求；诊断号重复已修复，实际 MP4 的数据库/manifest 哈希一致。
+- Windows 500 输入旧拼接实际 WinError 206（140114 字符），修复滤镜脚本及相对路径后实际 32x32/125 秒 MP4 passed（13284 字符）。缺少 tempfile 导入的首轮 4 项失败已修复，32 项相关回归通过。
+- 新增 composition 专项发现旧代码也存在 10 短镜头连续转场无音轨输出；增加输入音频分块与 AAC 尾部裁剪后 3/3 通过，实际 10 镜硬切/转场的 PCM 时长及各镜音量正确，新旧命令调用相同滤镜得到逐字节一致 MP4。
+- 1080p 长片 23:41 左右完成 55/60 镜头，独立 watcher 90842 正保留已完成片段，用于在最新拼接代码上复验；原长片 bundle 不变。最终 10 文件回归、类型检查仍在运行，尚未宣布本轮最终验收完成。
+- 最终 10 文件 200/200、typecheck/build、git diff --check 通过。最新版 500 输入小片段 23:42 实际复跑通过，Windows GetProcessMemoryInfo 所报 FFmpeg 峰值工作集为 1,338,695,680 字节，进一步说明多输入资源控制仍需推进。
+- 最新源码故障专项 23:44:03 passed，错误音频停止、编码/合成 sidecar 取消退出、零临时目录和旧成片保留通过。最终生产导演台实际导出 smoke 已正常退出；磁盘详情余下两张截图复审确认诊断号只有一个、换行与关闭按钮完整可见。
+- 原长片 session 4151 已因 40 分钟限额终止，报告修正为 failed 并保留超时事实。60 个完成片段已由 watcher 90842 保存（watcher exit 0），原 Electron/sidecar/FFmpeg PID 均确认退出；未重新捕获 14400 帧。
+- 最新源码同批 60 段 1080p 拼接 session 98048 已启动，单独验证最终 600 秒输出、切点/字幕/音量，并用 Windows API 记录 FFmpeg 峰值工作集。此结果仍在等待，不将原超时测试改写为通过。
+- 最新拼接 session 98048 正常完成；`.artifacts/compose-long-1080p-qa/report.json` 23:52:13 passed，600 秒、108,906,375 字节、155.64 秒拼接、FFmpeg 峰值 3,893,481,472 字节、零滤镜残留。8 帧与 60 镜声音验证均通过，接触表已复审：真实照片、运动标记、A/B 字幕、切点和末镜可见且正确。
+- QA wrapper 修改后类型检查 session 25876 exit 0；此前最终 200/200 与生产 build、导演台导出及故障 QA 通过。原临时根目录不存在，旧/新渲染 PID 均已退出，所有本轮必需命令会话已结束。总目标仍 active；本轮完成预算/哈希/拼接启动与转场修复、限定规模的实际长片验证，没有提交、回退或付费调用。
+
+## 2026-09-09 硬切分组合成
+
+- 每次最多 8 输入，分组分别输出视频和浮点 PCM，最终顺序合并视频、一次性编码 AAC。新增组合音频预算；原 <=8 输入和转场路径保留。
+- 初轮 11/12 通过，合并清单因 Python raw string 多余转义产生错误换行；修正后 12/12。新增 17 镜头非整帧跨组对照后 4/4：帧数一致、PCM 长度一致、最大样本差 <=2、最多 8 输入，临时目录清空。
+- 已保留上轮 single-stage-report.json 和十分钟 baseline 成片；新 60 段测试 session 12171、6 文件回归 37523 正在运行。新增真实 FFmpeg 第二组编码进度后取消的 QA，待执行；此阶段不宣称 500 段 1080p 或转场分组完成。
+
+- 分组视频边界修复已完成：每组显式按项目 FPS 输出，24/30fps 非整帧对照 5/5 通过；10fps 低帧率行为不纳入产品支持范围。
+- 60 段最新 1080p 分组拼接 00:25:49 完成：600 秒、9 个 FFmpeg 作业、每作业最多 8 输入、154.39 秒、峰值 1,349,009,408 字节；抽帧、60 镜静音起点和交替音量通过，滤镜零残留。
+- 同批边界复验 14 个时间点 passed，画面误差 0.62–1.04/255，PCM SHA-256 与单体基线相同；500 个 32x32 分组拼接 125 秒通过，峰值约 67.7MB。缺失素材/中途取消、临时文件和旧成片保留均通过。
+- 聚焦回归 8 文件 196/196、typecheck、production build、git diff --check 通过。转场分组、500 镜头 1080p、低帧率自定义输出和更深阶段取消尚未完成；随后返回 F02/U02。
+
+## 2026-09-09 F02 音频证据增量
+
+- sidecar 将 FFmpeg `ebur128` 的 integrated LUFS、true peak 与既有平均电平/样本峰值一起返回；真实非静音音频通过解析，静音音频保留既有 `ok` 状态但不伪造有限 dBTP。
+- 新字段贯通导演渲染结果、主进程审片报告、VOX/漫剧持久化 schema 与检查器 UI；质量报告 manifest 与数据库证据一致。生产质量 QA 08:56:13 passed、runtimeErrors=[]、paidGenerationCalls=0，截图覆盖 1536x1024/1040x720。
+- 4 文件 52/52（sidecar、导演质量、VOX 持久化和流程契约）、typecheck、production build 通过。LUFS/true-peak 仅完成证据层，F02 阈值/静音策略/局部重检仍 pending。
+
+## 2026-09-09 F02 音频判定与结构连续性
+
+- 上轮为 progress，继续总计划。字幕安全区字符/长度估算已存在，最新增量补入计划；实际字体测量、局部重检和版本绑定人工确认仍未完成。
+- 首轮静音测试曾按低电平加缺失指标直接通过，续核已修正：成功 ebur128 的 -inf 真峰值明确记录全静音，缺少完整指标报分析失败，静音 LUFS 哨兵不持久化。全静音与有效混音意图一致才通过，意外静音/响度超标/真峰值超标以 warning 复核；显式非语音混音不强制旁白。
+- 新增时间线切点、重复片段、顺序/总长/有限数值检查；漫剧按显式渲染分集，音轨复用既有归属/省略时长/源裁剪校验。输出尺寸按项目比例核对，非法大小/时长不能通过。
+- 3 文件 62/62（包含真实音频探测）通过。类型检查指出新测试访问漫剧不存在的 timeline 字段，改为结构断言后复跑。初轮 npm test 包装器未透传测试文件参数而运行全量，已停止；后续直接使用 vitest 的目标文件参数，旧 composition 异常纳入专项复核。
+- 生产专项正在扩展实际全静音、显式静音、无对白背景声、过大音量的双工作流保存重开与双尺寸截图，尚未作为通过证据。
+- 首轮生产 QA 完成 VOX 正常警告与阻断用例后，在漫剧导出时连接意外关闭；报告保留 failed，未记录到页面异常，日志未说明根因。补进程退出码/阶段/renderer crash 诊断，回归结束后独立复跑。
+- 旧拼接失败定位为 C 盘临时目录 FOXNOT~1 别名与 Path.resolve 长路径比较不同，测试根路径统一 resolve 后，7 文件 62/62（包含所有拼接真实媒体用例）通过。生产代码没有为此改变路径行为；类型检查和生产构建已通过。
+- 生产独立复跑通过两个基础工作流、VOX 意外/显式静音和无对白背景声，随后过大音量夹具只有响度超标（-3.8 LUFS），真峰值 -2.6 dBTP 没有越过 -1 阈值，测试如实失败。测试音轨增加显式 +6dB 增益验证真峰值，产品阈值不变；failed 报告保留在 attempt-2。
+- 最终生产 `attempt-3/report.json` 于 14:02:42 passed，11 次实际本地成片（包含 1 次质量阻断），两工作流的显式静音、意外静音、无对白背景声、过大音量判定正确。真峰值夹具两边均 -0.4 LUFS / -0.2 dBTP，保存重开与 manifest 完全一致。
+- 24 个状态/尺寸组合及底部操作截图共 48 张，代表性静音/超峰值/阻断画面已复审；重生成按钮命中、检查器横向溢出断言均通过。runtimeErrors=[]、paidGenerationCalls=0，所有本轮命令及 QA 子进程均已结束。
+- 计划、发现和总审计文档已同步。本轮不包含真实 Provider 品质、完整长片、逐帧连续性或真实字体安全区验收；F02 下一项为报告的分集/输入版本归属及局部重检，总目标保持 active。
+
+## 2026-09-09 F02 报告归属
+
+- 上一轮分类 progress。成功、阻断和渲染失败报告新增生成任务、输入指纹、分集字段；旧报告按明确任务 ID 关联，未知归属保留为待核对。检查器使用当前分集/输入报告，并区分过期/未知/无报告。
+- 当前报告按请求开始时间排序，较早请求晚完成不能覆盖较新结论；当前输入的报告优先于其他输入的历史结果。顶部审片完成改为依赖当前报告及各检查通过，而非仅成片资产存在。
+- 新回归初次 39/41，两处夹具问题：appendEpisode 已切换活动集，wrong-episode 设为第二集没有实际制造冲突；JSON 保存会省略 episodeId=undefined。改为实际另一集，并只在有分集时附加该字段；随后 3 文件 41/41、typecheck/build 通过。
+- 新生产脚本覆盖两工作流未保存字幕编辑的即时过期、保存/重新生成、两集切换、无报告、旧报告推导与未归属提示，以及完整应用重启；实际媒体验收尚在进行。
+- 归属 QA 首次运行在 VOX 恢复后重渲染被真实预检拒绝“缺少已选旁白”，定位为脚本只恢复了字幕而没有恢复完整原始输入。已改为保存前恢复初始 beats/timeline，同时保留历史报告、任务和资产；该失败报告保留，不视为产品缺陷。
+- 归属 QA 最终通过：`.artifacts/director-quality-ownership-qa/report.json` 14:52:31 passed。两工作流覆盖未保存/已保存字幕编辑过期、重新生成恢复当前、漫剧第二集无报告与独立报告、旧报告精确任务推导、未知归属提示、应用重启；runtimeErrors=[]、paidGenerationCalls=0，生产截图和操作命中检查通过。
+- 本轮 7 文件 77/77、`npx tsc --noEmit`、production build、`git diff --check` 通过。顶部“审片”步骤现在要求当前指纹报告所有检查通过，导出存在旧产物不再自动标记审片完成。下一步接可执行局部重检和绑定当前指纹的人工确认。
+## 2026-09-09 F02 局部重检定位
+
+- 审片质量检查卡不再只显示“修复后重检”文字；新增 `src/shared/production-quality-recheck.ts`，将报告 scope 解析为稳定的镜头、字幕句、检查器页签和时间轴定位计划。
+- DirectorDeskWorkspace 新增“定位复检范围”操作与状态提示：镜头/资产跳到首个有效镜头，字幕切换字幕页并聚焦 cue，音频切换声音页，媒体/项目回到审片页；项目级和失效对象明确提示需要整片重生成。
+- DirectorSubtitleInspector 增加可选 `focusCueId`，支持从质量报告直接聚焦字幕句。
+- 验证：`tests/production-quality-recheck.test.ts` 4 项，加上质量归属和导演台契约测试共 26/26；`npx tsc --noEmit`、`npm run build` 通过。当前只实现定位，不声称局部媒体复检已经执行。
+
+## 2026-09-09 F02 人工复核绑定
+
+- `ProductionQualityReport` 新增可选 `manualReview`，保存 `reportId`、`renderFingerprint`、复检 scope 和 `confirmedAt`，并纳入 VOX/漫剧严格 schema。
+- `confirmDirectorQualityReview` 校验当前工作流/分集、报告指纹和阻断状态；stale、unverified、缺失报告或 blocking 结果不能确认。
+- 导演台新增“确认已复核当前版本”按钮，页面通过现有保存队列写回数据库；已确认状态显示确认时间，报告变化后自动失效。
+- 回归 28/28，`npx tsc --noEmit`、`npm run build`、`git diff --check` 通过。生产双视口确认按钮验收留到下一轮。
+- 确认函数追加 `directorQualityReview(...).freshness === 'current'` 与 reportId 一致性校验，避免仅凭指纹字段确认缺失/冲突的历史任务。
+
+## 2026-09-09 F02 人工复核生产验收
+
+- 新增 `scripts/qa-director-quality-confirmation.py`，沿用本地媒体夹具和零网络约束，覆盖 VOX/漫剧当前报告确认、确认记录写入、编辑后 stale、保存重开、完整应用重启。
+- 生产证据：`.artifacts/director-quality-confirmation-qa/attempt-2/report.json`，`status=passed`；4 张双视口确认截图，`runtimeErrors=[]`、`paidGenerationCalls=0`，两个工作流均 `restartVerified=true`。
+- 原归属脚本 attempt-4 在漫剧首次渲染、attempt-5 在第二集渲染关闭页面，报告保留 failed；根因尚无证据，不能归为第二分集专有或环境问题。
+- 复核定位接线补漏：导演台现在把 `focusedCueId` 传给字幕检查器，质量报告跳转后会实际选中对应字幕句；相关 28 项回归、类型检查和脚本语法检查再次通过。
+
+## 2026-09-09 F02 复检导航与保存纠偏
+
+- 新导航解析现根据字幕句/实际素材版本反查镜头，过滤删除对象、去重并保持时间线顺序；字幕 cue 时钟优先，范围冲突不再跳离选中镜头。报告字幕时间改用全片偏移，导航暂停并清空镜头搜索，提示准确说明当前镜头与总影响数量。
+- 人工确认规范为整报告 scope，pending/failed blocking 均拒绝；页面只在持久化完成后接纳确认。使用保存前 baseline 合并数据库结果，保留等待期间的新编辑。
+- 带生命周期诊断的 ownership attempt-7 全流程通过，包括 4 次实际本地渲染、跨集与重启；未复现旧关闭，故不宣称根因解决。恢复旧报告字段删除后的精确任务推导验证正在补跑。
+- 首轮 5 文件 58 项中 1 项新增夹具漏填成片路径，补齐后 59/59 通过；类型检查发现新增测试的类型导入和窄对象推断问题，已补类型，待最终复验。
+- confirmation QA attempt-3/4 的夹具误加 VOX 不支持的 title/index 字段；attempt-5 的时间线 clip ID 未按领域约定生成，均被产品真实校验拒绝。已按两工作流 schema/时间线约定修正，保留失败报告。
+- attempt-6 正确触发保存失败，但 QA 期待内部异常码而产品显示脱敏后的“操作失败”，因此断言失败；改为验证用户错误、数据库未确认、按钮可重试，并用主进程日志核对实际故障注入。attempt-7 两工作流确认失败/重试和当前确认重启已通过，后续定位时发现紧凑抽屉遮挡顶部返回，已修复工作区定位容器。
+- 最终 `.artifacts/director-quality-confirmation-qa/attempt-8/report.json` 16:27:25 passed：2 次实际六秒本地渲染，原始报告与 manifest 一致；随后明确注入合成检查范围，验证 pending blocking 禁止确认、多范围整报告确认、2 次保存失败、2 次延迟保存、重试、当前/过期两次重启、第二镜头指定 cue/素材定位、手动改句保留。18 张截图，双尺寸确认/复检/顶部返回命中和检查器溢出断言通过。
+- `.artifacts/director-quality-ownership-qa/attempt-8/report.json` 16:27:27 passed：4 次实际渲染、两集切换、真实删除第二集报告元数据后按任务推导、未知归属、确认与过期记录重启。40 张截图、无运行错误，两份验收均零生成服务调用；未复现异常关闭，仍保留旧问题。
+- 最终类型检查、59 项聚焦测试、生产 build 与 diff check 通过。已复审正常桌面确认、紧凑错误/重试、双工作流定位截图，抽屉从顶部导航下沿开始且返回按钮可用。真实字体/安全区、局部媒体探针与帧级连续性仍待实现，不把报告定位等同于局部复检执行。
+
+## 2026-09-09 F02 实际字幕排版测量
+
+- 上一目标轮分类为 progress；继续总计划的真实字幕几何项。输出窗口在字体加载完成后检查每句字幕真实边界、行数、5% 安全区、标题及同时出现字幕的重叠；场景/cue 与全局时间证据传入两个工作流 schema、审片和 manifest。
+- 导出标题与字幕改为共享网格，隐藏 cue 仍预留最高排版高度，避免换句时标题跳动；保留换行并允许长词折行。新模板 fingerprint 升为 director-v3，旧成片保留为历史。
+- 字数估算通过已移除；缺失、失败、尺寸/时钟/对象不匹配测量不通过。排版测量与字形覆盖分开，尚无逐字字形证据时明确待人工复核。
+- 7 文件 81/81、类型检查、生产构建通过。新增实际横/竖屏双工作流正常/溢出/探针失败/重启 QA；attempt-1 的 Python 内嵌 JS 换行转义错误在配置阶段报 SyntaxError，改为 raw 字符串，保留失败证据。
+- attempt-2 暴露 Windows DPI 下隐藏 CSS 视口为 1922x1082、最终成片为 1920x1080；保留严格输出尺寸校验，将所有测量坐标按 X/Y 比例映射到编码画布，并单独存储原始视口尺寸。修正后 3 文件 33/33、类型检查与生产构建通过。
+- 真实成片专项 attempt-3 passed：VOX/漫剧横竖屏共 8 次正常/溢出输出，一次实际测量异常注入，四项目完整重启保留报告；完整几何与 manifest 一致，无运行错误、无生成服务调用。正在复审抽帧及双尺寸截图，补充通用渲染器检查等待/失败/取消/超时回归。
+- 已复审横屏中文三行（中间空行）、竖屏英文长词、极长字幕及双工作流审片正常/错误画面；证据共 36 张界面截图和 16 张实际 MP4 抽帧。正常项通过，超长项保留完整文本并明确失败，测量异常显示待检查。
+- 通用渲染器新增 5 项行为回归，覆盖字体/图片两种先后顺序、逐镜检查阻止提前捕帧、失败清理、取消释放捕获锁及 15 秒超时。6 文件 122 项先通过，增强资源先后顺序后 html-video 76/76；类型检查和 diff check 通过。
+- 同时出现字幕的实际碰撞补验使用合法持久化范围的重叠 cue，保留真实模板与测量流程；attempt-4-overlap 运行中。生成文件目录曾误按非打包结构查找，确认生产 main 为单文件 bundle，未新增单独测量打包入口。
+- attempt-4-overlap 于 16:55:31 passed：VOX/漫剧横竖屏四组实际碰撞成片，两个 cue 均记录 cue-overlap 并保留正确全局时间与定位范围；追加测量失败和完整重启也通过。20 张界面截图与 8 张 MP4 抽帧，已复审代表性横竖屏碰撞及测量失败 UI；无运行错误/外部生成调用，验收进程均已退出。
+- 视觉复审另确认编辑预览与导出不一致：CSS 固定 aspect-ratio:1.89，竖屏标签仍对应横向编辑画布；预览使用 projectTitle 与独立字幕 CSS，导出使用镜头/节拍标题。列入下一批前端优先项，当前字幕几何证据仅对实际导出有效。
+
+## 2026-09-09 编辑预览与成片对齐
+
+- 编辑画布改为真实项目比例，四种画幅均有正常/紧凑窗口截图；9:16 使用可用高度约束，播放条移出画面并保留工作区宽度，避免竖屏控件挤压和字幕被覆盖。
+- 标题来源、白色字样、字体、输出字号比例、字幕描边/底板、画面遮罩、漫画边框、镜头标记和安全区按成片模板对齐；移除 compact 固定 20px 标题覆盖。保留所有 cue 的共享网格占位，时间重叠时呈现全部活动 cue。
+- 导演台原 QA 夹具存在等待/失败的视频镜头，真实导出预检拒绝；调整为先验证这些状态及重试，再用本地视频补齐质量报告渲染前提。保留真实 providerJobId/renderFingerprint 后注入明确的失败检查，用于界面验收。QA 输出支持指定目录。
+- geometry-attempt-1 首组比较通过，后在复检打开的左侧抽屉处点击受阻；脚本补实际收起抽屉后重跑。`.artifacts/director-preview-consistency-qa/geometry-attempt-2/report.json` 17:57:01 passed：8 次双工作流横竖屏正常/重叠字幕输出、32 组双尺寸几何比较，另含故障测量与四项目重启。字体、边界、可见句数、播放条位置/控件边界均断言，归一化边界误差低于 0.8%；运行错误和生成调用为 0。
+- `.artifacts/director-preview-consistency-qa/desk-attempt-3/report.json` 17:58:00 passed：34 组工作台截图，四种画幅、视频/关键帧播放、生成状态、本地重试、质量报告、导出播放器无重复覆盖、字幕/结构保存重开均通过。代表性横竖屏与成片帧已复审。
+- 最终 5 文件 41/41、npm run typecheck、npm run build、git diff --check 通过；验收进程已结束。长标题、空字幕及纪录片版式的专门对照仍待补齐，其他总体任务保持进行中。
+### 2026-09-09 F02 可执行字幕局部复检
+
+- [completed] 新增 `director:recheck-subtitles` IPC、preload/API 类型和浏览器 fallback；请求绑定 task、report、分集、输入指纹、镜头/cue 范围及 `expectedUpdatedAt`。
+- [completed] 主进程在开始和保存前校验项目版本与指纹，只构建选定镜头、只测量选定字幕；复检失败或编辑期间版本变化时不保存，临时渲染目录始终清理。
+- [completed] 渲染场景公开契约移除项目绝对 `startMs`，改由 `renderDirectorVideo.sceneStarts` 可选参数提供局部复检时钟；完整渲染继续顺序累计，现有精确对象测试保持兼容。
+- [completed] VOX/AI 漫剧导演台审片检查器接入“局部复检”，复检后只替换报告中受影响镜头的排版证据并保留其他检查和证据顺序；报告不会因此制造整片成片通过结论。
+- 验证：TypeScript、导演渲染/质量归属/IPC schema 53 项聚焦测试通过；完整 renderer command inventory 仍有工作区既有 `generateImageLab` owner 缺口，未由本增量引入。
+- [completed] 真实 Electron 验收 `.artifacts/director-quality-confirmation-recheck-qa-3/report.json` 通过：VOX/AI 漫剧均点击局部复检并写回选定镜头排版证据，报告 ID 保持不变；人工确认保存失败/重试、编辑后 stale、当前/过期重启和双尺寸控件可达均通过。`runtimeErrors=[]`、`paidGenerationCalls=0`、无横向溢出。
+- [completed] 补齐 renderer command inventory 中 VOX 风格试片生成 owner，并同步现有导演台回调桥接证据；导演/IPC/页面聚焦回归 73 项通过，`npm run typecheck` 和 `git diff --check` 通过。
+
+### 2026-09-09 F02 切点实际帧
+
+- 新增批量切点四帧采样：FFmpeg 实际解码、真实 PTS、帧号、亮度范围和近黑占比写入共享严格 schema、VOX/漫剧报告及 manifest。人物/场景语义连续性仍需人工复核。
+- 首版遗留问题已纠正：多转义正则、逐切点启动进程、64 条证据上限、缺证据默认跳过与暗场硬阻断。当前最多 499 切点，一次解码；异常作 warning，范围仅包含受影响镜头。UI 可选择切点、查看四帧指标并定位到全片时钟。
+- 真实媒体与归属/持久化/页面回归 12 文件 136/136，typecheck/build 通过；499 切点日志最初触及 4 MiB 上限，改为有界 8 MiB 后通过，单次命令小于 2048 字符，滤镜零残留。
+- 主进程局部字幕复检修正版本与字幕字段引用；保留同镜头完整字幕排版上下文，并使用独立临时根目录包住整个渲染生命周期。旧字幕持久化用例改为显式两句夹具。
+- `.artifacts/director-visual-cuts-20260909-212304/report.json` passed：两工作流正常/暗场共 4 次实际成片、2 次实际字幕复检，manifest 一致，复检保留视觉证据/报告 ID/成片与任务历史，过期版本拒绝，两次完整重启与双尺寸定位通过。8 张界面截图与 8 张实际抽帧；runtimeErrors=[]、paidGenerationCalls=0、blockedNetworkCalls=0。
+- 随后补入渲染中途音频文件不可用的故障用例，检查复检失败不改报告且清理临时目录，生产专项正在独立复跑。未宣称整片逐帧、500 镜头 1080p 或视觉局部复检执行完成。
+- 最终 `.artifacts/director-visual-cuts-20260909-212907/report.json` passed：两工作流均完成实际字幕复检、源音频缺失时拒绝且不改报告、成功/失败临时目录清理，以及双尺寸定位和两轮完整重启。期间发现长临时路径触发 ENAMETOOLONG，改 `.rq-XXXXXX` 后复跑通过；失败报告 212651 保留。最终 typecheck/build/diff check 通过，8 张界面截图与 8 张实际抽帧已复审，验收进程均已结束。
+
+### 2026-09-09 F02 媒体范围可执行复检
+
+- 新增 `director:recheck-media` 请求/结果契约、IPC channel、preload、StoryDream API 和浏览器 fallback；请求绑定 task、report、episode、render fingerprint、镜头范围、时间范围及 `expectedUpdatedAt`。
+- 主进程复用本地渲染器对选定镜头生成临时局部片段，执行真实黑帧/切点探针；黑帧区间与切点帧时间按原时间线映射回全局，合并回原报告时保留未选镜头已有证据，不创建整片成片资产，失败或版本变化始终清理并不保存。
+- VOX/AI 漫剧审片检查卡对 `media`/`visual-continuity` 范围显示“媒体局部复检”，成功后保持原报告 ID；字幕局部复检入口保持独立。
+- 验证：媒体 IPC 契约、质量范围、质量归属、导演渲染与产品流程 58 项通过；`npm run typecheck`、`npm run build`、`git diff --check` 通过。真实 Electron 媒体局部复检与逐帧/人物语义连续性验收仍待下一步。
+- 生产 Electron `.artifacts/director-visual-cuts-media-20260909-qa-2/report.json` passed：VOX/AI 漫剧均执行真实媒体局部复检，报告 ID、资产/providerJobs 和未选范围证据保持，切点证据映射到全局 3000ms；双尺寸定位、两轮重启、失败清理与网络/付费调用约束通过，`runtimeErrors=[]`、`paidGenerationCalls=0`、`blockedNetworkCalls=0`。首次失败仅为 QA 使用了不存在的第一镜头 ID，已修正并保留失败报告。
+
+### 2026-09-09 F02 字幕逐字排版证据纠偏
+
+- 每个字幕 cue 现在记录非空 Unicode 码点数量、逐字 Range 可见矩形、字体 `document.fonts.check` 结果和缺失字符列表，证据写入字幕排版 schema、实际成片报告和审片 UI。
+- 经过原理复核，浏览器 Range/字体加载只能证明排版覆盖，不能证明没有 `.notdef` 或替换字形；因此新增 `verification: layout-only`，该结果只显示“逐字排版记录”，`subtitle-glyphs` 继续保持 `pending`，只有未来真正的字体引擎校验器标记 `font-engine` 才允许通过。
+- 缺字/替换字符仍会失败；排版测量失败、尺寸/时钟不匹配仍不会被字形记录掩盖。生产 `.artifacts/director-subtitle-glyphs-20260909-qa-3/report.json` 通过，覆盖 VOX/AI 漫剧横竖屏、超长字幕、重叠字幕、测量失败和重启；当前报告明确显示字形待人工复核。
+- 聚焦 47 项、`npm run typecheck`、`npm run build` 通过。真正的字体引擎覆盖证据仍是后续任务，不能把本轮 layout-only 记录写成字形完整性通过。
+
+### 2026-09-10 F02 字幕字体引擎证据
+
+- 接入 Electron Chromium DevTools Protocol 与 Windows 字体文件 cmap 字形引擎证据：对每个 `.caption` 查询实际 platform fonts，再按实际字体族逐码点读取系统字体 cmap；字体族、字体文件或码点不可验证时保持失败/待复核，不把 Range 矩形或 Chromium `glyphCount` 冒充字形完整性。
+- `subtitle-glyphs` 质量门现在仅在所有当前字幕 cue 均有 `verification: font-engine`、完整 glyph 覆盖且无缺字时通过；排版测量不完整、字体引擎不可用及替换字符继续阻断或保持 pending。
+- 生产 Electron `.artifacts/director-subtitle-font-engine-20260910-qa-final/report.json` passed：12 次真实渲染覆盖 VOX/AI 漫剧、16:9/9:16、正常/超长/重叠字幕、测量失败和完整重启；26 组截图/预览对照，36 句均为 `font-engine/ok`，Microsoft YaHei UI cmap 逐句通过，缺字 0，runtimeErrors=[]、paidGenerationCalls=0。负向 `.artifacts/director-subtitle-font-engine-negative-20260910-qa-final/report.json` passed：U+10FFFF 被识别为缺失字形，`subtitle-glyphs=failed`，审片徽章进入待复核，未产生付费调用。
+- 修正 QA 旧断言：正常案例质量徽章为“已通过”，人工排版问题案例为“可导出 · 待复核”；聚焦字幕/渲染/IPC 测试 85/85 通过，生产 build 已通过。后续仍需完整逐帧视觉连续性、人物/场景语义连续性、长标题/空字幕/纪录片版式专门验收及更高容量输出。
+- 审片证据区的“逐字排版记录”改为动态显示已验证句数、待复核句数或无字幕状态，不再固定写“字体引擎待接入”；字体 cmap 探针契约加入 IPC 聚焦测试，字幕/渲染/IPC 聚焦回归更新为 86/86，`npm run typecheck`、`npm run build`、`git diff --check` 均通过。
+- 最终 cmap 收紧验收 `.artifacts/director-subtitle-font-engine-cmap-final-20260910-qa-2/report.json` passed：8 次真实渲染覆盖两工作流和横竖画幅的正常/缺字负向组合，18 组截图，runtimeErrors=[]、paidGenerationCalls=0；正常 cue 全部 `font-engine/ok`，U+10FFFF 负向 cue 为 `font-engine/failed` 并记录缺失码点。此前 12 次正常/超长/重叠/测量失败完整报告仍保留在 `director-subtitle-font-engine-20260910-qa-final`。
+
+### 2026-09-10 F02 预览边界专项
+
+- 增加长标题、空字幕、纪录片版式的实际 Electron 边界夹具和纯渲染契约；空字幕会被真实质量门阻断，不生成成片；纪录片版式验证通过，覆盖两工作流横竖画幅和双尺寸预览。
+- 统一编辑预览标题字号比例与导出模板：普通标题从 4.2% 调整为 3.96%，纪录片标题从 3.2% 调整为 3.02%，避免长标题预览比成片多换行。
+- `.artifacts/director-preview-boundary-documentary-20260910-qa/report.json` passed，空字幕边界 `.artifacts/director-preview-boundary-empty-20260910-qa-9/report.json` passed，长标题 `.artifacts/director-preview-long-title-20260910-qa-3/report.json` passed；长标题对照仍使用较宽的归一化几何容差（字幕 5%、标题 12%），因此仅证明未裁切、未出安全区、控件可达和文本完整，不能宣称逐像素预览一致，后续仍需继续收紧长标题排版。
+- 本轮聚焦字幕/渲染/IPC 回归 87/87、脚本语法、`npm run typecheck`、`npm run build`、`git diff --check` 通过。整体计划继续保留视觉连续性、人物/场景语义连续性、长片资源与转场、创建页/封面真实性等未完成项。
+### 2026-09-10 F02 运动边界与局部复检续核
+
+- [completed] FFmpeg 切点探针升级为 version 2：在 `signalstats` 运行于 `select` 之前的单次解码中记录相邻编码帧的 `YDIF`（逐像素亮度差），保留平均亮度、近黑占比和真实帧号/PTS；跨硬切帧仍只作为人工复核边界。
+- [completed] 质量门新增“镜头内像素运动突变”告警，缺失 version-2 相邻帧差时保持 pending；审片切点表显示每帧 YDIF，旧 version-1 证据显示“未取得”，不会被旧指标冒充新证据。
+- [completed] 修复媒体局部复检映射：仅接受原时间线中相邻镜头的真实切点；局部起点必须按输出 FPS 对齐；全局回写同步移动帧号和时间；不相邻/未对齐时保持失败并保留旧证据，不删除未实际复检的切点。
+- [completed] 真实 Electron `.artifacts/director-visual-cuts-20260910-031635/report.json` passed：VOX/AI 漫剧正常与近黑异常、字幕/媒体复检、双尺寸定位、失败清理、两轮重启；version 2 切点含真实 YDIF，`runtimeErrors=[]`、付费生成 0、网络拦截 0。
+- [completed] 聚焦 `storybound-visual-continuity`、`production-visual-continuity`、`director-render-concurrency` 28/28；`npm run typecheck`、`npm run build`、`git diff --check` 通过（仅保留既有 CRLF 提示）。
+- [pending] 这仍不是逐帧整片检测，也不是人物/场景语义连续性证明；下一步补字幕切换/运动边界异常时间段的截图证据并继续收紧长标题几何。
+### 2026-09-10 F02 字幕切换边界证据
+
+- [completed] 隐藏输出窗口在真实 `window.__tl.seek` 时间线上逐个采样字幕开始/结束边界，记录全局时间和实际可见 cue ID；输出 schema 与审片质量报告新增 `subtitle-visibility`。
+- [completed] 可见性质量门按当前 cue 时间、重叠顺序和实际 DOM hidden 状态逐项比较；缺失或错位保持 pending，并定位字幕范围，不把几何测量替代时间线证据。
+- [completed] 生产 Electron `.artifacts/director-subtitle-visibility-20260910-qa/report.json` passed：两工作流、正常/异常媒体、双尺寸、字幕/媒体局部复检和重启均通过；正常报告 `subtitle-visibility=passed`，样例边界记录为 0ms/3000ms；无运行错误、付费生成或网络调用。
+- [completed] 字幕排版/渲染/切点聚焦测试 40/40，`npm run typecheck` 与生产 build 通过。
+- [pending] 仍需对字幕切换异常制作真实负向 Electron 夹具并截图；长标题几何容差、U02/U05/U01 页面和长片资源继续待办。
+### 2026-09-10 F02 预览与导出版式默认值收口
+
+- [completed] 发现并修复 AI 漫剧默认版式分叉：工作台将未保存的 `layoutTemplate` 按“漫画分格”显示，导出曾按空值退回“对比拼贴”；导出场景和渲染指纹现在使用同一默认值。
+- [completed] 导出标题字号比例与预览统一为普通 `3.96vw`、纪录片 `3.02vw`；长标题 QA 的标题几何容差从 12% 收紧到 0.8%，保留字幕 5% 仅用于长字幕边界。
+- [completed] `.artifacts/director-preview-long-title-20260910-final/report.json` passed：两工作流横竖画幅、正常字幕切换、双尺寸预览/控件可达/无横向溢出，运动漫画导出 HTML 已实际使用 `frame comic`；无运行错误或生成服务调用。
+- [completed] `director-render` 与字幕排版聚焦 33/33、生产 build 通过；脚本 `py_compile` 通过。
+- [pending] 长标题仍需在更极端的中日韩混排和纪录片标题边界继续抽样；整体页面 U02/U05/U01 和长片资源任务未完成。
+- [completed] 默认值变更后的跨工作流回归 6 文件 72/72 通过。
+- [completed] 默认版式修复后的最终 `npm run typecheck` 通过。
+
+### 2026-09-10 U01/U05 前端增量
+
+- [completed] 修复导演台项目摘要固定使用内置 `preview-city.png` 的真实性问题：封面现在只从当前项目真实资产或镜头缩略图取值；无有效图片时显示“未生成项目封面”空态，不再注入通用示例封面。
+- [completed] 创建向导步骤操作栏改为滚动容器内的 sticky footer，紧凑窗口滚动长表单时“下一步/创建”保持可达。
+- [completed] `tests/director-product-flow.test.ts` 12/12、`npm run typecheck`、`npm run build`、`git diff --check` 通过。
+- [completed] 生产 Electron `qa-director-desk.py` 已修复视频资产归属夹具并通过双尺寸验收；`.artifacts/director-desk-qa/report.json` 为 `status: passed`，`stateAssertions.emptyProject` 明确记录 `coverImageCount=0`、`previewImageCount=0`、封面/预览空态，`runtimeErrors=[]`、付费调用 0。
+- [completed] U02 将右侧生成状态、视频任务 ID、队列标题和队列详情由 9px 提升到 10px，保留省略和紧凑列宽；产品流程契约仍为 12/12，生产 build 复跑通过。
+
+### 2026-09-10 U05 创建页操作可达性续推
+
+- [completed] 普通新建任务三步表单的“上一步 / 下一步 / 开始创作”操作栏改为滚动容器内的 sticky footer；紧凑窗口下两个动作按钮平分可用宽度并保留底部安全间距。
+- [completed] HTML 动画视频长表单提交栏改为 sticky footer，增加顶部边界与阴影；紧凑窗口提交按钮占满宽度，滚动到长文案、网页资料和输出参数末尾时仍可达。
+- [completed] 音乐 MV 表头的“生成音乐 MV”操作在长歌词/参数表单滚动时保持可见，窄窗口改为纵向排列并让生成按钮占满宽度。
+- [completed] 恢复 VOX/AI 漫剧音频导入的命名 `importSound` 回调契约，容量预留仍在命名函数内部执行；`director-sound` 与导演台聚焦回归 28/28 通过。
+- [completed] `npm run build`、`git diff --check` 通过；总计划仍保留真实 Electron 创建页滚动截图、极端长标题、视觉语义连续性及长片资源验收。
+- [completed] HTML 动画创建页真实 Electron 双尺寸局部 QA：`.artifacts/html-video-create-sticky-qa/` 保留桌面/紧凑截图与选项交互截图；创建页无横向溢出、无裁切控件，提交栏计算样式为 `position: sticky`，滚动到底部仍可见，`runtimeErrors=[]`。
+- [completed] NewTask/MusicMv 创建页真实 Electron 双尺寸滚动 QA 已并入 `scripts/qa-workspace-unsaved.py`；`E:/StoryDream-QA/workspace-unsaved/report.json` 为 `status: passed`，两页 sticky 动作栏均为计算 `position=sticky`、滚动后可见、横向溢出 0，且草稿保存/放弃/重启恢复仍通过。
+- [pending] 继续 F02 字幕切换负向、极端混排长标题和长片资源专项。
+
+### 2026-09-10 F02 字幕可见性负向证据
+
+- [completed] QA 隔离生命周期支持一次性字幕可见性故障注入；只修改验收窗口返回的边界样本，不改变产品正常渲染路径。
+- [completed] `.artifacts/director-subtitle-visibility-negative-qa/report.json` passed：VOX/AI 漫剧、16:9/9:16 共 4 组真实本地成片；`subtitle-visibility` 均进入 pending 并带 subtitle recheck scope，审片显示“可导出 · 待复核”。
+- [completed] 8 张双尺寸负向审片截图、测量失败回归、重启恢复通过；`runtimeErrors=[]`、`paidGenerationCalls=0`，未产生网络或付费生成调用。
+- [pending] 继续极端中日韩混排长标题与人物/场景语义连续性人工证据；长片资源专项仍未完成。
+
+### 2026-09-10 F02 极端混排标题与纪录片版式
+
+- [completed] 修正字幕布局 QA 对 `mixed-long-title` 的质量徽章期望；该 case 的真实排版检查通过，应显示“已通过”，不属于负向待复核夹具。
+- [completed] `.artifacts/director-subtitle-mixed-documentary-qa/report.json` 通过：VOX/AI 漫剧、16:9/9:16、混排中英日韩与超长英文词标题、纪录片版式共 8 次真实渲染，覆盖双尺寸审片截图和完整重启阶段。
+- [completed] 报告确认标题未越出安全区、字幕行数与排版无异常，`runtimeErrors=[]`、`paidGenerationCalls=0`；代表性桌面/紧凑截图已人工复审。
+- [pending] 该专项只证明当前输入的标题排版和安全区，不证明逐帧视觉连续性或人物/场景语义连续性；后续继续人工语义证据与长片资源专项。
+
+### 2026-09-10 U02 检查器状态可读性与长片 QA 收口
+
+- [completed] 导演台检查器中运动事实、图层元信息、样片候选、渲染引擎状态、视频就绪状态、批次能力和批次摘要等语义状态字号统一提升到 10px；阶段导航和纯装饰性辅助字保留原布局。
+- [completed] `tests/director-product-flow.test.ts`、`tests/director-render-strategy-ui.test.ts`、`tests/director-batch.test.ts`、`tests/director-system-status.test.ts` 共 41/41 通过；`npm run typecheck`、`npm run build`、`git diff --check` 通过。
+- [completed] 修正 `scripts/qa-compose-capacity.ts --long-1080p` 的验收契约：长片模式现在明确要求 500 个 1920x1080 片段，并把 `expectedInputs=500` 写入报告；普通 500 输入容量回归通过。
+- [pending] 当前长片目录只有 60 个 1080p 片段，尚未取得 500 段/5000 秒完整输出，因此不能把长片资源验收写成通过；继续补齐真实高容量夹具并验证内存、磁盘、转场和深阶段取消。
+
+### 2026-09-10 F03 长文阅读速度可见化
+
+- [completed] 全文规划结果新增原稿有效字素数、最低预计阅读速度和最长字幕句阅读速度；创建向导在“预计朗读至少”旁显示速度，用户可以在选择固定时长或全文分配前判断可读性。
+- [completed] 仍保留固定时长过快阻断和全文完整保存，不截断原稿、不改变自动时长分配；新增规划回归覆盖中文全文、短稿和混排统计。
+- [completed] 真实 Electron `.artifacts/director-long-script-qa/report.json` 通过：11,990 字原稿、224 镜头、668 cue、全文自动时长 2,779,965ms；1536x1024 与 1040x720 共 12 张截图无横向溢出或乱码，草稿恢复、保存重开、项目重启和零付费调用通过。
+- [completed] 已用真实本地旁白时长回填复核实际语速；当前字段仍明确区分规划估算与音频实测。人物/场景语义连续性和转场/低帧率长片专项继续待办。
+
+### 2026-09-10 F02 受控语义连续性人工证据
+
+- [completed] 将切点视觉连续性 QA 夹具从抽象几何占位图改为无文字的同一人物/同一城市街区本地图像：蓝色雨伞、橙色外套、深色长裤，三栋楼与窗户布局固定，仅改变光线。
+- [completed] `.artifacts/director-visual-semantics-qa/report.json` passed：VOX/AI 漫剧正常与近黑负向共 4 组实际渲染，`runtimeErrors=[]`、`paidGenerationCalls=0`、`blockedNetworkCalls=0`；切点定位和字幕/媒体复检仍通过。
+- [completed] 人工观察记录写入 `.artifacts/director-visual-semantics-qa/human-review.json`：两个正常工作流的主体连续性与场景连续性均为 passed，黑帧负向明确标记为不适用。
+- [pending] 该记录只覆盖受控本地图像、一个切点和两帧样本，不能代表任意真实 AI 生成素材的通用人物/场景语义连续性；仍需更大样本和实际生成素材人工抽检。
+
+### 2026-09-10 F03 真实旁白时长回填第一步
+
+- [completed] 为音频资产增加可选实测 `durationMs`，旁白生成完成后通过本地音频元数据读取真实时长；无法探测时不绑定到当前镜头，并保留明确错误。
+- [completed] VOX 聚合旁白、AI 漫剧聚合旁白和独立对白片段均把实测源时长写入时间线，导入声音资产也保存实测时长；规划字幕时间不会被静默改写。
+- [completed] 新增 `production-audio-alignment` 证据：逐镜头记录规划时长、实际音频时长、有效字素数、规划/实际字符每秒和差值；缺失实测保持 pending，明显偏差进入人工复核项。
+- [completed] 审片报告持久化 `narrationAlignment`，检查器证据区显示旁白对齐结果；未把估算语速冒充真实音频通过。
+- [completed] 聚焦回归 4 个测试文件 54/54、`npm run typecheck`、`npm run build`、`git diff --check` 通过。
+- [completed] 已完成真实本地旁白生成的 Electron 双尺寸复跑，并把实际时长证据写入 `.artifacts/director-sound/report.json`；真实 AI 多镜头人物/场景抽检与长片转场/低帧率专项继续待办。
+
+### 2026-09-10 F03 真实旁白时长回填验收
+
+- [completed] 修复审片对齐证据误用“可播放片段”的问题：静音旁白仍从作者时间线读取资产 ID，实际混音继续尊重静音意图。
+- [completed] 拆分镜头使用每个音频片段的有效 `sourceDurationMs` 计算实际口播时长；同一源文件被拆成多个镜头时不再把完整源时长重复计入。
+- [completed] `.artifacts/director-sound/report.json` 真实 Electron 双工作流声音验收通过：VOX/AI 漫剧均持久化 `narrationAlignment.status=passed`，样例旁白规划/实测均为 3000ms，`runtimeErrors=[]`、`paidGenerationCalls=0`。
+- [completed] 声音专项覆盖本地导入、静音旁白、音效裁剪/淡入淡出、拆分/合并、预览定位、导出实测和保存重开；QA 报告导出项现在直接保存对齐证据。
+- [completed] 新增切片时长回归；旁白对齐、导演渲染和命令 owner 聚焦测试 30/30 通过，`npm run typecheck`、`npm run build`、`git diff --check` 通过。
+- [pending] 真实 AI 多镜头人物/场景抽检、转场/低帧率长片专项及 U02/U04/U05 页面人工整体复核继续待办。
+
+### 2026-09-10 500 段长片资源专项
+
+- [completed] 将本地 1920×1080/10 秒片段补齐为 500 个编号输入，运行真实分组硬切合成；重复片段只用于容量/时序夹具，不作为内容质量证据。
+- [completed] `.artifacts/compose-long-1080p-qa/report.json`：`status=passed`、`inputs=500`、`expectedInputs=500`、`duration=5000s`、`compositionProcessCount=64`、`peakFfmpegWorkingSetBytes=1,358,974,976`，500 个场景起始静音检查和 8 个帧点通过，`filterFilesRemaining=0`。
+- [completed] QA 外层超时从 15 分钟提升到 30 分钟，仅覆盖长片验收脚本；本次实际耗时约 19.8 分钟，未改产品侧媒体超时策略。
+- [pending] 转场模式的高容量、低帧率、自定义输出和更深阶段取消仍需单独真实验收；人物/场景语义连续性仍需独立人工抽检。
+
+### 2026-09-10 长片转场分组与低帧率专项
+
+- [completed] `_compose_with_xfade` 改为递归分组策略：每个 FFmpeg 滤镜图最多 8 个输入，组内和组间都保留一次 `xfade/acrossfade`，组目录使用 `TemporaryDirectory` 并在成功、异常后清理。
+- [completed] `compose_render` 转场时钟优先使用作者声明的镜头时长，避免低 FPS 编码容器时长漂移覆盖时间线；每个转场批次按累计时钟 `-t` 收尾，低于 10 fps 的硬切单组与分组视频也按组总时长收尾，高帧率保留原逐帧等价路径。
+- [completed] `.artifacts/compose-xfade-capacity-qa/report.json` 通过：65 段转场跨过递归边界，10 个合成进程、每次最多 8 输入、最大命令 2911 字符、输出 24.58 秒，音视频流可解码，滤镜/转场临时目录 0。
+- [completed] `.artifacts/compose-fps-qa/report.json` 通过：1/2/7.5/29.97 fps 的硬切与 fade 均保持输出帧率；硬切 7.5 秒，fade 约 6.4 秒，音视频流可解码，硬切/转场/滤镜临时目录均为 0。
+- [completed] 转场与低 FPS 修改后的 `tests/storybound-composition.test.ts` 5/5 通过；全量 Vitest 先前 2405/2405 通过，后续将复跑受影响的音频/sidecar 聚焦回归。
+- [completed] 分组转场中段取消已补宿主清理：`runStoryboundMediaSidecar` 只清理自身前缀的分组目录和滤镜文件，不删除同目录其他任务文件；`.artifacts/compose-xfade-cancel-qa/report.json` 通过，旧输出保留、`_source.mp4` 不存在、分组目录/滤镜均为 0。
+- [pending] 500 段 1080p 转场完整资源压力仍不等同于 65 段低分辨率转场夹具；人物/场景语义连续性和更大规模真实 AI 素材抽检仍待继续。
+
+### 2026-09-10 语义素材证据盘点
+
+- [completed] 复核现有语义连续性报告和工作区素材：当前可引用的连续性人工证据仍是受控本地图像夹具；500 镜头批次、图像恢复和声音专项中的图片为本地桩/几何夹具，不能当作真实 AI 人物或场景连续性证据。
+- [pending] 需要在不绕过费用/网络约束的前提下取得可审计的真实多镜头生成素材，按人物身份、服饰、动作、场景布局和镜头间切点进行更大样本人工抽检；在此之前不把受控夹具扩写成通用 AI 质量结论。
+
+### 2026-09-10 转场递归时钟修正
+
+- [failed] 首次 500 段 1080p 转场压力运行在 45 分钟外层 QA 时限处中止；现场保留在 `.artifacts/compose-xfade-long-1080p-qa/`，未将部分上层输出记为通过。
+- [completed] 定位递归分组时长漂移：上层曾读取编码 MP4 容器时长，AAC/时间基尾差在 63 个第一层分组后累计约 1.51 秒；改为按作者声明镜头时长计算每个分组的逻辑时长，并通过 30 项组合回归及 65 段真实转场 QA。
+- [completed] 长片转场 QA 外层时限提升至 120 分钟，仅用于覆盖真实 500 段 1080p 分组编码；产品侧 FFmpeg 子进程对带作者时长的长批次改为按时长增加预算，短任务仍保留 15 分钟上限。
+- [completed] 最新完整压力验收已通过：`.artifacts/compose-xfade-long-1080p-qa/report.json` 记录 `inputs=500`、`expectedDuration=4850.3s`、`duration=4850.33s`、`compositionProcessCount=72`、`maxInputArguments=8`、`maxCommandCharacters=2939`，音视频双流解码通过，本轮 `filterFilesRemaining=0`、`xfadeScratchDirsRemaining=0`；旧失败现场归档在 `.artifacts/compose-xfade-long-1080p-failures/`。
+- [completed] 长片转场通过后重跑低帧率专项与中段取消专项：`.artifacts/compose-fps-qa/report.json` 覆盖 1/2/7.5/29.97 fps 的 cut/fade，`.artifacts/compose-xfade-cancel-qa/report.json` 保留旧输出、只保留其他任务 sentinel，二者均 passed。
+
+### 2026-09-10 U02/U04/U05 资源修复后回归
+
+- [completed] 服务状态、音色语义、创建页、产品壳层、HTML 视频和漫剧契约回归 5 文件 257/257 通过；长片 sidecar 时钟/超时改动未破坏现有前端工作流契约。
+- [pending] 仍需真实 Electron 双尺寸人工复审更多项目的长状态文本、素材分类和系列场景语义；契约回归不能替代真实界面观察。
+
+### 2026-09-12 R2/P02 新建流程首轮
+
+- [completed] 新建页首屏收敛为五类制作入口（智能成片、VOX、AI 漫剧、HTML 动画、音乐 MV），三步语义为“制作类型 / 内容 / 制作设置”；智能成片进入内容步骤，其余四类进入各自真实工作区。
+- [completed] 主动作统一为“创建并开始生成”，同步 Electron editorial QA 按钮定位；类型选择器改为桌面五列、紧凑两列、760px 以下单列。
+- [completed] `.artifacts/storydream-web-redesign/p02-new-task-20260912/report.json` 为 `status=passed`：5 张真实浏览器截图、27 项检查、0 页面错误，覆盖 1440×900、1024×768、760×900、390×844、四类跳转及 MV 无主歌曲禁用。
+- [completed] 新建、统一任务、产品壳层、editorial QA、命令清单、路由和渲染架构 7 文件 249/249 通过；`npm run typecheck` 与 `npm run build` 通过。
+- [pending] R2.1 项目摘要分页/归档/500 项行为、真实 Electron 双尺寸创建与重开，以及其余四类完整创建/保存/恢复/生成/交付仍待在后续批次收口。
+
+### 2026-09-12 R2.1 项目管理与重开
+
+- [completed] 修复查询期间搜索框禁用、删除弹窗因 pendingDelete 自锁、图片失效无回退，以及进入项目后丢失筛选/分页/布局；中文输入法组字结束后才查询。
+- [completed] 路由保存项目列表会话，分页控制器仍按需加载；VOX/漫剧及其恢复页按项目/任务来源返回。列表操作区 CSS 限定到打开按钮，收紧 390px 筛选区，保留工具栏新建项目入口。
+- [completed] `scripts/qa-project-home.py` 使用隔离 FileDatabase、生产 Electron/preload/IPC：500 项分 10 页，无重字段/批量详情读取，全文尾部可搜索；15 组操作验证搜索旧回包、五类筛选与重开、收藏/归档/恢复、删除取消/失败/重试、列表错误重试、关闭重启持久化。
+- [completed] `.artifacts/storydream-web-redesign/r2-project-home-20260912/report.json` 为 passed，1440x900、1024x768、390x844 网格/列表共 6 张截图，0 页面错误、0 生成调用；QA 失败注入只存在于独立启动脚本。11 文件 299/299、typecheck、生产 build 与 diff check 通过。
+- [pending] 本轮创建数据通过 FileDatabase 构造，证明保存项目管理和重开；不替代 P02 创建表单全路径、真实服务生成与交付验收。
+
+### 2026-09-12 联网技能发现与安装
+
+- [in_progress] 已完整读取 `skill-installer`、`agent-reach`、`web-access`、`planning-with-files` 及 GitHub/网页搜索参考规范。
+- [pending] 联网盘点、筛选、安装与安装后验证。
+
+### 2026-09-12 联网技能安装错误记录
+
+- 首次追加计划的补丁缺少结束标记，未写入任何文件；已修正补丁格式后重试。
+- `list-skills.py` 的精选与实验清单请求均返回 GitHub API HTTP 403；改走官方仓库只读 Git 和公开网页检索。
+- `web-access` CDP 因浏览器未开启远程调试而不可用；Firecrawl 未认证。候选发现改用无需登录的 Git/Jina 公共路径。
+
+### 2026-09-12 预览优先导演台
+
+- [completed] 已落地用户选定的 Preview-first 视觉方向，统一 VOX/AI 漫剧导演台的四阶段导航、项目镜头栏、中央预览、胶片条、素材区和右侧检查器。
+- [completed] 已保留 Electron 窗口控制、路由/七步骤映射、真实媒体、选中镜头、播放时钟、保存/生成/审片/导出业务合同；移动端补齐面板关闭和焦点恢复。
+- [completed] 8 个聚焦测试文件 122/122、typecheck、production build 通过；生产截图已验证深色主题、窗口控制、预览媒体、无横向溢出和四种画幅。
+- [completed] 完整 `qa-director-desk.py` 最终报告 `.artifacts/storydream-web-redesign/r3-preview-first-20260912-final/report.json` 为 passed：36 张截图，生成、播放、队列、审片、导出、字幕、结构编辑和重载恢复均通过，runtimeErrors=[]、paidGenerationCalls=0。

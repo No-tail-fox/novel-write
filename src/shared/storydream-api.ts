@@ -93,11 +93,17 @@ import type {
   WebSearchRequest,
 } from './types';
 import type { PublicAppState as AppState, SaveConfigInput, SecretChanges } from './config-secrets';
-import type { PersonAssetImage, PersonAssetSummary } from './person-assets';
+import type { PersonAssetImage, PersonAssetSummary, RecycledPersonAsset } from './person-assets';
 import type { JianyingDraftPathDetection } from './jianying-paths';
 import type { EditorialCollageCreateInput, EditorialCollageSaveInput } from './editorial-collage';
 import type { MotionComicCreateInput, MotionComicSaveInput } from './motion-comic';
-import type { DirectorRenderRequest, DirectorRenderResult } from './director-render';
+import type { DirectorGenerateShotVideoRequest, DirectorGenerateShotVideoResult, DirectorRenderRequest, DirectorRenderResult, DirectorSubtitleRecheckRequest, DirectorSubtitleRecheckResult, DirectorMediaRecheckRequest, DirectorMediaRecheckResult } from './director-render';
+import type { CreateDirectorBatchInput, DirectorBatchRecord, DirectorBatchStatus, UpdateDirectorBatchInput } from './director-batch-persistence';
+
+export interface LocalSubtitleTimestampFile {
+  path: string;
+  contents: string;
+}
 
 export const INVOKE_CHANNELS = Object.freeze([
   'app:get-state',
@@ -176,15 +182,25 @@ export const INVOKE_CHANNELS = Object.freeze([
   'person-assets:list',
   'person-assets:create',
   'person-assets:rename',
+  'person-assets:usage',
   'person-assets:delete',
+  'person-assets:restore',
   'person-assets:import-images',
   'person-assets:list-images',
   'person-assets:open-directory',
   'editorial-collage:create',
   'editorial-collage:save',
+  'director:generate-shot-video',
   'motion-comic:create',
   'motion-comic:save',
   'director:render',
+  'director:recheck-subtitles',
+  'director:recheck-media',
+  'director:batch-create',
+  'director:batch-get',
+  'director:batch-list',
+  'director:batch-update',
+  'director:batch-delete',
   'html-video:create-task',
   'html-video:update-config',
   'html-video:update-scene',
@@ -232,6 +248,7 @@ export const INVOKE_CHANNELS = Object.freeze([
   'asset:read-data-url',
   'local-image:select',
   'local-audio:select',
+  'local-subtitle-timestamps:select',
   'local-folder:select',
   'cookie-file:select',
   'viral:open-login-window',
@@ -259,11 +276,19 @@ type LocalBenchmarkBookPersonAssetApi = {
   listPersonAssets: () => Promise<PersonAssetSummary[]>;
   createPersonAsset: (name: string) => Promise<PersonAssetSummary>;
   renamePersonAsset: (oldName: string, newName: string) => Promise<string>;
-  deletePersonAsset: (name: string) => Promise<void>;
+  getPersonAssetUsage: (name: string) => Promise<PersonAssetReference[]>;
+  deletePersonAsset: (name: string) => Promise<RecycledPersonAsset>;
+  restorePersonAsset: (token: string) => Promise<PersonAssetSummary>;
   importPersonAssetImages: (name: string) => Promise<number>;
   listPersonAssetImages: (name: string) => Promise<PersonAssetImage[]>;
   openPersonAssetDirectory: (name: string) => Promise<void>;
 };
+
+export interface PersonAssetReference {
+  taskId: string;
+  title: string;
+  status: string;
+}
 
 export type StoryDreamApi = {
   getState: () => Promise<AppState>;
@@ -329,9 +354,17 @@ export type StoryDreamApi = {
   saveUiPreferences: (update: UiPreferencesUpdate) => Promise<AppMutationResult | null>;
   createEditorialCollage: (input: EditorialCollageCreateInput) => Promise<AppMutationResult | null>;
   saveEditorialCollage: (input: EditorialCollageSaveInput) => Promise<AppMutationResult | null>;
+  generateDirectorShotVideo: (input: DirectorGenerateShotVideoRequest) => Promise<{ result: DirectorGenerateShotVideoResult; mutation: AppMutationResult | null }>;
   createMotionComic: (input: MotionComicCreateInput) => Promise<AppMutationResult | null>;
   saveMotionComic: (input: MotionComicSaveInput) => Promise<AppMutationResult | null>;
   renderDirectorProject: (input: DirectorRenderRequest) => Promise<{ result: DirectorRenderResult; mutation: AppMutationResult | null }>;
+  recheckDirectorSubtitles: (input: DirectorSubtitleRecheckRequest) => Promise<DirectorSubtitleRecheckResult>;
+  recheckDirectorMedia: (input: DirectorMediaRecheckRequest) => Promise<DirectorMediaRecheckResult>;
+  createDirectorBatch: (input: CreateDirectorBatchInput) => Promise<DirectorBatchRecord>;
+  getDirectorBatch: (id: string) => Promise<DirectorBatchRecord | null>;
+  listDirectorBatches: (options?: { projectId?: string; episodeId?: string | null; statuses?: readonly DirectorBatchStatus[] }) => Promise<DirectorBatchRecord[]>;
+  updateDirectorBatch: (id: string, patch: UpdateDirectorBatchInput) => Promise<DirectorBatchRecord>;
+  deleteDirectorBatch: (id: string) => Promise<boolean>;
   createHtmlVideoTask: (input: CreateTaskInput) => Promise<AppMutationResult | null>;
   updateHtmlVideoConfig: (id: string, changes: HtmlVideoConfigChange[]) => Promise<AppMutationResult | null>;
   updateHtmlVideoScene: (id: string, sceneIndex: number, changes: HtmlVideoSceneChange[]) => Promise<AppMutationResult | null>;
@@ -384,6 +417,7 @@ export type StoryDreamApi = {
     (): Promise<string | null>;
     (purpose: 'managed-bgm'): Promise<ManagedBgmImport | null>;
   };
+  selectLocalSubtitleTimestampFile: () => Promise<LocalSubtitleTimestampFile | null>;
   selectLocalFolder: () => Promise<string | null>;
   selectCookieFile: () => Promise<string | null>;
   openViralLoginWindow: () => Promise<string | null>;

@@ -10,6 +10,7 @@ import {
   taskProgressStages,
   taskStepPosition,
   taskTerminalStep,
+  isDirectorWorkflowTask,
 } from '../src/shared/task-progress';
 import { collectTaskEventPages } from '../src/shared/state-reconciliation';
 import { FileDatabase } from '../src/shared/storage';
@@ -133,6 +134,14 @@ describe('task operation contracts', () => {
     expect(taskTerminalStep(task({ processingMode: 'clip-only' }))).toBe(4);
     expect(taskProgressStages(task({ processingMode: 'clip-only' }))).toHaveLength(4);
     expect(taskProgressSnapshot(task({ processingMode: 'clip-only', status: 'completed', currentStep: 4 }))).toMatchObject({ completed: 4, total: 4 });
+  });
+
+  it('does not present director workflows as the ordinary seven-step pipeline', () => {
+    const director = task({ taskType: 'motion-comic', currentStep: 6, status: 'running' });
+    expect(isDirectorWorkflowTask(director)).toBe(true);
+    expect(taskProgressStages(director)).toEqual([{ index: 0, title: '导演台工作流', hint: '按项目、分集和批次执行', agent: 'Director Desk' }]);
+    expect(taskProgressSnapshot(director)).toEqual({ completed: 0, total: 1, position: 1 });
+    expect(taskOperationStatusLabel(director)).toBe('导演台进行中');
   });
 
   it('makes task detail consume every cursor page and removes inline progress guesses', async () => {

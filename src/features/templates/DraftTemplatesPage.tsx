@@ -1,10 +1,12 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useRef, useState, type SetStateAction } from 'react';
 import { Copy, FolderOpen, LayoutTemplate, Plus, Save, Trash2, Upload } from 'lucide-react';
 import type { AppMutationResult, DraftFontFamily, DraftTemplate, DraftTextBorder, JianyingEffectCatalog } from '../../shared/types';
 import type { StoryDreamApi } from '../../shared/storydream-api';
 import { draftFontCssFamily, draftFontGroups, draftFontOptions, draftImageFitLabel, draftImageFitOptions, draftImageMotions, draftTemplates as builtinDraftTemplates, imageAnimations } from '../../shared/templates';
 import { convertCozeWorkflowToDraftTemplate, convertManyCozeWorkflowsToDraftTemplates, type CozeWorkflowTemplateConversionResult } from '../../shared/coze-workflow-converter';
 import { useAsyncAction } from '../../ui/async-action';
+import { useUnsavedChanges } from '../../app/workspace-navigation';
+import { Button } from '../../ui';
 import { FormField as Field } from '../../components/FormField';
 import { SegmentedControl as Segmented } from '../../components/SegmentedControl';
 import { ToggleField } from '../../components/ToggleField';
@@ -20,8 +22,9 @@ export function DraftTemplatesPage({ api, state, applyState }: { api: StoryDream
   const [editingId, setEditingId] = useState<string | null>(null);
   const [templateDetails, setTemplateDetails] = useState<Record<string, DraftTemplate>>({});
   const galleryTemplates = state.draftTemplates.map((template) => resolveDraftTemplateDetail(template, templateDetails[template.id]));
-  const editingTemplate = editingId ? galleryTemplates.find((template) => template.id === editingId) ?? null : null;
-  const [draft, setDraft] = useState<DraftTemplate | null>(null);
+  const [draft, setDraftState] = useState<DraftTemplate | null>(null);
+  const draftRef = useRef(draft);
+  const [savedDraft, setSavedDraft] = useState<DraftTemplate | null>(null);
   const [animationPreview, setAnimationPreview] = useState<string | null>(null);
   const [selectedLayer, setSelectedLayer] = useState<DraftCanvasSelection>('title');
   const [expandedLayerPanels, setExpandedLayerPanels] = useState<Record<DraftCanvasLayer, boolean>>({
@@ -44,12 +47,30 @@ export function DraftTemplatesPage({ api, state, applyState }: { api: StoryDream
   const draftDetailGeneration = useRef(0);
   const draftControlsRef = useRef<HTMLElement | null>(null);
   const editorReady = Boolean(editingId && draft);
+  const dirty = Boolean(editingId && JSON.stringify(draft) !== JSON.stringify(savedDraft));
+  const { requestLeave } = useUnsavedChanges({
+    id: 'draft-template-editor',
+    label: '草稿模板',
+    dirty,
+    busy: draftTemplateAction.busy,
+    onSave: save,
+    onDiscard: () => setDraft(savedDraft ? cloneDraftTemplate(savedDraft) : null),
+  });
 
-  useEffect(() => {
-    // Rehydrate only when switching templates; state refreshes must not overwrite unsaved drag edits.
-    const currentEditingTemplate = galleryTemplates.find((template) => template.id === editingId) ?? null;
-    setDraft(currentEditingTemplate ? cloneDraftTemplate(currentEditingTemplate) : null);
-  }, [editingId]);
+  function setDraft(update: SetStateAction<DraftTemplate | null>) {
+    const next = typeof update === 'function' ? update(draftRef.current) : update;
+    draftRef.current = next;
+    setDraftState(next);
+  }
+
+  function acceptTemplate(template: DraftTemplate) {
+    draftDetailGeneration.current += 1;
+    setEditingId(template.id);
+    setSavedDraft(cloneDraftTemplate(template));
+    setDraft(cloneDraftTemplate(template));
+  }
+
+  useEffect(() => () => { draftDetailGeneration.current += 1; }, []);
 
   useEffect(() => {
     let disposed = false;
@@ -152,20 +173,29 @@ export function DraftTemplatesPage({ api, state, applyState }: { api: StoryDream
     return saved;
   }
 
-  async function save() {
-    if (!draft) return;
-    await draftTemplateAction.run(async () => {
-      const saved = applyDraftTemplateMutation(await api.saveDraftTemplate(draft));
-      if (saved) setDraft(cloneDraftTemplate(saved));
+  async function save(): Promise<boolean> {
+    const submitted = draftRef.current;
+    if (!submitted) return false;
+    const generation = draftDetailGeneration.current;
+    const result = await draftTemplateAction.run(async () => {
+      const saved = applyDraftTemplateMutation(await api.saveDraftTemplate(submitted));
+      if (!saved || generation !== draftDetailGeneration.current || draftRef.current?.id !== submitted.id) return false;
+      setSavedDraft(cloneDraftTemplate(saved));
+      if (JSON.stringify(draftRef.current) !== JSON.stringify(submitted)) return false;
+      setDraft(cloneDraftTemplate(saved));
+      return true;
     });
+    return result.ok && result.value;
   }
 
   async function copyTemplate(template: DraftTemplate) {
+    const generation = draftDetailGeneration.current;
+    const currentDraft = draftRef.current;
     await draftTemplateAction.run(async () => {
-      const detail = await api.getDraftTemplateDetail(template.id) ?? template;
+      const detail = template.id === currentDraft?.id ? currentDraft : await api.getDraftTemplateDetail(template.id) ?? template;
       const copy = { ...cloneDraftTemplate(detail), id: crypto.randomUUID(), name: `${detail.name} 副本`, isDefault: false };
-      applyDraftTemplateMutation(await api.saveDraftTemplate(copy));
-      setEditingId(copy.id);
+      const saved = applyDraftTemplateMutation(await api.saveDraftTemplate(copy));
+      if (saved && generation === draftDetailGeneration.current && draftRef.current === currentDraft) acceptTemplate(saved);
     });
   }
 
@@ -173,8 +203,8 @@ export function DraftTemplatesPage({ api, state, applyState }: { api: StoryDream
     const base = cloneDraftTemplate(builtinDraftTemplates[0]);
     const next = { ...base, id: crypto.randomUUID(), name: '新模板', isDefault: false };
     await draftTemplateAction.run(async () => {
-      applyDraftTemplateMutation(await api.saveDraftTemplate(next));
-      setEditingId(next.id);
+      const saved = applyDraftTemplateMutation(await api.saveDraftTemplate(next));
+      if (saved) acceptTemplate(saved);
     });
   }
 
@@ -210,10 +240,10 @@ export function DraftTemplatesPage({ api, state, applyState }: { api: StoryDream
     }
     const template = cozeImportName.trim() ? { ...result.template, name: cozeImportName.trim() } : result.template;
     await draftTemplateAction.run(async () => {
-      applyDraftTemplateMutation(await api.saveDraftTemplate(template));
+      const saved = applyDraftTemplateMutation(await api.saveDraftTemplate(template));
       setCozeImportResult({ ...result, template });
       setCozeImportError('');
-      setEditingId(template.id);
+      if (saved) acceptTemplate(saved);
     }, { onError: (error) => setCozeImportError(error.message) });
   }
 
@@ -236,20 +266,21 @@ export function DraftTemplatesPage({ api, state, applyState }: { api: StoryDream
       const first = results.find((result): result is Extract<CozeWorkflowTemplateConversionResult, { ok: true }> => result.ok) ?? null;
       setCozeImportResult(first);
       setCozeImportError('');
-      if (first) setEditingId(first.template.id);
+      if (first) acceptTemplate(first.template);
     }, { onError: (error) => setCozeImportError(error.message) });
   }
 
   function openEditor(template: DraftTemplate) {
-    const generation = ++draftDetailGeneration.current;
-    setDraft(cloneDraftTemplate(template));
-    setEditingId(template.id);
-    void draftTemplateAction.run(async () => {
-      const detail = await api.getDraftTemplateDetail(template.id);
-      if (generation === draftDetailGeneration.current && detail) {
+    if (draftTemplateAction.busy) return;
+    void requestLeave(async () => {
+      const generation = ++draftDetailGeneration.current;
+      await draftTemplateAction.run(async () => {
+        const detail = await api.getDraftTemplateDetail(template.id);
+        if (generation !== draftDetailGeneration.current) return;
+        if (!detail) throw new Error('模板已不存在，请刷新模板列表。');
         setTemplateDetails((current) => ({ ...current, [detail.id]: detail }));
-        setDraft(cloneDraftTemplate(detail));
-      }
+        acceptTemplate(detail);
+      });
     });
   }
 
@@ -313,11 +344,11 @@ export function DraftTemplatesPage({ api, state, applyState }: { api: StoryDream
     return (
       <div className="draft-template-page">
         <div className="editor-topbar">
-          <button className="ghost-action" onClick={() => setEditingId(null)}>返回模板列表</button>
+          <Button className="ghost-action" variant="subtle" onClick={() => void requestLeave(() => { draftDetailGeneration.current += 1; setEditingId(null); setDraft(null); setSavedDraft(null); })}>返回模板列表</Button>
           <input className="template-name-input" value={draft.name} onChange={(event) => setDraft({ ...draft, name: event.target.value })} />
           <div className="button-row">
-            <button className="ghost-action" onClick={() => setDraft(editingTemplate ? cloneDraftTemplate(editingTemplate) : draft)}>取消</button>
-            <button className="primary-action slim" disabled={draftTemplateAction.busy} onClick={save}><Save size={15} />保存</button>
+            <Button className="ghost-action" variant="subtle" disabled={draftTemplateAction.busy || !dirty} onClick={() => void requestLeave(() => undefined)}>取消</Button>
+            <Button className="primary-action slim" variant="primary" disabled={draftTemplateAction.busy || !dirty} onClick={() => void save()} icon={<Save size={15} />}>保存</Button>
           </div>
         </div>
         <InlineActionFeedback feedback={draftTemplateAction.feedback} />

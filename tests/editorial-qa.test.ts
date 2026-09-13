@@ -36,9 +36,9 @@ describe('editorial Electron QA configuration', () => {
 
   it('defines the exact completed capture count for every QA scope', () => {
     expect(Object.fromEntries(editorialQaScopes.map((scope) => [scope, editorialQaExpectedCaptureCount(scope)]))).toEqual({
-      all: 98,
+      all: 102,
       'theme-smoke': 4,
-      shell: 4,
+      shell: 8,
       'new-task': 4,
       'task-operations': 14,
       'html-video': 2,
@@ -69,13 +69,13 @@ describe('editorial Electron QA configuration', () => {
     expect(runner).toContain('qaEnvironment.LOCALAPPDATA = localAppData');
   });
 
-  it('classifies the canonical 67 required captures separately from 31 supplemental states', () => {
+  it('classifies the canonical 67 required captures separately from 35 supplemental states', () => {
     const required = editorialQaCaptureIdsByRequirement('required');
     const supplemental = editorialQaCaptureIdsByRequirement('supplemental');
     const all = editorialQaCaptureIds('all');
 
     expect(required).toHaveLength(67);
-    expect(supplemental).toHaveLength(31);
+    expect(supplemental).toHaveLength(35);
     expect(new Set([...required, ...supplemental])).toEqual(new Set(all));
     expect(required.filter((id) => supplemental.includes(id))).toEqual([]);
     expect(required).toEqual(expect.arrayContaining([
@@ -101,6 +101,10 @@ describe('editorial Electron QA configuration', () => {
       'shell-new-task-dark-desktop',
       'shell-new-task-light-compact',
       'shell-new-task-light-desktop',
+      'shell-projects-dark-compact',
+      'shell-projects-dark-desktop',
+      'shell-projects-light-compact',
+      'shell-projects-light-desktop',
       'task-detail-operations-desktop',
       'task-detail-borrowed-image-desktop',
       'task-detail-cover-page-light-desktop',
@@ -186,6 +190,27 @@ describe('editorial Electron QA configuration', () => {
     expect(runner).toContain('Editorial media bitmap changed across themes');
   });
 
+  it('captures truthful project status fixtures in the shell QA scope', async () => {
+    const source = await (await import('node:fs/promises')).readFile(new URL('../electron/editorial-qa.ts', import.meta.url), 'utf8');
+    const main = await (await import('node:fs/promises')).readFile(new URL('../electron/main.ts', import.meta.url), 'utf8');
+
+    expect(main).toContain("editorialQaConfig?.scope === 'shell'");
+    expect(main).toContain('const sceneVideoScope =');
+    expect(main).toContain('if (sceneVideoScope) await seedTaskOperationsSceneVideo(dataDir);');
+    expect(main).toContain("const draft = await createFixture('QA 草稿项目');");
+    expect(main).toContain("const pending = await createFixture('QA 待开始项目');");
+    expect(main).toContain("const cancelled = await createFixture('QA 已取消项目');");
+    expect(source).toContain("if (targetView === 'projects') {");
+    expect(source).toContain("document.querySelector('[data-project-home]')");
+    expect(source).toContain(".project-card[data-project-id]");
+    expect(source).toContain(".project-card-status small");
+    expect(source).toContain("projectStatus.pending === '等待开始'");
+    expect(source).toContain("!pendingCard?.textContent?.includes('当前步骤')");
+    expect(source).toContain("projectStatus.running === '当前步骤 4'");
+    expect(source).toContain("projectStatus.paused === '已暂停，可继续'");
+    expect(source).toContain("projectStatus.failed === '需要处理'");
+    expect(source).toContain("captureCase.view === 'projects' && !state.projectStatus.ready");
+  });
   it('toggles every draft text underline off, persists it, and reloads without blanking Electron', async () => {
     const source = await (await import('node:fs/promises')).readFile(new URL('../electron/editorial-qa.ts', import.meta.url), 'utf8');
 

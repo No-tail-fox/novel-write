@@ -27,7 +27,7 @@ describe('StoryDream Fluent UI system', () => {
     expect(theme).toContain('storyDreamDarkTheme');
     expect(theme).toContain('storyDreamLightTheme');
     expect(theme).toContain('#f2614b');
-    expect(theme).toContain('#cf3f2d');
+    expect(theme).toContain('#cf4938');
     expect(app).toContain('<StoryDreamProvider theme={state.ui.theme}>');
   });
 

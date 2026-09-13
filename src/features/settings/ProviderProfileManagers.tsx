@@ -526,7 +526,7 @@ export function TtsProfileManager({
 
   const selectedProfile = profiles.find((profile) => profile.id === selectedProfileId) ?? profiles.find((profile) => profile.id === activeId) ?? profiles[0];
   const availableVolcengineVoices = useMemo(() => buildVolcengineVoiceOptions(volcengineSpeakers), [volcengineSpeakers]);
-  if (!selectedProfile) return <ArtifactEmpty text="暂无 TTS 配置档案" />;
+  if (!selectedProfile) return <ArtifactEmpty text="暂无旁白服务配置档案" />;
 
   const provider = selectedProfile.provider;
   const volcengine = ttsProfileVolcengine(selectedProfile);
@@ -571,8 +571,8 @@ export function TtsProfileManager({
     <div className="llm-profile-manager">
       <div className="profile-switcher-head">
         <div>
-          <strong>TTS 档案</strong>
-          <span>可保存火山引擎与 MiniMax 配音配置，启用一个作为任务配音配置。</span>
+          <strong>旁白服务档案</strong>
+          <span>可保存火山引擎与 MiniMax 配音配置，启用一个作为任务旁白配置。</span>
         </div>
         <button className="ghost-action" type="button" onClick={addProfile}>
           <Plus size={15} />
@@ -597,7 +597,7 @@ export function TtsProfileManager({
               <GripVertical aria-hidden="true" className="profile-drag-dot" />
               <div className="profile-avatar">{profile.name?.slice(0, 1).toUpperCase() || 'T'}</div>
               <div className="profile-copy">
-                <strong>{profile.name || '未命名 TTS 配置'}</strong>
+                <strong>{profile.name || '未命名旁白服务配置'}</strong>
                 <span>{ttsProviderLabel(profile.provider)}</span>
                 <small>{ttsProfileSummary(profile)}</small>
               </div>
@@ -608,7 +608,7 @@ export function TtsProfileManager({
                   <button
                     className="primary-action slim"
                     type="button"
-                    aria-label={`启用 TTS 配置 ${profile.name}`}
+                    aria-label={`启用旁白服务配置 ${profile.name}`}
                     disabled={saving}
                     onClick={(event) => {
                       event.stopPropagation();

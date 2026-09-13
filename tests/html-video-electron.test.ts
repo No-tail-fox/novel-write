@@ -1,6 +1,7 @@
 import { existsSync, type BigIntStats } from 'node:fs';
 import { createHash } from 'node:crypto';
-import { copyFile, link, lstat, mkdir, mkdtemp, readFile, readdir, realpath, rename, rm, stat, symlink, unlink, writeFile } from 'node:fs/promises';
+import { copyFile, link, lstat, mkdir, readFile, readdir, realpath, rename, rm, stat, unlink, writeFile } from 'node:fs/promises';
+import { createTestTempDirectory as mkdtemp, createTestDirectoryLink as symlink, removeTestTempDirectories } from './helpers/test-temp-directories';
 import { tmpdir } from 'node:os';
 import { basename, dirname, join } from 'node:path';
 import { pathToFileURL } from 'node:url';
@@ -121,7 +122,7 @@ describe('Electron HTML video runtime contract', () => {
       expect(events.items[0]).toMatchObject({ type: 'config_update', step: 3 });
     } finally {
       await database.close();
-      await rm(directory, { recursive: true, force: true });
+      await removeTestTempDirectories(directory);
     }
   });
 
@@ -174,7 +175,7 @@ describe('Electron HTML video runtime contract', () => {
         .toEqual([expect.objectContaining({ type: 'config_update', step: 5 })]);
     } finally {
       await database.close();
-      await rm(directory, { recursive: true, force: true });
+      await removeTestTempDirectories(directory);
     }
   });
 
@@ -471,8 +472,8 @@ describe('Electron HTML video runtime contract', () => {
       await expect(readFile(outsideMedia, 'utf8')).resolves.toBe('external media');
     } finally {
       await Promise.all([
-        rm(trustedRoot, { recursive: true, force: true }),
-        rm(outsideDir, { recursive: true, force: true }),
+        removeTestTempDirectories(trustedRoot),
+        removeTestTempDirectories(outsideDir),
       ]);
     }
   });
@@ -503,7 +504,7 @@ describe('Electron HTML video runtime contract', () => {
         ).rejects.toMatchObject({ code: 'HTML_VIDEO_MEDIA_PATH_INVALID' });
         await expect(readFile(outsideMedia, 'utf8')).resolves.toBe('external child media');
       } finally {
-        await rm(outsideDir, { recursive: true, force: true });
+        await removeTestTempDirectories(outsideDir);
       }
     });
   });
@@ -993,7 +994,7 @@ describe('Electron HTML video runtime contract', () => {
           expect(basename(receivedProbes[0].path).endsWith(extension)).toBe(true);
           expect(existsSync(receivedProbes[0].path)).toBe(false);
         } finally {
-          await rm(sourceDir, { recursive: true, force: true });
+          await removeTestTempDirectories(sourceDir);
         }
       });
     },
@@ -1316,7 +1317,7 @@ describe('Electron HTML video runtime contract', () => {
         expect(probePaths[1]).toBe(cachedPath);
         expect(await readFile(cachedPath!, 'utf8')).toBe('cached audio');
       } finally {
-        await rm(sourceDir, { recursive: true, force: true });
+        await removeTestTempDirectories(sourceDir);
       }
     });
   });
@@ -1362,7 +1363,7 @@ describe('Electron HTML video runtime contract', () => {
             probeMedia: async () => ({ duration: 3, hasAudio: true }),
           })).resolves.toBe(cachedPath);
         } finally {
-          await rm(sourceDir, { recursive: true, force: true });
+          await removeTestTempDirectories(sourceDir);
         }
       });
     },
@@ -1746,7 +1747,7 @@ describe('Electron HTML video runtime contract', () => {
           expect(await readFile(sentinelPath, 'utf8')).toBe('do not touch');
           expect(await readdir(outsideDir)).toEqual(outsideEntries);
         } finally {
-          await rm(outsideDir, { recursive: true, force: true });
+          await removeTestTempDirectories(outsideDir);
         }
       });
     },
@@ -1785,7 +1786,7 @@ describe('Electron HTML video runtime contract', () => {
         expect(await readFile(outsideSentinel, 'utf8')).toBe('outside sentinel');
         expect(await readFile(outsideCollision, 'utf8')).toBe('external collision');
       } finally {
-        await rm(outsideDir, { recursive: true, force: true });
+        await removeTestTempDirectories(outsideDir);
       }
     });
   });
@@ -1816,8 +1817,8 @@ describe('Electron HTML video runtime contract', () => {
       expect(await readdir(outsideDir)).toEqual(outsideEntries);
     } finally {
       await Promise.all([
-        rm(trustedRoot, { recursive: true, force: true }),
-        rm(outsideDir, { recursive: true, force: true }),
+        removeTestTempDirectories(trustedRoot),
+        removeTestTempDirectories(outsideDir),
       ]);
     }
   });
@@ -1854,7 +1855,7 @@ describe('Electron HTML video runtime contract', () => {
         workDirExists: false,
       });
     } finally {
-      await rm(trustedRoot, { recursive: true, force: true });
+      await removeTestTempDirectories(trustedRoot);
     }
   });
 
@@ -1893,8 +1894,8 @@ describe('Electron HTML video runtime contract', () => {
       expect(await readdir(outsideDir)).toEqual(outsideEntries);
     } finally {
       await Promise.all([
-        rm(trustedAppDataRoot, { recursive: true, force: true }),
-        rm(outsideDir, { recursive: true, force: true }),
+        removeTestTempDirectories(trustedAppDataRoot),
+        removeTestTempDirectories(outsideDir),
       ]);
     }
   });
@@ -1954,8 +1955,8 @@ describe('Electron HTML video runtime contract', () => {
         expect(await readdir(outsideTaskDir)).toEqual(outsideEntries);
       } finally {
         await Promise.all([
-          rm(trustedAppDataRoot, { recursive: true, force: true }),
-          rm(outsideTasksRoot, { recursive: true, force: true }),
+          removeTestTempDirectories(trustedAppDataRoot),
+          removeTestTempDirectories(outsideTasksRoot),
         ]);
       }
     },
@@ -2007,7 +2008,7 @@ describe('Electron HTML video runtime contract', () => {
         expect((await stat(fixedHtmlPath, { bigint: true })).ino).not.toBe(sentinel.inode);
         expect(existsSync(captureWorkDir)).toBe(false);
       } finally {
-        await rm(outsideDir, { recursive: true, force: true });
+        await removeTestTempDirectories(outsideDir);
       }
     });
   });
@@ -2054,7 +2055,7 @@ describe('Electron HTML video runtime contract', () => {
         await expectExternalHardlinkSentinelUnchanged(sentinel);
         expect((await stat(fixedThumbnailPath, { bigint: true })).ino).not.toBe(sentinel.inode);
       } finally {
-        await rm(outsideDir, { recursive: true, force: true });
+        await removeTestTempDirectories(outsideDir);
       }
     });
   });
@@ -2294,7 +2295,7 @@ describe('Electron HTML video runtime contract', () => {
         expect(await readFile(outsideSentinel, 'utf8')).toBe('outside quarantine sentinel');
         expect(await readFile(similarName, 'utf8')).toBe('not runtime-owned');
       } finally {
-        await rm(outsideDir, { recursive: true, force: true });
+        await removeTestTempDirectories(outsideDir);
       }
     });
   });
@@ -2366,7 +2367,7 @@ describe('Electron HTML video runtime contract', () => {
         }
         expect(existsSync(renderWorkDir)).toBe(false);
       } finally {
-        await rm(outsideDir, { recursive: true, force: true });
+        await removeTestTempDirectories(outsideDir);
       }
     });
   });
@@ -2423,7 +2424,7 @@ describe('Electron HTML video runtime contract', () => {
         await expectExternalHardlinkSentinelUnchanged(hardlinkSentinel);
         expect(await readFile(outsideLinkedSentinel, 'utf8')).toBe('outside directory sentinel');
       } finally {
-        await rm(outsideDir, { recursive: true, force: true });
+        await removeTestTempDirectories(outsideDir);
       }
     });
   });
@@ -2482,7 +2483,7 @@ describe('Electron HTML video runtime contract', () => {
         expect(swaps).toBe(1);
         expect(await readFile(outsideSentinel, 'utf8')).toBe('outside sentinel');
       } finally {
-        await rm(outsideDir, { recursive: true, force: true });
+        await removeTestTempDirectories(outsideDir);
       }
     });
   });
@@ -2585,6 +2586,103 @@ describe('Electron HTML video runtime contract', () => {
       await expect(runtime.createPreviews(runtimeInput(background, foreground, voice))).rejects.toBe(captureError);
       expect(captureStage).not.toBe('');
       expect(existsSync(captureStage)).toBe(false);
+    });
+  });
+
+  it.each(['ENOTEMPTY', 'EPERM', 'EBUSY'])('retries transient %s stage cleanup without repeating capture', async (code) => {
+    await withRuntimeDir(async (workDir) => {
+      const background = join(workDir, 'cleanup-background.png');
+      const foreground = join(workDir, 'cleanup-foreground.png');
+      const voice = join(workDir, 'cleanup-voice.wav');
+      await Promise.all([background, foreground, voice].map((path) => writeFile(path, 'fixture')));
+      const captureError = new Error('original capture failure');
+      let captureCalls = 0;
+      let removeCalls = 0;
+      let stagePath = '';
+      const runtime = createElectronHtmlVideoRuntime({
+        taskDirectory: taskDirectoryFor(workDir),
+        taskTitle: 'Transient cleanup',
+        renderer: {
+          async capturePreview() { captureCalls += 1; throw captureError; },
+          async render() { throw new Error('Unexpected render'); },
+        },
+        probeMedia: async () => validFinalMediaProbe(),
+        stagingFileOperations: {
+          remove: async (path) => {
+            stagePath = path;
+            removeCalls += 1;
+            if (removeCalls <= 2) throw Object.assign(new Error('file handle busy'), { code });
+            await rm(path, { recursive: true, force: true, maxRetries: 5, retryDelay: 25 });
+          },
+        },
+      });
+      await expect(runtime.createPreviews(runtimeInput(background, foreground, voice))).rejects.toBe(captureError);
+      expect(captureCalls).toBe(1);
+      expect(removeCalls).toBe(3);
+      expect(existsSync(stagePath)).toBe(false);
+    });
+  });
+
+  it('stops after six cleanup attempts when a transient stage error persists', async () => {
+    await withRuntimeDir(async (workDir) => {
+      const cleanupError = Object.assign(new Error('stage directory remains busy'), { code: 'ENOTEMPTY' });
+      let removeCalls = 0;
+      let renderCalls = 0;
+      let stagePath = '';
+      await expect(renderWithMediaProbe(
+        workDir,
+        async () => validFinalMediaProbe(1.25),
+        undefined,
+        undefined,
+        () => { renderCalls += 1; },
+        undefined,
+        (options) => {
+          options.stagingFileOperations = {
+            remove: async (path) => {
+              stagePath = path;
+              removeCalls += 1;
+              throw cleanupError;
+            },
+          };
+        },
+      )).rejects.toBe(cleanupError);
+      expect(removeCalls).toBe(6);
+      expect(renderCalls).toBe(1);
+      expect(existsSync(stagePath)).toBe(true);
+    });
+  });
+
+  it('revalidates the stage identity before retrying a busy cleanup', async () => {
+    await withRuntimeDir(async (workDir) => {
+      const background = join(workDir, 'retry-background.png');
+      const foreground = join(workDir, 'retry-foreground.png');
+      const voice = join(workDir, 'retry-voice.wav');
+      await Promise.all([background, foreground, voice].map((path) => writeFile(path, 'fixture')));
+      const captureError = new Error('original capture failure');
+      let removeCalls = 0;
+      let replacementPath = '';
+      const runtime = createElectronHtmlVideoRuntime({
+        taskDirectory: taskDirectoryFor(workDir),
+        taskTitle: 'Replaced cleanup stage',
+        renderer: {
+          async capturePreview() { throw captureError; },
+          async render() { throw new Error('Unexpected render'); },
+        },
+        probeMedia: async () => validFinalMediaProbe(),
+        stagingFileOperations: {
+          remove: async (path) => {
+            removeCalls += 1;
+            await rename(path, `${path}-original`);
+            await mkdir(path);
+            replacementPath = join(path, 'keep.txt');
+            await writeFile(replacementPath, 'replacement must survive');
+            throw Object.assign(new Error('directory busy'), { code: 'ENOTEMPTY' });
+          },
+        },
+      });
+      await expect(runtime.createPreviews(runtimeInput(background, foreground, voice))).rejects.toBe(captureError);
+      expect(removeCalls).toBe(1);
+      expect(await readFile(replacementPath, 'utf8')).toBe('replacement must survive');
     });
   });
 
@@ -3000,8 +3098,8 @@ describe('Electron HTML video runtime contract', () => {
       expect(probeCalls).toBe(0);
     } finally {
       await Promise.all([
-        rm(trustedAppDataRoot, { recursive: true, force: true }),
-        rm(outsideDir, { recursive: true, force: true }),
+        removeTestTempDirectories(trustedAppDataRoot),
+        removeTestTempDirectories(outsideDir),
       ]);
     }
   });
@@ -3316,7 +3414,7 @@ describe('Electron HTML video runtime contract', () => {
         await expect(readFile(directorySentinel, 'utf8')).resolves.toBe('directory sentinel');
         await expect(readFile(similarName, 'utf8')).resolves.toBe('not runtime-owned');
       } finally {
-        await rm(outsideDir, { recursive: true, force: true });
+        await removeTestTempDirectories(outsideDir);
       }
     });
   });
@@ -4010,7 +4108,7 @@ describe('Electron HTML video runtime contract', () => {
           undefined,
           undefined,
           (composition) => {
-            expect(composition.totalDurationS).toBe(5);
+            expect(composition.totalDurationS).toBe(4.7);
             expect(composition.transition?.duration).toBe(0.3);
           },
           (input) => {
@@ -4466,6 +4564,6 @@ async function withRuntimeDir(run: (workDir: string) => Promise<void>): Promise<
     await run(workDir);
   } finally {
     testTaskDirectories.delete(workDir);
-    await rm(trustedRoot, { recursive: true, force: true });
+    await removeTestTempDirectories(trustedRoot);
   }
 }

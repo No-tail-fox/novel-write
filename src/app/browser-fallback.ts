@@ -15,6 +15,7 @@ import { loadDefaultPromptTemplates } from '../shared/prompt-template-loader';
 import { mergeMinimaxCloneVoice } from '../shared/minimax-clone-voices';
 import { taskToSummary } from '../shared/state-reconciliation';
 import type { StoryDreamApi } from '../shared/storydream-api';
+import { validateDirectorGenerateShotVideoRequest } from '../shared/director-video-request';
 import { taskSpeakerLabel } from '../shared/tts-voices';
 import { normalizeBenchmarkGroupInput, normalizeBenchmarkPostInput } from '../shared/benchmark-monitoring';
 import { buildBookDiscoveryFallback } from '../shared/book-discovery-fallback';
@@ -34,6 +35,8 @@ import {
   motionComicSaveInputSchema,
   parseMotionComicPipelineData,
 } from '../shared/motion-comic';
+import type { DirectorGenerateShotVideoRequest, DirectorMediaRecheckRequest, DirectorMediaRecheckResult } from '../shared/director-render';
+import type { CreateDirectorBatchInput, DirectorBatchRecord, DirectorBatchStatus, UpdateDirectorBatchInput } from '../shared/director-batch-persistence';
 import type {
   AccountProfile,
   ActivationState,
@@ -536,6 +539,10 @@ export function makeFallbackApi(setState: (state: AppState) => void): StoryDream
     const normalized = query?.trim().toLocaleLowerCase();
     return !normalized || values.some((value) => String(value ?? '').toLocaleLowerCase().includes(normalized));
   };
+  const readDirectorBatches = (): DirectorBatchRecord[] => {
+    try { return JSON.parse(localStorage.getItem('storydream-director-batches') || '[]') as DirectorBatchRecord[]; } catch { return []; }
+  };
+  const writeDirectorBatches = (records: DirectorBatchRecord[]) => localStorage.setItem('storydream-director-batches', JSON.stringify(records));
 
   return {
     async getState() {
@@ -1054,8 +1061,14 @@ export function makeFallbackApi(setState: (state: AppState) => void): StoryDream
     async renamePersonAsset(_oldName, newName) {
       return newName;
     },
+    async getPersonAssetUsage() {
+      return [];
+    },
     async deletePersonAsset() {
-      return undefined;
+      return { name: '', token: '', path: '', recycledAt: Date.now() };
+    },
+    async restorePersonAsset() {
+      throw new Error('浏览器预览不能撤销本地人物素材删除，请在 Electron 桌面端操作。');
     },
     async importPersonAssetImages() {
       return 0;
@@ -1072,7 +1085,7 @@ export function makeFallbackApi(setState: (state: AppState) => void): StoryDream
       const now = new Date().toISOString();
       const id = crypto.randomUUID();
       const draft = createEditorialCollageDraft({ id, title: validated.title, ratio: validated.ratio, now });
-      const document = createEditorialCollageStarterPlan(draft, validated.sourceText, now);
+      const document = createEditorialCollageStarterPlan(draft, validated.sourceText, now, validated.durationMs);
       const task: Task = {
         id,
         title: document.title,
@@ -1150,6 +1163,10 @@ export function makeFallbackApi(setState: (state: AppState) => void): StoryDream
         ...state,
         tasks: state.tasks.map((item) => item.id === task.id ? updated : item),
       }, task.id);
+    },
+    async generateDirectorShotVideo(input: DirectorGenerateShotVideoRequest) {
+      validateDirectorGenerateShotVideoRequest(input);
+      throw new Error('DIRECTOR_VIDEO_DESKTOP_ONLY: AI 动态海报需要 Electron 桌面端的本地媒体管线。');
     },
     async createMotionComic(input) {
       const validated = motionComicCreateInputSchema.parse(input);
@@ -1239,6 +1256,29 @@ export function makeFallbackApi(setState: (state: AppState) => void): StoryDream
     async renderDirectorProject() {
       throw new Error('DIRECTOR_RENDER_DESKTOP_ONLY: 导演台成片需要 Electron 桌面端的本地渲染器。');
     },
+    async recheckDirectorSubtitles() {
+      throw new Error('DIRECTOR_RECHECK_DESKTOP_ONLY: 字幕局部复检需要 Electron 桌面端的本地渲染器。');
+    },
+    async recheckDirectorMedia(_input: DirectorMediaRecheckRequest): Promise<DirectorMediaRecheckResult> {
+      throw new Error('DIRECTOR_RECHECK_DESKTOP_ONLY: 媒体局部复检需要 Electron 桌面端的本地渲染器。');
+    },
+    async createDirectorBatch(input: CreateDirectorBatchInput) {
+      const now = new Date().toISOString();
+      const record: DirectorBatchRecord = { id: input.id ?? crypto.randomUUID(), workflowKind: input.workflowKind, projectId: input.projectId, episodeId: input.episodeId ?? null, status: input.status ?? 'draft', concurrency: Math.max(1, Math.min(4, Math.floor(input.concurrency))), pauseRequested: Boolean(input.pauseRequested), cancelRequested: Boolean(input.cancelRequested), recoveryRequired: Boolean(input.recoveryRequired), recoveryReason: input.recoveryReason ?? '', plan: { scope: input.plan.scope, capabilities: { ...input.plan.capabilities }, outputReady: input.plan.outputReady, renderFailed: input.plan.renderFailed, shots: [...input.plan.shots] }, nodes: input.nodes.map((node) => ({ ...node, dependencies: [...node.dependencies] })), createdAt: now, updatedAt: now };
+      const records = readDirectorBatches();
+      if (records.some((item) => item.id === record.id)) throw new Error('DIRECTOR_BATCH_EXISTS: 批次已存在。');
+      writeDirectorBatches([record, ...records]);
+      return record;
+    },
+    async getDirectorBatch(id: string) { return readDirectorBatches().find((item) => item.id === id) ?? null; },
+    async listDirectorBatches(options = {}) { return readDirectorBatches().filter((item) => (!options.projectId || item.projectId === options.projectId) && (options.episodeId === undefined || item.episodeId === (options.episodeId ?? null)) && (!options.statuses || options.statuses.includes(item.status))); },
+    async updateDirectorBatch(id: string, patch: UpdateDirectorBatchInput) {
+      const records = readDirectorBatches(); const index = records.findIndex((item) => item.id === id); if (index < 0) throw new Error('DIRECTOR_BATCH_NOT_FOUND: 批次不存在。');
+      const current = records[index]; if (patch.expectedUpdatedAt && patch.expectedUpdatedAt !== current.updatedAt) throw new Error('DIRECTOR_BATCH_CONFLICT: 批次已被其他操作更新。');
+      const next: DirectorBatchRecord = { ...current, status: patch.status ?? current.status, concurrency: patch.concurrency === undefined ? current.concurrency : Math.max(1, Math.min(4, Math.floor(patch.concurrency))), pauseRequested: patch.pauseRequested ?? current.pauseRequested, cancelRequested: patch.cancelRequested ?? current.cancelRequested, recoveryRequired: patch.recoveryRequired ?? current.recoveryRequired, recoveryReason: patch.recoveryReason ?? current.recoveryReason, plan: patch.plan ? { scope: patch.plan.scope, capabilities: { ...patch.plan.capabilities }, outputReady: patch.plan.outputReady, renderFailed: patch.plan.renderFailed, shots: [...patch.plan.shots] } : current.plan, nodes: patch.nodes ? patch.nodes.map((node) => ({ ...node, dependencies: [...node.dependencies] })) : current.nodes, updatedAt: new Date(Math.max(Date.now(), Date.parse(current.updatedAt) + 1)).toISOString() };
+      records[index] = next; writeDirectorBatches(records); return next;
+    },
+    async deleteDirectorBatch(id: string) { const records = readDirectorBatches(); const next = records.filter((item) => item.id !== id); writeDirectorBatches(next); return next.length !== records.length; },
     async createHtmlVideoTask(input: CreateTaskInput) {
       const state = read();
       const now = new Date().toISOString();
@@ -1617,6 +1657,9 @@ export function makeFallbackApi(setState: (state: AppState) => void): StoryDream
       return null;
     },
     async selectLocalAudio(_purpose?: 'managed-bgm') {
+      return null;
+    },
+    async selectLocalSubtitleTimestampFile() {
       return null;
     },
     async selectLocalFolder() {

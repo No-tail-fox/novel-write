@@ -210,12 +210,12 @@ describe('renderer application ownership architecture', () => {
     expect(composition).not.toContain('function makeFallbackApi(');
   });
 
-  it('owns one new-task action and exactly eighteen sidebar entries', async () => {
+  it('owns one new-task action and exactly nineteen sidebar entries', async () => {
     const navigation = await import('../src/app/navigation');
     expect(navigation.newTaskPrimaryAction.view).toBe('new-task');
-    expect(navigation.sidebarNavItems).toHaveLength(18);
-    expect(new Set(navigation.sidebarNavItems.map((item) => item.view)).size).toBe(18);
-    expect(navigation.navigationItems).toHaveLength(19);
+    expect(navigation.sidebarNavItems).toHaveLength(19);
+    expect(new Set(navigation.sidebarNavItems.map((item) => item.view)).size).toBe(19);
+    expect(navigation.navigationItems).toHaveLength(20);
     expect(navigation.navigationItemForView('task-detail')).toMatchObject({ label: '任务详情', hint: '单任务流水线' });
   });
 
@@ -519,7 +519,7 @@ describe('renderer application composition architecture', () => {
     expect(applicationBoundary).toContain('getDerivedStateFromError');
     expect(applicationBoundary).toContain('revealThemedApplication()');
     expect(applicationBoundary).toContain('重新加载应用');
-    for (const implementation of ['function App(', 'function NavButton(', 'api.getBootstrap(', 'api.onAppDelta(', 'sidebarNavGroups.map(']) {
+    for (const implementation of ['function App(', 'function NavButton(', 'api.getBootstrap(', 'api.onAppDelta(', 'primaryNavGroups.map(']) {
       expect(main).not.toContain(implementation);
     }
     expect(main.length).toBeLessThan(1_200);
@@ -530,10 +530,10 @@ describe('renderer application composition architecture', () => {
     for (const symbol of ['api.getBootstrap(', 'api.onAppDelta(', 'api.reconcileDeltas(', 'refreshTaskDetail', 'refreshViralEvents', 'applyStoredTheme']) {
       expect(app).toContain(symbol);
     }
-    for (const symbol of ['window-controls', 'sidebarNavGroups.map(', 'group.items.map(', 'recent-task-strip', 'global-action-banner']) {
+    for (const symbol of ['window-controls', 'primaryNavGroups.map(', 'secondaryItems.map(', 'recent-task-strip', 'global-action-banner']) {
       expect(shell).toContain(symbol);
     }
-    for (const symbol of ['NewTaskPage', 'TaskDetailPage', 'HtmlVideoPage', 'PromptTemplatesPage', 'SettingsPage', 'ActivationPage']) {
+    for (const symbol of ['NewTaskPage', 'TaskDetailPage', 'ProjectHomePage', 'HtmlVideoPage', 'PromptTemplatesPage', 'SettingsPage', 'ActivationPage']) {
       expect(routes).toContain(symbol);
     }
     expect(shell).not.toContain("from '../features/");
@@ -567,22 +567,22 @@ describe('renderer application composition architecture', () => {
     expect(recovery).toContain('target.location.reload();');
   });
 
-  it('lazy-loads all twenty route pages behind one stable content fallback', async () => {
+  it('lazy-loads all twenty-one route pages behind one stable content fallback', async () => {
     const [routes, registry] = await Promise.all([
       source('src/app/AppRoutes.tsx'),
       source('src/app/route-registry.ts'),
     ]);
     const dynamicRoutes = [...registry.matchAll(/import\('([^']+)'\)\.then\(\(module\) => \(\{ default: module\.([A-Za-z0-9]+) \}\)\)/gu)];
 
-    expect(routes).toContain("import { Suspense } from 'react'");
+    expect(routes).toMatch(/import \{[^}]*\bSuspense\b[^}]*\} from 'react'/u);
     expect(routes).toContain("import { RouteLoadingState } from './RouteLoadingState'");
     expect(routes).toContain("from './route-registry'");
     expect(registry).toContain("import { lazy } from 'react'");
     expect(routes).toContain('<Suspense fallback={<RouteLoadingState />}>');
     expect(routes).toContain('</Suspense>');
-    expect(dynamicRoutes).toHaveLength(20);
-    expect(new Set(dynamicRoutes.map((match) => match[1])).size).toBe(20);
-    expect(new Set(dynamicRoutes.map((match) => match[2])).size).toBe(20);
+    expect(dynamicRoutes).toHaveLength(21);
+    expect(new Set(dynamicRoutes.map((match) => match[1])).size).toBe(21);
+    expect(new Set(dynamicRoutes.map((match) => match[2])).size).toBe(21);
     expect(`${routes}\n${registry}`).not.toMatch(/^import \{ [A-Za-z0-9]+Page \} from '\.\.\/features\//gmu);
   });
 

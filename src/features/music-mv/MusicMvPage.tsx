@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import { useWorkspaceDraft } from '../../app/workspace-draft';
 import { FolderOpen, Loader2, Music } from 'lucide-react';
 import { FormField as Field } from '../../components/FormField';
 import { OptionGroup as OptionCloud } from '../../components/OptionGroup';
@@ -12,6 +13,18 @@ import type { TemplateOption } from '../../shared/prompt-templates';
 import { pauseOptions, storyboardSceneCountOptions, styleOptions } from '../../shared/editorial-options';
 import { useAsyncAction } from '../../ui/async-action';
 import { addUploadedBgm, resolveDefaultBgmId, taskFromMutation, validBgmItems } from '../tasks/task-formatters';
+
+const MUSIC_MV_RHYTHM_LABELS: Record<Task['musicMv']['rhythmMode'], string> = {
+  'lyric-sync': '歌词同步',
+  'fast-cut': '快切',
+  'slow-cinematic': '慢镜头',
+};
+const MUSIC_MV_CAPTION_LABELS: Record<Task['musicMv']['captionStyle'], string> = {
+  karaoke: '卡拉 OK',
+  minimal: '极简字幕',
+  none: '无字幕',
+};
+const MUSIC_MV_SCENE_LABELS = ['开场', '主歌', '副歌', '结尾'] as const;
 
 export function MusicMvPage({
   api,
@@ -43,6 +56,17 @@ export function MusicMvPage({
   const [running, setRunning] = useState(false);
   const [message, setMessage] = useState('');
   const musicAction = useAsyncAction();
+  const creationDraft = useWorkspaceDraft({
+    id: 'music-mv-create', label: '音乐 MV 草稿',
+    busy: running,
+    value: { title, lyrics, style, ratio, templateId, storyboardSceneCount, processingMode, pausePoint, musicMvRhythmMode, musicMvCaptionStyle, musicMvVisualMotif, musicMvAudioPath, bgmId },
+    restore: (draft) => {
+      setTitle(draft.title); setLyrics(draft.lyrics); setStyle(draft.style); setRatio(draft.ratio); setTemplateId(draft.templateId);
+      setStoryboardSceneCount(draft.storyboardSceneCount); setProcessingMode(draft.processingMode); setPausePoint(draft.pausePoint);
+      setMusicMvRhythmMode(draft.musicMvRhythmMode); setMusicMvCaptionStyle(draft.musicMvCaptionStyle); setMusicMvVisualMotif(draft.musicMvVisualMotif);
+      setMusicMvAudioPath(draft.musicMvAudioPath); setBgmId(draft.bgmId);
+    },
+  });
   const bgmOptions = validBgmItems(state.config);
   const lyricLines = lyrics.split(/\n/u).map((line) => line.trim()).filter(Boolean);
   const musicMvStyleOptions = styleOptions;
@@ -69,8 +93,13 @@ export function MusicMvPage({
       setMessage('请先输入歌词 / 文案。');
       return;
     }
+    if (!musicMvAudioPath.trim()) {
+      setMessage('请先选择主歌曲音频；BGM 只能作为辅助配乐，不能替代主歌曲。');
+      return;
+    }
     await musicAction.run(async () => {
       setRunning(true);
+      const submittedDraft = creationDraft.snapshot();
       setMessage('');
       try {
         const next = await api.createAndRunTask({
@@ -95,7 +124,10 @@ export function MusicMvPage({
         });
         applyState(next);
         const createdTask = taskFromMutation(next);
-        if (createdTask) openTaskDetail(createdTask.id);
+        if (createdTask) {
+          creationDraft.complete(submittedDraft);
+          openTaskDetail(createdTask.id);
+        }
       } finally {
         setRunning(false);
       }
@@ -110,7 +142,7 @@ export function MusicMvPage({
             <h2>音乐MV</h2>
             <span>按歌词切分镜头、同步字幕节奏，并输出剪映草稿。</span>
           </div>
-          <button className="primary-action slim" onClick={runMusicMv} disabled={running || !lyrics.trim()}>
+          <button className="primary-action slim" onClick={runMusicMv} disabled={running || !lyrics.trim() || !musicMvAudioPath.trim()}>
             {running ? <Loader2 className="spin" size={15} /> : <Music size={15} />}
             生成音乐 MV
           </button>
@@ -155,6 +187,7 @@ export function MusicMvPage({
             <input value={musicMvAudioPath} onChange={(event) => setMusicMvAudioPath(event.target.value)} placeholder="可选择本地歌曲或伴奏" />
             <button className="ghost-action" disabled={musicAction.busy} onClick={selectMusicMvAudio}><FolderOpen size={15} />选择音频</button>
           </div>
+          {!musicMvAudioPath.trim() ? <small className="field-hint is-warning">必须选择主歌曲后才能生成；BGM 不会替代主歌曲。</small> : null}
         </Field>
 
         <span className="field-title">背景音乐</span>
@@ -172,13 +205,13 @@ export function MusicMvPage({
         <h3>MV 结构预览</h3>
         <div className="task-metrics">
           <div><small>歌词行</small><strong>{lyricLines.length}</strong></div>
-          <div><small>节奏</small><strong>{musicMvRhythmMode}</strong></div>
-          <div><small>字幕</small><strong>{musicMvCaptionStyle}</strong></div>
+          <div><small>节奏模式</small><strong>{MUSIC_MV_RHYTHM_LABELS[musicMvRhythmMode]}</strong></div>
+          <div><small>字幕样式</small><strong>{MUSIC_MV_CAPTION_LABELS[musicMvCaptionStyle]}</strong></div>
         </div>
         <div className="artifact-scene-list">
           {lyricLines.slice(0, 8).map((line, index) => (
             <div key={`${line}-${index}`}>
-              <strong>{index + 1}. {index === 0 ? 'intro' : index === lyricLines.length - 1 ? 'outro' : index >= Math.floor(lyricLines.length / 2) ? 'chorus' : 'verse'}</strong>
+              <strong>{index + 1}. {index === 0 ? MUSIC_MV_SCENE_LABELS[0] : index === lyricLines.length - 1 ? MUSIC_MV_SCENE_LABELS[3] : index >= Math.floor(lyricLines.length / 2) ? MUSIC_MV_SCENE_LABELS[2] : MUSIC_MV_SCENE_LABELS[1]}</strong>
               <p>{line}</p>
             </div>
           ))}

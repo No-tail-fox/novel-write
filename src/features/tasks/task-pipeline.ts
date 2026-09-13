@@ -1,4 +1,4 @@
-import { taskProgressStages, taskTerminalStep } from '../../shared/task-progress';
+import { isDirectorWorkflowTask, taskProgressStages, taskTerminalStep } from '../../shared/task-progress';
 import type { Task, TaskArtifactSnapshot } from '../../shared/types';
 
 export type PipelineStepStatus = 'pending' | 'running' | 'completed' | 'failed' | 'cancelled';
@@ -34,6 +34,7 @@ export function taskOperationStageTitle(title: string): string {
 }
 
 export function taskOperationStatusLabel(task: Pick<Task, 'taskType' | 'processingMode' | 'currentStep' | 'status'>): string {
+  if (isDirectorWorkflowTask(task) && task.status === 'running') return '导演台进行中';
   if (task.status === 'running') {
     const stages = taskProgressStages(task);
     const stage = stages[Math.min(Math.max(0, task.currentStep), Math.max(0, stages.length - 1))];

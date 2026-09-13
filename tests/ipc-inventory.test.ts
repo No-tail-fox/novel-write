@@ -21,13 +21,14 @@ describe('renderer IPC inventory', () => {
   });
 
   it('defines exactly one input schema for every canonical invoke channel', () => {
-    expect(INVOKE_CHANNELS).toHaveLength(139);
+    expect(INVOKE_CHANNELS).toHaveLength(150);
     expect(new Set(INVOKE_CHANNELS).size).toBe(INVOKE_CHANNELS.length);
     expect(new Set(Object.keys(ipcInputSchemas))).toEqual(new Set(INVOKE_CHANNELS));
     expect(INVOKE_CHANNELS).toContain('task:open-output-directory');
     expect(INVOKE_CHANNELS).toContain('image-lab:open-output-directory');
     expect(INVOKE_CHANNELS).toContain('person-assets:open-directory');
     expect(INVOKE_CHANNELS).toContain('director:render');
+    expect(INVOKE_CHANNELS).toContain('director:generate-shot-video');
     expect(INVOKE_CHANNELS).not.toContain('path:open');
   });
 

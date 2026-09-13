@@ -17,12 +17,12 @@ describe('unified StoryDream task system', () => {
     expect(routes).toContain('navigate={navigate}');
     expect(page).toContain('<TaskCreationTypePicker');
     expect(page).toContain("activeType=\"smart-video\"");
-    for (const type of ['smart-video', 'vox', 'motion-comic', 'html-video']) {
+    for (const type of ['smart-video', 'vox', 'motion-comic', 'html-video', 'music-mv']) {
       expect(picker).toContain(`id: '${type}'`);
     }
     expect(picker).toContain("taskCreationTarget(type.id)");
     expect(css).toContain('.new-task-type-picker');
-    expect(css).toContain('grid-template-columns: repeat(4, minmax(0, 1fr));');
+    expect(css).toContain('grid-template-columns: repeat(5, minmax(0, 1fr));');
   });
 
   it('removes duplicate global workflow shortcuts and preloads the actual recent-task workspace', async () => {
@@ -56,8 +56,9 @@ describe('unified StoryDream task system', () => {
       expect(page).toContain('useState(() => !requestedTaskId)');
       expect(page).toContain('useState(() => requestedTaskId)');
       expect(page).toContain("onBack={() => navigate?.('new-task')}");
-      expect(page).toContain("onReturnTasks={() => navigate?.('history')}");
-      expect(page).toContain("onBackToTasks={() => navigate?.('history')}");
+      expect(page).toContain("returnView = 'history'");
+      expect(page).toContain('onReturnTasks={() => navigate?.(returnView)}');
+      expect(page).toContain('onBackToTasks={() => navigate?.(returnView)}');
     }
   });
 
@@ -68,7 +69,8 @@ describe('unified StoryDream task system', () => {
     ]);
 
     expect(workspace).not.toContain('director-mode-switch');
-    expect(workspace).toContain('label="返回全部任务"');
+    expect(workspace).toContain("backToTasksLabel = '返回全部任务'");
+    expect(workspace).toContain('label={backToTasksLabel}');
     expect(css).toContain(".app-shell[data-shell-view='editorial-collage']:has(.director-desk)");
     expect(css).toContain(".app-shell[data-shell-view='motion-comic']:has(.director-desk)");
     expect(css).not.toContain(".app-shell[data-shell-view='editorial-collage'] > .window-line");

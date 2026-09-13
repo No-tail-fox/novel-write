@@ -14,10 +14,16 @@ import { AppShell } from './AppShell';
 import { taskWorkspaceView } from './navigation';
 import { RouteErrorBoundary } from './RouteErrorBoundary';
 import type { SettingsSection } from '../features/settings/SettingsPage';
+import { WorkspaceNavigationProvider, WorkspaceLeaveDialog, useNativeWindowLeaveGuard, useWorkspaceNavigation } from './workspace-navigation';
 
 applyStoredTheme(defaultUiPreferences.theme);
 
 export function App() {
+  return <WorkspaceNavigationProvider><AppWorkspace /></WorkspaceNavigationProvider>;
+}
+
+function AppWorkspace() {
+  const navigation = useWorkspaceNavigation();
   const [trackedState, dispatchState] = useReducer(
     reduceCompletionTrackedState<AppState>,
     { value: cloneState(initialState), completionToken: 0 },
@@ -30,6 +36,7 @@ export function App() {
   const [activeView, setActiveView] = useState<ShellView>('new-task');
   const [settingsEntry, setSettingsEntry] = useState<{ section: SettingsSection; returnView: ShellView; taskId?: string } | null>(null);
   const [selectedTaskId, setSelectedTaskId] = useState<string | null>(null);
+  const [taskDetailReturnView, setTaskDetailReturnView] = useState<ShellView>('history');
   const [requestedEditorialCollageTaskId, setRequestedEditorialCollageTaskId] = useState('');
   const [requestedMotionComicTaskId, setRequestedMotionComicTaskId] = useState('');
   const [requestedHtmlTaskId, setRequestedHtmlTaskId] = useState('');
@@ -562,7 +569,13 @@ export function App() {
   }
 
   function navigate(view: ShellView) {
+    if (view === activeViewRef.current) return;
+    void navigation.requestLeave(() => navigateNow(view));
+  }
+
+  function navigateNow(view: ShellView) {
     activeViewRef.current = view;
+    if (view !== 'task-detail') setTaskDetailReturnView('history');
     startTransition(() => {
       setRequestedEditorialCollageTaskId('');
       setRequestedMotionComicTaskId('');
@@ -576,18 +589,19 @@ export function App() {
   }
 
   function openSettings(section: SettingsSection, returnView: ShellView, taskId?: string) {
-    setSettingsEntry({ section, returnView, taskId });
-    navigate('settings');
+    void navigation.requestLeave(() => {
+      setSettingsEntry({ section, returnView, taskId });
+      navigateNow('settings');
+    });
   }
 
   function returnFromSettings() {
     const entry = settingsEntry;
-    setSettingsEntry(null);
-    if (entry?.taskId) {
-      void openTaskDetail(entry.taskId);
-      return;
-    }
-    navigate(entry?.returnView ?? 'new-task');
+    void navigation.requestLeave(async () => {
+      setSettingsEntry(null);
+      if (entry?.taskId) await openTaskDetailNow(entry.taskId, entry.returnView);
+      else navigateNow(entry?.returnView ?? 'new-task');
+    });
   }
 
   function applyState(next: AppMutationResult | null) {
@@ -600,7 +614,11 @@ export function App() {
     setSaveTone('saved');
   }
 
-  async function openTaskDetail(taskId: string) {
+  async function openTaskDetail(taskId: string, returnView: ShellView = 'history') {
+    await navigation.requestLeave(() => openTaskDetailNow(taskId, returnView));
+  }
+
+  async function openTaskDetailNow(taskId: string, returnView: ShellView = 'history') {
     let task = state.tasks.find((candidate) => candidate.id === taskId) ?? null;
     if (!task) {
       const lookup = await shellAction.run(async () => {
@@ -612,6 +630,7 @@ export function App() {
       task = lookup.value;
     }
     const targetView = taskWorkspaceView(task.taskType);
+    setTaskDetailReturnView(returnView);
     selectedTaskIdRef.current = targetView === 'task-detail' ? taskId : null;
     activeHtmlTaskIdRef.current = targetView === 'html-video' ? taskId : null;
     activeViewRef.current = targetView;
@@ -641,9 +660,8 @@ export function App() {
     void shellAction.run(() => api.windowControl('toggle-maximize'));
   }
 
-  function closeWindow() {
-    void shellAction.run(() => api.windowControl('close'));
-  }
+  const requestCloseWindow = useNativeWindowLeaveGuard(() => api.windowControl('close'), !isBrowserPreview);
+  function closeWindow() { void requestCloseWindow().catch(shellAction.reportError); }
 
   function toggleTheme() {
     const currentTheme = runtimeThemeRef.current;
@@ -669,7 +687,7 @@ export function App() {
       <AppShell
         activeView={activeView}
         state={state}
-        saveTone={saveTone}
+        saveTone={navigation.submitting ? 'saving' : navigation.dirty ? 'dirty' : saveTone}
         isBrowserPreview={isBrowserPreview}
         busy={shellAction.busy}
         feedback={shellAction.feedback}
@@ -694,6 +712,7 @@ export function App() {
             settingsReturnView={settingsEntry?.returnView}
             returnFromSettings={returnFromSettings}
             openTaskDetail={openTaskDetail}
+            taskDetailReturnView={taskDetailReturnView}
             isHistoryTombstoned={isHistoryTombstoned}
             historyFamilyEpochs={historyFamilyEpochs}
             refreshTaskDetail={refreshTaskDetail}
@@ -710,6 +729,7 @@ export function App() {
           />
         </RouteErrorBoundary>
       </AppShell>
+      <WorkspaceLeaveDialog />
     </StoryDreamProvider>
   );
 }

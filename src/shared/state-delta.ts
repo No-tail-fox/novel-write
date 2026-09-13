@@ -3,6 +3,7 @@ import type {
   HistoryFamily,
   ImageLabSummary,
   SequencedTaskEvent,
+  TaskEvent,
   TaskSummary,
   ViralAnalysisSummary,
   VoiceLabSummary,
@@ -36,6 +37,15 @@ export interface AppDeltaCoordinator {
 
 export const MAX_RENDERER_DELTA_BUFFER = 512;
 export const MAX_RENDERER_EVENT_HISTORY = 512;
+
+/**
+ * Event sequence numbers are scoped to a task run. Using seq alone lets an
+ * event from task A overwrite the same sequence from task B in the renderer.
+ */
+export function taskEventKey(event: Pick<TaskEvent, 'taskId' | 'runGeneration' | 'seq' | 'id' | 'ts' | 'type' | 'detail'>): string {
+  const sequence = event.seq ?? event.id ?? `${event.ts}:${event.type}:${event.detail}`;
+  return `${event.taskId}:${event.runGeneration ?? 'legacy'}:${sequence}`;
+}
 
 const historyFamilies: HistoryFamily[] = ['task', 'viral-analysis', 'image-lab', 'voice-lab'];
 
@@ -245,9 +255,9 @@ export function reduceAppDelta(state: DeltaViewState, delta: AppDelta): DeltaVie
     && delta.event.runGeneration !== task.runGeneration) {
     return advanceDeltaRevision(state, delta, entityRevisions, tombstoneRevisions);
   }
-  const bySeq = new Map<number, SequencedTaskEvent>(state.events.map((event) => [event.seq, event]));
-  bySeq.set(delta.event.seq, delta.event);
-  const events = [...bySeq.values()]
+  const byKey = new Map<string, SequencedTaskEvent>(state.events.map((event) => [taskEventKey(event), event]));
+  byKey.set(taskEventKey(delta.event), delta.event);
+  const events = [...byKey.values()]
     .sort((left, right) => left.seq - right.seq)
     .slice(-MAX_RENDERER_EVENT_HISTORY);
   return {
@@ -331,11 +341,11 @@ export function createAppDeltaCoordinator(
     if (task?.runGeneration !== undefined
       && delta.event.runGeneration !== undefined
       && delta.event.runGeneration !== task.runGeneration) return current;
-    const bySeq = new Map(current.events.map((event) => [event.seq, event]));
-    bySeq.set(delta.event.seq, delta.event);
+    const byKey = new Map(current.events.map((event) => [taskEventKey(event), event]));
+    byKey.set(taskEventKey(delta.event), delta.event);
     return {
       ...current,
-      events: [...bySeq.values()]
+      events: [...byKey.values()]
         .sort((left, right) => left.seq - right.seq)
         .slice(-MAX_RENDERER_EVENT_HISTORY),
     };
@@ -392,11 +402,11 @@ export function createAppDeltaCoordinator(
       outOfOrder.clear();
       reportedGapRevision = null;
       bufferOverflowed = false;
-      const bySeq = new Map<number, SequencedTaskEvent>();
-      [...preservedEvents, ...next.events].forEach((event) => bySeq.set(event.seq, event));
+      const byKey = new Map<string, SequencedTaskEvent>();
+      [...preservedEvents, ...next.events].forEach((event) => byKey.set(taskEventKey(event), event));
       state = prepareSnapshot({
         ...next,
-        events: [...bySeq.values()]
+        events: [...byKey.values()]
           .sort((left, right) => left.seq - right.seq)
           .slice(-MAX_RENDERER_EVENT_HISTORY),
       }, state, live);

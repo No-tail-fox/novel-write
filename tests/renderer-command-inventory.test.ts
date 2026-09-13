@@ -10,16 +10,20 @@ const queryOnlyMethods = new Set([
   'listViralAnalyses', 'getViralAnalysisDetail', 'listViralEvents', 'listImageLabRecords',
   'getImageLabRecordDetail', 'listVoiceLabRecords', 'getVoiceLabRecordDetail', 'listPromptTemplates',
   'getPromptTemplateDetail', 'listDraftTemplates', 'getDraftTemplateDetail', 'listMinimaxCloneVoices',
-  'listBookSelections', 'discoverBooks', 'listPersonAssets', 'listPersonAssetImages', 'getHtmlVideoMediaUrl', 'getTaskMediaUrl',
+  'listBookSelections', 'discoverBooks', 'listPersonAssets', 'listPersonAssetImages', 'getPersonAssetUsage', 'restorePersonAsset', 'getHtmlVideoMediaUrl', 'getTaskMediaUrl',
   'getHtmlVideoCompositionSource', 'lintHtmlVideoCompositionSource',
   'getViralAnalysisResult', 'getTaskArtifacts', 'readAssetDataUrl', 'getJianyingEffectCatalog', 'listSceneVideoLibrary', 'onAppDelta',
   'fetchHotBoard', 'queryAiHot', 'listBenchmarkGroups', 'listBenchmarkPosts',
+  // Director batch persistence is consumed through the workspace capability
+  // object, so these storage methods are not direct renderer commands.
+  'createDirectorBatch', 'getDirectorBatch', 'listDirectorBatches', 'updateDirectorBatch', 'deleteDirectorBatch',
 ]);
 
 const routeEntryPaths = {
   shell: ['src/app/App.tsx', 'src/app/AppShell.tsx', 'src/app/navigation.ts'],
   'new-task': ['src/features/tasks/NewTaskPage.tsx'],
   'hot-board': ['src/features/hotboard/HotBoardPage.tsx'],
+  projects: ['src/features/projects/ProjectHomePage.tsx'],
   queue: ['src/features/tasks/QueuePage.tsx'],
   history: ['src/features/tasks/HistoryPage.tsx'],
   'task-detail': ['src/features/tasks/TaskDetailPage.tsx'],

@@ -5,7 +5,7 @@
   min-height: 0;
   background: var(--shell-bg);
   color: var(--shell-text);
-  font-family: Inter, "Segoe UI", "Microsoft YaHei UI", sans-serif;
+  font-family: var(--sd-font-ui);
 }
 
 .sd-button,
@@ -16,6 +16,15 @@
 .sd-button--danger {
   background: var(--danger);
   color: #ffffff;
+}
+
+.sd-button--compact {
+  font-size: 13px;
+}
+
+.sd-button,
+.sd-icon-button {
+  transition: background-color var(--sd-motion-fast), border-color var(--sd-motion-fast), color var(--sd-motion-fast);
 }
 
 .sd-icon-button {
@@ -69,9 +78,42 @@
   background: var(--shell-surface);
 }
 
+.sd-segmented-control .fui-Tab {
+  min-height: 30px;
+  padding: 4px 10px;
+  border-radius: 4px;
+  font-family: var(--sd-font-ui);
+  font-size: 13px;
+}
+
+.sd-segmented-control .fui-Tab[aria-selected='true'] {
+  background: var(--shell-surface-raised);
+  color: var(--shell-accent-strong);
+  box-shadow: 0 1px 3px color-mix(in srgb, var(--shell-text) 12%, transparent);
+}
+
+.sd-segmented-control .fui-Tab::after {
+  display: none;
+}
+
 .sd-menu-popover,
 .sd-dialog-surface {
   color: var(--shell-text);
+}
+
+.sd-dialog-surface:has(.workspace-leave-content) .fui-DialogActions {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+}
+
+.sd-dialog-surface:has(.workspace-leave-content) .fui-DialogActions > button {
+  flex: 0 0 auto;
+  white-space: nowrap;
+}
+
+.sd-dialog-surface .workspace-leave-discard:not(:disabled) {
+  color: var(--danger);
 }
 
 .sd-pane {

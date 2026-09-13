@@ -1,3 +1,4 @@
+import { SHELL_VIEWS } from './types';
 import type { AppConfig, ShellView, ThemeName, UiPreferences } from './types';
 
 export const THEME_PREFERENCE_VERSION = 1 as const;
@@ -7,25 +8,7 @@ export interface ThemePreferencePair {
   config: AppConfig;
 }
 
-const shellViews = new Set<ShellView>([
-  'new-task',
-  'queue',
-  'history',
-  'task-detail',
-  'html-video',
-  'image-lab',
-  'voice-lab',
-  'music-mv',
-  'book-selection',
-  'benchmark',
-  'person-assets',
-  'viral-analyzer',
-  'prompt-templates',
-  'draft-templates',
-  'settings',
-  'account',
-  'activation',
-]);
+const shellViews = new Set<ShellView>(SHELL_VIEWS);
 
 function objectValue(value: unknown): Record<string, unknown> {
   return value && typeof value === 'object' && !Array.isArray(value)

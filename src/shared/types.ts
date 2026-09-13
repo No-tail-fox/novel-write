@@ -1,6 +1,7 @@
 export type TaskStatus = 'draft' | 'pending' | 'running' | 'paused' | 'completed' | 'failed' | 'cancelled';
 export type ThemeName = 'dark' | 'light';
 export const SHELL_VIEWS = [
+  'projects',
   'new-task',
   'hot-board',
   'queue',

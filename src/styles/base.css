@@ -1,7 +1,7 @@
 :root {
   color: var(--shell-text);
   background: var(--shell-bg);
-  font-family: "Segoe UI Variable", "Microsoft YaHei UI", "Segoe UI", system-ui, sans-serif;
+  font-family: var(--sd-font-ui);
   font-size: 14px;
   font-weight: 400;
   letter-spacing: 0;

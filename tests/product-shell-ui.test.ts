@@ -5,6 +5,7 @@ import * as reconciliationModule from '../src/shared/state-reconciliation';
 import type { AppMutationResult, BootstrapState } from '../src/shared/types';
 import { readRendererSources } from './helpers/renderer-source';
 import * as rendererSourceHelpers from './helpers/renderer-source';
+import { taskStatusDetail } from '../src/features/projects/project-task-status';
 
 const rendererSourcesPromise = readRendererSources();
 const appStateSourcePromise = readFile(new URL('../src/app/app-state.ts', import.meta.url), 'utf8');
@@ -833,19 +834,19 @@ describe('product shell ui', () => {
     expect(fallbackModels).toContain('models: []');
   });
 
-  it('presents the accepted three-category StoryDream sidebar without dropping shell utilities', async () => {
+  it('presents the accepted six-entry StoryDream sidebar without dropping shell utilities', async () => {
     const main = (await rendererSourcesPromise).requiredFile('src/app/AppShell.tsx');
     const navigation = await navigationSourcePromise;
     const shellSource = `${main}\n${navigation}`;
     const css = await readFile(new URL('../src/styles.css', import.meta.url), 'utf8');
 
     for (const text of [
-      '创作生产',
-      '素材与实验',
-      '模板与系统',
-      '最近任务',
-      '试用剩余',
-      '激活管理',
+      '项目',
+      '素材库',
+      '灵感',
+      '模板',
+      '任务',
+      '设置',
       '账户中心',
       '积分明细',
       '新建任务',
@@ -862,32 +863,54 @@ describe('product shell ui', () => {
       expect(shellSource).toContain(text);
     }
 
-    expect(main).toContain('sidebarNavGroups.map');
-    expect(navigation.indexOf("label: '创作生产'")).toBeLessThan(navigation.indexOf("label: '素材与实验'"));
-    expect(navigation.indexOf("label: '素材与实验'")).toBeLessThan(navigation.indexOf("label: '模板与系统'"));
-    expect(navigation.indexOf('新建任务')).toBeLessThan(navigation.indexOf('爆款拆解'));
+    expect(main).toContain('primaryNavGroups.map');
+    expect(main).toContain('secondaryItems.map');
+    const groupLabels = [...navigation.matchAll(/id: '[^']+', label: '([^']+)', defaultView:/gu)].map((match) => match[1]);
+    expect(groupLabels).toEqual(['项目', '素材库', '灵感', '模板', '任务', '设置']);
     expect(main).toContain('className="trial-activation-bar"');
     expect(main).toContain('className="recent-task-strip"');
     expect(main).toContain('navigate(\'account\')');
     expect(main).toContain('navigate(\'activation\')');
+    expect(main.match(/aria-current=\{activeView === 'account' \? 'page' : undefined\}/gu)).toHaveLength(2);
+    expect(main).toContain("aria-current={activeView === 'activation' ? 'page' : undefined}");
     expect(css).toContain('.trial-activation-bar');
     expect(css).toContain('.recent-task-strip');
     expect(css).toContain('.nav-section-label');
     expect(css).toContain('.account-entry-grid');
   });
 
-  it('keeps all five material and experiment routes together in concept order', async () => {
+  it('keeps project task summaries truthful for every task state', () => {
+    expect(taskStatusDetail({ status: 'draft', currentStep: 0 })).toBe('尚未开始生成');
+    expect(taskStatusDetail({ status: 'pending', currentStep: 4 })).toBe('等待开始');
+    expect(taskStatusDetail({ status: 'running', currentStep: 0 })).toBe('当前步骤 1');
+    expect(taskStatusDetail({ status: 'running', currentStep: 4 })).toBe('当前步骤 4');
+    expect(taskStatusDetail({ status: 'paused', currentStep: 4 })).toBe('已暂停，可继续');
+    expect(taskStatusDetail({ status: 'completed', currentStep: 7 })).toBe('已完成');
+    expect(taskStatusDetail({ status: 'failed', currentStep: 4 })).toBe('需要处理');
+    expect(taskStatusDetail({ status: 'cancelled', currentStep: 4 })).toBe('已取消');
+    expect(taskStatusDetail({ status: 'pending', currentStep: 4 })).not.toContain('当前步骤');
+  });
+
+  it('keeps the asset lab and inspiration routes in their accepted groups', async () => {
     const navigation = await navigationSourcePromise;
     const assetStart = navigation.indexOf('export const assetLabNavItems');
-    const assetEnd = navigation.indexOf('export const templateSystemNavItems');
+    const assetEnd = navigation.indexOf('const inspirationNavItems');
     const assetNav = navigation.slice(assetStart, assetEnd);
+    const inspirationStart = assetEnd;
+    const inspirationEnd = navigation.indexOf('export const templateSystemNavItems');
+    const inspirationNav = navigation.slice(inspirationStart, inspirationEnd);
 
-    for (const view of ['image-lab', 'voice-lab', 'music-mv', 'viral-analyzer', 'html-video']) {
+    for (const view of ['image-lab', 'voice-lab', 'person-assets']) {
       expect(assetNav).toContain(`view: '${view}'`);
     }
-    expect(assetNav).not.toContain("view: 'prompt-templates'");
-    expect(assetNav.indexOf("view: 'music-mv'")).toBeLessThan(assetNav.indexOf("view: 'viral-analyzer'"));
-    expect(assetNav.indexOf("view: 'viral-analyzer'")).toBeLessThan(assetNav.indexOf("view: 'html-video'"));
+    for (const view of ['music-mv', 'html-video', 'viral-analyzer', 'prompt-templates']) {
+      expect(assetNav).not.toContain(`view: '${view}'`);
+    }
+
+    for (const view of ['hot-board', 'benchmark', 'book-selection', 'viral-analyzer']) {
+      expect(inspirationNav).toContain(`view: '${view}'`);
+    }
+    expect(inspirationNav.indexOf("view: 'book-selection'")).toBeLessThan(inspirationNav.indexOf("view: 'viral-analyzer'"));
   });
 
   it('exposes local book selection and person asset APIs through preload', async () => {
@@ -1120,10 +1143,11 @@ describe('product shell ui', () => {
     expect(css).toContain('--accent');
   });
 
-  it('keeps the exact twenty route branches in the application route owner', async () => {
+  it('keeps the exact twenty-one route branches in the application route owner', async () => {
     const routes = (await rendererSourcesPromise).requiredFile('src/app/AppRoutes.tsx');
     const routedViews = [...routes.matchAll(/activeView === '([^']+)'/gu)].map((match) => match[1]);
     expect(routedViews).toEqual([
+      'projects',
       'new-task',
       'hot-board',
       'book-selection',
@@ -1145,7 +1169,7 @@ describe('product shell ui', () => {
       'account',
       'activation',
     ]);
-    expect(new Set(routedViews).size).toBe(20);
+    expect(new Set(routedViews).size).toBe(21);
   });
 
   it('adds a standalone voice lab for provider voice previews and history playback', async () => {
@@ -1206,6 +1230,8 @@ describe('product shell ui', () => {
       'processingMode',
       'setProcessingMode',
       'musicMv:',
+      '请先选择主歌曲音频；BGM 只能作为辅助配乐，不能替代主歌曲。',
+      "!musicMvAudioPath.trim()",
     ]) {
       expect(musicPage).toContain(symbol);
     }
@@ -1704,7 +1730,7 @@ describe('product shell ui', () => {
     expect(app).toContain('busy={shellAction.busy}');
     expect(shell).toContain('busy: boolean;');
     expect(shell).toContain('disabled={busy}');
-    expect(shell).toContain('item={item} active={activeView === item.view} busy={busy}');
+    expect(shell).toContain('item={item} level="secondary" active={activeView === item.view} busy={busy}');
     expect(shell).not.toContain('className="trial-strip"');
     expect(shell).not.toContain('className="activation-link"');
     expect(shell).not.toContain('获取激活码');
@@ -1952,9 +1978,10 @@ describe('product shell ui', () => {
   it('does not reset unsaved draft template drag edits during state refreshes', async () => {
     const main = (await rendererSourcesPromise).requiredFile('src/features/templates/DraftTemplatesPage.tsx');
 
-    expect(main).toContain('[editingId]');
-    expect(main).toContain('const currentEditingTemplate = galleryTemplates.find');
-    expect(main).toContain('setDraft(currentEditingTemplate ? cloneDraftTemplate(currentEditingTemplate) : null)');
+    expect(main).toContain('const draftRef = useRef(draft);');
+    expect(main).toContain('function setDraft(update: SetStateAction<DraftTemplate | null>)');
+    expect(main).toContain('draftRef.current = next;');
+    expect(main).toContain('const draftDetailGeneration = useRef(0);');
     expect(main).not.toContain('[editingId, editingTemplate]');
   });
 
@@ -2335,8 +2362,9 @@ describe('product shell ui', () => {
     const saveSnippet = main.slice(main.indexOf('async function savePromptTemplateDraft()'), main.indexOf('async function duplicateTemplate'));
     const duplicateSnippet = main.slice(main.indexOf('async function duplicateTemplate'), main.indexOf('async function duplicate()'));
 
-    expect(saveSnippet).toContain('const shouldForkTemplate = Boolean(draft.isBuiltin)');
-    expect(saveSnippet).toContain('id: shouldForkTemplate ? crypto.randomUUID() : draft.id');
+    expect(saveSnippet).toContain('const submitted = draftRef.current;');
+    expect(saveSnippet).toContain('const shouldForkTemplate = Boolean(submitted.isBuiltin)');
+    expect(saveSnippet).toContain('id: shouldForkTemplate ? crypto.randomUUID() : submitted.id');
     expect(saveSnippet).toContain('isBuiltin: false');
     expect(saveSnippet).toContain("origin: 'custom'");
     expect(saveSnippet).not.toContain('id: crypto.randomUUID(),');
@@ -2662,7 +2690,14 @@ describe('product shell ui', () => {
     expect(types).toContain("'task-detail'");
     expect(main).toContain('selectedTaskId');
     expect(main).toContain('openTaskDetail');
+    expect(main).toContain("useState<ShellView>('history')");
+    expect(main).toContain('setTaskDetailReturnView(returnView)');
+    expect(routes).toContain("openTaskDetail(taskId, 'projects')");
+    expect(routes).toContain('returnView={taskDetailReturnView}');
+    expect(routes).toContain('close={() => navigate(taskDetailReturnView)}');
     expect(routes).toContain('TaskDetailPage');
+    expect(detail).toContain('returnView: ShellView');
+    expect(detail).toContain("returnView === 'projects' ? '返回项目' : '返回历史任务'");
     expect(detail).toContain('taskProgressStages(activeTask)');
     expect(detail).toContain('{progress.total} 步流水线');
     for (const text of ['历史任务', '任务详情', '结果', '分镜', '图片', '配音', '事件', '等待当前步骤产物落盘']) {
@@ -3456,6 +3491,7 @@ describe('product shell ui', () => {
     expect(emptyStateRule).toContain('background: color-mix(in srgb, var(--shell-muted) 4%, var(--shell-surface-raised));');
     expect(css).toContain('.empty-state > svg {');
     expect(statusPillRule).toContain('background: color-mix(in srgb, var(--shell-muted) 10%, var(--shell-surface-raised));');
+    expect(css).toMatch(/\.status-pill\.paused,[\s\S]*?\.status-pill\.draft,[\s\S]*?\.status-pill\.pending \{/u);
     expect(css).toMatch(/\.ai-search-results \{[\s\S]*?background: var\(--shell-surface-raised\);/u);
     expect(css).toMatch(/\.search-source-card \{[\s\S]*?background: var\(--shell-surface\);/u);
     expect(css).toMatch(/\.search-source-card p \{[\s\S]*?color: var\(--shell-text\);/u);

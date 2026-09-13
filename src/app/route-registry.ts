@@ -1,6 +1,7 @@
 import { lazy } from 'react';
 import type { ShellView } from '../shared/types';
 
+const loadProjectHomePage = () => import('../features/projects/ProjectHomePage').then((module) => ({ default: module.ProjectHomePage }));
 const loadNewTaskPage = () => import('../features/tasks/NewTaskPage').then((module) => ({ default: module.NewTaskPage }));
 const loadHotBoardPage = () => import('../features/hotboard/HotBoardPage').then((module) => ({ default: module.HotBoardPage }));
 const loadQueuePage = () => import('../features/tasks/QueuePage').then((module) => ({ default: module.QueuePage }));
@@ -23,6 +24,7 @@ const loadAccountPage = () => import('../features/account/AccountPage').then((mo
 const loadActivationPage = () => import('../features/account/ActivationPage').then((module) => ({ default: module.ActivationPage }));
 
 export const routeLoaders = {
+  'projects': loadProjectHomePage,
   'new-task': loadNewTaskPage,
   'hot-board': loadHotBoardPage,
   'queue': loadQueuePage,
@@ -46,6 +48,7 @@ export const routeLoaders = {
 } as const satisfies Record<ShellView, () => Promise<unknown>>;
 
 export const routeComponents = {
+  'projects': lazy(routeLoaders['projects']),
   'new-task': lazy(routeLoaders['new-task']),
   'hot-board': lazy(routeLoaders['hot-board']),
   'queue': lazy(routeLoaders['queue']),

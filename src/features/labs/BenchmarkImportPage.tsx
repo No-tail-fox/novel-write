@@ -1,4 +1,5 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
+import { useUnsavedChanges } from '../../app/workspace-navigation';
 import {
   BarChart3,
   Check,
@@ -106,7 +107,9 @@ export function BenchmarkImportPage({
   const [showPostDialog, setShowPostDialog] = useState(false);
   const [groupDraft, setGroupDraft] = useState(emptyGroupDraft);
   const [postDraft, setPostDraft] = useState(emptyPostDraft);
-  const [detailNote, setDetailNote] = useState('');
+  const [noteDrafts, setNoteDrafts] = useState<Record<string, string>>({});
+  const noteDraftsRef = useRef(noteDrafts);
+  noteDraftsRef.current = noteDrafts;
   const [message, setMessage] = useState('');
   const [running, setRunning] = useState(false);
   const [syncingGroupId, setSyncingGroupId] = useState('');
@@ -123,6 +126,19 @@ export function BenchmarkImportPage({
     return !query || [post.title, post.author, post.tags.join(' '), post.transcript].some((value) => value.toLowerCase().includes(query));
   });
   const selectedPost = filteredPosts.find((post) => post.id === selectedPostId) ?? filteredPosts[0] ?? null;
+  const detailNote = selectedPost ? noteDrafts[selectedPost.id] ?? selectedPost.note ?? '' : '';
+  const unsavedNotes = Object.entries(noteDrafts).filter(([id, note]) => note !== (posts.find((post) => post.id === id)?.note ?? ''));
+  useUnsavedChanges({
+    id: 'benchmark-notes', label: '对标作品备注', dirty: unsavedNotes.length > 0, busy: benchmarkAction.busy,
+    onSave: () => saveNotes(unsavedNotes),
+    onDiscard: () => { noteDraftsRef.current = {}; setNoteDrafts({}); },
+  });
+  function setDetailNote(note: string) {
+    if (!selectedPost) return;
+    const next = { ...noteDraftsRef.current, [selectedPost.id]: note };
+    noteDraftsRef.current = next;
+    setNoteDrafts(next);
+  }
   const effectiveSelection = selectedPostIds.length > 0 ? selectedPostIds : selectedPost ? [selectedPost.id] : [];
 
   useEffect(() => {
@@ -146,10 +162,6 @@ export function BenchmarkImportPage({
       active = false;
     };
   }, [api, benchmarkAction.reportError]);
-
-  useEffect(() => {
-    setDetailNote(selectedPost?.note ?? '');
-  }, [selectedPost?.id, selectedPost?.note]);
 
   async function reload(preferredGroupId?: string, preferredPostId?: string) {
     const [nextGroups, nextPosts] = await Promise.all([api.listBenchmarkGroups(), api.listBenchmarkPosts()]);
@@ -296,10 +308,30 @@ export function BenchmarkImportPage({
     return result;
   }
 
+  async function saveNotes(notes: [string, string][]): Promise<boolean> {
+    const result = await benchmarkAction.run(async () => {
+      for (const [id, note] of notes) {
+        const post = posts.find((item) => item.id === id);
+        if (!post) throw new Error('备注所属作品已不存在，请保留内容后再离开。');
+        const saved = await api.saveBenchmarkPost(benchmarkPostInput(post, { note }));
+        if (!saved) throw new Error('备注未能保存。');
+        setPosts((current) => current.map((item) => item.id === id ? saved : item));
+        if (noteDraftsRef.current[id] === note) {
+          const next = { ...noteDraftsRef.current };
+          delete next[id];
+          noteDraftsRef.current = next;
+          setNoteDrafts(next);
+        }
+      }
+      return notes.every(([id]) => !(id in noteDraftsRef.current));
+    }, { onError: (error) => setMessage(error.message) });
+    if (result.ok && result.value) setMessage('备注已保存。');
+    return result.ok && result.value;
+  }
+
   async function saveDetailNote() {
-    if (!selectedPost) return;
-    const result = await patchPost(selectedPost, { note: detailNote });
-    if (result.ok) setMessage('备注已保存。');
+    if (!selectedPost) return false;
+    return saveNotes([[selectedPost.id, detailNote]]);
   }
 
   async function deletePost(post: BenchmarkPost) {
@@ -585,7 +617,7 @@ export function BenchmarkImportPage({
               </Field>
             </div>
             <div className="benchmark-inspector-actions">
-              <button className="mini-button" type="button" onClick={saveDetailNote}><Save size={14} />保存备注</button>
+              <button className="mini-button" type="button" disabled={benchmarkAction.busy || !detailNote.trim()} onClick={saveDetailNote}><Save size={14} />保存备注</button>
               <button className="mini-button" type="button" disabled={selectedPost.platform === 'wechat-channels'} onClick={() => deepAnalyze(selectedPost)}><Radar size={14} />深度拆解</button>
               <button className="mini-button" type="button" disabled={!selectedPost.transcript.trim() || running || benchmarkAction.busy} onClick={() => createBenchmarkTask(selectedPost)}>{running ? <Loader2 size={14} className="spin" /> : <FileSearch size={14} />}用此文案创建任务</button>
               <button className="primary-action slim" type="button" disabled={benchmarkAction.busy} onClick={addSelectedToSelections}><Check size={14} />加入选品候选</button>

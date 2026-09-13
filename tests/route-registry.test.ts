@@ -1,8 +1,9 @@
 import { readFile } from 'node:fs/promises';
 import { describe, expect, it } from 'vitest';
-import { navigationItems, newTaskPrimaryAction, sidebarNavGroups, sidebarNavItems, taskWorkspaceView } from '../src/app/navigation';
+import { navigationItems, navigationPrimaryView, newTaskPrimaryAction, sidebarNavGroups, sidebarNavItems, taskWorkspaceView } from '../src/app/navigation';
 
 const expectedViews = [
+  'projects',
   'new-task',
   'hot-board',
   'queue',
@@ -56,22 +57,37 @@ describe('renderer route registry', () => {
     const componentSection = registry.slice(registry.indexOf('export const routeComponents'), registry.indexOf('export function preloadRoute'));
     expect(registryKeys(loaderSection)).toEqual(expectedViews);
     expect(registryKeys(componentSection)).toEqual(expectedViews);
-    expect(registry.match(/lazy\(routeLoaders\['[^']+'\]\)/gu)).toHaveLength(20);
-    expect(registry.match(/import\('\.\.\/features\//gu)).toHaveLength(20);
+    expect(registry.match(/lazy\(routeLoaders\['[^']+'\]\)/gu)).toHaveLength(21);
+    expect(registry.match(/import\('\.\.\/features\//gu)).toHaveLength(21);
     expect(registry).toContain('export async function preloadRoute(view: ShellView)');
     expect(registry).not.toMatch(/^import \{ [A-Za-z0-9]+Page \} from '\.\.\/features\//gmu);
   });
 
-  it('keeps new task separate, eighteen sidebar entries, and task detail route-only', () => {
+  it('keeps new task separate, nineteen sidebar entries, and task detail route-only', () => {
     expect(newTaskPrimaryAction.view).toBe('new-task');
-    expect(sidebarNavGroups.map((group) => group.label)).toEqual(['创作生产', '素材与实验', '模板与系统']);
-    expect(sidebarNavGroups.map((group) => group.items.length)).toEqual([8, 5, 5]);
-    expect(sidebarNavItems).toHaveLength(18);
-    expect(new Set(sidebarNavItems.map((item) => item.view)).size).toBe(18);
+    expect(sidebarNavGroups.map((group) => group.label)).toEqual(['项目', '素材库', '灵感', '模板', '任务', '设置']);
+    expect(sidebarNavGroups.map((group) => group.items.length)).toEqual([5, 3, 4, 2, 2, 1]);
+    expect(sidebarNavItems).toHaveLength(19);
+    expect(new Set(sidebarNavItems.map((item) => item.view)).size).toBe(19);
     expect(sidebarNavItems.map((item) => item.view)).not.toContain('new-task');
     expect(sidebarNavItems.map((item) => item.view)).not.toContain('task-detail');
-    expect(navigationItems).toHaveLength(19);
+    expect(navigationItems).toHaveLength(20);
     expect(new Set([...navigationItems.map((item) => item.view), 'task-detail'])).toEqual(new Set(expectedViews));
+  });
+
+  it('keeps every workspace route under the correct visible primary entry', () => {
+    expect(navigationPrimaryView('projects')).toBe('projects');
+    expect(navigationPrimaryView('new-task')).toBe('projects');
+    expect(navigationPrimaryView('task-detail')).toBe('projects');
+    expect(navigationPrimaryView('editorial-collage')).toBe('projects');
+    expect(navigationPrimaryView('motion-comic')).toBe('projects');
+    expect(navigationPrimaryView('html-video')).toBe('projects');
+    expect(navigationPrimaryView('music-mv')).toBe('projects');
+    expect(navigationPrimaryView('voice-lab')).toBe('image-lab');
+    expect(navigationPrimaryView('book-selection')).toBe('hot-board');
+    expect(navigationPrimaryView('draft-templates')).toBe('prompt-templates');
+    expect(navigationPrimaryView('history')).toBe('queue');
+    expect(navigationPrimaryView('activation')).toBe('settings');
   });
 
   it('preloads on hover and focus while route state changes use transitions', async () => {

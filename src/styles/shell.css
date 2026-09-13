@@ -39,7 +39,7 @@
 }
 
 .app-shell[data-editorial-shell] .shell-grid {
-  grid-template-columns: 236px minmax(0, 1fr);
+  grid-template-columns: var(--sd-sidebar-width) minmax(0, 1fr);
 }
 
 .app-shell[data-editorial-shell] .sidebar {
@@ -246,7 +246,7 @@
 
 @media (max-width: 1120px) {
   .app-shell[data-editorial-shell] .shell-grid {
-    grid-template-columns: 68px minmax(0, 1fr);
+    grid-template-columns: 64px minmax(0, 1fr);
   }
 
   .app-shell[data-editorial-shell] .sidebar {
@@ -270,14 +270,14 @@
   .app-shell[data-editorial-shell] .nav-item,
   .app-shell[data-editorial-shell] .trial-activation-bar,
   .app-shell[data-editorial-shell] .credit-chip {
-    width: 48px;
-    min-width: 48px;
+    width: 46px;
+    min-width: 46px;
     justify-content: center;
   }
 
   .app-shell[data-editorial-shell] .recent-task-compact {
-    width: 48px;
-    min-height: 30px;
+    width: 46px;
+    min-height: 38px;
     display: grid;
     place-items: center;
     border-radius: 5px;
@@ -289,19 +289,19 @@
 
   .app-shell[data-editorial-shell] .new-task-button,
   .app-shell[data-editorial-shell] .nav-item {
-    min-height: 30px;
+    min-height: 38px;
     padding: 0;
     grid-template-columns: 1fr;
     place-items: center;
   }
 
   .app-shell[data-editorial-shell] .nav-list {
-    width: 48px;
+    width: 46px;
     gap: 1px;
   }
 
   .app-shell[data-editorial-shell] .sidebar-bottom {
-    display: none;
+    gap: 6px;
   }
 
   .app-shell[data-editorial-shell] .account-entry-grid {

@@ -1,6 +1,7 @@
 import type { Dirent } from 'node:fs';
-import { copyFile, mkdir, readdir, rename, rm, stat, writeFile } from 'node:fs/promises';
+import { copyFile, mkdir, readdir, rename, rm, stat, writeFile, readFile } from 'node:fs/promises';
 import { basename, dirname, extname, join } from 'node:path';
+import { randomUUID } from 'node:crypto';
 import type { SceneAsset } from './draft';
 import type { StoryboardScene } from './types';
 
@@ -20,6 +21,13 @@ export interface PersonAssetImage {
 export interface LocalMaterialCopyResult {
   assets: SceneAsset[];
   origins: Record<string, string>;
+}
+
+export interface RecycledPersonAsset {
+  name: string;
+  token: string;
+  path: string;
+  recycledAt: number;
 }
 
 const acceptedImageExtensions = new Set(['.jpg', '.jpeg', '.png', '.webp']);
@@ -43,7 +51,7 @@ export async function listPersonAssets(rootDir: string): Promise<PersonAssetSumm
   const entries = await safeReaddir(rootDir);
   const summaries = await Promise.all(
     entries
-      .filter((entry) => entry.isDirectory())
+      .filter((entry) => entry.isDirectory() && !entry.name.startsWith('.'))
       .map((entry) => summarizePersonDir(join(rootDir, entry.name))),
   );
   return summaries.sort((a, b) => a.name.localeCompare(b.name, 'zh-Hans-CN'));
@@ -89,6 +97,34 @@ export async function renamePersonAsset(rootDir: string, oldName: string, newNam
 
 export async function deletePersonAsset(rootDir: string, person: string): Promise<void> {
   await rm(personDir(rootDir, person), { recursive: true, force: true });
+}
+
+/** Move a library into the local recycle area so an accidental delete can be undone. */
+export async function recyclePersonAsset(rootDir: string, person: string): Promise<RecycledPersonAsset> {
+  const source = personDir(rootDir, person);
+  const info = await stat(source).catch(() => null);
+  if (!info?.isDirectory()) throw new Error(`人物素材库不存在或已删除：${person}`);
+  const recycledAt = Date.now();
+  const token = `${recycledAt}-${randomUUID()}`;
+  const trashDir = join(rootDir, '.trash');
+  await mkdir(trashDir, { recursive: true });
+  const target = join(trashDir, token);
+  await rename(source, target);
+  await writeFile(join(target, '.person-asset.json'), JSON.stringify({ name: sanitizePersonName(person), recycledAt }), 'utf8');
+  return { name: sanitizePersonName(person), token, path: target, recycledAt };
+}
+
+export async function restoreRecycledPersonAsset(rootDir: string, token: string): Promise<PersonAssetSummary> {
+  if (!/^[0-9]+-[0-9a-f-]+$/i.test(token)) throw new Error('人物素材回收令牌无效。');
+  const target = join(rootDir, '.trash', token);
+  const metadataPath = join(target, '.person-asset.json');
+  const metadata = JSON.parse(await readFile(metadataPath, 'utf8')) as { name?: string };
+  const name = sanitizePersonName(metadata.name ?? '');
+  const destination = personDir(rootDir, name);
+  if (await fileExists(destination)) throw new Error(`人物素材库「${name}」已存在，无法撤销删除。`);
+  await rename(target, destination);
+  await rm(join(destination, '.person-asset.json'), { force: true });
+  return summarizePersonDir(destination);
 }
 
 export async function copyPersonMaterialsForScenes(input: {

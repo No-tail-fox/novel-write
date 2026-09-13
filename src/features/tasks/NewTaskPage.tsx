@@ -59,7 +59,7 @@ import { imageGenerationQualityLabel, normalizeImageGenerationQuality } from '..
 import { createOrdinaryTaskPipelineData } from '../../shared/ordinary-task-options';
 import { useAsyncAction } from '../../ui/async-action';
 import { buildTaskCreateInput } from './task-create-input';
-import { TaskCreationTypePicker } from './TaskCreationTypePicker';
+import { TaskCreationTypePicker, taskCreationTarget, type TaskCreationType } from './TaskCreationTypePicker';
 import {
   clearNewTaskDraft,
   createNewTaskPreset,
@@ -114,9 +114,9 @@ function newTaskPresetId(): string {
 }
 
 const NEW_TASK_STAGE_META: ReadonlyArray<{ id: NewTaskStage; label: string; heading: string; description: string }> = [
-  { id: 'material', label: '素材输入', heading: '原始素材', description: '粘贴文案或从本地导入，任务标题会自动提取' },
-  { id: 'creative', label: '创作参数', heading: '内容赛道', description: '决定改写策略、分镜节奏与画面提示词' },
-  { id: 'output', label: '输出设置', heading: '输出设置', description: '配音、分镜、封面与剪映草稿' },
+  { id: 'material', label: '制作类型', heading: '制作类型', description: '选择制作方式；不同类型会进入各自最合适的创作流程' },
+  { id: 'creative', label: '内容', heading: '内容', description: '补充名称、正文或对应类型的核心输入与来源' },
+  { id: 'output', label: '制作设置', heading: '制作设置', description: '确认画幅、模板、时长策略与本次会执行的步骤' },
 ];
 
 const WEB_SEARCH_PROVIDER_OPTIONS: ReadonlyArray<{ id: WebSearchProvider; label: string; domain: string }> = [
@@ -1024,7 +1024,6 @@ export function NewTaskPage({
         void run();
       }}
     >
-      <TaskCreationTypePicker activeType="smart-video" navigate={navigate} />
       <nav className="new-task-stage-tabs" aria-label="新建任务步骤">
         {NEW_TASK_STAGE_META.map((stage, index) => (
           <button
@@ -1049,6 +1048,22 @@ export function NewTaskPage({
           </header>
 
           {activeStage === 'material' ? (
+            <section className="new-task-type-step" data-create-fields="task-type">
+              <TaskCreationTypePicker
+                activeType="smart-video"
+                navigate={navigate}
+                onSelect={(type: TaskCreationType) => {
+                  if (type === 'smart-video') {
+                    setActiveStage('creative');
+                    return;
+                  }
+                  navigate(taskCreationTarget(type));
+                }}
+              />
+            </section>
+          ) : null}
+
+          {activeStage === 'creative' ? (
             <section className="new-task-stage-panel" data-create-fields={NEW_TASK_CREATE_FIELDS_BY_STAGE.material.join(' ')}>
               <Field label="任务标题">
                 <input value={title} placeholder="留空会从文案自动提取" onChange={(event) => setTitle(event.target.value)} />
@@ -1347,7 +1362,7 @@ export function NewTaskPage({
               onClick={activeStage === 'output' ? run : advanceStage}
             >
               {activeStage === 'output' ? <Play size={15} /> : null}
-              {activeStage === 'output' ? '开始创作' : '下一步'}
+              {activeStage === 'output' ? '创建并开始生成' : '下一步'}
             </button>
           </footer>
         </main>
@@ -1372,7 +1387,7 @@ export function NewTaskPage({
           </div>
           <div className="new-task-summary-actions">
             <button type="button" className="primary-action" onClick={run} disabled={createTaskDisabled}>
-              {running ? <Loader2 className="spin" size={17} /> : <Play size={17} />}{running ? '运行中' : '创建并开始任务'}
+              {running ? <Loader2 className="spin" size={17} /> : <Play size={17} />}{running ? '生成中' : '创建并开始生成'}
             </button>
             <div className="new-task-draft-actions">
               <button type="button" className="ghost-action" onClick={saveDraft}><Save size={14} />保存草稿</button>

@@ -146,7 +146,7 @@ function electronEntry(input: {
 }): string {
   return `
 import { app, BrowserWindow } from 'electron';
-import { access, stat, writeFile } from 'node:fs/promises';
+import { access, readdir, stat, writeFile } from 'node:fs/promises';
 import { createElectronHtmlVideoRuntime, ensureHtmlVideoTaskWorkDir } from './electron/html-video-runtime';
 import { createElectronHtmlVideoRenderer } from './electron/html-video-renderer';
 import { runStoryboundMediaSidecar } from './src/shared/storybound-sidecar';
@@ -242,7 +242,7 @@ async function runAfterReady() {
   const thumbnailStats = await Promise.all(previews.compositions.map((item) => stat(item.thumbnailPath)));
   const outputProbe = await probeMedia(output.path);
   const frameDirectories = scenes.map((scene) => workDir + '/frames-' + String(scene.index).padStart(3, '0'));
-  const framesCleaned = (await Promise.all(frameDirectories.map(async (path) => {
+  const framesCleaned = !(await readdir(workDir)).some(name => name.startsWith('render-segments-')) && (await Promise.all(frameDirectories.map(async (path) => {
     try {
       await access(path);
       return false;

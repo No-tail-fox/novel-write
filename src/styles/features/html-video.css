@@ -444,13 +444,18 @@
 }
 
 .hv-create-footer {
+  position: sticky;
+  bottom: 0;
+  z-index: 4;
   min-height: 78px;
   display: flex;
   align-items: center;
   justify-content: space-between;
   gap: 24px;
   padding: 17px 24px;
+  border-top: 1px solid var(--shell-border);
   background: var(--shell-surface);
+  box-shadow: 0 -8px 16px color-mix(in srgb, var(--shell-bg) 22%, transparent);
 }
 
 .hv-create-footer > div {
@@ -487,6 +492,10 @@
   .hv-create-footer {
     align-items: stretch;
     flex-direction: column;
+  }
+
+  .hv-create-footer {
+    padding: 14px 18px 16px;
   }
 
   .hv-create-history,

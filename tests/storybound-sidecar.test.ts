@@ -2,6 +2,8 @@ import { mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
+import { runBoundedProcess } from '../src/shared/process-runner';
+import { resolvePythonRuntimeInfo } from '../src/shared/python-runtime';
 import {
   parseStoryboundSidecarOutput,
   runStoryboundMediaSidecar,
@@ -11,6 +13,84 @@ import {
 } from '@shared/storybound-sidecar';
 
 describe('Storybound-compatible media sidecar', () => {
+  it.each([8000, 30, 32767, 0])('measures real audio at amplitude %s and explicitly reports no video', async (amplitude) => {
+    const dir = await mkdtemp(join(tmpdir(), 'storydream-quality-audio-'));
+    try {
+      const path = join(dir, '声音.wav');
+      await writeFile(path, wavTone(600, amplitude));
+      const probe = await runStoryboundMediaSidecar({ mode: 'probe_media', work_dir: dir, media_path: path, analyze_quality: true });
+      expect(probe.audio_quality_status).toBe('ok');
+      expect(probe.black_detection_status).toBe('unavailable');
+      expect(probe.black_intervals).toBeUndefined();
+      expect(Number.isFinite(probe.audio_peak_db)).toBe(true);
+      if (amplitude > 0) {
+        expect(Number.isFinite(probe.audio_lufs)).toBe(true);
+        expect(Number.isFinite(probe.audio_true_peak_db)).toBe(true);
+        expect(probe.audio_is_silent).toBe(false);
+      } else {
+        expect(probe.audio_is_silent).toBe(true);
+        expect(probe.audio_lufs).toBeUndefined();
+        expect(probe.audio_true_peak_db).toBeUndefined();
+      }
+      expect(Number.isFinite(probe.audio_mean_volume_db)).toBe(true);
+      if (amplitude === 8000) {
+        expect(probe.audio_peak_db).toBeCloseTo(-12.2, 1);
+        expect(probe.audio_mean_volume_db).toBeCloseTo(-15.3, 1);
+      } else if (amplitude === 32767) expect(probe.audio_peak_db).toBeCloseTo(0, 1);
+      else expect(probe.audio_mean_volume_db!).toBeLessThan(-45);
+    } finally { await rm(dir, { recursive: true, force: true }); }
+  }, 30_000);
+
+  it('keeps analysis failures distinct from clean results in the actual Python metric function', async () => {
+    const dir = await mkdtemp(join(tmpdir(), 'storydream-quality-faults-'));
+    try {
+      const script = await writeStoryboundSidecarScript(dir);
+      const result = await runBoundedProcess(resolvePythonRuntimeInfo().command, ['-c', `
+import json, runpy, sys, types
+namespace = runpy.run_path(sys.argv[1])
+metrics = namespace['media_quality_metrics']
+metrics.__globals__['ffmpeg_exe'] = lambda: 'ffmpeg-test'
+cases = []
+for code, output in [(1, 'decoder failed'), (0, ''), (0, 'mean_volume: -20.0 dB\\nmax_volume: -6.0 dB\\nI: -17.0 LUFS\\nPeak: -5.8 dBFS'), (0, 'black_start:bad black_end:1'), (0, 'black_start:0.5'), (0, 'black_start:1e-3 black_end:9e-1'), (0, 'mean_volume: -20.0 dB\\nmax_volume: -6.0 dB')]:
+    metrics.__globals__['run_bounded_subprocess'] = lambda *args, **kwargs: types.SimpleNamespace(returncode=code, stdout='', stderr=output)
+    cases.append(metrics('fixture', {'has_audio': True, 'has_video': True}, 2))
+def timeout(*args, **kwargs):
+    raise TimeoutError('analysis timeout')
+metrics.__globals__['run_bounded_subprocess'] = timeout
+cases.append(metrics('fixture', {'has_audio': True, 'has_video': True}, 2))
+print(json.dumps(cases))
+`, script], { cwd: dir, timeoutMs: 10_000, maxStdoutBytes: 65536, maxStderrBytes: 65536 });
+      expect(result.code).toBe(0);
+      const [decoder, missing, clean, malformed, incomplete, scientific, partialAudio, timeout] = JSON.parse(result.stdout);
+      for (const failure of [decoder, timeout, malformed, incomplete]) {
+        expect(failure).toMatchObject({ audio_quality_status: 'failed', black_detection_status: 'failed' });
+        expect(failure.black_intervals).toBeUndefined();
+      }
+      expect(missing.audio_quality_status).toBe('failed');
+      expect(clean).toMatchObject({ audio_quality_status: 'ok', audio_mean_volume_db: -20, audio_peak_db: -6, black_detection_status: 'ok', black_intervals: [] });
+      expect(clean).toMatchObject({ audio_lufs: -17, audio_true_peak_db: -5.8, audio_is_silent: false });
+      expect(partialAudio).toMatchObject({ audio_quality_status: 'failed', audio_quality_error: expect.stringContaining('ebur128') });
+      expect(scientific).toMatchObject({ black_detection_status: 'ok', black_intervals: [{ start_ms: 1, end_ms: 900 }] });
+    } finally { await rm(dir, { recursive: true, force: true }); }
+  });
+
+  it.each([false, true])('locates a long black interval at the %s end of an otherwise visible video', async (trailing) => {
+    const dir = await mkdtemp(join(tmpdir(), 'storydream-quality-black-'));
+    try {
+      const black = join(dir, 'black'), color = join(dir, 'color'), voice = join(dir, 'voice.wav'), output = join(dir, 'result.mp4');
+      await Promise.all([mkdir(black), mkdir(color)]);
+      await Promise.all([writeFile(join(black, '0001.png'), blackPng()), writeFile(join(color, '0001.png'), colorPng()), writeFile(voice, wavTone(900))]);
+      const scenes = (trailing ? [color, black] : [black, color]).map((frames_dir) => ({ frames_dir, audio_path: voice, fps: 10, duration_s: .9 }));
+      await runStoryboundMediaSidecar({ mode: 'compose_render', work_dir: dir, scenes, transition: { type: 'cut', duration: 0 }, total_duration_s: 1.8, output_path: output });
+      const probe = await runStoryboundMediaSidecar({ mode: 'probe_media', work_dir: dir, media_path: output, require_nonblack: true, analyze_quality: true });
+      expect(probe).toMatchObject({ success: true, has_nonblack_video: true, black_detection_status: 'ok', audio_quality_status: 'ok' });
+      expect(probe.black_intervals).toHaveLength(1);
+      expect(probe.black_intervals![0].start_ms).toBe(trailing ? 900 : 0);
+      expect(probe.black_intervals![0].end_ms).toBeGreaterThanOrEqual(trailing ? 1700 : 900);
+      expect(probe.black_intervals![0].end_ms).toBeLessThanOrEqual(trailing ? 1800 : 1000);
+    } finally { await rm(dir, { recursive: true, force: true }); }
+  }, 30_000);
+
   it('parses the last JSON line from noisy sidecar stdout', () => {
     expect(parseStoryboundSidecarOutput('booting...\nprogress 80%\n{"success":true,"draft_dir":"D:/Drafts/A","draft_id":"A"}\n')).toEqual({
       success: true,
@@ -210,6 +290,8 @@ describe('Storybound-compatible media sidecar', () => {
       expect(script).toContain('music_tracks.append({"type": "bgm"');
       expect(script).toContain('"canvas": music_canvas');
       expect(script).toContain('def generate_compose_render');
+      expect(script).toContain('def ffmpeg_timeout_seconds');
+      expect(script).toContain('duration * 0.5 + 300');
       expect(script).toContain('def generate_remix_bgm');
       expect(script).toContain('def convert_audio_16k');
       expect(script).toContain('def normalize_scene_video');
@@ -244,7 +326,7 @@ describe('Storybound-compatible media sidecar', () => {
       expect(script).toContain('acrossfade=d=');
       expect(script).toContain('cover_fps = str(first_scene.get("fps") or 24)');
       expect(script).toContain('"-framerate",\n            cover_fps');
-      expect(script).not.toContain('"-f", "concat"');
+      expect(script).toContain('def _compose_hard_cut_groups');
       expect(script).not.toContain('"concat.txt"');
     } finally {
       await rm(dir, { recursive: true, force: true });
@@ -260,10 +342,184 @@ describe('Storybound-compatible media sidecar', () => {
 
       expect(script).toContain('"-map", "0:v:0"');
       expect(script).toContain('"-map", "1:a:0"');
+      expect(script).toContain('scene_duration = float(scene.get("duration_s") or 0)');
+      expect(script).toContain('"-af", "apad"');
+      expect(script).toContain('target_duration = float(payload.get("total_duration_s") or 0)');
+      expect(script).toContain('def _compose_with_hard_cuts');
+      expect(script).toContain('concat=n={len(segment_paths)}:v=1:a=0[vout]');
+      expect(script).toContain('concat=n={len(segment_paths)}:v=0:a=1[aout]');
+      expect(script).toContain('if transition_type in ("cut", "none")');
     } finally {
       await rm(dir, { recursive: true, force: true });
     }
   });
+
+  it('honors declared scene duration instead of truncating to short narration', async () => {
+    const dir = await mkdtemp(join(tmpdir(), 'storydream-sidecar-declared-duration-'));
+    const framesDir = join(dir, 'frames');
+    const audioPath = join(dir, 'voice.wav');
+    const outputPath = join(dir, 'output.mp4');
+
+    try {
+      await mkdir(framesDir, { recursive: true });
+      await writeFile(
+        join(framesDir, '0001.png'),
+        Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAIAAAACCAYAAABytg0kAAAAAXNSR0IArs4c6QAAAARnQU1BAACxjwv8YQUAAAAJcEhZcwAADsMAAA7DAcdvqGQAAAAVSURBVBhXY/jPAEQNIIrhPxD8/w8AQ9QJeKxchO4AAAAASUVORK5CYII=', 'base64'),
+      );
+      await writeFile(audioPath, wavTone(220));
+
+      await runStoryboundMediaSidecar({
+        mode: 'compose_render',
+        work_dir: dir,
+        scenes: [{ frames_dir: framesDir, audio_path: audioPath, fps: 10, duration_s: 1.2 }],
+        total_duration_s: 1.2,
+        output_path: outputPath,
+      });
+      const probe = await runStoryboundMediaSidecar({
+        mode: 'probe_media',
+        work_dir: dir,
+        media_path: outputPath,
+      });
+
+      expect(probe.duration).toBeCloseTo(1.2, 1);
+      expect(probe).toMatchObject({ success: true, has_audio: true, has_video: true });
+      expect(probe.audio_quality_status).toBeUndefined();
+      const quality = await runStoryboundMediaSidecar({ mode: 'probe_media', work_dir: dir, media_path: outputPath, analyze_quality: true });
+      expect(quality).toMatchObject({ audio_quality_status: 'ok', black_detection_status: 'ok', black_intervals: [] });
+    } finally {
+      await rm(dir, { recursive: true, force: true });
+    }
+  }, 30_000);
+
+  it('performs real hard cuts and detects a non-black frame in a later scene', async () => {
+    const dir = await mkdtemp(join(tmpdir(), 'storydream-sidecar-hard-cut-'));
+    const firstFramesDir = join(dir, 'frames-1');
+    const secondFramesDir = join(dir, 'frames-2');
+    const firstAudioPath = join(dir, 'voice-1.wav');
+    const secondAudioPath = join(dir, 'voice-2.wav');
+    const outputPath = join(dir, 'output.mp4');
+
+    try {
+      await Promise.all([
+        mkdir(firstFramesDir, { recursive: true }),
+        mkdir(secondFramesDir, { recursive: true }),
+      ]);
+      await Promise.all([
+        writeFile(join(firstFramesDir, '0001.png'), blackPng()),
+        writeFile(join(secondFramesDir, '0001.png'), colorPng()),
+        writeFile(firstAudioPath, wavTone(180)),
+        writeFile(secondAudioPath, wavTone(180)),
+      ]);
+
+      await runStoryboundMediaSidecar({
+        mode: 'compose_render',
+        work_dir: dir,
+        scenes: [
+          { frames_dir: firstFramesDir, audio_path: firstAudioPath, fps: 10, duration_s: 0.45 },
+          { frames_dir: secondFramesDir, audio_path: secondAudioPath, fps: 10, duration_s: 0.55 },
+        ],
+        transition: { type: 'cut', duration: 0 },
+        total_duration_s: 1,
+        output_path: outputPath,
+      });
+      const probe = await runStoryboundMediaSidecar({
+        mode: 'probe_media',
+        work_dir: dir,
+        media_path: outputPath,
+        require_nonblack: true,
+      });
+
+      expect(probe.duration).toBeCloseTo(1, 1);
+      expect(probe).toMatchObject({
+        success: true,
+        has_audio: true,
+        has_video: true,
+        has_nonblack_video: true,
+        width: 2,
+        height: 2,
+      });
+    } finally {
+      await rm(dir, { recursive: true, force: true });
+    }
+  }, 30_000);
+
+  it('reports an all-black video when non-black probing is required', async () => {
+    const dir = await mkdtemp(join(tmpdir(), 'storydream-sidecar-black-probe-'));
+    const framesDir = join(dir, 'frames');
+    const audioPath = join(dir, 'voice.wav');
+    const outputPath = join(dir, 'output.mp4');
+
+    try {
+      await mkdir(framesDir, { recursive: true });
+      await Promise.all([
+        writeFile(join(framesDir, '0001.png'), blackPng()),
+        writeFile(audioPath, wavTone(180)),
+      ]);
+      await runStoryboundMediaSidecar({
+        mode: 'compose_render',
+        work_dir: dir,
+        scenes: [{ frames_dir: framesDir, audio_path: audioPath, fps: 10, duration_s: 0.6 }],
+        total_duration_s: 0.6,
+        output_path: outputPath,
+      });
+
+      const probe = await runStoryboundMediaSidecar({
+        mode: 'probe_media',
+        work_dir: dir,
+        media_path: outputPath,
+        require_nonblack: true,
+        analyze_quality: true,
+      });
+      expect(probe).toMatchObject({ success: true, has_video: true, has_nonblack_video: false });
+      expect(probe.black_detection_status).toBe('ok');
+      expect(probe.black_intervals).toHaveLength(1);
+      expect(probe.black_intervals![0]).toMatchObject({ start_ms: 0 });
+      expect(probe.black_intervals![0].end_ms).toBeGreaterThanOrEqual(500);
+    } finally {
+      await rm(dir, { recursive: true, force: true });
+    }
+  }, 30_000);
+
+  it('carries non-black probing through scene-video normalization', async () => {
+    const dir = await mkdtemp(join(tmpdir(), 'storydream-sidecar-black-normalize-'));
+    const framesDir = join(dir, 'frames');
+    const audioPath = join(dir, 'voice.wav');
+    const sourcePath = join(dir, 'source.mp4');
+    const normalizedPath = join(dir, 'normalized.mp4');
+
+    try {
+      await mkdir(framesDir, { recursive: true });
+      await Promise.all([
+        writeFile(join(framesDir, '0001.png'), blackPng()),
+        writeFile(audioPath, wavTone(180)),
+      ]);
+      await runStoryboundMediaSidecar({
+        mode: 'compose_render',
+        work_dir: dir,
+        scenes: [{ frames_dir: framesDir, audio_path: audioPath, fps: 10, duration_s: 0.6 }],
+        total_duration_s: 0.6,
+        output_path: sourcePath,
+      });
+
+      const normalized = await runStoryboundMediaSidecar({
+        mode: 'normalize_scene_video',
+        work_dir: dir,
+        video_path: sourcePath,
+        output_path: normalizedPath,
+        require_nonblack: true,
+      });
+
+      expect(normalized).toMatchObject({
+        success: true,
+        has_video: true,
+        has_nonblack_video: false,
+        width: 2,
+        height: 2,
+      });
+    } finally {
+      await rm(dir, { recursive: true, force: true });
+    }
+  }, 30_000);
 
   it('keeps video and audio streams for narration shorter than one frame interval', async () => {
     const dir = await mkdtemp(join(tmpdir(), 'storydream-sidecar-short-scene-'));
@@ -393,7 +649,7 @@ describe('Storybound-compatible media sidecar', () => {
   });
 });
 
-function wavTone(durationMs: number): Buffer {
+function wavTone(durationMs: number, amplitude = 8000): Buffer {
   const sampleRate = 8000;
   const samples = Math.max(1, Math.floor((sampleRate * durationMs) / 1000));
   const dataSize = samples * 2;
@@ -412,8 +668,19 @@ function wavTone(durationMs: number): Buffer {
   buffer.write('data', 36);
   buffer.writeUInt32LE(dataSize, 40);
   for (let index = 0; index < samples; index += 1) {
-    const value = Math.round(Math.sin((index / sampleRate) * Math.PI * 2 * 440) * 8000);
+    const value = Math.round(Math.sin((index / sampleRate) * Math.PI * 2 * 440) * amplitude);
     buffer.writeInt16LE(value, 44 + index * 2);
   }
   return buffer;
+}
+
+function colorPng(): Buffer {
+  return Buffer.from(
+    'iVBORw0KGgoAAAANSUhEUgAAAAIAAAACCAYAAABytg0kAAAAAXNSR0IArs4c6QAAAARnQU1BAACxjwv8YQUAAAAJcEhZcwAADsMAAA7DAcdvqGQAAAAVSURBVBhXY/jPAEQNIIrhPxD8/w8AQ9QJeKxchO4AAAAASUVORK5CYII=',
+    'base64',
+  );
+}
+
+function blackPng(): Buffer {
+  return Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAIAAAACCAYAAABytg0kAAAAEElEQVR4nGNgYGD4D8UQBgAd9AP9yOH2qAAAAABJRU5ErkJggg==', 'base64');
 }
