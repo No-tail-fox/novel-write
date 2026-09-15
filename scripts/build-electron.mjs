@@ -41,3 +41,5 @@ await copyFile(
 
 await build({entryPoints: ['src/features/vox-animation/runtime.tsx'], outfile: 'dist-electron/electron/vox-animation-runtime.js', bundle: true, platform: 'browser', format: 'iife', target: 'chrome120', define: {'process.env.NODE_ENV': '"production"'}, minify: true});
 await copyFile('src/features/vox-animation/THIRD_PARTY_NOTICES.md', 'dist-electron/electron/VOX_THIRD_PARTY_NOTICES.md');
+await mkdir('dist-electron/electron/shotcraft', { recursive: true });
+await copyFile('src/features/vox-animation/shotcraft/LICENSE', 'dist-electron/electron/shotcraft/LICENSE');

@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import type { StoryDreamApi } from '../../shared/storydream-api';
-import { buildVoxAnimationHtml, validateVoxAnimation, type VoxAnimation, type VoxAnimationCue, type VoxAnimationPayload } from '../../shared/vox-animation';
+import { buildVoxAnimationHtml, validateVoxAnimation, voxAnimationAssetIds, type VoxAnimation, type VoxAnimationCue, type VoxAnimationPayload } from '../../shared/vox-animation';
 import { directorCanvasForRatio } from '../../shared/director-render';
 export interface VoxLocalAsset {id:string;label:string;kind:'image'|'audio';path:string;}
 export type VoxApi=Pick<StoryDreamApi,'getVoxAnimationRuntime'|'readVoxAnimationAsset'|'compileVoxAnimation'|'generateVoxAnimation'|'cancelVoxAnimation'|'listVoxTemplates'|'saveVoxTemplate'|'deleteVoxTemplate'>;
@@ -14,7 +14,7 @@ export function VoxAnimationPreview({animation,api,assets,ratio,durationMs,timeM
     const issues=validateVoxAnimation(animation,assets);if(issues.length)throw new Error(issues.join('；'));
     if(animation.mode==='template'&&['audio-captions','audio-lyrics'].includes(animation.template.id)&&!cues.length)throw new Error('请先在字幕面板添加字幕或导入歌词时间戳');
     let runtime=runtimes.get(api);if(!runtime){runtime=api.getVoxAnimationRuntime();runtimes.set(api,runtime);runtime.catch(()=>runtimes.delete(api));}
-    const ids=[...animation.template.props.assetIds,...(animation.template.props.audioAssetId?[animation.template.props.audioAssetId]:[])];
+    const ids=voxAnimationAssetIds(animation);
     const media=await Promise.all(ids.map(async id=>{const asset=assets.find(a=>a.id===id);if(!asset)throw new Error('素材不存在');const key=`${asset.id}:${asset.path}`;let loaded=assetCache.get(key);if(!loaded){loaded=api.readVoxAnimationAsset(asset.path);assetCache.set(key,loaded);loaded.catch(()=>assetCache.delete(key));if(assetCache.size>32)assetCache.delete(assetCache.keys().next().value!);}return {id,kind:asset.kind,label:asset.label,url:await loaded};}));
     const safeAnimation=animation.mode==='code'?{...animation,code:{...animation.code,...await api.compileVoxAnimation(animation.code.source)}}:animation;
     const payload:VoxAnimationPayload={animation:safeAnimation,assets:media,...directorCanvasForRatio(ratio),durationMs,fps:24,cues,subtitleStyle,audioClips};

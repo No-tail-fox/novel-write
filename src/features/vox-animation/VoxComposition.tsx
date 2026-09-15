@@ -3,6 +3,8 @@ import { AbsoluteFill, Img, interpolate, spring, useCurrentFrame, useVideoConfig
 import { visualizeAudio, type MediaUtilsAudioData } from '@remotion/media-utils';
 import type { VoxAnimationPayload, VoxAnimationProps } from '../../shared/vox-animation';
 import worldMap from './world-map.json';
+import { shotcraftRecipe } from '../../shared/shotcraft-recipes';
+import { ShotcraftComposition } from './shotcraft/ShotcraftComposition';
 
 const clamp=(n:number)=>Math.max(0,Math.min(1,n));
 const range=(f:number,a:number,b:number)=>clamp((f-a)/Math.max(1,b-a));
@@ -100,6 +102,7 @@ function Transition(s:SceneProps){const {p,id,f,d,images}=s,a=ease(range(f,d*.2,
 }
 function noHeadingFor(id:string){return ['text-opening','text-keywords','label-lower-third','paper-title','time-chapters','book-identity','audio-captions','audio-lyrics','audio-podcast','audio-spectrum'].includes(id);}
 export function VoxComposition(payload:VoxAnimationPayload){const frame=useCurrentFrame(),config=useVideoConfig();const {animation}=payload,p=animation.template.props,id=animation.template.id;const w=1000,h=config.height/config.width*w;const images=p.assetIds.flatMap(id=>payload.assets.find(a=>a.id===id&&a.kind==='image')?.url??[]),audio=payload.assets.find(a=>a.id===p.audioAssetId)?.url;
+  if(shotcraftRecipe(id))return <ShotcraftComposition payload={payload} frame={frame} durationInFrames={config.durationInFrames}/>;
   const stageTop=noHeadingFor(id)?50:Math.max(105,Math.min(220,Math.ceil(p.title.length/17)*62));
   const stageHeight=h-stageTop-Math.max(110,h*(p.source?.24:.19)),portrait=h>w;
   const count=Math.max(1,p.items.length);

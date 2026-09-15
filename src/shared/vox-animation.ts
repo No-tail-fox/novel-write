@@ -1,12 +1,13 @@
 import { z } from 'zod';
+import { SHOTCRAFT_TEMPLATES, type ShotcraftRecipe } from './shotcraft-recipes';
 
 export const VOX_ANIMATION_VERSION = 1;
 export const VOX_ANIMATION_CATEGORIES = ['纸张拼贴', '证据讲解', '时间叙事', '对比分析', '数据解释', '地图叙事', '原理流程', '书籍推荐', '文字与图片', '音频与字幕', '转场与标注'] as const;
 export type VoxAnimationCategory = typeof VOX_ANIMATION_CATEGORIES[number];
 export type VoxTemplateKind = 'paper' | 'evidence' | 'timeline' | 'compare' | 'data' | 'map' | 'flow' | 'book' | 'text' | 'gallery' | 'audio' | 'transition' | 'label';
-export interface VoxTemplate { id: string; name: string; category: VoxAnimationCategory; kind: VoxTemplateKind; description: string; minImages?: number; maxItems?: number; maxImages?: number; items?: boolean; numeric?: boolean; map?: boolean; audio?: boolean; }
+export interface VoxTemplate { id: string; name: string; category: VoxAnimationCategory; kind: VoxTemplateKind; description: string; minImages?: number; maxItems?: number; maxImages?: number; items?: boolean; numeric?: boolean; map?: boolean; audio?: boolean; recipe?: ShotcraftRecipe; }
 const group = (category: VoxAnimationCategory, kind: VoxTemplateKind, rows: Array<[string,string,string]>, flags: Partial<VoxTemplate> = {}): VoxTemplate[] => rows.map(([id,name,description]) => ({id,name,description,category,kind,...flags}));
-export const VOX_TEMPLATES: readonly VoxTemplate[] = [
+export const VOX_TEMPLATES: readonly VoxTemplate[] = [...[
   ...group('纸张拼贴','paper',[
     ['paper-actors','分层纸片入场','背景与透明主体错峰进入'],['paper-polaroids','拍立得拼贴','照片与说明逐张落版'],['paper-popup','立体纸卡','纸卡沿折线立起'],['paper-title','纸张标题压印','标题逐段压印到纸面'],
   ],{items:true}),
@@ -50,7 +51,7 @@ export const VOX_TEMPLATES: readonly VoxTemplate[] = [
   maxImages: ['paper','gallery'].includes(t.kind)?8:24,
   minImages: ['paper-actors','compare-slider','book-3d'].includes(t.id) ? 2 : ['paper-polaroids','paper-popup','evidence-focus','book-identity','book-reading-list','gallery-grid','gallery-space'].includes(t.id) ? 1 : 0,
   audio: ['audio-podcast','audio-spectrum'].includes(t.id),
-}));
+})), ...SHOTCRAFT_TEMPLATES];
 export const voxItemSchema = z.object({
   label:z.string().max(160), detail:z.string().max(1200).default(''), value:z.number().finite().min(-1e12).max(1e12).default(0),
   date:z.string().max(80).default(''), lat:z.number().min(-90).max(90).default(0), lng:z.number().min(-180).max(180).default(0),
@@ -67,7 +68,7 @@ export type VoxAnimationProps = z.infer<typeof voxPropsSchema>;
 export type VoxAnimationItem = z.infer<typeof voxItemSchema>;
 export const voxAnimationSchema = z.object({
   version:z.literal(1), mode:z.enum(['template','code']),
-  template:z.object({id:z.string().min(1).max(120),props:voxPropsSchema}).strict(),
+  template:z.object({id:z.string().min(1).max(120),revision:z.literal(1).optional(),props:voxPropsSchema}).strict(),
   code:z.object({source:z.string().max(100000).default(''), compiled:z.string().max(180000).default(''), prompt:z.string().max(10000).default('')}).strict(),
 }).strict();
 export type VoxAnimation = z.infer<typeof voxAnimationSchema>;
@@ -83,24 +84,40 @@ export const voxTemplate = (id:string) => VOX_TEMPLATES.find(t=>t.id===id);
 export function createVoxAnimation(title='',subtitle=''):VoxAnimation {
   return {version:1,mode:'template',template:{id:'text-opening',props:voxPropsSchema.parse({title,subtitle})},code:{source:'',compiled:'',prompt:''}};
 }
-export function voxAnimationAssetIds(animation:VoxAnimation):string[] {return [...new Set([...animation.template.props.assetIds,...(animation.template.props.audioAssetId?[animation.template.props.audioAssetId]:[])])];}
+export function voxAnimationAssetIds(animation:VoxAnimation):string[] {
+  const t=voxTemplate(animation.template.id),p=animation.template.props;
+  const recipe=animation.mode==='template'&&t?.recipe;
+  return [...new Set([...(recipe&&t.maxImages===0?[]:p.assetIds),...(p.audioAssetId&&(!recipe||t.audio)?[p.audioAssetId]:[])])];
+}
 export function validateVoxAnimation(animation:VoxAnimation, assets?:readonly {id:string;kind:string}[]):string[] {
   const parsed=voxAnimationSchema.safeParse(animation);if(!parsed.success)return ['动画参数格式无效'];
   const a=parsed.data,p=a.template.props,t=voxTemplate(a.template.id),issues:string[]=[];
   if(!t)return ['模板不存在，请重新选择'];
   if(a.mode==='code'){if(!a.code.source.trim()||!a.code.compiled.trim())issues.push('请生成或检查动画代码后再应用');}
   else {
+    if(t.recipe){
+      const r=t.recipe;
+      if(p.title.length>r.maxTitle)issues.push(`此模板标题最多 ${r.maxTitle} 字，请精简文字`);
+      if(p.subtitle.length>r.maxSubtitle)issues.push(`此模板补充说明最多 ${r.maxSubtitle} 字`);
+      if(p.source.length>120)issues.push('此模板来源最多 120 字');
+      if(t.items)p.items.forEach((item,i)=>{
+        if(item.label.length>r.maxLabel)issues.push(`条目 ${i+1} 标题最多 ${r.maxLabel} 字`);
+        if(item.detail.length>r.maxDetail)issues.push(`条目 ${i+1} 说明最多 ${r.maxDetail} 字`);
+        if(item.date.length>r.maxDate)issues.push(`条目 ${i+1} 日期最多 ${r.maxDate} 字`);
+      });
+      if(t.id==='shotcraft-paper-popup'&&!p.items.length&&!p.assetIds.length)issues.push('请添加纸卡内容或图片');
+    }
     if(!p.title.trim()&&!p.subtitle.trim()&&!p.items.length&&!p.assetIds.length)issues.push('请填写文字、条目或选择素材');
     if((t.minImages??0)>p.assetIds.length)issues.push(`此模板需要至少 ${t.minImages} 张图片`);
     if(t.items&&p.items.length>(t.maxItems??24))issues.push(`此模板最多显示 ${t.maxItems} 个条目，请删除多余条目`);
-    if(p.assetIds.length>(t.maxImages??24))issues.push(`此模板最多显示 ${t.maxImages} 张图片`);
+    if(!(t.recipe&&t.maxImages===0)&&p.assetIds.length>(t.maxImages??24))issues.push(`此模板最多显示 ${t.maxImages} 张图片`);
     if(t.items&&['timeline','data','flow','compare'].includes(t.kind)&&!p.items.length&&!['time-chapters','compare-slider'].includes(t.id))issues.push('请添加至少一个内容条目');
     if(t.id==='compare-values'&&p.items.length<2)issues.push('指标比较需要两组数值');
     if(t.id==='data-share'&&(p.items.some(x=>x.value<0)||p.items.reduce((n,x)=>n+x.value,0)<=0))issues.push('占比数据需要非负数，且总量大于 0');
     if(t.audio&&!p.audioAssetId)issues.push('请选择用于波形或频谱的真实音频');
     if(t.map&&t.id!=='map-region'&&p.items.length<2)issues.push('地图路线至少需要两个地点和坐标');
     if(t.id==='map-region'&&!p.geoJson.trim())issues.push('请填写区域 GeoJSON');
-    if(p.geoJson.trim()){
+    if(p.geoJson.trim()&&(!t.recipe||t.map)){
       try {
         const g=JSON.parse(p.geoJson), geometries=g.type==='FeatureCollection'?g.features?.map((f:any)=>f.geometry):[g.type==='Feature'?g.geometry:g];
         const point=z.tuple([z.number().finite().min(-180).max(180),z.number().finite().min(-90).max(90)]).rest(z.number());
@@ -110,7 +127,7 @@ export function validateVoxAnimation(animation:VoxAnimation, assets?:readonly {i
       } catch {issues.push('GeoJSON 不是有效的 JSON');}
     }
   }
-  if(assets){for(const id of p.assetIds)if(!assets.some(x=>x.id===id&&x.kind==='image'))issues.push('有图片素材不存在，请重新选择');if(p.audioAssetId&&!assets.some(x=>x.id===p.audioAssetId&&x.kind==='audio'))issues.push('音频素材不存在，请重新选择');}
+  if(assets){const active=new Set(voxAnimationAssetIds(a));for(const id of p.assetIds)if(active.has(id)&&!assets.some(x=>x.id===id&&x.kind==='image'))issues.push('有图片素材不存在，请重新选择');if(p.audioAssetId&&active.has(p.audioAssetId)&&!assets.some(x=>x.id===p.audioAssetId&&x.kind==='audio'))issues.push('音频素材不存在，请重新选择');}
   return [...new Set(issues)];
 }
 export function buildVoxAnimationHtml(runtime:string,payload:VoxAnimationPayload):string {
